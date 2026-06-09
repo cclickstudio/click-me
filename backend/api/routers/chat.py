@@ -1,24 +1,42 @@
-"""Chat router — Claude Sonnet SSE 스트리밍."""
-
+import json
 from fastapi import APIRouter
-from pydantic import BaseModel
+from fastapi.responses import StreamingResponse
+from anthropic import AsyncAnthropic
+
+from core.schemas import ChatRequest
 
 router = APIRouter()
+_anthropic = AsyncAnthropic()
+
+SYSTEM_PROMPT = """\
+당신은 ClickMe의 광고 분석 AI 어시스턴트입니다.
+마케터가 광고 성과를 이해하고 개선하는 데 도움을 드립니다.
+시뮬레이션 결과를 해석하고, 광고 전략을 조언하며, 광고 관련 질문에 답변합니다."""
 
 
-class ChatRequest(BaseModel):
-    session_id: str | None = None
-    message: str
-    project_id: str | None = None
+@router.post("/complete")
+async def chat_complete(body: ChatRequest):
+    messages = [{"role": m.role, "content": m.content} for m in body.messages]
+
+    async def generate():
+        async with _anthropic.messages.stream(
+            model="claude-sonnet-4-6",
+            max_tokens=2048,
+            system=SYSTEM_PROMPT,
+            messages=messages,
+        ) as stream:
+            async for text in stream.text_stream:
+                yield f"data: {json.dumps({'token': text}, ensure_ascii=False)}\n\n"
+        yield 'data: {"done": true}\n\n'
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
 
 
-@router.post("/")
-async def chat(body: ChatRequest) -> dict:
-    # TODO: Chat Agent (Claude Sonnet) SSE 스트리밍 연결
-    raise NotImplementedError
+@router.get("/sessions")
+async def list_sessions():
+    return {"sessions": []}
 
 
-@router.get("/sessions/{session_id}")
-async def get_session(session_id: str) -> dict:
-    # TODO: 채팅 세션 히스토리 조회
-    raise NotImplementedError
+@router.get("/sessions/{session_id}/messages")
+async def get_session_messages(session_id: str):
+    return {"session_id": session_id, "messages": []}

@@ -1,23 +1,48 @@
-"""Admin router — 관리자 전용 엔드포인트."""
-
+import uuid
+from datetime import datetime, timezone
 from fastapi import APIRouter
+
+from core.schemas import UserCreate
 
 router = APIRouter()
 
+_users: list[dict] = [
+    {
+        "user_id": str(uuid.uuid4()),
+        "email": "admin@clickme.io",
+        "name": "관리자",
+        "role": "admin",
+        "created_at": "2026-06-01T00:00:00Z",
+        "last_login_at": None,
+    }
+]
+
+
+@router.get("/users")
+async def list_users():
+    return {"users": _users}
+
+
+@router.post("/users", status_code=201)
+async def create_user(body: UserCreate):
+    user_id = str(uuid.uuid4())
+    _users.append({
+        "user_id": user_id,
+        "email": body.email,
+        "name": body.name,
+        "role": body.role,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "last_login_at": None,
+    })
+    return {"user_id": user_id}
+
 
 @router.get("/inquiries")
-async def list_inquiries() -> list:
-    # TODO: 고객 문의 목록 조회
-    raise NotImplementedError
-
-
-@router.post("/inquiries")
-async def create_inquiry() -> dict:
-    # TODO: 고객 문의 저장
-    raise NotImplementedError
+async def list_inquiries():
+    from api.routers.inquiries import _store as _inquiries
+    return {"inquiries": _inquiries}
 
 
 @router.get("/stats")
-async def get_stats() -> dict:
-    # TODO: 시뮬레이션 실행 수, 광고 수 등 집계
-    raise NotImplementedError
+async def get_stats():
+    return {"users": len(_users), "inquiries": 0}

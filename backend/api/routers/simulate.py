@@ -1,34 +1,39 @@
-"""Simulation router — SQS 비동기 큐 연동."""
+from fastapi import APIRouter, Request, HTTPException
+from fastapi.responses import StreamingResponse
 
-from fastapi import APIRouter
-from pydantic import BaseModel, Field
+from core.schemas import SimulationRequest, SimulationTaskResponse
+from services import simulation_service
 
 router = APIRouter()
 
 
-class SimulationRequest(BaseModel):
-    ad_id: str
-    persona_count: int = Field(default=20, ge=1, le=1000)
+@router.post("/reactions", response_model=SimulationTaskResponse)
+async def start_simulation(body: SimulationRequest, request: Request):
+    ssr_scorer = request.app.state.ssr_scorer
+    task_id = await simulation_service.start_simulation(body, ssr_scorer)
+    return SimulationTaskResponse(
+        task_id=task_id,
+        stream_url=f"/api/simulate/{task_id}/stream",
+    )
 
 
-class SimulationJobResponse(BaseModel):
-    job_id: str
-    status: str
+@router.get("/{task_id}/stream")
+async def stream_simulation(task_id: str):
+    return StreamingResponse(
+        simulation_service.stream_events(task_id),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
-@router.post("/", response_model=SimulationJobResponse)
-async def start_simulation(body: SimulationRequest) -> SimulationJobResponse:
-    # TODO: SQS에 시뮬레이션 작업 enqueue → job_id 반환
-    raise NotImplementedError
+@router.get("/{task_id}/result")
+async def get_result(task_id: str):
+    result = simulation_service.get_result(task_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Result not found or simulation not completed")
+    return result
 
 
-@router.get("/{job_id}/status")
-async def get_simulation_status(job_id: str) -> dict:
-    # TODO: 시뮬레이션 진행 상태 조회 (SSE 또는 polling)
-    raise NotImplementedError
-
-
-@router.get("/{job_id}/result")
-async def get_simulation_result(job_id: str) -> dict:
-    # TODO: 완료된 시뮬레이션 결과 (분포 데이터) 반환
-    raise NotImplementedError
+@router.post("/debate")
+async def debate_stub():
+    raise HTTPException(status_code=501, detail="Debate Agent는 7.8 목표 기능입니다.")

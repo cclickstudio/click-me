@@ -1,29 +1,79 @@
-"""SSR Scorer 툴 — LLM 없이 text-embedding-3-small로 구매의향 점수화."""
-
-from langchain_core.tools import tool
+import numpy as np
 from openai import AsyncOpenAI
 
-client = AsyncOpenAI()
-
-# 구매의향 앵커 텍스트 (KOBACO 데이터 기반으로 교체 가능)
-INTENT_ANCHORS = {
-    "high": "이 제품을 꼭 사고 싶다. 바로 구매할 의향이 있다.",
-    "medium": "관심은 있지만 더 고민해봐야 한다.",
-    "low": "별로 관심 없다. 구매할 생각이 없다.",
-}
+from core.schemas import ScoreDistribution
+from tools.simulation.anchors import ANCHOR_STATEMENTS, SCORE_RANGES, EMBEDDING_MODEL
 
 
-@tool
-async def score_purchase_intent(deliberation_text: str) -> float:
-    """숙고 텍스트를 임베딩 유사도로 구매의향 점수(0.0~1.0)로 변환합니다.
-
-    LLM 호출 없이 text-embedding-3-small만 사용하여 비용을 절감합니다.
-
-    Args:
-        deliberation_text: Deliberation Agent 결과 텍스트
-
-    Returns:
-        구매의향 점수 (0.0 = 구매 의향 없음, 1.0 = 강한 구매 의향)
+class SSRScorer:
     """
-    # TODO: deliberation_text + INTENT_ANCHORS 임베딩 → 코사인 유사도 → 정규화
-    raise NotImplementedError
+    Semantic Similarity Rating (SSR) scorer.
+    Exposure + Deliberation text → embeddings → cosine similarity with anchor statements → score distribution.
+    Deterministic: same input → same output. No LLM calls — embedding API only.
+    Must call precompute_anchors() once at server startup.
+    """
+
+    def __init__(self) -> None:
+        self.client = AsyncOpenAI()
+        self._anchor_embeddings: dict[str, np.ndarray] = {}
+
+    async def precompute_anchors(self) -> None:
+        all_anchors: list[str] = []
+        index_map: list[tuple[str, int]] = []
+        for dim, anchors in ANCHOR_STATEMENTS.items():
+            for i, anchor in enumerate(anchors):
+                all_anchors.append(anchor)
+                index_map.append((dim, i))
+
+        response = await self.client.embeddings.create(model=EMBEDDING_MODEL, input=all_anchors)
+
+        by_dim: dict[str, list[list[float]]] = {d: [] for d in ANCHOR_STATEMENTS}
+        for (dim, _), emb_obj in zip(index_map, response.data):
+            by_dim[dim].append(emb_obj.embedding)
+
+        for dim, emb_list in by_dim.items():
+            self._anchor_embeddings[dim] = np.array(emb_list, dtype=np.float32)
+
+    async def score(self, exposure_text: str) -> dict[str, ScoreDistribution]:
+        resp = await self.client.embeddings.create(model=EMBEDDING_MODEL, input=[exposure_text])
+        response_emb = np.array(resp.data[0].embedding, dtype=np.float32)
+
+        scores: dict[str, ScoreDistribution] = {}
+        rng = np.random.default_rng(42)
+
+        for dim, anchor_embs in self._anchor_embeddings.items():
+            anchor_norms = np.linalg.norm(anchor_embs, axis=1)
+            response_norm = float(np.linalg.norm(response_emb))
+            cosine_sims = (anchor_embs @ response_emb) / (anchor_norms * response_norm + 1e-9)
+
+            shifted = cosine_sims - cosine_sims.min()
+            probs = shifted / (shifted.sum() + 1e-9)
+
+            lo, hi = SCORE_RANGES[dim]
+            levels = np.linspace(lo, hi, len(probs))
+            expected = float(np.dot(probs, levels))
+            std = float(np.sqrt(np.dot(probs, (levels - expected) ** 2)))
+            sampled = rng.choice(levels, size=2000, p=probs)
+
+            scores[dim] = ScoreDistribution(
+                mean=expected,
+                std=std,
+                p10=float(np.percentile(sampled, 10)),
+                p90=float(np.percentile(sampled, 90)),
+                raw_probs=probs.tolist(),
+            )
+
+        return scores
+
+    @staticmethod
+    def build_input_text(exposure: dict, deliberation: dict) -> str:
+        return (
+            f"시선집중: {exposure.get('attention_capture', '')}\n"
+            f"첫감정: {exposure.get('first_emotion', '')}\n"
+            f"본능반응: {exposure.get('gut_reaction', '')}\n"
+            f"스크롤결정: {exposure.get('scroll_decision', '')}\n"
+            f"지지생각: {'; '.join(deliberation.get('supporting_thoughts', []))}\n"
+            f"반대생각: {'; '.join(deliberation.get('opposing_thoughts', []))}\n"
+            f"가치일치: {deliberation.get('value_alignment', '')}\n"
+            f"최종태도: {deliberation.get('final_attitude', '')}"
+        )
