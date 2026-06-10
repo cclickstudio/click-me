@@ -1,11 +1,14 @@
 import asyncio
 import json
+import logging
 
 from langsmith import traceable
 from openai import AsyncOpenAI
 
 from core.schemas import OCEAN, Persona, PersonaAttributes
 from tools.utils import safe_json_loads, str_list, str_or_none
+
+logger = logging.getLogger("clickme")
 
 _client = AsyncOpenAI(timeout=120.0)
 
@@ -100,8 +103,11 @@ async def _generate_batch(
     )
 
     parsed = safe_json_loads(response.choices[0].message.content, fallback="[]")
-    fallback = list(parsed.values())[0] if parsed else []
-    raw_list = parsed if isinstance(parsed, list) else parsed.get("personas", fallback)
+    if isinstance(parsed, list):
+        raw_list = parsed
+    else:
+        fallback = list(parsed.values())[0] if parsed else []
+        raw_list = parsed.get("personas", fallback)
 
     return [_parse_raw(raw, id_start + i - 1) for i, raw in enumerate(raw_list)]
 
@@ -134,7 +140,8 @@ async def run_persona_factory(
     personas: list[Persona] = []
     for r in results:
         if isinstance(r, Exception):
-            continue  # 실패한 배치는 건너뜀
+            logger.error("페르소나 배치 생성 실패: %s", r)
+            continue
         personas.extend(r)
 
     return personas
