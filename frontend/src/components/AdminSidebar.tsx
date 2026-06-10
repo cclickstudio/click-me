@@ -15,7 +15,7 @@ export default function AdminSidebar() {
   const pathname = usePathname();
 
   return (
-    <aside className="w-56 bg-[#191F28] min-h-screen flex flex-col shrink-0">
+    <aside className="w-56 bg-[#191F28] dark:bg-[#090E18] min-h-screen flex flex-col shrink-0 transition-colors">
       <div className="px-5 py-5 border-b border-white/10">
         <Link href="/" className="text-white font-bold text-base">ClickMe</Link>
         <span className="block text-[#8B95A1] text-xs mt-0.5">관리자</span>

@@ -46,8 +46,8 @@ export default function Page() {
       <div className="max-w-screen-xl mx-auto px-6 py-8">
         {/* Page header */}
         <div className="mb-8">
-          <h1 className="text-2xl font-bold text-[#191F28]">광고 제너레이터</h1>
-          <p className="text-sm text-[#8B95A1] mt-1">
+          <h1 className="text-2xl font-bold text-[#191F28] dark:text-[#F2F4F6]">광고 제너레이터</h1>
+          <p className="text-sm text-[#8B95A1] dark:text-[#6B7280] mt-1">
             시뮬레이션 결과를 기반으로 최적화된 광고 소재를 AI가 생성합니다
           </p>
         </div>
@@ -57,18 +57,18 @@ export default function Page() {
           {adTypes.map((type) => (
             <div
               key={type.label}
-              className="bg-white border border-[#E5E8EB] rounded-2xl p-5 opacity-60 cursor-not-allowed"
+              className="bg-white dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748] rounded-2xl p-5 opacity-60 cursor-not-allowed transition-colors"
             >
               <div className="flex items-start justify-between mb-3">
-                <div className="w-9 h-9 flex items-center justify-center rounded-xl bg-[#F2F4F6] text-[#8B95A1]">
+                <div className="w-9 h-9 flex items-center justify-center rounded-xl bg-[#F2F4F6] dark:bg-[#252D3D] text-[#8B95A1] dark:text-[#6B7280]">
                   {type.icon}
                 </div>
-                <span className="text-xs text-[#B0B8C1] bg-[#F2F4F6] px-2 py-1 rounded-full">
+                <span className="text-xs text-[#B0B8C1] dark:text-[#4B5563] bg-[#F2F4F6] dark:bg-[#252D3D] px-2 py-1 rounded-full">
                   {type.tag}
                 </span>
               </div>
-              <h3 className="text-sm font-semibold text-[#191F28] mb-0.5">{type.label}</h3>
-              <p className="text-xs text-[#8B95A1]">{type.desc}</p>
+              <h3 className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6] mb-0.5">{type.label}</h3>
+              <p className="text-xs text-[#8B95A1] dark:text-[#6B7280]">{type.desc}</p>
             </div>
           ))}
         </div>
@@ -76,20 +76,20 @@ export default function Page() {
         {/* Main area */}
         <div className="grid grid-cols-5 gap-5">
           {/* Input panel */}
-          <div className="col-span-2 bg-white border border-[#E5E8EB] rounded-2xl p-6">
-            <h2 className="text-sm font-semibold text-[#191F28] mb-1">생성 설정</h2>
-            <p className="text-xs text-[#8B95A1] mb-5">광고 생성 조건을 입력하세요</p>
-            <div className="min-h-64 flex items-center justify-center border-2 border-dashed border-[#E5E8EB] rounded-xl">
-              <p className="text-xs text-[#B0B8C1]">준비 중</p>
+          <div className="col-span-2 bg-white dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748] rounded-2xl p-6 transition-colors">
+            <h2 className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6] mb-1">생성 설정</h2>
+            <p className="text-xs text-[#8B95A1] dark:text-[#6B7280] mb-5">광고 생성 조건을 입력하세요</p>
+            <div className="min-h-64 flex items-center justify-center border-2 border-dashed border-[#E5E8EB] dark:border-[#2D3748] rounded-xl">
+              <p className="text-xs text-[#B0B8C1] dark:text-[#4B5563]">준비 중</p>
             </div>
           </div>
 
           {/* Result panel */}
-          <div className="col-span-3 bg-white border border-[#E5E8EB] rounded-2xl p-6">
-            <h2 className="text-sm font-semibold text-[#191F28] mb-1">생성 결과</h2>
-            <p className="text-xs text-[#8B95A1] mb-5">생성된 광고 소재가 여기에 표시됩니다</p>
-            <div className="min-h-64 flex items-center justify-center border-2 border-dashed border-[#E5E8EB] rounded-xl">
-              <p className="text-xs text-[#B0B8C1]">준비 중</p>
+          <div className="col-span-3 bg-white dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748] rounded-2xl p-6 transition-colors">
+            <h2 className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6] mb-1">생성 결과</h2>
+            <p className="text-xs text-[#8B95A1] dark:text-[#6B7280] mb-5">생성된 광고 소재가 여기에 표시됩니다</p>
+            <div className="min-h-64 flex items-center justify-center border-2 border-dashed border-[#E5E8EB] dark:border-[#2D3748] rounded-xl">
+              <p className="text-xs text-[#B0B8C1] dark:text-[#4B5563]">준비 중</p>
             </div>
           </div>
         </div>

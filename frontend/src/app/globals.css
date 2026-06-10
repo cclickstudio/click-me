@@ -14,6 +14,16 @@
   --color-hover: #F2F4F6;
 }
 
+html.dark {
+  --color-bg: #0F1117;
+  --color-surface: #1C2333;
+  --color-text-primary: #F2F4F6;
+  --color-text-secondary: #6B7280;
+  --color-text-tertiary: #4B5563;
+  --color-border: #2D3748;
+  --color-hover: #252D3D;
+}
+
 * {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;

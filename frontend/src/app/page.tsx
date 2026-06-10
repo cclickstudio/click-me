@@ -49,15 +49,15 @@ const steps = [
 
 export default function Page() {
   return (
-    <div className="min-h-screen bg-white">
+    <div className="min-h-screen bg-white dark:bg-[#0F1117] transition-colors">
       {/* Header */}
-      <header className="border-b border-[#E5E8EB] sticky top-0 z-50 bg-white/80 backdrop-blur-sm">
+      <header className="border-b border-[#E5E8EB] dark:border-[#2D3748] sticky top-0 z-50 bg-white/80 dark:bg-[#0F1117]/80 backdrop-blur-sm transition-colors">
         <div className="max-w-screen-xl mx-auto px-6 h-14 flex items-center justify-between">
           <span className="text-[#3182F6] font-bold text-lg">ClickMe</span>
           <div className="flex items-center gap-3">
             <Link
               href="/sign-in"
-              className="text-sm text-[#4E5968] hover:text-[#191F28] font-medium transition-colors"
+              className="text-sm text-[#4E5968] dark:text-[#9CA3AF] hover:text-[#191F28] dark:hover:text-[#F2F4F6] font-medium transition-colors"
             >
               로그인
             </Link>
@@ -73,13 +73,13 @@ export default function Page() {
 
       {/* Hero */}
       <section className="max-w-screen-xl mx-auto px-6 pt-28 pb-24 text-center">
-        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#EBF3FF] text-[#3182F6] text-xs font-medium mb-8">
+        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-[#EBF3FF] dark:bg-[#1E3A5F] text-[#3182F6] text-xs font-medium mb-8">
           AI 기반 광고 성과 예측 플랫폼
         </div>
-        <h1 className="text-5xl font-bold text-[#191F28] leading-tight mb-6 tracking-tight">
+        <h1 className="text-5xl font-bold text-[#191F28] dark:text-[#F2F4F6] leading-tight mb-6 tracking-tight">
           광고 성과,<br />런칭 전에 검증하세요
         </h1>
-        <p className="text-lg text-[#8B95A1] mb-10 max-w-md mx-auto leading-relaxed">
+        <p className="text-lg text-[#8B95A1] dark:text-[#6B7280] mb-10 max-w-md mx-auto leading-relaxed">
           AI로 만든 가상 소비자에게 먼저 테스트하여<br />
           CTR·CVR을 사전에 예측합니다
         </p>
@@ -92,7 +92,7 @@ export default function Page() {
           </Link>
           <Link
             href="/chat"
-            className="px-6 py-3 border border-[#E5E8EB] text-[#4E5968] font-medium rounded-xl hover:bg-[#F9FAFB] transition-colors"
+            className="px-6 py-3 border border-[#E5E8EB] dark:border-[#2D3748] text-[#4E5968] dark:text-[#9CA3AF] font-medium rounded-xl hover:bg-[#F9FAFB] dark:hover:bg-[#1C2333] transition-colors"
           >
             AI에게 물어보기
           </Link>
@@ -100,20 +100,20 @@ export default function Page() {
       </section>
 
       {/* How it works */}
-      <section className="bg-[#F9FAFB] py-20">
+      <section className="bg-[#F9FAFB] dark:bg-[#1C2333] py-20 transition-colors">
         <div className="max-w-screen-xl mx-auto px-6">
           <div className="text-center mb-12">
-            <h2 className="text-2xl font-bold text-[#191F28] mb-2">3단계로 시작하세요</h2>
-            <p className="text-sm text-[#8B95A1]">복잡한 설정 없이 바로 시작할 수 있습니다</p>
+            <h2 className="text-2xl font-bold text-[#191F28] dark:text-[#F2F4F6] mb-2">3단계로 시작하세요</h2>
+            <p className="text-sm text-[#8B95A1] dark:text-[#6B7280]">복잡한 설정 없이 바로 시작할 수 있습니다</p>
           </div>
           <div className="grid grid-cols-3 gap-8">
             {steps.map((s) => (
               <div key={s.step} className="text-center">
-                <div className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-[#EBF3FF] text-[#3182F6] text-sm font-bold mb-4">
+                <div className="inline-flex items-center justify-center w-10 h-10 rounded-full bg-[#EBF3FF] dark:bg-[#1E3A5F] text-[#3182F6] text-sm font-bold mb-4">
                   {s.step}
                 </div>
-                <h3 className="text-base font-semibold text-[#191F28] mb-2">{s.title}</h3>
-                <p className="text-sm text-[#8B95A1] leading-relaxed">{s.desc}</p>
+                <h3 className="text-base font-semibold text-[#191F28] dark:text-[#F2F4F6] mb-2">{s.title}</h3>
+                <p className="text-sm text-[#8B95A1] dark:text-[#6B7280] leading-relaxed">{s.desc}</p>
               </div>
             ))}
           </div>
@@ -123,20 +123,20 @@ export default function Page() {
       {/* Features */}
       <section className="max-w-screen-xl mx-auto px-6 py-20">
         <div className="text-center mb-12">
-          <h2 className="text-2xl font-bold text-[#191F28] mb-2">핵심 기능</h2>
-          <p className="text-sm text-[#8B95A1]">광고 기획부터 성과 관리까지 한 플랫폼에서</p>
+          <h2 className="text-2xl font-bold text-[#191F28] dark:text-[#F2F4F6] mb-2">핵심 기능</h2>
+          <p className="text-sm text-[#8B95A1] dark:text-[#6B7280]">광고 기획부터 성과 관리까지 한 플랫폼에서</p>
         </div>
         <div className="grid grid-cols-3 gap-6">
           {features.map((f) => (
             <div
               key={f.title}
-              className="p-6 bg-white border border-[#E5E8EB] rounded-2xl hover:shadow-md hover:border-[#3182F6]/20 transition-all group"
+              className="p-6 bg-white dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748] rounded-2xl hover:shadow-md hover:border-[#3182F6]/20 transition-all group"
             >
-              <div className="w-10 h-10 flex items-center justify-center rounded-xl bg-[#EBF3FF] text-[#3182F6] mb-4 group-hover:bg-[#3182F6] group-hover:text-white transition-colors">
+              <div className="w-10 h-10 flex items-center justify-center rounded-xl bg-[#EBF3FF] dark:bg-[#1E3A5F] text-[#3182F6] mb-4 group-hover:bg-[#3182F6] group-hover:text-white transition-colors">
                 {f.icon}
               </div>
-              <h3 className="text-base font-semibold text-[#191F28] mb-2">{f.title}</h3>
-              <p className="text-sm text-[#8B95A1] leading-relaxed mb-5">{f.desc}</p>
+              <h3 className="text-base font-semibold text-[#191F28] dark:text-[#F2F4F6] mb-2">{f.title}</h3>
+              <p className="text-sm text-[#8B95A1] dark:text-[#6B7280] leading-relaxed mb-5">{f.desc}</p>
               <Link
                 href={f.href}
                 className="text-sm font-medium text-[#3182F6] hover:underline"
@@ -161,10 +161,10 @@ export default function Page() {
       </section>
 
       {/* Footer */}
-      <footer className="border-t border-[#E5E8EB] py-8">
+      <footer className="border-t border-[#E5E8EB] dark:border-[#2D3748] py-8 bg-white dark:bg-[#0F1117] transition-colors">
         <div className="max-w-screen-xl mx-auto px-6 flex items-center justify-between">
           <span className="text-[#3182F6] font-bold text-sm">ClickMe</span>
-          <p className="text-xs text-[#B0B8C1]">
+          <p className="text-xs text-[#B0B8C1] dark:text-[#4B5563]">
             © 2026 ClickMe. AI 시뮬레이션 결과는 참고용이며 실제 성과와 차이가 있을 수 있습니다.
           </p>
         </div>

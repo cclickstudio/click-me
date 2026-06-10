@@ -42,20 +42,20 @@ export default function Page() {
   };
 
   return (
-    <div className="h-screen bg-white flex flex-col">
+    <div className="h-screen bg-white dark:bg-[#0F1117] flex flex-col transition-colors">
       <Navigation />
 
       <div className="flex-1 flex flex-col pt-14 overflow-hidden">
         {messages.length === 0 ? (
           /* ── Welcome state ── */
           <div className="flex-1 flex flex-col items-center justify-center px-4 pb-28">
-            <div className="mb-2 w-10 h-10 flex items-center justify-center rounded-2xl bg-[#EBF3FF]">
+            <div className="mb-2 w-10 h-10 flex items-center justify-center rounded-2xl bg-[#EBF3FF] dark:bg-[#1E3A5F]">
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#3182F6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
               </svg>
             </div>
-            <h2 className="text-xl font-bold text-[#191F28] mb-2 mt-3">무엇을 도와드릴까요?</h2>
-            <p className="text-sm text-[#8B95A1] mb-10 text-center leading-relaxed">
+            <h2 className="text-xl font-bold text-[#191F28] dark:text-[#F2F4F6] mb-2 mt-3">무엇을 도와드릴까요?</h2>
+            <p className="text-sm text-[#8B95A1] dark:text-[#6B7280] mb-10 text-center leading-relaxed">
               광고 분석, 성과 예측, 전략 제안까지<br />자유롭게 물어보세요
             </p>
             <div className="grid grid-cols-2 gap-3 w-full max-w-lg">
@@ -63,7 +63,7 @@ export default function Page() {
                 <button
                   key={prompt}
                   onClick={() => handleSend(prompt)}
-                  className="p-4 text-left text-sm text-[#4E5968] bg-[#F9FAFB] border border-[#E5E8EB] rounded-xl hover:border-[#3182F6] hover:text-[#3182F6] hover:bg-[#EBF3FF] transition-all"
+                  className="p-4 text-left text-sm text-[#4E5968] dark:text-[#9CA3AF] bg-[#F9FAFB] dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748] rounded-xl hover:border-[#3182F6] hover:text-[#3182F6] hover:bg-[#EBF3FF] dark:hover:bg-[#1E3A5F] transition-all"
                 >
                   {prompt}
                 </button>
@@ -80,7 +80,7 @@ export default function Page() {
                   className={`flex gap-3 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
                 >
                   {msg.role === 'assistant' && (
-                    <div className="w-7 h-7 shrink-0 flex items-center justify-center rounded-lg bg-[#EBF3FF] text-[#3182F6] mt-1">
+                    <div className="w-7 h-7 shrink-0 flex items-center justify-center rounded-lg bg-[#EBF3FF] dark:bg-[#1E3A5F] text-[#3182F6] mt-1">
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                         <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
                       </svg>
@@ -90,7 +90,7 @@ export default function Page() {
                     className={`max-w-sm px-4 py-3 rounded-2xl text-sm leading-relaxed ${
                       msg.role === 'user'
                         ? 'bg-[#3182F6] text-white rounded-br-md'
-                        : 'bg-[#F2F4F6] text-[#191F28] rounded-bl-md'
+                        : 'bg-[#F2F4F6] dark:bg-[#252D3D] text-[#191F28] dark:text-[#F2F4F6] rounded-bl-md'
                     }`}
                   >
                     {msg.content}
@@ -103,7 +103,7 @@ export default function Page() {
         )}
 
         {/* ── Input bar ── */}
-        <div className="border-t border-[#E5E8EB] bg-white px-4 py-4">
+        <div className="border-t border-[#E5E8EB] dark:border-[#2D3748] bg-white dark:bg-[#1C2333] px-4 py-4 transition-colors">
           <div className="max-w-2xl mx-auto flex items-end gap-3">
             <textarea
               value={input}
@@ -116,7 +116,7 @@ export default function Page() {
               }}
               placeholder="메시지를 입력하세요... (Shift+Enter로 줄바꿈)"
               rows={1}
-              className="flex-1 px-4 py-3 rounded-xl border border-[#E5E8EB] text-sm text-[#191F28] placeholder-[#B0B8C1] focus:outline-none focus:border-[#3182F6] focus:ring-2 focus:ring-[#3182F6]/10 transition-colors resize-none overflow-hidden bg-white leading-relaxed"
+              className="flex-1 px-4 py-3 rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] text-sm text-[#191F28] dark:text-[#F2F4F6] placeholder-[#B0B8C1] dark:placeholder-[#4B5563] focus:outline-none focus:border-[#3182F6] focus:ring-2 focus:ring-[#3182F6]/10 transition-colors resize-none overflow-hidden bg-white dark:bg-[#252D3D] leading-relaxed"
               style={{ maxHeight: '120px' }}
             />
             <button
@@ -127,7 +127,7 @@ export default function Page() {
               <SendIcon />
             </button>
           </div>
-          <p className="text-center text-xs text-[#B0B8C1] mt-3">
+          <p className="text-center text-xs text-[#B0B8C1] dark:text-[#4B5563] mt-3">
             AI 응답은 참고용이며 실제 광고 성과와 차이가 있을 수 있습니다
           </p>
         </div>
