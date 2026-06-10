@@ -5,14 +5,14 @@ import logging
 import uuid
 from collections.abc import AsyncIterator
 
-logger = logging.getLogger("clickme")
-
-from core.schemas import SimulationRequest, Persona
-from tools.simulation.ssr_scorer import SSRScorer
+from core.schemas import Persona, SimulationRequest
 from tools.ad_analysis.vision import run_ad_understanding
 from tools.persona.factory import run_persona_factory
-from tools.simulation.exposure import run_exposure
 from tools.simulation.deliberation import run_deliberation
+from tools.simulation.exposure import run_exposure
+from tools.simulation.ssr_scorer import SSRScorer
+
+logger = logging.getLogger("clickme")
 
 _tasks: dict[str, dict] = {}
 
@@ -39,14 +39,28 @@ async def _run_pipeline(task_id: str, request: SimulationRequest, ssr_scorer: SS
             ad_type="image",
             ad_content=str(request.ad_analysis),
         )
-        emit({"event": "progress", "stage": "persona_factory", "pct": 15, "message": "페르소나 생성 중..."})
+        emit(
+            {
+                "event": "progress",
+                "stage": "persona_factory",
+                "pct": 15,
+                "message": "페르소나 생성 중...",
+            }
+        )
 
         personas = await run_persona_factory(
             simulation_id=request.simulation_id,
             count=request.persona_set.get("size", 20),
             ad_analysis=ad_analysis.model_dump(),
         )
-        emit({"event": "progress", "stage": "exposure", "pct": 30, "message": f"반응 시뮬레이션 중 (0/{len(personas)})"})
+        emit(
+            {
+                "event": "progress",
+                "stage": "exposure",
+                "pct": 30,
+                "message": f"반응 시뮬레이션 중 (0/{len(personas)})",
+            }
+        )
 
         ssr_results: list[dict] = []
         sem = asyncio.Semaphore(5)
@@ -57,9 +71,18 @@ async def _run_pipeline(task_id: str, request: SimulationRequest, ssr_scorer: SS
                     exposure = await run_exposure(persona, ad_analysis.model_dump())
 
                     pct = 30 + int((idx + 1) / len(personas) * 30)
-                    emit({"event": "progress", "stage": "exposure", "pct": pct, "message": f"반응 시뮬레이션 중 ({idx+1}/{len(personas)})"})
+                    emit(
+                        {
+                            "event": "progress",
+                            "stage": "exposure",
+                            "pct": pct,
+                            "message": f"반응 시뮬레이션 중 ({idx + 1}/{len(personas)})",
+                        }
+                    )
 
-                    deliberation = await run_deliberation(persona, exposure, ad_analysis.model_dump())
+                    deliberation = await run_deliberation(
+                        persona, exposure, ad_analysis.model_dump()
+                    )
 
                     text = SSRScorer.build_input_text(exposure, deliberation)
                     signals = await ssr_scorer.score(text)
@@ -80,7 +103,9 @@ async def _run_pipeline(task_id: str, request: SimulationRequest, ssr_scorer: SS
         ssr_results = [r for r in raw_results if r is not None]
 
         if not ssr_results:
-            raise RuntimeError("모든 페르소나 처리에 실패했습니다. API 키 또는 네트워크를 확인하세요.")
+            raise RuntimeError(
+                "모든 페르소나 처리에 실패했습니다. API 키 또는 네트워크를 확인하세요."
+            )
 
         emit({"event": "milestone", "message": "집계 완료", "pct": 90})
 
@@ -111,7 +136,9 @@ async def _run_pipeline(task_id: str, request: SimulationRequest, ssr_scorer: SS
                     {
                         "persona_id": r["persona_id"],
                         "free_text_reaction": r.get("free_text", ""),
-                        "purchase_intent_distribution": r["signals"].get("conversion_intent", {}).get("raw_probs", [0.2] * 5),
+                        "purchase_intent_distribution": (
+                            r["signals"].get("conversion_intent", {}).get("raw_probs", [0.2] * 5)
+                        ),
                     }
                     for r in ssr_results
                 ],
@@ -121,15 +148,25 @@ async def _run_pipeline(task_id: str, request: SimulationRequest, ssr_scorer: SS
             "p1": {
                 "signal_distributions": {
                     dim: {
-                        "mean": avg_mean(dim), "std": 0.1,
+                        "mean": avg_mean(dim),
+                        "std": 0.1,
                         "p10": max(0.0, avg_mean(dim) - 0.2),
                         "p90": min(1.0, avg_mean(dim) + 0.2),
                         "raw_probs": avg_probs(dim),
                     }
                     for dim in ["attention", "sentiment", "click_intent", "comprehension", "recall"]
                 },
-                "kpi": {"ctr": round(clk, 3), "cvr": round(conv, 3), "net_sentiment": round(avg_mean("sentiment"), 3)},
-                "funnel": {"attention": round(att, 3), "comprehension": round(comp, 3), "click": round(clk, 3), "conversion": round(conv, 3)},
+                "kpi": {
+                    "ctr": round(clk, 3),
+                    "cvr": round(conv, 3),
+                    "net_sentiment": round(avg_mean("sentiment"), 3),
+                },
+                "funnel": {
+                    "attention": round(att, 3),
+                    "comprehension": round(comp, 3),
+                    "click": round(clk, 3),
+                    "conversion": round(conv, 3),
+                },
                 "langsmith_trace_url": None,
                 "note": "P1 신호는 탐색적(exploratory). 인간 ground truth 없음.",
             },

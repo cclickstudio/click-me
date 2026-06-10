@@ -20,6 +20,9 @@ class Settings(BaseSettings):
     # Anthropic
     anthropic_api_key: str
 
+    # Google Gemini
+    gemini_api_key: str | None = None
+
     # LangSmith
     langchain_tracing_v2: bool = True
     langchain_endpoint: str = "https://api.smith.langchain.com"

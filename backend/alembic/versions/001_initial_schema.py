@@ -3,9 +3,8 @@
 Revision ID: 001
 Create Date: 2026-06-09
 """
+
 from alembic import op
-import sqlalchemy as sa
-from sqlalchemy.dialects import postgresql
 
 revision = "001"
 down_revision = None
@@ -15,7 +14,7 @@ depends_on = None
 
 def upgrade() -> None:
     op.execute("CREATE EXTENSION IF NOT EXISTS vector")
-    op.execute("CREATE EXTENSION IF NOT EXISTS \"uuid-ossp\"")
+    op.execute('CREATE EXTENSION IF NOT EXISTS "uuid-ossp"')
 
     op.execute("""
         DO $$ BEGIN
@@ -205,7 +204,18 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    for table in ["audit_logs", "user_settings", "chat_messages", "chat_sessions",
-                  "inquiries", "reports", "persona_responses", "simulations",
-                  "ads", "projects", "users", "organizations"]:
+    for table in [
+        "audit_logs",
+        "user_settings",
+        "chat_messages",
+        "chat_sessions",
+        "inquiries",
+        "reports",
+        "persona_responses",
+        "simulations",
+        "ads",
+        "projects",
+        "users",
+        "organizations",
+    ]:
         op.execute(f"DROP TABLE IF EXISTS {table} CASCADE")

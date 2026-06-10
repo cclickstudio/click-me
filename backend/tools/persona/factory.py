@@ -1,11 +1,15 @@
+import asyncio
 import json
+
 from langsmith import traceable
 from openai import AsyncOpenAI
 
-from core.schemas import Persona, OCEAN, PersonaAttributes
-from tools.utils import str_or_none, str_list, safe_json_loads
+from core.schemas import OCEAN, Persona, PersonaAttributes
+from tools.utils import safe_json_loads, str_list, str_or_none
 
-_client = AsyncOpenAI(timeout=60.0)
+_client = AsyncOpenAI(timeout=120.0)
+
+BATCH_SIZE = 5  # 한 번에 생성할 페르소나 수
 
 SYSTEM = """\
 당신은 소비자 행동 심리학과 마케팅 리서치 전문가입니다.
@@ -23,17 +27,60 @@ USER_TEMPLATE = """\
 - 세그먼트 분포: {segment_distribution}
 - OCEAN CV > 0.3 필수, 극단 조합 포함: 고O+고E, 저O+저N, 고C+저A
 - 광고 공명:거부:중립 = 40:20:40
+- persona_id는 {id_start} 부터 시작 (예: P_{id_start:04d})
 
 각 페르소나에 persona_id (P_0001 형식), OCEAN, 인구통계, 행동패턴, 라이프스타일, 서사 컨텍스트 포함.
 JSON 배열로만 응답하세요."""
 
 
-@traceable(name="PersonaFactoryAgent", metadata={"prompt_version": "v1.0"})
-async def run_persona_factory(
-    simulation_id: str,
+def _parse_raw(raw: dict, offset: int) -> Persona:
+    ocean_data = raw.get("ocean", raw.get("OCEAN", {}))
+    attrs = raw.get("attributes", raw)
+    return Persona(
+        persona_id=raw.get("persona_id", f"P_{offset + 1:04d}"),
+        segment=raw.get("segment", "unknown"),
+        ocean=OCEAN(
+            openness=float(ocean_data.get("openness", 0.5)),
+            conscientiousness=float(ocean_data.get("conscientiousness", 0.5)),
+            extraversion=float(ocean_data.get("extraversion", 0.5)),
+            agreeableness=float(ocean_data.get("agreeableness", 0.5)),
+            neuroticism=float(ocean_data.get("neuroticism", 0.5)),
+        ),
+        attributes=PersonaAttributes(
+            age=int(attrs.get("age", 30)),
+            gender=str(attrs.get("gender", "미지정")),
+            region=str(attrs.get("region", "서울")),
+            occupation=str(attrs.get("occupation", "직장인")),
+            income_level=str(attrs.get("income_level", "중")),
+            education=str(attrs.get("education", "대졸")),
+            purchase_motivation=str(
+                attrs.get(
+                    "purchase_motivation",
+                    attrs.get("purchase_decision_style", "실용성"),
+                )
+            ),
+            price_sensitivity=float(attrs.get("price_sensitivity", 0.5)),
+            brand_loyalty=float(attrs.get("brand_loyalty", 0.5)),
+            impulse_buying_tendency=float(attrs.get("impulse_buying_tendency", 0.5)),
+            core_values=str_list(attrs.get("core_values")),
+            consumption_style=str_or_none(attrs.get("consumption_style")),
+            current_concern=str_or_none(attrs.get("current_concern")),
+            trigger_words=str_list(attrs.get("trigger_words")),
+            rejection_words=str_list(attrs.get("rejection_words")),
+            current_emotion=str_or_none(
+                attrs.get("current_emotional_state", attrs.get("current_emotion")),
+            ),
+        ),
+        temperature=float(raw.get("temperature", 0.7)),
+        seed=int(raw.get("seed", offset * 1000)),
+    )
+
+
+async def _generate_batch(
     count: int,
-    ad_analysis: dict,
-    segment_distribution: dict | None = None,
+    id_start: int,
+    ad_analysis_json: str,
+    segment_distribution: str,
 ) -> list[Persona]:
     response = await _client.chat.completions.create(
         model="gpt-4o-mini",
@@ -44,53 +91,50 @@ async def run_persona_factory(
                 "role": "user",
                 "content": USER_TEMPLATE.format(
                     count=count,
-                    ad_analysis_json=json.dumps(ad_analysis, ensure_ascii=False),
-                    segment_distribution=json.dumps(segment_distribution or {}, ensure_ascii=False),
+                    ad_analysis_json=ad_analysis_json,
+                    segment_distribution=segment_distribution,
+                    id_start=id_start,
                 ),
             },
         ],
     )
 
     parsed = safe_json_loads(response.choices[0].message.content, fallback="[]")
-    raw_list = parsed if isinstance(parsed, list) else parsed.get("personas", list(parsed.values())[0] if parsed else [])
+    fallback = list(parsed.values())[0] if parsed else []
+    raw_list = parsed if isinstance(parsed, list) else parsed.get("personas", fallback)
+
+    return [_parse_raw(raw, id_start + i - 1) for i, raw in enumerate(raw_list)]
+
+
+@traceable(name="PersonaFactoryAgent", metadata={"prompt_version": "v1.1"})
+async def run_persona_factory(
+    simulation_id: str,
+    count: int,
+    ad_analysis: dict,
+    segment_distribution: dict | None = None,
+) -> list[Persona]:
+    ad_json = json.dumps(ad_analysis, ensure_ascii=False)
+    seg_json = json.dumps(segment_distribution or {}, ensure_ascii=False)
+
+    # count를 BATCH_SIZE 단위로 나눠서 병렬 생성
+    batches = []
+    remaining = count
+    id_cursor = 1
+    while remaining > 0:
+        batch_count = min(remaining, BATCH_SIZE)
+        batches.append((batch_count, id_cursor))
+        id_cursor += batch_count
+        remaining -= batch_count
+
+    results = await asyncio.gather(
+        *[_generate_batch(n, start, ad_json, seg_json) for n, start in batches],
+        return_exceptions=True,
+    )
+
     personas: list[Persona] = []
-
-    for i, raw in enumerate(raw_list):
-        ocean_data = raw.get("ocean", raw.get("OCEAN", {}))
-        attrs = raw.get("attributes", raw)
-
-        personas.append(
-            Persona(
-                persona_id=raw.get("persona_id", f"P_{i+1:04d}"),
-                segment=raw.get("segment", "unknown"),
-                ocean=OCEAN(
-                    openness=float(ocean_data.get("openness", 0.5)),
-                    conscientiousness=float(ocean_data.get("conscientiousness", 0.5)),
-                    extraversion=float(ocean_data.get("extraversion", 0.5)),
-                    agreeableness=float(ocean_data.get("agreeableness", 0.5)),
-                    neuroticism=float(ocean_data.get("neuroticism", 0.5)),
-                ),
-                attributes=PersonaAttributes(
-                    age=int(attrs.get("age", 30)),
-                    gender=str(attrs.get("gender", "미지정")),
-                    region=str(attrs.get("region", "서울")),
-                    occupation=str(attrs.get("occupation", "직장인")),
-                    income_level=str(attrs.get("income_level", "중")),
-                    education=str(attrs.get("education", "대졸")),
-                    purchase_motivation=str(attrs.get("purchase_motivation", attrs.get("purchase_decision_style", "실용성"))),
-                    price_sensitivity=float(attrs.get("price_sensitivity", 0.5)),
-                    brand_loyalty=float(attrs.get("brand_loyalty", 0.5)),
-                    impulse_buying_tendency=float(attrs.get("impulse_buying_tendency", 0.5)),
-                    core_values=str_list(attrs.get("core_values")),
-                    consumption_style=str_or_none(attrs.get("consumption_style")),
-                    current_concern=str_or_none(attrs.get("current_concern")),
-                    trigger_words=str_list(attrs.get("trigger_words")),
-                    rejection_words=str_list(attrs.get("rejection_words")),
-                    current_emotion=str_or_none(attrs.get("current_emotional_state", attrs.get("current_emotion"))),
-                ),
-                temperature=float(raw.get("temperature", 0.7)),
-                seed=int(raw.get("seed", i * 1000)),
-            )
-        )
+    for r in results:
+        if isinstance(r, Exception):
+            continue  # 실패한 배치는 건너뜀
+        personas.extend(r)
 
     return personas

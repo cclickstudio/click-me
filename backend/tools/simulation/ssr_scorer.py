@@ -2,7 +2,7 @@ import numpy as np
 from openai import AsyncOpenAI
 
 from core.schemas import ScoreDistribution
-from tools.simulation.anchors import ANCHOR_STATEMENTS, SCORE_RANGES, EMBEDDING_MODEL
+from tools.simulation.anchors import ANCHOR_STATEMENTS, EMBEDDING_MODEL, SCORE_RANGES
 
 
 class SSRScorer:
@@ -28,7 +28,7 @@ class SSRScorer:
         response = await self.client.embeddings.create(model=EMBEDDING_MODEL, input=all_anchors)
 
         by_dim: dict[str, list[list[float]]] = {d: [] for d in ANCHOR_STATEMENTS}
-        for (dim, _), emb_obj in zip(index_map, response.data):
+        for (dim, _), emb_obj in zip(index_map, response.data, strict=False):
             by_dim[dim].append(emb_obj.embedding)
 
         for dim, emb_list in by_dim.items():

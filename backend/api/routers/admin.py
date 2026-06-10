@@ -1,5 +1,6 @@
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
+
 from fastapi import APIRouter
 
 from core.schemas import UserCreate
@@ -26,20 +27,23 @@ async def list_users():
 @router.post("/users", status_code=201)
 async def create_user(body: UserCreate):
     user_id = str(uuid.uuid4())
-    _users.append({
-        "user_id": user_id,
-        "email": body.email,
-        "name": body.name,
-        "role": body.role,
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "last_login_at": None,
-    })
+    _users.append(
+        {
+            "user_id": user_id,
+            "email": body.email,
+            "name": body.name,
+            "role": body.role,
+            "created_at": datetime.now(UTC).isoformat(),
+            "last_login_at": None,
+        }
+    )
     return {"user_id": user_id}
 
 
 @router.get("/inquiries")
 async def list_inquiries():
     from api.routers.inquiries import _store as _inquiries
+
     return {"inquiries": _inquiries}
 
 

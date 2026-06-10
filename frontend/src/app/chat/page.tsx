@@ -3,6 +3,8 @@
 import { useState, useRef, useEffect } from 'react';
 import Navigation from '@/components/Navigation';
 
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
+
 const quickPrompts = [
   '이 광고의 예상 CTR을 분석해줘',
   '20대 여성 타겟 광고 전략을 추천해줘',
@@ -24,21 +26,104 @@ function SendIcon() {
   );
 }
 
+function TypingIndicator() {
+  return (
+    <div className="flex gap-3 justify-start">
+      <div className="w-7 h-7 shrink-0 flex items-center justify-center rounded-lg bg-[#EBF3FF] dark:bg-[#1E3A5F] text-[#3182F6] mt-1">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+        </svg>
+      </div>
+      <div className="px-4 py-3 rounded-2xl rounded-bl-md bg-[#F2F4F6] dark:bg-[#252D3D] flex items-center gap-1.5">
+        <span className="w-2 h-2 rounded-full bg-[#8B95A1] dark:bg-[#6B7280] animate-bounce [animation-delay:-0.3s]" />
+        <span className="w-2 h-2 rounded-full bg-[#8B95A1] dark:bg-[#6B7280] animate-bounce [animation-delay:-0.15s]" />
+        <span className="w-2 h-2 rounded-full bg-[#8B95A1] dark:bg-[#6B7280] animate-bounce" />
+      </div>
+    </div>
+  );
+}
+
 export default function Page() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
+  const [isStreaming, setIsStreaming] = useState(false);
+  const sessionId = useRef(crypto.randomUUID());
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [messages, isStreaming]);
 
-  const handleSend = (text?: string) => {
+  const handleSend = async (text?: string) => {
     const content = text ?? input.trim();
-    if (!content) return;
-    setMessages((prev) => [...prev, { role: 'user', content }]);
+    if (!content || isStreaming) return;
+
+    const newMessages: Message[] = [...messages, { role: 'user', content }];
+    setMessages(newMessages);
     setInput('');
-    // TODO: connect to /api/chat/complete SSE endpoint
+    setIsStreaming(true);
+
+    try {
+      const res = await fetch(`${API_BASE}/api/chat/complete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_id: sessionId.current, messages: newMessages }),
+      });
+
+      if (!res.ok || !res.body) {
+        setMessages((prev) => [
+          ...prev,
+          { role: 'assistant', content: '응답을 가져오는 중 오류가 발생했습니다.' },
+        ]);
+        setIsStreaming(false);
+        return;
+      }
+
+      // add empty assistant placeholder
+      setMessages((prev) => [...prev, { role: 'assistant', content: '' }]);
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() ?? '';
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const raw = line.slice(6).trim();
+          if (!raw) continue;
+          try {
+            const data = JSON.parse(raw) as { token?: string; done?: boolean };
+            if (data.done) {
+              setIsStreaming(false);
+            } else if (data.token) {
+              setMessages((prev) => {
+                const last = prev[prev.length - 1];
+                return [
+                  ...prev.slice(0, -1),
+                  { ...last, content: last.content + data.token },
+                ];
+              });
+            }
+          } catch {
+            // ignore malformed SSE line
+          }
+        }
+      }
+    } catch {
+      setMessages((prev) => [
+        ...prev,
+        { role: 'assistant', content: '서버에 연결할 수 없습니다. 잠시 후 다시 시도해주세요.' },
+      ]);
+    } finally {
+      setIsStreaming(false);
+    }
   };
 
   return (
@@ -74,29 +159,39 @@ export default function Page() {
           /* ── Messages ── */
           <div className="flex-1 overflow-y-auto">
             <div className="max-w-2xl mx-auto px-4 py-8 space-y-6">
-              {messages.map((msg, i) => (
-                <div
-                  key={i}
-                  className={`flex gap-3 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                >
-                  {msg.role === 'assistant' && (
-                    <div className="w-7 h-7 shrink-0 flex items-center justify-center rounded-lg bg-[#EBF3FF] dark:bg-[#1E3A5F] text-[#3182F6] mt-1">
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-                      </svg>
-                    </div>
-                  )}
+              {messages.map((msg, i) => {
+                // 빈 assistant placeholder는 타이핑 인디케이터로 대체
+                if (msg.role === 'assistant' && msg.content === '') return null;
+                return (
                   <div
-                    className={`max-w-sm px-4 py-3 rounded-2xl text-sm leading-relaxed ${
-                      msg.role === 'user'
-                        ? 'bg-[#3182F6] text-white rounded-br-md'
-                        : 'bg-[#F2F4F6] dark:bg-[#252D3D] text-[#191F28] dark:text-[#F2F4F6] rounded-bl-md'
-                    }`}
+                    key={i}
+                    className={`flex gap-3 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
                   >
-                    {msg.content}
+                    {msg.role === 'assistant' && (
+                      <div className="w-7 h-7 shrink-0 flex items-center justify-center rounded-lg bg-[#EBF3FF] dark:bg-[#1E3A5F] text-[#3182F6] mt-1">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                        </svg>
+                      </div>
+                    )}
+                    <div
+                      className={`max-w-sm px-4 py-3 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap ${
+                        msg.role === 'user'
+                          ? 'bg-[#3182F6] text-white rounded-br-md'
+                          : 'bg-[#F2F4F6] dark:bg-[#252D3D] text-[#191F28] dark:text-[#F2F4F6] rounded-bl-md'
+                      }`}
+                    >
+                      {msg.content}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
+
+              {/* 타이핑 인디케이터: 스트리밍 중이고 아직 토큰 미도착 */}
+              {isStreaming && messages.length > 0 && messages[messages.length - 1].role === 'assistant' && messages[messages.length - 1].content === '' && (
+                <TypingIndicator />
+              )}
+
               <div ref={bottomRef} />
             </div>
           </div>
@@ -116,12 +211,13 @@ export default function Page() {
               }}
               placeholder="메시지를 입력하세요... (Shift+Enter로 줄바꿈)"
               rows={1}
-              className="flex-1 px-4 py-3 rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] text-sm text-[#191F28] dark:text-[#F2F4F6] placeholder-[#B0B8C1] dark:placeholder-[#4B5563] focus:outline-none focus:border-[#3182F6] focus:ring-2 focus:ring-[#3182F6]/10 transition-colors resize-none overflow-hidden bg-white dark:bg-[#252D3D] leading-relaxed"
+              disabled={isStreaming}
+              className="flex-1 px-4 py-3 rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] text-sm text-[#191F28] dark:text-[#F2F4F6] placeholder-[#B0B8C1] dark:placeholder-[#4B5563] focus:outline-none focus:border-[#3182F6] focus:ring-2 focus:ring-[#3182F6]/10 transition-colors resize-none overflow-hidden bg-white dark:bg-[#252D3D] leading-relaxed disabled:opacity-60"
               style={{ maxHeight: '120px' }}
             />
             <button
               onClick={() => handleSend()}
-              disabled={!input.trim()}
+              disabled={!input.trim() || isStreaming}
               className="p-3 bg-[#3182F6] text-white rounded-xl hover:bg-[#1B6EEB] disabled:opacity-30 disabled:cursor-not-allowed transition-all shrink-0"
             >
               <SendIcon />

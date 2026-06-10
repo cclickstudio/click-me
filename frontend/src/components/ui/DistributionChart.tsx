@@ -2,6 +2,15 @@
 
 const LIKERT_LABELS = ["전혀 없음", "낮음", "보통", "높음", "매우 높음"];
 
+const SIGNAL_LABELS: Record<string, string> = {
+  attention:         "주목도",
+  sentiment:         "호감도",
+  click_intent:      "클릭 의향",
+  comprehension:     "이해도",
+  recall:            "기억도",
+  conversion_intent: "구매 의향",
+};
+
 interface DistributionChartProps {
   distribution: number[];
   title?: string;
@@ -23,7 +32,7 @@ export function DistributionChart({
     <div className={`space-y-2 ${className}`}>
       {(title || exploratory || kobacoBadge) && (
         <div className="flex items-center gap-2 flex-wrap">
-          {title && <p className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]">{title}</p>}
+          {title && <p className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]">{SIGNAL_LABELS[title] ?? title}</p>}
           {exploratory && (
             <span className="text-xs px-2 py-0.5 rounded-full bg-[#FFF8E6] dark:bg-[#2D2000] text-[#F4A100] font-medium">
               탐색적

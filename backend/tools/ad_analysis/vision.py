@@ -1,8 +1,8 @@
 from langsmith import traceable
 from openai import AsyncOpenAI
 
-from core.schemas import AdAnalysisResult, TextAnalysis, VisualAnalysis, StrategicAnalysis
-from tools.utils import str_or_none, str_list, safe_json_loads
+from core.schemas import AdAnalysisResult, StrategicAnalysis, TextAnalysis, VisualAnalysis
+from tools.utils import safe_json_loads, str_list, str_or_none
 
 _client = AsyncOpenAI(timeout=60.0)
 
@@ -36,7 +36,13 @@ async def run_ad_understanding(
         temperature=0.1,
         messages=[
             {"role": "system", "content": SYSTEM},
-            {"role": "user", "content": USER_TEMPLATE.format(ad_type=ad_type, ad_content=ad_content)},
+            {
+                "role": "user",
+                "content": USER_TEMPLATE.format(
+                    ad_type=ad_type,
+                    ad_content=ad_content,
+                ),
+            },
         ],
         response_format={"type": "json_object"},
     )
@@ -59,7 +65,9 @@ async def run_ad_understanding(
             emotional_tone=str_or_none(raw.get("visual_tone")),
             layout_type=str_or_none(raw.get("layout_type")),
             brand_elements=str_list(raw.get("brand_elements")),
-        ) if ad_type == "image" else None,
+        )
+        if ad_type == "image"
+        else None,
         strategic_analysis=StrategicAnalysis(
             target_demographic=str_or_none(raw.get("target_demographic")),
             purchase_stage_target=str_or_none(raw.get("purchase_stage")) or "conversion",

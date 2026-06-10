@@ -1,5 +1,8 @@
-import pytest
 import pytest_asyncio
+from dotenv import load_dotenv
+
+load_dotenv()
+
 from tools.simulation.ssr_scorer import SSRScorer
 
 

@@ -10,7 +10,7 @@ const features = [
         <path d="M16 3.13a4 4 0 0 1 0 7.75" />
       </svg>
     ),
-    title: '광고 시뮬레이터',
+    title: '광고 시뮬레이션',
     desc: 'OCEAN 심리 모델 기반 AI 가상 소비자 20명에게 광고를 테스트하고 구매의향 분포를 사전에 예측합니다.',
     href: '/simulation',
     label: '시뮬레이션 시작',

@@ -3,17 +3,18 @@ import os
 from contextlib import asynccontextmanager
 
 from dotenv import load_dotenv
+
 load_dotenv()
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 logger = logging.getLogger("clickme")
 
+from api.routers import admin, ads, chat, inquiries, personas, projects, simulate
 from core.config import settings
-from api.routers import admin, ads, chat, simulate, inquiries, personas, projects
 from tools.simulation.ssr_scorer import SSRScorer
 
 if not settings.langchain_api_key:
@@ -51,10 +52,11 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "https://*.vercel.app"],
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000", "https://*.vercel.app"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
 
 app.include_router(chat.router, prefix="/api/chat", tags=["chat"])

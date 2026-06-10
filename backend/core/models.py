@@ -16,7 +16,9 @@ class Organization(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    plan: Mapped[str] = mapped_column(String(50), default="free")  # free | professional | enterprise
+    plan: Mapped[str] = mapped_column(
+        String(50), default="free"
+    )  # free | professional | enterprise
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     projects: Mapped[list["Project"]] = relationship(back_populates="organization")
@@ -56,7 +58,7 @@ class SimulationResult(Base):
     ad_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("ads.id"))
     persona_count: Mapped[int] = mapped_column(Integer)
     distribution: Mapped[dict] = mapped_column(JSONB)  # 구매의향 분포 데이터
-    personas: Mapped[dict] = mapped_column(JSONB)       # 페르소나 배열
+    personas: Mapped[dict] = mapped_column(JSONB)  # 페르소나 배열
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     ad: Mapped["Ad"] = relationship(back_populates="simulations")

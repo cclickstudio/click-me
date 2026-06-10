@@ -1,4 +1,5 @@
 import uuid
+
 from fastapi import APIRouter, File, Form, UploadFile
 from pydantic import BaseModel
 
@@ -12,7 +13,9 @@ router = APIRouter()
 async def analyze_image(body: dict):
     ad_id = body.get("ad_id", str(uuid.uuid4()))
     image_url = body.get("image_url", "")
-    return await run_ad_understanding(ad_id=ad_id, ad_type="image", ad_content=f"[이미지] {image_url}")
+    return await run_ad_understanding(
+        ad_id=ad_id, ad_type="image", ad_content=f"[이미지] {image_url}"
+    )
 
 
 @router.post("/analyze/text", response_model=AdAnalysisResult)

@@ -28,19 +28,24 @@ export default function SimulationPage() {
     setProgress({ stage: "ad_analysis", pct: 5, message: "광고 분석 중..." });
 
     try {
-      const projectId = "default";
-      let adId: string;
+      let adAnalysis: unknown;
 
       if (inputMode === "image" && file) {
-        const uploadRes = await api.analyze.upload(file, projectId);
-        adId = uploadRes.ad_id;
+        // 1) 업로드
+        const uploadRes = await api.ads.upload(file, "default") as { ad_id: string; s3_url: string };
+        // 2) 이미지 분석
+        adAnalysis = await api.ads.analyzeImage({ ad_id: uploadRes.ad_id, image_url: uploadRes.s3_url });
       } else {
-        adId = crypto.randomUUID();
+        // 텍스트 분석
+        adAnalysis = await api.ads.analyzeText({
+          ad_id: crypto.randomUUID(),
+          text_content: { headline: textInput.headline, body: textInput.body, cta: textInput.cta },
+        });
       }
 
       const simRes = await api.simulate.start({
         simulation_id: crypto.randomUUID(),
-        ad_id: adId,
+        ad_analysis: adAnalysis,
         objective,
         persona_set: { id: crypto.randomUUID(), size: personaCount, composition: {} },
       }) as { task_id: string };
@@ -67,19 +72,21 @@ export default function SimulationPage() {
 
   /* ─── STEP: upload ─── */
   if (step === "upload") {
+    const previewUrl = file ? URL.createObjectURL(file) : null;
+
     return (
       <AppLayout>
-        <div className="max-w-screen-xl mx-auto px-6 py-8">
+        <div className="px-8 py-8">
           <div className="mb-8">
-            <h1 className="text-2xl font-bold text-[#191F28] dark:text-[#F2F4F6]">광고 시뮬레이터</h1>
+            <h1 className="text-2xl font-bold text-[#191F28] dark:text-[#F2F4F6]">광고 시뮬레이션</h1>
             <p className="text-sm text-[#8B95A1] dark:text-[#6B7280] mt-1">
               AI 가상 소비자에게 광고를 테스트하고 성과를 예측합니다
             </p>
           </div>
 
-          <div className="bg-white dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748] rounded-2xl p-6 max-w-2xl space-y-6 transition-colors">
+          <div className="bg-white dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748] rounded-2xl p-8 w-full h-[700px] flex flex-col gap-6 transition-colors">
             {/* 탭 */}
-            <div className="flex gap-2 border-b border-[#E5E8EB] dark:border-[#2D3748] pb-4">
+            <div className="flex gap-2 border-b border-[#E5E8EB] dark:border-[#2D3748] pb-4 shrink-0">
               <button
                 onClick={() => setInputMode("image")}
                 className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
@@ -102,15 +109,33 @@ export default function SimulationPage() {
               </button>
             </div>
 
-            {/* 입력 영역 */}
+            {/* 입력 영역 — flex-1로 남은 공간 차지 */}
             {inputMode === "image" ? (
-              <label className="flex flex-col items-center justify-center h-48 border-2 border-dashed border-[#E5E8EB] dark:border-[#2D3748] rounded-xl cursor-pointer hover:border-[#3182F6] transition-colors">
-                <svg className="w-8 h-8 text-[#B0B8C1] dark:text-[#4B5563] mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                </svg>
-                <span className="text-sm text-[#8B95A1] dark:text-[#6B7280]">
-                  {file ? file.name : "이미지 드래그 또는 클릭 (JPG/PNG/WebP, max 10MB)"}
-                </span>
+              <label className="flex flex-col items-center justify-center flex-1 border-2 border-dashed border-[#E5E8EB] dark:border-[#2D3748] rounded-xl cursor-pointer hover:border-[#3182F6] transition-colors relative overflow-hidden group">
+                {previewUrl ? (
+                  <>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={previewUrl}
+                      alt="미리보기"
+                      className="w-full h-full object-contain p-2"
+                    />
+                    <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-2">
+                      <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                      </svg>
+                      <span className="text-sm text-white font-medium">클릭하여 변경</span>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <svg className="w-12 h-12 text-[#B0B8C1] dark:text-[#4B5563] mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                    </svg>
+                    <span className="text-base text-[#8B95A1] dark:text-[#6B7280]">이미지 드래그 또는 클릭</span>
+                    <span className="text-xs text-[#B0B8C1] dark:text-[#4B5563] mt-1">JPG / PNG / WebP · 최대 10MB</span>
+                  </>
+                )}
                 <input
                   type="file"
                   accept="image/*"
@@ -119,33 +144,65 @@ export default function SimulationPage() {
                 />
               </label>
             ) : (
-              <div className="space-y-3">
+              <div className="flex-1 overflow-y-auto space-y-4">
                 {(["headline", "body", "cta"] as const).map((field) => (
                   <div key={field}>
-                    <label className="text-xs text-[#8B95A1] dark:text-[#6B7280] mb-1 block">
-                      {field === "headline" ? "헤드라인" : field === "body" ? "본문" : "CTA"}
+                    <label className="text-xs font-medium text-[#8B95A1] dark:text-[#6B7280] mb-1.5 block uppercase tracking-wide">
+                      {field === "headline" ? "헤드라인" : field === "body" ? "본문" : "CTA (행동 유도 문구)"}
                     </label>
-                    <input
-                      type="text"
-                      value={textInput[field]}
-                      onChange={(e) => setTextInput((prev) => ({ ...prev, [field]: e.target.value }))}
-                      className="w-full px-3 py-2 rounded-lg border border-[#E5E8EB] dark:border-[#2D3748] bg-white dark:bg-[#252D3D] text-sm text-[#191F28] dark:text-[#F2F4F6] focus:outline-none focus:ring-2 focus:ring-[#3182F6] placeholder:text-[#B0B8C1] dark:placeholder:text-[#4B5563] transition-colors"
-                    />
+                    {field === "body" ? (
+                      <textarea
+                        value={textInput[field]}
+                        onChange={(e) => setTextInput((prev) => ({ ...prev, [field]: e.target.value }))}
+                        rows={10}
+                        placeholder="광고 본문을 입력하세요..."
+                        className="w-full px-4 py-3 rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-white dark:bg-[#252D3D] text-sm text-[#191F28] dark:text-[#F2F4F6] focus:outline-none focus:ring-2 focus:ring-[#3182F6] placeholder:text-[#B0B8C1] dark:placeholder:text-[#4B5563] transition-colors resize-none"
+                      />
+                    ) : (
+                      <input
+                        type="text"
+                        value={textInput[field]}
+                        onChange={(e) => setTextInput((prev) => ({ ...prev, [field]: e.target.value }))}
+                        placeholder={field === "headline" ? "강렬한 헤드라인을 입력하세요..." : "클릭 유도 문구 (예: 지금 시작하기)"}
+                        className="w-full px-4 py-3 rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-white dark:bg-[#252D3D] text-sm text-[#191F28] dark:text-[#F2F4F6] focus:outline-none focus:ring-2 focus:ring-[#3182F6] placeholder:text-[#B0B8C1] dark:placeholder:text-[#4B5563] transition-colors"
+                      />
+                    )}
                   </div>
                 ))}
               </div>
             )}
 
-            <button
-              onClick={() => setStep("config")}
-              disabled={inputMode === "image" ? !file : !textInput.headline}
-              className="flex items-center gap-2 px-6 py-3 bg-[#3182F6] hover:bg-[#1B6EEB] disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors"
-            >
-              다음 단계
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-              </svg>
-            </button>
+            {/* 하단 고정 영역: 파일명 배지(이미지 모드) + 다음 단계 버튼 */}
+            <div className="shrink-0 flex items-center justify-between gap-3">
+              {inputMode === "image" && file ? (
+                <div className="flex items-center gap-2 px-3 py-2 bg-[#F2F4F6] dark:bg-[#252D3D] rounded-lg min-w-0 flex-1">
+                  <svg className="w-4 h-4 text-[#3182F6] shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span className="text-sm text-[#4E5968] dark:text-[#9CA3AF] truncate">{file.name}</span>
+                  <button
+                    onClick={(e) => { e.preventDefault(); setFile(null); }}
+                    className="ml-auto text-[#B0B8C1] hover:text-[#F74D4D] transition-colors shrink-0"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              ) : (
+                <div className="flex-1" />
+              )}
+              <button
+                onClick={() => setStep("config")}
+                disabled={inputMode === "image" ? !file : !textInput.headline}
+                className="flex items-center gap-2 px-6 py-3 bg-[#3182F6] hover:bg-[#1B6EEB] disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors shrink-0"
+              >
+                다음 단계
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </button>
+            </div>
           </div>
         </div>
       </AppLayout>
@@ -156,13 +213,13 @@ export default function SimulationPage() {
   if (step === "config") {
     return (
       <AppLayout>
-        <div className="max-w-screen-xl mx-auto px-6 py-8">
+        <div className="px-8 py-8">
           <div className="mb-8">
             <h1 className="text-2xl font-bold text-[#191F28] dark:text-[#F2F4F6]">시뮬레이션 설정</h1>
             <p className="text-sm text-[#8B95A1] dark:text-[#6B7280] mt-1">페르소나 수와 캠페인 목표를 설정하세요</p>
           </div>
 
-          <div className="bg-white dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748] rounded-2xl p-6 max-w-2xl space-y-6 transition-colors">
+          <div className="bg-white dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748] rounded-2xl p-8 w-full h-[700px] overflow-y-auto space-y-6 transition-colors">
             {/* 페르소나 수 */}
             <div className="space-y-2">
               <label className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]">

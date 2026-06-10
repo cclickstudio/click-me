@@ -13,17 +13,17 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  analyze: {
+  ads: {
     upload: (file: File, projectId: string) => {
       const form = new FormData();
       form.append("file", file);
       form.append("project_id", projectId);
-      return fetch(`${API_BASE}/api/analyze/upload`, { method: "POST", body: form }).then((r) => r.json());
+      return fetch(`${API_BASE}/api/ads/upload`, { method: "POST", body: form }).then((r) => r.json());
     },
-    image: (body: { ad_id: string; image_url: string }) =>
-      request("/analyze/image", { method: "POST", body: JSON.stringify(body) }),
-    text: (body: { ad_id: string; text_content: { headline: string; body: string; cta: string } }) =>
-      request("/analyze/text", { method: "POST", body: JSON.stringify(body) }),
+    analyzeImage: (body: { ad_id: string; image_url: string }) =>
+      request("/ads/analyze/image", { method: "POST", body: JSON.stringify(body) }),
+    analyzeText: (body: { ad_id: string; text_content: { headline: string; body: string; cta: string } }) =>
+      request("/ads/analyze/text", { method: "POST", body: JSON.stringify(body) }),
   },
 
   personas: {

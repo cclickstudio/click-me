@@ -6,7 +6,7 @@ import { useTheme } from './ThemeProvider';
 
 const navItems = [
   { label: '채팅', href: '/chat' },
-  { label: '시뮬레이터', href: '/simulation' },
+  { label: '광고 시뮬레이션', href: '/simulation' },
   { label: '광고 제너레이터', href: '/generator' },
   { label: '광고 매니지먼트', href: '/manage' },
 ];

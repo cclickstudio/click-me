@@ -77,8 +77,11 @@ uv run alembic upgrade head
 ### 개발 서버 (핫 리로드)
 
 ```bash
-uv run uvicorn api.main:app --reload --host 0.0.0.0 --port 8000
+uv run dev.py
 ```
+
+> `dev.py`는 `.venv` 디렉터리를 감시 대상에서 제외하고 `api`, `agents`, `tools`, `core` 디렉터리만 watch합니다.  
+> Windows에서 `uv run uvicorn ... --reload` 실행 시 `.venv` 내부 파일 변경 이벤트로 인해 서버가 무한 재시작되는 문제를 방지합니다.
 
 ### 프로덕션 서버
 

@@ -8,41 +8,34 @@ dependencies = [
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.30.0",
     "python-multipart>=0.0.9",
-
     # LangGraph / LangChain
     "langgraph>=0.2.0",
     "langchain>=0.3.0",
     "langchain-openai>=0.2.0",
     "langchain-anthropic>=0.2.0",
     "langsmith>=0.1.0",
-
     # LLM SDKs
     "openai>=1.50.0",
     "anthropic>=0.36.0",
-
+    "google-generativeai>=0.8.0",
     # Database
     "sqlalchemy[asyncio]>=2.0.0",
     "asyncpg>=0.29.0",
     "pgvector>=0.3.0",
     "alembic>=1.13.0",
-
     # AWS
     "boto3>=1.35.0",
     "aioboto3>=13.0.0",
-
     # Config & Validation
     "pydantic>=2.9.0",
     "pydantic-settings>=2.5.0",
     "python-dotenv>=1.0.0",
-
     # PDF Report
     "reportlab>=4.2.0",
     "weasyprint>=62.0",
-
     # Numeric
     "numpy>=1.26.0",
     "scipy>=1.13.0",
-
     # Utils
     "httpx>=0.27.0",
     "tenacity>=9.0.0",
@@ -77,14 +70,31 @@ select = [
     "SIM", # flake8-simplify
 ]
 ignore = [
-    "ANN101", # missing type annotation for self
-    "ANN102", # missing type annotation for cls
     "ANN401", # dynamically typed expressions (Any)
+    "ANN201", # missing return type annotation for public function (routers 등)
+    "ANN001", # missing type annotation for function argument
     "B008",   # do not perform function call in argument defaults (FastAPI Depends)
 ]
 
+[tool.ruff.lint.per-file-ignores]
+# load_dotenv() 후 import는 의도적 순서
+"api/main.py" = ["E402"]
+"tests/conftest.py" = ["E402"]
+# 테스트 파일은 타입 어노테이션 불필요
+"tests/**" = ["ANN"]
+# alembic 마이그레이션은 SQL 문자열 포함으로 E501 허용
+"alembic/**" = ["E501"]
+# 한국어 시스템 프롬프트 / 긴 emit 문자열 허용
+"api/routers/chat.py" = ["E501"]
+"domain/simulation/service/simulation_service.py" = ["E501"]
+# 도구 파일 내 긴 문자열 허용
+"tools/simulation/ssr_scorer.py" = ["E501"]
+"api/routers/ads.py" = ["E501"]
+# 모델 주석
+"core/models.py" = ["E501"]
+
 [tool.ruff.lint.isort]
-known-first-party = ["api", "agents", "tools", "core"]
+known-first-party = ["api", "agents", "tools", "core", "domain"]
 
 [tool.ruff.format]
 quote-style = "double"

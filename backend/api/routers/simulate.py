@@ -1,8 +1,8 @@
-from fastapi import APIRouter, Request, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 
 from core.schemas import SimulationRequest, SimulationTaskResponse
-from services import simulation_service
+from domain.simulation.service import simulation_service
 
 router = APIRouter()
 
