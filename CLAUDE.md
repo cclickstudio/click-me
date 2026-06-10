@@ -284,6 +284,26 @@ Phase 1: admin APIs restricted by `/api/admin/*` path prefix only.
 
 ### Claude 자동 출력 규칙 (IMPORTANT — 반드시 따를 것)
 
+#### 백엔드 코드 수정 후 → Ruff 실행 제안 (IMPORTANT)
+
+백엔드 Python 파일을 수정한 직후, **커밋 메시지를 출력하기 전에** 반드시 아래 멘트로 Ruff 실행을 제안한다.
+
+> "백엔드 코드가 변경됐어요. 커밋 전에 Ruff로 린트·포맷을 맞춰두면 CI에서 막히지 않아요.  
+> **Ruff 실행할까요?** (몇 초면 끝나고, import 순서·스타일 오류를 자동으로 고쳐줘요)"
+
+- 팀원이 **"응 / 해줘 / yes / ㅇㅇ"** 등으로 수락하면 → 즉시 아래 명령어를 실행한다:
+
+```bash
+cd backend && uv run ruff format . && uv run ruff check . --fix
+```
+
+- 팀원이 **"괜찮아 / 나중에 / no / ㄴㄴ"** 등으로 거절하면 → 실행하지 않고 커밋 메시지 출력으로 넘어간다.
+- **프론트엔드(TypeScript) 파일만 수정한 경우**에는 이 제안을 생략한다.
+
+> **왜 중요한가**: Ruff는 수초면 끝나며 API 비용도 없다. CI(`ci.yml`)가 `ruff check`로 백엔드를 검증하므로, 로컬에서 미리 통과시켜 두지 않으면 push 후 CI가 실패한다. `pytest`(10분+, API 비용)와 달리 Ruff는 커밋마다 돌려도 부담이 없다.
+
+---
+
 #### 기능 구현 완료 시점 → 커밋 메시지 출력
 
 구현이 완료됐다고 판단되는 시점(코드 수정 완료, 정상 동작 확인 후)에 아래 형식으로 커밋 메시지를 출력한다.
@@ -339,3 +359,37 @@ gh --version
 
 인증 완료 후 `gh issue create` 명령어를 제공한다.
 label은 상황에 따라 `enhancement` / `bug` / `refactor` / `chore` 중 선택한다.
+
+#### Issue 생성 스크립트 포맷 → 반드시 Python 스크립트로 제공
+
+팀원이 Issue를 **스크립트로 일괄 생성**하는 코드를 요청할 경우, 파일 포맷은 **반드시 Python(`.py`)으로** 제공한다. PowerShell(`.ps1`) 또는 셸 스크립트(`.sh`)로 제공하지 않는다.
+
+Python 스크립트 기본 구조 (GitHub REST API 사용):
+
+```python
+import httpx
+
+GITHUB_TOKEN = "ghp_your_token_here"
+REPO = "org/repo-name"  # 실제 레포로 교체
+
+headers = {
+    "Authorization": f"Bearer {GITHUB_TOKEN}",
+    "Accept": "application/vnd.github+json",
+}
+
+issues = [
+    {"title": "이슈 제목 1", "body": "설명", "labels": ["enhancement"]},
+    {"title": "이슈 제목 2", "body": "설명", "labels": ["bug"]},
+]
+
+with httpx.Client() as client:
+    for issue in issues:
+        res = client.post(
+            f"https://api.github.com/repos/{REPO}/issues",
+            headers=headers,
+            json=issue,
+        )
+        print(f"[{res.status_code}] {issue['title']}")
+```
+
+`httpx`는 이미 백엔드 의존성에 포함되어 있으므로 `uv run python create_issues.py`로 바로 실행 가능하다.

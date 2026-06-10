@@ -10,7 +10,7 @@ name: CD
 #   - EC2_USER             : EC2 접속 유저 (ubuntu / ec2-user)
 #   - EC2_SSH_KEY          : EC2 PEM 키 전체 내용
 #   - NEXT_PUBLIC_API_URL  : 운영 API 주소 (예: https://api.yourdomain.com)
-#   - SLACK_WEBHOOK_URL    : (선택) 슬랙 알림
+#   - DISCORD_WEBHOOK_URL  : (선택) 디스코드 알림
 
 on:
   workflow_dispatch: # 준비되면 push 트리거로 교체
@@ -81,19 +81,17 @@ jobs:
       #       docker compose -f docker-compose.prod.yml up -d --remove-orphans
       #       docker image prune -f
 
-      # ── TODO: 슬랙 알림 (선택) ────────────────────────
+      # ── TODO: 디스코드 알림 (선택) ───────────────────────
       # - name: Notify deploy result
       #   if: always()
-      #   uses: slackapi/slack-github-action@v1
+      #   uses: sarisia/actions-status-discord@v1
       #   continue-on-error: true
       #   with:
-      #     payload: |
-      #       {
-      #         "text": "${{ job.status == 'success' && '✅' || '❌' }} ClickMe 배포 *${{ job.status }}*\nBranch: `${{ github.ref_name }}` | Commit: `${{ github.sha }}`\n<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|워크플로우 보기>"
-      #       }
-      #   env:
-      #     SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-      #     SLACK_WEBHOOK_TYPE: INCOMING_WEBHOOK
+      #     webhook: ${{ secrets.DISCORD_WEBHOOK_URL }}
+      #     status: ${{ job.status }}
+      #     title: "ClickMe 배포"
+      #     description: "Branch: `${{ github.ref_name }}` | Commit: `${{ github.sha }}`"
+      #     url: "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
       - name: 배포 준비 중
         run: echo "CD 파이프라인 틀만 구성된 상태입니다. Secrets 등록 후 주석을 해제하세요."
