@@ -1,0 +1,15 @@
+{
+  "event_id": "evt_002",
+  "campaign_id": "camp_xyz789",
+  "anomaly_type": "INSUFFICIENT_DATA",
+  "detected_at": "2026-06-11T00:30:00Z",
+  "metrics": {
+    "impressions": 12,
+    "expected_impressions": 500,
+    "spend": 0.06,
+    "expected_spend": 2.5,
+    "cpm": null
+  },
+  "severity": "LOW",
+  "message": "캠페인 시작 후 30분, 데이터 부족으로 이상 판단 보류."
+}

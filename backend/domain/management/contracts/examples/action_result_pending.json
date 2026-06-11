@@ -1,0 +1,10 @@
+{
+  "proposal_id": "prop_t3_001",
+  "status": "PENDING",
+  "executed_at": "2026-06-11T10:20:01Z",
+  "platform_response": {
+    "review_id": "rev_4421",
+    "estimated_review_minutes": 180
+  },
+  "error": null
+}
