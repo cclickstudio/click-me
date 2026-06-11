@@ -1,0 +1,11 @@
+{
+  "proposal_id": "prop_t1_002",
+  "status": "FAILED",
+  "executed_at": "2026-06-11T11:00:00Z",
+  "platform_response": null,
+  "error": {
+    "code": "RATE_LIMITED",
+    "message": "Meta API rate limit 초과. 재시도 가능 시각: 2026-06-11T11:15:00Z",
+    "retryable": true
+  }
+}
