@@ -1,4 +1,13 @@
+import os
+
 import pytest
+
+# 임베딩 API(OpenAI)를 실제 호출하는 통합 테스트.
+# 키가 없는 환경(CI 등)에서는 건너뛴다. 로컬에서 OPENAI_API_KEY가 있으면 실행된다.
+pytestmark = pytest.mark.skipif(
+    not os.getenv("OPENAI_API_KEY"),
+    reason="OPENAI_API_KEY 미설정 — 임베딩 API 테스트 건너뜀",
+)
 
 GOLDEN_TEXT = """\
 첫 주목: 중앙의 붉은 CTA 버튼이 먼저 눈에 들어왔다
