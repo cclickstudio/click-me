@@ -17,9 +17,9 @@ from api.routers import admin, ads, chat, inquiries, personas, projects, simulat
 from core.config import settings
 from tools.simulation.ssr_scorer import SSRScorer
 
-if not settings.langchain_api_key:
+if not settings.LANGSMITH_API_KEY:
     os.environ["LANGSMITH_TRACING"] = "false"
-    os.environ["LANGCHAIN_TRACING_V2"] = "false"
+    os.environ["LANGSMITH_TRACING_V2"] = "false"
 
 ssr_scorer = SSRScorer()
 
