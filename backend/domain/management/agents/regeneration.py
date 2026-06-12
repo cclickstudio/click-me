@@ -17,6 +17,7 @@ from uuid import uuid4
 from langgraph.graph import END, StateGraph
 
 from domain.management.contracts.enums import ActionTier, ProposalStatus
+from domain.management.contracts.policy import TIER_POLICY
 from domain.management.contracts.schemas import ActionProposal, DiagnosisResult, finalize_proposal
 from domain.management.execution.tier import estimate_max_total_spend
 
@@ -81,21 +82,16 @@ class RegenerationContext:
     run_days: int
     expected_state_version: str
     approval_policy_version: str
-    action_type: str = "replace_creative"
+    action_type: str = "REPLACE_CREATIVE"  # 어휘 정본 = contracts/policy.py TIER_POLICY
 
 
-def label_action_tier(
-    action_type: str, budget_before_krw: int, budget_after_krw: int
-) -> ActionTier:
-    """🅱의 제안 라벨 (P1 매핑 [안]) — 판정 정본은 approval.py(🅰).
+def label_action_tier(action_type: str) -> ActionTier:
+    """🅱의 제안 라벨 — P1 정책표(TIER_POLICY) 단일 소스 조회.
 
-    pause·예산 감액 = Tier 1 / 예산 증액·시안 교체 = Tier 3.
+    판정 정본은 approval.py(🅰)의 judge_tier — 같은 표를 읽으므로 라벨≠판정이
+    원칙적으로 발생하지 않는다. 미등록 action_type은 보수적으로 Tier 3.
     """
-    if action_type == "pause":
-        return ActionTier.TIER_1
-    if action_type == "adjust_budget" and budget_after_krw <= budget_before_krw:
-        return ActionTier.TIER_1
-    return ActionTier.TIER_3
+    return TIER_POLICY.get(action_type, ActionTier.TIER_3)
 
 
 class RegenState(TypedDict, total=False):
@@ -259,9 +255,7 @@ class RegenerationAgent:
             ad_account_id=context.ad_account_id,
             target_object_ids=context.target_object_ids,
             action_type=context.action_type,
-            action_tier=label_action_tier(
-                context.action_type, context.budget_before_krw, context.budget_after_krw
-            ),
+            action_tier=label_action_tier(context.action_type),
             # 정보 방화벽 — 근거는 진단 evidence + 후보 점수만 (그 밖 정보로 추론 금지)
             evidence_metrics={
                 **diagnosis.evidence_metrics,

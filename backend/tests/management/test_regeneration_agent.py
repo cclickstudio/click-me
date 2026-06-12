@@ -35,7 +35,7 @@ def make_diagnosis(**overrides) -> DiagnosisResult:
         "confidence": 0.7,
         "evidence_metrics": {"quality_ranking": "below_average_35"},
         "metrics_as_of": NOW,
-        "status": "CONFIRMED",
+        "status": "confirmed",
     }
     fields.update(overrides)
     return DiagnosisResult(**fields)
@@ -144,8 +144,11 @@ async def test_packaged_proposal_is_valid_and_hash_verified():
     assert proposal.max_total_spend_krw == 50_000 * 7  # P4 산식
 
 
-def test_tier_labels_follow_p1_draft_mapping():
-    assert label_action_tier("pause", 50_000, 50_000) is ActionTier.TIER_1
-    assert label_action_tier("adjust_budget", 50_000, 40_000) is ActionTier.TIER_1  # 감액
-    assert label_action_tier("adjust_budget", 50_000, 70_000) is ActionTier.TIER_3  # 증액
-    assert label_action_tier("replace_creative", 0, 0) is ActionTier.TIER_3
+def test_tier_labels_follow_p1_policy_table():
+    """라벨은 P1 정책표(TIER_POLICY) 단일 소스 — approval.py 판정과 같은 표."""
+    assert label_action_tier("PAUSE_CAMPAIGN") is ActionTier.TIER_1
+    assert label_action_tier("DECREASE_BUDGET") is ActionTier.TIER_1  # 감액 = 자율
+    assert label_action_tier("INCREASE_BUDGET") is ActionTier.TIER_3  # 증액 = 사용자 승인
+    assert label_action_tier("REPLACE_CREATIVE") is ActionTier.TIER_3
+    assert label_action_tier("REBALANCE_BUDGET") is ActionTier.TIER_2  # v1 비활성
+    assert label_action_tier("unknown_action") is ActionTier.TIER_3  # 미등록 = 보수적

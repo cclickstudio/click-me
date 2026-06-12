@@ -6,7 +6,7 @@
   "target_object_ids": [
     "camp-001"
   ],
-  "action_type": "pause",
+  "action_type": "PAUSE_CAMPAIGN",
   "action_tier": 1,
   "evidence_metrics": {
     "ctr": 0.001,
@@ -21,7 +21,7 @@
   "budget_after_krw": 50000,
   "max_total_spend_krw": 0,
   "expires_at": "2026-06-13T09:00:00Z",
-  "proposal_hash": "d80928368bf68b2d1b659c9383a4f8b3fe2010acad6fcd8b2f08522f92cfa741",
+  "proposal_hash": "4d172c3d7dabf15c4062a64e8d7b9ed4bfaceeded3705d95979646f34fe1455e",
   "approval_policy_version": "approval-policy-v1",
   "status": "pending"
 }

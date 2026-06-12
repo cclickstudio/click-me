@@ -84,3 +84,10 @@ def test_status_change_does_not_break_hash():
     proposal = make_proposal()
     executed = proposal.model_copy(update={"status": "executed"})
     assert verify_proposal_hash(executed)
+
+
+def test_relabel_does_not_break_hash():
+    """action_tier는 approval.py 재라벨 판정으로 합법 변경 — 해시 제외 (P1)."""
+    proposal = make_proposal()
+    relabeled = proposal.model_copy(update={"action_tier": 3})
+    assert verify_proposal_hash(relabeled)

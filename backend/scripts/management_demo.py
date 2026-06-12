@@ -89,7 +89,7 @@ async def main() -> None:
         confidence=0.82,
         evidence_metrics={"impressions_24h": 120, "expected_impressions_24h": 4800},
         metrics_as_of=now,
-        status="CONFIRMED",
+        status="confirmed",
     )
     section("1) DiagnosisResult (🅰 대체 입력)")
     print(diagnosis.model_dump_json(indent=2))
@@ -100,11 +100,11 @@ async def main() -> None:
         ad_account_id="act_demo",
         target_object_ids=("camp-demo-1",),
         budget_before_krw=50_000,
-        budget_after_krw=40_000,  # 감액 → Tier 1 라벨
+        budget_after_krw=40_000,  # 감액 → Tier 1 (P1 정책표)
         run_days=7,
         expected_state_version="sv-1",
         approval_policy_version="approval-policy-v1",
-        action_type="adjust_budget",
+        action_type="DECREASE_BUDGET",
     )
     proposal = await agent.propose(diagnosis, context)
     assert proposal is not None

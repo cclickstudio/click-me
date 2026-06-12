@@ -2,7 +2,7 @@
   "schema_version": "1.0",
   "approval_id": "appr-0002",
   "proposal_id": "prop-0002",
-  "proposal_hash": "c6b654bd3291aba6d6c3f2146d44f064b7bf0dec6d961260453af545eed2f912",
+  "proposal_hash": "716fc2b484c12dae03708d320f40fedca47c141bba134b3b1d6ca36bbe26711c",
   "tenant_id": "org-1111",
   "approver_id": "user-77",
   "action_tier": 3,

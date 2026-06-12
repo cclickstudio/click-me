@@ -33,7 +33,7 @@ def make_proposal(**overrides) -> ActionProposal:
         "tenant_id": "org-1111",
         "ad_account_id": "act_001",
         "target_object_ids": ("camp-001",),
-        "action_type": "pause",
+        "action_type": "PAUSE_CAMPAIGN",
         "action_tier": ActionTier.TIER_1,
         "evidence_metrics": {"ctr": 0.001},
         "metrics_as_of": NOW,
@@ -84,10 +84,10 @@ class FakeWriter:
         self.calls: list[tuple[str, str, str]] = []  # (op, campaign_id, idem_key)
 
     async def pause(self, campaign_id: str, idem_key: str) -> ActionResult:
-        return self._respond("pause", campaign_id, idem_key)
+        return self._respond("PAUSE_CAMPAIGN", campaign_id, idem_key)
 
     async def adjust_budget(self, campaign_id: str, amount_krw: int, idem_key: str) -> ActionResult:
-        return self._respond("adjust_budget", campaign_id, idem_key)
+        return self._respond("INCREASE_BUDGET", campaign_id, idem_key)
 
     def _respond(self, op: str, campaign_id: str, idem_key: str) -> ActionResult:
         self.calls.append((op, campaign_id, idem_key))

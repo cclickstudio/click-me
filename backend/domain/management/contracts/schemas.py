@@ -1,12 +1,13 @@
 """🤝 contracts — Pydantic v2 DTO (A/B 유일한 접점).
 
-[draft v1 — 🅱 작성 초안] contracts는 공동 소유 — 머지 전 🅰 리뷰 필수.
-공통 규칙 (합의문서 v2.1 §2): 모든 모델 ``ConfigDict(extra="forbid", frozen=True)`` ·
-타임스탬프 UTC aware datetime(naive 금지) · 통화 KRW 정수(float 금지) ·
-모든 계약에 ``schema_version`` 포함 · 골든 샘플은 ``evals/fixtures/contracts/``.
+[통합본 v1] 🅰 초안 + 🅱 초안 머지. 스튜어드 기준으로 채택:
+진단측(DiagnosisResult·MetricsSnapshot)=🅰안 / 액션측(ActionProposal·ActionResult·
+FaultConfig)=🅱안 / 경계측(ApprovedAction)=공동 — PK는 ``approval_id`` (D6+ERD).
 
-스튜어드: 진단측(DiagnosisResult)=🅰 / 액션측(ActionProposal·ActionResult·FaultConfig)=🅱 /
-경계측(ApprovedAction)=공동.
+공통 규칙 (합의문서 v2.1 §2 + §9.0 그라운드 룰): 모든 모델
+``ConfigDict(extra="forbid", frozen=True)`` · 타임스탬프 UTC aware datetime(naive 금지) ·
+통화 KRW 정수(float 금지, ``_krw`` 접미) · 모든 계약에 ``schema_version`` 포함 ·
+골든 샘플은 ``evals/fixtures/contracts/``.
 """
 
 from __future__ import annotations
@@ -21,7 +22,8 @@ from pydantic import AfterValidator, BaseModel, ConfigDict, Field
 from domain.management.contracts.enums import (
     ActionTier,
     AnomalyType,
-    CampaignState,
+    DiagnosisSource,
+    DiagnosisStatus,
     ExecutionMode,
     FailureReason,
     FaultMode,
@@ -45,7 +47,7 @@ UtcDatetime = Annotated[datetime, AfterValidator(_require_utc)]
 
 
 class Contract(BaseModel):
-    """모든 계약의 공통 베이스 — extra='forbid'로 합의 안 된 필드 차단."""
+    """모든 계약의 공통 베이스 — extra='forbid'로 합의 안 된 필드 차단 (§9.0)."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -67,15 +69,23 @@ class CampaignConfig(Contract):
 
 
 class MetricsSnapshot(Contract):
-    """D9 — 시간 단위 hourly 확정: 🅰 기대 노출 모델(일중 곡선)의 성립 조건."""
+    """D9 — 시간별(hourly) 지표. reach/frequency는 누적값 (시간행 단순 합산 금지).
+
+    필드 구성은 🅰 기대 노출 모델(일중 곡선) 요구 기준 — 스튜어드 🅰.
+    """
 
     campaign_id: str
     as_of: UtcDatetime
-    granularity: Literal["hourly"] = "hourly"
     impressions: int = Field(ge=0)
     clicks: int = Field(ge=0)
+    inline_link_clicks: int = Field(ge=0)
     spend_krw: int = Field(ge=0)
-    state: CampaignState | None = None
+    cum_impressions: int = Field(ge=0)
+    cum_reach: int = Field(ge=0)
+    frequency: float = Field(ge=0.0)
+    ctr: float = Field(ge=0.0)
+    cpm_krw: int = Field(ge=0)
+    cpc_krw: int = Field(ge=0)
 
 
 class DeliveryEstimate(Contract):
@@ -90,7 +100,7 @@ class DeliveryEstimate(Contract):
 
 
 class DiagnosisResult(Contract):
-    """🅰 → 🅱 단일 진단 계약 (합의문서 v2.1 §2.1) — 스튜어드: 🅰 (초안만 작성).
+    """🅰 → 🅱 단일 진단 계약 (v2.1 §2.1) — 스튜어드: 🅰.
 
     ``evidence_metrics`` 는 정보 방화벽 — agent가 이 밖의 정보로 추론하는 것 금지.
     """
@@ -99,22 +109,25 @@ class DiagnosisResult(Contract):
     tenant_id: str  # organization_id 정렬
     campaign_id: str
     anomaly_type: AnomalyType
-    source: Literal["deterministic", "agent"]
+    source: DiagnosisSource
     hypothesis: str = ""  # 원인 가설 (agent 산출 시)
     confidence: float = Field(ge=0.0, le=1.0)  # 결정론 경로는 1.0
     evidence_metrics: dict[str, Any] = Field(default_factory=dict)
     metrics_as_of: UtcDatetime
-    status: Literal["CONFIRMED", "INCONCLUSIVE"]
+    status: DiagnosisStatus  # INCONCLUSIVE만 agent로 라우팅
 
 
 class ActionProposal(Contract):
-    """🅱 단독 생산 → 승인 플레인 — 필드 18종 [확정: 변경 없음] (§4)."""
+    """🅱 단독 생산 → 승인 플레인 — 필드 18종 [확정: 변경 없음] (§4). 스튜어드: 🅱.
+
+    ``action_type`` 어휘는 contracts/policy.py의 TIER_POLICY 키가 정본 (P1).
+    """
 
     proposal_id: str
     tenant_id: str
     ad_account_id: str
     target_object_ids: tuple[str, ...] = Field(min_length=1)  # ads 느슨 참조
-    action_type: str  # 예: "pause" / "adjust_budget" / "replace_creative"
+    action_type: str  # 예: "PAUSE_CAMPAIGN" / "INCREASE_BUDGET" / "REPLACE_CREATIVE"
     action_tier: ActionTier  # 🅱의 제안 라벨 — 판정 정본은 approval.py(🅰)
     evidence_metrics: dict[str, Any] = Field(default_factory=dict)
     metrics_as_of: UtcDatetime
@@ -124,7 +137,7 @@ class ActionProposal(Contract):
     budget_before_krw: int = Field(ge=0)
     budget_after_krw: int = Field(ge=0)
     max_total_spend_krw: int = Field(ge=0)  # P4 산식: budget_after × 집행 예상일수
-    expires_at: UtcDatetime  # P3 TTL [안]: 일반 24h / 데모 10분
+    expires_at: UtcDatetime  # P3 TTL — 데모 10분 (policy.PROPOSAL_TTL_MINUTES)
     proposal_hash: str = ""  # finalize_proposal()로 채움 — 변조 감지
     approval_policy_version: str
     status: ProposalStatus = ProposalStatus.PENDING
@@ -133,6 +146,7 @@ class ActionProposal(Contract):
 class ApprovedAction(Contract):
     """승인 플레인(🅰) → executor(🅱) — 경계 계약, 확정 후 frozen (D6 + v2.1 §2.3).
 
+    PK 이름은 ``approval_id`` (D6 코드블록 + ERD approvals.approval_id 채택).
     발급자는 approval.py(🅰)뿐. executor(🅱)는 검증만 한다.
     승인 = 실행 자격(executor 4단계 재검증 통과 필요)이며 실행 보장이 아니다.
     """
@@ -170,8 +184,12 @@ class FaultConfig(Contract):
 
 
 # ── proposal_hash 유틸 — 생산(🅱)·승인(🅰)·실행(🅱)이 같은 산식을 공유한다 ──
+# [통합 결정] 전체 필드 해시(🅱안) 채택 — 5개 필드 부분 해시(🅰안)보다 변조 탐지
+# 범위가 넓다 (evidence·만료·예산 변조까지 잡는다). 산식은 양쪽이 반드시 공유.
+# 제외 3종은 라이프사이클상 합법적으로 변하는 필드: status(상태 전이),
+# action_tier(approval.py의 재라벨 판정 — P1 "판정 Tier로 재라벨 후 진행").
 
-_HASH_EXCLUDED: Final[frozenset[str]] = frozenset({"proposal_hash", "status"})
+_HASH_EXCLUDED: Final[frozenset[str]] = frozenset({"proposal_hash", "status", "action_tier"})
 
 
 def compute_proposal_hash(proposal: ActionProposal) -> str:

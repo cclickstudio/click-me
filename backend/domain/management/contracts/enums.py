@@ -1,6 +1,6 @@
 """🤝 contracts — 공용 Enum (A/B 유일한 접점).
 
-[draft v1 — 🅱 작성 초안] contracts는 공동 소유 — 머지 전 🅰 리뷰 필수.
+[통합본 v1] 🅰(feat/management) 초안 + 🅱(feat/management-boeun) 초안 머지.
 근거: docs/management/structure-and-roles.md §9.2 D1~D8,
 docs/management/clickme_management_합의문서_v2.1안_2.md §3.1.
 """
@@ -48,7 +48,21 @@ class AnomalyType(StrEnum):
     BUDGET_EXHAUSTED = "budget_exhausted"  # 예산 소진 (결정론 진단 영역)
     SCHEDULE_GAP = "schedule_gap"  # 일정 문제 (결정론)
     LEARNING_PHASE = "learning_phase"  # 학습 기간 (결정론)
-    INCONCLUSIVE = "inconclusive"  # 규칙엔진 판단 불가 → agent 라우팅
+    INCONCLUSIVE = "inconclusive"  # 규칙엔진 판단 불가 → agent 라우팅 (D1)
+
+
+class DiagnosisSource(StrEnum):
+    """결정론 경로 / agent 경로 구분."""
+
+    DETERMINISTIC = "deterministic"
+    AGENT = "agent"
+
+
+class DiagnosisStatus(StrEnum):
+    """INCONCLUSIVE만 agent로 라우팅된다."""
+
+    CONFIRMED = "confirmed"
+    INCONCLUSIVE = "inconclusive"
 
 
 class ProposalStatus(StrEnum):
@@ -94,11 +108,20 @@ class FailureReason(StrEnum):
 
 
 class FaultMode(StrEnum):
-    """D8 — 고장 주입. 🅱 테스트가 contracts 경유로 Mock 고장을 켠다."""
+    """D8 — 고장 주입. 위치 정본은 enums.py (v2.0 §1: 별도 파일 없음).
 
+    🅰 게재 고장 5종은 AnomalyType eval 정답 라벨과 1:1 (meta-data-sources.md §4.5).
+    """
+
+    # 🅱 실행(쓰기) 고장 — executor 테스트 시나리오
     WRITE_TIMEOUT = "write_timeout"
     REVIEW_STUCK = "review_stuck"
     RATE_LIMITED = "rate_limited"
-    # 🅱 추가분 — executor 테스트 시나리오 (게이트 #2, #7)
     PARTIAL_FAILURE = "partial_failure"
     STATE_VERSION_DRIFT = "state_version_drift"
+    # 🅰 게재 고장 5종 — Mock telemetry 정답 라벨
+    BID_LOSS = "bid_loss"
+    AUDIENCE_TOO_NARROW = "audience_too_narrow"
+    QUALITY_DEGRADED = "quality_degraded"
+    REVIEW_REJECTED = "review_rejected"
+    REVIEW_DELAY = "review_delay"

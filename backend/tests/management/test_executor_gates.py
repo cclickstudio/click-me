@@ -44,7 +44,7 @@ async def test_gate1_replay_does_not_consume_budget_twice():
     writer = FakeWriter()
     executor, _, _, budget = build_executor(writer, limit_krw=300_000)
     proposal = make_proposal(
-        action_type="adjust_budget", budget_after_krw=40_000, max_total_spend_krw=280_000
+        action_type="INCREASE_BUDGET", budget_after_krw=40_000, max_total_spend_krw=280_000
     )
     action = make_action(proposal)
 
@@ -198,7 +198,7 @@ async def test_budget_hardcap_blocks_spend():
     writer = FakeWriter()
     executor, _, _, _ = build_executor(writer, limit_krw=100_000)
     proposal = make_proposal(
-        action_type="adjust_budget", budget_after_krw=60_000, max_total_spend_krw=120_000
+        action_type="INCREASE_BUDGET", budget_after_krw=60_000, max_total_spend_krw=120_000
     )
     action = make_action(proposal)
 
@@ -211,7 +211,7 @@ async def test_budget_hardcap_blocks_spend():
 async def test_budget_softcap_95_blocks_auto_but_allows_human():
     """P4 [안]: 95% 도달 시 자율(AUTO) 불가 — 사용자 승인 건은 진행."""
     proposal = make_proposal(
-        action_type="adjust_budget", budget_after_krw=48_000, max_total_spend_krw=96_000
+        action_type="INCREASE_BUDGET", budget_after_krw=48_000, max_total_spend_krw=96_000
     )
 
     writer_auto = FakeWriter()
@@ -311,7 +311,7 @@ async def test_failed_execution_does_not_consume_budget_authority():
     writer = FakeWriter(fault=fault, fail_times=10)
     executor, _, _, budget = build_executor(writer, limit_krw=100_000)
     proposal = make_proposal(
-        action_type="adjust_budget", budget_after_krw=10_000, max_total_spend_krw=50_000
+        action_type="INCREASE_BUDGET", budget_after_krw=10_000, max_total_spend_krw=50_000
     )
     action = make_action(proposal)
 
@@ -328,7 +328,7 @@ async def test_audit_log_has_no_update_or_delete_path():
         assert not hasattr(audit, attr)
 
 
-@pytest.mark.parametrize("unsupported", ["replace_creative", "boost_post"])
+@pytest.mark.parametrize("unsupported", ["REPLACE_CREATIVE", "boost_post"])
 async def test_unsupported_action_type_rejected(unsupported):
     """v1 Port(D8)는 pause/adjust_budget만 — 그 외는 Writer 도달 전 차단."""
     writer = FakeWriter()

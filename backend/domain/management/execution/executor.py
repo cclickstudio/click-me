@@ -37,8 +37,13 @@ from domain.management.execution.audit_log import AuditEvent, AuditSink
 from domain.management.execution.state_machine import ExecutionRun, RunStatus
 from domain.management.execution.tier import BudgetAuthority, BudgetDecision
 
-#: v1 executor가 실행 가능한 action_type — Port(D8) 메서드와 1:1
-SUPPORTED_ACTION_TYPES: Final[tuple[str, ...]] = ("pause", "adjust_budget")
+#: v1 executor가 실행 가능한 action_type — 어휘 정본은 contracts/policy.py TIER_POLICY (P1)
+#: REPLACE_CREATIVE 등은 Port(D8)에 메서드가 없어 v1 실행 불가 → UNSUPPORTED_ACTION
+SUPPORTED_ACTION_TYPES: Final[tuple[str, ...]] = (
+    "PAUSE_CAMPAIGN",
+    "DECREASE_BUDGET",
+    "INCREASE_BUDGET",
+)
 
 #: v1에서 Writer 도달이 허용되는 실행 모드 — LIVE는 비활성 (§7 Must)
 DEFAULT_ALLOWED_MODES: Final[tuple[ExecutionMode, ...]] = (
@@ -344,9 +349,9 @@ class Executor:
             await self._sleep(delay)
 
     async def _dispatch(self, proposal: ActionProposal, target: str, idem_key: str) -> ActionResult:
-        if proposal.action_type == "pause":
+        if proposal.action_type == "PAUSE_CAMPAIGN":
             return await self._writer.pause(target, idem_key)
-        if proposal.action_type == "adjust_budget":
+        if proposal.action_type in ("DECREASE_BUDGET", "INCREASE_BUDGET"):
             return await self._writer.adjust_budget(target, proposal.budget_after_krw, idem_key)
         raise ValueError(f"미지원 action_type: {proposal.action_type}")  # _validate에서 차단됨
 

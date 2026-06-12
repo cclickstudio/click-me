@@ -200,7 +200,7 @@ _EVAL_CONTEXT_DEFAULTS = {
     "run_days": 7,
     "expected_state_version": "sv-eval",
     "approval_policy_version": "approval-policy-v1",
-    "action_type": "replace_creative",
+    "action_type": "REPLACE_CREATIVE",
 }
 
 

@@ -7,7 +7,7 @@
     "camp-001",
     "camp-002"
   ],
-  "action_type": "replace_creative",
+  "action_type": "REPLACE_CREATIVE",
   "action_tier": 3,
   "evidence_metrics": {
     "quality_ranking": "below_average_35",
@@ -27,7 +27,7 @@
   "budget_after_krw": 70000,
   "max_total_spend_krw": 490000,
   "expires_at": "2026-06-12T08:59:00Z",
-  "proposal_hash": "c6b654bd3291aba6d6c3f2146d44f064b7bf0dec6d961260453af545eed2f912",
+  "proposal_hash": "716fc2b484c12dae03708d320f40fedca47c141bba134b3b1d6ca36bbe26711c",
   "approval_policy_version": "approval-policy-v1",
   "status": "pending"
 }

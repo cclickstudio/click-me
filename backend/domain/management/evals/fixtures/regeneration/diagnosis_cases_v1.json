@@ -12,7 +12,7 @@
       "confidence": 0.75,
       "evidence_metrics": { "quality_ranking": "below_average_35" },
       "metrics_as_of": "2026-06-12T09:00:00Z",
-      "status": "CONFIRMED"
+      "status": "confirmed"
     },
     "candidates": [
       { "candidate_id": "c1", "ad_copy": "여름맞이 신제품, 오늘만 특가", "score": 0.62 },
@@ -33,7 +33,7 @@
       "confidence": 0.7,
       "evidence_metrics": { "auction_competitiveness": -0.31 },
       "metrics_as_of": "2026-06-12T09:00:00Z",
-      "status": "CONFIRMED"
+      "status": "confirmed"
     },
     "candidates": [
       { "candidate_id": "c1", "ad_copy": "효과 100% 보장 다이어트", "score": 0.9 },
@@ -54,7 +54,7 @@
       "confidence": 0.65,
       "evidence_metrics": { "quality_ranking": "below_average_20" },
       "metrics_as_of": "2026-06-12T09:00:00Z",
-      "status": "CONFIRMED"
+      "status": "confirmed"
     },
     "candidates": [
       { "candidate_id": "c1", "ad_copy": "재구매율 1위 클렌저", "score": 0.69 }
@@ -74,7 +74,7 @@
       "confidence": 0.6,
       "evidence_metrics": { "estimate_mau": 90000 },
       "metrics_as_of": "2026-06-12T09:00:00Z",
-      "status": "CONFIRMED"
+      "status": "confirmed"
     },
     "candidates": [
       { "candidate_id": "c1", "ad_copy": "2030 직장인 픽", "score": 0.8 },
@@ -94,7 +94,7 @@
       "confidence": 0.55,
       "evidence_metrics": { "quality_ranking": "below_average_10" },
       "metrics_as_of": "2026-06-12T09:00:00Z",
-      "status": "CONFIRMED"
+      "status": "confirmed"
     },
     "candidates": [
       { "candidate_id": "c1", "ad_copy": "무난한 카피 A", "score": 0.31 },
@@ -115,7 +115,7 @@
       "confidence": 0.5,
       "evidence_metrics": { "auction_competitiveness": -0.5 },
       "metrics_as_of": "2026-06-12T09:00:00Z",
-      "status": "CONFIRMED"
+      "status": "confirmed"
     },
     "candidates": [
       { "candidate_id": "c1", "ad_copy": "도달 불가 케이스", "score": 0.9 }
