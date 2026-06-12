@@ -1,0 +1,124 @@
+[
+  {
+    "case_id": "agent-001-clean-win",
+    "baseline_score": 0.45,
+    "diagnosis": {
+      "diagnosis_id": "diag-eval-001",
+      "tenant_id": "org-eval",
+      "campaign_id": "camp-eval-1",
+      "anomaly_type": "quality_degraded",
+      "source": "agent",
+      "hypothesis": "품질 저하 — 시안 피로도",
+      "confidence": 0.75,
+      "evidence_metrics": { "quality_ranking": "below_average_35" },
+      "metrics_as_of": "2026-06-12T09:00:00Z",
+      "status": "CONFIRMED"
+    },
+    "candidates": [
+      { "candidate_id": "c1", "ad_copy": "여름맞이 신제품, 오늘만 특가", "score": 0.62 },
+      { "candidate_id": "c2", "ad_copy": "후기로 증명된 베스트셀러", "score": 0.71 },
+      { "candidate_id": "c3", "ad_copy": "지금 가장 많이 담는 아이템", "score": 0.58 }
+    ]
+  },
+  {
+    "case_id": "agent-002-banned-expression-filtered",
+    "baseline_score": 0.5,
+    "diagnosis": {
+      "diagnosis_id": "diag-eval-002",
+      "tenant_id": "org-eval",
+      "campaign_id": "camp-eval-1",
+      "anomaly_type": "bid_loss",
+      "source": "agent",
+      "hypothesis": "입찰 패배 — 소재 경쟁력 저하",
+      "confidence": 0.7,
+      "evidence_metrics": { "auction_competitiveness": -0.31 },
+      "metrics_as_of": "2026-06-12T09:00:00Z",
+      "status": "CONFIRMED"
+    },
+    "candidates": [
+      { "candidate_id": "c1", "ad_copy": "효과 100% 보장 다이어트", "score": 0.9 },
+      { "candidate_id": "c2", "ad_copy": "한 달 사용 후기 공개", "score": 0.66 }
+    ]
+  },
+  {
+    "case_id": "agent-003-generator-recovers",
+    "baseline_score": 0.4,
+    "generator_fail_times": 1,
+    "diagnosis": {
+      "diagnosis_id": "diag-eval-003",
+      "tenant_id": "org-eval",
+      "campaign_id": "camp-eval-2",
+      "anomaly_type": "quality_degraded",
+      "source": "agent",
+      "hypothesis": "품질 저하",
+      "confidence": 0.65,
+      "evidence_metrics": { "quality_ranking": "below_average_20" },
+      "metrics_as_of": "2026-06-12T09:00:00Z",
+      "status": "CONFIRMED"
+    },
+    "candidates": [
+      { "candidate_id": "c1", "ad_copy": "재구매율 1위 클렌저", "score": 0.69 }
+    ]
+  },
+  {
+    "case_id": "agent-004-scorer-partial-fallback",
+    "baseline_score": 0.42,
+    "scorer_fail_ids": ["c1"],
+    "diagnosis": {
+      "diagnosis_id": "diag-eval-004",
+      "tenant_id": "org-eval",
+      "campaign_id": "camp-eval-2",
+      "anomaly_type": "audience_too_narrow",
+      "source": "agent",
+      "hypothesis": "타겟 협소 — 소재 소구점 확장 필요",
+      "confidence": 0.6,
+      "evidence_metrics": { "estimate_mau": 90000 },
+      "metrics_as_of": "2026-06-12T09:00:00Z",
+      "status": "CONFIRMED"
+    },
+    "candidates": [
+      { "candidate_id": "c1", "ad_copy": "2030 직장인 픽", "score": 0.8 },
+      { "candidate_id": "c2", "ad_copy": "온 가족이 함께 쓰는 데일리템", "score": 0.64 }
+    ]
+  },
+  {
+    "case_id": "agent-005-all-low-score-no-proposal",
+    "baseline_score": 0.72,
+    "diagnosis": {
+      "diagnosis_id": "diag-eval-005",
+      "tenant_id": "org-eval",
+      "campaign_id": "camp-eval-3",
+      "anomaly_type": "quality_degraded",
+      "source": "agent",
+      "hypothesis": "품질 저하",
+      "confidence": 0.55,
+      "evidence_metrics": { "quality_ranking": "below_average_10" },
+      "metrics_as_of": "2026-06-12T09:00:00Z",
+      "status": "CONFIRMED"
+    },
+    "candidates": [
+      { "candidate_id": "c1", "ad_copy": "무난한 카피 A", "score": 0.31 },
+      { "candidate_id": "c2", "ad_copy": "무난한 카피 B", "score": 0.28 }
+    ]
+  },
+  {
+    "case_id": "agent-006-generator-unrecovered",
+    "baseline_score": 0.5,
+    "generator_fail_times": 5,
+    "diagnosis": {
+      "diagnosis_id": "diag-eval-006",
+      "tenant_id": "org-eval",
+      "campaign_id": "camp-eval-3",
+      "anomaly_type": "bid_loss",
+      "source": "agent",
+      "hypothesis": "입찰 패배",
+      "confidence": 0.5,
+      "evidence_metrics": { "auction_competitiveness": -0.5 },
+      "metrics_as_of": "2026-06-12T09:00:00Z",
+      "status": "CONFIRMED"
+    },
+    "candidates": [
+      { "candidate_id": "c1", "ad_copy": "도달 불가 케이스", "score": 0.9 }
+    ]
+  }
+]

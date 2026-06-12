@@ -151,7 +151,7 @@ def build_executor(
         writer,
         idempotency=idem,
         audit=audit,
-        budget=budget,
+        budget_for=lambda _tenant_id: budget,
         state_version_provider=state_provider,
         current_policy_version=policy,
         clock=lambda: now,

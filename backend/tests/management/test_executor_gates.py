@@ -23,6 +23,22 @@ from tests.management.helpers import (
 # ── 게이트 #1: 같은 멱등키 10회 → 실행 1건 ──────────────────────
 
 
+async def test_gate1_concurrent_10_calls_one_execution():
+    """동시 제출(asyncio.gather)에서도 실행은 1건 — in-flight 중복은 거부 또는 재생."""
+    import asyncio
+
+    writer = FakeWriter()
+    executor, _, _, _ = build_executor(writer)
+    proposal = make_proposal()
+    action = make_action(proposal)
+
+    results = await asyncio.gather(*(executor.execute(action, proposal) for _ in range(10)))
+
+    assert len(writer.calls) == 1
+    succeeded = [r for r in results if r.status is ResultStatus.SUCCESS]
+    assert len(succeeded) >= 1  # 최소 1건 성공, 나머지는 재생 또는 in-flight 거부
+
+
 async def test_gate1_same_idempotency_key_10_calls_one_execution():
     writer = FakeWriter()
     executor, _, _, _ = build_executor(writer)

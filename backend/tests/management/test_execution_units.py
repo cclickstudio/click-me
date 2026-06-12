@@ -3,8 +3,10 @@
 import pytest
 
 from domain.management.contracts.enums import FailureReason, ProposalStatus, ResultStatus
+from domain.management.contracts.schemas import verify_proposal_hash
 from domain.management.evals.regeneration_eval import (
     RegenerationRecord,
+    run_agent_eval,
     run_eval,
     schema_compliance_rate,
     summarize,
@@ -15,6 +17,7 @@ from domain.management.execution.audit_log import MASKED, mask_sensitive
 from domain.management.execution.service.execution_service import (
     ExecutionService,
     InMemoryProposalRepository,
+    build_reproposal,
 )
 from domain.management.execution.state_machine import (
     ExecutionRun,
@@ -24,6 +27,7 @@ from domain.management.execution.state_machine import (
 from domain.management.execution.tier import (
     BudgetAuthority,
     BudgetDecision,
+    TenantBudgetRegistry,
     estimate_max_total_spend,
 )
 from tests.management.helpers import FakeWriter, build_executor, make_action, make_proposal
@@ -195,3 +199,88 @@ async def test_service_marks_proposal_executed_on_success():
 
     assert result.status is ResultStatus.SUCCESS
     assert repo.get(proposal.proposal_id).status is ProposalStatus.EXECUTED
+
+
+# ── 테넌트별 예산 권한 ──────────────────────────────────────────
+
+
+def test_tenant_budgets_are_isolated():
+    registry = TenantBudgetRegistry(default_limit_krw=100_000)
+    registry.for_tenant("org-a").commit(99_000)
+
+    assert registry.for_tenant("org-a").evaluate(2_000) is BudgetDecision.BLOCK
+    assert registry.for_tenant("org-b").evaluate(2_000) is BudgetDecision.ALLOW
+
+
+# ── stale → 재제안 (P2: 자동 승계 금지) ─────────────────────────
+
+
+def test_build_reproposal_resets_identity_and_version():
+    stale = make_proposal()
+    reproposal = build_reproposal(stale, "sv-43")
+
+    assert reproposal.proposal_id != stale.proposal_id
+    assert reproposal.expected_state_version == "sv-43"
+    assert reproposal.status is ProposalStatus.PENDING
+    assert verify_proposal_hash(reproposal)  # 새 해시 — 옛 승인으로 실행 불가
+    assert reproposal.proposal_hash != stale.proposal_hash
+    # 증거·가설은 승계
+    assert reproposal.evidence_metrics == stale.evidence_metrics
+    assert reproposal.hypothesis == stale.hypothesis
+
+
+async def test_stale_result_yields_pending_reproposal():
+    writer = FakeWriter()
+    executor, audit, _, _ = build_executor(writer, state_version="sv-43")  # 낙관적 락 불일치
+
+    async def state_provider(_ad_account_id):
+        return "sv-43"
+
+    repo = InMemoryProposalRepository()
+    proposal = make_proposal()  # expected_state_version="sv-42"
+    repo.save(proposal)
+    service = ExecutionService(executor, repo, audit, state_version_provider=state_provider)
+
+    result, reproposal = await service.handle_with_recovery(make_action(proposal))
+
+    assert result.failure_reason is FailureReason.STALE_PROPOSAL
+    assert reproposal is not None
+    assert reproposal.expected_state_version == "sv-43"
+    assert repo.get(reproposal.proposal_id).status is ProposalStatus.PENDING
+    assert repo.get(proposal.proposal_id).status is ProposalStatus.STALE
+    assert writer.calls == []  # 재제안은 재승인 전까지 실행되지 않는다
+
+
+async def test_partial_failure_halt_does_not_repropose():
+    writer = FakeWriter(fail_targets={"camp-002"})
+    executor, audit, _, _ = build_executor(writer)
+
+    async def state_provider(_ad_account_id):
+        return "sv-42"
+
+    repo = InMemoryProposalRepository()
+    proposal = make_proposal(target_object_ids=("camp-001", "camp-002"))
+    repo.save(proposal)
+    service = ExecutionService(executor, repo, audit, state_version_provider=state_provider)
+
+    result, reproposal = await service.handle_with_recovery(make_action(proposal))
+
+    assert result.failure_reason is FailureReason.PARTIAL_FAILURE
+    assert reproposal is None  # P5: 정지 — 자동 재제안 없음
+
+
+# ── agent 실행형 eval 하니스 ────────────────────────────────────
+
+
+async def test_agent_eval_runs_real_agent_over_fixtures():
+    report = await run_agent_eval("v1")
+
+    assert report.total_cases == 6
+    assert report.fixture_version == "v1"
+    # 승리 4건: clean-win·banned-filtered·generator-recovers·scorer-fallback
+    assert report.win_rate == pytest.approx(4 / 6)
+    assert report.guardrail_pass_rate == 1.0  # 금지표현 후보가 생존자에 없음
+    assert report.schema_compliance_rate == 1.0
+    # tool 실패 3케이스(003·004·006) 중 006만 미복구
+    assert report.tool_failure_recovery_rate == pytest.approx(2 / 3)
+    assert report.failure_breakdown.get(str(FailureReason.TIMEOUT)) == 1

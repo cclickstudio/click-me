@@ -3,24 +3,27 @@
 - Writer 직접 호출 금지 — 산출물은 ActionProposal뿐 (불변 규칙 §4-1).
 - 후보 가드: 최대 3개(P6) · 금지표현(오너=🅱) · 점수 미달 제거.
 - tool 실패는 재시도 1회 후 해당 후보 폴백(제외) — 빈손 복귀가 무리한 제안보다 낫다.
-- LangGraph StateGraph 승격은 6/23 주 마일스톤 — v1은 동일 노드를 순차 오케스트레이션.
+- LangGraph StateGraph: generate → guard → score →(생존자 있으면)→ package.
+  실제 tool(생성·시뮬·미리보기)은 타 팀 인터페이스 확정 전까지 Protocol 주입.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING, Final, Protocol
+from typing import TYPE_CHECKING, Final, Protocol, TypedDict
 from uuid import uuid4
 
+from langgraph.graph import END, StateGraph
+
 from domain.management.contracts.enums import ActionTier, ProposalStatus
-from domain.management.contracts.schemas import ActionProposal, finalize_proposal
+from domain.management.contracts.schemas import ActionProposal, DiagnosisResult, finalize_proposal
 from domain.management.execution.tier import estimate_max_total_spend
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
-    from domain.management.contracts.schemas import DiagnosisResult
+    from langgraph.graph.state import CompiledStateGraph
 
 #: P6 [안] — 재생성 후보 수 상한
 MAX_CANDIDATES: Final[int] = 3
@@ -95,6 +98,17 @@ def label_action_tier(
     return ActionTier.TIER_3
 
 
+class RegenState(TypedDict, total=False):
+    """LangGraph 상태 — 노드 간 전달되는 값 전부."""
+
+    diagnosis: DiagnosisResult
+    context: RegenerationContext
+    candidates: list[CreativeCandidate]
+    survivors: list[CreativeCandidate]
+    best: CreativeCandidate | None
+    proposal: ActionProposal | None
+
+
 class RegenerationAgent:
     def __init__(
         self,
@@ -118,20 +132,56 @@ class RegenerationAgent:
         self._tool_retries = tool_retries
         self._proposal_ttl = proposal_ttl
         self._clock = clock or (lambda: datetime.now(UTC))
+        self._graph = self._build_graph()
 
     async def propose(
         self, diagnosis: DiagnosisResult, context: RegenerationContext
     ) -> ActionProposal | None:
-        """진단 수신 → 후보 생성 → 가드 → 채점 → 최선 후보로 ActionProposal 패키징."""
-        candidates = await self._generate(diagnosis)
-        candidates = self._guard(candidates)
-        scored = await self._score_all(candidates)
+        """진단 수신 → (LangGraph) 생성 → 가드 → 채점 → 최선 후보로 패키징."""
+        final: RegenState = await self._graph.ainvoke({"diagnosis": diagnosis, "context": context})
+        return final.get("proposal")
+
+    # ── LangGraph 조립 ───────────────────────────────────────────
+
+    def _build_graph(self) -> CompiledStateGraph:
+        graph = StateGraph(RegenState)
+        graph.add_node("generate", self._node_generate)
+        graph.add_node("guard", self._node_guard)
+        graph.add_node("score", self._node_score)
+        graph.add_node("package", self._node_package)
+        graph.set_entry_point("generate")
+        graph.add_edge("generate", "guard")
+        graph.add_edge("guard", "score")
+        graph.add_conditional_edges(
+            "score",
+            self._route_after_score,
+            {"package": "package", "end": END},  # 생존자 0 → 빈손 복귀
+        )
+        graph.add_edge("package", END)
+        return graph.compile()
+
+    async def _node_generate(self, state: RegenState) -> RegenState:
+        return {"candidates": await self._generate(state["diagnosis"])}
+
+    async def _node_guard(self, state: RegenState) -> RegenState:
+        return {"candidates": self._guard(state["candidates"])}
+
+    async def _node_score(self, state: RegenState) -> RegenState:
+        scored = await self._score_all(state["candidates"])
         survivors = [c for c in scored if (c.sim_score or 0.0) >= self._min_score]
-        if not survivors:
-            return None
-        best = max(survivors, key=lambda c: c.sim_score or 0.0)
-        best = await self._attach_preview(best)
-        return self._package(diagnosis, context, best, survivors)
+        best = max(survivors, key=lambda c: c.sim_score or 0.0) if survivors else None
+        if best is not None:
+            best = await self._attach_preview(best)
+        return {"survivors": survivors, "best": best}
+
+    def _route_after_score(self, state: RegenState) -> str:
+        return "package" if state.get("best") is not None else "end"
+
+    async def _node_package(self, state: RegenState) -> RegenState:
+        proposal = self._package(
+            state["diagnosis"], state["context"], state["best"], state["survivors"]
+        )
+        return {"proposal": proposal}
 
     # ── 노드 1: 생성 (재시도 1회) ────────────────────────────────
 

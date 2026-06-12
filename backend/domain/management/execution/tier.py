@@ -61,3 +61,19 @@ class BudgetAuthority:
         if amount_krw < 0:
             raise ValueError("KRW 음수 금지")
         self.spent_krw += amount_krw
+
+
+class TenantBudgetRegistry:
+    """tenant_id → BudgetAuthority — 멀티테넌트 정렬 (한 tenant가 남의 한도를 못 쓴다).
+
+    영속화 전 인메모리. 한도 영속·tenant별 커스텀 한도는 core 테이블 합의 후.
+    """
+
+    def __init__(self, default_limit_krw: int) -> None:
+        self._default_limit_krw = default_limit_krw
+        self._authorities: dict[str, BudgetAuthority] = {}
+
+    def for_tenant(self, tenant_id: str) -> BudgetAuthority:
+        if tenant_id not in self._authorities:
+            self._authorities[tenant_id] = BudgetAuthority(limit_krw=self._default_limit_krw)
+        return self._authorities[tenant_id]

@@ -97,7 +97,7 @@ class Executor:
         *,
         idempotency: IdempotencyStore,
         audit: AuditSink,
-        budget: BudgetAuthority,
+        budget_for: Callable[[str], BudgetAuthority],  # tenant_id → 예산 권한 (멀티테넌트)
         state_version_provider: StateVersionProvider,
         current_policy_version: str,
         allowed_modes: tuple[ExecutionMode, ...] = DEFAULT_ALLOWED_MODES,
@@ -110,7 +110,7 @@ class Executor:
         self._writer = writer
         self._idempotency = idempotency
         self._audit = audit
-        self._budget = budget
+        self._budget_for = budget_for
         self._state_version_provider = state_version_provider
         self._current_policy_version = current_policy_version
         self._allowed_modes = allowed_modes
@@ -143,7 +143,8 @@ class Executor:
         run.advance(RunStatus.VALIDATED)
 
         # 6) 지출 후 총액 재계산 → 소프트캡 판정 → 멱등키 선점
-        decision = self._budget.evaluate(proposal.max_total_spend_krw)
+        budget = self._budget_for(action.tenant_id)
+        decision = budget.evaluate(proposal.max_total_spend_krw)
         if decision is BudgetDecision.BLOCK:
             return self._reject(
                 run, action, proposal, FailureReason.BUDGET_CAP_EXCEEDED, "100% 하드캡 차단"
@@ -181,7 +182,7 @@ class Executor:
         result = await self._call_targets(run, action, proposal, key)
         self._idempotency.save_result(key, result)
         if result.status in (ResultStatus.SUCCESS, ResultStatus.SUBMITTED_PENDING_REVIEW):
-            self._budget.commit(proposal.max_total_spend_krw)
+            budget.commit(proposal.max_total_spend_krw)
         self._record(
             run,
             action,
