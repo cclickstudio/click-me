@@ -3,18 +3,21 @@
 from __future__ import annotations
 
 import asyncio
+import io
 import json
 import logging
 import uuid
 from collections.abc import AsyncIterator
 
+from PIL import Image
 from sqlalchemy import select
 
 from core.db import AsyncSessionLocal
 from core.models import AdGeneration, AdGenerationCandidate, AdPublishLog
+from domain.generator.adapters.instagram import build_publisher
 from domain.generator.contracts.schemas import GenerationCreateRequest
 from domain.generator.graph.pipeline import generation_graph
-from tools.storage.s3 import presign_get
+from tools.storage.s3 import download_bytes, presign_get, publish_key, upload_bytes
 
 logger = logging.getLogger("clickme")
 
@@ -269,3 +272,73 @@ async def list_generations(limit: int = 20) -> list[dict]:
         }
         for g in generations
     ]
+
+
+def png_to_jpeg(png_bytes: bytes, quality: int = 90) -> bytes:
+    """PNG → JPEG 변환 — Instagram Content Publishing은 JPEG만 공식 지원."""
+    image = Image.open(io.BytesIO(png_bytes)).convert("RGB")
+    buffer = io.BytesIO()
+    image.save(buffer, format="JPEG", quality=quality)
+    return buffer.getvalue()
+
+
+async def publish_candidate(generation_id: str, candidate_id: str, caption: str) -> dict | None:
+    """사용자 승인 후 Instagram 게시 — 선택된 후보만 허용, 이력 전체 기록 (계획서 19장)."""
+    try:
+        gid = uuid.UUID(generation_id)
+        cid = uuid.UUID(candidate_id)
+    except ValueError:
+        return None
+
+    async with AsyncSessionLocal() as session:
+        generation = await session.get(AdGeneration, gid)
+        candidate = await session.get(AdGenerationCandidate, cid)
+        if generation is None or candidate is None or candidate.generation_id != gid:
+            return None
+        if generation.selected_candidate_id != cid:
+            return {"error": "selected_candidate_only"}
+        png_key = candidate.s3_key
+        candidate_idx = candidate.idx
+
+    # IG는 JPEG만 지원 — 게시용 변환본을 별도 키로 업로드 후 presigned URL 전달
+    png_bytes = await download_bytes(png_key)
+    jpeg_key = publish_key(generation_id, candidate_idx)
+    await upload_bytes(png_to_jpeg(png_bytes), jpeg_key, content_type="image/jpeg")
+    image_url = await presign_get(jpeg_key)
+
+    publisher = build_publisher()
+    outcome = await publisher.publish_image(image_url, caption)
+
+    if outcome.mocked:
+        status = "mocked"
+    elif outcome.success:
+        status = "published"
+    else:
+        status = "failed"
+
+    async with AsyncSessionLocal() as session:
+        session.add(
+            AdPublishLog(
+                generation_id=gid,
+                candidate_id=cid,
+                platform="instagram",
+                status=status,
+                ig_container_id=outcome.container_id,
+                ig_media_id=outcome.media_id,
+                caption=caption,
+                request_payload={"image_url": image_url, "caption": caption},
+                response_payload=outcome.raw,
+                error_message=outcome.error,
+            )
+        )
+        await session.commit()
+
+    return {
+        "generation_id": generation_id,
+        "candidate_id": candidate_id,
+        "status": status,
+        "success": outcome.success,
+        "mocked": outcome.mocked,
+        "media_id": outcome.media_id,
+        "error": outcome.error,
+    }

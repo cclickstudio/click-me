@@ -35,6 +35,13 @@ async def upload_bytes(data: bytes, key: str, content_type: str = "image/png") -
     return key
 
 
+async def download_bytes(key: str) -> bytes:
+    """S3 객체를 바이트로 다운로드한다."""
+    async with _session.client("s3") as s3:
+        obj = await s3.get_object(Bucket=settings.s3_bucket_name, Key=key)
+        return await obj["Body"].read()
+
+
 async def presign_get(key: str, expires_in: int = 3600) -> str:
     """다운로드용 presigned URL을 발급한다 (기본 1시간)."""
     async with _session.client("s3") as s3:
