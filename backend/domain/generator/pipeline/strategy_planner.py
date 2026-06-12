@@ -11,15 +11,17 @@ _STRATEGY_LABELS = {
     AdStrategy.BENEFIT: "혜택 강조",
     AdStrategy.PROBLEM_SOLVING: "문제 해결",
     AdStrategy.SOCIAL_PROOF: "사회적 증거",
+    AdStrategy.FOMO: "긴급성(FOMO)",
+    AdStrategy.EMOTIONAL: "감성 접근",
 }
 
 _SYSTEM = """\
 당신은 퍼포먼스 마케팅 전문가입니다.
-제품 분석 결과를 바탕으로 효과적인 광고 전략 2종을 수립하고, 각 전략에 맞는 광고 문구를 작성합니다.
+제품 분석 결과를 바탕으로 효과적인 광고 전략 3종을 수립하고, 각 전략에 맞는 광고 문구를 작성합니다.
 반드시 JSON 형식으로만 응답하세요."""
 
 _USER_TEMPLATE = """\
-아래 제품 분석 결과를 바탕으로 서로 다른 광고 전략 2종을 수립하세요.
+아래 제품 분석 결과를 바탕으로 서로 다른 광고 전략 3종을 수립하세요.
 
 ## 제품 분석
 제품명: {product_name}
@@ -30,12 +32,19 @@ Pain Points: {pain_points}
 광고 목적: {objective}
 
 ## 사용 가능한 전략
-- benefit: 혜택 강조
-- problem_solving: 문제 해결
-- social_proof: 사회적 증거
+- benefit: 혜택 강조 (제품의 핵심 혜택을 직접 소구) → 템플릿 A
+- problem_solving: 문제 해결 (타겟의 Pain Point → 솔루션 제시) → 템플릿 A
+- fomo: 긴급성 (한정 기간·수량, Fear of Missing Out) → 템플릿 B
+- social_proof: 사회적 증거 (후기·인증·신뢰도 강조) → 템플릿 C
+- emotional: 감성 접근 (라이프스타일·감성 이미지로 소구) → 템플릿 C
+
+## 규칙
+- 반드시 3개의 서로 다른 전략을 선택하세요.
+- 템플릿 B(fomo)는 반드시 하나 포함하세요. 그래야 3개의 템플릿(A·B·C)이 모두 활용됩니다.
+- 나머지 2개는 템플릿 A 계열(benefit 또는 problem_solving)과 템플릿 C 계열(social_proof 또는 emotional) 중 각 1개씩 선택하세요.
 
 ## 응답 형식
-서로 다른 전략 2개를 선택하고 각각에 대해 아래 JSON 배열로 반환하세요:
+서로 다른 전략 3개를 각각에 대해 아래 JSON 배열로 반환하세요:
 [
   {{
     "strategy": "전략 코드",
@@ -45,6 +54,7 @@ Pain Points: {pain_points}
     "cta": "CTA 문구 (10자 이내)",
     "rationale": "이 전략을 선택한 근거 (2~3문장)"
   }},
+  {{ ... }},
   {{ ... }}
 ]
 {improvement_section}"""
@@ -93,12 +103,12 @@ async def plan_strategies(
     items: list = raw if isinstance(raw, list) else raw.get("strategies", raw.get("items", []))
 
     outputs = []
-    for item in items[:2]:
+    for item in items[:3]:
         strategy_str = str_or_none(item.get("strategy")) or "benefit"
         try:
             strategy = AdStrategy(strategy_str)
         except ValueError:
-            strategy = AdStrategy.BENEFIT
+            strategy = AdStrategy.BENEFIT if not outputs else AdStrategy.FOMO if len(outputs) == 1 else AdStrategy.SOCIAL_PROOF
 
         outputs.append(
             StrategyOutput(

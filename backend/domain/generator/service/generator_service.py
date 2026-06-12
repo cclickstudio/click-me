@@ -111,7 +111,7 @@ async def generate_ad(request: GenerateRequest) -> GenerateResult:
     strategy_outputs = await plan_strategies(product_analysis)
     plans = _to_strategy_plans(strategy_outputs)
 
-    variant_ids = ["A", "B"]
+    variant_ids = ["A", "B", "C"]
     variants = await asyncio.gather(
         *[
             _build_variant(
@@ -146,9 +146,11 @@ async def improve_ad(request: ImproveRequest) -> GenerateResult:
     if request.fix_requests:
         improvement_context += f"\n추가 수정 요청: {request.fix_requests}"
 
-    # 개선모드는 상품 분석 대신 시뮬레이션 피드백을 기반으로 전략 수립
-    dummy_analysis = ProductAnalysis(
-        product_name="기존 광고",
+    # 개선모드: 시뮬레이션 피드백 기반 전략 수립
+    # product_name은 이미지 프롬프트 품질을 위해 전달받고, 없으면 S3 키를 대신 사용
+    effective_product_name = request.product_name or request.existing_ad_s3_key
+    improve_analysis = ProductAnalysis(
+        product_name=effective_product_name,
         core_values=[],
         pain_points=[],
         benefits=[],
@@ -157,19 +159,19 @@ async def improve_ad(request: ImproveRequest) -> GenerateResult:
     )
 
     strategy_outputs = await plan_strategies(
-        product_analysis=dummy_analysis,
+        product_analysis=improve_analysis,
         improvement_context=improvement_context,
     )
     plans = _to_strategy_plans(strategy_outputs)
 
-    variant_ids = ["A", "B"]
+    variant_ids = ["A", "B", "C"]
     variants = await asyncio.gather(
         *[
             _build_variant(
                 variant_id=vid,
                 generation_id=generation_id,
                 plan=plan,
-                product_analysis=dummy_analysis,
+                product_analysis=improve_analysis,
                 size=request.size,
                 brand_color=request.brand_color,
                 tone=request.tone,

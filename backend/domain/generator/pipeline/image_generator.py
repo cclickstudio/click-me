@@ -20,8 +20,8 @@ _TEMPLATE_LAYOUT: dict[TemplateType, str] = {
         "product image prominently centered, CTA button at bottom"
     ),
     TemplateType.B: (
-        "Problem-solving layout: problem statement prominently at top, "
-        "solution and product image centered, CTA button at bottom"
+        "Event/urgency layout: bold promotion or limited-time offer text at top, "
+        "product image centered, strong CTA button at bottom"
     ),
     TemplateType.C: (
         "Brand-focused layout: brand logo and colors prominent, "

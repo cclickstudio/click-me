@@ -24,6 +24,7 @@ class ImproveRequest(BaseModel):
 
     existing_ad_s3_key: str
     simulation_summary: str  # 시뮬레이션 결과 핵심 내용
+    product_name: str | None = None  # 이미지 프롬프트에 사용; 없으면 기존 광고 S3 키로 대체
     fix_requests: str | None = None  # 추가 수정 요청사항
     brand_color: str | None = None
     tone: str | None = None
@@ -111,5 +112,5 @@ class GeneratedAdVariant(BaseModel):
 class GenerateResult(BaseModel):
     generation_id: str
     mode: GenerationMode
-    variants: list[GeneratedAdVariant]  # 항상 2종
+    variants: list[GeneratedAdVariant]  # 항상 3종
     created_at: str
