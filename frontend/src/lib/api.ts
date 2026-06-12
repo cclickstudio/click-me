@@ -59,4 +59,23 @@ export const api = {
       request("/projects", { method: "POST", body: JSON.stringify(body) }),
     get: (id: string) => request(`/projects/${id}`),
   },
+
+  generator: {
+    start: (body: object) =>
+      request("/generator/generations", { method: "POST", body: JSON.stringify(body) }),
+    stream: (generationId: string) =>
+      new EventSource(`${API_BASE}/api/generator/generations/${generationId}/stream`),
+    detail: (generationId: string) => request(`/generator/generations/${generationId}`),
+    select: (generationId: string, candidateId: string) =>
+      request(`/generator/generations/${generationId}/select`, {
+        method: "POST",
+        body: JSON.stringify({ candidate_id: candidateId }),
+      }),
+    publish: (generationId: string, candidateId: string, caption: string) =>
+      request(`/generator/generations/${generationId}/publish`, {
+        method: "POST",
+        body: JSON.stringify({ candidate_id: candidateId, caption }),
+      }),
+    list: (limit = 20) => request(`/generator/generations?limit=${limit}`),
+  },
 };
