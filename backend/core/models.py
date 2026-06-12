@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, SmallInteger, String, Text, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -92,4 +92,77 @@ class Inquiry(Base):
     name: Mapped[str] = mapped_column(String(255))
     email: Mapped[str] = mapped_column(String(255))
     message: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class AdGeneration(Base):
+    """광고 생성 요청 단위 — 생성모드 파이프라인 1회 실행."""
+
+    __tablename__ = "ad_generations"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    project_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("projects.id", ondelete="SET NULL"), nullable=True
+    )
+    status: Mapped[str] = mapped_column(
+        String(20), default="pending"
+    )  # pending | running | completed | failed
+    input: Mapped[dict] = mapped_column(JSONB)  # GenerationCreateRequest 원본
+    product_analysis: Mapped[dict | None] = mapped_column(JSONB)  # 핵심가치/PainPoint/Benefit
+    strategies: Mapped[list | None] = mapped_column(JSONB)  # 전략 3종
+    selected_candidate_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), nullable=True
+    )
+    error_message: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )
+
+    candidates: Mapped[list["AdGenerationCandidate"]] = relationship(back_populates="generation")
+
+
+class AdGenerationCandidate(Base):
+    """생성된 광고 후보 — 생성 1회당 3종."""
+
+    __tablename__ = "ad_generation_candidates"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    generation_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("ad_generations.id", ondelete="CASCADE")
+    )
+    idx: Mapped[int] = mapped_column(SmallInteger)  # 0 | 1 | 2
+    strategy: Mapped[dict | None] = mapped_column(JSONB)  # {strategy_type, ...}
+    template_id: Mapped[str | None] = mapped_column(String(10))  # A | B | C
+    copy: Mapped[dict | None] = mapped_column(JSONB)  # {headline, subcopy, benefit_text, cta}
+    image_prompt: Mapped[str | None] = mapped_column(Text)
+    s3_key: Mapped[str | None] = mapped_column(String(512))
+    qa_result: Mapped[dict | None] = mapped_column(JSONB)  # QA Harness 7항목 결과
+    qa_passed: Mapped[bool | None] = mapped_column(Boolean)
+    explanation: Mapped[dict | None] = mapped_column(JSONB)  # 적용 타겟/전략/템플릿/근거
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    generation: Mapped["AdGeneration"] = relationship(back_populates="candidates")
+
+
+class AdPublishLog(Base):
+    """광고 플랫폼 게시 이력 — 요청/응답/오류 전체 기록."""
+
+    __tablename__ = "ad_publish_logs"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    generation_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("ad_generations.id", ondelete="SET NULL"), nullable=True
+    )
+    candidate_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("ad_generation_candidates.id", ondelete="SET NULL"), nullable=True
+    )
+    platform: Mapped[str] = mapped_column(String(20), default="instagram")
+    status: Mapped[str] = mapped_column(String(20))  # published | failed | mocked
+    ig_container_id: Mapped[str | None] = mapped_column(String(100))
+    ig_media_id: Mapped[str | None] = mapped_column(String(100))
+    caption: Mapped[str | None] = mapped_column(Text)
+    request_payload: Mapped[dict | None] = mapped_column(JSONB)
+    response_payload: Mapped[dict | None] = mapped_column(JSONB)
+    error_message: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
