@@ -39,6 +39,24 @@ async def test_gate1_concurrent_10_calls_one_execution():
     assert len(succeeded) >= 1  # 최소 1건 성공, 나머지는 재생 또는 in-flight 거부
 
 
+async def test_gate1_replay_does_not_consume_budget_twice():
+    """잔액이 1회 집행분뿐이어도 중복 제출은 재생된다 — 예산 이중 소모 금지."""
+    writer = FakeWriter()
+    executor, _, _, budget = build_executor(writer, limit_krw=300_000)
+    proposal = make_proposal(
+        action_type="adjust_budget", budget_after_krw=40_000, max_total_spend_krw=280_000
+    )
+    action = make_action(proposal)
+
+    first = await executor.execute(action, proposal)
+    replay = await executor.execute(action, proposal)
+
+    assert first.status is ResultStatus.SUCCESS
+    assert replay.result_id == first.result_id  # BUDGET_CAP_EXCEEDED가 아니라 재생
+    assert budget.spent_krw == 280_000  # 1회분만 소모
+    assert len(writer.calls) == 1
+
+
 async def test_gate1_same_idempotency_key_10_calls_one_execution():
     writer = FakeWriter()
     executor, _, _, _ = build_executor(writer)
