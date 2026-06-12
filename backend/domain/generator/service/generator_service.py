@@ -1,6 +1,6 @@
 import asyncio
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import aioboto3
 from langsmith import traceable
@@ -9,9 +9,9 @@ from core.config import settings
 from domain.generator.contracts.enums import GenerationMode
 from domain.generator.contracts.schemas import (
     AdCopy,
+    GeneratedAdVariant,
     GenerateRequest,
     GenerateResult,
-    GeneratedAdVariant,
     ImproveRequest,
     ProductAnalysis,
     StrategyPlan,
@@ -123,7 +123,7 @@ async def generate_ad(request: GenerateRequest) -> GenerateResult:
                 brand_color=request.brand_color,
                 tone=request.tone,
             )
-            for vid, plan in zip(variant_ids, plans)
+            for vid, plan in zip(variant_ids, plans, strict=True)
         ]
     )
 
@@ -131,7 +131,7 @@ async def generate_ad(request: GenerateRequest) -> GenerateResult:
         generation_id=generation_id,
         mode=GenerationMode.CREATE,
         variants=list(variants),
-        created_at=datetime.now(timezone.utc).isoformat(),
+        created_at=datetime.now(UTC).isoformat(),
     )
 
 
@@ -174,7 +174,7 @@ async def improve_ad(request: ImproveRequest) -> GenerateResult:
                 brand_color=request.brand_color,
                 tone=request.tone,
             )
-            for vid, plan in zip(variant_ids, plans)
+            for vid, plan in zip(variant_ids, plans, strict=True)
         ]
     )
 
@@ -182,5 +182,5 @@ async def improve_ad(request: ImproveRequest) -> GenerateResult:
         generation_id=generation_id,
         mode=GenerationMode.IMPROVE,
         variants=list(variants),
-        created_at=datetime.now(timezone.utc).isoformat(),
+        created_at=datetime.now(UTC).isoformat(),
     )

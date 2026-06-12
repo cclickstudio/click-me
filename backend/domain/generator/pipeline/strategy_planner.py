@@ -11,8 +11,6 @@ _STRATEGY_LABELS = {
     AdStrategy.BENEFIT: "혜택 강조",
     AdStrategy.PROBLEM_SOLVING: "문제 해결",
     AdStrategy.SOCIAL_PROOF: "사회적 증거",
-    AdStrategy.EMOTIONAL: "감성 접근",
-    AdStrategy.URGENCY: "긴급성(FOMO)",
 }
 
 _SYSTEM = """\
@@ -35,8 +33,6 @@ Pain Points: {pain_points}
 - benefit: 혜택 강조
 - problem_solving: 문제 해결
 - social_proof: 사회적 증거
-- emotional: 감성 접근
-- urgency: 긴급성(FOMO)
 
 ## 응답 형식
 서로 다른 전략 2개를 선택하고 각각에 대해 아래 JSON 배열로 반환하세요:
@@ -107,7 +103,8 @@ async def plan_strategies(
         outputs.append(
             StrategyOutput(
                 strategy=strategy,
-                strategy_description=str_or_none(item.get("strategy_description")) or _STRATEGY_LABELS[strategy],
+                strategy_description=str_or_none(item.get("strategy_description"))
+                or _STRATEGY_LABELS[strategy],
                 headline=str_or_none(item.get("headline")) or "",
                 body=str_or_none(item.get("body")) or "",
                 cta=str_or_none(item.get("cta")) or "지금 바로 확인하기",

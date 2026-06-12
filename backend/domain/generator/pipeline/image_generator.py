@@ -5,7 +5,6 @@ from openai import AsyncOpenAI
 
 from domain.generator.contracts.enums import AdSize, AdStrategy, TemplateType
 from domain.generator.contracts.schemas import AdCopy, ProductAnalysis
-from domain.generator.pipeline.template_selector import describe_template
 
 _client = AsyncOpenAI(timeout=120.0)
 
@@ -13,8 +12,6 @@ _STRATEGY_DESCRIPTIONS: dict[AdStrategy, str] = {
     AdStrategy.BENEFIT: "highlighting product benefits and value proposition",
     AdStrategy.PROBLEM_SOLVING: "showing how the product solves customer pain points",
     AdStrategy.SOCIAL_PROOF: "emphasizing trust, reviews, and social credibility",
-    AdStrategy.EMOTIONAL: "evoking emotions and emotional connection with the brand",
-    AdStrategy.URGENCY: "creating urgency and FOMO with limited-time messaging",
 }
 
 _TEMPLATE_LAYOUT: dict[TemplateType, str] = {
@@ -23,8 +20,8 @@ _TEMPLATE_LAYOUT: dict[TemplateType, str] = {
         "product image prominently centered, CTA button at bottom"
     ),
     TemplateType.B: (
-        "Promotional/event layout: bold large promotional text dominant, "
-        "small product image, oversized CTA button"
+        "Problem-solving layout: problem statement prominently at top, "
+        "solution and product image centered, CTA button at bottom"
     ),
     TemplateType.C: (
         "Brand-focused layout: brand logo and colors prominent, "
@@ -65,7 +62,11 @@ async def generate_image(
     brand_color: str | None = None,
     tone: str | None = None,
 ) -> bytes:
-    color_line = f"Brand color: {brand_color}" if brand_color else "Color palette: modern, clean, professional"
+    color_line = (
+        f"Brand color: {brand_color}"
+        if brand_color
+        else "Color palette: modern, clean, professional"
+    )
     tone_line = f"Tone and manner: {tone}" if tone else "Tone: clean, professional, trustworthy"
 
     prompt = _PROMPT_TEMPLATE.format(

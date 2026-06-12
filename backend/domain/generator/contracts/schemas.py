@@ -4,7 +4,6 @@ from pydantic import BaseModel, Field
 
 from domain.generator.contracts.enums import AdSize, AdStrategy, GenerationMode, TemplateType
 
-
 # ── 요청 스키마 ──────────────────────────────────────────────────────────────
 
 
