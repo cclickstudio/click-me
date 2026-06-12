@@ -1,10 +1,12 @@
 import logging
 import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from dotenv import load_dotenv
 
-load_dotenv()
+_BACKEND_ROOT = Path(__file__).resolve().parent.parent
+load_dotenv(_BACKEND_ROOT / ".env")
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -18,6 +20,7 @@ from api.routers import (
     ads,
     billing,
     chat,
+    generator,
     inquiries,
     management,
     personas,
@@ -25,6 +28,7 @@ from api.routers import (
     simulate,
 )
 from core.config import settings
+from domain.generator.adapters.instagram import load_meta_credentials
 from tools.simulation.ssr_scorer import SSRScorer
 
 if not settings.LANGSMITH_API_KEY:
@@ -36,6 +40,13 @@ ssr_scorer = SSRScorer()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    token, ig_user_id, _ = load_meta_credentials()
+    if token and ig_user_id:
+        logger.info("Instagram publisher: MetaGraph (ig_user_id=%s…)", ig_user_id[:6])
+    else:
+        logger.warning(
+            "Instagram publisher: Mock — .env에 META_ACCESS_TOKEN, META_IG_USER_ID 설정 필요"
+        )
     await ssr_scorer.precompute_anchors()
     app.state.ssr_scorer = ssr_scorer
     yield
@@ -78,6 +89,7 @@ app.include_router(personas.router, prefix="/api/personas", tags=["personas"])
 app.include_router(projects.router, prefix="/api/projects", tags=["projects"])
 app.include_router(billing.router, prefix="/api/billing", tags=["billing"])
 app.include_router(management.router, prefix="/api/management", tags=["management"])
+app.include_router(generator.router, prefix="/api/generator", tags=["generator"])
 
 
 @app.get("/health")

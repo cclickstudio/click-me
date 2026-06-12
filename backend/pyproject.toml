@@ -36,6 +36,8 @@ dependencies = [
     # Numeric
     "numpy>=1.26.0",
     "scipy>=1.13.0",
+    # Image (Generator — IG 게시용 JPEG 변환)
+    "pillow>=10.0.0",
     # Utils
     "httpx>=0.27.0",
     "tenacity>=9.0.0",
@@ -92,6 +94,8 @@ ignore = [
 "api/routers/ads.py" = ["E501"]
 # 모델 주석
 "core/models.py" = ["E501"]
+# 한국어 시스템 프롬프트 긴 줄 허용 (generator 파이프라인)
+"domain/generator/**" = ["E501"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["api", "agents", "tools", "core", "domain"]
