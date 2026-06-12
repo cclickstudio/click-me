@@ -41,5 +41,15 @@ class Settings(BaseSettings):
     default_persona_count: int = Field(default=20, ge=1, le=1000)
     max_persona_count: int = Field(default=1000, ge=1)
 
+    # Meta / Instagram Content Publishing (Generator) — 비우면 Mock 게시 모드
+    meta_access_token: str | None = None
+    meta_ig_user_id: str | None = None
+    meta_graph_api_version: str = "v21.0"
+
+    # Generator (광고 생성)
+    generator_text_model: str = "gpt-4o"
+    generator_image_model: str = "gpt-image-1"
+    generator_image_quality: str = "medium"
+
 
 settings = Settings()
