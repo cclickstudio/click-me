@@ -13,7 +13,7 @@ from fastapi.responses import JSONResponse
 
 logger = logging.getLogger("clickme")
 
-from api.routers import admin, ads, chat, inquiries, personas, projects, simulate
+from api.routers import admin, ads, chat, inquiries, management, personas, projects, simulate
 from core.config import settings
 from tools.simulation.ssr_scorer import SSRScorer
 
@@ -66,6 +66,7 @@ app.include_router(admin.router, prefix="/api/admin", tags=["admin"])
 app.include_router(inquiries.router, prefix="/api/inquiries", tags=["inquiries"])
 app.include_router(personas.router, prefix="/api/personas", tags=["personas"])
 app.include_router(projects.router, prefix="/api/projects", tags=["projects"])
+app.include_router(management.router, prefix="/api/management", tags=["management"])
 
 
 @app.get("/health")
