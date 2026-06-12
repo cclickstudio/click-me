@@ -1,4 +1,5 @@
 import AppLayout from '@/components/AppLayout';
+import CreditBalance from '@/components/CreditBalance';
 
 const statCards = [
   { label: '전체 광고', value: '-' },
@@ -19,9 +20,12 @@ export default function Page() {
               광고 캠페인을 관리하고 성과를 추적합니다
             </p>
           </div>
-          <button className="px-4 py-2 bg-[#3182F6] text-white text-sm font-medium rounded-lg hover:bg-[#1B6EEB] transition-colors opacity-40 cursor-not-allowed">
-            + 새 광고 등록
-          </button>
+          <div className="flex items-center gap-3">
+            <CreditBalance />
+            <button className="px-4 py-2 bg-[#3182F6] text-white text-sm font-medium rounded-lg hover:bg-[#1B6EEB] transition-colors opacity-40 cursor-not-allowed">
+              + 새 광고 등록
+            </button>
+          </div>
         </div>
 
         {/* Stat cards */}

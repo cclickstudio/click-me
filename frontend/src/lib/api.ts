@@ -59,4 +59,30 @@ export const api = {
       request("/projects", { method: "POST", body: JSON.stringify(body) }),
     get: (id: string) => request(`/projects/${id}`),
   },
+
+  billing: {
+    createOrder: (amountKrw: number) =>
+      request<{ order_id: string; amount_krw: number; client_key: string }>("/billing/orders", {
+        method: "POST",
+        body: JSON.stringify({ amount_krw: amountKrw }),
+      }),
+    confirm: (body: { payment_key: string; order_id: string; amount_krw: number }) =>
+      request<{ order_id: string; status: string; amount_krw: number; balance_krw: number }>(
+        "/billing/confirm",
+        { method: "POST", body: JSON.stringify(body) },
+      ),
+    balance: () => request<{ org_id: string; balance_krw: number }>("/billing/balance"),
+    history: () =>
+      request<{
+        org_id: string;
+        entries: {
+          entry_id: string;
+          delta_krw: number;
+          balance_after_krw: number;
+          reason: string;
+          ref_id: string;
+          created_at: string;
+        }[];
+      }>("/billing/history"),
+  },
 };
