@@ -6,39 +6,39 @@
 
 ## Key Decisions
 
-| Item | Decision |
-|---|---|
-| Backend | FastAPI (Python only). No Java Spring Boot. |
-| Package managers | uv (backend), pnpm (frontend). Cross-use forbidden. |
-| Architecture | Monolith + partial DDD + SOLID. Single EC2. |
-| Message queue | AWS SQS. No Redis. |
-| Simulation engine | Deepsona (OCEAN) + SSR paper (arXiv 2510.08338). |
-| Scoring | SSR (embedding-based, no LLM). Not DLR (direct number output). |
-| Output format | Distribution. Not a scalar score. |
-| Purchase intent validation | Compare against KOBACO baseline. Other signals are exploratory. |
-| Auth 6.12 | UI only (role selection button). No real JWT. |
-| Auth 7.8 | TBD (JWT self-impl vs Cognito). |
-| A/B comparison | UI in 6.12, YouTube RAG actual feature in 7.8. |
-| Chat advisor | Gemini 2.0 Flash. Persona: CLIO (광고 전략 AI 어드바이저). SSE streaming. |
-| Ad generation | Gemini Flash 3.0 / GPT Image 2 / Gemini Omni. [7.8] |
-| PDF report | Full generation included in 6.12. |
-| Customer inquiry | In-app form → DB storage. |
+| Item                       | Decision                                                                  |
+| -------------------------- | ------------------------------------------------------------------------- |
+| Backend                    | FastAPI (Python only). No Java Spring Boot.                               |
+| Package managers           | uv (backend), pnpm (frontend). Cross-use forbidden.                       |
+| Architecture               | Monolith + partial DDD + SOLID. Single EC2.                               |
+| Message queue              | AWS SQS. No Redis.                                                        |
+| Simulation engine          | Deepsona (OCEAN) + SSR paper (arXiv 2510.08338).                          |
+| Scoring                    | SSR (embedding-based, no LLM). Not DLR (direct number output).            |
+| Output format              | Distribution. Not a scalar score.                                         |
+| Purchase intent validation | Compare against KOBACO baseline. Other signals are exploratory.           |
+| Auth 6.12                  | UI only (role selection button). No real JWT.                             |
+| Auth 7.8                   | TBD (JWT self-impl vs Cognito).                                           |
+| A/B comparison             | UI in 6.12, YouTube RAG actual feature in 7.8.                            |
+| Chat advisor               | Gemini 2.0 Flash. Persona: CLIO (광고 전략 AI 어드바이저). SSE streaming. |
+| Ad generation              | Gemini Flash 3.0 / GPT Image 2 / Gemini Omni. [7.8]                       |
+| PDF report                 | Full generation included in 6.12.                                         |
+| Customer inquiry           | In-app form → DB storage.                                                 |
 
 ---
 
 ## Tech Stack
 
-| Area | Tech | Notes |
-|---|---|---|
-| Frontend | Next.js (TypeScript) + Tailwind CSS | pnpm |
-| Backend + AI | Python FastAPI + LangGraph | uv |
-| DB | NeonDB (PostgreSQL + pgvector) | vector(1536) |
-| Message queue | AWS SQS | Async simulation processing |
-| Storage | AWS S3 | Ad files, generated images |
-| Deploy | Single EC2 instance | Nginx reverse proxy |
-| CI/CD | GitHub Actions | Docker containers |
-| Tracing | LangSmith | AI pipeline tracing |
-| Chat LLM | Google Gemini 2.0 Flash | `google-generativeai>=0.8.0` |
+| Area          | Tech                                | Notes                        |
+| ------------- | ----------------------------------- | ---------------------------- |
+| Frontend      | Next.js (TypeScript) + Tailwind CSS | pnpm                         |
+| Backend + AI  | Python FastAPI + LangGraph          | uv                           |
+| DB            | NeonDB (PostgreSQL + pgvector)      | vector(1536)                 |
+| Message queue | AWS SQS                             | Async simulation processing  |
+| Storage       | AWS S3                              | Ad files, generated images   |
+| Deploy        | Single EC2 instance                 | Nginx reverse proxy          |
+| CI/CD         | GitHub Actions                      | Docker containers            |
+| Tracing       | LangSmith                           | AI pipeline tracing          |
+| Chat LLM      | Google Gemini 2.0 Flash             | `google-generativeai>=0.8.0` |
 
 ---
 
@@ -114,15 +114,15 @@ click-me/                        ← monorepo root
 Persona Factory → Exposure → Deliberation → SSR Scoring → [Debate 7.8] → Aggregation → [Improvement P2]
 ```
 
-| Stage | File | LLM | Temperature |
-|---|---|---|---|
-| Ad Understanding | `tools/ad_analysis/vision.py` | GPT-4o Vision | 0.1 |
-| Persona Factory | `tools/persona/factory.py` | GPT-4o-mini | 0.7 |
-| Exposure | `tools/simulation/exposure.py` | GPT-4o-mini | 0.8 |
-| Deliberation | `tools/simulation/deliberation.py` | GPT-4o-mini | 0.7 |
-| SSR Scoring | `tools/simulation/ssr_scorer.py` | **none** (embedding only) | — |
-| Debate [7.8] | `agents/agent-ad-creator/nodes.py` | Claude Haiku | 0.9 |
-| Aggregation | in `agents/agent-ad-simulator/nodes.py` | **none** | — |
+| Stage            | File                                    | LLM                       | Temperature |
+| ---------------- | --------------------------------------- | ------------------------- | ----------- |
+| Ad Understanding | `tools/ad_analysis/vision.py`           | GPT-4o Vision             | 0.1         |
+| Persona Factory  | `tools/persona/factory.py`              | GPT-4o-mini               | 0.7         |
+| Exposure         | `tools/simulation/exposure.py`          | GPT-4o-mini               | 0.8         |
+| Deliberation     | `tools/simulation/deliberation.py`      | GPT-4o-mini               | 0.7         |
+| SSR Scoring      | `tools/simulation/ssr_scorer.py`        | **none** (embedding only) | —           |
+| Debate [7.8]     | `agents/agent-ad-creator/nodes.py`      | Claude Haiku              | 0.9         |
+| Aggregation      | in `agents/agent-ad-simulator/nodes.py` | **none**                  | —           |
 
 **SSR key point**: DLR (asking LLM for a number directly) causes center-bias (KS 0.26~0.39). SSR embeds free text → cosine similarity against anchors → distribution (KS 0.80~0.88). See `docs/` for full schema.
 
@@ -130,13 +130,13 @@ Persona Factory → Exposure → Deliberation → SSR Scoring → [Debate 7.8] �
 
 ## Output Priorities
 
-| Priority | Item | Target |
-|---|---|---|
-| **P0** | Purchase intent distribution (KOBACO-comparable) | 6.12 |
-| **P0** | Per-persona free text reaction | 6.12 |
-| P1 | Other signal distributions (attention etc.) — **must label as "exploratory"** | 6.12 |
-| P1 | KPI (CTR/CVR proxy), Funnel, LangSmith trace | 6.12 |
-| **P2** | Segment breakdown, share_intent, improvement suggestions | TBD |
+| Priority | Item                                                                          | Target |
+| -------- | ----------------------------------------------------------------------------- | ------ |
+| **P0**   | Purchase intent distribution (KOBACO-comparable)                              | 6.12   |
+| **P0**   | Per-persona free text reaction                                                | 6.12   |
+| P1       | Other signal distributions (attention etc.) — **must label as "exploratory"** | 6.12   |
+| P1       | KPI (CTR/CVR proxy), Funnel, LangSmith trace                                  | 6.12   |
+| **P2**   | Segment breakdown, share_intent, improvement suggestions                      | TBD    |
 
 ---
 
@@ -144,27 +144,27 @@ Persona Factory → Exposure → Deliberation → SSR Scoring → [Debate 7.8] �
 
 ### User
 
-| Path | Screen | Phase |
-|---|---|---|
-| `/` | Landing page | 6.12 |
-| `/sign-in` | Sign in | 6.12 |
-| `/sign-up` | Sign up | 6.12 |
-| `/chat` | AI chat | 6.12 |
-| `/simulation` | Ad simulator | 6.12 |
-| `/generator` | Ad generator (UI skeleton) | 6.12 UI, 7.8 real |
-| `/manage` | Ad management | 6.12 |
-| `/compare` | A/B comparison (UI only) | 6.12 UI, 7.8 real |
+| Path          | Screen                     | Phase             |
+| ------------- | -------------------------- | ----------------- |
+| `/`           | Landing page               | 6.12              |
+| `/sign-in`    | Sign in                    | 6.12              |
+| `/sign-up`    | Sign up                    | 6.12              |
+| `/chat`       | AI chat                    | 6.12              |
+| `/simulation` | Ad simulator               | 6.12              |
+| `/generator`  | Ad generator (UI skeleton) | 6.12 UI, 7.8 real |
+| `/manage`     | Ad management              | 6.12              |
+| `/compare`    | A/B comparison (UI only)   | 6.12 UI, 7.8 real |
 
 ### Admin
 
-| Path | Screen | Phase |
-|---|---|---|
-| `/admin` | Redirects to `/admin/dashboard` | 6.12 |
-| `/admin/dashboard` | Admin dashboard | 6.12 |
-| `/admin/manage-user` | User management | 6.12 |
-| `/admin/chat-log` | Chat history | 6.12 |
-| `/admin/inquiry` | Customer inquiries | 6.12 |
-| `/admin/check` | Usage stats | 6.12 |
+| Path                 | Screen                          | Phase |
+| -------------------- | ------------------------------- | ----- |
+| `/admin`             | Redirects to `/admin/dashboard` | 6.12  |
+| `/admin/dashboard`   | Admin dashboard                 | 6.12  |
+| `/admin/manage-user` | User management                 | 6.12  |
+| `/admin/chat-log`    | Chat history                    | 6.12  |
+| `/admin/inquiry`     | Customer inquiries              | 6.12  |
+| `/admin/check`       | Usage stats                     | 6.12  |
 
 ---
 
@@ -182,10 +182,10 @@ AWS_SECRET_ACCESS_KEY=
 AWS_REGION=ap-northeast-2
 S3_BUCKET_NAME=
 SQS_SIMULATION_QUEUE_URL=
-LANGCHAIN_TRACING_V2=true
-LANGCHAIN_ENDPOINT=https://api.smith.langchain.com
-LANGCHAIN_API_KEY=
-LANGCHAIN_PROJECT=clickme-v2
+LANGSMITH_TRACING_V2=true
+LANGSMITH_ENDPOINT=https://api.smith.langchain.com
+LANGSMITH_API_KEY=
+LANGSMITH_PROJECT=clickme-v2
 
 # frontend/.env.local
 NEXT_PUBLIC_API_URL=http://localhost:8000
@@ -214,10 +214,10 @@ uv run pytest tests/ -v
 
 ## Auth Status
 
-| Phase | Status | Detail |
-|---|---|---|
+| Phase          | Status      | Detail                                            |
+| -------------- | ----------- | ------------------------------------------------- |
 | Phase 1 (6.12) | In progress | Role selection button → local state. No API auth. |
-| Phase 2 (7.8) | TBD | JWT self-impl or AWS Cognito |
+| Phase 2 (7.8)  | TBD         | JWT self-impl or AWS Cognito                      |
 
 Phase 1: admin APIs restricted by `/api/admin/*` path prefix only.
 
@@ -226,13 +226,15 @@ Phase 1: admin APIs restricted by `/api/admin/*` path prefix only.
 ## CI/CD 현황
 
 ### CI — `.github/workflows/ci.yml` ✅ 완료
-| 잡 | 내용 | 상태 |
-|---|---|---|
-| `backend` | ruff lint/format + pytest | ✅ 활성 |
-| `frontend` | ESLint + Next.js build | ✅ 활성 |
-| `docker-build` | Docker 이미지 빌드 검증 | ⏸ 주석 처리 (Secrets 등록 후 활성화) |
+
+| 잡             | 내용                      | 상태                                 |
+| -------------- | ------------------------- | ------------------------------------ |
+| `backend`      | ruff lint/format + pytest | ✅ 활성                              |
+| `frontend`     | ESLint + Next.js build    | ✅ 활성                              |
+| `docker-build` | Docker 이미지 빌드 검증   | ⏸ 주석 처리 (Secrets 등록 후 활성화) |
 
 ### CD — `.github/workflows/cd.yml` ⏳ 미완성
+
 전체 파이프라인 틀은 작성됐으나, **아래 작업 완료 후 주석 해제 필요**:
 
 1. **Docker Hub Secrets 등록** (`DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN`)
@@ -246,22 +248,22 @@ Phase 1: admin APIs restricted by `/api/admin/*` path prefix only.
 
 ## Open Issues
 
-| Item | Scope |
-|---|---|
-| Finalize segment enum list | P2 segment breakdown output |
-| Auth method for 7.8 (JWT vs Cognito) | DB `refresh_tokens`, API auth headers |
-| Define share_intent KPI | P2 output |
-| Remove `simulation_type = 'survey'` | DB enum migration |
-| Select sample ads for demo | KOBACO comparison demo |
-| CD 파이프라인 활성화 (Docker Hub + EC2 Secrets 등록) | 배포 자동화 |
+| Item                                                 | Scope                                 |
+| ---------------------------------------------------- | ------------------------------------- |
+| Finalize segment enum list                           | P2 segment breakdown output           |
+| Auth method for 7.8 (JWT vs Cognito)                 | DB `refresh_tokens`, API auth headers |
+| Define share_intent KPI                              | P2 output                             |
+| Remove `simulation_type = 'survey'`                  | DB enum migration                     |
+| Select sample ads for demo                           | KOBACO comparison demo                |
+| CD 파이프라인 활성화 (Docker Hub + EC2 Secrets 등록) | 배포 자동화                           |
 
 ---
 
 ## Reference Docs
 
-| Task | Doc |
-|---|---|
-| API endpoints | `docs/api-spec.md` |
+| Task                          | Doc                 |
+| ----------------------------- | ------------------- |
+| API endpoints                 | `docs/api-spec.md`  |
 | DB schema / Alembic migration | `docs/db-schema.md` |
 
 ---
@@ -270,12 +272,12 @@ Phase 1: admin APIs restricted by `/api/admin/*` path prefix only.
 
 ### 커밋 메시지 컨벤션
 
-| 타입 | 사용 상황 |
-|---|---|
-| `add` | 새 기능, 새 파일 추가 |
-| `delete` | 파일 또는 기능 삭제 |
-| `edit` | 기존 기능 수정, 리팩토링 |
-| `fix` | 버그 수정, 오류 해결 |
+| 타입     | 사용 상황                |
+| -------- | ------------------------ |
+| `add`    | 새 기능, 새 파일 추가    |
+| `delete` | 파일 또는 기능 삭제      |
+| `edit`   | 기존 기능 수정, 리팩토링 |
+| `fix`    | 버그 수정, 오류 해결     |
 
 형식: `타입: 한국어 설명`
 예시: `add: 시뮬레이션 기능 추가`
@@ -316,6 +318,7 @@ cd backend && uv run ruff format . && uv run ruff check . --fix
 ```
 
 전체 커밋 명령어도 함께 출력:
+
 ```bash
 git add .
 git commit -m "타입: 한국어 설명"
@@ -336,6 +339,7 @@ gh --version
 - **설치되어 있지 않으면** → 아래 순서로 설치 방법을 단계별로 안내한 뒤 명령어를 제공한다
 
 **Windows (winget)**
+
 ```bash
 winget install --id GitHub.cli
 # 설치 후 터미널 재시작
@@ -344,6 +348,7 @@ gh --version    # 설치 확인
 ```
 
 **macOS (Homebrew)**
+
 ```bash
 brew install gh
 gh auth login
@@ -351,6 +356,7 @@ gh --version
 ```
 
 **Linux (apt)**
+
 ```bash
 sudo apt install gh
 gh auth login

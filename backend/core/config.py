@@ -24,10 +24,10 @@ class Settings(BaseSettings):
     gemini_api_key: str | None = None
 
     # LangSmith
-    langchain_tracing_v2: bool = True
-    langchain_endpoint: str = "https://api.smith.langchain.com"
-    langchain_api_key: str
-    langchain_project: str = "clickme-v2"
+    LANGSMITH_TRACING_V2: bool = True
+    LANGSMITH_ENDPOINT: str = "https://api.smith.langchain.com"
+    LANGSMITH_API_KEY: str
+    LANGSMITH_PROJECT: str = "clickme-v2"
 
     # AWS
     aws_access_key_id: str
