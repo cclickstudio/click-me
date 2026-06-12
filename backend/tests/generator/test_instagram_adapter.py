@@ -2,7 +2,6 @@
 
 import httpx
 
-from core.config import settings
 from domain.generator.adapters.instagram import (
     MetaGraphPublisher,
     MockInstagramPublisher,
@@ -20,14 +19,18 @@ async def test_mock_publisher_returns_fake_ids():
 
 
 def test_build_publisher_mock_without_credentials(monkeypatch):
-    monkeypatch.setattr(settings, "meta_access_token", None)
-    monkeypatch.setattr(settings, "meta_ig_user_id", None)
+    monkeypatch.setattr(
+        "domain.generator.adapters.instagram.dotenv_values",
+        lambda _: {"META_ACCESS_TOKEN": "", "META_IG_USER_ID": ""},
+    )
     assert isinstance(build_publisher(), MockInstagramPublisher)
 
 
 def test_build_publisher_real_with_credentials(monkeypatch):
-    monkeypatch.setattr(settings, "meta_access_token", "token")
-    monkeypatch.setattr(settings, "meta_ig_user_id", "1789")
+    monkeypatch.setattr(
+        "domain.generator.adapters.instagram.dotenv_values",
+        lambda _: {"META_ACCESS_TOKEN": "token", "META_IG_USER_ID": "1789"},
+    )
     assert isinstance(build_publisher(), MetaGraphPublisher)
 
 

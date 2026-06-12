@@ -12,9 +12,10 @@ import uuid
 from typing import Protocol
 
 import httpx
+from dotenv import dotenv_values
 from pydantic import BaseModel, Field
 
-from core.config import settings
+from core.config import ENV_FILE, Settings
 
 logger = logging.getLogger("clickme")
 
@@ -94,7 +95,12 @@ class MetaGraphPublisher:
                 )
         except Exception as exc:
             logger.exception("Instagram 게시 실패")
-            return PublishOutcome(success=False, error=str(exc), raw=raw)
+            meta_err = raw.get("create_container", {}).get("error", {})
+            if isinstance(meta_err, dict) and meta_err.get("message"):
+                error = meta_err["message"]
+            else:
+                error = str(exc)
+            return PublishOutcome(success=False, error=error, raw=raw)
 
 
 class MockInstagramPublisher:
@@ -115,12 +121,33 @@ class MockInstagramPublisher:
         )
 
 
+def load_meta_credentials() -> tuple[str | None, str | None, str]:
+    """`.env` 파일에서 직접 읽기 — 서버 기동 시 os.environ에 박힌 만료 토큰보다 우선."""
+    if ENV_FILE.exists():
+        vals = dotenv_values(ENV_FILE)
+        token = (vals.get("META_ACCESS_TOKEN") or "").strip() or None
+        ig_user_id = (vals.get("META_IG_USER_ID") or "").strip() or None
+        api_version = (vals.get("META_GRAPH_API_VERSION") or "v21.0").strip()
+        return token, ig_user_id, api_version
+    cfg = Settings()
+    token = (cfg.meta_access_token or "").strip() or None
+    ig_user_id = (cfg.meta_ig_user_id or "").strip() or None
+    return token, ig_user_id, cfg.meta_graph_api_version
+
+
 def build_publisher() -> InstagramPublisher:
     """자격증명 유무로 실제/Mock 어댑터 자동 선택."""
-    if settings.meta_access_token and settings.meta_ig_user_id:
+    token, ig_user_id, api_version = load_meta_credentials()
+    if token and ig_user_id:
+        logger.info("Instagram: MetaGraphPublisher (ig_user_id=%s…)", ig_user_id[:6])
         return MetaGraphPublisher(
-            access_token=settings.meta_access_token,
-            ig_user_id=settings.meta_ig_user_id,
-            api_version=settings.meta_graph_api_version,
+            access_token=token,
+            ig_user_id=ig_user_id,
+            api_version=api_version,
         )
+    logger.warning(
+        "Instagram: Mock 모드 — META_ACCESS_TOKEN·META_IG_USER_ID 확인 (token=%s ig_id=%s)",
+        "set" if token else "missing",
+        "set" if ig_user_id else "missing",
+    )
     return MockInstagramPublisher()

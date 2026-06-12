@@ -1,9 +1,16 @@
+from pathlib import Path
+
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+BACKEND_ROOT = Path(__file__).resolve().parent.parent
+ENV_FILE = BACKEND_ROOT / ".env"
+
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=str(ENV_FILE), env_file_encoding="utf-8", extra="ignore"
+    )
 
     # App
     app_env: str = "development"
@@ -23,10 +30,10 @@ class Settings(BaseSettings):
     # Google Gemini
     gemini_api_key: str | None = None
 
-    # LangSmith
+    # LangSmith — API 키 없으면 트레이싱 비활성(로컬 기동 가능)
     LANGSMITH_TRACING_V2: bool = True
     LANGSMITH_ENDPOINT: str = "https://api.smith.langchain.com"
-    LANGSMITH_API_KEY: str
+    LANGSMITH_API_KEY: str = ""
     LANGSMITH_PROJECT: str = "clickme-v2"
 
     # AWS

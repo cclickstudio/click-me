@@ -1,5 +1,8 @@
 """광고 제너레이터 API — 생성 시작 / SSE 스트림 / 결과 조회 / 후보 선택 / 이력."""
 
+import os
+from pathlib import Path
+
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -22,6 +25,41 @@ class CandidateSelectRequest(BaseModel):
 class PublishRequest(BaseModel):
     candidate_id: str
     caption: str = ""
+
+
+@router.get("/instagram-status")
+async def instagram_status():
+    """Meta 자격증명 로드 상태 진단 (토큰 값은 노출하지 않음)."""
+    from dotenv import dotenv_values
+
+    from core.config import settings as cached
+    from domain.generator.adapters.instagram import build_publisher, load_meta_credentials
+
+    token, ig_id, api_version = load_meta_credentials()
+    publisher = build_publisher()
+    env_path = _backend_env_path()
+    file_token = (
+        (dotenv_values(env_path).get("META_ACCESS_TOKEN") or "") if env_path.exists() else ""
+    )
+    proc_token = os.environ.get("META_ACCESS_TOKEN") or ""
+    return {
+        "publisher": type(publisher).__name__,
+        "cwd": os.getcwd(),
+        "env_file": str(env_path),
+        "env_file_exists": env_path.exists(),
+        "file_token_len": len(file_token.strip()),
+        "process_token_len": len(proc_token.strip()),
+        "active_token_len": len(token or ""),
+        "tokens_in_sync": len(file_token.strip()) == len(token or ""),
+        "fresh_ig_user_id_prefix": (ig_id or "")[:6] or None,
+        "api_version": api_version,
+        "cached_meta_token_set": bool(cached.meta_access_token),
+        "cached_meta_ig_set": bool(cached.meta_ig_user_id),
+    }
+
+
+def _backend_env_path() -> Path:
+    return Path(__file__).resolve().parents[2] / ".env"
 
 
 @router.post("/generations", response_model=GenerationTaskResponse)
