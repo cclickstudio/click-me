@@ -18,18 +18,20 @@ async def test_mock_publisher_returns_fake_ids():
     assert outcome.raw["caption"] == "캡션"
 
 
+# build_publisher의 분기 로직만 검증 — load_meta_credentials를 직접 패치해
+# .env 파일 유무(로컬 vs CI)에 의존하지 않도록 한다.
 def test_build_publisher_mock_without_credentials(monkeypatch):
     monkeypatch.setattr(
-        "domain.generator.adapters.instagram.dotenv_values",
-        lambda _: {"META_ACCESS_TOKEN": "", "META_IG_USER_ID": ""},
+        "domain.generator.adapters.instagram.load_meta_credentials",
+        lambda: (None, None, "v21.0"),
     )
     assert isinstance(build_publisher(), MockInstagramPublisher)
 
 
 def test_build_publisher_real_with_credentials(monkeypatch):
     monkeypatch.setattr(
-        "domain.generator.adapters.instagram.dotenv_values",
-        lambda _: {"META_ACCESS_TOKEN": "token", "META_IG_USER_ID": "1789"},
+        "domain.generator.adapters.instagram.load_meta_credentials",
+        lambda: ("token", "1789", "v21.0"),
     )
     assert isinstance(build_publisher(), MetaGraphPublisher)
 
