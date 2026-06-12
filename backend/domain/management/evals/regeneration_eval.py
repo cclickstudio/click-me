@@ -278,3 +278,67 @@ async def run_agent_eval(
             )
         )
     return summarize(records, fixture_version=fixture_version)
+
+
+# ── 기본 tool 체인 실측 — 생성·시뮬·미리보기 구현체를 끝까지 관통 (W3) ──
+
+
+async def run_default_tools_eval(fixture_version: str = "v1") -> EvalReport:
+    """fixture 진단마다 기본 tool 구성(regeneration_tools)으로 agent를 실측한다.
+
+    스텁 하니스(run_agent_eval)와 달리 생성·채점·미리보기 구현체가 실제로 돈다 —
+    API 키 없는 환경은 결정론 폴백(Template/Heuristic)으로 같은 결과를 재현한다.
+    """
+    from domain.management.agents.regeneration_tools import (  # noqa: PLC0415 — 순환 방지
+        build_regeneration_agent,
+    )
+
+    path = FIXTURES_DIR / f"diagnosis_cases_{fixture_version}.json"
+    cases = json.loads(path.read_text(encoding="utf-8"))
+    agent = build_regeneration_agent()
+    records: list[RegenerationRecord] = []
+    for case in cases:
+        diagnosis = DiagnosisResult.model_validate(case["diagnosis"])
+        context = RegenerationContext(**_EVAL_CONTEXT_DEFAULTS)
+        proposal = await agent.propose(diagnosis, context)
+        scores, guard_ok, valid = _score_proposal(proposal, banned_ids=set())
+        records.append(
+            RegenerationRecord(
+                case_id=case["case_id"],
+                baseline_score=case["baseline_score"],
+                candidate_scores=scores,
+                guardrail_passed=guard_ok,
+                proposal_valid=valid,
+                fixture_version=fixture_version,
+            )
+        )
+    return summarize(records, fixture_version=fixture_version)
+
+
+def _print_report(title: str, report: EvalReport) -> None:
+    print(f"\n── {title} (fixture {report.fixture_version}, {report.total_cases}케이스) ──")
+    print(f"  승률(개선율)       {report.win_rate:>6.1%}  (목표 ≥ {WIN_RATE_TARGET:.0%})")
+    print(f"  가드레일 통과율    {report.guardrail_pass_rate:>6.1%}")
+    print(f"  schema 준수율      {report.schema_compliance_rate:>6.1%}")
+    print(f"  tool-call 성공률   {report.tool_call_success_rate:>6.1%}")
+    print(f"  도구실패 복구율    {report.tool_failure_recovery_rate:>6.1%}")
+    if report.failure_breakdown:
+        print(f"  실패 사유          {report.failure_breakdown}")
+    print(f"  목표 충족          {'✅' if report.meets_win_rate_target else '❌'}")
+
+
+def main() -> None:  # pragma: no cover — 수동 실행 진입점
+    """실행: cd backend && uv run python -m domain.management.evals.regeneration_eval"""
+    import asyncio  # noqa: PLC0415
+    import sys  # noqa: PLC0415
+
+    if sys.stdout.encoding and sys.stdout.encoding.lower() != "utf-8":
+        sys.stdout.reconfigure(encoding="utf-8")  # type: ignore[union-attr]
+
+    _print_report("① 채점 fixture eval", run_eval())
+    _print_report("② agent 실행형 eval (스텁 tool)", asyncio.run(run_agent_eval()))
+    _print_report("③ agent 실측 eval (기본 tool 체인)", asyncio.run(run_default_tools_eval()))
+
+
+if __name__ == "__main__":
+    main()
