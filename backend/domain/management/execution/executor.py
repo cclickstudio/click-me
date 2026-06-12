@@ -142,7 +142,21 @@ class Executor:
             )
         run.advance(RunStatus.VALIDATED)
 
-        # 6) 지출 후 총액 재계산 → 소프트캡 판정 → 멱등키 선점
+        # 6) 멱등 재생 → 지출 후 총액 재계산 → 소프트캡 판정 → 멱등키 선점
+        # 완료된 중복 제출은 예산 평가 전에 기존 결과를 재생한다 — 재생이 예산을
+        # 두 번 소모하면 게이트 #1(같은 키 = 실행 1건)이 잔액 한도에서 깨진다.
+        key = build_idempotency_key(action, proposal)
+        replayed = self._idempotency.get_result(key)
+        if replayed is not None:
+            self._record(
+                run,
+                action,
+                proposal,
+                "executor.duplicate_suppressed",
+                {"idempotency_key": key, "replayed": True},
+            )
+            return replayed
+
         budget = self._budget_for(action.tenant_id)
         decision = budget.evaluate(proposal.max_total_spend_krw)
         if decision is BudgetDecision.BLOCK:
@@ -160,18 +174,15 @@ class Executor:
         if decision is BudgetDecision.WARN:
             self._record(run, action, proposal, "executor.softcap_warn", {"threshold": "90%"})
 
-        key = build_idempotency_key(action, proposal)
         if not self._idempotency.reserve(key):
-            existing = self._idempotency.get_result(key)
+            # 선점됐는데 결과가 없다 = 동시 요청이 호출 진행 중 (in-flight)
             self._record(
                 run,
                 action,
                 proposal,
                 "executor.duplicate_suppressed",
-                {"idempotency_key": key, "replayed": existing is not None},
+                {"idempotency_key": key, "replayed": False},
             )
-            if existing is not None:
-                return existing  # 게이트 #1 — 같은 키는 실행 없이 기존 결과 재생
             return self._reject(
                 run, action, proposal, FailureReason.PLATFORM_ERROR, "멱등키 선점됨(in-flight)"
             )

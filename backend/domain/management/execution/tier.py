@@ -77,3 +77,13 @@ class TenantBudgetRegistry:
         if tenant_id not in self._authorities:
             self._authorities[tenant_id] = BudgetAuthority(limit_krw=self._default_limit_krw)
         return self._authorities[tenant_id]
+
+    def set_limit(self, tenant_id: str, limit_krw: int) -> None:
+        """한도 동기화 — 외부 원천(예: 결제 크레딧 잔액)이 한도가 될 때 사용.
+
+        spent는 유지한 채 limit만 갱신한다. management는 billing을 import하지 않으며,
+        연결은 합성(wiring) 지점에서만 한다.
+        """
+        if limit_krw < 0:
+            raise ValueError("KRW 음수 금지")
+        self.for_tenant(tenant_id).limit_krw = limit_krw
