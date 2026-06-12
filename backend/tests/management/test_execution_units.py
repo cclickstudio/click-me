@@ -5,6 +5,8 @@ import pytest
 from domain.management.contracts.enums import FailureReason, ProposalStatus, ResultStatus
 from domain.management.evals.regeneration_eval import (
     RegenerationRecord,
+    run_eval,
+    schema_compliance_rate,
     summarize,
     tool_failure_recovery_rate,
     win_rate,
@@ -139,11 +141,30 @@ def test_recovery_rate_only_considers_failed_tool_cases():
     assert tool_failure_recovery_rate(records) == pytest.approx(0.5)
 
 
+def test_schema_compliance_counts_only_reached_proposals():
+    records = [
+        _record(proposal_valid=True),
+        _record(case_id="case-2", proposal_valid=False),
+        _record(case_id="case-3", candidate_scores=(), proposal_valid=True),  # 미도달 — 제외
+    ]
+    assert schema_compliance_rate(records) == pytest.approx(0.5)
+
+
 def test_summary_reports_target_and_fixture_version():
     report = summarize([_record()], fixture_version="v1")
     assert report.fixture_version == "v1"
     assert report.win_rate == 1.0
+    assert report.schema_compliance_rate == 1.0
     assert report.meets_win_rate_target
+
+
+def test_run_eval_loads_v1_fixture_and_scores_it():
+    """B-4 실행 진입점 — cases_v1.json 8케이스 기계 채점."""
+    report = run_eval("v1")
+    assert report.total_cases == 8
+    assert report.fixture_version == "v1"
+    assert 0.0 <= report.win_rate <= 1.0
+    assert report.failure_breakdown.get(str(FailureReason.TIMEOUT)) == 1
 
 
 # ── ExecutionService ────────────────────────────────────────────
