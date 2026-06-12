@@ -1,5 +1,7 @@
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from domain.billing.toss_client import require_test_key
 
 
 class Settings(BaseSettings):
@@ -26,7 +28,7 @@ class Settings(BaseSettings):
     # LangSmith
     LANGSMITH_TRACING_V2: bool = True
     LANGSMITH_ENDPOINT: str = "https://api.smith.langchain.com"
-    LANGSMITH_API_KEY: str
+    LANGSMITH_API_KEY: str = ""  # 미설정 시 main.py가 트레이싱 비활성화
     LANGSMITH_PROJECT: str = "clickme-v2"
 
     # AWS
@@ -40,6 +42,16 @@ class Settings(BaseSettings):
     # Simulation
     default_persona_count: int = Field(default=20, ge=1, le=1000)
     max_persona_count: int = Field(default=1000, ge=1)
+
+    # Toss Payments — 테스트 키 전용 (기본값 = 토스 공식 문서 공개 샌드박스 키)
+    # 라이브 키 주입 시 기동 거부 — 실돈 결제는 7/8 Won't
+    toss_client_key: str = "test_gck_docs_Ovk5rk1EwkEbP0W43n07xlzm"
+    toss_secret_key: str = "test_gsk_docs_OaPz8L5KdmQXkzRz3y47BMw6"
+
+    @field_validator("toss_client_key", "toss_secret_key")
+    @classmethod
+    def _toss_keys_must_be_test(cls, value: str) -> str:
+        return require_test_key(value)
 
 
 settings = Settings()

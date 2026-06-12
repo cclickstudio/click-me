@@ -7,6 +7,9 @@
 - 진단(detection): 가짜 DiagnosisResult를 직접 만들어 투입
 - 승인(approval.py): §8 1주차 운영 원칙의 "동기 즉시승인 스텁"과 동일한 형태로 수동 발급
 실행 경로는 전부 실제 코드: RegenerationAgent → Executor → MetaAdsWriter(DRY_RUN).
+
+비용 관리: 결제(토스 테스트 모드) 충전 잔액 = 집행 한도(BudgetAuthority) → 실행 성공 시 차감.
+데모에서는 토스 호출만 대역(Fake) — 실제 결제 경로는 FE 위젯 → /api/billing 으로 검증.
 """
 # ruff: noqa: E402 — sys.path 부트스트랩 후 import (스크립트 단독 실행 지원)
 
@@ -18,6 +21,7 @@ from uuid import uuid4
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # backend/를 모듈 경로에 추가
 
+from domain.billing.service.billing_service import BillingService
 from domain.management.adapters.meta.writer import MetaAdsWriter
 from domain.management.agents.regeneration import (
     CreativeCandidate,
@@ -32,7 +36,14 @@ from domain.management.execution.service.execution_service import (
     ExecutionService,
     InMemoryProposalRepository,
 )
-from domain.management.execution.tier import BudgetAuthority
+from domain.management.execution.tier import TenantBudgetRegistry
+
+
+class DemoToss:
+    """토스 confirm 대역 — 실제 호출은 FE 위젯 → /api/billing 경로로 검증."""
+
+    async def confirm(self, payment_key, order_id, amount_krw):
+        return {"paymentKey": payment_key, "orderId": order_id, "totalAmount": amount_krw}
 
 
 class DemoGenerator:
@@ -58,6 +69,14 @@ def section(title: str) -> None:
 
 async def main() -> None:
     now = datetime.now(UTC)
+
+    # ── 0) 결제 충전 — 잔액이 곧 집행 한도가 된다 ───────────────
+    billing = BillingService(DemoToss())
+    order = billing.create_order("org-demo", 500_000)
+    await billing.confirm("pay-demo-1", order.order_id, 500_000)
+    section("0) 크레딧 충전 (토스 테스트 모드 대역)")
+    print(f"충전 금액   : {order.amount_krw:,} KRW")
+    print(f"충전 후 잔액: {billing.balance('org-demo'):,} KRW")
 
     # ── 1) 🅰 진단 대체 입력 (contracts 경유) ──────────────────
     diagnosis = DiagnosisResult(
@@ -115,12 +134,14 @@ async def main() -> None:
     async def state_provider(_ad_account_id: str) -> str:
         return "sv-1"
 
-    budget = BudgetAuthority(limit_krw=1_000_000)
+    # 잔액 = 집행 한도 — billing↔management 연결은 이 합성 지점에서만 (상호 import 없음)
+    budgets = TenantBudgetRegistry(default_limit_krw=0)
+    budgets.set_limit("org-demo", billing.balance("org-demo"))
     executor = Executor(
         MetaAdsWriter(mode=ExecutionMode.DRY_RUN),
         idempotency=InMemoryIdempotencyStore(),
         audit=audit,
-        budget_for=lambda _tenant_id: budget,
+        budget_for=budgets.for_tenant,
         state_version_provider=state_provider,
         current_policy_version="approval-policy-v1",
     )
@@ -138,6 +159,17 @@ async def main() -> None:
     print("audit events    :", [e.category for e in audit.for_approval(action.approval_id)])
     replay = await service.handle(action)  # 같은 승인 재제출
     print("duplicate replay:", replay.result_id == result.result_id, "(같은 result_id 재생)")
+
+    # ── 6) 비용 차감 — 실행 성공분을 크레딧 원장에 기록 ─────────
+    section("6) 비용 관리 — 집행 성공분 원장 차감")
+    if result.status.value in ("success", "pending_review"):
+        spend = proposal.max_total_spend_krw
+        if spend > 0:
+            billing.record_spend("org-demo", spend, ref_id=action.approval_id)
+        print(f"집행 차감   : {spend:,} KRW")
+    print(f"차감 후 잔액: {billing.balance('org-demo'):,} KRW")
+    for entry in billing.history("org-demo"):
+        print(f"  원장: {entry.reason:>6} {entry.delta_krw:+,} → 잔액 {entry.balance_after_krw:,}")
 
 
 if __name__ == "__main__":
