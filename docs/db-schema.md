@@ -16,6 +16,7 @@
 | `persona_responses` new columns | `ocean`, `free_text_reaction`, `exposure_output`, `deliberation_output` added |
 | `simulations` | `persona_config` JSONB includes OCEAN settings |
 | `inquiries` table | New table added (customer inquiries) |
+| `ad_generations` / `ad_generation_candidates` / `ad_publish_logs` | Generator pipeline tables (migration 003) |
 | `calibration_data` | Not implemented (TBD). Table definition retained. |
 | `simulation_type` enum | `'survey'` removal pending (open issue) |
 | `refresh_tokens` | Phase 1 has no auth. Table definition retained. |
@@ -283,6 +284,53 @@ CREATE TABLE inquiries (
 );
 
 -- ============================================================
+-- Ad Generator (생성모드 — migration 003)
+-- ============================================================
+
+CREATE TABLE ad_generations (
+    id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    project_id            UUID REFERENCES projects(id) ON DELETE SET NULL,
+    status                VARCHAR(20) NOT NULL DEFAULT 'pending',  -- pending | running | completed | failed
+    input                 JSONB NOT NULL,
+    product_analysis      JSONB,
+    strategies            JSONB,
+    selected_candidate_id UUID,
+    error_message         TEXT,
+    created_at            TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at            TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE ad_generation_candidates (
+    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    generation_id UUID NOT NULL REFERENCES ad_generations(id) ON DELETE CASCADE,
+    idx           SMALLINT NOT NULL,
+    strategy      JSONB,
+    template_id   VARCHAR(10),
+    copy          JSONB,
+    image_prompt  TEXT,
+    s3_key        VARCHAR(512),
+    qa_result     JSONB,
+    qa_passed     BOOLEAN,
+    explanation   JSONB,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE ad_publish_logs (
+    id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    generation_id    UUID REFERENCES ad_generations(id) ON DELETE SET NULL,
+    candidate_id     UUID REFERENCES ad_generation_candidates(id) ON DELETE SET NULL,
+    platform         VARCHAR(20) NOT NULL DEFAULT 'instagram',
+    status           VARCHAR(20) NOT NULL,  -- published | failed | mocked
+    ig_container_id  VARCHAR(100),
+    ig_media_id      VARCHAR(100),
+    caption          TEXT,
+    request_payload  JSONB,
+    response_payload JSONB,
+    error_message    TEXT,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- ============================================================
 -- Chat Sessions / Messages
 -- ============================================================
 
@@ -367,6 +415,7 @@ CREATE INDEX idx_persona_resp_seg   ON persona_responses(segment);
 CREATE INDEX idx_chat_sessions_user ON chat_sessions(user_id);
 CREATE INDEX idx_chat_msgs_session  ON chat_messages(session_id, created_at);
 CREATE INDEX idx_inquiries_resolved ON inquiries(is_resolved, created_at);
+CREATE INDEX idx_ad_generation_candidates_generation ON ad_generation_candidates(generation_id);
 CREATE INDEX idx_audit_created      ON audit_logs(created_at DESC);
 
 -- pgvector IVFFlat (for RAG persona search)
@@ -408,7 +457,8 @@ backend/
     ├── alembic.ini
     └── versions/
         ├── 001_initial_schema.py       ← v1.0 table creation
-        └── 002_v2_persona_signals.py   ← persona_responses signals → distribution structure
+        ├── 002_v2_persona_signals.py   ← persona_responses signals → distribution structure
+        └── 003_add_generator_tables.py ← ad_generations / candidates / publish_logs
 ```
 
 ### Key Migration (001→002)
@@ -459,6 +509,9 @@ organizations
         └── chat_sessions (N)
             └── chat_messages (N)
         └── generated_ads (N)              ← [7.8]
+        └── ad_generations (N)             ← 생성모드 (6.12)
+            └── ad_generation_candidates (3 per generation)
+            └── ad_publish_logs (N)
 
 inquiries (standalone)        ← v2.0 new
 persona_templates (standalone) ← for RAG
