@@ -168,6 +168,8 @@ class RegenerationAgent:
         best = max(survivors, key=lambda c: c.sim_score or 0.0) if survivors else None
         if best is not None:
             best = await self._attach_preview(best)
+            # 미리보기가 제안 evidence에 실리도록 생존자 목록에도 반영
+            survivors = [best if c.candidate_id == best.candidate_id else c for c in survivors]
         return {"survivors": survivors, "best": best}
 
     def _route_after_score(self, state: RegenState) -> str:
