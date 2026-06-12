@@ -1,0 +1,17 @@
+{
+  "schema_version": "1.0",
+  "result_id": "res-0001",
+  "approval_id": "appr-0001",
+  "status": "success",
+  "failure_reason": null,
+  "platform_response_snapshot": {
+    "targets": [
+      {
+        "target": "camp-001",
+        "status": "success"
+      }
+    ]
+  },
+  "executed_at": "2026-06-12T09:00:03Z",
+  "idempotency_key": "3f1a000000000000000000000000000000000000000000000000000000000000"
+}

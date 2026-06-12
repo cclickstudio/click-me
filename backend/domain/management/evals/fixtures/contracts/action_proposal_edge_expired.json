@@ -1,0 +1,33 @@
+{
+  "schema_version": "1.0",
+  "proposal_id": "prop-0002",
+  "tenant_id": "org-1111",
+  "ad_account_id": "act_001",
+  "target_object_ids": [
+    "camp-001",
+    "camp-002"
+  ],
+  "action_type": "replace_creative",
+  "action_tier": 3,
+  "evidence_metrics": {
+    "quality_ranking": "below_average_35",
+    "candidates": [
+      {
+        "candidate_id": "cand-1",
+        "sim_score": 0.72,
+        "preview_url": null
+      }
+    ]
+  },
+  "metrics_as_of": "2026-06-11T08:00:00Z",
+  "hypothesis": "품질 저하 — 시안 교체 제안",
+  "confidence": 0.6,
+  "expected_state_version": "sv-41",
+  "budget_before_krw": 50000,
+  "budget_after_krw": 70000,
+  "max_total_spend_krw": 490000,
+  "expires_at": "2026-06-12T08:59:00Z",
+  "proposal_hash": "c6b654bd3291aba6d6c3f2146d44f064b7bf0dec6d961260453af545eed2f912",
+  "approval_policy_version": "approval-policy-v1",
+  "status": "pending"
+}

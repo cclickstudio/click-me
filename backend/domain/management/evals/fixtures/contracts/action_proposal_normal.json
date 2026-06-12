@@ -1,0 +1,27 @@
+{
+  "schema_version": "1.0",
+  "proposal_id": "prop-0001",
+  "tenant_id": "org-1111",
+  "ad_account_id": "act_001",
+  "target_object_ids": [
+    "camp-001"
+  ],
+  "action_type": "pause",
+  "action_tier": 1,
+  "evidence_metrics": {
+    "ctr": 0.001,
+    "impressions_24h": 120,
+    "expected_impressions_24h": 4800
+  },
+  "metrics_as_of": "2026-06-12T09:00:00Z",
+  "hypothesis": "입찰 패배로 노출 급감 — 악화 광고 일시 중지",
+  "confidence": 0.85,
+  "expected_state_version": "sv-42",
+  "budget_before_krw": 50000,
+  "budget_after_krw": 50000,
+  "max_total_spend_krw": 0,
+  "expires_at": "2026-06-13T09:00:00Z",
+  "proposal_hash": "d80928368bf68b2d1b659c9383a4f8b3fe2010acad6fcd8b2f08522f92cfa741",
+  "approval_policy_version": "approval-policy-v1",
+  "status": "pending"
+}

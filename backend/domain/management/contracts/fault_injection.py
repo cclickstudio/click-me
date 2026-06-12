@@ -1,16 +1,10 @@
-"""★① contracts — FaultMode / FaultConfig. 🅱가 executor 테스트 시 import."""
+"""[이전 경로 호환 shim] FaultMode/FaultConfig 정본은 enums.py / schemas.py.
 
-from enum import StrEnum
+v2.0 §1: 고장 주입은 별도 파일 없이 기존 enums.py/schemas.py 안에서 해결한다.
+기존 import 경로가 깨지지 않도록 재수출만 유지 — 새 코드는 정본 경로를 쓸 것.
+"""
 
-from pydantic import BaseModel
+from domain.management.contracts.enums import FaultMode
+from domain.management.contracts.schemas import FaultConfig
 
-
-class FaultMode(StrEnum):
-    WRITE_TIMEOUT = "write_timeout"
-    REVIEW_STUCK = "review_stuck"
-    RATE_LIMITED = "rate_limited"
-
-
-class FaultConfig(BaseModel):
-    mode: FaultMode
-    probability: float = 1.0
+__all__ = ["FaultConfig", "FaultMode"]

@@ -1,0 +1,14 @@
+{
+  "schema_version": "1.0",
+  "approval_id": "appr-0001",
+  "proposal_id": "prop-0001",
+  "proposal_hash": "d80928368bf68b2d1b659c9383a4f8b3fe2010acad6fcd8b2f08522f92cfa741",
+  "tenant_id": "org-1111",
+  "approver_id": "AUTO",
+  "action_tier": 1,
+  "approved_at": "2026-06-12T09:00:00Z",
+  "expires_at": "2026-06-12T09:15:00Z",
+  "approval_policy_version": "approval-policy-v1",
+  "expected_state_version": "sv-42",
+  "execution_mode": "mock"
+}
