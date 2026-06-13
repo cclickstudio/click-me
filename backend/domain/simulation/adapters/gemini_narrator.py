@@ -20,7 +20,7 @@ def _build_prompt(persona: Persona) -> str:
         f"- 나이: {persona.age}\n"
         f"- 성별: {persona.gender}\n"
         f"- 지역: {persona.region}\n"
-        f"- OCEAN(1~5): {persona.ocean}\n"
+        f"- OCEAN(표준화 점수, 양수=평균이상/음수=평균이하): {persona.ocean}\n"
         f"- 미디어 행동: {persona.media_behavior}\n"
         f"- 보유 소비가치: {[k for k, v in persona.consumption_values.items() if v]}\n"
     )

@@ -8,7 +8,7 @@
 | 분포 | 상태 | 파일 | 비고 |
 |---|---|---|---|
 | 소비가치 응답률 | ✅ real(인용) | `distributions/consumption_values.json` | 대학내일20대연구소 공개 % |
-| OCEAN 연령밴드 | ◐ real(논문 5유형 클러스터) / **pending**(유형비율·정확 mean·sd) | `distributions/ocean_age_bands.json` | 5유형 앵커로 성격 분산 grounding. 정확 비율/수치는 논문 표에서 추출 필요 |
+| OCEAN 성격 | ✅ **real** | `distributions/ocean_age_bands.json` | 논문 Table 1 factor score mean·sd + 실 유형비율(PDF 추출 완료) |
 | 인구 연령×성별 | ◔ **placeholder** | `distributions/population_age_sex.json` | 근사 fixture — 공식 CSV로 교체 필요 |
 | 미디어·소비 행동 | ✗ **pending** | (없음) | KISDI raw 수동 다운로드 |
 | 심층 소비심리(체면·동조) | ✗ **pending** | (없음) | MDIS 사회조사 raw 수동 다운로드 |
@@ -31,15 +31,12 @@
 3. `backend/domain/simulation/data/raw/population_age_sex.csv` 로 저장.
    - 로더가 CSV를 **자동 우선** 사용한다(placeholder 무시). gitignore라 커밋 안 됨.
 
-### ② OCEAN 정밀화 — 논문 표에서 추출 (무료, 비상업 인용) [현재 5유형 클러스터로 동작 중]
+### ② OCEAN 성격 — ✅ 완료 (논문 PDF Table 1 추출)
 
-현재 `ocean_age_bands.json`은 논문의 **5개 유형 정성 프로필을 수치 앵커로 근사**해 성격 분산을 grounding한다(placeholder 졸업). 아래 둘 중 하나를 주면 real로 정밀화한다.
+`raw/s41598-025-34511-4.pdf`의 **Table 1**(유형별 Big Five factor score mean·sd)과 유형별 표본수(실 비율)를 추출해 `ocean_age_bands.json`에 반영 완료. 성격은 표준화 factor score로 샘플링된다.
 
-1. https://www.nature.com/articles/s41598-025-34511-4 (Open Access) 본문·**Supplementary** 확인.
-2. **(우선) 유형 비율** — 5유형의 전체 비율, 가능하면 연령밴드별 → `type_proportions.default`(또는 밴드별)에 넣고 `needs_real_values=false`.
-3. **(정밀) 트레이트 수치** — 연령대별 OCEAN 5차원 **평균·표준편차 + 척도**(1–5/1–7) → `type_profiles`를 실수치 앵커로 교체, `trait_sampling_sd` 조정.
-   - 40대+는 표본 3%뿐 → BFI-K 고령자(N=1,038)로 보완(P2 라벨 유지).
-   - ⚠️ **CC BY-NC-ND** — 수치 가공·상업 내장 시 법무 검토. 자기선택 편향 주석 유지.
+- ⚠️ **CC BY-NC-ND** — 수치 가공·상업 내장 시 법무 검토. 자기선택 편향 주석 유지(`bias_note`).
+- (선택 정밀화) **연령밴드별 유형 비율**은 논문 미공개 — 확보 시 `type_proportions`를 밴드별로 분리하면 연령 조건성↑. 40대+는 BFI-K(N=1,038) 보완 여지.
 
 ### ③ KISDI 한국미디어패널 raw — 회원가입 필요 (단계2-β + exposure_context)
 

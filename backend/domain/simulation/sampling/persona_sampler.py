@@ -26,7 +26,7 @@ _REGION_WEIGHTS: dict[str, float] = {
 # OCEAN 데이터 하한(논문 표본 14세부터) — 기본 샘플은 이 이상만.
 _MIN_AGE = 14
 _OPEN_BAND_TOP = 84  # "60+"/"70+" 같은 개방 구간의 상한 캡.
-_OCEAN_SCALE = (1.0, 5.0)
+_OCEAN_CLIP = (-5.0, 5.0)  # factor score(표준화) 안전 클립.
 _Z_GEN_MAX_AGE = 29  # Z세대 근사(2026년 기준 대략) — 소비가치 generation_specific 적용 범위.
 
 
@@ -136,27 +136,21 @@ class PersonaSampler:
         return cells
 
     def _sample_ocean(self, rng: random.Random, age: int) -> dict[str, float]:
-        """OCEAN — 논문 5유형 클러스터(앵커) 중 하나를 골라 그 주변에서 샘플링.
+        """OCEAN(factor score) — 논문 5유형 중 실비율로 하나 골라 그 유형의 mean·sd로 샘플링.
 
-        유형 비율은 type_proportions(연령 무관 기본값, 실비율 확보 시 교체). 미확보 시 placeholder.
+        유형 비율은 type_proportions(연령 무관 전체 비율). 결과는 표준화 factor score(평균≈0).
         """
-        lo, hi = _OCEAN_SCALE
+        lo, hi = _OCEAN_CLIP
         dims = ("openness", "conscientiousness", "extraversion", "agreeableness", "neuroticism")
-        profiles = self._ocean.get("type_profiles")
-        if profiles:
-            props = self._ocean["type_proportions"]["default"]
-            anchor = _weighted_choice(
-                rng, [(profiles[n], w) for n, w in props.items() if n in profiles]
-            )
-            sd = self._ocean.get("trait_sampling_sd", 0.5)
-            return {d: round(min(hi, max(lo, rng.gauss(anchor[d], sd))), 2) for d in dims}
-
-        traits = self._ocean.get("trait_params", {}).get("placeholder", {})  # 구버전 fallback
-        out: dict[str, float] = {}
-        for dim in dims:
-            p = traits.get(dim, {"mean": 3.0, "sd": 0.7})
-            out[dim] = round(min(hi, max(lo, rng.gauss(p["mean"], p["sd"]))), 2)
-        return out
+        profiles = self._ocean["type_profiles"]
+        props = self._ocean["type_proportions"]["default"]
+        profile = _weighted_choice(
+            rng, [(profiles[n], w) for n, w in props.items() if n in profiles]
+        )
+        return {
+            d: round(min(hi, max(lo, rng.gauss(profile[d]["mean"], profile[d]["sd"]))), 2)
+            for d in dims
+        }
 
     def _sample_media(self, rng: random.Random) -> dict[str, Any]:
         # 단계2-β stub — KISDI raw 확보 후 실분포로 교체(미디어 다이어리→exposure_context).

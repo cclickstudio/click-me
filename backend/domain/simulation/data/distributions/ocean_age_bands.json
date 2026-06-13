@@ -4,6 +4,7 @@
   "license": "CC BY-NC-ND 4.0 — 비상업·변경금지. 상업 서비스화 시 법무 검토 필수",
   "self_selection_bias": true,
   "bias_note": "카카오 마음날씨 자발적 이용자 표본 → 전국 대표 아님. 리포트·코드에 명시(§7 금지).",
+  "scale": "EFA factor score (표준화, 평균≈0, SD≈1). 원척도 IPIP-NEO-120 5점(0~4).",
   "personality_types": [
     "Average",
     "Introverted-Open",
@@ -19,26 +20,54 @@
     "50-59": { "sample_size": 21059, "tier": "P2" },
     "60+":   { "sample_size": 4604,  "tier": "P2" }
   },
-  "scale": "1-5 근사 (논문 원척도·정확 mean/sd 확인 필요)",
-  "trait_sampling_sd": 0.5,
   "type_profiles": {
-    "_source": "논문의 5개 유형 정성 프로필(high/low)을 1~5 수치 앵커로 근사. raw mean/sd 아님.",
-    "_anchors": "high≈4.2 · mid≈3.0 · lesser-low≈2.4 · low≈1.9",
-    "Average":              { "openness": 3.0, "conscientiousness": 3.0, "extraversion": 3.0, "agreeableness": 3.0, "neuroticism": 3.0 },
-    "Introverted-Open":     { "openness": 4.2, "conscientiousness": 3.0, "extraversion": 1.9, "agreeableness": 1.9, "neuroticism": 3.0 },
-    "Introverted-Reactive": { "openness": 3.0, "conscientiousness": 1.9, "extraversion": 1.9, "agreeableness": 3.0, "neuroticism": 4.2 },
-    "Expressive":           { "openness": 4.2, "conscientiousness": 3.0, "extraversion": 4.2, "agreeableness": 3.2, "neuroticism": 2.8 },
-    "Conventional":         { "openness": 1.9, "conscientiousness": 3.2, "extraversion": 3.0, "agreeableness": 2.4, "neuroticism": 2.2 }
+    "_source": "Nature s41598-025-34511-4 Table 1 — 유형별 Big Five factor score mean(sd)",
+    "Average": {
+      "openness": { "mean": -0.10, "sd": 0.69 },
+      "conscientiousness": { "mean": 0.16, "sd": 0.78 },
+      "extraversion": { "mean": 0.17, "sd": 0.70 },
+      "agreeableness": { "mean": 0.20, "sd": 0.61 },
+      "neuroticism": { "mean": -0.14, "sd": 0.79 }
+    },
+    "Introverted-Open": {
+      "openness": { "mean": 0.79, "sd": 0.51 },
+      "conscientiousness": { "mean": 0.13, "sd": 1.02 },
+      "extraversion": { "mean": -0.74, "sd": 0.63 },
+      "agreeableness": { "mean": -0.45, "sd": 1.08 },
+      "neuroticism": { "mean": -0.13, "sd": 1.00 }
+    },
+    "Introverted-Reactive": {
+      "openness": { "mean": -0.24, "sd": 0.91 },
+      "conscientiousness": { "mean": -0.72, "sd": 0.95 },
+      "extraversion": { "mean": -0.96, "sd": 0.71 },
+      "agreeableness": { "mean": 0.27, "sd": 0.90 },
+      "neuroticism": { "mean": 1.12, "sd": 0.43 }
+    },
+    "Expressive": {
+      "openness": { "mean": 1.03, "sd": 0.48 },
+      "conscientiousness": { "mean": -0.09, "sd": 1.06 },
+      "extraversion": { "mean": 1.33, "sd": 0.48 },
+      "agreeableness": { "mean": -0.29, "sd": 1.12 },
+      "neuroticism": { "mean": -0.23, "sd": 1.06 }
+    },
+    "Conventional": {
+      "openness": { "mean": -1.40, "sd": 0.68 },
+      "conscientiousness": { "mean": 0.12, "sd": 1.08 },
+      "extraversion": { "mean": -0.04, "sd": 1.11 },
+      "agreeableness": { "mean": -0.43, "sd": 1.13 },
+      "neuroticism": { "mean": -0.32, "sd": 1.06 }
+    }
   },
   "type_proportions": {
-    "needs_real_values": true,
-    "todo": "논문 GMM 유형 비율(가능하면 연령밴드별)을 표/그림에서 추출해 교체. 현재 균등 기본값.",
+    "needs_real_values": false,
+    "source": "Table 1 유형별 표본수 n / N=813,611 (연령 무관 전체 비율)",
+    "todo_optional": "연령밴드별 유형 비율은 미공개 — 확보 시 밴드별로 분리 가능.",
     "default": {
-      "Average": 0.2,
-      "Introverted-Open": 0.2,
-      "Introverted-Reactive": 0.2,
-      "Expressive": 0.2,
-      "Conventional": 0.2
+      "Average": 0.4731,
+      "Introverted-Open": 0.1481,
+      "Introverted-Reactive": 0.1366,
+      "Expressive": 0.1238,
+      "Conventional": 0.1184
     }
   }
 }

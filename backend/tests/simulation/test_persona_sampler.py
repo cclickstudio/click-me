@@ -47,7 +47,7 @@ def test_target_filter_age_range_conditional() -> None:
     assert len({p.age for p in personas}) >= 8
 
 
-def test_ocean_within_scale() -> None:
+def test_ocean_factor_scores_in_range() -> None:
     personas = _sampler().sample(PanelSpec(size=80, seed=5))
     for p in personas:
         assert set(p.ocean) == {
@@ -57,7 +57,8 @@ def test_ocean_within_scale() -> None:
             "agreeableness",
             "neuroticism",
         }
-        assert all(1.0 <= v <= 5.0 for v in p.ocean.values())
+        # factor score(표준화) — 안전 클립 범위 내.
+        assert all(-5.0 <= v <= 5.0 for v in p.ocean.values())
 
 
 def test_consumption_values_present_and_zgen() -> None:
