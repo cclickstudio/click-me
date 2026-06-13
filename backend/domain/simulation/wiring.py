@@ -3,10 +3,11 @@
 # 현재는 Mock 어댑터만 연결. 실제 LLM 어댑터(tools/ 이전 후)는 use_mock=False 분기로 추가.
 from __future__ import annotations
 
+from pathlib import Path
+
 from domain.simulation.adapters.memory_store import InMemorySimulationStore
 from domain.simulation.adapters.mock_engine import (
     MockAdInterpreter,
-    MockPanelProvider,
     MockQaGate,
     MockReactionEngine,
     MockRubricEvaluator,
@@ -14,7 +15,21 @@ from domain.simulation.adapters.mock_engine import (
 from domain.simulation.aggregation.aggregator import BasicAggregator
 from domain.simulation.graph.reaction_graph import build_reaction_graph
 from domain.simulation.graph.run_graph import build_run_graph
+from domain.simulation.panel.builder import CachedPanelProvider
+from domain.simulation.sampling.persona_sampler import PersonaSampler
 from domain.simulation.service.simulation_service import SimulationService
+
+_DEFAULT_PANEL = Path(__file__).resolve().parent / "data" / "panels" / "panel-v1.json"
+
+
+def build_panel_provider(settings=None):
+    """패널 공급자 — 빌드된 고정 패널(§3.6)이 있으면 로드, 없으면 실 인구 grounding 샘플러.
+
+    샘플러는 행안부 인구·OCEAN·소비가치 분포에서 통계 샘플링(LLM✗). 서사는 빈 채(반응 mock 무관).
+    """
+    if _DEFAULT_PANEL.exists():
+        return CachedPanelProvider(_DEFAULT_PANEL)
+    return PersonaSampler()
 
 
 def build_reaction_subgraph(settings=None):
@@ -36,7 +51,7 @@ def build_simulation_service(settings=None) -> SimulationService:
 
     graph = build_run_graph(
         interpreter=MockAdInterpreter(),
-        panel=MockPanelProvider(),
+        panel=build_panel_provider(settings),  # 실 인구 grounding 샘플러(또는 고정 패널)
         rubric=MockRubricEvaluator(),
         aggregator=BasicAggregator(),
         reaction_graph=build_reaction_subgraph(settings),
