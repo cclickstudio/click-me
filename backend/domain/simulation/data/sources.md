@@ -10,7 +10,7 @@
 | 소비가치 응답률 | ✅ real(인용) | `distributions/consumption_values.json` | 대학내일20대연구소 공개 % |
 | OCEAN 성격 | ✅ **real** | `distributions/ocean_age_bands.json` | 논문 Table 1 factor score mean·sd + 실 유형비율(PDF 추출 완료) |
 | 인구 연령×성별 | ◔ **placeholder** | `distributions/population_age_sex.json` | 근사 fixture — 공식 CSV로 교체 필요 |
-| 미디어·소비 행동 | ✗ **pending** | (없음) | KISDI raw 수동 다운로드 |
+| 미디어 행동 | ◐ real(기기별 사용시간) / pending(시간대·성연령) | `distributions/media_behavior.json` | KISDI 2025 표4-71(PDF 추출). 시간대(표4-77)·교차는 추후 |
 | 심층 소비심리(체면·동조) | ✗ **pending** | (없음) | MDIS 사회조사 raw 수동 다운로드 |
 
 > 웹 자동수집은 정밀 수치마다 인증·JS·차단으로 막혀 **placeholder/pending**이 남았다. 아래가 네가 받아야 할 부분이다.

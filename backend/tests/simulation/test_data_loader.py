@@ -32,8 +32,15 @@ def test_population_shares_sum_to_one() -> None:
     assert all(0.0 <= b["male_ratio"] <= 1.0 for b in data["bands"])
 
 
+def test_media_behavior_has_device_minutes() -> None:
+    data = loader.load_media_behavior()
+    dm = data["device_minutes"]
+    assert dm["컴퓨터"] == 250.06
+    assert all(v > 0 for v in dm.values())
+
+
 def test_data_status_reports_pending_items() -> None:
     status = loader.data_status()
     assert status["consumption_values"].startswith("real")
-    assert "pending" in status["media_behavior"]
+    assert status["media_behavior"].startswith("real")
     assert "pending" in status["social_values_deep"]

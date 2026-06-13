@@ -31,6 +31,11 @@ def load_ocean_age_bands() -> dict[str, Any]:
     return _read_json("ocean_age_bands.json")
 
 
+def load_media_behavior() -> dict[str, Any]:
+    """단계2-β 미디어 행동(KISDI 기기별 평균 사용시간)."""
+    return _read_json("media_behavior.json")
+
+
 def load_population_age_sex() -> dict[str, Any]:
     """단계1 인구 분포. 공식 CSV(raw/population_age_sex.csv)가 있으면 우선 사용.
 
@@ -121,6 +126,6 @@ def data_status() -> dict[str, str]:
         if ocean.get("type_proportions", {}).get("needs_real_values")
         else "real",
         "consumption_values": "real(인용)",
-        "media_behavior": "pending(KISDI raw 수동 다운로드)",
+        "media_behavior": "real(KISDI 기기별 사용시간) / pending(시간대·성연령 교차)",
         "social_values_deep": "pending(MDIS 사회조사 raw 수동 다운로드)",
     }

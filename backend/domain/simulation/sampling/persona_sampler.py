@@ -73,11 +73,13 @@ class PersonaSampler:
         population: dict | None = None,
         ocean: dict | None = None,
         consumption: dict | None = None,
+        media: dict | None = None,
         min_age: int = _MIN_AGE,
     ) -> None:
         self._population = population or loader.load_population_age_sex()
         self._ocean = ocean or loader.load_ocean_age_bands()
         self._consumption = consumption or loader.load_consumption_values()
+        self._media = media or loader.load_media_behavior()
         self._min_age = min_age
 
     async def get_or_build(self, spec: PanelSpec) -> tuple[str, list[Persona]]:
@@ -153,8 +155,16 @@ class PersonaSampler:
         }
 
     def _sample_media(self, rng: random.Random) -> dict[str, Any]:
-        # 단계2-β stub — KISDI raw 확보 후 실분포로 교체(미디어 다이어리→exposure_context).
-        return {"sns_hours": rng.randint(1, 6), "_source": "stub(KISDI raw 대기)"}
+        # 단계2-β — KISDI 다이어리 기기별 평균 사용시간 기반. primary는 사용시간 가중 선택.
+        dm = self._media["device_minutes"]
+        primary = _weighted_choice(rng, list(dm.items()))
+        avg = dm[primary]
+        minutes = max(5, round(rng.gauss(avg, avg * 0.35)))  # 개인 편차
+        return {
+            "primary_medium": primary,
+            "daily_media_minutes": minutes,
+            "_source": "KISDI 2025 표4-71",
+        }
 
     def _sample_consumption(self, rng: random.Random, age: int) -> dict[str, bool]:
         values = dict(self._consumption["values"])

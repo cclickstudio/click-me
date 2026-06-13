@@ -109,10 +109,11 @@ class MockNarrator:
 
     def narrate(self, persona: Persona) -> str:
         top = max(persona.ocean, key=persona.ocean.get) if persona.ocean else "openness"
-        sns = persona.media_behavior.get("sns_hours", "?")
+        medium = persona.media_behavior.get("primary_medium", "미디어")
+        minutes = persona.media_behavior.get("daily_media_minutes", "?")
         return (
             f"{persona.age}세 {persona.gender} · {persona.region}. "
-            f"성격은 {top}이(가) 두드러지고, 하루 SNS 이용은 약 {sns}시간."
+            f"성격은 {top}이(가) 두드러지고, 주 이용 미디어는 {medium}(하루 약 {minutes}분)."
         )
 
 
