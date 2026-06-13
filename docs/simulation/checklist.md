@@ -2,11 +2,14 @@
 
 > 원칙(§6): **완벽한 부품이 따로 노는 것보다, 어설퍼도 한 바퀴가 끝까지 도는 게 백 배 낫다.**
 > 마감 2026-07-08 / 발표 2026-07-14. 결정·근거는 `context-notes.md` 참조.
+>
+> **진행 현황(2026-06-13)** — Mock 한 바퀴 완성: P0·P5·P6·P7 ✅ + e2e 테스트.
+> 남음: P1(데이터)·P2(샘플러)·P3(패널빌드)·P4(실 어댑터)·P8(영속화)·P9(검증데모).
 
 ## P0 — 계약 고정 (병렬 착수의 전제, ~0.5일)
 
-- [ ] §3.5 `페르소나반응` 스키마를 REPORT §2-3 enum과 1회 동기화 (`contracts/schemas.py`·`enums.py` 이미 존재 → 검토·확정)
-- [ ] `시뮬레이션집계` 컬럼 계약 확정(`click_intent_rate`·`ci_low/high`·`purchase_intent`·`trust_avg`·`rejection_rate`·`variance_warning`·`engine_version`)
+- [x] §3.5 `페르소나반응` 스키마를 REPORT §2-3 enum과 1회 동기화 (`OVERPROMISE`·`EMPATHY` 추가)
+- [x] `시뮬레이션집계` 컬럼 계약 확정(`click_intent_rate`·`ci_low/high`·`purchase_intent`·`trust_avg`·`rejection_rate`·`variance_warning`·`engine_version`)
 - [ ] 두 계약을 분석팀과 공유(변경 시 동시 수정 합의)
 
 ## P1 — 데이터 레이어 (웹 확보분만 먼저)
@@ -38,24 +41,24 @@
 
 ## P5 — 반응 유닛 (LangGraph 서브그래프, 사이클)
 
-- [ ] `react_subgraph`: `gen_reaction → qa_gate → (실패&재시도여유) gen_reaction / (통과·포기) return`
-- [ ] §3.5 structured output 강제(자유 텍스트 금지, enum 직접 출력)
-- [ ] 모델 버전 pin + `panel_version` 기록(재현성)
-- [ ] 반응 캐시 금지 확인
+- [x] `react_subgraph`: `gen_reaction → qa_gate → (실패&재시도여유) gen_reaction / (통과·포기) return`
+- [ ] §3.5 structured output 강제(자유 텍스트 금지, enum 직접 출력) — 실 LLM 어댑터(P4)에서
+- [ ] 모델 버전 pin + `panel_version` 기록(재현성) — 실 LLM 어댑터(P4)에서
+- [x] 반응 캐시 금지 확인
 
 ## P6 — 오케스트레이션 그래프 (outer, 하이브리드)
 
-- [ ] outer 선형 DAG: `interpret_ad`·`load_panel`·`rubric_eval` → `Send×N react_subgraph` → `aggregate`
-- [ ] State TypedDict + `reactions: Annotated[list, operator.add]` 리듀서
-- [ ] 체크포인터(긴 런 재개) + LangSmith 트레이스 확인
-- [ ] `wiring.py`가 그래프 빌드 → `SimulationService` 주입, `_run`은 `ainvoke`만
+- [x] outer DAG: `interpret_ad→load_panel→rubric_eval → Send×N react → aggregate` (불균등 join 회피 위해 preamble 직렬)
+- [x] State TypedDict + `reactions: Annotated[list, operator.add]` 리듀서
+- [ ] 체크포인터(긴 런 재개) + LangSmith 트레이스 확인 — P8(영속화)·실 어댑터와 함께
+- [x] `wiring.py`가 그래프 빌드 → `SimulationService` 주입, `_run`은 `astream` 구동(SSE 진행률)
 
 ## P7 — 집계 엔진 (코드, "숫자는 집계 엔진")
 
-- [ ] QA 통과분만 집계(현 `BasicAggregator` 골격 존재)
-- [ ] 부트스트랩 신뢰구간 `ci_low/high` 산출(현재 TODO placeholder)
-- [ ] 분산 기반 `variance_warning` 산출
-- [ ] "CTR 예측" 라벨 금지 확인(calibration 전)
+- [x] QA 통과분만 집계
+- [x] 부트스트랩 신뢰구간 `ci_low/high` 산출(순수 stdlib·결정적)
+- [x] 분산 기반 `variance_warning` 산출(구매의도 집중도)
+- [x] "CTR 예측" 라벨 금지 확인(집계는 `click_intent_rate`만, 실측 스케일 미환산)
 
 ## P8 — 영속화 (9테이블)
 
