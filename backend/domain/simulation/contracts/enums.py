@@ -1,4 +1,5 @@
-# 시뮬레이터 도메인 enum taxonomy — 반응 구조화의 고정 어휘 (REPORT §2-3과 동기화)
+# 시뮬레이터 도메인 enum taxonomy — 반응 구조화의 고정 어휘
+# 분석팀과의 버전드 계약. 한글 표시는 보고서 렌더링 라벨(분석팀 소유)이며, 값 변경은 합의로만.
 from __future__ import annotations
 
 from enum import StrEnum
@@ -46,6 +47,7 @@ class RejectionReasonTag(StrEnum):
     IRRELEVANT = "irrelevant"
     OFFENSIVE = "offensive"
     OVERPRICED = "overpriced"
+    OVERPROMISE = "overpromise"  # 과장/과대 표현 (REPORT §2-3)
     DISTRUST = "distrust"
     AD_FATIGUE = "ad_fatigue"
     OTHER = "other"
@@ -56,8 +58,9 @@ class EmotionTag(StrEnum):
 
     CURIOSITY = "curiosity"
     DELIGHT = "delight"
+    EMPATHY = "empathy"  # 공감 (REPORT §2-4)
     TRUST = "trust"
     INDIFFERENCE = "indifference"
-    ANNOYANCE = "annoyance"
+    ANNOYANCE = "annoyance"  # 거부감은 라벨 매핑으로 흡수
     DISTRUST = "distrust"
     OTHER = "other"
