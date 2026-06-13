@@ -36,6 +36,15 @@ class MetaAdsWriter:
         self._require_writable(idem_key)
         return self._dry_run_result("create_ad", config.campaign_id, idem_key)
 
+    async def replace_creative(
+        self, campaign_id: str, creative_id: str, idem_key: str
+    ) -> ActionResult:
+        """창의 교체 — 재생성 agent(🅱)가 고른 selected_candidate_id를 게재에 반영."""
+        self._require_writable(idem_key)
+        return self._dry_run_result(
+            "replace_creative", campaign_id, idem_key, creative_id=creative_id
+        )
+
     async def preview(self, campaign_id: str) -> str:
         """미리보기 stub — 읽기성이라 idem_key 불요."""
         return f"https://www.facebook.com/ads/preview/{campaign_id}"
@@ -47,7 +56,7 @@ class MetaAdsWriter:
             raise NotImplementedError("LIVE 쓰기는 7/8 스코프 제외 (Won't, §7)")
 
     def _dry_run_result(
-        self, operation: str, campaign_id: str, idem_key: str, **detail: int
+        self, operation: str, campaign_id: str, idem_key: str, **detail: int | str
     ) -> ActionResult:
         return ActionResult(
             result_id=str(uuid4()),

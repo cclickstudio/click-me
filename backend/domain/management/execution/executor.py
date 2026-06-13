@@ -38,11 +38,13 @@ from domain.management.execution.state_machine import ExecutionRun, RunStatus
 from domain.management.execution.tier import BudgetAuthority, BudgetDecision
 
 #: v1 executor가 실행 가능한 action_type — 어휘 정본은 contracts/policy.py TIER_POLICY (P1)
-#: REPLACE_CREATIVE 등은 Port(D8)에 메서드가 없어 v1 실행 불가 → UNSUPPORTED_ACTION
+#: REPLACE_CREATIVE는 Port.replace_creative로 실행(재생성 루프 닫기) — selected_candidate_id 참조.
+#: 그 밖의 미등록 action_type은 Writer 도달 전 UNSUPPORTED_ACTION으로 차단.
 SUPPORTED_ACTION_TYPES: Final[tuple[str, ...]] = (
     "PAUSE_CAMPAIGN",
     "DECREASE_BUDGET",
     "INCREASE_BUDGET",
+    "REPLACE_CREATIVE",
 )
 
 #: v1에서 Writer 도달이 허용되는 실행 모드 — LIVE는 비활성 (§7 Must)
@@ -353,6 +355,12 @@ class Executor:
             return await self._writer.pause(target, idem_key)
         if proposal.action_type in ("DECREASE_BUDGET", "INCREASE_BUDGET"):
             return await self._writer.adjust_budget(target, proposal.budget_after_krw, idem_key)
+        if proposal.action_type == "REPLACE_CREATIVE":
+            creative_id = proposal.evidence_metrics.get("selected_candidate_id")
+            if not creative_id:
+                # 재생성 패키징이 항상 채우는 값 — 없으면 변조·계약 위반 (_validate 통과분 방어)
+                raise ValueError("REPLACE_CREATIVE 제안에 selected_candidate_id 없음")
+            return await self._writer.replace_creative(target, str(creative_id), idem_key)
         raise ValueError(f"미지원 action_type: {proposal.action_type}")  # _validate에서 차단됨
 
     # ── 결과·감사 헬퍼 ───────────────────────────────────────────

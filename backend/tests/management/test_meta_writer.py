@@ -52,3 +52,19 @@ async def test_preview_needs_no_idem_key():
     writer = MetaAdsWriter(mode=ExecutionMode.DRY_RUN)
     url = await writer.preview("camp-1")
     assert "camp-1" in url
+
+
+async def test_replace_creative_carries_creative_id():
+    writer = MetaAdsWriter(mode=ExecutionMode.DRY_RUN)
+    result = await writer.replace_creative("camp-1", "cand-42", "key-1")
+
+    assert result.status is ResultStatus.SUCCESS
+    snapshot = result.platform_response_snapshot
+    assert snapshot["operation"] == "replace_creative"
+    assert snapshot["creative_id"] == "cand-42"
+
+
+async def test_replace_creative_requires_idem_key():
+    writer = MetaAdsWriter(mode=ExecutionMode.DRY_RUN)
+    with pytest.raises(ValueError, match="idem_key"):
+        await writer.replace_creative("camp-1", "cand-42", "")

@@ -38,3 +38,7 @@ class AdPlatformWriter(Protocol):
     async def adjust_budget(
         self, campaign_id: str, amount_krw: int, idem_key: str
     ) -> ActionResult: ...
+
+    async def replace_creative(
+        self, campaign_id: str, creative_id: str, idem_key: str
+    ) -> ActionResult: ...

@@ -328,9 +328,9 @@ async def test_audit_log_has_no_update_or_delete_path():
         assert not hasattr(audit, attr)
 
 
-@pytest.mark.parametrize("unsupported", ["REPLACE_CREATIVE", "boost_post"])
+@pytest.mark.parametrize("unsupported", ["boost_post", "duplicate_campaign"])
 async def test_unsupported_action_type_rejected(unsupported):
-    """v1 Port(D8)는 pause/adjust_budget만 — 그 외는 Writer 도달 전 차단."""
+    """v1 Port(D8) 미등록 action_type은 Writer 도달 전 차단."""
     writer = FakeWriter()
     executor, _, _, _ = build_executor(writer)
     proposal = make_proposal(action_type=unsupported, action_tier=ActionTier.TIER_3)
@@ -339,4 +339,40 @@ async def test_unsupported_action_type_rejected(unsupported):
     result = await executor.execute(action, proposal)
 
     assert result.failure_reason is FailureReason.UNSUPPORTED_ACTION
+    assert writer.calls == []
+
+
+async def test_replace_creative_dispatches_to_writer():
+    """재생성→실행 루프: REPLACE_CREATIVE 제안이 selected_candidate_id로 writer 호출."""
+    writer = FakeWriter()
+    executor, _, _, _ = build_executor(writer)
+    proposal = make_proposal(
+        action_type="REPLACE_CREATIVE",
+        action_tier=ActionTier.TIER_3,
+        evidence_metrics={"ctr": 0.001, "selected_candidate_id": "cand-42"},
+    )
+    action = make_action(proposal)
+
+    result = await executor.execute(action, proposal)
+
+    assert result.status is ResultStatus.SUCCESS
+    assert len(writer.calls) == 1
+    assert writer.calls[0][0] == "REPLACE_CREATIVE"
+    assert writer.calls[0][1] == "camp-001"
+
+
+async def test_replace_creative_without_selected_candidate_fails():
+    """selected_candidate_id 누락 = 계약 위반 — Writer 도달은 막되 결과는 실패로 변환."""
+    writer = FakeWriter()
+    executor, _, _, _ = build_executor(writer)
+    proposal = make_proposal(
+        action_type="REPLACE_CREATIVE",
+        action_tier=ActionTier.TIER_3,
+        evidence_metrics={"ctr": 0.001},  # selected_candidate_id 없음
+    )
+    action = make_action(proposal)
+
+    result = await executor.execute(action, proposal)
+
+    assert result.status is ResultStatus.FAILED
     assert writer.calls == []

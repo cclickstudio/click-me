@@ -89,6 +89,11 @@ class FakeWriter:
     async def adjust_budget(self, campaign_id: str, amount_krw: int, idem_key: str) -> ActionResult:
         return self._respond("INCREASE_BUDGET", campaign_id, idem_key)
 
+    async def replace_creative(
+        self, campaign_id: str, creative_id: str, idem_key: str
+    ) -> ActionResult:
+        return self._respond("REPLACE_CREATIVE", campaign_id, idem_key)
+
     def _respond(self, op: str, campaign_id: str, idem_key: str) -> ActionResult:
         self.calls.append((op, campaign_id, idem_key))
         if campaign_id in self.fail_targets:
