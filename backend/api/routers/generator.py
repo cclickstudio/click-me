@@ -3,10 +3,12 @@
 import os
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+from core.auth import get_current_user
+from core.models import User
 from domain.generator.contracts.schemas import GenerationCreateRequest
 from domain.generator.service import generator_service
 
@@ -63,8 +65,11 @@ def _backend_env_path() -> Path:
 
 
 @router.post("/generations", response_model=GenerationTaskResponse)
-async def create_generation(body: GenerationCreateRequest):
-    generation_id = await generator_service.start_generation(body)
+async def create_generation(
+    body: GenerationCreateRequest,
+    current_user: User = Depends(get_current_user),
+):
+    generation_id = await generator_service.start_generation(body, created_by=current_user.id)
     return GenerationTaskResponse(
         generation_id=generation_id,
         stream_url=f"/api/generator/generations/{generation_id}/stream",

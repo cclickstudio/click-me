@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import AppLayout from "@/components/AppLayout";
+import { useProjects } from "@/components/ProjectContext";
 import { api } from "@/lib/api";
 import type {
   GenerationDetail,
@@ -54,6 +55,7 @@ const cardCls =
   "bg-white dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748] rounded-2xl transition-colors";
 
 export default function GeneratorPage() {
+  const { selectedProject, refreshDetails } = useProjects();
   const [step, setStep] = useState<Step>("input");
 
   // 입력 폼
@@ -79,7 +81,7 @@ export default function GeneratorPage() {
   const [publishing, setPublishing] = useState(false);
   const [publishResult, setPublishResult] = useState<PublishResult | null>(null);
 
-  const canStart = productName.trim() && productDescription.trim() && targetAudience.trim();
+  const canStart = !!selectedProject && productName.trim() && productDescription.trim() && targetAudience.trim();
 
   function reset() {
     setStep("input");
@@ -97,6 +99,7 @@ export default function GeneratorPage() {
 
     try {
       const res = (await api.generator.start({
+        project_id: selectedProject?.id ?? null,
         product_name: productName,
         product_description: productDescription,
         target_audience: targetAudience,
@@ -119,6 +122,7 @@ export default function GeneratorPage() {
             const d = (await api.generator.detail(res.generation_id)) as GenerationDetail;
             setDetail(d);
             setStep("candidates");
+            if (selectedProject?.id) refreshDetails(selectedProject.id);
           } catch (err) {
             setError(err instanceof Error ? err.message : "생성 결과를 불러오지 못했습니다.");
             setStep("input");
@@ -178,6 +182,22 @@ export default function GeneratorPage() {
       <p className="text-sm text-[#8B95A1] dark:text-[#6B7280] mt-1">
         상품 정보를 입력하면 AI가 전략이 다른 광고 후보 3종을 생성합니다
       </p>
+      {selectedProject ? (
+        <div className="flex items-center gap-2 mt-4 px-4 py-2.5 bg-[#EBF3FF] dark:bg-[#1E3A5F] rounded-xl border border-[#BFDBFE] dark:border-[#1E40AF]">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#3182F6" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+          </svg>
+          <span className="text-sm font-medium text-[#3182F6]">{selectedProject.name}</span>
+          <span className="text-xs text-[#60A5FA] ml-1">프로젝트에 제너레이터가 저장됩니다</span>
+        </div>
+      ) : (
+        <div className="flex items-center gap-2 mt-4 px-4 py-2.5 bg-[#FFFBEB] dark:bg-[#422006] rounded-xl border border-[#FDE68A] dark:border-[#78350F]">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#D97706" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
+          </svg>
+          <span className="text-sm text-[#D97706] dark:text-[#FCD34D]">왼쪽 패널에서 프로젝트를 선택해야 제너레이터를 실행할 수 있습니다</span>
+        </div>
+      )}
     </div>
   );
 
