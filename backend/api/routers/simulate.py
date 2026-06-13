@@ -1,6 +1,12 @@
-from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import StreamingResponse
 
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import StreamingResponse
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from core.auth import get_current_user
+from core.db import get_db
+from core.models import OrganizationMember, User
 from core.schemas import SimulationRequest, SimulationTaskResponse
 from domain.simulation.service import simulation_service
 
@@ -8,9 +14,26 @@ router = APIRouter()
 
 
 @router.post("/reactions", response_model=SimulationTaskResponse)
-async def start_simulation(body: SimulationRequest, request: Request):
+async def start_simulation(
+    body: SimulationRequest,
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     ssr_scorer = request.app.state.ssr_scorer
-    task_id = await simulation_service.start_simulation(body, ssr_scorer)
+
+    member = await db.scalar(
+        select(OrganizationMember).where(OrganizationMember.user_id == current_user.id)
+    )
+    organization_id = str(member.organization_id) if member else None
+
+    task_id = await simulation_service.start_simulation(
+        body,
+        ssr_scorer,
+        project_id=body.project_id,
+        user_id=str(current_user.id),
+        organization_id=organization_id,
+    )
     return SimulationTaskResponse(
         task_id=task_id,
         stream_url=f"/api/simulate/{task_id}/stream",
