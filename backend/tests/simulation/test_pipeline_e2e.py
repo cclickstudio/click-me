@@ -78,4 +78,4 @@ async def test_aggregate_contract_and_ranges() -> None:
     assert agg["ci_low"] <= agg["click_intent_rate"] <= agg["ci_high"]
     assert 0.0 <= agg["rejection_rate"] <= 1.0
     assert 1.0 <= agg["purchase_intent"] <= 5.0
-    assert agg["engine_version"] == "agg-0"
+    assert agg["engine_version"] == "agg-1"
