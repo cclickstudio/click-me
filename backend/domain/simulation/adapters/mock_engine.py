@@ -102,6 +102,20 @@ class MockRubricEvaluator:
         ]
 
 
+class MockNarrator:
+    """4-a 서사 생성(mock) — 속성을 결정적 한국어 문장으로 변환. LLM 없이 테스트·오프라인용."""
+
+    version = "mock-narrator-0"
+
+    def narrate(self, persona: Persona) -> str:
+        top = max(persona.ocean, key=persona.ocean.get) if persona.ocean else "openness"
+        sns = persona.media_behavior.get("sns_hours", "?")
+        return (
+            f"{persona.age}세 {persona.gender} · {persona.region}. "
+            f"성격은 {top}이(가) 두드러지고, 하루 SNS 이용은 약 {sns}시간."
+        )
+
+
 class MockQaGate:
     """QA 검문소(mock) — 결정적으로 일부 첫 시도를 탈락시켜 재시도 루프를 검증.
 
