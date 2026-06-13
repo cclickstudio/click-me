@@ -34,32 +34,81 @@ def load_ocean_age_bands() -> dict[str, Any]:
 def load_population_age_sex() -> dict[str, Any]:
     """단계1 인구 분포. 공식 CSV(raw/population_age_sex.csv)가 있으면 우선 사용.
 
-    CSV 형식: 헤더 ``age_band,sex,count`` (sex 는 M/F). 없으면 placeholder JSON.
+    지원 포맷: ① 행안부 원본(행정동×성×1세별, cp949) ② 정규화 ``age_band,sex,count``.
+    둘 다 없으면 placeholder JSON.
     """
     if _POPULATION_CSV.exists():
         return _load_population_csv(_POPULATION_CSV)
     return _read_json("population_age_sex.json")
 
 
+def _num(x: str) -> int:
+    x = x.strip().replace(",", "")
+    return int(x) if x and x.lstrip("-").isdigit() else 0
+
+
+def _age_to_band(age: int) -> str:
+    if age >= 70:
+        return "70+"
+    lo = (age // 10) * 10
+    return f"{lo}-{lo + 9}"
+
+
+def _read_csv_rows(path: Path) -> list[list[str]]:
+    raw = path.read_bytes()
+    for enc in ("utf-8-sig", "cp949"):
+        try:
+            text = raw.decode(enc)
+            break
+        except UnicodeDecodeError:
+            continue
+    else:
+        text = raw.decode("utf-8", errors="replace")
+    import io
+
+    return list(csv.reader(io.StringIO(text)))
+
+
+# 행안부 원본 레이아웃 — 남 0~110세(col 8~118), 여 0~110세(col 119~229).
+_MALE_COLS = range(8, 119)
+_FEMALE_COLS = range(119, 230)
+
+
 def _load_population_csv(path: Path) -> dict[str, Any]:
-    bands: dict[str, dict[str, float]] = {}
-    with path.open(encoding="utf-8-sig", newline="") as f:
-        for row in csv.DictReader(f):
-            band = row["age_band"].strip()
-            sex = row["sex"].strip().upper()
-            bands.setdefault(band, {"M": 0.0, "F": 0.0})[sex] += float(row["count"])
-    total = sum(m["M"] + m["F"] for m in bands.values()) or 1.0
-    out = []
-    for band, mf in bands.items():
-        band_total = mf["M"] + mf["F"]
-        out.append(
-            {
-                "age_band": band,
-                "share": round(band_total / total, 6),
-                "male_ratio": round(mf["M"] / band_total, 6) if band_total else 0.0,
-            }
-        )
-    return {"is_placeholder": False, "source": str(path.name), "bands": out}
+    rows = _read_csv_rows(path)
+    header = [h.strip().lower() for h in rows[0]] if rows else []
+    bands: dict[str, dict[str, int]] = {}
+
+    if {"age_band", "sex", "count"} <= set(header):  # ② 정규화 포맷
+        i_band, i_sex, i_cnt = header.index("age_band"), header.index("sex"), header.index("count")
+        for r in rows[1:]:
+            band, sex = r[i_band].strip(), r[i_sex].strip().upper()
+            bands.setdefault(band, {"M": 0, "F": 0})[sex] += _num(r[i_cnt])
+        source = f"{path.name} (정규화)"
+    else:  # ① 행안부 원본 — 성×1세별을 연령밴드로 집계
+        for r in rows[1:]:
+            if len(r) < 230:
+                continue
+            for sex, cols in (("M", _MALE_COLS), ("F", _FEMALE_COLS)):
+                for age, col in enumerate(cols):
+                    cnt = _num(r[col])
+                    if cnt:
+                        bands.setdefault(_age_to_band(age), {"M": 0, "F": 0})[sex] += cnt
+        ref = rows[1][1].strip() if len(rows) > 1 and len(rows[1]) > 1 else ""
+        source = f"행안부 주민등록 {ref} ({path.name})"
+
+    total = sum(mf["M"] + mf["F"] for mf in bands.values()) or 1
+    out = [
+        {
+            "age_band": band,
+            "share": round((bands[band]["M"] + bands[band]["F"]) / total, 6),
+            "male_ratio": round(bands[band]["M"] / (bands[band]["M"] + bands[band]["F"]), 6)
+            if (bands[band]["M"] + bands[band]["F"])
+            else 0.0,
+        }
+        for band in sorted(bands, key=lambda b: int(b.split("-")[0].rstrip("+")))
+    ]
+    return {"is_placeholder": False, "source": source, "bands": out}
 
 
 def data_status() -> dict[str, str]:
