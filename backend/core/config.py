@@ -65,6 +65,11 @@ class Settings(BaseSettings):
     toss_client_key: str = "test_gck_docs_Ovk5rk1EwkEbP0W43n07xlzm"
     toss_secret_key: str = "test_gsk_docs_OaPz8L5KdmQXkzRz3y47BMw6"
 
+    # JWT (Cognito 전환 전 임시)
+    jwt_secret: str = "clickme-dev-secret-change-in-prod"
+    jwt_algorithm: str = "HS256"
+    jwt_expire_minutes: int = 60 * 24 * 7  # 7일
+
     @field_validator("toss_client_key", "toss_secret_key")
     @classmethod
     def _toss_keys_must_be_test(cls, value: str) -> str:

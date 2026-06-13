@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import Navigation from '@/components/Navigation';
+import AppLayout from '@/components/AppLayout';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
@@ -127,10 +127,9 @@ export default function Page() {
   };
 
   return (
+    <AppLayout>
     <div className="h-screen bg-white dark:bg-[#0F1117] flex flex-col transition-colors">
-      <Navigation />
-
-      <div className="flex-1 flex flex-col pt-14 overflow-hidden">
+      <div className="flex-1 flex flex-col overflow-hidden">
         {messages.length === 0 ? (
           /* ── Welcome state ── */
           <div className="flex-1 flex flex-col items-center justify-center px-4 pb-28">
@@ -229,5 +228,6 @@ export default function Page() {
         </div>
       </div>
     </div>
+    </AppLayout>
   );
 }

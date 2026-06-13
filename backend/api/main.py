@@ -18,8 +18,11 @@ logger = logging.getLogger("clickme")
 from api.routers import (
     admin,
     ads,
+    auth,
     billing,
     chat,
+    company,
+    dashboard,
     generator,
     inquiries,
     management,
@@ -80,7 +83,10 @@ app.add_middleware(
     expose_headers=["*"],
 )
 
+app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
+app.include_router(company.router, prefix="/api/company", tags=["company"])
 app.include_router(chat.router, prefix="/api/chat", tags=["chat"])
+app.include_router(dashboard.router, prefix="/api/dashboard", tags=["dashboard"])
 app.include_router(simulate.router, prefix="/api/simulate", tags=["simulate"])
 app.include_router(ads.router, prefix="/api/ads", tags=["ads"])
 app.include_router(admin.router, prefix="/api/admin", tags=["admin"])
