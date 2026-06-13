@@ -1,8 +1,8 @@
 # 집계 엔진 단위 테스트 — 부트스트랩 CI·variance_warning·QA 필터 검증
 from __future__ import annotations
 
-from domain.simulation.aggregation.aggregator import BasicAggregator
 from domain.simulation.contracts.schemas import Aisas, PersonaReaction
+from domain.simulation.tools.aggregation.aggregator import BasicAggregator
 
 
 def _reaction(

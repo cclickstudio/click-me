@@ -9,7 +9,7 @@ import argparse
 from domain.simulation.adapters.mock_engine import MockNarrator
 from domain.simulation.contracts.schemas import PanelSpec
 from domain.simulation.panel.builder import PanelBuilder, save_panel
-from domain.simulation.sampling.persona_sampler import PersonaSampler
+from domain.simulation.tools.sampling.persona_sampler import PersonaSampler
 
 
 def main() -> None:

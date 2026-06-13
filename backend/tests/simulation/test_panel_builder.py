@@ -10,7 +10,7 @@ from domain.simulation.panel.builder import (
     load_panel,
     save_panel,
 )
-from domain.simulation.sampling.persona_sampler import PersonaSampler
+from domain.simulation.tools.sampling.persona_sampler import PersonaSampler
 
 
 def _builder() -> PanelBuilder:

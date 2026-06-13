@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from domain.simulation.contracts.schemas import PanelSpec
-from domain.simulation.sampling.persona_sampler import (
+from domain.simulation.tools.sampling.persona_sampler import (
     PersonaSampler,
     grounding_tier,
     ocean_band_of_age,

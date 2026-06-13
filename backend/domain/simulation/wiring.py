@@ -12,12 +12,12 @@ from domain.simulation.adapters.mock_engine import (
     MockReactionEngine,
     MockRubricEvaluator,
 )
-from domain.simulation.aggregation.aggregator import BasicAggregator
 from domain.simulation.graph.reaction_graph import build_reaction_graph
 from domain.simulation.graph.run_graph import build_run_graph
 from domain.simulation.panel.builder import CachedPanelProvider
-from domain.simulation.sampling.persona_sampler import PersonaSampler
 from domain.simulation.service.simulation_service import SimulationService
+from domain.simulation.tools.aggregation.aggregator import BasicAggregator
+from domain.simulation.tools.sampling.persona_sampler import PersonaSampler
 
 _DEFAULT_PANEL = Path(__file__).resolve().parent / "data" / "panels" / "panel-v1.json"
 
