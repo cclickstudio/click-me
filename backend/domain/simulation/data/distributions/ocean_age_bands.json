@@ -19,17 +19,26 @@
     "50-59": { "sample_size": 21059, "tier": "P2" },
     "60+":   { "sample_size": 4604,  "tier": "P2" }
   },
-  "trait_params": {
+  "scale": "1-5 근사 (논문 원척도·정확 mean/sd 확인 필요)",
+  "trait_sampling_sd": 0.5,
+  "type_profiles": {
+    "_source": "논문의 5개 유형 정성 프로필(high/low)을 1~5 수치 앵커로 근사. raw mean/sd 아님.",
+    "_anchors": "high≈4.2 · mid≈3.0 · lesser-low≈2.4 · low≈1.9",
+    "Average":              { "openness": 3.0, "conscientiousness": 3.0, "extraversion": 3.0, "agreeableness": 3.0, "neuroticism": 3.0 },
+    "Introverted-Open":     { "openness": 4.2, "conscientiousness": 3.0, "extraversion": 1.9, "agreeableness": 1.9, "neuroticism": 3.0 },
+    "Introverted-Reactive": { "openness": 3.0, "conscientiousness": 1.9, "extraversion": 1.9, "agreeableness": 3.0, "neuroticism": 4.2 },
+    "Expressive":           { "openness": 4.2, "conscientiousness": 3.0, "extraversion": 4.2, "agreeableness": 3.2, "neuroticism": 2.8 },
+    "Conventional":         { "openness": 1.9, "conscientiousness": 3.2, "extraversion": 3.0, "agreeableness": 2.4, "neuroticism": 2.2 }
+  },
+  "type_proportions": {
     "needs_real_values": true,
-    "todo": "연령밴드×OCEAN(openness/conscientiousness/extraversion/agreeableness/neuroticism)별 mean·sd를 Nature 본문·supplementary(또는 40대+는 BFI-K)에서 추출해 채울 것.",
-    "scale": "확인 필요 (논문 척도)",
-    "placeholder": {
-      "_warning": "파이프라인 가동용 중립 placeholder. 분석·발표 금지. 실수치로 교체 전까지 grounding 미성립.",
-      "openness": { "mean": 3.0, "sd": 0.7 },
-      "conscientiousness": { "mean": 3.0, "sd": 0.7 },
-      "extraversion": { "mean": 3.0, "sd": 0.7 },
-      "agreeableness": { "mean": 3.0, "sd": 0.7 },
-      "neuroticism": { "mean": 3.0, "sd": 0.7 }
+    "todo": "논문 GMM 유형 비율(가능하면 연령밴드별)을 표/그림에서 추출해 교체. 현재 균등 기본값.",
+    "default": {
+      "Average": 0.2,
+      "Introverted-Open": 0.2,
+      "Introverted-Reactive": 0.2,
+      "Expressive": 0.2,
+      "Conventional": 0.2
     }
   }
 }

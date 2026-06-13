@@ -117,8 +117,8 @@ def data_status() -> dict[str, str]:
     population = load_population_age_sex()
     return {
         "population_age_sex": "placeholder" if population.get("is_placeholder") else "real",
-        "ocean_age_bands": "real(표본수·티어) / pending(트레이트 mean·sd)"
-        if ocean["trait_params"].get("needs_real_values")
+        "ocean_age_bands": "real(논문 5유형 클러스터) / pending(유형비율·정확 mean·sd)"
+        if ocean.get("type_proportions", {}).get("needs_real_values")
         else "real",
         "consumption_values": "real(인용)",
         "media_behavior": "pending(KISDI raw 수동 다운로드)",

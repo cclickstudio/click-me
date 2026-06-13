@@ -8,7 +8,7 @@
 | 분포 | 상태 | 파일 | 비고 |
 |---|---|---|---|
 | 소비가치 응답률 | ✅ real(인용) | `distributions/consumption_values.json` | 대학내일20대연구소 공개 % |
-| OCEAN 연령밴드 | ◐ real(표본수·티어) / **pending**(트레이트 mean·sd) | `distributions/ocean_age_bands.json` | 표본수·5유형은 확보, 트레이트 수치는 논문에서 추출 필요 |
+| OCEAN 연령밴드 | ◐ real(논문 5유형 클러스터) / **pending**(유형비율·정확 mean·sd) | `distributions/ocean_age_bands.json` | 5유형 앵커로 성격 분산 grounding. 정확 비율/수치는 논문 표에서 추출 필요 |
 | 인구 연령×성별 | ◔ **placeholder** | `distributions/population_age_sex.json` | 근사 fixture — 공식 CSV로 교체 필요 |
 | 미디어·소비 행동 | ✗ **pending** | (없음) | KISDI raw 수동 다운로드 |
 | 심층 소비심리(체면·동조) | ✗ **pending** | (없음) | MDIS 사회조사 raw 수동 다운로드 |
@@ -31,14 +31,14 @@
 3. `backend/domain/simulation/data/raw/population_age_sex.csv` 로 저장.
    - 로더가 CSV를 **자동 우선** 사용한다(placeholder 무시). gitignore라 커밋 안 됨.
 
-### ② OCEAN 트레이트 mean·sd — 논문에서 추출 (무료, 비상업 인용)
+### ② OCEAN 정밀화 — 논문 표에서 추출 (무료, 비상업 인용) [현재 5유형 클러스터로 동작 중]
 
-`ocean_age_bands.json`의 `trait_params.placeholder`를 실수치로 교체.
+현재 `ocean_age_bands.json`은 논문의 **5개 유형 정성 프로필을 수치 앵커로 근사**해 성격 분산을 grounding한다(placeholder 졸업). 아래 둘 중 하나를 주면 real로 정밀화한다.
 
 1. https://www.nature.com/articles/s41598-025-34511-4 (Open Access) 본문·**Supplementary** 확인.
-2. 연령대별 또는 전체 OCEAN 5차원의 **평균·표준편차**와 **척도**(1–5/1–7)를 찾는다.
+2. **(우선) 유형 비율** — 5유형의 전체 비율, 가능하면 연령밴드별 → `type_proportions.default`(또는 밴드별)에 넣고 `needs_real_values=false`.
+3. **(정밀) 트레이트 수치** — 연령대별 OCEAN 5차원 **평균·표준편차 + 척도**(1–5/1–7) → `type_profiles`를 실수치 앵커로 교체, `trait_sampling_sd` 조정.
    - 40대+는 표본 3%뿐 → BFI-K 고령자(N=1,038)로 보완(P2 라벨 유지).
-3. `trait_params`에 `age_band → {openness:{mean,sd}, …}` 형태로 채우고 `needs_real_values`를 `false`로.
    - ⚠️ **CC BY-NC-ND** — 수치 가공·상업 내장 시 법무 검토. 자기선택 편향 주석 유지.
 
 ### ③ KISDI 한국미디어패널 raw — 회원가입 필요 (단계2-β + exposure_context)

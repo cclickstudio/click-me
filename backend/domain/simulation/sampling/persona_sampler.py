@@ -136,23 +136,26 @@ class PersonaSampler:
         return cells
 
     def _sample_ocean(self, rng: random.Random, age: int) -> dict[str, float]:
-        params = self._ocean["trait_params"]
-        # 실수치 미확보 시 placeholder(중립) 사용 — grounding_tier 로 신뢰도 표기.
-        by_band = params.get("by_age_band", {})
-        band = ocean_band_of_age(age)
-        traits = by_band.get(band, params.get("placeholder", {}))
+        """OCEAN — 논문 5유형 클러스터(앵커) 중 하나를 골라 그 주변에서 샘플링.
+
+        유형 비율은 type_proportions(연령 무관 기본값, 실비율 확보 시 교체). 미확보 시 placeholder.
+        """
         lo, hi = _OCEAN_SCALE
+        dims = ("openness", "conscientiousness", "extraversion", "agreeableness", "neuroticism")
+        profiles = self._ocean.get("type_profiles")
+        if profiles:
+            props = self._ocean["type_proportions"]["default"]
+            anchor = _weighted_choice(
+                rng, [(profiles[n], w) for n, w in props.items() if n in profiles]
+            )
+            sd = self._ocean.get("trait_sampling_sd", 0.5)
+            return {d: round(min(hi, max(lo, rng.gauss(anchor[d], sd))), 2) for d in dims}
+
+        traits = self._ocean.get("trait_params", {}).get("placeholder", {})  # 구버전 fallback
         out: dict[str, float] = {}
-        for dim in (
-            "openness",
-            "conscientiousness",
-            "extraversion",
-            "agreeableness",
-            "neuroticism",
-        ):
+        for dim in dims:
             p = traits.get(dim, {"mean": 3.0, "sd": 0.7})
-            val = rng.gauss(p["mean"], p["sd"])
-            out[dim] = round(min(hi, max(lo, val)), 2)
+            out[dim] = round(min(hi, max(lo, rng.gauss(p["mean"], p["sd"]))), 2)
         return out
 
     def _sample_media(self, rng: random.Random) -> dict[str, Any]:

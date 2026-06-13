@@ -17,8 +17,10 @@ def test_ocean_age_bands_have_tiers_and_samples() -> None:
     assert bands["50-59"]["tier"] == "P2"
     assert all(b["sample_size"] > 0 for b in bands.values())
     assert len(data["personality_types"]) == 5
-    # 트레이트 실수치는 아직 미확보(placeholder) 상태여야 함.
-    assert data["trait_params"]["needs_real_values"] is True
+    # 5유형 클러스터 프로필이 OCEAN 5차원 앵커를 갖는다.
+    assert len(data["type_profiles"]["Expressive"]) == 5
+    # 정확 유형 비율은 아직 미확보(기본 균등) 상태여야 함.
+    assert data["type_proportions"]["needs_real_values"] is True
 
 
 def test_population_shares_sum_to_one() -> None:
