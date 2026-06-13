@@ -15,7 +15,19 @@ from fastapi.responses import JSONResponse
 
 logger = logging.getLogger("clickme")
 
-from api.routers import admin, ads, chat, generator, inquiries, personas, projects, simulate
+from api.routers import (
+    admin,
+    ads,
+    auth,
+    chat,
+    company,
+    dashboard,
+    generator,
+    inquiries,
+    personas,
+    projects,
+    simulate,
+)
 from core.config import settings
 from domain.generator.adapters.instagram import load_meta_credentials
 from tools.simulation.ssr_scorer import SSRScorer
@@ -69,7 +81,10 @@ app.add_middleware(
     expose_headers=["*"],
 )
 
+app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
+app.include_router(company.router, prefix="/api/company", tags=["company"])
 app.include_router(chat.router, prefix="/api/chat", tags=["chat"])
+app.include_router(dashboard.router, prefix="/api/dashboard", tags=["dashboard"])
 app.include_router(simulate.router, prefix="/api/simulate", tags=["simulate"])
 app.include_router(ads.router, prefix="/api/ads", tags=["ads"])
 app.include_router(admin.router, prefix="/api/admin", tags=["admin"])
