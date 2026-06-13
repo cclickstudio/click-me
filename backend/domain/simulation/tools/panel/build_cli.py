@@ -1,6 +1,6 @@
 # 패널 빌드 CLI — 기본 패널 v1(고정 시드) 1회 빌드 후 캐시 저장
 #
-# 사용: cd backend && uv run python -m domain.simulation.panel.build_cli --size 1000 --seed 0
+# 사용: cd backend && uv run python -m domain.simulation.tools.panel.build_cli --size 1000 --seed 0
 # GEMINI_API_KEY 있으면 실 Gemini 서사, 없으면 --mock 으로 MockNarrator.
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import argparse
 
 from domain.simulation.adapters.mock_engine import MockNarrator
 from domain.simulation.contracts.schemas import PanelSpec
-from domain.simulation.panel.builder import PanelBuilder, save_panel
+from domain.simulation.tools.panel.builder import PanelBuilder, save_panel
 from domain.simulation.tools.sampling.persona_sampler import PersonaSampler
 
 

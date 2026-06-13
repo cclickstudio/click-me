@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from domain.simulation.adapters.mock_engine import MockNarrator
 from domain.simulation.contracts.schemas import PanelSpec
-from domain.simulation.panel.builder import (
+from domain.simulation.tools.panel.builder import (
     CachedPanelProvider,
     PanelBuilder,
     filter_personas,
