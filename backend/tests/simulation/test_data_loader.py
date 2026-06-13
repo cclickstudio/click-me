@@ -1,7 +1,7 @@
 # 분포 로더 단위 테스트 — JSON 적재·스키마·CSV 우선·상태 보고 검증
 from __future__ import annotations
 
-from domain.simulation.data import loader
+from domain.simulation.data.simulation import loader
 
 
 def test_consumption_values_loads_with_rates() -> None:

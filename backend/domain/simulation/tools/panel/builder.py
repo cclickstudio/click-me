@@ -14,8 +14,8 @@ from domain.simulation.contracts.schemas import PanelSpec, Persona
 _QA_MIN_LEN = 10
 _QA_MAX_LEN = 2000
 
-# tools/panel/builder.py → domain/simulation/data/panels
-_PANEL_DIR = Path(__file__).resolve().parents[2] / "data" / "panels"
+# tools/panel/builder.py → domain/simulation/data/simulation/panels
+_PANEL_DIR = Path(__file__).resolve().parents[2] / "data" / "simulation" / "panels"
 
 
 def _qa_ok(narrative: str) -> bool:

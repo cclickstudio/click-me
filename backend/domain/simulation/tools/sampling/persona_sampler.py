@@ -9,7 +9,7 @@ import random
 from typing import Any
 
 from domain.simulation.contracts.schemas import PanelSpec, Persona
-from domain.simulation.data import loader
+from domain.simulation.data.simulation import loader
 
 # 지역 분포 미확보 → 근사 가중치(행안부 지역 CSV 확보 시 교체). 합=1.0.
 _REGION_WEIGHTS: dict[str, float] = {

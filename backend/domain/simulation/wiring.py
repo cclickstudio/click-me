@@ -19,7 +19,9 @@ from domain.simulation.tools.aggregation.aggregator import BasicAggregator
 from domain.simulation.tools.panel.builder import CachedPanelProvider
 from domain.simulation.tools.sampling.persona_sampler import PersonaSampler
 
-_DEFAULT_PANEL = Path(__file__).resolve().parent / "data" / "panels" / "panel-v1.json"
+_DEFAULT_PANEL = (
+    Path(__file__).resolve().parent / "data" / "simulation" / "panels" / "panel-v1.json"
+)
 
 
 def build_panel_provider(settings=None):
