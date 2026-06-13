@@ -13,6 +13,7 @@ from domain.simulation.adapters.mock_engine import (
 )
 from domain.simulation.aggregation.aggregator import BasicAggregator
 from domain.simulation.graph.reaction_graph import build_reaction_graph
+from domain.simulation.graph.run_graph import build_run_graph
 from domain.simulation.service.simulation_service import SimulationService
 
 
@@ -33,11 +34,11 @@ def build_simulation_service(settings=None) -> SimulationService:
         # TODO(추후): LLM 어댑터(vision/exposure/deliberation/ssr) + DB SimulationStore 연결
         raise NotImplementedError("실 LLM 어댑터는 tools/ 이전 후 연결 예정")
 
-    return SimulationService(
+    graph = build_run_graph(
         interpreter=MockAdInterpreter(),
         panel=MockPanelProvider(),
-        reactor=MockReactionEngine(),
         rubric=MockRubricEvaluator(),
         aggregator=BasicAggregator(),
-        store=InMemorySimulationStore(),
+        reaction_graph=build_reaction_subgraph(settings),
     )
+    return SimulationService(graph=graph, store=InMemorySimulationStore())

@@ -20,6 +20,18 @@ async def _drain(service, run_id: str) -> list[str]:
     return [chunk async for chunk in service.stream_events(run_id)]
 
 
+async def test_per_persona_progress_emitted() -> None:
+    # outer 그래프 astream → 페르소나별 반응 진행률이 SSE로 보존되는지(P6 통합).
+    service = build_simulation_service()
+    sample = 15
+    run_id = await service.start(SimulationRunRequest(ad_id="AD-P", sample_size=sample))
+    events = await _drain(service, run_id)
+
+    reaction_msgs = [e for e in events if '"stage": "reaction"' in e and '"message"' in e]
+    assert len(reaction_msgs) == sample
+    assert f"반응 {sample}/{sample}" in reaction_msgs[-1]
+
+
 async def test_mock_pipeline_runs_end_to_end() -> None:
     service = build_simulation_service()
     request = SimulationRunRequest(ad_id="AD-TEST", sample_size=30)

@@ -1,7 +1,7 @@
-# 시뮬레이션 오케스트레이션 서비스 — 어댑터 주입(DI), 파이프라인 실행 + SSE 진행률
+# 시뮬레이션 오케스트레이션 서비스 — outer LangGraph 구동 + SSE 진행률
 #
-# 파이프라인: 광고해석 → 패널/페르소나 → 반응(동시) → 루브릭 → 집계 → [분석팀 핸드오프]
-# 어댑터 교체(mock ↔ 실 LLM)는 wiring.py의 use_mock 분기로만. (Protocol 포트 없이 덕타이핑)
+# _run 은 build_run_graph(P6) 컴파일본을 astream(updates)로 구동하며 노드별 진행률을 emit.
+# 그래프 교체(mock ↔ 실 LLM)는 wiring.py 에서만. 결과 키는 분석팀 핸드오프 계약 유지.
 from __future__ import annotations
 
 import asyncio
@@ -10,31 +10,16 @@ import logging
 import uuid
 from collections.abc import AsyncIterator
 
-from domain.simulation.contracts.schemas import PanelSpec, SimulationRunRequest
+from domain.simulation.contracts.schemas import SimulationRunRequest
 
 logger = logging.getLogger("clickme")
 
-_CONCURRENCY = 5
-
 
 class SimulationService:
-    """주입된 어댑터로 파이프라인을 실행. 구체 어댑터는 wiring.py가 결정·주입한다.
+    """주입된 outer 그래프를 구동. 그래프 구성·어댑터는 wiring.py 가 결정·주입한다."""
 
-    기대 어댑터(덕타이핑):
-      interpreter.interpret(request) -> AdInterpretation
-      panel.get_or_build(spec)       -> (panel_version, [Persona])
-      reactor.react(persona, ad)     -> PersonaReaction
-      rubric.evaluate(ad)            -> [RubricScore]
-      aggregator.aggregate([reaction]) -> SimulationAggregate
-      store: 실행 상태·이벤트·결과 보관
-    """
-
-    def __init__(self, *, interpreter, panel, reactor, rubric, aggregator, store) -> None:
-        self._interpreter = interpreter
-        self._panel = panel
-        self._reactor = reactor
-        self._rubric = rubric
-        self._aggregator = aggregator
+    def __init__(self, *, graph, store) -> None:
+        self._graph = graph
         self._store = store
 
     async def start(self, request: SimulationRunRequest) -> str:
@@ -48,55 +33,54 @@ class SimulationService:
         try:
             store.set_status(run_id, "RUNNING")
             store.emit(run_id, {"event": "progress", "stage": "ad_analysis", "pct": 5})
-            ad = await self._interpreter.interpret(request)
 
-            store.emit(run_id, {"event": "progress", "stage": "panel", "pct": 15})
-            spec = PanelSpec(size=request.sample_size, target_filter=request.target_filter)
-            _panel_version, personas = await self._panel.get_or_build(spec)
-
-            total = len(personas)
-            store.emit(run_id, {"event": "progress", "stage": "reaction", "pct": 30})
-            sem = asyncio.Semaphore(_CONCURRENCY)
+            state = {"request": request, "reactions": [], "personas": [], "rubric_scores": []}
+            ad_dump: dict | None = None
+            rubric_dump: list[dict] = []
+            reactions: list[dict] = []
+            aggregate_dump: dict | None = None
+            total = request.sample_size
             done = 0
 
-            async def react(persona) -> object | None:
-                nonlocal done
-                async with sem:
-                    try:
-                        result = await self._reactor.react(persona, ad)
-                    except Exception as exc:  # 한 명 실패는 건너뜀 (전체 진행 유지)
-                        logger.warning("페르소나 %s 반응 실패: %s", persona.persona_id, exc)
-                        return None
-                    done += 1
-                    pct = 30 + int(done / total * 50)
-                    store.emit(
-                        run_id,
-                        {
-                            "event": "progress",
-                            "stage": "reaction",
-                            "pct": pct,
-                            "message": f"반응 {done}/{total}",
-                        },
-                    )
-                    return result
+            async for update in self._graph.astream(state, stream_mode="updates"):
+                for node, out in update.items():
+                    if not out:
+                        continue
+                    if node == "interpret_ad":
+                        ad_dump = out["ad"].model_dump()
+                        store.emit(run_id, {"event": "progress", "stage": "panel", "pct": 15})
+                    elif node == "load_panel":
+                        total = len(out["personas"]) or total
+                        store.emit(run_id, {"event": "progress", "stage": "reaction", "pct": 30})
+                    elif node == "rubric_eval":
+                        rubric_dump = [s.model_dump() for s in out["rubric_scores"]]
+                    elif node == "react":
+                        for r in out.get("reactions", []):
+                            reactions.append(r.model_dump())  # §3.5 계약 (분석팀 입력)
+                            done += 1
+                            pct = 30 + int(done / total * 50) if total else 80
+                            store.emit(
+                                run_id,
+                                {
+                                    "event": "progress",
+                                    "stage": "reaction",
+                                    "pct": pct,
+                                    "message": f"반응 {done}/{total}",
+                                },
+                            )
+                    elif node == "aggregate":
+                        store.emit(run_id, {"event": "milestone", "stage": "aggregate", "pct": 95})
+                        aggregate_dump = out["aggregate"].model_dump()  # 집계 계약
 
-            raw = await asyncio.gather(*[react(p) for p in personas])
-            reactions = [r for r in raw if r is not None]
             if not reactions:
                 raise RuntimeError("모든 페르소나 반응 생성에 실패했습니다.")
 
-            store.emit(run_id, {"event": "progress", "stage": "rubric", "pct": 85})
-            rubric_scores = await self._rubric.evaluate(ad)
-
-            store.emit(run_id, {"event": "milestone", "stage": "aggregate", "pct": 95})
-            aggregate = self._aggregator.aggregate(reactions)
-
             result = {
                 "run_id": run_id,
-                "ad_analysis": ad.model_dump(),
-                "reactions": [r.model_dump() for r in reactions],  # §3.5 계약 (분석팀 입력)
-                "rubric_scores": [s.model_dump() for s in rubric_scores],
-                "aggregate": aggregate.model_dump(),  # 집계 계약 (분석팀·리포트 입력)
+                "ad_analysis": ad_dump,
+                "reactions": reactions,
+                "rubric_scores": rubric_dump,
+                "aggregate": aggregate_dump,
             }
             store.set_result(run_id, result)
             store.set_status(run_id, "COMPLETED")
