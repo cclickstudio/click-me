@@ -3,8 +3,8 @@
 > 원칙(§6): **완벽한 부품이 따로 노는 것보다, 어설퍼도 한 바퀴가 끝까지 도는 게 백 배 낫다.**
 > 마감 2026-07-08 / 발표 2026-07-14. 결정·근거는 `context-notes.md` 참조.
 >
-> **진행 현황(2026-06-13)** — Mock 한 바퀴 + 데이터·샘플러: P0·P1·P2·P5·P6·P7 ✅ + 테스트.
-> 남음: P3(패널빌드·서사)·P4(실 어댑터)·P8(영속화)·P9(검증데모). 데이터 raw는 사용자 수집(`data/sources.md`).
+> **진행 현황(2026-06-13)** — P0·P1·P2·P3·P5·P6·P7 ✅ + 테스트. 인구 grounding **real**(행안부 CSV 적재).
+> 남음: P4(실 광고해석·루브릭 어댑터)·P8(영속화)·P9(검증데모). 미수집 raw: OCEAN 트레이트·KISDI·MDIS(`data/sources.md`).
 
 ## P0 — 계약 고정 (병렬 착수의 전제, ~0.5일)
 
@@ -15,7 +15,7 @@
 ## P1 — 데이터 레이어 (웹 확보분만 먼저)
 
 - [x] `data/` 레이아웃 + 로더 설계 (`loader.py` + `data_status()`)
-- [x] 인구 marginal JSON — **placeholder**(사용자 공식 CSV 대기, 로더 자동 우선)
+- [x] 인구 marginal — **real**(행안부 원본 CSV 적재·파싱 완료, 전국 5,109만 일치)
 - [x] OCEAN 연령대별 JSON — 표본수·티어·5유형 real / **트레이트 mean·sd pending**(사용자 추출)
 - [x] 소비가치 응답률 JSON — 대학내일 인용 실수치
 - [x] raw 의존부(KISDI·MDIS)는 pending 표기 + `data/sources.md` 수집 가이드
@@ -29,10 +29,10 @@
 
 ## P3 — 패널 빌드 (4-a, 런타임과 분리)
 
-- [ ] 4-a 프로필 서사 생성(LLM 1콜/명, `with_structured_output`)
-- [ ] 기본 패널 v1 빌드 CLI(1,000명, 시드 고정, `panel-v1`) + 캐시 저장
-- [ ] 패널 로드 경로(시뮬레이션 런에서 재생성✗, 로드만)
-- [ ] 빌드 시점 사전 QA(모순 프로필 제거)
+- [x] 4-a 프로필 서사 생성 — MockNarrator + GeminiNarrator(gemini-2.5-flash, 실콜 검증)
+- [x] 빌드 CLI(`build_cli`, 시드 고정, `panel-v1`) + 캐시 저장(gitignore)
+- [x] 패널 로드 경로(`CachedPanelProvider`, 재생성✗, target_filter 부분집합)
+- [x] 빌드 시점 QA(빈/실패 서사 제거)
 
 ## P4 — 광고해석 · 루브릭 (런타임, 광고 의존)
 
