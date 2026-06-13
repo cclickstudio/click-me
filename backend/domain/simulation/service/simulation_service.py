@@ -5,6 +5,9 @@ import logging
 import uuid
 from collections.abc import AsyncIterator
 
+from sqlalchemy import text
+
+from core.db import AsyncSessionLocal
 from core.schemas import Persona, SimulationRequest
 from tools.ad_analysis.vision import run_ad_understanding
 from tools.persona.factory import run_persona_factory
@@ -17,11 +20,134 @@ logger = logging.getLogger("clickme")
 _tasks: dict[str, dict] = {}
 
 
-async def start_simulation(request: SimulationRequest, ssr_scorer: SSRScorer) -> str:
+async def start_simulation(
+    request: SimulationRequest,
+    ssr_scorer: SSRScorer,
+    project_id: str | None = None,
+    user_id: str | None = None,
+    organization_id: str | None = None,
+) -> str:
     task_id = str(uuid.uuid4())
-    _tasks[task_id] = {"status": "pending", "result": None, "events": []}
+
+    # DB에 simulations 행 미리 생성
+    sim_db_id: str | None = None
+    if project_id and organization_id:
+        sim_db_id = await _create_simulation_row(
+            project_id=project_id,
+            organization_id=organization_id,
+            user_id=user_id,
+            sample_size=request.persona_set.get("size", 20),
+            ad_title=request.ad_title or "광고 시뮬레이션",
+        )
+
+    _tasks[task_id] = {
+        "status": "pending",
+        "result": None,
+        "events": [],
+        "sim_db_id": sim_db_id,
+        "project_id": project_id,
+    }
     asyncio.create_task(_run_pipeline(task_id, request, ssr_scorer))
     return task_id
+
+
+async def _create_simulation_row(
+    project_id: str,
+    organization_id: str,
+    user_id: str | None,
+    sample_size: int,
+    ad_title: str,
+) -> str | None:
+    """simulations 테이블에 QUEUED 행 생성, sim_id 반환."""
+    try:
+        sim_id = str(uuid.uuid4())
+        ad_id = str(uuid.uuid4())
+        ad_analysis_id = str(uuid.uuid4())
+
+        async with AsyncSessionLocal() as session:
+            # ads 행 생성 (NOT NULL 컬럼 포함, ALTER TABLE로 nullable 처리 필요)
+            await session.execute(
+                text("""
+                    INSERT INTO ads (id, project_id, title, media_type, created_at)
+                    VALUES (:id, :project_id, :title, 'image', NOW())
+                """),
+                {"id": ad_id, "project_id": project_id, "title": ad_title},
+            )
+            # ad_analyses 행 생성
+            await session.execute(
+                text("""
+                    INSERT INTO ad_analyses (id, ad_id, structured_analysis, intent_mismatch, model_version, created_at)
+                    VALUES (:id, :ad_id, '{}'::jsonb, false, 'gpt-4o-mini', NOW())
+                """),
+                {"id": ad_analysis_id, "ad_id": ad_id},
+            )
+            # simulations 행 생성 (model_version 기본값은 ALTER TABLE로 설정 필요)
+            await session.execute(
+                text("""
+                    INSERT INTO simulations
+                        (id, ad_id, ad_analysis_id, organization_id, sample_size, status, model_version, created_by, created_at)
+                    VALUES
+                        (:id, :ad_id, :ad_analysis_id, :org_id, :sample_size, 'QUEUED', 'gpt-4o-mini', :created_by, NOW())
+                """),
+                {
+                    "id": sim_id,
+                    "ad_id": ad_id,
+                    "ad_analysis_id": ad_analysis_id,
+                    "org_id": organization_id,
+                    "sample_size": sample_size,
+                    "created_by": user_id,
+                },
+            )
+            await session.commit()
+        return sim_id
+    except Exception as exc:
+        logger.warning("시뮬레이션 DB 행 생성 실패 (계속 진행): %s", exc)
+        return None
+
+
+async def _save_simulation_result(
+    sim_db_id: str,
+    ad_id_str: str,
+    result: dict,
+    ssr_results: list[dict],
+) -> None:
+    """완료 후 simulations 상태 업데이트 + simulation_results 저장."""
+    try:
+        distribution = result.get("p0", {}).get("aggregate_purchase_intent", [])
+        personas_data = result.get("p0", {}).get("persona_reactions", [])
+
+        async with AsyncSessionLocal() as session:
+            await session.execute(
+                text("""
+                    UPDATE simulations
+                    SET status = 'COMPLETED', completed_at = NOW()
+                    WHERE id = :id
+                """),
+                {"id": sim_db_id},
+            )
+            # ad_id는 simulations 행의 ad_id를 조회
+            row = await session.execute(
+                text("SELECT ad_id FROM simulations WHERE id = :id"),
+                {"id": sim_db_id},
+            )
+            r = row.fetchone()
+            if r:
+                await session.execute(
+                    text("""
+                        INSERT INTO simulation_results (id, ad_id, persona_count, distribution, personas, created_at)
+                        VALUES (:id, :ad_id, :persona_count, :distribution::jsonb, :personas::jsonb, NOW())
+                    """),
+                    {
+                        "id": str(uuid.uuid4()),
+                        "ad_id": str(r.ad_id),
+                        "persona_count": len(ssr_results),
+                        "distribution": __import__("json").dumps(distribution),
+                        "personas": __import__("json").dumps(personas_data),
+                    },
+                )
+            await session.commit()
+    except Exception as exc:
+        logger.warning("시뮬레이션 결과 DB 저장 실패: %s", exc)
 
 
 async def _run_pipeline(task_id: str, request: SimulationRequest, ssr_scorer: SSRScorer) -> None:
@@ -174,10 +300,32 @@ async def _run_pipeline(task_id: str, request: SimulationRequest, ssr_scorer: SS
 
         store["result"] = result
         store["status"] = "completed"
+
+        # DB 저장
+        sim_db_id = store.get("sim_db_id")
+        if sim_db_id:
+            asyncio.create_task(
+                _save_simulation_result(sim_db_id, request.simulation_id, result, ssr_results)
+            )
+
         emit({"event": "completed", "result_url": f"/api/simulate/{task_id}/result"})
 
     except Exception as exc:
         store["status"] = "failed"
+        # 실패 상태 DB 업데이트
+        sim_db_id = store.get("sim_db_id")
+        if sim_db_id:
+            try:
+                async with AsyncSessionLocal() as session:
+                    await session.execute(
+                        text(
+                            "UPDATE simulations SET status = 'FAILED', completed_at = NOW() WHERE id = :id"
+                        ),
+                        {"id": sim_db_id},
+                    )
+                    await session.commit()
+            except Exception:
+                pass
         emit({"event": "error", "message": str(exc)})
 
 

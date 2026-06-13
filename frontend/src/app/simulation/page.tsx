@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import AppLayout from "@/components/AppLayout";
+import { useProjects } from "@/components/ProjectContext";
 import { SimulatorProgress } from "@/components/simulator/SimulatorProgress";
 import { DistributionChart } from "@/components/ui/DistributionChart";
 import { KpiCard } from "@/components/ui/KpiCard";
@@ -10,8 +12,25 @@ import { formatPercent } from "@/lib/utils";
 import { api } from "@/lib/api";
 import type { SimulationResult, SSEProgressEvent } from "@/lib/types";
 
-type Step = "upload" | "config" | "running" | "result";
+type Step = "setup" | "running" | "result";
 type InputMode = "image" | "text";
+type Objective = "awareness" | "conversion" | "lead_gen" | "app_install" | "retention" | "product_launch" | "promotion";
+type Gender = "여성" | "남성";
+type AgeGroup = "20대" | "30대" | "40대" | "50대" | "50+";
+type BudgetScale = "소규모" | "중간" | "대규모";
+type CompetitionLevel = "블루오션" | "보통" | "레드오션";
+
+const OBJECTIVES: { value: Objective; label: string }[] = [
+  { value: "awareness",      label: "브랜드 인지" },
+  { value: "conversion",     label: "구매 전환" },
+  { value: "lead_gen",       label: "리드 수집" },
+  { value: "app_install",    label: "앱 설치" },
+  { value: "retention",      label: "재구매 유도" },
+  { value: "product_launch", label: "신제품 런칭" },
+  { value: "promotion",      label: "프로모션 반응" },
+];
+
+const AGE_GROUPS: AgeGroup[] = ["20대", "30대", "40대", "50대", "50+"];
 
 const TRADEMARK_KINDS: Record<number, string> = {
   1:"화학제품, 비료, 코팅제, 비닐", 2:"페인트, 니스, 래커, 잉크, 염료",
@@ -68,70 +87,60 @@ const TRADEMARK_CATEGORIES = [
   { name: "IT/플랫폼/APP",           classes: [7,9,12,35,36,37,38,39,41,42,44,45] },
 ];
 
+/* ─── 공통 레이블 클래스 ─── */
+const labelCls = "block text-xs font-semibold text-[#4E5968] dark:text-[#9CA3AF] mb-1.5";
+const sectionTitle = "text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6] mb-2";
+const chipBase = "px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors";
+const chipActive = "border-[#3182F6] bg-[#EEF4FF] dark:bg-[#1E3A5F] text-[#3182F6]";
+const chipIdle = "border-[#E5E8EB] dark:border-[#2D3748] text-[#8B95A1] dark:text-[#6B7280] hover:border-[#3182F6]";
+const inputCls = "w-full px-3 py-2.5 rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-white dark:bg-[#252D3D] text-sm text-[#191F28] dark:text-[#F2F4F6] focus:outline-none focus:ring-2 focus:ring-[#3182F6] placeholder:text-[#B0B8C1] dark:placeholder:text-[#4B5563] transition-colors";
+
 export default function SimulationPage() {
-  const [step, setStep] = useState<Step>("upload");
+  const router = useRouter();
+  const { selectedProject, refreshDetails } = useProjects();
+  const [step, setStep] = useState<Step>("setup");
   const [inputMode, setInputMode] = useState<InputMode>("image");
   const [file, setFile] = useState<File | null>(null);
   const [adTitle, setAdTitle] = useState("");
   const [adDescription, setAdDescription] = useState("");
   const [textInput, setTextInput] = useState({ headline: "", body: "", cta: "" });
   const [personaCount, setPersonaCount] = useState(20);
-  type Objective = "awareness" | "conversion" | "lead_gen" | "app_install" | "retention" | "product_launch" | "promotion";
-  const OBJECTIVES: { value: Objective; label: string }[] = [
-    { value: "awareness",      label: "브랜드 인지" },
-    { value: "conversion",     label: "구매 전환" },
-    { value: "lead_gen",       label: "리드 수집" },
-    { value: "app_install",    label: "앱 설치" },
-    { value: "retention",      label: "재구매 유도" },
-    { value: "product_launch", label: "신제품 런칭" },
-    { value: "promotion",      label: "프로모션 반응" },
-  ];
   const [objectives, setObjectives] = useState<Objective[]>([]);
-  const toggleObjective = (o: Objective) =>
-    setObjectives((prev) => prev.includes(o) ? prev.filter((x) => x !== o) : [...prev, o]);
-  const [adCategory, setAdCategory] = useState<string>("");
+  const [adCategory, setAdCategory] = useState("");
   const [adClass, setAdClass] = useState<number | null>(null);
-  type Gender = "여성" | "남성";
-  type AgeGroup = "20대" | "30대" | "40대" | "50대" | "50+";
-  const AGE_GROUPS: AgeGroup[] = ["20대", "30대", "40대", "50대", "50+"];
   const [targetGenders, setTargetGenders] = useState<Gender[]>([]);
   const [targetAges, setTargetAges] = useState<AgeGroup[]>([]);
-  type BudgetScale = "소규모" | "중간" | "대규모";
-  type CompetitionLevel = "블루오션" | "보통" | "레드오션";
   const [budgetScale, setBudgetScale] = useState<BudgetScale | null>(null);
   const [competitionLevel, setCompetitionLevel] = useState<CompetitionLevel | null>(null);
-  const toggleGender = (g: Gender) =>
-    setTargetGenders((prev) => prev.includes(g) ? prev.filter((x) => x !== g) : [...prev, g]);
-  const toggleAge = (a: AgeGroup) =>
-    setTargetAges((prev) => prev.includes(a) ? prev.filter((x) => x !== a) : [...prev, a]);
   const [progress, setProgress] = useState({ stage: "", pct: 0, message: "" });
   const [result, setResult] = useState<SimulationResult | null>(null);
+
+  const toggle = <T,>(setter: React.Dispatch<React.SetStateAction<T[]>>, val: T) =>
+    setter((prev) => prev.includes(val) ? prev.filter((x) => x !== val) : [...prev, val]);
+
+  const canStart = !!selectedProject && (inputMode === "image" ? !!file : !!textInput.headline);
 
   async function startSimulation() {
     setStep("running");
     setProgress({ stage: "ad_analysis", pct: 5, message: "광고 분석 중..." });
-
     try {
       let adAnalysis: unknown;
-
       if (inputMode === "image" && file) {
-        // 1) 업로드
         const uploadRes = await api.ads.upload(file, "default") as { ad_id: string; s3_url: string };
-        // 2) 이미지 분석
         adAnalysis = await api.ads.analyzeImage({ ad_id: uploadRes.ad_id, image_url: uploadRes.s3_url });
       } else {
-        // 텍스트 분석
         adAnalysis = await api.ads.analyzeText({
           ad_id: crypto.randomUUID(),
           text_content: { headline: textInput.headline, body: textInput.body, cta: textInput.cta },
         });
       }
-
       const simRes = await api.simulate.start({
         simulation_id: crypto.randomUUID(),
         ad_analysis: adAnalysis,
         objective: objectives[0] ?? "conversion",
         persona_set: { id: crypto.randomUUID(), size: personaCount, composition: {} },
+        project_id: selectedProject?.id ?? null,
+        ad_title: adTitle || textInput.headline || "광고 시뮬레이션",
       }) as { task_id: string };
 
       const es = api.simulate.stream(simRes.task_id);
@@ -144,361 +153,260 @@ export default function SimulationPage() {
           const finalResult = await api.simulate.result(simRes.task_id) as SimulationResult;
           setResult(finalResult);
           setStep("result");
+          if (selectedProject?.id) refreshDetails(selectedProject.id);
         } else if (data.event === "error") {
           es.close();
-          setStep("upload");
+          setStep("setup");
         }
       };
     } catch {
-      setStep("upload");
+      setStep("setup");
     }
   }
 
-  /* ─── STEP: upload ─── */
-  if (step === "upload") {
+  /* ─── STEP: setup (upload + config 통합 2열) ─── */
+  if (step === "setup") {
     const previewUrl = file ? URL.createObjectURL(file) : null;
 
     return (
       <AppLayout>
-        <div className="px-8 py-8">
-          <div className="mb-8">
+        <div className="px-8 py-8 max-w-5xl mx-auto">
+          <div className="mb-6">
             <h1 className="text-2xl font-bold text-[#191F28] dark:text-[#F2F4F6]">광고 시뮬레이션</h1>
-            <p className="text-sm text-[#8B95A1] dark:text-[#6B7280] mt-1">
-              AI 가상 소비자에게 광고를 테스트하고 성과를 예측합니다
-            </p>
+            <p className="text-sm text-[#8B95A1] dark:text-[#6B7280] mt-1">AI 가상 소비자에게 광고를 테스트하고 성과를 예측합니다</p>
           </div>
 
-          <div className="bg-white dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748] rounded-2xl p-8 w-full h-[700px] flex flex-col gap-6 transition-colors">
-            {/* 탭 */}
-            <div className="flex gap-2 border-b border-[#E5E8EB] dark:border-[#2D3748] pb-4 shrink-0">
-              <button
-                onClick={() => setInputMode("image")}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  inputMode === "image"
-                    ? "bg-[#3182F6] text-white"
-                    : "bg-[#F2F4F6] dark:bg-[#252D3D] text-[#8B95A1] dark:text-[#6B7280] hover:bg-[#E5E8EB] dark:hover:bg-[#2D3748]"
-                }`}
-              >
-                이미지 업로드
-              </button>
-              <button
-                onClick={() => setInputMode("text")}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  inputMode === "text"
-                    ? "bg-[#3182F6] text-white"
-                    : "bg-[#F2F4F6] dark:bg-[#252D3D] text-[#8B95A1] dark:text-[#6B7280] hover:bg-[#E5E8EB] dark:hover:bg-[#2D3748]"
-                }`}
-              >
-                텍스트 입력
-              </button>
+          {/* 프로젝트 선택 상태 */}
+          {selectedProject ? (
+            <div className="flex items-center gap-2 mb-5 px-4 py-2.5 bg-[#EBF3FF] dark:bg-[#1E3A5F] rounded-xl border border-[#BFDBFE] dark:border-[#1E40AF]">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#3182F6" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+              </svg>
+              <span className="text-sm font-medium text-[#3182F6]">{selectedProject.name}</span>
+              <span className="text-xs text-[#60A5FA] ml-1">프로젝트에 시뮬레이션이 저장됩니다</span>
             </div>
+          ) : (
+            <div className="flex items-center gap-2 mb-5 px-4 py-2.5 bg-[#FFFBEB] dark:bg-[#422006] rounded-xl border border-[#FDE68A] dark:border-[#78350F]">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#D97706" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" />
+              </svg>
+              <span className="text-sm text-[#D97706] dark:text-[#FCD34D]">왼쪽 패널에서 프로젝트를 선택해야 시뮬레이션을 실행할 수 있습니다</span>
+            </div>
+          )}
 
-            {/* 입력 영역 */}
-            {inputMode === "image" ? (
-              <div className="flex-1 overflow-y-auto flex flex-col gap-4">
-                {/* 드래그존 */}
-                <label className="flex-1 min-h-0 flex flex-col items-center justify-center border-2 border-dashed border-[#E5E8EB] dark:border-[#2D3748] rounded-xl cursor-pointer hover:border-[#3182F6] transition-colors relative overflow-hidden group">
-                  {previewUrl ? (
-                    <>
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={previewUrl} alt="미리보기" className="w-full h-full object-contain" />
-                      <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-2">
-                        <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                        </svg>
-                        <span className="text-sm text-white font-medium">클릭하여 변경</span>
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <svg className="w-12 h-12 text-[#B0B8C1] dark:text-[#4B5563] mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
-                      </svg>
-                      <span className="text-base text-[#8B95A1] dark:text-[#6B7280]">이미지 드래그 또는 클릭</span>
-                      <span className="text-xs text-[#B0B8C1] dark:text-[#4B5563] mt-1">JPG / PNG / WebP · 최대 10MB</span>
-                    </>
-                  )}
-                  <input type="file" accept="image/*" className="hidden" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
-                </label>
-              </div>
-            ) : (
-              <div className="flex-1 overflow-y-auto space-y-4">
-                {(["headline", "body", "cta"] as const).map((field) => (
-                  <div key={field}>
-                    <label className="text-xs font-medium text-[#8B95A1] dark:text-[#6B7280] mb-1.5 block uppercase tracking-wide">
-                      {field === "headline" ? "헤드라인" : field === "body" ? "본문" : "CTA (행동 유도 문구)"}
-                    </label>
-                    {field === "body" ? (
-                      <textarea
-                        value={textInput[field]}
-                        onChange={(e) => setTextInput((prev) => ({ ...prev, [field]: e.target.value }))}
-                        rows={6}
-                        placeholder="광고 본문을 입력하세요..."
-                        className="w-full px-4 py-3 rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-white dark:bg-[#252D3D] text-sm text-[#191F28] dark:text-[#F2F4F6] focus:outline-none focus:ring-2 focus:ring-[#3182F6] placeholder:text-[#B0B8C1] dark:placeholder:text-[#4B5563] transition-colors resize-none"
-                      />
-                    ) : (
-                      <input
-                        type="text"
-                        value={textInput[field]}
-                        onChange={(e) => setTextInput((prev) => ({ ...prev, [field]: e.target.value }))}
-                        placeholder={field === "headline" ? "강렬한 헤드라인을 입력하세요..." : "클릭 유도 문구 (예: 지금 시작하기)"}
-                        className="w-full px-4 py-3 rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-white dark:bg-[#252D3D] text-sm text-[#191F28] dark:text-[#F2F4F6] focus:outline-none focus:ring-2 focus:ring-[#3182F6] placeholder:text-[#B0B8C1] dark:placeholder:text-[#4B5563] transition-colors"
-                      />
-                    )}
-                  </div>
+
+          <div className="grid grid-cols-[1fr_1fr] gap-5 items-start">
+
+            {/* ── 왼쪽: 광고 입력 ── */}
+            <div className="bg-white dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748] rounded-2xl p-6 flex flex-col gap-5 transition-colors">
+              <p className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]">광고 소재</p>
+
+              {/* 탭 */}
+              <div className="flex gap-2">
+                {(["image", "text"] as InputMode[]).map((m) => (
+                  <button
+                    key={m}
+                    onClick={() => setInputMode(m)}
+                    className={`px-4 py-2 rounded-lg text-xs font-medium transition-colors ${
+                      inputMode === m
+                        ? "bg-[#3182F6] text-white"
+                        : "bg-[#F2F4F6] dark:bg-[#252D3D] text-[#8B95A1] dark:text-[#6B7280] hover:bg-[#E5E8EB] dark:hover:bg-[#2D3748]"
+                    }`}
+                  >
+                    {m === "image" ? "이미지 업로드" : "텍스트 입력"}
+                  </button>
                 ))}
               </div>
-            )}
 
-            {/* 하단 고정 영역: 파일명 배지(이미지 모드) + 다음 단계 버튼 */}
-            <div className="shrink-0 flex items-center justify-between gap-3">
-              {inputMode === "image" && file ? (
-                <div className="flex items-center gap-2 px-3 py-2 bg-[#F2F4F6] dark:bg-[#252D3D] rounded-lg min-w-0 flex-1">
-                  <svg className="w-4 h-4 text-[#3182F6] shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                  </svg>
-                  <span className="text-sm text-[#4E5968] dark:text-[#9CA3AF] truncate">{file.name}</span>
-                  <button
-                    onClick={(e) => { e.preventDefault(); setFile(null); }}
-                    className="ml-auto text-[#B0B8C1] hover:text-[#F74D4D] transition-colors shrink-0"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
+              {/* 이미지 모드 */}
+              {inputMode === "image" ? (
+                <div className="flex flex-col gap-3">
+                  <label className="flex flex-col items-center justify-center h-52 border-2 border-dashed border-[#E5E8EB] dark:border-[#2D3748] rounded-xl cursor-pointer hover:border-[#3182F6] transition-colors relative overflow-hidden group">
+                    {previewUrl ? (
+                      <>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={previewUrl} alt="미리보기" className="w-full h-full object-contain" />
+                        <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center gap-2">
+                          <svg className="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                          </svg>
+                          <span className="text-xs text-white font-medium">클릭하여 변경</span>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <svg className="w-10 h-10 text-[#B0B8C1] dark:text-[#4B5563] mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                        </svg>
+                        <span className="text-sm text-[#8B95A1] dark:text-[#6B7280]">이미지 드래그 또는 클릭</span>
+                        <span className="text-xs text-[#B0B8C1] dark:text-[#4B5563] mt-1">JPG / PNG / WebP · 최대 10MB</span>
+                      </>
+                    )}
+                    <input type="file" accept="image/*" className="hidden" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+                  </label>
+
+                  {file && (
+                    <div className="flex items-center gap-2 px-3 py-2 bg-[#F2F4F6] dark:bg-[#252D3D] rounded-lg">
+                      <svg className="w-4 h-4 text-[#3182F6] shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      <span className="text-xs text-[#4E5968] dark:text-[#9CA3AF] truncate flex-1">{file.name}</span>
+                      <button onClick={() => setFile(null)} className="text-[#B0B8C1] hover:text-[#F74D4D] transition-colors shrink-0">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    </div>
+                  )}
+
+                  {/* 이미지 모드 전용: 광고 제목 */}
+                  <div>
+                    <label className={labelCls}>광고 제목 <span className="text-[#F74D4D]">*</span></label>
+                    <input type="text" value={adTitle} onChange={(e) => setAdTitle(e.target.value)}
+                      placeholder="광고 제목을 입력하세요" className={inputCls} />
+                  </div>
                 </div>
               ) : (
-                <div className="flex-1" />
+                /* 텍스트 모드 */
+                <div className="flex flex-col gap-4">
+                  {(["headline", "body", "cta"] as const).map((field) => (
+                    <div key={field}>
+                      <label className={labelCls}>
+                        {field === "headline" ? <>헤드라인 <span className="text-[#F74D4D]">*</span></> : field === "body" ? "본문" : "CTA (행동 유도 문구)"}
+                      </label>
+                      {field === "body" ? (
+                        <textarea value={textInput[field]} onChange={(e) => setTextInput((p) => ({ ...p, [field]: e.target.value }))}
+                          rows={5} placeholder="광고 본문을 입력하세요..."
+                          className={`${inputCls} resize-none`} />
+                      ) : (
+                        <input type="text" value={textInput[field]} onChange={(e) => setTextInput((p) => ({ ...p, [field]: e.target.value }))}
+                          placeholder={field === "headline" ? "강렬한 헤드라인을 입력하세요..." : "클릭 유도 문구 (예: 지금 시작하기)"}
+                          className={inputCls} />
+                      )}
+                    </div>
+                  ))}
+                </div>
               )}
-              <button
-                onClick={() => setStep("config")}
-                disabled={inputMode === "image" ? !file : !textInput.headline}
-                className="flex items-center gap-2 px-6 py-3 bg-[#3182F6] hover:bg-[#1B6EEB] disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors shrink-0"
-              >
-                다음 단계
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
-              </button>
-            </div>
-          </div>
-        </div>
-      </AppLayout>
-    );
-  }
 
-  /* ─── STEP: config ─── */
-  if (step === "config") {
-    return (
-      <AppLayout>
-        <div className="px-8 py-8">
-          <div className="mb-8">
-            <h1 className="text-2xl font-bold text-[#191F28] dark:text-[#F2F4F6]">시뮬레이션 설정</h1>
-            <p className="text-sm text-[#8B95A1] dark:text-[#6B7280] mt-1">페르소나 수와 캠페인 목표를 설정하세요</p>
-          </div>
-
-          <div className="bg-white dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748] rounded-2xl p-8 w-full h-[700px] overflow-y-auto space-y-6 transition-colors">
-            {/* 상단 2컬럼: 왼쪽(제목+설명) / 오른쪽(페르소나 수) */}
-            <div className="grid grid-cols-2 gap-8 items-stretch">
-              <div className="space-y-4">
-                {inputMode === "image" && (
-                  <div className="space-y-2">
-                    <label className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]">
-                      광고 제목 <span className="text-[#F74D4D]">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      value={adTitle}
-                      onChange={(e) => setAdTitle(e.target.value)}
-                      placeholder="광고 제목을 입력하세요"
-                      className="w-full px-4 py-3 rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-white dark:bg-[#252D3D] text-sm text-[#191F28] dark:text-[#F2F4F6] focus:outline-none focus:ring-2 focus:ring-[#3182F6] placeholder:text-[#B0B8C1] dark:placeholder:text-[#4B5563] transition-colors"
-                    />
-                  </div>
-                )}
-                <div className="space-y-2">
-                  <label className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]">
-                    광고 설명
-                    <span className="ml-2 text-xs font-normal text-[#8B95A1] dark:text-[#6B7280]">선택사항</span>
-                  </label>
-                  <textarea
-                    value={adDescription}
-                    onChange={(e) => setAdDescription(e.target.value)}
-                    rows={inputMode === "image" ? 4 : 6}
-                    placeholder="광고에 대한 추가 설명을 입력하세요"
-                    className="w-full px-4 py-3 rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-white dark:bg-[#252D3D] text-sm text-[#191F28] dark:text-[#F2F4F6] focus:outline-none focus:ring-2 focus:ring-[#3182F6] placeholder:text-[#B0B8C1] dark:placeholder:text-[#4B5563] transition-colors resize-none h-full min-h-[120px]"
-                  />
-                </div>
+              {/* 광고 설명 (공통) */}
+              <div>
+                <label className={labelCls}>광고 설명 <span className="text-[10px] text-[#B0B8C1] dark:text-[#4B5563]">선택사항</span></label>
+                <textarea value={adDescription} onChange={(e) => setAdDescription(e.target.value)}
+                  rows={3} placeholder="광고에 대한 추가 설명을 입력하세요"
+                  className={`${inputCls} resize-none`} />
               </div>
-              <div className="flex flex-col justify-center gap-3 bg-[#F9FAFB] dark:bg-[#252D3D] border border-[#E5E8EB] dark:border-[#2D3748] rounded-2xl px-6 py-5">
-                <label className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]">
-                  페르소나 수: <span className="text-[#3182F6]">{personaCount}명</span>
-                </label>
-                <input
-                  type="range"
-                  min={10}
-                  max={50}
-                  value={personaCount}
+            </div>
+
+            {/* ── 오른쪽: 시뮬레이션 설정 ── */}
+            <div className="bg-white dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748] rounded-2xl p-6 flex flex-col gap-5 transition-colors">
+              <p className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]">시뮬레이션 설정</p>
+
+              {/* 페르소나 수 */}
+              <div className="bg-[#F9FAFB] dark:bg-[#252D3D] border border-[#E5E8EB] dark:border-[#2D3748] rounded-xl px-4 py-4">
+                <label className={labelCls}>페르소나 수: <span className="text-[#3182F6] font-bold">{personaCount}명</span></label>
+                <input type="range" min={10} max={50} value={personaCount}
                   onChange={(e) => setPersonaCount(Number(e.target.value))}
-                  className="w-full accent-[#3182F6]"
-                />
-                <div className="flex justify-between text-xs text-[#B0B8C1] dark:text-[#4B5563]">
-                  <span>10명</span>
-                  <span>50명</span>
+                  className="w-full accent-[#3182F6] mt-1" />
+                <div className="flex justify-between text-[10px] text-[#B0B8C1] dark:text-[#4B5563] mt-1">
+                  <span>10명</span><span>50명</span>
                 </div>
               </div>
-            </div>
 
-            <hr className="border-[#E5E8EB] dark:border-[#2D3748]" />
+              <hr className="border-[#E5E8EB] dark:border-[#2D3748]" />
 
-            {/* 중단 2컬럼: 왼쪽(타겟+목표) / 오른쪽(페르소나수 아래 카테고리) */}
-            <div className="grid grid-cols-2 gap-8">
-              {/* 왼쪽: 광고 타겟 + 캠페인 목표 */}
-              <div className="space-y-6">
-                <div className="space-y-3">
-                  <label className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]">
-                    광고 타겟
-                    <span className="ml-2 text-xs font-normal text-[#8B95A1] dark:text-[#6B7280]">선택사항 — 미선택 시 전체 대상</span>
-                  </label>
-                  <div className="space-y-2">
-                    <p className="text-xs text-[#8B95A1] dark:text-[#6B7280]">성별</p>
+              {/* 광고 타겟 */}
+              <div>
+                <p className={sectionTitle}>광고 타겟 <span className="text-[10px] font-normal text-[#B0B8C1] dark:text-[#4B5563]">선택사항</span></p>
+                <div className="space-y-2">
+                  <div>
+                    <p className="text-[10px] text-[#8B95A1] dark:text-[#6B7280] mb-1.5">성별</p>
                     <div className="flex gap-2">
                       {(["여성", "남성"] as Gender[]).map((g) => (
-                        <button key={g} type="button" onClick={() => toggleGender(g)}
-                          className={`px-5 py-2 rounded-xl border text-sm font-medium transition-colors ${
-                            targetGenders.includes(g)
-                              ? "border-[#3182F6] bg-[#EEF4FF] dark:bg-[#1E3A5F] text-[#3182F6]"
-                              : "border-[#E5E8EB] dark:border-[#2D3748] text-[#8B95A1] dark:text-[#6B7280] hover:border-[#3182F6]"
-                          }`}
-                        >{g}</button>
+                        <button key={g} type="button" onClick={() => toggle(setTargetGenders, g)}
+                          className={`${chipBase} ${targetGenders.includes(g) ? chipActive : chipIdle}`}>{g}</button>
                       ))}
                     </div>
                   </div>
-                  <div className="space-y-2">
-                    <p className="text-xs text-[#8B95A1] dark:text-[#6B7280]">연령대</p>
-                    <div className="flex gap-2">
+                  <div>
+                    <p className="text-[10px] text-[#8B95A1] dark:text-[#6B7280] mb-1.5">연령대</p>
+                    <div className="flex flex-wrap gap-2">
                       {AGE_GROUPS.map((a) => (
-                        <button key={a} type="button" onClick={() => toggleAge(a)}
-                          className={`px-4 py-2 rounded-xl border text-sm font-medium transition-colors ${
-                            targetAges.includes(a)
-                              ? "border-[#3182F6] bg-[#EEF4FF] dark:bg-[#1E3A5F] text-[#3182F6]"
-                              : "border-[#E5E8EB] dark:border-[#2D3748] text-[#8B95A1] dark:text-[#6B7280] hover:border-[#3182F6]"
-                          }`}
-                        >{a}</button>
+                        <button key={a} type="button" onClick={() => toggle(setTargetAges, a)}
+                          className={`${chipBase} ${targetAges.includes(a) ? chipActive : chipIdle}`}>{a}</button>
                       ))}
                     </div>
-                  </div>
-                </div>
-
-                <hr className="border-[#E5E8EB] dark:border-[#2D3748]" />
-
-                <div className="space-y-2">
-                  <label className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]">캠페인 목표</label>
-                  <div className="flex flex-wrap gap-2">
-                    {OBJECTIVES.map(({ value, label }) => (
-                      <button key={value} type="button" onClick={() => toggleObjective(value)}
-                        className={`px-4 py-2.5 rounded-xl border text-sm font-medium transition-colors ${
-                          objectives.includes(value)
-                            ? "border-[#3182F6] bg-[#EEF4FF] dark:bg-[#1E3A5F] text-[#3182F6]"
-                            : "border-[#E5E8EB] dark:border-[#2D3748] text-[#8B95A1] dark:text-[#6B7280] hover:border-[#3182F6]"
-                        }`}
-                      >{label}</button>
-                    ))}
                   </div>
                 </div>
               </div>
 
-              {/* 오른쪽: 광고 카테고리 + 예산 + 경쟁 */}
-              <div className="space-y-6">
-                <div className="space-y-3">
-                  <label className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]">
-                    광고 카테고리
-                    <span className="ml-2 text-xs font-normal text-[#8B95A1] dark:text-[#6B7280]">선택사항 — 미선택 시 전체 대상</span>
-                  </label>
-                  <div className="space-y-1">
-                    <p className="text-xs text-[#8B95A1] dark:text-[#6B7280]">카테고리</p>
-                    <select
-                      value={adCategory}
-                      onChange={(e) => { setAdCategory(e.target.value); setAdClass(null); }}
-                      className="w-full px-3 py-2.5 rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-white dark:bg-[#252D3D] text-sm text-[#191F28] dark:text-[#F2F4F6] focus:outline-none focus:border-[#3182F6] transition-colors"
-                    >
-                      <option value="">카테고리 선택</option>
-                      {TRADEMARK_CATEGORIES.map((c) => (
-                        <option key={c.name} value={c.name}>{c.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="space-y-1">
-                    <p className="text-xs text-[#8B95A1] dark:text-[#6B7280]">상품·서비스 분류</p>
-                    <select
-                      value={adClass ?? ""}
-                      onChange={(e) => setAdClass(e.target.value ? Number(e.target.value) : null)}
-                      disabled={!adCategory}
-                      className="w-full px-3 py-2.5 rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-white dark:bg-[#252D3D] text-sm text-[#191F28] dark:text-[#F2F4F6] focus:outline-none focus:border-[#3182F6] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                    >
-                      <option value="">{adCategory ? "분류 선택 (선택사항)" : "카테고리를 먼저 선택하세요"}</option>
-                      {(TRADEMARK_CATEGORIES.find((c) => c.name === adCategory)?.classes ?? []).map((n) => (
-                        <option key={n} value={n}>{n}류 — {TRADEMARK_KINDS[n]}</option>
-                      ))}
-                    </select>
-                    {adClass !== null && (
-                      <p className="text-xs text-[#3182F6] bg-[#EEF4FF] dark:bg-[#1E3A5F] px-3 py-2 rounded-lg mt-1">
-                        {adClass}류: {TRADEMARK_KINDS[adClass]}
-                      </p>
-                    )}
-                  </div>
+              <hr className="border-[#E5E8EB] dark:border-[#2D3748]" />
+
+              {/* 캠페인 목표 */}
+              <div>
+                <p className={sectionTitle}>캠페인 목표</p>
+                <div className="flex flex-wrap gap-2">
+                  {OBJECTIVES.map(({ value, label }) => (
+                    <button key={value} type="button" onClick={() => toggle(setObjectives, value)}
+                      className={`${chipBase} ${objectives.includes(value) ? chipActive : chipIdle}`}>{label}</button>
+                  ))}
                 </div>
+              </div>
 
-                <hr className="border-[#E5E8EB] dark:border-[#2D3748]" />
+              <hr className="border-[#E5E8EB] dark:border-[#2D3748]" />
 
+              {/* 광고 카테고리 */}
+              <div>
+                <p className={sectionTitle}>광고 카테고리 <span className="text-[10px] font-normal text-[#B0B8C1] dark:text-[#4B5563]">선택사항</span></p>
                 <div className="space-y-2">
-                  <label className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]">
-                    예산 규모
-                    <span className="ml-2 text-xs font-normal text-[#8B95A1] dark:text-[#6B7280]">선택사항</span>
-                  </label>
-                  <div className="flex gap-2">
+                  <select value={adCategory} onChange={(e) => { setAdCategory(e.target.value); setAdClass(null); }}
+                    className={inputCls}>
+                    <option value="">카테고리 선택</option>
+                    {TRADEMARK_CATEGORIES.map((c) => <option key={c.name} value={c.name}>{c.name}</option>)}
+                  </select>
+                  <select value={adClass ?? ""} onChange={(e) => setAdClass(e.target.value ? Number(e.target.value) : null)}
+                    disabled={!adCategory} className={`${inputCls} disabled:opacity-40 disabled:cursor-not-allowed`}>
+                    <option value="">{adCategory ? "분류 선택 (선택사항)" : "카테고리를 먼저 선택하세요"}</option>
+                    {(TRADEMARK_CATEGORIES.find((c) => c.name === adCategory)?.classes ?? []).map((n) => (
+                      <option key={n} value={n}>{n}류 — {TRADEMARK_KINDS[n]}</option>
+                    ))}
+                  </select>
+                  {adClass !== null && (
+                    <p className="text-xs text-[#3182F6] bg-[#EEF4FF] dark:bg-[#1E3A5F] px-3 py-2 rounded-lg">
+                      {adClass}류: {TRADEMARK_KINDS[adClass]}
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              <hr className="border-[#E5E8EB] dark:border-[#2D3748]" />
+
+              {/* 예산 + 경쟁 */}
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <p className={sectionTitle}>예산 규모 <span className="text-[10px] font-normal text-[#B0B8C1] dark:text-[#4B5563]">선택</span></p>
+                  <div className="flex gap-1.5">
                     {(["소규모", "중간", "대규모"] as BudgetScale[]).map((v) => (
                       <button key={v} type="button" onClick={() => setBudgetScale(budgetScale === v ? null : v)}
-                        className={`flex-1 py-2.5 rounded-xl border text-sm font-medium transition-colors ${
-                          budgetScale === v
-                            ? "border-[#3182F6] bg-[#EEF4FF] dark:bg-[#1E3A5F] text-[#3182F6]"
-                            : "border-[#E5E8EB] dark:border-[#2D3748] text-[#8B95A1] dark:text-[#6B7280] hover:border-[#3182F6]"
-                        }`}
-                      >{v}</button>
+                        className={`flex-1 py-2 rounded-lg border text-[10px] font-medium transition-colors ${budgetScale === v ? chipActive : chipIdle}`}>{v}</button>
                     ))}
                   </div>
                 </div>
-
-                <div className="space-y-2">
-                  <label className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]">
-                    경쟁 강도
-                    <span className="ml-2 text-xs font-normal text-[#8B95A1] dark:text-[#6B7280]">선택사항</span>
-                  </label>
-                  <div className="flex gap-2">
+                <div>
+                  <p className={sectionTitle}>경쟁 강도 <span className="text-[10px] font-normal text-[#B0B8C1] dark:text-[#4B5563]">선택</span></p>
+                  <div className="flex gap-1.5">
                     {(["블루오션", "보통", "레드오션"] as CompetitionLevel[]).map((v) => (
                       <button key={v} type="button" onClick={() => setCompetitionLevel(competitionLevel === v ? null : v)}
-                        className={`flex-1 py-2.5 rounded-xl border text-sm font-medium transition-colors ${
-                          competitionLevel === v
-                            ? "border-[#3182F6] bg-[#EEF4FF] dark:bg-[#1E3A5F] text-[#3182F6]"
-                            : "border-[#E5E8EB] dark:border-[#2D3748] text-[#8B95A1] dark:text-[#6B7280] hover:border-[#3182F6]"
-                        }`}
-                      >{v}</button>
+                        className={`flex-1 py-2 rounded-lg border text-[10px] font-medium transition-colors ${competitionLevel === v ? chipActive : chipIdle}`}>{v}</button>
                     ))}
                   </div>
                 </div>
               </div>
-            </div>
 
-            <div className="flex gap-3 pt-2">
-              <button
-                onClick={() => setStep("upload")}
-                className="px-4 py-2.5 border border-[#E5E8EB] dark:border-[#2D3748] rounded-lg text-sm text-[#8B95A1] dark:text-[#6B7280] hover:bg-[#F9FAFB] dark:hover:bg-[#252D3D] transition-colors"
-              >
-                이전
-              </button>
+              {/* 시뮬레이션 시작 버튼 */}
               <button
                 onClick={startSimulation}
-                disabled={inputMode === "image" && !adTitle}
-                className="flex items-center gap-2 px-6 py-2.5 bg-[#3182F6] hover:bg-[#1B6EEB] disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors"
+                disabled={!canStart || (inputMode === "image" && !adTitle)}
+                className="mt-2 w-full flex items-center justify-center gap-2 py-3 bg-[#3182F6] hover:bg-[#1B6EEB] disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl text-sm font-semibold transition-colors"
               >
                 <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
                   <path d="M8 5v14l11-7z" />
@@ -516,17 +424,13 @@ export default function SimulationPage() {
   if (step === "running") {
     return (
       <AppLayout>
-        <div className="max-w-screen-xl mx-auto px-6 py-8">
-          <div className="mb-8">
+        <div className="px-8 py-8 max-w-5xl mx-auto">
+          <div className="mb-6">
             <h1 className="text-2xl font-bold text-[#191F28] dark:text-[#F2F4F6]">시뮬레이션 진행 중</h1>
             <p className="text-sm text-[#8B95A1] dark:text-[#6B7280] mt-1">잠시만 기다려주세요</p>
           </div>
           <div className="bg-white dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748] rounded-2xl p-6 max-w-2xl transition-colors">
-            <SimulatorProgress
-              currentStage={progress.stage}
-              pct={progress.pct}
-              message={progress.message}
-            />
+            <SimulatorProgress currentStage={progress.stage} pct={progress.pct} message={progress.message} />
           </div>
         </div>
       </AppLayout>
@@ -538,22 +442,18 @@ export default function SimulationPage() {
     const { p0, p1 } = result;
     return (
       <AppLayout>
-        <div className="max-w-screen-xl mx-auto px-6 py-8 space-y-6">
-          {/* 헤더 */}
+        <div className="px-8 py-8 max-w-5xl mx-auto space-y-6">
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-2xl font-bold text-[#191F28] dark:text-[#F2F4F6]">시뮬레이션 결과</h1>
               <p className="text-sm text-[#8B95A1] dark:text-[#6B7280] mt-1">AI 가상 소비자 {p0.persona_reactions.length}명의 반응</p>
             </div>
-            <button
-              onClick={() => { setStep("upload"); setResult(null); }}
-              className="px-4 py-2 border border-[#E5E8EB] dark:border-[#2D3748] rounded-lg text-sm text-[#8B95A1] dark:text-[#6B7280] hover:bg-[#F9FAFB] dark:hover:bg-[#252D3D] transition-colors"
-            >
+            <button onClick={() => { setStep("setup"); setResult(null); }}
+              className="px-4 py-2 border border-[#E5E8EB] dark:border-[#2D3748] rounded-lg text-sm text-[#8B95A1] dark:text-[#6B7280] hover:bg-[#F9FAFB] dark:hover:bg-[#252D3D] transition-colors">
               새 시뮬레이션
             </button>
           </div>
 
-          {/* KPI 카드 */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
             <KpiCard label="CTR 예측" value={formatPercent(p1.kpi.ctr)} />
             <KpiCard label="CVR 예측" value={formatPercent(p1.kpi.cvr)} />
@@ -561,16 +461,10 @@ export default function SimulationPage() {
             <KpiCard label="참여 페르소나" value={`${p0.persona_reactions.length}명`} />
           </div>
 
-          {/* 구매의향 분포 */}
           <div className="bg-white dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748] rounded-2xl p-6 transition-colors">
-            <DistributionChart
-              title="집단 구매의향 분포"
-              distribution={p0.aggregate_purchase_intent}
-              kobacoBadge={p0.kobaco_comparable}
-            />
+            <DistributionChart title="집단 구매의향 분포" distribution={p0.aggregate_purchase_intent} kobacoBadge={p0.kobaco_comparable} />
           </div>
 
-          {/* P1 신호 분포 */}
           <div>
             <h2 className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6] mb-3">
               신호별 분포{" "}
@@ -587,7 +481,6 @@ export default function SimulationPage() {
             </div>
           </div>
 
-          {/* 페르소나 반응 샘플 */}
           <div className="bg-white dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748] rounded-2xl p-6 space-y-3 transition-colors">
             <h2 className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]">페르소나 반응 샘플</h2>
             {p0.persona_reactions.slice(0, 5).map((r) => (

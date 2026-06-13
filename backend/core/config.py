@@ -1,9 +1,16 @@
+from pathlib import Path
+
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+BACKEND_ROOT = Path(__file__).resolve().parent.parent
+ENV_FILE = BACKEND_ROOT / ".env"
+
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=str(ENV_FILE), env_file_encoding="utf-8", extra="ignore"
+    )
 
     # App
     app_env: str = "development"
@@ -23,11 +30,11 @@ class Settings(BaseSettings):
     # Google Gemini
     gemini_api_key: str | None = None
 
-    # LangSmith
-    langchain_tracing_v2: bool = True
-    langchain_endpoint: str = "https://api.smith.langchain.com"
-    langchain_api_key: str
-    langchain_project: str = "clickme-v2"
+    # LangSmith — API 키 없으면 트레이싱 비활성(로컬 기동 가능)
+    LANGSMITH_TRACING_V2: bool = True
+    LANGSMITH_ENDPOINT: str = "https://api.smith.langchain.com"
+    LANGSMITH_API_KEY: str = ""
+    LANGSMITH_PROJECT: str = "clickme-v2"
 
     # AWS
     aws_access_key_id: str
@@ -40,6 +47,21 @@ class Settings(BaseSettings):
     # Simulation
     default_persona_count: int = Field(default=20, ge=1, le=1000)
     max_persona_count: int = Field(default=1000, ge=1)
+
+    # Meta / Instagram Content Publishing (Generator) — 비우면 Mock 게시 모드
+    meta_access_token: str | None = None
+    meta_ig_user_id: str | None = None
+    meta_graph_api_version: str = "v21.0"
+
+    # Generator (광고 생성)
+    generator_text_model: str = "gpt-4o"
+    generator_image_model: str = "gpt-image-1"
+    generator_image_quality: str = "medium"
+
+    # JWT (Cognito 전환 전 임시)
+    jwt_secret: str = "clickme-dev-secret-change-in-prod"
+    jwt_algorithm: str = "HS256"
+    jwt_expire_minutes: int = 60 * 24 * 7  # 7일
 
 
 settings = Settings()

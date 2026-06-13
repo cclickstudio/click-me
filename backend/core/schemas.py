@@ -129,8 +129,11 @@ class SimulationRequest(BaseModel):
     simulation_id: str
     ad_analysis: dict[str, Any]
     personas: list[dict[str, Any]] = Field(default_factory=list)
-    objective: str = "conversion"  # awareness|conversion|lead_gen|app_install|retention|product_launch|promotion
+    # awareness|conversion|lead_gen|app_install|retention|product_launch|promotion
+    objective: str = "conversion"
     persona_set: dict[str, Any] = Field(default_factory=dict)
+    project_id: str | None = None
+    ad_title: str | None = None
 
 
 class SimulationTaskResponse(BaseModel):

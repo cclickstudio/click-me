@@ -1,8 +1,12 @@
+import { getToken } from "./authApi";
+
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const token = getToken();
+  const authHeader = token ? { Authorization: `Bearer ${token}` } : {};
   const res = await fetch(`${API_BASE}/api${path}`, {
-    headers: { "Content-Type": "application/json", ...init?.headers },
+    headers: { "Content-Type": "application/json", ...authHeader, ...init?.headers },
     ...init,
   });
   if (!res.ok) {
@@ -58,5 +62,24 @@ export const api = {
     create: (body: { name: string; description?: string }) =>
       request("/projects", { method: "POST", body: JSON.stringify(body) }),
     get: (id: string) => request(`/projects/${id}`),
+  },
+
+  generator: {
+    start: (body: object) =>
+      request("/generator/generations", { method: "POST", body: JSON.stringify(body) }),
+    stream: (generationId: string) =>
+      new EventSource(`${API_BASE}/api/generator/generations/${generationId}/stream`),
+    detail: (generationId: string) => request(`/generator/generations/${generationId}`),
+    select: (generationId: string, candidateId: string) =>
+      request(`/generator/generations/${generationId}/select`, {
+        method: "POST",
+        body: JSON.stringify({ candidate_id: candidateId }),
+      }),
+    publish: (generationId: string, candidateId: string, caption: string) =>
+      request(`/generator/generations/${generationId}/publish`, {
+        method: "POST",
+        body: JSON.stringify({ candidate_id: candidateId, caption }),
+      }),
+    list: (limit = 20) => request(`/generator/generations?limit=${limit}`),
   },
 };

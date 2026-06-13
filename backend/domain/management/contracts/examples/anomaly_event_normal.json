@@ -1,0 +1,15 @@
+{
+  "event_id": "evt_001",
+  "campaign_id": "camp_abc123",
+  "anomaly_type": "DELIVERY_ANOMALY",
+  "detected_at": "2026-06-11T09:00:00Z",
+  "metrics": {
+    "impressions": 8200,
+    "expected_impressions": 10000,
+    "spend": 41.0,
+    "expected_spend": 50.0,
+    "cpm": 5.0
+  },
+  "severity": "MEDIUM",
+  "message": "노출이 기대치 대비 18% 부족합니다."
+}
