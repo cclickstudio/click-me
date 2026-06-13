@@ -1,0 +1,17 @@
+{
+  "_role": "단계1 인구통계 뼈대 — 연령밴드×성별 샘플링 가중치. target_filter 조건부 샘플링의 모집단.",
+  "is_placeholder": true,
+  "source": "행안부 주민등록 인구통계 (data.go.kr/data/15097972) — 공식 CSV로 교체 필요",
+  "warning": "근사 placeholder fixture(파이프라인 가동용). 분석·발표 전 raw/population_age_sex.csv(공식, age_band,sex,count)로 교체. 로더가 CSV 있으면 우선 사용.",
+  "reference_year": null,
+  "bands": [
+    { "age_band": "0-9",   "share": 0.07, "male_ratio": 0.512 },
+    { "age_band": "10-19", "share": 0.09, "male_ratio": 0.515 },
+    { "age_band": "20-29", "share": 0.12, "male_ratio": 0.530 },
+    { "age_band": "30-39", "share": 0.13, "male_ratio": 0.520 },
+    { "age_band": "40-49", "share": 0.15, "male_ratio": 0.505 },
+    { "age_band": "50-59", "share": 0.16, "male_ratio": 0.500 },
+    { "age_band": "60-69", "share": 0.14, "male_ratio": 0.480 },
+    { "age_band": "70+",   "share": 0.14, "male_ratio": 0.420 }
+  ]
+}

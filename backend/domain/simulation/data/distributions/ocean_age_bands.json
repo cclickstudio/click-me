@@ -1,0 +1,35 @@
+{
+  "_role": "단계2-α 성격(OCEAN) — 연령 조건부 샘플링용 분포. 연령은 단계1(인구)에서, 성격은 여기서.",
+  "source": "서울대-카카오 OCEAN, Nature Sci. Rep. 2026, DOI:10.1038/s41598-025-34511-4 (N=813,611)",
+  "license": "CC BY-NC-ND 4.0 — 비상업·변경금지. 상업 서비스화 시 법무 검토 필수",
+  "self_selection_bias": true,
+  "bias_note": "카카오 마음날씨 자발적 이용자 표본 → 전국 대표 아님. 리포트·코드에 명시(§7 금지).",
+  "personality_types": [
+    "Average",
+    "Introverted-Open",
+    "Introverted-Reactive",
+    "Expressive",
+    "Conventional"
+  ],
+  "age_bands": {
+    "14-19": { "sample_size": 162619, "tier": "P2" },
+    "20-29": { "sample_size": 396653, "tier": "P1" },
+    "30-39": { "sample_size": 172623, "tier": "P1" },
+    "40-49": { "sample_size": 54407, "tier": "P2" },
+    "50-59": { "sample_size": 21059, "tier": "P2" },
+    "60+":   { "sample_size": 4604,  "tier": "P2" }
+  },
+  "trait_params": {
+    "needs_real_values": true,
+    "todo": "연령밴드×OCEAN(openness/conscientiousness/extraversion/agreeableness/neuroticism)별 mean·sd를 Nature 본문·supplementary(또는 40대+는 BFI-K)에서 추출해 채울 것.",
+    "scale": "확인 필요 (논문 척도)",
+    "placeholder": {
+      "_warning": "파이프라인 가동용 중립 placeholder. 분석·발표 금지. 실수치로 교체 전까지 grounding 미성립.",
+      "openness": { "mean": 3.0, "sd": 0.7 },
+      "conscientiousness": { "mean": 3.0, "sd": 0.7 },
+      "extraversion": { "mean": 3.0, "sd": 0.7 },
+      "agreeableness": { "mean": 3.0, "sd": 0.7 },
+      "neuroticism": { "mean": 3.0, "sd": 0.7 }
+    }
+  }
+}
