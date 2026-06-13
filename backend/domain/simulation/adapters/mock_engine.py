@@ -100,3 +100,16 @@ class MockRubricEvaluator:
             RubricScore(dimension=d, score=rng.randint(40, 90), evidence={"mock": True})
             for d in dimensions
         ]
+
+
+class MockQaGate:
+    """QA 검문소(mock) — 결정적으로 일부 첫 시도를 탈락시켜 재시도 루프를 검증.
+
+    실제 QA(광고 무관·설정 모순·앞뒤 불일치 판정)는 추후 어댑터로 교체.
+    persona_id 기반 결정적 판정 → 약 20%가 첫 시도 탈락, 재생성(재시도) 시 통과로 간주.
+    """
+
+    def check(self, reaction: PersonaReaction, attempt: int) -> tuple[bool, str | None]:
+        if attempt < 2 and sum(map(ord, reaction.persona_id)) % 5 == 0:
+            return False, "mock_qa_inconsistent"
+        return True, None
