@@ -17,10 +17,22 @@ from fastapi.responses import JSONResponse
 
 logger = logging.getLogger("clickme")
 
-# API 라우터 재구성 진행 중 — 현재 도메인 구조로 이전 완료된 라우터만 등록.
-# (이전 평면 라우터 admin/ads/chat/generator/inquiries/personas/projects/simulate 는 이전 중.)
+# 시뮬레이션은 도메인 구조 라우터(api/routers/simulation)를 사용 — 구 simulate 라우터 대체.
+from api.routers import (
+    admin,
+    ads,
+    auth,
+    chat,
+    company,
+    dashboard,
+    generator,
+    inquiries,
+    personas,
+    projects,
+)
 from api.routers.simulation.router import router as simulation_router
 from core.config import settings
+from domain.generator.adapters.instagram import load_meta_credentials
 
 if not settings.LANGSMITH_API_KEY:
     os.environ["LANGSMITH_TRACING"] = "false"
@@ -29,6 +41,13 @@ if not settings.LANGSMITH_API_KEY:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    token, ig_user_id, _ = load_meta_credentials()
+    if token and ig_user_id:
+        logger.info("Instagram publisher: MetaGraph (ig_user_id=%s…)", ig_user_id[:6])
+    else:
+        logger.warning(
+            "Instagram publisher: Mock — .env에 META_ACCESS_TOKEN, META_IG_USER_ID 설정 필요"
+        )
     yield
 
 
@@ -60,7 +79,17 @@ app.add_middleware(
     expose_headers=["*"],
 )
 
+app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
+app.include_router(company.router, prefix="/api/company", tags=["company"])
+app.include_router(chat.router, prefix="/api/chat", tags=["chat"])
+app.include_router(dashboard.router, prefix="/api/dashboard", tags=["dashboard"])
 app.include_router(simulation_router, prefix="/api/simulation", tags=["simulation"])
+app.include_router(ads.router, prefix="/api/ads", tags=["ads"])
+app.include_router(admin.router, prefix="/api/admin", tags=["admin"])
+app.include_router(inquiries.router, prefix="/api/inquiries", tags=["inquiries"])
+app.include_router(personas.router, prefix="/api/personas", tags=["personas"])
+app.include_router(projects.router, prefix="/api/projects", tags=["projects"])
+app.include_router(generator.router, prefix="/api/generator", tags=["generator"])
 
 
 @app.get("/health")

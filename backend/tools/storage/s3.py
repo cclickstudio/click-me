@@ -42,11 +42,18 @@ async def download_bytes(key: str) -> bytes:
         return await obj["Body"].read()
 
 
-async def presign_get(key: str, expires_in: int = 3600) -> str:
-    """다운로드용 presigned URL을 발급한다 (기본 1시간)."""
-    async with _session.client("s3") as s3:
-        return await s3.generate_presigned_url(
-            "get_object",
-            Params={"Bucket": settings.s3_bucket_name, "Key": key},
-            ExpiresIn=expires_in,
-        )
+async def presign_get(key: str, expires_in: int = 3600) -> str | None:
+    """다운로드용 presigned URL을 발급한다 (기본 1시간). 실패 시 None 반환."""
+    import logging
+    try:
+        async with _session.client("s3") as s3:
+            url = await s3.generate_presigned_url(
+                "get_object",
+                Params={"Bucket": settings.s3_bucket_name, "Key": key},
+                ExpiresIn=expires_in,
+            )
+            logging.getLogger("clickme").debug("presign_get OK: key=%s", key)
+            return url
+    except Exception as exc:
+        logging.getLogger("clickme").warning("presign_get 실패: key=%s, error=%s", key, exc)
+        return None

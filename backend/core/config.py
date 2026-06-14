@@ -60,5 +60,10 @@ class Settings(BaseSettings):
     generator_image_model: str = "gpt-image-1"
     generator_image_quality: str = "medium"
 
+    # JWT (Cognito 전환 전 임시)
+    jwt_secret: str = "clickme-dev-secret-change-in-prod"
+    jwt_algorithm: str = "HS256"
+    jwt_expire_minutes: int = 60 * 24 * 7  # 7일
+
 
 settings = Settings()

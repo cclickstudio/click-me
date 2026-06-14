@@ -8,6 +8,7 @@ import json
 import logging
 import uuid
 from collections.abc import AsyncIterator
+from contextlib import suppress
 
 from PIL import Image
 from sqlalchemy import select
@@ -24,15 +25,23 @@ logger = logging.getLogger("clickme")
 _tasks: dict[str, dict] = {}
 
 
-async def start_generation(request: GenerationCreateRequest) -> str:
+async def start_generation(
+    request: GenerationCreateRequest,
+    created_by: uuid.UUID | None = None,
+) -> str:
     """생성 파이프라인 시작 — DB 행 생성 후 백그라운드 실행, generation_id 반환."""
     generation_id = str(uuid.uuid4())
+    project_uuid = None
+    if request.project_id:
+        with suppress(ValueError):
+            project_uuid = uuid.UUID(request.project_id)
+
     async with AsyncSessionLocal() as session:
         session.add(
             AdGeneration(
                 id=uuid.UUID(generation_id),
-                # 프로젝트 라우터가 인메모리라 FK 보장 불가 — project_id는 input JSONB에만 보관
-                project_id=None,
+                project_id=project_uuid,
+                created_by=created_by,
                 status="pending",
                 input=request.model_dump(),
             )
