@@ -117,26 +117,29 @@ async def instagram_status():
     from core.config import settings as cached
     from domain.generator.adapters.instagram import build_publisher, load_meta_credentials
 
-    token, ig_id, api_version = load_meta_credentials()
+    token, ig_account_id, api_version = load_meta_credentials()
     publisher = build_publisher()
     env_path = _backend_env_path()
-    file_token = (
-        (dotenv_values(env_path).get("META_ACCESS_TOKEN") or "") if env_path.exists() else ""
-    )
+    file_vals = dotenv_values(env_path) if env_path.exists() else {}
+    file_token = (file_vals.get("META_ACCESS_TOKEN") or "").strip()
     proc_token = os.environ.get("META_ACCESS_TOKEN") or ""
     return {
         "publisher": type(publisher).__name__,
         "cwd": os.getcwd(),
         "env_file": str(env_path),
         "env_file_exists": env_path.exists(),
-        "file_token_len": len(file_token.strip()),
+        "file_token_len": len(file_token),
         "process_token_len": len(proc_token.strip()),
         "active_token_len": len(token or ""),
-        "tokens_in_sync": len(file_token.strip()) == len(token or ""),
-        "fresh_ig_user_id_prefix": (ig_id or "")[:6] or None,
+        "tokens_in_sync": len(file_token) == len(token or ""),
+        "ig_account_id_prefix": (ig_account_id or "")[:6] or None,
         "api_version": api_version,
+        # Settings 캐시 상태 (새 변수명 기준)
         "cached_meta_token_set": bool(cached.meta_access_token),
-        "cached_meta_ig_set": bool(cached.meta_ig_user_id),
+        "cached_meta_instagram_account_id_set": bool(cached.meta_instagram_account_id),
+        "cached_meta_app_id_set": bool(cached.meta_app_id),
+        "cached_meta_page_id_set": bool(cached.meta_page_id),
+        "cached_meta_ad_account_id_set": bool(cached.meta_ad_account_id),
     }
 
 

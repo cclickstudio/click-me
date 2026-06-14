@@ -122,32 +122,37 @@ class MockInstagramPublisher:
 
 
 def load_meta_credentials() -> tuple[str | None, str | None, str]:
-    """`.env` 파일에서 직접 읽기 — 서버 기동 시 os.environ에 박힌 만료 토큰보다 우선."""
+    """`.env` 파일에서 직접 읽기 — 서버 기동 시 os.environ에 박힌 만료 토큰보다 우선.
+
+    Instagram 계정 ID는 META_INSTAGRAM_ACCOUNT_ID를 우선 읽고, 없으면 구형 META_IG_USER_ID로 폴백.
+    """
     if ENV_FILE.exists():
         vals = dotenv_values(ENV_FILE)
         token = (vals.get("META_ACCESS_TOKEN") or "").strip() or None
-        ig_user_id = (vals.get("META_IG_USER_ID") or "").strip() or None
-        api_version = (vals.get("META_GRAPH_API_VERSION") or "v21.0").strip()
-        return token, ig_user_id, api_version
+        ig_account_id = (
+            vals.get("META_INSTAGRAM_ACCOUNT_ID") or vals.get("META_IG_USER_ID") or ""
+        ).strip() or None
+        api_version = (vals.get("META_GRAPH_API_VERSION") or "v23.0").strip()
+        return token, ig_account_id, api_version
     cfg = Settings()
     token = (cfg.meta_access_token or "").strip() or None
-    ig_user_id = (cfg.meta_ig_user_id or "").strip() or None
-    return token, ig_user_id, cfg.meta_graph_api_version
+    ig_account_id = (cfg.meta_instagram_account_id or "").strip() or None
+    return token, ig_account_id, cfg.meta_graph_api_version
 
 
 def build_publisher() -> InstagramPublisher:
     """자격증명 유무로 실제/Mock 어댑터 자동 선택."""
-    token, ig_user_id, api_version = load_meta_credentials()
-    if token and ig_user_id:
-        logger.info("Instagram: MetaGraphPublisher (ig_user_id=%s…)", ig_user_id[:6])
+    token, ig_account_id, api_version = load_meta_credentials()
+    if token and ig_account_id:
+        logger.info("Instagram: MetaGraphPublisher (ig_account_id=%s…)", ig_account_id[:6])
         return MetaGraphPublisher(
             access_token=token,
-            ig_user_id=ig_user_id,
+            ig_user_id=ig_account_id,
             api_version=api_version,
         )
     logger.warning(
-        "Instagram: Mock 모드 — META_ACCESS_TOKEN·META_IG_USER_ID 확인 (token=%s ig_id=%s)",
+        "Instagram: Mock 모드 — META_ACCESS_TOKEN·META_INSTAGRAM_ACCOUNT_ID 확인 (token=%s ig_id=%s)",
         "set" if token else "missing",
-        "set" if ig_user_id else "missing",
+        "set" if ig_account_id else "missing",
     )
     return MockInstagramPublisher()

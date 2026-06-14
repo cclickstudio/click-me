@@ -62,10 +62,25 @@ class Settings(BaseSettings):
     default_persona_count: int = Field(default=20, ge=1, le=1000)
     max_persona_count: int = Field(default=1000, ge=1)
 
-    # Meta / Instagram Content Publishing (Generator) — 비우면 Mock 게시 모드
+    # Meta / Instagram (Generator) — 비우면 Mock 게시 모드
+    # App
+    meta_app_id: str | None = None
+    meta_app_secret: str | None = None
+    # User
     meta_access_token: str | None = None
-    meta_ig_user_id: str | None = None
-    meta_graph_api_version: str = "v21.0"
+    meta_user_id: str | None = None
+    # Facebook Page
+    meta_page_id: str | None = None
+    meta_page_access_token: str | None = None
+    # Instagram (META_IG_USER_ID → META_INSTAGRAM_ACCOUNT_ID, 구형 이름도 수용)
+    meta_instagram_account_id: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("META_INSTAGRAM_ACCOUNT_ID", "META_IG_USER_ID"),
+    )
+    # Marketing (Phase 6 광고 집행용)
+    meta_ad_account_id: str | None = None
+    # Config
+    meta_graph_api_version: str = "v23.0"
 
     # Generator (광고 생성)
     generator_text_provider: str = "openai"  # openai | anthropic | google_genai ...
