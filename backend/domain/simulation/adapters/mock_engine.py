@@ -1,0 +1,146 @@
+# Mock 어댑터 — LLM 없이 결정적(seed 기반) 산출. 구조 검증·테스트·무API 데모용
+#
+# 실제 LLM 어댑터(vision·exposure·deliberation·ssr)는 tools/ 이전 후 별도 어댑터로 추가.
+from __future__ import annotations
+
+import random
+
+from domain.simulation.contracts.enums import EmotionTag, RejectionReasonTag
+from domain.simulation.contracts.schemas import (
+    AdInterpretation,
+    Aisas,
+    PanelSpec,
+    Persona,
+    PersonaReaction,
+    RubricScore,
+    SimulationRunRequest,
+)
+
+_GENDERS = ("M", "F")
+_REGIONS = ("서울", "경기", "부산", "대구", "광주")
+_OCEAN_KEYS = ("openness", "conscientiousness", "extraversion", "agreeableness", "neuroticism")
+
+
+def _pick_exposure(persona: Persona, rng: random.Random) -> str:
+    """페르소나의 KISDI 노출맥락 후보에서 하나를 선택해 문자열로. 후보 없으면 기본값."""
+    candidates = persona.media_behavior.get("exposure_candidates") or []
+    if not candidates:
+        return "sns_feed_evening"
+    e = rng.choice(candidates)
+    return f"{e['timeband']}·{e['place']}·{e['medium']}·{e['activity']}"
+
+
+class MockAdInterpreter:
+    """AdInterpreter 어댑터 —고정 해석 반환."""
+
+    async def interpret(self, request: SimulationRunRequest) -> AdInterpretation:
+        return AdInterpretation(
+            ad_id=request.ad_id,
+            structured_analysis={"mock": True},
+            detected_industry="beverage",
+            detected_target="20대",
+            detected_message="신제품 출시",
+            intent_mismatch=False,
+            model_version="mock-vision-0",
+        )
+
+
+class MockPanelProvider:
+    """PanelProvider 어댑터 —seed 기반 결정적 페르소나 생성. 캐시 재사용은 추후."""
+
+    async def get_or_build(self, spec: PanelSpec) -> tuple[str, list[Persona]]:
+        rng = random.Random(spec.seed)
+        personas: list[Persona] = []
+        for i in range(spec.size):
+            personas.append(
+                Persona(
+                    persona_id=f"P-{i:05d}",
+                    age=rng.randint(20, 59),
+                    gender=rng.choice(_GENDERS),
+                    region=rng.choice(_REGIONS),
+                    ocean={k: round(rng.random(), 2) for k in _OCEAN_KEYS},
+                    media_behavior={"sns_hours": rng.randint(1, 6)},
+                    consumption_values={"price_sensitivity": round(rng.random(), 2)},
+                    profile_narrative="mock persona",
+                )
+            )
+        return spec.version, personas
+
+
+class MockReactionEngine:
+    """ReactionEngine 어댑터 —페르소나별 결정적 반응(§3.5 형태)."""
+
+    async def react(self, persona: Persona, ad: AdInterpretation) -> PersonaReaction:
+        rng = random.Random(persona.persona_id)
+        exposure = _pick_exposure(persona, rng)  # KISDI 노출맥락 후보에서 선택(반응마다 새로)
+        attention = rng.random() > 0.2
+        interest = attention and rng.random() > 0.3
+        action = interest and rng.random() > 0.6
+        rejected = rng.random() < 0.1
+        return PersonaReaction(
+            persona_id=persona.persona_id,
+            exposure_context=exposure,
+            aisas=Aisas(
+                attention=attention,
+                interest=interest,
+                search=interest and rng.random() > 0.5,
+                action=action,
+                share=action and rng.random() > 0.7,
+            ),
+            drop_stage=None if action else "search",
+            purchase_intent=rng.randint(1, 5),
+            trust=rng.randint(1, 5),
+            rejected=rejected,
+            rejection_reason_tag=RejectionReasonTag.IRRELEVANT if rejected else None,
+            emotion_tag=rng.choice(list(EmotionTag)),
+            perceived_message=ad.detected_message,
+            perceived_target=ad.detected_target,
+            utterance="썸네일은 눈에 띄는데 뭘 사라는 건지 모르겠어요.",
+            qa_passed=True,
+        )
+
+
+class MockRubricEvaluator:
+    """RubricEvaluator 어댑터 —차원별 점수(숫자) 결정적 산출."""
+
+    async def evaluate(self, ad: AdInterpretation) -> list[RubricScore]:
+        rng = random.Random(ad.ad_id)
+        dimensions = ("clarity", "relevance", "trust", "creativity", "cta_strength")
+        return [
+            RubricScore(dimension=d, score=rng.randint(40, 90), evidence={"mock": True})
+            for d in dimensions
+        ]
+
+
+class MockNarrator:
+    """4-a 서사 생성(mock) — 속성을 결정적 한국어 문장으로 변환. LLM 없이 테스트·오프라인용."""
+
+    version = "mock-narrator-0"
+
+    def narrate(self, persona: Persona) -> str:
+        top = max(persona.ocean, key=persona.ocean.get) if persona.ocean else "openness"
+        medium = persona.media_behavior.get("primary_medium", "미디어")
+        minutes = persona.media_behavior.get("daily_media_minutes", "?")
+        se = persona.socioeconomic
+        edu = se.get("education")
+        income = se.get("income_bracket")
+        se_phrase = f" {edu}, 월소득 {income}." if edu and income else ""
+        return (
+            f"{persona.age}세 {persona.gender} · {persona.region}.{se_phrase} "
+            f"성격은 {top}이(가) 두드러지고, 주 이용 미디어는 {medium}(하루 약 {minutes}분)."
+        )
+
+
+class MockQaGate:
+    """QA 검문소(mock) — 결정적으로 일부 첫 시도를 탈락시켜 재시도 루프를 검증.
+
+    실제 QA(광고 무관·설정 모순·앞뒤 불일치 판정)는 추후 어댑터로 교체.
+    persona_id 기반 결정적 판정 → 약 20%가 첫 시도 탈락, 재생성(재시도) 시 통과로 간주.
+    """
+
+    async def check(
+        self, reaction: PersonaReaction, attempt: int, *, persona=None, ad=None
+    ) -> tuple[bool, str | None]:
+        if attempt < 2 and sum(map(ord, reaction.persona_id)) % 5 == 0:
+            return False, "mock_qa_inconsistent"
+        return True, None

@@ -1,12 +1,13 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useProjects } from './ProjectContext';
 import { useAuth } from './AuthProvider';
+import { getToken } from '@/lib/authApi';
 
-const SHOW_ON = ['/chat', '/simulation', '/generator', '/manage', '/simulations', '/generations'];
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
 const statusColor: Record<string, string> = {
   COMPLETED: 'bg-emerald-400', completed: 'bg-emerald-400',
@@ -32,6 +33,76 @@ function ChevronIcon({ open }: { open: boolean }) {
   );
 }
 
+// ── 프로젝트 생성 모달 ──────────────────────────────────────────
+function CreateProjectModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
+  const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
+  const [creating, setCreating] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => { inputRef.current?.focus(); }, []);
+
+  const handleCreate = async () => {
+    if (!name.trim() || creating) return;
+    setCreating(true);
+    await fetch(`${API_BASE}/api/projects`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: name.trim(), description: description.trim() || null }),
+    });
+    setCreating(false);
+    onCreated();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
+      <div className="bg-white dark:bg-[#1C2333] rounded-2xl shadow-xl w-full max-w-md mx-4 p-6">
+        <h2 className="text-lg font-bold text-[#191F28] dark:text-[#F2F4F6] mb-4">새 프로젝트</h2>
+        <div className="space-y-3">
+          <div>
+            <label className="text-xs font-medium text-[#4E5968] dark:text-[#9CA3AF] block mb-1">프로젝트 이름 *</label>
+            <input
+              ref={inputRef}
+              value={name}
+              onChange={e => setName(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') handleCreate(); if (e.key === 'Escape') onClose(); }}
+              placeholder="예: 2024 여름 캠페인"
+              className="w-full px-3 py-2.5 text-sm border border-[#E5E8EB] dark:border-[#2D3748] rounded-xl bg-white dark:bg-[#252D3D] text-[#191F28] dark:text-[#F2F4F6] placeholder-[#B0B8C1] focus:outline-none focus:border-[#3182F6] transition-colors"
+            />
+          </div>
+          <div>
+            <label className="text-xs font-medium text-[#4E5968] dark:text-[#9CA3AF] block mb-1">설명 (선택)</label>
+            <textarea
+              value={description}
+              onChange={e => setDescription(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Escape') onClose(); }}
+              placeholder="프로젝트에 대한 간단한 설명"
+              rows={3}
+              className="w-full px-3 py-2.5 text-sm border border-[#E5E8EB] dark:border-[#2D3748] rounded-xl bg-white dark:bg-[#252D3D] text-[#191F28] dark:text-[#F2F4F6] placeholder-[#B0B8C1] focus:outline-none focus:border-[#3182F6] transition-colors resize-none"
+            />
+          </div>
+        </div>
+        <div className="flex gap-2 mt-5">
+          <button
+            onClick={onClose}
+            className="flex-1 py-2.5 text-sm font-medium border border-[#E5E8EB] dark:border-[#2D3748] rounded-xl text-[#4E5968] dark:text-[#9CA3AF] hover:bg-[#F2F4F6] dark:hover:bg-[#252D3D] transition-colors"
+          >
+            취소
+          </button>
+          <button
+            onClick={handleCreate}
+            disabled={!name.trim() || creating}
+            className="flex-1 py-2.5 text-sm font-medium bg-[#3182F6] text-white rounded-xl hover:bg-[#1B6EEB] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {creating ? '생성 중...' : '만들기'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── 프로젝트 아이템 ─────────────────────────────────────────────
 function ProjectItem({
   project,
   activeSimId,
@@ -74,6 +145,7 @@ function ProjectItem({
       if (activeSimId) setSimOpen(true);
       if (activeGenId) setGenOpen(true);
     });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoOpen]);
 
   const toggle = async () => {
@@ -98,26 +170,41 @@ function ProjectItem({
 
   return (
     <div>
-      <button
-        onClick={toggle}
+      <div
         className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg transition-colors text-left ${
           isSelected ? 'bg-[#EBF3FF] dark:bg-[#1E3A5F]' : 'hover:bg-[#F2F4F6] dark:hover:bg-[#252D3D]'
         }`}
       >
-        <ChevronIcon open={isOpen} />
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"
-          className={isSelected ? 'text-[#3182F6] shrink-0' : 'text-[#8B95A1] shrink-0'}>
-          <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
-        </svg>
-        <span className="flex-1 min-w-0">
-          <span className={`block text-sm font-medium truncate ${isSelected ? 'text-[#3182F6]' : 'text-[#191F28] dark:text-[#F2F4F6]'}`}>
-            {project.name}
+        {/* 접기/펼치기 */}
+        <button onClick={toggle} className="flex items-center gap-2 flex-1 min-w-0 text-left">
+          <ChevronIcon open={isOpen} />
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"
+            className={isSelected ? 'text-[#3182F6] shrink-0' : 'text-[#8B95A1] shrink-0'}>
+            <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
+          </svg>
+          <span className="flex-1 min-w-0">
+            <span className={`block text-sm font-medium truncate ${isSelected ? 'text-[#3182F6]' : 'text-[#191F28] dark:text-[#F2F4F6]'}`}>
+              {project.name}
+            </span>
+            {isAdmin && project.organization_name && (
+              <span className="block text-[10px] text-[#B0B8C1] dark:text-[#4B5563] truncate">{project.organization_name}</span>
+            )}
           </span>
-          {isAdmin && project.organization_name && (
-            <span className="block text-[10px] text-[#B0B8C1] dark:text-[#4B5563] truncate">{project.organization_name}</span>
-          )}
-        </span>
-      </button>
+        </button>
+        {/* 자세히 보기 */}
+        <Link
+          href={`/projects/${project.id}`}
+          title="프로젝트 상세"
+          className="shrink-0 p-1 rounded-md text-[#B0B8C1] hover:text-[#3182F6] hover:bg-[#EBF3FF] dark:hover:bg-[#1E3A5F] transition-colors"
+          onClick={e => e.stopPropagation()}
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+            <polyline points="15 3 21 3 21 9" />
+            <line x1="10" y1="14" x2="21" y2="3" />
+          </svg>
+        </Link>
+      </div>
 
       {isOpen && (
         <div className="ml-5 border-l border-[#E5E8EB] dark:border-[#2D3748] pl-2 space-y-0.5 mt-0.5 mb-1">
@@ -236,14 +323,14 @@ function ProjectItem({
   );
 }
 
-export default function ProjectPanel() {
+// ── 메인 패널 ───────────────────────────────────────────────────
+export default function ProjectPanel({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
   const pathname = usePathname();
-  const { projects, loading, details, loadDetails, loadAll, selectProject } = useProjects();
+  const { projects, loading, details, loadDetails, loadAll, selectProject, refresh } = useProjects();
   const { user } = useAuth();
   const [myOnly, setMyOnly] = useState(false);
   const [openProjectId, setOpenProjectId] = useState<string | null>(null);
-
-  const show = SHOW_ON.some(p => pathname.startsWith(p));
+  const [showModal, setShowModal] = useState(false);
 
   const simMatch = pathname.match(/^\/simulations\/([^/]+)/);
   const genMatch = pathname.match(/^\/generations\/([^/]+)/);
@@ -273,76 +360,147 @@ export default function ProjectPanel() {
     })();
   }, [activeItemId, details, projects]);
 
-  if (!show) return null;
+  const handleCreated = async () => {
+    setShowModal(false);
+    await refresh();
+  };
 
+  // ── 접힌 상태 ──
+  if (collapsed) {
+    return (
+      <aside className="fixed top-0 left-56 h-full w-[50px] bg-[#FAFBFC] dark:bg-[#161B27] border-r border-[#E5E8EB] dark:border-[#2D3748] flex flex-col items-center pt-3 z-30 transition-all duration-200">
+        <button
+          onClick={onToggle}
+          title="패널 펼치기"
+          className="w-8 h-8 flex items-center justify-center rounded-lg text-[#8B95A1] hover:bg-[#F2F4F6] dark:hover:bg-[#252D3D] hover:text-[#3182F6] transition-colors"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="9 18 15 12 9 6" />
+          </svg>
+        </button>
+      </aside>
+    );
+  }
+
+  // ── 펼친 상태 ──
   return (
-    <aside className="fixed top-0 left-56 h-full w-60 bg-[#FAFBFC] dark:bg-[#161B27] border-r border-[#E5E8EB] dark:border-[#2D3748] flex flex-col z-30 transition-colors">
-      {/* 헤더 */}
-      <div className="h-14 flex items-center justify-between px-4 border-b border-[#E5E8EB] dark:border-[#2D3748] shrink-0">
-        <p className="text-sm font-semibold text-[#4E5968] dark:text-[#9CA3AF]">프로젝트</p>
-        {/* 전체 / 내 것 토글 */}
-        <div className="flex items-center gap-0.5 bg-[#F2F4F6] dark:bg-[#252D3D] rounded-lg p-0.5">
+    <>
+      <aside className="fixed top-0 left-56 h-full w-60 bg-[#FAFBFC] dark:bg-[#161B27] border-r border-[#E5E8EB] dark:border-[#2D3748] flex flex-col z-30 transition-all duration-200">
+        {/* 헤더 */}
+        <div className="h-14 flex items-center justify-between px-3 border-b border-[#E5E8EB] dark:border-[#2D3748] shrink-0">
+          {/* 접기 버튼 */}
           <button
-            onClick={() => setMyOnly(false)}
-            className={`px-2 py-1 rounded-md text-[11px] font-medium transition-colors ${
-              !myOnly
-                ? 'bg-white dark:bg-[#1C2333] text-[#191F28] dark:text-[#F2F4F6] shadow-sm'
-                : 'text-[#8B95A1] dark:text-[#6B7280] hover:text-[#4E5968] dark:hover:text-[#9CA3AF]'
-            }`}
+            onClick={onToggle}
+            title="패널 접기"
+            className="w-7 h-7 flex items-center justify-center rounded-lg text-[#8B95A1] hover:bg-[#F2F4F6] dark:hover:bg-[#252D3D] hover:text-[#3182F6] transition-colors"
           >
-            ALL
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="15 18 9 12 15 6" />
+            </svg>
           </button>
-          <button
-            onClick={() => { setMyOnly(true); loadAll(); }}
-            className={`px-2 py-1 rounded-md text-[11px] font-medium transition-colors ${
-              myOnly
-                ? 'bg-white dark:bg-[#1C2333] text-[#191F28] dark:text-[#F2F4F6] shadow-sm'
-                : 'text-[#8B95A1] dark:text-[#6B7280] hover:text-[#4E5968] dark:hover:text-[#9CA3AF]'
-            }`}
-          >
-            MY
-          </button>
-        </div>
-      </div>
 
-      <div className="flex-1 overflow-y-auto py-2 px-2">
-        {loading ? (
-          <p className="text-xs text-[#B0B8C1] px-3 py-2">불러오는 중...</p>
-        ) : projects.length === 0 ? (
-          <p className="text-xs text-[#B0B8C1] px-3 py-2">프로젝트가 없습니다</p>
-        ) : myOnly && projects.every(p => {
-          const myName = user?.name ?? null;
-          if (p.created_by_name === myName) return false;
-          const d = details[p.id];
-          if (!d?.loaded) return false;
-          return !d.sims.some(s => s.created_by_name === myName) && !d.gens.some(g => g.created_by_name === myName);
-        }) ? (
-          <p className="text-xs text-[#B0B8C1] px-3 py-2">참여한 프로젝트가 없습니다</p>
-        ) : (
-          <div className="space-y-0.5">
-            {(myOnly ? projects.filter(p => {
-              const myName = user?.name ?? null;
-              if (p.created_by_name === myName) return true;
-              const d = details[p.id];
-              if (!d?.loaded) return true; // 아직 로드 전이면 일단 표시
-              return d.sims.some(s => s.created_by_name === myName) || d.gens.some(g => g.created_by_name === myName);
-            }) : projects).map(p => (
-              <ProjectItem
-                key={p.id}
-                project={p}
-                activeSimId={activeSimId}
-                activeGenId={activeGenId}
-                autoOpen={p.id === activeProjectId}
-                myOnly={myOnly}
-                myName={user?.name ?? null}
-                isAdmin={user?.role === 'ADMIN'}
-                isOpen={openProjectId === p.id}
-                onToggleOpen={(id) => setOpenProjectId(prev => prev === id ? null : id)}
-              />
-            ))}
+          <p className="text-sm font-semibold text-[#4E5968] dark:text-[#9CA3AF]">프로젝트</p>
+
+          <div className="flex items-center gap-1">
+            {/* 새로고침 */}
+            <button
+              onClick={refresh}
+              title="새로고침"
+              className="w-7 h-7 flex items-center justify-center rounded-lg text-[#8B95A1] hover:bg-[#F2F4F6] dark:hover:bg-[#252D3D] hover:text-[#3182F6] transition-colors"
+            >
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" />
+                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
+              </svg>
+            </button>
+            {/* ALL / MY 토글 */}
+            <div className="flex items-center gap-0.5 bg-[#F2F4F6] dark:bg-[#252D3D] rounded-lg p-0.5">
+              <button
+                onClick={() => setMyOnly(false)}
+                className={`px-1.5 py-0.5 rounded-md text-[10px] font-medium transition-colors ${
+                  !myOnly
+                    ? 'bg-white dark:bg-[#1C2333] text-[#191F28] dark:text-[#F2F4F6] shadow-sm'
+                    : 'text-[#8B95A1] dark:text-[#6B7280]'
+                }`}
+              >ALL</button>
+              <button
+                onClick={() => { setMyOnly(true); loadAll(); }}
+                className={`px-1.5 py-0.5 rounded-md text-[10px] font-medium transition-colors ${
+                  myOnly
+                    ? 'bg-white dark:bg-[#1C2333] text-[#191F28] dark:text-[#F2F4F6] shadow-sm'
+                    : 'text-[#8B95A1] dark:text-[#6B7280]'
+                }`}
+              >MY</button>
+            </div>
+
+            {/* + 버튼 */}
+            <button
+              onClick={() => setShowModal(true)}
+              title="새 프로젝트"
+              className="w-7 h-7 flex items-center justify-center rounded-lg text-[#8B95A1] hover:bg-[#EBF3FF] dark:hover:bg-[#1E3A5F] hover:text-[#3182F6] transition-colors"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+              </svg>
+            </button>
           </div>
-        )}
-      </div>
-    </aside>
+        </div>
+
+        {/* 프로젝트 목록 */}
+        <div className="flex-1 overflow-y-auto py-2 px-2">
+          {loading ? (
+            <p className="text-xs text-[#B0B8C1] px-3 py-2">불러오는 중...</p>
+          ) : projects.length === 0 ? (
+            <div className="px-3 py-6 text-center">
+              <p className="text-xs text-[#B0B8C1] dark:text-[#4B5563] mb-3">프로젝트가 없습니다</p>
+              <button
+                onClick={() => setShowModal(true)}
+                className="text-xs text-[#3182F6] hover:underline font-medium"
+              >
+                첫 프로젝트 만들기
+              </button>
+            </div>
+          ) : myOnly && projects.every(p => {
+            const myName = user?.name ?? null;
+            if (p.created_by_name === myName) return false;
+            const d = details[p.id];
+            if (!d?.loaded) return false;
+            return !d.sims.some(s => s.created_by_name === myName) && !d.gens.some(g => g.created_by_name === myName);
+          }) ? (
+            <p className="text-xs text-[#B0B8C1] px-3 py-2">참여한 프로젝트가 없습니다</p>
+          ) : (
+            <div className="space-y-0.5">
+              {(myOnly ? projects.filter(p => {
+                const myName = user?.name ?? null;
+                if (p.created_by_name === myName) return true;
+                const d = details[p.id];
+                if (!d?.loaded) return true;
+                return d.sims.some(s => s.created_by_name === myName) || d.gens.some(g => g.created_by_name === myName);
+              }) : projects).map(p => (
+                <ProjectItem
+                  key={p.id}
+                  project={p}
+                  activeSimId={activeSimId}
+                  activeGenId={activeGenId}
+                  autoOpen={p.id === activeProjectId}
+                  myOnly={myOnly}
+                  myName={user?.name ?? null}
+                  isAdmin={user?.role === 'ADMIN'}
+                  isOpen={openProjectId === p.id}
+                  onToggleOpen={(id) => setOpenProjectId(prev => prev === id ? null : id)}
+                />
+              ))}
+            </div>
+          )}
+        </div>
+      </aside>
+
+      {showModal && (
+        <CreateProjectModal
+          onClose={() => setShowModal(false)}
+          onCreated={handleCreated}
+        />
+      )}
+    </>
   );
 }

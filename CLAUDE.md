@@ -1,401 +1,139 @@
 # ClickMe — CLAUDE.md
 
-> AI-powered ad performance prediction platform. Test ads against AI-generated virtual consumers before launch.
-
----
+> 집행 전 AI 가상 소비자에게 광고를 테스트하고, 집행 후 성과를 추적·관리하는 **광고 전주기 지원 플랫폼** (기획서 v1.3).
+> 목표는 "실제 사람과 동일한 응답"이 아니라 "직감·내부 검토보다 나은 의사결정 근거" 제공.
 
 ## Key Decisions
 
-| Item                       | Decision                                                                  |
-| -------------------------- | ------------------------------------------------------------------------- |
-| Backend                    | FastAPI (Python only). No Java Spring Boot.                               |
-| Package managers           | uv (backend), pnpm (frontend). Cross-use forbidden.                       |
-| Architecture               | Monolith + partial DDD + SOLID. Single EC2.                               |
-| Message queue              | AWS SQS. No Redis.                                                        |
-| Simulation engine          | Deepsona (OCEAN) + SSR paper (arXiv 2510.08338).                          |
-| Scoring                    | SSR (embedding-based, no LLM). Not DLR (direct number output).            |
-| Output format              | Distribution. Not a scalar score.                                         |
-| Purchase intent validation | Compare against KOBACO baseline. Other signals are exploratory.           |
-| Auth 6.12                  | UI only (role selection button). No real JWT.                             |
-| Auth 7.8                   | TBD (JWT self-impl vs Cognito).                                           |
-| A/B comparison             | UI in 6.12, YouTube RAG actual feature in 7.8.                            |
-| Chat advisor               | Gemini 2.0 Flash. Persona: CLIO (광고 전략 AI 어드바이저). SSE streaming. |
-| Ad generation              | Gemini Flash 3.0 / GPT Image 2 / Gemini Omni. [7.8]                       |
-| PDF report                 | Full generation included in 6.12.                                         |
-| Customer inquiry           | In-app form → DB storage.                                                 |
+- **Backend** FastAPI (Python only, No Spring) / **PM** uv(backend)·pnpm(frontend) 교차 금지 / **Arch** 모놀리식 + 부분 DDD/SOLID, 단일 EC2.
+- **MQ** AWS SQS (No Redis — 트래킹 큐 Redis는 탐색 대상, Open Issues 참고).
+- **Sim engine** Deepsona(OCEAN) + SSR(arXiv 2510.08338). **Scoring** SSR(임베딩 기반, no LLM, not DLR). **Output** 스칼라 아닌 분포.
+- **구매의도 검증** KOBACO 베이스라인 대비. 그 외 신호는 탐색적(exploratory) 표기.
+- **인증(타깃)** JWT + 관리자 직접 계정 생성(자가가입·소셜 없음), Admin/User 역할. **(현재)** UI만, 실 JWT 미적용·점진 도입.
+- **A/B** UI 선반영, YouTube RAG 실기능은 최종 단계. **Chat** Gemini 2.0 Flash, persona CLIO, SSE — **후순위**.
+- **Ad gen** 개선 시안 5개 자동생성+순위 (Gemini Flash 3.0 / GPT Image 2 / Gemini Omni). **PDF** 전체 생성 포함. **문의** in-app 폼 → DB.
 
----
+## 핵심 기능 (기획서 v1.3)
+
+| #   | 기능              | 설명                                          | 우선순위 |
+| --- | ----------------- | --------------------------------------------- | -------- |
+| 4-1 | 광고 시뮬레이터   | 집행 전 반응 예측 → 개선 방향·보고서          | 핵심(2인) |
+| 4-2 | 광고 매니지먼트   | 목표·예산·플랫폼·성과를 단일 창구 관리        | 핵심(2인) |
+| 4-3 | 광고 생성         | 예측 반영 → 개선 시안 5개 생성·기대성과 순위  | 핵심(2인) |
+| 4-4 | 채팅 AI 어시스턴트 | 자유질문 + 시뮬·분석·생성 결과 전달          | 후순위    |
+
+> 핵심 3기능 병렬 진행, 채팅(4-4)·팀 관리는 그 완료 후 착수.
+
+**시뮬레이터 4대 KPI** — ① **클릭 의향률**: AISAS Action 통과 비율, 신뢰구간으로 표기 / **"예측 CTR" 등 실측 스케일 환산 금지**(실측 누적 후 calibration 해금). ② **구매의도**: 1~5점 평균+분포(분포 전체 표시, 평균 단언 금지). ③ **신뢰도**: 1~5점 평균. ④ **거부율**: 거부 비율 + 사유 분해.
+
+## 로드맵 / 비즈니스
+
+- **로드맵** 베이스라인 2026-06-12 ✅ → 최종 구현 2026-07-08(핵심 3기능 + 채팅·팀관리) → 발표 2026-07-14.
+- **플랜(UI만, 실과금 추후)** Free(개인·제한 시뮬·트래킹 1개) / Professional(팀·확장·무제한 트래킹·API 연동) / Enterprise(기업·대규모·다채널).
+- **조직** = 결제 단위(플랜 공유), **프로젝트** = 캠페인 단위(시안+매니지먼트), **팀 관리** = 프로젝트 협업(뷰어/에디터/오너).
+
+## 인증 및 보안
+
+- 소셜 로그인·자가가입 없음, **관리자가 직접 계정 생성**. JWT 기반, Admin/User 역할.
+- 기밀 데이터(예산·크리에이티브) 평문 로그 금지. 외부 플랫폼 API 키는 암호화 저장(AES-256 또는 AWS Secrets Manager).
+- 현재 페이즈: admin API는 `/api/admin/*` 경로 프리픽스로만 제한.
 
 ## Tech Stack
 
-| Area          | Tech                                | Notes                        |
-| ------------- | ----------------------------------- | ---------------------------- |
-| Frontend      | Next.js (TypeScript) + Tailwind CSS | pnpm                         |
-| Backend + AI  | Python FastAPI + LangGraph          | uv                           |
-| DB            | NeonDB (PostgreSQL + pgvector)      | vector(1536)                 |
-| Message queue | AWS SQS                             | Async simulation processing  |
-| Storage       | AWS S3                              | Ad files, generated images   |
-| Deploy        | Single EC2 instance                 | Nginx reverse proxy          |
-| CI/CD         | GitHub Actions                      | Docker containers            |
-| Tracing       | LangSmith                           | AI pipeline tracing          |
-| Chat LLM      | Google Gemini 2.0 Flash             | `google-generativeai>=0.8.0` |
+- **Frontend** Next.js(TS) + Tailwind (pnpm) / **Backend+AI** FastAPI + LangGraph (uv).
+- **DB** NeonDB(PostgreSQL + pgvector, vector(1536)) / **MQ** AWS SQS / **Storage** AWS S3.
+- **Deploy** 단일 EC2 + Nginx / **CI/CD** GitHub Actions(Docker) / **Tracing** LangSmith / **Chat LLM** Gemini 2.0 Flash(`google-generativeai>=0.8.0`).
 
----
+## 백엔드 아키텍처 (DDD)
 
-## Directory Structure
+핵심 3기능을 각각 `backend/domain/` 아래 **바운디드 컨텍스트**로 분리한 DDD + 헥사고날(포트·어댑터) 구조. 도메인 간 직접 의존 금지, 공유는 `core`/`tools`/각 도메인 `contracts`로만.
 
 ```
-click-me/                        ← monorepo root
-├── docker-compose.yaml
-├── .gitignore
-├── CLAUDE.md
-├── docs/
-│   ├── api-spec.md              ← API endpoint reference
-│   └── db-schema.md             ← Full SQL schema + Alembic migration
-│
-├── frontend/                    ← Next.js (pnpm owns this)
-│   ├── package.json
-│   ├── pnpm-lock.yaml
-│   └── src/
-│       ├── app/                 ← App Router (route = directory/page.tsx)
-│       │   ├── page.tsx         → /
-│       │   ├── sign-in/page.tsx → /sign-in
-│       │   ├── sign-up/page.tsx → /sign-up
-│       │   ├── chat/page.tsx    → /chat
-│       │   ├── simulation/page.tsx → /simulation
-│       │   ├── generator/page.tsx  → /generator
-│       │   ├── manage/page.tsx     → /manage
-│       │   └── admin/
-│       │       ├── layout.tsx      ← shared admin sidebar
-│       │       ├── page.tsx        ← redirects to /admin/dashboard
-│       │       ├── dashboard/page.tsx   → /admin/dashboard
-│       │       ├── manage-user/page.tsx → /admin/manage-user
-│       │       ├── chat-log/page.tsx    → /admin/chat-log
-│       │       ├── inquiry/page.tsx     → /admin/inquiry
-│       │       └── check/page.tsx       → /admin/check
-│       └── components/
-│           ├── Navigation.tsx   ← top nav bar (user-facing)
-│           ├── AppLayout.tsx    ← Navigation + main wrapper
-│           └── AdminSidebar.tsx ← dark sidebar, usePathname active state
-│
-└── backend/                     ← FastAPI (uv owns this)
-    ├── pyproject.toml
-    ├── uv.lock
-    ├── api/
-    │   ├── main.py
-    │   └── routers/
-    │       ├── chat.py
-    │       ├── simulate.py
-    │       ├── ads.py
-    │       └── admin.py
-    ├── agents/
-    │   ├── agent-ad-simulator/  ← state.py / nodes.py / graph.py
-    │   ├── agent-ad-creator/    ← [7.8]
-    │   └── agent-ad-management/
-    ├── tools/
-    │   ├── ad_analysis/vision.py
-    │   ├── persona/factory.py
-    │   ├── simulation/          ← exposure.py / deliberation.py / ssr_scorer.py
-    │   ├── storage/             ← s3.py / sqs.py
-    │   └── search/rag.py
-    └── core/
-        ├── config.py
-        ├── db.py
-        └── models.py
+backend/
+├── core/      공통 인프라: config.py(settings) · db.py(async/Neon) · models.py(ORM) · schemas.py
+├── api/       전송 계층: main.py(앱·라우터등록·lifespan·CORS) · routers/(도메인별, /api/* prefix)
+├── tools/     공용 도구: simulation(ssr_scorer·exposure·deliberation·anchors) · persona · ad_analysis · storage · search
+└── domain/    바운디드 컨텍스트(팀당 1개): generator(4-3) · management(4-2) · simulation(4-1)
 ```
 
-**Package manager rule**: pnpm forbidden inside `backend/`. uv forbidden inside `frontend/`.
+**도메인 내부 레이어** — `contracts/`(포트·스키마·enum, 외부 의존 없음) · `adapters/`(포트 구현체·외부연동·mock) · `service/`(유스케이스·DB영속·SSE) · `graph/`·`agents/`(LangGraph) · `wiring.py`(Composition Root, mock↔실연동 전환 유일 지점). management는 추가로 `detection/`·`execution/`·`evals/`.
 
----
+**의존성** `api/routers → domain/<ctx>/service → contracts(포트) ← adapters(구현)`. DB·설정은 `core`, LLM·SDK 래퍼는 `tools`에서만. mock/실연동 교체는 `wiring.py`에서만.
 
-## Simulation Pipeline
+> 이전 현황: generator·management는 `domain/` 이전 완료. simulation은 `tools/simulation/`·평면 라우터 → `domain/simulation/`·`api/routers/simulation/`로 이전 진행 중.
 
-```
-Persona Factory → Exposure → Deliberation → SSR Scoring → [Debate 7.8] → Aggregation → [Improvement P2]
-```
+## 협업 규칙 (충돌 방지)
 
-| Stage            | File                                    | LLM                       | Temperature |
-| ---------------- | --------------------------------------- | ------------------------- | ----------- |
-| Ad Understanding | `tools/ad_analysis/vision.py`           | GPT-4o Vision             | 0.1         |
-| Persona Factory  | `tools/persona/factory.py`              | GPT-4o-mini               | 0.7         |
-| Exposure         | `tools/simulation/exposure.py`          | GPT-4o-mini               | 0.8         |
-| Deliberation     | `tools/simulation/deliberation.py`      | GPT-4o-mini               | 0.7         |
-| SSR Scoring      | `tools/simulation/ssr_scorer.py`        | **none** (embedding only) | —           |
-| Debate [7.8]     | `agents/agent-ad-creator/nodes.py`      | Claude Haiku              | 0.9         |
-| Aggregation      | in `agents/agent-ad-simulator/nodes.py` | **none**                  | —           |
+원칙: **"자기 도메인은 자유롭게 / 공통부는 조율 후"**. 통합 충돌은 대부분 공통부 동시 수정에서 발생.
 
-**SSR key point**: DLR (asking LLM for a number directly) causes center-bias (KS 0.26~0.39). SSR embeds free text → cosine similarity against anchors → distribution (KS 0.80~0.88). See `docs/` for full schema.
-
----
-
-## Output Priorities
-
-| Priority | Item                                                                          | Target |
-| -------- | ----------------------------------------------------------------------------- | ------ |
-| **P0**   | Purchase intent distribution (KOBACO-comparable)                              | 6.12   |
-| **P0**   | Per-persona free text reaction                                                | 6.12   |
-| P1       | Other signal distributions (attention etc.) — **must label as "exploratory"** | 6.12   |
-| P1       | KPI (CTR/CVR proxy), Funnel, LangSmith trace                                  | 6.12   |
-| **P2**   | Segment breakdown, share_intent, improvement suggestions                      | TBD    |
-
----
-
-## Frontend Routes
-
-### User
-
-| Path          | Screen                     | Phase             |
-| ------------- | -------------------------- | ----------------- |
-| `/`           | Landing page               | 6.12              |
-| `/sign-in`    | Sign in                    | 6.12              |
-| `/sign-up`    | Sign up                    | 6.12              |
-| `/chat`       | AI chat                    | 6.12              |
-| `/simulation` | Ad simulator               | 6.12              |
-| `/generator`  | Ad generator (UI skeleton) | 6.12 UI, 7.8 real |
-| `/manage`     | Ad management              | 6.12              |
-| `/compare`    | A/B comparison (UI only)   | 6.12 UI, 7.8 real |
-
-### Admin
-
-| Path                 | Screen                          | Phase |
-| -------------------- | ------------------------------- | ----- |
-| `/admin`             | Redirects to `/admin/dashboard` | 6.12  |
-| `/admin/dashboard`   | Admin dashboard                 | 6.12  |
-| `/admin/manage-user` | User management                 | 6.12  |
-| `/admin/chat-log`    | Chat history                    | 6.12  |
-| `/admin/inquiry`     | Customer inquiries              | 6.12  |
-| `/admin/check`       | Usage stats                     | 6.12  |
-
----
+- **소유권** `domain/{simulation|management|generator}/`, 자기 `api/routers/*`, 자기 팀이 쓰는 `tools/*` 하위는 해당 팀만 수정·타 팀은 읽기만.
+- **공통부**(`core/`·`api/main.py`·공용 `tools/`·`docs/`·`CLAUDE.md`·`docker-compose`·CI) 변경 시
+  1. 작은 단독 PR로 분리(도메인 작업과 안 섞기).
+  2. **DB 모델·스키마(`core/models.py`·`docs/db-schema.md`) 단독 변경 금지** — 사전 공지 + Alembic.
+  3. **`api/main.py` 라우터 등록은 append-only** — 자기 `include_router` 한 줄만, 순서 유지.
+  4. 공용 `tools/` 시그니처 변경은 호출 팀 합의 후.
+- **경계** 타 도메인 내부 직접 import 금지 → `contracts/` 스키마로만 교환. 공유 로직은 `core`/`tools`로.
+- **브랜치** `feat/<domain>-<설명>`, `dev` 자주 rebase, 주간 통합 테스트.
 
 ## Environment Variables
 
 ```bash
 # backend/.env
 APP_ENV=development
-OPENAI_API_KEY=
-ANTHROPIC_API_KEY=
-GEMINI_API_KEY=          # 채팅 어드바이저 (Gemini 2.0 Flash)
-DATABASE_URL=postgresql+asyncpg://user:password@host/dbname?sslmode=require
-AWS_ACCESS_KEY_ID=
-AWS_SECRET_ACCESS_KEY=
-AWS_REGION=ap-northeast-2
-S3_BUCKET_NAME=
-SQS_SIMULATION_QUEUE_URL=
-LANGSMITH_TRACING_V2=true
-LANGSMITH_ENDPOINT=https://api.smith.langchain.com
-LANGSMITH_API_KEY=
-LANGSMITH_PROJECT=clickme-v2
-
+OPENAI_API_KEY= / ANTHROPIC_API_KEY= / GEMINI_API_KEY=   # 채팅(Gemini 2.0 Flash)
+DATABASE_URL=postgresql+asyncpg://user:pw@host/db?sslmode=require
+AWS_ACCESS_KEY_ID= / AWS_SECRET_ACCESS_KEY= / AWS_REGION=ap-northeast-2
+S3_BUCKET_NAME= / SQS_SIMULATION_QUEUE_URL=
+LANGSMITH_TRACING_V2=true / LANGSMITH_ENDPOINT=https://api.smith.langchain.com
+LANGSMITH_API_KEY= / LANGSMITH_PROJECT=clickme-v2
 # frontend/.env.local
 NEXT_PUBLIC_API_URL=http://localhost:8000
 ```
 
----
-
-## Dev Commands
-
-```bash
-# Backend
-cd backend && uv run uvicorn api.main:app --reload --port 8000
-
-# Frontend
-cd frontend && pnpm dev
-
-# Full stack (Docker)
-docker compose up --build
-
-# Backend tests
-cd backend
-uv run pytest tests/ -v
-```
-
----
-
-## Auth Status
-
-| Phase          | Status      | Detail                                            |
-| -------------- | ----------- | ------------------------------------------------- |
-| Phase 1 (6.12) | In progress | Role selection button → local state. No API auth. |
-| Phase 2 (7.8)  | TBD         | JWT self-impl or AWS Cognito                      |
-
-Phase 1: admin APIs restricted by `/api/admin/*` path prefix only.
-
----
-
 ## CI/CD 현황
 
-### CI — `.github/workflows/ci.yml` ✅ 완료
-
-| 잡             | 내용                      | 상태                                 |
-| -------------- | ------------------------- | ------------------------------------ |
-| `backend`      | ruff lint/format + pytest | ✅ 활성                              |
-| `frontend`     | ESLint + Next.js build    | ✅ 활성                              |
-| `docker-build` | Docker 이미지 빌드 검증   | ⏸ 주석 처리 (Secrets 등록 후 활성화) |
-
-### CD — `.github/workflows/cd.yml` ⏳ 미완성
-
-전체 파이프라인 틀은 작성됐으나, **아래 작업 완료 후 주석 해제 필요**:
-
-1. **Docker Hub Secrets 등록** (`DOCKERHUB_USERNAME`, `DOCKERHUB_TOKEN`)
-2. **EC2 Secrets 등록** (`EC2_HOST`, `EC2_USER`, `EC2_SSH_KEY`)
-3. **기타 Secrets 등록** (`NEXT_PUBLIC_API_URL`, `SLACK_WEBHOOK_URL`)
-4. `cd.yml`의 `on.push` 트리거 주석 해제 + 각 step 주석 해제
-
-> EC2 서버 세팅 및 Docker Hub 계정 준비가 되면 진행할 것.
-
----
-
-## Open Issues
-
-| Item                                                 | Scope                                 |
-| ---------------------------------------------------- | ------------------------------------- |
-| Finalize segment enum list                           | P2 segment breakdown output           |
-| Auth method for 7.8 (JWT vs Cognito)                 | DB `refresh_tokens`, API auth headers |
-| Define share_intent KPI                              | P2 output                             |
-| Remove `simulation_type = 'survey'`                  | DB enum migration                     |
-| Select sample ads for demo                           | KOBACO comparison demo                |
-| CD 파이프라인 활성화 (Docker Hub + EC2 Secrets 등록) | 배포 자동화                           |
-
----
-
-## Reference Docs
-
-| Task                          | Doc                 |
-| ----------------------------- | ------------------- |
-| API endpoints                 | `docs/api-spec.md`  |
-| DB schema / Alembic migration | `docs/db-schema.md` |
-
----
+- **CI** (`ci.yml`) ✅ — `backend`(ruff + pytest), `frontend`(ESLint + build) 활성 / `docker-build` ⏸(Secrets 후 활성).
+- **CD** (`cd.yml`) ⏳ — 틀만 작성. 활성화 조건: Docker Hub·EC2·기타 Secrets 등록 + `on.push` 및 각 step 주석 해제. EC2/Docker Hub 준비 후 진행.
 
 ## 개발 워크플로우 (Claude 행동 규칙)
 
-### 커밋 메시지 컨벤션
+**커밋 컨벤션** `타입: 한국어 설명` — `add`(새 기능/파일) · `delete`(삭제) · `edit`(수정/리팩토링) · `fix`(버그). 예: `add: 시뮬레이션 기능 추가`.
 
-| 타입     | 사용 상황                |
-| -------- | ------------------------ |
-| `add`    | 새 기능, 새 파일 추가    |
-| `delete` | 파일 또는 기능 삭제      |
-| `edit`   | 기존 기능 수정, 리팩토링 |
-| `fix`    | 버그 수정, 오류 해결     |
+**① 백엔드 .py 수정 직후 (IMPORTANT)** — 커밋 메시지 출력 **전에** Ruff 실행을 제안한다: *"백엔드 코드가 변경됐어요. 커밋 전에 Ruff로 맞춰두면 CI에서 안 막혀요. Ruff 실행할까요?"*
+- 수락(응/해줘/yes/ㅇㅇ) → `cd backend && uv run ruff format . && uv run ruff check . --fix` 실행.
+- 거절(나중에/ㄴㄴ) → 바로 커밋 메시지로. **프론트(TS)만 수정 시 생략.**
+- 왜: CI(`ci.yml`)가 `ruff check`로 검증. 로컬 선통과 안 하면 push 후 CI 실패. (pytest는 느리고 비용↑이라 별개.)
 
-형식: `타입: 한국어 설명`
-예시: `add: 시뮬레이션 기능 추가`
+**② 구현 완료 시** — `타입: 설명` + 변경 불릿 형태의 커밋 메시지와 `git add . && git commit -m "…"`를 출력. 사소한 작업도 출력, 여러 기능은 기능별로 분리 제안.
 
----
+**③ GitHub Issue 요청 시** — 먼저 `gh --version`으로 설치 확인. 미설치면 OS별 설치 안내(winget `GitHub.cli` / brew `gh` / apt `gh` → `gh auth login`) 후 `gh issue create` 제공. label은 `enhancement`/`bug`/`refactor`/`chore` 중 선택.
 
-### Claude 자동 출력 규칙 (IMPORTANT — 반드시 따를 것)
+**④ Issue 일괄 생성 스크립트** — 반드시 **Python(`.py`)** 으로 제공(`.ps1`/`.sh` 금지). 백엔드에 포함된 `httpx`로 GitHub REST API(`POST /repos/{repo}/issues`, `Bearer` 토큰) 호출, `uv run python create_issues.py` 실행.
 
-#### 백엔드 코드 수정 후 → Ruff 실행 제안 (IMPORTANT)
+## AI 작업 규칙 (행동 가이드라인)
 
-백엔드 Python 파일을 수정한 직후, **커밋 메시지를 출력하기 전에** 반드시 아래 멘트로 Ruff 실행을 제안한다.
+1. **코딩 전 생각** — 가정 명시·불확실하면 질문. 해석이 여럿이면 제시(침묵 선택 금지). 더 단순한 길 있으면 제안.
+2. **단순성 우선** — 요청 범위 밖 기능·추상화 금지. 200줄을 50줄로 줄일 수 있으면 다시 쓴다.
+3. **수술적 변경** — 고칠 곳만. 인접 코드·포맷 임의 "개선" 금지, 기존 스타일 유지. 무관한 죽은 코드는 언급만.
+4. **목표 기반** — 검증 가능한 성공 기준으로 변환("검증 추가"→"실패 테스트 작성 후 통과"). 다단계는 계획 먼저.
+5. **한국어 출력, 끝에 콜론 금지** — 사용자가 한국어면 출력도 한국어. 문장은 `.`/`?`/`!`로 종료(`:`는 코드·키:값·라벨 내부만).
+6. **새 파일 첫 줄 한국어 헤더 주석** — 역할 한 줄(지시문/shebang 바로 아래). 설정 파일 제외. 예: `# KIS API를 비동기로 래핑하는 클라이언트`.
+7. **계획+체크리스트+컨텍스트 노트** — 비자명한 작업 전 `checklist.md`·`context-notes.md` 작성. 계획만 받으면 멈추고 노트부터 만들지 확인.
+8. **완료 전 테스트** — 코드 건드렸으면 `pytest`/`pnpm` 실행, 실패 시 고치고 재실행. 셋업 없으면 최소 빌드 확인. "끝"이라 하기 전에 선제적으로.
+9. **시맨틱 커밋** — 한 논리 단위 = 한 커밋("한 문장 설명 가능?"). 무관한 변경 쌓지 않기.
+10. **에러는 읽어라** — 전체 에러·스택·실로그 확인 후 수정. 원인 확인 전 "흔한 수정" 적용 금지.
 
-> "백엔드 코드가 변경됐어요. 커밋 전에 Ruff로 린트·포맷을 맞춰두면 CI에서 막히지 않아요.  
-> **Ruff 실행할까요?** (몇 초면 끝나고, import 순서·스타일 오류를 자동으로 고쳐줘요)"
+## Open Issues
 
-- 팀원이 **"응 / 해줘 / yes / ㅇㅇ"** 등으로 수락하면 → 즉시 아래 명령어를 실행한다:
+| 항목                                | 비고                                                            |
+| ----------------------------------- | --------------------------------------------------------------- |
+| 트래킹 큐 Redis 도입 여부           | 결정은 No Redis(SQS). 기획서 리스크표가 Redis 큐 언급 → 보류·탐색. |
+| 인증 실구현 (JWT 자체 vs Cognito)   | 타깃 JWT + 관리자 계정 생성. 토큰 발급/검증 도입 시점·방식 미정.  |
+| 채팅(4-4) 착수 시점                 | 핵심 3기능 완료 후. 현재 `/chat`은 선반영.                       |
+| CD 활성화                           | Docker Hub + EC2 Secrets 등록 필요.                             |
 
-```bash
-cd backend && uv run ruff format . && uv run ruff check . --fix
-```
+## Reference
 
-- 팀원이 **"괜찮아 / 나중에 / no / ㄴㄴ"** 등으로 거절하면 → 실행하지 않고 커밋 메시지 출력으로 넘어간다.
-- **프론트엔드(TypeScript) 파일만 수정한 경우**에는 이 제안을 생략한다.
-
-> **왜 중요한가**: Ruff는 수초면 끝나며 API 비용도 없다. CI(`ci.yml`)가 `ruff check`로 백엔드를 검증하므로, 로컬에서 미리 통과시켜 두지 않으면 push 후 CI가 실패한다. `pytest`(10분+, API 비용)와 달리 Ruff는 커밋마다 돌려도 부담이 없다.
-
----
-
-#### 기능 구현 완료 시점 → 커밋 메시지 출력
-
-구현이 완료됐다고 판단되는 시점(코드 수정 완료, 정상 동작 확인 후)에 아래 형식으로 커밋 메시지를 출력한다.
-
-```
-타입: 한국어 설명
-
-- 변경 사항 1
-- 변경 사항 2
-```
-
-전체 커밋 명령어도 함께 출력:
-
-```bash
-git add .
-git commit -m "타입: 한국어 설명"
-```
-
-- 단순 오류 수정이나 스타일 변경 등 사소한 작업도 커밋 메시지를 출력한다
-- 여러 기능을 한 번에 구현한 경우 기능별로 커밋을 분리해서 제안
-
-#### GitHub Issue (`gh`) 요청 시 → 설치 여부 먼저 확인
-
-팀원이 GitHub Issue 생성 코드를 요청하면, `gh` CLI 설치 여부를 **먼저 확인**한다.
-
-```bash
-gh --version
-```
-
-- **설치되어 있으면** → 바로 `gh issue create` 명령어를 제공한다
-- **설치되어 있지 않으면** → 아래 순서로 설치 방법을 단계별로 안내한 뒤 명령어를 제공한다
-
-**Windows (winget)**
-
-```bash
-winget install --id GitHub.cli
-# 설치 후 터미널 재시작
-gh auth login   # GitHub 계정 인증 (브라우저 열림)
-gh --version    # 설치 확인
-```
-
-**macOS (Homebrew)**
-
-```bash
-brew install gh
-gh auth login
-gh --version
-```
-
-**Linux (apt)**
-
-```bash
-sudo apt install gh
-gh auth login
-gh --version
-```
-
-인증 완료 후 `gh issue create` 명령어를 제공한다.
-label은 상황에 따라 `enhancement` / `bug` / `refactor` / `chore` 중 선택한다.
-
-#### Issue 생성 스크립트 포맷 → 반드시 Python 스크립트로 제공
-
-팀원이 Issue를 **스크립트로 일괄 생성**하는 코드를 요청할 경우, 파일 포맷은 **반드시 Python(`.py`)으로** 제공한다. PowerShell(`.ps1`) 또는 셸 스크립트(`.sh`)로 제공하지 않는다.
-
-Python 스크립트 기본 구조 (GitHub REST API 사용):
-
-```python
-import httpx
-
-GITHUB_TOKEN = "ghp_your_token_here"
-REPO = "org/repo-name"  # 실제 레포로 교체
-
-headers = {
-    "Authorization": f"Bearer {GITHUB_TOKEN}",
-    "Accept": "application/vnd.github+json",
-}
-
-issues = [
-    {"title": "이슈 제목 1", "body": "설명", "labels": ["enhancement"]},
-    {"title": "이슈 제목 2", "body": "설명", "labels": ["bug"]},
-]
-
-with httpx.Client() as client:
-    for issue in issues:
-        res = client.post(
-            f"https://api.github.com/repos/{REPO}/issues",
-            headers=headers,
-            json=issue,
-        )
-        print(f"[{res.status_code}] {issue['title']}")
-```
-
-`httpx`는 이미 백엔드 의존성에 포함되어 있으므로 `uv run python create_issues.py`로 바로 실행 가능하다.
+- API 엔드포인트 → `docs/api-spec.md` / DB 스키마·Alembic → `docs/db-schema.md`.
+- **PM 규칙** pnpm은 `backend/` 금지, uv는 `frontend/` 금지.
+- **Dev** 백엔드 `cd backend && uv run uvicorn api.main:app --reload --port 8000` / 프론트 `cd frontend && pnpm dev` / 전체 `docker compose up --build` / 테스트 `cd backend && uv run pytest tests/ -v`.

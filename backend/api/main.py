@@ -6,7 +6,9 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 _BACKEND_ROOT = Path(__file__).resolve().parent.parent
-load_dotenv(_BACKEND_ROOT / ".env")
+# .env 는 프로젝트 루트 우선(현 배치), 없으면 backend/.env.
+_ROOT_ENV = _BACKEND_ROOT.parent / ".env"
+load_dotenv(_ROOT_ENV if _ROOT_ENV.exists() else _BACKEND_ROOT / ".env")
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -15,6 +17,7 @@ from fastapi.responses import JSONResponse
 
 logger = logging.getLogger("clickme")
 
+# 시뮬레이션은 도메인 구조 라우터(api/routers/simulation)를 사용 — 구 simulate 라우터 대체.
 from api.routers import (
     admin,
     ads,
@@ -28,17 +31,14 @@ from api.routers import (
     management,
     personas,
     projects,
-    simulate,
 )
+from api.routers.simulation.router import router as simulation_router
 from core.config import settings
 from domain.generator.adapters.instagram import load_meta_credentials
-from tools.simulation.ssr_scorer import SSRScorer
 
 if not settings.LANGSMITH_API_KEY:
     os.environ["LANGSMITH_TRACING"] = "false"
     os.environ["LANGSMITH_TRACING_V2"] = "false"
-
-ssr_scorer = SSRScorer()
 
 
 @asynccontextmanager
@@ -50,8 +50,6 @@ async def lifespan(app: FastAPI):
         logger.warning(
             "Instagram publisher: Mock — .env에 META_ACCESS_TOKEN, META_IG_USER_ID 설정 필요"
         )
-    await ssr_scorer.precompute_anchors()
-    app.state.ssr_scorer = ssr_scorer
     yield
 
 
@@ -87,7 +85,7 @@ app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(company.router, prefix="/api/company", tags=["company"])
 app.include_router(chat.router, prefix="/api/chat", tags=["chat"])
 app.include_router(dashboard.router, prefix="/api/dashboard", tags=["dashboard"])
-app.include_router(simulate.router, prefix="/api/simulate", tags=["simulate"])
+app.include_router(simulation_router, prefix="/api/simulation", tags=["simulation"])
 app.include_router(ads.router, prefix="/api/ads", tags=["ads"])
 app.include_router(admin.router, prefix="/api/admin", tags=["admin"])
 app.include_router(inquiries.router, prefix="/api/inquiries", tags=["inquiries"])
