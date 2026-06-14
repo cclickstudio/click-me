@@ -8,7 +8,6 @@ import json
 import uuid
 
 from langchain_core.runnables import RunnableConfig
-from langchain_openai import ChatOpenAI
 from langsmith import traceable
 from openai import AsyncOpenAI
 
@@ -17,13 +16,10 @@ from domain.generator.contracts.schemas import AdCopy
 from domain.generator.contracts.templates import AdTemplate, get_template, map_image_size
 from domain.generator.graph.nodes import emit_progress
 from domain.generator.graph.state import GenerationState
+from domain.generator.llm.factory import build_text_llm
 from tools.storage.s3 import candidate_key, upload_bytes
 
-_copy_llm = ChatOpenAI(
-    model=settings.generator_text_model,
-    api_key=settings.openai_api_key,
-    temperature=0.7,
-).with_structured_output(AdCopy)
+_copy_llm = build_text_llm(temperature=0.7).with_structured_output(AdCopy)
 
 _image_client = AsyncOpenAI(api_key=settings.openai_api_key, timeout=180.0)
 
@@ -69,9 +65,7 @@ def build_image_prompt(req: dict, strategy: dict, template: AdTemplate, copy: Ad
 - 전문 광고 디자인 품질, 선명하고 가독성 높은 한글 타이포그래피"""
 
 
-@traceable(name="AdImageGeneration")
-async def generate_image(prompt: str, size: str) -> bytes:
-    """gpt-image-1로 광고 이미지 생성 (PNG 바이트 반환)."""
+async def _openai_generate_image(prompt: str, size: str) -> bytes:
     response = await _image_client.images.generate(
         model=settings.generator_image_model,
         prompt=prompt,
@@ -80,6 +74,15 @@ async def generate_image(prompt: str, size: str) -> bytes:
         n=1,
     )
     return base64.b64decode(response.data[0].b64_json)
+
+
+@traceable(name="AdImageGeneration")
+async def generate_image(prompt: str, size: str) -> bytes:
+    """이미지 프로바이더 디스패치 — 현재 openai(gpt-image-1)만 구현. PNG 바이트 반환."""
+    provider = settings.generator_image_provider
+    if provider == "openai":
+        return await _openai_generate_image(prompt, size)
+    raise NotImplementedError(f"지원하지 않는 이미지 프로바이더: {provider}")
 
 
 async def generate_candidates(state: GenerationState, config: RunnableConfig) -> dict:

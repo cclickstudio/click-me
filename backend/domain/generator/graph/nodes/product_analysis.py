@@ -3,18 +3,13 @@
 from __future__ import annotations
 
 from langchain_core.runnables import RunnableConfig
-from langchain_openai import ChatOpenAI
 
-from core.config import settings
 from domain.generator.contracts.schemas import ProductAnalysis
 from domain.generator.graph.nodes import emit_progress
 from domain.generator.graph.state import GenerationState
+from domain.generator.llm.factory import build_text_llm
 
-_llm = ChatOpenAI(
-    model=settings.generator_text_model,
-    api_key=settings.openai_api_key,
-    temperature=0.3,
-).with_structured_output(ProductAnalysis)
+_llm = build_text_llm(temperature=0.3).with_structured_output(ProductAnalysis)
 
 _SYSTEM = """당신은 광고 기획 전문가입니다. 상품 정보를 분석해 다음을 한국어로 추출하세요.
 - core_values: 상품의 핵심 가치 3~5개

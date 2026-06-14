@@ -5,19 +5,14 @@ from __future__ import annotations
 import json
 
 from langchain_core.runnables import RunnableConfig
-from langchain_openai import ChatOpenAI
 
-from core.config import settings
 from domain.generator.contracts.schemas import TemplateAssignmentSet
 from domain.generator.contracts.templates import catalog_prompt, default_template_for
 from domain.generator.graph.nodes import emit_progress
 from domain.generator.graph.state import GenerationState
+from domain.generator.llm.factory import build_text_llm
 
-_llm = ChatOpenAI(
-    model=settings.generator_text_model,
-    api_key=settings.openai_api_key,
-    temperature=0.2,
-).with_structured_output(TemplateAssignmentSet)
+_llm = build_text_llm(temperature=0.2).with_structured_output(TemplateAssignmentSet)
 
 _SYSTEM = f"""당신은 광고 아트디렉터입니다. 각 광고 전략에 가장 적합한 템플릿을 카탈로그에서 하나씩 선택하세요.
 전략마다 template_id(A/B/C)와 선택 근거(reason)를 한국어로 작성하세요.

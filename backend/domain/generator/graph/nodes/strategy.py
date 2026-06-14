@@ -6,20 +6,15 @@ import json
 import logging
 
 from langchain_core.runnables import RunnableConfig
-from langchain_openai import ChatOpenAI
 
-from core.config import settings
 from domain.generator.contracts.schemas import StrategySet
 from domain.generator.graph.nodes import emit_progress
 from domain.generator.graph.state import GenerationState
+from domain.generator.llm.factory import build_text_llm
 
 logger = logging.getLogger("clickme")
 
-_llm = ChatOpenAI(
-    model=settings.generator_text_model,
-    api_key=settings.openai_api_key,
-    temperature=0.7,
-).with_structured_output(StrategySet)
+_llm = build_text_llm(temperature=0.7).with_structured_output(StrategySet)
 
 _SYSTEM = """당신은 광고 전략가입니다. 상품 분석 결과를 기반으로 서로 다른 방향의 광고 전략을 정확히 3개 생성하세요.
 - strategy_type은 다음 중 선택하며 3개가 모두 달라야 합니다: benefit | fomo | social_proof | emotional | problem_solution

@@ -54,7 +54,10 @@ class Settings(BaseSettings):
     meta_graph_api_version: str = "v21.0"
 
     # Generator (광고 생성)
-    generator_text_model: str = "gpt-4o"
+    generator_text_provider: str = "openai"  # openai | anthropic | google_genai ...
+    generator_text_model: str = "gpt-4.1"
+    generator_text_base_url: str | None = None  # 회사 OpenAI-호환 엔드포인트용
+    generator_image_provider: str = "openai"
     generator_image_model: str = "gpt-image-1"
     generator_image_quality: str = "medium"
 

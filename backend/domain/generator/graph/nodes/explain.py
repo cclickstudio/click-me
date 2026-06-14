@@ -6,19 +6,14 @@ import asyncio
 import json
 
 from langchain_core.runnables import RunnableConfig
-from langchain_openai import ChatOpenAI
 
-from core.config import settings
 from domain.generator.contracts.schemas import CandidateExplanation
 from domain.generator.contracts.templates import get_template
 from domain.generator.graph.nodes import emit_progress
 from domain.generator.graph.state import GenerationState
+from domain.generator.llm.factory import build_text_llm
 
-_llm = ChatOpenAI(
-    model=settings.generator_text_model,
-    api_key=settings.openai_api_key,
-    temperature=0.3,
-).with_structured_output(CandidateExplanation)
+_llm = build_text_llm(temperature=0.3).with_structured_output(CandidateExplanation)
 
 _SYSTEM = """당신은 광고 기획자입니다. 생성된 광고 후보에 대해 사용자에게 보여줄 생성 이유 설명을 한국어로 작성하세요.
 - applied_target: 어떤 타겟을 겨냥했는지 (1문장)

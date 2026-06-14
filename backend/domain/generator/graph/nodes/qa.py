@@ -12,18 +12,13 @@ import difflib
 import json
 
 from langchain_core.runnables import RunnableConfig
-from langchain_openai import ChatOpenAI
 
-from core.config import settings
 from domain.generator.contracts.schemas import LLMQAResult, QACheck, QAResult
 from domain.generator.graph.nodes import emit_progress
 from domain.generator.graph.state import GenerationState
+from domain.generator.llm.factory import build_text_llm
 
-_llm = ChatOpenAI(
-    model=settings.generator_text_model,
-    api_key=settings.openai_api_key,
-    temperature=0.0,
-).with_structured_output(LLMQAResult)
+_llm = build_text_llm(temperature=0.0).with_structured_output(LLMQAResult)
 
 _SYSTEM = """당신은 광고 품질 검수 전문가입니다. 광고 카피를 다음 4가지 기준으로 검증하세요.
 - typo: 맞춤법·띄어쓰기 오류가 없는가
