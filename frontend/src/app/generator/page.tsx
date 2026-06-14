@@ -672,7 +672,7 @@ export default function GeneratorPage() {
                     <>
                       <p className="font-semibold">Mock 모드로 게시 시뮬레이션 완료</p>
                       <p className="text-xs mt-1 opacity-80">
-                        META_ACCESS_TOKEN / META_IG_USER_ID를 설정하면 실제 Instagram에
+                        META_ACCESS_TOKEN / META_INSTAGRAM_ACCOUNT_ID를 설정하면 실제 Instagram에
                         게시됩니다. (media_id: {publishResult.media_id})
                       </p>
                     </>
@@ -694,6 +694,167 @@ export default function GeneratorPage() {
                   {publishing ? "게시 중..." : "Instagram에 업로드"}
                 </button>
               )}
+
+              {/* Meta 광고 집행 패널 추가 (시작) */}
+              <section className="mt-6 p-4 border border-[#E5E8EB] dark:border-[#2D3748] rounded-lg">
+                <h3 className="mb-2 text-sm font-semibold">Meta 광고 집행</h3>
+
+                {advertiseResult ? (
+                  <div
+                    className={`px-3 py-2 rounded-md text-sm ${advertiseResult.success
+                      ? "bg-[#00C471]/10 text-[#00C471]"
+                      : "bg-[#FFF0F0] dark:bg-[#3A2228] text-[#F74D4D]"
+                    }`}
+                  >
+                    {advertiseResult.mocked ? (
+                      <>
+                        <p className="font-semibold">Mock 모드로 광고 집행 시뮬레이션 완료</p>
+                        <p className="text-xs opacity-80">
+                          META_AD_ACCOUNT_ID, META_PAGE_ID, META_INSTAGRAM_ACCOUNT_ID, META_ACCESS_TOKEN이 설정되어 있으면
+                          실제 Meta Marketing API로 캠페인이 생성됩니다.
+                        </p>
+                      </>
+                    ) : advertiseResult.success ? (
+                      <>
+                        <p>캠페인 ID: {advertiseResult.campaign_id}</p>
+                        <p>광고세트 ID: {advertiseResult.adset_id}</p>
+                        <p>크리에이티브 ID: {advertiseResult.creative_id}</p>
+                        <p>광고 ID: {advertiseResult.ad_id}</p>
+                        <p className="mt-1">
+                          <a
+                            href={advertiseResult.ads_manager_url || "#"}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-[#3182F6] hover:underline"
+                          >
+                            페이스북 Ads Manager 바로가기
+                          </a>
+                        </p>
+                      </>
+                    ) : (
+                      <p>광고 집행 실패: {advertiseResult.error}</p>
+                    )}
+                  </div>
+                ) : (
+                  <>
+                    {/* 광고 목적 선택 */}
+                    <div className="mb-3">
+                      <label className="block text-xs font-medium mb-1">광고 목적</label>
+                      <select
+                        className="w-full rounded-md border border-gray-300 px-3 py-1 text-sm"
+                        value={adObjective}
+                        onChange={(e) => setAdObjective(e.target.value)}
+                      >
+                        {OBJECTIVES.map((obj) => (
+                          <option key={obj.value} value={obj.value}>
+                            {obj.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* 예산 입력 */}
+                    <div className="mb-3">
+                      <label className="block text-xs font-medium mb-1">
+                        일 예산 (원)
+                      </label>
+                      <input
+                        type="number"
+                        min={1000}
+                        className="w-full rounded-md border border-gray-300 px-3 py-1 text-sm"
+                        value={adBudget}
+                        onChange={(e) => setAdBudget(Number(e.target.value))}
+                        disabled={advertiseLoading}
+                      />
+                    </div>
+
+                    {/* 타겟 연령대 */}
+                    <div className="mb-3 grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-medium mb-1">최소 연령</label>
+                        <input
+                          type="number"
+                          min={13}
+                          max={adTargetingAgeMax}
+                          className="w-full rounded-md border border-gray-300 px-3 py-1 text-sm"
+                          value={adTargetingAgeMin}
+                          onChange={(e) => setAdTargetingAgeMin(Number(e.target.value))}
+                          disabled={advertiseLoading}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium mb-1">최대 연령</label>
+                        <input
+                          type="number"
+                          min={adTargetingAgeMin}
+                          max={100}
+                          className="w-full rounded-md border border-gray-300 px-3 py-1 text-sm"
+                          value={adTargetingAgeMax}
+                          onChange={(e) => setAdTargetingAgeMax(Number(e.target.value))}
+                          disabled={advertiseLoading}
+                        />
+                      </div>
+                    </div>
+
+                    {/* 국가 입력 */}
+                    <div className="mb-3">
+                      <label className="block text-xs font-medium mb-1">국가 코드 (쉼표로 구분)</label>
+                      <input
+                        type="text"
+                        className="w-full rounded-md border border-gray-300 px-3 py-1 text-sm"
+                        value={adTargetingCountries.join(",")}
+                        onChange={(e) => setAdTargetingCountries(e.target.value.split(",").map((c) => c.trim().toUpperCase()))}
+                        disabled={advertiseLoading}
+                      />
+                    </div>
+
+                    {/* 광고 시작일 */}
+                    <div className="mb-3">
+                      <label className="block text-xs font-medium mb-1">광고 시작일</label>
+                      <input
+                        type="date"
+                        className="w-full rounded-md border border-gray-300 px-3 py-1 text-sm"
+                        value={adStartDate}
+                        onChange={(e) => setAdStartDate(e.target.value)}
+                        disabled={advertiseLoading}
+                      />
+                    </div>
+
+                    {/* 광고 종료일 (선택) */}
+                    <div className="mb-3">
+                      <label className="block text-xs font-medium mb-1">
+                        광고 종료일 (선택)
+                      </label>
+                      <input
+                        type="date"
+                        className="w-full rounded-md border border-gray-300 px-3 py-1 text-sm"
+                        value={adEndDate ?? ""}
+                        onChange={(e) => setAdEndDate(e.target.value || null)}
+                        disabled={advertiseLoading}
+                      />
+                    </div>
+
+                    {/* 광고 집행 버튼 */}
+                    <button
+                      type="button"
+                      disabled={advertiseLoading || adBudget < 1000}
+                      onClick={advertise}
+                      className="w-full py-3 rounded-xl text-sm font-semibold bg-[#3182F6] text-white hover:bg-[#1B64DA] disabled:opacity-60 transition-colors"
+                    >
+                      {advertiseLoading ? "광고 집행 중..." : "Meta 광고 집행"}
+                    </button>
+
+                    <p className="mt-2 text-xs text-[#F4A100]">
+                      ※ 기본적으로 모든 광고 캠페인, 광고세트, 광고는 PAUSED 상태로 생성됩니다.
+                      <br />
+                      비용이 발생하지 않으며, 활성화는 Facebook Ads Manager에서 직접 하셔야 합니다.
+                    </p>
+                  </>
+                )}
+              </section>
+              {/* Meta 광고 집행 패널 추가 (끝) */}
+
+// ... 이하 기존 코드 계속 ...
             </div>
 
             {/* QA + 생성 이유 */}

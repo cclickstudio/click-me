@@ -78,6 +78,22 @@ export const api = {
         body: JSON.stringify({ candidate_id: candidateId, caption }),
       }),
     list: (limit = 20) => request(`/generator/generations?limit=${limit}`),
+    advertise: (
+      generationId: string,
+      body: {
+        candidate_id: string;
+        budget: number;
+        objective: string;
+        targeting: { age_min: number; age_max: number; genders: number[]; countries: string[] };
+        destination_url: string;
+        start_date: string;
+        end_date?: string | null;
+      },
+    ) =>
+      request(`/generator/generations/${generationId}/advertise`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
     brandProfile: {
       get: (clientId: string) =>
         request<{

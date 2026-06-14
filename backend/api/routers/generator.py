@@ -9,6 +9,7 @@ from fastapi.responses import StreamingResponse
 from PIL import Image
 from pydantic import BaseModel
 
+from domain.generator.adapters.meta_ads import AdvertiseRequest
 from domain.generator.contracts.schemas import GenerationCreateRequest
 from domain.generator.service import generator_service
 from domain.generator.service.brand_profile import get_profile, save_profile
@@ -213,6 +214,15 @@ async def select_candidate(generation_id: str, body: CandidateSelectRequest):
     if not ok:
         raise HTTPException(status_code=404, detail="Candidate not found in this generation")
     return {"generation_id": generation_id, "selected_candidate_id": body.candidate_id}
+
+
+@router.post("/generations/{generation_id}/advertise")
+async def advertise_candidate(generation_id: str, body: AdvertiseRequest):
+    """사용자 승인 액션 — 선택된 후보를 Meta Marketing API로 광고 집행 (기본 PAUSED)."""
+    result = await generator_service.advertise_candidate(generation_id, body)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Candidate not found in this generation")
+    return result
 
 
 @router.post("/generations/{generation_id}/publish")
