@@ -24,10 +24,23 @@ class SimulationService:
         self._persistence = persistence  # 주입되면 완료 런을 DB 저장(없으면 인메모리만)
 
     async def start(self, request: SimulationRunRequest) -> str:
+        """비동기 시작 — 백그라운드 실행 후 run_id 반환(진행률은 SSE, 결과는 get_result)."""
         run_id = str(uuid.uuid4())
         self._store.create_run(run_id)
         asyncio.create_task(self._run(run_id, request))
         return run_id
+
+    async def run(self, request: SimulationRunRequest) -> dict:
+        """동기 실행 — 끝까지 돌린 뒤 결과(반응·루브릭·집계)를 한 번에 반환."""
+        run_id = str(uuid.uuid4())
+        self._store.create_run(run_id)
+        await self._run(run_id, request)
+        result = self._store.get_result(run_id)
+        if result is None:
+            events = self._store.get_events(run_id)
+            msg = next((e.get("message") for e in reversed(events) if e.get("event") == "error"), "")
+            raise RuntimeError(f"시뮬레이션 실패: {msg}")
+        return result
 
     async def _run(self, run_id: str, request: SimulationRunRequest) -> None:
         store = self._store

@@ -1,7 +1,8 @@
 # 실 LLM 어댑터(P4)의 무콜 순수 로직 테스트 — RuleQaGate·JSON 파싱 (Gemini API 호출 없음)
 from __future__ import annotations
 
-from domain.simulation.adapters.gemini_engine import RuleQaGate, _parse_json
+from domain.simulation.adapters.gemini import RuleQaGate
+from domain.simulation.adapters.gemini._common import _parse_json
 from domain.simulation.contracts.schemas import Aisas, PersonaReaction
 
 

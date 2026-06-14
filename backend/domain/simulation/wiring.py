@@ -72,7 +72,7 @@ def build_reaction_subgraph(settings=None, *, use_mock=None, use_llm_qa=None):
     if _resolve_use_mock(settings, use_mock):
         return build_reaction_graph(reactor=MockReactionEngine(), qa=MockQaGate())
     _ensure_env("GEMINI_API_KEY")
-    from domain.simulation.adapters.gemini_engine import (
+    from domain.simulation.adapters.gemini import (
         GeminiQaGate,
         GeminiReactionEngine,
         RuleQaGate,
@@ -113,7 +113,7 @@ def build_simulation_service(
         rubric = MockRubricEvaluator()
     else:
         _ensure_env("GEMINI_API_KEY")
-        from domain.simulation.adapters.gemini_engine import (
+        from domain.simulation.adapters.gemini import (
             GeminiAdInterpreter,
             GeminiRubricEvaluator,
         )
