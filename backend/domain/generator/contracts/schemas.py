@@ -46,13 +46,10 @@ class ProductAnalysis(BaseModel):
 
 
 class StrategyOutput(BaseModel):
-    """strategy_planner 출력 (템플릿 결정 전)."""
+    """strategy_planner 출력 (템플릿·copy 결정 전)."""
 
     strategy: AdStrategy
     strategy_description: str
-    headline: str
-    body: str
-    cta: str
     rationale: str
 
 
@@ -62,13 +59,23 @@ class AdCopy(BaseModel):
     cta: str
 
 
+class ImageAnalysis(BaseModel):
+    """image_analyzer 출력."""
+
+    dominant_colors: list[str]
+    brightness: str  # "dark" | "medium" | "light"
+    mood: str
+    composition: str
+    clear_zones: str
+    suggested_text_color: str
+
+
 class StrategyPlan(BaseModel):
-    """template_selector 통과 후 확정된 전략."""
+    """template_selector 통과 후 확정된 전략 (copy 생성 전)."""
 
     strategy: AdStrategy
     strategy_description: str
     template: TemplateType
-    ad_copy: AdCopy
     rationale: str
 
 
@@ -88,6 +95,7 @@ class QualityReport(BaseModel):
     readability: QualityCheckItem
     target_fit: QualityCheckItem
     text_length: QualityCheckItem
+    brand_consistency: QualityCheckItem
     overall_passed: bool
 
 
@@ -97,7 +105,7 @@ class QualityReport(BaseModel):
 class GeneratedAdVariant(BaseModel):
     """생성된 광고 1종."""
 
-    variant_id: str  # "A" | "B"
+    variant_id: str  # "A" | "B" | "C"
     strategy: AdStrategy
     template: TemplateType
     image_s3_key: str

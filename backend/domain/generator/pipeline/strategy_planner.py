@@ -17,7 +17,7 @@ _STRATEGY_LABELS = {
 
 _SYSTEM = """\
 당신은 퍼포먼스 마케팅 전문가입니다.
-제품 분석 결과를 바탕으로 효과적인 광고 전략 3종을 수립하고, 각 전략에 맞는 광고 문구를 작성합니다.
+제품 분석 결과를 바탕으로 효과적인 광고 전략 3종을 수립합니다.
 반드시 JSON 형식으로만 응답하세요."""
 
 _USER_TEMPLATE = """\
@@ -44,19 +44,18 @@ Pain Points: {pain_points}
 - 나머지 2개는 템플릿 A 계열(benefit 또는 problem_solving)과 템플릿 C 계열(social_proof 또는 emotional) 중 각 1개씩 선택하세요.
 
 ## 응답 형식
-서로 다른 전략 3개를 각각에 대해 아래 JSON 배열로 반환하세요:
-[
-  {{
-    "strategy": "전략 코드",
-    "strategy_description": "전략 설명 (1문장)",
-    "headline": "광고 헤드라인 (20자 이내)",
-    "body": "광고 본문 (50자 이내)",
-    "cta": "CTA 문구 (10자 이내)",
-    "rationale": "이 전략을 선택한 근거 (2~3문장)"
-  }},
-  {{ ... }},
-  {{ ... }}
-]
+반드시 아래 JSON 객체 형식으로 반환하세요 (strategies 키 안에 배열):
+{{
+  "strategies": [
+    {{
+      "strategy": "전략 코드",
+      "strategy_description": "전략 설명 (1문장)",
+      "rationale": "이 전략을 선택한 근거 (2~3문장)"
+    }},
+    {{ ... }},
+    {{ ... }}
+  ]
+}}
 {improvement_section}"""
 
 _IMPROVE_SECTION = """\
@@ -99,8 +98,17 @@ async def plan_strategies(
         response_format={"type": "json_object"},
     )
 
-    raw = safe_json_loads(response.choices[0].message.content, fallback="[]")
-    items: list = raw if isinstance(raw, list) else raw.get("strategies", raw.get("items", []))
+    raw = safe_json_loads(response.choices[0].message.content, fallback="{}")
+    if isinstance(raw, list):
+        items: list = raw
+    elif isinstance(raw, dict):
+        items = (
+            raw.get("strategies")
+            or raw.get("items")
+            or next((v for v in raw.values() if isinstance(v, list)), [])
+        )
+    else:
+        items = []
 
     outputs = []
     for item in items[:3]:
@@ -108,16 +116,19 @@ async def plan_strategies(
         try:
             strategy = AdStrategy(strategy_str)
         except ValueError:
-            strategy = AdStrategy.BENEFIT if not outputs else AdStrategy.FOMO if len(outputs) == 1 else AdStrategy.SOCIAL_PROOF
+            strategy = (
+                AdStrategy.BENEFIT
+                if not outputs
+                else AdStrategy.FOMO
+                if len(outputs) == 1
+                else AdStrategy.SOCIAL_PROOF
+            )
 
         outputs.append(
             StrategyOutput(
                 strategy=strategy,
                 strategy_description=str_or_none(item.get("strategy_description"))
                 or _STRATEGY_LABELS[strategy],
-                headline=str_or_none(item.get("headline")) or "",
-                body=str_or_none(item.get("body")) or "",
-                cta=str_or_none(item.get("cta")) or "지금 바로 확인하기",
                 rationale=str_or_none(item.get("rationale")) or "",
             )
         )
