@@ -54,3 +54,8 @@ Thumbs.db
 *.pem
 npm-debug.log*
 pnpm-debug.log*
+
+# ── font ─────────────────────────────────────────
+*.ttf
+*.otf
+fonts/
