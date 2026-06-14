@@ -1,10 +1,11 @@
 # 시뮬레이션 전송 계층 — 광고(텍스트+이미지 파일) 입력 → 페르소나 반응·집계 산출.
 #
-# 서비스는 wiring이 조립한 단일 인스턴스. SIM_REAL=1 이면 실 Gemini, 아니면 Mock(기본, 무비용).
+# 기본 = 실데이터(실 Gemini). SIM_MOCK=1 이면 Mock 강제, GEMINI_API_KEY 없으면 자동 Mock 폴백.
 # 광고 이미지는 multipart 파일 업로드로 받아 임시 저장 후 VLM 해석에 사용.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import tempfile
 
@@ -12,13 +13,20 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 
 from domain.simulation.contracts.schemas import SimulationRunRequest
-from domain.simulation.wiring import build_simulation_service
+from domain.simulation.wiring import _ensure_env, build_simulation_service
 
+logger = logging.getLogger("clickme")
 router = APIRouter()
 
-_USE_MOCK = os.getenv("SIM_REAL", "0") != "1"  # 기본 Mock. 실 Gemini는 SIM_REAL=1
+_ensure_env("GEMINI_API_KEY")  # .env에서 키 적재(실데이터 기본 사용)
+_FORCE_MOCK = os.getenv("SIM_MOCK", "0") == "1"
+_HAS_GEMINI = bool(os.environ.get("GEMINI_API_KEY"))
+_USE_MOCK = _FORCE_MOCK or not _HAS_GEMINI  # 기본 실데이터, 강제·키부재 시에만 Mock
 _USE_LLM_QA = os.getenv("SIM_LLM_QA", "0") == "1"
 _service = build_simulation_service(use_mock=_USE_MOCK, use_llm_qa=_USE_LLM_QA)
+logger.info("Simulation service: %s 모드 (LLM QA=%s)", "mock" if _USE_MOCK else "real", _USE_LLM_QA)
+if not _FORCE_MOCK and not _HAS_GEMINI:
+    logger.warning("GEMINI_API_KEY 없음 → Mock 폴백. 실데이터는 .env에 키 설정 필요.")
 
 _IMAGE_MAX_BYTES = 10 * 1024 * 1024  # 10MB
 
