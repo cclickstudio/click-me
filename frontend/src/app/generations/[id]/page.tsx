@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import AppLayout from '@/components/AppLayout';
 import { useProjects } from '@/components/ProjectContext';
+import { useAuth } from '@/components/AuthProvider';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
@@ -139,6 +140,8 @@ function CandidateCard({ candidate, isSelected }: { candidate: Candidate; isSele
 export default function GenerationDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'ADMIN';
   const { projects, details } = useProjects();
 
   const [data, setData] = useState<GenDetail | null>(null);
@@ -202,7 +205,7 @@ export default function GenerationDetailPage() {
 
             {/* 기본 정보 */}
             <div className="bg-white dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748] rounded-2xl px-6 py-2 mb-6">
-              <InfoRow label="ID" value={<span className="font-mono text-xs">{data.generation_id}</span>} />
+              {isAdmin && <InfoRow label="ID" value={<span className="font-mono text-xs">{data.generation_id}</span>} />}
               {project && <InfoRow label="프로젝트" value={project.name} />}
               {genRow?.created_by_name && <InfoRow label="실행자" value={genRow.created_by_name} />}
               <InfoRow label="실행일시" value={fmt(data.created_at)} />

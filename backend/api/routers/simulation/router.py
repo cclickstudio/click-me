@@ -93,9 +93,15 @@ async def start_simulation(
 ) -> dict:
     """비동기 시작 — run_id 반환. 진행률은 /stream, 결과는 /result."""
     req = _build_request(
-        ad_id=ad_id, ad_content=ad_content, ad_image_path=await _save_upload(ad_image),
-        ad_image_url=ad_image_url, organization_id=organization_id, project_id=project_id,
-        target_filter=target_filter, target_mode=target_mode, sample_size=sample_size,
+        ad_id=ad_id,
+        ad_content=ad_content,
+        ad_image_path=await _save_upload(ad_image),
+        ad_image_url=ad_image_url,
+        organization_id=organization_id,
+        project_id=project_id,
+        target_filter=target_filter,
+        target_mode=target_mode,
+        sample_size=sample_size,
         allocation=allocation,
     )
     run_id = await _service.start(req)
@@ -122,9 +128,15 @@ async def run_simulation(
 ) -> dict:
     """동기 실행 — 광고+세부사항 입력 → 끝까지 돌려 반응·루브릭·집계를 한 번에 반환."""
     req = _build_request(
-        ad_id=ad_id, ad_content=ad_content, ad_image_path=await _save_upload(ad_image),
-        ad_image_url=ad_image_url, organization_id=organization_id, project_id=project_id,
-        target_filter=target_filter, target_mode=target_mode, sample_size=sample_size,
+        ad_id=ad_id,
+        ad_content=ad_content,
+        ad_image_path=await _save_upload(ad_image),
+        ad_image_url=ad_image_url,
+        organization_id=organization_id,
+        project_id=project_id,
+        target_filter=target_filter,
+        target_mode=target_mode,
+        sample_size=sample_size,
         allocation=allocation,
     )
     try:

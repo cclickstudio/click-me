@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import AppLayout from '@/components/AppLayout';
 import { getToken } from '@/lib/authApi';
+import { useAuth } from '@/components/AuthProvider';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
@@ -42,6 +43,8 @@ function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
 export default function SimulationDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'ADMIN';
   const [data, setData] = useState<SimDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -88,7 +91,7 @@ export default function SimulationDetailPage() {
 
             {/* 기본 정보 */}
             <div className="bg-white dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748] rounded-2xl px-6 py-2 mb-6">
-              <InfoRow label="ID" value={<span className="font-mono text-xs">{data.id}</span>} />
+              {isAdmin && <InfoRow label="ID" value={<span className="font-mono text-xs">{data.id}</span>} />}
               <InfoRow label="프로젝트" value={data.project_name} />
               <InfoRow label="광고 제목" value={data.ad_title ?? '—'} />
               <InfoRow label="샘플 수" value={`${data.sample_size}명`} />

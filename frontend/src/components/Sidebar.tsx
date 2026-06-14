@@ -15,10 +15,6 @@ const mainNav = [
     icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /></svg>,
   },
   {
-    label: '프로젝트', href: '/projects',
-    icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" /></svg>,
-  },
-  {
     label: '채팅', href: '/chat',
     icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>,
   },
@@ -45,28 +41,12 @@ const adminNav = [
     label: '채팅 내역', href: '/admin/chats',
     icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>,
   },
-  {
-    label: '시뮬레이션 내역', href: '/admin/simulations',
-    icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><polygon points="10 8 16 12 10 16 10 8" /></svg>,
-  },
-  {
-    label: '제너레이터 내역', href: '/admin/generations',
-    icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg>,
-  },
 ];
 
 const companyNav = [
   {
     label: '멤버 승인', href: '/company/members',
     icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><line x1="19" y1="8" x2="19" y2="14" /><line x1="22" y1="11" x2="16" y2="11" /></svg>,
-  },
-  {
-    label: '시뮬레이션 내역', href: '/company/simulations',
-    icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><polygon points="10 8 16 12 10 16 10 8" /></svg>,
-  },
-  {
-    label: '제너레이터 내역', href: '/company/generations',
-    icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg>,
   },
 ];
 
@@ -136,9 +116,13 @@ export default function Sidebar() {
 
       {/* 네비게이션 */}
       <nav className="flex-1 px-3 py-3 overflow-y-auto space-y-0.5">
-        {mainNav.map((item) => (
-          <NavItem key={item.href} {...item} active={pathname === item.href} />
-        ))}
+        {mainNav.map((item) => {
+          const active =
+            pathname === item.href ||
+            (item.href === '/simulation' && pathname.startsWith('/simulations/')) ||
+            (item.href === '/generator' && pathname.startsWith('/generations/'));
+          return <NavItem key={item.href} {...item} active={active} />;
+        })}
 
         {/* ADMIN 전용 섹션 */}
         {isAdmin && (
@@ -158,7 +142,6 @@ export default function Sidebar() {
         {/* COMPANY 전용 섹션 */}
         {isOrgMember && (
           <>
-            <SectionLabel label="기업 관리" />
             {companyNav
               .filter((item) => isCompany || item.href !== '/company/members')
               .map((item) => (
