@@ -36,6 +36,11 @@ def load_media_behavior() -> dict[str, Any]:
     return _read_json("media_behavior.json")
 
 
+def load_socioeconomic() -> dict[str, Any]:
+    """단계1 확장 — 연령×성별 소득(8구간)·학력(6단계) 분포(KISDI)."""
+    return _read_json("socioeconomic.json")
+
+
 def load_population_age_sex() -> dict[str, Any]:
     """단계1 인구 분포. 공식 CSV(raw/population_age_sex.csv)가 있으면 우선 사용.
 
@@ -74,7 +79,8 @@ def _read_csv_rows(path: Path) -> list[list[str]]:
     return list(csv.reader(io.StringIO(text)))
 
 
-# 행안부 원본 레이아웃 — 남 0~110세(col 8~118), 여 0~110세(col 119~229).
+# 행안부 원본 레이아웃 — 시도명(col 2), 남 0~110세(col 8~118), 여 0~110세(col 119~229).
+_SIDO_COL = 2
 _MALE_COLS = range(8, 119)
 _FEMALE_COLS = range(119, 230)
 
@@ -83,6 +89,7 @@ def _load_population_csv(path: Path) -> dict[str, Any]:
     rows = _read_csv_rows(path)
     header = [h.strip().lower() for h in rows[0]] if rows else []
     bands: dict[str, dict[str, int]] = {}
+    regions: dict[str, int] = {}  # 시도별 인구(행안부 원본에서만 채워짐)
 
     if {"age_band", "sex", "count"} <= set(header):  # ② 정규화 포맷
         i_band, i_sex, i_cnt = header.index("age_band"), header.index("sex"), header.index("count")
@@ -90,15 +97,18 @@ def _load_population_csv(path: Path) -> dict[str, Any]:
             band, sex = r[i_band].strip(), r[i_sex].strip().upper()
             bands.setdefault(band, {"M": 0, "F": 0})[sex] += _num(r[i_cnt])
         source = f"{path.name} (정규화)"
-    else:  # ① 행안부 원본 — 성×1세별을 연령밴드로 집계
+    else:  # ① 행안부 원본 — 성×1세별을 연령밴드로, 행정동을 시도로 집계
         for r in rows[1:]:
             if len(r) < 230:
                 continue
+            row_total = 0
             for sex, cols in (("M", _MALE_COLS), ("F", _FEMALE_COLS)):
                 for age, col in enumerate(cols):
                     cnt = _num(r[col])
                     if cnt:
                         bands.setdefault(_age_to_band(age), {"M": 0, "F": 0})[sex] += cnt
+                        row_total += cnt
+            regions[r[_SIDO_COL].strip()] = regions.get(r[_SIDO_COL].strip(), 0) + row_total
         ref = rows[1][1].strip() if len(rows) > 1 and len(rows[1]) > 1 else ""
         source = f"행안부 주민등록 {ref} ({path.name})"
 
@@ -113,7 +123,15 @@ def _load_population_csv(path: Path) -> dict[str, Any]:
         }
         for band in sorted(bands, key=lambda b: int(b.split("-")[0].rstrip("+")))
     ]
-    return {"is_placeholder": False, "source": source, "bands": out}
+    result: dict[str, Any] = {"is_placeholder": False, "source": source, "bands": out}
+    if regions:  # 시도 실분포(합=1) — 없으면(정규화 포맷) 키 생략 → sampler 근사 폴백
+        rtotal = sum(regions.values()) or 1
+        result["region_weights"] = {
+            name: round(cnt / rtotal, 6)
+            for name, cnt in sorted(regions.items(), key=lambda kv: -kv[1])
+            if name
+        }
+    return result
 
 
 def data_status() -> dict[str, str]:
@@ -126,6 +144,9 @@ def data_status() -> dict[str, str]:
         if ocean.get("type_proportions", {}).get("needs_real_values")
         else "real",
         "consumption_values": "real(인용)",
-        "media_behavior": "real(KISDI 기기별 사용시간) / pending(시간대·성연령 교차)",
+        "media_behavior": "real(KISDI 2024 raw — 연령×성별 교차·시간대 노출맥락)"
+        if load_media_behavior().get("cells")
+        else "real(KISDI 기기별 사용시간) / pending(시간대·성연령 교차)",
+        "socioeconomic": "real(KISDI 2024 raw — 연령×성별 소득·학력)",
         "social_values_deep": "pending(MDIS 사회조사 raw 수동 다운로드)",
     }

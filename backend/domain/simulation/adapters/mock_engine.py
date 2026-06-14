@@ -21,6 +21,15 @@ _REGIONS = ("서울", "경기", "부산", "대구", "광주")
 _OCEAN_KEYS = ("openness", "conscientiousness", "extraversion", "agreeableness", "neuroticism")
 
 
+def _pick_exposure(persona: Persona, rng: random.Random) -> str:
+    """페르소나의 KISDI 노출맥락 후보에서 하나를 선택해 문자열로. 후보 없으면 기본값."""
+    candidates = persona.media_behavior.get("exposure_candidates") or []
+    if not candidates:
+        return "sns_feed_evening"
+    e = rng.choice(candidates)
+    return f"{e['timeband']}·{e['place']}·{e['medium']}·{e['activity']}"
+
+
 class MockAdInterpreter:
     """AdInterpreter 어댑터 —고정 해석 반환."""
 
@@ -63,13 +72,14 @@ class MockReactionEngine:
 
     async def react(self, persona: Persona, ad: AdInterpretation) -> PersonaReaction:
         rng = random.Random(persona.persona_id)
+        exposure = _pick_exposure(persona, rng)  # KISDI 노출맥락 후보에서 선택(반응마다 새로)
         attention = rng.random() > 0.2
         interest = attention and rng.random() > 0.3
         action = interest and rng.random() > 0.6
         rejected = rng.random() < 0.1
         return PersonaReaction(
             persona_id=persona.persona_id,
-            exposure_context="sns_feed_evening",
+            exposure_context=exposure,
             aisas=Aisas(
                 attention=attention,
                 interest=interest,
@@ -111,8 +121,12 @@ class MockNarrator:
         top = max(persona.ocean, key=persona.ocean.get) if persona.ocean else "openness"
         medium = persona.media_behavior.get("primary_medium", "미디어")
         minutes = persona.media_behavior.get("daily_media_minutes", "?")
+        se = persona.socioeconomic
+        edu = se.get("education")
+        income = se.get("income_bracket")
+        se_phrase = f" {edu}, 월소득 {income}." if edu and income else ""
         return (
-            f"{persona.age}세 {persona.gender} · {persona.region}. "
+            f"{persona.age}세 {persona.gender} · {persona.region}.{se_phrase} "
             f"성격은 {top}이(가) 두드러지고, 주 이용 미디어는 {medium}(하루 약 {minutes}분)."
         )
 
@@ -124,7 +138,9 @@ class MockQaGate:
     persona_id 기반 결정적 판정 → 약 20%가 첫 시도 탈락, 재생성(재시도) 시 통과로 간주.
     """
 
-    def check(self, reaction: PersonaReaction, attempt: int) -> tuple[bool, str | None]:
+    async def check(
+        self, reaction: PersonaReaction, attempt: int, *, persona=None, ad=None
+    ) -> tuple[bool, str | None]:
         if attempt < 2 and sum(map(ord, reaction.persona_id)) % 5 == 0:
             return False, "mock_qa_inconsistent"
         return True, None

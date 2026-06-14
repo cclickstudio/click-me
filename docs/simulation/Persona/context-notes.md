@@ -77,13 +77,13 @@ react_subgraph(persona): gen_reaction → qa_gate ─실패→ gen_reaction
 | 경로 | 채울 내용 |
 |---|---|
 | `contracts/` | §3.5 반응·집계 스키마, enum taxonomy (있음) |
-| `data/` | 큐레이션 분포 JSON + 로더 (신규) |
-| `sampling/` 또는 `tools/` | 단계1~3 샘플러(코드, LLM✗) (신규) |
-| `panel/` | 패널 빌드(4-a 서사 LLM) + 캐시 로드 (신규) |
-| `graph/` | LangGraph 정의(outer + react_subgraph) (신규) |
-| `adapters/` | VLM·LLM 어댑터(실연동) + 현 mock (있음) |
-| `service/` | 오케스트레이션 + SSE (있음, 그래프 호출로 전환) |
-| `aggregation/` | 집계 엔진(코드) (있음) |
+| `data/` | 큐레이션 분포 JSON + 로더 |
+| `tools/sampling/` | 단계1~3 샘플러(순수 엔진, LLM✗) |
+| `tools/aggregation/` | 집계 엔진(순수 엔진, LLM✗) |
+| `panel/` | 패널 빌드(4-a 서사 LLM) + 캐시 로드 |
+| `graph/` | LangGraph 정의(outer + react_subgraph) |
+| `adapters/` | VLM·LLM 어댑터(실연동) + 현 mock |
+| `service/` | 오케스트레이션 구동 + SSE (그래프 astream 구동) |
 | `repositories/` | 9테이블 CRUD 영속화 (미구현) |
 | `agent/debate/` | 분석팀 경계 — 비워둠 |
 

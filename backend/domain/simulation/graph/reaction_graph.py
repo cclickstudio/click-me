@@ -27,8 +27,8 @@ def build_reaction_graph(*, reactor, qa):
     """반응+QA 재시도 서브그래프를 컴파일한다.
 
     기대 어댑터(덕타이핑):
-      reactor.react(persona, ad) -> PersonaReaction
-      qa.check(reaction, attempt) -> (passed: bool, reason: str | None)
+      async reactor.react(persona, ad) -> PersonaReaction
+      async qa.check(reaction, attempt, *, persona, ad) -> (passed, reason)
     """
 
     async def gen_reaction(state: ReactionState) -> dict:
@@ -36,7 +36,10 @@ def build_reaction_graph(*, reactor, qa):
         return {"reaction": reaction, "attempts": state["attempts"] + 1}
 
     async def qa_gate(state: ReactionState) -> dict:
-        passed, reason = qa.check(state["reaction"], state["attempts"])
+        # persona·ad 도 전달 — LLM QA(광고무관·설정모순) 판정용(규칙 QA는 무시). check 비동기.
+        passed, reason = await qa.check(
+            state["reaction"], state["attempts"], persona=state["persona"], ad=state["ad"]
+        )
         updated = state["reaction"].model_copy(
             update={"qa_passed": passed, "qa_fail_reason": reason}
         )

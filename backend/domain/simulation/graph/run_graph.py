@@ -55,7 +55,9 @@ def build_run_graph(*, interpreter, panel, rubric, aggregator, reaction_graph):
 
     async def load_panel(state: RunState) -> dict:
         req = state["request"]
-        spec = PanelSpec(size=req.sample_size, target_filter=req.target_filter)
+        spec = PanelSpec(
+            size=req.sample_size, target_filter=req.target_filter, allocation=req.allocation
+        )
         version, personas = await panel.get_or_build(spec)
         return {"panel_version": version, "personas": personas}
 
@@ -73,6 +75,8 @@ def build_run_graph(*, interpreter, panel, rubric, aggregator, reaction_graph):
         except Exception as exc:  # 한 명 실패는 건너뜀 (전체 진행 유지)
             logger.warning("페르소나 %s 반응 실패: %s", persona.persona_id, exc)
             return {"reactions": []}
+        # 페르소나 가중치를 반응에 사본으로 전달(§3.7) — 집계가 가중 평균에 사용. 어댑터 무관.
+        reaction = reaction.model_copy(update={"weight": persona.weight})
         return {"reactions": [reaction]}
 
     async def aggregate(state: RunState) -> dict:

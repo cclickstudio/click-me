@@ -54,6 +54,7 @@ class PanelRepository:
                     ocean=p.ocean,
                     media_behavior=p.media_behavior,
                     consumption_values=p.consumption_values,
+                    socioeconomic=p.socioeconomic,
                     profile_narrative=p.profile_narrative,
                 )
             )

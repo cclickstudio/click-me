@@ -1,7 +1,7 @@
-# 4-a 프로필 서사 생성 — 실 Gemini 어댑터(google-generativeai). 속성 묶음 → 한국어 인물 서사.
+# 4-a 프로필 서사 생성 — 실 Gemini 어댑터(google-genai). 속성 묶음 → 한국어 인물 서사.
 #
 # 원칙: LLM은 "주어진 속성을 말로 풀어주기만" 한다. 새 속성 생성 금지(동질화 원인).
-# core.config 미의존(현재 backend/.env 부재로 깨짐) — 키는 os.environ 또는 생성자 주입.
+# core.config 미의존 — 키는 os.environ 또는 생성자 주입.
 from __future__ import annotations
 
 import os
@@ -30,15 +30,17 @@ class GeminiNarrator:
     """Gemini 2.0 Flash 로 4-a 서사 생성. 빌드 시 1회 호출(런타임 아님)."""
 
     def __init__(self, *, api_key: str | None = None, model: str = _DEFAULT_MODEL) -> None:
-        import google.generativeai as genai
+        from google import genai
 
         key = api_key or os.environ.get("GEMINI_API_KEY")
         if not key:
             raise RuntimeError("GEMINI_API_KEY 미설정 — 서사 생성 불가")
-        genai.configure(api_key=key)
         self.version = model
-        self._model = genai.GenerativeModel(model)
+        self._model = model
+        self._client = genai.Client(api_key=key)
 
     def narrate(self, persona: Persona) -> str:
-        resp = self._model.generate_content(_build_prompt(persona))
+        resp = self._client.models.generate_content(
+            model=self._model, contents=_build_prompt(persona)
+        )
         return (getattr(resp, "text", "") or "").strip()

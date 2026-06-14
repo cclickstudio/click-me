@@ -44,6 +44,7 @@ class Persona(SimBase):
     ocean: Mapped[dict] = mapped_column(_JSONB, nullable=False)
     media_behavior: Mapped[dict] = mapped_column(_JSONB, nullable=False)
     consumption_values: Mapped[dict] = mapped_column(_JSONB, nullable=False)
+    socioeconomic: Mapped[dict] = mapped_column(_JSONB, nullable=False, default=dict)
     profile_narrative: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
@@ -86,12 +87,14 @@ class Simulation(SimBase):
 
 
 class PersonaReaction(SimBase):
-    __tablename__ = "persona_reactions"
+    # 정본 테이블명은 persona_responses (db-schema.md ERD·Neon). 분석팀이 읽는 계약 테이블.
+    __tablename__ = "persona_responses"
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid(), primary_key=True, default=uuid.uuid4)
     simulation_id: Mapped[uuid.UUID] = mapped_column(Uuid(), nullable=False)
     persona_id: Mapped[uuid.UUID] = mapped_column(Uuid(), nullable=False)
     exposure_context: Mapped[str | None] = mapped_column(String(50))
+    weight: Mapped[float] = mapped_column(Numeric(10, 4), nullable=False, default=1.0)
     aisas: Mapped[dict] = mapped_column(_JSONB, nullable=False)
     drop_stage: Mapped[str | None] = mapped_column(String(20))
     drop_reason_tag: Mapped[str | None] = mapped_column(String(50))
@@ -127,10 +130,14 @@ class SimulationAggregate(SimBase):
     click_intent_rate: Mapped[float] = mapped_column(Numeric(5, 4), nullable=False)
     ci_low: Mapped[float] = mapped_column(Numeric(5, 4), nullable=False)
     ci_high: Mapped[float] = mapped_column(Numeric(5, 4), nullable=False)
-    purchase_intent: Mapped[float] = mapped_column(Numeric(3, 2), nullable=False)
+    # 정본 컬럼명 purchase_intent_avg (Neon). 계약(Pydantic) 필드는 purchase_intent 유지.
+    purchase_intent: Mapped[float] = mapped_column(
+        "purchase_intent_avg", Numeric(3, 2), nullable=False
+    )
     trust_avg: Mapped[float] = mapped_column(Numeric(3, 2), nullable=False)
     rejection_rate: Mapped[float] = mapped_column(Numeric(5, 4), nullable=False)
     variance_warning: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    effective_n: Mapped[float] = mapped_column(Numeric(10, 1), nullable=False, default=0.0)
     payload: Mapped[dict] = mapped_column(_JSONB, nullable=False)
     engine_version: Mapped[str] = mapped_column(String(50), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())

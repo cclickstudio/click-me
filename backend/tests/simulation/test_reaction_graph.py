@@ -32,7 +32,9 @@ class _Qa:
     def __init__(self, pass_on: int | None) -> None:
         self.pass_on = pass_on
 
-    def check(self, reaction: PersonaReaction, attempt: int) -> tuple[bool, str | None]:
+    async def check(
+        self, reaction: PersonaReaction, attempt: int, *, persona=None, ad=None
+    ) -> tuple[bool, str | None]:
         if self.pass_on is not None and attempt >= self.pass_on:
             return True, None
         return False, "stub_fail"

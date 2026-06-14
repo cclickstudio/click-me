@@ -18,9 +18,10 @@ logger = logging.getLogger("clickme")
 class SimulationService:
     """주입된 outer 그래프를 구동. 그래프 구성·어댑터는 wiring.py 가 결정·주입한다."""
 
-    def __init__(self, *, graph, store) -> None:
+    def __init__(self, *, graph, store, persistence=None) -> None:
         self._graph = graph
         self._store = store
+        self._persistence = persistence  # 주입되면 완료 런을 DB 저장(없으면 인메모리만)
 
     async def start(self, request: SimulationRunRequest) -> str:
         run_id = str(uuid.uuid4())
@@ -39,6 +40,13 @@ class SimulationService:
             rubric_dump: list[dict] = []
             reactions: list[dict] = []
             aggregate_dump: dict | None = None
+            # 영속화용 typed 객체(주입된 persistence 가 있을 때만 DB 저장에 사용)
+            ad_obj = None
+            personas: list = []
+            rubric_objs: list = []
+            reaction_objs: list = []
+            aggregate_obj = None
+            panel_version = "panel-v1"
             total = request.sample_size
             done = 0
 
@@ -47,15 +55,20 @@ class SimulationService:
                     if not out:
                         continue
                     if node == "interpret_ad":
-                        ad_dump = out["ad"].model_dump()
+                        ad_obj = out["ad"]
+                        ad_dump = ad_obj.model_dump()
                         store.emit(run_id, {"event": "progress", "stage": "panel", "pct": 15})
                     elif node == "load_panel":
-                        total = len(out["personas"]) or total
+                        personas = out["personas"]
+                        panel_version = out.get("panel_version") or panel_version
+                        total = len(personas) or total
                         store.emit(run_id, {"event": "progress", "stage": "reaction", "pct": 30})
                     elif node == "rubric_eval":
-                        rubric_dump = [s.model_dump() for s in out["rubric_scores"]]
+                        rubric_objs = out["rubric_scores"]
+                        rubric_dump = [s.model_dump() for s in rubric_objs]
                     elif node == "react":
                         for r in out.get("reactions", []):
+                            reaction_objs.append(r)
                             reactions.append(r.model_dump())  # §3.5 계약 (분석팀 입력)
                             done += 1
                             pct = 30 + int(done / total * 50) if total else 80
@@ -70,7 +83,8 @@ class SimulationService:
                             )
                     elif node == "aggregate":
                         store.emit(run_id, {"event": "milestone", "stage": "aggregate", "pct": 95})
-                        aggregate_dump = out["aggregate"].model_dump()  # 집계 계약
+                        aggregate_obj = out["aggregate"]
+                        aggregate_dump = aggregate_obj.model_dump()  # 집계 계약
 
             if not reactions:
                 raise RuntimeError("모든 페르소나 반응 생성에 실패했습니다.")
@@ -82,6 +96,22 @@ class SimulationService:
                 "rubric_scores": rubric_dump,
                 "aggregate": aggregate_dump,
             }
+            # DB 영속화(주입 시) — 실패해도 런 결과(인메모리)는 유지. simulation_id를 결과에 병기.
+            if self._persistence is not None and ad_obj is not None and aggregate_obj is not None:
+                try:
+                    sim_id = await self._persistence.save_completed_run(
+                        request=request,
+                        ad=ad_obj,
+                        personas=personas,
+                        reactions=reaction_objs,
+                        rubric=rubric_objs,
+                        aggregate=aggregate_obj,
+                        panel_version=panel_version,
+                    )
+                    result["simulation_id"] = str(sim_id)
+                except Exception:
+                    logger.exception("영속화 실패(런은 유지) run_id=%s", run_id)
+
             store.set_result(run_id, result)
             store.set_status(run_id, "COMPLETED")
             store.emit(

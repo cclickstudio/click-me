@@ -13,6 +13,7 @@ def _reaction(
     trust: int = 3,
     rejected: bool = False,
     qa: bool = True,
+    weight: float = 1.0,
 ) -> PersonaReaction:
     return PersonaReaction(
         persona_id=pid,
@@ -21,6 +22,7 @@ def _reaction(
         trust=trust,
         rejected=rejected,
         qa_passed=qa,
+        weight=weight,
     )
 
 
@@ -47,7 +49,7 @@ def test_ci_brackets_point_estimate() -> None:
     agg = BasicAggregator().aggregate(reactions)
     assert agg.ci_low <= agg.click_intent_rate <= agg.ci_high
     assert agg.ci_low < agg.ci_high  # 표본 변동이 있으면 폭이 0보다 큼
-    assert agg.payload["ci_method"] == "bootstrap"
+    assert agg.payload["ci_method"] == "weighted_bootstrap"
 
 
 def test_low_purchase_variance_triggers_warning() -> None:
@@ -63,3 +65,25 @@ def test_spread_purchase_no_warning() -> None:
     reactions = [_reaction(f"P-{i}", action=True, purchase=(i % 5) + 1) for i in range(50)]
     agg = BasicAggregator().aggregate(reactions)
     assert agg.variance_warning is False
+
+
+def test_uniform_weights_match_unweighted_and_effective_n_equals_n() -> None:
+    # 균일 가중(self-weighting) → 가중 평균 = 단순 평균, 유효표본수 = n.
+    reactions = [_reaction(f"P-{i}", action=(i < 10), purchase=3) for i in range(40)]
+    agg = BasicAggregator().aggregate(reactions)
+    assert agg.click_intent_rate == 0.25  # 10/40
+    assert agg.effective_n == 40.0
+
+
+def test_nonuniform_weights_shift_estimate_and_reduce_effective_n() -> None:
+    # action=True 1명에 큰 가중, action=False 3명에 작은 가중 → 가중 클릭률↑, 유효표본 < 4.
+    reactions = [
+        _reaction("P-1", action=True, purchase=5, weight=7.0),
+        _reaction("P-2", action=False, purchase=1, weight=1.0),
+        _reaction("P-3", action=False, purchase=1, weight=1.0),
+        _reaction("P-4", action=False, purchase=1, weight=1.0),
+    ]
+    agg = BasicAggregator().aggregate(reactions)
+    assert agg.click_intent_rate == 0.7  # 7/(7+1+1+1)
+    assert agg.effective_n < 4.0  # Kish: 가중 편차로 유효표본 감소
+    assert agg.payload["weight_sum"] == 10.0

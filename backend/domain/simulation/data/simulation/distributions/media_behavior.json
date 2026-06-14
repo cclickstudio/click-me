@@ -1,18 +1,2055 @@
 {
-  "_role": "단계2-β 미디어 행동 — 기기별 평균 사용시간(다이어리)로 primary_medium·일일 미디어시간 샘플링.",
-  "source": "KISDI 2025 한국미디어패널조사 표4-71 (다이어리_대분류 미디어기기별 평균 사용시간, 사용자 기준, 분)",
+  "_role": "단계2-β 미디어행동 — 연령×성별 셀별 매체 사용시간 + 노출맥락(4-b exposure).",
+  "source": "KISDI 한국미디어패널 2024 raw(d25v32), 3일 다이어리×96슬롯(15분), d25wt 가중",
   "license": "공공·연구 이용",
-  "note": "사용자 기준 평균(분). primary 선택은 사용시간 가중(가입률 미반영). 시간대(표4-77)·성연령 교차는 추후 확장.",
-  "device_minutes": {
-    "종이매체": 239.39,
-    "TV": 209.28,
-    "컴퓨터": 250.06,
-    "전화기": 159.57,
-    "촬영기기": 67.50,
-    "오디오기기": 98.62,
-    "비디오": 58.42,
-    "게임기": 78.48,
-    "XR기기": 35.00,
-    "공간미디어": 150.83
+  "is_placeholder": false,
+  "slot_minutes": 15,
+  "slot_start_hour": 0,
+  "n_respondents": 8411,
+  "timebands": {
+    "새벽": [
+      0,
+      6
+    ],
+    "오전": [
+      6,
+      12
+    ],
+    "오후": [
+      12,
+      18
+    ],
+    "저녁": [
+      18,
+      24
+    ]
+  },
+  "medium_groups": [
+    "신문/잡지/책",
+    "사진/편지",
+    "TV",
+    "PC",
+    "내비/키오스크",
+    "전화기(고정)",
+    "스마트폰/휴대폰",
+    "카메라/캠코더",
+    "라디오/오디오",
+    "비디오재생",
+    "게임기",
+    "문화시설",
+    "차량/기타기기",
+    "XR"
+  ],
+  "cells": {
+    "0-9|F": {
+      "n": 9,
+      "daily_media_minutes": {
+        "mean": 393.9,
+        "sd": 144.9
+      },
+      "device_minutes": {
+        "신문/잡지/책": 233.9,
+        "스마트폰/휴대폰": 88.8,
+        "TV": 56.4,
+        "PC": 10.8,
+        "라디오/오디오": 3.9
+      },
+      "exposure": [
+        {
+          "timeband": "오전",
+          "medium": "신문/잡지/책",
+          "activity": "읽기",
+          "place": "교육시설",
+          "p": 0.3215
+        },
+        {
+          "timeband": "오후",
+          "medium": "신문/잡지/책",
+          "activity": "읽기",
+          "place": "교육시설",
+          "p": 0.2686
+        },
+        {
+          "timeband": "저녁",
+          "medium": "TV",
+          "activity": "TV/방송시청",
+          "place": "집",
+          "p": 0.0832
+        },
+        {
+          "timeband": "저녁",
+          "medium": "스마트폰/휴대폰",
+          "activity": "동영상/개인방송",
+          "place": "집",
+          "p": 0.0525
+        },
+        {
+          "timeband": "저녁",
+          "medium": "신문/잡지/책",
+          "activity": "읽기",
+          "place": "집",
+          "p": 0.0522
+        },
+        {
+          "timeband": "저녁",
+          "medium": "TV",
+          "activity": "동영상/개인방송",
+          "place": "집",
+          "p": 0.0453
+        },
+        {
+          "timeband": "저녁",
+          "medium": "스마트폰/휴대폰",
+          "activity": "게임",
+          "place": "집",
+          "p": 0.0375
+        },
+        {
+          "timeband": "오전",
+          "medium": "PC",
+          "activity": "동영상/개인방송",
+          "place": "교육시설",
+          "p": 0.0203
+        },
+        {
+          "timeband": "오전",
+          "medium": "스마트폰/휴대폰",
+          "activity": "동영상/개인방송",
+          "place": "집",
+          "p": 0.0203
+        },
+        {
+          "timeband": "오전",
+          "medium": "스마트폰/휴대폰",
+          "activity": "동영상/개인방송",
+          "place": "이동중",
+          "p": 0.02
+        },
+        {
+          "timeband": "오후",
+          "medium": "스마트폰/휴대폰",
+          "activity": "커뮤니케이션",
+          "place": "교육시설",
+          "p": 0.0177
+        },
+        {
+          "timeband": "오후",
+          "medium": "TV",
+          "activity": "TV/방송시청",
+          "place": "집",
+          "p": 0.0175
+        },
+        {
+          "timeband": "오후",
+          "medium": "스마트폰/휴대폰",
+          "activity": "게임",
+          "place": "집",
+          "p": 0.0174
+        },
+        {
+          "timeband": "오후",
+          "medium": "스마트폰/휴대폰",
+          "activity": "커뮤니케이션",
+          "place": "여가/외식",
+          "p": 0.0142
+        },
+        {
+          "timeband": "저녁",
+          "medium": "스마트폰/휴대폰",
+          "activity": "동영상/개인방송",
+          "place": "타인집",
+          "p": 0.012
+        }
+      ]
+    },
+    "0-9|M": {
+      "n": 7,
+      "daily_media_minutes": {
+        "mean": 396.6,
+        "sd": 83.5
+      },
+      "device_minutes": {
+        "신문/잡지/책": 205.9,
+        "스마트폰/휴대폰": 72.7,
+        "TV": 58.9,
+        "PC": 56.6,
+        "문화시설": 2.5
+      },
+      "exposure": [
+        {
+          "timeband": "오전",
+          "medium": "신문/잡지/책",
+          "activity": "읽기",
+          "place": "교육시설",
+          "p": 0.2578
+        },
+        {
+          "timeband": "오후",
+          "medium": "신문/잡지/책",
+          "activity": "읽기",
+          "place": "교육시설",
+          "p": 0.2216
+        },
+        {
+          "timeband": "저녁",
+          "medium": "TV",
+          "activity": "TV/방송시청",
+          "place": "집",
+          "p": 0.1106
+        },
+        {
+          "timeband": "오후",
+          "medium": "스마트폰/휴대폰",
+          "activity": "동영상/개인방송",
+          "place": "집",
+          "p": 0.0622
+        },
+        {
+          "timeband": "오후",
+          "medium": "신문/잡지/책",
+          "activity": "읽기",
+          "place": "상업/종교/기타",
+          "p": 0.0458
+        },
+        {
+          "timeband": "오전",
+          "medium": "TV",
+          "activity": "TV/방송시청",
+          "place": "집",
+          "p": 0.0393
+        },
+        {
+          "timeband": "오전",
+          "medium": "PC",
+          "activity": "동영상/개인방송",
+          "place": "상업/종교/기타",
+          "p": 0.0393
+        },
+        {
+          "timeband": "저녁",
+          "medium": "스마트폰/휴대폰",
+          "activity": "커뮤니케이션",
+          "place": "집",
+          "p": 0.0304
+        },
+        {
+          "timeband": "오전",
+          "medium": "신문/잡지/책",
+          "activity": "읽기",
+          "place": "상업/종교/기타",
+          "p": 0.0295
+        },
+        {
+          "timeband": "오후",
+          "medium": "PC",
+          "activity": "동영상/개인방송",
+          "place": "상업/종교/기타",
+          "p": 0.0295
+        },
+        {
+          "timeband": "저녁",
+          "medium": "PC",
+          "activity": "동영상/개인방송",
+          "place": "집",
+          "p": 0.028
+        },
+        {
+          "timeband": "저녁",
+          "medium": "스마트폰/휴대폰",
+          "activity": "동영상/개인방송",
+          "place": "집",
+          "p": 0.0272
+        },
+        {
+          "timeband": "저녁",
+          "medium": "PC",
+          "activity": "게임",
+          "place": "집",
+          "p": 0.0265
+        },
+        {
+          "timeband": "오전",
+          "medium": "PC",
+          "activity": "게임",
+          "place": "집",
+          "p": 0.0262
+        },
+        {
+          "timeband": "저녁",
+          "medium": "신문/잡지/책",
+          "activity": "읽기",
+          "place": "집",
+          "p": 0.0262
+        }
+      ]
+    },
+    "10-19|F": {
+      "n": 178,
+      "daily_media_minutes": {
+        "mean": 534.0,
+        "sd": 153.5
+      },
+      "device_minutes": {
+        "신문/잡지/책": 265.1,
+        "스마트폰/휴대폰": 139.2,
+        "PC": 65.4,
+        "TV": 56.8,
+        "문화시설": 3.5,
+        "라디오/오디오": 3.3,
+        "내비/키오스크": 0.5,
+        "사진/편지": 0.3
+      },
+      "exposure": [
+        {
+          "timeband": "오후",
+          "medium": "신문/잡지/책",
+          "activity": "읽기",
+          "place": "교육시설",
+          "p": 0.3028
+        },
+        {
+          "timeband": "오전",
+          "medium": "신문/잡지/책",
+          "activity": "읽기",
+          "place": "교육시설",
+          "p": 0.2556
+        },
+        {
+          "timeband": "저녁",
+          "medium": "TV",
+          "activity": "TV/방송시청",
+          "place": "집",
+          "p": 0.0761
+        },
+        {
+          "timeband": "저녁",
+          "medium": "신문/잡지/책",
+          "activity": "읽기",
+          "place": "교육시설",
+          "p": 0.0706
+        },
+        {
+          "timeband": "저녁",
+          "medium": "스마트폰/휴대폰",
+          "activity": "동영상/개인방송",
+          "place": "집",
+          "p": 0.0605
+        },
+        {
+          "timeband": "저녁",
+          "medium": "PC",
+          "activity": "동영상/개인방송",
+          "place": "집",
+          "p": 0.0412
+        },
+        {
+          "timeband": "저녁",
+          "medium": "스마트폰/휴대폰",
+          "activity": "커뮤니케이션",
+          "place": "집",
+          "p": 0.0295
+        },
+        {
+          "timeband": "오전",
+          "medium": "TV",
+          "activity": "TV/방송시청",
+          "place": "집",
+          "p": 0.0262
+        },
+        {
+          "timeband": "오후",
+          "medium": "스마트폰/휴대폰",
+          "activity": "동영상/개인방송",
+          "place": "집",
+          "p": 0.026
+        },
+        {
+          "timeband": "오후",
+          "medium": "TV",
+          "activity": "TV/방송시청",
+          "place": "집",
+          "p": 0.025
+        },
+        {
+          "timeband": "저녁",
+          "medium": "신문/잡지/책",
+          "activity": "읽기",
+          "place": "집",
+          "p": 0.021
+        },
+        {
+          "timeband": "오후",
+          "medium": "스마트폰/휴대폰",
+          "activity": "커뮤니케이션",
+          "place": "집",
+          "p": 0.0181
+        },
+        {
+          "timeband": "오후",
+          "medium": "PC",
+          "activity": "동영상/개인방송",
+          "place": "집",
+          "p": 0.0167
+        },
+        {
+          "timeband": "저녁",
+          "medium": "스마트폰/휴대폰",
+          "activity": "SNS",
+          "place": "집",
+          "p": 0.0155
+        },
+        {
+          "timeband": "저녁",
+          "medium": "스마트폰/휴대폰",
+          "activity": "게임",
+          "place": "집",
+          "p": 0.0153
+        }
+      ]
+    },
+    "10-19|M": {
+      "n": 191,
+      "daily_media_minutes": {
+        "mean": 520.3,
+        "sd": 140.1
+      },
+      "device_minutes": {
+        "신문/잡지/책": 247.5,
+        "스마트폰/휴대폰": 133.1,
+        "PC": 73.4,
+        "TV": 53.1,
+        "문화시설": 7.1,
+        "라디오/오디오": 5.4,
+        "비디오재생": 0.4,
+        "카메라/캠코더": 0.2,
+        "게임기": 0.1,
+        "내비/키오스크": 0.1,
+        "XR": 0.0
+      },
+      "exposure": [
+        {
+          "timeband": "오후",
+          "medium": "신문/잡지/책",
+          "activity": "읽기",
+          "place": "교육시설",
+          "p": 0.3063
+        },
+        {
+          "timeband": "오전",
+          "medium": "신문/잡지/책",
+          "activity": "읽기",
+          "place": "교육시설",
+          "p": 0.2464
+        },
+        {
+          "timeband": "저녁",
+          "medium": "TV",
+          "activity": "TV/방송시청",
+          "place": "집",
+          "p": 0.0777
+        },
+        {
+          "timeband": "저녁",
+          "medium": "신문/잡지/책",
+          "activity": "읽기",
+          "place": "교육시설",
+          "p": 0.0774
+        },
+        {
+          "timeband": "저녁",
+          "medium": "스마트폰/휴대폰",
+          "activity": "게임",
+          "place": "집",
+          "p": 0.0521
+        },
+        {
+          "timeband": "저녁",
+          "medium": "PC",
+          "activity": "동영상/개인방송",
+          "place": "집",
+          "p": 0.0435
+        },
+        {
+          "timeband": "저녁",
+          "medium": "스마트폰/휴대폰",
+          "activity": "동영상/개인방송",
+          "place": "집",
+          "p": 0.0414
+        },
+        {
+          "timeband": "저녁",
+          "medium": "PC",
+          "activity": "게임",
+          "place": "집",
+          "p": 0.0349
+        },
+        {
+          "timeband": "오전",
+          "medium": "TV",
+          "activity": "TV/방송시청",
+          "place": "집",
+          "p": 0.0195
+        },
+        {
+          "timeband": "오후",
+          "medium": "스마트폰/휴대폰",
+          "activity": "동영상/개인방송",
+          "place": "집",
+          "p": 0.0181
+        },
+        {
+          "timeband": "저녁",
+          "medium": "TV",
+          "activity": "동영상/개인방송",
+          "place": "집",
+          "p": 0.0176
+        },
+        {
+          "timeband": "저녁",
+          "medium": "스마트폰/휴대폰",
+          "activity": "커뮤니케이션",
+          "place": "집",
+          "p": 0.0174
+        },
+        {
+          "timeband": "오후",
+          "medium": "PC",
+          "activity": "게임",
+          "place": "집",
+          "p": 0.0168
+        },
+        {
+          "timeband": "오전",
+          "medium": "스마트폰/휴대폰",
+          "activity": "동영상/개인방송",
+          "place": "집",
+          "p": 0.0158
+        },
+        {
+          "timeband": "오후",
+          "medium": "스마트폰/휴대폰",
+          "activity": "게임",
+          "place": "집",
+          "p": 0.015
+        }
+      ]
+    },
+    "20-29|F": {
+      "n": 386,
+      "daily_media_minutes": {
+        "mean": 489.7,
+        "sd": 178.4
+      },
+      "device_minutes": {
+        "PC": 179.2,
+        "스마트폰/휴대폰": 171.0,
+        "TV": 81.2,
+        "신문/잡지/책": 33.4,
+        "라디오/오디오": 12.3,
+        "문화시설": 10.0,
+        "전화기(고정)": 1.1,
+        "사진/편지": 0.9,
+        "내비/키오스크": 0.5,
+        "게임기": 0.1,
+        "비디오재생": 0.0,
+        "카메라/캠코더": 0.0
+      },
+      "exposure": [
+        {
+          "timeband": "오후",
+          "medium": "PC",
+          "activity": "문서/그래픽작업",
+          "place": "직장",
+          "p": 0.2408
+        },
+        {
+          "timeband": "저녁",
+          "medium": "TV",
+          "activity": "TV/방송시청",
+          "place": "집",
+          "p": 0.2036
+        },
+        {
+          "timeband": "오전",
+          "medium": "PC",
+          "activity": "문서/그래픽작업",
+          "place": "직장",
+          "p": 0.1571
+        },
+        {
+          "timeband": "저녁",
+          "medium": "스마트폰/휴대폰",
+          "activity": "동영상/개인방송",
+          "place": "집",
+          "p": 0.0874
+        },
+        {
+          "timeband": "오후",
+          "medium": "신문/잡지/책",
+          "activity": "읽기",
+          "place": "교육시설",
+          "p": 0.04
+        },
+        {
+          "timeband": "오전",
+          "medium": "TV",
+          "activity": "TV/방송시청",
+          "place": "집",
+          "p": 0.0363
+        },
+        {
+          "timeband": "저녁",
+          "medium": "PC",
+          "activity": "동영상/개인방송",
+          "place": "집",
+          "p": 0.0348
+        },
+        {
+          "timeband": "오후",
+          "medium": "TV",
+          "activity": "TV/방송시청",
+          "place": "집",
+          "p": 0.0312
+        },
+        {
+          "timeband": "저녁",
+          "medium": "스마트폰/휴대폰",
+          "activity": "커뮤니케이션",
+          "place": "집",
+          "p": 0.0305
+        },
+        {
+          "timeband": "오전",
+          "medium": "스마트폰/휴대폰",
+          "activity": "라디오/음악",
+          "place": "이동중",
+          "p": 0.0284
+        },
+        {
+          "timeband": "오전",
+          "medium": "신문/잡지/책",
+          "activity": "읽기",
+          "place": "교육시설",
+          "p": 0.0271
+        },
+        {
+          "timeband": "오후",
+          "medium": "스마트폰/휴대폰",
+          "activity": "커뮤니케이션",
+          "place": "직장",
+          "p": 0.0243
+        },
+        {
+          "timeband": "오후",
+          "medium": "스마트폰/휴대폰",
+          "activity": "동영상/개인방송",
+          "place": "집",
+          "p": 0.0224
+        },
+        {
+          "timeband": "저녁",
+          "medium": "문화시설",
+          "activity": "문화/여가시설",
+          "place": "여가/외식",
+          "p": 0.0192
+        },
+        {
+          "timeband": "오전",
+          "medium": "스마트폰/휴대폰",
+          "activity": "커뮤니케이션",
+          "place": "집",
+          "p": 0.0167
+        }
+      ]
+    },
+    "20-29|M": {
+      "n": 346,
+      "daily_media_minutes": {
+        "mean": 497.3,
+        "sd": 149.2
+      },
+      "device_minutes": {
+        "PC": 199.5,
+        "스마트폰/휴대폰": 162.8,
+        "TV": 67.7,
+        "신문/잡지/책": 36.6,
+        "라디오/오디오": 14.3,
+        "문화시설": 13.0,
+        "내비/키오스크": 1.9,
+        "전화기(고정)": 1.0,
+        "사진/편지": 0.2,
+        "게임기": 0.1
+      },
+      "exposure": [
+        {
+          "timeband": "오후",
+          "medium": "PC",
+          "activity": "문서/그래픽작업",
+          "place": "직장",
+          "p": 0.1764
+        },
+        {
+          "timeband": "저녁",
+          "medium": "TV",
+          "activity": "TV/방송시청",
+          "place": "집",
+          "p": 0.1576
+        },
+        {
+          "timeband": "오전",
+          "medium": "PC",
+          "activity": "문서/그래픽작업",
+          "place": "직장",
+          "p": 0.1253
+        },
+        {
+          "timeband": "저녁",
+          "medium": "PC",
+          "activity": "게임",
+          "place": "집",
+          "p": 0.0867
+        },
+        {
+          "timeband": "저녁",
+          "medium": "스마트폰/휴대폰",
+          "activity": "동영상/개인방송",
+          "place": "집",
+          "p": 0.0853
+        },
+        {
+          "timeband": "오후",
+          "medium": "신문/잡지/책",
+          "activity": "읽기",
+          "place": "교육시설",
+          "p": 0.0725
+        },
+        {
+          "timeband": "오전",
+          "medium": "TV",
+          "activity": "TV/방송시청",
+          "place": "집",
+          "p": 0.048
+        },
+        {
+          "timeband": "저녁",
+          "medium": "PC",
+          "activity": "동영상/개인방송",
+          "place": "집",
+          "p": 0.0389
+        },
+        {
+          "timeband": "오전",
+          "medium": "신문/잡지/책",
+          "activity": "읽기",
+          "place": "교육시설",
+          "p": 0.0382
+        },
+        {
+          "timeband": "저녁",
+          "medium": "스마트폰/휴대폰",
+          "activity": "커뮤니케이션",
+          "place": "집",
+          "p": 0.0332
+        },
+        {
+          "timeband": "오후",
+          "medium": "스마트폰/휴대폰",
+          "activity": "커뮤니케이션",
+          "place": "직장",
+          "p": 0.0308
+        },
+        {
+          "timeband": "오후",
+          "medium": "PC",
+          "activity": "게임",
+          "place": "집",
+          "p": 0.0298
+        },
+        {
+          "timeband": "오후",
+          "medium": "스마트폰/휴대폰",
+          "activity": "동영상/개인방송",
+          "place": "집",
+          "p": 0.0284
+        },
+        {
+          "timeband": "오후",
+          "medium": "PC",
+          "activity": "문서/그래픽작업",
+          "place": "교육시설",
+          "p": 0.0281
+        },
+        {
+          "timeband": "저녁",
+          "medium": "TV",
+          "activity": "동영상/개인방송",
+          "place": "집",
+          "p": 0.0209
+        }
+      ]
+    },
+    "30-39|F": {
+      "n": 368,
+      "daily_media_minutes": {
+        "mean": 482.1,
+        "sd": 155.4
+      },
+      "device_minutes": {
+        "PC": 189.2,
+        "스마트폰/휴대폰": 131.4,
+        "TV": 126.6,
+        "라디오/오디오": 14.4,
+        "문화시설": 8.4,
+        "신문/잡지/책": 5.6,
+        "전화기(고정)": 4.6,
+        "내비/키오스크": 1.8,
+        "사진/편지": 0.2,
+        "XR": 0.0
+      },
+      "exposure": [
+        {
+          "timeband": "오후",
+          "medium": "PC",
+          "activity": "문서/그래픽작업",
+          "place": "직장",
+          "p": 0.2618
+        },
+        {
+          "timeband": "저녁",
+          "medium": "TV",
+          "activity": "TV/방송시청",
+          "place": "집",
+          "p": 0.2386
+        },
+        {
+          "timeband": "오전",
+          "medium": "PC",
+          "activity": "문서/그래픽작업",
+          "place": "직장",
+          "p": 0.1664
+        },
+        {
+          "timeband": "오전",
+          "medium": "TV",
+          "activity": "TV/방송시청",
+          "place": "집",
+          "p": 0.0626
+        },
+        {
+          "timeband": "저녁",
+          "medium": "스마트폰/휴대폰",
+          "activity": "동영상/개인방송",
+          "place": "집",
+          "p": 0.0461
+        },
+        {
+          "timeband": "저녁",
+          "medium": "TV",
+          "activity": "동영상/개인방송",
+          "place": "집",
+          "p": 0.0335
+        },
+        {
+          "timeband": "오후",
+          "medium": "스마트폰/휴대폰",
+          "activity": "커뮤니케이션",
+          "place": "직장",
+          "p": 0.0333
+        },
+        {
+          "timeband": "오후",
+          "medium": "TV",
+          "activity": "TV/방송시청",
+          "place": "집",
+          "p": 0.0304
+        },
+        {
+          "timeband": "저녁",
+          "medium": "PC",
+          "activity": "동영상/개인방송",
+          "place": "집",
+          "p": 0.0216
+        },
+        {
+          "timeband": "오전",
+          "medium": "라디오/오디오",
+          "activity": "라디오/음악",
+          "place": "이동중",
+          "p": 0.0193
+        },
+        {
+          "timeband": "저녁",
+          "medium": "스마트폰/휴대폰",
+          "activity": "커뮤니케이션",
+          "place": "집",
+          "p": 0.0188
+        },
+        {
+          "timeband": "오후",
+          "medium": "PC",
+          "activity": "라디오/음악",
+          "place": "직장",
+          "p": 0.0182
+        },
+        {
+          "timeband": "오후",
+          "medium": "문화시설",
+          "activity": "문화/여가시설",
+          "place": "여가/외식",
+          "p": 0.0176
+        },
+        {
+          "timeband": "오전",
+          "medium": "스마트폰/휴대폰",
+          "activity": "라디오/음악",
+          "place": "이동중",
+          "p": 0.0163
+        },
+        {
+          "timeband": "저녁",
+          "medium": "라디오/오디오",
+          "activity": "라디오/음악",
+          "place": "이동중",
+          "p": 0.0155
+        }
+      ]
+    },
+    "30-39|M": {
+      "n": 349,
+      "daily_media_minutes": {
+        "mean": 457.8,
+        "sd": 150.3
+      },
+      "device_minutes": {
+        "PC": 197.3,
+        "스마트폰/휴대폰": 120.0,
+        "TV": 101.2,
+        "라디오/오디오": 19.5,
+        "문화시설": 4.5,
+        "사진/편지": 4.4,
+        "내비/키오스크": 3.9,
+        "신문/잡지/책": 3.5,
+        "전화기(고정)": 2.8,
+        "카메라/캠코더": 0.5,
+        "게임기": 0.0
+      },
+      "exposure": [
+        {
+          "timeband": "오후",
+          "medium": "PC",
+          "activity": "문서/그래픽작업",
+          "place": "직장",
+          "p": 0.2781
+        },
+        {
+          "timeband": "저녁",
+          "medium": "TV",
+          "activity": "TV/방송시청",
+          "place": "집",
+          "p": 0.2255
+        },
+        {
+          "timeband": "오전",
+          "medium": "PC",
+          "activity": "문서/그래픽작업",
+          "place": "직장",
+          "p": 0.1857
+        },
+        {
+          "timeband": "저녁",
+          "medium": "스마트폰/휴대폰",
+          "activity": "동영상/개인방송",
+          "place": "집",
+          "p": 0.0499
+        },
+        {
+          "timeband": "오후",
+          "medium": "스마트폰/휴대폰",
+          "activity": "커뮤니케이션",
+          "place": "직장",
+          "p": 0.0448
+        },
+        {
+          "timeband": "오전",
+          "medium": "TV",
+          "activity": "TV/방송시청",
+          "place": "집",
+          "p": 0.0333
+        },
+        {
+          "timeband": "오전",
+          "medium": "라디오/오디오",
+          "activity": "라디오/음악",
+          "place": "이동중",
+          "p": 0.0282
+        },
+        {
+          "timeband": "저녁",
+          "medium": "TV",
+          "activity": "동영상/개인방송",
+          "place": "집",
+          "p": 0.0274
+        },
+        {
+          "timeband": "저녁",
+          "medium": "라디오/오디오",
+          "activity": "라디오/음악",
+          "place": "이동중",
+          "p": 0.0258
+        },
+        {
+          "timeband": "저녁",
+          "medium": "PC",
+          "activity": "게임",
+          "place": "집",
+          "p": 0.0213
+        },
+        {
+          "timeband": "저녁",
+          "medium": "PC",
+          "activity": "동영상/개인방송",
+          "place": "집",
+          "p": 0.0199
+        },
+        {
+          "timeband": "오후",
+          "medium": "스마트폰/휴대폰",
+          "activity": "동영상/개인방송",
+          "place": "집",
+          "p": 0.0155
+        },
+        {
+          "timeband": "오후",
+          "medium": "TV",
+          "activity": "TV/방송시청",
+          "place": "집",
+          "p": 0.0153
+        },
+        {
+          "timeband": "오전",
+          "medium": "스마트폰/휴대폰",
+          "activity": "커뮤니케이션",
+          "place": "직장",
+          "p": 0.0151
+        },
+        {
+          "timeband": "오후",
+          "medium": "PC",
+          "activity": "라디오/음악",
+          "place": "직장",
+          "p": 0.0142
+        }
+      ]
+    },
+    "40-49|F": {
+      "n": 646,
+      "daily_media_minutes": {
+        "mean": 420.4,
+        "sd": 144.0
+      },
+      "device_minutes": {
+        "TV": 190.7,
+        "스마트폰/휴대폰": 117.6,
+        "PC": 88.8,
+        "라디오/오디오": 12.7,
+        "신문/잡지/책": 3.7,
+        "문화시설": 2.5,
+        "전화기(고정)": 2.3,
+        "내비/키오스크": 1.8,
+        "사진/편지": 0.2
+      },
+      "exposure": [
+        {
+          "timeband": "저녁",
+          "medium": "TV",
+          "activity": "TV/방송시청",
+          "place": "집",
+          "p": 0.3723
+        },
+        {
+          "timeband": "오전",
+          "medium": "TV",
+          "activity": "TV/방송시청",
+          "place": "집",
+          "p": 0.1324
+        },
+        {
+          "timeband": "오후",
+          "medium": "PC",
+          "activity": "문서/그래픽작업",
+          "place": "직장",
+          "p": 0.1292
+        },
+        {
+          "timeband": "오전",
+          "medium": "PC",
+          "activity": "문서/그래픽작업",
+          "place": "직장",
+          "p": 0.0858
+        },
+        {
+          "timeband": "오후",
+          "medium": "TV",
+          "activity": "TV/방송시청",
+          "place": "집",
+          "p": 0.0733
+        },
+        {
+          "timeband": "저녁",
+          "medium": "스마트폰/휴대폰",
+          "activity": "동영상/개인방송",
+          "place": "집",
+          "p": 0.0404
+        },
+        {
+          "timeband": "오후",
+          "medium": "스마트폰/휴대폰",
+          "activity": "커뮤니케이션",
+          "place": "직장",
+          "p": 0.0274
+        },
+        {
+          "timeband": "오후",
+          "medium": "스마트폰/휴대폰",
+          "activity": "커뮤니케이션",
+          "place": "집",
+          "p": 0.0235
+        },
+        {
+          "timeband": "저녁",
+          "medium": "스마트폰/휴대폰",
+          "activity": "커뮤니케이션",
+          "place": "집",
+          "p": 0.0222
+        },
+        {
+          "timeband": "오후",
+          "medium": "스마트폰/휴대폰",
+          "activity": "동영상/개인방송",
+          "place": "집",
+          "p": 0.0174
+        },
+        {
+          "timeband": "오전",
+          "medium": "스마트폰/휴대폰",
+          "activity": "커뮤니케이션",
+          "place": "집",
+          "p": 0.0174
+        },
+        {
+          "timeband": "저녁",
+          "medium": "TV",
+          "activity": "동영상/개인방송",
+          "place": "집",
+          "p": 0.0156
+        },
+        {
+          "timeband": "오후",
+          "medium": "스마트폰/휴대폰",
+          "activity": "커뮤니케이션",
+          "place": "여가/외식",
+          "p": 0.0155
+        },
+        {
+          "timeband": "오전",
+          "medium": "스마트폰/휴대폰",
+          "activity": "동영상/개인방송",
+          "place": "집",
+          "p": 0.0148
+        },
+        {
+          "timeband": "오전",
+          "medium": "라디오/오디오",
+          "activity": "라디오/음악",
+          "place": "이동중",
+          "p": 0.0129
+        }
+      ]
+    },
+    "40-49|M": {
+      "n": 485,
+      "daily_media_minutes": {
+        "mean": 450.1,
+        "sd": 162.8
+      },
+      "device_minutes": {
+        "PC": 163.3,
+        "TV": 135.9,
+        "스마트폰/휴대폰": 111.6,
+        "라디오/오디오": 24.2,
+        "내비/키오스크": 7.0,
+        "전화기(고정)": 3.1,
+        "문화시설": 2.5,
+        "신문/잡지/책": 2.4,
+        "사진/편지": 0.2
+      },
+      "exposure": [
+        {
+          "timeband": "저녁",
+          "medium": "TV",
+          "activity": "TV/방송시청",
+          "place": "집",
+          "p": 0.2923
+        },
+        {
+          "timeband": "오후",
+          "medium": "PC",
+          "activity": "문서/그래픽작업",
+          "place": "직장",
+          "p": 0.2261
+        },
+        {
+          "timeband": "오전",
+          "medium": "PC",
+          "activity": "문서/그래픽작업",
+          "place": "직장",
+          "p": 0.1467
+        },
+        {
+          "timeband": "오전",
+          "medium": "TV",
+          "activity": "TV/방송시청",
+          "place": "집",
+          "p": 0.0565
+        },
+        {
+          "timeband": "오후",
+          "medium": "스마트폰/휴대폰",
+          "activity": "커뮤니케이션",
+          "place": "직장",
+          "p": 0.043
+        },
+        {
+          "timeband": "저녁",
+          "medium": "스마트폰/휴대폰",
+          "activity": "동영상/개인방송",
+          "place": "집",
+          "p": 0.0372
+        },
+        {
+          "timeband": "오전",
+          "medium": "라디오/오디오",
+          "activity": "라디오/음악",
+          "place": "이동중",
+          "p": 0.0327
+        },
+        {
+          "timeband": "오후",
+          "medium": "TV",
+          "activity": "TV/방송시청",
+          "place": "집",
+          "p": 0.0283
+        },
+        {
+          "timeband": "저녁",
+          "medium": "라디오/오디오",
+          "activity": "라디오/음악",
+          "place": "이동중",
+          "p": 0.0257
+        },
+        {
+          "timeband": "오전",
+          "medium": "스마트폰/휴대폰",
+          "activity": "커뮤니케이션",
+          "place": "직장",
+          "p": 0.0237
+        },
+        {
+          "timeband": "오후",
+          "medium": "PC",
+          "activity": "정보검색",
+          "place": "직장",
+          "p": 0.0202
+        },
+        {
+          "timeband": "오후",
+          "medium": "스마트폰/휴대폰",
+          "activity": "동영상/개인방송",
+          "place": "직장",
+          "p": 0.0188
+        },
+        {
+          "timeband": "오전",
+          "medium": "PC",
+          "activity": "정보검색",
+          "place": "직장",
+          "p": 0.0188
+        },
+        {
+          "timeband": "저녁",
+          "medium": "TV",
+          "activity": "동영상/개인방송",
+          "place": "집",
+          "p": 0.0175
+        },
+        {
+          "timeband": "저녁",
+          "medium": "PC",
+          "activity": "동영상/개인방송",
+          "place": "집",
+          "p": 0.0126
+        }
+      ]
+    },
+    "50-59|F": {
+      "n": 1067,
+      "daily_media_minutes": {
+        "mean": 401.2,
+        "sd": 159.0
+      },
+      "device_minutes": {
+        "TV": 209.2,
+        "스마트폰/휴대폰": 108.1,
+        "PC": 54.8,
+        "라디오/오디오": 15.3,
+        "신문/잡지/책": 4.2,
+        "전화기(고정)": 3.2,
+        "문화시설": 3.0,
+        "내비/키오스크": 2.8,
+        "사진/편지": 0.5,
+        "게임기": 0.0,
+        "카메라/캠코더": 0.0
+      },
+      "exposure": [
+        {
+          "timeband": "저녁",
+          "medium": "TV",
+          "activity": "TV/방송시청",
+          "place": "집",
+          "p": 0.3989
+        },
+        {
+          "timeband": "오전",
+          "medium": "TV",
+          "activity": "TV/방송시청",
+          "place": "집",
+          "p": 0.1734
+        },
+        {
+          "timeband": "오후",
+          "medium": "PC",
+          "activity": "문서/그래픽작업",
+          "place": "직장",
+          "p": 0.0805
+        },
+        {
+          "timeband": "오후",
+          "medium": "TV",
+          "activity": "TV/방송시청",
+          "place": "집",
+          "p": 0.0717
+        },
+        {
+          "timeband": "오전",
+          "medium": "PC",
+          "activity": "문서/그래픽작업",
+          "place": "직장",
+          "p": 0.0497
+        },
+        {
+          "timeband": "오후",
+          "medium": "스마트폰/휴대폰",
+          "activity": "커뮤니케이션",
+          "place": "직장",
+          "p": 0.0392
+        },
+        {
+          "timeband": "저녁",
+          "medium": "스마트폰/휴대폰",
+          "activity": "동영상/개인방송",
+          "place": "집",
+          "p": 0.0369
+        },
+        {
+          "timeband": "저녁",
+          "medium": "TV",
+          "activity": "동영상/개인방송",
+          "place": "집",
+          "p": 0.0334
+        },
+        {
+          "timeband": "오후",
+          "medium": "스마트폰/휴대폰",
+          "activity": "커뮤니케이션",
+          "place": "집",
+          "p": 0.0197
+        },
+        {
+          "timeband": "오후",
+          "medium": "스마트폰/휴대폰",
+          "activity": "동영상/개인방송",
+          "place": "집",
+          "p": 0.0189
+        },
+        {
+          "timeband": "저녁",
+          "medium": "스마트폰/휴대폰",
+          "activity": "커뮤니케이션",
+          "place": "집",
+          "p": 0.0179
+        },
+        {
+          "timeband": "오전",
+          "medium": "스마트폰/휴대폰",
+          "activity": "커뮤니케이션",
+          "place": "직장",
+          "p": 0.0162
+        },
+        {
+          "timeband": "오후",
+          "medium": "스마트폰/휴대폰",
+          "activity": "커뮤니케이션",
+          "place": "여가/외식",
+          "p": 0.0159
+        },
+        {
+          "timeband": "오전",
+          "medium": "스마트폰/휴대폰",
+          "activity": "커뮤니케이션",
+          "place": "집",
+          "p": 0.0151
+        },
+        {
+          "timeband": "오전",
+          "medium": "라디오/오디오",
+          "activity": "라디오/음악",
+          "place": "이동중",
+          "p": 0.0126
+        }
+      ]
+    },
+    "50-59|M": {
+      "n": 863,
+      "daily_media_minutes": {
+        "mean": 406.0,
+        "sd": 159.7
+      },
+      "device_minutes": {
+        "TV": 156.4,
+        "스마트폰/휴대폰": 107.3,
+        "PC": 98.9,
+        "라디오/오디오": 25.7,
+        "내비/키오스크": 9.8,
+        "전화기(고정)": 2.9,
+        "신문/잡지/책": 2.3,
+        "문화시설": 2.1,
+        "사진/편지": 0.5,
+        "카메라/캠코더": 0.0,
+        "게임기": 0.0,
+        "차량/기타기기": 0.0,
+        "비디오재생": 0.0
+      },
+      "exposure": [
+        {
+          "timeband": "저녁",
+          "medium": "TV",
+          "activity": "TV/방송시청",
+          "place": "집",
+          "p": 0.34
+        },
+        {
+          "timeband": "오후",
+          "medium": "PC",
+          "activity": "문서/그래픽작업",
+          "place": "직장",
+          "p": 0.1468
+        },
+        {
+          "timeband": "오전",
+          "medium": "PC",
+          "activity": "문서/그래픽작업",
+          "place": "직장",
+          "p": 0.1014
+        },
+        {
+          "timeband": "오전",
+          "medium": "TV",
+          "activity": "TV/방송시청",
+          "place": "집",
+          "p": 0.0974
+        },
+        {
+          "timeband": "오후",
+          "medium": "스마트폰/휴대폰",
+          "activity": "커뮤니케이션",
+          "place": "직장",
+          "p": 0.0595
+        },
+        {
+          "timeband": "오후",
+          "medium": "TV",
+          "activity": "TV/방송시청",
+          "place": "집",
+          "p": 0.0429
+        },
+        {
+          "timeband": "저녁",
+          "medium": "스마트폰/휴대폰",
+          "activity": "동영상/개인방송",
+          "place": "집",
+          "p": 0.0409
+        },
+        {
+          "timeband": "오전",
+          "medium": "라디오/오디오",
+          "activity": "라디오/음악",
+          "place": "이동중",
+          "p": 0.0318
+        },
+        {
+          "timeband": "오전",
+          "medium": "스마트폰/휴대폰",
+          "activity": "커뮤니케이션",
+          "place": "직장",
+          "p": 0.0306
+        },
+        {
+          "timeband": "저녁",
+          "medium": "TV",
+          "activity": "동영상/개인방송",
+          "place": "집",
+          "p": 0.0279
+        },
+        {
+          "timeband": "저녁",
+          "medium": "라디오/오디오",
+          "activity": "라디오/음악",
+          "place": "이동중",
+          "p": 0.0235
+        },
+        {
+          "timeband": "오후",
+          "medium": "스마트폰/휴대폰",
+          "activity": "커뮤니케이션",
+          "place": "여가/외식",
+          "p": 0.0163
+        },
+        {
+          "timeband": "오전",
+          "medium": "내비/키오스크",
+          "activity": "정보검색",
+          "place": "이동중",
+          "p": 0.0148
+        },
+        {
+          "timeband": "오후",
+          "medium": "PC",
+          "activity": "정보검색",
+          "place": "직장",
+          "p": 0.0132
+        },
+        {
+          "timeband": "오후",
+          "medium": "스마트폰/휴대폰",
+          "activity": "동영상/개인방송",
+          "place": "직장",
+          "p": 0.013
+        }
+      ]
+    },
+    "60-69|F": {
+      "n": 864,
+      "daily_media_minutes": {
+        "mean": 378.1,
+        "sd": 134.2
+      },
+      "device_minutes": {
+        "TV": 249.5,
+        "스마트폰/휴대폰": 96.7,
+        "라디오/오디오": 13.2,
+        "PC": 12.7,
+        "신문/잡지/책": 3.0,
+        "전화기(고정)": 1.3,
+        "내비/키오스크": 0.9,
+        "문화시설": 0.7,
+        "사진/편지": 0.0,
+        "카메라/캠코더": 0.0,
+        "비디오재생": 0.0
+      },
+      "exposure": [
+        {
+          "timeband": "저녁",
+          "medium": "TV",
+          "activity": "TV/방송시청",
+          "place": "집",
+          "p": 0.4306
+        },
+        {
+          "timeband": "오전",
+          "medium": "TV",
+          "activity": "TV/방송시청",
+          "place": "집",
+          "p": 0.2204
+        },
+        {
+          "timeband": "오후",
+          "medium": "TV",
+          "activity": "TV/방송시청",
+          "place": "집",
+          "p": 0.0981
+        },
+        {
+          "timeband": "오후",
+          "medium": "TV",
+          "activity": "TV/방송시청",
+          "place": "직장",
+          "p": 0.0407
+        },
+        {
+          "timeband": "오후",
+          "medium": "스마트폰/휴대폰",
+          "activity": "커뮤니케이션",
+          "place": "직장",
+          "p": 0.037
+        },
+        {
+          "timeband": "저녁",
+          "medium": "스마트폰/휴대폰",
+          "activity": "동영상/개인방송",
+          "place": "집",
+          "p": 0.0305
+        },
+        {
+          "timeband": "오후",
+          "medium": "스마트폰/휴대폰",
+          "activity": "커뮤니케이션",
+          "place": "집",
+          "p": 0.0244
+        },
+        {
+          "timeband": "오후",
+          "medium": "스마트폰/휴대폰",
+          "activity": "동영상/개인방송",
+          "place": "집",
+          "p": 0.0219
+        },
+        {
+          "timeband": "오전",
+          "medium": "스마트폰/휴대폰",
+          "activity": "커뮤니케이션",
+          "place": "집",
+          "p": 0.0175
+        },
+        {
+          "timeband": "오전",
+          "medium": "스마트폰/휴대폰",
+          "activity": "커뮤니케이션",
+          "place": "직장",
+          "p": 0.0163
+        },
+        {
+          "timeband": "저녁",
+          "medium": "스마트폰/휴대폰",
+          "activity": "커뮤니케이션",
+          "place": "집",
+          "p": 0.0142
+        },
+        {
+          "timeband": "오후",
+          "medium": "라디오/오디오",
+          "activity": "라디오/음악",
+          "place": "직장",
+          "p": 0.0138
+        },
+        {
+          "timeband": "오후",
+          "medium": "스마트폰/휴대폰",
+          "activity": "커뮤니케이션",
+          "place": "여가/외식",
+          "p": 0.0118
+        },
+        {
+          "timeband": "오전",
+          "medium": "TV",
+          "activity": "TV/방송시청",
+          "place": "직장",
+          "p": 0.0117
+        },
+        {
+          "timeband": "오후",
+          "medium": "PC",
+          "activity": "문서/그래픽작업",
+          "place": "직장",
+          "p": 0.011
+        }
+      ]
+    },
+    "60-69|M": {
+      "n": 797,
+      "daily_media_minutes": {
+        "mean": 388.9,
+        "sd": 148.7
+      },
+      "device_minutes": {
+        "TV": 207.6,
+        "스마트폰/휴대폰": 96.3,
+        "PC": 41.5,
+        "라디오/오디오": 34.5,
+        "신문/잡지/책": 3.3,
+        "내비/키오스크": 3.1,
+        "전화기(고정)": 2.0,
+        "문화시설": 0.6,
+        "사진/편지": 0.1,
+        "XR": 0.0,
+        "차량/기타기기": 0.0
+      },
+      "exposure": [
+        {
+          "timeband": "저녁",
+          "medium": "TV",
+          "activity": "TV/방송시청",
+          "place": "집",
+          "p": 0.4135
+        },
+        {
+          "timeband": "오전",
+          "medium": "TV",
+          "activity": "TV/방송시청",
+          "place": "집",
+          "p": 0.1419
+        },
+        {
+          "timeband": "오후",
+          "medium": "TV",
+          "activity": "TV/방송시청",
+          "place": "집",
+          "p": 0.0834
+        },
+        {
+          "timeband": "오후",
+          "medium": "PC",
+          "activity": "문서/그래픽작업",
+          "place": "직장",
+          "p": 0.0633
+        },
+        {
+          "timeband": "오후",
+          "medium": "스마트폰/휴대폰",
+          "activity": "커뮤니케이션",
+          "place": "직장",
+          "p": 0.0501
+        },
+        {
+          "timeband": "오전",
+          "medium": "PC",
+          "activity": "문서/그래픽작업",
+          "place": "직장",
+          "p": 0.0416
+        },
+        {
+          "timeband": "저녁",
+          "medium": "스마트폰/휴대폰",
+          "activity": "동영상/개인방송",
+          "place": "집",
+          "p": 0.0299
+        },
+        {
+          "timeband": "오후",
+          "medium": "라디오/오디오",
+          "activity": "라디오/음악",
+          "place": "직장",
+          "p": 0.0294
+        },
+        {
+          "timeband": "오전",
+          "medium": "라디오/오디오",
+          "activity": "라디오/음악",
+          "place": "직장",
+          "p": 0.0292
+        },
+        {
+          "timeband": "오전",
+          "medium": "스마트폰/휴대폰",
+          "activity": "커뮤니케이션",
+          "place": "직장",
+          "p": 0.0281
+        },
+        {
+          "timeband": "오전",
+          "medium": "라디오/오디오",
+          "activity": "라디오/음악",
+          "place": "이동중",
+          "p": 0.0233
+        },
+        {
+          "timeband": "오후",
+          "medium": "TV",
+          "activity": "TV/방송시청",
+          "place": "직장",
+          "p": 0.0176
+        },
+        {
+          "timeband": "저녁",
+          "medium": "라디오/오디오",
+          "activity": "라디오/음악",
+          "place": "이동중",
+          "p": 0.0167
+        },
+        {
+          "timeband": "오후",
+          "medium": "스마트폰/휴대폰",
+          "activity": "동영상/개인방송",
+          "place": "집",
+          "p": 0.0163
+        },
+        {
+          "timeband": "저녁",
+          "medium": "TV",
+          "activity": "동영상/개인방송",
+          "place": "집",
+          "p": 0.0156
+        }
+      ]
+    },
+    "70+|F": {
+      "n": 1102,
+      "daily_media_minutes": {
+        "mean": 397.5,
+        "sd": 135.6
+      },
+      "device_minutes": {
+        "TV": 326.1,
+        "스마트폰/휴대폰": 53.4,
+        "라디오/오디오": 6.7,
+        "PC": 5.3,
+        "신문/잡지/책": 3.1,
+        "전화기(고정)": 1.3,
+        "문화시설": 1.0,
+        "내비/키오스크": 0.5,
+        "사진/편지": 0.0
+      },
+      "exposure": [
+        {
+          "timeband": "저녁",
+          "medium": "TV",
+          "activity": "TV/방송시청",
+          "place": "집",
+          "p": 0.4129
+        },
+        {
+          "timeband": "오전",
+          "medium": "TV",
+          "activity": "TV/방송시청",
+          "place": "집",
+          "p": 0.2908
+        },
+        {
+          "timeband": "오후",
+          "medium": "TV",
+          "activity": "TV/방송시청",
+          "place": "집",
+          "p": 0.1467
+        },
+        {
+          "timeband": "오후",
+          "medium": "TV",
+          "activity": "TV/방송시청",
+          "place": "타인집",
+          "p": 0.0316
+        },
+        {
+          "timeband": "오후",
+          "medium": "스마트폰/휴대폰",
+          "activity": "커뮤니케이션",
+          "place": "집",
+          "p": 0.0235
+        },
+        {
+          "timeband": "오전",
+          "medium": "스마트폰/휴대폰",
+          "activity": "커뮤니케이션",
+          "place": "집",
+          "p": 0.0142
+        },
+        {
+          "timeband": "오후",
+          "medium": "TV",
+          "activity": "TV/방송시청",
+          "place": "상업/종교/기타",
+          "p": 0.0122
+        },
+        {
+          "timeband": "저녁",
+          "medium": "스마트폰/휴대폰",
+          "activity": "커뮤니케이션",
+          "place": "집",
+          "p": 0.0101
+        },
+        {
+          "timeband": "오후",
+          "medium": "스마트폰/휴대폰",
+          "activity": "동영상/개인방송",
+          "place": "집",
+          "p": 0.0101
+        },
+        {
+          "timeband": "오후",
+          "medium": "스마트폰/휴대폰",
+          "activity": "커뮤니케이션",
+          "place": "상업/종교/기타",
+          "p": 0.009
+        },
+        {
+          "timeband": "오후",
+          "medium": "스마트폰/휴대폰",
+          "activity": "커뮤니케이션",
+          "place": "직장",
+          "p": 0.0082
+        },
+        {
+          "timeband": "저녁",
+          "medium": "스마트폰/휴대폰",
+          "activity": "동영상/개인방송",
+          "place": "집",
+          "p": 0.0081
+        },
+        {
+          "timeband": "오후",
+          "medium": "스마트폰/휴대폰",
+          "activity": "커뮤니케이션",
+          "place": "타인집",
+          "p": 0.0076
+        },
+        {
+          "timeband": "오전",
+          "medium": "TV",
+          "activity": "TV/방송시청",
+          "place": "타인집",
+          "p": 0.0076
+        },
+        {
+          "timeband": "오후",
+          "medium": "PC",
+          "activity": "라디오/음악",
+          "place": "상업/종교/기타",
+          "p": 0.0072
+        }
+      ]
+    },
+    "70+|M": {
+      "n": 753,
+      "daily_media_minutes": {
+        "mean": 396.8,
+        "sd": 145.2
+      },
+      "device_minutes": {
+        "TV": 288.8,
+        "스마트폰/휴대폰": 71.2,
+        "라디오/오디오": 14.9,
+        "PC": 10.8,
+        "내비/키오스크": 4.9,
+        "신문/잡지/책": 4.1,
+        "전화기(고정)": 1.4,
+        "문화시설": 0.7,
+        "사진/편지": 0.1
+      },
+      "exposure": [
+        {
+          "timeband": "저녁",
+          "medium": "TV",
+          "activity": "TV/방송시청",
+          "place": "집",
+          "p": 0.4246
+        },
+        {
+          "timeband": "오전",
+          "medium": "TV",
+          "activity": "TV/방송시청",
+          "place": "집",
+          "p": 0.257
+        },
+        {
+          "timeband": "오후",
+          "medium": "TV",
+          "activity": "TV/방송시청",
+          "place": "집",
+          "p": 0.16
+        },
+        {
+          "timeband": "오후",
+          "medium": "스마트폰/휴대폰",
+          "activity": "커뮤니케이션",
+          "place": "직장",
+          "p": 0.0209
+        },
+        {
+          "timeband": "오후",
+          "medium": "스마트폰/휴대폰",
+          "activity": "커뮤니케이션",
+          "place": "집",
+          "p": 0.0189
+        },
+        {
+          "timeband": "오후",
+          "medium": "TV",
+          "activity": "TV/방송시청",
+          "place": "타인집",
+          "p": 0.0161
+        },
+        {
+          "timeband": "오후",
+          "medium": "스마트폰/휴대폰",
+          "activity": "동영상/개인방송",
+          "place": "집",
+          "p": 0.0154
+        },
+        {
+          "timeband": "저녁",
+          "medium": "스마트폰/휴대폰",
+          "activity": "동영상/개인방송",
+          "place": "집",
+          "p": 0.0148
+        },
+        {
+          "timeband": "오전",
+          "medium": "스마트폰/휴대폰",
+          "activity": "커뮤니케이션",
+          "place": "직장",
+          "p": 0.0141
+        },
+        {
+          "timeband": "오후",
+          "medium": "PC",
+          "activity": "문서/그래픽작업",
+          "place": "직장",
+          "p": 0.0112
+        },
+        {
+          "timeband": "오전",
+          "medium": "스마트폰/휴대폰",
+          "activity": "커뮤니케이션",
+          "place": "집",
+          "p": 0.0098
+        },
+        {
+          "timeband": "오후",
+          "medium": "라디오/오디오",
+          "activity": "라디오/음악",
+          "place": "직장",
+          "p": 0.0094
+        },
+        {
+          "timeband": "오전",
+          "medium": "라디오/오디오",
+          "activity": "라디오/음악",
+          "place": "이동중",
+          "p": 0.0094
+        },
+        {
+          "timeband": "오전",
+          "medium": "라디오/오디오",
+          "activity": "라디오/음악",
+          "place": "직장",
+          "p": 0.0093
+        },
+        {
+          "timeband": "저녁",
+          "medium": "스마트폰/휴대폰",
+          "activity": "커뮤니케이션",
+          "place": "집",
+          "p": 0.009
+        }
+      ]
+    }
   }
 }

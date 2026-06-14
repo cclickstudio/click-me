@@ -1,7 +1,7 @@
 # 시뮬레이터 도메인 DTO — 광고해석·페르소나·반응(§3.5)·루브릭·집계의 내부 계약
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -12,16 +12,22 @@ from domain.simulation.contracts.enums import (
     TargetMode,
 )
 
+# 표본 배분 방식(§3.7) — proportional: 인구비례 self-weighting / stratified: 층화 과대표집+가중보정
+Allocation = Literal["proportional", "stratified"]
+
 
 class SimulationRunRequest(BaseModel):
     """시뮬레이션 실행 입력 — 라우터 진입 DTO (도메인 내부 스키마)."""
 
     ad_id: str
+    ad_content: str | None = None  # 실 광고 카피·설명(실 LLM 해석 입력). 없으면 mock/최소 해석.
+    ad_image_url: str | None = None  # 광고 크리에이티브 이미지(URL·로컬경로) — VLM 해석 입력.
     project_id: str | None = None
     organization_id: str | None = None
     target_filter: dict[str, Any] | None = None
     target_mode: TargetMode = TargetMode.AUTO
     sample_size: int = Field(default=20, ge=1, le=1000)
+    allocation: Allocation = "proportional"
 
 
 class AdInterpretation(BaseModel):
@@ -44,6 +50,7 @@ class PanelSpec(BaseModel):
     size: int = Field(default=20, ge=1, le=1000)
     seed: int = 0
     target_filter: dict[str, Any] | None = None
+    allocation: Allocation = "proportional"
 
 
 class Persona(BaseModel):
@@ -56,6 +63,12 @@ class Persona(BaseModel):
     ocean: dict[str, float]
     media_behavior: dict[str, Any] = Field(default_factory=dict)
     consumption_values: dict[str, Any] = Field(default_factory=dict)
+    socioeconomic: dict[str, Any] = Field(
+        default_factory=dict
+    )  # 소득·학력(KISDI, 구매의도 grounding)
+    weight: float = Field(
+        default=1.0, gt=0
+    )  # 표본 가중치(§3.7) — 비례추출 기본 1.0(self-weighting)
     profile_narrative: str = ""
 
 
@@ -72,6 +85,7 @@ class PersonaReaction(BaseModel):
 
     persona_id: str
     exposure_context: str | None = None
+    weight: float = Field(default=1.0, gt=0)  # 페르소나 가중치 사본(§3.7) — 가중 집계 입력
     aisas: Aisas
     drop_stage: str | None = None
     drop_reason_tag: DropReasonTag | None = None
@@ -108,5 +122,8 @@ class SimulationAggregate(BaseModel):
     trust_avg: float
     rejection_rate: float
     variance_warning: bool = False
+    effective_n: float = (
+        0.0  # 유효표본수(Kish, §3.7) — 가중 편차 클수록 표본수보다 작아짐. CI 정직성
+    )
     payload: dict[str, Any] = Field(default_factory=dict)
     engine_version: str = "agg-0"

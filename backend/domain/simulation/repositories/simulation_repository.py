@@ -58,6 +58,8 @@ class SimulationRepository:
                 model_version=ad.model_version,
             )
         )
+        # 실 DB는 FK 강제(ORM은 FK 미선언) — 부모를 자식보다 먼저 flush해 INSERT 순서 보장.
+        await self._s.flush()  # ad_analyses → simulations 참조
 
         sim_id = uuid.uuid4()
         self._s.add(
@@ -76,6 +78,7 @@ class SimulationRepository:
                 completed_at=datetime.now(),
             )
         )
+        await self._s.flush()  # simulations → persona_responses·simulation_aggregates 참조
 
         for r in reactions:
             self._s.add(
@@ -83,6 +86,7 @@ class SimulationRepository:
                     simulation_id=sim_id,
                     persona_id=persona_uuid_by_ref[r.persona_id],
                     exposure_context=r.exposure_context,
+                    weight=r.weight,
                     aisas=r.aisas.model_dump(),
                     drop_stage=r.drop_stage,
                     drop_reason_tag=_tag(r.drop_reason_tag),
@@ -119,6 +123,7 @@ class SimulationRepository:
                 trust_avg=aggregate.trust_avg,
                 rejection_rate=aggregate.rejection_rate,
                 variance_warning=aggregate.variance_warning,
+                effective_n=aggregate.effective_n,
                 payload=aggregate.payload,
                 engine_version=aggregate.engine_version,
             )
