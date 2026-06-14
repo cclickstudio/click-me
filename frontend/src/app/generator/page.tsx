@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import AppLayout from "@/components/AppLayout";
 import { api } from "@/lib/api";
 import type {
+  CampaignResult,
   GenerationDetail,
   GeneratorCandidate,
   PublishResult,
@@ -20,6 +21,16 @@ const OBJECTIVES = [
   { value: "retention", label: "재구매 유도" },
   { value: "product_launch", label: "신제품 런칭" },
   { value: "promotion", label: "프로모션 반응" },
+];
+
+// Meta Marketing API 캠페인 목적 (생성용 OBJECTIVES와 별개)
+const META_OBJECTIVES = [
+  { value: "OUTCOME_TRAFFIC", label: "트래픽" },
+  { value: "OUTCOME_AWARENESS", label: "인지도" },
+  { value: "OUTCOME_ENGAGEMENT", label: "참여" },
+  { value: "OUTCOME_LEADS", label: "리드" },
+  { value: "OUTCOME_SALES", label: "판매" },
+  { value: "OUTCOME_APP_PROMOTION", label: "앱 홍보" },
 ];
 
 const SIZES = [
@@ -85,6 +96,17 @@ export default function GeneratorPage() {
   const [showConfirm, setShowConfirm] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [publishResult, setPublishResult] = useState<PublishResult | null>(null);
+
+  // Meta 광고 집행
+  const [adObjective, setAdObjective] = useState("OUTCOME_TRAFFIC");
+  const [adBudget, setAdBudget] = useState(10000);
+  const [adTargetingAgeMin, setAdTargetingAgeMin] = useState(18);
+  const [adTargetingAgeMax, setAdTargetingAgeMax] = useState(65);
+  const [adTargetingCountries, setAdTargetingCountries] = useState<string[]>(["KR"]);
+  const [adStartDate, setAdStartDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [adEndDate, setAdEndDate] = useState<string | null>(null);
+  const [advertiseLoading, setAdvertiseLoading] = useState(false);
+  const [advertiseResult, setAdvertiseResult] = useState<CampaignResult | null>(null);
 
   // 마운트 시: client_id 로드/생성 → 브랜드 프로필 프리필
   useEffect(() => {
@@ -238,6 +260,33 @@ export default function GeneratorPage() {
       setError(e instanceof Error ? e.message : "Instagram 게시에 실패했습니다.");
     } finally {
       setPublishing(false);
+    }
+  }
+
+  async function advertise() {
+    if (!detail || !selected) return;
+    setError("");
+    setAdvertiseLoading(true);
+    try {
+      const result = (await api.generator.advertise(detail.generation_id, {
+        candidate_id: selected.candidate_id,
+        budget: adBudget,
+        objective: adObjective,
+        targeting: {
+          age_min: adTargetingAgeMin,
+          age_max: adTargetingAgeMax,
+          genders: [],
+          countries: adTargetingCountries,
+        },
+        destination_url: "https://example.com",
+        start_date: adStartDate,
+        end_date: adEndDate,
+      })) as CampaignResult;
+      setAdvertiseResult(result);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Meta 광고 집행에 실패했습니다.");
+    } finally {
+      setAdvertiseLoading(false);
     }
   }
 
@@ -745,7 +794,7 @@ export default function GeneratorPage() {
                         value={adObjective}
                         onChange={(e) => setAdObjective(e.target.value)}
                       >
-                        {OBJECTIVES.map((obj) => (
+                        {META_OBJECTIVES.map((obj) => (
                           <option key={obj.value} value={obj.value}>
                             {obj.label}
                           </option>
@@ -853,8 +902,6 @@ export default function GeneratorPage() {
                 )}
               </section>
               {/* Meta 광고 집행 패널 추가 (끝) */}
-
-// ... 이하 기존 코드 계속 ...
             </div>
 
             {/* QA + 생성 이유 */}

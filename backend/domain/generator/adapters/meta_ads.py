@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Protocol
 
 import httpx
@@ -21,7 +21,7 @@ logger = logging.getLogger("clickme")
 
 
 def _date_to_unix(date_str: str) -> int:
-    return int(datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=timezone.utc).timestamp())
+    return int(datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=UTC).timestamp())
 
 
 class AdsOutcome(BaseModel):
@@ -65,7 +65,7 @@ class MetaMarketingPublisher:
         api_version: str,
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
-        self._act = f"act_{ad_account_id.lstrip('act_')}"
+        self._act = f"act_{ad_account_id.removeprefix('act_')}"
         self._page_id = page_id
         self._ig_account_id = ig_account_id
         self._token = access_token
@@ -87,7 +87,9 @@ class MetaMarketingPublisher:
                 img_res.raise_for_status()
                 image_hash = next(iter(raw["adimages"].get("images", {}).values()), {}).get("hash")
                 if not image_hash:
-                    return AdsOutcome(success=False, error="이미지 해시를 가져오지 못했습니다.", raw=raw)
+                    return AdsOutcome(
+                        success=False, error="이미지 해시를 가져오지 못했습니다.", raw=raw
+                    )
 
                 # 2) Campaign (PAUSED)
                 headline = (copy.get("headline") or "Ad")[:40]
@@ -128,9 +130,7 @@ class MetaMarketingPublisher:
                 if req.end_date:
                     adset_data["end_time"] = str(_date_to_unix(req.end_date))
 
-                adset_res = await client.post(
-                    f"{self._base}/{self._act}/adsets", data=adset_data
-                )
+                adset_res = await client.post(f"{self._base}/{self._act}/adsets", data=adset_data)
                 raw["adset"] = adset_res.json()
                 adset_res.raise_for_status()
                 adset_id = raw["adset"]["id"]

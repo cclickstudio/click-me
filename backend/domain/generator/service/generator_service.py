@@ -337,7 +337,7 @@ async def advertise_candidate(generation_id: str, req: AdvertiseRequest) -> dict
 
     ads_manager_url: str | None = None
     if cfg.meta_ad_account_id:
-        act_id = str(cfg.meta_ad_account_id).lstrip("act_")
+        act_id = str(cfg.meta_ad_account_id).removeprefix("act_")
         ads_manager_url = f"https://www.facebook.com/adsmanager/manage/campaigns?act={act_id}"
 
     return {
