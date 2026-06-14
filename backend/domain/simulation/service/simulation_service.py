@@ -38,7 +38,9 @@ class SimulationService:
         result = self._store.get_result(run_id)
         if result is None:
             events = self._store.get_events(run_id)
-            msg = next((e.get("message") for e in reversed(events) if e.get("event") == "error"), "")
+            msg = next(
+                (e.get("message") for e in reversed(events) if e.get("event") == "error"), ""
+            )
             raise RuntimeError(f"시뮬레이션 실패: {msg}")
         return result
 

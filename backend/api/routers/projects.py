@@ -278,6 +278,7 @@ async def get_generation_detail(
         raise HTTPException(status_code=404, detail="제너레이터 내역을 찾을 수 없습니다.")
 
     import logging
+
     logger = logging.getLogger("clickme")
 
     candidates = detail.get("candidates", [])

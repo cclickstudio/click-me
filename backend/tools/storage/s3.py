@@ -45,6 +45,7 @@ async def download_bytes(key: str) -> bytes:
 async def presign_get(key: str, expires_in: int = 3600) -> str | None:
     """다운로드용 presigned URL을 발급한다 (기본 1시간). 실패 시 None 반환."""
     import logging
+
     try:
         async with _session.client("s3") as s3:
             url = await s3.generate_presigned_url(
