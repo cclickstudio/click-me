@@ -17,7 +17,8 @@ dependencies = [
     # LLM SDKs
     "openai>=1.50.0",
     "anthropic>=0.36.0",
-    "google-genai>=1.0.0",
+    "google-genai>=1.0.0",  # 시뮬레이터(신 SDK)
+    "google-generativeai>=0.8.0",  # 채팅(api/routers/chat.py) — 추후 google-genai로 이전 예정
     # Database
     "sqlalchemy[asyncio]>=2.0.0",
     "asyncpg>=0.29.0",
