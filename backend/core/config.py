@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from pydantic import Field
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BACKEND_ROOT = Path(__file__).resolve().parent.parent
@@ -31,10 +31,24 @@ class Settings(BaseSettings):
     gemini_api_key: str | None = None
 
     # LangSmith — API 키 없으면 트레이싱 비활성(로컬 기동 가능)
-    LANGSMITH_TRACING_V2: bool = True
-    LANGSMITH_ENDPOINT: str = "https://api.smith.langchain.com"
-    LANGSMITH_API_KEY: str = ""
-    LANGSMITH_PROJECT: str = "clickme-v2"
+    # LANGCHAIN_*(레거시)·LANGSMITH_*(신규) 둘 다 수용 (AliasChoices).
+    # 팀 합의 전까지 .env는 LANGCHAIN_* 유지.
+    LANGSMITH_TRACING_V2: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("LANGSMITH_TRACING_V2", "LANGCHAIN_TRACING_V2"),
+    )
+    LANGSMITH_ENDPOINT: str = Field(
+        default="https://api.smith.langchain.com",
+        validation_alias=AliasChoices("LANGSMITH_ENDPOINT", "LANGCHAIN_ENDPOINT"),
+    )
+    LANGSMITH_API_KEY: str = Field(
+        default="",
+        validation_alias=AliasChoices("LANGSMITH_API_KEY", "LANGCHAIN_API_KEY"),
+    )
+    LANGSMITH_PROJECT: str = Field(
+        default="clickme-v2",
+        validation_alias=AliasChoices("LANGSMITH_PROJECT", "LANGCHAIN_PROJECT"),
+    )
 
     # AWS
     aws_access_key_id: str

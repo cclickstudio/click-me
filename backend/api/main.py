@@ -23,6 +23,12 @@ from tools.simulation.ssr_scorer import SSRScorer
 if not settings.LANGSMITH_API_KEY:
     os.environ["LANGSMITH_TRACING"] = "false"
     os.environ["LANGSMITH_TRACING_V2"] = "false"
+else:
+    # 별칭(LANGCHAIN_*/LANGSMITH_*)으로 해석된 값을 SDK 표준 변수로 주입 — 어느 쪽 이름을 써도 동작
+    os.environ.setdefault("LANGSMITH_API_KEY", settings.LANGSMITH_API_KEY)
+    os.environ.setdefault("LANGSMITH_ENDPOINT", settings.LANGSMITH_ENDPOINT)
+    os.environ.setdefault("LANGSMITH_PROJECT", settings.LANGSMITH_PROJECT)
+    os.environ["LANGSMITH_TRACING"] = "true" if settings.LANGSMITH_TRACING_V2 else "false"
 
 ssr_scorer = SSRScorer()
 

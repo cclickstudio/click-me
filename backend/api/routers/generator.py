@@ -62,6 +62,35 @@ def _backend_env_path() -> Path:
     return Path(__file__).resolve().parents[2] / ".env"
 
 
+@router.get("/langsmith-status")
+async def langsmith_status():
+    """LangSmith 트레이싱 로드 상태 진단 (API 키 값은 노출하지 않음)."""
+    from core.config import settings as cfg
+
+    try:
+        from langsmith.utils import tracing_is_enabled
+
+        enabled = tracing_is_enabled()
+    except Exception:  # noqa: BLE001 — 진단 목적, SDK 버전차 방어
+        enabled = None
+
+    key = cfg.LANGSMITH_API_KEY
+    return {
+        "tracing_enabled": enabled,
+        "api_key_loaded": bool(key),
+        "api_key_len": len(key or ""),
+        "project": (
+            os.environ.get("LANGSMITH_PROJECT")
+            or os.environ.get("LANGCHAIN_PROJECT")
+            or cfg.LANGSMITH_PROJECT
+        ),
+        "endpoint": cfg.LANGSMITH_ENDPOINT,
+        "env_tracing": (
+            os.environ.get("LANGSMITH_TRACING") or os.environ.get("LANGCHAIN_TRACING_V2")
+        ),
+    }
+
+
 @router.post("/generations", response_model=GenerationTaskResponse)
 async def create_generation(body: GenerationCreateRequest):
     generation_id = await generator_service.start_generation(body)
