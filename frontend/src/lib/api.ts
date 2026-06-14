@@ -1,9 +1,10 @@
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const { headers: initHeaders, ...restInit } = init ?? {};
   const res = await fetch(`${API_BASE}/api${path}`, {
-    headers: { "Content-Type": "application/json", ...init?.headers },
-    ...init,
+    headers: { "Content-Type": "application/json", ...(initHeaders as Record<string, string>) },
+    ...restInit,
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: "Unknown error" }));
@@ -77,5 +78,37 @@ export const api = {
         body: JSON.stringify({ candidate_id: candidateId, caption }),
       }),
     list: (limit = 20) => request(`/generator/generations?limit=${limit}`),
+    brandProfile: {
+      get: (clientId: string) =>
+        request<{
+          brand_color: string | null;
+          brand_logo_key: string | null;
+          brand_logo_url: string | null;
+          tone_and_manner: string | null;
+        }>("/generator/brand-profile", { headers: { "X-Client-Id": clientId } }),
+      save: (
+        clientId: string,
+        body: { brand_color?: string | null; brand_logo_key?: string | null; tone_and_manner?: string | null },
+      ) =>
+        request("/generator/brand-profile", {
+          method: "POST",
+          headers: { "X-Client-Id": clientId },
+          body: JSON.stringify(body),
+        }),
+      uploadLogo: async (clientId: string, file: File): Promise<{ key: string; url: string }> => {
+        const form = new FormData();
+        form.append("file", file);
+        const res = await fetch(`${API_BASE}/api/generator/logo`, {
+          method: "POST",
+          headers: { "X-Client-Id": clientId },
+          body: form,
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({ detail: "Unknown error" }));
+          throw new Error((err as { detail?: string }).detail ?? `HTTP ${res.status}`);
+        }
+        return res.json() as Promise<{ key: string; url: string }>;
+      },
+    },
   },
 };

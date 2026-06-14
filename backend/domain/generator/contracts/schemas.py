@@ -14,7 +14,8 @@ class GenerationCreateRequest(BaseModel):
     target_audience: str
     campaign_objective: str = "conversion"
     brand_color: str | None = None  # hex (#RRGGBB)
-    brand_logo_url: str | None = None
+    brand_logo_url: str | None = None  # deprecated — 직접 URL 입력 (구형 호환용)
+    brand_logo_s3_key: str | None = None  # S3 업로드 후 키 (brand_profile 캐시 연동)
     tone_and_manner: str | None = None
     width: int = Field(default=1080, ge=256, le=4096)
     height: int = Field(default=1080, ge=256, le=4096)

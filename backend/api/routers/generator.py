@@ -1,16 +1,98 @@
 """광고 제너레이터 API — 생성 시작 / SSE 스트림 / 결과 조회 / 후보 선택 / 이력."""
 
+import io
 import os
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, File, Header, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
+from PIL import Image
 from pydantic import BaseModel
 
 from domain.generator.contracts.schemas import GenerationCreateRequest
 from domain.generator.service import generator_service
+from domain.generator.service.brand_profile import get_profile, save_profile
+from tools.storage.s3 import brand_logo_key, presign_get, upload_bytes
 
 router = APIRouter()
+
+_ALLOWED_IMAGE_TYPES: dict[str, str] = {
+    "image/png": "png",
+    "image/jpeg": "jpg",
+    "image/webp": "webp",
+    "image/gif": "gif",
+}
+
+
+class BrandProfileBody(BaseModel):
+    brand_color: str | None = None
+    brand_logo_key: str | None = None
+    tone_and_manner: str | None = None
+
+
+@router.get("/brand-profile")
+async def get_brand_profile(x_client_id: str = Header()):
+    """저장된 브랜드 프로필 조회 — 로고 S3 키가 있으면 presigned URL도 반환."""
+    p = get_profile(x_client_id)
+    logo_url: str | None = None
+    if p.brand_logo_key:
+        try:
+            logo_url = await presign_get(p.brand_logo_key)
+        except Exception:
+            logo_url = None
+    return {
+        "brand_color": p.brand_color,
+        "brand_logo_key": p.brand_logo_key,
+        "brand_logo_url": logo_url,
+        "tone_and_manner": p.tone_and_manner,
+    }
+
+
+@router.post("/brand-profile")
+async def update_brand_profile(body: BrandProfileBody, x_client_id: str = Header()):
+    """브랜드 프로필 저장 — 전달된 필드만 업데이트(나머지 유지)."""
+    p = save_profile(
+        x_client_id,
+        brand_color=body.brand_color,
+        brand_logo_key=body.brand_logo_key,
+        tone_and_manner=body.tone_and_manner,
+    )
+    return {
+        "saved": True,
+        "brand_color": p.brand_color,
+        "brand_logo_key": p.brand_logo_key,
+        "tone_and_manner": p.tone_and_manner,
+    }
+
+
+@router.post("/logo")
+async def upload_logo(
+    x_client_id: str = Header(),
+    file: UploadFile = File(...),
+):
+    """로고 이미지 업로드 → S3 저장 → 키 + presigned URL 반환."""
+    ct = (file.content_type or "").split(";")[0].strip()
+    if ct not in _ALLOWED_IMAGE_TYPES:
+        raise HTTPException(status_code=400, detail="PNG·JPEG·WebP·GIF 이미지만 업로드 가능합니다.")
+
+    data = await file.read()
+    if len(data) > 2 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="로고 파일은 2MB 이하여야 합니다.")
+
+    img = Image.open(io.BytesIO(data))
+    if max(img.size) > 1024:
+        raise HTTPException(
+            status_code=400,
+            detail=f"로고는 한 변 1024px 이하여야 합니다. (현재 {img.size[0]}×{img.size[1]})",
+        )
+
+    ext = _ALLOWED_IMAGE_TYPES[ct]
+    key = brand_logo_key(x_client_id, ext)
+    await upload_bytes(data, key, content_type=ct)
+    save_profile(x_client_id, brand_logo_key=key)
+
+    url = await presign_get(key)
+    return {"key": key, "url": url}
 
 
 class GenerationTaskResponse(BaseModel):

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import AppLayout from "@/components/AppLayout";
 import { api } from "@/lib/api";
 import type {
@@ -56,6 +56,14 @@ const cardCls =
 export default function GeneratorPage() {
   const [step, setStep] = useState<Step>("input");
 
+  // 클라이언트 식별 + 브랜드 프로필
+  const [clientId, setClientId] = useState<string>("");
+  const [logoS3Key, setLogoS3Key] = useState<string>("");
+  const [logoPreviewUrl, setLogoPreviewUrl] = useState<string>("");
+  const [logoUploading, setLogoUploading] = useState(false);
+  const [profileSaved, setProfileSaved] = useState(false);
+  const logoInputRef = useRef<HTMLInputElement>(null);
+
   // 입력 폼
   const [productName, setProductName] = useState("");
   const [productDescription, setProductDescription] = useState("");
@@ -63,7 +71,6 @@ export default function GeneratorPage() {
   const [objective, setObjective] = useState("conversion");
   const [showOptional, setShowOptional] = useState(false);
   const [brandColor, setBrandColor] = useState("");
-  const [brandLogoUrl, setBrandLogoUrl] = useState("");
   const [toneAndManner, setToneAndManner] = useState("");
   const [sizeIdx, setSizeIdx] = useState(0);
 
@@ -79,6 +86,28 @@ export default function GeneratorPage() {
   const [publishing, setPublishing] = useState(false);
   const [publishResult, setPublishResult] = useState<PublishResult | null>(null);
 
+  // 마운트 시: client_id 로드/생성 → 브랜드 프로필 프리필
+  useEffect(() => {
+    let id = localStorage.getItem("generator_client_id");
+    if (!id) {
+      id = crypto.randomUUID();
+      localStorage.setItem("generator_client_id", id);
+    }
+    setClientId(id);
+    api.generator.brandProfile
+      .get(id)
+      .then((p) => {
+        if (p.brand_color) setBrandColor(p.brand_color);
+        if (p.tone_and_manner) setToneAndManner(p.tone_and_manner);
+        if (p.brand_logo_key) {
+          setLogoS3Key(p.brand_logo_key);
+          if (p.brand_logo_url) setLogoPreviewUrl(p.brand_logo_url);
+        }
+        if (p.brand_color || p.tone_and_manner || p.brand_logo_key) setShowOptional(true);
+      })
+      .catch(() => {});
+  }, []);
+
   const canStart = productName.trim() && productDescription.trim() && targetAudience.trim();
 
   function reset() {
@@ -88,6 +117,46 @@ export default function GeneratorPage() {
     setPublishResult(null);
     setCaption("");
     setError("");
+  }
+
+  async function handleLogoChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file || !clientId) return;
+    if (file.size > 2 * 1024 * 1024) {
+      setError("로고 파일은 2MB 이하여야 합니다.");
+      return;
+    }
+    const localUrl = URL.createObjectURL(file);
+    setLogoPreviewUrl(localUrl);
+    setLogoUploading(true);
+    try {
+      const result = await api.generator.brandProfile.uploadLogo(clientId, file);
+      setLogoS3Key(result.key);
+      setLogoPreviewUrl(result.url);
+      URL.revokeObjectURL(localUrl);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "로고 업로드에 실패했습니다.");
+      setLogoPreviewUrl("");
+      setLogoS3Key("");
+      URL.revokeObjectURL(localUrl);
+    } finally {
+      setLogoUploading(false);
+    }
+  }
+
+  async function saveProfile() {
+    if (!clientId) return;
+    try {
+      await api.generator.brandProfile.save(clientId, {
+        brand_color: brandColor || null,
+        brand_logo_key: logoS3Key || null,
+        tone_and_manner: toneAndManner || null,
+      });
+      setProfileSaved(true);
+      setTimeout(() => setProfileSaved(false), 2000);
+    } catch {
+      setError("브랜드 설정 저장에 실패했습니다.");
+    }
   }
 
   async function startGeneration() {
@@ -102,7 +171,7 @@ export default function GeneratorPage() {
         target_audience: targetAudience,
         campaign_objective: objective,
         brand_color: brandColor || null,
-        brand_logo_url: brandLogoUrl || null,
+        brand_logo_s3_key: logoS3Key || null,
         tone_and_manner: toneAndManner || null,
         width: SIZES[sizeIdx].width,
         height: SIZES[sizeIdx].height,
@@ -288,13 +357,41 @@ export default function GeneratorPage() {
                     </div>
 
                     <div>
-                      <label className={labelCls}>브랜드 로고 URL</label>
+                      <label className={labelCls}>브랜드 로고</label>
                       <input
-                        className={inputCls}
-                        value={brandLogoUrl}
-                        onChange={(e) => setBrandLogoUrl(e.target.value)}
-                        placeholder="https://..."
+                        ref={logoInputRef}
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp,image/gif"
+                        className="hidden"
+                        onChange={handleLogoChange}
                       />
+                      {logoPreviewUrl ? (
+                        <div className="flex items-center gap-3">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={logoPreviewUrl}
+                            alt="로고 미리보기"
+                            className="w-14 h-14 object-contain rounded-lg border border-[#E5E8EB] dark:border-[#2D3748] bg-white dark:bg-[#1C2333]"
+                          />
+                          <button
+                            type="button"
+                            disabled={logoUploading}
+                            onClick={() => logoInputRef.current?.click()}
+                            className="text-xs text-[#3182F6] hover:underline disabled:opacity-50"
+                          >
+                            {logoUploading ? "업로드 중..." : "다른 파일로 교체"}
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          disabled={logoUploading}
+                          onClick={() => logoInputRef.current?.click()}
+                          className={`${inputCls} text-left cursor-pointer`}
+                        >
+                          {logoUploading ? "업로드 중..." : "PNG · JPG · WebP (최대 2MB)"}
+                        </button>
+                      )}
                     </div>
 
                     <div>
@@ -326,6 +423,14 @@ export default function GeneratorPage() {
                         ))}
                       </div>
                     </div>
+
+                    <button
+                      type="button"
+                      onClick={saveProfile}
+                      className="w-full py-2 rounded-xl text-xs font-semibold border border-[#3182F6] text-[#3182F6] hover:bg-[#3182F6]/10 transition-colors"
+                    >
+                      {profileSaved ? "저장됨 ✓" : "이 브랜드 설정 저장"}
+                    </button>
                   </div>
                 )}
 

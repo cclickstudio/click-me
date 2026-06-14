@@ -18,7 +18,7 @@ from domain.generator.graph.nodes import emit_progress
 from domain.generator.graph.state import GenerationState
 from domain.generator.llm.factory import build_text_llm
 from domain.generator.render.text_overlay import compose_ad_image
-from tools.storage.s3 import candidate_key, upload_bytes
+from tools.storage.s3 import candidate_key, download_bytes, upload_bytes
 
 _copy_llm = build_text_llm(temperature=0.7).with_structured_output(AdCopy)
 
@@ -111,9 +111,18 @@ async def generate_candidates(state: GenerationState, config: RunnableConfig) ->
             image_prompt = build_image_prompt(req, strategy, template, copy)
             background_bytes = await generate_image(image_prompt, size)
 
+            # 로고: S3 키가 있으면 다운로드, 없으면 None (합성 스킵)
+            logo_png: bytes | None = None
+            logo_key = req.get("brand_logo_s3_key")
+            if logo_key:
+                try:
+                    logo_png = await download_bytes(logo_key)
+                except Exception:
+                    logo_png = None
+
             # 카피는 모델이 아니라 코드로 합성 (한글 깨짐 방지)
             image_bytes = await asyncio.to_thread(
-                compose_ad_image, background_bytes, copy, template, req.get("brand_color")
+                compose_ad_image, background_bytes, copy, template, req.get("brand_color"), logo_png
             )
 
             s3_key = candidate_key(state["generation_id"], idx)
