@@ -6,7 +6,9 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 _BACKEND_ROOT = Path(__file__).resolve().parent.parent
-load_dotenv(_BACKEND_ROOT / ".env")
+# .env 는 프로젝트 루트 우선(현 배치), 없으면 backend/.env.
+_ROOT_ENV = _BACKEND_ROOT.parent / ".env"
+load_dotenv(_ROOT_ENV if _ROOT_ENV.exists() else _BACKEND_ROOT / ".env")
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -15,29 +17,18 @@ from fastapi.responses import JSONResponse
 
 logger = logging.getLogger("clickme")
 
-from api.routers import admin, ads, chat, generator, inquiries, personas, projects, simulate
+# API 라우터 재구성 진행 중 — 현재 도메인 구조로 이전 완료된 라우터만 등록.
+# (이전 평면 라우터 admin/ads/chat/generator/inquiries/personas/projects/simulate 는 이전 중.)
+from api.routers.simulation.router import router as simulation_router
 from core.config import settings
-from domain.generator.adapters.instagram import load_meta_credentials
-from tools.simulation.ssr_scorer import SSRScorer
 
 if not settings.LANGSMITH_API_KEY:
     os.environ["LANGSMITH_TRACING"] = "false"
     os.environ["LANGSMITH_TRACING_V2"] = "false"
 
-ssr_scorer = SSRScorer()
-
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    token, ig_user_id, _ = load_meta_credentials()
-    if token and ig_user_id:
-        logger.info("Instagram publisher: MetaGraph (ig_user_id=%s…)", ig_user_id[:6])
-    else:
-        logger.warning(
-            "Instagram publisher: Mock — .env에 META_ACCESS_TOKEN, META_IG_USER_ID 설정 필요"
-        )
-    await ssr_scorer.precompute_anchors()
-    app.state.ssr_scorer = ssr_scorer
     yield
 
 
@@ -69,14 +60,7 @@ app.add_middleware(
     expose_headers=["*"],
 )
 
-app.include_router(chat.router, prefix="/api/chat", tags=["chat"])
-app.include_router(simulate.router, prefix="/api/simulate", tags=["simulate"])
-app.include_router(ads.router, prefix="/api/ads", tags=["ads"])
-app.include_router(admin.router, prefix="/api/admin", tags=["admin"])
-app.include_router(inquiries.router, prefix="/api/inquiries", tags=["inquiries"])
-app.include_router(personas.router, prefix="/api/personas", tags=["personas"])
-app.include_router(projects.router, prefix="/api/projects", tags=["projects"])
-app.include_router(generator.router, prefix="/api/generator", tags=["generator"])
+app.include_router(simulation_router, prefix="/api/simulation", tags=["simulation"])
 
 
 @app.get("/health")

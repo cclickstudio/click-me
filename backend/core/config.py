@@ -4,7 +4,9 @@ from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BACKEND_ROOT = Path(__file__).resolve().parent.parent
-ENV_FILE = BACKEND_ROOT / ".env"
+# .env 는 프로젝트 루트 우선(현 배치), 없으면 backend/.env 폴백.
+_ROOT_ENV = BACKEND_ROOT.parent / ".env"
+ENV_FILE = _ROOT_ENV if _ROOT_ENV.exists() else BACKEND_ROOT / ".env"
 
 
 class Settings(BaseSettings):
