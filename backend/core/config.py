@@ -74,6 +74,7 @@ class Settings(BaseSettings):
     generator_image_provider: str = "openai"
     generator_image_model: str = "gpt-image-1"
     generator_image_quality: str = "medium"
+    generator_font_dir: str | None = None  # 없으면 backend/assets/fonts 사용
 
 
 settings = Settings()

@@ -10,8 +10,18 @@ from pydantic import BaseModel
 
 class TemplateArea(BaseModel):
     name: str
+    role: str  # logo | headline | product | benefit | cta
     x: tuple[int, int]  # 가로 % 범위
     y: tuple[int, int]  # 세로 % 범위
+
+    def pixel_box(self, width: int, height: int) -> tuple[int, int, int, int]:
+        """% 범위를 실제 이미지 픽셀 박스(x0, y0, x1, y1)로 변환."""
+        return (
+            round(self.x[0] / 100 * width),
+            round(self.y[0] / 100 * height),
+            round(self.x[1] / 100 * width),
+            round(self.y[1] / 100 * height),
+        )
 
 
 class AdTemplate(BaseModel):
@@ -27,6 +37,10 @@ class AdTemplate(BaseModel):
             f"- {a.name}: 가로 {a.x[0]}~{a.x[1]}%, 세로 {a.y[0]}~{a.y[1]}% 위치" for a in self.areas
         )
 
+    def area_by_role(self, role: str) -> TemplateArea | None:
+        """역할로 영역 조회 (없으면 None)."""
+        return next((a for a in self.areas if a.role == role), None)
+
 
 TEMPLATES: dict[str, AdTemplate] = {
     "A": AdTemplate(
@@ -35,11 +49,11 @@ TEMPLATES: dict[str, AdTemplate] = {
         strategies=["benefit", "problem_solution"],
         description="제품 비주얼을 중앙에 크게 배치하고 혜택을 직관적으로 전달",
         areas=[
-            TemplateArea(name="Logo Area", x=(80, 95), y=(5, 15)),
-            TemplateArea(name="Headline Area", x=(10, 90), y=(10, 20)),
-            TemplateArea(name="Product Area", x=(15, 85), y=(25, 70)),
-            TemplateArea(name="Benefit Area", x=(10, 90), y=(72, 82)),
-            TemplateArea(name="CTA Area", x=(20, 80), y=(85, 92)),
+            TemplateArea(name="Logo Area", role="logo", x=(80, 95), y=(5, 15)),
+            TemplateArea(name="Headline Area", role="headline", x=(10, 90), y=(10, 20)),
+            TemplateArea(name="Product Area", role="product", x=(15, 85), y=(25, 70)),
+            TemplateArea(name="Benefit Area", role="benefit", x=(10, 90), y=(72, 82)),
+            TemplateArea(name="CTA Area", role="cta", x=(20, 80), y=(85, 92)),
         ],
     ),
     "B": AdTemplate(
@@ -48,11 +62,11 @@ TEMPLATES: dict[str, AdTemplate] = {
         strategies=["fomo", "benefit"],
         description="프로모션·긴급성을 상단에 크게 배치해 즉각적인 행동 유도",
         areas=[
-            TemplateArea(name="Logo Area", x=(80, 95), y=(5, 15)),
-            TemplateArea(name="Promotion Area", x=(10, 90), y=(10, 30)),
-            TemplateArea(name="Product Area", x=(20, 80), y=(35, 65)),
-            TemplateArea(name="Event Detail Area", x=(10, 90), y=(68, 78)),
-            TemplateArea(name="CTA Area", x=(15, 85), y=(82, 92)),
+            TemplateArea(name="Logo Area", role="logo", x=(80, 95), y=(5, 15)),
+            TemplateArea(name="Promotion Area", role="headline", x=(10, 90), y=(10, 30)),
+            TemplateArea(name="Product Area", role="product", x=(20, 80), y=(35, 65)),
+            TemplateArea(name="Event Detail Area", role="benefit", x=(10, 90), y=(68, 78)),
+            TemplateArea(name="CTA Area", role="cta", x=(15, 85), y=(82, 92)),
         ],
     ),
     "C": AdTemplate(
@@ -61,11 +75,11 @@ TEMPLATES: dict[str, AdTemplate] = {
         strategies=["social_proof", "emotional"],
         description="브랜드 메시지와 신뢰 요소를 중심으로 감성적인 톤 전달",
         areas=[
-            TemplateArea(name="Logo Area", x=(25, 75), y=(10, 25)),
-            TemplateArea(name="Brand Message Area", x=(10, 90), y=(30, 55)),
-            TemplateArea(name="Product Area", x=(25, 75), y=(55, 75)),
-            TemplateArea(name="Supporting Copy Area", x=(10, 90), y=(75, 85)),
-            TemplateArea(name="CTA Area", x=(20, 80), y=(88, 95)),
+            TemplateArea(name="Logo Area", role="logo", x=(25, 75), y=(10, 25)),
+            TemplateArea(name="Brand Message Area", role="headline", x=(10, 90), y=(30, 55)),
+            TemplateArea(name="Product Area", role="product", x=(25, 75), y=(55, 75)),
+            TemplateArea(name="Supporting Copy Area", role="benefit", x=(10, 90), y=(75, 85)),
+            TemplateArea(name="CTA Area", role="cta", x=(20, 80), y=(88, 95)),
         ],
     ),
 }

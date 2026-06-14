@@ -17,6 +17,7 @@ from domain.generator.contracts.templates import AdTemplate, get_template, map_i
 from domain.generator.graph.nodes import emit_progress
 from domain.generator.graph.state import GenerationState
 from domain.generator.llm.factory import build_text_llm
+from domain.generator.render.text_overlay import compose_ad_image
 from tools.storage.s3 import candidate_key, upload_bytes
 
 _copy_llm = build_text_llm(temperature=0.7).with_structured_output(AdCopy)
@@ -32,37 +33,37 @@ _COPY_SYSTEM = """당신은 광고 카피라이터입니다. 전략과 템플릿
 
 
 def build_image_prompt(req: dict, strategy: dict, template: AdTemplate, copy: AdCopy) -> str:
-    """템플릿 레이아웃 + 카피 + 브랜드 옵션을 gpt-image-1 프롬프트로 조립."""
+    """텍스트 없는 배경/제품 이미지 프롬프트 조립 — 카피는 후처리(Pillow)로 합성한다."""
     brand_lines = []
     if req.get("brand_color"):
         brand_lines.append(f"- 브랜드 메인 컬러 {req['brand_color']}를 배경·포인트 컬러로 사용")
     if req.get("tone_and_manner"):
         brand_lines.append(f"- 톤앤매너: {req['tone_and_manner']}")
-    if req.get("brand_logo_url"):
-        brand_lines.append("- Logo Area에 심플한 브랜드 로고 형태 배치")
     brand_block = "\n".join(brand_lines) if brand_lines else "- 제품 특성에 어울리는 세련된 색감"
 
-    return f"""고품질 Instagram 피드 광고 이미지를 생성하세요.
+    product_area = template.area_by_role("product")
+    product_pos = (
+        f"가로 {product_area.x[0]}~{product_area.x[1]}%, 세로 {product_area.y[0]}~{product_area.y[1]}%"
+        if product_area
+        else "중앙"
+    )
+
+    return f"""고품질 Instagram 피드 광고용 **배경 이미지**를 생성하세요. 글자·텍스트·로고는 절대 넣지 마세요.
 
 ## 제품
 {req["product_name"]} — {req["product_description"][:300]}
 
-## 광고 전략
+## 분위기/전략
 {strategy["name"]}: {strategy["key_message"]}
 
-## 레이아웃 (Template {template.template_id} {template.name} — 이미지 크기 대비 % 좌표, 반드시 준수)
-{template.layout_prompt()}
-- 모든 요소는 상하좌우 5% Safe Area 안쪽에 배치
-
-## 텍스트 (아래 한국어 문구를 철자 그대로 정확히 렌더링 — 오타·변형 금지)
-- 헤드라인: "{copy.headline}"
-- 보조 문구: "{copy.subcopy}"
-- 혜택 문구: "{copy.benefit_text}"
-- CTA 버튼: "{copy.cta}"
+## 구성 (중요)
+- 제품/주요 비주얼은 {product_pos} 영역에 배치
+- 상단(헤드라인 영역)과 하단(혜택·CTA 영역)은 나중에 텍스트를 얹으므로 **여백/단순한 배경**으로 비워둘 것
+- 어떤 문자·숫자·글자·워터마크·로고도 렌더링하지 말 것 (텍스트는 후처리로 합성됨)
 
 ## 브랜드·스타일
 {brand_block}
-- 전문 광고 디자인 품질, 선명하고 가독성 높은 한글 타이포그래피"""
+- 전문 광고 디자인 품질, 깔끔하고 고급스러운 비주얼"""
 
 
 async def _openai_generate_image(prompt: str, size: str) -> bytes:
@@ -108,7 +109,12 @@ async def generate_candidates(state: GenerationState, config: RunnableConfig) ->
             )
 
             image_prompt = build_image_prompt(req, strategy, template, copy)
-            image_bytes = await generate_image(image_prompt, size)
+            background_bytes = await generate_image(image_prompt, size)
+
+            # 카피는 모델이 아니라 코드로 합성 (한글 깨짐 방지)
+            image_bytes = await asyncio.to_thread(
+                compose_ad_image, background_bytes, copy, template, req.get("brand_color")
+            )
 
             s3_key = candidate_key(state["generation_id"], idx)
             await upload_bytes(image_bytes, s3_key, content_type="image/png")
