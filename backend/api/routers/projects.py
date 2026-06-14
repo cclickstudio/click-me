@@ -297,6 +297,51 @@ async def get_generation_detail(
     return detail
 
 
+@router.get("/{project_id}", response_model=ProjectRow)
+async def get_project(
+    project_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.role.upper() == "ADMIN":
+        result = await db.execute(
+            text("""
+                SELECT p.id, p.name, p.description, p.status, p.created_at,
+                       u.name AS created_by_name, o.name AS organization_name
+                FROM projects p
+                LEFT JOIN users u ON u.id = p.created_by
+                LEFT JOIN organizations o ON o.id = p.organization_id
+                WHERE p.id = :id AND p.status != 'DELETED'
+            """),
+            {"id": project_id},
+        )
+    else:
+        org_id = await _get_user_org_id(current_user, db)
+        result = await db.execute(
+            text("""
+                SELECT p.id, p.name, p.description, p.status, p.created_at,
+                       u.name AS created_by_name, o.name AS organization_name
+                FROM projects p
+                LEFT JOIN users u ON u.id = p.created_by
+                LEFT JOIN organizations o ON o.id = p.organization_id
+                WHERE p.id = :id AND p.organization_id = :org_id AND p.status != 'DELETED'
+            """),
+            {"id": project_id, "org_id": org_id},
+        )
+    r = result.fetchone()
+    if not r:
+        raise HTTPException(status_code=404, detail="프로젝트를 찾을 수 없습니다.")
+    return ProjectRow(
+        id=str(r.id),
+        name=r.name,
+        description=r.description,
+        status=r.status,
+        created_by_name=r.created_by_name,
+        organization_name=r.organization_name,
+        created_at=r.created_at,
+    )
+
+
 @router.delete("/{project_id}")
 async def delete_project(
     project_id: str,
