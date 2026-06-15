@@ -18,13 +18,17 @@ from domain.simulation.contracts.enums import (
     RejectionReasonTag,
 )
 from domain.simulation.contracts.schemas import AdInterpretation, Aisas, PersonaReaction
+from domain.simulation.tools.reachability import pick_social_exposure
 
 
 def _pick_exposure(persona, rng: random.Random) -> str | None:
+    # Meta 소셜피드 후보 우선 — 없으면 일반 후보, 후보 자체가 없으면 None.
     cands = persona.media_behavior.get("exposure_candidates") or []
-    if not cands:
-        return None
-    e = rng.choice(cands)
+    e = pick_social_exposure(cands, rng)
+    if e is None:
+        if not cands:
+            return None
+        e = rng.choice(cands)
     return f"{e['timeband']}·{e['place']}·{e['medium']}·{e['activity']}"
 
 

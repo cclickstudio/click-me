@@ -16,6 +16,7 @@ from domain.simulation.contracts.schemas import (
     RubricScore,
     SimulationRunRequest,
 )
+from domain.simulation.tools.reachability import pick_social_exposure
 
 # 결정적 광고 특성 스텁 — 무콜 데모·테스트용. structured_analysis 와 ad_features 양쪽에 동일하게.
 _MOCK_FEATURES = {
@@ -34,11 +35,13 @@ _OCEAN_KEYS = ("openness", "conscientiousness", "extraversion", "agreeableness",
 
 
 def _pick_exposure(persona: Persona, rng: random.Random) -> str:
-    """페르소나의 KISDI 노출맥락 후보에서 하나를 선택해 문자열로. 후보 없으면 기본값."""
+    """노출맥락 — Meta 소셜피드 후보 우선, 없으면 일반 후보, 그것도 없으면 기본값."""
     candidates = persona.media_behavior.get("exposure_candidates") or []
-    if not candidates:
-        return "sns_feed_evening"
-    e = rng.choice(candidates)
+    e = pick_social_exposure(candidates, rng)
+    if e is None:
+        if not candidates:
+            return "sns_feed_evening"
+        e = rng.choice(candidates)
     return f"{e['timeband']}·{e['place']}·{e['medium']}·{e['activity']}"
 
 
