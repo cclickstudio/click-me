@@ -4,7 +4,9 @@ from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 BACKEND_ROOT = Path(__file__).resolve().parent.parent
-ENV_FILE = BACKEND_ROOT / ".env"
+# .env 는 프로젝트 루트 우선(현 배치), 없으면 backend/.env 폴백.
+_ROOT_ENV = BACKEND_ROOT.parent / ".env"
+ENV_FILE = _ROOT_ENV if _ROOT_ENV.exists() else BACKEND_ROOT / ".env"
 
 
 class Settings(BaseSettings):
@@ -89,6 +91,11 @@ class Settings(BaseSettings):
     generator_image_model: str = "gpt-image-1"
     generator_image_quality: str = "medium"
     generator_font_dir: str | None = None  # 없으면 backend/assets/fonts 사용
+
+    # JWT (Cognito 전환 전 임시)
+    jwt_secret: str = "clickme-dev-secret-change-in-prod"
+    jwt_algorithm: str = "HS256"
+    jwt_expire_minutes: int = 60 * 24 * 7  # 7일
 
 
 settings = Settings()

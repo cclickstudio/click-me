@@ -7,11 +7,13 @@ import io
 import os
 from pathlib import Path
 
-from fastapi import APIRouter, File, Header, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Header, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 from PIL import Image
 from pydantic import BaseModel
 
+from core.auth import get_current_user
+from core.models import User
 from domain.generator.adapters.meta_ads import AdvertiseRequest
 from domain.generator.contracts.schemas import GenerationCreateRequest
 from domain.generator.service import generator_service
@@ -184,8 +186,11 @@ async def langsmith_status():
 
 
 @router.post("/generations", response_model=GenerationTaskResponse)
-async def create_generation(body: GenerationCreateRequest):
-    generation_id = await generator_service.start_generation(body)
+async def create_generation(
+    body: GenerationCreateRequest,
+    current_user: User = Depends(get_current_user),
+):
+    generation_id = await generator_service.start_generation(body, created_by=current_user.id)
     return GenerationTaskResponse(
         generation_id=generation_id,
         stream_url=f"/api/generator/generations/{generation_id}/stream",

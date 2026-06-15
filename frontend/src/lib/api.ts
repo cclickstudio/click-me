@@ -1,10 +1,17 @@
+import { getToken } from "./authApi";
+
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const { headers: initHeaders, ...restInit } = init ?? {};
+  const token = getToken();
+  const authHeader: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
   const res = await fetch(`${API_BASE}/api${path}`, {
-    headers: { "Content-Type": "application/json", ...(initHeaders as Record<string, string>) },
-    ...restInit,
+    headers: {
+      "Content-Type": "application/json",
+      ...authHeader,
+      ...(init?.headers as Record<string, string> | undefined),
+    },
+    ...init,
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: "Unknown error" }));

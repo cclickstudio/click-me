@@ -77,15 +77,9 @@ export default function Navigation() {
 
           <Link
             href="/sign-in"
-            className="px-4 py-2 text-sm font-medium text-[#4E5968] dark:text-[#9CA3AF] hover:text-[#191F28] dark:hover:text-[#F2F4F6] transition-colors"
-          >
-            로그인
-          </Link>
-          <Link
-            href="/sign-up"
             className="px-4 py-2 text-sm font-medium text-white bg-[#3182F6] rounded-lg hover:bg-[#1B6EEB] transition-colors"
           >
-            시작하기
+            로그인
           </Link>
         </div>
       </div>
