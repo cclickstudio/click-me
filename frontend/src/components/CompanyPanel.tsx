@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useProjects } from './ProjectContext';
+import TrashSection from './TrashSection';
 import { getToken } from '@/lib/authApi';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
@@ -46,15 +47,17 @@ function ProjectItem({
   activeGenId: string | null;
 }) {
   const router = useRouter();
-  const { details, loadDetails } = useProjects();
+  const { details, loadDetails, refreshDetails } = useProjects();
   const [open, setOpen] = useState(false);
   const [simOpen, setSimOpen] = useState(false);
   const [genOpen, setGenOpen] = useState(false);
+  const [trashOpen, setTrashOpen] = useState(false);
 
   const d = details[project.id];
   const isLoading = open && !d?.loaded;
   const sims: SimRow[] = d?.sims ?? [];
   const gens: GenRow[] = d?.gens ?? [];
+  const trashed = d?.trashed ?? [];
 
   const toggle = async () => {
     setOpen(v => !v);
@@ -179,6 +182,33 @@ function ProjectItem({
                   })}
                 </div>
               )}
+
+              {/* 채팅 — 후순위(데이터 미연동, 칸만) */}
+              <div className="w-full flex items-center gap-1.5 px-2 py-1">
+                <span className="w-3 shrink-0" />
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-[#8B95A1] shrink-0">
+                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                </svg>
+                <span className="text-xs font-semibold text-[#4E5968] dark:text-[#9CA3AF] uppercase tracking-wide">채팅 (0)</span>
+              </div>
+
+              {/* 휴지통 — 펼치면 삭제된 시뮬/제너, 클릭 시 상세 */}
+              <button
+                onClick={() => setTrashOpen(v => !v)}
+                className="w-full flex items-center gap-1.5 px-2 py-1 hover:bg-[#F2F4F6] dark:hover:bg-[#252D3D] rounded-md transition-colors"
+              >
+                <ChevronIcon open={trashOpen} />
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-[#8B95A1] shrink-0">
+                  <polyline points="3 6 5 6 21 6" />
+                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                </svg>
+                <span className="text-xs font-semibold text-[#4E5968] dark:text-[#9CA3AF] uppercase tracking-wide">
+                  휴지통{trashed.length > 0 ? ` (${trashed.length})` : ''}
+                </span>
+              </button>
+              {trashOpen && (
+                <TrashSection projectId={project.id} trashed={trashed} onChanged={() => refreshDetails(project.id)} />
+              )}
             </>
           )}
         </div>
@@ -203,18 +233,20 @@ function CompanyItem({
 
   return (
     <div>
-      <button
-        onClick={() => setOpen(v => !v)}
-        className="w-full flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-[#F2F4F6] dark:hover:bg-[#252D3D] transition-colors text-left"
-      >
-        <ChevronIcon open={open} />
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="text-[#3182F6] shrink-0">
-          <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-          <polyline points="9 22 9 12 15 12 15 22" />
-        </svg>
-        <span className="flex-1 min-w-0 text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6] truncate">{name}</span>
+      <div className="w-full flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-[#F2F4F6] dark:hover:bg-[#252D3D] transition-colors group">
+        <button
+          onClick={() => setOpen(v => !v)}
+          className="flex items-center gap-2 flex-1 min-w-0 text-left"
+        >
+          <ChevronIcon open={open} />
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="text-[#3182F6] shrink-0">
+            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+            <polyline points="9 22 9 12 15 12 15 22" />
+          </svg>
+          <span className="flex-1 min-w-0 text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6] truncate">{name}</span>
+        </button>
         <span className="text-[10px] text-[#B0B8C1] shrink-0">{projects.length}</span>
-      </button>
+      </div>
 
       {open && (
         <div className="ml-4 border-l border-[#E5E8EB] dark:border-[#2D3748] pl-2 space-y-0.5 mt-0.5 mb-1">
@@ -237,6 +269,15 @@ export default function CompanyPanel({ collapsed, onToggle }: { collapsed: boole
   const pathname = usePathname();
   const { projects, loading, refresh } = useProjects();
   const [search, setSearch] = useState('');
+  const [orgs, setOrgs] = useState<{ id: string; name: string }[]>([]);
+
+  // 전체 조직 목록 — 프로젝트가 0개인 회사도 패널에 표시하기 위함
+  useEffect(() => {
+    fetch(`${API_BASE}/api/admin/organizations`, { headers: { Authorization: `Bearer ${getToken()}` } })
+      .then(r => (r.ok ? r.json() : []))
+      .then(d => { if (Array.isArray(d)) setOrgs(d); })
+      .catch(() => {});
+  }, []);
 
   const simMatch = pathname.match(/^\/simulations\/([^/]+)/);
   const genMatch = pathname.match(/^\/generations\/([^/]+)/);
@@ -250,6 +291,11 @@ export default function CompanyPanel({ collapsed, onToggle }: { collapsed: boole
     acc[key].push({ id: p.id, name: p.name });
     return acc;
   }, {});
+
+  // 프로젝트가 0개인 회사도 빈 채로 포함 (전체 조직 목록 머지)
+  for (const o of orgs) {
+    if (!grouped[o.name]) grouped[o.name] = [];
+  }
 
   const filteredGrouped = search.trim()
     ? Object.fromEntries(
@@ -286,7 +332,7 @@ export default function CompanyPanel({ collapsed, onToggle }: { collapsed: boole
 
   // ── 펼친 상태 ──
   return (
-    <aside className="fixed top-0 left-56 h-full w-60 bg-[#FAFBFC] dark:bg-[#161B27] border-r border-[#E5E8EB] dark:border-[#2D3748] flex flex-col z-30 transition-all duration-200">
+    <aside className="fixed top-0 left-56 h-full w-72 bg-[#FAFBFC] dark:bg-[#161B27] border-r border-[#E5E8EB] dark:border-[#2D3748] flex flex-col z-30 transition-all duration-200">
       {/* 헤더 */}
       <div className="h-14 flex items-center justify-between px-3 border-b border-[#E5E8EB] dark:border-[#2D3748] shrink-0">
         <button
