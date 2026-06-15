@@ -1,14 +1,17 @@
 # ClickMe DB Schema
 
-| Version | v3.0 (실측 기준) |
+| Version | v3.1 |
 |---|---|
-| Date | 2026-06-13 |
+| Date | 2026-06-15 |
 | DB | NeonDB (PostgreSQL + pgvector) |
-| Source | information_schema 직접 조회 결과 |
+| Source | information_schema 직접 조회 + persona_debate* 신설 |
+
+> v3.1 변경 — 기존 `debate_sessions`·`debate_statements`·`debate_results`(전부 0행, 1:1·2인대립 구조) 제거하고,
+> `simulations` 1:N 페르소나 토론용 `persona_debates`·`persona_debate_participants`·`persona_debate_utterances` 신설.
 
 ---
 
-## 테이블 목록 (29개)
+## 테이블 목록 (30개)
 
 | 테이블 | 역할 |
 |---|---|
@@ -28,8 +31,9 @@
 | `simulation_aggregates` | 시뮬레이션 집계 결과 |
 | `simulation_results` | 시뮬레이션 결과 (분포/페르소나) |
 | `simulation_comparisons` | A/B 비교 |
-| `debate_sessions` | 디베이트 세션 [7.8] |
-| `debate_statements` | 디베이트 발언 [7.8] |
+| `persona_debates` | 페르소나 토론 세션 (simulations 1:N) |
+| `persona_debate_participants` | 토론 패널 6명 |
+| `persona_debate_utterances` | 토론 발언 로그 (라운드×패널) |
 | `diagnoses` | 시뮬레이션 진단 |
 | `rubric_scores` | 광고 루브릭 점수 |
 | `recommendations` | 개선 추천 |
@@ -367,32 +371,53 @@ CREATE TABLE reports (
 );
 
 -- ============================================================
--- debate_sessions  [7.8]
+-- persona_debates  (페르소나 토론 세션 = '토론 아이디', simulations 1:N)
 -- ============================================================
-CREATE TABLE debate_sessions (
-    id            UUID PRIMARY KEY,
-    simulation_id UUID        NOT NULL UNIQUE REFERENCES simulations(id),
-    status        VARCHAR(20) NOT NULL DEFAULT 'PENDING',
-    ms_absent     BOOLEAN     NOT NULL DEFAULT false,
-    llm_call_count INTEGER,
-    model_version VARCHAR(50) NOT NULL,
-    created_at    TIMESTAMP   NOT NULL DEFAULT now()
+CREATE TABLE persona_debates (
+    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    simulation_id UUID        NOT NULL REFERENCES simulations(id) ON DELETE CASCADE,  -- UNIQUE 없음 = 1:N
+    topic         TEXT,                              -- 토론 주제
+    rounds_run    INTEGER,                           -- 실제 돈 라운드(2~4)
+    stop_reason   VARCHAR(20),                       -- consensus | dissensus | max
+    judge_model   VARCHAR(50),                       -- Judge 모델 (claude-opus-4-8)
+    engines       JSONB,                             -- 토론자 엔진 ["haiku","gpt","gemini"]
+    judge_log     JSONB,                             -- 라운드별 Judge 중간 정리
+    final         JSONB,                             -- headline/consensus/dissent/ranked_actions
+    status        VARCHAR(20) NOT NULL DEFAULT 'PENDING',  -- PENDING | RUNNING | COMPLETED | FAILED
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_persona_debates_sim ON persona_debates(simulation_id);
+
+-- ============================================================
+-- persona_debate_participants  (토론 패널 6명, debate 1:N)
+-- ============================================================
+CREATE TABLE persona_debate_participants (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    debate_id       UUID        NOT NULL REFERENCES persona_debates(id) ON DELETE CASCADE,
+    persona_id      VARCHAR(50) NOT NULL,            -- "P-00011" (더미 문자열·실 UUID 양쪽 수용)
+    persona_name    VARCHAR(50),                     -- 이서연
+    persona_profile TEXT,                            -- "34세 직장인 여성·신뢰형"
+    role            VARCHAR(20),                     -- 피벗/완주자/거부자/불신자/초기이탈/미온2
+    engine          VARCHAR(20),                     -- haiku/gpt/gemini
+    UNIQUE (debate_id, persona_id)
 );
 
 -- ============================================================
--- debate_statements  [7.8]
+-- persona_debate_utterances  (LLM 발언 로그, 라운드×패널)
 -- ============================================================
-CREATE TABLE debate_statements (
-    id            UUID PRIMARY KEY,
-    session_id    UUID        NOT NULL REFERENCES debate_sessions(id),
-    agent         VARCHAR(10) NOT NULL,
-    round         INTEGER     NOT NULL,
-    claim         TEXT        NOT NULL,
-    targets_claim UUID REFERENCES debate_statements(id),
-    evidence_refs JSONB       NOT NULL,
-    verdict       VARCHAR(30),
-    created_at    TIMESTAMP   NOT NULL DEFAULT now()
+CREATE TABLE persona_debate_utterances (
+    id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    debate_id      UUID    NOT NULL REFERENCES persona_debates(id) ON DELETE CASCADE,
+    participant_id UUID    REFERENCES persona_debate_participants(id) ON DELETE CASCADE,
+    round          INTEGER NOT NULL,                 -- 1~4
+    phase          VARCHAR(10),                      -- 발산/반박/검증
+    stance         VARCHAR(10),                      -- positive/neutral/negative
+    text           TEXT,                             -- 실제 발언
+    reason         TEXT,                             -- 왜 그렇게 말했나
+    lever          TEXT,                             -- 이 사람 움직일 개선 레버
+    created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+CREATE INDEX idx_persona_debate_utt_debate ON persona_debate_utterances(debate_id);
 
 -- ============================================================
 -- benchmarks
@@ -554,7 +579,7 @@ organizations
         └── simulations (organization_id도 직접 참조)
             └── persona_responses → personas → panels
             └── simulation_aggregates
-            └── debate_sessions → debate_statements
+            └── persona_debates → persona_debate_participants · persona_debate_utterances
             └── diagnoses → recommendations
             └── reports
         └── simulation_results (ad_id 직접 참조)
