@@ -14,6 +14,13 @@
     "detected_message": "다우니 생화향기 컬렉션으로 옷에 생생하고 풍부한 꽃향기를 더하세요.",
     "intent_mismatch": false,
     "mismatch_detail": {
+      "category": {
+        "declared": "생활",
+        "detected": "생활용품/세탁용품 (섬유유연제)",
+        "match": true,
+        "note": "감지된 '생활용품/세탁용품 (섬유유연제)'는 선언된 '생활'을(를) 포함하는 동일·하위 범주로 높은 정합성을 보입니다.",
+        "score": 95
+      },
       "message": {
         "declared": "다우니",
         "detected": "다우니 생화향기 컬렉션으로 옷에 생생하고 풍부한 꽃향기를 더하세요.",
@@ -987,6 +994,15 @@
     }
   ],
   "rubric_scores": [
+    {
+      "dimension": "category_alignment",
+      "score": 95,
+      "evidence": {
+        "declared": "생활",
+        "detected": "생활용품/세탁용품 (섬유유연제)",
+        "note": "감지된 '생활용품/세탁용품 (섬유유연제)'는 선언된 '생활'을(를) 포함하는 동일·하위 범주로 높은 정합성을 보입니다."
+      }
+    },
     {
       "dimension": "message_alignment",
       "score": 98,

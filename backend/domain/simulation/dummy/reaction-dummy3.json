@@ -14,6 +14,13 @@
     "detected_message": "칸쵸 과자에서 나만의 이름을 찾으며 색다른 재미를 경험하세요!",
     "intent_mismatch": false,
     "mismatch_detail": {
+      "category": {
+        "declared": "과자",
+        "detected": "과자/식품",
+        "match": true,
+        "note": "감지된 '과자/식품'는 선언된 '과자'을(를) 포함하는 동일·하위 범주로 높은 정합성을 보입니다.",
+        "score": 95
+      },
       "message": {
         "declared": "칸쵸",
         "detected": "칸쵸 과자에서 나만의 이름을 찾으며 색다른 재미를 경험하세요!",
@@ -699,6 +706,15 @@
     }
   ],
   "rubric_scores": [
+    {
+      "dimension": "category_alignment",
+      "score": 95,
+      "evidence": {
+        "declared": "과자",
+        "detected": "과자/식품",
+        "note": "감지된 '과자/식품'는 선언된 '과자'을(를) 포함하는 동일·하위 범주로 높은 정합성을 보입니다."
+      }
+    },
     {
       "dimension": "message_alignment",
       "score": 98,

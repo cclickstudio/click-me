@@ -14,6 +14,13 @@
     "detected_message": "삼성 비스포크 그랑데 AI 세탁기의 특별 프로모션을 통해 AI 기술이 선사하는 새로운 세탁 경험을 지금 바로 만나보세요.",
     "intent_mismatch": false,
     "mismatch_detail": {
+      "category": {
+        "declared": "가전",
+        "detected": "가전제품/세탁기",
+        "match": true,
+        "note": "감지된 '가전제품/세탁기'는 선언된 '가전'을(를) 포함하는 동일·하위 범주로 높은 정합성을 보입니다.",
+        "score": 95
+      },
       "message": {
         "declared": "삼성 세탁기",
         "detected": "삼성 비스포크 그랑데 AI 세탁기의 특별 프로모션을 통해 AI 기술이 선사하는 새로운 세탁 경험을 지금 바로 만나보세요.",
@@ -459,6 +466,15 @@
     }
   ],
   "rubric_scores": [
+    {
+      "dimension": "category_alignment",
+      "score": 95,
+      "evidence": {
+        "declared": "가전",
+        "detected": "가전제품/세탁기",
+        "note": "감지된 '가전제품/세탁기'는 선언된 '가전'을(를) 포함하는 동일·하위 범주로 높은 정합성을 보입니다."
+      }
+    },
     {
       "dimension": "message_alignment",
       "score": 98,
