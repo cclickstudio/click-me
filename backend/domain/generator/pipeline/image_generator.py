@@ -88,6 +88,9 @@ Product: {product_name}
 {color_line}
 {tone_line}
 
+Product-specific visual direction:
+{product_visual_context}
+
 {safe_zone}
 
 Requirements:
@@ -97,6 +100,35 @@ Requirements:
 - Product must be clearly visible and well-lit
 - Clean, modern aesthetic suitable for Meta/Instagram feed
 - Photo-realistic or high-quality illustration style"""
+
+
+def _build_product_visual_context(
+    product_analysis: ProductAnalysis,
+    brand_color: str | None,
+) -> str:
+    lines = []
+
+    if product_analysis.core_values:
+        values_str = ", ".join(product_analysis.core_values)
+        lines.append(
+            f"Background atmosphere and mood must reflect these brand values: {values_str}"
+        )
+
+    if product_analysis.benefits:
+        benefits_str = ", ".join(product_analysis.benefits[:3])
+        lines.append(f"The visual should evoke the feeling of: {benefits_str}")
+
+    if brand_color:
+        lines.append(
+            f"The entire background color palette must be built around {brand_color}. "
+            "Use it as the dominant hue for the scene, lighting, and atmospheric elements."
+        )
+
+    return (
+        "\n".join(lines)
+        if lines
+        else "Use a visually appealing background that complements the product."
+    )
 
 
 @traceable(name="ImageGenerator", metadata={"pipeline": "generator"})
@@ -109,7 +141,7 @@ async def generate_image(
     tone: str | None = None,
 ) -> bytes:
     color_line = (
-        f"Brand color: {brand_color}"
+        f"Brand color accent: {brand_color} — incorporate into highlights and secondary elements"
         if brand_color
         else "Color palette: modern, clean, professional"
     )
@@ -120,6 +152,7 @@ async def generate_image(
         else ""
     )
     target_audience = product_analysis.target_audience or "general audience"
+    product_visual_context = _build_product_visual_context(product_analysis, brand_color)
 
     prompt = _PROMPT_TEMPLATE.format(
         platform="Meta/Instagram",
@@ -131,6 +164,7 @@ async def generate_image(
         target_audience=target_audience,
         color_line=color_line,
         tone_line=tone_line,
+        product_visual_context=product_visual_context,
         safe_zone=_TEMPLATE_SAFE_ZONES[template],
     )
 

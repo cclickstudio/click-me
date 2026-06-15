@@ -26,7 +26,14 @@ ssr_scorer = SSRScorer()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await ssr_scorer.precompute_anchors()
+    try:
+        await ssr_scorer.precompute_anchors()
+        logger.info("SSR scorer anchors precomputed successfully.")
+    except Exception as e:
+        logger.warning(
+            "SSR scorer anchor precomputation failed — simulation scoring unavailable. Cause: %s",
+            e,
+        )
     app.state.ssr_scorer = ssr_scorer
     yield
 

@@ -103,16 +103,13 @@ function AdVariantCard({
   variant: GeneratedAdVariant;
   onImageClick: () => void;
 }) {
-  const [showQuality, setShowQuality] = useState(false);
-  const qualityKeys = Object.keys(QUALITY_LABELS) as (keyof typeof QUALITY_LABELS)[];
-
   return (
-    <div className="bg-white dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748] rounded-2xl overflow-hidden">
-      {/* 이미지 — 클릭 시 모달 */}
-      <div
-        className="relative bg-[#F2F4F6] dark:bg-[#252D3D] aspect-square cursor-pointer group"
-        onClick={onImageClick}
-      >
+    <div
+      className="bg-white dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748] rounded-2xl overflow-hidden cursor-pointer group flex"
+      onClick={onImageClick}
+    >
+      {/* 이미지 */}
+      <div className="relative bg-[#F2F4F6] dark:bg-[#252D3D] w-52 flex-shrink-0 aspect-square">
         <img
           src={variant.image_url}
           alt={`광고 ${variant.variant_id}`}
@@ -127,74 +124,40 @@ function AdVariantCard({
             </svg>
           </div>
         </div>
-        <div className="absolute top-2 left-2 flex gap-1.5">
-          <span className="text-[11px] font-semibold bg-white/90 dark:bg-[#1C2333]/90 text-[#333D4B] dark:text-[#E5E8EB] px-2 py-0.5 rounded-full">
+        {/* 안 번호 */}
+        <div className="absolute top-2 left-2">
+          <span className="text-[11px] font-semibold bg-black/50 text-white px-2 py-0.5 rounded-full">
             {variant.variant_id}안
-          </span>
-          <span className="text-[11px] bg-[#3182F6]/90 text-white px-2 py-0.5 rounded-full">
-            {STRATEGY_LABELS[variant.strategy]}
-          </span>
-        </div>
-        <div className="absolute top-2 right-2">
-          <span className="text-[11px] bg-white/90 dark:bg-[#1C2333]/90 text-[#8B95A1] px-2 py-0.5 rounded-full">
-            {TEMPLATE_LABELS[variant.template]}
           </span>
         </div>
       </div>
 
-      {/* 광고 문구 */}
-      <div className="p-4 space-y-2">
-        <div>
-          <p className="text-[10px] font-semibold text-[#8B95A1] dark:text-[#6B7280] uppercase tracking-wide mb-0.5">헤드라인</p>
-          <p className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]">{variant.headline}</p>
+      {/* 우측 정보 */}
+      <div className="flex-1 p-5 flex flex-col justify-between min-w-0">
+        <div className="space-y-2">
+          {/* 배지 */}
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-[11px] bg-[#3182F6] text-white px-2 py-0.5 rounded-full">
+              {STRATEGY_LABELS[variant.strategy]}
+            </span>
+            <span className="text-[11px] bg-[#F2F4F6] dark:bg-[#252D3D] text-[#8B95A1] dark:text-[#6B7280] px-2 py-0.5 rounded-full">
+              {TEMPLATE_LABELS[variant.template]}
+            </span>
+          </div>
+          {/* 헤드라인 */}
+          <p className="text-sm font-bold text-[#191F28] dark:text-[#F2F4F6] leading-snug line-clamp-2">
+            {variant.headline}
+          </p>
+          {/* 본문 미리보기 */}
+          <p className="text-xs text-[#8B95A1] dark:text-[#6B7280] leading-relaxed line-clamp-2">
+            {variant.body}
+          </p>
         </div>
-        <div>
-          <p className="text-[10px] font-semibold text-[#8B95A1] dark:text-[#6B7280] uppercase tracking-wide mb-0.5">본문</p>
-          <p className="text-xs text-[#4E5968] dark:text-[#9CA3AF]">{variant.body}</p>
-        </div>
-        <div>
-          <p className="text-[10px] font-semibold text-[#8B95A1] dark:text-[#6B7280] uppercase tracking-wide mb-0.5">CTA</p>
-          <span className="inline-block text-xs font-medium bg-[#3182F6] text-white px-3 py-1 rounded-lg">{variant.cta}</span>
-        </div>
-
-        {/* 전략 근거 */}
-        <div className="mt-3 pt-3 border-t border-[#F2F4F6] dark:border-[#2D3748]">
-          <p className="text-[10px] font-semibold text-[#8B95A1] dark:text-[#6B7280] uppercase tracking-wide mb-1">전략 근거</p>
-          <p className="text-xs text-[#4E5968] dark:text-[#9CA3AF] leading-relaxed">{variant.rationale}</p>
-        </div>
-
-        {/* 품질 검증 */}
-        <div className="mt-2 pt-2 border-t border-[#F2F4F6] dark:border-[#2D3748]">
-          <button
-            onClick={() => setShowQuality((v) => !v)}
-            className="flex items-center justify-between w-full text-left"
-          >
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] font-semibold text-[#8B95A1] dark:text-[#6B7280] uppercase tracking-wide">품질 검증</span>
-              <span
-                className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full
-                  ${variant.quality_report.overall_passed
-                    ? 'bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400'
-                    : 'bg-yellow-100 text-yellow-600 dark:bg-yellow-900/30 dark:text-yellow-400'}`}
-              >
-                {variant.quality_report.overall_passed ? '통과' : '주의'}
-              </span>
-            </div>
-            <svg
-              width="14" height="14"
-              viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
-              className={`text-[#8B95A1] transition-transform ${showQuality ? 'rotate-180' : ''}`}
-            >
-              <polyline points="6 9 12 15 18 9" />
-            </svg>
-          </button>
-          {showQuality && (
-            <div className="mt-2">
-              {qualityKeys.map((key) => (
-                <QualityBadge key={key} item={variant.quality_report[key]} label={QUALITY_LABELS[key]} />
-              ))}
-            </div>
-          )}
+        <div className="flex items-center justify-between mt-3 pt-3 border-t border-[#F2F4F6] dark:border-[#2D3748]">
+          <span className="text-xs font-semibold text-[#4E5968] dark:text-[#9CA3AF] bg-[#F8F9FA] dark:bg-[#252D3D] px-3 py-1 rounded-lg">
+            {variant.cta}
+          </span>
+          <span className="text-xs text-[#3182F6] font-medium">자세히 보기 →</span>
         </div>
       </div>
     </div>
@@ -645,7 +608,7 @@ export default function Page() {
                     <span className="text-[#D1D5DB]">·</span>
                     <span className="text-xs text-[#8B95A1] dark:text-[#6B7280]">{new Date(result.created_at).toLocaleString('ko-KR')}</span>
                   </div>
-                  <div className="grid grid-cols-3 gap-4">
+                  <div className="flex flex-col gap-3">
                     {result.variants.map((v) => (
                       <AdVariantCard
                         key={v.variant_id}

@@ -133,6 +133,8 @@ def _draw_centered_lines(
     color: tuple[int, int, int],
     line_gap: int = 8,
     shadow: bool = False,
+    stroke_width: int = 0,
+    stroke_color: tuple[int, int, int] = (0, 0, 0),
 ) -> int:
     draw = ImageDraw.Draw(canvas)
     positions: list[tuple[int, int, int, int]] = []
@@ -154,7 +156,17 @@ def _draw_centered_lines(
         draw = ImageDraw.Draw(canvas)
 
     for line, (x, sy, _, _) in zip(lines, positions, strict=False):
-        draw.text((x, sy), line, font=font, fill=color)
+        if stroke_width > 0:
+            draw.text(
+                (x, sy),
+                line,
+                font=font,
+                fill=color,
+                stroke_width=stroke_width,
+                stroke_fill=stroke_color,
+            )
+        else:
+            draw.text((x, sy), line, font=font, fill=color)
     return cur_y
 
 
@@ -237,10 +249,12 @@ def _compose_template_a(
     """제품 강조: 이미지 하단으로 자연스럽게 페이드되는 그라디언트 오버레이."""
     scrim_a = _scrim_alpha(brightness)
 
-    # 그라디언트 구간을 넓혀 자연스러운 전환
-    _gradient_overlay(canvas, 0, int(h * 0.30), w, int(h * 0.32), alpha_start=0, alpha_end=120)
-    # 텍스트 존 보장: 밝기에 따라 적응형 alpha
-    _solid_overlay(canvas, 0, int(h * 0.57), w, h - int(h * 0.57), alpha=scrim_a)
+    # 굵은 선 제거: 그라디언트 끝 alpha == solid 시작 alpha 로 맞춰 경계선 소멸
+    grad_start_a = int(h * 0.30)
+    grad_h_a = int(h * 0.30)
+    solid_y_a = grad_start_a + grad_h_a
+    _gradient_overlay(canvas, 0, grad_start_a, w, grad_h_a, alpha_start=0, alpha_end=scrim_a)
+    _solid_overlay(canvas, 0, solid_y_a, w, h - solid_y_a, alpha=scrim_a)
 
     draw = ImageDraw.Draw(canvas)
     margin = int(w * 0.08)
@@ -298,11 +312,16 @@ def _compose_template_b(
     cta_rgb: tuple[int, int, int],
     brightness: str = "medium",
 ) -> None:
-    """이벤트 강조: 헤드라인 pill 스크림 + 하단 그라디언트."""
+    """이벤트 강조: 헤드라인 스트로크 텍스트 + 하단 그라디언트."""
     scrim_a = _scrim_alpha(brightness)
 
-    bottom_grad_y = int(h * 0.64)
+    # 굵은 선 제거: 그라디언트 끝 alpha == solid 시작 alpha 로 맞춰 경계선 소멸
+    grad_start_b = int(h * 0.44)
+    grad_h_b = int(h * 0.22)
+    bottom_grad_y = grad_start_b + grad_h_b
     bottom_grad_h = h - bottom_grad_y
+    _gradient_overlay(canvas, 0, grad_start_b, w, grad_h_b, alpha_start=0, alpha_end=scrim_a + 20)
+    _solid_overlay(canvas, 0, bottom_grad_y, w, bottom_grad_h, alpha=scrim_a + 20)
 
     base = min(w, h)
     margin = int(w * 0.07)
@@ -312,46 +331,23 @@ def _compose_template_b(
     bd_font = _load_font(max(22, int(base * 0.031)), bold=False)
     ct_font = _load_font(max(24, int(base * 0.033)), bold=True)
 
-    # 하단 그라디언트 + 솔리드 (기존 유지)
-    _gradient_overlay(canvas, 0, int(h * 0.46), w, int(h * 0.22), alpha_start=0, alpha_end=140)
-    _solid_overlay(canvas, 0, bottom_grad_y, w, bottom_grad_h, alpha=scrim_a + 20)
-
     draw = ImageDraw.Draw(canvas)
     hl_lines = _wrap_text(headline, hl_font, text_w, draw)
 
-    # 헤드라인 텍스트 바운딩 박스 계산
-    line_widths: list[int] = []
-    line_heights: list[int] = []
-    for line in hl_lines:
-        bbox = draw.textbbox((0, 0), line, font=hl_font)
-        line_widths.append(bbox[2] - bbox[0])
-        line_heights.append(bbox[3] - bbox[1])
-    total_hl_h = sum(line_heights) + 8 * (len(hl_lines) - 1)
-    max_line_w = max(line_widths) if line_widths else int(text_w * 0.6)
-
-    pill_pad_x = int(w * 0.06)
-    pill_pad_y = int(h * 0.022)
+    # pill 스크림·액센트 라인 제거 → 흰색 글자 + 검정 스트로크로 대체
     hl_y = int(h * 0.09)
-
-    pill_x1 = w // 2 - max_line_w // 2 - pill_pad_x
-    pill_y1 = hl_y - pill_pad_y
-    pill_x2 = w // 2 + max_line_w // 2 + pill_pad_x
-    pill_y2 = hl_y + total_hl_h + pill_pad_y
-
-    # pill 위에 브랜드 컬러 액센트 라인
-    accent_cx = w // 2
-    accent_half = int(w * 0.05)
-    draw.rectangle(
-        [accent_cx - accent_half, pill_y1 - 8, accent_cx + accent_half, pill_y1 - 4],
-        fill=cta_rgb,
-    )
-
-    # 반투명 pill 스크림
-    _draw_pill_scrim(canvas, pill_x1, pill_y1, pill_x2, pill_y2, alpha=scrim_a + 25, radius=20)
-
-    # 헤드라인 텍스트 (쉐도우 없이 — pill이 대비 보장)
     _draw_centered_lines(
-        canvas, hl_lines, hl_font, margin, text_w, hl_y, (255, 255, 255), 8, shadow=False
+        canvas,
+        hl_lines,
+        hl_font,
+        margin,
+        text_w,
+        hl_y,
+        (255, 255, 255),
+        8,
+        shadow=False,
+        stroke_width=4,
+        stroke_color=(0, 0, 0),
     )
 
     # 하단: 본문 + CTA
@@ -361,6 +357,35 @@ def _compose_template_b(
     y = _draw_centered_lines(canvas, bd_lines, bd_font, margin, text_w, y, (225, 232, 245), 8)
     y += int(bottom_grad_h * 0.16)
     _draw_cta_button(draw, cta, ct_font, w // 2, y, cta_rgb)
+
+
+def _horizontal_gradient_panel(
+    canvas: Image.Image,
+    panel_w: int,
+    h: int,
+    color: tuple[int, int, int],
+    alpha_full: int,
+    fade_ratio: float = 0.28,
+) -> None:
+    """좌측 불투명 → 우측 투명 그라디언트 패널. 제품이 패널에 걸쳐도 비쳐 보이게 함."""
+    alpha_col = Image.new("L", (panel_w, 1))
+    fade_start = int(panel_w * (1.0 - fade_ratio))
+    for x in range(panel_w):
+        if x <= fade_start:
+            a = alpha_full
+        else:
+            t = (x - fade_start) / max(panel_w - fade_start, 1)
+            a = int(alpha_full * (1.0 - t))
+        alpha_col.putpixel((x, 0), a)
+    alpha_map = alpha_col.resize((panel_w, h), Image.BILINEAR)
+
+    panel_rgb = Image.new("RGB", (panel_w, h), color)
+    r, g, b = panel_rgb.split()
+    panel_rgba = Image.merge("RGBA", (r, g, b, alpha_map))
+
+    layer = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
+    layer.paste(panel_rgba, (0, 0))
+    canvas.alpha_composite(layer)
 
 
 def _compose_template_c(
@@ -377,26 +402,20 @@ def _compose_template_c(
     scrim_a = _scrim_alpha(brightness)
     panel_w = int(w * 0.42)
 
-    base = min(w, h)
     margin = int(panel_w * 0.12)
     text_w = panel_w - margin * 2
 
-    hl_font = _load_font(max(28, int(base * 0.040)), bold=True)
-    bd_font = _load_font(max(17, int(base * 0.025)), bold=False)
-    ct_font = _load_font(max(20, int(base * 0.028)), bold=True)
-    label_font = _load_font(max(12, int(base * 0.016)), bold=False)
+    # 폰트 크기는 패널 폭 기준 — 전체 이미지 크기로 계산하면 패널 대비 너무 커짐
+    hl_font = _load_font(max(22, int(panel_w * 0.068)), bold=True)
+    bd_font = _load_font(max(14, int(panel_w * 0.040)), bold=False)
+    ct_font = _load_font(max(16, int(panel_w * 0.046)), bold=True)
+    label_font = _load_font(max(11, int(panel_w * 0.026)), bold=False)
 
-    # 좌측 패널: alpha_composite로 배경이 살짝 비치도록
+    # 좌측 패널: 우측 끝부분을 페이드아웃해 제품이 패널에 걸쳐도 비쳐 보이게 함
     panel_color = cta_rgb if _luminance(cta_rgb) < 0.72 else (30, 40, 80)
     panel_alpha = max(210, min(235, scrim_a + 80))
 
-    panel_layer = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
-    panel_draw = ImageDraw.Draw(panel_layer)
-    panel_draw.rectangle([0, 0, panel_w, h], fill=(*panel_color, panel_alpha))
-    # 패널 우측 하이라이트 라인 (약간 밝은 패널 색)
-    light = tuple(min(255, c + 35) for c in panel_color)
-    panel_draw.rectangle([panel_w - 3, 0, panel_w, h], fill=(*light, 255))
-    canvas.alpha_composite(panel_layer)
+    _horizontal_gradient_panel(canvas, panel_w, h, panel_color, panel_alpha)
 
     draw = ImageDraw.Draw(canvas)
 
@@ -419,7 +438,9 @@ def _compose_template_c(
     # 구분선
     y += int(h * 0.04)
     sep_layer = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
-    ImageDraw.Draw(sep_layer).line([(margin, y), (margin + text_w, y)], fill=(255, 255, 255, 70), width=1)
+    ImageDraw.Draw(sep_layer).line(
+        [(margin, y), (margin + text_w, y)], fill=(255, 255, 255, 70), width=1
+    )
     canvas.alpha_composite(sep_layer)
     y += int(h * 0.04)
 
