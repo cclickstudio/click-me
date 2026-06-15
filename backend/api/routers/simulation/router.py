@@ -12,6 +12,7 @@ import tempfile
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 
+from core.config import settings
 from domain.simulation.contracts.schemas import SimulationRunRequest
 from domain.simulation.wiring import _ensure_env, build_simulation_service
 
@@ -23,7 +24,8 @@ _FORCE_MOCK = os.getenv("SIM_MOCK", "0") == "1"
 _HAS_GEMINI = bool(os.environ.get("GEMINI_API_KEY"))
 _USE_MOCK = _FORCE_MOCK or not _HAS_GEMINI  # 기본 실데이터, 강제·키부재 시에만 Mock
 _USE_LLM_QA = os.getenv("SIM_LLM_QA", "0") == "1"
-_service = build_simulation_service(use_mock=_USE_MOCK, use_llm_qa=_USE_LLM_QA)
+# settings 주입 → settings.database_url 있으면 DB 영속화 활성(완료 런을 9테이블에 저장).
+_service = build_simulation_service(settings=settings, use_mock=_USE_MOCK, use_llm_qa=_USE_LLM_QA)
 logger.info("Simulation service: %s 모드 (LLM QA=%s)", "mock" if _USE_MOCK else "real", _USE_LLM_QA)
 if not _FORCE_MOCK and not _HAS_GEMINI:
     logger.warning("GEMINI_API_KEY 없음 → Mock 폴백. 실데이터는 .env에 키 설정 필요.")
