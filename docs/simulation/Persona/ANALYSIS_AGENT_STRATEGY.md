@@ -179,7 +179,7 @@ interpret_ad 노드:
 
 > 본 라운드는 **의도 정합으로 확정**. 위 공백 해소는 **REPORT_TEMPLATE 수정 + 분석팀 합의** 시점에 결정한다(이번 범위 밖).
 
-> **구현 범위(이번 라운드):** 본 문서 명세까지. 코드(입력 필드 추가 · 2단계 교차검증 콜 · 루브릭점수=정합 점수 전환 · 필드 충전)는 §7 "다음 라운드 구현 대상" 참조.
+> **구현 상태:** ✅ 코드 반영 완료 — `SimulationRunRequest` 선언 입력 4종, `interpret_ad`에 감지+교차검증 통합 콜(`intent_mismatch`·`mismatch_detail`·루브릭 정합 점수 동시 산출, `rubric_eval` 노드 제거), `AdInterpretation.detected_objective`, migration `006`(ad_analyses). ⚠️ `ads.service_class`/`description`은 core 소유 + 라이브 스키마 미반영이라 보류(선언 입력은 요청으로 전달). 솜씨 차원 공백 조율은 위 ⚠️ 참조.
 
 ---
 
@@ -371,7 +371,7 @@ AGT-JD의 처리 순서:
 
 ### 필수 — 데모 가능 최소선
 1. **광고 해석 모듈 (§3.5)** — 입력 3종 파싱 + 구조화 광고 분석 + 의도 교차검증 + 차원별 루브릭 평가 패스. (~1.5일)
-   - **다음 라운드 구현 대상 (§3.5-3 의도 교차검증 + 루브릭 전환):** ① 선언 입력(광고 제목·제품 카테고리·캠페인 목표·상품·서비스 분류)을 `광고` 테이블/요청에서 전달(타깃은 샘플링용 `target_filter`로 제외) ② `interpret_ad`에 2단계(감지→비교) 교차검증 콜 추가(앵커링 방지) — 차원 category·objective·message ③ 같은 콜에서 `intent_mismatch`·`mismatch_detail`(정성)과 `루브릭점수`(정량 정합 score 0~100)를 함께 산출 — 기존 솜씨 루브릭(`clarity` 등) 제거 ④ 결과 JSON·영속화 노출. **현재: 명세 완료·코드 미구현(`intent_mismatch` 기본 False, 루브릭은 아직 솜씨 5차원 절대평가).**
+   - **다음 라운드 구현 대상 (§3.5-3 의도 교차검증 + 루브릭 전환):** ① 선언 입력(광고 제목·제품 카테고리·캠페인 목표·상품·서비스 분류)을 `광고` 테이블/요청에서 전달(타깃은 샘플링용 `target_filter`로 제외) ② `interpret_ad`에 2단계(감지→비교) 교차검증 콜 추가(앵커링 방지) — 차원 category·objective·message ③ 같은 콜에서 `intent_mismatch`·`mismatch_detail`(정성)과 `루브릭점수`(정량 정합 score 0~100)를 함께 산출 — 기존 솜씨 루브릭(`clarity` 등) 제거 ④ 결과 JSON·영속화 노출. **✅ 구현 완료(이번 라운드): `interpret_ad` 통합 콜 + migration `006`. `ads` 컬럼은 core 조율 보류.**
    - **선행/조율:** 광고 솜씨 차원 공백(§3.5-3 ⚠️) — REPORT_TEMPLATE §4·§1 수정 + 분석팀 합의(해소 A/B 택1).
 2. **T1 처방 RAG 구축** — ABCD·Performance 5·네이버/카카오 가이드 수집 → 메타데이터 스키마로 청킹·임베딩. (~2일)
 3. **업종 벤치마크 DB (§6-5)** — 정적 JSON 손 큐레이션 + 부재 시 강등 규칙 구현. (~0.5–1일)

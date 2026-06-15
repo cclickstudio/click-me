@@ -57,6 +57,10 @@ def _build_request(
     target_mode: str,
     sample_size: int,
     allocation: str,
+    ad_title: str | None,
+    product_category: str | None,
+    ad_objective: str | None,
+    service_class: int | None,
 ) -> SimulationRunRequest:
     """multipart 폼 값들을 도메인 요청 DTO로 조립. target_filter는 JSON 문자열."""
     tf = None
@@ -75,6 +79,11 @@ def _build_request(
         target_mode=target_mode,
         sample_size=sample_size,
         allocation=allocation,
+        # 선언 의도(의도 교차검증 §3.5-3 기준) — 없으면 해당 차원 스킵.
+        ad_title=ad_title,
+        product_category=product_category,
+        ad_objective=ad_objective,
+        service_class=service_class,
     )
 
 
@@ -90,6 +99,10 @@ async def start_simulation(
     target_mode: str = Form("AUTO"),
     sample_size: int = Form(20),
     allocation: str = Form("proportional"),
+    ad_title: str | None = Form(None),
+    product_category: str | None = Form(None),
+    ad_objective: str | None = Form(None),
+    service_class: int | None = Form(None),
 ) -> dict:
     """비동기 시작 — run_id 반환. 진행률은 /stream, 결과는 /result."""
     req = _build_request(
@@ -103,6 +116,10 @@ async def start_simulation(
         target_mode=target_mode,
         sample_size=sample_size,
         allocation=allocation,
+        ad_title=ad_title,
+        product_category=product_category,
+        ad_objective=ad_objective,
+        service_class=service_class,
     )
     run_id = await _service.start(req)
     return {
@@ -125,6 +142,10 @@ async def run_simulation(
     target_mode: str = Form("AUTO"),
     sample_size: int = Form(20),
     allocation: str = Form("proportional"),
+    ad_title: str | None = Form(None),
+    product_category: str | None = Form(None),
+    ad_objective: str | None = Form(None),
+    service_class: int | None = Form(None),
 ) -> dict:
     """동기 실행 — 광고+세부사항 입력 → 끝까지 돌려 반응·루브릭·집계를 한 번에 반환."""
     req = _build_request(
@@ -138,6 +159,10 @@ async def run_simulation(
         target_mode=target_mode,
         sample_size=sample_size,
         allocation=allocation,
+        ad_title=ad_title,
+        product_category=product_category,
+        ad_objective=ad_objective,
+        service_class=service_class,
     )
     try:
         return await _service.run(req)
