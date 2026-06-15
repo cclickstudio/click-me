@@ -28,6 +28,23 @@ def _pick_exposure(persona, rng: random.Random) -> str | None:
     return f"{e['timeband']}·{e['place']}·{e['medium']}·{e['activity']}"
 
 
+def _ad_feature_lines(ad: AdInterpretation, income: str) -> str:
+    """광고 특성을 반응 힌트 줄로 — 가격은 월소득과 나란히 둬 적합도를 LLM이 판단(공식 없음)."""
+    f = ad.ad_features
+    lines: list[str] = []
+    if f.price_mentioned and (f.original_price or f.discounted_price):
+        if f.discounted_price and f.original_price:
+            price = f"정가 {f.original_price:,}원 → 할인가 {f.discounted_price:,}원"
+        else:
+            price = f"{(f.discounted_price or f.original_price):,}원"
+        lines.append(f"- 가격: {price} (내 월소득 {income} 기준으로 비싼지/적당한지 판단)")
+    if f.brand_mentioned:
+        lines.append("- 브랜드 언급: 있음")
+    if f.social_proof_strength and f.social_proof_strength != "none":
+        lines.append(f"- 사회적 증거(후기·인기): {f.social_proof_strength}")
+    return ("\n" + "\n".join(lines)) if lines else ""
+
+
 class GeminiReactionEngine:
     """4-b 반응 — §3.5 구조화 JSON 강제(비동기). temperature↑로 페르소나 간 응답 다양성 보존."""
 
@@ -54,7 +71,7 @@ class GeminiReactionEngine:
             f"- 서사: {persona.profile_narrative or '(없음)'}\n"
             f"- 지금 노출 맥락: {exposure or '일반'}\n\n"
             f"[광고]\n- 업종: {ad.detected_industry}\n- 메시지: {ad.detected_message}\n"
-            f"- 추정 타깃: {ad.detected_target}\n\n"
+            f"- 추정 타깃: {ad.detected_target}{_ad_feature_lines(ad, income)}\n\n"
             "[출력 — 아래 JSON만, 설명·코드펜스 없이]\n"
             "{\n"
             '  "aisas": {"attention": bool, "interest": bool, "search": bool, '

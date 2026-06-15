@@ -7,6 +7,7 @@ import random
 
 from domain.simulation.contracts.enums import EmotionTag, RejectionReasonTag
 from domain.simulation.contracts.schemas import (
+    AdFeatures,
     AdInterpretation,
     Aisas,
     PanelSpec,
@@ -15,6 +16,17 @@ from domain.simulation.contracts.schemas import (
     RubricScore,
     SimulationRunRequest,
 )
+
+# 결정적 광고 특성 스텁 — 무콜 데모·테스트용. structured_analysis 와 ad_features 양쪽에 동일하게.
+_MOCK_FEATURES = {
+    "ad_credibility": 70,
+    "ad_quality": 65,
+    "price_mentioned": True,
+    "original_price": 30000,
+    "discounted_price": 19900,
+    "brand_mentioned": True,
+    "social_proof_strength": "medium",
+}
 
 _GENDERS = ("M", "F")
 _REGIONS = ("서울", "경기", "부산", "대구", "광주")
@@ -36,11 +48,12 @@ class MockAdInterpreter:
     async def interpret(self, request: SimulationRunRequest) -> AdInterpretation:
         return AdInterpretation(
             ad_id=request.ad_id,
-            structured_analysis={"mock": True},
+            structured_analysis={"mock": True, **_MOCK_FEATURES},
             detected_industry="beverage",
             detected_objective="awareness",
             detected_target="20대",
             detected_message="신제품 출시",
+            ad_features=AdFeatures(**_MOCK_FEATURES),
             intent_mismatch=False,
             model_version="mock-vision-0",
         )
