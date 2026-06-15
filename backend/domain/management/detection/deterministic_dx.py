@@ -44,8 +44,24 @@ def diagnose(
     }
 
     if observed_window == 0:
-        anomaly, status, confidence = AnomalyType.REVIEW_REJECTED, DiagnosisStatus.CONFIRMED, 1.0
-        hypothesis = "이상 구간 전체 노출 0 — 심사 거절(DISAPPROVED)로 게재가 중단된 것으로 판정."
+        # 초반 공백인데 이후 회복 → 심사 지연 / 끝까지 0 → 심사 거절
+        last_anomaly = max(anomaly_hours)
+        recovered = any(s.impressions > 0 for s in snapshots[last_anomaly + 1 :])
+        if recovered and last_anomaly < 12:
+            anomaly, status, confidence = AnomalyType.REVIEW_DELAY, DiagnosisStatus.CONFIRMED, 1.0
+            hypothesis = (
+                f"0~{last_anomaly}시 노출 0 후 회복 — 심사 지연(PENDING_REVIEW)으로 게재가 "
+                "늦게 시작된 것으로 판정."
+            )
+        else:
+            anomaly, status, confidence = (
+                AnomalyType.REVIEW_REJECTED,
+                DiagnosisStatus.CONFIRMED,
+                1.0,
+            )
+            hypothesis = (
+                "이상 구간 전체 노출 0 — 심사 거절(DISAPPROVED)로 게재가 중단된 것으로 판정."
+            )
     elif cpm_avg >= CPM_ANCHOR_KRW * _CPM_SURGE_RATIO:
         anomaly, status, confidence = AnomalyType.BID_LOSS, DiagnosisStatus.CONFIRMED, 1.0
         hypothesis = (

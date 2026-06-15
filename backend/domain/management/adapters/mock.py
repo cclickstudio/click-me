@@ -19,6 +19,9 @@ from domain.management.contracts.policy import (
 )
 from domain.management.contracts.schemas import MetricsSnapshot
 
+_FAULT_ONSET_HOUR = 14  # 고장 발현 시각 (일중 곡선상 오후 — 정상/이상 대비가 뚜렷)
+_REVIEW_DELAY_UNTIL = 10  # 심사 지연: 이 시각 전까지 노출 0
+
 
 class MockAdPlatform:
     """게재 시뮬레이터. 데모는 이 어댑터만으로 성립한다 (게이트 #9)."""
@@ -35,6 +38,13 @@ class MockAdPlatform:
     ) -> list[MetricsSnapshot]:
         """하루치 시간별 지표 생성. fault 주입 시 14시부터 해당 고장 증상 재현."""
         inject = fault is not None and self._rng.random() < fault.probability
+        mode = fault.mode if (inject and fault is not None) else None
+
+        # AUDIENCE_TOO_NARROW = 타겟 모수를 크게 줄여 reach 조기 포화 → frequency 폭등
+        audience = AUDIENCE_SIZE
+        if mode == FaultMode.AUDIENCE_TOO_NARROW:
+            audience = 1_500  # 하루 누적 노출(~8천) 대비 작아 frequency가 5+로 치솟음
+
         snapshots: list[MetricsSnapshot] = []
         cum_impressions = 0.0
         prev_frequency = 1.0
@@ -42,26 +52,37 @@ class MockAdPlatform:
         for hour in range(24):
             cpm = CPM_ANCHOR_KRW * self._rng.uniform(0.92, 1.08)
             win_rate = 1.0
+            ctr_mult = 1.0
 
-            if inject and fault is not None and hour >= 14:
-                if fault.mode == FaultMode.BID_LOSS:
+            if mode is not None and hour >= _FAULT_ONSET_HOUR:
+                if mode == FaultMode.BID_LOSS:
                     # 경매가 급등 + 낙찰률 급감 → 예산 남는데 impressions 급감, cpm↑
-                    cpm *= 1.5 + 0.05 * (hour - 14)
+                    cpm *= 1.5 + 0.05 * (hour - _FAULT_ONSET_HOUR)
                     win_rate = 0.25
-                elif fault.mode == FaultMode.REVIEW_REJECTED:
+                elif mode == FaultMode.REVIEW_REJECTED:
                     win_rate = 0.0  # DISAPPROVED — 노출 전면 중단
+                elif mode == FaultMode.QUALITY_DEGRADED:
+                    # 품질 저하 — ctr 빠른 감쇠 + 경매가 소폭(1.3배 미만) + 게재 경쟁력 하락
+                    cpm *= 1.2
+                    ctr_mult = max(0.3, 1.0 - 0.12 * (hour - _FAULT_ONSET_HOUR))
+                    win_rate = 0.4
+                elif mode == FaultMode.AUDIENCE_TOO_NARROW:
+                    # 모수 소진 → 게재량 점감 (cum_reach는 작은 audience로 조기 포화)
+                    win_rate = max(0.2, 0.6 - 0.05 * (hour - _FAULT_ONSET_HOUR))
+            if mode == FaultMode.REVIEW_DELAY and hour < _REVIEW_DELAY_UNTIL:
+                win_rate = 0.0  # 심사 지연 — 승인 전까지 노출 0
 
             spend = daily_budget_krw * HOURLY_PACING[hour] * win_rate
             impressions = spend / cpm * 1000
 
             # 빈도 피로: 누적 빈도가 오를수록 ctr 감쇠
             fatigue = max(0.55, 1.0 - 0.18 * max(0.0, prev_frequency - 1.0))
-            ctr = BASE_CTR * self._rng.uniform(0.9, 1.1) * fatigue
+            ctr = BASE_CTR * self._rng.uniform(0.9, 1.1) * fatigue * ctr_mult
             clicks = impressions * ctr
 
             cum_impressions += impressions
             # 오디언스 포화 모델 — reach는 누적으로만 계산 (시간행 합산 금지)
-            cum_reach = AUDIENCE_SIZE * (1 - math.exp(-cum_impressions / AUDIENCE_SIZE))
+            cum_reach = audience * (1 - math.exp(-cum_impressions / audience))
             frequency = cum_impressions / cum_reach if cum_reach > 0 else 1.0
             prev_frequency = frequency
 
