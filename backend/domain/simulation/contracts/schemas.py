@@ -35,6 +35,21 @@ class SimulationRunRequest(BaseModel):
     service_class: int | None = None  # 상품·서비스 분류(NICE 1~45) — 메타데이터(교차검증 차원 아님)
 
 
+class AdFeatures(BaseModel):
+    """광고 특성 정량 추출 — 반응 프롬프트 입력 힌트(KPI 환산 금지). 전 필드 옵셔널(하위호환).
+
+    DB 컬럼 아님 — AdInterpretation.structured_analysis(JSONB)에 함께 담겨 영속된다.
+    """
+
+    ad_credibility: int | None = None  # 증거·현실성·정직성 종합(0~100, LLM 추정)
+    ad_quality: int | None = None  # 명확성·매력·구조·CTA 종합(0~100)
+    price_mentioned: bool = False
+    original_price: int | None = None
+    discounted_price: int | None = None
+    brand_mentioned: bool = False
+    social_proof_strength: Literal["high", "medium", "low", "none"] | None = None
+
+
 class AdInterpretation(BaseModel):
     """광고해석 — vision 구조화 산출 (exposure·페르소나 생성의 입력)."""
 
@@ -44,6 +59,7 @@ class AdInterpretation(BaseModel):
     detected_objective: str | None = None  # 감지 캠페인 목표 — objective 차원 교차검증용
     detected_target: str | None = None
     detected_message: str | None = None
+    ad_features: AdFeatures = Field(default_factory=AdFeatures)  # 정량 광고 특성(반응 힌트)
     intent_mismatch: bool = False
     mismatch_detail: dict[str, Any] | None = None
     model_version: str = "mock-0"
