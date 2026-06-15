@@ -3,7 +3,7 @@
 > 전체 시뮬레이션을 단계(조각)로 쪼개 stream으로 묶어 단계별 처리하기 위한 분해도.
 > 더미 5개(`backend/domain/simulation/dummy/reaction-dummy1~5.json`)는 **7번(반응 출력)에 해당** —
 > 즉 반응 생성·집계까지 끝난 상태라, 우리가 짤 부분은 **8(반응 분석)부터**다.
-> 토론 세부 규칙은 같은 디렉토리 상위의 `docs/simulation/persona-debate-pipeline.md` 참조.
+> 토론 세부 규칙은 같은 디렉토리의 `persona-debate-pipeline.md` 참조.
 
 ## 전체 맵 (0 ~ 11) — 더미는 7번
 
