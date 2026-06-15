@@ -4,9 +4,13 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const token = getToken();
-  const authHeader = token ? { Authorization: `Bearer ${token}` } : {};
+  const authHeader: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
   const res = await fetch(`${API_BASE}/api${path}`, {
-    headers: { "Content-Type": "application/json", ...authHeader, ...init?.headers },
+    headers: {
+      "Content-Type": "application/json",
+      ...authHeader,
+      ...(init?.headers as Record<string, string> | undefined),
+    },
     ...init,
   });
   if (!res.ok) {
