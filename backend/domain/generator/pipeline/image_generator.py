@@ -6,8 +6,13 @@ from openai import AsyncOpenAI
 from domain.generator.contracts.enums import AdSize, AdStrategy, TemplateType
 from domain.generator.contracts.schemas import ProductAnalysis
 
+# OpenAI 클라이언트 초기화 (이미지 생성 API 호출에 사용)
 _client = AsyncOpenAI(timeout=120.0)
 
+# ─────────────────────────────────────────────────────────────────────────────
+# 전략별 메타데이터 매핑 (광고 전략 → 프롬프트 설명문)
+# 각 AdStrategy 값에 대응하는 영문 설명을 담아 프롬프트에 삽입한다.
+# ─────────────────────────────────────────────────────────────────────────────
 _STRATEGY_DESCRIPTIONS: dict[AdStrategy, str] = {
     AdStrategy.BENEFIT: "highlighting product benefits and value proposition",
     AdStrategy.PROBLEM_SOLVING: "showing how the product solves customer pain points",
@@ -16,6 +21,8 @@ _STRATEGY_DESCRIPTIONS: dict[AdStrategy, str] = {
     AdStrategy.FOMO: "creating urgency and FOMO with limited-time messaging",
 }
 
+# 전략별 사진 촬영 스타일 지시문
+# 조명, 배경, 분위기 등 사진적 연출 방향을 전략에 맞게 정의한다.
 _STRATEGY_PHOTO_STYLE: dict[AdStrategy, str] = {
     AdStrategy.BENEFIT: (
         "Clean, well-lit product photography with soft even shadows. "
@@ -39,6 +46,11 @@ _STRATEGY_PHOTO_STYLE: dict[AdStrategy, str] = {
     ),
 }
 
+# ─────────────────────────────────────────────────────────────────────────────
+# 템플릿별 레이아웃 스타일 & 안전 영역(Safe Zone) 정의
+# ─────────────────────────────────────────────────────────────────────────────
+
+# 템플릿 유형(A/B/C)에 따른 전반적인 시각 스타일을 정의한다.
 _TEMPLATE_STYLE: dict[TemplateType, str] = {
     TemplateType.A: (
         "Clean product photography style. "
@@ -57,6 +69,8 @@ _TEMPLATE_STYLE: dict[TemplateType, str] = {
     ),
 }
 
+# 텍스트 오버레이가 가려질 영역을 AI에게 알려주는 Safe Zone 지시문.
+# 각 템플릿은 텍스트 배너 위치가 다르므로, 제품이 가리지 않도록 구도를 유도한다.
 _TEMPLATE_SAFE_ZONES: dict[TemplateType, str] = {
     TemplateType.A: (
         "COMPOSITION RULE: Keep the bottom 38% of the frame visually minimal and uncluttered "
@@ -75,6 +89,10 @@ _TEMPLATE_SAFE_ZONES: dict[TemplateType, str] = {
     ),
 }
 
+# ─────────────────────────────────────────────────────────────────────────────
+# 이미지 생성 프롬프트 템플릿
+# 위에서 정의한 스타일·전략 값들이 format()으로 조합되어 최종 프롬프트를 구성한다.
+# ─────────────────────────────────────────────────────────────────────────────
 _PROMPT_TEMPLATE = """\
 Create a professional {platform} advertisement product image.
 THIS IS A PRODUCT-ONLY IMAGE — do NOT include any text, letters, words, or numbers.
@@ -102,6 +120,10 @@ Requirements:
 - Photo-realistic or high-quality illustration style"""
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# 제품 분석 결과를 시각적 방향 문장으로 변환하는 헬퍼
+# 브랜드 가치, 혜택, 브랜드 컬러를 조합해 프롬프트 내 시각 방향 섹션을 생성한다.
+# ─────────────────────────────────────────────────────────────────────────────
 def _build_product_visual_context(
     product_analysis: ProductAnalysis,
     brand_color: str | None,
@@ -131,6 +153,11 @@ def _build_product_visual_context(
     )
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# 메인 이미지 생성 함수 (LangSmith 추적 활성화)
+# 전략·템플릿·사이즈 등 입력값을 받아 프롬프트를 조립하고,
+# GPT Image API를 호출한 뒤 base64 디코딩된 이미지 bytes를 반환한다.
+# ─────────────────────────────────────────────────────────────────────────────
 @traceable(name="ImageGenerator", metadata={"pipeline": "generator"})
 async def generate_image(
     product_analysis: ProductAnalysis,
@@ -140,6 +167,7 @@ async def generate_image(
     brand_color: str | None = None,
     tone: str | None = None,
 ) -> bytes:
+    # 브랜드 컬러·톤·핵심 가치 유무에 따라 프롬프트 삽입 문구를 분기 처리
     color_line = (
         f"Brand color accent: {brand_color} — incorporate into highlights and secondary elements"
         if brand_color
@@ -154,6 +182,7 @@ async def generate_image(
     target_audience = product_analysis.target_audience or "general audience"
     product_visual_context = _build_product_visual_context(product_analysis, brand_color)
 
+    # 모든 변수를 템플릿에 주입해 최종 프롬프트 완성
     prompt = _PROMPT_TEMPLATE.format(
         platform="Meta/Instagram",
         style=_TEMPLATE_STYLE[template],
@@ -168,6 +197,7 @@ async def generate_image(
         safe_zone=_TEMPLATE_SAFE_ZONES[template],
     )
 
+    # GPT Image API 호출 → base64 응답을 bytes로 디코딩해 반환
     response = await _client.images.generate(
         model="gpt-image-1",
         prompt=prompt,

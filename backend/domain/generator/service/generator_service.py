@@ -81,6 +81,8 @@ async def _build_variant(
     )
 
     # 4. 인페인팅(텍스트 존 자연화) + 품질 검증 병렬 실행
+    # asyncio.gather: 두 IO-bound 작업(API 호출)을 동시에 시작해 둘 다 기다림.
+    # 순차 실행 대비 더 느린 쪽 하나의 시간만 걸림 (합산 X).
     inpainted_bg, quality_report = await asyncio.gather(
         inpaint_text_zone(
             bg_bytes=bg_bytes,
@@ -92,6 +94,8 @@ async def _build_variant(
     )
 
     # 5. PIL로 한국어 텍스트 합성 (AI가 디자인한 배경 위에)
+    # asyncio.to_thread: PIL 픽셀 연산은 CPU-bound라 이벤트 루프를 블로킹함.
+    # 별도 스레드로 분리해 이벤트 루프가 다른 코루틴을 계속 처리할 수 있게 함.
     image_bytes = await asyncio.to_thread(
         composite_text,
         inpainted_bg,
@@ -147,6 +151,8 @@ async def generate_ad(request: GenerateRequest) -> GenerateResult:
     plans = _to_strategy_plans(strategy_outputs)
 
     variant_ids = ["A", "B", "C"]
+    # asyncio.gather: variant A/B/C를 동시에 생성. 각 variant는 독립적이므로 순서 무관.
+    # 3개를 순차 실행하면 합산 시간이 걸리지만, gather는 가장 느린 variant 하나의 시간만 걸림.
     variants = await asyncio.gather(
         *[
             _build_variant(
@@ -203,6 +209,7 @@ async def improve_ad(request: ImproveRequest) -> GenerateResult:
     plans = _to_strategy_plans(strategy_outputs)
 
     variant_ids = ["A", "B", "C"]
+    # asyncio.gather: generate_ad와 동일하게 개선 variant A/B/C를 동시에 생성.
     variants = await asyncio.gather(
         *[
             _build_variant(
