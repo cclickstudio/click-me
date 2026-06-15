@@ -1,6 +1,9 @@
 'use client';
 
+import { useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { useAuth } from '../components/AuthProvider';
 import { useTheme } from '../components/ThemeProvider';
 
 function SunIcon() {
@@ -72,6 +75,21 @@ const steps = [
 
 export default function Page() {
   const { theme, toggle } = useTheme();
+  const { user, loading } = useAuth();
+  const router = useRouter();
+
+  // 로그인 상태면 랜딩 진입 차단 — 로그아웃 전엔 대시보드로 이동
+  useEffect(() => {
+    if (!loading && user) router.replace('/dashboard');
+  }, [loading, user, router]);
+
+  if (loading || user) {
+    return (
+      <div className="min-h-screen bg-white dark:bg-[#0F1117] flex items-center justify-center">
+        <div className="w-6 h-6 border-2 border-[#3182F6] border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-white dark:bg-[#0F1117] transition-colors">

@@ -123,7 +123,7 @@ export interface Inquiry {
 
 export interface User {
   user_id: string;
-  email: string;
+  login_id: string;
   name: string;
   role: UserRole;
   created_at: string;

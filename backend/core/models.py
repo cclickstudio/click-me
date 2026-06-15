@@ -30,19 +30,40 @@ class User(Base):
     __tablename__ = "users"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    email: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    login_id: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     role: Mapped[str] = mapped_column(String(20), nullable=False)  # ADMIN | COMPANY | USER
     status: Mapped[str] = mapped_column(
         String(20), nullable=False, default="ACTIVE"
     )  # ACTIVE | PENDING
+    must_change_password: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )  # 관리자/기업이 발급한 계정 → 최초 로그인 시 비번 변경 유도
+    team_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("teams.id"), nullable=True
+    )  # 소속 팀(USER만, 미배정이면 NULL)
+    phone_num: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    user_email: Mapped[str | None] = mapped_column(
+        String(255), nullable=True
+    )  # 연락용(로그인 아님)
     created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), onupdate=func.now()
     )
+
+
+class Team(Base):
+    __tablename__ = "teams"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
 class OrganizationMember(Base):

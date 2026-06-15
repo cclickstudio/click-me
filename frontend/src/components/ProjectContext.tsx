@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useEffect, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { getToken } from '@/lib/authApi';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
@@ -9,7 +9,8 @@ export type Project = { id: string; name: string; status: string; description?: 
 export type SimRow = { id: string; status: string; sample_size: number; created_by_name: string | null; created_at: string };
 export type GenRow = { id: string; status: string; product_name: string | null; created_by_name: string | null; created_at: string };
 
-type ProjectDetails = { sims: SimRow[]; gens: GenRow[]; loaded: boolean };
+export type TrashRow = { id: string; kind: 'sim' | 'gen'; label: string; deleted_at: string };
+type ProjectDetails = { sims: SimRow[]; gens: GenRow[]; trashed: TrashRow[]; loaded: boolean };
 
 type ProjectContextValue = {
   projects: Project[];
@@ -44,13 +45,14 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const fetchedRef = useRef(false);
 
-  const fetchProjects = async () => {
+  const fetchProjects = useCallback(async () => {
     const token = getToken();
     if (!token) return;
     setLoading(true);
     try {
       const res = await fetch(`${API_BASE}/api/projects`, {
         headers: { Authorization: `Bearer ${token}` },
+        cache: 'no-store',
       });
       const data = await res.json();
       if (Array.isArray(data)) setProjects(data);
@@ -59,7 +61,7 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     if (fetchedRef.current) return;
@@ -71,15 +73,27 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
     const token = getToken();
     if (!token) return;
     const headers = { Authorization: `Bearer ${token}` };
-    const [s, g] = await Promise.all([
+    const [s, g, t] = await Promise.all([
       fetch(`${API_BASE}/api/projects/${projectId}/simulations`, { headers }).then(r => r.json()).catch(() => []),
       fetch(`${API_BASE}/api/projects/${projectId}/generations`, { headers }).then(r => r.json()).catch(() => []),
+      fetch(`${API_BASE}/api/projects/trash?project_id=${projectId}`, { headers }).then(r => r.json()).catch(() => null),
     ]);
+    const trashed: TrashRow[] = t
+      ? [
+          ...(Array.isArray(t.simulations) ? t.simulations : []).map((x: { id: string; ad_title: string | null; deleted_at: string }) => ({
+            id: x.id, kind: 'sim' as const, label: x.ad_title ?? '시뮬레이션', deleted_at: x.deleted_at,
+          })),
+          ...(Array.isArray(t.generations) ? t.generations : []).map((x: { id: string; product_name: string | null; deleted_at: string }) => ({
+            id: x.id, kind: 'gen' as const, label: x.product_name ?? '제너레이터', deleted_at: x.deleted_at,
+          })),
+        ]
+      : [];
     setDetails(prev => ({
       ...prev,
       [projectId]: {
         sims: Array.isArray(s) ? s : [],
         gens: Array.isArray(g) ? g : [],
+        trashed,
         loaded: true,
       },
     }));
