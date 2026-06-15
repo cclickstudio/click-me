@@ -40,8 +40,8 @@ export default function PendingScreen() {
             <span className="text-[#191F28] dark:text-[#F2F4F6] font-medium">{user?.name}</span>
           </div>
           <div className="flex justify-between text-sm">
-            <span className="text-[#8B95A1] dark:text-[#6B7280]">이메일</span>
-            <span className="text-[#191F28] dark:text-[#F2F4F6]">{user?.email}</span>
+            <span className="text-[#8B95A1] dark:text-[#6B7280]">아이디</span>
+            <span className="text-[#191F28] dark:text-[#F2F4F6]">{user?.login_id}</span>
           </div>
           <div className="flex justify-between text-sm">
             <span className="text-[#8B95A1] dark:text-[#6B7280]">계정 유형</span>
