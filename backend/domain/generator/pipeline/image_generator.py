@@ -1,4 +1,5 @@
 import base64
+import io
 
 from langsmith import traceable
 from openai import AsyncOpenAI
@@ -119,6 +120,27 @@ Requirements:
 - Clean, modern aesthetic suitable for Meta/Instagram feed
 - Photo-realistic or high-quality illustration style"""
 
+# 직접 수정 모드에서 원본 이미지를 Edit API로 수정할 때 사용하는 프롬프트
+_EDIT_PROMPT_TEMPLATE = """\
+Modify this advertisement image to improve it based on the following direction.
+Do NOT add any text, letters, words, or numbers to the image.
+
+Strategy: {strategy_desc}
+Visual style: {style}
+{color_line}
+{tone_line}
+
+Improvement direction:
+{improvement_context}
+
+{safe_zone}
+
+Requirements:
+- Keep the overall composition and product recognizable
+- STRICTLY NO text, letters, words, numbers, or typography
+- Maintain high-quality, commercial advertising photography style
+- Adjust lighting, color, mood, or composition as needed"""
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 제품 분석 결과를 시각적 방향 문장으로 변환하는 헬퍼
@@ -166,14 +188,38 @@ async def generate_image(
     size: AdSize = AdSize.SQUARE,
     brand_color: str | None = None,
     tone: str | None = None,
+    original_image_bytes: bytes | None = None,
+    improvement_context: str | None = None,
 ) -> bytes:
-    # 브랜드 컬러·톤·핵심 가치 유무에 따라 프롬프트 삽입 문구를 분기 처리
     color_line = (
         f"Brand color accent: {brand_color} — incorporate into highlights and secondary elements"
         if brand_color
         else "Color palette: modern, clean, professional"
     )
     tone_line = f"Tone and manner: {tone}" if tone else "Tone: clean, professional, trustworthy"
+
+    # 직접 수정 모드: 원본 이미지 + Edit API
+    if original_image_bytes is not None:
+        prompt = _EDIT_PROMPT_TEMPLATE.format(
+            strategy_desc=_STRATEGY_DESCRIPTIONS[strategy],
+            style=_TEMPLATE_STYLE[template],
+            color_line=color_line,
+            tone_line=tone_line,
+            improvement_context=improvement_context or "전반적인 광고 품질을 개선하세요.",
+            safe_zone=_TEMPLATE_SAFE_ZONES[template],
+        )
+        image_file = io.BytesIO(original_image_bytes)
+        image_file.name = "original.png"
+        response = await _client.images.edit(
+            model="gpt-image-1",
+            image=image_file,
+            prompt=prompt,
+            n=1,
+            size=size.value,
+        )
+        return base64.b64decode(response.data[0].b64_json)
+
+    # 시뮬레이션 기반 개선 또는 생성 모드: Generate API
     core_values_line = (
         f"Core values: {', '.join(product_analysis.core_values)}\n"
         if product_analysis.core_values
@@ -182,7 +228,12 @@ async def generate_image(
     target_audience = product_analysis.target_audience or "general audience"
     product_visual_context = _build_product_visual_context(product_analysis, brand_color)
 
-    # 모든 변수를 템플릿에 주입해 최종 프롬프트 완성
+    improvement_line = (
+        f"\nImprovement direction (apply to visual):\n{improvement_context}"
+        if improvement_context
+        else ""
+    )
+
     prompt = _PROMPT_TEMPLATE.format(
         platform="Meta/Instagram",
         style=_TEMPLATE_STYLE[template],
@@ -193,11 +244,10 @@ async def generate_image(
         target_audience=target_audience,
         color_line=color_line,
         tone_line=tone_line,
-        product_visual_context=product_visual_context,
+        product_visual_context=product_visual_context + improvement_line,
         safe_zone=_TEMPLATE_SAFE_ZONES[template],
     )
 
-    # GPT Image API 호출 → base64 응답을 bytes로 디코딩해 반환
     response = await _client.images.generate(
         model="gpt-image-1",
         prompt=prompt,

@@ -54,15 +54,26 @@ def _wrap_text(
     max_width: int,
     draw: ImageDraw.ImageDraw,
 ) -> list[str]:
-    """Character-level wrapping — safe for Korean."""
+    """Word-aware wrapping with character-level fallback for long single words."""
     lines: list[str] = []
     for paragraph in text.split("\n"):
+        words = paragraph.split(" ")
         line = ""
-        for char in paragraph:
-            test = line + char
-            if draw.textbbox((0, 0), test, font=font)[2] > max_width and line:
-                lines.append(line)
-                line = char
+        for word in words:
+            test = (line + " " + word).strip() if line else word
+            if draw.textbbox((0, 0), test, font=font)[2] > max_width:
+                if line:
+                    lines.append(line)
+                    line = word
+                else:
+                    # single word too long — character-level fallback
+                    for char in word:
+                        test_char = line + char
+                        if draw.textbbox((0, 0), test_char, font=font)[2] > max_width and line:
+                            lines.append(line)
+                            line = char
+                        else:
+                            line = test_char
             else:
                 line = test
         if line:
@@ -222,15 +233,20 @@ def _draw_cta_button(
     x2 = x_center + tw // 2 + pad_x
     y2 = y + th + pad_y
 
+    # bbox[1] is typically negative (font ascender offset); compensate so text is
+    # visually centered — without this the upper padding is visibly smaller than lower.
+    tx = x_center - tw // 2 - bbox[0]
+    ty = y - bbox[1]
+
     if _luminance(bg_rgb) > 0.72:
         draw.rounded_rectangle([x1, y1, x2, y2], radius=14, fill=bg_rgb)
         draw.rounded_rectangle([x1, y1, x2, y2], radius=14, outline=(50, 50, 50), width=2)
         eff_text = text_color if _luminance(text_color) < 0.55 else (30, 30, 30)
-        draw.text((x_center - tw // 2, y), cta, font=font, fill=eff_text)
+        draw.text((tx, ty), cta, font=font, fill=eff_text)
     else:
         draw.rounded_rectangle([x1 + 3, y1 + 3, x2 + 3, y2 + 3], radius=14, fill=(10, 10, 10))
         draw.rounded_rectangle([x1, y1, x2, y2], radius=14, fill=bg_rgb)
-        draw.text((x_center - tw // 2, y), cta, font=font, fill=text_color)
+        draw.text((tx, ty), cta, font=font, fill=text_color)
 
 
 # ── Template layouts ──────────────────────────────────────────────────────────
@@ -424,11 +440,12 @@ def _compose_template_c(
 
     # 헤드라인
     y = int(h * 0.18)
-    y = _draw_left_lines(
+    y = _draw_centered_lines(
         canvas,
         _wrap_text(headline, hl_font, text_w, draw),
         hl_font,
         margin,
+        text_w,
         y,
         (255, 255, 255),
         10,
@@ -447,11 +464,12 @@ def _compose_template_c(
     draw = ImageDraw.Draw(canvas)
 
     # 본문
-    _draw_left_lines(
+    _draw_centered_lines(
         canvas,
         _wrap_text(body, bd_font, text_w, draw),
         bd_font,
         margin,
+        text_w,
         y,
         (220, 228, 245),
         7,
@@ -476,7 +494,14 @@ def _compose_template_c(
 
     draw = ImageDraw.Draw(canvas)
     draw.rounded_rectangle([bx1, by1, bx2, by2], radius=14, fill=(255, 255, 255))
-    draw.text((panel_w // 2 - tw // 2, cta_y), cta, font=ct_font, fill=panel_color)
+    # Compensate for font ascender offset so text is visually centered in button
+    cta_bbox = draw.textbbox((0, 0), cta, font=ct_font)
+    draw.text(
+        (panel_w // 2 - tw // 2 - cta_bbox[0], cta_y - cta_bbox[1]),
+        cta,
+        font=ct_font,
+        fill=panel_color,
+    )
 
 
 # ── Public API ────────────────────────────────────────────────────────────────

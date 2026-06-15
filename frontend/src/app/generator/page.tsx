@@ -8,6 +8,7 @@ import AppLayout from '@/components/AppLayout';
 type AdStrategy = 'benefit' | 'problem_solving' | 'social_proof' | 'emotional' | 'fomo';
 type TemplateType = 'A' | 'B' | 'C';
 type GenerationMode = 'create' | 'improve';
+type ImproveSubMode = 'direct' | 'simulation';
 type AdSize = '1024x1024' | '1536x1024' | '1024x1536';
 
 interface QualityCheckItem {
@@ -393,6 +394,7 @@ function AdDetailModal({
 
 export default function Page() {
   const [mode, setMode] = useState<GenerationMode>('create');
+  const [improveSubMode, setImproveSubMode] = useState<ImproveSubMode>('direct');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<GenerateResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -407,11 +409,46 @@ export default function Page() {
   const [tone, setTone] = useState('');
   const [size, setSize] = useState<AdSize>('1024x1024');
 
-  // 개선모드 폼
-  const [existingS3Key, setExistingS3Key] = useState('');
-  const [simulationSummary, setSimulationSummary] = useState('');
-  const [fixRequests, setFixRequests] = useState('');
+  // 개선모드 공통
   const [improveProductName, setImproveProductName] = useState('');
+  const [existingS3Key, setExistingS3Key] = useState('');
+  const [fixRequests, setFixRequests] = useState('');
+  const [improveTone, setImproveTone] = useState('');
+  const [improveSize, setImproveSize] = useState<AdSize>('1024x1024');
+
+  // 개선모드 — 파일 업로드
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [uploadedPreview, setUploadedPreview] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [imageSource, setImageSource] = useState<'upload' | 's3'>('upload');
+
+  // 개선모드 — 시뮬레이션 기반
+  const [simulationSummary, setSimulationSummary] = useState('');
+
+  const handleFileSelect = async (file: File) => {
+    setUploadedFile(file);
+    setUploadedPreview(URL.createObjectURL(file));
+    setExistingS3Key('');
+
+    setUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const res = await fetch(`${API_BASE}/api/generator/upload`, { method: 'POST', body: formData });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: 'Unknown error' }));
+        throw new Error(err.detail ?? `HTTP ${res.status}`);
+      }
+      const data = await res.json();
+      setExistingS3Key(data.s3_key);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '업로드 중 오류가 발생했습니다.');
+      setUploadedFile(null);
+      setUploadedPreview(null);
+    } finally {
+      setUploading(false);
+    }
+  };
 
   const handleSubmit = async () => {
     setError(null);
@@ -419,24 +456,46 @@ export default function Page() {
     setLoading(true);
 
     try {
-      const endpoint = mode === 'create' ? '/api/generator/generate' : '/api/generator/improve';
-      const body =
-        mode === 'create'
-          ? { product_name: productName, description, target, objective, brand_color: brandColor || null, tone: tone || null, size }
-          : { existing_ad_s3_key: existingS3Key, simulation_summary: simulationSummary, product_name: improveProductName || null, fix_requests: fixRequests || null, tone: tone || null, size };
+      if (mode === 'create') {
+        const res = await fetch(`${API_BASE}/api/generator/generate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            product_name: productName,
+            description,
+            target,
+            objective,
+            brand_color: brandColor || null,
+            tone: tone || null,
+            size,
+          }),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({ detail: 'Unknown error' }));
+          throw new Error(err.detail ?? `HTTP ${res.status}`);
+        }
+        setResult(await res.json());
+      } else {
+        const body: Record<string, unknown> = {
+          existing_ad_s3_key: existingS3Key,
+          product_name: improveProductName || null,
+          fix_requests: fixRequests || null,
+          tone: improveTone || null,
+          size: improveSize,
+          simulation_summary: improveSubMode === 'simulation' ? simulationSummary || null : null,
+        };
 
-      const res = await fetch(`${API_BASE}${endpoint}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ detail: 'Unknown error' }));
-        throw new Error(err.detail ?? `HTTP ${res.status}`);
+        const res = await fetch(`${API_BASE}/api/generator/improve`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({ detail: 'Unknown error' }));
+          throw new Error(err.detail ?? `HTTP ${res.status}`);
+        }
+        setResult(await res.json());
       }
-
-      setResult(await res.json());
     } catch (e) {
       setError(e instanceof Error ? e.message : '오류가 발생했습니다.');
     } finally {
@@ -445,7 +504,9 @@ export default function Page() {
   };
 
   const isCreateValid = productName.trim() && description.trim() && target.trim();
-  const isImproveValid = existingS3Key.trim() && simulationSummary.trim();
+  const isImproveValid =
+    existingS3Key.trim() && !uploading &&
+    (improveSubMode === 'direct' ? !!fixRequests.trim() : !!simulationSummary.trim());
   const canSubmit = mode === 'create' ? isCreateValid : isImproveValid;
 
   return (
@@ -529,26 +590,119 @@ export default function Page() {
                 </>
               ) : (
                 <>
+                  {/* 서브 모드 탭 */}
+                  <div className="bg-[#F2F4F6] dark:bg-[#252D3D] rounded-xl p-1 flex">
+                    {(['direct', 'simulation'] as const).map((m) => (
+                      <button
+                        key={m}
+                        onClick={() => { setImproveSubMode(m); setResult(null); setError(null); }}
+                        className={`flex-1 py-1.5 text-xs font-medium rounded-lg transition-colors
+                          ${improveSubMode === m
+                            ? 'bg-white dark:bg-[#1C2333] text-[#191F28] dark:text-[#F2F4F6] shadow-sm'
+                            : 'text-[#8B95A1] dark:text-[#6B7280] hover:text-[#4E5968] dark:hover:text-[#9CA3AF]'}`}
+                      >
+                        {m === 'direct' ? '직접 수정' : '시뮬레이션 기반'}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* 이미지 소스 선택 */}
+                  <div>
+                    <p className="text-xs font-medium text-[#4E5968] dark:text-[#9CA3AF] mb-2">이미지 소스 *</p>
+                    <div className="flex gap-2 mb-3">
+                      {(['upload', 's3'] as const).map((src) => (
+                        <button
+                          key={src}
+                          onClick={() => { setImageSource(src); setUploadedFile(null); setUploadedPreview(null); setExistingS3Key(''); }}
+                          className={`flex-1 py-1.5 text-xs font-medium rounded-lg border transition-colors
+                            ${imageSource === src
+                              ? 'border-[#3182F6] bg-[#EBF3FF] dark:bg-[#1a2a4a] text-[#3182F6]'
+                              : 'border-[#E5E8EB] dark:border-[#2D3748] text-[#8B95A1] dark:text-[#6B7280] hover:border-[#B0B8C1]'}`}
+                        >
+                          {src === 'upload' ? '파일 업로드' : 'S3 키 입력'}
+                        </button>
+                      ))}
+                    </div>
+
+                    {imageSource === 'upload' ? (
+                      <div>
+                        <label
+                          className={`flex flex-col items-center justify-center w-full h-32 rounded-xl border-2 border-dashed cursor-pointer transition-colors
+                            ${uploadedPreview
+                              ? 'border-[#3182F6] bg-[#EBF3FF] dark:bg-[#1a2a4a]'
+                              : 'border-[#E5E8EB] dark:border-[#2D3748] bg-[#F8F9FA] dark:bg-[#252D3D] hover:border-[#B0B8C1]'}`}
+                        >
+                          {uploading ? (
+                            <div className="flex flex-col items-center gap-2">
+                              <div className="w-5 h-5 border-2 border-[#3182F6] border-t-transparent rounded-full animate-spin" />
+                              <span className="text-xs text-[#8B95A1]">업로드 중...</span>
+                            </div>
+                          ) : uploadedPreview ? (
+                            <div className="relative w-full h-full">
+                              <img src={uploadedPreview} alt="미리보기" className="w-full h-full object-contain rounded-xl p-1" />
+                              <div className="absolute inset-0 flex items-end justify-center pb-1">
+                                <span className="text-[10px] bg-black/50 text-white px-2 py-0.5 rounded-full">
+                                  {uploadedFile?.name} · 클릭해서 변경
+                                </span>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="flex flex-col items-center gap-2 text-[#B0B8C1] dark:text-[#4B5563]">
+                              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+                                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+                                <polyline points="17 8 12 3 7 8" /><line x1="12" y1="3" x2="12" y2="15" />
+                              </svg>
+                              <span className="text-xs">PNG, JPEG, WebP (최대 10MB)</span>
+                            </div>
+                          )}
+                          <input
+                            type="file"
+                            accept="image/png,image/jpeg,image/webp"
+                            className="hidden"
+                            onChange={(e) => { const f = e.target.files?.[0]; if (f) handleFileSelect(f); }}
+                          />
+                        </label>
+                        {existingS3Key && (
+                          <p className="mt-1 text-[10px] text-green-600 dark:text-green-400 font-mono truncate">
+                            ✓ 업로드 완료: {existingS3Key}
+                          </p>
+                        )}
+                      </div>
+                    ) : (
+                      <Field label="S3 키 *">
+                        <input value={existingS3Key} onChange={(e) => setExistingS3Key(e.target.value)} placeholder="예: ads/프로젝트ID/광고ID.png" />
+                      </Field>
+                    )}
+                  </div>
+
                   <Field label="제품명">
-                    <input value={improveProductName} onChange={(e) => setImproveProductName(e.target.value)} placeholder="예: 스마트 텀블러 Pro (이미지 품질 향상)" />
+                    <input value={improveProductName} onChange={(e) => setImproveProductName(e.target.value)} placeholder="없으면 이미지에서 자동 추출" />
                   </Field>
-                  <Field label="기존 광고 S3 키 *">
-                    <input value={existingS3Key} onChange={(e) => setExistingS3Key(e.target.value)} placeholder="예: ads/프로젝트ID/광고ID.png" />
-                  </Field>
-                  <Field label="시뮬레이션 결과 요약 *">
-                    <textarea rows={4} value={simulationSummary} onChange={(e) => setSimulationSummary(e.target.value)} placeholder="구매 의향 분포, 페르소나 반응, 주요 문제점 등을 입력하세요" />
-                  </Field>
-                  <Field label="수정 요청사항">
-                    <textarea rows={2} value={fixRequests} onChange={(e) => setFixRequests(e.target.value)} placeholder="추가로 수정하고 싶은 내용을 입력하세요" />
-                  </Field>
+
+                  {/* 서브 모드별 전용 입력 */}
+                  {improveSubMode === 'direct' ? (
+                    <Field label="수정 요청사항 *">
+                      <textarea rows={3} value={fixRequests} onChange={(e) => setFixRequests(e.target.value)} placeholder="예: 배경을 더 밝게, 텍스트 가독성 개선, 브랜드 컬러 강조" />
+                    </Field>
+                  ) : (
+                    <>
+                      <Field label="시뮬레이션 결과 요약 *">
+                        <textarea rows={4} value={simulationSummary} onChange={(e) => setSimulationSummary(e.target.value)} placeholder="구매 의향 분포, 페르소나 반응, 주요 문제점 등을 입력하세요" />
+                      </Field>
+                      <Field label="추가 수정 요청사항">
+                        <textarea rows={2} value={fixRequests} onChange={(e) => setFixRequests(e.target.value)} placeholder="시뮬레이션 결과 외 추가로 반영할 내용" />
+                      </Field>
+                    </>
+                  )}
+
                   <div className="border-t border-[#F2F4F6] dark:border-[#2D3748] pt-4">
                     <p className="text-xs font-medium text-[#8B95A1] dark:text-[#6B7280] mb-3">선택 옵션</p>
                     <div className="space-y-3">
                       <Field label="톤앤매너">
-                        <input value={tone} onChange={(e) => setTone(e.target.value)} placeholder="예: 전문적이고 신뢰감 있는" />
+                        <input value={improveTone} onChange={(e) => setImproveTone(e.target.value)} placeholder="예: 전문적이고 신뢰감 있는" />
                       </Field>
                       <Field label="이미지 사이즈">
-                        <select value={size} onChange={(e) => setSize(e.target.value as AdSize)}>
+                        <select value={improveSize} onChange={(e) => setImproveSize(e.target.value as AdSize)}>
                           <option value="1024x1024">1:1 — 피드 기본 (1024×1024)</option>
                           <option value="1536x1024">3:2 — 가로형 (1536×1024)</option>
                           <option value="1024x1536">2:3 — 세로형 (1024×1536)</option>

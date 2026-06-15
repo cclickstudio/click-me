@@ -16,6 +16,7 @@ from domain.generator.contracts.schemas import (
     StrategyOutput,
     StrategyPlan,
 )
+from domain.generator.pipeline.ad_info_extractor import extract_ad_info
 from domain.generator.pipeline.copy_generator import generate_copy
 from domain.generator.pipeline.image_analyzer import analyze_image
 from domain.generator.pipeline.image_generator import generate_image
@@ -58,8 +59,10 @@ async def _build_variant(
     size,
     brand_color: str | None,
     tone: str | None,
+    original_image_bytes: bytes | None = None,
+    improvement_context: str | None = None,
 ) -> GeneratedAdVariant:
-    # 1. 배경 이미지 생성
+    # 1. 배경 이미지 생성 (직접 수정 모드면 Edit API, 아니면 Generate API)
     bg_bytes = await generate_image(
         product_analysis=product_analysis,
         strategy=plan.strategy,
@@ -67,22 +70,23 @@ async def _build_variant(
         size=size,
         brand_color=brand_color,
         tone=tone,
+        original_image_bytes=original_image_bytes,
+        improvement_context=improvement_context,
     )
 
     # 2. 이미지 분석
     image_analysis = await analyze_image(bg_bytes)
 
-    # 3. 이미지에 맞는 카피 생성
+    # 3. 이미지에 맞는 카피 생성 (개선 컨텍스트 반영)
     ad_copy = await generate_copy(
         product_analysis=product_analysis,
         strategy_output=strategy_output,
         image_analysis=image_analysis,
         template=plan.template,
+        improvement_context=improvement_context,
     )
 
-    # 4. 인페인팅(텍스트 존 자연화) + 품질 검증 병렬 실행
-    # asyncio.gather: 두 IO-bound 작업(API 호출)을 동시에 시작해 둘 다 기다림.
-    # 순차 실행 대비 더 느린 쪽 하나의 시간만 걸림 (합산 X).
+    # 4. 인페인팅 + 품질 검증 병렬 실행
     inpainted_bg, quality_report = await asyncio.gather(
         inpaint_text_zone(
             bg_bytes=bg_bytes,
@@ -93,9 +97,7 @@ async def _build_variant(
         check_quality(ad_copy=ad_copy, target=product_analysis.target_audience),
     )
 
-    # 5. PIL로 한국어 텍스트 합성 (AI가 디자인한 배경 위에)
-    # asyncio.to_thread: PIL 픽셀 연산은 CPU-bound라 이벤트 루프를 블로킹함.
-    # 별도 스레드로 분리해 이벤트 루프가 다른 코루틴을 계속 처리할 수 있게 함.
+    # 5. PIL로 한국어 텍스트 합성
     image_bytes = await asyncio.to_thread(
         composite_text,
         inpainted_bg,
@@ -151,8 +153,6 @@ async def generate_ad(request: GenerateRequest) -> GenerateResult:
     plans = _to_strategy_plans(strategy_outputs)
 
     variant_ids = ["A", "B", "C"]
-    # asyncio.gather: variant A/B/C를 동시에 생성. 각 variant는 독립적이므로 순서 무관.
-    # 3개를 순차 실행하면 합산 시간이 걸리지만, gather는 가장 느린 variant 하나의 시간만 걸림.
     variants = await asyncio.gather(
         *[
             _build_variant(
@@ -183,50 +183,77 @@ async def generate_ad(request: GenerateRequest) -> GenerateResult:
 async def improve_ad(request: ImproveRequest) -> GenerateResult:
     generation_id = str(uuid.uuid4())
 
-    improvement_context = (
-        f"기존 광고 S3 키: {request.existing_ad_s3_key}\n"
-        f"시뮬레이션 피드백: {request.simulation_summary}"
-    )
-    if request.fix_requests:
-        improvement_context += f"\n추가 수정 요청: {request.fix_requests}"
-
-    # 개선모드: 시뮬레이션 피드백 기반 전략 수립
-    # product_name은 이미지 프롬프트 품질을 위해 전달받고, 없으면 S3 키를 대신 사용
-    effective_product_name = request.product_name or request.existing_ad_s3_key
-    improve_analysis = ProductAnalysis(
-        product_name=effective_product_name,
-        core_values=[],
-        pain_points=[],
-        benefits=[],
-        target_audience="기존 타겟",
-        objective="광고 개선",
+    # 공통: S3에서 원본 이미지 다운로드 + Vision 역분석으로 ProductAnalysis 채우기
+    original_image_bytes, product_analysis = await extract_ad_info(
+        s3_key=request.existing_ad_s3_key,
+        product_name=request.product_name,
+        description=request.description,
+        target=request.target,
+        objective=request.objective,
     )
 
-    strategy_outputs = await plan_strategies(
-        product_analysis=improve_analysis,
-        improvement_context=improvement_context,
-    )
-    plans = _to_strategy_plans(strategy_outputs)
+    if request.simulation_summary:
+        # 시뮬레이션 기반 개선: 피드백을 전 파이프라인에 전달, 원본 이미지를 Edit API로 수정
+        improvement_context = f"시뮬레이션 피드백: {request.simulation_summary}"
+        if request.fix_requests:
+            improvement_context += f"\n추가 수정 요청: {request.fix_requests}"
 
-    variant_ids = ["A", "B", "C"]
-    # asyncio.gather: generate_ad와 동일하게 개선 variant A/B/C를 동시에 생성.
-    variants = await asyncio.gather(
-        *[
-            _build_variant(
-                variant_id=vid,
-                generation_id=generation_id,
-                plan=plan,
-                strategy_output=so,
-                product_analysis=improve_analysis,
-                size=request.size,
-                brand_color=request.brand_color,
-                tone=request.tone,
-            )
-            for vid, plan, so in zip(
-                variant_ids[: len(plans)], plans, strategy_outputs, strict=False
-            )
-        ]
-    )
+        strategy_outputs = await plan_strategies(
+            product_analysis=product_analysis,
+            improvement_context=improvement_context,
+        )
+        plans = _to_strategy_plans(strategy_outputs)
+
+        variant_ids = ["A", "B", "C"]
+        variants = await asyncio.gather(
+            *[
+                _build_variant(
+                    variant_id=vid,
+                    generation_id=generation_id,
+                    plan=plan,
+                    strategy_output=so,
+                    product_analysis=product_analysis,
+                    size=request.size,
+                    brand_color=request.brand_color,
+                    tone=request.tone,
+                    original_image_bytes=original_image_bytes,  # Edit API로 원본 수정
+                    improvement_context=improvement_context,
+                )
+                for vid, plan, so in zip(
+                    variant_ids[: len(plans)], plans, strategy_outputs, strict=False
+                )
+            ]
+        )
+    else:
+        # 직접 수정 모드: 원본 이미지를 Edit API로 수정
+        improvement_context = request.fix_requests or "전반적인 광고 품질을 개선하세요."
+
+        strategy_outputs = await plan_strategies(
+            product_analysis=product_analysis,
+            improvement_context=improvement_context,
+        )
+        plans = _to_strategy_plans(strategy_outputs)
+
+        variant_ids = ["A", "B", "C"]
+        variants = await asyncio.gather(
+            *[
+                _build_variant(
+                    variant_id=vid,
+                    generation_id=generation_id,
+                    plan=plan,
+                    strategy_output=so,
+                    product_analysis=product_analysis,
+                    size=request.size,
+                    brand_color=request.brand_color,
+                    tone=request.tone,
+                    original_image_bytes=original_image_bytes,  # Edit API 사용
+                    improvement_context=improvement_context,
+                )
+                for vid, plan, so in zip(
+                    variant_ids[: len(plans)], plans, strategy_outputs, strict=False
+                )
+            ]
+        )
 
     return GenerateResult(
         generation_id=generation_id,

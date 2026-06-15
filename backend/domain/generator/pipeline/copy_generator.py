@@ -78,7 +78,15 @@ _USER_TEMPLATE = """\
   "headline": "헤드라인 (20자 이내 자연스러운 한국어)",
   "body": "본문 (50자 이내 자연스러운 한국어 문장)",
   "cta": "CTA (10자 이내)"
-}}"""
+}}
+{improvement_section}"""
+
+_IMPROVEMENT_SECTION = """\
+
+## 개선 방향 (최우선 반영)
+{improvement_context}
+
+기존 광고의 문제점을 해결하는 방향으로 카피를 작성하세요."""
 
 
 @traceable(name="CopyGenerator", metadata={"pipeline": "generator"})
@@ -87,7 +95,14 @@ async def generate_copy(
     strategy_output: StrategyOutput,
     image_analysis: ImageAnalysis,
     template: TemplateType,
+    improvement_context: str | None = None,
 ) -> AdCopy:
+    improvement_section = (
+        _IMPROVEMENT_SECTION.format(improvement_context=improvement_context)
+        if improvement_context
+        else ""
+    )
+
     response = await _client.chat.completions.create(
         model="gpt-4o-mini",
         temperature=0.5,
@@ -105,9 +120,8 @@ async def generate_copy(
                     mood=image_analysis.mood,
                     composition=image_analysis.composition,
                     brightness=image_analysis.brightness,
-                    clear_zones=image_analysis.clear_zones,
-                    suggested_text_color=image_analysis.suggested_text_color,
                     layout_guide=_TEMPLATE_COPY_GUIDE[template],
+                    improvement_section=improvement_section,
                 ),
             },
         ],

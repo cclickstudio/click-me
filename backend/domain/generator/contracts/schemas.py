@@ -23,9 +23,12 @@ class ImproveRequest(BaseModel):
     """개선모드 입력."""
 
     existing_ad_s3_key: str
-    simulation_summary: str  # 시뮬레이션 결과 핵심 내용
-    product_name: str | None = None  # 이미지 프롬프트에 사용; 없으면 기존 광고 S3 키로 대체
-    fix_requests: str | None = None  # 추가 수정 요청사항
+    simulation_summary: str | None = None  # 시뮬레이션 기반 개선 시 입력; 없으면 직접 수정 모드
+    product_name: str | None = None
+    description: str | None = None  # 있으면 Vision 역분석 결과 보강에 사용
+    target: str | None = None
+    objective: str | None = None
+    fix_requests: str | None = None  # 직접 수정 요청사항 (두 모드 공통)
     brand_color: str | None = None
     tone: str | None = None
     size: AdSize = AdSize.SQUARE
