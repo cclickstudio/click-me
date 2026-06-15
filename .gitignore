@@ -32,6 +32,7 @@ node_modules/
 .pnpm-store/
 .next/
 out/
+*.tsbuildinfo
 
 # ── Environment files ────────────────────────────
 .env
