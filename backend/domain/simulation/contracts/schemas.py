@@ -28,6 +28,11 @@ class SimulationRunRequest(BaseModel):
     target_mode: TargetMode = TargetMode.AUTO
     sample_size: int = Field(default=20, ge=1, le=1000)
     allocation: Allocation = "proportional"
+    # 선언 의도(광고 세부사항) — 의도 교차검증(§3.5-3) 비교 기준. 없으면 차원 스킵.
+    ad_title: str | None = None  # 광고 제목 → message 차원(선언 핵심 메시지)
+    product_category: str | None = None  # 제품 카테고리 → category 차원
+    ad_objective: str | None = None  # 캠페인 목표 → objective 차원
+    service_class: int | None = None  # 상품·서비스 분류(NICE 1~45) — 메타데이터(교차검증 차원 아님)
 
 
 class AdInterpretation(BaseModel):
@@ -36,6 +41,7 @@ class AdInterpretation(BaseModel):
     ad_id: str
     structured_analysis: dict[str, Any] = Field(default_factory=dict)
     detected_industry: str | None = None
+    detected_objective: str | None = None  # 감지 캠페인 목표 — objective 차원 교차검증용
     detected_target: str | None = None
     detected_message: str | None = None
     intent_mismatch: bool = False

@@ -23,9 +23,11 @@ class GeminiAdInterpreter:
     async def interpret(self, request: SimulationRunRequest) -> AdInterpretation:
         if not request.ad_content and not request.ad_image_url:
             return AdInterpretation(ad_id=request.ad_id, model_version=f"{self.version}-empty")
+        # 앵커링 방지(§3.5-3) — 선언 의도(product_category·ad_objective·ad_title)는 주입하지 않는다.
         prompt = (
             "다음 광고(카피/이미지)를 분석해 아래 JSON만 출력하라(코드펜스 없이).\n"
-            '{"detected_industry": "업종", "detected_target": "핵심 타깃", '
+            '{"detected_industry": "업종/제품 카테고리", "detected_objective": "광고 목적'
+            '(인지/구매전환/브랜딩 등)", "detected_target": "핵심 타깃", '
             '"detected_message": "핵심 메시지 한 문장"}\n\n'
             f"[광고 카피]\n{request.ad_content or '(텍스트 없음 — 이미지 참고)'}"
         )
@@ -42,6 +44,7 @@ class GeminiAdInterpreter:
             ad_id=request.ad_id,
             structured_analysis=result,
             detected_industry=result.get("detected_industry"),
+            detected_objective=result.get("detected_objective"),
             detected_target=result.get("detected_target"),
             detected_message=result.get("detected_message"),
             model_version=f"{self.version}-vision" if used_vision else self.version,
