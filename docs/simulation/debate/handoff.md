@@ -1,11 +1,11 @@
 # 작업 인수인계 노트 (세션 이어가기용)
 
 > 노트북 세션을 집 데스크탑 새 세션에서 그대로 이어가기 위한 맥락 전체.
-> 같은 디렉토리의 `pipeline-piece.md`(파이프라인 조각)와 상위 `docs/simulation/persona-debate-pipeline.md`(토론 설계)와 함께 읽을 것.
+> 같은 디렉토리의 `pipeline-piece.md`(파이프라인 조각)와 `persona-debate-pipeline.md`(토론 설계)와 함께 읽을 것.
 
 ## 0. 프로젝트 한 줄
 
-ClickMe — 집행 전 AI 가상 소비자에게 광고를 테스트하고 집행 후 성과를 추적하는 광고 전주기 플랫폼. 작업 브랜치 `feat/simulation`. 지금 다루는 영역은 **시뮬레이터 도메인(`backend/domain/simulation/`)의 페르소나 토론 파이프라인**.
+ClickMe — 집행 전 AI 가상 소비자에게 광고를 테스트하고 집행 후 성과를 추적하는 광고 전주기 플랫폼. 작업 브랜치 `feat/simulation-doyeon`. 지금 다루는 영역은 **시뮬레이터 도메인(`backend/domain/simulation/`)의 페르소나 토론 파이프라인**.
 
 ## 1. 전체 시뮬레이션 순서 (사용자 확정)
 
@@ -53,7 +53,7 @@ ClickMe — 집행 전 AI 가상 소비자에게 광고를 테스트하고 집�
 ## 4. 확인·미해결 사항
 
 - [ ] 위 **CREATE(persona_debate*) / DROP(debate_*) SQL을 실제 NeonDB에 적용했는지** 확인. (권장: CREATE 먼저 → DROP 나중. Alembic 마이그레이션으로 하는 게 팀 규칙에 맞음.)
-- [ ] **미커밋 변경 커밋·push** — `docs/db-schema.md`, `backend/api/routers/projects.py`, `backend/domain/simulation/dummy/*`, `docs/simulation/persona-debate-pipeline.md`, 본 `docs/simulation/debate/*`. (커밋 2~3개로 분리 제안: 토론 테이블 재설계 / 더미·선발 / 파이프라인 문서)
+- [ ] **미커밋 변경 커밋·push** — `docs/db-schema.md`, `backend/api/routers/projects.py`, `backend/domain/simulation/dummy/*`, `docs/simulation/debate/persona-debate-pipeline.md`, 본 `docs/simulation/debate/*`. (커밋 2~3개로 분리 제안: 토론 테이블 재설계 / 더미·선발 / 파이프라인 문서)
 - [ ] 프론트 `api.ts`의 `/api/simulate/*` 경로 불일치(별건).
 - [ ] 토론 인원 6명은 `persona-debate-pipeline.md`의 6슬롯과 일치. 만약 추후 5명으로 바꾸면 슬롯6 제거 필요(현재는 6명 유지).
 
@@ -70,7 +70,7 @@ ClickMe — 집행 전 AI 가상 소비자에게 광고를 테스트하고 집�
 
 | 무엇 | 경로 |
 | --- | --- |
-| 토론 설계(선발·배정·라운드 규칙) | `docs/simulation/persona-debate-pipeline.md` |
+| 토론 설계(선발·배정·라운드 규칙) | `docs/simulation/debate/persona-debate-pipeline.md` |
 | 파이프라인 조각(8~11) | `docs/simulation/debate/pipeline-piece.md` |
 | DB 스키마(v3.1, 새 토론 테이블) | `docs/db-schema.md` |
 | 더미 5개 | `backend/domain/simulation/dummy/reaction-dummy1~5.json` |
