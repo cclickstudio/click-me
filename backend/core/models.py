@@ -4,7 +4,18 @@ import uuid
 from datetime import datetime
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, SmallInteger, String, Text, func
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Integer,
+    SmallInteger,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -219,3 +230,100 @@ class AdPublishLog(Base):
     response_payload: Mapped[dict | None] = mapped_column(JSONB)
     error_message: Mapped[str | None] = mapped_column(Text)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+# ──────────────────────────────────────────────
+# 광고 매니지먼트 (🤝 공동, R&R §7) — contracts/schemas.py 계약과 1:1
+# 컬럼 규칙: 타임스탬프=TIMESTAMPTZ / 금액=BIGINT KRW / 유연 페이로드=JSONB /
+#           판정·조인 신호=일반 컬럼+인덱스 / enum=VARCHAR + 앱 레벨 검증.
+# tenant_id = organization_id 느슨 참조(FK 없음, 멀티테넌트 정렬용).
+# ──────────────────────────────────────────────
+_TS = DateTime(timezone=True)
+
+
+class ActionProposalRow(Base):
+    """🅱 생산 제안 (ActionProposal 계약). 판정·조인 신호는 컬럼, 나머지는 payload."""
+
+    __tablename__ = "action_proposals"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    proposal_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    ad_account_id: Mapped[str] = mapped_column(String(64))
+    action_type: Mapped[str] = mapped_column(String(48))
+    action_tier: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(24), index=True)
+    budget_before_krw: Mapped[int] = mapped_column(BigInteger)
+    budget_after_krw: Mapped[int] = mapped_column(BigInteger)
+    max_total_spend_krw: Mapped[int] = mapped_column(BigInteger)
+    expected_state_version: Mapped[str] = mapped_column(String(48))
+    proposal_hash: Mapped[str] = mapped_column(String(64))
+    approval_policy_version: Mapped[str] = mapped_column(String(16))
+    expires_at: Mapped[datetime] = mapped_column(_TS, index=True)
+    # evidence_metrics · hypothesis · confidence · metrics_as_of · target_object_ids
+    payload: Mapped[dict] = mapped_column(JSONB)
+    created_at: Mapped[datetime] = mapped_column(_TS, server_default=func.now())
+
+
+class ApprovalRow(Base):
+    """🅰 승인 기록 (ApprovedAction 계약). 복합 UNIQUE = 중복승인 멱등 (R&R P2)."""
+
+    __tablename__ = "approvals"
+    __table_args__ = (
+        UniqueConstraint("proposal_id", "approval_policy_version", name="uq_approval_idem"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    approval_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)  # 계약 PK
+    proposal_id: Mapped[str] = mapped_column(String(64), index=True)
+    proposal_hash: Mapped[str] = mapped_column(String(64))  # executor 재검증용
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    approver_id: Mapped[str] = mapped_column(String(64))  # 사용자 ID 또는 "AUTO"
+    action_tier: Mapped[int] = mapped_column(Integer)
+    approval_policy_version: Mapped[str] = mapped_column(String(16))
+    expected_state_version: Mapped[str] = mapped_column(String(48))
+    execution_mode: Mapped[str] = mapped_column(String(20))
+    expires_at: Mapped[datetime] = mapped_column(_TS)  # 승인 자체 만료 (제안 TTL보다 짧음)
+    approved_at: Mapped[datetime] = mapped_column(_TS, server_default=func.now())
+
+
+class AuditEventRow(Base):
+    """append-only 감사 로그 (게이트 #7). UPDATE/DELETE 코드 경로 없음."""
+
+    __tablename__ = "audit_events"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    proposal_id: Mapped[str] = mapped_column(String(64), index=True)
+    approval_id: Mapped[str | None] = mapped_column(String(64))  # 승인 전 이벤트는 null
+    stage: Mapped[str] = mapped_column(String(24))  # validate / execute / result
+    outcome: Mapped[str] = mapped_column(String(48))
+    detail: Mapped[dict] = mapped_column(JSONB)
+    at: Mapped[datetime] = mapped_column(_TS, server_default=func.now())
+
+
+class ExecutionRunRow(Base):
+    """🅱 실행 워크플로 상태 + 플랫폼 스냅샷(부분 실패 보존)."""
+
+    __tablename__ = "execution_runs"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    run_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    approval_id: Mapped[str] = mapped_column(String(64), index=True)
+    proposal_id: Mapped[str] = mapped_column(String(64), index=True)
+    status: Mapped[str] = mapped_column(String(24))  # WorkflowStatus
+    result_status: Mapped[str | None] = mapped_column(String(24))  # ResultStatus
+    failure_reason: Mapped[str | None] = mapped_column(String(48))
+    platform_snapshot: Mapped[dict] = mapped_column(JSONB)
+    executed_at: Mapped[datetime] = mapped_column(_TS, server_default=func.now())
+
+
+class IdempotencyKeyRow(Base):
+    """멱등키 선점 — key UNIQUE(PK) + INSERT ON CONFLICT DO NOTHING (게이트 #1)."""
+
+    __tablename__ = "idempotency_keys"
+
+    key: Mapped[str] = mapped_column(String(80), primary_key=True)
+    approval_id: Mapped[str] = mapped_column(String(64), index=True)
+    claimed: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(_TS, server_default=func.now())
