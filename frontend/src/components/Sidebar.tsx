@@ -34,7 +34,7 @@ const mainNav = [
 
 const adminNav = [
   {
-    label: '기업 승인', href: '/admin/companies',
+    label: '조직 관리', href: '/admin/companies',
     icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M9 12l2 2 4-4" /><rect x="2" y="7" width="20" height="14" rx="2" /><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2" /></svg>,
   },
   {
@@ -43,10 +43,13 @@ const adminNav = [
   },
 ];
 
+// COMPANY는 채팅·시뮬레이션 실행·제너레이터 실행 메뉴 숨김
+const COMPANY_HIDDEN_NAV = ['/chat', '/simulation', '/generator'];
+
 const companyNav = [
   {
-    label: '멤버 승인', href: '/company/members',
-    icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><line x1="19" y1="8" x2="19" y2="14" /><line x1="22" y1="11" x2="16" y2="11" /></svg>,
+    label: '팀 관리', href: '/company/teams',
+    icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="6" height="18" rx="1" /><rect x="10.5" y="3" width="6" height="12" rx="1" /><rect x="18" y="3" width="3" height="8" rx="1" /></svg>,
   },
 ];
 
@@ -85,7 +88,7 @@ export default function Sidebar() {
 
   const isAdmin = user?.role === 'ADMIN';
   const isCompany = user?.role === 'COMPANY';
-  const isOrgMember = user?.role === 'COMPANY' || user?.role === 'USER';
+  const isUser = user?.role === 'USER';
 
   useEffect(() => {
     if (!isAdmin) return;
@@ -116,13 +119,16 @@ export default function Sidebar() {
 
       {/* 네비게이션 */}
       <nav className="flex-1 px-3 py-3 overflow-y-auto space-y-0.5">
-        {mainNav.map((item) => {
-          const active =
-            pathname === item.href ||
-            (item.href === '/simulation' && pathname.startsWith('/simulations/')) ||
-            (item.href === '/generator' && pathname.startsWith('/generations/'));
-          return <NavItem key={item.href} {...item} active={active} />;
-        })}
+        {/* COMPANY는 채팅·시뮬/제너 실행 메뉴만 숨김 (대시보드·매니지먼트·프로젝트는 허용) */}
+        {mainNav
+          .filter((item) => !isCompany || !COMPANY_HIDDEN_NAV.includes(item.href))
+          .map((item) => {
+            const active =
+              pathname === item.href ||
+              (item.href === '/simulation' && pathname.startsWith('/simulations/')) ||
+              (item.href === '/generator' && pathname.startsWith('/generations/'));
+            return <NavItem key={item.href} {...item} active={active} />;
+          })}
 
         {/* ADMIN 전용 섹션 */}
         {isAdmin && (
@@ -140,18 +146,36 @@ export default function Sidebar() {
         )}
 
         {/* COMPANY 전용 섹션 */}
-        {isOrgMember && (
+        {isCompany && (
           <>
-            {companyNav
-              .filter((item) => isCompany || item.href !== '/company/members')
-              .map((item) => (
-                <NavItem
-                  key={item.href}
-                  {...item}
-                  active={pathname === item.href}
-                  badge={item.href === '/company/members' ? pendingMemberCount : undefined}
-                />
-              ))}
+            <SectionLabel label="기업 관리" />
+            {companyNav.map((item) => (
+              <NavItem
+                key={item.href}
+                {...item}
+                active={pathname === item.href}
+                badge={item.href === '/company/members' ? pendingMemberCount : undefined}
+              />
+            ))}
+          </>
+        )}
+
+        {/* USER 전용 — 내 조직 / 내 정보 관리 */}
+        {isUser && (
+          <>
+            <SectionLabel label="계정" />
+            <NavItem
+              href="/my-org"
+              label="내 조직"
+              active={pathname === '/my-org'}
+              icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 21h18" /><path d="M5 21V7l8-4v18" /><path d="M19 21V11l-6-4" /><path d="M9 9v.01M9 12v.01M9 15v.01M9 18v.01" /></svg>}
+            />
+            <NavItem
+              href="/profile"
+              label="내 정보 관리"
+              active={pathname === '/profile'}
+              icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>}
+            />
           </>
         )}
       </nav>
@@ -161,7 +185,7 @@ export default function Sidebar() {
         {user ? (
           <div className="px-3 py-2.5 rounded-xl bg-[#F9FAFB] dark:bg-[#252D3D] mb-1">
             <p className="text-xs font-semibold text-[#191F28] dark:text-[#F2F4F6] truncate">{user.name}</p>
-            <p className="text-[10px] text-[#8B95A1] dark:text-[#6B7280] truncate">{user.email}</p>
+            <p className="text-[10px] text-[#8B95A1] dark:text-[#6B7280] truncate">{user.login_id}</p>
             <span className="inline-block mt-1 text-[9px] font-medium px-1.5 py-0.5 rounded bg-[#EBF3FF] dark:bg-[#1E3A5F] text-[#3182F6]">
               {user.role}
             </span>

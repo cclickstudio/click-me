@@ -9,7 +9,7 @@ import { authApi } from '@/lib/authApi';
 export default function SignInPage() {
   const router = useRouter();
   const { login } = useAuth();
-  const [email, setEmail] = useState('');
+  const [loginId, setLoginId] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -19,7 +19,7 @@ export default function SignInPage() {
     setError('');
     setLoading(true);
     try {
-      const res = await authApi.login({ email, password });
+      const res = await authApi.login({ login_id: loginId, password });
       login(res.access_token, res.user);
       router.push('/dashboard');
     } catch (err) {
@@ -40,10 +40,10 @@ export default function SignInPage() {
         <div className="bg-white dark:bg-[#1C2333] rounded-2xl border border-[#E5E8EB] dark:border-[#2D3748] p-8 shadow-sm transition-colors">
           <form className="space-y-4" onSubmit={handleSubmit}>
             <div>
-              <label className="block text-sm font-medium text-[#4E5968] dark:text-[#9CA3AF] mb-1.5">이메일</label>
+              <label className="block text-sm font-medium text-[#4E5968] dark:text-[#9CA3AF] mb-1.5">아이디</label>
               <input
-                type="email" value={email} onChange={(e) => setEmail(e.target.value)} required
-                placeholder="example@email.com"
+                type="text" value={loginId} onChange={(e) => setLoginId(e.target.value)} required
+                placeholder="아이디를 입력하세요"
                 className="w-full px-4 py-3 rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] text-sm text-[#191F28] dark:text-[#F2F4F6] placeholder-[#B0B8C1] dark:placeholder-[#4B5563] focus:outline-none focus:border-[#3182F6] focus:ring-2 focus:ring-[#3182F6]/10 transition-colors bg-white dark:bg-[#252D3D]"
               />
             </div>
@@ -69,9 +69,8 @@ export default function SignInPage() {
           </form>
 
           <div className="mt-6 pt-6 border-t border-[#F2F4F6] dark:border-[#1E2A3A]">
-            <p className="text-center text-sm text-[#8B95A1] dark:text-[#6B7280]">
-              아직 계정이 없으신가요?{' '}
-              <Link href="/sign-up" className="text-[#3182F6] font-medium hover:underline">회원가입</Link>
+            <p className="text-center text-xs text-[#8B95A1] dark:text-[#6B7280]">
+              계정은 관리자가 직접 발급합니다. 필요하면 담당자에게 문의하세요.
             </p>
           </div>
         </div>

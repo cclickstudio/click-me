@@ -118,7 +118,6 @@ function ProjectCard({ project, onDelete }: { project: Project; onDelete: (id: s
                   <table className="w-full text-xs">
                     <thead>
                       <tr className="text-left">
-                        <th className="pb-2 font-medium text-[#8B95A1] pr-4">ID</th>
                         <th className="pb-2 font-medium text-[#8B95A1] pr-4">상태</th>
                         <th className="pb-2 font-medium text-[#8B95A1] pr-4">샘플 수</th>
                         <th className="pb-2 font-medium text-[#8B95A1] pr-4">실행자</th>
@@ -132,7 +131,6 @@ function ProjectCard({ project, onDelete }: { project: Project; onDelete: (id: s
                           onClick={() => router.push(`/simulations/${s.id}`)}
                           className="cursor-pointer hover:bg-[#F2F4F6] dark:hover:bg-[#252D3D] transition-colors"
                         >
-                          <td className="py-1.5 pr-4 font-mono text-[#4E5968] dark:text-[#9CA3AF]">{s.id.slice(0,8)}…</td>
                           <td className="py-1.5 pr-4">
                             <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-medium ${simStatusStyle[s.status] ?? ''}`}>
                               {simStatusLabel[s.status] ?? s.status}
@@ -159,7 +157,6 @@ function ProjectCard({ project, onDelete }: { project: Project; onDelete: (id: s
                   <table className="w-full text-xs">
                     <thead>
                       <tr className="text-left">
-                        <th className="pb-2 font-medium text-[#8B95A1] pr-4">ID</th>
                         <th className="pb-2 font-medium text-[#8B95A1] pr-4">상품명</th>
                         <th className="pb-2 font-medium text-[#8B95A1] pr-4">상태</th>
                         <th className="pb-2 font-medium text-[#8B95A1] pr-4">실행자</th>
@@ -173,7 +170,6 @@ function ProjectCard({ project, onDelete }: { project: Project; onDelete: (id: s
                           onClick={() => router.push(`/generations/${g.id}`)}
                           className="cursor-pointer hover:bg-[#F2F4F6] dark:hover:bg-[#252D3D] transition-colors"
                         >
-                          <td className="py-1.5 pr-4 font-mono text-[#4E5968] dark:text-[#9CA3AF]">{g.id.slice(0,8)}…</td>
                           <td className="py-1.5 pr-4 text-[#4E5968] dark:text-[#9CA3AF]">{g.product_name ?? '—'}</td>
                           <td className="py-1.5 pr-4">
                             <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-medium ${genStatusStyle[g.status] ?? ''}`}>

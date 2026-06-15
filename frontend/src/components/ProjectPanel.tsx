@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useProjects } from './ProjectContext';
 import { useAuth } from './AuthProvider';
+import TrashSection from './TrashSection';
 import { getToken } from '@/lib/authApi';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
@@ -108,26 +109,27 @@ function ProjectItem({
   activeSimId,
   activeGenId,
   autoOpen,
-  myOnly,
-  myName,
+  filterNames,
   isAdmin,
+  canRun,
   isOpen,
   onToggleOpen,
 }: {
   project: { id: string; name: string; status: string; organization_name: string | null };
   isAdmin: boolean;
+  canRun: boolean; // 시뮬/제너 실행 가능 여부 (COMPANY는 false)
   activeSimId: string | null;
   activeGenId: string | null;
   autoOpen: boolean;
-  myOnly: boolean;
-  myName: string | null;
+  filterNames: string[] | null; // null=전체, 배열=해당 이름만(MY/TEAM)
   isOpen: boolean;
   onToggleOpen: (id: string) => void;
 }) {
-  const { details, loadDetails, selectedProjectId, selectProject } = useProjects();
+  const { details, loadDetails, refreshDetails, selectedProjectId, selectProject } = useProjects();
   const router = useRouter();
   const [simOpen, setSimOpen] = useState(false);
   const [genOpen, setGenOpen] = useState(false);
+  const [trashOpen, setTrashOpen] = useState(false);
 
   const d = details[project.id];
   const isLoading = isOpen && !d?.loaded;
@@ -135,8 +137,9 @@ function ProjectItem({
 
   const allSims = d?.sims ?? [];
   const allGens = d?.gens ?? [];
-  const sims = myOnly ? allSims.filter(s => s.created_by_name === myName) : allSims;
-  const gens = myOnly ? allGens.filter(g => g.created_by_name === myName) : allGens;
+  const sims = filterNames ? allSims.filter(s => s.created_by_name != null && filterNames.includes(s.created_by_name)) : allSims;
+  const gens = filterNames ? allGens.filter(g => g.created_by_name != null && filterNames.includes(g.created_by_name)) : allGens;
+  const trashed = d?.trashed ?? [];
 
   useEffect(() => {
     if (!autoOpen) return;
@@ -229,7 +232,7 @@ function ProjectItem({
                 <div className="ml-4 space-y-0.5">
                   {sims.length === 0 ? (
                     <p className="text-xs text-[#B0B8C1] px-2 py-1">
-                      {myOnly ? '내가 실행한 내역 없음' : '내역 없음'}
+                      {filterNames ? '해당 내역 없음' : '내역 없음'}
                     </p>
                   ) : sims.map(s => {
                     const isActive = s.id === activeSimId;
@@ -252,15 +255,17 @@ function ProjectItem({
                       </Link>
                     );
                   })}
-                  <button
-                    onClick={goToSim}
-                    className="w-full flex items-center gap-1.5 px-2 py-1.5 rounded-md text-xs text-[#3182F6] hover:bg-[#EBF3FF] dark:hover:bg-[#1E3A5F] transition-colors"
-                  >
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                      <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
-                    </svg>
-                    시뮬레이션 추가
-                  </button>
+                  {canRun && (
+                    <button
+                      onClick={goToSim}
+                      className="w-full flex items-center gap-1.5 px-2 py-1.5 rounded-md text-xs text-[#3182F6] hover:bg-[#EBF3FF] dark:hover:bg-[#1E3A5F] transition-colors"
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+                      </svg>
+                      시뮬레이션 추가
+                    </button>
+                  )}
                 </div>
               )}
 
@@ -281,7 +286,7 @@ function ProjectItem({
                 <div className="ml-4 space-y-0.5">
                   {gens.length === 0 ? (
                     <p className="text-xs text-[#B0B8C1] px-2 py-1">
-                      {myOnly ? '내가 실행한 내역 없음' : '내역 없음'}
+                      {filterNames ? '해당 내역 없음' : '내역 없음'}
                     </p>
                   ) : gens.map(g => {
                     const isActive = g.id === activeGenId;
@@ -304,16 +309,45 @@ function ProjectItem({
                       </Link>
                     );
                   })}
-                  <button
-                    onClick={goToGen}
-                    className="w-full flex items-center gap-1.5 px-2 py-1.5 rounded-md text-xs text-[#3182F6] hover:bg-[#EBF3FF] dark:hover:bg-[#1E3A5F] transition-colors"
-                  >
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                      <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
-                    </svg>
-                    제너레이터 추가
-                  </button>
+                  {canRun && (
+                    <button
+                      onClick={goToGen}
+                      className="w-full flex items-center gap-1.5 px-2 py-1.5 rounded-md text-xs text-[#3182F6] hover:bg-[#EBF3FF] dark:hover:bg-[#1E3A5F] transition-colors"
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+                      </svg>
+                      제너레이터 추가
+                    </button>
+                  )}
                 </div>
+              )}
+
+              {/* 채팅 — 후순위(데이터 미연동, 칸만) */}
+              <div className="w-full flex items-center gap-2 px-2 py-1.5">
+                <span className="w-[13px] shrink-0" />
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-[#8B95A1] shrink-0">
+                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                </svg>
+                <span className="text-xs font-semibold text-[#4E5968] dark:text-[#9CA3AF] uppercase tracking-wide">채팅 (0)</span>
+              </div>
+
+              {/* 휴지통 — 펼치면 삭제된 시뮬/제너, 클릭 시 상세 */}
+              <button
+                onClick={() => setTrashOpen(v => !v)}
+                className="w-full flex items-center gap-2 px-2 py-1.5 hover:bg-[#F2F4F6] dark:hover:bg-[#252D3D] rounded-md transition-colors"
+              >
+                <ChevronIcon open={trashOpen} />
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-[#8B95A1] shrink-0">
+                  <polyline points="3 6 5 6 21 6" />
+                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                </svg>
+                <span className="text-xs font-semibold text-[#4E5968] dark:text-[#9CA3AF] uppercase tracking-wide">
+                  휴지통{trashed.length > 0 ? ` (${trashed.length})` : ''}
+                </span>
+              </button>
+              {trashOpen && (
+                <TrashSection projectId={project.id} trashed={trashed} onChanged={() => refreshDetails(project.id)} />
               )}
             </>
           )}
@@ -328,7 +362,8 @@ export default function ProjectPanel({ collapsed, onToggle }: { collapsed: boole
   const pathname = usePathname();
   const { projects, loading, details, loadDetails, loadAll, selectProject, refresh } = useProjects();
   const { user } = useAuth();
-  const [myOnly, setMyOnly] = useState(false);
+  const [view, setView] = useState<'ALL' | 'TEAM' | 'MY'>('ALL');
+  const [teamNames, setTeamNames] = useState<string[]>([]);
   const [openProjectId, setOpenProjectId] = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
 
@@ -365,6 +400,34 @@ export default function ProjectPanel({ collapsed, onToggle }: { collapsed: boole
     await refresh();
   };
 
+  const myName = user?.name ?? null;
+
+  // TEAM 토글용 — 내 팀 멤버 이름 목록 (팀 없으면 빈 배열)
+  useEffect(() => {
+    fetch(`${API_BASE}/api/company/my-team-members`, { headers: { Authorization: `Bearer ${getToken()}` } })
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => { if (d && Array.isArray(d.member_names)) setTeamNames(d.member_names); })
+      .catch(() => {});
+  }, []);
+
+  // null=전체(ALL), 배열=해당 이름만(MY/TEAM)
+  const filterNames: string[] | null =
+    view === 'ALL' ? null : view === 'MY' ? (myName ? [myName] : []) : teamNames;
+
+  const changeView = (v: 'ALL' | 'TEAM' | 'MY') => {
+    setView(v);
+    if (v !== 'ALL') loadAll();
+  };
+
+  const projectMatches = (p: { id: string; created_by_name?: string | null }) => {
+    if (!filterNames) return true;
+    if (p.created_by_name && filterNames.includes(p.created_by_name)) return true;
+    const d = details[p.id];
+    if (!d?.loaded) return true;
+    return d.sims.some(s => s.created_by_name != null && filterNames.includes(s.created_by_name))
+      || d.gens.some(g => g.created_by_name != null && filterNames.includes(g.created_by_name));
+  };
+
   // ── 접힌 상태 ──
   if (collapsed) {
     return (
@@ -385,7 +448,7 @@ export default function ProjectPanel({ collapsed, onToggle }: { collapsed: boole
   // ── 펼친 상태 ──
   return (
     <>
-      <aside className="fixed top-0 left-56 h-full w-60 bg-[#FAFBFC] dark:bg-[#161B27] border-r border-[#E5E8EB] dark:border-[#2D3748] flex flex-col z-30 transition-all duration-200">
+      <aside className="fixed top-0 left-56 h-full w-72 bg-[#FAFBFC] dark:bg-[#161B27] border-r border-[#E5E8EB] dark:border-[#2D3748] flex flex-col z-30 transition-all duration-200">
         {/* 헤더 */}
         <div className="h-14 flex items-center justify-between px-3 border-b border-[#E5E8EB] dark:border-[#2D3748] shrink-0">
           {/* 접기 버튼 */}
@@ -413,24 +476,19 @@ export default function ProjectPanel({ collapsed, onToggle }: { collapsed: boole
                 <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
               </svg>
             </button>
-            {/* ALL / MY 토글 */}
+            {/* ALL / TEAM / MY 토글 */}
             <div className="flex items-center gap-0.5 bg-[#F2F4F6] dark:bg-[#252D3D] rounded-lg p-0.5">
-              <button
-                onClick={() => setMyOnly(false)}
-                className={`px-1.5 py-0.5 rounded-md text-[10px] font-medium transition-colors ${
-                  !myOnly
-                    ? 'bg-white dark:bg-[#1C2333] text-[#191F28] dark:text-[#F2F4F6] shadow-sm'
-                    : 'text-[#8B95A1] dark:text-[#6B7280]'
-                }`}
-              >ALL</button>
-              <button
-                onClick={() => { setMyOnly(true); loadAll(); }}
-                className={`px-1.5 py-0.5 rounded-md text-[10px] font-medium transition-colors ${
-                  myOnly
-                    ? 'bg-white dark:bg-[#1C2333] text-[#191F28] dark:text-[#F2F4F6] shadow-sm'
-                    : 'text-[#8B95A1] dark:text-[#6B7280]'
-                }`}
-              >MY</button>
+              {(['ALL', 'TEAM', 'MY'] as const).map(v => (
+                <button
+                  key={v}
+                  onClick={() => changeView(v)}
+                  className={`px-1.5 py-0.5 rounded-md text-[10px] font-medium transition-colors ${
+                    view === v
+                      ? 'bg-white dark:bg-[#1C2333] text-[#191F28] dark:text-[#F2F4F6] shadow-sm'
+                      : 'text-[#8B95A1] dark:text-[#6B7280]'
+                  }`}
+                >{v}</button>
+              ))}
             </div>
 
             {/* + 버튼 */}
@@ -460,38 +518,46 @@ export default function ProjectPanel({ collapsed, onToggle }: { collapsed: boole
                 첫 프로젝트 만들기
               </button>
             </div>
-          ) : myOnly && projects.every(p => {
-            const myName = user?.name ?? null;
-            if (p.created_by_name === myName) return false;
-            const d = details[p.id];
-            if (!d?.loaded) return false;
-            return !d.sims.some(s => s.created_by_name === myName) && !d.gens.some(g => g.created_by_name === myName);
-          }) ? (
-            <p className="text-xs text-[#B0B8C1] px-3 py-2">참여한 프로젝트가 없습니다</p>
+          ) : filterNames && projects.every(p => !projectMatches(p)) ? (
+            <p className="text-xs text-[#B0B8C1] px-3 py-2">
+              {view === 'TEAM' ? '우리 팀 작업 내역이 없습니다' : '참여한 프로젝트가 없습니다'}
+            </p>
           ) : (
             <div className="space-y-0.5">
-              {(myOnly ? projects.filter(p => {
-                const myName = user?.name ?? null;
-                if (p.created_by_name === myName) return true;
-                const d = details[p.id];
-                if (!d?.loaded) return true;
-                return d.sims.some(s => s.created_by_name === myName) || d.gens.some(g => g.created_by_name === myName);
-              }) : projects).map(p => (
+              {(filterNames ? projects.filter(projectMatches) : projects).map(p => (
                 <ProjectItem
                   key={p.id}
                   project={p}
                   activeSimId={activeSimId}
                   activeGenId={activeGenId}
                   autoOpen={p.id === activeProjectId}
-                  myOnly={myOnly}
-                  myName={user?.name ?? null}
+                  filterNames={filterNames}
                   isAdmin={user?.role === 'ADMIN'}
+                  canRun={user?.role !== 'COMPANY'}
                   isOpen={openProjectId === p.id}
                   onToggleOpen={(id) => setOpenProjectId(prev => prev === id ? null : id)}
                 />
               ))}
             </div>
           )}
+        </div>
+
+        {/* 휴지통 */}
+        <div className="border-t border-[#E5E8EB] dark:border-[#2D3748] shrink-0 p-2">
+          <Link
+            href="/trash"
+            className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm transition-colors ${
+              pathname === '/trash'
+                ? 'bg-[#EBF3FF] dark:bg-[#1E3A5F] text-[#3182F6] font-medium'
+                : 'text-[#8B95A1] dark:text-[#6B7280] hover:bg-[#F2F4F6] dark:hover:bg-[#252D3D] hover:text-[#3182F6]'
+            }`}
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="shrink-0">
+              <polyline points="3 6 5 6 21 6" />
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+            </svg>
+            휴지통
+          </Link>
         </div>
       </aside>
 
