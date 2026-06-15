@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import AppLayout from '@/components/AppLayout';
 import { useAuth } from '@/components/AuthProvider';
+import { safeRandomUUID } from '@/lib/utils';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
@@ -135,7 +136,8 @@ export default function DashboardPage() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
-  const sessionId = useRef(crypto.randomUUID());
+  const sessionId = useRef<string>("");
+  if (!sessionId.current) sessionId.current = safeRandomUUID();
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {

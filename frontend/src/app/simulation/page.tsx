@@ -8,7 +8,7 @@ import { SimulatorProgress } from "@/components/simulator/SimulatorProgress";
 import { DistributionChart } from "@/components/ui/DistributionChart";
 import { KpiCard } from "@/components/ui/KpiCard";
 import { Disclaimer } from "@/components/ui/Disclaimer";
-import { formatPercent } from "@/lib/utils";
+import { formatPercent, safeRandomUUID } from "@/lib/utils";
 import { api } from "@/lib/api";
 import type { SimulationResult, SSEProgressEvent } from "@/lib/types";
 
@@ -130,15 +130,15 @@ export default function SimulationPage() {
         adAnalysis = await api.ads.analyzeImage({ ad_id: uploadRes.ad_id, image_url: uploadRes.s3_url });
       } else {
         adAnalysis = await api.ads.analyzeText({
-          ad_id: crypto.randomUUID(),
+          ad_id: safeRandomUUID(),
           text_content: { headline: textInput.headline, body: textInput.body, cta: textInput.cta },
         });
       }
       const simRes = await api.simulate.start({
-        simulation_id: crypto.randomUUID(),
+        simulation_id: safeRandomUUID(),
         ad_analysis: adAnalysis,
         objective: objectives[0] ?? "conversion",
-        persona_set: { id: crypto.randomUUID(), size: personaCount, composition: {} },
+        persona_set: { id: safeRandomUUID(), size: personaCount, composition: {} },
         project_id: selectedProject?.id ?? null,
         ad_title: adTitle || textInput.headline || "광고 시뮬레이션",
       }) as { task_id: string };
