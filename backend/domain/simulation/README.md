@@ -28,7 +28,7 @@
 domain/simulation/
 ├── contracts/      팀 간 계약 — DTO 스키마 · enum(거부/감정/이탈 태그). 외부 의존 없음
 ├── data/           grounding 데이터 — 한국 통계 분포 JSON + 로더 (data/simulation/)
-├── tools/          순수 빌딩블록 — 페르소나 속성 샘플링 · 고정 패널 · 집계 엔진 (LLM 거의 없음)
+├── tools/          순수 빌딩블록 — 페르소나 속성 샘플링 · 고정 패널 · 집계 엔진 · Meta 도달성(reachability) (LLM 거의 없음)
 ├── adapters/       외부 연동 — mock 어댑터 + 실 LLM(Gemini) 어댑터
 ├── graph/          오케스트레이션 흐름 정의 — LangGraph(전체 파이프라인 + 반응 유닛)
 ├── service/        실행 구동 — 그래프를 돌리고 진행률(SSE)·결과 관리
@@ -98,6 +98,8 @@ service ──구동──▶ graph ──(노드가 호출)──▶ tools · a
 | 인물 서사 | Gemini | ✅ real |
 
 > 광고 해석·루브릭·반응의 **실 LLM 어댑터는 아직 mock**(P4 예정). 즉 현재 KPI는 구조·계약 검증용이며, 실 모델 연결 후 의미 있는 값이 된다.
+
+> **Meta 전용 도달성 추출(§Tier1).** 제품이 Meta 광고만 취급 → 단계1 표본을 `인구 × 소셜피드 도달 비중`으로 추출(`tools/reachability.py`, `persona_sampler.reachability_sampling`, `wiring`에서 ON). 표본이 메타 도달층(젊은 층)에 집중되며 self-weighting 유지. 노출맥락도 소셜피드 우선. generic SNS 기준 — Meta 브랜드 특정은 발표 후(Tier 2). 모집단은 "소셜피드 도달 가능 한국 소비자".
 
 ---
 
