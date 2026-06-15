@@ -31,8 +31,7 @@ class Settings(BaseSettings):
     gemini_api_key: str | None = None
 
     # LangSmith — API 키 없으면 트레이싱 비활성(로컬 기동 가능)
-    # LANGCHAIN_*(레거시)·LANGSMITH_*(신규) 둘 다 수용 (AliasChoices).
-    # 팀 합의 전까지 .env는 LANGCHAIN_* 유지.
+    # LANGCHAIN_* 사용, LANGSMITH_*도 AliasChoices로 수용.
     LANGSMITH_TRACING_V2: bool = Field(
         default=True,
         validation_alias=AliasChoices("LANGSMITH_TRACING_V2", "LANGCHAIN_TRACING_V2"),

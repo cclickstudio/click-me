@@ -134,7 +134,7 @@ class AdGenerationCandidate(Base):
     idx: Mapped[int] = mapped_column(SmallInteger)  # 0 | 1 | 2
     strategy: Mapped[dict | None] = mapped_column(JSONB)  # {strategy_type, ...}
     template_id: Mapped[str | None] = mapped_column(String(10))  # A | B | C
-    copy: Mapped[dict | None] = mapped_column(JSONB)  # {headline, subcopy, benefit_text, cta}
+    copy: Mapped[dict | None] = mapped_column(JSONB)  # {headline, body, cta}
     image_prompt: Mapped[str | None] = mapped_column(Text)
     s3_key: Mapped[str | None] = mapped_column(String(512))
     qa_result: Mapped[dict | None] = mapped_column(JSONB)  # QA Harness 7항목 결과

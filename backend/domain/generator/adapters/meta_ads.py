@@ -148,7 +148,7 @@ class MetaMarketingPublisher:
                                     "message": copy.get("headline", ""),
                                     "link": req.destination_url,
                                     "image_hash": image_hash,
-                                    "description": copy.get("benefit_text", ""),
+                                    "description": copy.get("body", ""),
                                     "call_to_action": {
                                         "type": "LEARN_MORE",
                                         "value": {"link": req.destination_url},

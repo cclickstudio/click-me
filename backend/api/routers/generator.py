@@ -1,4 +1,7 @@
-"""광고 제너레이터 API — 생성 시작 / SSE 스트림 / 결과 조회 / 후보 선택 / 이력."""
+"""광고 제너레이터 API — graph 파이프라인 기반.
+
+생성 시작(생성/개선) / SSE 스트림 / 결과 조회 / 후보 선택 / 게시 / 광고집행 / 이력.
+"""
 
 import io
 import os
@@ -175,6 +178,9 @@ async def langsmith_status():
             os.environ.get("LANGSMITH_TRACING") or os.environ.get("LANGCHAIN_TRACING_V2")
         ),
     }
+
+
+# ── graph 기반 비동기 생성 엔드포인트 ────────────────────────────────────────
 
 
 @router.post("/generations", response_model=GenerationTaskResponse)

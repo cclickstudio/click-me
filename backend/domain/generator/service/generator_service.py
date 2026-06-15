@@ -1,4 +1,7 @@
-"""광고 생성 서비스 — 파이프라인 실행, SSE 진행률, DB 영속화, 후보 선택."""
+"""광고 생성 서비스 — graph 파이프라인 실행, SSE 진행률, DB 영속화, 후보 선택·게시·집행.
+
+생성/개선 모두 graph(LangGraph) 파이프라인으로 처리한다(GenerationCreateRequest.mode로 분기).
+"""
 
 from __future__ import annotations
 
@@ -118,10 +121,10 @@ async def _persist_results(generation_id: str, final_state: dict) -> None:
                     strategy=candidate["strategy"],
                     template_id=candidate["template_id"],
                     copy=candidate["copy"],
-                    image_prompt=candidate["image_prompt"],
+                    image_prompt=candidate.get("image_prompt"),
                     s3_key=candidate["s3_key"],
                     qa_result=qa_result,
-                    qa_passed=qa_result["passed"],
+                    qa_passed=qa_result.get("overall_passed", False),
                     explanation=explanation,
                 )
             )
