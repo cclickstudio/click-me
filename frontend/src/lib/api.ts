@@ -4,7 +4,7 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const token = getToken();
-  const authHeader = token ? { Authorization: `Bearer ${token}` } : {};
+  const authHeader: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
   const res = await fetch(`${API_BASE}/api${path}`, {
     headers: { "Content-Type": "application/json", ...authHeader, ...init?.headers },
     ...init,
@@ -88,6 +88,23 @@ export const api = {
           created_at: string;
         }[];
       }>("/billing/history"),
+  },
+
+  management: {
+    run: (fault: string) => request(`/management/run?fault=${fault}`),
+    regenerate: (diagnosis: unknown) =>
+      request("/management/regenerate", { method: "POST", body: JSON.stringify({ diagnosis }) }),
+    approve: (proposal: unknown, approved: boolean) =>
+      request("/management/approve", {
+        method: "POST",
+        body: JSON.stringify({ proposal, approved, approver_id: "user_demo" }),
+      }),
+    execute: (approved_action: unknown, proposal: unknown) =>
+      request("/management/execute", {
+        method: "POST",
+        body: JSON.stringify({ approved_action, proposal }),
+      }),
+    audit: (approvalId: string) => request(`/management/audit?approval_id=${approvalId}`),
   },
 
   generator: {
