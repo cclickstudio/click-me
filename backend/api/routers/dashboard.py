@@ -4,7 +4,7 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.db import get_db
@@ -37,7 +37,9 @@ class RecentGeneration(BaseModel):
 @router.get("/stats", response_model=DashboardStats)
 async def get_stats(db: AsyncSession = Depends(get_db)):
     total_sim = await db.scalar(select(func.count()).select_from(SimulationResult))
-    total_gen = await db.scalar(select(func.count()).select_from(AdGeneration))
+    total_gen = await db.scalar(
+        select(func.count()).select_from(AdGeneration).where(text("deleted_at IS NULL"))
+    )
 
     rows = await db.execute(select(SimulationResult.distribution))
     distributions = rows.scalars().all()
@@ -89,7 +91,10 @@ async def get_recent_simulations(limit: int = 5, db: AsyncSession = Depends(get_
 @router.get("/recent-generations", response_model=list[RecentGeneration])
 async def get_recent_generations(limit: int = 5, db: AsyncSession = Depends(get_db)):
     result = await db.execute(
-        select(AdGeneration).order_by(AdGeneration.created_at.desc()).limit(limit)
+        select(AdGeneration)
+        .where(text("deleted_at IS NULL"))
+        .order_by(AdGeneration.created_at.desc())
+        .limit(limit)
     )
     rows = result.scalars().all()
 
