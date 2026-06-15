@@ -11,7 +11,10 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from domain.management.adapters.meta.writer import MetaAdsWriter
 from domain.management.adapters.mock import MockAdPlatform
+from domain.management.agents.regeneration import RegenerationContext
+from domain.management.agents.regeneration_tools import build_regeneration_agent
 from domain.management.approval import (
     approve,
     relabel_if_mismatch,
@@ -19,18 +22,44 @@ from domain.management.approval import (
     validate_proposal,
 )
 from domain.management.contracts.fault_injection import FaultConfig, FaultMode
-from domain.management.contracts.policy import DAILY_BUDGET_KRW
-from domain.management.contracts.schemas import ActionProposal
+from domain.management.contracts.policy import APPROVAL_POLICY_VERSION, DAILY_BUDGET_KRW
+from domain.management.contracts.schemas import ActionProposal, ApprovedAction, DiagnosisResult
 from domain.management.demo import CAMPAIGN_ID, TENANT_ID, build_sample_proposal
 from domain.management.detection.deterministic_dx import diagnose
 from domain.management.detection.exposure_model import (
     expected_hourly_impressions,
     find_anomaly_window,
 )
+from domain.management.execution.audit_log import InMemoryAuditLog
+from domain.management.execution.executor import Executor, InMemoryIdempotencyStore
+from domain.management.execution.tier import TenantBudgetRegistry
 
 router = APIRouter()
 
 _DEMO_FAULTS = {"bid_loss", "review_rejected", "none"}
+
+# 데모용 인메모리 상태 — core 테이블 합의 후 DB Sink/Store로 교체 (합의문서 §7)
+_AUDIT_LOG = InMemoryAuditLog()
+_BUDGET = TenantBudgetRegistry(default_limit_krw=10_000_000)
+_executor: Executor | None = None
+
+
+async def _state_version(_ad_account_id: str) -> str:
+    return "state_v1"  # 데모 고정 — 제안의 expected_state_version과 일치
+
+
+def _get_executor() -> Executor:
+    global _executor  # noqa: PLW0603
+    if _executor is None:
+        _executor = Executor(
+            MetaAdsWriter(),
+            idempotency=InMemoryIdempotencyStore(),
+            audit=_AUDIT_LOG,
+            budget_for=_BUDGET.for_tenant,
+            state_version_provider=_state_version,
+            current_policy_version=APPROVAL_POLICY_VERSION,
+        )
+    return _executor
 
 
 @router.get("/run")
@@ -95,3 +124,56 @@ async def approve_proposal(body: ApprovalRequest):
 
     action = approve(body.proposal, body.approver_id)
     return {"status": "approved", "approved_action": action.model_dump(mode="json")}
+
+
+class RegenerateRequest(BaseModel):
+    diagnosis: DiagnosisResult
+
+
+@router.post("/regenerate")
+async def regenerate(body: RegenerateRequest):
+    """🅱 재생성 agent — 진단 수신 → 후보 생성·채점 → REPLACE_CREATIVE 제안 패키징."""
+    agent = build_regeneration_agent()  # API 키 없으면 결정론 폴백
+    context = RegenerationContext(
+        ad_account_id="act_demo_001",
+        target_object_ids=(body.diagnosis.campaign_id,),
+        budget_before_krw=DAILY_BUDGET_KRW,
+        budget_after_krw=int(DAILY_BUDGET_KRW * 1.5),
+        run_days=7,
+        expected_state_version="state_v1",
+        approval_policy_version=APPROVAL_POLICY_VERSION,
+        action_type="REPLACE_CREATIVE",
+    )
+    proposal = await agent.propose(body.diagnosis, context)
+    if proposal is None:
+        raise HTTPException(status_code=422, detail="생존 후보 없음 — 재생성 빈손")
+    return {"proposal": proposal.model_dump(mode="json")}
+
+
+class ExecuteRequest(BaseModel):
+    approved_action: ApprovedAction
+    proposal: ActionProposal
+
+
+@router.post("/execute")
+async def execute(body: ExecuteRequest):
+    """🅱 executor — 승인 후 4단계 재검증 + 멱등 실행. 모든 지출 단일 경로."""
+    result = await _get_executor().execute(body.approved_action, body.proposal)
+    return {"result": result.model_dump(mode="json")}
+
+
+@router.get("/audit")
+async def get_audit(approval_id: str):
+    """승인 단위 감사 이벤트(append-only) — 게이트 #7 추적용."""
+    events = _AUDIT_LOG.for_approval(approval_id)
+    return {
+        "events": [
+            {
+                "event_id": e.event_id,
+                "category": e.category,
+                "occurred_at": e.occurred_at.isoformat(),
+                "payload": e.payload,
+            }
+            for e in events
+        ]
+    }
