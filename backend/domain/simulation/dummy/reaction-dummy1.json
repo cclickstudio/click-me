@@ -1,0 +1,316 @@
+
+{
+  "run_id": "af0c3a5c-bfb9-4b5a-974c-cb611ca91728",
+  "ad_analysis": {
+    "ad_id": "96321d51-6b2f-43cc-9a22-f69168d67686",
+    "structured_analysis": {
+      "detected_industry": "음료 산업 (탄산음료)",
+      "detected_objective": "신제품(제로 슈거) 인지 증대 및 구매 유도",
+      "detected_target": "맛있는 탄산음료를 즐기면서도 설탕 섭취에 부담을 느끼는 소비자",
+      "detected_message": "설탕 없이도 세상에서 가장 맛있는 칠성사이다 제로로 부담 없이 상쾌함을 즐기세요."
+    },
+    "detected_industry": "음료 산업 (탄산음료)",
+    "detected_objective": "신제품(제로 슈거) 인지 증대 및 구매 유도",
+    "detected_target": "맛있는 탄산음료를 즐기면서도 설탕 섭취에 부담을 느끼는 소비자",
+    "detected_message": "설탕 없이도 세상에서 가장 맛있는 칠성사이다 제로로 부담 없이 상쾌함을 즐기세요.",
+    "intent_mismatch": false,
+    "mismatch_detail": {
+      "category": {
+        "declared": "식음료",
+        "detected": "음료 산업 (탄산음료)",
+        "match": true,
+        "note": "감지된 의도는 선언된 의도('식음료')의 하위 범주인 '음료 산업 (탄산음료)'를 명확히 지칭하여 높은 정합성을 보임.",
+        "score": 95
+      },
+      "message": {
+        "declared": "제로 칠성 사이다",
+        "detected": "설탕 없이도 세상에서 가장 맛있는 칠성사이다 제로로 부담 없이 상쾌함을 즐기세요.",
+        "match": true,
+        "note": "감지된 의도는 선언된 제품명('제로 칠성 사이다')을 포함하여 제품의 핵심 특징(제로 슈가, 상쾌함)을 구체적으로 설명하므로 매우 높은 정합성을 보임.",
+        "score": 98
+      }
+    },
+    "model_version": "gemini-2.5-flash-vision"
+  },
+  "reactions": [
+    {
+      "persona_id": "P-00009",
+      "exposure_context": "오전·직장·PC·문서/그래픽작업",
+      "weight": 1,
+      "aisas": {
+        "attention": true,
+        "interest": true,
+        "search": false,
+        "action": false,
+        "share": false
+      },
+      "drop_stage": "search",
+      "drop_reason_tag": "no_reason_to_explore",
+      "purchase_intent": 3,
+      "trust": 3,
+      "rejected": false,
+      "rejection_reason_tag": null,
+      "emotion_tag": "indifference",
+      "perceived_message": "설탕 없는 사이다인데 맛도 좋고 부담 없이 마실 수 있다는 내용.",
+      "perceived_target": "설탕 걱정하는 사람들, 근데 사이다 좋아하는 사람.",
+      "utterance": "제로 사이다라는데, '세상에서 제일 맛있다'는 건 좀 과장 아닌가. 그냥 뭐, 괜찮으면 마시고.",
+      "qa_passed": true,
+      "qa_fail_reason": null
+    },
+    {
+      "persona_id": "P-00010",
+      "exposure_context": "오전·집·TV·TV/방송시청",
+      "weight": 1,
+      "aisas": {
+        "attention": true,
+        "interest": true,
+        "search": false,
+        "action": true,
+        "share": false
+      },
+      "drop_stage": null,
+      "drop_reason_tag": null,
+      "purchase_intent": 4,
+      "trust": 4,
+      "rejected": false,
+      "rejection_reason_tag": null,
+      "emotion_tag": "curiosity",
+      "perceived_message": "설탕 없이도 정말 맛있고 부담 없이 마실 수 있는 상쾌한 탄산음료.",
+      "perceived_target": "탄산음료는 마시고 싶지만 설탕 때문에 죄책감을 느끼는 사람들.",
+      "utterance": "설탕 없는데도 세상에서 제일 맛있다고? 진짜면 한 번 마셔볼 만하겠네.",
+      "qa_passed": true,
+      "qa_fail_reason": null
+    },
+    {
+      "persona_id": "P-00006",
+      "exposure_context": "저녁·집·TV·TV/방송시청",
+      "weight": 1,
+      "aisas": {
+        "attention": true,
+        "interest": true,
+        "search": false,
+        "action": false,
+        "share": false
+      },
+      "drop_stage": "search",
+      "drop_reason_tag": "no_reason_to_explore",
+      "purchase_intent": 4,
+      "trust": 5,
+      "rejected": false,
+      "rejection_reason_tag": null,
+      "emotion_tag": "curiosity",
+      "perceived_message": "칠성사이다인데 설탕 없대서 몸에 부담 없을 것 같네.",
+      "perceived_target": "나처럼 설탕 걱정하는 나이 든 사람.",
+      "utterance": "칠성사이다면 믿을 만한데, 설탕 없으니 한 번 마셔볼까? 몸에 괜찮으려나.",
+      "qa_passed": true,
+      "qa_fail_reason": null
+    },
+    {
+      "persona_id": "P-00005",
+      "exposure_context": "오전·직장·PC·문서/그래픽작업",
+      "weight": 1,
+      "aisas": {
+        "attention": true,
+        "interest": true,
+        "search": false,
+        "action": false,
+        "share": false
+      },
+      "drop_stage": "search",
+      "drop_reason_tag": "no_reason_to_explore",
+      "purchase_intent": 3,
+      "trust": 4,
+      "rejected": false,
+      "rejection_reason_tag": null,
+      "emotion_tag": "indifference",
+      "perceived_message": "설탕 걱정 없이도 상쾌하고 맛있는 칠성사이다 제로를 즐기라는 광고.",
+      "perceived_target": "설탕 섭취에 부담을 느끼지만 탄산음료를 포기하고 싶지 않은 사람들.",
+      "utterance": "칠성사이다 제로? 맛있긴 할까. 지금 당장은 일해야지.",
+      "qa_passed": true,
+      "qa_fail_reason": null
+    },
+    {
+      "persona_id": "P-00015",
+      "exposure_context": "오후·직장·스마트폰/휴대폰·커뮤니케이션",
+      "weight": 1,
+      "aisas": {
+        "attention": true,
+        "interest": true,
+        "search": false,
+        "action": false,
+        "share": false
+      },
+      "drop_stage": "search",
+      "drop_reason_tag": "no_reason_to_explore",
+      "purchase_intent": 4,
+      "trust": 4,
+      "rejected": false,
+      "rejection_reason_tag": null,
+      "emotion_tag": "curiosity",
+      "perceived_message": "설탕 걱정 없이 칠성사이다 본연의 맛을 즐길 수 있다는 메시지.",
+      "perceived_target": "나처럼 건강 생각하면서도 탄산음료를 포기하기 힘든 중장년층.",
+      "utterance": "칠성사이다 제로면 설탕 부담 없이 마실 수 있으니 괜찮겠네. 한번 마셔봐야지.",
+      "qa_passed": true,
+      "qa_fail_reason": null
+    },
+    {
+      "persona_id": "P-00003",
+      "exposure_context": "오후·집·스마트폰/휴대폰·커뮤니케이션",
+      "weight": 1,
+      "aisas": {
+        "attention": true,
+        "interest": true,
+        "search": false,
+        "action": false,
+        "share": false
+      },
+      "drop_stage": "search",
+      "drop_reason_tag": "no_reason_to_explore",
+      "purchase_intent": 4,
+      "trust": 4,
+      "rejected": false,
+      "rejection_reason_tag": null,
+      "emotion_tag": "trust",
+      "perceived_message": "설탕 없이도 맛있는 사이다를 마실 수 있다는 내용.",
+      "perceived_target": "나처럼 단 음료 좋아하지만 건강 때문에 걱정하는 사람들.",
+      "utterance": "칠성사이다는 믿을 수 있지, 설탕 없어도 맛있으면 좋겠네. 다음에 마트에 가면 한번 사볼까.",
+      "qa_passed": true,
+      "qa_fail_reason": null
+    },
+    {
+      "persona_id": "P-00012",
+      "exposure_context": "오후·집·TV·TV/방송시청",
+      "weight": 1,
+      "aisas": {
+        "attention": true,
+        "interest": true,
+        "search": false,
+        "action": false,
+        "share": false
+      },
+      "drop_stage": "search",
+      "drop_reason_tag": "no_reason_to_explore",
+      "purchase_intent": 4,
+      "trust": 3,
+      "rejected": false,
+      "rejection_reason_tag": null,
+      "emotion_tag": "curiosity",
+      "perceived_message": "설탕이 없어 몸에 부담이 적고, 그러면서도 맛있는 사이다라는 거군. 청량감도 있겠지.",
+      "perceived_target": "설탕 많은 음료는 마시기 꺼려지지만, 시원하고 맛있는 탄산음료를 찾는 사람들. 나같이 나이 든 사람들도 해당되겠지.",
+      "utterance": "칠성사이다 제로? 설탕 없다는 건 마음에 드는데, '세상에서 제일 맛있다'는 건 좀 과장이 심하군. 그래도 부담 없다고 하니 한번쯤은 맛이나 볼까 싶네.",
+      "qa_passed": true,
+      "qa_fail_reason": null
+    },
+    {
+      "persona_id": "P-00014",
+      "exposure_context": "저녁·집·TV·TV/방송시청",
+      "weight": 1,
+      "aisas": {
+        "attention": true,
+        "interest": true,
+        "search": false,
+        "action": false,
+        "share": false
+      },
+      "drop_stage": "search",
+      "drop_reason_tag": "price_concern",
+      "purchase_intent": 2,
+      "trust": 3,
+      "rejected": false,
+      "rejection_reason_tag": null,
+      "emotion_tag": "curiosity",
+      "perceived_message": "설탕 없는 사이다인데 맛있다고 광고하네. 죄책감 없이 마실 수 있다는 말인데, 과연 그렇게 맛있을까?",
+      "perceived_target": "설탕 걱정하거나 건강 챙기는 사람들, 그리고 맛있는 탄산음료 찾는 사람들을 노리는 것 같음.",
+      "utterance": "설탕 없는데 세상에서 제일 맛있다고? 가격만 괜찮으면 한번 마셔볼 만할 것 같네.",
+      "qa_passed": true,
+      "qa_fail_reason": null
+    },
+    {
+      "persona_id": "P-00001",
+      "exposure_context": "오후·집·TV·TV/방송시청",
+      "weight": 1,
+      "aisas": {
+        "attention": true,
+        "interest": true,
+        "search": false,
+        "action": false,
+        "share": false
+      },
+      "drop_stage": "search",
+      "drop_reason_tag": "distrust",
+      "purchase_intent": 2,
+      "trust": 2,
+      "rejected": false,
+      "rejection_reason_tag": null,
+      "emotion_tag": "distrust",
+      "perceived_message": "설탕 없이도 맛있다고 하는 칠성사이다 제로로 속 편하게 마시라는 이야기. 제일 맛있다는 건 좀 믿기 어렵고.",
+      "perceived_target": "설탕 걱정하는 젊은 사람들이나 건강 따지는 사람들인가?",
+      "utterance": "설탕도 없이 세상에서 제일 맛있다니, 에이 거짓말! 마셔봐야 알지 뭘 그렇게 호들갑이야.",
+      "qa_passed": true,
+      "qa_fail_reason": null
+    },
+    {
+      "persona_id": "P-00000",
+      "exposure_context": "오전·집·TV·TV/방송시청",
+      "weight": 1,
+      "aisas": {
+        "attention": true,
+        "interest": true,
+        "search": false,
+        "action": false,
+        "share": false
+      },
+      "drop_stage": "search",
+      "drop_reason_tag": "no_reason_to_explore",
+      "purchase_intent": 4,
+      "trust": 4,
+      "rejected": false,
+      "rejection_reason_tag": null,
+      "emotion_tag": "curiosity",
+      "perceived_message": "설탕 없이도 사이다 맛을 즐길 수 있다는 것. 건강 걱정 없이 시원하게 마시라는 것.",
+      "perceived_target": "설탕 때문에 탄산음료 마시기 주저하는 나이 든 사람들.",
+      "utterance": "칠성사이다가 설탕 없이 나왔다고? 그럼 맛은 있으려나. 맹맹하면 도로아미타불인데, 몸에 좋다고 하니 한번 보이면 사봐야겠구먼.",
+      "qa_passed": true,
+      "qa_fail_reason": null
+    }
+  ],
+  "rubric_scores": [
+    {
+      "dimension": "category_alignment",
+      "score": 95,
+      "evidence": {
+        "declared": "식음료",
+        "detected": "음료 산업 (탄산음료)",
+        "note": "감지된 의도는 선언된 의도('식음료')의 하위 범주인 '음료 산업 (탄산음료)'를 명확히 지칭하여 높은 정합성을 보임."
+      }
+    },
+    {
+      "dimension": "message_alignment",
+      "score": 98,
+      "evidence": {
+        "declared": "제로 칠성 사이다",
+        "detected": "설탕 없이도 세상에서 가장 맛있는 칠성사이다 제로로 부담 없이 상쾌함을 즐기세요.",
+        "note": "감지된 의도는 선언된 제품명('제로 칠성 사이다')을 포함하여 제품의 핵심 특징(제로 슈가, 상쾌함)을 구체적으로 설명하므로 매우 높은 정합성을 보임."
+      }
+    }
+  ],
+  "aggregate": {
+    "click_intent_rate": 0.1,
+    "ci_low": 0,
+    "ci_high": 0.3,
+    "purchase_intent": 3.4,
+    "trust_avg": 3.6,
+    "rejection_rate": 0,
+    "variance_warning": false,
+    "effective_n": 10,
+    "payload": {
+      "qa_passed_count": 10,
+      "ci_method": "weighted_bootstrap",
+      "ci_iters": 2000,
+      "purchase_std": 0.8,
+      "weight_sum": 10
+    },
+    "engine_version": "agg-2"
+  },
+  "simulation_id": "43377a1e-37ae-4492-b6e1-b52d85c10a05"
+}
