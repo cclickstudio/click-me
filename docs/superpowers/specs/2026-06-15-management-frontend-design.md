@@ -1,6 +1,6 @@
 # 광고 매니지먼트 프론트엔드 설계 — 하이브리드 대시보드 + A/B 토글
 
-작성: 2026-06-15 · 도메인: management(4-2) · 슬롯 강조: 🅱(A도 표시)
+작성: 2026-06-15 · 도메인: management(4-2) · 슬롯 균형: 🅰·🅱 동등
 
 ## Context
 
@@ -8,13 +8,13 @@
 
 반면 백엔드 management 도메인은 풍부하다 — A(감지·진단·승인 플레인)와 B(재생성·실행·감사)의 전체 HITL 루프가 구현·테스트(92 passed)돼 있고, `GET /api/management/run`·`POST /api/management/approve` 두 엔드포인트가 노출돼 있다.
 
-**목표**: management 프론트를 (1) 실제 광고 관리 제품처럼 보이는 **사용자 중심 대시보드**로 만들면서, (2) 7/8 발표·포트폴리오를 위해 **A/B 아키텍처(HITL 설계·강제, Agentic AI, 계약 기반 협업)를 토글로 드러낼 수 있게** 한다. B의 역할(재생성·실행·감사)을 비중 있게, A의 역할(감지·진단·승인)도 함께 보이게 한다.
+**목표**: management 프론트를 (1) 실제 광고 관리 제품처럼 보이는 **사용자 중심 대시보드**로 만들면서, (2) 7/8 발표·포트폴리오를 위해 **A/B 아키텍처(HITL 설계·강제, Agentic AI, 계약 기반 협업)를 토글로 드러낼 수 있게** 한다. A(감지·진단·승인)와 B(재생성·실행·감사)가 **동등하게 주목받도록** 화면 면적·시선 비중을 균형 있게 배분한다.
 
 **스코프 결정**: 데모(#1)+포트폴리오(#3)를 단일 결과물로. 실운영 대시보드(#2, 라이브 데이터·DB 영속성·인증)는 합의문서 v1 스코프(Won't) 밖이므로 "확장 여지"로만 남긴다.
 
 ## 핵심 설계 결정
 
-1. **레이아웃 = 하이브리드 대시보드.** 대시보드 골격(KPI 스트립 + 노출/지출 추이 차트) 안에 "AI 진단·제안" 패널을 **주인공**으로 둔다. 순수 위젯 나열 금지 — 초점은 AI 패널 하나.
+1. **레이아웃 = 균형 하이브리드 대시보드.** 상단 KPI 스트립 아래를 **좌우 동등한 2존**으로 나눈다 — 왼쪽 "측정·진단" 존(🅰: 큰 노출 추이 차트 + 진단 카드), 오른쪽 "개선·실행" 존(🅱: 재생성 후보 + 제안 + 실행). 두 존은 같은 면적·같은 테두리 비중. 그 아래 **승인(HITL)을 좌우를 잇는 다리(공동 클라이맥스)**로, 맨 아래 감사 타임라인(🤝). 순수 위젯 나열 금지 — A존·B존·승인 다리 세 초점.
 2. **뷰 토글 = `사용자 보기`(기본) / `아키텍처 보기`.** 같은 데이터 흐름 위에 모드만 바뀐다. 사용자 보기엔 🅰/🅱·계약 이름이 안 보이고, 아키텍처 보기는 🅰/🅱 레인 + 계약 핸드오프(DiagnosisResult·ActionProposal·ApprovedAction·ActionResult) + 엔드포인트 라벨을 오버레이한다.
 3. **데이터 흐름 = 감지→진단→재생성→제안→승인→실행→감사** 단일 사이클. "데모 실행" 트리거(고장 주입 선택)로 시작.
 4. **백엔드 얇은 엔드포인트 3종 추가**(전부 B 소유 도메인에 위임): `POST /regenerate`, `POST /execute`, `GET /audit`. 결정론 폴백으로 API 키 없이 동작(발표 리허설 안정).
@@ -25,21 +25,22 @@
 
 라우트 `app/manage/page.tsx` 전면 교체. 뷰 모드는 페이지 로컬 상태(`'user' | 'arch'`)로 충분(컨텍스트 불필요). 차트는 기존 `components/ui/DistributionChart.tsx`와 동일하게 **커스텀 SVG**(차트 라이브러리 추가 안 함).
 
-신규 컴포넌트 (`components/manage/` 신설):
+신규 컴포넌트 (`components/manage/` 신설). 배치는 균형 2존 + 승인 다리 구조를 따른다:
 
-| 컴포넌트 | 역할 | 데이터 출처 |
-|---|---|---|
-| `KpiStrip` | 활성 캠페인·오늘 노출·오늘 지출(₩)·이상 감지 수 | /run 집계 |
-| `ImpressionTrendChart` | 시간별 기대 vs 실측 곡선 + 이상구간 음영 | /run `expected`·`snapshots`·`anomaly_hours` |
-| `SpendTrendChart` | 지출 추이 미니 막대 | /run `snapshots[].spend_krw` |
-| `AiAdvicePanel` | 주인공 패널 — 아래 5하위 단계 조립 | 사이클 전체 |
-| `DiagnosisCard` | 원인·확신도·결정론/agent 배지 | /run `diagnosis` |
-| `CandidateCards` | 재생성 후보 3 + 시뮬점수 + 선택 배지 | /regenerate |
-| `ProposalCard` | action_type·Tier·예산 before▶after·만료 카운트다운 | /regenerate 또는 /run `proposal` |
-| `ApprovalActions` | Tier 판정·재라벨(1▶3) 알림·[승인][거절] | /approve |
-| `ExecutionResult` | executor 4단계 진행 + status·failure_reason | /execute |
-| `AuditTimeline` | append-only 이벤트 타임라인 | /audit |
-| `ArchModeOverlay` | 아키텍처 보기 시 🅰/🅱 레인·계약·엔드포인트 라벨 | 토글 상태 |
+| 영역 | 컴포넌트 | 역할 | 데이터 출처 |
+|---|---|---|---|
+| 상단 | `KpiStrip` | 활성 캠페인·오늘 노출·오늘 지출(₩)·이상 감지 수 | /run 집계 |
+| **왼쪽 존 (🅰 측정·진단)** | `ImpressionTrendChart` | 시간별 기대 vs 실측 곡선 + 이상구간 음영 (크게) | /run `expected`·`snapshots`·`anomaly_hours` |
+| 왼쪽 존 (🅰) | `SpendTrendChart` | 지출 추이 미니 막대 | /run `snapshots[].spend_krw` |
+| 왼쪽 존 (🅰) | `DiagnosisCard` | 원인·확신도·결정론/agent 배지 | /run `diagnosis` |
+| **오른쪽 존 (🅱 개선·실행)** | `CandidateCards` | 재생성 후보 3 + 시뮬점수 + 선택 배지 | /regenerate |
+| 오른쪽 존 (🅱) | `ProposalCard` | action_type·Tier·예산 before▶after·만료 카운트다운 | /regenerate 또는 /run `proposal` |
+| 오른쪽 존 (🅱) | `ExecutionResult` | executor 4단계 진행 + status·failure_reason | /execute |
+| **가운데 다리 (🤝 승인)** | `ApprovalBridge` | Tier 판정·재라벨(1▶3)=A 설계 / 무승인 차단=B 강제 · [승인][거절] | /approve |
+| 하단 (🤝) | `AuditTimeline` | append-only 이벤트 타임라인 | /audit |
+| 전역 | `ViewModeToggle` + `ArchModeOverlay` | 사용자/아키텍처 토글 · 🅰/🅱·계약·엔드포인트 라벨 오버레이 | 토글 상태 |
+
+존 컨테이너는 사용자 보기에서 "측정·진단 / 개선·실행"으로만 라벨하고, 아키텍처 보기에서 🅰/🅱·계약 핸드오프가 양쪽에 동시에 표시된다. 좁은 화면은 두 존을 세로 스택으로 반응형 처리.
 
 `lib/api.ts`에 `management` 네임스페이스 추가:
 ```ts
