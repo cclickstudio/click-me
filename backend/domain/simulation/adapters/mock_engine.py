@@ -31,13 +31,14 @@ def _pick_exposure(persona: Persona, rng: random.Random) -> str:
 
 
 class MockAdInterpreter:
-    """AdInterpreter 어댑터 —고정 해석 반환."""
+    """AdInterpreter 어댑터 —고정 해석 반환(선언 의도는 보지 않음, 앵커링 방지 §3.5-3)."""
 
     async def interpret(self, request: SimulationRunRequest) -> AdInterpretation:
         return AdInterpretation(
             ad_id=request.ad_id,
             structured_analysis={"mock": True},
             detected_industry="beverage",
+            detected_objective="awareness",
             detected_target="20대",
             detected_message="신제품 출시",
             intent_mismatch=False,
@@ -101,15 +102,38 @@ class MockReactionEngine:
 
 
 class MockRubricEvaluator:
-    """RubricEvaluator 어댑터 —차원별 점수(숫자) 결정적 산출."""
+    """RubricEvaluator 어댑터 —의도 정합 점수(선언 ↔ 감지) 결정적 산출(§3.5-3).
 
-    async def evaluate(self, ad: AdInterpretation) -> list[RubricScore]:
-        rng = random.Random(ad.ad_id)
-        dimensions = ("clarity", "relevance", "trust", "creativity", "cta_strength")
-        return [
-            RubricScore(dimension=d, score=rng.randint(40, 90), evidence={"mock": True})
-            for d in dimensions
-        ]
+    선언 입력이 있는 차원만 채점. 선언==감지(유사)면 高, 다르면 低. 선언 미입력 차원은 생략.
+    """
+
+    async def evaluate(
+        self, ad: AdInterpretation, request: SimulationRunRequest
+    ) -> list[RubricScore]:
+        # (정합 차원, 선언값, 감지값) — 선언 미입력이면 스킵.
+        dims = (
+            ("category_alignment", request.product_category, ad.detected_industry),
+            ("objective_alignment", request.ad_objective, ad.detected_objective),
+            ("message_alignment", request.ad_title, ad.detected_message),
+        )
+        scores: list[RubricScore] = []
+        for dim, declared, detected in dims:
+            if not declared:
+                continue
+            match = bool(detected) and declared.strip().lower() in str(detected).strip().lower()
+            score = 90 if match else 40
+            scores.append(
+                RubricScore(
+                    dimension=dim,
+                    score=score,
+                    evidence={
+                        "declared": declared,
+                        "detected": detected,
+                        "note": "mock 정합" if match else "mock 불일치",
+                    },
+                )
+            )
+        return scores
 
 
 class MockNarrator:

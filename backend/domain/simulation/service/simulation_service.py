@@ -70,17 +70,17 @@ class SimulationService:
                     if not out:
                         continue
                     if node == "interpret_ad":
+                        # 감지 + 의도 정합 채점을 함께 산출(§3.5-3) — ad·rubric_scores 동시 수집.
                         ad_obj = out["ad"]
                         ad_dump = ad_obj.model_dump()
+                        rubric_objs = out.get("rubric_scores", [])
+                        rubric_dump = [s.model_dump() for s in rubric_objs]
                         store.emit(run_id, {"event": "progress", "stage": "panel", "pct": 15})
                     elif node == "load_panel":
                         personas = out["personas"]
                         panel_version = out.get("panel_version") or panel_version
                         total = len(personas) or total
                         store.emit(run_id, {"event": "progress", "stage": "reaction", "pct": 30})
-                    elif node == "rubric_eval":
-                        rubric_objs = out["rubric_scores"]
-                        rubric_dump = [s.model_dump() for s in rubric_objs]
                     elif node == "react":
                         for r in out.get("reactions", []):
                             reaction_objs.append(r)
