@@ -5,10 +5,14 @@ export type UserStatus = 'ACTIVE' | 'PENDING' | 'REJECTED';
 
 export type UserOut = {
   id: string;
-  email: string;
+  login_id: string;
   name: string;
   role: UserRole;
   status: UserStatus;
+  must_change_password: boolean;
+  phone_num: string | null;
+  user_email: string | null;
+  team_id: string | null;
   organization_id: string | null;
 };
 
@@ -20,8 +24,8 @@ export type AuthResponse = {
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...options.headers },
     ...options,
+    headers: { 'Content-Type': 'application/json', ...options.headers },
   });
   const data = await res.json();
   if (!res.ok) throw new Error(data.detail ?? '요청 실패');
@@ -29,17 +33,28 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 }
 
 export const authApi = {
-  signupCompany: (body: { name: string; email: string; password: string; company_name: string }) =>
-    request<AuthResponse>('/api/auth/signup/company', { method: 'POST', body: JSON.stringify(body) }),
-
-  signupUser: (body: { name: string; email: string; password: string; organization_id: string }) =>
-    request<AuthResponse>('/api/auth/signup/user', { method: 'POST', body: JSON.stringify(body) }),
-
-  login: (body: { email: string; password: string }) =>
+  login: (body: { login_id: string; password: string }) =>
     request<AuthResponse>('/api/auth/login', { method: 'POST', body: JSON.stringify(body) }),
 
   me: (token: string) =>
     request<UserOut>('/api/auth/me', { headers: { Authorization: `Bearer ${token}` } }),
+
+  changePassword: (token: string, new_password: string) =>
+    request<{ ok: boolean }>('/api/auth/change-password', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}` },
+      body: JSON.stringify({ new_password }),
+    }),
+
+  updateProfile: (
+    token: string,
+    body: { name?: string; phone_num?: string | null; user_email?: string | null },
+  ) =>
+    request<UserOut>('/api/auth/me', {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${token}` },
+      body: JSON.stringify(body),
+    }),
 };
 
 export const TOKEN_KEY = 'clickme_token';

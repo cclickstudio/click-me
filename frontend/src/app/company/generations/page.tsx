@@ -27,14 +27,26 @@ export default function CompanyGenerationsPage() {
   const [list, setList] = useState<Row[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  const load = () => {
+    setLoading(true);
     fetch(`${API_BASE}/api/company/generations`, {
       headers: { Authorization: `Bearer ${getToken()}` },
     })
       .then((r) => r.json())
       .then((data) => { if (Array.isArray(data)) setList(data); })
       .finally(() => setLoading(false));
-  }, []);
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('이 제너레이터 내역을 삭제할까요?\n생성 후보·게시 이력이 함께 삭제됩니다.')) return;
+    const res = await fetch(`${API_BASE}/api/projects/generations/${id}`, {
+      method: 'DELETE', headers: { Authorization: `Bearer ${getToken()}` },
+    });
+    if (!res.ok) { alert('삭제에 실패했습니다.'); return; }
+    load();
+  };
 
   return (
     <AppLayout>
@@ -52,19 +64,18 @@ export default function CompanyGenerationsPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-[#F2F4F6] dark:border-[#252D3D] bg-[#F9FAFB] dark:bg-[#252D3D]">
-                  <th className="text-left px-6 py-3 text-xs font-semibold text-[#8B95A1]">ID</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-[#8B95A1]">상품명</th>
+                  <th className="text-left px-6 py-3 text-xs font-semibold text-[#8B95A1]">상품명</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-[#8B95A1]">프로젝트</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-[#8B95A1]">실행자</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-[#8B95A1]">상태</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-[#8B95A1]">생성일</th>
+                  <th className="px-4 py-3" />
                 </tr>
               </thead>
               <tbody>
                 {list.map((r) => (
                   <tr key={r.id} className="border-b border-[#F9FAFB] dark:border-[#1C2333] last:border-0 hover:bg-[#F9FAFB] dark:hover:bg-[#252D3D] transition-colors">
-                    <td className="px-6 py-3 font-mono text-xs text-[#4E5968] dark:text-[#9CA3AF]">{r.id.slice(0, 8)}…</td>
-                    <td className="px-4 py-3 text-[#4E5968] dark:text-[#9CA3AF]">{r.product_name ?? '—'}</td>
+                    <td className="px-6 py-3 text-[#4E5968] dark:text-[#9CA3AF]">{r.product_name ?? '—'}</td>
                     <td className="px-4 py-3 text-[#4E5968] dark:text-[#9CA3AF]">{r.project_name ?? '—'}</td>
                     <td className="px-4 py-3 text-[#4E5968] dark:text-[#9CA3AF]">{r.created_by_name ?? '—'}</td>
                     <td className="px-4 py-3">
@@ -73,6 +84,10 @@ export default function CompanyGenerationsPage() {
                       </span>
                     </td>
                     <td className="px-4 py-3 text-[#8B95A1]">{fmt(r.created_at)}</td>
+                    <td className="px-4 py-3 text-right">
+                      <button onClick={() => handleDelete(r.id)}
+                        className="px-2.5 py-1 text-xs text-[#8B95A1] rounded-lg hover:bg-red-50 hover:text-red-500 transition-colors">삭제</button>
+                    </td>
                   </tr>
                 ))}
               </tbody>

@@ -7,8 +7,9 @@
 
 import math
 import random
-from datetime import datetime
+from datetime import UTC, datetime
 
+from domain.management.comparison.schemas import PostInsights, PostType
 from domain.management.contracts.fault_injection import FaultConfig, FaultMode
 from domain.management.contracts.policy import (
     AUDIENCE_SIZE,
@@ -103,3 +104,25 @@ class MockAdPlatform:
                 )
             )
         return snapshots
+
+
+class MockOrganicReader:
+    """OrganicInsightsReader 구현 — 오가닉 게시물 인사이트 mock (데모/eval 결정론)."""
+
+    def __init__(self, seed: int = 7) -> None:
+        self._rng = random.Random(seed)
+
+    async def get_post_insights(self, post_id: str) -> PostInsights:
+        reach = self._rng.randint(2000, 4000)
+        impressions = int(reach * self._rng.uniform(1.3, 1.6))
+        engagement = int(reach * self._rng.uniform(0.05, 0.08))
+        return PostInsights(
+            post_id=post_id,
+            post_type=PostType.ORGANIC,
+            as_of=datetime.now(UTC),
+            reach=reach,
+            impressions=impressions,
+            engagement=engagement,
+            clicks=0,
+            spend_krw=0,
+        )

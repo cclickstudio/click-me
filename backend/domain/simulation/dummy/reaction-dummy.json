@@ -1,0 +1,530 @@
+{
+  "run_id": "f448df73-109a-44d3-a3cb-ef8d8379b056",
+  "ad_analysis": {
+    "ad_id": "AD-1024",
+    "structured_analysis": {
+      "detected_industry": "탄산음료",
+      "detected_target": "칼로리 섭취에 민감하면서도 탄산음료를 즐기고 싶은 소비자",
+      "detected_message": "맛있는 칠성사이다를 칼로리 걱정 없이 즐길 수 있습니다."
+    },
+    "detected_industry": "탄산음료",
+    "detected_target": "칼로리 섭취에 민감하면서도 탄산음료를 즐기고 싶은 소비자",
+    "detected_message": "맛있는 칠성사이다를 칼로리 걱정 없이 즐길 수 있습니다.",
+    "intent_mismatch": false,
+    "mismatch_detail": null,
+    "model_version": "gemini-2.5-flash-vision"
+  },
+  "reactions": [
+    {
+      "persona_id": "P-00006",
+      "exposure_context": "오후·직장·PC·문서/그래픽작업",
+      "weight": 1,
+      "aisas": {
+        "attention": true,
+        "interest": true,
+        "search": true,
+        "action": true,
+        "share": true
+      },
+      "drop_stage": null,
+      "drop_reason_tag": null,
+      "purchase_intent": 4,
+      "trust": 4,
+      "rejected": false,
+      "rejection_reason_tag": null,
+      "emotion_tag": "curiosity",
+      "perceived_message": "오리지널 칠성사이다 맛은 유지하면서 칼로리 부담 없이 즐길 수 있다는 거겠지? 진짜 맛이 같을지가 관건인데.",
+      "perceived_target": "칼로리 신경 쓰면서도 탄산음료 못 끊는 사람들? 나처럼 건강도 챙기면서 시원한 거 좋아하는 사람인가.",
+      "utterance": "칼로리 제로는 좋은데, 과연 오리지널 맛을 제대로 냈을지가 제일 중요하지. 한번 마셔보고 판단해야겠네.",
+      "qa_passed": true,
+      "qa_fail_reason": null
+    },
+    {
+      "persona_id": "P-00010",
+      "exposure_context": "오후·직장·PC·문서/그래픽작업",
+      "weight": 1,
+      "aisas": {
+        "attention": true,
+        "interest": false,
+        "search": false,
+        "action": false,
+        "share": false
+      },
+      "drop_stage": "interest",
+      "drop_reason_tag": "low_relevance",
+      "purchase_intent": 1,
+      "trust": 3,
+      "rejected": false,
+      "rejection_reason_tag": null,
+      "emotion_tag": "indifference",
+      "perceived_message": "칠성사이다가 칼로리 낮은 제품을 만들었으니 부담 없이 마시라는 광고네.",
+      "perceived_target": "젊은 사람들이나 몸매 신경 쓰는 사람들이나 마시겠지.",
+      "utterance": "칼로리가 낮든 높든 칠성사이다는 그냥 칠성사이다지. 원래 맛만 좋으면 됐다.",
+      "qa_passed": true,
+      "qa_fail_reason": null
+    },
+    {
+      "persona_id": "P-00012",
+      "exposure_context": "오후·집·TV·TV/방송시청",
+      "weight": 1,
+      "aisas": {
+        "attention": true,
+        "interest": true,
+        "search": false,
+        "action": false,
+        "share": false
+      },
+      "drop_stage": "search",
+      "drop_reason_tag": "low_relevance",
+      "purchase_intent": 2,
+      "trust": 4,
+      "rejected": false,
+      "rejection_reason_tag": null,
+      "emotion_tag": "indifference",
+      "perceived_message": "칼로리 걱정 없이 칠성사이다를 마실 수 있다는 거군.",
+      "perceived_target": "젊은 사람들이나 건강에 신경 쓰는 사람들이 찾는 거겠지.",
+      "utterance": "칠성사이다는 아는 건데, 칼로리가 없다니... 괜찮겠지, 뭐.",
+      "qa_passed": true,
+      "qa_fail_reason": null
+    },
+    {
+      "persona_id": "P-00015",
+      "exposure_context": "저녁·집·스마트폰/휴대폰·동영상/개인방송",
+      "weight": 1,
+      "aisas": {
+        "attention": true,
+        "interest": true,
+        "search": true,
+        "action": true,
+        "share": false
+      },
+      "drop_stage": "share",
+      "drop_reason_tag": null,
+      "purchase_intent": 4,
+      "trust": 5,
+      "rejected": false,
+      "rejection_reason_tag": null,
+      "emotion_tag": "curiosity",
+      "perceived_message": "칠성사이다 맛은 그대로인데 칼로리가 없으니 죄책감 없이 마실 수 있다는 거네.",
+      "perceived_target": "나처럼 칼로리 신경 쓰면서도 탄산음료 못 끊는 사람들.",
+      "utterance": "오, 칠성사이다 제로? 칼로리 없으면 괜찮지, 뭐. 맛만 그대로면 한번 사볼 만하겠네.",
+      "qa_passed": true,
+      "qa_fail_reason": null
+    },
+    {
+      "persona_id": "P-00001",
+      "exposure_context": "오전·직장·PC·문서/그래픽작업",
+      "weight": 1,
+      "aisas": {
+        "attention": true,
+        "interest": true,
+        "search": false,
+        "action": false,
+        "share": false
+      },
+      "drop_stage": "search",
+      "drop_reason_tag": "low_relevance",
+      "purchase_intent": 2,
+      "trust": 4,
+      "rejected": false,
+      "rejection_reason_tag": null,
+      "emotion_tag": "indifference",
+      "perceived_message": "칠성사이다를 칼로리 걱정 없이 즐길 수 있다는 거네. 맛은 그대로일까?",
+      "perceived_target": "칼로리에 민감한 젊은 사람들이나 건강 생각하는 사람들 타깃인 것 같네.",
+      "utterance": "음… 칠성사이다 제로 칼로리? 나쁘진 않겠네. 칼로리 없는 건 좋은데, 굳이 찾아서 마실 정도는 아니지.",
+      "qa_passed": true,
+      "qa_fail_reason": null
+    },
+    {
+      "persona_id": "P-00008",
+      "exposure_context": "오후·집·TV·TV/방송시청",
+      "weight": 1,
+      "aisas": {
+        "attention": true,
+        "interest": true,
+        "search": true,
+        "action": true,
+        "share": false
+      },
+      "drop_stage": null,
+      "drop_reason_tag": null,
+      "purchase_intent": 4,
+      "trust": 4,
+      "rejected": false,
+      "rejection_reason_tag": null,
+      "emotion_tag": "curiosity",
+      "perceived_message": "칼로리 걱정 없이 맛있는 칠성사이다를 즐길 수 있다는 이야기군.",
+      "perceived_target": "건강을 신경 쓰면서도 탄산음료를 포기 못하는 나 같은 사람들을 위한 제품이군.",
+      "utterance": "칠성사이다는 익숙해서 좋은데, 칼로리 없으면 맛이 어떨지 모르겠군. 한번 마셔는 봐야겠어.",
+      "qa_passed": true,
+      "qa_fail_reason": null
+    },
+    {
+      "persona_id": "P-00013",
+      "exposure_context": "오전·집·TV·TV/방송시청",
+      "weight": 1,
+      "aisas": {
+        "attention": true,
+        "interest": true,
+        "search": false,
+        "action": false,
+        "share": false
+      },
+      "drop_stage": "search",
+      "drop_reason_tag": "distrust",
+      "purchase_intent": 1,
+      "trust": 2,
+      "rejected": false,
+      "rejection_reason_tag": null,
+      "emotion_tag": "distrust",
+      "perceived_message": "칼로리 걱정 없는 칠성사이다가 나왔다는 거구나. 근데 정말 맛이 있을까?",
+      "perceived_target": "칼로리 신경 쓰는 젊은 사람들이나 살 빼려는 사람들 마시라는 거네.",
+      "utterance": "칠성사이다가 칼로리가 없다고? 그럼 그 특유의 맛이 제대로 날까 싶네. 굳이 그런 걸 마실 필요가 있나.",
+      "qa_passed": true,
+      "qa_fail_reason": null
+    },
+    {
+      "persona_id": "P-00014",
+      "exposure_context": "오전·직장·PC·문서/그래픽작업",
+      "weight": 1,
+      "aisas": {
+        "attention": true,
+        "interest": true,
+        "search": true,
+        "action": true,
+        "share": false
+      },
+      "drop_stage": "share",
+      "drop_reason_tag": "no_reason_to_explore",
+      "purchase_intent": 4,
+      "trust": 4,
+      "rejected": false,
+      "rejection_reason_tag": null,
+      "emotion_tag": "curiosity",
+      "perceived_message": "칠성사이다의 맛은 그대로 유지하면서 칼로리 부담 없이 즐길 수 있다는 거네.",
+      "perceived_target": "나처럼 탄산음료는 좋아하는데 칼로리나 당 섭취에 신경 쓰는 사람들.",
+      "utterance": "칠성사이다 제로? 맛만 있으면 일반 사이다 대신 마실만하지. 어차피 사이다 마실 거면.",
+      "qa_passed": true,
+      "qa_fail_reason": null
+    },
+    {
+      "persona_id": "P-00018",
+      "exposure_context": "오후·직장·PC·문서/그래픽작업",
+      "weight": 1,
+      "aisas": {
+        "attention": true,
+        "interest": true,
+        "search": false,
+        "action": false,
+        "share": false
+      },
+      "drop_stage": "search",
+      "drop_reason_tag": "no_reason_to_explore",
+      "purchase_intent": 4,
+      "trust": 5,
+      "rejected": false,
+      "rejection_reason_tag": null,
+      "emotion_tag": "curiosity",
+      "perceived_message": "칠성사이다를 칼로리 걱정 없이 마실 수 있다는 거네.",
+      "perceived_target": "칼로리 신경 쓰는 사람들인데, 나도 이제 건강 생각해야 하니 나 같은 사람한테 좋겠어.",
+      "utterance": "어, 칠성사이다도 칼로리 없는 게 나왔네. 목마를 때 한 번 마셔봐야겠어.",
+      "qa_passed": true,
+      "qa_fail_reason": null
+    },
+    {
+      "persona_id": "P-00019",
+      "exposure_context": "오후·직장·스마트폰/휴대폰·커뮤니케이션",
+      "weight": 1,
+      "aisas": {
+        "attention": true,
+        "interest": true,
+        "search": false,
+        "action": false,
+        "share": false
+      },
+      "drop_stage": "search",
+      "drop_reason_tag": "no_reason_to_explore",
+      "purchase_intent": 3,
+      "trust": 5,
+      "rejected": false,
+      "rejection_reason_tag": null,
+      "emotion_tag": "indifference",
+      "perceived_message": "칼로리 걱정 없이 칠성사이다를 즐길 수 있다는 거네. 맛만 괜찮으면 좋겠지.",
+      "perceived_target": "탄산음료 마시고 싶은데 칼로리 때문에 망설이는 사람들인가.",
+      "utterance": "음, 칼로리 없는 사이다라... 건강 챙기려면 나쁘진 않겠네.",
+      "qa_passed": true,
+      "qa_fail_reason": null
+    },
+    {
+      "persona_id": "P-00017",
+      "exposure_context": "오후·교육시설·신문/잡지/책·읽기",
+      "weight": 1,
+      "aisas": {
+        "attention": true,
+        "interest": true,
+        "search": false,
+        "action": false,
+        "share": false
+      },
+      "drop_stage": "search",
+      "drop_reason_tag": "no_reason_to_explore",
+      "purchase_intent": 4,
+      "trust": 5,
+      "rejected": false,
+      "rejection_reason_tag": null,
+      "emotion_tag": "curiosity",
+      "perceived_message": "칠성사이다를 칼로리 걱정 없이 맛있게 마실 수 있다는 거네.",
+      "perceived_target": "탄산음료는 마시고 싶은데 칼로리는 신경 쓰는 사람들이겠지.",
+      "utterance": "칠성사이다 제로도 나왔네. 맛이 그대로인지 궁금한데, 나중에 편의점 보이면 한번 사 마셔봐야겠다.",
+      "qa_passed": true,
+      "qa_fail_reason": null
+    },
+    {
+      "persona_id": "P-00009",
+      "exposure_context": "오후·집·TV·TV/방송시청",
+      "weight": 1,
+      "aisas": {
+        "attention": true,
+        "interest": true,
+        "search": false,
+        "action": false,
+        "share": false
+      },
+      "drop_stage": "search",
+      "drop_reason_tag": "no_reason_to_explore",
+      "purchase_intent": 2,
+      "trust": 3,
+      "rejected": false,
+      "rejection_reason_tag": null,
+      "emotion_tag": "indifference",
+      "perceived_message": "칠성사이다인데 칼로리가 없다고 하네. 맛은 똑같을라나.",
+      "perceived_target": "건강 신경 써서 칼로리 걱정하는 사람들이 마시는 건가 보네.",
+      "utterance": "칠성사이다에 칼로리 없는 것도 나왔구먼. 뭐, 사이다는 원래 달달한 맛으로 마시는 건데.",
+      "qa_passed": true,
+      "qa_fail_reason": null
+    },
+    {
+      "persona_id": "P-00011",
+      "exposure_context": "오후·집·TV·TV/방송시청",
+      "weight": 1,
+      "aisas": {
+        "attention": true,
+        "interest": true,
+        "search": false,
+        "action": false,
+        "share": false
+      },
+      "drop_stage": "search",
+      "drop_reason_tag": "no_reason_to_explore",
+      "purchase_intent": 3,
+      "trust": 5,
+      "rejected": false,
+      "rejection_reason_tag": null,
+      "emotion_tag": "indifference",
+      "perceived_message": "칠성사이다를 칼로리 걱정 없이 마실 수 있다는 거네. 원래 맛있는데 부담도 없다고.",
+      "perceived_target": "살찌는 거 신경 쓰이는데 탄산음료 마시고 싶은 사람들, 젊은 사람들이나 다이어트 하는 사람들이 좋아하겠네.",
+      "utterance": "칠성사이다는 뭐 원래 맛있지. 살 안 찐다니 좋긴 한데, 난 크게 신경 안 쓰고 그냥 마실 것 같네.",
+      "qa_passed": true,
+      "qa_fail_reason": null
+    },
+    {
+      "persona_id": "P-00000",
+      "exposure_context": "오전·집·TV·TV/방송시청",
+      "weight": 1,
+      "aisas": {
+        "attention": true,
+        "interest": false,
+        "search": false,
+        "action": false,
+        "share": false
+      },
+      "drop_stage": "interest",
+      "drop_reason_tag": "low_relevance",
+      "purchase_intent": 1,
+      "trust": 2,
+      "rejected": true,
+      "rejection_reason_tag": "irrelevant",
+      "emotion_tag": "distrust",
+      "perceived_message": "칠성사이다인데, 칼로리 없는 걸로 만들었다는 거네. 근데 칼로리 없으면 맛이 없을 텐데.",
+      "perceived_target": "젊은 사람들 중에 살 찔까 봐 걱정하는 사람들이나 마시겠지. 나랑은 상관없어.",
+      "utterance": "칼로리 없다는 건 영 맛이 없어서 싫더라. 난 그냥 원래 칠성사이다가 좋아.",
+      "qa_passed": true,
+      "qa_fail_reason": null
+    },
+    {
+      "persona_id": "P-00007",
+      "exposure_context": "저녁·집·TV·TV/방송시청",
+      "weight": 1,
+      "aisas": {
+        "attention": true,
+        "interest": true,
+        "search": false,
+        "action": false,
+        "share": false
+      },
+      "drop_stage": "search",
+      "drop_reason_tag": "no_reason_to_explore",
+      "purchase_intent": 3,
+      "trust": 4,
+      "rejected": false,
+      "rejection_reason_tag": null,
+      "emotion_tag": "curiosity",
+      "perceived_message": "익숙한 칠성사이다를 칼로리 걱정 없이 마실 수 있다는 거군.",
+      "perceived_target": "나처럼 칠성사이다는 좋아하는데, 나이도 있고 해서 칼로리가 신경 쓰이는 사람들.",
+      "utterance": "칠성사이다 제로도 나왔네. 맛만 똑같으면 칼로리 없는 게 낫지.",
+      "qa_passed": true,
+      "qa_fail_reason": null
+    },
+    {
+      "persona_id": "P-00016",
+      "exposure_context": "오후·직장·스마트폰/휴대폰·커뮤니케이션",
+      "weight": 1,
+      "aisas": {
+        "attention": true,
+        "interest": true,
+        "search": true,
+        "action": true,
+        "share": false
+      },
+      "drop_stage": "share",
+      "drop_reason_tag": "other",
+      "purchase_intent": 4,
+      "trust": 5,
+      "rejected": false,
+      "rejection_reason_tag": null,
+      "emotion_tag": "trust",
+      "perceived_message": "칠성사이다가 칼로리 걱정 없이도 맛을 그대로 유지해서 건강 부담 없이 즐길 수 있겠다는 내용이군.",
+      "perceived_target": "건강에 신경 쓰면서도 익숙하고 맛있는 탄산음료를 포기하고 싶지 않은 중장년층 소비자.",
+      "utterance": "칠성사이다는 믿을 수 있는 브랜드인데, 칼로리 걱정 없이 마실 수 있다니 한 번 사봐야겠군.",
+      "qa_passed": true,
+      "qa_fail_reason": null
+    },
+    {
+      "persona_id": "P-00003",
+      "exposure_context": "오후·직장·스마트폰/휴대폰·커뮤니케이션",
+      "weight": 1,
+      "aisas": {
+        "attention": true,
+        "interest": true,
+        "search": false,
+        "action": false,
+        "share": false
+      },
+      "drop_stage": "search",
+      "drop_reason_tag": "no_reason_to_explore",
+      "purchase_intent": 4,
+      "trust": 5,
+      "rejected": false,
+      "rejection_reason_tag": null,
+      "emotion_tag": "curiosity",
+      "perceived_message": "칠성사이다가 칼로리 걱정 없이 마실 수 있는 것도 나왔다고? 맛있고 살찔 염려도 없다는 거네.",
+      "perceived_target": "나처럼 단 음료는 좋아하는데 나이 들어서 칼로리 때문에 신경 쓰이는 사람들.",
+      "utterance": "아이고, 칠성사이다는 원래 맛있는 거 아는데, 칼로리 걱정 없다니 다음에 한번 사 먹어봐야겠네.",
+      "qa_passed": true,
+      "qa_fail_reason": null
+    },
+    {
+      "persona_id": "P-00002",
+      "exposure_context": "저녁·집·TV·TV/방송시청",
+      "weight": 1,
+      "aisas": {
+        "attention": true,
+        "interest": true,
+        "search": false,
+        "action": false,
+        "share": false
+      },
+      "drop_stage": "search",
+      "drop_reason_tag": "no_reason_to_explore",
+      "purchase_intent": 3,
+      "trust": 4,
+      "rejected": false,
+      "rejection_reason_tag": null,
+      "emotion_tag": "curiosity",
+      "perceived_message": "칠성사이다가 맛은 그대로인데 칼로리 걱정 없이 마실 수 있대.",
+      "perceived_target": "단 거 좋아하는 나 같은 사람들 중에 살찌는 거 신경 쓰는 사람들.",
+      "utterance": "칠성사이다 맛은 다 아는 거고, 칼로리 부담 없다면 한 번 마셔볼 만하네.",
+      "qa_passed": true,
+      "qa_fail_reason": null
+    },
+    {
+      "persona_id": "P-00004",
+      "exposure_context": "오후·직장·PC·문서/그래픽작업",
+      "weight": 1,
+      "aisas": {
+        "attention": true,
+        "interest": true,
+        "search": false,
+        "action": false,
+        "share": false
+      },
+      "drop_stage": "search",
+      "drop_reason_tag": "other",
+      "purchase_intent": 4,
+      "trust": 4,
+      "rejected": false,
+      "rejection_reason_tag": null,
+      "emotion_tag": "curiosity",
+      "perceived_message": "맛있는 칠성사이다를 칼로리 걱정 없이 마실 수 있다는 거네.",
+      "perceived_target": "칼로리 신경 쓰이는데 시원한 탄산음료는 마시고 싶은 사람들.",
+      "utterance": "칠성사이다야 원래 맛있지, 근데 칼로리 걱정 없으면 한번 사서 마셔봐야겠네.",
+      "qa_passed": true,
+      "qa_fail_reason": null
+    }
+  ],
+  "rubric_scores": [
+    {
+      "dimension": "clarity",
+      "score": 95,
+      "evidence": {
+        "note": "제품과 핵심 혜택(칼로리 걱정 없음)이 명확하고 직관적으로 전달됩니다."
+      }
+    },
+    {
+      "dimension": "relevance",
+      "score": 95,
+      "evidence": {
+        "note": "타깃 소비자의 니즈(탄산음료 & 칼로리 걱정 없음)를 정확하게 충족시키는 메시지입니다."
+      }
+    },
+    {
+      "dimension": "trust",
+      "score": 85,
+      "evidence": {
+        "note": "“칼로리 걱정 없이”라는 메시지는 제로 음료에 대한 일반적인 인식과 부합하며, 제품 자체의 인지도가 신뢰를 더합니다."
+      }
+    },
+    {
+      "dimension": "creativity",
+      "score": 50,
+      "evidence": {
+        "note": "메시지가 직접적이고 기능적이라 독창성이나 창의적인 표현은 부족합니다."
+      }
+    },
+    {
+      "dimension": "cta_strength",
+      "score": 60,
+      "evidence": {
+        "note": "메시지가 혜택을 알리는 데 집중하며, 명시적인 구매 유도나 행동 촉구 문구가 없습니다."
+      }
+    }
+  ],
+  "aggregate": {
+    "click_intent_rate": 0.2632,
+    "ci_low": 0.1053,
+    "ci_high": 0.4737,
+    "purchase_intent": 3,
+    "trust_avg": 4.05,
+    "rejection_rate": 0.0526,
+    "variance_warning": false,
+    "effective_n": 19,
+    "payload": {
+      "qa_passed_count": 19,
+      "ci_method": "weighted_bootstrap",
+      "ci_iters": 2000,
+      "purchase_std": 1.124,
+      "weight_sum": 19
+    },
+    "engine_version": "agg-2"
+  }
+}

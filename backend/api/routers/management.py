@@ -11,8 +11,7 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from domain.management.adapters.meta.writer import MetaAdsWriter
-from domain.management.adapters.mock import MockAdPlatform
+from core.config import settings
 from domain.management.agents.regeneration import RegenerationContext
 from domain.management.agents.regeneration_tools import build_regeneration_agent
 from domain.management.approval import (
@@ -33,6 +32,7 @@ from domain.management.detection.exposure_model import (
 from domain.management.execution.audit_log import InMemoryAuditLog
 from domain.management.execution.executor import Executor, InMemoryIdempotencyStore
 from domain.management.execution.tier import TenantBudgetRegistry
+from domain.management.wiring import build_reader, build_writer
 
 router = APIRouter()
 
@@ -52,7 +52,7 @@ def _get_executor() -> Executor:
     global _executor  # noqa: PLW0603
     if _executor is None:
         _executor = Executor(
-            MetaAdsWriter(),
+            build_writer(settings),
             idempotency=InMemoryIdempotencyStore(),
             audit=_AUDIT_LOG,
             budget_for=_BUDGET.for_tenant,
@@ -71,7 +71,8 @@ async def run_detection(fault: str = "bid_loss"):
     fault_cfg = None if fault == "none" else FaultConfig(mode=FaultMode(fault))
     today = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
 
-    snapshots = MockAdPlatform().fetch_hourly_metrics(CAMPAIGN_ID, today, fault_cfg)
+    # 데이터 소스는 wiring 경유 — use_mock=True(기본)면 Mock+fault, False면 실 Meta reader.
+    snapshots = build_reader(settings).fetch_hourly_metrics(CAMPAIGN_ID, today, fault_cfg)
     expected = expected_hourly_impressions(DAILY_BUDGET_KRW)
     window = find_anomaly_window(expected, [s.impressions for s in snapshots])
 

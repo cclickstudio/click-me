@@ -5,6 +5,7 @@ import Link from 'next/link';
 import AppLayout from '@/components/AppLayout';
 import { useAuth } from '@/components/AuthProvider';
 import { safeRandomUUID } from '@/lib/utils';
+import { useProjects } from '@/components/ProjectContext';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
@@ -129,6 +130,7 @@ function StatCard({ label, value, sub }: { label: string; value: string; sub?: s
 
 export default function DashboardPage() {
   const { user } = useAuth();
+  const { refresh } = useProjects();
   const isAdmin = user?.role === 'ADMIN';
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [recentSims, setRecentSims] = useState<RecentSimulation[]>([]);
@@ -151,6 +153,9 @@ export default function DashboardPage() {
       if (Array.isArray(gens)) setRecentGens(gens);
     });
   }, []);
+
+  // 대시보드 진입 시 회사·프로젝트 목록을 최신으로 다시 불러온다 (캐시 무시)
+  useEffect(() => { refresh(); }, [refresh]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });

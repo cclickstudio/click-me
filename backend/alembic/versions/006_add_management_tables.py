@@ -39,9 +39,13 @@ def upgrade() -> None:
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
     """)
-    op.execute("CREATE INDEX IF NOT EXISTS ix_action_proposals_tenant ON action_proposals (tenant_id)")
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS ix_action_proposals_tenant ON action_proposals (tenant_id)"
+    )
     op.execute("CREATE INDEX IF NOT EXISTS ix_action_proposals_status ON action_proposals (status)")
-    op.execute("CREATE INDEX IF NOT EXISTS ix_action_proposals_expires ON action_proposals (expires_at)")
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS ix_action_proposals_expires ON action_proposals (expires_at)"
+    )
 
     # 🅰 승인 기록 — 복합 UNIQUE = 중복승인 멱등 (R&R P2)
     op.execute("""
@@ -94,8 +98,12 @@ def upgrade() -> None:
             executed_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
     """)
-    op.execute("CREATE INDEX IF NOT EXISTS ix_execution_runs_approval ON execution_runs (approval_id)")
-    op.execute("CREATE INDEX IF NOT EXISTS ix_execution_runs_proposal ON execution_runs (proposal_id)")
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS ix_execution_runs_approval ON execution_runs (approval_id)"
+    )
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS ix_execution_runs_proposal ON execution_runs (proposal_id)"
+    )
 
     # 멱등키 선점 — key UNIQUE(PK) + INSERT ON CONFLICT DO NOTHING (게이트 #1)
     op.execute("""
@@ -106,7 +114,9 @@ def upgrade() -> None:
             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         )
     """)
-    op.execute("CREATE INDEX IF NOT EXISTS ix_idempotency_keys_approval ON idempotency_keys (approval_id)")
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS ix_idempotency_keys_approval ON idempotency_keys (approval_id)"
+    )
 
 
 def downgrade() -> None:
