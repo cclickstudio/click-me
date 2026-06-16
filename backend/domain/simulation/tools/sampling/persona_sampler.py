@@ -154,11 +154,19 @@ class PersonaSampler:
     def _sample_proportional(
         self, spec: PanelSpec, cells: list, regions: list, rng: random.Random
     ) -> list[Persona]:
-        """비례 추출(self-weighting) — 매 추출마다 인구 비례로 셀 선택, 가중치 1.0(§3.7)."""
+        """비례 정수 배분(쿼터, self-weighting) — 셀(연령×성별)별 인원을 인구 비례로 확정.
+
+        최대잔여법. 독립 추첨이 아니라 쿼터라 작은 표본도 연령·성별 구성 안정(인구 20%→표본 ~20%).
+        셀 안의 나이·지역·OCEAN 등은 여전히 랜덤(다차원이라 불가피). 가중치 1.0(§3.7).
+        """
+        counts = _largest_remainder([w for _, w in cells], spec.size)
         personas: list[Persona] = []
-        for i in range(spec.size):
-            band_lo, band_hi, sex = _weighted_choice(rng, cells)
-            personas.append(self._build_persona(i, band_lo, band_hi, sex, regions, rng, 1.0))
+        i = 0
+        for (cell, _w), n_c in zip(cells, counts, strict=True):
+            band_lo, band_hi, sex = cell
+            for _ in range(n_c):
+                personas.append(self._build_persona(i, band_lo, band_hi, sex, regions, rng, 1.0))
+                i += 1
         return personas
 
     def _sample_stratified(
