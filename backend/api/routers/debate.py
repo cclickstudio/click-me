@@ -3,14 +3,16 @@
 # 현재 mock 엔진(wiring use_mock=True)으로 결정론 동작. 실 LLM·DB는 추후 wiring/영속화로 교체.
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+import json
+
+from fastapi import APIRouter, File, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from domain.simulation.adapters.memory_store import InMemorySimulationStore
 from domain.simulation.contracts.schemas import AdInterpretation, PersonaReaction
 from domain.simulation.service.debate_service import DebateService
-from domain.simulation.tools.debate.loader import load_dummy_by_name
+from domain.simulation.tools.debate.loader import load_dummy_by_name, parse_reaction_set
 from domain.simulation.wiring import build_debate_service
 
 router = APIRouter()
@@ -30,18 +32,38 @@ _SSE_HEADERS = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
 
 
 class DebateStartRequest(BaseModel):
-    """토론 시작 입력 — 7번(반응 출력) 산출물. ad_analysis는 토론 주제 근거(선택)."""
+    """토론 시작 입력 — 7번(반응 출력) 산출물. reactions 필수, 나머지 선택.
+
+    더미/시뮬레이션 결과 JSON 전체를 그대로 붙여넣어도 됨(run_id·rubric·aggregate는 무시).
+    """
 
     reactions: list[PersonaReaction]
     ad_analysis: AdInterpretation | None = None
+    simulation_id: str | None = None  # 있으면 영속화 FK로 사용(없으면 인메모리만)
 
 
 @router.post("/start")
 async def start_debate(body: DebateStartRequest, use_llm: bool = False) -> dict:
-    """실제 반응 데이터로 토론 시작 — 비동기. use_llm=true면 실 LLM(비용 발생)."""
+    """JSON 데이터(reactions[])로 토론 시작 — 비동기. use_llm=true면 실 LLM(비용 발생)."""
     if not body.reactions:
         raise HTTPException(status_code=422, detail="reactions가 비어 있습니다.")
-    run_id = await _svc(use_llm).start(body.reactions, body.ad_analysis)
+    run_id = await _svc(use_llm).start(
+        body.reactions, body.ad_analysis, simulation_id=body.simulation_id
+    )
+    return {"run_id": run_id, "stream_url": f"/api/debate/{run_id}/stream"}
+
+
+@router.post("/upload/start")
+async def start_from_file(file: UploadFile = File(...), use_llm: bool = False) -> dict:
+    """업로드한 7번 산출물 JSON 파일로 토론 시작 — reaction-dummyN.json 같은 파일 직접 투입."""
+    try:
+        raw = json.loads(await file.read())
+        ds = parse_reaction_set(raw, name=file.filename or "upload")
+    except (json.JSONDecodeError, ValueError, TypeError) as exc:
+        raise HTTPException(status_code=422, detail=f"JSON 파싱 실패: {exc}") from exc
+    run_id = await _svc(use_llm).start(
+        ds.reactions, ds.ad_analysis, simulation_id=ds.simulation_id
+    )
     return {"run_id": run_id, "stream_url": f"/api/debate/{run_id}/stream"}
 
 
@@ -52,7 +74,9 @@ async def start_dummy_debate(name: str, use_llm: bool = False) -> dict:
         ds = load_dummy_by_name(name)
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    run_id = await _svc(use_llm).start(ds.reactions, ds.ad_analysis)
+    run_id = await _svc(use_llm).start(
+        ds.reactions, ds.ad_analysis, simulation_id=ds.simulation_id
+    )
     return {"run_id": run_id, "stream_url": f"/api/debate/{run_id}/stream"}
 
 

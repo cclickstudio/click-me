@@ -21,7 +21,7 @@ _DUMMY_DIR = Path(__file__).resolve().parents[2] / "dummy"
 
 @dataclass(frozen=True)
 class DummyReactionSet:
-    """더미 한 건(7번 반응 출력) — 분석(8)·집계검증(9) 입력 묶음."""
+    """더미/업로드 한 건(7번 반응 출력) — 분석(8)·집계검증(9)·토론 입력 묶음."""
 
     name: str
     run_id: str
@@ -29,26 +29,34 @@ class DummyReactionSet:
     ad_analysis: AdInterpretation | None
     rubric_scores: list[RubricScore]
     aggregate: SimulationAggregate | None  # 더미에 박힌 7번 집계(9 재계산 일치 검증용)
+    simulation_id: str | None = None  # 영속화 FK용(있으면 토론 저장에 사용)
 
 
-def load_dummy(path: str | Path) -> DummyReactionSet:
-    """더미 JSON 한 개를 DummyReactionSet으로 파싱."""
-    p = Path(path)
-    raw = json.loads(p.read_text(encoding="utf-8"))
-
+def parse_reaction_set(raw: dict, *, name: str = "") -> DummyReactionSet:
+    """7번 산출물 dict(파일·업로드·body)를 DummyReactionSet으로 파싱. reactions 필수."""
     reactions = [PersonaReaction.model_validate(r) for r in raw.get("reactions", [])]
+    if not reactions:
+        raise ValueError("reactions가 비어 있습니다(7번 반응 출력 JSON 필요).")
     ad = raw.get("ad_analysis")
     rubric = [RubricScore.model_validate(s) for s in raw.get("rubric_scores", [])]
     agg = raw.get("aggregate")
 
     return DummyReactionSet(
-        name=p.stem,
+        name=name,
         run_id=raw.get("run_id", ""),
         reactions=reactions,
         ad_analysis=AdInterpretation.model_validate(ad) if ad else None,
         rubric_scores=rubric,
         aggregate=SimulationAggregate.model_validate(agg) if agg else None,
+        simulation_id=raw.get("simulation_id"),
     )
+
+
+def load_dummy(path: str | Path) -> DummyReactionSet:
+    """더미 JSON 파일 한 개를 DummyReactionSet으로 파싱."""
+    p = Path(path)
+    raw = json.loads(p.read_text(encoding="utf-8"))
+    return parse_reaction_set(raw, name=p.stem)
 
 
 def load_all_dummies(dummy_dir: str | Path | None = None) -> list[DummyReactionSet]:
