@@ -15,6 +15,7 @@ from domain.simulation.adapters.mock_engine import (
 )
 from domain.simulation.graph.reaction_graph import build_reaction_graph
 from domain.simulation.graph.run_graph import build_run_graph
+from domain.simulation.service.debate_service import DebateService
 from domain.simulation.service.simulation_service import SimulationService
 from domain.simulation.tools.aggregation.aggregator import BasicAggregator
 from domain.simulation.tools.panel.builder import CachedPanelProvider
@@ -133,4 +134,51 @@ def build_simulation_service(
         graph=graph,
         store=InMemorySimulationStore(),
         persistence=build_persistence(settings, session_factory),
+    )
+
+
+def build_debate_persistence(settings=None, session_factory=None):
+    """토론 영속화 어댑터(DebateRepository). DB 미구성이면 None → service는 인메모리만(저장 생략).
+
+    simulation_id FK(NOT NULL) 때문에 실제 simulations 행이 있는 운영 경로에서만 저장된다.
+    """
+    if session_factory is None:
+        if settings is None or not getattr(settings, "database_url", None):
+            return None
+        from core.db import AsyncSessionLocal
+
+        session_factory = AsyncSessionLocal
+    from domain.simulation.repositories.debate_repository import DebateRepository
+
+    return DebateRepository(session_factory)
+
+
+def build_debate_service(
+    settings=None, *, store=None, use_mock=None, session_factory=None
+) -> DebateService:
+    """토론 파이프라인 Composition Root. use_mock=True면 mock 토론 엔진 주입(재현·무비용).
+
+    실 LLM 엔진(Haiku/GPT/Gemini 토론자 + Opus Judge)은 use_mock=False 분기로 추후 추가.
+    엔진 미주입이면 결정론 파이프라인(8~9·10-a·10-b·11)만 돌고 10-c는 placeholder.
+    """
+    store = store or InMemorySimulationStore()
+    persistence = build_debate_persistence(settings, session_factory)
+    if _resolve_use_mock(settings, use_mock):
+        from domain.simulation.adapters.mock_debate import MockDebater, MockJudge
+
+        return DebateService(
+            store=store,
+            debater_factory=lambda reactions: MockDebater(reactions),
+            judge=MockJudge(),
+            persistence=persistence,
+        )
+
+    _ensure_env("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY")
+    from domain.simulation.adapters.llm_debate import LLMDebater, LLMJudge
+
+    return DebateService(
+        store=store,
+        debater_factory=lambda reactions: LLMDebater(reactions),
+        judge=LLMJudge(),
+        persistence=persistence,
     )

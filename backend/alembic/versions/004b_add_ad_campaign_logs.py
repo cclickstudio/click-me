@@ -1,14 +1,14 @@
 """add ad_campaign_logs table
 
-Revision ID: 004
-Revises: 003
+Revision ID: 004b
+Revises: 004
 Create Date: 2026-06-14
 """
 
 from alembic import op
 
-revision = "004"
-down_revision = "003"
+revision = "004b"
+down_revision = "004"
 branch_labels = None
 depends_on = None
 
