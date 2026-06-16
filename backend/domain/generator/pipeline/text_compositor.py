@@ -6,7 +6,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 from domain.generator.contracts.enums import TemplateType
-from domain.generator.contracts.schemas import ImageAnalysis
+from domain.generator.contracts.pipeline_schemas import ImageAnalysis
 
 _FONTS_DIR = Path(__file__).parents[3] / "assets" / "fonts"
 
@@ -521,6 +521,45 @@ def _compose_template_c(
 # ── Public API ────────────────────────────────────────────────────────────────
 
 
+def _paste_logo(canvas: Image.Image, logo_png: bytes, w: int, h: int) -> None:
+    """브랜드 로고를 좌상단에 합성 (텍스트 존과 겹치지 않는 안전 영역)."""
+    try:
+        logo = Image.open(io.BytesIO(logo_png)).convert("RGBA")
+    except Exception:
+        return
+    box = max(48, int(min(w, h) * 0.13))
+    logo.thumbnail((box, box), Image.LANCZOS)
+    margin = int(min(w, h) * 0.045)
+    canvas.alpha_composite(logo, (margin, margin))
+
+
+def resize_to_target(img_bytes: bytes, width: int, height: int) -> bytes:
+    """생성 이미지를 목표 치수로 맞춤 — 목표 종횡비로 center-crop 후 resize.
+
+    gpt-image-1은 1024/1536만 생성하므로 1080 계열 출력은 이 단계에서 보정한다.
+    """
+    img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
+    sw, sh = img.size
+    if (sw, sh) == (width, height):
+        return img_bytes
+
+    target_ratio = width / height
+    src_ratio = sw / sh
+    if src_ratio > target_ratio:  # 원본이 더 넓음 → 좌우 크롭
+        new_w = round(sh * target_ratio)
+        left = (sw - new_w) // 2
+        img = img.crop((left, 0, left + new_w, sh))
+    elif src_ratio < target_ratio:  # 원본이 더 높음 → 상하 크롭
+        new_h = round(sw / target_ratio)
+        top = (sh - new_h) // 2
+        img = img.crop((0, top, sw, top + new_h))
+
+    img = img.resize((width, height), Image.LANCZOS)
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
+
+
 def composite_text(
     bg_bytes: bytes,
     headline: str,
@@ -529,6 +568,7 @@ def composite_text(
     template: TemplateType,
     brand_color: str | None = None,
     image_analysis: ImageAnalysis | None = None,
+    logo_png: bytes | None = None,
 ) -> bytes:
     canvas = Image.open(io.BytesIO(bg_bytes)).convert("RGBA")
     w, h = canvas.size
@@ -542,6 +582,9 @@ def composite_text(
         _compose_template_b(canvas, w, h, headline, body, cta, cta_rgb, brightness)
     else:
         _compose_template_c(canvas, w, h, headline, body, cta, cta_rgb, brightness)
+
+    if logo_png:
+        _paste_logo(canvas, logo_png, w, h)
 
     buf = io.BytesIO()
     canvas.convert("RGB").save(buf, format="PNG")

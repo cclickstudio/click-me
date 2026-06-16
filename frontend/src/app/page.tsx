@@ -1,6 +1,9 @@
 'use client';
 
+import { useEffect } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { useAuth } from '../components/AuthProvider';
 import { useTheme } from '../components/ThemeProvider';
 
 function SunIcon() {
@@ -72,6 +75,21 @@ const steps = [
 
 export default function Page() {
   const { theme, toggle } = useTheme();
+  const { user, loading } = useAuth();
+  const router = useRouter();
+
+  // 로그인 상태면 랜딩 진입 차단 — 로그아웃 전엔 대시보드로 이동
+  useEffect(() => {
+    if (!loading && user) router.replace('/dashboard');
+  }, [loading, user, router]);
+
+  if (loading || user) {
+    return (
+      <div className="min-h-screen bg-white dark:bg-[#0F1117] flex items-center justify-center">
+        <div className="w-6 h-6 border-2 border-[#3182F6] border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-white dark:bg-[#0F1117] transition-colors">
@@ -94,7 +112,7 @@ export default function Page() {
               로그인
             </Link>
             <Link
-              href="/sign-up"
+              href="/dashboard"
               className="px-4 py-2 bg-[#3182F6] text-white text-sm font-medium rounded-lg hover:bg-[#1B6EEB] transition-colors"
             >
               무료로 시작하기
@@ -117,7 +135,7 @@ export default function Page() {
         </p>
         <div className="flex items-center justify-center gap-3">
           <Link
-            href="/simulation"
+            href="/dashboard"
             className="px-6 py-3 bg-[#3182F6] text-white font-medium rounded-xl hover:bg-[#1B6EEB] transition-colors shadow-sm"
           >
             무료로 시작하기
@@ -185,7 +203,7 @@ export default function Page() {
         <h2 className="text-2xl font-bold text-white mb-3">지금 바로 시작해보세요</h2>
         <p className="text-[#93C5FD] text-sm mb-8">광고 예산을 낭비하기 전에 먼저 검증하세요</p>
         <Link
-          href="/sign-up"
+          href="/dashboard"
           className="inline-block px-8 py-3 bg-white text-[#3182F6] font-semibold rounded-xl hover:bg-[#F0F7FF] transition-colors"
         >
           무료로 시작하기

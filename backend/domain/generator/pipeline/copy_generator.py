@@ -2,7 +2,7 @@ from langsmith import traceable
 from openai import AsyncOpenAI
 
 from domain.generator.contracts.enums import TemplateType
-from domain.generator.contracts.schemas import (
+from domain.generator.contracts.pipeline_schemas import (
     AdCopy,
     ImageAnalysis,
     ProductAnalysis,

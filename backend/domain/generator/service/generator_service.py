@@ -1,263 +1,429 @@
+"""광고 생성 서비스 — graph 파이프라인 실행, SSE 진행률, DB 영속화, 후보 선택·게시·집행.
+
+생성/개선 모두 graph(LangGraph) 파이프라인으로 처리한다(GenerationCreateRequest.mode로 분기).
+"""
+
+from __future__ import annotations
+
 import asyncio
+import io
+import json
+import logging
 import uuid
-from datetime import UTC, datetime
+from collections.abc import AsyncIterator
+from contextlib import suppress
 
-import aioboto3
-from langsmith import traceable
+from PIL import Image
+from sqlalchemy import select
 
-from core.config import settings
-from domain.generator.contracts.enums import GenerationMode
-from domain.generator.contracts.schemas import (
-    GeneratedAdVariant,
-    GenerateRequest,
-    GenerateResult,
-    ImproveRequest,
-    ProductAnalysis,
-    StrategyOutput,
-    StrategyPlan,
-)
-from domain.generator.pipeline.ad_info_extractor import extract_ad_info
-from domain.generator.pipeline.copy_generator import generate_copy
-from domain.generator.pipeline.image_analyzer import analyze_image
-from domain.generator.pipeline.image_generator import generate_image
-from domain.generator.pipeline.product_analyzer import analyze_product
-from domain.generator.pipeline.quality_checker import check_quality
-from domain.generator.pipeline.strategy_planner import plan_strategies
-from domain.generator.pipeline.template_selector import select_template
-from domain.generator.pipeline.text_compositor import composite_text
-from domain.generator.pipeline.text_inpainter import inpaint_text_zone
+from core.db import AsyncSessionLocal
+from core.models import AdCampaignLog, AdGeneration, AdGenerationCandidate, AdPublishLog
+from domain.generator.adapters.instagram import build_publisher
+from domain.generator.adapters.meta_ads import AdvertiseRequest, build_ads_publisher
+from domain.generator.contracts.schemas import GenerationCreateRequest
+from domain.generator.graph.pipeline import generation_graph
+from tools.storage.s3 import download_bytes, presign_get, publish_key, upload_bytes
+
+logger = logging.getLogger("clickme")
+
+_tasks: dict[str, dict] = {}
 
 
-async def _upload_to_s3(image_bytes: bytes, s3_key: str) -> str:
-    """이미지를 S3에 업로드하고 24시간 유효 presigned URL 반환."""
-    session = aioboto3.Session(
-        aws_access_key_id=settings.aws_access_key_id,
-        aws_secret_access_key=settings.aws_secret_access_key,
-        region_name=settings.aws_region,
-    )
-    async with session.client("s3") as s3:
-        await s3.put_object(
-            Bucket=settings.s3_bucket_name,
-            Key=s3_key,
-            Body=image_bytes,
-            ContentType="image/png",
+async def start_generation(
+    request: GenerationCreateRequest,
+    created_by: uuid.UUID | None = None,
+) -> str:
+    """생성 파이프라인 시작 — DB 행 생성 후 백그라운드 실행, generation_id 반환."""
+    generation_id = str(uuid.uuid4())
+    project_uuid = None
+    if request.project_id:
+        with suppress(ValueError):
+            project_uuid = uuid.UUID(request.project_id)
+
+    async with AsyncSessionLocal() as session:
+        session.add(
+            AdGeneration(
+                id=uuid.UUID(generation_id),
+                project_id=project_uuid,
+                created_by=created_by,
+                status="pending",
+                input=request.model_dump(),
+            )
         )
-        url = await s3.generate_presigned_url(
-            "get_object",
-            Params={"Bucket": settings.s3_bucket_name, "Key": s3_key},
-            ExpiresIn=86400,
+        await session.commit()
+
+    _tasks[generation_id] = {"status": "pending", "events": []}
+    asyncio.create_task(_run_pipeline(generation_id, request))
+    return generation_id
+
+
+async def _run_pipeline(generation_id: str, request: GenerationCreateRequest) -> None:
+    store = _tasks[generation_id]
+
+    def emit(event: dict) -> None:
+        store["events"].append(event)
+
+    try:
+        store["status"] = "running"
+        await _update_status(generation_id, "running")
+
+        config = {
+            "run_name": "AdGenerationPipeline",
+            "metadata": {"generation_id": generation_id},
+            "configurable": {"emit": emit},
+        }
+        initial_state = {
+            "generation_id": generation_id,
+            "request": request.model_dump(),
+        }
+        final_state = await generation_graph.ainvoke(initial_state, config=config)
+
+        await _persist_results(generation_id, final_state)
+        store["status"] = "completed"
+        emit(
+            {
+                "event": "completed",
+                "result_url": f"/api/generator/generations/{generation_id}",
+            }
         )
-    return url
+    except Exception as exc:
+        logger.exception("광고 생성 실패: generation_id=%s", generation_id)
+        store["status"] = "failed"
+        await _update_status(generation_id, "failed", error_message=str(exc))
+        emit({"event": "error", "message": str(exc)})
 
 
-async def _build_variant(
-    variant_id: str,
-    generation_id: str,
-    plan: StrategyPlan,
-    strategy_output: StrategyOutput,
-    product_analysis: ProductAnalysis,
-    size,
-    brand_color: str | None,
-    tone: str | None,
-    original_image_bytes: bytes | None = None,
-    improvement_context: str | None = None,
-) -> GeneratedAdVariant:
-    # 1. 배경 이미지 생성 (직접 수정 모드면 Edit API, 아니면 Generate API)
-    bg_bytes = await generate_image(
-        product_analysis=product_analysis,
-        strategy=plan.strategy,
-        template=plan.template,
-        size=size,
-        brand_color=brand_color,
-        tone=tone,
-        original_image_bytes=original_image_bytes,
-        improvement_context=improvement_context,
-    )
+async def _update_status(generation_id: str, status: str, error_message: str | None = None) -> None:
+    async with AsyncSessionLocal() as session:
+        generation = await session.get(AdGeneration, uuid.UUID(generation_id))
+        if generation is None:
+            return
+        generation.status = status
+        if error_message is not None:
+            generation.error_message = error_message
+        await session.commit()
 
-    # 2. 이미지 분석
-    image_analysis = await analyze_image(bg_bytes)
 
-    # 3. 이미지에 맞는 카피 생성 (개선 컨텍스트 반영)
-    ad_copy = await generate_copy(
-        product_analysis=product_analysis,
-        strategy_output=strategy_output,
-        image_analysis=image_analysis,
-        template=plan.template,
-        improvement_context=improvement_context,
-    )
+async def _persist_results(generation_id: str, final_state: dict) -> None:
+    """파이프라인 최종 state를 DB에 영속화."""
+    async with AsyncSessionLocal() as session:
+        generation = await session.get(AdGeneration, uuid.UUID(generation_id))
+        if generation is None:
+            raise RuntimeError(f"AdGeneration 행이 없습니다: {generation_id}")
 
-    # 4. 인페인팅 + 품질 검증 병렬 실행
-    inpainted_bg, quality_report = await asyncio.gather(
-        inpaint_text_zone(
-            bg_bytes=bg_bytes,
-            template=plan.template,
-            image_analysis=image_analysis,
-            brand_color=brand_color,
+        generation.status = "completed"
+        generation.product_analysis = final_state.get("product_analysis")
+        generation.strategies = final_state.get("strategies")
+
+        rows = zip(
+            final_state["candidates"],
+            final_state["qa_results"],
+            final_state["explanations"],
+            strict=True,
+        )
+        for candidate, qa_result, explanation in rows:
+            session.add(
+                AdGenerationCandidate(
+                    id=uuid.UUID(candidate["candidate_id"]),
+                    generation_id=uuid.UUID(generation_id),
+                    idx=candidate["idx"],
+                    strategy=candidate["strategy"],
+                    template_id=candidate["template_id"],
+                    copy=candidate["copy"],
+                    image_prompt=candidate.get("image_prompt"),
+                    s3_key=candidate["s3_key"],
+                    qa_result=qa_result,
+                    qa_passed=qa_result.get("overall_passed", False),
+                    explanation=explanation,
+                )
+            )
+        await session.commit()
+
+
+async def stream_events(generation_id: str) -> AsyncIterator[str]:
+    """SSE 이벤트 스트림 — simulation_service와 동일한 인메모리 누적 방식."""
+    if generation_id not in _tasks:
+        yield 'data: {"event": "error", "message": "Generation task not found"}\n\n'
+        return
+
+    sent = 0
+    while True:
+        store = _tasks[generation_id]
+        events = store["events"]
+        while sent < len(events):
+            yield f"data: {json.dumps(events[sent], ensure_ascii=False)}\n\n"
+            sent += 1
+
+        if store["status"] in ("completed", "failed"):
+            break
+
+        await asyncio.sleep(0.5)
+
+
+async def get_detail(generation_id: str) -> dict | None:
+    """생성 결과 상세 — DB 기준 (서버 재시작 후에도 조회 가능)."""
+    try:
+        gid = uuid.UUID(generation_id)
+    except ValueError:
+        return None
+
+    async with AsyncSessionLocal() as session:
+        generation = await session.get(AdGeneration, gid)
+        if generation is None:
+            return None
+
+        candidates = (
+            (
+                await session.execute(
+                    select(AdGenerationCandidate)
+                    .where(AdGenerationCandidate.generation_id == gid)
+                    .order_by(AdGenerationCandidate.idx)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        publish_logs = (
+            (
+                await session.execute(
+                    select(AdPublishLog)
+                    .where(AdPublishLog.generation_id == gid)
+                    .order_by(AdPublishLog.created_at.desc())
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+    candidate_dicts = []
+    for candidate in candidates:
+        candidate_dicts.append(
+            {
+                "candidate_id": str(candidate.id),
+                "idx": candidate.idx,
+                "strategy": candidate.strategy,
+                "template_id": candidate.template_id,
+                "copy": candidate.copy,
+                "s3_key": candidate.s3_key,
+                "image_url": await presign_get(candidate.s3_key) if candidate.s3_key else None,
+                "qa_result": candidate.qa_result,
+                "qa_passed": candidate.qa_passed,
+                "explanation": candidate.explanation,
+            }
+        )
+
+    return {
+        "generation_id": str(generation.id),
+        "status": generation.status,
+        "input": generation.input,
+        "product_analysis": generation.product_analysis,
+        "strategies": generation.strategies,
+        "selected_candidate_id": (
+            str(generation.selected_candidate_id) if generation.selected_candidate_id else None
         ),
-        check_quality(ad_copy=ad_copy, target=product_analysis.target_audience),
-    )
-
-    # 5. PIL로 한국어 텍스트 합성
-    image_bytes = await asyncio.to_thread(
-        composite_text,
-        inpainted_bg,
-        ad_copy.headline,
-        ad_copy.body,
-        ad_copy.cta,
-        plan.template,
-        brand_color,
-        image_analysis,
-    )
-
-    s3_key = f"generated/{generation_id}/{variant_id}.png"
-    image_url = await _upload_to_s3(image_bytes, s3_key)
-
-    return GeneratedAdVariant(
-        variant_id=variant_id,
-        strategy=plan.strategy,
-        template=plan.template,
-        image_s3_key=s3_key,
-        image_url=image_url,
-        headline=ad_copy.headline,
-        body=ad_copy.body,
-        cta=ad_copy.cta,
-        rationale=plan.rationale,
-        quality_report=quality_report,
-    )
+        "error_message": generation.error_message,
+        "created_at": generation.created_at.isoformat(),
+        "candidates": candidate_dicts,
+        "publish_logs": [
+            {
+                "id": str(log.id),
+                "candidate_id": str(log.candidate_id) if log.candidate_id else None,
+                "platform": log.platform,
+                "status": log.status,
+                "ig_media_id": log.ig_media_id,
+                "caption": log.caption,
+                "error_message": log.error_message,
+                "created_at": log.created_at.isoformat(),
+            }
+            for log in publish_logs
+        ],
+    }
 
 
-def _to_strategy_plans(strategy_outputs: list[StrategyOutput]) -> list[StrategyPlan]:
-    return [
-        StrategyPlan(
-            strategy=s.strategy,
-            strategy_description=s.strategy_description,
-            template=select_template(s.strategy),
-            rationale=s.rationale,
+async def select_candidate(generation_id: str, candidate_id: str) -> bool:
+    """사용자가 선택한 후보 저장 — 후보가 해당 생성에 속하는지 검증."""
+    try:
+        gid = uuid.UUID(generation_id)
+        cid = uuid.UUID(candidate_id)
+    except ValueError:
+        return False
+
+    async with AsyncSessionLocal() as session:
+        candidate = await session.get(AdGenerationCandidate, cid)
+        if candidate is None or candidate.generation_id != gid:
+            return False
+        generation = await session.get(AdGeneration, gid)
+        if generation is None:
+            return False
+        generation.selected_candidate_id = cid
+        await session.commit()
+        return True
+
+
+async def list_generations(limit: int = 20) -> list[dict]:
+    """생성 이력 목록 (최신순)."""
+    async with AsyncSessionLocal() as session:
+        generations = (
+            (
+                await session.execute(
+                    select(AdGeneration).order_by(AdGeneration.created_at.desc()).limit(limit)
+                )
+            )
+            .scalars()
+            .all()
         )
-        for s in strategy_outputs
+
+    return [
+        {
+            "generation_id": str(g.id),
+            "status": g.status,
+            "product_name": (g.input or {}).get("product_name"),
+            "selected_candidate_id": (
+                str(g.selected_candidate_id) if g.selected_candidate_id else None
+            ),
+            "created_at": g.created_at.isoformat(),
+        }
+        for g in generations
     ]
 
 
-@traceable(name="GeneratorService.generate", metadata={"pipeline": "generator", "mode": "create"})
-async def generate_ad(request: GenerateRequest) -> GenerateResult:
-    generation_id = str(uuid.uuid4())
+def png_to_jpeg(png_bytes: bytes, quality: int = 90) -> bytes:
+    """PNG → JPEG 변환 — Instagram Content Publishing은 JPEG만 공식 지원."""
+    image = Image.open(io.BytesIO(png_bytes)).convert("RGB")
+    buffer = io.BytesIO()
+    image.save(buffer, format="JPEG", quality=quality)
+    return buffer.getvalue()
 
-    product_analysis = await analyze_product(
-        product_name=request.product_name,
-        description=request.description,
-        target=request.target,
-        objective=request.objective,
-    )
 
-    strategy_outputs = await plan_strategies(product_analysis)
-    plans = _to_strategy_plans(strategy_outputs)
+async def advertise_candidate(generation_id: str, req: AdvertiseRequest) -> dict | None:
+    """선택된 후보를 Meta Marketing API로 광고 집행 (기본 PAUSED)."""
+    try:
+        gid = uuid.UUID(generation_id)
+        cid = uuid.UUID(req.candidate_id)
+    except ValueError:
+        return None
 
-    variant_ids = ["A", "B", "C"]
-    variants = await asyncio.gather(
-        *[
-            _build_variant(
-                variant_id=vid,
-                generation_id=generation_id,
-                plan=plan,
-                strategy_output=so,
-                product_analysis=product_analysis,
-                size=request.size,
-                brand_color=request.brand_color,
-                tone=request.tone,
+    async with AsyncSessionLocal() as session:
+        generation = await session.get(AdGeneration, gid)
+        candidate = await session.get(AdGenerationCandidate, cid)
+        if generation is None or candidate is None or candidate.generation_id != gid:
+            return None
+
+    image_url = await presign_get(candidate.s3_key, expires_in=3600)
+    copy = candidate.copy or {}
+
+    publisher = build_ads_publisher()
+    outcome = await publisher.create_ad_campaign(image_url, copy, req)
+
+    status = "mocked" if outcome.mocked else ("created" if outcome.success else "failed")
+
+    async with AsyncSessionLocal() as session:
+        session.add(
+            AdCampaignLog(
+                generation_id=gid,
+                candidate_id=cid,
+                status=status,
+                mocked=outcome.mocked,
+                campaign_id=outcome.campaign_id,
+                adset_id=outcome.adset_id,
+                creative_id=outcome.creative_id,
+                ad_id=outcome.ad_id,
+                budget=req.budget,
+                objective=req.objective,
+                targeting=req.targeting,
+                request_payload={
+                    "objective": req.objective,
+                    "budget": req.budget,
+                    "targeting": req.targeting,
+                    "destination_url": req.destination_url,
+                    "start_date": req.start_date,
+                    "end_date": req.end_date,
+                },
+                response_payload=outcome.raw,
+                error_message=outcome.error,
             )
-            for vid, plan, so in zip(
-                variant_ids[: len(plans)], plans, strategy_outputs, strict=False
-            )
-        ]
-    )
-
-    return GenerateResult(
-        generation_id=generation_id,
-        mode=GenerationMode.CREATE,
-        variants=list(variants),
-        created_at=datetime.now(UTC).isoformat(),
-    )
-
-
-@traceable(name="GeneratorService.improve", metadata={"pipeline": "generator", "mode": "improve"})
-async def improve_ad(request: ImproveRequest) -> GenerateResult:
-    generation_id = str(uuid.uuid4())
-
-    # 공통: S3에서 원본 이미지 다운로드 + Vision 역분석으로 ProductAnalysis 채우기
-    original_image_bytes, product_analysis = await extract_ad_info(
-        s3_key=request.existing_ad_s3_key,
-        product_name=request.product_name,
-        description=request.description,
-        target=request.target,
-        objective=request.objective,
-    )
-
-    if request.simulation_summary:
-        # 시뮬레이션 기반 개선: 피드백을 전 파이프라인에 전달, 원본 이미지를 Edit API로 수정
-        improvement_context = f"시뮬레이션 피드백: {request.simulation_summary}"
-        if request.fix_requests:
-            improvement_context += f"\n추가 수정 요청: {request.fix_requests}"
-
-        strategy_outputs = await plan_strategies(
-            product_analysis=product_analysis,
-            improvement_context=improvement_context,
         )
-        plans = _to_strategy_plans(strategy_outputs)
+        await session.commit()
 
-        variant_ids = ["A", "B", "C"]
-        variants = await asyncio.gather(
-            *[
-                _build_variant(
-                    variant_id=vid,
-                    generation_id=generation_id,
-                    plan=plan,
-                    strategy_output=so,
-                    product_analysis=product_analysis,
-                    size=request.size,
-                    brand_color=request.brand_color,
-                    tone=request.tone,
-                    original_image_bytes=original_image_bytes,  # Edit API로 원본 수정
-                    improvement_context=improvement_context,
-                )
-                for vid, plan, so in zip(
-                    variant_ids[: len(plans)], plans, strategy_outputs, strict=False
-                )
-            ]
-        )
+    from core.config import settings as cfg
+
+    ads_manager_url: str | None = None
+    if cfg.meta_ad_account_id:
+        act_id = str(cfg.meta_ad_account_id).removeprefix("act_")
+        ads_manager_url = f"https://www.facebook.com/adsmanager/manage/campaigns?act={act_id}"
+
+    return {
+        "generation_id": generation_id,
+        "candidate_id": req.candidate_id,
+        "status": status,
+        "success": outcome.success,
+        "mocked": outcome.mocked,
+        "campaign_id": outcome.campaign_id,
+        "adset_id": outcome.adset_id,
+        "creative_id": outcome.creative_id,
+        "ad_id": outcome.ad_id,
+        "error": outcome.error,
+        "ads_manager_url": ads_manager_url,
+    }
+
+
+async def publish_candidate(generation_id: str, candidate_id: str, caption: str) -> dict | None:
+    """사용자 승인 후 Instagram 게시 — 선택된 후보만 허용, 이력 전체 기록 (계획서 19장)."""
+    try:
+        gid = uuid.UUID(generation_id)
+        cid = uuid.UUID(candidate_id)
+    except ValueError:
+        return None
+
+    async with AsyncSessionLocal() as session:
+        generation = await session.get(AdGeneration, gid)
+        candidate = await session.get(AdGenerationCandidate, cid)
+        if generation is None or candidate is None or candidate.generation_id != gid:
+            return None
+        if generation.selected_candidate_id != cid:
+            return {"error": "selected_candidate_only"}
+        png_key = candidate.s3_key
+        candidate_idx = candidate.idx
+
+    # IG는 JPEG만 지원 — 게시용 변환본을 별도 키로 업로드 후 presigned URL 전달
+    png_bytes = await download_bytes(png_key)
+    jpeg_key = publish_key(generation_id, candidate_idx)
+    await upload_bytes(png_to_jpeg(png_bytes), jpeg_key, content_type="image/jpeg")
+    image_url = await presign_get(jpeg_key)
+
+    publisher = build_publisher()
+    outcome = await publisher.publish_image(image_url, caption)
+
+    if outcome.mocked:
+        status = "mocked"
+    elif outcome.success:
+        status = "published"
     else:
-        # 직접 수정 모드: 원본 이미지를 Edit API로 수정
-        improvement_context = request.fix_requests or "전반적인 광고 품질을 개선하세요."
+        status = "failed"
 
-        strategy_outputs = await plan_strategies(
-            product_analysis=product_analysis,
-            improvement_context=improvement_context,
+    async with AsyncSessionLocal() as session:
+        session.add(
+            AdPublishLog(
+                generation_id=gid,
+                candidate_id=cid,
+                platform="instagram",
+                status=status,
+                ig_container_id=outcome.container_id,
+                ig_media_id=outcome.media_id,
+                caption=caption,
+                request_payload={"image_url": image_url, "caption": caption},
+                response_payload=outcome.raw,
+                error_message=outcome.error,
+            )
         )
-        plans = _to_strategy_plans(strategy_outputs)
+        await session.commit()
 
-        variant_ids = ["A", "B", "C"]
-        variants = await asyncio.gather(
-            *[
-                _build_variant(
-                    variant_id=vid,
-                    generation_id=generation_id,
-                    plan=plan,
-                    strategy_output=so,
-                    product_analysis=product_analysis,
-                    size=request.size,
-                    brand_color=request.brand_color,
-                    tone=request.tone,
-                    original_image_bytes=original_image_bytes,  # Edit API 사용
-                    improvement_context=improvement_context,
-                )
-                for vid, plan, so in zip(
-                    variant_ids[: len(plans)], plans, strategy_outputs, strict=False
-                )
-            ]
-        )
-
-    return GenerateResult(
-        generation_id=generation_id,
-        mode=GenerationMode.IMPROVE,
-        variants=list(variants),
-        created_at=datetime.now(UTC).isoformat(),
-    )
+    return {
+        "generation_id": generation_id,
+        "candidate_id": candidate_id,
+        "status": status,
+        "success": outcome.success,
+        "mocked": outcome.mocked,
+        "media_id": outcome.media_id,
+        "error": outcome.error,
+    }

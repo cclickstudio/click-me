@@ -1,7 +1,7 @@
 from langsmith import traceable
 from openai import AsyncOpenAI
 
-from domain.generator.contracts.schemas import AdCopy, QualityCheckItem, QualityReport
+from domain.generator.contracts.pipeline_schemas import AdCopy, QualityCheckItem, QualityReport
 from tools.utils import safe_json_loads
 
 _client = AsyncOpenAI(timeout=60.0)

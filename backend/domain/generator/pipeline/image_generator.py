@@ -4,8 +4,9 @@ import io
 from langsmith import traceable
 from openai import AsyncOpenAI
 
+from core.config import settings
 from domain.generator.contracts.enums import AdSize, AdStrategy, TemplateType
-from domain.generator.contracts.schemas import ProductAnalysis
+from domain.generator.contracts.pipeline_schemas import ProductAnalysis
 
 # OpenAI 클라이언트 초기화 (이미지 생성 API 호출에 사용)
 _client = AsyncOpenAI(timeout=120.0)
@@ -302,11 +303,11 @@ async def generate_image(
     )
 
     response = await _client.images.generate(
-        model="gpt-image-1",
+        model=settings.generator_image_model,
         prompt=prompt,
         n=1,
         size=size.value,
-        quality="high",
+        quality=settings.generator_image_quality,
     )
 
     return base64.b64decode(response.data[0].b64_json)

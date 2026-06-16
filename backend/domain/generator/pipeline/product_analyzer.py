@@ -1,7 +1,7 @@
 from langsmith import traceable
 from openai import AsyncOpenAI
 
-from domain.generator.contracts.schemas import ProductAnalysis
+from domain.generator.contracts.pipeline_schemas import ProductAnalysis
 from tools.utils import safe_json_loads, str_list, str_or_none
 
 _client = AsyncOpenAI(timeout=60.0)

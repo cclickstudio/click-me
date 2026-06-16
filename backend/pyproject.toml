@@ -17,17 +17,19 @@ dependencies = [
     # LLM SDKs
     "openai>=1.50.0",
     "anthropic>=0.36.0",
-    "google-generativeai>=0.8.0",
+    "google-genai>=1.0.0",  # 시뮬레이터(신 SDK)
+    "google-generativeai>=0.8.0",  # 채팅(api/routers/chat.py) — 추후 google-genai로 이전 예정
     # Database
     "sqlalchemy[asyncio]>=2.0.0",
     "asyncpg>=0.29.0",
+    "psycopg2-binary>=2.9.0",
     "pgvector>=0.3.0",
     "alembic>=1.13.0",
     # AWS
     "boto3>=1.35.0",
     "aioboto3>=13.0.0",
     # Config & Validation
-    "pydantic>=2.9.0",
+    "pydantic[email]>=2.9.0",
     "pydantic-settings>=2.5.0",
     "python-dotenv>=1.0.0",
     # PDF Report
@@ -36,11 +38,14 @@ dependencies = [
     # Numeric
     "numpy>=1.26.0",
     "scipy>=1.13.0",
+    # Image (Generator — IG 게시용 JPEG 변환)
+    "pillow>=10.0.0",
     # Utils
     "httpx>=0.27.0",
     "tenacity>=9.0.0",
     "structlog>=24.4.0",
-    "pillow>=10.0.0",
+    "python-jose[cryptography]>=3.5.0",
+    "bcrypt>=4.0.0",
 ]
 
 [dependency-groups]
@@ -94,6 +99,8 @@ ignore = [
 "api/routers/ads.py" = ["E501"]
 # 모델 주석
 "core/models.py" = ["E501"]
+# 한국어 시스템 프롬프트 긴 줄 허용 (generator 파이프라인)
+"domain/generator/**" = ["E501"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["api", "agents", "tools", "core", "domain"]

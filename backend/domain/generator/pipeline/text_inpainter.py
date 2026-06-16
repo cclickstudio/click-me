@@ -6,7 +6,7 @@ from openai import AsyncOpenAI, OpenAIError
 from PIL import Image, ImageDraw
 
 from domain.generator.contracts.enums import TemplateType
-from domain.generator.contracts.schemas import ImageAnalysis
+from domain.generator.contracts.pipeline_schemas import ImageAnalysis
 
 _client = AsyncOpenAI(timeout=120.0)
 

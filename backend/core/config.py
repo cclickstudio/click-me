@@ -1,9 +1,18 @@
-from pydantic import Field
+from pathlib import Path
+
+from pydantic import AliasChoices, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+BACKEND_ROOT = Path(__file__).resolve().parent.parent
+# .env 는 프로젝트 루트 우선(현 배치), 없으면 backend/.env 폴백.
+_ROOT_ENV = BACKEND_ROOT.parent / ".env"
+ENV_FILE = _ROOT_ENV if _ROOT_ENV.exists() else BACKEND_ROOT / ".env"
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_file=str(ENV_FILE), env_file_encoding="utf-8", extra="ignore"
+    )
 
     # App
     app_env: str = "development"
@@ -23,11 +32,24 @@ class Settings(BaseSettings):
     # Google Gemini
     gemini_api_key: str | None = None
 
-    # LangSmith
-    LANGSMITH_TRACING_V2: bool = True
-    LANGSMITH_ENDPOINT: str = "https://api.smith.langchain.com"
-    LANGSMITH_API_KEY: str
-    LANGSMITH_PROJECT: str = "clickme-v2"
+    # LangSmith — API 키 없으면 트레이싱 비활성(로컬 기동 가능)
+    # LANGCHAIN_* 사용, LANGSMITH_*도 AliasChoices로 수용.
+    LANGSMITH_TRACING_V2: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("LANGSMITH_TRACING_V2", "LANGCHAIN_TRACING_V2"),
+    )
+    LANGSMITH_ENDPOINT: str = Field(
+        default="https://api.smith.langchain.com",
+        validation_alias=AliasChoices("LANGSMITH_ENDPOINT", "LANGCHAIN_ENDPOINT"),
+    )
+    LANGSMITH_API_KEY: str = Field(
+        default="",
+        validation_alias=AliasChoices("LANGSMITH_API_KEY", "LANGCHAIN_API_KEY"),
+    )
+    LANGSMITH_PROJECT: str = Field(
+        default="clickme-v2",
+        validation_alias=AliasChoices("LANGSMITH_PROJECT", "LANGCHAIN_PROJECT"),
+    )
 
     # AWS
     aws_access_key_id: str
@@ -40,6 +62,40 @@ class Settings(BaseSettings):
     # Simulation
     default_persona_count: int = Field(default=20, ge=1, le=1000)
     max_persona_count: int = Field(default=1000, ge=1)
+
+    # Meta / Instagram (Generator) — 비우면 Mock 게시 모드
+    # App
+    meta_app_id: str | None = None
+    meta_app_secret: str | None = None
+    # User
+    meta_access_token: str | None = None
+    meta_user_id: str | None = None
+    # Facebook Page
+    meta_page_id: str | None = None
+    meta_page_access_token: str | None = None
+    # Instagram (META_IG_USER_ID → META_INSTAGRAM_ACCOUNT_ID, 구형 이름도 수용)
+    meta_instagram_account_id: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("META_INSTAGRAM_ACCOUNT_ID", "META_IG_USER_ID"),
+    )
+    # Marketing (Phase 6 광고 집행용)
+    meta_ad_account_id: str | None = None
+    # Config
+    meta_graph_api_version: str = "v23.0"
+
+    # Generator (광고 생성)
+    generator_text_provider: str = "openai"  # openai | anthropic | google_genai ...
+    generator_text_model: str = "gpt-4.1"
+    generator_text_base_url: str | None = None  # 회사 OpenAI-호환 엔드포인트용
+    generator_image_provider: str = "openai"
+    generator_image_model: str = "gpt-image-1"
+    generator_image_quality: str = "medium"
+    generator_font_dir: str | None = None  # 없으면 backend/assets/fonts 사용
+
+    # JWT (Cognito 전환 전 임시)
+    jwt_secret: str = "clickme-dev-secret-change-in-prod"
+    jwt_algorithm: str = "HS256"
+    jwt_expire_minutes: int = 60 * 24 * 7  # 7일
 
 
 settings = Settings()

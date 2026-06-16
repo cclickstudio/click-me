@@ -1,127 +1,71 @@
+"""Generator DTO — graph 파이프라인 요청/산출물 스키마.
+
+생성·개선을 모두 graph(LangGraph) 파이프라인으로 처리한다.
+파이프라인 내부 산출물(ProductAnalysis/StrategyOutput/AdCopy 등)은 pipeline_schemas.py 참조.
+"""
+
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
-from domain.generator.contracts.enums import AdSize, AdStrategy, GenerationMode, TemplateType
-
-# ── 요청 스키마 ──────────────────────────────────────────────────────────────
+from domain.generator.contracts.enums import GenerationMode
 
 
-class GenerateRequest(BaseModel):
-    """생성모드 입력."""
+class GenerationCreateRequest(BaseModel):
+    """생성/개선 통합 입력 — mode로 분기.
 
-    product_name: str
-    description: str
-    target: str
-    objective: str  # awareness | conversion | lead_gen | promotion 등
-    brand_color: str | None = None  # 예: "#FF5733"
-    tone: str | None = None  # 예: "친근하고 활기찬"
-    size: AdSize = AdSize.SQUARE
+    - create: product_name / product_description / target_audience 필수
+    - improve: existing_ad_s3_key / simulation_summary 필수
+    """
+
+    mode: GenerationMode = GenerationMode.CREATE
+    project_id: str | None = None
+
+    # 생성모드 입력
+    product_name: str = ""
+    product_description: str = ""
+    target_audience: str = ""
+    campaign_objective: str = "conversion"
+
+    # 개선모드 입력
+    existing_ad_s3_key: str | None = None
+    simulation_summary: str | None = None
+    fix_requests: str | None = None
+
+    # 공통 — 브랜드 / 출력
+    brand_color: str | None = None  # hex (#RRGGBB)
+    brand_logo_url: str | None = None  # deprecated — 직접 URL 입력 (구형 호환용)
+    brand_logo_s3_key: str | None = None  # S3 업로드 후 키 (brand_profile 캐시 연동)
+    tone_and_manner: str | None = None
+    width: int = Field(default=1080, ge=256, le=4096)
+    height: int = Field(default=1080, ge=256, le=4096)
+
+    @model_validator(mode="after")
+    def _check_required_by_mode(self) -> GenerationCreateRequest:
+        if self.mode == GenerationMode.IMPROVE:
+            if not (self.existing_ad_s3_key or "").strip():
+                raise ValueError("개선모드에는 existing_ad_s3_key가 필요합니다.")
+            if not (self.simulation_summary or "").strip():
+                raise ValueError("개선모드에는 simulation_summary가 필요합니다.")
+        else:
+            missing = [
+                name
+                for name, value in (
+                    ("product_name", self.product_name),
+                    ("product_description", self.product_description),
+                    ("target_audience", self.target_audience),
+                )
+                if not (value or "").strip()
+            ]
+            if missing:
+                raise ValueError(f"생성모드 필수 필드 누락: {', '.join(missing)}")
+        return self
 
 
-class ImproveRequest(BaseModel):
-    """개선모드 입력."""
+class CandidateExplanation(BaseModel):
+    """생성 이유 설명 (계획서 8장)."""
 
-    existing_ad_s3_key: str
-    simulation_summary: str | None = None  # 시뮬레이션 기반 개선 시 입력; 없으면 직접 수정 모드
-    product_name: str | None = None
-    description: str | None = None  # 있으면 Vision 역분석 결과 보강에 사용
-    target: str | None = None
-    objective: str | None = None
-    fix_requests: str | None = None  # 직접 수정 요청사항 (두 모드 공통)
-    brand_color: str | None = None
-    tone: str | None = None
-    size: AdSize = AdSize.SQUARE
-
-
-# ── 파이프라인 내부 데이터 ─────────────────────────────────────────────────────
-
-
-class ProductAnalysis(BaseModel):
-    """product_analyzer 출력."""
-
-    product_name: str
-    core_values: list[str]
-    pain_points: list[str]
-    benefits: list[str]
-    target_audience: str
-    objective: str
-
-
-class StrategyOutput(BaseModel):
-    """strategy_planner 출력 (템플릿·copy 결정 전)."""
-
-    strategy: AdStrategy
-    strategy_description: str
+    applied_target: str
+    applied_strategy: str
+    applied_template: str
     rationale: str
-
-
-class AdCopy(BaseModel):
-    headline: str
-    body: str
-    cta: str
-
-
-class ImageAnalysis(BaseModel):
-    """image_analyzer 출력."""
-
-    dominant_colors: list[str]
-    brightness: str  # "dark" | "medium" | "light"
-    mood: str
-    composition: str
-    clear_zones: str
-    suggested_text_color: str
-
-
-class StrategyPlan(BaseModel):
-    """template_selector 통과 후 확정된 전략 (copy 생성 전)."""
-
-    strategy: AdStrategy
-    strategy_description: str
-    template: TemplateType
-    rationale: str
-
-
-# ── 품질 검증 ─────────────────────────────────────────────────────────────────
-
-
-class QualityCheckItem(BaseModel):
-    passed: bool
-    score: float = Field(ge=0.0, le=1.0)
-    feedback: str
-
-
-class QualityReport(BaseModel):
-    typo_check: QualityCheckItem
-    duplicate_check: QualityCheckItem
-    cta_exists: QualityCheckItem
-    readability: QualityCheckItem
-    target_fit: QualityCheckItem
-    text_length: QualityCheckItem
-    brand_consistency: QualityCheckItem
-    overall_passed: bool
-
-
-# ── 응답 스키마 ───────────────────────────────────────────────────────────────
-
-
-class GeneratedAdVariant(BaseModel):
-    """생성된 광고 1종."""
-
-    variant_id: str  # "A" | "B" | "C"
-    strategy: AdStrategy
-    template: TemplateType
-    image_s3_key: str
-    image_url: str  # presigned URL (24h)
-    headline: str
-    body: str
-    cta: str
-    rationale: str
-    quality_report: QualityReport
-
-
-class GenerateResult(BaseModel):
-    generation_id: str
-    mode: GenerationMode
-    variants: list[GeneratedAdVariant]  # 항상 3종
-    created_at: str
