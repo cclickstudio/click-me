@@ -42,6 +42,35 @@ class DebateStartRequest(BaseModel):
     simulation_id: str | None = None  # 있으면 영속화 FK로 사용(없으면 인메모리만)
 
 
+@router.post("/analyze")
+async def analyze_reactions(body: DebateStartRequest) -> dict:
+    """조각 8·9만 — 반응 분석·KPI·토론 주제를 즉시 반환(결정론·LLM✗·동기, 토론 전 미리보기)."""
+    if not body.reactions:
+        raise HTTPException(status_code=422, detail="reactions가 비어 있습니다.")
+    return _mock_service.analyze(body.reactions, body.ad_analysis)
+
+
+@router.post("/analyze/upload")
+async def analyze_from_file(file: UploadFile = File(...)) -> dict:
+    """업로드한 7번 산출물 JSON으로 반응 분석·KPI·주제만 즉시 반환(토론 없음)."""
+    try:
+        raw = json.loads(await file.read())
+        ds = parse_reaction_set(raw, name=file.filename or "upload")
+    except (json.JSONDecodeError, ValueError, TypeError) as exc:
+        raise HTTPException(status_code=422, detail=f"JSON 파싱 실패: {exc}") from exc
+    return _mock_service.analyze(ds.reactions, ds.ad_analysis)
+
+
+@router.post("/dummy/{name}/analyze")
+async def analyze_dummy(name: str) -> dict:
+    """더미(reaction-dummy1~5)의 반응 분석·KPI·주제만 즉시 반환 — 데모/검증용."""
+    try:
+        ds = load_dummy_by_name(name)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return _mock_service.analyze(ds.reactions, ds.ad_analysis)
+
+
 @router.post("/start")
 async def start_debate(body: DebateStartRequest, use_llm: bool = False) -> dict:
     """JSON 데이터(reactions[])로 토론 시작 — 비동기. use_llm=true면 실 LLM(비용 발생)."""

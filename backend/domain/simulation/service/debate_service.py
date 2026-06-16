@@ -43,6 +43,24 @@ class DebateService:
         self._judge = judge
         self._persistence = persistence  # DebateRepository(주입 시 + simulation_id 있을 때 저장)
 
+    def analyze(
+        self,
+        reactions: list[PersonaReaction],
+        ad_analysis: AdInterpretation | None = None,
+    ) -> dict:
+        """조각 8·9만 — 반응 분석·KPI·토론 주제(결정론·LLM✗·동기). 토론 전 미리보기용.
+
+        funnel·bottleneck·이탈/거부 분해·소비자 그룹(8) + 4대 KPI·토론 주제(9)를 즉시 반환.
+        """
+        analysis = analyze_reactions(reactions)
+        aggregate = compute_kpi(reactions)
+        topic = build_topic(analysis, aggregate, ad_analysis)
+        return {
+            "analysis": analysis.model_dump(),
+            "aggregate": aggregate.model_dump(),
+            "topic": topic.model_dump(),
+        }
+
     async def start(
         self,
         reactions: list[PersonaReaction],
