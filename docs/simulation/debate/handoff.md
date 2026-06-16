@@ -57,14 +57,29 @@ ClickMe — 집행 전 AI 가상 소비자에게 광고를 테스트하고 집�
 - [ ] 프론트 `api.ts`의 `/api/simulate/*` 경로 불일치(별건).
 - [ ] 토론 인원 6명은 `persona-debate-pipeline.md`의 6슬롯과 일치. 만약 추후 5명으로 바꾸면 슬롯6 제거 필요(현재는 6명 유지).
 
-## 5. 다음 할 일 (바로 착수)
+## 4-1. 조각 8~11 구현 완료 (2026-06-16 세션)
 
-**조각 8(반응 분석)부터 코드로 구현한다.** 순서:
-1. 조각 8 — `reactions[]` → AISAS 퍼널·병목·이탈/거부/불신/감정 분해·소비자 그룹. (결정론)
-2. 조각 9 — 4대 KPI 수치 확정(더미 `aggregate`와 일치 검증) + 토론 주제 생성. (결정론)
-3. 조각 10-a/10-b — 선발 6명 + 모델·이름 배정 + `persona_debates` DB행 생성. (결정론)
-4. 더미 5개로 1~3 전부 검증.
-5. stream(SSE) 골격 연결 후, 조각 10-c(LLM 토론, 2~4턴)·11(리포트)을 얹는다.
+**8~11 결정론 파이프라인 + mock 토론을 전부 구현·검증했다.** (커밋 5개, 전부 `feat/simulation-doyeon`)
+
+- **조각 8 반응 분석** — `tools/debate/analyzer.py`. AISAS 퍼널(단계별 flag 합산, 비단조 대비)·병목(인접 단계 인원 최대감소)·이탈/거부/감정 분해·소비자 그룹(겹침 허용). → `ReactionAnalysis`.
+- **조각 9 KPI+주제** — `tools/debate/kpi.py`. 기존 `BasicAggregator` 재사용(더미 `aggregate`와 일치 검증) + 주신호(rejection/trust_action_gap/early_attrition/mid_attrition) 분기 토론 주제. → `DebateTopic`.
+- **조각 10-a 선발** — `tools/debate/selector.py`. 6슬롯 배타배정·빈슬롯 보충(fallback)·비판자 확보. 피벗=신뢰-행동 갭.
+- **조각 10-b 배정** — `tools/debate/assigner.py`. 입장순 엔진 교차(haiku2/gpt2/gemini2, 피벗 haiku)·persona_id 결정론 이름(sha256, 중복회피).
+- **조각 10-c 토론(mock)** — `tools/debate/runner.py`(유동 라운드 MIN2/MAX4 + churn·dispersion 게이트) + `contracts/debate_ports.py`(DebaterPort/JudgePort) + `adapters/mock_debate.py`(MockDebater/MockJudge). mock은 churn=0 → 2라운드 consensus. **실 LLM 붙이면 churn 발생 → 3~4턴 가능.**
+- **조각 11 리포트** — `tools/debate/report.py`. KPI+분석+토론 결론·발언 인용 결정론 조립. → `SimulationReport`.
+- **stream 오케스트레이션** — `service/debate_service.py`. 8→9→10-a→10-b→(10-c)→11 순차 실행, 단계 이벤트 SSE emit. 엔진 미주입이면 10-c placeholder. 기존 `simulation_service` store/SSE 패턴 재사용.
+- **스키마** — `contracts/debate_schemas.py`에 전부 모음(공용 `schemas.py` 안 건드림).
+- **검증(도메인 내부, pytest 밖)** — `tools/debate/verify.py`(8·9·10-a·10-b) / `verify_stream.py`(stream 골격) / `verify_debate.py`(게이트 단위 + mock 토론 + 리포트). 더미 5개 전부 통과. 실행: `cd backend && uv run python -m domain.simulation.tools.debate.<모듈>`.
+
+## 5. 다음 할 일 (외부 의존/공통부 — 환경·우선순위 결정 필요)
+
+결정론 파이프라인(8~11)은 끝났다. 남은 건 전부 외부 의존이나 공통부 변경.
+
+1. **실 LLM 엔진** — Haiku/GPT/Gemini 토론자 + Opus Judge 어댑터(`adapters/`), `DebaterPort`/`JudgePort` 구현. `wiring.py`에서 mock↔실 교체(`build_debate_service(use_mock=...)`). API키·비용 발생. 라운드별 실시간 stream은 `run_debate`에 emit 콜백 추가.
+2. **wiring 연결** — `DebateService`를 Composition Root(`wiring.py`)에 조립 함수로 추가(현재는 verify가 직접 생성).
+3. **DB 영속화** — `persona_debates`/`participants`/`utterances` Alembic 적용(아래 4의 미해결) 후 `DebateResult` 저장.
+4. **라우터 노출** — `api/routers/`에 토론 엔드포인트 + `api/main.py` append-only 등록(공통부, 사전공지). 입력이 더미인지 실제 7번 산출인지 결정.
+5. 프론트 연동(SSE 단계 이벤트 소비).
 
 ## 6. 핵심 파일
 
@@ -74,5 +89,9 @@ ClickMe — 집행 전 AI 가상 소비자에게 광고를 테스트하고 집�
 | 파이프라인 조각(8~11) | `docs/simulation/debate/pipeline-piece.md` |
 | DB 스키마(v3.1, 새 토론 테이블) | `docs/db-schema.md` |
 | 더미 5개 | `backend/domain/simulation/dummy/reaction-dummy1~5.json` |
+| **조각 8~11 코드** | `backend/domain/simulation/tools/debate/`(analyzer·kpi·selector·assigner·runner·report·loader·verify*) |
+| **토론 DTO·포트** | `backend/domain/simulation/contracts/debate_schemas.py`·`debate_ports.py` |
+| **mock 엔진** | `backend/domain/simulation/adapters/mock_debate.py` |
+| **오케스트레이션** | `backend/domain/simulation/service/debate_service.py` |
 | 시뮬 도메인 코드 | `backend/domain/simulation/` (service·graph·tools·adapters·wiring) |
 | 프로젝트 삭제 SQL(토론 테이블 참조) | `backend/api/routers/projects.py` |
