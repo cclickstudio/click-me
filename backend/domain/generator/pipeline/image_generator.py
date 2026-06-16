@@ -1,5 +1,7 @@
 import base64
 
+from google import genai
+from google.genai import types as genai_types
 from langsmith import traceable
 from openai import AsyncOpenAI
 
@@ -7,7 +9,20 @@ from core.config import settings
 from domain.generator.contracts.enums import AdSize, AdStrategy, TemplateType
 from domain.generator.contracts.pipeline_schemas import ProductAnalysis
 
-_client = AsyncOpenAI(timeout=120.0)
+_openai_client = AsyncOpenAI(timeout=120.0)
+
+_GEMINI_NATIVE_ASPECT_RATIO: dict[AdSize, str] = {
+    AdSize.SQUARE: "1:1",
+    AdSize.LANDSCAPE: "3:2",
+    AdSize.PORTRAIT: "2:3",
+}
+
+# Imagen은 "1:1"/"3:4"/"4:3"/"9:16"/"16:9"만 지원 — AdSize 비율에 가장 가까운 값으로 매핑
+_IMAGEN_ASPECT_RATIO: dict[AdSize, str] = {
+    AdSize.SQUARE: "1:1",
+    AdSize.LANDSCAPE: "4:3",
+    AdSize.PORTRAIT: "3:4",
+}
 
 _STRATEGY_DESCRIPTIONS: dict[AdStrategy, str] = {
     AdStrategy.BENEFIT: "highlighting product benefits and value proposition",
@@ -169,12 +184,58 @@ async def generate_image(
         safe_zone=_TEMPLATE_SAFE_ZONES[template],
     )
 
-    response = await _client.images.generate(
+    provider = settings.generator_image_provider
+    if provider == "openai":
+        return await _generate_with_openai(prompt, size)
+    if provider == "google_genai":
+        return await _generate_with_gemini(prompt, size)
+    raise NotImplementedError(f"지원하지 않는 GENERATOR_IMAGE_PROVIDER: {provider!r}")
+
+
+async def _generate_with_openai(prompt: str, size: AdSize) -> bytes:
+    response = await _openai_client.images.generate(
         model=settings.generator_image_model,
         prompt=prompt,
         n=1,
         size=size.value,
         quality=settings.generator_image_quality,
     )
-
     return base64.b64decode(response.data[0].b64_json)
+
+
+async def _generate_with_gemini(prompt: str, size: AdSize) -> bytes:
+    model = settings.generator_image_model
+    if model.startswith("imagen-"):
+        return await _generate_with_imagen(model, prompt, size)
+    return await _generate_with_gemini_native(model, prompt, size)
+
+
+async def _generate_with_gemini_native(model: str, prompt: str, size: AdSize) -> bytes:
+    client = genai.Client(api_key=settings.gemini_api_key)
+    response = await client.aio.models.generate_content(
+        model=model,
+        contents=prompt,
+        config=genai_types.GenerateContentConfig(
+            response_modalities=["IMAGE"],
+            image_config=genai_types.ImageConfig(aspect_ratio=_GEMINI_NATIVE_ASPECT_RATIO[size]),
+        ),
+    )
+    for part in response.candidates[0].content.parts:
+        if part.inline_data and part.inline_data.data:
+            return part.inline_data.data
+    raise RuntimeError("Gemini 응답에 이미지 데이터가 없음")
+
+
+async def _generate_with_imagen(model: str, prompt: str, size: AdSize) -> bytes:
+    client = genai.Client(api_key=settings.gemini_api_key)
+    response = await client.aio.models.generate_images(
+        model=model,
+        prompt=prompt,
+        config=genai_types.GenerateImagesConfig(
+            number_of_images=1,
+            aspect_ratio=_IMAGEN_ASPECT_RATIO[size],
+        ),
+    )
+    if not response.generated_images:
+        raise RuntimeError("Imagen 응답에 이미지가 없음")
+    return response.generated_images[0].image.image_bytes
