@@ -53,22 +53,27 @@ class AuditEvent:
 
 
 class AuditSink(Protocol):
-    def append(self, event: AuditEvent) -> None: ...
+    async def append(self, event: AuditEvent) -> None: ...
+
+    async def for_approval(self, approval_id: str) -> tuple[AuditEvent, ...]: ...
 
 
 class InMemoryAuditLog:
-    """insert-only 인메모리 감사 로그 — 조회는 읽기 전용 튜플로만 노출."""
+    """insert-only 인메모리 감사 로그 — 조회는 읽기 전용 튜플로만 노출.
+
+    메서드는 async (AuditSink Protocol 통일) — DB 구현(DbAuditSink)과 교체 가능.
+    """
 
     def __init__(self) -> None:
         self._events: list[AuditEvent] = []
 
-    def append(self, event: AuditEvent) -> None:
+    async def append(self, event: AuditEvent) -> None:
         safe = dataclasses.replace(event, payload=mask_sensitive(event.payload))
         self._events.append(safe)
 
-    def events(self) -> tuple[AuditEvent, ...]:
+    async def events(self) -> tuple[AuditEvent, ...]:
         return tuple(self._events)
 
-    def for_approval(self, approval_id: str) -> tuple[AuditEvent, ...]:
+    async def for_approval(self, approval_id: str) -> tuple[AuditEvent, ...]:
         """게이트 #7 — 부분 실패·재시도 결과를 승인 단위로 추적."""
         return tuple(e for e in self._events if e.approval_id == approval_id)

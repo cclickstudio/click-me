@@ -11,6 +11,7 @@ from datetime import UTC, datetime
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from core.config import settings
 from domain.management.adapters.meta.writer import MetaAdsWriter
 from domain.management.adapters.mock import MockAdPlatform
 from domain.management.agents.regeneration import RegenerationContext
@@ -30,16 +31,17 @@ from domain.management.detection.exposure_model import (
     expected_hourly_impressions,
     find_anomaly_window,
 )
-from domain.management.execution.audit_log import InMemoryAuditLog
-from domain.management.execution.executor import Executor, InMemoryIdempotencyStore
+from domain.management.execution.executor import Executor
 from domain.management.execution.tier import TenantBudgetRegistry
+from domain.management.wiring import build_audit_sink, build_idempotency_store
 
 router = APIRouter()
 
 _DEMO_FAULTS = {"bid_loss", "review_rejected", "none"}
 
-# 데모용 인메모리 상태 — core 테이블 합의 후 DB Sink/Store로 교체 (합의문서 §7)
-_AUDIT_LOG = InMemoryAuditLog()
+# use_mock=True(기본)면 인메모리, False면 DB(idempotency_keys·audit_events) — wiring 분기.
+# 예산은 이번 범위 밖이라 인메모리 유지 (후속 B-1.2).
+_AUDIT_LOG = build_audit_sink(settings)
 _BUDGET = TenantBudgetRegistry(default_limit_krw=10_000_000)
 _executor: Executor | None = None
 
@@ -53,7 +55,7 @@ def _get_executor() -> Executor:
     if _executor is None:
         _executor = Executor(
             MetaAdsWriter(),
-            idempotency=InMemoryIdempotencyStore(),
+            idempotency=build_idempotency_store(settings),
             audit=_AUDIT_LOG,
             budget_for=_BUDGET.for_tenant,
             state_version_provider=_state_version,
@@ -165,7 +167,7 @@ async def execute(body: ExecuteRequest):
 @router.get("/audit")
 async def get_audit(approval_id: str):
     """승인 단위 감사 이벤트(append-only) — 게이트 #7 추적용."""
-    events = _AUDIT_LOG.for_approval(approval_id)
+    events = await _AUDIT_LOG.for_approval(approval_id)
     return {
         "events": [
             {

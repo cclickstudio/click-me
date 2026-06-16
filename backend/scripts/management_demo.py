@@ -156,7 +156,8 @@ async def main() -> None:
     # ── 5) 결과의 나머지 수신처 ────────────────────────────────
     section("5) 부수 수신처 — 제안 상태 / 감사 로그 / 멱등 재생")
     print("proposal.status :", repo.get(proposal.proposal_id).status)
-    print("audit events    :", [e.category for e in audit.for_approval(action.approval_id)])
+    _audit_events = await audit.for_approval(action.approval_id)
+    print("audit events    :", [e.category for e in _audit_events])
     replay = await service.handle(action)  # 같은 승인 재제출
     print("duplicate replay:", replay.result_id == result.result_id, "(같은 result_id 재생)")
 

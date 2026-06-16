@@ -64,32 +64,36 @@ def build_idempotency_key(action: ApprovedAction, proposal: ActionProposal) -> s
 
 
 class IdempotencyStore(Protocol):
-    """DB ``idempotency_keys.key UNIQUE + INSERT ... ON CONFLICT DO NOTHING`` 대응 Port."""
+    """DB ``idempotency_keys.key UNIQUE + INSERT ... ON CONFLICT DO NOTHING`` 대응 Port.
 
-    def reserve(self, key: str) -> bool: ...
+    메서드는 async (DB 구현 DbIdempotencyStore와 교체 가능). reserve는 테이블
+    ``approval_id`` NOT NULL 충족을 위해 approval_id를 함께 받는다.
+    """
 
-    def get_result(self, key: str) -> ActionResult | None: ...
+    async def reserve(self, key: str, approval_id: str) -> bool: ...
 
-    def save_result(self, key: str, result: ActionResult) -> None: ...
+    async def get_result(self, key: str) -> ActionResult | None: ...
+
+    async def save_result(self, key: str, result: ActionResult) -> None: ...
 
 
 class InMemoryIdempotencyStore:
-    """인메모리 멱등 저장소 — core 테이블 합의 후 DB 구현으로 교체."""
+    """인메모리 멱등 저장소 — DB 구현(DbIdempotencyStore)으로 교체 가능."""
 
     def __init__(self) -> None:
         self._reserved: set[str] = set()
         self._results: dict[str, ActionResult] = {}
 
-    def reserve(self, key: str) -> bool:
+    async def reserve(self, key: str, approval_id: str) -> bool:
         if key in self._reserved:
             return False
         self._reserved.add(key)
         return True
 
-    def get_result(self, key: str) -> ActionResult | None:
+    async def get_result(self, key: str) -> ActionResult | None:
         return self._results.get(key)
 
-    def save_result(self, key: str, result: ActionResult) -> None:
+    async def save_result(self, key: str, result: ActionResult) -> None:
         self._results[key] = result
 
 
@@ -136,12 +140,12 @@ class Executor:
         rejection = self._validate(action, proposal)
         if rejection is not None:
             reason, detail = rejection
-            return self._reject(run, action, proposal, reason, detail)
+            return await self._reject(run, action, proposal, reason, detail)
 
         # 5) expected_state_version 비교 — 낙관적 락
         current_version = await self._state_version_provider(proposal.ad_account_id)
         if current_version != action.expected_state_version:
-            return self._reject(
+            return await self._reject(
                 run,
                 action,
                 proposal,
@@ -155,9 +159,9 @@ class Executor:
         # 완료된 중복 제출은 예산 평가 전에 기존 결과를 재생한다 — 재생이 예산을
         # 두 번 소모하면 게이트 #1(같은 키 = 실행 1건)이 잔액 한도에서 깨진다.
         key = build_idempotency_key(action, proposal)
-        replayed = self._idempotency.get_result(key)
+        replayed = await self._idempotency.get_result(key)
         if replayed is not None:
-            self._record(
+            await self._record(
                 run,
                 action,
                 proposal,
@@ -169,11 +173,11 @@ class Executor:
         budget = self._budget_for(action.tenant_id)
         decision = budget.evaluate(proposal.max_total_spend_krw)
         if decision is BudgetDecision.BLOCK:
-            return self._reject(
+            return await self._reject(
                 run, action, proposal, FailureReason.BUDGET_CAP_EXCEEDED, "100% 하드캡 차단"
             )
         if decision is BudgetDecision.ESCALATE and action.approver_id == AUTO_APPROVER:
-            return self._reject(
+            return await self._reject(
                 run,
                 action,
                 proposal,
@@ -181,18 +185,18 @@ class Executor:
                 "95% 소프트캡 — 자율(AUTO) 불가, 사용자 승인 라우팅 필요 (P4)",
             )
         if decision is BudgetDecision.WARN:
-            self._record(run, action, proposal, "executor.softcap_warn", {"threshold": "90%"})
+            await self._record(run, action, proposal, "executor.softcap_warn", {"threshold": "90%"})
 
-        if not self._idempotency.reserve(key):
+        if not await self._idempotency.reserve(key, action.approval_id):
             # 선점됐는데 결과가 없다 = 동시 요청이 호출 진행 중 (in-flight)
-            self._record(
+            await self._record(
                 run,
                 action,
                 proposal,
                 "executor.duplicate_suppressed",
                 {"idempotency_key": key, "replayed": False},
             )
-            return self._reject(
+            return await self._reject(
                 run, action, proposal, FailureReason.PLATFORM_ERROR, "멱등키 선점됨(in-flight)"
             )
         run.advance(RunStatus.RESERVED)
@@ -200,10 +204,10 @@ class Executor:
         # 7) Writer 호출 (재시도·부분 실패 포함) + 감사 기록
         run.advance(RunStatus.CALLING)
         result = await self._call_targets(run, action, proposal, key)
-        self._idempotency.save_result(key, result)
+        await self._idempotency.save_result(key, result)
         if result.status in (ResultStatus.SUCCESS, ResultStatus.SUBMITTED_PENDING_REVIEW):
             budget.commit(proposal.max_total_spend_krw)
-        self._record(
+        await self._record(
             run,
             action,
             proposal,
@@ -270,7 +274,7 @@ class Executor:
                 if index > 0:
                     # 부분 실패 — 스냅샷 기록 후 정지, 자동 롤백 없음 (P5 → 게이트 #7)
                     run.advance(RunStatus.HALTED, snapshot=snapshots[-1])
-                    self._record(
+                    await self._record(
                         run,
                         action,
                         proposal,
@@ -343,7 +347,7 @@ class Executor:
                 delay = self._backoff_base_seconds
             else:
                 return outcome
-            self._record(
+            await self._record(
                 run,
                 action,
                 proposal,
@@ -392,7 +396,7 @@ class Executor:
             idempotency_key=idem_key,
         )
 
-    def _reject(
+    async def _reject(
         self,
         run: ExecutionRun,
         action: ApprovedAction,
@@ -402,14 +406,14 @@ class Executor:
     ) -> ActionResult:
         if not run.is_terminal:
             run.advance(RunStatus.FAILED)
-        self._record(
+        await self._record(
             run, action, proposal, "executor.rejected", {"reason": reason, "detail": detail}
         )
         return self._build_result(
             action, build_idempotency_key(action, proposal), ResultStatus.REJECTED, reason, None
         )
 
-    def _record(
+    async def _record(
         self,
         run: ExecutionRun,
         action: ApprovedAction,
@@ -417,7 +421,7 @@ class Executor:
         category: str,
         payload: dict[str, Any],
     ) -> None:
-        self._audit.append(
+        await self._audit.append(
             AuditEvent(
                 category=category,
                 tenant_id=action.tenant_id,

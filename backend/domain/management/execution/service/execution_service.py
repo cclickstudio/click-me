@@ -94,7 +94,7 @@ class ExecutionService:
     async def handle(self, action: ApprovedAction) -> ActionResult:
         proposal = self._proposals.get(action.proposal_id)
         if proposal is None:
-            self._audit.append(
+            await self._audit.append(
                 AuditEvent(
                     category="execution_service.proposal_not_found",
                     tenant_id=action.tenant_id,
@@ -134,7 +134,7 @@ class ExecutionService:
         current_version = await self._state_version_provider(stale.ad_account_id)
         reproposal = build_reproposal(stale, current_version, ttl=self._reproposal_ttl)
         self._proposals.save(reproposal)
-        self._audit.append(
+        await self._audit.append(
             AuditEvent(
                 category="execution_service.reproposed",
                 tenant_id=action.tenant_id,
