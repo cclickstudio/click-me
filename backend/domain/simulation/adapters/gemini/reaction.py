@@ -22,13 +22,12 @@ from domain.simulation.tools.reachability import pick_social_exposure
 
 
 def _pick_exposure(persona, rng: random.Random) -> str | None:
-    # Meta 소셜피드 후보 우선 — 없으면 일반 후보, 후보 자체가 없으면 None.
+    # Meta 전용 — 노출맥락은 항상 소셜피드. 비소셜(TV·신문 등)로는 절대 폴백하지 않는다(모순 차단).
     cands = persona.media_behavior.get("exposure_candidates") or []
     e = pick_social_exposure(cands, rng)
     if e is None:
-        if not cands:
-            return None
-        e = rng.choice(cands)
+        # 소셜 후보가 없으면(구버전 패널 등) 일반 소셜피드 기본값 — TV 등 비소셜 금지.
+        return "저녁·집·스마트폰/휴대폰·SNS"
     return f"{e['timeband']}·{e['place']}·{e['medium']}·{e['activity']}"
 
 

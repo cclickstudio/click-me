@@ -32,6 +32,7 @@ node_modules/
 .pnpm-store/
 .next/
 out/
+*.tsbuildinfo
 
 # ── Environment files ────────────────────────────
 .env
@@ -54,3 +55,10 @@ Thumbs.db
 *.pem
 npm-debug.log*
 pnpm-debug.log*
+
+# ── font ─────────────────────────────────────────
+*.ttf
+*.otf
+fonts/
+
+*.tsbuildinfo

@@ -107,6 +107,7 @@ class SimulationService:
             result = {
                 "run_id": run_id,
                 "ad_analysis": ad_dump,
+                "personas": [p.model_dump() for p in personas],  # 반응별 페르소나 속성 조회용
                 "reactions": reactions,
                 "rubric_scores": rubric_dump,
                 "aggregate": aggregate_dump,

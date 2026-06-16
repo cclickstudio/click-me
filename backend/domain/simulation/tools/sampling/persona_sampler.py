@@ -10,7 +10,7 @@ from typing import Any
 
 from domain.simulation.contracts.schemas import PanelSpec, Persona
 from domain.simulation.data.simulation import loader
-from domain.simulation.tools.reachability import cell_social_reach
+from domain.simulation.tools.reachability import cell_social_reach, is_social_context
 
 # 지역 분포 폴백 — 행안부 원본 CSV에 시도(region_weights)가 있으면 그걸 우선 사용. 합=1.0.
 _REGION_WEIGHTS: dict[str, float] = {
@@ -280,7 +280,8 @@ class PersonaSampler:
         primary = _weighted_choice(rng, list(dm.items())) if dm else "스마트폰/휴대폰"
         mm = cell["daily_media_minutes"]
         minutes = max(5, round(rng.gauss(mm["mean"], mm["sd"])))
-        # 노출맥락 후보(상위 5) — 반응(4-b) 시점에 exposure_context 로 하나 선택. 반응은 캐시✗.
+        # 노출맥락 후보 — Meta 전용이므로 소셜피드(SNS·동영상 @ 스마트폰/PC) 맥락만 추린 뒤 상위 5.
+        # 전체 상위5로 뽑으면 고령층은 TV가 점령해 소셜이 잘림 → 메타 광고 TV 노출 모순(§Tier1).
         candidates = [
             {
                 "timeband": e["timeband"],
@@ -288,8 +289,9 @@ class PersonaSampler:
                 "activity": e["activity"],
                 "place": e["place"],
             }
-            for e in cell.get("exposure", [])[:5]
-        ]
+            for e in cell.get("exposure", [])
+            if is_social_context(e.get("activity"), e.get("medium"))
+        ][:5]
         out: dict[str, Any] = {
             "primary_medium": primary,
             "daily_media_minutes": minutes,

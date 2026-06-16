@@ -5,6 +5,11 @@
 >
 > **진행 현황(2026-06-14)** — **P0~P9 ✅** + 테스트. grounding **real**(인구·지역·성격·소비가치·미디어·소득학력). 실 Gemini 반응·해석·루브릭(P4)·가중/층화 집계(§3.7)·검증데모(P9, 연령 미스매치 방향성 통과).
 > 남음(비핵심): core/models 병합 · auth 도입 시 created_by 복원 · 광고 VLM(이미지) · LLM QA 비동기화 · 공개조사 직접대조. 데이터는 OCEAN 연령별(미공개)·MDIS 심층(발표 후)만.
+>
+> **변경 이력(2026-06-16)**
+> - **fix: 노출맥락 소셜피드 한정** — `exposure_context`가 고령층 셀에서 TV·신문으로 폴백되던 모순 제거(메타 전용). 샘플러 노출후보를 소셜 맥락만으로 빌드, mock·gemini 어댑터의 비소셜 폴백 차단. 테스트 갱신(`test_reachability.py`).
+> - **add: `/run` 결과에 `personas` 추가** — 반응별 페르소나 속성(나이·OCEAN 등) 조회용. `service/simulation_service.py`.
+> - **add: 프론트 실행 화면 `/simulation/run`** — `/api/simulation/run` 연동 입력폼 + 4대 KPI·루브릭·페르소나별 반응 표시.
 
 ## P0 — 계약 고정 (병렬 착수의 전제, ~0.5일)
 

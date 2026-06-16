@@ -62,6 +62,107 @@ export interface SimulationResult {
   };
 }
 
+/* ─── Simulation (domain /api/simulation/run 계약) ─── */
+
+export interface SimAisas {
+  attention: boolean;
+  interest: boolean;
+  search: boolean;
+  action: boolean;
+  share: boolean;
+}
+
+export interface SimPersonaReaction {
+  persona_id: string;
+  exposure_context: string | null;
+  weight: number;
+  aisas: SimAisas;
+  drop_stage: string | null;
+  drop_reason_tag: string | null;
+  purchase_intent: number;
+  trust: number;
+  rejected: boolean;
+  rejection_reason_tag: string | null;
+  emotion_tag: string;
+  perceived_message: string | null;
+  perceived_target: string | null;
+  utterance: string | null;
+  qa_passed: boolean;
+  qa_fail_reason: string | null;
+}
+
+export interface SimRubricScore {
+  dimension: string;
+  score: number;
+  evidence: Record<string, unknown>;
+}
+
+export interface SimAggregate {
+  click_intent_rate: number;
+  ci_low: number;
+  ci_high: number;
+  purchase_intent: number;
+  trust_avg: number;
+  rejection_rate: number;
+  variance_warning: boolean;
+  effective_n: number;
+  payload: Record<string, unknown>;
+  engine_version: string;
+}
+
+export interface SimAdAnalysis {
+  ad_id: string;
+  structured_analysis: Record<string, unknown>;
+  detected_industry: string | null;
+  detected_objective: string | null;
+  detected_target: string | null;
+  detected_message: string | null;
+  ad_features: Record<string, unknown>;
+  intent_mismatch: boolean;
+  mismatch_detail: Record<string, unknown> | null;
+  model_version: string;
+}
+
+export interface SimPersona {
+  persona_id: string;
+  age: number;
+  gender: string;
+  region: string;
+  ocean: Record<string, number>;
+  media_behavior: Record<string, unknown>;
+  consumption_values: Record<string, unknown>;
+  socioeconomic: Record<string, unknown>;
+  weight: number;
+  profile_narrative: string;
+}
+
+export interface SimRunResult {
+  run_id: string;
+  ad_analysis: SimAdAnalysis | null;
+  personas: SimPersona[];
+  reactions: SimPersonaReaction[];
+  rubric_scores: SimRubricScore[];
+  aggregate: SimAggregate | null;
+  simulation_id?: string;
+}
+
+export interface SimRunInput {
+  ad_id: string;
+  ad_content?: string;
+  ad_image?: File | null;
+  ad_image_url?: string;
+  organization_id?: string;
+  project_id?: string;
+  target_filter?: Record<string, unknown>;
+  target_mode?: "AUTO" | "MANUAL";
+  sample_size?: number;
+  allocation?: "proportional" | "stratified";
+  ad_title?: string;
+  product_category?: string;
+  ad_objective?: string;
+  service_class?: number;
+}
+
 export interface SSEProgressEvent {
   event: "progress" | "milestone" | "completed" | "error";
   stage?: string;
@@ -142,15 +243,25 @@ export interface Project {
 
 export interface GeneratorCopy {
   headline: string;
-  subcopy: string;
-  benefit_text: string;
+  body: string;
   cta: string;
 }
 
-export interface GeneratorQACheck {
-  name: string;
+export interface QualityCheckItem {
   passed: boolean;
-  detail: string;
+  score: number;
+  feedback: string;
+}
+
+export interface QualityReport {
+  typo_check: QualityCheckItem;
+  duplicate_check: QualityCheckItem;
+  cta_exists: QualityCheckItem;
+  readability: QualityCheckItem;
+  target_fit: QualityCheckItem;
+  text_length: QualityCheckItem;
+  brand_consistency: QualityCheckItem;
+  overall_passed: boolean;
 }
 
 export interface GeneratorCandidate {
@@ -158,15 +269,14 @@ export interface GeneratorCandidate {
   idx: number;
   strategy: {
     strategy_type: string;
-    name: string;
-    key_message: string;
-    rationale: string;
+    strategy_description?: string;
+    rationale?: string;
   };
   template_id: string;
   copy: GeneratorCopy;
   s3_key: string;
   image_url: string | null;
-  qa_result: { checks: GeneratorQACheck[]; passed: boolean } | null;
+  qa_result: QualityReport | null;
   qa_passed: boolean | null;
   explanation: {
     applied_target: string;
@@ -191,12 +301,26 @@ export interface GenerationDetail {
   generation_id: string;
   status: "pending" | "running" | "completed" | "failed";
   input: Record<string, unknown>;
-  strategies: Array<{ strategy_type: string; name: string }> | null;
+  strategies: unknown[] | null;
   selected_candidate_id: string | null;
   error_message: string | null;
   created_at: string;
   candidates: GeneratorCandidate[];
   publish_logs: GenerationPublishLog[];
+}
+
+export interface CampaignResult {
+  generation_id: string;
+  candidate_id: string;
+  status: "created" | "failed" | "mocked";
+  success: boolean;
+  mocked: boolean;
+  campaign_id: string | null;
+  adset_id: string | null;
+  creative_id: string | null;
+  ad_id: string | null;
+  error: string | null;
+  ads_manager_url: string | null;
 }
 
 export interface PublishResult {

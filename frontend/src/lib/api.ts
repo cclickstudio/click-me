@@ -1,4 +1,5 @@
 import { getToken } from "./authApi";
+import type { SimRunInput, SimRunResult } from "./types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -44,6 +45,42 @@ export const api = {
     stream: (taskId: string) => new EventSource(`${API_BASE}/api/simulate/${taskId}/stream`),
   },
 
+  // 도메인 시뮬레이션(DDD) — /api/simulation/run 동기 실행(multipart/form-data).
+  simulation: {
+    run: (input: SimRunInput): Promise<SimRunResult> => {
+      const form = new FormData();
+      form.append("ad_id", input.ad_id);
+      if (input.ad_content) form.append("ad_content", input.ad_content);
+      if (input.ad_image) form.append("ad_image", input.ad_image);
+      if (input.ad_image_url) form.append("ad_image_url", input.ad_image_url);
+      if (input.organization_id) form.append("organization_id", input.organization_id);
+      if (input.project_id) form.append("project_id", input.project_id);
+      if (input.target_filter && Object.keys(input.target_filter).length > 0)
+        form.append("target_filter", JSON.stringify(input.target_filter));
+      if (input.target_mode) form.append("target_mode", input.target_mode);
+      if (input.sample_size != null) form.append("sample_size", String(input.sample_size));
+      if (input.allocation) form.append("allocation", input.allocation);
+      if (input.ad_title) form.append("ad_title", input.ad_title);
+      if (input.product_category) form.append("product_category", input.product_category);
+      if (input.ad_objective) form.append("ad_objective", input.ad_objective);
+      if (input.service_class != null) form.append("service_class", String(input.service_class));
+
+      const token = getToken();
+      // Content-Type은 지정하지 않는다 — 브라우저가 multipart boundary를 자동 설정.
+      return fetch(`${API_BASE}/api/simulation/run`, {
+        method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: form,
+      }).then(async (r) => {
+        if (!r.ok) {
+          const err = await r.json().catch(() => ({ detail: `HTTP ${r.status}` }));
+          throw new Error(err.detail ?? `HTTP ${r.status}`);
+        }
+        return r.json();
+      });
+    },
+  },
+
   chat: {
     complete: () => `${API_BASE}/api/chat/complete`,
     sessions: () => request<{ sessions: unknown[] }>("/chat/sessions"),
@@ -85,5 +122,53 @@ export const api = {
         body: JSON.stringify({ candidate_id: candidateId, caption }),
       }),
     list: (limit = 20) => request(`/generator/generations?limit=${limit}`),
+    advertise: (
+      generationId: string,
+      body: {
+        candidate_id: string;
+        budget: number;
+        objective: string;
+        targeting: { age_min: number; age_max: number; genders: number[]; countries: string[] };
+        destination_url: string;
+        start_date: string;
+        end_date?: string | null;
+      },
+    ) =>
+      request(`/generator/generations/${generationId}/advertise`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+    brandProfile: {
+      get: (clientId: string) =>
+        request<{
+          brand_color: string | null;
+          brand_logo_key: string | null;
+          brand_logo_url: string | null;
+          tone_and_manner: string | null;
+        }>("/generator/brand-profile", { headers: { "X-Client-Id": clientId } }),
+      save: (
+        clientId: string,
+        body: { brand_color?: string | null; brand_logo_key?: string | null; tone_and_manner?: string | null },
+      ) =>
+        request("/generator/brand-profile", {
+          method: "POST",
+          headers: { "X-Client-Id": clientId },
+          body: JSON.stringify(body),
+        }),
+      uploadLogo: async (clientId: string, file: File): Promise<{ key: string; url: string }> => {
+        const form = new FormData();
+        form.append("file", file);
+        const res = await fetch(`${API_BASE}/api/generator/logo`, {
+          method: "POST",
+          headers: { "X-Client-Id": clientId },
+          body: form,
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({ detail: "Unknown error" }));
+          throw new Error((err as { detail?: string }).detail ?? `HTTP ${res.status}`);
+        }
+        return res.json() as Promise<{ key: string; url: string }>;
+      },
+    },
   },
 };
