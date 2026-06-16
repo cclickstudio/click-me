@@ -299,7 +299,7 @@ def _compose_template_a(
         text_w,
         hl_y,
         (255, 255, 255),
-        8,
+        16,
         shadow=True,
     )
 
@@ -360,7 +360,7 @@ def _compose_template_b(
         text_w,
         hl_y,
         (255, 255, 255),
-        8,
+        16,
         shadow=False,
         stroke_width=4,
         stroke_color=(0, 0, 0),
@@ -462,7 +462,7 @@ def _compose_template_c(
         text_w,
         y,
         (255, 255, 255),
-        10,
+        16,
         shadow=False,
     )
 

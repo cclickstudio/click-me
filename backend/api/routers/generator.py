@@ -6,9 +6,10 @@
 import io
 import os
 from pathlib import Path
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, Header, HTTPException, UploadFile
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from PIL import Image
 from pydantic import BaseModel
 
@@ -18,7 +19,13 @@ from domain.generator.adapters.meta_ads import AdvertiseRequest
 from domain.generator.contracts.schemas import GenerationCreateRequest
 from domain.generator.service import generator_service
 from domain.generator.service.brand_profile import get_profile, save_profile
-from tools.storage.s3 import brand_logo_key, presign_get, upload_bytes
+from tools.storage.s3 import brand_logo_key, download_bytes, upload_bytes
+
+
+def _proxy_url(key: str) -> str:
+    """S3 키를 백엔드 프록시 URL로 변환 — AWS 자격증명 노출 방지."""
+    return f"/api/generator/image?key={quote(key, safe='')}"
+
 
 router = APIRouter()
 
@@ -42,10 +49,7 @@ async def get_brand_profile(x_client_id: str = Header()):
     p = get_profile(x_client_id)
     logo_url: str | None = None
     if p.brand_logo_key:
-        try:
-            logo_url = await presign_get(p.brand_logo_key)
-        except Exception:
-            logo_url = None
+        logo_url = _proxy_url(p.brand_logo_key)
     return {
         "brand_color": p.brand_color,
         "brand_logo_key": p.brand_logo_key,
@@ -97,8 +101,7 @@ async def upload_logo(
     await upload_bytes(data, key, content_type=ct)
     save_profile(x_client_id, brand_logo_key=key)
 
-    url = await presign_get(key)
-    return {"key": key, "url": url}
+    return {"key": key, "url": _proxy_url(key)}
 
 
 class GenerationTaskResponse(BaseModel):
@@ -180,6 +183,17 @@ async def langsmith_status():
             os.environ.get("LANGSMITH_TRACING") or os.environ.get("LANGCHAIN_TRACING_V2")
         ),
     }
+
+
+@router.get("/image")
+async def proxy_image(key: str):
+    """S3 이미지를 백엔드를 통해 제공 — AWS 자격증명 노출 방지."""
+    try:
+        data = await download_bytes(key)
+    except Exception:
+        raise HTTPException(status_code=404, detail="이미지를 찾을 수 없습니다.") from None
+    content_type = "image/jpeg" if key.endswith((".jpg", ".jpeg")) else "image/png"
+    return Response(content=data, media_type=content_type)
 
 
 # ── graph 기반 비동기 생성 엔드포인트 ────────────────────────────────────────
