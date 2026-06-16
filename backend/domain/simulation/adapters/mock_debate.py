@@ -85,10 +85,11 @@ class MockJudge:
             for p in participants
             if p.utterances and p.utterances[-1].stance == "positive"
         ]
+        # 거부자 슬롯이라도 마지막 발언이 negative일 때만 이견으로 — fallback 보충분 제외.
         dissent = [
             f"{p.persona_name}(거부자): 어떤 액션에도 무반응 가능 — 타깃 밖 가능성"
             for p in participants
-            if p.role == "거부자"
+            if p.role == "거부자" and p.utterances and p.utterances[-1].stance == "negative"
         ]
         ranked = [
             RankedAction(

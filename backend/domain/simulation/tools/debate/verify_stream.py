@@ -52,10 +52,14 @@ async def main() -> int:
         keys_ok = all(k in result for k in ("analysis", "aggregate", "topic", "panel"))
         panel_n = len(result["panel"]["participants"]) if result.get("panel") else 0
         ok2 = _check(keys_ok and panel_n == min(6, len(d.reactions)), f"result 키·패널 {panel_n}명")
-        # ③ placeholder
+        # ③ 엔진 미주입 — 토론(10-c)은 None, 리포트(11)는 조립됨(debate_available=False) + completed
+        report = result.get("report")
         ok3 = _check(
-            result["debate"] is None and result["report"] is None and last["event"] == "completed",
-            "10-c/11 placeholder(None) + completed",
+            result["debate"] is None
+            and report is not None
+            and report["debate_available"] is False
+            and last["event"] == "completed",
+            "10-c None + 리포트(debate_available=False) + completed",
         )
         # ④ 결정론(run_id 제외 동일)
         store2 = InMemorySimulationStore()

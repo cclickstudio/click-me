@@ -16,6 +16,7 @@ from domain.simulation.contracts.schemas import AdInterpretation, PersonaReactio
 from domain.simulation.tools.debate.analyzer import analyze_reactions
 from domain.simulation.tools.debate.assigner import assign_panel
 from domain.simulation.tools.debate.kpi import build_topic, compute_kpi
+from domain.simulation.tools.debate.report import build_report
 from domain.simulation.tools.debate.runner import run_debate
 from domain.simulation.tools.debate.selector import select_panel
 
@@ -142,9 +143,11 @@ class DebateService:
 
             # ── 조각 10-c LLM 토론 (엔진 주입 시 실행, 아니면 placeholder) ──
             debate_dump: dict | None = None
+            debate_obj = None
             if self._debater_factory is not None and self._judge is not None:
                 debater = self._debater_factory(reactions)
                 debate = run_debate(assigned, topic, debater, self._judge)
+                debate_obj = debate
                 for rn in sorted(debate.round_summaries):
                     store.emit(
                         run_id,
@@ -180,15 +183,17 @@ class DebateService:
                     },
                 )
 
-            # ── 조각 11 리포트 (placeholder — 다음 단계) ──
+            # ── 조각 11 리포트 (결정론 조립) ──
+            report = build_report(analysis, aggregate, topic, debate_obj)
             store.emit(
                 run_id,
                 {
                     "event": "progress",
                     "stage": "report",
-                    "pct": 95,
-                    "status": "pending",
-                    "message": "리포트(11) 미구현 — 토론 결론 확정 후 조립",
+                    "pct": 98,
+                    "headline": report.headline,
+                    "debate_available": report.debate_available,
+                    "actions": len(report.ranked_actions),
                 },
             )
 
@@ -199,7 +204,7 @@ class DebateService:
                 "topic": topic.model_dump(),
                 "panel": assigned.model_dump(),
                 "debate": debate_dump,  # 조각 10-c 산출(엔진 주입 시)
-                "report": None,  # 조각 11 산출 자리
+                "report": report.model_dump(),  # 조각 11 산출
             }
             store.set_result(run_id, result)
             store.set_status(run_id, "COMPLETED")

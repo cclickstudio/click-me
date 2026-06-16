@@ -184,3 +184,49 @@ class DebateResult(BaseModel):
     round_summaries: dict[int, str] = Field(default_factory=dict)  # Judge 라운드 정리
     proposed_actions: list[str] = Field(default_factory=list)  # Judge 잠정 액션
     final: JudgeFinal | None = None
+
+
+# ───────────────────────── 조각 11 리포트 ─────────────────────────
+
+
+class ReportKpi(BaseModel):
+    """리포트용 4대 KPI 묶음 — 9의 집계(SimulationAggregate)에서 그대로 가져온다."""
+
+    click_intent_rate: float
+    ci_low: float
+    ci_high: float
+    purchase_intent: float
+    trust_avg: float
+    rejection_rate: float
+    variance_warning: bool
+    effective_n: float
+
+
+class ReportQuote(BaseModel):
+    """리포트 '실제 소비자 목소리' 인용 1건 — 토론 발언 + 사람 이름."""
+
+    persona_name: str
+    role: str
+    stance: Stance
+    text: str
+
+
+class SimulationReport(BaseModel):
+    """조각 11 산출 — [KPI(9) + 분석(8) + 토론 결론·인용(10)] 조립(결정론, LLM✗).
+
+    debate_available=False면 토론 미실행(엔진 미주입) — KPI·분석만 채우고 진단은 주제로 대체.
+    """
+
+    headline: str  # 진단 헤드라인(judge.final.headline 또는 topic.diagnosis)
+    topic: str
+    kpi: ReportKpi
+    funnel: list[FunnelStage]
+    bottleneck: Bottleneck | None = None
+    consumer_groups: dict[str, int] = Field(default_factory=dict)  # 그룹별 인원
+    debate_available: bool = False
+    rounds_run: int = 0
+    stop_reason: str | None = None
+    consensus: list[str] = Field(default_factory=list)
+    dissent: list[str] = Field(default_factory=list)
+    ranked_actions: list[RankedAction] = Field(default_factory=list)
+    quotes: list[ReportQuote] = Field(default_factory=list)  # 참가자별 대표 발언

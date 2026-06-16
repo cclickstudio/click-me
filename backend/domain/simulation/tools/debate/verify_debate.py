@@ -75,15 +75,28 @@ async def _debate_cases() -> bool:
             f"round_{rr}" in stages and "judge_final" in stages,
             "stream round_*·judge_final",
         )
+        # 조각 11 리포트 — 토론 있을 때 debate_available·인용·개선안 매핑
+        report = result["report"]
+        ok_g = _check(
+            report is not None
+            and report["debate_available"] is True
+            and len(report["quotes"]) == len(debate["participants"])
+            and report["ranked_actions"] == debate["final"]["ranked_actions"]
+            and report["headline"] == debate["final"]["headline"],
+            f"리포트 조립(인용 {len(report['quotes'])}·개선안 {len(report['ranked_actions'])})",
+        )
         # 결정론
         store2 = InMemorySimulationStore()
         svc2 = DebateService(
             store=store2, debater_factory=lambda rs: MockDebater(rs), judge=MockJudge()
         )
         result2 = await svc2.run(d.reactions, d.ad_analysis)
-        ok_f = _check(result2["debate"] == debate, "결정론(토론 산출 동일)")
+        ok_f = _check(
+            result2["debate"] == debate and result2["report"] == report,
+            "결정론(토론·리포트 산출 동일)",
+        )
 
-        all_ok = all_ok and ok_a and ok_b and ok_c and ok_d and ok_e and ok_f
+        all_ok = all_ok and ok_a and ok_b and ok_c and ok_d and ok_e and ok_f and ok_g
         print()
     return all_ok
 
