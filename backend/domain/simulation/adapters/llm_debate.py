@@ -11,8 +11,8 @@ import os
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    import google.generativeai as genai
     from anthropic import Anthropic
+    from google.genai import Client as GenaiClient
     from openai import OpenAI
 
 from domain.simulation.contracts.debate_schemas import (
@@ -67,7 +67,7 @@ class _Clients:
     def __init__(self) -> None:
         self._anthropic = None
         self._openai = None
-        self._gemini_ready = False
+        self._gemini: GenaiClient | None = None
 
     def _ant(self) -> Anthropic:
         if self._anthropic is None:
@@ -83,13 +83,12 @@ class _Clients:
             self._openai = OpenAI()  # OPENAI_API_KEY
         return self._openai
 
-    def _gem(self, model: str) -> genai.GenerativeModel:
-        import google.generativeai as genai
+    def _gem(self) -> GenaiClient:
+        if self._gemini is None:
+            from google import genai
 
-        if not self._gemini_ready:
-            genai.configure(api_key=os.environ["GEMINI_API_KEY"])
-            self._gemini_ready = True
-        return genai.GenerativeModel(model)
+            self._gemini = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
+        return self._gemini
 
     def complete(
         self, engine: str, system: str, user: str, *, json_mode: bool, max_tokens: int = 500
@@ -118,11 +117,17 @@ class _Clients:
             )
             return r.choices[0].message.content or ""
         if engine == "gemini":
-            cfg = {"max_output_tokens": max_tokens}
-            if json_mode:
-                cfg["response_mime_type"] = "application/json"
-            r = self._gem(GEMINI_MODEL).generate_content(
-                f"{system}\n\n{user}", generation_config=cfg
+            # 2.5-flash는 thinking 모델 — thinking 토큰이 들쭉날쭉(최대 2000+)해 JSON이 잘린다.
+            # 신 SDK(google.genai)로 thinking_budget=0(완전 차단) → 출력만 생성(안정·저렴).
+            from google.genai import types
+
+            cfg = types.GenerateContentConfig(
+                max_output_tokens=max_tokens,
+                thinking_config=types.ThinkingConfig(thinking_budget=0),
+                response_mime_type="application/json" if json_mode else None,
+            )
+            r = self._gem().models.generate_content(
+                model=GEMINI_MODEL, contents=f"{system}\n\n{user}", config=cfg
             )
             return r.text
         raise ValueError(f"알 수 없는 엔진: {engine}")
