@@ -181,15 +181,19 @@ class SsrLike(Protocol):
 
 
 class SsrSimulationScorer:
-    """SimulationScoreTool 구현 — SSR 분포의 구매의향 평균을 0~1로 정규화한다."""
+    """SimulationScoreTool 구현 — SSR conversion_intent 분포 평균을 0~1로 정규화한다.
+
+    실 SSR(tools/simulation/anchors.py) 차원은 conversion_intent(구매 전환 의향, 0~1).
+    'purchase_intent'·1~5 스케일은 존재하지 않는 가정이었어 실 SSR과 정합(B-3).
+    """
 
     def __init__(
         self,
         ssr: SsrLike,
         *,
-        dimension: str = "purchase_intent",
-        scale_min: float = 1.0,
-        scale_max: float = 5.0,
+        dimension: str = "conversion_intent",
+        scale_min: float = 0.0,
+        scale_max: float = 1.0,
     ) -> None:
         if scale_max <= scale_min:
             raise ValueError("scale_max는 scale_min보다 커야 함")
