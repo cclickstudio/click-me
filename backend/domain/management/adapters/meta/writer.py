@@ -6,7 +6,7 @@
   SANDBOX_CONTRACT — execution_options=['validate_only']로 실전송, 실제 변경 없음
   LIVE             — 실제 변경. 코드 경로는 존재하나 executor 허용 모드 밖이라 봉인됨.
 LIVE 봉인은 executor.DEFAULT_ALLOWED_MODES + use_mock 이중 게이트가 담당한다.
-create_campaign(신규 캠페인 생성)은 PR2 — 여기서 다루지 않는다.
+create_campaign(신규 캠페인 생성, PR2)은 v1에서 PAUSED 상태 객체 생성까지만 (§7 좁히기).
 """
 
 from __future__ import annotations
@@ -77,10 +77,25 @@ class MetaAdsWriter:
             creative_id=creative_id,
         )
 
-    async def create_ad(self, config: CampaignConfig, idem_key: str) -> ActionResult:
-        """생성 stub — PR1 미구현(항상 합성 결과). 실구현·이름 정정은 PR2(create_campaign)."""
+    async def create_campaign(self, config: CampaignConfig, idem_key: str) -> ActionResult:
+        """신규 캠페인 생성 (PR2). v1은 PAUSED 상태로만 만든다 — 생성 후 사람이 켜야 게재(안전).
+
+        Meta는 campaign→adset→ad 3단이지만 v1은 campaign 객체 생성까지로 한정 (§7 좁히기).
+        """
         self._require_writable(idem_key)
-        return self._result("create_ad", config.campaign_id, idem_key, dry_run=True)
+        return await self._dispatch(
+            "create_campaign",
+            config.campaign_id,
+            idem_key,
+            {
+                "name": f"clickme-{config.campaign_id}",
+                "objective": "OUTCOME_TRAFFIC",  # v1 트래픽(클릭) 목표
+                "status": "PAUSED",
+                "special_ad_categories": "[]",
+            },
+            path=f"act_{config.ad_account_id}/campaigns",
+            ad_account_id=config.ad_account_id,
+        )
 
     async def preview(self, campaign_id: str) -> str:
         """미리보기 stub — 읽기성이라 idem_key 불요."""
@@ -98,13 +113,17 @@ class MetaAdsWriter:
         campaign_id: str,
         idem_key: str,
         data: dict[str, Any],
+        *,
+        path: str | None = None,
         **detail: int | str,
     ) -> ActionResult:
+        # path 미지정 시 대상 자체가 경로 (pause/예산/소재교체). create는 act_{id}/campaigns.
+        post_path = path or campaign_id
         if self._mode not in _SENDING_MODES or self._client is None:
             # DRY_RUN(또는 클라이언트 미구성) — 전송 없이 요청만 빌드한 것으로 본다.
             return self._result(operation, campaign_id, idem_key, dry_run=True, **detail)
         validate_only = self._mode is ExecutionMode.SANDBOX_CONTRACT
-        response = await self._client.post(campaign_id, data, validate_only=validate_only)
+        response = await self._client.post(post_path, data, validate_only=validate_only)
         return self._result(
             operation, campaign_id, idem_key, dry_run=validate_only, response=response, **detail
         )

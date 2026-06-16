@@ -31,6 +31,7 @@ from domain.management.contracts.schemas import (
     ActionProposal,
     ActionResult,
     ApprovedAction,
+    CampaignConfig,
     verify_proposal_hash,
 )
 from domain.management.execution.audit_log import AuditEvent, AuditSink
@@ -45,6 +46,7 @@ SUPPORTED_ACTION_TYPES: Final[tuple[str, ...]] = (
     "DECREASE_BUDGET",
     "INCREASE_BUDGET",
     "REPLACE_CREATIVE",
+    "CREATE_CAMPAIGN",  # PR2 — 신규 캠페인 생성 (config는 evidence_metrics에 적재, 옵션 A)
 )
 
 #: v1에서 Writer 도달이 허용되는 실행 모드 — LIVE는 비활성 (§7 Must)
@@ -361,6 +363,13 @@ class Executor:
                 # 재생성 패키징이 항상 채우는 값 — 없으면 변조·계약 위반 (_validate 통과분 방어)
                 raise ValueError("REPLACE_CREATIVE 제안에 selected_candidate_id 없음")
             return await self._writer.replace_creative(target, str(creative_id), idem_key)
+        if proposal.action_type == "CREATE_CAMPAIGN":
+            # 옵션 A — 신규 캠페인은 대상 id가 없어 config를 evidence_metrics로 받는다.
+            raw = proposal.evidence_metrics.get("campaign_config")
+            if not raw:
+                raise ValueError("CREATE_CAMPAIGN 제안에 campaign_config 없음")
+            config = raw if isinstance(raw, CampaignConfig) else CampaignConfig(**raw)
+            return await self._writer.create_campaign(config, idem_key)
         raise ValueError(f"미지원 action_type: {proposal.action_type}")  # _validate에서 차단됨
 
     # ── 결과·감사 헬퍼 ───────────────────────────────────────────

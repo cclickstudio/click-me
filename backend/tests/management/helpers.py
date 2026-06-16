@@ -94,6 +94,9 @@ class FakeWriter:
     ) -> ActionResult:
         return self._respond("REPLACE_CREATIVE", campaign_id, idem_key)
 
+    async def create_campaign(self, config, idem_key: str) -> ActionResult:
+        return self._respond("CREATE_CAMPAIGN", config.campaign_id, idem_key)
+
     def _respond(self, op: str, campaign_id: str, idem_key: str) -> ActionResult:
         self.calls.append((op, campaign_id, idem_key))
         if campaign_id in self.fail_targets:
