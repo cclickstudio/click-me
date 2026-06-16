@@ -26,6 +26,7 @@ def build_text_llm(temperature: float) -> BaseChatModel:
             "model": model,
             "api_key": settings.openai_api_key,
             "temperature": temperature,
+            "timeout": 120,
         }
         if settings.generator_text_base_url:
             kwargs["base_url"] = settings.generator_text_base_url

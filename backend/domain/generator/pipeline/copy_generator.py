@@ -34,6 +34,14 @@ _SYSTEM = """\
 오탈자, 문법 오류, 의미 없는 단어 조합은 절대 허용되지 않습니다.
 반드시 JSON 형식으로만 응답하세요."""
 
+_IMAGE_ANALYSIS_SECTION = """\
+
+## 생성된 이미지 분석
+무드: {mood}
+구도: {composition}
+밝기: {brightness}
+"""
+
 _USER_TEMPLATE = """\
 ## 제품 정보
 제품명: {product_name}
@@ -44,12 +52,7 @@ _USER_TEMPLATE = """\
 ## 광고 전략
 전략: {strategy_description}
 전략 근거: {rationale}
-
-## 생성된 이미지 분석
-무드: {mood}
-구도: {composition}
-밝기: {brightness}
-
+{image_analysis_section}
 ## 레이아웃 가이드
 {layout_guide}
 
@@ -93,10 +96,19 @@ _IMPROVEMENT_SECTION = """\
 async def generate_copy(
     product_analysis: ProductAnalysis,
     strategy_output: StrategyOutput,
-    image_analysis: ImageAnalysis,
     template: TemplateType,
+    image_analysis: ImageAnalysis | None = None,
     improvement_context: str | None = None,
 ) -> AdCopy:
+    image_analysis_section = (
+        _IMAGE_ANALYSIS_SECTION.format(
+            mood=image_analysis.mood,
+            composition=image_analysis.composition,
+            brightness=image_analysis.brightness,
+        )
+        if image_analysis is not None
+        else ""
+    )
     improvement_section = (
         _IMPROVEMENT_SECTION.format(improvement_context=improvement_context)
         if improvement_context
@@ -117,9 +129,7 @@ async def generate_copy(
                     target_audience=product_analysis.target_audience,
                     strategy_description=strategy_output.strategy_description,
                     rationale=strategy_output.rationale,
-                    mood=image_analysis.mood,
-                    composition=image_analysis.composition,
-                    brightness=image_analysis.brightness,
+                    image_analysis_section=image_analysis_section,
                     layout_guide=_TEMPLATE_COPY_GUIDE[template],
                     improvement_section=improvement_section,
                 ),

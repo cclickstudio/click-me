@@ -71,6 +71,41 @@ _TEMPLATE_STYLE: dict[TemplateType, str] = {
     ),
 }
 
+# ── 텍스트 포함 생성 모드: 템플릿별 레이아웃 + 텍스트 배치 지시 ───────────────
+# gpt-image-2가 텍스트를 이미지에 직접 렌더링할 때 각 템플릿의 레이아웃을 안내한다.
+_TEXT_LAYOUT: dict[TemplateType, str] = {
+    TemplateType.A: (
+        "DESIGN LAYOUT — Bottom gradient overlay:\n"
+        "- Upper 62%: product photography, clean background, product centered\n"
+        "- Bottom 38%: dark-to-transparent gradient overlay (part of the composition)\n"
+        "- Within the overlay, place text top-to-bottom:\n"
+        "  · HEADLINE: bold, ~28pt, white, horizontally centered, at ~65% from top\n"
+        "  · BODY: regular, ~16pt, white/light gray, centered, just below headline\n"
+        "  · CTA BUTTON: rounded rectangle, brand color fill, white bold text, "
+        "centered, near very bottom"
+    ),
+    TemplateType.B: (
+        "DESIGN LAYOUT — Top and bottom solid bands:\n"
+        "- TOP BAND (top 17%): solid dark panel\n"
+        "  · HEADLINE: bold, ~22pt, white, horizontally centered in band\n"
+        "- MIDDLE (17%–76%): product photography only, no text\n"
+        "- BOTTOM BAND (bottom 24%): solid dark panel\n"
+        "  · BODY: regular, ~14pt, white, centered in upper portion of band\n"
+        "  · CTA BUTTON: rounded button, brand color, white bold text, "
+        "centered in lower portion of band"
+    ),
+    TemplateType.C: (
+        "DESIGN LAYOUT — Left color panel + right product photo:\n"
+        "- LEFT PANEL (left 46%): solid brand color background\n"
+        "  · HEADLINE: bold, ~24pt, white, left-aligned with padding, upper third\n"
+        "  · BODY: regular, ~14pt, white, left-aligned, below headline\n"
+        "  · CTA BUTTON: white rounded rectangle, brand color text, "
+        "left-aligned, near bottom of panel\n"
+        "- GRADIENT ZONE (46%–53%): smooth transition from solid color to transparent\n"
+        "- RIGHT SIDE (53%–100%): product photography, product clearly visible and centered"
+    ),
+}
+
 # ── [생성 모드] Safe Zone ─────────────────────────────────────────────────────
 # 텍스트 오버레이가 가려질 영역을 AI에게 알려주는 Safe Zone 지시문.
 # 각 템플릿은 텍스트 배너 위치가 다르므로, 제품이 가리지 않도록 구도를 강하게 유도한다.
@@ -181,6 +216,79 @@ Requirements:
 - Adjust lighting, color, or mood only as needed by the improvement direction"""
 
 
+# ── [텍스트 포함 생성 모드] 프롬프트 ────────────────────────────────────────
+# gpt-image-2가 헤드라인·본문·CTA를 이미지에 직접 렌더링할 때 사용.
+_PROMPT_TEMPLATE_WITH_TEXT = """\
+Create a professional Korean {platform} advertisement image with integrated Korean text.
+
+Visual style: {style}
+Photography style: {photo_style}
+Strategy: {strategy_desc}
+
+Product: {product_name}
+{core_values_line}Target audience: {target_audience}
+{color_line}
+{tone_line}
+
+Product visual direction:
+{product_visual_context}
+
+{text_layout}
+
+KOREAN TEXT — render EXACTLY as written, character by character (zero tolerance for typos):
+  Headline : "{headline}"
+  Body     : "{body}"
+  CTA      : "{cta}"
+
+Typography rules:
+- All text must be in Korean (한국어) — every character must be a valid, correctly spelled Korean word
+- Headline: bold weight, large size, high contrast (white or bright on dark background)
+- Body: regular weight, smaller size, clean and readable
+- CTA: bold, placed inside a clearly visible rounded button shape
+- Text edges must be sharp and pixel-perfect — no blur, no hallucinated characters
+
+Output requirements:
+- Commercial advertising quality, modern and clean aesthetic for Meta/Instagram
+- Product clearly visible and well-lit
+- Text is fully integrated into the composition, not an afterthought"""
+
+# ── [텍스트 포함 개선 모드] 프롬프트 ────────────────────────────────────────
+# 원본 이미지를 Edit API로 수정하면서 텍스트도 함께 삽입할 때 사용.
+_EDIT_PROMPT_TEMPLATE_WITH_TEXT = """\
+IMPORTANT: Modify this advertisement image. \
+Preserve the original product and composition, apply the specified improvements, \
+and add the Korean text overlay as described below.
+
+Product: {product_name}
+Core values: {core_values}
+Target audience: {target_audience}
+Strategy: {strategy_desc}
+{color_line}
+{tone_line}
+
+Improvement direction:
+{improvement_context}
+
+{text_layout}
+
+KOREAN TEXT — render EXACTLY as written, character by character (zero tolerance for typos):
+  Headline : "{headline}"
+  Body     : "{body}"
+  CTA      : "{cta}"
+
+Typography rules:
+- All text in Korean (한국어) — must be valid, correctly spelled Korean
+- Headline: bold, large, high contrast
+- Body: regular, smaller, readable
+- CTA: bold, rounded button shape, clearly clickable
+
+Requirements:
+- PRESERVE original product placement and visual identity
+- Apply improvement direction changes
+- Add text zones as specified in the layout above
+- Keep product clearly recognizable"""
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # 제품 분석 결과를 시각적 방향 문장으로 변환하는 헬퍼
 # 브랜드 가치, 혜택, 브랜드 컬러를 조합해 프롬프트 내 시각 방향 섹션을 생성한다.
@@ -229,6 +337,9 @@ async def generate_image(
     tone: str | None = None,
     original_image_bytes: bytes | None = None,
     improvement_context: str | None = None,
+    headline: str | None = None,
+    body: str | None = None,
+    cta: str | None = None,
 ) -> bytes:
     color_line = (
         f"Brand color accent: {brand_color} — incorporate into highlights and secondary elements"
@@ -236,33 +347,46 @@ async def generate_image(
         else "Color palette: modern, clean, professional"
     )
     tone_line = f"Tone and manner: {tone}" if tone else "Tone: clean, professional, trustworthy"
+    has_text = bool(headline and body and cta)
 
     # ── [개선 모드] Edit API ───────────────────────────────────────────────────
-    # original_image_bytes가 있으면 개선 모드 — 원본 이미지를 Edit API로 수정한다.
-    # 직접 수정(fix_requests)과 시뮬레이션 기반(simulation_summary) 모두 이 경로를 탄다.
-    # - Safe Zone: 강제 배치 대신 소프트 힌트(_TEMPLATE_SAFE_ZONES_EDIT)를 사용해
-    #   원본 구도가 크게 바뀌지 않도록 한다.
-    # - 제품명·핵심 가치·타겟을 프롬프트에 포함해 모델이 무엇을 보존할지 파악하게 한다.
     if original_image_bytes is not None:
         core_values_str = (
             ", ".join(product_analysis.core_values) if product_analysis.core_values else "N/A"
         )
         target_audience = product_analysis.target_audience or "general audience"
-        prompt = _EDIT_PROMPT_TEMPLATE.format(
-            product_name=product_analysis.product_name,
-            core_values=core_values_str,
-            target_audience=target_audience,
-            strategy_desc=_STRATEGY_DESCRIPTIONS[strategy],
-            style=_TEMPLATE_STYLE[template],
-            color_line=color_line,
-            tone_line=tone_line,
-            improvement_context=improvement_context or "전반적인 광고 품질을 개선하세요.",
-            safe_zone=_TEMPLATE_SAFE_ZONES_EDIT[template],
-        )
+
+        if has_text:
+            prompt = _EDIT_PROMPT_TEMPLATE_WITH_TEXT.format(
+                product_name=product_analysis.product_name,
+                core_values=core_values_str,
+                target_audience=target_audience,
+                strategy_desc=_STRATEGY_DESCRIPTIONS[strategy],
+                color_line=color_line,
+                tone_line=tone_line,
+                improvement_context=improvement_context or "전반적인 광고 품질을 개선하세요.",
+                text_layout=_TEXT_LAYOUT[template],
+                headline=headline,
+                body=body,
+                cta=cta,
+            )
+        else:
+            prompt = _EDIT_PROMPT_TEMPLATE.format(
+                product_name=product_analysis.product_name,
+                core_values=core_values_str,
+                target_audience=target_audience,
+                strategy_desc=_STRATEGY_DESCRIPTIONS[strategy],
+                style=_TEMPLATE_STYLE[template],
+                color_line=color_line,
+                tone_line=tone_line,
+                improvement_context=improvement_context or "전반적인 광고 품질을 개선하세요.",
+                safe_zone=_TEMPLATE_SAFE_ZONES_EDIT[template],
+            )
+
         image_file = io.BytesIO(original_image_bytes)
         image_file.name = "original.png"
         response = await _client.images.edit(
-            model="gpt-image-1",
+            model=settings.generator_image_model,
             image=image_file,
             prompt=prompt,
             n=1,
@@ -271,9 +395,6 @@ async def generate_image(
         return base64.b64decode(response.data[0].b64_json)
 
     # ── [생성 모드] Generate API ──────────────────────────────────────────────
-    # original_image_bytes가 없으면 생성 모드 — 처음부터 새 이미지를 생성한다.
-    # - Safe Zone: 강제 배치 지시(_TEMPLATE_SAFE_ZONES)를 사용해 올바른 구도로 생성한다.
-    # - 제품 분석 결과 전체(핵심 가치, 혜택, 브랜드 컬러 등)를 시각 방향으로 변환해 삽입한다.
     core_values_line = (
         f"Core values: {', '.join(product_analysis.core_values)}\n"
         if product_analysis.core_values
@@ -282,25 +403,42 @@ async def generate_image(
     target_audience = product_analysis.target_audience or "general audience"
     product_visual_context = _build_product_visual_context(product_analysis, brand_color)
 
-    improvement_line = (
-        f"\nImprovement direction (apply to visual):\n{improvement_context}"
-        if improvement_context
-        else ""
-    )
-
-    prompt = _PROMPT_TEMPLATE.format(
-        platform="Meta/Instagram",
-        style=_TEMPLATE_STYLE[template],
-        photo_style=_STRATEGY_PHOTO_STYLE[strategy],
-        strategy_desc=_STRATEGY_DESCRIPTIONS[strategy],
-        product_name=product_analysis.product_name,
-        core_values_line=core_values_line,
-        target_audience=target_audience,
-        color_line=color_line,
-        tone_line=tone_line,
-        product_visual_context=product_visual_context + improvement_line,
-        safe_zone=_TEMPLATE_SAFE_ZONES[template],
-    )
+    if has_text:
+        prompt = _PROMPT_TEMPLATE_WITH_TEXT.format(
+            platform="Meta/Instagram",
+            style=_TEMPLATE_STYLE[template],
+            photo_style=_STRATEGY_PHOTO_STYLE[strategy],
+            strategy_desc=_STRATEGY_DESCRIPTIONS[strategy],
+            product_name=product_analysis.product_name,
+            core_values_line=core_values_line,
+            target_audience=target_audience,
+            color_line=color_line,
+            tone_line=tone_line,
+            product_visual_context=product_visual_context,
+            text_layout=_TEXT_LAYOUT[template],
+            headline=headline,
+            body=body,
+            cta=cta,
+        )
+    else:
+        improvement_line = (
+            f"\nImprovement direction (apply to visual):\n{improvement_context}"
+            if improvement_context
+            else ""
+        )
+        prompt = _PROMPT_TEMPLATE.format(
+            platform="Meta/Instagram",
+            style=_TEMPLATE_STYLE[template],
+            photo_style=_STRATEGY_PHOTO_STYLE[strategy],
+            strategy_desc=_STRATEGY_DESCRIPTIONS[strategy],
+            product_name=product_analysis.product_name,
+            core_values_line=core_values_line,
+            target_audience=target_audience,
+            color_line=color_line,
+            tone_line=tone_line,
+            product_visual_context=product_visual_context + improvement_line,
+            safe_zone=_TEMPLATE_SAFE_ZONES[template],
+        )
 
     response = await _client.images.generate(
         model=settings.generator_image_model,

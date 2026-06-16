@@ -1,7 +1,6 @@
-"""노드 4 — 광고 후보 3종 생성 (yunseop 렌더링 체인).
+"""노드 4 — 광고 후보 3종 생성 (gpt-image-2 올인원 체인).
 
-변종마다: 배경 생성 → 이미지 분석 → 카피 → (인페인팅 ∥ 품질검증)
-→ 목표 치수 보정 → 한글 텍스트·로고 합성 → S3 업로드.
+변종마다: 카피 생성 → 텍스트 포함 이미지 생성(gpt-image-2) → 품질검증 → S3 업로드.
 품질검증(QualityReport)은 이 노드에서 qa_results로 함께 산출한다(별도 run_qa 노드 없음).
 """
 
@@ -21,18 +20,15 @@ from domain.generator.contracts.pipeline_schemas import (
 from domain.generator.graph.nodes import emit_progress
 from domain.generator.graph.state import GenerationState
 from domain.generator.pipeline.copy_generator import generate_copy
-from domain.generator.pipeline.image_analyzer import analyze_image
 from domain.generator.pipeline.image_generator import generate_image
 from domain.generator.pipeline.quality_checker import check_quality
-from domain.generator.pipeline.text_compositor import composite_text, resize_to_target
-from domain.generator.pipeline.text_inpainter import inpaint_text_zone
-from tools.storage.s3 import candidate_key, download_bytes, upload_bytes
+from tools.storage.s3 import candidate_key, upload_bytes
 
 _VARIANT_IDS = ["A", "B", "C"]
 
 
 def _map_ad_size(width: int, height: int) -> AdSize:
-    """목표 치수를 gpt-image-1 생성 사이즈(AdSize)로 매핑."""
+    """목표 치수를 gpt-image-2 생성 사이즈(AdSize)로 매핑."""
     if width == height:
         return AdSize.SQUARE
     return AdSize.LANDSCAPE if width > height else AdSize.PORTRAIT
@@ -50,33 +46,12 @@ async def generate_candidates(state: GenerationState, config: RunnableConfig) ->
     brand_color = req.get("brand_color")
     tone = req.get("tone_and_manner")
 
-    # 로고: S3 키가 있으면 1회만 다운로드
-    logo_png: bytes | None = None
-    if req.get("brand_logo_s3_key"):
-        try:
-            logo_png = await download_bytes(req["brand_logo_s3_key"])
-        except Exception:
-            logo_png = None
-
     done = 0
 
     async def build(idx: int, variant_id: str, plan: StrategyPlan) -> dict:
         nonlocal done
 
-        # 1. 배경 이미지 (텍스트 없음)
-        bg_bytes = await generate_image(
-            product_analysis=product_analysis,
-            strategy=plan.strategy,
-            template=plan.template,
-            size=gen_size,
-            brand_color=brand_color,
-            tone=tone,
-        )
-
-        # 2. 이미지 분석
-        image_analysis = await analyze_image(bg_bytes)
-
-        # 3. 이미지에 맞는 카피
+        # 1. 카피 먼저 생성 (이미지 생성 전 텍스트 확정)
         ad_copy = await generate_copy(
             product_analysis=product_analysis,
             strategy_output=StrategyOutput(
@@ -84,36 +59,26 @@ async def generate_candidates(state: GenerationState, config: RunnableConfig) ->
                 strategy_description=plan.strategy_description,
                 rationale=plan.rationale,
             ),
-            image_analysis=image_analysis,
             template=plan.template,
         )
 
-        # 4. 인페인팅(텍스트존 자연화) + 품질검증 병렬
-        inpainted_bg, quality_report = await asyncio.gather(
-            inpaint_text_zone(
-                bg_bytes=bg_bytes,
+        # 2. 카피가 포함된 이미지 생성 (gpt-image-2 올인원)
+        image_bytes, quality_report = await asyncio.gather(
+            generate_image(
+                product_analysis=product_analysis,
+                strategy=plan.strategy,
                 template=plan.template,
-                image_analysis=image_analysis,
+                size=gen_size,
                 brand_color=brand_color,
+                tone=tone,
+                headline=ad_copy.headline,
+                body=ad_copy.body,
+                cta=ad_copy.cta,
             ),
             check_quality(ad_copy=ad_copy, target=product_analysis.target_audience),
         )
 
-        # 5. 목표 치수 보정(배경) 후 최종 치수에서 한글 텍스트·로고 합성
-        inpainted_bg = resize_to_target(inpainted_bg, width, height)
-        image_bytes = await asyncio.to_thread(
-            composite_text,
-            inpainted_bg,
-            ad_copy.headline,
-            ad_copy.body,
-            ad_copy.cta,
-            plan.template,
-            brand_color,
-            image_analysis,
-            logo_png,
-        )
-
-        # 6. S3 업로드
+        # 3. S3 업로드
         s3_key = candidate_key(generation_id, idx)
         await upload_bytes(image_bytes, s3_key, content_type="image/png")
 
