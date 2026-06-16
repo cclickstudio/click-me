@@ -157,7 +157,10 @@ class DebateService:
             debate_obj = None
             if self._debater_factory is not None and self._judge is not None:
                 debater = self._debater_factory(reactions)
-                debate = run_debate(assigned, topic, debater, self._judge)
+                # LLM 엔진은 동기 블로킹 — 스레드로 분리해 이벤트 루프(다른 SSE 요청)를 막지 않는다.
+                debate = await asyncio.to_thread(
+                    run_debate, assigned, topic, debater, self._judge
+                )
                 debate_obj = debate
                 for rn in sorted(debate.round_summaries):
                     store.emit(

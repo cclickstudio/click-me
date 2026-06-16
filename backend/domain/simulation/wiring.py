@@ -171,4 +171,13 @@ def build_debate_service(
             judge=MockJudge(),
             persistence=persistence,
         )
-    return DebateService(store=store, persistence=persistence)
+
+    _ensure_env("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY")
+    from domain.simulation.adapters.llm_debate import LLMDebater, LLMJudge
+
+    return DebateService(
+        store=store,
+        debater_factory=lambda reactions: LLMDebater(reactions),
+        judge=LLMJudge(),
+        persistence=persistence,
+    )
