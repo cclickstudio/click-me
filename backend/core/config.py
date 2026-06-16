@@ -57,6 +57,12 @@ class Settings(BaseSettings):
     meta_ig_user_id: str | None = None
     meta_graph_api_version: str = "v21.0"
 
+    # Management — Meta 광고 어댑터 (LIVE-ready, 이중 게이트로 봉인)
+    # use_mock=True 면 Mock 어댑터 (Meta 접촉 0). False여도 LIVE 쓰기는 executor가 차단.
+    meta_ad_account_id: str | None = None
+    use_mock: bool = True
+    management_execution_mode: str = "dry_run"  # dry_run | sandbox_contract | live
+
     # Generator (광고 생성)
     generator_text_model: str = "gpt-4o"
     generator_image_model: str = "gpt-image-1"
