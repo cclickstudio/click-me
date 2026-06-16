@@ -56,3 +56,11 @@ def load_all_dummies(dummy_dir: str | Path | None = None) -> list[DummyReactionS
     d = Path(dummy_dir) if dummy_dir else _DUMMY_DIR
     files = sorted(d.glob("reaction-dummy*.json"))
     return [load_dummy(f) for f in files]
+
+
+def load_dummy_by_name(name: str) -> DummyReactionSet:
+    """이름(예: reaction-dummy1)으로 더미 로드 — 라우터/데모용. 없으면 FileNotFoundError."""
+    p = _DUMMY_DIR / f"{name}.json"
+    if not p.exists():
+        raise FileNotFoundError(f"더미를 찾을 수 없음: {name}")
+    return load_dummy(p)

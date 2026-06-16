@@ -25,6 +25,7 @@ from api.routers import (
     chat,
     company,
     dashboard,
+    debate,
     generator,
     inquiries,
     personas,
@@ -96,6 +97,7 @@ app.include_router(inquiries.router, prefix="/api/inquiries", tags=["inquiries"]
 app.include_router(personas.router, prefix="/api/personas", tags=["personas"])
 app.include_router(projects.router, prefix="/api/projects", tags=["projects"])
 app.include_router(generator.router, prefix="/api/generator", tags=["generator"])
+app.include_router(debate.router, prefix="/api/debate", tags=["debate"])
 
 
 @app.get("/health")
