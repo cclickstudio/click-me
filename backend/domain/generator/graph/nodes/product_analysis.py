@@ -1,35 +1,41 @@
-"""노드 1 — 상품 분석: 핵심가치 / Pain Point / Benefit 추출."""
+"""노드 1 — 상품 분석.
+
+- create: pipeline.product_analyzer로 핵심가치/PainPoint/Benefit 추출
+- improve: 시뮬레이션 요약·수정요청 기반으로 분석 컨텍스트만 구성(분석 LLM 생략)
+"""
 
 from __future__ import annotations
 
 from langchain_core.runnables import RunnableConfig
-from langchain_openai import ChatOpenAI
 
-from core.config import settings
-from domain.generator.contracts.schemas import ProductAnalysis
+from domain.generator.contracts.enums import GenerationMode
+from domain.generator.contracts.pipeline_schemas import ProductAnalysis
 from domain.generator.graph.nodes import emit_progress
 from domain.generator.graph.state import GenerationState
-
-_llm = ChatOpenAI(
-    model=settings.generator_text_model,
-    api_key=settings.openai_api_key,
-    temperature=0.3,
-).with_structured_output(ProductAnalysis)
-
-_SYSTEM = """당신은 광고 기획 전문가입니다. 상품 정보를 분석해 다음을 한국어로 추출하세요.
-- core_values: 상품의 핵심 가치 3~5개
-- pain_points: 타겟 소비자가 겪는 문제(Pain Point) 3~5개
-- benefits: 구매 시 얻는 혜택(Benefit) 3~5개"""
+from domain.generator.pipeline.product_analyzer import analyze_product as pipeline_analyze_product
 
 
 async def analyze_product(state: GenerationState, config: RunnableConfig) -> dict:
     emit_progress(config, "product_analysis", 10, "상품 분석 중...")
     req = state["request"]
-    prompt = (
-        f"제품명: {req['product_name']}\n"
-        f"제품 설명: {req['product_description']}\n"
-        f"타겟: {req['target_audience']}\n"
-        f"광고 목적: {req['campaign_objective']}"
+
+    if req.get("mode") == GenerationMode.IMPROVE:
+        # 개선모드: 이미지 프롬프트 품질용 product_name만 유지, 나머지는 전략 노드의 개선 컨텍스트가 담당
+        effective_name = req.get("product_name") or req.get("existing_ad_s3_key") or "기존 광고"
+        analysis = ProductAnalysis(
+            product_name=effective_name,
+            core_values=[],
+            pain_points=[],
+            benefits=[],
+            target_audience=req.get("target_audience") or "기존 타겟",
+            objective="광고 개선",
+        )
+        return {"product_analysis": analysis.model_dump()}
+
+    analysis = await pipeline_analyze_product(
+        product_name=req["product_name"],
+        description=req["product_description"],
+        target=req["target_audience"],
+        objective=req["campaign_objective"],
     )
-    result: ProductAnalysis = await _llm.ainvoke([("system", _SYSTEM), ("user", prompt)])
-    return {"product_analysis": result.model_dump()}
+    return {"product_analysis": analysis.model_dump()}

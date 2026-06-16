@@ -22,6 +22,7 @@ dependencies = [
     # Database
     "sqlalchemy[asyncio]>=2.0.0",
     "asyncpg>=0.29.0",
+    "psycopg2-binary>=2.9.0",
     "pgvector>=0.3.0",
     "alembic>=1.13.0",
     # AWS
@@ -92,6 +93,7 @@ ignore = [
 # 한국어 시스템 프롬프트 / 긴 emit 문자열 허용
 "api/routers/chat.py" = ["E501"]
 "domain/simulation/service/simulation_service.py" = ["E501"]
+"domain/generator/pipeline/strategy_planner.py" = ["E501"]
 # 도구 파일 내 긴 문자열 허용
 "tools/simulation/ssr_scorer.py" = ["E501"]
 "api/routers/ads.py" = ["E501"]

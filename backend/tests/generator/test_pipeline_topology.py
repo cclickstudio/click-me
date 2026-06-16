@@ -7,7 +7,6 @@ EXPECTED_ORDER = [
     "generate_strategies",
     "select_templates",
     "generate_candidates",
-    "run_qa",
     "explain",
 ]
 
