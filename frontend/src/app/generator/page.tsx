@@ -807,8 +807,12 @@ export default function GeneratorPage() {
       });
       setProfileSaved(true);
       setTimeout(() => setProfileSaved(false), 2000);
-    } catch {
-      setError("브랜드 설정 저장에 실패했습니다.");
+    } catch (e) {
+      setError(
+        e instanceof Error
+          ? `브랜드 설정 저장에 실패했습니다: ${e.message}`
+          : "브랜드 설정 저장에 실패했습니다.",
+      );
     }
   }
 

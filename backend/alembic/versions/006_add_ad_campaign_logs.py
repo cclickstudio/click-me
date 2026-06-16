@@ -1,14 +1,18 @@
 """add ad_campaign_logs table
 
-Revision ID: 004
-Revises: 003
+Revision ID: 006
+Revises: 005
 Create Date: 2026-06-14
+
+주의: 원래 revision id가 004로, 004_add_simulation_weight_socioeconomic 과 중복되어
+alembic 그래프가 멀티헤드로 깨져 있었다. 선형화를 위해 005 뒤 006으로 재배치(테이블은
+CREATE TABLE IF NOT EXISTS라 이미 생성됐어도 재적용 안전).
 """
 
 from alembic import op
 
-revision = "004"
-down_revision = "003"
+revision = "006"
+down_revision = "005"
 branch_labels = None
 depends_on = None
 
