@@ -57,9 +57,17 @@ ClickMe — 집행 전 AI 가상 소비자에게 광고를 테스트하고 집�
 - [ ] 프론트 `api.ts`의 `/api/simulate/*` 경로 불일치(별건).
 - [ ] 토론 인원 6명은 `persona-debate-pipeline.md`의 6슬롯과 일치. 만약 추후 5명으로 바꾸면 슬롯6 제거 필요(현재는 6명 유지).
 
-## 4-1. 조각 8~11 구현 완료 (2026-06-16 세션)
+## 4-1. 조각 8~11 + wiring·라우터·DB영속화 구현 완료 (2026-06-16 세션)
 
-**8~11 결정론 파이프라인 + mock 토론을 전부 구현·검증했다.** (커밋 5개, 전부 `feat/simulation-doyeon`)
+**8~11 결정론 파이프라인 + mock 토론 + API 노출 + DB영속화 코드까지 구현·검증했다.** (커밋 8개, 전부 `feat/simulation-doyeon`)
+
+추가 완료(파이프라인 위):
+- **wiring 연결** — `wiring.py`에 `build_debate_service(use_mock, session_factory)`·`build_debate_persistence`. mock 엔진·영속화 주입 Composition Root.
+- **라우터 노출** — `api/routers/debate.py`(`POST /api/debate/start`·`/dummy/{name}/start`·`GET /{run_id}/stream`·`/result`) + `api/main.py` append-only 등록. mock으로 실 HTTP+SSE 동작 확인(TestClient).
+- **DB 영속화(코드만, NeonDB 미적용)** — `core/models.py` ORM 3모델(공통부) + `alembic/versions/007_add_persona_debate_tables.py` + `repositories/debate_repository.py`(순수매핑 `build_debate_rows` + `DebateRepository.save`). `DebateService`에 `persistence`+`simulation_id` 주입 — **FK상 실 simulations 행 있는 운영 경로에서만 저장**(더미 데모는 인메모리). 검증 `verify_persist.py`(ORM 메타+매핑, 더미 5개 통과).
+  - ⚠️ **NeonDB `alembic upgrade head` 미실행** — 도연님 적용 필요. 단 **기존 004 revision 중복**(`004_add_ad_campaign_logs`·`004_add_simulation_weight_socioeconomic` 둘 다 revision=004) 때문에 alembic 체인이 깨져 있어 **먼저 004 중복부터 해소**해야 함(별도 task로 분리해둠).
+
+**8~11 결정론 파이프라인 + mock 토론** (파이프라인 본체):
 
 - **조각 8 반응 분석** — `tools/debate/analyzer.py`. AISAS 퍼널(단계별 flag 합산, 비단조 대비)·병목(인접 단계 인원 최대감소)·이탈/거부/감정 분해·소비자 그룹(겹침 허용). → `ReactionAnalysis`.
 - **조각 9 KPI+주제** — `tools/debate/kpi.py`. 기존 `BasicAggregator` 재사용(더미 `aggregate`와 일치 검증) + 주신호(rejection/trust_action_gap/early_attrition/mid_attrition) 분기 토론 주제. → `DebateTopic`.
@@ -71,15 +79,14 @@ ClickMe — 집행 전 AI 가상 소비자에게 광고를 테스트하고 집�
 - **스키마** — `contracts/debate_schemas.py`에 전부 모음(공용 `schemas.py` 안 건드림).
 - **검증(도메인 내부, pytest 밖)** — `tools/debate/verify.py`(8·9·10-a·10-b) / `verify_stream.py`(stream 골격) / `verify_debate.py`(게이트 단위 + mock 토론 + 리포트). 더미 5개 전부 통과. 실행: `cd backend && uv run python -m domain.simulation.tools.debate.<모듈>`.
 
-## 5. 다음 할 일 (외부 의존/공통부 — 환경·우선순위 결정 필요)
+## 5. 다음 할 일 (외부 의존 — 환경 필요)
 
-결정론 파이프라인(8~11)은 끝났다. 남은 건 전부 외부 의존이나 공통부 변경.
+결정론 파이프라인(8~11) + mock 토론 + API + DB영속화 코드까지 끝났다. 남은 건 환경·외부 의존.
 
-1. **실 LLM 엔진** — Haiku/GPT/Gemini 토론자 + Opus Judge 어댑터(`adapters/`), `DebaterPort`/`JudgePort` 구현. `wiring.py`에서 mock↔실 교체(`build_debate_service(use_mock=...)`). API키·비용 발생. 라운드별 실시간 stream은 `run_debate`에 emit 콜백 추가.
-2. **wiring 연결** — `DebateService`를 Composition Root(`wiring.py`)에 조립 함수로 추가(현재는 verify가 직접 생성).
-3. **DB 영속화** — `persona_debates`/`participants`/`utterances` Alembic 적용(아래 4의 미해결) 후 `DebateResult` 저장.
-4. **라우터 노출** — `api/routers/`에 토론 엔드포인트 + `api/main.py` append-only 등록(공통부, 사전공지). 입력이 더미인지 실제 7번 산출인지 결정.
-5. 프론트 연동(SSE 단계 이벤트 소비).
+1. **NeonDB 적용** — (선결) 004 revision 중복 해소 → `uv run alembic upgrade head`로 007 적용. 그 뒤 운영 경로(실 simulation_id)에서 `DebateService(persistence=...)` 저장 end-to-end 확인.
+2. **실 LLM 엔진** — Haiku/GPT/Gemini 토론자 + Opus Judge 어댑터(`adapters/`), `DebaterPort`/`JudgePort` 구현. `wiring.py`의 `build_debate_service(use_mock=False)` 분기로 교체. **API키·비용 발생.** mock churn=0이라 2턴 고정이지만 실 LLM은 입장 변동 → 3~4턴 가능. 라운드별 실시간 stream은 `run_debate`에 emit 콜백 추가 필요(현재는 토론 후 사후 emit).
+3. **운영 연결** — 실제 7번(반응 출력) 산출 → `/api/debate/start`에 reactions + simulation_id 전달하는 경로(simulation_service 완료 후 토론 트리거). 현재 라우터는 더미·body 입력만.
+4. **프론트 연동** — SSE 단계 이벤트(analysis→…→round_N→judge_final→report→completed) 소비 + 리포트 렌더.
 
 ## 6. 핵심 파일
 
@@ -93,5 +100,8 @@ ClickMe — 집행 전 AI 가상 소비자에게 광고를 테스트하고 집�
 | **토론 DTO·포트** | `backend/domain/simulation/contracts/debate_schemas.py`·`debate_ports.py` |
 | **mock 엔진** | `backend/domain/simulation/adapters/mock_debate.py` |
 | **오케스트레이션** | `backend/domain/simulation/service/debate_service.py` |
+| **라우터(/api/debate)** | `backend/api/routers/debate.py` + `api/main.py` 등록 |
+| **영속화·ORM·마이그레이션** | `repositories/debate_repository.py` · `core/models.py`(PersonaDebate*) · `alembic/versions/007_*` |
+| **wiring** | `backend/domain/simulation/wiring.py`(`build_debate_service`·`build_debate_persistence`) |
 | 시뮬 도메인 코드 | `backend/domain/simulation/` (service·graph·tools·adapters·wiring) |
 | 프로젝트 삭제 SQL(토론 테이블 참조) | `backend/api/routers/projects.py` |
