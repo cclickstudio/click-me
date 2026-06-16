@@ -1,4 +1,8 @@
-"""🅱 MetaAdsWriter stub — idem_key 강제·LIVE 차단·DRY_RUN 응답 형태 검증."""
+"""🅱 MetaAdsWriter — idem_key 강제·모드 게이팅·DRY_RUN 응답 형태 검증.
+
+LIVE 봉인은 writer가 아니라 executor.DEFAULT_ALLOWED_MODES + use_mock 이중 게이트가
+담당한다 (계획 §게이팅). writer 차원 방어는 "자격증명 없으면 미전송".
+"""
 
 import pytest
 
@@ -12,13 +16,17 @@ async def test_empty_idem_key_is_rejected():
         await writer.pause("camp-1", "")
 
 
-async def test_live_mode_writes_are_not_implemented():
-    """LIVE 쓰기는 7/8 스코프 제외 (Won't, §7) — 물리적으로 막혀 있어야 한다."""
-    writer = MetaAdsWriter(mode=ExecutionMode.LIVE)
-    with pytest.raises(NotImplementedError):
-        await writer.pause("camp-1", "key-1")
-    with pytest.raises(NotImplementedError):
-        await writer.adjust_budget("camp-1", 10_000, "key-1")
+async def test_live_mode_without_credentials_does_not_send():
+    """LIVE 코드 경로는 존재하나, 자격증명(토큰) 없이는 네트워크로 나가지 않는다.
+
+    실제 LIVE 봉인은 executor 허용 모드 + use_mock 이중 게이트의 몫 (§7 Won't).
+    writer 단독 방어 = 토큰 없으면 합성 결과로 폴백.
+    """
+    writer = MetaAdsWriter(mode=ExecutionMode.LIVE)  # settings 없음 → 클라이언트 미구성
+    result = await writer.pause("camp-1", "key-1")
+    assert result.status is ResultStatus.SUCCESS
+    assert result.platform_response_snapshot["meta_response"] is None
+    assert result.platform_response_snapshot["mode"] == "live"
 
 
 async def test_negative_krw_is_rejected():
