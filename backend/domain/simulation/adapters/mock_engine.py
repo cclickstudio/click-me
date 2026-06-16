@@ -7,6 +7,7 @@ import random
 
 from domain.simulation.contracts.enums import EmotionTag, RejectionReasonTag
 from domain.simulation.contracts.schemas import (
+    AdFeatures,
     AdInterpretation,
     Aisas,
     PanelSpec,
@@ -15,6 +16,18 @@ from domain.simulation.contracts.schemas import (
     RubricScore,
     SimulationRunRequest,
 )
+from domain.simulation.tools.reachability import pick_social_exposure
+
+# 결정적 광고 특성 스텁 — 무콜 데모·테스트용. structured_analysis 와 ad_features 양쪽에 동일하게.
+_MOCK_FEATURES = {
+    "ad_credibility": 70,
+    "ad_quality": 65,
+    "price_mentioned": True,
+    "original_price": 30000,
+    "discounted_price": 19900,
+    "brand_mentioned": True,
+    "social_proof_strength": "medium",
+}
 
 _GENDERS = ("M", "F")
 _REGIONS = ("서울", "경기", "부산", "대구", "광주")
@@ -22,11 +35,11 @@ _OCEAN_KEYS = ("openness", "conscientiousness", "extraversion", "agreeableness",
 
 
 def _pick_exposure(persona: Persona, rng: random.Random) -> str:
-    """페르소나의 KISDI 노출맥락 후보에서 하나를 선택해 문자열로. 후보 없으면 기본값."""
+    """노출맥락 — Meta 전용이므로 소셜피드만. 비소셜(TV 등)로는 폴백하지 않는다(모순 차단)."""
     candidates = persona.media_behavior.get("exposure_candidates") or []
-    if not candidates:
-        return "sns_feed_evening"
-    e = rng.choice(candidates)
+    e = pick_social_exposure(candidates, rng)
+    if e is None:
+        return "sns_feed_evening"  # 소셜 후보 없을 때 기본값 — 비소셜 금지
     return f"{e['timeband']}·{e['place']}·{e['medium']}·{e['activity']}"
 
 
@@ -36,11 +49,12 @@ class MockAdInterpreter:
     async def interpret(self, request: SimulationRunRequest) -> AdInterpretation:
         return AdInterpretation(
             ad_id=request.ad_id,
-            structured_analysis={"mock": True},
+            structured_analysis={"mock": True, **_MOCK_FEATURES},
             detected_industry="beverage",
             detected_objective="awareness",
             detected_target="20대",
             detected_message="신제품 출시",
+            ad_features=AdFeatures(**_MOCK_FEATURES),
             intent_mismatch=False,
             model_version="mock-vision-0",
         )

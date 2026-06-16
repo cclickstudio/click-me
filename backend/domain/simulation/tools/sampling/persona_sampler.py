@@ -10,6 +10,7 @@ from typing import Any
 
 from domain.simulation.contracts.schemas import PanelSpec, Persona
 from domain.simulation.data.simulation import loader
+from domain.simulation.tools.reachability import cell_social_reach, is_social_context
 
 # 지역 분포 폴백 — 행안부 원본 CSV에 시도(region_weights)가 있으면 그걸 우선 사용. 합=1.0.
 _REGION_WEIGHTS: dict[str, float] = {
@@ -122,6 +123,7 @@ class PersonaSampler:
         media: dict | None = None,
         socioeconomic: dict | None = None,
         min_age: int = _MIN_AGE,
+        reachability_sampling: bool = False,
     ) -> None:
         self._population = population or loader.load_population_age_sex()
         self._ocean = ocean or loader.load_ocean_age_bands()
@@ -129,6 +131,10 @@ class PersonaSampler:
         self._media = media or loader.load_media_behavior()
         self._socioeconomic = socioeconomic or loader.load_socioeconomic()
         self._min_age = min_age
+        # Meta 전용 경로 — 켜면 연령×성별 표본을 인구×소셜도달 비율로 뽑는다(§Tier1).
+        # 가중이 아니라 추출분포를 바꿈(self-weighting 유지) → 메타 도달층에 표본 집중, CI 효율↑.
+        # 기본 OFF: 전인구 비례(§3.7)·기존 테스트 보존. wiring 에서만 ON.
+        self._reachability_sampling = reachability_sampling
 
     async def get_or_build(self, spec: PanelSpec) -> tuple[str, list[Persona]]:
         return spec.version, self.sample(spec)
@@ -183,6 +189,7 @@ class PersonaSampler:
         weight: float,
     ) -> Persona:
         age = rng.randint(band_lo, band_hi)
+        # 도달성은 추출분포(_population_cells)에 이미 반영 — 여기선 self-weighting(weight 그대로).
         return Persona(
             persona_id=f"P-{idx:05d}",
             age=age,
@@ -220,8 +227,18 @@ class PersonaSampler:
             for sex, ratio in (("M", b["male_ratio"]), ("F", 1 - b["male_ratio"])):
                 if gender_filter and sex != gender_filter:
                     continue
-                cells.append(((lo, hi, sex), band_weight * ratio))
+                w = band_weight * ratio
+                if self._reachability_sampling:
+                    # 인구 marginal × 소셜피드 도달 비율 = 메타 도달 가능 marginal(§Tier1).
+                    # 젊은 셀일수록 reach↑ → 표본이 자동으로 젊게 집중(손곡선 아님, 데이터 유도).
+                    w *= self._cell_reach(lo, sex)
+                cells.append(((lo, hi, sex), w))
         return cells
+
+    def _cell_reach(self, age: int, gender: str) -> float:
+        """연령×성별 셀의 소셜피드 도달 비중(0~1). 노출 데이터 없으면 중립 1.0(셀 제외 안 함)."""
+        reach = cell_social_reach(self._media_cell(age, gender))
+        return reach if reach is not None else 1.0
 
     def _sample_ocean(self, rng: random.Random, age: int) -> dict[str, float]:
         """OCEAN(factor score) — 논문 5유형 중 실비율로 하나 골라 그 유형의 mean·sd로 샘플링.
@@ -263,7 +280,8 @@ class PersonaSampler:
         primary = _weighted_choice(rng, list(dm.items())) if dm else "스마트폰/휴대폰"
         mm = cell["daily_media_minutes"]
         minutes = max(5, round(rng.gauss(mm["mean"], mm["sd"])))
-        # 노출맥락 후보(상위 5) — 반응(4-b) 시점에 exposure_context 로 하나 선택. 반응은 캐시✗.
+        # 노출맥락 후보 — Meta 전용이므로 소셜피드(SNS·동영상 @ 스마트폰/PC) 맥락만 추린 뒤 상위 5.
+        # 전체 상위5로 뽑으면 고령층은 TV가 점령해 소셜이 잘림 → 메타 광고 TV 노출 모순(§Tier1).
         candidates = [
             {
                 "timeband": e["timeband"],
@@ -271,14 +289,19 @@ class PersonaSampler:
                 "activity": e["activity"],
                 "place": e["place"],
             }
-            for e in cell.get("exposure", [])[:5]
-        ]
-        return {
+            for e in cell.get("exposure", [])
+            if is_social_context(e.get("activity"), e.get("medium"))
+        ][:5]
+        out: dict[str, Any] = {
             "primary_medium": primary,
             "daily_media_minutes": minutes,
             "exposure_candidates": candidates,
             "_source": "KISDI 한국미디어패널 2024(d25)",
         }
+        reach = cell_social_reach(cell)  # 소셜피드 노출 비중 — 도달성 가중 입력(§Tier1)
+        if reach is not None:
+            out["social_feed_reach"] = round(reach, 4)
+        return out
 
     def _sample_socioeconomic(self, rng: random.Random, age: int, gender: str) -> dict[str, Any]:
         # 단계1 확장 — KISDI 연령×성별 셀에서 소득(8구간)·학력(6단계) 조건부 샘플링.

@@ -53,10 +53,11 @@ def build_panel_provider(settings=None):
     """패널 공급자 — 빌드된 고정 패널(§3.6)이 있으면 로드, 없으면 실 인구 grounding 샘플러.
 
     샘플러는 행안부 인구·OCEAN·소비가치 분포에서 통계 샘플링(LLM✗). 서사는 빈 채(반응 mock 무관).
+    Meta 전용 — 표본을 인구×소셜도달 비율로 추출(§Tier1). 고정 패널도 같은 옵션으로 빌드해야 정합.
     """
     if _DEFAULT_PANEL.exists():
         return CachedPanelProvider(_DEFAULT_PANEL)
-    return PersonaSampler()
+    return PersonaSampler(reachability_sampling=True)
 
 
 def _resolve_use_mock(settings, use_mock) -> bool:
