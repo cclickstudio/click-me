@@ -122,6 +122,7 @@ class PersonaSampler:
         consumption: dict | None = None,
         media: dict | None = None,
         socioeconomic: dict | None = None,
+        meta_reach: dict | None = None,
         min_age: int = _MIN_AGE,
         reachability_sampling: bool = False,
     ) -> None:
@@ -130,8 +131,10 @@ class PersonaSampler:
         self._consumption = consumption or loader.load_consumption_values()
         self._media = media or loader.load_media_behavior()
         self._socioeconomic = socioeconomic or loader.load_socioeconomic()
+        # Meta 침투율 곡선(Tier 2) — 연령별 인스타/페북 사용률. reach 가중의 출처.
+        self._meta_reach = meta_reach or loader.load_meta_reach()
         self._min_age = min_age
-        # Meta 전용 경로 — 켜면 연령×성별 표본을 인구×소셜도달 비율로 뽑는다(§Tier1).
+        # Meta 전용 경로 — 켜면 연령×성별 표본을 인구×메타침투율 비율로 뽑는다(§Tier2).
         # 가중이 아니라 추출분포를 바꿈(self-weighting 유지) → 메타 도달층에 표본 집중, CI 효율↑.
         # 기본 OFF: 전인구 비례(§3.7)·기존 테스트 보존. wiring 에서만 ON.
         self._reachability_sampling = reachability_sampling
@@ -237,16 +240,21 @@ class PersonaSampler:
                     continue
                 w = band_weight * ratio
                 if self._reachability_sampling:
-                    # 인구 marginal × 소셜피드 도달 비율 = 메타 도달 가능 marginal(§Tier1).
-                    # 젊은 셀일수록 reach↑ → 표본이 자동으로 젊게 집중(손곡선 아님, 데이터 유도).
+                    # 인구 marginal × 메타 침투율 = 메타 도달 가능 marginal(§Tier2).
+                    # 젊은 셀일수록 침투율↑ → 표본이 자동으로 젊게 집중(공개 통계 기반).
                     w *= self._cell_reach(lo, sex)
                 cells.append(((lo, hi, sex), w))
         return cells
 
     def _cell_reach(self, age: int, gender: str) -> float:
-        """연령×성별 셀의 소셜피드 도달 비중(0~1). 노출 데이터 없으면 중립 1.0(셀 제외 안 함)."""
-        reach = cell_social_reach(self._media_cell(age, gender))
-        return reach if reach is not None else 1.0
+        """연령의 메타(인스타/페북) 침투율(0~1, §Tier2). 침투율 데이터 없으면 중립 1.0.
+
+        과거엔 KISDI 소셜피드 비중(cell_social_reach)을 썼으나, 그 데이터가 사실상 유튜브 영상
+        시청만 잡고 SNS 라벨이 비어 있어(0.02) 메타 사용과 어긋남 → 메타 침투율 곡선으로 교체.
+        gender 는 시그니처 유지(추후 성별 침투율 세분 대비), 현재는 연령만 사용.
+        """
+        band = media_band_of_age(age)
+        return self._meta_reach.get("age_bands", {}).get(band, 1.0)
 
     def _sample_ocean(self, rng: random.Random, age: int) -> dict[str, float]:
         """OCEAN(factor score) — 논문 5유형 중 실비율로 하나 골라 그 유형의 mean·sd로 샘플링.
@@ -306,7 +314,10 @@ class PersonaSampler:
             "exposure_candidates": candidates,
             "_source": "KISDI 한국미디어패널 2024(d25)",
         }
-        reach = cell_social_reach(cell)  # 소셜피드 노출 비중 — 도달성 가중 입력(§Tier1)
+        out["meta_reach"] = round(
+            self._cell_reach(age, gender), 4
+        )  # 메타 침투율 — 가중 출처(§Tier2)
+        reach = cell_social_reach(cell)  # KISDI 소셜피드(영상) 비중 — 노출맥락 투명성용 참고치
         if reach is not None:
             out["social_feed_reach"] = round(reach, 4)
         return out

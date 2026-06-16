@@ -99,7 +99,9 @@ service ──구동──▶ graph ──(노드가 호출)──▶ tools · a
 
 > 광고 해석·루브릭·반응의 **실 LLM 어댑터는 아직 mock**(P4 예정). 즉 현재 KPI는 구조·계약 검증용이며, 실 모델 연결 후 의미 있는 값이 된다.
 
-> **Meta 전용 도달성 추출(§Tier1).** 제품이 Meta 광고만 취급 → 단계1 표본을 `인구 × 소셜피드 도달 비중`으로 추출(`tools/reachability.py`, `persona_sampler.reachability_sampling`, `wiring`에서 ON). 표본이 메타 도달층(젊은 층)에 집중되며 self-weighting 유지. 노출맥락도 소셜피드 우선. generic SNS 기준 — Meta 브랜드 특정은 발표 후(Tier 2). 모집단은 "소셜피드 도달 가능 한국 소비자".
+> **Meta 전용 도달성 추출.** 제품이 Meta 광고만 취급 → 단계1 표본을 `인구 × 메타 침투율`로 추출(`persona_sampler.reachability_sampling`, `wiring`에서 ON). 표본이 메타 도달층(젊은 층)에 집중되며 self-weighting 유지. 모집단은 "메타(인스타/페북) 도달 가능 한국 소비자".
+>
+> **(2026-06-16, Tier 2) reach 출처를 메타 침투율 곡선으로 전환.** 과거 KISDI 소셜피드 비중(`cell_social_reach`)은 "SNS" 라벨이 거의 비어(0.02) 사실상 유튜브 영상 시청만 잡아 메타 사용과 어긋났다(30대 과소). → 연령별 메타(인스타/페북) 침투율(`data/.../meta_reach.json`)을 `_cell_reach`의 출처로 사용. **현재 placeholder 추정치(`needs_real_values`)** — 공개 통계 정확 수치로 교체 예정. 지역 메타 접근성은 미반영(추후 고도화). KISDI reach는 노출맥락 선택에만 사용.
 
 > **노출맥락은 소셜피드로만 한정(2026-06-16 수정).** `exposure_context`는 "이 광고를 본 경로"이며 Meta 전용이므로 **항상 소셜피드(SNS·동영상 @ 스마트폰/PC)** 만 선택한다. 샘플러는 노출후보(`exposure_candidates`)를 소셜 맥락만으로 빌드하고, 반응 어댑터(mock·gemini)는 소셜 후보가 없어도 **TV·신문 등 비소셜로 폴백하지 않는다** — 과거 고령층 셀에서 TV로 폴백돼 "메타 광고를 TV에서 봤다"는 모순이 발생하던 버그를 차단.
 

@@ -41,6 +41,11 @@ def load_socioeconomic() -> dict[str, Any]:
     return _read_json("socioeconomic.json")
 
 
+def load_meta_reach() -> dict[str, Any]:
+    """단계1 메타 도달 가중(Tier 2) — 연령별 인스타/페북 침투율(0~1)."""
+    return _read_json("meta_reach.json")
+
+
 def load_population_age_sex() -> dict[str, Any]:
     """단계1 인구 분포. 공식 CSV(raw/population_age_sex.csv)가 있으면 우선 사용.
 
@@ -148,5 +153,8 @@ def data_status() -> dict[str, str]:
         if load_media_behavior().get("cells")
         else "real(KISDI 기기별 사용시간) / pending(시간대·성연령 교차)",
         "socioeconomic": "real(KISDI 2024 raw — 연령×성별 소득·학력)",
+        "meta_reach": "placeholder(연령별 메타 침투율 추정치) / pending(공개 통계 정확 수치)"
+        if load_meta_reach().get("needs_real_values")
+        else "real",
         "social_values_deep": "pending(MDIS 사회조사 raw 수동 다운로드)",
     }
