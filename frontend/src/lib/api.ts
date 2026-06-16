@@ -85,5 +85,53 @@ export const api = {
         body: JSON.stringify({ candidate_id: candidateId, caption }),
       }),
     list: (limit = 20) => request(`/generator/generations?limit=${limit}`),
+    advertise: (
+      generationId: string,
+      body: {
+        candidate_id: string;
+        budget: number;
+        objective: string;
+        targeting: { age_min: number; age_max: number; genders: number[]; countries: string[] };
+        destination_url: string;
+        start_date: string;
+        end_date?: string | null;
+      },
+    ) =>
+      request(`/generator/generations/${generationId}/advertise`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+    brandProfile: {
+      get: (clientId: string) =>
+        request<{
+          brand_color: string | null;
+          brand_logo_key: string | null;
+          brand_logo_url: string | null;
+          tone_and_manner: string | null;
+        }>("/generator/brand-profile", { headers: { "X-Client-Id": clientId } }),
+      save: (
+        clientId: string,
+        body: { brand_color?: string | null; brand_logo_key?: string | null; tone_and_manner?: string | null },
+      ) =>
+        request("/generator/brand-profile", {
+          method: "POST",
+          headers: { "X-Client-Id": clientId },
+          body: JSON.stringify(body),
+        }),
+      uploadLogo: async (clientId: string, file: File): Promise<{ key: string; url: string }> => {
+        const form = new FormData();
+        form.append("file", file);
+        const res = await fetch(`${API_BASE}/api/generator/logo`, {
+          method: "POST",
+          headers: { "X-Client-Id": clientId },
+          body: form,
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({ detail: "Unknown error" }));
+          throw new Error((err as { detail?: string }).detail ?? `HTTP ${res.status}`);
+        }
+        return res.json() as Promise<{ key: string; url: string }>;
+      },
+    },
   },
 };
