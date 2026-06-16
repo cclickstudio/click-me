@@ -382,8 +382,9 @@ def _horizontal_gradient_panel(
     color: tuple[int, int, int],
     alpha_full: int,
     fade_ratio: float = 0.28,
+    x_offset: int = 0,
 ) -> None:
-    """좌측 불투명 → 우측 투명 그라디언트 패널. 제품이 패널에 걸쳐도 비쳐 보이게 함."""
+    """좌측 불투명 → 우측 투명 그라디언트 패널. x_offset으로 시작 위치 지정 가능."""
     alpha_col = Image.new("L", (panel_w, 1))
     fade_start = int(panel_w * (1.0 - fade_ratio))
     for x in range(panel_w):
@@ -400,7 +401,7 @@ def _horizontal_gradient_panel(
     panel_rgba = Image.merge("RGBA", (r, g, b, alpha_map))
 
     layer = Image.new("RGBA", canvas.size, (0, 0, 0, 0))
-    layer.paste(panel_rgba, (0, 0))
+    layer.paste(panel_rgba, (x_offset, 0))
     canvas.alpha_composite(layer)
 
 
@@ -414,11 +415,12 @@ def _compose_template_c(
     cta_rgb: tuple[int, int, int],
     brightness: str = "medium",
 ) -> None:
-    """브랜드 강조: 좌측 반투명 브랜드 패널 + 우측 제품 이미지."""
+    """브랜드 강조: 좌측 솔리드 텍스트 패널 + 그라데이션 전환 구간 + 우측 제품 영역."""
     scrim_a = _scrim_alpha(brightness)
-    panel_w = int(w * 0.42)
+    panel_w = int(w * 0.46)  # 텍스트 전용 솔리드 구간
+    gradient_ext = int(w * 0.07)  # 솔리드 구간 이후 그라데이션 전환 폭
 
-    margin = int(panel_w * 0.12)
+    margin = int(panel_w * 0.10)
     text_w = panel_w - margin * 2
 
     # 폰트 크기는 패널 폭 기준 — 전체 이미지 크기로 계산하면 패널 대비 너무 커짐
@@ -427,11 +429,23 @@ def _compose_template_c(
     ct_font = _load_font(max(16, int(panel_w * 0.046)), bold=True)
     label_font = _load_font(max(11, int(panel_w * 0.026)), bold=False)
 
-    # 좌측 패널: 우측 끝부분을 페이드아웃해 제품이 패널에 걸쳐도 비쳐 보이게 함
     panel_color = cta_rgb if _luminance(cta_rgb) < 0.72 else (30, 40, 80)
     panel_alpha = max(210, min(235, scrim_a + 80))
 
-    _horizontal_gradient_panel(canvas, panel_w, h, panel_color, panel_alpha)
+    # 솔리드 패널 (텍스트 영역 전체가 불투명 배경 위에 놓임)
+    solid = Image.new("RGBA", (panel_w, h), (*panel_color, panel_alpha))
+    canvas.alpha_composite(solid, (0, 0))
+
+    # 그라데이션 구간: 솔리드 끝 → 완전 투명 (제품이 서서히 드러남)
+    _horizontal_gradient_panel(
+        canvas,
+        gradient_ext,
+        h,
+        panel_color,
+        panel_alpha,
+        fade_ratio=1.0,
+        x_offset=panel_w,
+    )
 
     draw = ImageDraw.Draw(canvas)
 

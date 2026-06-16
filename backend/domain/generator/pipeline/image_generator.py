@@ -84,9 +84,11 @@ _TEMPLATE_SAFE_ZONES: dict[TemplateType, str] = {
         "Place the product prominently in the middle 59% of the frame."
     ),
     TemplateType.C: (
-        "COMPOSITION RULE: Place ALL important visual elements in the RIGHT 58% of the frame. "
-        "The left 42% will be completely covered by a solid color panel — keep it simple or empty. "
-        "Product must be clearly visible on the right side."
+        "COMPOSITION RULE: The left 46% of the frame is a solid color text panel — keep it empty. "
+        "The area from 46% to 53% has a gradient overlay fading to transparent. "
+        "Place the product clearly in the RIGHT 47% of the frame "
+        "(center the product at approximately 75-80% from the left edge). "
+        "No important visual elements in the left 53% of the frame."
     ),
 }
 
