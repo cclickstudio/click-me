@@ -35,6 +35,11 @@ class SSRScorer:
             self._anchor_embeddings[dim] = np.array(emb_list, dtype=np.float32)
 
     async def score(self, exposure_text: str) -> dict[str, ScoreDistribution]:
+        if not self._anchor_embeddings:
+            raise RuntimeError(
+                "SSR scorer is not initialized. "
+                "Anchor precomputation failed at startup — check OpenAI API quota."
+            )
         resp = await self.client.embeddings.create(model=EMBEDDING_MODEL, input=[exposure_text])
         response_emb = np.array(resp.data[0].embedding, dtype=np.float32)
 
