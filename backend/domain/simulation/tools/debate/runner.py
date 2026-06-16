@@ -4,6 +4,7 @@
 # 멈춤은 느낌이 아니라 숫자(churn·dispersion)로 — MIN 2 / MAX 4. 상세: persona-debate-pipeline.md ④
 from __future__ import annotations
 
+from collections.abc import Callable
 from statistics import pstdev
 
 from domain.simulation.contracts.debate_ports import DebaterPort, JudgePort
@@ -45,10 +46,23 @@ def stop_reason_for(round_n: int, churn: int, dispersion: float) -> str:
 
 
 def run_debate(
-    panel: AssignedPanel, topic: DebateTopic, debater: DebaterPort, judge: JudgePort
+    panel: AssignedPanel,
+    topic: DebateTopic,
+    debater: DebaterPort,
+    judge: JudgePort,
+    on_event: Callable[[dict], None] | None = None,
 ) -> DebateResult:
-    """유동 라운드 토론 — 포트로 발화 수집, 결정론 게이트로 종료 판단, Judge로 결론."""
+    """유동 라운드 토론 — 포트로 발화 수집, 결정론 게이트로 종료 판단, Judge로 결론.
+
+    on_event(주입 시): 발언 1건마다 utterance 이벤트, 라운드 끝마다 round_summary 이벤트를
+    실시간으로 흘린다(SSE 토론 과정 노출). 스레드세이프(호출자가 store.emit append만 수행).
+    """
     order = panel.participants  # slot 순
+
+    def emit(ev: dict) -> None:
+        if on_event is not None:
+            on_event(ev)
+
     pdebates: dict[str, ParticipantDebate] = {
         p.persona_id: ParticipantDebate(
             persona_id=p.persona_id,
@@ -75,8 +89,34 @@ def run_debate(
             pdebates[p.persona_id].utterances.append(u)
             round_utts.append(u)
             cur_stances[p.persona_id] = u.stance
-        round_summaries[round_n] = judge.summarize_round(round_n, round_utts)
+            emit(
+                {
+                    "event": "progress",
+                    "stage": "utterance",
+                    "round": round_n,
+                    "phase": phase,
+                    "persona_id": p.persona_id,
+                    "persona_name": p.persona_name,
+                    "persona_profile": p.persona_profile,
+                    "role": p.role,
+                    "engine": p.engine,
+                    "stance": u.stance,
+                    "text": u.text,
+                    "reason": u.reason,
+                    "lever": u.lever,
+                }
+            )
+        summary = judge.summarize_round(round_n, round_utts)
+        round_summaries[round_n] = summary
         rounds_run = round_n
+        emit(
+            {
+                "event": "progress",
+                "stage": "round_summary",
+                "round": round_n,
+                "summary": summary,
+            }
+        )
 
         # churn = 직전 라운드 대비 입장 바꾼 사람 수 / dispersion = 이번 라운드 입장 퍼짐
         churn = sum(1 for pid, s in cur_stances.items() if prev_stances.get(pid, s) != s)

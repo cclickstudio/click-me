@@ -157,22 +157,15 @@ class DebateService:
             debate_obj = None
             if self._debater_factory is not None and self._judge is not None:
                 debater = self._debater_factory(reactions)
+                # 발언·라운드 정리를 실시간 emit(토론 과정 stream). store.emit은 스레드세이프.
+                def _emit(ev: dict, _run_id: str = run_id) -> None:
+                    self._store.emit(_run_id, ev)
+
                 # LLM 엔진은 동기 블로킹 — 스레드로 분리해 이벤트 루프(다른 SSE 요청)를 막지 않는다.
                 debate = await asyncio.to_thread(
-                    run_debate, assigned, topic, debater, self._judge
+                    run_debate, assigned, topic, debater, self._judge, _emit
                 )
                 debate_obj = debate
-                for rn in sorted(debate.round_summaries):
-                    store.emit(
-                        run_id,
-                        {
-                            "event": "progress",
-                            "stage": f"round_{rn}",
-                            "pct": 80 + rn,
-                            "summary": debate.round_summaries[rn],
-                        },
-                    )
-                    await asyncio.sleep(0)
                 store.emit(
                     run_id,
                     {

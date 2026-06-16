@@ -74,15 +74,31 @@ _GIVEN = [
     "서윤",
 ]
 
-# 역할 → 한 줄 프로필(인구정보 부재 시 역할로 대체). 운영은 factory 프로필로 교체.
-_ROLE_PROFILE = {
-    "완주자": "끝까지 반응한 적극형",
-    "피벗": "신뢰는 있으나 행동 직전 멈춘 스윙형",
-    "거부자": "광고를 거부한 비판형",
-    "불신자": "메시지를 의심한 불신형",
-    "초기이탈": "흥미 단계에서 이탈한 무관심형",
-    "미온다수2": "관심은 있으나 움직이지 않은 미온형",
+# 역할 → 성향 라벨(프로필 끝에 붙임). 운영은 factory 프로필로 교체.
+_ROLE_TRAIT = {
+    "완주자": "적극형",
+    "피벗": "신뢰형",
+    "거부자": "비판형",
+    "불신자": "불신형",
+    "초기이탈": "무관심형",
+    "미온다수2": "미온형",
 }
+
+# 직업 풀(결정론 부여) — 더미엔 인구정보가 없어 persona_id 해시로 고른다.
+_JOBS = [
+    "회사원",
+    "대학생",
+    "주부",
+    "자영업자",
+    "교사",
+    "간호사",
+    "개발자",
+    "디자이너",
+    "영업직",
+    "공무원",
+    "프리랜서",
+    "마케터",
+]
 
 
 def _name_for(persona_id: str, taken: set[str]) -> str:
@@ -95,6 +111,16 @@ def _name_for(persona_id: str, taken: set[str]) -> str:
         if name not in taken:
             return name
     return surname + _GIVEN[gi]
+
+
+def _profile_for(persona_id: str, role: str) -> str:
+    """persona_id 결정론 프로필 — 나이·성별·직업 + 역할 성향. 더미용(운영은 factory 프로필)."""
+    h = int(hashlib.sha256(persona_id.encode("utf-8")).hexdigest(), 16)
+    age = 20 + (h % 45)  # 20~64세
+    gender = "남성" if (h // 45) % 2 == 0 else "여성"
+    job = _JOBS[(h // 90) % len(_JOBS)]
+    trait = _ROLE_TRAIT.get(role, role)
+    return f"{age}세 {gender} {job} · {trait}"
 
 
 def assign_panel(panel: SelectedPanel) -> AssignedPanel:
@@ -128,7 +154,7 @@ def assign_panel(panel: SelectedPanel) -> AssignedPanel:
                 is_fallback=p.is_fallback,
                 engine=engine_of.get(p.persona_id, PIVOT_ENGINE),
                 persona_name=name,
-                persona_profile=_ROLE_PROFILE.get(p.role, p.role),
+                persona_profile=_profile_for(p.persona_id, p.role),
             )
         )
 

@@ -70,10 +70,14 @@ async def _debate_cases() -> bool:
             "참가자 6명·발언수==rounds_run",
         )
         ok_d = _check(len(debate["final"]["ranked_actions"]) >= 1, "Judge 개선안 ≥1")
-        # round_n emit + judge_final
+        # 실시간 stream — 발언(utterance) emit 수 == 전체 발언 수, round_summary·judge_final 존재
+        utt_events = sum(1 for s in stages if s == "utterance")
+        total_utt = sum(len(p["utterances"]) for p in debate["participants"])
         ok_e = _check(
-            f"round_{rr}" in stages and "judge_final" in stages,
-            "stream round_*·judge_final",
+            utt_events == total_utt
+            and "round_summary" in stages
+            and "judge_final" in stages,
+            f"stream 발언 {utt_events}건·round_summary·judge_final",
         )
         # 조각 11 리포트 — 토론 있을 때 debate_available·인용·개선안 매핑
         report = result["report"]

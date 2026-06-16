@@ -178,30 +178,41 @@ class LLMDebater:
         self, participant: DebateParticipant, round_n: int, phase: str, topic: DebateTopic
     ) -> Utterance:
         r = self._by_id.get(participant.persona_id)
-        try:
-            data = self._c.complete_json(
-                participant.engine, _persona_system(participant, r), _round_user(phase, topic)
-            )
-            return Utterance(
-                round=round_n,
-                phase=phase,
-                stance=_norm_stance(data.get("stance")),
-                text=str(data.get("text", ""))[:500],
-                reason=str(data.get("reason", ""))[:300],
-                lever=str(data.get("lever", ""))[:200],
-            )
-        except Exception:
-            logger.exception(
-                "토론자 발화 실패 engine=%s pid=%s", participant.engine, participant.persona_id
-            )
-            return Utterance(
-                round=round_n,
-                phase=phase,
-                stance="neutral",
-                text="(응답 생성 실패)",
-                reason="",
-                lever="",
-            )
+        system, user = _persona_system(participant, r), _round_user(phase, topic)
+        # LLM 간헐 실패(빈 응답·파싱)에 대비해 2회 시도. 비결정이라 재시도 시 성공 가능.
+        last_exc: Exception | None = None
+        for _attempt in range(2):
+            try:
+                data = self._c.complete_json(
+                    participant.engine, system, user, max_tokens=800
+                )
+                text = str(data.get("text", "")).strip()
+                if not text:
+                    raise ValueError("빈 발언")
+                return Utterance(
+                    round=round_n,
+                    phase=phase,
+                    stance=_norm_stance(data.get("stance")),
+                    text=text[:500],
+                    reason=str(data.get("reason", ""))[:300],
+                    lever=str(data.get("lever", ""))[:200],
+                )
+            except Exception as exc:  # noqa: BLE001
+                last_exc = exc
+        logger.warning(
+            "토론자 발화 실패 engine=%s pid=%s err=%s",
+            participant.engine,
+            participant.persona_id,
+            last_exc,
+        )
+        return Utterance(
+            round=round_n,
+            phase=phase,
+            stance="neutral",
+            text="(응답 생성 실패)",
+            reason="",
+            lever="",
+        )
 
 
 class LLMJudge:
@@ -248,7 +259,8 @@ class LLMJudge:
             '"supporting_personas":["이름"]}]}'
         )
         try:
-            data = self._c.complete_json("opus", _JUDGE_SYS, user, max_tokens=700)
+            # final은 진단+합의+이견+개선안(supporting 포함)이라 길다 — 잘리지 않게 넉넉히.
+            data = self._c.complete_json("opus", _JUDGE_SYS, user, max_tokens=2000)
             ranked = [
                 RankedAction(
                     rank=int(a.get("rank", i + 1)),
