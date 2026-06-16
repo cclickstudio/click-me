@@ -36,27 +36,37 @@ class DebateService:
         store,
         debater_factory: Callable[[list[PersonaReaction]], DebaterPort] | None = None,
         judge: JudgePort | None = None,
+        persistence=None,
     ) -> None:
         self._store = store
         self._debater_factory = debater_factory
         self._judge = judge
+        self._persistence = persistence  # DebateRepository(주입 시 + simulation_id 있을 때 저장)
 
     async def start(
-        self, reactions: list[PersonaReaction], ad_analysis: AdInterpretation | None = None
+        self,
+        reactions: list[PersonaReaction],
+        ad_analysis: AdInterpretation | None = None,
+        *,
+        simulation_id: str | None = None,
     ) -> str:
         """비동기 시작 — 백그라운드 실행 후 run_id 반환(진행률은 SSE, 결과는 get_result)."""
         run_id = str(uuid.uuid4())
         self._store.create_run(run_id)
-        asyncio.create_task(self._run(run_id, reactions, ad_analysis))
+        asyncio.create_task(self._run(run_id, reactions, ad_analysis, simulation_id))
         return run_id
 
     async def run(
-        self, reactions: list[PersonaReaction], ad_analysis: AdInterpretation | None = None
+        self,
+        reactions: list[PersonaReaction],
+        ad_analysis: AdInterpretation | None = None,
+        *,
+        simulation_id: str | None = None,
     ) -> dict | None:
         """동기 실행 — 끝까지 돌린 뒤 결과(분석·KPI·주제·패널)를 반환."""
         run_id = str(uuid.uuid4())
         self._store.create_run(run_id)
-        await self._run(run_id, reactions, ad_analysis)
+        await self._run(run_id, reactions, ad_analysis, simulation_id)
         return self._store.get_result(run_id)
 
     async def _run(
@@ -64,6 +74,7 @@ class DebateService:
         run_id: str,
         reactions: list[PersonaReaction],
         ad_analysis: AdInterpretation | None,
+        simulation_id: str | None = None,
     ) -> None:
         store = self._store
         try:
@@ -197,8 +208,28 @@ class DebateService:
                 },
             )
 
+            # ── DB 영속화(주입 + simulation_id + 토론 있을 때만; FK상 실 simulations 행 필요) ──
+            debate_id: str | None = None
+            if self._persistence is not None and simulation_id and debate_obj is not None:
+                try:
+                    saved = await self._persistence.save(simulation_id, debate_obj)
+                    debate_id = str(saved)
+                    store.emit(
+                        run_id,
+                        {
+                            "event": "progress",
+                            "stage": "persisted",
+                            "pct": 99,
+                            "debate_id": debate_id,
+                        },
+                    )
+                except Exception:
+                    logger.exception("토론 영속화 실패(런은 유지) run_id=%s", run_id)
+
             result = {
                 "run_id": run_id,
+                "simulation_id": simulation_id,
+                "debate_id": debate_id,
                 "analysis": analysis.model_dump(),
                 "aggregate": aggregate.model_dump(),
                 "topic": topic.model_dump(),
