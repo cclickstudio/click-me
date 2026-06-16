@@ -9,22 +9,36 @@ import asyncio
 import json
 import logging
 import uuid
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 
+from domain.simulation.contracts.debate_ports import DebaterPort, JudgePort
 from domain.simulation.contracts.schemas import AdInterpretation, PersonaReaction
 from domain.simulation.tools.debate.analyzer import analyze_reactions
 from domain.simulation.tools.debate.assigner import assign_panel
 from domain.simulation.tools.debate.kpi import build_topic, compute_kpi
+from domain.simulation.tools.debate.runner import run_debate
 from domain.simulation.tools.debate.selector import select_panel
 
 logger = logging.getLogger("clickme")
 
 
 class DebateService:
-    """토론 파이프라인 구동 — 결정론 조각을 실행하며 진행률을 emit. LLM 토론은 추후 _run에 삽입."""
+    """토론 파이프라인 구동 — 결정론 조각 실행 + (엔진 주입 시) LLM 토론(10-c)을 라운드별 emit.
 
-    def __init__(self, *, store) -> None:
+    debater_factory·judge가 주입되면 10-c 토론을 돌리고, 미주입이면 placeholder(골격)만 흘린다.
+    엔진 교체(mock↔실 LLM)는 wiring에서만.
+    """
+
+    def __init__(
+        self,
+        *,
+        store,
+        debater_factory: Callable[[list[PersonaReaction]], DebaterPort] | None = None,
+        judge: JudgePort | None = None,
+    ) -> None:
         self._store = store
+        self._debater_factory = debater_factory
+        self._judge = judge
 
     async def start(
         self, reactions: list[PersonaReaction], ad_analysis: AdInterpretation | None = None
@@ -126,17 +140,45 @@ class DebateService:
             )
             await asyncio.sleep(0)
 
-            # ── 조각 10-c LLM 토론 (placeholder — 다음 단계) ──
-            store.emit(
-                run_id,
-                {
-                    "event": "progress",
-                    "stage": "debate",
-                    "pct": 85,
-                    "status": "pending",
-                    "message": "LLM 토론(10-c) 미구현 — 다음 단계에서 라운드별 stream 추가",
-                },
-            )
+            # ── 조각 10-c LLM 토론 (엔진 주입 시 실행, 아니면 placeholder) ──
+            debate_dump: dict | None = None
+            if self._debater_factory is not None and self._judge is not None:
+                debater = self._debater_factory(reactions)
+                debate = run_debate(assigned, topic, debater, self._judge)
+                for rn in sorted(debate.round_summaries):
+                    store.emit(
+                        run_id,
+                        {
+                            "event": "progress",
+                            "stage": f"round_{rn}",
+                            "pct": 80 + rn,
+                            "summary": debate.round_summaries[rn],
+                        },
+                    )
+                    await asyncio.sleep(0)
+                store.emit(
+                    run_id,
+                    {
+                        "event": "progress",
+                        "stage": "judge_final",
+                        "pct": 92,
+                        "rounds_run": debate.rounds_run,
+                        "stop_reason": debate.stop_reason,
+                        "headline": debate.final.headline if debate.final else None,
+                    },
+                )
+                debate_dump = debate.model_dump()
+            else:
+                store.emit(
+                    run_id,
+                    {
+                        "event": "progress",
+                        "stage": "debate",
+                        "pct": 85,
+                        "status": "pending",
+                        "message": "LLM 토론(10-c) 엔진 미주입 — wiring에서 mock/실 엔진 주입 필요",
+                    },
+                )
 
             # ── 조각 11 리포트 (placeholder — 다음 단계) ──
             store.emit(
@@ -156,7 +198,7 @@ class DebateService:
                 "aggregate": aggregate.model_dump(),
                 "topic": topic.model_dump(),
                 "panel": assigned.model_dump(),
-                "debate": None,  # 조각 10-c 산출 자리
+                "debate": debate_dump,  # 조각 10-c 산출(엔진 주입 시)
                 "report": None,  # 조각 11 산출 자리
             }
             store.set_result(run_id, result)

@@ -4,10 +4,15 @@
 # 주고받는 내부 스키마를 한 곳에 모은다. 8·9·10-a·10-b는 결정론(LLM✗), 10-c·11만 LLM.
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 # AISAS 5단계 — 퍼널 순서 고정(이 순서로만 인접 비교).
 AISAS_STAGES: list[str] = ["attention", "interest", "search", "action", "share"]
+
+# 토론 입장 — 라운드별 stance. churn/dispersion 계산의 단위.
+Stance = Literal["positive", "neutral", "negative"]
 
 
 class FunnelStage(BaseModel):
@@ -120,3 +125,62 @@ class DebateTopic(BaseModel):
     )
     focus: dict[str, float | str | None] = Field(default_factory=dict)  # 근거 수치(병목·KPI)
     objective: str | None = None  # detected_objective(캠페인 목표)
+
+
+# ───────────────────────── 조각 10-c 토론 산출 ─────────────────────────
+
+
+class Utterance(BaseModel):
+    """라운드별 발언 1건 — 토론자가 내놓는 구조화 발화. DB(utterances)·리포트 인용 입력."""
+
+    round: int
+    phase: str  # 발산 / 반박 / 검증
+    stance: Stance
+    text: str  # 실제 발언(리포트 인용용)
+    reason: str  # 왜 그렇게 말했나
+    lever: str  # 이 사람을 움직이려면 뭘 바꿔야 하나
+
+
+class ParticipantDebate(BaseModel):
+    """토론자 1명의 전체 발언 — 배정 정보 + 라운드별 utterances."""
+
+    persona_id: str
+    persona_name: str
+    persona_profile: str
+    role: str
+    engine: str
+    utterances: list[Utterance] = Field(default_factory=list)
+
+
+class RankedAction(BaseModel):
+    """개선안 1건(우선순위) — 리포트 §4 핵심."""
+
+    rank: int
+    action: str
+    expected_effect: str
+    supporting_personas: list[str] = Field(default_factory=list)  # 뒷받침한 사람(이름)
+
+
+class JudgeFinal(BaseModel):
+    """Judge 최종 결론 — 진단 + 합의/이견 + 개선안 순위."""
+
+    headline: str
+    consensus: list[str] = Field(default_factory=list)
+    dissent: list[str] = Field(default_factory=list)
+    ranked_actions: list[RankedAction] = Field(default_factory=list)
+
+
+class DebateResult(BaseModel):
+    """조각 10-c 산출 — 토론 전체(증거=participants + 결론=judge). 11 리포트·DB 입력.
+
+    rounds_run/stop_reason 으로 유동 라운드(2~4) 추적. models 로 재현 정보 기록.
+    """
+
+    topic: str
+    rounds_run: int
+    stop_reason: str  # consensus / dissensus / max
+    models: dict[str, object] = Field(default_factory=dict)  # judge·engines
+    participants: list[ParticipantDebate] = Field(default_factory=list)
+    round_summaries: dict[int, str] = Field(default_factory=dict)  # Judge 라운드 정리
+    proposed_actions: list[str] = Field(default_factory=list)  # Judge 잠정 액션
+    final: JudgeFinal | None = None
