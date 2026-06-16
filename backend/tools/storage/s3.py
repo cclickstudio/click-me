@@ -13,6 +13,11 @@ _session = aioboto3.Session(
 )
 
 
+def brand_logo_key(client_id: str, ext: str) -> str:
+    """브랜드 로고의 S3 키."""
+    return f"brand-logos/{client_id}/logo.{ext.lstrip('.')}"
+
+
 def candidate_key(generation_id: str, idx: int) -> str:
     """생성 후보 이미지(PNG)의 S3 키."""
     return f"generated-ads/{generation_id}/candidate-{idx}.png"

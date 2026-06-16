@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from pydantic import Field, field_validator
+from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from domain.billing.toss_client import require_test_key
@@ -35,10 +35,23 @@ class Settings(BaseSettings):
     gemini_api_key: str | None = None
 
     # LangSmith — API 키 없으면 트레이싱 비활성(로컬 기동 가능)
-    LANGSMITH_TRACING_V2: bool = True
-    LANGSMITH_ENDPOINT: str = "https://api.smith.langchain.com"
-    LANGSMITH_API_KEY: str = ""  # 미설정 시 main.py가 트레이싱 비활성화
-    LANGSMITH_PROJECT: str = "clickme-v2"
+    # LANGCHAIN_* 사용, LANGSMITH_*도 AliasChoices로 수용.
+    LANGSMITH_TRACING_V2: bool = Field(
+        default=True,
+        validation_alias=AliasChoices("LANGSMITH_TRACING_V2", "LANGCHAIN_TRACING_V2"),
+    )
+    LANGSMITH_ENDPOINT: str = Field(
+        default="https://api.smith.langchain.com",
+        validation_alias=AliasChoices("LANGSMITH_ENDPOINT", "LANGCHAIN_ENDPOINT"),
+    )
+    LANGSMITH_API_KEY: str = Field(
+        default="",
+        validation_alias=AliasChoices("LANGSMITH_API_KEY", "LANGCHAIN_API_KEY"),
+    )
+    LANGSMITH_PROJECT: str = Field(
+        default="clickme-v2",
+        validation_alias=AliasChoices("LANGSMITH_PROJECT", "LANGCHAIN_PROJECT"),
+    )
 
     # AWS
     aws_access_key_id: str
@@ -52,21 +65,40 @@ class Settings(BaseSettings):
     default_persona_count: int = Field(default=20, ge=1, le=1000)
     max_persona_count: int = Field(default=1000, ge=1)
 
-    # Meta / Instagram Content Publishing (Generator) — 비우면 Mock 게시 모드
+    # Meta / Instagram (Generator) — 비우면 Mock 게시 모드
+    # App
+    meta_app_id: str | None = None
+    meta_app_secret: str | None = None
+    # User
     meta_access_token: str | None = None
-    meta_ig_user_id: str | None = None
-    meta_graph_api_version: str = "v21.0"
+    meta_user_id: str | None = None
+    # Facebook Page
+    meta_page_id: str | None = None
+    meta_page_access_token: str | None = None
+    # Instagram (META_IG_USER_ID → META_INSTAGRAM_ACCOUNT_ID, 구형 이름도 수용)
+    meta_instagram_account_id: str | None = Field(
+        default=None,
+        validation_alias=AliasChoices("META_INSTAGRAM_ACCOUNT_ID", "META_IG_USER_ID"),
+    )
+    # Marketing (Phase 6 광고 집행용)
+    meta_ad_account_id: str | None = None
+    # Config
+    meta_graph_api_version: str = "v23.0"
 
     # Management — Meta 광고 어댑터 (LIVE-ready, 이중 게이트로 봉인)
-    # use_mock=True 면 Mock 어댑터 (Meta 접촉 0). False여도 LIVE 쓰기는 executor가 차단.
-    meta_ad_account_id: str | None = None
+    # meta_ad_account_id는 위 Marketing 섹션에서 선언. use_mock=True면 Mock 어댑터
+    # (Meta 접촉 0). False여도 LIVE 쓰기는 executor가 차단.
     use_mock: bool = True
     management_execution_mode: str = "dry_run"  # dry_run | sandbox_contract | live
 
     # Generator (광고 생성)
-    generator_text_model: str = "gpt-4o"
+    generator_text_provider: str = "openai"  # openai | anthropic | google_genai ...
+    generator_text_model: str = "gpt-4.1"
+    generator_text_base_url: str | None = None  # 회사 OpenAI-호환 엔드포인트용
+    generator_image_provider: str = "openai"
     generator_image_model: str = "gpt-image-1"
     generator_image_quality: str = "medium"
+    generator_font_dir: str | None = None  # 없으면 backend/assets/fonts 사용
 
     # Toss Payments — 테스트 키 전용 (기본값 = 토스 공식 문서 공개 샌드박스 키)
     # 라이브 키 주입 시 기동 거부 — 실돈 결제는 7/8 Won't

@@ -219,7 +219,7 @@ class AdGenerationCandidate(Base):
     idx: Mapped[int] = mapped_column(SmallInteger)  # 0 | 1 | 2
     strategy: Mapped[dict | None] = mapped_column(JSONB)  # {strategy_type, ...}
     template_id: Mapped[str | None] = mapped_column(String(10))  # A | B | C
-    copy: Mapped[dict | None] = mapped_column(JSONB)  # {headline, subcopy, benefit_text, cta}
+    copy: Mapped[dict | None] = mapped_column(JSONB)  # {headline, body, cta}
     image_prompt: Mapped[str | None] = mapped_column(Text)
     s3_key: Mapped[str | None] = mapped_column(String(512))
     qa_result: Mapped[dict | None] = mapped_column(JSONB)  # QA Harness 7항목 결과
@@ -228,6 +228,33 @@ class AdGenerationCandidate(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     generation: Mapped["AdGeneration"] = relationship(back_populates="candidates")
+
+
+class AdCampaignLog(Base):
+    """Meta Marketing API 광고 집행 이력."""
+
+    __tablename__ = "ad_campaign_logs"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    generation_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("ad_generations.id", ondelete="SET NULL"), nullable=True
+    )
+    candidate_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("ad_generation_candidates.id", ondelete="SET NULL"), nullable=True
+    )
+    status: Mapped[str] = mapped_column(String(20))  # created | failed | mocked
+    mocked: Mapped[bool] = mapped_column(Boolean, default=False)
+    campaign_id: Mapped[str | None] = mapped_column(String(100))
+    adset_id: Mapped[str | None] = mapped_column(String(100))
+    creative_id: Mapped[str | None] = mapped_column(String(100))
+    ad_id: Mapped[str | None] = mapped_column(String(100))
+    budget: Mapped[int | None] = mapped_column(Integer)
+    objective: Mapped[str | None] = mapped_column(String(50))
+    targeting: Mapped[dict | None] = mapped_column(JSONB)
+    request_payload: Mapped[dict | None] = mapped_column(JSONB)
+    response_payload: Mapped[dict | None] = mapped_column(JSONB)
+    error_message: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
 class AdPublishLog(Base):
