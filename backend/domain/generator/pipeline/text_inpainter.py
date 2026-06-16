@@ -1,14 +1,17 @@
 import base64
 import io
+import logging
 
 from langsmith import traceable
 from openai import AsyncOpenAI, OpenAIError
 from PIL import Image, ImageDraw
 
+from core.config import settings
 from domain.generator.contracts.enums import TemplateType
 from domain.generator.contracts.pipeline_schemas import ImageAnalysis
 
-_client = AsyncOpenAI(timeout=120.0)
+logger = logging.getLogger("clickme")
+_client = AsyncOpenAI(timeout=settings.generator_image_timeout)
 
 
 def _create_mask(w: int, h: int, template: TemplateType) -> bytes:
@@ -71,7 +74,14 @@ async def inpaint_text_zone(
     image_analysis: ImageAnalysis,
     brand_color: str | None = None,
 ) -> bytes:
-    """AI로 텍스트 존을 사진처럼 자연스럽게 디자인. 실패 시 원본 반환."""
+    """AI로 텍스트 존을 사진처럼 자연스럽게 디자인. 실패·미지원 시 원본 반환."""
+    if settings.generator_image_edit_provider != "openai":
+        # 현재 이미지 편집은 openai만 구현 — 그 외 프로바이더는 원본 유지(파이프라인 비중단)
+        logger.warning(
+            "이미지 편집 미지원 프로바이더(%s) — 인페인팅 건너뜀",
+            settings.generator_image_edit_provider,
+        )
+        return bg_bytes
     try:
         img = Image.open(io.BytesIO(bg_bytes)).convert("RGBA")
         w, h = img.size
@@ -84,7 +94,7 @@ async def inpaint_text_zone(
         prompt = _build_prompt(template, image_analysis, brand_color)
 
         response = await _client.images.edit(
-            model="gpt-image-1",
+            model=settings.generator_image_edit_model,
             image=img_buf,
             mask=mask_buf,
             prompt=prompt,

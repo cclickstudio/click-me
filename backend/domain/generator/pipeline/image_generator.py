@@ -9,7 +9,7 @@ from core.config import settings
 from domain.generator.contracts.enums import AdSize, AdStrategy, TemplateType
 from domain.generator.contracts.pipeline_schemas import ProductAnalysis
 
-_openai_client = AsyncOpenAI(timeout=120.0)
+_openai_client = AsyncOpenAI(timeout=settings.generator_image_timeout)
 
 _GEMINI_NATIVE_ASPECT_RATIO: dict[AdSize, str] = {
     AdSize.SQUARE: "1:1",
