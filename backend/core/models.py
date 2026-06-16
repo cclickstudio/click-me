@@ -341,13 +341,16 @@ class AuditEventRow(Base):
     __tablename__ = "audit_events"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    event_id: Mapped[str | None] = mapped_column(String(64), index=True)  # AuditEvent.event_id
+    category: Mapped[str | None] = mapped_column(String(64))  # 예: "executor.completed"
     tenant_id: Mapped[str] = mapped_column(String(64), index=True)
     proposal_id: Mapped[str] = mapped_column(String(64), index=True)
     approval_id: Mapped[str | None] = mapped_column(String(64))  # 승인 전 이벤트는 null
-    stage: Mapped[str] = mapped_column(String(24))  # validate / execute / result
-    outcome: Mapped[str] = mapped_column(String(48))
-    detail: Mapped[dict] = mapped_column(JSONB)
-    at: Mapped[datetime] = mapped_column(_TS, server_default=func.now())
+    run_id: Mapped[str | None] = mapped_column(String(64))  # 실행 run 연결
+    stage: Mapped[str | None] = mapped_column(String(24))  # 코드 미생성 — nullable
+    outcome: Mapped[str | None] = mapped_column(String(48))  # 코드 미생성 — nullable
+    detail: Mapped[dict] = mapped_column(JSONB)  # AuditEvent.payload (마스킹 후)
+    at: Mapped[datetime] = mapped_column(_TS, server_default=func.now())  # occurred_at
 
 
 class ExecutionRunRow(Base):
@@ -374,4 +377,5 @@ class IdempotencyKeyRow(Base):
     key: Mapped[str] = mapped_column(String(80), primary_key=True)
     approval_id: Mapped[str] = mapped_column(String(64), index=True)
     claimed: Mapped[bool] = mapped_column(Boolean, default=True)
+    result: Mapped[dict | None] = mapped_column(JSONB)  # ActionResult JSON — replay용 (게이트 #1)
     created_at: Mapped[datetime] = mapped_column(_TS, server_default=func.now())
