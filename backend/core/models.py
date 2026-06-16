@@ -290,8 +290,10 @@ class PersonaDebate(Base):
     __tablename__ = "persona_debates"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    # simulations 는 도메인 SimBase(별도 metadata)라 cross-base FK 선언 불가 — ORM 은 UUID 컬럼으로만
+    # 참조(domain 의 FK 미선언 패턴과 동일). DB 레벨 FK·CASCADE 제약은 마이그레이션 007 이 보유.
     simulation_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey("simulations.id", ondelete="CASCADE"), nullable=False, index=True
+        UUID(as_uuid=True), nullable=False, index=True
     )
     topic: Mapped[str | None] = mapped_column(Text)
     rounds_run: Mapped[int | None] = mapped_column(Integer)  # 실제 돈 라운드(2~4)
