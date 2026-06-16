@@ -35,13 +35,11 @@ _OCEAN_KEYS = ("openness", "conscientiousness", "extraversion", "agreeableness",
 
 
 def _pick_exposure(persona: Persona, rng: random.Random) -> str:
-    """노출맥락 — Meta 소셜피드 후보 우선, 없으면 일반 후보, 그것도 없으면 기본값."""
+    """노출맥락 — Meta 전용이므로 소셜피드만. 비소셜(TV 등)로는 폴백하지 않는다(모순 차단)."""
     candidates = persona.media_behavior.get("exposure_candidates") or []
     e = pick_social_exposure(candidates, rng)
     if e is None:
-        if not candidates:
-            return "sns_feed_evening"
-        e = rng.choice(candidates)
+        return "sns_feed_evening"  # 소셜 후보 없을 때 기본값 — 비소셜 금지
     return f"{e['timeband']}·{e['place']}·{e['medium']}·{e['activity']}"
 
 

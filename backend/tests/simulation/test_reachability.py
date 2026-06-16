@@ -49,10 +49,14 @@ def test_reaction_pick_exposure_uses_social_candidate() -> None:
     assert "SNS" in ctx and "스마트폰/휴대폰" in ctx
 
 
-def test_mock_pick_exposure_falls_back_when_no_social() -> None:
+def test_pick_exposure_never_falls_back_to_nonsocial() -> None:
+    # Meta 전용 — 소셜 후보가 없어도 TV·신문 등 비소셜로는 절대 폴백하지 않는다(모순 차단).
     persona = SimpleNamespace(media_behavior={"exposure_candidates": [_PAPER, _TV]})
-    ctx = mock_pick(persona, random.Random(1))
-    assert "신문/잡지/책" in ctx or "TV" in ctx  # 소셜 없으면 일반 후보로 폴백
+    for ctx in (
+        mock_pick(persona, random.Random(1)),
+        gemini_reaction._pick_exposure(persona, random.Random(1)),
+    ):
+        assert "TV" not in ctx and "신문/잡지/책" not in ctx
 
 
 def _two_cell_sampler(*, sampling: bool) -> PersonaSampler:

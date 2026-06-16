@@ -101,6 +101,10 @@ service ──구동──▶ graph ──(노드가 호출)──▶ tools · a
 
 > **Meta 전용 도달성 추출(§Tier1).** 제품이 Meta 광고만 취급 → 단계1 표본을 `인구 × 소셜피드 도달 비중`으로 추출(`tools/reachability.py`, `persona_sampler.reachability_sampling`, `wiring`에서 ON). 표본이 메타 도달층(젊은 층)에 집중되며 self-weighting 유지. 노출맥락도 소셜피드 우선. generic SNS 기준 — Meta 브랜드 특정은 발표 후(Tier 2). 모집단은 "소셜피드 도달 가능 한국 소비자".
 
+> **노출맥락은 소셜피드로만 한정(2026-06-16 수정).** `exposure_context`는 "이 광고를 본 경로"이며 Meta 전용이므로 **항상 소셜피드(SNS·동영상 @ 스마트폰/PC)** 만 선택한다. 샘플러는 노출후보(`exposure_candidates`)를 소셜 맥락만으로 빌드하고, 반응 어댑터(mock·gemini)는 소셜 후보가 없어도 **TV·신문 등 비소셜로 폴백하지 않는다** — 과거 고령층 셀에서 TV로 폴백돼 "메타 광고를 TV에서 봤다"는 모순이 발생하던 버그를 차단.
+
+> **실행 결과에 `personas` 포함(2026-06-16).** `/run` 결과 dict는 `reactions`·`rubric_scores`·`aggregate`에 더해, 반응별 페르소나 속성 조회용 `personas`(나이·성별·지역·OCEAN·소비가치·미디어·사회경제·서사)를 함께 반환한다. 프론트 실행 화면(`/simulation/run`)이 이를 페르소나별로 표시.
+
 ---
 
 ## 5. 진입점 (분석팀 / LLM이 어디부터 보면 되나)
