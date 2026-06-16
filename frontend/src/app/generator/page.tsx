@@ -629,6 +629,9 @@ function CandidateModal({
 
 // ── 메인 페이지 ───────────────────────────────────────────────────────────────
 
+// 진행 중인 생성 ID — 페이지 이탈/새로고침 후 복원용
+const ACTIVE_GEN_KEY = "generator_active_gen";
+
 export default function GeneratorPage() {
   const { selectedProject } = useProjects();
   const [mode, setMode] = useState<GenMode>("create");
@@ -642,6 +645,7 @@ export default function GeneratorPage() {
   const [logoUploading, setLogoUploading] = useState(false);
   const [profileSaved, setProfileSaved] = useState(false);
   const logoInputRef = useRef<HTMLInputElement>(null);
+  const esRef = useRef<EventSource | null>(null);
 
   // 공통 옵션
   const [showOptional, setShowOptional] = useState(false);
@@ -688,10 +692,79 @@ export default function GeneratorPage() {
       .catch(() => {});
   }, []);
 
+  // 진행 중이던 생성 복원 — 마운트 시 저장된 generation_id가 있으면 상태 확인 후 재연결
+  useEffect(() => {
+    const activeId = localStorage.getItem(ACTIVE_GEN_KEY);
+    if (!activeId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const d = (await api.generator.detail(activeId)) as GenerationDetail;
+        if (cancelled) return;
+        if (d.status === "completed") {
+          setDetail(d);
+          setPhase("done");
+          localStorage.removeItem(ACTIVE_GEN_KEY);
+        } else if (d.status === "failed") {
+          setError(d.error_message || "광고 생성에 실패했습니다.");
+          setPhase("idle");
+          localStorage.removeItem(ACTIVE_GEN_KEY);
+        } else {
+          // pending/running — 진행 중. SSE 재연결(서버 재시작으로 스트림 유실 시 onmessage error로 정리)
+          setPhase("generating");
+          setProgress({ stage: "", pct: 5, message: "진행 상태를 다시 불러오는 중..." });
+          subscribe(activeId);
+        }
+      } catch {
+        // 조회 실패(404 등) → 오래된 ID 정리
+        localStorage.removeItem(ACTIVE_GEN_KEY);
+      }
+    })();
+    return () => {
+      cancelled = true;
+      esRef.current?.close();
+    };
+  }, []);
+
   const canSubmit =
     mode === "create"
       ? productName.trim() && productDescription.trim() && targetAudience.trim()
       : existingS3Key.trim() && simulationSummary.trim();
+
+  // SSE 구독 — 시작/복원 공용. 완료·실패 시 localStorage 정리.
+  function subscribe(generationId: string) {
+    esRef.current?.close();
+    const es = api.generator.stream(generationId);
+    esRef.current = es;
+    es.onmessage = async (e) => {
+      const data = JSON.parse(e.data) as SSEProgressEvent;
+      if (data.event === "progress") {
+        setProgress({ stage: data.stage ?? "", pct: data.pct ?? 0, message: data.message ?? "" });
+      } else if (data.event === "completed") {
+        es.close();
+        localStorage.removeItem(ACTIVE_GEN_KEY);
+        try {
+          const d = (await api.generator.detail(generationId)) as GenerationDetail;
+          setDetail(d);
+          setPhase("done");
+        } catch (err) {
+          setError(err instanceof Error ? err.message : "생성 결과를 불러오지 못했습니다.");
+          setPhase("idle");
+        }
+      } else if (data.event === "error") {
+        es.close();
+        localStorage.removeItem(ACTIVE_GEN_KEY);
+        setError(data.message ?? "광고 생성에 실패했습니다.");
+        setPhase("idle");
+      }
+    };
+    es.onerror = () => {
+      es.close();
+      localStorage.removeItem(ACTIVE_GEN_KEY);
+      setError("진행 상태 연결이 끊어졌습니다. 다시 시도해주세요.");
+      setPhase("idle");
+    };
+  }
 
   function resetResult() {
     setPhase("idle");
@@ -774,32 +847,8 @@ export default function GeneratorPage() {
 
     try {
       const res = (await api.generator.start(body)) as { generation_id: string };
-      const es = api.generator.stream(res.generation_id);
-      es.onmessage = async (e) => {
-        const data = JSON.parse(e.data) as SSEProgressEvent;
-        if (data.event === "progress") {
-          setProgress({ stage: data.stage ?? "", pct: data.pct ?? 0, message: data.message ?? "" });
-        } else if (data.event === "completed") {
-          es.close();
-          try {
-            const d = (await api.generator.detail(res.generation_id)) as GenerationDetail;
-            setDetail(d);
-            setPhase("done");
-          } catch (err) {
-            setError(err instanceof Error ? err.message : "생성 결과를 불러오지 못했습니다.");
-            setPhase("idle");
-          }
-        } else if (data.event === "error") {
-          es.close();
-          setError(data.message ?? "광고 생성에 실패했습니다.");
-          setPhase("idle");
-        }
-      };
-      es.onerror = () => {
-        es.close();
-        setError("진행 상태 연결이 끊어졌습니다. 다시 시도해주세요.");
-        setPhase("idle");
-      };
+      localStorage.setItem(ACTIVE_GEN_KEY, res.generation_id);
+      subscribe(res.generation_id);
     } catch (e) {
       setError(e instanceof Error ? e.message : "광고 생성에 실패했습니다.");
       setPhase("idle");
