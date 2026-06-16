@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import AppLayout from "@/components/AppLayout";
+import { useProjects } from "@/components/ProjectContext";
 import { api } from "@/lib/api";
 import type {
   CampaignResult,
@@ -629,6 +630,7 @@ function CandidateModal({
 // ── 메인 페이지 ───────────────────────────────────────────────────────────────
 
 export default function GeneratorPage() {
+  const { selectedProject } = useProjects();
   const [mode, setMode] = useState<GenMode>("create");
   const [phase, setPhase] = useState<Phase>("idle");
   const [error, setError] = useState("");
@@ -744,6 +746,7 @@ export default function GeneratorPage() {
     setProgress({ stage: "product_analysis", pct: 5, message: "생성 시작..." });
 
     const common = {
+      project_id: selectedProject?.id ?? null,
       brand_color: brandColor || null,
       brand_logo_s3_key: logoS3Key || null,
       tone_and_manner: toneAndManner || null,
