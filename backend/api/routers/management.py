@@ -22,6 +22,7 @@ from domain.management.approval import (
     validate_proposal,
 )
 from domain.management.comparison.service.comparison_service import ComparisonService
+from domain.management.contracts.enums import CampaignState
 from domain.management.contracts.fault_injection import FaultConfig, FaultMode
 from domain.management.contracts.policy import APPROVAL_POLICY_VERSION, DAILY_BUDGET_KRW
 from domain.management.contracts.schemas import (
@@ -234,3 +235,80 @@ async def compare_board():
         lift = await svc.compare(post_id, campaign_id, since)
         rows.append({"title": title, "lift": lift.model_dump(mode="json")})
     return {"rows": rows}
+
+
+# ── 캠페인 목록·성과 대시보드 (🅰 reader 영역 데모 노출) ──────────────────
+# 백엔드에 "캠페인 목록" 능력이 없어(이름·상태 미보유) 데모 캠페인 상수 + MockAdPlatform로
+# 요약/시계열을 합성한다. 실연동 시 reader.list_campaigns로 교체.
+_CAMPAIGNS_DEMO: tuple[tuple[str, str, CampaignState, int, FaultMode | None], ...] = (
+    ("camp_1", "여름 신상 원피스", CampaignState.ACTIVE, 200_000, None),
+    ("camp_2", "브랜드 데일리 룩", CampaignState.ACTIVE, 120_000, FaultMode.BID_LOSS),
+    ("camp_3", "신상 액세서리 모음", CampaignState.ACTIVE, 80_000, FaultMode.AUDIENCE_TOO_NARROW),
+    ("camp_4", "쿠폰 안내 공지", CampaignState.UNDER_REVIEW, 40_000, FaultMode.REVIEW_DELAY),
+    ("camp_5", "봄 시즌오프 마감", CampaignState.ENDED, 60_000, None),
+)
+
+
+def _campaign_snapshots(
+    campaign_id: str, budget: int, fault: FaultMode | None, seed: int
+) -> list[MetricsSnapshot]:
+    fault_cfg = FaultConfig(mode=fault) if fault is not None else None
+    return MockAdPlatform(seed=seed).fetch_hourly_metrics(
+        campaign_id, _today_utc(), fault_cfg, budget
+    )
+
+
+def _campaign_summary(snaps: list[MetricsSnapshot], budget: int) -> dict:
+    """누적 스냅샷에서 일간 요약 KPI 산출 — 노출·도달은 누적, 지출·클릭은 시간행 합산."""
+    last = snaps[-1]
+    impressions = last.cum_impressions
+    total_spend = sum(s.spend_krw for s in snaps)
+    total_clicks = sum(s.clicks for s in snaps)
+    return {
+        "impressions": impressions,
+        "reach": last.cum_reach,
+        "spend_krw": total_spend,
+        "ctr": round(total_clicks / impressions, 5) if impressions else 0.0,
+        "cpc_krw": round(total_spend / total_clicks) if total_clicks else 0,
+        "frequency": last.frequency,
+        "pacing_pct": round(total_spend / budget * 100, 1) if budget else 0.0,
+    }
+
+
+@router.get("/campaigns")
+async def list_campaigns():
+    """데모 캠페인 목록 + 캠페인별 성과 요약 (단일 창구 대시보드)."""
+    out = []
+    for i, (cid, name, state, budget, fault) in enumerate(_CAMPAIGNS_DEMO):
+        snaps = _campaign_snapshots(cid, budget, fault, seed=40 + i)
+        out.append(
+            {
+                "campaign_id": cid,
+                "name": name,
+                "state": state.value,
+                "daily_budget_krw": budget,
+                **_campaign_summary(snaps, budget),
+            }
+        )
+    return {"campaigns": out}
+
+
+@router.get("/campaigns/{campaign_id}")
+async def get_campaign(campaign_id: str):
+    """캠페인 상세 — 시간별 노출(기대 vs 실측, 이상구간) + 요약 KPI."""
+    for i, (cid, name, state, budget, fault) in enumerate(_CAMPAIGNS_DEMO):
+        if cid == campaign_id:
+            snaps = _campaign_snapshots(cid, budget, fault, seed=40 + i)
+            actual = [s.impressions for s in snaps]
+            expected = expected_hourly_impressions(budget)
+            return {
+                "campaign_id": cid,
+                "name": name,
+                "state": state.value,
+                "daily_budget_krw": budget,
+                "expected": [round(e, 1) for e in expected],
+                "actual": actual,
+                "anomaly_hours": find_anomaly_window(expected, actual),
+                "summary": _campaign_summary(snaps, budget),
+            }
+    raise HTTPException(status_code=404, detail=f"캠페인 없음: {campaign_id}")
