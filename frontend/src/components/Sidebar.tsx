@@ -32,6 +32,11 @@ const mainNav = [
   },
 ];
 
+// 광고 매니지먼트 하위 메뉴 — 부모를 누르면 아래로 펼쳐진다.
+const manageChildren = [
+  { label: '게시물 성과 비교', href: '/manage/compare' },
+];
+
 const adminNav = [
   {
     label: '조직 관리', href: '/admin/companies',
@@ -72,6 +77,20 @@ function NavItem({ href, label, icon, active, badge }: { href: string; label: st
   );
 }
 
+function SubNavItem({ href, label, active }: { href: string; label: string; active: boolean }) {
+  return (
+    <Link href={href}
+      className={`flex items-center gap-2.5 pl-11 pr-3 py-2 rounded-xl text-sm transition-colors ${
+        active ? 'bg-[#EBF3FF] dark:bg-[#1E3A5F] text-[#3182F6] font-medium'
+               : 'text-[#8B95A1] dark:text-[#9CA3AF] hover:bg-[#F2F4F6] dark:hover:bg-[#252D3D] hover:text-[#191F28] dark:hover:text-[#F2F4F6]'
+      }`}
+    >
+      <span className="w-1.5 h-1.5 rounded-full bg-current opacity-60" />
+      <span className="flex-1">{label}</span>
+    </Link>
+  );
+}
+
 function SectionLabel({ label }: { label: string }) {
   return <p className="px-3 pt-3 pb-1 text-[10px] font-semibold text-[#B0B8C1] dark:text-[#4B5563] uppercase tracking-wider">{label}</p>;
 }
@@ -83,6 +102,7 @@ export default function Sidebar() {
   const router = useRouter();
   const [pendingCompanyCount, setPendingCompanyCount] = useState(0);
   const [pendingMemberCount, setPendingMemberCount] = useState(0);
+  const [manageOpen, setManageOpen] = useState(pathname.startsWith('/manage'));
 
   const handleLogout = () => { logout(); router.push('/'); };
 
@@ -123,6 +143,41 @@ export default function Sidebar() {
         {mainNav
           .filter((item) => !isCompany || !COMPANY_HIDDEN_NAV.includes(item.href))
           .map((item) => {
+            // 광고 매니지먼트 — 누르면 /manage로 이동하면서 하위 메뉴가 아래로 펼쳐짐.
+            if (item.href === '/manage') {
+              const parentActive = pathname === '/manage';
+              return (
+                <div key="/manage">
+                  <div
+                    className={`flex items-center rounded-xl text-sm font-medium transition-colors ${
+                      parentActive ? 'bg-[#EBF3FF] dark:bg-[#1E3A5F] text-[#3182F6]'
+                                   : 'text-[#4E5968] dark:text-[#9CA3AF] hover:bg-[#F2F4F6] dark:hover:bg-[#252D3D]'
+                    }`}
+                  >
+                    <Link href={item.href} onClick={() => setManageOpen(true)}
+                      className="flex items-center gap-3 flex-1 pl-3 py-2.5">
+                      <span className={parentActive ? 'text-[#3182F6]' : ''}>{item.icon}</span>
+                      <span>{item.label}</span>
+                    </Link>
+                    <button type="button" onClick={() => setManageOpen((o) => !o)}
+                      aria-label="하위 메뉴 토글" aria-expanded={manageOpen}
+                      className="px-3 py-2.5 text-[#8B95A1] hover:text-[#3182F6]">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+                        className={`transition-transform ${manageOpen ? 'rotate-180' : ''}`}>
+                        <polyline points="6 9 12 15 18 9" />
+                      </svg>
+                    </button>
+                  </div>
+                  {manageOpen && (
+                    <div className="mt-0.5 space-y-0.5">
+                      {manageChildren.map((c) => (
+                        <SubNavItem key={c.href} href={c.href} label={c.label} active={pathname === c.href} />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            }
             const active =
               pathname === item.href ||
               (item.href === '/simulation' && pathname.startsWith('/simulations/')) ||
