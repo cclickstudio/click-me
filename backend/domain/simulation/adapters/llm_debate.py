@@ -320,11 +320,17 @@ class LLMJudge:
             "plain_summary는 비전문가용이다 — 마케팅을 전혀 모르는 사람도 한 번에 이해하도록 "
             "전문 용어(퍼널·CTA·전환·포지셔닝 등)를 쓰지 말고, 무엇이 문제인지·왜 그런지·"
             "그래서 무엇을 하면 좋은지를 3~5문장 일상어로 풀어써라.\n"
-            '{"headline":"한 문장 진단(전문가용)",'
-            '"plain_summary":"전문 용어 없이 풀어쓴 쉬운 결론 3~5문장",'
+            "중요: 참가자들이 끝내 합의에 이르지 못했더라도(이견이 남아도) 결론을 미루지 말 것. "
+            "headline에는 반드시 '왜 그런지(인과)'를 담고, ranked_actions와 plain_summary에는 "
+            "반드시 '다음에 무엇을 할지(구체적 다음 행동)'를 1개 이상 담아라 — "
+            "인과와 다음 행동을 한 쌍으로 낸다. "
+            "이견이 컸다면 그 이견을 어떻게 검증·해소할지를 다음 행동으로 제시하라. "
+            "ranked_actions는 비워두지 말 것(최소 1개).\n"
+            '{"headline":"한 문장 진단 — 왜 그런지(인과) 포함(전문가용)",'
+            '"plain_summary":"전문 용어 없이 풀어쓴 쉬운 결론 + 다음에 할 행동 3~5문장",'
             '"consensus":["합의점"],"dissent":["이견"],'
-            '"ranked_actions":[{"rank":1,"action":"개선안","expected_effect":"기대효과",'
-            '"supporting_personas":["이름"]}]}'
+            '"ranked_actions":[{"rank":1,"action":"다음에 할 구체적 행동",'
+            '"expected_effect":"기대효과","supporting_personas":["이름"]}]}'
         )
         try:
             # final은 진단+합의+이견+개선안(supporting 포함)이라 길다 — 잘리지 않게 넉넉히.

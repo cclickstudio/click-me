@@ -64,15 +64,15 @@ async def debate_topics(body: DebateRequest) -> dict:
 
 
 @router.post("/start")
-async def start_debate(body: DebateRequest, lay_count: int = 4) -> dict:
+async def start_debate(body: DebateRequest, lay_count: int = 3) -> dict:
     """JSON 데이터(reactions[])로 토론 시작 — 비동기. 토론은 항상 실 LLM(비용 발생).
 
-    lay_count: 일반인 수(2=피벗·비판자 / 4=+완주자·미온). 패널 = 전문가4 + 일반인lay_count.
+    lay_count: 일반인 수(2=피벗·비판자 / 3=+완주자 / 4=+완주자·미온). 패널 = 전문가4 + 일반인.
     """
     if not body.reactions:
         raise HTTPException(status_code=422, detail="reactions가 비어 있습니다.")
-    if lay_count not in (2, 4):
-        raise HTTPException(status_code=422, detail="lay_count는 2 또는 4여야 합니다.")
+    if lay_count not in (2, 3, 4):
+        raise HTTPException(status_code=422, detail="lay_count는 2, 3, 4 중 하나여야 합니다.")
     run_id = await _service.start(
         body.reactions,
         body.ad_analysis,
