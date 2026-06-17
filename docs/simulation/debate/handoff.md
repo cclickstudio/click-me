@@ -94,6 +94,16 @@ ClickMe — 집행 전 AI 가상 소비자에게 광고를 테스트하고 집�
 - **코드 반영 완료** — `contracts/debate_schemas.py`(`is_expert`·전문가 `persona_profile`·`judge_engine="sonnet"`), `tools/debate/selector.py`(전문가4 합성+`detect_category`+일반인 `pick_pivot`/`pick_finisher`/`pick_critic`/`pick_second_undecided`, **`select_panel(reactions, ad_analysis, lay_count=4)`** 연속 slot), `assigner.py`(`PANEL_ENGINE=["haiku","gpt"]` slot 라운드로빈·Gemini 제거·`JUDGE_ENGINE="sonnet"`·전문가 프로필 승계), `adapters/llm_debate.py`(`SONNET_MODEL`·Judge engine 파라미터·`_expert_system` grounding 분기), `mock_debate.py`(역할 reason·비판자 dissent), `service/debate_service.py`(ad_analysis·**lay_count 전파**), **`api/routers/debate.py`(`POST /start?lay_count=2|4` 쿼리·422 검증)**, `wiring.py` 주석, `verify.py`(lay_count 2/4 둘 다)·`verify_debate`·`verify_stream`·`verify_persist`.
   - **미검증(잔여)**: 실 LLM 토론(`use_llm=true`)은 비용 때문에 안 돌림 — 전문가 grounding 실동작은 다음에 1회 확인 권장. GPT 쿼터 이슈는 그대로(§5-1).
 
+## 4-3. 새 데이터 포맷 통합 + 메시지갭(②) + 타깃선발(①) + 포맷 스키마 (2026-06-17 세션)
+
+데이터 생성 측이 포맷 변경(전체 시뮬 결과 = `personas` 분리·인구통계 포함). 신라면.json 수령 → 3기능 구현·검증.
+
+- **새 포맷 통합** — `loader`가 `personas` 파싱(`DummyReactionSet.personas`), `dummy/result-dummy-sinramyeon.json` 추가. 새 포맷 = ad/ad_analysis/simulation/**personas**/reactions/aggregate. `Persona` 스키마와 일치해 바로 파싱.
+- **② 메시지 수신 갭** — `analyzer._analyze_message`: 의도 메시지(`detected_message`) 대비 저항 표현(과장·식상·무관심 사전) 비율(결정론) → `MessageReception`. `kpi` 주신호 `message_gap`(저항≥0.5, 거부 다음 우선). 해석은 토론(LLM). 신라면 저항 0.8 → message_gap. **한계**: 한국어 신호어 사전이라 거침(케이스 누적 시 보강).
+- **① 타깃 적합 선발** — `selector._filter_on_target`: 반응 분포로 타깃층 역산(관심층=interest·비거부의 나이중심+다수성별), 타깃 밖(나이·성별 둘 다 불일치) 일반인 후보 **배제(강)**. 풀<필요면 허용범위 단계 완화. `select_panel(.., personas)`, `SelectedPanel.target_*`, 라우터 `DebateRequest.personas`. 신라면 age38·6명 배제. **personas 없으면 현행(graceful)**.
+- **데이터 포맷 스키마(전달용)** — `docs/simulation/sim-result-schema.md`. 중복(structured_analysis≈detected_*, mismatch≡rubric, _source 40회)·키불일치(consumption 3/5키)·빈값(profile_narrative·weight)·asset_url 로컬경로 정리한 권장 스키마. **데이터 준 사람에게 전달용**.
+- 검증 `verify`에 신라면 케이스(메시지갭·타깃선발) 추가. verify 4종 + Ruff 통과.
+
 ## 5. 다음 할 일 (외부 환경/개선)
 
 결정론 8~11 + mock·실 LLM 토론 + API + DB영속화 코드까지 끝났다. 남은 건 환경·연결·개선.
