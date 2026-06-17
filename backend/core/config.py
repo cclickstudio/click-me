@@ -1,7 +1,9 @@
 from pathlib import Path
 
-from pydantic import AliasChoices, Field
+from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from domain.billing.toss_client import require_test_key
 
 BACKEND_ROOT = Path(__file__).resolve().parent.parent
 # .env 는 프로젝트 루트 우선(현 배치), 없으면 backend/.env 폴백.
@@ -19,6 +21,9 @@ class Settings(BaseSettings):
     app_host: str = "0.0.0.0"
     app_port: int = 8000
     log_level: str = "INFO"
+
+    # 어댑터 모드 — True면 Mock(데모·기본), False면 실연동 어댑터. wiring.py 분기 기준.
+    use_mock: bool = True
 
     # Database
     database_url: str
@@ -67,6 +72,7 @@ class Settings(BaseSettings):
     # App
     meta_app_id: str | None = None
     meta_app_secret: str | None = None
+    meta_business_id: str | None = None  # 비즈니스 포트폴리오 ID
     # User
     meta_access_token: str | None = None
     meta_user_id: str | None = None
@@ -83,6 +89,11 @@ class Settings(BaseSettings):
     # Config
     meta_graph_api_version: str = "v23.0"
 
+    # Management — Meta 광고 어댑터 (LIVE-ready). use_mock은 App 섹션에서 공용 선언.
+    # use_mock=True면 reader=Mock·writer=DRY_RUN (Meta 접촉 0, wiring.py 분기).
+    # 실집행은 use_mock=False + management_execution_mode=live + 토큰일 때만.
+    management_execution_mode: str = "dry_run"  # dry_run | validate_only | live
+
     # Generator (광고 생성)
     generator_text_provider: str = "openai"  # openai | anthropic | google_genai ...
     generator_text_model: str = "gpt-4.1"
@@ -92,10 +103,20 @@ class Settings(BaseSettings):
     generator_image_quality: str = "medium"
     generator_font_dir: str | None = None  # 없으면 backend/assets/fonts 사용
 
+    # Toss Payments — 테스트 키 전용 (기본값 = 토스 공식 문서 공개 샌드박스 키)
+    # 라이브 키 주입 시 기동 거부 — 실돈 결제는 7/8 Won't
+    toss_client_key: str = "test_gck_docs_Ovk5rk1EwkEbP0W43n07xlzm"
+    toss_secret_key: str = "test_gsk_docs_OaPz8L5KdmQXkzRz3y47BMw6"
+
     # JWT (Cognito 전환 전 임시)
     jwt_secret: str = "clickme-dev-secret-change-in-prod"
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 60 * 24 * 7  # 7일
+
+    @field_validator("toss_client_key", "toss_secret_key")
+    @classmethod
+    def _toss_keys_must_be_test(cls, value: str) -> str:
+        return require_test_key(value)
 
 
 settings = Settings()

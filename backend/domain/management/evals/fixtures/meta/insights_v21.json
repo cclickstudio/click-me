@@ -1,0 +1,17 @@
+{
+  "data": [
+    {
+      "impressions": "12000",
+      "clicks": "204",
+      "inline_link_clicks": "180",
+      "spend": "95000",
+      "reach": "8000",
+      "frequency": "1.5",
+      "ctr": "1.7",
+      "cpm": "7916",
+      "cpc": "465",
+      "date_stop": "2026-06-15"
+    }
+  ],
+  "paging": { "cursors": { "before": "MA", "after": "MA" } }
+}

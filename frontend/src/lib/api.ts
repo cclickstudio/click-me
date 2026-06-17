@@ -1,4 +1,8 @@
 import { getToken } from "./authApi";
+import type { BoardResponse } from "@/components/manage/compare/types";
+import type { CampaignDetail, CampaignsResponse } from "@/components/manage/campaigns/types";
+import type { Proposal } from "@/components/manage/types";
+import type { BudgetStatus } from "@/components/manage/budget/types";
 import type {
   DebateResult,
   DebateStartResult,
@@ -192,6 +196,68 @@ export const api = {
     create: (body: { name: string; description?: string }) =>
       request("/projects", { method: "POST", body: JSON.stringify(body) }),
     get: (id: string) => request(`/projects/${id}`),
+  },
+
+  billing: {
+    createOrder: (amountKrw: number) =>
+      request<{ order_id: string; amount_krw: number; client_key: string }>("/billing/orders", {
+        method: "POST",
+        body: JSON.stringify({ amount_krw: amountKrw }),
+      }),
+    confirm: (body: { payment_key: string; order_id: string; amount_krw: number }) =>
+      request<{ order_id: string; status: string; amount_krw: number; balance_krw: number }>(
+        "/billing/confirm",
+        { method: "POST", body: JSON.stringify(body) },
+      ),
+    balance: () => request<{ org_id: string; balance_krw: number }>("/billing/balance"),
+    history: () =>
+      request<{
+        org_id: string;
+        entries: {
+          entry_id: string;
+          delta_krw: number;
+          balance_after_krw: number;
+          reason: string;
+          ref_id: string;
+          created_at: string;
+        }[];
+      }>("/billing/history"),
+  },
+
+  management: {
+    run: (fault: string) => request(`/management/run?fault=${fault}`),
+    regenerate: (diagnosis: unknown) =>
+      request("/management/regenerate", { method: "POST", body: JSON.stringify({ diagnosis }) }),
+    approve: (proposal: unknown, approved: boolean) =>
+      request("/management/approve", {
+        method: "POST",
+        body: JSON.stringify({ proposal, approved, approver_id: "user_demo" }),
+      }),
+    execute: (approved_action: unknown, proposal: unknown) =>
+      request("/management/execute", {
+        method: "POST",
+        body: JSON.stringify({ approved_action, proposal }),
+      }),
+    audit: (approvalId: string) => request(`/management/audit?approval_id=${approvalId}`),
+    compareBoard: () => request<BoardResponse>("/management/compare/board"),
+    campaigns: () => request<CampaignsResponse>("/management/campaigns"),
+    campaign: (id: string) => request<CampaignDetail>(`/management/campaigns/${id}`),
+    createCampaignProposal: (body: {
+      name: string;
+      daily_budget_krw: number;
+      run_days: number;
+      creative_ad_id?: string;
+    }) =>
+      request<{ proposal: Proposal }>("/management/campaigns/create-proposal", {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+    budget: () => request<BudgetStatus>("/management/budget"),
+    setBudgetLimit: (limitKrw: number) =>
+      request<BudgetStatus>("/management/budget/limit", {
+        method: "POST",
+        body: JSON.stringify({ limit_krw: limitKrw }),
+      }),
   },
 
   generator: {
