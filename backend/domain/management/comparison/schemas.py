@@ -69,3 +69,10 @@ class ComparisonRecommendation(Contract):
     reach_lift_ratio: float = Field(ge=0.0)
     rationale: str
     computed_at: UtcDatetime
+
+
+class ComparisonReport(Contract):
+    """🅰 비교 1회 산출물 묶음 — 상세 리프트 + 권고. 표시·전달 계층 입력."""
+
+    lift: LiftResult
+    recommendation: ComparisonRecommendation

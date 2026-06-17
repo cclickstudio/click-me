@@ -49,3 +49,44 @@ def test_fail_recommends_pause_with_pause_campaign_hint():
     assert lift.verdict == LiftVerdict.FAIL
     assert rec.recommended_action == RecommendedAction.PAUSE
     assert rec.suggested_action_type == "PAUSE_CAMPAIGN"
+
+
+def test_service_compare_and_recommend_bundles_lift_and_recommendation():
+    import asyncio
+    from datetime import timedelta
+
+    from domain.management.adapters.mock import MockOrganicReader
+    from domain.management.comparison.service.comparison_service import ComparisonService
+    from domain.management.contracts.schemas import MetricsSnapshot
+
+    class _FakeAd:
+        async def get_metrics(self, campaign_id: str, since: datetime) -> MetricsSnapshot:
+            return MetricsSnapshot(
+                campaign_id=campaign_id,
+                as_of=datetime.now(UTC),
+                impressions=40000,
+                clicks=1900,
+                inline_link_clicks=1700,
+                spend_krw=84000,
+                cum_impressions=40000,
+                cum_reach=22000,
+                frequency=1.8,
+                ctr=0.047,
+                cpm_krw=2100,
+                cpc_krw=44,
+            )
+
+    async def _run():
+        svc = ComparisonService(MockOrganicReader(), _FakeAd())
+        return await svc.compare_and_recommend(
+            "media123", "camp1", datetime.now(UTC) - timedelta(days=7)
+        )
+
+    report = asyncio.run(_run())
+    # 묶음: 상세 리프트 + 권고가 같은 산출물에 함께
+    assert report.lift.verdict == LiftVerdict.PASS
+    assert report.recommendation.recommended_action == RecommendedAction.SCALE_UP
+    assert report.recommendation.suggested_action_type == "INCREASE_BUDGET"
+    # 일관성: 권고의 post_id·ratio는 리프트와 동일
+    assert report.recommendation.post_id == report.lift.post_id
+    assert report.recommendation.reach_lift_ratio == report.lift.reach_lift_ratio
