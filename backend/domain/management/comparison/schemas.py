@@ -21,6 +21,14 @@ class LiftVerdict(StrEnum):
     FAIL = "fail"  # 미달 — 증분 부족
 
 
+class RecommendedAction(StrEnum):
+    """🅰 분석 추천 신호 — 제안(ActionProposal·🅱) 생성 전 단계의 권고."""
+
+    SCALE_UP = "scale_up"  # 광고가 증분 도달을 크게 만듦 → 증액 검토
+    HOLD = "hold"  # 약한 증분 → 유지·관찰
+    PAUSE = "pause"  # 증분 미미 → 중단·감액 검토
+
+
 class PostInsights(Contract):
     """단일 게시물 지표 — 오가닉 또는 광고. reach/impressions는 누적 기준."""
 
@@ -44,4 +52,20 @@ class LiftResult(Contract):
     reach_lift_ratio: float = Field(ge=0.0)  # 도달 배수
     impressions_lift_abs: int  # 증분 노출
     verdict: LiftVerdict
+    computed_at: UtcDatetime
+
+
+class ComparisonRecommendation(Contract):
+    """🅰 추천 신호 — LiftResult → 권고 액션. 🅱가 읽어 ActionProposal로 감싸는 seam.
+
+    제안 생성·Tier 판정은 🅱(executor·approval) 책임이며, suggested_action_type은
+    공유 정책표(TIER_POLICY) 키의 힌트일 뿐 강제가 아니다(정보 방화벽).
+    """
+
+    post_id: str  # 비교 기준 = 오가닉 게시물 id
+    verdict: LiftVerdict
+    recommended_action: RecommendedAction
+    suggested_action_type: str = ""  # 🅱 TIER_POLICY 키 힌트 (없으면 빈 문자열)
+    reach_lift_ratio: float = Field(ge=0.0)
+    rationale: str
     computed_at: UtcDatetime
