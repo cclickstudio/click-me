@@ -186,7 +186,27 @@ def main() -> int:
             and topic_sr.primary_signal == "message_gap",
             f"personas 20·메시지갭 저항 {rate}·signal message_gap",
         )
-        all_ok = all_ok and ok_sr
+        # 타깃 적합 선발 — personas 주입 시 타깃 밖 후보 배제(역산 age·성별)
+        pt = select_panel(sr.reactions, sr.ad_analysis, 4, sr.personas)
+        lay_t = [x for x in pt.participants if not x.is_expert]
+        pid_by = {p.persona_id: p for p in sr.personas}
+        all_on_target = all(
+            abs(pid_by[x.persona_id].age - pt.target_age_center) <= 20
+            for x in lay_t
+            if x.persona_id in pid_by
+        )
+        print(
+            f"  타깃: age_center={pt.target_age_center} genders={pt.target_genders} "
+            f"excluded={pt.excluded_off_target}"
+        )
+        ok_t = _check(
+            pt.target_age_center is not None
+            and pt.excluded_off_target > 0
+            and len(lay_t) == 4
+            and all_on_target,
+            f"타깃 적합 선발(배제 {pt.excluded_off_target}명·일반인 {len(lay_t)} 타깃 내)",
+        )
+        all_ok = all_ok and ok_sr and ok_t
 
     print("\n" + ("전체 통과 [PASS]" if all_ok else "실패 있음 [FAIL]"))
     return 0 if all_ok else 1

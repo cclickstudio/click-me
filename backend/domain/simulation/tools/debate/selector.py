@@ -5,10 +5,15 @@
 # 상세 규칙: docs/simulation/debate/persona-debate-pipeline.md ②③
 from __future__ import annotations
 
+from collections import Counter
 from statistics import median
 
 from domain.simulation.contracts.debate_schemas import SelectedPanel, SelectedParticipant
-from domain.simulation.contracts.schemas import AdInterpretation, PersonaReaction
+from domain.simulation.contracts.schemas import AdInterpretation, Persona, PersonaReaction
+
+# 타깃 적합 — 반응 분포로 타깃층(관심 보인 인구) 역산 후, 타깃 밖 후보를 일반인 풀에서 배제.
+TARGET_AGE_TOL = 12  # 타깃 나이 중심에서 이 이내면 적합(강: 성별도 일치해야)
+TARGET_GENDER_MIN = 0.35  # 관심층에서 이 비율 이상인 성별을 타깃 성별로 인정
 
 # 전문가 4명 고정 스펙 — (persona_id, slot, role, 프로필 템플릿). 도메인 2는 {category} 슬롯 주입.
 EXPERT_SPECS: list[tuple[str, int, str, str]] = [
@@ -114,6 +119,54 @@ def pick_second_undecided(
     return pick_representative(top)
 
 
+def _target_profile(
+    pool: list[PersonaReaction], by_id: dict[str, Persona]
+) -> tuple[float, set[str]] | None:
+    """타깃층 역산 — 관심 보인(interest·비거부) 인구의 나이 중심 + 다수 성별. 없으면 전체로.
+
+    detected_target이 '일반 대중'처럼 무의미할 때, 실제 반응으로 진짜 관심층을 잡는다.
+    """
+    engaged = [
+        by_id[r.persona_id]
+        for r in pool
+        if r.aisas.interest and not r.rejected and r.persona_id in by_id
+    ]
+    base = engaged or [by_id[r.persona_id] for r in pool if r.persona_id in by_id]
+    if not base:
+        return None
+    age_center = float(median(p.age for p in base))
+    gc = Counter(p.gender for p in base)
+    total = sum(gc.values())
+    genders = {g for g, c in gc.items() if c / total >= TARGET_GENDER_MIN} or set(gc)
+    return age_center, genders
+
+
+def _filter_on_target(
+    pool: list[PersonaReaction], personas: list[Persona], need: int
+) -> tuple[list[PersonaReaction], float | None, list[str], int]:
+    """타깃 밖 후보 배제(강: 나이·성별 둘 다 맞아야). 남은 풀 < need면 허용범위 단계 완화.
+
+    인구통계 없는 반응(by_id에 없음)은 배제하지 않는다(정보 부재 ≠ 타깃 밖).
+    """
+    by_id = {p.persona_id: p for p in personas}
+    prof = _target_profile(pool, by_id)
+    if prof is None:
+        return pool, None, [], 0
+    age_c, genders = prof
+
+    def on_target(r: PersonaReaction, tol: float) -> bool:
+        p = by_id.get(r.persona_id)
+        if p is None:
+            return True
+        return abs(p.age - age_c) <= tol and p.gender in genders
+
+    for tol in (TARGET_AGE_TOL, TARGET_AGE_TOL + 8, TARGET_AGE_TOL + 16, 200.0):
+        kept = [r for r in pool if on_target(r, tol)]
+        if len(kept) >= need:
+            return kept, age_c, sorted(genders), len(pool) - len(kept)
+    return pool, age_c, sorted(genders), 0
+
+
 def _expert_participants(category: str) -> list[SelectedParticipant]:
     """전문가 4명 합성 — 도메인 2는 카테고리 주입, 마케팅 2는 고정. 반응 없음(분석결과 grounded)."""
     return [
@@ -133,15 +186,25 @@ def select_panel(
     reactions: list[PersonaReaction],
     ad_analysis: AdInterpretation | None = None,
     lay_count: int = 4,
+    personas: list[Persona] | None = None,
 ) -> SelectedPanel:
     """패널 구성 — 전문가 4명(합성) + 일반인 lay_count명(실제 반응자에서 선발).
 
     lay_count=2: 피벗·비판자(두 극) / lay_count=4: +완주자·미온(분포 범위 커버).
+    personas 주입 시 타깃 적합 선발 — 타깃 밖(엉뚱한 인구) 후보를 일반인 풀에서 배제.
     일반인은 선발 우선순위(피벗→비판자→완주자→미온) 순으로 slot 5,6,…에 연속 배정.
     """
     if lay_count not in LAY_COUNTS:
         raise ValueError(f"lay_count는 {LAY_COUNTS} 중 하나여야 합니다: {lay_count}")
     pool = [r for r in reactions if r.qa_passed]
+
+    # 타깃 적합 — personas 있으면 타깃 밖 후보 배제(없으면 현행 그대로).
+    target_age: float | None = None
+    target_genders: list[str] = []
+    excluded = 0
+    if personas:
+        pool, target_age, target_genders, excluded = _filter_on_target(pool, personas, lay_count)
+
     participants: list[SelectedParticipant] = _expert_participants(detect_category(ad_analysis))
     chosen: set[str] = set()
     lay: list[tuple[PersonaReaction, str, bool]] = []  # (반응자, 역할, fallback) 선발 순
@@ -190,4 +253,11 @@ def select_panel(
         )
 
     parts = sorted(participants, key=lambda c: c.slot)
-    return SelectedPanel(participants=parts, pivot_id=pivot_id, critic_secured=critic_secured)
+    return SelectedPanel(
+        participants=parts,
+        pivot_id=pivot_id,
+        critic_secured=critic_secured,
+        target_age_center=target_age,
+        target_genders=target_genders,
+        excluded_off_target=excluded,
+    )

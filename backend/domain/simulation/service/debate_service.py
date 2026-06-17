@@ -12,7 +12,7 @@ import uuid
 from collections.abc import AsyncIterator, Callable
 
 from domain.simulation.contracts.debate_ports import DebaterPort, JudgePort
-from domain.simulation.contracts.schemas import AdInterpretation, PersonaReaction
+from domain.simulation.contracts.schemas import AdInterpretation, Persona, PersonaReaction
 from domain.simulation.tools.debate.analyzer import analyze_reactions
 from domain.simulation.tools.debate.assigner import assign_panel
 from domain.simulation.tools.debate.kpi import build_topic, compute_kpi
@@ -68,14 +68,18 @@ class DebateService:
         *,
         simulation_id: str | None = None,
         lay_count: int = 4,
+        personas: list[Persona] | None = None,
     ) -> str:
         """비동기 시작 — 백그라운드 실행 후 run_id 반환(진행률은 SSE, 결과는 get_result).
 
         lay_count: 일반인 수(2=피벗·비판자 / 4=+완주자·미온). 패널 = 전문가4 + 일반인lay_count.
+        personas: 인구통계(있으면 타깃 적합 선발 — 타깃 밖 후보 배제).
         """
         run_id = str(uuid.uuid4())
         self._store.create_run(run_id)
-        asyncio.create_task(self._run(run_id, reactions, ad_analysis, simulation_id, lay_count))
+        asyncio.create_task(
+            self._run(run_id, reactions, ad_analysis, simulation_id, lay_count, personas)
+        )
         return run_id
 
     async def run(
@@ -85,11 +89,12 @@ class DebateService:
         *,
         simulation_id: str | None = None,
         lay_count: int = 4,
+        personas: list[Persona] | None = None,
     ) -> dict | None:
         """동기 실행 — 끝까지 돌린 뒤 결과(분석·KPI·주제·패널)를 반환."""
         run_id = str(uuid.uuid4())
         self._store.create_run(run_id)
-        await self._run(run_id, reactions, ad_analysis, simulation_id, lay_count)
+        await self._run(run_id, reactions, ad_analysis, simulation_id, lay_count, personas)
         return self._store.get_result(run_id)
 
     async def _run(
@@ -99,6 +104,7 @@ class DebateService:
         ad_analysis: AdInterpretation | None,
         simulation_id: str | None = None,
         lay_count: int = 4,
+        personas: list[Persona] | None = None,
     ) -> None:
         store = self._store
         try:
@@ -145,8 +151,8 @@ class DebateService:
             )
             await asyncio.sleep(0)
 
-            # ── 조각 10-a 구성(전문가 4 합성 + 일반인 lay_count 선발) ──
-            panel = select_panel(reactions, ad_analysis, lay_count)
+            # ── 조각 10-a 구성(전문가 4 합성 + 일반인 lay_count 선발, personas 있으면 타깃 적합) ──
+            panel = select_panel(reactions, ad_analysis, lay_count, personas)
             store.emit(
                 run_id,
                 {

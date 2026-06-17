@@ -8,7 +8,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from domain.simulation.adapters.memory_store import InMemorySimulationStore
-from domain.simulation.contracts.schemas import AdInterpretation, PersonaReaction
+from domain.simulation.contracts.schemas import AdInterpretation, Persona, PersonaReaction
 from domain.simulation.service.debate_service import DebateService
 from domain.simulation.wiring import build_debate_service
 
@@ -37,6 +37,7 @@ class DebateRequest(BaseModel):
     reactions: list[PersonaReaction]
     ad_analysis: AdInterpretation | None = None
     simulation_id: str | None = None  # 있으면 영속화 FK로 사용(없으면 인메모리만)
+    personas: list[Persona] | None = None  # 인구통계(있으면 타깃 적합 선발 — 타깃 밖 후보 배제)
 
 
 @router.post("/analyze")
@@ -59,7 +60,11 @@ async def start_debate(body: DebateRequest, use_llm: bool = False, lay_count: in
     if lay_count not in (2, 4):
         raise HTTPException(status_code=422, detail="lay_count는 2 또는 4여야 합니다.")
     run_id = await _svc(use_llm).start(
-        body.reactions, body.ad_analysis, simulation_id=body.simulation_id, lay_count=lay_count
+        body.reactions,
+        body.ad_analysis,
+        simulation_id=body.simulation_id,
+        lay_count=lay_count,
+        personas=body.personas,
     )
     return {"run_id": run_id, "stream_url": f"/api/debate/{run_id}/stream", "lay_count": lay_count}
 

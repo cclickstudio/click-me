@@ -101,11 +101,17 @@ class SelectedParticipant(BaseModel):
 
 
 class SelectedPanel(BaseModel):
-    """조각 10-a 산출 — 토론 패널(전문가 4 + 일반인 최대 2). 합성·결정론 선발."""
+    """조각 10-a 산출 — 토론 패널(전문가 4 + 일반인). 합성·결정론 선발.
+
+    personas(인구통계) 주입 시 타깃 적합 선발 — 반응 분포로 타깃층 역산 후 타깃 밖 후보 배제.
+    """
 
     participants: list[SelectedParticipant]
     pivot_id: str | None = None  # 피벗 persona_id(일반인)
     critic_secured: bool = False  # 비판자(부정 입장) 최소 1명 확보 여부
+    target_age_center: float | None = None  # 역산 타깃 나이 중심(personas 있을 때)
+    target_genders: list[str] = Field(default_factory=list)  # 역산 타깃 성별(들)
+    excluded_off_target: int = 0  # 타깃 밖이라 일반인 후보에서 배제된 인원
 
 
 class DebateParticipant(BaseModel):
