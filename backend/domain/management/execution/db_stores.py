@@ -53,6 +53,14 @@ class DbIdempotencyStore:
                 row.result = result.model_dump(mode="json")
                 await session.commit()
 
+    async def release(self, key: str) -> None:
+        # 결과 없이 선점만 한 행을 삭제 — 일시 실패 후 동일 키 재선점(재시도)을 허용.
+        async with self._sf() as session:
+            row = await session.get(IdempotencyKeyRow, key)
+            if row is not None and row.result is None:
+                await session.delete(row)
+                await session.commit()
+
 
 class DbAuditSink:
     """audit_events 기반 insert-only 감사 로그 — 민감값 마스킹 후 저장 (게이트 #7·#8)."""

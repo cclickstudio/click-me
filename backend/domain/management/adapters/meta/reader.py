@@ -13,7 +13,11 @@ import json
 from datetime import UTC, datetime
 from typing import Any
 
-from domain.management.adapters.meta.client import MetaClient, build_meta_client
+from domain.management.adapters.meta.client import (
+    MetaClient,
+    build_meta_client,
+    normalize_ad_account,
+)
 from domain.management.contracts.enums import CampaignState
 from domain.management.contracts.schemas import (
     CampaignConfig,
@@ -80,9 +84,17 @@ class MetaAdsReader:
         self._client = client or build_meta_client(settings)
 
     async def get_metrics(self, campaign_id: str, since: datetime) -> MetricsSnapshot:
+        # since~오늘 구간을 time_range로 요청 → time_increment 없이 단일 집계행을 받는다.
+        # (time_increment=1로 일별 행을 받아 rows[0]만 취하면 since 무시 + 하루치만 읽힘)
+        until = datetime.now(UTC)
         payload = await self._client.get(
             f"{campaign_id}/insights",
-            {"fields": _INSIGHTS_FIELDS, "time_increment": 1},
+            {
+                "fields": _INSIGHTS_FIELDS,
+                "time_range": json.dumps(
+                    {"since": since.date().isoformat(), "until": until.date().isoformat()}
+                ),
+            },
         )
         rows = payload.get("data", [])
         row: dict[str, Any] = rows[0] if rows else {}
@@ -105,9 +117,9 @@ class MetaAdsReader:
         )
 
     async def get_estimate(self, config: CampaignConfig) -> DeliveryEstimate:
-        account = config.ad_account_id or (self._client.ad_account_id or "")
+        account = normalize_ad_account(config.ad_account_id or self._client.ad_account_id)
         payload = await self._client.get(
-            f"act_{account}/delivery_estimate",
+            f"{account}/delivery_estimate",
             {"optimization_goal": _TRAFFIC_OPTIMIZATION_GOAL},
         )
         rows = payload.get("data", [])

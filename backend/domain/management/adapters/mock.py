@@ -10,6 +10,7 @@ import random
 from datetime import UTC, datetime
 
 from domain.management.comparison.schemas import PostInsights, PostType
+from domain.management.contracts.enums import CampaignState
 from domain.management.contracts.fault_injection import FaultConfig, FaultMode
 from domain.management.contracts.policy import (
     AUDIENCE_SIZE,
@@ -18,7 +19,11 @@ from domain.management.contracts.policy import (
     DAILY_BUDGET_KRW,
     HOURLY_PACING,
 )
-from domain.management.contracts.schemas import MetricsSnapshot
+from domain.management.contracts.schemas import (
+    CampaignConfig,
+    DeliveryEstimate,
+    MetricsSnapshot,
+)
 
 _FAULT_ONSET_HOUR = 14  # 고장 발현 시각 (일중 곡선상 오후 — 정상/이상 대비가 뚜렷)
 _REVIEW_DELAY_UNTIL = 10  # 심사 지연: 이 시각 전까지 노출 0
@@ -30,7 +35,30 @@ class MockAdPlatform:
     def __init__(self, seed: int = 42) -> None:
         self._rng = random.Random(seed)
 
-    def fetch_hourly_metrics(
+    async def get_metrics(self, campaign_id: str, since: datetime) -> MetricsSnapshot:
+        """단일 누적 스냅샷 — 하루 생성 후 마지막 시간행(누적 reach·impressions)을 반환.
+
+        AdPlatformReader Port 충족(비교 서비스가 await로 호출). fault 없는 정상 게재 기준.
+        """
+        snapshots = await self.fetch_hourly_metrics(campaign_id, since)
+        return snapshots[-1]
+
+    async def get_state(self, campaign_id: str) -> CampaignState:
+        """Port 충족 — mock은 항상 ACTIVE."""
+        return CampaignState.ACTIVE
+
+    async def get_estimate(self, config: CampaignConfig) -> DeliveryEstimate:
+        """Port 충족 — audience 기반 간단 추정(결정론)."""
+        return DeliveryEstimate(
+            campaign_id=config.campaign_id,
+            estimate_ready=True,
+            estimate_mau_lower=AUDIENCE_SIZE // 2,
+            estimate_mau_upper=AUDIENCE_SIZE,
+            daily_outcomes_curve=(),
+            as_of=datetime.now(UTC),
+        )
+
+    async def fetch_hourly_metrics(
         self,
         campaign_id: str,
         day: datetime,

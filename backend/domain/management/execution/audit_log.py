@@ -21,20 +21,31 @@ _SENSITIVE_KEY_TOKENS: Final[tuple[str, ...]] = (
     "authorization",
     "api_key",
     "credential",
+    # 기밀 데이터(예산·크리에이티브) 평문 로그 금지 (CLAUDE.md 보안)
+    "budget",
+    "amount",
+    "creative",
 )
 MASKED: Final[str] = "***"
 
 
+def _mask_value(value: Any) -> Any:
+    """dict는 재귀, list는 원소별 재귀 — 중첩 리스트 안 민감키도 가린다."""
+    if isinstance(value, Mapping):
+        return mask_sensitive(value)
+    if isinstance(value, list):
+        return [_mask_value(item) for item in value]
+    return value
+
+
 def mask_sensitive(payload: Mapping[str, Any]) -> dict[str, Any]:
-    """민감 키워드가 포함된 키의 값을 재귀적으로 마스킹한다."""
+    """민감 키워드가 포함된 키의 값을 재귀적으로(중첩 dict·list 포함) 마스킹한다."""
     masked: dict[str, Any] = {}
     for key, value in payload.items():
         if any(token in key.lower() for token in _SENSITIVE_KEY_TOKENS):
             masked[key] = MASKED
-        elif isinstance(value, Mapping):
-            masked[key] = mask_sensitive(value)
         else:
-            masked[key] = value
+            masked[key] = _mask_value(value)
     return masked
 
 

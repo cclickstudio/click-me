@@ -22,8 +22,24 @@ def mask_token(token: str | None) -> str:
     return f"{token[:4]}…(masked)"
 
 
+def normalize_ad_account(account: str | None) -> str:
+    """ad account id에 ``act_`` 접두사를 보장한다(중복 부착 방지).
+
+    settings/.env의 META_AD_ACCOUNT_ID는 ``act_…`` 형태로 저장되지만 호출부가 또
+    ``act_``를 붙이면 ``act_act_…``가 돼 404가 난다. 입력에 접두사가 있으면 그대로 쓴다.
+    """
+    acct = account or ""
+    return acct if acct.startswith("act_") else f"act_{acct}"
+
+
 class MetaTokenError(RuntimeError):
     """토큰/앱 자격 미설정 — 메시지에 비밀값 없음."""
+
+
+#: Meta 스로틀링/레이트리밋 error code (앱/유저/페이지/커스텀/BUC 광고 한도).
+_RATE_LIMIT_CODES: frozenset[int] = frozenset(
+    {4, 17, 32, 613, 80000, 80001, 80002, 80003, 80004, 80005, 80006, 80008, 80009, 80014}
+)
 
 
 class MetaApiError(RuntimeError):
@@ -34,6 +50,11 @@ class MetaApiError(RuntimeError):
         self.subcode = subcode
         self.message = message
         super().__init__(f"Meta API error (code={code}, subcode={subcode}): {message}")
+
+    @property
+    def is_rate_limited(self) -> bool:
+        """레이트리밋 계열 — executor 재시도(RATE_LIMITED) 매핑에 사용."""
+        return self.code in _RATE_LIMIT_CODES
 
 
 class MetaClient:
@@ -78,7 +99,13 @@ class MetaClient:
 
     @staticmethod
     def _handle(res: httpx.Response) -> dict[str, Any]:
-        payload = res.json()
+        try:
+            payload = res.json()
+        except ValueError:  # 비JSON 에러 바디(HTML 5xx·게이트웨이 스로틀 페이지 등)
+            res.raise_for_status()  # 4xx/5xx면 httpx.HTTPStatusError로 표면화
+            raise MetaApiError(
+                None, None, f"non-JSON response (status={res.status_code})"
+            ) from None
         if isinstance(payload, dict) and "error" in payload:
             err = payload["error"]
             raise MetaApiError(

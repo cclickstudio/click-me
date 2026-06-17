@@ -35,7 +35,8 @@ def diagnose(
         "anomaly_hours": anomaly_hours,
         "impressions_expected": int(expected_window),
         "impressions_observed": observed_window,
-        "deficit_ratio": round(observed_window / expected_window, 3),
+        # 기대 노출 0(무예산·저페이싱 구간)이면 0 나눗셈 방지
+        "deficit_ratio": round(observed_window / expected_window, 3) if expected_window else 0.0,
         "cpm_window_avg_krw": int(cpm_avg),
         "cpm_anchor_krw": CPM_ANCHOR_KRW,
         "cpm_surge_ratio": round(cpm_avg / CPM_ANCHOR_KRW, 2),

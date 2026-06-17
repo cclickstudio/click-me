@@ -307,6 +307,43 @@ async def test_gate7_partial_failure_halts_and_links_audit():
     assert any(e.category == "executor.partial_failure" for e in events)
 
 
+async def test_transient_failure_is_retryable_not_permanently_cached():
+    """전량 일시 실패는 멱등키에 박제되지 않는다 — 같은 승인 재실행 시 재시도된다.
+
+    회귀: 실패 결과까지 save_result로 캐시해 재생 가드가 영구 FAILED를 반환하던 버그
+    (코드리뷰 2026-06-17). 고장 해제 후 동일 승인이 다시 실행되어 성공해야 한다.
+    """
+    writer = FakeWriter(fault=FaultConfig(mode=FaultMode.WRITE_TIMEOUT), fail_times=10)
+    executor, _, _, _ = build_executor(writer)
+    proposal = make_proposal()
+    action = make_action(proposal)
+
+    first = await executor.execute(action, proposal)
+    assert first.status is ResultStatus.FAILED
+
+    writer.fail_times = 0  # 고장 해제
+    second = await executor.execute(action, proposal)
+    assert second.status is ResultStatus.SUCCESS  # 캐시 FAILED 재생이 아니라 실제 재시도
+
+
+async def test_partial_failure_commits_budget_for_executed_targets():
+    """부분 실패 시 이미 집행된 타깃 비율만큼 예산 권한이 커밋된다(잔여 권한 과대 방지)."""
+    writer = FakeWriter(fail_targets={"camp-002"})
+    executor, _, _, budget = build_executor(writer)
+    proposal = make_proposal(
+        action_type="INCREASE_BUDGET",
+        target_object_ids=("camp-001", "camp-002"),
+        budget_after_krw=40_000,
+        max_total_spend_krw=100_000,
+    )
+    action = make_action(proposal)
+
+    result = await executor.execute(action, proposal)
+
+    assert result.failure_reason is FailureReason.PARTIAL_FAILURE
+    assert budget.spent_krw == 50_000  # 2개 중 1개 집행 → 100_000 * 1/2
+
+
 async def test_failed_execution_does_not_consume_budget_authority():
     fault = FaultConfig(mode=FaultMode.WRITE_TIMEOUT)
     writer = FakeWriter(fault=fault, fail_times=10)

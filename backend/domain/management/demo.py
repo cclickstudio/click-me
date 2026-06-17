@@ -9,6 +9,7 @@ ApprovedAction 발행에서 멈춘다: 여기서부터가 🅱 영역(executor)�
 """
 
 import argparse
+import asyncio
 import json
 import sys
 from datetime import UTC, datetime, timedelta
@@ -110,7 +111,7 @@ def main() -> None:
     # 1) Mock 게재 생성 — 고장 주입 = eval 정답 라벨
     fault_label = fault.mode.value if fault else "없음 (정상 게재)"
     _header("1/5", f"Mock 게재 데이터 생성 — 고장 주입: {fault_label}")
-    snapshots = MockAdPlatform().fetch_hourly_metrics(CAMPAIGN_ID, today, fault)
+    snapshots = asyncio.run(MockAdPlatform().fetch_hourly_metrics(CAMPAIGN_ID, today, fault))
     expected = expected_hourly_impressions(DAILY_BUDGET_KRW)
     _print_chart(expected, snapshots)
 

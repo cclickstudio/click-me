@@ -86,7 +86,7 @@ async def run_detection(fault: str = "bid_loss"):
     today = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
 
     # 데이터 소스는 wiring 경유 — use_mock=True(기본)면 Mock+fault, False면 실 Meta reader.
-    snapshots = build_reader(settings).fetch_hourly_metrics(CAMPAIGN_ID, today, fault_cfg)
+    snapshots = await build_reader(settings).fetch_hourly_metrics(CAMPAIGN_ID, today, fault_cfg)
     expected = expected_hourly_impressions(DAILY_BUDGET_KRW)
     window = find_anomaly_window(expected, [s.impressions for s in snapshots])
 
@@ -206,7 +206,7 @@ class _MockAdSnapshotReader:
         self._mock = MockAdPlatform(seed=seed)
 
     async def get_metrics(self, campaign_id: str, since: datetime) -> MetricsSnapshot:
-        snaps = self._mock.fetch_hourly_metrics(campaign_id, since, None, self._budget)
+        snaps = await self._mock.fetch_hourly_metrics(campaign_id, since, None, self._budget)
         return snaps[-1]
 
 
@@ -249,11 +249,11 @@ _CAMPAIGNS_DEMO: tuple[tuple[str, str, CampaignState, int, FaultMode | None], ..
 )
 
 
-def _campaign_snapshots(
+async def _campaign_snapshots(
     campaign_id: str, budget: int, fault: FaultMode | None, seed: int
 ) -> list[MetricsSnapshot]:
     fault_cfg = FaultConfig(mode=fault) if fault is not None else None
-    return MockAdPlatform(seed=seed).fetch_hourly_metrics(
+    return await MockAdPlatform(seed=seed).fetch_hourly_metrics(
         campaign_id, _today_utc(), fault_cfg, budget
     )
 
@@ -280,7 +280,7 @@ async def list_campaigns():
     """데모 캠페인 목록 + 캠페인별 성과 요약 (단일 창구 대시보드)."""
     out = []
     for i, (cid, name, state, budget, fault) in enumerate(_CAMPAIGNS_DEMO):
-        snaps = _campaign_snapshots(cid, budget, fault, seed=40 + i)
+        snaps = await _campaign_snapshots(cid, budget, fault, seed=40 + i)
         out.append(
             {
                 "campaign_id": cid,
@@ -298,7 +298,7 @@ async def get_campaign(campaign_id: str):
     """캠페인 상세 — 시간별 노출(기대 vs 실측, 이상구간) + 요약 KPI."""
     for i, (cid, name, state, budget, fault) in enumerate(_CAMPAIGNS_DEMO):
         if cid == campaign_id:
-            snaps = _campaign_snapshots(cid, budget, fault, seed=40 + i)
+            snaps = await _campaign_snapshots(cid, budget, fault, seed=40 + i)
             actual = [s.impressions for s in snaps]
             expected = expected_hourly_impressions(budget)
             return {
