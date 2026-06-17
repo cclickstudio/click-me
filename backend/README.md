@@ -16,10 +16,10 @@ FastAPI + LangGraph 기반 AI 광고 시뮬레이션 플랫폼 백엔드.
 
 ## 요구 사항
 
-| 항목 | 버전 |
-|---|---|
+| 항목       | 버전                    |
+| ---------- | ----------------------- |
 | **Python** | 3.12 (`uv`가 자동 설치) |
-| **uv** | 최신 |
+| **uv**     | 최신                    |
 
 ### uv 설치
 
@@ -43,6 +43,7 @@ uv sync
 ```
 
 `uv sync`가 한 번에 처리합니다:
+
 - `.python-version` 기반 Python 3.12 자동 설치
 - 가상환경(`.venv`) 생성 + 패키지 설치
 
@@ -54,15 +55,15 @@ cp .env.example .env
 
 `.env` 파일에 아래 항목을 채웁니다:
 
-| 변수 | 설명 |
-|---|---|
-| `DATABASE_URL` | NeonDB PostgreSQL 연결 문자열 |
-| `OPENAI_API_KEY` | OpenAI API 키 |
-| `ANTHROPIC_API_KEY` | Anthropic API 키 |
-| `LANGCHAIN_API_KEY` | LangSmith 트레이싱 키 |
-| `AWS_ACCESS_KEY_ID` | AWS IAM 액세스 키 |
-| `AWS_SECRET_ACCESS_KEY` | AWS IAM 시크릿 키 |
-| `SQS_SIMULATION_QUEUE_URL` | SQS 큐 URL |
+| 변수                       | 설명                          |
+| -------------------------- | ----------------------------- |
+| `DATABASE_URL`             | NeonDB PostgreSQL 연결 문자열 |
+| `OPENAI_API_KEY`           | OpenAI API 키                 |
+| `ANTHROPIC_API_KEY`        | Anthropic API 키              |
+| `LANGSMITH_API_KEY`        | LangSmith 트레이싱 키         |
+| `AWS_ACCESS_KEY_ID`        | AWS IAM 액세스 키             |
+| `AWS_SECRET_ACCESS_KEY`    | AWS IAM 시크릿 키             |
+| `SQS_SIMULATION_QUEUE_URL` | SQS 큐 URL                    |
 
 ### 3. DB 마이그레이션
 

@@ -1,0 +1,10 @@
+{
+  "proposal_id": "prop_t1_001",
+  "status": "SUCCESS",
+  "executed_at": "2026-06-11T09:05:03Z",
+  "platform_response": {
+    "ad_set_id": "adset_9910",
+    "new_daily_budget": 55000
+  },
+  "error": null
+}

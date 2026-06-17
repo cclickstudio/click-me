@@ -1,0 +1,12 @@
+{
+  "proposal_id": "prop_t1_001",
+  "campaign_id": "camp_abc123",
+  "tier": "TIER1",
+  "action_type": "ADJUST_BUDGET",
+  "params": {
+    "budget_delta_krw": 5000,
+    "reason": "시간대 피크 구간 도달 가능성"
+  },
+  "estimated_cost_krw": 5000,
+  "created_at": "2026-06-11T09:05:00Z"
+}

@@ -1,0 +1,11 @@
+{
+  "proposal_id": "prop_t3_001",
+  "campaign_id": "camp_abc123",
+  "tier": "TIER3",
+  "action_type": "PAUSE_CAMPAIGN",
+  "params": {
+    "reason": "CPA가 상한선의 3배 초과, 즉시 중단 권고"
+  },
+  "estimated_cost_krw": 0,
+  "created_at": "2026-06-11T10:20:00Z"
+}

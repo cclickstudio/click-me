@@ -435,7 +435,208 @@ List customer inquiries.
 
 ---
 
-## 8. A/B Comparison [Target: 7.8]
+## 8. Ad Generator
+
+생성모드 광고 파이프라인 — 상품 분석 → 전략 3종 → 템플릿 선택 → 후보 3종 이미지 생성 → QA → 생성 이유.
+
+### POST /api/generator/generations
+
+Start async ad generation task. Runs LangGraph pipeline in background.
+
+**Request Body**
+```json
+{
+  "project_id": "uuid | null",
+  "product_name": "string",
+  "product_description": "string",
+  "target_audience": "string",
+  "campaign_objective": "conversion",
+  "brand_color": "#3182F6 | null",
+  "brand_logo_url": "string | null",
+  "tone_and_manner": "string | null",
+  "width": 1080,
+  "height": 1080
+}
+```
+
+`campaign_objective`: `awareness | conversion | lead_gen | app_install | retention | product_launch | promotion`
+
+**Response 200**
+```json
+{
+  "generation_id": "uuid",
+  "stream_url": "/api/generator/generations/{generation_id}/stream"
+}
+```
+
+---
+
+### GET /api/generator/generations/{generation_id}/stream
+
+SSE streaming. Real-time generation progress events.
+
+**Response**: `text/event-stream`
+
+```
+data: {"event": "progress", "stage": "product_analysis", "pct": 10, "message": "상품 분석 중"}
+
+data: {"event": "progress", "stage": "strategy", "pct": 25, "message": "광고 전략 생성 중"}
+
+data: {"event": "progress", "stage": "template", "pct": 35, "message": "템플릿 선택 중"}
+
+data: {"event": "progress", "stage": "candidates", "pct": 55, "message": "광고 이미지 생성 중 (2/3)"}
+
+data: {"event": "progress", "stage": "qa", "pct": 85, "message": "품질 검증 중"}
+
+data: {"event": "progress", "stage": "explain", "pct": 95, "message": "생성 이유 작성 중"}
+
+data: {"event": "completed", "result_url": "/api/generator/generations/{generation_id}"}
+```
+
+---
+
+### GET /api/generator/generations/{generation_id}
+
+Retrieve completed generation result (candidates, QA, explanations, presigned image URLs).
+
+**Response 200**
+```json
+{
+  "generation_id": "uuid",
+  "status": "pending | running | completed | failed",
+  "input": { },
+  "product_analysis": {
+    "core_values": ["string"],
+    "pain_points": ["string"],
+    "benefits": ["string"]
+  },
+  "strategies": [
+    {"strategy_type": "benefit", "name": "string", "key_message": "string", "rationale": "string"}
+  ],
+  "selected_candidate_id": "uuid | null",
+  "error_message": "string | null",
+  "created_at": "ISO8601",
+  "candidates": [
+    {
+      "candidate_id": "uuid",
+      "idx": 0,
+      "strategy": { "strategy_type": "benefit", "name": "string", "key_message": "string", "rationale": "string" },
+      "template_id": "A | B | C",
+      "copy": {
+        "headline": "string",
+        "subcopy": "string",
+        "benefit_text": "string",
+        "cta": "string"
+      },
+      "s3_key": "generated-ads/{generation_id}/candidate-0.png",
+      "image_url": "string (S3 presigned URL)",
+      "qa_result": {
+        "checks": [{"name": "cta_presence", "passed": true, "detail": "string"}],
+        "passed": true
+      },
+      "qa_passed": true,
+      "explanation": {
+        "applied_target": "string",
+        "applied_strategy": "string",
+        "applied_template": "string",
+        "rationale": "string"
+      }
+    }
+  ],
+  "publish_logs": [
+    {
+      "id": "uuid",
+      "candidate_id": "uuid | null",
+      "platform": "instagram",
+      "status": "published | failed | mocked",
+      "ig_media_id": "string | null",
+      "caption": "string | null",
+      "error_message": "string | null",
+      "created_at": "ISO8601"
+    }
+  ]
+}
+```
+
+---
+
+### POST /api/generator/generations/{generation_id}/select
+
+Save user's selected candidate.
+
+**Request Body**
+```json
+{
+  "candidate_id": "uuid"
+}
+```
+
+**Response 200**
+```json
+{
+  "generation_id": "uuid",
+  "selected_candidate_id": "uuid"
+}
+```
+
+---
+
+### POST /api/generator/generations/{generation_id}/publish
+
+Publish selected candidate to Instagram (user approval action). Requires prior `select`. Without `META_ACCESS_TOKEN` / `META_IG_USER_ID`, runs in Mock mode (`status: mocked`).
+
+**Request Body**
+```json
+{
+  "candidate_id": "uuid",
+  "caption": "string"
+}
+```
+
+**Response 200**
+```json
+{
+  "generation_id": "uuid",
+  "candidate_id": "uuid",
+  "status": "published | failed | mocked",
+  "success": true,
+  "mocked": true,
+  "media_id": "string | null",
+  "error": "string | null"
+}
+```
+
+**Response 400** — candidate not selected first
+```json
+{"detail": "선택된 후보만 게시할 수 있습니다. 먼저 후보를 선택하세요."}
+```
+
+---
+
+### GET /api/generator/generations
+
+List generation history (newest first).
+
+**Query**: `limit` (default 20)
+
+**Response 200**
+```json
+{
+  "generations": [
+    {
+      "generation_id": "uuid",
+      "status": "completed",
+      "product_name": "string",
+      "selected_candidate_id": "uuid | null",
+      "created_at": "ISO8601"
+    }
+  ]
+}
+```
+
+---
+
+## 9. A/B Comparison [Target: 7.8]
 
 ### POST /api/compare/ab
 
@@ -448,7 +649,7 @@ Compare two ad simulation results.
 
 ---
 
-## 9. Common Error Responses
+## 10. Common Error Responses
 
 | HTTP | Code | Description |
 |---|---|---|

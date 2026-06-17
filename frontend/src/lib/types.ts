@@ -123,7 +123,7 @@ export interface Inquiry {
 
 export interface User {
   user_id: string;
-  email: string;
+  login_id: string;
   name: string;
   role: UserRole;
   created_at: string;
@@ -136,4 +136,98 @@ export interface Project {
   description: string | null;
   status: "active" | "archived";
   created_at: string;
+}
+
+/* ─── Generator ─── */
+
+export interface GeneratorCopy {
+  headline: string;
+  body: string;
+  cta: string;
+}
+
+export interface QualityCheckItem {
+  passed: boolean;
+  score: number;
+  feedback: string;
+}
+
+export interface QualityReport {
+  typo_check: QualityCheckItem;
+  duplicate_check: QualityCheckItem;
+  cta_exists: QualityCheckItem;
+  readability: QualityCheckItem;
+  target_fit: QualityCheckItem;
+  text_length: QualityCheckItem;
+  brand_consistency: QualityCheckItem;
+  overall_passed: boolean;
+}
+
+export interface GeneratorCandidate {
+  candidate_id: string;
+  idx: number;
+  strategy: {
+    strategy_type: string;
+    strategy_description?: string;
+    rationale?: string;
+  };
+  template_id: string;
+  copy: GeneratorCopy;
+  s3_key: string;
+  image_url: string | null;
+  qa_result: QualityReport | null;
+  qa_passed: boolean | null;
+  explanation: {
+    applied_target: string;
+    applied_strategy: string;
+    applied_template: string;
+    rationale: string;
+  } | null;
+}
+
+export interface GenerationPublishLog {
+  id: string;
+  candidate_id: string | null;
+  platform: string;
+  status: string;
+  ig_media_id: string | null;
+  caption: string | null;
+  error_message: string | null;
+  created_at: string;
+}
+
+export interface GenerationDetail {
+  generation_id: string;
+  status: "pending" | "running" | "completed" | "failed";
+  input: Record<string, unknown>;
+  strategies: unknown[] | null;
+  selected_candidate_id: string | null;
+  error_message: string | null;
+  created_at: string;
+  candidates: GeneratorCandidate[];
+  publish_logs: GenerationPublishLog[];
+}
+
+export interface CampaignResult {
+  generation_id: string;
+  candidate_id: string;
+  status: "created" | "failed" | "mocked";
+  success: boolean;
+  mocked: boolean;
+  campaign_id: string | null;
+  adset_id: string | null;
+  creative_id: string | null;
+  ad_id: string | null;
+  error: string | null;
+  ads_manager_url: string | null;
+}
+
+export interface PublishResult {
+  generation_id: string;
+  candidate_id: string;
+  status: "published" | "failed" | "mocked";
+  success: boolean;
+  mocked: boolean;
+  media_id: string | null;
+  error: string | null;
 }

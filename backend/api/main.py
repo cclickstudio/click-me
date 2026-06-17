@@ -1,10 +1,14 @@
 import logging
 import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from dotenv import load_dotenv
 
-load_dotenv()
+_BACKEND_ROOT = Path(__file__).resolve().parent.parent
+# .env 는 프로젝트 루트 우선(현 배치), 없으면 backend/.env.
+_ROOT_ENV = _BACKEND_ROOT.parent / ".env"
+load_dotenv(_ROOT_ENV if _ROOT_ENV.exists() else _BACKEND_ROOT / ".env")
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
@@ -13,21 +17,43 @@ from fastapi.responses import JSONResponse
 
 logger = logging.getLogger("clickme")
 
-from api.routers import admin, ads, chat, inquiries, personas, projects, simulate
+# 시뮬레이션은 도메인 구조 라우터(api/routers/simulation)를 사용 — 구 simulate 라우터 대체.
+from api.routers import (
+    admin,
+    ads,
+    auth,
+    chat,
+    company,
+    dashboard,
+    generator,
+    inquiries,
+    personas,
+    projects,
+)
+from api.routers.simulation.router import router as simulation_router
 from core.config import settings
-from tools.simulation.ssr_scorer import SSRScorer
+from domain.generator.adapters.instagram import load_meta_credentials
 
-if not settings.langchain_api_key:
+if not settings.LANGSMITH_API_KEY:
     os.environ["LANGSMITH_TRACING"] = "false"
-    os.environ["LANGCHAIN_TRACING_V2"] = "false"
-
-ssr_scorer = SSRScorer()
+    os.environ["LANGSMITH_TRACING_V2"] = "false"
+else:
+    # 별칭(LANGCHAIN_*/LANGSMITH_*)으로 해석된 값을 SDK 표준 변수로 주입 — 어느 쪽 이름을 써도 동작
+    os.environ.setdefault("LANGSMITH_API_KEY", settings.LANGSMITH_API_KEY)
+    os.environ.setdefault("LANGSMITH_ENDPOINT", settings.LANGSMITH_ENDPOINT)
+    os.environ.setdefault("LANGSMITH_PROJECT", settings.LANGSMITH_PROJECT)
+    os.environ["LANGSMITH_TRACING"] = "true" if settings.LANGSMITH_TRACING_V2 else "false"
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await ssr_scorer.precompute_anchors()
-    app.state.ssr_scorer = ssr_scorer
+    token, ig_user_id, _ = load_meta_credentials()
+    if token and ig_user_id:
+        logger.info("Instagram publisher: MetaGraph (ig_user_id=%s…)", ig_user_id[:6])
+    else:
+        logger.warning(
+            "Instagram publisher: Mock — .env에 META_ACCESS_TOKEN, META_IG_USER_ID 설정 필요"
+        )
     yield
 
 
@@ -52,20 +78,26 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000", "https://*.vercel.app"],
+    # Starlette는 allow_origins에 glob(*)을 지원하지 않으므로 vercel 서브도메인은 regex로 매칭
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origin_regex=r"https://.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
     expose_headers=["*"],
 )
 
+app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
+app.include_router(company.router, prefix="/api/company", tags=["company"])
 app.include_router(chat.router, prefix="/api/chat", tags=["chat"])
-app.include_router(simulate.router, prefix="/api/simulate", tags=["simulate"])
+app.include_router(dashboard.router, prefix="/api/dashboard", tags=["dashboard"])
+app.include_router(simulation_router, prefix="/api/simulation", tags=["simulation"])
 app.include_router(ads.router, prefix="/api/ads", tags=["ads"])
 app.include_router(admin.router, prefix="/api/admin", tags=["admin"])
 app.include_router(inquiries.router, prefix="/api/inquiries", tags=["inquiries"])
 app.include_router(personas.router, prefix="/api/personas", tags=["personas"])
 app.include_router(projects.router, prefix="/api/projects", tags=["projects"])
+app.include_router(generator.router, prefix="/api/generator", tags=["generator"])
 
 
 @app.get("/health")
