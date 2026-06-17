@@ -290,7 +290,8 @@ class LLMJudge:
             '개선 레버 1~3개를 JSON으로: {"actions":["...","..."]}'
         )
         try:
-            data = self._c.complete_json(self._engine, _JUDGE_SYS, user, max_tokens=300)
+            # 한국어 액션 1~3개가 길어 300토큰이면 JSON이 잘릴 수 있다(파싱 실패) — 넉넉히.
+            data = self._c.complete_json(self._engine, _JUDGE_SYS, user, max_tokens=800)
             return [str(a) for a in (data.get("actions") or [])][:3]
         except Exception:
             logger.exception("Judge 액션 제안 실패")
