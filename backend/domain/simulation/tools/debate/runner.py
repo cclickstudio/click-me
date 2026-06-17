@@ -17,6 +17,9 @@ from domain.simulation.contracts.debate_schemas import (
 
 MIN_ROUNDS, MAX_ROUNDS = 2, 4  # 최소 2(발산+반박) / 최대 4(비용 상한·종료 보장)
 CHURN_TH, DISP_TH = 1, 1.5  # 변동 1명 이하 = 정착 / 분산 1.5 이하 = 합의
+# 진행률(SSE) — assignment(75) 후 judge_final(92) 사이를 토론 발언으로 채운다.
+# 라운드 가변(2~4)이라 평균 3라운드를 예상치로 잡고 90을 상한으로 단조 증가(92와 충돌 방지).
+PCT_START, PCT_CAP, EXPECTED_ROUNDS = 75, 90, 3
 
 _STANCE_VAL = {"positive": 1.0, "neutral": 0.0, "negative": -1.0}
 _PHASE = {1: "발산", 2: "반박", 3: "검증"}
@@ -80,6 +83,11 @@ def run_debate(
     rounds_run = 0
     stop_reason = "max"
 
+    # 발언 1건마다 pct를 75→90으로 단조 증가(예상 = 참가자 × 평균 라운드).
+    expected_utts = max(1, len(order) * EXPECTED_ROUNDS)
+    spoken = 0
+    pct = PCT_START
+
     for round_n in range(1, MAX_ROUNDS + 1):
         phase = phase_for(round_n)
         cur_stances: dict[str, str] = {}
@@ -89,10 +97,13 @@ def run_debate(
             pdebates[p.persona_id].utterances.append(u)
             round_utts.append(u)
             cur_stances[p.persona_id] = u.stance
+            spoken += 1
+            pct = min(PCT_CAP, PCT_START + round(spoken / expected_utts * (PCT_CAP - PCT_START)))
             emit(
                 {
                     "event": "progress",
                     "stage": "utterance",
+                    "pct": pct,
                     "round": round_n,
                     "phase": phase,
                     "persona_id": p.persona_id,
@@ -113,6 +124,7 @@ def run_debate(
             {
                 "event": "progress",
                 "stage": "round_summary",
+                "pct": pct,
                 "round": round_n,
                 "summary": summary,
             }
