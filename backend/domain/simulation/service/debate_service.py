@@ -103,11 +103,18 @@ class DebateService:
         topic = build_topic(analysis, aggregate, ad_analysis)
         return {"topics": [topic.model_dump()]}
 
-    async def ask_question(self, run_id: str, question: str) -> AsyncIterator[str]:
+    async def ask_question(
+        self,
+        run_id: str,
+        question: str,
+        reactions: list[PersonaReaction],
+        ad_analysis: AdInterpretation | None = None,
+    ) -> AsyncIterator[str]:
         """토론 종료 후 Q&A — 패널이 순차로 답변(SSE 스트림).
 
-        TODO(T2 Q&A): run_id의 패널(assigned)·주제(topic)를 store/result에서 복원하고,
-        debater.answer_question을 참가자별로 순차 호출하며 qa_utterance 이벤트를 yield.
+        run_id의 결과(패널 assigned·주제 topic)를 get_result로 복원하고, reactions로
+        debater를 만들어 참가자별 answer_question을 순차 호출하며 qa_utterance를 yield.
+        TODO(T2 Q&A): 본문 구현(현재는 계약 스텁).
         """
         if self._store.get_status(run_id) is None:
             yield 'data: {"event": "error", "message": "Run not found"}\n\n'

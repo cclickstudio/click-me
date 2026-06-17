@@ -37,9 +37,11 @@ class DebateRequest(BaseModel):
 
 
 class QuestionRequest(BaseModel):
-    """토론 종료 후 Q&A 입력 — 사용자 질문 1건."""
+    """토론 종료 후 Q&A 입력 — 사용자 질문 + 답변 grounding용 reactions(토론 때와 동일)."""
 
     question: str
+    reactions: list[PersonaReaction]
+    ad_analysis: AdInterpretation | None = None
 
 
 @router.post("/analyze")
@@ -110,7 +112,7 @@ async def ask_question(run_id: str, body: QuestionRequest) -> StreamingResponse:
     if not body.question.strip():
         raise HTTPException(status_code=422, detail="question이 비어 있습니다.")
     return StreamingResponse(
-        _service.ask_question(run_id, body.question),
+        _service.ask_question(run_id, body.question, body.reactions, body.ad_analysis),
         media_type="text/event-stream",
         headers=_SSE_HEADERS,
     )
