@@ -122,7 +122,16 @@ ClickMe — 집행 전 AI 가상 소비자에게 광고를 테스트하고 집�
 - **연령 다양성 타이브레이크** — broad면 `age_spread=True`. 각 pick(피벗·비판자·완주자·미온)의 **핵심 기준(stance·갭·전형)은 유지**하고, 남은 **동점만** `_final_pick`이 '기선발자와 나이 차 최대 → id순'으로 가른다. `select_panel`이 `chosen_ages`를 누적해 점진 확장. → 신라면 일반인 23·29·45·53세(폭 30).
 - **스키마** — `SelectedPanel.broad_target` 추가. `target_age_center`는 좁은 타깃일 때만 채움.
 - **선발 철학 보존** — 사용자 선택(옵션 B): 토론 4역할(피벗·비판자·완주자·미온, 입장 대립) 유지하면서 연령만 퍼뜨림. 연령축 전면 전환(연령대별 1명)은 채택 안 함(토론 입장 다양성 약화 우려).
-- **한계** — 양 극단(17·61세)은 stance 동점 그룹에 들 때만 선발됨(무조건 포함 아님). 좁은 타깃 회귀 검증은 personas 포함 더미가 신라면뿐이라 미확보(reaction-dummy1~5는 personas 없어 graceful skip). verify 4종 + Ruff 통과.
+- **한계** — 양 극단(17·61세)은 stance 동점 그룹에 들 때만 선발됨(무조건 포함 아님). verify 4종 + Ruff 통과.
+
+**후속(같은 세션) — 새 더미 6개(`dummy/new/dummy1~6.json`, 전부 personas 포함) 수령·회귀 검증 통합:**
+- **좁은 타깃 회귀 확보** — 지난 한계(personas 더미가 신라면뿐)가 해소. 6개로 broad/narrow 양쪽 확인: broad=라면·치킨·쿠팡·커피(배제0, 연령폭30~44), narrow=화장품(여성 역산)·스마트폰. 성별 역산도 동작(단 표본 부족 시 완화 — 아래).
+- **치킨 경계 케이스 보정** — 치킨은 전 연령인데 `detected_target`="…일반 소비자…"·관심층 std 9.9로 narrow 오판(7명 배제). → **① `BROAD_TARGET_AGE_STD` 10.0→9.5, ② `_BROAD_TARGET_TERMS`에 "일반 소비자"·"전반" 추가**(둘 다, 사용자 선택). 치킨 broad 전환, 화장품(7.7)·스마트폰(7.9)은 narrow 유지(마진 충분).
+- **성별 역산 표본 부족 완화** — 스마트폰(성중립 제품)이 관심층 M5:F1(n=6)로 쏠려 남성 역산→여성 14명 배제되던 문제. 성별 쏠림이 진짜 타깃인지(화장품) 표본 편향인지(스마트폰) 데이터만으론 구분 불가 → **표본 크기로 가름**. `_target_profile`에 `GENDER_MIN_SAMPLE`(8): 관심층 < 8이면 성별 쏠림 신뢰 안 하고 전체 성별 허용(나이로만 좁힘). 스마트폰(6) 완화→배제 14→6·여성 후보 복귀, 화장품(11) 유지. **나이 broad와 다름**: 나이는 '넓은데 좁힘=오류', 성별은 '쏠림=신호일 수도'라 표본으로만 구분.
+- **verify 통합** — `verify.py`에 6개 broad/narrow 분류·선발 불변식(broad=배제0·타깃중심None / narrow=배제>0·타깃중심有) 자동 단언 + dummy1 메시지갭 단언(아래). 기대분류(`new_expect`) 비교 — 분류 달라지면 단언이 깨져 회귀 감지.
+- **sinramyeon 삭제·메시지갭 이관** — 데이터 측이 `result-dummy-sinramyeon.json` 삭제(→`dummy/new/dummy1.json` 라면이 동일 케이스). verify의 sinramyeon 메시지갭 단언(저항 0.8→message_gap)을 dummy1로 이관, 죽은 sinramyeon 블록 제거.
+- **참고(문서-코드 표현 차)** — §4-3은 "나이·성별 둘 다 불일치 배제(강)"라 적었으나 코드 `on_target`은 AND(나이·성별 둘 다 맞아야 적합)라 실제론 '하나만 틀려도 배제'. 표현 정정 필요(동작은 의도대로).
+- **⚠️ 병렬 작업 공존** — 같은 시기 selector.py에 LLM 재랭킹 게이트(`RerankFn`·`ROLE_DEFS`·`_pick_or_rerank`·`adapters/llm_selector.py`·`trap_check.py`·`selection-traps.json`) + 프론트(`DebatePanel.tsx` 등)가 별도로 추가됨. 본 보정과 한 파일(selector.py)에 공존 — 커밋 단위 분리는 그 작업과 조율 필요.
 
 ## 5. 다음 할 일 (외부 환경/개선)
 

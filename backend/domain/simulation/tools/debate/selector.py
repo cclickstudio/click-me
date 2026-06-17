@@ -6,19 +6,52 @@
 from __future__ import annotations
 
 from collections import Counter
+from collections.abc import Callable
 from statistics import median, pstdev
 
 from domain.simulation.contracts.debate_schemas import SelectedPanel, SelectedParticipant
 from domain.simulation.contracts.schemas import AdInterpretation, Persona, PersonaReaction
 
+# LLM 재랭킹 게이트 콜러블 — (역할, 역할정의, 동점 후보) → 고른 persona_id. None이면 100% 결정론.
+# 스칼라(trust·purchase_intent 등)로 못 가른 '동점 최상위군'이 2명 이상일 때만 호출된다.
+RerankFn = Callable[[str, str, list[PersonaReaction]], str]
+
+# 역할 정의 — 동점 시 LLM이 텍스트(utterance·사유)로 판단할 기준. 결정론 타이브레이크가 못 보는 결.
+ROLE_DEFS: dict[str, str] = {
+    "피벗": (
+        "신뢰는 하지만 아직 행동(클릭·구매)하지 않은 사람 중, 조금만 설득하면 넘어올 '스윙보터'. "
+        "이미 마음을 닫았거나 카테고리 자체에 관심이 없는 사람은 피벗이 아니다."
+    ),
+    "비판자": (
+        "밀어도 안 움직이는 구조적 안티 — 제품·브랜드 전반에 대한 불신처럼 "
+        "광고를 고쳐도 풀리지 않는 '개선의 천장'. "
+        "단지 이 광고가 식상하거나 노출이 잦아 피곤한 사람과 구분하라(그건 광고만 고치면 풀린다)."
+    ),
+    "완주자": "끝까지 간 긍정 극의 전형 — 가장 대표적으로 만족하고 행동까지 간 소비자.",
+    "미온": "관심은 있으나 굳이 움직이지 않은 다수의 결 — 피벗과는 다른 방식으로 미지근한 사람.",
+}
+
 # 타깃 적합 — 반응 분포로 타깃층(관심 보인 인구) 역산 후, 타깃 밖 후보를 일반인 풀에서 배제.
 TARGET_AGE_TOL = 12  # 타깃 나이 중심에서 이 이내면 적합(강: 성별도 일치해야)
 TARGET_GENDER_MIN = 0.35  # 관심층에서 이 비율 이상인 성별을 타깃 성별로 인정
+# 성별 역산 최소 표본 — 관심층이 이 미만이면 성별 쏠림을 신뢰 안 함(성별로 안 좁히고 나이로만).
+# 스마트폰처럼 성중립 제품이 작은 표본에서 우연히 한 성별로 쏠려도 배제되지 않게 한다.
+GENDER_MIN_SAMPLE = 8
 
 # 전 연령형(타깃 불명확) 판정 — 관심층 나이 분산이 크거나 detected_target이 포괄어면 배제를 끈다.
 # 라면처럼 전 연령 소비 제품은 중앙값으로 좁히면 양 끝(10대·고령)을 잘못 배제하기 때문.
-BROAD_TARGET_AGE_STD = 10.0  # 관심층 나이 std 이 이상 → 전 연령형(좁은 타깃은 보통 5~8)
-_BROAD_TARGET_TERMS = ["일반 대중", "전 연령", "누구나", "남녀노소", "온 가족", "전 국민", "모든"]
+BROAD_TARGET_AGE_STD = 9.5  # 관심층 나이 std 이 이상 → 전 연령형(좁은 타깃은 보통 7~8)
+_BROAD_TARGET_TERMS = [
+    "일반 대중",
+    "일반 소비자",
+    "전 연령",
+    "전반",
+    "누구나",
+    "남녀노소",
+    "온 가족",
+    "전 국민",
+    "모든",
+]
 
 # 전문가 4명 고정 스펙 — (persona_id, slot, role, 프로필 템플릿). 도메인 2는 {category} 슬롯 주입.
 EXPERT_SPECS: list[tuple[str, int, str, str]] = [
@@ -115,20 +148,47 @@ def _final_pick(
     return min(group, key=lambda r: (-spread(r), r.persona_id))  # 거리 최대 → id순
 
 
+def _pick_or_rerank(
+    role: str,
+    tie: list[PersonaReaction],
+    chosen_ages: list[int],
+    by_id: dict[str, Persona],
+    age_spread: bool,
+    rerank_fn: RerankFn | None,
+) -> PersonaReaction | None:
+    """동점 최상위군 tie에서 1명 — rerank_fn 있고 2명+면 LLM(텍스트), 아니면 결정론(_final_pick).
+
+    스칼라가 이미 못 가른 동점에서만 LLM을 부른다(=margin 게이트). 1명이면 LLM 불필요,
+    LLM 실패·무효 응답이면 결정론으로 안전 폴백 → 게이트가 정확도를 떨어뜨릴 일이 없다.
+    """
+    if not tie:
+        return None
+    if rerank_fn is None or len(tie) < 2:
+        return _final_pick(tie, chosen_ages, by_id, age_spread)
+    try:
+        pid = rerank_fn(role, ROLE_DEFS.get(role, role), tie)
+    except Exception:
+        return _final_pick(tie, chosen_ages, by_id, age_spread)
+    chosen = next((r for r in tie if r.persona_id == pid), None)
+    return chosen if chosen is not None else _final_pick(tie, chosen_ages, by_id, age_spread)
+
+
 def pick_representative(
     group: list[PersonaReaction],
     chosen_ages: list[int] | None = None,
     by_id: dict[str, Persona] | None = None,
     age_spread: bool = False,
+    role: str = "전형",
+    rerank_fn: RerankFn | None = None,
 ) -> PersonaReaction | None:
-    """그룹의 '전형'(중앙값 근접) 1명 — 동점은 연령 다양성(ON일 때)→id순."""
+    """그룹의 '전형'(중앙값 근접) 1명 — 동점은 LLM(rerank_fn) → 연령 다양성 → id순."""
     if not group:
         return None
     pi_med = median(p.purchase_intent for p in group)
     tr_med = median(p.trust for p in group)
     dmin = min(abs(p.purchase_intent - pi_med) + abs(p.trust - tr_med) for p in group)
     tie = [p for p in group if abs(p.purchase_intent - pi_med) + abs(p.trust - tr_med) == dmin]
-    return _final_pick(tie, chosen_ages or [], by_id or {}, age_spread)
+    return _pick_or_rerank(role, tie, chosen_ages or [], by_id or {}, age_spread, rerank_fn)
 
 
 def pick_pivot(
@@ -136,6 +196,7 @@ def pick_pivot(
     chosen_ages: list[int] | None = None,
     by_id: dict[str, Persona] | None = None,
     age_spread: bool = False,
+    rerank_fn: RerankFn | None = None,
 ) -> PersonaReaction | None:
     """피벗 = 신뢰-행동 갭 최대. 미전환자 중 ① 신뢰 최고 → ② 갭(trust−pi) 최대 → ③ 동점타이."""
     cands = [p for p in pool if is_undecided(p)]
@@ -145,7 +206,7 @@ def pick_pivot(
     top = [p for p in cands if p.trust == tmax]
     gmax = max(p.trust - p.purchase_intent for p in top)
     final = [p for p in top if p.trust - p.purchase_intent == gmax]
-    return _final_pick(final, chosen_ages or [], by_id or {}, age_spread)
+    return _pick_or_rerank("피벗", final, chosen_ages or [], by_id or {}, age_spread, rerank_fn)
 
 
 def pick_critic(
@@ -154,6 +215,7 @@ def pick_critic(
     chosen_ages: list[int] | None = None,
     by_id: dict[str, Persona] | None = None,
     age_spread: bool = False,
+    rerank_fn: RerankFn | None = None,
 ) -> PersonaReaction | None:
     """비판자 = 가장 부정적인 1명(거부·불신이 자동 하위). 피벗 제외 → 항상 다른 사람."""
     cands = [p for p in pool if p.persona_id != exclude_id]
@@ -161,7 +223,7 @@ def pick_critic(
         return None
     smin = min(stance_score(r) for r in cands)
     tie = [r for r in cands if stance_score(r) == smin]
-    return _final_pick(tie, chosen_ages or [], by_id or {}, age_spread)
+    return _pick_or_rerank("비판자", tie, chosen_ages or [], by_id or {}, age_spread, rerank_fn)
 
 
 def pick_finisher(
@@ -169,16 +231,17 @@ def pick_finisher(
     chosen_ages: list[int] | None = None,
     by_id: dict[str, Persona] | None = None,
     age_spread: bool = False,
+    rerank_fn: RerankFn | None = None,
 ) -> PersonaReaction | None:
     """완주자 = action 전형(끝까지 간 긍정 극). 클릭 0% 광고면 가장 긍정적인 1명으로 보충."""
     fin = [p for p in pool if p.aisas.action]
     if fin:
-        return pick_representative(fin, chosen_ages, by_id, age_spread)
+        return pick_representative(fin, chosen_ages, by_id, age_spread, "완주자", rerank_fn)
     if not pool:
         return None
     smax = max(stance_score(r) for r in pool)  # 가장 덜 부정(긍정 천장)
     tie = [r for r in pool if stance_score(r) == smax]
-    return _final_pick(tie, chosen_ages or [], by_id or {}, age_spread)
+    return _pick_or_rerank("완주자", tie, chosen_ages or [], by_id or {}, age_spread, rerank_fn)
 
 
 def pick_second_undecided(
@@ -187,6 +250,7 @@ def pick_second_undecided(
     chosen_ages: list[int] | None = None,
     by_id: dict[str, Persona] | None = None,
     age_spread: bool = False,
+    rerank_fn: RerankFn | None = None,
 ) -> PersonaReaction | None:
     """미온2 = 미전환자 중 피벗과 신뢰가 가장 다른 1명(같은 무리의 다른 결). 동점은 전형→타이."""
     cands = [p for p in pool if is_undecided(p)]
@@ -194,7 +258,7 @@ def pick_second_undecided(
         return None
     dmax = max(abs(p.trust - pivot.trust) for p in cands)
     top = [p for p in cands if abs(p.trust - pivot.trust) == dmax]
-    return pick_representative(top, chosen_ages, by_id, age_spread)
+    return pick_representative(top, chosen_ages, by_id, age_spread, "미온", rerank_fn)
 
 
 def _target_profile(
@@ -215,7 +279,11 @@ def _target_profile(
     age_center = float(median(p.age for p in base))
     gc = Counter(p.gender for p in base)
     total = sum(gc.values())
-    genders = {g for g, c in gc.items() if c / total >= TARGET_GENDER_MIN} or set(gc)
+    if total < GENDER_MIN_SAMPLE:
+        # 표본 부족 — 성별 쏠림이 우연일 수 있어 신뢰 안 함. 전체 성별 허용(성별로 안 좁힘).
+        genders = {p.gender for p in by_id.values()}
+    else:
+        genders = {g for g, c in gc.items() if c / total >= TARGET_GENDER_MIN} or set(gc)
     return age_center, genders
 
 
@@ -265,12 +333,15 @@ def select_panel(
     ad_analysis: AdInterpretation | None = None,
     lay_count: int = 4,
     personas: list[Persona] | None = None,
+    rerank_fn: RerankFn | None = None,
 ) -> SelectedPanel:
     """패널 구성 — 전문가 4명(합성) + 일반인 lay_count명(실제 반응자에서 선발).
 
     lay_count=2: 피벗·비판자(두 극) / lay_count=4: +완주자·미온(분포 범위 커버).
     personas 주입 시 타깃 적합 선발 — 타깃 밖(엉뚱한 인구) 후보를 일반인 풀에서 배제.
     일반인은 선발 우선순위(피벗→비판자→완주자→미온) 순으로 slot 5,6,…에 연속 배정.
+    rerank_fn 주입 시: 스칼라로 못 가른 '동점 후보'만 LLM이 텍스트로 재판단(margin 게이트).
+    None이면 100% 결정론(현행 동작 보존).
     """
     if lay_count not in LAY_COUNTS:
         raise ValueError(f"lay_count는 {LAY_COUNTS} 중 하나여야 합니다: {lay_count}")
@@ -309,27 +380,33 @@ def select_panel(
                 chosen_ages.append(p.age)
 
     # 피벗 — 미전환 중 신뢰-행동 갭. 없으면 전형으로 보충. (우선순위 1, 연령 기선이라 spread 무효)
-    pivot = pick_pivot(pool, chosen_ages, by_id, age_spread)
+    pivot = pick_pivot(pool, chosen_ages, by_id, age_spread, rerank_fn)
     fallback_pivot = pivot is None
     if pivot is None:
-        pivot = pick_representative(pool, chosen_ages, by_id, age_spread)
+        pivot = pick_representative(pool, chosen_ages, by_id, age_spread, "피벗", rerank_fn)
     pivot_id = pivot.persona_id if pivot is not None else None
     add(pivot, "피벗", fallback_pivot)
 
     # 비판자 — 가장 부정적인 1명(부정 극 먼저 확보, 피벗 제외). (우선순위 2)
-    critic = pick_critic(remaining(), pivot_id, chosen_ages, by_id, age_spread)
+    critic = pick_critic(remaining(), pivot_id, chosen_ages, by_id, age_spread, rerank_fn)
     critic_secured = critic is not None and stance_score(critic) < 0
     add(critic, "비판자")
 
     if lay_count >= 4:
         # 완주자 — action 전형(긍정 극). 클릭 0%면 가장 긍정적인 1명. (우선순위 3)
-        add(pick_finisher(remaining(), chosen_ages, by_id, age_spread), "완주자")
+        add(pick_finisher(remaining(), chosen_ages, by_id, age_spread, rerank_fn), "완주자")
         # 미온 — 미전환 중 피벗과 결 다른 1명. 미전환 소진이면 전형으로 보충. (우선순위 4)
-        second = pick_second_undecided(remaining(), pivot, chosen_ages, by_id, age_spread)
+        second = pick_second_undecided(
+            remaining(), pivot, chosen_ages, by_id, age_spread, rerank_fn
+        )
         if second is not None:
             add(second, "미온")
         else:
-            add(pick_representative(remaining(), chosen_ages, by_id, age_spread), "미온", fb=True)
+            add(
+                pick_representative(remaining(), chosen_ages, by_id, age_spread, "미온", rerank_fn),
+                "미온",
+                fb=True,
+            )
 
     # 선발 순서대로 slot 5,6,… 연속 부여(빈 slot 없음 → 엔진 라운드로빈 균등).
     for i, (r, role, fb) in enumerate(lay):

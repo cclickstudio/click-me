@@ -167,44 +167,56 @@ def main() -> int:
         )
         all_ok = all_ok and ok2 and ok2b
 
-    # ⑩ 신라면(새 포맷: personas 포함) — 메시지 수신 갭 + 인구통계 파싱
-    sr_path = _DUMMY_DIR / "result-dummy-sinramyeon.json"
-    if sr_path.exists():
-        sr = load_dummy(sr_path)
-        a_sr = analyze_reactions(sr.reactions, sr.ad_analysis)
-        topic_sr = build_topic(a_sr, compute_kpi(sr.reactions), sr.ad_analysis)
-        rate = a_sr.message.resistance_rate if a_sr.message else None
-        print("\n=== 신라면(새 포맷) ===")
-        print(
-            f"  personas={len(sr.personas)} message.resistance={rate} "
-            f"signal={topic_sr.primary_signal}"
-        )
-        ok_sr = _check(
-            len(sr.personas) == 20
-            and a_sr.message is not None
-            and a_sr.message.resistance_rate >= 0.5
-            and topic_sr.primary_signal == "message_gap",
-            f"personas 20·메시지갭 저항 {rate}·signal message_gap",
-        )
-        # 전 연령형(타깃 불명확) — 신라면은 관심층 17~61 고루 → 배제 끄고 연령 다양성 선발
-        pt = select_panel(sr.reactions, sr.ad_analysis, 4, sr.personas)
-        lay_t = [x for x in pt.participants if not x.is_expert]
-        pid_by = {p.persona_id: p for p in sr.personas}
-        lay_ages = [pid_by[x.persona_id].age for x in lay_t if x.persona_id in pid_by]
-        age_span = (max(lay_ages) - min(lay_ages)) if lay_ages else 0
-        print(
-            f"  전연령: broad={pt.broad_target} excluded={pt.excluded_off_target} "
-            f"일반인나이={sorted(lay_ages)} 폭={age_span}"
-        )
-        ok_t = _check(
-            pt.broad_target
-            and pt.excluded_off_target == 0
-            and pt.target_age_center is None
-            and len(lay_t) == 4
-            and age_span >= 20,
-            f"전 연령형 선발(배제 0·일반인 {len(lay_t)}·연령폭 {age_span})",
-        )
-        all_ok = all_ok and ok_sr and ok_t
+    # ⑨ 새 더미 6개(dummy/new) — 전 연령형(broad) vs 좁은 타깃(narrow) 분류·선발 불변식
+    # 기대 분류: 라면·치킨·쿠팡·커피=broad(전 연령), 화장품·스마트폰=narrow(타깃 명확).
+    # 분류가 바뀌면 실제 회귀이므로 단언이 깨지는 게 맞다(더미 내용 변경 신호).
+    new_expect = {
+        "dummy1": "broad",  # 식품/라면
+        "dummy2": "narrow",  # 뷰티/스킨케어(여성)
+        "dummy3": "broad",  # 식음료/치킨
+        "dummy4": "broad",  # 이커머스/쿠팡
+        "dummy5": "broad",  # 커피
+        "dummy6": "narrow",  # 스마트폰(남성)
+    }
+    new_dir = _DUMMY_DIR / "new"
+    if new_dir.exists():
+        print("\n=== 새 더미 6개(broad/narrow 분류·선발) ===")
+        for stem, expected in new_expect.items():
+            path = new_dir / f"{stem}.json"
+            if not path.exists():
+                continue
+            nd = load_dummy(path)
+            by = {p.persona_id: p for p in nd.personas}
+            panel = select_panel(nd.reactions, nd.ad_analysis, 4, nd.personas)
+            lay = [p for p in panel.participants if not p.is_expert]
+            ages = sorted(by[p.persona_id].age for p in lay if p.persona_id in by)
+            got = "broad" if panel.broad_target else "narrow"
+            # broad/narrow 불변식 — broad는 배제 0·타깃중심 없음, narrow는 배제>0·타깃중심 있음
+            invariant = (
+                (panel.excluded_off_target == 0 and panel.target_age_center is None)
+                if panel.broad_target
+                else (panel.excluded_off_target > 0 and panel.target_age_center is not None)
+            )
+            no_dup = len({p.persona_id for p in lay}) == len(lay)
+            ok_n = _check(
+                got == expected and invariant and len(lay) == 4 and no_dup,
+                f"{stem}: {got}(exp {expected})·배제{panel.excluded_off_target}·일반인{ages}",
+            )
+            all_ok = all_ok and ok_n
+
+            # dummy1(라면) = 메시지갭 케이스(구 sinramyeon 이관) — 의도 메시지 저항 → message_gap
+            if stem == "dummy1":
+                a1m = analyze_reactions(nd.reactions, nd.ad_analysis)
+                t1m = build_topic(a1m, compute_kpi(nd.reactions), nd.ad_analysis)
+                rate = a1m.message.resistance_rate if a1m.message else None
+                ok_msg = _check(
+                    len(nd.personas) == 20
+                    and a1m.message is not None
+                    and a1m.message.resistance_rate >= 0.5
+                    and t1m.primary_signal == "message_gap",
+                    f"dummy1 메시지갭 저항 {rate}·signal {t1m.primary_signal}",
+                )
+                all_ok = all_ok and ok_msg
 
     print("\n" + ("전체 통과 [PASS]" if all_ok else "실패 있음 [FAIL]"))
     return 0 if all_ok else 1
