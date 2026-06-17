@@ -137,11 +137,65 @@ export interface SimRunInput {
 
 export type DebateStance = "positive" | "neutral" | "negative";
 
+// 추가 토론용 논제 후보(/api/debate/topics) — ranking 순 정렬, headline을 제목으로 노출.
+export interface DebateTopic {
+  topic_id: string;
+  headline: string;
+  diagnosis: string;
+  question: string;
+  primary_signal: string;
+  focus: string;
+  objective: string;
+  ranking: number;
+  confidence: number;
+}
+
+export interface DebateTopicsResult {
+  topics: DebateTopic[];
+}
+
 export interface DebateStartResult {
   run_id: string;
   stream_url: string;
   lay_count: number;
 }
+
+/* ─── Debate Q&A (/api/debate/{run_id}/question) — POST SSE ─── */
+
+// 종료 후 Q&A에서 페르소나가 답하는 한 발언.
+export interface QAUtteranceEvent {
+  event: "progress";
+  stage: "qa_utterance";
+  persona_id: string;
+  persona_name: string;
+  role: string;
+  engine: string;
+  stance: DebateStance;
+  text: string;
+  reason: string;
+  lever: string;
+}
+
+// 진행자(주최자) 중간 멘트.
+export interface QAModeratorEvent {
+  event: "progress";
+  stage: "qa_moderator";
+  text: string;
+}
+
+// Q&A 종료 신호.
+export interface QACompletedEvent {
+  event: "completed";
+  stage: "qa_completed";
+}
+
+export interface QAErrorEvent {
+  event: "error";
+  stage?: string;
+  message?: string;
+}
+
+export type QAEvent = QAUtteranceEvent | QAModeratorEvent | QACompletedEvent | QAErrorEvent;
 
 export interface DebateUtterance {
   round: number;
