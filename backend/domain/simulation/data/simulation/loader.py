@@ -42,7 +42,7 @@ def load_socioeconomic() -> dict[str, Any]:
 
 
 def load_meta_reach() -> dict[str, Any]:
-    """단계1 메타 도달 가중(Tier 2) — 연령별 인스타/페북 침투율(0~1)."""
+    """단계1 메타 도달 가중(Tier2-A) — 메타 광고 관리자 실측 연령별 도달 점유율(합≈1)."""
     return _read_json("meta_reach.json")
 
 

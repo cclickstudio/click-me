@@ -101,7 +101,7 @@ service ──구동──▶ graph ──(노드가 호출)──▶ tools · a
 
 > **Meta 전용 도달성 추출.** 제품이 Meta 광고만 취급 → 단계1 표본을 `인구 × 메타 침투율`로 추출(`persona_sampler.reachability_sampling`, `wiring`에서 ON). 표본이 메타 도달층(젊은 층)에 집중되며 self-weighting 유지. 모집단은 "메타(인스타/페북) 도달 가능 한국 소비자".
 >
-> **(2026-06-16, Tier 2) reach 출처를 메타 침투율 곡선으로 전환.** 과거 KISDI 소셜피드 비중(`cell_social_reach`)은 "SNS" 라벨이 거의 비어(0.02) 사실상 유튜브 영상 시청만 잡아 메타 사용과 어긋났다(30대 과소). → 연령별 메타(인스타/페북) 침투율(`data/.../meta_reach.json`)을 `_cell_reach`의 출처로 사용. **현재 placeholder 추정치(`needs_real_values`)** — 공개 통계 정확 수치로 교체 예정. 지역 메타 접근성은 미반영(추후 고도화). KISDI reach는 노출맥락 선택에만 사용.
+> **(2026-06-17, Tier2-A) reach 출처를 Meta 광고 관리자 실측 도달 분포로 확정.** 과거 KISDI 소셜피드 비중은 사실상 유튜브 영상 시청만 잡아 어긋났고, 그 뒤 쓰던 침투율(도달÷인구)도 **메타 추산치가 census 인구를 초과**해(복수계정 등) 1.0을 넘어 깨졌다. → `meta_reach.json`을 **메타 광고 관리자 '추산 잠재고객 규모' 실측 도달 분포**(`metric_type:reach_share`, 합≈1)로 교체하고, `reachability_sampling` ON이면 `_population_cells`가 이 분포를 **연령 marginal로 직접 사용(인구비중 곱 제거, `_reach_marginal`)**. 성별만 `male_ratio`로 분할. 메타 5세 구간→10년 밴드는 연수 비례 안분, 65+는 65-69/70+로 추정 분할. 지역 메타 접근성은 미반영(추후 고도화). KISDI reach는 노출맥락 선택에만 사용.
 
 > **노출맥락은 소셜피드로만 한정(2026-06-16 수정).** `exposure_context`는 "이 광고를 본 경로"이며 Meta 전용이므로 **항상 소셜피드(SNS·동영상 @ 스마트폰/PC)** 만 선택한다. 샘플러는 노출후보(`exposure_candidates`)를 소셜 맥락만으로 빌드하고, 반응 어댑터(mock·gemini)는 소셜 후보가 없어도 **TV·신문 등 비소셜로 폴백하지 않는다** — 과거 고령층 셀에서 TV로 폴백돼 "메타 광고를 TV에서 봤다"는 모순이 발생하던 버그를 차단.
 
