@@ -12,6 +12,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from core.config import settings
+from domain.management.adapters.mock import MockAdPlatform
 from domain.management.agents.regeneration import RegenerationContext
 from domain.management.agents.regeneration_tools import build_regeneration_agent
 from domain.management.approval import (
@@ -20,9 +21,15 @@ from domain.management.approval import (
     requires_human,
     validate_proposal,
 )
+from domain.management.comparison.service.comparison_service import ComparisonService
 from domain.management.contracts.fault_injection import FaultConfig, FaultMode
 from domain.management.contracts.policy import APPROVAL_POLICY_VERSION, DAILY_BUDGET_KRW
-from domain.management.contracts.schemas import ActionProposal, ApprovedAction, DiagnosisResult
+from domain.management.contracts.schemas import (
+    ActionProposal,
+    ApprovedAction,
+    DiagnosisResult,
+    MetricsSnapshot,
+)
 from domain.management.demo import CAMPAIGN_ID, TENANT_ID, build_sample_proposal
 from domain.management.detection.deterministic_dx import diagnose
 from domain.management.detection.exposure_model import (
@@ -34,6 +41,7 @@ from domain.management.execution.tier import TenantBudgetRegistry
 from domain.management.wiring import (
     build_audit_sink,
     build_idempotency_store,
+    build_organic_reader,
     build_reader,
     build_writer,
 )
@@ -183,3 +191,54 @@ async def get_audit(approval_id: str):
             for e in events
         ]
     }
+
+
+# ── 오가닉 vs 광고 비교 (🅰 comparison 도메인 노출) ──────────────────────
+# MockAdPlatform은 get_metrics 미구현(fetch_hourly_metrics만) → ComparisonService가
+# 요구하는 단일 스냅샷을 마지막(누적) 시간행으로 공급하는 얇은 어댑터로 우회한다.
+# 🅰가 MockAdPlatform.get_metrics를 추가하면 이 어댑터는 제거 가능.
+class _MockAdSnapshotReader:
+    """하루치 fetch_hourly_metrics의 마지막(누적) 스냅샷을 단일 지표로 반환."""
+
+    def __init__(self, daily_budget_krw: int = DAILY_BUDGET_KRW, seed: int = 42) -> None:
+        self._budget = daily_budget_krw
+        self._mock = MockAdPlatform(seed=seed)
+
+    async def get_metrics(self, campaign_id: str, since: datetime) -> MetricsSnapshot:
+        snaps = self._mock.fetch_hourly_metrics(campaign_id, since, None, self._budget)
+        return snaps[-1]
+
+
+# 데모 보드 — (게시물 제목, 오가닉 post id, 광고 campaign id, 일예산). 예산 차이로
+# 광고 도달이 벌어져 통과/주의/미달이 고루 나오게 구성.
+_BOARD_DEMO: tuple[tuple[str, str, str, int], ...] = (
+    ("여름 신상 원피스 🌴", "ig_demo_1", "camp_demo_1", 200_000),
+    ("브랜드 데일리 룩", "ig_demo_2", "camp_demo_2", 120_000),
+    ("신상 액세서리 모음", "ig_demo_3", "camp_demo_3", 40_000),
+    ("쿠폰 안내 공지", "ig_demo_4", "camp_demo_4", 15_000),
+)
+
+
+def _today_utc() -> datetime:
+    return datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+
+
+@router.get("/compare")
+async def compare(organic_post_id: str = "ig_demo_1", campaign_id: str = "camp_demo_1"):
+    """오가닉 게시물 vs 광고 집행 게시물 1:1 비교 → 증분 리프트 (A 뷰)."""
+    svc = ComparisonService(build_organic_reader(settings), _MockAdSnapshotReader())
+    lift = await svc.compare(organic_post_id, campaign_id, _today_utc())
+    return {"title": "여름 신상 원피스 🌴", "lift": lift.model_dump(mode="json")}
+
+
+@router.get("/compare/board")
+async def compare_board():
+    """여러 게시물의 오가닉→광고 증분 일괄 검증 (B 뷰). 오가닉 reader는 공유해 행마다 다르게."""
+    organic_reader = build_organic_reader(settings)  # 공유 → rng 진행되며 행별 상이
+    since = _today_utc()
+    rows = []
+    for title, post_id, campaign_id, budget in _BOARD_DEMO:
+        svc = ComparisonService(organic_reader, _MockAdSnapshotReader(daily_budget_krw=budget))
+        lift = await svc.compare(post_id, campaign_id, since)
+        rows.append({"title": title, "lift": lift.model_dump(mode="json")})
+    return {"rows": rows}
