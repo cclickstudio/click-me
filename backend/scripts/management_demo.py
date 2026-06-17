@@ -27,6 +27,7 @@ from domain.management.agents.regeneration import (
     CreativeCandidate,
     RemediationAgent,
     RemediationContext,
+    RiskAppetite,
 )
 from domain.management.contracts.enums import AnomalyType, ExecutionMode
 from domain.management.contracts.schemas import ApprovedAction, DiagnosisResult
@@ -85,7 +86,7 @@ async def main() -> None:
         campaign_id="camp-demo-1",
         anomaly_type=AnomalyType.BID_LOSS,
         source="agent",
-        hypothesis="입찰 패배로 노출 급감 — 예산 감액 후 재생성 검토",
+        hypothesis="입찰 패배로 노출 급감 — 손실 캠페인 일시중지 검토",
         confidence=0.82,
         evidence_metrics={"impressions_24h": 120, "expected_impressions_24h": 4800},
         metrics_as_of=now,
@@ -94,21 +95,24 @@ async def main() -> None:
     section("1) DiagnosisResult (🅰 대체 입력)")
     print(diagnosis.model_dump_json(indent=2))
 
-    # ── 2) 🅱 재생성 agent → ActionProposal ───────────────────
+    # ── 2) 🅱 처방 agent → ActionProposal ─────────────────────
+    # action_type을 박지 않는다 — agent가 진단+의향으로 자율 결정한다.
+    # BID_LOSS + 보수적(CONSERVATIVE) → PAUSE_CAMPAIGN (Tier 1, 자율 통과).
     agent = RemediationAgent(generator=DemoGenerator(), scorer=DemoScorer())
     context = RemediationContext(
         ad_account_id="act_demo",
         target_object_ids=("camp-demo-1",),
         budget_before_krw=50_000,
-        budget_after_krw=40_000,  # 감액 → Tier 1 (P1 정책표)
+        budget_after_krw=0,  # 일시중지 → 지출 0
         run_days=7,
         expected_state_version="sv-1",
         approval_policy_version="approval-policy-v1",
-        action_type="DECREASE_BUDGET",
+        risk_appetite=RiskAppetite.CONSERVATIVE,
     )
     proposal = await agent.propose(diagnosis, context)
     assert proposal is not None
-    section("2) ActionProposal (🅱 단독 생산)")
+    section("2) ActionProposal (🅱 단독 생산 — 자율 처방)")
+    print(f"자율 결정 처방: {proposal.action_type} (Tier {proposal.action_tier})")
     print(proposal.model_dump_json(indent=2))
 
     # ── 3) 승인 — approval.py(🅰) 자리의 동기 즉시승인 스텁 ────
