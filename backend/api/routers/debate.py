@@ -9,20 +9,13 @@ from pydantic import BaseModel
 
 from domain.simulation.adapters.memory_store import InMemorySimulationStore
 from domain.simulation.contracts.schemas import AdInterpretation, Persona, PersonaReaction
-from domain.simulation.service.debate_service import DebateService
 from domain.simulation.wiring import build_debate_service
 
 router = APIRouter()
 
-# 단일 store를 mock·LLM 서비스가 공유 — start는 서비스가 갈려도 stream/result는 run_id(store) 기반.
+# 토론은 항상 실 LLM(Haiku/GPT 토론자 + Sonnet Judge + 선발 LLM 게이트). mock 토론 경로 제거.
 _store = InMemorySimulationStore()
-_mock_service = build_debate_service(use_mock=True, store=_store)
-_llm_service = build_debate_service(use_mock=False, store=_store)
-
-
-def _svc(use_llm: bool) -> DebateService:
-    """use_llm=True면 실 LLM(Haiku/GPT/Gemini+Opus), 아니면 mock(재현·무비용)."""
-    return _llm_service if use_llm else _mock_service
+_service = build_debate_service(use_mock=False, store=_store)
 
 
 _SSE_HEADERS = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
@@ -45,21 +38,20 @@ async def analyze_reactions(body: DebateRequest) -> dict:
     """조각 8·9만 — 반응 분석·KPI·토론 주제를 즉시 반환(결정론·LLM✗·동기, 토론 전 미리보기)."""
     if not body.reactions:
         raise HTTPException(status_code=422, detail="reactions가 비어 있습니다.")
-    return _mock_service.analyze(body.reactions, body.ad_analysis)
+    return _service.analyze(body.reactions, body.ad_analysis)
 
 
 @router.post("/start")
-async def start_debate(body: DebateRequest, use_llm: bool = False, lay_count: int = 4) -> dict:
-    """JSON 데이터(reactions[])로 토론 시작 — 비동기. use_llm=true면 실 LLM(비용 발생).
+async def start_debate(body: DebateRequest, lay_count: int = 4) -> dict:
+    """JSON 데이터(reactions[])로 토론 시작 — 비동기. 토론은 항상 실 LLM(비용 발생).
 
     lay_count: 일반인 수(2=피벗·비판자 / 4=+완주자·미온). 패널 = 전문가4 + 일반인lay_count.
-    두 버전을 같은 데이터로 돌려 비교할 수 있게 분리.
     """
     if not body.reactions:
         raise HTTPException(status_code=422, detail="reactions가 비어 있습니다.")
     if lay_count not in (2, 4):
         raise HTTPException(status_code=422, detail="lay_count는 2 또는 4여야 합니다.")
-    run_id = await _svc(use_llm).start(
+    run_id = await _service.start(
         body.reactions,
         body.ad_analysis,
         simulation_id=body.simulation_id,
@@ -73,7 +65,7 @@ async def start_debate(body: DebateRequest, use_llm: bool = False, lay_count: in
 async def stream_debate(run_id: str) -> StreamingResponse:
     """SSE — 단계별 진행 이벤트(analysis→…→utterance→round_summary→judge_final→report→completed)."""
     return StreamingResponse(
-        _mock_service.stream_events(run_id),  # store 공유라 서비스 무관(run_id 기반)
+        _service.stream_events(run_id),  # store 공유라 서비스 무관(run_id 기반)
         media_type="text/event-stream",
         headers=_SSE_HEADERS,
     )
@@ -82,7 +74,7 @@ async def stream_debate(run_id: str) -> StreamingResponse:
 @router.get("/{run_id}/result")
 async def debate_result(run_id: str) -> dict:
     """완료된 토론 결과(analysis·aggregate·topic·panel·debate·report)."""
-    result = _mock_service.get_result(run_id)  # store 공유라 서비스 무관
+    result = _service.get_result(run_id)  # store 공유라 서비스 무관
     if result is None:
         raise HTTPException(status_code=404, detail="결과 없음 또는 토론 미완료")
     return result
