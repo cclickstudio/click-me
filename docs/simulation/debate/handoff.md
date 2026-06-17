@@ -100,7 +100,7 @@ ClickMe — 집행 전 AI 가상 소비자에게 광고를 테스트하고 집�
 
 - **새 포맷 통합** — `loader`가 `personas` 파싱(`DummyReactionSet.personas`), `dummy/result-dummy-sinramyeon.json` 추가. 새 포맷 = ad/ad_analysis/simulation/**personas**/reactions/aggregate. `Persona` 스키마와 일치해 바로 파싱.
 - **② 메시지 수신 갭** — `analyzer._analyze_message`: 의도 메시지(`detected_message`) 대비 저항 표현(과장·식상·무관심 사전) 비율(결정론) → `MessageReception`. `kpi` 주신호 `message_gap`(저항≥0.5, 거부 다음 우선). 해석은 토론(LLM). 신라면 저항 0.8 → message_gap. **한계**: 한국어 신호어 사전이라 거침(케이스 누적 시 보강).
-- **① 타깃 적합 선발** — `selector._filter_on_target`: 반응 분포로 타깃층 역산(관심층=interest·비거부의 나이중심+다수성별), 타깃 밖(나이·성별 둘 다 불일치) 일반인 후보 **배제(강)**. 풀<필요면 허용범위 단계 완화. `select_panel(.., personas)`, `SelectedPanel.target_*`, 라우터 `DebateRequest.personas`. 신라면 age38·6명 배제. **personas 없으면 현행(graceful)**.
+- **① 타깃 적합 선발** — `selector._filter_on_target`: 반응 분포로 타깃층 역산(관심층=interest·비거부의 나이중심+다수성별), 타깃 밖(나이·성별 둘 다 불일치) 일반인 후보 **배제(강)**. 풀<필요면 허용범위 단계 완화. `select_panel(.., personas)`, `SelectedPanel.target_*`, 라우터 `DebateRequest.personas`. **personas 없으면 현행(graceful)**. ⚠️ **§4-5(2026-06-17)에서 전 연령형 예외 추가** — 라면처럼 타깃 불명확 제품은 배제를 끄고 연령 다양성 선발로 전환(아래 참조).
 - **데이터 포맷 스키마(전달용)** — `docs/simulation/sim-result-schema.md`. 중복(structured_analysis≈detected_*, mismatch≡rubric, _source 40회)·키불일치(consumption 3/5키)·빈값(profile_narrative·weight)·asset_url 로컬경로 정리한 권장 스키마. **데이터 준 사람에게 전달용**.
 - 검증 `verify`에 신라면 케이스(메시지갭·타깃선발) 추가. verify 4종 + Ruff 통과.
 
@@ -112,6 +112,17 @@ ClickMe — 집행 전 AI 가상 소비자에게 광고를 테스트하고 집�
 - **digest**(`debate_service._topic_digest`) — KPI·병목·이탈사유·메시지저항 + **실제 발언 샘플 5개**를 요약해 주입. "수치·발언 밖 사실 금지", "진단 질문 말고 대립 쟁점" 프롬프트 제약.
 - `_run`에서 topic emit 전 `await to_thread(judge.refine_topic, ...)` (엔진 주입 시만). headline/question/diagnosis만 교체, signal/focus는 유지.
 - **mock passthrough라 결정론 verify 영향 없음**. 실 LLM 주제는 비용 때문에 미검증(구조·폴백만 확인).
+
+## 4-5. 전 연령형(타깃 불명확) 선발 보정 (2026-06-17 세션)
+
+§4-3 타깃 적합 선발이 **신라면(라면=전 연령 소비, `detected_target`="라면을 즐겨먹는 일반 대중", `target_filter`=None)** 에서 오작동. 관심층이 17~61세 고루 퍼져 있는데도 중앙값(38)±12로 좁혀 **6명(10·20대 초반·50·60대) 배제**, 일반인 4명이 29~45세에 몰림. "38세만 관심 있나? 라면은 전 연령인데" 지적에서 출발.
+
+- **전 연령형 판정** — `selector._is_broad_target`: `detected_target`이 포괄어(`_BROAD_TARGET_TERMS`: 일반 대중·전 연령·누구나·남녀노소·온 가족·전 국민·모든) **또는** 관심층(interest·비거부) 나이 std ≥ `BROAD_TARGET_AGE_STD`(10.0, 좁은 타깃은 보통 5~8). 신라면 std 11.85 → broad.
+- **배제 끄기** — broad면 `_filter_on_target`을 스킵(`excluded=0`, `target_age_center=None`). 좁은 타깃(가전 등)은 기존대로 좁혀 배제.
+- **연령 다양성 타이브레이크** — broad면 `age_spread=True`. 각 pick(피벗·비판자·완주자·미온)의 **핵심 기준(stance·갭·전형)은 유지**하고, 남은 **동점만** `_final_pick`이 '기선발자와 나이 차 최대 → id순'으로 가른다. `select_panel`이 `chosen_ages`를 누적해 점진 확장. → 신라면 일반인 23·29·45·53세(폭 30).
+- **스키마** — `SelectedPanel.broad_target` 추가. `target_age_center`는 좁은 타깃일 때만 채움.
+- **선발 철학 보존** — 사용자 선택(옵션 B): 토론 4역할(피벗·비판자·완주자·미온, 입장 대립) 유지하면서 연령만 퍼뜨림. 연령축 전면 전환(연령대별 1명)은 채택 안 함(토론 입장 다양성 약화 우려).
+- **한계** — 양 극단(17·61세)은 stance 동점 그룹에 들 때만 선발됨(무조건 포함 아님). 좁은 타깃 회귀 검증은 personas 포함 더미가 신라면뿐이라 미확보(reaction-dummy1~5는 personas 없어 graceful skip). verify 4종 + Ruff 통과.
 
 ## 5. 다음 할 일 (외부 환경/개선)
 

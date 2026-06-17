@@ -186,25 +186,23 @@ def main() -> int:
             and topic_sr.primary_signal == "message_gap",
             f"personas 20·메시지갭 저항 {rate}·signal message_gap",
         )
-        # 타깃 적합 선발 — personas 주입 시 타깃 밖 후보 배제(역산 age·성별)
+        # 전 연령형(타깃 불명확) — 신라면은 관심층 17~61 고루 → 배제 끄고 연령 다양성 선발
         pt = select_panel(sr.reactions, sr.ad_analysis, 4, sr.personas)
         lay_t = [x for x in pt.participants if not x.is_expert]
         pid_by = {p.persona_id: p for p in sr.personas}
-        all_on_target = all(
-            abs(pid_by[x.persona_id].age - pt.target_age_center) <= 20
-            for x in lay_t
-            if x.persona_id in pid_by
-        )
+        lay_ages = [pid_by[x.persona_id].age for x in lay_t if x.persona_id in pid_by]
+        age_span = (max(lay_ages) - min(lay_ages)) if lay_ages else 0
         print(
-            f"  타깃: age_center={pt.target_age_center} genders={pt.target_genders} "
-            f"excluded={pt.excluded_off_target}"
+            f"  전연령: broad={pt.broad_target} excluded={pt.excluded_off_target} "
+            f"일반인나이={sorted(lay_ages)} 폭={age_span}"
         )
         ok_t = _check(
-            pt.target_age_center is not None
-            and pt.excluded_off_target > 0
+            pt.broad_target
+            and pt.excluded_off_target == 0
+            and pt.target_age_center is None
             and len(lay_t) == 4
-            and all_on_target,
-            f"타깃 적합 선발(배제 {pt.excluded_off_target}명·일반인 {len(lay_t)} 타깃 내)",
+            and age_span >= 20,
+            f"전 연령형 선발(배제 0·일반인 {len(lay_t)}·연령폭 {age_span})",
         )
         all_ok = all_ok and ok_sr and ok_t
 

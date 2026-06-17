@@ -109,9 +109,10 @@ class SelectedPanel(BaseModel):
     participants: list[SelectedParticipant]
     pivot_id: str | None = None  # 피벗 persona_id(일반인)
     critic_secured: bool = False  # 비판자(부정 입장) 최소 1명 확보 여부
-    target_age_center: float | None = None  # 역산 타깃 나이 중심(personas 있을 때)
+    target_age_center: float | None = None  # 역산 타깃 나이 중심(좁은 타깃일 때만)
     target_genders: list[str] = Field(default_factory=list)  # 역산 타깃 성별(들)
     excluded_off_target: int = 0  # 타깃 밖이라 일반인 후보에서 배제된 인원
+    broad_target: bool = False  # 전 연령형(타깃 불명확) — 배제 끄고 연령 다양성 선발
 
 
 class DebateParticipant(BaseModel):
@@ -188,9 +189,14 @@ class RankedAction(BaseModel):
 
 
 class JudgeFinal(BaseModel):
-    """Judge 최종 결론 — 진단 + 합의/이견 + 개선안 순위."""
+    """Judge 최종 결론 — 진단 + 합의/이견 + 개선안 순위.
+
+    headline·consensus·dissent·ranked_actions는 전문가용(정확한 용어 허용),
+    plain_summary는 비전문가용(마케팅을 몰라도 바로 이해되는 쉬운 말 결론) — 둘 다 도출.
+    """
 
     headline: str
+    plain_summary: str = ""  # 비전문가용 — 전문 용어 없이 풀어쓴 결론(문제·원인·해법 일상어)
     consensus: list[str] = Field(default_factory=list)
     dissent: list[str] = Field(default_factory=list)
     ranked_actions: list[RankedAction] = Field(default_factory=list)
@@ -243,7 +249,8 @@ class SimulationReport(BaseModel):
     debate_available=False면 토론 미실행(엔진 미주입) — KPI·분석만 채우고 진단은 주제로 대체.
     """
 
-    headline: str  # 진단 헤드라인(judge.final.headline 또는 topic.diagnosis)
+    headline: str  # 진단 헤드라인(judge.final.headline 또는 topic.diagnosis) — 전문가용
+    plain_summary: str = ""  # 비전문가용 쉬운 결론(judge.final.plain_summary). 토론 없으면 빈 값.
     topic: str
     kpi: ReportKpi
     funnel: list[FunnelStage]
