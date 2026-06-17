@@ -48,6 +48,26 @@ def _ad_feature_lines(ad: AdInterpretation, income: str) -> str:
     return ("\n" + "\n".join(lines)) if lines else ""
 
 
+def _visual_lines(ad: AdInterpretation) -> str:
+    """공유 시각 인벤토리(structured_analysis.visual_elements §4-a)를 반응 힌트 줄로.
+
+    전원 동일(공유 해석) — 같은 비주얼을 보여주되, 무엇을 더 보는지는 페르소나 프로필이 판단.
+    visual_elements 없으면(mock 구버전·텍스트 광고) 빈 문자열 → 기존 동작 그대로.
+    """
+    ve = ad.structured_analysis.get("visual_elements") if ad.structured_analysis else None
+    if not isinstance(ve, dict):
+        return ""
+    lines: list[str] = []
+    if ve.get("first_impression"):
+        lines.append(f"- 첫눈에 띄는 것: {ve['first_impression']}")
+    elements = ve.get("elements")
+    if isinstance(elements, list) and elements:
+        lines.append(f"- 주요 시각요소: {', '.join(str(e) for e in elements)}")
+    if ve.get("color_tone"):
+        lines.append(f"- 색감·톤: {ve['color_tone']}")
+    return ("\n[광고 비주얼]\n" + "\n".join(lines)) if lines else ""
+
+
 class GeminiReactionEngine:
     """4-b 반응 — §3.5 구조화 JSON 강제(비동기). temperature↑로 페르소나 간 응답 다양성 보존."""
 
@@ -74,7 +94,8 @@ class GeminiReactionEngine:
             f"- 서사: {persona.profile_narrative or '(없음)'}\n"
             f"- 지금 노출 맥락: {exposure or '일반'}\n\n"
             f"[광고]\n- 업종: {ad.detected_industry}\n- 메시지: {ad.detected_message}\n"
-            f"- 추정 타깃: {ad.detected_target}{_ad_feature_lines(ad, income)}\n\n"
+            f"- 추정 타깃: {ad.detected_target}{_ad_feature_lines(ad, income)}"
+            f"{_visual_lines(ad)}\n\n"
             "[출력 — 아래 JSON만, 설명·코드펜스 없이]\n"
             "{\n"
             '  "aisas": {"attention": bool, "interest": bool, "search": bool, '

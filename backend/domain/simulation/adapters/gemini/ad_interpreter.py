@@ -48,7 +48,12 @@ class GeminiAdInterpreter:
             '"ad_quality": 0~100 정수(명확성·매력·구조·CTA), '
             '"price_mentioned": bool, "original_price": 정가 숫자 또는 null, '
             '"discounted_price": 할인가 숫자 또는 null, "brand_mentioned": bool, '
-            '"social_proof_strength": "high"|"medium"|"low"|"none"}\n\n'
+            '"social_proof_strength": "high"|"medium"|"low"|"none", '
+            # 시각 요소 인벤토리(§4-a) — structured_analysis(JSONB)에 담겨 반응 프롬프트로 흐른다.
+            '"visual_elements": {"primary_subject": "가장 부각되는 피사체(인물/제품/텍스트 등)", '
+            '"elements": ["눈에 띄는 시각 요소 나열(모델 얼굴·제품샷·로고·CTA버튼·배경 등)"], '
+            '"first_impression": "첫눈에 가장 먼저 들어오는 요소 한 가지", '
+            '"color_tone": "전반 색감·톤 한 구절"}}\n\n'
             f"[광고 카피]\n{request.ad_content or '(텍스트 없음 — 이미지 참고)'}"
         )
         contents: Any = prompt

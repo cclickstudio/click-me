@@ -29,6 +29,14 @@ _MOCK_FEATURES = {
     "social_proof_strength": "medium",
 }
 
+# 결정적 시각 인벤토리 스텁(§4-a) — structured_analysis(JSONB)에만 담겨 반응 프롬프트로 흐른다.
+_MOCK_VISUAL = {
+    "primary_subject": "제품 패키지",
+    "elements": ["제품샷", "할인 배지", "브랜드 로고", "CTA 버튼"],
+    "first_impression": "큼지막한 할인 배지",
+    "color_tone": "밝고 선명한 원색 톤",
+}
+
 _GENDERS = ("M", "F")
 _REGIONS = ("서울", "경기", "부산", "대구", "광주")
 _OCEAN_KEYS = ("openness", "conscientiousness", "extraversion", "agreeableness", "neuroticism")
@@ -49,7 +57,7 @@ class MockAdInterpreter:
     async def interpret(self, request: SimulationRunRequest) -> AdInterpretation:
         return AdInterpretation(
             ad_id=request.ad_id,
-            structured_analysis={"mock": True, **_MOCK_FEATURES},
+            structured_analysis={"mock": True, **_MOCK_FEATURES, "visual_elements": _MOCK_VISUAL},
             detected_industry="beverage",
             detected_objective="awareness",
             detected_target="20대",
