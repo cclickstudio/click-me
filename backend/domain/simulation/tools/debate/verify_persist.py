@@ -60,7 +60,7 @@ def main() -> int:
         print(f"  rows: debate=1 participants={len(prows)} utterances={len(urows)}")
 
         ok_a = _check(
-            len(prows) == len(debate.participants) and len(prows) == min(6, len(d.reactions)),
+            len(prows) == len(debate.participants) and len(prows) == min(8, len(d.reactions)),
             f"participant 행 {len(prows)}",
         )
         expected_utt = sum(len(p.utterances) for p in debate.participants)

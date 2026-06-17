@@ -66,8 +66,8 @@ async def _debate_cases() -> bool:
         # 각 참가자 발언 수 == rounds_run
         utt_ok = all(len(p["utterances"]) == rr for p in debate["participants"])
         ok_c = _check(
-            utt_ok and len(debate["participants"]) == min(6, len(d.reactions)),
-            "참가자 6명·발언수==rounds_run",
+            utt_ok and len(debate["participants"]) == min(8, len(d.reactions)),
+            "참가자 8명·발언수==rounds_run",
         )
         ok_d = _check(len(debate["final"]["ranked_actions"]) >= 1, "Judge 개선안 ≥1")
         # 실시간 stream — 발언(utterance) emit 수 == 전체 발언 수, round_summary·judge_final 존재

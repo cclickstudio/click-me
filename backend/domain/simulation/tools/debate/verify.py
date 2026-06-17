@@ -101,7 +101,7 @@ def main() -> int:
         print(f"  panel: {roster}")
         experts = [p for p in panel.participants if p.is_expert]
         laypeople = [p for p in panel.participants if not p.is_expert]
-        expected_size = 4 + min(2, a.total_n)  # 전문가 4 + 일반인(피벗·비판자) 최대 2
+        expected_size = 4 + min(4, a.total_n)  # 전문가 4 + 일반인(피벗·완주자·비판자·미온) 최대 4
         size_ok = len(panel.participants) == expected_size and len(experts) == 4
         uniq_ok = len(set(ids)) == len(ids)
         det_ok = [
@@ -113,7 +113,7 @@ def main() -> int:
             f"(pivot={panel.pivot_id}, critic={panel.critic_secured})",
         )
 
-        # ⑨ 조각 10-b — 엔진·이름 배정(엔진 쿼터 haiku2/gpt2/gemini2·이름 중복없음·결정론)
+        # ⑨ 조각 10-b — 엔진·이름 배정(엔진 쿼터 haiku3/gpt3/gemini2·이름 중복없음·결정론)
         ap = assign_panel(panel)
         roster2 = ", ".join(f"{p.persona_name}/{p.engine}" for p in ap.participants)
         print(f"  assigned: {roster2}")
@@ -121,9 +121,9 @@ def main() -> int:
             e: sum(1 for p in ap.participants if p.engine == e) for e in ("haiku", "gpt", "gemini")
         }
         names = [p.persona_name for p in ap.participants]
-        # 6명 패널 기준 기대 쿼터 haiku2/gpt2/gemini2 (n<6이면 분포만 확인)
+        # 8명 패널 기준 기대 쿼터 haiku3/gpt3/gemini2 (n<8이면 분포만 확인)
         quota_ok = (
-            eng_counts == {"haiku": 2, "gpt": 2, "gemini": 2} if len(ap.participants) == 6 else True
+            eng_counts == {"haiku": 3, "gpt": 3, "gemini": 2} if len(ap.participants) == 8 else True
         )
         judge_ok = ap.judge_engine == "sonnet"
         det9 = [p.model_dump() for p in assign_panel(panel).participants] == [

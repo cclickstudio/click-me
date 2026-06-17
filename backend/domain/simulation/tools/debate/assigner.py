@@ -14,9 +14,8 @@ from domain.simulation.contracts.debate_schemas import (
 )
 
 JUDGE_ENGINE = "sonnet"  # Sonnet 4.6 (종합·최종 액션, 호출 적음 / Opus 4.8에서 다운). 별도 고정.
-# 6명 고정 표시 순서(slot 1~6) + 엔진 라운드로빈 → haiku2/gpt2/gemini2 (엔진 ⊥ 역할).
-# slot-1 인덱싱이라 일반인이 빠져도 전문가 엔진은 고정.
-# haiku={도메인1,마케팅2} / gpt={도메인2,피벗} / gemini={마케팅1,비판자}.
+# slot별 엔진 라운드로빈((slot-1)%3) — 엔진 ⊥ 역할. 8명(전문가4+일반4)이면 haiku3/gpt3/gemini2.
+# slot-1 인덱싱이라 일반인이 빠져도 전문가 엔진은 고정. haiku={s1,s4,s7}/gpt={s2,s5,s8}.
 PANEL_ENGINE = ["haiku", "gpt", "gemini", "haiku", "gpt", "gemini"]
 
 # 이름 풀(결정론 부여) — 더미엔 인구정보가 없어 persona_id 해시로 고른다.
@@ -92,7 +91,9 @@ _FEMALE_GIVEN = [
 # 전문가는 슬롯 프로필(카테고리 주입)을 직접 사용한다.
 _ROLE_TRAIT = {
     "피벗": "신뢰형",
+    "완주자": "적극형",
     "비판자": "비판형",
+    "미온": "미온형",
 }
 
 # 직업 풀 — (직업, 최소나이, 최대나이). 직업에 맞는 나이대에서 골라 '60세 대학생'을 막는다.

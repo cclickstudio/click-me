@@ -27,7 +27,8 @@ EXPERT_SPECS: list[tuple[str, int, str, str]] = [
     ("EXPERT-mkt-performance", 3, "마케팅 전문가(퍼포먼스)", "퍼포먼스·그로스 마케터"),
     ("EXPERT-mkt-brand", 4, "마케팅 전문가(브랜드)", "브랜드·크리에이티브 전문가"),
 ]
-PIVOT_SLOT, CRITIC_SLOT = 5, 6  # 일반인 2슬롯
+# 일반인 4슬롯 — 분포 범위 커버: [완주/긍정 극 — 피벗 — 미온 — 비판/부정 극].
+PIVOT_SLOT, FINISHER_SLOT, CRITIC_SLOT, MILD_SLOT = 5, 6, 7, 8
 
 
 def is_undecided(r: PersonaReaction) -> bool:
@@ -90,6 +91,28 @@ def pick_critic(pool: list[PersonaReaction], exclude_id: str | None) -> PersonaR
     return min(cands, key=lambda r: (stance_score(r), r.persona_id))
 
 
+def pick_finisher(pool: list[PersonaReaction]) -> PersonaReaction | None:
+    """완주자 = action 전형(끝까지 간 긍정 극). 클릭 0% 광고면 가장 긍정적인 1명으로 보충."""
+    fin = [p for p in pool if p.aisas.action]
+    if fin:
+        return pick_representative(fin)
+    if not pool:
+        return None
+    return min(pool, key=lambda r: (-stance_score(r), r.persona_id))  # 가장 덜 부정(긍정 천장)
+
+
+def pick_second_undecided(
+    pool: list[PersonaReaction], pivot: PersonaReaction | None
+) -> PersonaReaction | None:
+    """미온2 = 미전환자 중 피벗과 신뢰가 가장 다른 1명(같은 무리의 다른 결). 동점은 전형→id순."""
+    cands = [p for p in pool if is_undecided(p)]
+    if not cands or pivot is None:
+        return None
+    dmax = max(abs(p.trust - pivot.trust) for p in cands)
+    top = [p for p in cands if abs(p.trust - pivot.trust) == dmax]
+    return pick_representative(top)
+
+
 def _expert_participants(category: str) -> list[SelectedParticipant]:
     """전문가 4명 합성 — 도메인 2는 카테고리 주입, 마케팅 2는 고정. 반응 없음(분석결과 grounded)."""
     return [
@@ -108,40 +131,55 @@ def _expert_participants(category: str) -> list[SelectedParticipant]:
 def select_panel(
     reactions: list[PersonaReaction], ad_analysis: AdInterpretation | None = None
 ) -> SelectedPanel:
-    """패널 구성 — 전문가 4명(합성) + 일반인 2명(피벗·비판자, 실제 반응자에서 선발)."""
+    """패널 구성 — 전문가 4명(합성) + 일반인 4명(피벗·완주자·비판자·미온, 반응자에서 선발)."""
     pool = [r for r in reactions if r.qa_passed]
     participants: list[SelectedParticipant] = _expert_participants(detect_category(ad_analysis))
+    chosen: set[str] = set()
 
-    # 일반인 슬롯5 피벗 — 미전환자 없으면 전형으로 보충.
+    def take(r: PersonaReaction, slot: int, role: str, fb: bool = False) -> None:
+        chosen.add(r.persona_id)
+        participants.append(
+            SelectedParticipant(
+                persona_id=r.persona_id,
+                slot=slot,
+                role=role,
+                stance_score=round(stance_score(r), 3),
+                is_fallback=fb,
+            )
+        )
+
+    def remaining() -> list[PersonaReaction]:
+        return [r for r in pool if r.persona_id not in chosen]
+
+    # 슬롯5 피벗 — 미전환 중 신뢰-행동 갭. 없으면 전형으로 보충. (배타 우선순위 1)
     pivot = pick_pivot(pool)
     fallback_pivot = pivot is None
     if pivot is None:
         pivot = pick_representative(pool)
     pivot_id = pivot.persona_id if pivot is not None else None
     if pivot is not None:
-        participants.append(
-            SelectedParticipant(
-                persona_id=pivot.persona_id,
-                slot=PIVOT_SLOT,
-                role="피벗",
-                stance_score=round(stance_score(pivot), 3),
-                is_fallback=fallback_pivot,
-            )
-        )
+        take(pivot, PIVOT_SLOT, "피벗", fallback_pivot)
 
-    # 일반인 슬롯6 비판자 — 피벗 제외, 가장 부정적인 1명(항상 1명 확보).
-    critic = pick_critic(pool, pivot_id)
+    # 슬롯7 비판자 — 가장 부정적인 1명(부정 극 먼저 확보, 피벗 제외).
+    critic = pick_critic(remaining(), pivot_id)
     critic_secured = False
     if critic is not None:
-        participants.append(
-            SelectedParticipant(
-                persona_id=critic.persona_id,
-                slot=CRITIC_SLOT,
-                role="비판자",
-                stance_score=round(stance_score(critic), 3),
-            )
-        )
+        take(critic, CRITIC_SLOT, "비판자")
         critic_secured = stance_score(critic) < 0  # 실제 부정 입장일 때만(좋은 광고면 False)
+
+    # 슬롯6 완주자 — action 전형(긍정 극). 클릭 0%면 가장 긍정적인 1명.
+    finisher = pick_finisher(remaining())
+    if finisher is not None:
+        take(finisher, FINISHER_SLOT, "완주자")
+
+    # 슬롯8 미온 — 미전환 중 피벗과 결 다른 1명. 미전환 소진이면 전형으로 보충.
+    second = pick_second_undecided(remaining(), pivot)
+    if second is not None:
+        take(second, MILD_SLOT, "미온")
+    else:
+        fb_second = pick_representative(remaining())
+        if fb_second is not None:
+            take(fb_second, MILD_SLOT, "미온", fb=True)
 
     parts = sorted(participants, key=lambda c: c.slot)
     return SelectedPanel(participants=parts, pivot_id=pivot_id, critic_secured=critic_secured)
