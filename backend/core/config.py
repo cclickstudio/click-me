@@ -103,7 +103,8 @@ class Settings(BaseSettings):
     generator_image_edit_model: str = "gpt-image-1"
     # 멀티모달 단일호출(이미지+카피) — GEN_MODE=multimodal 일 때만 사용
     generator_multimodal_provider: str = "openai"  # openai | google_genai
-    generator_multimodal_model: str = "gpt-image-1"
+    generator_multimodal_model: str = "gpt-4o"  # Responses API 오케스트레이터(채팅 모델)
+    generator_multimodal_image_model: str = "gpt-image-1"  # image_generation 툴이 그릴 이미지 모델
     generator_font_dir: str | None = None  # 없으면 backend/assets/fonts 사용
 
     # JWT (Cognito 전환 전 임시)

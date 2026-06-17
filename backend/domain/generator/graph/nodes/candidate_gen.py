@@ -1,6 +1,8 @@
-"""노드 4 — 광고 후보 3종 생성 (gpt-image-2 올인원 체인).
+"""노드 4 — 광고 후보 3종 생성.
 
-변종마다: 카피 생성 → 텍스트 포함 이미지 생성(gpt-image-2) → 품질검증 → S3 업로드.
+생성 방식(GENERATOR_GEN_MODE)에 따라 변종마다 둘 중 하나로 동작한다.
+- pipeline: 카피 생성 → 제품 이미지 생성(단계 분리) → 품질검증 → S3 업로드.
+- multimodal: 한 모델 호출로 카피+이미지 동시 생성 → 품질검증 → S3 업로드.
 품질검증(QualityReport)은 이 노드에서 qa_results로 함께 산출한다(별도 run_qa 노드 없음).
 """
 
@@ -11,6 +13,7 @@ import uuid
 
 from langchain_core.runnables import RunnableConfig
 
+from core.config import settings
 from domain.generator.contracts.enums import AdSize
 from domain.generator.contracts.pipeline_schemas import (
     ProductAnalysis,
@@ -21,6 +24,7 @@ from domain.generator.graph.nodes import emit_progress
 from domain.generator.graph.state import GenerationState
 from domain.generator.pipeline.copy_generator import generate_copy
 from domain.generator.pipeline.image_generator import generate_image
+from domain.generator.pipeline.multimodal_generator import generate_image_and_copy
 from domain.generator.pipeline.quality_checker import check_quality
 from tools.storage.s3 import candidate_key, upload_bytes
 
@@ -47,33 +51,48 @@ async def generate_candidates(state: GenerationState, config: RunnableConfig) ->
     tone = req.get("tone_and_manner")
 
     done = 0
+    multimodal = settings.generator_gen_mode == "multimodal"
 
     async def build(idx: int, variant_id: str, plan: StrategyPlan) -> dict:
         nonlocal done
 
-        # 1. 카피 먼저 생성 (이미지 생성 전 텍스트 확정)
-        ad_copy = await generate_copy(
-            product_analysis=product_analysis,
-            strategy_output=StrategyOutput(
-                strategy=plan.strategy,
-                strategy_description=plan.strategy_description,
-                rationale=plan.rationale,
-            ),
-            template=plan.template,
-        )
-
-        # 2. 이미지 생성 + 품질검증 병렬 (gpt-image-2 올인원)
-        image_bytes, quality_report = await asyncio.gather(
-            generate_image(
+        if multimodal:
+            # 1+2. 한 모델 호출로 카피·이미지 동시 생성 (스타일 일관성), 이후 품질검증
+            image_bytes, ad_copy = await generate_image_and_copy(
                 product_analysis=product_analysis,
                 strategy=plan.strategy,
                 template=plan.template,
                 size=gen_size,
                 brand_color=brand_color,
                 tone=tone,
-            ),
-            check_quality(ad_copy=ad_copy, target=product_analysis.target_audience),
-        )
+            )
+            quality_report = await check_quality(
+                ad_copy=ad_copy, target=product_analysis.target_audience
+            )
+        else:
+            # 1. 카피 먼저 생성 (이미지 생성 전 텍스트 확정)
+            ad_copy = await generate_copy(
+                product_analysis=product_analysis,
+                strategy_output=StrategyOutput(
+                    strategy=plan.strategy,
+                    strategy_description=plan.strategy_description,
+                    rationale=plan.rationale,
+                ),
+                template=plan.template,
+            )
+
+            # 2. 이미지 생성 + 품질검증 병렬 (단계 분리)
+            image_bytes, quality_report = await asyncio.gather(
+                generate_image(
+                    product_analysis=product_analysis,
+                    strategy=plan.strategy,
+                    template=plan.template,
+                    size=gen_size,
+                    brand_color=brand_color,
+                    tone=tone,
+                ),
+                check_quality(ad_copy=ad_copy, target=product_analysis.target_audience),
+            )
 
         # 3. S3 업로드
         s3_key = candidate_key(generation_id, idx)

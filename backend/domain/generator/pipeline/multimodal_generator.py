@@ -85,7 +85,13 @@ async def generate_image_and_copy(
     response = await _client.responses.create(
         model=settings.generator_multimodal_model,
         input=prompt,
-        tools=[{"type": "image_generation", "size": size.value}],
+        tools=[
+            {
+                "type": "image_generation",
+                "size": size.value,
+                "model": settings.generator_multimodal_image_model,
+            }
+        ],
     )
 
     image_b64: str | None = None
