@@ -71,6 +71,9 @@ async def generate_candidates(state: GenerationState, config: RunnableConfig) ->
                 size=gen_size,
                 brand_color=brand_color,
                 tone=tone,
+                headline=ad_copy.headline,
+                body=ad_copy.body,
+                cta=ad_copy.cta,
             ),
             check_quality(ad_copy=ad_copy, target=product_analysis.target_audience),
         )
