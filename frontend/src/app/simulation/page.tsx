@@ -1,14 +1,14 @@
 "use client";
 // 도메인 시뮬레이터(/api/simulation/run) 동기 실행 화면 — 광고 입력 → 반응·루브릭·집계 표시
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import AppLayout from "@/components/AppLayout";
 import { useProjects } from "@/components/ProjectContext";
 import { DebatePanel } from "@/components/simulator/DebatePanel";
 import { KpiCard } from "@/components/ui/KpiCard";
 import { formatPercent } from "@/lib/utils";
 import { api } from "@/lib/api";
-import type { SimRunResult } from "@/lib/types";
+import type { SimRunResult, SSEProgressEvent } from "@/lib/types";
 
 type Step = "setup" | "running" | "result";
 type InputMode = "image" | "url" | "none";
@@ -101,6 +101,14 @@ export default function SimulationRunPage() {
   const [showFailed, setShowFailed] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
+  // SSE 진행률 — 실행 중 단계·퍼센트 표시.
+  const [pct, setPct] = useState(0);
+  const [stageMsg, setStageMsg] = useState("");
+  const esRef = useRef<EventSource | null>(null);
+
+  // 언마운트 시 스트림 정리.
+  useEffect(() => () => esRef.current?.close(), []);
+
   const toggleExpand = (id: string) =>
     setExpanded((prev) => {
       const next = new Set(prev);
@@ -111,6 +119,8 @@ export default function SimulationRunPage() {
 
   async function run() {
     setError(null);
+    setPct(0);
+    setStageMsg("");
     setStep("running");
     const targetFilter: Record<string, unknown> = {};
     if (ageMin) targetFilter.age_min = Number(ageMin);
@@ -118,7 +128,8 @@ export default function SimulationRunPage() {
     if (gender) targetFilter.gender = gender;
 
     try {
-      const res = await api.simulation.run({
+      // 비동기 시작 → run_id 받고 SSE로 진행률 구독(결과는 completed 후 GET).
+      const { run_id } = await api.simulation.start({
         ad_id: adId.trim() || `AD-${Date.now()}`,
         ad_content: adContent || undefined,
         ad_image: inputMode === "image" ? file : undefined,
@@ -132,8 +143,62 @@ export default function SimulationRunPage() {
         product_category: productCategory || undefined,
         ad_objective: adObjective || undefined,
       });
-      setResult(res);
-      setStep("result");
+
+      const es = api.simulation.stream(run_id);
+      esRef.current = es;
+
+      const STAGE_LABEL: Record<string, string> = {
+        ad_analysis: "광고 해석 중...",
+        panel: "페르소나 패널 로드 중...",
+        reaction: "페르소나 반응 생성 중...",
+        aggregate: "결과 집계 중...",
+      };
+
+      es.onmessage = (ev: MessageEvent) => {
+        let data: SSEProgressEvent;
+        try {
+          data = JSON.parse(ev.data) as SSEProgressEvent;
+        } catch {
+          return;
+        }
+
+        if (data.event === "error") {
+          setError(data.message ?? "시뮬레이션 진행 중 오류");
+          es.close();
+          esRef.current = null;
+          setStep("setup");
+          return;
+        }
+
+        if (typeof data.pct === "number") setPct(data.pct);
+        // reaction 단계는 message("반응 N/total")가 더 구체적이라 우선.
+        if (data.stage) setStageMsg(data.message ?? STAGE_LABEL[data.stage] ?? "");
+
+        if (data.event === "completed") {
+          setPct(100);
+          es.close();
+          esRef.current = null;
+          api.simulation
+            .result(run_id)
+            .then((r) => {
+              setResult(r);
+              setStep("result");
+            })
+            .catch((e) => {
+              setError(e instanceof Error ? e.message : "결과 조회 실패");
+              setStep("setup");
+            });
+        }
+      };
+
+      es.onerror = () => {
+        if (esRef.current) {
+          setError("스트림 연결이 끊겼습니다.");
+          es.close();
+          esRef.current = null;
+          setStep("setup");
+        }
+      };
     } catch (e) {
       setError(e instanceof Error ? e.message : "시뮬레이션 실행 실패");
       setStep("setup");
@@ -435,14 +500,28 @@ export default function SimulationRunPage() {
     return (
       <AppLayout>
         <div className="px-8 py-8 max-w-5xl mx-auto">
-          <div className={`${cardCls} flex flex-col items-center justify-center gap-4 py-20`}>
-            <div className="w-10 h-10 border-4 border-[#E5E8EB] dark:border-[#2D3748] border-t-[#3182F6] rounded-full animate-spin" />
-            <p className="text-sm font-medium text-[#4E5968] dark:text-[#9CA3AF]">
-              {sampleSize}명 페르소나가 광고에 반응하는 중...
-            </p>
-            <p className="text-xs text-[#B0B8C1] dark:text-[#4B5563]">
-              광고 해석 → 패널 로드 → 반응 생성 → 집계
-            </p>
+          <div className={`${cardCls} flex flex-col gap-6 py-16`}>
+            <div className="flex flex-col items-center gap-4">
+              <div className="w-10 h-10 border-4 border-[#E5E8EB] dark:border-[#2D3748] border-t-[#3182F6] rounded-full animate-spin" />
+              <p className="text-sm font-medium text-[#4E5968] dark:text-[#9CA3AF]">
+                {stageMsg || `${sampleSize}명 페르소나가 광고에 반응하는 중...`}
+              </p>
+            </div>
+            <div className="w-full max-w-md mx-auto space-y-2">
+              <div className="flex justify-between text-xs">
+                <span className="text-[#8B95A1] dark:text-[#6B7280]">진행률</span>
+                <span className="font-medium text-[#191F28] dark:text-[#F2F4F6]">{pct}%</span>
+              </div>
+              <div className="w-full bg-[#F2F4F6] dark:bg-[#252D3D] rounded-full h-2 overflow-hidden">
+                <div
+                  className="h-full bg-[#3182F6] rounded-full transition-all duration-300"
+                  style={{ width: `${pct}%` }}
+                />
+              </div>
+              <p className="text-xs text-[#B0B8C1] dark:text-[#4B5563] text-center pt-1">
+                광고 해석 → 패널 로드 → 반응 생성 → 집계
+              </p>
+            </div>
           </div>
         </div>
       </AppLayout>

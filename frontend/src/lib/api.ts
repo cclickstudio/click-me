@@ -33,6 +33,27 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json();
 }
 
+// 시뮬 multipart 폼 빌드 — run(동기)·start(비동기 SSE)가 공용으로 사용.
+function buildSimForm(input: SimRunInput): FormData {
+  const form = new FormData();
+  form.append("ad_id", input.ad_id);
+  if (input.ad_content) form.append("ad_content", input.ad_content);
+  if (input.ad_image) form.append("ad_image", input.ad_image);
+  if (input.ad_image_url) form.append("ad_image_url", input.ad_image_url);
+  if (input.organization_id) form.append("organization_id", input.organization_id);
+  if (input.project_id) form.append("project_id", input.project_id);
+  if (input.target_filter && Object.keys(input.target_filter).length > 0)
+    form.append("target_filter", JSON.stringify(input.target_filter));
+  if (input.target_mode) form.append("target_mode", input.target_mode);
+  if (input.sample_size != null) form.append("sample_size", String(input.sample_size));
+  if (input.allocation) form.append("allocation", input.allocation);
+  if (input.ad_title) form.append("ad_title", input.ad_title);
+  if (input.product_category) form.append("product_category", input.product_category);
+  if (input.ad_objective) form.append("ad_objective", input.ad_objective);
+  if (input.service_class != null) form.append("service_class", String(input.service_class));
+  return form;
+}
+
 export const api = {
   ads: {
     upload: (file: File, projectId: string) => {
@@ -51,32 +72,16 @@ export const api = {
     generate: (body: object) => request("/personas/generate", { method: "POST", body: JSON.stringify(body) }),
   },
 
-  // 도메인 시뮬레이션(DDD) — /api/simulation/run 동기 실행(multipart/form-data).
+  // 도메인 시뮬레이션(DDD) — multipart/form-data. run=동기(레거시), start=비동기 SSE.
   simulation: {
+    // 동기 실행 — 끝까지 돌린 결과를 한 번에 반환(진행률 없음).
     run: (input: SimRunInput): Promise<SimRunResult> => {
-      const form = new FormData();
-      form.append("ad_id", input.ad_id);
-      if (input.ad_content) form.append("ad_content", input.ad_content);
-      if (input.ad_image) form.append("ad_image", input.ad_image);
-      if (input.ad_image_url) form.append("ad_image_url", input.ad_image_url);
-      if (input.organization_id) form.append("organization_id", input.organization_id);
-      if (input.project_id) form.append("project_id", input.project_id);
-      if (input.target_filter && Object.keys(input.target_filter).length > 0)
-        form.append("target_filter", JSON.stringify(input.target_filter));
-      if (input.target_mode) form.append("target_mode", input.target_mode);
-      if (input.sample_size != null) form.append("sample_size", String(input.sample_size));
-      if (input.allocation) form.append("allocation", input.allocation);
-      if (input.ad_title) form.append("ad_title", input.ad_title);
-      if (input.product_category) form.append("product_category", input.product_category);
-      if (input.ad_objective) form.append("ad_objective", input.ad_objective);
-      if (input.service_class != null) form.append("service_class", String(input.service_class));
-
       const token = getToken();
       // Content-Type은 지정하지 않는다 — 브라우저가 multipart boundary를 자동 설정.
       return fetch(`${API_BASE}/api/simulation/run`, {
         method: "POST",
         headers: token ? { Authorization: `Bearer ${token}` } : {},
-        body: form,
+        body: buildSimForm(input),
       }).then(async (r) => {
         if (!r.ok) {
           const err = await r.json().catch(() => ({ detail: `HTTP ${r.status}` }));
@@ -85,6 +90,26 @@ export const api = {
         return r.json();
       });
     },
+    // 비동기 시작 — run_id 반환. 진행률은 stream(SSE), 결과는 result(GET).
+    start: (
+      input: SimRunInput,
+    ): Promise<{ run_id: string; stream_url: string; result_url: string; mode: string }> => {
+      const token = getToken();
+      return fetch(`${API_BASE}/api/simulation`, {
+        method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: buildSimForm(input),
+      }).then(async (r) => {
+        if (!r.ok) {
+          const err = await r.json().catch(() => ({ detail: `HTTP ${r.status}` }));
+          throw new Error(err.detail ?? `HTTP ${r.status}`);
+        }
+        return r.json();
+      });
+    },
+    stream: (runId: string) => new EventSource(`${API_BASE}/api/simulation/${runId}/stream`),
+    result: (runId: string): Promise<SimRunResult> =>
+      request<SimRunResult>(`/simulation/${runId}/result`),
   },
 
   // 페르소나 토론(/api/debate/*) — 시뮬 반응(reactions)을 받아 토론을 돌리고 결과를 낸다.
