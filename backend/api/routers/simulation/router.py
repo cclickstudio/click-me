@@ -101,7 +101,7 @@ async def start_simulation(
     target_filter: str | None = Form(None),
     target_mode: str = Form("AUTO"),
     sample_size: int = Form(20),
-    allocation: str = Form("proportional"),
+    allocation: str = Form("auto"),  # auto=표본크기로 자동(300+ stratified). 명시값도 허용
     ad_title: str | None = Form(None),
     product_category: str | None = Form(None),
     ad_objective: str | None = Form(None),
@@ -144,7 +144,7 @@ async def run_simulation(
     target_filter: str | None = Form(None),
     target_mode: str = Form("AUTO"),
     sample_size: int = Form(20),
-    allocation: str = Form("proportional"),
+    allocation: str = Form("auto"),  # auto=표본크기로 자동(300+ stratified). 명시값도 허용
     ad_title: str | None = Form(None),
     product_category: str | None = Form(None),
     ad_objective: str | None = Form(None),
