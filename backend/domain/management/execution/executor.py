@@ -76,6 +76,8 @@ class IdempotencyStore(Protocol):
 
     async def save_result(self, key: str, result: ActionResult) -> None: ...
 
+    async def release(self, key: str) -> None: ...
+
 
 class InMemoryIdempotencyStore:
     """인메모리 멱등 저장소 — DB 구현(DbIdempotencyStore)으로 교체 가능."""
@@ -95,6 +97,10 @@ class InMemoryIdempotencyStore:
 
     async def save_result(self, key: str, result: ActionResult) -> None:
         self._results[key] = result
+
+    async def release(self, key: str) -> None:
+        # 결과 없이 선점만 한 상태를 푼다 — 일시 실패 후 재승인 없이 재시도 가능하게.
+        self._reserved.discard(key)
 
 
 #: ad_account_id → 현재 state_version 조회 (낙관적 락 비교의 우변)
@@ -204,9 +210,21 @@ class Executor:
         # 7) Writer 호출 (재시도·부분 실패 포함) + 감사 기록
         run.advance(RunStatus.CALLING)
         result = await self._call_targets(run, action, proposal, key)
-        await self._idempotency.save_result(key, result)
         if result.status in (ResultStatus.SUCCESS, ResultStatus.SUBMITTED_PENDING_REVIEW):
+            await self._idempotency.save_result(key, result)
             budget.commit(proposal.max_total_spend_krw)
+        elif result.failure_reason is FailureReason.PARTIAL_FAILURE:
+            # 일부 타깃은 이미 집행됨 — 자동 재시도 시 성공분 중복 집행 위험이라 결과를
+            # 박제(재생)하고 사람이 개입한다(P5/게이트 #7). 집행된 비율만큼만 예산 권한을
+            # 커밋해 잔여 권한이 과대 계상(하드캡 약화)되지 않게 한다.
+            await self._idempotency.save_result(key, result)
+            executed = self._executed_target_count(result)
+            total = len(proposal.target_object_ids) or 1
+            if executed:
+                budget.commit(proposal.max_total_spend_krw * executed // total)
+        else:
+            # 아무 타깃도 집행되지 않은 일시 실패 — 멱등 선점을 풀어 재승인 없이 재시도 가능.
+            await self._idempotency.release(key)
         await self._record(
             run,
             action,
@@ -377,6 +395,13 @@ class Executor:
         raise ValueError(f"미지원 action_type: {proposal.action_type}")  # _validate에서 차단됨
 
     # ── 결과·감사 헬퍼 ───────────────────────────────────────────
+
+    @staticmethod
+    def _executed_target_count(result: ActionResult) -> int:
+        """부분 실패 결과에서 실제 집행(성공/심사보류)된 타깃 수 — 비례 예산 커밋용."""
+        snaps = (result.platform_response_snapshot or {}).get("targets") or []
+        done = {str(ResultStatus.SUCCESS), str(ResultStatus.SUBMITTED_PENDING_REVIEW)}
+        return sum(1 for s in snaps if s.get("status") in done)
 
     def _build_result(
         self,

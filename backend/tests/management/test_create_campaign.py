@@ -93,6 +93,22 @@ def test_create_campaign_sandbox_posts_to_account_with_validate_only():
     assert b"PAUSED" in body  # 안전 — 생성 후 사람이 켜야 게재
 
 
+def test_create_campaign_does_not_double_act_prefix():
+    # ad_account_id가 이미 act_ 접두사를 가지면(.env 정본 형태) act_act_ 이중 부착 금지.
+    captured: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append(request.url.path)
+        return httpx.Response(200, json={"id": "23842"})
+
+    client = MetaClient("EAAtest", transport=httpx.MockTransport(handler))
+    writer = MetaAdsWriter(mode=ExecutionMode.SANDBOX_CONTRACT, client=client)
+    asyncio.run(writer.create_campaign(_config(account="act_555"), "idem-c3"))
+
+    assert captured[0].endswith("/act_555/campaigns")
+    assert "act_act_" not in captured[0]
+
+
 # ── executor 디스패치 ────────────────────────────────────────────
 
 

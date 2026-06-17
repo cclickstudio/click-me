@@ -77,7 +77,7 @@ async def run_detection(fault: str = "bid_loss"):
     today = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
 
     # 데이터 소스는 wiring 경유 — use_mock=True(기본)면 Mock+fault, False면 실 Meta reader.
-    snapshots = build_reader(settings).fetch_hourly_metrics(CAMPAIGN_ID, today, fault_cfg)
+    snapshots = await build_reader(settings).fetch_hourly_metrics(CAMPAIGN_ID, today, fault_cfg)
     expected = expected_hourly_impressions(DAILY_BUDGET_KRW)
     window = find_anomaly_window(expected, [s.impressions for s in snapshots])
 

@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -64,7 +65,9 @@ def run_detection_for_fault(
 ) -> tuple[DiagnosisResult | None, GuardVerdict]:
     """eval/게이트 헬퍼 — Mock 게재 1일치 생성 후 감지 파이프라인을 돌린다."""
     day = datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
-    snapshots = MockAdPlatform(seed=seed).fetch_hourly_metrics(_EVAL_CAMPAIGN, day, fault)
+    snapshots = asyncio.run(
+        MockAdPlatform(seed=seed).fetch_hourly_metrics(_EVAL_CAMPAIGN, day, fault)
+    )
     outcome = run_detection(
         _EVAL_TENANT, _EVAL_CAMPAIGN, snapshots, daily_budget_krw=DAILY_BUDGET_KRW
     )

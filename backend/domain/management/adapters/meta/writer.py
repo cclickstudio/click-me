@@ -15,8 +15,15 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
-from domain.management.adapters.meta.client import MetaClient, build_meta_client
-from domain.management.contracts.enums import ExecutionMode, ResultStatus
+import httpx
+
+from domain.management.adapters.meta.client import (
+    MetaApiError,
+    MetaClient,
+    build_meta_client,
+    normalize_ad_account,
+)
+from domain.management.contracts.enums import ExecutionMode, FailureReason, ResultStatus
 from domain.management.contracts.schemas import ActionResult, CampaignConfig
 
 #: 실제 Graph API 전송이 일어나는 모드 (DRY_RUN은 로컬 빌드만).
@@ -57,7 +64,10 @@ class MetaAdsWriter:
             "adjust_budget",
             campaign_id,
             idem_key,
-            {"daily_budget": amount_krw},  # 계정 통화 = KRW 전제 (정수, minor unit 없음)
+            # ⚠️ LIVE 전 검증 필수(TODO): Meta는 통화별 currency_offset을 적용한다.
+            # KRW offset이 100이면 이 값은 100배 과소(₩50,000→₩500)가 된다.
+            # /act_{id}?fields=currency_offset로 확인 후 변환 적용. 현재 LIVE 봉인이라 보류.
+            {"daily_budget": amount_krw},
             amount_krw=amount_krw,
         )
 
@@ -93,7 +103,7 @@ class MetaAdsWriter:
                 "status": "PAUSED",
                 "special_ad_categories": "[]",
             },
-            path=f"act_{config.ad_account_id}/campaigns",
+            path=f"{normalize_ad_account(config.ad_account_id)}/campaigns",
             ad_account_id=config.ad_account_id,
         )
 
@@ -123,9 +133,47 @@ class MetaAdsWriter:
             # DRY_RUN(또는 클라이언트 미구성) — 전송 없이 요청만 빌드한 것으로 본다.
             return self._result(operation, campaign_id, idem_key, dry_run=True, **detail)
         validate_only = self._mode is ExecutionMode.SANDBOX_CONTRACT
-        response = await self._client.post(post_path, data, validate_only=validate_only)
+        # 플랫폼 예외를 Port의 FailureReason으로 번역 — executor가 어댑터 비의존으로
+        # 재시도(TIMEOUT/RATE_LIMITED)를 판단하게 한다(번역 책임은 어댑터에 둔다).
+        try:
+            response = await self._client.post(post_path, data, validate_only=validate_only)
+        except httpx.TimeoutException:
+            return self._failure(operation, campaign_id, idem_key, FailureReason.TIMEOUT, **detail)
+        except MetaApiError as exc:
+            reason = (
+                FailureReason.RATE_LIMITED if exc.is_rate_limited else FailureReason.PLATFORM_ERROR
+            )
+            return self._failure(operation, campaign_id, idem_key, reason, **detail)
+        except httpx.HTTPError:
+            return self._failure(
+                operation, campaign_id, idem_key, FailureReason.PLATFORM_ERROR, **detail
+            )
         return self._result(
             operation, campaign_id, idem_key, dry_run=validate_only, response=response, **detail
+        )
+
+    def _failure(
+        self,
+        operation: str,
+        campaign_id: str,
+        idem_key: str,
+        reason: FailureReason,
+        **detail: int | str,
+    ) -> ActionResult:
+        # 메시지엔 토큰/응답 바디를 싣지 않는다(게이트 #8) — reason만으로 충분.
+        return ActionResult(
+            result_id=str(uuid4()),
+            approval_id="",
+            status=ResultStatus.FAILED,
+            failure_reason=reason,
+            platform_response_snapshot={
+                "mode": str(self._mode),
+                "operation": operation,
+                "campaign_id": campaign_id,
+                **detail,
+            },
+            executed_at=datetime.now(UTC),
+            idempotency_key=idem_key,
         )
 
     def _result(
