@@ -1,7 +1,7 @@
 """add persona debate tables (persona_debates / participants / utterances)
 
-Revision ID: 007
-Revises: 006
+Revision ID: 007b
+Revises: 007
 Create Date: 2026-06-16
 
 시뮬레이터 4-1 페르소나 토론 — simulations 1:N 토론 3테이블 신설(db-schema v3.1).
@@ -11,8 +11,8 @@ persona_id는 더미 문자열·실 UUID 양쪽 수용 위해 VARCHAR(50).
 
 from alembic import op
 
-revision = "007"
-down_revision = "006"
+revision = "007b"
+down_revision = "007"
 branch_labels = None
 depends_on = None
 
