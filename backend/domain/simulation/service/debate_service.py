@@ -23,6 +23,29 @@ from domain.simulation.tools.debate.selector import select_panel
 logger = logging.getLogger("clickme")
 
 
+def _topic_digest(topic, analysis, agg, reactions: list[PersonaReaction]) -> str:
+    """LLM 주제 생성용 분석 요약 — KPI·병목·이탈사유·메시지저항 + 실제 발언 샘플(grounded)."""
+    lines = [
+        f"진단: {topic.diagnosis}",
+        f"KPI — 클릭의향 {agg.click_intent_rate}, 신뢰 {agg.trust_avg}, "
+        f"구매의도 {agg.purchase_intent}, 거부율 {agg.rejection_rate}",
+    ]
+    bn = analysis.bottleneck
+    if bn:
+        lines.append(f"병목: {bn.from_stage}->{bn.to_stage} {bn.dropped}명 이탈")
+    if analysis.by_drop_reason_tag:
+        lines.append(f"이탈 사유: {analysis.by_drop_reason_tag}")
+    msg = analysis.message
+    if msg and msg.resistance_rate:
+        terms = list(msg.resistance_terms)[:5]
+        lines.append(f"메시지 저항 {msg.resistance_rate} (의도='{msg.intended}', 저항어 {terms})")
+    quotes = [r.utterance for r in reactions if r.utterance][:5]
+    if quotes:
+        lines.append("실제 발언 샘플:")
+        lines.extend(f"- {q[:100]}" for q in quotes)
+    return "\n".join(lines)
+
+
 class DebateService:
     """토론 파이프라인 구동 — 결정론 조각 실행 + (엔진 주입 시) LLM 토론(10-c)을 라운드별 emit.
 
@@ -139,6 +162,10 @@ class DebateService:
                 },
             )
             topic = build_topic(analysis, aggregate, ad_analysis)
+            # 엔진 주입(실 LLM) 시 토론 주제를 데이터 기반 논쟁적 주제로 생성(mock은 시드 유지).
+            if self._judge is not None and self._debater_factory is not None:
+                digest = _topic_digest(topic, analysis, aggregate, reactions)
+                topic = await asyncio.to_thread(self._judge.refine_topic, topic, digest)
             store.emit(
                 run_id,
                 {

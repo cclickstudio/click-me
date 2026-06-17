@@ -66,7 +66,10 @@ class MockDebater:
 
 
 class MockJudge:
-    """결정론 Judge — 라운드 정리(입장 집계)·주신호 기반 액션·최종 결론."""
+    """결정론 Judge — 주제는 시드 그대로(재현)·라운드 정리(입장 집계)·주신호 기반 액션·최종 결론."""
+
+    def refine_topic(self, topic: DebateTopic, digest: str) -> DebateTopic:
+        return topic  # mock은 결정론 시드 주제 유지(무비용·재현). 유동 주제는 실 LLM만.
 
     def summarize_round(self, round_n: int, utterances: list[Utterance]) -> str:
         pos = sum(1 for u in utterances if u.stance == "positive")

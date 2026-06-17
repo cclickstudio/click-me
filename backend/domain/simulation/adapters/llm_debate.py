@@ -244,6 +244,30 @@ class LLMJudge:
         self._c = clients or _Clients()
         self._engine = engine
 
+    def refine_topic(self, topic: DebateTopic, digest: str) -> DebateTopic:
+        """결정론 시드 주제를 데이터 기반 '논쟁적' 주제로 교체(headline/question/diagnosis만)."""
+        user = (
+            f"광고 반응 분석 요약:\n{digest}\n\n"
+            "위 데이터에서 가상 소비자·전문가가 '실제로 의견이 갈릴' 토론 주제 1개를 정하라.\n"
+            "- 진단 질문(누구나 답이 같은)이 아니라 대립 가능한 쟁점이어야 한다.\n"
+            "- 예: '메시지를 바꿀까 타깃을 바꿀까', '인지가 충분한데 새 메시지가 필요한가'.\n"
+            "- 주어진 수치·발언 밖의 사실을 지어내지 말 것.\n"
+            '아래 JSON으로만: {"headline":"대립 쟁점 한 문장","question":"핵심 질문",'
+            '"diagnosis":"수치 근거 한 줄"}'
+        )
+        try:
+            data = self._c.complete_json(self._engine, _JUDGE_SYS, user, max_tokens=400)
+            return topic.model_copy(
+                update={
+                    "headline": str(data.get("headline") or topic.headline),
+                    "question": str(data.get("question") or topic.question),
+                    "diagnosis": str(data.get("diagnosis") or topic.diagnosis),
+                }
+            )
+        except Exception:
+            logger.exception("Judge 토론 주제 생성 실패(시드 주제 유지)")
+            return topic
+
     def summarize_round(self, round_n: int, utterances: list[Utterance]) -> str:
         body = "\n".join(f"- [{u.stance}] {u.text}" for u in utterances)
         user = (

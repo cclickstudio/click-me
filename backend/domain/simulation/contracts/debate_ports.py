@@ -23,7 +23,11 @@ class DebaterPort(Protocol):
 
 
 class JudgePort(Protocol):
-    """주최자(Judge) 엔진 — 라운드 정리·잠정 액션·최종 결론."""
+    """주최자(Judge) 엔진 — 토론 주제 정련·라운드 정리·잠정 액션·최종 결론."""
+
+    def refine_topic(self, topic: DebateTopic, digest: str) -> DebateTopic:
+        """결정론 시드 주제를 데이터 기반 논쟁적 주제로 정련. mock은 시드 그대로(재현)."""
+        ...
 
     def summarize_round(self, round_n: int, utterances: list[Utterance]) -> str: ...
 

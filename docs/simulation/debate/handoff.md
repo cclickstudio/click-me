@@ -104,6 +104,15 @@ ClickMe — 집행 전 AI 가상 소비자에게 광고를 테스트하고 집�
 - **데이터 포맷 스키마(전달용)** — `docs/simulation/sim-result-schema.md`. 중복(structured_analysis≈detected_*, mismatch≡rubric, _source 40회)·키불일치(consumption 3/5키)·빈값(profile_narrative·weight)·asset_url 로컬경로 정리한 권장 스키마. **데이터 준 사람에게 전달용**.
 - 검증 `verify`에 신라면 케이스(메시지갭·타깃선발) 추가. verify 4종 + Ruff 통과.
 
+## 4-4. 토론 주제 유동 생성 (2026-06-17 세션)
+
+결정론 `build_topic`이 신호별 고정 템플릿("거부율 높으면 → 무엇이 거부를 부르나")만 내 토론 주제가 다 비슷·진단 질문(논쟁 안 됨)인 문제. → **실 LLM이면 Judge가 주제를 유동 생성**.
+
+- **`JudgePort.refine_topic(topic, digest)`** — 결정론 시드 주제를 데이터 기반 '논쟁적' 주제로 교체. `MockJudge`는 시드 그대로 반환(재현·무비용), `LLMJudge`는 Sonnet으로 생성.
+- **digest**(`debate_service._topic_digest`) — KPI·병목·이탈사유·메시지저항 + **실제 발언 샘플 5개**를 요약해 주입. "수치·발언 밖 사실 금지", "진단 질문 말고 대립 쟁점" 프롬프트 제약.
+- `_run`에서 topic emit 전 `await to_thread(judge.refine_topic, ...)` (엔진 주입 시만). headline/question/diagnosis만 교체, signal/focus는 유지.
+- **mock passthrough라 결정론 verify 영향 없음**. 실 LLM 주제는 비용 때문에 미검증(구조·폴백만 확인).
+
 ## 5. 다음 할 일 (외부 환경/개선)
 
 결정론 8~11 + mock·실 LLM 토론 + API + DB영속화 코드까지 끝났다. 남은 건 환경·연결·개선.
