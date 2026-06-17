@@ -18,7 +18,7 @@ from domain.simulation.tools.debate.assigner import assign_panel
 from domain.simulation.tools.debate.kpi import build_topic, compute_kpi
 from domain.simulation.tools.debate.report import build_report
 from domain.simulation.tools.debate.runner import run_debate
-from domain.simulation.tools.debate.selector import select_panel
+from domain.simulation.tools.debate.selector import RerankFn, select_panel
 
 logger = logging.getLogger("clickme")
 
@@ -60,11 +60,14 @@ class DebateService:
         debater_factory: Callable[[list[PersonaReaction]], DebaterPort] | None = None,
         judge: JudgePort | None = None,
         persistence=None,
+        selector_rerank_fn: RerankFn | None = None,
     ) -> None:
         self._store = store
         self._debater_factory = debater_factory
         self._judge = judge
         self._persistence = persistence  # DebateRepository(주입 시 + simulation_id 있을 때 저장)
+        # 일반인 선발(10-a) 동점 시 LLM 재랭킹(주입 시). None이면 결정론 선발(mock·무비용 경로).
+        self._selector_rerank_fn = selector_rerank_fn
 
     def analyze(
         self,
@@ -179,7 +182,10 @@ class DebateService:
             await asyncio.sleep(0)
 
             # ── 조각 10-a 구성(전문가 4 합성 + 일반인 lay_count 선발, personas 있으면 타깃 적합) ──
-            panel = select_panel(reactions, ad_analysis, lay_count, personas)
+            # selector_rerank_fn 주입 시 동점 후보만 LLM 재랭킹(실 LLM 경로). mock은 None=결정론.
+            panel = select_panel(
+                reactions, ad_analysis, lay_count, personas, self._selector_rerank_fn
+            )
             store.emit(
                 run_id,
                 {

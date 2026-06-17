@@ -176,10 +176,13 @@ def build_debate_service(
     # 토론자 Haiku/GPT + Judge Sonnet (Gemini 제거 — 응답 실패 잦음)
     _ensure_env("ANTHROPIC_API_KEY", "OPENAI_API_KEY")
     from domain.simulation.adapters.llm_debate import LLMDebater, LLMJudge
+    from domain.simulation.adapters.llm_selector import LLMSelector
 
+    # 일반인 선발(10-a) 동점 시 LLM 재랭킹(Sonnet 다수결) — 실 LLM 경로에서만 켠다.
     return DebateService(
         store=store,
         debater_factory=lambda reactions: LLMDebater(reactions),
         judge=LLMJudge(),
         persistence=persistence,
+        selector_rerank_fn=LLMSelector().choose,
     )
