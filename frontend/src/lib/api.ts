@@ -2,6 +2,7 @@ import { getToken } from "./authApi";
 import type { BoardResponse } from "@/components/manage/compare/types";
 import type { CampaignDetail, CampaignsResponse } from "@/components/manage/campaigns/types";
 import type { Proposal } from "@/components/manage/types";
+import type { BudgetStatus } from "@/components/manage/budget/types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -124,6 +125,12 @@ export const api = {
       request<{ proposal: Proposal }>("/management/campaigns/create-proposal", {
         method: "POST",
         body: JSON.stringify(body),
+      }),
+    budget: () => request<BudgetStatus>("/management/budget"),
+    setBudgetLimit: (limitKrw: number) =>
+      request<BudgetStatus>("/management/budget/limit", {
+        method: "POST",
+        body: JSON.stringify({ limit_krw: limitKrw }),
       }),
   },
 
