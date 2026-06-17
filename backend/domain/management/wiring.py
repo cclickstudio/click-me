@@ -75,3 +75,14 @@ def build_audit_sink(settings) -> AuditSink:
     from domain.management.execution.db_stores import DbAuditSink  # noqa: PLC0415
 
     return DbAuditSink()
+
+
+def build_escalation_store(settings):
+    """에스컬레이션 사다리 저장소. 현재는 인메모리(데모·use_mock).
+
+    DB 영속(remediation_escalations 테이블·마이그레이션 008)은 준비돼 있으며, DbEscalationStore
+    구현 시 use_mock=False 분기를 여기 추가한다(후속). 그 전까지는 인메모리로 데모가 성립한다.
+    """
+    from domain.management.escalation import InMemoryEscalationStore  # noqa: PLC0415
+
+    return InMemoryEscalationStore()
