@@ -1,0 +1,1663 @@
+{
+    "run_id": "d9b371e1-09ba-4c1a-aa17-97a2fa37562d",
+    "ad": {
+      "ID": "96321d51-6b2f-43cc-9a22-f69168d67686",
+      "project_id": "e561c41e-a3d7-426d-84ef-1fe63b9c9fb2",
+      "title": "맥심 커피",
+      "media_type": "image",
+      "asset_url": "C:\\Users\\804\\AppData\\Local\\Temp\\clickme_ad_upid77wi.png",
+      "copy_text": "하루를 채우는 맥심 커피",
+      "description": null,
+      "industry_category": null,
+      "product_category": "식음료",
+      "service_class": 0,
+      "ad_objective": "브랜드 인식 강화",
+      "target_filter": null,
+      "status": "DRAFT"
+    },
+    "ad_analysis": {
+      "ad_id": "96321d51-6b2f-43cc-9a22-f69168d67686",
+      "structured_analysis": {
+        "detected_industry": "Coffee/Beverage",
+        "detected_objective": "Branding / Brand Awareness / Sustained Consumption",
+        "detected_target": "Adults seeking daily moments of enjoyment and satisfaction through coffee",
+        "detected_message": "Maxim coffee enriches and completes your day.",
+        "ad_credibility": 85,
+        "ad_quality": 90,
+        "price_mentioned": false,
+        "original_price": null,
+        "discounted_price": null,
+        "brand_mentioned": true,
+        "social_proof_strength": "none"
+      },
+      "detected_industry": "Coffee/Beverage",
+      "detected_objective": "Branding / Brand Awareness / Sustained Consumption",
+      "detected_target": "Adults seeking daily moments of enjoyment and satisfaction through coffee",
+      "detected_message": "Maxim coffee enriches and completes your day.",
+      "ad_features": {
+        "ad_credibility": 85,
+        "ad_quality": 90,
+        "price_mentioned": false,
+        "original_price": null,
+        "discounted_price": null,
+        "brand_mentioned": true,
+        "social_proof_strength": "none"
+      },
+      "intent_mismatch": false,
+      "mismatch_detail": {
+        "category": {
+          "declared": "식음료",
+          "detected": "Coffee/Beverage",
+          "match": true,
+          "note": "감지된 카테고리는 선언된 카테고리의 구체적인 하위 분류로, 의미상 거의 일치합니다.",
+          "score": 98
+        },
+        "objective": {
+          "declared": "브랜드 인식 강화",
+          "detected": "Branding / Brand Awareness / Sustained Consumption",
+          "match": true,
+          "note": "감지된 의도에 'Brand Awareness'가 명시되어 있고, 'Branding'과도 밀접하게 연결됩니다.",
+          "score": 93
+        },
+        "message": {
+          "declared": "맥심 커피",
+          "detected": "Maxim coffee enriches and completes your day.",
+          "match": true,
+          "note": "감지된 메시지가 선언된 제품명(맥심 커피)을 포함하고, 그 가치를 구체적으로 설명합니다.",
+          "score": 95
+        }
+      },
+      "model_version": "gemini-2.5-flash-vision"
+    },
+    "simulation": {
+      "ID": "d9b371e1-09ba-4c1a-aa17-97a2fa37562d",
+      "ad_id": "96321d51-6b2f-43cc-9a22-f69168d67686",
+      "ad_analysis_id": null,
+      "panel_id": "panel-v1",
+      "organization_id": "bd9df2e2-f89b-423a-975c-3592967f7ca0",
+      "target_filter": null,
+      "target_mode": "AUTO",
+      "sample_size": 20,
+      "qa_passed_count": 20,
+      "low_sample_warning": false,
+      "status": "COMPLETED",
+      "model_version": "gemini-2.5-flash-vision",
+      "error_detail": null
+    },
+    "personas": [
+      {
+        "persona_id": "P-00000",
+        "age": 17,
+        "gender": "M",
+        "region": "기타",
+        "ocean": {
+          "openness": -0.15,
+          "conscientiousness": 1.09,
+          "extraversion": -0.84,
+          "agreeableness": 0.8,
+          "neuroticism": -0.44
+        },
+        "media_behavior": {
+          "primary_medium": "스마트폰/휴대폰",
+          "daily_media_minutes": 671,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "PC",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오전",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.0807,
+          "social_feed_reach": 0.1188
+        },
+        "consumption_values": {
+          "성능": false,
+          "품질": true,
+          "편의": true,
+          "저렴한 가격": true,
+          "취향·덕질": true
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "소득 없음",
+          "income_code": 1,
+          "education": "초등학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00001",
+        "age": 29,
+        "gender": "M",
+        "region": "기타",
+        "ocean": {
+          "openness": -0.29,
+          "conscientiousness": -1.5,
+          "extraversion": -0.15,
+          "agreeableness": -0.43,
+          "neuroticism": 0.54
+        },
+        "media_behavior": {
+          "primary_medium": "스마트폰/휴대폰",
+          "daily_media_minutes": 591,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "저녁",
+              "medium": "PC",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.3171,
+          "social_feed_reach": 0.1526
+        },
+        "consumption_values": {
+          "성능": false,
+          "품질": false,
+          "편의": true,
+          "저렴한 가격": false,
+          "취향·덕질": true
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "400~500만원",
+          "income_code": 6,
+          "education": "대학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00002",
+        "age": 20,
+        "gender": "M",
+        "region": "서울",
+        "ocean": {
+          "openness": 0.82,
+          "conscientiousness": -1.89,
+          "extraversion": 0.86,
+          "agreeableness": -1.38,
+          "neuroticism": 0.22
+        },
+        "media_behavior": {
+          "primary_medium": "TV",
+          "daily_media_minutes": 379,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "저녁",
+              "medium": "PC",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.3171,
+          "social_feed_reach": 0.1526
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": true,
+          "편의": false,
+          "저렴한 가격": true,
+          "취향·덕질": false
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "소득 없음",
+          "income_code": 1,
+          "education": "대학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00003",
+        "age": 21,
+        "gender": "M",
+        "region": "서울",
+        "ocean": {
+          "openness": -1.7,
+          "conscientiousness": 0.07,
+          "extraversion": 0.86,
+          "agreeableness": 0.69,
+          "neuroticism": -0.41
+        },
+        "media_behavior": {
+          "primary_medium": "TV",
+          "daily_media_minutes": 316,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "저녁",
+              "medium": "PC",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.3171,
+          "social_feed_reach": 0.1526
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": false,
+          "편의": true,
+          "저렴한 가격": true,
+          "취향·덕질": true
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "300~400만원",
+          "income_code": 5,
+          "education": "대학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00004",
+        "age": 29,
+        "gender": "F",
+        "region": "경기",
+        "ocean": {
+          "openness": -0.02,
+          "conscientiousness": -0.02,
+          "extraversion": 0.71,
+          "agreeableness": 0.14,
+          "neuroticism": 0.94
+        },
+        "media_behavior": {
+          "primary_medium": "PC",
+          "daily_media_minutes": 603,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "저녁",
+              "medium": "PC",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.3171,
+          "social_feed_reach": 0.1446
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": true,
+          "편의": true,
+          "저렴한 가격": true,
+          "취향·덕질": false
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "400~500만원",
+          "income_code": 6,
+          "education": "대학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00005",
+        "age": 28,
+        "gender": "F",
+        "region": "경기",
+        "ocean": {
+          "openness": 1.63,
+          "conscientiousness": -1.92,
+          "extraversion": 0.34,
+          "agreeableness": -1.75,
+          "neuroticism": -1.25
+        },
+        "media_behavior": {
+          "primary_medium": "스마트폰/휴대폰",
+          "daily_media_minutes": 396,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "저녁",
+              "medium": "PC",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.3171,
+          "social_feed_reach": 0.1446
+        },
+        "consumption_values": {
+          "성능": false,
+          "품질": false,
+          "편의": false,
+          "저렴한 가격": true,
+          "취향·덕질": true
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "300~400만원",
+          "income_code": 5,
+          "education": "대학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00006",
+        "age": 23,
+        "gender": "F",
+        "region": "경기",
+        "ocean": {
+          "openness": 0.24,
+          "conscientiousness": -0.27,
+          "extraversion": -0.78,
+          "agreeableness": -0.51,
+          "neuroticism": 1.2
+        },
+        "media_behavior": {
+          "primary_medium": "PC",
+          "daily_media_minutes": 414,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "저녁",
+              "medium": "PC",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.3171,
+          "social_feed_reach": 0.1446
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": true,
+          "편의": true,
+          "저렴한 가격": false,
+          "취향·덕질": true
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "400~500만원",
+          "income_code": 6,
+          "education": "대학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00007",
+        "age": 33,
+        "gender": "M",
+        "region": "대구",
+        "ocean": {
+          "openness": 0.41,
+          "conscientiousness": 0.75,
+          "extraversion": -0.57,
+          "agreeableness": -0.49,
+          "neuroticism": 2.39
+        },
+        "media_behavior": {
+          "primary_medium": "PC",
+          "daily_media_minutes": 510,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "저녁",
+              "medium": "PC",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.2763,
+          "social_feed_reach": 0.0853
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": true,
+          "편의": false
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "800만원 이상",
+          "income_code": 8,
+          "education": "대학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00008",
+        "age": 36,
+        "gender": "M",
+        "region": "대전",
+        "ocean": {
+          "openness": 1.2,
+          "conscientiousness": 0.08,
+          "extraversion": 1.17,
+          "agreeableness": 0.85,
+          "neuroticism": 0.87
+        },
+        "media_behavior": {
+          "primary_medium": "스마트폰/휴대폰",
+          "daily_media_minutes": 521,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "저녁",
+              "medium": "PC",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.2763,
+          "social_feed_reach": 0.0853
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": true,
+          "편의": true
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "800만원 이상",
+          "income_code": 8,
+          "education": "대학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00009",
+        "age": 39,
+        "gender": "M",
+        "region": "서울",
+        "ocean": {
+          "openness": 0.07,
+          "conscientiousness": -0.79,
+          "extraversion": -1.57,
+          "agreeableness": -1.29,
+          "neuroticism": 0.94
+        },
+        "media_behavior": {
+          "primary_medium": "스마트폰/휴대폰",
+          "daily_media_minutes": 553,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "저녁",
+              "medium": "PC",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.2763,
+          "social_feed_reach": 0.0853
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": true,
+          "편의": true
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "400~500만원",
+          "income_code": 6,
+          "education": "대학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00010",
+        "age": 38,
+        "gender": "F",
+        "region": "기타",
+        "ocean": {
+          "openness": -1.26,
+          "conscientiousness": 0.18,
+          "extraversion": -0.34,
+          "agreeableness": 1.4,
+          "neuroticism": 0.95
+        },
+        "media_behavior": {
+          "primary_medium": "TV",
+          "daily_media_minutes": 499,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "저녁",
+              "medium": "PC",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.2763,
+          "social_feed_reach": 0.0677
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": true,
+          "편의": false
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "300~400만원",
+          "income_code": 5,
+          "education": "대학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00011",
+        "age": 35,
+        "gender": "F",
+        "region": "대구",
+        "ocean": {
+          "openness": -1.18,
+          "conscientiousness": -0.34,
+          "extraversion": -0.72,
+          "agreeableness": 1.31,
+          "neuroticism": -0.11
+        },
+        "media_behavior": {
+          "primary_medium": "스마트폰/휴대폰",
+          "daily_media_minutes": 426,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "저녁",
+              "medium": "PC",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.2763,
+          "social_feed_reach": 0.0677
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": true,
+          "편의": true
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "300~400만원",
+          "income_code": 5,
+          "education": "대학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00012",
+        "age": 39,
+        "gender": "F",
+        "region": "기타",
+        "ocean": {
+          "openness": 0.52,
+          "conscientiousness": -0.57,
+          "extraversion": 0.32,
+          "agreeableness": -0.75,
+          "neuroticism": 0.01
+        },
+        "media_behavior": {
+          "primary_medium": "TV",
+          "daily_media_minutes": 531,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "저녁",
+              "medium": "PC",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.2763,
+          "social_feed_reach": 0.0677
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": false,
+          "편의": false
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "400~500만원",
+          "income_code": 6,
+          "education": "대학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00013",
+        "age": 40,
+        "gender": "M",
+        "region": "인천",
+        "ocean": {
+          "openness": -1.33,
+          "conscientiousness": 0.45,
+          "extraversion": 1.08,
+          "agreeableness": -0.59,
+          "neuroticism": 1.02
+        },
+        "media_behavior": {
+          "primary_medium": "TV",
+          "daily_media_minutes": 1032,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "직장"
+            },
+            {
+              "timeband": "저녁",
+              "medium": "PC",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.1679,
+          "social_feed_reach": 0.0686
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": true,
+          "편의": false
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "400~500만원",
+          "income_code": 6,
+          "education": "대학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00014",
+        "age": 45,
+        "gender": "M",
+        "region": "서울",
+        "ocean": {
+          "openness": -0.04,
+          "conscientiousness": -2.02,
+          "extraversion": -0.26,
+          "agreeableness": -0.55,
+          "neuroticism": 0.26
+        },
+        "media_behavior": {
+          "primary_medium": "PC",
+          "daily_media_minutes": 658,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "직장"
+            },
+            {
+              "timeband": "저녁",
+              "medium": "PC",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.1679,
+          "social_feed_reach": 0.0686
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": true,
+          "편의": true
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "500~800만원",
+          "income_code": 7,
+          "education": "고등학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00015",
+        "age": 41,
+        "gender": "F",
+        "region": "서울",
+        "ocean": {
+          "openness": -1.3,
+          "conscientiousness": -0.39,
+          "extraversion": -0.11,
+          "agreeableness": 1.21,
+          "neuroticism": 0.31
+        },
+        "media_behavior": {
+          "primary_medium": "TV",
+          "daily_media_minutes": 231,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오전",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.1679,
+          "social_feed_reach": 0.0726
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": false,
+          "편의": true
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "300~400만원",
+          "income_code": 5,
+          "education": "대학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00016",
+        "age": 45,
+        "gender": "F",
+        "region": "기타",
+        "ocean": {
+          "openness": -1.23,
+          "conscientiousness": -0.05,
+          "extraversion": -0.05,
+          "agreeableness": -2.19,
+          "neuroticism": -1.26
+        },
+        "media_behavior": {
+          "primary_medium": "PC",
+          "daily_media_minutes": 232,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오전",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.1679,
+          "social_feed_reach": 0.0726
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": true,
+          "편의": true
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "300~400만원",
+          "income_code": 5,
+          "education": "대학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00017",
+        "age": 50,
+        "gender": "M",
+        "region": "서울",
+        "ocean": {
+          "openness": -0.44,
+          "conscientiousness": 0.8,
+          "extraversion": 1.18,
+          "agreeableness": 0.79,
+          "neuroticism": 0.47
+        },
+        "media_behavior": {
+          "primary_medium": "TV",
+          "daily_media_minutes": 434,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "직장"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.0968,
+          "social_feed_reach": 0.0539
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": true,
+          "편의": false
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "400~500만원",
+          "income_code": 6,
+          "education": "대학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00018",
+        "age": 53,
+        "gender": "F",
+        "region": "기타",
+        "ocean": {
+          "openness": 0.59,
+          "conscientiousness": -0.83,
+          "extraversion": -0.26,
+          "agreeableness": 1.3,
+          "neuroticism": -0.26
+        },
+        "media_behavior": {
+          "primary_medium": "스마트폰/휴대폰",
+          "daily_media_minutes": 474,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.0968,
+          "social_feed_reach": 0.0558
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": true,
+          "편의": false
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "400~500만원",
+          "income_code": 6,
+          "education": "고등학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00019",
+        "age": 61,
+        "gender": "F",
+        "region": "기타",
+        "ocean": {
+          "openness": -0.46,
+          "conscientiousness": 1.36,
+          "extraversion": 1.41,
+          "agreeableness": -0.64,
+          "neuroticism": -0.68
+        },
+        "media_behavior": {
+          "primary_medium": "PC",
+          "daily_media_minutes": 285,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.0496,
+          "social_feed_reach": 0.0524
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": true,
+          "편의": true
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "100만원 미만",
+          "income_code": 2,
+          "education": "고등학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      }
+    ],
+    "reactions": [
+      {
+        "persona_id": "P-00000",
+        "exposure_context": "저녁·집·스마트폰/휴대폰·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": false,
+          "search": false,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "interest",
+        "drop_reason_tag": "low_relevance",
+        "purchase_intent": 1,
+        "trust": 3,
+        "rejected": false,
+        "rejection_reason_tag": null,
+        "emotion_tag": "indifference",
+        "perceived_message": "어른들이 마시면 하루가 좋게 마무리된다는 커피 광고.",
+        "perceived_target": "커피 마시는 어른들, 회사 다니는 아빠나 엄마 같은 사람들.",
+        "utterance": "맥심 커피? 나는 별로. 어른들 마시는 거 아닌가. 내 돈 주고 살 일은 없을 듯.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00012",
+        "exposure_context": "저녁·집·PC·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": false,
+          "search": false,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "interest",
+        "drop_reason_tag": "low_relevance",
+        "purchase_intent": 1,
+        "trust": 3,
+        "rejected": false,
+        "rejection_reason_tag": null,
+        "emotion_tag": "indifference",
+        "perceived_message": "맥심 커피가 내 하루를 더 풍요롭고 완벽하게 만들어준다는 말.",
+        "perceived_target": "커피 한 잔으로 일상의 만족감이나 소소한 행복을 느끼고 싶어하는 사람들.",
+        "utterance": "늘 마시는 맥심인데, 뭘 그리 거창하게 '하루를 완성'한다는 건지 모르겠네. 그냥 커피잖아.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00017",
+        "exposure_context": "저녁·집·스마트폰/휴대폰·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": true,
+          "search": false,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "search",
+        "drop_reason_tag": "no_reason_to_explore",
+        "purchase_intent": 4,
+        "trust": 5,
+        "rejected": false,
+        "rejection_reason_tag": null,
+        "emotion_tag": "indifference",
+        "perceived_message": "맥심 커피는 익숙하게 우리 일상에 스며들어 편안함과 만족감을 준다.",
+        "perceived_target": "나처럼 매일 커피를 마시며 하루의 작은 위안을 찾는 보통의 중장년층 성인들.",
+        "utterance": "맥심은 워낙 익숙한 커피니까. '하루를 풍요롭게 완성해준다'는 말은 그냥 항상 마시던 커피가 주는 편안함을 말하는 것 같네.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00010",
+        "exposure_context": "저녁·집·스마트폰/휴대폰·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": true,
+          "search": false,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "search",
+        "drop_reason_tag": "no_reason_to_explore",
+        "purchase_intent": 3,
+        "trust": 5,
+        "rejected": false,
+        "rejection_reason_tag": null,
+        "emotion_tag": "indifference",
+        "perceived_message": "일상의 마무리로 따뜻한 맥심 커피 한 잔이 하루를 풍요롭게 해주고 기분 좋게 완성시켜 준다는 메시지 같아요.",
+        "perceived_target": "일상에서 소소한 행복과 만족을 느끼고 싶어 하는 직장인이나 주부들 같아요. 저 같은 사람이요.",
+        "utterance": "따뜻한 맥심 커피 한 잔이면 저녁에 하루의 피로가 풀리고 마무리되는 느낌이죠. 늘 먹던 거라 믿고 마셔요.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00002",
+        "exposure_context": "저녁·집·스마트폰/휴대폰·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": true,
+          "search": false,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "search",
+        "drop_reason_tag": "low_relevance",
+        "purchase_intent": 3,
+        "trust": 5,
+        "rejected": false,
+        "rejection_reason_tag": null,
+        "emotion_tag": "indifference",
+        "perceived_message": "맥심 커피가 하루를 풍요롭게 하고 완성시켜준다는 좀 평범하고 교과서적인 광고 멘트 같음.",
+        "perceived_target": "딱히 나 같은 대학생을 노린 것 같진 않고, 그냥 아침에 모닝커피 마시는 평범한 직장인들 같은 성인들.",
+        "utterance": "맨날 보던 맥심 광고인데, 그냥 그렇네. 어차피 싸고 만만해서 가끔 마시긴 할 텐데, 딱히 저 문구 때문에 막 사고 싶어지는 건 아님.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00003",
+        "exposure_context": "오후·집·스마트폰/휴대폰·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": false,
+          "search": false,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "interest",
+        "drop_reason_tag": "low_relevance",
+        "purchase_intent": 2,
+        "trust": 4,
+        "rejected": false,
+        "rejection_reason_tag": null,
+        "emotion_tag": "indifference",
+        "perceived_message": "맥심 커피 마시면 하루가 더 풍요롭고 완성된대.",
+        "perceived_target": "커피 한 잔으로 일상의 만족을 찾는 어른들, 부모님 세대가 좋아할 것 같다.",
+        "utterance": "맥심은 그냥 싸고 편하게 마시는 커피지, 내 하루를 '풍요롭게'까진 안 만드는 것 같은데.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00019",
+        "exposure_context": "저녁·집·스마트폰/휴대폰·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": true,
+          "search": false,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "search",
+        "drop_reason_tag": "no_reason_to_explore",
+        "purchase_intent": 3,
+        "trust": 4,
+        "rejected": false,
+        "rejection_reason_tag": null,
+        "emotion_tag": "indifference",
+        "perceived_message": "맥심 커피를 마시면 하루가 더 좋아진다는 내용. 늘 마시던 익숙한 제품의 흔한 이야기네.",
+        "perceived_target": "나처럼 커피 한 잔으로 일상의 소소한 즐거움을 찾는 어른들. 주로 나이 좀 있는 사람들이겠지.",
+        "utterance": "매일 마시는 커피인데, 새삼스럽게 하루를 풍요롭게 한다니. 그냥 싸고 맛있고 편해서 마시는 거지.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00005",
+        "exposure_context": "저녁·집·PC·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": false,
+          "search": false,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "interest",
+        "drop_reason_tag": "low_relevance",
+        "purchase_intent": 3,
+        "trust": 4,
+        "rejected": false,
+        "rejection_reason_tag": null,
+        "emotion_tag": "indifference",
+        "perceived_message": "맥심 커피가 당신의 하루를 풍요롭게 하고 완성시켜준다는 건데, 그냥 커피 마시면 좋다는 이야기인 듯.",
+        "perceived_target": "하루에 소소한 즐거움을 찾는 어른들? 아니면 그냥 보통 커피 좋아하는 사람들이겠지.",
+        "utterance": "맥심은 그냥 커피 생각나면 마시는 거지, 굳이 '하루를 완성시켜준다'는 이런 광고까지 필요할까 싶다. 무관심.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00014",
+        "exposure_context": "오후·직장·스마트폰/휴대폰·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": false,
+          "search": false,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "interest",
+        "drop_reason_tag": "no_reason_to_explore",
+        "purchase_intent": 3,
+        "trust": 5,
+        "rejected": false,
+        "rejection_reason_tag": null,
+        "emotion_tag": "indifference",
+        "perceived_message": "맥심 커피를 마시면 하루가 더 풍요로워지고 완벽해진다는 이야기겠지.",
+        "perceived_target": "하루에 커피 한 잔으로 소소한 즐거움을 찾는 평범한 어른들.",
+        "utterance": "아, 맥심. 오후에 커피 한 잔 딱이지. 특별할 건 없지만 무난하게 괜찮네.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00016",
+        "exposure_context": "오전·집·스마트폰/휴대폰·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": false,
+          "search": false,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "interest",
+        "drop_reason_tag": "no_reason_to_explore",
+        "purchase_intent": 2,
+        "trust": 4,
+        "rejected": false,
+        "rejection_reason_tag": null,
+        "emotion_tag": "indifference",
+        "perceived_message": "맥심 커피가 하루를 풍요롭고 완벽하게 만들어준다는 감성적인 내용이네.",
+        "perceived_target": "일상에서 커피를 통해 작은 즐거움과 만족을 얻고 싶어 하는 평범한 성인들.",
+        "utterance": "맨날 마시는 커피인데, 하루를 완성한다느니 하는 말은 좀 과장된 것 같네. 그냥 편하고 익숙한 맛이지.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00009",
+        "exposure_context": "저녁·집·PC·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": true,
+          "search": false,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "search",
+        "drop_reason_tag": "no_reason_to_explore",
+        "purchase_intent": 3,
+        "trust": 4,
+        "rejected": false,
+        "rejection_reason_tag": null,
+        "emotion_tag": "indifference",
+        "perceived_message": "맥심 커피 마시고 하루를 기분 좋게 마무리하거나 시작하라는 흔한 광고.",
+        "perceived_target": "나 같은 평범한 직장인들이 집이나 회사에서 편하게 마실 수 있는 커피.",
+        "utterance": "맨날 보던 맥심 광고네. 어차피 집에서 편하게 마시는 건데, 하루를 완성한다느니 하는 소리는 좀 오글거리네.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00015",
+        "exposure_context": "오전·집·스마트폰/휴대폰·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": true,
+          "search": false,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "search",
+        "drop_reason_tag": "no_reason_to_explore",
+        "purchase_intent": 4,
+        "trust": 5,
+        "rejected": false,
+        "rejection_reason_tag": null,
+        "emotion_tag": "trust",
+        "perceived_message": "맥심 커피 한 잔으로 평범한 하루가 조금 더 좋아지고 편안하게 마무리될 수 있다는 메시지. 일상 속 작은 행복 같은 느낌.",
+        "perceived_target": "나처럼 평범하고 바쁜 일상 속에서 커피 한 잔의 여유와 만족감을 찾는 사람들이 타깃인 것 같다. 특히 편리함을 중시하는 사람.",
+        "utterance": "역시 맥심은 언제 마셔도 익숙하고 편안한 맛이라, 하루를 시작하거나 마무리할 때 한 잔 있으면 든든하지.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00004",
+        "exposure_context": "저녁·집·PC·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": true,
+          "search": false,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "search",
+        "drop_reason_tag": "no_reason_to_explore",
+        "purchase_intent": 4,
+        "trust": 5,
+        "rejected": false,
+        "rejection_reason_tag": null,
+        "emotion_tag": "trust",
+        "perceived_message": "맥심 커피가 익숙한 맛으로 하루를 편안하게 마무리해주고 만족감을 준다는 메시지.",
+        "perceived_target": "일상에서 소소한 행복과 만족감을 찾는 사람들, 특히 익숙하고 편안한 것을 선호하는 사람들.",
+        "utterance": "맥심은 뭐.. 다 아는 맛이고, 저녁에 피곤할 때 한 잔 마시면 하루 마무리하는 느낌은 들지.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00001",
+        "exposure_context": "저녁·집·PC·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": true,
+          "search": false,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "search",
+        "drop_reason_tag": "no_reason_to_explore",
+        "purchase_intent": 4,
+        "trust": 5,
+        "rejected": false,
+        "rejection_reason_tag": null,
+        "emotion_tag": "indifference",
+        "perceived_message": "편하게 마실 수 있는 맥심 커피가 하루를 기분 좋게 마무리하도록 돕는다.",
+        "perceived_target": "일상 속 소소한 편의와 만족을 추구하는 성인.",
+        "utterance": "어, 맥심이네. 저녁에 영상 보면서 한 잔 마시면 딱이겠네.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00007",
+        "exposure_context": "저녁·집·스마트폰/휴대폰·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": false,
+          "search": false,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "interest",
+        "drop_reason_tag": "low_relevance",
+        "purchase_intent": 1,
+        "trust": 3,
+        "rejected": true,
+        "rejection_reason_tag": "irrelevant",
+        "emotion_tag": "indifference",
+        "perceived_message": "맥심 커피가 당신의 하루를 더 좋고 완벽하게 만들어준다는 메시지.",
+        "perceived_target": "일상 속 작은 만족감을 찾는 평범한 성인들. 아마도 인스턴트 커피를 주로 마시는 사람들.",
+        "utterance": "맥심 커피가 하루를 풍요롭게 하고 완성시킨다라... 그냥 무난하게 마시는 커피인데, 딱히 내 하루에 특별한 '성능'이나 '품질'적 가치를 더해주는 것 같진 않네.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00008",
+        "exposure_context": "저녁·집·PC·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": false,
+          "search": false,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "interest",
+        "drop_reason_tag": "no_reason_to_explore",
+        "purchase_intent": 2,
+        "trust": 5,
+        "rejected": false,
+        "rejection_reason_tag": null,
+        "emotion_tag": "indifference",
+        "perceived_message": "맥심 커피가 당신의 하루를 풍요롭고 완전하게 채워준다는, 익숙하고 평범한 메시지.",
+        "perceived_target": "매일 무난하게 커피를 즐기며 소소한 만족을 찾는 일반적인 성인들. 특별히 커피에 대한 깊은 취향이 없는 사람들.",
+        "utterance": "맥심? 뭐 있으면 편하긴 한데, 굳이 이 광고 보고 새로 뭘 느껴야 할지는 모르겠네. 그냥 원래 알던 그 맛인데.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00013",
+        "exposure_context": "저녁·집·스마트폰/휴대폰·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": true,
+          "search": false,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "search",
+        "drop_reason_tag": "no_reason_to_explore",
+        "purchase_intent": 4,
+        "trust": 5,
+        "rejected": false,
+        "rejection_reason_tag": null,
+        "emotion_tag": "trust",
+        "perceived_message": "맥심 커피가 매일 마시는 커피로 무난하고 만족스럽다는 얘기겠지.",
+        "perceived_target": "매일 커피 마시고, 익숙한 브랜드를 선호하는 보통 사람들.",
+        "utterance": "맥심이 하루를 완성해준다고? 글쎄, 그냥 내가 아는 그 맛에, 편하게 마시는 거지. 굳이 뭘 더 바라겠냐. 익숙해서 좋긴 하네.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00018",
+        "exposure_context": "오후·집·스마트폰/휴대폰·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": true,
+          "search": false,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "search",
+        "drop_reason_tag": "no_reason_to_explore",
+        "purchase_intent": 4,
+        "trust": 5,
+        "rejected": false,
+        "rejection_reason_tag": null,
+        "emotion_tag": "delight",
+        "perceived_message": "맥심 커피 한 잔이 하루의 소소한 즐거움과 만족감을 주어 하루를 풍요롭게 마무리해준다는 메시지.",
+        "perceived_target": "나처럼 집에서 편안하게 쉬면서 커피 한 잔 즐기는 평범한 사람들.",
+        "utterance": "맥심이야 원래 맛있고 편하니까. 저 말도 맞지, 집에서 영상 볼 때 한잔 마시면 딱 좋지 뭐.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00011",
+        "exposure_context": "저녁·집·PC·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": true,
+          "search": false,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "search",
+        "drop_reason_tag": "no_reason_to_explore",
+        "purchase_intent": 3,
+        "trust": 5,
+        "rejected": false,
+        "rejection_reason_tag": null,
+        "emotion_tag": "trust",
+        "perceived_message": "맥심 커피 한 잔으로 하루를 기분 좋게 마무리하거나 시작할 수 있다는, 일상의 소소한 만족감을 주는 메시지.",
+        "perceived_target": "매일 커피를 마시며 특별한 것보다 익숙하고 편안한 즐거움을 추구하는 사람들.",
+        "utterance": "맥심 커피는 늘 마시던 거라 광고 메시지가 편안하게 와닿네. 하루의 소소한 즐거움이지.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00006",
+        "exposure_context": "저녁·집·스마트폰/휴대폰·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": true,
+          "search": false,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "search",
+        "drop_reason_tag": "no_reason_to_explore",
+        "purchase_intent": 3,
+        "trust": 4,
+        "rejected": false,
+        "rejection_reason_tag": null,
+        "emotion_tag": "indifference",
+        "perceived_message": "맥심 커피를 마시면 하루를 풍요롭고 편안하게 마무리할 수 있다는 메시지.",
+        "perceived_target": "바쁜 일상 속에서 소소한 행복이나 편리함을 추구하는 어른들, 특히 퇴근 후 집에서 쉬는 사람.",
+        "utterance": "맥심이야 늘 알던 맛인데, 이걸로 하루가 특별해진다는 건 잘 모르겠어. 그냥 편해서 가끔 마시지 뭐.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      }
+    ],
+    "rubric_scores": [
+      {
+        "dimension": "category_alignment",
+        "score": 98,
+        "evidence": {
+          "declared": "식음료",
+          "detected": "Coffee/Beverage",
+          "note": "감지된 카테고리는 선언된 카테고리의 구체적인 하위 분류로, 의미상 거의 일치합니다."
+        }
+      },
+      {
+        "dimension": "objective_alignment",
+        "score": 93,
+        "evidence": {
+          "declared": "브랜드 인식 강화",
+          "detected": "Branding / Brand Awareness / Sustained Consumption",
+          "note": "감지된 의도에 'Brand Awareness'가 명시되어 있고, 'Branding'과도 밀접하게 연결됩니다."
+        }
+      },
+      {
+        "dimension": "message_alignment",
+        "score": 95,
+        "evidence": {
+          "declared": "맥심 커피",
+          "detected": "Maxim coffee enriches and completes your day.",
+          "note": "감지된 메시지가 선언된 제품명(맥심 커피)을 포함하고, 그 가치를 구체적으로 설명합니다."
+        }
+      }
+    ],
+    "aggregate": {
+      "click_intent_rate": 0,
+      "ci_low": 0,
+      "ci_high": 0,
+      "purchase_intent": 2.85,
+      "trust_avg": 4.4,
+      "rejection_rate": 0.05,
+      "variance_warning": false,
+      "effective_n": 20,
+      "payload": {
+        "qa_passed_count": 20,
+        "ci_method": "weighted_bootstrap",
+        "ci_iters": 2000,
+        "purchase_std": 1.014,
+        "weight_sum": 20
+      },
+      "engine_version": "agg-2"
+    },
+    "simulation_id": "c708040c-bc2e-4394-8b3f-2c0e370c259b"
+  }

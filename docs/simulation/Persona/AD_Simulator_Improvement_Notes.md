@@ -9,6 +9,8 @@
 
 우리 방식은 MD가 적은 "개선 방향"(OCEAN·통계청 인구·연령별 소득·조건부 상관·검증)을 **이미 구현한 상위 버전**이다. 다만 MD의 **정량 모델(광고 특성·가격적합도)** 과 **3-모드 UX**는 흡수할 가치가 있고, 우리 쪽엔 **재현성·calibration·core 병합** 등 별도 보완점이 남는다.
 
+> **진행 현황 (2026-06-16):** P1-1(광고 특성 정량 추출)·P1-2(가격–소득 힌트) **구현 완료**(`ad_features`). 추가로 **제품 스코프가 Meta 전용으로 피벗** → 단계1 표본을 "인구×소셜피드 도달 비중"으로 추출하는 **도달성 추출**(`tools/reachability.py`, PERSONA §3.7-7) 신설. 아래 P1-3·P2는 미착수.
+
 ---
 
 ## 1. 현재 방식 vs MD 방식 (요약)
@@ -27,15 +29,14 @@
 
 ### P1 — MD에서 흡수 (저비용·고효용)
 
-1. **광고 특성 정량 추출 강화**
-   - 현재: `GeminiAdInterpreter`가 업종·타깃·메시지만 추출.
-   - 보완: `ad_credibility`·`ad_quality`·`price_mentioned`·`original_price`·`discounted_price`·`brand_mentioned`·`social_proof_strength`를 구조화 추출 → 반응 프롬프트·루브릭 입력으로 전달(반응 충실도↑, 루브릭 근거 강화).
-   - 위치: `adapters/gemini/ad_interpreter.py`, `contracts/schemas.py(AdInterpretation)`.
+1. **광고 특성 정량 추출 강화 — ✅ 완료**
+   - 구현: `AdFeatures`(`ad_credibility`·`ad_quality`·`price_mentioned`·`original_price`·`discounted_price`·`brand_mentioned`·`social_proof_strength`) 신설, `GeminiAdInterpreter`가 추출해 `structured_analysis`(JSONB)에 영속(DDL 0줄). 반응 프롬프트 입력 힌트로 전달.
+   - **루브릭에는 넣지 않음** — 루브릭은 "의도 정합" 전용 유지(광고 품질과 의도 정합이 한 점수에 섞이는 것 방지).
+   - 위치: `adapters/gemini/ad_interpreter.py`, `adapters/mock_engine.py`, `contracts/schemas.py(AdFeatures)`.
 
-2. **가격–소득 적합도 신호**
-   - 현재: 소득(KISDI `socioeconomic.income_bracket`)은 페르소나에 있으나 가격 적합도에 미사용.
-   - 보완: 광고가(①에서 추출) × 소득 구간으로 "이 사람에게 비싼가/적당한가" 신호를 반응 프롬프트에 주입(MD `Price_Relevance` 취지). 공식 강제 아닌 **LLM 입력 힌트**로.
-   - 위치: `adapters/gemini/reaction.py` 프롬프트.
+2. **가격–소득 적합도 신호 — ✅ 완료**
+   - 구현: ①에서 추출한 가격(정가/할인가)을 페르소나 월소득(`socioeconomic.income_bracket`)과 나란히 반응 프롬프트에 제시 → "비싼가/적당한가"를 LLM이 판단. 공식 없이 힌트로(income은 구간 라벨이라 비율 계산 불가·불필요).
+   - 위치: `adapters/gemini/reaction.py`(`_ad_feature_lines`).
 
 3. **3-모드 분석 UX**
    - 현재: 단일 파이프라인.
@@ -68,6 +69,16 @@
 11. **광고해석 VLM 입력 확장** — 현재 단일 이미지. 다중 프레임/영상 썸네일·A/B 소재 비교.
 
 ---
+
+## 2.5. Meta 전용 스코프 — 도달성 추출 (✅ 완료, MD엔 없는 신규)
+
+제품이 **Meta 광고만 취급**으로 피벗 → 모집단을 "전인구"가 아니라 "Meta 도달 가능층"으로 정의.
+
+- **도달성 추출(S 방식)** — 단계1 연령×성별 셀 추출확률을 `인구 × 소셜피드 도달 비중`으로 보정. 소셜피드 도달 비중 = KISDI 노출맥락 중 `SNS·동영상 @ 스마트폰/PC` 확률 합(`cell_social_reach`). 젊은 셀일수록 비중↑ → 표본이 자연히 10~20대에 집중(나이 곡선 손입력 아님 — 데이터 유도, §7 준수).
+- **가중(W) 아닌 추출(S)** — 전인구 추출 후 weight에 reach 곱하기(W)는 weight≈0 페르소나에 LLM 콜을 낭비. 추출분포 보정(S)은 self-weighting 유지(`effective_n=표본수`)·비용 절감. PERSONA §3.7-7 참조.
+- **노출맥락 필터** — 4-b 반응의 `exposure_context`를 소셜피드 후보 우선으로 선택(`pick_social_exposure`) → "신문에서 메타 광고" 비현실 맥락 차단.
+- **한계(Tier 2)** — `cell_social_reach`는 generic SNS(카톡·밴드 포함) 기준이라 실제 Meta(인스타/페북)보다 덜 어림. 브랜드 특정 침투율 보정은 외부 데이터(DMC·오픈서베이·와이즈앱)로 발표 후. 모집단 라벨은 "소셜피드 도달 가능 한국 소비자".
+- 위치: `tools/reachability.py`, `tools/sampling/persona_sampler.py(reachability_sampling)`, `wiring.py`, `adapters/*(_pick_exposure)`.
 
 ## 3. 유지할 강점 (MD 대비 우위 — 후퇴 금지)
 

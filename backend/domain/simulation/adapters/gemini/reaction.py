@@ -18,14 +18,54 @@ from domain.simulation.contracts.enums import (
     RejectionReasonTag,
 )
 from domain.simulation.contracts.schemas import AdInterpretation, Aisas, PersonaReaction
+from domain.simulation.tools.reachability import pick_social_exposure
 
 
 def _pick_exposure(persona, rng: random.Random) -> str | None:
+    # Meta 전용 — 노출맥락은 항상 소셜피드. 비소셜(TV·신문 등)로는 절대 폴백하지 않는다(모순 차단).
     cands = persona.media_behavior.get("exposure_candidates") or []
-    if not cands:
-        return None
-    e = rng.choice(cands)
+    e = pick_social_exposure(cands, rng)
+    if e is None:
+        # 소셜 후보가 없으면(구버전 패널 등) 일반 소셜피드 기본값 — TV 등 비소셜 금지.
+        return "저녁·집·스마트폰/휴대폰·SNS"
     return f"{e['timeband']}·{e['place']}·{e['medium']}·{e['activity']}"
+
+
+def _ad_feature_lines(ad: AdInterpretation, income: str) -> str:
+    """광고 특성을 반응 힌트 줄로 — 가격은 월소득과 나란히 둬 적합도를 LLM이 판단(공식 없음)."""
+    f = ad.ad_features
+    lines: list[str] = []
+    if f.price_mentioned and (f.original_price or f.discounted_price):
+        if f.discounted_price and f.original_price:
+            price = f"정가 {f.original_price:,}원 → 할인가 {f.discounted_price:,}원"
+        else:
+            price = f"{(f.discounted_price or f.original_price):,}원"
+        lines.append(f"- 가격: {price} (내 월소득 {income} 기준으로 비싼지/적당한지 판단)")
+    if f.brand_mentioned:
+        lines.append("- 브랜드 언급: 있음")
+    if f.social_proof_strength and f.social_proof_strength != "none":
+        lines.append(f"- 사회적 증거(후기·인기): {f.social_proof_strength}")
+    return ("\n" + "\n".join(lines)) if lines else ""
+
+
+def _visual_lines(ad: AdInterpretation) -> str:
+    """공유 시각 인벤토리(structured_analysis.visual_elements §4-a)를 반응 힌트 줄로.
+
+    전원 동일(공유 해석) — 같은 비주얼을 보여주되, 무엇을 더 보는지는 페르소나 프로필이 판단.
+    visual_elements 없으면(mock 구버전·텍스트 광고) 빈 문자열 → 기존 동작 그대로.
+    """
+    ve = ad.structured_analysis.get("visual_elements") if ad.structured_analysis else None
+    if not isinstance(ve, dict):
+        return ""
+    lines: list[str] = []
+    if ve.get("first_impression"):
+        lines.append(f"- 첫눈에 띄는 것: {ve['first_impression']}")
+    elements = ve.get("elements")
+    if isinstance(elements, list) and elements:
+        lines.append(f"- 주요 시각요소: {', '.join(str(e) for e in elements)}")
+    if ve.get("color_tone"):
+        lines.append(f"- 색감·톤: {ve['color_tone']}")
+    return ("\n[광고 비주얼]\n" + "\n".join(lines)) if lines else ""
 
 
 class GeminiReactionEngine:
@@ -54,7 +94,8 @@ class GeminiReactionEngine:
             f"- 서사: {persona.profile_narrative or '(없음)'}\n"
             f"- 지금 노출 맥락: {exposure or '일반'}\n\n"
             f"[광고]\n- 업종: {ad.detected_industry}\n- 메시지: {ad.detected_message}\n"
-            f"- 추정 타깃: {ad.detected_target}\n\n"
+            f"- 추정 타깃: {ad.detected_target}{_ad_feature_lines(ad, income)}"
+            f"{_visual_lines(ad)}\n\n"
             "[출력 — 아래 JSON만, 설명·코드펜스 없이]\n"
             "{\n"
             '  "aisas": {"attention": bool, "interest": bool, "search": bool, '

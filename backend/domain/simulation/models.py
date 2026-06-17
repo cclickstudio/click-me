@@ -56,6 +56,7 @@ class AdAnalysis(SimBase):
     ad_id: Mapped[uuid.UUID] = mapped_column(Uuid(), nullable=False)
     structured_analysis: Mapped[dict] = mapped_column(_JSONB, nullable=False)
     detected_industry: Mapped[str | None] = mapped_column(String(100))
+    detected_objective: Mapped[str | None] = mapped_column(String(50))
     detected_target: Mapped[str | None] = mapped_column(String(100))
     detected_message: Mapped[str | None] = mapped_column(Text)
     intent_mismatch: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)

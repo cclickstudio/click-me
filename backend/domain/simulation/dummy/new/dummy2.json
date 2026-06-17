@@ -1,0 +1,1663 @@
+{
+    "run_id": "2e243472-836c-4be7-bc0a-d41fd9ff4b48",
+    "ad": {
+      "ID": "96321d51-6b2f-43cc-9a22-f69168d67686",
+      "project_id": "e561c41e-a3d7-426d-84ef-1fe63b9c9fb2",
+      "title": "레티놀 시카",
+      "media_type": "image",
+      "asset_url": "C:\\Users\\804\\AppData\\Local\\Temp\\clickme_ad_u4kvovpi.png",
+      "copy_text": "요즘 트러블엔 레티놀 시카 ",
+      "description": null,
+      "industry_category": null,
+      "product_category": "화장픔",
+      "service_class": 0,
+      "ad_objective": "상품 구매",
+      "target_filter": null,
+      "status": "DRAFT"
+    },
+    "ad_analysis": {
+      "ad_id": "96321d51-6b2f-43cc-9a22-f69168d67686",
+      "structured_analysis": {
+        "detected_industry": "뷰티/스킨케어",
+        "detected_objective": "구매 전환",
+        "detected_target": "붉은기, 모공, 각질, 잡티 흔적 등 다양한 피부 트러블로 고민하는 소비자",
+        "detected_message": "이니스프리 레티놀 시카 흔적 앰플은 요즘 피부 고민인 붉은기, 모공, 각질, 잡티 흔적을 효과적으로 관리해주는 솔루션입니다.",
+        "ad_credibility": 85,
+        "ad_quality": 90,
+        "price_mentioned": false,
+        "original_price": null,
+        "discounted_price": null,
+        "brand_mentioned": true,
+        "social_proof_strength": "none"
+      },
+      "detected_industry": "뷰티/스킨케어",
+      "detected_objective": "구매 전환",
+      "detected_target": "붉은기, 모공, 각질, 잡티 흔적 등 다양한 피부 트러블로 고민하는 소비자",
+      "detected_message": "이니스프리 레티놀 시카 흔적 앰플은 요즘 피부 고민인 붉은기, 모공, 각질, 잡티 흔적을 효과적으로 관리해주는 솔루션입니다.",
+      "ad_features": {
+        "ad_credibility": 85,
+        "ad_quality": 90,
+        "price_mentioned": false,
+        "original_price": null,
+        "discounted_price": null,
+        "brand_mentioned": true,
+        "social_proof_strength": "none"
+      },
+      "intent_mismatch": false,
+      "mismatch_detail": {
+        "category": {
+          "declared": "화장픔",
+          "detected": "뷰티/스킨케어",
+          "match": true,
+          "note": "선언된 '화장품'과 감지된 '뷰티/스킨케어'는 밀접하게 관련된 상위/하위 범주로 높은 일치도를 보임.",
+          "score": 98
+        },
+        "objective": {
+          "declared": "상품 구매",
+          "detected": "구매 전환",
+          "match": true,
+          "note": "선언된 '상품 구매'와 감지된 '구매 전환'은 동일한 마케팅 목표를 의미하며 완벽하게 일치함.",
+          "score": 99
+        },
+        "message": {
+          "declared": "레티놀 시카",
+          "detected": "이니스프리 레티놀 시카 흔적 앰플은 요즘 피부 고민인 붉은기, 모공, 각질, 잡티 흔적을 효과적으로 관리해주는 솔루션입니다.",
+          "match": true,
+          "note": "선언된 핵심 키워드 '레티놀 시카'가 감지된 상세 메시지에 제품명으로 명확히 포함되어 있으며 메시지의 핵심 내용을 이룸.",
+          "score": 92
+        }
+      },
+      "model_version": "gemini-2.5-flash-vision"
+    },
+    "simulation": {
+      "ID": "2e243472-836c-4be7-bc0a-d41fd9ff4b48",
+      "ad_id": "96321d51-6b2f-43cc-9a22-f69168d67686",
+      "ad_analysis_id": null,
+      "panel_id": "panel-v1",
+      "organization_id": "bd9df2e2-f89b-423a-975c-3592967f7ca0",
+      "target_filter": null,
+      "target_mode": "AUTO",
+      "sample_size": 20,
+      "qa_passed_count": 20,
+      "low_sample_warning": false,
+      "status": "COMPLETED",
+      "model_version": "gemini-2.5-flash-vision",
+      "error_detail": null
+    },
+    "personas": [
+      {
+        "persona_id": "P-00000",
+        "age": 17,
+        "gender": "M",
+        "region": "기타",
+        "ocean": {
+          "openness": -0.15,
+          "conscientiousness": 1.09,
+          "extraversion": -0.84,
+          "agreeableness": 0.8,
+          "neuroticism": -0.44
+        },
+        "media_behavior": {
+          "primary_medium": "스마트폰/휴대폰",
+          "daily_media_minutes": 671,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "PC",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오전",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.0807,
+          "social_feed_reach": 0.1188
+        },
+        "consumption_values": {
+          "성능": false,
+          "품질": true,
+          "편의": true,
+          "저렴한 가격": true,
+          "취향·덕질": true
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "소득 없음",
+          "income_code": 1,
+          "education": "초등학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00001",
+        "age": 29,
+        "gender": "M",
+        "region": "기타",
+        "ocean": {
+          "openness": -0.29,
+          "conscientiousness": -1.5,
+          "extraversion": -0.15,
+          "agreeableness": -0.43,
+          "neuroticism": 0.54
+        },
+        "media_behavior": {
+          "primary_medium": "스마트폰/휴대폰",
+          "daily_media_minutes": 591,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "저녁",
+              "medium": "PC",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.3171,
+          "social_feed_reach": 0.1526
+        },
+        "consumption_values": {
+          "성능": false,
+          "품질": false,
+          "편의": true,
+          "저렴한 가격": false,
+          "취향·덕질": true
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "400~500만원",
+          "income_code": 6,
+          "education": "대학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00002",
+        "age": 20,
+        "gender": "M",
+        "region": "서울",
+        "ocean": {
+          "openness": 0.82,
+          "conscientiousness": -1.89,
+          "extraversion": 0.86,
+          "agreeableness": -1.38,
+          "neuroticism": 0.22
+        },
+        "media_behavior": {
+          "primary_medium": "TV",
+          "daily_media_minutes": 379,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "저녁",
+              "medium": "PC",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.3171,
+          "social_feed_reach": 0.1526
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": true,
+          "편의": false,
+          "저렴한 가격": true,
+          "취향·덕질": false
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "소득 없음",
+          "income_code": 1,
+          "education": "대학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00003",
+        "age": 21,
+        "gender": "M",
+        "region": "서울",
+        "ocean": {
+          "openness": -1.7,
+          "conscientiousness": 0.07,
+          "extraversion": 0.86,
+          "agreeableness": 0.69,
+          "neuroticism": -0.41
+        },
+        "media_behavior": {
+          "primary_medium": "TV",
+          "daily_media_minutes": 316,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "저녁",
+              "medium": "PC",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.3171,
+          "social_feed_reach": 0.1526
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": false,
+          "편의": true,
+          "저렴한 가격": true,
+          "취향·덕질": true
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "300~400만원",
+          "income_code": 5,
+          "education": "대학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00004",
+        "age": 29,
+        "gender": "F",
+        "region": "경기",
+        "ocean": {
+          "openness": -0.02,
+          "conscientiousness": -0.02,
+          "extraversion": 0.71,
+          "agreeableness": 0.14,
+          "neuroticism": 0.94
+        },
+        "media_behavior": {
+          "primary_medium": "PC",
+          "daily_media_minutes": 603,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "저녁",
+              "medium": "PC",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.3171,
+          "social_feed_reach": 0.1446
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": true,
+          "편의": true,
+          "저렴한 가격": true,
+          "취향·덕질": false
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "400~500만원",
+          "income_code": 6,
+          "education": "대학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00005",
+        "age": 28,
+        "gender": "F",
+        "region": "경기",
+        "ocean": {
+          "openness": 1.63,
+          "conscientiousness": -1.92,
+          "extraversion": 0.34,
+          "agreeableness": -1.75,
+          "neuroticism": -1.25
+        },
+        "media_behavior": {
+          "primary_medium": "스마트폰/휴대폰",
+          "daily_media_minutes": 396,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "저녁",
+              "medium": "PC",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.3171,
+          "social_feed_reach": 0.1446
+        },
+        "consumption_values": {
+          "성능": false,
+          "품질": false,
+          "편의": false,
+          "저렴한 가격": true,
+          "취향·덕질": true
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "300~400만원",
+          "income_code": 5,
+          "education": "대학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00006",
+        "age": 23,
+        "gender": "F",
+        "region": "경기",
+        "ocean": {
+          "openness": 0.24,
+          "conscientiousness": -0.27,
+          "extraversion": -0.78,
+          "agreeableness": -0.51,
+          "neuroticism": 1.2
+        },
+        "media_behavior": {
+          "primary_medium": "PC",
+          "daily_media_minutes": 414,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "저녁",
+              "medium": "PC",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.3171,
+          "social_feed_reach": 0.1446
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": true,
+          "편의": true,
+          "저렴한 가격": false,
+          "취향·덕질": true
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "400~500만원",
+          "income_code": 6,
+          "education": "대학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00007",
+        "age": 33,
+        "gender": "M",
+        "region": "대구",
+        "ocean": {
+          "openness": 0.41,
+          "conscientiousness": 0.75,
+          "extraversion": -0.57,
+          "agreeableness": -0.49,
+          "neuroticism": 2.39
+        },
+        "media_behavior": {
+          "primary_medium": "PC",
+          "daily_media_minutes": 510,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "저녁",
+              "medium": "PC",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.2763,
+          "social_feed_reach": 0.0853
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": true,
+          "편의": false
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "800만원 이상",
+          "income_code": 8,
+          "education": "대학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00008",
+        "age": 36,
+        "gender": "M",
+        "region": "대전",
+        "ocean": {
+          "openness": 1.2,
+          "conscientiousness": 0.08,
+          "extraversion": 1.17,
+          "agreeableness": 0.85,
+          "neuroticism": 0.87
+        },
+        "media_behavior": {
+          "primary_medium": "스마트폰/휴대폰",
+          "daily_media_minutes": 521,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "저녁",
+              "medium": "PC",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.2763,
+          "social_feed_reach": 0.0853
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": true,
+          "편의": true
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "800만원 이상",
+          "income_code": 8,
+          "education": "대학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00009",
+        "age": 39,
+        "gender": "M",
+        "region": "서울",
+        "ocean": {
+          "openness": 0.07,
+          "conscientiousness": -0.79,
+          "extraversion": -1.57,
+          "agreeableness": -1.29,
+          "neuroticism": 0.94
+        },
+        "media_behavior": {
+          "primary_medium": "스마트폰/휴대폰",
+          "daily_media_minutes": 553,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "저녁",
+              "medium": "PC",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.2763,
+          "social_feed_reach": 0.0853
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": true,
+          "편의": true
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "400~500만원",
+          "income_code": 6,
+          "education": "대학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00010",
+        "age": 38,
+        "gender": "F",
+        "region": "기타",
+        "ocean": {
+          "openness": -1.26,
+          "conscientiousness": 0.18,
+          "extraversion": -0.34,
+          "agreeableness": 1.4,
+          "neuroticism": 0.95
+        },
+        "media_behavior": {
+          "primary_medium": "TV",
+          "daily_media_minutes": 499,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "저녁",
+              "medium": "PC",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.2763,
+          "social_feed_reach": 0.0677
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": true,
+          "편의": false
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "300~400만원",
+          "income_code": 5,
+          "education": "대학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00011",
+        "age": 35,
+        "gender": "F",
+        "region": "대구",
+        "ocean": {
+          "openness": -1.18,
+          "conscientiousness": -0.34,
+          "extraversion": -0.72,
+          "agreeableness": 1.31,
+          "neuroticism": -0.11
+        },
+        "media_behavior": {
+          "primary_medium": "스마트폰/휴대폰",
+          "daily_media_minutes": 426,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "저녁",
+              "medium": "PC",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.2763,
+          "social_feed_reach": 0.0677
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": true,
+          "편의": true
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "300~400만원",
+          "income_code": 5,
+          "education": "대학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00012",
+        "age": 39,
+        "gender": "F",
+        "region": "기타",
+        "ocean": {
+          "openness": 0.52,
+          "conscientiousness": -0.57,
+          "extraversion": 0.32,
+          "agreeableness": -0.75,
+          "neuroticism": 0.01
+        },
+        "media_behavior": {
+          "primary_medium": "TV",
+          "daily_media_minutes": 531,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "저녁",
+              "medium": "PC",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.2763,
+          "social_feed_reach": 0.0677
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": false,
+          "편의": false
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "400~500만원",
+          "income_code": 6,
+          "education": "대학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00013",
+        "age": 40,
+        "gender": "M",
+        "region": "인천",
+        "ocean": {
+          "openness": -1.33,
+          "conscientiousness": 0.45,
+          "extraversion": 1.08,
+          "agreeableness": -0.59,
+          "neuroticism": 1.02
+        },
+        "media_behavior": {
+          "primary_medium": "TV",
+          "daily_media_minutes": 1032,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "직장"
+            },
+            {
+              "timeband": "저녁",
+              "medium": "PC",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.1679,
+          "social_feed_reach": 0.0686
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": true,
+          "편의": false
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "400~500만원",
+          "income_code": 6,
+          "education": "대학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00014",
+        "age": 45,
+        "gender": "M",
+        "region": "서울",
+        "ocean": {
+          "openness": -0.04,
+          "conscientiousness": -2.02,
+          "extraversion": -0.26,
+          "agreeableness": -0.55,
+          "neuroticism": 0.26
+        },
+        "media_behavior": {
+          "primary_medium": "PC",
+          "daily_media_minutes": 658,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "직장"
+            },
+            {
+              "timeband": "저녁",
+              "medium": "PC",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.1679,
+          "social_feed_reach": 0.0686
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": true,
+          "편의": true
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "500~800만원",
+          "income_code": 7,
+          "education": "고등학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00015",
+        "age": 41,
+        "gender": "F",
+        "region": "서울",
+        "ocean": {
+          "openness": -1.3,
+          "conscientiousness": -0.39,
+          "extraversion": -0.11,
+          "agreeableness": 1.21,
+          "neuroticism": 0.31
+        },
+        "media_behavior": {
+          "primary_medium": "TV",
+          "daily_media_minutes": 231,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오전",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.1679,
+          "social_feed_reach": 0.0726
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": false,
+          "편의": true
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "300~400만원",
+          "income_code": 5,
+          "education": "대학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00016",
+        "age": 45,
+        "gender": "F",
+        "region": "기타",
+        "ocean": {
+          "openness": -1.23,
+          "conscientiousness": -0.05,
+          "extraversion": -0.05,
+          "agreeableness": -2.19,
+          "neuroticism": -1.26
+        },
+        "media_behavior": {
+          "primary_medium": "PC",
+          "daily_media_minutes": 232,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오전",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.1679,
+          "social_feed_reach": 0.0726
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": true,
+          "편의": true
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "300~400만원",
+          "income_code": 5,
+          "education": "대학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00017",
+        "age": 50,
+        "gender": "M",
+        "region": "서울",
+        "ocean": {
+          "openness": -0.44,
+          "conscientiousness": 0.8,
+          "extraversion": 1.18,
+          "agreeableness": 0.79,
+          "neuroticism": 0.47
+        },
+        "media_behavior": {
+          "primary_medium": "TV",
+          "daily_media_minutes": 434,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "직장"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.0968,
+          "social_feed_reach": 0.0539
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": true,
+          "편의": false
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "400~500만원",
+          "income_code": 6,
+          "education": "대학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00018",
+        "age": 53,
+        "gender": "F",
+        "region": "기타",
+        "ocean": {
+          "openness": 0.59,
+          "conscientiousness": -0.83,
+          "extraversion": -0.26,
+          "agreeableness": 1.3,
+          "neuroticism": -0.26
+        },
+        "media_behavior": {
+          "primary_medium": "스마트폰/휴대폰",
+          "daily_media_minutes": 474,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.0968,
+          "social_feed_reach": 0.0558
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": true,
+          "편의": false
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "400~500만원",
+          "income_code": 6,
+          "education": "고등학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00019",
+        "age": 61,
+        "gender": "F",
+        "region": "기타",
+        "ocean": {
+          "openness": -0.46,
+          "conscientiousness": 1.36,
+          "extraversion": 1.41,
+          "agreeableness": -0.64,
+          "neuroticism": -0.68
+        },
+        "media_behavior": {
+          "primary_medium": "PC",
+          "daily_media_minutes": 285,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.0496,
+          "social_feed_reach": 0.0524
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": true,
+          "편의": true
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "100만원 미만",
+          "income_code": 2,
+          "education": "고등학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      }
+    ],
+    "reactions": [
+      {
+        "persona_id": "P-00004",
+        "exposure_context": "저녁·집·PC·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": true,
+          "search": true,
+          "action": true,
+          "share": true
+        },
+        "drop_stage": null,
+        "drop_reason_tag": null,
+        "purchase_intent": 5,
+        "trust": 4,
+        "rejected": false,
+        "rejection_reason_tag": null,
+        "emotion_tag": "curiosity",
+        "perceived_message": "요즘 내 피부 고민인 붉은기, 모공, 각질, 잡티 흔적들을 이니스프리 레티놀 시카 앰플로 효과적으로 관리할 수 있다는 메시지.",
+        "perceived_target": "나처럼 복합적인 피부 트러블로 고민하고 있는 20대 후반~30대 초반 여성들.",
+        "utterance": "아, 요즘 피부 진짜 난리인데... 붉은기랑 모공 너무 신경 쓰여. 이니스프리 레티놀 시카면 성분도 괜찮고 가격도 적당할 것 같은데, 한번 찾아봐야겠다.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00016",
+        "exposure_context": "오전·집·스마트폰/휴대폰·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": false,
+          "search": false,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "interest",
+        "drop_reason_tag": "distrust",
+        "purchase_intent": 1,
+        "trust": 1,
+        "rejected": true,
+        "rejection_reason_tag": "distrust",
+        "emotion_tag": "distrust",
+        "perceived_message": "이니스프리 레티놀 시카 앰플이 붉은기, 모공, 각질, 잡티 같은 여러 피부 고민을 해결해준다는 내용.",
+        "perceived_target": "여러가지 피부 트러블로 고민이 많은 사람들을 위한 광고.",
+        "utterance": "또 레티놀에 시카까지? 저런 거 맨날 좋다고 해도 결국 다 거기서 거기더라.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00014",
+        "exposure_context": "오후·직장·스마트폰/휴대폰·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": false,
+          "search": false,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "interest",
+        "drop_reason_tag": "low_relevance",
+        "purchase_intent": 1,
+        "trust": 2,
+        "rejected": true,
+        "rejection_reason_tag": "irrelevant",
+        "emotion_tag": "indifference",
+        "perceived_message": "피부 안 좋거나 고민 많은 사람들을 위한 화장품 광고 같다.",
+        "perceived_target": "피부 관리에 신경 쓰는 젊은 여자들.",
+        "utterance": "난 이런 거 안 써. 귀찮아 죽겠는데 언제 바르고 앉아있냐.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00019",
+        "exposure_context": "저녁·집·스마트폰/휴대폰·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": false,
+          "search": false,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "interest",
+        "drop_reason_tag": "low_relevance",
+        "purchase_intent": 1,
+        "trust": 3,
+        "rejected": true,
+        "rejection_reason_tag": "irrelevant",
+        "emotion_tag": "indifference",
+        "perceived_message": "젊은 사람들이 피부에 뭐가 나거나 지저분할 때 쓰는 건가 보네. 붉은기랑 모공 같은 거.",
+        "perceived_target": "나보다 한참 어린 사람들. 한 20대에서 30대쯤?",
+        "utterance": "피부 고민이라는데 나는 주름이나 탄력이 더 걱정인데, 이건 나랑 상관없는 젊은 사람 제품 같네.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00009",
+        "exposure_context": "저녁·집·PC·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": false,
+          "search": false,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "interest",
+        "drop_reason_tag": "low_relevance",
+        "purchase_intent": 1,
+        "trust": 2,
+        "rejected": true,
+        "rejection_reason_tag": "irrelevant",
+        "emotion_tag": "indifference",
+        "perceived_message": "붉은기, 모공, 각질, 잡티 같은 피부 흔적을 관리해주는 이니스프리 앰플 광고. 뭔가 바르기 복잡한 제품인 것 같다.",
+        "perceived_target": "피부 트러블에 관심 많고 꾸준히 관리하는 사람들.",
+        "utterance": "귀찮게 뭘 또 바르라는 건지. 그냥 대충 아무거나 바르고 말지.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00006",
+        "exposure_context": "저녁·집·스마트폰/휴대폰·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": true,
+          "search": true,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": null,
+        "drop_reason_tag": null,
+        "purchase_intent": 4,
+        "trust": 4,
+        "rejected": false,
+        "rejection_reason_tag": null,
+        "emotion_tag": "curiosity",
+        "perceived_message": "붉은기, 모공, 각질, 잡티 흔적 등 여러 피부 고민을 이니스프리 레티놀 시카 앰플 하나로 효과적으로 관리할 수 있다는 메시지.",
+        "perceived_target": "다양한 피부 트러블로 스트레스 받는 20대 후반~30대 초반인 것 같다.",
+        "utterance": "요즘 내 피부 고민을 다 말하네. 레티놀이랑 시카 조합이라, 효과는 좀 있으려나? 한번 찾아볼까.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00001",
+        "exposure_context": "저녁·집·PC·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": true,
+          "search": false,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "search",
+        "drop_reason_tag": "other",
+        "purchase_intent": 4,
+        "trust": 4,
+        "rejected": false,
+        "rejection_reason_tag": null,
+        "emotion_tag": "curiosity",
+        "perceived_message": "내 붉은기, 모공, 잡티 같은 피부 고민을 복잡한 과정 없이 한 번에 관리해주는 간편한 제품이다.",
+        "perceived_target": "피부 트러블이 신경 쓰이는데 여러 단계 바르기는 귀찮아하는 나 같은 남자들.",
+        "utterance": "요즘 피부가 좀 푸석하고 붉은기도 신경 쓰였는데, 이거 하나로 다 된다니까 솔깃하네. 근데 지금 영상 보느라 귀찮아서 나중에 다시 찾아봐야겠다.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00013",
+        "exposure_context": "저녁·집·스마트폰/휴대폰·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": false,
+          "search": false,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "interest",
+        "drop_reason_tag": "low_relevance",
+        "purchase_intent": 1,
+        "trust": 2,
+        "rejected": true,
+        "rejection_reason_tag": "irrelevant",
+        "emotion_tag": "indifference",
+        "perceived_message": "이니스프리에서 피부 붉은기, 모공, 각질 같은 문제 해결해준다는 레티놀 시카 앰플 광고네.",
+        "perceived_target": "피부 트러블로 고민하는 젊은 사람들이나 여자들? 나 같은 아저씨한테는 좀...",
+        "utterance": "레티놀 시카? 복잡한 것 같고, 딱히 나한테 필요해 보이지도 않네. 그냥 넘겨야겠다.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00002",
+        "exposure_context": "저녁·집·스마트폰/휴대폰·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": true,
+          "search": false,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "search",
+        "drop_reason_tag": "price_concern",
+        "purchase_intent": 1,
+        "trust": 3,
+        "rejected": true,
+        "rejection_reason_tag": "overpriced",
+        "emotion_tag": "indifference",
+        "perceived_message": "내 피부 고민(붉은기, 모공) 해결해준다는 스킨케어 앰플 광고.",
+        "perceived_target": "피부 트러블 때문에 스트레스 받는 사람들. 특히 돈 좀 쓰는 젊은 여자들? 남자도 요즘 피부 관리 많이 하니까 뭐.",
+        "utterance": "이니스프리 앰플이면 비쌀 텐데... 귀찮게 저런 걸 꾸준히 바를 것 같지도 않고, 그냥 무난하게 있는 거나 쓸래.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00017",
+        "exposure_context": "저녁·집·스마트폰/휴대폰·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": false,
+          "search": false,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "interest",
+        "drop_reason_tag": "low_relevance",
+        "purchase_intent": 2,
+        "trust": 3,
+        "rejected": true,
+        "rejection_reason_tag": "irrelevant",
+        "emotion_tag": "indifference",
+        "perceived_message": "이니스프리 앰플이 피부 붉은기, 모공, 각질, 잡티 흔적 등 다양한 피부 고민을 효과적으로 관리해준다는 기능성 제품 광고.",
+        "perceived_target": "피부 트러블이나 노화 흔적으로 고민하는, 피부 관리에 관심 많은 사람들. 특히 젊은 여성들이나 자기 관리에 철저한 남성.",
+        "utterance": "남자 피부에 굳이 앰플까지 써야 하나? 그냥 로션 하나면 충분한데.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00003",
+        "exposure_context": "오후·집·스마트폰/휴대폰·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": false,
+          "search": false,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "interest",
+        "drop_reason_tag": "low_relevance",
+        "purchase_intent": 2,
+        "trust": 3,
+        "rejected": true,
+        "rejection_reason_tag": "irrelevant",
+        "emotion_tag": "indifference",
+        "perceived_message": "피부 붉은기랑 모공, 잡티 같은 거 관리해주는 이니스프리 앰플이래. 피부 트러블 고민 있는 사람들 쓰라고 하는 거 같네.",
+        "perceived_target": "피부 안 좋은 사람들? 특히 붉은기나 모공 이런 거 신경 쓰는 사람들. 나도 해당되나...",
+        "utterance": "이니스프리 흔적 앰플? 굳이 지금 쓰는 거 두고 저걸 써야 하나. 딱히 필요는 없는데.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00012",
+        "exposure_context": "저녁·집·PC·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": true,
+          "search": true,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "action",
+        "drop_reason_tag": "distrust",
+        "purchase_intent": 4,
+        "trust": 3,
+        "rejected": false,
+        "rejection_reason_tag": null,
+        "emotion_tag": "curiosity",
+        "perceived_message": "이니스프리 레티놀 시카 앰플이 붉은기, 모공, 각질, 잡티 같은 다양한 피부 흔적 고민에 효과적인 해결책이라는 광고. 성능을 강조하네.",
+        "perceived_target": "나처럼 여러 피부 트러블로 고민하고, 특히 성능을 중요하게 생각하는 사람들이 타깃이겠지.",
+        "utterance": "맨날 있는 고민이긴 한데… 레티놀 시카? 효과가 진짜 좋다면 써볼 만하겠네. 후기나 찾아봐야겠다.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00008",
+        "exposure_context": "저녁·집·PC·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": true,
+          "search": true,
+          "action": true,
+          "share": false
+        },
+        "drop_stage": null,
+        "drop_reason_tag": null,
+        "purchase_intent": 4,
+        "trust": 4,
+        "rejected": false,
+        "rejection_reason_tag": null,
+        "emotion_tag": "curiosity",
+        "perceived_message": "내 피부 고민인 붉은기, 모공, 각질, 잡티 흔적을 이니스프리 레티놀 시카 앰플이 효과적으로 해결해준다는 내용.",
+        "perceived_target": "나처럼 여러 피부 트러블로 고민하고, 빠르고 효과적인 해결책을 찾는 사람.",
+        "utterance": "오, 레티놀에 시카까지? 붉은기랑 모공 고민이었는데, 이니스프리면 믿을 만하고 써볼 만하겠네. 한 번 찾아봐야겠다.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00015",
+        "exposure_context": "오전·집·스마트폰/휴대폰·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": true,
+          "search": true,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "action",
+        "drop_reason_tag": "other",
+        "purchase_intent": 3,
+        "trust": 4,
+        "rejected": false,
+        "rejection_reason_tag": null,
+        "emotion_tag": "curiosity",
+        "perceived_message": "이니스프리 레티놀 시카 앰플이 붉은기, 모공, 각질, 잡티 같은 피부 고민을 효과적으로 해결해준다는 내용.",
+        "perceived_target": "나처럼 나이 들면서 피부 고민이 복합적으로 생기는 사람들.",
+        "utterance": "이니스프리에서 레티놀 시카 앰플이라니, 내 요즘 피부 고민들이랑 딱 맞아떨어지네. 한번 찾아봐야겠다.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00000",
+        "exposure_context": "저녁·집·스마트폰/휴대폰·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": false,
+          "search": false,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "interest",
+        "drop_reason_tag": "no_reason_to_explore",
+        "purchase_intent": 1,
+        "trust": 3,
+        "rejected": true,
+        "rejection_reason_tag": "irrelevant",
+        "emotion_tag": "indifference",
+        "perceived_message": "내 피부에 나는 붉은기나 잡티 같은 거 고민되면 이니스프리 레티놀 시카 앰플 쓰라는 건가 보네.",
+        "perceived_target": "피부에 뭐 나거나 모공 같은 거 때문에 스트레스 받는 사람들, 나이 좀 있는 어른들 같음.",
+        "utterance": "음... 피부 고민? 나는 그냥 아무거나 막 쓰거나 아니면 비싸서 엄마한테 사달라고 해야 하는데, 딱히 지금 당장 필요한가 싶네. 덕질템도 아니고.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00011",
+        "exposure_context": "저녁·집·PC·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": true,
+          "search": true,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "action",
+        "drop_reason_tag": null,
+        "purchase_intent": 3,
+        "trust": 4,
+        "rejected": false,
+        "rejection_reason_tag": null,
+        "emotion_tag": "curiosity",
+        "perceived_message": "이니스프리에서 피부 붉은기, 모공, 각질, 잡티 흔적 같은 여러 피부 트러블을 레티놀과 시카 성분으로 효과적으로 관리해준다는 앰플이 새로 나왔다는 거네.",
+        "perceived_target": "나처럼 피부에 잡다한 트러블 흔적이 많고, 이걸 깔끔하게 정리하고 싶은 30대 여성들을 위한 제품 같아.",
+        "utterance": "이니스프리니까 어느 정도는 믿을 만한데, 레티놀 시카 앰플이라고? 효과만 확실하면 좋겠다. 후기나 좀 찾아보고 괜찮으면 사볼까.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00018",
+        "exposure_context": "오후·집·스마트폰/휴대폰·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": true,
+          "search": true,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "action",
+        "drop_reason_tag": "distrust",
+        "purchase_intent": 3,
+        "trust": 3,
+        "rejected": false,
+        "rejection_reason_tag": null,
+        "emotion_tag": "curiosity",
+        "perceived_message": "나이 들면서 생기는 붉은기, 모공, 각질, 잡티 같은 피부 고민들을 잘 해결해주는 효과 좋은 앰플이라고 하는구나.",
+        "perceived_target": "피부 트러블이나 노화로 인한 피부 고민이 많은 사람들이 쓰면 좋겠다고 생각하겠네.",
+        "utterance": "요즘 신경 쓰이는 피부 문제들을 한 번에 해결해준다고 하니 솔깃하네, 진짜 효과가 있을까 싶어 찾아는 봐야겠어.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00007",
+        "exposure_context": "저녁·집·스마트폰/휴대폰·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": true,
+          "search": true,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "action",
+        "drop_reason_tag": "distrust",
+        "purchase_intent": 3,
+        "trust": 2,
+        "rejected": false,
+        "rejection_reason_tag": null,
+        "emotion_tag": "curiosity",
+        "perceived_message": "이니스프리 레티놀 시카 앰플이 붉은기, 모공, 각질, 잡티 같은 피부 고민들을 효과적으로 해결해준다는 내용.",
+        "perceived_target": "피부 트러블로 고민하고 효과적인 솔루션을 찾는 사람들, 특히 붉은기, 모공, 각질, 잡티를 가진 사람들.",
+        "utterance": "레티놀 시카? 피부 트러블에 효과 좋다고? 어지간한 걸로는 안 될 텐데... 성능이랑 후기 한번 찾아봐야겠네.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00005",
+        "exposure_context": "저녁·집·PC·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": true,
+          "search": false,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "search",
+        "drop_reason_tag": "price_concern",
+        "purchase_intent": 2,
+        "trust": 3,
+        "rejected": false,
+        "rejection_reason_tag": null,
+        "emotion_tag": "indifference",
+        "perceived_message": "이니스프리에서 레티놀이랑 시카 같이 들어간 앰플이 나왔고, 붉은기, 모공, 각질, 잡티 같은 여러 가지 피부 흔적 고민을 효과적으로 없애준다는 거네.",
+        "perceived_target": "피부 트러블이 이것저것 복합적으로 많아서 귀찮게 여러 제품 쓰는 것보다 하나로 해결하고 싶은 사람들, 나처럼 이것저것 신경은 쓰이는데 꾸준히 관리하기 힘들어하는 사람들.",
+        "utterance": "이니스프리 레티놀 시카? 어차피 맨날 바를 자신도 없는데… 효과가 좋다 해도 또 얼마나 비쌀까.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00010",
+        "exposure_context": "저녁·집·스마트폰/휴대폰·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": true,
+          "search": true,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": null,
+        "drop_reason_tag": null,
+        "purchase_intent": 4,
+        "trust": 4,
+        "rejected": false,
+        "rejection_reason_tag": null,
+        "emotion_tag": "curiosity",
+        "perceived_message": "요즘 신경 쓰이는 붉은기, 모공, 각질 같은 피부 흔적들을 이니스프리 레티놀 시카 앰플로 효과적으로 관리할 수 있겠네.",
+        "perceived_target": "나처럼 피부 트러블이 고민인데, 너무 자극적이지 않으면서도 효과 좋은 제품 찾는 사람들.",
+        "utterance": "내 피부 고민이랑 딱 맞는데, 이니스프리면 좀 순하려나? 한번 찾아봐야겠다.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      }
+    ],
+    "rubric_scores": [
+      {
+        "dimension": "category_alignment",
+        "score": 98,
+        "evidence": {
+          "declared": "화장픔",
+          "detected": "뷰티/스킨케어",
+          "note": "선언된 '화장품'과 감지된 '뷰티/스킨케어'는 밀접하게 관련된 상위/하위 범주로 높은 일치도를 보임."
+        }
+      },
+      {
+        "dimension": "objective_alignment",
+        "score": 99,
+        "evidence": {
+          "declared": "상품 구매",
+          "detected": "구매 전환",
+          "note": "선언된 '상품 구매'와 감지된 '구매 전환'은 동일한 마케팅 목표를 의미하며 완벽하게 일치함."
+        }
+      },
+      {
+        "dimension": "message_alignment",
+        "score": 92,
+        "evidence": {
+          "declared": "레티놀 시카",
+          "detected": "이니스프리 레티놀 시카 흔적 앰플은 요즘 피부 고민인 붉은기, 모공, 각질, 잡티 흔적을 효과적으로 관리해주는 솔루션입니다.",
+          "note": "선언된 핵심 키워드 '레티놀 시카'가 감지된 상세 메시지에 제품명으로 명확히 포함되어 있으며 메시지의 핵심 내용을 이룸."
+        }
+      }
+    ],
+    "aggregate": {
+      "click_intent_rate": 0.1,
+      "ci_low": 0,
+      "ci_high": 0.25,
+      "purchase_intent": 2.5,
+      "trust_avg": 3.05,
+      "rejection_rate": 0.45,
+      "variance_warning": false,
+      "effective_n": 20,
+      "payload": {
+        "qa_passed_count": 20,
+        "ci_method": "weighted_bootstrap",
+        "ci_iters": 2000,
+        "purchase_std": 1.323,
+        "weight_sum": 20
+      },
+      "engine_version": "agg-2"
+    },
+    "simulation_id": "0908c3a7-8d2e-4c55-97b0-06a1ebe39dca"
+  }

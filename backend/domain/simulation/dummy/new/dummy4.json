@@ -1,0 +1,1663 @@
+{
+    "run_id": "a4578e9f-0e02-4068-a5a2-798c223ae526",
+    "ad": {
+      "ID": "96321d51-6b2f-43cc-9a22-f69168d67686",
+      "project_id": "e561c41e-a3d7-426d-84ef-1fe63b9c9fb2",
+      "title": "쿠팡",
+      "media_type": "image",
+      "asset_url": "C:\\Users\\804\\AppData\\Local\\Temp\\clickme_ad_jey_u83w.png",
+      "copy_text": "쿠팡 로켓배송 주문한 당일 배송 해드립니다.",
+      "description": null,
+      "industry_category": null,
+      "product_category": "웹서비스",
+      "service_class": 0,
+      "ad_objective": "브랜드 인식 강화",
+      "target_filter": null,
+      "status": "DRAFT"
+    },
+    "ad_analysis": {
+      "ad_id": "96321d51-6b2f-43cc-9a22-f69168d67686",
+      "structured_analysis": {
+        "detected_industry": "이커머스/온라인 리테일/배송 서비스",
+        "detected_objective": "구매 전환 촉진 및 고객 유치",
+        "detected_target": "쿠팡 사용자 및 온라인 쇼핑객 전반",
+        "detected_message": "쿠팡 로켓배송 및 로켓직구 상품을 누구나 무료로 배송받을 수 있습니다.",
+        "ad_credibility": 85,
+        "ad_quality": 90,
+        "price_mentioned": true,
+        "original_price": null,
+        "discounted_price": 0,
+        "brand_mentioned": true,
+        "social_proof_strength": "none"
+      },
+      "detected_industry": "이커머스/온라인 리테일/배송 서비스",
+      "detected_objective": "구매 전환 촉진 및 고객 유치",
+      "detected_target": "쿠팡 사용자 및 온라인 쇼핑객 전반",
+      "detected_message": "쿠팡 로켓배송 및 로켓직구 상품을 누구나 무료로 배송받을 수 있습니다.",
+      "ad_features": {
+        "ad_credibility": 85,
+        "ad_quality": 90,
+        "price_mentioned": true,
+        "original_price": null,
+        "discounted_price": 0,
+        "brand_mentioned": true,
+        "social_proof_strength": "none"
+      },
+      "intent_mismatch": true,
+      "mismatch_detail": {
+        "category": {
+          "declared": "웹서비스",
+          "detected": "이커머스/온라인 리테일/배송 서비스",
+          "match": true,
+          "note": "감지된 의도가 선언된 의도의 구체적인 한 분야를 나타내어 매우 높은 연관성을 보임.",
+          "score": 90
+        },
+        "objective": {
+          "declared": "브랜드 인식 강화",
+          "detected": "구매 전환 촉진 및 고객 유치",
+          "match": false,
+          "note": "브랜드 인식 강화와 구매 전환 촉진은 목표 지향점이 다른 마케팅 단계로 직접적인 일치도는 낮음.",
+          "score": 40
+        },
+        "message": {
+          "declared": "쿠팡",
+          "detected": "쿠팡 로켓배송 및 로켓직구 상품을 누구나 무료로 배송받을 수 있습니다.",
+          "match": true,
+          "note": "감지된 의도가 선언된 브랜드를 명확히 설명하고 핵심 서비스를 언급하여 매우 높은 일치도를 보임.",
+          "score": 95
+        }
+      },
+      "model_version": "gemini-2.5-flash-vision"
+    },
+    "simulation": {
+      "ID": "a4578e9f-0e02-4068-a5a2-798c223ae526",
+      "ad_id": "96321d51-6b2f-43cc-9a22-f69168d67686",
+      "ad_analysis_id": null,
+      "panel_id": "panel-v1",
+      "organization_id": "bd9df2e2-f89b-423a-975c-3592967f7ca0",
+      "target_filter": null,
+      "target_mode": "AUTO",
+      "sample_size": 20,
+      "qa_passed_count": 20,
+      "low_sample_warning": false,
+      "status": "COMPLETED",
+      "model_version": "gemini-2.5-flash-vision",
+      "error_detail": null
+    },
+    "personas": [
+      {
+        "persona_id": "P-00000",
+        "age": 17,
+        "gender": "M",
+        "region": "기타",
+        "ocean": {
+          "openness": -0.15,
+          "conscientiousness": 1.09,
+          "extraversion": -0.84,
+          "agreeableness": 0.8,
+          "neuroticism": -0.44
+        },
+        "media_behavior": {
+          "primary_medium": "스마트폰/휴대폰",
+          "daily_media_minutes": 671,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "PC",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오전",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.0807,
+          "social_feed_reach": 0.1188
+        },
+        "consumption_values": {
+          "성능": false,
+          "품질": true,
+          "편의": true,
+          "저렴한 가격": true,
+          "취향·덕질": true
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "소득 없음",
+          "income_code": 1,
+          "education": "초등학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00001",
+        "age": 29,
+        "gender": "M",
+        "region": "기타",
+        "ocean": {
+          "openness": -0.29,
+          "conscientiousness": -1.5,
+          "extraversion": -0.15,
+          "agreeableness": -0.43,
+          "neuroticism": 0.54
+        },
+        "media_behavior": {
+          "primary_medium": "스마트폰/휴대폰",
+          "daily_media_minutes": 591,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "저녁",
+              "medium": "PC",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.3171,
+          "social_feed_reach": 0.1526
+        },
+        "consumption_values": {
+          "성능": false,
+          "품질": false,
+          "편의": true,
+          "저렴한 가격": false,
+          "취향·덕질": true
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "400~500만원",
+          "income_code": 6,
+          "education": "대학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00002",
+        "age": 20,
+        "gender": "M",
+        "region": "서울",
+        "ocean": {
+          "openness": 0.82,
+          "conscientiousness": -1.89,
+          "extraversion": 0.86,
+          "agreeableness": -1.38,
+          "neuroticism": 0.22
+        },
+        "media_behavior": {
+          "primary_medium": "TV",
+          "daily_media_minutes": 379,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "저녁",
+              "medium": "PC",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.3171,
+          "social_feed_reach": 0.1526
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": true,
+          "편의": false,
+          "저렴한 가격": true,
+          "취향·덕질": false
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "소득 없음",
+          "income_code": 1,
+          "education": "대학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00003",
+        "age": 21,
+        "gender": "M",
+        "region": "서울",
+        "ocean": {
+          "openness": -1.7,
+          "conscientiousness": 0.07,
+          "extraversion": 0.86,
+          "agreeableness": 0.69,
+          "neuroticism": -0.41
+        },
+        "media_behavior": {
+          "primary_medium": "TV",
+          "daily_media_minutes": 316,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "저녁",
+              "medium": "PC",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.3171,
+          "social_feed_reach": 0.1526
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": false,
+          "편의": true,
+          "저렴한 가격": true,
+          "취향·덕질": true
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "300~400만원",
+          "income_code": 5,
+          "education": "대학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00004",
+        "age": 29,
+        "gender": "F",
+        "region": "경기",
+        "ocean": {
+          "openness": -0.02,
+          "conscientiousness": -0.02,
+          "extraversion": 0.71,
+          "agreeableness": 0.14,
+          "neuroticism": 0.94
+        },
+        "media_behavior": {
+          "primary_medium": "PC",
+          "daily_media_minutes": 603,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "저녁",
+              "medium": "PC",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.3171,
+          "social_feed_reach": 0.1446
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": true,
+          "편의": true,
+          "저렴한 가격": true,
+          "취향·덕질": false
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "400~500만원",
+          "income_code": 6,
+          "education": "대학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00005",
+        "age": 28,
+        "gender": "F",
+        "region": "경기",
+        "ocean": {
+          "openness": 1.63,
+          "conscientiousness": -1.92,
+          "extraversion": 0.34,
+          "agreeableness": -1.75,
+          "neuroticism": -1.25
+        },
+        "media_behavior": {
+          "primary_medium": "스마트폰/휴대폰",
+          "daily_media_minutes": 396,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "저녁",
+              "medium": "PC",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.3171,
+          "social_feed_reach": 0.1446
+        },
+        "consumption_values": {
+          "성능": false,
+          "품질": false,
+          "편의": false,
+          "저렴한 가격": true,
+          "취향·덕질": true
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "300~400만원",
+          "income_code": 5,
+          "education": "대학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00006",
+        "age": 23,
+        "gender": "F",
+        "region": "경기",
+        "ocean": {
+          "openness": 0.24,
+          "conscientiousness": -0.27,
+          "extraversion": -0.78,
+          "agreeableness": -0.51,
+          "neuroticism": 1.2
+        },
+        "media_behavior": {
+          "primary_medium": "PC",
+          "daily_media_minutes": 414,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "저녁",
+              "medium": "PC",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.3171,
+          "social_feed_reach": 0.1446
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": true,
+          "편의": true,
+          "저렴한 가격": false,
+          "취향·덕질": true
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "400~500만원",
+          "income_code": 6,
+          "education": "대학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00007",
+        "age": 33,
+        "gender": "M",
+        "region": "대구",
+        "ocean": {
+          "openness": 0.41,
+          "conscientiousness": 0.75,
+          "extraversion": -0.57,
+          "agreeableness": -0.49,
+          "neuroticism": 2.39
+        },
+        "media_behavior": {
+          "primary_medium": "PC",
+          "daily_media_minutes": 510,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "저녁",
+              "medium": "PC",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.2763,
+          "social_feed_reach": 0.0853
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": true,
+          "편의": false
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "800만원 이상",
+          "income_code": 8,
+          "education": "대학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00008",
+        "age": 36,
+        "gender": "M",
+        "region": "대전",
+        "ocean": {
+          "openness": 1.2,
+          "conscientiousness": 0.08,
+          "extraversion": 1.17,
+          "agreeableness": 0.85,
+          "neuroticism": 0.87
+        },
+        "media_behavior": {
+          "primary_medium": "스마트폰/휴대폰",
+          "daily_media_minutes": 521,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "저녁",
+              "medium": "PC",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.2763,
+          "social_feed_reach": 0.0853
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": true,
+          "편의": true
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "800만원 이상",
+          "income_code": 8,
+          "education": "대학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00009",
+        "age": 39,
+        "gender": "M",
+        "region": "서울",
+        "ocean": {
+          "openness": 0.07,
+          "conscientiousness": -0.79,
+          "extraversion": -1.57,
+          "agreeableness": -1.29,
+          "neuroticism": 0.94
+        },
+        "media_behavior": {
+          "primary_medium": "스마트폰/휴대폰",
+          "daily_media_minutes": 553,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "저녁",
+              "medium": "PC",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.2763,
+          "social_feed_reach": 0.0853
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": true,
+          "편의": true
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "400~500만원",
+          "income_code": 6,
+          "education": "대학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00010",
+        "age": 38,
+        "gender": "F",
+        "region": "기타",
+        "ocean": {
+          "openness": -1.26,
+          "conscientiousness": 0.18,
+          "extraversion": -0.34,
+          "agreeableness": 1.4,
+          "neuroticism": 0.95
+        },
+        "media_behavior": {
+          "primary_medium": "TV",
+          "daily_media_minutes": 499,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "저녁",
+              "medium": "PC",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.2763,
+          "social_feed_reach": 0.0677
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": true,
+          "편의": false
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "300~400만원",
+          "income_code": 5,
+          "education": "대학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00011",
+        "age": 35,
+        "gender": "F",
+        "region": "대구",
+        "ocean": {
+          "openness": -1.18,
+          "conscientiousness": -0.34,
+          "extraversion": -0.72,
+          "agreeableness": 1.31,
+          "neuroticism": -0.11
+        },
+        "media_behavior": {
+          "primary_medium": "스마트폰/휴대폰",
+          "daily_media_minutes": 426,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "저녁",
+              "medium": "PC",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.2763,
+          "social_feed_reach": 0.0677
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": true,
+          "편의": true
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "300~400만원",
+          "income_code": 5,
+          "education": "대학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00012",
+        "age": 39,
+        "gender": "F",
+        "region": "기타",
+        "ocean": {
+          "openness": 0.52,
+          "conscientiousness": -0.57,
+          "extraversion": 0.32,
+          "agreeableness": -0.75,
+          "neuroticism": 0.01
+        },
+        "media_behavior": {
+          "primary_medium": "TV",
+          "daily_media_minutes": 531,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "저녁",
+              "medium": "PC",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.2763,
+          "social_feed_reach": 0.0677
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": false,
+          "편의": false
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "400~500만원",
+          "income_code": 6,
+          "education": "대학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00013",
+        "age": 40,
+        "gender": "M",
+        "region": "인천",
+        "ocean": {
+          "openness": -1.33,
+          "conscientiousness": 0.45,
+          "extraversion": 1.08,
+          "agreeableness": -0.59,
+          "neuroticism": 1.02
+        },
+        "media_behavior": {
+          "primary_medium": "TV",
+          "daily_media_minutes": 1032,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "직장"
+            },
+            {
+              "timeband": "저녁",
+              "medium": "PC",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.1679,
+          "social_feed_reach": 0.0686
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": true,
+          "편의": false
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "400~500만원",
+          "income_code": 6,
+          "education": "대학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00014",
+        "age": 45,
+        "gender": "M",
+        "region": "서울",
+        "ocean": {
+          "openness": -0.04,
+          "conscientiousness": -2.02,
+          "extraversion": -0.26,
+          "agreeableness": -0.55,
+          "neuroticism": 0.26
+        },
+        "media_behavior": {
+          "primary_medium": "PC",
+          "daily_media_minutes": 658,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "직장"
+            },
+            {
+              "timeband": "저녁",
+              "medium": "PC",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.1679,
+          "social_feed_reach": 0.0686
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": true,
+          "편의": true
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "500~800만원",
+          "income_code": 7,
+          "education": "고등학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00015",
+        "age": 41,
+        "gender": "F",
+        "region": "서울",
+        "ocean": {
+          "openness": -1.3,
+          "conscientiousness": -0.39,
+          "extraversion": -0.11,
+          "agreeableness": 1.21,
+          "neuroticism": 0.31
+        },
+        "media_behavior": {
+          "primary_medium": "TV",
+          "daily_media_minutes": 231,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오전",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.1679,
+          "social_feed_reach": 0.0726
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": false,
+          "편의": true
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "300~400만원",
+          "income_code": 5,
+          "education": "대학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00016",
+        "age": 45,
+        "gender": "F",
+        "region": "기타",
+        "ocean": {
+          "openness": -1.23,
+          "conscientiousness": -0.05,
+          "extraversion": -0.05,
+          "agreeableness": -2.19,
+          "neuroticism": -1.26
+        },
+        "media_behavior": {
+          "primary_medium": "PC",
+          "daily_media_minutes": 232,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오전",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.1679,
+          "social_feed_reach": 0.0726
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": true,
+          "편의": true
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "300~400만원",
+          "income_code": 5,
+          "education": "대학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00017",
+        "age": 50,
+        "gender": "M",
+        "region": "서울",
+        "ocean": {
+          "openness": -0.44,
+          "conscientiousness": 0.8,
+          "extraversion": 1.18,
+          "agreeableness": 0.79,
+          "neuroticism": 0.47
+        },
+        "media_behavior": {
+          "primary_medium": "TV",
+          "daily_media_minutes": 434,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "직장"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.0968,
+          "social_feed_reach": 0.0539
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": true,
+          "편의": false
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "400~500만원",
+          "income_code": 6,
+          "education": "대학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00018",
+        "age": 53,
+        "gender": "F",
+        "region": "기타",
+        "ocean": {
+          "openness": 0.59,
+          "conscientiousness": -0.83,
+          "extraversion": -0.26,
+          "agreeableness": 1.3,
+          "neuroticism": -0.26
+        },
+        "media_behavior": {
+          "primary_medium": "스마트폰/휴대폰",
+          "daily_media_minutes": 474,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.0968,
+          "social_feed_reach": 0.0558
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": true,
+          "편의": false
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "400~500만원",
+          "income_code": 6,
+          "education": "고등학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00019",
+        "age": 61,
+        "gender": "F",
+        "region": "기타",
+        "ocean": {
+          "openness": -0.46,
+          "conscientiousness": 1.36,
+          "extraversion": 1.41,
+          "agreeableness": -0.64,
+          "neuroticism": -0.68
+        },
+        "media_behavior": {
+          "primary_medium": "PC",
+          "daily_media_minutes": 285,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.0496,
+          "social_feed_reach": 0.0524
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": true,
+          "편의": true
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "100만원 미만",
+          "income_code": 2,
+          "education": "고등학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      }
+    ],
+    "reactions": [
+      {
+        "persona_id": "P-00016",
+        "exposure_context": "오전·집·스마트폰/휴대폰·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": true,
+          "search": false,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "search",
+        "drop_reason_tag": "distrust",
+        "purchase_intent": 1,
+        "trust": 2,
+        "rejected": true,
+        "rejection_reason_tag": "distrust",
+        "emotion_tag": "distrust",
+        "perceived_message": "쿠팡 로켓배송과 로켓직구가 모든 고객에게 무료로 제공된다는 것 같은데, 분명히 숨겨진 조건이 있을 거야.",
+        "perceived_target": "쿠팡 배송 시스템을 잘 모르거나, 무료 배송이라는 말에 쉽게 솔깃하는 사람들.",
+        "utterance": "누구나 무료? 쿠팡이 갑자기 자선사업 하는 것도 아니고, 분명히 와우 멤버십 가입해야 하거나 조건이 붙을 게 뻔해. 거짓말.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00000",
+        "exposure_context": "저녁·집·스마트폰/휴대폰·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": true,
+          "search": true,
+          "action": true,
+          "share": false
+        },
+        "drop_stage": null,
+        "drop_reason_tag": null,
+        "purchase_intent": 5,
+        "trust": 4,
+        "rejected": false,
+        "rejection_reason_tag": null,
+        "emotion_tag": "delight",
+        "perceived_message": "쿠팡 로켓배송이랑 로켓직구는 이제 배송비 안 내도 되고, 아무나 다 받을 수 있다는 거네. 배송비 신경 쓸 필요 없겠어.",
+        "perceived_target": "나처럼 돈 아끼고 싶거나 편하게 쇼핑하려는 사람들이겠지. 쿠팡 쓰는 사람들 다.",
+        "utterance": "와, 쿠팡 로켓배송이랑 직구 전부 다 배송비 공짜라고? 그럼 이제 뭐 시킬 때 배송비 걱정 없겠네. 진짜 편하겠다.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00013",
+        "exposure_context": "저녁·집·스마트폰/휴대폰·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": true,
+          "search": true,
+          "action": true,
+          "share": false
+        },
+        "drop_stage": null,
+        "drop_reason_tag": null,
+        "purchase_intent": 4,
+        "trust": 4,
+        "rejected": false,
+        "rejection_reason_tag": null,
+        "emotion_tag": "curiosity",
+        "perceived_message": "쿠팡 로켓배송과 로켓직구 상품을 와우회원 여부 상관없이 모든 사람이 무료로 배송받을 수 있다는 내용이다.",
+        "perceived_target": "쿠팡으로 물건을 자주 구매하는 일반 고객들, 특히 배송비가 부담되거나 와우회원이 아닌 사람들을 겨냥한 것 같다.",
+        "utterance": "쿠팡 로켓배송 무료라고? 와우 회원 아니어도 되는 건가? 진짜면 좋겠네, 한번 확인해 봐야겠다.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00011",
+        "exposure_context": "저녁·집·PC·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": true,
+          "search": true,
+          "action": true,
+          "share": false
+        },
+        "drop_stage": null,
+        "drop_reason_tag": null,
+        "purchase_intent": 5,
+        "trust": 4,
+        "rejected": false,
+        "rejection_reason_tag": null,
+        "emotion_tag": "delight",
+        "perceived_message": "쿠팡 로켓배송이랑 로켓직구 상품을 이젠 누구나 배송비 없이 살 수 있다는 거네. 멤버십 없어도 되는 건가?",
+        "perceived_target": "쿠팡 자주 쓰는 사람이나 나처럼 배송비 아까워하는 사람들 겨냥한 거겠지.",
+        "utterance": "오, 이제 로켓배송도 배송비 없이 막 시킬 수 있나? 그럼 쿠팡 쓸 일 더 많아지겠네, 편하고 좋다!",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00008",
+        "exposure_context": "저녁·집·PC·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": true,
+          "search": false,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "search",
+        "drop_reason_tag": "no_reason_to_explore",
+        "purchase_intent": 3,
+        "trust": 5,
+        "rejected": false,
+        "rejection_reason_tag": null,
+        "emotion_tag": "indifference",
+        "perceived_message": "쿠팡 로켓배송 및 로켓직구 상품을 모든 쿠팡 사용자가 무료로 배송받을 수 있다는 내용. 이미 로켓와우를 쓰고 있으니 나에게는 크게 새로운 소식은 아니다.",
+        "perceived_target": "쿠팡을 아직 이용하지 않거나 로켓와우 혜택을 잘 모르는 일반 온라인 쇼핑객들.",
+        "utterance": "난 이미 로켓와우 쓰는데, 새삼 이걸 광고하네. 뭐, 아직 모르는 사람도 있겠지.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00007",
+        "exposure_context": "저녁·집·스마트폰/휴대폰·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": true,
+          "search": true,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "action",
+        "drop_reason_tag": "distrust",
+        "purchase_intent": 2,
+        "trust": 2,
+        "rejected": false,
+        "rejection_reason_tag": null,
+        "emotion_tag": "distrust",
+        "perceived_message": "쿠팡 로켓배송이랑 직구 배송이 이제 모두에게 무료라는 건가? 뭔가 조건이 있을 것 같은데...",
+        "perceived_target": "쿠팡 로켓와우 회원이 아닌 일반 사용자나 배송비에 민감한 사람들을 겨냥한 광고인 것 같다.",
+        "utterance": "흠, 누구나 무료라고? 로켓와우 회원 아닌 사람도 다 무료라는 건가. 뭔가 조건이 붙어있을 것 같은데, 나중에 한번 찾아봐야겠군.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00006",
+        "exposure_context": "저녁·집·스마트폰/휴대폰·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": true,
+          "search": true,
+          "action": true,
+          "share": false
+        },
+        "drop_stage": null,
+        "drop_reason_tag": null,
+        "purchase_intent": 4,
+        "trust": 4,
+        "rejected": false,
+        "rejection_reason_tag": null,
+        "emotion_tag": "delight",
+        "perceived_message": "쿠팡 로켓배송이랑 로켓직구 상품을 이젠 모두가 배송비 없이 편하게 받을 수 있다는 거네. 와우 회원 아니어도 되는 건가?",
+        "perceived_target": "온라인으로 빠르고 편하게 쇼핑하고 싶은 사람들이나 쿠팡 와우 멤버십이 없던 사람들을 노리는 것 같네.",
+        "utterance": "오, 이제 와우 멤버십 없어도 로켓배송 무료라고? 그럼 로켓직구도? 편하긴 하겠네.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00004",
+        "exposure_context": "저녁·집·PC·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": true,
+          "search": true,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "search",
+        "drop_reason_tag": "unclear_message",
+        "purchase_intent": 3,
+        "trust": 3,
+        "rejected": false,
+        "rejection_reason_tag": null,
+        "emotion_tag": "curiosity",
+        "perceived_message": "쿠팡 로켓배송이랑 로켓직구 상품이 아무런 조건 없이 다 무료 배송된다는 말인가? 너무 좋은데 진짜일까?",
+        "perceived_target": "온라인 쇼핑 자주 하는 나 같은 사람들.",
+        "utterance": "무료배송은 언제나 환영인데 '누구나'라고 하니 진짜 아무 조건 없이 공짜라는 건지 바로 의심부터 드네. 혹시나 싶어 검색은 해봐야겠다.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00018",
+        "exposure_context": "오후·집·스마트폰/휴대폰·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": true,
+          "search": true,
+          "action": true,
+          "share": false
+        },
+        "drop_stage": null,
+        "drop_reason_tag": null,
+        "purchase_intent": 4,
+        "trust": 4,
+        "rejected": false,
+        "rejection_reason_tag": null,
+        "emotion_tag": "trust",
+        "perceived_message": "쿠팡에서 로켓배송이랑 로켓직구 상품들을 배송비 걱정 없이 살 수 있다는 거네. 정말 다 무료가 된 건가?",
+        "perceived_target": "쿠팡 자주 쓰는 사람들이나 인터넷으로 장 보는 사람들이 대상인 것 같네. 딱 나 같은 사람.",
+        "utterance": "오, 쿠팡 로켓배송 이제 다 무료라고? 그럼 뭐 살 때마다 배송비 신경 안 써도 되겠네. 편하겠다.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00002",
+        "exposure_context": "저녁·집·스마트폰/휴대폰·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": true,
+          "search": false,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "search",
+        "drop_reason_tag": "distrust",
+        "purchase_intent": 1,
+        "trust": 2,
+        "rejected": true,
+        "rejection_reason_tag": "distrust",
+        "emotion_tag": "distrust",
+        "perceived_message": "쿠팡 로켓배송이랑 로켓직구 상품들을 누구나 멤버십 없이 무료로 배송받을 수 있다는 거.",
+        "perceived_target": "온라인 쇼핑하는 사람들, 특히 배송비 아끼고 싶은 사람들을 다 노리는 것 같네.",
+        "utterance": "로켓배송이 누구나 무료라고? 와우 회원 아니어도? 에이, 거짓말 같아서 안 믿겨.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00009",
+        "exposure_context": "저녁·집·PC·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": true,
+          "search": true,
+          "action": true,
+          "share": false
+        },
+        "drop_stage": null,
+        "drop_reason_tag": null,
+        "purchase_intent": 4,
+        "trust": 3,
+        "rejected": false,
+        "rejection_reason_tag": null,
+        "emotion_tag": "curiosity",
+        "perceived_message": "쿠팡 로켓배송 및 로켓직구 상품을 멤버십 가입이나 최소 구매 금액 조건 없이 모든 사람이 무료로 이용할 수 있다는 메시지.",
+        "perceived_target": "온라인 쇼핑을 자주 하고 배송비에 민감하거나 신경 쓰는 것을 귀찮아하는 사람들.",
+        "utterance": "쿠팡 로켓배송이 누구나 무료라고? 믿기 어렵지만, 진짜라면 배송비 신경 안 써도 되니 편하긴 하겠네.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00012",
+        "exposure_context": "저녁·집·PC·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": true,
+          "search": true,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "search",
+        "drop_reason_tag": "distrust",
+        "purchase_intent": 2,
+        "trust": 2,
+        "rejected": true,
+        "rejection_reason_tag": "overpromise",
+        "emotion_tag": "distrust",
+        "perceived_message": "쿠팡 로켓배송과 로켓직구 상품을 누구나 무료로 배송받을 수 있다는 내용.",
+        "perceived_target": "쿠팡을 이용하거나 온라인 쇼핑에 관심 있는 모든 사람.",
+        "utterance": "누구나 무료라니, 또 무슨 조건이 붙어있겠지. 쿠팡이 언제부터 그렇게 대인배였다고. 혹시나 해서 찾아보긴 하겠네.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00001",
+        "exposure_context": "저녁·집·PC·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": true,
+          "search": true,
+          "action": true,
+          "share": false
+        },
+        "drop_stage": null,
+        "drop_reason_tag": null,
+        "purchase_intent": 4,
+        "trust": 4,
+        "rejected": false,
+        "rejection_reason_tag": null,
+        "emotion_tag": "delight",
+        "perceived_message": "쿠팡 와우 멤버십 회원은 로켓배송과 로켓직구 상품을 무료로 배송받을 수 있어 편리하다는 내용.",
+        "perceived_target": "나처럼 쿠팡을 자주 이용하고 편리한 쇼핑을 좋아하는 사람들.",
+        "utterance": "오, 로켓배송이랑 직구가 무료 배송이라니 편하겠네. 이거 쿠팡 와우 멤버십 이야기겠지?",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00003",
+        "exposure_context": "오후·집·스마트폰/휴대폰·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": true,
+          "search": true,
+          "action": true,
+          "share": false
+        },
+        "drop_stage": null,
+        "drop_reason_tag": null,
+        "purchase_intent": 5,
+        "trust": 4,
+        "rejected": false,
+        "rejection_reason_tag": null,
+        "emotion_tag": "curiosity",
+        "perceived_message": "쿠팡 로켓배송이랑 로켓직구 상품을 이젠 와우 회원이 아니어도 누구나 무료로 배송받을 수 있다는 내용인 것 같다. 진짜인지 궁금하다.",
+        "perceived_target": "쿠팡을 이용하는 모든 사람이나 평소 온라인 쇼핑을 즐겨 하는 사람들.",
+        "utterance": "오, 로켓배송이랑 로켓직구 무료? 진짜 누구나 무료면 개꿀인데, 바로 쿠팡 앱 확인해봐야겠다.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00010",
+        "exposure_context": "저녁·집·스마트폰/휴대폰·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": true,
+          "search": false,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "search",
+        "drop_reason_tag": "no_reason_to_explore",
+        "purchase_intent": 3,
+        "trust": 3,
+        "rejected": false,
+        "rejection_reason_tag": null,
+        "emotion_tag": "indifference",
+        "perceived_message": "쿠팡 로켓배송과 로켓직구를 누구나 무료로 이용할 수 있다는 내용인데, 정말 조건이 없나 하는 생각이 드네.",
+        "perceived_target": "쿠팡 자주 쓰는 사람이나 온라인으로 쇼핑하는 사람들이겠지.",
+        "utterance": "로켓배송이 누구나 무료라니 좋아 보이긴 하는데, 왠지 조건이 있을 것 같아서 구체적으로 찾아볼 생각은 안 드네.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00019",
+        "exposure_context": "저녁·집·스마트폰/휴대폰·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": true,
+          "search": true,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "action",
+        "drop_reason_tag": "distrust",
+        "purchase_intent": 4,
+        "trust": 2,
+        "rejected": false,
+        "rejection_reason_tag": null,
+        "emotion_tag": "distrust",
+        "perceived_message": "쿠팡 로켓배송이랑 로켓직구 상품을 회원 가입이나 복잡한 조건 없이 모두에게 무료로 배송해준다는 거네.",
+        "perceived_target": "나처럼 배송비 아끼고 싶고, 온라인으로 물건 자주 사는 사람들이겠지.",
+        "utterance": "누구나 다 무료배송이라고? 에이, 쿠팡이 그럴 리가. 분명히 무슨 조건이 붙을 거야. 어디 한번 찾아봐야겠네.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00017",
+        "exposure_context": "저녁·집·스마트폰/휴대폰·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": true,
+          "search": true,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "action",
+        "drop_reason_tag": "distrust",
+        "purchase_intent": 2,
+        "trust": 2,
+        "rejected": true,
+        "rejection_reason_tag": "distrust",
+        "emotion_tag": "distrust",
+        "perceived_message": "쿠팡 로켓배송과 로켓직구를 누구나 무료로 이용할 수 있다는 내용인데, 뭔가 기존 정책과 다른 것 같아 의심스럽다.",
+        "perceived_target": "온라인 쇼핑을 하는 일반 고객들이나 쿠팡 와우 멤버가 아닌 사람들을 노린 광고인 것 같다.",
+        "utterance": "로켓배송이 누구나 무료라고? 원래 와우 회원만 되던 거 아닌가? 뭔가 숨겨진 조건이 있거나 과장된 광고 같은데.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00005",
+        "exposure_context": "저녁·집·PC·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": true,
+          "search": true,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "action",
+        "drop_reason_tag": "distrust",
+        "purchase_intent": 3,
+        "trust": 2,
+        "rejected": true,
+        "rejection_reason_tag": "distrust",
+        "emotion_tag": "distrust",
+        "perceived_message": "쿠팡 로켓배송이랑 로켓직구 상품을 와우 멤버십이 없어도 누구든지 무료로 받을 수 있다는 건가? 너무 좋은 말이라 뭔가 꼼수가 있을 것 같다.",
+        "perceived_target": "나처럼 돈 아끼고 싶어 하는 쿠팡 사용자나 온라인 쇼핑객들, 특히 배송비가 부담스러운 사람들.",
+        "utterance": "뭐야, 로켓배송이 누구나 무료라고? 와우 회원도 아닌데? 뻔한 낚시 광고 같긴 한데, 그래도 진짜면 좋으니까 일단 한번 확인은 해보겠네.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00015",
+        "exposure_context": "오전·집·스마트폰/휴대폰·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": true,
+          "search": true,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "action",
+        "drop_reason_tag": "unclear_message",
+        "purchase_intent": 4,
+        "trust": 4,
+        "rejected": false,
+        "rejection_reason_tag": null,
+        "emotion_tag": "curiosity",
+        "perceived_message": "쿠팡 로켓배송 및 로켓직구 상품을 모든 사람이 무료로 받을 수 있게 됐다는 메시지로 이해했다. 기존의 멤버십 유무와 상관없이 가능한 것인지 궁금하다.",
+        "perceived_target": "쿠팡을 이용하는 일반 소비자, 특히 무료 배송 혜택에 관심이 있거나 멤버십 없이도 무료 배송을 원하는 사람들을 대상으로 하는 광고로 느껴진다.",
+        "utterance": "로켓배송 무료가 누구나 된다고? 진짜? 그럼 멤버십 없이도 되는 건가? 좀 알아봐야겠네, 사실이면 너무 편하겠다.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00014",
+        "exposure_context": "오후·직장·스마트폰/휴대폰·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": true,
+          "search": true,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "action",
+        "drop_reason_tag": "other",
+        "purchase_intent": 4,
+        "trust": 3,
+        "rejected": false,
+        "rejection_reason_tag": null,
+        "emotion_tag": "curiosity",
+        "perceived_message": "쿠팡 로켓배송이랑 로켓직구 상품을 이제는 와우 회원이든 아니든 상관없이 모든 사람들이 무료로 배송받을 수 있다는 내용인 것 같다.",
+        "perceived_target": "온라인으로 쿠팡 자주 쓰는 사람들이나 배송비 아끼고 싶은 사람들을 노린 광고인 것 같네.",
+        "utterance": "쿠팡 로켓배송이 누구나 무료라고? 대박인데, 그럼 내 와우회비는 이제 안 내도 되는 건가? 진짜면 좋겠다.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      }
+    ],
+    "rubric_scores": [
+      {
+        "dimension": "category_alignment",
+        "score": 90,
+        "evidence": {
+          "declared": "웹서비스",
+          "detected": "이커머스/온라인 리테일/배송 서비스",
+          "note": "감지된 의도가 선언된 의도의 구체적인 한 분야를 나타내어 매우 높은 연관성을 보임."
+        }
+      },
+      {
+        "dimension": "objective_alignment",
+        "score": 40,
+        "evidence": {
+          "declared": "브랜드 인식 강화",
+          "detected": "구매 전환 촉진 및 고객 유치",
+          "note": "브랜드 인식 강화와 구매 전환 촉진은 목표 지향점이 다른 마케팅 단계로 직접적인 일치도는 낮음."
+        }
+      },
+      {
+        "dimension": "message_alignment",
+        "score": 95,
+        "evidence": {
+          "declared": "쿠팡",
+          "detected": "쿠팡 로켓배송 및 로켓직구 상품을 누구나 무료로 배송받을 수 있습니다.",
+          "note": "감지된 의도가 선언된 브랜드를 명확히 설명하고 핵심 서비스를 언급하여 매우 높은 일치도를 보임."
+        }
+      }
+    ],
+    "aggregate": {
+      "click_intent_rate": 0.4,
+      "ci_low": 0.2,
+      "ci_high": 0.6,
+      "purchase_intent": 3.35,
+      "trust_avg": 3.15,
+      "rejection_rate": 0.25,
+      "variance_warning": false,
+      "effective_n": 20,
+      "payload": {
+        "qa_passed_count": 20,
+        "ci_method": "weighted_bootstrap",
+        "ci_iters": 2000,
+        "purchase_std": 1.195,
+        "weight_sum": 20
+      },
+      "engine_version": "agg-2"
+    },
+    "simulation_id": "1771960d-69c1-4ab7-91c6-cf963412484e"
+  }
