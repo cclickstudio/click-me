@@ -34,6 +34,7 @@ const mainNav = [
 
 // 광고 매니지먼트 하위 메뉴 — 부모를 누르면 아래로 펼쳐진다.
 const manageChildren = [
+  { label: '캠페인 대시보드', href: '/manage/campaigns' },
   { label: '게시물 성과 비교', href: '/manage/compare' },
 ];
 

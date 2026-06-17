@@ -1,5 +1,6 @@
 import { getToken } from "./authApi";
 import type { BoardResponse } from "@/components/manage/compare/types";
+import type { CampaignDetail, CampaignsResponse } from "@/components/manage/campaigns/types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -111,6 +112,8 @@ export const api = {
       }),
     audit: (approvalId: string) => request(`/management/audit?approval_id=${approvalId}`),
     compareBoard: () => request<BoardResponse>("/management/compare/board"),
+    campaigns: () => request<CampaignsResponse>("/management/campaigns"),
+    campaign: (id: string) => request<CampaignDetail>(`/management/campaigns/${id}`),
   },
 
   generator: {
