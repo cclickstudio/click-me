@@ -1,5 +1,13 @@
 import { getToken } from "./authApi";
-import type { DebateResult, DebateStartResult, SimRunInput, SimRunResult } from "./types";
+import type {
+  DebateResult,
+  DebateStartResult,
+  DebateTopic,
+  DebateTopicsResult,
+  QAEvent,
+  SimRunInput,
+  SimRunResult,
+} from "./types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -77,15 +85,27 @@ export const api = {
 
   // 페르소나 토론(/api/debate/*) — 시뮬 반응(reactions)을 받아 토론을 돌리고 결과를 낸다.
   debate: {
-    // 시뮬 반응으로 토론 시작 → run_id. 토론은 항상 실 LLM, lay_count는 일반인 수(2|4).
+    // 추가 토론용 논제 후보 5개 → ranking 순. 안 호출하면 최초 토론(분석 headline 고정).
+    topics: (body: {
+      reactions: unknown[];
+      ad_analysis?: unknown;
+      personas?: unknown[];
+    }): Promise<DebateTopicsResult> =>
+      request<DebateTopicsResult>("/debate/topics", {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+    // 시뮬 반응으로 토론 시작 → run_id. 토론은 항상 실 LLM, lay_count는 일반인 수(2|3|4).
+    // topic을 주면 그 논제로 추가 토론, 안 주면 최초 토론(분석 headline 고정).
     start: (
       body: {
         reactions: unknown[];
         ad_analysis?: unknown;
         personas?: unknown[];
         simulation_id?: string;
+        topic?: DebateTopic;
       },
-      opts?: { layCount?: 2 | 4 },
+      opts?: { layCount?: 2 | 3 | 4 },
     ): Promise<DebateStartResult> => {
       const q = new URLSearchParams();
       if (opts?.layCount) q.set("lay_count", String(opts.layCount));
@@ -96,6 +116,58 @@ export const api = {
     },
     stream: (runId: string) => new EventSource(`${API_BASE}/api/debate/${runId}/stream`),
     result: (runId: string): Promise<DebateResult> => request<DebateResult>(`/debate/${runId}/result`),
+    // 토론 종료 후 Q&A — POST라 EventSource 불가 → fetch + ReadableStream으로 "data: {json}\n\n" 파싱.
+    question: async (
+      runId: string,
+      body: { question: string; reactions: unknown[]; ad_analysis?: unknown },
+      onEvent: (ev: QAEvent) => void,
+    ): Promise<void> => {
+      const token = getToken();
+      const res = await fetch(`${API_BASE}/api/debate/${runId}/question`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok || !res.body) {
+        const err = await res.json().catch(() => ({ detail: `HTTP ${res.status}` }));
+        throw new Error((err as { detail?: string }).detail ?? `HTTP ${res.status}`);
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      // "data: {json}\n\n" 단위로 끊어 파싱.
+      const flush = (chunk: string) => {
+        buffer += chunk;
+        let sep: number;
+        while ((sep = buffer.indexOf("\n\n")) !== -1) {
+          const raw = buffer.slice(0, sep);
+          buffer = buffer.slice(sep + 2);
+          for (const line of raw.split("\n")) {
+            const trimmed = line.trim();
+            if (!trimmed.startsWith("data:")) continue;
+            const payload = trimmed.slice(5).trim();
+            if (!payload) continue;
+            try {
+              onEvent(JSON.parse(payload) as QAEvent);
+            } catch {
+              // 부분 JSON·keep-alive는 무시.
+            }
+          }
+        }
+      };
+
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        flush(decoder.decode(value, { stream: true }));
+      }
+      flush(decoder.decode());
+    },
   },
 
   chat: {
