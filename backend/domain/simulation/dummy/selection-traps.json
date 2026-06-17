@@ -297,6 +297,155 @@
           "qa_passed": true
         }
       ]
+    },
+    {
+      "case_id": "pivot-trap-02",
+      "role": "피벗",
+      "expected_pick": "P-00002",
+      "trap_distractor": "P-00001",
+      "why": "P-00001과 P-00002는 trust=5·purchase_intent=2·미전환까지 동률(갭 3)이라 결정론은 id순으로 P-00001을 찍는다. 그러나 P-00001은 '단 음료 자체를 안 마신다'는 카테고리 거부(밀어도 안 살 천장), P-00002는 '맛만 확인되면 산다'는 조건부 미전환(진짜 스윙보터)이다. 첫 피벗 함정과 다른 거부 유형(카테고리 비소비)으로 게이트의 일반화를 본다.",
+      "reactions": [
+        {
+          "persona_id": "P-00001",
+          "aisas": {"attention": true, "interest": true, "search": false, "action": false, "share": false},
+          "drop_stage": "search",
+          "drop_reason_tag": "low_relevance",
+          "purchase_intent": 2,
+          "trust": 5,
+          "rejected": false,
+          "emotion_tag": "indifference",
+          "perceived_message": "믿을 만한 브랜드의 제로 음료",
+          "utterance": "브랜드는 신뢰하는데 난 원래 단 음료 자체를 안 마셔. 뭘 바꿔도 안 살 듯.",
+          "qa_passed": true
+        },
+        {
+          "persona_id": "P-00002",
+          "aisas": {"attention": true, "interest": true, "search": false, "action": false, "share": false},
+          "drop_stage": "search",
+          "drop_reason_tag": "unclear_message",
+          "purchase_intent": 2,
+          "trust": 5,
+          "rejected": false,
+          "emotion_tag": "curiosity",
+          "perceived_message": "믿을 만한 브랜드의 제로 음료",
+          "utterance": "제로라는 게 진짜 맛 괜찮은지만 확인되면 바로 살 거야.",
+          "qa_passed": true
+        },
+        {
+          "persona_id": "P-00003",
+          "aisas": {"attention": true, "interest": false, "search": false, "action": false, "share": false},
+          "drop_stage": "interest",
+          "drop_reason_tag": "distrust",
+          "purchase_intent": 1,
+          "trust": 2,
+          "rejected": true,
+          "rejection_reason_tag": "distrust",
+          "emotion_tag": "distrust",
+          "perceived_message": "안 믿기는 광고",
+          "utterance": "못 믿겠고 별로야.",
+          "qa_passed": true
+        },
+        {
+          "persona_id": "P-00004",
+          "aisas": {"attention": true, "interest": true, "search": true, "action": true, "share": true},
+          "drop_stage": null,
+          "purchase_intent": 4,
+          "trust": 4,
+          "rejected": false,
+          "emotion_tag": "delight",
+          "perceived_message": "사고 싶은 제로 음료",
+          "utterance": "맛있어 보여서 바로 샀어.",
+          "qa_passed": true
+        },
+        {
+          "persona_id": "P-00005",
+          "aisas": {"attention": true, "interest": true, "search": false, "action": false, "share": false},
+          "drop_stage": "search",
+          "drop_reason_tag": "no_reason_to_explore",
+          "purchase_intent": 3,
+          "trust": 3,
+          "rejected": false,
+          "emotion_tag": "indifference",
+          "perceived_message": "평범한 제로 음료",
+          "utterance": "그냥 그래. 굳이 안 찾아봤어.",
+          "qa_passed": true
+        }
+      ]
+    },
+    {
+      "case_id": "critic-trap-02",
+      "role": "비판자",
+      "expected_pick": "P-00002",
+      "trap_distractor": "P-00001",
+      "why": "P-00001과 P-00002는 둘 다 거부·trust=2·purchase_intent=1이라 stance_score가 -7.5로 같고 결정론은 id순으로 P-00001을 찍는다. 그러나 P-00001은 '이번 카피가 불쾌'한 크리에이티브 거부(카피만 고치면 풀림), P-00002는 '맨날 과장하는 브랜드라 뭘 내놔도 안 믿어'(밀어도 안 풀리는 구조적 천장)다. 첫 비판자 함정(광고 피로)과 다른 유형(카피 불쾌)으로 본다.",
+      "reactions": [
+        {
+          "persona_id": "P-00001",
+          "aisas": {"attention": true, "interest": false, "search": false, "action": false, "share": false},
+          "drop_stage": "interest",
+          "drop_reason_tag": "other",
+          "purchase_intent": 1,
+          "trust": 2,
+          "rejected": true,
+          "rejection_reason_tag": "offensive",
+          "emotion_tag": "annoyance",
+          "perceived_message": "불쾌한 카피의 광고",
+          "utterance": "이번 광고 카피가 불쾌해서 거부. 제품 자체야 뭐 괜찮을 수도 있고.",
+          "qa_passed": true
+        },
+        {
+          "persona_id": "P-00002",
+          "aisas": {"attention": true, "interest": false, "search": false, "action": false, "share": false},
+          "drop_stage": "interest",
+          "drop_reason_tag": "distrust",
+          "purchase_intent": 1,
+          "trust": 2,
+          "rejected": true,
+          "rejection_reason_tag": "overpromise",
+          "emotion_tag": "distrust",
+          "perceived_message": "과장하는 브랜드의 광고",
+          "utterance": "이 브랜드는 맨날 과장만 해. 뭘 내놔도 안 믿어.",
+          "qa_passed": true
+        },
+        {
+          "persona_id": "P-00003",
+          "aisas": {"attention": true, "interest": true, "search": false, "action": false, "share": false},
+          "drop_stage": "search",
+          "drop_reason_tag": "price_concern",
+          "purchase_intent": 2,
+          "trust": 5,
+          "rejected": false,
+          "emotion_tag": "curiosity",
+          "perceived_message": "믿을 만한 신제품",
+          "utterance": "믿는데 가격 때문에 아직 안 샀어.",
+          "qa_passed": true
+        },
+        {
+          "persona_id": "P-00004",
+          "aisas": {"attention": true, "interest": true, "search": true, "action": true, "share": false},
+          "drop_stage": null,
+          "purchase_intent": 4,
+          "trust": 4,
+          "rejected": false,
+          "emotion_tag": "delight",
+          "perceived_message": "사고 싶은 신제품",
+          "utterance": "괜찮아서 바로 샀어.",
+          "qa_passed": true
+        },
+        {
+          "persona_id": "P-00005",
+          "aisas": {"attention": true, "interest": true, "search": false, "action": false, "share": false},
+          "drop_stage": "search",
+          "drop_reason_tag": "no_reason_to_explore",
+          "purchase_intent": 2,
+          "trust": 2,
+          "rejected": false,
+          "emotion_tag": "indifference",
+          "perceived_message": "그저 그런 신제품",
+          "utterance": "별 느낌 없어.",
+          "qa_passed": true
+        }
+      ]
     }
   ]
 }
