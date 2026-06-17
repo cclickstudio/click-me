@@ -67,11 +67,15 @@ class DebateService:
         ad_analysis: AdInterpretation | None = None,
         *,
         simulation_id: str | None = None,
+        lay_count: int = 4,
     ) -> str:
-        """비동기 시작 — 백그라운드 실행 후 run_id 반환(진행률은 SSE, 결과는 get_result)."""
+        """비동기 시작 — 백그라운드 실행 후 run_id 반환(진행률은 SSE, 결과는 get_result).
+
+        lay_count: 일반인 수(2=피벗·비판자 / 4=+완주자·미온). 패널 = 전문가4 + 일반인lay_count.
+        """
         run_id = str(uuid.uuid4())
         self._store.create_run(run_id)
-        asyncio.create_task(self._run(run_id, reactions, ad_analysis, simulation_id))
+        asyncio.create_task(self._run(run_id, reactions, ad_analysis, simulation_id, lay_count))
         return run_id
 
     async def run(
@@ -80,11 +84,12 @@ class DebateService:
         ad_analysis: AdInterpretation | None = None,
         *,
         simulation_id: str | None = None,
+        lay_count: int = 4,
     ) -> dict | None:
         """동기 실행 — 끝까지 돌린 뒤 결과(분석·KPI·주제·패널)를 반환."""
         run_id = str(uuid.uuid4())
         self._store.create_run(run_id)
-        await self._run(run_id, reactions, ad_analysis, simulation_id)
+        await self._run(run_id, reactions, ad_analysis, simulation_id, lay_count)
         return self._store.get_result(run_id)
 
     async def _run(
@@ -93,6 +98,7 @@ class DebateService:
         reactions: list[PersonaReaction],
         ad_analysis: AdInterpretation | None,
         simulation_id: str | None = None,
+        lay_count: int = 4,
     ) -> None:
         store = self._store
         try:
@@ -139,8 +145,8 @@ class DebateService:
             )
             await asyncio.sleep(0)
 
-            # ── 조각 10-a 구성(전문가 4 합성 + 일반인 2 선발) ──
-            panel = select_panel(reactions, ad_analysis)
+            # ── 조각 10-a 구성(전문가 4 합성 + 일반인 lay_count 선발) ──
+            panel = select_panel(reactions, ad_analysis, lay_count)
             store.emit(
                 run_id,
                 {

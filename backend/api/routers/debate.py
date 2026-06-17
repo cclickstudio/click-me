@@ -48,14 +48,20 @@ async def analyze_reactions(body: DebateRequest) -> dict:
 
 
 @router.post("/start")
-async def start_debate(body: DebateRequest, use_llm: bool = False) -> dict:
-    """JSON 데이터(reactions[])로 토론 시작 — 비동기. use_llm=true면 실 LLM(비용 발생)."""
+async def start_debate(body: DebateRequest, use_llm: bool = False, lay_count: int = 4) -> dict:
+    """JSON 데이터(reactions[])로 토론 시작 — 비동기. use_llm=true면 실 LLM(비용 발생).
+
+    lay_count: 일반인 수(2=피벗·비판자 / 4=+완주자·미온). 패널 = 전문가4 + 일반인lay_count.
+    두 버전을 같은 데이터로 돌려 비교할 수 있게 분리.
+    """
     if not body.reactions:
         raise HTTPException(status_code=422, detail="reactions가 비어 있습니다.")
+    if lay_count not in (2, 4):
+        raise HTTPException(status_code=422, detail="lay_count는 2 또는 4여야 합니다.")
     run_id = await _svc(use_llm).start(
-        body.reactions, body.ad_analysis, simulation_id=body.simulation_id
+        body.reactions, body.ad_analysis, simulation_id=body.simulation_id, lay_count=lay_count
     )
-    return {"run_id": run_id, "stream_url": f"/api/debate/{run_id}/stream"}
+    return {"run_id": run_id, "stream_url": f"/api/debate/{run_id}/stream", "lay_count": lay_count}
 
 
 @router.get("/{run_id}/stream")

@@ -90,8 +90,8 @@ def main() -> int:
             f"토픽 재현성 [{topic.primary_signal}] {topic.headline}",
         )
 
-        # ⑧ 조각 10-a — 패널 구성(전문가4 합성 + 일반인2 선발·중복없음·결정론)
-        panel = select_panel(d.reactions, d.ad_analysis)
+        # ⑧ 조각 10-a — 패널 구성(전문가4 합성 + 일반인 lay_count 선발·중복없음·결정론)
+        panel = select_panel(d.reactions, d.ad_analysis)  # 기본 lay_count=4
         ids = [p.persona_id for p in panel.participants]
         roster = ", ".join(
             f"{p.persona_id}[{p.role}"
@@ -101,7 +101,7 @@ def main() -> int:
         print(f"  panel: {roster}")
         experts = [p for p in panel.participants if p.is_expert]
         laypeople = [p for p in panel.participants if not p.is_expert]
-        expected_size = 4 + min(4, a.total_n)  # 전문가 4 + 일반인(피벗·완주자·비판자·미온) 최대 4
+        expected_size = 4 + min(4, a.total_n)  # 전문가 4 + 일반인(피벗·비판자·완주자·미온) 최대 4
         size_ok = len(panel.participants) == expected_size and len(experts) == 4
         uniq_ok = len(set(ids)) == len(ids)
         det_ok = [
@@ -111,6 +111,18 @@ def main() -> int:
             size_ok and uniq_ok and det_ok,
             f"구성 전문가{len(experts)}+일반인{len(laypeople)}·중복없음·결정론 "
             f"(pivot={panel.pivot_id}, critic={panel.critic_secured})",
+        )
+
+        # ⑧b 조각 10-a — lay_count=2 버전(전문가4 + 일반인2=피벗·비판자, slot 5·6 연속)
+        panel2 = select_panel(d.reactions, d.ad_analysis, 2)
+        lay2 = [p for p in panel2.participants if not p.is_expert]
+        roles2 = [p.role for p in lay2]
+        slots2 = [p.slot for p in panel2.participants]
+        ok8b = _check(
+            len(panel2.participants) == 4 + min(2, a.total_n)
+            and roles2 == ["피벗", "비판자"][: len(lay2)]
+            and slots2 == list(range(1, len(panel2.participants) + 1)),  # slot 연속(빈칸 없음)
+            f"lay_count=2 → 전문가4+일반인{len(lay2)}{roles2}·slot연속",
         )
 
         # ⑨ 조각 10-b — 엔진·이름 배정(엔진 쿼터 haiku3/gpt3/gemini2·이름 중복없음·결정론)
@@ -134,7 +146,7 @@ def main() -> int:
             f"배정 엔진{eng_counts}·judge={ap.judge_engine}·이름중복없음·결정론",
         )
 
-        all_ok = all_ok and ok1 and ok3 and ok5 and ok6 and ok7 and ok8 and ok9
+        all_ok = all_ok and ok1 and ok3 and ok5 and ok6 and ok7 and ok8 and ok8b and ok9
         print()
 
     # ② 더미1 손검증: attention10 interest10 search0 action1 share0, 병목 interest->search(10)

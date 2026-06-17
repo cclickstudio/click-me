@@ -82,15 +82,16 @@ ClickMe — 집행 전 AI 가상 소비자에게 광고를 테스트하고 집�
 
 ## 4-2. 패널 구조 변경 (2026-06-17 세션) — **설계 + 코드 반영 완료**
 
-토론 패널 8명 구성과 Judge 모델을 바꿨다. **문서 4개 + 코드 전부 반영하고 verify 4종(8·9·10-a·10-b / 10-c mock / stream / persist) 더미 5개 통과·Ruff 통과까지 확인했다.**
+토론 패널 구성(전문가4 + 일반인 2 또는 4)과 Judge 모델을 바꿨다. **문서 4개 + 코드 전부 반영하고 verify 4종(8·9·10-a·10-b / 10-c mock / stream / persist) 더미 5개 통과·Ruff 통과까지 확인했다. 일반인 2/4는 `lay_count` API로 분리.**
 
-- **8명 구성 변경** — 기존 "전원 실제 반응자 6명" → **도메인 전문가 2 + 마케팅 전문가 2 + 일반인 4** (소비자 4 : 전문가 4 균형).
-  - **일반인 4** = 실제 반응자에서 **피벗·완주자·비판자·미온** 배타 선발(분포 범위 커버). 피벗=신뢰-행동 갭, 완주자=action 전형(클릭0%면 최대 긍정), 비판자=`min(stance_score)`(항상 1명 확보), 미온=미전환 중 피벗과 trust 차 최대. (처음 일반인 2명(피벗+비판자)이었으나 **순수 소비자 의견의 가치를 위해 4명으로 확대** — 토론자가 저가 라인이라 비용 영향 작음.)
+- **패널 구성** — 기존 "전원 실제 반응자 6명" → **전문가 4 + 일반인 N**. 일반인 수는 `lay_count`(API 파라미터, 기본 4)로 선택: **2명(피벗·비판자) / 4명(+완주자·미온)**. ⚠️ **2 vs 4 어느 쪽이 나은지 미검증 — 둘 다 돌려보고 결정(사용자 요청으로 API 분리).**
+  - **일반인 선발** = 우선순위 **피벗 → 비판자 →(4명)완주자 → 미온** 배타 선발, slot 5,6,… **연속** 배정(빈칸 없어 엔진 라운드로빈 균등: 6명 2/2/2, 8명 3/3/2). 피벗=신뢰-행동 갭, 비판자=`min(stance_score)`(항상 1명), 완주자=action 전형(클릭0%면 최대 긍정), 미온=미전환 중 피벗과 trust 차 최대.
+  - **(보류) 타겟 적합 선발** — "과자면 10·20대 타겟에서 일반인 선발"은 반응 데이터에 나이·성별이 없어(=`PersonaReaction`에 인구통계 부재) 보류. 추후 reaction에 age/gender(Optional) 추가 + `detected_target` 규칙 파싱 필요.
   - **전문가 4** = 합성(실제 반응 없음). 도메인 2는 `ad_analysis`의 카테고리(`detected_industry`/`mismatch_detail.category.declared`)를 `{category}` 슬롯에 끼운 **고정 프롬프트 템플릿**(LLM 생성✗), 마케팅 2는 카테고리 무관 고정(퍼포먼스/브랜드). **분석결과(8·9)에 grounded** — "수치 밖 사실 금지" 프롬프트 제약.
   - **grounding 두 갈래** — 일반인=자기 실제 반응(1인칭), 전문가=분석 결과(3인칭 진단). 소비자 4 : 전문가 4 균형.
 - **모델 배정 변경** — 전문가는 stance가 없어 기존 "입장순 교차" 불가 → **역할 기반 라운드로빈**(`PANEL_ENGINE`, `(slot-1)%3`). 토론자 8명 Haiku3/GPT3/Gemini2(엔진⊥역할). 피벗 Haiku 고정 규칙 폐기.
 - **Judge 모델** — **Opus 4.8 → Sonnet 4.6 다운그레이드**(비용). Judge는 호출 3~4회라 비용영향 작고 종합추론 신뢰가 중요 → Haiku 대신 Sonnet 절충. `models.judge` = `claude-sonnet-4-6`.
-- **코드 반영 완료** — `contracts/debate_schemas.py`(`is_expert`·전문가 `persona_profile`·`judge_engine="sonnet"`), `tools/debate/selector.py`(전문가4 합성+`detect_category`+일반인4 `pick_pivot`/`pick_finisher`/`pick_critic`/`pick_second_undecided`, `select_panel(reactions, ad_analysis)`), `assigner.py`(`PANEL_ENGINE` slot 라운드로빈·`JUDGE_ENGINE="sonnet"`·전문가 프로필 승계), `adapters/llm_debate.py`(`SONNET_MODEL`·Judge engine 파라미터·`_expert_system` grounding 분기), `mock_debate.py`(역할 reason·비판자 dissent), `service/debate_service.py`(ad_analysis 전달), `wiring.py` 주석, `verify.py`·`verify_debate`·`verify_stream`·`verify_persist`(전문가/일반·8명·judge=sonnet 검증).
+- **코드 반영 완료** — `contracts/debate_schemas.py`(`is_expert`·전문가 `persona_profile`·`judge_engine="sonnet"`), `tools/debate/selector.py`(전문가4 합성+`detect_category`+일반인 `pick_pivot`/`pick_finisher`/`pick_critic`/`pick_second_undecided`, **`select_panel(reactions, ad_analysis, lay_count=4)`** 연속 slot), `assigner.py`(`PANEL_ENGINE` slot 라운드로빈·`JUDGE_ENGINE="sonnet"`·전문가 프로필 승계), `adapters/llm_debate.py`(`SONNET_MODEL`·Judge engine 파라미터·`_expert_system` grounding 분기), `mock_debate.py`(역할 reason·비판자 dissent), `service/debate_service.py`(ad_analysis·**lay_count 전파**), **`api/routers/debate.py`(`POST /start?lay_count=2|4` 쿼리·422 검증)**, `wiring.py` 주석, `verify.py`(lay_count 2/4 둘 다)·`verify_debate`·`verify_stream`·`verify_persist`.
   - **미검증(잔여)**: 실 LLM 토론(`use_llm=true`)은 비용 때문에 안 돌림 — 전문가 grounding 실동작은 다음에 1회 확인 권장. GPT 쿼터 이슈는 그대로(§5-1).
 
 ## 5. 다음 할 일 (외부 환경/개선)
