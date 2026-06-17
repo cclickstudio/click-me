@@ -222,23 +222,30 @@ class PersonaSampler:
         Layer1 스킵 금지 — 필터 안에서도 실분포(밴드 share·성비)를 유지하며 샘플링.
         """
         tf = target_filter or {}
-        age_min = max(self._min_age, int(tf.get("age_min", self._min_age)))
-        age_max = int(tf.get("age_max", _OPEN_BAND_TOP))
+        user_min = tf.get("age_min")  # 사용자 지정만 분리 — 기본 min_age 절단과 구분(§Tier2-A)
+        user_max = tf.get("age_max")
+        age_min = max(self._min_age, int(user_min) if user_min is not None else self._min_age)
+        age_max = int(user_max) if user_max is not None else _OPEN_BAND_TOP
         gender_filter = tf.get("gender")
 
         cells: list[tuple[tuple[int, int, str], float]] = []
         for b in self._population["bands"]:
-            lo, hi = _band_range(b["age_band"])
-            lo, hi = max(lo, age_min), min(hi, age_max)
+            full_lo, full_hi = _band_range(b["age_band"])
+            lo, hi = max(full_lo, age_min), min(full_hi, age_max)
             if lo > hi:
                 continue
-            full = _band_range(b["age_band"])
-            frac = (hi - lo + 1) / (full[1] - full[0] + 1)  # 부분 절단 시 가중치 비례 축소
+            span = full_hi - full_lo + 1
             if self._reachability_sampling:
                 # Meta 도달 분포를 연령 marginal로 직접 사용(§Tier2-A). 메타 추산치는 census
                 # 인구를 초과(복수계정 등)해 침투율이 아닌 '도달 marginal' → 인구비중 곱 금지.
+                # frac은 '사용자 지정' 연령 절단만 반영 — 기본 min_age(14) 절단으로는 축소하지
+                # 않는다. 도달 marginal은 밴드 내 실제 연령 분포를 이미 담아 균등 가정 축소가 왜곡.
+                u_lo = max(full_lo, int(user_min)) if user_min is not None else full_lo
+                u_hi = min(full_hi, int(user_max)) if user_max is not None else full_hi
+                frac = (u_hi - u_lo + 1) / span if u_hi >= u_lo else 0.0
                 band_weight = self._reach_marginal(b["age_band"]) * frac
             else:
+                frac = (hi - lo + 1) / span  # 부분 절단 시 가중치 비례 축소(인구 균등 가정)
                 band_weight = b["share"] * frac
             for sex, ratio in (("M", b["male_ratio"]), ("F", 1 - b["male_ratio"])):
                 if gender_filter and sex != gender_filter:
