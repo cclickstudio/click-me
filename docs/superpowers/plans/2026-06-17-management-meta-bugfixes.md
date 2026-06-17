@@ -100,6 +100,13 @@
 - [ ] **Step 2:** `uv run ruff format . && uv run ruff check . --fix`.
 - [ ] **Step 3:** 논리 단위 커밋 — `fix: management Meta 연동 버그 수정 (코드리뷰 후속, High/Medium)`.
 
+## 실 API 검증 로그 (2026-06-17, System User 토큰)
+
+계정 `act_882448327559337`(currency=KRW)에 실호출로 확인한 결과.
+
+- **KRW offset = 1 확정 [Task 10]** — `min_daily_budget=1521`(≈$1.1)이라 원 단위 그대로가 정답. offset=100이면 최소예산 ₩15로 비현실적. `currency_offset`은 계정 노드 필드가 아님(code=100 에러)이라 `min_daily_budget`으로 역산. → 코드 무변경, 주석 정정.
+- **get_metrics 요청 형태 유효 [Task 5]** — `time_range`(time_increment 없음) 요청을 Meta가 정상 수락(에러 없음). 다만 **계정에 캠페인·지출이 0이라 응답이 `[]`** → "단일 집계행 반환" 가정의 데이터 실증은 보류. 실 지출 캠페인 확보 후 `time_increment` 유무로 행 수 차이 재확인 필요(코드 문제 아님, 데이터 부재).
+
 ## (주의 · 본 PR 밖)
 
 - LIVE 모드 해금은 별도 — 본 수정은 DRY_RUN/SANDBOX 게이트 유지.
