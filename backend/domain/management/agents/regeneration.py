@@ -120,7 +120,11 @@ class RegenerationContext:
     run_days: int
     expected_state_version: str
     approval_policy_version: str
-    action_type: str = "REPLACE_CREATIVE"  # 어휘 정본 = contracts/policy.py TIER_POLICY
+    #: 사용자 의향 — decide_action이 예산 가지(증액↔끄기)를 가를 때만 사용.
+    risk_appetite: RiskAppetite = RiskAppetite.CONSERVATIVE
+    #: None이면 agent가 진단으로 자율 결정(decide_action). 명시하면 그 값으로 override
+    #: (PR2 신규 캠페인 등 오케스트레이터 주도 흐름). 어휘 정본 = contracts/policy.py.
+    action_type: str | None = None
     # CREATE_CAMPAIGN(신규 캠페인 생성, PR2 옵션 A)일 때만 채운다. 대상 id가 없으므로
     # 오케스트레이터는 target_object_ids=(ad_account_id,)로 두고 설정은 여기로 전달한다.
     campaign_config: CampaignConfig | None = None
@@ -140,6 +144,7 @@ class RegenState(TypedDict, total=False):
 
     diagnosis: DiagnosisResult
     context: RegenerationContext
+    action_type: str | None  # decide가 정한 처방 (None = 관망)
     candidates: list[CreativeCandidate]
     survivors: list[CreativeCandidate]
     best: CreativeCandidate | None
@@ -182,11 +187,17 @@ class RegenerationAgent:
 
     def _build_graph(self) -> CompiledStateGraph:
         graph = StateGraph(RegenState)
+        graph.add_node("decide", self._node_decide)
         graph.add_node("generate", self._node_generate)
         graph.add_node("guard", self._node_guard)
         graph.add_node("score", self._node_score)
         graph.add_node("package", self._node_package)
-        graph.set_entry_point("generate")
+        graph.set_entry_point("decide")
+        graph.add_conditional_edges(
+            "decide",
+            self._route_after_decide,
+            {"creative": "generate", "direct": "package", "noop": END},
+        )
         graph.add_edge("generate", "guard")
         graph.add_edge("guard", "score")
         graph.add_conditional_edges(
@@ -196,6 +207,19 @@ class RegenerationAgent:
         )
         graph.add_edge("package", END)
         return graph.compile()
+
+    async def _node_decide(self, state: RegenState) -> RegenState:
+        context = state["context"]
+        action_type = context.action_type or decide_action(
+            state["diagnosis"], context.risk_appetite
+        )
+        return {"action_type": action_type}
+
+    def _route_after_decide(self, state: RegenState) -> str:
+        action_type = state.get("action_type")
+        if action_type is None:
+            return "noop"  # 관망 — 빈손 복귀
+        return "creative" if action_type in CREATIVE_ACTIONS else "direct"
 
     async def _node_generate(self, state: RegenState) -> RegenState:
         return {"candidates": await self._generate(state["diagnosis"])}
@@ -218,7 +242,11 @@ class RegenerationAgent:
 
     async def _node_package(self, state: RegenState) -> RegenState:
         proposal = self._package(
-            state["diagnosis"], state["context"], state["best"], state["survivors"]
+            state["diagnosis"],
+            state["context"],
+            state["action_type"],
+            state.get("best"),
+            state.get("survivors", []),
         )
         return {"proposal": proposal}
 
@@ -288,34 +316,35 @@ class RegenerationAgent:
         self,
         diagnosis: DiagnosisResult,
         context: RegenerationContext,
-        best: CreativeCandidate,
+        action_type: str,
+        best: CreativeCandidate | None,
         survivors: list[CreativeCandidate],
     ) -> ActionProposal:
         now = self._clock()
         # 정보 방화벽 — 근거는 진단 evidence + 후보 점수만 (그 밖 정보로 추론 금지)
-        evidence: dict[str, Any] = {
-            **diagnosis.evidence_metrics,
-            "candidates": [
+        evidence: dict[str, Any] = {**diagnosis.evidence_metrics}
+        # 크리에이티브 가지에서만 후보 근거를 싣는다 (예산/끄기는 진단 근거만).
+        if best is not None:
+            evidence["candidates"] = [
                 {
                     "candidate_id": c.candidate_id,
                     "sim_score": c.sim_score,
                     "preview_url": c.preview_url,
                 }
                 for c in survivors
-            ],
-            "selected_candidate_id": best.candidate_id,
-        }
+            ]
+            evidence["selected_candidate_id"] = best.candidate_id
         # 옵션 A — 신규 캠페인 생성은 대상 id가 없어 설정을 evidence_metrics에 싣는다
         # (해시 산식이 evidence를 포함 → 변조 방지 대상에 들어감).
-        if context.action_type == "CREATE_CAMPAIGN" and context.campaign_config is not None:
+        if action_type == "CREATE_CAMPAIGN" and context.campaign_config is not None:
             evidence["campaign_config"] = context.campaign_config.model_dump(mode="json")
         proposal = ActionProposal(
             proposal_id=str(uuid4()),
             tenant_id=diagnosis.tenant_id,
             ad_account_id=context.ad_account_id,
             target_object_ids=context.target_object_ids,
-            action_type=context.action_type,
-            action_tier=label_action_tier(context.action_type),
+            action_type=action_type,
+            action_tier=label_action_tier(action_type),
             evidence_metrics=evidence,
             metrics_as_of=diagnosis.metrics_as_of,
             hypothesis=diagnosis.hypothesis,
