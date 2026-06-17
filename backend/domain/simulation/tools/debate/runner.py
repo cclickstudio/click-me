@@ -129,8 +129,9 @@ def run_debate(
             break
 
     participants = [pdebates[p.persona_id] for p in order]
-    proposed_actions = judge.propose_actions(topic, participants)
     final = judge.finalize(topic, participants)
+    # 잠정 액션은 최종 결론(ranked_actions)에 흡수 — 별도 Judge 호출 제거(비용 최적화).
+    proposed_actions = [a.action for a in final.ranked_actions]
     models = {
         "judge": panel.judge_engine,
         "engines": sorted({p.engine for p in panel.participants}),

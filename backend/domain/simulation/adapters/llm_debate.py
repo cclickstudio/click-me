@@ -36,6 +36,7 @@ GPT_MODEL = "gpt-4o-mini"
 GEMINI_MODEL = "gemini-2.5-flash"  # (미배정) 복구용 — 응답 실패 잦아 토론자 배정에서 제외
 
 JUDGE_ENGINE = "sonnet"  # LLMJudge 기본 호출 엔진(assigner.JUDGE_ENGINE과 일치).
+SUMMARIZE_ENGINE = "haiku"  # 라운드 정리는 한 문장 요약 — 저가 엔진으로(비용 최적화).
 _ANTHROPIC_MODELS = {"haiku": HAIKU_MODEL, "sonnet": SONNET_MODEL, "opus": OPUS_MODEL}
 
 _VALID_STANCE = {"positive", "neutral", "negative"}
@@ -335,28 +336,13 @@ class LLMJudge:
             f"{round_n}라운드 발언:\n{body}\n\n핵심 긴장점을 한 문장으로 정리하라(JSON 아님, 평문)."
         )
         try:
+            # 라운드 정리는 한 문장 요약 — Sonnet 불필요. Haiku로 강등(비용 최적화·품질 무손실).
             return self._c.complete(
-                self._engine, _JUDGE_SYS, user, json_mode=False, max_tokens=200
+                SUMMARIZE_ENGINE, _JUDGE_SYS, user, json_mode=False, max_tokens=200
             ).strip()
         except Exception:
             logger.exception("Judge 라운드 정리 실패 round=%s", round_n)
             return f"R{round_n}: 정리 실패"
-
-    def propose_actions(
-        self, topic: DebateTopic, participants: list[ParticipantDebate]
-    ) -> list[str]:
-        body = self._participants_digest(participants)
-        user = (
-            f"주제: {topic.headline}\n참가자 발언 요약:\n{body}\n\n"
-            '개선 레버 1~3개를 JSON으로: {"actions":["...","..."]}'
-        )
-        try:
-            # 한국어 액션 1~3개가 길어 300토큰이면 JSON이 잘릴 수 있다(파싱 실패) — 넉넉히.
-            data = self._c.complete_json(self._engine, _JUDGE_SYS, user, max_tokens=800)
-            return [str(a) for a in (data.get("actions") or [])][:3]
-        except Exception:
-            logger.exception("Judge 액션 제안 실패")
-            return []
 
     def finalize(self, topic: DebateTopic, participants: list[ParticipantDebate]) -> JudgeFinal:
         body = self._participants_digest(participants)
@@ -380,8 +366,8 @@ class LLMJudge:
             '"expected_effect":"기대효과","supporting_personas":["이름"]}]}'
         )
         try:
-            # final은 진단+합의+이견+개선안(supporting 포함)이라 길다 — 잘리지 않게 넉넉히.
-            data = self._c.complete_json(self._engine, _JUDGE_SYS, user, max_tokens=2000)
+            # final은 진단+합의+이견+개선안(supporting 포함)이라 길다 — 잘리지 않을 만큼만(1200).
+            data = self._c.complete_json(self._engine, _JUDGE_SYS, user, max_tokens=1200)
             ranked = [
                 RankedAction(
                     rank=int(a.get("rank", i + 1)),
