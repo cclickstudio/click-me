@@ -63,6 +63,7 @@ def build_report(
         final = debate.final
         return SimulationReport(
             headline=final.headline,
+            plain_summary=final.plain_summary,
             topic=topic.headline,
             kpi=kpi,
             funnel=analysis.funnel,

@@ -300,8 +300,14 @@ class LLMJudge:
         body = self._participants_digest(participants)
         user = (
             f"주제: {topic.headline}\n참가자 발언 요약:\n{body}\n\n"
-            "토론 최종 결론을 아래 JSON으로만 출력하라:\n"
-            '{"headline":"한 문장 진단","consensus":["합의점"],"dissent":["이견"],'
+            "토론 최종 결론을 아래 JSON으로만 출력하라. "
+            "headline·consensus·dissent·ranked_actions는 전문가용(정확한 마케팅 용어 허용), "
+            "plain_summary는 비전문가용이다 — 마케팅을 전혀 모르는 사람도 한 번에 이해하도록 "
+            "전문 용어(퍼널·CTA·전환·포지셔닝 등)를 쓰지 말고, 무엇이 문제인지·왜 그런지·"
+            "그래서 무엇을 하면 좋은지를 3~5문장 일상어로 풀어써라.\n"
+            '{"headline":"한 문장 진단(전문가용)",'
+            '"plain_summary":"전문 용어 없이 풀어쓴 쉬운 결론 3~5문장",'
+            '"consensus":["합의점"],"dissent":["이견"],'
             '"ranked_actions":[{"rank":1,"action":"개선안","expected_effect":"기대효과",'
             '"supporting_personas":["이름"]}]}'
         )
@@ -319,6 +325,7 @@ class LLMJudge:
             ]
             return JudgeFinal(
                 headline=str(data.get("headline", topic.diagnosis)),
+                plain_summary=str(data.get("plain_summary", "")),
                 consensus=[str(s) for s in (data.get("consensus") or [])],
                 dissent=[str(s) for s in (data.get("dissent") or [])],
                 ranked_actions=ranked,

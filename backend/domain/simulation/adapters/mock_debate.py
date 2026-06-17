@@ -105,8 +105,14 @@ class MockJudge:
             )
             for i, a in enumerate(actions)
         ]
+        # 비전문가용 — mock은 결정론이라 주제·첫 액션을 쉬운 말 한두 문장으로 조합(실 LLM이 대체).
+        first = actions[0] if actions else "메시지·CTA 보강"
+        plain_summary = (
+            f"쉽게 말하면, {topic.diagnosis} 지금으로선 '{first}'부터 해보는 게 좋겠습니다."
+        )
         return JudgeFinal(
             headline=topic.diagnosis,
+            plain_summary=plain_summary,
             consensus=[topic.question],
             dissent=dissent,
             ranked_actions=ranked,
