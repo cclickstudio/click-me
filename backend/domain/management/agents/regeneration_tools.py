@@ -12,9 +12,11 @@ Writer의 읽기성 메서드(preview)만 사용한다 (§4-1, LLM 출력 → Wr
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import re
+import time
 from typing import TYPE_CHECKING, Any, Final, Protocol
 from uuid import uuid4
 
@@ -262,6 +264,114 @@ class MetaPreviewTool:
         return await self._writer.preview(candidate.image_ref or candidate.candidate_id)
 
 
+# ── 생성 tool ③ — generator 도메인 HTTP 어댑터 (IMPROVE) ─────────────
+
+
+class GeneratorInputError(ValueError):
+    """IMPROVE 호출에 필요한 입력(기존 크리에이티브 s3_key)이 진단에 없음 → 폴백 신호."""
+
+
+class AsyncHttpClient(Protocol):
+    """generator HTTP API 호출에 쓰는 최소 표면 — 테스트는 fake로 대체한다."""
+
+    async def post(self, url: str, json: dict[str, Any]) -> Any: ...  # noqa: A002
+
+    async def get(self, url: str) -> Any: ...
+
+
+def _summarize_diagnosis(diagnosis: DiagnosisResult) -> str:
+    """진단을 generator IMPROVE의 simulation_summary 문자열로 합성 (s3_key는 제외)."""
+    parts = [f"이상 유형: {diagnosis.anomaly_type.value}"]
+    if diagnosis.hypothesis:
+        parts.append(f"가설: {diagnosis.hypothesis}")
+    evidence = {k: v for k, v in diagnosis.evidence_metrics.items() if k != "existing_ad_s3_key"}
+    if evidence:
+        parts.append(f"근거: {json.dumps(evidence, ensure_ascii=False)}")
+    return " / ".join(parts)
+
+
+class GeneratorHttpTool:
+    """CreativeGenerationTool 구현 — generator 도메인의 공개 HTTP API(IMPROVE)를 호출한다.
+
+    도메인 경계 준수: generator 내부를 import하지 않고 HTTP 표면에만 의존한다
+    (의존 계약 = POST /generations(IMPROVE) 요청 + GET /generations/{id} 응답 모양).
+    생성은 백그라운드 작업이라 GET으로 완료까지 폴링하고, 초과 시 TimeoutError(→폴백).
+    필수 입력 existing_ad_s3_key는 진단 evidence에서 읽는다 — 없으면 GeneratorInputError.
+    """
+
+    def __init__(
+        self,
+        client: AsyncHttpClient,
+        *,
+        base_url: str = "/api/generator",
+        poll_interval: float = 0.5,
+        timeout_s: float = 30.0,
+        clock: Any = None,
+        sleep: Any = None,
+    ) -> None:
+        self._client = client
+        self._base = base_url.rstrip("/")
+        self._poll_interval = poll_interval
+        self._timeout_s = timeout_s
+        self._clock = clock or time.monotonic
+        self._sleep = sleep or asyncio.sleep
+
+    async def generate(self, diagnosis: DiagnosisResult, count: int) -> list[CreativeCandidate]:
+        s3_key = diagnosis.evidence_metrics.get("existing_ad_s3_key")
+        if not s3_key:
+            raise GeneratorInputError("진단에 existing_ad_s3_key가 없어 IMPROVE 호출 불가")
+        body = {
+            "mode": "improve",
+            "existing_ad_s3_key": s3_key,
+            "simulation_summary": _summarize_diagnosis(diagnosis),
+            "fix_requests": diagnosis.hypothesis or None,
+        }
+        post = await self._client.post(f"{self._base}/generations", json=body)
+        generation_id = post.json()["generation_id"]
+        detail = await self._poll(generation_id)
+        candidates = detail.get("candidates", [])[:count]
+        return [
+            CreativeCandidate(
+                candidate_id=c["candidate_id"],
+                ad_copy=c["copy"],
+                image_ref=c.get("s3_key"),
+            )
+            for c in candidates
+        ]
+
+    async def _poll(self, generation_id: str) -> dict[str, Any]:
+        start = self._clock()
+        url = f"{self._base}/generations/{generation_id}"
+        while True:
+            detail = (await self._client.get(url)).json()
+            status = detail.get("status")
+            if status == "completed":
+                return detail
+            if status == "failed":
+                raise RuntimeError(f"generator 생성 실패: {generation_id}")
+            if self._clock() - start >= self._timeout_s:
+                raise TimeoutError(f"generator 생성 타임아웃: {generation_id}")
+            await self._sleep(self._poll_interval)
+
+
+class FallbackCreativeGenerator:
+    """primary(실 generator) 실패 시 fallback(Template 등)으로 graceful degrade.
+
+    어떤 실패(타임아웃·입력부족·네트워크)든 결정론 폴백으로 — 빈손보다 낫고,
+    키·서버 없는 CI·데모에서도 같은 결과를 재현한다 (게이트 #9·#10).
+    """
+
+    def __init__(self, *, primary: Any, fallback: Any) -> None:
+        self._primary = primary
+        self._fallback = fallback
+
+    async def generate(self, diagnosis: DiagnosisResult, count: int) -> list[CreativeCandidate]:
+        try:
+            return list(await self._primary.generate(diagnosis, count))
+        except Exception:  # noqa: BLE001 — 폴백 경계: 어떤 실패든 결정론 폴백으로
+            return list(await self._fallback.generate(diagnosis, count))
+
+
 # ── 조립 헬퍼 — 오케스트레이터(별도 담당)가 쓰는 기본 구성 ────────────
 
 
@@ -271,20 +381,25 @@ def build_regeneration_agent(
     llm: ChatModelLike | None = None,
     ssr: SsrLike | None = None,
     preview_writer: MetaAdsWriter | None = None,
+    generator_client: AsyncHttpClient | None = None,
     **agent_kwargs: Any,
 ) -> RemediationAgent:
     """기본 tool 구성으로 RemediationAgent를 조립한다.
 
-    - 생성: llm 주입 또는 openai 키가 있으면 LLM, 없으면 결정론 템플릿 폴백
+    - 생성: generator_client 주입 시 generator HTTP(IMPROVE)+Template 폴백,
+            아니면 llm/키 있으면 LLM, 없으면 결정론 템플릿 폴백
     - 채점: ssr 주입 시 SSR 정규화, 없으면 결정론 휴리스틱 폴백
     - 미리보기: MetaAdsWriter.preview (stub은 페이스북 미리보기 URL 형식 반환)
     """
-    use_llm = llm is not None or bool(getattr(settings, "openai_api_key", None))
-    generator = (
-        LLMCreativeGenerator(llm=llm, api_key=getattr(settings, "openai_api_key", None))
-        if use_llm
-        else TemplateCreativeGenerator()
-    )
+    if generator_client is not None:
+        generator: Any = FallbackCreativeGenerator(
+            primary=GeneratorHttpTool(generator_client),
+            fallback=TemplateCreativeGenerator(),
+        )
+    elif llm is not None or bool(getattr(settings, "openai_api_key", None)):
+        generator = LLMCreativeGenerator(llm=llm, api_key=getattr(settings, "openai_api_key", None))
+    else:
+        generator = TemplateCreativeGenerator()
     scorer = SsrSimulationScorer(ssr) if ssr is not None else HeuristicSimulationScorer()
     preview = MetaPreviewTool(writer=preview_writer, settings=settings)
     return RemediationAgent(generator=generator, scorer=scorer, preview=preview, **agent_kwargs)
