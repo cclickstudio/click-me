@@ -64,9 +64,9 @@ class MetaAdsWriter:
             "adjust_budget",
             campaign_id,
             idem_key,
-            # ⚠️ LIVE 전 검증 필수(TODO): Meta는 통화별 currency_offset을 적용한다.
-            # KRW offset이 100이면 이 값은 100배 과소(₩50,000→₩500)가 된다.
-            # /act_{id}?fields=currency_offset로 확인 후 변환 적용. 현재 LIVE 봉인이라 보류.
+            # KRW는 minor unit 없음(currency_offset=1) — 원 단위 정수를 그대로 전송.
+            # 실계정 확인(2026-06-17): act 통화=KRW, min_daily_budget=1521(≈$1.1)이라
+            # offset=1 확정(100이면 최소예산이 ₩15로 비현실적). 변환 불필요.
             {"daily_budget": amount_krw},
             amount_krw=amount_krw,
         )

@@ -89,10 +89,10 @@
 - [ ] **Step 2:** `executor` — 부분 실패 시 집행된 타깃 수만큼 예산 커밋(또는 타깃별 커밋 구조).
 - [ ] **Step 3:** 테스트 통과.
 
-## Task 10: KRW 예산 단위 검증 [Fix 9 · Medium · LIVE 전]
+## Task 10: KRW 예산 단위 검증 [Fix 9 · Medium] — ✅ 해결(변환 불필요)
 
-- [ ] **Step 1:** Meta currency offset(KRW) 문서 확인 — 실제 minor unit 기대 여부.
-- [ ] **Step 2:** 결론에 맞춰 `writer.adjust_budget` 단위 변환 + 주석 정정(불확실하면 TODO+가드만, LIVE 봉인 유지).
+- [x] **Step 1:** 실계정 조회(2026-06-17) — currency=KRW, min_daily_budget=1521(≈$1.1) → **offset=1 확정**(100이면 최소예산 ₩15로 비현실적). `currency_offset`은 계정 노드 필드 아님.
+- [x] **Step 2:** 결론 = 원 단위 그대로 전송이 정확 → 코드 무변경, 주석을 검증 결과로 정정.
 
 ## 검증 + 마무리
 
