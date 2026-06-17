@@ -49,6 +49,30 @@ async def test_mock_pipeline_runs_end_to_end() -> None:
     assert result["run_id"] == run_id
 
 
+async def test_ad_and_simulation_blocks_present() -> None:
+    # ERD 광고·시뮬레이션 테이블 데이터가 run 결과에 인메모리로 조립돼 나오는지(ERD 5테이블 출력).
+    service = build_simulation_service()
+    request = SimulationRunRequest(
+        ad_id="AD-BLK", sample_size=20, ad_title="신제품", product_category="음료"
+    )
+    run_id = await service.start(request)
+    await _drain(service, run_id)
+
+    result = service.get_result(run_id)
+    assert {"ad", "simulation"}.issubset(result)
+
+    ad = result["ad"]
+    assert ad["ID"] == "AD-BLK"
+    assert ad["title"] == "신제품"
+    assert ad["product_category"] == "음료"
+
+    sim = result["simulation"]
+    assert sim["ad_id"] == "AD-BLK"
+    assert sim["sample_size"] == 20
+    assert sim["status"] == "COMPLETED"
+    assert sim["qa_passed_count"] == sum(1 for r in result["reactions"] if r["qa_passed"])
+
+
 async def test_reaction_contract_fields_present() -> None:
     service = build_simulation_service()
     run_id = await service.start(SimulationRunRequest(ad_id="AD-1", sample_size=20))

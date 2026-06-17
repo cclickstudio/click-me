@@ -14,6 +14,7 @@ from fastapi.responses import StreamingResponse
 
 from core.config import settings
 from domain.simulation.contracts.schemas import SimulationRunRequest
+from domain.simulation.service.analysis_view import to_analysis_payload
 from domain.simulation.wiring import _ensure_env, build_simulation_service
 
 logger = logging.getLogger("clickme")
@@ -148,8 +149,12 @@ async def run_simulation(
     product_category: str | None = Form(None),
     ad_objective: str | None = Form(None),
     service_class: int | None = Form(None),
+    shape: str = "full",
 ) -> dict:
-    """동기 실행 — 광고+세부사항 입력 → 끝까지 돌려 반응·루브릭·집계를 한 번에 반환."""
+    """동기 실행 — 광고+세부사항 입력 → 끝까지 돌려 반응·루브릭·집계를 한 번에 반환.
+
+    shape=analysis 면 분석팀 정리 스키마(중복 제거·평탄화)로 반환. 기본 full(원본).
+    """
     req = _build_request(
         ad_id=ad_id,
         ad_content=ad_content,
@@ -167,9 +172,10 @@ async def run_simulation(
         service_class=service_class,
     )
     try:
-        return await _service.run(req)
+        result = await _service.run(req)
     except RuntimeError as e:
         raise HTTPException(status_code=500, detail=str(e)) from e
+    return to_analysis_payload(result) if shape == "analysis" else result
 
 
 @router.get("/{run_id}/stream")
@@ -189,3 +195,12 @@ async def get_simulation_result(run_id: str) -> dict:
     if result is None:
         raise HTTPException(status_code=404, detail="결과 없음 — 미완료이거나 잘못된 run_id")
     return result
+
+
+@router.get("/{run_id}/result/analysis")
+async def get_simulation_result_analysis(run_id: str) -> dict:
+    """완료된 실행 결과를 분석팀 정리 스키마(중복 제거·평탄화)로 반환. 없으면 404."""
+    result = _service.get_result(run_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="결과 없음 — 미완료이거나 잘못된 run_id")
+    return to_analysis_payload(result)
