@@ -11,8 +11,10 @@ import logging
 import uuid
 from collections.abc import AsyncIterator, Callable
 
+from langsmith import traceable
+
 from domain.simulation.contracts.debate_ports import DebaterPort, JudgePort
-from domain.simulation.contracts.debate_schemas import DebateTopic
+from domain.simulation.contracts.debate_schemas import DebateResult, DebateTopic
 from domain.simulation.contracts.schemas import AdInterpretation, Persona, PersonaReaction
 from domain.simulation.tools.debate.analyzer import analyze_reactions
 from domain.simulation.tools.debate.assigner import assign_panel
@@ -271,10 +273,20 @@ class DebateService:
 
                 # 토론 토큰 = (토론 후 - 토론 전) 누적 스냅샷 차이. 동시 토론 시 합산될 수 있음.
                 usage_before = self._usage_clients.usage_snapshot() if self._usage_clients else None
-                # LLM 엔진은 동기 블로킹 — 스레드로 분리해 이벤트 루프(다른 SSE 요청)를 막지 않는다.
-                debate = await asyncio.to_thread(
-                    run_debate, assigned, topic, debater, self._judge, _emit
+
+                # 토론 1회를 LangSmith 단일 트레이스로 묶는다 — 내부 LLM 호출(wrap된 클라이언트)이
+                # 이 부모 run의 자식으로 중첩된다(개별 호출이 따로따로 올라가던 것 → 토론 1트리).
+                @traceable(
+                    run_type="chain",
+                    name="토론",
+                    metadata={"topic": topic.headline, "lay_count": lay_count},
                 )
+                def _run_debate_traced() -> DebateResult:
+                    return run_debate(assigned, topic, debater, self._judge, _emit)
+
+                # LLM 엔진은 동기 블로킹 — 스레드로 분리해 이벤트 루프(다른 SSE 요청)를 막지 않는다.
+                # to_thread가 현재 컨텍스트를 스레드로 복사하므로 trace 중첩이 유지된다.
+                debate = await asyncio.to_thread(_run_debate_traced)
                 debate_obj = debate
                 usage = None
                 if usage_before is not None:
