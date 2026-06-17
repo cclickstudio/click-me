@@ -24,11 +24,8 @@ export type LiftResult = {
   computed_at: string;
 };
 
-export type CompareResponse = { title: string; lift: LiftResult };
 export type BoardRow = { title: string; lift: LiftResult };
 export type BoardResponse = { rows: BoardRow[] };
-
-export type CompareTab = 'A' | 'B';
 
 // 비율(%) — 분모 0 보호. engagement/impressions 또는 clicks/impressions.
 export const rate = (num: number, den: number): number => (den > 0 ? (num / den) * 100 : 0);

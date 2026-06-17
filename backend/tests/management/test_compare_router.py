@@ -18,22 +18,6 @@ def client():
     return TestClient(app)
 
 
-def test_compare_returns_lift_result(client):
-    res = client.get("/api/management/compare")
-    assert res.status_code == 200
-    body = res.json()
-    lift = body["lift"]
-    assert lift["organic"]["post_type"] == "organic"
-    assert lift["paid"]["post_type"] == "paid"
-    assert lift["verdict"] in _VERDICTS
-    # 증분 = 광고 도달 - 오가닉 도달, 배수 ≥ 0
-    assert lift["reach_lift_abs"] == lift["paid"]["reach"] - lift["organic"]["reach"]
-    assert lift["reach_lift_ratio"] >= 0.0
-    # 오가닉은 비용·클릭 0
-    assert lift["organic"]["spend_krw"] == 0
-    assert lift["organic"]["clicks"] == 0
-
-
 def test_compare_board_returns_rows(client):
     res = client.get("/api/management/compare/board")
     assert res.status_code == 200
@@ -41,7 +25,14 @@ def test_compare_board_returns_rows(client):
     assert len(rows) == 4
     for row in rows:
         assert row["title"]
-        assert row["lift"]["verdict"] in _VERDICTS
+        lift = row["lift"]
+        assert lift["organic"]["post_type"] == "organic"
+        assert lift["paid"]["post_type"] == "paid"
+        assert lift["verdict"] in _VERDICTS
+        # 증분 = 광고 도달 - 오가닉 도달, 오가닉은 비용·클릭 0
+        assert lift["reach_lift_abs"] == lift["paid"]["reach"] - lift["organic"]["reach"]
+        assert lift["organic"]["spend_krw"] == 0
+        assert lift["organic"]["clicks"] == 0
 
 
 def test_board_budget_spread_lowers_ratio(client):

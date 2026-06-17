@@ -223,14 +223,6 @@ def _today_utc() -> datetime:
     return datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
 
 
-@router.get("/compare")
-async def compare(organic_post_id: str = "ig_demo_1", campaign_id: str = "camp_demo_1"):
-    """오가닉 게시물 vs 광고 집행 게시물 1:1 비교 → 증분 리프트 (A 뷰)."""
-    svc = ComparisonService(build_organic_reader(settings), _MockAdSnapshotReader())
-    lift = await svc.compare(organic_post_id, campaign_id, _today_utc())
-    return {"title": "여름 신상 원피스 🌴", "lift": lift.model_dump(mode="json")}
-
-
 @router.get("/compare/board")
 async def compare_board():
     """여러 게시물의 오가닉→광고 증분 일괄 검증 (B 뷰). 오가닉 reader는 공유해 행마다 다르게."""
