@@ -5,15 +5,15 @@ import pytest
 from domain.management.agents.regeneration import (
     MAX_CANDIDATES,
     CreativeCandidate,
-    RegenerationAgent,
-    RegenerationContext,
+    RemediationAgent,
+    RemediationContext,
     label_action_tier,
 )
 from domain.management.contracts.enums import ActionTier, AnomalyType, ProposalStatus
 from domain.management.contracts.schemas import DiagnosisResult, verify_proposal_hash
 from tests.management.helpers import NOW, POLICY_VERSION, STATE_VERSION
 
-CONTEXT = RegenerationContext(
+CONTEXT = RemediationContext(
     ad_account_id="act_001",
     target_object_ids=("camp-001",),
     budget_before_krw=50_000,
@@ -68,8 +68,8 @@ class StubScorer:
         return self.scores[cand.candidate_id]
 
 
-def build_agent(generator, scorer, **kwargs) -> RegenerationAgent:
-    return RegenerationAgent(generator=generator, scorer=scorer, clock=lambda: NOW, **kwargs)
+def build_agent(generator, scorer, **kwargs) -> RemediationAgent:
+    return RemediationAgent(generator=generator, scorer=scorer, clock=lambda: NOW, **kwargs)
 
 
 async def test_banned_expression_is_filtered():
@@ -99,7 +99,7 @@ async def test_candidate_cap_is_enforced():
 
 def test_candidate_cap_cannot_be_raised_beyond_policy():
     with pytest.raises(ValueError, match="P6"):
-        RegenerationAgent(
+        RemediationAgent(
             generator=StubGenerator([]), scorer=StubScorer({}), max_candidates=MAX_CANDIDATES + 1
         )
 

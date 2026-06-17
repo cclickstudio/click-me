@@ -9,7 +9,7 @@ from domain.management.agents.regeneration import (
     BANNED_EXPRESSIONS,
     MAX_CANDIDATES,
     CreativeCandidate,
-    RegenerationAgent,
+    RemediationAgent,
 )
 from domain.management.agents.regeneration_tools import (
     HeuristicSimulationScorer,
@@ -188,12 +188,12 @@ async def test_preview_tool_uses_writer_readonly_method():
 
 
 async def test_default_tool_chain_produces_finalized_proposal():
-    from domain.management.agents.regeneration import RegenerationContext
+    from domain.management.agents.regeneration import RemediationContext
 
     agent = build_regeneration_agent()  # 키 없는 환경 → Template + Heuristic + Preview
-    assert isinstance(agent, RegenerationAgent)
+    assert isinstance(agent, RemediationAgent)
 
-    context = RegenerationContext(
+    context = RemediationContext(
         ad_account_id="act_001",
         target_object_ids=("camp-001",),
         budget_before_krw=50_000,

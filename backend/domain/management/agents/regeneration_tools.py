@@ -23,7 +23,7 @@ from domain.management.agents.regeneration import (
     BANNED_EXPRESSIONS,
     MAX_CANDIDATES,
     CreativeCandidate,
-    RegenerationAgent,
+    RemediationAgent,
 )
 from domain.management.contracts.enums import AnomalyType
 
@@ -272,8 +272,8 @@ def build_regeneration_agent(
     ssr: SsrLike | None = None,
     preview_writer: MetaAdsWriter | None = None,
     **agent_kwargs: Any,
-) -> RegenerationAgent:
-    """기본 tool 구성으로 RegenerationAgent를 조립한다.
+) -> RemediationAgent:
+    """기본 tool 구성으로 RemediationAgent를 조립한다.
 
     - 생성: llm 주입 또는 openai 키가 있으면 LLM, 없으면 결정론 템플릿 폴백
     - 채점: ssr 주입 시 SSR 정규화, 없으면 결정론 휴리스틱 폴백
@@ -287,4 +287,4 @@ def build_regeneration_agent(
     )
     scorer = SsrSimulationScorer(ssr) if ssr is not None else HeuristicSimulationScorer()
     preview = MetaPreviewTool(writer=preview_writer, settings=settings)
-    return RegenerationAgent(generator=generator, scorer=scorer, preview=preview, **agent_kwargs)
+    return RemediationAgent(generator=generator, scorer=scorer, preview=preview, **agent_kwargs)

@@ -6,7 +6,7 @@
 🅰 미구현 파트의 대체:
 - 진단(detection): 가짜 DiagnosisResult를 직접 만들어 투입
 - 승인(approval.py): §8 1주차 운영 원칙의 "동기 즉시승인 스텁"과 동일한 형태로 수동 발급
-실행 경로는 전부 실제 코드: RegenerationAgent → Executor → MetaAdsWriter(DRY_RUN).
+실행 경로는 전부 실제 코드: RemediationAgent → Executor → MetaAdsWriter(DRY_RUN).
 
 비용 관리: 결제(토스 테스트 모드) 충전 잔액 = 집행 한도(BudgetAuthority) → 실행 성공 시 차감.
 데모에서는 토스 호출만 대역(Fake) — 실제 결제 경로는 FE 위젯 → /api/billing 으로 검증.
@@ -25,8 +25,8 @@ from domain.billing.service.billing_service import BillingService
 from domain.management.adapters.meta.writer import MetaAdsWriter
 from domain.management.agents.regeneration import (
     CreativeCandidate,
-    RegenerationAgent,
-    RegenerationContext,
+    RemediationAgent,
+    RemediationContext,
 )
 from domain.management.contracts.enums import AnomalyType, ExecutionMode
 from domain.management.contracts.schemas import ApprovedAction, DiagnosisResult
@@ -95,8 +95,8 @@ async def main() -> None:
     print(diagnosis.model_dump_json(indent=2))
 
     # ── 2) 🅱 재생성 agent → ActionProposal ───────────────────
-    agent = RegenerationAgent(generator=DemoGenerator(), scorer=DemoScorer())
-    context = RegenerationContext(
+    agent = RemediationAgent(generator=DemoGenerator(), scorer=DemoScorer())
+    context = RemediationContext(
         ad_account_id="act_demo",
         target_object_ids=("camp-demo-1",),
         budget_before_krw=50_000,

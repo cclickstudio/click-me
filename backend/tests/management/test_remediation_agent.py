@@ -1,8 +1,8 @@
 # 🅱 처방 agent — 자율 action 결정 + 가지별 라우팅(생성/직접/관망) 검증
 from domain.management.agents.regeneration import (
     CreativeCandidate,
-    RegenerationAgent,
-    RegenerationContext,
+    RemediationAgent,
+    RemediationContext,
     RiskAppetite,
 )
 from domain.management.contracts.enums import ActionTier, AnomalyType
@@ -27,7 +27,7 @@ def make_diagnosis(anomaly: AnomalyType, **overrides) -> DiagnosisResult:
     return DiagnosisResult(**fields)
 
 
-def context(**overrides) -> RegenerationContext:
+def context(**overrides) -> RemediationContext:
     fields = {
         "ad_account_id": "act_001",
         "target_object_ids": ("camp-001",),
@@ -38,7 +38,7 @@ def context(**overrides) -> RegenerationContext:
         "approval_policy_version": POLICY_VERSION,
     }
     fields.update(overrides)
-    return RegenerationContext(**fields)
+    return RemediationContext(**fields)
 
 
 class TrackingGenerator:
@@ -60,7 +60,7 @@ class StubScorer:
 
 
 def build_agent(generator, scorer):
-    return RegenerationAgent(generator=generator, scorer=scorer, clock=lambda: NOW)
+    return RemediationAgent(generator=generator, scorer=scorer, clock=lambda: NOW)
 
 
 async def test_direct_branch_skips_generation():

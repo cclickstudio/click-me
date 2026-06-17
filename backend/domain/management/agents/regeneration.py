@@ -110,7 +110,7 @@ class PreviewTool(Protocol):
 
 
 @dataclass(frozen=True)
-class RegenerationContext:
+class RemediationContext:
     """제안 패키징에 필요한 실행 맥락 — 오케스트레이터(별도 담당)가 전달."""
 
     ad_account_id: str
@@ -139,11 +139,11 @@ def label_action_tier(action_type: str) -> ActionTier:
     return TIER_POLICY.get(action_type, ActionTier.TIER_3)
 
 
-class RegenState(TypedDict, total=False):
+class RemediationState(TypedDict, total=False):
     """LangGraph 상태 — 노드 간 전달되는 값 전부."""
 
     diagnosis: DiagnosisResult
-    context: RegenerationContext
+    context: RemediationContext
     action_type: str | None  # decide가 정한 처방 (None = 관망)
     candidates: list[CreativeCandidate]
     survivors: list[CreativeCandidate]
@@ -151,7 +151,7 @@ class RegenState(TypedDict, total=False):
     proposal: ActionProposal | None
 
 
-class RegenerationAgent:
+class RemediationAgent:
     def __init__(
         self,
         *,
@@ -177,16 +177,18 @@ class RegenerationAgent:
         self._graph = self._build_graph()
 
     async def propose(
-        self, diagnosis: DiagnosisResult, context: RegenerationContext
+        self, diagnosis: DiagnosisResult, context: RemediationContext
     ) -> ActionProposal | None:
         """진단 수신 → (LangGraph) 생성 → 가드 → 채점 → 최선 후보로 패키징."""
-        final: RegenState = await self._graph.ainvoke({"diagnosis": diagnosis, "context": context})
+        final: RemediationState = await self._graph.ainvoke(
+            {"diagnosis": diagnosis, "context": context}
+        )
         return final.get("proposal")
 
     # ── LangGraph 조립 ───────────────────────────────────────────
 
     def _build_graph(self) -> CompiledStateGraph:
-        graph = StateGraph(RegenState)
+        graph = StateGraph(RemediationState)
         graph.add_node("decide", self._node_decide)
         graph.add_node("generate", self._node_generate)
         graph.add_node("guard", self._node_guard)
@@ -208,26 +210,26 @@ class RegenerationAgent:
         graph.add_edge("package", END)
         return graph.compile()
 
-    async def _node_decide(self, state: RegenState) -> RegenState:
+    async def _node_decide(self, state: RemediationState) -> RemediationState:
         context = state["context"]
         action_type = context.action_type or decide_action(
             state["diagnosis"], context.risk_appetite
         )
         return {"action_type": action_type}
 
-    def _route_after_decide(self, state: RegenState) -> str:
+    def _route_after_decide(self, state: RemediationState) -> str:
         action_type = state.get("action_type")
         if action_type is None:
             return "noop"  # 관망 — 빈손 복귀
         return "creative" if action_type in CREATIVE_ACTIONS else "direct"
 
-    async def _node_generate(self, state: RegenState) -> RegenState:
+    async def _node_generate(self, state: RemediationState) -> RemediationState:
         return {"candidates": await self._generate(state["diagnosis"])}
 
-    async def _node_guard(self, state: RegenState) -> RegenState:
+    async def _node_guard(self, state: RemediationState) -> RemediationState:
         return {"candidates": self._guard(state["candidates"])}
 
-    async def _node_score(self, state: RegenState) -> RegenState:
+    async def _node_score(self, state: RemediationState) -> RemediationState:
         scored = await self._score_all(state["candidates"])
         survivors = [c for c in scored if (c.sim_score or 0.0) >= self._min_score]
         best = max(survivors, key=lambda c: c.sim_score or 0.0) if survivors else None
@@ -237,10 +239,10 @@ class RegenerationAgent:
             survivors = [best if c.candidate_id == best.candidate_id else c for c in survivors]
         return {"survivors": survivors, "best": best}
 
-    def _route_after_score(self, state: RegenState) -> str:
+    def _route_after_score(self, state: RemediationState) -> str:
         return "package" if state.get("best") is not None else "end"
 
-    async def _node_package(self, state: RegenState) -> RegenState:
+    async def _node_package(self, state: RemediationState) -> RemediationState:
         proposal = self._package(
             state["diagnosis"],
             state["context"],
@@ -315,7 +317,7 @@ class RegenerationAgent:
     def _package(
         self,
         diagnosis: DiagnosisResult,
-        context: RegenerationContext,
+        context: RemediationContext,
         action_type: str,
         best: CreativeCandidate | None,
         survivors: list[CreativeCandidate],

@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field
 
 from core.config import settings
 from domain.management.adapters.mock import MockAdPlatform
-from domain.management.agents.regeneration import RegenerationContext
+from domain.management.agents.regeneration import RemediationContext
 from domain.management.agents.regeneration_tools import build_regeneration_agent
 from domain.management.approval import (
     approve,
@@ -162,7 +162,7 @@ class RegenerateRequest(BaseModel):
 async def regenerate(body: RegenerateRequest):
     """🅱 재생성 agent — 진단 수신 → 후보 생성·채점 → REPLACE_CREATIVE 제안 패키징."""
     agent = build_regeneration_agent()  # API 키 없으면 결정론 폴백
-    context = RegenerationContext(
+    context = RemediationContext(
         ad_account_id="act_demo_001",
         target_object_ids=(body.diagnosis.campaign_id,),
         budget_before_krw=DAILY_BUDGET_KRW,

@@ -19,8 +19,8 @@ from domain.management.agents.regeneration import (
     BANNED_EXPRESSIONS,
     MAX_CANDIDATES,
     CreativeCandidate,
-    RegenerationAgent,
-    RegenerationContext,
+    RemediationAgent,
+    RemediationContext,
     RiskAppetite,
     decide_action,
 )
@@ -169,7 +169,7 @@ def run_eval(fixture_version: str = "v1") -> EvalReport:
     return summarize(records, fixture_version=fixture_version)
 
 
-# ── agent 실행형 하니스 — 진짜 RegenerationAgent를 fixture 진단에 돌려 채점 ──
+# ── agent 실행형 하니스 — 진짜 RemediationAgent를 fixture 진단에 돌려 채점 ──
 
 
 @dataclass
@@ -239,7 +239,7 @@ def _score_proposal(
 
 async def run_agent_eval(
     fixture_version: str = "v1",
-    agent_factory: Callable[..., RegenerationAgent] | None = None,
+    agent_factory: Callable[..., RemediationAgent] | None = None,
 ) -> EvalReport:
     """fixture 진단마다 진짜 agent를 실행해 RegenerationRecord를 생산·채점한다.
 
@@ -265,8 +265,8 @@ async def run_agent_eval(
         if agent_factory is not None:
             agent = agent_factory(generator=generator, scorer=scorer)
         else:
-            agent = RegenerationAgent(generator=generator, scorer=scorer)
-        context = RegenerationContext(**_EVAL_CONTEXT_DEFAULTS)
+            agent = RemediationAgent(generator=generator, scorer=scorer)
+        context = RemediationContext(**_EVAL_CONTEXT_DEFAULTS)
 
         proposal = await agent.propose(diagnosis, context)
 
@@ -347,7 +347,7 @@ async def run_default_tools_eval(fixture_version: str = "v1") -> EvalReport:
     records: list[RegenerationRecord] = []
     for case in cases:
         diagnosis = DiagnosisResult.model_validate(case["diagnosis"])
-        context = RegenerationContext(**_EVAL_CONTEXT_DEFAULTS)
+        context = RemediationContext(**_EVAL_CONTEXT_DEFAULTS)
         proposal = await agent.propose(diagnosis, context)
         scores, guard_ok, valid = _score_proposal(proposal, banned_ids=set())
         records.append(

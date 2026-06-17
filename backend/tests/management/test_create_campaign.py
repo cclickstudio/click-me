@@ -16,8 +16,8 @@ from domain.management.adapters.meta.client import MetaClient
 from domain.management.adapters.meta.writer import MetaAdsWriter
 from domain.management.agents.regeneration import (
     CreativeCandidate,
-    RegenerationAgent,
-    RegenerationContext,
+    RemediationAgent,
+    RemediationContext,
     label_action_tier,
 )
 from domain.management.contracts.enums import ActionTier, AnomalyType, ExecutionMode, ResultStatus
@@ -161,7 +161,7 @@ class _StubScore:
 
 def test_regeneration_packages_create_campaign_with_config():
     cfg = _config()
-    context = RegenerationContext(
+    context = RemediationContext(
         ad_account_id="111",
         target_object_ids=("111",),
         budget_before_krw=0,
@@ -183,7 +183,7 @@ def test_regeneration_packages_create_campaign_with_config():
         metrics_as_of=NOW,
         status="confirmed",
     )
-    agent = RegenerationAgent(generator=_StubGen(), scorer=_StubScore(), clock=lambda: NOW)
+    agent = RemediationAgent(generator=_StubGen(), scorer=_StubScore(), clock=lambda: NOW)
 
     proposal = asyncio.run(agent.propose(diagnosis, context))
 
