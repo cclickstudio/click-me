@@ -4,6 +4,7 @@
 import { useState } from "react";
 import AppLayout from "@/components/AppLayout";
 import { useProjects } from "@/components/ProjectContext";
+import { DebatePanel } from "@/components/simulator/DebatePanel";
 import { KpiCard } from "@/components/ui/KpiCard";
 import { formatPercent } from "@/lib/utils";
 import { api } from "@/lib/api";
@@ -715,6 +716,14 @@ export default function SimulationRunPage() {
               })}
             </div>
           </div>
+
+          {/* 페르소나 토론 — 위 반응을 받아 토론을 돌려 개선 방향 도출 (리포트 전 결과) */}
+          <DebatePanel
+            reactions={reactions}
+            adAnalysis={ad ?? null}
+            personas={result.personas ?? []}
+            simulationId={result.simulation_id}
+          />
 
           <p className="text-xs text-[#B0B8C1] dark:text-[#4B5563] border-t border-[#E5E8EB] dark:border-[#2D3748] pt-4">
             본 결과는 AI 시뮬레이션 기반 예측이며 의사결정 보조 근거입니다. 클릭 의향률은 실측 CTR이

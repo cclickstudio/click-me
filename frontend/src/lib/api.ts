@@ -1,5 +1,5 @@
 import { getToken } from "./authApi";
-import type { SimRunInput, SimRunResult } from "./types";
+import type { DebateResult, DebateStartResult, SimRunInput, SimRunResult } from "./types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -79,6 +79,30 @@ export const api = {
         return r.json();
       });
     },
+  },
+
+  // 페르소나 토론(/api/debate/*) — 시뮬 반응(reactions)을 받아 토론을 돌리고 결과를 낸다.
+  debate: {
+    // 시뮬 반응으로 토론 시작 → run_id. use_llm=true면 실 LLM(비용), lay_count는 일반인 수(2|4).
+    start: (
+      body: {
+        reactions: unknown[];
+        ad_analysis?: unknown;
+        personas?: unknown[];
+        simulation_id?: string;
+      },
+      opts?: { useLlm?: boolean; layCount?: 2 | 4 },
+    ): Promise<DebateStartResult> => {
+      const q = new URLSearchParams();
+      if (opts?.useLlm) q.set("use_llm", "true");
+      if (opts?.layCount) q.set("lay_count", String(opts.layCount));
+      return request<DebateStartResult>(`/debate/start?${q.toString()}`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+    },
+    stream: (runId: string) => new EventSource(`${API_BASE}/api/debate/${runId}/stream`),
+    result: (runId: string): Promise<DebateResult> => request<DebateResult>(`/debate/${runId}/result`),
   },
 
   chat: {

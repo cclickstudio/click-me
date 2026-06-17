@@ -163,6 +163,116 @@ export interface SimRunInput {
   service_class?: number;
 }
 
+/* ─── Debate (페르소나 토론 /api/debate/*) ─── */
+
+export type DebateStance = "positive" | "neutral" | "negative";
+
+export interface DebateStartResult {
+  run_id: string;
+  stream_url: string;
+  lay_count: number;
+}
+
+export interface DebateUtterance {
+  round: number;
+  phase: string; // 발산 / 반박 / 검증
+  stance: DebateStance;
+  text: string;
+  reason: string;
+  lever: string;
+}
+
+export interface DebateParticipantDebate {
+  persona_id: string;
+  persona_name: string;
+  persona_profile: string;
+  role: string;
+  engine: string;
+  utterances: DebateUtterance[];
+}
+
+export interface RankedAction {
+  rank: number;
+  action: string;
+  expected_effect: string;
+  supporting_personas: string[];
+}
+
+export interface JudgeFinal {
+  headline: string; // 전문가용 진단
+  plain_summary: string; // 비전문가용 쉬운 결론
+  consensus: string[];
+  dissent: string[];
+  ranked_actions: RankedAction[];
+}
+
+export interface DebateData {
+  topic: string;
+  rounds_run: number;
+  stop_reason: string; // consensus / dissensus / max
+  models: { judge?: string; engines?: string[] };
+  participants: DebateParticipantDebate[];
+  round_summaries: Record<string, string>;
+  proposed_actions: string[];
+  final: JudgeFinal | null;
+}
+
+export interface DebateReportQuote {
+  persona_name: string;
+  role: string;
+  stance: DebateStance;
+  text: string;
+}
+
+export interface DebateReport {
+  headline: string; // 전문가용
+  plain_summary: string; // 비전문가용
+  topic: string;
+  debate_available: boolean;
+  rounds_run: number;
+  stop_reason: string | null;
+  consensus: string[];
+  dissent: string[];
+  ranked_actions: RankedAction[];
+  quotes: DebateReportQuote[];
+  consumer_groups: Record<string, number>;
+}
+
+export interface DebateResult {
+  run_id: string;
+  simulation_id: string | null;
+  debate_id: string | null;
+  topic: { headline: string; diagnosis: string; question: string; primary_signal: string };
+  debate: DebateData | null;
+  report: DebateReport;
+}
+
+// SSE 토론 진행 이벤트(stage에 따라 채워지는 필드가 다름).
+export interface DebateSSEEvent {
+  event: "progress" | "completed" | "error";
+  stage?: string; // analysis/kpi/topic/selection/assignment/utterance/round_summary/judge_final/report
+  pct?: number;
+  message?: string;
+  // utterance stage
+  round?: number;
+  phase?: string;
+  persona_id?: string;
+  persona_name?: string;
+  persona_profile?: string;
+  role?: string;
+  engine?: string;
+  stance?: DebateStance;
+  text?: string;
+  reason?: string;
+  lever?: string;
+  // round_summary stage
+  summary?: string;
+  // judge_final stage
+  rounds_run?: number;
+  stop_reason?: string;
+  headline?: string;
+}
+
 export interface SSEProgressEvent {
   event: "progress" | "milestone" | "completed" | "error";
   stage?: string;
