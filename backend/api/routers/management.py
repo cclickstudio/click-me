@@ -6,10 +6,11 @@
 변조를 감지한다 (승인 전 3단계 검증 시연).
 """
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from core.config import settings
 from domain.management.adapters.mock import MockAdPlatform
@@ -22,14 +23,20 @@ from domain.management.approval import (
     validate_proposal,
 )
 from domain.management.comparison.service.comparison_service import ComparisonService
-from domain.management.contracts.enums import CampaignState
+from domain.management.contracts.enums import ActionTier, CampaignState
 from domain.management.contracts.fault_injection import FaultConfig, FaultMode
-from domain.management.contracts.policy import APPROVAL_POLICY_VERSION, DAILY_BUDGET_KRW
+from domain.management.contracts.policy import (
+    APPROVAL_POLICY_VERSION,
+    DAILY_BUDGET_KRW,
+    PROPOSAL_TTL_MINUTES,
+)
 from domain.management.contracts.schemas import (
     ActionProposal,
     ApprovedAction,
+    CampaignConfig,
     DiagnosisResult,
     MetricsSnapshot,
+    finalize_proposal,
 )
 from domain.management.demo import CAMPAIGN_ID, TENANT_ID, build_sample_proposal
 from domain.management.detection.deterministic_dx import diagnose
@@ -312,3 +319,55 @@ async def get_campaign(campaign_id: str):
                 "summary": _campaign_summary(snaps, budget),
             }
     raise HTTPException(status_code=404, detail=f"캠페인 없음: {campaign_id}")
+
+
+# ── 신규 캠페인 생성 제안 (CREATE_CAMPAIGN, Tier 3 — 항상 사람 승인) ────────
+# 진단 없이 폼 입력으로 제안을 생산한다(제안 생산 = 🅱 역할). 대상 id가 없어 CampaignConfig를
+# evidence_metrics에 싣는다(옵션 A). 승인·실행은 기존 /approve·/execute로 이어진다.
+_DEMO_AD_ACCOUNT = "act_demo_001"
+
+
+class CreateCampaignRequest(BaseModel):
+    name: str
+    daily_budget_krw: int = Field(ge=1_000)
+    run_days: int = Field(ge=1, le=90)
+    creative_ad_id: str | None = None
+
+
+@router.post("/campaigns/create-proposal")
+async def create_campaign_proposal(body: CreateCampaignRequest):
+    """폼 입력 → CREATE_CAMPAIGN 제안(Tier 3) 패키징. 승인 후 /execute로 생성(기본 DRY_RUN)."""
+    now = datetime.now(UTC)
+    config = CampaignConfig(
+        campaign_id=f"camp_new_{uuid4().hex[:8]}",
+        tenant_id=TENANT_ID,
+        ad_account_id=_DEMO_AD_ACCOUNT,
+        daily_budget_krw=body.daily_budget_krw,
+        start_at=now,
+        end_at=now + timedelta(days=body.run_days),
+        creative_ad_id=body.creative_ad_id,
+    )
+    proposal = finalize_proposal(
+        ActionProposal(
+            proposal_id=f"prop_{uuid4().hex[:8]}",
+            tenant_id=TENANT_ID,
+            ad_account_id=_DEMO_AD_ACCOUNT,
+            target_object_ids=(_DEMO_AD_ACCOUNT,),  # 신규 — 대상은 광고계정 (옵션 A)
+            action_type="CREATE_CAMPAIGN",
+            action_tier=ActionTier.TIER_3,
+            evidence_metrics={
+                "campaign_config": config.model_dump(mode="json"),
+                "name": body.name,
+            },
+            metrics_as_of=now,
+            hypothesis="사용자 신규 캠페인 생성 요청",
+            confidence=1.0,
+            expected_state_version="state_v1",
+            budget_before_krw=0,
+            budget_after_krw=body.daily_budget_krw,
+            max_total_spend_krw=body.daily_budget_krw * body.run_days,
+            expires_at=now + timedelta(minutes=PROPOSAL_TTL_MINUTES),
+            approval_policy_version=APPROVAL_POLICY_VERSION,
+        )
+    )
+    return {"proposal": proposal.model_dump(mode="json")}
