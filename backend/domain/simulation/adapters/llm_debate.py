@@ -73,19 +73,35 @@ class _Clients:
         self._anthropic = None
         self._openai = None
         self._gemini: GenaiClient | None = None
+        # 엔진별 누적 토큰(input/output/calls) — complete()가 매 호출 응답의 usage를 더한다.
+        # debater·judge가 같은 _Clients를 공유하면 토론 1회 토큰이 여기 모인다(wiring 주입).
+        self.usage: dict[str, dict[str, int]] = {}
+
+    def _track(self, engine: str, inp: object, out: object) -> None:
+        slot = self.usage.setdefault(engine, {"input": 0, "output": 0, "calls": 0})
+        slot["input"] += int(inp or 0)
+        slot["output"] += int(out or 0)
+        slot["calls"] += 1
+
+    def usage_snapshot(self) -> dict[str, dict[str, int]]:
+        """현재까지 누적 토큰의 깊은 복사 — 토론 전후 스냅샷 차이로 1회 사용량을 구한다."""
+        return {e: dict(v) for e, v in self.usage.items()}
 
     def _ant(self) -> Anthropic:
         if self._anthropic is None:
             from anthropic import Anthropic
+            from langsmith.wrappers import wrap_anthropic
 
-            self._anthropic = Anthropic()  # ANTHROPIC_API_KEY
+            # LangSmith 트레이싱(LANGSMITH_TRACING=true일 때만 전송, 아니면 무동작 통과).
+            self._anthropic = wrap_anthropic(Anthropic())  # ANTHROPIC_API_KEY
         return self._anthropic
 
     def _oai(self) -> OpenAI:
         if self._openai is None:
+            from langsmith.wrappers import wrap_openai
             from openai import OpenAI
 
-            self._openai = OpenAI()  # OPENAI_API_KEY
+            self._openai = wrap_openai(OpenAI())  # OPENAI_API_KEY
         return self._openai
 
     def _gem(self) -> GenaiClient:
@@ -108,6 +124,9 @@ class _Clients:
                 system=sys_prompt,
                 messages=[{"role": "user", "content": user}],
             )
+            u = getattr(r, "usage", None)
+            if u is not None:
+                self._track(engine, getattr(u, "input_tokens", 0), getattr(u, "output_tokens", 0))
             return r.content[0].text
         if engine == "gpt":
             kwargs = {"response_format": {"type": "json_object"}} if json_mode else {}
@@ -120,6 +139,11 @@ class _Clients:
                 ],
                 **kwargs,
             )
+            u = getattr(r, "usage", None)
+            if u is not None:
+                self._track(
+                    engine, getattr(u, "prompt_tokens", 0), getattr(u, "completion_tokens", 0)
+                )
             return r.choices[0].message.content or ""
         if engine == "gemini":
             # 2.5-flash는 thinking 모델 — thinking 토큰이 들쭉날쭉(최대 2000+)해 JSON이 잘린다.
@@ -134,6 +158,13 @@ class _Clients:
             r = self._gem().models.generate_content(
                 model=GEMINI_MODEL, contents=f"{system}\n\n{user}", config=cfg
             )
+            um = getattr(r, "usage_metadata", None)
+            if um is not None:
+                self._track(
+                    engine,
+                    getattr(um, "prompt_token_count", 0),
+                    getattr(um, "candidates_token_count", 0),
+                )
             return r.text
         raise ValueError(f"알 수 없는 엔진: {engine}")
 

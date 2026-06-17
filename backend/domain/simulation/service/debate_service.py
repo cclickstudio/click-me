@@ -29,6 +29,23 @@ from domain.simulation.tools.debate.selector import RerankFn, select_panel
 logger = logging.getLogger("clickme")
 
 
+def _usage_delta(
+    before: dict[str, dict[str, int]], after: dict[str, dict[str, int]]
+) -> dict[str, dict[str, int]]:
+    """토론 전후 누적 토큰 스냅샷 차이 → 엔진별 1회 사용량 + total. 호출 없던 엔진은 생략."""
+    by_engine: dict[str, dict[str, int]] = {}
+    total = {"input": 0, "output": 0, "calls": 0}
+    for engine, a in after.items():
+        b = before.get(engine, {})
+        d = {k: a.get(k, 0) - b.get(k, 0) for k in ("input", "output", "calls")}
+        if any(d.values()):
+            by_engine[engine] = d
+            for k in total:
+                total[k] += d[k]
+    by_engine["total"] = total
+    return by_engine
+
+
 class DebateService:
     """토론 파이프라인 구동 — 결정론 조각 실행 + (엔진 주입 시) LLM 토론(10-c)을 라운드별 emit.
 
@@ -44,6 +61,7 @@ class DebateService:
         judge: JudgePort | None = None,
         persistence=None,
         selector_rerank_fn: RerankFn | None = None,
+        usage_clients=None,
     ) -> None:
         self._store = store
         self._debater_factory = debater_factory
@@ -51,6 +69,8 @@ class DebateService:
         self._persistence = persistence  # DebateRepository(주입 시 + simulation_id 있을 때 저장)
         # 일반인 선발(10-a) 동점 시 LLM 재랭킹(주입 시). None이면 결정론 선발(mock·무비용 경로).
         self._selector_rerank_fn = selector_rerank_fn
+        # 토론자·Judge가 공유하는 _Clients(실 LLM 경로만). 토론 전후 스냅샷 차이로 1회 토큰 집계.
+        self._usage_clients = usage_clients
 
     def analyze(
         self,
@@ -249,11 +269,17 @@ class DebateService:
                 def _emit(ev: dict, _run_id: str = run_id) -> None:
                     self._store.emit(_run_id, ev)
 
+                # 토론 토큰 = (토론 후 - 토론 전) 누적 스냅샷 차이. 동시 토론 시 합산될 수 있음.
+                usage_before = self._usage_clients.usage_snapshot() if self._usage_clients else None
                 # LLM 엔진은 동기 블로킹 — 스레드로 분리해 이벤트 루프(다른 SSE 요청)를 막지 않는다.
                 debate = await asyncio.to_thread(
                     run_debate, assigned, topic, debater, self._judge, _emit
                 )
                 debate_obj = debate
+                usage = None
+                if usage_before is not None:
+                    usage = _usage_delta(usage_before, self._usage_clients.usage_snapshot())
+                    logger.info("토론 토큰 사용량 run_id=%s usage=%s", run_id, usage)
                 store.emit(
                     run_id,
                     {
@@ -263,6 +289,7 @@ class DebateService:
                         "rounds_run": debate.rounds_run,
                         "stop_reason": debate.stop_reason,
                         "headline": debate.final.headline if debate.final else None,
+                        "usage": usage,  # 엔진별 input/output/calls + total(실 LLM 경로만)
                     },
                 )
                 debate_dump = debate.model_dump()
