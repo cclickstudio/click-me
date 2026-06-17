@@ -5,11 +5,12 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from domain.simulation.contracts.schemas import (
     AdInterpretation,
+    Persona,
     PersonaReaction,
     RubricScore,
     SimulationAggregate,
@@ -21,7 +22,11 @@ _DUMMY_DIR = Path(__file__).resolve().parents[2] / "dummy"
 
 @dataclass(frozen=True)
 class DummyReactionSet:
-    """더미/업로드 한 건(7번 반응 출력) — 분석(8)·집계검증(9)·토론 입력 묶음."""
+    """더미/업로드 한 건(7번 반응 출력) — 분석(8)·집계검증(9)·토론 입력 묶음.
+
+    personas: 새 포맷(전체 시뮬 결과)이면 채워지고, 구 포맷(reactions만)이면 빈 리스트.
+    persona_id로 reactions와 조인 → 타깃 적합 선발(①)·인구통계 분석 입력.
+    """
 
     name: str
     run_id: str
@@ -30,6 +35,7 @@ class DummyReactionSet:
     rubric_scores: list[RubricScore]
     aggregate: SimulationAggregate | None  # 더미에 박힌 7번 집계(9 재계산 일치 검증용)
     simulation_id: str | None = None  # 영속화 FK용(있으면 토론 저장에 사용)
+    personas: list[Persona] = field(default_factory=list)  # 인구통계(있으면) — 타깃 선발 입력
 
 
 def parse_reaction_set(raw: dict, *, name: str = "") -> DummyReactionSet:
@@ -40,6 +46,7 @@ def parse_reaction_set(raw: dict, *, name: str = "") -> DummyReactionSet:
     ad = raw.get("ad_analysis")
     rubric = [RubricScore.model_validate(s) for s in raw.get("rubric_scores", [])]
     agg = raw.get("aggregate")
+    personas = [Persona.model_validate(p) for p in raw.get("personas", [])]
 
     return DummyReactionSet(
         name=name,
@@ -49,6 +56,7 @@ def parse_reaction_set(raw: dict, *, name: str = "") -> DummyReactionSet:
         rubric_scores=rubric,
         aggregate=SimulationAggregate.model_validate(agg) if agg else None,
         simulation_id=raw.get("simulation_id"),
+        personas=personas,
     )
 
 

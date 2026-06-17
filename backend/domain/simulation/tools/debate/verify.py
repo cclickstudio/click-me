@@ -11,7 +11,7 @@ import sys
 from domain.simulation.tools.debate.analyzer import analyze_reactions
 from domain.simulation.tools.debate.assigner import assign_panel
 from domain.simulation.tools.debate.kpi import build_topic, compute_kpi
-from domain.simulation.tools.debate.loader import load_all_dummies
+from domain.simulation.tools.debate.loader import _DUMMY_DIR, load_all_dummies, load_dummy
 from domain.simulation.tools.debate.selector import select_panel
 
 # Windows 콘솔(cp949)에서 한글·em대시 출력이 깨지지 않게 강제(검증 출력 전용).
@@ -166,6 +166,27 @@ def main() -> int:
             "병목 == interest->search(10)",
         )
         all_ok = all_ok and ok2 and ok2b
+
+    # ⑩ 신라면(새 포맷: personas 포함) — 메시지 수신 갭 + 인구통계 파싱
+    sr_path = _DUMMY_DIR / "result-dummy-sinramyeon.json"
+    if sr_path.exists():
+        sr = load_dummy(sr_path)
+        a_sr = analyze_reactions(sr.reactions, sr.ad_analysis)
+        topic_sr = build_topic(a_sr, compute_kpi(sr.reactions), sr.ad_analysis)
+        rate = a_sr.message.resistance_rate if a_sr.message else None
+        print("\n=== 신라면(새 포맷) ===")
+        print(
+            f"  personas={len(sr.personas)} message.resistance={rate} "
+            f"signal={topic_sr.primary_signal}"
+        )
+        ok_sr = _check(
+            len(sr.personas) == 20
+            and a_sr.message is not None
+            and a_sr.message.resistance_rate >= 0.5
+            and topic_sr.primary_signal == "message_gap",
+            f"personas 20·메시지갭 저항 {rate}·signal message_gap",
+        )
+        all_ok = all_ok and ok_sr
 
     print("\n" + ("전체 통과 [PASS]" if all_ok else "실패 있음 [FAIL]"))
     return 0 if all_ok else 1

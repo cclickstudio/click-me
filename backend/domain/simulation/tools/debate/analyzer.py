@@ -11,10 +11,31 @@ from domain.simulation.contracts.debate_schemas import (
     Bottleneck,
     FunnelStage,
     GroupMembers,
+    MessageReception,
     ReactionAnalysis,
     RejectionBreakdown,
 )
-from domain.simulation.contracts.schemas import PersonaReaction
+from domain.simulation.contracts.schemas import AdInterpretation, PersonaReaction
+
+# 메시지 저항 신호어(한국어 광고 반응) — 의도 메시지에 대한 과장·식상·무관심 표현.
+# 결정론 사전이라 거칠다(해석은 토론이 보완). 케이스 누적되면 보강.
+_RESISTANCE_TERMS = [
+    "과장",
+    "오버",
+    "오바",
+    "글쎄",
+    "모르겠",
+    "아니냐",
+    "아니야",  # 과장·회의
+    "늘 먹던",
+    "맨날",
+    "딱히",
+    "새로울",
+    "다 아는",
+    "원래",
+    "그 맛",
+    "익숙",  # 식상·무관심
+]
 
 
 def _count_by(values: list[str | None]) -> dict[str, int]:
@@ -23,8 +44,36 @@ def _count_by(values: list[str | None]) -> dict[str, int]:
     return dict(c)
 
 
-def analyze_reactions(reactions: list[PersonaReaction]) -> ReactionAnalysis:
-    """반응 리스트를 구조 분석해 ReactionAnalysis 산출."""
+def _analyze_message(
+    passed: list[PersonaReaction], ad_analysis: AdInterpretation | None
+) -> MessageReception | None:
+    """메시지 수신 갭 — 의도 메시지 대비 저항 표현(과장·식상) 비율. ad_analysis 없으면 None."""
+    if ad_analysis is None:
+        return None
+    n = len(passed)
+    terms: Counter[str] = Counter()
+    quotes: list[str] = []
+    resisted = 0
+    for r in passed:
+        text = f"{r.utterance or ''} {r.perceived_message or ''}"
+        hits = [t for t in _RESISTANCE_TERMS if t in text]
+        if hits:
+            resisted += 1
+            terms.update(hits)
+            if r.utterance:
+                quotes.append(r.utterance[:120])
+    return MessageReception(
+        intended=ad_analysis.detected_message,
+        resistance_rate=round(resisted / n, 4) if n else 0.0,
+        resistance_terms=dict(terms.most_common(8)),
+        resisted_quotes=quotes[:5],
+    )
+
+
+def analyze_reactions(
+    reactions: list[PersonaReaction], ad_analysis: AdInterpretation | None = None
+) -> ReactionAnalysis:
+    """반응 리스트를 구조 분석해 ReactionAnalysis 산출. ad_analysis 있으면 메시지 수신 갭 포함."""
     passed = [r for r in reactions if r.qa_passed]
     n = len(passed)
 
@@ -88,4 +137,5 @@ def analyze_reactions(reactions: list[PersonaReaction]) -> ReactionAnalysis:
         emotion_dist=emotion_dist,
         rejection=rejection,
         groups=groups,
+        message=_analyze_message(passed, ad_analysis),
     )

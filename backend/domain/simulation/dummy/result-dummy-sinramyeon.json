@@ -1,0 +1,1663 @@
+{
+    "run_id": "7d011148-0362-4f3c-a4cd-d29e9dc64847",
+    "ad": {
+      "ID": "96321d51-6b2f-43cc-9a22-f69168d67686",
+      "project_id": "e561c41e-a3d7-426d-84ef-1fe63b9c9fb2",
+      "title": "신라면",
+      "media_type": "image",
+      "asset_url": "C:\\Users\\804\\AppData\\Local\\Temp\\clickme_ad_c2dmput4.png",
+      "copy_text": "농심 신라면",
+      "description": null,
+      "industry_category": null,
+      "product_category": "음식",
+      "service_class": 0,
+      "ad_objective": "브랜드 인식 강화",
+      "target_filter": null,
+      "status": "DRAFT"
+    },
+    "ad_analysis": {
+      "ad_id": "96321d51-6b2f-43cc-9a22-f69168d67686",
+      "structured_analysis": {
+        "detected_industry": "식품/라면",
+        "detected_objective": "브랜딩 및 인지 유지",
+        "detected_target": "라면을 즐겨먹는 일반 대중",
+        "detected_message": "강렬하고 깊은 맛으로 삶에 활력을 주는 신라면",
+        "ad_credibility": 90,
+        "ad_quality": 90,
+        "price_mentioned": false,
+        "original_price": null,
+        "discounted_price": null,
+        "brand_mentioned": true,
+        "social_proof_strength": "none"
+      },
+      "detected_industry": "식품/라면",
+      "detected_objective": "브랜딩 및 인지 유지",
+      "detected_target": "라면을 즐겨먹는 일반 대중",
+      "detected_message": "강렬하고 깊은 맛으로 삶에 활력을 주는 신라면",
+      "ad_features": {
+        "ad_credibility": 90,
+        "ad_quality": 90,
+        "price_mentioned": false,
+        "original_price": null,
+        "discounted_price": null,
+        "brand_mentioned": true,
+        "social_proof_strength": "none"
+      },
+      "intent_mismatch": false,
+      "mismatch_detail": {
+        "category": {
+          "declared": "음식",
+          "detected": "식품/라면",
+          "match": true,
+          "note": "감지된 카테고리가 선언된 카테고리의 하위 범주로 정확히 일치하며 더욱 구체적임.",
+          "score": 98
+        },
+        "objective": {
+          "declared": "브랜드 인식 강화",
+          "detected": "브랜딩 및 인지 유지",
+          "match": true,
+          "note": "'강화'와 '유지'는 뉘앙스 차이가 있으나, 브랜드 인지 관리라는 핵심 목표는 일치함.",
+          "score": 90
+        },
+        "message": {
+          "declared": "신라면",
+          "detected": "강렬하고 깊은 맛으로 삶에 활력을 주는 신라면",
+          "match": true,
+          "note": "감지된 메시지가 선언된 브랜드명을 포함하며, 구체적인 특장점을 덧붙여 설명함.",
+          "score": 95
+        }
+      },
+      "model_version": "gemini-2.5-flash-vision"
+    },
+    "simulation": {
+      "ID": "7d011148-0362-4f3c-a4cd-d29e9dc64847",
+      "ad_id": "96321d51-6b2f-43cc-9a22-f69168d67686",
+      "ad_analysis_id": null,
+      "panel_id": "panel-v1",
+      "organization_id": "bd9df2e2-f89b-423a-975c-3592967f7ca0",
+      "target_filter": null,
+      "target_mode": "AUTO",
+      "sample_size": 20,
+      "qa_passed_count": 20,
+      "low_sample_warning": false,
+      "status": "COMPLETED",
+      "model_version": "gemini-2.5-flash-vision",
+      "error_detail": null
+    },
+    "personas": [
+      {
+        "persona_id": "P-00000",
+        "age": 17,
+        "gender": "M",
+        "region": "기타",
+        "ocean": {
+          "openness": -0.15,
+          "conscientiousness": 1.09,
+          "extraversion": -0.84,
+          "agreeableness": 0.8,
+          "neuroticism": -0.44
+        },
+        "media_behavior": {
+          "primary_medium": "스마트폰/휴대폰",
+          "daily_media_minutes": 671,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "PC",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오전",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.0807,
+          "social_feed_reach": 0.1188
+        },
+        "consumption_values": {
+          "성능": false,
+          "품질": true,
+          "편의": true,
+          "저렴한 가격": true,
+          "취향·덕질": true
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "소득 없음",
+          "income_code": 1,
+          "education": "초등학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00001",
+        "age": 29,
+        "gender": "M",
+        "region": "기타",
+        "ocean": {
+          "openness": -0.29,
+          "conscientiousness": -1.5,
+          "extraversion": -0.15,
+          "agreeableness": -0.43,
+          "neuroticism": 0.54
+        },
+        "media_behavior": {
+          "primary_medium": "스마트폰/휴대폰",
+          "daily_media_minutes": 591,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "저녁",
+              "medium": "PC",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.3171,
+          "social_feed_reach": 0.1526
+        },
+        "consumption_values": {
+          "성능": false,
+          "품질": false,
+          "편의": true,
+          "저렴한 가격": false,
+          "취향·덕질": true
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "400~500만원",
+          "income_code": 6,
+          "education": "대학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00002",
+        "age": 20,
+        "gender": "M",
+        "region": "서울",
+        "ocean": {
+          "openness": 0.82,
+          "conscientiousness": -1.89,
+          "extraversion": 0.86,
+          "agreeableness": -1.38,
+          "neuroticism": 0.22
+        },
+        "media_behavior": {
+          "primary_medium": "TV",
+          "daily_media_minutes": 379,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "저녁",
+              "medium": "PC",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.3171,
+          "social_feed_reach": 0.1526
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": true,
+          "편의": false,
+          "저렴한 가격": true,
+          "취향·덕질": false
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "소득 없음",
+          "income_code": 1,
+          "education": "대학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00003",
+        "age": 21,
+        "gender": "M",
+        "region": "서울",
+        "ocean": {
+          "openness": -1.7,
+          "conscientiousness": 0.07,
+          "extraversion": 0.86,
+          "agreeableness": 0.69,
+          "neuroticism": -0.41
+        },
+        "media_behavior": {
+          "primary_medium": "TV",
+          "daily_media_minutes": 316,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "저녁",
+              "medium": "PC",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.3171,
+          "social_feed_reach": 0.1526
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": false,
+          "편의": true,
+          "저렴한 가격": true,
+          "취향·덕질": true
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "300~400만원",
+          "income_code": 5,
+          "education": "대학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00004",
+        "age": 29,
+        "gender": "F",
+        "region": "경기",
+        "ocean": {
+          "openness": -0.02,
+          "conscientiousness": -0.02,
+          "extraversion": 0.71,
+          "agreeableness": 0.14,
+          "neuroticism": 0.94
+        },
+        "media_behavior": {
+          "primary_medium": "PC",
+          "daily_media_minutes": 603,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "저녁",
+              "medium": "PC",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.3171,
+          "social_feed_reach": 0.1446
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": true,
+          "편의": true,
+          "저렴한 가격": true,
+          "취향·덕질": false
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "400~500만원",
+          "income_code": 6,
+          "education": "대학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00005",
+        "age": 28,
+        "gender": "F",
+        "region": "경기",
+        "ocean": {
+          "openness": 1.63,
+          "conscientiousness": -1.92,
+          "extraversion": 0.34,
+          "agreeableness": -1.75,
+          "neuroticism": -1.25
+        },
+        "media_behavior": {
+          "primary_medium": "스마트폰/휴대폰",
+          "daily_media_minutes": 396,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "저녁",
+              "medium": "PC",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.3171,
+          "social_feed_reach": 0.1446
+        },
+        "consumption_values": {
+          "성능": false,
+          "품질": false,
+          "편의": false,
+          "저렴한 가격": true,
+          "취향·덕질": true
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "300~400만원",
+          "income_code": 5,
+          "education": "대학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00006",
+        "age": 23,
+        "gender": "F",
+        "region": "경기",
+        "ocean": {
+          "openness": 0.24,
+          "conscientiousness": -0.27,
+          "extraversion": -0.78,
+          "agreeableness": -0.51,
+          "neuroticism": 1.2
+        },
+        "media_behavior": {
+          "primary_medium": "PC",
+          "daily_media_minutes": 414,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "저녁",
+              "medium": "PC",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.3171,
+          "social_feed_reach": 0.1446
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": true,
+          "편의": true,
+          "저렴한 가격": false,
+          "취향·덕질": true
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "400~500만원",
+          "income_code": 6,
+          "education": "대학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00007",
+        "age": 33,
+        "gender": "M",
+        "region": "대구",
+        "ocean": {
+          "openness": 0.41,
+          "conscientiousness": 0.75,
+          "extraversion": -0.57,
+          "agreeableness": -0.49,
+          "neuroticism": 2.39
+        },
+        "media_behavior": {
+          "primary_medium": "PC",
+          "daily_media_minutes": 510,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "저녁",
+              "medium": "PC",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.2763,
+          "social_feed_reach": 0.0853
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": true,
+          "편의": false
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "800만원 이상",
+          "income_code": 8,
+          "education": "대학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00008",
+        "age": 36,
+        "gender": "M",
+        "region": "대전",
+        "ocean": {
+          "openness": 1.2,
+          "conscientiousness": 0.08,
+          "extraversion": 1.17,
+          "agreeableness": 0.85,
+          "neuroticism": 0.87
+        },
+        "media_behavior": {
+          "primary_medium": "스마트폰/휴대폰",
+          "daily_media_minutes": 521,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "저녁",
+              "medium": "PC",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.2763,
+          "social_feed_reach": 0.0853
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": true,
+          "편의": true
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "800만원 이상",
+          "income_code": 8,
+          "education": "대학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00009",
+        "age": 39,
+        "gender": "M",
+        "region": "서울",
+        "ocean": {
+          "openness": 0.07,
+          "conscientiousness": -0.79,
+          "extraversion": -1.57,
+          "agreeableness": -1.29,
+          "neuroticism": 0.94
+        },
+        "media_behavior": {
+          "primary_medium": "스마트폰/휴대폰",
+          "daily_media_minutes": 553,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "저녁",
+              "medium": "PC",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.2763,
+          "social_feed_reach": 0.0853
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": true,
+          "편의": true
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "400~500만원",
+          "income_code": 6,
+          "education": "대학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00010",
+        "age": 38,
+        "gender": "F",
+        "region": "기타",
+        "ocean": {
+          "openness": -1.26,
+          "conscientiousness": 0.18,
+          "extraversion": -0.34,
+          "agreeableness": 1.4,
+          "neuroticism": 0.95
+        },
+        "media_behavior": {
+          "primary_medium": "TV",
+          "daily_media_minutes": 499,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "저녁",
+              "medium": "PC",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.2763,
+          "social_feed_reach": 0.0677
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": true,
+          "편의": false
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "300~400만원",
+          "income_code": 5,
+          "education": "대학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00011",
+        "age": 35,
+        "gender": "F",
+        "region": "대구",
+        "ocean": {
+          "openness": -1.18,
+          "conscientiousness": -0.34,
+          "extraversion": -0.72,
+          "agreeableness": 1.31,
+          "neuroticism": -0.11
+        },
+        "media_behavior": {
+          "primary_medium": "스마트폰/휴대폰",
+          "daily_media_minutes": 426,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "저녁",
+              "medium": "PC",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.2763,
+          "social_feed_reach": 0.0677
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": true,
+          "편의": true
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "300~400만원",
+          "income_code": 5,
+          "education": "대학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00012",
+        "age": 39,
+        "gender": "F",
+        "region": "기타",
+        "ocean": {
+          "openness": 0.52,
+          "conscientiousness": -0.57,
+          "extraversion": 0.32,
+          "agreeableness": -0.75,
+          "neuroticism": 0.01
+        },
+        "media_behavior": {
+          "primary_medium": "TV",
+          "daily_media_minutes": 531,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "저녁",
+              "medium": "PC",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.2763,
+          "social_feed_reach": 0.0677
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": false,
+          "편의": false
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "400~500만원",
+          "income_code": 6,
+          "education": "대학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00013",
+        "age": 40,
+        "gender": "M",
+        "region": "인천",
+        "ocean": {
+          "openness": -1.33,
+          "conscientiousness": 0.45,
+          "extraversion": 1.08,
+          "agreeableness": -0.59,
+          "neuroticism": 1.02
+        },
+        "media_behavior": {
+          "primary_medium": "TV",
+          "daily_media_minutes": 1032,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "직장"
+            },
+            {
+              "timeband": "저녁",
+              "medium": "PC",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.1679,
+          "social_feed_reach": 0.0686
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": true,
+          "편의": false
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "400~500만원",
+          "income_code": 6,
+          "education": "대학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00014",
+        "age": 45,
+        "gender": "M",
+        "region": "서울",
+        "ocean": {
+          "openness": -0.04,
+          "conscientiousness": -2.02,
+          "extraversion": -0.26,
+          "agreeableness": -0.55,
+          "neuroticism": 0.26
+        },
+        "media_behavior": {
+          "primary_medium": "PC",
+          "daily_media_minutes": 658,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "직장"
+            },
+            {
+              "timeband": "저녁",
+              "medium": "PC",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.1679,
+          "social_feed_reach": 0.0686
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": true,
+          "편의": true
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "500~800만원",
+          "income_code": 7,
+          "education": "고등학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00015",
+        "age": 41,
+        "gender": "F",
+        "region": "서울",
+        "ocean": {
+          "openness": -1.3,
+          "conscientiousness": -0.39,
+          "extraversion": -0.11,
+          "agreeableness": 1.21,
+          "neuroticism": 0.31
+        },
+        "media_behavior": {
+          "primary_medium": "TV",
+          "daily_media_minutes": 231,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오전",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.1679,
+          "social_feed_reach": 0.0726
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": false,
+          "편의": true
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "300~400만원",
+          "income_code": 5,
+          "education": "대학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00016",
+        "age": 45,
+        "gender": "F",
+        "region": "기타",
+        "ocean": {
+          "openness": -1.23,
+          "conscientiousness": -0.05,
+          "extraversion": -0.05,
+          "agreeableness": -2.19,
+          "neuroticism": -1.26
+        },
+        "media_behavior": {
+          "primary_medium": "PC",
+          "daily_media_minutes": 232,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오전",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.1679,
+          "social_feed_reach": 0.0726
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": true,
+          "편의": true
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "300~400만원",
+          "income_code": 5,
+          "education": "대학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00017",
+        "age": 50,
+        "gender": "M",
+        "region": "서울",
+        "ocean": {
+          "openness": -0.44,
+          "conscientiousness": 0.8,
+          "extraversion": 1.18,
+          "agreeableness": 0.79,
+          "neuroticism": 0.47
+        },
+        "media_behavior": {
+          "primary_medium": "TV",
+          "daily_media_minutes": 434,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "직장"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.0968,
+          "social_feed_reach": 0.0539
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": true,
+          "편의": false
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "400~500만원",
+          "income_code": 6,
+          "education": "대학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00018",
+        "age": 53,
+        "gender": "F",
+        "region": "기타",
+        "ocean": {
+          "openness": 0.59,
+          "conscientiousness": -0.83,
+          "extraversion": -0.26,
+          "agreeableness": 1.3,
+          "neuroticism": -0.26
+        },
+        "media_behavior": {
+          "primary_medium": "스마트폰/휴대폰",
+          "daily_media_minutes": 474,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.0968,
+          "social_feed_reach": 0.0558
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": true,
+          "편의": false
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "400~500만원",
+          "income_code": 6,
+          "education": "고등학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00019",
+        "age": 61,
+        "gender": "F",
+        "region": "기타",
+        "ocean": {
+          "openness": -0.46,
+          "conscientiousness": 1.36,
+          "extraversion": 1.41,
+          "agreeableness": -0.64,
+          "neuroticism": -0.68
+        },
+        "media_behavior": {
+          "primary_medium": "PC",
+          "daily_media_minutes": 285,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.0496,
+          "social_feed_reach": 0.0524
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": true,
+          "편의": true
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "100만원 미만",
+          "income_code": 2,
+          "education": "고등학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      }
+    ],
+    "reactions": [
+      {
+        "persona_id": "P-00011",
+        "exposure_context": "저녁·집·PC·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": true,
+          "search": false,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "search",
+        "drop_reason_tag": "no_reason_to_explore",
+        "purchase_intent": 3,
+        "trust": 5,
+        "rejected": false,
+        "rejection_reason_tag": null,
+        "emotion_tag": "indifference",
+        "perceived_message": "신라면은 여전히 강렬하고 깊은 맛으로, 친숙하게 삶에 활력을 주는 라면이다.",
+        "perceived_target": "라면을 좋아하는 일반적인 사람들.",
+        "utterance": "신라면은 늘 먹던 맛이니까 딱히 궁금하진 않지만, 라면이 땡기면 뭐, 언젠가 또 집어들겠지.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00001",
+        "exposure_context": "저녁·집·PC·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": true,
+          "search": false,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "search",
+        "drop_reason_tag": "no_reason_to_explore",
+        "purchase_intent": 3,
+        "trust": 5,
+        "rejected": false,
+        "rejection_reason_tag": null,
+        "emotion_tag": "indifference",
+        "perceived_message": "익숙하고 강렬한 신라면의 맛으로 지친 일상에 활력을 불어넣으라는 메시지.",
+        "perceived_target": "라면을 즐겨 먹는 사람, 특히 자극적인 맛을 선호하는 대중.",
+        "utterance": "신라면? 뭐, 늘 먹던 맛이지. 굳이 광고를 보고 더 찾아볼 건 없네.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00012",
+        "exposure_context": "저녁·집·PC·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": true,
+          "search": false,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "search",
+        "drop_reason_tag": "no_reason_to_explore",
+        "purchase_intent": 3,
+        "trust": 5,
+        "rejected": false,
+        "rejection_reason_tag": null,
+        "emotion_tag": "indifference",
+        "perceived_message": "신라면의 강렬하고 깊은 맛을 강조하며, 익숙하고 실패 없는 선택으로 일상에 작은 만족감을 준다는 메시지.",
+        "perceived_target": "라면을 즐겨 먹고, 특히 자극적이고 확실한 맛을 선호하는 일반 대중.",
+        "utterance": "신라면이야 뭐, 늘 그 맛이지. 딱히 새로울 것도 없지만, 라면 생각날 때 무난하게 먹기 좋겠네.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00008",
+        "exposure_context": "저녁·집·PC·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": false,
+          "search": false,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "interest",
+        "drop_reason_tag": "no_reason_to_explore",
+        "purchase_intent": 3,
+        "trust": 5,
+        "rejected": false,
+        "rejection_reason_tag": null,
+        "emotion_tag": "indifference",
+        "perceived_message": "강렬하고 깊은 맛으로 삶에 활력을 주는 신라면이라는 메시지. 뭐, 매콤한 맛은 인정인데 활력까진 글쎄.",
+        "perceived_target": "라면 즐겨 먹는 일반적인 사람들.",
+        "utterance": "신라면이야 워낙 잘 아는 맛인데, 저녁에 동영상 보면서 간단하게 먹는 라면이 삶에 활력까지 준다는 건 좀 과장이 심하네.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00016",
+        "exposure_context": "오전·집·스마트폰/휴대폰·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": false,
+          "search": false,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "interest",
+        "drop_reason_tag": "low_relevance",
+        "purchase_intent": 2,
+        "trust": 4,
+        "rejected": false,
+        "rejection_reason_tag": null,
+        "emotion_tag": "indifference",
+        "perceived_message": "신라면이 강렬하고 깊은 맛으로 삶에 활력을 준다는 내용.",
+        "perceived_target": "라면을 즐겨 먹는 일반 사람들.",
+        "utterance": "신라면이야 다 아는 맛인데, 활력까진 모르겠고... 그냥 늘 먹던 라면 광고네.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00004",
+        "exposure_context": "저녁·집·PC·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": false,
+          "search": false,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "interest",
+        "drop_reason_tag": "no_reason_to_explore",
+        "purchase_intent": 3,
+        "trust": 5,
+        "rejected": false,
+        "rejection_reason_tag": null,
+        "emotion_tag": "indifference",
+        "perceived_message": "신라면의 강하고 깊은 맛이 먹으면 힘이 난다는 메시지.",
+        "perceived_target": "매콤한 라면을 즐겨 먹는 사람들.",
+        "utterance": "아, 신라면 광고. 늘 먹는 라면이긴 한데, '활력'까지는 모르겠고 그냥 익숙한 매운맛이긴 하네.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00009",
+        "exposure_context": "저녁·집·PC·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": true,
+          "search": false,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "search",
+        "drop_reason_tag": "no_reason_to_explore",
+        "purchase_intent": 4,
+        "trust": 5,
+        "rejected": false,
+        "rejection_reason_tag": null,
+        "emotion_tag": "trust",
+        "perceived_message": "매콤하고 든든하게 먹기 좋은 라면. 활력까지는 과장이지.",
+        "perceived_target": "나처럼 평소에 라면 즐겨 먹고, 익숙한 맛 찾는 사람",
+        "utterance": "신라면이야 뭐 믿고 먹는 맛이지. 매콤하니 스트레스 풀기 좋고. 근데 활력까지 준다는 건 좀 오버 아니냐?",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00000",
+        "exposure_context": "저녁·집·스마트폰/휴대폰·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": true,
+          "search": false,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "search",
+        "drop_reason_tag": "no_reason_to_explore",
+        "purchase_intent": 4,
+        "trust": 5,
+        "rejected": false,
+        "rejection_reason_tag": null,
+        "emotion_tag": "indifference",
+        "perceived_message": "내가 아는 신라면은 원래 맛있고, 든든하게 먹으면 힘이 난다는 광고겠지.",
+        "perceived_target": "라면 좋아하는 사람이라면 다 해당될 걸. 나처럼.",
+        "utterance": "신라면 뭐, 원래 맛있는 거지. 저녁에 하나 끓여 먹으면 든든하고 좋긴 해.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00010",
+        "exposure_context": "저녁·집·스마트폰/휴대폰·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": true,
+          "search": true,
+          "action": true,
+          "share": false
+        },
+        "drop_stage": "share",
+        "drop_reason_tag": "no_reason_to_explore",
+        "purchase_intent": 4,
+        "trust": 5,
+        "rejected": false,
+        "rejection_reason_tag": null,
+        "emotion_tag": "trust",
+        "perceived_message": "신라면의 강렬하고 깊은 맛이 삶에 활력을 준다는 메시지. 언제나 믿고 먹을 수 있는 라면이라는 느낌을 준다.",
+        "perceived_target": "바쁜 일상 속에서 빠르고 든든하게 한 끼를 해결하고 싶거나, 매콤한 라면으로 기분 전환을 하고 싶은 일반 대중.",
+        "utterance": "신라면은 역시 실패가 없지, 가끔 힘든 날 저녁에 먹으면 든든하고 속도 풀리는 것 같아.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00007",
+        "exposure_context": "저녁·집·스마트폰/휴대폰·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": true,
+          "search": false,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "search",
+        "drop_reason_tag": "no_reason_to_explore",
+        "purchase_intent": 3,
+        "trust": 4,
+        "rejected": false,
+        "rejection_reason_tag": null,
+        "emotion_tag": "indifference",
+        "perceived_message": "신라면은 강하고 깊은 맛이 나는 라면이다.",
+        "perceived_target": "라면을 즐겨먹는 일반 대중, 나 같은 사람도 포함되는 보편적인 라면 광고.",
+        "utterance": "신라면이야 뭐, 맛은 알지. 근데 삶에 활력까지 준다는 건 좀 오버 아니냐.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00017",
+        "exposure_context": "저녁·집·스마트폰/휴대폰·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": true,
+          "search": false,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "search",
+        "drop_reason_tag": "no_reason_to_explore",
+        "purchase_intent": 4,
+        "trust": 5,
+        "rejected": false,
+        "rejection_reason_tag": null,
+        "emotion_tag": "trust",
+        "perceived_message": "매운 맛과 깊은 국물 맛으로 언제 먹어도 만족스러운, 믿고 먹는 신라면.",
+        "perceived_target": "나처럼 신라면을 즐겨 먹는 일반 소비자들.",
+        "utterance": "뭐, 신라면은 말해 뭐해. 늘 먹던 맛이지. 딱히 광고 보고 새로울 건 없지만, 한 번씩 생각날 때마다 찾게 되는 편이야.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00015",
+        "exposure_context": "오전·집·스마트폰/휴대폰·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": true,
+          "search": false,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "search",
+        "drop_reason_tag": "no_reason_to_explore",
+        "purchase_intent": 4,
+        "trust": 5,
+        "rejected": false,
+        "rejection_reason_tag": null,
+        "emotion_tag": "trust",
+        "perceived_message": "신라면은 원래 맛있는 라면이고, 그 맛으로 힘을 낼 수 있다는 이야기.",
+        "perceived_target": "라면을 좋아하는 보통 사람, 나 같은 사람.",
+        "utterance": "신라면이야 뭐, 원래 맛있지. 늘 먹던 거라 딱히 새롭진 않네.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00002",
+        "exposure_context": "저녁·집·스마트폰/휴대폰·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": true,
+          "search": false,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "search",
+        "drop_reason_tag": "no_reason_to_explore",
+        "purchase_intent": 4,
+        "trust": 5,
+        "rejected": false,
+        "rejection_reason_tag": null,
+        "emotion_tag": "indifference",
+        "perceived_message": "신라면이 강렬하고 맛있어서 삶에 활력을 준다는 광고. 근데 좀 과장된 것 같음.",
+        "perceived_target": "라면 좋아하는 사람들, 특히 야식이나 식사 대용 찾는 사람들.",
+        "utterance": "아 또 신라면 광고네. 맨날 보는 건데. 맛있긴 하지, 근데 삶에 활력까지는 모르겠고 그냥 야식으로 먹으면 싸고 든든하니 좋지 뭐.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00003",
+        "exposure_context": "오후·집·스마트폰/휴대폰·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": true,
+          "search": false,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "action",
+        "drop_reason_tag": "no_reason_to_explore",
+        "purchase_intent": 4,
+        "trust": 5,
+        "rejected": false,
+        "rejection_reason_tag": null,
+        "emotion_tag": "indifference",
+        "perceived_message": "맵고 맛있는 라면으로 배 채우기 좋다. 간단하게 식사 해결.",
+        "perceived_target": "매운 라면 좋아하는 사람들, 간편하게 한 끼 때우려는 사람",
+        "utterance": "신라면? 뭐 늘 먹던 거지. 배고플 때 땡기긴 하겠다.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00019",
+        "exposure_context": "저녁·집·스마트폰/휴대폰·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": true,
+          "search": false,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "search",
+        "drop_reason_tag": "no_reason_to_explore",
+        "purchase_intent": 4,
+        "trust": 5,
+        "rejected": false,
+        "rejection_reason_tag": null,
+        "emotion_tag": "indifference",
+        "perceived_message": "신라면이 강렬하고 깊은 맛으로 기운을 북돋아 준다는 광고.",
+        "perceived_target": "라면 즐겨 먹는 사람들이면 누구든 되겠지.",
+        "utterance": "신라면은 원래 맛있는 거 알지만, 활력까지야. 그냥 배 채우는 거지 뭐.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00013",
+        "exposure_context": "저녁·집·스마트폰/휴대폰·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": true,
+          "search": false,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "search",
+        "drop_reason_tag": "no_reason_to_explore",
+        "purchase_intent": 4,
+        "trust": 5,
+        "rejected": false,
+        "rejection_reason_tag": null,
+        "emotion_tag": "trust",
+        "perceived_message": "신라면의 강하고 깊은 맛이 지치거나 피곤할 때 삶에 활력을 줄 수 있다는 메시지.",
+        "perceived_target": "라면을 즐겨먹으며 자극적인 맛을 선호하는 일반 대중.",
+        "utterance": "역시 신라면은 국물 맛이 최고지. 가끔 확 당길 때가 있긴 해.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00018",
+        "exposure_context": "오후·집·스마트폰/휴대폰·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": true,
+          "search": false,
+          "action": true,
+          "share": false
+        },
+        "drop_stage": "share",
+        "drop_reason_tag": "no_reason_to_explore",
+        "purchase_intent": 4,
+        "trust": 5,
+        "rejected": false,
+        "rejection_reason_tag": null,
+        "emotion_tag": "trust",
+        "perceived_message": "신라면의 강렬하고 깊은 맛이 삶에 활력을 준다는 내용.",
+        "perceived_target": "라면을 즐겨 먹는 일반 대중.",
+        "utterance": "어유, 신라면 광고 나오네. 역시 국물은 신라면이 최고지. 오늘 저녁에 하나 끓여 먹을까.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00005",
+        "exposure_context": "저녁·집·PC·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": true,
+          "search": false,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "search",
+        "drop_reason_tag": "no_reason_to_explore",
+        "purchase_intent": 4,
+        "trust": 5,
+        "rejected": false,
+        "rejection_reason_tag": null,
+        "emotion_tag": "indifference",
+        "perceived_message": "신라면의 강하고 깊은 맛을 강조하며, 먹으면 왠지 모르게 기운이 날 수 있다는 메시지로 보인다. 근데 솔직히 라면 먹고 활력까지 생길지는 잘 모르겠다.",
+        "perceived_target": "라면을 즐겨 먹는 일반 대중, 특히 매콤하고 진한 맛을 선호하는 사람들을 위한 광고라고 생각한다.",
+        "utterance": "또 신라면 광고네. 익숙한 맛이긴 한데 저녁이라 좀 땡기긴 하네. 라면이 삶에 활력을 준다는 건 좀 오바 아니야?",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00006",
+        "exposure_context": "저녁·집·스마트폰/휴대폰·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": true,
+          "search": false,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "search",
+        "drop_reason_tag": "no_reason_to_explore",
+        "purchase_intent": 4,
+        "trust": 4,
+        "rejected": false,
+        "rejection_reason_tag": null,
+        "emotion_tag": "trust",
+        "perceived_message": "신라면은 강렬하고 깊은 맛으로 지친 하루에 간편하게 활력을 주는 라면이다.",
+        "perceived_target": "매운 라면을 좋아하고 간편한 식사를 원하는 사람.",
+        "utterance": "신라면은 뭐 원래 아는 맛이지. 딱히 새로울 건 없는데, 저녁에 끓여 먹으면 편하고 든든하긴 하겠다.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00014",
+        "exposure_context": "오후·직장·스마트폰/휴대폰·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": true,
+          "search": false,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "search",
+        "drop_reason_tag": "no_reason_to_explore",
+        "purchase_intent": 4,
+        "trust": 5,
+        "rejected": false,
+        "rejection_reason_tag": null,
+        "emotion_tag": "indifference",
+        "perceived_message": "신라면은 강렬하고 깊은 맛으로 일상에 활력을 주는 라면이다.",
+        "perceived_target": "라면을 즐겨먹는 일반 대중, 나 같은 사람들.",
+        "utterance": "신라면이야? 뭐, 맛있는 라면이지. 퇴근하고 하나 끓여 먹을까.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      }
+    ],
+    "rubric_scores": [
+      {
+        "dimension": "category_alignment",
+        "score": 98,
+        "evidence": {
+          "declared": "음식",
+          "detected": "식품/라면",
+          "note": "감지된 카테고리가 선언된 카테고리의 하위 범주로 정확히 일치하며 더욱 구체적임."
+        }
+      },
+      {
+        "dimension": "objective_alignment",
+        "score": 90,
+        "evidence": {
+          "declared": "브랜드 인식 강화",
+          "detected": "브랜딩 및 인지 유지",
+          "note": "'강화'와 '유지'는 뉘앙스 차이가 있으나, 브랜드 인지 관리라는 핵심 목표는 일치함."
+        }
+      },
+      {
+        "dimension": "message_alignment",
+        "score": 95,
+        "evidence": {
+          "declared": "신라면",
+          "detected": "강렬하고 깊은 맛으로 삶에 활력을 주는 신라면",
+          "note": "감지된 메시지가 선언된 브랜드명을 포함하며, 구체적인 특장점을 덧붙여 설명함."
+        }
+      }
+    ],
+    "aggregate": {
+      "click_intent_rate": 0.1,
+      "ci_low": 0,
+      "ci_high": 0.25,
+      "purchase_intent": 3.6,
+      "trust_avg": 4.85,
+      "rejection_rate": 0,
+      "variance_warning": false,
+      "effective_n": 20,
+      "payload": {
+        "qa_passed_count": 20,
+        "ci_method": "weighted_bootstrap",
+        "ci_iters": 2000,
+        "purchase_std": 0.583,
+        "weight_sum": 20
+      },
+      "engine_version": "agg-2"
+    },
+    "simulation_id": "488147f9-f27e-4d71-a833-9ee0babc6965"
+  }

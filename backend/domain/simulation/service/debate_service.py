@@ -52,7 +52,7 @@ class DebateService:
 
         funnel·bottleneck·이탈/거부 분해·소비자 그룹(8) + 4대 KPI·토론 주제(9)를 즉시 반환.
         """
-        analysis = analyze_reactions(reactions)
+        analysis = analyze_reactions(reactions, ad_analysis)
         aggregate = compute_kpi(reactions)
         topic = build_topic(analysis, aggregate, ad_analysis)
         return {
@@ -105,7 +105,7 @@ class DebateService:
             store.set_status(run_id, "RUNNING")
 
             # ── 조각 8 반응 분석 ──
-            analysis = analyze_reactions(reactions)
+            analysis = analyze_reactions(reactions, ad_analysis)
             bn = analysis.bottleneck
             store.emit(
                 run_id,

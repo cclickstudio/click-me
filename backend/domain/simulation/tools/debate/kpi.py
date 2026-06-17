@@ -14,6 +14,7 @@ from domain.simulation.tools.aggregation.aggregator import BasicAggregator
 
 # 주신호 판정 임계 — 어느 신호를 토론 초점으로 삼을지 결정(우선순위 순으로 검사).
 _REJECTION_TH = 0.3  # 거부율 이 이상이면 거부가 주신호
+_RESIST_TH = 0.5  # 메시지 저항률 이 이상이면 "메시지가 안 먹힘"이 주신호
 _TRUST_HIGH = 3.5  # 신뢰 이 이상이면 "신뢰는 확보"
 _CLICK_LOW = 0.3  # 클릭 의향 이 미만이면 "행동 안 함"
 
@@ -34,15 +35,20 @@ def build_topic(
 ) -> DebateTopic:
     """병목 + KPI + 캠페인 목표 → 토론 주제(결정론).
 
-    주신호 우선순위: 거부 → 신뢰-행동 갭 → 초기이탈(attention병목) → 중간이탈.
+    주신호 우선순위: 거부 → 메시지 갭 → 신뢰-행동 갭 → 초기이탈(attention병목) → 중간이탈.
     """
     bn = analysis.bottleneck
     objective = ad_analysis.detected_objective if ad_analysis else None
+    msg = analysis.message
 
     if agg.rejection_rate >= _REJECTION_TH:
         signal = "rejection"
         diagnosis = f"거부 반응이 큼(거부율 {_pct(agg.rejection_rate)})"
         question = "무엇이 거부를 부르나?"
+    elif msg is not None and msg.resistance_rate >= _RESIST_TH:
+        signal = "message_gap"
+        diagnosis = f"의도 메시지가 잘 안 먹힘(저항 {_pct(msg.resistance_rate)})"
+        question = "메시지의 무엇이 받아들여지지 않나?"
     elif agg.trust_avg >= _TRUST_HIGH and agg.click_intent_rate < _CLICK_LOW:
         signal = "trust_action_gap"
         click = _pct(agg.click_intent_rate)
@@ -69,6 +75,7 @@ def build_topic(
             "click_intent_rate": agg.click_intent_rate,
             "trust_avg": agg.trust_avg,
             "rejection_rate": agg.rejection_rate,
+            "message_resistance_rate": msg.resistance_rate if msg else None,
         },
         objective=objective,
     )

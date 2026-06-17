@@ -54,11 +54,24 @@ class RejectionBreakdown(BaseModel):
     distrust_count: int = 0  # emotion_tag == distrust 인원
 
 
+class MessageReception(BaseModel):
+    """조각 8 — 메시지 수신 갭(의도 메시지가 어떻게 받아들여졌나). 결정론 신호, 해석은 토론(LLM).
+
+    의도(detected_message)는 그대로 토론에 넘기고, 여기선 '저항 표현(과장·식상·무관심)' 비율만
+    결정론으로 센다. 점수가 정밀하진 않지만 "메시지가 안 먹혔다"는 신호와 인용은 잡는다.
+    """
+
+    intended: str | None = None  # 광고 의도 메시지(ad_analysis.detected_message)
+    resistance_rate: float = 0.0  # 저항 표현 포함 반응 비율(0~1)
+    resistance_terms: dict[str, int] = Field(default_factory=dict)  # 어떤 저항어가 몇 번
+    resisted_quotes: list[str] = Field(default_factory=list)  # 저항 발언 샘플(토론 컨텍스트)
+
+
 class ReactionAnalysis(BaseModel):
     """조각 8 산출 — 반응 데이터의 구조적 분석(결정론, LLM✗).
 
     funnel/bottleneck = 어디서 새는가, groups = 누가 어떤 무리인가(선발 후보 풀),
-    breakdown/emotion_dist = 왜 새는가. 조각 10-a(선발)·11(리포트)이 소비한다.
+    breakdown/emotion_dist = 왜 새는가, message = 의도 메시지가 먹혔나. 10-a·11이 소비한다.
     """
 
     total_n: int  # qa_passed 표본 수
@@ -69,6 +82,7 @@ class ReactionAnalysis(BaseModel):
     emotion_dist: dict[str, int] = Field(default_factory=dict)
     rejection: RejectionBreakdown
     groups: GroupMembers
+    message: MessageReception | None = None  # 메시지 수신 갭(ad_analysis 있을 때만)
 
 
 class SelectedParticipant(BaseModel):
