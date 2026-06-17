@@ -11,12 +11,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from enum import StrEnum
 from typing import TYPE_CHECKING, Final, Protocol, TypedDict
 from uuid import uuid4
 
 from langgraph.graph import END, StateGraph
 
-from domain.management.contracts.enums import ActionTier, ProposalStatus
+from domain.management.contracts.enums import ActionTier, AnomalyType, ProposalStatus
 from domain.management.contracts.policy import TIER_POLICY
 from domain.management.contracts.schemas import (
     ActionProposal,
@@ -45,6 +46,37 @@ BANNED_EXPRESSIONS: Final[tuple[str, ...]] = (
 )
 
 DEFAULT_MIN_SCORE: Final[float] = 0.5
+
+#: 크리에이티브가 필요한 처방 — decide 라우팅이 generate 가지로 보낸다.
+CREATIVE_ACTIONS: Final[frozenset[str]] = frozenset({"REPLACE_CREATIVE", "CREATE_CAMPAIGN"})
+
+
+class RiskAppetite(StrEnum):
+    """사용자 의향 — 챗봇(입)이 구조화 노브로만 주입 (정보 방화벽 유지).
+
+    "줄이는 건 자율, 늘리는 건 승인" 원칙상 기본값은 보수적(끄기).
+    """
+
+    AGGRESSIVE = "aggressive"  # 예산 증액으로 밀어붙임 (Tier 3 승인)
+    CONSERVATIVE = "conservative"  # 손절(끄기) (Tier 1 자율)
+
+
+def decide_action(diagnosis: DiagnosisResult, risk_appetite: RiskAppetite) -> str | None:
+    """🅱 처방 결정 코어 — 진단+의향 → action_type (없으면 None=관망).
+
+    diagnosis evidence + 구조화 노브만 읽는다 (그 밖 정보 추론 금지, 방화벽).
+    실제 LLM 추론으로 교체 가능한 단일 지점 — 기본은 결정론 (게이트 #9·eval 채점성).
+    """
+    anomaly = diagnosis.anomaly_type
+    if anomaly in (AnomalyType.QUALITY_DEGRADED, AnomalyType.REVIEW_REJECTED):
+        return "REPLACE_CREATIVE"
+    if anomaly is AnomalyType.AUDIENCE_TOO_NARROW:
+        return "CREATE_CAMPAIGN"
+    if anomaly in (AnomalyType.BID_LOSS, AnomalyType.BUDGET_EXHAUSTED):
+        return "INCREASE_BUDGET" if risk_appetite is RiskAppetite.AGGRESSIVE else "PAUSE_CAMPAIGN"
+    # LEARNING_PHASE / REVIEW_DELAY / INCONCLUSIVE / SCHEDULE_GAP → 관망
+    return None
+
 
 #: P3 TTL [안] — 일반 24h (데모 모드는 10분으로 주입)
 DEFAULT_PROPOSAL_TTL: Final[timedelta] = timedelta(hours=24)
