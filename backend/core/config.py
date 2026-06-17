@@ -89,7 +89,7 @@ class Settings(BaseSettings):
     generator_text_base_url: str | None = None  # 회사 OpenAI-호환 엔드포인트용
     generator_image_provider: str = "openai"
     generator_image_model: str = "gpt-image-2"
-    generator_image_quality: str = "high"
+    generator_image_quality: str = "medium"
     generator_font_dir: str | None = None  # 없으면 backend/assets/fonts 사용
 
     # JWT (Cognito 전환 전 임시)
