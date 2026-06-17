@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
@@ -59,6 +60,15 @@ def _strip_json(text: str) -> str:
             t = t[4:]
         t = t.split("```")[0]
     return t.strip()
+
+
+def _strip_md(text: str) -> str:
+    """마크다운 마커 제거 + 개행→공백 → 한 줄 평문(라운드 정리는 채팅용 한 문장이라 형식 불필요)."""
+    t = (text or "").strip()
+    t = re.sub(r"-{3,}", " ", t)  # 구분선 ---
+    t = re.sub(r"[#*`>|]", "", t)  # 머리글·굵게·코드·인용·표 마커
+    t = re.sub(r"\s*\n\s*", " ", t)  # 개행 → 공백
+    return re.sub(r"\s{2,}", " ", t).strip()  # 연속 공백 압축
 
 
 def _norm_stance(value: object) -> Stance:
@@ -364,13 +374,16 @@ class LLMJudge:
     def summarize_round(self, round_n: int, utterances: list[Utterance]) -> str:
         body = "\n".join(f"- [{u.stance}] {u.text}" for u in utterances)
         user = (
-            f"{round_n}라운드 발언:\n{body}\n\n핵심 긴장점을 한 문장으로 정리하라(JSON 아님, 평문)."
+            f"{round_n}라운드 발언:\n{body}\n\n"
+            "핵심 긴장점을 한국어 평문 한 문장으로만 정리하라. "
+            "마크다운 금지 — 머리글(#)·굵게(**)·목록·표·구분선·줄바꿈 없이 순수 텍스트 한 문장."
         )
         try:
             # 라운드 정리는 한 문장 요약 — Sonnet 불필요. Haiku로 강등(비용 최적화·품질 무손실).
-            return self._c.complete(
+            raw = self._c.complete(
                 SUMMARIZE_ENGINE, _JUDGE_SYS, user, json_mode=False, max_tokens=200
-            ).strip()
+            )
+            return _strip_md(raw)  # 모델이 형식을 넣어도 평문 한 줄로 정규화(안전망)
         except Exception:
             logger.exception("Judge 라운드 정리 실패 round=%s", round_n)
             return f"R{round_n}: 정리 실패"
