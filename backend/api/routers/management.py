@@ -7,6 +7,7 @@
 """
 
 from datetime import UTC, datetime, timedelta
+from random import Random
 from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException
@@ -275,13 +276,20 @@ def _campaign_summary(snaps: list[MetricsSnapshot], budget: int) -> dict:
     last = snaps[-1]
     impressions = last.cum_impressions
     total_spend = sum(s.spend_krw for s in snaps)
-    total_clicks = sum(s.clicks for s in snaps)
+    total_clicks = sum(s.clicks for s in snaps)  # 광고 내 모든 클릭
+    total_inline = sum(s.inline_link_clicks for s in snaps)  # 랜딩/링크로 나간 클릭
+    # 전환(conversions)은 광고 telemetry에 아직 없어 데모로 합성한다 — 캠페인별 고정 전환율
+    # (campaign_id seed로 결정론). CVR = 전환 / 인라인 링크클릭 (사용자 정의).
+    conversions = round(total_inline * Random(snaps[0].campaign_id).uniform(0.04, 0.12))
     return {
         "impressions": impressions,
         "reach": last.cum_reach,
         "spend_krw": total_spend,
         "ctr": round(total_clicks / impressions, 5) if impressions else 0.0,
         "cpc_krw": round(total_spend / total_clicks) if total_clicks else 0,
+        "cpm_krw": round(total_spend / impressions * 1000) if impressions else 0,
+        "conversions": conversions,
+        "cvr": round(conversions / total_inline, 5) if total_inline else 0.0,
         "frequency": last.frequency,
         "pacing_pct": round(total_spend / budget * 100, 1) if budget else 0.0,
     }
