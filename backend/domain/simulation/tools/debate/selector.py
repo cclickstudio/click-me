@@ -72,7 +72,9 @@ EXPERT_SPECS: list[tuple[str, int, str, str]] = [
 ]
 # 일반인 slot 시작(1~4는 전문가). 선발 우선순위 순으로 5,6,7,…에 연속 배정(엔진 균등 유지).
 LAY_SLOT_START = 5
-LAY_COUNTS = (2, 4)  # 지원하는 일반인 수 — 2(피벗·비판자) / 4(+완주자·미온)
+# 지원하는 일반인 수 — 2(피벗·비판자) / 3(+완주자·미온 중 1명) / 4(+완주자·미온 둘 다).
+# 기본은 3(전문가4 + 일반인3 = 프레이밍·합의 + 역할 다양성의 절충). 2·4도 동작 유지.
+LAY_COUNTS = (2, 3, 4)
 
 
 def is_undecided(r: PersonaReaction) -> bool:
@@ -331,13 +333,14 @@ def _expert_participants(category: str) -> list[SelectedParticipant]:
 def select_panel(
     reactions: list[PersonaReaction],
     ad_analysis: AdInterpretation | None = None,
-    lay_count: int = 4,
+    lay_count: int = 3,
     personas: list[Persona] | None = None,
     rerank_fn: RerankFn | None = None,
 ) -> SelectedPanel:
     """패널 구성 — 전문가 4명(합성) + 일반인 lay_count명(실제 반응자에서 선발).
 
-    lay_count=2: 피벗·비판자(두 극) / lay_count=4: +완주자·미온(분포 범위 커버).
+    lay_count=2: 피벗·비판자(두 극) / 3(기본): +완주자·미온 중 1명(완주자 우선) /
+    4: +완주자·미온 둘 다(분포 범위 커버). 피벗·비판자는 항상 확보(필수).
     personas 주입 시 타깃 적합 선발 — 타깃 밖(엉뚱한 인구) 후보를 일반인 풀에서 배제.
     일반인은 선발 우선순위(피벗→비판자→완주자→미온) 순으로 slot 5,6,…에 연속 배정.
     rerank_fn 주입 시: 스칼라로 못 가른 '동점 후보'만 LLM이 텍스트로 재판단(margin 게이트).
@@ -392,9 +395,12 @@ def select_panel(
     critic_secured = critic is not None and stance_score(critic) < 0
     add(critic, "비판자")
 
-    if lay_count >= 4:
+    if lay_count >= 3:
         # 완주자 — action 전형(긍정 극). 클릭 0%면 가장 긍정적인 1명. (우선순위 3)
+        # lay_count=3은 여기까지(피벗·비판자·완주자 = 액션 지향 결론용 긍정 극 1명 보강).
         add(pick_finisher(remaining(), chosen_ages, by_id, age_spread, rerank_fn), "완주자")
+
+    if lay_count >= 4:
         # 미온 — 미전환 중 피벗과 결 다른 1명. 미전환 소진이면 전형으로 보충. (우선순위 4)
         second = pick_second_undecided(
             remaining(), pivot, chosen_ages, by_id, age_spread, rerank_fn

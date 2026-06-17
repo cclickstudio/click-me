@@ -16,35 +16,16 @@ from domain.simulation.contracts.debate_schemas import DebateTopic
 from domain.simulation.contracts.schemas import AdInterpretation, Persona, PersonaReaction
 from domain.simulation.tools.debate.analyzer import analyze_reactions
 from domain.simulation.tools.debate.assigner import assign_panel
-from domain.simulation.tools.debate.kpi import build_topic, compute_kpi
+from domain.simulation.tools.debate.kpi import (
+    build_topic,
+    build_topic_candidates,
+    compute_kpi,
+)
 from domain.simulation.tools.debate.report import build_report
 from domain.simulation.tools.debate.runner import run_debate
 from domain.simulation.tools.debate.selector import RerankFn, select_panel
 
 logger = logging.getLogger("clickme")
-
-
-def _topic_digest(topic, analysis, agg, reactions: list[PersonaReaction]) -> str:
-    """LLM 주제 생성용 분석 요약 — KPI·병목·이탈사유·메시지저항 + 실제 발언 샘플(grounded)."""
-    lines = [
-        f"진단: {topic.diagnosis}",
-        f"KPI — 클릭의향 {agg.click_intent_rate}, 신뢰 {agg.trust_avg}, "
-        f"구매의도 {agg.purchase_intent}, 거부율 {agg.rejection_rate}",
-    ]
-    bn = analysis.bottleneck
-    if bn:
-        lines.append(f"병목: {bn.from_stage}->{bn.to_stage} {bn.dropped}명 이탈")
-    if analysis.by_drop_reason_tag:
-        lines.append(f"이탈 사유: {analysis.by_drop_reason_tag}")
-    msg = analysis.message
-    if msg and msg.resistance_rate:
-        terms = list(msg.resistance_terms)[:5]
-        lines.append(f"메시지 저항 {msg.resistance_rate} (의도='{msg.intended}', 저항어 {terms})")
-    quotes = [r.utterance for r in reactions if r.utterance][:5]
-    if quotes:
-        lines.append("실제 발언 샘플:")
-        lines.extend(f"- {q[:100]}" for q in quotes)
-    return "\n".join(lines)
 
 
 class DebateService:
@@ -95,13 +76,12 @@ class DebateService:
     ) -> dict:
         """추가 토론용 논제 후보 5개(결정론·LLM✗). 사용자가 골라 start(topic=)로 전달.
 
-        TODO(T1 논제5개): kpi.build_topic_candidates(analysis, agg, ad_analysis)로 교체.
-        현재는 계약 스텁 — 단일 주제 1개만 감싸 반환한다.
+        5가지 주신호를 진단형 대립 논제로 만들어 ranking·confidence 순으로 반환(변경2).
         """
         analysis = analyze_reactions(reactions, ad_analysis)
         aggregate = compute_kpi(reactions)
-        topic = build_topic(analysis, aggregate, ad_analysis)
-        return {"topics": [topic.model_dump()]}
+        topics = build_topic_candidates(analysis, aggregate, ad_analysis)
+        return {"topics": [t.model_dump() for t in topics]}
 
     async def ask_question(
         self,
@@ -127,13 +107,13 @@ class DebateService:
         ad_analysis: AdInterpretation | None = None,
         *,
         simulation_id: str | None = None,
-        lay_count: int = 4,
+        lay_count: int = 3,
         personas: list[Persona] | None = None,
         topic: DebateTopic | None = None,
     ) -> str:
         """비동기 시작 — 백그라운드 실행 후 run_id 반환(진행률은 SSE, 결과는 get_result).
 
-        lay_count: 일반인 수(2=피벗·비판자 / 4=+완주자·미온). 패널 = 전문가4 + 일반인lay_count.
+        lay_count: 일반인 수(2=피벗·비판자 / 3=+완주자 / 4=+완주자·미온). 패널 = 전문가4 + 일반인.
         personas: 인구통계(있으면 타깃 적합 선발 — 타깃 밖 후보 배제).
         topic: 추가 토론에서 사용자가 고른 논제(None이면 최초 토론 = 분석 headline 고정).
         """
@@ -150,7 +130,7 @@ class DebateService:
         ad_analysis: AdInterpretation | None = None,
         *,
         simulation_id: str | None = None,
-        lay_count: int = 4,
+        lay_count: int = 3,
         personas: list[Persona] | None = None,
     ) -> dict | None:
         """동기 실행 — 끝까지 돌린 뒤 결과(분석·KPI·주제·패널)를 반환."""
@@ -165,7 +145,7 @@ class DebateService:
         reactions: list[PersonaReaction],
         ad_analysis: AdInterpretation | None,
         simulation_id: str | None = None,
-        lay_count: int = 4,
+        lay_count: int = 3,
         personas: list[Persona] | None = None,
         selected_topic: DebateTopic | None = None,
     ) -> None:
@@ -201,16 +181,12 @@ class DebateService:
                     "rejection_rate": aggregate.rejection_rate,
                 },
             )
-            # 추가 토론: 사용자가 고른 논제를 그대로 사용. 최초 토론: 분석 기반 주제 생성.
-            # NOTE(T1): 최초 토론 headline 고정(변경1) — refine_topic 정책은 코어 트랙에서 확정.
+            # 추가 토론: 사용자가 고른 논제를 그대로 사용. 최초 토론: 분석 headline 고정(변경1).
+            # build_topic이 만든 진단 기반 headline을 그대로 토론 주제로 쓴다(LLM refine 없음).
             if selected_topic is not None:
                 topic = selected_topic
             else:
                 topic = build_topic(analysis, aggregate, ad_analysis)
-                # 엔진 주입(실 LLM) 시 토론 주제를 데이터 기반 논쟁적 주제로 생성(mock은 시드 유지).
-                if self._judge is not None and self._debater_factory is not None:
-                    digest = _topic_digest(topic, analysis, aggregate, reactions)
-                    topic = await asyncio.to_thread(self._judge.refine_topic, topic, digest)
             store.emit(
                 run_id,
                 {
