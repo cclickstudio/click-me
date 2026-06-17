@@ -22,7 +22,9 @@ export function CampaignTable({
             <th className="text-right font-semibold px-3 py-2.5">노출</th>
             <th className="text-right font-semibold px-3 py-2.5">지출</th>
             <th className="text-right font-semibold px-3 py-2.5 hidden md:table-cell">CTR</th>
+            <th className="text-right font-semibold px-3 py-2.5 hidden lg:table-cell">CVR</th>
             <th className="text-right font-semibold px-3 py-2.5 hidden md:table-cell">CPC</th>
+            <th className="text-right font-semibold px-3 py-2.5 hidden lg:table-cell">CPM</th>
             <th className="text-right font-semibold px-4 py-2.5">소진율</th>
           </tr>
         </thead>
@@ -51,8 +53,14 @@ export function CampaignTable({
               <td className="px-3 py-3 text-right tabular-nums text-[#4E5968] dark:text-[#C9CED6] hidden md:table-cell">
                 {(c.ctr * 100).toFixed(1)}%
               </td>
+              <td className="px-3 py-3 text-right tabular-nums text-[#4E5968] dark:text-[#C9CED6] hidden lg:table-cell">
+                {(c.cvr * 100).toFixed(1)}%
+              </td>
               <td className="px-3 py-3 text-right tabular-nums text-[#4E5968] dark:text-[#C9CED6] hidden md:table-cell">
                 ₩{c.cpc_krw.toLocaleString()}
+              </td>
+              <td className="px-3 py-3 text-right tabular-nums text-[#4E5968] dark:text-[#C9CED6] hidden lg:table-cell">
+                ₩{c.cpm_krw.toLocaleString()}
               </td>
               <td className="px-4 py-3 text-right">
                 <PacingCell pct={c.pacing_pct} />

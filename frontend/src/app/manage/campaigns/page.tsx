@@ -6,7 +6,7 @@ import AppLayout from '@/components/AppLayout';
 import { api } from '@/lib/api';
 import { CampaignTable } from '@/components/manage/campaigns/CampaignTable';
 import { CampaignCards } from '@/components/manage/campaigns/CampaignCards';
-import { CampaignDetail } from '@/components/manage/campaigns/CampaignDetail';
+import { CampaignDetailModal } from '@/components/manage/campaigns/CampaignDetailModal';
 import type {
   CampaignDetail as Detail,
   CampaignSummary,
@@ -30,7 +30,6 @@ export default function Page() {
       .then((r) => {
         if (!alive) return;
         setCampaigns(r.campaigns);
-        setSelected(r.campaigns[0]?.campaign_id ?? null);
       })
       .catch((e) => alive && setError(e instanceof Error ? e.message : '불러오기 실패'))
       .finally(() => alive && setBusy(false));
@@ -100,8 +99,11 @@ export default function Page() {
             ) : (
               <CampaignCards campaigns={campaigns} selected={selected} onSelect={setSelected} />
             )}
-            {detail && <CampaignDetail detail={detail} />}
           </div>
+        )}
+
+        {selected && detail && (
+          <CampaignDetailModal detail={detail} onClose={() => setSelected(null)} />
         )}
 
         <p className="mt-6 text-[11px] text-[#B0B8C1]">

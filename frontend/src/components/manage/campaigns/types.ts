@@ -14,6 +14,9 @@ export type CampaignKpi = {
   spend_krw: number;
   ctr: number; // 0~1
   cpc_krw: number;
+  cpm_krw: number;
+  conversions: number;
+  cvr: number; // 0~1 (전환/인라인 링크클릭)
   frequency: number;
   pacing_pct: number;
 };

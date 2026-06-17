@@ -55,7 +55,10 @@ export function CampaignDetail({ detail }: { detail: Detail }) {
         <Tile label="지출" value={`₩${s.spend_krw.toLocaleString()}`} />
         <Tile label="소진율" value={`${s.pacing_pct.toFixed(0)}%`} />
         <Tile label="CTR" value={`${(s.ctr * 100).toFixed(1)}%`} />
+        <Tile label="CVR" value={`${(s.cvr * 100).toFixed(1)}%`} />
         <Tile label="CPC" value={`₩${s.cpc_krw.toLocaleString()}`} />
+        <Tile label="CPM" value={`₩${s.cpm_krw.toLocaleString()}`} />
+        <Tile label="전환" value={s.conversions.toLocaleString()} />
         <Tile label="빈도" value={s.frequency.toFixed(2)} />
         <Tile label="일예산" value={`₩${detail.daily_budget_krw.toLocaleString()}`} />
       </div>
