@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import AppLayout from '@/components/AppLayout';
 import { api } from '@/lib/api';
 import { CampaignTable } from '@/components/manage/campaigns/CampaignTable';
@@ -61,19 +62,27 @@ export default function Page() {
             <h1 className="text-2xl font-bold text-[#191F28] dark:text-[#F2F4F6]">캠페인 대시보드</h1>
             <p className="text-sm text-[#8B95A1] mt-1">목표·예산·성과를 한 창구에서 (Mock 기반 데모)</p>
           </div>
-          <div className="flex rounded-lg border border-[#E5E8EB] dark:border-[#2D3748] overflow-hidden text-sm">
-            <button
-              onClick={() => setView('table')}
-              className={`px-3 py-1.5 ${view === 'table' ? 'bg-[#3182F6] text-white' : 'text-[#8B95A1]'}`}
+          <div className="flex items-center gap-2">
+            <div className="flex rounded-lg border border-[#E5E8EB] dark:border-[#2D3748] overflow-hidden text-sm">
+              <button
+                onClick={() => setView('table')}
+                className={`px-3 py-1.5 ${view === 'table' ? 'bg-[#3182F6] text-white' : 'text-[#8B95A1]'}`}
+              >
+                테이블
+              </button>
+              <button
+                onClick={() => setView('cards')}
+                className={`px-3 py-1.5 ${view === 'cards' ? 'bg-[#3182F6] text-white' : 'text-[#8B95A1]'}`}
+              >
+                카드
+              </button>
+            </div>
+            <Link
+              href="/manage/campaigns/new"
+              className="px-3 py-1.5 bg-[#3182F6] text-white text-sm font-medium rounded-lg hover:bg-[#1B6EEB]"
             >
-              테이블
-            </button>
-            <button
-              onClick={() => setView('cards')}
-              className={`px-3 py-1.5 ${view === 'cards' ? 'bg-[#3182F6] text-white' : 'text-[#8B95A1]'}`}
-            >
-              카드
-            </button>
+              + 새 캠페인
+            </Link>
           </div>
         </div>
 

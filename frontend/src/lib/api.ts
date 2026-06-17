@@ -1,6 +1,7 @@
 import { getToken } from "./authApi";
 import type { BoardResponse } from "@/components/manage/compare/types";
 import type { CampaignDetail, CampaignsResponse } from "@/components/manage/campaigns/types";
+import type { Proposal } from "@/components/manage/types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -114,6 +115,16 @@ export const api = {
     compareBoard: () => request<BoardResponse>("/management/compare/board"),
     campaigns: () => request<CampaignsResponse>("/management/campaigns"),
     campaign: (id: string) => request<CampaignDetail>(`/management/campaigns/${id}`),
+    createCampaignProposal: (body: {
+      name: string;
+      daily_budget_krw: number;
+      run_days: number;
+      creative_ad_id?: string;
+    }) =>
+      request<{ proposal: Proposal }>("/management/campaigns/create-proposal", {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
   },
 
   generator: {
