@@ -1,5 +1,7 @@
+# 이미지·전략에 맞는 광고 카피(헤드라인/본문/CTA)를 생성하는 노드 (factory LLM 경유)
+from __future__ import annotations
+
 from langsmith import traceable
-from openai import AsyncOpenAI
 
 from domain.generator.contracts.enums import TemplateType
 from domain.generator.contracts.pipeline_schemas import (
@@ -8,9 +10,7 @@ from domain.generator.contracts.pipeline_schemas import (
     ProductAnalysis,
     StrategyOutput,
 )
-from tools.utils import safe_json_loads, str_or_none
-
-_client = AsyncOpenAI(timeout=60.0)
+from domain.generator.llm.factory import build_text_llm
 
 _TEMPLATE_COPY_GUIDE: dict[TemplateType, str] = {
     TemplateType.A: (
@@ -31,8 +31,7 @@ _TEMPLATE_COPY_GUIDE: dict[TemplateType, str] = {
 _SYSTEM = """\
 당신은 대한민국 퍼포먼스 마케팅 카피라이터입니다.
 모든 출력은 반드시 자연스러운 한국어로 작성해야 합니다.
-오탈자, 문법 오류, 의미 없는 단어 조합은 절대 허용되지 않습니다.
-반드시 JSON 형식으로만 응답하세요."""
+오탈자, 문법 오류, 의미 없는 단어 조합은 절대 허용되지 않습니다."""
 
 _IMAGE_ANALYSIS_SECTION = """\
 
@@ -138,10 +137,12 @@ async def generate_copy(
         response_format={"type": "json_object"},
     )
 
-    raw = safe_json_loads(response.choices[0].message.content, fallback="{}")
-
-    return AdCopy(
-        headline=str_or_none(raw.get("headline")) or "",
-        body=str_or_none(raw.get("body")) or "",
-        cta=str_or_none(raw.get("cta")) or "지금 바로 확인하기",
-    )
+    try:
+        out: AdCopy = await _llm.ainvoke([("system", _SYSTEM), ("user", prompt)])
+        return AdCopy(
+            headline=out.headline or "",
+            body=out.body or "",
+            cta=out.cta or "지금 바로 확인하기",
+        )
+    except Exception:
+        return AdCopy(headline="", body="", cta="지금 바로 확인하기")

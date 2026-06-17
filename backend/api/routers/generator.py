@@ -46,7 +46,7 @@ class BrandProfileBody(BaseModel):
 @router.get("/brand-profile")
 async def get_brand_profile(x_client_id: str = Header()):
     """저장된 브랜드 프로필 조회 — 로고 S3 키가 있으면 presigned URL도 반환."""
-    p = get_profile(x_client_id)
+    p = await get_profile(x_client_id)
     logo_url: str | None = None
     if p.brand_logo_key:
         logo_url = _proxy_url(p.brand_logo_key)
@@ -61,7 +61,7 @@ async def get_brand_profile(x_client_id: str = Header()):
 @router.post("/brand-profile")
 async def update_brand_profile(body: BrandProfileBody, x_client_id: str = Header()):
     """브랜드 프로필 저장 — 전달된 필드만 업데이트(나머지 유지)."""
-    p = save_profile(
+    p = await save_profile(
         x_client_id,
         brand_color=body.brand_color,
         brand_logo_key=body.brand_logo_key,
@@ -99,7 +99,7 @@ async def upload_logo(
     ext = _ALLOWED_IMAGE_TYPES[ct]
     key = brand_logo_key(x_client_id, ext)
     await upload_bytes(data, key, content_type=ct)
-    save_profile(x_client_id, brand_logo_key=key)
+    await save_profile(x_client_id, brand_logo_key=key)
 
     return {"key": key, "url": _proxy_url(key)}
 

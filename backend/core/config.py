@@ -84,12 +84,26 @@ class Settings(BaseSettings):
     meta_graph_api_version: str = "v23.0"
 
     # Generator (광고 생성)
+    # 생성 방식: pipeline=카피·이미지 단계 분리 / multimodal=한 모델이 이미지+카피 동시 생성
+    generator_gen_mode: str = "pipeline"  # pipeline | multimodal
+    # 텍스트(상품분석·전략·카피·QA·설명)
     generator_text_provider: str = "openai"  # openai | anthropic | google_genai ...
     generator_text_model: str = "gpt-4.1"
     generator_text_base_url: str | None = None  # 회사 OpenAI-호환 엔드포인트용
-    generator_image_provider: str = "openai"
-    generator_image_model: str = "gpt-image-2"
-    generator_image_quality: str = "medium"
+    # 비전(이미지 분석)
+    generator_vision_provider: str = "openai"  # openai | google_genai ...
+    generator_vision_model: str = "gpt-4o"
+    # 이미지 생성(배경)
+    generator_image_provider: str = "openai"  # openai | google_genai
+    generator_image_model: str = "gpt-image-1"
+    generator_image_quality: str = "medium"  # openai 전용(low|medium|high), google_genai는 무시
+    generator_image_timeout: float = 120.0  # 무거운 이미지 모델 대비 호출 타임아웃(초)
+    # 이미지 편집(텍스트존 인페인팅)
+    generator_image_edit_provider: str = "openai"  # openai
+    generator_image_edit_model: str = "gpt-image-1"
+    # 멀티모달 단일호출(이미지+카피) — GEN_MODE=multimodal 일 때만 사용
+    generator_multimodal_provider: str = "openai"  # openai | google_genai
+    generator_multimodal_model: str = "gpt-image-1"
     generator_font_dir: str | None = None  # 없으면 backend/assets/fonts 사용
 
     # JWT (Cognito 전환 전 임시)

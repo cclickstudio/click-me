@@ -11,6 +11,7 @@ import uuid
 
 from langchain_core.runnables import RunnableConfig
 
+from core.config import settings
 from domain.generator.contracts.enums import AdSize
 from domain.generator.contracts.pipeline_schemas import (
     ProductAnalysis,
@@ -21,6 +22,7 @@ from domain.generator.graph.nodes import emit_progress
 from domain.generator.graph.state import GenerationState
 from domain.generator.pipeline.copy_generator import generate_copy
 from domain.generator.pipeline.image_generator import generate_image
+from domain.generator.pipeline.multimodal_generator import generate_image_and_copy
 from domain.generator.pipeline.quality_checker import check_quality
 from tools.storage.s3 import candidate_key, upload_bytes
 
@@ -71,14 +73,64 @@ async def generate_candidates(state: GenerationState, config: RunnableConfig) ->
                 size=gen_size,
                 brand_color=brand_color,
                 tone=tone,
-                headline=ad_copy.headline,
-                body=ad_copy.body,
-                cta=ad_copy.cta,
-            ),
-            check_quality(ad_copy=ad_copy, target=product_analysis.target_audience),
-        )
+            )
+            quality_report = await check_quality(
+                ad_copy=ad_copy, target=product_analysis.target_audience
+            )
+            image_bytes = resize_to_target(creative, width, height)
+        else:
+            # pipeline: 텍스트 없는 배경 → 분석 → 카피 → 인페인팅 → 한글 텍스트·로고 합성
+            # 1. 배경 이미지 (텍스트 없음)
+            bg_bytes = await generate_image(
+                product_analysis=product_analysis,
+                strategy=plan.strategy,
+                template=plan.template,
+                size=gen_size,
+                brand_color=brand_color,
+                tone=tone,
+            )
 
-        # 3. S3 업로드
+            # 2. 이미지 분석
+            image_analysis = await analyze_image(bg_bytes)
+
+            # 3. 이미지에 맞는 카피
+            ad_copy = await generate_copy(
+                product_analysis=product_analysis,
+                strategy_output=StrategyOutput(
+                    strategy=plan.strategy,
+                    strategy_description=plan.strategy_description,
+                    rationale=plan.rationale,
+                ),
+                image_analysis=image_analysis,
+                template=plan.template,
+            )
+
+            # 4. 인페인팅(텍스트존 자연화) + 품질검증 병렬
+            inpainted_bg, quality_report = await asyncio.gather(
+                inpaint_text_zone(
+                    bg_bytes=bg_bytes,
+                    template=plan.template,
+                    image_analysis=image_analysis,
+                    brand_color=brand_color,
+                ),
+                check_quality(ad_copy=ad_copy, target=product_analysis.target_audience),
+            )
+
+            # 5. 목표 치수 보정(배경) 후 최종 치수에서 한글 텍스트·로고 합성
+            inpainted_bg = resize_to_target(inpainted_bg, width, height)
+            image_bytes = await asyncio.to_thread(
+                composite_text,
+                inpainted_bg,
+                ad_copy.headline,
+                ad_copy.body,
+                ad_copy.cta,
+                plan.template,
+                brand_color,
+                image_analysis,
+                logo_png,
+            )
+
+        # 6. S3 업로드
         s3_key = candidate_key(generation_id, idx)
         await upload_bytes(image_bytes, s3_key, content_type="image/png")
 
