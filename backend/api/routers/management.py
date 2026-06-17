@@ -45,7 +45,12 @@ from domain.management.detection.exposure_model import (
     find_anomaly_window,
 )
 from domain.management.execution.executor import Executor
-from domain.management.execution.tier import TenantBudgetRegistry
+from domain.management.execution.tier import (
+    ESCALATE_THRESHOLD,
+    WARN_THRESHOLD,
+    BudgetAuthority,
+    TenantBudgetRegistry,
+)
 from domain.management.wiring import (
     build_audit_sink,
     build_idempotency_store,
@@ -371,3 +376,45 @@ async def create_campaign_proposal(body: CreateCampaignRequest):
         )
     )
     return {"proposal": proposal.model_dump(mode="json")}
+
+
+# ── 예산 관리·페이싱 (테넌트 한도 대비 캠페인 합산 소진 + 90/95/100% 판정) ────
+# 소진액은 데모 캠페인 지출 합산(레지스트리 커밋분은 데모에서 0). 한도는 _BUDGET에서
+# 읽고/쓰며(set_limit, 인메모리), BudgetAuthority.evaluate로 경고 레벨을 판정한다.
+async def _budget_status() -> dict:
+    spent = 0
+    campaigns = []
+    for i, (cid, name, _state, budget, fault) in enumerate(_CAMPAIGNS_DEMO):
+        snaps = await _campaign_snapshots(cid, budget, fault, seed=40 + i)
+        spend = _campaign_summary(snaps, budget)["spend_krw"]
+        spent += spend
+        campaigns.append({"name": name, "spend_krw": spend})
+    limit = _BUDGET.for_tenant(TENANT_ID).limit_krw
+    decision = BudgetAuthority(limit_krw=limit, spent_krw=spent).evaluate(0).value
+    return {
+        "tenant_id": TENANT_ID,
+        "limit_krw": limit,
+        "spent_krw": spent,
+        "remaining_krw": max(limit - spent, 0),
+        "ratio": round(spent / limit, 3) if limit else 0.0,
+        "decision": decision,
+        "thresholds": {"warn": WARN_THRESHOLD, "escalate": ESCALATE_THRESHOLD},
+        "campaigns": campaigns,
+    }
+
+
+@router.get("/budget")
+async def get_budget():
+    """테넌트 예산 한도 대비 캠페인 합산 소진 + 90/95/100% 판정."""
+    return await _budget_status()
+
+
+class BudgetLimitRequest(BaseModel):
+    limit_krw: int = Field(ge=0)
+
+
+@router.post("/budget/limit")
+async def set_budget_limit(body: BudgetLimitRequest):
+    """예산 한도 설정 — 변경 후 경고 레벨(decision)이 즉시 반영(인메모리)."""
+    _BUDGET.set_limit(TENANT_ID, body.limit_krw)
+    return await _budget_status()
