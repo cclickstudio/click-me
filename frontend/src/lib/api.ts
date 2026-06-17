@@ -83,7 +83,7 @@ export const api = {
 
   // 페르소나 토론(/api/debate/*) — 시뮬 반응(reactions)을 받아 토론을 돌리고 결과를 낸다.
   debate: {
-    // 시뮬 반응으로 토론 시작 → run_id. use_llm=true면 실 LLM(비용), lay_count는 일반인 수(2|4).
+    // 시뮬 반응으로 토론 시작 → run_id. 토론은 항상 실 LLM, lay_count는 일반인 수(2|4).
     start: (
       body: {
         reactions: unknown[];
@@ -91,10 +91,9 @@ export const api = {
         personas?: unknown[];
         simulation_id?: string;
       },
-      opts?: { useLlm?: boolean; layCount?: 2 | 4 },
+      opts?: { layCount?: 2 | 4 },
     ): Promise<DebateStartResult> => {
       const q = new URLSearchParams();
-      if (opts?.useLlm) q.set("use_llm", "true");
       if (opts?.layCount) q.set("lay_count", String(opts.layCount));
       return request<DebateStartResult>(`/debate/start?${q.toString()}`, {
         method: "POST",

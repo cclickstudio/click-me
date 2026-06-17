@@ -77,7 +77,6 @@ function avatarColor(role: string): string {
 
 export function DebatePanel({ reactions, adAnalysis, personas, simulationId }: DebatePanelProps) {
   const [phase, setPhase] = useState<Phase>("idle");
-  const [useLlm, setUseLlm] = useState(false);
   const [layCount, setLayCount] = useState<2 | 4>(4);
 
   const [stageMsg, setStageMsg] = useState("");
@@ -113,7 +112,7 @@ export function DebatePanel({ reactions, adAnalysis, personas, simulationId }: D
           personas: personas.length > 0 ? personas : undefined,
           simulation_id: simulationId,
         },
-        { useLlm, layCount },
+        { layCount },
       );
 
       const es = api.debate.stream(run_id);
@@ -225,44 +224,21 @@ export function DebatePanel({ reactions, adAnalysis, personas, simulationId }: D
       {/* ── 옵션 + 시작 ── */}
       {(phase === "idle" || phase === "error") && (
         <div className="space-y-4">
-          <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
-            <div>
-              <p className="text-xs font-semibold text-[#4E5968] dark:text-[#9CA3AF] mb-1.5">
-                일반인 수 (lay_count)
-              </p>
-              <div className="flex gap-2">
-                {([2, 4] as const).map((n) => (
-                  <button
-                    key={n}
-                    type="button"
-                    onClick={() => setLayCount(n)}
-                    className={`${chipBase} ${layCount === n ? chipActive : chipIdle}`}
-                  >
-                    {n === 2 ? "2명 (피벗·비판자)" : "4명 (+완주자·미온)"}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div>
-              <p className="text-xs font-semibold text-[#4E5968] dark:text-[#9CA3AF] mb-1.5">
-                토론 엔진
-              </p>
-              <div className="flex gap-2">
+          <div>
+            <p className="text-xs font-semibold text-[#4E5968] dark:text-[#9CA3AF] mb-1.5">
+              일반인 수 (lay_count)
+            </p>
+            <div className="flex gap-2">
+              {([2, 4] as const).map((n) => (
                 <button
+                  key={n}
                   type="button"
-                  onClick={() => setUseLlm(false)}
-                  className={`${chipBase} ${!useLlm ? chipActive : chipIdle}`}
+                  onClick={() => setLayCount(n)}
+                  className={`${chipBase} ${layCount === n ? chipActive : chipIdle}`}
                 >
-                  Mock (즉시·무료)
+                  {n === 2 ? "2명 (피벗·비판자)" : "4명 (+완주자·미온)"}
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setUseLlm(true)}
-                  className={`${chipBase} ${useLlm ? chipActive : chipIdle}`}
-                >
-                  실 LLM (Sonnet·비용)
-                </button>
-              </div>
+              ))}
             </div>
           </div>
 
@@ -279,11 +255,9 @@ export function DebatePanel({ reactions, adAnalysis, personas, simulationId }: D
           >
             토론 시작
           </button>
-          {useLlm && (
-            <p className="text-[11px] text-[#B0B8C1] dark:text-[#4B5563] text-center">
-              실 LLM은 발언을 또박또박 생성해 30초~1분 이상 걸립니다.
-            </p>
-          )}
+          <p className="text-[11px] text-[#B0B8C1] dark:text-[#4B5563] text-center">
+            토론은 실 LLM으로 진행됩니다 — 발언을 또박또박 생성해 30초~1분 이상 걸립니다.
+          </p>
         </div>
       )}
 
