@@ -20,7 +20,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # backend/를 모듈 경로에 추가
 
 from core.config import settings
-from domain.management.adapters.meta.client import MetaApiError, MetaClient
+from domain.management.adapters.meta.client import MetaApiError, MetaClient, build_meta_client
 
 
 async def _probe(client: MetaClient, perm: str, path: str, params: dict) -> bool:
@@ -34,7 +34,7 @@ async def _probe(client: MetaClient, perm: str, path: str, params: dict) -> bool
 
 
 async def run() -> None:
-    client = MetaClient(settings)
+    client = build_meta_client(settings)
     page = settings.meta_page_id
     biz = settings.meta_business_id
     acct = settings.meta_ad_account_id

@@ -17,6 +17,7 @@ TIER_POLICY: dict[str, ActionTier] = {
     "REBALANCE_BUDGET": ActionTier.TIER_2,  # 비활성 (7/8 스코프 제외)
     "INCREASE_BUDGET": ActionTier.TIER_3,
     "REPLACE_CREATIVE": ActionTier.TIER_3,
+    "CREATE_CAMPAIGN": ActionTier.TIER_3,  # 신규 집행 — 항상 건별 사용자 승인 (PR2)
 }
 
 AUTO_APPROVE_MAX_TIER = ActionTier.TIER_1

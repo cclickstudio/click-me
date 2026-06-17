@@ -243,7 +243,8 @@ async def test_write_timeout_retried_with_backoff_then_succeeds():
 
     assert result.status is ResultStatus.SUCCESS
     assert len(writer.calls) == 3
-    retries = [e for e in audit.for_approval(action.approval_id) if e.category == "executor.retry"]
+    events = await audit.for_approval(action.approval_id)
+    retries = [e for e in events if e.category == "executor.retry"]
     assert len(retries) == 2
 
 
@@ -302,7 +303,7 @@ async def test_gate7_partial_failure_halts_and_links_audit():
     assert [s["target"] for s in snapshots] == ["camp-001", "camp-002"]
     assert snapshots[0]["status"] == "success"
     # 감사 로그가 approval_id로 전 과정을 추적할 수 있어야 한다
-    events = audit.for_approval(action.approval_id)
+    events = await audit.for_approval(action.approval_id)
     assert any(e.category == "executor.partial_failure" for e in events)
 
 

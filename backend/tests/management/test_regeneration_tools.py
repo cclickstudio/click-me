@@ -152,20 +152,21 @@ class FakeSsr:
         self._mean = mean
 
     async def score(self, exposure_text: str):
-        return {"purchase_intent": SimpleNamespace(mean=self._mean)}
+        # 실 SSR 차원 = conversion_intent (0~1)
+        return {"conversion_intent": SimpleNamespace(mean=self._mean)}
 
 
 async def test_ssr_scorer_normalizes_to_unit_interval():
-    scorer = SsrSimulationScorer(FakeSsr(mean=3.8))
+    scorer = SsrSimulationScorer(FakeSsr(mean=0.7))
     candidate = CreativeCandidate(candidate_id="c1", ad_copy="아무 카피")
 
-    assert await scorer.score(candidate) == pytest.approx((3.8 - 1.0) / 4.0)
+    assert await scorer.score(candidate) == pytest.approx(0.7)  # 0~1 = 통과
 
 
 async def test_ssr_scorer_clamps_and_accepts_dict_distribution():
     class DictSsr:
         async def score(self, exposure_text: str):
-            return {"purchase_intent": {"mean": 9.9}}
+            return {"conversion_intent": {"mean": 9.9}}  # 범위 밖 → 1.0 클램프
 
     scorer = SsrSimulationScorer(DictSsr())
     assert await scorer.score(CreativeCandidate(candidate_id="c1", ad_copy="x")) == 1.0

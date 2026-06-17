@@ -18,11 +18,17 @@ from langgraph.graph import END, StateGraph
 
 from domain.management.contracts.enums import ActionTier, ProposalStatus
 from domain.management.contracts.policy import TIER_POLICY
-from domain.management.contracts.schemas import ActionProposal, DiagnosisResult, finalize_proposal
+from domain.management.contracts.schemas import (
+    ActionProposal,
+    CampaignConfig,
+    DiagnosisResult,
+    finalize_proposal,
+)
 from domain.management.execution.tier import estimate_max_total_spend
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
+    from typing import Any
 
     from langgraph.graph.state import CompiledStateGraph
 
@@ -83,6 +89,9 @@ class RegenerationContext:
     expected_state_version: str
     approval_policy_version: str
     action_type: str = "REPLACE_CREATIVE"  # 어휘 정본 = contracts/policy.py TIER_POLICY
+    # CREATE_CAMPAIGN(신규 캠페인 생성, PR2 옵션 A)일 때만 채운다. 대상 id가 없으므로
+    # 오케스트레이터는 target_object_ids=(ad_account_id,)로 두고 설정은 여기로 전달한다.
+    campaign_config: CampaignConfig | None = None
 
 
 def label_action_tier(action_type: str) -> ActionTier:
@@ -251,6 +260,23 @@ class RegenerationAgent:
         survivors: list[CreativeCandidate],
     ) -> ActionProposal:
         now = self._clock()
+        # 정보 방화벽 — 근거는 진단 evidence + 후보 점수만 (그 밖 정보로 추론 금지)
+        evidence: dict[str, Any] = {
+            **diagnosis.evidence_metrics,
+            "candidates": [
+                {
+                    "candidate_id": c.candidate_id,
+                    "sim_score": c.sim_score,
+                    "preview_url": c.preview_url,
+                }
+                for c in survivors
+            ],
+            "selected_candidate_id": best.candidate_id,
+        }
+        # 옵션 A — 신규 캠페인 생성은 대상 id가 없어 설정을 evidence_metrics에 싣는다
+        # (해시 산식이 evidence를 포함 → 변조 방지 대상에 들어감).
+        if context.action_type == "CREATE_CAMPAIGN" and context.campaign_config is not None:
+            evidence["campaign_config"] = context.campaign_config.model_dump(mode="json")
         proposal = ActionProposal(
             proposal_id=str(uuid4()),
             tenant_id=diagnosis.tenant_id,
@@ -258,19 +284,7 @@ class RegenerationAgent:
             target_object_ids=context.target_object_ids,
             action_type=context.action_type,
             action_tier=label_action_tier(context.action_type),
-            # 정보 방화벽 — 근거는 진단 evidence + 후보 점수만 (그 밖 정보로 추론 금지)
-            evidence_metrics={
-                **diagnosis.evidence_metrics,
-                "candidates": [
-                    {
-                        "candidate_id": c.candidate_id,
-                        "sim_score": c.sim_score,
-                        "preview_url": c.preview_url,
-                    }
-                    for c in survivors
-                ],
-                "selected_candidate_id": best.candidate_id,
-            },
+            evidence_metrics=evidence,
             metrics_as_of=diagnosis.metrics_as_of,
             hypothesis=diagnosis.hypothesis,
             confidence=diagnosis.confidence,

@@ -9,7 +9,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
-from domain.management.adapters.meta.client import MetaClient
+from domain.management.adapters.meta.client import MetaClient, build_meta_client
 from domain.management.comparison.schemas import PostInsights, PostType
 
 # IG 미디어 인사이트 지표 (미디어 타입에 따라 일부 미지원일 수 있어 방어적 파싱)
@@ -38,7 +38,7 @@ class MetaOrganicReader:
     """OrganicInsightsReader 구현 — IG 미디어 인사이트(instagram_manage_insights)."""
 
     def __init__(self, settings: object, *, client: MetaClient | None = None) -> None:
-        self._client = client or MetaClient(settings)
+        self._client = client or build_meta_client(settings)
 
     async def get_post_insights(self, post_id: str) -> PostInsights:
         payload = await self._client.get(f"{post_id}/insights", {"metric": _MEDIA_METRICS})

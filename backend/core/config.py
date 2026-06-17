@@ -89,6 +89,12 @@ class Settings(BaseSettings):
     # Config
     meta_graph_api_version: str = "v23.0"
 
+    # Management — Meta 광고 어댑터 (LIVE-ready, 이중 게이트로 봉인)
+    # meta_ad_account_id는 위 Marketing 섹션에서 선언. use_mock=True면 Mock 어댑터
+    # (Meta 접촉 0). False여도 LIVE 쓰기는 executor가 차단.
+    use_mock: bool = True
+    management_execution_mode: str = "dry_run"  # dry_run | sandbox_contract | live
+
     # Generator (광고 생성)
     generator_text_provider: str = "openai"  # openai | anthropic | google_genai ...
     generator_text_model: str = "gpt-4.1"

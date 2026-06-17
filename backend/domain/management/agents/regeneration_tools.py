@@ -87,10 +87,12 @@ class LLMCreativeGenerator:
         self,
         llm: ChatModelLike | None = None,
         *,
+        api_key: str | None = None,
         model: str = "gpt-4o-mini",
         temperature: float = 0.8,
     ) -> None:
         self._llm = llm
+        self._api_key = api_key
         self._model = model
         self._temperature = temperature
 
@@ -98,7 +100,11 @@ class LLMCreativeGenerator:
         if self._llm is None:
             from langchain_openai import ChatOpenAI  # noqa: PLC0415 — 키 없는 환경 보호
 
-            self._llm = ChatOpenAI(model=self._model, temperature=self._temperature)
+            # 키는 Settings에서 명시 주입 (.env는 os.environ에 안 실림 — generator 팩토리와 동일)
+            kwargs: dict[str, Any] = {"model": self._model, "temperature": self._temperature}
+            if self._api_key:
+                kwargs["api_key"] = self._api_key
+            self._llm = ChatOpenAI(**kwargs)
         return self._llm
 
     async def generate(self, diagnosis: DiagnosisResult, count: int) -> list[CreativeCandidate]:
@@ -175,15 +181,19 @@ class SsrLike(Protocol):
 
 
 class SsrSimulationScorer:
-    """SimulationScoreTool 구현 — SSR 분포의 구매의향 평균을 0~1로 정규화한다."""
+    """SimulationScoreTool 구현 — SSR conversion_intent 분포 평균을 0~1로 정규화한다.
+
+    실 SSR(tools/simulation/anchors.py) 차원은 conversion_intent(구매 전환 의향, 0~1).
+    'purchase_intent'·1~5 스케일은 존재하지 않는 가정이었어 실 SSR과 정합(B-3).
+    """
 
     def __init__(
         self,
         ssr: SsrLike,
         *,
-        dimension: str = "purchase_intent",
-        scale_min: float = 1.0,
-        scale_max: float = 5.0,
+        dimension: str = "conversion_intent",
+        scale_min: float = 0.0,
+        scale_max: float = 1.0,
     ) -> None:
         if scale_max <= scale_min:
             raise ValueError("scale_max는 scale_min보다 커야 함")
@@ -270,7 +280,11 @@ def build_regeneration_agent(
     - 미리보기: MetaAdsWriter.preview (stub은 페이스북 미리보기 URL 형식 반환)
     """
     use_llm = llm is not None or bool(getattr(settings, "openai_api_key", None))
-    generator = LLMCreativeGenerator(llm=llm) if use_llm else TemplateCreativeGenerator()
+    generator = (
+        LLMCreativeGenerator(llm=llm, api_key=getattr(settings, "openai_api_key", None))
+        if use_llm
+        else TemplateCreativeGenerator()
+    )
     scorer = SsrSimulationScorer(ssr) if ssr is not None else HeuristicSimulationScorer()
     preview = MetaPreviewTool(writer=preview_writer, settings=settings)
     return RegenerationAgent(generator=generator, scorer=scorer, preview=preview, **agent_kwargs)

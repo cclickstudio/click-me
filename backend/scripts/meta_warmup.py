@@ -21,7 +21,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # backend/를 모듈 경로에 추가
 
 from core.config import settings
-from domain.management.adapters.meta.client import MetaApiError, MetaClient
+from domain.management.adapters.meta.client import MetaApiError, build_meta_client
 
 # rate limit 계열 신호 (Graph error code 4/17/613, HTTP 429)
 _RATE_SIGNALS = ('"code":4', '"code":17', '"code":613', " 429:", "429")
@@ -37,7 +37,7 @@ def _build_call(acct: str | None) -> tuple[str, dict[str, str]]:
 
 
 async def run(target: int, delay: float) -> None:
-    client = MetaClient(settings)
+    client = build_meta_client(settings)
     path, params = _build_call(settings.meta_ad_account_id)
     print(f"엔드포인트 {path} · 목표 성공 {target}콜 · 간격 {delay}s", flush=True)
 

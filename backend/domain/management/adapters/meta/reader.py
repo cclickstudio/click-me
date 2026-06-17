@@ -1,7 +1,9 @@
-# 🅰 Meta 읽기 어댑터 — Insights / delivery_estimate / 상태 조회 (ads_read 스코프)
+# 🤝 Meta 읽기 어댑터 — Insights / delivery_estimate / 상태 조회 (AdPlatformReader 구현)
 """AdPlatformReader 구현 — Graph API 실호출.
 
-wiring.py 가 ``use_mock=False`` 일 때 Port에 꽂는다. contracts 외 의존 없음(§5).
+Graph API JSON → contracts Port 스키마 변환만 담당한다. 정책·진단 판단은 하지 않는다.
+reader는 공동 소유(🅰 합의) — MetricsSnapshot 등 매핑 스키마의 스튜어드는 🅰이므로
+필드 해석 변경 시 🅰 합의. import는 contracts·adapters.meta.client만 (경계 §5 유지).
 spend/cpm/cpc 는 광고계정 통화가 KRW 라는 전제로 정수 KRW 로 매핑한다.
 """
 
@@ -11,7 +13,7 @@ import json
 from datetime import UTC, datetime
 from typing import Any
 
-from domain.management.adapters.meta.client import MetaClient
+from domain.management.adapters.meta.client import MetaClient, build_meta_client
 from domain.management.contracts.enums import CampaignState
 from domain.management.contracts.schemas import (
     CampaignConfig,
@@ -19,10 +21,7 @@ from domain.management.contracts.schemas import (
     MetricsSnapshot,
 )
 
-# Meta insights 조회 필드 (성과 읽기 핵심)
-_INSIGHT_FIELDS = "impressions,clicks,inline_link_clicks,spend,reach,frequency,ctr,cpm,cpc"
-
-# Meta effective_status → 도메인 CampaignState (D2)
+#: Meta effective_status → contracts CampaignState 매핑 (미등록 값은 DRAFT 보수 처리).
 _STATE_MAP: dict[str, CampaignState] = {
     "ACTIVE": CampaignState.ACTIVE,
     "PAUSED": CampaignState.PAUSED,
@@ -36,21 +35,34 @@ _STATE_MAP: dict[str, CampaignState] = {
     "DISAPPROVED": CampaignState.PAUSED,
     "DELETED": CampaignState.ENDED,
     "ARCHIVED": CampaignState.ENDED,
+    "COMPLETED": CampaignState.ENDED,
 }
+
+#: 트래픽 목표(클릭) — v1 스코프 (§7). delivery_estimate optimization_goal.
+_TRAFFIC_OPTIMIZATION_GOAL = "LINK_CLICKS"
+
+# Meta insights 조회 필드 (성과 읽기 핵심)
+_INSIGHTS_FIELDS = (
+    "impressions,clicks,inline_link_clicks,spend,reach,frequency,ctr,cpm,cpc,date_stop"
+)
+
+# 시간별(hourly breakdown) 조회 필드 — date_stop 불필요
+_HOURLY_FIELDS = "impressions,clicks,inline_link_clicks,spend,reach,frequency,ctr,cpm,cpc"
 
 
 def _to_int(value: Any) -> int:
-    try:
-        return int(round(float(value)))
-    except (TypeError, ValueError):
-        return 0
+    return int(round(float(value))) if value not in (None, "") else 0
 
 
 def _to_float(value: Any) -> float:
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return 0.0
+    return float(value) if value not in (None, "") else 0.0
+
+
+def _parse_date_utc(value: str | None, fallback: datetime) -> datetime:
+    if not value:
+        return fallback
+    # Meta insights date_stop = 'YYYY-MM-DD' → 해당일 UTC 자정
+    return datetime.strptime(value, "%Y-%m-%d").replace(tzinfo=UTC)
 
 
 def _parse_hour(label: str | None) -> int:
@@ -62,67 +74,59 @@ def _parse_hour(label: str | None) -> int:
 
 
 class MetaAdsReader:
-    """읽기 Port 구현 — 🅰 감지·진단이 소비. 외부 호출은 MetaClient 단일 경로."""
+    """AdPlatformReader 구현 — wiring.py가 Port에 꽂는다."""
 
-    def __init__(self, settings: object, *, client: MetaClient | None = None) -> None:
-        self._client = client or MetaClient(settings)
+    def __init__(self, settings: object = None, *, client: MetaClient | None = None) -> None:
+        self._client = client or build_meta_client(settings)
 
     async def get_metrics(self, campaign_id: str, since: datetime) -> MetricsSnapshot:
-        """캠페인 누적 성과 (since~현재 집계)를 한 스냅샷으로 반환."""
-        params = {
-            "fields": _INSIGHT_FIELDS,
-            "level": "campaign",
-            "time_range": json.dumps(
-                {
-                    "since": since.astimezone(UTC).date().isoformat(),
-                    "until": datetime.now(UTC).date().isoformat(),
-                }
-            ),
-        }
-        payload = await self._client.get(f"{campaign_id}/insights", params)
-        rows = payload.get("data") or []
-        row = rows[0] if rows else {}
-
+        payload = await self._client.get(
+            f"{campaign_id}/insights",
+            {"fields": _INSIGHTS_FIELDS, "time_increment": 1},
+        )
+        rows = payload.get("data", [])
+        row: dict[str, Any] = rows[0] if rows else {}
         impressions = _to_int(row.get("impressions"))
+        clicks = _to_int(row.get("clicks"))
+        reach = _to_int(row.get("reach"))
         return MetricsSnapshot(
             campaign_id=campaign_id,
-            as_of=datetime.now(UTC),
+            as_of=_parse_date_utc(row.get("date_stop"), since),
             impressions=impressions,
-            clicks=_to_int(row.get("clicks")),
+            clicks=clicks,
             inline_link_clicks=_to_int(row.get("inline_link_clicks")),
-            spend_krw=_to_int(row.get("spend")),
-            cum_impressions=impressions,  # since 집계 = 누적과 동일
-            cum_reach=_to_int(row.get("reach")),
+            spend_krw=_to_int(row.get("spend")),  # 계정 통화 = KRW 전제 (정수)
+            cum_impressions=impressions,  # 단일 스냅샷 — 누적은 호출자 책임
+            cum_reach=reach,
             frequency=_to_float(row.get("frequency")),
-            ctr=_to_float(row.get("ctr")) / 100.0,  # Meta ctr=백분율 → 비율로 정규화
+            ctr=_to_float(row.get("ctr")) / 100.0,  # Meta ctr은 백분율 → 비율로 환산
             cpm_krw=_to_int(row.get("cpm")),
             cpc_krw=_to_int(row.get("cpc")),
         )
 
-    async def get_state(self, campaign_id: str) -> CampaignState:
-        """캠페인 effective_status → 도메인 상태. 미지의 값은 DRAFT 보수 매핑."""
-        payload = await self._client.get(campaign_id, {"fields": "effective_status,status"})
-        status = payload.get("effective_status") or payload.get("status") or ""
-        return _STATE_MAP.get(status, CampaignState.DRAFT)
-
     async def get_estimate(self, config: CampaignConfig) -> DeliveryEstimate:
-        """delivery_estimate — 미래 도달 예측(forecast). v1 best-effort(traffic=LINK_CLICKS)."""
-        params = {
-            "optimization_goal": "LINK_CLICKS",  # objective=traffic 대응
-            "targeting_spec": json.dumps(config.target_audience or {}),
-        }
-        payload = await self._client.get(f"{config.ad_account_id}/delivery_estimate", params)
-        rows = payload.get("data") or []
-        row = rows[0] if rows else {}
-
-        mau = _to_int(row.get("estimate_mau"))
+        account = config.ad_account_id or (self._client.ad_account_id or "")
+        payload = await self._client.get(
+            f"act_{account}/delivery_estimate",
+            {"optimization_goal": _TRAFFIC_OPTIMIZATION_GOAL},
+        )
+        rows = payload.get("data", [])
+        row: dict[str, Any] = rows[0] if rows else {}
+        lower = _to_int(row.get("estimate_mau_lower_bound") or row.get("estimate_mau"))
+        upper = _to_int(row.get("estimate_mau_upper_bound") or row.get("estimate_mau"))
         return DeliveryEstimate(
             campaign_id=config.campaign_id,
             estimate_ready=bool(row.get("estimate_ready", False)),
-            estimate_mau_lower=_to_int(row.get("estimate_mau_lower_bound")) or mau,
-            estimate_mau_upper=_to_int(row.get("estimate_mau_upper_bound")) or mau,
+            estimate_mau_lower=lower,
+            estimate_mau_upper=upper,
+            daily_outcomes_curve=tuple(row.get("daily_outcomes_curve", [])),
             as_of=datetime.now(UTC),
         )
+
+    async def get_state(self, campaign_id: str) -> CampaignState:
+        payload = await self._client.get(campaign_id, {"fields": "effective_status"})
+        status = str(payload.get("effective_status", "")).upper()
+        return _STATE_MAP.get(status, CampaignState.DRAFT)
 
     async def fetch_hourly_metrics(
         self,
@@ -138,7 +142,7 @@ class MetaAdsReader:
         """
         date = day.astimezone(UTC).date().isoformat()
         params = {
-            "fields": _INSIGHT_FIELDS,
+            "fields": _HOURLY_FIELDS,
             "level": "campaign",
             "time_range": json.dumps({"since": date, "until": date}),
             "breakdowns": "hourly_stats_aggregated_by_advertiser_time_zone",
