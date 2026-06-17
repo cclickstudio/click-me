@@ -13,7 +13,7 @@ class ExecutionMode(StrEnum):
 
     MOCK = "mock"
     DRY_RUN = "dry_run"
-    SANDBOX_CONTRACT = "sandbox_contract"
+    VALIDATE_ONLY = "validate_only"  # 실전송+Meta 검증만(변경 0). 샌드박스 계정과 무관
     LIVE = "live"
 
 

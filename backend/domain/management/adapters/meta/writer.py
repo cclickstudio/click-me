@@ -3,7 +3,7 @@
 모든 쓰기에 idem_key 필수 (D8). 호출 주체는 executor 단일 경로뿐 (§4 불변).
 모드별 의미 (게이팅 §2):
   DRY_RUN          — 요청 빌드만, 미전송 (합성 결과 반환)
-  SANDBOX_CONTRACT — execution_options=['validate_only']로 실전송, 실제 변경 없음
+  VALIDATE_ONLY    — execution_options=['validate_only']로 실전송, 실제 변경 없음
   LIVE             — 실제 변경. 코드 경로는 존재하나 executor 허용 모드 밖이라 봉인됨.
 LIVE 봉인은 executor.DEFAULT_ALLOWED_MODES + use_mock 이중 게이트가 담당한다.
 create_campaign(신규 캠페인 생성, PR2)은 v1에서 PAUSED 상태 객체 생성까지만 (§7 좁히기).
@@ -20,7 +20,7 @@ from domain.management.contracts.enums import ExecutionMode, ResultStatus
 from domain.management.contracts.schemas import ActionResult, CampaignConfig
 
 #: 실제 Graph API 전송이 일어나는 모드 (DRY_RUN은 로컬 빌드만).
-_SENDING_MODES = (ExecutionMode.SANDBOX_CONTRACT, ExecutionMode.LIVE)
+_SENDING_MODES = (ExecutionMode.VALIDATE_ONLY, ExecutionMode.LIVE)
 
 
 class MetaAdsWriter:
@@ -122,7 +122,7 @@ class MetaAdsWriter:
         if self._mode not in _SENDING_MODES or self._client is None:
             # DRY_RUN(또는 클라이언트 미구성) — 전송 없이 요청만 빌드한 것으로 본다.
             return self._result(operation, campaign_id, idem_key, dry_run=True, **detail)
-        validate_only = self._mode is ExecutionMode.SANDBOX_CONTRACT
+        validate_only = self._mode is ExecutionMode.VALIDATE_ONLY
         response = await self._client.post(post_path, data, validate_only=validate_only)
         return self._result(
             operation, campaign_id, idem_key, dry_run=validate_only, response=response, **detail

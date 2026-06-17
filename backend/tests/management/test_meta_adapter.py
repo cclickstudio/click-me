@@ -128,9 +128,9 @@ def test_dry_run_does_not_send():
     assert result.platform_response_snapshot["meta_response"] is None
 
 
-def test_sandbox_contract_sends_with_validate_only():
+def test_validate_only_sends_with_validate_only():
     sent: list[bytes] = []
-    writer = _capturing_writer(ExecutionMode.SANDBOX_CONTRACT, sent)
+    writer = _capturing_writer(ExecutionMode.VALIDATE_ONLY, sent)
     result = asyncio.run(writer.adjust_budget("23842000000000123", 120_000, "idem-2"))
     assert len(sent) == 1
     assert b"validate_only" in sent[0]  # execution_options 부착

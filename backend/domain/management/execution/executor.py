@@ -53,7 +53,7 @@ SUPPORTED_ACTION_TYPES: Final[tuple[str, ...]] = (
 DEFAULT_ALLOWED_MODES: Final[tuple[ExecutionMode, ...]] = (
     ExecutionMode.MOCK,
     ExecutionMode.DRY_RUN,
-    ExecutionMode.SANDBOX_CONTRACT,
+    ExecutionMode.VALIDATE_ONLY,
 )
 
 

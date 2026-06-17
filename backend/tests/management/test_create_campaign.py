@@ -83,7 +83,7 @@ def test_create_campaign_sandbox_posts_to_account_with_validate_only():
         return httpx.Response(200, json={"id": "23842"})
 
     client = MetaClient("EAAtest", transport=httpx.MockTransport(handler))
-    writer = MetaAdsWriter(mode=ExecutionMode.SANDBOX_CONTRACT, client=client)
+    writer = MetaAdsWriter(mode=ExecutionMode.VALIDATE_ONLY, client=client)
     asyncio.run(writer.create_campaign(_config(account="999"), "idem-c2"))
 
     assert len(captured) == 1

@@ -89,11 +89,10 @@ class Settings(BaseSettings):
     # Config
     meta_graph_api_version: str = "v23.0"
 
-    # Management — Meta 광고 어댑터 (LIVE-ready, 이중 게이트로 봉인)
-    # meta_ad_account_id는 위 Marketing 섹션에서 선언. use_mock=True면 Mock 어댑터
-    # (Meta 접촉 0). False여도 LIVE 쓰기는 executor가 차단.
-    use_mock: bool = True
-    management_execution_mode: str = "dry_run"  # dry_run | sandbox_contract | live
+    # Management — Meta 광고 어댑터 (LIVE-ready). use_mock은 App 섹션에서 공용 선언.
+    # use_mock=True면 reader=Mock·writer=DRY_RUN (Meta 접촉 0, wiring.py 분기).
+    # 실집행은 use_mock=False + management_execution_mode=live + 토큰일 때만.
+    management_execution_mode: str = "dry_run"  # dry_run | validate_only | live
 
     # Generator (광고 생성)
     generator_text_provider: str = "openai"  # openai | anthropic | google_genai ...

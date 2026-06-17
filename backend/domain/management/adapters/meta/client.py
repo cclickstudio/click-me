@@ -70,7 +70,7 @@ class MetaClient:
     ) -> dict[str, Any]:
         body: dict[str, Any] = {**(data or {}), "access_token": self._token}
         if validate_only:
-            # Meta가 요청을 검증만 하고 실제 변경은 하지 않는다 (SANDBOX_CONTRACT의 핵심).
+            # Meta가 요청을 검증만 하고 실제 변경은 하지 않는다 (VALIDATE_ONLY의 핵심).
             body["execution_options"] = '["validate_only"]'
         async with httpx.AsyncClient(timeout=self._timeout, transport=self._transport) as client:
             res = await client.post(f"{self._base}/{path}", data=body)

@@ -49,11 +49,11 @@ async def test_dry_run_snapshot_shape():
 
 async def test_mode_read_from_settings_object():
     class FakeSettings:
-        management_execution_mode = "sandbox_contract"
+        management_execution_mode = "validate_only"
 
     writer = MetaAdsWriter(FakeSettings())
     result = await writer.pause("camp-1", "key-1")
-    assert result.platform_response_snapshot["mode"] == "sandbox_contract"
+    assert result.platform_response_snapshot["mode"] == "validate_only"
 
 
 async def test_preview_needs_no_idem_key():
