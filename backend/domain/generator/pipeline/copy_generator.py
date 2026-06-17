@@ -74,7 +74,7 @@ _IMPROVEMENT_SECTION = """\
 
 기존 광고의 문제점을 해결하는 방향으로 카피를 작성하세요."""
 
-_llm = build_text_llm(temperature=0.5).with_structured_output(AdCopy)
+_llm = build_text_llm(temperature=0.5, max_tokens=150).with_structured_output(AdCopy)
 
 
 @traceable(name="CopyGenerator", metadata={"pipeline": "generator"})
