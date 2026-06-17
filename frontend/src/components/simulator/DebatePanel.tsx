@@ -359,11 +359,6 @@ export function DebatePanel({ reactions, adAnalysis, personas, simulationId }: D
                         </p>
                       )}
                       <div className="flex flex-wrap items-center gap-1.5 mt-2">
-                        {t.focus && (
-                          <span className="px-2 py-0.5 rounded-full bg-[#F2F4F6] dark:bg-[#252D3D] text-[10px] text-[#8B95A1] dark:text-[#6B7280]">
-                            {t.focus}
-                          </span>
-                        )}
                         {t.primary_signal && (
                           <span className="px-2 py-0.5 rounded-full bg-[#F2F4F6] dark:bg-[#252D3D] text-[10px] text-[#8B95A1] dark:text-[#6B7280]">
                             {t.primary_signal}
