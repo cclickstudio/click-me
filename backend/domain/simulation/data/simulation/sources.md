@@ -47,6 +47,7 @@
 - 슬롯별 실신호는 `MA`(매체)/`AA`(행위)/`CA`(연결)/`p`(장소). `s`는 미디어이용 신호 아님(무시).
 - 재생성: `uv run python -m domain.simulation.data.simulation.build_media_behavior`.
 - (확장 여지) 연결방법(OTT/케이블 등) 노출 축, 동시이용(B축), 종단(zip d10~24)은 추후.
+- **Meta 도달성(§Tier1)** — 셀별 노출맥락에서 `SNS·동영상 @ 스마트폰/PC` 비중(`tools/reachability.cell_social_reach`)을 뽑아 단계1 표본 추출분포를 보정. 별도 수집 불필요. 단 generic SNS 기준이라 Meta 브랜드 특정 침투율 보정은 외부 데이터(DMC·오픈서베이·와이즈앱)로 추후(Tier 2).
 
 ### ④ MDIS 사회조사 raw — 회원가입 필요 (단계3 심층 심리, 후순위)
 

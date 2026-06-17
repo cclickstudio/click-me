@@ -51,6 +51,7 @@ class SimulationRepository:
                 ad_id=ad_id,
                 structured_analysis=ad.structured_analysis,
                 detected_industry=ad.detected_industry,
+                detected_objective=ad.detected_objective,
                 detected_target=ad.detected_target,
                 detected_message=ad.detected_message,
                 intent_mismatch=ad.intent_mismatch,

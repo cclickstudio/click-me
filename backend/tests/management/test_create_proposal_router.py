@@ -33,9 +33,7 @@ def test_create_proposal_is_tier3_with_config(client):
 def test_create_proposal_round_trip_to_execution(client):
     prop = client.post("/api/management/campaigns/create-proposal", json=_BODY).json()["proposal"]
 
-    appr = client.post(
-        "/api/management/approve", json={"proposal": prop, "approved": True}
-    ).json()
+    appr = client.post("/api/management/approve", json={"proposal": prop, "approved": True}).json()
     assert appr["status"] == "approved"
     action = appr["approved_action"]
 

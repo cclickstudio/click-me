@@ -1,0 +1,507 @@
+{
+  "run_id": "9a92c809-d7e4-42d7-8352-aa7dbad4f770",
+  "ad_analysis": {
+    "ad_id": "96321d51-6b2f-43cc-9a22-f69168d67686",
+    "structured_analysis": {
+      "detected_industry": "가전제품/세탁기",
+      "detected_objective": "구매 전환 및 브랜드 인지",
+      "detected_target": "혁신적인 디자인과 AI 기능을 선호하는 고성능 세탁기 잠재 구매자",
+      "detected_message": "삼성 비스포크 그랑데 AI 세탁기의 특별 프로모션을 통해 AI 기술이 선사하는 새로운 세탁 경험을 지금 바로 만나보세요."
+    },
+    "detected_industry": "가전제품/세탁기",
+    "detected_objective": "구매 전환 및 브랜드 인지",
+    "detected_target": "혁신적인 디자인과 AI 기능을 선호하는 고성능 세탁기 잠재 구매자",
+    "detected_message": "삼성 비스포크 그랑데 AI 세탁기의 특별 프로모션을 통해 AI 기술이 선사하는 새로운 세탁 경험을 지금 바로 만나보세요.",
+    "intent_mismatch": false,
+    "mismatch_detail": {
+      "category": {
+        "declared": "가전",
+        "detected": "가전제품/세탁기",
+        "match": true,
+        "note": "감지된 '가전제품/세탁기'는 선언된 '가전'을(를) 포함하는 동일·하위 범주로 높은 정합성을 보입니다.",
+        "score": 95
+      },
+      "message": {
+        "declared": "삼성 세탁기",
+        "detected": "삼성 비스포크 그랑데 AI 세탁기의 특별 프로모션을 통해 AI 기술이 선사하는 새로운 세탁 경험을 지금 바로 만나보세요.",
+        "match": true,
+        "note": "감지된 의도가 선언된 '삼성 세탁기'를 정확히 포함하고 있으며, 특정 모델명 및 프로모션 상세 정보를 추가하여 핵심 의미가 완벽히 일치함.",
+        "score": 98
+      }
+    },
+    "model_version": "gemini-2.5-flash-vision"
+  },
+  "reactions": [
+    {
+      "persona_id": "P-00028",
+      "exposure_context": "오후·직장·TV·TV/방송시청",
+      "weight": 1,
+      "aisas": {
+        "attention": true,
+        "interest": false,
+        "search": false,
+        "action": false,
+        "share": false
+      },
+      "drop_stage": "interest",
+      "drop_reason_tag": "low_relevance",
+      "purchase_intent": 1,
+      "trust": 4,
+      "rejected": true,
+      "rejection_reason_tag": "irrelevant",
+      "emotion_tag": "indifference",
+      "perceived_message": "삼성 세탁기가 비싸고 복잡한 인공지능 기능으로 나왔다는 광고인데, 할인 행사도 한다네.",
+      "perceived_target": "새로운 기술 좋아하고 돈 많은 젊은 사람들",
+      "utterance": "삼성 세탁기는 좋지만 인공지능이니 뭐니 복잡한 기능은 필요 없어. 비쌀 게 뻔한데.",
+      "qa_passed": true,
+      "qa_fail_reason": null
+    },
+    {
+      "persona_id": "P-00014",
+      "exposure_context": "저녁·집·TV·TV/방송시청",
+      "weight": 1,
+      "aisas": {
+        "attention": true,
+        "interest": false,
+        "search": false,
+        "action": false,
+        "share": false
+      },
+      "drop_stage": "interest",
+      "drop_reason_tag": "no_reason_to_explore",
+      "purchase_intent": 1,
+      "trust": 4,
+      "rejected": true,
+      "rejection_reason_tag": "irrelevant",
+      "emotion_tag": "indifference",
+      "perceived_message": "삼성 비스포크 그랑데 AI 세탁기가 AI 기술로 더 좋아졌고, 지금 할인 같은 거 한다는 이야기.",
+      "perceived_target": "우리 엄마 아빠나, 아니면 새 집에 들어가는 사람들 같은 어른들.",
+      "utterance": "세탁기? 나랑 상관 없는데. 우리 집 세탁기도 아직 멀쩡하고.",
+      "qa_passed": true,
+      "qa_fail_reason": null
+    },
+    {
+      "persona_id": "P-00000",
+      "exposure_context": "오전·집·TV·TV/방송시청",
+      "weight": 1,
+      "aisas": {
+        "attention": true,
+        "interest": false,
+        "search": false,
+        "action": false,
+        "share": false
+      },
+      "drop_stage": "interest",
+      "drop_reason_tag": "no_reason_to_explore",
+      "purchase_intent": 1,
+      "trust": 3,
+      "rejected": true,
+      "rejection_reason_tag": "irrelevant",
+      "emotion_tag": "indifference",
+      "perceived_message": "삼성에서 AI라는 기능이 들어간 새 세탁기가 나왔다는 광고군. 뭔가 특별한 프로모션도 한다네.",
+      "perceived_target": "복잡한 기능 좋아하는 젊은 사람들이나 살까 싶은 세탁기 광고네.",
+      "utterance": "AI 세탁기가 뭔가, 늙은이한테는 그냥 빨래 잘 되고 고장 안 나면 그만이지 뭐 그리 복잡한 게 필요한가.",
+      "qa_passed": true,
+      "qa_fail_reason": null
+    },
+    {
+      "persona_id": "P-00024",
+      "exposure_context": "저녁·집·TV·TV/방송시청",
+      "weight": 1,
+      "aisas": {
+        "attention": true,
+        "interest": false,
+        "search": false,
+        "action": false,
+        "share": false
+      },
+      "drop_stage": "interest",
+      "drop_reason_tag": "no_reason_to_explore",
+      "purchase_intent": 1,
+      "trust": 3,
+      "rejected": false,
+      "rejection_reason_tag": null,
+      "emotion_tag": "indifference",
+      "perceived_message": "삼성 세탁기 새로 나왔는데 AI 기술 들어갔고 행사 중이라는 거.",
+      "perceived_target": "AI나 혁신적인 거 좋아하는 사람, 젊은 사람들 같네.",
+      "utterance": "삼성 세탁기구나... 뭐 AI가 들어갔다는데, 빨래가 얼마나 더 잘 된다는 건지 모르겠네. 지금 것도 괜찮은데.",
+      "qa_passed": true,
+      "qa_fail_reason": null
+    },
+    {
+      "persona_id": "P-00021",
+      "exposure_context": "오전·직장·PC·문서/그래픽작업",
+      "weight": 1,
+      "aisas": {
+        "attention": true,
+        "interest": false,
+        "search": false,
+        "action": false,
+        "share": false
+      },
+      "drop_stage": "interest",
+      "drop_reason_tag": "price_concern",
+      "purchase_intent": 1,
+      "trust": 3,
+      "rejected": true,
+      "rejection_reason_tag": "overpriced",
+      "emotion_tag": "indifference",
+      "perceived_message": "삼성 비스포크 그랑데 AI 세탁기가 비싸고 좋은 제품인데 지금 프로모션 한다니까 관심 있으면 보라는 광고다.",
+      "perceived_target": "돈 많고 새 기능 좋아하는, 최신 세탁기 필요한 사람들을 위한 광고인 것 같다.",
+      "utterance": "돈도 없는데 비싼 세탁기 광고는 왜 뜨는 건지, 일하는 중에 괜히 시간만 뺏겼네.",
+      "qa_passed": true,
+      "qa_fail_reason": null
+    },
+    {
+      "persona_id": "P-00001",
+      "exposure_context": "오후·집·TV·TV/방송시청",
+      "weight": 1,
+      "aisas": {
+        "attention": true,
+        "interest": false,
+        "search": false,
+        "action": false,
+        "share": false
+      },
+      "drop_stage": "interest",
+      "drop_reason_tag": "low_relevance",
+      "purchase_intent": 1,
+      "trust": 3,
+      "rejected": true,
+      "rejection_reason_tag": "irrelevant",
+      "emotion_tag": "indifference",
+      "perceived_message": "삼성 세탁기가 할인하는 모양인데, AI라는 복잡한 기술이 들어갔다네. 세탁이 더 잘 된다는 건지, 뭐가 다르다는 건지 모르겠어.",
+      "perceived_target": "젊은 사람들이나 새 기술에 관심 많은 사람들이나 쓸 것 같아. 나 같은 늙은이에겐 너무 어려울 것 같네.",
+      "utterance": "AI인지 뭔지 복잡한 소리만 하고, 그냥 빨래 잘 되고 고장 안 나면 됐지 뭘 그리 대단하다고.",
+      "qa_passed": true,
+      "qa_fail_reason": null
+    },
+    {
+      "persona_id": "P-00015",
+      "exposure_context": "오후·직장·스마트폰/휴대폰·커뮤니케이션",
+      "weight": 1,
+      "aisas": {
+        "attention": true,
+        "interest": true,
+        "search": false,
+        "action": false,
+        "share": false
+      },
+      "drop_stage": "search",
+      "drop_reason_tag": "no_reason_to_explore",
+      "purchase_intent": 2,
+      "trust": 4,
+      "rejected": false,
+      "rejection_reason_tag": null,
+      "emotion_tag": "curiosity",
+      "perceived_message": "삼성에서 AI 세탁기가 나왔고, 지금 사면 특별 혜택이 있다는 거네. 세탁이 얼마나 더 잘 되고 편리해질까?",
+      "perceived_target": "성능 좋은 새 세탁기를 찾는 사람들, 특히 AI 같은 신기술에 관심 있는 좀 젊은 층이나 주부들 같네.",
+      "utterance": "AI 기술이라... 세탁이 얼마나 더 좋아진다는 건지, 나중에 시간 되면 한번 찾아봐야겠네.",
+      "qa_passed": true,
+      "qa_fail_reason": null
+    },
+    {
+      "persona_id": "P-00008",
+      "exposure_context": "오후·집·TV·TV/방송시청",
+      "weight": 1,
+      "aisas": {
+        "attention": true,
+        "interest": false,
+        "search": false,
+        "action": false,
+        "share": false
+      },
+      "drop_stage": "interest",
+      "drop_reason_tag": "low_relevance",
+      "purchase_intent": 1,
+      "trust": 3,
+      "rejected": true,
+      "rejection_reason_tag": "irrelevant",
+      "emotion_tag": "indifference",
+      "perceived_message": "삼성에서 AI라는 복잡한 기술이 들어간 새 세탁기가 나왔고, 싸게 판다는데 나는 별로 필요 없을 것 같다.",
+      "perceived_target": "젊은 사람들이나 돈 많고 새것 좋아하는 사람들이 쓰는 비싼 세탁기겠지.",
+      "utterance": "AI 세탁기가 뭐 얼마나 좋다고… 복잡하기만 할 것 같은데. 그냥 빨래 잘 되고 고장 안 나면 됐지, 비싸기만 할 것 같네.",
+      "qa_passed": true,
+      "qa_fail_reason": null
+    },
+    {
+      "persona_id": "P-00003",
+      "exposure_context": "오후·집·스마트폰/휴대폰·커뮤니케이션",
+      "weight": 1,
+      "aisas": {
+        "attention": true,
+        "interest": false,
+        "search": false,
+        "action": false,
+        "share": false
+      },
+      "drop_stage": "interest",
+      "drop_reason_tag": "low_relevance",
+      "purchase_intent": 2,
+      "trust": 4,
+      "rejected": true,
+      "rejection_reason_tag": "irrelevant",
+      "emotion_tag": "indifference",
+      "perceived_message": "삼성에서 AI 세탁기 신제품이 나왔고, 특별 할인도 한다는데 AI가 얼마나 편한지 모르겠네. 괜히 복잡하기만 할 것 같아.",
+      "perceived_target": "젊고 새 기계 좋아하는 사람들이나 사겠지. 나한테는 필요 없어.",
+      "utterance": "삼성 세탁기는 좋은 건 아는데, AI가 뭐 그리 좋다고. 괜히 복잡하기만 할 것 같아. 지금 쓰는 게 더 편할 것 같네.",
+      "qa_passed": true,
+      "qa_fail_reason": null
+    },
+    {
+      "persona_id": "P-00022",
+      "exposure_context": "오후·직장·스마트폰/휴대폰·커뮤니케이션",
+      "weight": 1,
+      "aisas": {
+        "attention": true,
+        "interest": false,
+        "search": false,
+        "action": false,
+        "share": false
+      },
+      "drop_stage": "interest",
+      "drop_reason_tag": "low_relevance",
+      "purchase_intent": 1,
+      "trust": 3,
+      "rejected": true,
+      "rejection_reason_tag": "irrelevant",
+      "emotion_tag": "indifference",
+      "perceived_message": "삼성 비스포크 세탁기에 AI 기능 넣어서 특별 할인 판매하나 보네. 뭔가 새로운 세탁 경험이라는데, 얼마나 좋아진다는 건지 알 수가 없군.",
+      "perceived_target": "새로운 기술이나 트렌드에 관심 많고, 비싸더라도 좋은 제품 쓰고 싶어 하는 젊은 층이나 주부들인가.",
+      "utterance": "요즘 세탁기에 AI는 뭘 해준다는 건지. 그냥 빨래 잘 되고 잔고장 없으면 됐지, AI니 새로운 경험이니 하는 건 크게 와닿지 않네.",
+      "qa_passed": true,
+      "qa_fail_reason": null
+    },
+    {
+      "persona_id": "P-00027",
+      "exposure_context": "오후·직장·PC·문서/그래픽작업",
+      "weight": 1,
+      "aisas": {
+        "attention": true,
+        "interest": false,
+        "search": false,
+        "action": false,
+        "share": false
+      },
+      "drop_stage": "interest",
+      "drop_reason_tag": "low_relevance",
+      "purchase_intent": 1,
+      "trust": 4,
+      "rejected": false,
+      "rejection_reason_tag": null,
+      "emotion_tag": "indifference",
+      "perceived_message": "삼성 비스포크 AI 세탁기를 특별 할인하는 광고인데, AI 기술로 세탁이 편해진다고 하네.",
+      "perceived_target": "신기술 좋아하고 비싼 가전제품도 사는 사람들한테 맞는 광고 같아.",
+      "utterance": "AI가 뭐 얼마나 좋다고, 그냥 삼성 세탁기면 다 잘 빨리는 거 아냐? 지금 쓰는 것도 멀쩡한데.",
+      "qa_passed": true,
+      "qa_fail_reason": null
+    },
+    {
+      "persona_id": "P-00013",
+      "exposure_context": "오전·교육시설·신문/잡지/책·읽기",
+      "weight": 1,
+      "aisas": {
+        "attention": false,
+        "interest": false,
+        "search": false,
+        "action": false,
+        "share": false
+      },
+      "drop_stage": "attention",
+      "drop_reason_tag": "low_relevance",
+      "purchase_intent": 1,
+      "trust": 3,
+      "rejected": true,
+      "rejection_reason_tag": "irrelevant",
+      "emotion_tag": "indifference",
+      "perceived_message": "삼성 비싼 세탁기가 AI 기능으로 세탁 경험이 특별하다는 광고.",
+      "perceived_target": "세탁기 살 돈 있는 어른들.",
+      "utterance": "에이, 나랑 아무 상관없는 세탁기 광고잖아. 비쌀 게 뻔한데. 지금은 공부나 해야지.",
+      "qa_passed": true,
+      "qa_fail_reason": null
+    },
+    {
+      "persona_id": "P-00005",
+      "exposure_context": "오전·직장·PC·문서/그래픽작업",
+      "weight": 1,
+      "aisas": {
+        "attention": false,
+        "interest": false,
+        "search": false,
+        "action": false,
+        "share": false
+      },
+      "drop_stage": "attention",
+      "drop_reason_tag": "low_relevance",
+      "purchase_intent": 1,
+      "trust": 4,
+      "rejected": true,
+      "rejection_reason_tag": "irrelevant",
+      "emotion_tag": "indifference",
+      "perceived_message": "삼성 AI 세탁기 신제품이 나왔고 프로모션을 하는구나. 비싸겠지.",
+      "perceived_target": "세련된 디자인이랑 AI 기능 좋아하는, 돈 많은 사람.",
+      "utterance": "지금 세탁기 필요 없는데. 게다가 AI까지는 잘 모르겠고... 비싸겠지 뭐. 난 그냥 싼 거 쓰련다.",
+      "qa_passed": true,
+      "qa_fail_reason": null
+    },
+    {
+      "persona_id": "P-00012",
+      "exposure_context": "오후·집·TV·TV/방송시청",
+      "weight": 1,
+      "aisas": {
+        "attention": true,
+        "interest": false,
+        "search": false,
+        "action": false,
+        "share": false
+      },
+      "drop_stage": "interest",
+      "drop_reason_tag": "low_relevance",
+      "purchase_intent": 1,
+      "trust": 3,
+      "rejected": true,
+      "rejection_reason_tag": "irrelevant",
+      "emotion_tag": "indifference",
+      "perceived_message": "삼성 세탁기가 비싼 AI 기술로 특별한 세탁 경험을 준다는 건데, 프로모션이라 해도 결국 비쌀 것 같다는 생각이 드네.",
+      "perceived_target": "젊고 신기술 좋아하는 사람이나, 비싼 거 쓰는 거 티 내고 싶은 사람이겠지.",
+      "utterance": "세탁기는 빨래나 잘 되면 됐지, 뭔 AI에 새로운 경험까지 붙여서 비싸게 팔려고 하는지 모르겠네. 특별 프로모션도 결국 비쌀 게 뻔하고.",
+      "qa_passed": true,
+      "qa_fail_reason": null
+    },
+    {
+      "persona_id": "P-00029",
+      "exposure_context": "오후·직장·스마트폰/휴대폰·커뮤니케이션",
+      "weight": 1,
+      "aisas": {
+        "attention": true,
+        "interest": true,
+        "search": false,
+        "action": false,
+        "share": false
+      },
+      "drop_stage": "search",
+      "drop_reason_tag": "unclear_message",
+      "purchase_intent": 2,
+      "trust": 4,
+      "rejected": false,
+      "rejection_reason_tag": null,
+      "emotion_tag": "indifference",
+      "perceived_message": "삼성에서 AI 세탁기가 나왔고, 지금 사면 특별 프로모션이 있다는 건 알겠는데, AI가 뭐가 그리 좋다는 건지 딱 와닿지는 않네.",
+      "perceived_target": "혁신적인 기능에 관심 많고 돈 좀 있는 젊은 사람들한테 어필하려는 광고 같군.",
+      "utterance": "삼성 세탁기 AI 기능이라... 뭐 편해졌다는 건가? 뭐가 그리 새롭다는 건지, 뭐 딱히 지금 찾아볼 정도는 아니네. 나중에 필요하면 한번 봐야겠어.",
+      "qa_passed": true,
+      "qa_fail_reason": null
+    },
+    {
+      "persona_id": "P-00016",
+      "exposure_context": "오전·직장·PC·문서/그래픽작업",
+      "weight": 1,
+      "aisas": {
+        "attention": true,
+        "interest": false,
+        "search": false,
+        "action": false,
+        "share": false
+      },
+      "drop_stage": "interest",
+      "drop_reason_tag": "low_relevance",
+      "purchase_intent": 1,
+      "trust": 4,
+      "rejected": false,
+      "rejection_reason_tag": null,
+      "emotion_tag": "indifference",
+      "perceived_message": "삼성 비스포크 세탁기를 지금 프로모션 하는데, AI 기능으로 새로운 세탁 경험을 준다는 내용이네.",
+      "perceived_target": "새로운 기술이나 디자인에 관심 많은 젊은 사람들이나 그런 거 좋아하는 사람들이 타깃인 것 같네.",
+      "utterance": "삼성 세탁기는 좋지. 근데 AI까지 들어가면 뭐 얼마나 다르다고? 그냥 튼튼하고 빨래 잘 되는 게 최고여.",
+      "qa_passed": true,
+      "qa_fail_reason": null
+    },
+    {
+      "persona_id": "P-00025",
+      "exposure_context": "오전·직장·PC·문서/그래픽작업",
+      "weight": 1,
+      "aisas": {
+        "attention": true,
+        "interest": true,
+        "search": false,
+        "action": false,
+        "share": false
+      },
+      "drop_stage": "search",
+      "drop_reason_tag": "no_reason_to_explore",
+      "purchase_intent": 1,
+      "trust": 4,
+      "rejected": false,
+      "rejection_reason_tag": null,
+      "emotion_tag": "indifference",
+      "perceived_message": "삼성 AI 세탁기가 새롭게 나왔고 할인 행사 중이니 관심 있으면 보라는 광고네.",
+      "perceived_target": "세탁기 바꿀 때 됐거나, AI 기능에 관심 있는 사람들한테 팔려는 거겠지.",
+      "utterance": "AI 세탁기라... 뭐가 얼마나 특별할지는 모르겠고, 지금은 일해야지. 세탁기 살 생각도 없는데.",
+      "qa_passed": true,
+      "qa_fail_reason": null
+    },
+    {
+      "persona_id": "P-00026",
+      "exposure_context": "오후·집·TV·TV/방송시청",
+      "weight": 1,
+      "aisas": {
+        "attention": true,
+        "interest": true,
+        "search": true,
+        "action": false,
+        "share": false
+      },
+      "drop_stage": "action",
+      "drop_reason_tag": "price_concern",
+      "purchase_intent": 3,
+      "trust": 4,
+      "rejected": false,
+      "rejection_reason_tag": null,
+      "emotion_tag": "curiosity",
+      "perceived_message": "삼성에서 AI 세탁기가 나왔고, 특별 할인으로 새로운 세탁 경험을 할 수 있다는 내용이군.",
+      "perceived_target": "최신 기술에 관심도 있고, 세탁기 살 때 성능이나 편리함을 많이 보는 사람들을 노리는 광고 같네. 나 같은 사람.",
+      "utterance": "AI 세탁기가 뭐 얼마나 좋다고? 특별 프로모션이라니 한번 찾아볼까 싶기도 하네.",
+      "qa_passed": true,
+      "qa_fail_reason": null
+    }
+  ],
+  "rubric_scores": [
+    {
+      "dimension": "category_alignment",
+      "score": 95,
+      "evidence": {
+        "declared": "가전",
+        "detected": "가전제품/세탁기",
+        "note": "감지된 '가전제품/세탁기'는 선언된 '가전'을(를) 포함하는 동일·하위 범주로 높은 정합성을 보입니다."
+      }
+    },
+    {
+      "dimension": "message_alignment",
+      "score": 98,
+      "evidence": {
+        "declared": "삼성 세탁기",
+        "detected": "삼성 비스포크 그랑데 AI 세탁기의 특별 프로모션을 통해 AI 기술이 선사하는 새로운 세탁 경험을 지금 바로 만나보세요.",
+        "note": "감지된 의도가 선언된 '삼성 세탁기'를 정확히 포함하고 있으며, 특정 모델명 및 프로모션 상세 정보를 추가하여 핵심 의미가 완벽히 일치함."
+      }
+    }
+  ],
+  "aggregate": {
+    "click_intent_rate": 0,
+    "ci_low": 0,
+    "ci_high": 0,
+    "purchase_intent": 1.28,
+    "trust_avg": 3.56,
+    "rejection_rate": 0.6111,
+    "variance_warning": false,
+    "effective_n": 18,
+    "payload": {
+      "qa_passed_count": 18,
+      "ci_method": "weighted_bootstrap",
+      "ci_iters": 2000,
+      "purchase_std": 0.558,
+      "weight_sum": 18
+    },
+    "engine_version": "agg-2"
+  },
+  "simulation_id": "53ae5f9e-d05e-4d08-81d7-6b0b3190330a"
+}

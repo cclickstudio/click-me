@@ -1,0 +1,1663 @@
+{
+    "run_id": "46cb381a-fc18-4e6b-b39f-9c08c93cfd28",
+    "ad": {
+      "ID": "96321d51-6b2f-43cc-9a22-f69168d67686",
+      "project_id": "e561c41e-a3d7-426d-84ef-1fe63b9c9fb2",
+      "title": "iphone12",
+      "media_type": "image",
+      "asset_url": "C:\\Users\\804\\AppData\\Local\\Temp\\clickme_ad_mstwcqz4.png",
+      "copy_text": "5g 로 더 새로워진 iphone 12pro  출시",
+      "description": null,
+      "industry_category": null,
+      "product_category": "전자기기",
+      "service_class": 0,
+      "ad_objective": "상품 구매",
+      "target_filter": null,
+      "status": "DRAFT"
+    },
+    "ad_analysis": {
+      "ad_id": "96321d51-6b2f-43cc-9a22-f69168d67686",
+      "structured_analysis": {
+        "detected_industry": "스마트폰",
+        "detected_objective": "인지 및 신제품 출시 홍보",
+        "detected_target": "최신 스마트폰 및 5G 기술에 관심 있는 소비자, 아이폰 잠재 및 기존 고객",
+        "detected_message": "5G 기능을 탑재한 새로운 아이폰 12 Pro가 출시되었습니다.",
+        "ad_credibility": 95,
+        "ad_quality": 93,
+        "price_mentioned": false,
+        "original_price": null,
+        "discounted_price": null,
+        "brand_mentioned": true,
+        "social_proof_strength": "none"
+      },
+      "detected_industry": "스마트폰",
+      "detected_objective": "인지 및 신제품 출시 홍보",
+      "detected_target": "최신 스마트폰 및 5G 기술에 관심 있는 소비자, 아이폰 잠재 및 기존 고객",
+      "detected_message": "5G 기능을 탑재한 새로운 아이폰 12 Pro가 출시되었습니다.",
+      "ad_features": {
+        "ad_credibility": 95,
+        "ad_quality": 93,
+        "price_mentioned": false,
+        "original_price": null,
+        "discounted_price": null,
+        "brand_mentioned": true,
+        "social_proof_strength": "none"
+      },
+      "intent_mismatch": true,
+      "mismatch_detail": {
+        "category": {
+          "declared": "전자기기",
+          "detected": "스마트폰",
+          "match": true,
+          "note": "스마트폰은 전자기기의 하위 범주로, 핵심 의미가 거의 완벽하게 일치합니다.",
+          "score": 95
+        },
+        "objective": {
+          "declared": "상품 구매",
+          "detected": "인지 및 신제품 출시 홍보",
+          "match": false,
+          "note": "상품 구매는 직접적인 전환 목표인 반면, 인지 및 홍보는 상위 퍼널 목표로 의도에 차이가 있습니다.",
+          "score": 40
+        },
+        "message": {
+          "declared": "iphone12",
+          "detected": "5G 기능을 탑재한 새로운 아이폰 12 Pro가 출시되었습니다.",
+          "match": true,
+          "note": "선언된 'iphone12'가 감지된 메시지('아이폰 12 Pro')에 명확히 포함되어 있으며, 구체적인 정보로 확장되었습니다.",
+          "score": 90
+        }
+      },
+      "model_version": "gemini-2.5-flash-vision"
+    },
+    "simulation": {
+      "ID": "46cb381a-fc18-4e6b-b39f-9c08c93cfd28",
+      "ad_id": "96321d51-6b2f-43cc-9a22-f69168d67686",
+      "ad_analysis_id": null,
+      "panel_id": "panel-v1",
+      "organization_id": "bd9df2e2-f89b-423a-975c-3592967f7ca0",
+      "target_filter": null,
+      "target_mode": "AUTO",
+      "sample_size": 20,
+      "qa_passed_count": 20,
+      "low_sample_warning": false,
+      "status": "COMPLETED",
+      "model_version": "gemini-2.5-flash-vision",
+      "error_detail": null
+    },
+    "personas": [
+      {
+        "persona_id": "P-00000",
+        "age": 17,
+        "gender": "M",
+        "region": "기타",
+        "ocean": {
+          "openness": -0.15,
+          "conscientiousness": 1.09,
+          "extraversion": -0.84,
+          "agreeableness": 0.8,
+          "neuroticism": -0.44
+        },
+        "media_behavior": {
+          "primary_medium": "스마트폰/휴대폰",
+          "daily_media_minutes": 671,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "PC",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오전",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.0807,
+          "social_feed_reach": 0.1188
+        },
+        "consumption_values": {
+          "성능": false,
+          "품질": true,
+          "편의": true,
+          "저렴한 가격": true,
+          "취향·덕질": true
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "소득 없음",
+          "income_code": 1,
+          "education": "초등학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00001",
+        "age": 29,
+        "gender": "M",
+        "region": "기타",
+        "ocean": {
+          "openness": -0.29,
+          "conscientiousness": -1.5,
+          "extraversion": -0.15,
+          "agreeableness": -0.43,
+          "neuroticism": 0.54
+        },
+        "media_behavior": {
+          "primary_medium": "스마트폰/휴대폰",
+          "daily_media_minutes": 591,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "저녁",
+              "medium": "PC",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.3171,
+          "social_feed_reach": 0.1526
+        },
+        "consumption_values": {
+          "성능": false,
+          "품질": false,
+          "편의": true,
+          "저렴한 가격": false,
+          "취향·덕질": true
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "400~500만원",
+          "income_code": 6,
+          "education": "대학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00002",
+        "age": 20,
+        "gender": "M",
+        "region": "서울",
+        "ocean": {
+          "openness": 0.82,
+          "conscientiousness": -1.89,
+          "extraversion": 0.86,
+          "agreeableness": -1.38,
+          "neuroticism": 0.22
+        },
+        "media_behavior": {
+          "primary_medium": "TV",
+          "daily_media_minutes": 379,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "저녁",
+              "medium": "PC",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.3171,
+          "social_feed_reach": 0.1526
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": true,
+          "편의": false,
+          "저렴한 가격": true,
+          "취향·덕질": false
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "소득 없음",
+          "income_code": 1,
+          "education": "대학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00003",
+        "age": 21,
+        "gender": "M",
+        "region": "서울",
+        "ocean": {
+          "openness": -1.7,
+          "conscientiousness": 0.07,
+          "extraversion": 0.86,
+          "agreeableness": 0.69,
+          "neuroticism": -0.41
+        },
+        "media_behavior": {
+          "primary_medium": "TV",
+          "daily_media_minutes": 316,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "저녁",
+              "medium": "PC",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.3171,
+          "social_feed_reach": 0.1526
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": false,
+          "편의": true,
+          "저렴한 가격": true,
+          "취향·덕질": true
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "300~400만원",
+          "income_code": 5,
+          "education": "대학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00004",
+        "age": 29,
+        "gender": "F",
+        "region": "경기",
+        "ocean": {
+          "openness": -0.02,
+          "conscientiousness": -0.02,
+          "extraversion": 0.71,
+          "agreeableness": 0.14,
+          "neuroticism": 0.94
+        },
+        "media_behavior": {
+          "primary_medium": "PC",
+          "daily_media_minutes": 603,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "저녁",
+              "medium": "PC",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.3171,
+          "social_feed_reach": 0.1446
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": true,
+          "편의": true,
+          "저렴한 가격": true,
+          "취향·덕질": false
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "400~500만원",
+          "income_code": 6,
+          "education": "대학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00005",
+        "age": 28,
+        "gender": "F",
+        "region": "경기",
+        "ocean": {
+          "openness": 1.63,
+          "conscientiousness": -1.92,
+          "extraversion": 0.34,
+          "agreeableness": -1.75,
+          "neuroticism": -1.25
+        },
+        "media_behavior": {
+          "primary_medium": "스마트폰/휴대폰",
+          "daily_media_minutes": 396,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "저녁",
+              "medium": "PC",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.3171,
+          "social_feed_reach": 0.1446
+        },
+        "consumption_values": {
+          "성능": false,
+          "품질": false,
+          "편의": false,
+          "저렴한 가격": true,
+          "취향·덕질": true
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "300~400만원",
+          "income_code": 5,
+          "education": "대학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00006",
+        "age": 23,
+        "gender": "F",
+        "region": "경기",
+        "ocean": {
+          "openness": 0.24,
+          "conscientiousness": -0.27,
+          "extraversion": -0.78,
+          "agreeableness": -0.51,
+          "neuroticism": 1.2
+        },
+        "media_behavior": {
+          "primary_medium": "PC",
+          "daily_media_minutes": 414,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "저녁",
+              "medium": "PC",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.3171,
+          "social_feed_reach": 0.1446
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": true,
+          "편의": true,
+          "저렴한 가격": false,
+          "취향·덕질": true
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "400~500만원",
+          "income_code": 6,
+          "education": "대학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00007",
+        "age": 33,
+        "gender": "M",
+        "region": "대구",
+        "ocean": {
+          "openness": 0.41,
+          "conscientiousness": 0.75,
+          "extraversion": -0.57,
+          "agreeableness": -0.49,
+          "neuroticism": 2.39
+        },
+        "media_behavior": {
+          "primary_medium": "PC",
+          "daily_media_minutes": 510,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "저녁",
+              "medium": "PC",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.2763,
+          "social_feed_reach": 0.0853
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": true,
+          "편의": false
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "800만원 이상",
+          "income_code": 8,
+          "education": "대학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00008",
+        "age": 36,
+        "gender": "M",
+        "region": "대전",
+        "ocean": {
+          "openness": 1.2,
+          "conscientiousness": 0.08,
+          "extraversion": 1.17,
+          "agreeableness": 0.85,
+          "neuroticism": 0.87
+        },
+        "media_behavior": {
+          "primary_medium": "스마트폰/휴대폰",
+          "daily_media_minutes": 521,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "저녁",
+              "medium": "PC",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.2763,
+          "social_feed_reach": 0.0853
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": true,
+          "편의": true
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "800만원 이상",
+          "income_code": 8,
+          "education": "대학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00009",
+        "age": 39,
+        "gender": "M",
+        "region": "서울",
+        "ocean": {
+          "openness": 0.07,
+          "conscientiousness": -0.79,
+          "extraversion": -1.57,
+          "agreeableness": -1.29,
+          "neuroticism": 0.94
+        },
+        "media_behavior": {
+          "primary_medium": "스마트폰/휴대폰",
+          "daily_media_minutes": 553,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "저녁",
+              "medium": "PC",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.2763,
+          "social_feed_reach": 0.0853
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": true,
+          "편의": true
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "400~500만원",
+          "income_code": 6,
+          "education": "대학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00010",
+        "age": 38,
+        "gender": "F",
+        "region": "기타",
+        "ocean": {
+          "openness": -1.26,
+          "conscientiousness": 0.18,
+          "extraversion": -0.34,
+          "agreeableness": 1.4,
+          "neuroticism": 0.95
+        },
+        "media_behavior": {
+          "primary_medium": "TV",
+          "daily_media_minutes": 499,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "저녁",
+              "medium": "PC",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.2763,
+          "social_feed_reach": 0.0677
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": true,
+          "편의": false
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "300~400만원",
+          "income_code": 5,
+          "education": "대학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00011",
+        "age": 35,
+        "gender": "F",
+        "region": "대구",
+        "ocean": {
+          "openness": -1.18,
+          "conscientiousness": -0.34,
+          "extraversion": -0.72,
+          "agreeableness": 1.31,
+          "neuroticism": -0.11
+        },
+        "media_behavior": {
+          "primary_medium": "스마트폰/휴대폰",
+          "daily_media_minutes": 426,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "저녁",
+              "medium": "PC",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.2763,
+          "social_feed_reach": 0.0677
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": true,
+          "편의": true
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "300~400만원",
+          "income_code": 5,
+          "education": "대학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00012",
+        "age": 39,
+        "gender": "F",
+        "region": "기타",
+        "ocean": {
+          "openness": 0.52,
+          "conscientiousness": -0.57,
+          "extraversion": 0.32,
+          "agreeableness": -0.75,
+          "neuroticism": 0.01
+        },
+        "media_behavior": {
+          "primary_medium": "TV",
+          "daily_media_minutes": 531,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "저녁",
+              "medium": "PC",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.2763,
+          "social_feed_reach": 0.0677
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": false,
+          "편의": false
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "400~500만원",
+          "income_code": 6,
+          "education": "대학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00013",
+        "age": 40,
+        "gender": "M",
+        "region": "인천",
+        "ocean": {
+          "openness": -1.33,
+          "conscientiousness": 0.45,
+          "extraversion": 1.08,
+          "agreeableness": -0.59,
+          "neuroticism": 1.02
+        },
+        "media_behavior": {
+          "primary_medium": "TV",
+          "daily_media_minutes": 1032,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "직장"
+            },
+            {
+              "timeband": "저녁",
+              "medium": "PC",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.1679,
+          "social_feed_reach": 0.0686
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": true,
+          "편의": false
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "400~500만원",
+          "income_code": 6,
+          "education": "대학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00014",
+        "age": 45,
+        "gender": "M",
+        "region": "서울",
+        "ocean": {
+          "openness": -0.04,
+          "conscientiousness": -2.02,
+          "extraversion": -0.26,
+          "agreeableness": -0.55,
+          "neuroticism": 0.26
+        },
+        "media_behavior": {
+          "primary_medium": "PC",
+          "daily_media_minutes": 658,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "직장"
+            },
+            {
+              "timeband": "저녁",
+              "medium": "PC",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.1679,
+          "social_feed_reach": 0.0686
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": true,
+          "편의": true
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "500~800만원",
+          "income_code": 7,
+          "education": "고등학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00015",
+        "age": 41,
+        "gender": "F",
+        "region": "서울",
+        "ocean": {
+          "openness": -1.3,
+          "conscientiousness": -0.39,
+          "extraversion": -0.11,
+          "agreeableness": 1.21,
+          "neuroticism": 0.31
+        },
+        "media_behavior": {
+          "primary_medium": "TV",
+          "daily_media_minutes": 231,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오전",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.1679,
+          "social_feed_reach": 0.0726
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": false,
+          "편의": true
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "300~400만원",
+          "income_code": 5,
+          "education": "대학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00016",
+        "age": 45,
+        "gender": "F",
+        "region": "기타",
+        "ocean": {
+          "openness": -1.23,
+          "conscientiousness": -0.05,
+          "extraversion": -0.05,
+          "agreeableness": -2.19,
+          "neuroticism": -1.26
+        },
+        "media_behavior": {
+          "primary_medium": "PC",
+          "daily_media_minutes": 232,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오전",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.1679,
+          "social_feed_reach": 0.0726
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": true,
+          "편의": true
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "300~400만원",
+          "income_code": 5,
+          "education": "대학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00017",
+        "age": 50,
+        "gender": "M",
+        "region": "서울",
+        "ocean": {
+          "openness": -0.44,
+          "conscientiousness": 0.8,
+          "extraversion": 1.18,
+          "agreeableness": 0.79,
+          "neuroticism": 0.47
+        },
+        "media_behavior": {
+          "primary_medium": "TV",
+          "daily_media_minutes": 434,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "직장"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.0968,
+          "social_feed_reach": 0.0539
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": true,
+          "편의": false
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "400~500만원",
+          "income_code": 6,
+          "education": "대학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00018",
+        "age": 53,
+        "gender": "F",
+        "region": "기타",
+        "ocean": {
+          "openness": 0.59,
+          "conscientiousness": -0.83,
+          "extraversion": -0.26,
+          "agreeableness": 1.3,
+          "neuroticism": -0.26
+        },
+        "media_behavior": {
+          "primary_medium": "스마트폰/휴대폰",
+          "daily_media_minutes": 474,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.0968,
+          "social_feed_reach": 0.0558
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": true,
+          "편의": false
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "400~500만원",
+          "income_code": 6,
+          "education": "고등학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      },
+      {
+        "persona_id": "P-00019",
+        "age": 61,
+        "gender": "F",
+        "region": "기타",
+        "ocean": {
+          "openness": -0.46,
+          "conscientiousness": 1.36,
+          "extraversion": 1.41,
+          "agreeableness": -0.64,
+          "neuroticism": -0.68
+        },
+        "media_behavior": {
+          "primary_medium": "PC",
+          "daily_media_minutes": 285,
+          "exposure_candidates": [
+            {
+              "timeband": "저녁",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            },
+            {
+              "timeband": "오후",
+              "medium": "스마트폰/휴대폰",
+              "activity": "동영상/개인방송",
+              "place": "집"
+            }
+          ],
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "meta_reach": 0.0496,
+          "social_feed_reach": 0.0524
+        },
+        "consumption_values": {
+          "성능": true,
+          "품질": true,
+          "편의": true
+        },
+        "socioeconomic": {
+          "_source": "KISDI 한국미디어패널 2024(d25)",
+          "income_bracket": "100만원 미만",
+          "income_code": 2,
+          "education": "고등학교"
+        },
+        "weight": 1,
+        "profile_narrative": ""
+      }
+    ],
+    "reactions": [
+      {
+        "persona_id": "P-00000",
+        "exposure_context": "저녁·집·스마트폰/휴대폰·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": false,
+          "search": false,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "interest",
+        "drop_reason_tag": "price_concern",
+        "purchase_intent": 1,
+        "trust": 3,
+        "rejected": true,
+        "rejection_reason_tag": "overpriced",
+        "emotion_tag": "indifference",
+        "perceived_message": "새로운 아이폰 12 Pro가 나왔고, 5G 기능을 탑재했대.",
+        "perceived_target": "돈 많은 어른들이나 아이폰 원래 쓰던 사람들",
+        "utterance": "또 아이폰이네. 5G라는데 엄청 비싸겠지 뭐. 나랑은 상관없는 이야기.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00019",
+        "exposure_context": "저녁·집·스마트폰/휴대폰·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": false,
+          "search": false,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "interest",
+        "drop_reason_tag": "price_concern",
+        "purchase_intent": 1,
+        "trust": 3,
+        "rejected": true,
+        "rejection_reason_tag": "overpriced",
+        "emotion_tag": "indifference",
+        "perceived_message": "비싼 아이폰 새 모델이 5G라는 뭐 새로운 기능이 있대. 나한테는 너무 비싸.",
+        "perceived_target": "돈 많고 최신 폰 좋아하는 젊은 사람들이나 사는 거겠지.",
+        "utterance": "아이폰은 비싸서 엄두도 못 내는데, 5G가 뭔지도 모르고 나랑은 상관없는 얘기네.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00002",
+        "exposure_context": "저녁·집·스마트폰/휴대폰·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": true,
+          "search": false,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "search",
+        "drop_reason_tag": "price_concern",
+        "purchase_intent": 1,
+        "trust": 3,
+        "rejected": true,
+        "rejection_reason_tag": "overpriced",
+        "emotion_tag": "indifference",
+        "perceived_message": "5G 기능을 탑재한 새 아이폰 12 프로가 출시됐다는 건데, 비쌀 게 뻔하다는 생각이 먼저 든다.",
+        "perceived_target": "최신 아이폰이나 5G 기술에 돈을 아끼지 않는 사람들.",
+        "utterance": "5G 되는 아이폰 12 프로 나왔다고? 좋긴 하겠지만 나랑은 상관없는 얘기지, 돈이 없는데.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00004",
+        "exposure_context": "저녁·집·PC·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": true,
+          "search": true,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "action",
+        "drop_reason_tag": "price_concern",
+        "purchase_intent": 3,
+        "trust": 4,
+        "rejected": false,
+        "rejection_reason_tag": null,
+        "emotion_tag": "curiosity",
+        "perceived_message": "새 아이폰 12 프로 나왔고 5G 됨.",
+        "perceived_target": "최신 아이폰이나 5G에 관심 많고 돈 좀 쓸 준비 된 사람들.",
+        "utterance": "또 새 아이폰 나왔네. 5G라니 빠르긴 하겠는데... 역시 비싸겠지?",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00011",
+        "exposure_context": "저녁·집·PC·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": false,
+          "search": false,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "interest",
+        "drop_reason_tag": "no_reason_to_explore",
+        "purchase_intent": 1,
+        "trust": 4,
+        "rejected": false,
+        "rejection_reason_tag": null,
+        "emotion_tag": "indifference",
+        "perceived_message": "비싸고 새로운 아이폰 프로가 5G 기능과 함께 나왔다는 말이구나.",
+        "perceived_target": "최신 기능에 민감하고 돈 많은 사람들. 또는 원래 아이폰만 쓰는 사람.",
+        "utterance": "또 비싼 새 아이폰 나왔네. 5G라는데, 내가 굳이 지금 쓸 필요 있을까?",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00009",
+        "exposure_context": "저녁·집·PC·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": false,
+          "search": false,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "interest",
+        "drop_reason_tag": "low_relevance",
+        "purchase_intent": 1,
+        "trust": 3,
+        "rejected": false,
+        "rejection_reason_tag": null,
+        "emotion_tag": "indifference",
+        "perceived_message": "아이폰 신제품이 나왔고, 5G가 된다는 말이군.",
+        "perceived_target": "최신 아이폰에 관심 많거나 5G가 뭔지 궁금한 사람들을 위한 광고인 것 같다.",
+        "utterance": "또 아이폰 신제품인가? 내 폰도 아직 쓸만한데 5G가 꼭 필요한지도 모르겠고.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00008",
+        "exposure_context": "저녁·집·PC·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": true,
+          "search": true,
+          "action": true,
+          "share": false
+        },
+        "drop_stage": "share",
+        "drop_reason_tag": "no_reason_to_explore",
+        "purchase_intent": 4,
+        "trust": 5,
+        "rejected": false,
+        "rejection_reason_tag": null,
+        "emotion_tag": "curiosity",
+        "perceived_message": "새로운 아이폰 12 Pro가 5G 기능을 탑재하고 출시되었으니, 최신 아이폰에 관심 있는 사람은 주목해라.",
+        "perceived_target": "최신 아이폰을 사용하거나 관심 있는 사람, 성능과 품질을 중요하게 생각하는 소비자.",
+        "utterance": "오, 드디어 12 Pro가 나왔네. 5G는 얼마나 빨라졌을지 한번 찾아봐야겠다.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00013",
+        "exposure_context": "저녁·집·스마트폰/휴대폰·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": false,
+          "search": false,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "interest",
+        "drop_reason_tag": "low_relevance",
+        "purchase_intent": 1,
+        "trust": 3,
+        "rejected": true,
+        "rejection_reason_tag": "irrelevant",
+        "emotion_tag": "indifference",
+        "perceived_message": "새로운 아이폰 12 Pro가 나왔고 5G 기능이 있대.",
+        "perceived_target": "최신 폰 좋아하는 얼리어답터나 아이폰만 쓰는 사람들인가보네.",
+        "utterance": "새 폰이야? 지금 폰도 쓸만한데 뭐하러 또 바꾸래. 5G가 뭔지도 모르겠고.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00001",
+        "exposure_context": "저녁·집·PC·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": true,
+          "search": false,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "search",
+        "drop_reason_tag": "low_relevance",
+        "purchase_intent": 2,
+        "trust": 4,
+        "rejected": false,
+        "rejection_reason_tag": null,
+        "emotion_tag": "indifference",
+        "perceived_message": "새 아이폰 12 Pro가 나왔고 5G 기능이 들어있다는 광고네.",
+        "perceived_target": "최신 아이폰이나 5G 기술에 관심 많은 사람들을 위한 거겠지.",
+        "utterance": "또 새 아이폰 나왔네. 5G라는데, 지금 당장 바꿔야 할 정도로 필요한가 싶네.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00017",
+        "exposure_context": "저녁·집·스마트폰/휴대폰·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": true,
+          "search": false,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "search",
+        "drop_reason_tag": "low_relevance",
+        "purchase_intent": 2,
+        "trust": 4,
+        "rejected": false,
+        "rejection_reason_tag": null,
+        "emotion_tag": "indifference",
+        "perceived_message": "애플에서 5G 기능을 탑재한 고급형 신형 아이폰이 출시되었다는 내용.",
+        "perceived_target": "최신 기술이나 아이폰을 선호하는 젊은층이나 스마트폰에 아낌없이 투자하는 사람.",
+        "utterance": "새로운 아이폰 12 Pro가 나왔다는 건 알겠는데, 지금 폰도 불편함 없이 잘 쓰고 있고 5G 기능이 나한테 딱히 와닿지는 않네.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00018",
+        "exposure_context": "오후·집·스마트폰/휴대폰·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": false,
+          "search": false,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "interest",
+        "drop_reason_tag": "low_relevance",
+        "purchase_intent": 1,
+        "trust": 4,
+        "rejected": false,
+        "rejection_reason_tag": null,
+        "emotion_tag": "indifference",
+        "perceived_message": "아이폰에서 5G 되는 새 폰이 나왔구나.",
+        "perceived_target": "새 폰에 관심 많고 아이폰 좋아하는 젊은 사람들.",
+        "utterance": "아이폰은 좋다지만, 5G가 뭔지도 잘 모르고 지금 폰도 쓸만한데 굳이 바꿀 필요가 있을까 싶네.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00005",
+        "exposure_context": "저녁·집·PC·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": true,
+          "search": false,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "search",
+        "drop_reason_tag": "price_concern",
+        "purchase_intent": 1,
+        "trust": 3,
+        "rejected": true,
+        "rejection_reason_tag": "overpriced",
+        "emotion_tag": "indifference",
+        "perceived_message": "비싼 아이폰 12 Pro가 5G 기능을 들고 나왔다.",
+        "perceived_target": "돈 많고 최신 스마트폰에 관심 많은 사람들.",
+        "utterance": "또 비싼 아이폰이네. 5G가 뭐 대수라고, 어차피 나랑은 상관없는 얘기지.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00007",
+        "exposure_context": "저녁·집·스마트폰/휴대폰·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": true,
+          "search": true,
+          "action": true,
+          "share": false
+        },
+        "drop_stage": null,
+        "drop_reason_tag": null,
+        "purchase_intent": 4,
+        "trust": 4,
+        "rejected": false,
+        "rejection_reason_tag": null,
+        "emotion_tag": "curiosity",
+        "perceived_message": "새로운 아이폰 12 Pro가 5G 기능을 탑재하고 출시되었다. (기존 모델 대비 성능, 품질 업그레이드에 대한 기대를 갖게 하는 메시지)",
+        "perceived_target": "최신 아이폰에 관심 있거나, 5G 같은 신기술에 관심이 많고, 특히 성능과 품질을 중요하게 생각하는 소비자",
+        "utterance": "아이폰 12 Pro가 나왔다고? 5G는 됐고, 이번엔 성능이랑 카메라 얼마나 좋아졌는지 자세히 알아봐야겠군.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00014",
+        "exposure_context": "오후·직장·스마트폰/휴대폰·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": true,
+          "search": false,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "search",
+        "drop_reason_tag": "no_reason_to_explore",
+        "purchase_intent": 3,
+        "trust": 4,
+        "rejected": false,
+        "rejection_reason_tag": null,
+        "emotion_tag": "curiosity",
+        "perceived_message": "새 아이폰 12 Pro가 5G 기능을 달고 나왔다는 광고.",
+        "perceived_target": "최신 아이폰이나 5G에 관심 많은 사람들, 아니면 아이폰 원래 쓰던 사람들.",
+        "utterance": "또 새로운 아이폰이 나왔네. 5G? 좋겠지, 뭐.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00016",
+        "exposure_context": "오전·집·스마트폰/휴대폰·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": false,
+          "search": false,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "interest",
+        "drop_reason_tag": "low_relevance",
+        "purchase_intent": 1,
+        "trust": 3,
+        "rejected": true,
+        "rejection_reason_tag": "irrelevant",
+        "emotion_tag": "indifference",
+        "perceived_message": "비싼 최신 아이폰이 또 나왔고, 5G라는 잘 모르는 기능이 추가됐다는 이야기.",
+        "perceived_target": "최신 기술이나 아이폰 신제품에 관심 많고 돈 많은 사람.",
+        "utterance": "또 새 폰 나왔네. 내 폰도 잘만 되는데, 굳이 저 비싼 걸 왜 사? 5G가 뭔지도 모르겠고.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00003",
+        "exposure_context": "오후·집·스마트폰/휴대폰·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": false,
+          "search": false,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "interest",
+        "drop_reason_tag": "price_concern",
+        "purchase_intent": 1,
+        "trust": 4,
+        "rejected": true,
+        "rejection_reason_tag": "overpriced",
+        "emotion_tag": "indifference",
+        "perceived_message": "새로운 아이폰 12 Pro 모델에 5G 기능이 탑재되어 나왔다는 광고.",
+        "perceived_target": "비싸도 최신 아이폰을 쓰고 싶거나 5G를 중요하게 생각하는 사람들.",
+        "utterance": "아이폰 프로 모델 비싼데, 5G가 나한테 그렇게 필요한가? 지금 폰도 쓸만한데.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00010",
+        "exposure_context": "저녁·집·스마트폰/휴대폰·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": false,
+          "search": false,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "interest",
+        "drop_reason_tag": "no_reason_to_explore",
+        "purchase_intent": 1,
+        "trust": 4,
+        "rejected": false,
+        "rejection_reason_tag": null,
+        "emotion_tag": "indifference",
+        "perceived_message": "새로운 아이폰 12 Pro가 나왔고 5G 기능이 탑재되어 있다는 광고네.",
+        "perceived_target": "최신 스마트폰이나 5G 기술에 관심이 많고, 아이폰을 좋아하는 사람들이 보겠지.",
+        "utterance": "새로운 폰이 나왔다는데, 지금 쓰는 폰도 멀쩡하고 5G가 나한테 그렇게 필요한 기능인지는 모르겠네. 굳이 바꿔야 할 이유를 못 찾겠어.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00006",
+        "exposure_context": "저녁·집·스마트폰/휴대폰·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": false,
+          "search": false,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "interest",
+        "drop_reason_tag": "low_relevance",
+        "purchase_intent": 2,
+        "trust": 4,
+        "rejected": false,
+        "rejection_reason_tag": null,
+        "emotion_tag": "indifference",
+        "perceived_message": "아이폰 12 프로에 5G 기능이 새로 나왔다는 광고네.",
+        "perceived_target": "최신폰이나 아이폰에 관심 있는 사람들. 5G가 필요한가 싶은데.",
+        "utterance": "새 아이폰 12 Pro 나왔구나. 5G 기능 있다는 건데, 내가 굳이 이걸로 뭘 해야 하나 싶네. 딱히 끌리진 않는다.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00012",
+        "exposure_context": "저녁·집·PC·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": false,
+          "search": false,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "interest",
+        "drop_reason_tag": "no_reason_to_explore",
+        "purchase_intent": 2,
+        "trust": 3,
+        "rejected": false,
+        "rejection_reason_tag": null,
+        "emotion_tag": "indifference",
+        "perceived_message": "아이폰 신제품 12 Pro가 5G 기능을 탑재해서 나왔다는 광고네.",
+        "perceived_target": "최신폰이나 5G에 관심 많은 얼리어답터들, 아니면 원래 아이폰 쓰는 사람들 겨냥한 건가.",
+        "utterance": "5G가 뭐가 그렇게 대단한지 모르겠는데, 내 폰도 아직 쓸 만하고, 굳이 지금 바꿀 이유는 없네.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      },
+      {
+        "persona_id": "P-00015",
+        "exposure_context": "오전·집·스마트폰/휴대폰·동영상/개인방송",
+        "weight": 1,
+        "aisas": {
+          "attention": true,
+          "interest": false,
+          "search": false,
+          "action": false,
+          "share": false
+        },
+        "drop_stage": "interest",
+        "drop_reason_tag": "low_relevance",
+        "purchase_intent": 1,
+        "trust": 4,
+        "rejected": true,
+        "rejection_reason_tag": "irrelevant",
+        "emotion_tag": "indifference",
+        "perceived_message": "새 아이폰 12 프로가 나왔는데, 5G 기능이 있다고 광고하는구나.",
+        "perceived_target": "최신 기술에 관심 많고 돈 좀 있는 사람들이 사겠지. 나랑은 상관없네.",
+        "utterance": "아이폰 새 거 나왔네. 5G 기능 있다는 건 알겠는데, 아직 나한테는 굳이 필요할까 싶다.",
+        "qa_passed": true,
+        "qa_fail_reason": null
+      }
+    ],
+    "rubric_scores": [
+      {
+        "dimension": "category_alignment",
+        "score": 95,
+        "evidence": {
+          "declared": "전자기기",
+          "detected": "스마트폰",
+          "note": "스마트폰은 전자기기의 하위 범주로, 핵심 의미가 거의 완벽하게 일치합니다."
+        }
+      },
+      {
+        "dimension": "objective_alignment",
+        "score": 40,
+        "evidence": {
+          "declared": "상품 구매",
+          "detected": "인지 및 신제품 출시 홍보",
+          "note": "상품 구매는 직접적인 전환 목표인 반면, 인지 및 홍보는 상위 퍼널 목표로 의도에 차이가 있습니다."
+        }
+      },
+      {
+        "dimension": "message_alignment",
+        "score": 90,
+        "evidence": {
+          "declared": "iphone12",
+          "detected": "5G 기능을 탑재한 새로운 아이폰 12 Pro가 출시되었습니다.",
+          "note": "선언된 'iphone12'가 감지된 메시지('아이폰 12 Pro')에 명확히 포함되어 있으며, 구체적인 정보로 확장되었습니다."
+        }
+      }
+    ],
+    "aggregate": {
+      "click_intent_rate": 0.1,
+      "ci_low": 0,
+      "ci_high": 0.25,
+      "purchase_intent": 1.7,
+      "trust_avg": 3.65,
+      "rejection_rate": 0.4,
+      "variance_warning": false,
+      "effective_n": 20,
+      "payload": {
+        "qa_passed_count": 20,
+        "ci_method": "weighted_bootstrap",
+        "ci_iters": 2000,
+        "purchase_std": 1.005,
+        "weight_sum": 20
+      },
+      "engine_version": "agg-2"
+    },
+    "simulation_id": "e88125b4-7bf3-4d99-8da4-d651e59caae6"
+  }

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from domain.simulation.contracts.enums import (
     DropReasonTag,
@@ -14,6 +14,10 @@ from domain.simulation.contracts.enums import (
 
 # 표본 배분 방식(§3.7) — proportional: 인구비례 self-weighting / stratified: 층화 과대표집+가중보정
 Allocation = Literal["proportional", "stratified"]
+# 요청 배분 선택지 — auto(기본)면 sample_size로 자동 결정(사용자 선택 아님, §3.5).
+AllocationChoice = Literal["auto", "proportional", "stratified"]
+# auto 임계 — 이상이면 stratified(얇은 층 floor 보강), 미만이면 proportional.
+_AUTO_STRATIFIED_MIN = 300
 
 
 class SimulationRunRequest(BaseModel):
@@ -27,7 +31,37 @@ class SimulationRunRequest(BaseModel):
     target_filter: dict[str, Any] | None = None
     target_mode: TargetMode = TargetMode.AUTO
     sample_size: int = Field(default=20, ge=1, le=1000)
-    allocation: Allocation = "proportional"
+    allocation: AllocationChoice = "auto"  # auto면 sample_size로 자동 결정(아래 validator)
+    # 선언 의도(광고 세부사항) — 의도 교차검증(§3.5-3) 비교 기준. 없으면 차원 스킵.
+    ad_title: str | None = None  # 광고 제목 → message 차원(선언 핵심 메시지)
+    product_category: str | None = None  # 제품 카테고리 → category 차원
+    ad_objective: str | None = None  # 캠페인 목표 → objective 차원
+    service_class: int | None = None  # 상품·서비스 분류(NICE 1~45) — 메타데이터(교차검증 차원 아님)
+
+    @model_validator(mode="after")
+    def _resolve_allocation(self) -> SimulationRunRequest:
+        # auto면 표본 크기로 배분 결정 — 사용자 선택이 아니라 자동(§3.7). 300+ 대규모는 stratified로
+        # 얇은 세그먼트(예 40대+ OCEAN)를 floor 보강해 세그먼트 신뢰도↑. 명시값은 그대로 존중.
+        if self.allocation == "auto":
+            self.allocation = (
+                "stratified" if self.sample_size >= _AUTO_STRATIFIED_MIN else "proportional"
+            )
+        return self
+
+
+class AdFeatures(BaseModel):
+    """광고 특성 정량 추출 — 반응 프롬프트 입력 힌트(KPI 환산 금지). 전 필드 옵셔널(하위호환).
+
+    DB 컬럼 아님 — AdInterpretation.structured_analysis(JSONB)에 함께 담겨 영속된다.
+    """
+
+    ad_credibility: int | None = None  # 증거·현실성·정직성 종합(0~100, LLM 추정)
+    ad_quality: int | None = None  # 명확성·매력·구조·CTA 종합(0~100)
+    price_mentioned: bool = False
+    original_price: int | None = None
+    discounted_price: int | None = None
+    brand_mentioned: bool = False
+    social_proof_strength: Literal["high", "medium", "low", "none"] | None = None
 
 
 class AdInterpretation(BaseModel):
@@ -36,8 +70,10 @@ class AdInterpretation(BaseModel):
     ad_id: str
     structured_analysis: dict[str, Any] = Field(default_factory=dict)
     detected_industry: str | None = None
+    detected_objective: str | None = None  # 감지 캠페인 목표 — objective 차원 교차검증용
     detected_target: str | None = None
     detected_message: str | None = None
+    ad_features: AdFeatures = Field(default_factory=AdFeatures)  # 정량 광고 특성(반응 힌트)
     intent_mismatch: bool = False
     mismatch_detail: dict[str, Any] | None = None
     model_version: str = "mock-0"

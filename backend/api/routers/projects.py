@@ -31,9 +31,11 @@ async def _get_user_org_id(user: User, db: AsyncSession) -> str:
 async def _purge_simulations(db: AsyncSession, sim_ids_sql: str, params: dict) -> None:
     """sim_ids_sql(시뮬레이션 id 서브쿼리)에 해당하는 시뮬과 모든 자식 레코드를 삭제."""
     stmts = [
-        f"DELETE FROM debate_statements WHERE session_id IN "
-        f"(SELECT id FROM debate_sessions WHERE simulation_id IN ({sim_ids_sql}))",
-        f"DELETE FROM debate_sessions WHERE simulation_id IN ({sim_ids_sql})",
+        f"DELETE FROM persona_debate_utterances WHERE debate_id IN "
+        f"(SELECT id FROM persona_debates WHERE simulation_id IN ({sim_ids_sql}))",
+        f"DELETE FROM persona_debate_participants WHERE debate_id IN "
+        f"(SELECT id FROM persona_debates WHERE simulation_id IN ({sim_ids_sql}))",
+        f"DELETE FROM persona_debates WHERE simulation_id IN ({sim_ids_sql})",
         f"DELETE FROM recommendations WHERE simulation_id IN ({sim_ids_sql}) "
         f"OR diagnosis_id IN (SELECT id FROM diagnoses WHERE simulation_id IN ({sim_ids_sql}))",
         f"DELETE FROM diagnoses WHERE simulation_id IN ({sim_ids_sql})",

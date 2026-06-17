@@ -27,7 +27,8 @@ def main() -> None:
 
         narrator = GeminiNarrator()
 
-    builder = PanelBuilder(sampler=PersonaSampler(), narrator=narrator)
+    # Meta 전용 — 런타임 wiring과 동일하게 도달 분포 기반 추출(§Tier2-A). 패널·런 정합 필수.
+    builder = PanelBuilder(sampler=PersonaSampler(reachability_sampling=True), narrator=narrator)
     spec = PanelSpec(version=args.version, size=args.size, seed=args.seed)
     panel = builder.build(spec)
     path = save_panel(panel)
