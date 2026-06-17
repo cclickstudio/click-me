@@ -17,6 +17,7 @@ from domain.simulation.contracts.schemas import AdInterpretation, Persona, Perso
 from domain.simulation.tools.debate.analyzer import analyze_reactions
 from domain.simulation.tools.debate.assigner import assign_panel
 from domain.simulation.tools.debate.kpi import build_topic, compute_kpi
+from domain.simulation.tools.debate.qa import stream_qa
 from domain.simulation.tools.debate.report import build_report
 from domain.simulation.tools.debate.runner import run_debate
 from domain.simulation.tools.debate.selector import RerankFn, select_panel
@@ -114,12 +115,17 @@ class DebateService:
 
         run_id의 결과(패널 assigned·주제 topic)를 get_result로 복원하고, reactions로
         debater를 만들어 참가자별 answer_question을 순차 호출하며 qa_utterance를 yield.
-        TODO(T2 Q&A): 본문 구현(현재는 계약 스텁).
         """
-        if self._store.get_status(run_id) is None:
-            yield 'data: {"event": "error", "message": "Run not found"}\n\n'
+        result = self.get_result(run_id)
+        if result is None:
+            yield 'data: {"event": "error", "message": "결과 없음 또는 토론 미완료"}\n\n'
             return
-        yield 'data: {"event": "error", "message": "Q&A 미구현(T2 트랙에서 구현 예정)"}\n\n'
+        if self._debater_factory is None:
+            yield 'data: {"event": "error", "message": "토론 엔진 미주입 — Q&A 불가"}\n\n'
+            return
+        debater = self._debater_factory(reactions)
+        async for chunk in stream_qa(result, question, debater):
+            yield chunk
 
     async def start(
         self,

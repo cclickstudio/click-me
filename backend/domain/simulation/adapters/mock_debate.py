@@ -71,14 +71,16 @@ class MockDebater:
         topic: DebateTopic,
         history: list[Utterance],
     ) -> Utterance:
-        """Q&A 답변(결정론·무비용) — 반응(utterance) 재사용. 실 구현은 Q&A 트랙(T2)."""
+        """Q&A 답변(결정론·무비용) — 질문을 짧게 받아 반응(utterance) 재사용으로 답한다."""
         r = self._by_id.get(participant.persona_id)
         base = (r.utterance if r and r.utterance else f"{participant.role}로서의 반응") or ""
+        q = (question or "").strip()[:40]
+        text = f'[질의응답] "{q}" — {base}' if q else f"[질의응답] {base}"
         return Utterance(
             round=0,
             phase="질의응답",
             stance=_stance_of(participant.stance_score),
-            text=f"[질의응답] {base}",
+            text=text,
             reason=_REASON_BY_ROLE.get(participant.role, "역할 기반 반응"),
             lever="",
         )
