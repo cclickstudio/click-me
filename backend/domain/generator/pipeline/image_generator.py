@@ -490,6 +490,8 @@ async def _generate_with_gemini_native(model: str, prompt: str, size: AdSize) ->
             image_config=genai_types.ImageConfig(aspect_ratio=_GEMINI_NATIVE_ASPECT_RATIO[size]),
         ),
     )
+    if not response.candidates:
+        raise RuntimeError("Gemini 응답에 candidates가 없음")
     for part in response.candidates[0].content.parts:
         if part.inline_data and part.inline_data.data:
             return part.inline_data.data

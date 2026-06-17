@@ -3,7 +3,7 @@ import io
 import logging
 
 from langsmith import traceable
-from openai import AsyncOpenAI, OpenAIError
+from openai import AsyncOpenAI
 from PIL import Image, ImageDraw
 
 from core.config import settings
@@ -103,5 +103,6 @@ async def inpaint_text_zone(
 
         return base64.b64decode(response.data[0].b64_json)
 
-    except OpenAIError:
+    except Exception:
+        logger.warning("텍스트 인페인팅 실패 — 원본 이미지 반환", exc_info=True)
         return bg_bytes
