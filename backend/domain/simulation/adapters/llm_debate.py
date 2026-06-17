@@ -191,6 +191,19 @@ def _round_user(phase: str, topic: DebateTopic) -> str:
     )
 
 
+def _qa_user(question: str, topic: DebateTopic, history: list[Utterance]) -> str:
+    """Q&A user 프롬프트 — 주제·사용자 질문·이 참가자의 기존 발언 요약으로 일관된 답변 유도."""
+    said = " / ".join(u.text for u in history if u.text)[:600]
+    return (
+        f"토론 주제: {topic.headline}\n"
+        f"당신이 토론에서 한 말 요약: {said or '(없음)'}\n"
+        f"사용자 질문: {question}\n"
+        "기존 입장과 일관되게 1~2문장으로 답하라. 아래 JSON으로만: "
+        '{"stance":"positive|neutral|negative","text":"답변 1~2문장",'
+        '"reason":"그렇게 답한 이유","lever":"당신을 움직일 개선점"}'
+    )
+
+
 class LLMDebater:
     """실 LLM 토론자 — participant.engine으로 라우팅, 페르소나 반응에 grounded."""
 
@@ -245,10 +258,44 @@ class LLMDebater:
     ) -> Utterance:
         """토론 종료 후 Q&A — 사용자 질문에 대한 답변 1건(phase='질의응답').
 
-        TODO(T2 Q&A): speak() 패턴을 재사용해 구현 — _persona_system으로 캐릭터 고정,
-        user 프롬프트에 question + history(이 참가자의 기존 발언)를 넣어 일관된 답변 생성.
+        speak()와 동일 패턴 — _persona_system으로 캐릭터 고정, user에 question + history(기존
+        발언) 주입해 일관된 답변 생성. JSON 파싱·2회 재시도·실패 시 placeholder Utterance 반환.
         """
-        raise NotImplementedError("Q&A 답변(answer_question)은 Q&A 트랙(T2)에서 구현")
+        r = self._by_id.get(participant.persona_id)
+        system = _persona_system(participant, r, topic)
+        user = _qa_user(question, topic, history)
+        # LLM 간헐 실패(빈 응답·파싱)에 대비해 2회 시도. 비결정이라 재시도 시 성공 가능.
+        last_exc: Exception | None = None
+        for _attempt in range(2):
+            try:
+                data = self._c.complete_json(participant.engine, system, user, max_tokens=800)
+                text = str(data.get("text", "")).strip()
+                if not text:
+                    raise ValueError("빈 답변")
+                return Utterance(
+                    round=0,
+                    phase="질의응답",
+                    stance=_norm_stance(data.get("stance")),
+                    text=text[:500],
+                    reason=str(data.get("reason", ""))[:300],
+                    lever=str(data.get("lever", ""))[:200],
+                )
+            except Exception as exc:  # noqa: BLE001
+                last_exc = exc
+        logger.warning(
+            "Q&A 답변 실패 engine=%s pid=%s err=%s",
+            participant.engine,
+            participant.persona_id,
+            last_exc,
+        )
+        return Utterance(
+            round=0,
+            phase="질의응답",
+            stance="neutral",
+            text="(응답 생성 실패)",
+            reason="",
+            lever="",
+        )
 
 
 class LLMJudge:
