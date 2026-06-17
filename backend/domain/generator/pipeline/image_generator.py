@@ -399,7 +399,7 @@ async def generate_image(
 
         image_file = io.BytesIO(original_image_bytes)
         image_file.name = "original.png"
-        response = await _client.images.edit(
+        response = await _openai_client.images.edit(
             model=settings.generator_image_model,
             image=image_file,
             prompt=prompt,
