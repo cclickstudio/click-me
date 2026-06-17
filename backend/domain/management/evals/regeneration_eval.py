@@ -21,6 +21,8 @@ from domain.management.agents.regeneration import (
     CreativeCandidate,
     RegenerationAgent,
     RegenerationContext,
+    RiskAppetite,
+    decide_action,
 )
 from domain.management.contracts.enums import FailureReason
 from domain.management.contracts.schemas import (
@@ -50,6 +52,9 @@ class RegenerationRecord:
     tool_failures: int = 0
     recovered: bool = True  # tool 실패 발생 시 재시도/폴백으로 제안까지 도달했는가
     failure_reason: FailureReason | None = None  # 실패 시 기계 채점용 enum
+    expected_action: str | None = None  # 기대 처방 (None = 관망 기대)
+    chosen_action: str | None = None  # agent가 실제로 고른 처방
+    action_labeled: bool = False  # action 선택 채점 대상 여부 (None=관망과 미라벨 구분)
     fixture_version: str = "v1"
 
 
@@ -62,6 +67,7 @@ class EvalReport:
     schema_compliance_rate: float
     tool_call_success_rate: float
     tool_failure_recovery_rate: float
+    action_selection_accuracy: float
     failure_breakdown: dict[str, int]
     meets_win_rate_target: bool
 
@@ -106,6 +112,14 @@ def tool_failure_recovery_rate(records: Sequence[RegenerationRecord]) -> float:
     return sum(1 for r in failed if r.recovered) / len(failed)
 
 
+def action_selection_accuracy(records: Sequence[RegenerationRecord]) -> float:
+    """라벨된 케이스 중 agent의 처방이 기대 처방과 일치한 비율 (None=관망도 정답 대상)."""
+    labeled = [r for r in records if r.action_labeled]
+    if not labeled:
+        return 1.0
+    return sum(1 for r in labeled if r.chosen_action == r.expected_action) / len(labeled)
+
+
 def failure_breakdown(records: Sequence[RegenerationRecord]) -> dict[str, int]:
     counter = Counter(str(r.failure_reason) for r in records if r.failure_reason is not None)
     return dict(counter)
@@ -121,6 +135,7 @@ def summarize(records: Sequence[RegenerationRecord], fixture_version: str = "v1"
         schema_compliance_rate=schema_compliance_rate(records),
         tool_call_success_rate=tool_call_success_rate(records),
         tool_failure_recovery_rate=tool_failure_recovery_rate(records),
+        action_selection_accuracy=action_selection_accuracy(records),
         failure_breakdown=failure_breakdown(records),
         meets_win_rate_target=rate >= WIN_RATE_TARGET,
     )
@@ -280,6 +295,39 @@ async def run_agent_eval(
     return summarize(records, fixture_version=fixture_version)
 
 
+# ── 처방 결정 eval — 진단+의향 → action 선택 정확도 (creative 품질과 분리) ──
+
+
+async def run_action_selection_eval(fixture_version: str = "v1") -> EvalReport:
+    """fixture 진단마다 결정 코어(agent의 decide_action)를 돌려 처방 선택을 채점한다.
+
+    creative 후보 생존과 무관하게 '무슨 처방을 골랐나'만 본다 — fixture가 라벨한
+    ``expected_action`` 대비 일치율. 의향은 ``risk_appetite`` 노브로 주입(기본 보수적).
+    """
+    path = FIXTURES_DIR / f"diagnosis_cases_{fixture_version}.json"
+    cases = json.loads(path.read_text(encoding="utf-8"))
+    records: list[RegenerationRecord] = []
+    for case in cases:
+        if "expected_action" not in case:
+            continue  # 라벨 없는 케이스는 처방 채점에서 제외
+        diagnosis = DiagnosisResult.model_validate(case["diagnosis"])
+        risk = RiskAppetite(case.get("risk_appetite", RiskAppetite.CONSERVATIVE.value))
+        chosen = decide_action(diagnosis, risk)
+        records.append(
+            RegenerationRecord(
+                case_id=case["case_id"],
+                baseline_score=case["baseline_score"],
+                candidate_scores=(),
+                guardrail_passed=True,
+                expected_action=case["expected_action"],
+                chosen_action=chosen,
+                action_labeled=True,
+                fixture_version=fixture_version,
+            )
+        )
+    return summarize(records, fixture_version=fixture_version)
+
+
 # ── 기본 tool 체인 실측 — 생성·시뮬·미리보기 구현체를 끝까지 관통 (W3) ──
 
 
@@ -322,6 +370,7 @@ def _print_report(title: str, report: EvalReport) -> None:
     print(f"  schema 준수율      {report.schema_compliance_rate:>6.1%}")
     print(f"  tool-call 성공률   {report.tool_call_success_rate:>6.1%}")
     print(f"  도구실패 복구율    {report.tool_failure_recovery_rate:>6.1%}")
+    print(f"  처방 선택 정확도   {report.action_selection_accuracy:>6.1%}")
     if report.failure_breakdown:
         print(f"  실패 사유          {report.failure_breakdown}")
     print(f"  목표 충족          {'✅' if report.meets_win_rate_target else '❌'}")
@@ -338,6 +387,7 @@ def main() -> None:  # pragma: no cover — 수동 실행 진입점
     _print_report("① 채점 fixture eval", run_eval())
     _print_report("② agent 실행형 eval (스텁 tool)", asyncio.run(run_agent_eval()))
     _print_report("③ agent 실측 eval (기본 tool 체인)", asyncio.run(run_default_tools_eval()))
+    _print_report("④ 처방 선택 eval (결정 코어)", asyncio.run(run_action_selection_eval()))
 
 
 if __name__ == "__main__":

@@ -2,6 +2,7 @@
   {
     "case_id": "agent-001-clean-win",
     "baseline_score": 0.45,
+    "expected_action": "REPLACE_CREATIVE",
     "diagnosis": {
       "diagnosis_id": "diag-eval-001",
       "tenant_id": "org-eval",
@@ -23,6 +24,8 @@
   {
     "case_id": "agent-002-banned-expression-filtered",
     "baseline_score": 0.5,
+    "risk_appetite": "aggressive",
+    "expected_action": "INCREASE_BUDGET",
     "diagnosis": {
       "diagnosis_id": "diag-eval-002",
       "tenant_id": "org-eval",
@@ -43,6 +46,7 @@
   {
     "case_id": "agent-003-generator-recovers",
     "baseline_score": 0.4,
+    "expected_action": "REPLACE_CREATIVE",
     "generator_fail_times": 1,
     "diagnosis": {
       "diagnosis_id": "diag-eval-003",
@@ -63,6 +67,7 @@
   {
     "case_id": "agent-004-scorer-partial-fallback",
     "baseline_score": 0.42,
+    "expected_action": "CREATE_CAMPAIGN",
     "scorer_fail_ids": ["c1"],
     "diagnosis": {
       "diagnosis_id": "diag-eval-004",
@@ -84,6 +89,7 @@
   {
     "case_id": "agent-005-all-low-score-no-proposal",
     "baseline_score": 0.72,
+    "expected_action": "REPLACE_CREATIVE",
     "diagnosis": {
       "diagnosis_id": "diag-eval-005",
       "tenant_id": "org-eval",
@@ -104,6 +110,7 @@
   {
     "case_id": "agent-006-generator-unrecovered",
     "baseline_score": 0.5,
+    "expected_action": "PAUSE_CAMPAIGN",
     "generator_fail_times": 5,
     "diagnosis": {
       "diagnosis_id": "diag-eval-006",
