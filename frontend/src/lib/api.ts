@@ -39,12 +39,6 @@ export const api = {
     generate: (body: object) => request("/personas/generate", { method: "POST", body: JSON.stringify(body) }),
   },
 
-  simulate: {
-    start: (body: object) => request("/simulate/reactions", { method: "POST", body: JSON.stringify(body) }),
-    result: (taskId: string) => request(`/simulate/${taskId}/result`),
-    stream: (taskId: string) => new EventSource(`${API_BASE}/api/simulate/${taskId}/stream`),
-  },
-
   // 도메인 시뮬레이션(DDD) — /api/simulation/run 동기 실행(multipart/form-data).
   simulation: {
     run: (input: SimRunInput): Promise<SimRunResult> => {

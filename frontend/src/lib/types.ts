@@ -32,36 +32,6 @@ export interface Persona {
   seed: number;
 }
 
-export interface ScoreDistribution {
-  mean: number;
-  std: number;
-  p10: number;
-  p90: number;
-  raw_probs: number[];
-}
-
-export interface SimulationResult {
-  simulation_id: string;
-  task_id: string;
-  status: "pending" | "running" | "completed" | "failed";
-  p0: {
-    persona_reactions: Array<{
-      persona_id: string;
-      free_text_reaction: string;
-      purchase_intent_distribution: number[];
-    }>;
-    aggregate_purchase_intent: number[];
-    kobaco_comparable: boolean;
-  };
-  p1: {
-    signal_distributions: Record<string, ScoreDistribution>;
-    kpi: { ctr: number; cvr: number; net_sentiment: number };
-    funnel: { attention: number; comprehension: number; click: number; conversion: number };
-    langsmith_trace_url: string | null;
-    note: string;
-  };
-}
-
 /* ─── Simulation (domain /api/simulation/run 계약) ─── */
 
 export interface SimAisas {
