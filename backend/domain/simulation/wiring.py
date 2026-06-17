@@ -158,7 +158,7 @@ def build_debate_service(
 ) -> DebateService:
     """토론 파이프라인 Composition Root. use_mock=True면 mock 토론 엔진 주입(재현·무비용).
 
-    실 LLM 엔진(Haiku/GPT/Gemini 토론자 + Opus Judge)은 use_mock=False 분기로 추후 추가.
+    실 LLM 엔진(Haiku/GPT/Gemini 토론자 + Sonnet Judge)은 use_mock=False 분기로 연결.
     엔진 미주입이면 결정론 파이프라인(8~9·10-a·10-b·11)만 돌고 10-c는 placeholder.
     """
     store = store or InMemorySimulationStore()

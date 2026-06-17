@@ -1,24 +1,33 @@
-# 조각 10-a — 토론 패널 선발(결정론, LLM✗). 실제 반응자 전원 중 규칙으로 6명을 고른다.
+# 조각 10-a — 토론 패널 구성(결정론, LLM✗). 전문가 4명 합성 + 일반인 2명 선발.
 #
-# 규칙은 절대값을 박지 않는다 — 전부 "조건 필터 → 정렬 → 타이브레이크"의 상대적 선택이라
-# 데이터가 바뀌면 그 안에서 다시 계산된다. 배타 배정(한 사람 1슬롯), 빈 슬롯은 다음 우선순위로 보충.
+# 전문가 4(도메인2·마케팅2)는 카테고리(ad_analysis)로 합성, 일반인 2(피벗·비판자)는 반응자에서 선발.
+# 규칙은 절대값을 박지 않는다 — 일반인은 "조건 필터 → 정렬 → 타이브레이크"의 상대적 선택.
 # 상세 규칙: docs/simulation/debate/persona-debate-pipeline.md ②③
 from __future__ import annotations
 
 from statistics import median
 
 from domain.simulation.contracts.debate_schemas import SelectedPanel, SelectedParticipant
-from domain.simulation.contracts.schemas import PersonaReaction
+from domain.simulation.contracts.schemas import AdInterpretation, PersonaReaction
 
-# 6개 고정 슬롯 — 희소 신호(거부·불신) 먼저, 흔한 무리는 나중. 위에서부터 배타 배정.
-SLOT_ROLES: dict[int, str] = {
-    1: "완주자",
-    2: "피벗",
-    3: "거부자",
-    4: "불신자",
-    5: "초기이탈",
-    6: "미온다수2",
-}
+# 전문가 4명 고정 스펙 — (persona_id, slot, role, 프로필 템플릿). 도메인 2는 {category} 슬롯 주입.
+EXPERT_SPECS: list[tuple[str, int, str, str]] = [
+    (
+        "EXPERT-domain-product",
+        1,
+        "도메인 전문가(제품·카테고리)",
+        "{category} 분야 제품·카테고리 전문가",
+    ),
+    (
+        "EXPERT-domain-market",
+        2,
+        "도메인 전문가(시장·유통)",
+        "{category} 분야 시장·유통·경쟁 전문가",
+    ),
+    ("EXPERT-mkt-performance", 3, "마케팅 전문가(퍼포먼스)", "퍼포먼스·그로스 마케터"),
+    ("EXPERT-mkt-brand", 4, "마케팅 전문가(브랜드)", "브랜드·크리에이티브 전문가"),
+]
+PIVOT_SLOT, CRITIC_SLOT = 5, 6  # 일반인 2슬롯
 
 
 def is_undecided(r: PersonaReaction) -> bool:
@@ -27,7 +36,7 @@ def is_undecided(r: PersonaReaction) -> bool:
 
 
 def stance_score(r: PersonaReaction) -> float:
-    """입장 점수(③ 모델 배정 전용) — AISAS 단계 + 구매의도/신뢰 + 거부. 이를수록 부정.
+    """입장 점수(비판자 선정 전용) — AISAS 단계 + 구매의도/신뢰 + 거부. 이를수록 부정.
 
     drop_stage는 LLM 출력이라 attention 등도 올 수 있어 .get으로 KeyError 방어(미정의=중립 1).
     """
@@ -37,6 +46,16 @@ def stance_score(r: PersonaReaction) -> float:
     if r.rejected:
         s -= 5
     return s
+
+
+def detect_category(ad_analysis: AdInterpretation | None) -> str:
+    """광고 카테고리를 결정론 추출 — 도메인 전문가 프로필 슬롯에 주입. 없으면 generic."""
+    if ad_analysis is None:
+        return "해당 제품"
+    detail = ad_analysis.mismatch_detail or {}
+    cat = detail.get("category") if isinstance(detail, dict) else None
+    declared = cat.get("declared") if isinstance(cat, dict) else None
+    return declared or ad_analysis.detected_industry or "해당 제품"
 
 
 def pick_representative(group: list[PersonaReaction]) -> PersonaReaction | None:
@@ -63,83 +82,66 @@ def pick_pivot(pool: list[PersonaReaction]) -> PersonaReaction | None:
     return min(final, key=lambda p: p.persona_id)
 
 
-def pick_second_undecided(
-    pool: list[PersonaReaction], pivot: PersonaReaction
-) -> PersonaReaction | None:
-    """미온2 = 피벗과 신뢰가 가장 다른 미전환자(같은 무리의 다른 결). 동점은 전형→id순."""
-    cands = [p for p in pool if is_undecided(p)]
+def pick_critic(pool: list[PersonaReaction], exclude_id: str | None) -> PersonaReaction | None:
+    """비판자 = 가장 부정적인 1명(거부·불신이 자동 하위). 피벗 제외 → 항상 다른 사람."""
+    cands = [p for p in pool if p.persona_id != exclude_id]
     if not cands:
         return None
-    dmax = max(abs(p.trust - pivot.trust) for p in cands)
-    top = [p for p in cands if abs(p.trust - pivot.trust) == dmax]
-    return pick_representative(top)
+    return min(cands, key=lambda r: (stance_score(r), r.persona_id))
 
 
-def select_panel(reactions: list[PersonaReaction], panel_size: int = 6) -> SelectedPanel:
-    """반응자 전원에서 패널 선발 — 6슬롯 배타 배정 + 빈 슬롯 보충 + 비판자 1명 확보."""
-    pool = [r for r in reactions if r.qa_passed]
-    chosen: dict[str, SelectedParticipant] = {}
-
-    def remaining() -> list[PersonaReaction]:
-        return [r for r in pool if r.persona_id not in chosen]
-
-    def take(r: PersonaReaction, slot: int, fallback: bool = False) -> PersonaReaction:
-        chosen[r.persona_id] = SelectedParticipant(
-            persona_id=r.persona_id,
+def _expert_participants(category: str) -> list[SelectedParticipant]:
+    """전문가 4명 합성 — 도메인 2는 카테고리 주입, 마케팅 2는 고정. 반응 없음(분석결과 grounded)."""
+    return [
+        SelectedParticipant(
+            persona_id=pid,
             slot=slot,
-            role=SLOT_ROLES[slot],
-            stance_score=round(stance_score(r), 3),
-            is_fallback=fallback,
+            role=role,
+            stance_score=0.0,
+            is_expert=True,
+            persona_profile=tmpl.format(category=category),
         )
-        return r
+        for pid, slot, role, tmpl in EXPERT_SPECS
+    ]
 
-    def fill(slot: int, cands: list[PersonaReaction]) -> PersonaReaction | None:
-        """슬롯 후보가 있으면 전형을 뽑고, 없으면 remaining 전체에서 보충(is_fallback)."""
-        pick = pick_representative(cands)
-        if pick is not None:
-            return take(pick, slot)
-        rem = remaining()
-        pick = pick_representative(rem)
-        return take(pick, slot, fallback=True) if pick is not None else None
 
-    # 슬롯1 완주자
-    fill(1, [r for r in remaining() if r.aisas.action])
+def select_panel(
+    reactions: list[PersonaReaction], ad_analysis: AdInterpretation | None = None
+) -> SelectedPanel:
+    """패널 구성 — 전문가 4명(합성) + 일반인 2명(피벗·비판자, 실제 반응자에서 선발)."""
+    pool = [r for r in reactions if r.qa_passed]
+    participants: list[SelectedParticipant] = _expert_participants(detect_category(ad_analysis))
 
-    # 슬롯2 피벗 — 신뢰-행동 갭. 미전환자 없으면 보충.
-    pivot = pick_pivot(remaining())
+    # 일반인 슬롯5 피벗 — 미전환자 없으면 전형으로 보충.
+    pivot = pick_pivot(pool)
+    fallback_pivot = pivot is None
+    if pivot is None:
+        pivot = pick_representative(pool)
+    pivot_id = pivot.persona_id if pivot is not None else None
     if pivot is not None:
-        take(pivot, 2)
-    else:
-        pivot = fill(2, [])
+        participants.append(
+            SelectedParticipant(
+                persona_id=pivot.persona_id,
+                slot=PIVOT_SLOT,
+                role="피벗",
+                stance_score=round(stance_score(pivot), 3),
+                is_fallback=fallback_pivot,
+            )
+        )
 
-    # 슬롯3 거부자 / 슬롯4 불신자 / 슬롯5 초기이탈 (희소 신호 우선)
-    fill(3, [r for r in remaining() if r.rejected])
-    fill(4, [r for r in remaining() if str(r.emotion_tag) == "distrust"])
-    fill(5, [r for r in remaining() if r.drop_stage == "interest"])
+    # 일반인 슬롯6 비판자 — 피벗 제외, 가장 부정적인 1명(항상 1명 확보).
+    critic = pick_critic(pool, pivot_id)
+    critic_secured = False
+    if critic is not None:
+        participants.append(
+            SelectedParticipant(
+                persona_id=critic.persona_id,
+                slot=CRITIC_SLOT,
+                role="비판자",
+                stance_score=round(stance_score(critic), 3),
+            )
+        )
+        critic_secured = stance_score(critic) < 0  # 실제 부정 입장일 때만(좋은 광고면 False)
 
-    # 슬롯6 미온2 — 피벗과 신뢰 차 최대. 피벗·미전환자 없으면 보충.
-    slot6 = pick_second_undecided(remaining(), pivot) if pivot is not None else None
-    if slot6 is not None:
-        take(slot6, 6)
-    else:
-        fill(6, [])
-
-    # panel_size가 6 미만이면 슬롯 순서대로 잘라낸다(현재 기본 6).
-    parts = sorted(chosen.values(), key=lambda c: c.slot)[:panel_size]
-
-    # 비판자 확보 — 패널에 부정 입장(stance<0)이 0명이면 remaining 중 가장 부정적인 1명으로
-    # 마지막 슬롯을 교체(칭찬 일색 메아리방 방지). 교체 대상이 더 부정적일 때만.
-    critic_secured = any(c.stance_score < 0 for c in parts)
-    if not critic_secured and parts:
-        rem = remaining()
-        if rem:
-            worst = min(rem, key=lambda r: (stance_score(r), r.persona_id))
-            replaced = parts[-1]
-            if stance_score(worst) < replaced.stance_score:
-                del chosen[replaced.persona_id]
-                take(worst, replaced.slot, fallback=True)
-                parts = sorted(chosen.values(), key=lambda c: c.slot)[:panel_size]
-                critic_secured = any(c.stance_score < 0 for c in parts)
-
-    pivot_id = next((c.persona_id for c in parts if c.slot == 2), None)
+    parts = sorted(participants, key=lambda c: c.slot)
     return SelectedPanel(participants=parts, pivot_id=pivot_id, critic_secured=critic_secured)

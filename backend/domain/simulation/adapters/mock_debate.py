@@ -23,12 +23,12 @@ _ACTIONS_BY_SIGNAL: dict[str, list[str]] = {
     "mid_attrition": ["다음 단계 진입 이유(혜택) 명시"],
 }
 _REASON_BY_ROLE: dict[str, str] = {
-    "완주자": "끝까지 반응할 만큼 동기가 충분",
     "피벗": "신뢰는 있으나 즉시 행동 동기 부재",
-    "거부자": "메시지 자체를 수용하지 않음",
-    "불신자": "주장을 신뢰하지 못함",
-    "초기이탈": "흥미 단계에서 관련성을 못 느낌",
-    "미온다수2": "관심은 있으나 움직일 이유 부족",
+    "비판자": "메시지 자체를 수용하지 않음",
+    "도메인 전문가(제품·카테고리)": "카테고리 관점에서 제품 가치 전달이 약함",
+    "도메인 전문가(시장·유통)": "경쟁 제품 대비 차별점이 불명확",
+    "마케팅 전문가(퍼포먼스)": "클릭 동기·CTA 설계가 부족",
+    "마케팅 전문가(브랜드)": "메시지·포지셔닝이 모호",
 }
 
 
@@ -85,11 +85,11 @@ class MockJudge:
             for p in participants
             if p.utterances and p.utterances[-1].stance == "positive"
         ]
-        # 거부자 슬롯이라도 마지막 발언이 negative일 때만 이견으로 — fallback 보충분 제외.
+        # 비판자가 마지막 발언이 negative일 때만 이견으로 — 좋은 광고면 비판자도 중립이라 제외.
         dissent = [
-            f"{p.persona_name}(거부자): 어떤 액션에도 무반응 가능 — 타깃 밖 가능성"
+            f"{p.persona_name}(비판자): 어떤 액션에도 무반응 가능 — 타깃 밖 가능성"
             for p in participants
-            if p.role == "거부자" and p.utterances and p.utterances[-1].stance == "negative"
+            if p.role == "비판자" and p.utterances and p.utterances[-1].stance == "negative"
         ]
         ranked = [
             RankedAction(

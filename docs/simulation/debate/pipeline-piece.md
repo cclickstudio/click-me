@@ -65,14 +65,14 @@
 
 세 부분으로 쪼개진다. 토론 세부 규칙(선발 슬롯·모델 배정·라운드 동사·유동 게이트)은 `persona-debate-pipeline.md` 참조.
 
-### 10-a 선발 (결정론, LLM✗)
-- 조각 8의 groups에서 **토론 패널 6명** 선발(완주자·피벗·거부자·불신자·초기이탈·미온다수2).
-- 피벗 기준 = **신뢰-행동 갭**(미전환자 중 trust 최고 → `trust − purchase_intent` 최대 → id순). `stance_score`(③ 배정 전용)와 분리.
-- 슬롯 배타 배정(이미 뽑힌 사람 제외), 슬롯6 = 피벗과 trust 차 최대.
+### 10-a 구성 (결정론, LLM✗)
+- **패널 6명 = 도메인 전문가 2 + 마케팅 전문가 2 + 일반인 2.** (전문가 4 합성 + 일반인 2 선발)
+- **일반인 2** = 조각 8의 groups에서 **피벗 + 비판자** 선발. 피벗 = 신뢰-행동 갭(미전환자 중 trust 최고 → `trust − purchase_intent` 최대 → id순). 비판자 = `min(stance_score)`(거부·불신 우선, 피벗 제외) — 항상 1명 확보.
+- **전문가 4** = 합성. 도메인 2는 `ad_analysis`의 카테고리(`detected_industry`/`declared`)를 `{category}` 슬롯에 주입한 고정 템플릿, 마케팅 2는 카테고리 무관 고정. **분석결과(8·9)에 grounded**(수치 밖 사실 금지).
 
 ### 10-b 배정 (결정론, LLM✗)
-- 입장순 정렬 후 엔진 교차 배정 — 토론자 6명 = Haiku 2(피벗 포함) / GPT 2 / Gemini 2, 주최자(Judge) = Opus.
-- `persona_name`·`persona_profile` 결정론 부여(persona_id 기반). 더미는 factory를 안 거쳤으니 **여기서 이름 부여**.
+- 역할 기반 라운드로빈 — 토론자 6명 = Haiku 2 / GPT 2 / Gemini 2(엔진 ⊥ 역할), 주최자(Judge) = **Sonnet 4.6**(Opus에서 다운).
+- `persona_name`·`persona_profile` 결정론 부여(일반인=persona_id 기반, 전문가=역할 키 기반). 더미는 factory를 안 거쳤으니 **여기서 이름 부여**.
 - **DB**: `persona_debates` 1행 생성(= 토론 id) + `persona_debate_participants` 6행 저장.
 
 ### 10-c 토론 (LLM, 2~4턴 유동)
@@ -96,7 +96,7 @@
 
 ```
 더미 로드 → 8 analysis_ready → 9 kpi_ready·topic_ready
-          → 10-a 선발 · 10-b 배정(DB 생성) → round_1 → round_2 → …(2~4) → judge_final
+          → 10-a 구성(전문가4 합성+일반인2 선발) · 10-b 배정(DB 생성) → round_1 → round_2 → …(2~4) → judge_final
           → 11 report_ready → completed
    └──── 결정론(빠름: 8·9·10-a·10-b) ────┘ └──── LLM(느림, stream 흘림) ────┘
 ```

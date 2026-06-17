@@ -139,8 +139,8 @@ class DebateService:
             )
             await asyncio.sleep(0)
 
-            # ── 조각 10-a 선발 ──
-            panel = select_panel(reactions)
+            # ── 조각 10-a 구성(전문가 4 합성 + 일반인 2 선발) ──
+            panel = select_panel(reactions, ad_analysis)
             store.emit(
                 run_id,
                 {
@@ -175,6 +175,7 @@ class DebateService:
             debate_obj = None
             if self._debater_factory is not None and self._judge is not None:
                 debater = self._debater_factory(reactions)
+
                 # 발언·라운드 정리를 실시간 emit(토론 과정 stream). store.emit은 스레드세이프.
                 def _emit(ev: dict, _run_id: str = run_id) -> None:
                     self._store.emit(_run_id, ev)

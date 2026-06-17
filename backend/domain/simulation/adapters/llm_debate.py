@@ -1,7 +1,7 @@
-# 실 LLM 토론 엔진 — DebaterPort/JudgePort 구현. 토론자 Haiku/GPT/Gemini, Judge Opus.
+# 실 LLM 토론 엔진 — DebaterPort/JudgePort 구현. 토론자 Haiku/GPT/Gemini, Judge Sonnet.
 #
-# 발화는 실제 반응 데이터(trust·purchase_intent·utterance)에 grounded — system에 주입해 일관 유지.
-# 엔진은 participant.engine으로 라우팅(haiku→Anthropic, gpt→OpenAI, gemini→Google).
+# 일반인 발화는 실제 반응에, 전문가 발화는 분석 결과(topic)에 grounded — system에 주입.
+# 엔진 라우팅: participant.engine(haiku/sonnet→Anthropic, gpt→OpenAI, gemini→Google).
 # 동기 SDK 호출 — DebateService가 asyncio.to_thread로 감싸 이벤트 루프를 막지 않는다.
 from __future__ import annotations
 
@@ -28,11 +28,15 @@ from domain.simulation.contracts.schemas import PersonaReaction
 
 logger = logging.getLogger("clickme")
 
-# 모델 ID — 비용 라인: 토론자 저가(Haiku/mini/Flash), Judge 강모델(Opus). 바꾸려면 여기만.
+# 모델 ID — 비용 라인: 토론자 저가(Haiku/mini/Flash), Judge 중상(Sonnet). 바꾸려면 여기만.
 HAIKU_MODEL = "claude-haiku-4-5"
-OPUS_MODEL = "claude-opus-4-8"
+SONNET_MODEL = "claude-sonnet-4-6"  # Judge — Opus 4.8에서 다운(호출 적어 비용영향 작음).
+OPUS_MODEL = "claude-opus-4-8"  # (미사용·여분) 필요 시 Judge를 다시 올릴 핀.
 GPT_MODEL = "gpt-4o-mini"
 GEMINI_MODEL = "gemini-2.5-flash"  # 기존 어댑터(_common·chat)와 동일 핀
+
+JUDGE_ENGINE = "sonnet"  # LLMJudge 기본 호출 엔진(assigner.JUDGE_ENGINE과 일치).
+_ANTHROPIC_MODELS = {"haiku": HAIKU_MODEL, "sonnet": SONNET_MODEL, "opus": OPUS_MODEL}
 
 _VALID_STANCE = {"positive", "neutral", "negative"}
 
@@ -94,8 +98,8 @@ class _Clients:
         self, engine: str, system: str, user: str, *, json_mode: bool, max_tokens: int = 500
     ) -> str:
         """엔진별 1회 호출 → 원문 텍스트. json_mode면 가능한 SDK는 JSON 응답을 강제."""
-        if engine in ("haiku", "opus"):
-            model = OPUS_MODEL if engine == "opus" else HAIKU_MODEL
+        if engine in _ANTHROPIC_MODELS:
+            model = _ANTHROPIC_MODELS[engine]
             sys_prompt = system + (" 반드시 JSON만 출력." if json_mode else "")
             r = self._ant().messages.create(
                 model=model,
@@ -139,7 +143,27 @@ class _Clients:
         return json.loads(_strip_json(raw))
 
 
-def _persona_system(p: DebateParticipant, r: PersonaReaction | None) -> str:
+def _expert_system(p: DebateParticipant, topic: DebateTopic) -> str:
+    """전문가 system — 소비자가 아니라 분석 결과를 진단. 수치 밖 사실 금지(분석결과 grounded)."""
+    focus = ", ".join(f"{k}={v}" for k, v in (topic.focus or {}).items() if v is not None)
+    parts = [
+        f"당신은 '{p.persona_name}', {p.persona_profile}입니다.",
+        f"토론에서 당신의 역할: {p.role}.",
+        "당신은 광고를 본 소비자가 아니라, 아래 시뮬레이션 분석 결과를 진단하는 전문가입니다.",
+        f"분석 진단 — {topic.diagnosis}",
+    ]
+    if focus:
+        parts.append(f"근거 수치 — {focus}.")
+    parts.append(
+        "주어진 분석 수치 밖의 사실을 지어내지 말고, 전문 지식으로 "
+        "'왜 이런 결과인지'와 개선 방향을 제시하라."
+    )
+    return " ".join(parts)
+
+
+def _persona_system(p: DebateParticipant, r: PersonaReaction | None, topic: DebateTopic) -> str:
+    if p.is_expert:
+        return _expert_system(p, topic)
     parts = [
         f"당신은 광고를 본 소비자 '{p.persona_name}'({p.persona_profile})입니다.",
         f"토론에서 당신의 역할: {p.role}.",
@@ -178,14 +202,12 @@ class LLMDebater:
         self, participant: DebateParticipant, round_n: int, phase: str, topic: DebateTopic
     ) -> Utterance:
         r = self._by_id.get(participant.persona_id)
-        system, user = _persona_system(participant, r), _round_user(phase, topic)
+        system, user = _persona_system(participant, r, topic), _round_user(phase, topic)
         # LLM 간헐 실패(빈 응답·파싱)에 대비해 2회 시도. 비결정이라 재시도 시 성공 가능.
         last_exc: Exception | None = None
         for _attempt in range(2):
             try:
-                data = self._c.complete_json(
-                    participant.engine, system, user, max_tokens=800
-                )
+                data = self._c.complete_json(participant.engine, system, user, max_tokens=800)
                 text = str(data.get("text", "")).strip()
                 if not text:
                     raise ValueError("빈 발언")
@@ -216,10 +238,11 @@ class LLMDebater:
 
 
 class LLMJudge:
-    """실 LLM 주최자 — Opus로 라운드 정리·잠정 액션·최종 결론."""
+    """실 LLM 주최자 — Sonnet 4.6으로 라운드 정리·잠정 액션·최종 결론(Opus에서 다운)."""
 
-    def __init__(self, clients: _Clients | None = None) -> None:
+    def __init__(self, clients: _Clients | None = None, engine: str = JUDGE_ENGINE) -> None:
         self._c = clients or _Clients()
+        self._engine = engine
 
     def summarize_round(self, round_n: int, utterances: list[Utterance]) -> str:
         body = "\n".join(f"- [{u.stance}] {u.text}" for u in utterances)
@@ -228,7 +251,7 @@ class LLMJudge:
         )
         try:
             return self._c.complete(
-                "opus", _JUDGE_SYS, user, json_mode=False, max_tokens=200
+                self._engine, _JUDGE_SYS, user, json_mode=False, max_tokens=200
             ).strip()
         except Exception:
             logger.exception("Judge 라운드 정리 실패 round=%s", round_n)
@@ -243,7 +266,7 @@ class LLMJudge:
             '개선 레버 1~3개를 JSON으로: {"actions":["...","..."]}'
         )
         try:
-            data = self._c.complete_json("opus", _JUDGE_SYS, user, max_tokens=300)
+            data = self._c.complete_json(self._engine, _JUDGE_SYS, user, max_tokens=300)
             return [str(a) for a in (data.get("actions") or [])][:3]
         except Exception:
             logger.exception("Judge 액션 제안 실패")
@@ -260,7 +283,7 @@ class LLMJudge:
         )
         try:
             # final은 진단+합의+이견+개선안(supporting 포함)이라 길다 — 잘리지 않게 넉넉히.
-            data = self._c.complete_json("opus", _JUDGE_SYS, user, max_tokens=2000)
+            data = self._c.complete_json(self._engine, _JUDGE_SYS, user, max_tokens=2000)
             ranked = [
                 RankedAction(
                     rank=int(a.get("rank", i + 1)),

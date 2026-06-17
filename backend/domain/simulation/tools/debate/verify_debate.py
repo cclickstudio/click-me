@@ -74,9 +74,7 @@ async def _debate_cases() -> bool:
         utt_events = sum(1 for s in stages if s == "utterance")
         total_utt = sum(len(p["utterances"]) for p in debate["participants"])
         ok_e = _check(
-            utt_events == total_utt
-            and "round_summary" in stages
-            and "judge_final" in stages,
+            utt_events == total_utt and "round_summary" in stages and "judge_final" in stages,
             f"stream 발언 {utt_events}건·round_summary·judge_final",
         )
         # 조각 11 리포트 — 토론 있을 때 debate_available·인용·개선안 매핑

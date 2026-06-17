@@ -72,42 +72,48 @@ class ReactionAnalysis(BaseModel):
 
 
 class SelectedParticipant(BaseModel):
-    """조각 10-a 선발 1명 — 슬롯·역할·입장점수. 배타 배정(한 사람 1슬롯)."""
+    """조각 10-a 선발/합성 1명 — 슬롯·역할·입장점수.
+
+    slot 1~4=전문가(도메인2·마케팅2, 합성), 5=피벗, 6=비판자(실제 반응자에서 선발).
+    """
 
     persona_id: str
-    slot: int  # 1~6 (1완주자 2피벗 3거부자 4불신자 5초기이탈 6미온다수2)
+    slot: int  # 1도메인1 2도메인2 3마케팅1 4마케팅2 5피벗 6비판자
     role: str  # 한글 역할 라벨
-    stance_score: float  # ③ 모델 배정 전용 입장 점수(피벗 선정엔 안 씀)
-    is_fallback: bool = False  # 해당 슬롯 후보 없어 다음 우선순위에서 보충됐는지
+    stance_score: float  # 비판자 선정 전용 입장 점수(전문가는 0.0)
+    is_fallback: bool = False  # 일반인 슬롯 후보 없어 보충됐는지
+    is_expert: bool = False  # 합성 전문가(실제 반응 없음 → 분석결과에 grounded)
+    persona_profile: str | None = None  # 전문가만: 카테고리 주입된 프로필(일반인은 10-b에서 생성)
 
 
 class SelectedPanel(BaseModel):
-    """조각 10-a 산출 — 토론 패널(기본 6명). groups 후보 풀에서 결정론 규칙으로 선발."""
+    """조각 10-a 산출 — 토론 패널(전문가 4 + 일반인 최대 2). 합성·결정론 선발."""
 
     participants: list[SelectedParticipant]
-    pivot_id: str | None = None  # 피벗 persona_id(10-b 엔진 배정에서 Haiku 고정)
+    pivot_id: str | None = None  # 피벗 persona_id(일반인)
     critic_secured: bool = False  # 비판자(부정 입장) 최소 1명 확보 여부
 
 
 class DebateParticipant(BaseModel):
-    """조각 10-b 산출 1명 — 선발 결과 + 엔진·이름·프로필. 토론·DB·리포트 입력."""
+    """조각 10-b 산출 1명 — 선발/합성 결과 + 엔진·이름·프로필. 토론·DB·리포트 입력."""
 
     persona_id: str
     slot: int
     role: str
     stance_score: float
     is_fallback: bool = False
-    engine: str  # haiku / gpt / gemini (토론자). 입장순 교차 배정, 피벗은 haiku 고정.
+    is_expert: bool = False  # 전문가(분석결과 grounded) / 일반인(실제 반응 grounded)
+    engine: str  # haiku / gpt / gemini (토론자). 역할 기반 라운드로빈(엔진 ⊥ 역할).
     persona_name: str  # 결정론 부여 이름(운영은 factory 이름 승계). 리포트 표시용.
-    persona_profile: str  # 역할 기반 한 줄 프로필(더미엔 인구정보 없음)
+    persona_profile: str  # 한 줄 프로필(전문가=카테고리 주입, 일반인=역할/인구 기반)
 
 
 class AssignedPanel(BaseModel):
-    """조각 10-b 산출 — 엔진·이름 배정 끝난 토론 패널. judge는 별도 고정(Opus)."""
+    """조각 10-b 산출 — 엔진·이름 배정 끝난 토론 패널. judge는 별도 고정(Sonnet 4.6)."""
 
     participants: list[DebateParticipant]
     pivot_id: str | None = None
-    judge_engine: str = "opus"
+    judge_engine: str = "sonnet"
     critic_secured: bool = False
 
 
