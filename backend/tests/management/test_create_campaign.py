@@ -91,6 +91,7 @@ def test_create_campaign_sandbox_posts_to_account_with_validate_only():
     assert path.endswith("/act_999/campaigns")
     assert b"validate_only" in body
     assert b"PAUSED" in body  # 안전 — 생성 후 사람이 켜야 게재
+    assert b"is_adset_budget_sharing_enabled" in body  # v21 필수 (실 API 검증)
 
 
 def test_create_campaign_does_not_double_act_prefix():

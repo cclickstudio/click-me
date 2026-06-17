@@ -102,6 +102,9 @@ class MetaAdsWriter:
                 "objective": "OUTCOME_TRAFFIC",  # v1 트래픽(클릭) 목표
                 "status": "PAUSED",
                 "special_ad_categories": "[]",
+                # v21 필수 — 캠페인 예산 미사용 시 true/false 명시 (실 API 검증 2026-06-17).
+                # v1은 adset 레벨 예산이므로 false. 누락 시 code=100 sub=4834011.
+                "is_adset_budget_sharing_enabled": "false",
             },
             path=f"{normalize_ad_account(config.ad_account_id)}/campaigns",
             ad_account_id=config.ad_account_id,
