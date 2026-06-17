@@ -72,7 +72,7 @@
 - **전문가 4** = 합성. 도메인 2는 `ad_analysis`의 카테고리(`detected_industry`/`declared`)를 `{category}` 슬롯에 주입한 고정 템플릿, 마케팅 2는 카테고리 무관 고정. **분석결과(8·9)에 grounded**(수치 밖 사실 금지).
 
 ### 10-b 배정 (결정론, LLM✗)
-- 역할 기반 라운드로빈 — 토론자 8명 = Haiku 3 / GPT 3 / Gemini 2(엔진 ⊥ 역할), 주최자(Judge) = **Sonnet 4.6**(Opus에서 다운).
+- 역할 기반 라운드로빈 — 토론자 8명 = Haiku 4 / GPT 4(엔진 ⊥ 역할, Gemini 제거), 주최자(Judge) = **Sonnet 4.6**(Opus에서 다운).
 - `persona_name`·`persona_profile` 결정론 부여(일반인=persona_id 기반, 전문가=역할 키 기반). 더미는 factory를 안 거쳤으니 **여기서 이름 부여**.
 - **DB**: `persona_debates` 1행 생성(= 토론 id) + `persona_debate_participants` 8행 저장.
 

@@ -1,7 +1,7 @@
-# 실 LLM 토론 엔진 — DebaterPort/JudgePort 구현. 토론자 Haiku/GPT/Gemini, Judge Sonnet.
+# 실 LLM 토론 엔진 — DebaterPort/JudgePort 구현. 토론자 Haiku/GPT, Judge Sonnet.
 #
 # 일반인 발화는 실제 반응에, 전문가 발화는 분석 결과(topic)에 grounded — system에 주입.
-# 엔진 라우팅: participant.engine(haiku/sonnet→Anthropic, gpt→OpenAI, gemini→Google).
+# 엔진 라우팅: participant.engine(haiku/sonnet→Anthropic, gpt→OpenAI). Gemini는 복구용 잔존(미배정).
 # 동기 SDK 호출 — DebateService가 asyncio.to_thread로 감싸 이벤트 루프를 막지 않는다.
 from __future__ import annotations
 
@@ -33,7 +33,7 @@ HAIKU_MODEL = "claude-haiku-4-5"
 SONNET_MODEL = "claude-sonnet-4-6"  # Judge — Opus 4.8에서 다운(호출 적어 비용영향 작음).
 OPUS_MODEL = "claude-opus-4-8"  # (미사용·여분) 필요 시 Judge를 다시 올릴 핀.
 GPT_MODEL = "gpt-4o-mini"
-GEMINI_MODEL = "gemini-2.5-flash"  # 기존 어댑터(_common·chat)와 동일 핀
+GEMINI_MODEL = "gemini-2.5-flash"  # (미배정) 복구용 — 응답 실패 잦아 토론자 배정에서 제외
 
 JUDGE_ENGINE = "sonnet"  # LLMJudge 기본 호출 엔진(assigner.JUDGE_ENGINE과 일치).
 _ANTHROPIC_MODELS = {"haiku": HAIKU_MODEL, "sonnet": SONNET_MODEL, "opus": OPUS_MODEL}

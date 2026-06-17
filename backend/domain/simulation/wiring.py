@@ -173,7 +173,8 @@ def build_debate_service(
             persistence=persistence,
         )
 
-    _ensure_env("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY")
+    # 토론자 Haiku/GPT + Judge Sonnet (Gemini 제거 — 응답 실패 잦음)
+    _ensure_env("ANTHROPIC_API_KEY", "OPENAI_API_KEY")
     from domain.simulation.adapters.llm_debate import LLMDebater, LLMJudge
 
     return DebateService(

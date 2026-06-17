@@ -125,7 +125,7 @@ def main() -> int:
             f"lay_count=2 → 전문가4+일반인{len(lay2)}{roles2}·slot연속",
         )
 
-        # ⑨ 조각 10-b — 엔진·이름 배정(엔진 쿼터 haiku3/gpt3/gemini2·이름 중복없음·결정론)
+        # ⑨ 조각 10-b — 엔진·이름 배정(엔진 쿼터 haiku4/gpt4·gemini 제거·이름 중복없음·결정론)
         ap = assign_panel(panel)
         roster2 = ", ".join(f"{p.persona_name}/{p.engine}" for p in ap.participants)
         print(f"  assigned: {roster2}")
@@ -133,9 +133,9 @@ def main() -> int:
             e: sum(1 for p in ap.participants if p.engine == e) for e in ("haiku", "gpt", "gemini")
         }
         names = [p.persona_name for p in ap.participants]
-        # 8명 패널 기준 기대 쿼터 haiku3/gpt3/gemini2 (n<8이면 분포만 확인)
+        # 8명 패널 기준 기대 쿼터 haiku4/gpt4 (Gemini 제거, n<8이면 분포만 확인)
         quota_ok = (
-            eng_counts == {"haiku": 3, "gpt": 3, "gemini": 2} if len(ap.participants) == 8 else True
+            eng_counts == {"haiku": 4, "gpt": 4, "gemini": 0} if len(ap.participants) == 8 else True
         )
         judge_ok = ap.judge_engine == "sonnet"
         det9 = [p.model_dump() for p in assign_panel(panel).participants] == [

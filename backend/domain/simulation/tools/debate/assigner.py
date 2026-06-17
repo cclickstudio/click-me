@@ -14,9 +14,9 @@ from domain.simulation.contracts.debate_schemas import (
 )
 
 JUDGE_ENGINE = "sonnet"  # Sonnet 4.6 (종합·최종 액션, 호출 적음 / Opus 4.8에서 다운). 별도 고정.
-# slot별 엔진 라운드로빈((slot-1)%3) — 엔진 ⊥ 역할. 8명(전문가4+일반4)이면 haiku3/gpt3/gemini2.
-# slot-1 인덱싱이라 일반인이 빠져도 전문가 엔진은 고정. haiku={s1,s4,s7}/gpt={s2,s5,s8}.
-PANEL_ENGINE = ["haiku", "gpt", "gemini", "haiku", "gpt", "gemini"]
+# slot별 엔진 라운드로빈((slot-1)%2) — 엔진 ⊥ 역할. Gemini 제거(응답 실패 잦음) → Haiku·GPT 2엔진.
+# 8명이면 Haiku4/GPT4, 6명(일반인2)이면 Haiku3/GPT3. slot 고정이라 전문가/일반에 엔진이 골고루.
+PANEL_ENGINE = ["haiku", "gpt"]
 
 # 이름 풀(결정론 부여) — 더미엔 인구정보가 없어 persona_id 해시로 고른다.
 # 성별을 먼저 정하고 성별에 맞는 이름 풀에서 골라 '남성+여성이름' 같은 불일치를 막는다.
