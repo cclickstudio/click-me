@@ -236,6 +236,20 @@ class LLMDebater:
             lever="",
         )
 
+    def answer_question(
+        self,
+        participant: DebateParticipant,
+        question: str,
+        topic: DebateTopic,
+        history: list[Utterance],
+    ) -> Utterance:
+        """토론 종료 후 Q&A — 사용자 질문에 대한 답변 1건(phase='질의응답').
+
+        TODO(T2 Q&A): speak() 패턴을 재사용해 구현 — _persona_system으로 캐릭터 고정,
+        user 프롬프트에 question + history(이 참가자의 기존 발언)를 넣어 일관된 답변 생성.
+        """
+        raise NotImplementedError("Q&A 답변(answer_question)은 Q&A 트랙(T2)에서 구현")
+
 
 class LLMJudge:
     """실 LLM 주최자 — Sonnet 4.6으로 라운드 정리·잠정 액션·최종 결론(Opus에서 다운)."""

@@ -8,6 +8,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from domain.simulation.adapters.memory_store import InMemorySimulationStore
+from domain.simulation.contracts.debate_schemas import DebateTopic
 from domain.simulation.contracts.schemas import AdInterpretation, Persona, PersonaReaction
 from domain.simulation.wiring import build_debate_service
 
@@ -31,6 +32,14 @@ class DebateRequest(BaseModel):
     ad_analysis: AdInterpretation | None = None
     simulation_id: str | None = None  # 있으면 영속화 FK로 사용(없으면 인메모리만)
     personas: list[Persona] | None = None  # 인구통계(있으면 타깃 적합 선발 — 타깃 밖 후보 배제)
+    # 추가 토론: 사용자가 /topics 후보 중 고른 논제(없으면 분석 headline 고정 = 최초 토론).
+    topic: DebateTopic | None = None
+
+
+class QuestionRequest(BaseModel):
+    """토론 종료 후 Q&A 입력 — 사용자 질문 1건."""
+
+    question: str
 
 
 @router.post("/analyze")
@@ -39,6 +48,17 @@ async def analyze_reactions(body: DebateRequest) -> dict:
     if not body.reactions:
         raise HTTPException(status_code=422, detail="reactions가 비어 있습니다.")
     return _service.analyze(body.reactions, body.ad_analysis)
+
+
+@router.post("/topics")
+async def debate_topics(body: DebateRequest) -> dict:
+    """추가 토론용 논제 후보 5개(결정론·LLM✗). 사용자가 이 중 하나를 골라 /start의 topic으로 전달.
+
+    반환: {"topics": [DebateTopic, ...]} — ranking·confidence 순 정렬. (본문 로직은 코어 트랙 T1)
+    """
+    if not body.reactions:
+        raise HTTPException(status_code=422, detail="reactions가 비어 있습니다.")
+    return _service.build_candidates(body.reactions, body.ad_analysis)
 
 
 @router.post("/start")
@@ -57,6 +77,7 @@ async def start_debate(body: DebateRequest, lay_count: int = 4) -> dict:
         simulation_id=body.simulation_id,
         lay_count=lay_count,
         personas=body.personas,
+        topic=body.topic,  # 선택 논제(없으면 최초 토론 = 분석 headline 고정)
     )
     return {"run_id": run_id, "stream_url": f"/api/debate/{run_id}/stream", "lay_count": lay_count}
 
@@ -78,3 +99,18 @@ async def debate_result(run_id: str) -> dict:
     if result is None:
         raise HTTPException(status_code=404, detail="결과 없음 또는 토론 미완료")
     return result
+
+
+@router.post("/{run_id}/question")
+async def ask_question(run_id: str, body: QuestionRequest) -> StreamingResponse:
+    """토론 종료 후 Q&A — 패널 참가자가 순차로 답변(SSE). run_id의 패널·주제를 재사용.
+
+    이벤트: qa_utterance(참가자별 답변) → qa_completed. (본문 로직은 Q&A 트랙 T2)
+    """
+    if not body.question.strip():
+        raise HTTPException(status_code=422, detail="question이 비어 있습니다.")
+    return StreamingResponse(
+        _service.ask_question(run_id, body.question),
+        media_type="text/event-stream",
+        headers=_SSE_HEADERS,
+    )

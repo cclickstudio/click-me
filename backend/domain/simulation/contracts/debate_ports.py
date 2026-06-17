@@ -21,6 +21,19 @@ class DebaterPort(Protocol):
         self, participant: DebateParticipant, round_n: int, phase: str, topic: DebateTopic
     ) -> Utterance: ...
 
+    def answer_question(
+        self,
+        participant: DebateParticipant,
+        question: str,
+        topic: DebateTopic,
+        history: list[Utterance],
+    ) -> Utterance:
+        """토론 종료 후 Q&A — 한 참가자가 사용자 질문에 답변 1건을 생성(phase='질의응답').
+
+        history는 이 참가자가 토론에서 한 발언들(일관성 유지용). 본문 구현은 Q&A 트랙(T2).
+        """
+        ...
+
 
 class JudgePort(Protocol):
     """주최자(Judge) 엔진 — 토론 주제 정련·라운드 정리·잠정 액션·최종 결론."""

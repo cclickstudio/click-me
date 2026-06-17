@@ -12,6 +12,7 @@ import uuid
 from collections.abc import AsyncIterator, Callable
 
 from domain.simulation.contracts.debate_ports import DebaterPort, JudgePort
+from domain.simulation.contracts.debate_schemas import DebateTopic
 from domain.simulation.contracts.schemas import AdInterpretation, Persona, PersonaReaction
 from domain.simulation.tools.debate.analyzer import analyze_reactions
 from domain.simulation.tools.debate.assigner import assign_panel
@@ -87,6 +88,32 @@ class DebateService:
             "topic": topic.model_dump(),
         }
 
+    def build_candidates(
+        self,
+        reactions: list[PersonaReaction],
+        ad_analysis: AdInterpretation | None = None,
+    ) -> dict:
+        """추가 토론용 논제 후보 5개(결정론·LLM✗). 사용자가 골라 start(topic=)로 전달.
+
+        TODO(T1 논제5개): kpi.build_topic_candidates(analysis, agg, ad_analysis)로 교체.
+        현재는 계약 스텁 — 단일 주제 1개만 감싸 반환한다.
+        """
+        analysis = analyze_reactions(reactions, ad_analysis)
+        aggregate = compute_kpi(reactions)
+        topic = build_topic(analysis, aggregate, ad_analysis)
+        return {"topics": [topic.model_dump()]}
+
+    async def ask_question(self, run_id: str, question: str) -> AsyncIterator[str]:
+        """토론 종료 후 Q&A — 패널이 순차로 답변(SSE 스트림).
+
+        TODO(T2 Q&A): run_id의 패널(assigned)·주제(topic)를 store/result에서 복원하고,
+        debater.answer_question을 참가자별로 순차 호출하며 qa_utterance 이벤트를 yield.
+        """
+        if self._store.get_status(run_id) is None:
+            yield 'data: {"event": "error", "message": "Run not found"}\n\n'
+            return
+        yield 'data: {"event": "error", "message": "Q&A 미구현(T2 트랙에서 구현 예정)"}\n\n'
+
     async def start(
         self,
         reactions: list[PersonaReaction],
@@ -95,16 +122,18 @@ class DebateService:
         simulation_id: str | None = None,
         lay_count: int = 4,
         personas: list[Persona] | None = None,
+        topic: DebateTopic | None = None,
     ) -> str:
         """비동기 시작 — 백그라운드 실행 후 run_id 반환(진행률은 SSE, 결과는 get_result).
 
         lay_count: 일반인 수(2=피벗·비판자 / 4=+완주자·미온). 패널 = 전문가4 + 일반인lay_count.
         personas: 인구통계(있으면 타깃 적합 선발 — 타깃 밖 후보 배제).
+        topic: 추가 토론에서 사용자가 고른 논제(None이면 최초 토론 = 분석 headline 고정).
         """
         run_id = str(uuid.uuid4())
         self._store.create_run(run_id)
         asyncio.create_task(
-            self._run(run_id, reactions, ad_analysis, simulation_id, lay_count, personas)
+            self._run(run_id, reactions, ad_analysis, simulation_id, lay_count, personas, topic)
         )
         return run_id
 
@@ -131,6 +160,7 @@ class DebateService:
         simulation_id: str | None = None,
         lay_count: int = 4,
         personas: list[Persona] | None = None,
+        selected_topic: DebateTopic | None = None,
     ) -> None:
         store = self._store
         try:
@@ -164,11 +194,16 @@ class DebateService:
                     "rejection_rate": aggregate.rejection_rate,
                 },
             )
-            topic = build_topic(analysis, aggregate, ad_analysis)
-            # 엔진 주입(실 LLM) 시 토론 주제를 데이터 기반 논쟁적 주제로 생성(mock은 시드 유지).
-            if self._judge is not None and self._debater_factory is not None:
-                digest = _topic_digest(topic, analysis, aggregate, reactions)
-                topic = await asyncio.to_thread(self._judge.refine_topic, topic, digest)
+            # 추가 토론: 사용자가 고른 논제를 그대로 사용. 최초 토론: 분석 기반 주제 생성.
+            # NOTE(T1): 최초 토론 headline 고정(변경1) — refine_topic 정책은 코어 트랙에서 확정.
+            if selected_topic is not None:
+                topic = selected_topic
+            else:
+                topic = build_topic(analysis, aggregate, ad_analysis)
+                # 엔진 주입(실 LLM) 시 토론 주제를 데이터 기반 논쟁적 주제로 생성(mock은 시드 유지).
+                if self._judge is not None and self._debater_factory is not None:
+                    digest = _topic_digest(topic, analysis, aggregate, reactions)
+                    topic = await asyncio.to_thread(self._judge.refine_topic, topic, digest)
             store.emit(
                 run_id,
                 {

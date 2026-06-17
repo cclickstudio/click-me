@@ -152,6 +152,10 @@ class DebateTopic(BaseModel):
     )
     focus: dict[str, float | str | None] = Field(default_factory=dict)  # 근거 수치(병목·KPI)
     objective: str | None = None  # detected_objective(캠페인 목표)
+    # ── 논제 후보(추가 토론 선택지)용 — 최초 토론(단일 주제)은 기본값 그대로 ──
+    topic_id: str = ""  # 후보 식별자(추가 토론에서 사용자가 고른 논제 매칭용)
+    ranking: int = 0  # 1~5 우선순위(0=미지정, 후보 정렬용)
+    confidence: float = 0.0  # 신호 강도(0~1, 후보 정렬·표시용)
 
 
 # ───────────────────────── 조각 10-c 토론 산출 ─────────────────────────

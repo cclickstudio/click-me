@@ -64,6 +64,25 @@ class MockDebater:
             lever=lever,
         )
 
+    def answer_question(
+        self,
+        participant: DebateParticipant,
+        question: str,
+        topic: DebateTopic,
+        history: list[Utterance],
+    ) -> Utterance:
+        """Q&A 답변(결정론·무비용) — 반응(utterance) 재사용. 실 구현은 Q&A 트랙(T2)."""
+        r = self._by_id.get(participant.persona_id)
+        base = (r.utterance if r and r.utterance else f"{participant.role}로서의 반응") or ""
+        return Utterance(
+            round=0,
+            phase="질의응답",
+            stance=_stance_of(participant.stance_score),
+            text=f"[질의응답] {base}",
+            reason=_REASON_BY_ROLE.get(participant.role, "역할 기반 반응"),
+            lever="",
+        )
+
 
 class MockJudge:
     """결정론 Judge — 주제는 시드 그대로(재현)·라운드 정리(입장 집계)·주신호 기반 액션·최종 결론."""
