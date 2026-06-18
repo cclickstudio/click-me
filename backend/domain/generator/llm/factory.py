@@ -26,9 +26,30 @@ def build_text_llm(temperature: float) -> BaseChatModel:
             "model": model,
             "api_key": settings.openai_api_key,
             "temperature": temperature,
+            "timeout": 120,
         }
         if settings.generator_text_base_url:
             kwargs["base_url"] = settings.generator_text_base_url
         return ChatOpenAI(**kwargs)
+
+    return init_chat_model(model, model_provider=provider, temperature=temperature)
+
+
+def build_vision_llm(temperature: float) -> BaseChatModel:
+    """이미지 입력(vision)용 ChatModel — 텍스트와 별도 프로바이더/모델 설정.
+
+    `GENERATOR_VISION_PROVIDER` / `GENERATOR_VISION_MODEL`로 분기. 비전 지원 모델이어야 한다.
+    """
+    provider = settings.generator_vision_provider
+    model = settings.generator_vision_model
+
+    if provider == "openai":
+        from langchain_openai import ChatOpenAI
+
+        return ChatOpenAI(
+            model=model,
+            api_key=settings.openai_api_key,
+            temperature=temperature,
+        )
 
     return init_chat_model(model, model_provider=provider, temperature=temperature)

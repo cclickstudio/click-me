@@ -87,7 +87,7 @@ function CandidateCard({ candidate, isSelected }: { candidate: Candidate; isSele
         <div className="relative w-full aspect-square bg-[#F9FAFB] dark:bg-[#161B27]">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={candidate.image_url}
+            src={candidate.image_url.startsWith('/') ? `${API_BASE}${candidate.image_url}` : candidate.image_url}
             alt={`광고 후보 ${candidate.idx + 1}`}
             className="w-full h-full object-contain"
           />
