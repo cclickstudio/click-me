@@ -9,8 +9,7 @@
     {
       "id": "120250000000000002",
       "name": "신상 런칭",
-      "effective_status": "PAUSED",
-      "daily_budget": "30000"
+      "effective_status": "PAUSED"
     }
   ],
   "paging": { "cursors": { "before": "MA", "after": "MA" } }

@@ -57,6 +57,9 @@ _HOURLY_FIELDS = "impressions,clicks,inline_link_clicks,spend,reach,frequency,ct
 # 캠페인 목록 조회 필드 — 대시보드 목록(이름·상태·일예산). daily_budget은 KRW(offset=1) 전제.
 _CAMPAIGN_FIELDS = "id,name,effective_status,daily_budget"
 
+# 광고세트 예산 조회 필드 — 캠페인 노드에 예산이 없을 때(광고세트 예산) 일예산 보완.
+_ADSET_FIELDS = "daily_budget,campaign_id"
+
 
 def _to_int(value: Any) -> int:
     return int(round(float(value))) if value not in (None, "") else 0
@@ -144,24 +147,38 @@ class MetaAdsReader:
         status = str(payload.get("effective_status", "")).upper()
         return _STATE_MAP.get(status, CampaignState.DRAFT)
 
+    async def _adset_daily_budgets(self, account: str) -> dict[str, int]:
+        """캠페인별 광고세트 일예산 합 — 캠페인 노드에 예산이 없을 때(광고세트 예산) 보완."""
+        payload = await self._client.get(f"{account}/adsets", {"fields": _ADSET_FIELDS})
+        sums: dict[str, int] = {}
+        for row in payload.get("data", []):
+            cid = str(row.get("campaign_id", ""))
+            if cid:
+                sums[cid] = sums.get(cid, 0) + _to_int(row.get("daily_budget"))  # KRW offset=1
+        return sums
+
     async def list_campaigns(self) -> list[CampaignInfo]:
         """광고계정의 캠페인 목록 — 대시보드용(이름·상태·일예산).
 
         Meta ``GET /act_{id}/campaigns``. daily_budget은 캠페인 예산 최적화(CBO) 시에만
-        캠페인 노드에 존재 — 광고세트 예산이면 0으로 들어온다(상세는 별도 조회 대상).
+        캠페인 노드에 존재 — 광고세트 예산이면 광고세트 일예산 합으로 보완한다.
         """
         account = normalize_ad_account(self._client.ad_account_id)
         payload = await self._client.get(f"{account}/campaigns", {"fields": _CAMPAIGN_FIELDS})
         rows = payload.get("data", [])
+        adset_budgets = await self._adset_daily_budgets(account)  # 캠페인 예산 없으면 보완
         out: list[CampaignInfo] = []
         for row in rows:
+            cid = str(row.get("id", ""))
             status = str(row.get("effective_status", "")).upper()
+            # 캠페인(CBO) 예산 우선, 없으면(0) 광고세트 일예산 합
+            budget = _to_int(row.get("daily_budget")) or adset_budgets.get(cid, 0)
             out.append(
                 CampaignInfo(
-                    campaign_id=str(row.get("id", "")),
+                    campaign_id=cid,
                     name=str(row.get("name", "")),
                     state=_STATE_MAP.get(status, CampaignState.DRAFT),
-                    daily_budget_krw=_to_int(row.get("daily_budget")),  # KRW offset=1 전제
+                    daily_budget_krw=budget,
                 )
             )
         return out

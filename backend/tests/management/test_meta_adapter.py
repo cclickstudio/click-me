@@ -32,6 +32,8 @@ def _reader_handler(request: httpx.Request) -> httpx.Response:
     # /campaigns 분기는 status 체크보다 먼저 — 목록 요청 필드에도 effective_status 포함
     if path.endswith("/campaigns"):
         return httpx.Response(200, json=_load("campaigns_v21.json"))
+    if path.endswith("/adsets"):
+        return httpx.Response(200, json=_load("adsets_v21.json"))
     if "/insights" in path:
         return httpx.Response(200, json=_load("insights_v21.json"))
     if "/delivery_estimate" in path:
@@ -101,8 +103,10 @@ def test_list_campaigns_maps_campaign_json():
     assert first.campaign_id == "120250000000000001"
     assert first.name == "여름 세일"
     assert first.state is CampaignState.ACTIVE
-    assert first.daily_budget_krw == 50000  # KRW offset=1 — 원 단위 그대로
+    assert first.daily_budget_krw == 50000  # 캠페인(CBO) 예산 — KRW offset=1
     assert campaigns[1].state is CampaignState.PAUSED
+    # 캠페인 노드에 예산 없음 → 광고세트 일예산 합(15000+15000)으로 보완
+    assert campaigns[1].daily_budget_krw == 30000
 
 
 # ── client 에러·마스킹 ───────────────────────────────────────────
