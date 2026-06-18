@@ -1,42 +1,26 @@
-# 조각 11 리포트 → PDF 직접 렌더(reportlab). html2pdf 변환 금지 — 백엔드에서 바이트 직접 생성.
+# 조각 11 리포트 → PDF. Tailwind 대시보드 HTML을 Playwright(headless Chromium)로 렌더(서버 사이드).
 #
-# 입력은 토론 result dict(report·analysis·aggregate·topic·ad_analysis). 한글 폰트는 generator와
-# 동일 폴백 체인(assets/fonts → Windows malgun → Linux noto)으로 1회 등록. 차트는 1차로 텍스트 막대.
+# 프론트 html2pdf.js(클라이언트 캡처) 아님 — 서버 Chromium이 HTML을 PDF로 인쇄한다.
+# 디자인: Tailwind Play CDN · grid 레이아웃 · 섹션별 카드 분리 · 상단 KPI 카드 strip · 강한 색 대비.
+# 비전문가도 읽도록 모든 수치에 쉬운 해설을 붙인다. _build_html은 순수 함수(테스트·디버그용).
 from __future__ import annotations
 
-import io
 import logging
-from pathlib import Path
-from xml.sax.saxutils import escape
-
-from reportlab.lib import colors
-from reportlab.lib.pagesizes import A4
-from reportlab.lib.styles import ParagraphStyle
-from reportlab.lib.units import mm
-from reportlab.pdfbase import pdfmetrics
-from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.platypus import (
-    HRFlowable,
-    Paragraph,
-    SimpleDocTemplate,
-    Spacer,
-    Table,
-    TableStyle,
-)
+from html import escape
 
 logger = logging.getLogger("clickme")
 
-# pdf_report.py = backend/domain/simulation/tools/debate/ → parents[4] = backend
-_FONTS_DIR = Path(__file__).parents[4] / "assets" / "fonts"
-_FONT = "ClickKR"
-_FONT_BOLD = "ClickKR-Bold"
-_FONTS_READY: tuple[str, str] | None = None
+# ── 팔레트(강한 대비) ──
+_BLUE, _INDIGO, _TEAL, _GREEN, _AMBER, _RED, _SLATE = (
+    "#2563EB",
+    "#4F46E5",
+    "#0D9488",
+    "#10B981",
+    "#F59E0B",
+    "#EF4444",
+    "#64748B",
+)
 
-_ACCENT = colors.HexColor("#1a4d8f")
-_GREY = colors.HexColor("#666666")
-_LIGHT = colors.HexColor("#eef2f7")
-
-# enum → 한글 라벨(보고서 렌더링용 — enums.py 주석의 표시 라벨과 동일 의도).
 _AISAS_KO = {
     "attention": "주목",
     "interest": "흥미",
@@ -63,336 +47,736 @@ _REJECTION_KO = {
     "ad_fatigue": "광고 거부감",
     "other": "기타",
 }
-_DROP_REASON_KO = {
-    "no_reason_to_explore": "더 알아볼 이유 없음",
-    "price_concern": "가격 부담",
-    "low_relevance": "관련성 낮음",
-    "unclear_message": "메시지 불명확",
-    "distrust": "불신",
-    "other": "기타",
+_RUBRIC_KO = {
+    "hook": "훅(첫 3초)",
+    "message_clarity": "메시지 명료성",
+    "message_alignment": "메시지 정합",
+    "usp": "USP 전달",
+    "visual_copy_fit": "비주얼-카피 정합",
+    "cta_clarity": "행동 유도(CTA)",
+    "target_fit": "타깃 적합성",
+    "brand_memory": "브랜드 기억도",
+    "category_alignment": "카테고리 정합",
+    "objective_alignment": "목표 정합",
 }
+_STANCE = {
+    "positive": (_GREEN, "긍정"),
+    "neutral": (_SLATE, "중립"),
+    "negative": (_RED, "부정"),
+}
+_GENDER_KO = {"M": "남성", "F": "여성"}
+
+_CARD = "bg-white rounded-2xl border border-slate-200 shadow-sm break-inside-avoid"
 
 
-def _candidates(bold: bool) -> list[Path]:
-    name = "NotoSansKR-Bold.ttf" if bold else "NotoSansKR-Regular.ttf"
-    return [
-        _FONTS_DIR / name,
-        Path("C:/Windows/Fonts/malgunbd.ttf" if bold else "C:/Windows/Fonts/malgun.ttf"),
-        Path(
-            "/usr/share/fonts/truetype/noto/NotoSansCJKkr-Bold.otf"
-            if bold
-            else "/usr/share/fonts/truetype/noto/NotoSansCJKkr-Regular.otf"
-        ),
+def _pct(x) -> str:
+    try:
+        return f"{(x or 0) * 100:.0f}%"
+    except (TypeError, ValueError):
+        return "0%"
+
+
+def _n(x) -> int:
+    try:
+        return round((x or 0) * 100)
+    except (TypeError, ValueError):
+        return 0
+
+
+def _ival(d: dict, key: int, default: int = 0) -> int:
+    return int(d.get(key, d.get(str(key), default)))
+
+
+def _signal(score: float) -> str:
+    return _GREEN if score >= 70 else _AMBER if score >= 50 else _RED
+
+
+def _grade(s: float) -> tuple[str, str]:
+    if s >= 80:
+        return "A", "매우 좋음"
+    if s >= 70:
+        return "B", "좋음"
+    if s >= 60:
+        return "C", "보통"
+    if s >= 50:
+        return "D", "아쉬움"
+    return "E", "재검토"
+
+
+def _overall(kpi: dict, rubric: list) -> int:
+    parts = [
+        kpi.get("click_intent_rate", 0) or 0,
+        (kpi.get("purchase_intent", 0) or 0) / 5,
+        (kpi.get("trust_avg", 0) or 0) / 5,
+        1 - (kpi.get("rejection_rate", 0) or 0),
+        kpi.get("brand_recognition_rate", 0) or 0,
     ]
+    if rubric:
+        parts.append(sum((s.get("score", 0) or 0) for s in rubric) / (len(rubric) * 100))
+    return round(sum(parts) / len(parts) * 100)
 
 
-def _register_one(name: str, *, bold: bool) -> bool:
-    for path in _candidates(bold):
-        if path.exists():
-            try:
-                pdfmetrics.registerFont(TTFont(name, str(path)))
-                return True
-            except Exception:
-                logger.exception("폰트 등록 실패 path=%s", path)
-    return False
-
-
-def _fonts() -> tuple[str, str]:
-    """한글 TTF를 1회 등록하고 (regular, bold) 폰트명 반환. 못 찾으면 Helvetica 폴백(한글 깨짐)."""
-    global _FONTS_READY
-    if _FONTS_READY is not None:
-        return _FONTS_READY
-    has_regular = _register_one(_FONT, bold=False)
-    has_bold = _register_one(_FONT_BOLD, bold=True)
-    if has_regular:
-        _FONTS_READY = (_FONT, _FONT_BOLD if has_bold else _FONT)
-    else:
-        logger.warning(
-            "한글 폰트 미발견 — PDF 한글이 깨질 수 있음(assets/fonts에 NotoSansKR 추가)."
+def _verdict(cir: float, rej: float) -> tuple[str, str, str]:
+    if rej >= 0.4 or cir < 0.05:
+        return (
+            "재제작 권장",
+            _RED,
+            "거부 반응이 크거나 클릭으로 잘 이어지지 않아, 지금 그대로 내보내기엔 무리가 있어요.",
         )
-        _FONTS_READY = ("Helvetica", "Helvetica-Bold")
-    return _FONTS_READY
+    if cir >= 0.2 and rej < 0.2:
+        return ("집행 권장", _GREEN, "전반적으로 반응이 좋아 지금 내보내도 큰 무리가 없어요.")
+    return (
+        "조건부 집행 권장",
+        _AMBER,
+        "가능성은 보이지만, '아쉬운 점'을 손보고 내보내는 걸 권해요.",
+    )
 
 
-def _bar(ratio: float, width: int = 18) -> str:
-    """0~1 비율을 텍스트 막대로(1차 차트). reportlab 그래픽 차트는 점진 도입."""
-    filled = max(0, min(width, round(ratio * width)))
-    return "█" * filled + "░" * (width - filled)
+def _sw(rubric: list) -> tuple[list, list]:
+    if not rubric:
+        return [], []
+    srt = sorted(rubric, key=lambda s: s.get("score", 0) or 0)
+    weak = [
+        (_RUBRIC_KO.get(s.get("dimension"), s.get("dimension", "")), s.get("score", 0) or 0)
+        for s in srt[:2]
+        if (s.get("score", 0) or 0) < 70
+    ]
+    strong = [
+        (_RUBRIC_KO.get(s.get("dimension"), s.get("dimension", "")), s.get("score", 0) or 0)
+        for s in srt[::-1][:2]
+        if (s.get("score", 0) or 0) >= 60
+    ]
+    return strong, weak
 
 
-def _pct(x: float | None) -> str:
-    return f"{(x or 0) * 100:.0f}%"
+def _bar(label: str, ratio: float, disp: str, color: str = _BLUE) -> str:
+    w = max(0.0, min(1.0, ratio)) * 100
+    return (
+        '<div class="flex items-center gap-3 my-[5px]">'
+        f'<span class="w-20 text-[11px] text-slate-700 shrink-0">{escape(label)}</span>'
+        '<div class="flex-1 h-2.5 bg-slate-100 rounded-full overflow-hidden">'
+        f'<div class="h-full rounded-full" style="width:{w:.1f}%;background:{color}"></div></div>'
+        f'<span class="w-[78px] text-right text-[10px] text-slate-500 shrink-0">{escape(disp)}</span>'
+        "</div>"
+    )
 
 
-def render_report_pdf(result: dict) -> bytes:
-    """토론 result dict(report·analysis·aggregate·topic·ad_analysis)를 §0~§5 PDF 바이트로 렌더."""
-    font, font_bold = _fonts()
+def _kpi_card(value: str, label: str, exp: str, color: str) -> str:
+    return (
+        '<div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 border-t-4" '
+        f'style="border-top-color:{color}">'
+        f'<div class="text-[11px] font-bold text-slate-500">{escape(label)}</div>'
+        f'<div class="text-[28px] font-extrabold leading-tight mt-1" style="color:{color}">'
+        f"{escape(value)}</div>"
+        f'<div class="text-[9.5px] text-slate-400 mt-1 leading-snug">{escape(exp)}</div></div>'
+    )
+
+
+def _section(num: str, title: str, color: str, body: str, *, tip: str = "") -> str:
+    tip_html = (
+        (
+            f'<p class="text-[11px] leading-relaxed text-slate-500 bg-slate-50 '
+            f'rounded-lg px-3 py-2 mb-3">{tip}</p>'
+        )
+        if tip
+        else ""
+    )
+    num_html = (
+        (
+            f'<span class="w-7 h-7 rounded-lg text-white text-[12px] font-bold '
+            f'grid place-items-center" style="background:{color}">{num}</span>'
+        )
+        if num
+        else (
+            f'<span class="w-1.5 h-5 rounded-full inline-block" style="background:{color}"></span>'
+        )
+    )
+    return (
+        f'<section class="{_CARD} p-5">'
+        f'<div class="flex items-center gap-2.5 mb-1">{num_html}'
+        f'<h2 class="text-[15px] font-bold text-slate-800">{escape(title)}</h2></div>'
+        f"{tip_html}{body}</section>"
+    )
+
+
+# ── ReportView 신규 섹션 빌더(화면 SimulationReportView와 같은 데이터·구성) ──
+
+
+def _objective_fit_block(of: dict) -> str:
+    """캠페인 목표 달성 가능성 — 결정권자 1순위 판정(기존 PDF서 통째로 누락이던 것)."""
+    grade = str(of.get("grade") or "")
+    color = _GREEN if grade == "높음" else _AMBER if grade == "보통" else _RED
+    score = of.get("score") or 0
+    bars = "".join(
+        _bar(
+            str(c.get("label", "")),
+            c.get("value") or 0,
+            f"{_n(c.get('value'))}% ·가중 {_n(c.get('weight'))}%",
+            _INDIGO,
+        )
+        for c in (of.get("contributions") or [])
+    )
+    body = (
+        '<div class="flex justify-between items-end mb-2">'
+        f'<span class="text-[12px] text-slate-600">목표 — {escape(str(of.get("objective") or "-"))}</span>'
+        f'<span class="text-[24px] font-extrabold" style="color:{color}">{escape(grade)}'
+        f'<span class="text-[11px] text-slate-400 font-normal ml-1">지수 {score}/100</span></span></div>'
+        '<div class="h-2 rounded-full bg-slate-100 overflow-hidden mb-3">'
+        f'<div class="h-full rounded-full" style="width:{score}%;background:{color}"></div></div>'
+        f'<p class="text-[11.5px] text-slate-600 leading-relaxed mb-2">'
+        f"{escape(str(of.get('rationale') or ''))}</p>{bars}"
+    )
+    if of.get("low_confidence"):
+        body += '<p class="text-[10px] text-amber-600 mt-1">⚠ 표본이 적어 신뢰가 낮습니다.</p>'
+    return _section(
+        "1",
+        "캠페인 목표 달성 가능성",
+        color,
+        body,
+        tip="결정권자가 가장 먼저 보는 판정 — 시뮬 신호 기반 상대 지수예요(실측 아님, exploratory).",
+    )
+
+
+def _confidence_block(c: dict) -> str:
+    """전 섹션 공통 신뢰 배지 — 과신 방지(실측 환산 금지 문구 포함)."""
+    label, col = {"high": ("신뢰 높음", _GREEN), "medium": ("신뢰 보통", _AMBER)}.get(
+        str(c.get("level")), ("신뢰 낮음", _RED)
+    )
+    warns = "".join(
+        f'<li class="text-[10px] text-slate-500 leading-relaxed">· {escape(str(w))}</li>'
+        for w in (c.get("warnings") or [])
+    )
+    body = (
+        '<div class="flex flex-wrap items-center gap-3 text-[11px]">'
+        f'<span class="font-bold" style="color:{col}">● {label}</span>'
+        f'<span class="text-slate-500">유효표본 {c.get("effective_n", 0)} / 총 '
+        f"{c.get('total_n', 0)}명</span>"
+        f'<span class="text-slate-500">신뢰구간 폭 {_pct(c.get("ci_width"))}</span></div>'
+        f'<ul class="mt-1.5 space-y-0.5">{warns}</ul>'
+    )
+    return _section("", "신뢰도 안내", _SLATE, body)
+
+
+def _segment_block(segs: list) -> str:
+    """연령대×성별 세그먼트 히트맵 — '누구에게 통하나'(우리 최대 차별점)."""
+    rows = []
+    for s in segs:
+        cir = s.get("click_intent_rate") or 0
+        col = _GREEN if cir >= 0.3 else _AMBER if cir >= 0.15 else _RED
+        thin = (
+            ' <span class="text-[9px] text-slate-400">ⓘ얇음</span>'
+            if s.get("low_confidence")
+            else ""
+        )
+        rows.append(
+            '<tr class="border-t border-slate-100">'
+            f'<td class="py-1.5 pr-2 text-slate-700">{escape(str(s.get("age_band", "")))} '
+            f"{escape(_GENDER_KO.get(s.get('gender'), str(s.get('gender', ''))))}{thin}</td>"
+            f'<td class="text-right px-2 text-slate-400">{s.get("n", 0)}</td>'
+            f'<td class="text-right px-2 font-bold" style="color:{col}">{_pct(cir)}</td>'
+            f'<td class="text-right px-2 text-slate-500">{(s.get("purchase_intent") or 0):.1f}</td>'
+            f'<td class="text-right px-2 text-slate-500">{(s.get("trust_avg") or 0):.1f}</td>'
+            f'<td class="text-right pl-2 text-slate-500">{_pct(s.get("rejection_rate"))}</td></tr>'
+        )
+    table = (
+        '<table class="w-full text-[10.5px] border-collapse"><thead>'
+        '<tr class="text-slate-400"><th class="text-left font-medium py-1 pr-2">세그먼트</th>'
+        '<th class="text-right font-medium px-2">인원</th>'
+        '<th class="text-right font-medium px-2">클릭 의향</th>'
+        '<th class="text-right font-medium px-2">구매(5)</th>'
+        '<th class="text-right font-medium px-2">신뢰(5)</th>'
+        '<th class="text-right font-medium pl-2">거부율</th></tr></thead><tbody>'
+        + "".join(rows)
+        + "</tbody></table>"
+    )
+    return _section(
+        "",
+        "누구에게 통하나 — 연령대×성별",
+        _INDIGO,
+        table,
+        tip=(
+            "같은 광고도 누가 보느냐에 따라 반응이 달라요. "
+            "클릭 의향이 높은 셀이 실질 타깃입니다(얇은 셀은 신뢰 낮음 표시)."
+        ),
+    )
+
+
+def _message_block(m: dict) -> str:
+    """메시지 수신 — 의도 메시지가 어떻게 받아들여졌나(화면·PDF 양쪽 소실 1순위였던 것)."""
+    rr = m.get("resistance_rate") or 0
+    body = ""
+    if m.get("intended"):
+        body += (
+            f'<p class="text-[11.5px] text-slate-700 mb-2">의도 메시지 — '
+            f"“{escape(str(m['intended']))}”</p>"
+        )
+    body += _bar("저항 반응", rr, _pct(rr), _RED if rr >= 0.3 else _SLATE)
+    terms = m.get("resistance_terms") or {}
+    if terms:
+        body += (
+            '<p class="text-[10px] text-slate-500 mt-1.5">저항 표현 — '
+            + escape(", ".join(f"{k}({v})" for k, v in terms.items()))
+            + "</p>"
+        )
+    for q in (m.get("resisted_quotes") or [])[:3]:
+        body += (
+            f'<div class="text-[10.5px] text-slate-600 bg-slate-50 rounded-lg '
+            f'px-3 py-1.5 mt-1.5">“{escape(str(q))}”</div>'
+        )
+    return _section(
+        "",
+        "메시지가 의도대로 받아들여졌나",
+        _AMBER,
+        body,
+        tip=(
+            "광고가 던진 메시지가 소비자에게 어떻게 닿았는지 — "
+            "과장·식상·무관심 같은 저항 표현 비율로 가늠합니다."
+        ),
+    )
+
+
+def _build_html(result: dict) -> str:
+    """ReportView dict → Tailwind 대시보드 HTML(Chromium 인쇄 입력). 순수 함수.
+
+    result는 report_view(단일 소스)를 받는다 — report/analysis/aggregate/topic/debate에
+    더해 objective_fit·segments·message_reception·confidence를 함께 그린다.
+    (구버전 result도 호환: 신규 키 없으면 해당 섹션만 생략.)
+    """
     report = result.get("report") or {}
     analysis = result.get("analysis") or {}
     aggregate = result.get("aggregate") or {}
     topic = result.get("topic") or {}
     ad = result.get("ad_analysis") or {}
+    debate = result.get("debate") or {}
     kpi = report.get("kpi") or {}
-
-    body = ParagraphStyle("body", fontName=font, fontSize=10, leading=15)
-    small = ParagraphStyle("small", fontName=font, fontSize=8.5, leading=12, textColor=_GREY)
-    title = ParagraphStyle("title", fontName=font_bold, fontSize=18, leading=23, spaceAfter=2)
-    h2 = ParagraphStyle(
-        "h2",
-        fontName=font_bold,
-        fontSize=13,
-        leading=17,
-        spaceBefore=14,
-        spaceAfter=5,
-        textColor=_ACCENT,
-    )
-    headline = ParagraphStyle("headline", fontName=font_bold, fontSize=12, leading=17, spaceAfter=4)
-
-    story: list = []
-
-    def hr() -> None:
-        story.append(Spacer(1, 3))
-        story.append(HRFlowable(width="100%", thickness=0.6, color=_LIGHT))
-
-    def section(label: str) -> None:
-        story.append(Paragraph(escape(label), h2))
-
-    def kv_table(rows: list[tuple[str, str]]) -> Table:
-        data = [
-            [Paragraph(f"<b>{escape(k)}</b>", small), Paragraph(escape(v), body)] for k, v in rows
-        ]
-        t = Table(data, colWidths=[42 * mm, 120 * mm])
-        t.setStyle(
-            TableStyle(
-                [
-                    ("FONTNAME", (0, 0), (-1, -1), font),
-                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                    ("TOPPADDING", (0, 0), (-1, -1), 2),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
-                    ("LINEBELOW", (0, 0), (-1, -1), 0.3, _LIGHT),
-                ]
-            )
-        )
-        return t
-
-    def dist_table(rows: list[tuple[str, int, float]]) -> Table | Paragraph:
-        """라벨·막대·수치 3열 분포 표(퍼널·구매의도·감정 공용). 빈 입력이면 안내 문구."""
-        if not rows:
-            return Paragraph("데이터 없음", small)
-        data = [
-            [
-                Paragraph(escape(label), body),
-                Paragraph(_bar(ratio), body),
-                Paragraph(f"{cnt}명 ({_pct(ratio)})", small),
-            ]
-            for label, cnt, ratio in rows
-        ]
-        t = Table(data, colWidths=[40 * mm, 80 * mm, 42 * mm])
-        t.setStyle(
-            TableStyle(
-                [
-                    ("FONTNAME", (0, 0), (-1, -1), font),
-                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-                    ("TOPPADDING", (0, 0), (-1, -1), 1),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
-                ]
-            )
-        )
-        return t
-
+    rubric = report.get("rubric_scores") or []
     total_n = analysis.get("total_n") or 0
 
-    # ── §0 헤더 ──
-    story.append(Paragraph("광고 시뮬레이션 보고서", title))
-    story.append(Paragraph("ClickMe — AI 가상 소비자 반응 예측", small))
-    hr()
-    header_rows: list[tuple[str, str]] = []
+    cir = kpi.get("click_intent_rate") or 0
+    pi = kpi.get("purchase_intent", 0) or 0
+    tr = kpi.get("trust_avg", 0) or 0
+    rej = kpi.get("rejection_rate") or 0
+    brr = kpi.get("brand_recognition_rate") or 0
+    overall = _overall(kpi, rubric)
+    grade, gtext = _grade(overall)
+    ocolor = _signal(overall)
+    vlabel, vcolor, vdesc = _verdict(cir, rej)
+    head = report.get("plain_summary") or report.get("headline") or vdesc
+    blocks: list[str] = []
+
+    # ── 헤더 밴드 ──
+    metabits = []
     if ad.get("detected_industry"):
-        header_rows.append(("업종(감지)", str(ad["detected_industry"])))
+        metabits.append(f"업종 {ad['detected_industry']}")
     if topic.get("objective") or ad.get("detected_objective"):
-        header_rows.append(
-            ("광고 목적", str(topic.get("objective") or ad.get("detected_objective")))
-        )
+        metabits.append(f"목적 {topic.get('objective') or ad.get('detected_objective')}")
     if ad.get("detected_message"):
-        header_rows.append(("핵심 메시지(감지)", str(ad["detected_message"])))
-    header_rows.append(("페르소나 규모", f"{total_n}명 (QA 통과 응답)"))
-    header_rows.append(("엔진", str(aggregate.get("engine_version") or "-")))
-    story.append(kv_table(header_rows))
-
-    # ── §1 결론 카드 ──
-    section("§1. 결론")
-    if report.get("headline"):
-        story.append(Paragraph(escape(report["headline"]), headline))
-    if report.get("plain_summary"):
-        story.append(Paragraph(escape(report["plain_summary"]), body))
-    story.append(Spacer(1, 4))
-    ci = f"{_pct(kpi.get('ci_low'))} ~ {_pct(kpi.get('ci_high'))}"
-    story.append(
-        kv_table(
-            [
-                ("클릭 의향률 (95% CI)", ci),
-                ("구매의도", f"{kpi.get('purchase_intent', 0):.2f} / 5"),
-                ("신뢰도", f"{kpi.get('trust_avg', 0):.2f} / 5"),
-                ("거부율", _pct(kpi.get("rejection_rate"))),
-                ("브랜드 식별률", _pct(kpi.get("brand_recognition_rate"))),
-            ]
+        metabits.append(f"메시지 {ad['detected_message']}")
+    blocks.append(
+        '<div class="rounded-2xl p-6 text-white flex justify-between items-end shadow-md" '
+        'style="background:linear-gradient(120deg,#0f1f3d,#1e3a8a 55%,#2563eb)">'
+        '<div><div class="text-[25px] font-extrabold tracking-tight">광고 시뮬레이션 보고서</div>'
+        f'<div class="text-[12px] text-blue-200 mt-1.5">집행 전, AI 가상 소비자 {total_n}명에게 '
+        "미리 보여준 반응이에요</div>"
+        + (
+            f'<div class="text-[10px] text-blue-300 mt-2">{escape("  ·  ".join(metabits))}</div>'
+            if metabits
+            else ""
         )
+        + "</div>"
+        f'<div class="text-right text-[10px] text-blue-200 leading-relaxed shrink-0 ml-4">'
+        f"엔진 {escape(str(aggregate.get('engine_version') or '-'))}<br>가상 소비자 {total_n}명</div>"
+        "</div>"
     )
-    if kpi.get("variance_warning"):
-        story.append(Paragraph("⚠️ 응답 분산 낮음 — 재시뮬레이션 권장.", small))
 
-    # ── §2-1 AISAS 퍼널 ──
-    section("§2-1. AISAS 퍼널")
-    funnel = analysis.get("funnel") or []
-    story.append(
-        dist_table(
-            [
-                (_AISAS_KO.get(f["stage"], f["stage"]), f["passed"], f.get("pass_rate") or 0)
-                for f in funnel
-            ]
+    # ── 상단 KPI 카드 strip (5개) ──
+    blocks.append(
+        '<div class="grid grid-cols-5 gap-3">'
+        + _kpi_card(_pct(cir), "클릭 의향", f"100명 중 {_n(cir)}명이 눌러보고 싶어 했어요", _BLUE)
+        + _kpi_card(f"{pi:.1f}", "구매의도 (5점)", "사고 싶은 마음의 정도", _INDIGO)
+        + _kpi_card(f"{tr:.1f}", "신뢰도 (5점)", "광고를 얼마나 믿는지", _TEAL)
+        + _kpi_card(
+            _pct(rej),
+            "거부율",
+            f"{_n(rej)}명이 '싫다·스킵'. 낮을수록 좋아요",
+            _RED if rej >= 0.3 else _SLATE,
         )
+        + _kpi_card(_pct(brr), "브랜드 식별", f"{_n(brr)}명이 어느 브랜드인지 알아봤어요", _GREEN)
+        + "</div>"
+    )
+
+    # ── 종합 판정(2칸) + 강약점(1칸) ──
+    deg = overall / 100 * 360
+    strong, weak = _sw(rubric)
+    gi = (
+        "".join(
+            f'<li>{escape(nm)} <b class="text-emerald-600">{sc}점</b></li>' for nm, sc in strong
+        )
+        or "<li>—</li>"
+    )
+    bi = (
+        "".join(f'<li>{escape(nm)} <b class="text-red-500">{sc}점</b></li>' for nm, sc in weak)
+        or "<li>—</li>"
+    )
+    verdict_card = (
+        f'<div class="{_CARD} p-5 col-span-2 flex items-center gap-5">'
+        '<div class="shrink-0 text-center">'
+        '<div class="w-[92px] h-[92px] rounded-full grid place-items-center" '
+        f'style="background:conic-gradient({ocolor} {deg:.1f}deg,#e2e8f0 0)">'
+        '<div class="w-[64px] h-[64px] rounded-full bg-white grid place-items-center '
+        f'text-[26px] font-extrabold text-slate-800">{overall}</div></div>'
+        f'<div class="text-[12px] font-extrabold mt-1.5" style="color:{ocolor}">'
+        f"{grade}등급 · {gtext}</div>"
+        '<div class="text-[9px] text-slate-400">종합 점수 / 100</div></div>'
+        '<div><span class="inline-block px-4 py-1.5 rounded-full text-white font-extrabold '
+        f'text-[13px]" style="background:{vcolor}">{vlabel}</span>'
+        f'<div class="text-[13.5px] font-bold text-slate-800 mt-2.5 leading-snug">'
+        f"{escape(str(head))}</div>"
+        f'<div class="text-[11px] text-slate-500 mt-1.5 leading-relaxed">{escape(vdesc)}</div>'
+        "</div></div>"
+    )
+    sw_card = (
+        f'<div class="{_CARD} p-5">'
+        '<div class="text-[11px] font-extrabold text-emerald-600 mb-1.5">잘한 점</div>'
+        f'<ul class="text-[11px] text-slate-600 space-y-1 mb-3 list-none">{gi}</ul>'
+        '<div class="text-[11px] font-extrabold text-red-500 mb-1.5">아쉬운 점</div>'
+        f'<ul class="text-[11px] text-slate-600 space-y-1 list-none">{bi}</ul></div>'
+    )
+    blocks.append(
+        f'<div class="grid grid-cols-3 gap-3 items-stretch">{verdict_card}{sw_card}</div>'
+    )
+
+    # ── 목표 달성 가능성(결정권자 1순위) — verdict 바로 아래 ──
+    of = result.get("objective_fit")
+    if of:
+        blocks.append(_objective_fit_block(of))
+
+    blocks.append(
+        '<div class="text-[10.5px] text-slate-500 bg-blue-50 rounded-xl px-4 py-2.5">'
+        '💡 <b class="text-slate-700">읽는 법</b> — 위에서부터 <b>결론</b>(내보내도 될까) → '
+        "<b>근거</b>(소비자 반응) → <b>진단·개선</b>(무엇을 고치나) 순서예요. "
+        "바쁘면 위 카드만 봐도 됩니다.</div>"
+    )
+
+    # ── 신뢰도 안내(과신 방지) ──
+    conf = result.get("confidence")
+    if conf:
+        blocks.append(_confidence_block(conf))
+
+    # ── §2 퍼널 (풀폭) ──
+    funnel_body = "".join(
+        _bar(
+            _AISAS_KO.get(f["stage"], f["stage"]),
+            f.get("pass_rate") or 0,
+            f"{_pct(f.get('pass_rate'))} ({f.get('passed', 0)}명)",
+            _BLUE,
+        )
+        for f in analysis.get("funnel") or []
     )
     bn = analysis.get("bottleneck")
     if bn:
-        story.append(
-            Paragraph(
-                f"최대 이탈 구간: {_AISAS_KO.get(bn['from_stage'], bn['from_stage'])} → "
-                f"{_AISAS_KO.get(bn['to_stage'], bn['to_stage'])} "
-                f"(-{bn['dropped']}명, {_pct(bn.get('drop_rate'))})",
-                small,
-            )
+        funnel_body += (
+            '<div class="mt-2.5 text-[10.5px] text-amber-700 bg-amber-50 rounded-lg px-3 py-2">'
+            f"⬇ 여기서 가장 많이 빠졌어요 — <b>{_AISAS_KO.get(bn['from_stage'], bn['from_stage'])} → "
+            f"{_AISAS_KO.get(bn['to_stage'], bn['to_stage'])}</b> 구간 {bn['dropped']}명 이탈"
+            f"({_pct(bn.get('drop_rate'))}). 이 지점을 고치면 효과가 가장 큽니다.</div>"
         )
+    blocks.append(
+        _section(
+            "2",
+            "소비자 반응 — 어디서 새는가",
+            _BLUE,
+            funnel_body,
+            tip=(
+                "소비자가 광고를 만나 행동까지 가는 길이에요: <b>주목→흥미→탐색→행동→공유</b>. "
+                "단계가 갈수록 자연히 줄지만, <b>갑자기 확 빠지는 구간</b>이 고쳐야 할 곳이에요."
+            ),
+        )
+    )
 
-    # ── §2-2 구매의도 분포 ──
-    section("§2-2. 구매의도 분포")
+    # ── 세그먼트 히트맵(누구에게 통하나) ──
+    segs = result.get("segments") or []
+    if segs:
+        blocks.append(_segment_block(segs))
+
+    # ── 구매의도 | 감정 (2열) ──
     pid = report.get("purchase_intent_dist") or {}
-    labels = {1: "전혀 없음", 2: "낮음", 3: "보통", 4: "높음", 5: "매우 높음"}
-    story.append(
-        dist_table(
-            [
-                (
-                    labels[i],
-                    int(pid.get(i, pid.get(str(i), 0))),
-                    (int(pid.get(i, pid.get(str(i), 0))) / total_n if total_n else 0),
-                )
-                for i in range(1, 6)
-            ]
-        )
+    plab = {1: "전혀 없음", 2: "낮음", 3: "보통", 4: "높음", 5: "매우 높음"}
+    pcol = {1: _RED, 2: _AMBER, 3: _SLATE, 4: _BLUE, 5: _GREEN}
+    pi_body = "".join(
+        _bar(plab[i], (_ival(pid, i) / total_n if total_n else 0), f"{_ival(pid, i)}명", pcol[i])
+        for i in range(1, 6)
     )
-
-    # ── §2-3 신뢰·거부 분석 ──
-    section("§2-3. 신뢰 · 거부 분석")
-    rej = report.get("rejection") or {}
-    story.append(
-        Paragraph(
-            f"거부율 {_pct(rej.get('rejection_rate'))} · 불신 {rej.get('distrust_count', 0)}명",
-            body,
-        )
-    )
-    by_rej = rej.get("by_rejection_reason_tag") or {}
-    if by_rej:
-        rc = rej.get("rejected_count") or sum(by_rej.values()) or 1
-        story.append(dist_table([(_REJECTION_KO.get(k, k), v, v / rc) for k, v in by_rej.items()]))
-    by_drop = report.get("by_drop_reason_tag") or {}
-    if by_drop:
-        story.append(Paragraph("이탈 사유", small))
-        dn = sum(by_drop.values()) or 1
-        story.append(
-            dist_table([(_DROP_REASON_KO.get(k, k), v, v / dn) for k, v in by_drop.items()])
-        )
-
-    # ── §2-4 감정 반응 ──
-    section("§2-4. 감정 반응")
     emo = report.get("emotion_dist") or {}
     en = sum(emo.values()) or 1
-    story.append(dist_table([(_EMOTION_KO.get(k, k), v, v / en) for k, v in emo.items()]))
-
-    # ── §2-5 브랜드 식별 ──
-    section("§2-5. 브랜드 식별 (Fluency)")
-    br = report.get("brand_recognition") or {}
-    story.append(
-        Paragraph(
-            f"브랜드 식별률 {_pct(br.get('recognition_rate'))} "
-            f"(식별 {br.get('recognized_count', 0)}명 / "
-            f"미식별 {br.get('unrecognized_count', 0)}명)",
-            body,
+    emo_body = "".join(_bar(_EMOTION_KO.get(k, k), v / en, f"{v}명", _TEAL) for k, v in emo.items())
+    blocks.append(
+        '<div class="grid grid-cols-2 gap-3">'
+        + _section(
+            "", "구매의도 분포", _INDIGO, pi_body, tip='"이 제품 사고 싶나?"를 5단계로 나눈 거예요.'
         )
+        + _section("", "광고를 보고 든 느낌", _TEAL, emo_body)
+        + "</div>"
+    )
+
+    # ── 메시지 수신(의도 vs 저항) ──
+    msg = result.get("message_reception")
+    if msg:
+        blocks.append(_message_block(msg))
+
+    # ── 거부 사유 | 브랜드 식별 (2열) ──
+    rb = report.get("rejection") or {}
+    by_rej = rb.get("by_rejection_reason_tag") or {}
+    rc = rb.get("rejected_count") or sum(by_rej.values()) or 1
+    rej_body = (
+        "".join(_bar(_REJECTION_KO.get(k, k), v / rc, f"{v}명", _RED) for k, v in by_rej.items())
+        or '<div class="text-[11px] text-slate-400">거부 없음</div>'
+    )
+    br = report.get("brand_recognition") or {}
+    brand_body = _bar(
+        "기억함",
+        br.get("recognition_rate") or 0,
+        f"{br.get('recognized_count', 0)}명 ({_pct(br.get('recognition_rate'))})",
+        _GREEN,
+    ) + _bar(
+        "기억 못 함",
+        (br.get("unrecognized_count", 0) / total_n if total_n else 0),
+        f"{br.get('unrecognized_count', 0)}명",
+        _SLATE,
     )
     pb = br.get("perceived_brands") or {}
     if pb:
-        story.append(
-            Paragraph(
-                "인식한 브랜드/제품: " + ", ".join(f"{escape(k)}({v})" for k, v in pb.items()),
-                small,
-            )
+        brand_body += (
+            '<div class="mt-2 text-[10px] text-slate-500">떠올린 브랜드 — '
+            + escape(", ".join(f"{k}({v}명)" for k, v in pb.items()))
+            + "</div>"
         )
+    blocks.append(
+        '<div class="grid grid-cols-2 gap-3">'
+        + _section("", f"광고를 거부한 이유 ({_pct(rb.get('rejection_rate'))})", _RED, rej_body)
+        + _section(
+            "3",
+            "브랜드가 기억에 남았나",
+            _GREEN,
+            brand_body,
+            tip='광고를 보고 <b>"어느 브랜드인지"</b> 알아봤는지예요(Fluency).',
+        )
+        + "</div>"
+    )
 
-    # ── §4 크리에이티브 진단(루브릭) ──
-    rubric = report.get("rubric_scores") or []
+    # ── §4 진단 (풀폭) ──
     if rubric:
-        section("§4. 크리에이티브 진단")
-        data = [[Paragraph("<b>항목</b>", small), Paragraph("<b>점수</b>", small)]]
-        for s in rubric:
-            data.append(
-                [
-                    Paragraph(escape(str(s.get("dimension", ""))), body),
-                    Paragraph(f"{s.get('score', 0)} / 100", body),
-                ]
+        diag_body = "".join(
+            _bar(
+                _RUBRIC_KO.get(s.get("dimension"), s.get("dimension", "")),
+                (s.get("score", 0) or 0) / 100,
+                f"{s.get('score', 0)}/100",
+                _signal(s.get("score", 0) or 0),
             )
-        t = Table(data, colWidths=[120 * mm, 42 * mm])
-        t.setStyle(
-            TableStyle(
-                [
-                    ("FONTNAME", (0, 0), (-1, -1), font),
-                    ("BACKGROUND", (0, 0), (-1, 0), _LIGHT),
-                    ("LINEBELOW", (0, 0), (-1, -1), 0.3, _LIGHT),
-                    ("TOPPADDING", (0, 0), (-1, -1), 3),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
-                ]
+            for s in rubric
+        )
+        blocks.append(
+            _section(
+                "4",
+                "광고 자체의 완성도 진단",
+                _AMBER,
+                diag_body,
+                tip=(
+                    '항목별 100점 만점 채점이에요. <b class="text-emerald-600">초록</b>=좋음 · '
+                    '<b class="text-amber-500">주황</b>=보통 · '
+                    '<b class="text-red-500">빨강</b>=손봐야 함.'
+                ),
             )
         )
-        story.append(t)
 
-    # ── §5 개선 권고 ──
-    actions = report.get("ranked_actions") or []
+    # ── §5 토론 (풀폭) ──
+    participants = debate.get("participants") or []
+    if participants:
+        rr = debate.get("rounds_run") or 0
+        stop_ko = {"consensus": "의견 일치", "dissensus": "의견 갈림", "max": "최대 라운드"}.get(
+            str(debate.get("stop_reason")), str(debate.get("stop_reason") or "")
+        )
+        rsum = debate.get("round_summaries") or {}
+        max_round = max(
+            (u.get("round", 0) for pa in participants for u in (pa.get("utterances") or [])),
+            default=0,
+        )
+        tbody = []
+        for rnd in range(1, max_round + 1):
+            phase, cards = "", []
+            for pa in participants:
+                for u in pa.get("utterances") or []:
+                    if u.get("round") != rnd:
+                        continue
+                    phase = u.get("phase", phase)
+                    sc, sk = _STANCE.get(u.get("stance", "neutral"), (_SLATE, ""))
+                    lever = u.get("lever")
+                    lv = (
+                        (
+                            f'<div class="text-[9.5px] text-slate-400 mt-0.5">→ 이렇게 바꾸면: '
+                            f"{escape(str(lever))}</div>"
+                        )
+                        if lever
+                        else ""
+                    )
+                    cards.append(
+                        '<div class="rounded-lg bg-slate-50 border-l-4 px-3 py-2 break-inside-avoid" '
+                        f'style="border-color:{sc}">'
+                        '<div><span class="font-bold text-[11px] text-slate-800">'
+                        f"{escape(str(pa.get('persona_name', '')))}</span>"
+                        '<span class="text-[9.5px] text-slate-500 ml-1.5">'
+                        f"{escape(str(pa.get('role', '')))}</span>"
+                        f'<span class="text-[9.5px] font-bold ml-1.5" style="color:{sc}">● {sk}</span>'
+                        "</div>"
+                        f'<div class="text-[10.5px] text-slate-700 mt-0.5">'
+                        f"{escape(str(u.get('text', '')))}</div>{lv}</div>"
+                    )
+            if not cards:
+                continue
+            st = rsum.get(rnd, rsum.get(str(rnd)))
+            judge = (
+                (
+                    f'<div class="mt-2 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2 '
+                    f'text-[10.5px] text-slate-600"><b class="text-blue-800">정리.</b> '
+                    f"{escape(str(st))}</div>"
+                )
+                if st
+                else ""
+            )
+            tbody.append(
+                '<div class="break-inside-avoid mb-3"><div class="flex items-baseline gap-2 mb-1.5">'
+                f'<b class="text-blue-600 text-[12px]">{rnd}라운드</b>'
+                f'<span class="text-slate-400 text-[10px]">{escape(str(phase))}</span></div>'
+                f'<div class="space-y-1.5">{"".join(cards)}</div>{judge}</div>'
+            )
+        final = debate.get("final") or {}
+        concl = []
+        for c in final.get("consensus") or report.get("consensus") or []:
+            concl.append(
+                '<div class="my-1 text-[11px]"><span class="inline-block px-2 py-0.5 '
+                'rounded text-white text-[9.5px] font-bold mr-2" '
+                f'style="background:{_GREEN}">다같이 동의</span>{escape(str(c))}</div>'
+            )
+        for d in final.get("dissent") or report.get("dissent") or []:
+            concl.append(
+                '<div class="my-1 text-[11px]"><span class="inline-block px-2 py-0.5 '
+                'rounded text-white text-[9.5px] font-bold mr-2" '
+                f'style="background:{_AMBER}">의견 갈림</span>{escape(str(d))}</div>'
+            )
+        concl_html = (
+            (
+                '<div class="mt-3 pt-3 border-t border-slate-100">'
+                '<div class="text-[11px] font-bold text-slate-700 mb-1.5">토론 결론</div>'
+                f"{''.join(concl)}</div>"
+            )
+            if concl
+            else ""
+        )
+        blocks.append(
+            _section(
+                "5",
+                "전문가·소비자 토론",
+                _INDIGO,
+                "".join(tbody) + concl_html,
+                tip=(
+                    f"왜 이런 결과인지 전문가 4명과 실제 소비자를 모아 <b>{rr}라운드</b> 토론한 "
+                    f"내용이에요. (결과: {escape(stop_ko)})"
+                ),
+            )
+        )
+
+    # ── §6 개선 권고 (풀폭) ──
+    actions = (
+        report.get("ranked_actions") or (debate.get("final") or {}).get("ranked_actions") or []
+    )
     if actions:
-        section("§5. 개선 권고 (우선순위)")
+        rec = []
         for a in actions:
-            story.append(
-                Paragraph(f"<b>{a.get('rank', '?')}. {escape(str(a.get('action', '')))}</b>", body)
+            eff = (
+                (
+                    f'<div class="text-[10px] text-slate-500 mt-0.5">기대 효과: '
+                    f"{escape(str(a['expected_effect']))}</div>"
+                )
+                if a.get("expected_effect")
+                else ""
             )
-            if a.get("expected_effect"):
-                story.append(Paragraph(f"기대 효과: {escape(str(a['expected_effect']))}", small))
-            story.append(Spacer(1, 3))
-
-    # ── 페르소나 보이스(토론 인용) ──
-    quotes = report.get("quotes") or []
-    if quotes:
-        section("페르소나 보이스")
-        for q in quotes[:5]:
-            who = f"{q.get('persona_name', '')} · {q.get('role', '')}"
-            story.append(Paragraph(f"“{escape(str(q.get('text', '')))}”", body))
-            story.append(Paragraph(escape(who), small))
-            story.append(Spacer(1, 3))
-
-    story.append(Spacer(1, 8))
-    story.append(
-        Paragraph(
-            "본 보고서는 가상 소비자 반응 기반 추정이며 실제 성과를 보증하지 않습니다. "
-            "예측은 레인지로 해석하세요.",
-            small,
+            sp = a.get("supporting_personas") or []
+            spx = (
+                (
+                    f'<div class="text-[10px] text-slate-500 mt-0.5">이렇게 말한 사람: '
+                    f"{escape(', '.join(str(x) for x in sp))}</div>"
+                )
+                if sp
+                else ""
+            )
+            rec.append(
+                '<div class="flex gap-3 py-2.5 border-b border-slate-100 break-inside-avoid">'
+                '<span class="w-6 h-6 rounded-full bg-blue-600 text-white text-[11px] font-bold '
+                f'grid place-items-center shrink-0">{escape(str(a.get("rank", "?")))}</span>'
+                f'<div><div class="font-bold text-[11.5px] text-slate-800">'
+                f"{escape(str(a.get('action', '')))}</div>{eff}{spx}</div></div>"
+            )
+        blocks.append(
+            _section(
+                "6",
+                "그래서, 무엇을 고치면 되나",
+                _BLUE,
+                "".join(rec),
+                tip="효과가 큰 순서대로 정리한 개선 액션이에요.",
+            )
         )
+
+    if not participants:
+        quotes = report.get("quotes") or []
+        if quotes:
+            qb = "".join(
+                '<div class="rounded-lg bg-slate-50 border-l-4 border-slate-300 px-3 py-2 my-1.5">'
+                f'<div class="text-[10.5px] text-slate-700">“{escape(str(q.get("text", "")))}”</div>'
+                f'<div class="text-[9.5px] text-slate-400 mt-0.5">— '
+                f"{escape(str(q.get('persona_name', '')))} · {escape(str(q.get('role', '')))}</div>"
+                "</div>"
+                for q in quotes[:5]
+            )
+            blocks.append(_section("5", "소비자 목소리", _SLATE, qb))
+
+    blocks.append(
+        '<div class="text-[9px] text-slate-400 leading-relaxed pt-3 border-t border-slate-200">'
+        "이 보고서는 실제 사람이 아니라 한국 인구·성격·미디어 통계로 만든 AI 가상 소비자의 반응을 "
+        "모은 <b>예측 참고 자료</b>입니다. 실제 광고 성과를 보증하지 않으며, 수치는 정확한 값이 "
+        "아니라 방향과 범위로 읽어 주세요.</div>"
     )
 
-    buf = io.BytesIO()
-    doc = SimpleDocTemplate(
-        buf,
-        pagesize=A4,
-        leftMargin=20 * mm,
-        rightMargin=20 * mm,
-        topMargin=18 * mm,
-        bottomMargin=18 * mm,
-        title="광고 시뮬레이션 보고서",
+    body = '<div class="max-w-[820px] mx-auto space-y-4">' + "".join(blocks) + "</div>"
+    return (
+        "<!DOCTYPE html><html lang='ko'><head><meta charset='utf-8'>"
+        "<script src='https://cdn.tailwindcss.com'></script>"
+        "<script>tailwind.config={theme:{extend:{fontFamily:{sans:"
+        "['Malgun Gothic','Noto Sans KR','Apple SD Gothic Neo','sans-serif']}}}}</script>"
+        "<style>*{-webkit-print-color-adjust:exact;print-color-adjust:exact;}"
+        "body{font-family:'Malgun Gothic','Noto Sans KR','Apple SD Gothic Neo',sans-serif;}</style>"
+        "</head><body class='bg-slate-100 text-slate-900 p-6'>" + body + "</body></html>"
     )
-    doc.build(story)
-    return buf.getvalue()
+
+
+def render_report_pdf(result: dict) -> bytes:
+    """result → Tailwind HTML → Playwright(Chromium) PDF 바이트. 동기(라우터에서 to_thread).
+
+    report_view(화면·PDF 공용 단일 소스)를 우선 소비한다 — 없으면 구버전 result로 폴백.
+    """
+    from playwright.sync_api import sync_playwright
+
+    html = _build_html(result.get("report_view") or result)
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch(args=["--no-sandbox"])
+        try:
+            page = browser.new_page()
+            page.set_content(html, wait_until="networkidle")
+            page.wait_for_timeout(600)  # Tailwind Play CDN(JIT)이 DOM 스캔·스타일 주입할 시간
+            pdf = page.pdf(
+                format="A4",
+                print_background=True,
+                margin={"top": "8mm", "bottom": "8mm", "left": "0mm", "right": "0mm"},
+            )
+        finally:
+            browser.close()
+    return pdf
