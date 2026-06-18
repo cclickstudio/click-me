@@ -10,6 +10,7 @@ import json
 import logging
 import uuid
 from collections.abc import AsyncIterator, Callable
+from datetime import UTC, datetime
 
 from langsmith import traceable
 
@@ -17,6 +18,7 @@ from domain.simulation.contracts.debate_ports import DebaterPort, JudgePort
 from domain.simulation.contracts.debate_schemas import DebateResult, DebateTopic
 from domain.simulation.contracts.schemas import (
     AdInterpretation,
+    ObjectiveFit,
     Persona,
     PersonaReaction,
     RubricScore,
@@ -29,7 +31,7 @@ from domain.simulation.tools.debate.kpi import (
     compute_kpi,
 )
 from domain.simulation.tools.debate.qa import stream_qa
-from domain.simulation.tools.debate.report import build_report
+from domain.simulation.tools.debate.report import build_report, build_report_view
 from domain.simulation.tools.debate.runner import run_debate
 from domain.simulation.tools.debate.selector import RerankFn, select_panel
 
@@ -152,6 +154,7 @@ class DebateService:
         personas: list[Persona] | None = None,
         topic: DebateTopic | None = None,
         rubric: list[RubricScore] | None = None,
+        objective_fit: ObjectiveFit | None = None,
     ) -> str:
         """비동기 시작 — 백그라운드 실행 후 run_id 반환(진행률은 SSE, 결과는 get_result).
 
@@ -159,12 +162,21 @@ class DebateService:
         personas: 인구통계(있으면 타깃 적합 선발 — 타깃 밖 후보 배제).
         topic: 추가 토론에서 사용자가 고른 논제(None이면 최초 토론 = 분석 headline 고정).
         rubric: §4 루브릭 점수(있으면 리포트 크리에이티브 진단에 그대로 실음).
+        objective_fit: 캠페인 목표 적합도(ReportView 메인 판정 — DB 영속 없어 직접 전달).
         """
         run_id = str(uuid.uuid4())
         self._store.create_run(run_id)
         asyncio.create_task(
             self._run(
-                run_id, reactions, ad_analysis, simulation_id, lay_count, personas, topic, rubric
+                run_id,
+                reactions,
+                ad_analysis,
+                simulation_id,
+                lay_count,
+                personas,
+                topic,
+                rubric,
+                objective_fit,
             )
         )
         return run_id
@@ -178,12 +190,20 @@ class DebateService:
         lay_count: int = 3,
         personas: list[Persona] | None = None,
         rubric: list[RubricScore] | None = None,
+        objective_fit: ObjectiveFit | None = None,
     ) -> dict | None:
-        """동기 실행 — 끝까지 돌린 뒤 결과(분석·KPI·주제·패널)를 반환."""
+        """동기 실행 — 끝까지 돌린 뒤 결과(분석·KPI·주제·패널·리포트뷰)를 반환."""
         run_id = str(uuid.uuid4())
         self._store.create_run(run_id)
         await self._run(
-            run_id, reactions, ad_analysis, simulation_id, lay_count, personas, rubric=rubric
+            run_id,
+            reactions,
+            ad_analysis,
+            simulation_id,
+            lay_count,
+            personas,
+            rubric=rubric,
+            objective_fit=objective_fit,
         )
         return self._store.get_result(run_id)
 
@@ -197,6 +217,7 @@ class DebateService:
         personas: list[Persona] | None = None,
         selected_topic: DebateTopic | None = None,
         rubric: list[RubricScore] | None = None,
+        objective_fit: ObjectiveFit | None = None,
     ) -> None:
         store = self._store
         try:
@@ -370,6 +391,24 @@ class DebateService:
                 except Exception:
                     logger.exception("토론 영속화 실패(런은 유지) run_id=%s", run_id)
 
+            # ── 통합 ReportView 조립(화면·PDF 공용 단일 소스) — 시뮬+토론 종합 ──
+            report_view = build_report_view(
+                run_id=run_id,
+                simulation_id=simulation_id,
+                debate_id=debate_id,
+                report=report,
+                objective_fit=objective_fit,
+                ad_analysis=ad_analysis,
+                ad=None,  # 광고 선언 입력은 시뮬 result['ad']에만(추후 DebateRequest로 전달)
+                topic=topic,
+                debate=debate_obj,
+                aggregate=aggregate,
+                analysis=analysis,
+                personas=personas or [],
+                reactions=reactions,
+                generated_at=datetime.now(UTC).isoformat(),
+            )
+
             result = {
                 "run_id": run_id,
                 "simulation_id": simulation_id,
@@ -381,6 +420,7 @@ class DebateService:
                 "panel": assigned.model_dump(),
                 "debate": debate_dump,  # 조각 10-c 산출(엔진 주입 시)
                 "report": report.model_dump(),  # 조각 11 산출
+                "report_view": report_view.model_dump(),  # 통합 리포트(화면·PDF 단일 소스)
             }
             store.set_result(run_id, result)
             store.set_status(run_id, "COMPLETED")

@@ -8,7 +8,12 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from domain.simulation.contracts.schemas import RubricScore
+from domain.simulation.contracts.schemas import (
+    AdInterpretation,
+    ObjectiveFit,
+    RubricScore,
+    SimulationAggregate,
+)
 
 # AISAS 5단계 — 퍼널 순서 고정(이 순서로만 인접 비교).
 AISAS_STAGES: list[str] = ["attention", "interest", "search", "action", "share"]
@@ -296,3 +301,102 @@ class SimulationReport(BaseModel):
     dissent: list[str] = Field(default_factory=list)
     ranked_actions: list[RankedAction] = Field(default_factory=list)
     quotes: list[ReportQuote] = Field(default_factory=list)  # 참가자별 대표 발언
+
+
+# ── 통합 리포트(ReportView) — 시뮬+토론 종합, 화면·PDF 공용 단일 소스 ──
+
+
+class SegmentCell(BaseModel):
+    """연령대×성별 세그먼트 1칸 — personas×reactions 조인 후 가중 재집계(우리 제품 최대 차별점)."""
+
+    age_band: str
+    gender: str
+    n: int  # 셀 인원(QA 통과)
+    effective_n: float  # Kish 유효표본 — 얇은 셀 신뢰 경고용
+    click_intent_rate: float
+    purchase_intent: float
+    trust_avg: float
+    rejection_rate: float
+    attention_pass_rate: float
+    low_confidence: bool = False  # effective_n < 10
+
+
+class GroupProfile(BaseModel):
+    """소비자 그룹(완주/미온/거부/불신/초기이탈)의 인구통계 프로필."""
+
+    count: int
+    avg_age: float
+    gender_ratio: dict[str, float] = Field(default_factory=dict)
+    top_emotion: str | None = None
+
+
+class ContributionBar(BaseModel):
+    """목표 적합도 기여 신호 1개(워터폴) — contribution = value × weight."""
+
+    label: str
+    contribution: float
+    value: float
+    weight: float
+
+
+class ConversionStep(BaseModel):
+    """AISAS 인접 단계 전환율 — to.passed / from.passed."""
+
+    from_stage: str
+    to_stage: str
+    conversion: float
+
+
+class SummaryMetrics(BaseModel):
+    """분포 기반 파생 요약 묶음(평균 단언 대신 분포 요약 — CLAUDE.md 원칙)."""
+
+    top2box_purchase: float = 0.0  # 구매의도 4·5점 비율(강한 구매의향)
+    bottom2box_purchase: float = 0.0  # 1·2점 비율
+    positive_emotion_rate: float = 0.0
+    negative_emotion_rate: float = 0.0
+    neutral_emotion_rate: float = 0.0
+    trust_action_gap: float = 0.0  # trust_avg − click_intent_rate×5
+    trust_action_label: str = ""  # 믿는데 안 누름 / 안 믿는데 누름 / 균형
+    contribution_waterfall: list[ContributionBar] = Field(default_factory=list)
+    weakest_signal: str | None = None  # 최우선 개선 레버 후보
+    weakest_linked_action_rank: int | None = None
+    funnel_conversion: list[ConversionStep] = Field(default_factory=list)
+    target_match_rate: float | None = None  # detected vs perceived 타깃 일치율(exploratory)
+    discount_rate: float | None = None  # 1 − 할인가/정가
+
+
+class ConfidenceBadge(BaseModel):
+    """전 섹션 공통 신뢰 배지 — 과신 방지(실측 환산 금지 문구 포함)."""
+
+    level: str  # high / medium / low
+    ci_width: float
+    effective_n: float
+    total_n: int
+    warnings: list[str] = Field(default_factory=list)
+
+
+class ReportView(BaseModel):
+    """시뮬+토론을 합친 단일 리포트 객체 — 프론트 '최종 결과' 화면과 PDF가 공유하는 진실 소스.
+
+    대부분 기존 산출의 매핑이고, segments·group_profiles·summary_metrics·confidence만 신규 파생.
+    objective_fit를 메인 판정으로, message_reception을 최상위로 승격(기존 리포트서 누락).
+    """
+
+    run_id: str
+    simulation_id: str | None = None
+    debate_id: str | None = None
+    report: SimulationReport
+    objective_fit: ObjectiveFit | None = None  # 메인 종합 판정(시뮬 result→토론 경로 직접 전달)
+    ad_analysis: AdInterpretation | None = None
+    ad: dict | None = None  # 광고 선언 입력(헤더)
+    topic: DebateTopic | None = None
+    segments: list[SegmentCell] = Field(default_factory=list)  # 연령×성별
+    group_profiles: dict[str, GroupProfile] = Field(default_factory=dict)
+    message_reception: MessageReception | None = None  # 의도 메시지 vs 저항(1순위 누락 데이터)
+    summary_metrics: SummaryMetrics
+    confidence: ConfidenceBadge
+    debate: DebateResult | None = None
+    aggregate: SimulationAggregate
+    analysis: ReactionAnalysis
+    generated_at: str  # ISO8601(조립 시각)
+    report_view_version: str = "reportview-1"

@@ -3,6 +3,8 @@
 # 입력은 JSON body(reactions[])로 통일. 분석(analyze)은 동기 즉시 반환, 토론(start)은 SSE 비동기.
 from __future__ import annotations
 
+import asyncio
+
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
@@ -12,6 +14,7 @@ from domain.simulation.adapters.memory_store import InMemorySimulationStore
 from domain.simulation.contracts.debate_schemas import DebateTopic
 from domain.simulation.contracts.schemas import (
     AdInterpretation,
+    ObjectiveFit,
     Persona,
     PersonaReaction,
     RubricScore,
@@ -45,6 +48,8 @@ class DebateRequest(BaseModel):
     topic: DebateTopic | None = None
     # §4 루브릭 점수(시뮬 결과에 포함) — 있으면 리포트 크리에이티브 진단에 그대로 실음.
     rubric_scores: list[RubricScore] | None = None
+    # 캠페인 목표 적합도(시뮬 결과에 포함) — ReportView 메인 판정. DB 영속 없어 직접 동봉.
+    objective_fit: ObjectiveFit | None = None
 
 
 class QuestionRequest(BaseModel):
@@ -92,6 +97,7 @@ async def start_debate(body: DebateRequest, lay_count: int = 3) -> dict:
         personas=body.personas,
         topic=body.topic,  # 선택 논제(없으면 최초 토론 = 분석 headline 고정)
         rubric=body.rubric_scores,  # §4 루브릭(있으면 리포트에 실음)
+        objective_fit=body.objective_fit,  # 캠페인 목표 적합도(ReportView 메인 판정)
     )
     return {"run_id": run_id, "stream_url": f"/api/debate/{run_id}/stream", "lay_count": lay_count}
 
@@ -139,7 +145,7 @@ async def download_report_pdf(run_id: str) -> Response:
     result = _service.get_result(run_id)
     if result is None:
         raise HTTPException(status_code=404, detail="결과 없음 또는 토론 미완료")
-    pdf = render_report_pdf(result)
+    pdf = await asyncio.to_thread(render_report_pdf, result)  # sync Playwright를 스레드로 분리
     return Response(
         content=pdf,
         media_type="application/pdf",
