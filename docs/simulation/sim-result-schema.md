@@ -125,6 +125,8 @@
       "emotion_tag": "indifference",
       "perceived_message": "신라면은 여전히 강렬하고 깊은 맛으로...",
       "perceived_target": "라면을 좋아하는 일반적인 사람들.",
+      "brand_recognized": true,           // 어느 브랜드/제품 광고인지 명확히 식별(§2-5 Fluency)
+      "perceived_brand": "신라면",         // 인식한 브랜드/제품명(미인식 시 null)
       "utterance": "신라면은 늘 먹던 맛이니까...",
       "qa_passed": true,
       "qa_fail_reason": null
@@ -135,7 +137,7 @@
   "aggregate": {
     "click_intent_rate": 0.1, "ci_low": 0.0, "ci_high": 0.25,
     "purchase_intent": 3.6, "trust_avg": 4.85, "rejection_rate": 0.0,
-    "variance_warning": false, "effective_n": 20
+    "brand_recognition_rate": 0.65, "variance_warning": false, "effective_n": 20
     // payload.qa_passed_count 제거 → simulation.qa_passed_count와 중복
   }
 }
