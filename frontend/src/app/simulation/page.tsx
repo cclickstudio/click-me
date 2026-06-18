@@ -9,7 +9,7 @@ import { KpiCard } from '@/components/ui/KpiCard';
 import { formatPercent } from '@/lib/utils';
 import { api } from '@/lib/api';
 import { SIM_CATEGORIES } from '@/lib/simCategories';
-import type { SimRunResult, SSEProgressEvent } from '@/lib/types';
+import type { ObjectiveFit, SimRunResult, SSEProgressEvent } from '@/lib/types';
 
 type Step = 'setup' | 'running' | 'result';
 type InputMode = 'image' | 'url';
@@ -268,16 +268,12 @@ export default function SimulationRunPage() {
   /* ─── STEP: setup ─── */
   if (step === 'setup') {
     const previewUrl = file ? URL.createObjectURL(file) : null;
-    // 광고 입력은 전부 필수 — 모두 채워야 실행 활성화.
-    const imageReady =
-      (inputMode === 'image' && !!file) ||
-      (inputMode === 'url' && imageUrl.trim() !== '');
+    // 광고 이미지는 선택 — 나머지(제품명·설명·카테고리·목표)는 필수.
     const goalReady =
       goalItem === '기타' ? customGoal.trim() !== '' : goalItem !== '';
     const canRun =
       adTitle.trim() !== '' &&
       adContent.trim() !== '' &&
-      imageReady &&
       categoryId !== '' &&
       serviceClass !== '' &&
       goalReady;
@@ -334,9 +330,7 @@ export default function SimulationRunPage() {
 
               {/* 이미지 입력 방식 — 남는 세로 공간을 채워 좌우 높이 정렬 */}
               <div className='flex flex-1 flex-col'>
-                <label className={labelCls}>
-                  광고 이미지 <span className='text-[#F74D4D]'>*</span>
-                </label>
+                <label className={labelCls}>광고 이미지 (선택)</label>
                 <div className='flex gap-2 mb-3'>
                   {(
                     [
@@ -693,6 +687,7 @@ export default function SimulationRunPage() {
     const passed = reactions.filter(r => r.qa_passed);
     const failed = reactions.filter(r => !r.qa_passed);
     const ad = result.ad_analysis;
+    const fit = result.objective_fit ?? null;
     const shown = showFailed ? reactions : passed;
     const personaMap = new Map(
       (result.personas ?? []).map(p => [p.persona_id, p])
@@ -722,6 +717,80 @@ export default function SimulationRunPage() {
               새 시뮬레이션
             </button>
           </div>
+
+          {/* 캠페인 목표 달성 가능성 (결정론 룰 — 상대 지표, exploratory) */}
+          {fit &&
+            ((f: ObjectiveFit) => {
+              const tone =
+                f.grade === '높음'
+                  ? {
+                      text: 'text-[#15803D] dark:text-[#4ADE80]',
+                      bar: 'bg-[#22C55E]',
+                      bg: 'bg-[#F0FDF4] dark:bg-[#0B2E13]',
+                      border: 'border-[#BBF7D0] dark:border-[#14532D]',
+                    }
+                  : f.grade === '보통'
+                    ? {
+                        text: 'text-[#B45309] dark:text-[#F4A100]',
+                        bar: 'bg-[#F4A100]',
+                        bg: 'bg-[#FFF8E6] dark:bg-[#2D2000]',
+                        border: 'border-[#FDE68A] dark:border-[#78350F]',
+                      }
+                    : {
+                        text: 'text-[#DC2626] dark:text-[#FCA5A5]',
+                        bar: 'bg-[#F04452]',
+                        bg: 'bg-[#FEF2F2] dark:bg-[#3B0D0D]',
+                        border: 'border-[#FECACA] dark:border-[#7F1D1D]',
+                      };
+              return (
+                <div className={`rounded-2xl border p-6 ${tone.bg} ${tone.border}`}>
+                  <div className='flex items-start justify-between gap-4 flex-wrap'>
+                    <div>
+                      <p className='text-xs font-semibold text-[#8B95A1] dark:text-[#6B7280]'>
+                        캠페인 목표 달성 가능성
+                      </p>
+                      <p className='text-sm text-[#4E5968] dark:text-[#9CA3AF] mt-0.5'>
+                        목표: {f.objective}
+                      </p>
+                    </div>
+                    <div className='flex items-baseline gap-2'>
+                      <span className={`text-3xl font-bold ${tone.text}`}>
+                        {f.grade}
+                      </span>
+                      <span className='text-sm text-[#8B95A1] dark:text-[#6B7280]'>
+                        지수 {f.score}/100
+                      </span>
+                    </div>
+                  </div>
+                  <div className='mt-3 h-2 rounded-full bg-white/60 dark:bg-black/30 overflow-hidden'>
+                    <div
+                      className={`h-full rounded-full ${tone.bar}`}
+                      style={{ width: `${f.score}%` }}
+                    />
+                  </div>
+                  <p className='text-sm text-[#4E5968] dark:text-[#9CA3AF] mt-3'>
+                    {f.rationale}
+                  </p>
+                  <div className='flex flex-wrap gap-2 mt-3'>
+                    {f.contributions.map(c => (
+                      <span
+                        key={c.label}
+                        className='text-[11px] px-2 py-1 rounded-full bg-white/70 dark:bg-black/20 text-[#4E5968] dark:text-[#9CA3AF]'>
+                        {c.label} {Math.round(c.value * 100)}%
+                        <span className='opacity-60'>
+                          {' '}
+                          ·가중 {Math.round(c.weight * 100)}%
+                        </span>
+                      </span>
+                    ))}
+                  </div>
+                  <p className='text-[11px] text-[#B0B8C1] dark:text-[#4B5563] mt-2'>
+                    {f.low_confidence && '⚠ 표본이 적어 신뢰가 낮습니다. '}
+                    실측이 아닌 시뮬 신호 기반 상대 지표입니다(exploratory).
+                  </p>
+                </div>
+              );
+            })(fit)}
 
           {/* 4대 KPI */}
           {agg && (
