@@ -987,8 +987,8 @@ export default function SimulationRunPage() {
               </div>
             </div>
 
-            {/* 오른쪽: 토론 (채팅 + 결과 박스, 자체 height 고정) */}
-            <div>
+            {/* 오른쪽: 토론 (채팅 + 결과 박스) */}
+            <div className='h-full'>
               <DebatePanel
                 reactions={reactions}
                 adAnalysis={ad ?? null}

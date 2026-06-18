@@ -74,9 +74,12 @@ interface DebateSession {
 function buildRestoredMessages(d: DebateSessionDetail): ChatMsg[] {
   const messages: ChatMsg[] = [];
   const topicText = d.topic ?? d.headline ?? '';
-  if (topicText) messages.push({ kind: 'judge', variant: 'topic', text: topicText });
+  if (topicText)
+    messages.push({ kind: 'judge', variant: 'topic', text: topicText });
 
-  const rounds = [...new Set(d.utterances.map(u => u.round))].sort((a, b) => a - b);
+  const rounds = [...new Set(d.utterances.map(u => u.round))].sort(
+    (a, b) => a - b
+  );
   for (const r of rounds) {
     for (const u of d.utterances.filter(x => x.round === r)) {
       messages.push({
@@ -92,9 +95,16 @@ function buildRestoredMessages(d: DebateSessionDetail): ChatMsg[] {
       });
     }
     const summary = d.round_summaries?.[String(r)];
-    if (summary) messages.push({ kind: 'judge', variant: 'round', round: r, text: summary });
+    if (summary)
+      messages.push({
+        kind: 'judge',
+        variant: 'round',
+        round: r,
+        text: summary,
+      });
   }
-  if (d.final?.headline) messages.push({ kind: 'judge', variant: 'final', text: d.final.headline });
+  if (d.final?.headline)
+    messages.push({ kind: 'judge', variant: 'final', text: d.final.headline });
   return messages;
 }
 
@@ -111,7 +121,10 @@ function buildRestoredResult(d: DebateSessionDetail): DebateResult {
       topic,
       rounds_run: d.rounds_run ?? 0,
       stop_reason: d.stop_reason ?? '',
-      models: { judge: d.models?.judge ?? undefined, engines: d.models?.engines ?? [] },
+      models: {
+        judge: d.models?.judge ?? undefined,
+        engines: d.models?.engines ?? [],
+      },
       participants: [],
       round_summaries: d.round_summaries ?? {},
       proposed_actions: [],
@@ -383,7 +396,8 @@ export function DebatePanel({
       // 1) DB 저장 토론 복원(simulationId 있을 때만 — 없으면 인메모리만)
       if (simulationId) {
         try {
-          const { debates: saved } = await api.debate.bySimulation(simulationId);
+          const { debates: saved } =
+            await api.debate.bySimulation(simulationId);
           if (saved.length > 0) {
             // 목록은 최신순(desc) → 시간순(오래된→최신)으로 뒤집어 탭·복원 순서를 맞춘다.
             const ordered = [...saved].reverse();
@@ -463,7 +477,7 @@ export function DebatePanel({
   const passedCount = reactions.filter(r => r.qa_passed).length;
 
   return (
-    <div className='space-y-4'>
+    <div className='flex h-full flex-col gap-6'>
       {/* 토론 카드 — 헤더 + 세션 탭 + 채팅 + Q&A 입력 */}
       <div className={cardCls}>
         <div className='flex items-center justify-between mb-1'>
@@ -572,7 +586,9 @@ export function DebatePanel({
                       ? '페르소나에게 질문하기 (Enter 전송 · Shift+Enter 줄바꿈)'
                       : '토론이 끝나면 질문할 수 있어요'
                 }
-                disabled={active.status !== 'done' || active.qaBusy || !!active.restored}
+                disabled={
+                  active.status !== 'done' || active.qaBusy || !!active.restored
+                }
                 className='flex-1 px-4 py-2.5 rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-white dark:bg-[#252D3D] text-sm text-[#191F28] dark:text-[#F2F4F6] focus:outline-none focus:ring-2 focus:ring-[#3182F6] placeholder:text-[#B0B8C1] dark:placeholder:text-[#4B5563] transition-colors resize-none disabled:opacity-50'
               />
               <button
@@ -596,13 +612,19 @@ export function DebatePanel({
         )}
       </div>
 
-      {/* 토론 결과 — 채팅창 바로 아래 별도 박스(done) */}
-      {view === 'active' && active?.status === 'done' && active.result && (
-        <div className={cardCls}>
+      {/* 토론 결과 — 항상 박스 표시(완료 전엔 안내). 컬럼 남은 높이를 flex-1로 채움 */}
+      {view === 'active' && (
+        <div className={`${cardCls} flex-1`}>
           <h2 className='text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6] mb-4'>
             토론 결과
           </h2>
-          <DebateOutcome result={active.result} />
+          {active?.status === 'done' && active.result ? (
+            <DebateOutcome result={active.result} />
+          ) : (
+            <p className='text-sm text-[#8B95A1] dark:text-[#6B7280]'>
+              토론이 끝나면 결과가 여기에 표시됩니다.
+            </p>
+          )}
         </div>
       )}
     </div>
