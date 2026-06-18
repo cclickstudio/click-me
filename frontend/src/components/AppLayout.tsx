@@ -33,6 +33,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     if (!loading && companyBlocked) router.replace('/dashboard');
   }, [loading, companyBlocked, router]);
 
+  // 미로그인 가드 — 토큰 없거나 만료(user 없음)면 진입 라우트(/sign-in)로 튕김.
+  useEffect(() => {
+    if (!loading && !user) router.replace('/sign-in');
+  }, [loading, user, router]);
+
   const togglePanel = () => {
     setPanelCollapsed(v => {
       const next = !v;
@@ -44,6 +49,18 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   if (loading) {
     return (
       <div className="min-h-screen bg-[#F9FAFB] dark:bg-[#0F1117] flex items-center justify-center">
+        <div className="w-6 h-6 border-2 border-[#3182F6] border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  // 미로그인 — 안내를 잠깐 띄우고 위 useEffect가 /sign-in으로 이동시킨다.
+  if (!user) {
+    return (
+      <div className="min-h-screen bg-[#F9FAFB] dark:bg-[#0F1117] flex flex-col items-center justify-center gap-3">
+        <p className="text-sm font-medium text-[#4E5968] dark:text-[#9CA3AF]">
+          로그인이 필요한 서비스입니다.
+        </p>
         <div className="w-6 h-6 border-2 border-[#3182F6] border-t-transparent rounded-full animate-spin" />
       </div>
     );
