@@ -40,7 +40,11 @@ export type CampaignSummary = CampaignKpi & {
   name: string;
   state: CampaignState;
   daily_budget_krw: number;
+  delivery_blocked?: boolean; // 계정 자금 막힘 + ACTIVE인데 게재 중단
+  block_reason?: string | null; // "선불 잔액 부족" 등
 };
+
+export type HourPoint = { hour: number; impressions: number; spend_krw: number };
 
 export type CampaignDetail = {
   campaign_id: string;
@@ -50,9 +54,23 @@ export type CampaignDetail = {
   expected: number[];
   actual: number[];
   anomaly_hours: number[];
+  series: HourPoint[];
   summary: CampaignKpi;
 };
 
+export type PlatformMetrics = {
+  platform: string; // facebook · instagram · audience_network · messenger
+  impressions: number;
+  clicks: number;
+  spend_krw: number;
+  reach: number;
+};
+export type PlatformsResponse = { platforms: PlatformMetrics[] };
+
 export type CampaignSource = 'live' | 'mock'; // live=실 Meta, mock=데모
-export type CampaignsResponse = { campaigns: CampaignSummary[]; source?: CampaignSource };
+export type CampaignsResponse = {
+  campaigns: CampaignSummary[];
+  source?: CampaignSource;
+  account_block_reason?: string | null; // 계정 전체 게재 중단 사유 (배너용)
+};
 export type CampaignView = 'table' | 'cards';
