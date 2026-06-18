@@ -11,8 +11,8 @@ IdempotencyKeyRow와 1:1. 컬럼 규칙: 타임스탬프=TIMESTAMPTZ / 금액=BI
 
 from alembic import op
 
-revision = "006"
-down_revision = "005"
+revision = "006_management"
+down_revision = "006_ad_analysis"
 branch_labels = None
 depends_on = None
 
