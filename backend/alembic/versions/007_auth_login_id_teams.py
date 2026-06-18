@@ -19,8 +19,8 @@ ORM 만 바뀌고 마이그레이션이 누락돼 있어 DB(Neon, alembic 006)�
 
 from alembic import op
 
-revision = "007_auth"
-down_revision = "006_management"
+revision = "007"
+down_revision = "006"
 branch_labels = None
 depends_on = None
 

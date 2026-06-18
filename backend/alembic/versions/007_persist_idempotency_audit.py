@@ -11,8 +11,8 @@ audit_events 컬럼을 코드의 AuditEvent(category·run_id·event_id·payload)
 
 from alembic import op
 
-revision = "007_idempotency"
-down_revision = "007_auth"
+revision = "007"
+down_revision = "006"
 branch_labels = None
 depends_on = None
 
