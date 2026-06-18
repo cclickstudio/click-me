@@ -6,14 +6,21 @@
 변조를 감지한다 (승인 전 3단계 검증 시연).
 """
 
+import asyncio
 from datetime import UTC, datetime, timedelta
 from random import Random
 from uuid import uuid4
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
+from core.db import get_db
+from domain.management.adapters.meta.connection_flow import complete_meta_connection
+from domain.management.adapters.meta.oauth import build_login_url
+from domain.management.adapters.meta.token_crypto import TokenCipher
 from domain.management.adapters.mock import MockAdPlatform, MockOrganicReader
 from domain.management.agents.regeneration import RemediationContext
 from domain.management.agents.regeneration_tools import build_regeneration_agent
@@ -64,6 +71,16 @@ from domain.management.wiring import (
 )
 
 router = APIRouter()
+
+# 멀티테넌트 Meta 연결 요청 스코프 — App Review 승인 권한과 일치해야 한다.
+_META_CONNECT_SCOPES = [
+    "ads_read",
+    "ads_management",
+    "instagram_basic",
+    "instagram_manage_insights",
+    "pages_show_list",
+    "pages_read_engagement",
+]
 
 _DEMO_FAULTS = {"bid_loss", "review_rejected", "none"}
 
@@ -346,32 +363,57 @@ async def _list_campaigns_real() -> dict:
     """실연동 — Meta 캠페인 목록 + 캠페인별 실측 요약."""
     reader = build_reader(settings)
     since = _today_utc()
+    # 목록·계정 자금 병렬 → 캠페인별 지표 병렬 (순차면 캠페인 수만큼 직렬로 느림)
+    infos, funding = await asyncio.gather(
+        reader.list_campaigns(),
+        reader.get_account_funding(),
+    )
+    metrics = await asyncio.gather(*(reader.get_metrics(c.campaign_id, since) for c in infos))
     out = []
-    for info in await reader.list_campaigns():
-        m = await reader.get_metrics(info.campaign_id, since)
+    for info, m in zip(infos, metrics, strict=True):
+        # 게재 차단: 계정 자금 막힘 + 캠페인이 켜져 있는데(ACTIVE) 안 도는 경우
+        blocked = funding.delivery_blocked and info.state == CampaignState.ACTIVE
         out.append(
             {
                 "campaign_id": info.campaign_id,
                 "name": info.name,
                 "state": info.state.value,
                 "daily_budget_krw": info.daily_budget_krw,
+                "delivery_blocked": blocked,
+                "block_reason": funding.block_reason if blocked else None,
                 **_real_summary(m, info.daily_budget_krw),
             }
         )
-    return {"campaigns": out, "source": "live"}
+    return {
+        "campaigns": out,
+        "source": "live",
+        "account_block_reason": funding.block_reason if funding.delivery_blocked else None,
+    }
+
+
+def _hourly_series(snaps: list[MetricsSnapshot]) -> list[dict]:
+    """시간별 {시각, 노출, 지출} — 전략 A 차트(누적 지출 vs 일예산)용."""
+    return [
+        {"hour": s.as_of.hour, "impressions": s.impressions, "spend_krw": s.spend_krw}
+        for s in snaps
+    ]
 
 
 async def _get_campaign_real(campaign_id: str) -> dict:
     """실연동 — 캠페인 상세(시간별 실측 + 기대곡선 + 요약)."""
     reader = build_reader(settings)
     today = _today_utc()
-    info = next((c for c in await reader.list_campaigns() if c.campaign_id == campaign_id), None)
+    # 독립 호출 3개 병렬 — 순차로 기다리면 토글 펼침이 느림(Meta 왕복 ×3).
+    campaigns, snaps, m = await asyncio.gather(
+        reader.list_campaigns(),
+        reader.fetch_hourly_metrics(campaign_id, today),
+        reader.get_metrics(campaign_id, today),
+    )
+    info = next((c for c in campaigns if c.campaign_id == campaign_id), None)
     if info is None:
         raise HTTPException(status_code=404, detail=f"캠페인 없음: {campaign_id}")
-    snaps = await reader.fetch_hourly_metrics(campaign_id, today)
     actual = [s.impressions for s in snaps]
     expected = expected_hourly_impressions(info.daily_budget_krw)
-    m = await reader.get_metrics(campaign_id, today)
     return {
         "campaign_id": info.campaign_id,
         "name": info.name,
@@ -380,6 +422,7 @@ async def _get_campaign_real(campaign_id: str) -> dict:
         "expected": [round(e, 1) for e in expected],
         "actual": actual,
         "anomaly_hours": find_anomaly_window(expected, actual) if actual else [],
+        "series": _hourly_series(snaps),
         "summary": _real_summary(m, info.daily_budget_krw),
     }
 
@@ -436,6 +479,13 @@ async def get_campaign_outcome(campaign_id: str, creative_id: str | None = None)
     return _real_outcome(m, campaign_id, creative_id).model_dump(mode="json")
 
 
+@router.get("/campaigns/{campaign_id}/platforms")
+async def get_campaign_platforms(campaign_id: str):
+    """게재 플랫폼별(FB/IG 등) 노출·클릭·지출·도달 분해 (publisher_platform)."""
+    rows = await build_reader(settings).get_platform_breakdown(campaign_id, _today_utc())
+    return {"platforms": [r.model_dump(mode="json") for r in rows]}
+
+
 @router.get("/campaigns/{campaign_id}")
 async def get_campaign(campaign_id: str):
     """캠페인 상세 — 시간별 노출(기대 vs 실측, 이상구간) + 요약 KPI."""
@@ -454,6 +504,7 @@ async def get_campaign(campaign_id: str):
                 "expected": [round(e, 1) for e in expected],
                 "actual": actual,
                 "anomaly_hours": find_anomaly_window(expected, actual),
+                "series": _hourly_series(snaps),
                 "summary": _campaign_summary(snaps, budget),
             }
     raise HTTPException(status_code=404, detail=f"캠페인 없음: {campaign_id}")
@@ -622,3 +673,61 @@ async def mark_rung_rejected(body: RungOutcomeRequest):
     """현재 단계가 거절됐음을 알린다 (다음 재평가에서 즉시 다음 단계로 에스컬레이션)."""
     await _get_escalation().on_rejected(body.run_id)
     return {"run_id": body.run_id, "rung_status": "rejected"}
+
+
+# ── 멀티테넌트 Meta 연결 (OAuth) — 외부 광고주가 자기 Meta 자산을 연결 ──
+# organization_id는 임시로 쿼리/state로 운반 — JWT 연동 시 토큰의 org로 대체한다.
+
+
+@router.get("/meta/connect")
+async def meta_connect(organization_id: str, request: Request):
+    """광고주를 Facebook 로그인 대화상자로 보내 자기 Meta 자산 접근 권한을 받는다."""
+    app_id = getattr(settings, "meta_app_id", None)
+    if not app_id:
+        raise HTTPException(503, "META_APP_ID 미설정 — Meta 연결 불가")
+    redirect_uri = str(request.url_for("meta_callback"))
+    state = f"{organization_id}:{uuid4().hex}"  # CSRF nonce + org 운반
+    url = build_login_url(
+        app_id=app_id,
+        redirect_uri=redirect_uri,
+        scopes=_META_CONNECT_SCOPES,
+        state=state,
+        api_version=settings.meta_graph_api_version,
+    )
+    return RedirectResponse(url, status_code=307)
+
+
+@router.get("/meta/callback", name="meta_callback")
+async def meta_callback(
+    code: str, state: str, request: Request, db: AsyncSession = Depends(get_db)
+):
+    """OAuth 콜백 — code를 장기 토큰으로 교환해 org 연결로 암호화 저장한다."""
+    key = getattr(settings, "meta_token_encryption_key", None)
+    app_id = getattr(settings, "meta_app_id", None)
+    app_secret = getattr(settings, "meta_app_secret", None)
+    if not key:
+        raise HTTPException(503, "토큰 암호화 키(META_TOKEN_ENCRYPTION_KEY) 미설정")
+    if not (app_id and app_secret):
+        raise HTTPException(503, "META_APP_ID/META_APP_SECRET 미설정")
+    org = state.split(":", 1)[0]
+    await complete_meta_connection(
+        db,
+        TokenCipher.from_base64_key(key),
+        app_id=app_id,
+        app_secret=app_secret,
+        redirect_uri=str(request.url_for("meta_callback")),
+        code=code,
+        organization_id=uuid4_or_str(org),
+        api_version=settings.meta_graph_api_version,
+    )
+    return {"status": "connected", "organization_id": org}
+
+
+def uuid4_or_str(value: str):
+    """org 식별자를 UUID로 변환(데모용 비-UUID 문자열이면 그대로 반환)."""
+    from uuid import UUID  # noqa: PLC0415
+
+    try:
+        return UUID(value)
+    except ValueError:
+        return value
