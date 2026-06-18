@@ -1,17 +1,17 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import AppLayout from '@/components/AppLayout';
 import { api } from '@/lib/api';
 import { CampaignTable } from '@/components/manage/campaigns/CampaignTable';
 import { CampaignCards } from '@/components/manage/campaigns/CampaignCards';
-import { CampaignDetailModal } from '@/components/manage/campaigns/CampaignDetailModal';
 import type {
   CampaignDetail as Detail,
   CampaignSource,
   CampaignSummary,
   CampaignView,
+  PlatformMetrics,
 } from '@/components/manage/campaigns/types';
 
 export default function Page() {
@@ -20,9 +20,12 @@ export default function Page() {
   const [source, setSource] = useState<CampaignSource>('mock');
   const [selected, setSelected] = useState<string | null>(null);
   const [detail, setDetail] = useState<Detail | null>(null);
+  const [platforms, setPlatforms] = useState<PlatformMetrics[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
+  const [accountBlock, setAccountBlock] = useState<string | null>(null);
+  const [blockDetailOpen, setBlockDetailOpen] = useState(false);
 
   // silent=true면 폴링 갱신 — 로딩 스피너 없이 값만 교체.
   const load = useCallback(async (silent = false) => {
@@ -32,6 +35,7 @@ export default function Page() {
       const r = await api.management.campaigns();
       setCampaigns(r.campaigns);
       setSource(r.source ?? 'mock');
+      setAccountBlock(r.account_block_reason ?? null);
       setLastUpdated(new Date().toLocaleTimeString('ko-KR'));
     } catch (e) {
       setError(e instanceof Error ? e.message : '불러오기 실패');
@@ -51,20 +55,73 @@ export default function Page() {
     return () => clearInterval(id);
   }, [source, load]);
 
+  // 캠페인별 {상세, 플랫폼} 캐시 — 재토글·재방문 시 즉시 표시(재요청 0).
+  type DetailEntry = { detail: Detail; platforms: PlatformMetrics[] };
+  const detailCache = useRef<Map<string, DetailEntry>>(new Map());
+  const inflight = useRef<Map<string, Promise<DetailEntry>>>(new Map());
+
+  const fetchDetail = useCallback((id: string): Promise<DetailEntry> => {
+    const hit = detailCache.current.get(id);
+    if (hit) return Promise.resolve(hit);
+    const pending = inflight.current.get(id);
+    if (pending) return pending; // 호버로 시작한 요청을 클릭이 이어받음(중복 호출 0)
+    const promise = Promise.all([
+      api.management.campaign(id),
+      api.management.campaignPlatforms(id),
+    ])
+      .then(([d, p]): DetailEntry => {
+        const entry = { detail: d, platforms: p.platforms };
+        detailCache.current.set(id, entry);
+        inflight.current.delete(id);
+        return entry;
+      })
+      .catch((e) => {
+        inflight.current.delete(id);
+        throw e;
+      });
+    inflight.current.set(id, promise);
+    return promise;
+  }, []);
+
+  // 행/카드에 마우스 올리면 미리 가져옴 → 토글 누를 땐 이미 준비됨(체감 즉시).
+  const prefetch = useCallback(
+    (id: string) => {
+      if (!detailCache.current.has(id)) fetchDetail(id).catch(() => {});
+    },
+    [fetchDetail],
+  );
+
   useEffect(() => {
     if (!selected) {
       setDetail(null);
+      setPlatforms([]);
+      return;
+    }
+    const hit = detailCache.current.get(selected);
+    if (hit) {
+      setDetail(hit.detail);
+      setPlatforms(hit.platforms);
       return;
     }
     let alive = true;
-    api.management
-      .campaign(selected)
-      .then((d) => alive && setDetail(d))
-      .catch(() => alive && setDetail(null));
+    setDetail(null);
+    setPlatforms([]);
+    fetchDetail(selected)
+      .then((e) => {
+        if (!alive) return;
+        setDetail(e.detail);
+        setPlatforms(e.platforms);
+      })
+      .catch(() => {
+        if (alive) {
+          setDetail(null);
+          setPlatforms([]);
+        }
+      });
     return () => {
       alive = false;
     };
-  }, [selected]);
+  }, [selected, fetchDetail]);
 
   return (
     <AppLayout>
@@ -123,6 +180,37 @@ export default function Page() {
           </div>
         </div>
 
+        {accountBlock && (
+          <div className="mb-4 rounded-xl border border-red-300 bg-red-50 px-4 py-3 dark:border-red-900/50 dark:bg-red-900/20">
+            <div className="flex items-start justify-between gap-3">
+              <p className="text-sm text-red-700 dark:text-red-400">
+                <span className="font-semibold">⚠ 게재 중단</span> · {accountBlock} — 광고가 게재되지
+                않고 있어요. Meta Ads Manager에서 충전이 필요합니다.
+              </p>
+              <button
+                type="button"
+                onClick={() => setBlockDetailOpen((o) => !o)}
+                className="shrink-0 whitespace-nowrap text-[11px] font-medium text-red-700 underline underline-offset-2 hover:text-red-800 dark:text-red-400"
+              >
+                왜 중단됐나요? {blockDetailOpen ? '▲' : '▾'}
+              </button>
+            </div>
+            {blockDetailOpen && (
+              <div className="mt-2 space-y-1 border-t border-red-200 pt-2 text-[12px] text-red-700/90 dark:border-red-900/40 dark:text-red-400/90">
+                <p>
+                  <b>소진율(일예산)</b>과 <b>선불 잔액</b>은 다른 개념이에요.
+                </p>
+                <p>· <b>일예산</b> — 캠페인이 하루 쓸 수 있는 <b>한도</b> (남아 있어도 됨)</p>
+                <p>· <b>선불 잔액</b> — 계정에 충전된 <b>실제 돈</b> (지금 ₩0 = 결제 재원 없음)</p>
+                <p>
+                  한도(일예산)가 남았어도 충전액이 0이면 Meta가 광고비를 차감할 수 없어 게재가 멈춰요.
+                  Ads Manager에서 충전하면 재개됩니다.
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+
         {busy && <p className="text-sm text-[#8B95A1] py-20 text-center">불러오는 중…</p>}
         {error && (
           <p className="text-sm text-red-500 py-20 text-center" role="alert">
@@ -133,15 +221,27 @@ export default function Page() {
         {!busy && !error && campaigns.length > 0 && (
           <div className="space-y-4">
             {view === 'table' ? (
-              <CampaignTable campaigns={campaigns} selected={selected} onSelect={setSelected} />
+              <CampaignTable
+                campaigns={campaigns}
+                selected={selected}
+                onSelect={(id) => setSelected((p) => (p === id ? null : id))}
+                onPrefetch={prefetch}
+                detail={detail}
+                platforms={platforms}
+                source={source}
+              />
             ) : (
-              <CampaignCards campaigns={campaigns} selected={selected} onSelect={setSelected} />
+              <CampaignCards
+                campaigns={campaigns}
+                selected={selected}
+                onSelect={(id) => setSelected((p) => (p === id ? null : id))}
+                onPrefetch={prefetch}
+                detail={detail}
+                platforms={platforms}
+                source={source}
+              />
             )}
           </div>
-        )}
-
-        {selected && detail && (
-          <CampaignDetailModal detail={detail} source={source} onClose={() => setSelected(null)} />
         )}
 
         <p className="mt-6 text-[11px] text-[#B0B8C1]">
