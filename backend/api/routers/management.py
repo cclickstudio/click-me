@@ -14,7 +14,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from core.config import settings
-from domain.management.adapters.mock import MockAdPlatform
+from domain.management.adapters.mock import MockAdPlatform, MockOrganicReader
 from domain.management.agents.regeneration import RemediationContext
 from domain.management.agents.regeneration_tools import build_regeneration_agent
 from domain.management.approval import (
@@ -57,10 +57,8 @@ from domain.management.execution.tier import (
 )
 from domain.management.wiring import (
     build_audit_sink,
-    build_comparison_service,
     build_escalation_store,
     build_idempotency_store,
-    build_organic_reader,
     build_reader,
     build_writer,
 )
@@ -247,17 +245,17 @@ async def compare_one(post_id: str = "ig_demo_1", campaign_id: str = "camp_demo_
     """단일 오가닉 게시물 ↔ 광고 캠페인 비교 + 🅰 권고 (ComparisonReport).
 
     제안 생성·집행은 🅱 — 여기는 분석 산출물(상세 리프트 + 권고)만 노출한다.
+    비교는 매칭된 오가닉+부스트 쌍이 필요한 데모라 use_mock 무관하게 항상 mock 데이터.
     """
-    report = await build_comparison_service(settings).compare_and_recommend(
-        post_id, campaign_id, _today_utc()
-    )
+    svc = ComparisonService(MockOrganicReader(), _MockAdSnapshotReader())
+    report = await svc.compare_and_recommend(post_id, campaign_id, _today_utc())
     return report.model_dump(mode="json")
 
 
 @router.get("/compare/board")
 async def compare_board():
-    """여러 게시물의 오가닉→광고 증분 일괄 검증 + 권고 (B 뷰). reader 공유로 행마다 상이."""
-    organic_reader = build_organic_reader(settings)  # 공유 → rng 진행되며 행별 상이
+    """여러 게시물의 오가닉→광고 증분 일괄 검증 + 권고 (B 뷰). 매칭 쌍 데모라 항상 mock."""
+    organic_reader = MockOrganicReader()  # 데모 게시물 — 실모드에도 mock(실 Meta엔 해당 ID 없음)
     since = _today_utc()
     rows = []
     for title, post_id, campaign_id, budget in _BOARD_DEMO:
