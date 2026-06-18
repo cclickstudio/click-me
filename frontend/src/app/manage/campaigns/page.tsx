@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import AppLayout from '@/components/AppLayout';
 import { api } from '@/lib/api';
@@ -22,24 +22,34 @@ export default function Page() {
   const [detail, setDetail] = useState<Detail | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<string | null>(null);
+
+  // silent=true면 폴링 갱신 — 로딩 스피너 없이 값만 교체.
+  const load = useCallback(async (silent = false) => {
+    if (!silent) setBusy(true);
+    setError(null);
+    try {
+      const r = await api.management.campaigns();
+      setCampaigns(r.campaigns);
+      setSource(r.source ?? 'mock');
+      setLastUpdated(new Date().toLocaleTimeString('ko-KR'));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '불러오기 실패');
+    } finally {
+      if (!silent) setBusy(false);
+    }
+  }, []);
 
   useEffect(() => {
-    let alive = true;
-    setBusy(true);
-    setError(null);
-    api.management
-      .campaigns()
-      .then((r) => {
-        if (!alive) return;
-        setCampaigns(r.campaigns);
-        setSource(r.source ?? 'mock');
-      })
-      .catch((e) => alive && setError(e instanceof Error ? e.message : '불러오기 실패'))
-      .finally(() => alive && setBusy(false));
-    return () => {
-      alive = false;
-    };
-  }, []);
+    load();
+  }, [load]);
+
+  // 실데이터일 때만 45초 폴링 — Meta가 분 단위로 갱신하므로 그 이상 잦게 안 함(rate limit).
+  useEffect(() => {
+    if (source !== 'live') return;
+    const id = setInterval(() => load(true), 45000);
+    return () => clearInterval(id);
+  }, [source, load]);
 
   useEffect(() => {
     if (!selected) {
@@ -80,6 +90,16 @@ export default function Page() {
             </p>
           </div>
           <div className="flex items-center gap-2">
+            {source === 'live' && (
+              <button
+                onClick={() => load(true)}
+                title="새로고침"
+                className="flex items-center gap-1.5 text-[11px] text-[#8B95A1] hover:text-[#191F28] dark:hover:text-[#F2F4F6] px-2 py-1.5"
+              >
+                <span className="inline-block w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
+                {lastUpdated ? `갱신 ${lastUpdated}` : '실시간'} ↻
+              </button>
+            )}
             <div className="flex rounded-lg border border-[#E5E8EB] dark:border-[#2D3748] overflow-hidden text-sm">
               <button
                 onClick={() => setView('table')}
