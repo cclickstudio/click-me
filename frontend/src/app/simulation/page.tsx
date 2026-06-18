@@ -62,6 +62,8 @@ const inputCls =
   "w-full px-3 py-2.5 rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-white dark:bg-[#252D3D] text-sm text-[#191F28] dark:text-[#F2F4F6] focus:outline-none focus:ring-2 focus:ring-[#3182F6] placeholder:text-[#B0B8C1] dark:placeholder:text-[#4B5563] transition-colors";
 const cardCls =
   "bg-white dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748] rounded-2xl p-6 transition-colors";
+const advToggleCls =
+  "flex items-center gap-1 text-xs font-medium text-[#8B95A1] dark:text-[#6B7280] hover:text-[#3182F6] transition-colors";
 
 function aisasFunnel(a: SimRunResult["reactions"][number]["aisas"]): string {
   const stages: [keyof typeof a, string][] = [
@@ -105,6 +107,10 @@ export default function SimulationRunPage() {
   const [pct, setPct] = useState(0);
   const [stageMsg, setStageMsg] = useState("");
   const esRef = useRef<EventSource | null>(null);
+
+  // 고급 설정 접기 — 기본 화면 단순화.
+  const [showAdGoal, setShowAdGoal] = useState(false);
+  const [showAdvSettings, setShowAdvSettings] = useState(false);
 
   // 언마운트 시 스트림 정리.
   useEffect(() => () => esRef.current?.close(), []);
@@ -216,7 +222,7 @@ export default function SimulationRunPage() {
               시뮬레이터 실행
             </h1>
             <p className="text-sm text-[#8B95A1] dark:text-[#6B7280] mt-1">
-              /api/simulation/run — AI 가상 소비자 패널에게 광고를 테스트합니다
+              AI 가상 소비자에게 광고 반응을 미리 테스트합니다
             </p>
           </div>
 
@@ -245,7 +251,7 @@ export default function SimulationRunPage() {
               </div>
 
               <div>
-                <label className={labelCls}>광고 카피·설명 (ad_content)</label>
+                <label className={labelCls}>광고 문구·설명</label>
                 <textarea
                   value={adContent}
                   onChange={(e) => setAdContent(e.target.value)}
@@ -306,46 +312,55 @@ export default function SimulationRunPage() {
                 )}
               </div>
 
-              {/* 선언 의도(교차검증 차원) */}
+              {/* 광고 의도(고급 — 의도-반응 교차검증) */}
               <hr className="border-[#E5E8EB] dark:border-[#2D3748]" />
-              <p className={sectionTitle}>
-                선언 의도{" "}
-                <span className="text-[10px] font-normal text-[#B0B8C1] dark:text-[#4B5563]">
-                  의도-반응 교차검증용 · 선택
-                </span>
-              </p>
-              <div>
-                <label className={labelCls}>광고 제목 (ad_title → message)</label>
-                <input
-                  type="text"
-                  value={adTitle}
-                  onChange={(e) => setAdTitle(e.target.value)}
-                  placeholder="제로콜라 여름 신상 런칭"
-                  className={inputCls}
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className={labelCls}>제품 카테고리</label>
-                  <input
-                    type="text"
-                    value={productCategory}
-                    onChange={(e) => setProductCategory(e.target.value)}
-                    placeholder="음료"
-                    className={inputCls}
-                  />
-                </div>
-                <div>
-                  <label className={labelCls}>캠페인 목표</label>
-                  <input
-                    type="text"
-                    value={adObjective}
-                    onChange={(e) => setAdObjective(e.target.value)}
-                    placeholder="신제품 인지도"
-                    className={inputCls}
-                  />
-                </div>
-              </div>
+              <button
+                type="button"
+                onClick={() => setShowAdGoal((v) => !v)}
+                className={advToggleCls}
+              >
+                <span>광고 의도 (선택)</span>
+                <span>{showAdGoal ? "▴" : "▾"}</span>
+              </button>
+              {showAdGoal && (
+                <>
+                  <p className="text-[11px] text-[#B0B8C1] dark:text-[#4B5563] -mt-2">
+                    적어두면 광고가 의도대로 전달됐는지 함께 비교합니다.
+                  </p>
+                  <div>
+                    <label className={labelCls}>광고 제목</label>
+                    <input
+                      type="text"
+                      value={adTitle}
+                      onChange={(e) => setAdTitle(e.target.value)}
+                      placeholder="제로콜라 여름 신상 런칭"
+                      className={inputCls}
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className={labelCls}>제품 카테고리</label>
+                      <input
+                        type="text"
+                        value={productCategory}
+                        onChange={(e) => setProductCategory(e.target.value)}
+                        placeholder="음료"
+                        className={inputCls}
+                      />
+                    </div>
+                    <div>
+                      <label className={labelCls}>캠페인 목표</label>
+                      <input
+                        type="text"
+                        value={adObjective}
+                        onChange={(e) => setAdObjective(e.target.value)}
+                        placeholder="신제품 인지도"
+                        className={inputCls}
+                      />
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
 
             {/* ── 오른쪽: 시뮬레이션 설정 ── */}
@@ -357,7 +372,7 @@ export default function SimulationRunPage() {
               {/* 표본 수 */}
               <div className="bg-[#F9FAFB] dark:bg-[#252D3D] border border-[#E5E8EB] dark:border-[#2D3748] rounded-xl px-4 py-4">
                 <label className={labelCls}>
-                  표본 수 (sample_size):{" "}
+                  가상 소비자 수:{" "}
                   <span className="text-[#3182F6] font-bold">{sampleSize}명</span>
                 </label>
                 <input
@@ -370,110 +385,130 @@ export default function SimulationRunPage() {
                 />
                 <div className="flex justify-between text-[10px] text-[#B0B8C1] dark:text-[#4B5563] mt-1">
                   <span>1명</span>
-                  <span>200명 (API 최대 1000)</span>
+                  <span>200명</span>
                 </div>
               </div>
 
-              {/* allocation */}
-              <div>
-                <p className={sectionTitle}>표본 배분 (allocation)</p>
-                <div className="flex gap-2">
-                  {(
-                    [
-                      ["proportional", "비례 추출 (기본)"],
-                      ["stratified", "층화 과대표집"],
-                    ] as ["proportional" | "stratified", string][]
-                  ).map(([v, lbl]) => (
-                    <button
-                      key={v}
-                      type="button"
-                      onClick={() => setAllocation(v)}
-                      className={`${chipBase} ${allocation === v ? chipActive : chipIdle}`}
-                    >
-                      {lbl}
-                    </button>
-                  ))}
-                </div>
-                <p className="text-[11px] text-[#8B95A1] dark:text-[#6B7280] mt-1.5">
-                  {allocation === "proportional"
-                    ? "인구 비례 self-weighting — 가중치 균일."
-                    : "얇은 층까지 보장 후 가중치로 모집단 보정 (유효표본↓·CI↑)."}
-                </p>
-              </div>
-
+              {/* 고급 설정(표본 추출·타깃) — 기본 닫힘 */}
               <hr className="border-[#E5E8EB] dark:border-[#2D3748]" />
+              <button
+                type="button"
+                onClick={() => setShowAdvSettings((v) => !v)}
+                className={advToggleCls}
+              >
+                <span>고급 설정 (표본 추출·타깃)</span>
+                <span>{showAdvSettings ? "▴" : "▾"}</span>
+              </button>
 
-              {/* target_mode */}
-              <div>
-                <p className={sectionTitle}>타깃 모드 (target_mode)</p>
-                <div className="flex gap-2">
-                  {(["AUTO", "MANUAL"] as const).map((v) => (
-                    <button
-                      key={v}
-                      type="button"
-                      onClick={() => setTargetMode(v)}
-                      className={`${chipBase} ${targetMode === v ? chipActive : chipIdle}`}
-                    >
-                      {v}
-                    </button>
-                  ))}
-                </div>
-              </div>
+              {showAdvSettings && (
+                <>
+                  {/* 표본 추출 방식 */}
+                  <div>
+                    <p className={sectionTitle}>표본 추출 방식</p>
+                    <div className="flex gap-2">
+                      {(
+                        [
+                          ["proportional", "인구 비례 (기본)"],
+                          ["stratified", "소수 그룹 보강"],
+                        ] as ["proportional" | "stratified", string][]
+                      ).map(([v, lbl]) => (
+                        <button
+                          key={v}
+                          type="button"
+                          onClick={() => setAllocation(v)}
+                          className={`${chipBase} ${allocation === v ? chipActive : chipIdle}`}
+                        >
+                          {lbl}
+                        </button>
+                      ))}
+                    </div>
+                    <p className="text-[11px] text-[#8B95A1] dark:text-[#6B7280] mt-1.5">
+                      {allocation === "proportional"
+                        ? "실제 인구 비율대로 뽑습니다 (기본 권장)."
+                        : "소수 그룹도 충분히 포함되게 보강합니다 (정밀하지만 신뢰구간이 넓어짐)."}
+                    </p>
+                  </div>
 
-              {/* target_filter */}
-              <div>
-                <p className={sectionTitle}>
-                  타깃 필터 (target_filter){" "}
-                  <span className="text-[10px] font-normal text-[#B0B8C1] dark:text-[#4B5563]">
-                    선택
-                  </span>
-                </p>
-                <div className="grid grid-cols-2 gap-3 mb-2">
+                  <hr className="border-[#E5E8EB] dark:border-[#2D3748]" />
+
+                  {/* 타깃 지정 방식 */}
                   <div>
-                    <label className={labelCls}>최소 나이 (age_min)</label>
-                    <input
-                      type="number"
-                      min={14}
-                      max={84}
-                      value={ageMin}
-                      onChange={(e) => setAgeMin(e.target.value)}
-                      placeholder="20"
-                      className={inputCls}
-                    />
+                    <p className={sectionTitle}>타깃 지정 방식</p>
+                    <div className="flex gap-2">
+                      {(
+                        [
+                          ["AUTO", "자동"],
+                          ["MANUAL", "직접 지정"],
+                        ] as ["AUTO" | "MANUAL", string][]
+                      ).map(([v, lbl]) => (
+                        <button
+                          key={v}
+                          type="button"
+                          onClick={() => setTargetMode(v)}
+                          className={`${chipBase} ${targetMode === v ? chipActive : chipIdle}`}
+                        >
+                          {lbl}
+                        </button>
+                      ))}
+                    </div>
                   </div>
+
+                  {/* 타깃 조건 */}
                   <div>
-                    <label className={labelCls}>최대 나이 (age_max)</label>
-                    <input
-                      type="number"
-                      min={14}
-                      max={84}
-                      value={ageMax}
-                      onChange={(e) => setAgeMax(e.target.value)}
-                      placeholder="29"
-                      className={inputCls}
-                    />
+                    <p className={sectionTitle}>
+                      타깃 조건{" "}
+                      <span className="text-[10px] font-normal text-[#B0B8C1] dark:text-[#4B5563]">
+                        선택
+                      </span>
+                    </p>
+                    <div className="grid grid-cols-2 gap-3 mb-2">
+                      <div>
+                        <label className={labelCls}>최소 나이</label>
+                        <input
+                          type="number"
+                          min={14}
+                          max={84}
+                          value={ageMin}
+                          onChange={(e) => setAgeMin(e.target.value)}
+                          placeholder="20"
+                          className={inputCls}
+                        />
+                      </div>
+                      <div>
+                        <label className={labelCls}>최대 나이</label>
+                        <input
+                          type="number"
+                          min={14}
+                          max={84}
+                          value={ageMax}
+                          onChange={(e) => setAgeMax(e.target.value)}
+                          placeholder="29"
+                          className={inputCls}
+                        />
+                      </div>
+                    </div>
+                    <label className={labelCls}>성별</label>
+                    <div className="flex gap-2">
+                      {(
+                        [
+                          ["", "전체"],
+                          ["F", "여성"],
+                          ["M", "남성"],
+                        ] as [GenderFilter, string][]
+                      ).map(([v, lbl]) => (
+                        <button
+                          key={lbl}
+                          type="button"
+                          onClick={() => setGender(v)}
+                          className={`${chipBase} ${gender === v ? chipActive : chipIdle}`}
+                        >
+                          {lbl}
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                </div>
-                <label className={labelCls}>성별 (gender)</label>
-                <div className="flex gap-2">
-                  {(
-                    [
-                      ["", "전체"],
-                      ["F", "여성"],
-                      ["M", "남성"],
-                    ] as [GenderFilter, string][]
-                  ).map(([v, lbl]) => (
-                    <button
-                      key={lbl}
-                      type="button"
-                      onClick={() => setGender(v)}
-                      className={`${chipBase} ${gender === v ? chipActive : chipIdle}`}
-                    >
-                      {lbl}
-                    </button>
-                  ))}
-                </div>
-              </div>
+                </>
+              )}
 
               <button
                 onClick={run}
@@ -486,7 +521,7 @@ export default function SimulationRunPage() {
                 시뮬레이터 실행
               </button>
               <p className="text-[11px] text-[#B0B8C1] dark:text-[#4B5563] text-center">
-                동기 실행 — 표본 수에 따라 수 초~수십 초 소요됩니다.
+                가상 소비자 수에 따라 수 초~수십 초 걸립니다.
               </p>
             </div>
           </div>
