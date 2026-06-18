@@ -15,7 +15,7 @@ import type {
   SimRunResult,
 } from "./types";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+export const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const token = getToken();
@@ -135,6 +135,8 @@ export const api = {
         personas?: unknown[];
         simulation_id?: string;
         topic?: DebateTopic;
+        rubric_scores?: unknown[]; // §4 루브릭(있으면 리포트 진단에 실음)
+        objective_fit?: unknown; // 캠페인 목표 적합도(ReportView 메인 판정)
       },
       opts?: { layCount?: 2 | 3 | 4 },
     ): Promise<DebateStartResult> => {

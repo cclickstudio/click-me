@@ -11,10 +11,13 @@ import type {
   DebateSSEEvent,
   DebateStance,
   DebateTopic,
+  ObjectiveFit,
   QAEvent,
+  ReportView,
   SimAdAnalysis,
   SimPersona,
   SimPersonaReaction,
+  SimRubricScore,
 } from '@/lib/types';
 
 interface DebatePanelProps {
@@ -22,6 +25,10 @@ interface DebatePanelProps {
   adAnalysis: SimAdAnalysis | null;
   personas: SimPersona[];
   simulationId?: string;
+  objectiveFit?: ObjectiveFit | null; // 토론 /start에 동봉 → ReportView 메인 판정
+  rubricScores?: SimRubricScore[]; // 토론 /start에 동봉 → 리포트 §4 진단
+  // 활성 세션의 통합 리포트를 부모('최종 결과' 영역)로 올린다. 토론 전·복원본은 null.
+  onReportView?: (rv: ReportView | null) => void;
 }
 
 // 채팅 타임라인 1건 — 토론 발언/진행자 + Q&A 질문/답변/주최자(한 스트림에 통합).
@@ -208,6 +215,9 @@ export function DebatePanel({
   adAnalysis,
   personas,
   simulationId,
+  objectiveFit,
+  rubricScores,
+  onReportView,
 }: DebatePanelProps) {
   const [sessions, setSessions] = useState<DebateSession[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -226,6 +236,14 @@ export function DebatePanel({
   const active = sessions.find(s => s.id === activeId) ?? null;
 
   useEffect(() => () => esRef.current?.close(), []);
+
+  // 활성 세션의 통합 리포트를 부모('최종 결과' 영역)로 올린다 — 탭 전환·완료 시 갱신.
+  const activeReportView = active?.result?.report_view ?? null;
+  useEffect(() => {
+    onReportView?.(activeReportView);
+    // onReportView는 매 렌더 새 함수일 수 있어 의존성에서 제외(값만 추적).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeReportView]);
 
   function patch(id: string, p: Partial<DebateSession>) {
     setSessions(prev => prev.map(s => (s.id === id ? { ...s, ...p } : s)));
@@ -289,6 +307,9 @@ export function DebatePanel({
           personas: personas.length > 0 ? personas : undefined,
           simulation_id: simulationId,
           topic,
+          rubric_scores:
+            rubricScores && rubricScores.length > 0 ? rubricScores : undefined,
+          objective_fit: objectiveFit ?? undefined,
         },
         { layCount }
       );

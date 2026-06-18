@@ -5,11 +5,17 @@ import { useState, useRef, useEffect } from 'react';
 import AppLayout from '@/components/AppLayout';
 import { useProjects } from '@/components/ProjectContext';
 import { DebatePanel } from '@/components/simulator/DebatePanel';
+import { SimulationReportView } from '@/components/simulator/SimulationReportView';
 import { KpiCard } from '@/components/ui/KpiCard';
 import { formatPercent } from '@/lib/utils';
 import { api } from '@/lib/api';
 import { SIM_CATEGORIES } from '@/lib/simCategories';
-import type { ObjectiveFit, SimRunResult, SSEProgressEvent } from '@/lib/types';
+import type {
+  ObjectiveFit,
+  ReportView,
+  SimRunResult,
+  SSEProgressEvent,
+} from '@/lib/types';
 
 type Step = 'setup' | 'running' | 'result';
 type InputMode = 'image' | 'url';
@@ -138,7 +144,6 @@ export default function SimulationRunPage() {
 
   // 시뮬레이션 설정
   const [sampleSize, setSampleSize] = useState(20);
-  const [targetMode, setTargetMode] = useState<'AUTO' | 'MANUAL'>('AUTO');
   const [allocation, setAllocation] = useState<'proportional' | 'stratified'>(
     'proportional'
   );
@@ -146,6 +151,8 @@ export default function SimulationRunPage() {
   const [gender, setGender] = useState<GenderFilter>('');
 
   const [result, setResult] = useState<SimRunResult | null>(null);
+  // 토론 완료 시 DebatePanel이 올려주는 통합 리포트('최종 결과' 영역 단일 소스).
+  const [reportView, setReportView] = useState<ReportView | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showFailed, setShowFailed] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -171,16 +178,15 @@ export default function SimulationRunPage() {
     setPct(0);
     setStageMsg('');
     setStep('running');
+    // 사용자가 연령대·성별을 고르면 그 조건으로, 아무것도 안 고르면 자동(AUTO).
     const targetFilter: Record<string, unknown> = {};
-    // 직접 지정일 때만 타깃 조건 반영. 연령대 → 선택 구간들의 하한~상한.
-    if (targetMode === 'MANUAL') {
-      const bands = AGE_BANDS.filter(b => ageBands.includes(b.label));
-      if (bands.length > 0) {
-        targetFilter.age_min = Math.min(...bands.map(b => b.min));
-        targetFilter.age_max = Math.max(...bands.map(b => b.max));
-      }
-      if (gender) targetFilter.gender = gender;
+    const bands = AGE_BANDS.filter(b => ageBands.includes(b.label));
+    if (bands.length > 0) {
+      targetFilter.age_min = Math.min(...bands.map(b => b.min));
+      targetFilter.age_max = Math.max(...bands.map(b => b.max));
     }
+    if (gender) targetFilter.gender = gender;
+    const targetMode = bands.length > 0 || gender !== '' ? 'MANUAL' : 'AUTO';
 
     try {
       // 비동기 시작 → run_id 받고 SSE로 진행률 구독(결과는 completed 후 GET).
@@ -532,92 +538,68 @@ export default function SimulationRunPage() {
                 </div>
               </div>
 
-              {/* ── 타깃 설정 ── */}
+              {/* ── 타깃 설정 (미지정 시 자동 추정) ── */}
               <div className={`${cardCls} flex flex-col gap-5`}>
                 <p className='text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]'>
                   타깃 설정
                 </p>
-                <div className='flex flex-col gap-5'>
-                  {/* 타깃 지정 방식 */}
-                  <div>
-                    <p className={sectionTitle}>타깃 지정 방식</p>
-                    <div className='flex gap-2'>
-                      {(
-                        [
-                          ['AUTO', '자동'],
-                          ['MANUAL', '직접 지정'],
-                        ] as ['AUTO' | 'MANUAL', string][]
-                      ).map(([v, lbl]) => (
+                <p className='text-[11px] text-[#8B95A1] dark:text-[#6B7280] -mt-2'>
+                  지정하지 않으면 자동으로 타깃을 추정합니다.
+                </p>
+
+                <div>
+                  <p className={sectionTitle}>
+                    연령대{' '}
+                    <span className='text-[10px] font-normal text-[#B0B8C1] dark:text-[#4B5563]'>
+                      복수 선택 가능
+                    </span>
+                  </p>
+                  <div className='flex flex-wrap gap-2'>
+                    {AGE_BANDS.map(b => {
+                      const on = ageBands.includes(b.label);
+                      return (
                         <button
-                          key={v}
+                          key={b.label}
                           type='button'
-                          onClick={() => setTargetMode(v)}
-                          className={`${chipBase} ${targetMode === v ? chipActive : chipIdle}`}>
-                          {lbl}
+                          onClick={() =>
+                            setAgeBands(prev =>
+                              on
+                                ? prev.filter(x => x !== b.label)
+                                : [...prev, b.label]
+                            )
+                          }
+                          className={`${chipBase} ${on ? chipActive : chipIdle}`}>
+                          {b.label}
                         </button>
-                      ))}
-                    </div>
+                      );
+                    })}
                   </div>
+                </div>
 
-                  {/* 타깃 조건(연령대·성별) — 직접 지정(MANUAL)일 때만 표시 */}
-                  {targetMode === 'MANUAL' && (
-                    <>
-                      <div>
-                        <p className={sectionTitle}>
-                          연령대{' '}
-                          <span className='text-[10px] font-normal text-[#B0B8C1] dark:text-[#4B5563]'>
-                            복수 선택 가능
-                          </span>
-                        </p>
-                        <div className='flex flex-wrap gap-2'>
-                          {AGE_BANDS.map(b => {
-                            const on = ageBands.includes(b.label);
-                            return (
-                              <button
-                                key={b.label}
-                                type='button'
-                                onClick={() =>
-                                  setAgeBands(prev =>
-                                    on
-                                      ? prev.filter(x => x !== b.label)
-                                      : [...prev, b.label]
-                                  )
-                                }
-                                className={`${chipBase} ${on ? chipActive : chipIdle}`}>
-                                {b.label}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-
-                      <div>
-                        <p className={sectionTitle}>
-                          성별{' '}
-                          <span className='text-[10px] font-normal text-[#B0B8C1] dark:text-[#4B5563]'>
-                            선택
-                          </span>
-                        </p>
-                        <div className='flex gap-2'>
-                          {(
-                            [
-                              ['', '전체'],
-                              ['F', '여성'],
-                              ['M', '남성'],
-                            ] as [GenderFilter, string][]
-                          ).map(([v, lbl]) => (
-                            <button
-                              key={lbl}
-                              type='button'
-                              onClick={() => setGender(v)}
-                              className={`${chipBase} ${gender === v ? chipActive : chipIdle}`}>
-                              {lbl}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                    </>
-                  )}
+                <div>
+                  <p className={sectionTitle}>
+                    성별{' '}
+                    <span className='text-[10px] font-normal text-[#B0B8C1] dark:text-[#4B5563]'>
+                      선택
+                    </span>
+                  </p>
+                  <div className='flex gap-2'>
+                    {(
+                      [
+                        ['', '전체'],
+                        ['F', '여성'],
+                        ['M', '남성'],
+                      ] as [GenderFilter, string][]
+                    ).map(([v, lbl]) => (
+                      <button
+                        key={lbl}
+                        type='button'
+                        onClick={() => setGender(v)}
+                        className={`${chipBase} ${gender === v ? chipActive : chipIdle}`}>
+                        {lbl}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>
@@ -711,6 +693,7 @@ export default function SimulationRunPage() {
               onClick={() => {
                 setStep('setup');
                 setResult(null);
+                setReportView(null);
                 setAdId(`AD-${Date.now()}`);
               }}
               className='px-4 py-2 border border-[#E5E8EB] dark:border-[#2D3748] rounded-lg text-sm text-[#8B95A1] dark:text-[#6B7280] hover:bg-[#F9FAFB] dark:hover:bg-[#252D3D] transition-colors'>
@@ -1063,18 +1046,27 @@ export default function SimulationRunPage() {
                 adAnalysis={ad ?? null}
                 personas={result.personas ?? []}
                 simulationId={result.simulation_id}
+                objectiveFit={fit}
+                rubricScores={result.rubric_scores}
+                onReportView={setReportView}
               />
             </div>
           </div>
 
-          {/* 최종 결과 (리포트 — 추후 박스 추가 예정, 지금은 자리만) */}
+          {/* 최종 결과 — 통합 리포트(화면 = PDF 단일 소스). 토론 완료 후 채워짐. */}
           <div className={cardCls}>
-            <h2 className='text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6] mb-2'>
-              최종 결과
-            </h2>
-            <p className='text-xs text-[#8B95A1] dark:text-[#6B7280]'>
-              리포트가 준비되면 여기에 표시됩니다.
-            </p>
+            {reportView ? (
+              <SimulationReportView rv={reportView} />
+            ) : (
+              <>
+                <h2 className='text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6] mb-2'>
+                  최종 결과
+                </h2>
+                <p className='text-xs text-[#8B95A1] dark:text-[#6B7280]'>
+                  토론이 끝나면 종합 리포트가 여기에 표시됩니다 (PDF 다운로드 포함).
+                </p>
+              </>
+            )}
           </div>
 
           <p className='text-xs text-[#B0B8C1] dark:text-[#4B5563] border-t border-[#E5E8EB] dark:border-[#2D3748] pt-4'>

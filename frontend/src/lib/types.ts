@@ -298,6 +298,159 @@ export interface DebateResult {
   topic: { headline: string; diagnosis: string; question: string; primary_signal: string };
   debate: DebateData | null;
   report: DebateReport;
+  report_view?: ReportView | null; // 통합 리포트(완료된 토론 결과에만 포함)
+}
+
+/* ─── 통합 ReportView — 화면 '최종 결과' = 리포트 = PDF 공용 단일 소스 ─── */
+
+// 리포트용 4대 KPI(시뮬 집계에서 매핑).
+export interface ReportKpi {
+  click_intent_rate: number;
+  ci_low: number;
+  ci_high: number;
+  purchase_intent: number;
+  trust_avg: number;
+  rejection_rate: number;
+  brand_recognition_rate: number;
+  variance_warning: boolean;
+  effective_n: number;
+}
+
+export interface FunnelStage {
+  stage: string;
+  passed: number;
+  pass_rate: number;
+}
+
+export interface Bottleneck {
+  from_stage: string;
+  to_stage: string;
+  dropped: number;
+  drop_rate: number;
+}
+
+export interface RejectionBreakdown {
+  rejected_count: number;
+  rejection_rate: number;
+  by_rejection_reason_tag: Record<string, number>;
+  distrust_count: number;
+}
+
+export interface BrandRecognition {
+  recognized_count: number;
+  recognition_rate: number;
+  unrecognized_count: number;
+  perceived_brands: Record<string, number>;
+}
+
+// ReportView.report — SimulationReport(DebateReport보다 풍부: KPI·퍼널·분포 포함).
+export interface SimulationReport {
+  headline: string;
+  plain_summary: string;
+  topic: string;
+  kpi: ReportKpi;
+  funnel: FunnelStage[];
+  bottleneck: Bottleneck | null;
+  purchase_intent_dist: Record<string, number>;
+  rejection: RejectionBreakdown | null;
+  by_drop_reason_tag: Record<string, number>;
+  emotion_dist: Record<string, number>;
+  brand_recognition: BrandRecognition | null;
+  rubric_scores: SimRubricScore[];
+  consumer_groups: Record<string, number>;
+  debate_available: boolean;
+  rounds_run: number;
+  stop_reason: string | null;
+  consensus: string[];
+  dissent: string[];
+  ranked_actions: RankedAction[];
+  quotes: DebateReportQuote[];
+}
+
+// 연령대×성별 세그먼트 1칸(우리 제품 최대 차별점).
+export interface SegmentCell {
+  age_band: string;
+  gender: string;
+  n: number;
+  effective_n: number;
+  click_intent_rate: number;
+  purchase_intent: number;
+  trust_avg: number;
+  rejection_rate: number;
+  attention_pass_rate: number;
+  low_confidence: boolean;
+}
+
+export interface GroupProfile {
+  count: number;
+  avg_age: number;
+  gender_ratio: Record<string, number>;
+  top_emotion: string | null;
+}
+
+export interface ContributionBar {
+  label: string;
+  contribution: number;
+  value: number;
+  weight: number;
+}
+
+export interface ConversionStep {
+  from_stage: string;
+  to_stage: string;
+  conversion: number;
+}
+
+export interface SummaryMetrics {
+  top2box_purchase: number;
+  bottom2box_purchase: number;
+  positive_emotion_rate: number;
+  negative_emotion_rate: number;
+  neutral_emotion_rate: number;
+  trust_action_gap: number;
+  trust_action_label: string;
+  contribution_waterfall: ContributionBar[];
+  weakest_signal: string | null;
+  weakest_linked_action_rank: number | null;
+  funnel_conversion: ConversionStep[];
+  target_match_rate: number | null;
+  discount_rate: number | null;
+}
+
+export interface ConfidenceBadge {
+  level: string; // high / medium / low
+  ci_width: number;
+  effective_n: number;
+  total_n: number;
+  warnings: string[];
+}
+
+export interface MessageReception {
+  intended: string | null;
+  resistance_rate: number;
+  resistance_terms: Record<string, number>;
+  resisted_quotes: string[];
+}
+
+export interface ReportView {
+  run_id: string;
+  simulation_id: string | null;
+  debate_id: string | null;
+  report: SimulationReport;
+  objective_fit: ObjectiveFit | null;
+  ad_analysis: SimAdAnalysis | null;
+  ad: Record<string, unknown> | null;
+  topic: DebateTopic | null;
+  segments: SegmentCell[];
+  group_profiles: Record<string, GroupProfile>;
+  message_reception: MessageReception | null;
+  summary_metrics: SummaryMetrics;
+  confidence: ConfidenceBadge;
+  debate: DebateData | null;
+  aggregate: SimAggregate;
+  analysis: Record<string, unknown>;
+  generated_at: string;
+  report_view_version: string;
 }
 
 // SSE 토론 진행 이벤트(stage에 따라 채워지는 필드가 다름).
