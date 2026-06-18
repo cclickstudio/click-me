@@ -106,6 +106,23 @@ export interface SimPersona {
   profile_narrative: string;
 }
 
+export interface ObjectiveContribution {
+  label: string;
+  value: number; // 0~1 정규화 신호값
+  weight: number;
+}
+
+export interface ObjectiveFit {
+  objective: string;
+  matched_goal: string;
+  score: number; // 0~100 상대 지수(확률 아님)
+  grade: string; // 높음 / 보통 / 낮음
+  rationale: string;
+  contributions: ObjectiveContribution[];
+  low_confidence: boolean;
+  exploratory: boolean;
+}
+
 export interface SimRunResult {
   run_id: string;
   ad_analysis: SimAdAnalysis | null;
@@ -113,6 +130,7 @@ export interface SimRunResult {
   reactions: SimPersonaReaction[];
   rubric_scores: SimRubricScore[];
   aggregate: SimAggregate | null;
+  objective_fit?: ObjectiveFit | null;
   simulation_id?: string;
 }
 

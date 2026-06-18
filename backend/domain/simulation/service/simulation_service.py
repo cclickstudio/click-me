@@ -11,6 +11,7 @@ import uuid
 from collections.abc import AsyncIterator
 
 from domain.simulation.contracts.schemas import SimulationRunRequest
+from domain.simulation.tools.objective_fit import assess_objective_fit
 
 logger = logging.getLogger("clickme")
 
@@ -154,6 +155,10 @@ class SimulationService:
                 "rubric_scores": rubric_dump,
                 "aggregate": aggregate_dump,
             }
+            # 캠페인 목표 달성 가능성(결정론 룰) — 목표 선언 + 집계가 있을 때만(exploratory).
+            if request.ad_objective and aggregate_obj is not None:
+                fit = assess_objective_fit(request.ad_objective, aggregate_obj, reaction_objs)
+                result["objective_fit"] = fit.model_dump() if fit is not None else None
             # DB 영속화(주입 시) — 실패해도 런 결과(인메모리)는 유지. simulation_id를 결과에 병기.
             if self._persistence is not None and ad_obj is not None and aggregate_obj is not None:
                 try:
