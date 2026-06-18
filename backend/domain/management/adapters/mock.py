@@ -21,6 +21,7 @@ from domain.management.contracts.policy import (
 )
 from domain.management.contracts.schemas import (
     CampaignConfig,
+    CampaignInfo,
     DeliveryEstimate,
     MetricsSnapshot,
 )
@@ -46,6 +47,25 @@ class MockAdPlatform:
     async def get_state(self, campaign_id: str) -> CampaignState:
         """Port 충족 — mock은 항상 ACTIVE."""
         return CampaignState.ACTIVE
+
+    async def list_campaigns(self) -> list[CampaignInfo]:
+        """Port 충족 — 데모 캠페인 목록(고정). 라우터 데모 경로의 풍부한 고장 시나리오는
+        _CAMPAIGNS_DEMO(라우터 소유)에 있고, 여기는 Port 일반 소비자용 최소 목록.
+        """
+        return [
+            CampaignInfo(
+                campaign_id="camp_1",
+                name="여름 신상 원피스",
+                state=CampaignState.ACTIVE,
+                daily_budget_krw=200_000,
+            ),
+            CampaignInfo(
+                campaign_id="camp_2",
+                name="브랜드 데일리 룩",
+                state=CampaignState.ACTIVE,
+                daily_budget_krw=120_000,
+            ),
+        ]
 
     async def get_estimate(self, config: CampaignConfig) -> DeliveryEstimate:
         """Port 충족 — audience 기반 간단 추정(결정론)."""

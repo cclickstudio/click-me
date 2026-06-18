@@ -317,9 +317,77 @@ def _campaign_summary(snaps: list[MetricsSnapshot], budget: int) -> dict:
     }
 
 
+def _real_summary(m: MetricsSnapshot, budget: int) -> dict:
+    """실 reader 단일 집계 스냅샷 → 대시보드 요약.
+
+    CTR/CPC/CPM/지출/도달은 Meta 실측. 전환(CVR)은 픽셀/CAPI 미설정이면 합성하지 않고
+    None + conversion_tracking=False로 정직하게 표기한다(난수 합성 금지).
+    """
+    return {
+        "impressions": m.impressions,
+        "reach": m.cum_reach,
+        "spend_krw": m.spend_krw,
+        "ctr": m.ctr,
+        "cpc_krw": m.cpc_krw,
+        "cpm_krw": m.cpm_krw,
+        "conversions": None,
+        "cvr": None,
+        "conversion_tracking": False,
+        "frequency": m.frequency,
+        "pacing_pct": round(m.spend_krw / budget * 100, 1) if budget else 0.0,
+    }
+
+
+async def _list_campaigns_real() -> dict:
+    """실연동 — Meta 캠페인 목록 + 캠페인별 실측 요약."""
+    reader = build_reader(settings)
+    since = _today_utc()
+    out = []
+    for info in await reader.list_campaigns():
+        m = await reader.get_metrics(info.campaign_id, since)
+        out.append(
+            {
+                "campaign_id": info.campaign_id,
+                "name": info.name,
+                "state": info.state.value,
+                "daily_budget_krw": info.daily_budget_krw,
+                **_real_summary(m, info.daily_budget_krw),
+            }
+        )
+    return {"campaigns": out}
+
+
+async def _get_campaign_real(campaign_id: str) -> dict:
+    """실연동 — 캠페인 상세(시간별 실측 + 기대곡선 + 요약)."""
+    reader = build_reader(settings)
+    today = _today_utc()
+    info = next((c for c in await reader.list_campaigns() if c.campaign_id == campaign_id), None)
+    if info is None:
+        raise HTTPException(status_code=404, detail=f"캠페인 없음: {campaign_id}")
+    snaps = await reader.fetch_hourly_metrics(campaign_id, today)
+    actual = [s.impressions for s in snaps]
+    expected = expected_hourly_impressions(info.daily_budget_krw)
+    m = await reader.get_metrics(campaign_id, today)
+    return {
+        "campaign_id": info.campaign_id,
+        "name": info.name,
+        "state": info.state.value,
+        "daily_budget_krw": info.daily_budget_krw,
+        "expected": [round(e, 1) for e in expected],
+        "actual": actual,
+        "anomaly_hours": find_anomaly_window(expected, actual) if actual else [],
+        "summary": _real_summary(m, info.daily_budget_krw),
+    }
+
+
 @router.get("/campaigns")
 async def list_campaigns():
-    """데모 캠페인 목록 + 캠페인별 성과 요약 (단일 창구 대시보드)."""
+    """캠페인 목록 + 캠페인별 성과 요약 (단일 창구 대시보드).
+
+    use_mock=False면 Meta 실측, True면 데모 합성. CVR은 실모드에선 전환 추적 전까지 None.
+    """
+    if not getattr(settings, "use_mock", True):
+        return await _list_campaigns_real()
     out = []
     for i, (cid, name, state, budget, fault) in enumerate(_CAMPAIGNS_DEMO):
         snaps = await _campaign_snapshots(cid, budget, fault, seed=40 + i)
@@ -338,6 +406,8 @@ async def list_campaigns():
 @router.get("/campaigns/{campaign_id}")
 async def get_campaign(campaign_id: str):
     """캠페인 상세 — 시간별 노출(기대 vs 실측, 이상구간) + 요약 KPI."""
+    if not getattr(settings, "use_mock", True):
+        return await _get_campaign_real(campaign_id)
     for i, (cid, name, state, budget, fault) in enumerate(_CAMPAIGNS_DEMO):
         if cid == campaign_id:
             snaps = await _campaign_snapshots(cid, budget, fault, seed=40 + i)

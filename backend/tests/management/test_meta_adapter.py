@@ -29,6 +29,9 @@ def _load(name: str) -> dict:
 
 def _reader_handler(request: httpx.Request) -> httpx.Response:
     path = request.url.path
+    # /campaigns 분기는 status 체크보다 먼저 — 목록 요청 필드에도 effective_status 포함
+    if path.endswith("/campaigns"):
+        return httpx.Response(200, json=_load("campaigns_v21.json"))
     if "/insights" in path:
         return httpx.Response(200, json=_load("insights_v21.json"))
     if "/delivery_estimate" in path:
@@ -40,6 +43,16 @@ def _reader_handler(request: httpx.Request) -> httpx.Response:
 
 def _reader(token: str = "EAAtest_secret_token") -> MetaAdsReader:
     client = MetaClient(token, api_version="v21.0", transport=httpx.MockTransport(_reader_handler))
+    return MetaAdsReader(client=client)
+
+
+def _reader_with_account(account: str = "111222333") -> MetaAdsReader:
+    client = MetaClient(
+        "EAAtest_secret_token",
+        ad_account_id=account,
+        api_version="v21.0",
+        transport=httpx.MockTransport(_reader_handler),
+    )
     return MetaAdsReader(client=client)
 
 
@@ -79,6 +92,17 @@ def test_get_estimate_maps_delivery_estimate_json():
 def test_get_state_maps_effective_status():
     state = asyncio.run(_reader().get_state("23842000000000123"))
     assert state is CampaignState.ACTIVE
+
+
+def test_list_campaigns_maps_campaign_json():
+    campaigns = asyncio.run(_reader_with_account().list_campaigns())
+    assert len(campaigns) == 2
+    first = campaigns[0]
+    assert first.campaign_id == "120250000000000001"
+    assert first.name == "여름 세일"
+    assert first.state is CampaignState.ACTIVE
+    assert first.daily_budget_krw == 50000  # KRW offset=1 — 원 단위 그대로
+    assert campaigns[1].state is CampaignState.PAUSED
 
 
 # ── client 에러·마스킹 ───────────────────────────────────────────

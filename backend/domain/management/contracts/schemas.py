@@ -22,6 +22,7 @@ from pydantic import AfterValidator, BaseModel, ConfigDict, Field
 from domain.management.contracts.enums import (
     ActionTier,
     AnomalyType,
+    CampaignState,
     DiagnosisSource,
     DiagnosisStatus,
     ExecutionMode,
@@ -66,6 +67,18 @@ class CampaignConfig(Contract):
     end_at: UtcDatetime
     creative_ad_id: str | None = None  # core Ad 느슨 참조 (FK 없음)
     target_audience: dict[str, Any] = Field(default_factory=dict)
+
+
+class CampaignInfo(Contract):
+    """캠페인 목록 항목 — 대시보드용 (AdPlatformReader.list_campaigns 산출).
+
+    이름·상태·일예산만 담는 경량 DTO. 성과 지표는 get_metrics로 별도 조회.
+    """
+
+    campaign_id: str
+    name: str
+    state: CampaignState
+    daily_budget_krw: int = Field(ge=0)
 
 
 class MetricsSnapshot(Contract):

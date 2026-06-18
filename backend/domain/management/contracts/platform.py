@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from domain.management.contracts.schemas import (
         ActionResult,
         CampaignConfig,
+        CampaignInfo,
         DeliveryEstimate,
         MetricsSnapshot,
     )
@@ -28,6 +29,8 @@ class AdPlatformReader(Protocol):
     async def get_estimate(self, config: CampaignConfig) -> DeliveryEstimate: ...
 
     async def get_state(self, campaign_id: str) -> CampaignState: ...
+
+    async def list_campaigns(self) -> list[CampaignInfo]: ...
 
 
 class AdPlatformWriter(Protocol):

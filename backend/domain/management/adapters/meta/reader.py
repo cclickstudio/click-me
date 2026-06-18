@@ -21,6 +21,7 @@ from domain.management.adapters.meta.client import (
 from domain.management.contracts.enums import CampaignState
 from domain.management.contracts.schemas import (
     CampaignConfig,
+    CampaignInfo,
     DeliveryEstimate,
     MetricsSnapshot,
 )
@@ -52,6 +53,9 @@ _INSIGHTS_FIELDS = (
 
 # 시간별(hourly breakdown) 조회 필드 — date_stop 불필요
 _HOURLY_FIELDS = "impressions,clicks,inline_link_clicks,spend,reach,frequency,ctr,cpm,cpc"
+
+# 캠페인 목록 조회 필드 — 대시보드 목록(이름·상태·일예산). daily_budget은 KRW(offset=1) 전제.
+_CAMPAIGN_FIELDS = "id,name,effective_status,daily_budget"
 
 
 def _to_int(value: Any) -> int:
@@ -139,6 +143,28 @@ class MetaAdsReader:
         payload = await self._client.get(campaign_id, {"fields": "effective_status"})
         status = str(payload.get("effective_status", "")).upper()
         return _STATE_MAP.get(status, CampaignState.DRAFT)
+
+    async def list_campaigns(self) -> list[CampaignInfo]:
+        """광고계정의 캠페인 목록 — 대시보드용(이름·상태·일예산).
+
+        Meta ``GET /act_{id}/campaigns``. daily_budget은 캠페인 예산 최적화(CBO) 시에만
+        캠페인 노드에 존재 — 광고세트 예산이면 0으로 들어온다(상세는 별도 조회 대상).
+        """
+        account = normalize_ad_account(self._client.ad_account_id)
+        payload = await self._client.get(f"{account}/campaigns", {"fields": _CAMPAIGN_FIELDS})
+        rows = payload.get("data", [])
+        out: list[CampaignInfo] = []
+        for row in rows:
+            status = str(row.get("effective_status", "")).upper()
+            out.append(
+                CampaignInfo(
+                    campaign_id=str(row.get("id", "")),
+                    name=str(row.get("name", "")),
+                    state=_STATE_MAP.get(status, CampaignState.DRAFT),
+                    daily_budget_krw=_to_int(row.get("daily_budget")),  # KRW offset=1 전제
+                )
+            )
+        return out
 
     async def fetch_hourly_metrics(
         self,
