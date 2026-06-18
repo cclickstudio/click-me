@@ -1,8 +1,12 @@
 # 영속화 통합 테스트 — SimulationService 완료 런이 9테이블에 저장되는지 SQLite로 검증
+#
+# 서비스 구동 테스트는 실 Gemini 필요(mock 제거) — GEMINI_API_KEY 없으면 skip. _as_uuid는 순수.
 from __future__ import annotations
 
 import asyncio
+import os
 
+import pytest
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
@@ -11,6 +15,11 @@ from domain.simulation import models
 from domain.simulation.contracts.schemas import SimulationRunRequest
 from domain.simulation.repositories.persistence import _as_uuid
 from domain.simulation.wiring import build_simulation_service
+
+_needs_gemini = pytest.mark.skipif(
+    os.environ.get("RUN_LIVE_LLM") != "1",
+    reason="실 Gemini e2e — RUN_LIVE_LLM=1로 명시 실행(mock 제거)",
+)
 
 
 def _engine_and_sessionmaker():
@@ -29,6 +38,7 @@ async def _wait_done(svc, run_id: str) -> None:
         await asyncio.sleep(0.02)
 
 
+@_needs_gemini
 async def test_completed_run_is_persisted_to_db() -> None:
     engine, sm = _engine_and_sessionmaker()
     async with engine.begin() as conn:
@@ -65,6 +75,7 @@ async def test_completed_run_is_persisted_to_db() -> None:
         await engine.dispose()  # aiosqlite 연결 스레드 정리(루프 종료 hang 방지)
 
 
+@_needs_gemini
 async def test_no_persistence_when_session_factory_absent() -> None:
     # session_factory 미주입(.env 없는 기본 경로) — DB 저장 생략, 런은 정상 완료.
     svc = build_simulation_service()
