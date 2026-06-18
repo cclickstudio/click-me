@@ -74,18 +74,6 @@ class DebateService:
         # 토론자·Judge가 공유하는 _Clients(실 LLM 경로만). 토론 전후 스냅샷 차이로 1회 토큰 집계.
         self._usage_clients = usage_clients
 
-    async def list_debates(self, simulation_id: str) -> list[dict]:
-        """시뮬의 저장된 토론 목록(메타). persistence 미주입이면 빈 목록."""
-        if self._persistence is None:
-            return []
-        return await self._persistence.list_by_simulation(simulation_id)
-
-    async def get_debate_detail(self, debate_id: str) -> dict | None:
-        """저장된 토론 상세(채팅·결과 복원용). persistence 미주입이면 None."""
-        if self._persistence is None:
-            return None
-        return await self._persistence.get_detail(debate_id)
-
     def analyze(
         self,
         reactions: list[PersonaReaction],
