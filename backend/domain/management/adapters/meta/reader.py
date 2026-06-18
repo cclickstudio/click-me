@@ -10,6 +10,7 @@ spend/cpm/cpc 는 광고계정 통화가 KRW 라는 전제로 정수 KRW 로 매
 from __future__ import annotations
 
 import json
+import re
 from datetime import UTC, datetime
 from typing import Any
 
@@ -20,10 +21,12 @@ from domain.management.adapters.meta.client import (
 )
 from domain.management.contracts.enums import CampaignState
 from domain.management.contracts.schemas import (
+    AccountFunding,
     CampaignConfig,
     CampaignInfo,
     DeliveryEstimate,
     MetricsSnapshot,
+    PlatformMetrics,
 )
 
 #: Meta effective_status → contracts CampaignState 매핑 (미등록 값은 DRAFT 보수 처리).
@@ -60,6 +63,12 @@ _CAMPAIGN_FIELDS = "id,name,effective_status,daily_budget"
 # 광고세트 예산 조회 필드 — 캠페인 노드에 예산이 없을 때(광고세트 예산) 일예산 보완.
 _ADSET_FIELDS = "daily_budget,campaign_id"
 
+# 플랫폼별 분해 조회 필드 — publisher_platform breakdown (FB/IG 등)
+_PLATFORM_FIELDS = "impressions,clicks,spend,reach"
+
+# 계정 자금·게재 가능 조회 필드 — 선불 잔액 소진·계정 비활성 감지
+_FUNDING_FIELDS = "account_status,disable_reason,funding_source_details"
+
 
 def _to_int(value: Any) -> int:
     return int(round(float(value))) if value not in (None, "") else 0
@@ -67,6 +76,12 @@ def _to_int(value: Any) -> int:
 
 def _to_float(value: Any) -> float:
     return float(value) if value not in (None, "") else 0.0
+
+
+def _extract_won(text: str) -> int | None:
+    """'사용 가능한 잔액(₩5,000 KRW)' → 5000. 못 찾으면 None."""
+    m = re.search(r"₩\s*([\d,]+)", text)
+    return int(m.group(1).replace(",", "")) if m else None
 
 
 def _parse_date_utc(value: str | None, fallback: datetime) -> datetime:
@@ -228,3 +243,55 @@ class MetaAdsReader:
                 )
             )
         return snapshots
+
+    async def get_platform_breakdown(
+        self, campaign_id: str, since: datetime
+    ) -> list[PlatformMetrics]:
+        """게재 플랫폼별(FB/IG 등) 지표 — insights breakdowns=publisher_platform."""
+        until = datetime.now(UTC)
+        payload = await self._client.get(
+            f"{campaign_id}/insights",
+            {
+                "fields": _PLATFORM_FIELDS,
+                "breakdowns": "publisher_platform",
+                "time_range": json.dumps(
+                    {"since": since.date().isoformat(), "until": until.date().isoformat()}
+                ),
+            },
+        )
+        out: list[PlatformMetrics] = []
+        for row in payload.get("data", []):
+            out.append(
+                PlatformMetrics(
+                    platform=str(row.get("publisher_platform", "")),
+                    impressions=_to_int(row.get("impressions")),
+                    clicks=_to_int(row.get("clicks")),
+                    spend_krw=_to_int(row.get("spend")),
+                    reach=_to_int(row.get("reach")),
+                )
+            )
+        return out
+
+    async def get_account_funding(self) -> AccountFunding:
+        """광고계정 게재 가능 여부 — 선불 잔액 0(소진)·계정 비활성 감지.
+
+        잔액 소진 시 캠페인 effective_status는 ACTIVE로 남고 계정 status도 1이라,
+        게재 중단을 알려면 funding_source_details(선불 가용 잔액)를 봐야 한다.
+        """
+        account = normalize_ad_account(self._client.ad_account_id)
+        payload = await self._client.get(account, {"fields": _FUNDING_FIELDS})
+        account_status = _to_int(payload.get("account_status"))
+        fsd = payload.get("funding_source_details") or {}
+        is_prepaid = _to_int(fsd.get("type")) == 20  # 20 = 선불(prepaid)
+        available = _extract_won(str(fsd.get("display_string") or "")) if is_prepaid else None
+        blocked, reason = False, None
+        if account_status not in (1, 201):  # 1=active, 201=any_active
+            blocked, reason = True, "계정 비활성"
+        elif is_prepaid and available is not None and available <= 0:
+            blocked, reason = True, "선불 잔액 부족"
+        return AccountFunding(
+            account_status=account_status,
+            available_balance_krw=available,
+            delivery_blocked=blocked,
+            block_reason=reason,
+        )

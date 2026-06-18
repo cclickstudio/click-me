@@ -1,0 +1,10 @@
+{
+  "account_status": 1,
+  "disable_reason": 0,
+  "funding_source_details": {
+    "id": "27293956200289056",
+    "display_string": "사용 가능한 잔액(₩0 KRW)",
+    "type": 20
+  },
+  "id": "act_111222333"
+}

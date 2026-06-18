@@ -35,7 +35,11 @@ def _reader_handler(request: httpx.Request) -> httpx.Response:
     if path.endswith("/adsets"):
         return httpx.Response(200, json=_load("adsets_v21.json"))
     if "/insights" in path:
+        if request.url.params.get("breakdowns") == "publisher_platform":
+            return httpx.Response(200, json=_load("insights_platform_v21.json"))
         return httpx.Response(200, json=_load("insights_v21.json"))
+    if "funding_source_details" in (request.url.params.get("fields") or ""):
+        return httpx.Response(200, json=_load("account_funding_v21.json"))
     if "/delivery_estimate" in path:
         return httpx.Response(200, json=_load("delivery_estimate_v21.json"))
     if "effective_status" in (request.url.params.get("fields") or ""):
@@ -94,6 +98,22 @@ def test_get_estimate_maps_delivery_estimate_json():
 def test_get_state_maps_effective_status():
     state = asyncio.run(_reader().get_state("23842000000000123"))
     assert state is CampaignState.ACTIVE
+
+
+def test_get_platform_breakdown_splits_fb_ig():
+    rows = asyncio.run(_reader().get_platform_breakdown("23842000000000123", datetime.now(UTC)))
+    by = {r.platform: r for r in rows}
+    assert by["facebook"].impressions == 25
+    assert by["instagram"].impressions == 799
+    assert by["instagram"].spend_krw == 4895
+    assert by["facebook"].clicks == 2
+
+
+def test_get_account_funding_detects_prepaid_exhausted():
+    f = asyncio.run(_reader_with_account().get_account_funding())
+    assert f.delivery_blocked is True
+    assert f.block_reason == "선불 잔액 부족"
+    assert f.available_balance_krw == 0
 
 
 def test_list_campaigns_maps_campaign_json():
