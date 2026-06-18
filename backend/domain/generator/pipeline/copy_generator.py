@@ -1,16 +1,15 @@
+# 이미지·전략에 맞는 광고 카피(헤드라인/본문/CTA)를 생성하는 노드 (factory LLM 경유)
+from __future__ import annotations
+
 from langsmith import traceable
-from openai import AsyncOpenAI
 
 from domain.generator.contracts.enums import TemplateType
 from domain.generator.contracts.pipeline_schemas import (
     AdCopy,
-    ImageAnalysis,
     ProductAnalysis,
     StrategyOutput,
 )
-from tools.utils import safe_json_loads, str_or_none
-
-_client = AsyncOpenAI(timeout=60.0)
+from domain.generator.llm.factory import build_text_llm
 
 _TEMPLATE_COPY_GUIDE: dict[TemplateType, str] = {
     TemplateType.A: (
@@ -31,8 +30,7 @@ _TEMPLATE_COPY_GUIDE: dict[TemplateType, str] = {
 _SYSTEM = """\
 당신은 대한민국 퍼포먼스 마케팅 카피라이터입니다.
 모든 출력은 반드시 자연스러운 한국어로 작성해야 합니다.
-오탈자, 문법 오류, 의미 없는 단어 조합은 절대 허용되지 않습니다.
-반드시 JSON 형식으로만 응답하세요."""
+오탈자, 문법 오류, 의미 없는 단어 조합은 절대 허용되지 않습니다."""
 
 _USER_TEMPLATE = """\
 ## 제품 정보
@@ -44,11 +42,6 @@ _USER_TEMPLATE = """\
 ## 광고 전략
 전략: {strategy_description}
 전략 근거: {rationale}
-
-## 생성된 이미지 분석
-무드: {mood}
-구도: {composition}
-밝기: {brightness}
 
 ## 레이아웃 가이드
 {layout_guide}
@@ -72,52 +65,38 @@ _USER_TEMPLATE = """\
 - "퀄랄리", "퀄랄리티" ✗  ← quality의 잘못된 음차
 - "음다 음을", "스타일하게" ✗  ← 의미 없는 단어 조합
 - "스마트 퀄랄리" ✗  ← 비문
+{improvement_section}"""
 
-## 응답 형식
-{{
-  "headline": "헤드라인 (20자 이내 자연스러운 한국어)",
-  "body": "본문 (50자 이내 자연스러운 한국어 문장)",
-  "cta": "CTA (10자 이내)"
-}}"""
+_IMPROVEMENT_SECTION = """\
+
+## 개선 방향 (최우선 반영)
+{improvement_context}
+
+기존 광고의 문제점을 해결하는 방향으로 카피를 작성하세요."""
+
+_llm = build_text_llm(temperature=0.5).with_structured_output(AdCopy)
 
 
 @traceable(name="CopyGenerator", metadata={"pipeline": "generator"})
 async def generate_copy(
     product_analysis: ProductAnalysis,
     strategy_output: StrategyOutput,
-    image_analysis: ImageAnalysis,
     template: TemplateType,
+    improvement_context: str | None = None,
 ) -> AdCopy:
-    response = await _client.chat.completions.create(
-        model="gpt-4o-mini",
-        temperature=0.5,
-        messages=[
-            {"role": "system", "content": _SYSTEM},
-            {
-                "role": "user",
-                "content": _USER_TEMPLATE.format(
-                    product_name=product_analysis.product_name,
-                    core_values=", ".join(product_analysis.core_values),
-                    benefits=", ".join(product_analysis.benefits),
-                    target_audience=product_analysis.target_audience,
-                    strategy_description=strategy_output.strategy_description,
-                    rationale=strategy_output.rationale,
-                    mood=image_analysis.mood,
-                    composition=image_analysis.composition,
-                    brightness=image_analysis.brightness,
-                    clear_zones=image_analysis.clear_zones,
-                    suggested_text_color=image_analysis.suggested_text_color,
-                    layout_guide=_TEMPLATE_COPY_GUIDE[template],
-                ),
-            },
-        ],
-        response_format={"type": "json_object"},
+    improvement_section = (
+        _IMPROVEMENT_SECTION.format(improvement_context=improvement_context)
+        if improvement_context
+        else ""
     )
-
-    raw = safe_json_loads(response.choices[0].message.content, fallback="{}")
-
-    return AdCopy(
-        headline=str_or_none(raw.get("headline")) or "",
-        body=str_or_none(raw.get("body")) or "",
-        cta=str_or_none(raw.get("cta")) or "지금 바로 확인하기",
+    prompt = _USER_TEMPLATE.format(
+        product_name=product_analysis.product_name,
+        core_values=", ".join(product_analysis.core_values),
+        benefits=", ".join(product_analysis.benefits),
+        target_audience=product_analysis.target_audience,
+        strategy_description=strategy_output.strategy_description,
+        rationale=strategy_output.rationale,
+        layout_guide=_TEMPLATE_COPY_GUIDE[template],
+        improvement_section=improvement_section,
     )
+    return await _llm.ainvoke([("system", _SYSTEM), ("user", prompt)])

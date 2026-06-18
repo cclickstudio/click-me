@@ -280,6 +280,21 @@ class AdPublishLog(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
+class BrandProfileRow(Base):
+    """제너레이터 브랜드 설정 — 로그인 없이 client_id(브라우저 UUID)로 식별·영속."""
+
+    __tablename__ = "brand_profiles"
+
+    client_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    brand_color: Mapped[str | None] = mapped_column(String(20))
+    brand_logo_key: Mapped[str | None] = mapped_column(String(512))
+    tone_and_manner: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )
+
+
 # ──────────────────────────────────────────────
 # 광고 매니지먼트 (🤝 공동, R&R §7) — contracts/schemas.py 계약과 1:1
 # 컬럼 규칙: 타임스탬프=TIMESTAMPTZ / 금액=BIGINT KRW / 유연 페이로드=JSONB /
