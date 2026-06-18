@@ -279,7 +279,8 @@ Typography rules:
 - All text must be in Korean (한국어) — every character must be a valid, correctly spelled Korean word
 - Headline: bold weight, high contrast (white on dark background) — size must fit within its zone
 - Body: regular weight, smaller than headline — size must fit within its zone
-- CTA: bold, inside a clearly visible rounded button shape
+- CTA: bold, placed inside a clearly visible rounded button shape
+- NEVER use a font size so large that text overflows its designated zone
 - Text edges must be sharp and pixel-perfect — no blur, no hallucinated characters
 - NEVER use a font size so large that text overflows its designated zone
 
@@ -538,6 +539,11 @@ async def _generate_with_imagen(model: str, prompt: str, size: AdSize) -> bytes:
     if not response.generated_images:
         raise RuntimeError("Imagen 응답에 이미지가 없음")
     return response.generated_images[0].image.image_bytes
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 로고 합성 (PIL 기반)
+# ─────────────────────────────────────────────────────────────────────────────
 
 
 def _composite_logo_pil(
