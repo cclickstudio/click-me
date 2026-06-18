@@ -17,6 +17,7 @@ export type CampaignKpi = {
   cpm_krw: number;
   conversions: number | null; // 전환 추적 미설정(픽셀/CAPI 전)이면 null
   cvr: number | null; // 0~1 (전환/인라인 링크클릭) — 미설정이면 null
+  roas: number | null; // 매출÷지출 — 전환 가치 추적 전이면 null(측정 불가)
   conversion_tracking?: boolean; // 실모드에서 전환 추적 여부 (false면 cvr/conversions=null)
   frequency: number;
   pacing_pct: number;
@@ -28,6 +29,10 @@ export const fmtCvr = (cvr: number | null): string =>
 
 export const fmtConversions = (n: number | null): string =>
   n == null ? '미설정' : n.toLocaleString();
+
+// ROAS는 매출(전환 가치) 추적 전엔 측정 불가 — null이면 "미측정".
+export const fmtRoas = (roas: number | null): string =>
+  roas == null ? '미측정' : `${roas.toFixed(2)}x`;
 
 export type CampaignSummary = CampaignKpi & {
   campaign_id: string;

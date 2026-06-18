@@ -313,6 +313,7 @@ def _campaign_summary(snaps: list[MetricsSnapshot], budget: int) -> dict:
         "cpm_krw": round(total_spend / impressions * 1000) if impressions else 0,
         "conversions": conversions,
         "cvr": round(conversions / total_inline, 5) if total_inline else 0.0,
+        "roas": None,  # 매출(전환 가치) 추적 전 — 측정 불가, 합성 금지
         "frequency": last.frequency,
         "pacing_pct": round(total_spend / budget * 100, 1) if budget else 0.0,
     }
@@ -333,6 +334,7 @@ def _real_summary(m: MetricsSnapshot, budget: int) -> dict:
         "cpm_krw": m.cpm_krw,
         "conversions": None,
         "cvr": None,
+        "roas": None,  # 매출(전환 가치) 추적 전 — 측정 불가
         "conversion_tracking": False,
         "frequency": m.frequency,
         "pacing_pct": round(m.spend_krw / budget * 100, 1) if budget else 0.0,
@@ -417,6 +419,7 @@ def _real_outcome(m: MetricsSnapshot, campaign_id: str, creative_id: str | None)
         cpm_krw=m.cpm_krw,
         conversions=None,
         cvr=None,
+        roas=None,
         as_of=m.as_of,
     )
 

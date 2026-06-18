@@ -1,6 +1,6 @@
 // 캠페인 목록 — 테이블 뷰 (행 클릭 = 선택)
 import type { CampaignSummary } from './types';
-import { fmtCvr } from './types';
+import { fmtCvr, fmtRoas } from './types';
 import { StateBadge } from './StateBadge';
 
 export function CampaignTable({
@@ -24,6 +24,7 @@ export function CampaignTable({
             <th className="text-right font-semibold px-3 py-2.5">지출</th>
             <th className="text-right font-semibold px-3 py-2.5 hidden md:table-cell">CTR</th>
             <th className="text-right font-semibold px-3 py-2.5 hidden lg:table-cell">CVR</th>
+            <th className="text-right font-semibold px-3 py-2.5 hidden lg:table-cell">ROAS</th>
             <th className="text-right font-semibold px-3 py-2.5 hidden md:table-cell">CPC</th>
             <th className="text-right font-semibold px-3 py-2.5 hidden lg:table-cell">CPM</th>
             <th className="text-right font-semibold px-4 py-2.5">소진율</th>
@@ -56,6 +57,9 @@ export function CampaignTable({
               </td>
               <td className="px-3 py-3 text-right tabular-nums text-[#4E5968] dark:text-[#C9CED6] hidden lg:table-cell">
                 {fmtCvr(c.cvr)}
+              </td>
+              <td className="px-3 py-3 text-right tabular-nums text-[#4E5968] dark:text-[#C9CED6] hidden lg:table-cell">
+                {fmtRoas(c.roas)}
               </td>
               <td className="px-3 py-3 text-right tabular-nums text-[#4E5968] dark:text-[#C9CED6] hidden md:table-cell">
                 ₩{c.cpc_krw.toLocaleString()}

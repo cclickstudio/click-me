@@ -118,6 +118,7 @@ class RealOutcome(Contract):
     cpm_krw: int = Field(ge=0)
     conversions: int | None = None
     cvr: float | None = None
+    roas: float | None = None  # 매출÷지출 — 전환 가치 추적 전이면 None(측정 불가)
     as_of: UtcDatetime
 
 

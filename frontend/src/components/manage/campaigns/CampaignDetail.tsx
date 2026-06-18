@@ -1,6 +1,6 @@
 // 캠페인 상세 — 시간별 노출(기대 vs 실측, 이상구간 음영) + 요약 KPI 타일
 import type { CampaignDetail as Detail } from './types';
-import { fmtConversions, fmtCvr } from './types';
+import { fmtConversions, fmtCvr, fmtRoas } from './types';
 import { StateBadge } from './StateBadge';
 
 function MetricChart({ expected, actual, anomalyHours }: { expected: number[]; actual: number[]; anomalyHours: number[] }) {
@@ -57,6 +57,7 @@ export function CampaignDetail({ detail }: { detail: Detail }) {
         <Tile label="소진율" value={`${s.pacing_pct.toFixed(0)}%`} />
         <Tile label="CTR" value={`${(s.ctr * 100).toFixed(1)}%`} />
         <Tile label="CVR" value={fmtCvr(s.cvr)} />
+        <Tile label="ROAS" value={fmtRoas(s.roas)} />
         <Tile label="CPC" value={`₩${s.cpc_krw.toLocaleString()}`} />
         <Tile label="CPM" value={`₩${s.cpm_krw.toLocaleString()}`} />
         <Tile label="전환" value={fmtConversions(s.conversions)} />
