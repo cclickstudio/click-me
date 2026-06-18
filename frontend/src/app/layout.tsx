@@ -4,6 +4,7 @@ import './globals.css';
 import ThemeProvider from '@/components/ThemeProvider';
 import { AuthProvider } from '@/components/AuthProvider';
 import { ProjectProvider } from '@/components/ProjectContext';
+import MetaPixel from '@/components/MetaPixel';
 
 const inter = Inter({ subsets: ['latin'] });
 
@@ -24,6 +25,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
       </head>
       <body className={inter.className}>
+        <MetaPixel />
         <ThemeProvider><AuthProvider><ProjectProvider>{children}</ProjectProvider></AuthProvider></ThemeProvider>
       </body>
     </html>

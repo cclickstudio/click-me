@@ -15,18 +15,24 @@ from enum import StrEnum
 from typing import Any, Protocol
 from uuid import uuid4
 
-from domain.billing.toss_client import PaymentConfirmError, TossPaymentsClient
+from domain.billing.toss_client import (
+    PaymentCancelError,
+    PaymentConfirmError,
+    TossPaymentsClient,
+)
 
 
 class PaymentStatus(StrEnum):
     READY = "ready"
     DONE = "done"
     FAILED = "failed"
+    CANCELED = "canceled"
 
 
 class LedgerReason(StrEnum):
     CHARGE = "charge"  # 결제 충전
     SPEND = "spend"  # 광고 집행 차감
+    REFUND = "refund"  # 결제 취소에 따른 충전 크레딧 환수
 
 
 @dataclass
@@ -37,8 +43,10 @@ class PaymentOrder:
     status: PaymentStatus = PaymentStatus.READY
     payment_key: str | None = None
     raw_response: dict[str, Any] | None = None
+    cancel_response: dict[str, Any] | None = None
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     approved_at: datetime | None = None
+    canceled_at: datetime | None = None
 
 
 @dataclass(frozen=True)
@@ -119,6 +127,8 @@ class BillingService:
         order = self._orders.get(order_id)
         if order is None:
             raise BillingError("존재하지 않는 주문입니다")
+        if order.status is PaymentStatus.CANCELED:
+            raise BillingError("취소된 주문은 다시 승인할 수 없습니다")
         if order.status is PaymentStatus.DONE:
             if order.payment_key == payment_key:
                 return order  # 중복 confirm 멱등 재생
@@ -144,6 +154,50 @@ class BillingService:
                 delta_krw=order.amount_krw,
                 balance_after_krw=self.balance(order.org_id) + order.amount_krw,
                 reason=LedgerReason.CHARGE,
+                ref_id=order.order_id,
+            )
+        )
+        return order
+
+    async def cancel(self, order_id: str, reason: str) -> PaymentOrder:
+        """승인 결제 전액 취소 — PG 취소 성공 뒤 크레딧을 역분개한다.
+
+        이미 사용한 크레딧까지 환수해 음수 잔액이 되지 않도록 현재 잔액이 충전액보다
+        작으면 취소를 막는다. 같은 주문의 중복 취소는 PG 재호출 없이 멱등 반환한다.
+        """
+        order = self._orders.get(order_id)
+        if order is None:
+            raise BillingError("존재하지 않는 주문입니다")
+        if order.status is PaymentStatus.CANCELED:
+            return order
+        if order.status is not PaymentStatus.DONE or not order.payment_key:
+            raise BillingError("승인 완료된 결제만 취소할 수 있습니다")
+        current = self.balance(order.org_id)
+        if current < order.amount_krw:
+            raise BillingError(
+                f"충전 크레딧 사용 후 취소 불가: 잔액 {current}원 < 취소액 {order.amount_krw}원"
+            )
+        reason = reason.strip()
+        if not reason:
+            raise BillingError("취소 사유를 입력해야 합니다")
+        try:
+            response = await self._toss.cancel(
+                order.payment_key,
+                reason,
+                idempotency_key=f"clickme-cancel-{order.order_id}",
+            )
+        except PaymentCancelError:
+            raise
+        order.status = PaymentStatus.CANCELED
+        order.cancel_response = response
+        order.canceled_at = datetime.now(UTC)
+        self._orders.save(order)
+        self._ledger.append(
+            LedgerEntry(
+                org_id=order.org_id,
+                delta_krw=-order.amount_krw,
+                balance_after_krw=current - order.amount_krw,
+                reason=LedgerReason.REFUND,
                 ref_id=order.order_id,
             )
         )
