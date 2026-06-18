@@ -96,8 +96,16 @@ const inputCls =
   'w-full px-3 py-2.5 rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-white dark:bg-[#252D3D] text-sm text-[#191F28] dark:text-[#F2F4F6] focus:outline-none focus:ring-2 focus:ring-[#3182F6] placeholder:text-[#B0B8C1] dark:placeholder:text-[#4B5563] transition-colors';
 const cardCls =
   'bg-white dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748] rounded-2xl p-6 transition-colors';
-const advToggleCls =
-  'flex items-center gap-1 text-xs font-medium text-[#8B95A1] dark:text-[#6B7280] hover:text-[#3182F6] transition-colors';
+
+/* ─── 연령대 → age_min/age_max 변환 (다중 선택 시 하한~상한 범위) ─── */
+const AGE_BANDS: { label: string; min: number; max: number }[] = [
+  { label: '10대', min: 14, max: 19 },
+  { label: '20대', min: 20, max: 29 },
+  { label: '30대', min: 30, max: 39 },
+  { label: '40대', min: 40, max: 49 },
+  { label: '50대', min: 50, max: 59 },
+  { label: '60대 이상', min: 60, max: 84 },
+];
 
 function aisasFunnel(a: SimRunResult['reactions'][number]['aisas']): string {
   const stages: [keyof typeof a, string][] = [
@@ -133,8 +141,7 @@ export default function SimulationRunPage() {
   const [allocation, setAllocation] = useState<'proportional' | 'stratified'>(
     'proportional'
   );
-  const [ageMin, setAgeMin] = useState('');
-  const [ageMax, setAgeMax] = useState('');
+  const [ageBands, setAgeBands] = useState<string[]>([]);
   const [gender, setGender] = useState<GenderFilter>('');
 
   const [result, setResult] = useState<SimRunResult | null>(null);
@@ -147,8 +154,6 @@ export default function SimulationRunPage() {
   const [stageMsg, setStageMsg] = useState('');
   const esRef = useRef<EventSource | null>(null);
 
-  // 고급 설정 접기 — 기본 화면 단순화.
-  const [showAdvSettings, setShowAdvSettings] = useState(false);
 
   // 언마운트 시 스트림 정리.
   useEffect(() => () => esRef.current?.close(), []);
@@ -447,139 +452,140 @@ export default function SimulationRunPage() {
                 </div>
               </div>
 
-              {/* 고급 설정(표본 추출·타깃) — 기본 닫힘 */}
-              <hr className='border-[#E5E8EB] dark:border-[#2D3748]' />
-              <button
-                type='button'
-                onClick={() => setShowAdvSettings(v => !v)}
-                className={advToggleCls}>
-                <span>고급 설정 (표본 추출·타깃)</span>
-                <span>{showAdvSettings ? '▴' : '▾'}</span>
-              </button>
-
-              {showAdvSettings && (
-                <>
-                  {/* 표본 추출 방식 */}
-                  <div>
-                    <p className={sectionTitle}>표본 추출 방식</p>
-                    <div className='flex gap-2'>
-                      {(
-                        [
-                          ['proportional', '인구 비례 (기본)'],
-                          ['stratified', '소수 그룹 보강'],
-                        ] as ['proportional' | 'stratified', string][]
-                      ).map(([v, lbl]) => (
-                        <button
-                          key={v}
-                          type='button'
-                          onClick={() => setAllocation(v)}
-                          className={`${chipBase} ${allocation === v ? chipActive : chipIdle}`}>
-                          {lbl}
-                        </button>
-                      ))}
-                    </div>
-                    <p className='text-[11px] text-[#8B95A1] dark:text-[#6B7280] mt-1.5'>
-                      {allocation === 'proportional'
-                        ? '실제 인구 비율대로 뽑습니다 (기본 권장).'
-                        : '소수 그룹도 충분히 포함되게 보강합니다 (정밀하지만 신뢰구간이 넓어짐).'}
-                    </p>
-                  </div>
-
-                  <hr className='border-[#E5E8EB] dark:border-[#2D3748]' />
-
-                  {/* 타깃 지정 방식 */}
-                  <div>
-                    <p className={sectionTitle}>타깃 지정 방식</p>
-                    <div className='flex gap-2'>
-                      {(
-                        [
-                          ['AUTO', '자동'],
-                          ['MANUAL', '직접 지정'],
-                        ] as ['AUTO' | 'MANUAL', string][]
-                      ).map(([v, lbl]) => (
-                        <button
-                          key={v}
-                          type='button'
-                          onClick={() => setTargetMode(v)}
-                          className={`${chipBase} ${targetMode === v ? chipActive : chipIdle}`}>
-                          {lbl}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* 타깃 조건 */}
-                  <div>
-                    <p className={sectionTitle}>
-                      타깃 조건{' '}
-                      <span className='text-[10px] font-normal text-[#B0B8C1] dark:text-[#4B5563]'>
-                        선택
-                      </span>
-                    </p>
-                    <div className='grid grid-cols-2 gap-3 mb-2'>
-                      <div>
-                        <label className={labelCls}>최소 나이</label>
-                        <input
-                          type='number'
-                          min={14}
-                          max={84}
-                          value={ageMin}
-                          onChange={e => setAgeMin(e.target.value)}
-                          placeholder='20'
-                          className={inputCls}
-                        />
-                      </div>
-                      <div>
-                        <label className={labelCls}>최대 나이</label>
-                        <input
-                          type='number'
-                          min={14}
-                          max={84}
-                          value={ageMax}
-                          onChange={e => setAgeMax(e.target.value)}
-                          placeholder='29'
-                          className={inputCls}
-                        />
-                      </div>
-                    </div>
-                    <label className={labelCls}>성별</label>
-                    <div className='flex gap-2'>
-                      {(
-                        [
-                          ['', '전체'],
-                          ['F', '여성'],
-                          ['M', '남성'],
-                        ] as [GenderFilter, string][]
-                      ).map(([v, lbl]) => (
-                        <button
-                          key={lbl}
-                          type='button'
-                          onClick={() => setGender(v)}
-                          className={`${chipBase} ${gender === v ? chipActive : chipIdle}`}>
-                          {lbl}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                </>
-              )}
-
-              <button
-                onClick={run}
-                disabled={!adTitle.trim()}
-                className='mt-2 w-full flex items-center justify-center gap-2 py-3 bg-[#3182F6] hover:bg-[#1B6EEB] disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl text-sm font-semibold transition-colors'>
-                <svg
-                  className='w-4 h-4'
-                  fill='currentColor'
-                  viewBox='0 0 24 24'>
-                  <path d='M8 5v14l11-7z' />
-                </svg>
-                시뮬레이터 실행
-              </button>
-              <p className='text-[11px] text-[#B0B8C1] dark:text-[#4B5563] text-center'>
-                가상 소비자 수에 따라 수 초~수십 초 걸립니다.
-              </p>
+              {/* 표본 추출 방식 */}
+              <div>
+                <p className={sectionTitle}>표본 추출 방식</p>
+                <div className='flex gap-2'>
+                  {(
+                    [
+                      ['proportional', '인구 비례 (기본)'],
+                      ['stratified', '소수 그룹 보강'],
+                    ] as ['proportional' | 'stratified', string][]
+                  ).map(([v, lbl]) => (
+                    <button
+                      key={v}
+                      type='button'
+                      onClick={() => setAllocation(v)}
+                      className={`${chipBase} ${allocation === v ? chipActive : chipIdle}`}>
+                      {lbl}
+                    </button>
+                  ))}
+                </div>
+                <p className='text-[11px] text-[#8B95A1] dark:text-[#6B7280] mt-1.5'>
+                  {allocation === 'proportional'
+                    ? '실제 인구 비율대로 뽑습니다 (기본 권장).'
+                    : '소수 그룹도 충분히 포함되게 보강합니다 (정밀하지만 신뢰구간이 넓어짐).'}
+                </p>
+              </div>
             </div>
+          </div>
+
+          {/* ── 타깃 설정 (전체 너비) ── */}
+          <div className={`${cardCls} flex flex-col gap-5 mt-5`}>
+            <p className='text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]'>
+              타깃 설정
+            </p>
+            <div className='grid grid-cols-1 md:grid-cols-3 gap-5'>
+              {/* 타깃 지정 방식 */}
+              <div>
+                <p className={sectionTitle}>타깃 지정 방식</p>
+                <div className='flex gap-2'>
+                  {(
+                    [
+                      ['AUTO', '자동'],
+                      ['MANUAL', '직접 지정'],
+                    ] as ['AUTO' | 'MANUAL', string][]
+                  ).map(([v, lbl]) => (
+                    <button
+                      key={v}
+                      type='button'
+                      onClick={() => setTargetMode(v)}
+                      className={`${chipBase} ${targetMode === v ? chipActive : chipIdle}`}>
+                      {lbl}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* 나이 범위 */}
+              <div>
+                <p className={sectionTitle}>
+                  나이 범위{' '}
+                  <span className='text-[10px] font-normal text-[#B0B8C1] dark:text-[#4B5563]'>
+                    선택
+                  </span>
+                </p>
+                <div className='grid grid-cols-2 gap-3'>
+                  <div>
+                    <label className={labelCls}>최소 나이</label>
+                    <input
+                      type='number'
+                      min={14}
+                      max={84}
+                      value={ageMin}
+                      onChange={e => setAgeMin(e.target.value)}
+                      placeholder='20'
+                      className={inputCls}
+                    />
+                  </div>
+                  <div>
+                    <label className={labelCls}>최대 나이</label>
+                    <input
+                      type='number'
+                      min={14}
+                      max={84}
+                      value={ageMax}
+                      onChange={e => setAgeMax(e.target.value)}
+                      placeholder='29'
+                      className={inputCls}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* 성별 */}
+              <div>
+                <p className={sectionTitle}>
+                  성별{' '}
+                  <span className='text-[10px] font-normal text-[#B0B8C1] dark:text-[#4B5563]'>
+                    선택
+                  </span>
+                </p>
+                <div className='flex gap-2'>
+                  {(
+                    [
+                      ['', '전체'],
+                      ['F', '여성'],
+                      ['M', '남성'],
+                    ] as [GenderFilter, string][]
+                  ).map(([v, lbl]) => (
+                    <button
+                      key={lbl}
+                      type='button'
+                      onClick={() => setGender(v)}
+                      className={`${chipBase} ${gender === v ? chipActive : chipIdle}`}>
+                      {lbl}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* ── 실행 버튼 (하단 전체 너비) ── */}
+          <div className='mt-5'>
+            <button
+              onClick={run}
+              disabled={!adTitle.trim()}
+              className='w-full flex items-center justify-center gap-2 py-3.5 bg-[#3182F6] hover:bg-[#1B6EEB] disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl text-sm font-semibold transition-colors'>
+              <svg className='w-4 h-4' fill='currentColor' viewBox='0 0 24 24'>
+                <path d='M8 5v14l11-7z' />
+              </svg>
+              시뮬레이터 실행
+            </button>
+            <p className='text-[11px] text-[#B0B8C1] dark:text-[#4B5563] text-center mt-2'>
+              가상 소비자 수에 따라 수 초~수십 초 걸립니다.
+            </p>
           </div>
         </div>
       </AppLayout>
