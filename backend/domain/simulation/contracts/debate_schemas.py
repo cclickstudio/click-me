@@ -8,6 +8,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from domain.simulation.contracts.schemas import RubricScore
+
 # AISAS 5단계 — 퍼널 순서 고정(이 순서로만 인접 비교).
 AISAS_STAGES: list[str] = ["attention", "interest", "search", "action", "share"]
 
@@ -54,6 +56,21 @@ class RejectionBreakdown(BaseModel):
     distrust_count: int = 0  # emotion_tag == distrust 인원
 
 
+class BrandRecognition(BaseModel):
+    """조각 8 — 브랜드 식별 분해(Fluency, REPORT §2-5). 인원 기반(9의 가중 rate와 별개).
+
+    선언 브랜드명 입력이 없어 '정확 귀속 vs 오귀속' 자동 판정은 안 한다. 식별/미식별 +
+    인식한 브랜드명(perceived_brand) 분포만 결정론으로 센다(오인식 해석은 토론·사람 몫).
+    """
+
+    recognized_count: int  # brand_recognized == true 인원
+    recognition_rate: float  # recognized_count / total_n (인원 기반, 0~1)
+    unrecognized_count: int  # 미식별 인원
+    perceived_brands: dict[str, int] = Field(
+        default_factory=dict
+    )  # 인식한 브랜드/제품명 분포(상위)
+
+
 class MessageReception(BaseModel):
     """조각 8 — 메시지 수신 갭(의도 메시지가 어떻게 받아들여졌나). 결정론 신호, 해석은 토론(LLM).
 
@@ -80,6 +97,8 @@ class ReactionAnalysis(BaseModel):
     by_drop_stage: dict[str, int] = Field(default_factory=dict)
     by_drop_reason_tag: dict[str, int] = Field(default_factory=dict)
     emotion_dist: dict[str, int] = Field(default_factory=dict)
+    purchase_intent_dist: dict[int, int] = Field(default_factory=dict)  # 구매의도 1~5 분포(§2-2)
+    brand_recognition: BrandRecognition | None = None  # 브랜드 식별 분해(§2-5)
     rejection: RejectionBreakdown
     groups: GroupMembers
     message: MessageReception | None = None  # 메시지 수신 갭(ad_analysis 있을 때만)
@@ -235,6 +254,7 @@ class ReportKpi(BaseModel):
     purchase_intent: float
     trust_avg: float
     rejection_rate: float
+    brand_recognition_rate: float = 0.0  # 브랜드 식별률(§2-5 Fluency) — 가중 비율
     variance_warning: bool
     effective_n: float
 
@@ -260,6 +280,14 @@ class SimulationReport(BaseModel):
     kpi: ReportKpi
     funnel: list[FunnelStage]
     bottleneck: Bottleneck | None = None
+    # ── §2 반응 집계 상세(이미 산출된 분석 데이터 노출 — 신규 합성 없음) ──
+    purchase_intent_dist: dict[int, int] = Field(default_factory=dict)  # §2-2 구매의도 분포
+    rejection: RejectionBreakdown | None = None  # §2-3 거부 사유 분해
+    by_drop_reason_tag: dict[str, int] = Field(default_factory=dict)  # 이탈 사유 분해
+    emotion_dist: dict[str, int] = Field(default_factory=dict)  # §2-4 감정 분포
+    brand_recognition: BrandRecognition | None = None  # §2-5 브랜드 식별 분해
+    # ── §4 크리에이티브 진단(루브릭 평가 패스 점수 — 토론 입력으로 주입 시) ──
+    rubric_scores: list[RubricScore] = Field(default_factory=list)
     consumer_groups: dict[str, int] = Field(default_factory=dict)  # 그룹별 인원
     debate_available: bool = False
     rounds_run: int = 0

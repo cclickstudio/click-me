@@ -15,7 +15,12 @@ from langsmith import traceable
 
 from domain.simulation.contracts.debate_ports import DebaterPort, JudgePort
 from domain.simulation.contracts.debate_schemas import DebateResult, DebateTopic
-from domain.simulation.contracts.schemas import AdInterpretation, Persona, PersonaReaction
+from domain.simulation.contracts.schemas import (
+    AdInterpretation,
+    Persona,
+    PersonaReaction,
+    RubricScore,
+)
 from domain.simulation.tools.debate.analyzer import analyze_reactions
 from domain.simulation.tools.debate.assigner import assign_panel
 from domain.simulation.tools.debate.kpi import (
@@ -146,17 +151,21 @@ class DebateService:
         lay_count: int = 3,
         personas: list[Persona] | None = None,
         topic: DebateTopic | None = None,
+        rubric: list[RubricScore] | None = None,
     ) -> str:
         """비동기 시작 — 백그라운드 실행 후 run_id 반환(진행률은 SSE, 결과는 get_result).
 
         lay_count: 일반인 수(2=피벗·비판자 / 3=+완주자 / 4=+완주자·미온). 패널 = 전문가4 + 일반인.
         personas: 인구통계(있으면 타깃 적합 선발 — 타깃 밖 후보 배제).
         topic: 추가 토론에서 사용자가 고른 논제(None이면 최초 토론 = 분석 headline 고정).
+        rubric: §4 루브릭 점수(있으면 리포트 크리에이티브 진단에 그대로 실음).
         """
         run_id = str(uuid.uuid4())
         self._store.create_run(run_id)
         asyncio.create_task(
-            self._run(run_id, reactions, ad_analysis, simulation_id, lay_count, personas, topic)
+            self._run(
+                run_id, reactions, ad_analysis, simulation_id, lay_count, personas, topic, rubric
+            )
         )
         return run_id
 
@@ -168,11 +177,14 @@ class DebateService:
         simulation_id: str | None = None,
         lay_count: int = 3,
         personas: list[Persona] | None = None,
+        rubric: list[RubricScore] | None = None,
     ) -> dict | None:
         """동기 실행 — 끝까지 돌린 뒤 결과(분석·KPI·주제·패널)를 반환."""
         run_id = str(uuid.uuid4())
         self._store.create_run(run_id)
-        await self._run(run_id, reactions, ad_analysis, simulation_id, lay_count, personas)
+        await self._run(
+            run_id, reactions, ad_analysis, simulation_id, lay_count, personas, rubric=rubric
+        )
         return self._store.get_result(run_id)
 
     async def _run(
@@ -184,6 +196,7 @@ class DebateService:
         lay_count: int = 3,
         personas: list[Persona] | None = None,
         selected_topic: DebateTopic | None = None,
+        rubric: list[RubricScore] | None = None,
     ) -> None:
         store = self._store
         try:
@@ -326,7 +339,7 @@ class DebateService:
                 )
 
             # ── 조각 11 리포트 (결정론 조립) ──
-            report = build_report(analysis, aggregate, topic, debate_obj)
+            report = build_report(analysis, aggregate, topic, debate_obj, rubric)
             store.emit(
                 run_id,
                 {

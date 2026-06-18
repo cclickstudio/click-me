@@ -10,7 +10,12 @@ from pydantic import BaseModel
 from core.config import settings
 from domain.simulation.adapters.memory_store import InMemorySimulationStore
 from domain.simulation.contracts.debate_schemas import DebateTopic
-from domain.simulation.contracts.schemas import AdInterpretation, Persona, PersonaReaction
+from domain.simulation.contracts.schemas import (
+    AdInterpretation,
+    Persona,
+    PersonaReaction,
+    RubricScore,
+)
 from domain.simulation.wiring import build_debate_service
 
 router = APIRouter()
@@ -28,7 +33,7 @@ _SSE_HEADERS = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
 class DebateRequest(BaseModel):
     """토론/분석 입력 — 7번(반응 출력) 산출물. reactions 필수, 나머지 선택.
 
-    더미·시뮬레이션 결과 JSON 전체를 그대로 붙여넣어도 됨(run_id·rubric·aggregate는 무시).
+    더미·시뮬레이션 결과 JSON 전체를 그대로 붙여넣어도 됨(run_id·aggregate는 무시).
     """
 
     reactions: list[PersonaReaction]
@@ -37,6 +42,8 @@ class DebateRequest(BaseModel):
     personas: list[Persona] | None = None  # 인구통계(있으면 타깃 적합 선발 — 타깃 밖 후보 배제)
     # 추가 토론: 사용자가 /topics 후보 중 고른 논제(없으면 분석 headline 고정 = 최초 토론).
     topic: DebateTopic | None = None
+    # §4 루브릭 점수(시뮬 결과에 포함) — 있으면 리포트 크리에이티브 진단에 그대로 실음.
+    rubric_scores: list[RubricScore] | None = None
 
 
 class QuestionRequest(BaseModel):
@@ -83,6 +90,7 @@ async def start_debate(body: DebateRequest, lay_count: int = 3) -> dict:
         lay_count=lay_count,
         personas=body.personas,
         topic=body.topic,  # 선택 논제(없으면 최초 토론 = 분석 headline 고정)
+        rubric=body.rubric_scores,  # §4 루브릭(있으면 리포트에 실음)
     )
     return {"run_id": run_id, "stream_url": f"/api/debate/{run_id}/stream", "lay_count": lay_count}
 

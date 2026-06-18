@@ -12,7 +12,7 @@ from domain.simulation.contracts.debate_schemas import (
     ReportQuote,
     SimulationReport,
 )
-from domain.simulation.contracts.schemas import SimulationAggregate
+from domain.simulation.contracts.schemas import RubricScore, SimulationAggregate
 
 
 def _consumer_group_counts(analysis: ReactionAnalysis) -> dict[str, int]:
@@ -46,8 +46,12 @@ def build_report(
     aggregate: SimulationAggregate,
     topic: DebateTopic,
     debate: DebateResult | None = None,
+    rubric: list[RubricScore] | None = None,
 ) -> SimulationReport:
-    """앞 조각 산출을 리포트로 조립. debate가 None이면 토론 파트는 비우고 진단은 주제로 대체."""
+    """앞 조각 산출을 리포트로 조립. debate가 None이면 토론 파트는 비우고 진단은 주제로 대체.
+
+    rubric(§4 루브릭 평가 패스)이 주입되면 크리에이티브 진단 점수를 그대로 싣는다(없으면 생략).
+    """
     kpi = ReportKpi(
         click_intent_rate=aggregate.click_intent_rate,
         ci_low=aggregate.ci_low,
@@ -55,20 +59,31 @@ def build_report(
         purchase_intent=aggregate.purchase_intent,
         trust_avg=aggregate.trust_avg,
         rejection_rate=aggregate.rejection_rate,
+        brand_recognition_rate=aggregate.brand_recognition_rate,
         variance_warning=aggregate.variance_warning,
         effective_n=aggregate.effective_n,
     )
+
+    # §2 반응 집계 상세·§4 루브릭은 토론 유무와 무관하게 동일하게 싣는다(이미 산출된 데이터).
+    common = {
+        "topic": topic.headline,
+        "kpi": kpi,
+        "funnel": analysis.funnel,
+        "bottleneck": analysis.bottleneck,
+        "purchase_intent_dist": analysis.purchase_intent_dist,
+        "rejection": analysis.rejection,
+        "by_drop_reason_tag": analysis.by_drop_reason_tag,
+        "emotion_dist": analysis.emotion_dist,
+        "brand_recognition": analysis.brand_recognition,
+        "rubric_scores": rubric or [],
+        "consumer_groups": _consumer_group_counts(analysis),
+    }
 
     if debate is not None and debate.final is not None:
         final = debate.final
         return SimulationReport(
             headline=final.headline,
             plain_summary=final.plain_summary,
-            topic=topic.headline,
-            kpi=kpi,
-            funnel=analysis.funnel,
-            bottleneck=analysis.bottleneck,
-            consumer_groups=_consumer_group_counts(analysis),
             debate_available=True,
             rounds_run=debate.rounds_run,
             stop_reason=debate.stop_reason,
@@ -76,15 +91,8 @@ def build_report(
             dissent=final.dissent,
             ranked_actions=final.ranked_actions,
             quotes=_quotes(debate),
+            **common,
         )
 
     # 토론 미실행 — KPI·분석만, 진단은 주제 diagnosis로.
-    return SimulationReport(
-        headline=topic.diagnosis,
-        topic=topic.headline,
-        kpi=kpi,
-        funnel=analysis.funnel,
-        bottleneck=analysis.bottleneck,
-        consumer_groups=_consumer_group_counts(analysis),
-        debate_available=False,
-    )
+    return SimulationReport(headline=topic.diagnosis, debate_available=False, **common)
