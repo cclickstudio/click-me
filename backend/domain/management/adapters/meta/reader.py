@@ -9,7 +9,9 @@ spend/cpm/cpc 는 광고계정 통화가 KRW 라는 전제로 정수 KRW 로 매
 
 from __future__ import annotations
 
+import asyncio
 import json
+import re
 from datetime import UTC, datetime
 from typing import Any
 
@@ -20,10 +22,12 @@ from domain.management.adapters.meta.client import (
 )
 from domain.management.contracts.enums import CampaignState
 from domain.management.contracts.schemas import (
+    AccountFunding,
     CampaignConfig,
     CampaignInfo,
     DeliveryEstimate,
     MetricsSnapshot,
+    PlatformMetrics,
 )
 
 #: Meta effective_status → contracts CampaignState 매핑 (미등록 값은 DRAFT 보수 처리).
@@ -48,7 +52,8 @@ _TRAFFIC_OPTIMIZATION_GOAL = "LINK_CLICKS"
 
 # Meta insights 조회 필드 (성과 읽기 핵심)
 _INSIGHTS_FIELDS = (
-    "impressions,clicks,inline_link_clicks,spend,reach,frequency,ctr,cpm,cpc,date_stop"
+    "impressions,clicks,inline_link_clicks,spend,reach,frequency,ctr,cpm,cpc,"
+    "actions,action_values,purchase_roas,date_stop"
 )
 
 # 시간별(hourly breakdown) 조회 필드 — date_stop 불필요
@@ -60,6 +65,18 @@ _CAMPAIGN_FIELDS = "id,name,effective_status,daily_budget"
 # 광고세트 예산 조회 필드 — 캠페인 노드에 예산이 없을 때(광고세트 예산) 일예산 보완.
 _ADSET_FIELDS = "daily_budget,campaign_id"
 
+# 플랫폼별 분해 조회 필드 — publisher_platform breakdown (FB/IG 등)
+_PLATFORM_FIELDS = "impressions,clicks,spend,reach"
+
+# 계정 자금·게재 가능 조회 필드 — 선불 잔액 소진·계정 비활성 감지
+_FUNDING_FIELDS = "account_status,disable_reason,funding_source_details"
+
+_PURCHASE_ACTION_TYPES = (
+    "offsite_conversion.fb_pixel_purchase",
+    "omni_purchase",
+    "purchase",
+)
+
 
 def _to_int(value: Any) -> int:
     return int(round(float(value))) if value not in (None, "") else 0
@@ -67,6 +84,31 @@ def _to_int(value: Any) -> int:
 
 def _to_float(value: Any) -> float:
     return float(value) if value not in (None, "") else 0.0
+
+
+def _extract_won(text: str) -> int | None:
+    """'사용 가능한 잔액(₩5,000 KRW)' → 5000. 못 찾으면 None."""
+    m = re.search(r"₩\s*([\d,]+)", text)
+    return int(m.group(1).replace(",", "")) if m else None
+
+
+def _purchase_metric(items: Any) -> float | None:
+    """Meta action 배열에서 구매 값을 하나만 고른다.
+
+    omni_purchase와 pixel_purchase가 동시에 내려오는 경우 같은 구매가 중복될 수 있어
+    합산하지 않고 명시한 우선순위의 첫 값을 사용한다.
+    """
+    if not isinstance(items, list):
+        return None
+    values = {
+        str(item.get("action_type")): _to_float(item.get("value"))
+        for item in items
+        if isinstance(item, dict)
+    }
+    for action_type in _PURCHASE_ACTION_TYPES:
+        if action_type in values:
+            return values[action_type]
+    return 0.0
 
 
 def _parse_date_utc(value: str | None, fallback: datetime) -> datetime:
@@ -108,19 +150,38 @@ class MetaAdsReader:
         impressions = _to_int(row.get("impressions"))
         clicks = _to_int(row.get("clicks"))
         reach = _to_int(row.get("reach"))
+        inline_link_clicks = _to_int(row.get("inline_link_clicks"))
+        spend_krw = _to_int(row.get("spend"))
+        purchase_count = _purchase_metric(row.get("actions"))
+        purchase_value = _purchase_metric(row.get("action_values"))
+        meta_roas = _purchase_metric(row.get("purchase_roas"))
+        conversions = int(round(purchase_count)) if purchase_count is not None else None
+        purchase_value_krw = int(round(purchase_value)) if purchase_value is not None else None
+        cvr = (
+            conversions / inline_link_clicks
+            if conversions is not None and inline_link_clicks
+            else (0.0 if conversions == 0 else None)
+        )
+        roas = meta_roas
+        if roas is None and purchase_value_krw is not None:
+            roas = purchase_value_krw / spend_krw if spend_krw else 0.0
         return MetricsSnapshot(
             campaign_id=campaign_id,
             as_of=_parse_date_utc(row.get("date_stop"), since),
             impressions=impressions,
             clicks=clicks,
-            inline_link_clicks=_to_int(row.get("inline_link_clicks")),
-            spend_krw=_to_int(row.get("spend")),  # 계정 통화 = KRW 전제 (정수)
+            inline_link_clicks=inline_link_clicks,
+            spend_krw=spend_krw,  # 계정 통화 = KRW 전제 (정수)
             cum_impressions=impressions,  # 단일 스냅샷 — 누적은 호출자 책임
             cum_reach=reach,
             frequency=_to_float(row.get("frequency")),
             ctr=_to_float(row.get("ctr")) / 100.0,  # Meta ctr은 백분율 → 비율로 환산
             cpm_krw=_to_int(row.get("cpm")),
             cpc_krw=_to_int(row.get("cpc")),
+            conversions=conversions,
+            purchase_value_krw=purchase_value_krw,
+            cvr=cvr,
+            roas=roas,
         )
 
     async def get_estimate(self, config: CampaignConfig) -> DeliveryEstimate:
@@ -147,6 +208,58 @@ class MetaAdsReader:
         status = str(payload.get("effective_status", "")).upper()
         return _STATE_MAP.get(status, CampaignState.DRAFT)
 
+    async def get_platform_breakdown(
+        self, campaign_id: str, since: datetime
+    ) -> list[PlatformMetrics]:
+        """게재 플랫폼별(FB/IG 등) 지표 — insights breakdowns=publisher_platform."""
+        until = datetime.now(UTC)
+        payload = await self._client.get(
+            f"{campaign_id}/insights",
+            {
+                "fields": _PLATFORM_FIELDS,
+                "breakdowns": "publisher_platform",
+                "time_range": json.dumps(
+                    {"since": since.date().isoformat(), "until": until.date().isoformat()}
+                ),
+            },
+        )
+        out: list[PlatformMetrics] = []
+        for row in payload.get("data", []):
+            out.append(
+                PlatformMetrics(
+                    platform=str(row.get("publisher_platform", "")),
+                    impressions=_to_int(row.get("impressions")),
+                    clicks=_to_int(row.get("clicks")),
+                    spend_krw=_to_int(row.get("spend")),
+                    reach=_to_int(row.get("reach")),
+                )
+            )
+        return out
+
+    async def get_account_funding(self) -> AccountFunding:
+        """광고계정 게재 가능 여부 — 선불 잔액 0(소진)·계정 비활성 감지.
+
+        잔액 소진 시 캠페인 effective_status는 ACTIVE로 남고 계정 status도 1이라,
+        게재 중단을 알려면 funding_source_details(선불 가용 잔액)를 봐야 한다.
+        """
+        account = normalize_ad_account(self._client.ad_account_id)
+        payload = await self._client.get(account, {"fields": _FUNDING_FIELDS})
+        account_status = _to_int(payload.get("account_status"))
+        fsd = payload.get("funding_source_details") or {}
+        is_prepaid = _to_int(fsd.get("type")) == 20  # 20 = 선불(prepaid)
+        available = _extract_won(str(fsd.get("display_string") or "")) if is_prepaid else None
+        blocked, reason = False, None
+        if account_status not in (1, 201):  # 1=active, 201=any_active
+            blocked, reason = True, "계정 비활성"
+        elif is_prepaid and available is not None and available <= 0:
+            blocked, reason = True, "선불 잔액 부족"
+        return AccountFunding(
+            account_status=account_status,
+            available_balance_krw=available,
+            delivery_blocked=blocked,
+            block_reason=reason,
+        )
+
     async def _adset_daily_budgets(self, account: str) -> dict[str, int]:
         """캠페인별 광고세트 일예산 합 — 캠페인 노드에 예산이 없을 때(광고세트 예산) 보완."""
         payload = await self._client.get(f"{account}/adsets", {"fields": _ADSET_FIELDS})
@@ -164,9 +277,12 @@ class MetaAdsReader:
         캠페인 노드에 존재 — 광고세트 예산이면 광고세트 일예산 합으로 보완한다.
         """
         account = normalize_ad_account(self._client.ad_account_id)
-        payload = await self._client.get(f"{account}/campaigns", {"fields": _CAMPAIGN_FIELDS})
+        # 캠페인 목록·광고세트 예산 병렬 — 순차면 Meta 왕복 2번이 직렬로 쌓임.
+        payload, adset_budgets = await asyncio.gather(
+            self._client.get(f"{account}/campaigns", {"fields": _CAMPAIGN_FIELDS}),
+            self._adset_daily_budgets(account),
+        )
         rows = payload.get("data", [])
-        adset_budgets = await self._adset_daily_budgets(account)  # 캠페인 예산 없으면 보완
         out: list[CampaignInfo] = []
         for row in rows:
             cid = str(row.get("id", ""))
