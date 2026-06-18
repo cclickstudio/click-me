@@ -14,10 +14,13 @@ from uuid import uuid4
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.auth import get_current_user
 from core.config import settings
 from core.db import get_db
+from core.models import OrganizationMember, User
 from domain.management.adapters.meta.connection_flow import complete_meta_connection
 from domain.management.adapters.meta.oauth import build_login_url
 from domain.management.adapters.meta.token_crypto import TokenCipher
@@ -680,28 +683,42 @@ async def mark_rung_rejected(body: RungOutcomeRequest):
 
 
 @router.get("/meta/connect")
-async def meta_connect(organization_id: str, request: Request):
-    """광고주를 Facebook 로그인 대화상자로 보내 자기 Meta 자산 접근 권한을 받는다."""
+async def meta_connect(
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """로그인한 광고주의 조직(JWT)으로 Facebook 로그인 URL을 만들어 반환한다.
+
+    브라우저 최상위 이동엔 Authorization 헤더가 안 실리므로, 프론트가 이 인증된 XHR로
+    login_url을 받아 window.location으로 이동시킨다. org는 state로 콜백까지 운반.
+    """
     app_id = getattr(settings, "meta_app_id", None)
     if not app_id:
         raise HTTPException(503, "META_APP_ID 미설정 — Meta 연결 불가")
-    redirect_uri = str(request.url_for("meta_callback"))
-    state = f"{organization_id}:{uuid4().hex}"  # CSRF nonce + org 운반
+    org_id = await db.scalar(
+        select(OrganizationMember.organization_id).where(
+            OrganizationMember.user_id == user.id
+        )
+    )
+    if org_id is None:
+        raise HTTPException(409, "소속 조직이 없습니다 — 조직 연결 후 시도하세요.")
+    state = f"{org_id}:{uuid4().hex}"  # org 운반 + CSRF nonce
     url = build_login_url(
         app_id=app_id,
-        redirect_uri=redirect_uri,
+        redirect_uri=str(request.url_for("meta_callback")),
         scopes=_META_CONNECT_SCOPES,
         state=state,
         api_version=settings.meta_graph_api_version,
     )
-    return RedirectResponse(url, status_code=307)
+    return {"login_url": url, "state": state}
 
 
 @router.get("/meta/callback", name="meta_callback")
 async def meta_callback(
     code: str, state: str, request: Request, db: AsyncSession = Depends(get_db)
 ):
-    """OAuth 콜백 — code를 장기 토큰으로 교환해 org 연결로 암호화 저장한다."""
+    """OAuth 콜백(브라우저 리다이렉트) — code를 장기 토큰으로 교환해 org 연결로 암호화 저장."""
     key = getattr(settings, "meta_token_encryption_key", None)
     app_id = getattr(settings, "meta_app_id", None)
     app_secret = getattr(settings, "meta_app_secret", None)
@@ -709,7 +726,7 @@ async def meta_callback(
         raise HTTPException(503, "토큰 암호화 키(META_TOKEN_ENCRYPTION_KEY) 미설정")
     if not (app_id and app_secret):
         raise HTTPException(503, "META_APP_ID/META_APP_SECRET 미설정")
-    org = state.split(":", 1)[0]
+    org = state.split(":", 1)[0]  # connect가 넣은 org:nonce
     await complete_meta_connection(
         db,
         TokenCipher.from_base64_key(key),
@@ -720,7 +737,8 @@ async def meta_callback(
         organization_id=uuid4_or_str(org),
         api_version=settings.meta_graph_api_version,
     )
-    return {"status": "connected", "organization_id": org}
+    # 연결완료 → 프론트 화면으로 (clickme.co.kr가 앱·/api 동일 도메인 서빙 전제, 상대경로)
+    return RedirectResponse("/manage/campaigns?meta=connected", status_code=303)
 
 
 def uuid4_or_str(value: str):

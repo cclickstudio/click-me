@@ -1,6 +1,6 @@
 import { getToken } from "./authApi";
 import type { BoardResponse } from "@/components/manage/compare/types";
-import type { CampaignDetail, CampaignsResponse } from "@/components/manage/campaigns/types";
+import type { CampaignDetail, CampaignsResponse, PlatformsResponse } from "@/components/manage/campaigns/types";
 import type { Proposal } from "@/components/manage/types";
 import type { BudgetStatus } from "@/components/manage/budget/types";
 import type {
@@ -239,9 +239,13 @@ export const api = {
         body: JSON.stringify({ approved_action, proposal }),
       }),
     audit: (approvalId: string) => request(`/management/audit?approval_id=${approvalId}`),
+    // 멀티테넌트 — 로그인 org로 Meta OAuth 로그인 URL을 받는다(인증 XHR). 프론트가 그 URL로 이동.
+    connectMeta: () => request<{ login_url: string; state: string }>("/management/meta/connect"),
     compareBoard: () => request<BoardResponse>("/management/compare/board"),
     campaigns: () => request<CampaignsResponse>("/management/campaigns"),
     campaign: (id: string) => request<CampaignDetail>(`/management/campaigns/${id}`),
+    campaignPlatforms: (id: string) =>
+      request<PlatformsResponse>(`/management/campaigns/${id}/platforms`),
     createCampaignProposal: (body: {
       name: string;
       daily_budget_krw: number;
