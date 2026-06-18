@@ -10,6 +10,7 @@ from typing import Any
 
 from domain.simulation.contracts.schemas import PanelSpec, Persona
 from domain.simulation.data.simulation import loader
+from domain.simulation.tools.reachability import cell_social_reach, is_social_context
 
 # 지역 분포 폴백 — 행안부 원본 CSV에 시도(region_weights)가 있으면 그걸 우선 사용. 합=1.0.
 _REGION_WEIGHTS: dict[str, float] = {
@@ -121,14 +122,22 @@ class PersonaSampler:
         consumption: dict | None = None,
         media: dict | None = None,
         socioeconomic: dict | None = None,
+        meta_reach: dict | None = None,
         min_age: int = _MIN_AGE,
+        reachability_sampling: bool = False,
     ) -> None:
         self._population = population or loader.load_population_age_sex()
         self._ocean = ocean or loader.load_ocean_age_bands()
         self._consumption = consumption or loader.load_consumption_values()
         self._media = media or loader.load_media_behavior()
         self._socioeconomic = socioeconomic or loader.load_socioeconomic()
+        # Meta 침투율 곡선(Tier 2) — 연령별 인스타/페북 사용률. reach 가중의 출처.
+        self._meta_reach = meta_reach or loader.load_meta_reach()
         self._min_age = min_age
+        # Meta 전용 경로 — 켜면 연령×성별 표본을 인구×메타침투율 비율로 뽑는다(§Tier2).
+        # 가중이 아니라 추출분포를 바꿈(self-weighting 유지) → 메타 도달층에 표본 집중, CI 효율↑.
+        # 기본 OFF: 전인구 비례(§3.7)·기존 테스트 보존. wiring 에서만 ON.
+        self._reachability_sampling = reachability_sampling
 
     async def get_or_build(self, spec: PanelSpec) -> tuple[str, list[Persona]]:
         return spec.version, self.sample(spec)
@@ -148,11 +157,19 @@ class PersonaSampler:
     def _sample_proportional(
         self, spec: PanelSpec, cells: list, regions: list, rng: random.Random
     ) -> list[Persona]:
-        """비례 추출(self-weighting) — 매 추출마다 인구 비례로 셀 선택, 가중치 1.0(§3.7)."""
+        """비례 정수 배분(쿼터, self-weighting) — 셀(연령×성별)별 인원을 인구 비례로 확정.
+
+        최대잔여법. 독립 추첨이 아니라 쿼터라 작은 표본도 연령·성별 구성 안정(인구 20%→표본 ~20%).
+        셀 안의 나이·지역·OCEAN 등은 여전히 랜덤(다차원이라 불가피). 가중치 1.0(§3.7).
+        """
+        counts = _largest_remainder([w for _, w in cells], spec.size)
         personas: list[Persona] = []
-        for i in range(spec.size):
-            band_lo, band_hi, sex = _weighted_choice(rng, cells)
-            personas.append(self._build_persona(i, band_lo, band_hi, sex, regions, rng, 1.0))
+        i = 0
+        for (cell, _w), n_c in zip(cells, counts, strict=True):
+            band_lo, band_hi, sex = cell
+            for _ in range(n_c):
+                personas.append(self._build_persona(i, band_lo, band_hi, sex, regions, rng, 1.0))
+                i += 1
         return personas
 
     def _sample_stratified(
@@ -183,6 +200,7 @@ class PersonaSampler:
         weight: float,
     ) -> Persona:
         age = rng.randint(band_lo, band_hi)
+        # 도달성은 추출분포(_population_cells)에 이미 반영 — 여기선 self-weighting(weight 그대로).
         return Persona(
             persona_id=f"P-{idx:05d}",
             age=age,
@@ -204,24 +222,50 @@ class PersonaSampler:
         Layer1 스킵 금지 — 필터 안에서도 실분포(밴드 share·성비)를 유지하며 샘플링.
         """
         tf = target_filter or {}
-        age_min = max(self._min_age, int(tf.get("age_min", self._min_age)))
-        age_max = int(tf.get("age_max", _OPEN_BAND_TOP))
+        user_min = tf.get("age_min")  # 사용자 지정만 분리 — 기본 min_age 절단과 구분(§Tier2-A)
+        user_max = tf.get("age_max")
+        age_min = max(self._min_age, int(user_min) if user_min is not None else self._min_age)
+        age_max = int(user_max) if user_max is not None else _OPEN_BAND_TOP
         gender_filter = tf.get("gender")
 
         cells: list[tuple[tuple[int, int, str], float]] = []
         for b in self._population["bands"]:
-            lo, hi = _band_range(b["age_band"])
-            lo, hi = max(lo, age_min), min(hi, age_max)
+            full_lo, full_hi = _band_range(b["age_band"])
+            lo, hi = max(full_lo, age_min), min(full_hi, age_max)
             if lo > hi:
                 continue
-            full = _band_range(b["age_band"])
-            frac = (hi - lo + 1) / (full[1] - full[0] + 1)  # 부분 절단 시 가중치 비례 축소
-            band_weight = b["share"] * frac
+            span = full_hi - full_lo + 1
+            if self._reachability_sampling:
+                # Meta 도달 분포를 연령 marginal로 직접 사용(§Tier2-A). 메타 추산치는 census
+                # 인구를 초과(복수계정 등)해 침투율이 아닌 '도달 marginal' → 인구비중 곱 금지.
+                # frac은 '사용자 지정' 연령 절단만 반영 — 기본 min_age(14) 절단으로는 축소하지
+                # 않는다. 도달 marginal은 밴드 내 실제 연령 분포를 이미 담아 균등 가정 축소가 왜곡.
+                u_lo = max(full_lo, int(user_min)) if user_min is not None else full_lo
+                u_hi = min(full_hi, int(user_max)) if user_max is not None else full_hi
+                frac = (u_hi - u_lo + 1) / span if u_hi >= u_lo else 0.0
+                band_weight = self._reach_marginal(b["age_band"]) * frac
+            else:
+                frac = (hi - lo + 1) / span  # 부분 절단 시 가중치 비례 축소(인구 균등 가정)
+                band_weight = b["share"] * frac
             for sex, ratio in (("M", b["male_ratio"]), ("F", 1 - b["male_ratio"])):
                 if gender_filter and sex != gender_filter:
                     continue
                 cells.append(((lo, hi, sex), band_weight * ratio))
         return cells
+
+    def _reach_marginal(self, band_key: str) -> float:
+        """Meta 도달 분포에서 밴드의 도달 점유율(연령 marginal). 없으면 0(§Tier2-A)."""
+        return self._meta_reach.get("age_bands", {}).get(band_key, 0.0)
+
+    def _cell_reach(self, age: int, gender: str) -> float:
+        """연령의 Meta 도달 점유율(0~1, §Tier2-A). 데이터 없으면 0. 페르소나 기록용 참고치.
+
+        과거엔 KISDI 소셜피드 비중(cell_social_reach)을 썼으나 사실상 유튜브 영상 시청만 잡혀
+        메타와 어긋남 → Meta 광고 관리자 실측 도달 분포로 교체. 추출 가중은 _reach_marginal이
+        담당하고 여기선 동일 값을 페르소나 속성으로 노출. gender 는 시그니처만 유지(현재 미사용).
+        """
+        band = media_band_of_age(age)
+        return self._meta_reach.get("age_bands", {}).get(band, 0.0)
 
     def _sample_ocean(self, rng: random.Random, age: int) -> dict[str, float]:
         """OCEAN(factor score) — 논문 5유형 중 실비율로 하나 골라 그 유형의 mean·sd로 샘플링.
@@ -263,7 +307,8 @@ class PersonaSampler:
         primary = _weighted_choice(rng, list(dm.items())) if dm else "스마트폰/휴대폰"
         mm = cell["daily_media_minutes"]
         minutes = max(5, round(rng.gauss(mm["mean"], mm["sd"])))
-        # 노출맥락 후보(상위 5) — 반응(4-b) 시점에 exposure_context 로 하나 선택. 반응은 캐시✗.
+        # 노출맥락 후보 — Meta 전용이므로 소셜피드(SNS·동영상 @ 스마트폰/PC) 맥락만 추린 뒤 상위 5.
+        # 전체 상위5로 뽑으면 고령층은 TV가 점령해 소셜이 잘림 → 메타 광고 TV 노출 모순(§Tier1).
         candidates = [
             {
                 "timeband": e["timeband"],
@@ -271,14 +316,22 @@ class PersonaSampler:
                 "activity": e["activity"],
                 "place": e["place"],
             }
-            for e in cell.get("exposure", [])[:5]
-        ]
-        return {
+            for e in cell.get("exposure", [])
+            if is_social_context(e.get("activity"), e.get("medium"))
+        ][:5]
+        out: dict[str, Any] = {
             "primary_medium": primary,
             "daily_media_minutes": minutes,
             "exposure_candidates": candidates,
             "_source": "KISDI 한국미디어패널 2024(d25)",
         }
+        out["meta_reach"] = round(
+            self._cell_reach(age, gender), 4
+        )  # Meta 도달 점유율 — 추출 marginal(§Tier2-A)
+        reach = cell_social_reach(cell)  # KISDI 소셜피드(영상) 비중 — 노출맥락 투명성용 참고치
+        if reach is not None:
+            out["social_feed_reach"] = round(reach, 4)
+        return out
 
     def _sample_socioeconomic(self, rng: random.Random, age: int, gender: str) -> dict[str, Any]:
         # 단계1 확장 — KISDI 연령×성별 셀에서 소득(8구간)·학력(6단계) 조건부 샘플링.

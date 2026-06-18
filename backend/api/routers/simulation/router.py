@@ -12,7 +12,9 @@ import tempfile
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 
+from core.config import settings
 from domain.simulation.contracts.schemas import SimulationRunRequest
+from domain.simulation.service.analysis_view import to_analysis_payload
 from domain.simulation.wiring import _ensure_env, build_simulation_service
 
 logger = logging.getLogger("clickme")
@@ -23,7 +25,8 @@ _FORCE_MOCK = os.getenv("SIM_MOCK", "0") == "1"
 _HAS_GEMINI = bool(os.environ.get("GEMINI_API_KEY"))
 _USE_MOCK = _FORCE_MOCK or not _HAS_GEMINI  # 기본 실데이터, 강제·키부재 시에만 Mock
 _USE_LLM_QA = os.getenv("SIM_LLM_QA", "0") == "1"
-_service = build_simulation_service(use_mock=_USE_MOCK, use_llm_qa=_USE_LLM_QA)
+# settings 주입 → settings.database_url 있으면 DB 영속화 활성(완료 런을 9테이블에 저장).
+_service = build_simulation_service(settings=settings, use_mock=_USE_MOCK, use_llm_qa=_USE_LLM_QA)
 logger.info("Simulation service: %s 모드 (LLM QA=%s)", "mock" if _USE_MOCK else "real", _USE_LLM_QA)
 if not _FORCE_MOCK and not _HAS_GEMINI:
     logger.warning("GEMINI_API_KEY 없음 → Mock 폴백. 실데이터는 .env에 키 설정 필요.")
@@ -57,6 +60,10 @@ def _build_request(
     target_mode: str,
     sample_size: int,
     allocation: str,
+    ad_title: str | None,
+    product_category: str | None,
+    ad_objective: str | None,
+    service_class: int | None,
 ) -> SimulationRunRequest:
     """multipart 폼 값들을 도메인 요청 DTO로 조립. target_filter는 JSON 문자열."""
     tf = None
@@ -75,6 +82,11 @@ def _build_request(
         target_mode=target_mode,
         sample_size=sample_size,
         allocation=allocation,
+        # 선언 의도(의도 교차검증 §3.5-3 기준) — 없으면 해당 차원 스킵.
+        ad_title=ad_title,
+        product_category=product_category,
+        ad_objective=ad_objective,
+        service_class=service_class,
     )
 
 
@@ -89,7 +101,11 @@ async def start_simulation(
     target_filter: str | None = Form(None),
     target_mode: str = Form("AUTO"),
     sample_size: int = Form(20),
-    allocation: str = Form("proportional"),
+    allocation: str = Form("auto"),  # auto=표본크기로 자동(300+ stratified). 명시값도 허용
+    ad_title: str | None = Form(None),
+    product_category: str | None = Form(None),
+    ad_objective: str | None = Form(None),
+    service_class: int | None = Form(None),
 ) -> dict:
     """비동기 시작 — run_id 반환. 진행률은 /stream, 결과는 /result."""
     req = _build_request(
@@ -103,6 +119,10 @@ async def start_simulation(
         target_mode=target_mode,
         sample_size=sample_size,
         allocation=allocation,
+        ad_title=ad_title,
+        product_category=product_category,
+        ad_objective=ad_objective,
+        service_class=service_class,
     )
     run_id = await _service.start(req)
     return {
@@ -124,9 +144,17 @@ async def run_simulation(
     target_filter: str | None = Form(None),
     target_mode: str = Form("AUTO"),
     sample_size: int = Form(20),
-    allocation: str = Form("proportional"),
+    allocation: str = Form("auto"),  # auto=표본크기로 자동(300+ stratified). 명시값도 허용
+    ad_title: str | None = Form(None),
+    product_category: str | None = Form(None),
+    ad_objective: str | None = Form(None),
+    service_class: int | None = Form(None),
+    shape: str = "full",
 ) -> dict:
-    """동기 실행 — 광고+세부사항 입력 → 끝까지 돌려 반응·루브릭·집계를 한 번에 반환."""
+    """동기 실행 — 광고+세부사항 입력 → 끝까지 돌려 반응·루브릭·집계를 한 번에 반환.
+
+    shape=analysis 면 분석팀 정리 스키마(중복 제거·평탄화)로 반환. 기본 full(원본).
+    """
     req = _build_request(
         ad_id=ad_id,
         ad_content=ad_content,
@@ -138,11 +166,16 @@ async def run_simulation(
         target_mode=target_mode,
         sample_size=sample_size,
         allocation=allocation,
+        ad_title=ad_title,
+        product_category=product_category,
+        ad_objective=ad_objective,
+        service_class=service_class,
     )
     try:
-        return await _service.run(req)
+        result = await _service.run(req)
     except RuntimeError as e:
         raise HTTPException(status_code=500, detail=str(e)) from e
+    return to_analysis_payload(result) if shape == "analysis" else result
 
 
 @router.get("/{run_id}/stream")
@@ -162,3 +195,12 @@ async def get_simulation_result(run_id: str) -> dict:
     if result is None:
         raise HTTPException(status_code=404, detail="결과 없음 — 미완료이거나 잘못된 run_id")
     return result
+
+
+@router.get("/{run_id}/result/analysis")
+async def get_simulation_result_analysis(run_id: str) -> dict:
+    """완료된 실행 결과를 분석팀 정리 스키마(중복 제거·평탄화)로 반환. 없으면 404."""
+    result = _service.get_result(run_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="결과 없음 — 미완료이거나 잘못된 run_id")
+    return to_analysis_payload(result)

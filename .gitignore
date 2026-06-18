@@ -32,6 +32,10 @@ node_modules/
 .pnpm-store/
 .next/
 out/
+*.tsbuildinfo
+
+# ── Superpowers brainstorm 산출물 ────────────────
+.superpowers/
 
 # ── Environment files ────────────────────────────
 .env

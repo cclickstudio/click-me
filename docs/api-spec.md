@@ -263,6 +263,26 @@ Retrieve completed simulation result.
 
 ---
 
+### (구현 현황) /api/simulation/* — 실제 라우터
+
+> 위 `/api/simulate/*`는 초기 초안. **실제 구현은 `/api/simulation/*`** 이며 아래가 현재 동작.
+
+#### POST /api/simulation/run
+
+동기 실행 — 광고(multipart/form-data) 입력 → 끝까지 돌려 **반응·루브릭·집계 + DB 저장**을 한 번에 반환. 별도 조회 호출 불필요.
+
+- **Query** `shape=full`(기본, 원본 전체) \| `shape=analysis`(분석팀 정리 스키마).
+- **정리 스키마**(`shape=analysis`) = 중복 제거·평탄화: `meta`(run_id·simulation_id·source·model_version) / `ad` / `ad_analysis`(detected_*·ad_features·`alignment[]`) / `simulation` / `personas`(consumption 5키 고정·`_source` 제거) / `reactions` / `aggregate`(8필드). 변환 로직 `domain/simulation/service/analysis_view.py`.
+- **run_id 출처** — 이 응답의 `meta.run_id`(정리) 또는 최상위 `run_id`(원본). 비동기 `POST /api/simulation`(start)은 `{run_id, result_url}` 반환.
+
+#### GET /api/simulation/{run_id}/result/analysis
+
+이미 끝난 런(동기/비동기 무관)을 **정리 스키마로 재조회**. 미완료/없음이면 404. 동기 `run?shape=analysis`로 받았으면 호출 불필요(보조 경로).
+
+> 참고: `ad.asset_url`은 스토리지(S3) 연동 전까지 로컬/None — 인프라 작업 별도.
+
+---
+
 ### POST /api/simulate/debate
 
 Run Debate Agent. [Target: 7.8]

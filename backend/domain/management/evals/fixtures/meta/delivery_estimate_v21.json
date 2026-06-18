@@ -1,0 +1,13 @@
+{
+  "data": [
+    {
+      "estimate_ready": true,
+      "estimate_mau_lower_bound": 1500000,
+      "estimate_mau_upper_bound": 2000000,
+      "daily_outcomes_curve": [
+        { "spend": 0, "reach": 0, "impressions": 0, "actions": 0 },
+        { "spend": 100000, "reach": 8000, "impressions": 12000, "actions": 200 }
+      ]
+    }
+  ]
+}

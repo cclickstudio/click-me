@@ -15,6 +15,7 @@ from domain.simulation.adapters.mock_engine import (
 )
 from domain.simulation.graph.reaction_graph import build_reaction_graph
 from domain.simulation.graph.run_graph import build_run_graph
+from domain.simulation.service.debate_service import DebateService
 from domain.simulation.service.simulation_service import SimulationService
 from domain.simulation.tools.aggregation.aggregator import BasicAggregator
 from domain.simulation.tools.panel.builder import CachedPanelProvider
@@ -52,10 +53,11 @@ def build_panel_provider(settings=None):
     """패널 공급자 — 빌드된 고정 패널(§3.6)이 있으면 로드, 없으면 실 인구 grounding 샘플러.
 
     샘플러는 행안부 인구·OCEAN·소비가치 분포에서 통계 샘플링(LLM✗). 서사는 빈 채(반응 mock 무관).
+    Meta 전용 — 표본을 인구×소셜도달 비율로 추출(§Tier1). 고정 패널도 같은 옵션으로 빌드해야 정합.
     """
     if _DEFAULT_PANEL.exists():
         return CachedPanelProvider(_DEFAULT_PANEL)
-    return PersonaSampler()
+    return PersonaSampler(reachability_sampling=True)
 
 
 def _resolve_use_mock(settings, use_mock) -> bool:
@@ -132,4 +134,59 @@ def build_simulation_service(
         graph=graph,
         store=InMemorySimulationStore(),
         persistence=build_persistence(settings, session_factory),
+    )
+
+
+def build_debate_persistence(settings=None, session_factory=None):
+    """토론 영속화 어댑터(DebateRepository). DB 미구성이면 None → service는 인메모리만(저장 생략).
+
+    simulation_id FK(NOT NULL) 때문에 실제 simulations 행이 있는 운영 경로에서만 저장된다.
+    """
+    if session_factory is None:
+        if settings is None or not getattr(settings, "database_url", None):
+            return None
+        from core.db import AsyncSessionLocal
+
+        session_factory = AsyncSessionLocal
+    from domain.simulation.repositories.debate_repository import DebateRepository
+
+    return DebateRepository(session_factory)
+
+
+def build_debate_service(
+    settings=None, *, store=None, use_mock=None, session_factory=None
+) -> DebateService:
+    """토론 파이프라인 Composition Root. use_mock=True면 mock 토론 엔진 주입(재현·무비용).
+
+    실 LLM 엔진(Haiku/GPT/Gemini 토론자 + Sonnet Judge)은 use_mock=False 분기로 연결.
+    엔진 미주입이면 결정론 파이프라인(8~9·10-a·10-b·11)만 돌고 10-c는 placeholder.
+    """
+    store = store or InMemorySimulationStore()
+    persistence = build_debate_persistence(settings, session_factory)
+    if _resolve_use_mock(settings, use_mock):
+        from domain.simulation.adapters.mock_debate import MockDebater, MockJudge
+
+        return DebateService(
+            store=store,
+            debater_factory=lambda reactions: MockDebater(reactions),
+            judge=MockJudge(),
+            persistence=persistence,
+        )
+
+    # 토론자 Haiku/GPT + Judge Sonnet (Gemini 제거 — 응답 실패 잦음)
+    _ensure_env("ANTHROPIC_API_KEY", "OPENAI_API_KEY")
+    from domain.simulation.adapters.llm_debate import LLMDebater, LLMJudge, _Clients
+    from domain.simulation.adapters.llm_selector import LLMSelector
+
+    # 토론자·Judge가 _Clients를 공유 → 토론 1회 토큰을 한곳에 누적(usage_clients로 서비스에 노출).
+    shared_clients = _Clients()
+
+    # 일반인 선발(10-a) 동점 시 LLM 재랭킹(Sonnet 다수결) — 실 LLM 경로에서만 켠다.
+    return DebateService(
+        store=store,
+        debater_factory=lambda reactions: LLMDebater(reactions, clients=shared_clients),
+        judge=LLMJudge(clients=shared_clients),
+        persistence=persistence,
+        selector_rerank_fn=LLMSelector().choose,
+        usage_clients=shared_clients,
     )

@@ -1,7 +1,12 @@
 """add ad_campaign_logs table
 
+<<<<<<<< HEAD:backend/alembic/versions/006_add_ad_campaign_logs.py
 Revision ID: 006
 Revises: 005
+========
+Revision ID: 004b
+Revises: 004
+>>>>>>>> dev:backend/alembic/versions/004b_add_ad_campaign_logs.py
 Create Date: 2026-06-14
 
 주의: 원래 revision id가 004로, 004_add_simulation_weight_socioeconomic 과 중복되어
