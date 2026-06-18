@@ -87,6 +87,24 @@ async def start_debate(body: DebateRequest, lay_count: int = 3) -> dict:
     return {"run_id": run_id, "stream_url": f"/api/debate/{run_id}/stream", "lay_count": lay_count}
 
 
+@router.get("/sessions")
+async def list_sessions(simulation_id: str) -> dict:
+    """simulation_id로 저장된(DB) 토론 목록 — 메타만(발언 제외). 영속화 미주입이면 빈 목록.
+
+    프로젝트 패널·세션 탭 복원용. {"sessions": [{debate_id·topic·status·headline·…}, ...]}.
+    """
+    return {"sessions": await _service.list_saved(simulation_id)}
+
+
+@router.get("/session/{debate_id}")
+async def get_session(debate_id: str) -> dict:
+    """저장된 토론 1건 상세(participants + 라운드순 발언 + judge_log + final) — 복원·표시용."""
+    detail = await _service.get_saved(debate_id)
+    if detail is None:
+        raise HTTPException(status_code=404, detail="저장된 토론을 찾을 수 없습니다(DB 미연동 가능).")
+    return detail
+
+
 @router.get("/{run_id}/stream")
 async def stream_debate(run_id: str) -> StreamingResponse:
     """SSE — 단계별 진행 이벤트(analysis→…→utterance→round_summary→judge_final→report→completed)."""
@@ -104,6 +122,21 @@ async def debate_result(run_id: str) -> dict:
     if result is None:
         raise HTTPException(status_code=404, detail="결과 없음 또는 토론 미완료")
     return result
+
+
+@router.get("/by-simulation/{simulation_id}")
+async def debates_by_simulation(simulation_id: str) -> dict:
+    """시뮬의 저장된 토론 목록(메타) — 프로젝트 패널·복원용. persistence 없으면 빈 목록."""
+    return {"debates": await _service.list_debates(simulation_id)}
+
+
+@router.get("/{debate_id}/detail")
+async def debate_detail(debate_id: str) -> dict:
+    """저장된 토론 상세(채팅·결과 복원용). 없으면 404."""
+    detail = await _service.get_debate_detail(debate_id)
+    if detail is None:
+        raise HTTPException(status_code=404, detail="저장된 토론 없음")
+    return detail
 
 
 @router.post("/{run_id}/question")
