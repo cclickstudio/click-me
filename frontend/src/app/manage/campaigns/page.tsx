@@ -72,7 +72,7 @@ export default function Page() {
         <div className="flex items-center justify-between mb-6">
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-bold text-[#191F28] dark:text-[#F2F4F6]">캠페인 대시보드</h1>
+              <h1 className="text-2xl font-bold text-[#191F28] dark:text-[#F2F4F6]">캠페인</h1>
               {source === 'live' ? (
                 <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
                   실데이터

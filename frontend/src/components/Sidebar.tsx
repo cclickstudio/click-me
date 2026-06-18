@@ -34,7 +34,7 @@ const mainNav = [
 
 // 광고 매니지먼트 하위 메뉴 — 부모는 토글(자체 페이지 없음), 실제 화면은 여기로.
 const manageChildren = [
-  { label: '캠페인 대시보드', href: '/manage/campaigns' },
+  { label: '캠페인', href: '/manage/campaigns' },
   { label: '모니터링', href: '/manage/monitoring' },
   { label: '예산 관리', href: '/manage/budget' },
   { label: '성과 비교', href: '/manage/compare' },

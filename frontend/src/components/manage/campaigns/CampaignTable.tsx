@@ -23,11 +23,11 @@ export function CampaignTable({
             <th className="text-right font-semibold px-3 py-2.5">노출</th>
             <th className="text-right font-semibold px-3 py-2.5 hidden sm:table-cell">클릭</th>
             <th className="text-right font-semibold px-3 py-2.5">지출</th>
-            <th className="text-right font-semibold px-3 py-2.5 hidden md:table-cell">CTR</th>
-            <th className="text-right font-semibold px-3 py-2.5 hidden md:table-cell">CPC</th>
-            <th className="text-right font-semibold px-3 py-2.5 hidden lg:table-cell">CPM</th>
-            <th className="text-right font-semibold px-3 py-2.5 hidden lg:table-cell">CVR</th>
-            <th className="text-right font-semibold px-3 py-2.5 hidden lg:table-cell">ROAS</th>
+            <th className="text-right font-semibold px-3 py-2.5 hidden md:table-cell">CTR<span className="block font-normal text-[9px] text-[#B0B8C1] leading-tight">클릭률</span></th>
+            <th className="text-right font-semibold px-3 py-2.5 hidden md:table-cell">CPC<span className="block font-normal text-[9px] text-[#B0B8C1] leading-tight">클릭당비용</span></th>
+            <th className="text-right font-semibold px-3 py-2.5 hidden lg:table-cell">CPM<span className="block font-normal text-[9px] text-[#B0B8C1] leading-tight">노출당비용</span></th>
+            <th className="text-right font-semibold px-3 py-2.5 hidden lg:table-cell">CVR<span className="block font-normal text-[9px] text-[#B0B8C1] leading-tight">전환율</span></th>
+            <th className="text-right font-semibold px-3 py-2.5 hidden lg:table-cell">ROAS<span className="block font-normal text-[9px] text-[#B0B8C1] leading-tight">투자수익률</span></th>
             <th className="text-right font-semibold px-4 py-2.5">소진율</th>
           </tr>
         </thead>
