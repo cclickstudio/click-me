@@ -8,7 +8,7 @@ import { DebatePanel } from "@/components/simulator/DebatePanel";
 import { KpiCard } from "@/components/ui/KpiCard";
 import { formatPercent } from "@/lib/utils";
 import { api } from "@/lib/api";
-import type { SimRunResult, SSEProgressEvent } from "@/lib/types";
+import type { SimRunResult, SSEProgressEvent, SimCategory } from "@/lib/types";
 
 type Step = "setup" | "running" | "result";
 type InputMode = "image" | "url" | "none";
@@ -87,7 +87,9 @@ export default function SimulationRunPage() {
   const [file, setFile] = useState<File | null>(null);
   const [imageUrl, setImageUrl] = useState("");
   const [adTitle, setAdTitle] = useState("");
-  const [productCategory, setProductCategory] = useState("");
+  const [categoryId, setCategoryId] = useState<number | "">("");
+  const [serviceClass, setServiceClass] = useState<number | "">("");
+  const [categories, setCategories] = useState<SimCategory[]>([]);
   const [adObjective, setAdObjective] = useState("");
 
   // 시뮬레이션 설정
@@ -114,6 +116,14 @@ export default function SimulationRunPage() {
 
   // 언마운트 시 스트림 정리.
   useEffect(() => () => esRef.current?.close(), []);
+
+  // 제품 카테고리 마스터 로드(2단계 드롭다운).
+  useEffect(() => {
+    api.simulation
+      .categories()
+      .then(setCategories)
+      .catch(() => setCategories([]));
+  }, []);
 
   const toggleExpand = (id: string) =>
     setExpanded((prev) => {
@@ -146,7 +156,8 @@ export default function SimulationRunPage() {
         sample_size: sampleSize,
         allocation,
         ad_title: adTitle || undefined,
-        product_category: productCategory || undefined,
+        product_category: categories.find((c) => c.id === categoryId)?.name || undefined,
+        service_class: typeof serviceClass === "number" ? serviceClass : undefined,
         ad_objective: adObjective || undefined,
       });
 
@@ -239,19 +250,19 @@ export default function SimulationRunPage() {
 
               <div>
                 <label className={labelCls}>
-                  광고 ID <span className="text-[#F74D4D]">*</span>
+                  광고 제목 <span className="text-[#F74D4D]">*</span>
                 </label>
                 <input
                   type="text"
-                  value={adId}
-                  onChange={(e) => setAdId(e.target.value)}
-                  placeholder="AD-1024"
+                  value={adTitle}
+                  onChange={(e) => setAdTitle(e.target.value)}
+                  placeholder="제로콜라 여름 신상 런칭"
                   className={inputCls}
                 />
               </div>
 
               <div>
-                <label className={labelCls}>광고 문구·설명</label>
+                <label className={labelCls}>광고 설명</label>
                 <textarea
                   value={adContent}
                   onChange={(e) => setAdContent(e.target.value)}
@@ -327,37 +338,53 @@ export default function SimulationRunPage() {
                   <p className="text-[11px] text-[#B0B8C1] dark:text-[#4B5563] -mt-2">
                     적어두면 광고가 의도대로 전달됐는지 함께 비교합니다.
                   </p>
-                  <div>
-                    <label className={labelCls}>광고 제목</label>
-                    <input
-                      type="text"
-                      value={adTitle}
-                      onChange={(e) => setAdTitle(e.target.value)}
-                      placeholder="제로콜라 여름 신상 런칭"
-                      className={inputCls}
-                    />
-                  </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className={labelCls}>제품 카테고리</label>
-                      <input
-                        type="text"
-                        value={productCategory}
-                        onChange={(e) => setProductCategory(e.target.value)}
-                        placeholder="음료"
+                      <select
+                        value={categoryId}
+                        onChange={(e) => {
+                          setCategoryId(e.target.value ? Number(e.target.value) : "");
+                          setServiceClass("");
+                        }}
                         className={inputCls}
-                      />
+                      >
+                        <option value="">선택 안 함</option>
+                        {categories.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.name}
+                          </option>
+                        ))}
+                      </select>
                     </div>
                     <div>
-                      <label className={labelCls}>캠페인 목표</label>
-                      <input
-                        type="text"
-                        value={adObjective}
-                        onChange={(e) => setAdObjective(e.target.value)}
-                        placeholder="신제품 인지도"
-                        className={inputCls}
-                      />
+                      <label className={labelCls}>세부 분류 (NICE)</label>
+                      <select
+                        value={serviceClass}
+                        onChange={(e) =>
+                          setServiceClass(e.target.value ? Number(e.target.value) : "")
+                        }
+                        disabled={!categoryId}
+                        className={`${inputCls} disabled:opacity-50`}
+                      >
+                        <option value="">선택 안 함</option>
+                        {(categories.find((c) => c.id === categoryId)?.kinds ?? []).map((k) => (
+                          <option key={k.id} value={k.id}>
+                            {k.id}류 · {k.description}
+                          </option>
+                        ))}
+                      </select>
                     </div>
+                  </div>
+                  <div>
+                    <label className={labelCls}>캠페인 목표</label>
+                    <input
+                      type="text"
+                      value={adObjective}
+                      onChange={(e) => setAdObjective(e.target.value)}
+                      placeholder="신제품 인지도"
+                      className={inputCls}
+                    />
                   </div>
                 </>
               )}
@@ -512,7 +539,7 @@ export default function SimulationRunPage() {
 
               <button
                 onClick={run}
-                disabled={!adId.trim()}
+                disabled={!adTitle.trim()}
                 className="mt-2 w-full flex items-center justify-center gap-2 py-3 bg-[#3182F6] hover:bg-[#1B6EEB] disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl text-sm font-semibold transition-colors"
               >
                 <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">

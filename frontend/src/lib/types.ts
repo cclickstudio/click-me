@@ -116,6 +116,17 @@ export interface SimRunResult {
   simulation_id?: string;
 }
 
+export interface SimCategoryKind {
+  id: number; // NICE 상품분류 류 번호 (= service_class)
+  description: string;
+}
+
+export interface SimCategory {
+  id: number;
+  name: string; // 업종 대분류명 (= product_category)
+  kinds: SimCategoryKind[];
+}
+
 export interface SimRunInput {
   ad_id: string;
   ad_content?: string;

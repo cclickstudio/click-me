@@ -9,6 +9,7 @@ import type {
   DebateTopic,
   DebateTopicsResult,
   QAEvent,
+  SimCategory,
   SimRunInput,
   SimRunResult,
 } from "./types";
@@ -110,6 +111,8 @@ export const api = {
     stream: (runId: string) => new EventSource(`${API_BASE}/api/simulation/${runId}/stream`),
     result: (runId: string): Promise<SimRunResult> =>
       request<SimRunResult>(`/simulation/${runId}/result`),
+    // 제품 카테고리 마스터 — 대분류별 NICE 류 목록(2단계 드롭다운용).
+    categories: (): Promise<SimCategory[]> => request<SimCategory[]>("/simulation/categories"),
   },
 
   // 페르소나 토론(/api/debate/*) — 시뮬 반응(reactions)을 받아 토론을 돌리고 결과를 낸다.
