@@ -154,7 +154,6 @@ export default function SimulationRunPage() {
   const [stageMsg, setStageMsg] = useState('');
   const esRef = useRef<EventSource | null>(null);
 
-
   // 언마운트 시 스트림 정리.
   useEffect(() => () => esRef.current?.close(), []);
 
@@ -172,9 +171,15 @@ export default function SimulationRunPage() {
     setStageMsg('');
     setStep('running');
     const targetFilter: Record<string, unknown> = {};
-    if (ageMin) targetFilter.age_min = Number(ageMin);
-    if (ageMax) targetFilter.age_max = Number(ageMax);
-    if (gender) targetFilter.gender = gender;
+    // 직접 지정일 때만 타깃 조건 반영. 연령대 → 선택 구간들의 하한~상한.
+    if (targetMode === 'MANUAL') {
+      const bands = AGE_BANDS.filter(b => ageBands.includes(b.label));
+      if (bands.length > 0) {
+        targetFilter.age_min = Math.min(...bands.map(b => b.min));
+        targetFilter.age_max = Math.max(...bands.map(b => b.max));
+      }
+      if (gender) targetFilter.gender = gender;
+    }
 
     try {
       // 비동기 시작 → run_id 받고 SSE로 진행률 구독(결과는 completed 후 GET).
@@ -371,7 +376,9 @@ export default function SimulationRunPage() {
                   <select
                     value={categoryId}
                     onChange={e => {
-                      setCategoryId(e.target.value ? Number(e.target.value) : '');
+                      setCategoryId(
+                        e.target.value ? Number(e.target.value) : ''
+                      );
                       setServiceClass('');
                     }}
                     className={inputCls}>
@@ -385,18 +392,20 @@ export default function SimulationRunPage() {
                   <select
                     value={serviceClass}
                     onChange={e =>
-                      setServiceClass(e.target.value ? Number(e.target.value) : '')
+                      setServiceClass(
+                        e.target.value ? Number(e.target.value) : ''
+                      )
                     }
                     disabled={!categoryId}
                     className={`${inputCls} disabled:opacity-50`}>
                     <option value=''>세부 분류 (NICE)</option>
-                    {(categories.find(c => c.id === categoryId)?.kinds ?? []).map(
-                      k => (
-                        <option key={k.id} value={k.id}>
-                          {k.id}류 · {k.description}
-                        </option>
-                      )
-                    )}
+                    {(
+                      categories.find(c => c.id === categoryId)?.kinds ?? []
+                    ).map(k => (
+                      <option key={k.id} value={k.id}>
+                        {k.id}류 · {k.description}
+                      </option>
+                    ))}
                   </select>
                 </div>
               </div>
@@ -507,68 +516,65 @@ export default function SimulationRunPage() {
                 </div>
               </div>
 
-              {/* 나이 범위 */}
-              <div>
-                <p className={sectionTitle}>
-                  나이 범위{' '}
-                  <span className='text-[10px] font-normal text-[#B0B8C1] dark:text-[#4B5563]'>
-                    선택
-                  </span>
-                </p>
-                <div className='grid grid-cols-2 gap-3'>
+              {/* 타깃 조건(연령대·성별) — 직접 지정(MANUAL)일 때만 표시 */}
+              {targetMode === 'MANUAL' && (
+                <>
                   <div>
-                    <label className={labelCls}>최소 나이</label>
-                    <input
-                      type='number'
-                      min={14}
-                      max={84}
-                      value={ageMin}
-                      onChange={e => setAgeMin(e.target.value)}
-                      placeholder='20'
-                      className={inputCls}
-                    />
+                    <p className={sectionTitle}>
+                      연령대{' '}
+                      <span className='text-[10px] font-normal text-[#B0B8C1] dark:text-[#4B5563]'>
+                        복수 선택 가능
+                      </span>
+                    </p>
+                    <div className='flex flex-wrap gap-2'>
+                      {AGE_BANDS.map(b => {
+                        const on = ageBands.includes(b.label);
+                        return (
+                          <button
+                            key={b.label}
+                            type='button'
+                            onClick={() =>
+                              setAgeBands(prev =>
+                                on
+                                  ? prev.filter(x => x !== b.label)
+                                  : [...prev, b.label]
+                              )
+                            }
+                            className={`${chipBase} ${on ? chipActive : chipIdle}`}>
+                            {b.label}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
-                  <div>
-                    <label className={labelCls}>최대 나이</label>
-                    <input
-                      type='number'
-                      min={14}
-                      max={84}
-                      value={ageMax}
-                      onChange={e => setAgeMax(e.target.value)}
-                      placeholder='29'
-                      className={inputCls}
-                    />
-                  </div>
-                </div>
-              </div>
 
-              {/* 성별 */}
-              <div>
-                <p className={sectionTitle}>
-                  성별{' '}
-                  <span className='text-[10px] font-normal text-[#B0B8C1] dark:text-[#4B5563]'>
-                    선택
-                  </span>
-                </p>
-                <div className='flex gap-2'>
-                  {(
-                    [
-                      ['', '전체'],
-                      ['F', '여성'],
-                      ['M', '남성'],
-                    ] as [GenderFilter, string][]
-                  ).map(([v, lbl]) => (
-                    <button
-                      key={lbl}
-                      type='button'
-                      onClick={() => setGender(v)}
-                      className={`${chipBase} ${gender === v ? chipActive : chipIdle}`}>
-                      {lbl}
-                    </button>
-                  ))}
-                </div>
-              </div>
+                  <div>
+                    <p className={sectionTitle}>
+                      성별{' '}
+                      <span className='text-[10px] font-normal text-[#B0B8C1] dark:text-[#4B5563]'>
+                        선택
+                      </span>
+                    </p>
+                    <div className='flex gap-2'>
+                      {(
+                        [
+                          ['', '전체'],
+                          ['F', '여성'],
+                          ['M', '남성'],
+                        ] as [GenderFilter, string][]
+                      ).map(([v, lbl]) => (
+                        <button
+                          key={lbl}
+                          type='button'
+                          onClick={() => setGender(v)}
+                          className={`${chipBase} ${gender === v ? chipActive : chipIdle}`}>
+                          {lbl}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
           </div>
 
