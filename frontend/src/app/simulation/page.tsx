@@ -355,13 +355,13 @@ export default function SimulationRunPage() {
                 </div>
 
                 {inputMode === 'image' && (
-                  <label className='flex flex-1 min-h-0 flex-col items-center justify-center border-2 border-dashed border-[#E5E8EB] dark:border-[#2D3748] rounded-xl cursor-pointer hover:border-[#3182F6] transition-colors overflow-hidden'>
+                  <label className='relative flex flex-1 min-h-0 flex-col items-center justify-center border-2 border-dashed border-[#E5E8EB] dark:border-[#2D3748] rounded-xl cursor-pointer hover:border-[#3182F6] transition-colors overflow-hidden'>
                     {previewUrl ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img
                         src={previewUrl}
                         alt='미리보기'
-                        className='w-full h-full object-contain'
+                        className='absolute inset-0 h-full w-full object-contain'
                       />
                     ) : (
                       <span className='text-sm text-[#8B95A1] dark:text-[#6B7280]'>
