@@ -209,6 +209,11 @@ export const api = {
         "/billing/confirm",
         { method: "POST", body: JSON.stringify(body) },
       ),
+    cancel: (orderId: string, reason = "사용자 요청") =>
+      request<{ order_id: string; status: string; amount_krw: number; balance_krw: number }>(
+        "/billing/cancel",
+        { method: "POST", body: JSON.stringify({ order_id: orderId, reason }) },
+      ),
     balance: () => request<{ org_id: string; balance_krw: number }>("/billing/balance"),
     history: () =>
       request<{
