@@ -10,6 +10,7 @@ export type CampaignState =
 
 export type CampaignKpi = {
   impressions: number;
+  clicks: number;
   reach: number;
   spend_krw: number;
   ctr: number; // 0~1

@@ -21,12 +21,13 @@ export function CampaignTable({
             <th className="text-left font-semibold px-3 py-2.5">상태</th>
             <th className="text-right font-semibold px-3 py-2.5">일예산</th>
             <th className="text-right font-semibold px-3 py-2.5">노출</th>
+            <th className="text-right font-semibold px-3 py-2.5 hidden sm:table-cell">클릭</th>
             <th className="text-right font-semibold px-3 py-2.5">지출</th>
             <th className="text-right font-semibold px-3 py-2.5 hidden md:table-cell">CTR</th>
-            <th className="text-right font-semibold px-3 py-2.5 hidden lg:table-cell">CVR</th>
-            <th className="text-right font-semibold px-3 py-2.5 hidden lg:table-cell">ROAS</th>
             <th className="text-right font-semibold px-3 py-2.5 hidden md:table-cell">CPC</th>
             <th className="text-right font-semibold px-3 py-2.5 hidden lg:table-cell">CPM</th>
+            <th className="text-right font-semibold px-3 py-2.5 hidden lg:table-cell">CVR</th>
+            <th className="text-right font-semibold px-3 py-2.5 hidden lg:table-cell">ROAS</th>
             <th className="text-right font-semibold px-4 py-2.5">소진율</th>
           </tr>
         </thead>
@@ -49,23 +50,26 @@ export function CampaignTable({
               <td className="px-3 py-3 text-right tabular-nums text-[#191F28] dark:text-[#F2F4F6]">
                 {c.impressions.toLocaleString()}
               </td>
+              <td className="px-3 py-3 text-right tabular-nums text-[#191F28] dark:text-[#F2F4F6] hidden sm:table-cell">
+                {c.clicks.toLocaleString()}
+              </td>
               <td className="px-3 py-3 text-right tabular-nums text-[#4E5968] dark:text-[#C9CED6]">
                 ₩{c.spend_krw.toLocaleString()}
               </td>
               <td className="px-3 py-3 text-right tabular-nums text-[#4E5968] dark:text-[#C9CED6] hidden md:table-cell">
                 {(c.ctr * 100).toFixed(1)}%
               </td>
-              <td className="px-3 py-3 text-right tabular-nums text-[#4E5968] dark:text-[#C9CED6] hidden lg:table-cell">
-                {fmtCvr(c.cvr)}
-              </td>
-              <td className="px-3 py-3 text-right tabular-nums text-[#4E5968] dark:text-[#C9CED6] hidden lg:table-cell">
-                {fmtRoas(c.roas)}
-              </td>
               <td className="px-3 py-3 text-right tabular-nums text-[#4E5968] dark:text-[#C9CED6] hidden md:table-cell">
                 ₩{c.cpc_krw.toLocaleString()}
               </td>
               <td className="px-3 py-3 text-right tabular-nums text-[#4E5968] dark:text-[#C9CED6] hidden lg:table-cell">
                 ₩{c.cpm_krw.toLocaleString()}
+              </td>
+              <td className="px-3 py-3 text-right tabular-nums text-[#4E5968] dark:text-[#C9CED6] hidden lg:table-cell">
+                {fmtCvr(c.cvr)}
+              </td>
+              <td className="px-3 py-3 text-right tabular-nums text-[#4E5968] dark:text-[#C9CED6] hidden lg:table-cell">
+                {fmtRoas(c.roas)}
               </td>
               <td className="px-4 py-3 text-right">
                 <PacingCell pct={c.pacing_pct} />

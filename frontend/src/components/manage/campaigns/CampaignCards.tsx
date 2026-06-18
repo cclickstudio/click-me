@@ -41,12 +41,13 @@ export function CampaignCards({
             </div>
             <div className="grid grid-cols-2 gap-y-2.5 gap-x-3">
               <Metric label="노출" value={c.impressions.toLocaleString()} />
+              <Metric label="클릭" value={c.clicks.toLocaleString()} />
               <Metric label="지출" value={`₩${c.spend_krw.toLocaleString()}`} />
               <Metric label="CTR" value={`${(c.ctr * 100).toFixed(1)}%`} />
-              <Metric label="CVR" value={fmtCvr(c.cvr)} />
-              <Metric label="ROAS" value={fmtRoas(c.roas)} />
               <Metric label="CPC" value={`₩${c.cpc_krw.toLocaleString()}`} />
               <Metric label="CPM" value={`₩${c.cpm_krw.toLocaleString()}`} />
+              <Metric label="CVR" value={fmtCvr(c.cvr)} />
+              <Metric label="ROAS" value={fmtRoas(c.roas)} />
             </div>
             <div className="mt-3">
               <div className="flex items-center justify-between text-[11px] text-[#8B95A1] mb-1">

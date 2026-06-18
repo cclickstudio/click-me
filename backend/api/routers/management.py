@@ -305,6 +305,7 @@ def _campaign_summary(snaps: list[MetricsSnapshot], budget: int) -> dict:
     conversions = round(total_inline * Random(snaps[0].campaign_id).uniform(0.04, 0.12))
     return {
         "impressions": impressions,
+        "clicks": total_clicks,
         "reach": last.cum_reach,
         "spend_krw": total_spend,
         "ctr": round(total_clicks / impressions, 5) if impressions else 0.0,
@@ -326,6 +327,7 @@ def _real_summary(m: MetricsSnapshot, budget: int) -> dict:
     """
     return {
         "impressions": m.impressions,
+        "clicks": m.clicks,
         "reach": m.cum_reach,
         "spend_krw": m.spend_krw,
         "ctr": m.ctr,
