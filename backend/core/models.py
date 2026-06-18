@@ -381,6 +381,35 @@ class IdempotencyKeyRow(Base):
     created_at: Mapped[datetime] = mapped_column(_TS, server_default=func.now())
 
 
+class RemediationEscalationRow(Base):
+    """🅱 시간축 에스컬레이션 사다리 진행 상태 — 캠페인당 active 1건 (re_evaluate 소유).
+
+    파괴도 낮은 조치부터 우선순위대로 시도하고, 회복(원래 anomaly 소멸)이 안 되면 다음 단계로
+    올린다. 회복 판정은 재탐지로만 하므로 baseline 스냅샷은 저장하지 않는다.
+    """
+
+    __tablename__ = "remediation_escalations"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    run_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    ad_account_id: Mapped[str] = mapped_column(String(64))
+    campaign_id: Mapped[str] = mapped_column(String(64), index=True)
+    anomaly_type: Mapped[str] = mapped_column(String(48))  # 사다리를 연 anomaly = 회복 판정 기준
+    ladder: Mapped[list] = mapped_column(JSONB)  # 우선순위 action_type 목록 스냅샷
+    current_rung_index: Mapped[int] = mapped_column(Integer, default=0)
+    rung_status: Mapped[str] = mapped_column(String(16))  # proposed | executed | rejected
+    rung_executed_at: Mapped[datetime | None] = mapped_column(_TS)
+    last_proposal_id: Mapped[str | None] = mapped_column(String(64))
+    last_approval_id: Mapped[str | None] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(16), index=True)  # active | recovered | exhausted
+    opened_at: Mapped[datetime] = mapped_column(_TS, server_default=func.now())
+    last_evaluated_at: Mapped[datetime | None] = mapped_column(_TS)
+    updated_at: Mapped[datetime] = mapped_column(
+        _TS, server_default=func.now(), onupdate=func.now()
+    )
+
+
 # ──────────────────────────────────────────────
 # Persona Debate (시뮬레이터 4-1 페르소나 토론, simulations 1:N) — db-schema v3.1
 # ──────────────────────────────────────────────

@@ -45,6 +45,8 @@ from domain.management.detection.exposure_model import (
     expected_hourly_impressions,
     find_anomaly_window,
 )
+from domain.management.escalation import EscalationController
+from domain.management.escalation_demo import DemoScenarioDetector
 from domain.management.execution.executor import Executor
 from domain.management.execution.tier import (
     ESCALATE_THRESHOLD,
@@ -55,6 +57,7 @@ from domain.management.execution.tier import (
 from domain.management.wiring import (
     build_audit_sink,
     build_comparison_service,
+    build_escalation_store,
     build_idempotency_store,
     build_organic_reader,
     build_reader,
@@ -445,3 +448,74 @@ async def set_budget_limit(body: BudgetLimitRequest):
     """예산 한도 설정 — 변경 후 경고 레벨(decision)이 즉시 반영(인메모리)."""
     _BUDGET.set_limit(TENANT_ID, body.limit_krw)
     return await _budget_status()
+
+
+# ── 시간축 자동 에스컬레이션 (re_evaluate — 엔드포인트·tick·추후 SQS 동일 함수) ────
+# 가벼운 조치부터 우선순위대로 시도하고, 회복(원래 anomaly 소멸) 안 되면 다음 단계 제안.
+# Tier 3은 항상 건별 승인 — "자동"은 다음 단계 *제안* 자동 생성만 뜻한다(HITL 강제).
+_escalation: EscalationController | None = None
+
+
+def _get_escalation() -> EscalationController:
+    global _escalation  # noqa: PLW0603
+    if _escalation is None:
+        _escalation = EscalationController(
+            store=build_escalation_store(settings),
+            detector=DemoScenarioDetector(),  # 데모 시나리오 — 2단계 집행 후 회복
+            agent=build_regeneration_agent(),  # 키 없으면 결정론 폴백
+            audit=_AUDIT_LOG,
+        )
+    return _escalation
+
+
+def _now_or(now_iso: str | None) -> datetime:
+    """데모 tick — now 미지정이면 현재. 지정 시 그 시각으로 결정론 재평가."""
+    return datetime.fromisoformat(now_iso) if now_iso else datetime.now(UTC)
+
+
+def _escalation_payload(outcome) -> dict:
+    return {
+        "status": outcome.status.value,
+        "reason": outcome.reason,
+        "run_id": outcome.run_id,
+        "notice": outcome.notice,
+        "proposal": outcome.proposal.model_dump(mode="json") if outcome.proposal else None,
+    }
+
+
+class ReEvaluateRequest(BaseModel):
+    tenant_id: str = TENANT_ID
+    ad_account_id: str = _DEMO_AD_ACCOUNT
+    campaign_id: str = CAMPAIGN_ID
+    now: str | None = None  # ISO8601 — 데모 tick(시간 전진)
+
+
+@router.post("/re-evaluate")
+async def re_evaluate(body: ReEvaluateRequest):
+    """사다리 1회 재평가 — 개시/다음단계 제안 / 보류(PENDING) / 회복 / 소진을 반환."""
+    outcome = await _get_escalation().re_evaluate(
+        body.tenant_id, body.ad_account_id, body.campaign_id, now=_now_or(body.now)
+    )
+    return _escalation_payload(outcome)
+
+
+class RungOutcomeRequest(BaseModel):
+    run_id: str
+    now: str | None = None
+    approval_id: str | None = None
+
+
+@router.post("/re-evaluate/executed")
+async def mark_rung_executed(body: RungOutcomeRequest):
+    """현재 단계가 집행됐음을 사다리에 알린다 (다음 재평가에서 회복 판정 가능)."""
+    await _get_escalation().on_executed(
+        body.run_id, now=_now_or(body.now), approval_id=body.approval_id
+    )
+    return {"run_id": body.run_id, "rung_status": "executed"}
+
+
+@router.post("/re-evaluate/rejected")
+async def mark_rung_rejected(body: RungOutcomeRequest):
+    """현재 단계가 거절됐음을 알린다 (다음 재평가에서 즉시 다음 단계로 에스컬레이션)."""
+    await _get_escalation().on_rejected(body.run_id)
+    return {"run_id": body.run_id, "rung_status": "rejected"}
