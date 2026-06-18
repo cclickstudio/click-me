@@ -132,6 +132,9 @@ class PersonaReaction(BaseModel):
     emotion_tag: EmotionTag = EmotionTag.INDIFFERENCE
     perceived_message: str | None = None
     perceived_target: str | None = None
+    # 브랜드 식별(Fluency, REPORT §2-5) — "어느 브랜드/제품 광고인지" 전달력. 사전 인지가 아님.
+    brand_recognized: bool = False  # 명확히 식별했는가 — 가중 집계 입력(brand_recognition_rate)
+    perceived_brand: str | None = None  # 인식한 브랜드/제품명(선언 의도와 대조해 오귀속 분해)
     utterance: str | None = None
     qa_passed: bool = True
     qa_fail_reason: str | None = None
@@ -157,6 +160,7 @@ class SimulationAggregate(BaseModel):
     purchase_intent: float
     trust_avg: float
     rejection_rate: float
+    brand_recognition_rate: float = 0.0  # 브랜드 식별률(§2-5 Fluency) — QA 통과분 가중 비율
     variance_warning: bool = False
     effective_n: float = (
         0.0  # 유효표본수(Kish, §3.7) — 가중 편차 클수록 표본수보다 작아짐. CI 정직성

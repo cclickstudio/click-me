@@ -160,6 +160,7 @@ def test_aggregate_trimmed_to_contract_fields() -> None:
         "purchase_intent",
         "trust_avg",
         "rejection_rate",
+        "brand_recognition_rate",
         "variance_warning",
         "effective_n",
     }

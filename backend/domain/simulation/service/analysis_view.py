@@ -17,6 +17,7 @@ _AGG_KEEP = (
     "purchase_intent",
     "trust_avg",
     "rejection_rate",
+    "brand_recognition_rate",
     "variance_warning",
     "effective_n",
 )

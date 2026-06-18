@@ -106,9 +106,12 @@ class GeminiReactionEngine:
             f'  "rejection_reason_tag": null 또는 [{_enum_values(RejectionReasonTag)}] 중 하나,\n'
             f'  "emotion_tag": [{_enum_values(EmotionTag)}] 중 하나,\n'
             '  "perceived_message": "내가 이해한 메시지", "perceived_target": "내가 느낀 타깃",\n'
+            '  "brand_recognized": bool,  // 이 광고가 어느 브랜드/제품 광고인지 명확히 알겠는가\n'
+            '  "perceived_brand": "내가 인식한 브랜드/제품명(모르겠으면 null)",\n'
             '  "utterance": "한 문장 솔직한 반응"\n'
             "}\n"
             "주의: AISAS는 깔때기 — action=true면 attention·interest도 true여야 한다. "
+            "brand_recognized는 광고를 보고 '무슨 브랜드/제품 광고인지' 분명히 떠오를 때만 true. "
             "태그는 반드시 제시된 값에서만 고른다(새 값 금지)."
         )
 
@@ -134,6 +137,8 @@ class GeminiReactionEngine:
             emotion_tag=data.get("emotion_tag", EmotionTag.INDIFFERENCE),
             perceived_message=data.get("perceived_message"),
             perceived_target=data.get("perceived_target"),
+            brand_recognized=bool(data.get("brand_recognized", False)),
+            perceived_brand=data.get("perceived_brand"),
             utterance=data.get("utterance"),
             qa_passed=True,  # QA 게이트가 별도 판정
         )
