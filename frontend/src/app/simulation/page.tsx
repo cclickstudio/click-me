@@ -690,7 +690,7 @@ export default function SimulationRunPage() {
           )}
 
           {/* 분석 데이터(왼쪽) + 토론(오른쪽) 가로 배치 */}
-          <div className='grid grid-cols-1 lg:grid-cols-2 gap-6 items-start'>
+          <div className='grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch'>
             {/* 왼쪽: 분석 데이터 */}
             <div className='space-y-6'>
               {/* 광고 해석 */}
@@ -921,6 +921,16 @@ export default function SimulationRunPage() {
                 simulationId={result.simulation_id}
               />
             </div>
+          </div>
+
+          {/* 최종 결과 (리포트 — 추후 박스 추가 예정, 지금은 자리만) */}
+          <div className={cardCls}>
+            <h2 className='text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6] mb-2'>
+              최종 결과
+            </h2>
+            <p className='text-xs text-[#8B95A1] dark:text-[#6B7280]'>
+              리포트가 준비되면 여기에 표시됩니다.
+            </p>
           </div>
 
           <p className='text-xs text-[#B0B8C1] dark:text-[#4B5563] border-t border-[#E5E8EB] dark:border-[#2D3748] pt-4'>
