@@ -374,6 +374,7 @@ class DebateService:
                 "run_id": run_id,
                 "simulation_id": simulation_id,
                 "debate_id": debate_id,
+                "ad_analysis": ad_analysis.model_dump() if ad_analysis else None,  # §0 헤더(PDF)용
                 "analysis": analysis.model_dump(),
                 "aggregate": aggregate.model_dump(),
                 "topic": topic.model_dump(),

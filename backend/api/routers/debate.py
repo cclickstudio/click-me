@@ -4,7 +4,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
 
 from core.config import settings
@@ -16,6 +16,7 @@ from domain.simulation.contracts.schemas import (
     PersonaReaction,
     RubricScore,
 )
+from domain.simulation.tools.debate.pdf_report import render_report_pdf
 from domain.simulation.wiring import build_debate_service
 
 router = APIRouter()
@@ -130,6 +131,20 @@ async def debate_result(run_id: str) -> dict:
     if result is None:
         raise HTTPException(status_code=404, detail="결과 없음 또는 토론 미완료")
     return result
+
+
+@router.get("/{run_id}/report.pdf")
+async def download_report_pdf(run_id: str) -> Response:
+    """완료된 리포트를 PDF로 직접 생성해 다운로드(html2pdf 미사용, reportlab 렌더)."""
+    result = _service.get_result(run_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="결과 없음 또는 토론 미완료")
+    pdf = render_report_pdf(result)
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="report_{run_id}.pdf"'},
+    )
 
 
 @router.post("/{run_id}/question")
