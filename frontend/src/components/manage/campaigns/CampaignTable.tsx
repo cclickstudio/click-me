@@ -1,5 +1,6 @@
 // 캠페인 목록 — 테이블 뷰 (행 클릭 = 선택)
 import type { CampaignSummary } from './types';
+import { fmtCvr } from './types';
 import { StateBadge } from './StateBadge';
 
 export function CampaignTable({
@@ -54,7 +55,7 @@ export function CampaignTable({
                 {(c.ctr * 100).toFixed(1)}%
               </td>
               <td className="px-3 py-3 text-right tabular-nums text-[#4E5968] dark:text-[#C9CED6] hidden lg:table-cell">
-                {(c.cvr * 100).toFixed(1)}%
+                {fmtCvr(c.cvr)}
               </td>
               <td className="px-3 py-3 text-right tabular-nums text-[#4E5968] dark:text-[#C9CED6] hidden md:table-cell">
                 ₩{c.cpc_krw.toLocaleString()}

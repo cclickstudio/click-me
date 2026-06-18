@@ -1,5 +1,6 @@
 // 캠페인 목록 — 카드 그리드 뷰 (카드 클릭 = 선택)
 import type { CampaignSummary } from './types';
+import { fmtCvr } from './types';
 import { StateBadge } from './StateBadge';
 
 function Metric({ label, value }: { label: string; value: string }) {
@@ -42,7 +43,7 @@ export function CampaignCards({
               <Metric label="노출" value={c.impressions.toLocaleString()} />
               <Metric label="지출" value={`₩${c.spend_krw.toLocaleString()}`} />
               <Metric label="CTR" value={`${(c.ctr * 100).toFixed(1)}%`} />
-              <Metric label="CVR" value={`${(c.cvr * 100).toFixed(1)}%`} />
+              <Metric label="CVR" value={fmtCvr(c.cvr)} />
               <Metric label="CPC" value={`₩${c.cpc_krw.toLocaleString()}`} />
               <Metric label="CPM" value={`₩${c.cpm_krw.toLocaleString()}`} />
             </div>
