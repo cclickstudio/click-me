@@ -9,10 +9,13 @@ import logging
 import os
 import tempfile
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
+from core.db import get_db
+from domain.simulation.adapters.category_repo import list_categories
 from domain.simulation.contracts.schemas import SimulationRunRequest
 from domain.simulation.service.analysis_view import to_analysis_payload
 from domain.simulation.wiring import _ensure_env, build_simulation_service
@@ -176,6 +179,12 @@ async def run_simulation(
     except RuntimeError as e:
         raise HTTPException(status_code=500, detail=str(e)) from e
     return to_analysis_payload(result) if shape == "analysis" else result
+
+
+@router.get("/categories")
+async def get_categories(session: AsyncSession = Depends(get_db)) -> list[dict]:
+    """광고 제품 카테고리 — 업종 대분류별 NICE 상품분류(45류). 2단계 선택(대분류→세부)용."""
+    return await list_categories(session)
 
 
 @router.get("/{run_id}/stream")
