@@ -12,7 +12,7 @@ import { SIM_CATEGORIES } from '@/lib/simCategories';
 import type { SimRunResult, SSEProgressEvent } from '@/lib/types';
 
 type Step = 'setup' | 'running' | 'result';
-type InputMode = 'image' | 'url' | 'none';
+type InputMode = 'image' | 'url';
 type GenderFilter = '' | 'M' | 'F';
 
 /* ─── enum 한글 라벨(백엔드 contracts/enums.py 동기화) ─── */
@@ -125,15 +125,16 @@ export default function SimulationRunPage() {
   // 광고 입력
   const [adId, setAdId] = useState(`AD-${Date.now()}`);
   const [adContent, setAdContent] = useState('');
-  const [inputMode, setInputMode] = useState<InputMode>('none');
+  const [inputMode, setInputMode] = useState<InputMode>('image');
   const [file, setFile] = useState<File | null>(null);
   const [imageUrl, setImageUrl] = useState('');
   const [adTitle, setAdTitle] = useState('');
   const [categoryId, setCategoryId] = useState<number | ''>('');
   const [serviceClass, setServiceClass] = useState<number | ''>('');
   const categories = SIM_CATEGORIES; // 하드코딩 마스터(DB/API 대체).
-  // 광고 목표 — 일반인도 쉽게 고르는 단일 선택.
+  // 광고 목표 — 일반인도 쉽게 고르는 단일 선택(+ 기타 직접 입력).
   const [goalItem, setGoalItem] = useState('');
+  const [customGoal, setCustomGoal] = useState('');
 
   // 시뮬레이션 설정
   const [sampleSize, setSampleSize] = useState(20);
@@ -194,11 +195,12 @@ export default function SimulationRunPage() {
         sample_size: sampleSize,
         allocation,
         ad_title: adTitle || undefined,
+        ad_objective:
+          (goalItem === '기타' ? customGoal.trim() : goalItem) || undefined,
         product_category:
           categories.find(c => c.id === categoryId)?.name || undefined,
         service_class:
           typeof serviceClass === 'number' ? serviceClass : undefined,
-        ad_objective: goalItem || undefined,
       });
 
       const es = api.simulation.stream(run_id);
@@ -266,6 +268,19 @@ export default function SimulationRunPage() {
   /* ─── STEP: setup ─── */
   if (step === 'setup') {
     const previewUrl = file ? URL.createObjectURL(file) : null;
+    // 광고 입력은 전부 필수 — 모두 채워야 실행 활성화.
+    const imageReady =
+      (inputMode === 'image' && !!file) ||
+      (inputMode === 'url' && imageUrl.trim() !== '');
+    const goalReady =
+      goalItem === '기타' ? customGoal.trim() !== '' : goalItem !== '';
+    const canRun =
+      adTitle.trim() !== '' &&
+      adContent.trim() !== '' &&
+      imageReady &&
+      categoryId !== '' &&
+      serviceClass !== '' &&
+      goalReady;
     return (
       <AppLayout>
         <div className='px-8 py-8 max-w-5xl mx-auto'>
@@ -284,7 +299,7 @@ export default function SimulationRunPage() {
             </div>
           )}
 
-          <div className='grid grid-cols-[1fr_1fr] gap-5 items-start'>
+          <div className='grid grid-cols-[1fr_1fr] gap-5 items-stretch'>
             {/* ── 왼쪽: 광고 입력 ── */}
             <div className={`${cardCls} flex flex-col gap-5`}>
               <p className='text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]'>
@@ -305,23 +320,26 @@ export default function SimulationRunPage() {
               </div>
 
               <div>
-                <label className={labelCls}>제품 설명</label>
+                <label className={labelCls}>
+                  제품 설명 <span className='text-[#F74D4D]'>*</span>
+                </label>
                 <textarea
                   value={adContent}
                   onChange={e => setAdContent(e.target.value)}
                   rows={4}
-                  placeholder='제품 특징이나 광고 카피를 입력하세요. 이미지 없이 텍스트만으로도 해석됩니다.'
+                  placeholder='제품 특징이나 광고 카피를 입력하세요.'
                   className={`${inputCls} resize-none`}
                 />
               </div>
 
               {/* 이미지 입력 방식 */}
               <div>
-                <label className={labelCls}>광고 이미지 (선택)</label>
+                <label className={labelCls}>
+                  광고 이미지 <span className='text-[#F74D4D]'>*</span>
+                </label>
                 <div className='flex gap-2 mb-3'>
                   {(
                     [
-                      ['none', '없음'],
                       ['image', '파일 업로드'],
                       ['url', '이미지 URL'],
                     ] as [InputMode, string][]
@@ -371,7 +389,9 @@ export default function SimulationRunPage() {
 
               {/* 제품 카테고리 & 세부 분류 */}
               <div>
-                <label className={labelCls}>제품 카테고리 (선택)</label>
+                <label className={labelCls}>
+                  제품 카테고리 <span className='text-[#F74D4D]'>*</span>
+                </label>
                 <div className='grid grid-cols-2 gap-3'>
                   <select
                     value={categoryId}
@@ -410,9 +430,11 @@ export default function SimulationRunPage() {
                 </div>
               </div>
 
-              {/* 광고 목표 — 쉬운 단일 선택(칩) */}
+              {/* 광고 목표 — 쉬운 단일 선택(칩) + 기타 직접 입력 */}
               <div>
-                <label className={labelCls}>광고 목표 (선택)</label>
+                <label className={labelCls}>
+                  광고 목표 <span className='text-[#F74D4D]'>*</span>
+                </label>
                 <div className='flex flex-wrap gap-2'>
                   {AD_GOALS.map(g => (
                     <button
@@ -425,156 +447,175 @@ export default function SimulationRunPage() {
                       {g.label}
                     </button>
                   ))}
+                  <button
+                    type='button'
+                    onClick={() => setGoalItem(goalItem === '기타' ? '' : '기타')}
+                    className={`${chipBase} ${goalItem === '기타' ? chipActive : chipIdle}`}>
+                    기타
+                  </button>
                 </div>
+                {goalItem === '기타' && (
+                  <input
+                    type='text'
+                    value={customGoal}
+                    onChange={e => setCustomGoal(e.target.value)}
+                    placeholder='광고 목표를 직접 입력하세요'
+                    className={`${inputCls} mt-2`}
+                  />
+                )}
                 <p className='text-[11px] text-[#8B95A1] dark:text-[#6B7280] mt-1.5'>
-                  {AD_GOALS.find(g => g.value === goalItem)?.desc ??
-                    '이 광고로 가장 원하는 결과를 하나 고르세요. 광고가 의도대로 전달됐는지 함께 비교합니다.'}
+                  {goalItem === '기타'
+                    ? '원하는 광고 목표를 직접 적어주세요.'
+                    : (AD_GOALS.find(g => g.value === goalItem)?.desc ??
+                      '이 광고로 가장 원하는 결과를 하나 고르세요. 광고가 의도대로 전달됐는지 함께 비교합니다.')}
                 </p>
               </div>
             </div>
 
-            {/* ── 오른쪽: 시뮬레이션 설정 ── */}
-            <div className={`${cardCls} flex flex-col gap-5`}>
-              <p className='text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]'>
-                시뮬레이션 설정
-              </p>
-
-              {/* 표본 수 */}
-              <div className='bg-[#F9FAFB] dark:bg-[#252D3D] border border-[#E5E8EB] dark:border-[#2D3748] rounded-xl px-4 py-4'>
-                <label className={labelCls}>
-                  가상 소비자 수:{' '}
-                  <span className='text-[#3182F6] font-bold'>
-                    {sampleSize}명
-                  </span>
-                </label>
-                <input
-                  type='range'
-                  min={1}
-                  max={200}
-                  value={sampleSize}
-                  onChange={e => setSampleSize(Number(e.target.value))}
-                  className='w-full accent-[#3182F6] mt-1'
-                />
-                <div className='flex justify-between text-[10px] text-[#B0B8C1] dark:text-[#4B5563] mt-1'>
-                  <span>1명</span>
-                  <span>200명</span>
-                </div>
-              </div>
-
-              {/* 표본 추출 방식 */}
-              <div>
-                <p className={sectionTitle}>표본 추출 방식</p>
-                <div className='flex gap-2'>
-                  {(
-                    [
-                      ['proportional', '인구 비례 (기본)'],
-                      ['stratified', '소수 그룹 보강'],
-                    ] as ['proportional' | 'stratified', string][]
-                  ).map(([v, lbl]) => (
-                    <button
-                      key={v}
-                      type='button'
-                      onClick={() => setAllocation(v)}
-                      className={`${chipBase} ${allocation === v ? chipActive : chipIdle}`}>
-                      {lbl}
-                    </button>
-                  ))}
-                </div>
-                <p className='text-[11px] text-[#8B95A1] dark:text-[#6B7280] mt-1.5'>
-                  {allocation === 'proportional'
-                    ? '실제 인구 비율대로 뽑습니다 (기본 권장).'
-                    : '소수 그룹도 충분히 포함되게 보강합니다 (정밀하지만 신뢰구간이 넓어짐).'}
+            {/* ── 오른쪽: 시뮬레이션 설정 + 타깃 설정 (세로 스택) ── */}
+            <div className='flex flex-col gap-5'>
+              <div className={`${cardCls} flex flex-col gap-5`}>
+                <p className='text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]'>
+                  시뮬레이션 설정
                 </p>
-              </div>
-            </div>
-          </div>
 
-          {/* ── 타깃 설정 (전체 너비) ── */}
-          <div className={`${cardCls} flex flex-col gap-5 mt-5`}>
-            <p className='text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]'>
-              타깃 설정
-            </p>
-            <div className='grid grid-cols-1 md:grid-cols-3 gap-5'>
-              {/* 타깃 지정 방식 */}
-              <div>
-                <p className={sectionTitle}>타깃 지정 방식</p>
-                <div className='flex gap-2'>
-                  {(
-                    [
-                      ['AUTO', '자동'],
-                      ['MANUAL', '직접 지정'],
-                    ] as ['AUTO' | 'MANUAL', string][]
-                  ).map(([v, lbl]) => (
-                    <button
-                      key={v}
-                      type='button'
-                      onClick={() => setTargetMode(v)}
-                      className={`${chipBase} ${targetMode === v ? chipActive : chipIdle}`}>
-                      {lbl}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* 타깃 조건(연령대·성별) — 직접 지정(MANUAL)일 때만 표시 */}
-              {targetMode === 'MANUAL' && (
-                <>
-                  <div>
-                    <p className={sectionTitle}>
-                      연령대{' '}
-                      <span className='text-[10px] font-normal text-[#B0B8C1] dark:text-[#4B5563]'>
-                        복수 선택 가능
-                      </span>
-                    </p>
-                    <div className='flex flex-wrap gap-2'>
-                      {AGE_BANDS.map(b => {
-                        const on = ageBands.includes(b.label);
-                        return (
-                          <button
-                            key={b.label}
-                            type='button'
-                            onClick={() =>
-                              setAgeBands(prev =>
-                                on
-                                  ? prev.filter(x => x !== b.label)
-                                  : [...prev, b.label]
-                              )
-                            }
-                            className={`${chipBase} ${on ? chipActive : chipIdle}`}>
-                            {b.label}
-                          </button>
-                        );
-                      })}
-                    </div>
+                {/* 표본 수 */}
+                <div className='bg-[#F9FAFB] dark:bg-[#252D3D] border border-[#E5E8EB] dark:border-[#2D3748] rounded-xl px-4 py-4'>
+                  <label className={labelCls}>
+                    가상 소비자 수:{' '}
+                    <span className='text-[#3182F6] font-bold'>
+                      {sampleSize}명
+                    </span>
+                  </label>
+                  <input
+                    type='range'
+                    min={1}
+                    max={200}
+                    value={sampleSize}
+                    onChange={e => setSampleSize(Number(e.target.value))}
+                    className='w-full accent-[#3182F6] mt-1'
+                  />
+                  <div className='flex justify-between text-[10px] text-[#B0B8C1] dark:text-[#4B5563] mt-1'>
+                    <span>1명</span>
+                    <span>200명</span>
                   </div>
+                </div>
 
+                {/* 표본 추출 방식 */}
+                <div>
+                  <p className={sectionTitle}>표본 추출 방식</p>
+                  <div className='flex gap-2'>
+                    {(
+                      [
+                        ['proportional', '인구 비례 (기본)'],
+                        ['stratified', '소수 그룹 보강'],
+                      ] as ['proportional' | 'stratified', string][]
+                    ).map(([v, lbl]) => (
+                      <button
+                        key={v}
+                        type='button'
+                        onClick={() => setAllocation(v)}
+                        className={`${chipBase} ${allocation === v ? chipActive : chipIdle}`}>
+                        {lbl}
+                      </button>
+                    ))}
+                  </div>
+                  <p className='text-[11px] text-[#8B95A1] dark:text-[#6B7280] mt-1.5'>
+                    {allocation === 'proportional'
+                      ? '실제 인구 비율대로 뽑습니다 (기본 권장).'
+                      : '소수 그룹도 충분히 포함되게 보강합니다 (정밀하지만 신뢰구간이 넓어짐).'}
+                  </p>
+                </div>
+              </div>
+
+              {/* ── 타깃 설정 ── */}
+              <div className={`${cardCls} flex flex-col gap-5`}>
+                <p className='text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]'>
+                  타깃 설정
+                </p>
+                <div className='flex flex-col gap-5'>
+                  {/* 타깃 지정 방식 */}
                   <div>
-                    <p className={sectionTitle}>
-                      성별{' '}
-                      <span className='text-[10px] font-normal text-[#B0B8C1] dark:text-[#4B5563]'>
-                        선택
-                      </span>
-                    </p>
+                    <p className={sectionTitle}>타깃 지정 방식</p>
                     <div className='flex gap-2'>
                       {(
                         [
-                          ['', '전체'],
-                          ['F', '여성'],
-                          ['M', '남성'],
-                        ] as [GenderFilter, string][]
+                          ['AUTO', '자동'],
+                          ['MANUAL', '직접 지정'],
+                        ] as ['AUTO' | 'MANUAL', string][]
                       ).map(([v, lbl]) => (
                         <button
-                          key={lbl}
+                          key={v}
                           type='button'
-                          onClick={() => setGender(v)}
-                          className={`${chipBase} ${gender === v ? chipActive : chipIdle}`}>
+                          onClick={() => setTargetMode(v)}
+                          className={`${chipBase} ${targetMode === v ? chipActive : chipIdle}`}>
                           {lbl}
                         </button>
                       ))}
                     </div>
                   </div>
-                </>
-              )}
+
+                  {/* 타깃 조건(연령대·성별) — 직접 지정(MANUAL)일 때만 표시 */}
+                  {targetMode === 'MANUAL' && (
+                    <>
+                      <div>
+                        <p className={sectionTitle}>
+                          연령대{' '}
+                          <span className='text-[10px] font-normal text-[#B0B8C1] dark:text-[#4B5563]'>
+                            복수 선택 가능
+                          </span>
+                        </p>
+                        <div className='flex flex-wrap gap-2'>
+                          {AGE_BANDS.map(b => {
+                            const on = ageBands.includes(b.label);
+                            return (
+                              <button
+                                key={b.label}
+                                type='button'
+                                onClick={() =>
+                                  setAgeBands(prev =>
+                                    on
+                                      ? prev.filter(x => x !== b.label)
+                                      : [...prev, b.label]
+                                  )
+                                }
+                                className={`${chipBase} ${on ? chipActive : chipIdle}`}>
+                                {b.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      <div>
+                        <p className={sectionTitle}>
+                          성별{' '}
+                          <span className='text-[10px] font-normal text-[#B0B8C1] dark:text-[#4B5563]'>
+                            선택
+                          </span>
+                        </p>
+                        <div className='flex gap-2'>
+                          {(
+                            [
+                              ['', '전체'],
+                              ['F', '여성'],
+                              ['M', '남성'],
+                            ] as [GenderFilter, string][]
+                          ).map(([v, lbl]) => (
+                            <button
+                              key={lbl}
+                              type='button'
+                              onClick={() => setGender(v)}
+                              className={`${chipBase} ${gender === v ? chipActive : chipIdle}`}>
+                              {lbl}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
 
@@ -582,7 +623,7 @@ export default function SimulationRunPage() {
           <div className='mt-5'>
             <button
               onClick={run}
-              disabled={!adTitle.trim()}
+              disabled={!canRun}
               className='w-full flex items-center justify-center gap-2 py-3.5 bg-[#3182F6] hover:bg-[#1B6EEB] disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl text-sm font-semibold transition-colors'>
               <svg className='w-4 h-4' fill='currentColor' viewBox='0 0 24 24'>
                 <path d='M8 5v14l11-7z' />
