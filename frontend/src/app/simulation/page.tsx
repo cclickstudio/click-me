@@ -332,8 +332,8 @@ export default function SimulationRunPage() {
                 />
               </div>
 
-              {/* 이미지 입력 방식 */}
-              <div>
+              {/* 이미지 입력 방식 — 남는 세로 공간을 채워 좌우 높이 정렬 */}
+              <div className='flex flex-1 flex-col'>
                 <label className={labelCls}>
                   광고 이미지 <span className='text-[#F74D4D]'>*</span>
                 </label>
@@ -355,7 +355,7 @@ export default function SimulationRunPage() {
                 </div>
 
                 {inputMode === 'image' && (
-                  <label className='flex flex-col items-center justify-center h-40 border-2 border-dashed border-[#E5E8EB] dark:border-[#2D3748] rounded-xl cursor-pointer hover:border-[#3182F6] transition-colors overflow-hidden'>
+                  <label className='flex flex-1 min-h-0 flex-col items-center justify-center border-2 border-dashed border-[#E5E8EB] dark:border-[#2D3748] rounded-xl cursor-pointer hover:border-[#3182F6] transition-colors overflow-hidden'>
                     {previewUrl ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img
@@ -386,94 +386,104 @@ export default function SimulationRunPage() {
                   />
                 )}
               </div>
-
-              {/* 제품 카테고리 & 세부 분류 */}
-              <div>
-                <label className={labelCls}>
-                  제품 카테고리 <span className='text-[#F74D4D]'>*</span>
-                </label>
-                <div className='grid grid-cols-2 gap-3'>
-                  <select
-                    value={categoryId}
-                    onChange={e => {
-                      setCategoryId(
-                        e.target.value ? Number(e.target.value) : ''
-                      );
-                      setServiceClass('');
-                    }}
-                    className={inputCls}>
-                    <option value=''>대분류 선택</option>
-                    {categories.map(c => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
-                      </option>
-                    ))}
-                  </select>
-                  <select
-                    value={serviceClass}
-                    onChange={e =>
-                      setServiceClass(
-                        e.target.value ? Number(e.target.value) : ''
-                      )
-                    }
-                    disabled={!categoryId}
-                    className={`${inputCls} disabled:opacity-50`}>
-                    <option value=''>세부 분류 (NICE)</option>
-                    {(
-                      categories.find(c => c.id === categoryId)?.kinds ?? []
-                    ).map(k => (
-                      <option key={k.id} value={k.id}>
-                        {k.id}류 · {k.description}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              {/* 광고 목표 — 쉬운 단일 선택(칩) + 기타 직접 입력 */}
-              <div>
-                <label className={labelCls}>
-                  광고 목표 <span className='text-[#F74D4D]'>*</span>
-                </label>
-                <div className='flex flex-wrap gap-2'>
-                  {AD_GOALS.map(g => (
-                    <button
-                      key={g.value}
-                      type='button'
-                      onClick={() =>
-                        setGoalItem(goalItem === g.value ? '' : g.value)
-                      }
-                      className={`${chipBase} ${goalItem === g.value ? chipActive : chipIdle}`}>
-                      {g.label}
-                    </button>
-                  ))}
-                  <button
-                    type='button'
-                    onClick={() => setGoalItem(goalItem === '기타' ? '' : '기타')}
-                    className={`${chipBase} ${goalItem === '기타' ? chipActive : chipIdle}`}>
-                    기타
-                  </button>
-                </div>
-                {goalItem === '기타' && (
-                  <input
-                    type='text'
-                    value={customGoal}
-                    onChange={e => setCustomGoal(e.target.value)}
-                    placeholder='광고 목표를 직접 입력하세요'
-                    className={`${inputCls} mt-2`}
-                  />
-                )}
-                <p className='text-[11px] text-[#8B95A1] dark:text-[#6B7280] mt-1.5'>
-                  {goalItem === '기타'
-                    ? '원하는 광고 목표를 직접 적어주세요.'
-                    : (AD_GOALS.find(g => g.value === goalItem)?.desc ??
-                      '이 광고로 가장 원하는 결과를 하나 고르세요. 광고가 의도대로 전달됐는지 함께 비교합니다.')}
-                </p>
-              </div>
             </div>
 
-            {/* ── 오른쪽: 시뮬레이션 설정 + 타깃 설정 (세로 스택) ── */}
+            {/* ── 오른쪽: 광고 설정 + 시뮬레이션 설정 + 타깃 설정 (세로 스택) ── */}
             <div className='flex flex-col gap-5'>
+              {/* 광고 설정 — 제품 카테고리 & 광고 목표 */}
+              <div className={`${cardCls} flex flex-col gap-5`}>
+                <p className='text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]'>
+                  광고 설정
+                </p>
+
+                {/* 제품 카테고리 & 세부 분류 */}
+                <div>
+                  <label className={labelCls}>
+                    제품 카테고리 <span className='text-[#F74D4D]'>*</span>
+                  </label>
+                  <div className='grid grid-cols-2 gap-3'>
+                    <select
+                      value={categoryId}
+                      onChange={e => {
+                        setCategoryId(
+                          e.target.value ? Number(e.target.value) : ''
+                        );
+                        setServiceClass('');
+                      }}
+                      className={inputCls}>
+                      <option value=''>대분류 선택</option>
+                      {categories.map(c => (
+                        <option key={c.id} value={c.id}>
+                          {c.name}
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      value={serviceClass}
+                      onChange={e =>
+                        setServiceClass(
+                          e.target.value ? Number(e.target.value) : ''
+                        )
+                      }
+                      disabled={!categoryId}
+                      className={`${inputCls} disabled:opacity-50`}>
+                      <option value=''>세부 분류 (NICE)</option>
+                      {(
+                        categories.find(c => c.id === categoryId)?.kinds ?? []
+                      ).map(k => (
+                        <option key={k.id} value={k.id}>
+                          {k.id}류 · {k.description}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {/* 광고 목표 — 쉬운 단일 선택(칩) + 기타 직접 입력 */}
+                <div>
+                  <label className={labelCls}>
+                    광고 목표 <span className='text-[#F74D4D]'>*</span>
+                  </label>
+                  <div className='flex flex-wrap gap-2'>
+                    {AD_GOALS.map(g => (
+                      <button
+                        key={g.value}
+                        type='button'
+                        onClick={() =>
+                          setGoalItem(goalItem === g.value ? '' : g.value)
+                        }
+                        className={`${chipBase} ${goalItem === g.value ? chipActive : chipIdle}`}>
+                        {g.label}
+                      </button>
+                    ))}
+                    <button
+                      type='button'
+                      onClick={() =>
+                        setGoalItem(goalItem === '기타' ? '' : '기타')
+                      }
+                      className={`${chipBase} ${goalItem === '기타' ? chipActive : chipIdle}`}>
+                      기타
+                    </button>
+                  </div>
+                  {goalItem === '기타' && (
+                    <input
+                      type='text'
+                      value={customGoal}
+                      onChange={e => setCustomGoal(e.target.value)}
+                      placeholder='광고 목표를 직접 입력하세요'
+                      className={`${inputCls} mt-2`}
+                    />
+                  )}
+                  <p className='text-[11px] text-[#8B95A1] dark:text-[#6B7280] mt-1.5'>
+                    {goalItem === '기타'
+                      ? '원하는 광고 목표를 직접 적어주세요.'
+                      : (AD_GOALS.find(g => g.value === goalItem)?.desc ??
+                        '이 광고로 가장 원하는 결과를 하나 고르세요. 광고가 의도대로 전달됐는지 함께 비교합니다.')}
+                  </p>
+                </div>
+              </div>
+
+              {/* 시뮬레이션 설정 */}
               <div className={`${cardCls} flex flex-col gap-5`}>
                 <p className='text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]'>
                   시뮬레이션 설정
