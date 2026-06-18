@@ -8,7 +8,8 @@ import { DebatePanel } from '@/components/simulator/DebatePanel';
 import { KpiCard } from '@/components/ui/KpiCard';
 import { formatPercent } from '@/lib/utils';
 import { api } from '@/lib/api';
-import type { SimRunResult, SSEProgressEvent, SimCategory } from '@/lib/types';
+import { SIM_CATEGORIES } from '@/lib/simCategories';
+import type { SimRunResult, SSEProgressEvent } from '@/lib/types';
 
 type Step = 'setup' | 'running' | 'result';
 type InputMode = 'image' | 'url' | 'none';
@@ -50,6 +51,35 @@ const OCEAN_LABEL: Record<string, string> = {
   agreeableness: '친화성',
   neuroticism: '신경성',
 };
+
+/* ─── 광고 목표(일반인도 쉽게 고르는 단일 선택) ─── */
+const AD_GOALS: { value: string; label: string; desc: string }[] = [
+  {
+    value: '관심 유도',
+    label: '관심 유도',
+    desc: '브랜드·제품을 더 많은 사람에게 알리고 흥미를 끕니다.',
+  },
+  {
+    value: '클릭 유도',
+    label: '클릭 유도',
+    desc: '사이트·콘텐츠 방문이나 영상 시청을 유도합니다.',
+  },
+  {
+    value: '가입·문의 유도',
+    label: '가입·문의 유도',
+    desc: '회원가입·상담·자료 신청 등 잠재고객을 확보합니다.',
+  },
+  {
+    value: '구매 전환',
+    label: '구매 전환',
+    desc: '실제 구매·결제·예약 같은 전환을 늘립니다.',
+  },
+  {
+    value: '재구매·단골',
+    label: '재구매·단골',
+    desc: '기존 고객의 재구매·구독 유지로 단골을 만듭니다.',
+  },
+];
 
 /* ─── 공통 스타일(기존 simulation 페이지 컨벤션) ─── */
 const labelCls =
@@ -93,8 +123,9 @@ export default function SimulationRunPage() {
   const [adTitle, setAdTitle] = useState('');
   const [categoryId, setCategoryId] = useState<number | ''>('');
   const [serviceClass, setServiceClass] = useState<number | ''>('');
-  const [categories, setCategories] = useState<SimCategory[]>([]);
-  const [adObjective, setAdObjective] = useState('');
+  const categories = SIM_CATEGORIES; // 하드코딩 마스터(DB/API 대체).
+  // 광고 목표 — 일반인도 쉽게 고르는 단일 선택.
+  const [goalItem, setGoalItem] = useState('');
 
   // 시뮬레이션 설정
   const [sampleSize, setSampleSize] = useState(20);
@@ -117,19 +148,10 @@ export default function SimulationRunPage() {
   const esRef = useRef<EventSource | null>(null);
 
   // 고급 설정 접기 — 기본 화면 단순화.
-  const [showAdGoal, setShowAdGoal] = useState(false);
   const [showAdvSettings, setShowAdvSettings] = useState(false);
 
   // 언마운트 시 스트림 정리.
   useEffect(() => () => esRef.current?.close(), []);
-
-  // 제품 카테고리 마스터 로드(2단계 드롭다운).
-  useEffect(() => {
-    api.simulation
-      .categories()
-      .then(setCategories)
-      .catch(() => setCategories([]));
-  }, []);
 
   const toggleExpand = (id: string) =>
     setExpanded(prev => {
@@ -166,7 +188,7 @@ export default function SimulationRunPage() {
           categories.find(c => c.id === categoryId)?.name || undefined,
         service_class:
           typeof serviceClass === 'number' ? serviceClass : undefined,
-        ad_objective: adObjective || undefined,
+        ad_objective: goalItem || undefined,
       });
 
       const es = api.simulation.stream(run_id);
@@ -261,24 +283,24 @@ export default function SimulationRunPage() {
 
               <div>
                 <label className={labelCls}>
-                  광고 제목 <span className='text-[#F74D4D]'>*</span>
+                  광고 제품명 <span className='text-[#F74D4D]'>*</span>
                 </label>
                 <input
                   type='text'
                   value={adTitle}
                   onChange={e => setAdTitle(e.target.value)}
-                  placeholder='제로콜라 여름 신상 런칭'
+                  placeholder='제로콜라 제로슈거'
                   className={inputCls}
                 />
               </div>
 
               <div>
-                <label className={labelCls}>광고 설명</label>
+                <label className={labelCls}>제품 설명</label>
                 <textarea
                   value={adContent}
                   onChange={e => setAdContent(e.target.value)}
                   rows={4}
-                  placeholder='광고 카피나 설명 텍스트를 입력하세요. 이미지 없이 텍스트만으로도 해석됩니다.'
+                  placeholder='제품 특징이나 광고 카피를 입력하세요. 이미지 없이 텍스트만으로도 해석됩니다.'
                   className={`${inputCls} resize-none`}
                 />
               </div>
@@ -337,74 +359,64 @@ export default function SimulationRunPage() {
                 )}
               </div>
 
-              {/* 광고 의도(고급 — 의도-반응 교차검증) */}
-              <hr className='border-[#E5E8EB] dark:border-[#2D3748]' />
-              <button
-                type='button'
-                onClick={() => setShowAdGoal(v => !v)}
-                className={advToggleCls}>
-                <span>광고 의도 (선택)</span>
-                <span>{showAdGoal ? '▴' : '▾'}</span>
-              </button>
-              {showAdGoal && (
-                <>
-                  <p className='text-[11px] text-[#B0B8C1] dark:text-[#4B5563] -mt-2'>
-                    적어두면 광고가 의도대로 전달됐는지 함께 비교합니다.
-                  </p>
-                  <div className='grid grid-cols-2 gap-3'>
-                    <div>
-                      <label className={labelCls}>제품 카테고리</label>
-                      <select
-                        value={categoryId}
-                        onChange={e => {
-                          setCategoryId(
-                            e.target.value ? Number(e.target.value) : ''
-                          );
-                          setServiceClass('');
-                        }}
-                        className={inputCls}>
-                        <option value=''>선택 안 함</option>
-                        {categories.map(c => (
-                          <option key={c.id} value={c.id}>
-                            {c.name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                    <div>
-                      <label className={labelCls}>세부 분류 (NICE)</label>
-                      <select
-                        value={serviceClass}
-                        onChange={e =>
-                          setServiceClass(
-                            e.target.value ? Number(e.target.value) : ''
-                          )
-                        }
-                        disabled={!categoryId}
-                        className={`${inputCls} disabled:opacity-50`}>
-                        <option value=''>선택 안 함</option>
-                        {(
-                          categories.find(c => c.id === categoryId)?.kinds ?? []
-                        ).map(k => (
-                          <option key={k.id} value={k.id}>
-                            {k.id}류 · {k.description}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-                  <div>
-                    <label className={labelCls}>캠페인 목표</label>
-                    <input
-                      type='text'
-                      value={adObjective}
-                      onChange={e => setAdObjective(e.target.value)}
-                      placeholder='신제품 인지도'
-                      className={inputCls}
-                    />
-                  </div>
-                </>
-              )}
+              {/* 제품 카테고리 & 세부 분류 */}
+              <div>
+                <label className={labelCls}>제품 카테고리 (선택)</label>
+                <div className='grid grid-cols-2 gap-3'>
+                  <select
+                    value={categoryId}
+                    onChange={e => {
+                      setCategoryId(e.target.value ? Number(e.target.value) : '');
+                      setServiceClass('');
+                    }}
+                    className={inputCls}>
+                    <option value=''>대분류 선택</option>
+                    {categories.map(c => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    value={serviceClass}
+                    onChange={e =>
+                      setServiceClass(e.target.value ? Number(e.target.value) : '')
+                    }
+                    disabled={!categoryId}
+                    className={`${inputCls} disabled:opacity-50`}>
+                    <option value=''>세부 분류 (NICE)</option>
+                    {(categories.find(c => c.id === categoryId)?.kinds ?? []).map(
+                      k => (
+                        <option key={k.id} value={k.id}>
+                          {k.id}류 · {k.description}
+                        </option>
+                      )
+                    )}
+                  </select>
+                </div>
+              </div>
+
+              {/* 광고 목표 — 쉬운 단일 선택(칩) */}
+              <div>
+                <label className={labelCls}>광고 목표 (선택)</label>
+                <div className='flex flex-wrap gap-2'>
+                  {AD_GOALS.map(g => (
+                    <button
+                      key={g.value}
+                      type='button'
+                      onClick={() =>
+                        setGoalItem(goalItem === g.value ? '' : g.value)
+                      }
+                      className={`${chipBase} ${goalItem === g.value ? chipActive : chipIdle}`}>
+                      {g.label}
+                    </button>
+                  ))}
+                </div>
+                <p className='text-[11px] text-[#8B95A1] dark:text-[#6B7280] mt-1.5'>
+                  {AD_GOALS.find(g => g.value === goalItem)?.desc ??
+                    '이 광고로 가장 원하는 결과를 하나 고르세요. 광고가 의도대로 전달됐는지 함께 비교합니다.'}
+                </p>
+              </div>
             </div>
 
             {/* ── 오른쪽: 시뮬레이션 설정 ── */}
