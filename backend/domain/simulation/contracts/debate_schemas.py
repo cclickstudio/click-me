@@ -143,18 +143,18 @@ class DebateParticipant(BaseModel):
     stance_score: float
     is_fallback: bool = False
     is_expert: bool = False  # 전문가(분석결과 grounded) / 일반인(실제 반응 grounded)
-    engine: str  # haiku / gpt / gemini (토론자). 역할 기반 라운드로빈(엔진 ⊥ 역할).
+    engine: str  # gpt (토론자, gpt-4o-mini 통일). haiku/gemini는 여분.
     persona_name: str  # 결정론 부여 이름(운영은 factory 이름 승계). 리포트 표시용.
     persona_profile: str  # 한 줄 프로필(전문가=카테고리 주입, 일반인=역할/인구 기반)
     tone: str = ""  # 일반인 말투(표현 스타일). 전문가는 빈 값 — 같은 모델 통일 시 표현 다양성용.
 
 
 class AssignedPanel(BaseModel):
-    """조각 10-b 산출 — 엔진·이름 배정 끝난 토론 패널. judge는 별도 고정(Sonnet 4.6)."""
+    """조각 10-b 산출 — 엔진·이름 배정 끝난 토론 패널. judge는 별도 고정(Haiku)."""
 
     participants: list[DebateParticipant]
     pivot_id: str | None = None
-    judge_engine: str = "sonnet"
+    judge_engine: str = "haiku"
     critic_secured: bool = False
 
 

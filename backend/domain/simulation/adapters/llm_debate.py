@@ -1,4 +1,4 @@
-# 실 LLM 토론 엔진 — DebaterPort/JudgePort 구현. 토론자 Haiku/GPT, Judge Sonnet.
+# 실 LLM 토론 엔진 — DebaterPort/JudgePort 구현. 토론자 GPT(gpt-4o-mini), Judge Haiku.
 #
 # 일반인 발화는 실제 반응에, 전문가 발화는 분석 결과(topic)에 grounded — system에 주입.
 # 엔진 라우팅: participant.engine(haiku/sonnet→Anthropic, gpt→OpenAI). Gemini는 복구용 잔존(미배정).
@@ -29,15 +29,15 @@ from domain.simulation.contracts.schemas import PersonaReaction
 
 logger = logging.getLogger("clickme")
 
-# 모델 ID — 비용 라인: 토론자 저가(Haiku/mini/Flash), Judge 중상(Sonnet). 바꾸려면 여기만.
-HAIKU_MODEL = "claude-haiku-4-5"
-SONNET_MODEL = "claude-sonnet-4-6"  # Judge — Opus 4.8에서 다운(호출 적어 비용영향 작음).
+# 모델 ID — 비용 라인: 토론자 gpt-4o-mini, Judge Haiku. 바꾸려면 여기만.
+HAIKU_MODEL = "claude-haiku-4-5"  # Judge — Sonnet에서 다운(호출 적어 비용영향 작음).
+SONNET_MODEL = "claude-sonnet-4-6"  # (미사용·여분) 필요 시 Judge를 다시 올릴 핀.
 OPUS_MODEL = "claude-opus-4-8"  # (미사용·여분) 필요 시 Judge를 다시 올릴 핀.
-GPT_MODEL = "gpt-4o-mini"
+GPT_MODEL = "gpt-4o-mini"  # 토론자 전원 + 라운드 정리.
 GEMINI_MODEL = "gemini-2.5-flash"  # (미배정) 복구용 — 응답 실패 잦아 토론자 배정에서 제외
 
-JUDGE_ENGINE = "sonnet"  # LLMJudge 기본 호출 엔진(assigner.JUDGE_ENGINE과 일치).
-SUMMARIZE_ENGINE = "haiku"  # 라운드 정리는 한 문장 요약 — 저가 엔진으로(비용 최적화).
+JUDGE_ENGINE = "haiku"  # LLMJudge 기본 호출 엔진(assigner.JUDGE_ENGINE과 일치). Sonnet→Haiku 다운.
+SUMMARIZE_ENGINE = "gpt"  # 라운드 정리 — 토론자와 같은 gpt-4o-mini(Haiku→gpt).
 _ANTHROPIC_MODELS = {"haiku": HAIKU_MODEL, "sonnet": SONNET_MODEL, "opus": OPUS_MODEL}
 
 _VALID_STANCE = {"positive", "neutral", "negative"}
@@ -346,7 +346,7 @@ class LLMDebater:
 
 
 class LLMJudge:
-    """실 LLM 주최자 — Sonnet 4.6으로 라운드 정리·잠정 액션·최종 결론(Opus에서 다운)."""
+    """실 LLM 주최자 — Haiku로 잠정 액션·최종 결론(Sonnet에서 다운), 라운드 정리는 gpt-4o-mini."""
 
     def __init__(self, clients: _Clients | None = None, engine: str = JUDGE_ENGINE) -> None:
         self._c = clients or _Clients()

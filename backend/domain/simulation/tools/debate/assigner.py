@@ -1,6 +1,6 @@
 # 조각 10-b — 엔진·이름 배정(결정론, LLM✗). 패널 6명에 모델·페르소나명을 부여한다.
 #
-# 엔진은 역할 기반 라운드로빈(엔진 ⊥ 역할) — 한 엔진이 한 역할군에 쏠리지 않게. Judge=Sonnet.
+# 토론자는 gpt-4o-mini로 통일(표현 다양성은 _LAY_TONES 말투 풀로 확보). Judge=Haiku.
 # 이름은 persona_id 기반 결정론(같은 id → 항상 같은 이름). 운영은 factory 이름을 우선 승계.
 # 상세 규칙: docs/simulation/debate/persona-debate-pipeline.md ③⑤
 from __future__ import annotations
@@ -13,10 +13,9 @@ from domain.simulation.contracts.debate_schemas import (
     SelectedPanel,
 )
 
-JUDGE_ENGINE = "sonnet"  # Sonnet 4.6 (종합·최종 액션, 호출 적음 / Opus 4.8에서 다운). 별도 고정.
-# slot별 엔진 라운드로빈((slot-1)%2) — 엔진 ⊥ 역할. Gemini 제거(응답 실패 잦음) → Haiku·GPT 2엔진.
-# 8명이면 Haiku4/GPT4, 6명(일반인2)이면 Haiku3/GPT3. slot 고정이라 전문가/일반에 엔진이 골고루.
-PANEL_ENGINE = ["haiku", "gpt"]
+JUDGE_ENGINE = "haiku"  # Haiku (종합·최종 액션, 호출 적음 / Sonnet에서 다운). 별도 고정.
+# 토론자 엔진 — gpt-4o-mini로 통일. 동일 모델의 톤 쏠림은 _LAY_TONES(일반인 말투 풀)로 분산.
+PANEL_ENGINE = ["gpt"]
 
 # 이름 풀(결정론 부여) — 더미엔 인구정보가 없어 persona_id 해시로 고른다.
 # 성별을 먼저 정하고 성별에 맞는 이름 풀에서 골라 '남성+여성이름' 같은 불일치를 막는다.
