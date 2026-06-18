@@ -308,6 +308,55 @@ export interface DebateSSEEvent {
   headline?: string;
 }
 
+/* ─── 저장된 토론 조회(/api/debate/by-simulation/{id}·/{id}/detail) — DB 영속화 복원용 ─── */
+
+// 토론 목록 1건(메타, 발언 제외) — 세션 탭·프로젝트 패널 표시용.
+export interface DebateSessionMeta {
+  debate_id: string;
+  simulation_id: string;
+  topic: string | null;
+  status: string;
+  rounds_run: number | null;
+  stop_reason: string | null;
+  headline: string | null;
+  plain_summary: string | null;
+  created_at: string | null;
+}
+
+export interface DebateSessionsResult {
+  debates: DebateSessionMeta[];
+}
+
+// 토론 상세 — 메타 + 참가자 + 라운드순 발언 + judge_log + final(복원용).
+export interface DebateSessionUtterance {
+  round: number;
+  phase: string | null;
+  stance: DebateStance | null;
+  text: string | null;
+  reason: string | null;
+  lever: string | null;
+  persona_id: string | null;
+  persona_name: string | null;
+  role: string | null;
+  engine: string | null;
+}
+
+export interface DebateSessionParticipant {
+  persona_id: string;
+  persona_name: string | null;
+  persona_profile: string | null;
+  role: string | null;
+  engine: string | null;
+}
+
+export interface DebateSessionDetail extends DebateSessionMeta {
+  models: { judge?: string | null; engines?: string[] };
+  round_summaries: Record<string, string>;
+  final: JudgeFinal | null;
+  participants: DebateSessionParticipant[];
+  utterances: DebateSessionUtterance[];
+}
+
 export interface SSEProgressEvent {
   event: "progress" | "milestone" | "completed" | "error";
   stage?: string;

@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useProjects } from './ProjectContext';
+import { useProjects, type SimRow } from './ProjectContext';
 import { useAuth } from './AuthProvider';
 import TrashSection from './TrashSection';
 import { getToken } from '@/lib/authApi';
@@ -31,6 +31,81 @@ function ChevronIcon({ open }: { open: boolean }) {
     >
       <polyline points="9 18 15 12 9 6" />
     </svg>
+  );
+}
+
+// ── 시뮬레이션 1건 + 토론 펼침 ─────────────────────────────────
+// 시뮬 행(상세 링크) 아래에 그 시뮬의 저장된 토론 목록을 lazy 로드해 펼친다(말풍선 토글).
+function SimEntry({ sim, isActive }: { sim: SimRow; isActive: boolean }) {
+  const { debates, loadDebates } = useProjects();
+  const [open, setOpen] = useState(false);
+  const list = debates[sim.id];
+
+  const toggle = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const next = !open;
+    setOpen(next);
+    if (next && list === undefined) loadDebates(sim.id);
+  };
+
+  return (
+    <div>
+      <div className={`flex items-center gap-1 rounded-md transition-colors ${
+        isActive ? 'bg-[#EBF3FF] dark:bg-[#1E3A5F]' : 'hover:bg-[#EBF3FF] dark:hover:bg-[#1E3A5F]'
+      }`}>
+        <Link href={`/simulations/${sim.id}`} className="flex items-center gap-2 px-2 py-1.5 flex-1 min-w-0 group">
+          <span className={`w-2 h-2 rounded-full shrink-0 ${statusColor[sim.status] ?? 'bg-[#B0B8C1]'}`} />
+          <div className="flex-1 min-w-0">
+            <p className={`text-xs truncate ${isActive ? 'text-[#3182F6] font-medium' : 'text-[#4E5968] dark:text-[#9CA3AF] group-hover:text-[#3182F6]'}`}>
+              {sim.sample_size}명 · {sim.created_by_name ?? '—'}
+            </p>
+            <p className="text-[10px] text-[#B0B8C1] dark:text-[#4B5563]">{fmt(sim.created_at)}</p>
+          </div>
+          {isActive && <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-[#3182F6]" />}
+        </Link>
+        {/* 토론 펼침 토글(말풍선 + 건수) */}
+        <button
+          onClick={toggle}
+          title="토론 내역"
+          className="shrink-0 flex items-center gap-1 pr-2 pl-1 py-1.5 text-[#8B95A1] hover:text-[#3182F6] transition-colors"
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+          </svg>
+          {list && list.length > 0 && <span className="text-[10px] font-medium">{list.length}</span>}
+          <ChevronIcon open={open} />
+        </button>
+      </div>
+
+      {open && (
+        <div className="ml-6 pl-2 border-l border-[#E5E8EB] dark:border-[#2D3748] space-y-0.5 my-0.5">
+          {list === undefined ? (
+            <p className="text-[10px] text-[#B0B8C1] px-2 py-1">불러오는 중...</p>
+          ) : list.length === 0 ? (
+            <p className="text-[10px] text-[#B0B8C1] px-2 py-1">토론 내역 없음</p>
+          ) : (
+            list.map(d => (
+              <Link
+                key={d.debate_id}
+                href={`/simulations/${sim.id}`}
+                className="flex items-start gap-2 px-2 py-1 rounded-md hover:bg-[#EBF3FF] dark:hover:bg-[#1E3A5F] transition-colors group"
+              >
+                <span className={`mt-1 w-1.5 h-1.5 rounded-full shrink-0 ${statusColor[d.status] ?? 'bg-[#B0B8C1]'}`} />
+                <div className="min-w-0 flex-1">
+                  <p className="text-[11px] truncate text-[#4E5968] dark:text-[#9CA3AF] group-hover:text-[#3182F6]">
+                    {d.headline ?? d.topic ?? '토론'}
+                  </p>
+                  <p className="text-[10px] text-[#B0B8C1] dark:text-[#4B5563]">
+                    {d.rounds_run ? `${d.rounds_run}라운드` : '—'}{d.created_at ? ` · ${fmt(d.created_at)}` : ''}
+                  </p>
+                </div>
+              </Link>
+            ))
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -234,27 +309,9 @@ function ProjectItem({
                     <p className="text-xs text-[#B0B8C1] px-2 py-1">
                       {filterNames ? '해당 내역 없음' : '내역 없음'}
                     </p>
-                  ) : sims.map(s => {
-                    const isActive = s.id === activeSimId;
-                    return (
-                      <Link
-                        key={s.id}
-                        href={`/simulations/${s.id}`}
-                        className={`flex items-center gap-2 px-2 py-1.5 rounded-md transition-colors group ${
-                          isActive ? 'bg-[#EBF3FF] dark:bg-[#1E3A5F]' : 'hover:bg-[#EBF3FF] dark:hover:bg-[#1E3A5F]'
-                        }`}
-                      >
-                        <span className={`w-2 h-2 rounded-full shrink-0 ${statusColor[s.status] ?? 'bg-[#B0B8C1]'}`} />
-                        <div className="flex-1 min-w-0">
-                          <p className={`text-xs truncate ${isActive ? 'text-[#3182F6] font-medium' : 'text-[#4E5968] dark:text-[#9CA3AF] group-hover:text-[#3182F6]'}`}>
-                            {s.sample_size}명 · {s.created_by_name ?? '—'}
-                          </p>
-                          <p className="text-[10px] text-[#B0B8C1] dark:text-[#4B5563]">{fmt(s.created_at)}</p>
-                        </div>
-                        {isActive && <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-[#3182F6]" />}
-                      </Link>
-                    );
-                  })}
+                  ) : sims.map(s => (
+                    <SimEntry key={s.id} sim={s} isActive={s.id === activeSimId} />
+                  ))}
                   {canRun && (
                     <button
                       onClick={goToSim}

@@ -127,37 +127,6 @@ class DebateRepository:
     def __init__(self, session_factory: async_sessionmaker) -> None:
         self._session_factory = session_factory
 
-    async def list_by_simulation(self, simulation_id: str) -> list[dict]:
-        """한 시뮬의 토론 목록(생성순) — 발언 제외 메타만(목록 카드·세션 탭용)."""
-        async with self._session_factory() as session:
-            rows = (
-                (
-                    await session.execute(
-                        select(PersonaDebate)
-                        .where(PersonaDebate.simulation_id == _as_uuid(simulation_id))
-                        .order_by(PersonaDebate.created_at)
-                    )
-                )
-                .scalars()
-                .all()
-            )
-            return [_debate_meta(r) for r in rows]
-
-    async def get_detail(self, debate_id: str) -> dict | None:
-        """토론 1건 상세(participants + 라운드순 발언 + judge_log + final) — 복원·표시용. 없으면 None."""
-        async with self._session_factory() as session:
-            row = (
-                await session.execute(
-                    select(PersonaDebate)
-                    .where(PersonaDebate.id == _as_uuid(debate_id))
-                    .options(
-                        selectinload(PersonaDebate.participants),
-                        selectinload(PersonaDebate.utterances),
-                    )
-                )
-            ).scalar_one_or_none()
-            return _debate_detail(row) if row is not None else None
-
     async def save(self, simulation_id: str, debate: DebateResult) -> uuid.UUID:
         """반환: 저장된 debate_id. participants→utterances 순으로 FK 연결."""
         debate_row, _, _ = build_debate_rows(simulation_id, debate)

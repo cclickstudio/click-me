@@ -1,12 +1,13 @@
 'use client';
 // 시뮬 반응(reactions)으로 페르소나 토론을 돌리고, 여러 세션을 보관·전환하며 종료 후 같은 창에서 Q&A까지.
-// 흐름: 마운트 시 첫 토론 자동 시작 → SSE(발언 실시간·진행바) → completed → 결과를 채팅창 아래 박스에.
-// 한 시뮬에 토론 여러 번 가능 → 세션 탭으로 전환(로컬 메모리, NeonDB·프로젝트 패널 통합은 다음 단계).
+// 흐름: 마운트 시 DB 저장 토론 복원 → 없으면 첫 토론 자동 시작 → SSE(발언 실시간·진행바) → completed → 결과 박스.
+// 한 시뮬에 토론 여러 번 가능 → 세션 탭으로 전환. 복원 세션은 runId 없음(Q&A 불가, 결과·로그만 표시).
 
 import { useEffect, useRef, useState } from 'react';
 import { api } from '@/lib/api';
 import type {
   DebateResult,
+  DebateSessionDetail,
   DebateSSEEvent,
   DebateStance,
   DebateTopic,
@@ -66,6 +67,87 @@ interface DebateSession {
   stageMsg: string;
   errorMsg: string | null;
   qaBusy: boolean;
+  restored?: boolean; // DB에서 복원된 과거 토론(runId 없음 → Q&A 불가)
+}
+
+// DB 저장 토론 상세(DebateSessionDetail) → 채팅 메시지 복원(주제·라운드 발언·라운드 정리·최종 결론).
+function buildRestoredMessages(d: DebateSessionDetail): ChatMsg[] {
+  const messages: ChatMsg[] = [];
+  const topicText = d.topic ?? d.headline ?? '';
+  if (topicText) messages.push({ kind: 'judge', variant: 'topic', text: topicText });
+
+  const rounds = [...new Set(d.utterances.map(u => u.round))].sort((a, b) => a - b);
+  for (const r of rounds) {
+    for (const u of d.utterances.filter(x => x.round === r)) {
+      messages.push({
+        kind: 'utterance',
+        round: u.round,
+        phase: u.phase ?? '',
+        persona_name: u.persona_name ?? u.persona_id ?? '?',
+        role: u.role ?? '',
+        engine: u.engine ?? '',
+        stance: u.stance ?? 'neutral',
+        text: u.text ?? '',
+        lever: u.lever ?? '',
+      });
+    }
+    const summary = d.round_summaries?.[String(r)];
+    if (summary) messages.push({ kind: 'judge', variant: 'round', round: r, text: summary });
+  }
+  if (d.final?.headline) messages.push({ kind: 'judge', variant: 'final', text: d.final.headline });
+  return messages;
+}
+
+// DB 상세 → DebateOutcome가 쓰는 DebateResult 형태 재구성(analysis·aggregate·panel은 미저장 → 생략).
+function buildRestoredResult(d: DebateSessionDetail): DebateResult {
+  const final = d.final;
+  const topic = d.topic ?? d.headline ?? '';
+  return {
+    run_id: '',
+    simulation_id: d.simulation_id,
+    debate_id: d.debate_id,
+    topic: { headline: topic, diagnosis: '', question: '', primary_signal: '' },
+    debate: {
+      topic,
+      rounds_run: d.rounds_run ?? 0,
+      stop_reason: d.stop_reason ?? '',
+      models: { judge: d.models?.judge ?? undefined, engines: d.models?.engines ?? [] },
+      participants: [],
+      round_summaries: d.round_summaries ?? {},
+      proposed_actions: [],
+      final,
+    },
+    report: {
+      headline: final?.headline ?? d.headline ?? '',
+      plain_summary: final?.plain_summary ?? d.plain_summary ?? '',
+      topic,
+      debate_available: true,
+      rounds_run: d.rounds_run ?? 0,
+      stop_reason: d.stop_reason ?? null,
+      consensus: final?.consensus ?? [],
+      dissent: final?.dissent ?? [],
+      ranked_actions: final?.ranked_actions ?? [],
+      quotes: [],
+      consumer_groups: {},
+    },
+  };
+}
+
+// DB 상세 → 복원 세션(완료 상태). id는 debate_id 기반(라이브 세션과 충돌 없음).
+function buildRestoredSession(d: DebateSessionDetail): DebateSession {
+  return {
+    id: `restored-${d.debate_id}`,
+    title: d.headline ?? d.topic ?? '저장된 토론',
+    status: 'done',
+    runId: null,
+    messages: buildRestoredMessages(d),
+    result: buildRestoredResult(d),
+    pct: 100,
+    stageMsg: '',
+    errorMsg: null,
+    qaBusy: false,
+    restored: true,
+  };
 }
 
 export const STANCE_STYLE: Record<
@@ -126,7 +208,7 @@ export function DebatePanel({
 
   const esRef = useRef<EventSource | null>(null);
   const seqRef = useRef(0);
-  const startedRef = useRef(false);
+  const initRef = useRef(false);
 
   const active = sessions.find(s => s.id === activeId) ?? null;
 
@@ -292,12 +374,39 @@ export function DebatePanel({
     }
   }
 
-  // 분석 완료 후 첫 토론 자동 시작(시작 버튼·일반인 수 지정 불필요). StrictMode 중복 방지 ref.
+  // 마운트 시: DB에 저장된 과거 토론을 복원 → 없으면 첫 토론 자동 시작. StrictMode 중복 방지 ref.
   useEffect(() => {
-    if (!startedRef.current && reactions.length > 0) {
-      startedRef.current = true;
-      void startDebate();
-    }
+    if (initRef.current) return;
+    initRef.current = true;
+
+    void (async () => {
+      // 1) DB 저장 토론 복원(simulationId 있을 때만 — 없으면 인메모리만)
+      if (simulationId) {
+        try {
+          const { debates: saved } = await api.debate.bySimulation(simulationId);
+          if (saved.length > 0) {
+            // 목록은 최신순(desc) → 시간순(오래된→최신)으로 뒤집어 탭·복원 순서를 맞춘다.
+            const ordered = [...saved].reverse();
+            const details = await Promise.all(
+              ordered.map(s => api.debate.detail(s.debate_id).catch(() => null))
+            );
+            const built = details
+              .filter((d): d is DebateSessionDetail => d !== null)
+              .map(buildRestoredSession);
+            if (built.length > 0) {
+              setSessions(built);
+              setActiveId(built[built.length - 1].id); // 가장 최근 토론을 활성 탭으로
+              return; // 복원본이 있으면 새 토론 자동 시작 안 함
+            }
+          }
+        } catch {
+          // 복원 실패는 무시 — 아래에서 새 토론으로 진행
+        }
+      }
+
+      // 2) 복원본이 없고 반응이 있으면 첫 토론 자동 시작
+      if (reactions.length > 0) void startDebate();
+    })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -457,17 +566,22 @@ export function DebatePanel({
                 }}
                 rows={1}
                 placeholder={
-                  active.status === 'done'
-                    ? '페르소나에게 질문하기 (Enter 전송 · Shift+Enter 줄바꿈)'
-                    : '토론이 끝나면 질문할 수 있어요'
+                  active.restored
+                    ? '저장된 토론이에요 — Q&A는 새 토론에서 가능합니다'
+                    : active.status === 'done'
+                      ? '페르소나에게 질문하기 (Enter 전송 · Shift+Enter 줄바꿈)'
+                      : '토론이 끝나면 질문할 수 있어요'
                 }
-                disabled={active.status !== 'done' || active.qaBusy}
+                disabled={active.status !== 'done' || active.qaBusy || !!active.restored}
                 className='flex-1 px-4 py-2.5 rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-white dark:bg-[#252D3D] text-sm text-[#191F28] dark:text-[#F2F4F6] focus:outline-none focus:ring-2 focus:ring-[#3182F6] placeholder:text-[#B0B8C1] dark:placeholder:text-[#4B5563] transition-colors resize-none disabled:opacity-50'
               />
               <button
                 onClick={askQuestion}
                 disabled={
-                  active.status !== 'done' || active.qaBusy || !qaInput.trim()
+                  active.status !== 'done' ||
+                  active.qaBusy ||
+                  !!active.restored ||
+                  !qaInput.trim()
                 }
                 className='shrink-0 px-5 py-2.5 bg-[#3182F6] hover:bg-[#1B6EEB] disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl text-sm font-semibold transition-colors'>
                 전송

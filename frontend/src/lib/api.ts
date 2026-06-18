@@ -5,6 +5,8 @@ import type { Proposal } from "@/components/manage/types";
 import type { BudgetStatus } from "@/components/manage/budget/types";
 import type {
   DebateResult,
+  DebateSessionDetail,
+  DebateSessionsResult,
   DebateStartResult,
   DebateTopic,
   DebateTopicsResult,
@@ -148,6 +150,12 @@ export const api = {
     },
     stream: (runId: string) => new EventSource(`${API_BASE}/api/debate/${runId}/stream`),
     result: (runId: string): Promise<DebateResult> => request<DebateResult>(`/debate/${runId}/result`),
+    // 시뮬의 저장된 토론 목록(메타) — 세션 탭·프로젝트 패널 복원용. DB 미연동이면 빈 목록.
+    bySimulation: (simulationId: string): Promise<DebateSessionsResult> =>
+      request<DebateSessionsResult>(`/debate/by-simulation/${simulationId}`),
+    // 저장된 토론 1건 상세(참가자·발언·judge_log·final) — 채팅·결과 복원용.
+    detail: (debateId: string): Promise<DebateSessionDetail> =>
+      request<DebateSessionDetail>(`/debate/${debateId}/detail`),
     // 토론 종료 후 Q&A — POST라 EventSource 불가 → fetch + ReadableStream으로 "data: {json}\n\n" 파싱.
     question: async (
       runId: string,
