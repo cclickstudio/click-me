@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+from core.config import settings
 from domain.simulation.adapters.memory_store import InMemorySimulationStore
 from domain.simulation.contracts.debate_schemas import DebateTopic
 from domain.simulation.contracts.schemas import AdInterpretation, Persona, PersonaReaction
@@ -15,8 +16,10 @@ from domain.simulation.wiring import build_debate_service
 router = APIRouter()
 
 # 토론은 항상 실 LLM(Haiku/GPT 토론자 + Sonnet Judge + 선발 LLM 게이트). mock 토론 경로 제거.
+# settings 주입 → settings.database_url 있으면 토론 영속화 활성(persona_debates·participants·
+# utterances 3테이블 저장). simulation_id가 함께 와야 FK(NOT NULL) 충족돼 실제 저장된다.
 _store = InMemorySimulationStore()
-_service = build_debate_service(use_mock=False, store=_store)
+_service = build_debate_service(settings=settings, use_mock=False, store=_store)
 
 
 _SSE_HEADERS = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
