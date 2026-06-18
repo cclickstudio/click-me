@@ -127,6 +127,7 @@ class DebateParticipant(BaseModel):
     engine: str  # haiku / gpt / gemini (토론자). 역할 기반 라운드로빈(엔진 ⊥ 역할).
     persona_name: str  # 결정론 부여 이름(운영은 factory 이름 승계). 리포트 표시용.
     persona_profile: str  # 한 줄 프로필(전문가=카테고리 주입, 일반인=역할/인구 기반)
+    tone: str = ""  # 일반인 말투(표현 스타일). 전문가는 빈 값 — 같은 모델 통일 시 표현 다양성용.
 
 
 class AssignedPanel(BaseModel):

@@ -220,6 +220,11 @@ def _persona_system(p: DebateParticipant, r: PersonaReaction | None, topic: Deba
         if r.utterance:
             parts.append(f'당신이 광고를 보고 한 말: "{r.utterance}"')
     parts.append("이 캐릭터와 실제 반응에 일관되게 답하라. 새로 지어내지 말 것.")
+    if p.tone:
+        parts.append(
+            f"말투: {p.tone} 단, 이 말투는 표현 방식일 뿐이며 "
+            "광고에 대한 찬반 판단은 위 실제 반응을 따른다."
+        )
     return " ".join(parts)
 
 
