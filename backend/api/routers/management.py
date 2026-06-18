@@ -37,6 +37,7 @@ from domain.management.contracts.schemas import (
     CampaignConfig,
     DiagnosisResult,
     MetricsSnapshot,
+    RealOutcome,
     finalize_proposal,
 )
 from domain.management.demo import CAMPAIGN_ID, TENANT_ID, build_sample_proposal
@@ -401,6 +402,34 @@ async def list_campaigns():
             }
         )
     return {"campaigns": out}
+
+
+def _real_outcome(m: MetricsSnapshot, campaign_id: str, creative_id: str | None) -> RealOutcome:
+    """실측 스냅샷 → RealOutcome 계약. 전환은 추적 전이면 None(합성 금지)."""
+    return RealOutcome(
+        creative_id=creative_id,
+        campaign_id=campaign_id,
+        impressions=m.impressions,
+        reach=m.cum_reach,
+        spend_krw=m.spend_krw,
+        ctr=m.ctr,
+        cpc_krw=m.cpc_krw,
+        cpm_krw=m.cpm_krw,
+        conversions=None,
+        cvr=None,
+        as_of=m.as_of,
+    )
+
+
+@router.get("/campaigns/{campaign_id}/outcome")
+async def get_campaign_outcome(campaign_id: str, creative_id: str | None = None):
+    """집행 후 실측 성과(RealOutcome) — 시뮬 예측 vs 실측 캘리브레이션 소비용 seam.
+
+    wiring 경유라 use_mock=False면 Meta 실측, True면 데모. creative_id는 집행한 크리에이티브
+    귀속(생성→집행 경로가 stamp; 없으면 None).
+    """
+    m = await build_reader(settings).get_metrics(campaign_id, _today_utc())
+    return _real_outcome(m, campaign_id, creative_id).model_dump(mode="json")
 
 
 @router.get("/campaigns/{campaign_id}")

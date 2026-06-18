@@ -101,6 +101,26 @@ class MetricsSnapshot(Contract):
     cpc_krw: int = Field(ge=0)
 
 
+class RealOutcome(Contract):
+    """집행 후 실측 성과 — 캘리브레이션(시뮬 예측 vs 실측) 소비용 계약.
+
+    크리에이티브 기준 귀속(creative_id)으로 "어떤 안을 집행했더니 실제로 이랬다"를 노출한다.
+    전환(conversions·cvr)은 픽셀/CAPI 미설정이면 None — 합성 금지(정직).
+    """
+
+    creative_id: str | None = None  # 집행된 크리에이티브 (미연결이면 None)
+    campaign_id: str
+    impressions: int = Field(ge=0)
+    reach: int = Field(ge=0)
+    spend_krw: int = Field(ge=0)
+    ctr: float = Field(ge=0.0)
+    cpc_krw: int = Field(ge=0)
+    cpm_krw: int = Field(ge=0)
+    conversions: int | None = None
+    cvr: float | None = None
+    as_of: UtcDatetime
+
+
 class DeliveryEstimate(Contract):
     """Meta delivery_estimate 대응 — 미래 예측치(forecast), 성과 아님."""
 
