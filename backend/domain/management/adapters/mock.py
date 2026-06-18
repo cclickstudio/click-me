@@ -20,10 +20,12 @@ from domain.management.contracts.policy import (
     HOURLY_PACING,
 )
 from domain.management.contracts.schemas import (
+    AccountFunding,
     CampaignConfig,
     CampaignInfo,
     DeliveryEstimate,
     MetricsSnapshot,
+    PlatformMetrics,
 )
 
 _FAULT_ONSET_HOUR = 14  # 고장 발현 시각 (일중 곡선상 오후 — 정상/이상 대비가 뚜렷)
@@ -152,6 +154,27 @@ class MockAdPlatform:
                 )
             )
         return snapshots
+
+    async def get_platform_breakdown(
+        self, campaign_id: str, since: datetime
+    ) -> list[PlatformMetrics]:
+        """Port 충족 — 누적 지표를 IG/FB로 분해(데모 합성, 결정론 62/38)."""
+        m = await self.get_metrics(campaign_id, since)
+        split = (("instagram", 0.62), ("facebook", 0.38))
+        return [
+            PlatformMetrics(
+                platform=p,
+                impressions=int(m.impressions * f),
+                clicks=int(m.clicks * f),
+                spend_krw=int(m.spend_krw * f),
+                reach=int(m.cum_reach * f),
+            )
+            for p, f in split
+        ]
+
+    async def get_account_funding(self) -> AccountFunding:
+        """Port 충족 — 데모는 잔액 충분(게재 차단 없음)."""
+        return AccountFunding(account_status=1, available_balance_krw=1_000_000)
 
 
 class MockOrganicReader:
