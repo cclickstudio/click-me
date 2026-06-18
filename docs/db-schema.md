@@ -849,4 +849,3 @@ categories ── category_kinds ── kinds        (업종↔NICE류 매핑, �
 | ORM 모델 | `backend/core/models.py` |
 | 시뮬레이션 서비스 | `backend/domain/simulation/service/simulation_service.py` |
 | 제너레이터 서비스 | `backend/domain/generator/service/generator_service.py` |
-| 실측 덤프 원본 | `backend/schema_dump.sql` (pg_dump, 임시) |
