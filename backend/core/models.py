@@ -5,6 +5,7 @@ from datetime import datetime
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
+    JSON,
     BigInteger,
     Boolean,
     DateTime,
@@ -482,3 +483,32 @@ class PersonaDebateUtterance(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     debate: Mapped["PersonaDebate"] = relationship(back_populates="utterances")
+
+
+class MetaConnection(Base):
+    """테넌트(Organization)별 Meta 연결 — OAuth 장기 토큰을 암호화 저장 (멀티테넌트 (A)).
+
+    외부 광고주가 자기 Meta 자산을 연결하면 org당 1건 생성된다. access_token_enc는
+    AES-256-GCM 암호문(평문 토큰 저장·로그 금지 — CLAUDE.md 보안 규칙). scopes는 부여 권한
+    목록(JSONB, SQLite 테스트에선 JSON), token_expires_at은 장기토큰 만료(갱신 트리거용).
+    """
+
+    __tablename__ = "meta_connections"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, unique=True
+    )
+    access_token_enc: Mapped[str] = mapped_column(Text, nullable=False)
+    ad_account_id: Mapped[str | None] = mapped_column(String(64))
+    page_id: Mapped[str | None] = mapped_column(String(64))
+    ig_user_id: Mapped[str | None] = mapped_column(String(64))
+    scopes: Mapped[list | None] = mapped_column(JSONB().with_variant(JSON(), "sqlite"))
+    token_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="active"
+    )  # active | needs_reconnect
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
