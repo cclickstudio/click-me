@@ -20,9 +20,9 @@ from domain.generator.contracts.pipeline_schemas import (
 from domain.generator.graph.nodes import emit_progress
 from domain.generator.graph.state import GenerationState
 from domain.generator.pipeline.copy_generator import generate_copy
-from domain.generator.pipeline.image_generator import generate_image
+from domain.generator.pipeline.image_generator import composite_logo, generate_image
 from domain.generator.pipeline.quality_checker import check_quality
-from tools.storage.s3 import candidate_key, upload_bytes
+from tools.storage.s3 import candidate_key, download_bytes, upload_bytes
 
 _VARIANT_IDS = ["A", "B", "C"]
 
@@ -78,7 +78,13 @@ async def generate_candidates(state: GenerationState, config: RunnableConfig) ->
             check_quality(ad_copy=ad_copy, target=product_analysis.target_audience),
         )
 
-        # 3. S3 업로드
+        # 3. 로고 합성 (brand_logo_s3_key 제공 시)
+        logo_key = req.get("brand_logo_s3_key")
+        if logo_key:
+            logo_bytes = await download_bytes(logo_key)
+            image_bytes = composite_logo(image_bytes, logo_bytes, plan.template)
+
+        # 4. S3 업로드
         s3_key = candidate_key(generation_id, idx)
         await upload_bytes(image_bytes, s3_key, content_type="image/png")
 

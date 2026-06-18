@@ -5,6 +5,7 @@ from google import genai
 from google.genai import types as genai_types
 from langsmith import traceable
 from openai import AsyncOpenAI
+from PIL import Image
 
 from core.config import settings
 from domain.generator.contracts.enums import AdSize, AdStrategy, TemplateType
@@ -89,34 +90,54 @@ _TEMPLATE_STYLE: dict[TemplateType, str] = {
 # gpt-image-2가 텍스트를 이미지에 직접 렌더링할 때 각 템플릿의 레이아웃을 안내한다.
 _TEXT_LAYOUT: dict[TemplateType, str] = {
     TemplateType.A: (
-        "DESIGN LAYOUT — Bottom gradient overlay:\n"
-        "- Upper 62%: product photography, clean background, product centered\n"
-        "- Bottom 38%: dark-to-transparent gradient overlay (part of the composition)\n"
-        "- Within the overlay, place text top-to-bottom:\n"
-        "  · HEADLINE: bold, ~28pt, white, horizontally centered, at ~65% from top\n"
-        "  · BODY: regular, ~16pt, white/light gray, centered, just below headline\n"
-        "  · CTA BUTTON: rounded rectangle, brand color fill, white bold text, "
-        "centered, near very bottom"
+        "DESIGN LAYOUT — Bottom dark overlay:\n"
+        "- Upper 55%: product photography, clean background, product centered\n"
+        "- Bottom 45%: SOLID semi-opaque dark panel (rgba(0,0,0,0.75)), no gradient\n"
+        "- Stack THREE elements top-to-bottom inside the dark panel, each in its own zone:\n"
+        "  · ZONE 1 (top 30% of panel): HEADLINE — bold, compact size, white, horizontally centered\n"
+        "  · ZONE 2 (middle 32% of panel): BODY — regular, smaller than headline, white/light gray, centered\n"
+        "  · ZONE 3 (bottom 38% of panel): CTA BUTTON — rounded rectangle, brand color fill, "
+        "white bold text, centered, 20px clearance from bottom edge\n"
+        "MANDATORY RULES:\n"
+        "1. ALL THREE elements must be 100% visible within the dark panel — no clipping.\n"
+        "2. NO element may touch or cross the image boundary.\n"
+        "3. CTA BUTTON is NOT optional. If it does not fit, make it and all text smaller.\n"
+        "4. Do NOT use decorative fonts or large display sizes — keep text compact and readable."
     ),
     TemplateType.B: (
         "DESIGN LAYOUT — Top and bottom solid bands:\n"
-        "- TOP BAND (top 17%): solid dark panel\n"
-        "  · HEADLINE: bold, ~22pt, white, horizontally centered in band\n"
-        "- MIDDLE (17%–76%): product photography only, no text\n"
-        "- BOTTOM BAND (bottom 24%): solid dark panel\n"
-        "  · BODY: regular, ~14pt, white, centered in upper portion of band\n"
-        "  · CTA BUTTON: rounded button, brand color, white bold text, "
-        "centered in lower portion of band"
+        "- TOP BAND (top 22%): solid dark panel (rgba(0,0,0,0.85))\n"
+        "  · HEADLINE: bold, compact size, white, horizontally centered in band\n"
+        "- MIDDLE (22%–60%): product photography ONLY, no text\n"
+        "- BOTTOM BAND (bottom 40%): solid dark panel\n"
+        "  · SUB-ZONE A (top 55% of bottom band): BODY TEXT — regular, compact size, white, centered\n"
+        "  · SUB-ZONE B (bottom 45% of bottom band): CTA BUTTON — rounded button, brand color, "
+        "white bold text, centered, 20px clearance from bottom edge\n"
+        "MANDATORY RULES:\n"
+        "1. HEADLINE must be fully visible inside top band — no clipping.\n"
+        "2. BODY TEXT must be fully visible inside sub-zone A — no clipping.\n"
+        "3. CTA BUTTON must be fully visible inside sub-zone B — it is NOT optional.\n"
+        "4. NO element may touch or cross the image boundary.\n"
+        "5. If any element does not fit, reduce its font size until it fits."
     ),
     TemplateType.C: (
         "DESIGN LAYOUT — Left color panel + right product photo:\n"
-        "- LEFT PANEL (left 46%): solid brand color background\n"
-        "  · HEADLINE: bold, ~24pt, white, left-aligned with padding, upper third\n"
-        "  · BODY: regular, ~14pt, white, left-aligned, below headline\n"
-        "  · CTA BUTTON: white rounded rectangle, brand color text, "
-        "left-aligned, near bottom of panel\n"
+        "- LEFT PANEL (left 46%): solid brand color background. "
+        "All text elements must stay within this panel with minimum 20px padding from all panel edges.\n"
+        "  · HEADLINE: bold, compact size, white, left-aligned (20px from left edge), "
+        "placed in the upper section (top 10%–35% of image height). Max 2 lines\n"
+        "  · BODY: regular, smaller than headline, white, left-aligned, "
+        "placed below headline with at least 12px gap\n"
+        "  · CTA BUTTON: white rounded rectangle, brand color text, left-aligned, "
+        "placed in the lower section (70%–85% of image height). "
+        "Button must have at least 20px clearance from bottom edge\n"
         "- GRADIENT ZONE (46%–53%): smooth transition from solid color to transparent\n"
-        "- RIGHT SIDE (53%–100%): product photography, product clearly visible and centered"
+        "- RIGHT SIDE (53%–100%): product photography, product clearly visible and centered\n"
+        "MANDATORY RULES:\n"
+        "1. ALL THREE elements must be 100% visible inside the left panel.\n"
+        "2. Elements must not overlap each other — maintain clear vertical spacing.\n"
+        "3. NO element may touch or cross any image boundary.\n"
+        "4. CTA BUTTON is NOT optional — it must always appear."
     ),
 }
 
@@ -256,15 +277,16 @@ KOREAN TEXT — render EXACTLY as written, character by character (zero toleranc
 
 Typography rules:
 - All text must be in Korean (한국어) — every character must be a valid, correctly spelled Korean word
-- Headline: bold weight, large size, high contrast (white or bright on dark background)
-- Body: regular weight, smaller size, clean and readable
+- Headline: bold weight, high contrast (white on dark background) — size must fit within its zone
+- Body: regular weight, smaller than headline — size must fit within its zone
 - CTA: bold, placed inside a clearly visible rounded button shape
+- NEVER use a font size so large that text overflows its designated zone
 - Text edges must be sharp and pixel-perfect — no blur, no hallucinated characters
 
 Output requirements:
 - Commercial advertising quality, modern and clean aesthetic for Meta/Instagram
 - Product clearly visible and well-lit
-- Text is fully integrated into the composition, not an afterthought"""
+- CRITICAL: ALL three text elements (HEADLINE, BODY, CTA BUTTON) must be COMPLETELY visible within the image — zero clipping or cutoff allowed under any circumstance"""
 
 # ── [텍스트 포함 개선 모드] 프롬프트 ────────────────────────────────────────
 # 원본 이미지를 Edit API로 수정하면서 텍스트도 함께 삽입할 때 사용.
@@ -292,15 +314,17 @@ KOREAN TEXT — render EXACTLY as written, character by character (zero toleranc
 
 Typography rules:
 - All text in Korean (한국어) — must be valid, correctly spelled Korean
-- Headline: bold, large, high contrast
-- Body: regular, smaller, readable
+- Headline: bold, high contrast — size must fit within its designated zone
+- Body: regular, smaller than headline — size must fit within its designated zone
 - CTA: bold, rounded button shape, clearly clickable
+- NEVER use a font size so large that text overflows its designated zone
 
 Requirements:
 - PRESERVE original product placement and visual identity
 - Apply improvement direction changes
 - Add text zones as specified in the layout above
-- Keep product clearly recognizable"""
+- Keep product clearly recognizable
+- CRITICAL: ALL three text elements (HEADLINE, BODY, CTA BUTTON) must be COMPLETELY visible within the image — zero clipping or cutoff allowed"""
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -511,3 +535,57 @@ async def _generate_with_imagen(model: str, prompt: str, size: AdSize) -> bytes:
     if not response.generated_images:
         raise RuntimeError("Imagen 응답에 이미지가 없음")
     return response.generated_images[0].image.image_bytes
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 로고 합성 (PIL 기반)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def _composite_logo_pil(
+    logo: Image.Image,
+    ad: Image.Image,
+    template: TemplateType,
+    margin: int = 16,
+) -> None:
+    """로고를 광고 이미지에 in-place 합성한다. 템플릿별 위치 규칙 적용."""
+    if logo.mode != "RGBA":
+        logo = logo.convert("RGBA")
+
+    if template == TemplateType.A:
+        # 상단 좌측 — 제품 상단(55%) 영역에 작게 배치
+        logo_w = max(1, int(ad.width * 0.12))
+        logo_h = max(1, int(logo.height * logo_w / logo.width))
+        logo = logo.resize((logo_w, logo_h), Image.LANCZOS)
+        x, y = margin, margin
+    elif template == TemplateType.B:
+        # 상단 밴드(top 22%) 내 좌측 수직 중앙
+        band_h = int(ad.height * 0.22)
+        logo_w = max(1, int(ad.width * 0.10))
+        logo_h = max(1, int(logo.height * logo_w / logo.width))
+        logo = logo.resize((logo_w, logo_h), Image.LANCZOS)
+        x = margin
+        y = max(margin, (band_h - logo_h) // 2)
+    else:  # C
+        # 좌측 패널(left 46%) 상단 좌측 — 하단 CTA와 겹치지 않도록 상단 배치
+        max_logo_h = int(ad.height * 0.08)
+        logo_w = max(1, int(ad.width * 0.12))
+        logo_h = max(1, int(logo.height * logo_w / logo.width))
+        if logo_h > max_logo_h:
+            logo_h = max_logo_h
+            logo_w = max(1, int(logo.width * logo_h / logo.height))
+        logo = logo.resize((logo_w, logo_h), Image.LANCZOS)
+        x = margin
+        y = margin
+
+    ad.paste(logo, (x, y), logo)
+
+
+def composite_logo(image_bytes: bytes, logo_bytes: bytes, template: TemplateType) -> bytes:
+    """로고를 광고 이미지에 합성하여 PNG bytes로 반환한다."""
+    ad = Image.open(io.BytesIO(image_bytes)).convert("RGBA")
+    logo = Image.open(io.BytesIO(logo_bytes)).convert("RGBA")
+    _composite_logo_pil(logo, ad, template)
+    buf = io.BytesIO()
+    ad.save(buf, format="PNG")
+    return buf.getvalue()
