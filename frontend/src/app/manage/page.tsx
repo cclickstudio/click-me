@@ -79,8 +79,15 @@ export default function Page() {
       <div className="max-w-screen-xl mx-auto px-6 py-8">
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h1 className="text-2xl font-bold text-[#191F28] dark:text-[#F2F4F6]">광고 매니지먼트</h1>
-            <p className="text-sm text-[#8B95A1] mt-1">집행 후 이상 감지부터 개선·실행까지 (Mock 기반 데모)</p>
+            <div className="flex items-center gap-2">
+              <h1 className="text-2xl font-bold text-[#191F28] dark:text-[#F2F4F6]">광고 매니지먼트</h1>
+              <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                시연
+              </span>
+            </div>
+            <p className="text-sm text-[#8B95A1] mt-1">
+              이상 감지·진단·처방 시연 · 주입한 고장 시나리오 기준 (실데이터 아님)
+            </p>
           </div>
           <div className="flex items-center gap-2">
             <div className="flex rounded-lg border border-[#E5E8EB] dark:border-[#2D3748] overflow-hidden text-sm">
@@ -97,6 +104,7 @@ export default function Page() {
                 아키텍처 보기
               </button>
             </div>
+            <span className="text-[11px] text-[#8B95A1]">고장 시나리오</span>
             <select
               value={fault}
               onChange={(e) => setFault(e.target.value)}

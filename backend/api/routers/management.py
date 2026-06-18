@@ -357,7 +357,7 @@ async def _list_campaigns_real() -> dict:
                 **_real_summary(m, info.daily_budget_krw),
             }
         )
-    return {"campaigns": out}
+    return {"campaigns": out, "source": "live"}
 
 
 async def _get_campaign_real(campaign_id: str) -> dict:
@@ -403,7 +403,7 @@ async def list_campaigns():
                 **_campaign_summary(snaps, budget),
             }
         )
-    return {"campaigns": out}
+    return {"campaigns": out, "source": "mock"}
 
 
 def _real_outcome(m: MetricsSnapshot, campaign_id: str, creative_id: str | None) -> RealOutcome:

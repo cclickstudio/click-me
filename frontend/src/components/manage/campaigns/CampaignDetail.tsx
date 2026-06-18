@@ -1,5 +1,5 @@
 // 캠페인 상세 — 시간별 노출(기대 vs 실측, 이상구간 음영) + 요약 KPI 타일
-import type { CampaignDetail as Detail } from './types';
+import type { CampaignDetail as Detail, CampaignSource } from './types';
 import { fmtConversions, fmtCvr, fmtRoas } from './types';
 import { StateBadge } from './StateBadge';
 
@@ -31,8 +31,9 @@ function Tile({ label, value }: { label: string; value: string }) {
   );
 }
 
-export function CampaignDetail({ detail }: { detail: Detail }) {
+export function CampaignDetail({ detail, source }: { detail: Detail; source?: CampaignSource }) {
   const s = detail.summary;
+  const live = source === 'live';
   return (
     <div className="rounded-2xl border border-[#E5E8EB] dark:border-[#2D3748] px-5 py-4">
       <div className="flex items-center justify-between mb-1">
@@ -49,6 +50,14 @@ export function CampaignDetail({ detail }: { detail: Detail }) {
         {detail.anomaly_hours.length > 0 && <span className="text-[#E5484D]">■ 이상구간</span>}
       </div>
       <MetricChart expected={detail.expected} actual={detail.actual} anomalyHours={detail.anomaly_hours} />
+
+      {live && (
+        <p className="mt-2 text-[11px] text-[#8B95A1]">
+          {detail.anomaly_hours.length > 0
+            ? '실 캠페인 — 기대모델(예산 기반 추정) 대비 편차. 이상 판단은 이력 누적 후 신뢰도↑'
+            : '정상 게재 · 데이터 누적 중 — 실 캠페인 이상 판단엔 이력이 더 필요해요'}
+        </p>
+      )}
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 mt-4">
         <Tile label="노출" value={s.impressions.toLocaleString()} />

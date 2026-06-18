@@ -52,5 +52,6 @@ export type CampaignDetail = {
   summary: CampaignKpi;
 };
 
-export type CampaignsResponse = { campaigns: CampaignSummary[] };
+export type CampaignSource = 'live' | 'mock'; // live=실 Meta, mock=데모
+export type CampaignsResponse = { campaigns: CampaignSummary[]; source?: CampaignSource };
 export type CampaignView = 'table' | 'cards';

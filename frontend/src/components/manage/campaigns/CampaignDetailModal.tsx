@@ -2,10 +2,18 @@
 
 // 캠페인 클릭 시 뜨는 상세보기 모달 — 배경/ESC로 닫기. CampaignDetail을 오버레이로 감싼다.
 import { useEffect } from 'react';
-import type { CampaignDetail as Detail } from './types';
+import type { CampaignDetail as Detail, CampaignSource } from './types';
 import { CampaignDetail } from './CampaignDetail';
 
-export function CampaignDetailModal({ detail, onClose }: { detail: Detail; onClose: () => void }) {
+export function CampaignDetailModal({
+  detail,
+  source,
+  onClose,
+}: {
+  detail: Detail;
+  source?: CampaignSource;
+  onClose: () => void;
+}) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
@@ -34,7 +42,7 @@ export function CampaignDetailModal({ detail, onClose }: { detail: Detail; onClo
           </button>
         </div>
         <div className="p-4">
-          <CampaignDetail detail={detail} />
+          <CampaignDetail detail={detail} source={source} />
         </div>
       </div>
     </div>

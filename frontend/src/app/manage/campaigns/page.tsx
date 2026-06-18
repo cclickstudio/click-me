@@ -9,6 +9,7 @@ import { CampaignCards } from '@/components/manage/campaigns/CampaignCards';
 import { CampaignDetailModal } from '@/components/manage/campaigns/CampaignDetailModal';
 import type {
   CampaignDetail as Detail,
+  CampaignSource,
   CampaignSummary,
   CampaignView,
 } from '@/components/manage/campaigns/types';
@@ -16,6 +17,7 @@ import type {
 export default function Page() {
   const [view, setView] = useState<CampaignView>('table');
   const [campaigns, setCampaigns] = useState<CampaignSummary[]>([]);
+  const [source, setSource] = useState<CampaignSource>('mock');
   const [selected, setSelected] = useState<string | null>(null);
   const [detail, setDetail] = useState<Detail | null>(null);
   const [busy, setBusy] = useState(false);
@@ -30,6 +32,7 @@ export default function Page() {
       .then((r) => {
         if (!alive) return;
         setCampaigns(r.campaigns);
+        setSource(r.source ?? 'mock');
       })
       .catch((e) => alive && setError(e instanceof Error ? e.message : '불러오기 실패'))
       .finally(() => alive && setBusy(false));
@@ -58,8 +61,23 @@ export default function Page() {
       <div className="max-w-screen-xl mx-auto px-6 py-8">
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h1 className="text-2xl font-bold text-[#191F28] dark:text-[#F2F4F6]">캠페인 대시보드</h1>
-            <p className="text-sm text-[#8B95A1] mt-1">목표·예산·성과를 한 창구에서 (Mock 기반 데모)</p>
+            <div className="flex items-center gap-2">
+              <h1 className="text-2xl font-bold text-[#191F28] dark:text-[#F2F4F6]">캠페인 대시보드</h1>
+              {source === 'live' ? (
+                <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
+                  실데이터
+                </span>
+              ) : (
+                <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-300">
+                  데모
+                </span>
+              )}
+            </div>
+            <p className="text-sm text-[#8B95A1] mt-1">
+              {source === 'live'
+                ? '실 Meta 연동 · 라이브 지표'
+                : '목표·예산·성과를 한 창구에서 (Mock 기반 데모)'}
+            </p>
           </div>
           <div className="flex items-center gap-2">
             <div className="flex rounded-lg border border-[#E5E8EB] dark:border-[#2D3748] overflow-hidden text-sm">
@@ -103,11 +121,13 @@ export default function Page() {
         )}
 
         {selected && detail && (
-          <CampaignDetailModal detail={detail} onClose={() => setSelected(null)} />
+          <CampaignDetailModal detail={detail} source={source} onClose={() => setSelected(null)} />
         )}
 
         <p className="mt-6 text-[11px] text-[#B0B8C1]">
-          ⚠ Mock 기반 데모 · 노출/지출은 일중 곡선 모델 기반 · &quot;예측 CTR&quot; 등 실측 환산 없음 · 금액 KRW
+          {source === 'live'
+            ? '실데이터 · Meta 라이브 · CVR/ROAS는 전환 추적 전이라 미측정 · 금액 KRW'
+            : '⚠ Mock 기반 데모 · 노출/지출은 일중 곡선 모델 기반 · "예측 CTR" 등 실측 환산 없음 · 금액 KRW'}
         </p>
       </div>
     </AppLayout>
