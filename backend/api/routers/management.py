@@ -342,8 +342,7 @@ def _campaign_summary(snaps: list[MetricsSnapshot], budget: int) -> dict:
 def _real_summary(m: MetricsSnapshot, budget: int) -> dict:
     """실 reader 단일 집계 스냅샷 → 대시보드 요약.
 
-    CTR/CPC/CPM/지출/도달은 Meta 실측. 전환(CVR)은 픽셀/CAPI 미설정이면 합성하지 않고
-    None + conversion_tracking=False로 정직하게 표기한다(난수 합성 금지).
+    전환 필드가 응답에 있으면 CVR·ROAS까지 실측으로 표시하고, 없으면 합성하지 않는다.
     """
     return {
         "impressions": m.impressions,
@@ -353,10 +352,10 @@ def _real_summary(m: MetricsSnapshot, budget: int) -> dict:
         "ctr": m.ctr,
         "cpc_krw": m.cpc_krw,
         "cpm_krw": m.cpm_krw,
-        "conversions": None,
-        "cvr": None,
-        "roas": None,  # 매출(전환 가치) 추적 전 — 측정 불가
-        "conversion_tracking": False,
+        "conversions": m.conversions,
+        "cvr": m.cvr,
+        "roas": m.roas,
+        "conversion_tracking": m.conversions is not None,
         "frequency": m.frequency,
         "pacing_pct": round(m.spend_krw / budget * 100, 1) if budget else 0.0,
     }
@@ -454,7 +453,7 @@ async def list_campaigns():
 
 
 def _real_outcome(m: MetricsSnapshot, campaign_id: str, creative_id: str | None) -> RealOutcome:
-    """실측 스냅샷 → RealOutcome 계약. 전환은 추적 전이면 None(합성 금지)."""
+    """실측 스냅샷 → RealOutcome 계약. 전환 응답이 없으면 None(합성 금지)."""
     return RealOutcome(
         creative_id=creative_id,
         campaign_id=campaign_id,
@@ -464,9 +463,9 @@ def _real_outcome(m: MetricsSnapshot, campaign_id: str, creative_id: str | None)
         ctr=m.ctr,
         cpc_krw=m.cpc_krw,
         cpm_krw=m.cpm_krw,
-        conversions=None,
-        cvr=None,
-        roas=None,
+        conversions=m.conversions,
+        cvr=m.cvr,
+        roas=m.roas,
         as_of=m.as_of,
     )
 
@@ -697,9 +696,7 @@ async def meta_connect(
     if not app_id:
         raise HTTPException(503, "META_APP_ID 미설정 — Meta 연결 불가")
     org_id = await db.scalar(
-        select(OrganizationMember.organization_id).where(
-            OrganizationMember.user_id == user.id
-        )
+        select(OrganizationMember.organization_id).where(OrganizationMember.user_id == user.id)
     )
     if org_id is None:
         raise HTTPException(409, "소속 조직이 없습니다 — 조직 연결 후 시도하세요.")
