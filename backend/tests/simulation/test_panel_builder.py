@@ -1,7 +1,6 @@
-# 패널 빌더·캐시·로드 단위 테스트 — MockNarrator(결정적, LLM✗)로 검증
+# 패널 빌더·캐시·로드 단위 테스트 — 결정적 스텁 나레이터(LLM✗)로 검증
 from __future__ import annotations
 
-from domain.simulation.adapters.mock_engine import MockNarrator
 from domain.simulation.contracts.schemas import PanelSpec
 from domain.simulation.tools.panel.builder import (
     CachedPanelProvider,
@@ -13,14 +12,23 @@ from domain.simulation.tools.panel.builder import (
 from domain.simulation.tools.sampling.persona_sampler import PersonaSampler
 
 
+class _StubNarrator:
+    """결정적 서사 스텁 — LLM 없이 패널 빌더 로직만 검증(mock 어댑터 제거됨)."""
+
+    version = "stub-narrator-0"
+
+    def narrate(self, persona) -> str:
+        return f"{persona.age}세 {persona.gender} · {persona.region}."
+
+
 def _builder() -> PanelBuilder:
-    return PanelBuilder(sampler=PersonaSampler(), narrator=MockNarrator())
+    return PanelBuilder(sampler=PersonaSampler(), narrator=_StubNarrator())
 
 
 def test_build_fills_narrative_for_all() -> None:
     panel = _builder().build(PanelSpec(size=30, seed=1))
     assert panel["size"] == 30
-    assert panel["narrator"] == "mock-narrator-0"
+    assert panel["narrator"] == "stub-narrator-0"
     assert all(p["profile_narrative"] for p in panel["personas"])
 
 

@@ -112,7 +112,7 @@ def _stratified_allocation(
 
 
 class PersonaSampler:
-    """분포에서 페르소나 속성 묶음을 샘플링. MockPanelProvider 와 동일한 get_or_build 시그니처."""
+    """분포에서 페르소나 속성 묶음을 샘플링. CachedPanelProvider 와 동일한 get_or_build 시그니처."""
 
     def __init__(
         self,

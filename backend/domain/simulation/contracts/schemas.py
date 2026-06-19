@@ -135,6 +135,7 @@ class PersonaReaction(BaseModel):
     # 브랜드 식별(Fluency, REPORT §2-5) — "어느 브랜드/제품 광고인지" 전달력. 사전 인지가 아님.
     brand_recognized: bool = False  # 명확히 식별했는가 — 가중 집계 입력(brand_recognition_rate)
     perceived_brand: str | None = None  # 인식한 브랜드/제품명(선언 의도와 대조해 오귀속 분해)
+    noticed_first: str | None = None  # §4-b salience — 프로필상 가장 먼저 주의가 간 요소(탐색적)
     utterance: str | None = None
     qa_passed: bool = True
     qa_fail_reason: str | None = None
