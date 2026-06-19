@@ -76,7 +76,12 @@ export default function Page() {
     <AppLayout>
       <div className="max-w-screen-xl mx-auto px-6 py-8">
         <div className="mb-6">
-          <h1 className="text-2xl font-bold text-[#191F28] dark:text-[#F2F4F6]">예산 관리</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-bold text-[#191F28] dark:text-[#F2F4F6]">예산 관리</h1>
+            <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-300">
+              데모
+            </span>
+          </div>
           <p className="text-sm text-[#8B95A1] mt-1">한도 대비 소진·페이싱 + 90/95/100% 가드레일 (Mock 기반 데모)</p>
         </div>
 

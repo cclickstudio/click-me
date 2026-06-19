@@ -43,7 +43,7 @@ export function CampaignTable({
             <th className="text-right font-semibold px-3 py-2.5 hidden lg:table-cell">CPM<span className="block font-normal text-[9px] text-[#B0B8C1] leading-tight">노출당비용</span></th>
             <th className="text-right font-semibold px-3 py-2.5 hidden lg:table-cell">CVR<span className="block font-normal text-[9px] text-[#B0B8C1] leading-tight">전환율</span></th>
             <th className="text-right font-semibold px-3 py-2.5 hidden lg:table-cell">ROAS<span className="block font-normal text-[9px] text-[#B0B8C1] leading-tight">투자수익률</span></th>
-            <th className="text-right font-semibold px-4 py-2.5">소진율</th>
+            <th className="text-right font-semibold px-4 py-2.5">일예산 대비</th>
             <th className="px-2 py-2.5 w-8" aria-label="상세 토글"></th>
           </tr>
         </thead>
@@ -91,10 +91,10 @@ export function CampaignTable({
                 ₩{c.cpm_krw.toLocaleString()}
               </td>
               <td className="px-3 py-3 text-right tabular-nums text-[#4E5968] dark:text-[#C9CED6] hidden lg:table-cell">
-                {fmtCvr(c.cvr)}
+                {fmtCvr(c.cvr, c.conversions)}
               </td>
               <td className="px-3 py-3 text-right tabular-nums text-[#4E5968] dark:text-[#C9CED6] hidden lg:table-cell">
-                {fmtRoas(c.roas)}
+                {fmtRoas(c.roas, c.conversions)}
               </td>
               <td className="px-4 py-3 text-right">
                 <PacingCell pct={c.pacing_pct} />
@@ -145,7 +145,7 @@ export function CampaignTable({
 }
 
 function PacingCell({ pct }: { pct: number }) {
-  const color = pct >= 95 ? 'bg-red-500' : pct >= 80 ? 'bg-amber-500' : 'bg-[#3182F6]';
+  const color = 'bg-[#3182F6]'; // 누적지출/일예산 — 누적이라 초과 정상, 경보색 제거
   return (
     <div className="flex items-center justify-end gap-2">
       <div className="w-16 h-1.5 rounded-full bg-[#F2F4F6] dark:bg-[#2D3748] overflow-hidden">

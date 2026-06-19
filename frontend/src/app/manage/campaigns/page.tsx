@@ -246,7 +246,7 @@ export default function Page() {
 
         <p className="mt-6 text-[11px] text-[#B0B8C1]">
           {source === 'live'
-            ? '실데이터 · Meta 라이브 · CVR/ROAS는 전환 추적 전이라 미측정 · 금액 KRW'
+            ? '실데이터 · Meta 라이브(전체 기간 누적) · CVR/ROAS는 전환(구매) 발생 시 표시 · 금액 KRW'
             : '⚠ Mock 기반 데모 · 노출/지출은 일중 곡선 모델 기반 · "예측 CTR" 등 실측 환산 없음 · 금액 KRW'}
         </p>
       </div>
