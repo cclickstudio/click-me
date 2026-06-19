@@ -435,6 +435,24 @@ export interface MessageReception {
   resisted_quotes: string[];
 }
 
+// 리포트 합산 토론 1건 — 주제 + 대표 인용 + 결론(여러 토론이면 각 토론을 간결히 나열).
+export interface DebateDigest {
+  debate_id?: string | null;
+  topic_headline: string;
+  diagnosis?: string;
+  rounds_run?: number;
+  stop_reason?: string | null;
+  consensus: string[];
+  dissent: string[];
+  ranked_actions: {
+    rank: number;
+    action: string;
+    expected_effect: string;
+    supporting_personas: string[];
+  }[];
+  quotes: { persona_name: string; role: string; stance: string; text: string }[];
+}
+
 export interface ReportView {
   run_id: string;
   simulation_id: string | null;
@@ -450,6 +468,7 @@ export interface ReportView {
   summary_metrics: SummaryMetrics;
   confidence: ConfidenceBadge;
   debate: DebateData | null;
+  debates?: DebateDigest[]; // 합산 토론(여러 토론 누적) — 없으면 단일 debate 렌더(하위호환).
   aggregate: SimAggregate;
   analysis: Record<string, unknown>;
   generated_at: string;

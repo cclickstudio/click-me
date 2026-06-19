@@ -232,6 +232,8 @@ export function DebatePanel({
   const [topicsLoading, setTopicsLoading] = useState(false);
   const [topicsError, setTopicsError] = useState<string | null>(null);
   const [qaInput, setQaInput] = useState('');
+  // 결과 박스에서 볼 세션 — null이면 활성 세션을 따라간다(추가 토론 시 자동 갱신).
+  const [resultViewId, setResultViewId] = useState<string | null>(null);
 
   const esRef = useRef<EventSource | null>(null);
   const seqRef = useRef(0);
@@ -240,6 +242,11 @@ export function DebatePanel({
   const active = sessions.find(s => s.id === activeId) ?? null;
 
   useEffect(() => () => esRef.current?.close(), []);
+
+  // 활성 세션이 바뀌면(탭 전환·추가 토론) 결과 박스는 다시 활성 세션을 따라가게 초기화.
+  useEffect(() => {
+    setResultViewId(null);
+  }, [activeId]);
 
   // 활성 세션의 통합 리포트를 부모('최종 결과' 영역)로 올린다 — 탭 전환·완료 시 갱신.
   const activeReportView = active?.result?.report_view ?? null;
@@ -505,6 +512,13 @@ export function DebatePanel({
 
   const passedCount = reactions.filter(r => r.qa_passed).length;
 
+  // 결과 박스 — 결과가 있는(done) 세션들. select/탭으로 전환해 모두 볼 수 있다.
+  const doneSessions = sessions.filter(s => s.status === 'done' && s.result);
+  // 명시 선택(resultViewId)이 유효하면 그걸, 아니면 활성 세션을 따라간다.
+  const resultSession =
+    (resultViewId && doneSessions.find(s => s.id === resultViewId)) ||
+    (active?.status === 'done' && active.result ? active : null);
+
   return (
     <div className='flex h-full flex-col gap-6'>
       {/* 토론 카드 — 헤더 + 세션 탭 + 채팅 + Q&A 입력 */}
@@ -641,19 +655,35 @@ export function DebatePanel({
         )}
       </div>
 
-      {/* 토론 결과 — 항상 박스 표시(완료 전엔 안내). 컬럼 남은 높이를 flex-1로 채움 */}
+      {/* 토론 결과 — done 세션을 select로 전환해 모두 볼 수 있다. 높이는 제한 + 내부 스크롤. */}
       {view === 'active' && (
-        <div className={`${cardCls} flex-1`}>
-          <h2 className='text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6] mb-4'>
-            토론 결과
-          </h2>
-          {active?.status === 'done' && active.result ? (
-            <DebateOutcome result={active.result} />
-          ) : (
-            <p className='text-sm text-[#8B95A1] dark:text-[#6B7280]'>
-              토론이 끝나면 결과가 여기에 표시됩니다.
-            </p>
-          )}
+        <div className={cardCls}>
+          <div className='flex items-center justify-between gap-3 mb-4 flex-wrap'>
+            <h2 className='text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]'>
+              토론 결과
+            </h2>
+            {doneSessions.length > 1 && (
+              <select
+                value={resultSession?.id ?? ''}
+                onChange={e => setResultViewId(e.target.value || null)}
+                className='max-w-[240px] truncate px-2.5 py-1 rounded-lg text-xs font-medium border border-[#E5E8EB] dark:border-[#2D3748] bg-white dark:bg-[#252D3D] text-[#4E5968] dark:text-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-[#3182F6] transition-colors'>
+                {doneSessions.map((s, i) => (
+                  <option key={s.id} value={s.id}>
+                    {`토론 ${i + 1} · ${s.title}`}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+          <div className='max-h-[460px] overflow-y-auto'>
+            {resultSession?.result ? (
+              <DebateOutcome result={resultSession.result} />
+            ) : (
+              <p className='text-sm text-[#8B95A1] dark:text-[#6B7280]'>
+                토론이 끝나면 결과가 여기에 표시됩니다.
+              </p>
+            )}
+          </div>
         </div>
       )}
     </div>

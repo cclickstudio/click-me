@@ -5,11 +5,19 @@
 import { API_BASE } from '@/lib/api';
 import type {
   ConfidenceBadge,
+  DebateDigest,
   ObjectiveFit,
   ReportView,
   SegmentCell,
   SimulationReport,
 } from '@/lib/types';
+
+const STOP_LABEL: Record<string, string> = {
+  consensus: '합의 도달',
+  dissensus: '이견 잔존',
+  dissent: '이견 잔존',
+  max: '최대 라운드',
+};
 
 /* ─── 한글 라벨(백엔드 enums 동기화) ─── */
 const AISAS_KO: Record<string, string> = {
@@ -366,6 +374,125 @@ function MessageCard({ m }: { m: NonNullable<ReportView['message_reception']> })
   );
 }
 
+/* ─── 토론 1건 다이제스트 — 주제 + 대표 인용 1~2 + 결론(합의/이견) 간결 렌더 ─── */
+function DebateDigestItem({ d, index }: { d: DebateDigest; index?: number }) {
+  const quotes = (d.quotes ?? []).slice(0, 2);
+  const consensus = d.consensus ?? [];
+  const dissent = d.dissent ?? [];
+  return (
+    <div className='rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-[#F9FAFB] dark:bg-[#252D3D] p-4'>
+      <div className='flex items-start gap-2 flex-wrap'>
+        {typeof index === 'number' && (
+          <span className='shrink-0 mt-0.5 w-5 h-5 rounded-full bg-[#3182F6] text-white text-[11px] font-bold flex items-center justify-center'>
+            {index + 1}
+          </span>
+        )}
+        <p className='min-w-0 flex-1 text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6] leading-snug'>
+          {d.topic_headline}
+        </p>
+        {d.stop_reason && (
+          <span className='shrink-0 px-2 py-0.5 rounded-full bg-white dark:bg-[#1C2333] text-[10px] text-[#8B95A1] dark:text-[#6B7280]'>
+            {STOP_LABEL[d.stop_reason] ?? d.stop_reason}
+          </span>
+        )}
+      </div>
+
+      {quotes.length > 0 && (
+        <ul className='mt-2.5 space-y-1.5'>
+          {quotes.map((q, i) => (
+            <li
+              key={i}
+              className='text-[12px] text-[#4E5968] dark:text-[#9CA3AF] bg-white dark:bg-[#1C2333] rounded-lg px-3 py-2 leading-relaxed'>
+              “{q.text}”
+              {q.persona_name && (
+                <span className='block mt-0.5 text-[10px] text-[#B0B8C1] dark:text-[#4B5563]'>
+                  — {q.persona_name}
+                  {q.role ? ` · ${q.role}` : ''}
+                </span>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {(consensus.length > 0 || dissent.length > 0) && (
+        <div className='mt-2.5 grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5'>
+          {consensus.length > 0 && (
+            <div>
+              <p className='text-[11px] font-semibold text-[#00A661] mb-0.5'>
+                합의
+              </p>
+              <ul className='space-y-0.5'>
+                {consensus.map((c, i) => (
+                  <li
+                    key={i}
+                    className='text-[11px] text-[#4E5968] dark:text-[#9CA3AF] leading-relaxed'>
+                    · {c}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {dissent.length > 0 && (
+            <div>
+              <p className='text-[11px] font-semibold text-[#F4A100] mb-0.5'>
+                이견
+              </p>
+              <ul className='space-y-0.5'>
+                {dissent.map((c, i) => (
+                  <li
+                    key={i}
+                    className='text-[11px] text-[#4E5968] dark:text-[#9CA3AF] leading-relaxed'>
+                    · {c}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ─── 토론 섹션 — debates(합산)면 각 토론 나열, 없으면 단일 debate 렌더(하위호환) ─── */
+function DebateSection({ rv }: { rv: ReportView }) {
+  const rep = rv.report;
+  // 합산 토론(여러 토론 누적) 우선.
+  if (rv.debates && rv.debates.length > 0) {
+    return (
+      <Section
+        title={`페르소나 토론 요약 (${rv.debates.length}건)`}
+        tip='개선 방향을 도출한 전문가·일반인 토론입니다. 토론할수록 항목이 늘어나요 — 각 토론의 주제·대표 발언·결론만 간추렸습니다.'>
+        <div className='space-y-3'>
+          {rv.debates.map((d, i) => (
+            <DebateDigestItem key={d.debate_id ?? i} d={d} index={i} />
+          ))}
+        </div>
+      </Section>
+    );
+  }
+
+  // 하위호환: 단일 토론 — report 필드로 다이제스트 구성.
+  if (!rep.debate_available) return null;
+  const single: DebateDigest = {
+    topic_headline: rep.topic || rep.headline || '페르소나 토론',
+    rounds_run: rep.rounds_run,
+    stop_reason: rep.stop_reason,
+    consensus: rep.consensus ?? [],
+    dissent: rep.dissent ?? [],
+    ranked_actions: rep.ranked_actions ?? [],
+    quotes: rep.quotes ?? [],
+  };
+  return (
+    <Section
+      title='페르소나 토론 요약'
+      tip='개선 방향을 도출한 전문가·일반인 토론입니다 — 주제·대표 발언·결론만 간추렸습니다.'>
+      <DebateDigestItem d={single} />
+    </Section>
+  );
+}
+
 /* ─── 메인 ─── */
 export function SimulationReportView({ rv }: { rv: ReportView }) {
   const rep = rv.report;
@@ -715,6 +842,9 @@ export function SimulationReportView({ rv }: { rv: ReportView }) {
           </div>
         </Section>
       )}
+
+      {/* 페르소나 토론 요약 — debates(합산) 또는 단일 debate(하위호환) */}
+      <DebateSection rv={rv} />
 
       <p className='text-[11px] text-[#B0B8C1] dark:text-[#4B5563] leading-relaxed border-t border-[#E5E8EB] dark:border-[#2D3748] pt-4'>
         이 리포트는 실제 사람이 아니라 한국 인구·성격·미디어 통계로 만든 AI 가상
