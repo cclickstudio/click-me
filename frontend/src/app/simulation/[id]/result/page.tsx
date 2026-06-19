@@ -7,18 +7,30 @@ import AppLayout from '@/components/AppLayout';
 import { SimulationResultView } from '@/components/simulator/SimulationResultView';
 import { api } from '@/lib/api';
 import { loadSimResult } from '@/lib/simResultStore';
-import type { SimRunResult } from '@/lib/types';
+import type { ReportView, SimRunResult } from '@/lib/types';
 
 export default function SimulationResultPage() {
   const { id } = useParams<{ id: string }>();
   const [result, setResult] = useState<SimRunResult | null>(null);
   const [adTitle, setAdTitle] = useState<string | undefined>();
   const [adDescription, setAdDescription] = useState<string | undefined>();
+  // DB에 저장된 통합 리포트 — 토론을 다시 돌리지 않아도 최종 리포트 복원.
+  const [savedReport, setSavedReport] = useState<ReportView | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let alive = true;
+
+    // 저장된 통합 리포트는 진입 경로와 무관하게 병렬로 복원 시도(없으면 null, 실패 무시).
+    api.debate
+      .savedReport(id)
+      .then(rv => {
+        if (alive) setSavedReport(rv);
+      })
+      .catch(() => {
+        /* 리포트 복원 실패는 무시 — 결과 화면은 떠야 함. */
+      });
 
     // 1) 방금 실행한 결과(전체 데이터)가 sessionStorage에 있으면 그대로 사용.
     const stored = loadSimResult(id);
@@ -73,6 +85,7 @@ export default function SimulationResultPage() {
           result={result}
           adTitle={adTitle}
           adDescription={adDescription}
+          initialReportView={savedReport}
         />
       )}
     </AppLayout>

@@ -64,6 +64,8 @@ interface Props {
   result: SimRunResult;
   adTitle?: string;
   adDescription?: string;
+  // DB에 저장된 통합 리포트(콜드·새로고침·패널 진입 복원용). 없으면 null.
+  initialReportView?: ReportView | null;
   // 실행 흐름에서만 '새 시뮬레이션' 버튼 노출(라우트 진입 시엔 숨김).
   onReset?: () => void;
 }
@@ -72,12 +74,15 @@ export function SimulationResultView({
   result,
   adTitle,
   adDescription,
+  initialReportView,
   onReset,
 }: Props) {
   const [showFailed, setShowFailed] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  // 토론 완료 시 DebatePanel이 올려주는 통합 리포트('최종 결과' 영역 단일 소스).
-  const [reportView, setReportView] = useState<ReportView | null>(null);
+  // 통합 리포트('최종 결과' 영역 단일 소스) — 저장본을 먼저 보여주고, 새 토론 완료 시 DebatePanel이 덮어쓴다.
+  const [reportView, setReportView] = useState<ReportView | null>(
+    initialReportView ?? null
+  );
 
   const toggleExpand = (id: string) =>
     setExpanded(prev => {

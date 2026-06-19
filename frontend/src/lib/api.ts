@@ -11,6 +11,7 @@ import type {
   DebateTopic,
   DebateTopicsResult,
   QAEvent,
+  ReportView,
   SimRunInput,
   SimRunResult,
 } from "./types";
@@ -162,6 +163,17 @@ export const api = {
     // 저장된 토론 1건 상세(참가자·발언·judge_log·final) — 채팅·결과 복원용.
     detail: (debateId: string): Promise<DebateSessionDetail> =>
       request<DebateSessionDetail>(`/debate/${debateId}/detail`),
+    // 시뮬에 저장된 통합 리포트(ReportView) 복원 — 콜드·새로고침·패널 진입용.
+    // request 헬퍼는 404에 throw하므로 여기선 fetch 직접 호출 → 404·실패 시 null 반환(결과 화면은 떠야 함).
+    savedReport: async (simulationId: string): Promise<ReportView | null> => {
+      const token = getToken();
+      const res = await fetch(
+        `${API_BASE}/api/debate/by-simulation/${simulationId}/report`,
+        { headers: token ? { Authorization: `Bearer ${token}` } : {} },
+      );
+      if (!res.ok) return null;
+      return res.json() as Promise<ReportView>;
+    },
     // 토론 종료 후 Q&A — POST라 EventSource 불가 → fetch + ReadableStream으로 "data: {json}\n\n" 파싱.
     question: async (
       runId: string,
