@@ -20,9 +20,9 @@ from domain.generator.contracts.pipeline_schemas import (
 from domain.generator.graph.nodes import emit_progress
 from domain.generator.graph.state import GenerationState
 from domain.generator.pipeline.copy_generator import generate_copy
-from domain.generator.pipeline.image_generator import generate_image
+from domain.generator.pipeline.image_generator import composite_logo, generate_image
 from domain.generator.pipeline.quality_checker import check_quality
-from tools.storage.s3 import candidate_key, upload_bytes
+from tools.storage.s3 import candidate_key, download_bytes, upload_bytes
 
 _VARIANT_IDS = ["A", "B", "C"]
 
@@ -46,6 +46,14 @@ async def generate_candidates(state: GenerationState, config: RunnableConfig) ->
     brand_color = req.get("brand_color")
     tone = req.get("tone_and_manner")
 
+    logo_s3_key = req.get("brand_logo_s3_key")
+    logo_image_bytes: bytes | None = None
+    if logo_s3_key:
+        try:
+            logo_image_bytes = await download_bytes(logo_s3_key)
+        except Exception:
+            logo_image_bytes = None
+
     done = 0
 
     async def build(idx: int, variant_id: str, plan: StrategyPlan) -> dict:
@@ -62,23 +70,25 @@ async def generate_candidates(state: GenerationState, config: RunnableConfig) ->
             template=plan.template,
         )
 
-        # 2. 이미지 생성 + 품질검증 병렬 (gpt-image-2 올인원)
-        image_bytes, quality_report = await asyncio.gather(
-            generate_image(
-                product_analysis=product_analysis,
-                strategy=plan.strategy,
-                template=plan.template,
-                size=gen_size,
-                brand_color=brand_color,
-                tone=tone,
-                headline=ad_copy.headline,
-                body=ad_copy.body,
-                cta=ad_copy.cta,
-            ),
-            check_quality(ad_copy=ad_copy, target=product_analysis.target_audience),
+        # 2. 이미지 생성 후 품질검증 (check_quality는 순수 동기 함수)
+        image_bytes = await generate_image(
+            product_analysis=product_analysis,
+            strategy=plan.strategy,
+            template=plan.template,
+            size=gen_size,
+            brand_color=brand_color,
+            tone=tone,
+            headline=ad_copy.headline,
+            body=ad_copy.body,
+            cta=ad_copy.cta,
         )
+        quality_report = check_quality(ad_copy=ad_copy, target=product_analysis.target_audience)
 
-        # 3. S3 업로드
+        # 3. 로고 합성 (brand_logo_s3_key 제공 시)
+        if logo_image_bytes is not None:
+            image_bytes = composite_logo(image_bytes, logo_image_bytes, plan.template)
+
+        # 4. S3 업로드
         s3_key = candidate_key(generation_id, idx)
         await upload_bytes(image_bytes, s3_key, content_type="image/png")
 
@@ -105,7 +115,7 @@ async def generate_candidates(state: GenerationState, config: RunnableConfig) ->
     results = await asyncio.gather(
         *[
             build(i, vid, plan)
-            for i, (vid, plan) in enumerate(zip(_VARIANT_IDS, plans, strict=False))
+            for i, (vid, plan) in enumerate(zip(_VARIANT_IDS, plans, strict=True))
         ]
     )
     candidates = sorted(results, key=lambda c: c["idx"])
