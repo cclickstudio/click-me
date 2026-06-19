@@ -24,16 +24,16 @@ export type CampaignKpi = {
   pacing_pct: number;
 };
 
-// 전환 추적 미설정이면 cvr/conversions가 null — "0.0%"로 거짓표시 금지, "미설정"으로 표기.
-export const fmtCvr = (cvr: number | null): string =>
-  cvr == null ? '미설정' : `${(cvr * 100).toFixed(1)}%`;
+// 규칙 하나 — conversions null(추적 미설정)=「미설정」, 그 외는 측정값 표기(구매 0이면 0.0%/0.00x).
+// CVR·ROAS 동일 규칙으로 일관. 구매 0은 "측정 불가"가 아니라 "측정된 0"이라 숫자로 보인다.
+export const fmtCvr = (cvr: number | null, conversions: number | null): string =>
+  conversions == null ? '미설정' : `${((cvr ?? 0) * 100).toFixed(1)}%`;
 
 export const fmtConversions = (n: number | null): string =>
-  n == null ? '미설정' : n.toLocaleString();
+  n == null ? '미설정' : `${n.toLocaleString()}건`;
 
-// ROAS는 매출(전환 가치) 추적 전엔 측정 불가 — null이면 "미측정".
-export const fmtRoas = (roas: number | null): string =>
-  roas == null ? '미측정' : `${roas.toFixed(2)}x`;
+export const fmtRoas = (roas: number | null, conversions: number | null): string =>
+  conversions == null ? '미설정' : `${(roas ?? 0).toFixed(2)}x`;
 
 export type CampaignSummary = CampaignKpi & {
   campaign_id: string;
@@ -44,7 +44,19 @@ export type CampaignSummary = CampaignKpi & {
   block_reason?: string | null; // "선불 잔액 부족" 등
 };
 
-export type HourPoint = { hour: number; impressions: number; spend_krw: number };
+export type DayPoint = {
+  label: string;
+  impressions: number;
+  clicks: number;
+  reach: number;
+  spend_krw: number;
+  ctr: number;
+  cpc_krw: number;
+  cpm_krw: number;
+  conversions: number | null;
+  cvr: number | null;
+  roas: number | null;
+};
 
 export type CampaignDetail = {
   campaign_id: string;
@@ -54,7 +66,7 @@ export type CampaignDetail = {
   expected: number[];
   actual: number[];
   anomaly_hours: number[];
-  series: HourPoint[];
+  series: DayPoint[];
   summary: CampaignKpi;
 };
 

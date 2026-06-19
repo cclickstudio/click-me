@@ -69,8 +69,8 @@ export function CampaignCards({
               <Metric label="CTR(클릭률)" value={`${(c.ctr * 100).toFixed(1)}%`} />
               <Metric label="CPC(클릭당비용)" value={`₩${c.cpc_krw.toLocaleString()}`} />
               <Metric label="CPM(노출당비용)" value={`₩${c.cpm_krw.toLocaleString()}`} />
-              <Metric label="CVR(전환율)" value={fmtCvr(c.cvr)} />
-              <Metric label="ROAS(투자수익률)" value={fmtRoas(c.roas)} />
+              <Metric label="CVR(전환율)" value={fmtCvr(c.cvr, c.conversions)} />
+              <Metric label="ROAS(투자수익률)" value={fmtRoas(c.roas, c.conversions)} />
             </div>
             <div className="mt-3">
               <div className="flex items-center justify-between text-[11px] text-[#8B95A1] mb-1">
