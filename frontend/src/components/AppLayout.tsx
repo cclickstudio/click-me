@@ -10,7 +10,7 @@ import CompanyPanel from './CompanyPanel';
 import ChangePasswordModal from './ChangePasswordModal';
 
 // COMPANY 계정이 막아야 하는 경로 — 채팅·시뮬/제너 실행 + 내 정보 관리(USER 전용)
-// (/simulations/[id]·/generations/[id] 상세, /projects 등은 허용)
+// 정확 일치만 차단한다 — /simulation/[id](결과)·/generations/[id] 상세, /projects 등은 허용.
 const COMPANY_BLOCKED = ['/chat', '/simulation', '/generator', '/profile'];
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
@@ -26,9 +26,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   }, []);
 
   // COMPANY는 채팅·시뮬/제너 실행만 차단(프로젝트·상세·삭제·팀 관리는 허용)
+  // 정확 일치만 — /simulation/[id](결과 대시보드)는 허용해야 COMPANY도 시뮬 결과를 본다.
   const companyBlocked =
-    user?.role === 'COMPANY' &&
-    COMPANY_BLOCKED.some((p) => pathname === p || pathname.startsWith(p + '/'));
+    user?.role === 'COMPANY' && COMPANY_BLOCKED.includes(pathname);
   useEffect(() => {
     if (!loading && companyBlocked) router.replace('/dashboard');
   }, [loading, companyBlocked, router]);

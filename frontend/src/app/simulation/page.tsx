@@ -187,7 +187,7 @@ export default function SimulationRunPage() {
                 adTitle: adTitle || undefined,
                 adDescription: adContent || undefined,
               });
-              router.push(`/simulation/${routeId}/result`);
+              router.push(`/simulation/${routeId}`);
             })
             .catch(e => {
               setError(e instanceof Error ? e.message : '결과 조회 실패');

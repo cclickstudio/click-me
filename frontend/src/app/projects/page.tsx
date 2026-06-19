@@ -128,7 +128,7 @@ function ProjectCard({ project, onDelete }: { project: Project; onDelete: (id: s
                       {sims.map(s => (
                         <tr
                           key={s.id}
-                          onClick={() => router.push(`/simulations/${s.id}`)}
+                          onClick={() => router.push(`/simulation/${s.id}`)}
                           className="cursor-pointer hover:bg-[#F2F4F6] dark:hover:bg-[#252D3D] transition-colors"
                         >
                           <td className="py-1.5 pr-4">

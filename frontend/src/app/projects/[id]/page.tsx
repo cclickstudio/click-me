@@ -170,7 +170,7 @@ export default function ProjectDetailPage() {
                     {sims.map(s => (
                       <tr
                         key={s.id}
-                        onClick={() => router.push(`/simulations/${s.id}`)}
+                        onClick={() => router.push(`/simulation/${s.id}`)}
                         className="border-b border-[#F9FAFB] dark:border-[#1C2333] last:border-0 hover:bg-[#F9FAFB] dark:hover:bg-[#252D3D] cursor-pointer transition-colors"
                       >
                         <td className="px-6 py-3">

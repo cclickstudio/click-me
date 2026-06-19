@@ -97,7 +97,7 @@ export default function TrashSection({
                 </svg>
               </label>
               <Link
-                href={t.kind === 'sim' ? `/simulations/${t.id}` : `/generations/${t.id}`}
+                href={t.kind === 'sim' ? `/simulation/${t.id}` : `/generations/${t.id}`}
                 className="flex-1 min-w-0 group"
               >
                 <p className="text-xs truncate text-[#4E5968] dark:text-[#9CA3AF] group-hover:text-[#3182F6]">{t.label}</p>
