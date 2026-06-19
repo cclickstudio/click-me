@@ -97,6 +97,12 @@ class FakeWriter:
     async def create_campaign(self, config, idem_key: str) -> ActionResult:
         return self._respond("CREATE_CAMPAIGN", config.campaign_id, idem_key)
 
+    async def expand_audience(self, campaign_id: str, idem_key: str) -> ActionResult:
+        return self._respond("EXPAND_AUDIENCE", campaign_id, idem_key)
+
+    async def change_bid_strategy(self, campaign_id: str, idem_key: str) -> ActionResult:
+        return self._respond("CHANGE_BID_STRATEGY", campaign_id, idem_key)
+
     def _respond(self, op: str, campaign_id: str, idem_key: str) -> ActionResult:
         self.calls.append((op, campaign_id, idem_key))
         if campaign_id in self.fail_targets:

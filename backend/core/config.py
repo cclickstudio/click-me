@@ -88,6 +88,10 @@ class Settings(BaseSettings):
     meta_ad_account_id: str | None = None
     # Config
     meta_graph_api_version: str = "v23.0"
+    # 멀티테넌트 — 고객별 Meta 토큰 암호화 키(AES-256, base64 32B). 미설정이면 연결 저장 불가.
+    meta_token_encryption_key: str | None = None
+    # OAuth 콜백 완료 후 돌아갈 프론트 주소(개발=3000, 운영=https://clickme.co.kr).
+    frontend_base_url: str = "http://localhost:3000"
 
     # Management — Meta 광고 어댑터 (LIVE-ready). use_mock은 App 섹션에서 공용 선언.
     # use_mock=True면 reader=Mock·writer=DRY_RUN (Meta 접촉 0, wiring.py 분기).
