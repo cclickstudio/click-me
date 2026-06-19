@@ -274,10 +274,11 @@ export default function SimulationRunPage() {
   /* ─── STEP: setup ─── */
   if (step === 'setup') {
     const previewUrl = file ? URL.createObjectURL(file) : null;
-    // 광고 이미지는 선택 — 나머지(제품명·설명·카테고리·목표)는 필수.
+    // 광고 이미지는 선택 — 나머지(프로젝트·제품명·설명·카테고리·목표)는 필수.
     const goalReady =
       goalItem === '기타' ? customGoal.trim() !== '' : goalItem !== '';
     const canRun =
+      selectedProject !== null &&
       adTitle.trim() !== '' &&
       adContent.trim() !== '' &&
       categoryId !== '' &&
@@ -616,9 +617,15 @@ export default function SimulationRunPage() {
               </svg>
               시뮬레이터 실행
             </button>
-            <p className='text-[11px] text-[#B0B8C1] dark:text-[#4B5563] text-center mt-2'>
-              가상 소비자 수에 따라 수 초~수십 초 걸립니다.
-            </p>
+            {selectedProject === null ? (
+              <p className='text-[11px] text-[#F74D4D] text-center mt-2'>
+                왼쪽 패널에서 프로젝트를 먼저 선택해 주세요.
+              </p>
+            ) : (
+              <p className='text-[11px] text-[#B0B8C1] dark:text-[#4B5563] text-center mt-2'>
+                가상 소비자 수에 따라 수 초~수십 초 걸립니다.
+              </p>
+            )}
           </div>
         </div>
       </AppLayout>
