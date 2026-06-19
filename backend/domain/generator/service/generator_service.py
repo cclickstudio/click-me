@@ -12,6 +12,7 @@ import logging
 import uuid
 from collections.abc import AsyncIterator
 from contextlib import suppress
+from urllib.parse import quote
 
 from PIL import Image
 from sqlalchemy import select
@@ -205,7 +206,9 @@ async def get_detail(generation_id: str) -> dict | None:
                 "template_id": candidate.template_id,
                 "copy": candidate.copy,
                 "s3_key": candidate.s3_key,
-                "image_url": await presign_get(candidate.s3_key) if candidate.s3_key else None,
+                "image_url": f"/api/generator/image?key={quote(candidate.s3_key, safe='')}"
+                if candidate.s3_key
+                else None,
                 "qa_result": candidate.qa_result,
                 "qa_passed": candidate.qa_passed,
                 "explanation": candidate.explanation,
