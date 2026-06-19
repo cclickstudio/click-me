@@ -112,6 +112,9 @@ export const api = {
     stream: (runId: string) => new EventSource(`${API_BASE}/api/simulation/${runId}/stream`),
     result: (runId: string): Promise<SimRunResult> =>
       request<SimRunResult>(`/simulation/${runId}/result`),
+    // DB에 저장된 시뮬 결과를 simulation_id로 조회(콜드·패널 진입). 404=결과 없음.
+    dbResult: (simulationId: string): Promise<SimRunResult> =>
+      request<SimRunResult>(`/simulation/${simulationId}/db-result`),
   },
 
   // 페르소나 토론(/api/debate/*) — 시뮬 반응(reactions)을 받아 토론을 돌리고 결과를 낸다.

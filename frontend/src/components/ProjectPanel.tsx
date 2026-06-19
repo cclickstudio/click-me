@@ -54,7 +54,7 @@ function SimEntry({ sim, isActive }: { sim: SimRow; isActive: boolean }) {
       <div className={`flex items-center gap-1 rounded-md transition-colors ${
         isActive ? 'bg-[#EBF3FF] dark:bg-[#1E3A5F]' : 'hover:bg-[#EBF3FF] dark:hover:bg-[#1E3A5F]'
       }`}>
-        <Link href={`/simulations/${sim.id}`} className="flex items-center gap-2 px-2 py-1.5 flex-1 min-w-0 group">
+        <Link href={`/simulation/${sim.id}/result`} className="flex items-center gap-2 px-2 py-1.5 flex-1 min-w-0 group">
           <span className={`w-2 h-2 rounded-full shrink-0 ${statusColor[sim.status] ?? 'bg-[#B0B8C1]'}`} />
           <div className="flex-1 min-w-0">
             <p className={`text-xs truncate ${isActive ? 'text-[#3182F6] font-medium' : 'text-[#4E5968] dark:text-[#9CA3AF] group-hover:text-[#3182F6]'}`}>
@@ -88,7 +88,7 @@ function SimEntry({ sim, isActive }: { sim: SimRow; isActive: boolean }) {
             list.map(d => (
               <Link
                 key={d.debate_id}
-                href={`/simulations/${sim.id}`}
+                href={`/simulation/${sim.id}/result`}
                 className="flex items-start gap-2 px-2 py-1 rounded-md hover:bg-[#EBF3FF] dark:hover:bg-[#1E3A5F] transition-colors group"
               >
                 <span className={`mt-1 w-1.5 h-1.5 rounded-full shrink-0 ${statusColor[d.status] ?? 'bg-[#B0B8C1]'}`} />
@@ -424,7 +424,7 @@ export default function ProjectPanel({ collapsed, onToggle }: { collapsed: boole
   const [openProjectId, setOpenProjectId] = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
 
-  const simMatch = pathname.match(/^\/simulations\/([^/]+)/);
+  const simMatch = pathname.match(/^\/simulation\/([^/]+)\/result/);
   const genMatch = pathname.match(/^\/generations\/([^/]+)/);
   const activeSimId = simMatch?.[1] ?? null;
   const activeGenId = genMatch?.[1] ?? null;
