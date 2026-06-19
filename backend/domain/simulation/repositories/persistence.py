@@ -65,9 +65,7 @@ class SimulationPersistence:
                 )
             ).first()
             org_id = (
-                org_row[0]
-                if org_row
-                else _as_uuid(request.organization_id, fallback=_ORG_FALLBACK)
+                org_row[0] if org_row else _as_uuid(request.organization_id, fallback=_ORG_FALLBACK)
             )
             # ads 행 보장 — ad_analyses의 FK(ads.id) 충족. 없으면 현재 프로젝트에 광고 행 생성.
             # 실 DB 스키마(media_type·status…)에 맞춰 raw SQL로 INSERT(core.models.Ad와 불일치).

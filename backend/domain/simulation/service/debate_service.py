@@ -85,14 +85,17 @@ class DebateService:
         self,
         reactions: list[PersonaReaction],
         ad_analysis: AdInterpretation | None = None,
+        ad_title: str | None = None,
+        ad_description: str | None = None,
     ) -> dict:
         """조각 8·9만 — 반응 분석·KPI·토론 주제(결정론·LLM✗·동기). 토론 전 미리보기용.
 
         funnel·bottleneck·이탈/거부 분해·소비자 그룹(8) + 4대 KPI·토론 주제(9)를 즉시 반환.
+        topic에 광고 제목·설명·해석이 동봉돼 토론자 grounding과 동일 맥락을 미리보기로 노출.
         """
         analysis = analyze_reactions(reactions, ad_analysis)
         aggregate = compute_kpi(reactions)
-        topic = build_topic(analysis, aggregate, ad_analysis)
+        topic = build_topic(analysis, aggregate, ad_analysis, ad_title, ad_description)
         return {
             "analysis": analysis.model_dump(),
             "aggregate": aggregate.model_dump(),
@@ -103,14 +106,17 @@ class DebateService:
         self,
         reactions: list[PersonaReaction],
         ad_analysis: AdInterpretation | None = None,
+        ad_title: str | None = None,
+        ad_description: str | None = None,
     ) -> dict:
         """추가 토론용 논제 후보 5개(결정론·LLM✗). 사용자가 골라 start(topic=)로 전달.
 
         5가지 주신호를 진단형 대립 논제로 만들어 ranking·confidence 순으로 반환(변경2).
+        각 후보에 광고 제목·설명·해석을 동봉 — 사용자가 고른 논제가 그대로 토론자 grounding이 된다.
         """
         analysis = analyze_reactions(reactions, ad_analysis)
         aggregate = compute_kpi(reactions)
-        topics = build_topic_candidates(analysis, aggregate, ad_analysis)
+        topics = build_topic_candidates(analysis, aggregate, ad_analysis, ad_title, ad_description)
         return {"topics": [t.model_dump() for t in topics]}
 
     async def ask_question(
@@ -155,6 +161,8 @@ class DebateService:
         topic: DebateTopic | None = None,
         rubric: list[RubricScore] | None = None,
         objective_fit: ObjectiveFit | None = None,
+        ad_title: str | None = None,
+        ad_description: str | None = None,
     ) -> str:
         """비동기 시작 — 백그라운드 실행 후 run_id 반환(진행률은 SSE, 결과는 get_result).
 
@@ -177,6 +185,8 @@ class DebateService:
                 topic,
                 rubric,
                 objective_fit,
+                ad_title,
+                ad_description,
             )
         )
         return run_id
@@ -191,6 +201,8 @@ class DebateService:
         personas: list[Persona] | None = None,
         rubric: list[RubricScore] | None = None,
         objective_fit: ObjectiveFit | None = None,
+        ad_title: str | None = None,
+        ad_description: str | None = None,
     ) -> dict | None:
         """동기 실행 — 끝까지 돌린 뒤 결과(분석·KPI·주제·패널·리포트뷰)를 반환."""
         run_id = str(uuid.uuid4())
@@ -204,6 +216,8 @@ class DebateService:
             personas,
             rubric=rubric,
             objective_fit=objective_fit,
+            ad_title=ad_title,
+            ad_description=ad_description,
         )
         return self._store.get_result(run_id)
 
@@ -218,6 +232,8 @@ class DebateService:
         selected_topic: DebateTopic | None = None,
         rubric: list[RubricScore] | None = None,
         objective_fit: ObjectiveFit | None = None,
+        ad_title: str | None = None,
+        ad_description: str | None = None,
     ) -> None:
         store = self._store
         try:
@@ -256,7 +272,7 @@ class DebateService:
             if selected_topic is not None:
                 topic = selected_topic
             else:
-                topic = build_topic(analysis, aggregate, ad_analysis)
+                topic = build_topic(analysis, aggregate, ad_analysis, ad_title, ad_description)
             store.emit(
                 run_id,
                 {

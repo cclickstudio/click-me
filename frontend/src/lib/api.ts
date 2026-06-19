@@ -121,6 +121,8 @@ export const api = {
       reactions: unknown[];
       ad_analysis?: unknown;
       personas?: unknown[];
+      ad_title?: string; // 광고 제목 — 후보 topic에 동봉(토론자 grounding)
+      ad_description?: string; // 광고 설명 — 동상
     }): Promise<DebateTopicsResult> =>
       request<DebateTopicsResult>("/debate/topics", {
         method: "POST",
@@ -137,6 +139,8 @@ export const api = {
         topic?: DebateTopic;
         rubric_scores?: unknown[]; // §4 루브릭(있으면 리포트 진단에 실음)
         objective_fit?: unknown; // 캠페인 목표 적합도(ReportView 메인 판정)
+        ad_title?: string; // 광고 제목 — 최초 토론 topic에 동봉(토론자 grounding)
+        ad_description?: string; // 광고 설명 — 동상
       },
       opts?: { layCount?: 2 | 3 | 4 },
     ): Promise<DebateStartResult> => {

@@ -173,8 +173,11 @@ export interface DebateTopic {
   diagnosis: string;
   question: string;
   primary_signal: string;
-  focus: string;
+  focus: Record<string, number | string | null>; // 4대 KPI·병목 근거 수치
   objective: string;
+  ad_title?: string | null; // 광고 제목(제품명) — 토론자 grounding
+  ad_description?: string | null; // 광고 설명 — 토론자 grounding
+  ad_interpretation?: Record<string, unknown> | null; // 광고 해석 요약(detected_*)
   ranking: number;
   confidence: number;
 }

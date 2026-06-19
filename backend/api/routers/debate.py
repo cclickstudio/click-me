@@ -44,6 +44,9 @@ class DebateRequest(BaseModel):
     ad_analysis: AdInterpretation | None = None
     simulation_id: str | None = None  # 있으면 영속화 FK로 사용(없으면 인메모리만)
     personas: list[Persona] | None = None  # 인구통계(있으면 타깃 적합 선발 — 타깃 밖 후보 배제)
+    # 광고 제목·설명 — 토론 주제(topic)에 동봉돼 토론자 grounding·analyze 응답으로 흐름.
+    ad_title: str | None = None
+    ad_description: str | None = None
     # 추가 토론: 사용자가 /topics 후보 중 고른 논제(없으면 분석 headline 고정 = 최초 토론).
     topic: DebateTopic | None = None
     # §4 루브릭 점수(시뮬 결과에 포함) — 있으면 리포트 크리에이티브 진단에 그대로 실음.
@@ -65,7 +68,7 @@ async def analyze_reactions(body: DebateRequest) -> dict:
     """조각 8·9만 — 반응 분석·KPI·토론 주제를 즉시 반환(결정론·LLM✗·동기, 토론 전 미리보기)."""
     if not body.reactions:
         raise HTTPException(status_code=422, detail="reactions가 비어 있습니다.")
-    return _service.analyze(body.reactions, body.ad_analysis)
+    return _service.analyze(body.reactions, body.ad_analysis, body.ad_title, body.ad_description)
 
 
 @router.post("/topics")
@@ -76,7 +79,9 @@ async def debate_topics(body: DebateRequest) -> dict:
     """
     if not body.reactions:
         raise HTTPException(status_code=422, detail="reactions가 비어 있습니다.")
-    return _service.build_candidates(body.reactions, body.ad_analysis)
+    return _service.build_candidates(
+        body.reactions, body.ad_analysis, body.ad_title, body.ad_description
+    )
 
 
 @router.post("/start")
@@ -98,6 +103,8 @@ async def start_debate(body: DebateRequest, lay_count: int = 3) -> dict:
         topic=body.topic,  # 선택 논제(없으면 최초 토론 = 분석 headline 고정)
         rubric=body.rubric_scores,  # §4 루브릭(있으면 리포트에 실음)
         objective_fit=body.objective_fit,  # 캠페인 목표 적합도(ReportView 메인 판정)
+        ad_title=body.ad_title,  # 광고 제목 — 최초 토론 topic에 동봉(토론자 grounding)
+        ad_description=body.ad_description,  # 광고 설명 — 동상
     )
     return {"run_id": run_id, "stream_url": f"/api/debate/{run_id}/stream", "lay_count": lay_count}
 

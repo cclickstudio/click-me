@@ -4,7 +4,7 @@
 # 주고받는 내부 스키마를 한 곳에 모은다. 8·9·10-a·10-b는 결정론(LLM✗), 10-c·11만 LLM.
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -175,8 +175,12 @@ class DebateTopic(BaseModel):
     primary_signal: (
         str  # 주신호 종류: rejection / trust_action_gap / early_attrition / mid_attrition
     )
-    focus: dict[str, float | str | None] = Field(default_factory=dict)  # 근거 수치(병목·KPI)
+    focus: dict[str, float | str | None] = Field(default_factory=dict)  # 근거 수치(4대 KPI·병목)
     objective: str | None = None  # detected_objective(캠페인 목표)
+    # ── 광고 컨텍스트(토론자 grounding·analyze 응답) — "어떤 광고인지"를 주제와 함께 전달 ──
+    ad_title: str | None = None  # 광고 제목(제품명)
+    ad_description: str | None = None  # 광고 설명(제품 설명)
+    ad_interpretation: dict[str, Any] | None = None  # 광고 해석 요약(detected_* + structured)
     # ── 논제 후보(추가 토론 선택지)용 — 최초 토론(단일 주제)은 기본값 그대로 ──
     topic_id: str = ""  # 후보 식별자(추가 토론에서 사용자가 고른 논제 매칭용)
     ranking: int = 0  # 1~5 우선순위(0=미지정, 후보 정렬용)

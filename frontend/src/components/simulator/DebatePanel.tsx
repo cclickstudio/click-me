@@ -27,6 +27,8 @@ interface DebatePanelProps {
   simulationId?: string;
   objectiveFit?: ObjectiveFit | null; // 토론 /start에 동봉 → ReportView 메인 판정
   rubricScores?: SimRubricScore[]; // 토론 /start에 동봉 → 리포트 §4 진단
+  adTitle?: string; // 광고 제목 — 토론 주제에 동봉(토론자 grounding)
+  adDescription?: string; // 광고 설명 — 동상
   // 활성 세션의 통합 리포트를 부모('최종 결과' 영역)로 올린다. 토론 전·복원본은 null.
   onReportView?: (rv: ReportView | null) => void;
 }
@@ -217,6 +219,8 @@ export function DebatePanel({
   simulationId,
   objectiveFit,
   rubricScores,
+  adTitle,
+  adDescription,
   onReportView,
 }: DebatePanelProps) {
   const [sessions, setSessions] = useState<DebateSession[]>([]);
@@ -265,6 +269,8 @@ export function DebatePanel({
         reactions,
         ad_analysis: adAnalysis ?? undefined,
         personas: personas.length > 0 ? personas : undefined,
+        ad_title: adTitle || undefined,
+        ad_description: adDescription || undefined,
       });
       setTopics([...fetched].sort((a, b) => a.ranking - b.ranking));
     } catch (e) {
@@ -310,6 +316,8 @@ export function DebatePanel({
           rubric_scores:
             rubricScores && rubricScores.length > 0 ? rubricScores : undefined,
           objective_fit: objectiveFit ?? undefined,
+          ad_title: adTitle || undefined,
+          ad_description: adDescription || undefined,
         },
         { layCount }
       );

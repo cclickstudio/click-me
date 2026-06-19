@@ -185,6 +185,32 @@ class _Clients:
         return json.loads(_strip_json(raw))
 
 
+def _ad_block(topic: DebateTopic) -> str:
+    """광고 컨텍스트 한 줄 — '어떤 광고인지'(제목·설명·해석)를 토론자에게 grounding. 없으면 ''.
+
+    KPI는 topic.focus(근거 수치)로 별도 전달되므로 여기선 광고 정체성만 담는다.
+    """
+    parts: list[str] = []
+    if topic.ad_title:
+        parts.append(f"제목 '{topic.ad_title}'")
+    if topic.ad_description:
+        parts.append(f"설명 '{topic.ad_description}'")
+    interp = topic.ad_interpretation or {}
+    detail = [
+        f"{label} {interp[key]}"
+        for key, label in (
+            ("industry", "업종"),
+            ("objective", "목표"),
+            ("target", "타깃"),
+            ("message", "메시지"),
+        )
+        if interp.get(key)
+    ]
+    if detail:
+        parts.append("해석(" + ", ".join(detail) + ")")
+    return f"대상 광고 — {', '.join(parts)}." if parts else ""
+
+
 def _expert_system(p: DebateParticipant, topic: DebateTopic) -> str:
     """전문가 system — 소비자가 아니라 분석 결과를 진단. 수치 밖 사실 금지(분석결과 grounded)."""
     focus = ", ".join(f"{k}={v}" for k, v in (topic.focus or {}).items() if v is not None)
@@ -192,10 +218,13 @@ def _expert_system(p: DebateParticipant, topic: DebateTopic) -> str:
         f"당신은 '{p.persona_name}', {p.persona_profile}입니다.",
         f"토론에서 당신의 역할: {p.role}.",
         "당신은 광고를 본 소비자가 아니라, 아래 시뮬레이션 분석 결과를 진단하는 전문가입니다.",
-        f"분석 진단 — {topic.diagnosis}",
     ]
+    ad = _ad_block(topic)
+    if ad:
+        parts.append(ad)
+    parts.append(f"분석 진단 — {topic.diagnosis}")
     if focus:
-        parts.append(f"근거 수치 — {focus}.")
+        parts.append(f"근거 수치(4대 KPI·병목) — {focus}.")
     parts.append(
         "주어진 분석 수치 밖의 사실을 지어내지 말고, 전문 지식으로 "
         "'왜 이런 결과인지'와 개선 방향을 제시하라."
@@ -210,6 +239,9 @@ def _persona_system(p: DebateParticipant, r: PersonaReaction | None, topic: Deba
         f"당신은 광고를 본 소비자 '{p.persona_name}'({p.persona_profile})입니다.",
         f"토론에서 당신의 역할: {p.role}.",
     ]
+    ad = _ad_block(topic)
+    if ad:
+        parts.append(ad)
     if r is not None:
         acted = "행동(클릭)함" if r.aisas.action else "행동하지 않음"
         rejected = "광고를 거부함" if r.rejected else "거부하지 않음"

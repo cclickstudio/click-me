@@ -1048,6 +1048,8 @@ export default function SimulationRunPage() {
                 simulationId={result.simulation_id}
                 objectiveFit={fit}
                 rubricScores={result.rubric_scores}
+                adTitle={adTitle || undefined}
+                adDescription={adContent || undefined}
                 onReportView={setReportView}
               />
             </div>
