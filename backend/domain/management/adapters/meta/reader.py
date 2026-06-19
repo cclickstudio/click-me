@@ -339,3 +339,48 @@ class MetaAdsReader:
                 )
             )
         return snapshots
+
+    async def fetch_daily_metrics(self, campaign_id: str) -> list[dict]:
+        """일자별 지출·노출 (lifetime, time_increment=1) — 종료·중단돼도 실제 운영 추이.
+
+        시간별(오늘)과 달리 캠페인 전 기간을 일 단위로 받아, 멈춰 있어도 차트가 비지 않는다.
+        """
+        payload = await self._client.get(
+            f"{campaign_id}/insights",
+            {
+                "fields": (
+                    "spend,impressions,clicks,inline_link_clicks,reach,ctr,cpc,cpm,"
+                    "actions,action_values,purchase_roas"
+                ),
+                "date_preset": "maximum",
+                "time_increment": "1",
+            },
+        )
+        out: list[dict] = []
+        for row in payload.get("data", []):
+            inline = _to_int(row.get("inline_link_clicks"))
+            spend = _to_int(row.get("spend"))
+            count = _purchase_metric(row.get("actions"))
+            value = _purchase_metric(row.get("action_values"))
+            meta_roas = _purchase_metric(row.get("purchase_roas"))
+            conv = int(round(count)) if count is not None else None
+            cvr = conv / inline if conv is not None and inline else (0.0 if conv == 0 else None)
+            roas = meta_roas
+            if roas is None and value is not None:
+                roas = value / spend if spend else 0.0
+            out.append(
+                {
+                    "label": str(row.get("date_start", ""))[5:],  # 'YYYY-MM-DD' → 'MM-DD'
+                    "impressions": _to_int(row.get("impressions")),
+                    "clicks": _to_int(row.get("clicks")),
+                    "reach": _to_int(row.get("reach")),
+                    "spend_krw": spend,
+                    "ctr": _to_float(row.get("ctr")) / 100.0,  # Meta ctr 백분율 → 비율
+                    "cpc_krw": _to_int(row.get("cpc")),
+                    "cpm_krw": _to_int(row.get("cpm")),
+                    "conversions": conv,
+                    "cvr": cvr,
+                    "roas": roas,
+                }
+            )
+        return out
