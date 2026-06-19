@@ -706,9 +706,21 @@ async def meta_connect(
 
 @router.get("/meta/callback", name="meta_callback")
 async def meta_callback(
-    code: str, state: str, request: Request, db: AsyncSession = Depends(get_db)
+    request: Request,
+    code: str | None = None,
+    state: str | None = None,
+    error: str | None = None,
+    db: AsyncSession = Depends(get_db),
 ):
-    """OAuth 콜백(브라우저 리다이렉트) — code를 장기 토큰으로 교환해 org 연결로 암호화 저장."""
+    """OAuth 콜백(브라우저 리다이렉트) — code를 장기 토큰으로 교환해 org 연결로 암호화 저장.
+
+    동의 취소·에러·code 누락이면 raw 422 대신 연동 페이지로 안내 리다이렉트한다.
+    성공/취소 모두 프론트 주소(frontend_base_url)로 보내 화면이 깔끔히 뜨게 한다.
+    """
+    front = settings.frontend_base_url.rstrip("/")
+    # 동의 취소/에러/필수값 누락 → 연동 페이지로 친절히 (영상에 raw 에러 안 뜨게)
+    if error or not code or not state:
+        return RedirectResponse(f"{front}/manage/connect?meta=cancelled", status_code=303)
     key = getattr(settings, "meta_token_encryption_key", None)
     app_id = getattr(settings, "meta_app_id", None)
     app_secret = getattr(settings, "meta_app_secret", None)
@@ -727,8 +739,7 @@ async def meta_callback(
         organization_id=uuid4_or_str(org),
         api_version=settings.meta_graph_api_version,
     )
-    # 연결완료 → 프론트 화면으로 (clickme.co.kr가 앱·/api 동일 도메인 서빙 전제, 상대경로)
-    return RedirectResponse("/manage/campaigns?meta=connected", status_code=303)
+    return RedirectResponse(f"{front}/manage/connect?meta=connected", status_code=303)
 
 
 def uuid4_or_str(value: str):
