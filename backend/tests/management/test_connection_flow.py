@@ -1,4 +1,4 @@
-# Meta 연결 완료 오케스트레이션 — code→단기→장기 교환 후 장기토큰 암호화 저장 (Mock+SQLite)
+# Meta 연결 완료 오케스트레이션 — 토큰 교환 + granular_scopes 자산 조회 후 암호화 저장 (Mock+SQLite)
 import uuid
 
 import httpx
@@ -22,11 +22,28 @@ async def _session() -> AsyncSession:
     return AsyncSession(engine)
 
 
-def _two_step_transport(calls: list) -> httpx.MockTransport:
-    # 1) code 교환 → 단기, 2) fb_exchange_token → 장기
+_DEBUG_TOKEN = {
+    "data": {
+        "scopes": ["ads_read", "ads_management", "pages_show_list", "instagram_basic"],
+        "granular_scopes": [
+            {"scope": "pages_show_list", "target_ids": ["page_1"]},
+            {"scope": "instagram_basic", "target_ids": ["ig_1"]},
+            {"scope": "ads_management", "target_ids": None},  # 전체 부여 → /me/adaccounts 폴백
+        ],
+    }
+}
+
+
+def _flow_transport() -> httpx.MockTransport:
+    """OAuth 토큰 교환 + debug_token + /me/adaccounts 폴백을 URL로 분기."""
+
     def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
         params = dict(request.url.params)
-        calls.append(params)
+        if "/debug_token" in url:
+            return httpx.Response(200, json=_DEBUG_TOKEN)
+        if "/me/adaccounts" in url:
+            return httpx.Response(200, json={"data": [{"id": "act_999"}]})
         if params.get("grant_type") == "fb_exchange_token":
             return httpx.Response(
                 200, json={"access_token": "LONG", "token_type": "bearer", "expires_in": 5184000}
@@ -38,9 +55,7 @@ def _two_step_transport(calls: list) -> httpx.MockTransport:
     return httpx.MockTransport(handler)
 
 
-async def test_complete_stores_long_lived_token_encrypted():
-    calls = []
-    transport = _two_step_transport(calls)
+async def test_complete_stores_token_and_granular_assets():
     cipher = TokenCipher.from_base64_key(generate_key())
     org = uuid.uuid4()
     async with await _session() as session:
@@ -52,17 +67,51 @@ async def test_complete_stores_long_lived_token_encrypted():
             redirect_uri="https://clickme.co.kr/cb",
             code="the-code",
             organization_id=org,
-            ad_account_id="act_5",
-            transport=transport,
+            transport=_flow_transport(),
         )
         repo = MetaConnectionRepository(session, cipher)
-        # 저장된 건 장기 토큰(LONG)이어야 — 단기(SHORT) 아님
         assert await repo.load_token(org) == "LONG"
-        # 두 번 호출(code 교환 + 장기 교환), 단기 토큰이 장기 교환에 전달됨
-        assert len(calls) == 2
-        assert calls[1]["fb_exchange_token"] == "SHORT"
-        # 평문 미저장
         row = await repo._get(org)
         assert "LONG" not in row.access_token_enc
-        assert row.ad_account_id == "act_5"
         assert row.token_expires_at is not None
+        # granular_scopes로 정확한 페이지·IG, ads는 폴백(act_999)
+        assert row.page_id == "page_1"
+        assert row.ig_user_id == "ig_1"
+        assert row.ad_account_id == "act_999"
+        assert row.scopes == ["ads_read", "ads_management", "pages_show_list", "instagram_basic"]
+
+
+async def test_assets_best_effort_when_calls_fail():
+    # debug_token·adaccounts가 에러여도 연결(토큰 저장)은 성공해야 한다.
+    def handler(request: httpx.Request) -> httpx.Response:
+        url = str(request.url)
+        if "/debug_token" in url or "/me/" in url:
+            return httpx.Response(400, json={"error": {"code": 10, "message": "no permission"}})
+        params = dict(request.url.params)
+        if params.get("grant_type") == "fb_exchange_token":
+            return httpx.Response(
+                200, json={"access_token": "LONG", "token_type": "bearer", "expires_in": 100}
+            )
+        return httpx.Response(
+            200, json={"access_token": "SHORT", "token_type": "bearer", "expires_in": 100}
+        )
+
+    cipher = TokenCipher.from_base64_key(generate_key())
+    org = uuid.uuid4()
+    async with await _session() as session:
+        await complete_meta_connection(
+            session,
+            cipher,
+            app_id="a",
+            app_secret="s",
+            redirect_uri="r",
+            code="c",
+            organization_id=org,
+            transport=httpx.MockTransport(handler),
+        )
+        repo = MetaConnectionRepository(session, cipher)
+        assert await repo.load_token(org) == "LONG"  # 토큰은 저장됨
+        row = await repo._get(org)
+        assert row.ad_account_id is None  # best-effort라 None
+        assert row.page_id is None
+        assert row.scopes is None
