@@ -491,7 +491,7 @@ async def generate_image(
 
 async def _generate_with_openai(prompt: str, size: AdSize) -> bytes:
     model = settings.generator_image_model
-    kwargs: dict = dict(model=model, prompt=prompt, n=1, size=size.value)
+    kwargs: dict = {"model": model, "prompt": prompt, "n": 1, "size": size.value}
     # gpt-image-1은 response_format 파라미터를 지원하지 않음 (항상 b64_json 반환)
     if not model.startswith("gpt-image"):
         kwargs["response_format"] = "b64_json"

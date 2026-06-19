@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import uuid
 
 from langchain_core.runnables import RunnableConfig
@@ -23,6 +24,8 @@ from domain.generator.pipeline.copy_generator import generate_copy
 from domain.generator.pipeline.image_generator import composite_logo, generate_image
 from domain.generator.pipeline.quality_checker import check_quality
 from tools.storage.s3 import candidate_key, download_bytes, upload_bytes
+
+logger = logging.getLogger("clickme")
 
 _VARIANT_IDS = ["A", "B", "C"]
 
@@ -90,7 +93,12 @@ async def generate_candidates(state: GenerationState, config: RunnableConfig) ->
 
         # 4. S3 업로드
         s3_key = candidate_key(generation_id, idx)
-        await upload_bytes(image_bytes, s3_key, content_type="image/png")
+        try:
+            await upload_bytes(image_bytes, s3_key, content_type="image/png")
+            logger.info("S3 업로드 완료: key=%s", s3_key)
+        except Exception:
+            logger.exception("S3 업로드 실패: key=%s", s3_key)
+            raise
 
         done += 1
         emit_progress(config, "candidates", 40 + done * 12, f"광고 후보 생성 중 ({done}/3)")

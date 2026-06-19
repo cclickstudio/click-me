@@ -68,10 +68,18 @@ async def _run_pipeline(generation_id: str, request: GenerationCreateRequest) ->
         store["status"] = "running"
         await _update_status(generation_id, "running")
 
+        from langchain_core.tracers.langchain import LangChainTracer
+
+        from core.config import settings as cfg
+
+        callbacks = (
+            [LangChainTracer(project_name=cfg.LANGSMITH_PROJECT)] if cfg.LANGSMITH_API_KEY else []
+        )
         config = {
             "run_name": "AdGenerationPipeline",
             "metadata": {"generation_id": generation_id},
             "configurable": {"emit": emit},
+            "callbacks": callbacks,
         }
         initial_state = {
             "generation_id": generation_id,
