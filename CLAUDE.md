@@ -84,8 +84,8 @@ OPENAI_API_KEY= / ANTHROPIC_API_KEY= / GEMINI_API_KEY=   # 채팅(Gemini 2.0 Fla
 DATABASE_URL=postgresql+asyncpg://user:pw@host/db?sslmode=require
 AWS_ACCESS_KEY_ID= / AWS_SECRET_ACCESS_KEY= / AWS_REGION=ap-northeast-2
 S3_BUCKET_NAME= / SQS_SIMULATION_QUEUE_URL=
-LANGSMITH_TRACING_V2=true / LANGSMITH_ENDPOINT=https://api.smith.langchain.com
-LANGSMITH_API_KEY= / LANGSMITH_PROJECT=clickme-v2
+LANGCHAIN_TRACING_V2=true / LANGCHAIN_ENDPOINT=https://api.smith.langchain.com
+LANGCHAIN_API_KEY= / LANGCHAIN_PROJECT=clickme
 # frontend/.env.local
 NEXT_PUBLIC_API_URL=http://localhost:8000
 ```
