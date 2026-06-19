@@ -46,3 +46,22 @@ def test_campaign_detail_has_timeseries(client):
 def test_campaign_detail_unknown_id_404(client):
     res = client.get("/api/management/campaigns/nope")
     assert res.status_code == 404
+
+
+def test_campaign_outcome_exposes_real_outcome(client):
+    res = client.get("/api/management/campaigns/camp_1/outcome")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["campaign_id"] == "camp_1"
+    assert body["creative_id"] is None  # 미연결 — 생성→집행 경로가 stamp
+    # 전환 추적 전이면 합성 금지 → None
+    assert body["conversions"] is None
+    assert body["cvr"] is None
+    for key in ("impressions", "reach", "spend_krw", "ctr", "cpc_krw", "cpm_krw", "as_of"):
+        assert key in body
+
+
+def test_campaign_outcome_stamps_creative_id(client):
+    res = client.get("/api/management/campaigns/camp_1/outcome?creative_id=cre_9")
+    assert res.status_code == 200
+    assert res.json()["creative_id"] == "cre_9"

@@ -1,51 +1,82 @@
-// 캠페인 목록 — 테이블 뷰 (행 클릭 = 선택)
-import type { CampaignSummary } from './types';
+// 캠페인 목록 — 테이블 뷰 (행 클릭 = 선택, 그 아래로 상세 펼침)
+import { Fragment } from 'react';
+import type {
+  CampaignDetail as Detail,
+  CampaignSource,
+  CampaignSummary,
+  PlatformMetrics,
+} from './types';
+import { fmtCvr, fmtRoas } from './types';
 import { StateBadge } from './StateBadge';
+import { CampaignDetail } from './CampaignDetail';
 
 export function CampaignTable({
   campaigns,
   selected,
   onSelect,
+  onPrefetch,
+  detail,
+  platforms,
+  source,
 }: {
   campaigns: CampaignSummary[];
   selected: string | null;
   onSelect: (id: string) => void;
+  onPrefetch?: (id: string) => void;
+  detail?: Detail | null;
+  platforms?: PlatformMetrics[];
+  source?: CampaignSource;
 }) {
   return (
     <div className="rounded-2xl border border-[#E5E8EB] dark:border-[#2D3748] overflow-hidden">
-      <table className="w-full text-sm">
+      <table className="w-full text-sm [&_td]:whitespace-nowrap [&_th]:whitespace-nowrap">
         <thead>
           <tr className="bg-[#F9FAFB] dark:bg-[#1A202C] text-[#8B95A1] text-xs">
-            <th className="text-left font-semibold px-4 py-2.5">캠페인</th>
+            <th className="text-left font-semibold px-4 py-2.5 w-full">캠페인</th>
             <th className="text-left font-semibold px-3 py-2.5">상태</th>
             <th className="text-right font-semibold px-3 py-2.5">일예산</th>
             <th className="text-right font-semibold px-3 py-2.5">노출</th>
+            <th className="text-right font-semibold px-3 py-2.5 hidden sm:table-cell">클릭</th>
             <th className="text-right font-semibold px-3 py-2.5">지출</th>
-            <th className="text-right font-semibold px-3 py-2.5 hidden md:table-cell">CTR</th>
-            <th className="text-right font-semibold px-3 py-2.5 hidden lg:table-cell">CVR</th>
-            <th className="text-right font-semibold px-3 py-2.5 hidden md:table-cell">CPC</th>
-            <th className="text-right font-semibold px-3 py-2.5 hidden lg:table-cell">CPM</th>
-            <th className="text-right font-semibold px-4 py-2.5">소진율</th>
+            <th className="text-right font-semibold px-3 py-2.5 hidden md:table-cell">CTR<span className="block font-normal text-[9px] text-[#B0B8C1] leading-tight">클릭률</span></th>
+            <th className="text-right font-semibold px-3 py-2.5 hidden md:table-cell">CPC<span className="block font-normal text-[9px] text-[#B0B8C1] leading-tight">클릭당비용</span></th>
+            <th className="text-right font-semibold px-3 py-2.5 hidden lg:table-cell">CPM<span className="block font-normal text-[9px] text-[#B0B8C1] leading-tight">노출당비용</span></th>
+            <th className="text-right font-semibold px-3 py-2.5 hidden lg:table-cell">CVR<span className="block font-normal text-[9px] text-[#B0B8C1] leading-tight">전환율</span></th>
+            <th className="text-right font-semibold px-3 py-2.5 hidden lg:table-cell">ROAS<span className="block font-normal text-[9px] text-[#B0B8C1] leading-tight">투자수익률</span></th>
+            <th className="text-right font-semibold px-4 py-2.5">일예산 대비</th>
+            <th className="px-2 py-2.5 w-8" aria-label="상세 토글"></th>
           </tr>
         </thead>
         <tbody>
           {campaigns.map((c) => (
+            <Fragment key={c.campaign_id}>
             <tr
-              key={c.campaign_id}
-              onClick={() => onSelect(c.campaign_id)}
-              className={`cursor-pointer border-t border-[#F2F4F6] dark:border-[#2D3748] ${
+              onMouseEnter={() => onPrefetch?.(c.campaign_id)}
+              className={`border-t border-[#F2F4F6] dark:border-[#2D3748] ${
                 selected === c.campaign_id
                   ? 'bg-[#EAF3FF] dark:bg-[#1E293B]'
                   : 'hover:bg-[#F9FAFB] dark:hover:bg-[#1A202C]'
               }`}
             >
               <td className="px-4 py-3 font-medium text-[#191F28] dark:text-[#F2F4F6]">{c.name}</td>
-              <td className="px-3 py-3"><StateBadge state={c.state} /></td>
+              <td className="px-3 py-3">
+                <span className="inline-flex items-center gap-1.5">
+                  <StateBadge state={c.state} />
+                  {c.delivery_blocked && (
+                    <span className="rounded-md bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-700 dark:bg-red-900/30 dark:text-red-400">
+                      게재 중단
+                    </span>
+                  )}
+                </span>
+              </td>
               <td className="px-3 py-3 text-right tabular-nums text-[#4E5968] dark:text-[#C9CED6]">
                 ₩{c.daily_budget_krw.toLocaleString()}
               </td>
               <td className="px-3 py-3 text-right tabular-nums text-[#191F28] dark:text-[#F2F4F6]">
                 {c.impressions.toLocaleString()}
+              </td>
+              <td className="px-3 py-3 text-right tabular-nums text-[#191F28] dark:text-[#F2F4F6] hidden sm:table-cell">
+                {c.clicks.toLocaleString()}
               </td>
               <td className="px-3 py-3 text-right tabular-nums text-[#4E5968] dark:text-[#C9CED6]">
                 ₩{c.spend_krw.toLocaleString()}
@@ -53,19 +84,59 @@ export function CampaignTable({
               <td className="px-3 py-3 text-right tabular-nums text-[#4E5968] dark:text-[#C9CED6] hidden md:table-cell">
                 {(c.ctr * 100).toFixed(1)}%
               </td>
-              <td className="px-3 py-3 text-right tabular-nums text-[#4E5968] dark:text-[#C9CED6] hidden lg:table-cell">
-                {(c.cvr * 100).toFixed(1)}%
-              </td>
               <td className="px-3 py-3 text-right tabular-nums text-[#4E5968] dark:text-[#C9CED6] hidden md:table-cell">
                 ₩{c.cpc_krw.toLocaleString()}
               </td>
               <td className="px-3 py-3 text-right tabular-nums text-[#4E5968] dark:text-[#C9CED6] hidden lg:table-cell">
                 ₩{c.cpm_krw.toLocaleString()}
               </td>
+              <td className="px-3 py-3 text-right tabular-nums text-[#4E5968] dark:text-[#C9CED6] hidden lg:table-cell">
+                {fmtCvr(c.cvr, c.conversions)}
+              </td>
+              <td className="px-3 py-3 text-right tabular-nums text-[#4E5968] dark:text-[#C9CED6] hidden lg:table-cell">
+                {fmtRoas(c.roas, c.conversions)}
+              </td>
               <td className="px-4 py-3 text-right">
                 <PacingCell pct={c.pacing_pct} />
               </td>
+              <td className="px-2 py-3 text-center">
+                <button
+                  onClick={() => onSelect(c.campaign_id)}
+                  aria-label="상세 펼치기"
+                  aria-expanded={selected === c.campaign_id}
+                  className="text-[#8B95A1] hover:text-[#3182F6] p-1 align-middle"
+                >
+                  <svg
+                    width="16"
+                    height="16"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    className={`transition-transform ${selected === c.campaign_id ? 'rotate-180' : ''}`}
+                  >
+                    <polyline points="6 9 12 15 18 9" />
+                  </svg>
+                </button>
+              </td>
             </tr>
+            {selected === c.campaign_id && detail && (
+              <tr>
+                <td colSpan={13} className="p-0 border-t border-[#F2F4F6] dark:border-[#2D3748]">
+                  <div className="px-4 py-4 bg-[#F9FAFB] dark:bg-[#161B26]">
+                    <CampaignDetail
+                      detail={detail}
+                      source={source}
+                      platforms={platforms}
+                      blockReason={c.block_reason}
+                    />
+                  </div>
+                </td>
+              </tr>
+            )}
+            </Fragment>
           ))}
         </tbody>
       </table>
@@ -74,7 +145,7 @@ export function CampaignTable({
 }
 
 function PacingCell({ pct }: { pct: number }) {
-  const color = pct >= 95 ? 'bg-red-500' : pct >= 80 ? 'bg-amber-500' : 'bg-[#3182F6]';
+  const color = 'bg-[#3182F6]'; // 누적지출/일예산 — 누적이라 초과 정상, 경보색 제거
   return (
     <div className="flex items-center justify-end gap-2">
       <div className="w-16 h-1.5 rounded-full bg-[#F2F4F6] dark:bg-[#2D3748] overflow-hidden">

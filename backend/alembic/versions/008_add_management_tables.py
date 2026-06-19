@@ -1,8 +1,13 @@
 """add management tables (R&R §7) — 제안/승인/감사/실행/멱등키 5종
 
-Revision ID: 006
-Revises: 005
+Revision ID: 008
+Revises: 007b
 Create Date: 2026-06-15
+
+⚠️ 리비전 재정렬(2026-06-18) — 본래 006/005로 선언돼 시뮬·auth 체인의 006/007과
+revision ID가 충돌(중복)했다. 실 DB(Neon)는 이 management 5테이블이 미생성 상태이고
+stamp는 007이므로, 충돌 해소를 위해 시뮬레이터 정식 체인(…→007→007b) 뒤에
+008로 재배치한다. 내용은 그대로(IF NOT EXISTS, 비파괴).
 
 core/models.py의 ActionProposalRow/ApprovalRow/AuditEventRow/ExecutionRunRow/
 IdempotencyKeyRow와 1:1. 컬럼 규칙: 타임스탬프=TIMESTAMPTZ / 금액=BIGINT KRW /
@@ -11,8 +16,8 @@ IdempotencyKeyRow와 1:1. 컬럼 규칙: 타임스탬프=TIMESTAMPTZ / 금액=BI
 
 from alembic import op
 
-revision = "006"
-down_revision = "005"
+revision = "008"
+down_revision = "007b"
 branch_labels = None
 depends_on = None
 

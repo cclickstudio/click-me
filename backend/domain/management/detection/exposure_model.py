@@ -24,10 +24,18 @@ def find_anomaly_window(
 ) -> list[int]:
     """기대 대비 관측이 임계 미만인 시간대 반환.
 
+    실시간 캠페인은 경과한 시간까지만 관측되므로, 종일 기대 곡선을 관측 길이에
+    맞춰 정렬한다. observed가 expected보다 길면(24시간 초과 버킷) 진짜 정렬 오류다.
+
     가드레일: min_consecutive회 연속 관측을 충족한 구간만 이상으로 본다
     (단발 노이즈로 인한 오탐 방지).
     """
-    flagged = [obs < exp * deficit_threshold for exp, obs in zip(expected, observed, strict=True)]
+    if len(observed) > len(expected):
+        raise ValueError(
+            f"관측 시간 수({len(observed)})가 기대 곡선({len(expected)})보다 김 — 정렬 오류"
+        )
+    # observed가 더 짧은 건 정상(경과 시간까지만 관측) — 위에서 초과만 막았으니 strict=False
+    flagged = [obs < exp * deficit_threshold for exp, obs in zip(expected, observed, strict=False)]
 
     window: list[int] = []
     run: list[int] = []

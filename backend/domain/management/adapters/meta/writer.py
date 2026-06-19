@@ -110,6 +110,34 @@ class MetaAdsWriter:
             ad_account_id=config.ad_account_id,
         )
 
+    async def expand_audience(self, campaign_id: str, idem_key: str) -> ActionResult:
+        """타겟 범위 확장 (에스컬레이션 1순위). v1은 adset targeting 확장 요청 빌드 수준.
+
+        실 Meta에선 adset의 targeting(geo/age/interest) 완화 — v1은 detailed_targeting_expansion을
+        켜는 수준으로 한정 (§7 좁히기). DRY_RUN은 요청만 빌드.
+        """
+        self._require_writable(idem_key)
+        return await self._dispatch(
+            "expand_audience",
+            campaign_id,
+            idem_key,
+            {"targeting_optimization": "expansion_all"},
+        )
+
+    async def change_bid_strategy(self, campaign_id: str, idem_key: str) -> ActionResult:
+        """입찰 전략 변경 (에스컬레이션 2순위). 예산 총액 불변 — 전략만 전환.
+
+        실 Meta에선 campaign bid_strategy 전환(LOWEST_COST_WITHOUT_CAP 등) — v1은 요청 빌드 수준.
+        DRY_RUN은 요청만 빌드.
+        """
+        self._require_writable(idem_key)
+        return await self._dispatch(
+            "change_bid_strategy",
+            campaign_id,
+            idem_key,
+            {"bid_strategy": "LOWEST_COST_WITHOUT_CAP"},
+        )
+
     async def preview(self, campaign_id: str) -> str:
         """미리보기 stub — 읽기성이라 idem_key 불요."""
         return f"https://www.facebook.com/ads/preview/{campaign_id}"

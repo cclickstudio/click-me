@@ -7,7 +7,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from domain.management.comparison.lift import compute_lift
-from domain.management.comparison.schemas import PostInsights, PostType
+from domain.management.comparison.recommend import recommend_action
+from domain.management.comparison.schemas import ComparisonReport, PostInsights, PostType
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -38,3 +39,13 @@ class ComparisonService:
             spend_krw=snap.spend_krw,
         )
         return compute_lift(organic, paid)
+
+    async def compare_and_recommend(
+        self, organic_post_id: str, campaign_id: str, since: datetime
+    ) -> ComparisonReport:
+        """비교(LiftResult)에 🅰 권고(ComparisonRecommendation)를 묶어 반환.
+
+        제안 생성·집행은 🅱 — 여기는 분석 산출물(상세+권고)을 한 번에 낸다(경계 유지).
+        """
+        lift = await self.compare(organic_post_id, campaign_id, since)
+        return ComparisonReport(lift=lift, recommendation=recommend_action(lift))
