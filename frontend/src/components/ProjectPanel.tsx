@@ -58,9 +58,11 @@ function SimEntry({ sim, isActive }: { sim: SimRow; isActive: boolean }) {
           <span className={`w-2 h-2 rounded-full shrink-0 ${statusColor[sim.status] ?? 'bg-[#B0B8C1]'}`} />
           <div className="flex-1 min-w-0">
             <p className={`text-xs truncate ${isActive ? 'text-[#3182F6] font-medium' : 'text-[#4E5968] dark:text-[#9CA3AF] group-hover:text-[#3182F6]'}`}>
-              {sim.sample_size}명 · {sim.created_by_name ?? '—'}
+              {sim.ad_title || '제목 없음'}
             </p>
-            <p className="text-[10px] text-[#B0B8C1] dark:text-[#4B5563]">{fmt(sim.created_at)}</p>
+            <p className="text-[10px] text-[#B0B8C1] dark:text-[#4B5563] truncate">
+              {sim.sample_size}명 · {sim.created_by_name ?? '—'} · {fmt(sim.created_at)}
+            </p>
           </div>
           {isActive && <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-[#3182F6]" />}
         </Link>

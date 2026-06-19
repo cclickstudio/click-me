@@ -195,7 +195,8 @@ async def list_project_simulations(
     if current_user.role.upper() == "ADMIN":
         result = await db.execute(
             text("""
-                SELECT s.id, s.status, s.sample_size, s.created_at, u.name AS created_by_name
+                SELECT s.id, s.status, s.sample_size, s.created_at,
+                       u.name AS created_by_name, a.title AS ad_title
                 FROM simulations s
                 LEFT JOIN users u ON u.id = s.created_by
                 JOIN ads a ON a.id = s.ad_id
@@ -209,7 +210,8 @@ async def list_project_simulations(
         org_id = await _get_user_org_id(current_user, db)
         result = await db.execute(
             text("""
-                SELECT s.id, s.status, s.sample_size, s.created_at, u.name AS created_by_name
+                SELECT s.id, s.status, s.sample_size, s.created_at,
+                       u.name AS created_by_name, a.title AS ad_title
                 FROM simulations s
                 LEFT JOIN users u ON u.id = s.created_by
                 JOIN ads a ON a.id = s.ad_id
@@ -225,6 +227,7 @@ async def list_project_simulations(
             "id": str(r.id),
             "status": r.status,
             "sample_size": r.sample_size,
+            "ad_title": r.ad_title,
             "created_by_name": r.created_by_name,
             "created_at": r.created_at.isoformat(),
         }
