@@ -153,6 +153,52 @@ def build_debate_persistence(settings=None, session_factory=None):
     return DebateRepository(session_factory)
 
 
+class _ReportPersistence:
+    """통합 리포트 upsert·조회 핸들러 — 세션 열기·commit을 묶어 DebateService에 주입.
+
+    ReportRepository는 세션만 받으므로(SQL 전용), 트랜잭션 관리는 여기서 한다.
+    """
+
+    def __init__(self, session_factory) -> None:
+        self._session_factory = session_factory
+
+    async def upsert(
+        self,
+        simulation_id: str,
+        report_view: dict,
+        run_id: str | None = None,
+        debate_id: str | None = None,
+        debate_count: int = 0,
+    ) -> None:
+        from domain.simulation.repositories.report_repository import ReportRepository
+
+        async with self._session_factory() as session:
+            await ReportRepository(session).upsert(
+                simulation_id, report_view, run_id, debate_id, debate_count
+            )
+            await session.commit()
+
+    async def get_by_simulation(self, simulation_id: str) -> dict | None:
+        from domain.simulation.repositories.report_repository import ReportRepository
+
+        async with self._session_factory() as session:
+            return await ReportRepository(session).get_by_simulation(simulation_id)
+
+
+def build_report_persistence(settings=None, session_factory=None):
+    """통합 리포트(report_view) 영속화 핸들러. DB 미구성이면 None → service는 인메모리만(저장 생략).
+
+    simulation_id UNIQUE FK 때문에 실제 simulations 행이 있는 운영 경로에서만 저장된다.
+    """
+    if session_factory is None:
+        if settings is None or not getattr(settings, "database_url", None):
+            return None
+        from core.db import AsyncSessionLocal
+
+        session_factory = AsyncSessionLocal
+    return _ReportPersistence(session_factory)
+
+
 def build_debate_service(
     settings=None, *, store=None, use_mock=None, session_factory=None
 ) -> DebateService:
@@ -163,6 +209,7 @@ def build_debate_service(
     """
     store = store or InMemorySimulationStore()
     persistence = build_debate_persistence(settings, session_factory)
+    report_persistence = build_report_persistence(settings, session_factory)
     if _resolve_use_mock(settings, use_mock):
         from domain.simulation.adapters.mock_debate import MockDebater, MockJudge
 
@@ -171,6 +218,7 @@ def build_debate_service(
             debater_factory=lambda reactions: MockDebater(reactions),
             judge=MockJudge(),
             persistence=persistence,
+            report_persistence=report_persistence,
         )
 
     # 토론자 Haiku/GPT + Judge Sonnet (Gemini 제거 — 응답 실패 잦음)
@@ -187,6 +235,7 @@ def build_debate_service(
         debater_factory=lambda reactions: LLMDebater(reactions, clients=shared_clients),
         judge=LLMJudge(clients=shared_clients),
         persistence=persistence,
+        report_persistence=report_persistence,
         selector_rerank_fn=LLMSelector().choose,
         usage_clients=shared_clients,
     )

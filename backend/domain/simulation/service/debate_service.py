@@ -77,6 +77,7 @@ class DebateService:
         debater_factory: Callable[[list[PersonaReaction]], DebaterPort] | None = None,
         judge: JudgePort | None = None,
         persistence=None,
+        report_persistence=None,
         selector_rerank_fn: RerankFn | None = None,
         usage_clients=None,
     ) -> None:
@@ -84,6 +85,8 @@ class DebateService:
         self._debater_factory = debater_factory
         self._judge = judge
         self._persistence = persistence  # DebateRepository(주입 시 + simulation_id 있을 때 저장)
+        # 통합 리포트(report_view) upsert·조회 핸들러. 주입 + simulation_id 있을 때만 저장.
+        self._report_persistence = report_persistence
         # 일반인 선발(10-a) 동점 시 LLM 재랭킹(주입 시). None이면 결정론 선발(mock·무비용 경로).
         self._selector_rerank_fn = selector_rerank_fn
         # 토론자·Judge가 공유하는 _Clients(실 LLM 경로만). 토론 전후 스냅샷 차이로 1회 토큰 집계.
@@ -446,6 +449,20 @@ class DebateService:
                 debates=debates_digests,
             )
 
+            # ── 통합 리포트 영속화(주입 + simulation_id 있을 때만; 1행 upsert) ──
+            # 새로고침·콜드 진입 시 최종 합산 리포트 복원용. 실패해도 런은 유지(로깅).
+            if self._report_persistence is not None and simulation_id:
+                try:
+                    await self._report_persistence.upsert(
+                        simulation_id,
+                        report_view.model_dump(),
+                        run_id,
+                        debate_id,
+                        len(debates_digests),
+                    )
+                except Exception:
+                    logger.exception("통합 리포트 영속화 실패(런은 유지) run_id=%s", run_id)
+
             result = {
                 "run_id": run_id,
                 "simulation_id": simulation_id,
@@ -496,3 +513,9 @@ class DebateService:
         if self._persistence is None:
             return None
         return await self._persistence.get_detail(debate_id)
+
+    async def get_saved_report(self, simulation_id: str) -> dict | None:
+        """simulation_id로 저장된 통합 리포트(report_view) 복원. 영속화 미주입이면 None."""
+        if self._report_persistence is None:
+            return None
+        return await self._report_persistence.get_by_simulation(simulation_id)

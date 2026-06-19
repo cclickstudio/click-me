@@ -118,6 +118,18 @@ async def list_sessions(simulation_id: str) -> dict:
     return {"debates": await _service.list_saved(simulation_id)}
 
 
+@router.get("/by-simulation/{simulation_id}/report")
+async def get_saved_report(simulation_id: str) -> dict:
+    """simulation_id로 저장된 통합 리포트(report_view) — 새로고침·콜드 진입 시 최종 리포트 복원.
+
+    DB에 영속된 simulation_reports 1행의 report_view를 반환. 없으면 404(DB 미연동·미저장 포함).
+    """
+    report_view = await _service.get_saved_report(simulation_id)
+    if report_view is None:
+        raise HTTPException(status_code=404, detail="저장된 리포트 없음(DB 미연동·미저장 가능)")
+    return report_view
+
+
 @router.get("/{debate_id}/detail")
 async def get_session(debate_id: str) -> dict:
     """저장된 토론 1건 상세(participants + 라운드순 발언 + judge_log + final) — 복원·표시용."""
