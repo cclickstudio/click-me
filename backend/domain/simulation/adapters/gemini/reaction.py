@@ -70,6 +70,24 @@ def _generation_lines(age: int) -> str:
     )
 
 
+def _brand_era_lines(ad: AdInterpretation) -> str:
+    """공유 브랜드 시대성(structured_analysis.brand_era §4.4 Tier 2)을 반응 힌트 줄로.
+
+    전원 동일한 '사실'(전성기·세대 친숙도)만 주입 — 친숙/낯섦 판단은 페르소나 나이(형성기)가 한다.
+    식별 실패(identified=false)·필드 없으면 빈 문자열 → 기존 동작 그대로.
+    (PERSONA_COHORT_KNOWLEDGE_STRATEGY Tier 2)
+    """
+    be = ad.structured_analysis.get("brand_era") if ad.structured_analysis else None
+    if not isinstance(be, dict) or not be.get("identified"):
+        return ""
+    bits = [str(be[k]) for k in ("era", "note") if be.get(k)]
+    if not bits:
+        return ""
+    return (
+        "\n- 브랜드 시대성(전원 공유 사실): " + " — ".join(bits) + " (친숙/낯섦은 내 형성기로 판단)"
+    )
+
+
 def _visual_lines(ad: AdInterpretation) -> str:
     """공유 시각 인벤토리(structured_analysis.visual_elements §4-a)를 반응 힌트 줄로.
 
@@ -118,6 +136,7 @@ class GeminiReactionEngine:
             f"{_generation_lines(persona.age)}\n\n"
             f"[광고]\n- 업종: {ad.detected_industry}\n- 메시지: {ad.detected_message}\n"
             f"- 추정 타깃: {ad.detected_target}{_ad_feature_lines(ad, income)}"
+            f"{_brand_era_lines(ad)}"
             f"{_visual_lines(ad)}\n\n"
             "[출력 — 아래 JSON만, 설명·코드펜스 없이]\n"
             "{\n"
