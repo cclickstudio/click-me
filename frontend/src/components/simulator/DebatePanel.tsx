@@ -520,7 +520,7 @@ export function DebatePanel({
     (active?.status === 'done' && active.result ? active : null);
 
   return (
-    <div className='flex h-full flex-col gap-6'>
+    <div className='flex flex-col gap-6'>
       {/* 토론 카드 — 헤더 + 세션 탭 + 채팅 + Q&A 입력 */}
       <div className={cardCls}>
         <div className='flex items-center justify-between mb-1'>
@@ -655,9 +655,9 @@ export function DebatePanel({
         )}
       </div>
 
-      {/* 토론 결과 — done 세션을 select로 전환해 모두 볼 수 있다. 남은 높이를 채우고 내부 스크롤. */}
+      {/* 토론 결과 — done 세션 select 전환. max-h 고정 블록(콘텐츠 많아도 안 늘어남, 내부 스크롤). */}
       {view === 'active' && (
-        <div className={`${cardCls} flex flex-1 flex-col`}>
+        <div className={cardCls}>
           <div className='flex items-center justify-between gap-3 mb-4 flex-wrap'>
             <h2 className='text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]'>
               토론 결과
@@ -675,7 +675,7 @@ export function DebatePanel({
               </select>
             )}
           </div>
-          <div className='flex-1 min-h-0 overflow-y-auto'>
+          <div className='max-h-[440px] overflow-y-auto'>
             {resultSession?.result ? (
               <DebateOutcome result={resultSession.result} />
             ) : (

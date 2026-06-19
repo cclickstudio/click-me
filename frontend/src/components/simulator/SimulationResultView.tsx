@@ -112,8 +112,7 @@ export function SimulationResultView({
           </h1>
           <p className='text-sm text-[#8B95A1] dark:text-[#6B7280] mt-1'>
             run_id {result.run_id.slice(0, 8)} · 반응 {reactions.length}건 (QA
-            통과 {passed.length})
-            {result.simulation_id && ' · DB 저장됨'}
+            통과 {passed.length}){result.simulation_id && ' · DB 저장됨'}
           </p>
         </div>
         {onReset && (
@@ -240,229 +239,231 @@ export function SimulationResultView({
         </>
       )}
 
-      {/* 분석 데이터(왼쪽) + 토론(오른쪽) 가로 배치 */}
+      {/* 분석 데이터(왼쪽) + 토론(오른쪽) 가로 배치 — stretch로 좌열이 우열 높이까지 확장 */}
       <div className='grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch'>
-        {/* 왼쪽: 분석 데이터 */}
-        <div className='flex flex-col gap-6'>
-          {/* 광고 해석 */}
-          {ad && (
-            <div className={cardCls}>
-              <h2 className='text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6] mb-3'>
-                광고 해석 (VLM/LLM 감지)
-              </h2>
-              <div className='grid grid-cols-2 md:grid-cols-4 gap-3 text-sm'>
-                {[
-                  ['감지 업종', ad.detected_industry],
-                  ['감지 목표', ad.detected_objective],
-                  ['감지 타깃', ad.detected_target],
-                  ['감지 메시지', ad.detected_message],
-                ].map(([k, v]) => (
-                  <div key={k}>
-                    <p className='text-xs text-[#8B95A1] dark:text-[#6B7280]'>
-                      {k}
-                    </p>
-                    <p className='text-[#191F28] dark:text-[#F2F4F6] mt-0.5'>
-                      {v || '—'}
-                    </p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* 루브릭 */}
-          {result.rubric_scores.length > 0 && (
-            <div className={cardCls}>
-              <h2 className='text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6] mb-3'>
-                루브릭 평가 (차원별 점수)
-              </h2>
-              <div className='space-y-2.5'>
-                {result.rubric_scores.map(s => (
-                  <div key={s.dimension} className='flex items-center gap-3'>
-                    <span className='w-40 text-xs text-[#4E5968] dark:text-[#9CA3AF] truncate'>
-                      {s.dimension}
-                    </span>
-                    <div className='flex-1 h-2 rounded-full bg-[#F2F4F6] dark:bg-[#252D3D] overflow-hidden'>
-                      <div
-                        className='h-full bg-[#3182F6] rounded-full'
-                        style={{ width: `${s.score}%` }}
-                      />
-                    </div>
-                    <span className='w-10 text-right text-xs font-semibold text-[#191F28] dark:text-[#F2F4F6]'>
-                      {s.score}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* 페르소나 반응 — 좌우 높이 균형 위해 남는 공간을 flex-1로 채우고 박스를 키운다 */}
-          <div className={`${cardCls} flex flex-1 flex-col`}>
-            <div className='flex items-center justify-between mb-3'>
-              <h2 className='text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]'>
-                페르소나 반응 ({shown.length})
-              </h2>
-              {failed.length > 0 && (
-                <button
-                  onClick={() => setShowFailed(v => !v)}
-                  className='text-xs text-[#8B95A1] dark:text-[#6B7280] hover:text-[#3182F6]'>
-                  {showFailed
-                    ? 'QA 통과분만 보기'
-                    : `QA 탈락 ${failed.length}건 포함`}
-                </button>
-              )}
-            </div>
-            <div className='space-y-3 flex-1 min-h-[600px] max-h-[920px] overflow-y-auto'>
-              {shown.map(r => {
-                const p = personaMap.get(r.persona_id);
-                const isOpen = expanded.has(r.persona_id);
-                return (
-                  <div
-                    key={r.persona_id}
-                    className={`border-l-2 pl-3 py-1 ${
-                      r.qa_passed
-                        ? 'border-[#3182F6]'
-                        : 'border-[#F04452] opacity-60'
-                    }`}>
-                    {/* 페르소나 기본 정보 */}
-                    <div className='flex flex-wrap items-center gap-2 text-[11px] mb-1'>
-                      <button
-                        type='button'
-                        onClick={() => p && toggleExpand(r.persona_id)}
-                        className='font-medium text-[#191F28] dark:text-[#F2F4F6] hover:text-[#3182F6]'>
-                        {p ? (
-                          <>
-                            {p.age}세 {GENDER_LABEL[p.gender] ?? p.gender} ·{' '}
-                            {p.region}
-                            <span className='ml-1 text-[#B0B8C1] dark:text-[#4B5563]'>
-                              {isOpen ? '▲' : '▼'}
-                            </span>
-                          </>
-                        ) : (
-                          r.persona_id
-                        )}
-                      </button>
-                      <span className='text-[10px] text-[#B0B8C1] dark:text-[#4B5563]'>
-                        {r.persona_id}
-                      </span>
-                    </div>
-
-                    {/* 반응 요약 */}
-                    <div className='flex flex-wrap items-center gap-2 text-[11px] mb-1'>
-                      <span className='font-mono text-[#3182F6]'>
-                        {aisasFunnel(r.aisas)}
-                      </span>
-                      <span className='text-[#4E5968] dark:text-[#9CA3AF]'>
-                        구매 {r.purchase_intent}·신뢰 {r.trust}
-                      </span>
-                      <span className='px-1.5 py-0.5 rounded bg-[#F2F4F6] dark:bg-[#252D3D] text-[#4E5968] dark:text-[#9CA3AF]'>
-                        {EMOTION_LABEL[r.emotion_tag] ?? r.emotion_tag}
-                      </span>
-                      {r.rejected && (
-                        <span className='px-1.5 py-0.5 rounded bg-[#FEF2F2] dark:bg-[#3B0D0D] text-[#DC2626]'>
-                          거부
-                          {r.rejection_reason_tag
-                            ? `·${REJECTION_LABEL[r.rejection_reason_tag] ?? r.rejection_reason_tag}`
-                            : ''}
-                        </span>
-                      )}
-                      {r.drop_stage && (
-                        <span className='text-[#B0B8C1] dark:text-[#4B5563]'>
-                          이탈 {r.drop_stage}
-                          {r.drop_reason_tag
-                            ? `·${DROP_LABEL[r.drop_reason_tag] ?? r.drop_reason_tag}`
-                            : ''}
-                        </span>
-                      )}
-                      {r.exposure_context && (
-                        <span className='text-[#B0B8C1] dark:text-[#4B5563]'>
-                          노출 {r.exposure_context}
-                        </span>
-                      )}
-                      {!r.qa_passed && (
-                        <span className='text-[#F04452]'>
-                          QA 탈락
-                          {r.qa_fail_reason ? `·${r.qa_fail_reason}` : ''}
-                        </span>
-                      )}
-                    </div>
-
-                    {r.utterance && (
-                      <p className='text-sm text-[#4E5968] dark:text-[#9CA3AF]'>
-                        {r.utterance}
+        {/* 왼쪽: 분석 데이터 — 래퍼는 row 높이를 우열(토론)에 맡기고, 내부는 그 높이를 채움 */}
+        <div className='relative min-h-0'>
+          <div className='flex flex-col gap-6 lg:absolute lg:inset-0'>
+            {/* 광고 해석 */}
+            {ad && (
+              <div className={cardCls}>
+                <h2 className='text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6] mb-3'>
+                  광고 해석 (VLM/LLM 감지)
+                </h2>
+                <div className='grid grid-cols-2 md:grid-cols-4 gap-3 text-sm'>
+                  {[
+                    ['감지 업종', ad.detected_industry],
+                    ['감지 목표', ad.detected_objective],
+                    ['감지 타깃', ad.detected_target],
+                    ['감지 메시지', ad.detected_message],
+                  ].map(([k, v]) => (
+                    <div key={k}>
+                      <p className='text-xs text-[#8B95A1] dark:text-[#6B7280]'>
+                        {k}
                       </p>
-                    )}
+                      <p className='text-[#191F28] dark:text-[#F2F4F6] mt-0.5'>
+                        {v || '—'}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
-                    {/* 페르소나 상세 (펼침) */}
-                    {isOpen && p && (
-                      <div className='mt-2 p-3 rounded-lg bg-[#F9FAFB] dark:bg-[#252D3D] text-[11px] space-y-2'>
-                        <div>
-                          <span className='text-[#8B95A1] dark:text-[#6B7280]'>
-                            OCEAN
-                          </span>
-                          <div className='flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5 text-[#4E5968] dark:text-[#9CA3AF]'>
-                            {Object.entries(p.ocean).map(([dim, v]) => (
-                              <span key={dim}>
-                                {OCEAN_LABEL[dim] ?? dim} {v.toFixed(2)}
+            {/* 루브릭 */}
+            {result.rubric_scores.length > 0 && (
+              <div className={cardCls}>
+                <h2 className='text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6] mb-3'>
+                  루브릭 평가 (차원별 점수)
+                </h2>
+                <div className='space-y-2.5'>
+                  {result.rubric_scores.map(s => (
+                    <div key={s.dimension} className='flex items-center gap-3'>
+                      <span className='w-40 text-xs text-[#4E5968] dark:text-[#9CA3AF] truncate'>
+                        {s.dimension}
+                      </span>
+                      <div className='flex-1 h-2 rounded-full bg-[#F2F4F6] dark:bg-[#252D3D] overflow-hidden'>
+                        <div
+                          className='h-full bg-[#3182F6] rounded-full'
+                          style={{ width: `${s.score}%` }}
+                        />
+                      </div>
+                      <span className='w-10 text-right text-xs font-semibold text-[#191F28] dark:text-[#F2F4F6]'>
+                        {s.score}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* 페르소나 반응 — flex-1로 좌열 남은 높이를 채우고, 내부 영역 스크롤 */}
+            <div className={`${cardCls} flex-1 flex flex-col min-h-0`}>
+              <div className='flex items-center justify-between mb-3'>
+                <h2 className='text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]'>
+                  페르소나 반응 ({shown.length})
+                </h2>
+                {failed.length > 0 && (
+                  <button
+                    onClick={() => setShowFailed(v => !v)}
+                    className='text-xs text-[#8B95A1] dark:text-[#6B7280] hover:text-[#3182F6]'>
+                    {showFailed
+                      ? 'QA 통과분만 보기'
+                      : `QA 탈락 ${failed.length}건 포함`}
+                  </button>
+                )}
+              </div>
+              <div className='space-y-3 flex-1 min-h-0 overflow-y-auto'>
+                {shown.map(r => {
+                  const p = personaMap.get(r.persona_id);
+                  const isOpen = expanded.has(r.persona_id);
+                  return (
+                    <div
+                      key={r.persona_id}
+                      className={`border-l-2 pl-3 py-1 ${
+                        r.qa_passed
+                          ? 'border-[#3182F6]'
+                          : 'border-[#F04452] opacity-60'
+                      }`}>
+                      {/* 페르소나 기본 정보 */}
+                      <div className='flex flex-wrap items-center gap-2 text-[11px] mb-1'>
+                        <button
+                          type='button'
+                          onClick={() => p && toggleExpand(r.persona_id)}
+                          className='font-medium text-[#191F28] dark:text-[#F2F4F6] hover:text-[#3182F6]'>
+                          {p ? (
+                            <>
+                              {p.age}세 {GENDER_LABEL[p.gender] ?? p.gender} ·{' '}
+                              {p.region}
+                              <span className='ml-1 text-[#B0B8C1] dark:text-[#4B5563]'>
+                                {isOpen ? '▲' : '▼'}
                               </span>
-                            ))}
-                          </div>
-                        </div>
-                        {Object.keys(p.consumption_values).length > 0 && (
-                          <div>
-                            <span className='text-[#8B95A1] dark:text-[#6B7280]'>
-                              소비가치
-                            </span>
-                            <p className='mt-0.5 text-[#4E5968] dark:text-[#9CA3AF] break-all'>
-                              {JSON.stringify(p.consumption_values)}
-                            </p>
-                          </div>
-                        )}
-                        {Object.keys(p.media_behavior).length > 0 && (
-                          <div>
-                            <span className='text-[#8B95A1] dark:text-[#6B7280]'>
-                              미디어 행동
-                            </span>
-                            <p className='mt-0.5 text-[#4E5968] dark:text-[#9CA3AF] break-all'>
-                              {JSON.stringify(p.media_behavior)}
-                            </p>
-                          </div>
-                        )}
-                        {Object.keys(p.socioeconomic).length > 0 && (
-                          <div>
-                            <span className='text-[#8B95A1] dark:text-[#6B7280]'>
-                              사회경제
-                            </span>
-                            <p className='mt-0.5 text-[#4E5968] dark:text-[#9CA3AF] break-all'>
-                              {JSON.stringify(p.socioeconomic)}
-                            </p>
-                          </div>
-                        )}
-                        {p.profile_narrative && (
-                          <div>
-                            <span className='text-[#8B95A1] dark:text-[#6B7280]'>
-                              프로필 서사
-                            </span>
-                            <p className='mt-0.5 text-[#4E5968] dark:text-[#9CA3AF]'>
-                              {p.profile_narrative}
-                            </p>
-                          </div>
-                        )}
-                        <span className='inline-block text-[10px] text-[#B0B8C1] dark:text-[#4B5563]'>
-                          가중치 {p.weight}
+                            </>
+                          ) : (
+                            r.persona_id
+                          )}
+                        </button>
+                        <span className='text-[10px] text-[#B0B8C1] dark:text-[#4B5563]'>
+                          {r.persona_id}
                         </span>
                       </div>
-                    )}
-                  </div>
-                );
-              })}
+
+                      {/* 반응 요약 */}
+                      <div className='flex flex-wrap items-center gap-2 text-[11px] mb-1'>
+                        <span className='font-mono text-[#3182F6]'>
+                          {aisasFunnel(r.aisas)}
+                        </span>
+                        <span className='text-[#4E5968] dark:text-[#9CA3AF]'>
+                          구매 {r.purchase_intent}·신뢰 {r.trust}
+                        </span>
+                        <span className='px-1.5 py-0.5 rounded bg-[#F2F4F6] dark:bg-[#252D3D] text-[#4E5968] dark:text-[#9CA3AF]'>
+                          {EMOTION_LABEL[r.emotion_tag] ?? r.emotion_tag}
+                        </span>
+                        {r.rejected && (
+                          <span className='px-1.5 py-0.5 rounded bg-[#FEF2F2] dark:bg-[#3B0D0D] text-[#DC2626]'>
+                            거부
+                            {r.rejection_reason_tag
+                              ? `·${REJECTION_LABEL[r.rejection_reason_tag] ?? r.rejection_reason_tag}`
+                              : ''}
+                          </span>
+                        )}
+                        {r.drop_stage && (
+                          <span className='text-[#B0B8C1] dark:text-[#4B5563]'>
+                            이탈 {r.drop_stage}
+                            {r.drop_reason_tag
+                              ? `·${DROP_LABEL[r.drop_reason_tag] ?? r.drop_reason_tag}`
+                              : ''}
+                          </span>
+                        )}
+                        {r.exposure_context && (
+                          <span className='text-[#B0B8C1] dark:text-[#4B5563]'>
+                            노출 {r.exposure_context}
+                          </span>
+                        )}
+                        {!r.qa_passed && (
+                          <span className='text-[#F04452]'>
+                            QA 탈락
+                            {r.qa_fail_reason ? `·${r.qa_fail_reason}` : ''}
+                          </span>
+                        )}
+                      </div>
+
+                      {r.utterance && (
+                        <p className='text-sm text-[#4E5968] dark:text-[#9CA3AF]'>
+                          {r.utterance}
+                        </p>
+                      )}
+
+                      {/* 페르소나 상세 (펼침) */}
+                      {isOpen && p && (
+                        <div className='mt-2 p-3 rounded-lg bg-[#F9FAFB] dark:bg-[#252D3D] text-[11px] space-y-2'>
+                          <div>
+                            <span className='text-[#8B95A1] dark:text-[#6B7280]'>
+                              OCEAN
+                            </span>
+                            <div className='flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5 text-[#4E5968] dark:text-[#9CA3AF]'>
+                              {Object.entries(p.ocean).map(([dim, v]) => (
+                                <span key={dim}>
+                                  {OCEAN_LABEL[dim] ?? dim} {v.toFixed(2)}
+                                </span>
+                              ))}
+                            </div>
+                          </div>
+                          {Object.keys(p.consumption_values).length > 0 && (
+                            <div>
+                              <span className='text-[#8B95A1] dark:text-[#6B7280]'>
+                                소비가치
+                              </span>
+                              <p className='mt-0.5 text-[#4E5968] dark:text-[#9CA3AF] break-all'>
+                                {JSON.stringify(p.consumption_values)}
+                              </p>
+                            </div>
+                          )}
+                          {Object.keys(p.media_behavior).length > 0 && (
+                            <div>
+                              <span className='text-[#8B95A1] dark:text-[#6B7280]'>
+                                미디어 행동
+                              </span>
+                              <p className='mt-0.5 text-[#4E5968] dark:text-[#9CA3AF] break-all'>
+                                {JSON.stringify(p.media_behavior)}
+                              </p>
+                            </div>
+                          )}
+                          {Object.keys(p.socioeconomic).length > 0 && (
+                            <div>
+                              <span className='text-[#8B95A1] dark:text-[#6B7280]'>
+                                사회경제
+                              </span>
+                              <p className='mt-0.5 text-[#4E5968] dark:text-[#9CA3AF] break-all'>
+                                {JSON.stringify(p.socioeconomic)}
+                              </p>
+                            </div>
+                          )}
+                          {p.profile_narrative && (
+                            <div>
+                              <span className='text-[#8B95A1] dark:text-[#6B7280]'>
+                                프로필 서사
+                              </span>
+                              <p className='mt-0.5 text-[#4E5968] dark:text-[#9CA3AF]'>
+                                {p.profile_narrative}
+                              </p>
+                            </div>
+                          )}
+                          <span className='inline-block text-[10px] text-[#B0B8C1] dark:text-[#4B5563]'>
+                            가중치 {p.weight}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </div>
         </div>
 
         {/* 오른쪽: 토론 (채팅 + 결과 박스) */}
-        <div className='h-full'>
+        <div>
           <DebatePanel
             reactions={reactions}
             adAnalysis={ad ?? null}
