@@ -44,9 +44,35 @@ _VALID_STANCE = {"positive", "neutral", "negative"}
 
 _PHASE_INSTR = {
     "발산": "다른 참가자를 보지 말고 주제에 독립적으로 반응하라.",
-    "반박": "앞선 의견에 동의하거나 반박하라(같은 말 재진술 금지).",
-    "검증": "제안된 개선안이 실제로 당신을 움직일지 솔직히 답하라.",
+    "반박": (
+        "위 '다른 참가자 발언' 중 한 명 이상을 이름으로 지목해 동의하거나 반박하라. "
+        "동의하면 새 근거를 보태고, 반대하면 그 사람 말의 무엇이 틀렸는지 구체적으로 짚어라. "
+        "앞서 나온 말이나 당신의 직전 발언을 그대로 되풀이하지 말 것."
+    ),
+    "검증": (
+        "제안된 개선안이 실제로 당신을 움직일지 솔직히 답하라. "
+        "다른 참가자 발언을 반영해 입장이 달라졌다면 무엇이 왜 바뀌었는지 밝혀라. "
+        "직전 발언의 반복은 금지."
+    ),
 }
+
+_STANCE_KO = {"positive": "긍정", "neutral": "중립", "negative": "부정"}
+
+
+def _stance_ko(s: str) -> str:
+    return _STANCE_KO.get(s, s)
+
+
+def _split_prior(
+    prior: list[tuple[str, str, str, str]] | None, me: str
+) -> tuple[list[tuple[str, str, str]], str | None]:
+    """직전 라운드 발언을 (타인 발언 [(name, stance, text)], 내 직전 발언 text)로 분리."""
+    if not prior:
+        return [], None
+    others = [(name, st, text) for pid, name, st, text in prior if pid != me]
+    mine = next((text for pid, _n, _s, text in prior if pid == me), None)
+    return others, mine
+
 
 _JUDGE_SYS = "당신은 광고 소비자 토론의 주최자입니다. 편향 없이 종합하고 지정 형식으로만 출력하라."
 
@@ -260,14 +286,29 @@ def _persona_system(p: DebateParticipant, r: PersonaReaction | None, topic: Deba
     return " ".join(parts)
 
 
-def _round_user(phase: str, topic: DebateTopic) -> str:
-    return (
-        f"토론 주제: {topic.headline}\n"
-        f"이번 라운드({phase}): {_PHASE_INSTR.get(phase, '')}\n"
+def _round_user(
+    phase: str,
+    topic: DebateTopic,
+    others: list[tuple[str, str, str]] | None = None,
+    my_last: str | None = None,
+) -> str:
+    """라운드 user 프롬프트 — 반박·검증 라운드는 직전 라운드 발언(others)·자기 직전 발언(my_last)을
+
+    함께 실어 '서로를 보고 반응'하게 한다(R1 발산은 others 없이 독립 반응).
+    """
+    lines = [f"토론 주제: {topic.headline}"]
+    if others:
+        block = "\n".join(f"- {name}({_stance_ko(st)}): {text}" for name, st, text in others)
+        lines.append(f"다른 참가자들의 직전 발언:\n{block}")
+    if my_last:
+        lines.append(f"당신의 직전 발언(그대로 되풀이 금지): {my_last}")
+    lines.append(f"이번 라운드({phase}): {_PHASE_INSTR.get(phase, '')}")
+    lines.append(
         "아래 JSON으로만 답하라: "
         '{"stance":"positive|neutral|negative","text":"실제 발언 1~2문장",'
         '"reason":"그렇게 말한 이유","lever":"당신을 움직일 개선점"}'
     )
+    return "\n".join(lines)
 
 
 def _qa_user(question: str, topic: DebateTopic, history: list[Utterance]) -> str:
@@ -291,10 +332,17 @@ class LLMDebater:
         self._c = clients or _Clients()
 
     def speak(
-        self, participant: DebateParticipant, round_n: int, phase: str, topic: DebateTopic
+        self,
+        participant: DebateParticipant,
+        round_n: int,
+        phase: str,
+        topic: DebateTopic,
+        prior: list[tuple[str, str, str, str]] | None = None,
     ) -> Utterance:
         r = self._by_id.get(participant.persona_id)
-        system, user = _persona_system(participant, r, topic), _round_user(phase, topic)
+        others, my_last = _split_prior(prior, participant.persona_id)
+        system = _persona_system(participant, r, topic)
+        user = _round_user(phase, topic, others, my_last)
         # LLM 간헐 실패(빈 응답·파싱)에 대비해 2회 시도. 비결정이라 재시도 시 성공 가능.
         last_exc: Exception | None = None
         for _attempt in range(2):
