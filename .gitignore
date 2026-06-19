@@ -36,6 +36,10 @@ out/
 
 # ── Superpowers brainstorm 산출물 ────────────────
 .superpowers/
+private/
+
+# ── Claude Code 로컬 설정·개인 도구 ───────────────
+.claude/
 
 # ── Environment files ────────────────────────────
 .env

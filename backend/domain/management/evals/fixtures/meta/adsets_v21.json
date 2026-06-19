@@ -1,0 +1,7 @@
+{
+  "data": [
+    { "daily_budget": "15000", "campaign_id": "120250000000000002" },
+    { "daily_budget": "15000", "campaign_id": "120250000000000002" }
+  ],
+  "paging": { "cursors": { "before": "MA", "after": "MA" } }
+}

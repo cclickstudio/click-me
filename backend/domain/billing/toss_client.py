@@ -33,9 +33,19 @@ class PaymentConfirmError(RuntimeError):
     """PG 승인 실패 — 주문은 FAILED로 기록되고 원장은 변하지 않는다."""
 
 
+class PaymentCancelError(RuntimeError):
+    """PG 취소 실패 — 주문과 크레딧 원장은 기존 상태를 유지한다."""
+
+
 class TossPaymentsClient(Protocol):
     async def confirm(self, payment_key: str, order_id: str, amount_krw: int) -> dict[str, Any]:
         """결제 승인 확정 — 성공 시 토스 Payment 객체(dict) 반환, 실패 시 PaymentConfirmError."""
+        ...
+
+    async def cancel(
+        self, payment_key: str, reason: str, *, idempotency_key: str
+    ) -> dict[str, Any]:
+        """전액 취소 — 성공 시 취소된 Payment 객체, 실패 시 PaymentCancelError."""
         ...
 
 
@@ -60,4 +70,25 @@ class TossPaymentsHttpClient:
         if response.status_code != 200:
             detail = response.json().get("message", response.text)  # 시크릿 미포함 응답
             raise PaymentConfirmError(f"토스 승인 거절({response.status_code}): {detail}")
+        return response.json()
+
+    async def cancel(
+        self, payment_key: str, reason: str, *, idempotency_key: str
+    ) -> dict[str, Any]:
+        credential = base64.b64encode(f"{self._secret_key}:".encode()).decode()
+        try:
+            async with httpx.AsyncClient(base_url=self._base_url, timeout=10.0) as client:
+                response = await client.post(
+                    f"/v1/payments/{payment_key}/cancel",
+                    headers={
+                        "Authorization": f"Basic {credential}",
+                        "Idempotency-Key": idempotency_key,
+                    },
+                    json={"cancelReason": reason},
+                )
+        except httpx.HTTPError as exc:
+            raise PaymentCancelError(f"토스 취소 API 통신 실패: {type(exc).__name__}") from exc
+        if response.status_code != 200:
+            detail = response.json().get("message", response.text)
+            raise PaymentCancelError(f"토스 취소 거절({response.status_code}): {detail}")
         return response.json()

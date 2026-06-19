@@ -1,5 +1,6 @@
 // 🅱 개선·실행 존 — 재생성 후보 + 제안 카드 + 실행 결과
 import type { ActionResult, Proposal, ViewMode } from "./types";
+import { actionLabel } from "./types";
 import { RoleTag } from "./RoleTag";
 
 export function BZone({
@@ -40,7 +41,7 @@ export function BZone({
       {proposal && (
         <div className="rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] p-3 mb-3">
           <div className="flex items-center justify-between">
-            <span className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]">📋 {proposal.action_type}</span>
+            <span className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]">📋 {actionLabel(proposal.action_type)}</span>
             <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#FFF3E0] text-[#E5840F]">
               Tier {proposal.action_tier}
             </span>

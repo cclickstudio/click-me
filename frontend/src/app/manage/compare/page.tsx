@@ -31,9 +31,14 @@ export default function Page() {
     <AppLayout>
       <div className="max-w-screen-xl mx-auto px-6 py-8">
         <div className="mb-6">
-          <h1 className="text-2xl font-bold text-[#191F28] dark:text-[#F2F4F6]">게시물 성과 비교</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-2xl font-bold text-[#191F28] dark:text-[#F2F4F6]">게시물 성과 비교</h1>
+            <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-300">
+              데모
+            </span>
+          </div>
           <p className="text-sm text-[#8B95A1] mt-1">
-            오가닉→광고 증분 리프트 검증 보드 (Mock 기반 데모)
+            오가닉→광고 증분 리프트 검증 보드 · 매칭 쌍(오가닉+부스트)이 필요해 합성 데이터로 시연
           </p>
         </div>
 

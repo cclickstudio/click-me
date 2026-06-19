@@ -47,6 +47,8 @@ SUPPORTED_ACTION_TYPES: Final[tuple[str, ...]] = (
     "INCREASE_BUDGET",
     "REPLACE_CREATIVE",
     "CREATE_CAMPAIGN",  # PR2 — 신규 캠페인 생성 (config는 evidence_metrics에 적재, 옵션 A)
+    "EXPAND_AUDIENCE",  # 에스컬레이션 사다리 1순위 — 타겟 범위 확장 (direct)
+    "CHANGE_BID_STRATEGY",  # 에스컬레이션 사다리 2순위 — 입찰 전략 변경 (direct)
 )
 
 #: v1에서 Writer 도달이 허용되는 실행 모드 — LIVE는 비활성 (§7 Must)
@@ -392,6 +394,10 @@ class Executor:
                 raise ValueError("CREATE_CAMPAIGN 제안에 campaign_config 없음")
             config = raw if isinstance(raw, CampaignConfig) else CampaignConfig(**raw)
             return await self._writer.create_campaign(config, idem_key)
+        if proposal.action_type == "EXPAND_AUDIENCE":
+            return await self._writer.expand_audience(target, idem_key)
+        if proposal.action_type == "CHANGE_BID_STRATEGY":
+            return await self._writer.change_bid_strategy(target, idem_key)
         raise ValueError(f"미지원 action_type: {proposal.action_type}")  # _validate에서 차단됨
 
     # ── 결과·감사 헬퍼 ───────────────────────────────────────────

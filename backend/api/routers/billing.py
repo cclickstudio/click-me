@@ -10,7 +10,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from domain.billing.service.billing_service import BillingError, BillingService
-from domain.billing.toss_client import PaymentConfirmError, TossPaymentsHttpClient
+from domain.billing.toss_client import (
+    PaymentCancelError,
+    PaymentConfirmError,
+    TossPaymentsHttpClient,
+)
 
 router = APIRouter()
 
@@ -59,6 +63,18 @@ class ConfirmResponse(BaseModel):
     balance_krw: int
 
 
+class CancelRequest(BaseModel):
+    order_id: str
+    reason: str = Field(default="사용자 요청", min_length=1, max_length=200)
+
+
+class CancelResponse(BaseModel):
+    order_id: str
+    status: str
+    amount_krw: int
+    balance_krw: int
+
+
 class BalanceResponse(BaseModel):
     org_id: str
     balance_krw: int
@@ -88,6 +104,24 @@ async def confirm_payment(
     except PaymentConfirmError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     return ConfirmResponse(
+        order_id=order.order_id,
+        status=str(order.status),
+        amount_krw=order.amount_krw,
+        balance_krw=service.balance(order.org_id),
+    )
+
+
+@router.post("/cancel", response_model=CancelResponse)
+async def cancel_payment(
+    body: CancelRequest, service: BillingService = Depends(get_billing_service)
+):
+    try:
+        order = await service.cancel(body.order_id, body.reason)
+    except BillingError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except PaymentCancelError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return CancelResponse(
         order_id=order.order_id,
         status=str(order.status),
         amount_krw=order.amount_krw,

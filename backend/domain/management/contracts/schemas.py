@@ -22,6 +22,7 @@ from pydantic import AfterValidator, BaseModel, ConfigDict, Field
 from domain.management.contracts.enums import (
     ActionTier,
     AnomalyType,
+    CampaignState,
     DiagnosisSource,
     DiagnosisStatus,
     ExecutionMode,
@@ -68,6 +69,18 @@ class CampaignConfig(Contract):
     target_audience: dict[str, Any] = Field(default_factory=dict)
 
 
+class CampaignInfo(Contract):
+    """캠페인 목록 항목 — 대시보드용 (AdPlatformReader.list_campaigns 산출).
+
+    이름·상태·일예산만 담는 경량 DTO. 성과 지표는 get_metrics로 별도 조회.
+    """
+
+    campaign_id: str
+    name: str
+    state: CampaignState
+    daily_budget_krw: int = Field(ge=0)
+
+
 class MetricsSnapshot(Contract):
     """D9 — 시간별(hourly) 지표. reach/frequency는 누적값 (시간행 단순 합산 금지).
 
@@ -86,6 +99,50 @@ class MetricsSnapshot(Contract):
     ctr: float = Field(ge=0.0)
     cpm_krw: int = Field(ge=0)
     cpc_krw: int = Field(ge=0)
+    conversions: int | None = Field(default=None, ge=0)
+    purchase_value_krw: int | None = Field(default=None, ge=0)
+    cvr: float | None = Field(default=None, ge=0.0)
+    roas: float | None = Field(default=None, ge=0.0)
+
+
+class RealOutcome(Contract):
+    """집행 후 실측 성과 — 캘리브레이션(시뮬 예측 vs 실측) 소비용 계약.
+
+    크리에이티브 기준 귀속(creative_id)으로 "어떤 안을 집행했더니 실제로 이랬다"를 노출한다.
+    전환(conversions·cvr)은 픽셀/CAPI 미설정이면 None — 합성 금지(정직).
+    """
+
+    creative_id: str | None = None  # 집행된 크리에이티브 (미연결이면 None)
+    campaign_id: str
+    impressions: int = Field(ge=0)
+    reach: int = Field(ge=0)
+    spend_krw: int = Field(ge=0)
+    ctr: float = Field(ge=0.0)
+    cpc_krw: int = Field(ge=0)
+    cpm_krw: int = Field(ge=0)
+    conversions: int | None = None
+    cvr: float | None = None
+    roas: float | None = None  # 매출÷지출 — 전환 가치 추적 전이면 None(측정 불가)
+    as_of: UtcDatetime
+
+
+class PlatformMetrics(Contract):
+    """게재 플랫폼별(publisher_platform) 지표 분해 — facebook/instagram/audience_network 등."""
+
+    platform: str
+    impressions: int = Field(ge=0)
+    clicks: int = Field(ge=0)
+    spend_krw: int = Field(ge=0)
+    reach: int = Field(ge=0)
+
+
+class AccountFunding(Contract):
+    """광고계정 자금·게재 가능 여부 — 선불 잔액 소진·계정 비활성 감지(게재 중단 원인)."""
+
+    account_status: int
+    available_balance_krw: int | None = None  # 선불 가용 잔액 (모르면 None)
+    delivery_blocked: bool = False
+    block_reason: str | None = None  # "선불 잔액 부족" · "계정 비활성" 등
 
 
 class DeliveryEstimate(Contract):
