@@ -11,6 +11,7 @@ from domain.simulation.contracts.debate_schemas import (
     ConfidenceBadge,
     ContributionBar,
     ConversionStep,
+    DebateDigest,
     DebateResult,
     DebateTopic,
     GroupProfile,
@@ -44,19 +45,44 @@ def _consumer_group_counts(analysis: ReactionAnalysis) -> dict[str, int]:
     }
 
 
-def _quotes(debate: DebateResult) -> list[ReportQuote]:
-    """참가자별 대표 발언 1건(마지막 라운드) — 리포트 '실제 소비자 목소리'."""
-    quotes = []
-    for p in debate.participants:
-        if not p.utterances:
-            continue
-        last = p.utterances[-1]
-        quotes.append(
-            ReportQuote(
-                persona_name=p.persona_name, role=p.role, stance=last.stance, text=last.text
-            )
-        )
-    return quotes
+def _quotes(debate: DebateResult, limit: int = 2) -> list[ReportQuote]:
+    """결론을 가장 잘 보여주는 대표 발언 1~2개 — 다수 입장 1 + 반대 입장 1(대립의 생생함).
+
+    전문을 싣지 않고 핵심만 인용해 분량을 줄인다(나머지 발언은 토론 전체 debate에만 남는다).
+    """
+    lasts = [(p, p.utterances[-1]) for p in debate.participants if p.utterances]
+    if not lasts:
+        return []
+    majority = Counter(u.stance for _, u in lasts).most_common(1)[0][0]
+    picks: list[tuple] = []
+    maj = next(((p, u) for p, u in lasts if u.stance == majority), None)
+    if maj:
+        picks.append(maj)
+    opp = next(((p, u) for p, u in lasts if u.stance != majority), None)
+    if opp:
+        picks.append(opp)
+    return [
+        ReportQuote(persona_name=p.persona_name, role=p.role, stance=u.stance, text=u.text)
+        for p, u in picks[:limit]
+    ]
+
+
+def build_debate_digest(
+    topic: DebateTopic, debate: DebateResult, debate_id: str | None = None
+) -> DebateDigest:
+    """토론 1건 → 합산 리포트용 요약(주제 + 결론 + 대표 인용 1~2). 전문은 버린다."""
+    final = debate.final
+    return DebateDigest(
+        debate_id=debate_id,
+        topic_headline=topic.headline,
+        diagnosis=topic.diagnosis,
+        rounds_run=debate.rounds_run,
+        stop_reason=debate.stop_reason,
+        consensus=final.consensus if final else [],
+        dissent=final.dissent if final else [],
+        ranked_actions=final.ranked_actions if final else [],
+        quotes=_quotes(debate),
+    )
 
 
 def build_report(
@@ -337,6 +363,7 @@ def build_report_view(
     personas: list[Persona],
     reactions: list[PersonaReaction],
     generated_at: str,
+    debates: list[DebateDigest] | None = None,
 ) -> ReportView:
     """시뮬+토론 산출을 단일 ReportView로 종합 — 화면·PDF 공용 진실 소스(결정론, LLM✗).
 
@@ -360,6 +387,7 @@ def build_report_view(
         ),
         confidence=_confidence_badge(aggregate, objective_fit, analysis.total_n),
         debate=debate,
+        debates=debates or [],
         aggregate=aggregate,
         analysis=analysis,
         generated_at=generated_at,

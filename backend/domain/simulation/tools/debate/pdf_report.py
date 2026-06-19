@@ -589,98 +589,52 @@ def _build_html(result: dict) -> str:
             )
         )
 
-    # ── §5 토론 (풀폭) ──
-    participants = debate.get("participants") or []
-    if participants:
-        rr = debate.get("rounds_run") or 0
-        stop_ko = {"consensus": "의견 일치", "dissensus": "의견 갈림", "max": "최대 라운드"}.get(
-            str(debate.get("stop_reason")), str(debate.get("stop_reason") or "")
-        )
-        rsum = debate.get("round_summaries") or {}
-        max_round = max(
-            (u.get("round", 0) for pa in participants for u in (pa.get("utterances") or [])),
-            default=0,
-        )
-        tbody = []
-        for rnd in range(1, max_round + 1):
-            phase, cards = "", []
-            for pa in participants:
-                for u in pa.get("utterances") or []:
-                    if u.get("round") != rnd:
-                        continue
-                    phase = u.get("phase", phase)
-                    sc, sk = _STANCE.get(u.get("stance", "neutral"), (_SLATE, ""))
-                    lever = u.get("lever")
-                    lv = (
-                        (
-                            f'<div class="text-[9.5px] text-slate-400 mt-0.5">→ 이렇게 바꾸면: '
-                            f"{escape(str(lever))}</div>"
-                        )
-                        if lever
-                        else ""
-                    )
-                    cards.append(
-                        '<div class="rounded-lg bg-slate-50 border-l-4 px-3 py-2 break-inside-avoid" '
-                        f'style="border-color:{sc}">'
-                        '<div><span class="font-bold text-[11px] text-slate-800">'
-                        f"{escape(str(pa.get('persona_name', '')))}</span>"
-                        '<span class="text-[9.5px] text-slate-500 ml-1.5">'
-                        f"{escape(str(pa.get('role', '')))}</span>"
-                        f'<span class="text-[9.5px] font-bold ml-1.5" style="color:{sc}">● {sk}</span>'
-                        "</div>"
-                        f'<div class="text-[10.5px] text-slate-700 mt-0.5">'
-                        f"{escape(str(u.get('text', '')))}</div>{lv}</div>"
-                    )
-            if not cards:
-                continue
-            st = rsum.get(rnd, rsum.get(str(rnd)))
-            judge = (
-                (
-                    f'<div class="mt-2 bg-blue-50 border border-blue-100 rounded-lg px-3 py-2 '
-                    f'text-[10.5px] text-slate-600"><b class="text-blue-800">정리.</b> '
-                    f"{escape(str(st))}</div>"
+    # ── §5 토론 (풀폭) — 주제 + 대표 인용 1~2 + 결론만(전문 생략, 분량 축소) ──
+    # debates(누적 요약)가 있으면 토론마다 한 블록 — 토론을 더 할수록 항목이 늘어난다.
+    debates_list = result.get("debates") or []
+    if debates_list:
+        dcards = []
+        for dg in debates_list:
+            qh = "".join(
+                '<div class="rounded-lg bg-slate-50 border-l-4 px-3 py-2 my-1 break-inside-avoid" '
+                f'style="border-color:{_STANCE.get(q.get("stance", "neutral"), (_SLATE, ""))[0]}">'
+                f'<div class="text-[10.5px] text-slate-700">“{escape(str(q.get("text", "")))}”</div>'
+                '<div class="text-[9.5px] text-slate-400 mt-0.5">— '
+                f"{escape(str(q.get('persona_name', '')))} · {escape(str(q.get('role', '')))}</div>"
+                "</div>"
+                for q in (dg.get("quotes") or [])[:2]
+            )
+            concl = []
+            for c in dg.get("consensus") or []:
+                concl.append(
+                    '<div class="my-1 text-[11px]"><span class="inline-block px-2 py-0.5 '
+                    'rounded text-white text-[9.5px] font-bold mr-2" '
+                    f'style="background:{_GREEN}">다같이 동의</span>{escape(str(c))}</div>'
                 )
-                if st
-                else ""
+            for d in dg.get("dissent") or []:
+                concl.append(
+                    '<div class="my-1 text-[11px]"><span class="inline-block px-2 py-0.5 '
+                    'rounded text-white text-[9.5px] font-bold mr-2" '
+                    f'style="background:{_AMBER}">의견 갈림</span>{escape(str(d))}</div>'
+                )
+            rr = dg.get("rounds_run") or 0
+            dcards.append(
+                '<div class="break-inside-avoid mb-3 pb-3 border-b border-slate-100 last:border-0">'
+                '<div class="text-[11.5px] font-bold text-slate-800 mb-1.5">'
+                f"{escape(str(dg.get('topic_headline', '')))}"
+                f'<span class="text-[9.5px] font-normal text-slate-400 ml-1.5">{rr}라운드</span>'
+                "</div>"
+                f"{qh}{''.join(concl)}</div>"
             )
-            tbody.append(
-                '<div class="break-inside-avoid mb-3"><div class="flex items-baseline gap-2 mb-1.5">'
-                f'<b class="text-blue-600 text-[12px]">{rnd}라운드</b>'
-                f'<span class="text-slate-400 text-[10px]">{escape(str(phase))}</span></div>'
-                f'<div class="space-y-1.5">{"".join(cards)}</div>{judge}</div>'
-            )
-        final = debate.get("final") or {}
-        concl = []
-        for c in final.get("consensus") or report.get("consensus") or []:
-            concl.append(
-                '<div class="my-1 text-[11px]"><span class="inline-block px-2 py-0.5 '
-                'rounded text-white text-[9.5px] font-bold mr-2" '
-                f'style="background:{_GREEN}">다같이 동의</span>{escape(str(c))}</div>'
-            )
-        for d in final.get("dissent") or report.get("dissent") or []:
-            concl.append(
-                '<div class="my-1 text-[11px]"><span class="inline-block px-2 py-0.5 '
-                'rounded text-white text-[9.5px] font-bold mr-2" '
-                f'style="background:{_AMBER}">의견 갈림</span>{escape(str(d))}</div>'
-            )
-        concl_html = (
-            (
-                '<div class="mt-3 pt-3 border-t border-slate-100">'
-                '<div class="text-[11px] font-bold text-slate-700 mb-1.5">토론 결론</div>'
-                f"{''.join(concl)}</div>"
-            )
-            if concl
-            else ""
-        )
         blocks.append(
             _section(
                 "5",
                 "전문가·소비자 토론",
                 _INDIGO,
-                "".join(tbody) + concl_html,
+                "".join(dcards),
                 tip=(
-                    f"왜 이런 결과인지 전문가 4명과 실제 소비자를 모아 <b>{rr}라운드</b> 토론한 "
-                    f"내용이에요. (결과: {escape(stop_ko)})"
+                    "토론마다 주제와 대표 발언 1~2개, 결론만 추렸어요. "
+                    "(토론을 더 할수록 항목이 늘어납니다. 전체 발언은 화면 토론 패널에서 볼 수 있어요.)"
                 ),
             )
         )
@@ -726,7 +680,7 @@ def _build_html(result: dict) -> str:
             )
         )
 
-    if not participants:
+    if not debates_list:
         quotes = report.get("quotes") or []
         if quotes:
             qb = "".join(
@@ -735,7 +689,7 @@ def _build_html(result: dict) -> str:
                 f'<div class="text-[9.5px] text-slate-400 mt-0.5">— '
                 f"{escape(str(q.get('persona_name', '')))} · {escape(str(q.get('role', '')))}</div>"
                 "</div>"
-                for q in quotes[:5]
+                for q in quotes[:2]
             )
             blocks.append(_section("5", "소비자 목소리", _SLATE, qb))
 

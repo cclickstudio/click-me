@@ -15,7 +15,11 @@ from datetime import UTC, datetime
 from langsmith import traceable
 
 from domain.simulation.contracts.debate_ports import DebaterPort, JudgePort
-from domain.simulation.contracts.debate_schemas import DebateResult, DebateTopic
+from domain.simulation.contracts.debate_schemas import (
+    DebateDigest,
+    DebateResult,
+    DebateTopic,
+)
 from domain.simulation.contracts.schemas import (
     AdInterpretation,
     ObjectiveFit,
@@ -31,7 +35,11 @@ from domain.simulation.tools.debate.kpi import (
     compute_kpi,
 )
 from domain.simulation.tools.debate.qa import stream_qa
-from domain.simulation.tools.debate.report import build_report, build_report_view
+from domain.simulation.tools.debate.report import (
+    build_debate_digest,
+    build_report,
+    build_report_view,
+)
 from domain.simulation.tools.debate.runner import run_debate
 from domain.simulation.tools.debate.selector import RerankFn, select_panel
 
@@ -407,6 +415,18 @@ class DebateService:
                 except Exception:
                     logger.exception("토론 영속화 실패(런은 유지) run_id=%s", run_id)
 
+            # ── 추가 토론 합산: 이 시뮬의 모든 토론(기존+현재) 요약을 누적 ──
+            # 같은 simulation_id로 토론을 거듭하면 digest가 쌓여 리포트 내용이 늘어난다(DB 무관).
+            debates_digests: list[DebateDigest] = []
+            if debate_obj is not None:
+                current_digest = build_debate_digest(topic, debate_obj, debate_id)
+                if simulation_id:
+                    prior = [DebateDigest(**d) for d in store.get_debate_digests(simulation_id)]
+                    debates_digests = [*prior, current_digest]
+                    store.add_debate_digest(simulation_id, current_digest.model_dump())
+                else:
+                    debates_digests = [current_digest]
+
             # ── 통합 ReportView 조립(화면·PDF 공용 단일 소스) — 시뮬+토론 종합 ──
             report_view = build_report_view(
                 run_id=run_id,
@@ -423,6 +443,7 @@ class DebateService:
                 personas=personas or [],
                 reactions=reactions,
                 generated_at=datetime.now(UTC).isoformat(),
+                debates=debates_digests,
             )
 
             result = {

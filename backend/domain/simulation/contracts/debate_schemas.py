@@ -379,11 +379,29 @@ class ConfidenceBadge(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+class DebateDigest(BaseModel):
+    """토론 1건 요약 — 합산 리포트용. 전문 대신 [주제 + 결론 + 대표 인용 1~2]만 담아 분량을 줄인다.
+
+    한 시뮬에 토론(기존+추가)이 여러 개면 각 토론이 1 digest가 되어 ReportView.debates에 누적된다.
+    """
+
+    debate_id: str | None = None
+    topic_headline: str  # 토론 주제(headline)
+    diagnosis: str = ""  # 진단부
+    rounds_run: int = 0
+    stop_reason: str | None = None
+    consensus: list[str] = Field(default_factory=list)
+    dissent: list[str] = Field(default_factory=list)
+    ranked_actions: list[RankedAction] = Field(default_factory=list)
+    quotes: list[ReportQuote] = Field(default_factory=list)  # 결론 대표 발언 1~2개(생생함만)
+
+
 class ReportView(BaseModel):
     """시뮬+토론을 합친 단일 리포트 객체 — 프론트 '최종 결과' 화면과 PDF가 공유하는 진실 소스.
 
     대부분 기존 산출의 매핑이고, segments·group_profiles·summary_metrics·confidence만 신규 파생.
     objective_fit를 메인 판정으로, message_reception을 최상위로 승격(기존 리포트서 누락).
+    debates: 한 시뮬의 모든 토론(기존+추가) 요약 누적 — 토론할수록 늘어난다(옵셔널, 하위호환).
     """
 
     run_id: str
@@ -399,7 +417,8 @@ class ReportView(BaseModel):
     message_reception: MessageReception | None = None  # 의도 메시지 vs 저항(1순위 누락 데이터)
     summary_metrics: SummaryMetrics
     confidence: ConfidenceBadge
-    debate: DebateResult | None = None
+    debate: DebateResult | None = None  # 최근(현재) 토론 전체 — 하위호환 단일 토론 경로
+    debates: list[DebateDigest] = Field(default_factory=list)  # 한 시뮬의 모든 토론 요약 누적
     aggregate: SimulationAggregate
     analysis: ReactionAnalysis
     generated_at: str  # ISO8601(조립 시각)
