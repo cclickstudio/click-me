@@ -13,8 +13,8 @@ access_token_enc는 AES-256-GCM 암호문(평문 토큰 저장 금지 — CLAUDE
 
 from alembic import op
 
-revision = "009_meta_connections"
-down_revision = "008_mgmt_escalation"
+revision = "012"
+down_revision = "011"
 branch_labels = None
 depends_on = None
 
