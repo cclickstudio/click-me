@@ -2,7 +2,7 @@
 // 시뮬 결과 화면 재사용 컴포넌트 — /simulation 실행 흐름과 /simulation/[id]/result 라우트가 공용.
 // SimRunResult 한 건을 받아 4대 KPI·광고해석·루브릭·페르소나반응·DebatePanel·최종 ReportView를 그린다.
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { DebatePanel } from '@/components/simulator/DebatePanel';
 import { SimulationReportView } from '@/components/simulator/SimulationReportView';
 import { KpiCard } from '@/components/ui/KpiCard';
@@ -83,6 +83,12 @@ export function SimulationResultView({
   const [reportView, setReportView] = useState<ReportView | null>(
     initialReportView ?? null
   );
+
+  // 콜드 진입 시 savedReport(initialReportView)는 비동기로 늦게 도착 — 도착하면 반영한다.
+  // (useState 초기값만으론 늦은 prop을 놓쳐 최종 결과가 안 뜬다. 토론을 새로 돌리면 onReportView가 덮어씀.)
+  useEffect(() => {
+    if (initialReportView) setReportView(initialReportView);
+  }, [initialReportView]);
 
   const toggleExpand = (id: string) =>
     setExpanded(prev => {

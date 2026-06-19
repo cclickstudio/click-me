@@ -160,10 +160,17 @@ async def debate_result(run_id: str) -> dict:
 
 @router.get("/{run_id}/report.pdf")
 async def download_report_pdf(run_id: str) -> Response:
-    """완료된 리포트를 PDF로 직접 생성해 다운로드(html2pdf 미사용, reportlab 렌더)."""
+    """완료된 리포트를 PDF로 생성해 다운로드(서버 Chromium 렌더).
+
+    콜드·새로고침 진입에선 인메모리 run_id가 죽어 있으므로, 못 찾으면 simulation_id로
+    간주해 저장 리포트를 재조립한다(화면 최종 결과와 동일 소스).
+    """
     result = _service.get_result(run_id)
     if result is None:
-        raise HTTPException(status_code=404, detail="결과 없음 또는 토론 미완료")
+        report_view = await _service.get_saved_report(run_id)
+        if report_view is None:
+            raise HTTPException(status_code=404, detail="결과 없음 또는 토론 미완료")
+        result = {"report_view": report_view}
     pdf = await asyncio.to_thread(render_report_pdf, result)  # sync Playwright를 스레드로 분리
     return Response(
         content=pdf,
