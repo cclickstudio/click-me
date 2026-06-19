@@ -6,7 +6,6 @@ import { useEffect, useState, useCallback } from 'react';
 import AppLayout from '@/components/AppLayout';
 import { useAuth } from '@/components/AuthProvider';
 import { getToken } from '@/lib/authApi';
-import { api } from '@/lib/api';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
@@ -20,21 +19,6 @@ export default function MyOrgPage() {
   const [teams, setTeams] = useState<Team[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
   const [loading, setLoading] = useState(true);
-  const [metaBusy, setMetaBusy] = useState(false);
-  const [metaError, setMetaError] = useState<string | null>(null);
-
-  // 외부 광고주가 자기 Meta 자산을 연결 — 인증 XHR로 받은 로그인 URL로 이동.
-  const connectMeta = async () => {
-    setMetaBusy(true);
-    setMetaError(null);
-    try {
-      const { login_url } = await api.management.connectMeta();
-      window.location.href = login_url;
-    } catch (e) {
-      setMetaError(e instanceof Error ? e.message : 'Meta 연결 시작에 실패했습니다.');
-      setMetaBusy(false);
-    }
-  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -67,25 +51,6 @@ export default function MyOrgPage() {
             {org ? `${org.name} · 팀원 ${members.length}명` : '우리 조직의 팀과 팀원을 확인하세요'}
           </p>
         </div>
-
-        <section className="rounded-2xl border border-[#E5E8EB] dark:border-[#2D3748] bg-[#F9FAFB] dark:bg-[#161B27] px-5 py-4">
-          <div className="flex items-center justify-between gap-4">
-            <div className="min-w-0">
-              <h2 className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]">Meta 계정 연결</h2>
-              <p className="text-xs text-[#8B95A1] dark:text-[#6B7280] mt-1">
-                Facebook 로그인으로 광고 계정·페이지·Instagram 접근 권한을 부여하면 성과 조회·비교·관리가 가능합니다.
-              </p>
-            </div>
-            <button
-              onClick={connectMeta}
-              disabled={metaBusy}
-              className="shrink-0 rounded-xl bg-[#3182F6] px-4 py-2 text-sm font-medium text-white hover:bg-[#1B64DA] disabled:opacity-50"
-            >
-              {metaBusy ? '연결 중…' : 'Meta 계정 연결'}
-            </button>
-          </div>
-          {metaError && <p className="mt-2 text-xs text-red-500">{metaError}</p>}
-        </section>
 
         {loading ? (
           <div className="py-20 text-center text-sm text-[#8B95A1]">불러오는 중...</div>
