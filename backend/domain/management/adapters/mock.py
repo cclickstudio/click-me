@@ -90,6 +90,31 @@ class MockAdPlatform:
         """Port 충족 — 데모는 잔액 충분(게재 차단 없음)."""
         return AccountFunding(account_status=1, available_balance_krw=1_000_000)
 
+    async def fetch_daily_metrics(self, campaign_id: str) -> list[dict]:
+        """데모 일자별(3일) 합성(결정론) — 상세 차트·일자별 표용."""
+        base = sum(ord(ch) for ch in campaign_id) % 2000
+        out: list[dict] = []
+        for i in range(3):
+            impr = 900 + base + i * 120
+            clicks = 30 + (base % 40) + i * 5
+            spend = 4000 + base + i * 800
+            out.append(
+                {
+                    "label": f"{i + 1}일차",
+                    "impressions": impr,
+                    "clicks": clicks,
+                    "reach": int(impr * 0.95),
+                    "spend_krw": spend,
+                    "ctr": clicks / impr if impr else 0.0,
+                    "cpc_krw": spend // clicks if clicks else 0,
+                    "cpm_krw": int(spend / impr * 1000) if impr else 0,
+                    "conversions": None,  # 데모는 전환 추적 미설정
+                    "cvr": None,
+                    "roas": None,
+                }
+            )
+        return out
+
     async def get_estimate(self, config: CampaignConfig) -> DeliveryEstimate:
         """Port 충족 — audience 기반 간단 추정(결정론)."""
         return DeliveryEstimate(

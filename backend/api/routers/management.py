@@ -393,23 +393,16 @@ async def _list_campaigns_real() -> dict:
     }
 
 
-def _hourly_series(snaps: list[MetricsSnapshot]) -> list[dict]:
-    """시간별 {시각, 노출, 지출} — 전략 A 차트(누적 지출 vs 일예산)용."""
-    return [
-        {"hour": s.as_of.hour, "impressions": s.impressions, "spend_krw": s.spend_krw}
-        for s in snaps
-    ]
-
-
 async def _get_campaign_real(campaign_id: str) -> dict:
     """실연동 — 캠페인 상세(시간별 실측 + 기대곡선 + 요약)."""
     reader = build_reader(settings)
     today = _today_utc()
     # 독립 호출 3개 병렬 — 순차로 기다리면 토글 펼침이 느림(Meta 왕복 ×3).
-    campaigns, snaps, m = await asyncio.gather(
+    campaigns, snaps, m, daily = await asyncio.gather(
         reader.list_campaigns(),
         reader.fetch_hourly_metrics(campaign_id, today),
         reader.get_metrics(campaign_id, today),
+        reader.fetch_daily_metrics(campaign_id),
     )
     info = next((c for c in campaigns if c.campaign_id == campaign_id), None)
     if info is None:
@@ -424,7 +417,7 @@ async def _get_campaign_real(campaign_id: str) -> dict:
         "expected": [round(e, 1) for e in expected],
         "actual": actual,
         "anomaly_hours": find_anomaly_window(expected, actual) if actual else [],
-        "series": _hourly_series(snaps),
+        "series": daily,
         "summary": _real_summary(m, info.daily_budget_krw),
     }
 
@@ -506,7 +499,7 @@ async def get_campaign(campaign_id: str):
                 "expected": [round(e, 1) for e in expected],
                 "actual": actual,
                 "anomaly_hours": find_anomaly_window(expected, actual),
-                "series": _hourly_series(snaps),
+                "series": await MockAdPlatform().fetch_daily_metrics(cid),
                 "summary": _campaign_summary(snaps, budget),
             }
     raise HTTPException(status_code=404, detail=f"캠페인 없음: {campaign_id}")
