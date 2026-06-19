@@ -258,26 +258,37 @@ def _confidence_block(c: dict) -> str:
 
 
 def _segment_block(segs: list) -> str:
-    """연령대×성별 세그먼트 히트맵 — '누구에게 통하나'(우리 최대 차별점)."""
+    """연령대×성별 세그먼트 — '누구에게 통하나'(우리 최대 차별점).
+
+    표본이 작은 셀(유효표본 10 미만)은 1명짜리 100% 같은 과신을 막으려 비율을 색으로 단언하지
+    않고 회색 처리한다. 인원 많은 셀부터 정렬하고, '얇음' 표시는 행 도배 대신 하단 범례 한 줄로.
+    """
+    ordered = sorted(segs, key=lambda s: s.get("n") or 0, reverse=True)
+    has_thin = any(s.get("low_confidence") for s in ordered)
     rows = []
-    for s in segs:
+    for s in ordered:
         cir = s.get("click_intent_rate") or 0
-        col = _GREEN if cir >= 0.3 else _AMBER if cir >= 0.15 else _RED
-        thin = (
-            ' <span class="text-[9px] text-slate-400">ⓘ얇음</span>'
-            if s.get("low_confidence")
-            else ""
-        )
+        thin = bool(s.get("low_confidence"))
+        # 얇은 셀은 비율을 색으로 단언하지 않는다(개별 셀 과신 방지)
+        col = _SLATE if thin else (_GREEN if cir >= 0.3 else _AMBER if cir >= 0.15 else _RED)
+        name_cls = "text-slate-400" if thin else "text-slate-700"
+        mark = ' <span class="text-[9px] text-slate-300">ⓘ</span>' if thin else ""
         rows.append(
             '<tr class="border-t border-slate-100">'
-            f'<td class="py-1.5 pr-2 text-slate-700">{escape(str(s.get("age_band", "")))} '
-            f"{escape(_GENDER_KO.get(s.get('gender'), str(s.get('gender', ''))))}{thin}</td>"
+            f'<td class="py-1.5 pr-2 {name_cls}">{escape(str(s.get("age_band", "")))} '
+            f"{escape(_GENDER_KO.get(s.get('gender'), str(s.get('gender', ''))))}{mark}</td>"
             f'<td class="text-right px-2 text-slate-400">{s.get("n", 0)}</td>'
             f'<td class="text-right px-2 font-bold" style="color:{col}">{_pct(cir)}</td>'
             f'<td class="text-right px-2 text-slate-500">{(s.get("purchase_intent") or 0):.1f}</td>'
             f'<td class="text-right px-2 text-slate-500">{(s.get("trust_avg") or 0):.1f}</td>'
             f'<td class="text-right pl-2 text-slate-500">{_pct(s.get("rejection_rate"))}</td></tr>'
         )
+    legend = (
+        '<p class="text-[9.5px] text-slate-400 mt-2">'
+        "ⓘ 회색 셀은 유효표본 10명 미만 — 비율은 경향 참고용이에요(개별 셀 단언 금지).</p>"
+        if has_thin
+        else ""
+    )
     table = (
         '<table class="w-full text-[10.5px] border-collapse"><thead>'
         '<tr class="text-slate-400"><th class="text-left font-medium py-1 pr-2">세그먼트</th>'
@@ -288,6 +299,7 @@ def _segment_block(segs: list) -> str:
         '<th class="text-right font-medium pl-2">거부율</th></tr></thead><tbody>'
         + "".join(rows)
         + "</tbody></table>"
+        + legend
     )
     return _section(
         "",
@@ -295,8 +307,8 @@ def _segment_block(segs: list) -> str:
         _INDIGO,
         table,
         tip=(
-            "같은 광고도 누가 보느냐에 따라 반응이 달라요. "
-            "클릭 의향이 높은 셀이 실질 타깃입니다(얇은 셀은 신뢰 낮음 표시)."
+            "같은 광고도 누가 보느냐에 따라 반응이 달라요. 인원 많은 셀부터 정렬했고, "
+            "클릭 의향이 높은(초록) 셀이 실질 타깃입니다."
         ),
     )
 
@@ -708,8 +720,37 @@ def _build_html(result: dict) -> str:
         "['Malgun Gothic','Noto Sans KR','Apple SD Gothic Neo','sans-serif']}}}}</script>"
         "<style>*{-webkit-print-color-adjust:exact;print-color-adjust:exact;}"
         "body{font-family:'Malgun Gothic','Noto Sans KR','Apple SD Gothic Neo',sans-serif;}</style>"
-        "</head><body class='bg-slate-100 text-slate-900 p-6'>" + body + "</body></html>"
+        "</head><body class='bg-slate-100 text-slate-900 px-6 pt-6 pb-2'>" + body + "</body></html>"
     )
+
+
+def _strip_trailing_blank_pages(pdf: bytes) -> bytes:
+    """분량이 페이지 경계를 미세 초과할 때 Chromium이 덧붙인 꼬리 빈 페이지를 제거한다.
+
+    빈 페이지엔 body 배경(vector)만 있고 텍스트가 없다 — 마지막부터 텍스트 0인 페이지를 잘라낸다.
+    실패해도 원본을 그대로 반환(다운로드 자체는 막지 않는다).
+    """
+    import io
+
+    from pypdf import PdfReader, PdfWriter
+
+    try:
+        reader = PdfReader(io.BytesIO(pdf))
+        total = len(reader.pages)
+        keep = total
+        while keep > 1 and not (reader.pages[keep - 1].extract_text() or "").strip():
+            keep -= 1
+        if keep == total:
+            return pdf
+        writer = PdfWriter()
+        for i in range(keep):
+            writer.add_page(reader.pages[i])
+        out = io.BytesIO()
+        writer.write(out)
+        return out.getvalue()
+    except Exception:
+        logger.exception("빈 페이지 트림 실패 — 원본 PDF 반환")
+        return pdf
 
 
 def render_report_pdf(result: dict) -> bytes:
@@ -733,4 +774,4 @@ def render_report_pdf(result: dict) -> bytes:
             )
         finally:
             browser.close()
-    return pdf
+    return _strip_trailing_blank_pages(pdf)
