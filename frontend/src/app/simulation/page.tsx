@@ -125,7 +125,7 @@ function aisasFunnel(a: SimRunResult['reactions'][number]['aisas']): string {
 }
 
 export default function SimulationRunPage() {
-  const { selectedProject } = useProjects();
+  const { selectedProject, projects, selectProject } = useProjects();
   const [step, setStep] = useState<Step>('setup');
 
   // 광고 입력
@@ -302,6 +302,30 @@ export default function SimulationRunPage() {
             </div>
           )}
 
+          {/* ── 프로젝트 선택 (광고 입력 위, 풀너비) ── */}
+          <div className={`${cardCls} mb-5`}>
+            <label className={labelCls}>
+              프로젝트 <span className='text-[#F74D4D]'>*</span>
+            </label>
+            {projects.length === 0 ? (
+              <p className='text-sm text-[#8B95A1] dark:text-[#6B7280]'>
+                선택할 프로젝트가 없습니다. 왼쪽 패널에서 프로젝트를 먼저 만들어 주세요.
+              </p>
+            ) : (
+              <select
+                value={selectedProject?.id ?? ''}
+                onChange={e => selectProject(e.target.value || null)}
+                className={inputCls}>
+                <option value=''>프로젝트를 선택하세요</option>
+                {projects.map(p => (
+                  <option key={p.id} value={p.id}>
+                    {p.name}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
+
           <div className='grid grid-cols-[1fr_1fr] gap-5 items-stretch'>
             {/* ── 왼쪽: 광고 입력 ── */}
             <div className={`${cardCls} flex flex-col gap-5`}>
@@ -329,7 +353,7 @@ export default function SimulationRunPage() {
                 <textarea
                   value={adContent}
                   onChange={e => setAdContent(e.target.value)}
-                  rows={4}
+                  rows={3}
                   placeholder='제품 특징이나 광고 카피를 입력하세요.'
                   className={`${inputCls} resize-none`}
                 />
@@ -619,7 +643,7 @@ export default function SimulationRunPage() {
             </button>
             {selectedProject === null ? (
               <p className='text-[11px] text-[#F74D4D] text-center mt-2'>
-                왼쪽 패널에서 프로젝트를 먼저 선택해 주세요.
+                위에서 프로젝트를 먼저 선택해 주세요.
               </p>
             ) : (
               <p className='text-[11px] text-[#B0B8C1] dark:text-[#4B5563] text-center mt-2'>
