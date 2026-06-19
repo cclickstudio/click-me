@@ -132,6 +132,7 @@ class PersonaReaction(BaseModel):
     emotion_tag: EmotionTag = EmotionTag.INDIFFERENCE
     perceived_message: str | None = None
     perceived_target: str | None = None
+    noticed_first: str | None = None  # §4-b salience — 프로필상 가장 먼저 주의가 간 요소(탐색적)
     utterance: str | None = None
     qa_passed: bool = True
     qa_fail_reason: str | None = None
