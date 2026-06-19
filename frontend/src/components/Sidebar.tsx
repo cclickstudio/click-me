@@ -38,6 +38,7 @@ const manageChildren = [
   { label: '모니터링', href: '/manage/monitoring' },
   { label: '예산 관리', href: '/manage/budget' },
   { label: '성과 비교', href: '/manage/compare' },
+  { label: '연동', href: '/manage/connect' },
 ];
 
 const adminNav = [
