@@ -655,9 +655,9 @@ export function DebatePanel({
         )}
       </div>
 
-      {/* 토론 결과 — done 세션을 select로 전환해 모두 볼 수 있다. 높이는 제한 + 내부 스크롤. */}
+      {/* 토론 결과 — done 세션을 select로 전환해 모두 볼 수 있다. 남은 높이를 채우고 내부 스크롤. */}
       {view === 'active' && (
-        <div className={cardCls}>
+        <div className={`${cardCls} flex flex-1 flex-col`}>
           <div className='flex items-center justify-between gap-3 mb-4 flex-wrap'>
             <h2 className='text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]'>
               토론 결과
@@ -675,7 +675,7 @@ export function DebatePanel({
               </select>
             )}
           </div>
-          <div className='max-h-[460px] overflow-y-auto'>
+          <div className='flex-1 min-h-0 overflow-y-auto'>
             {resultSession?.result ? (
               <DebateOutcome result={resultSession.result} />
             ) : (
