@@ -32,11 +32,13 @@ const mainNav = [
   },
 ];
 
-// 광고 매니지먼트 하위 메뉴 — 부모를 누르면 아래로 펼쳐진다.
+// 광고 매니지먼트 하위 메뉴 — 부모는 토글(자체 페이지 없음), 실제 화면은 여기로.
 const manageChildren = [
-  { label: '캠페인 대시보드', href: '/manage/campaigns' },
+  { label: '캠페인', href: '/manage/campaigns' },
+  { label: '모니터링', href: '/manage/monitoring' },
   { label: '예산 관리', href: '/manage/budget' },
-  { label: '게시물 성과 비교', href: '/manage/compare' },
+  { label: '성과 비교', href: '/manage/compare' },
+  { label: '연동', href: '/manage/connect' },
 ];
 
 const adminNav = [
@@ -145,31 +147,29 @@ export default function Sidebar() {
         {mainNav
           .filter((item) => !isCompany || !COMPANY_HIDDEN_NAV.includes(item.href))
           .map((item) => {
-            // 광고 매니지먼트 — 누르면 /manage로 이동하면서 하위 메뉴가 아래로 펼쳐짐.
+            // 광고 매니지먼트 — 카테고리. 누르면 하위 메뉴만 토글(자체 페이지 없음).
             if (item.href === '/manage') {
-              const parentActive = pathname === '/manage';
+              const sectionActive = pathname.startsWith('/manage');
               return (
                 <div key="/manage">
-                  <div
-                    className={`flex items-center rounded-xl text-sm font-medium transition-colors ${
-                      parentActive ? 'bg-[#EBF3FF] dark:bg-[#1E3A5F] text-[#3182F6]'
-                                   : 'text-[#4E5968] dark:text-[#9CA3AF] hover:bg-[#F2F4F6] dark:hover:bg-[#252D3D]'
+                  <button type="button" onClick={() => setManageOpen((o) => !o)}
+                    aria-label="광고 매니지먼트 하위 메뉴 토글" aria-expanded={manageOpen}
+                    className={`flex items-center w-full rounded-xl text-sm font-medium transition-colors ${
+                      sectionActive ? 'text-[#3182F6]'
+                                    : 'text-[#4E5968] dark:text-[#9CA3AF] hover:bg-[#F2F4F6] dark:hover:bg-[#252D3D] hover:text-[#191F28] dark:hover:text-[#F2F4F6]'
                     }`}
                   >
-                    <Link href={item.href} onClick={() => setManageOpen(true)}
-                      className="flex items-center gap-3 flex-1 pl-3 py-2.5">
-                      <span className={parentActive ? 'text-[#3182F6]' : ''}>{item.icon}</span>
+                    <span className="flex items-center gap-3 flex-1 pl-3 py-2.5">
+                      <span className={sectionActive ? 'text-[#3182F6]' : ''}>{item.icon}</span>
                       <span>{item.label}</span>
-                    </Link>
-                    <button type="button" onClick={() => setManageOpen((o) => !o)}
-                      aria-label="하위 메뉴 토글" aria-expanded={manageOpen}
-                      className="px-3 py-2.5 text-[#8B95A1] hover:text-[#3182F6]">
+                    </span>
+                    <span className="px-3 py-2.5 text-[#8B95A1]">
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
                         className={`transition-transform ${manageOpen ? 'rotate-180' : ''}`}>
                         <polyline points="6 9 12 15 18 9" />
                       </svg>
-                    </button>
-                  </div>
+                    </span>
+                  </button>
                   {manageOpen && (
                     <div className="mt-0.5 space-y-0.5">
                       {manageChildren.map((c) => (

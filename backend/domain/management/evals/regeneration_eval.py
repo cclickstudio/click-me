@@ -363,6 +363,84 @@ async def run_default_tools_eval(fixture_version: str = "v1") -> EvalReport:
     return summarize(records, fixture_version=fixture_version)
 
 
+# ── 에스컬레이션 사다리 eval — 사다리 순서 준수 + 회복 시 정지 (시간축 채점) ──
+
+
+@dataclass(frozen=True)
+class EscalationEvalReport:
+    """사다리 1시나리오 채점 — 방문 순서가 우선순위와 일치하고 회복 시 멈췄는가."""
+
+    scenario: str
+    visited_actions: tuple[str, ...]
+    expected_order: tuple[str, ...]
+    order_ok: bool  # 방문 액션이 사다리 우선순위 접두와 일치
+    terminal: str  # "recovered" | "exhausted"
+    stopped_on_recovery: bool
+
+
+async def run_escalation_eval(
+    *, recover_after: int = 2, max_ticks: int = 8
+) -> EscalationEvalReport:
+    """데모 시나리오(BID_LOSS)로 사다리를 끝까지 돌려 순서 준수·회복 정지를 채점한다.
+
+    실 agent(결정론 폴백) + 실 detection을 관통한다 — 새 액션(CHANGE_BID_STRATEGY·
+    EXPAND_AUDIENCE)이 제안·집행까지 실제로 도는지 시간축으로 확인한다.
+    """
+    from datetime import UTC, datetime  # noqa: PLC0415
+
+    from domain.management.agents.regeneration_tools import (  # noqa: PLC0415
+        build_regeneration_agent,
+    )
+    from domain.management.contracts.enums import AnomalyType, FaultMode  # noqa: PLC0415
+    from domain.management.escalation import (  # noqa: PLC0415
+        ACTIVE_LADDERS,
+        EscalationController,
+        EscalationStatus,
+        InMemoryEscalationStore,
+    )
+    from domain.management.escalation_demo import DemoScenarioDetector  # noqa: PLC0415
+    from domain.management.execution.audit_log import InMemoryAuditLog  # noqa: PLC0415
+
+    anomaly = AnomalyType.BID_LOSS
+    controller = EscalationController(
+        store=InMemoryEscalationStore(),
+        detector=DemoScenarioDetector(
+            anomaly_fault=FaultMode.BID_LOSS, recover_after=recover_after
+        ),
+        agent=build_regeneration_agent(),
+        audit=InMemoryAuditLog(),
+    )
+    now = datetime(2026, 6, 12, 9, 0, tzinfo=UTC)
+    tenant, account, campaign = "org_eval", "act_eval", "camp_eval_esc"
+
+    visited: list[str] = []
+    terminal = "exhausted"
+    for _ in range(max_ticks):
+        outcome = await controller.re_evaluate(tenant, account, campaign, now=now)
+        if outcome.status is EscalationStatus.ESCALATED and outcome.proposal is not None:
+            visited.append(outcome.proposal.action_type)
+            await controller.on_executed(outcome.run_id, now=now)
+        elif outcome.status is EscalationStatus.RECOVERED:
+            terminal = "recovered"
+            break
+        elif outcome.status is EscalationStatus.EXHAUSTED:
+            terminal = "exhausted"
+            break
+        else:
+            break
+
+    expected = tuple(ACTIVE_LADDERS.get(anomaly, []))
+    order_ok = tuple(visited) == expected[: len(visited)]
+    return EscalationEvalReport(
+        scenario=f"{anomaly.value}/recover_after={recover_after}",
+        visited_actions=tuple(visited),
+        expected_order=expected,
+        order_ok=order_ok,
+        terminal=terminal,
+        stopped_on_recovery=(terminal == "recovered"),
+    )
+
+
 def _print_report(title: str, report: EvalReport) -> None:
     print(f"\n── {title} (fixture {report.fixture_version}, {report.total_cases}케이스) ──")
     print(f"  승률(개선율)       {report.win_rate:>6.1%}  (목표 ≥ {WIN_RATE_TARGET:.0%})")
@@ -388,6 +466,12 @@ def main() -> None:  # pragma: no cover — 수동 실행 진입점
     _print_report("② agent 실행형 eval (스텁 tool)", asyncio.run(run_agent_eval()))
     _print_report("③ agent 실측 eval (기본 tool 체인)", asyncio.run(run_default_tools_eval()))
     _print_report("④ 처방 선택 eval (결정 코어)", asyncio.run(run_action_selection_eval()))
+
+    esc = asyncio.run(run_escalation_eval())
+    print(f"\n── ⑤ 에스컬레이션 사다리 eval ({esc.scenario}) ──")
+    print(f"  방문 순서          {' → '.join(esc.visited_actions)}")
+    print(f"  사다리 순서 준수   {'✅' if esc.order_ok else '❌'}")
+    print(f"  종료 / 회복정지    {esc.terminal} / {'✅' if esc.stopped_on_recovery else '❌'}")
 
 
 if __name__ == "__main__":

@@ -5,6 +5,7 @@ from datetime import datetime
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
+    JSON,
     BigInteger,
     Boolean,
     DateTime,
@@ -396,6 +397,35 @@ class IdempotencyKeyRow(Base):
     created_at: Mapped[datetime] = mapped_column(_TS, server_default=func.now())
 
 
+class RemediationEscalationRow(Base):
+    """🅱 시간축 에스컬레이션 사다리 진행 상태 — 캠페인당 active 1건 (re_evaluate 소유).
+
+    파괴도 낮은 조치부터 우선순위대로 시도하고, 회복(원래 anomaly 소멸)이 안 되면 다음 단계로
+    올린다. 회복 판정은 재탐지로만 하므로 baseline 스냅샷은 저장하지 않는다.
+    """
+
+    __tablename__ = "remediation_escalations"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    run_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    ad_account_id: Mapped[str] = mapped_column(String(64))
+    campaign_id: Mapped[str] = mapped_column(String(64), index=True)
+    anomaly_type: Mapped[str] = mapped_column(String(48))  # 사다리를 연 anomaly = 회복 판정 기준
+    ladder: Mapped[list] = mapped_column(JSONB)  # 우선순위 action_type 목록 스냅샷
+    current_rung_index: Mapped[int] = mapped_column(Integer, default=0)
+    rung_status: Mapped[str] = mapped_column(String(16))  # proposed | executed | rejected
+    rung_executed_at: Mapped[datetime | None] = mapped_column(_TS)
+    last_proposal_id: Mapped[str | None] = mapped_column(String(64))
+    last_approval_id: Mapped[str | None] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(16), index=True)  # active | recovered | exhausted
+    opened_at: Mapped[datetime] = mapped_column(_TS, server_default=func.now())
+    last_evaluated_at: Mapped[datetime | None] = mapped_column(_TS)
+    updated_at: Mapped[datetime] = mapped_column(
+        _TS, server_default=func.now(), onupdate=func.now()
+    )
+
+
 # ──────────────────────────────────────────────
 # Persona Debate (시뮬레이터 4-1 페르소나 토론, simulations 1:N) — db-schema v3.1
 # ──────────────────────────────────────────────
@@ -468,3 +498,32 @@ class PersonaDebateUtterance(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     debate: Mapped["PersonaDebate"] = relationship(back_populates="utterances")
+
+
+class MetaConnection(Base):
+    """테넌트(Organization)별 Meta 연결 — OAuth 장기 토큰을 암호화 저장 (멀티테넌트 (A)).
+
+    외부 광고주가 자기 Meta 자산을 연결하면 org당 1건 생성된다. access_token_enc는
+    AES-256-GCM 암호문(평문 토큰 저장·로그 금지 — CLAUDE.md 보안 규칙). scopes는 부여 권한
+    목록(JSONB, SQLite 테스트에선 JSON), token_expires_at은 장기토큰 만료(갱신 트리거용).
+    """
+
+    __tablename__ = "meta_connections"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, unique=True
+    )
+    access_token_enc: Mapped[str] = mapped_column(Text, nullable=False)
+    ad_account_id: Mapped[str | None] = mapped_column(String(64))
+    page_id: Mapped[str | None] = mapped_column(String(64))
+    ig_user_id: Mapped[str | None] = mapped_column(String(64))
+    scopes: Mapped[list | None] = mapped_column(JSONB().with_variant(JSON(), "sqlite"))
+    token_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="active"
+    )  # active | needs_reconnect
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
