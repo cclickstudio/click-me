@@ -133,16 +133,14 @@ class MetaAdsReader:
         self._client = client or build_meta_client(settings)
 
     async def get_metrics(self, campaign_id: str, since: datetime) -> MetricsSnapshot:
-        # since~오늘 구간을 time_range로 요청 → time_increment 없이 단일 집계행을 받는다.
-        # (time_increment=1로 일별 행을 받아 rows[0]만 취하면 since 무시 + 하루치만 읽힘)
-        until = datetime.now(UTC)
+        # lifetime(date_preset=maximum)으로 누적 집계행 1개를 받는다 — 캠페인이 종료·게재중단돼도
+        # "오늘" 윈도우면 0이 되므로, 실제 누적 성과를 그대로 보여주려 전체 기간으로 조회한다.
+        # (since는 date_stop 없을 때 as_of 폴백으로만 사용)
         payload = await self._client.get(
             f"{campaign_id}/insights",
             {
                 "fields": _INSIGHTS_FIELDS,
-                "time_range": json.dumps(
-                    {"since": since.date().isoformat(), "until": until.date().isoformat()}
-                ),
+                "date_preset": "maximum",
             },
         )
         rows = payload.get("data", [])
@@ -211,16 +209,13 @@ class MetaAdsReader:
     async def get_platform_breakdown(
         self, campaign_id: str, since: datetime
     ) -> list[PlatformMetrics]:
-        """게재 플랫폼별(FB/IG 등) 지표 — insights breakdowns=publisher_platform."""
-        until = datetime.now(UTC)
+        """게재 플랫폼별(FB/IG 등) 지표 — insights breakdowns=publisher_platform (lifetime 누적)."""
         payload = await self._client.get(
             f"{campaign_id}/insights",
             {
                 "fields": _PLATFORM_FIELDS,
                 "breakdowns": "publisher_platform",
-                "time_range": json.dumps(
-                    {"since": since.date().isoformat(), "until": until.date().isoformat()}
-                ),
+                "date_preset": "maximum",
             },
         )
         out: list[PlatformMetrics] = []
