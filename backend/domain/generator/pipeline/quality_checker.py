@@ -48,7 +48,9 @@ def _failed_item() -> QualityCheckItem:
     return QualityCheckItem(passed=False, score=0.0, feedback="품질 검증 호출 실패")
 
 
-@traceable(name="QualityChecker", metadata={"pipeline": "generator"})
+@traceable(
+    name="generator:check_quality", metadata={"pipeline": "generator", "prompt_version": "v1.0"}
+)
 async def check_quality(
     ad_copy: AdCopy,
     target: str,

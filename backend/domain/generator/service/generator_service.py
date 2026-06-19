@@ -19,6 +19,7 @@ from sqlalchemy import select
 
 from core.db import AsyncSessionLocal
 from core.models import AdCampaignLog, AdGeneration, AdGenerationCandidate, AdPublishLog
+from core.tracing import make_trace_config
 from domain.generator.adapters.instagram import build_publisher
 from domain.generator.adapters.meta_ads import AdvertiseRequest, build_ads_publisher
 from domain.generator.contracts.schemas import GenerationCreateRequest
@@ -54,11 +55,15 @@ async def start_generation(
         await session.commit()
 
     _tasks[generation_id] = {"status": "pending", "events": []}
-    asyncio.create_task(_run_pipeline(generation_id, request))
+    asyncio.create_task(_run_pipeline(generation_id, request, created_by=created_by))
     return generation_id
 
 
-async def _run_pipeline(generation_id: str, request: GenerationCreateRequest) -> None:
+async def _run_pipeline(
+    generation_id: str,
+    request: GenerationCreateRequest,
+    created_by: uuid.UUID | None = None,
+) -> None:
     store = _tasks[generation_id]
 
     def emit(event: dict) -> None:
@@ -68,11 +73,15 @@ async def _run_pipeline(generation_id: str, request: GenerationCreateRequest) ->
         store["status"] = "running"
         await _update_status(generation_id, "running")
 
-        config = {
-            "run_name": "AdGenerationPipeline",
-            "metadata": {"generation_id": generation_id},
-            "configurable": {"emit": emit},
-        }
+        config = make_trace_config(
+            domain="generator",
+            feature="generate",
+            mode=request.mode.value,
+            user_id=str(created_by) if created_by else "anonymous",
+            project_id=request.project_id,
+            extra_metadata={"generation_id": generation_id},
+            configurable={"emit": emit},
+        )
         initial_state = {
             "generation_id": generation_id,
             "request": request.model_dump(),

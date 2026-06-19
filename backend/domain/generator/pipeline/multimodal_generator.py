@@ -63,7 +63,10 @@ def _build_prompt(
     )
 
 
-@traceable(name="MultimodalGenerator", metadata={"pipeline": "generator"})
+@traceable(
+    name="generator:generate_multimodal",
+    metadata={"pipeline": "generator", "prompt_version": "v1.0"},
+)
 async def generate_image_and_copy(
     product_analysis: ProductAnalysis,
     strategy: AdStrategy,

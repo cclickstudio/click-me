@@ -40,7 +40,9 @@ class _ProductAnalysisLLM(BaseModel):
 _llm = build_text_llm(temperature=0.3).with_structured_output(_ProductAnalysisLLM)
 
 
-@traceable(name="ProductAnalyzer", metadata={"pipeline": "generator"})
+@traceable(
+    name="generator:analyze_product", metadata={"pipeline": "generator", "prompt_version": "v1.0"}
+)
 async def analyze_product(
     product_name: str,
     description: str,

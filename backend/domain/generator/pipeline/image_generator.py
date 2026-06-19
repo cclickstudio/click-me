@@ -341,7 +341,9 @@ def _build_product_visual_context(
 # 전략·템플릿·사이즈 등 입력값을 받아 프롬프트를 조립하고,
 # GPT Image API를 호출한 뒤 base64 디코딩된 이미지 bytes를 반환한다.
 # ─────────────────────────────────────────────────────────────────────────────
-@traceable(name="ImageGenerator", metadata={"pipeline": "generator"})
+@traceable(
+    name="generator:generate_image", metadata={"pipeline": "generator", "prompt_version": "v1.0"}
+)
 async def generate_image(
     product_analysis: ProductAnalysis,
     strategy: AdStrategy,
