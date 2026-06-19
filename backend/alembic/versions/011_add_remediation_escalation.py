@@ -13,8 +13,8 @@ revision id가 있어(병렬 브랜치), 통합 시 체인 정리가 함께 필�
 
 from alembic import op
 
-revision = "008_mgmt_escalation"
-down_revision = "007"
+revision = "011"
+down_revision = "010"
 branch_labels = None
 depends_on = None
 
