@@ -122,7 +122,7 @@ birth_year ≈ 현재연도 − age
 |---|---|---|---|---|
 | **1. 프롬프트 세대 게이팅 ✅ 적용 완료** | 형성기 구간 + **나이대 말투**를 프롬프트에 넣고 "네 나이에 비추어 친숙/생소를 판단, 모르면 모르는 대로 반응" 지시 (`reaction.py:_generation_lines`) | **완료(2026-06-19)** | 코드 몇 줄, 데이터 0 | LLM 자체 시대지식에 의존(브랜드 연대 오인 가능) |
 | **2. 브랜드 시대성 1회 추출 ✅ 적용 완료** | `interpret_ad`가 브랜드 시대·세대 관련성도 추출("전세대 국민/Z세대 native/90s 전성기") → `structured_analysis.brand_era`로 전 페르소나 공유 주입 (`reaction.py:_brand_era_lines`) | **완료(2026-06-19)** | 해석 1콜 확장 | 브랜드 식별 실패 시 무력(identified=false → 미주입) |
-| **3. 실데이터 주입** | 세대별 브랜드 인지도 실측(한국갤럽 브랜드 트래킹·대학내일20대연구소)을 페르소나에 주입 | Phase 2 | 데이터 확보 비쌈 | 브랜드 단위 포괄 수집 난이도 |
+| **3. 실데이터 주입** | 세대별 브랜드 인지도 실측(한국갤럽 브랜드 트래킹·대학내일20대연구소)을 페르소나에 주입 → 상세 [PERSONA_COHORT_TIER3_REALDATA_STRATEGY.md](./PERSONA_COHORT_TIER3_REALDATA_STRATEGY.md) | Phase 2 | 데이터 확보 비쌈 | 브랜드 단위 포괄 수집 난이도 |
 
 ### 4.3 Tier 1 — 적용 완료 (2026-06-19)
 
@@ -191,7 +191,7 @@ birth_year ≈ 현재연도 − age
   (JSONB) 키로 담아 **계약/ORM·Alembic 변경 없음**(`visual_elements` §4-a와 동일 방식).
 - ~~**무명 브랜드 fallback**~~ → **결정됨**. 식별 실패 시 `brand_era.identified=false`로 두고 **반응 프롬프트에 미주입**
   (시대 날조 금지). 검색 1회 부착은 보류(가드레일 §5-1: 반응 단계 검색 금지 유지).
-- **실데이터(Tier 3) 트리거** — 클라이언트가 브랜드 단위 정확도를 요구할 때만 착수.
+- **실데이터(Tier 3) 트리거** — 클라이언트가 브랜드 단위 정확도를 요구할 때만 착수. 전략 상세는 [PERSONA_COHORT_TIER3_REALDATA_STRATEGY.md](./PERSONA_COHORT_TIER3_REALDATA_STRATEGY.md).
 
 ---
 
