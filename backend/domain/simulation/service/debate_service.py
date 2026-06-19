@@ -19,6 +19,9 @@ from domain.simulation.contracts.debate_schemas import (
     DebateDigest,
     DebateResult,
     DebateTopic,
+    JudgeFinal,
+    ParticipantDebate,
+    Utterance,
 )
 from domain.simulation.contracts.schemas import (
     AdInterpretation,
@@ -26,6 +29,7 @@ from domain.simulation.contracts.schemas import (
     Persona,
     PersonaReaction,
     RubricScore,
+    SimulationAggregate,
 )
 from domain.simulation.tools.debate.analyzer import analyze_reactions
 from domain.simulation.tools.debate.assigner import assign_panel
@@ -77,7 +81,7 @@ class DebateService:
         debater_factory: Callable[[list[PersonaReaction]], DebaterPort] | None = None,
         judge: JudgePort | None = None,
         persistence=None,
-        report_persistence=None,
+        sim_session_factory=None,
         selector_rerank_fn: RerankFn | None = None,
         usage_clients=None,
     ) -> None:
@@ -85,8 +89,8 @@ class DebateService:
         self._debater_factory = debater_factory
         self._judge = judge
         self._persistence = persistence  # DebateRepository(주입 시 + simulation_id 있을 때 저장)
-        # 통합 리포트(report_view) upsert·조회 핸들러. 주입 + simulation_id 있을 때만 저장.
-        self._report_persistence = report_persistence
+        # 시뮬 결과 재조회용 세션 팩토리(get_saved_report 재조립). 미주입이면 복원 불가(None).
+        self._sim_session_factory = sim_session_factory
         # 일반인 선발(10-a) 동점 시 LLM 재랭킹(주입 시). None이면 결정론 선발(mock·무비용 경로).
         self._selector_rerank_fn = selector_rerank_fn
         # 토론자·Judge가 공유하는 _Clients(실 LLM 경로만). 토론 전후 스냅샷 차이로 1회 토큰 집계.
@@ -449,19 +453,8 @@ class DebateService:
                 debates=debates_digests,
             )
 
-            # ── 통합 리포트 영속화(주입 + simulation_id 있을 때만; 1행 upsert) ──
-            # 새로고침·콜드 진입 시 최종 합산 리포트 복원용. 실패해도 런은 유지(로깅).
-            if self._report_persistence is not None and simulation_id:
-                try:
-                    await self._report_persistence.upsert(
-                        simulation_id,
-                        report_view.model_dump(),
-                        run_id,
-                        debate_id,
-                        len(debates_digests),
-                    )
-                except Exception:
-                    logger.exception("통합 리포트 영속화 실패(런은 유지) run_id=%s", run_id)
+            # report_view는 결정론 파생물(LLM✗) — 별도 영속화하지 않는다(중복·stale 방지).
+            # 조회 시 get_saved_report가 시뮬 결과 + 저장 토론으로 재조립한다.
 
             result = {
                 "run_id": run_id,
@@ -515,7 +508,144 @@ class DebateService:
         return await self._persistence.get_detail(debate_id)
 
     async def get_saved_report(self, simulation_id: str) -> dict | None:
-        """simulation_id로 저장된 통합 리포트(report_view) 복원. 영속화 미주입이면 None."""
-        if self._report_persistence is None:
+        """simulation_id로 통합 리포트(report_view)를 재조립해 반환. report_view는 결정론
+        파생물(LLM✗)이라 저장 결과 + 저장 토론만 있으면 언제든 재조립된다(별도 영속화 없음).
+
+        시뮬 결과 없음 / 토론 0개(최종 리포트는 토론 후 산출) / 예외 → None(로깅).
+        """
+        if self._sim_session_factory is None or self._persistence is None:
             return None
-        return await self._report_persistence.get_by_simulation(simulation_id)
+        try:
+            return await self._rebuild_report(simulation_id)
+        except Exception:
+            logger.exception("통합 리포트 재조립 실패 simulation_id=%s", simulation_id)
+            return None
+
+    async def _rebuild_report(self, simulation_id: str) -> dict | None:
+        """시뮬 결과(DB) + 저장 토론(DB)을 contracts 객체로 복원해 ReportView를 재조립."""
+        import uuid as _uuid
+
+        from domain.simulation.repositories.simulation_repository import SimulationRepository
+
+        # ── 시뮬 결과 복원 ──
+        async with self._sim_session_factory() as session:
+            full = await SimulationRepository(session).get_full_result(
+                _uuid.UUID(str(simulation_id))
+            )
+        if full is None:
+            return None
+
+        ad_analysis = (
+            AdInterpretation.model_validate(full["ad_analysis"])
+            if full.get("ad_analysis")
+            else None
+        )
+        personas = [Persona.model_validate(p) for p in full.get("personas", [])]
+        reactions = [PersonaReaction.model_validate(r) for r in full.get("reactions", [])]
+        rubric = [RubricScore.model_validate(s) for s in full.get("rubric_scores", [])]
+        aggregate = (
+            SimulationAggregate.model_validate(full["aggregate"]) if full.get("aggregate") else None
+        )
+        objective_fit = (
+            ObjectiveFit.model_validate(full["objective_fit"])
+            if full.get("objective_fit")
+            else None
+        )
+        if aggregate is None or not reactions:
+            return None
+
+        analysis = analyze_reactions(reactions, ad_analysis)
+
+        # ── 저장 토론 복원(0개면 None — 최종 리포트는 토론 후 산출) ──
+        metas = await self._persistence.list_by_simulation(simulation_id)
+        if not metas:
+            return None
+
+        digests: list[DebateDigest] = []
+        main_debate: DebateResult | None = None
+        main_topic: DebateTopic | None = None
+        main_debate_id: str | None = None
+        # list_by_simulation은 최신순 — 정렬 누적은 오래된→최신, 메인은 최신(첫 항목).
+        for idx, meta in enumerate(metas):
+            debate_id = meta.get("debate_id")
+            detail = await self._persistence.get_detail(debate_id)
+            if detail is None:
+                continue
+            debate_obj = self._detail_to_debate_result(detail)
+            topic = build_topic(analysis, aggregate, ad_analysis)
+            # 저장된 headline로 메인 topic의 표시 문구를 맞춘다(diagnosis 등 진단은 재생성값 유지).
+            if detail.get("topic"):
+                topic = topic.model_copy(update={"headline": detail["topic"]})
+            digests.append(build_debate_digest(topic, debate_obj, debate_id))
+            if idx == 0:  # 최신 토론을 메인으로
+                main_debate = debate_obj
+                main_topic = topic
+                main_debate_id = debate_id
+        if main_debate is None:
+            return None
+        digests.reverse()  # 오래된→최신 누적 순서로
+
+        report = build_report(analysis, aggregate, main_topic, main_debate, rubric)
+        report_view = build_report_view(
+            run_id=str(simulation_id),
+            simulation_id=str(simulation_id),
+            debate_id=main_debate_id,
+            report=report,
+            objective_fit=objective_fit,
+            ad_analysis=ad_analysis,
+            ad=None,
+            topic=main_topic,
+            debate=main_debate,
+            aggregate=aggregate,
+            analysis=analysis,
+            personas=personas,
+            reactions=reactions,
+            generated_at=datetime.now(UTC).isoformat(),
+            debates=digests,
+        )
+        return report_view.model_dump(mode="json")
+
+    @staticmethod
+    def _detail_to_debate_result(detail: dict) -> DebateResult:
+        """get_detail(dict) → DebateResult 복원. participants는 발언을 라운드순으로 다시 묶는다."""
+        # 발언(평면 리스트)을 persona_id로 그룹핑.
+        utt_by_pid: dict[str, list[Utterance]] = {}
+        for u in detail.get("utterances", []):
+            pid = u.get("persona_id")
+            if pid is None:
+                continue
+            utt_by_pid.setdefault(pid, []).append(
+                Utterance(
+                    round=u["round"],
+                    phase=u["phase"],
+                    stance=u["stance"],
+                    text=u["text"],
+                    reason=u.get("reason", ""),
+                    lever=u.get("lever", ""),
+                )
+            )
+        participants = [
+            ParticipantDebate(
+                persona_id=p["persona_id"],
+                persona_name=p["persona_name"],
+                persona_profile=p.get("persona_profile", ""),
+                role=p["role"],
+                engine=p["engine"],
+                utterances=utt_by_pid.get(p["persona_id"], []),
+            )
+            for p in detail.get("participants", [])
+        ]
+        final_d = detail.get("final")
+        final = JudgeFinal.model_validate(final_d) if final_d else None
+        # round_summaries 키는 JSON 직렬화로 str일 수 있음 → int로 환원(스키마는 dict[int, str]).
+        rs_raw = detail.get("round_summaries") or {}
+        round_summaries = {int(k): v for k, v in rs_raw.items()}
+        return DebateResult(
+            topic=detail.get("topic") or "",
+            rounds_run=detail.get("rounds_run") or 0,
+            stop_reason=detail.get("stop_reason") or "",
+            models=detail.get("models") or {},
+            participants=participants,
+            round_summaries=round_summaries,
+            final=final,
+        )

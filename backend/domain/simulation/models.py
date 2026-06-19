@@ -125,22 +125,6 @@ class RubricScore(SimBase):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
-class SimulationReport(SimBase):
-    # 시뮬+토론 합산 통합 리포트(report_view) 영속화 — 시뮬당 1행(simulation_id UNIQUE).
-    # 토론할 때마다 최신 합산 report_view로 upsert. 새로고침·콜드 진입 시 최종 리포트 복원용.
-    __tablename__ = "simulation_reports"
-
-    id: Mapped[uuid.UUID] = mapped_column(Uuid(), primary_key=True, default=uuid.uuid4)
-    simulation_id: Mapped[uuid.UUID] = mapped_column(Uuid(), nullable=False, unique=True)
-    run_id: Mapped[str | None] = mapped_column(String(64))
-    debate_id: Mapped[uuid.UUID | None] = mapped_column(Uuid())
-    debate_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-    report_view: Mapped[dict] = mapped_column(_JSONB, nullable=False)
-    generated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
-
-
 class SimulationAggregate(SimBase):
     __tablename__ = "simulation_aggregates"
 
