@@ -288,6 +288,75 @@ Output requirements:
 - Product clearly visible and well-lit
 - CRITICAL: ALL three text elements (HEADLINE, BODY, CTA BUTTON) must be COMPLETELY visible within the image — zero clipping or cutoff allowed under any circumstance"""
 
+# ── [컴포즈 모드] 프롬프트 ──────────────────────────────────────────────────
+# 사용자가 제공한 상품 이미지를 기반으로 광고 배경을 생성할 때 사용.
+# Edit API에 원본 상품 이미지를 넘기고, AI가 배경만 광고 스타일로 채운다.
+_COMPOSE_PROMPT_TEMPLATE = """\
+Create a professional {platform} advertisement image around the provided product.
+
+THE PRODUCT IS PROTECTED — preserve all product visual details exactly as provided. \
+Your task is to create the BACKGROUND and AD ENVIRONMENT around the product only.
+
+Visual style: {style}
+Photography style: {photo_style}
+Strategy: {strategy_desc}
+
+Product: {product_name}
+{core_values_line}Target audience: {target_audience}
+{color_line}
+{tone_line}
+
+Background direction:
+{product_visual_context}
+
+{safe_zone}
+
+Requirements:
+- STRICTLY preserve the product as provided — zero modification to product appearance
+- Create a professional advertisement background that complements the product
+- Background lighting and mood must match the photography style above
+- STRICTLY NO text, letters, words, numbers, or typography of any kind
+- No logos, watermarks, URLs, or QR codes
+- Clean, modern aesthetic suitable for Meta/Instagram feed"""
+
+_COMPOSE_PROMPT_TEMPLATE_WITH_TEXT = """\
+Create a professional Korean {platform} advertisement image around the provided product with integrated Korean text.
+
+THE PRODUCT IS PROTECTED — preserve all product visual details exactly as provided. \
+Your task is to create the BACKGROUND, AD ENVIRONMENT, and TEXT OVERLAY around the product only.
+
+Visual style: {style}
+Photography style: {photo_style}
+Strategy: {strategy_desc}
+
+Product: {product_name}
+{core_values_line}Target audience: {target_audience}
+{color_line}
+{tone_line}
+
+Background direction:
+{product_visual_context}
+
+{text_layout}
+
+KOREAN TEXT — render EXACTLY as written, character by character (zero tolerance for typos):
+  Headline : "{headline}"
+  Body     : "{body}"
+  CTA      : "{cta}"
+
+Typography rules:
+- All text must be in Korean (한국어) — every character must be a valid, correctly spelled Korean word
+- Headline: bold weight, high contrast (white on dark background) — size must fit within its zone
+- Body: regular weight, smaller than headline — size must fit within its zone
+- CTA: bold, placed inside a clearly visible rounded button shape
+- NEVER use a font size so large that text overflows its designated zone
+
+Output requirements:
+- STRICTLY preserve the product as provided — zero modification to product appearance
+- Commercial advertising quality, modern and clean aesthetic for Meta/Instagram
+- CRITICAL: ALL three text elements (HEADLINE, BODY, CTA BUTTON) must be COMPLETELY visible — zero clipping"""
+
+
 # ── [텍스트 포함 개선 모드] 프롬프트 ────────────────────────────────────────
 # 원본 이미지를 Edit API로 수정하면서 텍스트도 함께 삽입할 때 사용.
 _EDIT_PROMPT_TEMPLATE_WITH_TEXT = """\
@@ -374,6 +443,7 @@ async def generate_image(
     brand_color: str | None = None,
     tone: str | None = None,
     original_image_bytes: bytes | None = None,
+    product_image_bytes: bytes | None = None,
     improvement_context: str | None = None,
     headline: str | None = None,
     body: str | None = None,
@@ -386,6 +456,59 @@ async def generate_image(
     )
     tone_line = f"Tone and manner: {tone}" if tone else "Tone: clean, professional, trustworthy"
     has_text = bool(headline and body and cta)
+    core_values_line = (
+        f"Core values: {', '.join(product_analysis.core_values)}\n"
+        if product_analysis.core_values
+        else ""
+    )
+
+    # ── [컴포즈 모드] Edit API + 상품 이미지 ─────────────────────────────────
+    if product_image_bytes is not None:
+        target_audience = product_analysis.target_audience or "general audience"
+        product_visual_context = _build_product_visual_context(product_analysis, brand_color)
+
+        if has_text:
+            prompt = _COMPOSE_PROMPT_TEMPLATE_WITH_TEXT.format(
+                platform="Meta/Instagram",
+                style=_TEMPLATE_STYLE[template],
+                photo_style=_STRATEGY_PHOTO_STYLE[strategy],
+                strategy_desc=_STRATEGY_DESCRIPTIONS[strategy],
+                product_name=product_analysis.product_name,
+                core_values_line=core_values_line,
+                target_audience=target_audience,
+                color_line=color_line,
+                tone_line=tone_line,
+                product_visual_context=product_visual_context,
+                text_layout=_TEXT_LAYOUT[template],
+                headline=headline,
+                body=body,
+                cta=cta,
+            )
+        else:
+            prompt = _COMPOSE_PROMPT_TEMPLATE.format(
+                platform="Meta/Instagram",
+                style=_TEMPLATE_STYLE[template],
+                photo_style=_STRATEGY_PHOTO_STYLE[strategy],
+                strategy_desc=_STRATEGY_DESCRIPTIONS[strategy],
+                product_name=product_analysis.product_name,
+                core_values_line=core_values_line,
+                target_audience=target_audience,
+                color_line=color_line,
+                tone_line=tone_line,
+                product_visual_context=product_visual_context,
+                safe_zone=_TEMPLATE_SAFE_ZONES_EDIT[template],
+            )
+
+        image_file = io.BytesIO(product_image_bytes)
+        image_file.name = "product.png"
+        response = await _openai_client.images.edit(
+            model=settings.generator_image_model,
+            image=image_file,
+            prompt=prompt,
+            n=1,
+            size=size.value,
+        )
+        return base64.b64decode(response.data[0].b64_json)
 
     # ── [개선 모드] Edit API ───────────────────────────────────────────────────
     if original_image_bytes is not None:
@@ -433,11 +556,6 @@ async def generate_image(
         return base64.b64decode(response.data[0].b64_json)
 
     # ── [생성 모드] Generate API ──────────────────────────────────────────────
-    core_values_line = (
-        f"Core values: {', '.join(product_analysis.core_values)}\n"
-        if product_analysis.core_values
-        else ""
-    )
     target_audience = product_analysis.target_audience or "general audience"
     product_visual_context = _build_product_visual_context(product_analysis, brand_color)
 

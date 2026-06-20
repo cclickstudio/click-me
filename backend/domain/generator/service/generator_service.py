@@ -28,6 +28,15 @@ from tools.storage.s3 import download_bytes, presign_get, publish_key, upload_by
 logger = logging.getLogger("clickme")
 
 _tasks: dict[str, dict] = {}
+# 상품 이미지 임시 저장소 — 테스트용, 추후 S3 방식으로 전환
+_product_image_store: dict[str, bytes] = {}
+
+
+async def store_temp_image(data: bytes) -> str:
+    """상품 이미지를 메모리에 임시 저장하고 temp_key를 반환한다."""
+    key = str(uuid.uuid4())
+    _product_image_store[key] = data
+    return key
 
 
 async def start_generation(
@@ -53,7 +62,16 @@ async def start_generation(
         )
         await session.commit()
 
-    _tasks[generation_id] = {"status": "pending", "events": []}
+    # 상품 이미지 bytes를 task store에 주입 (pipeline이 state로 전달받음)
+    product_image_bytes: bytes | None = None
+    if request.product_image_temp_key:
+        product_image_bytes = _product_image_store.pop(request.product_image_temp_key, None)
+
+    _tasks[generation_id] = {
+        "status": "pending",
+        "events": [],
+        "product_image_bytes": product_image_bytes,
+    }
     asyncio.create_task(_run_pipeline(generation_id, request))
     return generation_id
 
@@ -73,10 +91,14 @@ async def _run_pipeline(generation_id: str, request: GenerationCreateRequest) ->
             "metadata": {"generation_id": generation_id},
             "configurable": {"emit": emit},
         }
-        initial_state = {
+        initial_state: dict = {
             "generation_id": generation_id,
             "request": request.model_dump(),
         }
+        product_image_bytes: bytes | None = store.pop("product_image_bytes", None)
+        if product_image_bytes is not None:
+            initial_state["product_image_bytes"] = product_image_bytes
+
         final_state = await generation_graph.ainvoke(initial_state, config=config)
 
         await _persist_results(generation_id, final_state)
