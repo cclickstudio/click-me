@@ -1,4 +1,4 @@
-# 반응 서브그래프 단위 테스트 — QA 재시도 루프 3분기(통과/재시도후통과/포기) 검증
+# 반응 서브그래프 단위 테스트 — QA 재시도 루프 3분기(통과/재시도후통과/소진후강제포함) 검증
 from __future__ import annotations
 
 from domain.simulation.contracts.schemas import AdInterpretation, Aisas, Persona, PersonaReaction
@@ -59,11 +59,11 @@ async def test_retry_then_pass() -> None:
     assert reactor.calls == 2  # 첫 시도 탈락 → 재생성 후 통과
 
 
-async def test_give_up_after_max_attempts() -> None:
+async def test_force_include_after_max_attempts() -> None:
     reactor = _StubReactor()
     graph = build_reaction_graph(reactor=reactor, qa=_Qa(pass_on=None))
     reaction = await run_reaction(graph, _persona(), _ad())
 
-    assert reaction.qa_passed is False  # 포기 → 집계에서 제외됨
-    assert reaction.qa_fail_reason == "stub_fail"
+    assert reaction.qa_passed is True  # 최대 시도 소진 → 강제 포함(집계 반영)
+    assert reaction.qa_fail_reason == "stub_fail"  # 원 실패 사유는 추적용 보존
     assert reactor.calls == MAX_ATTEMPTS

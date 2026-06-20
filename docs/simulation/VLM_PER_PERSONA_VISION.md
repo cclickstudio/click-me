@@ -69,14 +69,19 @@ vision 이해에 갭이 있다(arXiv 2502.20504). reasoning 단계에 원본 이
 
 원하는 "다르게 본다"를 **거의 공짜로** 살리는 길. vision은 여전히 1회.
 
-- **(a) 해석을 더 풍부하게 (여전히 1회 vision).** 지금 `interpret_ad`가 메시지·타깃·가격만 뽑는데, 여기에
+- **(a) 해석을 더 풍부하게 (여전히 1회 vision). ✅ 적용 완료.** 지금 `interpret_ad`가 메시지·타깃·가격만 뽑는데, 여기에
   **"시각 요소 인벤토리"**(모델 얼굴/제품샷/로고/카피 배치/색감/첫눈에 띄는 것)를 추가 추출해 공유 해석에 담는다.
-  vision 비용은 그대로 1회.
-- **(b) salience를 반응 프롬프트에서 페르소나 조건화.** `reaction.py:_prompt`에서 "당신의 성격·소비가치상
+  vision 비용은 그대로 1회. (`ad_interpreter.py` — 해석 프롬프트에 `visual_elements`, `structured_analysis`에 영속.)
+- **(b) salience를 반응 프롬프트에서 페르소나 조건화. ✅ 적용 완료.** `reaction.py:_prompt`에서 "당신의 성격·소비가치상
   이 광고에서 *가장 먼저 눈에 들어오는 요소*는 무엇인가"를 페르소나 프로필 기반으로 고르게 한다. 가격민감
   페르소나는 가격에, 개방성 높은 페르소나는 비주얼에 — **같은 인벤토리, 다른 가중.** 추가 비용은 텍스트 토큰 약간.
+  (`reaction.py` — 출력 `noticed_first` 필드 + salience 선택 지시, `PersonaReaction.noticed_first` 계약 필드로 흐름.)
 
 이게 "보는 시점이 다르다"의 진짜 메커니즘(같은 자극, 다른 주의 배분)에 더 충실하고, vision N배 비용 없이 된다.
+
+> **구현 상태(2026-06-19):** §4-(a)·(b) 모두 코드 반영 완료 — 시각 인벤토리(`visual_elements`)는 공유 해석에서 1회 추출되고,
+> `noticed_first`(페르소나별 salience)는 같은 인벤토리를 프로필로 다르게 가중해 반응 JSON·`PersonaReaction` 계약·분석 핸드오프로 흐른다.
+> `noticed_first`는 탐색적 텍스트 신호라 **DB 컬럼은 미반영**(필요 시 별도 PR로 `persona_reactions.noticed_first` + Alembic). §5 권고대로 페르소나별 원본 이미지 재투입은 **여전히 안 함**(vision 1회 유지).
 
 ### 비용 비교 (개념)
 

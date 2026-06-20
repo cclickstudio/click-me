@@ -28,14 +28,51 @@ def _pct(x: float) -> str:
     return f"{round(x * 100, 1)}%"
 
 
+def _ad_interpretation(ad_analysis: AdInterpretation | None) -> dict | None:
+    """광고 해석 요약 — 토론자 grounding·analyze 응답용. ad_analysis의 핵심 필드만 추린다.
+
+    structured_analysis 전체가 아니라 감지 결과(detected_*)와 의도불일치 위주(지어내지 않음).
+    """
+    if ad_analysis is None:
+        return None
+    summary: dict = {
+        "industry": ad_analysis.detected_industry,
+        "objective": ad_analysis.detected_objective,
+        "target": ad_analysis.detected_target,
+        "message": ad_analysis.detected_message,
+        "intent_mismatch": ad_analysis.intent_mismatch,
+    }
+    if ad_analysis.structured_analysis:
+        summary["structured"] = ad_analysis.structured_analysis
+    return {k: v for k, v in summary.items() if v is not None}
+
+
+def _kpi_focus(agg: SimulationAggregate, analysis: ReactionAnalysis) -> dict:
+    """4대 KPI + 병목을 focus로 — 클릭 의향·구매의도·신뢰·거부율 전부 포함(토론자 근거 수치)."""
+    bn = analysis.bottleneck
+    msg = analysis.message
+    return {
+        "bottleneck": f"{bn.from_stage}->{bn.to_stage}" if bn else None,
+        "bottleneck_dropped": float(bn.dropped) if bn else None,
+        "click_intent_rate": agg.click_intent_rate,
+        "purchase_intent": agg.purchase_intent,
+        "trust_avg": agg.trust_avg,
+        "rejection_rate": agg.rejection_rate,
+        "message_resistance_rate": msg.resistance_rate if msg else None,
+    }
+
+
 def build_topic(
     analysis: ReactionAnalysis,
     agg: SimulationAggregate,
     ad_analysis: AdInterpretation | None = None,
+    ad_title: str | None = None,
+    ad_description: str | None = None,
 ) -> DebateTopic:
     """병목 + KPI + 캠페인 목표 → 토론 주제(결정론).
 
     주신호 우선순위: 거부 → 메시지 갭 → 신뢰-행동 갭 → 초기이탈(attention병목) → 중간이탈.
+    ad_title·ad_description·ad_analysis 요약은 topic에 동봉돼 토론자 grounding으로 흐른다.
     """
     bn = analysis.bottleneck
     objective = ad_analysis.detected_objective if ad_analysis else None
@@ -69,15 +106,11 @@ def build_topic(
         diagnosis=diagnosis,
         question=question,
         primary_signal=signal,
-        focus={
-            "bottleneck": f"{bn.from_stage}->{bn.to_stage}" if bn else None,
-            "bottleneck_dropped": float(bn.dropped) if bn else None,
-            "click_intent_rate": agg.click_intent_rate,
-            "trust_avg": agg.trust_avg,
-            "rejection_rate": agg.rejection_rate,
-            "message_resistance_rate": msg.resistance_rate if msg else None,
-        },
+        focus=_kpi_focus(agg, analysis),
         objective=objective,
+        ad_title=ad_title,
+        ad_description=ad_description,
+        ad_interpretation=_ad_interpretation(ad_analysis),
     )
 
 
@@ -100,6 +133,8 @@ def build_topic_candidates(
     analysis: ReactionAnalysis,
     agg: SimulationAggregate,
     ad_analysis: AdInterpretation | None = None,
+    ad_title: str | None = None,
+    ad_description: str | None = None,
 ) -> list[DebateTopic]:
     """추가 토론용 논제 후보 5개(결정론·LLM✗) — 5가지 주신호를 모두 진단형 대립 논제로.
 
@@ -161,6 +196,8 @@ def build_topic_candidates(
 
     # 강도 내림차순 정렬 → ranking 1~5 부여(동률은 spec 정의 순으로 안정 정렬).
     ordered = sorted(enumerate(specs), key=lambda it: (-it[1][3], it[0]))
+    focus = _kpi_focus(agg, analysis)  # 4대 KPI·병목 — 후보 전체 공통(주제만 다름)
+    ad_interp = _ad_interpretation(ad_analysis)
     topics: list[DebateTopic] = []
     for rank, (_, (signal, headline, diagnosis, strength)) in enumerate(ordered, start=1):
         topics.append(
@@ -169,15 +206,11 @@ def build_topic_candidates(
                 diagnosis=diagnosis,
                 question=headline,  # 진단형 논제 자체가 질문(이분법 '선택' 강요 아님)
                 primary_signal=signal,
-                focus={
-                    "bottleneck": f"{bn.from_stage}->{bn.to_stage}" if bn else None,
-                    "bottleneck_dropped": float(bn.dropped) if bn else None,
-                    "click_intent_rate": agg.click_intent_rate,
-                    "trust_avg": agg.trust_avg,
-                    "rejection_rate": agg.rejection_rate,
-                    "message_resistance_rate": resist if msg else None,
-                },
+                focus=focus,
                 objective=objective,
+                ad_title=ad_title,
+                ad_description=ad_description,
+                ad_interpretation=ad_interp,
                 topic_id=signal,  # 신호 종류가 곧 후보 식별자(start로 그대로 매칭)
                 ranking=rank,
                 confidence=round(strength, 3),

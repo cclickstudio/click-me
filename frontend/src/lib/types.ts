@@ -106,6 +106,23 @@ export interface SimPersona {
   profile_narrative: string;
 }
 
+export interface ObjectiveContribution {
+  label: string;
+  value: number; // 0~1 정규화 신호값
+  weight: number;
+}
+
+export interface ObjectiveFit {
+  objective: string;
+  matched_goal: string;
+  score: number; // 0~100 상대 지수(확률 아님)
+  grade: string; // 높음 / 보통 / 낮음
+  rationale: string;
+  contributions: ObjectiveContribution[];
+  low_confidence: boolean;
+  exploratory: boolean;
+}
+
 export interface SimRunResult {
   run_id: string;
   ad_analysis: SimAdAnalysis | null;
@@ -113,7 +130,19 @@ export interface SimRunResult {
   reactions: SimPersonaReaction[];
   rubric_scores: SimRubricScore[];
   aggregate: SimAggregate | null;
+  objective_fit?: ObjectiveFit | null;
   simulation_id?: string;
+}
+
+export interface SimCategoryKind {
+  id: number; // NICE 상품분류 류 번호 (= service_class)
+  description: string;
+}
+
+export interface SimCategory {
+  id: number;
+  name: string; // 업종 대분류명 (= product_category)
+  kinds: SimCategoryKind[];
 }
 
 export interface SimRunInput {
@@ -144,8 +173,11 @@ export interface DebateTopic {
   diagnosis: string;
   question: string;
   primary_signal: string;
-  focus: string;
+  focus: Record<string, number | string | null>; // 4대 KPI·병목 근거 수치
   objective: string;
+  ad_title?: string | null; // 광고 제목(제품명) — 토론자 grounding
+  ad_description?: string | null; // 광고 설명 — 토론자 grounding
+  ad_interpretation?: Record<string, unknown> | null; // 광고 해석 요약(detected_*)
   ranking: number;
   confidence: number;
 }
@@ -269,6 +301,178 @@ export interface DebateResult {
   topic: { headline: string; diagnosis: string; question: string; primary_signal: string };
   debate: DebateData | null;
   report: DebateReport;
+  report_view?: ReportView | null; // 통합 리포트(완료된 토론 결과에만 포함)
+}
+
+/* ─── 통합 ReportView — 화면 '최종 결과' = 리포트 = PDF 공용 단일 소스 ─── */
+
+// 리포트용 4대 KPI(시뮬 집계에서 매핑).
+export interface ReportKpi {
+  click_intent_rate: number;
+  ci_low: number;
+  ci_high: number;
+  purchase_intent: number;
+  trust_avg: number;
+  rejection_rate: number;
+  brand_recognition_rate: number;
+  variance_warning: boolean;
+  effective_n: number;
+}
+
+export interface FunnelStage {
+  stage: string;
+  passed: number;
+  pass_rate: number;
+}
+
+export interface Bottleneck {
+  from_stage: string;
+  to_stage: string;
+  dropped: number;
+  drop_rate: number;
+}
+
+export interface RejectionBreakdown {
+  rejected_count: number;
+  rejection_rate: number;
+  by_rejection_reason_tag: Record<string, number>;
+  distrust_count: number;
+}
+
+export interface BrandRecognition {
+  recognized_count: number;
+  recognition_rate: number;
+  unrecognized_count: number;
+  perceived_brands: Record<string, number>;
+}
+
+// ReportView.report — SimulationReport(DebateReport보다 풍부: KPI·퍼널·분포 포함).
+export interface SimulationReport {
+  headline: string;
+  plain_summary: string;
+  topic: string;
+  kpi: ReportKpi;
+  funnel: FunnelStage[];
+  bottleneck: Bottleneck | null;
+  purchase_intent_dist: Record<string, number>;
+  rejection: RejectionBreakdown | null;
+  by_drop_reason_tag: Record<string, number>;
+  emotion_dist: Record<string, number>;
+  brand_recognition: BrandRecognition | null;
+  rubric_scores: SimRubricScore[];
+  consumer_groups: Record<string, number>;
+  debate_available: boolean;
+  rounds_run: number;
+  stop_reason: string | null;
+  consensus: string[];
+  dissent: string[];
+  ranked_actions: RankedAction[];
+  quotes: DebateReportQuote[];
+}
+
+// 연령대×성별 세그먼트 1칸(우리 제품 최대 차별점).
+export interface SegmentCell {
+  age_band: string;
+  gender: string;
+  n: number;
+  effective_n: number;
+  click_intent_rate: number;
+  purchase_intent: number;
+  trust_avg: number;
+  rejection_rate: number;
+  attention_pass_rate: number;
+  low_confidence: boolean;
+}
+
+export interface GroupProfile {
+  count: number;
+  avg_age: number;
+  gender_ratio: Record<string, number>;
+  top_emotion: string | null;
+}
+
+export interface ContributionBar {
+  label: string;
+  contribution: number;
+  value: number;
+  weight: number;
+}
+
+export interface ConversionStep {
+  from_stage: string;
+  to_stage: string;
+  conversion: number;
+}
+
+export interface SummaryMetrics {
+  top2box_purchase: number;
+  bottom2box_purchase: number;
+  positive_emotion_rate: number;
+  negative_emotion_rate: number;
+  neutral_emotion_rate: number;
+  trust_action_gap: number;
+  trust_action_label: string;
+  contribution_waterfall: ContributionBar[];
+  weakest_signal: string | null;
+  weakest_linked_action_rank: number | null;
+  funnel_conversion: ConversionStep[];
+  target_match_rate: number | null;
+  discount_rate: number | null;
+}
+
+export interface ConfidenceBadge {
+  level: string; // high / medium / low
+  ci_width: number;
+  effective_n: number;
+  total_n: number;
+  warnings: string[];
+}
+
+export interface MessageReception {
+  intended: string | null;
+  resistance_rate: number;
+  resistance_terms: Record<string, number>;
+  resisted_quotes: string[];
+}
+
+// 리포트 합산 토론 1건 — 주제 + 대표 인용 + 결론(여러 토론이면 각 토론을 간결히 나열).
+export interface DebateDigest {
+  debate_id?: string | null;
+  topic_headline: string;
+  diagnosis?: string;
+  rounds_run?: number;
+  stop_reason?: string | null;
+  consensus: string[];
+  dissent: string[];
+  ranked_actions: {
+    rank: number;
+    action: string;
+    expected_effect: string;
+    supporting_personas: string[];
+  }[];
+  quotes: { persona_name: string; role: string; stance: string; text: string }[];
+}
+
+export interface ReportView {
+  run_id: string;
+  simulation_id: string | null;
+  debate_id: string | null;
+  report: SimulationReport;
+  objective_fit: ObjectiveFit | null;
+  ad_analysis: SimAdAnalysis | null;
+  ad: Record<string, unknown> | null;
+  topic: DebateTopic | null;
+  segments: SegmentCell[];
+  group_profiles: Record<string, GroupProfile>;
+  message_reception: MessageReception | null;
+  summary_metrics: SummaryMetrics;
+  confidence: ConfidenceBadge;
+  debate: DebateData | null;
+  debates?: DebateDigest[]; // 합산 토론(여러 토론 누적) — 없으면 단일 debate 렌더(하위호환).
+  aggregate: SimAggregate;
+  analysis: Record<string, unknown>;
+  generated_at: string;
+  report_view_version: string;
 }
 
 // SSE 토론 진행 이벤트(stage에 따라 채워지는 필드가 다름).
@@ -295,6 +499,55 @@ export interface DebateSSEEvent {
   rounds_run?: number;
   stop_reason?: string;
   headline?: string;
+}
+
+/* ─── 저장된 토론 조회(/api/debate/by-simulation/{id}·/{id}/detail) — DB 영속화 복원용 ─── */
+
+// 토론 목록 1건(메타, 발언 제외) — 세션 탭·프로젝트 패널 표시용.
+export interface DebateSessionMeta {
+  debate_id: string;
+  simulation_id: string;
+  topic: string | null;
+  status: string;
+  rounds_run: number | null;
+  stop_reason: string | null;
+  headline: string | null;
+  plain_summary: string | null;
+  created_at: string | null;
+}
+
+export interface DebateSessionsResult {
+  debates: DebateSessionMeta[];
+}
+
+// 토론 상세 — 메타 + 참가자 + 라운드순 발언 + judge_log + final(복원용).
+export interface DebateSessionUtterance {
+  round: number;
+  phase: string | null;
+  stance: DebateStance | null;
+  text: string | null;
+  reason: string | null;
+  lever: string | null;
+  persona_id: string | null;
+  persona_name: string | null;
+  role: string | null;
+  engine: string | null;
+}
+
+export interface DebateSessionParticipant {
+  persona_id: string;
+  persona_name: string | null;
+  persona_profile: string | null;
+  role: string | null;
+  engine: string | null;
+}
+
+export interface DebateSessionDetail extends DebateSessionMeta {
+  models: { judge?: string | null; engines?: string[] };
+  round_summaries: Record<string, string>;
+  final: JudgeFinal | null;
+  participants: DebateSessionParticipant[];
+  utterances: DebateSessionUtterance[];
 }
 
 export interface SSEProgressEvent {

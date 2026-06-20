@@ -100,6 +100,7 @@ class MockReactionEngine:
         interest = attention and rng.random() > 0.3
         action = interest and rng.random() > 0.6
         rejected = rng.random() < 0.1
+        brand_recognized = attention and rng.random() > 0.35  # 주목해야 브랜드 식별 가능
         return PersonaReaction(
             persona_id=persona.persona_id,
             exposure_context=exposure,
@@ -118,6 +119,8 @@ class MockReactionEngine:
             emotion_tag=rng.choice(list(EmotionTag)),
             perceived_message=ad.detected_message,
             perceived_target=ad.detected_target,
+            brand_recognized=brand_recognized,
+            perceived_brand=ad.detected_message if brand_recognized else None,
             utterance="썸네일은 눈에 띄는데 뭘 사라는 건지 모르겠어요.",
             qa_passed=True,
         )

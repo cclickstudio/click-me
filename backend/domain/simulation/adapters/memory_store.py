@@ -7,9 +7,19 @@ class InMemorySimulationStore:
 
     def __init__(self) -> None:
         self._runs: dict[str, dict] = {}
+        # simulation_id → 그 시뮬의 완료된 토론 요약(digest) 누적. 추가 토론 합산 리포트용(DB 무관).
+        self._digests_by_sim: dict[str, list[dict]] = {}
 
     def create_run(self, run_id: str) -> None:
         self._runs[run_id] = {"status": "QUEUED", "events": [], "result": None}
+
+    def add_debate_digest(self, simulation_id: str, digest: dict) -> None:
+        """완료 토론 요약을 시뮬 단위로 누적 — 같은 시뮬의 다음 토론이 합산 리포트에 쌓는다."""
+        self._digests_by_sim.setdefault(simulation_id, []).append(digest)
+
+    def get_debate_digests(self, simulation_id: str) -> list[dict]:
+        """그 시뮬에 지금까지 누적된 토론 요약(현재 토론 추가 전까지)."""
+        return list(self._digests_by_sim.get(simulation_id, []))
 
     def emit(self, run_id: str, event: dict) -> None:
         self._runs[run_id]["events"].append(event)

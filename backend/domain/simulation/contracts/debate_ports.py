@@ -18,8 +18,18 @@ class DebaterPort(Protocol):
     """토론자 엔진 — 한 참가자가 한 라운드에 발언 1건을 생성."""
 
     def speak(
-        self, participant: DebateParticipant, round_n: int, phase: str, topic: DebateTopic
-    ) -> Utterance: ...
+        self,
+        participant: DebateParticipant,
+        round_n: int,
+        phase: str,
+        topic: DebateTopic,
+        prior: list[tuple[str, str, str, str]] | None = None,
+    ) -> Utterance:
+        """발언 1건 생성. prior=직전 라운드 발언 [(persona_id, name, stance, text)] —
+
+        반박·검증 라운드의 grounding(다른 참가자 발언을 보고 반응). R1(발산)은 None.
+        """
+        ...
 
     def answer_question(
         self,

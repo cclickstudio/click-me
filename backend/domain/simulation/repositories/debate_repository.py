@@ -6,7 +6,9 @@ from __future__ import annotations
 
 import uuid
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker
+from sqlalchemy.orm import selectinload
 
 from core.models import PersonaDebate, PersonaDebateParticipant, PersonaDebateUtterance
 from domain.simulation.contracts.debate_schemas import DebateResult
@@ -63,6 +65,62 @@ def build_debate_rows(
     return debate_row, participant_rows, utterance_rows
 
 
+def _debate_meta(r: PersonaDebate) -> dict:
+    """토론 1건 메타(목록 카드용) — 발언 제외, 주제·상태·결론 요약만."""
+    final = r.final or {}
+    return {
+        "debate_id": str(r.id),
+        "simulation_id": str(r.simulation_id),
+        "topic": r.topic,
+        "status": r.status,
+        "rounds_run": r.rounds_run,
+        "stop_reason": r.stop_reason,
+        "headline": final.get("headline"),
+        "plain_summary": final.get("plain_summary"),
+        "created_at": r.created_at.isoformat() if r.created_at else None,
+    }
+
+
+def _debate_detail(r: PersonaDebate) -> dict:
+    """토론 상세(채팅·결과 복원용) — participants + 라운드순 발언 + judge_log + final."""
+    pinfo = {p.id: p for p in r.participants}
+    utts = sorted(r.utterances, key=lambda u: (u.round, u.created_at or r.created_at))
+    utterances = []
+    for u in utts:
+        p = pinfo.get(u.participant_id)
+        utterances.append(
+            {
+                "round": u.round,
+                "phase": u.phase,
+                "stance": u.stance,
+                "text": u.text,
+                "reason": u.reason,
+                "lever": u.lever,
+                "persona_id": p.persona_id if p else None,
+                "persona_name": p.persona_name if p else None,
+                "role": p.role if p else None,
+                "engine": p.engine if p else None,
+            }
+        )
+    return {
+        **_debate_meta(r),
+        "models": {"judge": r.judge_model, "engines": r.engines or []},
+        "round_summaries": r.judge_log or {},
+        "final": r.final,
+        "participants": [
+            {
+                "persona_id": p.persona_id,
+                "persona_name": p.persona_name,
+                "persona_profile": p.persona_profile,
+                "role": p.role,
+                "engine": p.engine,
+            }
+            for p in r.participants
+        ],
+        "utterances": utterances,
+    }
+
+
 class DebateRepository:
     """토론 결과를 한 트랜잭션으로 저장. session_factory 주입(미주입 시 service가 영속화 생략)."""
 
@@ -113,3 +171,34 @@ class DebateRepository:
                     )
             await session.commit()
             return row.id
+
+    async def list_by_simulation(self, simulation_id: str) -> list[dict]:
+        """시뮬의 토론 목록(메타) — 최신순. 발언 제외, 카드 표시용."""
+        async with self._session_factory() as session:
+            rows = (
+                (
+                    await session.execute(
+                        select(PersonaDebate)
+                        .where(PersonaDebate.simulation_id == _as_uuid(simulation_id))
+                        .order_by(PersonaDebate.created_at.desc())
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            return [_debate_meta(r) for r in rows]
+
+    async def get_detail(self, debate_id: str) -> dict | None:
+        """토론 상세 — participants·utterances 포함(채팅·결과 복원용). 없으면 None."""
+        async with self._session_factory() as session:
+            row = (
+                await session.execute(
+                    select(PersonaDebate)
+                    .where(PersonaDebate.id == _as_uuid(debate_id))
+                    .options(
+                        selectinload(PersonaDebate.participants),
+                        selectinload(PersonaDebate.utterances),
+                    )
+                )
+            ).scalar_one_or_none()
+            return _debate_detail(row) if row is not None else None

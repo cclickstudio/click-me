@@ -195,7 +195,8 @@ async def list_project_simulations(
     if current_user.role.upper() == "ADMIN":
         result = await db.execute(
             text("""
-                SELECT s.id, s.status, s.sample_size, s.created_at, u.name AS created_by_name
+                SELECT s.id, s.status, s.sample_size, s.created_at,
+                       u.name AS created_by_name, a.title AS ad_title
                 FROM simulations s
                 LEFT JOIN users u ON u.id = s.created_by
                 JOIN ads a ON a.id = s.ad_id
@@ -209,7 +210,8 @@ async def list_project_simulations(
         org_id = await _get_user_org_id(current_user, db)
         result = await db.execute(
             text("""
-                SELECT s.id, s.status, s.sample_size, s.created_at, u.name AS created_by_name
+                SELECT s.id, s.status, s.sample_size, s.created_at,
+                       u.name AS created_by_name, a.title AS ad_title
                 FROM simulations s
                 LEFT JOIN users u ON u.id = s.created_by
                 JOIN ads a ON a.id = s.ad_id
@@ -225,6 +227,7 @@ async def list_project_simulations(
             "id": str(r.id),
             "status": r.status,
             "sample_size": r.sample_size,
+            "ad_title": r.ad_title,
             "created_by_name": r.created_by_name,
             "created_at": r.created_at.isoformat(),
         }
@@ -283,9 +286,14 @@ async def get_simulation_detail(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    org_id = await _get_user_org_id(current_user, db)
+    # ADMIN은 조직 무관 조회(목록 핸들러와 동일 정책), 그 외는 자기 조직으로 제한
+    params = {"sim_id": simulation_id}
+    org_filter = ""
+    if current_user.role.upper() != "ADMIN":
+        params["org_id"] = await _get_user_org_id(current_user, db)
+        org_filter = "AND p.organization_id = :org_id"
     result = await db.execute(
-        text("""
+        text(f"""
             SELECT s.id, s.status, s.sample_size, s.created_at, s.deleted_at,
                    u.name AS created_by_name,
                    a.id AS ad_id, a.title AS ad_title,
@@ -296,9 +304,9 @@ async def get_simulation_detail(
             JOIN ads a ON a.id = s.ad_id
             JOIN projects p ON p.id = a.project_id
             LEFT JOIN simulation_results sr ON sr.ad_id = s.ad_id
-            WHERE s.id = :sim_id AND p.organization_id = :org_id
+            WHERE s.id = :sim_id {org_filter}
         """),
-        {"sim_id": simulation_id, "org_id": org_id},
+        params,
     )
     r = result.fetchone()
     if not r:
@@ -377,18 +385,22 @@ async def get_generation_detail(
 ):
     from domain.generator.service import generator_service
 
-    org_id = await _get_user_org_id(current_user, db)
-    # 조직 소속 확인
+    # ADMIN은 조직 무관 조회(목록 핸들러와 동일 정책), 그 외는 자기 조직으로 제한
+    params = {"gen_id": generation_id}
+    org_filter = ""
+    if current_user.role.upper() != "ADMIN":
+        params["org_id"] = await _get_user_org_id(current_user, db)
+        org_filter = "AND p.organization_id = :org_id"
     meta = await db.execute(
-        text("""
+        text(f"""
             SELECT g.id, g.deleted_at, u.name AS created_by_name,
                    p.id AS project_id, p.name AS project_name
             FROM ad_generations g
             LEFT JOIN users u ON u.id = g.created_by
             JOIN projects p ON p.id = g.project_id
-            WHERE g.id = :gen_id AND p.organization_id = :org_id
+            WHERE g.id = :gen_id {org_filter}
         """),
-        {"gen_id": generation_id, "org_id": org_id},
+        params,
     )
     r = meta.fetchone()
     if not r:
