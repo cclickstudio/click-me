@@ -315,7 +315,7 @@ export const api = {
       request<{
         min_daily_budget_krw: number;
         min_by_objective_krw: Record<string, number>;
-        special_ad_categories: string[];
+        special_ad_categories: { value: string; label: string }[];
         age_min: number;
         age_max: number;
       }>("/management/campaign-policy"),

@@ -15,14 +15,16 @@ export type CampaignFormValues = {
   gender: 'all' | 'male' | 'female';
 };
 
-// Meta 특별 광고 카테고리 라벨 (정책 신고용).
-const CATEGORY_LABEL: Record<string, string> = {
-  NONE: '없음',
-  HOUSING: '주택',
-  EMPLOYMENT: '고용',
-  CREDIT: '신용',
-  ISSUES_ELECTIONS_POLITICS: '사회·선거·정치',
-};
+// 특별 광고 카테고리 — 라벨은 백엔드 정책(/campaign-policy)에서 받아온다(정책 변경 시 자동 반영).
+// 아래는 정책 도착 전 폴백일 뿐. 실제 표시는 서버 값 우선.
+type Category = { value: string; label: string };
+const DEFAULT_CATEGORIES: Category[] = [
+  { value: 'NONE', label: '없음' },
+  { value: 'HOUSING', label: '주택' },
+  { value: 'EMPLOYMENT', label: '고용' },
+  { value: 'CREDIT', label: '금융 상품·서비스' },
+  { value: 'ISSUES_ELECTIONS_POLITICS', label: '사회·선거·정치' },
+];
 const COUNTRIES: { code: string; label: string }[] = [
   { code: 'KR', label: '대한민국' },
   { code: 'US', label: '미국' },
@@ -64,7 +66,9 @@ export function CampaignForm({
     traffic: 2_000,
     leads: 10_000,
   });
-  const [categories, setCategories] = useState<string[]>(Object.keys(CATEGORY_LABEL));
+  const [categories, setCategories] = useState<Category[]>(DEFAULT_CATEGORIES);
+  // 정책상 허용 연령 범위(인풋 min/max) — 백엔드 정책에서 받아 자동 반영.
+  const [ageBounds, setAgeBounds] = useState({ min: 18, max: 65 });
 
   useEffect(() => {
     api.management
@@ -72,6 +76,7 @@ export function CampaignForm({
       .then((p) => {
         setMinByObjective(p.min_by_objective_krw);
         if (p.special_ad_categories?.length) setCategories(p.special_ad_categories);
+        if (p.age_min && p.age_max) setAgeBounds({ min: p.age_min, max: p.age_max });
       })
       .catch(() => {}); // 실패 시 폴백 기본값 유지
   }, []);
@@ -163,11 +168,11 @@ export function CampaignForm({
         </Field>
       </div>
       <div className="grid grid-cols-2 gap-4">
-        <Field label="연령 최소" hint="Meta 최소 18세">
+        <Field label="연령 최소" hint={`특별 카테고리는 ${ageBounds.min}세 이상 강제`}>
           <input
             type="number"
-            min={18}
-            max={65}
+            min={ageBounds.min}
+            max={ageBounds.max}
             className={inputCls}
             value={ageMin}
             onChange={(e) => setAgeMin(Number(e.target.value))}
@@ -176,23 +181,23 @@ export function CampaignForm({
         <Field label="연령 최대">
           <input
             type="number"
-            min={18}
-            max={65}
+            min={ageBounds.min}
+            max={ageBounds.max}
             className={inputCls}
             value={ageMax}
             onChange={(e) => setAgeMax(Number(e.target.value))}
           />
         </Field>
       </div>
-      <Field label="특별 광고 카테고리" hint="주택·고용·신용·정치 광고는 Meta 정책상 신고 필수">
+      <Field label="특별 광고 카테고리" hint="주택·고용·금융·정치 광고는 Meta 정책상 신고 필수">
         <select
           className={inputCls}
           value={specialCat}
           onChange={(e) => setSpecialCat(e.target.value)}
         >
           {categories.map((c) => (
-            <option key={c} value={c}>
-              {CATEGORY_LABEL[c] ?? c}
+            <option key={c.value} value={c.value}>
+              {c.label}
             </option>
           ))}
         </select>

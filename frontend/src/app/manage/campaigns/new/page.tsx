@@ -16,6 +16,7 @@ export default function Page() {
   const [result, setResult] = useState<ActionResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [metaError, setMetaError] = useState<string | null>(null); // Meta 거부 사용자용 메시지
 
   const createProposal = async (v: CampaignFormValues) => {
     setBusy(true);
@@ -35,12 +36,15 @@ export default function Page() {
     if (!proposal) return;
     setBusy(true);
     setError(null);
+    setMetaError(null);
     try {
       const a = (await api.management.approve(proposal, true)) as { approved_action: unknown };
-      const { result: r } = (await api.management.execute(a.approved_action, proposal)) as {
+      const resp = (await api.management.execute(a.approved_action, proposal)) as {
         result: ActionResult;
+        error_message?: string;
       };
-      setResult(r);
+      setResult(resp.result);
+      if (resp.error_message) setMetaError(resp.error_message); // Meta 거부 사유 표시
       setStep('done');
     } catch (e) {
       setError(e instanceof Error ? e.message : '승인·생성 실패');
@@ -53,6 +57,7 @@ export default function Page() {
     setProposal(null);
     setResult(null);
     setError(null);
+    setMetaError(null);
     setStep('form');
   };
 
@@ -100,8 +105,15 @@ export default function Page() {
             ) : (
               <>
                 <h2 className="font-bold text-red-500 mb-2">생성 실패</h2>
+                {metaError && (
+                  <div className="rounded-lg bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 p-3 mb-3">
+                    <p className="text-xs font-semibold text-red-700 dark:text-red-300">Meta 거부 사유</p>
+                    <p className="text-sm text-red-600 dark:text-red-400 mt-1 leading-relaxed">{metaError}</p>
+                  </div>
+                )}
                 <p className="text-sm text-[#8B95A1]">
-                  사유 {result?.failure_reason ?? '알 수 없음'} — 예산 한도·정책을 확인하세요.
+                  사유 코드 {result?.failure_reason ?? '알 수 없음'}
+                  {!metaError && ' — 예산 한도·일정(최소 24h)·정책을 확인하세요.'}
                 </p>
               </>
             )}
