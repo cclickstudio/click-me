@@ -4,6 +4,8 @@ import type {
   CampaignDetail as Detail,
   CampaignSource,
   CampaignSummary,
+  CreativePreview,
+  DemographicMetrics,
   PlatformMetrics,
 } from './types';
 import { fmtCvr, fmtRoas } from './types';
@@ -17,6 +19,8 @@ export function CampaignTable({
   onPrefetch,
   detail,
   platforms,
+  demographics,
+  creatives,
   source,
 }: {
   campaigns: CampaignSummary[];
@@ -25,6 +29,8 @@ export function CampaignTable({
   onPrefetch?: (id: string) => void;
   detail?: Detail | null;
   platforms?: PlatformMetrics[];
+  demographics?: DemographicMetrics[];
+  creatives?: CreativePreview[];
   source?: CampaignSource;
 }) {
   return (
@@ -94,7 +100,7 @@ export function CampaignTable({
                 {fmtCvr(c.cvr, c.conversions)}
               </td>
               <td className="px-3 py-3 text-right tabular-nums text-[#4E5968] dark:text-[#C9CED6] hidden lg:table-cell">
-                {fmtRoas(c.roas, c.conversions)}
+                {fmtRoas(c.roas, c.conversions, c.roas_estimated)}
               </td>
               <td className="px-4 py-3 text-right">
                 <PacingCell pct={c.pacing_pct} />
@@ -130,6 +136,8 @@ export function CampaignTable({
                       detail={detail}
                       source={source}
                       platforms={platforms}
+                      demographics={demographics}
+                      creatives={creatives}
                       blockReason={c.block_reason}
                     />
                   </div>

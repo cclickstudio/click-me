@@ -1,8 +1,15 @@
-// 캠페인 상세 — 일자별 지출 vs 일예산 차트 + KPI 타일 + 플랫폼별(FB/IG) 분해
+// 캠페인 상세 — 일자별 지출 vs 일예산 차트 + KPI 타일 + 분해 탭(인구통계/플랫폼) + 대표 크리에이티브
 'use client';
 
 import dynamic from 'next/dynamic';
-import type { CampaignDetail as Detail, CampaignSource, PlatformMetrics } from './types';
+import { useState } from 'react';
+import type {
+  CampaignDetail as Detail,
+  CampaignSource,
+  CreativePreview,
+  DemographicMetrics,
+  PlatformMetrics,
+} from './types';
 import { fmtCvr, fmtRoas } from './types';
 import { StateBadge } from './StateBadge';
 
@@ -15,6 +22,16 @@ const DeliveryChart = dynamic(() => import('./DeliveryChart'), {
 });
 
 const PlatformDonut = dynamic(() => import('./PlatformDonut'), {
+  ssr: false,
+  loading: () => <div className="h-32 animate-pulse rounded-xl bg-[#F2F4F6] dark:bg-[#2D3748]" />,
+});
+
+const DemographicBars = dynamic(() => import('./DemographicBars'), {
+  ssr: false,
+  loading: () => <div className="h-32 animate-pulse rounded-xl bg-[#F2F4F6] dark:bg-[#2D3748]" />,
+});
+
+const AdPreviewCards = dynamic(() => import('./AdPreviewCards'), {
   ssr: false,
   loading: () => <div className="h-32 animate-pulse rounded-xl bg-[#F2F4F6] dark:bg-[#2D3748]" />,
 });
@@ -56,15 +73,28 @@ export function CampaignDetail({
   detail,
   source,
   platforms = [],
+  demographics = [],
+  creatives = [],
   blockReason,
 }: {
   detail: Detail;
   source?: CampaignSource;
   platforms?: PlatformMetrics[];
+  demographics?: DemographicMetrics[];
+  creatives?: CreativePreview[];
   blockReason?: string | null;
 }) {
   const s = detail.summary;
   const live = source === 'live';
+  // 분해 탭 — 데이터 있는 것만 노출(둘 다 없으면 섹션 자체 숨김)
+  const breakdownTabs = [
+    { key: 'demographics' as const, label: '인구통계학적 특성', has: demographics.length > 0 },
+    { key: 'platforms' as const, label: '플랫폼', has: platforms.length > 0 },
+  ].filter((t) => t.has);
+  const [activeTab, setActiveTab] = useState<'demographics' | 'platforms'>(
+    breakdownTabs[0]?.key ?? 'demographics',
+  );
+  const tab = breakdownTabs.some((t) => t.key === activeTab) ? activeTab : breakdownTabs[0]?.key;
   return (
     <div className="rounded-2xl border border-[#E5E8EB] dark:border-[#2D3748] px-5 py-4">
       <div className="flex items-center justify-between mb-2">
@@ -90,7 +120,7 @@ export function CampaignDetail({
         <Tile label="CPM(노출당비용)" value={`₩${s.cpm_krw.toLocaleString()}`} />
         <Tile label="빈도" value={s.frequency.toFixed(2)} />
         <Tile label="CVR(전환율)" value={fmtCvr(s.cvr, s.conversions)} />
-        <Tile label="ROAS(투자수익률)" value={fmtRoas(s.roas, s.conversions)} />
+        <Tile label="ROAS(투자수익률)" value={fmtRoas(s.roas, s.conversions, s.roas_estimated)} />
         <Tile label="일예산" value={`₩${detail.daily_budget_krw.toLocaleString()}`} />
         <div className="flex items-center gap-2.5 rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] px-3 py-2.5">
           <PacingRing pct={s.pacing_pct} />
@@ -183,12 +213,48 @@ export function CampaignDetail({
         </div>
       )}
 
-      {platforms.length > 0 && (
-        <div className="mt-4">
-          <p className="mb-2 text-center text-[12px] font-semibold text-[#4E5968] dark:text-[#9CA3AF]">
-            플랫폼별 노출
-          </p>
-          <PlatformDonut rows={platforms} />
+      {breakdownTabs.length > 0 && (
+        <div className="mt-4 flex flex-col gap-x-6 gap-y-3 lg:flex-row lg:items-stretch">
+          {/* 왼쪽: 분해 탭 + 차트(카드 높이만큼 채움) */}
+          <div className="flex w-full flex-col lg:flex-1">
+            <div className="mb-3 flex h-[30px] shrink-0 items-center gap-1.5">
+              {breakdownTabs.map((t) => {
+                const on = t.key === tab;
+                return (
+                  <button
+                    key={t.key}
+                    type="button"
+                    onClick={() => setActiveTab(t.key)}
+                    className={`rounded-lg px-3 py-1.5 text-[12px] font-semibold transition-colors ${
+                      on
+                        ? 'bg-[#E8F3FF] text-[#3182F6] dark:bg-[#1E3A5F] dark:text-[#7BB4F5]'
+                        : 'text-[#8B95A1] hover:bg-[#F2F4F6] dark:hover:bg-[#2D3748]'
+                    }`}
+                  >
+                    {t.label}
+                  </button>
+                );
+              })}
+            </div>
+            <div className="flex min-h-0 flex-1 items-center">
+              {tab === 'demographics' ? (
+                <DemographicBars rows={demographics} />
+              ) : (
+                <PlatformDonut rows={platforms} />
+              )}
+            </div>
+          </div>
+          {/* 오른쪽: 대표 광고 시안(헤더는 탭과 같은 라인, 높이는 차트와 동일) */}
+          {creatives.length > 0 && (
+            <div className="flex w-full flex-col lg:flex-1">
+              <p className="mb-3 flex h-[30px] items-center text-[12px] font-semibold text-[#4E5968] dark:text-[#9CA3AF]">
+                대표 광고 시안
+              </p>
+              <div className="min-h-0 flex-1">
+                <AdPreviewCards items={creatives} />
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

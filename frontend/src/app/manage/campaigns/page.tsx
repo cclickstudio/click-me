@@ -11,6 +11,8 @@ import type {
   CampaignSource,
   CampaignSummary,
   CampaignView,
+  CreativePreview,
+  DemographicMetrics,
   PlatformMetrics,
 } from '@/components/manage/campaigns/types';
 
@@ -21,28 +23,43 @@ export default function Page() {
   const [selected, setSelected] = useState<string | null>(null);
   const [detail, setDetail] = useState<Detail | null>(null);
   const [platforms, setPlatforms] = useState<PlatformMetrics[]>([]);
+  const [demographics, setDemographics] = useState<DemographicMetrics[]>([]);
+  const [creatives, setCreatives] = useState<CreativePreview[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [accountBlock, setAccountBlock] = useState<string | null>(null);
   const [blockDetailOpen, setBlockDetailOpen] = useState(false);
+  const [authError, setAuthError] = useState<string | null>(null); // Meta 토큰 만료 안내
+  // 전환 1건 가치(₩) — 입력 시 구매 외 전환의 추정 ROAS를 백엔드가 채운다. localStorage 유지.
+  const [convValue, setConvValue] = useState<number | null>(null);
+  const [convInput, setConvInput] = useState('');
+
+  useEffect(() => {
+    const saved = localStorage.getItem('clickme.conversionValueKrw');
+    if (saved) {
+      setConvValue(Number(saved) || null);
+      setConvInput(saved);
+    }
+  }, []);
 
   // silent=true면 폴링 갱신 — 로딩 스피너 없이 값만 교체.
   const load = useCallback(async (silent = false) => {
     if (!silent) setBusy(true);
     setError(null);
     try {
-      const r = await api.management.campaigns();
+      const r = await api.management.campaigns(convValue);
       setCampaigns(r.campaigns);
       setSource(r.source ?? 'mock');
       setAccountBlock(r.account_block_reason ?? null);
+      setAuthError(r.auth_error ?? null);
       setLastUpdated(new Date().toLocaleTimeString('ko-KR'));
     } catch (e) {
       setError(e instanceof Error ? e.message : '불러오기 실패');
     } finally {
       if (!silent) setBusy(false);
     }
-  }, []);
+  }, [convValue]);
 
   useEffect(() => {
     load();
@@ -56,7 +73,12 @@ export default function Page() {
   }, [source, load]);
 
   // 캠페인별 {상세, 플랫폼} 캐시 — 재토글·재방문 시 즉시 표시(재요청 0).
-  type DetailEntry = { detail: Detail; platforms: PlatformMetrics[] };
+  type DetailEntry = {
+    detail: Detail;
+    platforms: PlatformMetrics[];
+    demographics: DemographicMetrics[];
+    creatives: CreativePreview[];
+  };
   const detailCache = useRef<Map<string, DetailEntry>>(new Map());
   const inflight = useRef<Map<string, Promise<DetailEntry>>>(new Map());
 
@@ -66,11 +88,18 @@ export default function Page() {
     const pending = inflight.current.get(id);
     if (pending) return pending; // 호버로 시작한 요청을 클릭이 이어받음(중복 호출 0)
     const promise = Promise.all([
-      api.management.campaign(id),
+      api.management.campaign(id, convValue),
       api.management.campaignPlatforms(id),
+      api.management.campaignDemographics(id),
+      api.management.campaignCreatives(id),
     ])
-      .then(([d, p]): DetailEntry => {
-        const entry = { detail: d, platforms: p.platforms };
+      .then(([d, p, g, c]): DetailEntry => {
+        const entry = {
+          detail: d,
+          platforms: p.platforms,
+          demographics: g.demographics,
+          creatives: c.creatives,
+        };
         detailCache.current.set(id, entry);
         inflight.current.delete(id);
         return entry;
@@ -81,7 +110,20 @@ export default function Page() {
       });
     inflight.current.set(id, promise);
     return promise;
-  }, []);
+  }, [convValue]);
+
+  // 전환 가치가 바뀌면 캐시된 상세는 옛 ROAS라 비운다 → 선택 상세가 새 값으로 재조회된다.
+  useEffect(() => {
+    detailCache.current.clear();
+    inflight.current.clear();
+  }, [convValue]);
+
+  const applyConvValue = () => {
+    const v = convInput ? Number(convInput) : null;
+    setConvValue(v && Number.isFinite(v) ? v : null);
+    if (v) localStorage.setItem('clickme.conversionValueKrw', String(v));
+    else localStorage.removeItem('clickme.conversionValueKrw');
+  };
 
   // 행/카드에 마우스 올리면 미리 가져옴 → 토글 누를 땐 이미 준비됨(체감 즉시).
   const prefetch = useCallback(
@@ -95,27 +137,37 @@ export default function Page() {
     if (!selected) {
       setDetail(null);
       setPlatforms([]);
+      setDemographics([]);
+      setCreatives([]);
       return;
     }
     const hit = detailCache.current.get(selected);
     if (hit) {
       setDetail(hit.detail);
       setPlatforms(hit.platforms);
+      setDemographics(hit.demographics);
+      setCreatives(hit.creatives);
       return;
     }
     let alive = true;
     setDetail(null);
     setPlatforms([]);
+    setDemographics([]);
+    setCreatives([]);
     fetchDetail(selected)
       .then((e) => {
         if (!alive) return;
         setDetail(e.detail);
         setPlatforms(e.platforms);
+        setDemographics(e.demographics);
+        setCreatives(e.creatives);
       })
       .catch(() => {
         if (alive) {
           setDetail(null);
           setPlatforms([]);
+          setDemographics([]);
+          setCreatives([]);
         }
       });
     return () => {
@@ -148,6 +200,26 @@ export default function Page() {
           </div>
           <div className="flex items-center gap-2">
             {source === 'live' && (
+              <label
+                className="flex items-center gap-1 text-[11px] text-[#8B95A1]"
+                title="전환 1건 가치(₩) — 입력하면 구매 외 전환(리드·가입 등)의 추정 ROAS를 계산합니다"
+              >
+                전환가치
+                <input
+                  type="number"
+                  min={0}
+                  step={1000}
+                  inputMode="numeric"
+                  value={convInput}
+                  onChange={(e) => setConvInput(e.target.value)}
+                  onBlur={applyConvValue}
+                  onKeyDown={(e) => e.key === 'Enter' && applyConvValue()}
+                  placeholder="₩/건"
+                  className="w-20 rounded border border-[#E5E8EB] dark:border-[#2D3748] bg-transparent px-1.5 py-1 text-right tabular-nums text-[#191F28] dark:text-[#F2F4F6]"
+                />
+              </label>
+            )}
+            {source === 'live' && (
               <button
                 onClick={() => load(true)}
                 title="새로고침"
@@ -179,6 +251,15 @@ export default function Page() {
             </Link>
           </div>
         </div>
+
+        {authError && (
+          <div className="mb-4 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 dark:border-amber-900/50 dark:bg-amber-900/20">
+            <p className="text-sm text-amber-800 dark:text-amber-300">
+              <span className="font-semibold">⚠ Meta 연결 만료</span> · {authError} 실데이터를
+              불러올 수 없어요. 관리자가 Meta 액세스 토큰을 갱신하면 다시 표시됩니다.
+            </p>
+          </div>
+        )}
 
         {accountBlock && (
           <div className="mb-4 rounded-xl border border-red-300 bg-red-50 px-4 py-3 dark:border-red-900/50 dark:bg-red-900/20">
@@ -228,6 +309,8 @@ export default function Page() {
                 onPrefetch={prefetch}
                 detail={detail}
                 platforms={platforms}
+                demographics={demographics}
+                creatives={creatives}
                 source={source}
               />
             ) : (
@@ -238,6 +321,8 @@ export default function Page() {
                 onPrefetch={prefetch}
                 detail={detail}
                 platforms={platforms}
+                demographics={demographics}
+                creatives={creatives}
                 source={source}
               />
             )}
@@ -246,7 +331,7 @@ export default function Page() {
 
         <p className="mt-6 text-[11px] text-[#B0B8C1]">
           {source === 'live'
-            ? '실데이터 · Meta 라이브(전체 기간 누적) · CVR/ROAS는 전환(구매) 발생 시 표시 · 금액 KRW'
+            ? '실데이터 · Meta 라이브(전체 기간 누적) · CVR은 전환(구매·리드·가입 등) 발생 시 · ROAS는 전환가치 입력 시 추정 · 금액 KRW'
             : '⚠ Mock 기반 데모 · 노출/지출은 일중 곡선 모델 기반 · "예측 CTR" 등 실측 환산 없음 · 금액 KRW'}
         </p>
       </div>

@@ -1,6 +1,6 @@
 import { getToken } from "./authApi";
 import type { BoardResponse } from "@/components/manage/compare/types";
-import type { CampaignDetail, CampaignsResponse, PlatformsResponse } from "@/components/manage/campaigns/types";
+import type { CampaignDetail, CampaignsResponse, CreativesResponse, DemographicsResponse, PlatformsResponse } from "@/components/manage/campaigns/types";
 import type { Proposal } from "@/components/manage/types";
 import type { BudgetStatus } from "@/components/manage/budget/types";
 import type {
@@ -301,10 +301,21 @@ export const api = {
     // 멀티테넌트 — 로그인 org로 Meta OAuth 로그인 URL을 받는다(인증 XHR). 프론트가 그 URL로 이동.
     connectMeta: () => request<{ login_url: string; state: string }>("/management/meta/connect"),
     compareBoard: () => request<BoardResponse>("/management/compare/board"),
-    campaigns: () => request<CampaignsResponse>("/management/campaigns"),
-    campaign: (id: string) => request<CampaignDetail>(`/management/campaigns/${id}`),
+    // conversionValueKrw(전환 1건 가치) 전달 시 구매 외 전환의 추정 ROAS가 채워진다.
+    campaigns: (conversionValueKrw?: number | null) =>
+      request<CampaignsResponse>(
+        `/management/campaigns${conversionValueKrw ? `?conversion_value_krw=${conversionValueKrw}` : ""}`,
+      ),
+    campaign: (id: string, conversionValueKrw?: number | null) =>
+      request<CampaignDetail>(
+        `/management/campaigns/${id}${conversionValueKrw ? `?conversion_value_krw=${conversionValueKrw}` : ""}`,
+      ),
     campaignPlatforms: (id: string) =>
       request<PlatformsResponse>(`/management/campaigns/${id}/platforms`),
+    campaignDemographics: (id: string) =>
+      request<DemographicsResponse>(`/management/campaigns/${id}/demographics`),
+    campaignCreatives: (id: string) =>
+      request<CreativesResponse>(`/management/campaigns/${id}/creatives`),
     createCampaignProposal: (body: {
       name: string;
       daily_budget_krw: number;

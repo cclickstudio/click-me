@@ -4,6 +4,8 @@ import type {
   CampaignDetail as Detail,
   CampaignSource,
   CampaignSummary,
+  CreativePreview,
+  DemographicMetrics,
   PlatformMetrics,
 } from './types';
 import { fmtCvr, fmtRoas } from './types';
@@ -26,6 +28,8 @@ export function CampaignCards({
   onPrefetch,
   detail,
   platforms,
+  demographics,
+  creatives,
   source,
 }: {
   campaigns: CampaignSummary[];
@@ -34,6 +38,8 @@ export function CampaignCards({
   onPrefetch?: (id: string) => void;
   detail?: Detail | null;
   platforms?: PlatformMetrics[];
+  demographics?: DemographicMetrics[];
+  creatives?: CreativePreview[];
   source?: CampaignSource;
 }) {
   return (
@@ -70,7 +76,7 @@ export function CampaignCards({
               <Metric label="CPC(클릭당비용)" value={`₩${c.cpc_krw.toLocaleString()}`} />
               <Metric label="CPM(노출당비용)" value={`₩${c.cpm_krw.toLocaleString()}`} />
               <Metric label="CVR(전환율)" value={fmtCvr(c.cvr, c.conversions)} />
-              <Metric label="ROAS(투자수익률)" value={fmtRoas(c.roas, c.conversions)} />
+              <Metric label="ROAS(투자수익률)" value={fmtRoas(c.roas, c.conversions, c.roas_estimated)} />
             </div>
             <div className="mt-3">
               <div className="flex items-center justify-between text-[11px] text-[#8B95A1] mb-1">
@@ -90,6 +96,8 @@ export function CampaignCards({
                 detail={detail}
                 source={source}
                 platforms={platforms}
+                demographics={demographics}
+                creatives={creatives}
                 blockReason={c.block_reason}
               />
             </div>
