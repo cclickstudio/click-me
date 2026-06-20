@@ -54,7 +54,10 @@ export function CampaignForm({
 }) {
   const [name, setName] = useState('');
   const [objective, setObjective] = useState<'traffic' | 'leads'>('traffic');
-  // 기본값은 '최소 위주' — 예산은 정책의 목표별 최소(=Meta floor)를 따라가고, 기간은 최소 1일.
+  // 기본(자동): 총 예산만 받고 일 예산=Meta 최소·일수=최대한 길게로 폼이 자동 최적화(전략).
+  const [total, setTotal] = useState(50_000); // 사용자가 넣는 유일한 예산 입력(총액)
+  const [advanced, setAdvanced] = useState(false); // 고급 — 일예산·일수 직접 설정
+  // 고급 모드 전용(자동 모드에선 floor·계산값을 씀).
   const [budget, setBudget] = useState(0);
   const [budgetTouched, setBudgetTouched] = useState(false); // 사용자가 예산을 직접 만졌는가
   const [runDays, setRunDays] = useState(1);
@@ -125,11 +128,19 @@ export function CampaignForm({
 
   // 목표별 최소 일예산 = Meta floor(정책에서 받음). 미달이면 Meta가 광고세트 생성을 거부한다.
   const minBudget = minByObjective[objective] ?? 1_521;
-  // 사용자가 안 만졌으면 항상 최소(=floor)로 따라간다 — 기본 '최소 위주' + 정책 변경 자동 반영.
+  // 고급 모드에서 사용자가 안 만졌으면 최소로 따라간다(자동 모드는 floor 고정이라 무관).
   useEffect(() => {
     if (!budgetTouched) setBudget(minBudget);
   }, [minBudget, budgetTouched]);
-  const valid = name.trim().length > 0 && budget >= minBudget && runDays >= 1;
+
+  // 자동 전략 — 일 예산 = floor(최소), 일수 = 최대(총÷floor, ≤90). 총<floor면 1일도 불가.
+  const autoDays = total >= minBudget ? Math.min(Math.floor(total / minBudget), 90) : 0;
+  const autoTotal = minBudget * autoDays; // 실제 집행될 총액(일예산×일수)
+  // 실제 전송될 값 — 자동이면 floor·autoDays, 고급이면 사용자 입력.
+  const sendDaily = advanced ? budget : minBudget;
+  const sendDays = advanced ? runDays : autoDays;
+  const valid =
+    name.trim().length > 0 && sendDaily >= minBudget && sendDays >= 1 && sendDays <= 90;
 
   return (
     <form
@@ -139,8 +150,8 @@ export function CampaignForm({
           onSubmit({
             name: name.trim(),
             objective,
-            daily_budget_krw: budget,
-            run_days: runDays,
+            daily_budget_krw: sendDaily,
+            run_days: sendDays,
             creative_ad_id: creativeId.trim() || undefined,
             image_hash: imageHash || undefined,
             special_ad_category: specialCat,
@@ -155,30 +166,78 @@ export function CampaignForm({
       <Field label="캠페인 이름">
         <input className={inputCls} value={name} onChange={(e) => setName(e.target.value)} placeholder="예: 가을 신상 런칭" />
       </Field>
-      <div className="grid grid-cols-2 gap-4">
-        <Field label="일 예산 (KRW)" hint={`Meta 최소 ₩${minBudget.toLocaleString()} (${objective === 'leads' ? '리드' : '트래픽'})`}>
-          <input
-            type="number"
-            min={minBudget}
-            step={1000}
-            className={inputCls}
-            value={budget}
-            onChange={(e) => {
-              setBudgetTouched(true);
-              setBudget(Number(e.target.value));
-            }}
-          />
-        </Field>
-        <Field label="집행 기간 (일)" hint="1~90일">
-          <input
-            type="number"
-            min={1}
-            max={90}
-            className={inputCls}
-            value={runDays}
-            onChange={(e) => setRunDays(Number(e.target.value))}
-          />
-        </Field>
+      {/* 예산 — 기본은 '총 예산만' 받고 일별은 자동 최적화(최소 일예산 × 최대 일수) */}
+      <div>
+        <div className="flex items-center justify-between">
+          <span className="text-sm font-medium text-[#191F28] dark:text-[#F2F4F6]">예산</span>
+          <button
+            type="button"
+            onClick={() => setAdvanced((v) => !v)}
+            className="text-[11px] font-medium text-[#8B95A1] hover:text-[#3182F6]"
+          >
+            {advanced ? '간편 설정으로' : '직접 설정(고급)'}
+          </button>
+        </div>
+
+        {!advanced ? (
+          <>
+            <input
+              type="number"
+              min={minBudget}
+              step={1000}
+              className={inputCls}
+              value={total}
+              onChange={(e) => setTotal(Number(e.target.value))}
+              placeholder="총 예산 (예: 50000)"
+            />
+            {autoDays > 0 ? (
+              <div className="mt-2 rounded-xl bg-[#F2F9FF] dark:bg-[#16263A] px-3 py-2.5">
+                <p className="text-sm font-semibold text-[#3182F6]">
+                  일 ₩{minBudget.toLocaleString()} × {autoDays}일 = ₩{autoTotal.toLocaleString()}
+                </p>
+                <p className="mt-0.5 text-[11px] text-[#4E5968] dark:text-[#9CA3AF]">
+                  최소 비용으로 최대한 길게 노출 — Meta 최소 일예산으로 가장 오래 집행해 노출·클릭에 유리.
+                </p>
+                <p className="mt-0.5 text-[11px] text-[#8B95A1]">
+                  너무 낮은 일예산은 초반 게재가 느릴 수 있어요. 빠른 게재가 필요하면 ‘직접 설정’.
+                </p>
+              </div>
+            ) : (
+              <p className="mt-1.5 text-[11px] text-red-500">
+                총 예산이 Meta 최소 일예산(₩{minBudget.toLocaleString()})보다 커야 해요.
+              </p>
+            )}
+          </>
+        ) : (
+          <div className="mt-1.5 grid grid-cols-2 gap-4">
+            <Field
+              label="일 예산 (KRW)"
+              hint={`Meta 최소 ₩${minBudget.toLocaleString()} (${objective === 'leads' ? '리드' : '트래픽'})`}
+            >
+              <input
+                type="number"
+                min={minBudget}
+                step={1000}
+                className={inputCls}
+                value={budget}
+                onChange={(e) => {
+                  setBudgetTouched(true);
+                  setBudget(Number(e.target.value));
+                }}
+              />
+            </Field>
+            <Field label="집행 기간 (일)" hint="1~90일">
+              <input
+                type="number"
+                min={1}
+                max={90}
+                className={inputCls}
+                value={runDays}
+                onChange={(e) => setRunDays(Number(e.target.value))}
+              />
+            </Field>
+          </div>
+        )}
       </div>
       <Field label="목표" hint="리드는 잠재고객 폼(즉석 양식)으로 전환·ROAS 측정이 가능">
         <select
@@ -306,7 +365,9 @@ export function CampaignForm({
       </Field>
 
       <div className="flex items-center justify-between pt-1">
-        <p className="text-[11px] text-[#8B95A1]">예상 총지출 ₩{(budget * runDays).toLocaleString()}</p>
+        <p className="text-[11px] text-[#8B95A1]">
+          예상 총지출 ₩{(advanced ? budget * runDays : autoTotal).toLocaleString()}
+        </p>
         <button
           type="submit"
           disabled={!valid || busy}
