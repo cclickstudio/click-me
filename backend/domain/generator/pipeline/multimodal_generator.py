@@ -63,7 +63,10 @@ def _build_prompt(
     )
 
 
-@traceable(name="MultimodalGenerator", metadata={"pipeline": "generator"})
+@traceable(
+    name="generator:generate_multimodal",
+    metadata={"pipeline": "generator", "prompt_version": "v1.0"},
+)
 async def generate_image_and_copy(
     product_analysis: ProductAnalysis,
     strategy: AdStrategy,
@@ -85,7 +88,13 @@ async def generate_image_and_copy(
     response = await _client.responses.create(
         model=settings.generator_multimodal_model,
         input=prompt,
-        tools=[{"type": "image_generation", "size": size.value}],
+        tools=[
+            {
+                "type": "image_generation",
+                "size": size.value,
+                "model": settings.generator_multimodal_image_model,
+            }
+        ],
     )
 
     image_b64: str | None = None

@@ -22,11 +22,14 @@ from api.routers import (
     admin,
     ads,
     auth,
+    billing,
     chat,
     company,
     dashboard,
+    debate,
     generator,
     inquiries,
+    management,
     personas,
     projects,
 )
@@ -97,7 +100,10 @@ app.include_router(admin.router, prefix="/api/admin", tags=["admin"])
 app.include_router(inquiries.router, prefix="/api/inquiries", tags=["inquiries"])
 app.include_router(personas.router, prefix="/api/personas", tags=["personas"])
 app.include_router(projects.router, prefix="/api/projects", tags=["projects"])
+app.include_router(billing.router, prefix="/api/billing", tags=["billing"])
+app.include_router(management.router, prefix="/api/management", tags=["management"])
 app.include_router(generator.router, prefix="/api/generator", tags=["generator"])
+app.include_router(debate.router, prefix="/api/debate", tags=["debate"])
 
 
 @app.get("/health")

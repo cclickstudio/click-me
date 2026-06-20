@@ -1,8 +1,20 @@
-# 시뮬레이터 파이프라인 end-to-end 스모크 — Mock 어댑터로 광고→반응→집계 한 바퀴 검증
+# 시뮬레이터 파이프라인 end-to-end 스모크 — 실 Gemini로 광고→반응→집계 한 바퀴 검증
+#
+# mock 제거로 실 LLM 전용 → 비용·비결정성 때문에 RUN_LIVE_LLM=1 일 때만 실행(기본 skip).
+# 실데이터 검증: RUN_LIVE_LLM=1 로 이 파일을 pytest 실행.
 from __future__ import annotations
+
+import os
+
+import pytest
 
 from domain.simulation.contracts.schemas import SimulationRunRequest
 from domain.simulation.wiring import build_simulation_service
+
+pytestmark = pytest.mark.skipif(
+    os.environ.get("RUN_LIVE_LLM") != "1",
+    reason="실 Gemini e2e — RUN_LIVE_LLM=1로 명시 실행(mock 제거)",
+)
 
 _AGG_KEYS = (
     "click_intent_rate",
@@ -33,7 +45,7 @@ async def test_per_persona_progress_emitted() -> None:
     assert f"반응 {sample}/{sample}" in reaction_msgs[-1]
 
 
-async def test_mock_pipeline_runs_end_to_end() -> None:
+async def test_pipeline_runs_end_to_end() -> None:
     service = build_simulation_service()
     request = SimulationRunRequest(ad_id="AD-TEST", sample_size=30)
 
@@ -47,6 +59,30 @@ async def test_mock_pipeline_runs_end_to_end() -> None:
     result = service.get_result(run_id)
     assert result is not None
     assert result["run_id"] == run_id
+
+
+async def test_ad_and_simulation_blocks_present() -> None:
+    # ERD 광고·시뮬레이션 테이블 데이터가 run 결과에 인메모리로 조립돼 나오는지(ERD 5테이블 출력).
+    service = build_simulation_service()
+    request = SimulationRunRequest(
+        ad_id="AD-BLK", sample_size=20, ad_title="신제품", product_category="음료"
+    )
+    run_id = await service.start(request)
+    await _drain(service, run_id)
+
+    result = service.get_result(run_id)
+    assert {"ad", "simulation"}.issubset(result)
+
+    ad = result["ad"]
+    assert ad["ID"] == "AD-BLK"
+    assert ad["title"] == "신제품"
+    assert ad["product_category"] == "음료"
+
+    sim = result["simulation"]
+    assert sim["ad_id"] == "AD-BLK"
+    assert sim["sample_size"] == 20
+    assert sim["status"] == "COMPLETED"
+    assert sim["qa_passed_count"] == sum(1 for r in result["reactions"] if r["qa_passed"])
 
 
 async def test_reaction_contract_fields_present() -> None:
@@ -80,5 +116,5 @@ async def test_aggregate_contract_and_ranges() -> None:
     assert 0.0 <= agg["rejection_rate"] <= 1.0
     assert 1.0 <= agg["purchase_intent"] <= 5.0
     assert agg["engine_version"] == "agg-2"
-    # 균일 가중(self-weighting) → 유효표본수 = 표본수.
+    # 도달성은 추출분포에 반영(§Tier1)·self-weighting 유지 → 균일 가중 → 유효표본수 = 표본수.
     assert agg["effective_n"] == 40.0

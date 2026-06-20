@@ -10,12 +10,34 @@ from pathlib import Path
 from typing import Any
 
 import httpx
+from langsmith import get_current_run_tree, traceable
 
 _DEFAULT_MODEL = "gemini-2.5-flash"  # 재현성 위해 버전 핀
 
 
 def _enum_values(enum_cls) -> str:
     return ", ".join(e.value for e in enum_cls)
+
+
+def _trace_inputs(inputs: dict) -> dict:
+    # client(genai.Client)는 직렬화 의미가 없음 → 트레이스 입력에서 제거, 모델·프롬프트만 남긴다.
+    return {k: v for k, v in inputs.items() if k != "client"}
+
+
+def _record_usage(resp: Any, model: str) -> None:
+    """google-genai 응답의 토큰 사용량을 현재 LangSmith run에 기록(트레이싱 OFF면 무동작)."""
+    run = get_current_run_tree()
+    um = getattr(resp, "usage_metadata", None)
+    if run is None or um is None:
+        return
+    run.set(
+        usage_metadata={
+            "input_tokens": getattr(um, "prompt_token_count", None) or 0,
+            "output_tokens": getattr(um, "candidates_token_count", None) or 0,
+            "total_tokens": getattr(um, "total_token_count", None) or 0,
+        },
+        metadata={"ls_model_name": model, "ls_provider": "google_genai"},
+    )
 
 
 def _new_client(api_key: str | None) -> Any:
@@ -27,14 +49,19 @@ def _new_client(api_key: str | None) -> Any:
     return genai.Client(api_key=key)
 
 
+@traceable(run_type="llm", name="gemini.generate_content", process_inputs=_trace_inputs)
 async def _agen_json(
     client: Any, model: str, contents: Any, *, temperature: float | None = None
 ) -> dict:
-    """google-genai 비동기 호출 + JSON 파싱. contents는 str 또는 [str, 이미지 Part] 리스트."""
+    """google-genai 비동기 호출 + JSON 파싱. contents는 str 또는 [str, 이미지 Part] 리스트.
+
+    LangSmith LLM run으로 추적 — 응답 토큰량(usage_metadata)을 현재 run에 첨부한다.
+    """
     config: dict[str, Any] = {"response_mime_type": "application/json"}
     if temperature is not None:
         config["temperature"] = temperature
     resp = await client.aio.models.generate_content(model=model, contents=contents, config=config)
+    _record_usage(resp, model)
     return _parse_json(getattr(resp, "text", "") or "")
 
 

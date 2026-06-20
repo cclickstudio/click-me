@@ -77,7 +77,9 @@ _IMPROVEMENT_SECTION = """\
 _llm = build_text_llm(temperature=0.5, max_tokens=150).with_structured_output(AdCopy)
 
 
-@traceable(name="CopyGenerator", metadata={"pipeline": "generator"})
+@traceable(
+    name="generator:generate_copy", metadata={"pipeline": "generator", "prompt_version": "v1.0"}
+)
 async def generate_copy(
     product_analysis: ProductAnalysis,
     strategy_output: StrategyOutput,

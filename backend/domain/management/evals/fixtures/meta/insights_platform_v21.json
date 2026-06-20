@@ -1,0 +1,19 @@
+{
+  "data": [
+    {
+      "publisher_platform": "facebook",
+      "impressions": "25",
+      "clicks": "2",
+      "spend": "146",
+      "reach": "24"
+    },
+    {
+      "publisher_platform": "instagram",
+      "impressions": "799",
+      "clicks": "51",
+      "spend": "4895",
+      "reach": "789"
+    }
+  ],
+  "paging": { "cursors": { "before": "MA", "after": "MA" } }
+}

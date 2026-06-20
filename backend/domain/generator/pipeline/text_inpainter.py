@@ -67,7 +67,9 @@ def _build_prompt(
         )
 
 
-@traceable(name="TextInpainter", metadata={"pipeline": "generator"})
+@traceable(
+    name="generator:inpaint_text_zone", metadata={"pipeline": "generator", "prompt_version": "v1.0"}
+)
 async def inpaint_text_zone(
     bg_bytes: bytes,
     template: TemplateType,

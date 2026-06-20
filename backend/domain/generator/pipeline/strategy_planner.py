@@ -66,7 +66,9 @@ class _StrategyList(BaseModel):
 _llm = build_text_llm(temperature=0.7).with_structured_output(_StrategyList)
 
 
-@traceable(name="StrategyPlanner", metadata={"pipeline": "generator"})
+@traceable(
+    name="generator:plan_strategies", metadata={"pipeline": "generator", "prompt_version": "v1.0"}
+)
 async def plan_strategies(
     product_analysis: ProductAnalysis,
     improvement_context: str | None = None,

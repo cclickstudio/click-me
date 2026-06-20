@@ -4,7 +4,19 @@ import uuid
 from datetime import datetime
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, SmallInteger, String, Text, func
+from sqlalchemy import (
+    JSON,
+    BigInteger,
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Integer,
+    SmallInteger,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -281,4 +293,237 @@ class BrandProfileRow(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), onupdate=func.now()
+    )
+
+
+# ──────────────────────────────────────────────
+# 광고 매니지먼트 (🤝 공동, R&R §7) — contracts/schemas.py 계약과 1:1
+# 컬럼 규칙: 타임스탬프=TIMESTAMPTZ / 금액=BIGINT KRW / 유연 페이로드=JSONB /
+#           판정·조인 신호=일반 컬럼+인덱스 / enum=VARCHAR + 앱 레벨 검증.
+# tenant_id = organization_id 느슨 참조(FK 없음, 멀티테넌트 정렬용).
+# ──────────────────────────────────────────────
+_TS = DateTime(timezone=True)
+
+
+class ActionProposalRow(Base):
+    """🅱 생산 제안 (ActionProposal 계약). 판정·조인 신호는 컬럼, 나머지는 payload."""
+
+    __tablename__ = "action_proposals"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    proposal_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    ad_account_id: Mapped[str] = mapped_column(String(64))
+    action_type: Mapped[str] = mapped_column(String(48))
+    action_tier: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(24), index=True)
+    budget_before_krw: Mapped[int] = mapped_column(BigInteger)
+    budget_after_krw: Mapped[int] = mapped_column(BigInteger)
+    max_total_spend_krw: Mapped[int] = mapped_column(BigInteger)
+    expected_state_version: Mapped[str] = mapped_column(String(48))
+    proposal_hash: Mapped[str] = mapped_column(String(64))
+    approval_policy_version: Mapped[str] = mapped_column(String(16))
+    expires_at: Mapped[datetime] = mapped_column(_TS, index=True)
+    # evidence_metrics · hypothesis · confidence · metrics_as_of · target_object_ids
+    payload: Mapped[dict] = mapped_column(JSONB)
+    created_at: Mapped[datetime] = mapped_column(_TS, server_default=func.now())
+
+
+class ApprovalRow(Base):
+    """🅰 승인 기록 (ApprovedAction 계약). 복합 UNIQUE = 중복승인 멱등 (R&R P2)."""
+
+    __tablename__ = "approvals"
+    __table_args__ = (
+        UniqueConstraint("proposal_id", "approval_policy_version", name="uq_approval_idem"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    approval_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)  # 계약 PK
+    proposal_id: Mapped[str] = mapped_column(String(64), index=True)
+    proposal_hash: Mapped[str] = mapped_column(String(64))  # executor 재검증용
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    approver_id: Mapped[str] = mapped_column(String(64))  # 사용자 ID 또는 "AUTO"
+    action_tier: Mapped[int] = mapped_column(Integer)
+    approval_policy_version: Mapped[str] = mapped_column(String(16))
+    expected_state_version: Mapped[str] = mapped_column(String(48))
+    execution_mode: Mapped[str] = mapped_column(String(20))
+    expires_at: Mapped[datetime] = mapped_column(_TS)  # 승인 자체 만료 (제안 TTL보다 짧음)
+    approved_at: Mapped[datetime] = mapped_column(_TS, server_default=func.now())
+
+
+class AuditEventRow(Base):
+    """append-only 감사 로그 (게이트 #7). UPDATE/DELETE 코드 경로 없음."""
+
+    __tablename__ = "audit_events"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    event_id: Mapped[str | None] = mapped_column(String(64), index=True)  # AuditEvent.event_id
+    category: Mapped[str | None] = mapped_column(String(64))  # 예: "executor.completed"
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    proposal_id: Mapped[str] = mapped_column(String(64), index=True)
+    approval_id: Mapped[str | None] = mapped_column(String(64))  # 승인 전 이벤트는 null
+    run_id: Mapped[str | None] = mapped_column(String(64))  # 실행 run 연결
+    stage: Mapped[str | None] = mapped_column(String(24))  # 코드 미생성 — nullable
+    outcome: Mapped[str | None] = mapped_column(String(48))  # 코드 미생성 — nullable
+    detail: Mapped[dict] = mapped_column(JSONB)  # AuditEvent.payload (마스킹 후)
+    at: Mapped[datetime] = mapped_column(_TS, server_default=func.now())  # occurred_at
+
+
+class ExecutionRunRow(Base):
+    """🅱 실행 워크플로 상태 + 플랫폼 스냅샷(부분 실패 보존)."""
+
+    __tablename__ = "execution_runs"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    run_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    approval_id: Mapped[str] = mapped_column(String(64), index=True)
+    proposal_id: Mapped[str] = mapped_column(String(64), index=True)
+    status: Mapped[str] = mapped_column(String(24))  # WorkflowStatus
+    result_status: Mapped[str | None] = mapped_column(String(24))  # ResultStatus
+    failure_reason: Mapped[str | None] = mapped_column(String(48))
+    platform_snapshot: Mapped[dict] = mapped_column(JSONB)
+    executed_at: Mapped[datetime] = mapped_column(_TS, server_default=func.now())
+
+
+class IdempotencyKeyRow(Base):
+    """멱등키 선점 — key UNIQUE(PK) + INSERT ON CONFLICT DO NOTHING (게이트 #1)."""
+
+    __tablename__ = "idempotency_keys"
+
+    key: Mapped[str] = mapped_column(String(80), primary_key=True)
+    approval_id: Mapped[str] = mapped_column(String(64), index=True)
+    claimed: Mapped[bool] = mapped_column(Boolean, default=True)
+    result: Mapped[dict | None] = mapped_column(JSONB)  # ActionResult JSON — replay용 (게이트 #1)
+    created_at: Mapped[datetime] = mapped_column(_TS, server_default=func.now())
+
+
+class RemediationEscalationRow(Base):
+    """🅱 시간축 에스컬레이션 사다리 진행 상태 — 캠페인당 active 1건 (re_evaluate 소유).
+
+    파괴도 낮은 조치부터 우선순위대로 시도하고, 회복(원래 anomaly 소멸)이 안 되면 다음 단계로
+    올린다. 회복 판정은 재탐지로만 하므로 baseline 스냅샷은 저장하지 않는다.
+    """
+
+    __tablename__ = "remediation_escalations"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    run_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    ad_account_id: Mapped[str] = mapped_column(String(64))
+    campaign_id: Mapped[str] = mapped_column(String(64), index=True)
+    anomaly_type: Mapped[str] = mapped_column(String(48))  # 사다리를 연 anomaly = 회복 판정 기준
+    ladder: Mapped[list] = mapped_column(JSONB)  # 우선순위 action_type 목록 스냅샷
+    current_rung_index: Mapped[int] = mapped_column(Integer, default=0)
+    rung_status: Mapped[str] = mapped_column(String(16))  # proposed | executed | rejected
+    rung_executed_at: Mapped[datetime | None] = mapped_column(_TS)
+    last_proposal_id: Mapped[str | None] = mapped_column(String(64))
+    last_approval_id: Mapped[str | None] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(16), index=True)  # active | recovered | exhausted
+    opened_at: Mapped[datetime] = mapped_column(_TS, server_default=func.now())
+    last_evaluated_at: Mapped[datetime | None] = mapped_column(_TS)
+    updated_at: Mapped[datetime] = mapped_column(
+        _TS, server_default=func.now(), onupdate=func.now()
+    )
+
+
+# ──────────────────────────────────────────────
+# Persona Debate (시뮬레이터 4-1 페르소나 토론, simulations 1:N) — db-schema v3.1
+# ──────────────────────────────────────────────
+
+
+class PersonaDebate(Base):
+    """페르소나 토론 세션(= 토론 아이디). simulations 1:N(UNIQUE 없음)."""
+
+    __tablename__ = "persona_debates"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    # simulations 는 도메인 SimBase(별도 metadata)라 cross-base FK 선언 불가 — ORM 은 UUID 컬럼으로만
+    # 참조(domain 의 FK 미선언 패턴과 동일). DB 레벨 FK·CASCADE 제약은 마이그레이션 007 이 보유.
+    simulation_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), nullable=False, index=True)
+    topic: Mapped[str | None] = mapped_column(Text)
+    rounds_run: Mapped[int | None] = mapped_column(Integer)  # 실제 돈 라운드(2~4)
+    stop_reason: Mapped[str | None] = mapped_column(String(20))  # consensus | dissensus | max
+    judge_model: Mapped[str | None] = mapped_column(String(50))
+    engines: Mapped[list | None] = mapped_column(JSONB)  # ["haiku","gpt","gemini"]
+    judge_log: Mapped[dict | None] = mapped_column(JSONB)  # 라운드별 Judge 중간 정리
+    final: Mapped[dict | None] = mapped_column(JSONB)  # headline/consensus/dissent/ranked_actions
+    status: Mapped[str] = mapped_column(String(20), default="PENDING")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    participants: Mapped[list["PersonaDebateParticipant"]] = relationship(
+        back_populates="debate", cascade="all, delete-orphan"
+    )
+    utterances: Mapped[list["PersonaDebateUtterance"]] = relationship(
+        back_populates="debate", cascade="all, delete-orphan"
+    )
+
+
+class PersonaDebateParticipant(Base):
+    """토론 패널 1명(기본 6명). debate 1:N. persona_id는 더미 문자열·실 UUID 양쪽 수용."""
+
+    __tablename__ = "persona_debate_participants"
+    __table_args__ = (UniqueConstraint("debate_id", "persona_id"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    debate_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("persona_debates.id", ondelete="CASCADE"), nullable=False
+    )
+    persona_id: Mapped[str] = mapped_column(String(50), nullable=False)  # "P-00011"
+    persona_name: Mapped[str | None] = mapped_column(String(50))
+    persona_profile: Mapped[str | None] = mapped_column(Text)
+    role: Mapped[str | None] = mapped_column(String(20))  # 피벗/완주자/거부자/…
+    engine: Mapped[str | None] = mapped_column(String(20))  # haiku/gpt/gemini
+
+    debate: Mapped["PersonaDebate"] = relationship(back_populates="participants")
+
+
+class PersonaDebateUtterance(Base):
+    """토론 발언 로그(라운드×패널). debate 1:N, participant 참조."""
+
+    __tablename__ = "persona_debate_utterances"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    debate_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("persona_debates.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    participant_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("persona_debate_participants.id", ondelete="CASCADE"), nullable=True
+    )
+    round: Mapped[int] = mapped_column(Integer, nullable=False)  # 1~4
+    phase: Mapped[str | None] = mapped_column(String(10))  # 발산/반박/검증
+    stance: Mapped[str | None] = mapped_column(String(10))  # positive/neutral/negative
+    text: Mapped[str | None] = mapped_column(Text)
+    reason: Mapped[str | None] = mapped_column(Text)
+    lever: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    debate: Mapped["PersonaDebate"] = relationship(back_populates="utterances")
+
+
+class MetaConnection(Base):
+    """테넌트(Organization)별 Meta 연결 — OAuth 장기 토큰을 암호화 저장 (멀티테넌트 (A)).
+
+    외부 광고주가 자기 Meta 자산을 연결하면 org당 1건 생성된다. access_token_enc는
+    AES-256-GCM 암호문(평문 토큰 저장·로그 금지 — CLAUDE.md 보안 규칙). scopes는 부여 권한
+    목록(JSONB, SQLite 테스트에선 JSON), token_expires_at은 장기토큰 만료(갱신 트리거용).
+    """
+
+    __tablename__ = "meta_connections"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, unique=True
+    )
+    access_token_enc: Mapped[str] = mapped_column(Text, nullable=False)
+    ad_account_id: Mapped[str | None] = mapped_column(String(64))
+    page_id: Mapped[str | None] = mapped_column(String(64))
+    ig_user_id: Mapped[str | None] = mapped_column(String(64))
+    scopes: Mapped[list | None] = mapped_column(JSONB().with_variant(JSON(), "sqlite"))
+    token_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="active"
+    )  # active | needs_reconnect
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )

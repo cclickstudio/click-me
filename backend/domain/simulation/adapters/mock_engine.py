@@ -7,6 +7,7 @@ import random
 
 from domain.simulation.contracts.enums import EmotionTag, RejectionReasonTag
 from domain.simulation.contracts.schemas import (
+    AdFeatures,
     AdInterpretation,
     Aisas,
     PanelSpec,
@@ -15,6 +16,26 @@ from domain.simulation.contracts.schemas import (
     RubricScore,
     SimulationRunRequest,
 )
+from domain.simulation.tools.reachability import pick_social_exposure
+
+# 결정적 광고 특성 스텁 — 무콜 데모·테스트용. structured_analysis 와 ad_features 양쪽에 동일하게.
+_MOCK_FEATURES = {
+    "ad_credibility": 70,
+    "ad_quality": 65,
+    "price_mentioned": True,
+    "original_price": 30000,
+    "discounted_price": 19900,
+    "brand_mentioned": True,
+    "social_proof_strength": "medium",
+}
+
+# 결정적 시각 인벤토리 스텁(§4-a) — structured_analysis(JSONB)에만 담겨 반응 프롬프트로 흐른다.
+_MOCK_VISUAL = {
+    "primary_subject": "제품 패키지",
+    "elements": ["제품샷", "할인 배지", "브랜드 로고", "CTA 버튼"],
+    "first_impression": "큼지막한 할인 배지",
+    "color_tone": "밝고 선명한 원색 톤",
+}
 
 _GENDERS = ("M", "F")
 _REGIONS = ("서울", "경기", "부산", "대구", "광주")
@@ -22,24 +43,26 @@ _OCEAN_KEYS = ("openness", "conscientiousness", "extraversion", "agreeableness",
 
 
 def _pick_exposure(persona: Persona, rng: random.Random) -> str:
-    """페르소나의 KISDI 노출맥락 후보에서 하나를 선택해 문자열로. 후보 없으면 기본값."""
+    """노출맥락 — Meta 전용이므로 소셜피드만. 비소셜(TV 등)로는 폴백하지 않는다(모순 차단)."""
     candidates = persona.media_behavior.get("exposure_candidates") or []
-    if not candidates:
-        return "sns_feed_evening"
-    e = rng.choice(candidates)
+    e = pick_social_exposure(candidates, rng)
+    if e is None:
+        return "sns_feed_evening"  # 소셜 후보 없을 때 기본값 — 비소셜 금지
     return f"{e['timeband']}·{e['place']}·{e['medium']}·{e['activity']}"
 
 
 class MockAdInterpreter:
-    """AdInterpreter 어댑터 —고정 해석 반환."""
+    """AdInterpreter 어댑터 —고정 해석 반환(선언 의도는 보지 않음, 앵커링 방지 §3.5-3)."""
 
     async def interpret(self, request: SimulationRunRequest) -> AdInterpretation:
         return AdInterpretation(
             ad_id=request.ad_id,
-            structured_analysis={"mock": True},
+            structured_analysis={"mock": True, **_MOCK_FEATURES, "visual_elements": _MOCK_VISUAL},
             detected_industry="beverage",
+            detected_objective="awareness",
             detected_target="20대",
             detected_message="신제품 출시",
+            ad_features=AdFeatures(**_MOCK_FEATURES),
             intent_mismatch=False,
             model_version="mock-vision-0",
         )
@@ -77,6 +100,7 @@ class MockReactionEngine:
         interest = attention and rng.random() > 0.3
         action = interest and rng.random() > 0.6
         rejected = rng.random() < 0.1
+        brand_recognized = attention and rng.random() > 0.35  # 주목해야 브랜드 식별 가능
         return PersonaReaction(
             persona_id=persona.persona_id,
             exposure_context=exposure,
@@ -95,21 +119,46 @@ class MockReactionEngine:
             emotion_tag=rng.choice(list(EmotionTag)),
             perceived_message=ad.detected_message,
             perceived_target=ad.detected_target,
+            brand_recognized=brand_recognized,
+            perceived_brand=ad.detected_message if brand_recognized else None,
             utterance="썸네일은 눈에 띄는데 뭘 사라는 건지 모르겠어요.",
             qa_passed=True,
         )
 
 
 class MockRubricEvaluator:
-    """RubricEvaluator 어댑터 —차원별 점수(숫자) 결정적 산출."""
+    """RubricEvaluator 어댑터 —의도 정합 점수(선언 ↔ 감지) 결정적 산출(§3.5-3).
 
-    async def evaluate(self, ad: AdInterpretation) -> list[RubricScore]:
-        rng = random.Random(ad.ad_id)
-        dimensions = ("clarity", "relevance", "trust", "creativity", "cta_strength")
-        return [
-            RubricScore(dimension=d, score=rng.randint(40, 90), evidence={"mock": True})
-            for d in dimensions
-        ]
+    선언 입력이 있는 차원만 채점. 선언==감지(유사)면 高, 다르면 低. 선언 미입력 차원은 생략.
+    """
+
+    async def evaluate(
+        self, ad: AdInterpretation, request: SimulationRunRequest
+    ) -> list[RubricScore]:
+        # (정합 차원, 선언값, 감지값) — 선언 미입력이면 스킵.
+        dims = (
+            ("category_alignment", request.product_category, ad.detected_industry),
+            ("objective_alignment", request.ad_objective, ad.detected_objective),
+            ("message_alignment", request.ad_title, ad.detected_message),
+        )
+        scores: list[RubricScore] = []
+        for dim, declared, detected in dims:
+            if not declared:
+                continue
+            match = bool(detected) and declared.strip().lower() in str(detected).strip().lower()
+            score = 90 if match else 40
+            scores.append(
+                RubricScore(
+                    dimension=dim,
+                    score=score,
+                    evidence={
+                        "declared": declared,
+                        "detected": detected,
+                        "note": "mock 정합" if match else "mock 불일치",
+                    },
+                )
+            )
+        return scores
 
 
 class MockNarrator:

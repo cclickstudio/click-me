@@ -11,8 +11,47 @@ import uuid
 from collections.abc import AsyncIterator
 
 from domain.simulation.contracts.schemas import SimulationRunRequest
+from domain.simulation.tools.objective_fit import assess_objective_fit
 
 logger = logging.getLogger("clickme")
+
+
+def _ad_block(request: SimulationRunRequest) -> dict:
+    """ERD 광고 테이블 컬럼을 선언 입력(request)에서 인메모리 조립 — 폼에 없는 값은 None."""
+    return {
+        "ID": request.ad_id,
+        "project_id": request.project_id,
+        "title": request.ad_title,
+        "media_type": "image" if request.ad_image_url else "text",
+        "asset_url": request.ad_image_url,
+        "copy_text": request.ad_content,
+        "description": None,  # 폼 미수집
+        "industry_category": None,  # 폼 미수집
+        "product_category": request.product_category,
+        "service_class": request.service_class,
+        "ad_objective": request.ad_objective,
+        "target_filter": request.target_filter,
+        "status": "DRAFT",
+    }
+
+
+def _simulation_block(run_id, request, ad, reactions, aggregate, panel_version) -> dict:
+    """ERD 시뮬레이션 테이블 컬럼을 실행 메타에서 인메모리 조립(DB 행 아님 — UUID는 미보유)."""
+    return {
+        "ID": run_id,
+        "ad_id": request.ad_id,
+        "ad_analysis_id": None,  # 영속화 시에만 생성
+        "panel_id": panel_version,  # 인메모리엔 UUID 없음 → 패널 버전 문자열
+        "organization_id": request.organization_id,
+        "target_filter": request.target_filter,
+        "target_mode": getattr(request.target_mode, "value", str(request.target_mode)),
+        "sample_size": request.sample_size,
+        "qa_passed_count": sum(1 for r in reactions if r.qa_passed),
+        "low_sample_warning": aggregate.variance_warning,
+        "status": "COMPLETED",
+        "model_version": ad.model_version,
+        "error_detail": None,
+    }
 
 
 class SimulationService:
@@ -70,17 +109,17 @@ class SimulationService:
                     if not out:
                         continue
                     if node == "interpret_ad":
+                        # 감지 + 의도 정합 채점을 함께 산출(§3.5-3) — ad·rubric_scores 동시 수집.
                         ad_obj = out["ad"]
                         ad_dump = ad_obj.model_dump()
+                        rubric_objs = out.get("rubric_scores", [])
+                        rubric_dump = [s.model_dump() for s in rubric_objs]
                         store.emit(run_id, {"event": "progress", "stage": "panel", "pct": 15})
                     elif node == "load_panel":
                         personas = out["personas"]
                         panel_version = out.get("panel_version") or panel_version
                         total = len(personas) or total
                         store.emit(run_id, {"event": "progress", "stage": "reaction", "pct": 30})
-                    elif node == "rubric_eval":
-                        rubric_objs = out["rubric_scores"]
-                        rubric_dump = [s.model_dump() for s in rubric_objs]
                     elif node == "react":
                         for r in out.get("reactions", []):
                             reaction_objs.append(r)
@@ -106,13 +145,27 @@ class SimulationService:
 
             result = {
                 "run_id": run_id,
-                "ad_analysis": ad_dump,
+                "ad": _ad_block(request),  # 광고(선언 입력) 테이블
+                "ad_analysis": ad_dump,  # 광고해석 테이블
+                "simulation": _simulation_block(  # 시뮬레이션(실행 메타) 테이블
+                    run_id, request, ad_obj, reaction_objs, aggregate_obj, panel_version
+                ),
+                "personas": [p.model_dump() for p in personas],  # 반응별 페르소나 속성 조회용
                 "reactions": reactions,
                 "rubric_scores": rubric_dump,
                 "aggregate": aggregate_dump,
             }
-            # DB 영속화(주입 시) — 실패해도 런 결과(인메모리)는 유지. simulation_id를 결과에 병기.
-            if self._persistence is not None and ad_obj is not None and aggregate_obj is not None:
+            # 캠페인 목표 달성 가능성(결정론 룰) — 목표 선언 + 집계가 있을 때만(exploratory).
+            if request.ad_objective and aggregate_obj is not None:
+                fit = assess_objective_fit(request.ad_objective, aggregate_obj, reaction_objs)
+                result["objective_fit"] = fit.model_dump() if fit is not None else None
+            # DB 영속화 — 프로젝트 선택 시에만(ads→projects FK). 실패해도 런 결과(인메모리)는 유지.
+            if (
+                self._persistence is not None
+                and ad_obj is not None
+                and aggregate_obj is not None
+                and request.project_id
+            ):
                 try:
                     sim_id = await self._persistence.save_completed_run(
                         request=request,
