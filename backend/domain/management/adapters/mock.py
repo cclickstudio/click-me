@@ -23,7 +23,9 @@ from domain.management.contracts.schemas import (
     AccountFunding,
     CampaignConfig,
     CampaignInfo,
+    CreativePreview,
     DeliveryEstimate,
+    DemographicMetrics,
     MetricsSnapshot,
     PlatformMetrics,
 )
@@ -84,6 +86,50 @@ class MockAdPlatform:
                 reach=int(m.cum_reach * f),
             )
             for p, f in split
+        ]
+
+    async def get_demographic_breakdown(
+        self, campaign_id: str, since: datetime
+    ) -> list[DemographicMetrics]:
+        """Port 충족 — 누적 지표를 연령×성별로 분해(데모 합성, 결정론 가중)."""
+        m = await self.get_metrics(campaign_id, since)
+        # 연령 버킷 가중 × 성별 분할(여 54 / 남 46) — 합 1.0
+        age_w = (
+            ("18-24", 0.22),
+            ("25-34", 0.34),
+            ("35-44", 0.24),
+            ("45-54", 0.13),
+            ("55-64", 0.07),
+        )
+        gender_w = (("female", 0.54), ("male", 0.46))
+        return [
+            DemographicMetrics(
+                age=age,
+                gender=gender,
+                impressions=int(m.impressions * aw * gw),
+                clicks=int(m.clicks * aw * gw),
+                spend_krw=int(m.spend_krw * aw * gw),
+                reach=int(m.cum_reach * aw * gw),
+            )
+            for age, aw in age_w
+            for gender, gw in gender_w
+        ]
+
+    async def get_creatives(self, campaign_id: str) -> list[CreativePreview]:
+        """Port 충족 — 데모 대표 시안 2개(이미지 없음 → 프론트 placeholder 카드)."""
+        return [
+            CreativePreview(
+                ad_id=f"{campaign_id}_ad1",
+                ad_name="메인 비주얼 A",
+                headline="여름 신상 최대 50% 할인",
+                primary_text="지금 만나보는 시즌 오프 특가, 놓치지 마세요.",
+            ),
+            CreativePreview(
+                ad_id=f"{campaign_id}_ad2",
+                ad_name="모델 컷 B",
+                headline="데일리룩 완성",
+                primary_text="가볍게 입기 좋은 데일리 아이템.",
+            ),
         ]
 
     async def get_account_funding(self) -> AccountFunding:

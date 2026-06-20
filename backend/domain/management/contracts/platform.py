@@ -17,7 +17,9 @@ if TYPE_CHECKING:
         ActionResult,
         CampaignConfig,
         CampaignInfo,
+        CreativePreview,
         DeliveryEstimate,
+        DemographicMetrics,
         MetricsSnapshot,
         PlatformMetrics,
     )
@@ -37,6 +39,12 @@ class AdPlatformReader(Protocol):
     async def get_platform_breakdown(
         self, campaign_id: str, since: datetime
     ) -> list[PlatformMetrics]: ...
+
+    async def get_demographic_breakdown(
+        self, campaign_id: str, since: datetime
+    ) -> list[DemographicMetrics]: ...
+
+    async def get_creatives(self, campaign_id: str) -> list[CreativePreview]: ...
 
     async def get_account_funding(self) -> AccountFunding: ...
 

@@ -41,6 +41,10 @@ _RATE_LIMIT_CODES: frozenset[int] = frozenset(
     {4, 17, 32, 613, 80000, 80001, 80002, 80003, 80004, 80005, 80006, 80008, 80009, 80014}
 )
 
+#: 인증·토큰 만료 계열 error code — 재연결(토큰 갱신)이 필요한 경우.
+#: 190=토큰 만료/무효, 102=세션 무효, 463/467=토큰 만료·변경.
+_AUTH_ERROR_CODES: frozenset[int] = frozenset({190, 102, 463, 467})
+
 
 class MetaApiError(RuntimeError):
     """Graph API 응답의 error 객체를 표준 예외로 변환 — 메시지에 토큰 미포함."""
@@ -55,6 +59,11 @@ class MetaApiError(RuntimeError):
     def is_rate_limited(self) -> bool:
         """레이트리밋 계열 — executor 재시도(RATE_LIMITED) 매핑에 사용."""
         return self.code in _RATE_LIMIT_CODES
+
+    @property
+    def is_auth_error(self) -> bool:
+        """토큰 만료·무효 계열 — 화면에 'Meta 재연결 필요' 안내로 매핑."""
+        return self.code in _AUTH_ERROR_CODES
 
 
 class MetaClient:

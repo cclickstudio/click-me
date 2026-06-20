@@ -136,6 +136,31 @@ class PlatformMetrics(Contract):
     reach: int = Field(ge=0)
 
 
+class DemographicMetrics(Contract):
+    """연령×성별(age,gender breakdown) 지표 분해 — Meta age 버킷 × male/female/unknown."""
+
+    age: str
+    gender: str
+    impressions: int = Field(ge=0)
+    clicks: int = Field(ge=0)
+    spend_krw: int = Field(ge=0)
+    reach: int = Field(ge=0)
+
+
+class CreativePreview(Contract):
+    """광고 크리에이티브 미리보기 — 캠페인 대표 시안(광고명·이미지·문구).
+
+    image_url은 원본 해상도(카드 표시용), thumbnail_url은 폴백용 소형 썸네일.
+    """
+
+    ad_id: str
+    ad_name: str
+    image_url: str | None = None  # 원본 해상도 (카드 메인 이미지)
+    thumbnail_url: str | None = None  # 소형 썸네일 (image_url 없을 때 폴백)
+    headline: str | None = None  # 광고 제목(creative.title)
+    primary_text: str | None = None  # 기본 문구(creative.body)
+
+
 class AccountFunding(Contract):
     """광고계정 자금·게재 가능 여부 — 선불 잔액 소진·계정 비활성 감지(게재 중단 원인)."""
 
