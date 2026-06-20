@@ -393,5 +393,18 @@ export const api = {
         return { ...data, url: `${API_BASE}${data.url}` };
       },
     },
+    uploadProductImage: async (file: File): Promise<{ temp_key: string }> => {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await fetch(`${API_BASE}/api/generator/product-image`, {
+        method: "POST",
+        body: form,
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: "Unknown error" }));
+        throw new Error((err as { detail?: string }).detail ?? `HTTP ${res.status}`);
+      }
+      return res.json() as Promise<{ temp_key: string }>;
+    },
   },
 };

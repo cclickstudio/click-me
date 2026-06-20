@@ -75,6 +75,19 @@ async def update_brand_profile(body: BrandProfileBody, x_client_id: str = Header
     }
 
 
+@router.post("/product-image")
+async def upload_product_image(file: UploadFile = File(...)):
+    """상품 이미지 업로드 → 메모리 임시 저장 → temp_key 반환 (테스트용, 추후 S3 전환)."""
+    ct = (file.content_type or "").split(";")[0].strip()
+    if ct not in _ALLOWED_IMAGE_TYPES:
+        raise HTTPException(status_code=400, detail="PNG·JPEG·WebP 이미지만 업로드 가능합니다.")
+    data = await file.read()
+    if len(data) > 4 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="상품 이미지는 4MB 이하여야 합니다.")
+    temp_key = await generator_service.store_temp_image(data)
+    return {"temp_key": temp_key}
+
+
 @router.post("/logo")
 async def upload_logo(
     x_client_id: str = Header(),

@@ -649,6 +649,12 @@ export default function GeneratorPage() {
   const logoInputRef = useRef<HTMLInputElement>(null);
   const esRef = useRef<EventSource | null>(null);
 
+  // 상품 이미지 (생성 모드)
+  const [productImageTempKey, setProductImageTempKey] = useState("");
+  const [productImagePreviewUrl, setProductImagePreviewUrl] = useState("");
+  const [productImageUploading, setProductImageUploading] = useState(false);
+  const productImageInputRef = useRef<HTMLInputElement>(null);
+
   // 공통 옵션
   const [showOptional, setShowOptional] = useState(false);
   const [brandColor, setBrandColor] = useState("");
@@ -774,6 +780,29 @@ export default function GeneratorPage() {
     setError("");
   }
 
+  async function handleProductImageChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 4 * 1024 * 1024) {
+      setError("상품 이미지는 4MB 이하여야 합니다.");
+      return;
+    }
+    const localUrl = URL.createObjectURL(file);
+    setProductImagePreviewUrl(localUrl);
+    setProductImageUploading(true);
+    try {
+      const result = await api.generator.uploadProductImage(file);
+      setProductImageTempKey(result.temp_key);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "상품 이미지 업로드에 실패했습니다.");
+      setProductImagePreviewUrl("");
+      setProductImageTempKey("");
+      URL.revokeObjectURL(localUrl);
+    } finally {
+      setProductImageUploading(false);
+    }
+  }
+
   async function handleLogoChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file || !clientId) return;
@@ -841,6 +870,7 @@ export default function GeneratorPage() {
             product_description: productDescription,
             target_audience: targetAudience,
             campaign_objective: objective,
+            product_image_temp_key: productImageTempKey || null,
           }
         : {
             ...common,
@@ -932,6 +962,65 @@ export default function GeneratorPage() {
                       onChange={(e) => setProductName(e.target.value)}
                       placeholder="예: 에어쿨 미니 서큘레이터"
                     />
+                  </div>
+                  <div>
+                    <label className={labelCls}>
+                      상품 이미지{" "}
+                      <span className="text-[#8B95A1] font-normal">(선택 — 제공 시 상품 이미지 기반으로 광고 생성)</span>
+                    </label>
+                    <input
+                      ref={productImageInputRef}
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp"
+                      className="hidden"
+                      onChange={handleProductImageChange}
+                    />
+                    {productImagePreviewUrl ? (
+                      <div className="flex items-center gap-3 p-3 rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-[#F8F9FA] dark:bg-[#252D3D]">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={productImagePreviewUrl}
+                          alt="상품 이미지 미리보기"
+                          className="w-14 h-14 object-contain rounded-lg border border-[#E5E8EB] dark:border-[#2D3748] bg-white dark:bg-[#1C2333]"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <p className="text-xs text-[#4E5968] dark:text-[#9CA3AF] mb-1.5">
+                            이 이미지를 기반으로 광고 배경이 생성됩니다
+                          </p>
+                          <div className="flex gap-3">
+                            <button
+                              type="button"
+                              disabled={productImageUploading}
+                              onClick={() => productImageInputRef.current?.click()}
+                              className="text-xs text-[#3182F6] hover:underline disabled:opacity-50"
+                            >
+                              {productImageUploading ? "업로드 중..." : "교체"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setProductImagePreviewUrl("");
+                                setProductImageTempKey("");
+                              }}
+                              className="text-xs text-[#8B95A1] hover:text-[#F74D4D] transition-colors"
+                            >
+                              제거
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled={productImageUploading}
+                        onClick={() => productImageInputRef.current?.click()}
+                        className={`${inputCls} text-left cursor-pointer`}
+                      >
+                        {productImageUploading
+                          ? "업로드 중..."
+                          : "PNG · JPG · WebP (최대 4MB)"}
+                      </button>
+                    )}
                   </div>
                   <div>
                     <label className={labelCls}>
