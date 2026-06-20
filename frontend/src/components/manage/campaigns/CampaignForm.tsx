@@ -8,6 +8,7 @@ export type CampaignFormValues = {
   daily_budget_krw: number;
   run_days: number;
   creative_ad_id?: string;
+  image_hash?: string; // 업로드한 광고 소재 이미지
   special_ad_category: string; // NONE | HOUSING | EMPLOYMENT | CREDIT | ISSUES_ELECTIONS_POLITICS
   country: string; // ISO2
   age_min: number;
@@ -63,6 +64,44 @@ export function CampaignForm({
   const [ageMin, setAgeMin] = useState(18);
   const [ageMax, setAgeMax] = useState(65);
   const [gender, setGender] = useState<'all' | 'male' | 'female'>('all');
+  // 광고 소재 이미지 — 업로드 시 Meta image_hash 받아 보관 + 샘플 시안 미리보기.
+  const [imageHash, setImageHash] = useState<string | null>(null);
+  const [imageName, setImageName] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [previews, setPreviews] = useState<{ format: string; html: string }[]>([]);
+  const [previewing, setPreviewing] = useState(false);
+  const [imgError, setImgError] = useState<string | null>(null);
+
+  const onPickImage = async (file: File | undefined) => {
+    if (!file) return;
+    setUploading(true);
+    setImgError(null);
+    setPreviews([]);
+    try {
+      const r = await api.management.uploadAdImage(file);
+      if (!r.image_hash) throw new Error('업로드 실패 (실모드에서만 가능)');
+      setImageHash(r.image_hash);
+      setImageName(file.name);
+    } catch (e) {
+      setImgError(e instanceof Error ? e.message : '이미지 업로드 실패');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const onPreview = async () => {
+    if (!imageHash) return;
+    setPreviewing(true);
+    setImgError(null);
+    try {
+      const r = await api.management.adPreview(imageHash, name.trim() || undefined);
+      setPreviews(r.previews ?? []);
+    } catch (e) {
+      setImgError(e instanceof Error ? e.message : '시안 생성 실패');
+    } finally {
+      setPreviewing(false);
+    }
+  };
   // Meta 정책(최소예산·특별카테고리 등)을 서버에서 받아온다 — 코드 하드코딩 대신 자동 최신화.
   // 폴백도 휴리스틱 금지 — 계정 floor 실측값(₩1,521)을 둘 다 동일하게(정책 도착 시 덮어씀).
   const [minByObjective, setMinByObjective] = useState<Record<string, number>>({
@@ -103,6 +142,7 @@ export function CampaignForm({
             daily_budget_krw: budget,
             run_days: runDays,
             creative_ad_id: creativeId.trim() || undefined,
+            image_hash: imageHash || undefined,
             special_ad_category: specialCat,
             country,
             age_min: ageMin,
@@ -212,6 +252,54 @@ export function CampaignForm({
           ))}
         </select>
       </Field>
+
+      {/* ── 광고 소재 이미지 (업로드 → Meta 해시 → 샘플 시안) ── */}
+      <Field label="광고 이미지" hint="업로드하면 Meta가 FB·인스타에 자동 배치 게재 · 시안 미리보기 가능">
+        <div className="mt-1.5 flex flex-wrap items-center gap-2">
+          <label className="cursor-pointer rounded-xl border border-dashed border-[#C9CED6] dark:border-[#3A4452] px-3 py-2 text-sm text-[#4E5968] dark:text-[#9CA3AF] hover:border-[#3182F6]">
+            {uploading ? '업로드 중…' : imageName ? '이미지 변경' : '이미지 선택'}
+            <input
+              type="file"
+              accept="image/*"
+              className="hidden"
+              disabled={uploading}
+              onChange={(e) => onPickImage(e.target.files?.[0])}
+            />
+          </label>
+          {imageHash && (
+            <>
+              <span className="text-[12px] text-green-600">✓ {imageName}</span>
+              <button
+                type="button"
+                onClick={onPreview}
+                disabled={previewing}
+                className="rounded-lg border border-[#E5E8EB] dark:border-[#2D3748] px-2.5 py-1.5 text-[12px] font-medium text-[#3182F6] disabled:opacity-40"
+              >
+                {previewing ? '시안 생성 중…' : '샘플 시안 보기'}
+              </button>
+            </>
+          )}
+        </div>
+        {imgError && <span className="mt-1 block text-[11px] text-red-500">{imgError}</span>}
+      </Field>
+
+      {previews.length > 0 && (
+        <div className="rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] p-3">
+          <p className="mb-2 text-[12px] font-semibold text-[#4E5968] dark:text-[#9CA3AF]">
+            샘플 시안 (페이스북 · 인스타그램)
+          </p>
+          <div className="flex flex-wrap gap-3">
+            {previews.map((p) => (
+              <div
+                key={p.format}
+                className="overflow-hidden rounded-lg border border-[#E5E8EB] dark:border-[#2D3748]"
+                // Meta 호스팅 iframe — 샌드박스된 미리보기
+                dangerouslySetInnerHTML={{ __html: p.html }}
+              />
+            ))}
+          </div>
+        </div>
+      )}
 
       <Field label="소재 ID (선택)" hint="기존 광고 소재를 연결할 경우">
         <input className={inputCls} value={creativeId} onChange={(e) => setCreativeId(e.target.value)} placeholder="ad_xxxxx" />

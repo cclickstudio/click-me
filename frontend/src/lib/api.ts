@@ -354,6 +354,7 @@ export const api = {
       daily_budget_krw: number;
       run_days: number;
       creative_ad_id?: string;
+      image_hash?: string; // /ad-image 업로드 결과 — 광고 소재 이미지
       special_ad_category?: string; // NONE | HOUSING | EMPLOYMENT | CREDIT | ISSUES_ELECTIONS_POLITICS
       country?: string; // ISO2 (KR 등)
       age_min?: number;
@@ -363,6 +364,20 @@ export const api = {
       request<{ proposal: Proposal }>("/management/campaigns/create-proposal", {
         method: "POST",
         body: JSON.stringify(body),
+      }),
+    // 광고 소재 이미지 업로드 → image_hash (멀티파트, 무과금 자산 등록)
+    uploadAdImage: (file: File) => {
+      const form = new FormData();
+      form.append('file', file);
+      return fetch(`${API_BASE}/api/management/ad-image`, { method: 'POST', body: form }).then(
+        (r) => r.json() as Promise<{ image_hash: string }>,
+      );
+    },
+    // 샘플 시안 — FB 피드·인스타 미리보기 HTML(Meta iframe)
+    adPreview: (imageHash: string, name?: string) =>
+      request<{ previews: { format: string; html: string }[] }>("/management/ad-preview", {
+        method: "POST",
+        body: JSON.stringify({ image_hash: imageHash, name }),
       }),
     budget: () => request<BudgetStatus>("/management/budget"),
     setBudgetLimit: (limitKrw: number) =>
