@@ -6,6 +6,13 @@
 >
 > **v1.4 핵심 결정 요약**: ① 승인 플레인(`approval.py`) 신설 → 🅰 소유 (HITL 설계) ② executor에서 승인 로직 분리 → 🅱는 강제만 ③ `ApprovedAction` 계약 추가 (계약 2개 → 3개) ④ `meta/client.py`·core 테이블 → 공동 ⑤ ActionProposal 생산자 = 🅱 단독 ⑥ 오케스트레이터 = A/B 밖 별도 담당 ⑦ **폴더 구조 유지 — 새 폴더 0개.** 목적: **양쪽 모두 Agentic AI · Tool-use · HITL 경험 + 리스크 중간×2로 균등화.**
 
+> **[구현 현황 2026-06-21]** 설계 너머 실제 동작분 — 상세 데이터/엔드포인트는 `meta-data-sources.md §11`.
+> - **라이브 캠페인 생성(PAUSED)**: 캠페인→광고세트→(리드)폼→광고, 배치는 Meta 자동(FB/IG). 게재·과금은 사람이 활성화.
+> - **이미지 소재·샘플 시안**: `/adimages` 업로드 → image_hash, `generatepreviews`(GET)로 FB/인스타 미리보기.
+> - **실측 최소예산 ₩1,521**(트래픽·리드 동일, Meta floor). `campaign_policy.py` **단일원천 → 프론트 자동 반영**(휴리스틱·하드코딩 금지).
+> - **CVR·ROAS 재정의 구현**: 전환=리드/가입/설치 일반화, ROAS=전환×전환가치÷지출(추정), 목표 미달 판정. 프론트는 실측 읽기전용 + 미설정 시 추정 입력(하이브리드).
+> - **안전·영속**: 소프트 삭제(`deleted_at` 감사) + Meta 동시 삭제, NeonDB `created_campaigns` 누적, 목록 페이징, 요청한도 graceful.
+
 ---
 
 ## 0. 현실 점검
