@@ -576,3 +576,5 @@ class CreatedCampaign(Base):
     status: Mapped[str] = mapped_column(String(20), nullable=False)  # success | failed
     execution_mode: Mapped[str] = mapped_column(String(20), nullable=False)  # live | validate_only…
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    # 소프트 삭제 — Meta에서 캠페인 삭제 시 행을 지우지 않고 시각만 찍는다(감사 이력 보존).
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

@@ -15,7 +15,7 @@ from uuid import UUID, uuid4
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.auth import get_current_user
@@ -304,6 +304,7 @@ async def created_campaigns(db: AsyncSession = Depends(get_db)):
                 "status": r.status,
                 "execution_mode": r.execution_mode,
                 "created_at": r.created_at.isoformat(),
+                "deleted_at": r.deleted_at.isoformat() if r.deleted_at else None,
             }
             for r in rows
         ]
@@ -707,10 +708,24 @@ async def put_kpi_override(
 
 
 @router.delete("/campaigns/{campaign_id}")
-async def delete_campaign(campaign_id: str):
-    """캠페인 삭제 — 자식 광고세트·광고도 함께. LIVE 모드에서만 실제 Meta 삭제(그 외 무동작)."""
+async def delete_campaign(campaign_id: str, db: AsyncSession = Depends(get_db)):
+    """캠페인 삭제 — 자식 광고세트·광고도 함께. LIVE 모드에서만 실제 Meta 삭제(그 외 무동작).
+
+    적재 기록(created_campaigns)은 지우지 않고 deleted_at만 찍는다(감사 이력 — 만듦→지움 보존).
+    """
     writer = build_writer(settings)
     result = await writer.delete_campaign(campaign_id, idem_key=f"del_{campaign_id}")
+    status = result.status.value if hasattr(result.status, "value") else str(result.status)
+    if status == "success":
+        try:
+            await db.execute(
+                update(CreatedCampaign)
+                .where(CreatedCampaign.meta_campaign_id == campaign_id)
+                .values(deleted_at=func.now())
+            )
+            await db.commit()
+        except Exception:  # noqa: BLE001 — 소프트삭제 실패가 본 응답을 막지 않게
+            await db.rollback()
     return {"result": result.model_dump(mode="json")}
 
 
