@@ -165,6 +165,27 @@ _TEMPLATE_SAFE_ZONES: dict[TemplateType, str] = {
     ),
 }
 
+# ── [컴포즈 모드] 상품 배치 영역 Safe Zone ───────────────────────────────────
+# 배경만 생성하므로, 이후 실제 상품 PNG가 합성될 영역(_COMPOSE_PRODUCT_ZONES와 동일 구도)을
+# AI가 깨끗이 비워두도록 강하게 지시한다. 텍스트 영역도 함께 비운다.
+_TEMPLATE_SAFE_ZONES_COMPOSE: dict[TemplateType, str] = {
+    TemplateType.A: (
+        "PRODUCT PLACEMENT AREA: Keep the upper 55% of the frame clean, simple, and uncluttered "
+        "— a product photo will be composited there. Do NOT draw any object in that area. "
+        "Keep the bottom 38% minimal — it will be covered by a text overlay."
+    ),
+    TemplateType.B: (
+        "PRODUCT PLACEMENT AREA: Keep the middle 59% of the frame clean and uncluttered "
+        "— a product photo will be composited there. Do NOT draw any object in that area. "
+        "Keep the top 17% and bottom 24% clear — they will be covered by text banners."
+    ),
+    TemplateType.C: (
+        "PRODUCT PLACEMENT AREA: Keep the RIGHT 47% of the frame clean and uncluttered "
+        "— a product photo will be composited there. Do NOT draw any object in that area. "
+        "The left 46% is a text panel — keep it empty of any object."
+    ),
+}
+
 # ── [개선 모드] Safe Zone ─────────────────────────────────────────────────────
 # 원본 이미지 구도를 최대한 유지하면서 텍스트 오버레이 영역만 참고용으로 알려준다.
 # 개선 모드에서 사용 — 강제 배치 지시 대신 "가능하면 비워달라"는 소프트 힌트로 처리.
@@ -290,19 +311,19 @@ Output requirements:
 - CRITICAL: ALL three text elements (HEADLINE, BODY, CTA BUTTON) must be COMPLETELY visible within the image — zero clipping or cutoff allowed under any circumstance"""
 
 # ── [컴포즈 모드] 프롬프트 ──────────────────────────────────────────────────
-# 사용자가 제공한 상품 이미지를 기반으로 광고 배경을 생성할 때 사용.
-# Edit API에 원본 상품 이미지를 넘기고, AI가 배경만 광고 스타일로 채운다.
+# 사용자가 제공한 상품 이미지를 픽셀 그대로 보존하기 위해, AI는 상품을 그리지 않고
+# "상품 없는 광고 배경"만 생성한다. 실제 상품 PNG는 이후 PIL로 합성된다(composite_product).
+# 따라서 상품 배치 영역(_COMPOSE_PRODUCT_ZONES)은 반드시 비워두도록 강하게 지시한다.
 _COMPOSE_PROMPT_TEMPLATE = """\
-Create a professional {platform} advertisement image around the provided product.
-
-THE PRODUCT IS PROTECTED — preserve all product visual details exactly as provided. \
-Your task is to create the BACKGROUND and AD ENVIRONMENT around the product only.
+Create a professional {platform} advertisement BACKGROUND scene.
+IMPORTANT: Do NOT draw any product, object, or main subject. This is a background-only image.
+THIS IS A BACKGROUND-ONLY IMAGE — do NOT include any text, letters, words, or numbers.
 
 Visual style: {style}
 Photography style: {photo_style}
 Strategy: {strategy_desc}
 
-Product: {product_name}
+Context — a "{product_name}" product photo will be composited on top later.
 {core_values_line}Target audience: {target_audience}
 {color_line}
 {tone_line}
@@ -313,24 +334,22 @@ Background direction:
 {safe_zone}
 
 Requirements:
-- STRICTLY preserve the product as provided — zero modification to product appearance
-- Create a professional advertisement background that complements the product
+- Create ONLY an advertising background scene — no product, no main object, no subject
 - Background lighting and mood must match the photography style above
+- The product placement area must stay clean and uncluttered (a product will be placed there)
 - STRICTLY NO text, letters, words, numbers, or typography of any kind
 - No logos, watermarks, URLs, or QR codes
 - Clean, modern aesthetic suitable for Meta/Instagram feed"""
 
 _COMPOSE_PROMPT_TEMPLATE_WITH_TEXT = """\
-Create a professional Korean {platform} advertisement image around the provided product with integrated Korean text.
-
-THE PRODUCT IS PROTECTED — preserve all product visual details exactly as provided. \
-Your task is to create the BACKGROUND, AD ENVIRONMENT, and TEXT OVERLAY around the product only.
+Create a professional Korean {platform} advertisement BACKGROUND scene with integrated Korean text.
+IMPORTANT: Do NOT draw any product, object, or main subject. Render only the background and the Korean text overlay.
 
 Visual style: {style}
 Photography style: {photo_style}
 Strategy: {strategy_desc}
 
-Product: {product_name}
+Context — a "{product_name}" product photo will be composited on top later.
 {core_values_line}Target audience: {target_audience}
 {color_line}
 {tone_line}
@@ -353,7 +372,8 @@ Typography rules:
 - NEVER use a font size so large that text overflows its designated zone
 
 Output requirements:
-- STRICTLY preserve the product as provided — zero modification to product appearance
+- Render ONLY the background and the text — NO product, object, or main subject
+- The product placement area must stay clean (a product photo will be placed there)
 - Commercial advertising quality, modern and clean aesthetic for Meta/Instagram
 - CRITICAL: ALL three text elements (HEADLINE, BODY, CTA BUTTON) must be COMPLETELY visible — zero clipping"""
 
@@ -446,7 +466,7 @@ async def generate_image(
     brand_color: str | None = None,
     tone: str | None = None,
     original_image_bytes: bytes | None = None,
-    product_image_bytes: bytes | None = None,
+    compose_mode: bool = False,
     improvement_context: str | None = None,
     headline: str | None = None,
     body: str | None = None,
@@ -465,8 +485,8 @@ async def generate_image(
         else ""
     )
 
-    # ── [컴포즈 모드] Edit API + 상품 이미지 ─────────────────────────────────
-    if product_image_bytes is not None:
+    # ── [컴포즈 모드] 상품 없는 배경만 생성 (실제 상품은 이후 PIL 합성) ──────────
+    if compose_mode:
         target_audience = product_analysis.target_audience or "general audience"
         product_visual_context = _build_product_visual_context(product_analysis, brand_color)
 
@@ -499,19 +519,15 @@ async def generate_image(
                 color_line=color_line,
                 tone_line=tone_line,
                 product_visual_context=product_visual_context,
-                safe_zone=_TEMPLATE_SAFE_ZONES_EDIT[template],
+                safe_zone=_TEMPLATE_SAFE_ZONES_COMPOSE[template],
             )
 
-        image_file = io.BytesIO(product_image_bytes)
-        image_file.name = "product.png"
-        response = await _openai_client.images.edit(
-            model=settings.generator_image_model,
-            image=image_file,
-            prompt=prompt,
-            n=1,
-            size=size.value,
-        )
-        return base64.b64decode(response.data[0].b64_json)
+        provider = settings.generator_image_provider
+        if provider == "openai":
+            return await _generate_with_openai(prompt, size)
+        if provider == "google_genai":
+            return await _generate_with_gemini(prompt, size)
+        raise NotImplementedError(f"지원하지 않는 GENERATOR_IMAGE_PROVIDER: {provider!r}")
 
     # ── [개선 모드] Edit API ───────────────────────────────────────────────────
     if original_image_bytes is not None:
@@ -659,6 +675,90 @@ async def _generate_with_imagen(model: str, prompt: str, size: AdSize) -> bytes:
     if not response.generated_images:
         raise RuntimeError("Imagen 응답에 이미지가 없음")
     return response.generated_images[0].image.image_bytes
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 상품 누끼 (배경 제거) — gpt-image-2 edit + transparent background
+# 사용자가 올린 상품 이미지에서 배경을 제거하고 알파 채널 PNG bytes를 반환한다.
+# AI 추출이라 픽셀이 완벽히 동일하진 않으나, 전체 재생성 대비 원본에 훨씬 가깝다.
+# ─────────────────────────────────────────────────────────────────────────────
+
+_REMOVE_BG_PROMPT = (
+    "Remove the background completely and keep ONLY the main product, "
+    "fully preserving its exact shape, colors, text, and details. "
+    "Output the product on a fully transparent background. "
+    "Do not add, redraw, or stylize anything — keep the product identical to the input."
+)
+
+
+async def remove_product_background(product_image_bytes: bytes) -> bytes:
+    """상품 이미지의 배경을 제거하고 투명 PNG bytes를 반환한다."""
+    image_file = io.BytesIO(product_image_bytes)
+    image_file.name = "product.png"
+    response = await _openai_client.images.edit(
+        model=settings.generator_image_model,
+        image=image_file,
+        prompt=_REMOVE_BG_PROMPT,
+        n=1,
+        background="transparent",
+    )
+    return base64.b64decode(response.data[0].b64_json)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 상품 합성 (PIL 기반)
+# 배경(AI 생성) 위에 누끼한 실제 상품 PNG를 템플릿별 상품 영역에 합성한다.
+# 텍스트 영역을 가리지 않도록 영역을 분리해 배치한다(_COMPOSE_PRODUCT_BOXES).
+# ─────────────────────────────────────────────────────────────────────────────
+
+# 템플릿별 상품 배치 박스 — (x0, y0, x1, y1), 광고 가로/세로 대비 비율.
+# 상품은 이 박스 안에 비율 유지로 들어가며 박스 중앙에 정렬된다.
+_COMPOSE_PRODUCT_BOXES: dict[TemplateType, tuple[float, float, float, float]] = {
+    TemplateType.A: (0.14, 0.06, 0.86, 0.52),  # 상단 영역(텍스트는 하단)
+    TemplateType.B: (0.16, 0.20, 0.84, 0.74),  # 중앙 영역(텍스트는 상·하 밴드)
+    TemplateType.C: (0.52, 0.16, 0.96, 0.84),  # 우측 영역(텍스트는 좌측 패널)
+}
+
+# 박스 대비 상품이 차지할 최대 비율(여백 확보).
+_PRODUCT_FILL = 0.92
+
+
+def _composite_product_pil(
+    product: Image.Image,
+    ad: Image.Image,
+    template: TemplateType,
+) -> None:
+    """누끼한 상품을 광고 배경에 in-place 합성한다. 템플릿별 영역에 비율 유지 배치."""
+    if product.mode != "RGBA":
+        product = product.convert("RGBA")
+
+    x0, y0, x1, y1 = _COMPOSE_PRODUCT_BOXES[template]
+    box_w = max(1, int(ad.width * (x1 - x0) * _PRODUCT_FILL))
+    box_h = max(1, int(ad.height * (y1 - y0) * _PRODUCT_FILL))
+
+    # 비율 유지하며 박스 안에 contain
+    scale = min(box_w / product.width, box_h / product.height)
+    new_w = max(1, int(product.width * scale))
+    new_h = max(1, int(product.height * scale))
+    product = product.resize((new_w, new_h), Image.LANCZOS)
+
+    # 박스 중앙 정렬
+    cx = int(ad.width * (x0 + x1) / 2)
+    cy = int(ad.height * (y0 + y1) / 2)
+    x = cx - new_w // 2
+    y = cy - new_h // 2
+
+    ad.paste(product, (x, y), product)
+
+
+def composite_product(image_bytes: bytes, product_bytes: bytes, template: TemplateType) -> bytes:
+    """누끼한 상품을 광고 배경에 합성하여 PNG bytes로 반환한다."""
+    ad = Image.open(io.BytesIO(image_bytes)).convert("RGBA")
+    product = Image.open(io.BytesIO(product_bytes)).convert("RGBA")
+    _composite_product_pil(product, ad, template)
+    buf = io.BytesIO()
+    ad.save(buf, format="PNG")
+    return buf.getvalue()
 
 
 # ─────────────────────────────────────────────────────────────────────────────

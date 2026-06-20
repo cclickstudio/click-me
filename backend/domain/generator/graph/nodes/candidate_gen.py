@@ -24,7 +24,12 @@ from domain.generator.contracts.pipeline_schemas import (
 from domain.generator.graph.nodes import emit_progress
 from domain.generator.graph.state import GenerationState
 from domain.generator.pipeline.copy_generator import generate_copy
-from domain.generator.pipeline.image_generator import composite_logo, generate_image
+from domain.generator.pipeline.image_generator import (
+    composite_logo,
+    composite_product,
+    generate_image,
+    remove_product_background,
+)
 from domain.generator.pipeline.multimodal_generator import generate_image_and_copy
 from domain.generator.pipeline.quality_checker import check_quality
 from tools.storage.s3 import candidate_key, download_bytes, upload_bytes
@@ -65,6 +70,16 @@ async def generate_candidates(state: GenerationState, config: RunnableConfig) ->
     done = 0
     multimodal = settings.generator_gen_mode == "multimodal"
 
+    # 상품 이미지 누끼는 후보 3종 공통 → gather 전 1회만 실행 (API 호출 절약).
+    # multimodal 모드는 상품 합성을 지원하지 않으므로 pipeline 모드에서만 수행.
+    product_cutout_bytes: bytes | None = None
+    if product_image_bytes is not None and not multimodal:
+        try:
+            product_cutout_bytes = await remove_product_background(product_image_bytes)
+        except Exception:
+            logger.exception("상품 누끼 실패 — 배경 생성만 진행")
+            product_cutout_bytes = None
+
     async def build(idx: int, variant_id: str, plan: StrategyPlan) -> dict:
         nonlocal done
 
@@ -90,7 +105,7 @@ async def generate_candidates(state: GenerationState, config: RunnableConfig) ->
                 template=plan.template,
             )
 
-            # 2. 이미지 생성 (카피 텍스트 + 상품 이미지를 프롬프트에 반영)
+            # 2. 이미지 생성 — 상품 이미지가 있으면 배경만 생성(compose_mode)
             image_bytes = await generate_image(
                 product_analysis=product_analysis,
                 strategy=plan.strategy,
@@ -98,7 +113,7 @@ async def generate_candidates(state: GenerationState, config: RunnableConfig) ->
                 size=gen_size,
                 brand_color=brand_color,
                 tone=tone,
-                product_image_bytes=product_image_bytes,
+                compose_mode=product_cutout_bytes is not None,
                 headline=ad_copy.headline,
                 body=ad_copy.body,
                 cta=ad_copy.cta,
@@ -107,7 +122,11 @@ async def generate_candidates(state: GenerationState, config: RunnableConfig) ->
         # 3. 품질검증 (순수 동기 함수)
         quality_report = check_quality(ad_copy=ad_copy, target=product_analysis.target_audience)
 
-        # 3. 로고 합성 (brand_logo_s3_key 제공 시)
+        # 3. 상품 합성 (누끼한 실제 상품을 배경 위에 합성 — 픽셀 보존)
+        if product_cutout_bytes is not None:
+            image_bytes = composite_product(image_bytes, product_cutout_bytes, plan.template)
+
+        # 4. 로고 합성 (brand_logo_s3_key 제공 시)
         if logo_image_bytes is not None:
             image_bytes = composite_logo(image_bytes, logo_image_bytes, plan.template)
 
