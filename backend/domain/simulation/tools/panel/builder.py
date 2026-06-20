@@ -83,7 +83,7 @@ def load_panel(path: Path) -> dict[str, Any]:
 class CachedPanelProvider:
     """캐시된 패널을 로드만 — 시뮬레이션 런에서 재생성하지 않는다(§3.6, §7 금지).
 
-    MockPanelProvider 와 동일한 get_or_build 시그니처. target_filter 로 동일 패널 부분집합 반환.
+    PersonaSampler 와 동일한 get_or_build 시그니처. target_filter 로 동일 패널 부분집합 반환.
     """
 
     def __init__(self, path: Path) -> None:

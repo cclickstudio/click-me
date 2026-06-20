@@ -1,4 +1,4 @@
-# 실 LLM 토론 엔진 — DebaterPort/JudgePort 구현. 토론자 Haiku/GPT, Judge Sonnet.
+# 실 LLM 토론 엔진 — DebaterPort/JudgePort 구현. 토론자 GPT(gpt-4o-mini), Judge Haiku.
 #
 # 일반인 발화는 실제 반응에, 전문가 발화는 분석 결과(topic)에 grounded — system에 주입.
 # 엔진 라우팅: participant.engine(haiku/sonnet→Anthropic, gpt→OpenAI). Gemini는 복구용 잔존(미배정).
@@ -29,24 +29,50 @@ from domain.simulation.contracts.schemas import PersonaReaction
 
 logger = logging.getLogger("clickme")
 
-# 모델 ID — 비용 라인: 토론자 저가(Haiku/mini/Flash), Judge 중상(Sonnet). 바꾸려면 여기만.
-HAIKU_MODEL = "claude-haiku-4-5"
-SONNET_MODEL = "claude-sonnet-4-6"  # Judge — Opus 4.8에서 다운(호출 적어 비용영향 작음).
+# 모델 ID — 비용 라인: 토론자 gpt-4o-mini, Judge Haiku. 바꾸려면 여기만.
+HAIKU_MODEL = "claude-haiku-4-5"  # Judge — Sonnet에서 다운(호출 적어 비용영향 작음).
+SONNET_MODEL = "claude-sonnet-4-6"  # (미사용·여분) 필요 시 Judge를 다시 올릴 핀.
 OPUS_MODEL = "claude-opus-4-8"  # (미사용·여분) 필요 시 Judge를 다시 올릴 핀.
-GPT_MODEL = "gpt-4o-mini"
+GPT_MODEL = "gpt-4o-mini"  # 토론자 전원 + 라운드 정리.
 GEMINI_MODEL = "gemini-2.5-flash"  # (미배정) 복구용 — 응답 실패 잦아 토론자 배정에서 제외
 
-JUDGE_ENGINE = "sonnet"  # LLMJudge 기본 호출 엔진(assigner.JUDGE_ENGINE과 일치).
-SUMMARIZE_ENGINE = "haiku"  # 라운드 정리는 한 문장 요약 — 저가 엔진으로(비용 최적화).
+JUDGE_ENGINE = "haiku"  # LLMJudge 기본 호출 엔진(assigner.JUDGE_ENGINE과 일치). Sonnet→Haiku 다운.
+SUMMARIZE_ENGINE = "gpt"  # 라운드 정리 — 토론자와 같은 gpt-4o-mini(Haiku→gpt).
 _ANTHROPIC_MODELS = {"haiku": HAIKU_MODEL, "sonnet": SONNET_MODEL, "opus": OPUS_MODEL}
 
 _VALID_STANCE = {"positive", "neutral", "negative"}
 
 _PHASE_INSTR = {
     "발산": "다른 참가자를 보지 말고 주제에 독립적으로 반응하라.",
-    "반박": "앞선 의견에 동의하거나 반박하라(같은 말 재진술 금지).",
-    "검증": "제안된 개선안이 실제로 당신을 움직일지 솔직히 답하라.",
+    "반박": (
+        "위 '다른 참가자 발언' 중 한 명 이상을 이름으로 지목해 동의하거나 반박하라. "
+        "동의하면 새 근거를 보태고, 반대하면 그 사람 말의 무엇이 틀렸는지 구체적으로 짚어라. "
+        "앞서 나온 말이나 당신의 직전 발언을 그대로 되풀이하지 말 것."
+    ),
+    "검증": (
+        "제안된 개선안이 실제로 당신을 움직일지 솔직히 답하라. "
+        "다른 참가자 발언을 반영해 입장이 달라졌다면 무엇이 왜 바뀌었는지 밝혀라. "
+        "직전 발언의 반복은 금지."
+    ),
 }
+
+_STANCE_KO = {"positive": "긍정", "neutral": "중립", "negative": "부정"}
+
+
+def _stance_ko(s: str) -> str:
+    return _STANCE_KO.get(s, s)
+
+
+def _split_prior(
+    prior: list[tuple[str, str, str, str]] | None, me: str
+) -> tuple[list[tuple[str, str, str]], str | None]:
+    """직전 라운드 발언을 (타인 발언 [(name, stance, text)], 내 직전 발언 text)로 분리."""
+    if not prior:
+        return [], None
+    others = [(name, st, text) for pid, name, st, text in prior if pid != me]
+    mine = next((text for pid, _n, _s, text in prior if pid == me), None)
+    return others, mine
+
 
 _JUDGE_SYS = "당신은 광고 소비자 토론의 주최자입니다. 편향 없이 종합하고 지정 형식으로만 출력하라."
 
@@ -185,6 +211,32 @@ class _Clients:
         return json.loads(_strip_json(raw))
 
 
+def _ad_block(topic: DebateTopic) -> str:
+    """광고 컨텍스트 한 줄 — '어떤 광고인지'(제목·설명·해석)를 토론자에게 grounding. 없으면 ''.
+
+    KPI는 topic.focus(근거 수치)로 별도 전달되므로 여기선 광고 정체성만 담는다.
+    """
+    parts: list[str] = []
+    if topic.ad_title:
+        parts.append(f"제목 '{topic.ad_title}'")
+    if topic.ad_description:
+        parts.append(f"설명 '{topic.ad_description}'")
+    interp = topic.ad_interpretation or {}
+    detail = [
+        f"{label} {interp[key]}"
+        for key, label in (
+            ("industry", "업종"),
+            ("objective", "목표"),
+            ("target", "타깃"),
+            ("message", "메시지"),
+        )
+        if interp.get(key)
+    ]
+    if detail:
+        parts.append("해석(" + ", ".join(detail) + ")")
+    return f"대상 광고 — {', '.join(parts)}." if parts else ""
+
+
 def _expert_system(p: DebateParticipant, topic: DebateTopic) -> str:
     """전문가 system — 소비자가 아니라 분석 결과를 진단. 수치 밖 사실 금지(분석결과 grounded)."""
     focus = ", ".join(f"{k}={v}" for k, v in (topic.focus or {}).items() if v is not None)
@@ -192,10 +244,13 @@ def _expert_system(p: DebateParticipant, topic: DebateTopic) -> str:
         f"당신은 '{p.persona_name}', {p.persona_profile}입니다.",
         f"토론에서 당신의 역할: {p.role}.",
         "당신은 광고를 본 소비자가 아니라, 아래 시뮬레이션 분석 결과를 진단하는 전문가입니다.",
-        f"분석 진단 — {topic.diagnosis}",
     ]
+    ad = _ad_block(topic)
+    if ad:
+        parts.append(ad)
+    parts.append(f"분석 진단 — {topic.diagnosis}")
     if focus:
-        parts.append(f"근거 수치 — {focus}.")
+        parts.append(f"근거 수치(4대 KPI·병목) — {focus}.")
     parts.append(
         "주어진 분석 수치 밖의 사실을 지어내지 말고, 전문 지식으로 "
         "'왜 이런 결과인지'와 개선 방향을 제시하라."
@@ -210,6 +265,9 @@ def _persona_system(p: DebateParticipant, r: PersonaReaction | None, topic: Deba
         f"당신은 광고를 본 소비자 '{p.persona_name}'({p.persona_profile})입니다.",
         f"토론에서 당신의 역할: {p.role}.",
     ]
+    ad = _ad_block(topic)
+    if ad:
+        parts.append(ad)
     if r is not None:
         acted = "행동(클릭)함" if r.aisas.action else "행동하지 않음"
         rejected = "광고를 거부함" if r.rejected else "거부하지 않음"
@@ -220,17 +278,37 @@ def _persona_system(p: DebateParticipant, r: PersonaReaction | None, topic: Deba
         if r.utterance:
             parts.append(f'당신이 광고를 보고 한 말: "{r.utterance}"')
     parts.append("이 캐릭터와 실제 반응에 일관되게 답하라. 새로 지어내지 말 것.")
+    if p.tone:
+        parts.append(
+            f"말투: {p.tone} 단, 이 말투는 표현 방식일 뿐이며 "
+            "광고에 대한 찬반 판단은 위 실제 반응을 따른다."
+        )
     return " ".join(parts)
 
 
-def _round_user(phase: str, topic: DebateTopic) -> str:
-    return (
-        f"토론 주제: {topic.headline}\n"
-        f"이번 라운드({phase}): {_PHASE_INSTR.get(phase, '')}\n"
+def _round_user(
+    phase: str,
+    topic: DebateTopic,
+    others: list[tuple[str, str, str]] | None = None,
+    my_last: str | None = None,
+) -> str:
+    """라운드 user 프롬프트 — 반박·검증 라운드는 직전 라운드 발언(others)·자기 직전 발언(my_last)을
+
+    함께 실어 '서로를 보고 반응'하게 한다(R1 발산은 others 없이 독립 반응).
+    """
+    lines = [f"토론 주제: {topic.headline}"]
+    if others:
+        block = "\n".join(f"- {name}({_stance_ko(st)}): {text}" for name, st, text in others)
+        lines.append(f"다른 참가자들의 직전 발언:\n{block}")
+    if my_last:
+        lines.append(f"당신의 직전 발언(그대로 되풀이 금지): {my_last}")
+    lines.append(f"이번 라운드({phase}): {_PHASE_INSTR.get(phase, '')}")
+    lines.append(
         "아래 JSON으로만 답하라: "
         '{"stance":"positive|neutral|negative","text":"실제 발언 1~2문장",'
         '"reason":"그렇게 말한 이유","lever":"당신을 움직일 개선점"}'
     )
+    return "\n".join(lines)
 
 
 def _qa_user(question: str, topic: DebateTopic, history: list[Utterance]) -> str:
@@ -254,10 +332,17 @@ class LLMDebater:
         self._c = clients or _Clients()
 
     def speak(
-        self, participant: DebateParticipant, round_n: int, phase: str, topic: DebateTopic
+        self,
+        participant: DebateParticipant,
+        round_n: int,
+        phase: str,
+        topic: DebateTopic,
+        prior: list[tuple[str, str, str, str]] | None = None,
     ) -> Utterance:
         r = self._by_id.get(participant.persona_id)
-        system, user = _persona_system(participant, r, topic), _round_user(phase, topic)
+        others, my_last = _split_prior(prior, participant.persona_id)
+        system = _persona_system(participant, r, topic)
+        user = _round_user(phase, topic, others, my_last)
         # LLM 간헐 실패(빈 응답·파싱)에 대비해 2회 시도. 비결정이라 재시도 시 성공 가능.
         last_exc: Exception | None = None
         for _attempt in range(2):
@@ -341,7 +426,7 @@ class LLMDebater:
 
 
 class LLMJudge:
-    """실 LLM 주최자 — Sonnet 4.6으로 라운드 정리·잠정 액션·최종 결론(Opus에서 다운)."""
+    """실 LLM 주최자 — Haiku로 잠정 액션·최종 결론(Sonnet에서 다운), 라운드 정리는 gpt-4o-mini."""
 
     def __init__(self, clients: _Clients | None = None, engine: str = JUDGE_ENGINE) -> None:
         self._c = clients or _Clients()

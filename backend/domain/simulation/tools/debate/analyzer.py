@@ -9,6 +9,7 @@ from collections import Counter
 from domain.simulation.contracts.debate_schemas import (
     AISAS_STAGES,
     Bottleneck,
+    BrandRecognition,
     FunnelStage,
     GroupMembers,
     MessageReception,
@@ -109,6 +110,21 @@ def analyze_reactions(
     )
     emotion_dist = _count_by([str(r.emotion_tag) for r in passed])
 
+    # ── 구매의도 분포(§2-2): 1~5 전 구간 고정(누락 구간은 0) ──
+    purchase_intent_dist = {
+        i: sum(1 for r in passed if r.purchase_intent == i) for i in range(1, 6)
+    }
+
+    # ── 브랜드 식별 분해(§2-5): 식별/미식별 + 인식한 브랜드명 분포(상위 8) ──
+    recognized = [r for r in passed if r.brand_recognized]
+    perceived = Counter(r.perceived_brand for r in recognized if r.perceived_brand)
+    brand_recognition = BrandRecognition(
+        recognized_count=len(recognized),
+        recognition_rate=round(len(recognized) / n, 4) if n else 0.0,
+        unrecognized_count=n - len(recognized),
+        perceived_brands=dict(perceived.most_common(8)),
+    )
+
     rejected = [r for r in passed if r.rejected]
     rejection = RejectionBreakdown(
         rejected_count=len(rejected),
@@ -135,6 +151,8 @@ def analyze_reactions(
         by_drop_stage=by_drop_stage,
         by_drop_reason_tag=by_drop_reason,
         emotion_dist=emotion_dist,
+        purchase_intent_dist=purchase_intent_dist,
+        brand_recognition=brand_recognition,
         rejection=rejection,
         groups=groups,
         message=_analyze_message(passed, ad_analysis),

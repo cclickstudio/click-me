@@ -132,6 +132,10 @@ class PersonaReaction(BaseModel):
     emotion_tag: EmotionTag = EmotionTag.INDIFFERENCE
     perceived_message: str | None = None
     perceived_target: str | None = None
+    # 브랜드 식별(Fluency, REPORT §2-5) — "어느 브랜드/제품 광고인지" 전달력. 사전 인지가 아님.
+    brand_recognized: bool = False  # 명확히 식별했는가 — 가중 집계 입력(brand_recognition_rate)
+    perceived_brand: str | None = None  # 인식한 브랜드/제품명(선언 의도와 대조해 오귀속 분해)
+    noticed_first: str | None = None  # §4-b salience — 프로필상 가장 먼저 주의가 간 요소(탐색적)
     utterance: str | None = None
     qa_passed: bool = True
     qa_fail_reason: str | None = None
@@ -157,9 +161,35 @@ class SimulationAggregate(BaseModel):
     purchase_intent: float
     trust_avg: float
     rejection_rate: float
+    brand_recognition_rate: float = 0.0  # 브랜드 식별률(§2-5 Fluency) — QA 통과분 가중 비율
     variance_warning: bool = False
     effective_n: float = (
         0.0  # 유효표본수(Kish, §3.7) — 가중 편차 클수록 표본수보다 작아짐. CI 정직성
     )
     payload: dict[str, Any] = Field(default_factory=dict)
     engine_version: str = "agg-0"
+
+
+class ObjectiveContribution(BaseModel):
+    """목표 달성 가능성에 기여한 신호 1건 — 정규화값(0~1)과 가중치."""
+
+    label: str  # 사람이 읽는 신호명("클릭 의향률" 등)
+    value: float = Field(ge=0.0, le=1.0)  # 0~1 정규화 신호값
+    weight: float = Field(ge=0.0, le=1.0)  # 이 목표에서의 가중치
+
+
+class ObjectiveFit(BaseModel):
+    """캠페인 목표 달성 가능성(결정론 룰) — 목표별 KPI 가중 조합의 상대 지표.
+
+    실측 스케일 환산이 아니라 시뮬 신호 기반 '상대적 유리/불리' 지표다(exploratory).
+    확률·실측 CTR로 단정하지 말 것 — 등급(grade)+상대점수(score)+근거(rationale)로만 표기.
+    """
+
+    objective: str  # 사용자 선언 캠페인 목표(원문)
+    matched_goal: str  # 매핑된 목표 유형(awareness/click/lead/purchase/retention/general)
+    score: int = Field(ge=0, le=100)  # 0~100 상대 지수(확률 아님)
+    grade: str  # 높음 / 보통 / 낮음
+    rationale: str  # 강점·약점 한 줄 근거
+    contributions: list[ObjectiveContribution] = Field(default_factory=list)
+    low_confidence: bool = False  # 유효표본 부족 등으로 신뢰 낮음
+    exploratory: bool = True  # 항상 탐색적 — 실측 보정 전

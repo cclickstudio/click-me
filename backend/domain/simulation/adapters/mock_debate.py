@@ -50,8 +50,14 @@ class MockDebater:
         self._by_id = {r.persona_id: r for r in reactions}
 
     def speak(
-        self, participant: DebateParticipant, round_n: int, phase: str, topic: DebateTopic
+        self,
+        participant: DebateParticipant,
+        round_n: int,
+        phase: str,
+        topic: DebateTopic,
+        prior: list[tuple[str, str, str, str]] | None = None,
     ) -> Utterance:
+        # prior(직전 라운드 발언)는 결정론 mock에선 무시 — 실 LLM 토론자만 반박 grounding에 사용.
         r = self._by_id.get(participant.persona_id)
         base = (r.utterance if r and r.utterance else f"{participant.role}로서의 반응") or ""
         lever = (_ACTIONS_BY_SIGNAL.get(topic.primary_signal) or ["메시지·CTA 보강"])[0]

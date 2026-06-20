@@ -23,6 +23,7 @@ type Account = {
   role: AccountRole;
   status: string;
   created_at: string;
+  organization_name: string | null;
 };
 
 function formatDate(iso: string) {
@@ -315,6 +316,7 @@ export default function AdminCompaniesPage() {
                   <th className="text-left px-6 py-3 text-xs font-semibold text-[#8B95A1] dark:text-[#6B7280]">이름</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-[#8B95A1] dark:text-[#6B7280]">아이디</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-[#8B95A1] dark:text-[#6B7280]">역할</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-[#8B95A1] dark:text-[#6B7280]">소속</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-[#8B95A1] dark:text-[#6B7280]">상태</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold text-[#8B95A1] dark:text-[#6B7280]">생성일</th>
                   <th className="px-4 py-3" />
@@ -328,6 +330,7 @@ export default function AdminCompaniesPage() {
                     <td className="px-4 py-4">
                       <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-medium ${roleStyle[a.role] ?? ''}`}>{a.role}</span>
                     </td>
+                    <td className="px-4 py-4 text-[#4E5968] dark:text-[#9CA3AF]">{a.organization_name ?? '—'}</td>
                     <td className="px-4 py-4">
                       <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-medium ${orgStatusStyle[a.status] ?? ''}`}>
                         {orgStatusLabel[a.status] ?? a.status}
