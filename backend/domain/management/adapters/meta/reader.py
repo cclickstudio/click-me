@@ -442,6 +442,24 @@ class MetaAdsReader:
         # (하나라도 무기한/미래면 진행 중)
         return bool(adset_ends) and all(e and _is_past(e) for e in adset_ends)
 
+    async def _all_campaign_rows(self, account: str) -> list[dict[str, Any]]:
+        """계정의 모든 캠페인 행 — 페이징을 끝까지 따라가 25개(기본 limit) 초과도 빠짐없이.
+
+        Meta GET /campaigns는 기본 25개씩 페이지로 준다. cursors.after로 next가 없을 때까지 순회.
+        (단 Ads Manager '임시 저장됨' 초안은 API가 반환하지 않아 게시 전엔 안 잡힌다.)
+        """
+        rows: list[dict[str, Any]] = []
+        params: dict[str, Any] = {"fields": _CAMPAIGN_FIELDS, "limit": 100}
+        while True:
+            payload = await self._client.get(f"{account}/campaigns", params)
+            rows.extend(payload.get("data", []))
+            paging = payload.get("paging", {})
+            after = (paging.get("cursors") or {}).get("after")
+            if not after or not paging.get("next"):
+                break
+            params = {**params, "after": after}
+        return rows
+
     async def list_campaigns(self) -> list[CampaignInfo]:
         """광고계정의 캠페인 목록 — 대시보드용(이름·상태·일예산).
 
@@ -449,12 +467,11 @@ class MetaAdsReader:
         캠페인 노드에 존재 — 광고세트 예산이면 광고세트 일예산 합으로 보완한다.
         """
         account = normalize_ad_account(self._client.ad_account_id)
-        # 캠페인 목록·광고세트 정보 병렬 — 순차면 Meta 왕복 2번이 직렬로 쌓임.
-        payload, adset_info = await asyncio.gather(
-            self._client.get(f"{account}/campaigns", {"fields": _CAMPAIGN_FIELDS}),
+        # 캠페인 목록(페이징 끝까지)·광고세트 정보 병렬 — 순차면 Meta 왕복이 직렬로 쌓임.
+        rows, adset_info = await asyncio.gather(
+            self._all_campaign_rows(account),
             self._adset_info(account),
         )
-        rows = payload.get("data", [])
         out: list[CampaignInfo] = []
         for row in rows:
             cid = str(row.get("id", ""))
