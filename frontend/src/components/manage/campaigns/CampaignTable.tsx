@@ -19,6 +19,7 @@ export function CampaignTable({
   selected,
   onSelect,
   onPrefetch,
+  onDelete,
   detail,
   platforms,
   demographics,
@@ -32,6 +33,7 @@ export function CampaignTable({
   selected: string | null;
   onSelect: (id: string) => void;
   onPrefetch?: (id: string) => void;
+  onDelete?: (id: string, name: string) => void;
   detail?: Detail | null;
   platforms?: PlatformMetrics[];
   demographics?: DemographicMetrics[];
@@ -135,7 +137,29 @@ export function CampaignTable({
                   <PacingCell pct={c.pacing_pct} />
                 )}
               </td>
-              <td className="px-2 py-3 text-center">
+              <td className="px-2 py-3 text-center whitespace-nowrap">
+                {onDelete && (
+                  <button
+                    onClick={() => onDelete(c.campaign_id, c.name)}
+                    aria-label="캠페인 삭제"
+                    title="삭제 (Meta에서도 삭제)"
+                    className="text-[#B0B8C1] hover:text-red-500 p-1 align-middle"
+                  >
+                    <svg
+                      width="15"
+                      height="15"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <polyline points="3 6 5 6 21 6" />
+                      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                    </svg>
+                  </button>
+                )}
                 <button
                   onClick={() => onSelect(c.campaign_id)}
                   aria-label="상세 펼치기"
@@ -172,6 +196,7 @@ export function CampaignTable({
                       manualKpi={manualKpi?.[c.campaign_id]}
                       endedAt={c.ended_at}
                       blockReason={c.block_reason}
+                      onDelete={onDelete}
                     />
                   </div>
                 </td>

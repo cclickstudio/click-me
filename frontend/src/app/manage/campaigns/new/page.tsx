@@ -67,7 +67,7 @@ export default function Page() {
           </Link>
           <h1 className="text-2xl font-bold text-[#191F28] dark:text-[#F2F4F6] mt-1">새 캠페인 만들기</h1>
           <p className="text-sm text-[#8B95A1] mt-1">
-            폼 → 제안 → 승인 → 생성 (Tier 3 · 사람 승인 · Mock 기반 데모)
+            폼 → 제안 → 승인 → 생성 (Tier 3 · 사람 승인 · 생성은 PAUSED, 게재는 직접)
           </p>
         </div>
 

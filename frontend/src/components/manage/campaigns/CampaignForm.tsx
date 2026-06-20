@@ -1,5 +1,6 @@
 // 신규 캠페인 생성 폼 — 목표·예산·기간·소재 입력 → 제안 생성
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { api } from '@/lib/api';
 
 export type CampaignFormValues = {
   name: string;
@@ -7,7 +8,26 @@ export type CampaignFormValues = {
   daily_budget_krw: number;
   run_days: number;
   creative_ad_id?: string;
+  special_ad_category: string; // NONE | HOUSING | EMPLOYMENT | CREDIT | ISSUES_ELECTIONS_POLITICS
+  country: string; // ISO2
+  age_min: number;
+  age_max: number;
+  gender: 'all' | 'male' | 'female';
 };
+
+// Meta 특별 광고 카테고리 라벨 (정책 신고용).
+const CATEGORY_LABEL: Record<string, string> = {
+  NONE: '없음',
+  HOUSING: '주택',
+  EMPLOYMENT: '고용',
+  CREDIT: '신용',
+  ISSUES_ELECTIONS_POLITICS: '사회·선거·정치',
+};
+const COUNTRIES: { code: string; label: string }[] = [
+  { code: 'KR', label: '대한민국' },
+  { code: 'US', label: '미국' },
+  { code: 'JP', label: '일본' },
+];
 
 function Field({ label, children, hint }: { label: string; children: React.ReactNode; hint?: string }) {
   return (
@@ -34,8 +54,31 @@ export function CampaignForm({
   const [budget, setBudget] = useState(50_000);
   const [runDays, setRunDays] = useState(7);
   const [creativeId, setCreativeId] = useState('');
+  const [specialCat, setSpecialCat] = useState('NONE');
+  const [country, setCountry] = useState('KR');
+  const [ageMin, setAgeMin] = useState(18);
+  const [ageMax, setAgeMax] = useState(65);
+  const [gender, setGender] = useState<'all' | 'male' | 'female'>('all');
+  // Meta 정책(최소예산·특별카테고리 등)을 서버에서 받아온다 — 코드 하드코딩 대신 자동 최신화.
+  const [minByObjective, setMinByObjective] = useState<Record<string, number>>({
+    traffic: 2_000,
+    leads: 10_000,
+  });
+  const [categories, setCategories] = useState<string[]>(Object.keys(CATEGORY_LABEL));
 
-  const valid = name.trim().length > 0 && budget >= 1_000 && runDays >= 1;
+  useEffect(() => {
+    api.management
+      .campaignPolicy()
+      .then((p) => {
+        setMinByObjective(p.min_by_objective_krw);
+        if (p.special_ad_categories?.length) setCategories(p.special_ad_categories);
+      })
+      .catch(() => {}); // 실패 시 폴백 기본값 유지
+  }, []);
+
+  // 목표별 최소 일예산 — 미달이면 Meta가 광고세트 생성을 거부한다.
+  const minBudget = minByObjective[objective] ?? (objective === 'leads' ? 10_000 : 2_000);
+  const valid = name.trim().length > 0 && budget >= minBudget && runDays >= 1;
 
   return (
     <form
@@ -48,6 +91,11 @@ export function CampaignForm({
             daily_budget_krw: budget,
             run_days: runDays,
             creative_ad_id: creativeId.trim() || undefined,
+            special_ad_category: specialCat,
+            country,
+            age_min: ageMin,
+            age_max: ageMax,
+            gender,
           });
       }}
       className="rounded-2xl border border-[#E5E8EB] dark:border-[#2D3748] p-5 space-y-4 max-w-xl"
@@ -56,10 +104,10 @@ export function CampaignForm({
         <input className={inputCls} value={name} onChange={(e) => setName(e.target.value)} placeholder="예: 가을 신상 런칭" />
       </Field>
       <div className="grid grid-cols-2 gap-4">
-        <Field label="일 예산 (KRW)" hint="최소 ₩1,000">
+        <Field label="일 예산 (KRW)" hint={`Meta 최소 ₩${minBudget.toLocaleString()} (${objective === 'leads' ? '리드' : '트래픽'})`}>
           <input
             type="number"
-            min={1000}
+            min={minBudget}
             step={1000}
             className={inputCls}
             value={budget}
@@ -87,6 +135,69 @@ export function CampaignForm({
           <option value="leads">리드 (잠재고객 폼)</option>
         </select>
       </Field>
+
+      {/* ── 광고세트 타겟 (Meta) ── */}
+      <p className="text-[11px] font-semibold text-[#8B95A1] pt-1 border-t border-[#F2F4F6] dark:border-[#2D3748]">
+        타겟 · 정책
+      </p>
+      <div className="grid grid-cols-2 gap-4">
+        <Field label="위치">
+          <select className={inputCls} value={country} onChange={(e) => setCountry(e.target.value)}>
+            {COUNTRIES.map((c) => (
+              <option key={c.code} value={c.code}>
+                {c.label}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <Field label="성별">
+          <select
+            className={inputCls}
+            value={gender}
+            onChange={(e) => setGender(e.target.value as 'all' | 'male' | 'female')}
+          >
+            <option value="all">전체</option>
+            <option value="male">남성</option>
+            <option value="female">여성</option>
+          </select>
+        </Field>
+      </div>
+      <div className="grid grid-cols-2 gap-4">
+        <Field label="연령 최소" hint="Meta 최소 18세">
+          <input
+            type="number"
+            min={18}
+            max={65}
+            className={inputCls}
+            value={ageMin}
+            onChange={(e) => setAgeMin(Number(e.target.value))}
+          />
+        </Field>
+        <Field label="연령 최대">
+          <input
+            type="number"
+            min={18}
+            max={65}
+            className={inputCls}
+            value={ageMax}
+            onChange={(e) => setAgeMax(Number(e.target.value))}
+          />
+        </Field>
+      </div>
+      <Field label="특별 광고 카테고리" hint="주택·고용·신용·정치 광고는 Meta 정책상 신고 필수">
+        <select
+          className={inputCls}
+          value={specialCat}
+          onChange={(e) => setSpecialCat(e.target.value)}
+        >
+          {categories.map((c) => (
+            <option key={c} value={c}>
+              {CATEGORY_LABEL[c] ?? c}
+            </option>
+          ))}
+        </select>
+      </Field>
+
       <Field label="소재 ID (선택)" hint="기존 광고 소재를 연결할 경우">
         <input className={inputCls} value={creativeId} onChange={(e) => setCreativeId(e.target.value)} placeholder="ad_xxxxx" />
       </Field>

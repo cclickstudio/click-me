@@ -28,6 +28,7 @@ export function CampaignCards({
   selected,
   onSelect,
   onPrefetch,
+  onDelete,
   detail,
   platforms,
   demographics,
@@ -40,6 +41,7 @@ export function CampaignCards({
   selected: string | null;
   onSelect: (id: string) => void;
   onPrefetch?: (id: string) => void;
+  onDelete?: (id: string, name: string) => void;
   detail?: Detail | null;
   platforms?: PlatformMetrics[];
   demographics?: DemographicMetrics[];
@@ -135,6 +137,7 @@ export function CampaignCards({
                 manualKpi={manual}
                 endedAt={c.ended_at}
                 blockReason={c.block_reason}
+                onDelete={onDelete}
               />
             </div>
           )}

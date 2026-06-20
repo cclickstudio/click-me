@@ -151,6 +151,27 @@ export default function Page() {
     [fetchDetail],
   );
 
+  // 캠페인 삭제 — 대시보드에서 삭제 = Meta에서도 삭제. 되돌릴 수 없어 확인 후 진행.
+  const handleDelete = useCallback(
+    async (id: string, name: string) => {
+      if (!window.confirm(`'${name}' 캠페인을 삭제할까요?\nMeta에서도 삭제되며 되돌릴 수 없습니다.`))
+        return;
+      try {
+        const { result } = await api.management.deleteCampaign(id);
+        if (result.status !== 'success') {
+          setError(`삭제 실패 — ${result.failure_reason ?? '알 수 없음'}`);
+          return;
+        }
+        detailCache.current.delete(id);
+        if (selected === id) setSelected(null);
+        await load(true);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : '삭제 실패');
+      }
+    },
+    [load, selected],
+  );
+
   useEffect(() => {
     if (!selected) {
       setDetail(null);
@@ -349,6 +370,7 @@ export default function Page() {
                 selected={selected}
                 onSelect={(id) => setSelected((p) => (p === id ? null : id))}
                 onPrefetch={prefetch}
+                onDelete={handleDelete}
                 detail={detail}
                 platforms={platforms}
                 demographics={demographics}
@@ -364,6 +386,7 @@ export default function Page() {
                 selected={selected}
                 onSelect={(id) => setSelected((p) => (p === id ? null : id))}
                 onPrefetch={prefetch}
+                onDelete={handleDelete}
                 detail={detail}
                 platforms={platforms}
                 demographics={demographics}

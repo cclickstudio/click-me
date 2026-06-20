@@ -310,6 +310,15 @@ export const api = {
     // 멀티테넌트 — 로그인 org로 Meta OAuth 로그인 URL을 받는다(인증 XHR). 프론트가 그 URL로 이동.
     connectMeta: () => request<{ login_url: string; state: string }>("/management/meta/connect"),
     compareBoard: () => request<BoardResponse>("/management/compare/board"),
+    // 캠페인 생성 정책 — 최소예산(Meta 실시간)·특별광고카테고리·연령. 폼이 동적 검증에 사용.
+    campaignPolicy: () =>
+      request<{
+        min_daily_budget_krw: number;
+        min_by_objective_krw: Record<string, number>;
+        special_ad_categories: string[];
+        age_min: number;
+        age_max: number;
+      }>("/management/campaign-policy"),
     // conversionValueKrw(전환 가치)→추정 ROAS, targetRoas(목표)→목표 미달 판정.
     campaigns: (conversionValueKrw?: number | null, targetRoas?: number | null) =>
       request<CampaignsResponse>(
@@ -325,6 +334,12 @@ export const api = {
       request<DemographicsResponse>(`/management/campaigns/${id}/demographics`),
     campaignCreatives: (id: string) =>
       request<CreativesResponse>(`/management/campaigns/${id}/creatives`),
+    // 캠페인 삭제 — 내 대시보드에서 삭제 = Meta에서도 삭제(LIVE 모드). 자식 광고세트·광고 함께.
+    deleteCampaign: (id: string) =>
+      request<{ result: { status: string; failure_reason?: string | null } }>(
+        `/management/campaigns/${id}`,
+        { method: "DELETE" },
+      ),
     // 수동 KPI(추정 CVR·ROAS) — 조직 단위 DB 영속
     kpiOverrides: () =>
       request<{ overrides: ManualKpiMap }>(`/management/kpi-overrides`),
@@ -339,6 +354,11 @@ export const api = {
       daily_budget_krw: number;
       run_days: number;
       creative_ad_id?: string;
+      special_ad_category?: string; // NONE | HOUSING | EMPLOYMENT | CREDIT | ISSUES_ELECTIONS_POLITICS
+      country?: string; // ISO2 (KR 등)
+      age_min?: number;
+      age_max?: number;
+      gender?: 'all' | 'male' | 'female';
     }) =>
       request<{ proposal: Proposal }>("/management/campaigns/create-proposal", {
         method: "POST",

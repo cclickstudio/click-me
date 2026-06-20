@@ -81,6 +81,7 @@ export function CampaignDetail({
   manualKpi,
   endedAt,
   blockReason,
+  onDelete,
 }: {
   detail: Detail;
   source?: CampaignSource;
@@ -91,6 +92,7 @@ export function CampaignDetail({
   manualKpi?: ManualKpi;
   endedAt?: string | null;
   blockReason?: string | null;
+  onDelete?: (id: string, name: string) => void;
 }) {
   const s = detail.summary;
   const live = source === 'live';
@@ -122,7 +124,18 @@ export function CampaignDetail({
         <p className="font-bold text-[#191F28] dark:text-[#F2F4F6]">
           {detail.name} — 일자별 지출 vs 일예산
         </p>
-        <StateBadge state={detail.state} />
+        <span className="inline-flex items-center gap-2">
+          {onDelete && (
+            <button
+              onClick={() => onDelete(detail.campaign_id, detail.name)}
+              className="text-[11px] font-medium text-red-500 hover:text-red-600 border border-red-200 dark:border-red-900/50 rounded-md px-2 py-1"
+              title="Meta에서도 삭제됩니다"
+            >
+              캠페인 삭제
+            </button>
+          )}
+          <StateBadge state={detail.state} />
+        </span>
       </div>
       <DeliveryChart series={detail.series} dailyBudget={detail.daily_budget_krw} />
       <p className="mt-1 text-[12px] text-[#8B95A1]">
