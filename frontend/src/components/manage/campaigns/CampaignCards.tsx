@@ -7,11 +7,13 @@ import type {
   CampaignSummary,
   CreativePreview,
   DemographicMetrics,
+  ManualKpiMap,
   PlatformMetrics,
 } from './types';
 import { fmtCvr, fmtRoas } from './types';
 import { StateBadge } from './StateBadge';
 import { CampaignDetail } from './CampaignDetail';
+import { KpiInput } from './KpiInput';
 
 function Metric({ label, value }: { label: string; value: string }) {
   return (
@@ -33,6 +35,8 @@ export function CampaignCards({
   demographics,
   creatives,
   account,
+  manualKpi,
+  onEditKpi,
   source,
 }: {
   campaigns: CampaignSummary[];
@@ -45,12 +49,15 @@ export function CampaignCards({
   demographics?: DemographicMetrics[];
   creatives?: CreativePreview[];
   account?: AccountWallet | null;
+  manualKpi?: ManualKpiMap;
+  onEditKpi?: (id: string, field: 'cvr' | 'roas', raw: string) => void;
   source?: CampaignSource;
 }) {
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
       {campaigns.map((c) => {
         const pColor = c.pacing_pct >= 95 ? 'bg-red-500' : c.pacing_pct >= 80 ? 'bg-amber-500' : 'bg-[#3182F6]';
+        const manual = manualKpi?.[c.campaign_id];
         return (
           <Fragment key={c.campaign_id}>
           <button
@@ -88,14 +95,37 @@ export function CampaignCards({
               <Metric label="CTR(클릭률)" value={`${(c.ctr * 100).toFixed(1)}%`} />
               <Metric label="CPC(클릭당비용)" value={`₩${c.cpc_krw.toLocaleString()}`} />
               <Metric label="CPM(노출당비용)" value={`₩${c.cpm_krw.toLocaleString()}`} />
-              <Metric label="CVR(전환율)" value={fmtCvr(c.cvr, c.conversions)} />
-              <Metric
-                label="ROAS(투자수익률)"
-                value={
-                  fmtRoas(c.roas, c.conversions, c.roas_estimated) +
-                  (c.target_missed ? ' · 목표↓' : '')
-                }
-              />
+              {/* 실측 있으면 읽기전용, 미설정이면 직접 입력(추정) */}
+              {c.conversions == null ? (
+                <div>
+                  <p className="text-[12px] text-[#8B95A1]">CVR(전환율)</p>
+                  <KpiInput
+                    manual={manual?.cvr}
+                    unit="%"
+                    onCommit={(raw) => onEditKpi?.(c.campaign_id, 'cvr', raw)}
+                  />
+                </div>
+              ) : (
+                <Metric label="CVR(전환율)" value={fmtCvr(c.cvr, c.conversions)} />
+              )}
+              {c.conversions == null ? (
+                <div>
+                  <p className="text-[12px] text-[#8B95A1]">ROAS(투자수익률)</p>
+                  <KpiInput
+                    manual={manual?.roas}
+                    unit="x"
+                    onCommit={(raw) => onEditKpi?.(c.campaign_id, 'roas', raw)}
+                  />
+                </div>
+              ) : (
+                <Metric
+                  label="ROAS(투자수익률)"
+                  value={
+                    fmtRoas(c.roas, c.conversions, c.roas_estimated) +
+                    (c.target_missed ? ' · 목표↓' : '')
+                  }
+                />
+              )}
             </div>
             <div className="mt-3">
               <div className="flex items-center justify-between text-[12px] text-[#8B95A1] mb-1">
@@ -126,6 +156,7 @@ export function CampaignCards({
                 demographics={demographics}
                 creatives={creatives}
                 account={account}
+                manualKpi={manual}
                 endedAt={c.ended_at}
                 blockReason={c.block_reason}
                 onDelete={onDelete}

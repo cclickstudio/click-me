@@ -14,6 +14,7 @@ import type {
   CampaignView,
   CreativePreview,
   DemographicMetrics,
+  ManualKpiMap,
   PlatformMetrics,
 } from '@/components/manage/campaigns/types';
 
@@ -38,6 +39,38 @@ export default function Page() {
   // (직접 입력 아님 — CVR=전환÷클릭 실측, ROAS=(전환×가치)÷지출 추정). 스펙: CVR·ROAS 재정의.
   const [convValue, setConvValue] = useState<number | null>(null);
   const [targetRoas, setTargetRoas] = useState<number | null>(null);
+  // 수동 추정 CVR·ROAS — 전환 데이터가 없는(미설정) 캠페인에만 직접 입력(하이브리드).
+  // 실측이 있으면 그 값을 읽기전용으로 쓰고, 여기 값은 무시된다. 조직 단위 DB 영속.
+  const [manualKpi, setManualKpi] = useState<ManualKpiMap>({});
+
+  useEffect(() => {
+    let alive = true;
+    api.management
+      .kpiOverrides()
+      .then((r) => {
+        if (alive) setManualKpi(r.overrides ?? {});
+      })
+      .catch(() => {}); // 미인증 등 — 무시
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  // 미설정 셀 직접 입력 → 낙관적 갱신 + DB 저장(PUT). 빈 값이면 필드 제거(둘 다 비면 행 삭제).
+  const editKpi = useCallback((id: string, field: 'cvr' | 'roas', raw: string) => {
+    setManualKpi((prev) => {
+      const v = raw.trim() === '' ? undefined : Number(raw);
+      const entry = { ...prev[id] };
+      if (v == null || !Number.isFinite(v)) delete entry[field];
+      else entry[field] = v;
+      const next = { ...prev, [id]: entry };
+      if (Object.keys(entry).length === 0) delete next[id];
+      api.management
+        .putKpiOverride(id, { cvr: entry.cvr ?? null, roas: entry.roas ?? null })
+        .catch(() => {});
+      return next;
+    });
+  }, []);
 
   // silent=true면 폴링 갱신 — 로딩 스피너 없이 값만 교체.
   const load = useCallback(async (silent = false) => {
@@ -338,8 +371,8 @@ export default function Page() {
             </p>
             <p className="mt-1 text-[13px] text-[#8B95A1]">
               <b>CVR(전환율)</b> = 전환수 ÷ 클릭수(실측) · <b>ROAS(투자수익률)</b> = 전환가치 × 전환수
-              ÷ 지출(추정). CVR·ROAS는 <b>계산 결과</b>이고, 입력은 아래 <b>전환 1건 가치</b>·
-              <b>목표 ROAS</b>뿐이에요.
+              ÷ 지출(추정). 실측 데이터가 있으면 <b>계산 결과(읽기전용)</b>로 뜨고, 전환 추적 전
+              ‘미설정’ 캠페인은 표에서 <b>직접 추정값</b>을 넣을 수 있어요.
             </p>
           </div>
         )}
@@ -398,6 +431,8 @@ export default function Page() {
                 demographics={demographics}
                 creatives={creatives}
                 account={account}
+                manualKpi={manualKpi}
+                onEditKpi={editKpi}
                 source={source}
               />
             ) : (
@@ -412,6 +447,8 @@ export default function Page() {
                 demographics={demographics}
                 creatives={creatives}
                 account={account}
+                manualKpi={manualKpi}
+                onEditKpi={editKpi}
                 source={source}
               />
             )}
