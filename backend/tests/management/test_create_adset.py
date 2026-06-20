@@ -68,6 +68,20 @@ def test_create_adset_traffic_uses_link_clicks_no_promoted_object():
     assert b"destination_type" not in body
 
 
+def test_create_adset_uses_config_targeting():
+    # 폼에서 받은 위치·연령·성별이 targeting에 그대로 실린다.
+    writer, captured = _capture_writer()
+    cfg = _config(objective="traffic").model_copy(
+        update={"countries": ("US", "JP"), "age_min": 25, "age_max": 45, "genders": (2,)}
+    )
+    asyncio.run(writer.create_adset(cfg, "campX", "idem-t"))
+
+    _path, body = captured[0]
+    assert b"US" in body and b"JP" in body  # geo_locations.countries
+    assert b"age_min" in body and b"25" in body  # 연령
+    assert b"genders" in body  # 성별 지정(여성)
+
+
 def test_create_adset_lead_without_page_id_is_blocked():
     # 리드인데 page_id가 없으면 실 호출 전에 차단(FAILED) — 전송 0.
     writer = MetaAdsWriter(mode=ExecutionMode.VALIDATE_ONLY, client=None)

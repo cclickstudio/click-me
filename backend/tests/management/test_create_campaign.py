@@ -145,6 +145,22 @@ def test_create_campaign_defaults_name_and_traffic_objective():
     assert b"OUTCOME_TRAFFIC" in body  # objective 기본 = traffic
 
 
+def test_create_campaign_special_ad_categories_from_config():
+    # 특별 광고 카테고리(주택 등)가 캠페인 생성 요청에 실린다 (Meta 정책 신고).
+    captured: list[bytes] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append(request.content)
+        return httpx.Response(200, json={"id": "1"})
+
+    client = MetaClient("EAAtest", transport=httpx.MockTransport(handler))
+    writer = MetaAdsWriter(mode=ExecutionMode.VALIDATE_ONLY, client=client)
+    cfg = _config().model_copy(update={"special_ad_categories": ("HOUSING",)})
+    asyncio.run(writer.create_campaign(cfg, "idem-h"))
+
+    assert b"HOUSING" in captured[0]
+
+
 # ── executor 디스패치 ────────────────────────────────────────────
 
 

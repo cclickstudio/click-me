@@ -21,7 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.auth import get_current_user
 from core.config import settings
 from core.db import get_db
-from core.models import CampaignKpiOverride, OrganizationMember, User
+from core.models import CampaignKpiOverride, CreatedCampaign, OrganizationMember, User
 from domain.management.adapters.meta.client import MetaApiError
 from domain.management.adapters.meta.connection_flow import complete_meta_connection
 from domain.management.adapters.meta.oauth import build_login_url
@@ -35,6 +35,7 @@ from domain.management.approval import (
     requires_human,
     validate_proposal,
 )
+from domain.management.campaign_policy import get_campaign_policy, min_daily_budget_for
 from domain.management.comparison.service.comparison_service import ComparisonService
 from domain.management.contracts.enums import ActionTier, CampaignState, ExecutionMode
 from domain.management.contracts.fault_injection import FaultConfig, FaultMode
@@ -231,11 +232,82 @@ class ExecuteRequest(BaseModel):
     proposal: ActionProposal
 
 
+def _find_in_snapshot(obj: object, key: str) -> object | None:
+    """중첩된 결과 스냅샷(dict/list)에서 키를 재귀로 찾는다 (campaign_meta_id 추출용)."""
+    if isinstance(obj, dict):
+        if key in obj:
+            return obj[key]
+        for v in obj.values():
+            found = _find_in_snapshot(v, key)
+            if found is not None:
+                return found
+    elif isinstance(obj, list):
+        for v in obj:
+            found = _find_in_snapshot(v, key)
+            if found is not None:
+                return found
+    return None
+
+
+async def _record_created_campaign(db: AsyncSession, proposal: ActionProposal, result) -> None:
+    """캠페인 생성 결과를 created_campaigns에 누적 기록 — 실패해도 응답엔 영향 없음(best-effort)."""
+    cfg = proposal.evidence_metrics.get("campaign_config") or {}
+    meta_id = _find_in_snapshot(result.platform_response_snapshot, "campaign_meta_id")
+    db.add(
+        CreatedCampaign(
+            tenant_id=proposal.tenant_id,
+            meta_campaign_id=str(meta_id) if meta_id else None,
+            name=cfg.get("name") or proposal.evidence_metrics.get("name") or "(이름없음)",
+            objective=cfg.get("objective", "traffic"),
+            ad_account_id=proposal.ad_account_id,
+            daily_budget_krw=int(cfg.get("daily_budget_krw") or proposal.budget_after_krw or 0),
+            status=result.status.value if hasattr(result.status, "value") else str(result.status),
+            execution_mode=str(_resolved_execution_mode().value),
+        )
+    )
+    await db.commit()
+
+
 @router.post("/execute")
-async def execute(body: ExecuteRequest):
-    """🅱 executor — 승인 후 4단계 재검증 + 멱등 실행. 모든 지출 단일 경로."""
+async def execute(body: ExecuteRequest, db: AsyncSession = Depends(get_db)):
+    """🅱 executor — 승인 후 4단계 재검증 + 멱등 실행. 모든 지출 단일 경로.
+
+    CREATE_CAMPAIGN이면 결과를 created_campaigns(네온 DB)에 누적 기록한다.
+    """
     result = await _get_executor().execute(body.approved_action, body.proposal)
+    if body.proposal.action_type == "CREATE_CAMPAIGN":
+        try:
+            await _record_created_campaign(db, body.proposal, result)
+        except Exception:  # noqa: BLE001 — 적재 실패가 생성 응답을 막지 않게
+            await db.rollback()
     return {"result": result.model_dump(mode="json")}
+
+
+@router.get("/created-campaigns")
+async def created_campaigns(db: AsyncSession = Depends(get_db)):
+    """앱에서 생성한 캠페인 누적 기록 (최신순) — 네온 DB 영속."""
+    rows = (
+        (await db.execute(select(CreatedCampaign).order_by(CreatedCampaign.created_at.desc())))
+        .scalars()
+        .all()
+    )
+    return {
+        "items": [
+            {
+                "id": str(r.id),
+                "tenant_id": r.tenant_id,
+                "meta_campaign_id": r.meta_campaign_id,
+                "name": r.name,
+                "objective": r.objective,
+                "ad_account_id": r.ad_account_id,
+                "daily_budget_krw": r.daily_budget_krw,
+                "status": r.status,
+                "execution_mode": r.execution_mode,
+                "created_at": r.created_at.isoformat(),
+            }
+            for r in rows
+        ]
+    }
 
 
 @router.get("/audit")
@@ -634,6 +706,14 @@ async def put_kpi_override(
     return {"campaign_id": campaign_id, "cvr": row.cvr, "roas": row.roas}
 
 
+@router.delete("/campaigns/{campaign_id}")
+async def delete_campaign(campaign_id: str):
+    """캠페인 삭제 — 자식 광고세트·광고도 함께. LIVE 모드에서만 실제 Meta 삭제(그 외 무동작)."""
+    writer = build_writer(settings)
+    result = await writer.delete_campaign(campaign_id, idem_key=f"del_{campaign_id}")
+    return {"result": result.model_dump(mode="json")}
+
+
 @router.get("/campaigns/{campaign_id}")
 async def get_campaign(
     campaign_id: str, conversion_value_krw: int | None = None, target_roas: float | None = None
@@ -669,19 +749,44 @@ _DEMO_AD_ACCOUNT = "act_demo_001"
 class CreateCampaignRequest(BaseModel):
     name: str
     objective: Literal["traffic", "leads"] = "traffic"  # 트래픽(클릭) / 리드(잠재고객)
-    daily_budget_krw: int = Field(ge=1_000)
+    daily_budget_krw: int = Field(ge=2_000)  # Meta 최소 일예산 정책 (목표별 추가 검증은 핸들러)
     run_days: int = Field(ge=1, le=90)
     creative_ad_id: str | None = None
+    # Meta 타겟·정책 — 폼 입력(단일값) → CampaignConfig로 매핑.
+    special_ad_category: Literal[
+        "NONE", "HOUSING", "EMPLOYMENT", "CREDIT", "ISSUES_ELECTIONS_POLITICS"
+    ] = "NONE"
+    country: str = "KR"  # ISO2
+    age_min: int = Field(default=18, ge=18, le=65)  # Meta 최소 연령 18
+    age_max: int = Field(default=65, ge=18, le=65)
+    gender: Literal["all", "male", "female"] = "all"
+
+
+@router.get("/campaign-policy")
+async def campaign_policy():
+    """캠페인 생성 정책 — 최소 일예산(Meta 실시간)·특별광고카테고리·연령. 폼이 동적 검증에 사용."""
+    return await get_campaign_policy(build_reader(settings))
 
 
 @router.post("/campaigns/create-proposal")
 async def create_campaign_proposal(body: CreateCampaignRequest):
     """폼 입력 → CREATE_CAMPAIGN 제안(Tier 3) 패키징. 승인 후 /execute로 생성(기본 DRY_RUN)."""
+    # Meta 최소 일예산 정책 — Meta에서 실시간 조회(자동 최신화). 미달이면 광고세트 거부 전 차단.
+    policy = await get_campaign_policy(build_reader(settings))
+    min_budget = min_daily_budget_for(body.objective, policy)
+    if body.daily_budget_krw < min_budget:
+        raise HTTPException(
+            status_code=422,
+            detail=f"{body.objective} 캠페인의 최소 일예산은 ₩{min_budget:,}입니다 (Meta 정책).",
+        )
     now = datetime.now(UTC)
     # 실모드면 실제 광고계정(.env)으로, 데모면 데모 계정으로 패키징한다.
     ad_account = _DEMO_AD_ACCOUNT
     if not getattr(settings, "use_mock", True) and getattr(settings, "meta_ad_account_id", None):
         ad_account = settings.meta_ad_account_id
+    # 폼 단일값 → Meta 타겟 코드로 매핑.
+    genders = {"all": (), "male": (1,), "female": (2,)}[body.gender]
+    categories = () if body.special_ad_category == "NONE" else (body.special_ad_category,)
     config = CampaignConfig(
         campaign_id=f"camp_new_{uuid4().hex[:8]}",
         tenant_id=TENANT_ID,
@@ -692,6 +797,11 @@ async def create_campaign_proposal(body: CreateCampaignRequest):
         start_at=now,
         end_at=now + timedelta(days=body.run_days),
         creative_ad_id=body.creative_ad_id,
+        special_ad_categories=categories,
+        countries=(body.country,),
+        age_min=body.age_min,
+        age_max=body.age_max,
+        genders=genders,
     )
     proposal = finalize_proposal(
         ActionProposal(

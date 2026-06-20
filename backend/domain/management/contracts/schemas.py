@@ -67,6 +67,12 @@ class CampaignConfig(Contract):
     start_at: UtcDatetime
     end_at: UtcDatetime
     creative_ad_id: str | None = None  # core Ad 느슨 참조 (FK 없음)
+    # Meta 타겟·정책 — 광고세트 targeting + 캠페인 special_ad_categories로 매핑된다.
+    special_ad_categories: tuple[str, ...] = ()  # () | ("HOUSING",) | ("EMPLOYMENT",) 등
+    countries: tuple[str, ...] = ("KR",)  # geo_locations.countries (ISO2)
+    age_min: int = Field(default=18, ge=18, le=65)  # Meta 최소 연령 18
+    age_max: int = Field(default=65, ge=18, le=65)
+    genders: tuple[int, ...] = ()  # () = 전체, (1,) = 남성, (2,) = 여성 (Meta 코드)
     target_audience: dict[str, Any] = Field(default_factory=dict)
 
 

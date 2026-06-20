@@ -49,11 +49,17 @@ _AUTH_ERROR_CODES: frozenset[int] = frozenset({190, 102, 463, 467})
 class MetaApiError(RuntimeError):
     """Graph API 응답의 error 객체를 표준 예외로 변환 — 메시지에 토큰 미포함."""
 
-    def __init__(self, code: int | None, subcode: int | None, message: str) -> None:
+    def __init__(
+        self, code: int | None, subcode: int | None, message: str, user_msg: str | None = None
+    ) -> None:
         self.code = code
         self.subcode = subcode
         self.message = message
-        super().__init__(f"Meta API error (code={code}, subcode={subcode}): {message}")
+        self.user_msg = user_msg  # Meta error_user_msg — 어떤 파라미터가 왜 틀렸는지 사람용 설명
+        detail = f"Meta API error (code={code}, subcode={subcode}): {message}"
+        if user_msg:
+            detail += f" | {user_msg}"
+        super().__init__(detail)
 
     @property
     def is_rate_limited(self) -> bool:
@@ -106,6 +112,12 @@ class MetaClient:
             res = await client.post(f"{self._base}/{path}", data=body)
             return self._handle(res)
 
+    async def delete(self, path: str) -> dict[str, Any]:
+        """객체 삭제 (HTTP DELETE). 캠페인 삭제 시 자식 광고세트·광고도 함께 삭제됨."""
+        async with httpx.AsyncClient(timeout=self._timeout, transport=self._transport) as client:
+            res = await client.delete(f"{self._base}/{path}", params={"access_token": self._token})
+            return self._handle(res)
+
     @staticmethod
     def _handle(res: httpx.Response) -> dict[str, Any]:
         try:
@@ -118,7 +130,10 @@ class MetaClient:
         if isinstance(payload, dict) and "error" in payload:
             err = payload["error"]
             raise MetaApiError(
-                err.get("code"), err.get("error_subcode"), err.get("message", "unknown error")
+                err.get("code"),
+                err.get("error_subcode"),
+                err.get("message", "unknown error"),
+                err.get("error_user_msg") or err.get("error_user_title"),
             )
         res.raise_for_status()
         return payload

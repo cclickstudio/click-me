@@ -101,6 +101,9 @@ class FakeWriter:
         # 오케스트레이션은 executor 입장에선 단일 CREATE_CAMPAIGN 액션 — 기록 라벨 동일.
         return self._respond("CREATE_CAMPAIGN", config.campaign_id, idem_key)
 
+    async def delete_campaign(self, campaign_id: str, idem_key: str) -> ActionResult:
+        return self._respond("DELETE_CAMPAIGN", campaign_id, idem_key)
+
     async def expand_audience(self, campaign_id: str, idem_key: str) -> ActionResult:
         return self._respond("EXPAND_AUDIENCE", campaign_id, idem_key)
 

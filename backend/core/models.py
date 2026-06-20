@@ -555,3 +555,24 @@ class CampaignKpiOverride(Base):
     __table_args__ = (
         UniqueConstraint("organization_id", "campaign_id", name="uq_kpi_override_org_campaign"),
     )
+
+
+class CreatedCampaign(Base):
+    """앱에서 생성한 캠페인 누적 기록 — 무엇을 언제 어떤 설정으로 만들었는지 영속.
+
+    대시보드는 Meta에서 실시간 조회하지만, 이 표는 "우리가 만든 것"의 이력(삭제돼도 남음).
+    tenant_id는 FK 없이 문자열(데모 테넌트도 수용). meta_campaign_id는 LIVE 생성 시 채워진다.
+    """
+
+    __tablename__ = "created_campaigns"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    meta_campaign_id: Mapped[str | None] = mapped_column(String(64))  # LIVE 생성 시 Meta id
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    objective: Mapped[str] = mapped_column(String(20), nullable=False)  # traffic | leads
+    ad_account_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    daily_budget_krw: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)  # success | failed
+    execution_mode: Mapped[str] = mapped_column(String(20), nullable=False)  # live | validate_only…
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

@@ -12,6 +12,7 @@ create_campaign(신규 캠페인 생성, PR2)은 v1에서 PAUSED 상태 객체 �
 from __future__ import annotations
 
 import json
+import logging
 from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
@@ -26,6 +27,8 @@ from domain.management.adapters.meta.client import (
 )
 from domain.management.contracts.enums import ExecutionMode, FailureReason, ResultStatus
 from domain.management.contracts.schemas import ActionResult, CampaignConfig
+
+logger = logging.getLogger(__name__)
 
 #: 실제 Graph API 전송이 일어나는 모드 (DRY_RUN은 로컬 빌드만).
 _SENDING_MODES = (ExecutionMode.VALIDATE_ONLY, ExecutionMode.LIVE)
@@ -50,6 +53,12 @@ def _created_id(result: ActionResult) -> str | None:
     snap = result.platform_response_snapshot or {}
     resp = snap.get("meta_response")
     return resp.get("id") if isinstance(resp, dict) else None
+
+
+def _tag_campaign(result: ActionResult, cid: str) -> ActionResult:
+    """결과 스냅샷에 캠페인 Meta id를 실어, DB 적재가 꺼내 쓰게 한다(오케스트레이션 최종 결과용)."""
+    snap = {**(result.platform_response_snapshot or {}), "campaign_meta_id": cid}
+    return result.model_copy(update={"platform_response_snapshot": snap})
 
 
 class MetaAdsWriter:
@@ -125,7 +134,7 @@ class MetaAdsWriter:
                 "name": config.name or f"clickme-{config.campaign_id}",
                 "objective": _OBJECTIVE_MAP[config.objective],
                 "status": "PAUSED",
-                "special_ad_categories": "[]",
+                "special_ad_categories": json.dumps(list(config.special_ad_categories)),
                 # v21 필수 — 캠페인 예산 미사용 시 true/false 명시 (실 API 검증 2026-06-17).
                 # v1은 adset 레벨 예산이므로 false. 누락 시 code=100 sub=4834011.
                 "is_adset_budget_sharing_enabled": "false",
@@ -169,9 +178,14 @@ class MetaAdsWriter:
             "billing_event": "IMPRESSIONS",  # 노출당 과금(표준)
             "optimization_goal": _ADSET_OPTIMIZATION[config.objective],
             "bid_strategy": "LOWEST_COST_WITHOUT_CAP",  # 최저비용 자동입찰(상한 없음)
-            # 최소 타겟 — 국내 19~65세. 실제론 사용자 입력으로 확장(추후 Task).
+            # 타겟 — 폼에서 받은 위치·연령·성별(config). genders 비면 전체.
             "targeting": json.dumps(
-                {"geo_locations": {"countries": ["KR"]}, "age_min": 19, "age_max": 65}
+                {
+                    "geo_locations": {"countries": list(config.countries)},
+                    "age_min": config.age_min,
+                    "age_max": config.age_max,
+                    **({"genders": list(config.genders)} if config.genders else {}),
+                }
             ),
             "status": "PAUSED",  # 안전 — 생성 후 사람이 활성화(Task5)
             "start_time": config.start_at.isoformat(),
@@ -281,12 +295,13 @@ class MetaAdsWriter:
         if adset.status is not ResultStatus.SUCCESS or asid is None:
             return adset
         if config.objective != "leads":
-            return adset  # 트래픽은 폼 없이 광고세트까지(광고 소재는 후속)
+            return _tag_campaign(adset, cid)  # 트래픽은 광고세트까지(광고 소재는 후속)
         form = await self.create_lead_form(config, f"{idem_key}-form", page_id=page_id)
         fid = _created_id(form)
         if form.status is not ResultStatus.SUCCESS or fid is None:
             return form
-        return await self.create_ad(config, asid, f"{idem_key}-ad", page_id=page_id, form_id=fid)
+        ad = await self.create_ad(config, asid, f"{idem_key}-ad", page_id=page_id, form_id=fid)
+        return _tag_campaign(ad, cid)
 
     async def activate(self, object_id: str, idem_key: str) -> ActionResult:
         """객체(캠페인/광고세트/광고)를 ACTIVE로 — 게재·과금 시작 (Task5).
@@ -297,6 +312,34 @@ class MetaAdsWriter:
         """
         self._require_writable(idem_key)
         return await self._dispatch("activate", object_id, idem_key, {"status": "ACTIVE"})
+
+    async def delete_campaign(self, campaign_id: str, idem_key: str) -> ActionResult:
+        """캠페인 삭제 (HTTP DELETE) — 자식 광고세트·광고도 함께 삭제. 되돌릴 수 없음.
+
+        파괴적 작업이라 **LIVE에서만 실제 삭제**한다(VALIDATE_ONLY는 delete에 검증 플래그가
+        없어 진짜 지워지므로, 안전하게 LIVE 외 모드는 무동작 dry_run으로 본다).
+        """
+        self._require_writable(idem_key)
+        if self._mode is not ExecutionMode.LIVE or self._client is None:
+            return self._result("delete_campaign", campaign_id, idem_key, dry_run=True)
+        try:
+            response = await self._client.delete(campaign_id)
+        except httpx.TimeoutException:
+            return self._failure("delete_campaign", campaign_id, idem_key, FailureReason.TIMEOUT)
+        except MetaApiError as exc:
+            reason = (
+                FailureReason.RATE_LIMITED if exc.is_rate_limited else FailureReason.PLATFORM_ERROR
+            )
+            logger.warning("Meta 삭제 실패 [delete_campaign] code=%s: %s", exc.code, exc)
+            return self._failure("delete_campaign", campaign_id, idem_key, reason)
+        except httpx.HTTPError as exc:
+            logger.warning("Meta 삭제 HTTP 오류 [delete_campaign]: %s", type(exc).__name__)
+            return self._failure(
+                "delete_campaign", campaign_id, idem_key, FailureReason.PLATFORM_ERROR
+            )
+        return self._result(
+            "delete_campaign", campaign_id, idem_key, dry_run=False, response=response
+        )
 
     async def expand_audience(self, campaign_id: str, idem_key: str) -> ActionResult:
         """타겟 범위 확장 (에스컬레이션 1순위). v1은 adset targeting 확장 요청 빌드 수준.
@@ -362,8 +405,12 @@ class MetaAdsWriter:
             reason = (
                 FailureReason.RATE_LIMITED if exc.is_rate_limited else FailureReason.PLATFORM_ERROR
             )
+            # 진단용 서버 로그 — 어느 단계(operation)에서 Meta가 왜 거부했는지. exc 메시지엔
+            # 토큰 미포함(MetaApiError 설계). API 응답엔 여전히 reason만(마스킹 유지).
+            logger.warning("Meta 쓰기 실패 [%s] code=%s: %s", operation, exc.code, exc)
             return self._failure(operation, campaign_id, idem_key, reason, **detail)
-        except httpx.HTTPError:
+        except httpx.HTTPError as exc:
+            logger.warning("Meta 쓰기 HTTP 오류 [%s]: %s", operation, type(exc).__name__)
             return self._failure(
                 operation, campaign_id, idem_key, FailureReason.PLATFORM_ERROR, **detail
             )

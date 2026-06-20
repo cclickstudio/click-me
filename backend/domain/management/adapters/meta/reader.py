@@ -377,6 +377,15 @@ class MetaAdsReader:
             )
         return out
 
+    async def get_min_daily_budget(self) -> int:
+        """광고계정의 현재 최소 일예산(KRW)을 Meta에서 조회 — 정책 자동 최신화용.
+
+        코드에 박지 않고 실시간 조회해, Meta가 통화 최소예산 정책을 바꾸면 자동으로 따라간다.
+        """
+        account = normalize_ad_account(self._client.ad_account_id)
+        payload = await self._client.get(account, {"fields": "min_daily_budget"})
+        return _to_int(payload.get("min_daily_budget"))
+
     async def get_account_funding(self) -> AccountFunding:
         """광고계정 게재 가능 여부 — 선불 잔액 0(소진)·계정 비활성 감지.
 
