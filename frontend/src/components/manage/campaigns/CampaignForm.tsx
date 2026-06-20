@@ -3,6 +3,7 @@ import { useState } from 'react';
 
 export type CampaignFormValues = {
   name: string;
+  objective: 'traffic' | 'leads'; // 트래픽(클릭) / 리드(잠재고객 폼) — 리드라야 전환·ROAS 측정
   daily_budget_krw: number;
   run_days: number;
   creative_ad_id?: string;
@@ -29,6 +30,7 @@ export function CampaignForm({
   busy: boolean;
 }) {
   const [name, setName] = useState('');
+  const [objective, setObjective] = useState<'traffic' | 'leads'>('traffic');
   const [budget, setBudget] = useState(50_000);
   const [runDays, setRunDays] = useState(7);
   const [creativeId, setCreativeId] = useState('');
@@ -42,6 +44,7 @@ export function CampaignForm({
         if (valid && !busy)
           onSubmit({
             name: name.trim(),
+            objective,
             daily_budget_krw: budget,
             run_days: runDays,
             creative_ad_id: creativeId.trim() || undefined,
@@ -74,8 +77,15 @@ export function CampaignForm({
           />
         </Field>
       </div>
-      <Field label="목표">
-        <div className={`${inputCls} text-[#8B95A1] cursor-not-allowed`}>트래픽 (클릭) · v1 고정</div>
+      <Field label="목표" hint="리드는 잠재고객 폼(즉석 양식)으로 전환·ROAS 측정이 가능">
+        <select
+          className={inputCls}
+          value={objective}
+          onChange={(e) => setObjective(e.target.value as 'traffic' | 'leads')}
+        >
+          <option value="traffic">트래픽 (클릭)</option>
+          <option value="leads">리드 (잠재고객 폼)</option>
+        </select>
       </Field>
       <Field label="소재 ID (선택)" hint="기존 광고 소재를 연결할 경우">
         <input className={inputCls} value={creativeId} onChange={(e) => setCreativeId(e.target.value)} placeholder="ad_xxxxx" />

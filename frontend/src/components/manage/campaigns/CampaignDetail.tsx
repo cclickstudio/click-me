@@ -4,10 +4,12 @@
 import dynamic from 'next/dynamic';
 import { useState } from 'react';
 import type {
+  AccountWallet,
   CampaignDetail as Detail,
   CampaignSource,
   CreativePreview,
   DemographicMetrics,
+  ManualKpi,
   PlatformMetrics,
 } from './types';
 import { fmtCvr, fmtRoas } from './types';
@@ -63,7 +65,7 @@ function PacingRing({ pct }: { pct: number }) {
 function Tile({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] px-3 py-2.5">
-      <p className="text-[11px] text-[#8B95A1]">{label}</p>
+      <p className="text-[12px] text-[#8B95A1]">{label}</p>
       <p className="text-base font-bold text-[#191F28] dark:text-[#F2F4F6] tabular-nums mt-0.5">{value}</p>
     </div>
   );
@@ -75,6 +77,9 @@ export function CampaignDetail({
   platforms = [],
   demographics = [],
   creatives = [],
+  account,
+  manualKpi,
+  endedAt,
   blockReason,
 }: {
   detail: Detail;
@@ -82,10 +87,26 @@ export function CampaignDetail({
   platforms?: PlatformMetrics[];
   demographics?: DemographicMetrics[];
   creatives?: CreativePreview[];
+  account?: AccountWallet | null;
+  manualKpi?: ManualKpi;
+  endedAt?: string | null;
   blockReason?: string | null;
 }) {
   const s = detail.summary;
   const live = source === 'live';
+  // 종료/중단 사유 — 데이터(상태·종료일·잔액)로 조립. 충전해도 재개 안 되는 경우 구분.
+  const endReason = (() => {
+    if (detail.state !== 'ended') return null;
+    const parts: string[] = [];
+    if (endedAt) {
+      const d = new Date(endedAt);
+      if (!Number.isNaN(d.getTime())) parts.push(`게재 기간 종료(${d.getMonth() + 1}/${d.getDate()})`);
+    }
+    if ((account?.available_balance_krw ?? null) === 0 && (account?.amount_spent_krw ?? 0) > 0) {
+      parts.push('충전 잔액 소진(₩0)');
+    }
+    return parts.length ? parts.join(' · ') : null;
+  })();
   // 분해 탭 — 데이터 있는 것만 노출(둘 다 없으면 섹션 자체 숨김)
   const breakdownTabs = [
     { key: 'demographics' as const, label: '인구통계학적 특성', has: demographics.length > 0 },
@@ -104,10 +125,18 @@ export function CampaignDetail({
         <StateBadge state={detail.state} />
       </div>
       <DeliveryChart series={detail.series} dailyBudget={detail.daily_budget_krw} />
-      <p className="mt-1 text-[11px] text-[#8B95A1]">
-        {live ? '실 캠페인' : '데모'} · 전체 기간 일자별 지출(막대)과 일예산(점선).
+      <p className="mt-1 text-[12px] text-[#8B95A1]">
+        {live ? '실 캠페인' : '데모'} · 전체 기간 일자별 지출(막대)과 일일예산(점선).
         {blockReason ? ' 현재 게재 중단 — 선불 잔액 부족.' : ''}
       </p>
+      {endReason && (
+        <p className="mt-2 rounded-lg bg-[#F2F4F6] px-3 py-2 text-[12px] text-[#4E5968] dark:bg-[#2D3748] dark:text-[#C9CED6]">
+          <span className="font-semibold">종료 사유</span> · {endReason}
+          <span className="ml-1 text-[#8B95A1]">
+            (일일예산은 하루 상한이라 미사용분은 이월되지 않습니다)
+          </span>
+        </p>
+      )}
 
       {/* 전달 → 효율 → 전환·예산 순, 4×3 정렬 */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 mt-4">
@@ -119,15 +148,27 @@ export function CampaignDetail({
         <Tile label="CPC(클릭당비용)" value={`₩${s.cpc_krw.toLocaleString()}`} />
         <Tile label="CPM(노출당비용)" value={`₩${s.cpm_krw.toLocaleString()}`} />
         <Tile label="빈도" value={s.frequency.toFixed(2)} />
-        <Tile label="CVR(전환율)" value={fmtCvr(s.cvr, s.conversions)} />
-        <Tile label="ROAS(투자수익률)" value={fmtRoas(s.roas, s.conversions, s.roas_estimated)} />
-        <Tile label="일예산" value={`₩${detail.daily_budget_krw.toLocaleString()}`} />
+        <Tile
+          label="CVR(전환율)"
+          value={manualKpi?.cvr != null ? `${manualKpi.cvr}% (추정)` : fmtCvr(s.cvr, s.conversions)}
+        />
+        <Tile
+          label="ROAS(투자수익률)"
+          value={
+            manualKpi?.roas != null
+              ? `${manualKpi.roas}x (추정)`
+              : fmtRoas(s.roas, s.conversions, s.roas_estimated)
+          }
+        />
+        <Tile label="일일예산(하루 상한)" value={`₩${detail.daily_budget_krw.toLocaleString()}`} />
         <div className="flex items-center gap-2.5 rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] px-3 py-2.5">
-          <PacingRing pct={s.pacing_pct} />
+          <PacingRing pct={detail.state === 'ended' ? 0 : s.pacing_pct} />
           <div>
-            <p className="text-[11px] text-[#8B95A1]">일예산 대비</p>
+            <p className="text-[12px] text-[#8B95A1]">
+              {detail.state === 'ended' ? '게재' : '일예산 대비'}
+            </p>
             <p className="text-base font-bold text-[#191F28] dark:text-[#F2F4F6] tabular-nums mt-0.5">
-              {s.pacing_pct.toFixed(0)}%
+              {detail.state === 'ended' ? '종료' : `${s.pacing_pct.toFixed(0)}%`}
             </p>
           </div>
         </div>

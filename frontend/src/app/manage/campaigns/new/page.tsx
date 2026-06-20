@@ -93,8 +93,8 @@ export default function Page() {
                   <h2 className="font-bold text-[#191F28] dark:text-[#F2F4F6]">캠페인 생성됨 (PAUSED)</h2>
                 </div>
                 <p className="text-sm text-[#8B95A1]">
-                  안전을 위해 <b>PAUSED 상태</b>로 생성됩니다 · 기본 DRY_RUN이라 Meta에 미전송된 데모 ·
-                  실제 게재는 사람이 Ads Manager에서 직접 켜야 시작됩니다.
+                  안전을 위해 <b>PAUSED 상태</b>로 생성됩니다 · 실행 모드에 따라 검증(validate)·실생성(live) ·
+                  실제 게재(과금)는 사람이 Ads Manager에서 직접 켜야 시작됩니다.
                 </p>
               </>
             ) : (

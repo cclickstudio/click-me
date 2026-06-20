@@ -7,12 +7,14 @@ import { api } from '@/lib/api';
 import { CampaignTable } from '@/components/manage/campaigns/CampaignTable';
 import { CampaignCards } from '@/components/manage/campaigns/CampaignCards';
 import type {
+  AccountWallet,
   CampaignDetail as Detail,
   CampaignSource,
   CampaignSummary,
   CampaignView,
   CreativePreview,
   DemographicMetrics,
+  ManualKpiMap,
   PlatformMetrics,
 } from '@/components/manage/campaigns/types';
 
@@ -31,16 +33,44 @@ export default function Page() {
   const [accountBlock, setAccountBlock] = useState<string | null>(null);
   const [blockDetailOpen, setBlockDetailOpen] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null); // Meta 토큰 만료 안내
-  // 전환 1건 가치(₩) — 입력 시 구매 외 전환의 추정 ROAS를 백엔드가 채운다. localStorage 유지.
-  const [convValue, setConvValue] = useState<number | null>(null);
-  const [convInput, setConvInput] = useState('');
+  const [account, setAccount] = useState<AccountWallet | null>(null); // 계정 지갑(잔액·한도·지출)
+  // 수동 입력 CVR·ROAS — 전환 추적 전(0.0%/0.00x)인 캠페인에 고객이 직접 넣는 '추정'값.
+  // 조직 단위로 DB(/management/kpi-overrides)에 영속 — 기기·팀원 간 공유(스펙 #2).
+  const [manualKpi, setManualKpi] = useState<ManualKpiMap>({});
 
+  // 마운트 시 조직의 저장된 수동 KPI 로드. 미인증·조직없음이면 빈 값(화면은 정상).
   useEffect(() => {
-    const saved = localStorage.getItem('clickme.conversionValueKrw');
-    if (saved) {
-      setConvValue(Number(saved) || null);
-      setConvInput(saved);
-    }
+    let alive = true;
+    api.management
+      .kpiOverrides()
+      .then((r) => {
+        if (alive) setManualKpi(r.overrides ?? {});
+      })
+      .catch(() => {
+        /* 미인증 등 — 무시(수동값 없이 표시) */
+      });
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  // 셀 직접 입력 → 낙관적 상태 갱신 + DB 저장(PUT). 빈 값이면 해당 필드 제거(둘 다 비면 행 삭제).
+  const editKpi = useCallback((id: string, field: 'cvr' | 'roas', raw: string) => {
+    setManualKpi((prev) => {
+      const v = raw.trim() === '' ? undefined : Number(raw);
+      const entry = { ...prev[id] };
+      if (v == null || !Number.isFinite(v)) delete entry[field];
+      else entry[field] = v;
+      const next = { ...prev, [id]: entry };
+      if (Object.keys(entry).length === 0) delete next[id];
+      // 서버에 두 필드 모두 전송(업서트) — 백엔드가 둘 다 null이면 행 삭제
+      api.management
+        .putKpiOverride(id, { cvr: entry.cvr ?? null, roas: entry.roas ?? null })
+        .catch(() => {
+          /* 저장 실패는 조용히 — 다음 입력에서 재시도 */
+        });
+      return next;
+    });
   }, []);
 
   // silent=true면 폴링 갱신 — 로딩 스피너 없이 값만 교체.
@@ -48,18 +78,19 @@ export default function Page() {
     if (!silent) setBusy(true);
     setError(null);
     try {
-      const r = await api.management.campaigns(convValue);
+      const r = await api.management.campaigns();
       setCampaigns(r.campaigns);
       setSource(r.source ?? 'mock');
       setAccountBlock(r.account_block_reason ?? null);
       setAuthError(r.auth_error ?? null);
+      setAccount(r.account ?? null);
       setLastUpdated(new Date().toLocaleTimeString('ko-KR'));
     } catch (e) {
       setError(e instanceof Error ? e.message : '불러오기 실패');
     } finally {
       if (!silent) setBusy(false);
     }
-  }, [convValue]);
+  }, []);
 
   useEffect(() => {
     load();
@@ -88,7 +119,7 @@ export default function Page() {
     const pending = inflight.current.get(id);
     if (pending) return pending; // 호버로 시작한 요청을 클릭이 이어받음(중복 호출 0)
     const promise = Promise.all([
-      api.management.campaign(id, convValue),
+      api.management.campaign(id),
       api.management.campaignPlatforms(id),
       api.management.campaignDemographics(id),
       api.management.campaignCreatives(id),
@@ -110,20 +141,7 @@ export default function Page() {
       });
     inflight.current.set(id, promise);
     return promise;
-  }, [convValue]);
-
-  // 전환 가치가 바뀌면 캐시된 상세는 옛 ROAS라 비운다 → 선택 상세가 새 값으로 재조회된다.
-  useEffect(() => {
-    detailCache.current.clear();
-    inflight.current.clear();
-  }, [convValue]);
-
-  const applyConvValue = () => {
-    const v = convInput ? Number(convInput) : null;
-    setConvValue(v && Number.isFinite(v) ? v : null);
-    if (v) localStorage.setItem('clickme.conversionValueKrw', String(v));
-    else localStorage.removeItem('clickme.conversionValueKrw');
-  };
+  }, []);
 
   // 행/카드에 마우스 올리면 미리 가져옴 → 토글 누를 땐 이미 준비됨(체감 즉시).
   const prefetch = useCallback(
@@ -200,30 +218,10 @@ export default function Page() {
           </div>
           <div className="flex items-center gap-2">
             {source === 'live' && (
-              <label
-                className="flex items-center gap-1 text-[11px] text-[#8B95A1]"
-                title="전환 1건 가치(₩) — 입력하면 구매 외 전환(리드·가입 등)의 추정 ROAS를 계산합니다"
-              >
-                전환가치
-                <input
-                  type="number"
-                  min={0}
-                  step={1000}
-                  inputMode="numeric"
-                  value={convInput}
-                  onChange={(e) => setConvInput(e.target.value)}
-                  onBlur={applyConvValue}
-                  onKeyDown={(e) => e.key === 'Enter' && applyConvValue()}
-                  placeholder="₩/건"
-                  className="w-20 rounded border border-[#E5E8EB] dark:border-[#2D3748] bg-transparent px-1.5 py-1 text-right tabular-nums text-[#191F28] dark:text-[#F2F4F6]"
-                />
-              </label>
-            )}
-            {source === 'live' && (
               <button
                 onClick={() => load(true)}
                 title="새로고침"
-                className="flex items-center gap-1.5 text-[11px] text-[#8B95A1] hover:text-[#191F28] dark:hover:text-[#F2F4F6] px-2 py-1.5"
+                className="flex items-center gap-1.5 text-[12px] text-[#8B95A1] hover:text-[#191F28] dark:hover:text-[#F2F4F6] px-2 py-1.5"
               >
                 <span className="inline-block w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
                 {lastUpdated ? `갱신 ${lastUpdated}` : '실시간'} ↻
@@ -299,6 +297,50 @@ export default function Page() {
           </p>
         )}
 
+        {/* 계정 지갑 — 일일예산(하루 상한)과 다른 '실제 충전·지출·잔액' (부가세 별도). 전환가치·목표ROAS 입력 동거. */}
+        {source === 'live' && account && (
+          <div className="mb-4 rounded-xl border border-[#E5E8EB] bg-white px-4 py-3.5 dark:border-[#2D3748] dark:bg-[#1A1F28]">
+            <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
+              <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+                <span className="text-[14px] font-semibold text-[#4E5968] dark:text-[#9CA3AF]">
+                  계정 지갑
+                </span>
+                <span className="text-[15px] text-[#191F28] dark:text-[#F2F4F6]">
+                  사용 가능 잔액{' '}
+                  <b className="tabular-nums">
+                    ₩{(account.available_balance_krw ?? 0).toLocaleString()}
+                  </b>
+                </span>
+                <span className="text-[15px] text-[#191F28] dark:text-[#F2F4F6]">
+                  누적 지출{' '}
+                  <b className="tabular-nums">
+                    ₩{(account.amount_spent_krw ?? 0).toLocaleString()}
+                  </b>
+                </span>
+                {account.spend_cap_krw != null && account.spend_cap_krw > 0 && (
+                  <span className="text-[15px] text-[#191F28] dark:text-[#F2F4F6]">
+                    충전 한도{' '}
+                    <b className="tabular-nums">₩{account.spend_cap_krw.toLocaleString()}</b>
+                    <span className="ml-1 text-[#8B95A1]">
+                      (
+                      {Math.round(((account.amount_spent_krw ?? 0) / account.spend_cap_krw) * 100)}%
+                      소진)
+                    </span>
+                  </span>
+                )}
+              </div>
+            </div>
+            <p className="mt-2 text-[13px] text-[#8B95A1]">
+              일일예산은 “하루 상한”일 뿐, 실제 돈은 위 잔액입니다. 충전액은 광고비 + 부가세 10%
+              (예: 광고로 ₩10,000 쓰려면 ₩11,000 충전).
+            </p>
+            <p className="mt-1 text-[13px] text-[#8B95A1]">
+              <b>CVR(전환율)</b> = 전환수 ÷ 클릭수 · <b>ROAS(투자수익률)</b> = 전환가치 × 전환수 ÷
+              지출. 전환 추적 전이면 표의 CVR·ROAS 셀에 직접 입력할 수 있어요(추정값).
+            </p>
+          </div>
+        )}
+
         {!busy && !error && campaigns.length > 0 && (
           <div className="space-y-4">
             {view === 'table' ? (
@@ -311,6 +353,9 @@ export default function Page() {
                 platforms={platforms}
                 demographics={demographics}
                 creatives={creatives}
+                account={account}
+                manualKpi={manualKpi}
+                onEditKpi={editKpi}
                 source={source}
               />
             ) : (
@@ -323,13 +368,15 @@ export default function Page() {
                 platforms={platforms}
                 demographics={demographics}
                 creatives={creatives}
+                account={account}
+                manualKpi={manualKpi}
                 source={source}
               />
             )}
           </div>
         )}
 
-        <p className="mt-6 text-[11px] text-[#B0B8C1]">
+        <p className="mt-6 text-[12px] text-[#B0B8C1]">
           {source === 'live'
             ? '실데이터 · Meta 라이브(전체 기간 누적) · CVR은 전환(구매·리드·가입 등) 발생 시 · ROAS는 전환가치 입력 시 추정 · 금액 KRW'
             : '⚠ Mock 기반 데모 · 노출/지출은 일중 곡선 모델 기반 · "예측 CTR" 등 실측 환산 없음 · 금액 KRW'}

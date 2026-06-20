@@ -1,6 +1,6 @@
 import { getToken } from "./authApi";
 import type { BoardResponse } from "@/components/manage/compare/types";
-import type { CampaignDetail, CampaignsResponse, CreativesResponse, DemographicsResponse, PlatformsResponse } from "@/components/manage/campaigns/types";
+import type { CampaignDetail, CampaignsResponse, CreativesResponse, DemographicsResponse, ManualKpiMap, PlatformsResponse } from "@/components/manage/campaigns/types";
 import type { Proposal } from "@/components/manage/types";
 import type { BudgetStatus } from "@/components/manage/budget/types";
 import type {
@@ -55,6 +55,15 @@ function buildSimForm(input: SimRunInput): FormData {
   if (input.ad_objective) form.append("ad_objective", input.ad_objective);
   if (input.service_class != null) form.append("service_class", String(input.service_class));
   return form;
+}
+
+// 캠페인 조회 쿼리스트링 — 전환가치·목표 ROAS는 입력됐을 때만 붙인다.
+function _campaignQuery(conversionValueKrw?: number | null, targetRoas?: number | null): string {
+  const p = new URLSearchParams();
+  if (conversionValueKrw) p.set("conversion_value_krw", String(conversionValueKrw));
+  if (targetRoas) p.set("target_roas", String(targetRoas));
+  const q = p.toString();
+  return q ? `?${q}` : "";
 }
 
 export const api = {
@@ -301,14 +310,14 @@ export const api = {
     // 멀티테넌트 — 로그인 org로 Meta OAuth 로그인 URL을 받는다(인증 XHR). 프론트가 그 URL로 이동.
     connectMeta: () => request<{ login_url: string; state: string }>("/management/meta/connect"),
     compareBoard: () => request<BoardResponse>("/management/compare/board"),
-    // conversionValueKrw(전환 1건 가치) 전달 시 구매 외 전환의 추정 ROAS가 채워진다.
-    campaigns: (conversionValueKrw?: number | null) =>
+    // conversionValueKrw(전환 가치)→추정 ROAS, targetRoas(목표)→목표 미달 판정.
+    campaigns: (conversionValueKrw?: number | null, targetRoas?: number | null) =>
       request<CampaignsResponse>(
-        `/management/campaigns${conversionValueKrw ? `?conversion_value_krw=${conversionValueKrw}` : ""}`,
+        `/management/campaigns${_campaignQuery(conversionValueKrw, targetRoas)}`,
       ),
-    campaign: (id: string, conversionValueKrw?: number | null) =>
+    campaign: (id: string, conversionValueKrw?: number | null, targetRoas?: number | null) =>
       request<CampaignDetail>(
-        `/management/campaigns/${id}${conversionValueKrw ? `?conversion_value_krw=${conversionValueKrw}` : ""}`,
+        `/management/campaigns/${id}${_campaignQuery(conversionValueKrw, targetRoas)}`,
       ),
     campaignPlatforms: (id: string) =>
       request<PlatformsResponse>(`/management/campaigns/${id}/platforms`),
@@ -316,8 +325,17 @@ export const api = {
       request<DemographicsResponse>(`/management/campaigns/${id}/demographics`),
     campaignCreatives: (id: string) =>
       request<CreativesResponse>(`/management/campaigns/${id}/creatives`),
+    // 수동 KPI(추정 CVR·ROAS) — 조직 단위 DB 영속
+    kpiOverrides: () =>
+      request<{ overrides: ManualKpiMap }>(`/management/kpi-overrides`),
+    putKpiOverride: (id: string, body: { cvr: number | null; roas: number | null }) =>
+      request<{ campaign_id: string; cvr: number | null; roas: number | null }>(
+        `/management/campaigns/${id}/kpi-override`,
+        { method: "PUT", body: JSON.stringify(body) },
+      ),
     createCampaignProposal: (body: {
       name: string;
+      objective?: 'traffic' | 'leads'; // 리드면 잠재고객 폼까지 생성(전환·ROAS 측정용)
       daily_budget_krw: number;
       run_days: number;
       creative_ad_id?: string;
