@@ -9,7 +9,6 @@ import type {
   CampaignSource,
   CreativePreview,
   DemographicMetrics,
-  ManualKpi,
   PlatformMetrics,
 } from './types';
 import { fmtCvr, fmtRoas } from './types';
@@ -78,7 +77,6 @@ export function CampaignDetail({
   demographics = [],
   creatives = [],
   account,
-  manualKpi,
   endedAt,
   blockReason,
   onDelete,
@@ -89,7 +87,6 @@ export function CampaignDetail({
   demographics?: DemographicMetrics[];
   creatives?: CreativePreview[];
   account?: AccountWallet | null;
-  manualKpi?: ManualKpi;
   endedAt?: string | null;
   blockReason?: string | null;
   onDelete?: (id: string, name: string) => void;
@@ -161,16 +158,11 @@ export function CampaignDetail({
         <Tile label="CPC(클릭당비용)" value={`₩${s.cpc_krw.toLocaleString()}`} />
         <Tile label="CPM(노출당비용)" value={`₩${s.cpm_krw.toLocaleString()}`} />
         <Tile label="빈도" value={s.frequency.toFixed(2)} />
-        <Tile
-          label="CVR(전환율)"
-          value={manualKpi?.cvr != null ? `${manualKpi.cvr}% (추정)` : fmtCvr(s.cvr, s.conversions)}
-        />
+        <Tile label="CVR(전환율)" value={fmtCvr(s.cvr, s.conversions)} />
         <Tile
           label="ROAS(투자수익률)"
           value={
-            manualKpi?.roas != null
-              ? `${manualKpi.roas}x (추정)`
-              : fmtRoas(s.roas, s.conversions, s.roas_estimated)
+            fmtRoas(s.roas, s.conversions, s.roas_estimated) + (s.target_missed ? ' · 목표↓' : '')
           }
         />
         <Tile label="일일예산(하루 상한)" value={`₩${detail.daily_budget_krw.toLocaleString()}`} />

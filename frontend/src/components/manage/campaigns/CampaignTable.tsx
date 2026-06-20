@@ -7,12 +7,11 @@ import type {
   CampaignSummary,
   CreativePreview,
   DemographicMetrics,
-  ManualKpiMap,
   PlatformMetrics,
 } from './types';
+import { fmtCvr, fmtRoas } from './types';
 import { StateBadge } from './StateBadge';
 import { CampaignDetail } from './CampaignDetail';
-import { KpiInput } from './KpiInput';
 
 export function CampaignTable({
   campaigns,
@@ -25,8 +24,6 @@ export function CampaignTable({
   demographics,
   creatives,
   account,
-  manualKpi,
-  onEditKpi,
   source,
 }: {
   campaigns: CampaignSummary[];
@@ -39,8 +36,6 @@ export function CampaignTable({
   demographics?: DemographicMetrics[];
   creatives?: CreativePreview[];
   account?: AccountWallet | null;
-  manualKpi?: ManualKpiMap;
-  onEditKpi?: (id: string, field: 'cvr' | 'roas', raw: string) => void;
   source?: CampaignSource;
 }) {
   return (
@@ -114,21 +109,18 @@ export function CampaignTable({
               <td className="px-3 py-3 text-right tabular-nums text-[#191F28] dark:text-[#F2F4F6] hidden lg:table-cell">
                 ₩{c.cpm_krw.toLocaleString()}
               </td>
-              <td className="px-3 py-3 text-right hidden lg:table-cell">
-                <KpiInput
-                  manual={manualKpi?.[c.campaign_id]?.cvr}
-                  measured={c.conversions == null ? null : (c.cvr ?? 0) * 100}
-                  unit="%"
-                  onCommit={(raw) => onEditKpi?.(c.campaign_id, 'cvr', raw)}
-                />
+              <td className="px-3 py-3 text-right tabular-nums text-[#191F28] dark:text-[#F2F4F6] hidden lg:table-cell">
+                {fmtCvr(c.cvr, c.conversions)}
               </td>
-              <td className="px-3 py-3 text-right hidden lg:table-cell">
-                <KpiInput
-                  manual={manualKpi?.[c.campaign_id]?.roas}
-                  measured={c.conversions == null ? null : (c.roas ?? 0)}
-                  unit="x"
-                  onCommit={(raw) => onEditKpi?.(c.campaign_id, 'roas', raw)}
-                />
+              <td className="px-3 py-3 text-right tabular-nums hidden lg:table-cell">
+                <span className="inline-flex items-center justify-end gap-1">
+                  <span className="text-[#191F28] dark:text-[#F2F4F6]">
+                    {fmtRoas(c.roas, c.conversions, c.roas_estimated)}
+                  </span>
+                  {c.target_missed && (
+                    <span className="text-[10px] font-medium text-red-500">목표↓</span>
+                  )}
+                </span>
               </td>
               <td className="px-4 py-3 text-right">
                 {c.state === 'ended' ? (
@@ -193,7 +185,6 @@ export function CampaignTable({
                       demographics={demographics}
                       creatives={creatives}
                       account={account}
-                      manualKpi={manualKpi?.[c.campaign_id]}
                       endedAt={c.ended_at}
                       blockReason={c.block_reason}
                       onDelete={onDelete}

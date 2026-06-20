@@ -14,7 +14,6 @@ import type {
   CampaignView,
   CreativePreview,
   DemographicMetrics,
-  ManualKpiMap,
   PlatformMetrics,
 } from '@/components/manage/campaigns/types';
 
@@ -34,51 +33,17 @@ export default function Page() {
   const [blockDetailOpen, setBlockDetailOpen] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null); // Meta 토큰 만료 안내
   const [account, setAccount] = useState<AccountWallet | null>(null); // 계정 지갑(잔액·한도·지출)
-  // 수동 입력 CVR·ROAS — 전환 추적 전(0.0%/0.00x)인 캠페인에 고객이 직접 넣는 '추정'값.
-  // 조직 단위로 DB(/management/kpi-overrides)에 영속 — 기기·팀원 간 공유(스펙 #2).
-  const [manualKpi, setManualKpi] = useState<ManualKpiMap>({});
-
-  // 마운트 시 조직의 저장된 수동 KPI 로드. 미인증·조직없음이면 빈 값(화면은 정상).
-  useEffect(() => {
-    let alive = true;
-    api.management
-      .kpiOverrides()
-      .then((r) => {
-        if (alive) setManualKpi(r.overrides ?? {});
-      })
-      .catch(() => {
-        /* 미인증 등 — 무시(수동값 없이 표시) */
-      });
-    return () => {
-      alive = false;
-    };
-  }, []);
-
-  // 셀 직접 입력 → 낙관적 상태 갱신 + DB 저장(PUT). 빈 값이면 해당 필드 제거(둘 다 비면 행 삭제).
-  const editKpi = useCallback((id: string, field: 'cvr' | 'roas', raw: string) => {
-    setManualKpi((prev) => {
-      const v = raw.trim() === '' ? undefined : Number(raw);
-      const entry = { ...prev[id] };
-      if (v == null || !Number.isFinite(v)) delete entry[field];
-      else entry[field] = v;
-      const next = { ...prev, [id]: entry };
-      if (Object.keys(entry).length === 0) delete next[id];
-      // 서버에 두 필드 모두 전송(업서트) — 백엔드가 둘 다 null이면 행 삭제
-      api.management
-        .putKpiOverride(id, { cvr: entry.cvr ?? null, roas: entry.roas ?? null })
-        .catch(() => {
-          /* 저장 실패는 조용히 — 다음 입력에서 재시도 */
-        });
-      return next;
-    });
-  }, []);
+  // 전환 1건 가치(₩)·목표 ROAS — 고객이 입력하는 사업 통계. CVR·ROAS는 이 값으로 '계산'된다
+  // (직접 입력 아님 — CVR=전환÷클릭 실측, ROAS=(전환×가치)÷지출 추정). 스펙: CVR·ROAS 재정의.
+  const [convValue, setConvValue] = useState<number | null>(null);
+  const [targetRoas, setTargetRoas] = useState<number | null>(null);
 
   // silent=true면 폴링 갱신 — 로딩 스피너 없이 값만 교체.
   const load = useCallback(async (silent = false) => {
     if (!silent) setBusy(true);
     setError(null);
     try {
-      const r = await api.management.campaigns();
+      const r = await api.management.campaigns(convValue, targetRoas);
       setCampaigns(r.campaigns);
       setSource(r.source ?? 'mock');
       setAccountBlock(r.account_block_reason ?? null);
@@ -90,7 +55,7 @@ export default function Page() {
     } finally {
       if (!silent) setBusy(false);
     }
-  }, []);
+  }, [convValue, targetRoas]);
 
   useEffect(() => {
     load();
@@ -356,14 +321,55 @@ export default function Page() {
               (예: 광고로 ₩10,000 쓰려면 ₩11,000 충전).
             </p>
             <p className="mt-1 text-[13px] text-[#8B95A1]">
-              <b>CVR(전환율)</b> = 전환수 ÷ 클릭수 · <b>ROAS(투자수익률)</b> = 전환가치 × 전환수 ÷
-              지출. 전환 추적 전이면 표의 CVR·ROAS 셀에 직접 입력할 수 있어요(추정값).
+              <b>CVR(전환율)</b> = 전환수 ÷ 클릭수(실측) · <b>ROAS(투자수익률)</b> = 전환가치 × 전환수
+              ÷ 지출(추정). CVR·ROAS는 <b>계산 결과</b>이고, 입력은 아래 <b>전환 1건 가치</b>·
+              <b>목표 ROAS</b>뿐이에요.
             </p>
           </div>
         )}
 
         {!busy && !error && campaigns.length > 0 && (
           <div className="space-y-4">
+            {/* 입력은 둘뿐 — CVR·ROAS는 이 값으로 계산되는 결과(직접 입력 아님) */}
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] px-4 py-3">
+              <label className="flex items-center gap-2 text-sm text-[#4E5968] dark:text-[#9CA3AF]">
+                전환 1건 가치
+                <span className="inline-flex items-center">
+                  <span className="text-[#8B95A1]">₩</span>
+                  <input
+                    type="number"
+                    min={0}
+                    step={1000}
+                    placeholder="예: 30000"
+                    value={convValue ?? ''}
+                    onChange={(e) =>
+                      setConvValue(e.target.value === '' ? null : Number(e.target.value))
+                    }
+                    className="ml-1 w-28 rounded-lg border border-[#E5E8EB] dark:border-[#2D3748] bg-transparent px-2 py-1 text-right text-sm tabular-nums text-[#191F28] dark:text-[#F2F4F6] focus:border-[#3182F6] outline-none"
+                  />
+                </span>
+              </label>
+              <label className="flex items-center gap-2 text-sm text-[#4E5968] dark:text-[#9CA3AF]">
+                목표 ROAS
+                <span className="inline-flex items-center">
+                  <input
+                    type="number"
+                    min={0}
+                    step={0.1}
+                    placeholder="예: 3.0"
+                    value={targetRoas ?? ''}
+                    onChange={(e) =>
+                      setTargetRoas(e.target.value === '' ? null : Number(e.target.value))
+                    }
+                    className="w-20 rounded-lg border border-[#E5E8EB] dark:border-[#2D3748] bg-transparent px-2 py-1 text-right text-sm tabular-nums text-[#191F28] dark:text-[#F2F4F6] focus:border-[#3182F6] outline-none"
+                  />
+                  <span className="ml-0.5 text-[#8B95A1]">x</span>
+                </span>
+              </label>
+              <span className="text-[12px] text-[#8B95A1]">
+                전환 가치 입력 시 ROAS(추정)가 채워지고, 목표 미달이면 표에 ‘목표↓’로 표시돼요.
+              </span>
+            </div>
             {view === 'table' ? (
               <CampaignTable
                 campaigns={campaigns}
@@ -376,8 +382,6 @@ export default function Page() {
                 demographics={demographics}
                 creatives={creatives}
                 account={account}
-                manualKpi={manualKpi}
-                onEditKpi={editKpi}
                 source={source}
               />
             ) : (
@@ -392,7 +396,6 @@ export default function Page() {
                 demographics={demographics}
                 creatives={creatives}
                 account={account}
-                manualKpi={manualKpi}
                 source={source}
               />
             )}
