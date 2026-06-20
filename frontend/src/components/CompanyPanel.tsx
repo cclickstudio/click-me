@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useProjects } from './ProjectContext';
+import { useProjects, type SimRow } from './ProjectContext';
 import TrashSection from './TrashSection';
 import { getToken } from '@/lib/authApi';
 
@@ -33,7 +33,6 @@ function ChevronIcon({ open }: { open: boolean }) {
   );
 }
 
-type SimRow = { id: string; status: string; sample_size: number; created_by_name: string | null; created_at: string };
 type GenRow = { id: string; status: string; product_name: string | null; created_by_name: string | null; created_at: string };
 
 // ── 프로젝트 아이템 ──────────────────────────────────────────────
@@ -116,7 +115,7 @@ function ProjectItem({
                     return (
                       <Link
                         key={s.id}
-                        href={`/simulations/${s.id}`}
+                        href={`/simulation/${s.id}`}
                         className={`flex items-center gap-1.5 px-2 py-1 rounded-md transition-colors group ${
                           isActive ? 'bg-[#EBF3FF] dark:bg-[#1E3A5F]' : 'hover:bg-[#EBF3FF] dark:hover:bg-[#1E3A5F]'
                         }`}
@@ -124,9 +123,9 @@ function ProjectItem({
                         <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${statusColor[s.status] ?? 'bg-[#B0B8C1]'}`} />
                         <div className="flex-1 min-w-0">
                           <p className={`text-xs truncate ${isActive ? 'text-[#3182F6] font-medium' : 'text-[#4E5968] dark:text-[#9CA3AF]'}`}>
-                            {s.sample_size}명 · {s.created_by_name ?? '—'}
+                            {s.ad_title || '제목 없음'}
                           </p>
-                          <p className="text-[11px] text-[#B0B8C1]">{fmt(s.created_at)}</p>
+                          <p className="text-[11px] text-[#B0B8C1] truncate">{s.sample_size}명 · {s.created_by_name ?? '—'} · {fmt(s.created_at)}</p>
                         </div>
                       </Link>
                     );
@@ -279,7 +278,7 @@ export default function CompanyPanel({ collapsed, onToggle }: { collapsed: boole
       .catch(() => {});
   }, []);
 
-  const simMatch = pathname.match(/^\/simulations\/([^/]+)/);
+  const simMatch = pathname.match(/^\/simulation\/([^/]+)/);
   const genMatch = pathname.match(/^\/generations\/([^/]+)/);
   const activeSimId = simMatch?.[1] ?? null;
   const activeGenId = genMatch?.[1] ?? null;

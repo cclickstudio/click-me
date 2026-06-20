@@ -10,6 +10,7 @@ from statistics import pstdev
 from domain.simulation.contracts.debate_ports import DebaterPort, JudgePort
 from domain.simulation.contracts.debate_schemas import (
     AssignedPanel,
+    DebateParticipant,
     DebateResult,
     DebateTopic,
     ParticipantDebate,
@@ -17,6 +18,9 @@ from domain.simulation.contracts.debate_schemas import (
 
 MIN_ROUNDS, MAX_ROUNDS = 2, 4  # 최소 2(발산+반박) / 최대 4(비용 상한·종료 보장)
 CHURN_TH, DISP_TH = 1, 1.5  # 변동 1명 이하 = 정착 / 분산 1.5 이하 = 합의
+# 진행률(SSE) — assignment(75) 후 judge_final(92) 사이를 토론 발언으로 채운다.
+# 라운드 가변(2~4)이라 평균 3라운드를 예상치로 잡고 90을 상한으로 단조 증가(92와 충돌 방지).
+PCT_START, PCT_CAP, EXPECTED_ROUNDS = 75, 90, 3
 
 _STANCE_VAL = {"positive": 1.0, "neutral": 0.0, "negative": -1.0}
 _PHASE = {1: "발산", 2: "반박", 3: "검증"}
@@ -25,6 +29,28 @@ _PHASE = {1: "발산", 2: "반박", 3: "검증"}
 def phase_for(round_n: int) -> str:
     """라운드 동사 — 4라운드째도 검증(추가 검증)."""
     return _PHASE.get(round_n, "검증")
+
+
+def _order_by_stance(
+    order: list[DebateParticipant], stances: dict[str, str]
+) -> list[DebateParticipant]:
+    """직전 입장 기준 긍정·부정 번갈아 배치(중립은 뒤) — 반박 라운드 대립 구도 노출.
+
+    발언 순서(=SSE 표시 순서)만 바꾼다. 집계(churn·dispersion)는 persona_id 기반이라 무관.
+    """
+    pos = [p for p in order if stances.get(p.persona_id) == "positive"]
+    neg = [p for p in order if stances.get(p.persona_id) == "negative"]
+    neu = [p for p in order if stances.get(p.persona_id) not in ("positive", "negative")]
+    woven = []
+    i = j = 0
+    while i < len(pos) or j < len(neg):
+        if i < len(pos):
+            woven.append(pos[i])
+            i += 1
+        if j < len(neg):
+            woven.append(neg[j])
+            j += 1
+    return woven + neu
 
 
 def should_continue(round_n: int, churn: int, dispersion: float) -> bool:
@@ -77,22 +103,36 @@ def run_debate(
 
     round_summaries: dict[int, str] = {}
     prev_stances: dict[str, str] = {}
+    # 직전 라운드 발언 [(persona_id, name, stance, text)] — 다음 라운드 토론자의 반박 grounding.
+    prev_utts: list[tuple[str, str, str, str]] | None = None
     rounds_run = 0
     stop_reason = "max"
 
+    # 발언 1건마다 pct를 75→90으로 단조 증가(예상 = 참가자 × 평균 라운드).
+    expected_utts = max(1, len(order) * EXPECTED_ROUNDS)
+    spoken = 0
+    pct = PCT_START
+
     for round_n in range(1, MAX_ROUNDS + 1):
         phase = phase_for(round_n)
+        # R1은 slot 순(발산), 반박 라운드부터는 직전 입장 기준 긍·부 교차(대립 구도 노출).
+        speak_order = order if round_n == 1 else _order_by_stance(order, prev_stances)
         cur_stances: dict[str, str] = {}
         round_utts = []
-        for p in order:
-            u = debater.speak(p, round_n, phase, topic)
+        round_prior: list[tuple[str, str, str, str]] = []
+        for p in speak_order:
+            u = debater.speak(p, round_n, phase, topic, prior=prev_utts)
             pdebates[p.persona_id].utterances.append(u)
             round_utts.append(u)
+            round_prior.append((p.persona_id, p.persona_name, u.stance, u.text))
             cur_stances[p.persona_id] = u.stance
+            spoken += 1
+            pct = min(PCT_CAP, PCT_START + round(spoken / expected_utts * (PCT_CAP - PCT_START)))
             emit(
                 {
                     "event": "progress",
                     "stage": "utterance",
+                    "pct": pct,
                     "round": round_n,
                     "phase": phase,
                     "persona_id": p.persona_id,
@@ -113,6 +153,7 @@ def run_debate(
             {
                 "event": "progress",
                 "stage": "round_summary",
+                "pct": pct,
                 "round": round_n,
                 "summary": summary,
             }
@@ -123,6 +164,7 @@ def run_debate(
         vals = [_STANCE_VAL[s] for s in cur_stances.values()]
         dispersion = pstdev(vals) if len(vals) > 1 else 0.0
         prev_stances = cur_stances
+        prev_utts = round_prior  # 다음 라운드 토론자에게 줄 직전 발언(반박 grounding)
 
         if not should_continue(round_n, churn, dispersion):
             stop_reason = stop_reason_for(round_n, churn, dispersion)

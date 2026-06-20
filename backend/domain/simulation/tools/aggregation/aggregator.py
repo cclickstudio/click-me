@@ -75,6 +75,7 @@ class BasicAggregator:
                 purchase_intent=0.0,
                 trust_avg=0.0,
                 rejection_rate=0.0,
+                brand_recognition_rate=0.0,
                 variance_warning=True,
                 effective_n=0.0,
                 payload={"note": "QA 통과 표본 없음", "qa_passed_count": 0},
@@ -95,6 +96,9 @@ class BasicAggregator:
             purchase_intent=round(_wmean(purchases, weights), 2),
             trust_avg=round(_wmean([float(r.trust) for r in passed], weights), 2),
             rejection_rate=round(_wmean([float(r.rejected) for r in passed], weights), 4),
+            brand_recognition_rate=round(
+                _wmean([float(r.brand_recognized) for r in passed], weights), 4
+            ),
             variance_warning=purchase_std < _VARIANCE_MIN_STD,
             effective_n=round(eff_n, 1),
             payload={

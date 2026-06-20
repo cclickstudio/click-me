@@ -151,6 +151,9 @@
   "emotion_tag": "curiosity",
   "perceived_message": "새로운 음료가 나왔다는 것",
   "perceived_target": "20대 여성",
+  "brand_recognized": false,
+  "perceived_brand": null,
+  "noticed_first": "썸네일의 분홍빛 색감",
   "utterance": "썸네일은 예뻐서 멈췄는데 뭘 사라는 건지는 모르겠어요.",
   "qa_passed": true
 }
@@ -163,10 +166,14 @@
 | `purchase_intent` (1~5) / `trust` (1~5) | 정수 제약 필드 | §2-2 히스토그램 / §2-3 |
 | `rejection_reason_tag` / `emotion_tag` | **사전 정의 taxonomy enum — 자유 텍스트 금지.** LLM이 직접 enum으로 출력 (사후 분류 아님) | §2-3 거부 분해 / §2-4 감정 분포 |
 | `perceived_message` / `perceived_target` | 페르소나가 인식한 메시지·타깃 | §3-1 의도-반응 비교 (타깃 미스매치 판정) |
+| `brand_recognized` (bool) / `perceived_brand` | 브랜드 식별 여부·인식 브랜드명 (DB 영속, 마이그 010) | §2-5 브랜드 식별률(Fluency)·오귀속 분해 |
+| `noticed_first` | 프로필상 가장 먼저 주의 간 요소 (§4-b salience, **탐색적·DB 미영속**) | VLM_PER_PERSONA_VISION §4-b 페르소나별 주의 배분 |
 | `utterance` | 자유 발화 1개 | §3-2 페르소나 보이스 (QA 통과분만 노출) |
 | `qa_passed` | QA 검문소 결과 | 집계 포함 여부 게이트 |
 
 > enum 목록(거부 사유·감정·이탈 사유)은 구현 착수 시 REPORT §2-3의 분류 체계와 함께 1회 확정하고, 이후 변경은 집계·렌더링 코드와 동기화한다.
+>
+> **반응 조건화(2026-06-19) — `reaction.py` 프롬프트에 추가, 스키마 무변경.** ① **세대 게이팅·말투(Tier 1)** — 페르소나 나이로 형성기(15~25세)를 계산해 브랜드 친숙도·어투를 조건화. ② **브랜드 시대성 공유(Tier 2)** — `interpret_ad`가 `structured_analysis.brand_era`로 1회 추출한 '사실'을 전 페르소나에 동일 주입(친숙/낯섦 판단은 나이가). 둘 다 PERSONA_COHORT_KNOWLEDGE_STRATEGY 참조. 원칙 2(다양성은 데이터=나이에서, 사실은 공유 1회에서) 정합.
 
 ---
 
