@@ -42,6 +42,7 @@ class UserRow(BaseModel):
     role: str
     status: str
     created_at: datetime
+    organization_name: str | None = None  # 소속 조직명(멤버십 기준, ADMIN 등 미소속이면 None)
 
 
 class SimulationRow(BaseModel):
@@ -231,7 +232,13 @@ async def list_users(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_admin),
 ):
-    rows = await db.execute(select(User).order_by(User.created_at.desc()))
+    # 소속 조직명은 멤버십(OrganizationMember)으로만 알 수 있어 outerjoin — 미소속(ADMIN 등)은 None.
+    rows = await db.execute(
+        select(User, Organization.name)
+        .outerjoin(OrganizationMember, OrganizationMember.user_id == User.id)
+        .outerjoin(Organization, Organization.id == OrganizationMember.organization_id)
+        .order_by(User.created_at.desc())
+    )
     return [
         UserRow(
             id=str(u.id),
@@ -240,8 +247,9 @@ async def list_users(
             role=u.role,
             status=u.status,
             created_at=u.created_at,
+            organization_name=org_name,
         )
-        for u in rows.scalars()
+        for u, org_name in rows.all()
     ]
 
 
