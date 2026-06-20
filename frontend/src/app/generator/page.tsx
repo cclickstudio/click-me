@@ -4,6 +4,8 @@ import { useEffect, useRef, useState } from "react";
 import AppLayout from "@/components/AppLayout";
 import { useProjects } from "@/components/ProjectContext";
 import { api } from "@/lib/api";
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 import type {
   CampaignResult,
   GenerationDetail,
@@ -135,7 +137,7 @@ function CandidateCard({
         {candidate.image_url ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
-            src={candidate.image_url}
+            src={candidate.image_url?.startsWith("/") ? `${API_BASE}${candidate.image_url}` : candidate.image_url ?? undefined}
             alt={`광고 ${letter}`}
             className="w-full h-full object-cover transition-opacity group-hover:opacity-90"
           />
@@ -281,7 +283,7 @@ function CandidateModal({
           {candidate.image_url && (
             // eslint-disable-next-line @next/next/no-img-element
             <img
-              src={candidate.image_url}
+              src={candidate.image_url?.startsWith("/") ? `${API_BASE}${candidate.image_url}` : candidate.image_url ?? undefined}
               alt={`광고 ${letter}`}
               className="w-full h-full object-contain"
             />

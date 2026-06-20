@@ -37,7 +37,7 @@ async def analyze_image(image_bytes: bytes) -> ImageAnalysis:
     try:
         out: ImageAnalysis = await _llm.ainvoke([message])
         return ImageAnalysis(
-            dominant_colors=(out.dominant_colors[:3] or ["#FFFFFF"]),
+            dominant_colors=(out.dominant_colors or ["#FFFFFF"])[:3],
             brightness=out.brightness or "medium",
             mood=out.mood or "",
             composition=out.composition or "",

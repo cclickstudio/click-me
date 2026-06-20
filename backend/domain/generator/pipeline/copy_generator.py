@@ -6,7 +6,6 @@ from langsmith import traceable
 from domain.generator.contracts.enums import TemplateType
 from domain.generator.contracts.pipeline_schemas import (
     AdCopy,
-    ImageAnalysis,
     ProductAnalysis,
     StrategyOutput,
 )
@@ -20,7 +19,7 @@ _TEMPLATE_COPY_GUIDE: dict[TemplateType, str] = {
     TemplateType.B: (
         "오버레이 레이아웃. 헤드라인은 이미지 상단에 pill 스크림으로 강조되므로 "
         "긴급성·이벤트 중심으로 짧고 임팩트 있게 (10자 이내 권장). "
-        "본문은 하단 오버레이에 배치되어 부가 설명 역할."
+        "본문은 하단 오버레이에 배치되어 부가 설명 역할. CTA는 행동 유도."
     ),
     TemplateType.C: (
         "좌측 패널 레이아웃. 헤드라인·본문·CTA가 모두 좌측 컬러 패널 안에 들어가므로 "
@@ -44,11 +43,6 @@ _USER_TEMPLATE = """\
 전략: {strategy_description}
 전략 근거: {rationale}
 
-## 생성된 이미지 분석
-무드: {mood}
-구도: {composition}
-밝기: {brightness}
-
 ## 레이아웃 가이드
 {layout_guide}
 
@@ -71,20 +65,30 @@ _USER_TEMPLATE = """\
 - "퀄랄리", "퀄랄리티" ✗  ← quality의 잘못된 음차
 - "음다 음을", "스타일하게" ✗  ← 의미 없는 단어 조합
 - "스마트 퀄랄리" ✗  ← 비문
+{improvement_section}"""
 
-headline(20자 이내), body(50자 이내), cta(10자 이내)를 작성하세요."""
+_IMPROVEMENT_SECTION = """\
 
+## 개선 방향 (최우선 반영)
+{improvement_context}
 
-_llm = build_text_llm(temperature=0.5).with_structured_output(AdCopy)
+기존 광고의 문제점을 해결하는 방향으로 카피를 작성하세요."""
+
+_llm = build_text_llm(temperature=0.5, max_tokens=150).with_structured_output(AdCopy)
 
 
 @traceable(name="CopyGenerator", metadata={"pipeline": "generator"})
 async def generate_copy(
     product_analysis: ProductAnalysis,
     strategy_output: StrategyOutput,
-    image_analysis: ImageAnalysis,
     template: TemplateType,
+    improvement_context: str | None = None,
 ) -> AdCopy:
+    improvement_section = (
+        _IMPROVEMENT_SECTION.format(improvement_context=improvement_context)
+        if improvement_context
+        else ""
+    )
     prompt = _USER_TEMPLATE.format(
         product_name=product_analysis.product_name,
         core_values=", ".join(product_analysis.core_values),
@@ -92,18 +96,7 @@ async def generate_copy(
         target_audience=product_analysis.target_audience,
         strategy_description=strategy_output.strategy_description,
         rationale=strategy_output.rationale,
-        mood=image_analysis.mood,
-        composition=image_analysis.composition,
-        brightness=image_analysis.brightness,
         layout_guide=_TEMPLATE_COPY_GUIDE[template],
+        improvement_section=improvement_section,
     )
-
-    try:
-        out: AdCopy = await _llm.ainvoke([("system", _SYSTEM), ("user", prompt)])
-        return AdCopy(
-            headline=out.headline or "",
-            body=out.body or "",
-            cta=out.cta or "지금 바로 확인하기",
-        )
-    except Exception:
-        return AdCopy(headline="", body="", cta="지금 바로 확인하기")
+    return await _llm.ainvoke([("system", _SYSTEM), ("user", prompt)])

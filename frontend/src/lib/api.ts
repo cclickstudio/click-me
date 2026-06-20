@@ -5,13 +5,14 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const token = getToken();
   const authHeader: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+  const { headers: initHeaders, ...restInit } = init ?? {};
   const res = await fetch(`${API_BASE}/api${path}`, {
     headers: {
       "Content-Type": "application/json",
       ...authHeader,
-      ...(init?.headers as Record<string, string> | undefined),
+      ...(initHeaders as Record<string, string> | undefined),
     },
-    ...init,
+    ...restInit,
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: "Unknown error" }));
@@ -108,7 +109,10 @@ export const api = {
           brand_logo_key: string | null;
           brand_logo_url: string | null;
           tone_and_manner: string | null;
-        }>("/generator/brand-profile", { headers: { "X-Client-Id": clientId } }),
+        }>("/generator/brand-profile", { headers: { "X-Client-Id": clientId } }).then((p) => ({
+          ...p,
+          brand_logo_url: p.brand_logo_url ? `${API_BASE}${p.brand_logo_url}` : null,
+        })),
       save: (
         clientId: string,
         body: { brand_color?: string | null; brand_logo_key?: string | null; tone_and_manner?: string | null },
@@ -130,7 +134,8 @@ export const api = {
           const err = await res.json().catch(() => ({ detail: "Unknown error" }));
           throw new Error((err as { detail?: string }).detail ?? `HTTP ${res.status}`);
         }
-        return res.json() as Promise<{ key: string; url: string }>;
+        const data = (await res.json()) as { key: string; url: string };
+        return { ...data, url: `${API_BASE}${data.url}` };
       },
     },
   },

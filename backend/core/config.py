@@ -47,7 +47,7 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("LANGSMITH_API_KEY", "LANGCHAIN_API_KEY"),
     )
     LANGSMITH_PROJECT: str = Field(
-        default="clickme-v2",
+        default="clickme",
         validation_alias=AliasChoices("LANGSMITH_PROJECT", "LANGCHAIN_PROJECT"),
     )
 
