@@ -12,7 +12,7 @@ persona_id는 더미 문자열·실 UUID 양쪽 수용 위해 VARCHAR(50).
 from alembic import op
 
 revision = "007b"
-down_revision = "007"
+down_revision = "007a"
 branch_labels = None
 depends_on = None
 

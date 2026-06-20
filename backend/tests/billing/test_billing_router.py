@@ -42,6 +42,29 @@ def test_order_confirm_balance_roundtrip(client):
     assert history["entries"][0]["reason"] == "charge"
 
 
+def test_cancel_roundtrip_reverses_balance(client):
+    created = client.post("/api/billing/orders", json={"amount_krw": 50_000}).json()
+    client.post(
+        "/api/billing/confirm",
+        json={
+            "payment_key": "pay-1",
+            "order_id": created["order_id"],
+            "amount_krw": 50_000,
+        },
+    )
+
+    canceled = client.post(
+        "/api/billing/cancel",
+        json={"order_id": created["order_id"], "reason": "사용자 요청"},
+    )
+
+    assert canceled.status_code == 200
+    assert canceled.json()["status"] == "canceled"
+    assert canceled.json()["balance_krw"] == 0
+    history = client.get("/api/billing/history").json()["entries"]
+    assert [entry["reason"] for entry in history] == ["charge", "refund"]
+
+
 def test_confirm_amount_mismatch_returns_400(client):
     created = client.post("/api/billing/orders", json={"amount_krw": 10_000}).json()
 

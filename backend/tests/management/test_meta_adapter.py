@@ -29,8 +29,17 @@ def _load(name: str) -> dict:
 
 def _reader_handler(request: httpx.Request) -> httpx.Response:
     path = request.url.path
+    # /campaigns 분기는 status 체크보다 먼저 — 목록 요청 필드에도 effective_status 포함
+    if path.endswith("/campaigns"):
+        return httpx.Response(200, json=_load("campaigns_v21.json"))
+    if path.endswith("/adsets"):
+        return httpx.Response(200, json=_load("adsets_v21.json"))
     if "/insights" in path:
+        if request.url.params.get("breakdowns") == "publisher_platform":
+            return httpx.Response(200, json=_load("insights_platform_v21.json"))
         return httpx.Response(200, json=_load("insights_v21.json"))
+    if "funding_source_details" in (request.url.params.get("fields") or ""):
+        return httpx.Response(200, json=_load("account_funding_v21.json"))
     if "/delivery_estimate" in path:
         return httpx.Response(200, json=_load("delivery_estimate_v21.json"))
     if "effective_status" in (request.url.params.get("fields") or ""):
@@ -40,6 +49,16 @@ def _reader_handler(request: httpx.Request) -> httpx.Response:
 
 def _reader(token: str = "EAAtest_secret_token") -> MetaAdsReader:
     client = MetaClient(token, api_version="v21.0", transport=httpx.MockTransport(_reader_handler))
+    return MetaAdsReader(client=client)
+
+
+def _reader_with_account(account: str = "111222333") -> MetaAdsReader:
+    client = MetaClient(
+        "EAAtest_secret_token",
+        ad_account_id=account,
+        api_version="v21.0",
+        transport=httpx.MockTransport(_reader_handler),
+    )
     return MetaAdsReader(client=client)
 
 
@@ -65,6 +84,10 @@ def test_get_metrics_maps_insights_json():
     assert snap.spend_krw == 95000
     assert snap.ctr == pytest.approx(0.017)  # Meta 백분율(1.7) → 비율 환산
     assert snap.cum_reach == 8000
+    assert snap.conversions == 9
+    assert snap.purchase_value_krw == 475_000
+    assert snap.cvr == pytest.approx(0.05)
+    assert snap.roas == pytest.approx(5.0)
     assert snap.as_of == datetime(2026, 6, 15, tzinfo=UTC)
 
 
@@ -79,6 +102,35 @@ def test_get_estimate_maps_delivery_estimate_json():
 def test_get_state_maps_effective_status():
     state = asyncio.run(_reader().get_state("23842000000000123"))
     assert state is CampaignState.ACTIVE
+
+
+def test_get_platform_breakdown_splits_fb_ig():
+    rows = asyncio.run(_reader().get_platform_breakdown("23842000000000123", datetime.now(UTC)))
+    by = {r.platform: r for r in rows}
+    assert by["facebook"].impressions == 25
+    assert by["instagram"].impressions == 799
+    assert by["instagram"].spend_krw == 4895
+    assert by["facebook"].clicks == 2
+
+
+def test_get_account_funding_detects_prepaid_exhausted():
+    f = asyncio.run(_reader_with_account().get_account_funding())
+    assert f.delivery_blocked is True
+    assert f.block_reason == "선불 잔액 부족"
+    assert f.available_balance_krw == 0
+
+
+def test_list_campaigns_maps_campaign_json():
+    campaigns = asyncio.run(_reader_with_account().list_campaigns())
+    assert len(campaigns) == 2
+    first = campaigns[0]
+    assert first.campaign_id == "120250000000000001"
+    assert first.name == "여름 세일"
+    assert first.state is CampaignState.ACTIVE
+    assert first.daily_budget_krw == 50000  # 캠페인(CBO) 예산 — KRW offset=1
+    assert campaigns[1].state is CampaignState.PAUSED
+    # 캠페인 노드에 예산 없음 → 광고세트 일예산 합(15000+15000)으로 보완
+    assert campaigns[1].daily_budget_krw == 30000
 
 
 # ── client 에러·마스킹 ───────────────────────────────────────────

@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import AppLayout from '@/components/AppLayout';
 import { api } from '@/lib/api';
+import { trackMetaPixelEventOnce } from '@/lib/metaPixel';
 
 function SuccessContent() {
   const params = useSearchParams();
@@ -28,6 +29,18 @@ function SuccessContent() {
     api.billing
       .confirm({ payment_key: paymentKey, order_id: orderId, amount_krw: Number(amount) })
       .then((res) => {
+        trackMetaPixelEventOnce(
+          'Purchase',
+          {
+            value: res.amount_krw,
+            currency: 'KRW',
+            content_type: 'product',
+            content_ids: ['clickme-ad-credit'],
+            content_name: 'ClickMe 광고 크레딧',
+            num_items: 1,
+          },
+          `purchase-${res.order_id}`,
+        );
         setBalance(res.balance_krw);
         setStatus('done');
       })
