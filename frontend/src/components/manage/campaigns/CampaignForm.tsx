@@ -53,8 +53,9 @@ export function CampaignForm({
 }) {
   const [name, setName] = useState('');
   const [objective, setObjective] = useState<'traffic' | 'leads'>('traffic');
-  const [budget, setBudget] = useState(50_000);
-  const [runDays, setRunDays] = useState(7);
+  // 기본값은 '최소 위주' — 예산은 정책 도착 시 목표별 최소로 맞추고, 기간은 최소 1일.
+  const [budget, setBudget] = useState(2_000);
+  const [runDays, setRunDays] = useState(1);
   const [creativeId, setCreativeId] = useState('');
   const [specialCat, setSpecialCat] = useState('NONE');
   const [country, setCountry] = useState('KR');
@@ -83,6 +84,10 @@ export function CampaignForm({
 
   // 목표별 최소 일예산 — 미달이면 Meta가 광고세트 생성을 거부한다.
   const minBudget = minByObjective[objective] ?? (objective === 'leads' ? 10_000 : 2_000);
+  // 예산이 최소 미만이면 최소로 끌어올린다(정책 도착·목표 변경 시) — 기본 '최소 위주' 유지·항상 유효.
+  useEffect(() => {
+    setBudget((b) => (b < minBudget ? minBudget : b));
+  }, [minBudget]);
   const valid = name.trim().length > 0 && budget >= minBudget && runDays >= 1;
 
   return (
