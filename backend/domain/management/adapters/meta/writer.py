@@ -11,6 +11,7 @@ create_campaign(신규 캠페인 생성, PR2)은 v1에서 PAUSED 상태 객체 �
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
@@ -28,6 +29,27 @@ from domain.management.contracts.schemas import ActionResult, CampaignConfig
 
 #: 실제 Graph API 전송이 일어나는 모드 (DRY_RUN은 로컬 빌드만).
 _SENDING_MODES = (ExecutionMode.VALIDATE_ONLY, ExecutionMode.LIVE)
+
+#: CampaignConfig.objective → Meta Outcome 목표(v23 ODAX). 트래픽=클릭, 리드=잠재고객 폼.
+_OBJECTIVE_MAP = {"traffic": "OUTCOME_TRAFFIC", "leads": "OUTCOME_LEADS"}
+
+#: 광고세트 최적화 목표(optimization_goal). 캠페인 objective와 짝을 맞춰야 Meta가 거부 안 함.
+#: 트래픽=링크클릭 최대화, 리드=잠재고객 폼 제출 최대화.
+_ADSET_OPTIMIZATION = {"traffic": "LINK_CLICKS", "leads": "LEAD_GENERATION"}
+
+#: 리드폼 필수 — 개인정보처리방침 링크(이미 운영 중인 페이지).
+_PRIVACY_POLICY_URL = "https://clickme.co.kr/privacy"
+
+
+def _created_id(result: ActionResult) -> str | None:
+    """생성 응답에서 Meta가 만든 객체 id를 뽑는다 — 다음 단계의 부모로 넘기기 위함.
+
+    LIVE에선 meta_response={'id': ...}라 id가 잡히고, validate_only/dry_run은 생성이 없어
+    id가 없다(None) → 오케스트레이션이 그 단계에서 멈춘다(검증만 하고 체인 X).
+    """
+    snap = result.platform_response_snapshot or {}
+    resp = snap.get("meta_response")
+    return resp.get("id") if isinstance(resp, dict) else None
 
 
 class MetaAdsWriter:
@@ -51,6 +73,8 @@ class MetaAdsWriter:
             self._client = build_meta_client(settings)
         else:
             self._client = None
+        # 리드폼·광고가 매달릴 페이지(.env META_PAGE_ID). 오케스트레이션 기본 page_id로 쓴다.
+        self._page_id: str | None = getattr(settings, "meta_page_id", None)
 
     async def pause(self, campaign_id: str, idem_key: str) -> ActionResult:
         self._require_writable(idem_key)
@@ -98,8 +122,8 @@ class MetaAdsWriter:
             config.campaign_id,
             idem_key,
             {
-                "name": f"clickme-{config.campaign_id}",
-                "objective": "OUTCOME_TRAFFIC",  # v1 트래픽(클릭) 목표
+                "name": config.name or f"clickme-{config.campaign_id}",
+                "objective": _OBJECTIVE_MAP[config.objective],
                 "status": "PAUSED",
                 "special_ad_categories": "[]",
                 # v21 필수 — 캠페인 예산 미사용 시 true/false 명시 (실 API 검증 2026-06-17).
@@ -109,6 +133,170 @@ class MetaAdsWriter:
             path=f"{normalize_ad_account(config.ad_account_id)}/campaigns",
             ad_account_id=config.ad_account_id,
         )
+
+    async def create_adset(
+        self,
+        config: CampaignConfig,
+        campaign_id: str,
+        idem_key: str,
+        *,
+        page_id: str | None = None,
+    ) -> ActionResult:
+        """캠페인 산하 광고세트(예산·타겟·최적화) 생성 (Task3). v1은 PAUSED — 사람이 켜야 게재.
+
+        ⚠ campaign_id는 create_campaign이 돌려준 **Meta 캠페인 id**다(로컬 config.campaign_id 아님).
+          오케스트레이터가 생성 응답의 id를 받아 이 메서드로 넘긴다.
+
+        목표별 차이.
+          - 리드: optimization_goal=LEAD_GENERATION + promoted_object(폼을 띄울 page_id)
+            + destination_type=ON_AD(광고 안에서 즉석 양식 노출). page_id 필수.
+          - 트래픽: optimization_goal=LINK_CLICKS. promoted_object 불필요.
+
+        인코딩 주의 — client.post는 form 바디(data=)라 중첩 객체(targeting·promoted_object)는
+        Graph API 규약대로 **JSON 문자열**로 직렬화해 넣는다(dict 그대로면 깨짐).
+        """
+        self._require_writable(idem_key)
+        if config.objective == "leads" and not page_id:
+            # 리드 광고세트는 폼을 띄울 페이지가 필수 — 실 호출 전에 어댑터에서 차단(정직).
+            return self._failure(
+                "create_adset", campaign_id, idem_key, FailureReason.PLATFORM_ERROR
+            )
+        data: dict[str, Any] = {
+            "name": f"{config.name or campaign_id}-adset",
+            "campaign_id": campaign_id,  # 부모 캠페인(Meta id) — 광고세트가 매달릴 노드
+            # 예산은 광고세트 레벨(캠페인은 is_adset_budget_sharing_enabled=false). KRW 원 단위.
+            "daily_budget": config.daily_budget_krw,
+            "billing_event": "IMPRESSIONS",  # 노출당 과금(표준)
+            "optimization_goal": _ADSET_OPTIMIZATION[config.objective],
+            "bid_strategy": "LOWEST_COST_WITHOUT_CAP",  # 최저비용 자동입찰(상한 없음)
+            # 최소 타겟 — 국내 19~65세. 실제론 사용자 입력으로 확장(추후 Task).
+            "targeting": json.dumps(
+                {"geo_locations": {"countries": ["KR"]}, "age_min": 19, "age_max": 65}
+            ),
+            "status": "PAUSED",  # 안전 — 생성 후 사람이 활성화(Task5)
+            "start_time": config.start_at.isoformat(),
+            "end_time": config.end_at.isoformat(),
+        }
+        if config.objective == "leads":
+            # 즉석 양식 리드 — 폼을 띄울 페이지 지정 + 광고 안에서(ON_AD) 폼 노출.
+            data["promoted_object"] = json.dumps({"page_id": page_id})
+            data["destination_type"] = "ON_AD"
+        return await self._dispatch(
+            "create_adset",
+            campaign_id,
+            idem_key,
+            data,
+            path=f"{normalize_ad_account(config.ad_account_id)}/adsets",
+            ad_account_id=config.ad_account_id,
+        )
+
+    async def create_lead_form(
+        self, config: CampaignConfig, idem_key: str, *, page_id: str
+    ) -> ActionResult:
+        """페이지에 즉석 양식(leadgen form) 생성 (Task4). 사용자가 광고 안에서 채우는 폼.
+
+        엔드포인트는 act_ 아닌 **페이지 노드**(/{page_id}/leadgen_forms). 개인정보처리방침 링크는
+        Meta 필수 — 이미 운영 중인 페이지를 쓴다. 질문은 최소(이름·이메일).
+        주의 — 폼 생성은 페이지 권한(pages_manage_ads/페이지 토큰)이 필요할 수 있어, live에서
+        권한 부족 시 별도 페이지 토큰이 필요할 수 있다(실연동 때 확인).
+        """
+        self._require_writable(idem_key)
+        return await self._dispatch(
+            "create_lead_form",
+            page_id,
+            idem_key,
+            {
+                "name": f"{config.name or config.campaign_id}-form",
+                "locale": "ko_KR",
+                # 중첩 객체는 form 바디라 JSON 문자열로 직렬화.
+                "questions": json.dumps([{"type": "FULL_NAME"}, {"type": "EMAIL"}]),
+                "privacy_policy": json.dumps(
+                    {"url": _PRIVACY_POLICY_URL, "link_text": "개인정보처리방침"}
+                ),
+                "thank_you_page": json.dumps(
+                    {"title": "신청 완료", "body": "곧 연락드리겠습니다.", "button_type": "NONE"}
+                ),
+            },
+            path=f"{page_id}/leadgen_forms",
+            ad_account_id=config.ad_account_id,
+        )
+
+    async def create_ad(
+        self,
+        config: CampaignConfig,
+        adset_id: str,
+        idem_key: str,
+        *,
+        page_id: str,
+        form_id: str,
+        image_hash: str | None = None,
+    ) -> ActionResult:
+        """광고세트에 광고(소재) 생성 (Task4). 리드폼을 여는 CTA가 달린 크리에이티브.
+
+        adset_id는 create_adset이 돌려준 **Meta 광고세트 id**. 크리에이티브의 call_to_action이
+        SIGN_UP + lead_gen_form_id로 폼을 띄운다. v1은 PAUSED.
+        주의 — link_data는 보통 이미지(image_hash)가 필요하다. 미업로드면 live에서 Meta가
+        거부할 수 있어, 이미지 업로드(/adimages)는 후속 Task로 둔다(여기선 있으면 첨부).
+        """
+        self._require_writable(idem_key)
+        link_data: dict[str, Any] = {
+            "message": config.name or "지금 신청하세요",
+            "link": _PRIVACY_POLICY_URL,  # 리드폼 광고는 CTA가 폼을 띄움 — link는 형식상 필요
+            "call_to_action": {"type": "SIGN_UP", "value": {"lead_gen_form_id": form_id}},
+        }
+        if image_hash:
+            link_data["image_hash"] = image_hash
+        creative = {"object_story_spec": {"page_id": page_id, "link_data": link_data}}
+        return await self._dispatch(
+            "create_ad",
+            adset_id,
+            idem_key,
+            {
+                "name": f"{config.name or config.campaign_id}-ad",
+                "adset_id": adset_id,
+                "creative": json.dumps(creative),
+                "status": "PAUSED",
+            },
+            path=f"{normalize_ad_account(config.ad_account_id)}/ads",
+            ad_account_id=config.ad_account_id,
+        )
+
+    async def create_full_campaign(
+        self, config: CampaignConfig, idem_key: str, *, page_id: str | None = None
+    ) -> ActionResult:
+        """오케스트레이션 — 캠페인→광고세트→(리드면 폼→광고)를 한 흐름으로 생성.
+
+        각 단계의 Meta id를 다음 단계의 부모로 넘긴다. 어느 단계든 실패하면 그 결과를 반환하고
+        멈춘다(앞 단계는 모두 PAUSED라 게재·과금 0). 실제 id가 필요하므로 **LIVE에서 완전 동작**
+        하고, validate_only/dry_run은 id가 없어 캠페인 단계까지만(검증) 의미가 있다.
+        page_id 미지정 시 .env META_PAGE_ID(self._page_id)를 쓴다.
+        """
+        page_id = page_id or self._page_id
+        campaign = await self.create_campaign(config, f"{idem_key}-camp")
+        cid = _created_id(campaign)
+        if campaign.status is not ResultStatus.SUCCESS or cid is None:
+            return campaign  # 검증 모드(또는 실패) — 캠페인 단계에서 종료
+        adset = await self.create_adset(config, cid, f"{idem_key}-adset", page_id=page_id)
+        asid = _created_id(adset)
+        if adset.status is not ResultStatus.SUCCESS or asid is None:
+            return adset
+        if config.objective != "leads":
+            return adset  # 트래픽은 폼 없이 광고세트까지(광고 소재는 후속)
+        form = await self.create_lead_form(config, f"{idem_key}-form", page_id=page_id)
+        fid = _created_id(form)
+        if form.status is not ResultStatus.SUCCESS or fid is None:
+            return form
+        return await self.create_ad(config, asid, f"{idem_key}-ad", page_id=page_id, form_id=fid)
+
+    async def activate(self, object_id: str, idem_key: str) -> ActionResult:
+        """객체(캠페인/광고세트/광고)를 ACTIVE로 — 게재·과금 시작 (Task5).
+
+        ⚠ 실제 과금이 시작되는 유일한 쓰기. 게재되려면 캠페인·광고세트·광고가 **모두 ACTIVE**여야
+          한다(한 단계라도 PAUSED면 미게재). 솔로에선 이 단계를 Ads Manager에서 사람이 직접 켜는
+          걸 권장한다 — 무엇을 켜는지 눈으로 보고. 본 메서드는 그 능력만 제공(자동 호출 안 함).
+        """
+        self._require_writable(idem_key)
+        return await self._dispatch("activate", object_id, idem_key, {"status": "ACTIVE"})
 
     async def expand_audience(self, campaign_id: str, idem_key: str) -> ActionResult:
         """타겟 범위 확장 (에스컬레이션 1순위). v1은 adset targeting 확장 요청 빌드 수준.

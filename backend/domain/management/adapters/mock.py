@@ -134,7 +134,12 @@ class MockAdPlatform:
 
     async def get_account_funding(self) -> AccountFunding:
         """Port 충족 — 데모는 잔액 충분(게재 차단 없음)."""
-        return AccountFunding(account_status=1, available_balance_krw=1_000_000)
+        return AccountFunding(
+            account_status=1,
+            available_balance_krw=1_000_000,
+            spend_cap_krw=2_000_000,
+            amount_spent_krw=1_000_000,
+        )
 
     async def fetch_daily_metrics(self, campaign_id: str) -> list[dict]:
         """데모 일자별(3일) 합성(결정론) — 상세 차트·일자별 표용."""

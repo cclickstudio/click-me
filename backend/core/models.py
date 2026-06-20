@@ -9,6 +9,7 @@ from sqlalchemy import (
     BigInteger,
     Boolean,
     DateTime,
+    Float,
     ForeignKey,
     Integer,
     SmallInteger,
@@ -526,4 +527,31 @@ class MetaConnection(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class CampaignKpiOverride(Base):
+    """조직별 캠페인 수동 KPI(추정 CVR·ROAS) — 전환 추적 전 고객이 직접 넣는 값 영속.
+
+    실측이 아니라 고객 비즈니스 통계 기반 추정(스펙: CVR·ROAS 재정의 #2). org+campaign 유니크.
+    cvr=전환율(%), roas=투자수익률(배수). 둘 다 NULL이면 행 삭제(실측으로 복귀).
+    """
+
+    __tablename__ = "campaign_kpi_overrides"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+    )
+    campaign_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    cvr: Mapped[float | None] = mapped_column(Float)  # 전환율 % (수동 추정)
+    roas: Mapped[float | None] = mapped_column(Float)  # 투자수익률 배수 (수동 추정)
+    updated_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    __table_args__ = (
+        UniqueConstraint("organization_id", "campaign_id", name="uq_kpi_override_org_campaign"),
     )

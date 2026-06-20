@@ -9,7 +9,8 @@
 import asyncio
 from datetime import UTC, datetime, timedelta
 from random import Random
-from uuid import uuid4
+from typing import Literal
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import RedirectResponse
@@ -20,7 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from core.auth import get_current_user
 from core.config import settings
 from core.db import get_db
-from core.models import OrganizationMember, User
+from core.models import CampaignKpiOverride, OrganizationMember, User
 from domain.management.adapters.meta.client import MetaApiError
 from domain.management.adapters.meta.connection_flow import complete_meta_connection
 from domain.management.adapters.meta.oauth import build_login_url
@@ -35,7 +36,7 @@ from domain.management.approval import (
     validate_proposal,
 )
 from domain.management.comparison.service.comparison_service import ComparisonService
-from domain.management.contracts.enums import ActionTier, CampaignState
+from domain.management.contracts.enums import ActionTier, CampaignState, ExecutionMode
 from domain.management.contracts.fault_injection import FaultConfig, FaultMode
 from domain.management.contracts.policy import (
     APPROVAL_POLICY_VERSION,
@@ -60,13 +61,14 @@ from domain.management.detection.exposure_model import (
 )
 from domain.management.escalation import EscalationController
 from domain.management.escalation_demo import DemoScenarioDetector
-from domain.management.execution.executor import Executor
+from domain.management.execution.executor import DEFAULT_ALLOWED_MODES, Executor
 from domain.management.execution.tier import (
     ESCALATE_THRESHOLD,
     WARN_THRESHOLD,
     BudgetAuthority,
     TenantBudgetRegistry,
 )
+from domain.management.target_check import is_target_missed
 from domain.management.wiring import (
     build_audit_sink,
     build_escalation_store,
@@ -100,9 +102,28 @@ async def _state_version(_ad_account_id: str) -> str:
     return "state_v1"  # 데모 고정 — 제안의 expected_state_version과 일치
 
 
+def _resolved_execution_mode() -> ExecutionMode:
+    """settings 기반 실행 모드 — use_mock이면 무조건 MOCK(봉인).
+
+    실모드(use_mock=False)에서만 management_execution_mode(dry_run|validate_only|live)를 따른다.
+    LIVE는 여기를 통해서만 들어오고, 호출부는 /approve 단일 경로(AUTO 자율 승인은 안 거침).
+    """
+    if getattr(settings, "use_mock", True):
+        return ExecutionMode.MOCK
+    raw = getattr(settings, "management_execution_mode", "dry_run")
+    try:
+        return ExecutionMode(raw)
+    except ValueError:
+        return ExecutionMode.DRY_RUN
+
+
 def _get_executor() -> Executor:
     global _executor  # noqa: PLW0603
     if _executor is None:
+        # LIVE는 명시 opt-in(use_mock=False + mode=live)일 때만 executor 게이트를 통과시킨다.
+        allowed = DEFAULT_ALLOWED_MODES
+        if _resolved_execution_mode() is ExecutionMode.LIVE:
+            allowed = (*DEFAULT_ALLOWED_MODES, ExecutionMode.LIVE)
         _executor = Executor(
             build_writer(settings),
             idempotency=build_idempotency_store(settings),
@@ -110,6 +131,7 @@ def _get_executor() -> Executor:
             budget_for=_BUDGET.for_tenant,
             state_version_provider=_state_version,
             current_policy_version=APPROVAL_POLICY_VERSION,
+            allowed_modes=allowed,
         )
     return _executor
 
@@ -176,7 +198,7 @@ async def approve_proposal(body: ApprovalRequest):
             "detail": "거절됨 — 무승인 액션은 어떤 경로로도 Writer에 도달 불가 (불변 규칙 #2)",
         }
 
-    action = approve(body.proposal, body.approver_id)
+    action = approve(body.proposal, body.approver_id, execution_mode=_resolved_execution_mode())
     return {"status": "approved", "approved_action": action.model_dump(mode="json")}
 
 
@@ -341,12 +363,18 @@ def _campaign_summary(snaps: list[MetricsSnapshot], budget: int) -> dict:
     }
 
 
-def _real_summary(m: MetricsSnapshot, budget: int, conversion_value_krw: int | None = None) -> dict:
+def _real_summary(
+    m: MetricsSnapshot,
+    budget: int,
+    conversion_value_krw: int | None = None,
+    target_roas: float | None = None,
+) -> dict:
     """실 reader 단일 집계 스냅샷 → 대시보드 요약.
 
     전환 필드가 응답에 있으면 CVR·ROAS까지 실측으로 표시하고, 없으면 합성하지 않는다.
     매출이 측정 안 되는(구매 외) 전환은 ROAS가 None인데, 고객이 전환 가치를 입력하면
     그 통계가치로 ROAS를 추정해 채운다(roas_estimated=True로 '추정' 표기 책임을 넘김).
+    target_roas(고객 목표) 입력 시 실제 ROAS가 목표 대비 미달이면 target_missed=True.
     """
     roas = m.roas
     roas_estimated = False
@@ -366,13 +394,17 @@ def _real_summary(m: MetricsSnapshot, budget: int, conversion_value_krw: int | N
         "cvr": m.cvr,
         "roas": roas,
         "roas_estimated": roas_estimated,
+        "target_roas": target_roas,
+        "target_missed": is_target_missed(roas, target_roas),
         "conversion_tracking": m.conversions is not None,
         "frequency": m.frequency,
         "pacing_pct": round(m.spend_krw / budget * 100, 1) if budget else 0.0,
     }
 
 
-async def _list_campaigns_real(conversion_value_krw: int | None = None) -> dict:
+async def _list_campaigns_real(
+    conversion_value_krw: int | None = None, target_roas: float | None = None
+) -> dict:
     """실연동 — Meta 캠페인 목록 + 캠페인별 실측 요약."""
     reader = build_reader(settings)
     since = _today_utc()
@@ -395,9 +427,10 @@ async def _list_campaigns_real(conversion_value_krw: int | None = None) -> dict:
                 "name": info.name,
                 "state": info.state.value,
                 "daily_budget_krw": info.daily_budget_krw,
+                "ended_at": info.ended_at,
                 "delivery_blocked": blocked,
                 "block_reason": funding.block_reason if blocked else None,
-                **_real_summary(m, info.daily_budget_krw, conversion_value_krw),
+                **_real_summary(m, info.daily_budget_krw, conversion_value_krw, target_roas),
             }
         )
     return {
@@ -405,10 +438,18 @@ async def _list_campaigns_real(conversion_value_krw: int | None = None) -> dict:
         "source": "live",
         # 계정 배너는 실제로 막힌(진행중) 캠페인이 있을 때만 — 전부 종료면 노이즈라 숨김
         "account_block_reason": funding.block_reason if any_blocked else None,
+        # 계정 지갑(돈 개념 분리) — 일일예산과 다른 '실제 충전·지출·잔액'
+        "account": {
+            "available_balance_krw": funding.available_balance_krw,
+            "spend_cap_krw": funding.spend_cap_krw,
+            "amount_spent_krw": funding.amount_spent_krw,
+        },
     }
 
 
-async def _get_campaign_real(campaign_id: str, conversion_value_krw: int | None = None) -> dict:
+async def _get_campaign_real(
+    campaign_id: str, conversion_value_krw: int | None = None, target_roas: float | None = None
+) -> dict:
     """실연동 — 캠페인 상세(시간별 실측 + 기대곡선 + 요약)."""
     reader = build_reader(settings)
     today = _today_utc()
@@ -433,12 +474,12 @@ async def _get_campaign_real(campaign_id: str, conversion_value_krw: int | None 
         "actual": actual,
         "anomaly_hours": find_anomaly_window(expected, actual) if actual else [],
         "series": daily,
-        "summary": _real_summary(m, info.daily_budget_krw, conversion_value_krw),
+        "summary": _real_summary(m, info.daily_budget_krw, conversion_value_krw, target_roas),
     }
 
 
 @router.get("/campaigns")
-async def list_campaigns(conversion_value_krw: int | None = None):
+async def list_campaigns(conversion_value_krw: int | None = None, target_roas: float | None = None):
     """캠페인 목록 + 캠페인별 성과 요약 (단일 창구 대시보드).
 
     use_mock=False면 Meta 실측, True면 데모 합성. CVR은 실모드에선 전환 추적 전까지 None.
@@ -446,7 +487,7 @@ async def list_campaigns(conversion_value_krw: int | None = None):
     """
     if not getattr(settings, "use_mock", True):
         try:
-            return await _list_campaigns_real(conversion_value_krw)
+            return await _list_campaigns_real(conversion_value_krw, target_roas)
         except MetaApiError as exc:
             # 토큰 만료 등 인증 오류는 화면을 깨지 말고 '재연결 필요'로 안내(빈 목록 + auth_error).
             if exc.is_auth_error:
@@ -521,11 +562,85 @@ async def get_campaign_creatives(campaign_id: str):
     return {"creatives": [r.model_dump(mode="json") for r in rows]}
 
 
+# ── 수동 KPI(추정 CVR·ROAS) — 조직 단위 DB 영속 (전환 추적 전 고객 입력값) ──
+
+
+class KpiOverrideBody(BaseModel):
+    cvr: float | None = None  # 전환율 % (수동 추정)
+    roas: float | None = None  # 투자수익률 배수 (수동 추정)
+
+
+async def _resolve_org_id(user: User, db: AsyncSession) -> UUID | None:
+    """로그인 사용자의 소속 조직 — 없으면 None."""
+    return await db.scalar(
+        select(OrganizationMember.organization_id).where(OrganizationMember.user_id == user.id)
+    )
+
+
+@router.get("/kpi-overrides")
+async def list_kpi_overrides(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """로그인 조직의 캠페인별 수동 KPI(추정 CVR·ROAS) — {campaign_id: {cvr, roas}}."""
+    org_id = await _resolve_org_id(user, db)
+    if org_id is None:
+        return {"overrides": {}}
+    rows = (
+        await db.scalars(
+            select(CampaignKpiOverride).where(CampaignKpiOverride.organization_id == org_id)
+        )
+    ).all()
+    return {
+        "overrides": {
+            r.campaign_id: {
+                **({"cvr": r.cvr} if r.cvr is not None else {}),
+                **({"roas": r.roas} if r.roas is not None else {}),
+            }
+            for r in rows
+        }
+    }
+
+
+@router.put("/campaigns/{campaign_id}/kpi-override")
+async def put_kpi_override(
+    campaign_id: str,
+    body: KpiOverrideBody,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """캠페인 수동 KPI 저장(업서트). cvr·roas 둘 다 비면 행 삭제(실측으로 복귀)."""
+    org_id = await _resolve_org_id(user, db)
+    if org_id is None:
+        raise HTTPException(409, "소속 조직이 없습니다 — 조직 연결 후 시도하세요.")
+    row = await db.scalar(
+        select(CampaignKpiOverride).where(
+            CampaignKpiOverride.organization_id == org_id,
+            CampaignKpiOverride.campaign_id == campaign_id,
+        )
+    )
+    if body.cvr is None and body.roas is None:
+        if row is not None:
+            await db.delete(row)
+            await db.commit()
+        return {"campaign_id": campaign_id, "cvr": None, "roas": None}
+    if row is None:
+        row = CampaignKpiOverride(organization_id=org_id, campaign_id=campaign_id)
+        db.add(row)
+    row.cvr = body.cvr
+    row.roas = body.roas
+    row.updated_by = user.id
+    await db.commit()
+    return {"campaign_id": campaign_id, "cvr": row.cvr, "roas": row.roas}
+
+
 @router.get("/campaigns/{campaign_id}")
-async def get_campaign(campaign_id: str, conversion_value_krw: int | None = None):
+async def get_campaign(
+    campaign_id: str, conversion_value_krw: int | None = None, target_roas: float | None = None
+):
     """캠페인 상세 — 시간별 노출(기대 vs 실측, 이상구간) + 요약 KPI."""
     if not getattr(settings, "use_mock", True):
-        return await _get_campaign_real(campaign_id, conversion_value_krw)
+        return await _get_campaign_real(campaign_id, conversion_value_krw, target_roas)
     for i, (cid, name, state, budget, fault) in enumerate(_CAMPAIGNS_DEMO):
         if cid == campaign_id:
             snaps = await _campaign_snapshots(cid, budget, fault, seed=40 + i)
@@ -553,6 +668,7 @@ _DEMO_AD_ACCOUNT = "act_demo_001"
 
 class CreateCampaignRequest(BaseModel):
     name: str
+    objective: Literal["traffic", "leads"] = "traffic"  # 트래픽(클릭) / 리드(잠재고객)
     daily_budget_krw: int = Field(ge=1_000)
     run_days: int = Field(ge=1, le=90)
     creative_ad_id: str | None = None
@@ -562,10 +678,16 @@ class CreateCampaignRequest(BaseModel):
 async def create_campaign_proposal(body: CreateCampaignRequest):
     """폼 입력 → CREATE_CAMPAIGN 제안(Tier 3) 패키징. 승인 후 /execute로 생성(기본 DRY_RUN)."""
     now = datetime.now(UTC)
+    # 실모드면 실제 광고계정(.env)으로, 데모면 데모 계정으로 패키징한다.
+    ad_account = _DEMO_AD_ACCOUNT
+    if not getattr(settings, "use_mock", True) and getattr(settings, "meta_ad_account_id", None):
+        ad_account = settings.meta_ad_account_id
     config = CampaignConfig(
         campaign_id=f"camp_new_{uuid4().hex[:8]}",
         tenant_id=TENANT_ID,
-        ad_account_id=_DEMO_AD_ACCOUNT,
+        ad_account_id=ad_account,
+        name=body.name,
+        objective=body.objective,
         daily_budget_krw=body.daily_budget_krw,
         start_at=now,
         end_at=now + timedelta(days=body.run_days),
@@ -575,8 +697,8 @@ async def create_campaign_proposal(body: CreateCampaignRequest):
         ActionProposal(
             proposal_id=f"prop_{uuid4().hex[:8]}",
             tenant_id=TENANT_ID,
-            ad_account_id=_DEMO_AD_ACCOUNT,
-            target_object_ids=(_DEMO_AD_ACCOUNT,),  # 신규 — 대상은 광고계정 (옵션 A)
+            ad_account_id=ad_account,
+            target_object_ids=(ad_account,),  # 신규 — 대상은 광고계정 (옵션 A)
             action_type="CREATE_CAMPAIGN",
             action_tier=ActionTier.TIER_3,
             evidence_metrics={
@@ -784,8 +906,6 @@ async def meta_callback(
 
 def uuid4_or_str(value: str):
     """org 식별자를 UUID로 변환(데모용 비-UUID 문자열이면 그대로 반환)."""
-    from uuid import UUID  # noqa: PLC0415
-
     try:
         return UUID(value)
     except ValueError:

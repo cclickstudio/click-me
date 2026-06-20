@@ -393,7 +393,9 @@ class Executor:
             if not raw:
                 raise ValueError("CREATE_CAMPAIGN 제안에 campaign_config 없음")
             config = raw if isinstance(raw, CampaignConfig) else CampaignConfig(**raw)
-            return await self._writer.create_campaign(config, idem_key)
+            # 오케스트레이션 — 캠페인→광고세트→(리드면 폼→광고)를 한 흐름으로. page_id는
+            # writer가 .env(META_PAGE_ID)에서 채운다. 검증 모드면 캠페인 단계까지만 동작.
+            return await self._writer.create_full_campaign(config, idem_key)
         if proposal.action_type == "EXPAND_AUDIENCE":
             return await self._writer.expand_audience(target, idem_key)
         if proposal.action_type == "CHANGE_BID_STRATEGY":

@@ -110,6 +110,41 @@ def test_create_campaign_does_not_double_act_prefix():
     assert "act_act_" not in captured[0]
 
 
+def test_create_campaign_uses_user_name_and_leads_objective():
+    # 사용자가 지정한 이름과 리드 목표가 Meta 요청에 그대로 실린다 (Task1).
+    captured: list[bytes] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append(request.content)
+        return httpx.Response(200, json={"id": "23842"})
+
+    client = MetaClient("EAAtest", transport=httpx.MockTransport(handler))
+    writer = MetaAdsWriter(mode=ExecutionMode.VALIDATE_ONLY, client=client)
+    cfg = _config().model_copy(update={"name": "lead_test_2606", "objective": "leads"})
+    asyncio.run(writer.create_campaign(cfg, "idem-c4"))
+
+    body = captured[0]
+    assert b"lead_test_2606" in body  # 사용자 이름 그대로 전송
+    assert b"OUTCOME_LEADS" in body  # objective=leads → OUTCOME_LEADS 매핑
+
+
+def test_create_campaign_defaults_name_and_traffic_objective():
+    # 이름 미지정 → clickme-{id} 폴백, objective 기본 traffic → OUTCOME_TRAFFIC.
+    captured: list[bytes] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append(request.content)
+        return httpx.Response(200, json={"id": "1"})
+
+    client = MetaClient("EAAtest", transport=httpx.MockTransport(handler))
+    writer = MetaAdsWriter(mode=ExecutionMode.VALIDATE_ONLY, client=client)
+    asyncio.run(writer.create_campaign(_config(campaign="camp-x"), "idem-d"))
+
+    body = captured[0]
+    assert b"clickme-camp-x" in body  # 이름 미지정 폴백
+    assert b"OUTCOME_TRAFFIC" in body  # objective 기본 = traffic
+
+
 # ── executor 디스패치 ────────────────────────────────────────────
 
 

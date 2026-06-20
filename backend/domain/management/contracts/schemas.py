@@ -61,7 +61,8 @@ class CampaignConfig(Contract):
     campaign_id: str
     tenant_id: str
     ad_account_id: str
-    objective: Literal["traffic"] = "traffic"  # v1 스코프: 트래픽(클릭)만 (§7)
+    name: str | None = None  # 사용자 지정 캠페인 이름 (없으면 writer가 clickme-{id} 폴백)
+    objective: Literal["traffic", "leads"] = "traffic"  # 트래픽(클릭) / 리드(잠재고객)
     daily_budget_krw: int = Field(ge=0)
     start_at: UtcDatetime
     end_at: UtcDatetime
@@ -79,6 +80,7 @@ class CampaignInfo(Contract):
     name: str
     state: CampaignState
     daily_budget_krw: int = Field(ge=0)
+    ended_at: str | None = None  # 게재 종료일(ISO) — 캠페인 stop_time 또는 광고세트 종료일
 
 
 class MetricsSnapshot(Contract):
@@ -166,6 +168,8 @@ class AccountFunding(Contract):
 
     account_status: int
     available_balance_krw: int | None = None  # 선불 가용 잔액 (모르면 None)
+    spend_cap_krw: int | None = None  # 계정 지출 한도(선불이면 충전액과 일치, 부가세 별도)
+    amount_spent_krw: int | None = None  # 계정 누적 지출(광고 집행분, 부가세 별도)
     delivery_blocked: bool = False
     block_reason: str | None = None  # "선불 잔액 부족" · "계정 비활성" 등
 

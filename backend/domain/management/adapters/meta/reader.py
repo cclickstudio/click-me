@@ -100,8 +100,9 @@ def _pick_image(creative: dict[str, Any]) -> str | None:
     return creative.get("image_url")
 
 
-# 계정 자금·게재 가능 조회 필드 — 선불 잔액 소진·계정 비활성 감지
-_FUNDING_FIELDS = "account_status,disable_reason,funding_source_details"
+# 계정 자금·게재 가능 조회 필드 — 선불 잔액 소진·계정 비활성 감지 + 지갑(한도·누적지출).
+# KRW는 무소수 통화라 amount_spent·spend_cap이 그대로 원 단위 정수 문자열로 온다.
+_FUNDING_FIELDS = "account_status,disable_reason,funding_source_details,amount_spent,spend_cap"
 
 # 전환 이벤트별 Meta action_type — 같은 전환이 omni·pixel로 중복 집계될 수 있어
 # 합산하지 않고 우선순위(앞이 우선)대로 첫 값만 쓴다. 캠페인이 구매를 안 팔아도
@@ -393,9 +394,14 @@ class MetaAdsReader:
             blocked, reason = True, "계정 비활성"
         elif is_prepaid and available is not None and available <= 0:
             blocked, reason = True, "선불 잔액 부족"
+        # 지출 한도·누적 지출 — 0이면 미설정(None)으로 둬서 프론트가 '한도 없음'을 구분.
+        spend_cap = _to_int(payload.get("spend_cap")) or None
+        amount_spent = _to_int(payload.get("amount_spent"))
         return AccountFunding(
             account_status=account_status,
             available_balance_krw=available,
+            spend_cap_krw=spend_cap,
+            amount_spent_krw=amount_spent,
             delivery_blocked=blocked,
             block_reason=reason,
         )
@@ -445,10 +451,14 @@ class MetaAdsReader:
             cid = str(row.get("id", ""))
             status = str(row.get("effective_status", "")).upper()
             info = adset_info.get(cid, {})
+            ends = info.get("ends", [])
+            campaign_stop = row.get("stop_time")
+            # 표시용 종료일 — 캠페인 stop_time 우선, 없으면 광고세트 종료일 중 가장 늦은 것
+            ended_at = campaign_stop or max([e for e in ends if e], default=None)
             # 캠페인(CBO) 예산 우선, 없으면(0) 광고세트 일예산 합
             budget = _to_int(row.get("daily_budget")) or info.get("budget", 0)
             # 게재 기간이 끝났으면 effective_status가 ACTIVE라도 '종료'로 본다(충전해도 재개 안 됨).
-            if self._schedule_ended(row.get("stop_time"), info.get("ends", [])):
+            if self._schedule_ended(campaign_stop, ends):
                 state = CampaignState.ENDED
             else:
                 state = _STATE_MAP.get(status, CampaignState.DRAFT)
@@ -458,6 +468,7 @@ class MetaAdsReader:
                     name=str(row.get("name", "")),
                     state=state,
                     daily_budget_krw=budget,
+                    ended_at=ended_at,
                 )
             )
         return out
