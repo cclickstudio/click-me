@@ -53,8 +53,9 @@ export function CampaignForm({
 }) {
   const [name, setName] = useState('');
   const [objective, setObjective] = useState<'traffic' | 'leads'>('traffic');
-  // 기본값은 '최소 위주' — 예산은 정책 도착 시 목표별 최소로 맞추고, 기간은 최소 1일.
-  const [budget, setBudget] = useState(2_000);
+  // 기본값은 '최소 위주' — 예산은 정책의 목표별 최소(=Meta floor)를 따라가고, 기간은 최소 1일.
+  const [budget, setBudget] = useState(0);
+  const [budgetTouched, setBudgetTouched] = useState(false); // 사용자가 예산을 직접 만졌는가
   const [runDays, setRunDays] = useState(1);
   const [creativeId, setCreativeId] = useState('');
   const [specialCat, setSpecialCat] = useState('NONE');
@@ -63,9 +64,10 @@ export function CampaignForm({
   const [ageMax, setAgeMax] = useState(65);
   const [gender, setGender] = useState<'all' | 'male' | 'female'>('all');
   // Meta 정책(최소예산·특별카테고리 등)을 서버에서 받아온다 — 코드 하드코딩 대신 자동 최신화.
+  // 폴백도 휴리스틱 금지 — 계정 floor 실측값(₩1,521)을 둘 다 동일하게(정책 도착 시 덮어씀).
   const [minByObjective, setMinByObjective] = useState<Record<string, number>>({
-    traffic: 2_000,
-    leads: 10_000,
+    traffic: 1_521,
+    leads: 1_521,
   });
   const [categories, setCategories] = useState<Category[]>(DEFAULT_CATEGORIES);
   // 정책상 허용 연령 범위(인풋 min/max) — 백엔드 정책에서 받아 자동 반영.
@@ -82,12 +84,12 @@ export function CampaignForm({
       .catch(() => {}); // 실패 시 폴백 기본값 유지
   }, []);
 
-  // 목표별 최소 일예산 — 미달이면 Meta가 광고세트 생성을 거부한다.
-  const minBudget = minByObjective[objective] ?? (objective === 'leads' ? 10_000 : 2_000);
-  // 예산이 최소 미만이면 최소로 끌어올린다(정책 도착·목표 변경 시) — 기본 '최소 위주' 유지·항상 유효.
+  // 목표별 최소 일예산 = Meta floor(정책에서 받음). 미달이면 Meta가 광고세트 생성을 거부한다.
+  const minBudget = minByObjective[objective] ?? 1_521;
+  // 사용자가 안 만졌으면 항상 최소(=floor)로 따라간다 — 기본 '최소 위주' + 정책 변경 자동 반영.
   useEffect(() => {
-    setBudget((b) => (b < minBudget ? minBudget : b));
-  }, [minBudget]);
+    if (!budgetTouched) setBudget(minBudget);
+  }, [minBudget, budgetTouched]);
   const valid = name.trim().length > 0 && budget >= minBudget && runDays >= 1;
 
   return (
@@ -121,7 +123,10 @@ export function CampaignForm({
             step={1000}
             className={inputCls}
             value={budget}
-            onChange={(e) => setBudget(Number(e.target.value))}
+            onChange={(e) => {
+              setBudgetTouched(true);
+              setBudget(Number(e.target.value));
+            }}
           />
         </Field>
         <Field label="집행 기간 (일)" hint="1~90일">

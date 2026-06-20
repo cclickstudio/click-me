@@ -37,7 +37,12 @@ from domain.management.approval import (
 )
 from domain.management.campaign_policy import get_campaign_policy, min_daily_budget_for
 from domain.management.comparison.service.comparison_service import ComparisonService
-from domain.management.contracts.enums import ActionTier, CampaignState, ExecutionMode
+from domain.management.contracts.enums import (
+    ActionTier,
+    CampaignState,
+    DiagnosisStatus,
+    ExecutionMode,
+)
 from domain.management.contracts.fault_injection import FaultConfig, FaultMode
 from domain.management.contracts.policy import (
     APPROVAL_POLICY_VERSION,
@@ -60,6 +65,7 @@ from domain.management.detection.exposure_model import (
     expected_hourly_impressions,
     find_anomaly_window,
 )
+from domain.management.detection.performance_dx import diagnose_performance
 from domain.management.escalation import EscalationController
 from domain.management.escalation_demo import DemoScenarioDetector
 from domain.management.execution.executor import DEFAULT_ALLOWED_MODES, Executor
@@ -72,6 +78,7 @@ from domain.management.execution.tier import (
 from domain.management.target_check import is_target_missed
 from domain.management.wiring import (
     build_audit_sink,
+    build_diagnosis_agent,
     build_escalation_store,
     build_idempotency_store,
     build_reader,
@@ -527,10 +534,42 @@ async def _list_campaigns_real(
     }
 
 
+async def _campaign_diagnosis(
+    reader, campaign_id: str, summary: dict, as_of: datetime
+) -> dict | None:
+    """성과 미달 진단 — 결정론 판정 후 INCONCLUSIVE면 LLM agent 재판정(키 있을 때).
+
+    additive·best-effort: 신호 조회나 LLM이 실패해도 None 반환 → 상세 화면은 그대로.
+    """
+    try:
+        relevance = await reader.get_relevance_diagnostics(campaign_id)
+        dx = diagnose_performance(
+            TENANT_ID,
+            campaign_id,
+            roas=summary.get("roas"),
+            target_roas=summary.get("target_roas"),
+            as_of=as_of,
+            relevance=relevance,
+        )
+        if dx is None:
+            return None
+        if dx.status == DiagnosisStatus.INCONCLUSIVE:
+            dx = await build_diagnosis_agent(settings)(dx, reader)
+    except Exception:  # noqa: BLE001 — 진단은 부가 정보: 실패해도 실데이터 상세는 무영향
+        return None
+    return {
+        "anomaly_type": dx.anomaly_type.value,
+        "hypothesis": dx.hypothesis,
+        "confidence": dx.confidence,
+        "source": dx.source.value,
+        "status": dx.status.value,
+    }
+
+
 async def _get_campaign_real(
     campaign_id: str, conversion_value_krw: int | None = None, target_roas: float | None = None
 ) -> dict:
-    """실연동 — 캠페인 상세(시간별 실측 + 기대곡선 + 요약)."""
+    """실연동 — 캠페인 상세(시간별 실측 + 기대곡선 + 요약 + 성과 미달 진단)."""
     reader = build_reader(settings)
     today = _today_utc()
     # 독립 호출 3개 병렬 — 순차로 기다리면 토글 펼침이 느림(Meta 왕복 ×3).
@@ -545,6 +584,7 @@ async def _get_campaign_real(
         raise HTTPException(status_code=404, detail=f"캠페인 없음: {campaign_id}")
     actual = [s.impressions for s in snaps]
     expected = expected_hourly_impressions(info.daily_budget_krw)
+    summary = _real_summary(m, info.daily_budget_krw, conversion_value_krw, target_roas)
     return {
         "campaign_id": info.campaign_id,
         "name": info.name,
@@ -554,7 +594,8 @@ async def _get_campaign_real(
         "actual": actual,
         "anomaly_hours": find_anomaly_window(expected, actual) if actual else [],
         "series": daily,
-        "summary": _real_summary(m, info.daily_budget_krw, conversion_value_krw, target_roas),
+        "summary": summary,
+        "diagnosis": await _campaign_diagnosis(reader, campaign_id, summary, m.as_of),
     }
 
 
@@ -771,7 +812,7 @@ _DEMO_AD_ACCOUNT = "act_demo_001"
 class CreateCampaignRequest(BaseModel):
     name: str
     objective: Literal["traffic", "leads"] = "traffic"  # 트래픽(클릭) / 리드(잠재고객)
-    daily_budget_krw: int = Field(ge=2_000)  # Meta 최소 일예산 정책 (목표별 추가 검증은 핸들러)
+    daily_budget_krw: int = Field(ge=1)  # 실제 최소는 핸들러가 라이브 정책(Meta floor)으로 검증
     run_days: int = Field(ge=1, le=90)
     creative_ad_id: str | None = None
     # Meta 타겟·정책 — 폼 입력(단일값) → CampaignConfig로 매핑.
