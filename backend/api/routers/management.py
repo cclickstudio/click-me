@@ -280,7 +280,14 @@ async def execute(body: ExecuteRequest, db: AsyncSession = Depends(get_db)):
             await _record_created_campaign(db, body.proposal, result)
         except Exception:  # noqa: BLE001 — 적재 실패가 생성 응답을 막지 않게
             await db.rollback()
-    return {"result": result.model_dump(mode="json")}
+    response: dict[str, object] = {"result": result.model_dump(mode="json")}
+    # 실패면 Meta 사용자용 안내(error_user_msg)를 끌어올려 프론트가 그대로 보여주게 한다.
+    status = result.status.value if hasattr(result.status, "value") else str(result.status)
+    if status != "success":
+        msg = _find_in_snapshot(result.platform_response_snapshot, "user_msg")
+        if msg:
+            response["error_message"] = str(msg)
+    return response
 
 
 @router.get("/created-campaigns")

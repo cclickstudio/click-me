@@ -11,8 +11,18 @@ from __future__ import annotations
 import time
 from typing import Any
 
-# Meta가 데이터로 노출하지 않는 정책 — 문서 기준 기본값. 바뀌면 여기만 수정.
-_SPECIAL_AD_CATEGORIES = ["NONE", "HOUSING", "EMPLOYMENT", "CREDIT", "ISSUES_ELECTIONS_POLITICS"]
+# Meta가 데이터로 노출하지 않는 정책 — 문서 기준 기본값. Meta 정책이 바뀌면 여기만 고치면
+# /campaign-policy를 통해 프론트(폼)까지 자동 반영된다(프론트는 이 라벨을 그대로 렌더).
+# value=Meta API special_ad_categories enum(고정), label=현재 표시명.
+_SPECIAL_AD_CATEGORIES = [
+    {"value": "NONE", "label": "없음"},
+    {"value": "HOUSING", "label": "주택"},
+    {"value": "EMPLOYMENT", "label": "고용"},
+    # Meta가 2025년 '신용'→'금융 상품·서비스'로 확장·개명(API enum은 CREDIT 유지).
+    {"value": "CREDIT", "label": "금융 상품·서비스"},
+    {"value": "ISSUES_ELECTIONS_POLITICS", "label": "사회·선거·정치"},
+]
+# 특별 카테고리는 18~65 강제(Meta), 일반 광고는 더 낮게 가능 — 안전 기본은 18.
 _AGE_MIN, _AGE_MAX = 18, 65
 
 # 목표별 안전 최소 일예산(KRW). 리드(전환 최적화)는 floor보다 높은 최소를 요구한다.

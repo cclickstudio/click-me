@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import uuid4
 
@@ -170,6 +170,13 @@ class MetaAdsWriter:
             return self._failure(
                 "create_adset", campaign_id, idem_key, FailureReason.PLATFORM_ERROR
             )
+        # 일정 보정 — Meta는 일예산 광고세트를 "최소 24h 게재 예약" 요구(subcode 1487793).
+        # 제안 생성 시각(config.start_at)이 실행 시점엔 과거가 돼 창이 24h 미만이 될 수 있다.
+        # → 시작은 항상 미래(now+5분), 종료는 시작+24h 이상으로 보정(여유 10분).
+        now = datetime.now(UTC)
+        start = config.start_at if config.start_at > now else now + timedelta(minutes=5)
+        min_end = start + timedelta(hours=24, minutes=10)
+        end = config.end_at if config.end_at > min_end else min_end
         data: dict[str, Any] = {
             "name": f"{config.name or campaign_id}-adset",
             "campaign_id": campaign_id,  # 부모 캠페인(Meta id) — 광고세트가 매달릴 노드
@@ -188,8 +195,8 @@ class MetaAdsWriter:
                 }
             ),
             "status": "PAUSED",  # 안전 — 생성 후 사람이 활성화(Task5)
-            "start_time": config.start_at.isoformat(),
-            "end_time": config.end_at.isoformat(),
+            "start_time": start.isoformat(),  # 보정된 일정(미래 시작)
+            "end_time": end.isoformat(),  # 보정된 일정(시작+24h 이상)
         }
         if config.objective == "leads":
             # 즉석 양식 리드 — 폼을 띄울 페이지 지정 + 광고 안에서(ON_AD) 폼 노출.
@@ -406,8 +413,11 @@ class MetaAdsWriter:
                 FailureReason.RATE_LIMITED if exc.is_rate_limited else FailureReason.PLATFORM_ERROR
             )
             # 진단용 서버 로그 — 어느 단계(operation)에서 Meta가 왜 거부했는지. exc 메시지엔
-            # 토큰 미포함(MetaApiError 설계). API 응답엔 여전히 reason만(마스킹 유지).
+            # 토큰 미포함(MetaApiError 설계). API 응답엔 reason + 사용자용 안내(error_user_msg)만.
             logger.warning("Meta 쓰기 실패 [%s] code=%s: %s", operation, exc.code, exc)
+            # error_user_msg는 Meta가 주는 사람용 설명(토큰·기밀 없음) → 프론트에 그대로 표시 가능.
+            if exc.user_msg:
+                detail["user_msg"] = exc.user_msg
             return self._failure(operation, campaign_id, idem_key, reason, **detail)
         except httpx.HTTPError as exc:
             logger.warning("Meta 쓰기 HTTP 오류 [%s]: %s", operation, type(exc).__name__)
