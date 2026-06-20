@@ -1,36 +1,44 @@
-# 컨텍스트 노트 — 상품 이미지 픽셀 보존 합성
+# 컨텍스트 노트 — 상품 이미지 보존 + 자연스러운 통합 (마스크 인페인팅)
 
 ## 왜 이 작업을 하는가
 
-기존 compose 모드는 `images.edit`에 상품 이미지를 **마스크 없이** 넘겨서, AI가
-이미지 전체를 재생성 → 업로드한 상품과 결과물의 상품이 크게 달라지는 문제.
-(프롬프트의 "PRODUCT IS PROTECTED"는 강제력 없는 텍스트일 뿐.)
+1차 문제: 기존 compose는 `images.edit`에 상품을 **마스크 없이** 넘겨 전체 재생성
+→ 상품이 크게 달라짐.
+2차 문제(순수 합성 시도): 배경 따로 생성 + 실제 상품 paste → 픽셀은 보존되나
+조명·그림자·원근 불일치로 "오려붙인" 부자연스러움.
 
-해결: 실제 상품 픽셀을 그대로 paste. AI는 배경만 그린다.
+최종 해결: **마스크 인페인팅**. 실제 상품을 캔버스에 배치하고 마스크로 잠근 뒤,
+AI가 상품을 보면서 주변 배경·그림자·텍스트를 한 패스로 생성.
+→ 상품 픽셀 보존 + 장면 통합의 자연스러움 동시 확보.
 
 ## 핵심 흐름
 
 ```
 상품 이미지
- → remove_product_background()   # gpt-image-2 edit, background=transparent → RGBA PNG (1회)
- → 배경 생성 (후보 3종 각각, 상품 없는 배경 + 텍스트)
- → composite_product()           # 템플릿 상품영역에 paste
- → composite_logo()              # 기존
+ → remove_product_background()        # gpt-image edit, background=transparent → RGBA (1회)
+ → _build_inpaint_base_and_mask()     # 상품을 템플릿 박스에 배치 → base + mask 생성
+ → images.edit(image=base, mask=mask, prompt=인페인팅)  # 후보 3종 각각
+ → composite_logo()                   # 기존
  → S3
 ```
 
+## 마스크 규약 (중요)
+
+OpenAI: 마스크의 **투명(alpha=0) 영역이 "수정될 곳"**.
+→ 상품 실루엣 = 불투명(보존), 나머지 = 투명(배경/텍스트 생성).
+`_build_inpaint_base_and_mask`에서 상품 알파를 마스크에 paste해 실루엣만 불투명화.
+
 ## 주의점
 
-- 누끼를 AI(edit)로 하므로 추출 단계에서 상품이 미세하게 변형될 수 있음.
-  부족하면 `rembg`(로컬, onnxruntime+u2net) 도입으로 전환.
-- gpt-image-2 edit + `background="transparent"`는 PNG(alpha) 반환. b64_json 디코딩.
+- 누끼를 AI(edit)로 하므로 추출 단계에서 상품이 미세 변형 가능 → 부족하면 `rembg`로 전환.
 - 누끼 API 호출은 비용↑ → 반드시 후보 루프 밖 1회.
-- multimodal 모드(`GENERATOR_GEN_MODE=multimodal`)는 product_image를 아예 안 씀 → 이번 작업 범위는 pipeline 모드. multimodal 합류는 후속.
+- 상품 이미지가 있으면 **gen_mode 무관**하게 인페인팅 경로(candidate_gen에서 분기).
+  multimodal 한방 생성은 상품 보존 불가라 상품 있을 땐 안 씀.
+- 마스크 경계에서 가끔 AI가 상품을 살짝 건드릴 수 있음(순수 재생성보다는 안정적).
 
-## 합성 배치 (composite_product, _composite_logo_pil 패턴 차용)
+## 상품 배치 박스 (_COMPOSE_PRODUCT_BOXES, 화면 비율)
 
-- 상품을 상품영역 박스 안에 비율 유지로 contain → 박스 중앙 정렬.
-- A: y중심 ~ 상단 27%, 폭 ~ 화면 60%
-- B: y중심 ~ 화면 50%, 폭 ~ 화면 62%
-- C: x중심 ~ 화면 75%, 폭 ~ 화면 42%
+- A: (0.14, 0.06, 0.86, 0.52) 상단 — 텍스트는 하단
+- B: (0.16, 0.20, 0.84, 0.74) 중앙 — 텍스트는 상·하 밴드
+- C: (0.52, 0.16, 0.96, 0.84) 우측 — 텍스트는 좌측 패널
 - 실제 값은 생성 결과 보고 미세조정.

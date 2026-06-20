@@ -165,24 +165,20 @@ _TEMPLATE_SAFE_ZONES: dict[TemplateType, str] = {
     ),
 }
 
-# ── [컴포즈 모드] 상품 배치 영역 Safe Zone ───────────────────────────────────
-# 배경만 생성하므로, 이후 실제 상품 PNG가 합성될 영역(_COMPOSE_PRODUCT_ZONES와 동일 구도)을
-# AI가 깨끗이 비워두도록 강하게 지시한다. 텍스트 영역도 함께 비운다.
+# ── [컴포즈 모드] 텍스트 배치 가이드 (인페인팅) ───────────────────────────────
+# 상품은 이미 캔버스에 배치되어 잠겨 있다. 텍스트/배경을 상품과 겹치지 않게 배치하도록 안내한다.
 _TEMPLATE_SAFE_ZONES_COMPOSE: dict[TemplateType, str] = {
     TemplateType.A: (
-        "PRODUCT PLACEMENT AREA: Keep the upper 55% of the frame clean, simple, and uncluttered "
-        "— a product photo will be composited there. Do NOT draw any object in that area. "
-        "Keep the bottom 38% minimal — it will be covered by a text overlay."
+        "LAYOUT: The locked product sits in the upper area. "
+        "Build the background around it and keep the bottom 38% suitable for a text overlay."
     ),
     TemplateType.B: (
-        "PRODUCT PLACEMENT AREA: Keep the middle 59% of the frame clean and uncluttered "
-        "— a product photo will be composited there. Do NOT draw any object in that area. "
-        "Keep the top 17% and bottom 24% clear — they will be covered by text banners."
+        "LAYOUT: The locked product sits in the middle area. "
+        "Keep the top 17% and bottom 24% suitable for text banners."
     ),
     TemplateType.C: (
-        "PRODUCT PLACEMENT AREA: Keep the RIGHT 47% of the frame clean and uncluttered "
-        "— a product photo will be composited there. Do NOT draw any object in that area. "
-        "The left 46% is a text panel — keep it empty of any object."
+        "LAYOUT: The locked product sits on the RIGHT side. "
+        "Keep the left 46% suitable for a text panel."
     ),
 }
 
@@ -310,20 +306,20 @@ Output requirements:
 - Product clearly visible and well-lit
 - CRITICAL: ALL three text elements (HEADLINE, BODY, CTA BUTTON) must be COMPLETELY visible within the image — zero clipping or cutoff allowed under any circumstance"""
 
-# ── [컴포즈 모드] 프롬프트 ──────────────────────────────────────────────────
-# 사용자가 제공한 상품 이미지를 픽셀 그대로 보존하기 위해, AI는 상품을 그리지 않고
-# "상품 없는 광고 배경"만 생성한다. 실제 상품 PNG는 이후 PIL로 합성된다(composite_product).
-# 따라서 상품 배치 영역(_COMPOSE_PRODUCT_ZONES)은 반드시 비워두도록 강하게 지시한다.
+# ── [컴포즈 모드] 프롬프트 (마스크 인페인팅) ─────────────────────────────────
+# 실제 상품 PNG를 캔버스에 미리 배치하고 마스크로 잠근 뒤 Edit API에 넘긴다.
+# AI는 잠긴 상품은 그대로 두고, 그 주위 배경·조명·그림자(+텍스트)를 한 패스로 생성한다.
+# → 상품 픽셀은 보존되면서 장면에 자연스럽게 통합된다.
 _COMPOSE_PROMPT_TEMPLATE = """\
-Create a professional {platform} advertisement BACKGROUND scene.
-IMPORTANT: Do NOT draw any product, object, or main subject. This is a background-only image.
-THIS IS A BACKGROUND-ONLY IMAGE — do NOT include any text, letters, words, or numbers.
+This image already contains a REAL product photo that is LOCKED and must not change.
+DO NOT alter, move, redraw, recolor, or stylize the product in any way.
+Your task: generate a professional {platform} advertisement BACKGROUND around the locked product.
 
 Visual style: {style}
 Photography style: {photo_style}
 Strategy: {strategy_desc}
 
-Context — a "{product_name}" product photo will be composited on top later.
+Product: {product_name}
 {core_values_line}Target audience: {target_audience}
 {color_line}
 {tone_line}
@@ -334,22 +330,24 @@ Background direction:
 {safe_zone}
 
 Requirements:
-- Create ONLY an advertising background scene — no product, no main object, no subject
-- Background lighting and mood must match the photography style above
-- The product placement area must stay clean and uncluttered (a product will be placed there)
+- Keep the locked product EXACTLY as-is — zero modification to its pixels
+- Build a cohesive background that matches the product's lighting and perspective
+- Add a natural, soft contact shadow under the product so it sits naturally in the scene
 - STRICTLY NO text, letters, words, numbers, or typography of any kind
 - No logos, watermarks, URLs, or QR codes
 - Clean, modern aesthetic suitable for Meta/Instagram feed"""
 
 _COMPOSE_PROMPT_TEMPLATE_WITH_TEXT = """\
-Create a professional Korean {platform} advertisement BACKGROUND scene with integrated Korean text.
-IMPORTANT: Do NOT draw any product, object, or main subject. Render only the background and the Korean text overlay.
+This image already contains a REAL product photo that is LOCKED and must not change.
+DO NOT alter, move, redraw, recolor, or stylize the product in any way.
+Your task: generate a professional Korean {platform} advertisement around the locked product —
+the background scene AND the Korean ad text overlay.
 
 Visual style: {style}
 Photography style: {photo_style}
 Strategy: {strategy_desc}
 
-Context — a "{product_name}" product photo will be composited on top later.
+Product: {product_name}
 {core_values_line}Target audience: {target_audience}
 {color_line}
 {tone_line}
@@ -372,8 +370,9 @@ Typography rules:
 - NEVER use a font size so large that text overflows its designated zone
 
 Output requirements:
-- Render ONLY the background and the text — NO product, object, or main subject
-- The product placement area must stay clean (a product photo will be placed there)
+- Keep the locked product EXACTLY as-is — zero modification to its pixels
+- Add a natural soft contact shadow so the product sits naturally in the scene
+- Place text only in its designated zones — never overlap the product
 - Commercial advertising quality, modern and clean aesthetic for Meta/Instagram
 - CRITICAL: ALL three text elements (HEADLINE, BODY, CTA BUTTON) must be COMPLETELY visible — zero clipping"""
 
@@ -466,7 +465,7 @@ async def generate_image(
     brand_color: str | None = None,
     tone: str | None = None,
     original_image_bytes: bytes | None = None,
-    compose_mode: bool = False,
+    product_cutout_bytes: bytes | None = None,
     improvement_context: str | None = None,
     headline: str | None = None,
     body: str | None = None,
@@ -485,8 +484,8 @@ async def generate_image(
         else ""
     )
 
-    # ── [컴포즈 모드] 상품 없는 배경만 생성 (실제 상품은 이후 PIL 합성) ──────────
-    if compose_mode:
+    # ── [컴포즈 모드] 마스크 인페인팅 — 상품 잠금 + 주변 배경/텍스트 생성 ──────────
+    if product_cutout_bytes is not None:
         target_audience = product_analysis.target_audience or "general audience"
         product_visual_context = _build_product_visual_context(product_analysis, brand_color)
 
@@ -522,12 +521,20 @@ async def generate_image(
                 safe_zone=_TEMPLATE_SAFE_ZONES_COMPOSE[template],
             )
 
-        provider = settings.generator_image_provider
-        if provider == "openai":
-            return await _generate_with_openai(prompt, size)
-        if provider == "google_genai":
-            return await _generate_with_gemini(prompt, size)
-        raise NotImplementedError(f"지원하지 않는 GENERATOR_IMAGE_PROVIDER: {provider!r}")
+        base_png, mask_png = _build_inpaint_base_and_mask(product_cutout_bytes, template, size)
+        base_file = io.BytesIO(base_png)
+        base_file.name = "base.png"
+        mask_file = io.BytesIO(mask_png)
+        mask_file.name = "mask.png"
+        response = await _openai_client.images.edit(
+            model=settings.generator_image_model,
+            image=base_file,
+            mask=mask_file,
+            prompt=prompt,
+            n=1,
+            size=size.value,
+        )
+        return base64.b64decode(response.data[0].b64_json)
 
     # ── [개선 모드] Edit API ───────────────────────────────────────────────────
     if original_image_bytes is not None:
@@ -706,9 +713,9 @@ async def remove_product_background(product_image_bytes: bytes) -> bytes:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 상품 합성 (PIL 기반)
-# 배경(AI 생성) 위에 누끼한 실제 상품 PNG를 템플릿별 상품 영역에 합성한다.
-# 텍스트 영역을 가리지 않도록 영역을 분리해 배치한다(_COMPOSE_PRODUCT_BOXES).
+# 인페인팅용 베이스 캔버스 + 마스크 생성 (PIL 기반)
+# 누끼한 상품을 템플릿별 영역에 배치한 베이스 이미지와, 상품 실루엣만 잠그는 마스크를 만든다.
+# OpenAI 마스크 규약: 투명(alpha=0) 영역이 "수정될 곳" → 상품은 불투명(보존), 배경은 투명(생성).
 # ─────────────────────────────────────────────────────────────────────────────
 
 # 템플릿별 상품 배치 박스 — (x0, y0, x1, y1), 광고 가로/세로 대비 비율.
@@ -723,42 +730,43 @@ _COMPOSE_PRODUCT_BOXES: dict[TemplateType, tuple[float, float, float, float]] = 
 _PRODUCT_FILL = 0.92
 
 
-def _composite_product_pil(
-    product: Image.Image,
-    ad: Image.Image,
-    template: TemplateType,
-) -> None:
-    """누끼한 상품을 광고 배경에 in-place 합성한다. 템플릿별 영역에 비율 유지 배치."""
-    if product.mode != "RGBA":
-        product = product.convert("RGBA")
-
+def _place_product(
+    product: Image.Image, w: int, h: int, template: TemplateType
+) -> tuple[Image.Image, int, int]:
+    """상품을 템플릿 박스에 비율 유지로 리사이즈하고 배치 좌표를 계산한다."""
     x0, y0, x1, y1 = _COMPOSE_PRODUCT_BOXES[template]
-    box_w = max(1, int(ad.width * (x1 - x0) * _PRODUCT_FILL))
-    box_h = max(1, int(ad.height * (y1 - y0) * _PRODUCT_FILL))
-
-    # 비율 유지하며 박스 안에 contain
+    box_w = max(1, int(w * (x1 - x0) * _PRODUCT_FILL))
+    box_h = max(1, int(h * (y1 - y0) * _PRODUCT_FILL))
     scale = min(box_w / product.width, box_h / product.height)
     new_w = max(1, int(product.width * scale))
     new_h = max(1, int(product.height * scale))
     product = product.resize((new_w, new_h), Image.LANCZOS)
-
-    # 박스 중앙 정렬
-    cx = int(ad.width * (x0 + x1) / 2)
-    cy = int(ad.height * (y0 + y1) / 2)
-    x = cx - new_w // 2
-    y = cy - new_h // 2
-
-    ad.paste(product, (x, y), product)
+    cx = int(w * (x0 + x1) / 2)
+    cy = int(h * (y0 + y1) / 2)
+    return product, cx - new_w // 2, cy - new_h // 2
 
 
-def composite_product(image_bytes: bytes, product_bytes: bytes, template: TemplateType) -> bytes:
-    """누끼한 상품을 광고 배경에 합성하여 PNG bytes로 반환한다."""
-    ad = Image.open(io.BytesIO(image_bytes)).convert("RGBA")
-    product = Image.open(io.BytesIO(product_bytes)).convert("RGBA")
-    _composite_product_pil(product, ad, template)
-    buf = io.BytesIO()
-    ad.save(buf, format="PNG")
-    return buf.getvalue()
+def _build_inpaint_base_and_mask(
+    product_cutout_bytes: bytes, template: TemplateType, size: AdSize
+) -> tuple[bytes, bytes]:
+    """누끼 상품을 배치한 베이스 PNG와, 상품 실루엣만 보존하는 마스크 PNG를 만든다."""
+    w, h = (int(v) for v in size.value.split("x"))
+    product = Image.open(io.BytesIO(product_cutout_bytes)).convert("RGBA")
+    product, x, y = _place_product(product, w, h, template)
+
+    # 베이스: 중립 회색 위에 상품 배치 (배경 영역은 어차피 재생성됨)
+    base = Image.new("RGBA", (w, h), (245, 245, 245, 255))
+    base.paste(product, (x, y), product)
+
+    # 마스크: 전체 투명(수정 대상) + 상품 실루엣만 불투명(보존)
+    mask = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    keep = Image.new("RGBA", product.size, (255, 255, 255, 255))
+    mask.paste(keep, (x, y), product)  # 상품 알파를 따라 불투명 영역 형성
+
+    base_buf, mask_buf = io.BytesIO(), io.BytesIO()
+    base.save(base_buf, format="PNG")
+    mask.save(mask_buf, format="PNG")
+    return base_buf.getvalue(), mask_buf.getvalue()
 
 
 # ─────────────────────────────────────────────────────────────────────────────
