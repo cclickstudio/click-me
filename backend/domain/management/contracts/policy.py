@@ -8,6 +8,9 @@ from domain.management.contracts.enums import ActionTier
 
 APPROVAL_POLICY_VERSION = "v1"
 
+# ── 재생성 decide 확신도 게이트 임계 (B) — 이 미만이면 돈 늘리는 처방을 관망으로 강등 ──
+DECIDE_CONFIDENCE_MIN = 0.5
+
 # ── P1. Tier 매핑 정책표 (정본 — 제안의 action_tier는 라벨일 뿐) ──
 TIER_POLICY: dict[str, ActionTier] = {
     "GET_INSIGHTS": ActionTier.TIER_0,
