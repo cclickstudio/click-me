@@ -15,3 +15,5 @@ class GenerationState(TypedDict, total=False):
     qa_results: list[dict]  # QualityReport (candidates와 같은 순서)
     explanations: list[dict]  # CandidateExplanation (candidates와 같은 순서)
     error: str | None
+    # 상품 이미지 직접 주입 (테스트용 — 추후 S3 키 다운로드로 전환)
+    product_image_bytes: bytes | None

@@ -52,6 +52,7 @@ async def generate_candidates(state: GenerationState, config: RunnableConfig) ->
     gen_size = _map_ad_size(width, height)
     brand_color = req.get("brand_color")
     tone = req.get("tone_and_manner")
+    product_image_bytes: bytes | None = state.get("product_image_bytes")
 
     logo_s3_key = req.get("brand_logo_s3_key")
     logo_image_bytes: bytes | None = None
@@ -89,7 +90,7 @@ async def generate_candidates(state: GenerationState, config: RunnableConfig) ->
                 template=plan.template,
             )
 
-            # 2. 이미지 생성 (카피 텍스트를 프롬프트에 반영)
+            # 2. 이미지 생성 (카피 텍스트 + 상품 이미지를 프롬프트에 반영)
             image_bytes = await generate_image(
                 product_analysis=product_analysis,
                 strategy=plan.strategy,
@@ -97,6 +98,7 @@ async def generate_candidates(state: GenerationState, config: RunnableConfig) ->
                 size=gen_size,
                 brand_color=brand_color,
                 tone=tone,
+                product_image_bytes=product_image_bytes,
                 headline=ad_copy.headline,
                 body=ad_copy.body,
                 cta=ad_copy.cta,
