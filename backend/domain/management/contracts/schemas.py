@@ -29,6 +29,7 @@ from domain.management.contracts.enums import (
     FailureReason,
     FaultMode,
     ProposalStatus,
+    RelevanceRank,
     ResultStatus,
 )
 
@@ -67,6 +68,7 @@ class CampaignConfig(Contract):
     start_at: UtcDatetime
     end_at: UtcDatetime
     creative_ad_id: str | None = None  # core Ad 느슨 참조 (FK 없음)
+    image_hash: str | None = None  # Meta /adimages 업로드 해시 — 광고 소재 이미지(없으면 텍스트만)
     # Meta 타겟·정책 — 광고세트 targeting + 캠페인 special_ad_categories로 매핑된다.
     special_ad_categories: tuple[str, ...] = ()  # () | ("HOUSING",) | ("EMPLOYMENT",) 등
     countries: tuple[str, ...] = ("KR",)  # geo_locations.countries (ISO2)
@@ -188,6 +190,33 @@ class DeliveryEstimate(Contract):
     estimate_mau_lower: int = Field(ge=0)
     estimate_mau_upper: int = Field(ge=0)
     daily_outcomes_curve: tuple[dict[str, Any], ...] = ()
+    as_of: UtcDatetime
+
+
+class RelevanceDiagnostics(Contract):
+    """Ad Relevance Diagnostics — 메타 본인 채점표 (meta-data-sources §2②).
+
+    광고(ad) 단위 경쟁 대비 백분위. QUALITY_DEGRADED 1차 신호 + conversion_rate_ranking은
+    성과 미달(PERFORMANCE_BELOW_TARGET) 진단 신호. 미설정/저노출이면 UNKNOWN(합성 금지).
+    """
+
+    campaign_id: str
+    quality_ranking: RelevanceRank = RelevanceRank.UNKNOWN
+    engagement_rate_ranking: RelevanceRank = RelevanceRank.UNKNOWN
+    conversion_rate_ranking: RelevanceRank = RelevanceRank.UNKNOWN
+    as_of: UtcDatetime
+
+
+class DeliveryStatusDetail(Contract):
+    """상태·심사·학습 상세 (meta-data-sources §3.1) — Insights 아닌 Ad/AdSet 객체에서.
+
+    REVIEW_*/LEARNING_PHASE 감지용. get_state(CampaignState)와 별개의 상세 신호.
+    """
+
+    campaign_id: str
+    effective_status: str  # ACTIVE / PAUSED / DISAPPROVED / PENDING_REVIEW ...
+    issues_info: tuple[str, ...] = ()  # 심사 거절/제한 사유
+    learning_stage: str | None = None  # LEARNING / SUCCESS / FAIL (adset)
     as_of: UtcDatetime
 
 

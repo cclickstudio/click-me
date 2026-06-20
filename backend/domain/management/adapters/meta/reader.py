@@ -20,16 +20,18 @@ from domain.management.adapters.meta.client import (
     build_meta_client,
     normalize_ad_account,
 )
-from domain.management.contracts.enums import CampaignState
+from domain.management.contracts.enums import CampaignState, RelevanceRank
 from domain.management.contracts.schemas import (
     AccountFunding,
     CampaignConfig,
     CampaignInfo,
     CreativePreview,
     DeliveryEstimate,
+    DeliveryStatusDetail,
     DemographicMetrics,
     MetricsSnapshot,
     PlatformMetrics,
+    RelevanceDiagnostics,
 )
 
 #: Meta effective_status → contracts CampaignState 매핑 (미등록 값은 DRAFT 보수 처리).
@@ -73,6 +75,12 @@ _PLATFORM_FIELDS = "impressions,clicks,spend,reach"
 
 # 연령×성별 분해 조회 필드 — age,gender breakdown
 _DEMOGRAPHIC_FIELDS = "impressions,clicks,spend,reach"
+
+# Ad Relevance Diagnostics — 메타 본인 채점표 (광고 단위 백분위, meta-data-sources §2②)
+_RELEVANCE_FIELDS = "quality_ranking,engagement_rate_ranking,conversion_rate_ranking"
+
+# 상태·심사 상세 — 캠페인 노드 effective_status + 심사 이슈(meta-data-sources §3.1)
+_STATUS_FIELDS = "effective_status,issues_info"
 
 # 크리에이티브 조회 필드 — 이름 + creative(여러 이미지 소스·문구·썸네일).
 # 동적/Advantage+ 광고는 image_url이 비고 asset_feed_spec.images 또는 object_story_spec에
@@ -131,6 +139,15 @@ _CONVERSION_ACTION_TYPES: dict[str, tuple[str, ...]] = {
 
 # 자동 감지 우선순위 — 실제 발생한 전환 중 구매에 가장 가까운 것부터 택1.
 _CONVERSION_EVENT_PRIORITY: tuple[str, ...] = ("purchase", "lead", "signup", "install")
+
+
+_RANK_VALUES: frozenset[str] = frozenset(r.value for r in RelevanceRank)
+
+
+def _to_rank(value: Any) -> RelevanceRank:
+    """Meta 랭킹 문자열 → RelevanceRank (미설정·저노출 'unknown' 포함, 미등록 값도 UNKNOWN)."""
+    text = str(value or "").lower()
+    return RelevanceRank(text) if text in _RANK_VALUES else RelevanceRank.UNKNOWN
 
 
 def _to_int(value: Any) -> int:
@@ -376,6 +393,56 @@ class MetaAdsReader:
                 )
             )
         return out
+
+    async def get_relevance_diagnostics(self, campaign_id: str) -> RelevanceDiagnostics:
+        """Ad Relevance Diagnostics — 광고 단위 백분위(level=ad), 대표 1행 채택.
+
+        메타는 광고(ad) 단위로만 랭킹을 준다. 캠페인 insights를 level=ad·lifetime으로 받아
+        첫 행을 대표로 쓴다(없거나 저노출이면 전 필드 UNKNOWN — 합성 금지).
+        """
+        payload = await self._client.get(
+            f"{campaign_id}/insights",
+            {"fields": _RELEVANCE_FIELDS, "level": "ad", "date_preset": "maximum"},
+        )
+        rows = payload.get("data", [])
+        row: dict[str, Any] = rows[0] if rows else {}
+        return RelevanceDiagnostics(
+            campaign_id=campaign_id,
+            quality_ranking=_to_rank(row.get("quality_ranking")),
+            engagement_rate_ranking=_to_rank(row.get("engagement_rate_ranking")),
+            conversion_rate_ranking=_to_rank(row.get("conversion_rate_ranking")),
+            as_of=datetime.now(UTC),
+        )
+
+    async def get_delivery_status_detail(self, campaign_id: str) -> DeliveryStatusDetail:
+        """상태·심사·학습 상세 — 캠페인 effective_status·issues_info + 광고세트 learning_stage.
+
+        get_state(CampaignState 요약)와 별개로 진단 신호 원본을 그대로 노출한다.
+        """
+        node, adsets = await asyncio.gather(
+            self._client.get(campaign_id, {"fields": _STATUS_FIELDS}),
+            self._client.get(f"{campaign_id}/adsets", {"fields": "learning_stage_info"}),
+        )
+        issues = tuple(
+            str(it.get("error_message") or it.get("error_summary") or "").strip()
+            for it in (node.get("issues_info") or [])
+            if isinstance(it, dict)
+        )
+        # 광고세트 학습 단계 — 하나라도 LEARNING이면 학습 중으로 본다.
+        learning: str | None = None
+        for row in adsets.get("data", []):
+            stage = (row.get("learning_stage_info") or {}).get("status")
+            if stage:
+                learning = str(stage)
+                if str(stage).upper() == "LEARNING":
+                    break
+        return DeliveryStatusDetail(
+            campaign_id=campaign_id,
+            effective_status=str(node.get("effective_status", "")).upper(),
+            issues_info=tuple(i for i in issues if i),
+            learning_stage=learning,
+            as_of=datetime.now(UTC),
+        )
 
     async def get_min_daily_budget(self) -> int:
         """광고계정의 현재 최소 일예산(KRW)을 Meta에서 조회 — 정책 자동 최신화용.

@@ -7,10 +7,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import UTC, datetime
 
-from domain.management.contracts.enums import AnomalyType
+from domain.management.contracts.enums import AnomalyType, DiagnosisStatus, RelevanceRank
 from domain.management.contracts.fault_injection import FaultConfig, FaultMode
+from domain.management.contracts.schemas import RelevanceDiagnostics
 from domain.management.detection.guardrails import GuardVerdict
+from domain.management.detection.performance_dx import diagnose_performance
 from domain.management.detection.service.detection_service import run_detection_for_fault
 
 # 주입 FaultMode → 기대 AnomalyType (1:1 정답 라벨)
@@ -73,10 +76,80 @@ def run(seeds: range = range(20)) -> DiagnosisEvalResult:
     )
 
 
+@dataclass
+class PerformanceEvalResult:
+    """성과 미달(PERFORMANCE_BELOW_TARGET) 판정 정확도 — 실데이터 축(고장 주입 무관)."""
+
+    accuracy: float
+    false_alarms: int  # 정상(목표 70% 이내)을 미달로 잘못 잡은 수
+    n_cases: int
+
+    @property
+    def passes(self) -> bool:
+        return self.false_alarms == 0 and self.accuracy >= 0.99
+
+
+def _relevance(conv: RelevanceRank) -> RelevanceDiagnostics:
+    return RelevanceDiagnostics(
+        campaign_id="camp_perf",
+        conversion_rate_ranking=conv,
+        as_of=datetime.now(UTC),
+    )
+
+
+# 합성 케이스 — (roas, target_roas, conv_rank, 기대 결과). 기대: anomaly_type 또는 None(정상).
+# below_average + 미달 → CONFIRMED, average + 미달 → INCONCLUSIVE, 70% 이내 → None(오탐 금지).
+_PERF_CASES = [
+    (1.0, 3.0, RelevanceRank.BELOW_AVERAGE_20, AnomalyType.PERFORMANCE_BELOW_TARGET),
+    (1.5, 3.0, RelevanceRank.AVERAGE, AnomalyType.PERFORMANCE_BELOW_TARGET),
+    (2.5, 3.0, RelevanceRank.AVERAGE, None),  # 83% — 목표 70% 이내라 정상
+    (3.5, 3.0, RelevanceRank.ABOVE_AVERAGE, None),  # 목표 초과 — 정상
+    (None, 3.0, RelevanceRank.UNKNOWN, None),  # ROAS 측정 불가 — 판정 불가(정직)
+    (1.0, None, RelevanceRank.BELOW_AVERAGE_10, None),  # 목표 미입력 — 판정 불가
+]
+
+
+def run_performance() -> PerformanceEvalResult:
+    """성과 미달 진단을 합성 케이스로 채점 — 결정론, 키·LLM 불필요(게이트 #9)."""
+    correct = 0
+    false_alarms = 0
+    now = datetime.now(UTC)
+    for roas, target, conv_rank, expected in _PERF_CASES:
+        dx = diagnose_performance(
+            "org_eval",
+            "camp_perf",
+            roas=roas,
+            target_roas=target,
+            as_of=now,
+            relevance=_relevance(conv_rank),
+        )
+        predicted = dx.anomaly_type if dx else None
+        if predicted == expected:
+            correct += 1
+        if expected is None and dx is not None:
+            false_alarms += 1
+        # CONFIRMED vs INCONCLUSIVE 분기 검증 — below_average는 CONFIRMED여야 한다.
+        if dx is not None and conv_rank in {
+            RelevanceRank.BELOW_AVERAGE_10,
+            RelevanceRank.BELOW_AVERAGE_20,
+            RelevanceRank.BELOW_AVERAGE_35,
+        }:
+            assert dx.status == DiagnosisStatus.CONFIRMED  # noqa: S101 — eval 단정
+    n = len(_PERF_CASES)
+    return PerformanceEvalResult(
+        accuracy=round(correct / n, 3) if n else 0.0,
+        false_alarms=false_alarms,
+        n_cases=n,
+    )
+
+
 if __name__ == "__main__":
     r = run()
     gate = "통과" if r.passes_gate5 else "실패"
-    print(f"정확도={r.accuracy}  오탐률={r.false_positive_rate}  게이트#5={gate}")
-    print(f"케이스={r.n_cases}  평균 tool 호출={r.avg_tool_calls}")
+    print(f"[게재 고장] 정확도={r.accuracy}  오탐률={r.false_positive_rate}  게이트#5={gate}")
+    print(f"  케이스={r.n_cases}  평균 tool 호출={r.avg_tool_calls}")
     for label, preds in r.confusion.items():
         print(f"  {label} → {preds}")
+    p = run_performance()
+    verdict = "통과" if p.passes else "실패"
+    print(f"[성과 미달] 정확도={p.accuracy}  오탐={p.false_alarms}  판정={verdict}")

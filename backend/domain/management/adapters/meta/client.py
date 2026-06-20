@@ -112,6 +112,19 @@ class MetaClient:
             res = await client.post(f"{self._base}/{path}", data=body)
             return self._handle(res)
 
+    async def post_image(self, path: str, image_bytes: bytes, filename: str) -> dict[str, Any]:
+        """멀티파트 이미지 업로드 (/adimages) — data= 대신 files=로 전송.
+
+        Meta는 응답을 업로드 필드명(filename)으로 키잉한다: {images: {<filename>: {hash, url}}}.
+        """
+        async with httpx.AsyncClient(timeout=self._timeout, transport=self._transport) as client:
+            res = await client.post(
+                f"{self._base}/{path}",
+                data={"access_token": self._token},
+                files={filename: (filename, image_bytes, "image/jpeg")},
+            )
+            return self._handle(res)
+
     async def delete(self, path: str) -> dict[str, Any]:
         """객체 삭제 (HTTP DELETE). 캠페인 삭제 시 자식 광고세트·광고도 함께 삭제됨."""
         async with httpx.AsyncClient(timeout=self._timeout, transport=self._transport) as client:

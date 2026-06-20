@@ -12,7 +12,7 @@ from random import Random
 from typing import Literal
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select, update
@@ -816,12 +816,35 @@ async def get_campaign(
 _DEMO_AD_ACCOUNT = "act_demo_001"
 
 
+def _resolve_ad_account() -> str:
+    """실모드면 실제 광고계정(.env), 데모면 데모 계정."""
+    if not getattr(settings, "use_mock", True) and getattr(settings, "meta_ad_account_id", None):
+        return settings.meta_ad_account_id
+    return _DEMO_AD_ACCOUNT
+
+
+def _asset_config(name: str | None = None, image_hash: str | None = None) -> CampaignConfig:
+    """업로드·미리보기처럼 캠페인 전 단계에서 ad_account만 필요할 때 쓰는 최소 config."""
+    now = datetime.now(UTC)
+    return CampaignConfig(
+        campaign_id=f"asset_{uuid4().hex[:8]}",
+        tenant_id=TENANT_ID,
+        ad_account_id=_resolve_ad_account(),
+        name=name,
+        daily_budget_krw=1,
+        start_at=now,
+        end_at=now + timedelta(days=1),
+        image_hash=image_hash,
+    )
+
+
 class CreateCampaignRequest(BaseModel):
     name: str
     objective: Literal["traffic", "leads"] = "traffic"  # 트래픽(클릭) / 리드(잠재고객)
     daily_budget_krw: int = Field(ge=1)  # 실제 최소는 핸들러가 라이브 정책(Meta floor)으로 검증
     run_days: int = Field(ge=1, le=90)
     creative_ad_id: str | None = None
+    image_hash: str | None = None  # /ad-image 업로드 결과 — 광고 소재 이미지
     # Meta 타겟·정책 — 폼 입력(단일값) → CampaignConfig로 매핑.
     special_ad_category: Literal[
         "NONE", "HOUSING", "EMPLOYMENT", "CREDIT", "ISSUES_ELECTIONS_POLITICS"
@@ -838,6 +861,41 @@ async def campaign_policy():
     return await get_campaign_policy(build_reader(settings))
 
 
+# 미리보기 포맷 — 페이스북 피드 + 인스타그램(자동 배치라 둘 다 노출됨).
+_PREVIEW_FORMATS = ["MOBILE_FEED_STANDARD", "INSTAGRAM_STANDARD"]
+
+
+@router.post("/ad-image")
+async def upload_ad_image(file: UploadFile = File(...)):
+    """광고 소재 이미지를 Meta(/adimages)에 업로드 → image_hash 반환. 무과금(자산 등록)."""
+    writer = build_writer(settings)
+    data = await file.read()
+    image_hash = await writer.upload_image(
+        _asset_config(), data, file.filename or "ad.jpg", idem_key=f"img_{uuid4().hex[:8]}"
+    )
+    if not image_hash:
+        raise HTTPException(status_code=422, detail="이미지 업로드 실패 — 실모드(live)에서만 가능.")
+    return {"image_hash": image_hash}
+
+
+class AdPreviewRequest(BaseModel):
+    image_hash: str
+    name: str | None = None
+
+
+@router.post("/ad-preview")
+async def ad_preview(body: AdPreviewRequest):
+    """샘플 시안 — 업로드 이미지로 FB 피드·인스타 미리보기(Meta 호스팅 iframe). 무과금(읽기)."""
+    writer = build_writer(settings)
+    page_id = getattr(settings, "meta_page_id", None)
+    if not page_id:
+        raise HTTPException(status_code=422, detail="META_PAGE_ID 미설정 — 미리보기 불가.")
+    previews = await writer.generate_previews(
+        _asset_config(name=body.name), body.image_hash, _PREVIEW_FORMATS, page_id=page_id
+    )
+    return {"previews": previews}
+
+
 @router.post("/campaigns/create-proposal")
 async def create_campaign_proposal(body: CreateCampaignRequest):
     """폼 입력 → CREATE_CAMPAIGN 제안(Tier 3) 패키징. 승인 후 /execute로 생성(기본 DRY_RUN)."""
@@ -850,10 +908,7 @@ async def create_campaign_proposal(body: CreateCampaignRequest):
             detail=f"{body.objective} 캠페인의 최소 일예산은 ₩{min_budget:,}입니다 (Meta 정책).",
         )
     now = datetime.now(UTC)
-    # 실모드면 실제 광고계정(.env)으로, 데모면 데모 계정으로 패키징한다.
-    ad_account = _DEMO_AD_ACCOUNT
-    if not getattr(settings, "use_mock", True) and getattr(settings, "meta_ad_account_id", None):
-        ad_account = settings.meta_ad_account_id
+    ad_account = _resolve_ad_account()
     # 폼 단일값 → Meta 타겟 코드로 매핑.
     genders = {"all": (), "male": (1,), "female": (2,)}[body.gender]
     categories = () if body.special_ad_category == "NONE" else (body.special_ad_category,)
@@ -867,6 +922,7 @@ async def create_campaign_proposal(body: CreateCampaignRequest):
         start_at=now,
         end_at=now + timedelta(days=body.run_days),
         creative_ad_id=body.creative_ad_id,
+        image_hash=body.image_hash,
         special_ad_categories=categories,
         countries=(body.country,),
         age_min=body.age_min,

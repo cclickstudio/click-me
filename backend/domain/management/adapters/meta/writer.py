@@ -282,6 +282,56 @@ class MetaAdsWriter:
             ad_account_id=config.ad_account_id,
         )
 
+    async def upload_image(
+        self, config: CampaignConfig, image_bytes: bytes, filename: str, idem_key: str
+    ) -> str | None:
+        """이미지를 Meta(/adimages)에 업로드하고 image_hash 반환 — 광고 소재에 첨부할 값.
+
+        전송 모드(live/validate)에서만 실제 업로드. mock/dry는 None(소재 이미지 없이 진행).
+        업로드는 캠페인 변경이 아니라 자산 등록이라 과금·게재와 무관(안전).
+        """
+        self._require_writable(idem_key)
+        if self._mode not in _SENDING_MODES or self._client is None:
+            return None
+        account = normalize_ad_account(config.ad_account_id)
+        payload = await self._client.post_image(f"{account}/adimages", image_bytes, filename)
+        images = payload.get("images", {})
+        entry = images.get(filename) or next(iter(images.values()), {})
+        return entry.get("hash") if isinstance(entry, dict) else None
+
+    async def generate_previews(
+        self, config: CampaignConfig, image_hash: str, ad_formats: list[str], *, page_id: str
+    ) -> list[dict[str, str]]:
+        """소재 미리보기(샘플 시안) — 포맷별 Meta 호스팅 iframe HTML. 상태 변경 없음(읽기).
+
+        ad_formats 예: MOBILE_FEED_STANDARD(페이스북 피드)·INSTAGRAM_STANDARD(인스타).
+        client 없으면(mock/dry) 빈 목록.
+        """
+        if self._client is None:
+            return []
+        account = normalize_ad_account(config.ad_account_id)
+        creative = {
+            "object_story_spec": {
+                "page_id": page_id,
+                "link_data": {
+                    "message": config.name or "지금 신청하세요",
+                    "link": _PRIVACY_POLICY_URL,
+                    "image_hash": image_hash,
+                },
+            }
+        }
+        out: list[dict[str, str]] = []
+        for fmt in ad_formats:
+            payload = await self._client.post(
+                f"{account}/generatepreviews",
+                {"creative": json.dumps(creative), "ad_format": fmt},
+            )
+            data = payload.get("data", [])
+            body = data[0].get("body") if data and isinstance(data[0], dict) else None
+            if body:
+                out.append({"format": fmt, "html": body})
+        return out
+
     async def create_full_campaign(
         self, config: CampaignConfig, idem_key: str, *, page_id: str | None = None
     ) -> ActionResult:
@@ -307,7 +357,14 @@ class MetaAdsWriter:
         fid = _created_id(form)
         if form.status is not ResultStatus.SUCCESS or fid is None:
             return form
-        ad = await self.create_ad(config, asid, f"{idem_key}-ad", page_id=page_id, form_id=fid)
+        ad = await self.create_ad(
+            config,
+            asid,
+            f"{idem_key}-ad",
+            page_id=page_id,
+            form_id=fid,
+            image_hash=config.image_hash,  # 업로드된 소재 이미지(있으면 첨부)
+        )
         return _tag_campaign(ad, cid)
 
     async def activate(self, object_id: str, idem_key: str) -> ActionResult:

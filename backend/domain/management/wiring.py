@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from domain.management.contracts.platform import AdPlatformReader, AdPlatformWriter
+    from domain.management.contracts.schemas import DiagnosisResult
     from domain.management.execution.audit_log import AuditSink
     from domain.management.execution.executor import IdempotencyStore
 
@@ -31,6 +32,33 @@ def build_writer(settings) -> AdPlatformWriter:
 
         return MetaAdsWriter(settings, mode=ExecutionMode.DRY_RUN)
     return MetaAdsWriter(settings)
+
+
+def build_diagnosis_agent(settings):
+    """진단 LLM ReAct 러너 — ``async (prior, reader) -> DiagnosisResult``.
+
+    use_mock(데모) 또는 키 없음이면 결정론 폴백(prior 그대로) — 게이트 #9(키 없이 재현) 유지.
+    실모드 + 키면 INCONCLUSIVE 진단을 LLM이 메타 신호 tool로 재판정한다(P6 고정값 주입).
+    """
+    api_key = getattr(settings, "openai_api_key", None)
+    if getattr(settings, "use_mock", True) or not api_key:
+
+        async def _passthrough(prior: DiagnosisResult, _reader) -> DiagnosisResult:
+            return prior
+
+        return _passthrough
+
+    model = getattr(settings, "management_diagnosis_model", "gpt-4o-mini")
+    temperature = getattr(settings, "management_diagnosis_temperature", 0.0)
+
+    async def _run(prior: DiagnosisResult, reader) -> DiagnosisResult:
+        from domain.management.agents.diagnosis_llm import run_llm_diagnosis  # noqa: PLC0415
+
+        return await run_llm_diagnosis(
+            prior, reader, model=model, temperature=temperature, api_key=api_key
+        )
+
+    return _run
 
 
 def build_organic_reader(settings):

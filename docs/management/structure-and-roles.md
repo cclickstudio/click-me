@@ -204,7 +204,8 @@ agents/diagnosis (A)                     agents/regeneration (B)
 
 - **Must(7/8)**: contracts(계약 3종) · 실행모드 격리(`MOCK`/`DRY_RUN`/`SANDBOX_CONTRACT`/`LIVE`비활성) · Mock 고장 5종 · 기대치·이상감지 · 결정론진단 · 진단 agent · ActionProposal · **승인 플레인** · 멱등 실행기 · 예산 가드레일(90% 경고/95% 차단) · 재생성 루프 · 감사 로그 · eval(**일정 밀려도 안 자른다 — 발표 차별점**) · 통합 데모.
 - **Should**: Meta 인증/읽기/`delivery_estimate`/Preview/DRY_RUN 쓰기계약("실제 API 계약 검증" 수준까지만) · 발표 UI. 막히면 1일 내 철수.
-- **Won't(7/8 제외 — 못 한 게 아니라 안 하기로 결정)**: 실돈 LIVE · 자동 Tier2 재배분 · 통계적 A/B 승자판정 · 시뮬점수 자동교체(상관 미검증 — 발표에서 정직하게 공개) · 전환/ROAS · 다중 플랫폼 · 프로덕션 OAuth/멀티테넌시 · 완전 상태 동기화.
+- **Won't(7/8 제외 — 못 한 게 아니라 안 하기로 결정)**: 실돈 LIVE · 자동 Tier2 재배분 · 통계적 A/B 승자판정 · 시뮬점수 자동교체(상관 미검증 — 발표에서 정직하게 공개) · 다중 플랫폼 · 프로덕션 OAuth/멀티테넌시 · 완전 상태 동기화.
+  - **[갱신 2026-06-21] 전환/ROAS는 Won't에서 해제** — 전환 일반화(설치·가입·리드)·추정 ROAS·**목표 기준 이상판정**이 In scope다. 근거: `docs/superpowers/specs/2026-06-20-cvr-roas-재정의.md`(멘토 피드백). Meta는 stub→**실연동**, 액션 공간에 `EXPAND_AUDIENCE·CHANGE_BID_STRATEGY·CREATE_CAMPAIGN` 추가(06-21). 정직성: 추정은 추정으로 표기, 시뮬↔실성과 상관은 여전히 미검증.
 - A/B는 `CREATIVE_COMPARISON`, 출력은 `INSUFFICIENT_DATA / DIRECTIONAL`까지. **예산 "하드캡" = 내부 권한 한도**(Meta 지출 절대상한 보장 아님).
 
 **발표에서 정직하게 말할 한계**: 시뮬 점수 ↔ 실제 성과 상관 미검증(로드맵만 제시) · v1은 Mock 기반 · 소액 예산이라 클릭 지표까지만 신뢰 · 60+ 연령 페르소나 데이터 약점. *"안 한 것"과 "못 한 것"을 구분해서 말하는 게 발표 전략이다.*
@@ -265,9 +266,11 @@ class AnomalyType(StrEnum):
     BUDGET_EXHAUSTED = "budget_exhausted"        # 예산 소진 (결정론 진단 영역)
     SCHEDULE_GAP = "schedule_gap"                # 일정 문제 (결정론)
     LEARNING_PHASE = "learning_phase"            # 학습 기간 (결정론)
+    PERFORMANCE_BELOW_TARGET = "performance_below_target"  # ★신규 성과 미달 — 게재 고장 아닌 성과 부진 축
     INCONCLUSIVE = "inconclusive"                # 규칙엔진 판단 불가 → agent로 (없으면 agent가 빈 껍데기)
 ```
 - [ ] 카탈로그 확정  · 복수 라벨: [ ] 출력은 `list[AnomalyType]` 허용, 채점은 단일부터(권고)  □ 단일 고정
+- **[갱신 2026-06-21] `PERFORMANCE_BELOW_TARGET` 추가** — 게재 고장 5종("왜 안 나가나")과 **다른 축**(나가는데 고객 목표 미달). **실데이터·고객 목표 기반이라 `FaultMode`(주입 고장)에는 넣지 않는다**(06-20 §3). 판정 = `detection/performance_dx.py`, 모호 시 진단 agent 라우팅.
 
 **D2 — `CampaignState`** (B 소유처럼 보이지만 A도 소비자 — "노출 0"이 이상인지는 상태에 달림)
 
@@ -453,8 +456,9 @@ main
 - **장**: **HITL 설계 경험** — "어떤 액션이 자율이고 어떤 액션이 사람을 거치는가"를 코드로 박는 2026 채용 최고 키워드의 본체. 돈이 직접 안 움직여 실패해도 재승인으로 복구 가능.
 - **단**: 비동기 함정(승인 대기 중 상황 변경, 중복 클릭 경합)이 본질. 데모 임계 경로 진입으로 A 리스크 상승(의도된 트레이드오프). `ApprovedAction` 1일차 미합의 시 블로킹.
 
-**A-4. 진단 에이전트 (`agents/diagnosis.py`) — ★★★☆**
-- [ ] LangGraph + read-tool 4종 ReAct(metrics/상태/estimate/이력) / [ ] INCONCLUSIVE 케이스만 수신 / [ ] 원인+확신도+근거 출력 / [ ] 정보 방화벽(evidence 밖 정보 추론 금지)
+**A-4. 진단 에이전트 (`agents/diagnosis.py` + `agents/diagnosis_llm.py`) — ★★★☆**
+- [ ] LangGraph ReAct + **현재 `AdPlatformReader` 기반 tool 세트**(meta-data-sources §5 매핑 기준 — metrics·relevance diagnostics·status detail·demographic breakdown 등에서 적응 선택, 상한 6) / [ ] INCONCLUSIVE 케이스만 수신 / [ ] 원인+확신도+근거 출력 / [ ] 정보 방화벽(evidence 밖 정보 추론 금지)
+- **[갱신 2026-06-21]** "read-tool 4종(metrics/상태/estimate/이력)"은 06-12 stub 시절 목록 → 현재 reader 신호(Ad Relevance Diagnostics·status detail 포함)로 재도출. **P6 재현성 고정값 기입**(`management_diagnosis_model`/`_temperature`, config). 결정론 코어(`diagnosis.py`)는 폴백으로 유지(키 없으면 — 게이트 #9). 성과 미달(`PERFORMANCE_BELOW_TARGET`) INCONCLUSIVE도 이 agent가 수신.
 - **장**: Agentic + Tool-use 충족. "tool을 왜 썼는지 숫자로 설명" 가능(A-5 연계).
 - **단**: tool 루프 지연·비용 — 호출 상한 필요. 결정론이 과하게 잡으면 agent가 빈 껍데기(핸드오프 튜닝 필요).
 

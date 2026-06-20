@@ -161,6 +161,40 @@ def test_create_campaign_special_ad_categories_from_config():
     assert b"HOUSING" in captured[0]
 
 
+def test_upload_image_returns_hash():
+    # /adimages 멀티파트 업로드 → 응답에서 image_hash 추출.
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"images": {"ad.jpg": {"hash": "abc123", "url": "u"}}})
+
+    client = MetaClient("EAAtest", transport=httpx.MockTransport(handler))
+    writer = MetaAdsWriter(mode=ExecutionMode.VALIDATE_ONLY, client=client)
+    h = asyncio.run(writer.upload_image(_config(), b"fakebytes", "ad.jpg", "idem-img"))
+    assert h == "abc123"
+
+
+def test_create_ad_attaches_image_hash():
+    # 업로드한 image_hash가 광고 소재(link_data)에 실린다.
+    captured: list[bytes] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append(request.content)
+        return httpx.Response(200, json={"id": "1"})
+
+    client = MetaClient("EAAtest", transport=httpx.MockTransport(handler))
+    writer = MetaAdsWriter(mode=ExecutionMode.VALIDATE_ONLY, client=client)
+    asyncio.run(
+        writer.create_ad(
+            _config(),
+            "adset1",
+            "idem-ad",
+            page_id="PAGE",
+            form_id="FORM",
+            image_hash="IMGHASH",
+        )
+    )
+    assert b"IMGHASH" in captured[0]
+
+
 # ── executor 디스패치 ────────────────────────────────────────────
 
 

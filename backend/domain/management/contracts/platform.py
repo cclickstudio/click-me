@@ -19,9 +19,11 @@ if TYPE_CHECKING:
         CampaignInfo,
         CreativePreview,
         DeliveryEstimate,
+        DeliveryStatusDetail,
         DemographicMetrics,
         MetricsSnapshot,
         PlatformMetrics,
+        RelevanceDiagnostics,
     )
 
 
@@ -48,6 +50,11 @@ class AdPlatformReader(Protocol):
 
     async def get_account_funding(self) -> AccountFunding: ...
 
+    # ── 진단 신호 (meta-data-sources §2②·§3.1) — 성과/품질 진단 agent가 소비 ──
+    async def get_relevance_diagnostics(self, campaign_id: str) -> RelevanceDiagnostics: ...
+
+    async def get_delivery_status_detail(self, campaign_id: str) -> DeliveryStatusDetail: ...
+
 
 class AdPlatformWriter(Protocol):
     """쓰기 Port — 호출 주체는 executor(🅱) 단일 경로뿐 (§4 불변)."""
@@ -65,6 +72,14 @@ class AdPlatformWriter(Protocol):
     async def create_campaign(self, config: CampaignConfig, idem_key: str) -> ActionResult: ...
 
     async def create_full_campaign(self, config: CampaignConfig, idem_key: str) -> ActionResult: ...
+
+    async def upload_image(
+        self, config: CampaignConfig, image_bytes: bytes, filename: str, idem_key: str
+    ) -> str | None: ...
+
+    async def generate_previews(
+        self, config: CampaignConfig, image_hash: str, ad_formats: list[str], *, page_id: str
+    ) -> list[dict[str, str]]: ...
 
     async def delete_campaign(self, campaign_id: str, idem_key: str) -> ActionResult: ...
 

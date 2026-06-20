@@ -10,7 +10,7 @@ import random
 from datetime import UTC, datetime
 
 from domain.management.comparison.schemas import PostInsights, PostType
-from domain.management.contracts.enums import CampaignState
+from domain.management.contracts.enums import CampaignState, RelevanceRank
 from domain.management.contracts.fault_injection import FaultConfig, FaultMode
 from domain.management.contracts.policy import (
     AUDIENCE_SIZE,
@@ -25,9 +25,11 @@ from domain.management.contracts.schemas import (
     CampaignInfo,
     CreativePreview,
     DeliveryEstimate,
+    DeliveryStatusDetail,
     DemographicMetrics,
     MetricsSnapshot,
     PlatformMetrics,
+    RelevanceDiagnostics,
 )
 
 _FAULT_ONSET_HOUR = 14  # 고장 발현 시각 (일중 곡선상 오후 — 정상/이상 대비가 뚜렷)
@@ -139,6 +141,26 @@ class MockAdPlatform:
             available_balance_krw=1_000_000,
             spend_cap_krw=2_000_000,
             amount_spent_krw=1_000_000,
+        )
+
+    async def get_relevance_diagnostics(self, campaign_id: str) -> RelevanceDiagnostics:
+        """Port 충족 — 데모 정상 캠페인은 평균 등급(오탐 방지). 합성 금지 원칙상 단정 안 함."""
+        return RelevanceDiagnostics(
+            campaign_id=campaign_id,
+            quality_ranking=RelevanceRank.AVERAGE,
+            engagement_rate_ranking=RelevanceRank.AVERAGE,
+            conversion_rate_ranking=RelevanceRank.AVERAGE,
+            as_of=datetime.now(UTC),
+        )
+
+    async def get_delivery_status_detail(self, campaign_id: str) -> DeliveryStatusDetail:
+        """Port 충족 — 데모는 정상 게재(ACTIVE, 이슈 없음)."""
+        return DeliveryStatusDetail(
+            campaign_id=campaign_id,
+            effective_status="ACTIVE",
+            issues_info=(),
+            learning_stage=None,
+            as_of=datetime.now(UTC),
         )
 
     async def fetch_daily_metrics(self, campaign_id: str) -> list[dict]:

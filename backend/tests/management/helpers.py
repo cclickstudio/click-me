@@ -104,6 +104,12 @@ class FakeWriter:
     async def delete_campaign(self, campaign_id: str, idem_key: str) -> ActionResult:
         return self._respond("DELETE_CAMPAIGN", campaign_id, idem_key)
 
+    async def upload_image(self, config, image_bytes, filename: str, idem_key: str) -> str | None:
+        return "fakehash123"
+
+    async def generate_previews(self, config, image_hash, ad_formats, *, page_id):
+        return [{"format": f, "html": f"<iframe data-fmt='{f}'></iframe>"} for f in ad_formats]
+
     async def expand_audience(self, campaign_id: str, idem_key: str) -> ActionResult:
         return self._respond("EXPAND_AUDIENCE", campaign_id, idem_key)
 
