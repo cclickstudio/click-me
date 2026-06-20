@@ -2,8 +2,7 @@
 from __future__ import annotations
 
 from domain.simulation.adapters.gemini.reaction import _ad_feature_lines
-from domain.simulation.adapters.mock_engine import _MOCK_FEATURES, MockAdInterpreter
-from domain.simulation.contracts.schemas import AdFeatures, AdInterpretation, SimulationRunRequest
+from domain.simulation.contracts.schemas import AdFeatures, AdInterpretation
 
 
 def test_ad_features_defaults() -> None:
@@ -18,15 +17,6 @@ def test_ad_features_partial_dict() -> None:
     f = AdFeatures(**{"ad_quality": 80, "price_mentioned": True})
     assert f.ad_quality == 80 and f.price_mentioned is True
     assert f.ad_credibility is None
-
-
-async def test_mock_interpreter_fills_features_and_persists_in_json() -> None:
-    ad = await MockAdInterpreter().interpret(SimulationRunRequest(ad_id="AD-1"))
-    # 타입 객체로도, structured_analysis(JSON 영속 경로)에도 동일하게 담긴다(A안).
-    assert ad.ad_features.social_proof_strength == "medium"
-    assert ad.ad_features.discounted_price == 19900
-    for k, v in _MOCK_FEATURES.items():
-        assert ad.structured_analysis[k] == v
 
 
 def test_reaction_feature_lines_include_price_with_income() -> None:

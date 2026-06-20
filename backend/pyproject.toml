@@ -47,6 +47,8 @@ dependencies = [
     "structlog>=24.4.0",
     "python-jose[cryptography]>=3.5.0",
     "bcrypt>=4.0.0",
+    "playwright>=1.60.0",
+    "pypdf>=6.13.3",
 ]
 
 [dependency-groups]
@@ -99,6 +101,8 @@ ignore = [
 # 도구 파일 내 긴 문자열 허용
 "tools/simulation/ssr_scorer.py" = ["E501"]
 "api/routers/ads.py" = ["E501"]
+# PDF 리포트는 긴 Tailwind HTML 문자열 포함 허용
+"domain/simulation/tools/debate/pdf_report.py" = ["E501"]
 # 모델 주석
 "core/models.py" = ["E501"]
 # 한국어 시스템 프롬프트 긴 줄 허용 (generator 파이프라인)

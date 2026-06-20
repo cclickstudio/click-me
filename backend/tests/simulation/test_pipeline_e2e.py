@@ -1,8 +1,20 @@
-# 시뮬레이터 파이프라인 end-to-end 스모크 — Mock 어댑터로 광고→반응→집계 한 바퀴 검증
+# 시뮬레이터 파이프라인 end-to-end 스모크 — 실 Gemini로 광고→반응→집계 한 바퀴 검증
+#
+# mock 제거로 실 LLM 전용 → 비용·비결정성 때문에 RUN_LIVE_LLM=1 일 때만 실행(기본 skip).
+# 실데이터 검증: RUN_LIVE_LLM=1 로 이 파일을 pytest 실행.
 from __future__ import annotations
+
+import os
+
+import pytest
 
 from domain.simulation.contracts.schemas import SimulationRunRequest
 from domain.simulation.wiring import build_simulation_service
+
+pytestmark = pytest.mark.skipif(
+    os.environ.get("RUN_LIVE_LLM") != "1",
+    reason="실 Gemini e2e — RUN_LIVE_LLM=1로 명시 실행(mock 제거)",
+)
 
 _AGG_KEYS = (
     "click_intent_rate",
@@ -33,7 +45,7 @@ async def test_per_persona_progress_emitted() -> None:
     assert f"반응 {sample}/{sample}" in reaction_msgs[-1]
 
 
-async def test_mock_pipeline_runs_end_to_end() -> None:
+async def test_pipeline_runs_end_to_end() -> None:
     service = build_simulation_service()
     request = SimulationRunRequest(ad_id="AD-TEST", sample_size=30)
 

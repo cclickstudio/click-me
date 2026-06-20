@@ -65,7 +65,7 @@ flowchart TB
     REQ["SimulationRunRequest<br/>(+선언 입력: ad_title·product_category·ad_objective·service_class)"]
     subgraph IA["interpret_ad 노드 (graph/run_graph.py)"]
         direction TB
-        S1["① interpreter.interpret(req)<br/>선언 미주입 = 앵커링 방지<br/>→ detected_industry/objective/target/message"]
+        S1["① interpreter.interpret(req)<br/>선언 미주입 = 앵커링 방지<br/>→ detected_industry/objective/target/message<br/>+ visual_elements·brand_era → structured_analysis(공유 1회)"]
         S2["② rubric.evaluate(ad, req)<br/>선언 ↔ 감지 비교<br/>→ category/objective/message_alignment score(0~100)<br/>evidence={declared, detected, note}"]
         S3["③ _derive_intent(scores)<br/>score 임계(60)로 match 파생<br/>→ intent_mismatch · mismatch_detail"]
         S1 --> S2 --> S3
@@ -109,7 +109,7 @@ flowchart LR
 
 | # | 노드 | 하는 일 | 호출 어댑터(주입) |
 |---|---|---|---|
-| 1 | `interpret_ad` | ① VLM 감지(선언 미주입) → ② 의도 교차검증(정합 채점) → ③ `intent_mismatch`·`mismatch_detail` 파생. `ad` + `rubric_scores` 동시 산출 | `interpreter.interpret` + `rubric.evaluate(ad, request)` |
+| 1 | `interpret_ad` | ① VLM 감지(선언 미주입) → ② 의도 교차검증(정합 채점) → ③ `intent_mismatch`·`mismatch_detail` 파생. `ad` + `rubric_scores` 동시 산출. 감지 콜이 `visual_elements`(§4-a)·`brand_era`(Tier 2)도 `structured_analysis`에 함께 추출 → 전 페르소나 공유 | `interpreter.interpret` + `rubric.evaluate(ad, request)` |
 | 2 | `load_panel` | 고정 패널 로드 or 샘플링 → `[Persona]` | `panel.get_or_build` (`CachedPanelProvider` / `PersonaSampler`) |
 | 3 | `react` | fan-out 워커 — 페르소나 1명당 1개 디스패치, 내부에서 inner 그래프 실행 | inner 그래프(`reaction_graph`) |
 | 4 | `aggregate` | QA 통과분만 가중 집계 → `SimulationAggregate` | `aggregator.aggregate` (`BasicAggregator`) |
@@ -145,3 +145,4 @@ flowchart LR
 - **비싼 N개 반응만 병렬 fan-out** — LLM 콜은 여기서만 N배 발생. 값싼 preamble은 직렬.
 - **노드는 어댑터를 모름** — 전부 덕타이핑 주입, mock↔실 Gemini 교체는 `wiring.py` 한 곳에서만.
 - **Inner 그래프의 사이클**(retry 루프)이 LangGraph를 쓰는 진짜 이유 — 나머지는 선형이라 과설계 회피(`context-notes.md §3`).
+- **공유 해석 1회 → 페르소나별 조건화.** `interpret_ad`가 비싼 vision을 1회만 내고 `visual_elements`·`brand_era`를 `structured_analysis`에 담으면, `react` 워커는 그 공유 '사실'에 페르소나 나이·프로필을 곱해 다르게 반응한다(Tier 1 세대 게이팅 + §4-b salience). vision을 N배로 늘리지 않고 "같은 자극, 다른 주의·친숙도"를 만든다(VLM_PER_PERSONA_VISION·PERSONA_COHORT_KNOWLEDGE_STRATEGY).

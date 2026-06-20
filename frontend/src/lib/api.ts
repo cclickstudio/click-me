@@ -5,15 +5,18 @@ import type { Proposal } from "@/components/manage/types";
 import type { BudgetStatus } from "@/components/manage/budget/types";
 import type {
   DebateResult,
+  DebateSessionDetail,
+  DebateSessionsResult,
   DebateStartResult,
   DebateTopic,
   DebateTopicsResult,
   QAEvent,
+  ReportView,
   SimRunInput,
   SimRunResult,
 } from "./types";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+export const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const token = getToken();
@@ -31,6 +34,27 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     throw new Error(err.detail ?? `HTTP ${res.status}`);
   }
   return res.json();
+}
+
+// 시뮬 multipart 폼 빌드 — run(동기)·start(비동기 SSE)가 공용으로 사용.
+function buildSimForm(input: SimRunInput): FormData {
+  const form = new FormData();
+  form.append("ad_id", input.ad_id);
+  if (input.ad_content) form.append("ad_content", input.ad_content);
+  if (input.ad_image) form.append("ad_image", input.ad_image);
+  if (input.ad_image_url) form.append("ad_image_url", input.ad_image_url);
+  if (input.organization_id) form.append("organization_id", input.organization_id);
+  if (input.project_id) form.append("project_id", input.project_id);
+  if (input.target_filter && Object.keys(input.target_filter).length > 0)
+    form.append("target_filter", JSON.stringify(input.target_filter));
+  if (input.target_mode) form.append("target_mode", input.target_mode);
+  if (input.sample_size != null) form.append("sample_size", String(input.sample_size));
+  if (input.allocation) form.append("allocation", input.allocation);
+  if (input.ad_title) form.append("ad_title", input.ad_title);
+  if (input.product_category) form.append("product_category", input.product_category);
+  if (input.ad_objective) form.append("ad_objective", input.ad_objective);
+  if (input.service_class != null) form.append("service_class", String(input.service_class));
+  return form;
 }
 
 export const api = {
@@ -51,32 +75,16 @@ export const api = {
     generate: (body: object) => request("/personas/generate", { method: "POST", body: JSON.stringify(body) }),
   },
 
-  // 도메인 시뮬레이션(DDD) — /api/simulation/run 동기 실행(multipart/form-data).
+  // 도메인 시뮬레이션(DDD) — multipart/form-data. run=동기(레거시), start=비동기 SSE.
   simulation: {
+    // 동기 실행 — 끝까지 돌린 결과를 한 번에 반환(진행률 없음).
     run: (input: SimRunInput): Promise<SimRunResult> => {
-      const form = new FormData();
-      form.append("ad_id", input.ad_id);
-      if (input.ad_content) form.append("ad_content", input.ad_content);
-      if (input.ad_image) form.append("ad_image", input.ad_image);
-      if (input.ad_image_url) form.append("ad_image_url", input.ad_image_url);
-      if (input.organization_id) form.append("organization_id", input.organization_id);
-      if (input.project_id) form.append("project_id", input.project_id);
-      if (input.target_filter && Object.keys(input.target_filter).length > 0)
-        form.append("target_filter", JSON.stringify(input.target_filter));
-      if (input.target_mode) form.append("target_mode", input.target_mode);
-      if (input.sample_size != null) form.append("sample_size", String(input.sample_size));
-      if (input.allocation) form.append("allocation", input.allocation);
-      if (input.ad_title) form.append("ad_title", input.ad_title);
-      if (input.product_category) form.append("product_category", input.product_category);
-      if (input.ad_objective) form.append("ad_objective", input.ad_objective);
-      if (input.service_class != null) form.append("service_class", String(input.service_class));
-
       const token = getToken();
       // Content-Type은 지정하지 않는다 — 브라우저가 multipart boundary를 자동 설정.
       return fetch(`${API_BASE}/api/simulation/run`, {
         method: "POST",
         headers: token ? { Authorization: `Bearer ${token}` } : {},
-        body: form,
+        body: buildSimForm(input),
       }).then(async (r) => {
         if (!r.ok) {
           const err = await r.json().catch(() => ({ detail: `HTTP ${r.status}` }));
@@ -85,6 +93,29 @@ export const api = {
         return r.json();
       });
     },
+    // 비동기 시작 — run_id 반환. 진행률은 stream(SSE), 결과는 result(GET).
+    start: (
+      input: SimRunInput,
+    ): Promise<{ run_id: string; stream_url: string; result_url: string; mode: string }> => {
+      const token = getToken();
+      return fetch(`${API_BASE}/api/simulation`, {
+        method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: buildSimForm(input),
+      }).then(async (r) => {
+        if (!r.ok) {
+          const err = await r.json().catch(() => ({ detail: `HTTP ${r.status}` }));
+          throw new Error(err.detail ?? `HTTP ${r.status}`);
+        }
+        return r.json();
+      });
+    },
+    stream: (runId: string) => new EventSource(`${API_BASE}/api/simulation/${runId}/stream`),
+    result: (runId: string): Promise<SimRunResult> =>
+      request<SimRunResult>(`/simulation/${runId}/result`),
+    // DB에 저장된 시뮬 결과를 simulation_id로 조회(콜드·패널 진입). 404=결과 없음.
+    dbResult: (simulationId: string): Promise<SimRunResult> =>
+      request<SimRunResult>(`/simulation/${simulationId}/db-result`),
   },
 
   // 페르소나 토론(/api/debate/*) — 시뮬 반응(reactions)을 받아 토론을 돌리고 결과를 낸다.
@@ -94,6 +125,8 @@ export const api = {
       reactions: unknown[];
       ad_analysis?: unknown;
       personas?: unknown[];
+      ad_title?: string; // 광고 제목 — 후보 topic에 동봉(토론자 grounding)
+      ad_description?: string; // 광고 설명 — 동상
     }): Promise<DebateTopicsResult> =>
       request<DebateTopicsResult>("/debate/topics", {
         method: "POST",
@@ -108,6 +141,10 @@ export const api = {
         personas?: unknown[];
         simulation_id?: string;
         topic?: DebateTopic;
+        rubric_scores?: unknown[]; // §4 루브릭(있으면 리포트 진단에 실음)
+        objective_fit?: unknown; // 캠페인 목표 적합도(ReportView 메인 판정)
+        ad_title?: string; // 광고 제목 — 최초 토론 topic에 동봉(토론자 grounding)
+        ad_description?: string; // 광고 설명 — 동상
       },
       opts?: { layCount?: 2 | 3 | 4 },
     ): Promise<DebateStartResult> => {
@@ -120,6 +157,23 @@ export const api = {
     },
     stream: (runId: string) => new EventSource(`${API_BASE}/api/debate/${runId}/stream`),
     result: (runId: string): Promise<DebateResult> => request<DebateResult>(`/debate/${runId}/result`),
+    // 시뮬의 저장된 토론 목록(메타) — 세션 탭·프로젝트 패널 복원용. DB 미연동이면 빈 목록.
+    bySimulation: (simulationId: string): Promise<DebateSessionsResult> =>
+      request<DebateSessionsResult>(`/debate/by-simulation/${simulationId}`),
+    // 저장된 토론 1건 상세(참가자·발언·judge_log·final) — 채팅·결과 복원용.
+    detail: (debateId: string): Promise<DebateSessionDetail> =>
+      request<DebateSessionDetail>(`/debate/${debateId}/detail`),
+    // 시뮬에 저장된 통합 리포트(ReportView) 복원 — 콜드·새로고침·패널 진입용.
+    // request 헬퍼는 404에 throw하므로 여기선 fetch 직접 호출 → 404·실패 시 null 반환(결과 화면은 떠야 함).
+    savedReport: async (simulationId: string): Promise<ReportView | null> => {
+      const token = getToken();
+      const res = await fetch(
+        `${API_BASE}/api/debate/by-simulation/${simulationId}/report`,
+        { headers: token ? { Authorization: `Bearer ${token}` } : {} },
+      );
+      if (!res.ok) return null;
+      return res.json() as Promise<ReportView>;
+    },
     // 토론 종료 후 Q&A — POST라 EventSource 불가 → fetch + ReadableStream으로 "data: {json}\n\n" 파싱.
     question: async (
       runId: string,

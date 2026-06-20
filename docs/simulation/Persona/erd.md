@@ -86,6 +86,8 @@ CREATE TABLE `보고서` (
 	`생성일시`	TIMESTAMP	NOT NULL
 );
 
+-- noticed_first(§4-b salience, 프로필상 가장 먼저 주의 간 요소)는 계약(PersonaReaction)·분석 핸드오프로만
+--   흐르는 탐색적 신호라 컬럼 미영속. DB 보관이 필요해지면 별도 PR + Alembic으로 추가.
 CREATE TABLE `페르소나반응` (
 	`ID`	UUID	NULL,
 	`simulation_id`	UUID	NOT NULL,
@@ -101,6 +103,8 @@ CREATE TABLE `페르소나반응` (
 	`emotion_tag`	VARCHAR(50)	NOT NULL,
 	`perceived_message`	TEXT	NULL,
 	`perceived_target`	VARCHAR(100)	NULL,
+	`brand_recognized`	BOOLEAN	NOT NULL	DEFAULT FALSE,	-- 브랜드 식별 여부(Fluency, REPORT §2-5, 마이그 010)
+	`perceived_brand`	VARCHAR(200)	NULL,	-- 인식한 브랜드/제품명(선언 의도와 대조해 오귀속 분해)
 	`utterance`	TEXT	NULL,
 	`qa_passed`	BOOLEAN	NOT NULL,
 	`qa_fail_reason`	VARCHAR(100)	NULL,
@@ -184,7 +188,7 @@ CREATE TABLE `조직` (
 CREATE TABLE `광고해석` (
 	`ID`	UUID	NULL,
 	`ad_id`	UUID	NOT NULL,	-- 광고(선언 입력) 참조
-	`structured_analysis`	JSONB	NOT NULL,	-- 훅·카피·CTA·비주얼 구조화
+	`structured_analysis`	JSONB	NOT NULL,	-- 훅·카피·CTA + visual_elements(§4-a 시각 인벤토리)·brand_era(Tier 2 브랜드 시대성) 포함
 	`detected_industry`	VARCHAR(100)	NULL,	-- 감지 업종 ↔ 제품 카테고리(category 차원)
 	`detected_objective`	VARCHAR(50)	NULL,	-- 감지 캠페인 목표 ↔ ad_objective(objective 차원, 신규)
 	`detected_message`	TEXT	NULL,	-- 감지 핵심 메시지 ↔ 광고 제목(message 차원)
@@ -204,6 +208,7 @@ CREATE TABLE `시뮬레이션집계` (
 	`purchase_intent`	DECIMAL(3,2)	NOT NULL,
 	`trust_avg`	DECIMAL(3,2)	NOT NULL,
 	`rejection_rate`	DECIMAL(5,4)	NOT NULL,
+	`brand_recognition_rate`	DECIMAL(5,4)	NOT NULL	DEFAULT 0,	-- QA 통과분 가중 브랜드 식별률(§2-5, 마이그 010)
 	`variance_warning`	BOOLEAN	NOT NULL,
 	`payload`	JSONB	NOT NULL,
 	`engine_version`	VARCHAR(50)	NOT NULL,
