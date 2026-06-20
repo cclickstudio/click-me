@@ -17,6 +17,7 @@ from enum import StrEnum
 from typing import TYPE_CHECKING, Protocol
 from uuid import uuid4
 
+from domain.management.agents.outcome import OutcomeKind
 from domain.management.agents.regeneration import RemediationContext
 from domain.management.contracts.enums import AnomalyType
 from domain.management.contracts.policy import APPROVAL_POLICY_VERSION, DAILY_BUDGET_KRW
@@ -263,7 +264,21 @@ class EscalationController:
             return None
         action_type = run.ladder[run.current_rung_index]
         context = self._context_factory(run, action_type)
-        return await self._agent.propose(diagnosis, context)
+        # 자동 사다리 예외 (스펙 §5d): 시간축 사다리는 단계 액션을 강제하고 자동 전진한다.
+        # /regenerate 엔드포인트는 AWAITING_SELECTION을 사람에게 노출해 선택을 받지만,
+        # 사다리는 비동기 시간축으로 운영되므로 최상위(4-3 idx 0) 후보를 자동 선택해
+        # 즉시 package()한다. HITL 강제는 Tier-3 승인 단계(approval.py)에서 유지된다.
+        outcome = await self._agent.rank(diagnosis, context)
+        if outcome.kind is OutcomeKind.AWAITING_SELECTION:
+            selected = outcome.candidates[0]["candidate_id"]
+            outcome = await self._agent.package(
+                outcome.selection_token,
+                tenant_id=diagnosis.tenant_id,
+                selected_id=selected,
+            )
+        if outcome.kind is OutcomeKind.PROPOSED:
+            return outcome.proposal
+        return None  # OBSERVE / CREATIVE_UNAVAILABLE / FAILED → 빈손(다음 단계 전진)
 
     def _escalated(
         self, run: EscalationRun, reason: str, proposal: ActionProposal

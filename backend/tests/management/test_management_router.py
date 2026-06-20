@@ -14,23 +14,72 @@ def client():
     return TestClient(app)
 
 
-def test_regenerate_returns_replace_creative_proposal(client):
+def test_regenerate_returns_awaiting_selection(client):
+    """FIX 1 — /regenerate는 AWAITING_SELECTION을 그대로 반환한다(자동 선택 금지)."""
     run = client.get("/api/management/run?fault=bid_loss").json()
     assert run["diagnosis"] is not None
 
     res = client.post("/api/management/regenerate", json={"diagnosis": run["diagnosis"]})
     assert res.status_code == 200
-    proposal = res.json()["proposal"]
-    assert proposal["action_type"] == "REPLACE_CREATIVE"
-    assert proposal["evidence_metrics"]["selected_candidate_id"]
-    assert len(proposal["evidence_metrics"]["candidates"]) >= 1
+    body = res.json()
+    # 크리에이티브 진단 → AWAITING_SELECTION 반환, 자동 선택·패키징 없음
+    assert body["kind"] == "awaiting_selection"
+    assert body["selection_token"]
+    assert isinstance(body["candidates"], list)
+    assert len(body["candidates"]) >= 1
+    # 제안이 포함돼 있으면 안 된다 (아직 사람이 선택하지 않았으므로)
+    assert "proposal" not in body
+
+
+def _build_proposal_via_package(diagnosis_json: dict) -> dict:
+    """AWAITING_SELECTION을 받아 idx-0 후보를 선택·package해 제안 dict를 반환한다.
+
+    동기 컨텍스트(TestClient)에서 비동기 agent를 호출하기 위해 asyncio.run()을 사용한다.
+    """
+    import asyncio
+
+    from domain.management.agents.outcome import OutcomeKind
+    from domain.management.agents.regeneration import RemediationContext
+    from domain.management.agents.regeneration_tools import build_regeneration_agent
+    from domain.management.contracts.policy import APPROVAL_POLICY_VERSION, DAILY_BUDGET_KRW
+    from domain.management.contracts.schemas import DiagnosisResult
+
+    async def _run():
+        agent = build_regeneration_agent()
+        dx = DiagnosisResult.model_validate(diagnosis_json)
+        ctx = RemediationContext(
+            ad_account_id="act_demo_001",
+            target_object_ids=(dx.campaign_id,),
+            budget_before_krw=DAILY_BUDGET_KRW,
+            budget_after_krw=int(DAILY_BUDGET_KRW * 1.5),
+            run_days=7,
+            expected_state_version="state_v1",
+            approval_policy_version=APPROVAL_POLICY_VERSION,
+            action_type="REPLACE_CREATIVE",
+        )
+        outcome = await agent.rank(dx, ctx)
+        assert outcome.kind is OutcomeKind.AWAITING_SELECTION
+        pkg = await agent.package(
+            outcome.selection_token,
+            tenant_id=dx.tenant_id,
+            selected_id=outcome.candidates[0]["candidate_id"],
+        )
+        return pkg.proposal.model_dump(mode="json")
+
+    return asyncio.run(_run())
 
 
 def test_full_cycle_run_regenerate_approve_execute(client):
+    """선택(package) 포함 풀 사이클 — AWAITING_SELECTION → 후보 선택 → 제안 → 승인 → 집행."""
     run = client.get("/api/management/run?fault=bid_loss").json()
-    proposal = client.post(
-        "/api/management/regenerate", json={"diagnosis": run["diagnosis"]}
-    ).json()["proposal"]
+    assert run["diagnosis"] is not None
+
+    regen = client.post("/api/management/regenerate", json={"diagnosis": run["diagnosis"]}).json()
+    assert regen["kind"] == "awaiting_selection"
+
+    proposal = _build_proposal_via_package(run["diagnosis"])
+    assert proposal["action_type"] == "REPLACE_CREATIVE"
+    assert proposal["evidence_metrics"]["selected_candidate_id"]
 
     approved = client.post(
         "/api/management/approve",
@@ -49,10 +98,10 @@ def test_full_cycle_run_regenerate_approve_execute(client):
 
 
 def test_audit_lists_events_for_approval(client):
+    """감사 이벤트 — 풀 사이클(package 포함) 후 executor.completed 확인."""
     run = client.get("/api/management/run?fault=bid_loss").json()
-    proposal = client.post(
-        "/api/management/regenerate", json={"diagnosis": run["diagnosis"]}
-    ).json()["proposal"]
+    proposal = _build_proposal_via_package(run["diagnosis"])
+
     action = client.post(
         "/api/management/approve",
         json={"proposal": proposal, "approved": True, "approver_id": "user_demo"},

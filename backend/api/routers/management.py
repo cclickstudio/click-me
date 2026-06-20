@@ -15,6 +15,7 @@ from pydantic import BaseModel, Field
 
 from core.config import settings
 from domain.management.adapters.mock import MockAdPlatform
+from domain.management.agents.outcome import OutcomeKind
 from domain.management.agents.regeneration import RemediationContext
 from domain.management.agents.regeneration_tools import build_regeneration_agent
 from domain.management.approval import (
@@ -164,7 +165,12 @@ class RegenerateRequest(BaseModel):
 
 @router.post("/regenerate")
 async def regenerate(body: RegenerateRequest):
-    """🅱 재생성 agent — 진단 수신 → 후보 생성·채점 → REPLACE_CREATIVE 제안 패키징."""
+    """🅱 재생성 agent — 진단 수신 → 4-3 위임 생성 → guard → AWAITING_SELECTION 반환(사람 선택 대기).
+
+    AWAITING_SELECTION: 프론트가 selection_token + candidates를 받아 사용자에게 선택 UI를 제공하고,
+    사용자가 고른 candidate_id를 /select 엔드포인트로 보내면 package()가 제안을 완성한다.
+    크리에이티브 외 가지(PROPOSED/OBSERVE/CREATIVE_UNAVAILABLE 등)는 그대로 직렬화해 반환한다.
+    """
     agent = build_regeneration_agent()  # API 키 없으면 결정론 폴백
     context = RemediationContext(
         ad_account_id="act_demo_001",
@@ -176,10 +182,21 @@ async def regenerate(body: RegenerateRequest):
         approval_policy_version=APPROVAL_POLICY_VERSION,
         action_type="REPLACE_CREATIVE",
     )
-    proposal = await agent.propose(body.diagnosis, context)
-    if proposal is None:
-        raise HTTPException(status_code=422, detail="생존 후보 없음 — 재생성 빈손")
-    return {"proposal": proposal.model_dump(mode="json")}
+    outcome = await agent.rank(body.diagnosis, context)
+    # AWAITING_SELECTION: 자동 선택 금지 — 사람이 고를 수 있도록 후보 목록과 토큰을 그대로 반환.
+    if outcome.kind is OutcomeKind.AWAITING_SELECTION:
+        return {
+            "kind": outcome.kind.value,
+            "selection_token": outcome.selection_token,
+            "candidates": outcome.candidates,
+        }
+    # 비크리에이티브 가지(PROPOSED / OBSERVE 등)는 제안 또는 상태를 반환.
+    if outcome.kind is OutcomeKind.PROPOSED and outcome.proposal is not None:
+        return {"kind": outcome.kind.value, "proposal": outcome.proposal.model_dump(mode="json")}
+    raise HTTPException(
+        status_code=422,
+        detail={"kind": outcome.kind.value, "reason": outcome.reason and outcome.reason.value},
+    )
 
 
 class ExecuteRequest(BaseModel):

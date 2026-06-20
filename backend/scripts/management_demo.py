@@ -48,20 +48,13 @@ class DemoToss:
 
 
 class DemoGenerator:
-    """생성 tool 스텁 — 7/8 전 generator 팀 인터페이스로 교체."""
+    """생성 tool 스텁 — 4-3(generator) 도메인 대역. copy 객체·idx 그대로 통과."""
 
     async def generate(self, diagnosis, count):
         return [
-            CreativeCandidate(candidate_id=f"cand-{i}", ad_copy=f"새 시안 카피 {i}")
+            CreativeCandidate(candidate_id=f"cand-{i}", copy=f"새 시안 카피 {i}", idx=i)
             for i in range(count)
         ]
-
-
-class DemoScorer:
-    """시뮬 점수 tool 스텁 — simulation 팀 인터페이스로 교체."""
-
-    async def score(self, candidate):
-        return 0.55 + 0.1 * int(candidate.candidate_id.split("-")[1])
 
 
 def section(title: str) -> None:
@@ -98,7 +91,11 @@ async def main() -> None:
     # ── 2) 🅱 처방 agent → ActionProposal ─────────────────────
     # action_type을 박지 않는다 — agent가 진단+의향으로 자율 결정한다.
     # BID_LOSS + 보수적(CONSERVATIVE) → PAUSE_CAMPAIGN (Tier 1, 자율 통과).
-    agent = RemediationAgent(generator=DemoGenerator(), scorer=DemoScorer())
+    from domain.management.agents.selection import InMemorySelectionRoundStore
+
+    agent = RemediationAgent(
+        generator=DemoGenerator(), selection_store=InMemorySelectionRoundStore()
+    )
     context = RemediationContext(
         ad_account_id="act_demo",
         target_object_ids=("camp-demo-1",),
@@ -109,7 +106,8 @@ async def main() -> None:
         approval_policy_version="approval-policy-v1",
         risk_appetite=RiskAppetite.CONSERVATIVE,
     )
-    proposal = await agent.propose(diagnosis, context)
+    outcome = await agent.rank(diagnosis, context)
+    proposal = outcome.proposal
     assert proposal is not None
     section("2) ActionProposal (🅱 단독 생산 — 자율 처방)")
     print(f"자율 결정 처방: {proposal.action_type} (Tier {proposal.action_tier})")

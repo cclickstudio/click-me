@@ -152,12 +152,11 @@ def test_executor_rejects_create_campaign_without_config():
 
 class _StubGen:
     async def generate(self, _diagnosis, _count):
-        return [CreativeCandidate(candidate_id="c1", ad_copy="여름 신상 런칭")]
-
-
-class _StubScore:
-    async def score(self, _cand):
-        return 0.9
+        return [
+            CreativeCandidate(
+                candidate_id="c1", copy="여름 신상 런칭", idx=0, image_ref="s3/new.png"
+            )
+        ]
 
 
 def test_regeneration_packages_create_campaign_with_config():
@@ -184,9 +183,20 @@ def test_regeneration_packages_create_campaign_with_config():
         metrics_as_of=NOW,
         status="confirmed",
     )
-    agent = RemediationAgent(generator=_StubGen(), scorer=_StubScore(), clock=lambda: NOW)
+    from domain.management.agents.selection import InMemorySelectionRoundStore
 
-    proposal = asyncio.run(agent.propose(diagnosis, context))
+    # clock을 주입하지 않아 기본(real UTC)을 사용 — SelectionRound.expires_at이 항상 미래
+    # (InMemorySelectionRoundStore.claim()이 real wall-clock으로 만료를 검증하므로).
+    agent = RemediationAgent(generator=_StubGen(), selection_store=InMemorySelectionRoundStore())
+
+    async def _run():
+        ranked = await agent.rank(diagnosis, context)
+        return await agent.package(
+            ranked.selection_token, tenant_id=diagnosis.tenant_id, selected_id="c1"
+        )
+
+    out = asyncio.run(_run())
+    proposal = out.proposal
 
     assert proposal is not None
     assert proposal.action_type == "CREATE_CAMPAIGN"
