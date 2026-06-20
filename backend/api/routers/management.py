@@ -617,6 +617,13 @@ async def list_campaigns(conversion_value_krw: int | None = None, target_roas: f
                     "source": "live",
                     "auth_error": "Meta 연결이 만료됐어요. 토큰 갱신(재연결)이 필요합니다.",
                 }
+            # Meta 요청 한도(code 17 등) — 일시적. 500으로 깨지 말고 안내(폴링이 곧 복구).
+            if exc.is_rate_limited:
+                return {
+                    "campaigns": [],
+                    "source": "live",
+                    "rate_limited": "Meta 요청 한도에 일시 도달했어요. 잠시 후 다시 불러옵니다.",
+                }
             raise
     out = []
     for i, (cid, name, state, budget, fault) in enumerate(_CAMPAIGNS_DEMO):

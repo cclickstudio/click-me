@@ -79,6 +79,16 @@ export type DayPoint = {
   roas: number | null;
 };
 
+// 성과 미달 진단 — 백엔드 detection.performance_dx + (INCONCLUSIVE면) 진단 agent 산출.
+// 없으면(정상이거나 목표 미입력) 백엔드가 null을 보내고 프론트는 노트를 숨긴다.
+export type CampaignDiagnosis = {
+  anomaly_type: string; // performance_below_target 등
+  hypothesis: string; // 추정 원인 (한국어 한 문장)
+  confidence: number; // 0~1
+  source: string; // deterministic · agent
+  status: string; // confirmed · inconclusive
+};
+
 export type CampaignDetail = {
   campaign_id: string;
   name: string;
@@ -89,6 +99,7 @@ export type CampaignDetail = {
   anomaly_hours: number[];
   series: DayPoint[];
   summary: CampaignKpi;
+  diagnosis?: CampaignDiagnosis | null; // 성과 미달 진단(있을 때만)
 };
 
 export type PlatformMetrics = {
@@ -126,6 +137,7 @@ export type CampaignsResponse = {
   source?: CampaignSource;
   account_block_reason?: string | null; // 계정 전체 게재 중단 사유 (배너용)
   auth_error?: string | null; // Meta 토큰 만료 등 인증 오류 — 재연결 안내 배너용
+  rate_limited?: string | null; // Meta 요청 한도(일시) — 기존 데이터 유지 + 안내 배너
   account?: AccountWallet; // 계정 지갑(잔액·한도·지출)
 };
 export type CampaignView = 'table' | 'cards';
