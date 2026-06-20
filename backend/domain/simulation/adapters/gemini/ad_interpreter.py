@@ -53,7 +53,16 @@ class GeminiAdInterpreter:
             '"visual_elements": {"primary_subject": "가장 부각되는 피사체(인물/제품/텍스트 등)", '
             '"elements": ["눈에 띄는 시각 요소 나열(모델 얼굴·제품샷·로고·CTA버튼·배경 등)"], '
             '"first_impression": "첫눈에 가장 먼저 들어오는 요소 한 가지", '
-            '"color_tone": "전반 색감·톤 한 구절"}}\n\n'
+            '"color_tone": "전반 색감·톤 한 구절"}, '
+            # 브랜드 시대성(Tier 2) — 유명 브랜드 특정 시에만.
+            # structured_analysis(JSONB)에 1회 추출해 전 페르소나 공유.
+            '"brand_era": {"identified": bool(특정 유명 브랜드/제품으로 식별했는가), '
+            '"era": "그 브랜드가 가장 친숙·전성기였던 시기 한 구절'
+            '(예: 1990년대/2010년대/전세대 꾸준), 모르면 null", '
+            '"generational_skew": "all"|"older"|"younger"|"unknown", '
+            '"note": "세대 관련성 한 구절(예: 90년대 국민 음료·중장년 향수), 모르면 null"}}\n'
+            "유명 브랜드를 특정 못 하면 brand_era.identified=false 로 두고 "
+            "시대를 지어내지 마라.\n\n"
             f"[광고 카피]\n{request.ad_content or '(텍스트 없음 — 이미지 참고)'}"
         )
         contents: Any = prompt

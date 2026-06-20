@@ -48,13 +48,12 @@ async def run_age_mismatch(
     *,
     bands: tuple = _DEFAULT_BANDS,
     n_per_band: int = 8,
-    use_mock: bool = True,
     seed_base: int = 0,
 ) -> dict:
-    """젊은-타깃 광고를 연령대별로 노출해 집계 + 방향성 판정. use_mock=False면 실 Gemini."""
+    """젊은-타깃 광고를 연령대별로 노출해 집계 + 방향성 판정(실 Gemini 전용)."""
     from domain.simulation.wiring import build_simulation_service
 
-    service = build_simulation_service(use_mock=use_mock)
+    service = build_simulation_service()
     by_band: list[dict] = []
     for age_min, age_max, age_mid in bands:
         req = SimulationRunRequest(
@@ -97,7 +96,7 @@ def _print_report(out: dict) -> None:
 
 def main() -> None:
     ad = "제로 칼로리 탄산수 신제품. 20대 직장인 타깃, 다이어트·건강 강조, 편의점 단독 출시."
-    out = asyncio.run(run_age_mismatch(ad, n_per_band=8, use_mock=False))
+    out = asyncio.run(run_age_mismatch(ad, n_per_band=8))
     _print_report(out)
 
 

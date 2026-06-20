@@ -106,6 +106,8 @@ class PersonaReaction(SimBase):
     emotion_tag: Mapped[str] = mapped_column(String(50), nullable=False)
     perceived_message: Mapped[str | None] = mapped_column(Text)
     perceived_target: Mapped[str | None] = mapped_column(String(100))
+    brand_recognized: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    perceived_brand: Mapped[str | None] = mapped_column(String(200))
     utterance: Mapped[str | None] = mapped_column(Text)
     qa_passed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     qa_fail_reason: Mapped[str | None] = mapped_column(String(100))
@@ -137,6 +139,9 @@ class SimulationAggregate(SimBase):
     )
     trust_avg: Mapped[float] = mapped_column(Numeric(3, 2), nullable=False)
     rejection_rate: Mapped[float] = mapped_column(Numeric(5, 4), nullable=False)
+    brand_recognition_rate: Mapped[float] = mapped_column(
+        Numeric(5, 4), nullable=False, default=0.0
+    )
     variance_warning: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     effective_n: Mapped[float] = mapped_column(Numeric(10, 1), nullable=False, default=0.0)
     payload: Mapped[dict] = mapped_column(_JSONB, nullable=False)

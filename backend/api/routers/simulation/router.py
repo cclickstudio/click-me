@@ -1,6 +1,6 @@
 # 시뮬레이션 전송 계층 — 광고(텍스트+이미지 파일) 입력 → 페르소나 반응·집계 산출.
 #
-# 기본 = 실데이터(실 Gemini). SIM_MOCK=1 이면 Mock 강제, GEMINI_API_KEY 없으면 자동 Mock 폴백.
+# 실데이터 전용(실 Gemini). GEMINI_API_KEY 없으면 시작 시 오류(mock 폴백 제거).
 # 광고 이미지는 multipart 파일 업로드로 받아 임시 저장 후 VLM 해석에 사용.
 from __future__ import annotations
 
@@ -8,28 +8,30 @@ import json
 import logging
 import os
 import tempfile
+import uuid
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
+from core.db import get_db
+from domain.simulation.adapters.category_repo import list_categories
 from domain.simulation.contracts.schemas import SimulationRunRequest
+from domain.simulation.repositories.simulation_repository import SimulationRepository
 from domain.simulation.service.analysis_view import to_analysis_payload
 from domain.simulation.wiring import _ensure_env, build_simulation_service
 
 logger = logging.getLogger("clickme")
 router = APIRouter()
 
-_ensure_env("GEMINI_API_KEY")  # .env에서 키 적재(실데이터 기본 사용)
-_FORCE_MOCK = os.getenv("SIM_MOCK", "0") == "1"
-_HAS_GEMINI = bool(os.environ.get("GEMINI_API_KEY"))
-_USE_MOCK = _FORCE_MOCK or not _HAS_GEMINI  # 기본 실데이터, 강제·키부재 시에만 Mock
+_ensure_env("GEMINI_API_KEY")  # .env에서 키 적재(실데이터 전용 — mock 폴백 없음)
+if not os.environ.get("GEMINI_API_KEY"):
+    raise RuntimeError("GEMINI_API_KEY 미설정 — 시뮬레이션은 실 Gemini 전용입니다(mock 제거됨).")
 _USE_LLM_QA = os.getenv("SIM_LLM_QA", "0") == "1"
 # settings 주입 → settings.database_url 있으면 DB 영속화 활성(완료 런을 9테이블에 저장).
-_service = build_simulation_service(settings=settings, use_mock=_USE_MOCK, use_llm_qa=_USE_LLM_QA)
-logger.info("Simulation service: %s 모드 (LLM QA=%s)", "mock" if _USE_MOCK else "real", _USE_LLM_QA)
-if not _FORCE_MOCK and not _HAS_GEMINI:
-    logger.warning("GEMINI_API_KEY 없음 → Mock 폴백. 실데이터는 .env에 키 설정 필요.")
+_service = build_simulation_service(settings=settings, use_llm_qa=_USE_LLM_QA)
+logger.info("Simulation service: real(Gemini) 모드 (LLM QA=%s)", _USE_LLM_QA)
 
 _IMAGE_MAX_BYTES = 10 * 1024 * 1024  # 10MB
 
@@ -127,7 +129,7 @@ async def start_simulation(
     run_id = await _service.start(req)
     return {
         "run_id": run_id,
-        "mode": "mock" if _USE_MOCK else "real",
+        "mode": "real",
         "stream_url": f"/api/simulation/{run_id}/stream",
         "result_url": f"/api/simulation/{run_id}/result",
     }
@@ -178,6 +180,12 @@ async def run_simulation(
     return to_analysis_payload(result) if shape == "analysis" else result
 
 
+@router.get("/categories")
+async def get_categories(session: AsyncSession = Depends(get_db)) -> list[dict]:
+    """광고 제품 카테고리 — 업종 대분류별 NICE 상품분류(45류). 2단계 선택(대분류→세부)용."""
+    return await list_categories(session)
+
+
 @router.get("/{run_id}/stream")
 async def stream_simulation(run_id: str) -> StreamingResponse:
     """SSE — 노드별 진행률(progress)·완료(completed)·에러 이벤트 스트림."""
@@ -204,3 +212,18 @@ async def get_simulation_result_analysis(run_id: str) -> dict:
     if result is None:
         raise HTTPException(status_code=404, detail="결과 없음 — 미완료이거나 잘못된 run_id")
     return to_analysis_payload(result)
+
+
+@router.get("/{simulation_id}/db-result")
+async def get_simulation_db_result(
+    simulation_id: str, session: AsyncSession = Depends(get_db)
+) -> dict:
+    """DB 영속 결과 재조회 — 새로고침·프로젝트 패널 재진입 시 SimRunResult 복원. 없으면 404."""
+    try:
+        sim_uuid = uuid.UUID(simulation_id)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=f"잘못된 simulation_id: {e}") from e
+    result = await SimulationRepository(session).get_full_result(sim_uuid)
+    if result is None:
+        raise HTTPException(status_code=404, detail="결과 없음 — 잘못된 simulation_id")
+    return result
