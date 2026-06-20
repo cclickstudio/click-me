@@ -322,7 +322,8 @@ class MetaAdsWriter:
         }
         out: list[dict[str, str]] = []
         for fmt in ad_formats:
-            payload = await self._client.post(
+            # generatepreviews는 GET 전용(POST는 subcode 33 거부). creative는 JSON 문자열 쿼리.
+            payload = await self._client.get(
                 f"{account}/generatepreviews",
                 {"creative": json.dumps(creative), "ad_format": fmt},
             )
