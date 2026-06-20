@@ -21,6 +21,7 @@ from core.auth import get_current_user
 from core.config import settings
 from core.db import get_db
 from core.models import OrganizationMember, User
+from domain.management.adapters.meta.client import MetaApiError
 from domain.management.adapters.meta.connection_flow import complete_meta_connection
 from domain.management.adapters.meta.oauth import build_login_url
 from domain.management.adapters.meta.token_crypto import TokenCipher
@@ -50,6 +51,7 @@ from domain.management.contracts.schemas import (
     RealOutcome,
     finalize_proposal,
 )
+from domain.management.conversion_value import estimate_roas
 from domain.management.demo import CAMPAIGN_ID, TENANT_ID, build_sample_proposal
 from domain.management.detection.deterministic_dx import diagnose
 from domain.management.detection.exposure_model import (
@@ -339,11 +341,19 @@ def _campaign_summary(snaps: list[MetricsSnapshot], budget: int) -> dict:
     }
 
 
-def _real_summary(m: MetricsSnapshot, budget: int) -> dict:
+def _real_summary(m: MetricsSnapshot, budget: int, conversion_value_krw: int | None = None) -> dict:
     """실 reader 단일 집계 스냅샷 → 대시보드 요약.
 
     전환 필드가 응답에 있으면 CVR·ROAS까지 실측으로 표시하고, 없으면 합성하지 않는다.
+    매출이 측정 안 되는(구매 외) 전환은 ROAS가 None인데, 고객이 전환 가치를 입력하면
+    그 통계가치로 ROAS를 추정해 채운다(roas_estimated=True로 '추정' 표기 책임을 넘김).
     """
+    roas = m.roas
+    roas_estimated = False
+    if roas is None:
+        estimated = estimate_roas(m.conversions, conversion_value_krw, m.spend_krw)
+        if estimated is not None:
+            roas, roas_estimated = estimated, True
     return {
         "impressions": m.impressions,
         "clicks": m.clicks,
@@ -354,14 +364,15 @@ def _real_summary(m: MetricsSnapshot, budget: int) -> dict:
         "cpm_krw": m.cpm_krw,
         "conversions": m.conversions,
         "cvr": m.cvr,
-        "roas": m.roas,
+        "roas": roas,
+        "roas_estimated": roas_estimated,
         "conversion_tracking": m.conversions is not None,
         "frequency": m.frequency,
         "pacing_pct": round(m.spend_krw / budget * 100, 1) if budget else 0.0,
     }
 
 
-async def _list_campaigns_real() -> dict:
+async def _list_campaigns_real(conversion_value_krw: int | None = None) -> dict:
     """실연동 — Meta 캠페인 목록 + 캠페인별 실측 요약."""
     reader = build_reader(settings)
     since = _today_utc()
@@ -372,9 +383,12 @@ async def _list_campaigns_real() -> dict:
     )
     metrics = await asyncio.gather(*(reader.get_metrics(c.campaign_id, since) for c in infos))
     out = []
+    any_blocked = False
     for info, m in zip(infos, metrics, strict=True):
         # 게재 차단: 계정 자금 막힘 + 캠페인이 켜져 있는데(ACTIVE) 안 도는 경우
+        # (게재 기간 종료 캠페인은 state가 ENDED라 제외 — 충전해도 재개 안 됨)
         blocked = funding.delivery_blocked and info.state == CampaignState.ACTIVE
+        any_blocked = any_blocked or blocked
         out.append(
             {
                 "campaign_id": info.campaign_id,
@@ -383,17 +397,18 @@ async def _list_campaigns_real() -> dict:
                 "daily_budget_krw": info.daily_budget_krw,
                 "delivery_blocked": blocked,
                 "block_reason": funding.block_reason if blocked else None,
-                **_real_summary(m, info.daily_budget_krw),
+                **_real_summary(m, info.daily_budget_krw, conversion_value_krw),
             }
         )
     return {
         "campaigns": out,
         "source": "live",
-        "account_block_reason": funding.block_reason if funding.delivery_blocked else None,
+        # 계정 배너는 실제로 막힌(진행중) 캠페인이 있을 때만 — 전부 종료면 노이즈라 숨김
+        "account_block_reason": funding.block_reason if any_blocked else None,
     }
 
 
-async def _get_campaign_real(campaign_id: str) -> dict:
+async def _get_campaign_real(campaign_id: str, conversion_value_krw: int | None = None) -> dict:
     """실연동 — 캠페인 상세(시간별 실측 + 기대곡선 + 요약)."""
     reader = build_reader(settings)
     today = _today_utc()
@@ -418,18 +433,29 @@ async def _get_campaign_real(campaign_id: str) -> dict:
         "actual": actual,
         "anomaly_hours": find_anomaly_window(expected, actual) if actual else [],
         "series": daily,
-        "summary": _real_summary(m, info.daily_budget_krw),
+        "summary": _real_summary(m, info.daily_budget_krw, conversion_value_krw),
     }
 
 
 @router.get("/campaigns")
-async def list_campaigns():
+async def list_campaigns(conversion_value_krw: int | None = None):
     """캠페인 목록 + 캠페인별 성과 요약 (단일 창구 대시보드).
 
     use_mock=False면 Meta 실측, True면 데모 합성. CVR은 실모드에선 전환 추적 전까지 None.
+    conversion_value_krw(전환 1건 가치) 입력 시 구매 외 전환의 ROAS를 추정해 채운다.
     """
     if not getattr(settings, "use_mock", True):
-        return await _list_campaigns_real()
+        try:
+            return await _list_campaigns_real(conversion_value_krw)
+        except MetaApiError as exc:
+            # 토큰 만료 등 인증 오류는 화면을 깨지 말고 '재연결 필요'로 안내(빈 목록 + auth_error).
+            if exc.is_auth_error:
+                return {
+                    "campaigns": [],
+                    "source": "live",
+                    "auth_error": "Meta 연결이 만료됐어요. 토큰 갱신(재연결)이 필요합니다.",
+                }
+            raise
     out = []
     for i, (cid, name, state, budget, fault) in enumerate(_CAMPAIGNS_DEMO):
         snaps = await _campaign_snapshots(cid, budget, fault, seed=40 + i)
@@ -481,11 +507,25 @@ async def get_campaign_platforms(campaign_id: str):
     return {"platforms": [r.model_dump(mode="json") for r in rows]}
 
 
+@router.get("/campaigns/{campaign_id}/demographics")
+async def get_campaign_demographics(campaign_id: str):
+    """연령×성별(age,gender) 노출·클릭·지출·도달 분해."""
+    rows = await build_reader(settings).get_demographic_breakdown(campaign_id, _today_utc())
+    return {"demographics": [r.model_dump(mode="json") for r in rows]}
+
+
+@router.get("/campaigns/{campaign_id}/creatives")
+async def get_campaign_creatives(campaign_id: str):
+    """캠페인 대표 크리에이티브 — 광고 시안 이름·썸네일."""
+    rows = await build_reader(settings).get_creatives(campaign_id)
+    return {"creatives": [r.model_dump(mode="json") for r in rows]}
+
+
 @router.get("/campaigns/{campaign_id}")
-async def get_campaign(campaign_id: str):
+async def get_campaign(campaign_id: str, conversion_value_krw: int | None = None):
     """캠페인 상세 — 시간별 노출(기대 vs 실측, 이상구간) + 요약 KPI."""
     if not getattr(settings, "use_mock", True):
-        return await _get_campaign_real(campaign_id)
+        return await _get_campaign_real(campaign_id, conversion_value_krw)
     for i, (cid, name, state, budget, fault) in enumerate(_CAMPAIGNS_DEMO):
         if cid == campaign_id:
             snaps = await _campaign_snapshots(cid, budget, fault, seed=40 + i)

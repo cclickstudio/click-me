@@ -25,7 +25,9 @@ from domain.management.contracts.schemas import (
     AccountFunding,
     CampaignConfig,
     CampaignInfo,
+    CreativePreview,
     DeliveryEstimate,
+    DemographicMetrics,
     MetricsSnapshot,
     PlatformMetrics,
 )
@@ -59,23 +61,75 @@ _INSIGHTS_FIELDS = (
 # 시간별(hourly breakdown) 조회 필드 — date_stop 불필요
 _HOURLY_FIELDS = "impressions,clicks,inline_link_clicks,spend,reach,frequency,ctr,cpm,cpc"
 
-# 캠페인 목록 조회 필드 — 대시보드 목록(이름·상태·일예산). daily_budget은 KRW(offset=1) 전제.
-_CAMPAIGN_FIELDS = "id,name,effective_status,daily_budget"
+# 캠페인 목록 조회 필드 — 대시보드 목록(이름·상태·일예산·종료일). daily_budget은 KRW(offset=1) 전제.
+# stop_time: Meta는 게재 기간이 끝나도 effective_status를 ACTIVE로 유지 → 종료 판별에 필요.
+_CAMPAIGN_FIELDS = "id,name,effective_status,daily_budget,stop_time"
 
-# 광고세트 예산 조회 필드 — 캠페인 노드에 예산이 없을 때(광고세트 예산) 일예산 보완.
-_ADSET_FIELDS = "daily_budget,campaign_id"
+# 광고세트 예산·종료일 조회 필드 — 캠페인 노드에 예산/종료일이 없을 때(광고세트 일정) 보완.
+_ADSET_FIELDS = "daily_budget,campaign_id,end_time"
 
 # 플랫폼별 분해 조회 필드 — publisher_platform breakdown (FB/IG 등)
 _PLATFORM_FIELDS = "impressions,clicks,spend,reach"
 
+# 연령×성별 분해 조회 필드 — age,gender breakdown
+_DEMOGRAPHIC_FIELDS = "impressions,clicks,spend,reach"
+
+# 크리에이티브 조회 필드 — 이름 + creative(여러 이미지 소스·문구·썸네일).
+# 동적/Advantage+ 광고는 image_url이 비고 asset_feed_spec.images 또는 object_story_spec에
+# 원본이 있어, 고해상도 확보를 위해 가능한 소스를 모두 펼쳐 받는다.
+_CREATIVE_FIELDS = (
+    "name,creative{image_url,thumbnail_url,title,body,"
+    "object_story_spec{link_data{picture},photo_data{url}},"
+    "asset_feed_spec{images{url}}}"
+)
+_CREATIVE_LIMIT = 6  # 대표 시안만 — 너무 많으면 갤러리 과밀
+
+
+def _pick_image(creative: dict[str, Any]) -> str | None:
+    """가장 고해상도일 가능성이 높은 이미지 URL 선택 (동적 광고 우선)."""
+    afs_images = (creative.get("asset_feed_spec") or {}).get("images") or []
+    if afs_images and afs_images[0].get("url"):
+        return afs_images[0]["url"]
+    oss = creative.get("object_story_spec") or {}
+    picture = (oss.get("link_data") or {}).get("picture")
+    if picture:
+        return picture
+    photo = (oss.get("photo_data") or {}).get("url")
+    if photo:
+        return photo
+    return creative.get("image_url")
+
+
 # 계정 자금·게재 가능 조회 필드 — 선불 잔액 소진·계정 비활성 감지
 _FUNDING_FIELDS = "account_status,disable_reason,funding_source_details"
 
-_PURCHASE_ACTION_TYPES = (
-    "offsite_conversion.fb_pixel_purchase",
-    "omni_purchase",
-    "purchase",
-)
+# 전환 이벤트별 Meta action_type — 같은 전환이 omni·pixel로 중복 집계될 수 있어
+# 합산하지 않고 우선순위(앞이 우선)대로 첫 값만 쓴다. 캠페인이 구매를 안 팔아도
+# 리드·가입·설치 중 실제 발생한 행동을 전환으로 센다(비이커머스 전환 의미화).
+_CONVERSION_ACTION_TYPES: dict[str, tuple[str, ...]] = {
+    "purchase": (
+        "offsite_conversion.fb_pixel_purchase",
+        "omni_purchase",
+        "purchase",
+    ),
+    "lead": (
+        "onsite_conversion.lead_grouped",  # Meta 즉석 양식(플랫폼 내부 리드)
+        "offsite_conversion.fb_pixel_lead",  # 웹 픽셀 리드
+        "lead",
+    ),
+    "signup": (
+        "offsite_conversion.fb_pixel_complete_registration",
+        "omni_complete_registration",
+        "complete_registration",
+    ),
+    "install": (
+        "mobile_app_install",
+        "omni_app_install",
+    ),
+}
+
+# 자동 감지 우선순위 — 실제 발생한 전환 중 구매에 가장 가까운 것부터 택1.
+_CONVERSION_EVENT_PRIORITY: tuple[str, ...] = ("purchase", "lead", "signup", "install")
 
 
 def _to_int(value: Any) -> int:
@@ -92,23 +146,47 @@ def _extract_won(text: str) -> int | None:
     return int(m.group(1).replace(",", "")) if m else None
 
 
-def _purchase_metric(items: Any) -> float | None:
-    """Meta action 배열에서 구매 값을 하나만 고른다.
-
-    omni_purchase와 pixel_purchase가 동시에 내려오는 경우 같은 구매가 중복될 수 있어
-    합산하지 않고 명시한 우선순위의 첫 값을 사용한다.
-    """
+def _values_by_action_type(items: Any) -> dict[str, float] | None:
+    """Meta action 배열을 {action_type: value} 로 — 배열이 아니면(추적 데이터 없음) None."""
     if not isinstance(items, list):
         return None
-    values = {
+    return {
         str(item.get("action_type")): _to_float(item.get("value"))
         for item in items
         if isinstance(item, dict)
     }
-    for action_type in _PURCHASE_ACTION_TYPES:
+
+
+def _pick(values: dict[str, float], action_types: tuple[str, ...]) -> float | None:
+    """우선순위대로 처음 일치하는 action_type 값 (없으면 None)."""
+    for action_type in action_types:
         if action_type in values:
             return values[action_type]
-    return 0.0
+    return None
+
+
+def _count_conversions(actions: Any) -> tuple[float | None, str | None]:
+    """실제 발생한 전환 건수와 그 이벤트명을 자동 감지로 돌려준다.
+
+    actions가 배열이 아니면(전환 추적 미설정) (None, None) — 합성 금지·정직.
+    배열이면 측정값이며, 우선순위로 데이터가 있는 첫 이벤트를 택1한다
+    (구매를 안 파는 캠페인도 리드·가입·설치가 잡히면 그걸로 전환을 센다).
+    어떤 전환도 없으면 (0.0, None) — 측정된 0.
+    """
+    values = _values_by_action_type(actions)
+    if values is None:
+        return None, None
+    for event in _CONVERSION_EVENT_PRIORITY:
+        hit = _pick(values, _CONVERSION_ACTION_TYPES[event])
+        if hit is not None:
+            return hit, event
+    return 0.0, None
+
+
+def _purchase_value(items: Any) -> float | None:
+    """구매 매출·ROAS 배열에서 구매 값 하나만 고른다 (Meta 제공값, 구매 이벤트 한정)."""
+    values = _values_by_action_type(items)
+    return _pick(values, _CONVERSION_ACTION_TYPES["purchase"]) if values is not None else None
 
 
 def _parse_date_utc(value: str | None, fallback: datetime) -> datetime:
@@ -116,6 +194,19 @@ def _parse_date_utc(value: str | None, fallback: datetime) -> datetime:
         return fallback
     # Meta insights date_stop = 'YYYY-MM-DD' → 해당일 UTC 자정
     return datetime.strptime(value, "%Y-%m-%d").replace(tzinfo=UTC)
+
+
+def _is_past(value: str | None) -> bool:
+    """Meta 일정 시각(예 '2026-06-19T15:34:00+0900')이 현재보다 과거면 True (게재 기간 종료)."""
+    if not value:
+        return False
+    try:
+        dt = datetime.fromisoformat(value)
+    except ValueError:
+        return False
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=UTC)
+    return dt < datetime.now(UTC)
 
 
 def _parse_hour(label: str | None) -> int:
@@ -150,19 +241,23 @@ class MetaAdsReader:
         reach = _to_int(row.get("reach"))
         inline_link_clicks = _to_int(row.get("inline_link_clicks"))
         spend_krw = _to_int(row.get("spend"))
-        purchase_count = _purchase_metric(row.get("actions"))
-        purchase_value = _purchase_metric(row.get("action_values"))
-        meta_roas = _purchase_metric(row.get("purchase_roas"))
-        conversions = int(round(purchase_count)) if purchase_count is not None else None
-        purchase_value_krw = int(round(purchase_value)) if purchase_value is not None else None
+        conv_count, conv_event = _count_conversions(row.get("actions"))
+        conversions = int(round(conv_count)) if conv_count is not None else None
+        # 매출·ROAS는 Meta가 구매 이벤트에만 값을 준다. 그 외 전환의 가치 환산은
+        # 고객 통계(전환 가치) 기반 추정으로, service 레이어 책임(여기선 None 유지·정직).
+        purchase_value_krw: int | None = None
+        roas: float | None = None
+        if conv_event == "purchase":
+            purchase_value = _purchase_value(row.get("action_values"))
+            purchase_value_krw = int(round(purchase_value)) if purchase_value is not None else None
+            roas = _purchase_value(row.get("purchase_roas"))
+            if roas is None and purchase_value_krw is not None:
+                roas = purchase_value_krw / spend_krw if spend_krw else 0.0
         cvr = (
             conversions / inline_link_clicks
             if conversions is not None and inline_link_clicks
             else (0.0 if conversions == 0 else None)
         )
-        roas = meta_roas
-        if roas is None and purchase_value_krw is not None:
-            roas = purchase_value_krw / spend_krw if spend_krw else 0.0
         return MetricsSnapshot(
             campaign_id=campaign_id,
             as_of=_parse_date_utc(row.get("date_stop"), since),
@@ -202,7 +297,10 @@ class MetaAdsReader:
         )
 
     async def get_state(self, campaign_id: str) -> CampaignState:
-        payload = await self._client.get(campaign_id, {"fields": "effective_status"})
+        payload = await self._client.get(campaign_id, {"fields": "effective_status,stop_time"})
+        # 게재 기간이 끝났으면 effective_status가 ACTIVE라도 '종료'로 본다.
+        if _is_past(payload.get("stop_time")):
+            return CampaignState.ENDED
         status = str(payload.get("effective_status", "")).upper()
         return _STATE_MAP.get(status, CampaignState.DRAFT)
 
@@ -231,6 +329,53 @@ class MetaAdsReader:
             )
         return out
 
+    async def get_demographic_breakdown(
+        self, campaign_id: str, since: datetime
+    ) -> list[DemographicMetrics]:
+        """연령×성별(age,gender) 지표 — insights breakdowns=age,gender (lifetime 누적)."""
+        payload = await self._client.get(
+            f"{campaign_id}/insights",
+            {
+                "fields": _DEMOGRAPHIC_FIELDS,
+                "breakdowns": "age,gender",
+                "date_preset": "maximum",
+            },
+        )
+        out: list[DemographicMetrics] = []
+        for row in payload.get("data", []):
+            out.append(
+                DemographicMetrics(
+                    age=str(row.get("age", "")),
+                    gender=str(row.get("gender", "")),
+                    impressions=_to_int(row.get("impressions")),
+                    clicks=_to_int(row.get("clicks")),
+                    spend_krw=_to_int(row.get("spend")),
+                    reach=_to_int(row.get("reach")),
+                )
+            )
+        return out
+
+    async def get_creatives(self, campaign_id: str) -> list[CreativePreview]:
+        """캠페인 대표 크리에이티브 — 산하 광고의 이름·썸네일(중첩 creative 필드)."""
+        payload = await self._client.get(
+            f"{campaign_id}/ads",
+            {"fields": _CREATIVE_FIELDS, "limit": _CREATIVE_LIMIT},
+        )
+        out: list[CreativePreview] = []
+        for row in payload.get("data", []):
+            creative = row.get("creative") or {}
+            out.append(
+                CreativePreview(
+                    ad_id=str(row.get("id", "")),
+                    ad_name=str(row.get("name", "")),
+                    image_url=_pick_image(creative),
+                    thumbnail_url=creative.get("thumbnail_url"),
+                    headline=creative.get("title"),
+                    primary_text=creative.get("body"),
+                )
+            )
+        return out
+
     async def get_account_funding(self) -> AccountFunding:
         """광고계정 게재 가능 여부 — 선불 잔액 0(소진)·계정 비활성 감지.
 
@@ -255,15 +400,32 @@ class MetaAdsReader:
             block_reason=reason,
         )
 
-    async def _adset_daily_budgets(self, account: str) -> dict[str, int]:
-        """캠페인별 광고세트 일예산 합 — 캠페인 노드에 예산이 없을 때(광고세트 예산) 보완."""
+    async def _adset_info(self, account: str) -> dict[str, dict[str, Any]]:
+        """캠페인별 광고세트 일예산 합 + 종료일 목록 — 캠페인 노드 정보 보완용.
+
+        반환: ``{campaign_id: {"budget": int, "ends": [end_time | None, ...]}}``.
+        budget은 캠페인 노드에 예산이 없을 때(광고세트 예산), ends는 캠페인 stop_time이
+        없을 때 게재 기간 종료 판별에 쓴다.
+        """
         payload = await self._client.get(f"{account}/adsets", {"fields": _ADSET_FIELDS})
-        sums: dict[str, int] = {}
+        info: dict[str, dict[str, Any]] = {}
         for row in payload.get("data", []):
             cid = str(row.get("campaign_id", ""))
-            if cid:
-                sums[cid] = sums.get(cid, 0) + _to_int(row.get("daily_budget"))  # KRW offset=1
-        return sums
+            if not cid:
+                continue
+            entry = info.setdefault(cid, {"budget": 0, "ends": []})
+            entry["budget"] += _to_int(row.get("daily_budget"))  # KRW offset=1
+            entry["ends"].append(row.get("end_time"))
+        return info
+
+    @staticmethod
+    def _schedule_ended(campaign_stop: str | None, adset_ends: list[str | None]) -> bool:
+        """게재 기간 종료 여부 — 캠페인 stop_time 우선, 없으면 모든 광고세트 종료일이 과거일 때."""
+        if campaign_stop:
+            return _is_past(campaign_stop)
+        # 캠페인 일정이 없으면 광고세트 기준 — 종료일이 다 있고 전부 과거여야 종료
+        # (하나라도 무기한/미래면 진행 중)
+        return bool(adset_ends) and all(e and _is_past(e) for e in adset_ends)
 
     async def list_campaigns(self) -> list[CampaignInfo]:
         """광고계정의 캠페인 목록 — 대시보드용(이름·상태·일예산).
@@ -272,23 +434,29 @@ class MetaAdsReader:
         캠페인 노드에 존재 — 광고세트 예산이면 광고세트 일예산 합으로 보완한다.
         """
         account = normalize_ad_account(self._client.ad_account_id)
-        # 캠페인 목록·광고세트 예산 병렬 — 순차면 Meta 왕복 2번이 직렬로 쌓임.
-        payload, adset_budgets = await asyncio.gather(
+        # 캠페인 목록·광고세트 정보 병렬 — 순차면 Meta 왕복 2번이 직렬로 쌓임.
+        payload, adset_info = await asyncio.gather(
             self._client.get(f"{account}/campaigns", {"fields": _CAMPAIGN_FIELDS}),
-            self._adset_daily_budgets(account),
+            self._adset_info(account),
         )
         rows = payload.get("data", [])
         out: list[CampaignInfo] = []
         for row in rows:
             cid = str(row.get("id", ""))
             status = str(row.get("effective_status", "")).upper()
+            info = adset_info.get(cid, {})
             # 캠페인(CBO) 예산 우선, 없으면(0) 광고세트 일예산 합
-            budget = _to_int(row.get("daily_budget")) or adset_budgets.get(cid, 0)
+            budget = _to_int(row.get("daily_budget")) or info.get("budget", 0)
+            # 게재 기간이 끝났으면 effective_status가 ACTIVE라도 '종료'로 본다(충전해도 재개 안 됨).
+            if self._schedule_ended(row.get("stop_time"), info.get("ends", [])):
+                state = CampaignState.ENDED
+            else:
+                state = _STATE_MAP.get(status, CampaignState.DRAFT)
             out.append(
                 CampaignInfo(
                     campaign_id=cid,
                     name=str(row.get("name", "")),
-                    state=_STATE_MAP.get(status, CampaignState.DRAFT),
+                    state=state,
                     daily_budget_krw=budget,
                 )
             )
@@ -360,14 +528,15 @@ class MetaAdsReader:
         for row in payload.get("data", []):
             inline = _to_int(row.get("inline_link_clicks"))
             spend = _to_int(row.get("spend"))
-            count = _purchase_metric(row.get("actions"))
-            value = _purchase_metric(row.get("action_values"))
-            meta_roas = _purchase_metric(row.get("purchase_roas"))
-            conv = int(round(count)) if count is not None else None
+            conv_count, conv_event = _count_conversions(row.get("actions"))
+            conv = int(round(conv_count)) if conv_count is not None else None
             cvr = conv / inline if conv is not None and inline else (0.0 if conv == 0 else None)
-            roas = meta_roas
-            if roas is None and value is not None:
-                roas = value / spend if spend else 0.0
+            roas: float | None = None
+            if conv_event == "purchase":
+                value = _purchase_value(row.get("action_values"))
+                roas = _purchase_value(row.get("purchase_roas"))
+                if roas is None and value is not None:
+                    roas = value / spend if spend else 0.0
             out.append(
                 {
                     "label": str(row.get("date_start", ""))[5:],  # 'YYYY-MM-DD' → 'MM-DD'
