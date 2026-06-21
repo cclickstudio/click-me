@@ -13,14 +13,13 @@
 
 ## ② 상하 글씨 잘림 → PIL 직접 렌더링 (핵심)
 
-- [ ] 한글 TTF 폰트 번들 (assets/fonts/, 예: Pretendard/NotoSansKR)
-- [ ] pipeline/text_overlay.py: render_ad_text(image, copy, template, size) -> bytes
-      - 템플릿별 zone(_TEXT_LAYOUT 비율 재활용)에 헤드라인/본문/CTA 그림
-      - shrink-to-fit + 줄바꿈 + 가장자리 안전여백 → 잘림 물리적 불가
-      - 패널 배경(반투명 다크/브랜드컬러) + CTA 버튼 모양
-- [ ] 이미지 모델 프롬프트 "텍스트 없이"로 전환 (generate + compose 양쪽)
-- [ ] candidate_gen: 이미지 생성 후 render_ad_text → composite_logo 순서
-- [ ] 단위 테스트: zone 안에 텍스트가 들어가고 경계 안 넘는지
+- [x] 한글 TTF 폰트 — Pretendard 이미 번들됨(assets/fonts/)
+- [x] pipeline/text_overlay.py: render_ad_text — 템플릿별 zone, shrink-to-fit+줄바꿈, 패널+CTA버튼
+- [x] has_text=False로 전환 — 생성/컴포즈/개선 全경로 텍스트 없는 프롬프트
+- [x] multimodal_generator: 이미지에 텍스트 미생성(카피 JSON만), 텍스트존 비움
+- [x] candidate_gen: 두 경로 모두 render_ad_text → composite_logo
+- [x] 단위 테스트: 렌더·전템플릿·긴텍스트 shrink (test_text_overlay.py)
+- [ ] 검증(런타임): 실제 생성으로 상하 잘림 없는지 (사용자 확인)
 
 ## ③ 제공 텍스트 우선 / 그림 텍스트 보존 (대부분 ②로 해결)
 

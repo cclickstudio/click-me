@@ -477,7 +477,9 @@ async def generate_image(
         else "Color palette: modern, clean, professional"
     )
     tone_line = f"Tone and manner: {tone}" if tone else "Tone: clean, professional, trustworthy"
-    has_text = bool(headline and body and cta)
+    # 텍스트는 이미지 생성 후 text_overlay(PIL)로 렌더한다 — AI는 글자를 그리지 않는다
+    # (확산모델 텍스트 잘림·오탈자 방지). 모든 경로(생성/컴포즈/개선)가 텍스트 없는 프롬프트를 탄다.
+    has_text = False
     core_values_line = (
         f"Core values: {', '.join(product_analysis.core_values)}\n"
         if product_analysis.core_values
