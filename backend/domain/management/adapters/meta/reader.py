@@ -241,15 +241,16 @@ class MetaAdsReader:
     def __init__(self, settings: object = None, *, client: MetaClient | None = None) -> None:
         self._client = client or build_meta_client(settings)
 
-    async def get_metrics(self, campaign_id: str, since: datetime) -> MetricsSnapshot:
-        # lifetime(date_preset=maximum)으로 누적 집계행 1개를 받는다 — 캠페인이 종료·게재중단돼도
-        # "오늘" 윈도우면 0이 되므로, 실제 누적 성과를 그대로 보여주려 전체 기간으로 조회한다.
+    async def get_metrics(
+        self, campaign_id: str, since: datetime, date_preset: str = "maximum"
+    ) -> MetricsSnapshot:
+        # 기본 lifetime(maximum) 누적 1행. date_preset="this_month" 등 기간 한정 가능(예산 페이싱).
         # (since는 date_stop 없을 때 as_of 폴백으로만 사용)
         payload = await self._client.get(
             f"{campaign_id}/insights",
             {
                 "fields": _INSIGHTS_FIELDS,
-                "date_preset": "maximum",
+                "date_preset": date_preset,
             },
         )
         rows = payload.get("data", [])
@@ -321,6 +322,11 @@ class MetaAdsReader:
             return CampaignState.ENDED
         status = str(payload.get("effective_status", "")).upper()
         return _STATE_MAP.get(status, CampaignState.DRAFT)
+
+    async def get_spend_cap(self, campaign_id: str) -> int | None:
+        """캠페인 평생 지출 상한(spend_cap, KRW). 안 걸려 있으면 None — 소진/상한 진행률 표시용."""
+        payload = await self._client.get(campaign_id, {"fields": "spend_cap"})
+        return _to_int(payload.get("spend_cap")) or None
 
     async def get_platform_breakdown(
         self, campaign_id: str, since: datetime
@@ -657,3 +663,24 @@ class MetaAdsReader:
                 }
             )
         return out
+
+    async def get_account_spend(self, date_preset: str = "this_month") -> int:
+        """계정 단위 기간 소진(KRW) — 예산 페이싱의 '이번 달 소진'. 1콜로 합계."""
+        account = normalize_ad_account(self._client.ad_account_id)
+        payload = await self._client.get(
+            f"{account}/insights", {"fields": "spend", "date_preset": date_preset}
+        )
+        rows = payload.get("data", [])
+        return _to_int(rows[0].get("spend")) if rows else 0
+
+    async def get_account_daily_spend(self, date_preset: str = "this_month") -> list[dict]:
+        """계정 단위 일자별 소진 — 페이싱 곡선(계획 vs 실제)용. [{date, spend_krw}]."""
+        account = normalize_ad_account(self._client.ad_account_id)
+        payload = await self._client.get(
+            f"{account}/insights",
+            {"fields": "spend", "date_preset": date_preset, "time_increment": "1"},
+        )
+        return [
+            {"date": str(r.get("date_start", "")), "spend_krw": _to_int(r.get("spend"))}
+            for r in payload.get("data", [])
+        ]

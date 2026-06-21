@@ -47,6 +47,7 @@ SUPPORTED_ACTION_TYPES: Final[tuple[str, ...]] = (
     "INCREASE_BUDGET",
     "REPLACE_CREATIVE",
     "CREATE_CAMPAIGN",  # PR2 — 신규 캠페인 생성 (config는 evidence_metrics에 적재, 옵션 A)
+    "ACTIVATE_CAMPAIGN",  # 게재 시작 — 캠페인·광고세트·광고 전부 ACTIVE (크레딧 게이트 후 호출)
     "EXPAND_AUDIENCE",  # 에스컬레이션 사다리 1순위 — 타겟 범위 확장 (direct)
     "CHANGE_BID_STRATEGY",  # 에스컬레이션 사다리 2순위 — 입찰 전략 변경 (direct)
 )
@@ -396,6 +397,9 @@ class Executor:
             # 오케스트레이션 — 캠페인→광고세트→(리드면 폼→광고)를 한 흐름으로. page_id는
             # writer가 .env(META_PAGE_ID)에서 채운다. 검증 모드면 캠페인 단계까지만 동작.
             return await self._writer.create_full_campaign(config, idem_key)
+        if proposal.action_type == "ACTIVATE_CAMPAIGN":
+            # 게재 시작 — 캠페인·광고세트·광고를 전부 ACTIVE로(한 단계라도 PAUSED면 미게재).
+            return await self._writer.activate_tree(target, idem_key)
         if proposal.action_type == "EXPAND_AUDIENCE":
             return await self._writer.expand_audience(target, idem_key)
         if proposal.action_type == "CHANGE_BID_STRATEGY":

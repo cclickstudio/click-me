@@ -7,7 +7,7 @@ from enum import StrEnum
 
 from pydantic import Field
 
-from domain.management.contracts.schemas import Contract, UtcDatetime
+from domain.management.contracts.schemas import Contract, RealOutcome, UtcDatetime
 
 
 class PostType(StrEnum):
@@ -76,3 +76,45 @@ class ComparisonReport(Contract):
 
     lift: LiftResult
     recommendation: ComparisonRecommendation
+
+
+# ── 집행 전(시뮬 예측) vs 후(실측) 비교 — 시뮬과 느슨 결합용 슬롯 ──
+
+
+class PredictionSnapshot(Contract):
+    """집행 전 시뮬 예측 — 실 시뮬 KPI와 동일 필드(슬롯). 지금은 Mock, 추후 실 시뮬로 교체.
+
+    예측은 상대 지표(클릭의향률 0~1·구매의도/신뢰도 1~5·objective_fit 0~100)다.
+    실측(RealOutcome, 절대)과 스케일이 달라 환산하지 않고 나란히 둔다(CLAUDE.md).
+    """
+
+    ad_id: str
+    click_intent_rate: float = Field(ge=0.0)  # 0~1
+    purchase_intent: float = Field(ge=0.0)  # 1~5
+    trust_avg: float = Field(ge=0.0)  # 1~5
+    rejection_rate: float = Field(ge=0.0)  # 0~1
+    objective_fit_score: int | None = None  # 0~100 종합 적합도
+    grade: str | None = None  # 높음 / 보통 / 낮음
+    as_of: UtcDatetime
+    source: str = "mock"  # mock | sim — 슬롯이 무엇으로 채워졌는지
+
+
+class BeforeAfterVerdict(StrEnum):
+    ALIGNED = "aligned"  # 예측과 실측 방향 일치
+    OVERPERFORMED = "overperformed"  # 예측보다 실측 좋음
+    UNDERPERFORMED = "underperformed"  # 예측보다 실측 약함
+    UNKNOWN = "unknown"  # 예측 없음(시뮬 미연결) 또는 판단 보류
+
+
+class BeforeAfter(Contract):
+    """캠페인 1건의 전(예측)·후(실측) 묶음 + 정성 방향성 판정.
+
+    prediction이 None이면 시뮬 미연결(슬롯 비어있음) — 화면은 '시뮬 연결 대기'로.
+    """
+
+    campaign_id: str
+    name: str
+    prediction: PredictionSnapshot | None
+    actual: RealOutcome
+    verdict: BeforeAfterVerdict
+    rationale: str

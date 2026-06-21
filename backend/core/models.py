@@ -160,6 +160,19 @@ class AdEmbedding(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
+class ManagementKbChunk(Base):
+    """매니지먼트 지식베이스 청크 (에이전틱 RAG) — 정책·플레이북·KPI 규칙의 벡터 검색."""
+
+    __tablename__ = "management_kb_chunks"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    source: Mapped[str] = mapped_column(String(128))  # 출처 파일명(인용용)
+    title: Mapped[str] = mapped_column(String(256))  # 섹션 제목(인용용)
+    chunk: Mapped[str] = mapped_column(Text)
+    embedding: Mapped[list[float]] = mapped_column(Vector(1536))
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
 class ChatSession(Base):
     __tablename__ = "chat_sessions"
 
@@ -575,6 +588,47 @@ class CreatedCampaign(Base):
     daily_budget_krw: Mapped[int] = mapped_column(Integer, nullable=False)
     status: Mapped[str] = mapped_column(String(20), nullable=False)  # success | failed
     execution_mode: Mapped[str] = mapped_column(String(20), nullable=False)  # live | validate_only…
+    # 집행 전 시뮬 예측 연결용 — 이 캠페인이 어떤 광고(ad_id)로 만들어졌는지(없으면 미연결).
+    creative_ad_id: Mapped[str | None] = mapped_column(String(64))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     # 소프트 삭제 — Meta에서 캠페인 삭제 시 행을 지우지 않고 시각만 찍는다(감사 이력 보존).
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+# ──────────────────────────────────────────────
+# Billing (크레딧 충전·집행 차감 영속)
+# ──────────────────────────────────────────────
+
+
+class PaymentOrderRow(Base):
+    """크레딧 충전 주문 — 서버가 기억하는 금액(FE 변조 대조)·승인 상태."""
+
+    __tablename__ = "payment_orders"
+
+    order_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    org_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    amount_krw: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)  # ready|done|failed|canceled
+    payment_key: Mapped[str | None] = mapped_column(String(128))
+    raw_response: Mapped[dict | None] = mapped_column(JSONB)
+    cancel_response: Mapped[dict | None] = mapped_column(JSONB)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    canceled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class CreditLedgerRow(Base):
+    """크레딧 원장 — append-only(수정·삭제 경로 없음). 잔액은 delta 합으로 산출.
+
+    CHARGE는 양수, SPEND/REFUND는 음수. ref_id는 주문 id 또는 집행 참조(campaign 등).
+    """
+
+    __tablename__ = "credit_ledger"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    org_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    delta_krw: Mapped[int] = mapped_column(Integer, nullable=False)
+    balance_after_krw: Mapped[int] = mapped_column(Integer, nullable=False)
+    reason: Mapped[str] = mapped_column(String(16), nullable=False)  # charge|spend|refund
+    ref_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

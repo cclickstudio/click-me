@@ -7,6 +7,8 @@
 """
 
 import asyncio
+import calendar
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from random import Random
 from typing import Literal
@@ -18,10 +20,12 @@ from pydantic import BaseModel, Field
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.routers.billing import DEMO_ORG_ID, get_billing_service
 from core.auth import get_current_user
 from core.config import settings
 from core.db import get_db
 from core.models import CampaignKpiOverride, CreatedCampaign, OrganizationMember, User
+from domain.billing.service.billing_service import BillingError
 from domain.management.adapters.meta.client import MetaApiError
 from domain.management.adapters.meta.connection_flow import complete_meta_connection
 from domain.management.adapters.meta.oauth import build_login_url
@@ -35,7 +39,10 @@ from domain.management.approval import (
     requires_human,
     validate_proposal,
 )
+from domain.management.assistant.agent import build_management_agent
+from domain.management.assistant.contracts import AskRequest, AskResult
 from domain.management.campaign_policy import get_campaign_policy, min_daily_budget_for
+from domain.management.comparison.service.before_after_service import compute_before_after
 from domain.management.comparison.service.comparison_service import ComparisonService
 from domain.management.contracts.enums import (
     ActionTier,
@@ -81,6 +88,7 @@ from domain.management.wiring import (
     build_diagnosis_agent,
     build_escalation_store,
     build_idempotency_store,
+    build_prediction_reader,
     build_reader,
     build_writer,
 )
@@ -95,6 +103,7 @@ _META_CONNECT_SCOPES = [
     "instagram_manage_insights",
     "pages_show_list",
     "pages_read_engagement",
+    "leads_retrieval",  # 리드(잠재고객) 명단 조회 — 즉석 양식 제출 데이터 fetch
 ]
 
 _DEMO_FAULTS = {"bid_loss", "review_rejected", "none"}
@@ -270,6 +279,7 @@ async def _record_created_campaign(db: AsyncSession, proposal: ActionProposal, r
             daily_budget_krw=int(cfg.get("daily_budget_krw") or proposal.budget_after_krw or 0),
             status=result.status.value if hasattr(result.status, "value") else str(result.status),
             execution_mode=str(_resolved_execution_mode().value),
+            creative_ad_id=cfg.get("creative_ad_id"),  # 집행 전 시뮬 예측 연결용
         )
     )
     await db.commit()
@@ -401,6 +411,76 @@ async def compare_board():
             }
         )
     return {"rows": rows}
+
+
+@router.get("/compare/before-after")
+async def compare_before_after(db: AsyncSession = Depends(get_db)):
+    """집행 전(시뮬 예측) vs 후(실측) — 실제 Meta 캠페인별.
+
+    후=실 Meta 실측(list_campaigns→get_metrics→RealOutcome). 전=PredictionReader(지금 Mock 슬롯,
+    추후 실 시뮬). 예측·실측 스케일이 달라 환산 없이 나란히 + 정성 판정(compute_before_after).
+    예측 링크(creative_ad_id)는 created_campaigns에서 meta_id로 매핑(없으면 시뮬 미연결).
+    """
+    reader = build_reader(settings)
+    pred_reader = build_prediction_reader(settings)
+    now = datetime.now(UTC)
+    # meta_campaign_id → creative_ad_id 매핑(앱에서 만든 캠페인의 시뮬 연결 키)
+    ad_by_meta: dict[str, str] = {}
+    try:
+        rows = (
+            (await db.execute(select(CreatedCampaign).where(CreatedCampaign.deleted_at.is_(None))))
+            .scalars()
+            .all()
+        )
+        ad_by_meta = {
+            str(r.meta_campaign_id): r.creative_ad_id
+            for r in rows
+            if r.meta_campaign_id and r.creative_ad_id
+        }
+    except Exception:  # noqa: BLE001 — 매핑 실패해도 실측은 보여준다
+        ad_by_meta = {}
+    items: list[dict] = []
+    try:
+        campaigns = await reader.list_campaigns()
+    except MetaApiError as exc:
+        # Meta 요청 한도(code 17 등) — "캠페인 없음"으로 오해되지 않게 표면화.
+        if exc.is_rate_limited:
+            return {"items": [], "rate_limited": "Meta 요청 한도 — 잠시 후 다시 시도하세요."}
+        return {"items": []}
+    except Exception:  # noqa: BLE001 — 그 외 목록 실패면 빈 결과
+        return {"items": []}
+    for c in campaigns:
+        cid = c.campaign_id
+        try:
+            actual = _real_outcome(await reader.get_metrics(cid, now), cid, ad_by_meta.get(cid))
+        except Exception:  # noqa: BLE001 — 캠페인 1건 실측 실패가 전체를 막지 않게
+            continue
+        ad_id = ad_by_meta.get(cid)
+        prediction = await pred_reader.get_prediction(ad_id) if ad_id else None
+        ba = compute_before_after(cid, c.name, prediction, actual)
+        items.append(ba.model_dump(mode="json"))
+    return {"items": items}
+
+
+_assistant = None
+
+
+def _get_assistant() -> Callable[[AskRequest], Awaitable[AskResult]]:
+    """매니지먼트 에이전틱 RAG 서브에이전트 — 1회 빌드 후 재사용."""
+    global _assistant
+    if _assistant is None:
+        _assistant = build_management_agent(settings)
+    return _assistant
+
+
+@router.post("/assistant")
+async def management_assistant(body: AskRequest):
+    """자연어 매니지먼트 질의 → 근거+인용 답변(하이브리드 RAG: 실측 툴 + KB).
+
+    오케스트레이터(채팅)가 `build_management_agent`를 'management 서브에이전트'로 사용.
+    """
+    result = await _get_assistant()(body)
+    return result.model_dump(mode="json")
 
 
 # ── 캠페인 목록·성과 대시보드 (🅰 reader 영역 데모 노출) ──────────────────
@@ -955,10 +1035,325 @@ async def create_campaign_proposal(body: CreateCampaignRequest):
     return {"proposal": proposal.model_dump(mode="json")}
 
 
+# ── 게재 시작(활성화) + 크레딧 연동 + 소진 동기화 ──────────────────────────
+# 결제(/billing) 충전 크레딧을 게이트·차감의 단일 한도로 쓴다. Meta 직접 충전은 불가하므로
+# 충전액을 캠페인 spend_cap으로 걸어 "그만큼만 집행 → 소진 시 자동 종료"를 동일하게 구현한다.
+def _serving_causes(detail, funding) -> tuple[bool, list[dict]]:
+    """effective_status·심사·계정 자금을 게재 불가 원인 목록으로 — 한국어 단일 매핑."""
+    status = (getattr(detail, "effective_status", "") or "").upper()
+    serving = status == "ACTIVE"
+    causes: list[dict] = []
+    if status in ("DISAPPROVED", "WITH_ISSUES", "AD_DISAPPROVED"):
+        issues = getattr(detail, "issues_info", ()) or ()
+        msg = "; ".join(issues) if issues else "광고가 심사에서 거부되었습니다."
+        causes.append({"code": "DISAPPROVED", "message": f"심사 거부 — {msg}"})
+    elif status == "PENDING_REVIEW":
+        causes.append(
+            {"code": "PENDING_REVIEW", "message": "심사 대기 중입니다 — 검토 후 자동 게재됩니다."}
+        )
+    elif status in ("PAUSED", "CAMPAIGN_PAUSED", "ADSET_PAUSED"):
+        causes.append(
+            {"code": "PAUSED", "message": "일시중지 상태입니다 — '게재 시작'으로 활성화하세요."}
+        )
+    elif not serving and status:
+        causes.append({"code": status, "message": f"현재 상태: {status} — 게재되지 않습니다."})
+    if funding is not None and getattr(funding, "delivery_blocked", False):
+        reason = getattr(funding, "block_reason", None) or "Meta 계정 결제수단을 확인하세요."
+        causes.append({"code": "ACCOUNT_FUNDING", "message": reason})
+    return serving, causes
+
+
+class ActivateRequest(BaseModel):
+    commit_krw: int | None = Field(
+        default=None, ge=1
+    )  # 이 캠페인에 배정(=spend_cap). 미지정 시 일예산.
+    org_id: str = DEMO_ORG_ID
+
+
+async def _created_campaign_row(db: AsyncSession, campaign_id: str) -> CreatedCampaign | None:
+    return (
+        (
+            await db.execute(
+                select(CreatedCampaign).where(CreatedCampaign.meta_campaign_id == campaign_id)
+            )
+        )
+        .scalars()
+        .first()
+    )
+
+
+@router.post("/campaigns/{campaign_id}/activate")
+async def activate_campaign(
+    campaign_id: str, body: ActivateRequest, db: AsyncSession = Depends(get_db)
+):
+    """게재 시작 — Meta 선불 잔액 게이트 → spend_cap → 캠페인·세트·광고 ACTIVE. 실과금 시작점."""
+    row = await _created_campaign_row(db, campaign_id)
+    commit = body.commit_krw or (row.daily_budget_krw if row else 0)
+    if commit <= 0:
+        raise HTTPException(status_code=422, detail="배정 금액(commit_krw)을 결정할 수 없습니다.")
+
+    # 1) 게이트 — Meta 광고계정 선불 잔액이 배정액보다 적으면 차단(예산·게재 기준 통일).
+    try:
+        funding = await build_reader(settings).get_account_funding()
+        meta_balance = funding.available_balance_krw or 0
+    except Exception:  # noqa: BLE001 — 자금 조회 실패 시 0으로 보아 차단(안전)
+        meta_balance = 0
+    if meta_balance < commit:
+        return {
+            "serving": False,
+            "result": None,
+            "balance_krw": meta_balance,
+            "commit_krw": commit,
+            "causes": [
+                {
+                    "code": "INSUFFICIENT_META_BALANCE",
+                    "message": (
+                        f"Meta 광고계정 선불 잔액 부족 — {commit - meta_balance:,}원 더 필요. "
+                        "Ads Manager 결제 설정에서 충전하세요."
+                    ),
+                    "need_krw": commit - meta_balance,
+                    "balance_krw": meta_balance,
+                    "commit_krw": commit,
+                }
+            ],
+        }
+
+    # 2) 지출 상한 — 충전액만큼만 집행되도록(소진 시 자동 종료). 실패 시 활성화 중단(무한집행 방지).
+    writer = build_writer(settings)
+    cap = await writer.set_spend_cap(campaign_id, commit, idem_key=f"cap_{uuid4().hex[:8]}")
+    cap_status = cap.status.value if hasattr(cap.status, "value") else str(cap.status)
+    if cap_status != "success":
+        msg = _find_in_snapshot(cap.platform_response_snapshot, "user_msg")
+        return {
+            "serving": False,
+            "result": cap.model_dump(mode="json"),
+            "balance_krw": meta_balance,
+            "commit_krw": commit,
+            "causes": [
+                {
+                    "code": "SPEND_CAP_FAILED",
+                    "message": str(msg)
+                    if msg
+                    else "지출 상한 설정 실패 — Meta 최소 상한을 확인하세요.",
+                }
+            ],
+        }
+
+    # 3) 활성화 제안 → 승인 → 실행 (멱등·감사 단일 경로). 버튼 클릭 = Tier 3 사람 승인.
+    now = datetime.now(UTC)
+    ad_account = _resolve_ad_account()
+    proposal = finalize_proposal(
+        ActionProposal(
+            proposal_id=f"prop_{uuid4().hex[:8]}",
+            tenant_id=TENANT_ID,
+            ad_account_id=ad_account,
+            target_object_ids=(campaign_id,),
+            action_type="ACTIVATE_CAMPAIGN",
+            action_tier=ActionTier.TIER_3,
+            evidence_metrics={"commit_krw": commit, "name": row.name if row else campaign_id},
+            metrics_as_of=now,
+            hypothesis="사용자 게재 시작 요청",
+            confidence=1.0,
+            expected_state_version="state_v1",
+            budget_before_krw=0,
+            budget_after_krw=commit,
+            max_total_spend_krw=commit,
+            expires_at=now + timedelta(minutes=PROPOSAL_TTL_MINUTES),
+            approval_policy_version=APPROVAL_POLICY_VERSION,
+        )
+    )
+    action = approve(proposal, "user_demo", execution_mode=_resolved_execution_mode())
+    result = await _get_executor().execute(action, proposal)
+    status = result.status.value if hasattr(result.status, "value") else str(result.status)
+    serving = status == "success"
+    if serving and row is not None:
+        row.status = "active"
+        await db.commit()
+
+    resp: dict[str, object] = {
+        "serving": serving,
+        "result": result.model_dump(mode="json"),
+        "balance_krw": meta_balance,
+        "commit_krw": commit,
+        "causes": [],
+    }
+    if not serving:
+        msg = _find_in_snapshot(result.platform_response_snapshot, "user_msg")
+        if msg:
+            resp["error_message"] = str(msg)
+    return resp
+
+
+@router.get("/campaigns/{campaign_id}/delivery-status")
+async def delivery_status(campaign_id: str):
+    """게재 여부 + 불가 원인 + Meta 선불 잔액 — 대시보드/게재 화면이 원인을 그대로 표시."""
+    reader = build_reader(settings)
+    detail = await reader.get_delivery_status_detail(campaign_id)
+    try:
+        funding = await reader.get_account_funding()
+    except Exception:  # noqa: BLE001 — 자금 조회 실패가 상태 표시를 막지 않게
+        funding = None
+    try:
+        spend_cap = await reader.get_spend_cap(campaign_id)
+    except Exception:  # noqa: BLE001 — 상한 조회 실패가 상태 표시를 막지 않게
+        spend_cap = None
+    serving, causes = _serving_causes(detail, funding)
+    # 게재 기준과 통일 — 잔액은 Meta 선불 가용 잔액.
+    balance = (funding.available_balance_krw or 0) if funding is not None else 0
+    return {
+        "campaign_id": campaign_id,
+        "serving": serving,
+        "effective_status": detail.effective_status,
+        "issues": list(getattr(detail, "issues_info", ()) or ()),
+        "causes": causes,
+        "spend_cap_krw": spend_cap,
+        "balance_krw": balance,
+    }
+
+
+@router.get("/campaigns/{campaign_id}/sync")
+async def sync_campaign(
+    campaign_id: str, org_id: str = DEMO_ORG_ID, db: AsyncSession = Depends(get_db)
+):
+    """Meta 누적 소진액 → 크레딧 차감 정산(증분) + 자동 종료 상태 반영."""
+    reader = build_reader(settings)
+    billing = get_billing_service()
+    metrics = await reader.get_metrics(campaign_id, datetime.now(UTC))
+    spent = max(0, metrics.spend_krw or 0)
+    already = await billing.spent_for(org_id, campaign_id)
+    charged = 0
+    delta = spent - already
+    if delta > 0:
+        amount = min(delta, await billing.balance(org_id))  # 잔액 한도 내에서만(음수 잔액 금지)
+        if amount > 0:
+            try:
+                await billing.record_spend(org_id, amount, ref_id=campaign_id)
+                charged = amount
+            except BillingError:
+                charged = 0
+    detail = await reader.get_delivery_status_detail(campaign_id)
+    ended = (detail.effective_status or "").upper() not in ("ACTIVE", "PENDING_REVIEW")
+    row = await _created_campaign_row(db, campaign_id)
+    if row is not None:
+        new_status = "ended" if ended else "active"
+        if row.status != new_status:
+            row.status = new_status
+            await db.commit()
+    return {
+        "campaign_id": campaign_id,
+        "spend_krw": spent,
+        "charged_now_krw": charged,
+        "balance_krw": await billing.balance(org_id),
+        "effective_status": detail.effective_status,
+        "ended": ended,
+    }
+
+
+@router.post("/campaigns/{campaign_id}/pause")
+async def pause_campaign(campaign_id: str, db: AsyncSession = Depends(get_db)):
+    """캠페인 즉시 일시중지(PAUSED) — 게재·과금 중단. 크레딧 게이트 불요(돈이 나가는 쪽 아님)."""
+    now = datetime.now(UTC)
+    ad_account = _resolve_ad_account()
+    proposal = finalize_proposal(
+        ActionProposal(
+            proposal_id=f"prop_{uuid4().hex[:8]}",
+            tenant_id=TENANT_ID,
+            ad_account_id=ad_account,
+            target_object_ids=(campaign_id,),
+            action_type="PAUSE_CAMPAIGN",
+            action_tier=ActionTier.TIER_1,
+            evidence_metrics={"name": campaign_id},
+            metrics_as_of=now,
+            hypothesis="사용자 일시중지 요청",
+            confidence=1.0,
+            expected_state_version="state_v1",
+            budget_before_krw=0,
+            budget_after_krw=0,
+            max_total_spend_krw=0,
+            expires_at=now + timedelta(minutes=PROPOSAL_TTL_MINUTES),
+            approval_policy_version=APPROVAL_POLICY_VERSION,
+        )
+    )
+    action = approve(proposal, "user_demo", execution_mode=_resolved_execution_mode())
+    result = await _get_executor().execute(action, proposal)
+    status = result.status.value if hasattr(result.status, "value") else str(result.status)
+    if status == "success":
+        try:
+            await db.execute(
+                update(CreatedCampaign)
+                .where(CreatedCampaign.meta_campaign_id == campaign_id)
+                .values(status="paused")
+            )
+            await db.commit()
+        except Exception:  # noqa: BLE001 — 상태 기록 실패가 응답을 막지 않게
+            await db.rollback()
+    resp: dict[str, object] = {
+        "paused": status == "success",
+        "result": result.model_dump(mode="json"),
+    }
+    if status != "success":
+        msg = _find_in_snapshot(result.platform_response_snapshot, "user_msg")
+        if msg:
+            resp["error_message"] = str(msg)
+    return resp
+
+
+@router.get("/campaigns/{campaign_id}/leads")
+async def campaign_leads(campaign_id: str):
+    """이 캠페인 광고로 제출된 잠재고객(리드) 명단 — Meta leadgen에서 조회.
+
+    리드 데이터는 Meta에 저장된다(우리 도메인 아님). 페이지 토큰 + leads_retrieval 권한이
+    필요하며, 권한·토큰 문제는 note로 안내한다(빈 목록 반환, 화면이 안 깨지게).
+    """
+    if getattr(settings, "use_mock", True):
+        return {"leads": [], "count": 0, "note": "데모(mock) 모드 — 리드는 live에서 조회됩니다."}
+    from domain.management.adapters.meta.client import (  # noqa: PLC0415 — live 전용 지연 로드
+        MetaClient,
+        build_meta_client,
+    )
+
+    client = build_meta_client(settings)
+    page_id = str(getattr(settings, "meta_page_id", "") or "")
+    try:
+        # 사용자 토큰 → 페이지 토큰 (leadgen 리드 조회는 페이지 토큰 필요)
+        accts = await client.get("me/accounts", {"fields": "id,access_token", "limit": 100})
+        page_token = next(
+            (p.get("access_token") for p in accts.get("data", []) if str(p.get("id")) == page_id),
+            None,
+        )
+        if not page_token:
+            return {"leads": [], "count": 0, "note": "페이지 토큰을 얻지 못함(페이지 권한 확인)."}
+        page_client = MetaClient(
+            page_token, api_version=getattr(settings, "meta_graph_api_version", None) or "v21.0"
+        )
+        # 캠페인 하위 광고 → 광고별 리드 수집
+        ads = await client.get(f"{campaign_id}/ads", {"fields": "id", "limit": 200})
+        leads: list[dict] = []
+        for ad in ads.get("data", []):
+            res = await page_client.get(
+                f"{ad['id']}/leads", {"fields": "created_time,field_data", "limit": 200}
+            )
+            for lead in res.get("data", []):
+                fields = {
+                    f.get("name"): (f.get("values") or [""])[0]
+                    for f in (lead.get("field_data") or [])
+                }
+                leads.append({"created_time": lead.get("created_time"), "fields": fields})
+        leads.sort(key=lambda x: x.get("created_time") or "", reverse=True)
+        return {"leads": leads, "count": len(leads)}
+    except MetaApiError as exc:
+        # 권한 부족(leads_retrieval 미승인)·토큰 문제 등 — 화면용 안내로 변환.
+        return {"leads": [], "count": 0, "note": f"리드 조회 불가: {exc.user_msg or exc.message}"}
+
+
 # ── 예산 관리·페이싱 (테넌트 한도 대비 캠페인 합산 소진 + 90/95/100% 판정) ────
 # 소진액은 데모 캠페인 지출 합산(레지스트리 커밋분은 데모에서 0). 한도는 _BUDGET에서
 # 읽고/쓰며(set_limit, 인메모리), BudgetAuthority.evaluate로 경고 레벨을 판정한다.
 async def _budget_status() -> dict:
+    # 실모드: 한도=총 충전 크레딧, 소진=실 Meta 집행액, 잔여=크레딧 잔액.
+    if not getattr(settings, "use_mock", True):
+        return await _budget_status_live()
+    # 데모(mock): 합성 캠페인 지출 + 인메모리 한도.
     spent = 0
     campaigns = []
     for i, (cid, name, _state, budget, fault) in enumerate(_CAMPAIGNS_DEMO):
@@ -974,6 +1369,67 @@ async def _budget_status() -> dict:
         "spent_krw": spent,
         "remaining_krw": max(limit - spent, 0),
         "ratio": round(spent / limit, 3) if limit else 0.0,
+        "decision": decision,
+        "thresholds": {"warn": WARN_THRESHOLD, "escalate": ESCALATE_THRESHOLD},
+        "campaigns": campaigns,
+    }
+
+
+async def _budget_status_live() -> dict:
+    """실데이터 예산 현황 — 월 목표 예산 대비 이번 달 실소진 페이싱(관제).
+
+    한도=월 목표 예산(설정), 소진=이번 달 Meta 집행, 잔여=목표−소진, 여력=Meta 선불 잔액.
+    런레이트(projection)로 "이 페이스면 월말 얼마"를 예측한다. 캠페인별은 이번 달 소진·ROAS.
+    """
+    reader = build_reader(settings)
+    now = datetime.now(UTC)
+    days_in_month = calendar.monthrange(now.year, now.month)[1]
+    target = _BUDGET.for_tenant(TENANT_ID).limit_krw  # 월 목표(미설정 0) — v1 in-memory
+
+    # 이번 달 실소진(계정 단위 1콜) + 일자별 곡선
+    try:
+        spent = await reader.get_account_spend("this_month")
+    except Exception:  # noqa: BLE001 — 조회 실패면 0
+        spent = 0
+    try:
+        daily = await reader.get_account_daily_spend("this_month")
+    except Exception:  # noqa: BLE001
+        daily = []
+    # 여력 — Meta 선불 가용 잔액
+    try:
+        account_balance = (await reader.get_account_funding()).available_balance_krw or 0
+    except Exception:  # noqa: BLE001
+        account_balance = 0
+    # 캠페인별 이번 달 소진 + ROAS
+    campaigns: list[dict] = []
+    try:
+        for c in await reader.list_campaigns():
+            try:
+                m = await reader.get_metrics(c.campaign_id, now, date_preset="this_month")
+                campaigns.append({"name": c.name, "spend_krw": m.spend_krw or 0, "roas": m.roas})
+            except Exception:  # noqa: BLE001 — 캠페인 1건 실패가 전체를 막지 않게
+                campaigns.append({"name": c.name, "spend_krw": 0, "roas": None})
+    except Exception:  # noqa: BLE001
+        campaigns = []
+
+    # 런레이트 예측 — 현재 페이스로 월말 예상 소진.
+    projection = round(spent / now.day * days_in_month) if now.day and spent else spent
+    decision = (
+        BudgetAuthority(limit_krw=target, spent_krw=spent).evaluate(0).value
+        if target > 0
+        else "allow"
+    )
+    return {
+        "tenant_id": TENANT_ID,
+        "limit_krw": target,
+        "monthly_target_krw": target,
+        "spent_krw": spent,
+        "remaining_krw": max(target - spent, 0),
+        "ratio": round(spent / target, 3) if target else 0.0,
+        "projection_krw": projection,
+        "account_balance_krw": account_balance,
+        "period": now.strftime("%Y-%m"),
+        "daily": daily,
         "decision": decision,
         "thresholds": {"warn": WARN_THRESHOLD, "escalate": ESCALATE_THRESHOLD},
         "campaigns": campaigns,

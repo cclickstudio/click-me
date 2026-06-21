@@ -81,6 +81,19 @@ def build_comparison_service(settings):
     return ComparisonService(build_organic_reader(settings), build_reader(settings))
 
 
+def build_prediction_reader(settings):
+    """집행 전(시뮬 예측) reader — 시뮬 디커플링 슬롯의 교체 지점.
+
+    지금은 MockPredictionReader. 시뮬 KPI 안정화 후 이 줄만 SimPredictionReader로 바꾸면
+    compare 화면·API 변경 없이 실 예측이 들어온다.
+    """
+    from domain.management.comparison.prediction_adapters import (  # noqa: PLC0415
+        MockPredictionReader,
+    )
+
+    return MockPredictionReader()
+
+
 def build_idempotency_store(settings) -> IdempotencyStore:
     """멱등 저장소 — use_mock이면 인메모리, 아니면 DB(idempotency_keys)."""
     if getattr(settings, "use_mock", True):

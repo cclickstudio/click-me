@@ -222,12 +222,15 @@ class MetaAdsWriter:
         권한 부족 시 별도 페이지 토큰이 필요할 수 있다(실연동 때 확인).
         """
         self._require_writable(idem_key)
+        # 양식은 페이지 자산이라 이름이 페이지 내 유일해야 한다(캠페인 삭제로도 안 지워짐) →
+        # 매 생성마다 짧은 고유 접미사를 붙여 "이미 존재하는 이름" 충돌을 막는다.
+        form_name = f"{config.name or config.campaign_id}-form-{uuid4().hex[:8]}"
         return await self._dispatch(
             "create_lead_form",
             page_id,
             idem_key,
             {
-                "name": f"{config.name or config.campaign_id}-form",
+                "name": form_name,
                 "locale": "ko_KR",
                 # 중첩 객체는 form 바디라 JSON 문자열로 직렬화.
                 "questions": json.dumps([{"type": "FULL_NAME"}, {"type": "EMAIL"}]),
@@ -338,25 +341,27 @@ class MetaAdsWriter:
     ) -> ActionResult:
         """오케스트레이션 — 캠페인→광고세트→(리드면 폼→광고)를 한 흐름으로 생성.
 
-        각 단계의 Meta id를 다음 단계의 부모로 넘긴다. 어느 단계든 실패하면 그 결과를 반환하고
-        멈춘다(앞 단계는 모두 PAUSED라 게재·과금 0). 실제 id가 필요하므로 **LIVE에서 완전 동작**
-        하고, validate_only/dry_run은 id가 없어 캠페인 단계까지만(검증) 의미가 있다.
+        각 단계의 Meta id를 다음 단계의 부모로 넘긴다. **중간 단계가 실패하면 이미 만든 캠페인을
+        삭제(롤백)**해 "생성 실패 = 아무것도 안 남음"을 보장한다(부분 생성 방지). 실제 id가 필요해
+        LIVE에서 완전 동작하고, validate_only/dry_run은 id가 없어 캠페인 단계까지만 의미가 있다.
         page_id 미지정 시 .env META_PAGE_ID(self._page_id)를 쓴다.
         """
         page_id = page_id or self._page_id
         campaign = await self.create_campaign(config, f"{idem_key}-camp")
         cid = _created_id(campaign)
         if campaign.status is not ResultStatus.SUCCESS or cid is None:
-            return campaign  # 검증 모드(또는 실패) — 캠페인 단계에서 종료
+            return campaign  # 검증 모드(또는 캠페인 단계 실패) — 아직 만든 게 없으니 롤백 불요
         adset = await self.create_adset(config, cid, f"{idem_key}-adset", page_id=page_id)
-        asid = _created_id(adset)
-        if adset.status is not ResultStatus.SUCCESS or asid is None:
+        if adset.status is not ResultStatus.SUCCESS or _created_id(adset) is None:
+            await self._rollback(cid, idem_key)
             return adset
+        asid = _created_id(adset)
         if config.objective != "leads":
             return _tag_campaign(adset, cid)  # 트래픽은 광고세트까지(광고 소재는 후속)
         form = await self.create_lead_form(config, f"{idem_key}-form", page_id=page_id)
         fid = _created_id(form)
         if form.status is not ResultStatus.SUCCESS or fid is None:
+            await self._rollback(cid, idem_key)
             return form
         ad = await self.create_ad(
             config,
@@ -366,17 +371,76 @@ class MetaAdsWriter:
             form_id=fid,
             image_hash=config.image_hash,  # 업로드된 소재 이미지(있으면 첨부)
         )
+        if ad.status is not ResultStatus.SUCCESS:
+            await self._rollback(cid, idem_key)
+            return ad
         return _tag_campaign(ad, cid)
+
+    async def _rollback(self, campaign_id: str, idem_key: str) -> None:
+        """부분 생성 정리 — 이미 만든 캠페인(과 하위 광고세트·광고)을 삭제. 실패해도 흐름은 진행.
+
+        삭제 자체가 또 실패하면 고아 객체가 남을 수 있으나 모두 PAUSED라 과금은 0(로그로 알린다).
+        """
+        try:
+            await self.delete_campaign(campaign_id, f"{idem_key}-rollback")
+            logger.warning("부분 생성 롤백 — 캠페인 삭제 %s", campaign_id)
+        except Exception:  # noqa: BLE001 — 롤백 실패가 원래 에러를 가리지 않게
+            logger.warning("롤백 실패 — 수동 정리 필요 campaign=%s", campaign_id)
 
     async def activate(self, object_id: str, idem_key: str) -> ActionResult:
         """객체(캠페인/광고세트/광고)를 ACTIVE로 — 게재·과금 시작 (Task5).
 
         ⚠ 실제 과금이 시작되는 유일한 쓰기. 게재되려면 캠페인·광고세트·광고가 **모두 ACTIVE**여야
-          한다(한 단계라도 PAUSED면 미게재). 솔로에선 이 단계를 Ads Manager에서 사람이 직접 켜는
-          걸 권장한다 — 무엇을 켜는지 눈으로 보고. 본 메서드는 그 능력만 제공(자동 호출 안 함).
+          한다(한 단계라도 PAUSED면 미게재). 단일 객체만 켠다 — 트리 전체는 activate_tree 참고.
         """
         self._require_writable(idem_key)
         return await self._dispatch("activate", object_id, idem_key, {"status": "ACTIVE"})
+
+    async def set_spend_cap(self, campaign_id: str, amount_krw: int, idem_key: str) -> ActionResult:
+        """캠페인 평생 지출 상한(spend_cap)을 건다 — 충전 크레딧만큼만 집행되게 하는 핵심.
+
+        Meta는 누적 지출이 spend_cap에 도달하면 캠페인 게재를 자동 중지한다(= "소진 시 자동 종료").
+        KRW는 minor unit 없음(offset=1)이라 원 단위 정수를 그대로 전송한다.
+        """
+        self._require_writable(idem_key)
+        if amount_krw <= 0:
+            raise ValueError("spend_cap은 양의 KRW 정수여야 함")
+        return await self._dispatch(
+            "set_spend_cap",
+            campaign_id,
+            idem_key,
+            {"spend_cap": amount_krw},
+            spend_cap=amount_krw,
+        )
+
+    async def activate_tree(self, campaign_id: str, idem_key: str) -> ActionResult:
+        """캠페인·광고세트·광고를 **모두 ACTIVE**로 — 실제 게재가 시작되는 진입점.
+
+        한 단계라도 PAUSED면 미게재이므로 자식(광고세트·광고)을 조회해 전부 켠다. 어느 단계든
+        실패하면 그 결과를 반환하고 멈춘다. DRY_RUN(클라이언트 없음)은 캠페인 단계만 합성 처리.
+        """
+        self._require_writable(idem_key)
+        camp = await self.activate(campaign_id, f"{idem_key}-camp")
+        if camp.status is not ResultStatus.SUCCESS:
+            return _tag_campaign(camp, campaign_id)
+        # DRY_RUN 등 비전송 모드는 자식이 실재하지 않으므로 캠페인 단계까지만(검증).
+        if self._mode not in _SENDING_MODES or self._client is None:
+            return _tag_campaign(camp, campaign_id)
+        for prefix, path in (("adset", f"{campaign_id}/adsets"), ("ad", f"{campaign_id}/ads")):
+            for i, child_id in enumerate(await self._child_ids(path)):
+                result = await self.activate(child_id, f"{idem_key}-{prefix}-{i}")
+                if result.status is not ResultStatus.SUCCESS:
+                    return _tag_campaign(result, campaign_id)
+        return _tag_campaign(camp, campaign_id)
+
+    async def _child_ids(self, path: str) -> list[str]:
+        """캠페인 하위 객체(adsets/ads)의 id 목록 — 조회 실패는 빈 목록으로 흡수."""
+        try:
+            payload = await self._client.get(path, {"fields": "id", "limit": 200})  # type: ignore[union-attr]
+        except (httpx.HTTPError, MetaApiError):
+            logger.warning("자식 id 조회 실패: %s", path)
+            return []
+        return [str(row["id"]) for row in payload.get("data", []) if row.get("id")]
 
     async def delete_campaign(self, campaign_id: str, idem_key: str) -> ActionResult:
         """캠페인 삭제 (HTTP DELETE) — 자식 광고세트·광고도 함께 삭제. 되돌릴 수 없음.

@@ -42,13 +42,24 @@ class MockAdPlatform:
     def __init__(self, seed: int = 42) -> None:
         self._rng = random.Random(seed)
 
-    async def get_metrics(self, campaign_id: str, since: datetime) -> MetricsSnapshot:
+    async def get_metrics(
+        self, campaign_id: str, since: datetime, date_preset: str = "maximum"
+    ) -> MetricsSnapshot:
         """단일 누적 스냅샷 — 하루 생성 후 마지막 시간행(누적 reach·impressions)을 반환.
 
         AdPlatformReader Port 충족(비교 서비스가 await로 호출). fault 없는 정상 게재 기준.
+        date_preset은 실 reader 시그니처 일치용(데모는 무시).
         """
         snapshots = await self.fetch_hourly_metrics(campaign_id, since)
         return snapshots[-1]
+
+    async def get_account_spend(self, date_preset: str = "this_month") -> int:
+        """Port 충족 — 데모는 0(예산 페이싱은 live에서만 의미)."""
+        return 0
+
+    async def get_account_daily_spend(self, date_preset: str = "this_month") -> list[dict]:
+        """Port 충족 — 데모는 빈 곡선."""
+        return []
 
     async def get_state(self, campaign_id: str) -> CampaignState:
         """Port 충족 — mock은 항상 ACTIVE."""
@@ -152,6 +163,10 @@ class MockAdPlatform:
             conversion_rate_ranking=RelevanceRank.AVERAGE,
             as_of=datetime.now(UTC),
         )
+
+    async def get_spend_cap(self, campaign_id: str) -> int | None:
+        """Port 충족 — 데모는 상한 미설정."""
+        return None
 
     async def get_delivery_status_detail(self, campaign_id: str) -> DeliveryStatusDetail:
         """Port 충족 — 데모는 정상 게재(ACTIVE, 이슈 없음)."""
