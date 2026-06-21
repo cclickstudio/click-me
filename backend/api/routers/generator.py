@@ -198,9 +198,19 @@ async def langsmith_status():
     }
 
 
+# 프록시로 제공 가능한 S3 키 프리픽스 — 이 밖의 임의 객체 열람을 차단(오픈 프록시 방지).
+_ALLOWED_IMAGE_PREFIXES = ("generated-ads/", "brand-logos/")
+
+
 @router.get("/image")
 async def proxy_image(key: str):
-    """S3 이미지를 백엔드를 통해 제공 — AWS 자격증명 노출 방지."""
+    """S3 이미지를 백엔드를 통해 제공 — AWS 자격증명 노출 방지.
+
+    허용된 프리픽스(생성 광고·브랜드 로고)만 통과시켜 버킷 내 임의 객체 열람을 막는다.
+    (img 태그가 헤더를 못 보내 인증은 불가하나, UUID 경로라 실질 추측은 어렵다.)
+    """
+    if ".." in key or not key.startswith(_ALLOWED_IMAGE_PREFIXES):
+        raise HTTPException(status_code=403, detail="허용되지 않은 이미지 경로입니다.")
     try:
         data = await download_bytes(key)
     except Exception:
