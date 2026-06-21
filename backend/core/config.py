@@ -105,6 +105,7 @@ class Settings(BaseSettings):
     generator_multimodal_provider: str = "openai"  # openai | google_genai
     generator_multimodal_model: str = "gpt-image-1"
     generator_font_dir: str | None = None  # 없으면 backend/assets/fonts 사용
+    generator_chat_model: str = "gpt-4o-mini"  # 챗봇 전용 LLM (파이프라인과 분리)
 
     # JWT (Cognito 전환 전 임시)
     jwt_secret: str = "clickme-dev-secret-change-in-prod"

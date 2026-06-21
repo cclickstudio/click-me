@@ -276,3 +276,62 @@ async def publish_candidate(generation_id: str, body: PublishRequest):
             status_code=400, detail="선택된 후보만 게시할 수 있습니다. 먼저 후보를 선택하세요."
         )
     return result
+
+
+# ── 챗봇 엔드포인트 (인증 없음 — 테스트 단계) ────────────────────────────────
+
+
+class ChatMessageBody(BaseModel):
+    content: str
+    project_id: str | None = None
+    brand_logo_s3_key: str | None = None
+    product_image_temp_key: str | None = None
+
+
+@router.post("/chat/sessions")
+async def create_chat_session(project_id: str | None = None):
+    """챗봇 세션 생성 — session_id 반환."""
+    from domain.generator.service import chat_service
+
+    session_id = chat_service.create_session(project_id=project_id)
+    return {"session_id": session_id}
+
+
+@router.post("/chat/sessions/{session_id}/messages")
+async def send_chat_message(session_id: str, body: ChatMessageBody):
+    """챗봇 메시지 전송 — AI 응답 반환.
+
+    생성이 확정되면 generation_id가 함께 반환되며, 프론트는 기존
+    /generations/{id}/stream 으로 SSE 진행률을 구독한다.
+    """
+    from domain.generator.service import chat_service
+
+    extra: dict = {
+        k: v
+        for k, v in {
+            "brand_logo_s3_key": body.brand_logo_s3_key,
+            "product_image_temp_key": body.product_image_temp_key,
+        }.items()
+        if v
+    }
+    try:
+        return await chat_service.handle_message(session_id, body.content, extra_fields=extra)
+    except KeyError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+
+
+@router.get("/chat/sessions/{session_id}")
+async def get_chat_session(session_id: str):
+    """챗봇 세션 상태 + 대화 이력 조회."""
+    from domain.generator.service import chat_service
+
+    session = chat_service.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail="세션을 찾을 수 없습니다.")
+    return {
+        "session_id": session.session_id,
+        "messages": session.messages,
+        "partial_request": session.partial_request,
+        "status": session.status,
+        "generation_id": session.generation_id,
+    }
