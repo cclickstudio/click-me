@@ -849,6 +849,11 @@ export default function GeneratorPage() {
 
   async function startGeneration() {
     setError("");
+    // 생성 내역이 프로젝트에 기록되도록 활성 프로젝트를 강제 — 미선택 시 차단(내역 누락 방지).
+    if (!selectedProject) {
+      setError("생성 내역을 저장할 프로젝트를 먼저 선택하세요.");
+      return;
+    }
     setDetail(null);
     setPhase("generating");
     setProgress({ stage: "product_analysis", pct: 5, message: "생성 시작..." });

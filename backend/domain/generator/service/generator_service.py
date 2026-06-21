@@ -50,6 +50,11 @@ async def start_generation(
     if request.project_id:
         with suppress(ValueError):
             project_uuid = uuid.UUID(request.project_id)
+    if project_uuid is None:
+        logger.warning(
+            "생성 요청에 project_id가 없음 — 프로젝트에 기록되지 않음: generation_id=%s",
+            generation_id,
+        )
 
     async with AsyncSessionLocal() as session:
         session.add(
