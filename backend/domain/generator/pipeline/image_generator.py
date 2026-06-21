@@ -313,6 +313,8 @@ Output requirements:
 _COMPOSE_PROMPT_TEMPLATE = """\
 This image already contains a REAL product photo that is LOCKED and must not change.
 DO NOT alter, move, redraw, recolor, or stylize the product in any way.
+If the product has its own text, logo, or label printed on it, PRESERVE it exactly as pixels —
+never redraw, re-spell, or hallucinate any character on the product.
 Your task: generate a professional {platform} advertisement BACKGROUND around the locked product.
 
 Visual style: {style}
@@ -330,10 +332,10 @@ Background direction:
 {safe_zone}
 
 Requirements:
-- Keep the locked product EXACTLY as-is — zero modification to its pixels
+- Keep the locked product EXACTLY as-is — zero modification to its pixels, including any text on it
 - Build a cohesive background that matches the product's lighting and perspective
 - Add a natural, soft contact shadow under the product so it sits naturally in the scene
-- STRICTLY NO text, letters, words, numbers, or typography of any kind
+- STRICTLY NO new text, letters, words, numbers, or typography anywhere in the background
 - No logos, watermarks, URLs, or QR codes
 - Clean, modern aesthetic suitable for Meta/Instagram feed"""
 
