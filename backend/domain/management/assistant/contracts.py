@@ -38,3 +38,5 @@ class AskResult(BaseModel):
     used_tools: list[str] = Field(default_factory=list)
     evidence: dict = Field(default_factory=dict)  # 답에 쓰인 실측 수치(디버그·검증용)
     suggested_action: SuggestedAction | None = None  # 행동 의도 시 추천(실행은 승인 경로)
+    requires_approval: bool = False  # write 제안이 사람 승인 게이트에서 멈췄는가(HITL)
+    thread_id: str | None = None  # interrupt로 멈춘 그래프의 재개 키(승인 경로에서 사용)

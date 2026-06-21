@@ -121,6 +121,8 @@ async def chat_complete(body: ChatRequest) -> StreamingResponse:
                         for c in result.citations
                     ],
                     "used_tools": result.used_tools,
+                    "requires_approval": result.requires_approval,  # HITL — 승인 게이트에서 멈춤
+                    "thread_id": result.thread_id,  # interrupt 재개 키(승인 경로에서 사용)
                 }
                 yield f"data: {json.dumps({'meta': meta}, ensure_ascii=False)}\n\n"
                 answer = result.answer

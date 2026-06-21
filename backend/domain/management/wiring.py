@@ -118,6 +118,17 @@ def build_audit_sink(settings) -> AuditSink:
     return DbAuditSink()
 
 
+def build_checkpointer(settings):
+    """어시스턴트 ReAct 그래프의 checkpointer — interrupt(HITL) 재개에 필요.
+
+    1차는 인메모리(MemorySaver). Neon 영속(AsyncPostgresSaver)은 후속 — 이 분기만 바꾸면
+    interrupt로 멈춘 그래프가 프로세스 재시작 후에도 재개된다.
+    """
+    from langgraph.checkpoint.memory import MemorySaver  # noqa: PLC0415
+
+    return MemorySaver()
+
+
 def build_escalation_store(settings):
     """에스컬레이션 사다리 저장소. 현재는 인메모리(데모·use_mock).
 

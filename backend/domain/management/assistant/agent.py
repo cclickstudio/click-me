@@ -79,21 +79,55 @@ def build_management_agent(settings):
 
         return _ask_fallback
 
-    # 풀모드 — CRAG-lite 그래프(LLM 라우팅·평가·생성 + pgvector KB)
+    # 풀모드 — Tool-calling ReAct 그래프(LLM 자율 도구 선택 + pgvector KB + HITL)
+    from uuid import uuid4  # noqa: PLC0415
+
+    from langchain_core.messages import HumanMessage  # noqa: PLC0415
     from langchain_openai import ChatOpenAI  # noqa: PLC0415 — 키 있을 때만 로드
 
-    from domain.management.assistant.graph import build_graph, to_result
-    from domain.management.assistant.retriever import KbRetriever
+    from domain.management.assistant.contracts import SuggestedAction  # noqa: PLC0415
+    from domain.management.assistant.graph import build_graph, to_result  # noqa: PLC0415
+    from domain.management.assistant.retriever import KbRetriever  # noqa: PLC0415
+    from domain.management.wiring import build_checkpointer  # noqa: PLC0415
 
     model = getattr(settings, "management_assistant_model", "gpt-4o-mini")
     llm = ChatOpenAI(model=model, temperature=0.0, api_key=api_key)
     retriever = KbRetriever(api_key=api_key)
-    graph = build_graph(settings, retriever, llm)
+    graph = build_graph(settings, retriever, llm, checkpointer=build_checkpointer(settings))
 
     async def _ask(req: AskRequest) -> AskResult:
+        thread_id = uuid4().hex
+        config = {
+            "configurable": {"thread_id": thread_id},
+            "run_name": "management_assistant",
+            "tags": ["management", "assistant"],
+            "metadata": {"campaign_id": req.campaign_id, "ad_id": req.ad_id},
+        }
         final = await graph.ainvoke(
-            {"question": req.question, "campaign_id": req.campaign_id, "ad_id": req.ad_id}
+            {
+                "messages": [HumanMessage(content=req.question)],
+                "campaign_id": req.campaign_id,
+            },
+            config=config,
         )
-        return to_result(final)
+        # interrupt로 멈춘 경우 — 위험 액션이 사람 승인 게이트에서 멈췄다(HITL)
+        interrupts = final.get("__interrupt__")
+        if interrupts:
+            payload = interrupts[0].value or {}
+            sa_dict = payload.get("suggested_action", {})
+            sa = SuggestedAction(**sa_dict) if sa_dict else None
+            return AskResult(
+                answer=(
+                    f"{sa.rationale} 승인하시면 실행 경로로 진행됩니다."
+                    if sa
+                    else "사람 승인이 필요한 작업입니다."
+                ),
+                used_tools=list(final.get("used_tools", [])),
+                evidence=final.get("live_evidence", {}) or {},
+                suggested_action=sa,
+                requires_approval=True,
+                thread_id=thread_id,
+            )
+        return to_result(final, thread_id)
 
     return _ask
