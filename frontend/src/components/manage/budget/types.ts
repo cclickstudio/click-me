@@ -2,15 +2,23 @@
 
 export type BudgetDecision = 'allow' | 'warn' | 'escalate' | 'block';
 
-export type BudgetCampaignSpend = { name: string; spend_krw: number };
+export type BudgetCampaignSpend = { name: string; spend_krw: number; roas?: number | null };
+
+export type BudgetDayPoint = { date: string; spend_krw: number };
 
 export type BudgetStatus = {
   tenant_id: string;
-  limit_krw: number;
-  spent_krw: number;
+  limit_krw: number; // = 월 목표(monthly_target_krw)와 동일
+  spent_krw: number; // 이번 달 실소진
   remaining_krw: number;
   ratio: number; // 0~ (1 초과 가능)
   decision: BudgetDecision;
   thresholds: { warn: number; escalate: number };
   campaigns: BudgetCampaignSpend[];
+  // 페이싱 확장(live)
+  monthly_target_krw?: number;
+  projection_krw?: number; // 런레이트 월말 예상 소진
+  account_balance_krw?: number; // Meta 선불 가용 잔액(여력)
+  period?: string; // 'YYYY-MM'
+  daily?: BudgetDayPoint[];
 };

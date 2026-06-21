@@ -18,6 +18,91 @@ import type {
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
+// 게재 불가 원인 — code별 한국어 message. INSUFFICIENT_CREDIT는 부족액·잔액 동반.
+export interface DeliveryCause {
+  code: string;
+  message: string;
+  need_krw?: number;
+  balance_krw?: number;
+  commit_krw?: number;
+}
+export interface ActivateResponse {
+  serving: boolean;
+  result: { status?: string; failure_reason?: string | null } | null;
+  balance_krw: number;
+  commit_krw: number;
+  causes: DeliveryCause[];
+  error_message?: string;
+}
+export interface DeliveryStatusResponse {
+  campaign_id: string;
+  serving: boolean;
+  effective_status: string;
+  issues: string[];
+  causes: DeliveryCause[];
+  spend_cap_krw?: number | null;
+  balance_krw: number;
+}
+export interface PauseResponse {
+  paused: boolean;
+  result: { status?: string; failure_reason?: string | null } | null;
+  error_message?: string;
+}
+export interface SyncResponse {
+  campaign_id: string;
+  spend_krw: number;
+  charged_now_krw: number;
+  balance_krw: number;
+  effective_status: string;
+  ended: boolean;
+}
+export interface LeadRecord {
+  created_time: string;
+  fields: Record<string, string>;
+}
+export interface LeadsResponse {
+  leads: LeadRecord[];
+  count: number;
+  note?: string;
+}
+// 집행 전(시뮬 예측) — 실 시뮬 KPI와 동일 필드(슬롯). source=mock|sim
+export interface PredictionSnapshot {
+  ad_id: string;
+  click_intent_rate: number;
+  purchase_intent: number;
+  trust_avg: number;
+  rejection_rate: number;
+  objective_fit_score?: number | null;
+  grade?: string | null;
+  as_of: string;
+  source: string;
+}
+// 집행 후(실측)
+export interface ActualOutcome {
+  campaign_id: string;
+  impressions: number;
+  reach: number;
+  spend_krw: number;
+  ctr: number;
+  cpc_krw: number;
+  cpm_krw: number;
+  conversions?: number | null;
+  cvr?: number | null;
+  roas?: number | null;
+}
+export interface BeforeAfterItem {
+  campaign_id: string;
+  name: string;
+  prediction: PredictionSnapshot | null;
+  actual: ActualOutcome;
+  verdict: 'aligned' | 'overperformed' | 'underperformed' | 'unknown';
+  rationale: string;
+}
+export interface BeforeAfterResponse {
+  items: BeforeAfterItem[];
+  rate_limited?: string; // Meta 요청 한도 시 안내
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const token = getToken();
   const authHeader: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
@@ -310,6 +395,8 @@ export const api = {
     // 멀티테넌트 — 로그인 org로 Meta OAuth 로그인 URL을 받는다(인증 XHR). 프론트가 그 URL로 이동.
     connectMeta: () => request<{ login_url: string; state: string }>("/management/meta/connect"),
     compareBoard: () => request<BoardResponse>("/management/compare/board"),
+    // 집행 전(시뮬 예측) vs 후(실측) — ClickMe로 만든 캠페인별
+    beforeAfter: () => request<BeforeAfterResponse>("/management/compare/before-after"),
     // 캠페인 생성 정책 — 최소예산(Meta 실시간)·특별광고카테고리·연령. 폼이 동적 검증에 사용.
     campaignPolicy: () =>
       request<{
@@ -385,6 +472,24 @@ export const api = {
         method: "POST",
         body: JSON.stringify({ limit_krw: limitKrw }),
       }),
+    // 게재 시작(활성화) — 크레딧 잔액 게이트 → spend_cap → 캠페인·세트·광고 ACTIVE
+    activate: (campaignId: string, commitKrw?: number) =>
+      request<ActivateResponse>(`/management/campaigns/${campaignId}/activate`, {
+        method: "POST",
+        body: JSON.stringify({ commit_krw: commitKrw }),
+      }),
+    // 게재 여부 + 불가 원인 + 크레딧 잔액
+    deliveryStatus: (campaignId: string) =>
+      request<DeliveryStatusResponse>(`/management/campaigns/${campaignId}/delivery-status`),
+    // Meta 소진액 → 크레딧 차감 정산 + 자동 종료 반영
+    syncCampaign: (campaignId: string) =>
+      request<SyncResponse>(`/management/campaigns/${campaignId}/sync`),
+    // 캠페인 즉시 일시중지(PAUSED) — 게재·과금 중단
+    pause: (campaignId: string) =>
+      request<PauseResponse>(`/management/campaigns/${campaignId}/pause`, { method: 'POST' }),
+    // 이 캠페인으로 제출된 잠재고객(리드) 명단 — Meta leadgen 조회(권한 필요 시 note)
+    leads: (campaignId: string) =>
+      request<LeadsResponse>(`/management/campaigns/${campaignId}/leads`),
   },
 
   generator: {

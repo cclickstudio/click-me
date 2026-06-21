@@ -37,6 +37,7 @@ export function CampaignCards({
   account,
   manualKpi,
   onEditKpi,
+  onChanged,
   source,
 }: {
   campaigns: CampaignSummary[];
@@ -44,6 +45,7 @@ export function CampaignCards({
   onSelect: (id: string) => void;
   onPrefetch?: (id: string) => void;
   onDelete?: (id: string, name: string) => void;
+  onChanged?: () => void;
   detail?: Detail | null;
   platforms?: PlatformMetrics[];
   demographics?: DemographicMetrics[];
@@ -160,6 +162,7 @@ export function CampaignCards({
                 endedAt={c.ended_at}
                 blockReason={c.block_reason}
                 onDelete={onDelete}
+                onChanged={onChanged}
               />
             </div>
           )}

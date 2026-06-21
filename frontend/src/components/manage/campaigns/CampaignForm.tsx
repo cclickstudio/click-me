@@ -55,7 +55,9 @@ export function CampaignForm({
   const [name, setName] = useState('');
   const [objective, setObjective] = useState<'traffic' | 'leads'>('traffic');
   // 기본(자동): 총 예산만 받고 일 예산=Meta 최소·일수=최대한 길게로 폼이 자동 최적화(전략).
-  const [total, setTotal] = useState(50_000); // 사용자가 넣는 유일한 예산 입력(총액)
+  // 기본값은 최소 금액(Meta floor) — 사용자가 직접 만지기 전까진 minBudget을 따라간다.
+  const [total, setTotal] = useState(1_521);
+  const [totalTouched, setTotalTouched] = useState(false); // 사용자가 총예산을 직접 만졌는가
   const [advanced, setAdvanced] = useState(false); // 고급 — 일예산·일수 직접 설정
   // 고급 모드 전용(자동 모드에선 floor·계산값을 씀).
   const [budget, setBudget] = useState(0);
@@ -132,6 +134,10 @@ export function CampaignForm({
   useEffect(() => {
     if (!budgetTouched) setBudget(minBudget);
   }, [minBudget, budgetTouched]);
+  // 간편 모드 총 예산도 안 만졌으면 최소(minBudget)로 — 기본을 5만원이 아닌 최소로 픽스.
+  useEffect(() => {
+    if (!totalTouched) setTotal(minBudget);
+  }, [minBudget, totalTouched]);
 
   // 자동 전략 — 일 예산 = floor(최소), 일수 = 최대(총÷floor, ≤90). 총<floor면 1일도 불가.
   const autoDays = total >= minBudget ? Math.min(Math.floor(total / minBudget), 90) : 0;
@@ -187,8 +193,11 @@ export function CampaignForm({
               step={1000}
               className={inputCls}
               value={total}
-              onChange={(e) => setTotal(Number(e.target.value))}
-              placeholder="총 예산 (예: 50000)"
+              onChange={(e) => {
+                setTotal(Number(e.target.value));
+                setTotalTouched(true);
+              }}
+              placeholder={`총 예산 (최소 ₩${minBudget.toLocaleString()})`}
             />
             {autoDays > 0 ? (
               <div className="mt-2 rounded-xl bg-[#F2F9FF] dark:bg-[#16263A] px-3 py-2.5">
@@ -360,8 +369,8 @@ export function CampaignForm({
         </div>
       )}
 
-      <Field label="소재 ID (선택)" hint="기존 광고 소재를 연결할 경우">
-        <input className={inputCls} value={creativeId} onChange={(e) => setCreativeId(e.target.value)} placeholder="ad_xxxxx" />
+      <Field label="기존 광고 재사용 (선택)" hint="보통 비워두세요 — 위에 올린 이미지로 새 소재를 만듭니다. Ads Manager의 기존 광고를 그대로 쓸 때만 그 광고 ID 입력(.env 값 아님)">
+        <input className={inputCls} value={creativeId} onChange={(e) => setCreativeId(e.target.value)} placeholder="비워두기 (또는 Ads Manager 광고 ID)" />
       </Field>
 
       <div className="flex items-center justify-between pt-1">

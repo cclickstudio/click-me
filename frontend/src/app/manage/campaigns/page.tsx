@@ -101,10 +101,14 @@ export default function Page() {
     load();
   }, [load]);
 
-  // 실데이터일 때만 45초 폴링 — Meta가 분 단위로 갱신하므로 그 이상 잦게 안 함(rate limit).
+  // 실데이터일 때만 120초 폴링 — Meta는 분 단위 갱신이라 잦게 안 함(rate limit 절감).
+  // 탭이 숨겨져 있으면(다른 탭/최소화) 폴링하지 않아 불필요한 Meta 호출을 막는다.
   useEffect(() => {
     if (source !== 'live') return;
-    const id = setInterval(() => load(true), 45000);
+    const id = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
+      load(true);
+    }, 120000);
     return () => clearInterval(id);
   }, [source, load]);
 
@@ -176,6 +180,12 @@ export default function Page() {
     },
     [load, selected],
   );
+
+  // 게재시작/일시중지/정산 후 — 상세 캐시 비우고 목록 새로고침(상태 배지·지표 최신화).
+  const handleChanged = useCallback(() => {
+    detailCache.current.clear();
+    load(true);
+  }, [load]);
 
   useEffect(() => {
     if (!selected) {
@@ -433,6 +443,7 @@ export default function Page() {
                 account={account}
                 manualKpi={manualKpi}
                 onEditKpi={editKpi}
+                onChanged={handleChanged}
                 source={source}
               />
             ) : (
@@ -449,6 +460,7 @@ export default function Page() {
                 account={account}
                 manualKpi={manualKpi}
                 onEditKpi={editKpi}
+                onChanged={handleChanged}
                 source={source}
               />
             )}

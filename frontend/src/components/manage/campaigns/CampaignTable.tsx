@@ -28,6 +28,7 @@ export function CampaignTable({
   account,
   manualKpi,
   onEditKpi,
+  onChanged,
   source,
 }: {
   campaigns: CampaignSummary[];
@@ -42,6 +43,7 @@ export function CampaignTable({
   account?: AccountWallet | null;
   manualKpi?: ManualKpiMap;
   onEditKpi?: (id: string, field: 'cvr' | 'roas', raw: string) => void;
+  onChanged?: () => void;
   source?: CampaignSource;
 }) {
   return (
@@ -212,6 +214,7 @@ export function CampaignTable({
                       endedAt={c.ended_at}
                       blockReason={c.block_reason}
                       onDelete={onDelete}
+                      onChanged={onChanged}
                     />
                   </div>
                 </td>
