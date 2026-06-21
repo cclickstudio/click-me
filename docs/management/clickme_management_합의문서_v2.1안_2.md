@@ -12,6 +12,14 @@
 > 실측 최소예산(₩1,521 단일원천→프론트 자동)·CVR·ROAS 재정의(전환 일반화·추정 ROAS·목표 미달·하이브리드 입력)·
 > 소프트 삭제(감사)·NeonDB 적재·페이징·요청한도 graceful**이 동작한다. 상세는 `meta-data-sources.md §11`.
 > 원칙: **실데이터는 휴리스틱 금지, 진짜 Meta 정책과 일치 / 정책 변경 시 백엔드 한 곳→프론트 자동 반영.**
+>
+> **확정된 정책값(§9 빈칸은 합의 폼으로 보존, 실제 값은 코드 단일원천):**
+> - Tier(`contracts/policy.py TIER_POLICY`): PAUSE_CAMPAIGN·DECREASE_BUDGET=Tier1 / INCREASE_BUDGET·REPLACE_CREATIVE·CREATE_CAMPAIGN·ACTIVATE_CAMPAIGN·EXPAND_AUDIENCE·CHANGE_BID_STRATEGY=Tier3. 자율 통과=Tier0~1, Tier2 비활성, Tier3 사용자 승인.
+> - TTL: `PROPOSAL_TTL_MINUTES=10` · `APPROVAL_TTL_MINUTES=5`(데모). 예산 권한 기본: `default_limit_krw=10,000,000`. 가드레일 90% 경고/95% 상향/100% 차단.
+> - 진단 에이전트: `management_diagnosis_model="gpt-4o-mini"` · `temperature=0.0`(재현성 고정).
+> - 최소 일예산: 실측 floor **₩1,521** 단일원천(`campaign_policy.py`).
+>
+> **추가 구현(06-21):** writer/execution 전 배선(게재시작 `ACTIVATE_CAMPAIGN`·일시중지·`spend_cap`·예산 조정) · billing(크레딧)·결제 연동 · 예산 페이싱 · 성과 전후 비교(예측 슬롯 vs 실측) · **에이전틱 RAG 어시스턴트**(읽기+행동 제안, 실행은 승인 경로). 상세: `structure-and-roles.md §4·§12`.
 
 ---
 

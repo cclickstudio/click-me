@@ -448,6 +448,13 @@ KOBACO 소비자행태조사(MCR):
 - 삭제: `DELETE`(Meta 캠페인+자식) + DB는 **소프트 삭제(`deleted_at`)** 로 감사 이력 보존.
 - 적재: 생성분을 `created_campaigns`(NeonDB)에 누적(meta_campaign_id 포함).
 - 요청 한도(code 17): 대시보드는 **500 대신 안내 배너 + 기존 데이터 유지**(폴링 자동 복구).
+- **GET 캐시(rate limit 절감)**: 공통 Meta 클라이언트가 GET 응답을 **TTL 캐시**(쓰기 시 무효화)해, 대시보드·예산·비교·어시스턴트가 같은 조회를 반복해도 한도를 덜 먹는다. 폴링 주기도 완화(+탭 비활성 시 중단).
+
+### 11.6 파생 분석 데이터 소스 (읽기 위)
+
+- **예산 페이싱**: 계정 단위 `insights(date_preset=this_month)` 소진 + 일자별(`time_increment=1`) + `funding`(선불 잔액) → 월 목표 대비 소진·런레이트·여력.
+- **성과 전후 비교**: 시뮬 **예측(슬롯, PredictionReader)** ↔ **실측(RealOutcome)**. 예측=상대·실측=절대라 **환산 없이 방향성**만(`docs/superpowers/specs/2026-06-21-chat-management-agentic-rag.md` 원칙과 동일).
+- **에이전틱 RAG 어시스턴트**: 위 실시간 지표(툴) + 정책·플레이북·KPI 규칙(pgvector KB)을 하이브리드 검색해 근거+인용 답변. 숫자는 항상 실측 툴에서(환각 방지).
 
 ---
 
