@@ -984,7 +984,10 @@ _PREVIEW_FORMATS = ["MOBILE_FEED_STANDARD", "INSTAGRAM_STANDARD"]
 
 
 @router.post("/ad-image")
-async def upload_ad_image(file: UploadFile = File(...)):
+async def upload_ad_image(
+    file: UploadFile = File(...),
+    user: User = Depends(get_current_user),
+):
     """광고 소재 이미지를 Meta(/adimages)에 업로드 → image_hash 반환. 무과금(자산 등록)."""
     writer = build_writer(settings)
     data = await file.read()

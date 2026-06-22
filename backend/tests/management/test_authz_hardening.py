@@ -161,3 +161,8 @@ def test_create_proposal_requires_auth():
 def test_from_candidate_requires_auth():
     res = _client_no_auth().post("/api/management/campaign-proposals/from-candidate", json={})
     assert res.status_code == 401
+
+
+def test_ad_image_requires_auth():
+    res = _client_no_auth().post("/api/management/ad-image")
+    assert res.status_code == 401
