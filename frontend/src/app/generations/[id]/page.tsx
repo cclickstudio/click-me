@@ -99,8 +99,35 @@ function InputSection({ input }: { input: Record<string, unknown> }) {
   );
 }
 
-function CandidateCard({ candidate, isSelected }: { candidate: Candidate; isSelected: boolean }) {
+// 플랫폼별 리레이아웃 미리보기 — ig_feed는 원본, 그 외는 온디맨드 렌더 엔드포인트
+const PLATFORMS = [
+  { key: 'ig_feed', label: 'IG 피드', aspect: 'aspect-square' },
+  { key: 'ig_story', label: 'IG 스토리', aspect: 'aspect-[9/16]' },
+  { key: 'fb_feed', label: 'Facebook', aspect: 'aspect-[1200/628]' },
+  { key: 'linkedin', label: 'LinkedIn', aspect: 'aspect-[1200/627]' },
+] as const;
+
+function CandidateCard({
+  candidate,
+  isSelected,
+  platform,
+  aspect,
+}: {
+  candidate: Candidate;
+  isSelected: boolean;
+  platform: string;
+  aspect: string;
+}) {
   const copy = candidate.copy;
+  const original = candidate.image_url
+    ? candidate.image_url.startsWith('/')
+      ? `${API_BASE}${candidate.image_url}`
+      : candidate.image_url
+    : null;
+  const imgSrc =
+    platform === 'ig_feed'
+      ? original
+      : `${API_BASE}/api/generator/candidates/${candidate.candidate_id}/render?platform=${platform}`;
   return (
     <div
       className={`rounded-2xl border overflow-hidden bg-white dark:bg-[#1C2333] ${
@@ -109,11 +136,11 @@ function CandidateCard({ candidate, isSelected }: { candidate: Candidate; isSele
           : 'border-[#E5E8EB] dark:border-[#2D3748]'
       }`}
     >
-      {candidate.image_url ? (
-        <div className="relative w-full aspect-square bg-[#F9FAFB] dark:bg-[#161B27]">
+      {imgSrc ? (
+        <div className={`relative w-full ${aspect} bg-[#F9FAFB] dark:bg-[#161B27]`}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={candidate.image_url.startsWith('/') ? `${API_BASE}${candidate.image_url}` : candidate.image_url}
+            src={imgSrc}
             alt={`광고 후보 ${candidate.idx + 1}`}
             className="w-full h-full object-contain"
           />
@@ -124,7 +151,7 @@ function CandidateCard({ candidate, isSelected }: { candidate: Candidate; isSele
           )}
         </div>
       ) : (
-        <div className="w-full aspect-square bg-[#F2F4F6] dark:bg-[#161B27] flex items-center justify-center">
+        <div className={`w-full ${aspect} bg-[#F2F4F6] dark:bg-[#161B27] flex items-center justify-center`}>
           <span className="text-sm text-[#B0B8C1]">이미지 없음</span>
         </div>
       )}
@@ -231,6 +258,7 @@ export default function GenerationDetailPage() {
   const [error, setError] = useState('');
   const [deleting, setDeleting] = useState(false);
   const [restoring, setRestoring] = useState(false);
+  const [platform, setPlatform] = useState<string>('ig_feed');
 
   // 인증 없이 접근 가능한 generator 엔드포인트 사용 (candidates + image_url 포함)
   useEffect(() => {
@@ -361,15 +389,35 @@ export default function GenerationDetailPage() {
             {/* 생성된 광고 후보 */}
             {data.candidates && data.candidates.length > 0 && (
               <div className="mb-6">
-                <h2 className="text-base font-semibold text-[#191F28] dark:text-[#F2F4F6] mb-3">
-                  생성된 광고 후보 ({data.candidates.length}개)
-                </h2>
+                <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
+                  <h2 className="text-base font-semibold text-[#191F28] dark:text-[#F2F4F6]">
+                    생성된 광고 후보 ({data.candidates.length}개)
+                  </h2>
+                  {/* 플랫폼별 리레이아웃 미리보기 토글 */}
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {PLATFORMS.map(p => (
+                      <button
+                        key={p.key}
+                        onClick={() => setPlatform(p.key)}
+                        className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+                          platform === p.key
+                            ? 'bg-[#3182F6] text-white'
+                            : 'bg-[#F2F4F6] dark:bg-[#252D3D] text-[#4E5968] dark:text-[#9CA3AF] hover:text-[#3182F6]'
+                        }`}
+                      >
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                   {data.candidates.map(c => (
                     <CandidateCard
                       key={c.candidate_id}
                       candidate={c}
                       isSelected={c.candidate_id === data.selected_candidate_id}
+                      platform={platform}
+                      aspect={PLATFORMS.find(p => p.key === platform)?.aspect ?? 'aspect-square'}
                     />
                   ))}
                 </div>
