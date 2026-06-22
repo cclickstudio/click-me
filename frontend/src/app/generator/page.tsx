@@ -8,6 +8,7 @@ import { getToken } from "@/lib/authApi";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 import type {
+  BrandKit,
   CampaignResult,
   GenerationDetail,
   GeneratorCandidate,
@@ -671,6 +672,11 @@ export default function GeneratorPage() {
   const [logoS3Key, setLogoS3Key] = useState("");
   const [logoPreviewUrl, setLogoPreviewUrl] = useState("");
   const [logoUploading, setLogoUploading] = useState(false);
+
+  // 브랜드 키트 (조직 단위 저장/불러오기)
+  const [kits, setKits] = useState<BrandKit[]>([]);
+  const [selectedKitId, setSelectedKitId] = useState("");
+  const [kitName, setKitName] = useState("");
   const [profileSaved, setProfileSaved] = useState(false);
   const logoInputRef = useRef<HTMLInputElement>(null);
   const esRef = useRef<EventSource | null>(null);
@@ -883,6 +889,61 @@ export default function GeneratorPage() {
     setPhase("idle");
     setDetail(null);
     setError("");
+  }
+
+  // ── 브랜드 키트 ─────────────────────────────────────────────────────────────
+  async function loadKits() {
+    try {
+      const { kits } = await api.generator.brandKits.list();
+      setKits(kits);
+    } catch {
+      /* 미로그인·네트워크 오류 시 빈 목록 유지 */
+    }
+  }
+
+  useEffect(() => {
+    loadKits();
+  }, []);
+
+  function applyKit(id: string) {
+    setSelectedKitId(id);
+    const kit = kits.find((k) => k.id === id);
+    if (!kit) return;
+    setBrandColor(kit.brand_color ?? "");
+    setLogoS3Key(kit.brand_logo_key ?? "");
+    setLogoPreviewUrl(
+      kit.brand_logo_key
+        ? `${API_BASE}/api/generator/image?key=${encodeURIComponent(kit.brand_logo_key)}`
+        : "",
+    );
+    setToneAndManner(kit.tone_and_manner ?? "");
+  }
+
+  async function saveKit() {
+    if (!kitName.trim()) return;
+    try {
+      await api.generator.brandKits.create({
+        name: kitName.trim(),
+        brand_color: brandColor || null,
+        brand_logo_key: logoS3Key || null,
+        tone_and_manner: toneAndManner || null,
+      });
+      setKitName("");
+      await loadKits();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "브랜드 키트 저장에 실패했습니다.");
+    }
+  }
+
+  async function deleteKit() {
+    if (!selectedKitId) return;
+    try {
+      await api.generator.brandKits.remove(selectedKitId);
+      setSelectedKitId("");
+      await loadKits();
+    } catch {
+      /* 무시 */
+    }
   }
 
   async function handleProductImageChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -1339,6 +1400,50 @@ export default function GeneratorPage() {
 
               {showOptional && (
                 <div className="space-y-4 pt-1">
+                  {/* ── 브랜드 키트 (저장/불러오기) ── */}
+                  <div className="space-y-2 pb-4 border-b border-[#F2F4F6] dark:border-[#252D3D]">
+                    <label className={labelCls}>브랜드 키트</label>
+                    <div className="flex gap-2">
+                      <select
+                        value={selectedKitId}
+                        onChange={(e) => applyKit(e.target.value)}
+                        className={inputCls}
+                      >
+                        <option value="">저장된 키트 불러오기...</option>
+                        {kits.map((k) => (
+                          <option key={k.id} value={k.id}>
+                            {k.name}
+                          </option>
+                        ))}
+                      </select>
+                      {selectedKitId && (
+                        <button
+                          type="button"
+                          onClick={deleteKit}
+                          className="px-3 py-2 text-sm text-red-500 border border-red-200 dark:border-red-900/40 rounded-xl hover:bg-red-50 dark:hover:bg-red-900/20 shrink-0"
+                        >
+                          삭제
+                        </button>
+                      )}
+                    </div>
+                    <div className="flex gap-2">
+                      <input
+                        className={inputCls}
+                        value={kitName}
+                        onChange={(e) => setKitName(e.target.value)}
+                        placeholder="현재 설정을 새 키트로 저장 (이름)"
+                      />
+                      <button
+                        type="button"
+                        onClick={saveKit}
+                        disabled={!kitName.trim()}
+                        className="px-3 py-2 text-sm font-medium text-white bg-[#3182F6] rounded-xl hover:bg-[#1B6EEB] disabled:opacity-40 shrink-0"
+                      >
+                        저장
+                      </button>
+                    </div>
+                  </div>
+
                   <div>
                     <label className={labelCls}>브랜드 컬러</label>
                     <div className="flex gap-2">
