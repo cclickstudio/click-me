@@ -135,4 +135,4 @@ async def test_start_creates_queued_row_and_schedules():
     assert rec.campaign_id == "camp-9"
     assert len(scheduled) == 1  # run_job 코루틴이 스케줄됨
 
-    await scheduled[0]  # 캡처한 코루틴을 닫아 RuntimeWarning 방지
+    scheduled[0].close()  # 실행하지 않고 코루틴을 닫아 RuntimeWarning 방지(부작용 없음)
