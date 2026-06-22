@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import uuid
+
 import aioboto3
 
 from core.config import settings
@@ -14,8 +16,8 @@ _session = aioboto3.Session(
 
 
 def brand_logo_key(client_id: str, ext: str) -> str:
-    """브랜드 로고의 S3 키."""
-    return f"brand-logos/{client_id}/logo.{ext.lstrip('.')}"
+    """브랜드 로고의 S3 키 — 업로드마다 고유(키트별 개별 로고 보존)."""
+    return f"brand-logos/{client_id}/{uuid.uuid4().hex}.{ext.lstrip('.')}"
 
 
 def candidate_key(generation_id: str, idx: int) -> str:
