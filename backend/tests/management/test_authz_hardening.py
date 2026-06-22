@@ -113,3 +113,24 @@ async def test_require_ad_account_mock_falls_back_to_demo(monkeypatch):
     monkeypatch.setattr(management.settings, "use_mock", True, raising=False)
     db = _FakeDB(conn=None)
     assert await management._require_ad_account(db, uuid.uuid4()) == management._DEMO_AD_ACCOUNT
+
+
+@pytest.mark.asyncio
+async def test_escalation_controller_get_run_reads_store():
+    from domain.management.escalation import EscalationController, EscalationRun
+
+    run = EscalationRun(
+        tenant_id="org_1",
+        ad_account_id="act_1",
+        campaign_id="camp_1",
+        anomaly_type="quality_degraded",
+        ladder=["REPLACE_CREATIVE", "CREATE_CAMPAIGN"],
+    )
+
+    class _Store:
+        async def get_by_run_id(self, run_id):
+            return run if run_id == run.run_id else None
+
+    ctrl = EscalationController(store=_Store(), detector=object(), agent=object(), audit=object())
+    assert (await ctrl.get_run(run.run_id)) is run
+    assert (await ctrl.get_run("nope")) is None
