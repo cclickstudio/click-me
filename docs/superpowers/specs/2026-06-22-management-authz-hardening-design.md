@@ -54,7 +54,7 @@ async def _require_org_id(user, db) -> UUID:
     return org_id
 
 async def _require_owned_campaign(db, org_id, campaign_id) -> CreatedCampaign | None:
-    """DB 적재 캠페인이면 tenant 소유 검증(불일치 403), mock 데모 캠페인(행 없음)은 None 반환(3.4)."""
+    """DB 적재 캠페인은 tenant 소유 검증. DB 행 없음은 mock/demo fixture로 확인된 경우에만 None 허용."""
 ```
 
 **엔드포인트별 의존성 주입(라우터 레벨 금지)** — 라우터 전체에 의존성을 걸면 같은 파일의 🅰 엔드포인트
@@ -80,12 +80,18 @@ async def _require_owned_campaign(db, org_id, campaign_id) -> CreatedCampaign | 
 
 ### 3.4 mock/데모 엣지 케이스
 
-`use_mock=True`일 때 캠페인은 `_CAMPAIGNS_DEMO` 상수에서 오므로 `CreatedCampaign` 행이 없다.
+`use_mock=True`일 때 일부 캠페인은 `_CAMPAIGNS_DEMO` 공유 픽스처에서 오므로 `CreatedCampaign` 행이
+없을 수 있다. 단, **DB 행이 없다는 사실만으로 소유권 검증을 통과시키지 않는다.**
+
 소유권 검증은 다음과 같이 분기한다.
 
 - **DB 적재 캠페인** → `tenant_id == str(org_id)` 검증, 불일치 시 **403**.
-- **mock 데모 캠페인(행 없음)** → 공유 픽스처라 테넌트 귀속이 불가능하므로 "인증됨 + org 보유"까지만
-  보장하고 통과시킨다(데모 흐름 보존). `_require_owned_campaign`이 `None`을 반환하는 경로.
+- **DB 행 없음 + `use_mock=True` + `campaign_id`가 `_CAMPAIGNS_DEMO`에 존재** → mock/demo fixture로
+  보고 인증된 사용자에게만 통과시킨다.
+- **DB 행 없음 + 그 외** → 소유권을 확인할 수 없으므로 **404**(또는 **403**)으로 실패 처리한다.
+
+즉, mock/demo 예외는 데모 fixture로 확인된 캠페인에만 제한하고, "행 없음" 자체를 통과 조건으로 삼지
+않는다.
 
 > 운영 메모(코드 아님): 실모드 시연 시 `created_campaigns` 행이 로그인 org의 tenant로 찍히도록 데모
 > 시드를 정렬해야 소유권 검증이 의미를 가진다. 데이터 시드 이슈로 별도 관리.
@@ -118,6 +124,8 @@ async def _require_owned_campaign(db, org_id, campaign_id) -> CreatedCampaign | 
 - 토큰 없음 → **401**
 - 소속 org 없음 → **409**
 - 타 org 캠페인 대상 delete/activate/pause/sync → **403**
+- DB 행 없음 + `_CAMPAIGNS_DEMO`에 없는 임의 `campaign_id` → **404/403**(행 없음만으로 통과 금지)
+- `use_mock=True` + `_CAMPAIGNS_DEMO`에 존재하는 campaign_id → 인증 사용자에게 통과
 - `/execute`에서 `proposal.tenant_id ≠ 내 org` → **403**
 - `/sync`가 쿼리 `org_id`를 무시하고 JWT org로 정산 → 검증
 - 정상(내 org) → 기존 동작/200 유지
