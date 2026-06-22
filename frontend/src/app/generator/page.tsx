@@ -648,6 +648,7 @@ function adRefImageSrc(asset: string): string | null {
 export default function GeneratorPage() {
   const { selectedProject, projects, selectProject, details, loadDetails } = useProjects();
   const [mode, setMode] = useState<GenMode>("create");
+  const [format, setFormat] = useState<"single" | "carousel">("single");
   const [phase, setPhase] = useState<Phase>("idle");
   const [error, setError] = useState("");
 
@@ -961,6 +962,7 @@ export default function GeneratorPage() {
         ? {
             ...common,
             mode: "create",
+            format,
             product_name: productName,
             product_description: productDescription,
             target_audience: targetAudience,
@@ -1104,6 +1106,30 @@ export default function GeneratorPage() {
 
               {mode === "create" ? (
                 <>
+                  <div>
+                    <label className={labelCls}>형식</label>
+                    <div className="flex gap-2">
+                      {(
+                        [
+                          ["single", "단일 광고"],
+                          ["carousel", "카드뉴스 (5장)"],
+                        ] as const
+                      ).map(([f, label]) => (
+                        <button
+                          key={f}
+                          type="button"
+                          onClick={() => setFormat(f)}
+                          className={`flex-1 py-2 text-sm font-medium rounded-xl border transition-colors ${
+                            format === f
+                              ? "border-[#3182F6] text-[#3182F6] bg-[#EBF3FF] dark:bg-[#1E3A5F]"
+                              : "border-[#E5E8EB] dark:border-[#2D3748] text-[#8B95A1] dark:text-[#6B7280] hover:text-[#3182F6]"
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                   <div>
                     <label className={labelCls}>
                       제품명 <span className="text-[#F74D4D]">*</span>

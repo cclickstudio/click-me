@@ -107,6 +107,18 @@ const PLATFORMS = [
   { key: 'linkedin', label: 'LinkedIn', aspect: 'aspect-[1200/627]' },
 ] as const;
 
+// 후보 이미지 src — ig_feed는 원본(프록시), 그 외는 온디맨드 리레이아웃 렌더
+function candidateImageSrc(candidate: Candidate, platform: string): string | null {
+  const original = candidate.image_url
+    ? candidate.image_url.startsWith('/')
+      ? `${API_BASE}${candidate.image_url}`
+      : candidate.image_url
+    : null;
+  return platform === 'ig_feed'
+    ? original
+    : `${API_BASE}/api/generator/candidates/${candidate.candidate_id}/render?platform=${platform}`;
+}
+
 function CandidateCard({
   candidate,
   isSelected,
@@ -119,15 +131,7 @@ function CandidateCard({
   aspect: string;
 }) {
   const copy = candidate.copy;
-  const original = candidate.image_url
-    ? candidate.image_url.startsWith('/')
-      ? `${API_BASE}${candidate.image_url}`
-      : candidate.image_url
-    : null;
-  const imgSrc =
-    platform === 'ig_feed'
-      ? original
-      : `${API_BASE}/api/generator/candidates/${candidate.candidate_id}/render?platform=${platform}`;
+  const imgSrc = candidateImageSrc(candidate, platform);
   return (
     <div
       className={`rounded-2xl border overflow-hidden bg-white dark:bg-[#1C2333] ${
@@ -246,6 +250,76 @@ function StrategyCard({ s, idx }: { s: Strategy; idx: number }) {
   );
 }
 
+function CarouselViewer({
+  candidates,
+  platform,
+  aspect,
+}: {
+  candidates: Candidate[];
+  platform: string;
+  aspect: string;
+}) {
+  const slides = [...candidates].sort((a, b) => a.idx - b.idx);
+  const [i, setI] = useState(0);
+  const cur = Math.min(i, slides.length - 1);
+  const c = slides[cur];
+  const imgSrc = candidateImageSrc(c, platform);
+  const role = (c.strategy as { strategy_description?: string } | null)?.strategy_description;
+  return (
+    <div className="max-w-sm">
+      <div
+        className={`relative w-full ${aspect} rounded-2xl overflow-hidden border border-[#E5E8EB] dark:border-[#2D3748] bg-[#F9FAFB] dark:bg-[#161B27]`}
+      >
+        {imgSrc && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={imgSrc} alt={`슬라이드 ${cur + 1}`} className="w-full h-full object-contain" />
+        )}
+        {cur > 0 && (
+          <button
+            onClick={() => setI(cur - 1)}
+            className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/50 text-white flex items-center justify-center hover:bg-black/70"
+          >
+            ‹
+          </button>
+        )}
+        {cur < slides.length - 1 && (
+          <button
+            onClick={() => setI(cur + 1)}
+            className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/50 text-white flex items-center justify-center hover:bg-black/70"
+          >
+            ›
+          </button>
+        )}
+      </div>
+      <div className="mt-3 text-center">
+        <p className="text-xs text-[#8B95A1] dark:text-[#6B7280]">
+          슬라이드 {cur + 1} / {slides.length}
+          {role ? ` · ${role}` : ''}
+        </p>
+        {c.copy?.headline && (
+          <p className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6] mt-1">
+            {c.copy.headline}
+          </p>
+        )}
+        {c.copy?.body && (
+          <p className="text-xs text-[#4E5968] dark:text-[#9CA3AF] mt-1">{c.copy.body}</p>
+        )}
+      </div>
+      <div className="flex items-center justify-center gap-1.5 mt-3">
+        {slides.map((s, idx) => (
+          <button
+            key={s.candidate_id}
+            onClick={() => setI(idx)}
+            className={`w-2 h-2 rounded-full transition-colors ${
+              idx === cur ? 'bg-[#3182F6]' : 'bg-[#E5E8EB] dark:bg-[#2D3748]'
+            }`}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function GenerationDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
@@ -285,6 +359,8 @@ export default function GenerationDetailPage() {
   const isDeleted = !!(projectId && details[projectId]?.trashed.some(t => t.kind === 'gen' && t.id === id));
 
   const productName = data?.input?.product_name as string | undefined;
+  const isCarousel = (data?.input?.format as string | undefined) === 'carousel';
+  const aspect = PLATFORMS.find(p => p.key === platform)?.aspect ?? 'aspect-square';
   const st = data
     ? (statusStyle[data.status] ?? { bg: 'bg-gray-50', text: 'text-gray-600', label: data.status })
     : null;
@@ -391,7 +467,9 @@ export default function GenerationDetailPage() {
               <div className="mb-6">
                 <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
                   <h2 className="text-base font-semibold text-[#191F28] dark:text-[#F2F4F6]">
-                    생성된 광고 후보 ({data.candidates.length}개)
+                    {isCarousel
+                      ? `카드뉴스 (${data.candidates.length}장)`
+                      : `생성된 광고 후보 (${data.candidates.length}개)`}
                   </h2>
                   {/* 플랫폼별 리레이아웃 미리보기 토글 */}
                   <div className="flex items-center gap-1.5 flex-wrap">
@@ -410,17 +488,21 @@ export default function GenerationDetailPage() {
                     ))}
                   </div>
                 </div>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {data.candidates.map(c => (
-                    <CandidateCard
-                      key={c.candidate_id}
-                      candidate={c}
-                      isSelected={c.candidate_id === data.selected_candidate_id}
-                      platform={platform}
-                      aspect={PLATFORMS.find(p => p.key === platform)?.aspect ?? 'aspect-square'}
-                    />
-                  ))}
-                </div>
+                {isCarousel ? (
+                  <CarouselViewer candidates={data.candidates} platform={platform} aspect={aspect} />
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {data.candidates.map(c => (
+                      <CandidateCard
+                        key={c.candidate_id}
+                        candidate={c}
+                        isSelected={c.candidate_id === data.selected_candidate_id}
+                        platform={platform}
+                        aspect={aspect}
+                      />
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 
