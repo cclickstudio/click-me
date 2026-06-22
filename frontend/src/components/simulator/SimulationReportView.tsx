@@ -6,6 +6,8 @@ import { API_BASE } from '@/lib/api';
 import type {
   ConfidenceBadge,
   DebateDigest,
+  DebateParticipantDebate,
+  DebateStance,
   ObjectiveFit,
   ReportView,
   SegmentCell,
@@ -455,26 +457,88 @@ function DebateDigestItem({ d, index }: { d: DebateDigest; index?: number }) {
   );
 }
 
+/* ─── 토론 참가자 입장 라벨(stance) — PDF _STANCE와 동일 의미 ─── */
+const STANCE_LABEL: Record<DebateStance, { label: string; cls: string }> = {
+  positive: { label: '긍정', cls: 'text-[#00A661] bg-[#E7F7EF] dark:bg-[#143C2C]' },
+  neutral: { label: '중립', cls: 'text-[#8B95A1] bg-[#F2F4F6] dark:bg-[#252D3D]' },
+  negative: { label: '부정', cls: 'text-[#F04452] bg-[#FDECEE] dark:bg-[#3B1F23]' },
+};
+
+/* 최종 입장 — 마지막 라운드 발언의 stance(없으면 중립). */
+function finalStance(p: DebateParticipantDebate): DebateStance {
+  const u = p.utterances;
+  return u && u.length > 0 ? u[u.length - 1].stance : 'neutral';
+}
+
+/* ─── 토론 참가자 소개 — 개선안에 나오는 이름이 누구인지 먼저 정리(프로필·역할·입장) ─── */
+function ParticipantRoster({
+  participants,
+}: {
+  participants: DebateParticipantDebate[];
+}) {
+  return (
+    <Section
+      title='토론 참가자'
+      tip='개선안과 토론에 등장하는 이름이 누구인지 — 한 줄 프로필·역할·토론 최종 입장을 먼저 정리했어요.'>
+      <ul className='space-y-1.5'>
+        {participants.map(p => {
+          const s = STANCE_LABEL[finalStance(p)] ?? STANCE_LABEL.neutral;
+          return (
+            <li
+              key={p.persona_id}
+              className='flex items-center gap-2 flex-wrap text-[12px] bg-[#F9FAFB] dark:bg-[#252D3D] rounded-lg px-3 py-2'>
+              <span className='font-semibold text-[#191F28] dark:text-[#F2F4F6]'>
+                {p.persona_name}
+              </span>
+              {p.persona_profile && (
+                <span className='min-w-0 text-[#4E5968] dark:text-[#9CA3AF]'>
+                  · {p.persona_profile}
+                </span>
+              )}
+              {p.role && (
+                <span className='shrink-0 px-1.5 py-0.5 rounded bg-white dark:bg-[#1C2333] text-[10px] text-[#8B95A1] dark:text-[#6B7280]'>
+                  {p.role}
+                </span>
+              )}
+              <span
+                className={`shrink-0 ml-auto px-2 py-0.5 rounded-full text-[10px] font-semibold ${s.cls}`}>
+                {s.label}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    </Section>
+  );
+}
+
 /* ─── 토론 섹션 — debates(합산)면 각 토론 나열, 없으면 단일 debate 렌더(하위호환) ─── */
 function DebateSection({ rv }: { rv: ReportView }) {
   const rep = rv.report;
+  // 참가자 소개는 현재(최근) 토론 기준 — 토론 요약보다 먼저 보여 이름을 식별 가능하게 한다.
+  const roster = rv.debate?.participants ?? [];
+  const rosterEl = roster.length > 0 ? <ParticipantRoster participants={roster} /> : null;
+
   // 합산 토론(여러 토론 누적) 우선.
   if (rv.debates && rv.debates.length > 0) {
     return (
-      <Section
-        title={`페르소나 토론 요약 (${rv.debates.length}건)`}
-        tip='개선 방향을 도출한 전문가·일반인 토론입니다. 토론할수록 항목이 늘어나요 — 각 토론의 주제·대표 발언·결론만 간추렸습니다.'>
-        <div className='space-y-3'>
-          {rv.debates.map((d, i) => (
-            <DebateDigestItem key={d.debate_id ?? i} d={d} index={i} />
-          ))}
-        </div>
-      </Section>
+      <>
+        {rosterEl}
+        <Section
+          title={`페르소나 토론 요약 (${rv.debates.length}건)`}
+          tip='개선 방향을 도출한 전문가·일반인 토론입니다. 토론할수록 항목이 늘어나요 — 각 토론의 주제·대표 발언·결론만 간추렸습니다.'>
+          <div className='space-y-3'>
+            {rv.debates.map((d, i) => (
+              <DebateDigestItem key={d.debate_id ?? i} d={d} index={i} />
+            ))}
+          </div>
+        </Section>
+      </>
     );
   }
 
   // 하위호환: 단일 토론 — report 필드로 다이제스트 구성.
-  if (!rep.debate_available) return null;
+  if (!rep.debate_available) return rosterEl;
   const single: DebateDigest = {
     topic_headline: rep.topic || rep.headline || '페르소나 토론',
     rounds_run: rep.rounds_run,
@@ -485,11 +549,14 @@ function DebateSection({ rv }: { rv: ReportView }) {
     quotes: rep.quotes ?? [],
   };
   return (
-    <Section
-      title='페르소나 토론 요약'
-      tip='개선 방향을 도출한 전문가·일반인 토론입니다 — 주제·대표 발언·결론만 간추렸습니다.'>
-      <DebateDigestItem d={single} />
-    </Section>
+    <>
+      {rosterEl}
+      <Section
+        title='페르소나 토론 요약'
+        tip='개선 방향을 도출한 전문가·일반인 토론입니다 — 주제·대표 발언·결론만 간추렸습니다.'>
+        <DebateDigestItem d={single} />
+      </Section>
+    </>
   );
 }
 

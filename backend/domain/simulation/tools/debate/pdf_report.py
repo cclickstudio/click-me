@@ -601,6 +601,44 @@ def _build_html(result: dict) -> str:
             )
         )
 
+    # ── 토론 참가자 소개 — 개선안·토론에 나오는 이름이 누구인지 먼저 정리(프로필·역할·최종 입장) ──
+    # 현재(최근) 토론 기준(debate.participants). 화면 ParticipantRoster와 같은 의미·라벨.
+    participants = debate.get("participants") or []
+    if participants:
+        prows = []
+        for p in participants:
+            utts = p.get("utterances") or []
+            stance = (utts[-1].get("stance") if utts else "neutral") or "neutral"
+            scol, slab = _STANCE.get(stance, (_SLATE, "중립"))
+            prof = escape(str(p.get("persona_profile", "")))
+            role = escape(str(p.get("role", "")))
+            prof_html = f'<span class="text-[10px] text-slate-500">· {prof}</span>' if prof else ""
+            role_html = (
+                '<span class="text-[9.5px] text-slate-400 bg-slate-100 rounded px-1.5 py-0.5">'
+                f"{role}</span>"
+                if role
+                else ""
+            )
+            prows.append(
+                '<div class="flex items-center gap-2 py-1.5 border-b border-slate-100 '
+                'last:border-0 break-inside-avoid">'
+                '<span class="font-bold text-[11px] text-slate-800">'
+                f"{escape(str(p.get('persona_name', '')))}</span>"
+                f"{prof_html}{role_html}"
+                '<span class="ml-auto inline-block px-2 py-0.5 rounded-full text-white '
+                f'text-[9.5px] font-bold shrink-0" style="background:{scol}">{slab}</span>'
+                "</div>"
+            )
+        blocks.append(
+            _section(
+                "",
+                "토론 참가자",
+                _INDIGO,
+                "".join(prows),
+                tip="개선안과 토론에 나오는 이름이 누구인지 — 프로필·역할·토론 최종 입장을 먼저 정리했어요.",
+            )
+        )
+
     # ── §5 토론 (풀폭) — 주제 + 대표 인용 1~2 + 결론만(전문 생략, 분량 축소) ──
     # debates(누적 요약)가 있으면 토론마다 한 블록 — 토론을 더 할수록 항목이 늘어난다.
     debates_list = result.get("debates") or []
