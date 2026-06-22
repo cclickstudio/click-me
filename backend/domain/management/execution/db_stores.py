@@ -177,7 +177,8 @@ class DbRegenerationJobStore:
                     campaign_id=record.campaign_id,
                     status=record.status.value,
                     selection_token=record.selection_token,
-                    candidates=record.candidates or None,
+                    # 빈 리스트도 그대로 저장 — InMemory store와 동일 의미([] ↔ []) 유지.
+                    candidates=record.candidates,
                     selected_candidate_id=record.selected_candidate_id,
                     proposal=record.proposal,
                     outcome_reason=record.outcome_reason,
@@ -202,7 +203,7 @@ class DbRegenerationJobStore:
                 return
             row.status = record.status.value
             row.selection_token = record.selection_token
-            row.candidates = record.candidates or None
+            row.candidates = record.candidates  # [] 그대로 — InMemory와 동일 의미
             row.selected_candidate_id = record.selected_candidate_id
             row.proposal = record.proposal
             row.outcome_reason = record.outcome_reason

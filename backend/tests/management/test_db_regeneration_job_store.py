@@ -28,3 +28,18 @@ def test_row_to_record_maps_fields():
     assert rec.id == "job-1"
     assert rec.status is JobStatus.AWAITING_SELECTION
     assert rec.candidates == [{"candidate_id": "c1"}]
+
+
+def test_row_to_record_null_candidates_maps_to_empty_list():
+    # 레거시 NULL 또는 빈 후보 → InMemory store와 동일하게 [](never None)으로 복원.
+    row = RegenerationJobRow(
+        id="job-2",
+        tenant_id="org-1",
+        campaign_id="camp-1",
+        status="queued",
+        candidates=None,
+        created_at=NOW,
+        updated_at=NOW,
+    )
+    rec = _row_to_record(row)
+    assert rec.candidates == []
