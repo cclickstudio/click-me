@@ -147,9 +147,11 @@ class PredictionReader(Protocol):
     ) -> PredictionSnapshot | None: ...
 ```
 
-**호출부 2곳** — 매핑을 `meta_campaign_id → creative_ad_id` 에서 `meta_campaign_id → (simulation_id, tenant_id)` 로 교체:
-- `api/routers/management.py` `compare_before_after` — `CreatedCampaign`에서 `simulation_id`·`tenant_id`를 함께 읽어 `get_prediction(sim_id, tenant_id)`. `simulation_id` 없는 행은 호출 생략 → prediction `None`.
-- `domain/management/assistant/tools.py` — 동일 매핑·호출.
+**호출부 2곳** — `creative_ad_id` 매핑은 **유지**(실측 `RealOutcome.creative_id` 귀속에 그대로 필요), **`simulation_id` 매핑을 따로 추가**:
+- `api/routers/management.py` `compare_before_after` — 같은 `CreatedCampaign` 행 순회에서 `creative_by_meta`(기존, `_real_outcome`의 `creative_id`용)와 `sim_by_meta`(신규, `{meta_id: (simulation_id, tenant_id)}`)를 둘 다 만든다. 예측은 `get_prediction(sim_id, tenant_id)`, `simulation_id` 없는 행은 호출 생략 → prediction `None`.
+- `domain/management/assistant/tools.py` `live_before_after` — 동일.
+
+> ⚠ `_real_outcome(m, cid, creative_id)`의 세 번째 인자는 `RealOutcome.creative_id`(크리에이티브 귀속)라 **반드시 `creative_ad_id`를 유지**해야 한다. 예측 키(`simulation_id`)로 바꾸면 실측 귀속이 깨진다.
 
 DTO(`PredictionSnapshot`·`BeforeAfter`) 무변경 → 프론트·assistant 응답 형태 동일.
 
