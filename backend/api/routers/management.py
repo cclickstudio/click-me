@@ -87,7 +87,15 @@ from domain.management.detection.exposure_model import (
 from domain.management.detection.performance_dx import diagnose_performance
 from domain.management.escalation import EscalationController, EscalationRun
 from domain.management.escalation_demo import DemoScenarioDetector
+from domain.management.execution.assistant_tools import execution_history
 from domain.management.execution.executor import DEFAULT_ALLOWED_MODES, Executor
+from domain.management.execution.regeneration_jobs import (
+    CandidateNotInJob,
+    JobNotAwaitingSelection,
+    JobNotFound,
+    JobTenantMismatch,
+    SelectionContextExpired,
+)
 from domain.management.execution.tier import (
     ESCALATE_THRESHOLD,
     WARN_THRESHOLD,
@@ -103,6 +111,7 @@ from domain.management.wiring import (
     build_idempotency_store,
     build_prediction_reader,
     build_reader,
+    build_regeneration_job_service,
     build_writer,
 )
 from tools.storage.s3 import download_bytes
@@ -389,6 +398,105 @@ async def get_audit(approval_id: str):
             for e in events
         ]
     }
+
+
+def _job_http_error(exc: Exception) -> HTTPException:
+    """재생성 job 도메인 예외 → HTTPException. 라우터 분기 단일화."""
+    if isinstance(exc, (JobNotFound, JobTenantMismatch)):
+        return HTTPException(404, "job을 찾을 수 없습니다.")
+    if isinstance(exc, CandidateNotInJob):
+        return HTTPException(422, "선택한 후보가 이 job에 없습니다.")
+    if isinstance(exc, SelectionContextExpired):
+        return HTTPException(409, {"reason": "SELECTION_CONTEXT_EXPIRED"})
+    if isinstance(exc, JobNotAwaitingSelection):
+        return HTTPException(409, "선택 가능한 상태가 아닙니다.")
+    return HTTPException(500, "알 수 없는 오류")
+
+
+class StartRegenJobRequest(BaseModel):
+    diagnosis: DiagnosisResult
+
+
+class SelectRegenJobRequest(BaseModel):
+    selected_id: str
+
+
+@router.post("/regenerate/jobs")
+async def start_regen_job(
+    body: StartRegenJobRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """재생성 비동기 job 시작 → {job_id, status}. 무거운 생성은 백그라운드."""
+    org_id = await _require_org_id(user, db)
+    if body.diagnosis.tenant_id != str(org_id):
+        raise HTTPException(403, "다른 조직의 진단으로는 재생성할 수 없습니다.")
+    context = RemediationContext(
+        ad_account_id="act_demo_001",
+        target_object_ids=(body.diagnosis.campaign_id,),
+        budget_before_krw=DAILY_BUDGET_KRW,
+        budget_after_krw=int(DAILY_BUDGET_KRW * 1.5),
+        run_days=7,
+        expected_state_version="state_v1",
+        approval_policy_version=APPROVAL_POLICY_VERSION,
+        action_type="REPLACE_CREATIVE",
+    )
+    service = build_regeneration_job_service(settings)
+    job_id = await service.start(body.diagnosis, context)
+    return {"job_id": job_id, "status": "queued"}
+
+
+@router.get("/regenerate/jobs/{job_id}")
+async def get_regen_job(
+    job_id: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    org_id = await _require_org_id(user, db)
+    service = build_regeneration_job_service(settings)
+    try:
+        rec = await service.get(job_id, tenant_id=str(org_id))
+    except (JobNotFound, JobTenantMismatch) as exc:
+        raise _job_http_error(exc) from exc
+    return {
+        "job_id": rec.id,
+        "status": rec.status.value,
+        "candidates": rec.candidates,
+        "proposal": rec.proposal,
+        "outcome_reason": rec.outcome_reason,
+    }
+
+
+@router.post("/regenerate/jobs/{job_id}/select")
+async def select_regen_job(
+    job_id: str,
+    body: SelectRegenJobRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    org_id = await _require_org_id(user, db)
+    service = build_regeneration_job_service(settings)
+    try:
+        rec = await service.select(job_id, body.selected_id, tenant_id=str(org_id))
+    except (
+        JobNotFound,
+        JobTenantMismatch,
+        JobNotAwaitingSelection,
+        CandidateNotInJob,
+        SelectionContextExpired,
+    ) as exc:
+        raise _job_http_error(exc) from exc
+    return {"job_id": rec.id, "status": rec.status.value, "proposal": rec.proposal}
+
+
+@router.get("/execution/history")
+async def execution_history_endpoint(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """테넌트의 최근 실행 감사 이력(읽기) — org 스코프 강제."""
+    org_id = await _require_org_id(user, db)
+    return await execution_history(_AUDIT_LOG, tenant_id=str(org_id))
 
 
 # ── 오가닉 vs 광고 비교 (🅰 comparison 도메인 노출) ──────────────────────
