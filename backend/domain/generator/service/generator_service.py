@@ -19,6 +19,7 @@ from sqlalchemy import select
 
 from core.db import AsyncSessionLocal
 from core.models import AdCampaignLog, AdGeneration, AdGenerationCandidate, AdPublishLog
+from core.tracing import make_trace_config
 from domain.generator.adapters.instagram import build_publisher
 from domain.generator.adapters.meta_ads import AdvertiseRequest, build_ads_publisher
 from domain.generator.contracts.schemas import GenerationCreateRequest
@@ -28,6 +29,15 @@ from tools.storage.s3 import download_bytes, presign_get, publish_key, upload_by
 logger = logging.getLogger("clickme")
 
 _tasks: dict[str, dict] = {}
+# 상품 이미지 임시 저장소 — 테스트용, 추후 S3 방식으로 전환
+_product_image_store: dict[str, bytes] = {}
+
+
+async def store_temp_image(data: bytes) -> str:
+    """상품 이미지를 메모리에 임시 저장하고 temp_key를 반환한다."""
+    key = str(uuid.uuid4())
+    _product_image_store[key] = data
+    return key
 
 
 async def start_generation(
@@ -40,6 +50,11 @@ async def start_generation(
     if request.project_id:
         with suppress(ValueError):
             project_uuid = uuid.UUID(request.project_id)
+    if project_uuid is None:
+        logger.warning(
+            "생성 요청에 project_id가 없음 — 프로젝트에 기록되지 않음: generation_id=%s",
+            generation_id,
+        )
 
     async with AsyncSessionLocal() as session:
         session.add(
@@ -53,12 +68,25 @@ async def start_generation(
         )
         await session.commit()
 
-    _tasks[generation_id] = {"status": "pending", "events": []}
-    asyncio.create_task(_run_pipeline(generation_id, request))
+    # 상품 이미지 bytes를 task store에 주입 (pipeline이 state로 전달받음)
+    product_image_bytes: bytes | None = None
+    if request.product_image_temp_key:
+        product_image_bytes = _product_image_store.pop(request.product_image_temp_key, None)
+
+    _tasks[generation_id] = {
+        "status": "pending",
+        "events": [],
+        "product_image_bytes": product_image_bytes,
+    }
+    asyncio.create_task(_run_pipeline(generation_id, request, created_by=created_by))
     return generation_id
 
 
-async def _run_pipeline(generation_id: str, request: GenerationCreateRequest) -> None:
+async def _run_pipeline(
+    generation_id: str,
+    request: GenerationCreateRequest,
+    created_by: uuid.UUID | None = None,
+) -> None:
     store = _tasks[generation_id]
 
     def emit(event: dict) -> None:
@@ -68,15 +96,23 @@ async def _run_pipeline(generation_id: str, request: GenerationCreateRequest) ->
         store["status"] = "running"
         await _update_status(generation_id, "running")
 
-        config = {
-            "run_name": "AdGenerationPipeline",
-            "metadata": {"generation_id": generation_id},
-            "configurable": {"emit": emit},
-        }
+        config = make_trace_config(
+            domain="generator",
+            feature="generate",
+            mode=request.mode.value,
+            user_id=str(created_by) if created_by else "anonymous",
+            project_id=request.project_id,
+            extra_metadata={"generation_id": generation_id},
+            configurable={"emit": emit},
+        )
         initial_state = {
             "generation_id": generation_id,
             "request": request.model_dump(),
         }
+        product_image_bytes: bytes | None = store.pop("product_image_bytes", None)
+        if product_image_bytes is not None:
+            initial_state["product_image_bytes"] = product_image_bytes
+
         final_state = await generation_graph.ainvoke(initial_state, config=config)
 
         await _persist_results(generation_id, final_state)

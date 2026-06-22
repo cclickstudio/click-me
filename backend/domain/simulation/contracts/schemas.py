@@ -102,6 +102,9 @@ class Persona(BaseModel):
     socioeconomic: dict[str, Any] = Field(
         default_factory=dict
     )  # 소득·학력(KISDI, 구매의도 grounding)
+    social_values_deep: dict[str, float] = Field(
+        default_factory=dict
+    )  # 단계3 한국 특화 심리(체면·동조·눈치) — 값 미확보 시 빈 dict(반응 무변화)
     weight: float = Field(
         default=1.0, gt=0
     )  # 표본 가중치(§3.7) — 비례추출 기본 1.0(self-weighting)

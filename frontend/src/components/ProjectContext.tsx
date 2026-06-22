@@ -7,7 +7,7 @@ import type { DebateSessionMeta } from '@/lib/types';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
-export type Project = { id: string; name: string; status: string; description?: string | null; created_at?: string; created_by_name: string | null; organization_name: string | null };
+export type Project = { id: string; name: string; status: string; description?: string | null; created_at?: string; created_by_name: string | null; organization_name: string | null; team_id: string | null; team_name: string | null };
 export type SimRow = { id: string; status: string; sample_size: number; ad_title: string | null; created_by_name: string | null; created_at: string };
 export type GenRow = { id: string; status: string; product_name: string | null; created_by_name: string | null; created_at: string };
 
@@ -77,6 +77,18 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
     fetchProjects();
   }, []);
 
+  // 활성 프로젝트를 localStorage에 고정 — 페이지 이동·새로고침 후에도 유지(생성 내역 누락 방지).
+  useEffect(() => {
+    const stored = localStorage.getItem('selectedProjectId');
+    if (stored) setSelectedProjectId(stored);
+  }, []);
+
+  const selectProject = useCallback((id: string | null) => {
+    setSelectedProjectId(id);
+    if (id) localStorage.setItem('selectedProjectId', id);
+    else localStorage.removeItem('selectedProjectId');
+  }, []);
+
   const fetchDetailsForProject = async (projectId: string) => {
     const token = getToken();
     if (!token) return;
@@ -137,7 +149,7 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
   return (
     <ProjectContext.Provider value={{
       projects, loading, details, loadDetails, loadAll, refreshDetails, refresh: fetchProjects,
-      selectedProjectId, selectedProject, selectProject: setSelectedProjectId,
+      selectedProjectId, selectedProject, selectProject,
       debates, loadDebates,
     }}>
       {children}

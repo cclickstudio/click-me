@@ -17,6 +17,8 @@ from enum import StrEnum
 from typing import TYPE_CHECKING, Protocol
 from uuid import uuid4
 
+from langsmith import traceable
+
 from domain.management.agents.outcome import OutcomeKind
 from domain.management.agents.regeneration import RemediationContext
 from domain.management.contracts.enums import AnomalyType
@@ -155,9 +157,12 @@ class EscalationController:
         """run_id로 사다리 run 조회 — 라우터의 tenant 소유 검증용(읽기 전용)."""
         return await self._store.get_by_run_id(run_id)
 
+    @traceable(name="management.remediation", run_type="chain")
     async def re_evaluate(
         self, tenant_id: str, ad_account_id: str, campaign_id: str, *, now: datetime
     ) -> EscalationOutcome:
+        # 캠페인 평가 1회를 LangSmith 부모 트레이스로 묶는다 — 아래 진단(detect 내부)·재생성
+        # (propose)이 자식 run으로 한 트리에 모인다. 트레이싱 꺼지면 무동작 통과.
         run = await self._store.get_active(tenant_id, campaign_id)
         outcome = await self._detector.detect(
             tenant_id,

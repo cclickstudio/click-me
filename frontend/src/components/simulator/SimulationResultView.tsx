@@ -68,6 +68,8 @@ interface Props {
   initialReportView?: ReportView | null;
   // 실행 흐름에서만 '새 시뮬레이션' 버튼 노출(라우트 진입 시엔 숨김).
   onReset?: () => void;
+  // 헤더 우측 액션 슬롯(상세 페이지의 삭제/복원 등) — 제목과 한 row로 정렬.
+  headerAction?: React.ReactNode;
 }
 
 export function SimulationResultView({
@@ -76,6 +78,7 @@ export function SimulationResultView({
   adDescription,
   initialReportView,
   onReset,
+  headerAction,
 }: Props) {
   const [showFailed, setShowFailed] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -121,12 +124,17 @@ export function SimulationResultView({
             통과 {passed.length}){result.simulation_id && ' · DB 저장됨'}
           </p>
         </div>
-        {onReset && (
-          <button
-            onClick={onReset}
-            className='px-4 py-2 border border-[#E5E8EB] dark:border-[#2D3748] rounded-lg text-sm text-[#8B95A1] dark:text-[#6B7280] hover:bg-[#F9FAFB] dark:hover:bg-[#252D3D] transition-colors'>
-            새 시뮬레이션
-          </button>
+        {(headerAction || onReset) && (
+          <div className='flex items-center gap-2'>
+            {headerAction}
+            {onReset && (
+              <button
+                onClick={onReset}
+                className='px-4 py-2 border border-[#E5E8EB] dark:border-[#2D3748] rounded-lg text-sm text-[#8B95A1] dark:text-[#6B7280] hover:bg-[#F9FAFB] dark:hover:bg-[#252D3D] transition-colors'>
+                새 시뮬레이션
+              </button>
+            )}
+          </div>
         )}
       </div>
 

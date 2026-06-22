@@ -19,7 +19,7 @@ _TEMPLATE_COPY_GUIDE: dict[TemplateType, str] = {
     TemplateType.B: (
         "오버레이 레이아웃. 헤드라인은 이미지 상단에 pill 스크림으로 강조되므로 "
         "긴급성·이벤트 중심으로 짧고 임팩트 있게 (10자 이내 권장). "
-        "본문은 하단 오버레이에 배치되어 부가 설명 역할."
+        "본문은 하단 오버레이에 배치되어 부가 설명 역할. CTA는 행동 유도."
     ),
     TemplateType.C: (
         "좌측 패널 레이아웃. 헤드라인·본문·CTA가 모두 좌측 컬러 패널 안에 들어가므로 "
@@ -74,10 +74,12 @@ _IMPROVEMENT_SECTION = """\
 
 기존 광고의 문제점을 해결하는 방향으로 카피를 작성하세요."""
 
-_llm = build_text_llm(temperature=0.5).with_structured_output(AdCopy)
+_llm = build_text_llm(temperature=0.5, max_tokens=150).with_structured_output(AdCopy)
 
 
-@traceable(name="CopyGenerator", metadata={"pipeline": "generator"})
+@traceable(
+    name="generator:generate_copy", metadata={"pipeline": "generator", "prompt_version": "v1.0"}
+)
 async def generate_copy(
     product_analysis: ProductAnalysis,
     strategy_output: StrategyOutput,

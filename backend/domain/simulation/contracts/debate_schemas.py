@@ -275,6 +275,7 @@ class ReportQuote(BaseModel):
     role: str
     stance: Stance
     text: str
+    reason: str = ""  # 왜 그렇게 말했나(무엇에 대한 동의/반대인지 — 인용 맥락)
 
 
 class SimulationReport(BaseModel):

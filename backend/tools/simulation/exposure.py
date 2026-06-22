@@ -37,7 +37,7 @@ USP: {usp}
 JSON만 출력하세요."""
 
 
-@traceable(name="ExposureAgent", metadata={"prompt_version": "v1.0"})
+@traceable(name="tools:exposure", metadata={"prompt_version": "v1.0"})
 async def run_exposure(persona: Persona, ad_analysis: dict) -> dict:
     strategic = ad_analysis.get("strategic_analysis", {})
     text_a = ad_analysis.get("text_analysis", {})
