@@ -707,7 +707,7 @@ async def remove_product_background(product_image_bytes: bytes) -> bytes:
     image_file = io.BytesIO(product_image_bytes)
     image_file.name = "product.png"
     response = await _openai_client.images.edit(
-        model=settings.generator_image_model,
+        model=settings.generator_image_edit_model,
         image=image_file,
         prompt=_REMOVE_BG_PROMPT,
         n=1,
