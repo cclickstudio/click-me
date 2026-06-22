@@ -3,7 +3,8 @@ import uuid
 from types import SimpleNamespace
 
 import pytest
-from fastapi import HTTPException
+from fastapi import FastAPI, HTTPException
+from fastapi.testclient import TestClient
 
 from api.routers import management
 
@@ -134,3 +135,29 @@ async def test_escalation_controller_get_run_reads_store():
     ctrl = EscalationController(store=_Store(), detector=object(), agent=object(), audit=object())
     assert (await ctrl.get_run(run.run_id)) is run
     assert (await ctrl.get_run("nope")) is None
+
+
+def _client_no_auth():
+    app = FastAPI()
+    app.include_router(management.router, prefix="/api/management")
+    return TestClient(app, raise_server_exceptions=False)
+
+
+def test_execute_requires_auth():
+    res = _client_no_auth().post("/api/management/execute", json={})
+    assert res.status_code == 401
+
+
+def test_regenerate_requires_auth():
+    res = _client_no_auth().post("/api/management/regenerate", json={})
+    assert res.status_code == 401
+
+
+def test_create_proposal_requires_auth():
+    res = _client_no_auth().post("/api/management/campaigns/create-proposal", json={})
+    assert res.status_code == 401
+
+
+def test_from_candidate_requires_auth():
+    res = _client_no_auth().post("/api/management/campaign-proposals/from-candidate", json={})
+    assert res.status_code == 401
