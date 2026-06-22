@@ -16,6 +16,7 @@ from pydantic import BaseModel
 from core.auth import get_current_user
 from core.models import User
 from domain.generator.adapters.meta_ads import AdvertiseRequest
+from domain.generator.contracts.enums import GenerationMode
 from domain.generator.contracts.schemas import GenerationCreateRequest
 from domain.generator.service import generator_service
 from domain.generator.service.brand_profile import get_profile, save_profile
@@ -73,6 +74,19 @@ async def update_brand_profile(body: BrandProfileBody, x_client_id: str = Header
         "brand_logo_key": p.brand_logo_key,
         "tone_and_manner": p.tone_and_manner,
     }
+
+
+@router.post("/product-image")
+async def upload_product_image(file: UploadFile = File(...)):
+    """상품 이미지 업로드 → 메모리 임시 저장 → temp_key 반환 (테스트용, 추후 S3 전환)."""
+    ct = (file.content_type or "").split(";")[0].strip()
+    if ct not in _ALLOWED_IMAGE_TYPES:
+        raise HTTPException(status_code=400, detail="PNG·JPEG·WebP 이미지만 업로드 가능합니다.")
+    data = await file.read()
+    if len(data) > 4 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="상품 이미지는 4MB 이하여야 합니다.")
+    temp_key = await generator_service.store_temp_image(data)
+    return {"temp_key": temp_key}
 
 
 @router.post("/logo")
@@ -185,9 +199,19 @@ async def langsmith_status():
     }
 
 
+# 프록시로 제공 가능한 S3 키 프리픽스 — 이 밖의 임의 객체 열람을 차단(오픈 프록시 방지).
+_ALLOWED_IMAGE_PREFIXES = ("generated-ads/", "brand-logos/")
+
+
 @router.get("/image")
 async def proxy_image(key: str):
-    """S3 이미지를 백엔드를 통해 제공 — AWS 자격증명 노출 방지."""
+    """S3 이미지를 백엔드를 통해 제공 — AWS 자격증명 노출 방지.
+
+    허용된 프리픽스(생성 광고·브랜드 로고)만 통과시켜 버킷 내 임의 객체 열람을 막는다.
+    (img 태그가 헤더를 못 보내 인증은 불가하나, UUID 경로라 실질 추측은 어렵다.)
+    """
+    if ".." in key or not key.startswith(_ALLOWED_IMAGE_PREFIXES):
+        raise HTTPException(status_code=403, detail="허용되지 않은 이미지 경로입니다.")
     try:
         data = await download_bytes(key)
     except Exception:
@@ -204,6 +228,12 @@ async def create_generation(
     body: GenerationCreateRequest,
     current_user: User = Depends(get_current_user),
 ):
+    # 사용자 생성(create)은 프로젝트에 저장돼야 하므로 project_id 필수 (프론트 우회 호출도 차단).
+    # improve(management 재생성 등 시스템 호출)는 프로젝트 컨텍스트가 없을 수 있어 제외.
+    if body.mode == GenerationMode.CREATE and not body.project_id:
+        raise HTTPException(
+            status_code=400, detail="생성 결과를 저장할 프로젝트를 먼저 선택해주세요."
+        )
     generation_id = await generator_service.start_generation(body, created_by=current_user.id)
     return GenerationTaskResponse(
         generation_id=generation_id,

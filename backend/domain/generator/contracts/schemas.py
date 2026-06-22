@@ -37,6 +37,8 @@ class GenerationCreateRequest(BaseModel):
     brand_logo_url: str | None = None  # deprecated — 직접 URL 입력 (구형 호환용)
     brand_logo_s3_key: str | None = None  # S3 업로드 후 키 (brand_profile 캐시 연동)
     tone_and_manner: str | None = None
+    # 생성 모드 전용 — 상품 이미지 기반 생성 (추후 S3 키 방식으로 전환 예정)
+    product_image_temp_key: str | None = None  # 테스트용 서버 메모리 임시 키
     width: int = Field(default=1080, ge=256, le=4096)
     height: int = Field(default=1080, ge=256, le=4096)
 
