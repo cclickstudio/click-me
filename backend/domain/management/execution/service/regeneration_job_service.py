@@ -119,6 +119,10 @@ class RegenerationJobService:
     async def select(
         self, job_id: str, selected_id: str, *, tenant_id: str
     ) -> RegenerationJobRecord:
+        """AWAITING_SELECTION → PROPOSED. 같은 선택 재시도는 멱등, 다른 선택은 409.
+
+        v1 동시성 전제는 클래스 docstring 참조(uvicorn --workers 1) — 별도 락 없음.
+        """
         rec = await self.get(job_id, tenant_id=tenant_id)  # 1·2. 조회 + tenant
         # 3. status — 멱등/충돌 처리
         if rec.status is JobStatus.PROPOSED:
