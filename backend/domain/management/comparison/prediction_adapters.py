@@ -1,8 +1,8 @@
-# 집행 전(시뮬 예측) 읽기 어댑터 — Mock(지금) + Sim(추후 교체 stub)
+# 집행 전(시뮬 예측) 읽기 어댑터 — Sim(운영) + Mock(데모·테스트 폴백)
 """PredictionReader 구현. 시뮬 로직이 바뀌어도 management는 이 포트에만 의존한다.
 
-지금은 MockPredictionReader로 화면을 동작시키고, 시뮬 KPI가 안정화되면 wiring에서
-SimPredictionReader로 교체한다(화면·API 변경 없음).
+운영 wiring은 SimPredictionReader(simulation_aggregates를 raw SQL로 읽음)를 쓴다.
+MockPredictionReader는 데모·단위 테스트에서 직접 주입하는 합성 예측(운영 합성 금지).
 """
 
 from __future__ import annotations
