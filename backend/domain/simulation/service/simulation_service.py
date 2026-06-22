@@ -10,6 +10,7 @@ import logging
 import uuid
 from collections.abc import AsyncIterator
 
+from core.tracing import make_trace_config
 from domain.simulation.contracts.schemas import SimulationRunRequest
 from domain.simulation.tools.objective_fit import assess_objective_fit
 
@@ -90,6 +91,20 @@ class SimulationService:
             store.emit(run_id, {"event": "progress", "stage": "ad_analysis", "pct": 5})
 
             state = {"request": request, "reactions": [], "personas": [], "rubric_scores": []}
+            # LangSmith — 전체 시뮬레이션 = 요청 1건 = 최상위 Trace(simulation.simulate).
+            # 페르소나 N명 반응은 이 Trace 아래 하위 Node로 자동 부채꼴 집계된다.
+            trace_config = make_trace_config(
+                domain="simulation",
+                feature="simulate",
+                ad_id=request.ad_id,
+                project_id=request.project_id,
+                extra_metadata={
+                    "run_id": run_id,
+                    "sample_size": request.sample_size,
+                    "organization_id": request.organization_id,
+                },
+                extra_tags=["batch"] if request.sample_size > 10 else None,
+            )
             ad_dump: dict | None = None
             rubric_dump: list[dict] = []
             reactions: list[dict] = []
@@ -104,7 +119,9 @@ class SimulationService:
             total = request.sample_size
             done = 0
 
-            async for update in self._graph.astream(state, stream_mode="updates"):
+            async for update in self._graph.astream(
+                state, config=trace_config, stream_mode="updates"
+            ):
                 for node, out in update.items():
                     if not out:
                         continue

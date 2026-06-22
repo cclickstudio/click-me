@@ -51,7 +51,9 @@ def build_panel_provider(settings=None):
     """
     if _DEFAULT_PANEL.exists():
         return CachedPanelProvider(_DEFAULT_PANEL)
-    return PersonaSampler(reachability_sampling=True)
+    # Meta 플랫폼(instagram/facebook) 지정 시 그 도달 분포로 추출 — 실데이터 없으면 통합 reach 폴백.
+    platform = getattr(settings, "meta_platform", None) if settings is not None else None
+    return PersonaSampler(reachability_sampling=True, platform=platform)
 
 
 def _resolve_use_mock(settings, use_mock) -> bool:

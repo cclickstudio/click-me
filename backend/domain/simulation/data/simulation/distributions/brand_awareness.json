@@ -1,0 +1,26 @@
+{
+  "_role": "Tier 3 브랜드 보조인지율 — interpret_ad에서 룩업해 structured_analysis.awareness_by_age 부착. 페르소나는 반응 시 자기 연령대 칸만 읽음(다양성=나이, 사실=공유 1회). 미수록 브랜드는 None → Tier 2(LLM 추정) 폴백.",
+  "source": "한국갤럽 브랜드 트래킹 / 오픈서베이 Custom Survey / 클라이언트 제공 — 미확보(유료 계약 필요)",
+  "license": "출처별 상이 — 갤럽·오픈서베이 raw는 계약자 전용. 공개분만 인용. 서비스화 시 법무 검토.",
+  "is_placeholder": true,
+  "needs_real_values": true,
+  "metric": "aided_awareness 보조인지율(0~1)",
+  "age_bands": ["10-19", "20-29", "30-39", "40-49", "50-59", "60-69"],
+  "_schema_example": {
+    "브랜드명(키)": {
+      "aliases": ["별칭", "영문명"],
+      "industry": "detected_industry와 매칭할 업종(선택)",
+      "awareness_by_age": {
+        "10-19": 0.0,
+        "20-29": 0.0,
+        "30-39": 0.0,
+        "40-49": 0.0,
+        "50-59": 0.0,
+        "60-69": 0.0
+      },
+      "source": "출처명",
+      "year": 2026
+    }
+  },
+  "brands": {}
+}

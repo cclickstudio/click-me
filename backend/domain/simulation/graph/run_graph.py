@@ -24,6 +24,7 @@ from domain.simulation.contracts.schemas import (
     SimulationRunRequest,
 )
 from domain.simulation.graph.reaction_graph import run_reaction
+from domain.simulation.tools.brand_awareness import lookup_brand_awareness
 
 logger = logging.getLogger("clickme")
 
@@ -90,7 +91,13 @@ def build_run_graph(*, interpreter, panel, rubric, aggregator, reaction_graph):
         ad = await interpreter.interpret(req)
         scores = await rubric.evaluate(ad, req)
         mismatch, detail = _derive_intent(scores)
-        ad = ad.model_copy(update={"intent_mismatch": mismatch, "mismatch_detail": detail})
+        update: dict = {"intent_mismatch": mismatch, "mismatch_detail": detail}
+        # ③ Tier3 브랜드 인지율 — 광고 텍스트에 수록 브랜드 있으면 1회 부착(없으면 폴백).
+        brand_hint = " ".join(x for x in (req.ad_title, req.ad_content, ad.detected_message) if x)
+        awareness = lookup_brand_awareness(brand_hint)
+        if awareness:
+            update["structured_analysis"] = {**ad.structured_analysis, **awareness}
+        ad = ad.model_copy(update=update)
         return {"ad": ad, "rubric_scores": scores}
 
     async def load_panel(state: RunState) -> dict:
