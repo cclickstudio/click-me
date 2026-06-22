@@ -1,6 +1,8 @@
 # 🅱 재생성 job store 단위 테스트 — 상태 레코드 + 인메모리 CRUD
 from datetime import UTC, datetime
 
+import pytest
+
 from domain.management.execution.regeneration_jobs import (
     InMemoryRegenerationJobStore,
     JobStatus,
@@ -55,3 +57,16 @@ async def test_get_returns_copy_not_live_reference():
     got.status = JobStatus.FAILED
     again = await store.get("job-1")
     assert again.status is JobStatus.QUEUED
+
+
+def test_naive_datetime_rejected():
+    # UTC-aware 강제 (naive 금지 — management/CLAUDE.md 공통 규칙).
+    with pytest.raises(ValueError, match="UTC-aware"):
+        RegenerationJobRecord(
+            id="job-1",
+            tenant_id="org-1",
+            campaign_id="camp-1",
+            status=JobStatus.QUEUED,
+            created_at=datetime(2026, 6, 22, 9, 0),  # naive
+            updated_at=NOW,
+        )

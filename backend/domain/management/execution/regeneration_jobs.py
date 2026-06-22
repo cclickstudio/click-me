@@ -59,6 +59,13 @@ class RegenerationJobRecord:
     started_at: datetime | None = None
     finished_at: datetime | None = None
 
+    def __post_init__(self) -> None:
+        # 모든 타임스탬프는 UTC-aware (naive 금지 — management/CLAUDE.md 공통 규칙).
+        for name in ("created_at", "updated_at", "started_at", "finished_at"):
+            value = getattr(self, name)
+            if value is not None and value.tzinfo is None:
+                raise ValueError(f"{name}는 UTC-aware datetime이어야 합니다 (naive 금지)")
+
 
 class RegenerationJobStore(Protocol):
     async def create(self, record: RegenerationJobRecord) -> None: ...
