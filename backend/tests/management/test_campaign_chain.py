@@ -124,6 +124,24 @@ def test_full_campaign_traffic_stops_at_adset():
     assert not any(p.endswith("/ads") for p in paths)
 
 
+def test_full_campaign_traffic_with_link_creates_link_ad():
+    # link_url 있으면 traffic도 링크광고까지 생성 — 실 writer 분기 검증(폼은 없음).
+    writer, calls = _routing_writer()
+    cfg = _config(objective="traffic").model_copy(
+        update={"link_url": "https://shop.example.com", "headline": "제목", "body": "본문"}
+    )
+    result = asyncio.run(writer.create_full_campaign(cfg, "idem-tl", page_id="P"))
+
+    paths = [p for p, _ in calls]
+    assert any(p.endswith("/adsets") for p in paths)
+    assert any(p.endswith("/ads") for p in paths)  # link_url → 광고 생성
+    assert not any(p.endswith("/leadgen_forms") for p in paths)  # 리드 아님 → 폼 없음
+    ad_body = next(b for p, b in calls if p.endswith("/ads"))
+    assert b"shop.example.com" in ad_body  # 목적지 link
+    assert b"adset_1" in ad_body  # 부모 광고세트 스레딩
+    assert result.status is ResultStatus.SUCCESS
+
+
 def test_activate_sets_status_active():
     # Task5 — 활성화는 status=ACTIVE를 보낸다(과금 시작 트리거). 실 활성화는 사람 몫.
     writer, captured = _capture_writer()

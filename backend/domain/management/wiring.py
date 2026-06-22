@@ -138,3 +138,11 @@ def build_escalation_store(settings):
     from domain.management.escalation import InMemoryEscalationStore  # noqa: PLC0415
 
     return InMemoryEscalationStore()
+
+
+def build_generator_client(settings):
+    """generator D1 계약 HTTP 클라이언트 — base_url은 internal_api_base_url."""
+    from domain.management.adapters.generator.client import GeneratorReadClient  # noqa: PLC0415
+
+    base = getattr(settings, "internal_api_base_url", "http://localhost:8000")
+    return GeneratorReadClient(base_url=base)

@@ -43,6 +43,21 @@ _ADSET_OPTIMIZATION = {"traffic": "LINK_CLICKS", "leads": "LEAD_GENERATION"}
 #: 리드폼 필수 — 개인정보처리방침 링크(이미 운영 중인 페이지).
 _PRIVACY_POLICY_URL = "https://clickme.co.kr/privacy"
 
+_CTA_BY_OBJECTIVE = {"traffic": "LEARN_MORE", "leads": "SIGN_UP"}
+
+
+def _build_link_creative(config, *, page_id: str, image_hash: str | None) -> dict:
+    """traffic 링크광고 크리에이티브 — copy·link_url을 Meta link_data로 매핑."""
+    link_data: dict = {
+        "message": config.body or config.name or "지금 확인하세요",
+        "name": config.headline or config.name,
+        "link": config.link_url,
+        "call_to_action": {"type": _CTA_BY_OBJECTIVE.get(config.objective, "LEARN_MORE")},
+    }
+    if image_hash:
+        link_data["image_hash"] = image_hash
+    return {"object_story_spec": {"page_id": page_id, "link_data": link_data}}
+
 
 def _created_id(result: ActionResult) -> str | None:
     """생성 응답에서 Meta가 만든 객체 id를 뽑는다 — 다음 단계의 부모로 넘기기 위함.
@@ -285,6 +300,32 @@ class MetaAdsWriter:
             ad_account_id=config.ad_account_id,
         )
 
+    async def create_link_ad(
+        self,
+        config: CampaignConfig,
+        adset_id: str,
+        idem_key: str,
+        *,
+        page_id: str,
+        image_hash: str | None = None,
+    ) -> ActionResult:
+        """traffic 링크광고 생성 — 후보 copy·link_url을 소재로. v1은 PAUSED."""
+        self._require_writable(idem_key)
+        creative = _build_link_creative(config, page_id=page_id, image_hash=image_hash)
+        return await self._dispatch(
+            "create_ad",
+            adset_id,
+            idem_key,
+            {
+                "name": f"{config.name or config.campaign_id}-ad",
+                "adset_id": adset_id,
+                "creative": json.dumps(creative),
+                "status": "PAUSED",
+            },
+            path=f"{normalize_ad_account(config.ad_account_id)}/ads",
+            ad_account_id=config.ad_account_id,
+        )
+
     async def upload_image(
         self, config: CampaignConfig, image_bytes: bytes, filename: str, idem_key: str
     ) -> str | None:
@@ -357,7 +398,15 @@ class MetaAdsWriter:
             return adset
         asid = _created_id(adset)
         if config.objective != "leads":
-            return _tag_campaign(adset, cid)  # 트래픽은 광고세트까지(광고 소재는 후속)
+            if config.link_url:
+                ad = await self.create_link_ad(
+                    config, asid, f"{idem_key}-ad", page_id=page_id, image_hash=config.image_hash
+                )
+                if ad.status is not ResultStatus.SUCCESS:
+                    await self._rollback(cid, idem_key)
+                    return ad
+                return _tag_campaign(ad, cid)
+            return _tag_campaign(adset, cid)  # link_url 없으면 현행(광고세트까지)
         form = await self.create_lead_form(config, f"{idem_key}-form", page_id=page_id)
         fid = _created_id(form)
         if form.status is not ResultStatus.SUCCESS or fid is None:

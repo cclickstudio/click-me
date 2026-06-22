@@ -16,7 +16,7 @@ from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import RedirectResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -26,6 +26,10 @@ from core.config import settings
 from core.db import get_db
 from core.models import CampaignKpiOverride, CreatedCampaign, OrganizationMember, User
 from domain.billing.service.billing_service import BillingError
+from domain.management.adapters.generator.client import (
+    GeneratorUnavailableError,
+    InvalidGenerationError,
+)
 from domain.management.adapters.meta.client import MetaApiError
 from domain.management.adapters.meta.connection_flow import complete_meta_connection
 from domain.management.adapters.meta.oauth import build_login_url
@@ -88,11 +92,13 @@ from domain.management.wiring import (
     build_audit_sink,
     build_diagnosis_agent,
     build_escalation_store,
+    build_generator_client,
     build_idempotency_store,
     build_prediction_reader,
     build_reader,
     build_writer,
 )
+from tools.storage.s3 import download_bytes
 
 router = APIRouter()
 
@@ -1040,6 +1046,124 @@ async def create_campaign_proposal(body: CreateCampaignRequest):
             },
             metrics_as_of=now,
             hypothesis="사용자 신규 캠페인 생성 요청",
+            confidence=1.0,
+            expected_state_version="state_v1",
+            budget_before_krw=0,
+            budget_after_krw=body.daily_budget_krw,
+            max_total_spend_krw=body.daily_budget_krw * body.run_days,
+            expires_at=now + timedelta(minutes=PROPOSAL_TTL_MINUTES),
+            approval_policy_version=APPROVAL_POLICY_VERSION,
+        )
+    )
+    return {"proposal": proposal.model_dump(mode="json")}
+
+
+class FromCandidateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    # self-call URL 경로에 박히므로 안전 문자만 — 경로 주입(../ 등) 차단.
+    generation_id: str = Field(pattern=r"^[A-Za-z0-9_-]+$")
+    candidate_id: str = Field(pattern=r"^[A-Za-z0-9_-]+$")
+    link_url: HttpUrl | None = None
+    name: str
+    daily_budget_krw: int = Field(ge=1)
+    run_days: int = Field(ge=1, le=90)
+    special_ad_category: Literal[
+        "NONE", "HOUSING", "EMPLOYMENT", "CREDIT", "ISSUES_ELECTIONS_POLITICS"
+    ] = "NONE"
+    country: str = "KR"
+    age_min: int = Field(default=18, ge=18, le=65)
+    age_max: int = Field(default=65, ge=18, le=65)
+    gender: Literal["all", "male", "female"] = "all"
+
+
+def _resolve_link_url(req_url: HttpUrl | None) -> str | None:
+    """목적지 URL — 요청값만 사용(없으면 None→422). 조직 기본값 prefill은 프론트 담당(스펙 §5.1)."""
+    return str(req_url) if req_url is not None else None
+
+
+@router.post("/campaign-proposals/from-candidate")
+async def from_candidate(body: FromCandidateRequest):
+    """generator 후보 → CREATE_CAMPAIGN(traffic) 제안. 승인·집행은 /approve·/execute 재사용."""
+    client = build_generator_client(settings)
+    try:
+        cand = await client.get_candidate(body.generation_id, body.candidate_id)
+    except InvalidGenerationError as exc:
+        raise HTTPException(status_code=exc.http_status, detail=exc.detail) from exc
+    except GeneratorUnavailableError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    link_url = _resolve_link_url(body.link_url)
+    if not link_url:
+        raise HTTPException(status_code=422, detail="목적지 URL(link_url)이 필요합니다.")
+
+    try:
+        image_bytes = await download_bytes(cand.s3_key)
+    except Exception as exc:  # noqa: BLE001 — S3 유실/손상은 입력 문제로 거부
+        raise HTTPException(status_code=422, detail="후보 이미지를 읽을 수 없습니다.") from exc
+
+    writer = build_writer(settings)
+    image_hash = await writer.upload_image(
+        _asset_config(name=body.name),
+        image_bytes,
+        "candidate.png",
+        idem_key=f"img_{uuid4().hex[:8]}",
+    )
+    if not getattr(settings, "use_mock", True) and not image_hash:
+        raise HTTPException(status_code=502, detail="Meta 이미지 업로드 실패.")
+
+    policy = await get_campaign_policy(build_reader(settings))
+    min_budget = min_daily_budget_for("traffic", policy)
+    if body.daily_budget_krw < min_budget:
+        raise HTTPException(status_code=422, detail=f"최소 일예산은 ₩{min_budget:,}입니다.")
+
+    now = datetime.now(UTC)
+    ad_account = _resolve_ad_account()
+    genders = {"all": (), "male": (1,), "female": (2,)}[body.gender]
+    categories = () if body.special_ad_category == "NONE" else (body.special_ad_category,)
+    config = CampaignConfig(
+        campaign_id=f"camp_cand_{uuid4().hex[:8]}",
+        tenant_id=TENANT_ID,
+        ad_account_id=ad_account,
+        name=body.name,
+        objective="traffic",
+        daily_budget_krw=body.daily_budget_krw,
+        start_at=now,
+        end_at=now + timedelta(days=body.run_days),
+        image_hash=image_hash,
+        headline=cand.copy.headline,
+        body=cand.copy.body,
+        link_url=link_url,
+        special_ad_categories=categories,
+        countries=(body.country,),
+        age_min=body.age_min,
+        age_max=body.age_max,
+        genders=genders,
+    )
+    snapshot = {
+        "generation_id": body.generation_id,
+        "candidate_id": cand.candidate_id,
+        "copy": cand.copy.model_dump(),
+        "s3_key": cand.s3_key,
+        "image_hash": image_hash,
+        "strategy": cand.strategy,
+        "template_id": cand.template_id,
+        "idx": cand.idx,
+    }
+    proposal = finalize_proposal(
+        ActionProposal(
+            proposal_id=f"prop_{uuid4().hex[:8]}",
+            tenant_id=TENANT_ID,
+            ad_account_id=ad_account,
+            target_object_ids=(ad_account,),
+            action_type="CREATE_CAMPAIGN",
+            action_tier=ActionTier.TIER_3,
+            evidence_metrics={
+                "campaign_config": config.model_dump(mode="json"),
+                "name": body.name,
+                "candidate_snapshot": snapshot,
+            },
+            metrics_as_of=now,
+            hypothesis="후보 기반 신규 캠페인",
             confidence=1.0,
             expected_state_version="state_v1",
             budget_before_krw=0,
