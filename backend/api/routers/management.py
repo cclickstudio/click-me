@@ -20,7 +20,7 @@ from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.routers.billing import DEMO_ORG_ID, get_billing_service
+from api.routers.billing import get_billing_service
 from core.auth import get_current_user
 from core.config import settings
 from core.db import get_db
@@ -1244,7 +1244,6 @@ class ActivateRequest(BaseModel):
     commit_krw: int | None = Field(
         default=None, ge=1
     )  # 이 캠페인에 배정(=spend_cap). 미지정 시 일예산.
-    org_id: str = DEMO_ORG_ID
 
 
 async def _created_campaign_row(db: AsyncSession, campaign_id: str) -> CreatedCampaign | None:
