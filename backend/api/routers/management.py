@@ -84,7 +84,7 @@ from domain.management.detection.exposure_model import (
     find_anomaly_window,
 )
 from domain.management.detection.performance_dx import diagnose_performance
-from domain.management.escalation import EscalationController
+from domain.management.escalation import EscalationController, EscalationRun
 from domain.management.escalation_demo import DemoScenarioDetector
 from domain.management.execution.executor import DEFAULT_ALLOWED_MODES, Executor
 from domain.management.execution.tier import (
@@ -1298,6 +1298,18 @@ async def _require_ad_account(db: AsyncSession, org_id: UUID) -> str:
     raise HTTPException(409, "Meta 광고계정 연결이 필요합니다 — 연결 후 시도하세요.")
 
 
+async def _require_owned_run(
+    escalation: EscalationController, run_id: str, org_id: UUID
+) -> EscalationRun:
+    """사다리 run 소유 검증 — 없으면 404, 타 org면 403, 통과 시 run 반환."""
+    run = await escalation.get_run(run_id)
+    if run is None:
+        raise HTTPException(404, "run을 찾을 수 없습니다.")
+    if run.tenant_id != str(org_id):
+        raise HTTPException(403, "다른 조직의 run입니다.")
+    return run
+
+
 @router.post("/campaigns/{campaign_id}/activate")
 async def activate_campaign(
     campaign_id: str,
@@ -1723,8 +1735,6 @@ def _escalation_payload(outcome) -> dict:
 
 
 class ReEvaluateRequest(BaseModel):
-    tenant_id: str = TENANT_ID
-    ad_account_id: str = _DEMO_AD_ACCOUNT
     campaign_id: str = CAMPAIGN_ID
     now: str | None = None  # ISO8601 — 데모 tick(시간 전진)
 
@@ -1758,14 +1768,9 @@ async def mark_rung_executed(
 ):
     """현재 단계가 집행됐음을 사다리에 알린다 (다음 재평가에서 회복 판정 가능)."""
     org_id = await _require_org_id(user, db)
-    run = await _get_escalation().get_run(body.run_id)
-    if run is None:
-        raise HTTPException(404, "run을 찾을 수 없습니다.")
-    if run.tenant_id != str(org_id):
-        raise HTTPException(403, "다른 조직의 run입니다.")
-    await _get_escalation().on_executed(
-        body.run_id, now=_now_or(body.now), approval_id=body.approval_id
-    )
+    escalation = _get_escalation()
+    await _require_owned_run(escalation, body.run_id, org_id)
+    await escalation.on_executed(body.run_id, now=_now_or(body.now), approval_id=body.approval_id)
     return {"run_id": body.run_id, "rung_status": "executed"}
 
 
@@ -1777,12 +1782,9 @@ async def mark_rung_rejected(
 ):
     """현재 단계가 거절됐음을 알린다 (다음 재평가에서 즉시 다음 단계로 에스컬레이션)."""
     org_id = await _require_org_id(user, db)
-    run = await _get_escalation().get_run(body.run_id)
-    if run is None:
-        raise HTTPException(404, "run을 찾을 수 없습니다.")
-    if run.tenant_id != str(org_id):
-        raise HTTPException(403, "다른 조직의 run입니다.")
-    await _get_escalation().on_rejected(body.run_id)
+    escalation = _get_escalation()
+    await _require_owned_run(escalation, body.run_id, org_id)
+    await escalation.on_rejected(body.run_id)
     return {"run_id": body.run_id, "rung_status": "rejected"}
 
 
