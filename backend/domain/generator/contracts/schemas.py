@@ -20,6 +20,7 @@ class GenerationCreateRequest(BaseModel):
 
     mode: GenerationMode = GenerationMode.CREATE
     project_id: str | None = None
+    format: str = "single"  # single | carousel(카드뉴스 5장)
 
     # 생성모드 입력
     product_name: str = ""
