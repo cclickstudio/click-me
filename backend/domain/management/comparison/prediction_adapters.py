@@ -7,7 +7,10 @@ SimPredictionReader로 교체한다(화면·API 변경 없음).
 
 from __future__ import annotations
 
+import uuid
 from datetime import UTC, datetime
+
+from sqlalchemy import text
 
 from domain.management.comparison.schemas import PredictionSnapshot
 
@@ -46,11 +49,45 @@ class MockPredictionReader:
 
 
 class SimPredictionReader:
-    """실 시뮬 예측 읽기 — 추후 simulation 도메인을 simulation_id로 조회해 채운다(현재 미배선).
+    """실 시뮬 예측 읽기 — simulation_id로 simulation_aggregates를 raw SQL 조회(도메인 경계).
 
-    시뮬 로직 안정화 후 여기서 simulation aggregate를 PredictionSnapshot(source='sim')으로
-    매핑한다. 그전까지는 None(시뮬 미연결)으로 둬 화면이 '연결 대기'를 표시.
+    org 불일치/미완료(aggregate 없음)/미존재/형식오류는 None(연결 대기). simulation 도메인
+    ORM import 금지 — 테이블·컬럼명 문자열로만 접근. as_of는 시뮬 완료시각(UTC aware).
     """
 
+    _SQL = text(
+        """
+        SELECT s.ad_id, s.organization_id, s.completed_at,
+               a.click_intent_rate, a.purchase_intent_avg, a.trust_avg, a.rejection_rate
+        FROM simulations s
+        JOIN simulation_aggregates a ON a.simulation_id = s.id
+        WHERE s.id = :sid
+        """
+    )
+
+    def __init__(self, session_factory) -> None:
+        self._session_factory = session_factory
+
     async def get_prediction(self, simulation_id: str, tenant_id: str) -> PredictionSnapshot | None:
-        return None
+        try:
+            sid = uuid.UUID(str(simulation_id))
+        except (ValueError, TypeError):
+            return None
+        async with self._session_factory() as db:
+            row = (await db.execute(self._SQL, {"sid": str(sid)})).first()
+        if row is None:
+            return None
+        if str(row[1]) != str(tenant_id):  # org 대조
+            return None
+        as_of = row[2].replace(tzinfo=UTC) if row[2] is not None else datetime.now(UTC)
+        return PredictionSnapshot(
+            ad_id=str(row[0]),
+            click_intent_rate=float(row[3]),
+            purchase_intent=float(row[4]),
+            trust_avg=float(row[5]),
+            rejection_rate=float(row[6]),
+            objective_fit_score=None,  # 시뮬 파생값 — 다음 단계
+            grade=None,
+            as_of=as_of,
+            source="sim",
+        )
