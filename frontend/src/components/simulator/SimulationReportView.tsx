@@ -251,6 +251,70 @@ function ObjectiveFitCard({ f }: { f: ObjectiveFit }) {
   );
 }
 
+/* ─── 세그먼트 도넛 — 조각 크기=인원 비중, 색=클릭 의향 신호(PDF와 동일) ─── */
+function SegmentDonut({ segments }: { segments: SegmentCell[] }) {
+  const byN = [...segments].sort((a, b) => (b.n || 0) - (a.n || 0));
+  const total = byN.reduce((s, x) => s + (x.n || 0), 0) || 1;
+  let acc = 0;
+  const stops: string[] = [];
+  const legend: { key: string; col: string; name: string; n: number; cir: number }[] = [];
+  for (const s of byN) {
+    const n = s.n || 0;
+    if (n <= 0) continue;
+    const cir = s.click_intent_rate || 0;
+    const col = s.low_confidence
+      ? '#64748B'
+      : cir >= 0.3
+        ? '#10B981'
+        : cir >= 0.15
+          ? '#F59E0B'
+          : '#EF4444';
+    const start = (acc / total) * 360;
+    acc += n;
+    stops.push(`${col} ${start.toFixed(1)}deg ${((acc / total) * 360).toFixed(1)}deg`);
+    legend.push({
+      key: `${s.age_band}-${s.gender}`,
+      col,
+      name: `${s.age_band} ${GENDER_KO[s.gender] ?? s.gender}`,
+      n,
+      cir,
+    });
+  }
+  if (legend.length === 0) return null;
+  return (
+    <div className='flex items-center gap-4 mb-3 flex-wrap'>
+      <div
+        className='shrink-0 w-[112px] h-[112px] rounded-full grid place-items-center'
+        style={{ background: `conic-gradient(${stops.join(',')})` }}>
+        <div className='w-[64px] h-[64px] rounded-full bg-white dark:bg-[#1C2333] grid place-items-center text-center'>
+          <div>
+            <div className='text-[15px] font-extrabold text-[#191F28] dark:text-[#F2F4F6]'>
+              {total}
+            </div>
+            <div className='text-[8px] text-[#8B95A1] dark:text-[#6B7280]'>명</div>
+          </div>
+        </div>
+      </div>
+      <div className='flex-1 min-w-[180px] space-y-1'>
+        {legend.map(l => (
+          <div key={l.key} className='flex items-center gap-1.5 text-[11px]'>
+            <span
+              className='w-2 h-2 rounded-full shrink-0'
+              style={{ background: l.col }}
+            />
+            <span className='text-[#4E5968] dark:text-[#9CA3AF] truncate'>
+              {l.name}
+            </span>
+            <span className='ml-auto text-[#8B95A1] dark:text-[#6B7280] shrink-0'>
+              {l.n}명 · 클릭 {pct(l.cir)}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /* ─── 연령×성별 세그먼트 히트맵(최대 차별점) ─── */
 function SegmentHeatmap({ segments }: { segments: SegmentCell[] }) {
   if (segments.length === 0) return null;
@@ -270,6 +334,7 @@ function SegmentHeatmap({ segments }: { segments: SegmentCell[] }) {
     <Section
       title='누구에게 통하나 — 연령대×성별'
       tip='같은 광고도 누가 보느냐에 따라 반응이 다릅니다. 셀이 진할수록 클릭 의향이 높아요(얇은 셀은 신뢰 낮음 표시).'>
+      <SegmentDonut segments={segments} />
       <div className='overflow-x-auto'>
         <table className='w-full text-xs border-collapse'>
           <thead>
@@ -406,6 +471,11 @@ function DebateDigestItem({ d, index }: { d: DebateDigest; index?: number }) {
               key={i}
               className='text-[12px] text-[#4E5968] dark:text-[#9CA3AF] bg-white dark:bg-[#1C2333] rounded-lg px-3 py-2 leading-relaxed'>
               “{q.text}”
+              {q.reason && (
+                <span className='block mt-1 text-[10px] text-[#8B95A1] dark:text-[#6B7280] leading-snug'>
+                  ↳ 무엇에/왜 — {q.reason}
+                </span>
+              )}
               {q.persona_name && (
                 <span className='block mt-0.5 text-[10px] text-[#B0B8C1] dark:text-[#4B5563]'>
                   — {q.persona_name}
@@ -639,14 +709,26 @@ export function SimulationReportView({ rv }: { rv: ReportView }) {
             style={{ background: oc }}>
             {vLabel}
           </span>
-          {(rep.plain_summary || rep.headline) && (
+          {/* 전문가용 진단(headline) — verdict 바로 아래 */}
+          {(rep.headline || rep.plain_summary) && (
             <p className='text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6] mt-2 leading-snug'>
-              {rep.plain_summary || rep.headline}
+              {rep.headline || rep.plain_summary}
             </p>
           )}
           <p className='text-xs text-[#8B95A1] dark:text-[#6B7280] mt-1 leading-relaxed'>
             {vDesc}
           </p>
+          {/* 비전문가용 '한눈에 보는 결론' — 가장 마지막(쉬운 말 요약) */}
+          {rep.plain_summary && rep.plain_summary !== rep.headline && (
+            <div className='mt-3 pt-3 border-t border-[#F2F4F6] dark:border-[#252D3D]'>
+              <p className='text-[11px] font-bold text-[#3182F6] mb-1'>
+                🔎 한눈에 보는 결론
+              </p>
+              <p className='text-xs text-[#4E5968] dark:text-[#9CA3AF] leading-relaxed'>
+                {rep.plain_summary}
+              </p>
+            </div>
+          )}
         </div>
       </div>
 
