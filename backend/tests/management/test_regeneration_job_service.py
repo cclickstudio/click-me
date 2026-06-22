@@ -136,3 +136,121 @@ async def test_start_creates_queued_row_and_schedules():
     assert len(scheduled) == 1  # run_job 코루틴이 스케줄됨
 
     scheduled[0].close()  # 실행하지 않고 코루틴을 닫아 RuntimeWarning 방지(부작용 없음)
+
+
+# ── Task 4: get + select ──────────────────────────────────────────────
+
+
+async def _seed_awaiting(svc, *, tenant_id="org-1", token="tok-1"):
+    from domain.management.execution.regeneration_jobs import RegenerationJobRecord
+
+    await svc._store.create(
+        RegenerationJobRecord(
+            id="job-1",
+            tenant_id=tenant_id,
+            campaign_id="camp-1",
+            status=JobStatus.AWAITING_SELECTION,
+            created_at=NOW,
+            updated_at=NOW,
+            selection_token=token,
+            candidates=[{"candidate_id": "c1"}, {"candidate_id": "c2"}],
+        )
+    )
+
+
+class _Proposal:
+    def model_dump(self, mode="json"):
+        return {"proposal_id": "p1"}
+
+
+async def test_select_packages_and_marks_proposed():
+    from domain.management.agents.outcome import RemediationOutcome
+
+    pkg = RemediationOutcome(kind=OutcomeKind.PROPOSED, proposal=_Proposal())
+    agent = _FakeAgent(package_outcome=pkg)
+    svc = _service(agent)
+    await _seed_awaiting(svc)
+    rec = await svc.select("job-1", "c1", tenant_id="org-1")
+    assert rec.status is JobStatus.PROPOSED
+    assert rec.selected_candidate_id == "c1"
+    assert rec.proposal == {"proposal_id": "p1"}
+    assert agent.package_calls == [("tok-1", "org-1", "c1")]
+
+
+async def test_select_same_candidate_is_idempotent():
+    from domain.management.agents.outcome import RemediationOutcome
+
+    agent = _FakeAgent(
+        package_outcome=RemediationOutcome(kind=OutcomeKind.PROPOSED, proposal=_Proposal())
+    )
+    svc = _service(agent)
+    await _seed_awaiting(svc)
+    await svc.select("job-1", "c1", tenant_id="org-1")
+    rec = await svc.select("job-1", "c1", tenant_id="org-1")  # 재시도
+    assert rec.status is JobStatus.PROPOSED
+    assert len(agent.package_calls) == 1  # package는 한 번만(멱등)
+
+
+async def test_select_different_candidate_after_proposed_raises_409():
+    import pytest
+
+    from domain.management.agents.outcome import RemediationOutcome
+    from domain.management.execution.regeneration_jobs import JobNotAwaitingSelection
+
+    agent = _FakeAgent(
+        package_outcome=RemediationOutcome(kind=OutcomeKind.PROPOSED, proposal=_Proposal())
+    )
+    svc = _service(agent)
+    await _seed_awaiting(svc)
+    await svc.select("job-1", "c1", tenant_id="org-1")
+    with pytest.raises(JobNotAwaitingSelection):
+        await svc.select("job-1", "c2", tenant_id="org-1")
+
+
+async def test_select_unknown_candidate_raises_422():
+    import pytest
+
+    from domain.management.execution.regeneration_jobs import CandidateNotInJob
+
+    svc = _service(_FakeAgent())
+    await _seed_awaiting(svc)
+    with pytest.raises(CandidateNotInJob):
+        await svc.select("job-1", "c9", tenant_id="org-1")
+
+
+async def test_select_other_tenant_raises_404():
+    import pytest
+
+    from domain.management.execution.regeneration_jobs import JobTenantMismatch
+
+    svc = _service(_FakeAgent())
+    await _seed_awaiting(svc, tenant_id="org-1")
+    with pytest.raises(JobTenantMismatch):
+        await svc.select("job-1", "c1", tenant_id="org-OTHER")
+
+
+async def test_select_missing_pending_raises_selection_expired():
+    import pytest
+
+    from domain.management.agents.outcome import RemediationOutcome
+    from domain.management.execution.regeneration_jobs import SelectionContextExpired
+
+    # _pending 소실 시 package는 PROPOSED가 아닌 결과를 돌려준다(INPUT_INVALID).
+    agent = _FakeAgent(package_outcome=RemediationOutcome(kind=OutcomeKind.INPUT_INVALID))
+    svc = _service(agent)
+    await _seed_awaiting(svc)
+    with pytest.raises(SelectionContextExpired):
+        await svc.select("job-1", "c1", tenant_id="org-1")
+    rec = await svc._store.get("job-1")
+    assert rec.status is JobStatus.AWAITING_SELECTION  # FAILED로 덮지 않음(설계 §2.3)
+
+
+async def test_get_other_tenant_raises_404():
+    import pytest
+
+    from domain.management.execution.regeneration_jobs import JobTenantMismatch
+
+    svc = _service(_FakeAgent())
+    await _seed_awaiting(svc, tenant_id="org-1")
+    with pytest.raises(JobTenantMismatch):
+        await svc.get("job-1", tenant_id="org-OTHER")

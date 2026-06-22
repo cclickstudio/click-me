@@ -13,9 +13,13 @@ from uuid import uuid4
 
 from domain.management.agents.outcome import OutcomeKind
 from domain.management.execution.regeneration_jobs import (
+    CandidateNotInJob,
+    JobNotAwaitingSelection,
     JobNotFound,
     JobStatus,
+    JobTenantMismatch,
     RegenerationJobRecord,
+    SelectionContextExpired,
 )
 
 if TYPE_CHECKING:
@@ -103,6 +107,42 @@ class RegenerationJobService:
             rec.error = f"unexpected_outcome:{kind.value}"
             rec.finished_at = self._clock()
         await self._touch(rec)
+
+    # ── get + select ─────────────────────────────────────────────
+    async def get(self, job_id: str, *, tenant_id: str) -> RegenerationJobRecord:
+        """tenant 검증 포함 조회. 다른 테넌트면 404(존재 노출 금지)."""
+        rec = await self._require(job_id)
+        if rec.tenant_id != tenant_id:
+            raise JobTenantMismatch(job_id)
+        return rec
+
+    async def select(
+        self, job_id: str, selected_id: str, *, tenant_id: str
+    ) -> RegenerationJobRecord:
+        rec = await self.get(job_id, tenant_id=tenant_id)  # 1·2. 조회 + tenant
+        # 3. status — 멱등/충돌 처리
+        if rec.status is JobStatus.PROPOSED:
+            if rec.selected_candidate_id == selected_id:
+                return rec  # 같은 선택 재시도 → 저장된 proposal 멱등 반환
+            raise JobNotAwaitingSelection(job_id)  # 다른 선택 → 409
+        if rec.status is not JobStatus.AWAITING_SELECTION:
+            raise JobNotAwaitingSelection(job_id)
+        # 4. candidate 멤버십(1차 방어 — package의 claim이 2차)
+        if selected_id not in {c.get("candidate_id") for c in rec.candidates}:
+            raise CandidateNotInJob(selected_id)
+        # 5. package — _pending 소실 시 PROPOSED가 아닌 결과 → 409
+        outcome = await self._agent.package(
+            rec.selection_token, tenant_id=tenant_id, selected_id=selected_id
+        )
+        if outcome.kind is not OutcomeKind.PROPOSED or outcome.proposal is None:
+            raise SelectionContextExpired(job_id)  # job.status는 AWAITING_SELECTION 유지
+        # 6. 저장
+        rec.status = JobStatus.PROPOSED
+        rec.selected_candidate_id = selected_id
+        rec.proposal = outcome.proposal.model_dump(mode="json")
+        rec.finished_at = self._clock()
+        await self._touch(rec)
+        return rec
 
     # ── 내부 헬퍼 ────────────────────────────────────────────────
     async def _require(self, job_id: str) -> RegenerationJobRecord:
