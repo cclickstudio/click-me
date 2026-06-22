@@ -125,11 +125,14 @@ function QualityBadge({ item, label }: { item: QualityCheckItem; label: string }
 function CandidateCard({
   candidate,
   onClick,
+  isCarousel,
 }: {
   candidate: GeneratorCandidate;
   onClick: () => void;
+  isCarousel: boolean;
 }) {
   const letter = VARIANT_LETTERS[candidate.idx] ?? String(candidate.idx + 1);
+  const label = isCarousel ? `슬라이드 ${candidate.idx + 1}` : `${letter}안`;
   return (
     <div
       className="bg-white dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748] rounded-2xl overflow-hidden cursor-pointer group flex hover:border-[#3182F6] hover:shadow-md transition-all"
@@ -140,7 +143,7 @@ function CandidateCard({
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={candidate.image_url?.startsWith("/") ? `${API_BASE}${candidate.image_url}` : candidate.image_url ?? undefined}
-            alt={`광고 ${letter}`}
+            alt={`광고 ${label}`}
             className="w-full h-full object-cover transition-opacity group-hover:opacity-90"
           />
         ) : (
@@ -148,7 +151,7 @@ function CandidateCard({
         )}
         <div className="absolute top-2 left-2">
           <span className="text-[11px] font-semibold bg-black/50 text-white px-2 py-0.5 rounded-full">
-            {letter}안
+            {label}
           </span>
         </div>
       </div>
@@ -156,11 +159,15 @@ function CandidateCard({
         <div className="space-y-2">
           <div className="flex items-center gap-1.5 flex-wrap">
             <span className="text-[11px] bg-[#3182F6] text-white px-2 py-0.5 rounded-full">
-              {strategyLabel(candidate.strategy.strategy_type)}
+              {isCarousel
+                ? (candidate.strategy.strategy_description ?? `슬라이드 ${candidate.idx + 1}`)
+                : strategyLabel(candidate.strategy.strategy_type)}
             </span>
-            <span className="text-[11px] bg-[#F2F4F6] dark:bg-[#252D3D] text-[#8B95A1] dark:text-[#6B7280] px-2 py-0.5 rounded-full">
-              {TEMPLATE_LABELS[candidate.template_id] ?? `템플릿 ${candidate.template_id}`}
-            </span>
+            {!isCarousel && (
+              <span className="text-[11px] bg-[#F2F4F6] dark:bg-[#252D3D] text-[#8B95A1] dark:text-[#6B7280] px-2 py-0.5 rounded-full">
+                {TEMPLATE_LABELS[candidate.template_id] ?? `템플릿 ${candidate.template_id}`}
+              </span>
+            )}
             <span
               className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${
                 candidate.qa_passed
@@ -196,13 +203,16 @@ function CandidateModal({
   candidate,
   selectError,
   onClose,
+  isCarousel,
 }: {
   generationId: string;
   candidate: GeneratorCandidate;
   selectError: string | null;
   onClose: () => void;
+  isCarousel: boolean;
 }) {
   const letter = VARIANT_LETTERS[candidate.idx] ?? String(candidate.idx + 1);
+  const label = isCarousel ? `슬라이드 ${candidate.idx + 1}` : `${letter}안`;
   const qa = candidate.qa_result;
   const qualityKeys = Object.keys(QUALITY_LABELS) as (keyof typeof QUALITY_LABELS)[];
 
@@ -286,7 +296,7 @@ function CandidateModal({
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={candidate.image_url?.startsWith("/") ? `${API_BASE}${candidate.image_url}` : candidate.image_url ?? undefined}
-              alt={`광고 ${letter}`}
+              alt={`광고 ${label}`}
               className="w-full h-full object-contain"
             />
           )}
@@ -294,13 +304,17 @@ function CandidateModal({
 
         <div className="flex-1 overflow-y-auto">
           <div className="sticky top-0 bg-white dark:bg-[#1C2333] border-b border-[#E5E8EB] dark:border-[#2D3748] px-6 py-4 flex items-center gap-2">
-            <span className="text-sm font-bold text-[#191F28] dark:text-[#F2F4F6]">{letter}안</span>
+            <span className="text-sm font-bold text-[#191F28] dark:text-[#F2F4F6]">{label}</span>
             <span className="text-[11px] bg-[#3182F6] text-white px-2 py-0.5 rounded-full">
-              {strategyLabel(candidate.strategy.strategy_type)}
+              {isCarousel
+                ? (candidate.strategy.strategy_description ?? `슬라이드 ${candidate.idx + 1}`)
+                : strategyLabel(candidate.strategy.strategy_type)}
             </span>
-            <span className="text-[11px] bg-[#F2F4F6] dark:bg-[#252D3D] text-[#4E5968] dark:text-[#9CA3AF] px-2 py-0.5 rounded-full">
-              {TEMPLATE_LABELS[candidate.template_id] ?? `템플릿 ${candidate.template_id}`}
-            </span>
+            {!isCarousel && (
+              <span className="text-[11px] bg-[#F2F4F6] dark:bg-[#252D3D] text-[#4E5968] dark:text-[#9CA3AF] px-2 py-0.5 rounded-full">
+                {TEMPLATE_LABELS[candidate.template_id] ?? `템플릿 ${candidate.template_id}`}
+              </span>
+            )}
           </div>
 
           <div className="p-6 space-y-6">
@@ -1518,6 +1532,7 @@ export default function GeneratorPage() {
                       key={c.candidate_id}
                       candidate={c}
                       onClick={() => openCandidate(c)}
+                      isCarousel={(detail.input?.format as string | undefined) === "carousel"}
                     />
                   ))}
                 </div>
@@ -1541,6 +1556,7 @@ export default function GeneratorPage() {
             candidate={modalCandidate}
             selectError={selectError}
             onClose={() => setModalCandidate(null)}
+            isCarousel={(detail.input?.format as string | undefined) === "carousel"}
           />
         )}
       </div>
