@@ -20,7 +20,7 @@
 - 경로 1 — from-simulation 핸드오프가 집행 시 `simulation_id` 자동 기록.
 - 경로 2 — 수동 캠페인 폼의 "내 시뮬 이력 선택" 드롭다운 + 시뮬 이력 조회 API.
 - `objective_fit_score`·`grade` 실값 채움(시뮬 파생 지표 노출).
-- before-after / assistant 도구 엔드포인트의 org 인증 정비(현재 무인증 — 별건).
+- **before-after / assistant 도구 엔드포인트의 org 인증·인가 정비(현재 무인증 — 후속 필수 이슈).** 본 토대의 reader org 대조는 예측 *노출* 방지용일 뿐, 엔드포인트 자체 인증을 대체하지 않는다.
 
 **비범위**
 - 시뮬 실행·KPI 산출 로직(시뮬 도메인) 변경.
@@ -162,7 +162,8 @@ DTO(`PredictionSnapshot`·`BeforeAfter`) 무변경 → 프론트·assistant 응�
 ```python
 simulation_id: str | None = None   # 이 캠페인이 연결될 시뮬 런(UUID 문자열). 없으면 예측 미연결.
 ```
-- UUID 형식 검증(`Field(pattern=...)` 또는 파싱 가드). 잘못된 형식 422.
+- **UUID 형식 검증** — `Field(pattern=...)` 또는 파싱 가드. 잘못된 형식 422.
+- **쓰기 시점 org 검증(방어 심층)** — `simulation_id`가 들어오면 `create_campaign_proposal`이 이미 가진 `org_id`로 raw SQL 대조(`SELECT 1 FROM simulations WHERE id=:sid AND organization_id=:org`). 없거나 타 org면 **422**(잘못된 링크를 영속하지 않음). 미전달이면 검증 생략. → 읽기 시점 org 대조(§5)와 **이중 방어**: 쓰기 때 한 번, 표시 때 한 번.
 
 **`create_campaign_proposal`** — `evidence_metrics`에 형제 키 추가:
 ```python
@@ -191,6 +192,7 @@ CreatedCampaign(
 | 상황 | 처리 |
 |---|---|
 | `simulation_id` 형식 오류(요청) | 422 |
+| `simulation_id` 미존재/타 org (쓰기 시점) | 422 (잘못된 링크 영속 거부) |
 | `simulation_id` 미전달 | `None` 영속 → prediction None(연결 대기) |
 | simulation_id가 가리키는 시뮬 없음 | reader `None` |
 | aggregate 행 없음(미완료) | reader `None` |
