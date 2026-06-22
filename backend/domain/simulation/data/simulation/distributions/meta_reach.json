@@ -32,5 +32,35 @@
     "50-59": 0.0968,
     "60-69": 0.0496,
     "70+": 0.0116
+  },
+  "platform_specifics": {
+    "_role": "IG/FB 플랫폼별 도달 연령 분포(age_bands, 합≈1) — _reach_marginal/_cell_reach가 platform 지정 시 사용, 없으면 통합 age_bands 폴백.",
+    "source": "KOSIS 주로 이용하는 SNS 계정 1순위(2025). 연령밴드별 audience = 응답자수×1순위율 → 정규화. ⚠️ '1순위'(택1)는 침투율 아님 — 플랫폼 audience의 연령 분포 추정. 산출: raw/sns_primary_account_2025_kosis.csv · derive_meta_platform_reach.py.",
+    "needs_real_values": false,
+    "by_age_gender_note": "연령×성별 cross는 본 데이터에 없음(연령·성별 marginal만) → by_age_gender 비움(_cell_reach는 age_bands 폴백). 정밀 cross는 Meta 광고관리자 추산 도달 필요.",
+    "instagram": {
+      "age_bands": {
+        "10-19": 0.1348,
+        "20-29": 0.2595,
+        "30-39": 0.2565,
+        "40-49": 0.1982,
+        "50-59": 0.117,
+        "60-69": 0.0294,
+        "70+": 0.0047
+      },
+      "by_age_gender": {}
+    },
+    "facebook": {
+      "age_bands": {
+        "10-19": 0.066,
+        "20-29": 0.1065,
+        "30-39": 0.1809,
+        "40-49": 0.3028,
+        "50-59": 0.231,
+        "60-69": 0.1031,
+        "70+": 0.0098
+      },
+      "by_age_gender": {}
+    }
   }
 }

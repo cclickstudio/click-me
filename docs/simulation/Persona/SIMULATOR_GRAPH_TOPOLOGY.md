@@ -109,7 +109,7 @@ flowchart LR
 
 | # | 노드 | 하는 일 | 호출 어댑터(주입) |
 |---|---|---|---|
-| 1 | `interpret_ad` | ① VLM 감지(선언 미주입) → ② 의도 교차검증(정합 채점) → ③ `intent_mismatch`·`mismatch_detail` 파생. `ad` + `rubric_scores` 동시 산출 | `interpreter.interpret` + `rubric.evaluate(ad, request)` |
+| 1 | `interpret_ad` | ① VLM 감지(선언 미주입) → ② 의도 교차검증(정합 채점) → ③ `intent_mismatch`·`mismatch_detail` 파생 → ④ **브랜드 인지율(Tier3) 룩업해 `structured_analysis.awareness_by_age` 부착**(스키마 무변경, 미수록 시 폴백, 작업1). `ad` + `rubric_scores` 동시 산출 | `interpreter.interpret` + `rubric.evaluate` + `lookup_brand_awareness` |
 | 2 | `load_panel` | 고정 패널 로드 or 샘플링 → `[Persona]` | `panel.get_or_build` (`CachedPanelProvider` / `PersonaSampler`) |
 | 3 | `react` | fan-out 워커 — 페르소나 1명당 1개 디스패치, 내부에서 inner 그래프 실행 | inner 그래프(`reaction_graph`) |
 | 4 | `aggregate` | QA 통과분만 가중 집계 → `SimulationAggregate` | `aggregator.aggregate` (`BasicAggregator`) |

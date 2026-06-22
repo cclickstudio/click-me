@@ -264,14 +264,14 @@ KPI를 AISAS(Attention → Interest → Search → Action → Share) 단계에 �
 → 위 1~7이 연결되어 **"페르소나가 광고에 반응하는 한 바퀴"**가 완성되는 것이 데모의 심장.
 
 ### 여유 되면
-- 단계 3의 한국 특화 심리 속성 확장
+- 단계 3의 한국 특화 심리 속성 확장 — ✅ `social_values_deep`(체면·동조·눈치) **프레임워크 구현**(Persona 필드·샘플러·반응 프롬프트 배선, **값 비움** → MDIS 사회조사 데이터 게이트)
 - Debate 검문소 / DeepPersona식 5:3:2 stratified sampling(§3.7 과대표집 + 가중 보정)
 - AISAS KPI 매핑 리포트
 
-### 발표 후 (Phase 2+)
-- 옵션 3(IPF 결합분포 추정)으로 성격↔행동 결합 정교화 + 외부 marginal raking 보정(§3.7 고도화)
-- 40대 이상 OCEAN을 BFI-K로 전 연령 확장
-- MDIS 주문형 분석으로 풀 상관 매트릭스 확보
+### 발표 후 (Phase 2+) — 진행 현황(2026-06-22)
+- ✅ **외부 marginal raking 보정**(`tools/sampling/raking.py`, opt-in `rake_to_census`) + **OCEAN→행동 경량 조건화** 적용. 진짜 성격↔행동 IPF joint는 개인단위 연결 데이터 부재로 **보류**.
+- ✅ **40대+ OCEAN 실데이터 주입 완료** — BFI-K 확장이 아니라 **카카오 OSF 원자료(class×age 직접 산출)** 로 해결(B-6, 밴드별 유형비율 + factor 평균). BFI-K는 정성 prior로만.
+- ⬜ MDIS 주문형 분석으로 풀 상관 매트릭스 확보(데이터 게이트).
 
 ---
 

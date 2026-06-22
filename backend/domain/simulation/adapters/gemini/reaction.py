@@ -80,6 +80,8 @@ def _visual_lines(ad: AdInterpretation) -> str:
     if not isinstance(ve, dict):
         return ""
     lines: list[str] = []
+    if ve.get("primary_subject"):
+        lines.append(f"- 핵심 피사체: {ve['primary_subject']}")
     if ve.get("first_impression"):
         lines.append(f"- 첫눈에 띄는 것: {ve['first_impression']}")
     elements = ve.get("elements")
@@ -88,6 +90,84 @@ def _visual_lines(ad: AdInterpretation) -> str:
     if ve.get("color_tone"):
         lines.append(f"- 색감·톤: {ve['color_tone']}")
     return ("\n[광고 비주얼]\n" + "\n".join(lines)) if lines else ""
+
+
+def _awareness_band(age: int) -> str:
+    """나이 → 브랜드 인지율 연령밴드(10-19~60-69). 60+는 60-69 칸을 읽는다."""
+    if age < 20:
+        return "10-19"
+    if age >= 60:
+        return "60-69"
+    return f"{age // 10 * 10}-{age // 10 * 10 + 9}"
+
+
+def _awareness_lines(ad: AdInterpretation, age: int) -> str:
+    """Tier 3 브랜드 인지율(structured_analysis.awareness_by_age)을 내 연령대 기준 반응 힌트 줄로.
+
+    공유 1회 룩업값을 페르소나는 자기 연령대 칸만 읽는다(다양성=나이, 사실=공유). 없으면 "".
+    """
+    sa = ad.structured_analysis or {}
+    aw = sa.get("awareness_by_age")
+    if not isinstance(aw, dict):
+        return ""
+    band = _awareness_band(age)
+    rate = aw.get(band)
+    if rate is None:
+        return ""
+    brand = sa.get("awareness_brand") or "이 광고 브랜드"
+    pct = round(float(rate) * 100)
+    return (
+        f"\n[브랜드 인지도]\n- {brand}는 내 또래({band}) 인지도 약 {pct}%. "
+        "낮으면 낯섦, 높으면 익숙함을 반응에 반영(아는 척·모르는 척 금지)."
+    )
+
+
+def _social_values_lines(persona) -> str:
+    """단계3 한국 특화 심리(체면·동조·눈치)를 반응 힌트 줄로. 비면 ""(현 동작 보존)."""
+    sv = getattr(persona, "social_values_deep", None) or {}
+    if not sv:
+        return ""
+    parts = ", ".join(f"{k} {round(float(v) * 100)}%" for k, v in sv.items())
+    return f"\n[내 성향(한국 특화)]\n- {parts} (높을수록 강함 — 반응·말투에 반영)"
+
+
+_OCEAN_KO = {
+    "openness": "개방성",
+    "conscientiousness": "성실성",
+    "extraversion": "외향성",
+    "agreeableness": "친화성",
+    "neuroticism": "신경증",
+}
+_OCEAN_ORDER = ("openness", "conscientiousness", "extraversion", "agreeableness", "neuroticism")
+
+
+def _ocean_level(z: float) -> str:
+    """표준화 factor score → 정성 수준(LLM이 raw 숫자보다 잘 연기)."""
+    if z >= 1.0:
+        return "매우 높음"
+    if z >= 0.4:
+        return "높음"
+    if z > -0.4:
+        return "보통"
+    if z > -1.0:
+        return "낮음"
+    return "매우 낮음"
+
+
+def _ocean_descriptors(ocean: dict[str, float]) -> str:
+    """OCEAN 5차원 z-score를 '개방성 높음·외향성 매우 높음…' 정성 묘사로. 비면 '(미상)'."""
+    parts = [f"{_OCEAN_KO[d]} {_ocean_level(float(ocean[d]))}" for d in _OCEAN_ORDER if d in ocean]
+    return ", ".join(parts) or "(미상)"
+
+
+def _media_line(mb: dict) -> str:
+    """주 이용 미디어 + 하루 이용 강도(헤비/보통/라이트)를 한 줄로 — 미디어 친숙도 단서."""
+    primary = mb.get("primary_medium", "?")
+    mins = mb.get("daily_media_minutes")
+    if isinstance(mins, (int, float)) and mins > 0:
+        level = "헤비" if mins >= 360 else ("라이트" if mins < 120 else "보통")
+        return f"- 주 이용 미디어: {primary} (하루 약 {int(mins)}분, {level} 이용자)"
+    return f"- 주 이용 미디어: {primary}"
 
 
 class GeminiReactionEngine:
@@ -110,15 +190,17 @@ class GeminiReactionEngine:
             "주어진 광고에 솔직하게 반응하세요. 교과서적 정답이 아니라 이 사람의 실제 반응을.\n\n"
             f"[나]\n- {persona.age}세 {persona.gender}, {persona.region}\n"
             f"- 학력 {edu}, 월소득 {income}\n"
-            f"- OCEAN(표준화, 양수=평균이상): {persona.ocean}\n"
-            f"- 주 이용 미디어: {persona.media_behavior.get('primary_medium', '?')}\n"
+            f"- 성격(OCEAN): {_ocean_descriptors(persona.ocean)}\n"
+            f"{_media_line(persona.media_behavior)}\n"
             f"- 중시 소비가치: {values}\n"
             f"- 서사: {persona.profile_narrative or '(없음)'}\n"
             f"- 지금 노출 맥락: {exposure or '일반'}"
+            f"{_social_values_lines(persona)}"
             f"{_generation_lines(persona.age)}\n\n"
-            f"[광고]\n- 업종: {ad.detected_industry}\n- 메시지: {ad.detected_message}\n"
+            f"[광고]\n- 업종: {ad.detected_industry} / 목적: {ad.detected_objective}\n"
+            f"- 메시지: {ad.detected_message}\n"
             f"- 추정 타깃: {ad.detected_target}{_ad_feature_lines(ad, income)}"
-            f"{_visual_lines(ad)}\n\n"
+            f"{_visual_lines(ad)}{_awareness_lines(ad, persona.age)}\n\n"
             "[출력 — 아래 JSON만, 설명·코드펜스 없이]\n"
             "{\n"
             '  "aisas": {"attention": bool, "interest": bool, "search": bool, '

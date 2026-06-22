@@ -23,6 +23,20 @@ def test_ocean_age_bands_have_tiers_and_samples() -> None:
     # 유형 비율은 실 표본수 기반(미확보 아님), 합≈1.
     assert data["type_proportions"]["needs_real_values"] is False
     assert abs(sum(data["type_proportions"]["default"].values()) - 1.0) < 0.01
+    # 연령밴드별 실측 유형비율(OSF 원자료 class×age 산출) — 6밴드 전부, 각 5유형·합≈1.
+    bab = data["type_proportions"]["by_age_band"]
+    assert set(bab) == {"14-19", "20-29", "30-39", "40-49", "50-59", "60+"}
+    for props in bab.values():
+        assert set(props) == set(data["personality_types"])
+        assert abs(sum(props.values()) - 1.0) < 0.01
+    # 핵심 구배 — 고령일수록 Average↑·취약형(Introverted-Reactive)↓.
+    assert bab["60+"]["Average"] > bab["20-29"]["Average"]
+    assert bab["60+"]["Introverted-Reactive"] < bab["20-29"]["Introverted-Reactive"]
+    # 밴드별 factor 평균(잔차 offset의 실측 타깃) — 6밴드, 성실성↑·신경증↓(성숙원리).
+    bfm = data["band_factor_means"]
+    assert {"14-19", "20-29", "30-39", "40-49", "50-59", "60+"} <= set(bfm)
+    assert bfm["60+"]["conscientiousness"] > bfm["14-19"]["conscientiousness"]
+    assert bfm["60+"]["neuroticism"] < bfm["14-19"]["neuroticism"]
 
 
 def test_population_shares_sum_to_one() -> None:
