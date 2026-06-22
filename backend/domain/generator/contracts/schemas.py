@@ -29,8 +29,9 @@ class GenerationCreateRequest(BaseModel):
 
     # 개선모드 입력
     existing_ad_s3_key: str | None = None
-    simulation_summary: str | None = None
-    fix_requests: str | None = None
+    simulation_summary: str | None = None  # 시뮬 결과 요약(KPI 등)
+    improvement_direction: str | None = None  # 토론 개선 권고("그래서 무엇을 고치면 되나")
+    fix_requests: str | None = None  # 사용자 수정 요청(개선방향 1순위)
 
     # 공통 — 브랜드 / 출력
     brand_color: str | None = None  # hex (#RRGGBB)
