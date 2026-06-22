@@ -39,7 +39,7 @@ OCEAN: O={O:.2f}, C={C:.2f}, E={E:.2f}, A={A:.2f}, N={N:.2f}
 JSON만 출력하세요."""
 
 
-@traceable(name="DeliberationAgent", metadata={"prompt_version": "v1.0"})
+@traceable(name="tools:deliberation", metadata={"prompt_version": "v1.0"})
 async def run_deliberation(persona: Persona, exposure_output: dict, ad_analysis: dict) -> dict:
     strategic = ad_analysis.get("strategic_analysis", {})
     text_a = ad_analysis.get("text_analysis", {})

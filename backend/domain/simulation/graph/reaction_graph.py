@@ -66,6 +66,16 @@ def build_reaction_graph(*, reactor, qa):
 
 
 async def run_reaction(graph, persona: Persona, ad: AdInterpretation) -> PersonaReaction:
-    """서브그래프 1회 실행 → 최종 PersonaReaction 반환."""
-    final = await graph.ainvoke({"persona": persona, "ad": ad, "attempts": 0, "reaction": None})
+    """서브그래프 1회 실행 → 최종 PersonaReaction 반환.
+
+    상위 시뮬레이션 Trace(simulation.simulate) 아래의 페르소나별 하위 Node로 묶인다
+    (run_name=simulation.react). 별도 Trace가 아니라 부모 컨텍스트에 자동 부착된다.
+    """
+    pid = getattr(persona, "id", None) or getattr(persona, "persona_id", None)
+    config: dict = {"run_name": "simulation.react"}
+    if pid:
+        config["metadata"] = {"persona_id": str(pid)}
+    final = await graph.ainvoke(
+        {"persona": persona, "ad": ad, "attempts": 0, "reaction": None}, config=config
+    )
     return final["reaction"]

@@ -25,7 +25,7 @@ likely_resonates_with (OCEAN 특성 목록), likely_resists_with, potential_obje
 trigger_concepts, confidence (0.0~1.0) 를 JSON으로 반환하세요."""
 
 
-@traceable(name="AdUnderstandingAgent", metadata={"prompt_version": "v1.0"})
+@traceable(name="tools:ad_vision", metadata={"prompt_version": "v1.0"})
 async def run_ad_understanding(
     ad_id: str,
     ad_type: str,
