@@ -168,7 +168,10 @@ _regeneration_job_service = None
 
 
 def build_regeneration_job_service(settings):
-    """프로세스 싱글톤. rank·select가 같은 agent 인스턴스를 공유해야 한다(설계 §2.3)."""
+    """프로세스 싱글톤. rank·select가 같은 agent 인스턴스를 공유해야 한다(설계 §2.3).
+
+    최초 호출의 settings로만 초기화 — 이후 호출의 settings는 무시(전 프로세스 단일).
+    """
     global _regeneration_job_service  # noqa: PLW0603
     if _regeneration_job_service is None:
         from domain.management.agents.regeneration_tools import (  # noqa: PLC0415
