@@ -1088,6 +1088,7 @@ class CreateCampaignRequest(BaseModel):
     objective: Literal["traffic", "leads"] = "traffic"  # 트래픽(클릭) / 리드(잠재고객)
     daily_budget_krw: int = Field(ge=1)  # 실제 최소는 핸들러가 라이브 정책(Meta floor)으로 검증
     run_days: int = Field(ge=1, le=90)
+    simulation_id: str | None = None  # 이 캠페인이 연결될 시뮬 런(UUID). 없으면 예측 미연결.
     creative_ad_id: str | None = None
     image_hash: str | None = None  # /ad-image 업로드 결과 — 광고 소재 이미지
     # Meta 타겟·정책 — 폼 입력(단일값) → CampaignConfig로 매핑.
@@ -1160,6 +1161,20 @@ async def create_campaign_proposal(
             status_code=422,
             detail=f"{body.objective} 캠페인의 최소 일예산은 ₩{min_budget:,}입니다 (Meta 정책).",
         )
+    # 시뮬 연결 키 — 형식·org 소유 검증(방어 심층, 읽기 시점 대조와 이중).
+    if body.simulation_id is not None:
+        try:
+            sid = UUID(body.simulation_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail="simulation_id 형식 오류") from exc
+        owned = await db.scalar(
+            text("SELECT 1 FROM simulations WHERE id = :sid AND organization_id = :org"),
+            {"sid": str(sid), "org": str(org_id)},
+        )
+        if not owned:
+            raise HTTPException(
+                status_code=422, detail="해당 시뮬을 찾을 수 없거나 권한이 없습니다."
+            )
     now = datetime.now(UTC)
     ad_account = await _require_ad_account(db, org_id)
     tenant_id = str(org_id)
@@ -1194,6 +1209,7 @@ async def create_campaign_proposal(
             evidence_metrics={
                 "campaign_config": config.model_dump(mode="json"),
                 "name": body.name,
+                "simulation_id": body.simulation_id,
             },
             metrics_as_of=now,
             hypothesis="사용자 신규 캠페인 생성 요청",
