@@ -7,6 +7,20 @@
 > 계약(contracts)·역할 배정·절차를 한 문서에서 확정한다.
 > 표기 규칙 — `[확정]` = 양측 합의 완료 항목 / `[안]` = 본 문서가 제안하는 초안 / `[빈칸]` = 합의 세션에서 채울 항목.
 
+> **[구현 현황 2026-06-21 — 참고]** 합의 내용(아래)은 그대로 두고, 이후 실제 구현된 항목만 요약한다.
+> 매니지먼트 A파트 라인에서 **라이브 캠페인 생성(PAUSED)·이미지 소재·샘플 시안(generatepreviews)·
+> 실측 최소예산(₩1,521 단일원천→프론트 자동)·CVR·ROAS 재정의(전환 일반화·추정 ROAS·목표 미달·하이브리드 입력)·
+> 소프트 삭제(감사)·NeonDB 적재·페이징·요청한도 graceful**이 동작한다. 상세는 `meta-data-sources.md §11`.
+> 원칙: **실데이터는 휴리스틱 금지, 진짜 Meta 정책과 일치 / 정책 변경 시 백엔드 한 곳→프론트 자동 반영.**
+>
+> **확정된 정책값(§9 빈칸은 합의 폼으로 보존, 실제 값은 코드 단일원천):**
+> - Tier(`contracts/policy.py TIER_POLICY`): PAUSE_CAMPAIGN·DECREASE_BUDGET=Tier1 / INCREASE_BUDGET·REPLACE_CREATIVE·CREATE_CAMPAIGN·ACTIVATE_CAMPAIGN·EXPAND_AUDIENCE·CHANGE_BID_STRATEGY=Tier3. 자율 통과=Tier0~1, Tier2 비활성, Tier3 사용자 승인.
+> - TTL: `PROPOSAL_TTL_MINUTES=10` · `APPROVAL_TTL_MINUTES=5`(데모). 예산 권한 기본: `default_limit_krw=10,000,000`. 가드레일 90% 경고/95% 상향/100% 차단.
+> - 진단 에이전트: `management_diagnosis_model="gpt-4o-mini"` · `temperature=0.0`(재현성 고정).
+> - 최소 일예산: 실측 floor **₩1,521** 단일원천(`campaign_policy.py`).
+>
+> **추가 구현(06-21):** writer/execution 전 배선(게재시작 `ACTIVATE_CAMPAIGN`·일시중지·`spend_cap`·예산 조정) · billing(크레딧)·결제 연동 · 예산 페이싱 · 성과 전후 비교(예측 슬롯 vs 실측) · **에이전틱 RAG 어시스턴트**(읽기+행동 제안, 실행은 승인 경로). 상세: `structure-and-roles.md §4·§12`.
+
 ---
 
 ## 0. 정본(Single Source of Truth) 선언 — [빈칸: 양측 서명 필요]
@@ -21,6 +35,12 @@
 **근거(기록용)**: 승인/실행 분리는 executor 단일 장애점을 축소하고(defense in depth),
 A/B 리스크를 중간×2로 균등화한다. 되돌리면 executor가 승인 포함 7단계로 비대해져
 데모 정지 리스크가 한 사람에게 집중된다.
+
+> **[스코프 갱신 2026-06-21 — §0 정본 규칙(되돌림은 사유 명기) 준수]**
+> 전환/ROAS는 본 문서·structure-and-roles §7에서 Won't였으나 **해제**한다. 사유: 멘토 피드백
+> (`docs/superpowers/specs/2026-06-20-cvr-roas-재정의.md`) — 전환을 설치·가입·리드로 재정의하고
+> 추정 ROAS·고객 목표 기준 이상판정을 In scope로 둔다. 신규 anomaly `PERFORMANCE_BELOW_TARGET`
+> (게재 고장 5종과 다른 축, FaultMode 아님) 추가. 계약 불변식(§4)·승인/실행 분리는 무변경.
 
 ---
 
@@ -289,9 +309,10 @@ main
 
 - [ ] 진단 agent tool 호출 상한 — [안]: 1회 진단당 최대 6 호출 (초과 시 INCONCLUSIVE 반환)
 - [ ] 재생성 후보 수 상한 — [안]: 3 (PRD ⚠ 항목 종결)
-- [ ] 재현성: temperature·모델 버전 고정값 명기 — ______
-- [ ] 금지표현 목록 오너 = 🅱 (재생성 가드) / 결정론→agent 핸드오프 임계치 조정권 = 🅰 단독
-  (단, 게이트 #5 오탐률 ≤5% 준수 조건) — [빈칸: 양측 확인]
+- [x] **[확정 2026-06-21] 재현성: temperature·모델 버전 고정값** — `management_diagnosis_model="gpt-4o-mini"`,
+  `management_diagnosis_temperature=0.0` (`core/config.py`). 키 없으면 결정론 코어 폴백(게이트 #9).
+- [x] **[확정 2026-06-21] 결정론→agent 핸드오프 임계치 조정권 = 🅰 단독** (게이트 #5 오탐률 ≤5% 준수 조건).
+  금지표현 목록 오너 = 🅱 (재생성 가드).
 
 ---
 

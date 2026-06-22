@@ -48,7 +48,24 @@ class AnomalyType(StrEnum):
     BUDGET_EXHAUSTED = "budget_exhausted"  # 예산 소진 (결정론 진단 영역)
     SCHEDULE_GAP = "schedule_gap"  # 일정 문제 (결정론)
     LEARNING_PHASE = "learning_phase"  # 학습 기간 (결정론)
+    # 성과 부진 축 — 게재 고장 5종과 다른 축(나가는데 목표 미달). 실데이터·고객 목표 기반
+    # 이라 FaultMode(주입 고장)에는 추가하지 않는다 (06-20 멘토 피드백 §3).
+    PERFORMANCE_BELOW_TARGET = "performance_below_target"
     INCONCLUSIVE = "inconclusive"  # 규칙엔진 판단 불가 → agent 라우팅 (D1)
+
+
+class RelevanceRank(StrEnum):
+    """Ad Relevance Diagnostics 등급 — 메타 본인 채점표 (meta-data-sources §2②).
+
+    경쟁 광고 대비 백분위. quality/engagement/conversion_rate_ranking 공통 값.
+    """
+
+    ABOVE_AVERAGE = "above_average"
+    AVERAGE = "average"
+    BELOW_AVERAGE_35 = "below_average_35"
+    BELOW_AVERAGE_20 = "below_average_20"
+    BELOW_AVERAGE_10 = "below_average_10"
+    UNKNOWN = "unknown"
 
 
 class DiagnosisSource(StrEnum):

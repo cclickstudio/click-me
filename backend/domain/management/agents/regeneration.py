@@ -181,7 +181,13 @@ class RemediationAgent:
     ) -> ActionProposal | None:
         """진단 수신 → (LangGraph) 생성 → 가드 → 채점 → 최선 후보로 패키징."""
         final: RemediationState = await self._graph.ainvoke(
-            {"diagnosis": diagnosis, "context": context}
+            {"diagnosis": diagnosis, "context": context},
+            {
+                # LangSmith: 재생성 에이전트(LangGraph)로 식별 — re_evaluate 트레이스의 자식.
+                "run_name": "regeneration_agent",
+                "tags": ["management", "regeneration-agent"],
+                "metadata": {"campaign_id": diagnosis.campaign_id},
+            },
         )
         return final.get("proposal")
 

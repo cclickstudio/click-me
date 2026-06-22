@@ -21,16 +21,16 @@ const color = (p: string) => COLORS[p] ?? '#8B95A1';
 export default function PlatformDonut({ rows }: { rows: PlatformMetrics[] }) {
   const total = rows.reduce((a, r) => a + r.impressions, 0) || 1;
   return (
-    <div className="flex flex-col items-center gap-4">
-      <div className="h-40 w-40">
+    <div className="flex h-full w-full flex-col items-center gap-4">
+      <div className="min-h-[9rem] w-full flex-1">
         <ResponsiveContainer width="100%" height="100%">
           <PieChart>
             <Pie
               data={rows}
               dataKey="impressions"
               nameKey="platform"
-              innerRadius={48}
-              outerRadius={70}
+              innerRadius="52%"
+              outerRadius="78%"
               paddingAngle={2}
               stroke="none"
             >
@@ -45,7 +45,7 @@ export default function PlatformDonut({ rows }: { rows: PlatformMetrics[] }) {
           </PieChart>
         </ResponsiveContainer>
       </div>
-      <div className="w-full max-w-xl space-y-1.5">
+      <div className="w-full shrink-0 space-y-1.5">
         {rows.map((r) => (
           <div key={r.platform} className="flex items-center justify-between gap-3 text-[11px]">
             <span className="flex items-center gap-1.5 font-medium text-[#191F28] dark:text-[#F2F4F6]">
