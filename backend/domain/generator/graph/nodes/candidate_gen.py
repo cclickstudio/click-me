@@ -9,6 +9,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import uuid
 
 from langchain_core.runnables import RunnableConfig
@@ -23,10 +24,17 @@ from domain.generator.contracts.pipeline_schemas import (
 from domain.generator.graph.nodes import emit_progress
 from domain.generator.graph.state import GenerationState
 from domain.generator.pipeline.copy_generator import generate_copy
-from domain.generator.pipeline.image_generator import generate_image
+from domain.generator.pipeline.image_generator import (
+    composite_logo,
+    generate_image,
+    remove_product_background,
+)
 from domain.generator.pipeline.multimodal_generator import generate_image_and_copy
 from domain.generator.pipeline.quality_checker import check_quality
-from tools.storage.s3 import candidate_key, upload_bytes
+from domain.generator.pipeline.text_overlay import render_ad_text
+from tools.storage.s3 import candidate_key, download_bytes, upload_bytes
+
+logger = logging.getLogger("clickme")
 
 _VARIANT_IDS = ["A", "B", "C"]
 
@@ -49,15 +57,35 @@ async def generate_candidates(state: GenerationState, config: RunnableConfig) ->
     gen_size = _map_ad_size(width, height)
     brand_color = req.get("brand_color")
     tone = req.get("tone_and_manner")
+    product_image_bytes: bytes | None = state.get("product_image_bytes")
+
+    logo_s3_key = req.get("brand_logo_s3_key")
+    logo_image_bytes: bytes | None = None
+    if logo_s3_key:
+        try:
+            logo_image_bytes = await download_bytes(logo_s3_key)
+        except Exception:
+            logo_image_bytes = None
 
     done = 0
     multimodal = settings.generator_gen_mode == "multimodal"
 
+    # 상품 이미지 누끼는 후보 3종 공통 → gather 전 1회만 실행 (API 호출 절약).
+    # 상품 이미지가 있으면 모드와 무관하게 컴포즈(마스크 인페인팅) 경로를 탄다.
+    product_cutout_bytes: bytes | None = None
+    if product_image_bytes is not None:
+        try:
+            product_cutout_bytes = await remove_product_background(product_image_bytes)
+        except Exception:
+            logger.exception("상품 누끼 실패 — 상품 없이 일반 생성으로 진행")
+            product_cutout_bytes = None
+
     async def build(idx: int, variant_id: str, plan: StrategyPlan) -> dict:
         nonlocal done
 
-        if multimodal:
-            # 1+2. 한 모델 호출로 카피·이미지 동시 생성 (스타일 일관성), 이후 품질검증
+        # multimodal 한방 생성은 상품 픽셀 보존이 불가하므로, 상품 이미지가 있으면 사용하지 않는다.
+        if multimodal and product_cutout_bytes is None:
+            # 1+2. 한 모델 호출로 카피·이미지 동시 생성 (스타일 일관성)
             image_bytes, ad_copy = await generate_image_and_copy(
                 product_analysis=product_analysis,
                 strategy=plan.strategy,
@@ -65,9 +93,6 @@ async def generate_candidates(state: GenerationState, config: RunnableConfig) ->
                 size=gen_size,
                 brand_color=brand_color,
                 tone=tone,
-            )
-            quality_report = await check_quality(
-                ad_copy=ad_copy, target=product_analysis.target_audience
             )
         else:
             # 1. 카피 먼저 생성 (이미지 생성 전 텍스트 확정)
@@ -81,22 +106,45 @@ async def generate_candidates(state: GenerationState, config: RunnableConfig) ->
                 template=plan.template,
             )
 
-            # 2. 이미지 생성 + 품질검증 병렬 (단계 분리)
-            image_bytes, quality_report = await asyncio.gather(
-                generate_image(
-                    product_analysis=product_analysis,
-                    strategy=plan.strategy,
-                    template=plan.template,
-                    size=gen_size,
-                    brand_color=brand_color,
-                    tone=tone,
-                ),
-                check_quality(ad_copy=ad_copy, target=product_analysis.target_audience),
+            # 2. 이미지 생성 — 상품 이미지가 있으면 마스크 인페인팅으로 상품 보존하며 생성
+            image_bytes = await generate_image(
+                product_analysis=product_analysis,
+                strategy=plan.strategy,
+                template=plan.template,
+                size=gen_size,
+                brand_color=brand_color,
+                tone=tone,
+                product_cutout_bytes=product_cutout_bytes,
+                headline=ad_copy.headline,
+                body=ad_copy.body,
+                cta=ad_copy.cta,
             )
 
-        # 3. S3 업로드
+        # 3. 카피 텍스트를 PIL로 렌더 (AI는 텍스트 미생성 — 잘림·오탈자 방지)
+        image_bytes = render_ad_text(
+            image_bytes,
+            headline=ad_copy.headline,
+            body=ad_copy.body,
+            cta=ad_copy.cta,
+            template=plan.template,
+            brand_color=brand_color,
+        )
+
+        # 4. 품질검증 (순수 동기 함수)
+        quality_report = check_quality(ad_copy=ad_copy, target=product_analysis.target_audience)
+
+        # 5. 로고 합성 (brand_logo_s3_key 제공 시)
+        if logo_image_bytes is not None:
+            image_bytes = composite_logo(image_bytes, logo_image_bytes, plan.template)
+
+        # 6. S3 업로드
         s3_key = candidate_key(generation_id, idx)
-        await upload_bytes(image_bytes, s3_key, content_type="image/png")
+        try:
+            await upload_bytes(image_bytes, s3_key, content_type="image/png")
+            logger.info("S3 업로드 완료: key=%s", s3_key)
+        except Exception:
+            logger.exception("S3 업로드 실패: key=%s", s3_key)
+            raise
 
         done += 1
         emit_progress(config, "candidates", 40 + done * 12, f"광고 후보 생성 중 ({done}/3)")
@@ -121,7 +169,7 @@ async def generate_candidates(state: GenerationState, config: RunnableConfig) ->
     results = await asyncio.gather(
         *[
             build(i, vid, plan)
-            for i, (vid, plan) in enumerate(zip(_VARIANT_IDS, plans, strict=False))
+            for i, (vid, plan) in enumerate(zip(_VARIANT_IDS, plans, strict=True))
         ]
     )
     candidates = sorted(results, key=lambda c: c["idx"])

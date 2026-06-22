@@ -22,7 +22,9 @@ Analyze this advertisement background image and return structured fields:
 _llm = build_vision_llm(temperature=0.1).with_structured_output(ImageAnalysis)
 
 
-@traceable(name="ImageAnalyzer", metadata={"pipeline": "generator"})
+@traceable(
+    name="generator:analyze_image", metadata={"pipeline": "generator", "prompt_version": "v1.0"}
+)
 async def analyze_image(image_bytes: bytes) -> ImageAnalysis:
     b64 = base64.b64encode(image_bytes).decode()
     message = HumanMessage(

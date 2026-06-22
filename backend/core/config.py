@@ -97,6 +97,9 @@ class Settings(BaseSettings):
     # use_mock=True면 reader=Mock·writer=DRY_RUN (Meta 접촉 0, wiring.py 분기).
     # 실집행은 use_mock=False + management_execution_mode=live + 토큰일 때만.
     management_execution_mode: str = "dry_run"  # dry_run | validate_only | live
+    # 진단 agent LLM ReAct 재현성 고정값 (합의문서 P6 — 빈칸 기입). 키 없으면 결정론 폴백.
+    management_diagnosis_model: str = "gpt-4o-mini"
+    management_diagnosis_temperature: float = 0.0
 
     # Generator (광고 생성)
     # 생성 방식: pipeline=카피·이미지 단계 분리 / multimodal=한 모델이 이미지+카피 동시 생성
@@ -110,7 +113,7 @@ class Settings(BaseSettings):
     generator_vision_model: str = "gpt-4o"
     # 이미지 생성(배경)
     generator_image_provider: str = "openai"  # openai | google_genai
-    generator_image_model: str = "gpt-image-1"
+    generator_image_model: str = "gpt-image-2"
     generator_image_quality: str = "medium"  # openai 전용(low|medium|high), google_genai는 무시
     generator_image_timeout: float = 120.0  # 무거운 이미지 모델 대비 호출 타임아웃(초)
     # 이미지 편집(텍스트존 인페인팅)

@@ -6,6 +6,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useTheme } from './ThemeProvider';
 import { useAuth } from './AuthProvider';
 import { getToken } from '@/lib/authApi';
+import CreditBalance from './CreditBalance';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
@@ -251,6 +252,12 @@ export default function Sidebar() {
 
       {/* 하단 */}
       <div className="px-4 py-4 border-t border-[#E5E8EB] dark:border-[#2D3748] shrink-0 space-y-1">
+        {/* ClickMe 크레딧 잔액 — 광고 집행 한도. 충전(/payment)로 이동. */}
+        {user && (
+          <div className="mb-2">
+            <CreditBalance />
+          </div>
+        )}
         {user ? (
           <div className="px-3 py-2.5 rounded-xl bg-[#F9FAFB] dark:bg-[#252D3D] mb-1">
             <p className="text-xs font-semibold text-[#191F28] dark:text-[#F2F4F6] truncate">{user.name}</p>

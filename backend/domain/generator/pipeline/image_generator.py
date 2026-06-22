@@ -4,13 +4,16 @@ import io
 from google import genai
 from google.genai import types as genai_types
 from langsmith import traceable
+from langsmith.wrappers import wrap_openai
 from openai import AsyncOpenAI
+from PIL import Image
 
 from core.config import settings
 from domain.generator.contracts.enums import AdSize, AdStrategy, TemplateType
 from domain.generator.contracts.pipeline_schemas import ProductAnalysis
 
-_openai_client = AsyncOpenAI(timeout=settings.generator_image_timeout)
+# wrap_openai로 감싸 이미지/Responses 호출의 토큰·비용 usage가 LangSmith에 기록되게 한다.
+_openai_client = wrap_openai(AsyncOpenAI(timeout=settings.generator_image_timeout))
 
 _GEMINI_NATIVE_ASPECT_RATIO: dict[AdSize, str] = {
     AdSize.SQUARE: "1:1",
@@ -89,34 +92,54 @@ _TEMPLATE_STYLE: dict[TemplateType, str] = {
 # gpt-image-2가 텍스트를 이미지에 직접 렌더링할 때 각 템플릿의 레이아웃을 안내한다.
 _TEXT_LAYOUT: dict[TemplateType, str] = {
     TemplateType.A: (
-        "DESIGN LAYOUT — Bottom gradient overlay:\n"
-        "- Upper 62%: product photography, clean background, product centered\n"
-        "- Bottom 38%: dark-to-transparent gradient overlay (part of the composition)\n"
-        "- Within the overlay, place text top-to-bottom:\n"
-        "  · HEADLINE: bold, ~28pt, white, horizontally centered, at ~65% from top\n"
-        "  · BODY: regular, ~16pt, white/light gray, centered, just below headline\n"
-        "  · CTA BUTTON: rounded rectangle, brand color fill, white bold text, "
-        "centered, near very bottom"
+        "DESIGN LAYOUT — Bottom dark overlay:\n"
+        "- Upper 55%: product photography, clean background, product centered\n"
+        "- Bottom 45%: SOLID semi-opaque dark panel (rgba(0,0,0,0.75)), no gradient\n"
+        "- Stack THREE elements top-to-bottom inside the dark panel, each in its own zone:\n"
+        "  · ZONE 1 (top 30% of panel): HEADLINE — bold, compact size, white, horizontally centered\n"
+        "  · ZONE 2 (middle 32% of panel): BODY — regular, smaller than headline, white/light gray, centered\n"
+        "  · ZONE 3 (bottom 38% of panel): CTA BUTTON — rounded rectangle, brand color fill, "
+        "white bold text, centered, 20px clearance from bottom edge\n"
+        "MANDATORY RULES:\n"
+        "1. ALL THREE elements must be 100% visible within the dark panel — no clipping.\n"
+        "2. NO element may touch or cross the image boundary.\n"
+        "3. CTA BUTTON is NOT optional. If it does not fit, make it and all text smaller.\n"
+        "4. Do NOT use decorative fonts or large display sizes — keep text compact and readable."
     ),
     TemplateType.B: (
         "DESIGN LAYOUT — Top and bottom solid bands:\n"
-        "- TOP BAND (top 17%): solid dark panel\n"
-        "  · HEADLINE: bold, ~22pt, white, horizontally centered in band\n"
-        "- MIDDLE (17%–76%): product photography only, no text\n"
-        "- BOTTOM BAND (bottom 24%): solid dark panel\n"
-        "  · BODY: regular, ~14pt, white, centered in upper portion of band\n"
-        "  · CTA BUTTON: rounded button, brand color, white bold text, "
-        "centered in lower portion of band"
+        "- TOP BAND (top 22%): solid dark panel (rgba(0,0,0,0.85))\n"
+        "  · HEADLINE: bold, compact size, white, horizontally centered in band\n"
+        "- MIDDLE (22%–60%): product photography ONLY, no text\n"
+        "- BOTTOM BAND (bottom 40%): solid dark panel\n"
+        "  · SUB-ZONE A (top 55% of bottom band): BODY TEXT — regular, compact size, white, centered\n"
+        "  · SUB-ZONE B (bottom 45% of bottom band): CTA BUTTON — rounded button, brand color, "
+        "white bold text, centered, 20px clearance from bottom edge\n"
+        "MANDATORY RULES:\n"
+        "1. HEADLINE must be fully visible inside top band — no clipping.\n"
+        "2. BODY TEXT must be fully visible inside sub-zone A — no clipping.\n"
+        "3. CTA BUTTON must be fully visible inside sub-zone B — it is NOT optional.\n"
+        "4. NO element may touch or cross the image boundary.\n"
+        "5. If any element does not fit, reduce its font size until it fits."
     ),
     TemplateType.C: (
         "DESIGN LAYOUT — Left color panel + right product photo:\n"
-        "- LEFT PANEL (left 46%): solid brand color background\n"
-        "  · HEADLINE: bold, ~24pt, white, left-aligned with padding, upper third\n"
-        "  · BODY: regular, ~14pt, white, left-aligned, below headline\n"
-        "  · CTA BUTTON: white rounded rectangle, brand color text, "
-        "left-aligned, near bottom of panel\n"
+        "- LEFT PANEL (left 46%): solid brand color background. "
+        "All text elements must stay within this panel with minimum 20px padding from all panel edges.\n"
+        "  · HEADLINE: bold, compact size, white, left-aligned (20px from left edge), "
+        "placed in the upper section (top 10%–35% of image height). Max 2 lines\n"
+        "  · BODY: regular, smaller than headline, white, left-aligned, "
+        "placed below headline with at least 12px gap\n"
+        "  · CTA BUTTON: white rounded rectangle, brand color text, left-aligned, "
+        "placed in the lower section (70%–85% of image height). "
+        "Button must have at least 20px clearance from bottom edge\n"
         "- GRADIENT ZONE (46%–53%): smooth transition from solid color to transparent\n"
-        "- RIGHT SIDE (53%–100%): product photography, product clearly visible and centered"
+        "- RIGHT SIDE (53%–100%): product photography, product clearly visible and centered\n"
+        "MANDATORY RULES:\n"
+        "1. ALL THREE elements must be 100% visible inside the left panel.\n"
+        "2. Elements must not overlap each other — maintain clear vertical spacing.\n"
+        "3. NO element may touch or cross any image boundary.\n"
+        "4. CTA BUTTON is NOT optional — it must always appear."
     ),
 }
 
@@ -141,6 +164,23 @@ _TEMPLATE_SAFE_ZONES: dict[TemplateType, str] = {
         "Place the product clearly in the RIGHT 47% of the frame "
         "(center the product at approximately 75-80% from the left edge). "
         "No important visual elements in the left 53% of the frame."
+    ),
+}
+
+# ── [컴포즈 모드] 텍스트 배치 가이드 (인페인팅) ───────────────────────────────
+# 상품은 이미 캔버스에 배치되어 잠겨 있다. 텍스트/배경을 상품과 겹치지 않게 배치하도록 안내한다.
+_TEMPLATE_SAFE_ZONES_COMPOSE: dict[TemplateType, str] = {
+    TemplateType.A: (
+        "LAYOUT: The locked product sits in the upper area. "
+        "Build the background around it and keep the bottom 38% suitable for a text overlay."
+    ),
+    TemplateType.B: (
+        "LAYOUT: The locked product sits in the middle area. "
+        "Keep the top 17% and bottom 24% suitable for text banners."
+    ),
+    TemplateType.C: (
+        "LAYOUT: The locked product sits on the RIGHT side. "
+        "Keep the left 46% suitable for a text panel."
     ),
 }
 
@@ -256,15 +296,90 @@ KOREAN TEXT — render EXACTLY as written, character by character (zero toleranc
 
 Typography rules:
 - All text must be in Korean (한국어) — every character must be a valid, correctly spelled Korean word
-- Headline: bold weight, large size, high contrast (white or bright on dark background)
-- Body: regular weight, smaller size, clean and readable
+- Headline: bold weight, high contrast (white on dark background) — size must fit within its zone
+- Body: regular weight, smaller than headline — size must fit within its zone
 - CTA: bold, placed inside a clearly visible rounded button shape
+- NEVER use a font size so large that text overflows its designated zone
 - Text edges must be sharp and pixel-perfect — no blur, no hallucinated characters
+- NEVER use a font size so large that text overflows its designated zone
 
 Output requirements:
 - Commercial advertising quality, modern and clean aesthetic for Meta/Instagram
 - Product clearly visible and well-lit
-- Text is fully integrated into the composition, not an afterthought"""
+- CRITICAL: ALL three text elements (HEADLINE, BODY, CTA BUTTON) must be COMPLETELY visible within the image — zero clipping or cutoff allowed under any circumstance"""
+
+# ── [컴포즈 모드] 프롬프트 (마스크 인페인팅) ─────────────────────────────────
+# 실제 상품 PNG를 캔버스에 미리 배치하고 마스크로 잠근 뒤 Edit API에 넘긴다.
+# AI는 잠긴 상품은 그대로 두고, 그 주위 배경·조명·그림자(+텍스트)를 한 패스로 생성한다.
+# → 상품 픽셀은 보존되면서 장면에 자연스럽게 통합된다.
+_COMPOSE_PROMPT_TEMPLATE = """\
+This image already contains a REAL product photo that is LOCKED and must not change.
+DO NOT alter, move, redraw, recolor, or stylize the product in any way.
+If the product has its own text, logo, or label printed on it, PRESERVE it exactly as pixels —
+never redraw, re-spell, or hallucinate any character on the product.
+Your task: generate a professional {platform} advertisement BACKGROUND around the locked product.
+
+Visual style: {style}
+Photography style: {photo_style}
+Strategy: {strategy_desc}
+
+Product: {product_name}
+{core_values_line}Target audience: {target_audience}
+{color_line}
+{tone_line}
+
+Background direction:
+{product_visual_context}
+
+{safe_zone}
+
+Requirements:
+- Keep the locked product EXACTLY as-is — zero modification to its pixels, including any text on it
+- Build a cohesive background that matches the product's lighting and perspective
+- Add a natural, soft contact shadow under the product so it sits naturally in the scene
+- STRICTLY NO new text, letters, words, numbers, or typography anywhere in the background
+- No logos, watermarks, URLs, or QR codes
+- Clean, modern aesthetic suitable for Meta/Instagram feed"""
+
+_COMPOSE_PROMPT_TEMPLATE_WITH_TEXT = """\
+This image already contains a REAL product photo that is LOCKED and must not change.
+DO NOT alter, move, redraw, recolor, or stylize the product in any way.
+Your task: generate a professional Korean {platform} advertisement around the locked product —
+the background scene AND the Korean ad text overlay.
+
+Visual style: {style}
+Photography style: {photo_style}
+Strategy: {strategy_desc}
+
+Product: {product_name}
+{core_values_line}Target audience: {target_audience}
+{color_line}
+{tone_line}
+
+Background direction:
+{product_visual_context}
+
+{text_layout}
+
+KOREAN TEXT — render EXACTLY as written, character by character (zero tolerance for typos):
+  Headline : "{headline}"
+  Body     : "{body}"
+  CTA      : "{cta}"
+
+Typography rules:
+- All text must be in Korean (한국어) — every character must be a valid, correctly spelled Korean word
+- Headline: bold weight, high contrast (white on dark background) — size must fit within its zone
+- Body: regular weight, smaller than headline — size must fit within its zone
+- CTA: bold, placed inside a clearly visible rounded button shape
+- NEVER use a font size so large that text overflows its designated zone
+
+Output requirements:
+- Keep the locked product EXACTLY as-is — zero modification to its pixels
+- Add a natural soft contact shadow so the product sits naturally in the scene
+- Place text only in its designated zones — never overlap the product
+- Commercial advertising quality, modern and clean aesthetic for Meta/Instagram
+- CRITICAL: ALL three text elements (HEADLINE, BODY, CTA BUTTON) must be COMPLETELY visible — zero clipping"""
+
 
 # ── [텍스트 포함 개선 모드] 프롬프트 ────────────────────────────────────────
 # 원본 이미지를 Edit API로 수정하면서 텍스트도 함께 삽입할 때 사용.
@@ -292,15 +407,17 @@ KOREAN TEXT — render EXACTLY as written, character by character (zero toleranc
 
 Typography rules:
 - All text in Korean (한국어) — must be valid, correctly spelled Korean
-- Headline: bold, large, high contrast
-- Body: regular, smaller, readable
+- Headline: bold, high contrast — size must fit within its designated zone
+- Body: regular, smaller than headline — size must fit within its designated zone
 - CTA: bold, rounded button shape, clearly clickable
+- NEVER use a font size so large that text overflows its designated zone
 
 Requirements:
 - PRESERVE original product placement and visual identity
 - Apply improvement direction changes
 - Add text zones as specified in the layout above
-- Keep product clearly recognizable"""
+- Keep product clearly recognizable
+- CRITICAL: ALL three text elements (HEADLINE, BODY, CTA BUTTON) must be COMPLETELY visible within the image — zero clipping or cutoff allowed"""
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -341,7 +458,9 @@ def _build_product_visual_context(
 # 전략·템플릿·사이즈 등 입력값을 받아 프롬프트를 조립하고,
 # GPT Image API를 호출한 뒤 base64 디코딩된 이미지 bytes를 반환한다.
 # ─────────────────────────────────────────────────────────────────────────────
-@traceable(name="ImageGenerator", metadata={"pipeline": "generator"})
+@traceable(
+    name="generator:generate_image", metadata={"pipeline": "generator", "prompt_version": "v1.0"}
+)
 async def generate_image(
     product_analysis: ProductAnalysis,
     strategy: AdStrategy,
@@ -350,6 +469,7 @@ async def generate_image(
     brand_color: str | None = None,
     tone: str | None = None,
     original_image_bytes: bytes | None = None,
+    product_cutout_bytes: bytes | None = None,
     improvement_context: str | None = None,
     headline: str | None = None,
     body: str | None = None,
@@ -361,7 +481,66 @@ async def generate_image(
         else "Color palette: modern, clean, professional"
     )
     tone_line = f"Tone and manner: {tone}" if tone else "Tone: clean, professional, trustworthy"
-    has_text = bool(headline and body and cta)
+    # 텍스트는 이미지 생성 후 text_overlay(PIL)로 렌더한다 — AI는 글자를 그리지 않는다
+    # (확산모델 텍스트 잘림·오탈자 방지). 모든 경로(생성/컴포즈/개선)가 텍스트 없는 프롬프트를 탄다.
+    has_text = False
+    core_values_line = (
+        f"Core values: {', '.join(product_analysis.core_values)}\n"
+        if product_analysis.core_values
+        else ""
+    )
+
+    # ── [컴포즈 모드] 마스크 인페인팅 — 상품 잠금 + 주변 배경/텍스트 생성 ──────────
+    if product_cutout_bytes is not None:
+        target_audience = product_analysis.target_audience or "general audience"
+        product_visual_context = _build_product_visual_context(product_analysis, brand_color)
+
+        if has_text:
+            prompt = _COMPOSE_PROMPT_TEMPLATE_WITH_TEXT.format(
+                platform="Meta/Instagram",
+                style=_TEMPLATE_STYLE[template],
+                photo_style=_STRATEGY_PHOTO_STYLE[strategy],
+                strategy_desc=_STRATEGY_DESCRIPTIONS[strategy],
+                product_name=product_analysis.product_name,
+                core_values_line=core_values_line,
+                target_audience=target_audience,
+                color_line=color_line,
+                tone_line=tone_line,
+                product_visual_context=product_visual_context,
+                text_layout=_TEXT_LAYOUT[template],
+                headline=headline,
+                body=body,
+                cta=cta,
+            )
+        else:
+            prompt = _COMPOSE_PROMPT_TEMPLATE.format(
+                platform="Meta/Instagram",
+                style=_TEMPLATE_STYLE[template],
+                photo_style=_STRATEGY_PHOTO_STYLE[strategy],
+                strategy_desc=_STRATEGY_DESCRIPTIONS[strategy],
+                product_name=product_analysis.product_name,
+                core_values_line=core_values_line,
+                target_audience=target_audience,
+                color_line=color_line,
+                tone_line=tone_line,
+                product_visual_context=product_visual_context,
+                safe_zone=_TEMPLATE_SAFE_ZONES_COMPOSE[template],
+            )
+
+        base_png, mask_png = _build_inpaint_base_and_mask(product_cutout_bytes, template, size)
+        base_file = io.BytesIO(base_png)
+        base_file.name = "base.png"
+        mask_file = io.BytesIO(mask_png)
+        mask_file.name = "mask.png"
+        response = await _openai_client.images.edit(
+            model=settings.generator_image_model,
+            image=base_file,
+            mask=mask_file,
+            prompt=prompt,
+            n=1,
+            size=size.value,
+        )
+        return base64.b64decode(response.data[0].b64_json)
 
     # ── [개선 모드] Edit API ───────────────────────────────────────────────────
     if original_image_bytes is not None:
@@ -409,11 +588,6 @@ async def generate_image(
         return base64.b64decode(response.data[0].b64_json)
 
     # ── [생성 모드] Generate API ──────────────────────────────────────────────
-    core_values_line = (
-        f"Core values: {', '.join(product_analysis.core_values)}\n"
-        if product_analysis.core_values
-        else ""
-    )
     target_audience = product_analysis.target_audience or "general audience"
     product_visual_context = _build_product_visual_context(product_analysis, brand_color)
 
@@ -456,20 +630,23 @@ async def generate_image(
 
     provider = settings.generator_image_provider
     if provider == "openai":
-        return await _generate_with_openai(prompt, size)
-    if provider == "google_genai":
-        return await _generate_with_gemini(prompt, size)
-    raise NotImplementedError(f"지원하지 않는 GENERATOR_IMAGE_PROVIDER: {provider!r}")
+        image_bytes = await _generate_with_openai(prompt, size)
+    elif provider == "google_genai":
+        image_bytes = await _generate_with_gemini(prompt, size)
+    else:
+        raise NotImplementedError(f"지원하지 않는 GENERATOR_IMAGE_PROVIDER: {provider!r}")
+
+    return image_bytes
 
 
 async def _generate_with_openai(prompt: str, size: AdSize) -> bytes:
-    response = await _openai_client.images.generate(
-        model=settings.generator_image_model,
-        prompt=prompt,
-        n=1,
-        size=size.value,
-        quality=settings.generator_image_quality,
-    )
+    model = settings.generator_image_model
+    kwargs: dict = {"model": model, "prompt": prompt, "n": 1, "size": size.value}
+    # gpt-image-1은 response_format 파라미터를 지원하지 않음 (항상 b64_json 반환)
+    if not model.startswith("gpt-image"):
+        kwargs["response_format"] = "b64_json"
+        kwargs["quality"] = settings.generator_image_quality
+    response = await _openai_client.images.generate(**kwargs)
     return base64.b64decode(response.data[0].b64_json)
 
 
@@ -511,3 +688,142 @@ async def _generate_with_imagen(model: str, prompt: str, size: AdSize) -> bytes:
     if not response.generated_images:
         raise RuntimeError("Imagen 응답에 이미지가 없음")
     return response.generated_images[0].image.image_bytes
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 상품 누끼 (배경 제거) — gpt-image-2 edit + transparent background
+# 사용자가 올린 상품 이미지에서 배경을 제거하고 알파 채널 PNG bytes를 반환한다.
+# AI 추출이라 픽셀이 완벽히 동일하진 않으나, 전체 재생성 대비 원본에 훨씬 가깝다.
+# ─────────────────────────────────────────────────────────────────────────────
+
+_REMOVE_BG_PROMPT = (
+    "Remove the background completely and keep ONLY the main product, "
+    "fully preserving its exact shape, colors, text, and details. "
+    "Output the product on a fully transparent background. "
+    "Do not add, redraw, or stylize anything — keep the product identical to the input."
+)
+
+
+async def remove_product_background(product_image_bytes: bytes) -> bytes:
+    """상품 이미지의 배경을 제거하고 투명 PNG bytes를 반환한다."""
+    image_file = io.BytesIO(product_image_bytes)
+    image_file.name = "product.png"
+    response = await _openai_client.images.edit(
+        model=settings.generator_image_model,
+        image=image_file,
+        prompt=_REMOVE_BG_PROMPT,
+        n=1,
+        background="transparent",
+    )
+    return base64.b64decode(response.data[0].b64_json)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 인페인팅용 베이스 캔버스 + 마스크 생성 (PIL 기반)
+# 누끼한 상품을 템플릿별 영역에 배치한 베이스 이미지와, 상품 실루엣만 잠그는 마스크를 만든다.
+# OpenAI 마스크 규약: 투명(alpha=0) 영역이 "수정될 곳" → 상품은 불투명(보존), 배경은 투명(생성).
+# ─────────────────────────────────────────────────────────────────────────────
+
+# 템플릿별 상품 배치 박스 — (x0, y0, x1, y1), 광고 가로/세로 대비 비율.
+# 상품은 이 박스 안에 비율 유지로 들어가며 박스 중앙에 정렬된다.
+_COMPOSE_PRODUCT_BOXES: dict[TemplateType, tuple[float, float, float, float]] = {
+    TemplateType.A: (0.14, 0.06, 0.86, 0.52),  # 상단 영역(텍스트는 하단)
+    TemplateType.B: (0.16, 0.20, 0.84, 0.74),  # 중앙 영역(텍스트는 상·하 밴드)
+    TemplateType.C: (0.52, 0.16, 0.96, 0.84),  # 우측 영역(텍스트는 좌측 패널)
+}
+
+# 박스 대비 상품이 차지할 최대 비율(여백 확보).
+_PRODUCT_FILL = 0.92
+
+
+def _place_product(
+    product: Image.Image, w: int, h: int, template: TemplateType
+) -> tuple[Image.Image, int, int]:
+    """상품을 템플릿 박스에 비율 유지로 리사이즈하고 배치 좌표를 계산한다."""
+    x0, y0, x1, y1 = _COMPOSE_PRODUCT_BOXES[template]
+    box_w = max(1, int(w * (x1 - x0) * _PRODUCT_FILL))
+    box_h = max(1, int(h * (y1 - y0) * _PRODUCT_FILL))
+    scale = min(box_w / product.width, box_h / product.height)
+    new_w = max(1, int(product.width * scale))
+    new_h = max(1, int(product.height * scale))
+    product = product.resize((new_w, new_h), Image.LANCZOS)
+    cx = int(w * (x0 + x1) / 2)
+    cy = int(h * (y0 + y1) / 2)
+    return product, cx - new_w // 2, cy - new_h // 2
+
+
+def _build_inpaint_base_and_mask(
+    product_cutout_bytes: bytes, template: TemplateType, size: AdSize
+) -> tuple[bytes, bytes]:
+    """누끼 상품을 배치한 베이스 PNG와, 상품 실루엣만 보존하는 마스크 PNG를 만든다."""
+    w, h = (int(v) for v in size.value.split("x"))
+    product = Image.open(io.BytesIO(product_cutout_bytes)).convert("RGBA")
+    product, x, y = _place_product(product, w, h, template)
+
+    # 베이스: 중립 회색 위에 상품 배치 (배경 영역은 어차피 재생성됨)
+    base = Image.new("RGBA", (w, h), (245, 245, 245, 255))
+    base.paste(product, (x, y), product)
+
+    # 마스크: 전체 투명(수정 대상) + 상품 실루엣만 불투명(보존)
+    mask = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    keep = Image.new("RGBA", product.size, (255, 255, 255, 255))
+    mask.paste(keep, (x, y), product)  # 상품 알파를 따라 불투명 영역 형성
+
+    base_buf, mask_buf = io.BytesIO(), io.BytesIO()
+    base.save(base_buf, format="PNG")
+    mask.save(mask_buf, format="PNG")
+    return base_buf.getvalue(), mask_buf.getvalue()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 로고 합성 (PIL 기반)
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def _composite_logo_pil(
+    logo: Image.Image,
+    ad: Image.Image,
+    template: TemplateType,
+    margin: int = 16,
+) -> None:
+    """로고를 광고 이미지에 in-place 합성한다. 템플릿별 위치 규칙 적용."""
+    if logo.mode != "RGBA":
+        logo = logo.convert("RGBA")
+
+    if template == TemplateType.A:
+        # 상단 좌측 — 제품 상단(55%) 영역에 작게 배치
+        logo_w = max(1, int(ad.width * 0.12))
+        logo_h = max(1, int(logo.height * logo_w / logo.width))
+        logo = logo.resize((logo_w, logo_h), Image.LANCZOS)
+        x, y = margin, margin
+    elif template == TemplateType.B:
+        # 상단 밴드(top 22%) 내 좌측 수직 중앙
+        band_h = int(ad.height * 0.22)
+        logo_w = max(1, int(ad.width * 0.10))
+        logo_h = max(1, int(logo.height * logo_w / logo.width))
+        logo = logo.resize((logo_w, logo_h), Image.LANCZOS)
+        x = margin
+        y = max(margin, (band_h - logo_h) // 2)
+    else:  # C
+        # 좌측 패널(left 46%) 상단 좌측 — 하단 CTA와 겹치지 않도록 상단 배치
+        max_logo_h = int(ad.height * 0.08)
+        logo_w = max(1, int(ad.width * 0.12))
+        logo_h = max(1, int(logo.height * logo_w / logo.width))
+        if logo_h > max_logo_h:
+            logo_h = max_logo_h
+            logo_w = max(1, int(logo.width * logo_h / logo.height))
+        logo = logo.resize((logo_w, logo_h), Image.LANCZOS)
+        x = margin
+        y = margin
+
+    ad.paste(logo, (x, y), logo)
+
+
+def composite_logo(image_bytes: bytes, logo_bytes: bytes, template: TemplateType) -> bytes:
+    """로고를 광고 이미지에 합성하여 PNG bytes로 반환한다."""
+    ad = Image.open(io.BytesIO(image_bytes)).convert("RGBA")
+    logo = Image.open(io.BytesIO(logo_bytes)).convert("RGBA")
+    _composite_logo_pil(logo, ad, template)
+    buf = io.BytesIO()
+    ad.save(buf, format="PNG")
+    return buf.getvalue()
