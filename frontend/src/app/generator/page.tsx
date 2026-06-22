@@ -636,6 +636,15 @@ function CandidateModal({
 // 진행 중인 생성 ID — 페이지 이탈/새로고침 후 복원용
 const ACTIVE_GEN_KEY = "generator_active_gen";
 
+// 광고 asset_url(전체 URL / 프록시 경로 / S3 키 / 로컬 파일경로) → 미리보기 가능한 src.
+// 로컬 파일경로(C:\..., 백슬래시 포함) 등 표시 불가하면 null.
+function adRefImageSrc(asset: string): string | null {
+  if (/^https?:\/\//.test(asset)) return asset;
+  if (asset.startsWith("/")) return `${API_BASE}${asset}`;
+  if (/[\\]/.test(asset) || /^[A-Za-z]:/.test(asset)) return null;
+  return `${API_BASE}/api/generator/image?key=${encodeURIComponent(asset)}`;
+}
+
 export default function GeneratorPage() {
   const { selectedProject, projects, selectProject, details, loadDetails } = useProjects();
   const [mode, setMode] = useState<GenMode>("create");
@@ -672,7 +681,7 @@ export default function GeneratorPage() {
   // 개선 모드 입력 — 시뮬레이션 선택 → 자동 로드
   const [selectedSimId, setSelectedSimId] = useState("");
   const [improveData, setImproveData] = useState<{
-    ad_s3_key: string | null;
+    ad_asset_url: string | null;
     product_name: string;
     summary: string;
     improvement_direction: string;
@@ -773,29 +782,37 @@ export default function GeneratorPage() {
     setImproveLoading(true);
     try {
       const headers = { Authorization: `Bearer ${getToken()}` };
-      const detail = await fetch(`${API_BASE}/api/projects/simulations/${simId}`, { headers }).then(
-        (r) => r.json(),
-      );
+      const r = await fetch(`${API_BASE}/api/projects/simulations/${simId}`, { headers });
+      if (!r.ok) throw new Error(`시뮬레이션 조회 실패 (HTTP ${r.status})`);
+      const detail = await r.json();
       const agg = (detail.aggregate ?? {}) as Record<string, number | null>;
       const productName: string = detail.ad_title ?? "";
       const summary =
         buildSimSummary(agg, detail.sample_size) || `${productName || "광고"} 시뮬레이션 결과`;
 
+      // 개선방향(토론 리포트) — 토론 없거나 실패해도 무시(개선방향만 비움)
       let direction = "";
-      const rep = await fetch(`${API_BASE}/api/debate/by-simulation/${simId}/report`, { headers });
-      if (rep.ok) {
-        const rv = (await rep.json()) as {
-          report?: { ranked_actions?: RankedAction[]; plain_summary?: string };
-        };
-        const actions = rv.report?.ranked_actions ?? [];
-        direction = actions.length
-          ? actions
-              .map((a, i) => `${i + 1}. ${a.action}${a.expected_effect ? ` — ${a.expected_effect}` : ""}`)
-              .join("\n")
-          : (rv.report?.plain_summary ?? "");
+      try {
+        const rep = await fetch(`${API_BASE}/api/debate/by-simulation/${simId}/report`, { headers });
+        if (rep.ok) {
+          const rv = (await rep.json()) as {
+            report?: { ranked_actions?: RankedAction[]; plain_summary?: string };
+          };
+          const actions = rv.report?.ranked_actions ?? [];
+          direction = actions.length
+            ? actions
+                .map(
+                  (a, i) =>
+                    `${i + 1}. ${a.action}${a.expected_effect ? ` — ${a.expected_effect}` : ""}`,
+                )
+                .join("\n")
+            : (rv.report?.plain_summary ?? "");
+        }
+      } catch {
+        /* 토론 리포트 없음/실패 — 개선방향 비움 */
       }
       setImproveData({
-        ad_s3_key: detail.ad_s3_key ?? null,
+        ad_asset_url: detail.ad_asset_url ?? null,
         product_name: productName,
         summary,
         improvement_direction: direction,
@@ -810,7 +827,7 @@ export default function GeneratorPage() {
   const canSubmit =
     mode === "create"
       ? productName.trim() && productDescription.trim() && targetAudience.trim()
-      : !!improveData?.ad_s3_key;
+      : !!improveData?.ad_asset_url;
 
   // SSE 구독 — 시작/복원 공용. 완료·실패 시 localStorage 정리.
   function subscribe(generationId: string) {
@@ -954,7 +971,7 @@ export default function GeneratorPage() {
             ...common,
             mode: "improve",
             product_name: improveData?.product_name || "",
-            existing_ad_s3_key: improveData?.ad_s3_key || "",
+            existing_ad_s3_key: improveData?.ad_asset_url || "",
             simulation_summary: improveData?.summary || "",
             improvement_direction: improveData?.improvement_direction || null,
             fix_requests: fixRequests || null,
@@ -1206,19 +1223,23 @@ export default function GeneratorPage() {
                   {improveError && <p className="text-sm text-red-500">{improveError}</p>}
                   {improveData && (
                     <>
-                      {improveData.ad_s3_key ? (
+                      {!improveData.ad_asset_url ? (
+                        <p className="text-sm text-red-500">
+                          이 시뮬레이션의 광고 이미지 정보가 없어 개선을 진행할 수 없어요.
+                        </p>
+                      ) : adRefImageSrc(improveData.ad_asset_url) ? (
                         <div>
                           <label className={labelCls}>기존 광고 (참고)</label>
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img
-                            src={`${API_BASE}/api/generator/image?key=${encodeURIComponent(improveData.ad_s3_key)}`}
+                            src={adRefImageSrc(improveData.ad_asset_url)!}
                             alt="기존 광고"
                             className="w-full max-w-[220px] rounded-xl border border-[#E5E8EB] dark:border-[#2D3748]"
                           />
                         </div>
                       ) : (
-                        <p className="text-sm text-red-500">
-                          이 시뮬레이션의 광고 이미지가 없어 개선을 진행할 수 없어요.
+                        <p className="text-xs text-[#8B95A1] dark:text-[#6B7280]">
+                          참고 이미지를 표시할 수 없어요(저장된 경로가 미리보기 불가). 개선 생성은 시뮬레이션 피드백 기준으로 진행됩니다.
                         </p>
                       )}
                       <div>

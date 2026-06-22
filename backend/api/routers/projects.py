@@ -309,7 +309,7 @@ async def get_simulation_detail(
         text("""
             SELECT s.id, s.status, s.sample_size, s.created_at, s.deleted_at,
                    u.name AS created_by_name,
-                   a.id AS ad_id, a.title AS ad_title, a.s3_key AS ad_s3_key,
+                   a.id AS ad_id, a.title AS ad_title, a.asset_url AS ad_asset_url,
                    p.id AS project_id, p.name AS project_name,
                    p.organization_id, p.team_id, p.created_by AS project_created_by,
                    sr.distribution, sr.personas,
@@ -347,7 +347,7 @@ async def get_simulation_detail(
         "created_by_name": r.created_by_name,
         "ad_id": str(r.ad_id),
         "ad_title": r.ad_title,
-        "ad_s3_key": r.ad_s3_key,
+        "ad_asset_url": r.ad_asset_url,  # 광고 이미지(URL/S3키/로컬경로 — 형식 제각각)
         "aggregate": {
             "purchase_intent": _num(r.purchase_intent_avg),
             "rejection_rate": _num(r.rejection_rate),
