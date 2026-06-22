@@ -431,8 +431,9 @@ async def start_regen_job(
     org_id = await _require_org_id(user, db)
     if body.diagnosis.tenant_id != str(org_id):
         raise HTTPException(403, "다른 조직의 진단으로는 재생성할 수 없습니다.")
+    ad_account = await _require_ad_account(db, org_id)  # /regenerate와 동일 — live면 fail-closed
     context = RemediationContext(
-        ad_account_id="act_demo_001",
+        ad_account_id=ad_account,
         target_object_ids=(body.diagnosis.campaign_id,),
         budget_before_krw=DAILY_BUDGET_KRW,
         budget_after_krw=int(DAILY_BUDGET_KRW * 1.5),
@@ -452,6 +453,7 @@ async def get_regen_job(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    """재생성 job 진행 상태 조회(폴링) — org 스코프 강제."""
     org_id = await _require_org_id(user, db)
     service = build_regeneration_job_service(settings)
     try:
