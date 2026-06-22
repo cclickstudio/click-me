@@ -227,6 +227,11 @@ async def create_generation(
     body: GenerationCreateRequest,
     current_user: User = Depends(get_current_user),
 ):
+    # 생성 결과는 프로젝트에 저장돼야 하므로 project_id 필수 (프론트 우회 호출도 차단)
+    if not body.project_id:
+        raise HTTPException(
+            status_code=400, detail="생성 결과를 저장할 프로젝트를 먼저 선택해주세요."
+        )
     generation_id = await generator_service.start_generation(body, created_by=current_user.id)
     return GenerationTaskResponse(
         generation_id=generation_id,
