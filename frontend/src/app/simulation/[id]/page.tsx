@@ -120,43 +120,43 @@ export default function SimulationResultPage() {
     await refreshDetails(meta.project_id); // 패널 카운트 실시간 반영
   };
 
+  // 삭제/복원 액션 — 결과 헤더('시뮬레이터 결과') 우측에 한 row로 붙인다(DB 저장 시만).
+  const headerAction = meta ? (
+    <div className='flex items-center gap-2'>
+      {meta.deleted_at && (
+        <span className='px-2 py-0.5 rounded-full text-xs font-medium bg-red-50 dark:bg-red-900/20 text-red-600'>
+          삭제됨
+        </span>
+      )}
+      {meta.deleted_at ? (
+        <button
+          onClick={handleRestore}
+          disabled={acting}
+          className='px-3 py-1.5 rounded-full text-sm font-medium text-[#3182F6] border border-[#3182F6]/30 hover:bg-[#EBF3FF] dark:hover:bg-[#1E3A5F] transition-colors disabled:opacity-40'
+        >
+          {acting ? '복원 중...' : '복원'}
+        </button>
+      ) : (
+        <button
+          onClick={handleDelete}
+          disabled={acting}
+          className='flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium text-red-500 border border-red-200 dark:border-red-900/40 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors disabled:opacity-40'
+        >
+          <svg width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='2' strokeLinecap='round' strokeLinejoin='round'>
+            <polyline points='3 6 5 6 21 6' />
+            <path d='M19 6l-1 14H6L5 6' />
+            <path d='M10 11v6' />
+            <path d='M14 11v6' />
+            <path d='M9 6V4h6v2' />
+          </svg>
+          {acting ? '삭제 중...' : '삭제'}
+        </button>
+      )}
+    </div>
+  ) : null;
+
   return (
     <AppLayout>
-      {/* 삭제/복원 액션 바 — DB에 저장된 시뮬일 때만 노출 */}
-      {meta && (
-        <div className='px-8 pt-6 max-w-5xl mx-auto flex items-center justify-end gap-2'>
-          {meta.deleted_at && (
-            <span className='px-2 py-0.5 rounded-full text-xs font-medium bg-red-50 dark:bg-red-900/20 text-red-600'>
-              삭제됨
-            </span>
-          )}
-          {meta.deleted_at ? (
-            <button
-              onClick={handleRestore}
-              disabled={acting}
-              className='px-3 py-1.5 rounded-full text-sm font-medium text-[#3182F6] border border-[#3182F6]/30 hover:bg-[#EBF3FF] dark:hover:bg-[#1E3A5F] transition-colors disabled:opacity-40'
-            >
-              {acting ? '복원 중...' : '복원'}
-            </button>
-          ) : (
-            <button
-              onClick={handleDelete}
-              disabled={acting}
-              className='flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium text-red-500 border border-red-200 dark:border-red-900/40 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors disabled:opacity-40'
-            >
-              <svg width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='currentColor' strokeWidth='2' strokeLinecap='round' strokeLinejoin='round'>
-                <polyline points='3 6 5 6 21 6' />
-                <path d='M19 6l-1 14H6L5 6' />
-                <path d='M10 11v6' />
-                <path d='M14 11v6' />
-                <path d='M9 6V4h6v2' />
-              </svg>
-              {acting ? '삭제 중...' : '삭제'}
-            </button>
-          )}
-        </div>
-      )}
-
       {loading && (
         <div className='px-8 py-16 max-w-5xl mx-auto text-center'>
           <div className='inline-block w-8 h-8 border-4 border-[#E5E8EB] dark:border-[#2D3748] border-t-[#3182F6] rounded-full animate-spin' />
@@ -178,6 +178,7 @@ export default function SimulationResultPage() {
           adTitle={adTitle}
           adDescription={adDescription}
           initialReportView={savedReport}
+          headerAction={headerAction}
         />
       )}
     </AppLayout>
