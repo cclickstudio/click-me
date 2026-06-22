@@ -62,6 +62,55 @@ def test_ocean_factor_scores_in_range() -> None:
         assert all(-5.0 <= v <= 5.0 for v in p.ocean.values())
 
 
+def test_ocean_age_conditioned_by_real_band_proportions() -> None:
+    # 연령밴드별 실측 유형비율(OSF) 적용 — 고령 코호트는 신경증↓·성실성↑(취약형 비중 급감).
+    # 밴드 조건화가 배선됐는지 행동 검증: 변경 전(전 연령 동질)이면 두 코호트 평균이 같다.
+    s = _sampler()
+    young = s.sample(PanelSpec(size=400, seed=41, target_filter={"age_min": 20, "age_max": 29}))
+    old = s.sample(PanelSpec(size=400, seed=42, target_filter={"age_min": 50, "age_max": 59}))
+
+    def mean(ps: list, dim: str) -> float:
+        return sum(p.ocean[dim] for p in ps) / len(ps)
+
+    # 성숙원리 방향 — 밴드평균 격차(N≈0.48·C≈0.8)가 표본노이즈보다 훨씬 커 안정적.
+    assert mean(old, "neuroticism") < mean(young, "neuroticism")
+    assert mean(old, "conscientiousness") > mean(young, "conscientiousness")
+
+
+def test_ocean_band_marginal_means_match_real_data() -> None:
+    # 밴드 factor 잔차 offset — 밴드 marginal 평균이 실측(band_factor_means)에 정합.
+    # 유형비율만이면 60+ 성실성≈0.11에 그치나 실측은 +0.87 → offset 배선 여부를 가름.
+    s = _sampler()
+    old = s.sample(PanelSpec(size=600, seed=51, target_filter={"age_min": 60, "age_max": 69}))
+    young = s.sample(PanelSpec(size=600, seed=52, target_filter={"age_min": 20, "age_max": 29}))
+
+    def mean(ps: list, dim: str) -> float:
+        return sum(p.ocean[dim] for p in ps) / len(ps)
+
+    # 60+ 성실성 실측 0.871 — 표본노이즈 내 근사(유형혼합한정 ≈0.11이면 실패).
+    assert abs(mean(old, "conscientiousness") - 0.871) < 0.25
+    assert abs(mean(young, "conscientiousness") - (-0.059)) < 0.2
+    assert abs(mean(old, "neuroticism") - (-0.669)) < 0.25
+
+
+def test_ocean_gender_conditioned() -> None:
+    # 성별 조건화(OSF age×gender) — 같은 연령대에서 여성이 남성보다 신경증·친화성↑(실데이터 방향).
+    # 이전엔 성별 무조건화로 남녀 성격이 동일했음.
+    s = _sampler()
+    m = s.sample(
+        PanelSpec(size=500, seed=61, target_filter={"age_min": 20, "age_max": 29, "gender": "M"})
+    )
+    f = s.sample(
+        PanelSpec(size=500, seed=62, target_filter={"age_min": 20, "age_max": 29, "gender": "F"})
+    )
+
+    def mean(ps: list, dim: str) -> float:
+        return sum(p.ocean[dim] for p in ps) / len(ps)
+
+    assert mean(f, "neuroticism") > mean(m, "neuroticism")
+    assert mean(f, "agreeableness") > mean(m, "agreeableness")
+
+
 def test_consumption_values_present_and_zgen() -> None:
     personas = _sampler().sample(PanelSpec(size=100, seed=6))
     young = [p for p in personas if p.age <= 29]
