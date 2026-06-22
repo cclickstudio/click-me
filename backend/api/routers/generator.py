@@ -16,6 +16,7 @@ from pydantic import BaseModel
 from core.auth import get_current_user
 from core.models import User
 from domain.generator.adapters.meta_ads import AdvertiseRequest
+from domain.generator.contracts.enums import GenerationMode
 from domain.generator.contracts.schemas import GenerationCreateRequest
 from domain.generator.service import generator_service
 from domain.generator.service.brand_profile import get_profile, save_profile
@@ -227,8 +228,9 @@ async def create_generation(
     body: GenerationCreateRequest,
     current_user: User = Depends(get_current_user),
 ):
-    # 생성 결과는 프로젝트에 저장돼야 하므로 project_id 필수 (프론트 우회 호출도 차단)
-    if not body.project_id:
+    # 사용자 생성(create)은 프로젝트에 저장돼야 하므로 project_id 필수 (프론트 우회 호출도 차단).
+    # improve(management 재생성 등 시스템 호출)는 프로젝트 컨텍스트가 없을 수 있어 제외.
+    if body.mode == GenerationMode.CREATE and not body.project_id:
         raise HTTPException(
             status_code=400, detail="생성 결과를 저장할 프로젝트를 먼저 선택해주세요."
         )
