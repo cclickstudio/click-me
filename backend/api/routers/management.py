@@ -12,12 +12,13 @@ from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from random import Random
 from typing import Literal
+from urllib.parse import parse_qs, urlparse
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl
-from sqlalchemy import func, select, update
+from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.routers.billing import get_billing_service
@@ -1200,6 +1201,191 @@ async def from_candidate(
             },
             metrics_as_of=now,
             hypothesis="후보 기반 신규 캠페인",
+            confidence=1.0,
+            expected_state_version="state_v1",
+            budget_before_krw=0,
+            budget_after_krw=body.daily_budget_krw,
+            max_total_spend_krw=body.daily_budget_krw * body.run_days,
+            expires_at=now + timedelta(minutes=PROPOSAL_TTL_MINUTES),
+            approval_policy_version=APPROVAL_POLICY_VERSION,
+        )
+    )
+    return {"proposal": proposal.model_dump(mode="json")}
+
+
+# 우리 S3 영속 네임스페이스 — 이 prefix 키만 핸드오프 집행 허용(임시·외부는 차단).
+_DURABLE_KEY_PREFIXES = ("generator/", "ads/")
+
+
+def _resolve_sim_asset_key(asset_url: str | None) -> str | None:
+    """시뮬 asset_url에서 우리 S3 키만 추출 — generator 이미지 URL(?key=) 또는 우리 버킷 prefix 키.
+    임시 로컬 파일·외부 URL은 None(호출부 422). 임의 URL fetch 금지(SSRF 차단)."""
+    if not asset_url:
+        return None
+    parsed = urlparse(asset_url)
+    keys = parse_qs(parsed.query).get("key")
+    if keys:
+        key = keys[0]
+        return key if key.startswith(_DURABLE_KEY_PREFIXES) else None
+    if not parsed.scheme and asset_url.startswith(_DURABLE_KEY_PREFIXES):
+        return asset_url
+    return None
+
+
+def _is_executable_verdict(click_intent_rate: float, rejection_rate: float) -> bool:
+    """'집행 권장' 게이트 — 프론트 verdict()와 동일 임계값(백엔드 정본)."""
+    return click_intent_rate >= 0.2 and rejection_rate < 0.2
+
+
+class FromSimulationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    simulation_id: str = Field(pattern=r"^[A-Za-z0-9_-]+$")
+    link_url: HttpUrl | None = None
+    name: str
+    daily_budget_krw: int = Field(ge=1)
+    run_days: int = Field(ge=1, le=90)
+    special_ad_category: Literal[
+        "NONE", "HOUSING", "EMPLOYMENT", "CREDIT", "ISSUES_ELECTIONS_POLITICS"
+    ] = "NONE"
+    country: str = "KR"
+    age_min: int = Field(default=18, ge=18, le=65)
+    age_max: int = Field(default=65, ge=18, le=65)
+    gender: Literal["all", "male", "female"] = "all"
+
+
+@router.post("/campaign-proposals/from-simulation")
+async def from_simulation(
+    body: FromSimulationRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """시뮬(generator-소스) → CREATE_CAMPAIGN(traffic) 제안. 승인·집행은 /approve·/execute 재사용.
+
+    Simulation/SimulationAggregate는 domain.simulation 내부 모델이라 import 금지 — raw SQL로만 읽음
+    (임시 결합, 추후 시뮬 read 계약으로 교체).
+    """
+    try:
+        sim_uuid = UUID(body.simulation_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="잘못된 simulation_id") from exc
+
+    org_id = await _require_org_id(user, db)
+
+    sim_row = (
+        await db.execute(
+            text("SELECT organization_id, ad_id FROM simulations WHERE id = :sid"),
+            {"sid": sim_uuid},
+        )
+    ).first()
+    if sim_row is None or sim_row[0] != org_id:
+        raise HTTPException(status_code=404, detail="시뮬레이션을 찾을 수 없습니다.")
+    ad_id = sim_row[1]
+
+    agg_row = (
+        await db.execute(
+            text(
+                "SELECT click_intent_rate, rejection_rate FROM simulation_aggregates "
+                "WHERE simulation_id = :sid"
+            ),
+            {"sid": sim_uuid},
+        )
+    ).first()
+    if agg_row is None:
+        raise HTTPException(status_code=409, detail="시뮬 집계가 없습니다(미완료).")
+    cir, rej = float(agg_row[0]), float(agg_row[1])
+    if not _is_executable_verdict(cir, rej):
+        raise HTTPException(status_code=409, detail="집행 권장 결과가 아닙니다.")
+
+    ad_row = (
+        await db.execute(
+            text("SELECT title, asset_url, copy_text FROM ads WHERE id = :aid"),
+            {"aid": ad_id},
+        )
+    ).first()
+    if ad_row is None:
+        raise HTTPException(status_code=404, detail="광고를 찾을 수 없습니다.")
+    title, asset_url, copy_text = ad_row[0], ad_row[1], ad_row[2]
+
+    s3_key = _resolve_sim_asset_key(asset_url)
+    if not s3_key:
+        raise HTTPException(
+            status_code=422, detail="durable S3 이미지가 아닙니다(업로드 광고 집행은 추후)."
+        )
+
+    link_url = _resolve_link_url(body.link_url)
+    if not link_url:
+        raise HTTPException(status_code=422, detail="목적지 URL(link_url)이 필요합니다.")
+
+    try:
+        image_bytes = await download_bytes(s3_key)
+    except Exception as exc:  # noqa: BLE001 — S3 유실/손상은 입력 문제로 거부
+        raise HTTPException(status_code=422, detail="시뮬 이미지를 읽을 수 없습니다.") from exc
+
+    writer = build_writer(settings)
+    image_hash = await writer.upload_image(
+        _asset_config(name=body.name),
+        image_bytes,
+        "creative.png",
+        idem_key=f"img_{uuid4().hex[:8]}",
+    )
+    if not getattr(settings, "use_mock", True) and not image_hash:
+        raise HTTPException(status_code=502, detail="Meta 이미지 업로드 실패.")
+
+    policy = await get_campaign_policy(build_reader(settings))
+    min_budget = min_daily_budget_for("traffic", policy)
+    if body.daily_budget_krw < min_budget:
+        raise HTTPException(status_code=422, detail=f"최소 일예산은 ₩{min_budget:,}입니다.")
+
+    now = datetime.now(UTC)
+    ad_account = await _require_ad_account(db, org_id)
+    tenant_id = str(org_id)
+    genders = {"all": (), "male": (1,), "female": (2,)}[body.gender]
+    categories = () if body.special_ad_category == "NONE" else (body.special_ad_category,)
+    config = CampaignConfig(
+        campaign_id=f"camp_sim_{uuid4().hex[:8]}",
+        tenant_id=tenant_id,
+        ad_account_id=ad_account,
+        name=body.name,
+        objective="traffic",
+        daily_budget_krw=body.daily_budget_krw,
+        start_at=now,
+        end_at=now + timedelta(days=body.run_days),
+        image_hash=image_hash,
+        headline=title,
+        body=copy_text,
+        link_url=link_url,
+        special_ad_categories=categories,
+        countries=(body.country,),
+        age_min=body.age_min,
+        age_max=body.age_max,
+        genders=genders,
+    )
+    snapshot = {
+        "simulation_id": body.simulation_id,
+        "source_ad_id": str(ad_id),
+        "verdict": "집행 권장",
+        "source_asset": s3_key,
+        "image_hash": image_hash,
+        "headline": title,
+        "body": copy_text,
+        "click_intent_rate": cir,
+        "rejection_rate": rej,
+    }
+    proposal = finalize_proposal(
+        ActionProposal(
+            proposal_id=f"prop_{uuid4().hex[:8]}",
+            tenant_id=tenant_id,
+            ad_account_id=ad_account,
+            target_object_ids=(ad_account,),
+            action_type="CREATE_CAMPAIGN",
+            action_tier=ActionTier.TIER_3,
+            evidence_metrics={
+                "campaign_config": config.model_dump(mode="json"),
+                "name": body.name,
+                "simulation_snapshot": snapshot,
+            },
+            metrics_as_of=now,
+            hypothesis="시뮬 기반 신규 캠페인",
             confidence=1.0,
             expected_state_version="state_v1",
             budget_before_krw=0,
