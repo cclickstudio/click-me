@@ -677,7 +677,6 @@ export default function GeneratorPage() {
   const [kits, setKits] = useState<BrandKit[]>([]);
   const [selectedKitId, setSelectedKitId] = useState("");
   const [kitName, setKitName] = useState("");
-  const [profileSaved, setProfileSaved] = useState(false);
   const logoInputRef = useRef<HTMLInputElement>(null);
   const esRef = useRef<EventSource | null>(null);
 
@@ -991,25 +990,6 @@ export default function GeneratorPage() {
       URL.revokeObjectURL(localUrl);
     } finally {
       setLogoUploading(false);
-    }
-  }
-
-  async function saveProfile() {
-    if (!clientId) return;
-    try {
-      await api.generator.brandProfile.save(clientId, {
-        brand_color: brandColor || null,
-        brand_logo_key: logoS3Key || null,
-        tone_and_manner: toneAndManner || null,
-      });
-      setProfileSaved(true);
-      setTimeout(() => setProfileSaved(false), 2000);
-    } catch (e) {
-      setError(
-        e instanceof Error
-          ? `브랜드 설정 저장에 실패했습니다: ${e.message}`
-          : "브랜드 설정 저장에 실패했습니다.",
-      );
     }
   }
 
@@ -1530,13 +1510,6 @@ export default function GeneratorPage() {
                     </div>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={saveProfile}
-                    className="w-full py-2 rounded-xl text-xs font-semibold border border-[#3182F6] text-[#3182F6] hover:bg-[#3182F6]/10 transition-colors"
-                  >
-                    {profileSaved ? "저장됨 ✓" : "이 브랜드 설정 저장"}
-                  </button>
                 </div>
               )}
 
