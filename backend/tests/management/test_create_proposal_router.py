@@ -1,20 +1,46 @@
 # 신규 캠페인 생성 제안 라우터 — /campaigns/create-proposal → /approve → /execute 왕복
 """폼 입력으로 CREATE_CAMPAIGN 제안(Tier 3)을 만들고 승인·실행 경로로 생성(DRY_RUN)되는지 확인."""
 
+import uuid
+from types import SimpleNamespace
+
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from api.routers import management
+from core.auth import get_current_user
+from core.db import get_db
 from domain.management.contracts.schemas import ActionProposal, verify_proposal_hash
 
 _BODY = {"name": "가을 신상 런칭", "daily_budget_krw": 50_000, "run_days": 7}
 
 
+class _FakeDB:
+    """org 조회(db.scalar)만 흉내 — meta_connections는 None으로 mock fallback."""
+
+    def __init__(self, org_id):
+        self._org_id = org_id
+
+    async def scalar(self, stmt, *a, **k):
+        if "organization_members" in str(stmt):
+            return self._org_id
+        return None
+
+    async def commit(self):
+        pass
+
+    async def rollback(self):
+        pass
+
+
 @pytest.fixture()
 def client():
+    org_id = uuid.uuid4()
     app = FastAPI()
     app.include_router(management.router, prefix="/api/management")
+    app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(id=org_id)
+    app.dependency_overrides[get_db] = lambda: _FakeDB(org_id)
     return TestClient(app)
 
 

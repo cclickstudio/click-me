@@ -1102,87 +1102,6 @@ def _resolve_link_url(req_url: HttpUrl | None) -> str | None:
     return str(req_url) if req_url is not None else None
 
 
-async def _package_traffic_proposal(
-    *,
-    ad_account: str,
-    tenant_id: str,
-    headline: str | None,
-    body: str | None,
-    image_bytes: bytes,
-    link_url: str,
-    name: str,
-    daily_budget_krw: int,
-    run_days: int,
-    special_ad_category: str,
-    country: str,
-    age_min: int,
-    age_max: int,
-    gender: str,
-    source_snapshot: dict,
-    snapshot_key: str,
-) -> ActionProposal:
-    """크리에이티브+캠페인 설정 → CREATE_CAMPAIGN(traffic) 제안. source 조회 책임 없음."""
-    writer = build_writer(settings)
-    image_hash = await writer.upload_image(
-        _asset_config(name=name), image_bytes, "creative.png", idem_key=f"img_{uuid4().hex[:8]}"
-    )
-    if not getattr(settings, "use_mock", True) and not image_hash:
-        raise HTTPException(status_code=502, detail="Meta 이미지 업로드 실패.")
-
-    policy = await get_campaign_policy(build_reader(settings))
-    min_budget = min_daily_budget_for("traffic", policy)
-    if daily_budget_krw < min_budget:
-        raise HTTPException(status_code=422, detail=f"최소 일예산은 ₩{min_budget:,}입니다.")
-
-    now = datetime.now(UTC)
-    genders = {"all": (), "male": (1,), "female": (2,)}[gender]
-    categories = () if special_ad_category == "NONE" else (special_ad_category,)
-    config = CampaignConfig(
-        campaign_id=f"camp_{uuid4().hex[:8]}",
-        tenant_id=tenant_id,
-        ad_account_id=ad_account,
-        name=name,
-        objective="traffic",
-        daily_budget_krw=daily_budget_krw,
-        start_at=now,
-        end_at=now + timedelta(days=run_days),
-        image_hash=image_hash,
-        headline=headline,
-        body=body,
-        link_url=link_url,
-        special_ad_categories=categories,
-        countries=(country,),
-        age_min=age_min,
-        age_max=age_max,
-        genders=genders,
-    )
-    snapshot = {**source_snapshot, "image_hash": image_hash}
-    return finalize_proposal(
-        ActionProposal(
-            proposal_id=f"prop_{uuid4().hex[:8]}",
-            tenant_id=tenant_id,
-            ad_account_id=ad_account,
-            target_object_ids=(ad_account,),
-            action_type="CREATE_CAMPAIGN",
-            action_tier=ActionTier.TIER_3,
-            evidence_metrics={
-                "campaign_config": config.model_dump(mode="json"),
-                "name": name,
-                snapshot_key: snapshot,
-            },
-            metrics_as_of=now,
-            hypothesis="크리에이티브 기반 신규 캠페인",
-            confidence=1.0,
-            expected_state_version="state_v1",
-            budget_before_krw=0,
-            budget_after_krw=daily_budget_krw,
-            max_total_spend_krw=daily_budget_krw * run_days,
-            expires_at=now + timedelta(minutes=PROPOSAL_TTL_MINUTES),
-            approval_policy_version=APPROVAL_POLICY_VERSION,
-        )
-    )
-
-
 @router.post("/campaign-proposals/from-candidate")
 async def from_candidate(
     body: FromCandidateRequest,
@@ -1190,9 +1109,6 @@ async def from_candidate(
     db: AsyncSession = Depends(get_db),
 ):
     """generator 후보 → CREATE_CAMPAIGN(traffic) 제안. 승인·집행은 /approve·/execute 재사용."""
-    org_id = await _require_org_id(user, db)
-    ad_account = await _require_ad_account(db, org_id)
-    tenant_id = str(org_id)
     client = build_generator_client(settings)
     try:
         cand = await client.get_candidate(body.generation_id, body.candidate_id)
@@ -1210,32 +1126,79 @@ async def from_candidate(
     except Exception as exc:  # noqa: BLE001 — S3 유실/손상은 입력 문제로 거부
         raise HTTPException(status_code=422, detail="후보 이미지를 읽을 수 없습니다.") from exc
 
+    writer = build_writer(settings)
+    image_hash = await writer.upload_image(
+        _asset_config(name=body.name),
+        image_bytes,
+        "candidate.png",
+        idem_key=f"img_{uuid4().hex[:8]}",
+    )
+    if not getattr(settings, "use_mock", True) and not image_hash:
+        raise HTTPException(status_code=502, detail="Meta 이미지 업로드 실패.")
+
+    policy = await get_campaign_policy(build_reader(settings))
+    min_budget = min_daily_budget_for("traffic", policy)
+    if body.daily_budget_krw < min_budget:
+        raise HTTPException(status_code=422, detail=f"최소 일예산은 ₩{min_budget:,}입니다.")
+
+    now = datetime.now(UTC)
+    org_id = await _require_org_id(user, db)
+    ad_account = await _require_ad_account(db, org_id)
+    tenant_id = str(org_id)
+    genders = {"all": (), "male": (1,), "female": (2,)}[body.gender]
+    categories = () if body.special_ad_category == "NONE" else (body.special_ad_category,)
+    config = CampaignConfig(
+        campaign_id=f"camp_cand_{uuid4().hex[:8]}",
+        tenant_id=tenant_id,
+        ad_account_id=ad_account,
+        name=body.name,
+        objective="traffic",
+        daily_budget_krw=body.daily_budget_krw,
+        start_at=now,
+        end_at=now + timedelta(days=body.run_days),
+        image_hash=image_hash,
+        headline=cand.copy.headline,
+        body=cand.copy.body,
+        link_url=link_url,
+        special_ad_categories=categories,
+        countries=(body.country,),
+        age_min=body.age_min,
+        age_max=body.age_max,
+        genders=genders,
+    )
     snapshot = {
         "generation_id": body.generation_id,
         "candidate_id": cand.candidate_id,
         "copy": cand.copy.model_dump(),
         "s3_key": cand.s3_key,
+        "image_hash": image_hash,
         "strategy": cand.strategy,
         "template_id": cand.template_id,
         "idx": cand.idx,
     }
-    proposal = await _package_traffic_proposal(
-        ad_account=ad_account,
-        tenant_id=tenant_id,
-        headline=cand.copy.headline,
-        body=cand.copy.body,
-        image_bytes=image_bytes,
-        link_url=link_url,
-        name=body.name,
-        daily_budget_krw=body.daily_budget_krw,
-        run_days=body.run_days,
-        special_ad_category=body.special_ad_category,
-        country=body.country,
-        age_min=body.age_min,
-        age_max=body.age_max,
-        gender=body.gender,
-        source_snapshot=snapshot,
-        snapshot_key="candidate_snapshot",
+    proposal = finalize_proposal(
+        ActionProposal(
+            proposal_id=f"prop_{uuid4().hex[:8]}",
+            tenant_id=tenant_id,
+            ad_account_id=ad_account,
+            target_object_ids=(ad_account,),
+            action_type="CREATE_CAMPAIGN",
+            action_tier=ActionTier.TIER_3,
+            evidence_metrics={
+                "campaign_config": config.model_dump(mode="json"),
+                "name": body.name,
+                "candidate_snapshot": snapshot,
+            },
+            metrics_as_of=now,
+            hypothesis="후보 기반 신규 캠페인",
+            confidence=1.0,
+            expected_state_version="state_v1",
+            budget_before_krw=0,
+            budget_after_krw=body.daily_budget_krw,
+            max_total_spend_krw=body.daily_budget_krw * body.run_days,
+            expires_at=now + timedelta(minutes=PROPOSAL_TTL_MINUTES),
+            approval_policy_version=APPROVAL_POLICY_VERSION,
+        )
     )
     return {"proposal": proposal.model_dump(mode="json")}
 

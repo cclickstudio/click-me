@@ -1,8 +1,26 @@
 # from-candidate — 후보 → CREATE_CAMPAIGN(traffic) 제안 패키징
+import uuid
+from types import SimpleNamespace
+
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from api.routers import management
+from core.auth import get_current_user
+from core.db import get_db
+
+
+class _FakeDB:
+    """org 조회(db.scalar)만 흉내 — meta_connections는 None으로 mock fallback."""
+
+    def __init__(self, org_id):
+        self._org_id = org_id
+
+    async def scalar(self, stmt, *a, **k):
+        if "organization_members" in str(stmt):
+            return self._org_id
+        return None
+
 
 _CAND = {
     "candidate_id": "c1",
@@ -35,6 +53,8 @@ def _client(monkeypatch):
 
     app = FastAPI()
     app.include_router(management.router, prefix="/api/management")
+    app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(id=uuid.uuid4())
+    app.dependency_overrides[get_db] = lambda: _FakeDB(uuid.uuid4())
     return TestClient(app)
 
 

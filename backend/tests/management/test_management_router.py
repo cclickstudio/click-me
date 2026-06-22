@@ -1,16 +1,42 @@
 """management 라우터 — /run→/regenerate→/approve→/execute→/audit 왕복."""
 
+import uuid
+
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from api.routers import management
+from core.auth import get_current_user
+from core.db import get_db
+from domain.management.demo import TENANT_ID
+
+
+class _FakeDB:
+    """org 조회(db.scalar)만 흉내 — org_id는 데모 TENANT_ID로 고정해 제안 tenant와 정합."""
+
+    def __init__(self, org_id):
+        self._org_id = org_id
+
+    async def scalar(self, stmt, *a, **k):
+        if "organization_members" in str(stmt):
+            return self._org_id
+        return None
+
+    async def commit(self):
+        pass
+
+    async def rollback(self):
+        pass
 
 
 @pytest.fixture()
 def client():
     app = FastAPI()
     app.include_router(management.router, prefix="/api/management")
+    app.dependency_overrides[get_current_user] = lambda: type("U", (), {"id": uuid.uuid4()})()
+    # /run·재생성 후보·제안의 tenant_id는 데모 TENANT_ID → fake org도 동일하게 맞춰야 403 회피.
+    app.dependency_overrides[get_db] = lambda: _FakeDB(TENANT_ID)
     return TestClient(app)
 
 
