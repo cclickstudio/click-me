@@ -66,6 +66,19 @@ _STANCE = {
 }
 _GENDER_KO = {"M": "남성", "F": "여성"}
 
+# 도넛 세그먼트 구분색(순환) — 인원 비중을 색으로 구분(클릭의향은 범례 텍스트로).
+# 클릭의향 신호색을 쓰면 표본 적은 셀이 전부 회색이 돼 구분이 안 되므로 구분 팔레트 사용.
+_DONUT_PALETTE = (
+    "#3182F6",
+    "#F59E0B",
+    "#10B981",
+    "#8B5CF6",
+    "#EC4899",
+    "#14B8A6",
+    "#EF4444",
+    "#64748B",
+)
+
 _CARD = "bg-white rounded-2xl border border-slate-200 shadow-sm break-inside-avoid"
 
 
@@ -130,23 +143,6 @@ def _verdict(cir: float, rej: float) -> tuple[str, str, str]:
         _AMBER,
         "가능성은 보이지만, '아쉬운 점'을 손보고 내보내는 걸 권해요.",
     )
-
-
-def _sw(rubric: list) -> tuple[list, list]:
-    if not rubric:
-        return [], []
-    srt = sorted(rubric, key=lambda s: s.get("score", 0) or 0)
-    weak = [
-        (_RUBRIC_KO.get(s.get("dimension"), s.get("dimension", "")), s.get("score", 0) or 0)
-        for s in srt[:2]
-        if (s.get("score", 0) or 0) < 70
-    ]
-    strong = [
-        (_RUBRIC_KO.get(s.get("dimension"), s.get("dimension", "")), s.get("score", 0) or 0)
-        for s in srt[::-1][:2]
-        if (s.get("score", 0) or 0) >= 60
-    ]
-    return strong, weak
 
 
 def _bar(label: str, ratio: float, disp: str, color: str = _BLUE) -> str:
@@ -229,7 +225,7 @@ def _objective_fit_block(of: dict) -> str:
     if of.get("low_confidence"):
         body += '<p class="text-[10px] text-amber-600 mt-1">⚠ 표본이 적어 신뢰가 낮습니다.</p>'
     return _section(
-        "1",
+        "",
         "캠페인 목표 달성 가능성",
         color,
         body,
@@ -257,7 +253,7 @@ def _confidence_block(c: dict) -> str:
     return _section("", "신뢰도 안내", _SLATE, body)
 
 
-def _segment_block(segs: list) -> str:
+def _segment_block(segs: list, num: str = "") -> str:
     """연령대×성별 세그먼트 — '누구에게 통하나'(우리 최대 차별점).
 
     표본이 작은 셀(유효표본 10 미만)은 1명짜리 100% 같은 과신을 막으려 비율을 색으로 단언하지
@@ -301,11 +297,42 @@ def _segment_block(segs: list) -> str:
         + "</tbody></table>"
         + legend
     )
+    # 도넛 — 조각 크기=인원 비중, 색=세그먼트 구분(클릭의향은 범례 텍스트로).
+    total_seg = sum((s.get("n") or 0) for s in ordered) or 1
+    stops, acc, legend_rows = [], 0.0, []
+    for i, s in enumerate(ordered):
+        n = s.get("n") or 0
+        if n <= 0:
+            continue
+        cir = s.get("click_intent_rate") or 0
+        col = _DONUT_PALETTE[i % len(_DONUT_PALETTE)]
+        start = acc * 360
+        acc += n / total_seg
+        stops.append(f"{col} {start:.1f}deg {acc * 360:.1f}deg")
+        nm = (
+            f"{escape(str(s.get('age_band', '')))} "
+            f"{escape(_GENDER_KO.get(s.get('gender'), str(s.get('gender', ''))))}"
+        )
+        legend_rows.append(
+            '<div class="flex items-center gap-1.5 text-[10px]">'
+            f'<span class="w-2 h-2 rounded-full shrink-0" style="background:{col}"></span>'
+            f'<span class="text-slate-600 truncate">{nm}</span>'
+            f'<span class="ml-auto text-slate-400 shrink-0">{n}명 · 클릭 {_pct(cir)}</span></div>'
+        )
+    donut = (
+        '<div class="flex items-center gap-4 mb-3">'
+        '<div class="shrink-0 w-[112px] h-[112px] rounded-full grid place-items-center" '
+        f'style="background:conic-gradient({", ".join(stops)})">'
+        '<div class="w-[64px] h-[64px] rounded-full bg-white grid place-items-center text-center">'
+        f'<div><div class="text-[15px] font-extrabold text-slate-800">{total_seg}</div>'
+        '<div class="text-[8px] text-slate-400">명</div></div></div></div>'
+        f'<div class="flex-1 space-y-1">{"".join(legend_rows)}</div></div>'
+    )
     return _section(
-        "",
+        num,
         "누구에게 통하나 — 연령대×성별",
         _INDIGO,
-        table,
+        donut + table,
         tip=(
             "같은 광고도 누가 보느냐에 따라 반응이 달라요. 인원 많은 셀부터 정렬했고, "
             "클릭 의향이 높은(초록) 셀이 실질 타깃입니다."
@@ -313,7 +340,7 @@ def _segment_block(segs: list) -> str:
     )
 
 
-def _message_block(m: dict) -> str:
+def _message_block(m: dict, num: str = "") -> str:
     """메시지 수신 — 의도 메시지가 어떻게 받아들여졌나(화면·PDF 양쪽 소실 1순위였던 것)."""
     rr = m.get("resistance_rate") or 0
     body = ""
@@ -336,7 +363,7 @@ def _message_block(m: dict) -> str:
             f'px-3 py-1.5 mt-1.5">“{escape(str(q))}”</div>'
         )
     return _section(
-        "",
+        num,
         "메시지가 의도대로 받아들여졌나",
         _AMBER,
         body,
@@ -373,8 +400,18 @@ def _build_html(result: dict) -> str:
     grade, gtext = _grade(overall)
     ocolor = _signal(overall)
     vlabel, vcolor, vdesc = _verdict(cir, rej)
-    head = report.get("plain_summary") or report.get("headline") or vdesc
+    # verdict 카드 본문 = 전문가용 진단(headline). 비전문가용(plain_summary)은 강약점 박스 끝으로.
+    head = report.get("headline") or report.get("plain_summary") or vdesc
     blocks: list[str] = []
+
+    # 본문 섹션 번호 — 존재하는 섹션만 1..N 연속(조건부 섹션이 빠져도 번호 점프 없음).
+    # 상단 요약(헤더·KPI·종합판정·목표달성·신뢰도)은 번호를 매기지 않는다.
+    _secn = 0
+
+    def _sec() -> str:
+        nonlocal _secn
+        _secn += 1
+        return str(_secn)
 
     # ── 헤더 밴드 ──
     metabits = []
@@ -417,21 +454,22 @@ def _build_html(result: dict) -> str:
         + "</div>"
     )
 
-    # ── 종합 판정(2칸) + 강약점(1칸) ──
+    # ── 종합 판정(풀폭) — verdict(전문가 진단) + 한눈에 보는 결론(비전문가, 하단 가로) ──
+    # 화면(SimulationReportView)과 동일 구조. 강약점 요약은 §진단 섹션(rubric)에 그대로 있다.
     deg = overall / 100 * 360
-    strong, weak = _sw(rubric)
-    gi = (
-        "".join(
-            f'<li>{escape(nm)} <b class="text-emerald-600">{sc}점</b></li>' for nm, sc in strong
+    plain = report.get("plain_summary") or ""
+    plain_block = (
+        (
+            '<div class="mt-4 pt-3 border-t border-slate-100">'
+            '<div class="text-[11px] font-extrabold text-blue-600 mb-1">🔎 한눈에 보는 결론</div>'
+            f'<p class="text-[11px] text-slate-600 leading-relaxed">{escape(str(plain))}</p></div>'
         )
-        or "<li>—</li>"
+        if plain and plain != head
+        else ""
     )
-    bi = (
-        "".join(f'<li>{escape(nm)} <b class="text-red-500">{sc}점</b></li>' for nm, sc in weak)
-        or "<li>—</li>"
-    )
-    verdict_card = (
-        f'<div class="{_CARD} p-5 col-span-2 flex items-center gap-5">'
+    blocks.append(
+        f'<div class="{_CARD} p-5">'
+        '<div class="flex items-center gap-5">'
         '<div class="shrink-0 text-center">'
         '<div class="w-[92px] h-[92px] rounded-full grid place-items-center" '
         f'style="background:conic-gradient({ocolor} {deg:.1f}deg,#e2e8f0 0)">'
@@ -440,22 +478,13 @@ def _build_html(result: dict) -> str:
         f'<div class="text-[12px] font-extrabold mt-1.5" style="color:{ocolor}">'
         f"{grade}등급 · {gtext}</div>"
         '<div class="text-[9px] text-slate-400">종합 점수 / 100</div></div>'
-        '<div><span class="inline-block px-4 py-1.5 rounded-full text-white font-extrabold '
-        f'text-[13px]" style="background:{vcolor}">{vlabel}</span>'
+        '<div class="flex-1"><span class="inline-block px-4 py-1.5 rounded-full text-white '
+        f'font-extrabold text-[13px]" style="background:{vcolor}">{vlabel}</span>'
         f'<div class="text-[13.5px] font-bold text-slate-800 mt-2.5 leading-snug">'
         f"{escape(str(head))}</div>"
         f'<div class="text-[11px] text-slate-500 mt-1.5 leading-relaxed">{escape(vdesc)}</div>'
         "</div></div>"
-    )
-    sw_card = (
-        f'<div class="{_CARD} p-5">'
-        '<div class="text-[11px] font-extrabold text-emerald-600 mb-1.5">잘한 점</div>'
-        f'<ul class="text-[11px] text-slate-600 space-y-1 mb-3 list-none">{gi}</ul>'
-        '<div class="text-[11px] font-extrabold text-red-500 mb-1.5">아쉬운 점</div>'
-        f'<ul class="text-[11px] text-slate-600 space-y-1 list-none">{bi}</ul></div>'
-    )
-    blocks.append(
-        f'<div class="grid grid-cols-3 gap-3 items-stretch">{verdict_card}{sw_card}</div>'
+        f"{plain_block}</div>"
     )
 
     # ── 목표 달성 가능성(결정권자 1순위) — verdict 바로 아래 ──
@@ -495,7 +524,7 @@ def _build_html(result: dict) -> str:
         )
     blocks.append(
         _section(
-            "2",
+            _sec(),
             "소비자 반응 — 어디서 새는가",
             _BLUE,
             funnel_body,
@@ -509,7 +538,7 @@ def _build_html(result: dict) -> str:
     # ── 세그먼트 히트맵(누구에게 통하나) ──
     segs = result.get("segments") or []
     if segs:
-        blocks.append(_segment_block(segs))
+        blocks.append(_segment_block(segs, _sec()))
 
     # ── 구매의도 | 감정 (2열) ──
     pid = report.get("purchase_intent_dist") or {}
@@ -525,7 +554,11 @@ def _build_html(result: dict) -> str:
     blocks.append(
         '<div class="grid grid-cols-2 gap-3">'
         + _section(
-            "", "구매의도 분포", _INDIGO, pi_body, tip='"이 제품 사고 싶나?"를 5단계로 나눈 거예요.'
+            _sec(),
+            "구매의도 분포",
+            _INDIGO,
+            pi_body,
+            tip='"이 제품 사고 싶나?"를 5단계로 나눈 거예요.',
         )
         + _section("", "광고를 보고 든 느낌", _TEAL, emo_body)
         + "</div>"
@@ -534,7 +567,7 @@ def _build_html(result: dict) -> str:
     # ── 메시지 수신(의도 vs 저항) ──
     msg = result.get("message_reception")
     if msg:
-        blocks.append(_message_block(msg))
+        blocks.append(_message_block(msg, _sec()))
 
     # ── 거부 사유 | 브랜드 식별 (2열) ──
     rb = report.get("rejection") or {}
@@ -565,9 +598,9 @@ def _build_html(result: dict) -> str:
         )
     blocks.append(
         '<div class="grid grid-cols-2 gap-3">'
-        + _section("", f"광고를 거부한 이유 ({_pct(rb.get('rejection_rate'))})", _RED, rej_body)
+        + _section(_sec(), f"광고를 거부한 이유 ({_pct(rb.get('rejection_rate'))})", _RED, rej_body)
         + _section(
-            "3",
+            "",
             "브랜드가 기억에 남았나",
             _GREEN,
             brand_body,
@@ -589,7 +622,7 @@ def _build_html(result: dict) -> str:
         )
         blocks.append(
             _section(
-                "4",
+                _sec(),
                 "광고 자체의 완성도 진단",
                 _AMBER,
                 diag_body,
@@ -598,6 +631,44 @@ def _build_html(result: dict) -> str:
                     '<b class="text-amber-500">주황</b>=보통 · '
                     '<b class="text-red-500">빨강</b>=손봐야 함.'
                 ),
+            )
+        )
+
+    # ── 토론 참가자 소개 — 개선안·토론에 나오는 이름이 누구인지 먼저 정리(프로필·역할·최종 입장) ──
+    # 현재(최근) 토론 기준(debate.participants). 화면 ParticipantRoster와 같은 의미·라벨.
+    participants = debate.get("participants") or []
+    if participants:
+        prows = []
+        for p in participants:
+            utts = p.get("utterances") or []
+            stance = (utts[-1].get("stance") if utts else "neutral") or "neutral"
+            scol, slab = _STANCE.get(stance, (_SLATE, "중립"))
+            prof = escape(str(p.get("persona_profile", "")))
+            role = escape(str(p.get("role", "")))
+            prof_html = f'<span class="text-[10px] text-slate-500">· {prof}</span>' if prof else ""
+            role_html = (
+                '<span class="text-[9.5px] text-slate-400 bg-slate-100 rounded px-1.5 py-0.5">'
+                f"{role}</span>"
+                if role
+                else ""
+            )
+            prows.append(
+                '<div class="flex items-center gap-2 py-1.5 border-b border-slate-100 '
+                'last:border-0 break-inside-avoid">'
+                '<span class="font-bold text-[11px] text-slate-800">'
+                f"{escape(str(p.get('persona_name', '')))}</span>"
+                f"{prof_html}{role_html}"
+                '<span class="ml-auto inline-block px-2 py-0.5 rounded-full text-white '
+                f'text-[9.5px] font-bold shrink-0" style="background:{scol}">{slab}</span>'
+                "</div>"
+            )
+        blocks.append(
+            _section(
+                "",
+                "토론 참가자",
+                _INDIGO,
+                "".join(prows),
+                tip="개선안과 토론에 나오는 이름이 누구인지 — 프로필·역할·토론 최종 입장을 먼저 정리했어요.",
             )
         )
 
@@ -611,7 +682,13 @@ def _build_html(result: dict) -> str:
                 '<div class="rounded-lg bg-slate-50 border-l-4 px-3 py-2 my-1 break-inside-avoid" '
                 f'style="border-color:{_STANCE.get(q.get("stance", "neutral"), (_SLATE, ""))[0]}">'
                 f'<div class="text-[10.5px] text-slate-700">“{escape(str(q.get("text", "")))}”</div>'
-                '<div class="text-[9.5px] text-slate-400 mt-0.5">— '
+                + (
+                    '<div class="text-[9.5px] text-slate-500 mt-1 leading-snug">↳ 무엇에/왜 — '
+                    f"{escape(str(q.get('reason', '')))}</div>"
+                    if q.get("reason")
+                    else ""
+                )
+                + '<div class="text-[9.5px] text-slate-400 mt-0.5">— '
                 f"{escape(str(q.get('persona_name', '')))} · {escape(str(q.get('role', '')))}</div>"
                 "</div>"
                 for q in (dg.get("quotes") or [])[:2]
@@ -640,7 +717,7 @@ def _build_html(result: dict) -> str:
             )
         blocks.append(
             _section(
-                "5",
+                _sec(),
                 "전문가·소비자 토론",
                 _INDIGO,
                 "".join(dcards),
@@ -684,7 +761,7 @@ def _build_html(result: dict) -> str:
             )
         blocks.append(
             _section(
-                "6",
+                _sec(),
                 "그래서, 무엇을 고치면 되나",
                 _BLUE,
                 "".join(rec),
@@ -698,12 +775,18 @@ def _build_html(result: dict) -> str:
             qb = "".join(
                 '<div class="rounded-lg bg-slate-50 border-l-4 border-slate-300 px-3 py-2 my-1.5">'
                 f'<div class="text-[10.5px] text-slate-700">“{escape(str(q.get("text", "")))}”</div>'
-                f'<div class="text-[9.5px] text-slate-400 mt-0.5">— '
+                + (
+                    '<div class="text-[9.5px] text-slate-500 mt-1 leading-snug">↳ 무엇에/왜 — '
+                    f"{escape(str(q.get('reason', '')))}</div>"
+                    if q.get("reason")
+                    else ""
+                )
+                + '<div class="text-[9.5px] text-slate-400 mt-0.5">— '
                 f"{escape(str(q.get('persona_name', '')))} · {escape(str(q.get('role', '')))}</div>"
                 "</div>"
                 for q in quotes[:2]
             )
-            blocks.append(_section("5", "소비자 목소리", _SLATE, qb))
+            blocks.append(_section(_sec(), "소비자 목소리", _SLATE, qb))
 
     blocks.append(
         '<div class="text-[9px] text-slate-400 leading-relaxed pt-3 border-t border-slate-200">'
@@ -719,8 +802,9 @@ def _build_html(result: dict) -> str:
         "<script>tailwind.config={theme:{extend:{fontFamily:{sans:"
         "['Malgun Gothic','Noto Sans KR','Apple SD Gothic Neo','sans-serif']}}}}</script>"
         "<style>*{-webkit-print-color-adjust:exact;print-color-adjust:exact;}"
+        "html,body{background:#f1f5f9;}"
         "body{font-family:'Malgun Gothic','Noto Sans KR','Apple SD Gothic Neo',sans-serif;}</style>"
-        "</head><body class='bg-slate-100 text-slate-900 px-6 pt-6 pb-2'>" + body + "</body></html>"
+        "</head><body class='bg-slate-100 text-slate-900 px-8 py-3'>" + body + "</body></html>"
     )
 
 
@@ -761,6 +845,13 @@ def render_report_pdf(result: dict) -> bytes:
     from playwright.sync_api import sync_playwright
 
     html = _build_html(result.get("report_view") or result)
+    # 모든 페이지 상/하단에 '배경색 여백'을 만든다 — @page margin 영역(원래 흰색)을
+    # header/footer 템플릿의 배경 띠로 덮는다. body 배경(#f1f5f9)과 같은 색이라 첫 페이지부터
+    # 마지막까지 균일한 여백이 된다(margin 0이면 2페이지부터 콘텐츠가 가장자리에 붙던 문제 해결).
+    band = (
+        '<div style="background:#f1f5f9;width:100%;height:100%;margin:0;'
+        '-webkit-print-color-adjust:exact;print-color-adjust:exact;"></div>'
+    )
     with sync_playwright() as pw:
         browser = pw.chromium.launch(args=["--no-sandbox"])
         try:
@@ -770,7 +861,10 @@ def render_report_pdf(result: dict) -> bytes:
             pdf = page.pdf(
                 format="A4",
                 print_background=True,
-                margin={"top": "8mm", "bottom": "8mm", "left": "0mm", "right": "0mm"},
+                display_header_footer=True,
+                header_template=band,
+                footer_template=band,
+                margin={"top": "12mm", "bottom": "12mm", "left": "0mm", "right": "0mm"},
             )
         finally:
             browser.close()

@@ -62,7 +62,13 @@ def _quotes(debate: DebateResult, limit: int = 2) -> list[ReportQuote]:
     if opp:
         picks.append(opp)
     return [
-        ReportQuote(persona_name=p.persona_name, role=p.role, stance=u.stance, text=u.text)
+        ReportQuote(
+            persona_name=p.persona_name,
+            role=p.role,
+            stance=u.stance,
+            text=u.text,
+            reason=u.reason,
+        )
         for p, u in picks[:limit]
     ]
 

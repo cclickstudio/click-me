@@ -6,6 +6,8 @@ import { API_BASE } from '@/lib/api';
 import type {
   ConfidenceBadge,
   DebateDigest,
+  DebateParticipantDebate,
+  DebateStance,
   ObjectiveFit,
   ReportView,
   SegmentCell,
@@ -249,6 +251,76 @@ function ObjectiveFitCard({ f }: { f: ObjectiveFit }) {
   );
 }
 
+// 도넛 세그먼트 구분색(순환) — 인원 비중을 색으로 구분(클릭의향은 범례 텍스트로). PDF _DONUT_PALETTE와 동일.
+const DONUT_PALETTE = [
+  '#3182F6',
+  '#F59E0B',
+  '#10B981',
+  '#8B5CF6',
+  '#EC4899',
+  '#14B8A6',
+  '#EF4444',
+  '#64748B',
+];
+
+/* ─── 세그먼트 도넛 — 조각 크기=인원 비중, 색=세그먼트 구분(PDF와 동일) ─── */
+function SegmentDonut({ segments }: { segments: SegmentCell[] }) {
+  const byN = [...segments].sort((a, b) => (b.n || 0) - (a.n || 0));
+  const total = byN.reduce((s, x) => s + (x.n || 0), 0) || 1;
+  let acc = 0;
+  const stops: string[] = [];
+  const legend: { key: string; col: string; name: string; n: number; cir: number }[] = [];
+  byN.forEach((s, i) => {
+    const n = s.n || 0;
+    if (n <= 0) return;
+    const cir = s.click_intent_rate || 0;
+    const col = DONUT_PALETTE[i % DONUT_PALETTE.length];
+    const start = (acc / total) * 360;
+    acc += n;
+    stops.push(`${col} ${start.toFixed(1)}deg ${((acc / total) * 360).toFixed(1)}deg`);
+    legend.push({
+      key: `${s.age_band}-${s.gender}`,
+      col,
+      name: `${s.age_band} ${GENDER_KO[s.gender] ?? s.gender}`,
+      n,
+      cir,
+    });
+  });
+  if (legend.length === 0) return null;
+  return (
+    <div className='flex items-center gap-4 mb-3 flex-wrap'>
+      <div
+        className='shrink-0 w-[112px] h-[112px] rounded-full grid place-items-center'
+        style={{ background: `conic-gradient(${stops.join(',')})` }}>
+        <div className='w-[64px] h-[64px] rounded-full bg-white dark:bg-[#1C2333] grid place-items-center text-center'>
+          <div>
+            <div className='text-[15px] font-extrabold text-[#191F28] dark:text-[#F2F4F6]'>
+              {total}
+            </div>
+            <div className='text-[8px] text-[#8B95A1] dark:text-[#6B7280]'>명</div>
+          </div>
+        </div>
+      </div>
+      <div className='flex-1 min-w-[180px] space-y-1'>
+        {legend.map(l => (
+          <div key={l.key} className='flex items-center gap-1.5 text-[11px]'>
+            <span
+              className='w-2 h-2 rounded-full shrink-0'
+              style={{ background: l.col }}
+            />
+            <span className='text-[#4E5968] dark:text-[#9CA3AF] truncate'>
+              {l.name}
+            </span>
+            <span className='ml-auto text-[#8B95A1] dark:text-[#6B7280] shrink-0'>
+              {l.n}명 · 클릭 {pct(l.cir)}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /* ─── 연령×성별 세그먼트 히트맵(최대 차별점) ─── */
 function SegmentHeatmap({ segments }: { segments: SegmentCell[] }) {
   if (segments.length === 0) return null;
@@ -268,6 +340,7 @@ function SegmentHeatmap({ segments }: { segments: SegmentCell[] }) {
     <Section
       title='누구에게 통하나 — 연령대×성별'
       tip='같은 광고도 누가 보느냐에 따라 반응이 다릅니다. 셀이 진할수록 클릭 의향이 높아요(얇은 셀은 신뢰 낮음 표시).'>
+      <SegmentDonut segments={segments} />
       <div className='overflow-x-auto'>
         <table className='w-full text-xs border-collapse'>
           <thead>
@@ -404,6 +477,11 @@ function DebateDigestItem({ d, index }: { d: DebateDigest; index?: number }) {
               key={i}
               className='text-[12px] text-[#4E5968] dark:text-[#9CA3AF] bg-white dark:bg-[#1C2333] rounded-lg px-3 py-2 leading-relaxed'>
               “{q.text}”
+              {q.reason && (
+                <span className='block mt-1 text-[10px] text-[#8B95A1] dark:text-[#6B7280] leading-snug'>
+                  ↳ 무엇에/왜 — {q.reason}
+                </span>
+              )}
               {q.persona_name && (
                 <span className='block mt-0.5 text-[10px] text-[#B0B8C1] dark:text-[#4B5563]'>
                   — {q.persona_name}
@@ -455,26 +533,88 @@ function DebateDigestItem({ d, index }: { d: DebateDigest; index?: number }) {
   );
 }
 
+/* ─── 토론 참가자 입장 라벨(stance) — PDF _STANCE와 동일 의미 ─── */
+const STANCE_LABEL: Record<DebateStance, { label: string; cls: string }> = {
+  positive: { label: '긍정', cls: 'text-[#00A661] bg-[#E7F7EF] dark:bg-[#143C2C]' },
+  neutral: { label: '중립', cls: 'text-[#8B95A1] bg-[#F2F4F6] dark:bg-[#252D3D]' },
+  negative: { label: '부정', cls: 'text-[#F04452] bg-[#FDECEE] dark:bg-[#3B1F23]' },
+};
+
+/* 최종 입장 — 마지막 라운드 발언의 stance(없으면 중립). */
+function finalStance(p: DebateParticipantDebate): DebateStance {
+  const u = p.utterances;
+  return u && u.length > 0 ? u[u.length - 1].stance : 'neutral';
+}
+
+/* ─── 토론 참가자 소개 — 개선안에 나오는 이름이 누구인지 먼저 정리(프로필·역할·입장) ─── */
+function ParticipantRoster({
+  participants,
+}: {
+  participants: DebateParticipantDebate[];
+}) {
+  return (
+    <Section
+      title='토론 참가자'
+      tip='개선안과 토론에 등장하는 이름이 누구인지 — 한 줄 프로필·역할·토론 최종 입장을 먼저 정리했어요.'>
+      <ul className='space-y-1.5'>
+        {participants.map(p => {
+          const s = STANCE_LABEL[finalStance(p)] ?? STANCE_LABEL.neutral;
+          return (
+            <li
+              key={p.persona_id}
+              className='flex items-center gap-2 flex-wrap text-[12px] bg-[#F9FAFB] dark:bg-[#252D3D] rounded-lg px-3 py-2'>
+              <span className='font-semibold text-[#191F28] dark:text-[#F2F4F6]'>
+                {p.persona_name}
+              </span>
+              {p.persona_profile && (
+                <span className='min-w-0 text-[#4E5968] dark:text-[#9CA3AF]'>
+                  · {p.persona_profile}
+                </span>
+              )}
+              {p.role && (
+                <span className='shrink-0 px-1.5 py-0.5 rounded bg-white dark:bg-[#1C2333] text-[10px] text-[#8B95A1] dark:text-[#6B7280]'>
+                  {p.role}
+                </span>
+              )}
+              <span
+                className={`shrink-0 ml-auto px-2 py-0.5 rounded-full text-[10px] font-semibold ${s.cls}`}>
+                {s.label}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    </Section>
+  );
+}
+
 /* ─── 토론 섹션 — debates(합산)면 각 토론 나열, 없으면 단일 debate 렌더(하위호환) ─── */
 function DebateSection({ rv }: { rv: ReportView }) {
   const rep = rv.report;
+  // 참가자 소개는 현재(최근) 토론 기준 — 토론 요약보다 먼저 보여 이름을 식별 가능하게 한다.
+  const roster = rv.debate?.participants ?? [];
+  const rosterEl = roster.length > 0 ? <ParticipantRoster participants={roster} /> : null;
+
   // 합산 토론(여러 토론 누적) 우선.
   if (rv.debates && rv.debates.length > 0) {
     return (
-      <Section
-        title={`페르소나 토론 요약 (${rv.debates.length}건)`}
-        tip='개선 방향을 도출한 전문가·일반인 토론입니다. 토론할수록 항목이 늘어나요 — 각 토론의 주제·대표 발언·결론만 간추렸습니다.'>
-        <div className='space-y-3'>
-          {rv.debates.map((d, i) => (
-            <DebateDigestItem key={d.debate_id ?? i} d={d} index={i} />
-          ))}
-        </div>
-      </Section>
+      <>
+        {rosterEl}
+        <Section
+          title={`페르소나 토론 요약 (${rv.debates.length}건)`}
+          tip='개선 방향을 도출한 전문가·일반인 토론입니다. 토론할수록 항목이 늘어나요 — 각 토론의 주제·대표 발언·결론만 간추렸습니다.'>
+          <div className='space-y-3'>
+            {rv.debates.map((d, i) => (
+              <DebateDigestItem key={d.debate_id ?? i} d={d} index={i} />
+            ))}
+          </div>
+        </Section>
+      </>
     );
   }
 
   // 하위호환: 단일 토론 — report 필드로 다이제스트 구성.
-  if (!rep.debate_available) return null;
+  if (!rep.debate_available) return rosterEl;
   const single: DebateDigest = {
     topic_headline: rep.topic || rep.headline || '페르소나 토론',
     rounds_run: rep.rounds_run,
@@ -485,11 +625,14 @@ function DebateSection({ rv }: { rv: ReportView }) {
     quotes: rep.quotes ?? [],
   };
   return (
-    <Section
-      title='페르소나 토론 요약'
-      tip='개선 방향을 도출한 전문가·일반인 토론입니다 — 주제·대표 발언·결론만 간추렸습니다.'>
-      <DebateDigestItem d={single} />
-    </Section>
+    <>
+      {rosterEl}
+      <Section
+        title='페르소나 토론 요약'
+        tip='개선 방향을 도출한 전문가·일반인 토론입니다 — 주제·대표 발언·결론만 간추렸습니다.'>
+        <DebateDigestItem d={single} />
+      </Section>
+    </>
   );
 }
 
@@ -572,14 +715,26 @@ export function SimulationReportView({ rv }: { rv: ReportView }) {
             style={{ background: oc }}>
             {vLabel}
           </span>
-          {(rep.plain_summary || rep.headline) && (
+          {/* 전문가용 진단(headline) — verdict 바로 아래 */}
+          {(rep.headline || rep.plain_summary) && (
             <p className='text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6] mt-2 leading-snug'>
-              {rep.plain_summary || rep.headline}
+              {rep.headline || rep.plain_summary}
             </p>
           )}
           <p className='text-xs text-[#8B95A1] dark:text-[#6B7280] mt-1 leading-relaxed'>
             {vDesc}
           </p>
+          {/* 비전문가용 '한눈에 보는 결론' — 가장 마지막(쉬운 말 요약) */}
+          {rep.plain_summary && rep.plain_summary !== rep.headline && (
+            <div className='mt-3 pt-3 border-t border-[#F2F4F6] dark:border-[#252D3D]'>
+              <p className='text-[11px] font-bold text-[#3182F6] mb-1'>
+                🔎 한눈에 보는 결론
+              </p>
+              <p className='text-xs text-[#4E5968] dark:text-[#9CA3AF] leading-relaxed'>
+                {rep.plain_summary}
+              </p>
+            </div>
+          )}
         </div>
       </div>
 
