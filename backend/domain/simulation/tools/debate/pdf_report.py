@@ -66,6 +66,19 @@ _STANCE = {
 }
 _GENDER_KO = {"M": "남성", "F": "여성"}
 
+# 도넛 세그먼트 구분색(순환) — 인원 비중을 색으로 구분(클릭의향은 범례 텍스트로).
+# 클릭의향 신호색을 쓰면 표본 적은 셀이 전부 회색이 돼 구분이 안 되므로 구분 팔레트 사용.
+_DONUT_PALETTE = (
+    "#3182F6",
+    "#F59E0B",
+    "#10B981",
+    "#8B5CF6",
+    "#EC4899",
+    "#14B8A6",
+    "#EF4444",
+    "#64748B",
+)
+
 _CARD = "bg-white rounded-2xl border border-slate-200 shadow-sm break-inside-avoid"
 
 
@@ -130,23 +143,6 @@ def _verdict(cir: float, rej: float) -> tuple[str, str, str]:
         _AMBER,
         "가능성은 보이지만, '아쉬운 점'을 손보고 내보내는 걸 권해요.",
     )
-
-
-def _sw(rubric: list) -> tuple[list, list]:
-    if not rubric:
-        return [], []
-    srt = sorted(rubric, key=lambda s: s.get("score", 0) or 0)
-    weak = [
-        (_RUBRIC_KO.get(s.get("dimension"), s.get("dimension", "")), s.get("score", 0) or 0)
-        for s in srt[:2]
-        if (s.get("score", 0) or 0) < 70
-    ]
-    strong = [
-        (_RUBRIC_KO.get(s.get("dimension"), s.get("dimension", "")), s.get("score", 0) or 0)
-        for s in srt[::-1][:2]
-        if (s.get("score", 0) or 0) >= 60
-    ]
-    return strong, weak
 
 
 def _bar(label: str, ratio: float, disp: str, color: str = _BLUE) -> str:
@@ -301,16 +297,15 @@ def _segment_block(segs: list, num: str = "") -> str:
         + "</tbody></table>"
         + legend
     )
-    # 도넛 — 조각 크기=인원 비중, 색=클릭 의향 신호(초록 큰 조각=잘 통하는 타깃이 많다).
+    # 도넛 — 조각 크기=인원 비중, 색=세그먼트 구분(클릭의향은 범례 텍스트로).
     total_seg = sum((s.get("n") or 0) for s in ordered) or 1
     stops, acc, legend_rows = [], 0.0, []
-    for s in ordered:
+    for i, s in enumerate(ordered):
         n = s.get("n") or 0
         if n <= 0:
             continue
         cir = s.get("click_intent_rate") or 0
-        thin = bool(s.get("low_confidence"))
-        col = _SLATE if thin else (_GREEN if cir >= 0.3 else _AMBER if cir >= 0.15 else _RED)
+        col = _DONUT_PALETTE[i % len(_DONUT_PALETTE)]
         start = acc * 360
         acc += n / total_seg
         stops.append(f"{col} {start:.1f}deg {acc * 360:.1f}deg")
@@ -459,21 +454,22 @@ def _build_html(result: dict) -> str:
         + "</div>"
     )
 
-    # ── 종합 판정(2칸) + 강약점(1칸) ──
+    # ── 종합 판정(풀폭) — verdict(전문가 진단) + 한눈에 보는 결론(비전문가, 하단 가로) ──
+    # 화면(SimulationReportView)과 동일 구조. 강약점 요약은 §진단 섹션(rubric)에 그대로 있다.
     deg = overall / 100 * 360
-    strong, weak = _sw(rubric)
-    gi = (
-        "".join(
-            f'<li>{escape(nm)} <b class="text-emerald-600">{sc}점</b></li>' for nm, sc in strong
+    plain = report.get("plain_summary") or ""
+    plain_block = (
+        (
+            '<div class="mt-4 pt-3 border-t border-slate-100">'
+            '<div class="text-[11px] font-extrabold text-blue-600 mb-1">🔎 한눈에 보는 결론</div>'
+            f'<p class="text-[11px] text-slate-600 leading-relaxed">{escape(str(plain))}</p></div>'
         )
-        or "<li>—</li>"
+        if plain and plain != head
+        else ""
     )
-    bi = (
-        "".join(f'<li>{escape(nm)} <b class="text-red-500">{sc}점</b></li>' for nm, sc in weak)
-        or "<li>—</li>"
-    )
-    verdict_card = (
-        f'<div class="{_CARD} p-5 col-span-2 flex items-center gap-5">'
+    blocks.append(
+        f'<div class="{_CARD} p-5">'
+        '<div class="flex items-center gap-5">'
         '<div class="shrink-0 text-center">'
         '<div class="w-[92px] h-[92px] rounded-full grid place-items-center" '
         f'style="background:conic-gradient({ocolor} {deg:.1f}deg,#e2e8f0 0)">'
@@ -482,34 +478,13 @@ def _build_html(result: dict) -> str:
         f'<div class="text-[12px] font-extrabold mt-1.5" style="color:{ocolor}">'
         f"{grade}등급 · {gtext}</div>"
         '<div class="text-[9px] text-slate-400">종합 점수 / 100</div></div>'
-        '<div><span class="inline-block px-4 py-1.5 rounded-full text-white font-extrabold '
-        f'text-[13px]" style="background:{vcolor}">{vlabel}</span>'
+        '<div class="flex-1"><span class="inline-block px-4 py-1.5 rounded-full text-white '
+        f'font-extrabold text-[13px]" style="background:{vcolor}">{vlabel}</span>'
         f'<div class="text-[13.5px] font-bold text-slate-800 mt-2.5 leading-snug">'
         f"{escape(str(head))}</div>"
         f'<div class="text-[11px] text-slate-500 mt-1.5 leading-relaxed">{escape(vdesc)}</div>'
         "</div></div>"
-    )
-    # 비전문가용 '한눈에 보는 결론' — 강약점 박스 맨 아래(쉬운 말 요약)
-    plain = report.get("plain_summary") or ""
-    plain_block = (
-        (
-            '<div class="mt-3 pt-3 border-t border-slate-100">'
-            '<div class="text-[11px] font-extrabold text-blue-600 mb-1">🔎 한눈에 보는 결론</div>'
-            f'<p class="text-[11px] text-slate-600 leading-relaxed">{escape(str(plain))}</p></div>'
-        )
-        if plain
-        else ""
-    )
-    sw_card = (
-        f'<div class="{_CARD} p-5">'
-        '<div class="text-[11px] font-extrabold text-emerald-600 mb-1.5">잘한 점</div>'
-        f'<ul class="text-[11px] text-slate-600 space-y-1 mb-3 list-none">{gi}</ul>'
-        '<div class="text-[11px] font-extrabold text-red-500 mb-1.5">아쉬운 점</div>'
-        f'<ul class="text-[11px] text-slate-600 space-y-1 list-none">{bi}</ul>'
         f"{plain_block}</div>"
-    )
-    blocks.append(
-        f'<div class="grid grid-cols-3 gap-3 items-stretch">{verdict_card}{sw_card}</div>'
     )
 
     # ── 목표 달성 가능성(결정권자 1순위) — verdict 바로 아래 ──
@@ -827,10 +802,9 @@ def _build_html(result: dict) -> str:
         "<script>tailwind.config={theme:{extend:{fontFamily:{sans:"
         "['Malgun Gothic','Noto Sans KR','Apple SD Gothic Neo','sans-serif']}}}}</script>"
         "<style>*{-webkit-print-color-adjust:exact;print-color-adjust:exact;}"
-        "@page{margin:0;}"
         "html,body{background:#f1f5f9;}"
         "body{font-family:'Malgun Gothic','Noto Sans KR','Apple SD Gothic Neo',sans-serif;}</style>"
-        "</head><body class='bg-slate-100 text-slate-900 px-6 py-8'>" + body + "</body></html>"
+        "</head><body class='bg-slate-100 text-slate-900 px-8 py-3'>" + body + "</body></html>"
     )
 
 
@@ -871,18 +845,26 @@ def render_report_pdf(result: dict) -> bytes:
     from playwright.sync_api import sync_playwright
 
     html = _build_html(result.get("report_view") or result)
+    # 모든 페이지 상/하단에 '배경색 여백'을 만든다 — @page margin 영역(원래 흰색)을
+    # header/footer 템플릿의 배경 띠로 덮는다. body 배경(#f1f5f9)과 같은 색이라 첫 페이지부터
+    # 마지막까지 균일한 여백이 된다(margin 0이면 2페이지부터 콘텐츠가 가장자리에 붙던 문제 해결).
+    band = (
+        '<div style="background:#f1f5f9;width:100%;height:100%;margin:0;'
+        '-webkit-print-color-adjust:exact;print-color-adjust:exact;"></div>'
+    )
     with sync_playwright() as pw:
         browser = pw.chromium.launch(args=["--no-sandbox"])
         try:
             page = browser.new_page()
             page.set_content(html, wait_until="networkidle")
             page.wait_for_timeout(600)  # Tailwind Play CDN(JIT)이 DOM 스캔·스타일 주입할 시간
-            # margin 0 — 페이지 여백은 @page/body 패딩이 대신 잡고, body 배경이 가장자리까지
-            # 칠해져 상/하단 흰 띠가 없어진다(여백도 배경색).
             pdf = page.pdf(
                 format="A4",
                 print_background=True,
-                margin={"top": "0mm", "bottom": "0mm", "left": "0mm", "right": "0mm"},
+                display_header_footer=True,
+                header_template=band,
+                footer_template=band,
+                margin={"top": "12mm", "bottom": "12mm", "left": "0mm", "right": "0mm"},
             )
         finally:
             browser.close()

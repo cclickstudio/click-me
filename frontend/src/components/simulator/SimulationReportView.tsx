@@ -251,24 +251,30 @@ function ObjectiveFitCard({ f }: { f: ObjectiveFit }) {
   );
 }
 
-/* ─── 세그먼트 도넛 — 조각 크기=인원 비중, 색=클릭 의향 신호(PDF와 동일) ─── */
+// 도넛 세그먼트 구분색(순환) — 인원 비중을 색으로 구분(클릭의향은 범례 텍스트로). PDF _DONUT_PALETTE와 동일.
+const DONUT_PALETTE = [
+  '#3182F6',
+  '#F59E0B',
+  '#10B981',
+  '#8B5CF6',
+  '#EC4899',
+  '#14B8A6',
+  '#EF4444',
+  '#64748B',
+];
+
+/* ─── 세그먼트 도넛 — 조각 크기=인원 비중, 색=세그먼트 구분(PDF와 동일) ─── */
 function SegmentDonut({ segments }: { segments: SegmentCell[] }) {
   const byN = [...segments].sort((a, b) => (b.n || 0) - (a.n || 0));
   const total = byN.reduce((s, x) => s + (x.n || 0), 0) || 1;
   let acc = 0;
   const stops: string[] = [];
   const legend: { key: string; col: string; name: string; n: number; cir: number }[] = [];
-  for (const s of byN) {
+  byN.forEach((s, i) => {
     const n = s.n || 0;
-    if (n <= 0) continue;
+    if (n <= 0) return;
     const cir = s.click_intent_rate || 0;
-    const col = s.low_confidence
-      ? '#64748B'
-      : cir >= 0.3
-        ? '#10B981'
-        : cir >= 0.15
-          ? '#F59E0B'
-          : '#EF4444';
+    const col = DONUT_PALETTE[i % DONUT_PALETTE.length];
     const start = (acc / total) * 360;
     acc += n;
     stops.push(`${col} ${start.toFixed(1)}deg ${((acc / total) * 360).toFixed(1)}deg`);
@@ -279,7 +285,7 @@ function SegmentDonut({ segments }: { segments: SegmentCell[] }) {
       n,
       cir,
     });
-  }
+  });
   if (legend.length === 0) return null;
   return (
     <div className='flex items-center gap-4 mb-3 flex-wrap'>
