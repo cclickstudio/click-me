@@ -1,7 +1,10 @@
 # 🅱 어시스턴트 tool-body — 채팅 그래프(🅰)가 @tool로 래핑할 위임 함수들
 """숫자·상태는 여기서(실측·DB) 나온다. 어시스턴트는 예외를 던지지 않고 dict로 표면화한다.
 start_regeneration은 이미 만들어진 DiagnosisResult를 받는 오케스트레이터에서 호출된다 —
-detection(🅰) 호출은 이 모듈이 하지 않는다(설계 §1 경계)."""
+detection(🅰) 호출은 이 모듈이 하지 않는다(설계 §1 경계).
+
+연결 대기 — 🅰가 build_management_agent에서 @tool로 래핑 후 INTENT_TOOLS에 등록(설계 §3·§5.1).
+현재는 라우터 엔드포인트로만 노출되며 채팅 그래프에서는 아직 호출되지 않는다."""
 
 from __future__ import annotations
 

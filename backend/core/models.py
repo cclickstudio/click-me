@@ -422,7 +422,7 @@ class RegenerationJobRow(Base):
     campaign_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
     status: Mapped[str] = mapped_column(String(32), index=True, nullable=False)
     selection_token: Mapped[str | None] = mapped_column(String(64), unique=True)
-    candidates: Mapped[dict | None] = mapped_column(JSONB)
+    candidates: Mapped[list | None] = mapped_column(JSONB)  # list[dict] — AWAITING_SELECTION 후보
     selected_candidate_id: Mapped[str | None] = mapped_column(String(64))
     proposal: Mapped[dict | None] = mapped_column(JSONB)
     outcome_reason: Mapped[str | None] = mapped_column(String(48))
