@@ -478,6 +478,45 @@ async def assign_member_team(
     return {"ok": True}
 
 
+@router.patch("/projects/{project_id}/team")
+async def assign_project_team(
+    project_id: str,
+    body: AssignTeam,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """프로젝트를 팀에 배정/이동 (칸반 드래그). team_id가 None이면 미배정으로. COMPANY 전용."""
+    if current_user.role != "COMPANY":
+        raise HTTPException(
+            status_code=403, detail="프로젝트 팀 배정은 기업(COMPANY) 계정만 가능합니다."
+        )
+    org = await _get_company_org(current_user, db)
+
+    proj = await db.execute(
+        text("SELECT organization_id FROM projects WHERE id = :pid AND deleted_at IS NULL"),
+        {"pid": project_id},
+    )
+    p = proj.fetchone()
+    if not p or str(p.organization_id) != str(org.id):
+        raise HTTPException(status_code=404, detail="프로젝트를 찾을 수 없습니다.")
+
+    team_uuid = None
+    if body.team_id:
+        team = await db.scalar(
+            select(Team).where(Team.id == body.team_id, Team.organization_id == org.id)
+        )
+        if not team:
+            raise HTTPException(status_code=404, detail="존재하지 않는 팀입니다.")
+        team_uuid = str(team.id)
+
+    await db.execute(
+        text("UPDATE projects SET team_id = :tid WHERE id = :pid"),
+        {"tid": team_uuid, "pid": project_id},
+    )
+    await db.commit()
+    return {"ok": True}
+
+
 class OrgInfo(BaseModel):
     id: str
     name: str
