@@ -71,7 +71,7 @@ async def start_generation(
     # 상품 이미지 bytes를 task store에 주입 (pipeline이 state로 전달받음)
     product_image_bytes: bytes | None = None
     if request.product_image_temp_key:
-        product_image_bytes = _product_image_store.pop(request.product_image_temp_key, None)
+        product_image_bytes = _product_image_store.get(request.product_image_temp_key)
 
     _tasks[generation_id] = {
         "status": "pending",
@@ -128,6 +128,9 @@ async def _run_pipeline(
         store["status"] = "failed"
         await _update_status(generation_id, "failed", error_message=str(exc))
         emit({"event": "error", "message": str(exc)})
+    finally:
+        if request.product_image_temp_key:
+            _product_image_store.pop(request.product_image_temp_key, None)
 
 
 async def _update_status(generation_id: str, status: str, error_message: str | None = None) -> None:

@@ -23,7 +23,7 @@ from domain.generator.contracts.pipeline_schemas import (
 )
 from domain.generator.graph.nodes import emit_progress
 from domain.generator.graph.state import GenerationState
-from domain.generator.pipeline.copy_generator import generate_copy
+from domain.generator.pipeline.copy_generator import generate_copies_batch
 from domain.generator.pipeline.image_generator import (
     composite_logo,
     generate_image,
@@ -80,7 +80,27 @@ async def generate_candidates(state: GenerationState, config: RunnableConfig) ->
             logger.exception("상품 누끼 실패 — 상품 없이 일반 생성으로 진행")
             product_cutout_bytes = None
 
-    async def build(idx: int, variant_id: str, plan: StrategyPlan) -> dict:
+    # 카피 3개를 LLM 1회 호출로 일괄 생성 (pipeline 모드일 때만).
+    # multimodal + 상품 이미지 없는 경우는 generate_image_and_copy 내부에서 카피를 만든다.
+    batch_copies = [None, None, None]
+    if not (multimodal and product_cutout_bytes is None):
+        batch_copies = await generate_copies_batch(
+            product_analysis=product_analysis,
+            strategy_outputs=[
+                (
+                    StrategyOutput(
+                        strategy=plan.strategy,
+                        strategy_description=plan.strategy_description,
+                        rationale=plan.rationale,
+                    ),
+                    plan.template,
+                )
+                for plan in plans
+            ],
+            improvement_context=req.get("improvement_context"),
+        )
+
+    async def build(idx: int, variant_id: str, plan: StrategyPlan, ad_copy) -> dict:
         nonlocal done
 
         # multimodal 한방 생성은 상품 픽셀 보존이 불가하므로, 상품 이미지가 있으면 사용하지 않는다.
@@ -95,17 +115,7 @@ async def generate_candidates(state: GenerationState, config: RunnableConfig) ->
                 tone=tone,
             )
         else:
-            # 1. 카피 먼저 생성 (이미지 생성 전 텍스트 확정)
-            ad_copy = await generate_copy(
-                product_analysis=product_analysis,
-                strategy_output=StrategyOutput(
-                    strategy=plan.strategy,
-                    strategy_description=plan.strategy_description,
-                    rationale=plan.rationale,
-                ),
-                template=plan.template,
-            )
-
+            # 1. 카피는 이미 배치 생성됨 — 이미지만 생성
             # 2. 이미지 생성 — 상품 이미지가 있으면 마스크 인페인팅으로 상품 보존하며 생성
             image_bytes = await generate_image(
                 product_analysis=product_analysis,
@@ -168,8 +178,10 @@ async def generate_candidates(state: GenerationState, config: RunnableConfig) ->
 
     results = await asyncio.gather(
         *[
-            build(i, vid, plan)
-            for i, (vid, plan) in enumerate(zip(_VARIANT_IDS, plans, strict=True))
+            build(i, vid, plan, copy)
+            for i, (vid, plan, copy) in enumerate(
+                zip(_VARIANT_IDS, plans, batch_copies, strict=True)
+            )
         ]
     )
     candidates = sorted(results, key=lambda c: c["idx"])
