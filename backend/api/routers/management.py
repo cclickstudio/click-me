@@ -881,11 +881,17 @@ async def put_kpi_override(
 
 
 @router.delete("/campaigns/{campaign_id}")
-async def delete_campaign(campaign_id: str, db: AsyncSession = Depends(get_db)):
+async def delete_campaign(
+    campaign_id: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     """캠페인 삭제 — 자식 광고세트·광고도 함께. LIVE 모드에서만 실제 Meta 삭제(그 외 무동작).
 
     적재 기록(created_campaigns)은 지우지 않고 deleted_at만 찍는다(감사 이력 — 만듦→지움 보존).
     """
+    org_id = await _require_org_id(user, db)
+    await _require_owned_campaign(db, org_id, campaign_id)
     writer = build_writer(settings)
     result = await writer.delete_campaign(campaign_id, idem_key=f"del_{campaign_id}")
     status = result.status.value if hasattr(result.status, "value") else str(result.status)
@@ -1295,10 +1301,14 @@ async def _require_ad_account(db: AsyncSession, org_id: UUID) -> str:
 
 @router.post("/campaigns/{campaign_id}/activate")
 async def activate_campaign(
-    campaign_id: str, body: ActivateRequest, db: AsyncSession = Depends(get_db)
+    campaign_id: str,
+    body: ActivateRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
     """게재 시작 — Meta 선불 잔액 게이트 → spend_cap → 캠페인·세트·광고 ACTIVE. 실과금 시작점."""
-    row = await _created_campaign_row(db, campaign_id)
+    org_id = await _require_org_id(user, db)
+    row = await _require_owned_campaign(db, org_id, campaign_id)
     commit = body.commit_krw or (row.daily_budget_krw if row else 0)
     if commit <= 0:
         raise HTTPException(status_code=422, detail="배정 금액(commit_krw)을 결정할 수 없습니다.")
@@ -1352,11 +1362,11 @@ async def activate_campaign(
 
     # 3) 활성화 제안 → 승인 → 실행 (멱등·감사 단일 경로). 버튼 클릭 = Tier 3 사람 승인.
     now = datetime.now(UTC)
-    ad_account = _resolve_ad_account()
+    ad_account = await _require_ad_account(db, org_id)
     proposal = finalize_proposal(
         ActionProposal(
             proposal_id=f"prop_{uuid4().hex[:8]}",
-            tenant_id=TENANT_ID,
+            tenant_id=str(org_id),
             ad_account_id=ad_account,
             target_object_ids=(campaign_id,),
             action_type="ACTIVATE_CAMPAIGN",
@@ -1424,9 +1434,14 @@ async def delivery_status(campaign_id: str):
 
 @router.get("/campaigns/{campaign_id}/sync")
 async def sync_campaign(
-    campaign_id: str, org_id: str = DEMO_ORG_ID, db: AsyncSession = Depends(get_db)
+    campaign_id: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
     """Meta 누적 소진액 → 크레딧 차감 정산(증분) + 자동 종료 상태 반영."""
+    org_uuid = await _require_org_id(user, db)
+    await _require_owned_campaign(db, org_uuid, campaign_id)
+    org_id = str(org_uuid)
     reader = build_reader(settings)
     billing = get_billing_service()
     metrics = await reader.get_metrics(campaign_id, datetime.now(UTC))
@@ -1461,14 +1476,20 @@ async def sync_campaign(
 
 
 @router.post("/campaigns/{campaign_id}/pause")
-async def pause_campaign(campaign_id: str, db: AsyncSession = Depends(get_db)):
+async def pause_campaign(
+    campaign_id: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     """캠페인 즉시 일시중지(PAUSED) — 게재·과금 중단. 크레딧 게이트 불요(돈이 나가는 쪽 아님)."""
+    org_id = await _require_org_id(user, db)
+    await _require_owned_campaign(db, org_id, campaign_id)
     now = datetime.now(UTC)
-    ad_account = _resolve_ad_account()
+    ad_account = await _require_ad_account(db, org_id)
     proposal = finalize_proposal(
         ActionProposal(
             proposal_id=f"prop_{uuid4().hex[:8]}",
-            tenant_id=TENANT_ID,
+            tenant_id=str(org_id),
             ad_account_id=ad_account,
             target_object_ids=(campaign_id,),
             action_type="PAUSE_CAMPAIGN",

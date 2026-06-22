@@ -7,6 +7,8 @@ from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 
 from api.routers import management
+from core.auth import get_current_user
+from core.db import get_db
 
 
 class _FakeScalars:
@@ -166,3 +168,39 @@ def test_from_candidate_requires_auth():
 def test_ad_image_requires_auth():
     res = _client_no_auth().post("/api/management/ad-image")
     assert res.status_code == 401
+
+
+def _client_with(org_id, *, campaign=None, conn=None, use_mock=True, monkeypatch=None):
+    if monkeypatch is not None:
+        monkeypatch.setattr(management.settings, "use_mock", use_mock, raising=False)
+    app = FastAPI()
+    app.include_router(management.router, prefix="/api/management")
+    app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(id=uuid.uuid4())
+    app.dependency_overrides[get_db] = lambda: _FakeDB(org_id=org_id, campaign=campaign, conn=conn)
+    return TestClient(app, raise_server_exceptions=False)
+
+
+def test_delete_requires_auth():
+    res = _client_no_auth().delete("/api/management/campaigns/camp_x")
+    assert res.status_code == 401
+
+
+def test_sync_requires_auth():
+    res = _client_no_auth().get("/api/management/campaigns/camp_x/sync")
+    assert res.status_code == 401
+
+
+def test_delete_cross_tenant_403(monkeypatch):
+    org = uuid.uuid4()
+    other = uuid.uuid4()
+    campaign = SimpleNamespace(tenant_id=str(other), daily_budget_krw=1000, name="x")
+    client = _client_with(org, campaign=campaign, monkeypatch=monkeypatch)
+    res = client.delete("/api/management/campaigns/camp_x")
+    assert res.status_code == 403
+
+
+def test_sync_unknown_campaign_404(monkeypatch):
+    org = uuid.uuid4()
+    client = _client_with(org, campaign=None, use_mock=True, monkeypatch=monkeypatch)
+    res = client.get("/api/management/campaigns/totally_unknown/sync")
+    assert res.status_code == 404

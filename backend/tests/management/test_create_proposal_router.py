@@ -16,6 +16,22 @@ from domain.management.contracts.schemas import ActionProposal, verify_proposal_
 _BODY = {"name": "가을 신상 런칭", "daily_budget_krw": 50_000, "run_days": 7}
 
 
+class _FakeScalars:
+    def __init__(self, v):
+        self._v = v
+
+    def first(self):
+        return self._v
+
+
+class _FakeResult:
+    def __init__(self, v):
+        self._v = v
+
+    def scalars(self):
+        return _FakeScalars(self._v)
+
+
 class _FakeDB:
     """org 조회(db.scalar)만 흉내 — meta_connections는 None으로 mock fallback."""
 
@@ -26,6 +42,12 @@ class _FakeDB:
         if "organization_members" in str(stmt):
             return self._org_id
         return None
+
+    async def execute(self, stmt, *a, **k):
+        # 소유권 조회(_created_campaign_row) — org 소유 캠페인 행을 반환해 검증 통과.
+        return _FakeResult(
+            SimpleNamespace(tenant_id=str(self._org_id), daily_budget_krw=50_000, name="x")
+        )
 
     async def commit(self):
         pass
