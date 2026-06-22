@@ -100,8 +100,8 @@ def build_management_agent(settings):
         config = {
             "configurable": {"thread_id": thread_id},
             "run_name": "management_assistant",
-            # part-a/3k — 2인 매니지먼트 중 A파트(감지·진단·승인) 소유 표시. LangSmith 태그 필터용.
-            "tags": ["management", "assistant", "part-a", "3k"],
+            # LangSmith: 어시스턴트(대화형 RAG)로 식별 — 컴포넌트 단위 필터용.
+            "tags": ["management", "assistant"],
             "metadata": {"campaign_id": req.campaign_id, "ad_id": req.ad_id},
         }
         final = await graph.ainvoke(

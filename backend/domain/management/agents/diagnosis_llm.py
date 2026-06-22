@@ -164,7 +164,13 @@ async def run_llm_diagnosis(
                     ),
                 ]
             },
-            {"recursion_limit": MAX_TOOL_CALLS * 2 + 1},
+            {
+                "recursion_limit": MAX_TOOL_CALLS * 2 + 1,
+                # LangSmith: 진단 에이전트(ReAct)로 식별 — re_evaluate 트레이스의 자식.
+                "run_name": "diagnosis_agent",
+                "tags": ["management", "diagnosis-agent"],
+                "metadata": {"campaign_id": prior.campaign_id},
+            },
         )
     except Exception:  # noqa: BLE001 — LLM/네트워크 경계: 어떤 실패든 결정론 폴백(게이트 #9)
         return prior
