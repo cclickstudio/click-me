@@ -152,7 +152,7 @@ class EscalationController:
         self._ladders = ACTIVE_LADDERS if ladders is None else ladders
         self._context_factory = context_factory
 
-    @traceable(name="management.remediation", run_type="chain")
+    @traceable(name="management.remediation", run_type="chain", tags=["management"])
     async def re_evaluate(
         self, tenant_id: str, ad_account_id: str, campaign_id: str, *, now: datetime
     ) -> EscalationOutcome:
