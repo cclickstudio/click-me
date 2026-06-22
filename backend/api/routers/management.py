@@ -1730,10 +1730,16 @@ class ReEvaluateRequest(BaseModel):
 
 
 @router.post("/re-evaluate")
-async def re_evaluate(body: ReEvaluateRequest):
+async def re_evaluate(
+    body: ReEvaluateRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     """사다리 1회 재평가 — 개시/다음단계 제안 / 보류(PENDING) / 회복 / 소진을 반환."""
+    org_id = await _require_org_id(user, db)
+    ad_account = await _require_ad_account(db, org_id)
     outcome = await _get_escalation().re_evaluate(
-        body.tenant_id, body.ad_account_id, body.campaign_id, now=_now_or(body.now)
+        str(org_id), ad_account, body.campaign_id, now=_now_or(body.now)
     )
     return _escalation_payload(outcome)
 
@@ -1745,8 +1751,18 @@ class RungOutcomeRequest(BaseModel):
 
 
 @router.post("/re-evaluate/executed")
-async def mark_rung_executed(body: RungOutcomeRequest):
+async def mark_rung_executed(
+    body: RungOutcomeRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     """현재 단계가 집행됐음을 사다리에 알린다 (다음 재평가에서 회복 판정 가능)."""
+    org_id = await _require_org_id(user, db)
+    run = await _get_escalation().get_run(body.run_id)
+    if run is None:
+        raise HTTPException(404, "run을 찾을 수 없습니다.")
+    if run.tenant_id != str(org_id):
+        raise HTTPException(403, "다른 조직의 run입니다.")
     await _get_escalation().on_executed(
         body.run_id, now=_now_or(body.now), approval_id=body.approval_id
     )
@@ -1754,8 +1770,18 @@ async def mark_rung_executed(body: RungOutcomeRequest):
 
 
 @router.post("/re-evaluate/rejected")
-async def mark_rung_rejected(body: RungOutcomeRequest):
+async def mark_rung_rejected(
+    body: RungOutcomeRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     """현재 단계가 거절됐음을 알린다 (다음 재평가에서 즉시 다음 단계로 에스컬레이션)."""
+    org_id = await _require_org_id(user, db)
+    run = await _get_escalation().get_run(body.run_id)
+    if run is None:
+        raise HTTPException(404, "run을 찾을 수 없습니다.")
+    if run.tenant_id != str(org_id):
+        raise HTTPException(403, "다른 조직의 run입니다.")
     await _get_escalation().on_rejected(body.run_id)
     return {"run_id": body.run_id, "rung_status": "rejected"}
 

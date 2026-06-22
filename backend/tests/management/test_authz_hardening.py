@@ -209,3 +209,29 @@ def test_sync_unknown_campaign_404(monkeypatch):
 def test_budget_limit_requires_auth():
     res = _client_no_auth().post("/api/management/budget/limit", json={"limit_krw": 1000})
     assert res.status_code == 401
+
+
+def _async_return(value):
+    async def _coro(*a, **k):
+        return value
+
+    return _coro()
+
+
+def test_re_evaluate_requires_auth():
+    res = _client_no_auth().post("/api/management/re-evaluate", json={})
+    assert res.status_code == 401
+
+
+def test_rung_executed_cross_tenant_403(monkeypatch):
+    org = uuid.uuid4()
+    other = uuid.uuid4()
+    run = SimpleNamespace(tenant_id=str(other), run_id="esc_1")
+    monkeypatch.setattr(
+        management,
+        "_get_escalation",
+        lambda: SimpleNamespace(get_run=lambda rid: _async_return(run)),
+    )
+    client = _client_with(org, monkeypatch=monkeypatch)
+    res = client.post("/api/management/re-evaluate/executed", json={"run_id": "esc_1"})
+    assert res.status_code == 403
