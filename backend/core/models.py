@@ -612,6 +612,8 @@ class CreatedCampaign(Base):
     execution_mode: Mapped[str] = mapped_column(String(20), nullable=False)  # live | validate_only…
     # 집행 전 시뮬 예측 연결용 — 이 캠페인이 어떤 광고(ad_id)로 만들어졌는지(없으면 미연결).
     creative_ad_id: Mapped[str | None] = mapped_column(String(64))
+    # 집행 전 시뮬 예측 연결용 — 이 캠페인이 어떤 시뮬 런(simulations.id)으로 집행됐는지(없으면 미연결).
+    simulation_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     # 소프트 삭제 — Meta에서 캠페인 삭제 시 행을 지우지 않고 시각만 찍는다(감사 이력 보존).
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
