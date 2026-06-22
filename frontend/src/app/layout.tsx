@@ -20,8 +20,11 @@ const notoSansKR = localFont({
 });
 
 export const metadata: Metadata = {
-  title: 'ClickMe',
+  title: 'Click Me — 광고 관리 올인원 플랫폼',
   description: '광고를 집행하기 전에, AI 가상 소비자에게 먼저 테스트하세요.',
+  icons: {
+    icon: '/logo/logo-mark.svg',
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
