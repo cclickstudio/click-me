@@ -1394,7 +1394,7 @@ async def activate_campaign(
             approval_policy_version=APPROVAL_POLICY_VERSION,
         )
     )
-    action = approve(proposal, "user_demo", execution_mode=_resolved_execution_mode())
+    action = approve(proposal, str(user.id), execution_mode=_resolved_execution_mode())
     result = await _get_executor().execute(action, proposal)
     status = result.status.value if hasattr(result.status, "value") else str(result.status)
     serving = status == "success"
@@ -1517,7 +1517,7 @@ async def pause_campaign(
             approval_policy_version=APPROVAL_POLICY_VERSION,
         )
     )
-    action = approve(proposal, "user_demo", execution_mode=_resolved_execution_mode())
+    action = approve(proposal, str(user.id), execution_mode=_resolved_execution_mode())
     result = await _get_executor().execute(action, proposal)
     status = result.status.value if hasattr(result.status, "value") else str(result.status)
     if status == "success":
