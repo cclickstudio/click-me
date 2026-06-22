@@ -82,16 +82,17 @@ def build_comparison_service(settings):
 
 
 def build_prediction_reader(settings):
-    """집행 전(시뮬 예측) reader — 시뮬 디커플링 슬롯의 교체 지점.
+    """집행 전(시뮬 예측) reader — simulation_aggregates를 raw SQL로 읽는 SimPredictionReader.
 
-    지금은 MockPredictionReader. 시뮬 KPI 안정화 후 이 줄만 SimPredictionReader로 바꾸면
-    compare 화면·API 변경 없이 실 예측이 들어온다.
+    실데이터가 있으면 실 예측, 없으면 None(연결 대기). 데모/단위 테스트는 MockPredictionReader를
+    직접 주입해 사용(가짜 예측 합성은 테스트 전용 — 운영은 합성 금지).
     """
+    from core.db import AsyncSessionLocal  # noqa: PLC0415
     from domain.management.comparison.prediction_adapters import (  # noqa: PLC0415
-        MockPredictionReader,
+        SimPredictionReader,
     )
 
-    return MockPredictionReader()
+    return SimPredictionReader(AsyncSessionLocal)
 
 
 def build_idempotency_store(settings) -> IdempotencyStore:
