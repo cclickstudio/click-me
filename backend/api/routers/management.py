@@ -583,21 +583,25 @@ async def compare_before_after(db: AsyncSession = Depends(get_db)):
     reader = build_reader(settings)
     pred_reader = build_prediction_reader(settings)
     now = datetime.now(UTC)
-    # meta_campaign_id → creative_ad_id 매핑(앱에서 만든 캠페인의 시뮬 연결 키)
-    ad_by_meta: dict[str, str] = {}
+    # meta_campaign_id → creative_ad_id(실측 귀속) / (simulation_id, tenant_id)(예측 키)
+    creative_by_meta: dict[str, str] = {}
+    sim_by_meta: dict[str, tuple[str, str]] = {}
     try:
         rows = (
             (await db.execute(select(CreatedCampaign).where(CreatedCampaign.deleted_at.is_(None))))
             .scalars()
             .all()
         )
-        ad_by_meta = {
-            str(r.meta_campaign_id): r.creative_ad_id
-            for r in rows
-            if r.meta_campaign_id and r.creative_ad_id
-        }
+        for r in rows:
+            if not r.meta_campaign_id:
+                continue
+            if r.creative_ad_id:
+                creative_by_meta[str(r.meta_campaign_id)] = r.creative_ad_id
+            if r.simulation_id:
+                sim_by_meta[str(r.meta_campaign_id)] = (str(r.simulation_id), r.tenant_id)
     except Exception:  # noqa: BLE001 — 매핑 실패해도 실측은 보여준다
-        ad_by_meta = {}
+        creative_by_meta = {}
+        sim_by_meta = {}
     items: list[dict] = []
     try:
         campaigns = await reader.list_campaigns()
@@ -611,11 +615,13 @@ async def compare_before_after(db: AsyncSession = Depends(get_db)):
     for c in campaigns:
         cid = c.campaign_id
         try:
-            actual = _real_outcome(await reader.get_metrics(cid, now), cid, ad_by_meta.get(cid))
+            actual = _real_outcome(
+                await reader.get_metrics(cid, now), cid, creative_by_meta.get(cid)
+            )
         except Exception:  # noqa: BLE001 — 캠페인 1건 실측 실패가 전체를 막지 않게
             continue
-        ad_id = ad_by_meta.get(cid)
-        prediction = await pred_reader.get_prediction(ad_id) if ad_id else None
+        link = sim_by_meta.get(cid)
+        prediction = await pred_reader.get_prediction(link[0], link[1]) if link else None
         ba = compute_before_after(cid, c.name, prediction, actual)
         items.append(ba.model_dump(mode="json"))
     return {"items": items}
