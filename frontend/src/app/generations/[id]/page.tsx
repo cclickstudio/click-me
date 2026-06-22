@@ -28,6 +28,7 @@ type ProductAnalysis = {
   benefits?: string[];
   target_audience?: string;
   objective?: string;
+  improvement_guidance?: string; // 개선모드: 이미지로 적용 어려운 개선점 가이드
 };
 
 type Strategy = {
@@ -372,6 +373,18 @@ export default function GenerationDetailPage() {
                     />
                   ))}
                 </div>
+              </div>
+            )}
+
+            {/* 개선 적용 가이드 (개선모드) */}
+            {data.product_analysis?.improvement_guidance && (
+              <div className="bg-[#FFF8EF] dark:bg-[#2A2114] border border-[#FCD9A8] dark:border-[#5A4420] rounded-2xl p-6 mb-6">
+                <h2 className="text-base font-semibold text-[#B45309] dark:text-[#F0A84B] mb-3 flex items-center gap-2">
+                  💡 개선 적용 가이드
+                </h2>
+                <p className="text-sm text-[#7A5418] dark:text-[#E8C896] leading-relaxed whitespace-pre-wrap">
+                  {data.product_analysis.improvement_guidance}
+                </p>
               </div>
             )}
 
