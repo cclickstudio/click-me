@@ -51,6 +51,8 @@ export type ActionResult = {
   status: string;
   failure_reason: string | null;
   idempotency_key: string;
+  // 생성 결과 스냅샷 — campaign_meta_id(LIVE 생성 시 Meta 캠페인 id) 등.
+  platform_response_snapshot?: { campaign_meta_id?: string } & Record<string, unknown>;
 };
 export type AuditEvent = { event_id: string; category: string; occurred_at: string; payload: Record<string, unknown> };
 

@@ -635,7 +635,7 @@ function CandidateModal({
 const ACTIVE_GEN_KEY = "generator_active_gen";
 
 export default function GeneratorPage() {
-  const { selectedProject } = useProjects();
+  const { selectedProject, projects, selectProject } = useProjects();
   const [mode, setMode] = useState<GenMode>("create");
   const [phase, setPhase] = useState<Phase>("idle");
   const [error, setError] = useState("");
@@ -924,6 +924,31 @@ export default function GeneratorPage() {
         <div className="grid grid-cols-5 gap-5">
           {/* ── 좌측 폼 ── */}
           <div className="col-span-2 space-y-4">
+            {/* ── 프로젝트 선택 (생성 결과 저장 대상) ── */}
+            <div className={`${cardCls} p-6`}>
+              <label className={labelCls}>
+                프로젝트 <span className="text-[#F74D4D]">*</span>
+              </label>
+              {projects.length === 0 ? (
+                <p className="text-sm text-[#8B95A1] dark:text-[#6B7280]">
+                  선택할 프로젝트가 없습니다. 왼쪽 패널에서 프로젝트를 먼저 만들어 주세요.
+                </p>
+              ) : (
+                <select
+                  value={selectedProject?.id ?? ""}
+                  onChange={(e) => selectProject(e.target.value || null)}
+                  className={inputCls}
+                >
+                  <option value="">프로젝트를 선택하세요</option>
+                  {projects.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+
             <div className={`${cardCls} p-1 flex`}>
               {(["create", "improve"] as const).map((m) => (
                 <button

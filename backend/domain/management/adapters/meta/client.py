@@ -10,9 +10,15 @@ raw httpx로 Graph API를 직접 호출한다(신규 SDK 의존성 0). 테스트
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 import httpx
+
+#: Meta GET 응답 단기 캐시 — 대시보드·예산·비교 탭이 같은 list_campaigns/insights/funding을
+#: 반복 호출하는 fan-out을 합쳐 요청 한도(rate limit, code 17 등)를 아낀다. 쓰기 시 무효화.
+_GET_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
+_GET_CACHE_TTL = 90.0  # seconds — 실측은 Meta 집계 지연이 있어 90초 staleness는 허용
 
 
 def mask_token(token: str | None) -> str:
@@ -41,20 +47,35 @@ _RATE_LIMIT_CODES: frozenset[int] = frozenset(
     {4, 17, 32, 613, 80000, 80001, 80002, 80003, 80004, 80005, 80006, 80008, 80009, 80014}
 )
 
+#: 인증·토큰 만료 계열 error code — 재연결(토큰 갱신)이 필요한 경우.
+#: 190=토큰 만료/무효, 102=세션 무효, 463/467=토큰 만료·변경.
+_AUTH_ERROR_CODES: frozenset[int] = frozenset({190, 102, 463, 467})
+
 
 class MetaApiError(RuntimeError):
     """Graph API 응답의 error 객체를 표준 예외로 변환 — 메시지에 토큰 미포함."""
 
-    def __init__(self, code: int | None, subcode: int | None, message: str) -> None:
+    def __init__(
+        self, code: int | None, subcode: int | None, message: str, user_msg: str | None = None
+    ) -> None:
         self.code = code
         self.subcode = subcode
         self.message = message
-        super().__init__(f"Meta API error (code={code}, subcode={subcode}): {message}")
+        self.user_msg = user_msg  # Meta error_user_msg — 어떤 파라미터가 왜 틀렸는지 사람용 설명
+        detail = f"Meta API error (code={code}, subcode={subcode}): {message}"
+        if user_msg:
+            detail += f" | {user_msg}"
+        super().__init__(detail)
 
     @property
     def is_rate_limited(self) -> bool:
         """레이트리밋 계열 — executor 재시도(RATE_LIMITED) 매핑에 사용."""
         return self.code in _RATE_LIMIT_CODES
+
+    @property
+    def is_auth_error(self) -> bool:
+        """토큰 만료·무효 계열 — 화면에 'Meta 재연결 필요' 안내로 매핑."""
+        return self.code in _AUTH_ERROR_CODES
 
 
 class MetaClient:
@@ -79,12 +100,27 @@ class MetaClient:
         self._transport = transport  # 테스트용 httpx.MockTransport 주입 지점
         self._timeout = timeout
 
+    def _cache_key(self, path: str, params: dict[str, Any]) -> str:
+        items = sorted((k, str(v)) for k, v in params.items())
+        return f"{self._token[:8]}|{path}|{items}"  # 토큰 앞자리로 계정 구분(평문 미저장)
+
     async def get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+        params = params or {}
+        # 실 네트워크 호출(transport 미주입)만 캐시 — 테스트(MockTransport)·토큰검증은 제외.
+        cacheable = self._transport is None and "access_token" not in params
+        if cacheable:
+            key = self._cache_key(path, params)
+            hit = _GET_CACHE.get(key)
+            if hit and hit[0] > time.monotonic():
+                return hit[1]
         # access_token 기본 주입 → 호출자 params가 덮어쓸 수 있음(앱 토큰 등 ⑤ 토큰검증).
-        query = {"access_token": self._token, **(params or {})}
+        query = {"access_token": self._token, **params}
         async with httpx.AsyncClient(timeout=self._timeout, transport=self._transport) as client:
             res = await client.get(f"{self._base}/{path}", params=query)
-            return self._handle(res)
+            payload = self._handle(res)
+        if cacheable:
+            _GET_CACHE[key] = (time.monotonic() + _GET_CACHE_TTL, payload)
+        return payload
 
     async def post(
         self, path: str, data: dict[str, Any] | None = None, *, validate_only: bool = False
@@ -95,7 +131,32 @@ class MetaClient:
             body["execution_options"] = '["validate_only"]'
         async with httpx.AsyncClient(timeout=self._timeout, transport=self._transport) as client:
             res = await client.post(f"{self._base}/{path}", data=body)
+            payload = self._handle(res)
+        if not validate_only and self._transport is None:
+            _GET_CACHE.clear()  # 상태 변경 → 캐시 무효화(다음 GET은 최신)
+        return payload
+
+    async def post_image(self, path: str, image_bytes: bytes, filename: str) -> dict[str, Any]:
+        """멀티파트 이미지 업로드 (/adimages) — data= 대신 files=로 전송.
+
+        Meta는 응답을 업로드 필드명(filename)으로 키잉한다: {images: {<filename>: {hash, url}}}.
+        """
+        async with httpx.AsyncClient(timeout=self._timeout, transport=self._transport) as client:
+            res = await client.post(
+                f"{self._base}/{path}",
+                data={"access_token": self._token},
+                files={filename: (filename, image_bytes, "image/jpeg")},
+            )
             return self._handle(res)
+
+    async def delete(self, path: str) -> dict[str, Any]:
+        """객체 삭제 (HTTP DELETE). 캠페인 삭제 시 자식 광고세트·광고도 함께 삭제됨."""
+        async with httpx.AsyncClient(timeout=self._timeout, transport=self._transport) as client:
+            res = await client.delete(f"{self._base}/{path}", params={"access_token": self._token})
+            payload = self._handle(res)
+        if self._transport is None:
+            _GET_CACHE.clear()  # 삭제 → 캐시 무효화
+        return payload
 
     @staticmethod
     def _handle(res: httpx.Response) -> dict[str, Any]:
@@ -109,7 +170,10 @@ class MetaClient:
         if isinstance(payload, dict) and "error" in payload:
             err = payload["error"]
             raise MetaApiError(
-                err.get("code"), err.get("error_subcode"), err.get("message", "unknown error")
+                err.get("code"),
+                err.get("error_subcode"),
+                err.get("message", "unknown error"),
+                err.get("error_user_msg") or err.get("error_user_title"),
             )
         res.raise_for_status()
         return payload

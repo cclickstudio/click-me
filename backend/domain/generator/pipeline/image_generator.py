@@ -4,6 +4,7 @@ import io
 from google import genai
 from google.genai import types as genai_types
 from langsmith import traceable
+from langsmith.wrappers import wrap_openai
 from openai import AsyncOpenAI
 from PIL import Image
 
@@ -11,7 +12,8 @@ from core.config import settings
 from domain.generator.contracts.enums import AdSize, AdStrategy, TemplateType
 from domain.generator.contracts.pipeline_schemas import ProductAnalysis
 
-_openai_client = AsyncOpenAI(timeout=settings.generator_image_timeout)
+# wrap_openai로 감싸 이미지/Responses 호출의 토큰·비용 usage가 LangSmith에 기록되게 한다.
+_openai_client = wrap_openai(AsyncOpenAI(timeout=settings.generator_image_timeout))
 
 _GEMINI_NATIVE_ASPECT_RATIO: dict[AdSize, str] = {
     AdSize.SQUARE: "1:1",

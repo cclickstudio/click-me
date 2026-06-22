@@ -16,18 +16,18 @@ export default function CreditBalance() {
   }, []);
 
   return (
-    <div className="flex items-center gap-3">
-      <div className="text-right">
-        <p className="text-xs text-[#8B95A1] dark:text-[#6B7280]">크레딧 잔액</p>
-        <p className="text-sm font-bold text-[#191F28] dark:text-[#F2F4F6]">
+    <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-[#F9FAFB] dark:bg-[#252D3D]">
+      <div className="min-w-0">
+        <p className="text-[10px] text-[#8B95A1] dark:text-[#6B7280]">크레딧 잔액</p>
+        <p className="text-sm font-bold text-[#191F28] dark:text-[#F2F4F6] truncate">
           {balance === null ? '-' : `${balance.toLocaleString()}원`}
         </p>
       </div>
       <Link
         href="/payment"
-        className="px-4 py-2 bg-[#3182F6] text-white text-sm font-medium rounded-lg hover:bg-[#1B6EEB] transition-colors"
+        className="shrink-0 px-2.5 py-1.5 bg-[#3182F6] text-white text-xs font-medium rounded-lg hover:bg-[#1B6EEB] transition-colors"
       >
-        크레딧 충전
+        충전
       </Link>
     </div>
   );

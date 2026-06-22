@@ -18,6 +18,7 @@ TIER_POLICY: dict[str, ActionTier] = {
     "INCREASE_BUDGET": ActionTier.TIER_3,
     "REPLACE_CREATIVE": ActionTier.TIER_3,
     "CREATE_CAMPAIGN": ActionTier.TIER_3,  # 신규 집행 — 항상 건별 사용자 승인 (PR2)
+    "ACTIVATE_CAMPAIGN": ActionTier.TIER_3,  # 게재 시작(실과금) — 항상 건별 사용자 승인
     # 에스컬레이션 사다리 신규 액션 — 라이브 캠페인 개입(늘림) → 건별 승인.
     # CHANGE_BID_STRATEGY는 개념상 Tier 2 후보지만 Tier 2는 v1 자동 실행 비활성이라 Tier 3로 둔다.
     "EXPAND_AUDIENCE": ActionTier.TIER_3,
