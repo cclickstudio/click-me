@@ -3,6 +3,7 @@ import io
 import logging
 
 from langsmith import traceable
+from langsmith.wrappers import wrap_openai
 from openai import AsyncOpenAI
 from PIL import Image, ImageDraw
 
@@ -11,7 +12,8 @@ from domain.generator.contracts.enums import TemplateType
 from domain.generator.contracts.pipeline_schemas import ImageAnalysis
 
 logger = logging.getLogger("clickme")
-_client = AsyncOpenAI(timeout=settings.generator_image_timeout)
+# wrap_openai로 감싸 호출 usage가 LangSmith에 기록되게 한다.
+_client = wrap_openai(AsyncOpenAI(timeout=settings.generator_image_timeout))
 
 
 def _create_mask(w: int, h: int, template: TemplateType) -> bytes:

@@ -9,6 +9,7 @@ import json
 import re
 
 from langsmith import traceable
+from langsmith.wrappers import wrap_openai
 from openai import AsyncOpenAI
 
 from core.config import settings
@@ -16,7 +17,8 @@ from domain.generator.contracts.enums import AdSize, AdStrategy, TemplateType
 from domain.generator.contracts.pipeline_schemas import AdCopy, ProductAnalysis
 from tools.utils import str_or_none
 
-_client = AsyncOpenAI(timeout=settings.generator_image_timeout)
+# wrap_openai로 감싸 Responses API(이미지+카피) 호출 usage가 LangSmith에 기록되게 한다.
+_client = wrap_openai(AsyncOpenAI(timeout=settings.generator_image_timeout))
 
 _TEMPLATE_LAYOUT: dict[TemplateType, str] = {
     TemplateType.A: "제품을 화면 상단~중앙에 크게 배치하고, 하단 45%는 텍스트가 올라갈 영역이므로 비워둔다.",
