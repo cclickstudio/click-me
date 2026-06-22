@@ -11,6 +11,7 @@ from typing import Any
 from domain.simulation.contracts.schemas import PanelSpec, Persona
 from domain.simulation.data.simulation import loader
 from domain.simulation.tools.reachability import cell_social_reach, is_social_context
+from domain.simulation.tools.sampling.raking import rake_weights
 
 # 지역 분포 폴백 — 행안부 원본 CSV에 시도(region_weights)가 있으면 그걸 우선 사용. 합=1.0.
 _REGION_WEIGHTS: dict[str, float] = {
@@ -56,6 +57,17 @@ def media_band_of_age(age: int) -> str:
     return f"{age // 10 * 10}-{age // 10 * 10 + 9}"
 
 
+def _generation_of_age(age: int) -> str:
+    """실 나이 → 세대 라벨(social_values_deep generation_specific 키)."""
+    if age <= _Z_GEN_MAX_AGE:
+        return "Z세대"
+    if age <= 44:
+        return "밀레니얼"
+    if age <= 59:
+        return "X세대"
+    return "베이비부머"
+
+
 def grounding_tier(ocean: dict[str, Any], age: int) -> str:
     """연령 grounding 신뢰도 — 20~30대 P1, 그 외 P2(표본 제한)."""
     band = ocean_band_of_age(age)
@@ -71,6 +83,64 @@ def _weighted_choice(rng: random.Random, items: list[tuple[Any, float]]) -> Any:
         if r <= upto:
             return value
     return items[-1][0]
+
+
+# OCEAN 5차원(type_profiles·band_factor_means 공통 키 순서).
+_OCEAN_DIMS = ("openness", "conscientiousness", "extraversion", "agreeableness", "neuroticism")
+
+
+def _band_factor_offsets(ocean: dict[str, Any]) -> dict[str, dict[str, float]]:
+    """밴드별 factor 잔차 offset = 실측 밴드평균 − (밴드 유형비율 × 유형 프로파일 평균).
+
+    유형비율 조건화만으론 성숙원리(성실성·친화성↑·신경증↓)의 일부만 재현된다(유형 내 노화 미반영).
+    실측 평균이 있으면 잔차로 밴드 marginal을 실측에 정합. 연령×성별('밴드|성별') 우선, 연령만 폴백.
+    """
+    profiles = ocean.get("type_profiles", {})
+    tp = ocean.get("type_proportions", {})
+    by_band = tp.get("by_age_band", {})
+    by_gender = tp.get("by_age_gender_band", {})
+    default = tp.get("default", {})
+
+    def residual(observed: dict[str, float], props: dict[str, float]) -> dict[str, float]:
+        wsum = sum(props.values()) or 1.0
+        out: dict[str, float] = {}
+        for d in _OCEAN_DIMS:
+            implied = sum(props[t] * profiles[t][d]["mean"] for t in props if t in profiles) / wsum
+            out[d] = round(observed[d] - implied, 4)
+        return out
+
+    offsets: dict[str, dict[str, float]] = {}
+    for key, observed in ocean.get("band_factor_means_by_gender", {}).items():
+        if key.startswith("_"):  # _source 등 메타 키 건너뜀.
+            continue
+        offsets[key] = residual(
+            observed, by_gender.get(key) or by_band.get(key.split("|")[0]) or default
+        )
+    for band, observed in ocean.get("band_factor_means", {}).items():
+        if band.startswith("_"):
+            continue
+        offsets[band] = residual(observed, by_band.get(band) or default)
+    return offsets
+
+
+# OCEAN→행동 경량 조건화(문헌 prior, 진짜 성격×행동 joint 아님) — 표준화 factor score당 보정.
+_OCEAN_VALUE_NUDGE = {
+    # 소비가치: (OCEAN 차원, 계수). 성실성↑→성능·품질 중시, 개방성↑→취향·덕질(신규·니치 선호).
+    "성능": ("conscientiousness", 0.05),
+    "품질": ("conscientiousness", 0.05),
+    "취향·덕질": ("openness", 0.06),
+}
+
+
+def _nudge_rate(rate: float, ocean: dict[str, float], dim: str, k: float) -> float:
+    """소비가치 보유확률을 OCEAN으로 소폭 보정 — 안전 클립[0.02, 0.98]."""
+    return min(0.98, max(0.02, rate + k * ocean.get(dim, 0.0)))
+
+
+def _media_minutes_factor(ocean: dict[str, float]) -> float:
+    """OCEAN→미디어 이용시간 경량 보정 — 개방성·외향성↑이면 매체 이용 다소↑(클립 0.85~1.15)."""
+    raw = ocean.get("openness", 0.0) + ocean.get("extraversion", 0.0)
+    return min(1.15, max(0.85, 1.0 + 0.04 * raw))
 
 
 def _largest_remainder(weights: list[float], total: int) -> list[int]:
@@ -123,14 +193,19 @@ class PersonaSampler:
         media: dict | None = None,
         socioeconomic: dict | None = None,
         meta_reach: dict | None = None,
+        social_values_deep: dict | None = None,
         min_age: int = _MIN_AGE,
         reachability_sampling: bool = False,
+        platform: str | None = None,
+        rake_to_census: bool = False,
     ) -> None:
         self._population = population or loader.load_population_age_sex()
         self._ocean = ocean or loader.load_ocean_age_bands()
         self._consumption = consumption or loader.load_consumption_values()
         self._media = media or loader.load_media_behavior()
         self._socioeconomic = socioeconomic or loader.load_socioeconomic()
+        # 단계3 한국 특화 심리(체면·동조·눈치) — 값 미확보면 generation_specific 비어 샘플 시 {}.
+        self._social_values_deep = social_values_deep or loader.load_social_values_deep()
         # Meta 침투율 곡선(Tier 2) — 연령별 인스타/페북 사용률. reach 가중의 출처.
         self._meta_reach = meta_reach or loader.load_meta_reach()
         self._min_age = min_age
@@ -138,6 +213,12 @@ class PersonaSampler:
         # 가중이 아니라 추출분포를 바꿈(self-weighting 유지) → 메타 도달층에 표본 집중, CI 효율↑.
         # 기본 OFF: 전인구 비례(§3.7)·기존 테스트 보존. wiring 에서만 ON.
         self._reachability_sampling = reachability_sampling
+        # Meta 플랫폼(instagram/facebook) — 지정 + 실데이터 있으면 그 분포, 없으면 통합 reach 폴백.
+        self._platform = platform
+        # 외부 marginal raking — 켜면 가중치를 census 나이·성별에 IPF 정합(기본 OFF, 회귀 보존).
+        self._rake_to_census = rake_to_census
+        # 밴드별 factor 잔차 offset(성숙원리 정량 반영) — 1회 산출 후 _sample_ocean에서 가산.
+        self._ocean_band_offset = _band_factor_offsets(self._ocean)
 
     async def get_or_build(self, spec: PanelSpec) -> tuple[str, list[Persona]]:
         return spec.version, self.sample(spec)
@@ -151,8 +232,33 @@ class PersonaSampler:
         regions = list((self._population.get("region_weights") or _REGION_WEIGHTS).items())
 
         if spec.allocation == "stratified":
-            return self._sample_stratified(spec, cells, regions, rng)
-        return self._sample_proportional(spec, cells, regions, rng)
+            personas = self._sample_stratified(spec, cells, regions, rng)
+        else:
+            personas = self._sample_proportional(spec, cells, regions, rng)
+        if self._rake_to_census:
+            personas = self._apply_census_raking(personas)
+        return personas
+
+    def _apply_census_raking(self, personas: list[Persona]) -> list[Persona]:
+        """패널 가중치를 census(인구) 나이밴드·성별 marginal에 IPF 정합 — 편향 보정(§3.7).
+
+        도달성 과표집 등으로 틀어진 가중을 외부 marginal에 맞춰 되돌린다. 인구 분포 없으면 무변화.
+        """
+        bands = self._population.get("bands") or []
+        if not bands:
+            return personas
+        age_target = {b["age_band"]: b["share"] for b in bands}
+        male = sum(b["share"] * b.get("male_ratio", 0.5) for b in bands)
+        gender_target = {"M": male, "F": 1.0 - male}
+        weights = rake_weights(
+            personas,
+            [
+                (lambda p: media_band_of_age(p.age), age_target),
+                (lambda p: p.gender, gender_target),
+            ],
+            base_weights=[p.weight for p in personas],
+        )
+        return [p.model_copy(update={"weight": w}) for p, w in zip(personas, weights, strict=True)]
 
     def _sample_proportional(
         self, spec: PanelSpec, cells: list, regions: list, rng: random.Random
@@ -200,19 +306,32 @@ class PersonaSampler:
         weight: float,
     ) -> Persona:
         age = rng.randint(band_lo, band_hi)
+        ocean = self._sample_ocean(rng, age, sex)
         # 도달성은 추출분포(_population_cells)에 이미 반영 — 여기선 self-weighting(weight 그대로).
         return Persona(
             persona_id=f"P-{idx:05d}",
             age=age,
             gender=sex,
             region=_weighted_choice(rng, regions),
-            ocean=self._sample_ocean(rng, age),
-            media_behavior=self._sample_media(rng, age, sex),
-            consumption_values=self._sample_consumption(rng, age),
+            ocean=ocean,
+            media_behavior=self._sample_media(rng, age, sex, ocean),
+            consumption_values=self._sample_consumption(rng, age, ocean),
             socioeconomic=self._sample_socioeconomic(rng, age, sex),
+            social_values_deep=self._sample_social_values_deep(age, ocean),
             weight=weight,
             profile_narrative="",  # 4-a(LLM)에서 채움 — P3
         )
+
+    def _sample_social_values_deep(self, age: int, ocean: dict[str, float]) -> dict[str, float]:
+        """단계3 한국 특화 심리(체면·동조·눈치) — generation_specific 비면 {}(비활성·폴백).
+
+        데이터 확보 시 세대 base를 OCEAN으로 조건부 보정. 현재 값 비움이라 빈 dict 반환.
+        """
+        gen_map = self._social_values_deep.get("generation_specific") or {}
+        if not gen_map:
+            return {}
+        base = gen_map.get(_generation_of_age(age), {})
+        return {k: round(max(0.0, min(1.0, float(v))), 3) for k, v in base.items()}
 
     def _population_cells(
         self, target_filter: dict | None
@@ -253,36 +372,58 @@ class PersonaSampler:
                 cells.append(((lo, hi, sex), band_weight * ratio))
         return cells
 
+    def _reach_age_bands(self) -> dict[str, float]:
+        """도달 연령 marginal — 플랫폼(IG/FB) 지정 + 실데이터 있으면 그것, 없으면 통합 age_bands."""
+        if self._platform:
+            spec = self._meta_reach.get("platform_specifics", {}).get(self._platform, {})
+            bands = spec.get("age_bands")
+            if bands:
+                return bands
+        return self._meta_reach.get("age_bands", {})
+
     def _reach_marginal(self, band_key: str) -> float:
         """Meta 도달 분포에서 밴드의 도달 점유율(연령 marginal). 없으면 0(§Tier2-A)."""
-        return self._meta_reach.get("age_bands", {}).get(band_key, 0.0)
+        return self._reach_age_bands().get(band_key, 0.0)
 
     def _cell_reach(self, age: int, gender: str) -> float:
-        """연령의 Meta 도달 점유율(0~1, §Tier2-A). 데이터 없으면 0. 페르소나 기록용 참고치.
+        """연령(+플랫폼 지정 시 성별)의 Meta 도달 점유율(0~1). 데이터 없으면 0. 페르소나 기록용.
 
-        과거엔 KISDI 소셜피드 비중(cell_social_reach)을 썼으나 사실상 유튜브 영상 시청만 잡혀
-        메타와 어긋남 → Meta 광고 관리자 실측 도달 분포로 교체. 추출 가중은 _reach_marginal이
-        담당하고 여기선 동일 값을 페르소나 속성으로 노출. gender 는 시그니처만 유지(현재 미사용).
+        플랫폼(IG/FB) 지정 + by_age_gender 실데이터 있으면 연령×성별 값, 없으면 연령 marginal 폴백.
+        과거 KISDI 소셜피드 비중(영상 위주)과 어긋나 Meta 광고관리자 실측 도달로 교체(§Tier2-A).
         """
         band = media_band_of_age(age)
-        return self._meta_reach.get("age_bands", {}).get(band, 0.0)
+        if self._platform:
+            spec = self._meta_reach.get("platform_specifics", {}).get(self._platform, {})
+            v = (spec.get("by_age_gender") or {}).get(f"{band}|{gender}")
+            if v is not None:
+                return v
+        return self._reach_age_bands().get(band, 0.0)
 
-    def _sample_ocean(self, rng: random.Random, age: int) -> dict[str, float]:
+    def _sample_ocean(self, rng: random.Random, age: int, gender: str) -> dict[str, float]:
         """OCEAN(factor score) — 논문 5유형 중 실비율로 하나 골라 그 유형의 mean·sd로 샘플링.
 
-        유형 비율은 type_proportions(연령 무관 전체 비율). 결과는 표준화 factor score(평균≈0).
+        유형 비율은 연령×성별 실측(by_age_gender_band) 우선 → 연령만(by_age_band) → default 폴백.
+        밴드 factor 잔차 offset도 성별 우선 적용해 남녀 성격 차이(여>남 신경증·친화성)를 반영.
         """
         lo, hi = _OCEAN_CLIP
-        dims = ("openness", "conscientiousness", "extraversion", "agreeableness", "neuroticism")
+        band = ocean_band_of_age(age)
+        key = f"{band}|{gender}"
+        tp = self._ocean["type_proportions"]
+        props = (
+            tp.get("by_age_gender_band", {}).get(key)
+            or tp.get("by_age_band", {}).get(band)
+            or tp["default"]
+        )
         profiles = self._ocean["type_profiles"]
-        props = self._ocean["type_proportions"]["default"]
         profile = _weighted_choice(
             rng, [(profiles[n], w) for n, w in props.items() if n in profiles]
         )
-        return {
-            d: round(min(hi, max(lo, rng.gauss(profile[d]["mean"], profile[d]["sd"]))), 2)
-            for d in dims
-        }
+        offset = self._ocean_band_offset.get(key) or self._ocean_band_offset.get(band, {})
+        out: dict[str, float] = {}
+        for d in _OCEAN_DIMS:
+            v = rng.gauss(profile[d]["mean"], profile[d]["sd"]) + offset.get(d, 0.0)
+            out[d] = round(min(hi, max(lo, v)), 2)
+        return out
 
     def _media_cell(self, age: int, gender: str) -> dict | None:
         """연령×성별 미디어 셀 조회. v2(cells) 없으면 None(평면 fallback)."""
@@ -291,8 +432,11 @@ class PersonaSampler:
             return None
         return cells.get(f"{media_band_of_age(age)}|{gender}")
 
-    def _sample_media(self, rng: random.Random, age: int, gender: str) -> dict[str, Any]:
+    def _sample_media(
+        self, rng: random.Random, age: int, gender: str, ocean: dict[str, float]
+    ) -> dict[str, Any]:
         # 단계2-β — KISDI 다이어리 연령×성별 셀: 주매체(사용시간 가중)·일일분·노출맥락 후보.
+        f = _media_minutes_factor(ocean)  # OCEAN 경량 조건화(개방성·외향성↑→이용시간↑)
         cell = self._media_cell(age, gender)
         if cell is None:  # 평면 포맷(구버전 JSON) 폴백
             dm = self._media["device_minutes"]
@@ -300,13 +444,13 @@ class PersonaSampler:
             avg = dm[primary]
             return {
                 "primary_medium": primary,
-                "daily_media_minutes": max(5, round(rng.gauss(avg, avg * 0.35))),
+                "daily_media_minutes": max(5, round(rng.gauss(avg * f, avg * 0.35))),
                 "_source": "KISDI 표4-71(평면)",
             }
         dm = cell["device_minutes"]
         primary = _weighted_choice(rng, list(dm.items())) if dm else "스마트폰/휴대폰"
         mm = cell["daily_media_minutes"]
-        minutes = max(5, round(rng.gauss(mm["mean"], mm["sd"])))
+        minutes = max(5, round(rng.gauss(mm["mean"] * f, mm["sd"])))
         # 노출맥락 후보 — Meta 전용이므로 소셜피드(SNS·동영상 @ 스마트폰/PC) 맥락만 추린 뒤 상위 5.
         # 전체 상위5로 뽑으면 고령층은 TV가 점령해 소셜이 잘림 → 메타 광고 TV 노출 모순(§Tier1).
         candidates = [
@@ -350,8 +494,15 @@ class PersonaSampler:
             out["education"] = edu["label"]
         return out
 
-    def _sample_consumption(self, rng: random.Random, age: int) -> dict[str, bool]:
+    def _sample_consumption(
+        self, rng: random.Random, age: int, ocean: dict[str, float]
+    ) -> dict[str, bool]:
         values = dict(self._consumption["values"])
         if age <= _Z_GEN_MAX_AGE:
             values.update(self._consumption.get("generation_specific", {}).get("Z세대", {}))
-        return {name: rng.random() < rate for name, rate in values.items()}
+        out: dict[str, bool] = {}
+        for name, rate in values.items():
+            spec = _OCEAN_VALUE_NUDGE.get(name)  # OCEAN 경량 조건화(있는 가치만)
+            adj = _nudge_rate(rate, ocean, *spec) if spec else rate
+            out[name] = rng.random() < adj
+        return out

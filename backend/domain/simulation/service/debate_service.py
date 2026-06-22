@@ -318,7 +318,8 @@ class DebateService:
             )
 
             # ── 조각 10-b 엔진·이름 배정 ──
-            assigned = assign_panel(panel)
+            # seed=run_id로 토론마다 참가자 이름을 다양화(같은 run_id 안에서는 일관·재현).
+            assigned = assign_panel(panel, seed=run_id)
             store.emit(
                 run_id,
                 {

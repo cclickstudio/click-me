@@ -181,7 +181,8 @@ function CreateProjectModal({ onClose, onCreated }: { onClose: () => void; onCre
 }
 
 // ── 프로젝트 아이템 ─────────────────────────────────────────────
-function ProjectItem({
+// CompanyPanel(조회 전용)에서도 재사용하므로 export.
+export function ProjectItem({
   project,
   activeSimId,
   activeGenId,
@@ -419,10 +420,8 @@ function ProjectItem({
 // ── 메인 패널 ───────────────────────────────────────────────────
 export default function ProjectPanel({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
   const pathname = usePathname();
-  const { projects, loading, details, loadDetails, loadAll, selectProject, refresh } = useProjects();
+  const { projects, loading, details, loadDetails, selectProject, refresh } = useProjects();
   const { user } = useAuth();
-  const [view, setView] = useState<'ALL' | 'TEAM' | 'MY'>('ALL');
-  const [teamNames, setTeamNames] = useState<string[]>([]);
   const [openProjectId, setOpenProjectId] = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
 
@@ -457,34 +456,6 @@ export default function ProjectPanel({ collapsed, onToggle }: { collapsed: boole
   const handleCreated = async () => {
     setShowModal(false);
     await refresh();
-  };
-
-  const myName = user?.name ?? null;
-
-  // TEAM 토글용 — 내 팀 멤버 이름 목록 (팀 없으면 빈 배열)
-  useEffect(() => {
-    fetch(`${API_BASE}/api/company/my-team-members`, { headers: { Authorization: `Bearer ${getToken()}` } })
-      .then(r => (r.ok ? r.json() : null))
-      .then(d => { if (d && Array.isArray(d.member_names)) setTeamNames(d.member_names); })
-      .catch(() => {});
-  }, []);
-
-  // null=전체(ALL), 배열=해당 이름만(MY/TEAM)
-  const filterNames: string[] | null =
-    view === 'ALL' ? null : view === 'MY' ? (myName ? [myName] : []) : teamNames;
-
-  const changeView = (v: 'ALL' | 'TEAM' | 'MY') => {
-    setView(v);
-    if (v !== 'ALL') loadAll();
-  };
-
-  const projectMatches = (p: { id: string; created_by_name?: string | null }) => {
-    if (!filterNames) return true;
-    if (p.created_by_name && filterNames.includes(p.created_by_name)) return true;
-    const d = details[p.id];
-    if (!d?.loaded) return true;
-    return d.sims.some(s => s.created_by_name != null && filterNames.includes(s.created_by_name))
-      || d.gens.some(g => g.created_by_name != null && filterNames.includes(g.created_by_name));
   };
 
   // ── 접힌 상태 ──
@@ -535,20 +506,6 @@ export default function ProjectPanel({ collapsed, onToggle }: { collapsed: boole
                 <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
               </svg>
             </button>
-            {/* ALL / TEAM / MY 토글 */}
-            <div className="flex items-center gap-0.5 bg-[#F2F4F6] dark:bg-[#252D3D] rounded-lg p-0.5">
-              {(['ALL', 'TEAM', 'MY'] as const).map(v => (
-                <button
-                  key={v}
-                  onClick={() => changeView(v)}
-                  className={`px-1.5 py-0.5 rounded-md text-[10px] font-medium transition-colors ${
-                    view === v
-                      ? 'bg-white dark:bg-[#1C2333] text-[#191F28] dark:text-[#F2F4F6] shadow-sm'
-                      : 'text-[#8B95A1] dark:text-[#6B7280]'
-                  }`}
-                >{v}</button>
-              ))}
-            </div>
 
             {/* + 버튼 */}
             <button
@@ -577,20 +534,16 @@ export default function ProjectPanel({ collapsed, onToggle }: { collapsed: boole
                 첫 프로젝트 만들기
               </button>
             </div>
-          ) : filterNames && projects.every(p => !projectMatches(p)) ? (
-            <p className="text-xs text-[#B0B8C1] px-3 py-2">
-              {view === 'TEAM' ? '우리 팀 작업 내역이 없습니다' : '참여한 프로젝트가 없습니다'}
-            </p>
           ) : (
             <div className="space-y-0.5">
-              {(filterNames ? projects.filter(projectMatches) : projects).map(p => (
+              {projects.map(p => (
                 <ProjectItem
                   key={p.id}
                   project={p}
                   activeSimId={activeSimId}
                   activeGenId={activeGenId}
                   autoOpen={p.id === activeProjectId}
-                  filterNames={filterNames}
+                  filterNames={null}
                   isAdmin={user?.role === 'ADMIN'}
                   canRun={user?.role !== 'COMPANY'}
                   isOpen={openProjectId === p.id}

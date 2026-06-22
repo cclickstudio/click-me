@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import AppLayout from '@/components/AppLayout';
 import { useAuth } from '@/components/AuthProvider';
@@ -20,8 +21,10 @@ type DashboardStats = {
 type RecentSimulation = {
   id: string;
   ad_id: string;
+  ad_title: string | null;
   persona_count: number;
   avg_intent: number | null;
+  status: string;
   created_at: string;
 };
 
@@ -130,6 +133,7 @@ function StatCard({ label, value, sub }: { label: string; value: string; sub?: s
 
 export default function DashboardPage() {
   const { user } = useAuth();
+  const router = useRouter();
   const { refresh } = useProjects();
   const isAdmin = user?.role === 'ADMIN';
   const [stats, setStats] = useState<DashboardStats | null>(null);
@@ -243,10 +247,10 @@ export default function DashboardPage() {
             label="평균 구매의향"
             value={
               stats?.avg_purchase_intent != null
-                ? `${stats.avg_purchase_intent > 0 ? '+' : ''}${stats.avg_purchase_intent}`
+                ? `${stats.avg_purchase_intent} / 5`
                 : '—'
             }
-            sub="전체 시뮬레이션 기준"
+            sub="전체 시뮬레이션 기준 (1~5)"
           />
         </div>
 
@@ -276,7 +280,7 @@ export default function DashboardPage() {
           <div className="bg-white dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748] rounded-2xl overflow-hidden">
             <div className="flex items-center justify-between px-5 py-4 border-b border-[#E5E8EB] dark:border-[#2D3748]">
               <p className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]">최근 시뮬레이션</p>
-              <Link href="/simulation" className="text-xs text-[#3182F6] hover:underline font-medium">전체 보기 →</Link>
+              <Link href="/simulations" className="text-xs text-[#3182F6] hover:underline font-medium">전체 보기 →</Link>
             </div>
             {recentSims.length === 0 ? (
               <div className="py-12 text-center text-xs text-[#B0B8C1] dark:text-[#4B5563]">
@@ -286,22 +290,23 @@ export default function DashboardPage() {
               <table className="w-full text-xs">
                 <thead>
                   <tr className="border-b border-[#F2F4F6] dark:border-[#252D3D]">
-                    {isAdmin && <th className="text-left px-5 py-2.5 text-[#8B95A1] dark:text-[#6B7280] font-medium">ID</th>}
-                    <th className="text-left px-5 py-2.5 text-[#8B95A1] dark:text-[#6B7280] font-medium">페르소나</th>
+                    <th className="text-left px-5 py-2.5 text-[#8B95A1] dark:text-[#6B7280] font-medium">광고</th>
+                    <th className="text-left px-3 py-2.5 text-[#8B95A1] dark:text-[#6B7280] font-medium">페르소나</th>
                     <th className="text-left px-3 py-2.5 text-[#8B95A1] dark:text-[#6B7280] font-medium">평균 의향</th>
                     <th className="text-left px-3 py-2.5 text-[#8B95A1] dark:text-[#6B7280] font-medium">일시</th>
                   </tr>
                 </thead>
                 <tbody>
                   {recentSims.map((s) => (
-                    <tr key={s.id} className="border-b border-[#F9FAFB] dark:border-[#1C2333] last:border-0 hover:bg-[#F9FAFB] dark:hover:bg-[#252D3D] transition-colors">
-                      {isAdmin && <td className="px-5 py-3 font-mono text-[#4E5968] dark:text-[#9CA3AF]">{shortId(s.id)}</td>}
-                      <td className="px-5 py-3 text-[#4E5968] dark:text-[#9CA3AF]">{s.persona_count}명</td>
+                    <tr
+                      key={s.id}
+                      onClick={() => router.push(`/simulation/${s.id}`)}
+                      className="border-b border-[#F9FAFB] dark:border-[#1C2333] last:border-0 hover:bg-[#F9FAFB] dark:hover:bg-[#252D3D] cursor-pointer transition-colors"
+                    >
+                      <td className="px-5 py-3 text-[#4E5968] dark:text-[#9CA3AF] max-w-[140px] truncate">{s.ad_title ?? '—'}</td>
+                      <td className="px-3 py-3 text-[#4E5968] dark:text-[#9CA3AF]">{s.persona_count}명</td>
                       <td className="px-3 py-3 text-[#4E5968] dark:text-[#9CA3AF]">
-                        {s.avg_intent != null
-                          ? <span className={s.avg_intent >= 0 ? 'text-emerald-500' : 'text-red-400'}>{s.avg_intent > 0 ? '+' : ''}{s.avg_intent}</span>
-                          : '—'
-                        }
+                        {s.avg_intent != null ? s.avg_intent.toFixed(2) : '—'}
                       </td>
                       <td className="px-3 py-3 text-[#B0B8C1] dark:text-[#4B5563]">{formatDate(s.created_at)}</td>
                     </tr>
