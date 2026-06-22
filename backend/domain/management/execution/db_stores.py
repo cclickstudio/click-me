@@ -12,9 +12,10 @@ from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from core.db import AsyncSessionLocal
-from core.models import AuditEventRow, IdempotencyKeyRow
+from core.models import AuditEventRow, IdempotencyKeyRow, RegenerationJobRow
 from domain.management.contracts.schemas import ActionResult
 from domain.management.execution.audit_log import AuditEvent, mask_sensitive
+from domain.management.execution.regeneration_jobs import JobStatus, RegenerationJobRecord
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -111,3 +112,102 @@ class DbAuditSink:
             )
             for row in rows
         )
+
+    async def for_tenant(self, tenant_id: str) -> tuple[AuditEvent, ...]:
+        async with self._sf() as session:
+            rows = (
+                (
+                    await session.execute(
+                        select(AuditEventRow)
+                        .where(AuditEventRow.tenant_id == tenant_id)
+                        .order_by(AuditEventRow.at)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        return tuple(
+            AuditEvent(
+                category=row.category or "",
+                tenant_id=row.tenant_id,
+                proposal_id=row.proposal_id,
+                approval_id=row.approval_id,
+                run_id=row.run_id,
+                payload=row.detail,
+                event_id=row.event_id or "",
+                occurred_at=row.at,
+            )
+            for row in rows
+        )
+
+
+def _row_to_record(row: RegenerationJobRow) -> RegenerationJobRecord:
+    return RegenerationJobRecord(
+        id=row.id,
+        tenant_id=row.tenant_id,
+        campaign_id=row.campaign_id,
+        status=JobStatus(row.status),
+        created_at=row.created_at,
+        updated_at=row.updated_at,
+        selection_token=row.selection_token,
+        candidates=list(row.candidates or []),
+        selected_candidate_id=row.selected_candidate_id,
+        proposal=row.proposal,
+        outcome_reason=row.outcome_reason,
+        error=row.error,
+        started_at=row.started_at,
+        finished_at=row.finished_at,
+    )
+
+
+class DbRegenerationJobStore:
+    """regeneration_jobs 기반 — record↔row 변환. 메서드당 짧은 세션(get_db 패턴)."""
+
+    def __init__(
+        self, session_factory: async_sessionmaker[AsyncSession] = AsyncSessionLocal
+    ) -> None:
+        self._sf = session_factory
+
+    async def create(self, record: RegenerationJobRecord) -> None:
+        async with self._sf() as session:
+            session.add(
+                RegenerationJobRow(
+                    id=record.id,
+                    tenant_id=record.tenant_id,
+                    campaign_id=record.campaign_id,
+                    status=record.status.value,
+                    selection_token=record.selection_token,
+                    candidates=record.candidates or None,
+                    selected_candidate_id=record.selected_candidate_id,
+                    proposal=record.proposal,
+                    outcome_reason=record.outcome_reason,
+                    error=record.error,
+                    created_at=record.created_at,
+                    updated_at=record.updated_at,
+                    started_at=record.started_at,
+                    finished_at=record.finished_at,
+                )
+            )
+            await session.commit()
+
+    async def get(self, job_id: str) -> RegenerationJobRecord | None:
+        async with self._sf() as session:
+            row = await session.get(RegenerationJobRow, job_id)
+        return _row_to_record(row) if row is not None else None
+
+    async def save(self, record: RegenerationJobRecord) -> None:
+        async with self._sf() as session:
+            row = await session.get(RegenerationJobRow, record.id)
+            if row is None:
+                return
+            row.status = record.status.value
+            row.selection_token = record.selection_token
+            row.candidates = record.candidates or None
+            row.selected_candidate_id = record.selected_candidate_id
+            row.proposal = record.proposal
+            row.outcome_reason = record.outcome_reason
+            row.error = record.error
+            row.updated_at = record.updated_at
+            row.started_at = record.started_at
+            row.finished_at = record.finished_at
+            await session.commit()
