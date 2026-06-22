@@ -83,3 +83,54 @@ def test_before_after_passes_sim_and_keeps_creative(monkeypatch):
     assert res.status_code == 200, res.text
     assert calls["pred"] == (str(_SIM), "org_1")  # 예측 키 = simulation_id + tenant
     assert calls["creative"] == "cr1"  # 실측 귀속 = creative_ad_id 유지
+
+
+async def test_tools_live_before_after_passes_sim(monkeypatch):
+    from contextlib import asynccontextmanager
+
+    from domain.management.assistant import tools
+
+    calls = {}
+
+    class _Pred:
+        async def get_prediction(self, simulation_id, tenant_id):
+            calls["pred"] = (simulation_id, tenant_id)
+            return None
+
+    class _Reader:
+        async def list_campaigns(self):
+            return [SimpleNamespace(campaign_id="m1", name="C1")]
+
+        async def get_metrics(self, cid, now):
+            return object()
+
+    rows = [
+        SimpleNamespace(
+            meta_campaign_id="m1", creative_ad_id="cr1", simulation_id=_SIM, tenant_id="org_1"
+        )
+    ]
+
+    @asynccontextmanager
+    async def fake_session():
+        yield _FakeDB(rows)
+
+    monkeypatch.setattr(tools, "AsyncSessionLocal", fake_session)
+    monkeypatch.setattr(tools, "build_reader", lambda s: _Reader())
+    monkeypatch.setattr(tools, "build_prediction_reader", lambda s: _Pred())
+    monkeypatch.setattr(
+        tools,
+        "_outcome",
+        lambda m, cid, creative_id: calls.setdefault("creative", creative_id) or SimpleNamespace(),
+    )
+    monkeypatch.setattr(
+        tools,
+        "compute_before_after",
+        lambda cid, name, prediction, actual: SimpleNamespace(
+            name=name, verdict=SimpleNamespace(value="unknown"), rationale="r"
+        ),
+    )
+
+    out = await tools.live_before_after(SimpleNamespace())
+    assert out["items"][0]["name"] == "C1"
+    assert calls["pred"] == (str(_SIM), "org_1")
+    assert calls["creative"] == "cr1"
