@@ -7,6 +7,7 @@ import AppLayout from '@/components/AppLayout';
 import { useAuth } from '@/components/AuthProvider';
 import { safeRandomUUID } from '@/lib/utils';
 import { useProjects } from '@/components/ProjectContext';
+import ModeBadge from '@/components/ModeBadge';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
@@ -32,6 +33,7 @@ type RecentGeneration = {
   id: string;
   status: string;
   product_name: string | null;
+  mode: string;
   created_at: string;
 };
 
@@ -346,7 +348,12 @@ export default function DashboardPage() {
                         className="border-b border-[#F9FAFB] dark:border-[#1C2333] last:border-0 hover:bg-[#F9FAFB] dark:hover:bg-[#252D3D] cursor-pointer transition-colors"
                       >
                         {isAdmin && <td className="px-5 py-3 font-mono text-[#4E5968] dark:text-[#9CA3AF]">{shortId(g.id)}</td>}
-                        <td className="px-5 py-3 text-[#4E5968] dark:text-[#9CA3AF] max-w-[100px] truncate">{g.product_name ?? '—'}</td>
+                        <td className="px-5 py-3 text-[#4E5968] dark:text-[#9CA3AF]">
+                          <span className="inline-flex items-center gap-1.5 max-w-[140px]">
+                            <ModeBadge mode={g.mode} />
+                            <span className="truncate">{g.product_name ?? '—'}</span>
+                          </span>
+                        </td>
                         <td className="px-3 py-3">
                           <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-medium ${s.color}`}>{s.text}</span>
                         </td>

@@ -6,6 +6,7 @@ import AppLayout from '@/components/AppLayout';
 import { getToken } from '@/lib/authApi';
 import { useProjects } from '@/components/ProjectContext';
 import { useAuth } from '@/components/AuthProvider';
+import ModeBadge from '@/components/ModeBadge';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
@@ -302,6 +303,7 @@ export default function GenerationDetailPage() {
               <div>
                 {project && <p className="text-xs text-[#8B95A1] mb-1">{project.name}</p>}
                 <h1 className="text-2xl font-bold text-[#191F28] dark:text-[#F2F4F6] flex items-center gap-2">
+                  <ModeBadge mode={data.input?.mode as string | undefined} />
                   {productName ?? '제너레이터 상세'}
                   {isDeleted && (
                     <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-red-50 dark:bg-red-900/20 text-red-600">삭제됨</span>
