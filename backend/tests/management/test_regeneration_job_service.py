@@ -112,3 +112,27 @@ async def test_run_job_swallows_exception_and_marks_failed():
     rec = await svc._store.get("job-1")
     assert rec.status is JobStatus.FAILED
     assert "boom" in rec.error
+
+
+async def test_start_creates_queued_row_and_schedules():
+    scheduled: list = []
+    svc = RegenerationJobService(
+        store=InMemoryRegenerationJobStore(),
+        agent=_FakeAgent(),
+        clock=lambda: NOW,
+        scheduler=lambda coro: scheduled.append(coro),  # create_task 대신 캡처
+    )
+
+    class _Dx:
+        tenant_id = "org-9"
+        campaign_id = "camp-9"
+
+    job_id = await svc.start(_Dx(), context=None)
+    rec = await svc._store.get(job_id)
+    assert rec is not None
+    assert rec.status is JobStatus.QUEUED
+    assert rec.tenant_id == "org-9"
+    assert rec.campaign_id == "camp-9"
+    assert len(scheduled) == 1  # run_job 코루틴이 스케줄됨
+
+    await scheduled[0]  # 캡처한 코루틴을 닫아 RuntimeWarning 방지

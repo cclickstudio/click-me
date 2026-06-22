@@ -9,6 +9,7 @@ import asyncio
 from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
+from uuid import uuid4
 
 from domain.management.agents.outcome import OutcomeKind
 from domain.management.execution.regeneration_jobs import (
@@ -18,6 +19,8 @@ from domain.management.execution.regeneration_jobs import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Coroutine
+
     from domain.management.execution.regeneration_jobs import RegenerationJobStore
 
 
@@ -28,11 +31,40 @@ class RegenerationJobService:
         store: RegenerationJobStore,
         agent: Any,
         clock: Callable[[], datetime] | None = None,
+        scheduler: Callable[[Coroutine[Any, Any, None]], None] | None = None,
     ) -> None:
         self._store = store
         self._agent = agent  # RemediationAgent 싱글톤 (rank/package)
         self._clock = clock or (lambda: datetime.now(UTC))
+        self._scheduler = scheduler
         self._tasks: set[asyncio.Task] = set()
+
+    # ── start — QUEUED 행 생성 + 백그라운드 스케줄 ──────────────────
+    async def start(self, diagnosis: Any, context: Any) -> str:
+        """QUEUED 행 생성 후 백그라운드 run_job 스케줄 → job_id 반환(즉답)."""
+        job_id = uuid4().hex
+        now = self._clock()
+        await self._store.create(
+            RegenerationJobRecord(
+                id=job_id,
+                tenant_id=diagnosis.tenant_id,
+                campaign_id=diagnosis.campaign_id,
+                status=JobStatus.QUEUED,
+                created_at=now,
+                updated_at=now,
+            )
+        )
+        self._schedule(self.run_job(job_id, diagnosis, context))
+        return job_id
+
+    def _schedule(self, coro: Coroutine[Any, Any, None]) -> None:
+        # 주입된 scheduler가 있으면 그것으로(테스트), 없으면 create_task + 레퍼런스 보관(GC 방지).
+        if self._scheduler is not None:
+            self._scheduler(coro)
+            return
+        task = asyncio.create_task(coro)
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.discard)
 
     # ── run_job — rank() 결과를 job 상태로 매핑 ────────────────────
     async def run_job(self, job_id: str, diagnosis: Any, context: Any) -> None:
