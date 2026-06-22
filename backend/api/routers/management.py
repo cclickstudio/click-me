@@ -311,6 +311,15 @@ async def _record_created_campaign(db: AsyncSession, proposal: ActionProposal, r
     """캠페인 생성 결과를 created_campaigns에 누적 기록 — 실패해도 응답엔 영향 없음(best-effort)."""
     cfg = proposal.evidence_metrics.get("campaign_config") or {}
     meta_id = _find_in_snapshot(result.platform_response_snapshot, "campaign_meta_id")
+    em = proposal.evidence_metrics
+    # 두 경로 — 수동 create-proposal 형제 키(우선) + from-simulation snapshot 키.
+    raw_sim = em.get("simulation_id") or (em.get("simulation_snapshot") or {}).get("simulation_id")
+    sim_uuid = None
+    if raw_sim:
+        try:
+            sim_uuid = UUID(str(raw_sim))
+        except (ValueError, TypeError):
+            sim_uuid = None
     db.add(
         CreatedCampaign(
             tenant_id=proposal.tenant_id,
@@ -321,7 +330,8 @@ async def _record_created_campaign(db: AsyncSession, proposal: ActionProposal, r
             daily_budget_krw=int(cfg.get("daily_budget_krw") or proposal.budget_after_krw or 0),
             status=result.status.value if hasattr(result.status, "value") else str(result.status),
             execution_mode=str(_resolved_execution_mode().value),
-            creative_ad_id=cfg.get("creative_ad_id"),  # 집행 전 시뮬 예측 연결용
+            creative_ad_id=cfg.get("creative_ad_id"),  # Meta 기존 광고 재사용 귀속
+            simulation_id=sim_uuid,  # 시뮬 예측 연결 키(수동 + from-simulation)
         )
     )
     await db.commit()
