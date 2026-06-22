@@ -74,6 +74,7 @@ class AssignTeam(BaseModel):
 class SimulationRow(BaseModel):
     id: str
     ad_id: str
+    ad_title: str | None
     status: str
     sample_size: int
     created_by_name: str | None
@@ -517,8 +518,10 @@ async def list_company_simulations(
 
     result = await db.execute(
         text("""
-            SELECT s.id, s.ad_id, s.status, s.sample_size, s.created_at, u.name AS created_by_name
+            SELECT s.id, s.ad_id, s.status, s.sample_size, s.created_at,
+                   a.title AS ad_title, u.name AS created_by_name
             FROM simulations s
+            LEFT JOIN ads a ON a.id = s.ad_id
             LEFT JOIN users u ON u.id = s.created_by
             WHERE s.organization_id = :org_id AND s.deleted_at IS NULL
             ORDER BY s.created_at DESC
@@ -530,6 +533,7 @@ async def list_company_simulations(
         SimulationRow(
             id=str(r.id),
             ad_id=str(r.ad_id),
+            ad_title=r.ad_title,
             status=r.status,
             sample_size=r.sample_size,
             created_by_name=r.created_by_name,
