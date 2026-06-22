@@ -18,6 +18,7 @@ from uuid import uuid4
 
 from langgraph.graph import END, StateGraph
 
+from core.tracing import make_trace_config
 from domain.management.agents.outcome import (
     OutcomeError,
     OutcomeKind,
@@ -297,8 +298,21 @@ class RemediationAgent:
     ) -> RemediationOutcome:
         """진단 수신 → 그래프 실행 → 종료 상태를 RemediationOutcome으로 분기. 절대 예외 안 올림."""
         try:
+            config = make_trace_config(
+                domain="management",
+                feature="regenerate",
+                user_id=diagnosis.tenant_id,
+                extra_tags=["part-b"],
+                extra_metadata={
+                    "tenant_id": diagnosis.tenant_id,
+                    "campaign_id": diagnosis.campaign_id,
+                    "diagnosis_id": diagnosis.diagnosis_id,
+                    "anomaly_type": diagnosis.anomaly_type.value,
+                    "ad_account_id": context.ad_account_id,
+                },
+            )
             state: RemediationState = await self._graph.ainvoke(
-                {"diagnosis": diagnosis, "context": context}
+                {"diagnosis": diagnosis, "context": context}, config=config
             )
             return await self._to_outcome(diagnosis, context, state)
         except Exception:  # noqa: BLE001 — 어댑터 경계: 모든 예외를 결과로 수렴
