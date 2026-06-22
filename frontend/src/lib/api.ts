@@ -1,6 +1,6 @@
 import { getToken } from "./authApi";
 import type { BoardResponse } from "@/components/manage/compare/types";
-import type { CampaignDetail, CampaignsResponse, PlatformsResponse } from "@/components/manage/campaigns/types";
+import type { CampaignDetail, CampaignsResponse, CreativesResponse, DemographicsResponse, ManualKpiMap, PlatformsResponse } from "@/components/manage/campaigns/types";
 import type { Proposal } from "@/components/manage/types";
 import type { BudgetStatus } from "@/components/manage/budget/types";
 import type {
@@ -17,6 +17,91 @@ import type {
 } from "./types";
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+
+// 게재 불가 원인 — code별 한국어 message. INSUFFICIENT_CREDIT는 부족액·잔액 동반.
+export interface DeliveryCause {
+  code: string;
+  message: string;
+  need_krw?: number;
+  balance_krw?: number;
+  commit_krw?: number;
+}
+export interface ActivateResponse {
+  serving: boolean;
+  result: { status?: string; failure_reason?: string | null } | null;
+  balance_krw: number;
+  commit_krw: number;
+  causes: DeliveryCause[];
+  error_message?: string;
+}
+export interface DeliveryStatusResponse {
+  campaign_id: string;
+  serving: boolean;
+  effective_status: string;
+  issues: string[];
+  causes: DeliveryCause[];
+  spend_cap_krw?: number | null;
+  balance_krw: number;
+}
+export interface PauseResponse {
+  paused: boolean;
+  result: { status?: string; failure_reason?: string | null } | null;
+  error_message?: string;
+}
+export interface SyncResponse {
+  campaign_id: string;
+  spend_krw: number;
+  charged_now_krw: number;
+  balance_krw: number;
+  effective_status: string;
+  ended: boolean;
+}
+export interface LeadRecord {
+  created_time: string;
+  fields: Record<string, string>;
+}
+export interface LeadsResponse {
+  leads: LeadRecord[];
+  count: number;
+  note?: string;
+}
+// 집행 전(시뮬 예측) — 실 시뮬 KPI와 동일 필드(슬롯). source=mock|sim
+export interface PredictionSnapshot {
+  ad_id: string;
+  click_intent_rate: number;
+  purchase_intent: number;
+  trust_avg: number;
+  rejection_rate: number;
+  objective_fit_score?: number | null;
+  grade?: string | null;
+  as_of: string;
+  source: string;
+}
+// 집행 후(실측)
+export interface ActualOutcome {
+  campaign_id: string;
+  impressions: number;
+  reach: number;
+  spend_krw: number;
+  ctr: number;
+  cpc_krw: number;
+  cpm_krw: number;
+  conversions?: number | null;
+  cvr?: number | null;
+  roas?: number | null;
+}
+export interface BeforeAfterItem {
+  campaign_id: string;
+  name: string;
+  prediction: PredictionSnapshot | null;
+  actual: ActualOutcome;
+  verdict: 'aligned' | 'overperformed' | 'underperformed' | 'unknown';
+  rationale: string;
+}
+export interface BeforeAfterResponse {
+  items: BeforeAfterItem[];
+  rate_limited?: string; // Meta 요청 한도 시 안내
+}
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const token = getToken();
@@ -56,6 +141,15 @@ function buildSimForm(input: SimRunInput): FormData {
   if (input.ad_objective) form.append("ad_objective", input.ad_objective);
   if (input.service_class != null) form.append("service_class", String(input.service_class));
   return form;
+}
+
+// 캠페인 조회 쿼리스트링 — 전환가치·목표 ROAS는 입력됐을 때만 붙인다.
+function _campaignQuery(conversionValueKrw?: number | null, targetRoas?: number | null): string {
+  const p = new URLSearchParams();
+  if (conversionValueKrw) p.set("conversion_value_krw", String(conversionValueKrw));
+  if (targetRoas) p.set("target_roas", String(targetRoas));
+  const q = p.toString();
+  return q ? `?${q}` : "";
 }
 
 export const api = {
@@ -302,19 +396,76 @@ export const api = {
     // 멀티테넌트 — 로그인 org로 Meta OAuth 로그인 URL을 받는다(인증 XHR). 프론트가 그 URL로 이동.
     connectMeta: () => request<{ login_url: string; state: string }>("/management/meta/connect"),
     compareBoard: () => request<BoardResponse>("/management/compare/board"),
-    campaigns: () => request<CampaignsResponse>("/management/campaigns"),
-    campaign: (id: string) => request<CampaignDetail>(`/management/campaigns/${id}`),
+    // 집행 전(시뮬 예측) vs 후(실측) — ClickMe로 만든 캠페인별
+    beforeAfter: () => request<BeforeAfterResponse>("/management/compare/before-after"),
+    // 캠페인 생성 정책 — 최소예산(Meta 실시간)·특별광고카테고리·연령. 폼이 동적 검증에 사용.
+    campaignPolicy: () =>
+      request<{
+        min_daily_budget_krw: number;
+        min_by_objective_krw: Record<string, number>;
+        special_ad_categories: { value: string; label: string }[];
+        age_min: number;
+        age_max: number;
+      }>("/management/campaign-policy"),
+    // conversionValueKrw(전환 가치)→추정 ROAS, targetRoas(목표)→목표 미달 판정.
+    campaigns: (conversionValueKrw?: number | null, targetRoas?: number | null) =>
+      request<CampaignsResponse>(
+        `/management/campaigns${_campaignQuery(conversionValueKrw, targetRoas)}`,
+      ),
+    campaign: (id: string, conversionValueKrw?: number | null, targetRoas?: number | null) =>
+      request<CampaignDetail>(
+        `/management/campaigns/${id}${_campaignQuery(conversionValueKrw, targetRoas)}`,
+      ),
     campaignPlatforms: (id: string) =>
       request<PlatformsResponse>(`/management/campaigns/${id}/platforms`),
+    campaignDemographics: (id: string) =>
+      request<DemographicsResponse>(`/management/campaigns/${id}/demographics`),
+    campaignCreatives: (id: string) =>
+      request<CreativesResponse>(`/management/campaigns/${id}/creatives`),
+    // 캠페인 삭제 — 내 대시보드에서 삭제 = Meta에서도 삭제(LIVE 모드). 자식 광고세트·광고 함께.
+    deleteCampaign: (id: string) =>
+      request<{ result: { status: string; failure_reason?: string | null } }>(
+        `/management/campaigns/${id}`,
+        { method: "DELETE" },
+      ),
+    // 수동 KPI(추정 CVR·ROAS) — 조직 단위 DB 영속
+    kpiOverrides: () =>
+      request<{ overrides: ManualKpiMap }>(`/management/kpi-overrides`),
+    putKpiOverride: (id: string, body: { cvr: number | null; roas: number | null }) =>
+      request<{ campaign_id: string; cvr: number | null; roas: number | null }>(
+        `/management/campaigns/${id}/kpi-override`,
+        { method: "PUT", body: JSON.stringify(body) },
+      ),
     createCampaignProposal: (body: {
       name: string;
+      objective?: 'traffic' | 'leads'; // 리드면 잠재고객 폼까지 생성(전환·ROAS 측정용)
       daily_budget_krw: number;
       run_days: number;
       creative_ad_id?: string;
+      image_hash?: string; // /ad-image 업로드 결과 — 광고 소재 이미지
+      special_ad_category?: string; // NONE | HOUSING | EMPLOYMENT | CREDIT | ISSUES_ELECTIONS_POLITICS
+      country?: string; // ISO2 (KR 등)
+      age_min?: number;
+      age_max?: number;
+      gender?: 'all' | 'male' | 'female';
     }) =>
       request<{ proposal: Proposal }>("/management/campaigns/create-proposal", {
         method: "POST",
         body: JSON.stringify(body),
+      }),
+    // 광고 소재 이미지 업로드 → image_hash (멀티파트, 무과금 자산 등록)
+    uploadAdImage: (file: File) => {
+      const form = new FormData();
+      form.append('file', file);
+      return fetch(`${API_BASE}/api/management/ad-image`, { method: 'POST', body: form }).then(
+        (r) => r.json() as Promise<{ image_hash: string }>,
+      );
+    },
+    // 샘플 시안 — FB 피드·인스타 미리보기 HTML(Meta iframe)
+    adPreview: (imageHash: string, name?: string) =>
+      request<{ previews: { format: string; html: string }[] }>("/management/ad-preview", {
+        method: "POST",
+        body: JSON.stringify({ image_hash: imageHash, name }),
       }),
     budget: () => request<BudgetStatus>("/management/budget"),
     setBudgetLimit: (limitKrw: number) =>
@@ -322,6 +473,24 @@ export const api = {
         method: "POST",
         body: JSON.stringify({ limit_krw: limitKrw }),
       }),
+    // 게재 시작(활성화) — 크레딧 잔액 게이트 → spend_cap → 캠페인·세트·광고 ACTIVE
+    activate: (campaignId: string, commitKrw?: number) =>
+      request<ActivateResponse>(`/management/campaigns/${campaignId}/activate`, {
+        method: "POST",
+        body: JSON.stringify({ commit_krw: commitKrw }),
+      }),
+    // 게재 여부 + 불가 원인 + 크레딧 잔액
+    deliveryStatus: (campaignId: string) =>
+      request<DeliveryStatusResponse>(`/management/campaigns/${campaignId}/delivery-status`),
+    // Meta 소진액 → 크레딧 차감 정산 + 자동 종료 반영
+    syncCampaign: (campaignId: string) =>
+      request<SyncResponse>(`/management/campaigns/${campaignId}/sync`),
+    // 캠페인 즉시 일시중지(PAUSED) — 게재·과금 중단
+    pause: (campaignId: string) =>
+      request<PauseResponse>(`/management/campaigns/${campaignId}/pause`, { method: 'POST' }),
+    // 이 캠페인으로 제출된 잠재고객(리드) 명단 — Meta leadgen 조회(권한 필요 시 note)
+    leads: (campaignId: string) =>
+      request<LeadsResponse>(`/management/campaigns/${campaignId}/leads`),
   },
 
   generator: {

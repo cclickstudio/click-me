@@ -6,6 +6,13 @@
 >
 > **v1.4 핵심 결정 요약**: ① 승인 플레인(`approval.py`) 신설 → 🅰 소유 (HITL 설계) ② executor에서 승인 로직 분리 → 🅱는 강제만 ③ `ApprovedAction` 계약 추가 (계약 2개 → 3개) ④ `meta/client.py`·core 테이블 → 공동 ⑤ ActionProposal 생산자 = 🅱 단독 ⑥ 오케스트레이터 = A/B 밖 별도 담당 ⑦ **폴더 구조 유지 — 새 폴더 0개.** 목적: **양쪽 모두 Agentic AI · Tool-use · HITL 경험 + 리스크 중간×2로 균등화.**
 
+> **[구현 현황 2026-06-21]** 설계 너머 실제 동작분 — 상세 데이터/엔드포인트는 `meta-data-sources.md §11`.
+> - **라이브 캠페인 생성(PAUSED)**: 캠페인→광고세트→(리드)폼→광고, 배치는 Meta 자동(FB/IG). 게재·과금은 사람이 활성화.
+> - **이미지 소재·샘플 시안**: `/adimages` 업로드 → image_hash, `generatepreviews`(GET)로 FB/인스타 미리보기.
+> - **실측 최소예산 ₩1,521**(트래픽·리드 동일, Meta floor). `campaign_policy.py` **단일원천 → 프론트 자동 반영**(휴리스틱·하드코딩 금지).
+> - **CVR·ROAS 재정의 구현**: 전환=리드/가입/설치 일반화, ROAS=전환×전환가치÷지출(추정), 목표 미달 판정. 프론트는 실측 읽기전용 + 미설정 시 추정 입력(하이브리드).
+> - **안전·영속**: 소프트 삭제(`deleted_at` 감사) + Meta 동시 삭제, NeonDB `created_campaigns` 누적, 목록 페이징, 요청한도 graceful.
+
 ---
 
 ## 0. 현실 점검
@@ -146,6 +153,21 @@ backend/core/config.py             # (기존 확장) management_execution_mode s
 
 `ActionProposal` 필드 18종: `proposal_id, tenant_id, ad_account_id, target_object_ids, action_type, action_tier, evidence_metrics, metrics_as_of, hypothesis, confidence, expected_state_version, budget_before, budget_after, max_total_spend, expires_at, proposal_hash, approval_policy_version, status`
 
+**`action_type` 유효값 8종** (`executor.SUPPORTED_ACTION_TYPES` ↔ `contracts/policy.py TIER_POLICY` ↔ writer):
+
+| action_type | Tier | 설명 | writer 메서드 |
+| --- | --- | --- | --- |
+| `PAUSE_CAMPAIGN` | 1 | 게재 중단 | `pause` |
+| `DECREASE_BUDGET` | 1 | 예산 감액 | `adjust_budget` |
+| `INCREASE_BUDGET` | 3 | 예산 증액 | `adjust_budget` |
+| `REPLACE_CREATIVE` | 3 | 소재 교체(재생성 루프) | `replace_creative` |
+| `CREATE_CAMPAIGN` | 3 | 신규 캠페인 생성 | `create_full_campaign` |
+| `ACTIVATE_CAMPAIGN` | 3 | 게재 시작(캠페인·세트·광고 ACTIVE) — 실과금이라 항상 사람 승인 | `activate_tree`(+`set_spend_cap`) |
+| `EXPAND_AUDIENCE` | 3 | 에스컬레이션 1순위 — 타깃 확장 | (direct) |
+| `CHANGE_BID_STRATEGY` | 3 | 에스컬레이션 2순위 — 입찰 전략 변경 | (direct) |
+
+미등록 action_type은 Writer 도달 전 `UNSUPPORTED_ACTION`으로 차단. Tier 2는 비활성(자율 통과 0~1, 사용자 승인 3).
+
 **승인 전 — `approval.py`(🅰) 3단계** (실패 시 REJECTED / EXPIRED):
 ```
 1) 만료(expires_at)·proposal_hash 검증   2) 승인자 tenant·계정 권한
@@ -200,11 +222,12 @@ agents/diagnosis (A)                     agents/regeneration (B)
 
 ## 7. 스코프 (PRD §9)
 
-**v1 지원 범위 (좁게 간다, 의도적)**: 광고 형식 **이미지 단일** · 플랫폼 **Meta 단일(데모는 Mock 주력)** · 캠페인 목표 **트래픽(클릭)만** · 예산 **일일 고정 + 기간 지정**.
+**v1 지원 범위 (좁게 간다, 의도적)**: 광고 형식 **이미지 단일** · 플랫폼 **Meta 단일(Mock + 실연동 병행)** · 캠페인 목표 **트래픽·리드** · 예산 **일일 고정 + 기간 지정**.
 
 - **Must(7/8)**: contracts(계약 3종) · 실행모드 격리(`MOCK`/`DRY_RUN`/`SANDBOX_CONTRACT`/`LIVE`비활성) · Mock 고장 5종 · 기대치·이상감지 · 결정론진단 · 진단 agent · ActionProposal · **승인 플레인** · 멱등 실행기 · 예산 가드레일(90% 경고/95% 차단) · 재생성 루프 · 감사 로그 · eval(**일정 밀려도 안 자른다 — 발표 차별점**) · 통합 데모.
 - **Should**: Meta 인증/읽기/`delivery_estimate`/Preview/DRY_RUN 쓰기계약("실제 API 계약 검증" 수준까지만) · 발표 UI. 막히면 1일 내 철수.
-- **Won't(7/8 제외 — 못 한 게 아니라 안 하기로 결정)**: 실돈 LIVE · 자동 Tier2 재배분 · 통계적 A/B 승자판정 · 시뮬점수 자동교체(상관 미검증 — 발표에서 정직하게 공개) · 전환/ROAS · 다중 플랫폼 · 프로덕션 OAuth/멀티테넌시 · 완전 상태 동기화.
+- **구현 완료 (06-21 기준 — Should·확장 일부가 In scope로 승격)**: Meta **실연동**(읽기·쓰기) · **인앱 캠페인 생성(PAUSED)+소재(이미지) 업로드+샘플 시안** · **게재 시작(`ACTIVATE_CAMPAIGN`, 항상 사람 승인)·일시중지·`spend_cap`·예산 조정** · billing(크레딧)·결제 연동 · **예산 페이싱**(월 목표 대비 실소진·런레이트·여력) · **성과 전후 비교**(시뮬 예측 슬롯 vs 실측, 환산 금지) · **전환/ROAS 재정의**(전환=리드/가입/설치 일반화·추정 ROAS·목표 미달 판정 `PERFORMANCE_BELOW_TARGET`) · **에이전틱 RAG 어시스턴트**(실시간 툴 + pgvector KB) · Meta GET 캐시(rate limit 절감). 근거: `docs/superpowers/specs/2026-06-20-cvr-roas-재정의.md`·`2026-06-21-chat-management-agentic-rag.md`.
+- **Won't (여전히 제외)**: 실돈 **자동** LIVE(게재·과금은 **항상 사람 승인** `ACTIVATE_CAMPAIGN`) · 자동 Tier2 재배분 · 통계적 A/B 승자판정 · 시뮬점수 자동교체(상관 미검증 — 정직 공개) · 다중 플랫폼 · 프로덕션 OAuth/멀티테넌시 · 완전 상태 동기화.
 - A/B는 `CREATIVE_COMPARISON`, 출력은 `INSUFFICIENT_DATA / DIRECTIONAL`까지. **예산 "하드캡" = 내부 권한 한도**(Meta 지출 절대상한 보장 아님).
 
 **발표에서 정직하게 말할 한계**: 시뮬 점수 ↔ 실제 성과 상관 미검증(로드맵만 제시) · v1은 Mock 기반 · 소액 예산이라 클릭 지표까지만 신뢰 · 60+ 연령 페르소나 데이터 약점. *"안 한 것"과 "못 한 것"을 구분해서 말하는 게 발표 전략이다.*
@@ -265,9 +288,11 @@ class AnomalyType(StrEnum):
     BUDGET_EXHAUSTED = "budget_exhausted"        # 예산 소진 (결정론 진단 영역)
     SCHEDULE_GAP = "schedule_gap"                # 일정 문제 (결정론)
     LEARNING_PHASE = "learning_phase"            # 학습 기간 (결정론)
+    PERFORMANCE_BELOW_TARGET = "performance_below_target"  # ★신규 성과 미달 — 게재 고장 아닌 성과 부진 축
     INCONCLUSIVE = "inconclusive"                # 규칙엔진 판단 불가 → agent로 (없으면 agent가 빈 껍데기)
 ```
 - [ ] 카탈로그 확정  · 복수 라벨: [ ] 출력은 `list[AnomalyType]` 허용, 채점은 단일부터(권고)  □ 단일 고정
+- **[갱신 2026-06-21] `PERFORMANCE_BELOW_TARGET` 추가** — 게재 고장 5종("왜 안 나가나")과 **다른 축**(나가는데 고객 목표 미달). **실데이터·고객 목표 기반이라 `FaultMode`(주입 고장)에는 넣지 않는다**(06-20 §3). 판정 = `detection/performance_dx.py`, 모호 시 진단 agent 라우팅.
 
 **D2 — `CampaignState`** (B 소유처럼 보이지만 A도 소비자 — "노출 0"이 이상인지는 상태에 달림)
 
@@ -453,8 +478,9 @@ main
 - **장**: **HITL 설계 경험** — "어떤 액션이 자율이고 어떤 액션이 사람을 거치는가"를 코드로 박는 2026 채용 최고 키워드의 본체. 돈이 직접 안 움직여 실패해도 재승인으로 복구 가능.
 - **단**: 비동기 함정(승인 대기 중 상황 변경, 중복 클릭 경합)이 본질. 데모 임계 경로 진입으로 A 리스크 상승(의도된 트레이드오프). `ApprovedAction` 1일차 미합의 시 블로킹.
 
-**A-4. 진단 에이전트 (`agents/diagnosis.py`) — ★★★☆**
-- [ ] LangGraph + read-tool 4종 ReAct(metrics/상태/estimate/이력) / [ ] INCONCLUSIVE 케이스만 수신 / [ ] 원인+확신도+근거 출력 / [ ] 정보 방화벽(evidence 밖 정보 추론 금지)
+**A-4. 진단 에이전트 (`agents/diagnosis.py` + `agents/diagnosis_llm.py`) — ★★★☆**
+- [ ] LangGraph ReAct + **현재 `AdPlatformReader` 기반 tool 세트**(meta-data-sources §5 매핑 기준 — metrics·relevance diagnostics·status detail·demographic breakdown 등에서 적응 선택, 상한 6) / [ ] INCONCLUSIVE 케이스만 수신 / [ ] 원인+확신도+근거 출력 / [ ] 정보 방화벽(evidence 밖 정보 추론 금지)
+- **[갱신 2026-06-21]** "read-tool 4종(metrics/상태/estimate/이력)"은 06-12 stub 시절 목록 → 현재 reader 신호(Ad Relevance Diagnostics·status detail 포함)로 재도출. **P6 재현성 고정값 기입**(`management_diagnosis_model`/`_temperature`, config). 결정론 코어(`diagnosis.py`)는 폴백으로 유지(키 없으면 — 게이트 #9). 성과 미달(`PERFORMANCE_BELOW_TARGET`) INCONCLUSIVE도 이 agent가 수신.
 - **장**: Agentic + Tool-use 충족. "tool을 왜 썼는지 숫자로 설명" 가능(A-5 연계).
 - **단**: tool 루프 지연·비용 — 호출 상한 필요. 결정론이 과하게 잡으면 agent가 빈 껍데기(핸드오프 튜닝 필요).
 
@@ -517,6 +543,18 @@ main
 - **B의 executor는 여전히 가장 어려운 단일 컴포넌트**(★5). 승인 분리로 개수는 줄었지만 높이는 그대로 → 게이트 #7·#9·#10을 🤝로 두어 데모 실패 책임을 공동 분산.
 - **A는 의존 사슬이 김** (Mock → 임계치 → eval). 1주차 Mock 품질이 A 전체 일정의 열쇠.
 - 보강 포인트: A는 트랜잭션·동시성(승인 멱등 처리가 입문), B는 측정·모델링(품질 eval이 입문) — **재분배가 이 보강을 의도적으로 끼워 넣음.**
+
+---
+
+## 12. 에이전틱 RAG 어시스턴트 (2026-06-21 추가)
+
+채팅(오케스트레이터)이 매니지먼트를 물으면 답하는 **서브에이전트**. 공통 오케스트레이터 본체는 미정이라 매니지먼트 단독으로 완성하고, 추후 `build_management_agent(settings)` 진입점을 툴 하나로 등록만 한다(시뮬/생성도 동일 패턴). 모듈: `domain/management/assistant/`, 엔드포인트: `POST /management/assistant`.
+
+- **하이브리드 검색(hybrid retrieval)** — 숫자는 **실시간 툴**(reader·예산 페이싱·before/after·진단), 판단·가이드는 **pgvector KB**(정책·플레이북·KPI 규칙) 코사인 검색. (dense 벡터만 — BM25/sparse 아님.)
+- **CRAG-lite** — LangGraph `route → retrieve(live+kb) → grade(근거 채점) → 부족 시 재검색 → generate`. 수치는 실측에서만 인용(환각 방지), 예측↔실측 환산 금지.
+- **읽기 + 행동 제안** — 행동 의도(일시중지·게재시작·증액·소재교체)는 추천 `action_type`·근거로 **제안만** 하고, 실행은 §4의 **승인→executor 경로**(Tier 게이트)로. 어시스턴트가 직접 write 트리거하지 않음.
+- **무키 폴백** — 키·임베딩 없으면 키워드 라우팅 + 실시간 툴 요약(게이트 #9 재현성).
+- 스택 재사용: pgvector `Vector(1536)` · OpenAI 임베딩 · LangSmith 트레이싱.
 
 ---
 

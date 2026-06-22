@@ -97,6 +97,19 @@ class FakeWriter:
     async def create_campaign(self, config, idem_key: str) -> ActionResult:
         return self._respond("CREATE_CAMPAIGN", config.campaign_id, idem_key)
 
+    async def create_full_campaign(self, config, idem_key: str) -> ActionResult:
+        # 오케스트레이션은 executor 입장에선 단일 CREATE_CAMPAIGN 액션 — 기록 라벨 동일.
+        return self._respond("CREATE_CAMPAIGN", config.campaign_id, idem_key)
+
+    async def delete_campaign(self, campaign_id: str, idem_key: str) -> ActionResult:
+        return self._respond("DELETE_CAMPAIGN", campaign_id, idem_key)
+
+    async def upload_image(self, config, image_bytes, filename: str, idem_key: str) -> str | None:
+        return "fakehash123"
+
+    async def generate_previews(self, config, image_hash, ad_formats, *, page_id):
+        return [{"format": f, "html": f"<iframe data-fmt='{f}'></iframe>"} for f in ad_formats]
+
     async def expand_audience(self, campaign_id: str, idem_key: str) -> ActionResult:
         return self._respond("EXPAND_AUDIENCE", campaign_id, idem_key)
 
