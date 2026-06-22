@@ -1,19 +1,39 @@
 # 예산 관리 라우터 — /budget · /budget/limit (한도 대비 캠페인 합산 소진 + 90/95/100% 판정)
 """캠페인 지출 합산 소진과 한도 설정에 따른 BudgetDecision 전환을 확인한다."""
 
+import uuid
+from types import SimpleNamespace
+
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from api.routers import management
+from core.auth import get_current_user
+from core.db import get_db
 
 _DECISIONS = {"allow", "warn", "escalate", "block"}
+
+
+class _FakeDB:
+    """/budget/limit 인증용 가짜 DB — organization_members 조회 시 org_id를 반환."""
+
+    def __init__(self, org_id):
+        self._org_id = org_id
+
+    async def scalar(self, stmt, *a, **k):
+        if "organization_members" in str(stmt):
+            return self._org_id
+        return None
 
 
 @pytest.fixture()
 def client():
     app = FastAPI()
     app.include_router(management.router, prefix="/api/management")
+    org_id = uuid.uuid4()
+    app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(id=uuid.uuid4())
+    app.dependency_overrides[get_db] = lambda: _FakeDB(org_id=org_id)
     return TestClient(app)
 
 

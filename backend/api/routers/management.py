@@ -1678,8 +1678,13 @@ class BudgetLimitRequest(BaseModel):
 
 
 @router.post("/budget/limit")
-async def set_budget_limit(body: BudgetLimitRequest):
+async def set_budget_limit(
+    body: BudgetLimitRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     """예산 한도 설정 — 변경 후 경고 레벨(decision)이 즉시 반영(인메모리)."""
+    await _require_org_id(user, db)
     _BUDGET.set_limit(TENANT_ID, body.limit_krw)
     return await _budget_status()
 

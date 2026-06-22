@@ -204,3 +204,8 @@ def test_sync_unknown_campaign_404(monkeypatch):
     client = _client_with(org, campaign=None, use_mock=True, monkeypatch=monkeypatch)
     res = client.get("/api/management/campaigns/totally_unknown/sync")
     assert res.status_code == 404
+
+
+def test_budget_limit_requires_auth():
+    res = _client_no_auth().post("/api/management/budget/limit", json={"limit_krw": 1000})
+    assert res.status_code == 401
