@@ -52,45 +52,45 @@ def make_service(fail=False) -> tuple[BillingService, FakeToss]:
 
 async def test_charge_increases_balance():
     service, toss = make_service()
-    order = service.create_order(ORG, 50_000)
+    order = await service.create_order(ORG, 50_000)
 
     confirmed = await service.confirm("pay-1", order.order_id, 50_000)
 
     assert confirmed.status is PaymentStatus.DONE
-    assert service.balance(ORG) == 50_000
+    assert await service.balance(ORG) == 50_000
     assert len(toss.calls) == 1
-    assert service.history(ORG)[-1].reason is LedgerReason.CHARGE
+    assert (await service.history(ORG))[-1].reason is LedgerReason.CHARGE
 
 
 async def test_amount_mismatch_is_rejected_without_toss_call():
     """FE가 보낸 금액 변조 → 서버 기억 금액과 대조해 차단."""
     service, toss = make_service()
-    order = service.create_order(ORG, 50_000)
+    order = await service.create_order(ORG, 50_000)
 
     with pytest.raises(BillingError, match="금액 불일치"):
         await service.confirm("pay-1", order.order_id, 999_999)
 
-    assert service.balance(ORG) == 0
+    assert await service.balance(ORG) == 0
     assert toss.calls == []  # 토스 호출 전에 차단
 
 
 async def test_duplicate_confirm_is_idempotent():
     """같은 paymentKey confirm 2회 → 원장 1건 (충전 중복 방지)."""
     service, toss = make_service()
-    order = service.create_order(ORG, 30_000)
+    order = await service.create_order(ORG, 30_000)
 
     first = await service.confirm("pay-1", order.order_id, 30_000)
     second = await service.confirm("pay-1", order.order_id, 30_000)
 
     assert first.order_id == second.order_id
-    assert service.balance(ORG) == 30_000
-    assert len(service.history(ORG)) == 1
+    assert await service.balance(ORG) == 30_000
+    assert len(await service.history(ORG)) == 1
     assert len(toss.calls) == 1
 
 
 async def test_done_order_with_different_payment_key_is_rejected():
     service, _ = make_service()
-    order = service.create_order(ORG, 30_000)
+    order = await service.create_order(ORG, 30_000)
     await service.confirm("pay-1", order.order_id, 30_000)
 
     with pytest.raises(BillingError, match="이미 다른 결제"):
@@ -105,48 +105,48 @@ async def test_unknown_order_is_rejected():
 
 async def test_toss_failure_marks_order_failed_and_keeps_ledger():
     service, _ = make_service(fail=True)
-    order = service.create_order(ORG, 50_000)
+    order = await service.create_order(ORG, 50_000)
 
     with pytest.raises(PaymentConfirmError):
         await service.confirm("pay-1", order.order_id, 50_000)
 
     assert order.status is PaymentStatus.FAILED
-    assert service.balance(ORG) == 0
-    assert service.history(ORG) == ()
+    assert await service.balance(ORG) == 0
+    assert await service.history(ORG) == ()
 
 
-def test_order_amount_must_be_positive_int():
+async def test_order_amount_must_be_positive_int():
     service, _ = make_service()
     with pytest.raises(BillingError):
-        service.create_order(ORG, 0)
+        await service.create_order(ORG, 0)
     with pytest.raises(BillingError):
-        service.create_order(ORG, -1)
+        await service.create_order(ORG, -1)
 
 
 async def test_record_spend_decreases_balance_and_blocks_overdraft():
     service, _ = make_service()
-    order = service.create_order(ORG, 50_000)
+    order = await service.create_order(ORG, 50_000)
     await service.confirm("pay-1", order.order_id, 50_000)
 
-    entry = service.record_spend(ORG, 30_000, ref_id="appr-1")
+    entry = await service.record_spend(ORG, 30_000, ref_id="appr-1")
 
     assert entry.reason is LedgerReason.SPEND
-    assert service.balance(ORG) == 20_000
+    assert await service.balance(ORG) == 20_000
     with pytest.raises(BillingError, match="잔액 부족"):
-        service.record_spend(ORG, 20_001, ref_id="appr-2")
-    assert service.balance(ORG) == 20_000  # 거부 건은 원장 무변화
+        await service.record_spend(ORG, 20_001, ref_id="appr-2")
+    assert await service.balance(ORG) == 20_000  # 거부 건은 원장 무변화
 
 
 async def test_cancel_refunds_payment_and_reverses_credit():
     service, toss = make_service()
-    order = service.create_order(ORG, 50_000)
+    order = await service.create_order(ORG, 50_000)
     await service.confirm("pay-1", order.order_id, 50_000)
 
     canceled = await service.cancel(order.order_id, "사용자 요청")
 
     assert canceled.status is PaymentStatus.CANCELED
-    assert service.balance(ORG) == 0
-    assert [e.reason for e in service.history(ORG)] == [
+    assert await service.balance(ORG) == 0
+    assert [e.reason for e in await service.history(ORG)] == [
         LedgerReason.CHARGE,
         LedgerReason.REFUND,
     ]
@@ -155,15 +155,15 @@ async def test_cancel_refunds_payment_and_reverses_credit():
 
 async def test_duplicate_cancel_is_idempotent():
     service, toss = make_service()
-    order = service.create_order(ORG, 50_000)
+    order = await service.create_order(ORG, 50_000)
     await service.confirm("pay-1", order.order_id, 50_000)
 
     await service.cancel(order.order_id, "첫 취소")
     await service.cancel(order.order_id, "중복 취소")
 
-    assert service.balance(ORG) == 0
+    assert await service.balance(ORG) == 0
     assert len(toss.cancel_calls) == 1
-    assert len(service.history(ORG)) == 2
+    assert len(await service.history(ORG)) == 2
 
     with pytest.raises(BillingError, match="취소된 주문"):
         await service.confirm("pay-1", order.order_id, 50_000)
@@ -171,35 +171,35 @@ async def test_duplicate_cancel_is_idempotent():
 
 async def test_cancel_is_blocked_after_credit_spend():
     service, toss = make_service()
-    order = service.create_order(ORG, 50_000)
+    order = await service.create_order(ORG, 50_000)
     await service.confirm("pay-1", order.order_id, 50_000)
-    service.record_spend(ORG, 10_000, "ad-spend")
+    await service.record_spend(ORG, 10_000, "ad-spend")
 
     with pytest.raises(BillingError, match="사용 후 취소 불가"):
         await service.cancel(order.order_id, "사용자 요청")
 
-    assert service.balance(ORG) == 40_000
+    assert await service.balance(ORG) == 40_000
     assert toss.cancel_calls == []
 
 
 async def test_cancel_failure_keeps_order_and_credit():
     toss = FakeToss(cancel_fail=True)
     service = BillingService(toss)
-    order = service.create_order(ORG, 50_000)
+    order = await service.create_order(ORG, 50_000)
     await service.confirm("pay-1", order.order_id, 50_000)
 
     with pytest.raises(PaymentCancelError):
         await service.cancel(order.order_id, "사용자 요청")
 
     assert order.status is PaymentStatus.DONE
-    assert service.balance(ORG) == 50_000
-    assert len(service.history(ORG)) == 1
+    assert await service.balance(ORG) == 50_000
+    assert len(await service.history(ORG)) == 1
 
 
-def test_balances_are_isolated_per_org():
+async def test_balances_are_isolated_per_org():
     service, _ = make_service()
-    assert service.balance("org-a") == 0
-    assert service.balance("org-b") == 0
+    assert await service.balance("org-a") == 0
+    assert await service.balance("org-b") == 0
 
 
 def test_live_key_is_forbidden():

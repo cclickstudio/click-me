@@ -29,6 +29,7 @@ from domain.management.contracts.enums import (
     FailureReason,
     FaultMode,
     ProposalStatus,
+    RelevanceRank,
     ResultStatus,
 )
 
@@ -61,11 +62,19 @@ class CampaignConfig(Contract):
     campaign_id: str
     tenant_id: str
     ad_account_id: str
-    objective: Literal["traffic"] = "traffic"  # v1 스코프: 트래픽(클릭)만 (§7)
+    name: str | None = None  # 사용자 지정 캠페인 이름 (없으면 writer가 clickme-{id} 폴백)
+    objective: Literal["traffic", "leads"] = "traffic"  # 트래픽(클릭) / 리드(잠재고객)
     daily_budget_krw: int = Field(ge=0)
     start_at: UtcDatetime
     end_at: UtcDatetime
     creative_ad_id: str | None = None  # core Ad 느슨 참조 (FK 없음)
+    image_hash: str | None = None  # Meta /adimages 업로드 해시 — 광고 소재 이미지(없으면 텍스트만)
+    # Meta 타겟·정책 — 광고세트 targeting + 캠페인 special_ad_categories로 매핑된다.
+    special_ad_categories: tuple[str, ...] = ()  # () | ("HOUSING",) | ("EMPLOYMENT",) 등
+    countries: tuple[str, ...] = ("KR",)  # geo_locations.countries (ISO2)
+    age_min: int = Field(default=18, ge=18, le=65)  # Meta 최소 연령 18
+    age_max: int = Field(default=65, ge=18, le=65)
+    genders: tuple[int, ...] = ()  # () = 전체, (1,) = 남성, (2,) = 여성 (Meta 코드)
     target_audience: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -79,6 +88,7 @@ class CampaignInfo(Contract):
     name: str
     state: CampaignState
     daily_budget_krw: int = Field(ge=0)
+    ended_at: str | None = None  # 게재 종료일(ISO) — 캠페인 stop_time 또는 광고세트 종료일
 
 
 class MetricsSnapshot(Contract):
@@ -136,11 +146,38 @@ class PlatformMetrics(Contract):
     reach: int = Field(ge=0)
 
 
+class DemographicMetrics(Contract):
+    """연령×성별(age,gender breakdown) 지표 분해 — Meta age 버킷 × male/female/unknown."""
+
+    age: str
+    gender: str
+    impressions: int = Field(ge=0)
+    clicks: int = Field(ge=0)
+    spend_krw: int = Field(ge=0)
+    reach: int = Field(ge=0)
+
+
+class CreativePreview(Contract):
+    """광고 크리에이티브 미리보기 — 캠페인 대표 시안(광고명·이미지·문구).
+
+    image_url은 원본 해상도(카드 표시용), thumbnail_url은 폴백용 소형 썸네일.
+    """
+
+    ad_id: str
+    ad_name: str
+    image_url: str | None = None  # 원본 해상도 (카드 메인 이미지)
+    thumbnail_url: str | None = None  # 소형 썸네일 (image_url 없을 때 폴백)
+    headline: str | None = None  # 광고 제목(creative.title)
+    primary_text: str | None = None  # 기본 문구(creative.body)
+
+
 class AccountFunding(Contract):
     """광고계정 자금·게재 가능 여부 — 선불 잔액 소진·계정 비활성 감지(게재 중단 원인)."""
 
     account_status: int
     available_balance_krw: int | None = None  # 선불 가용 잔액 (모르면 None)
+    spend_cap_krw: int | None = None  # 계정 지출 한도(선불이면 충전액과 일치, 부가세 별도)
+    amount_spent_krw: int | None = None  # 계정 누적 지출(광고 집행분, 부가세 별도)
     delivery_blocked: bool = False
     block_reason: str | None = None  # "선불 잔액 부족" · "계정 비활성" 등
 
@@ -153,6 +190,33 @@ class DeliveryEstimate(Contract):
     estimate_mau_lower: int = Field(ge=0)
     estimate_mau_upper: int = Field(ge=0)
     daily_outcomes_curve: tuple[dict[str, Any], ...] = ()
+    as_of: UtcDatetime
+
+
+class RelevanceDiagnostics(Contract):
+    """Ad Relevance Diagnostics — 메타 본인 채점표 (meta-data-sources §2②).
+
+    광고(ad) 단위 경쟁 대비 백분위. QUALITY_DEGRADED 1차 신호 + conversion_rate_ranking은
+    성과 미달(PERFORMANCE_BELOW_TARGET) 진단 신호. 미설정/저노출이면 UNKNOWN(합성 금지).
+    """
+
+    campaign_id: str
+    quality_ranking: RelevanceRank = RelevanceRank.UNKNOWN
+    engagement_rate_ranking: RelevanceRank = RelevanceRank.UNKNOWN
+    conversion_rate_ranking: RelevanceRank = RelevanceRank.UNKNOWN
+    as_of: UtcDatetime
+
+
+class DeliveryStatusDetail(Contract):
+    """상태·심사·학습 상세 (meta-data-sources §3.1) — Insights 아닌 Ad/AdSet 객체에서.
+
+    REVIEW_*/LEARNING_PHASE 감지용. get_state(CampaignState)와 별개의 상세 신호.
+    """
+
+    campaign_id: str
+    effective_status: str  # ACTIVE / PAUSED / DISAPPROVED / PENDING_REVIEW ...
+    issues_info: tuple[str, ...] = ()  # 심사 거절/제한 사유
+    learning_stage: str | None = None  # LEARNING / SUCCESS / FAIL (adset)
     as_of: UtcDatetime
 
 

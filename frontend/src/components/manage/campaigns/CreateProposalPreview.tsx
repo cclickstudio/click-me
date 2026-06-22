@@ -32,6 +32,8 @@ export function CreateProposalPreview({
   const cfg = proposal.evidence_metrics.campaign_config as ConfigView | undefined;
   const name = (proposal.evidence_metrics.name as string | undefined) ?? '신규 캠페인';
   const fmtDate = (s?: string) => (s ? s.slice(0, 10) : '-');
+  // 폼에서 고른 목표를 그대로 반영 (leads=리드 / 그 외=트래픽)
+  const objectiveLabel = cfg?.objective === 'leads' ? '리드 (잠재고객 폼)' : '트래픽 (클릭)';
 
   return (
     <div className="rounded-2xl border border-[#E5E8EB] dark:border-[#2D3748] p-5 max-w-xl">
@@ -46,7 +48,7 @@ export function CreateProposalPreview({
       </p>
 
       <div className="rounded-xl bg-[#F9FAFB] dark:bg-[#1A202C] px-4 py-2">
-        <Row label="목표" value="트래픽 (클릭)" />
+        <Row label="목표" value={objectiveLabel} />
         <Row label="일 예산" value={`₩${proposal.budget_after_krw.toLocaleString()}`} />
         <Row label="집행 기간" value={`${fmtDate(cfg?.start_at)} ~ ${fmtDate(cfg?.end_at)}`} />
         <Row label="예상 총지출" value={`₩${proposal.max_total_spend_krw.toLocaleString()}`} />

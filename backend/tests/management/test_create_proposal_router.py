@@ -48,6 +48,16 @@ def test_create_proposal_round_trip_to_execution(client):
     assert target["response"]["dry_run"] is True  # 기본 DRY_RUN — Meta 미전송
 
 
+def test_pause_campaign_returns_paused(client):
+    # 일시중지 — 제안→승인→실행 단일 경로. MOCK 모드라 DRY_RUN으로 합성 성공.
+    res = client.post("/api/management/campaigns/cmp_test_pause/pause")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["paused"] is True
+    target = body["result"]["platform_response_snapshot"]["targets"][0]
+    assert target["response"]["operation"] == "pause"
+
+
 def test_create_proposal_rejects_invalid_budget(client):
     res = client.post(
         "/api/management/campaigns/create-proposal",

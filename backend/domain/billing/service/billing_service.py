@@ -4,7 +4,7 @@
 - 금액은 서버가 기억한 주문과 대조한다 — FE가 보낸 금액 변조 차단.
 - 같은 주문의 중복 confirm은 멱등 — 원장에 1건만 기록.
 - 승인 실패 시 주문 FAILED, 원장 무변화.
-- 영속화는 인메모리 Port — core 테이블 합의 후 Repository만 교체.
+- 영속화는 Repository Port — 테스트는 InMemory, 운영은 DB(db_repositories.py)로 교체.
 """
 
 from __future__ import annotations
@@ -65,27 +65,29 @@ class BillingError(RuntimeError):
 
 
 class OrderRepository(Protocol):
-    def get(self, order_id: str) -> PaymentOrder | None: ...
+    """주문 영속 Port — InMemory(테스트)·DB(운영) 교체. DB I/O라 async."""
 
-    def save(self, order: PaymentOrder) -> None: ...
+    async def get(self, order_id: str) -> PaymentOrder | None: ...
+
+    async def save(self, order: PaymentOrder) -> None: ...
 
 
 class LedgerRepository(Protocol):
-    """append-only — 수정·삭제 경로 없음 (감사 로그와 동일 원칙)."""
+    """append-only — 수정·삭제 경로 없음 (감사 로그와 동일 원칙). DB I/O라 async."""
 
-    def append(self, entry: LedgerEntry) -> None: ...
+    async def append(self, entry: LedgerEntry) -> None: ...
 
-    def entries(self, org_id: str) -> tuple[LedgerEntry, ...]: ...
+    async def entries(self, org_id: str) -> tuple[LedgerEntry, ...]: ...
 
 
 class InMemoryOrderRepository:
     def __init__(self) -> None:
         self._orders: dict[str, PaymentOrder] = {}
 
-    def get(self, order_id: str) -> PaymentOrder | None:
+    async def get(self, order_id: str) -> PaymentOrder | None:
         return self._orders.get(order_id)
 
-    def save(self, order: PaymentOrder) -> None:
+    async def save(self, order: PaymentOrder) -> None:
         self._orders[order.order_id] = order
 
 
@@ -93,10 +95,10 @@ class InMemoryLedgerRepository:
     def __init__(self) -> None:
         self._entries: list[LedgerEntry] = []
 
-    def append(self, entry: LedgerEntry) -> None:
+    async def append(self, entry: LedgerEntry) -> None:
         self._entries.append(entry)
 
-    def entries(self, org_id: str) -> tuple[LedgerEntry, ...]:
+    async def entries(self, org_id: str) -> tuple[LedgerEntry, ...]:
         return tuple(e for e in self._entries if e.org_id == org_id)
 
 
@@ -114,17 +116,17 @@ class BillingService:
 
     # ── 주문 ────────────────────────────────────────────────────
 
-    def create_order(self, org_id: str, amount_krw: int) -> PaymentOrder:
+    async def create_order(self, org_id: str, amount_krw: int) -> PaymentOrder:
         """충전 주문 생성 — 금액은 서버가 기억한다 (KRW 정수, 양수만)."""
         if not isinstance(amount_krw, int) or amount_krw <= 0:
             raise BillingError("충전 금액은 양의 KRW 정수여야 합니다")
         order = PaymentOrder(order_id=str(uuid4()), org_id=org_id, amount_krw=amount_krw)
-        self._orders.save(order)
+        await self._orders.save(order)
         return order
 
     async def confirm(self, payment_key: str, order_id: str, amount_krw: int) -> PaymentOrder:
         """결제 승인 확정 — 금액 대조 → 멱등 → 토스 confirm → 원장 CHARGE."""
-        order = self._orders.get(order_id)
+        order = await self._orders.get(order_id)
         if order is None:
             raise BillingError("존재하지 않는 주문입니다")
         if order.status is PaymentStatus.CANCELED:
@@ -141,18 +143,18 @@ class BillingService:
             response = await self._toss.confirm(payment_key, order_id, amount_krw)
         except PaymentConfirmError:
             order.status = PaymentStatus.FAILED
-            self._orders.save(order)
+            await self._orders.save(order)
             raise
         order.status = PaymentStatus.DONE
         order.payment_key = payment_key
         order.raw_response = response
         order.approved_at = datetime.now(UTC)
-        self._orders.save(order)
-        self._ledger.append(
+        await self._orders.save(order)
+        await self._ledger.append(
             LedgerEntry(
                 org_id=order.org_id,
                 delta_krw=order.amount_krw,
-                balance_after_krw=self.balance(order.org_id) + order.amount_krw,
+                balance_after_krw=await self.balance(order.org_id) + order.amount_krw,
                 reason=LedgerReason.CHARGE,
                 ref_id=order.order_id,
             )
@@ -165,14 +167,14 @@ class BillingService:
         이미 사용한 크레딧까지 환수해 음수 잔액이 되지 않도록 현재 잔액이 충전액보다
         작으면 취소를 막는다. 같은 주문의 중복 취소는 PG 재호출 없이 멱등 반환한다.
         """
-        order = self._orders.get(order_id)
+        order = await self._orders.get(order_id)
         if order is None:
             raise BillingError("존재하지 않는 주문입니다")
         if order.status is PaymentStatus.CANCELED:
             return order
         if order.status is not PaymentStatus.DONE or not order.payment_key:
             raise BillingError("승인 완료된 결제만 취소할 수 있습니다")
-        current = self.balance(order.org_id)
+        current = await self.balance(order.org_id)
         if current < order.amount_krw:
             raise BillingError(
                 f"충전 크레딧 사용 후 취소 불가: 잔액 {current}원 < 취소액 {order.amount_krw}원"
@@ -191,8 +193,8 @@ class BillingService:
         order.status = PaymentStatus.CANCELED
         order.cancel_response = response
         order.canceled_at = datetime.now(UTC)
-        self._orders.save(order)
-        self._ledger.append(
+        await self._orders.save(order)
+        await self._ledger.append(
             LedgerEntry(
                 org_id=order.org_id,
                 delta_krw=-order.amount_krw,
@@ -205,18 +207,33 @@ class BillingService:
 
     # ── 원장 ────────────────────────────────────────────────────
 
-    def balance(self, org_id: str) -> int:
-        entries = self._ledger.entries(org_id)
-        return entries[-1].balance_after_krw if entries else 0
+    async def balance(self, org_id: str) -> int:
+        # 잔액 = delta 합 (원장 순서와 무관하게 견고).
+        entries = await self._ledger.entries(org_id)
+        return sum(e.delta_krw for e in entries)
 
-    def history(self, org_id: str) -> tuple[LedgerEntry, ...]:
-        return self._ledger.entries(org_id)
+    async def history(self, org_id: str) -> tuple[LedgerEntry, ...]:
+        return await self._ledger.entries(org_id)
 
-    def record_spend(self, org_id: str, amount_krw: int, ref_id: str) -> LedgerEntry:
+    async def total_charged(self, org_id: str) -> int:
+        """누적 순충전액 = CHARGE 합 − REFUND 합 — 예산 관리의 '한도'(충전한 만큼이 예산)."""
+        entries = await self._ledger.entries(org_id)
+        return sum(
+            e.delta_krw for e in entries if e.reason in (LedgerReason.CHARGE, LedgerReason.REFUND)
+        )
+
+    async def spent_for(self, org_id: str, ref_id: str) -> int:
+        """특정 참조(캠페인 등)에 지금까지 차감(SPEND)된 누적액 — 증분 정산의 기준."""
+        entries = await self._ledger.entries(org_id)
+        return sum(
+            -e.delta_krw for e in entries if e.reason is LedgerReason.SPEND and e.ref_id == ref_id
+        )
+
+    async def record_spend(self, org_id: str, amount_krw: int, ref_id: str) -> LedgerEntry:
         """광고 집행 성공분 차감 — 잔액 초과 차단 (음수 잔액 금지)."""
         if not isinstance(amount_krw, int) or amount_krw <= 0:
             raise BillingError("차감 금액은 양의 KRW 정수여야 합니다")
-        current = self.balance(org_id)
+        current = await self.balance(org_id)
         if amount_krw > current:
             raise BillingError(f"잔액 부족: 잔액 {current}원 < 차감 {amount_krw}원")
         entry = LedgerEntry(
@@ -226,5 +243,5 @@ class BillingService:
             reason=LedgerReason.SPEND,
             ref_id=ref_id,
         )
-        self._ledger.append(entry)
+        await self._ledger.append(entry)
         return entry

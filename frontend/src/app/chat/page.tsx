@@ -13,9 +13,18 @@ const quickPrompts = [
   '광고 카피 개선 방법을 알려줘',
 ];
 
+type Citation = { kind: string; source: string; title?: string };
+type SourceMeta = {
+  source: string; // management | clio
+  label: string; // 매니지먼트 어시스턴트 | CLIO
+  engine: string; // OpenAI · 실측+KB | Gemini
+  citations?: Citation[];
+  used_tools?: string[];
+};
 type Message = {
   role: 'user' | 'assistant';
   content: string;
+  meta?: SourceMeta;
 };
 
 function SendIcon() {
@@ -101,9 +110,18 @@ export default function Page() {
           const raw = line.slice(6).trim();
           if (!raw) continue;
           try {
-            const data = JSON.parse(raw) as { token?: string; done?: boolean };
+            const data = JSON.parse(raw) as {
+              token?: string;
+              done?: boolean;
+              meta?: SourceMeta;
+            };
             if (data.done) {
               setIsStreaming(false);
+            } else if (data.meta) {
+              setMessages((prev) => {
+                const last = prev[prev.length - 1];
+                return [...prev.slice(0, -1), { ...last, meta: data.meta }];
+              });
             } else if (data.token) {
               setMessages((prev) => {
                 const last = prev[prev.length - 1];
@@ -175,14 +193,40 @@ export default function Page() {
                         </svg>
                       </div>
                     )}
-                    <div
-                      className={`max-w-sm px-4 py-3 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap ${
-                        msg.role === 'user'
-                          ? 'bg-[#3182F6] text-white rounded-br-md'
-                          : 'bg-[#F2F4F6] dark:bg-[#252D3D] text-[#191F28] dark:text-[#F2F4F6] rounded-bl-md'
-                      }`}
-                    >
-                      {msg.content}
+                    <div className={`flex flex-col gap-1 max-w-sm ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
+                      {msg.role === 'assistant' && msg.meta && (
+                        <span
+                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                            msg.meta.source === 'management'
+                              ? 'bg-[#EBF3FF] text-[#3182F6] dark:bg-[#1E3A5F] dark:text-[#7BB4F5]'
+                              : 'bg-[#F2E9FF] text-[#7C3AED] dark:bg-[#2E1F47] dark:text-[#C4A8F5]'
+                          }`}
+                        >
+                          {msg.meta.source === 'management' ? '⚙' : '🧠'} {msg.meta.label} · {msg.meta.engine}
+                        </span>
+                      )}
+                      <div
+                        className={`px-4 py-3 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap ${
+                          msg.role === 'user'
+                            ? 'bg-[#3182F6] text-white rounded-br-md'
+                            : 'bg-[#F2F4F6] dark:bg-[#252D3D] text-[#191F28] dark:text-[#F2F4F6] rounded-bl-md'
+                        }`}
+                      >
+                        {msg.content}
+                      </div>
+                      {msg.role === 'assistant' &&
+                        msg.meta?.source === 'management' &&
+                        (msg.meta.citations?.length || msg.meta.used_tools?.length) ? (
+                        <p className="text-[10px] text-[#B0B8C1] dark:text-[#6B7280] px-1">
+                          근거:{' '}
+                          {[
+                            ...(msg.meta.used_tools ?? []).map((t) => t.replace('live_', '실측·')),
+                            ...(msg.meta.citations ?? [])
+                              .filter((c) => c.kind === 'kb')
+                              .map((c) => c.title || c.source.replace('.md', '')),
+                          ].join(' · ')}
+                        </p>
+                      ) : null}
                     </div>
                   </div>
                 );
