@@ -110,6 +110,91 @@ def test_create_campaign_does_not_double_act_prefix():
     assert "act_act_" not in captured[0]
 
 
+def test_create_campaign_uses_user_name_and_leads_objective():
+    # 사용자가 지정한 이름과 리드 목표가 Meta 요청에 그대로 실린다 (Task1).
+    captured: list[bytes] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append(request.content)
+        return httpx.Response(200, json={"id": "23842"})
+
+    client = MetaClient("EAAtest", transport=httpx.MockTransport(handler))
+    writer = MetaAdsWriter(mode=ExecutionMode.VALIDATE_ONLY, client=client)
+    cfg = _config().model_copy(update={"name": "lead_test_2606", "objective": "leads"})
+    asyncio.run(writer.create_campaign(cfg, "idem-c4"))
+
+    body = captured[0]
+    assert b"lead_test_2606" in body  # 사용자 이름 그대로 전송
+    assert b"OUTCOME_LEADS" in body  # objective=leads → OUTCOME_LEADS 매핑
+
+
+def test_create_campaign_defaults_name_and_traffic_objective():
+    # 이름 미지정 → clickme-{id} 폴백, objective 기본 traffic → OUTCOME_TRAFFIC.
+    captured: list[bytes] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append(request.content)
+        return httpx.Response(200, json={"id": "1"})
+
+    client = MetaClient("EAAtest", transport=httpx.MockTransport(handler))
+    writer = MetaAdsWriter(mode=ExecutionMode.VALIDATE_ONLY, client=client)
+    asyncio.run(writer.create_campaign(_config(campaign="camp-x"), "idem-d"))
+
+    body = captured[0]
+    assert b"clickme-camp-x" in body  # 이름 미지정 폴백
+    assert b"OUTCOME_TRAFFIC" in body  # objective 기본 = traffic
+
+
+def test_create_campaign_special_ad_categories_from_config():
+    # 특별 광고 카테고리(주택 등)가 캠페인 생성 요청에 실린다 (Meta 정책 신고).
+    captured: list[bytes] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append(request.content)
+        return httpx.Response(200, json={"id": "1"})
+
+    client = MetaClient("EAAtest", transport=httpx.MockTransport(handler))
+    writer = MetaAdsWriter(mode=ExecutionMode.VALIDATE_ONLY, client=client)
+    cfg = _config().model_copy(update={"special_ad_categories": ("HOUSING",)})
+    asyncio.run(writer.create_campaign(cfg, "idem-h"))
+
+    assert b"HOUSING" in captured[0]
+
+
+def test_upload_image_returns_hash():
+    # /adimages 멀티파트 업로드 → 응답에서 image_hash 추출.
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"images": {"ad.jpg": {"hash": "abc123", "url": "u"}}})
+
+    client = MetaClient("EAAtest", transport=httpx.MockTransport(handler))
+    writer = MetaAdsWriter(mode=ExecutionMode.VALIDATE_ONLY, client=client)
+    h = asyncio.run(writer.upload_image(_config(), b"fakebytes", "ad.jpg", "idem-img"))
+    assert h == "abc123"
+
+
+def test_create_ad_attaches_image_hash():
+    # 업로드한 image_hash가 광고 소재(link_data)에 실린다.
+    captured: list[bytes] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured.append(request.content)
+        return httpx.Response(200, json={"id": "1"})
+
+    client = MetaClient("EAAtest", transport=httpx.MockTransport(handler))
+    writer = MetaAdsWriter(mode=ExecutionMode.VALIDATE_ONLY, client=client)
+    asyncio.run(
+        writer.create_ad(
+            _config(),
+            "adset1",
+            "idem-ad",
+            page_id="PAGE",
+            form_id="FORM",
+            image_hash="IMGHASH",
+        )
+    )
+    assert b"IMGHASH" in captured[0]
+
+
 # ── executor 디스패치 ────────────────────────────────────────────
 
 

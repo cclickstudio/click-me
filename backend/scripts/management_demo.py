@@ -66,11 +66,11 @@ async def main() -> None:
 
     # ── 0) 결제 충전 — 잔액이 곧 집행 한도가 된다 ───────────────
     billing = BillingService(DemoToss())
-    order = billing.create_order("org-demo", 500_000)
+    order = await billing.create_order("org-demo", 500_000)
     await billing.confirm("pay-demo-1", order.order_id, 500_000)
     section("0) 크레딧 충전 (토스 테스트 모드 대역)")
     print(f"충전 금액   : {order.amount_krw:,} KRW")
-    print(f"충전 후 잔액: {billing.balance('org-demo'):,} KRW")
+    print(f"충전 후 잔액: {await billing.balance('org-demo'):,} KRW")
 
     # ── 1) 🅰 진단 대체 입력 (contracts 경유) ──────────────────
     diagnosis = DiagnosisResult(
@@ -138,7 +138,7 @@ async def main() -> None:
 
     # 잔액 = 집행 한도 — billing↔management 연결은 이 합성 지점에서만 (상호 import 없음)
     budgets = TenantBudgetRegistry(default_limit_krw=0)
-    budgets.set_limit("org-demo", billing.balance("org-demo"))
+    budgets.set_limit("org-demo", await billing.balance("org-demo"))
     executor = Executor(
         MetaAdsWriter(mode=ExecutionMode.DRY_RUN),
         idempotency=InMemoryIdempotencyStore(),
@@ -168,10 +168,10 @@ async def main() -> None:
     if result.status.value in ("success", "pending_review"):
         spend = proposal.max_total_spend_krw
         if spend > 0:
-            billing.record_spend("org-demo", spend, ref_id=action.approval_id)
+            await billing.record_spend("org-demo", spend, ref_id=action.approval_id)
         print(f"집행 차감   : {spend:,} KRW")
-    print(f"차감 후 잔액: {billing.balance('org-demo'):,} KRW")
-    for entry in billing.history("org-demo"):
+    print(f"차감 후 잔액: {await billing.balance('org-demo'):,} KRW")
+    for entry in await billing.history("org-demo"):
         print(f"  원장: {entry.reason:>6} {entry.delta_krw:+,} → 잔액 {entry.balance_after_krw:,}")
 
 
