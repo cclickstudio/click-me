@@ -70,6 +70,24 @@ def _generation_lines(age: int) -> str:
     )
 
 
+def _brand_era_lines(ad: AdInterpretation) -> str:
+    """공유 브랜드 시대성(structured_analysis.brand_era §4.4 Tier 2)을 반응 힌트 줄로.
+
+    전원 동일한 '사실'(전성기·세대 친숙도)만 주입 — 친숙/낯섦 판단은 페르소나 나이(형성기)가 한다.
+    식별 실패(identified=false)·필드 없으면 빈 문자열 → 기존 동작 그대로.
+    (PERSONA_COHORT_KNOWLEDGE_STRATEGY Tier 2)
+    """
+    be = ad.structured_analysis.get("brand_era") if ad.structured_analysis else None
+    if not isinstance(be, dict) or not be.get("identified"):
+        return ""
+    bits = [str(be[k]) for k in ("era", "note") if be.get(k)]
+    if not bits:
+        return ""
+    return (
+        "\n- 브랜드 시대성(전원 공유 사실): " + " — ".join(bits) + " (친숙/낯섦은 내 형성기로 판단)"
+    )
+
+
 def _visual_lines(ad: AdInterpretation) -> str:
     """공유 시각 인벤토리(structured_analysis.visual_elements §4-a)를 반응 힌트 줄로.
 
@@ -200,6 +218,7 @@ class GeminiReactionEngine:
             f"[광고]\n- 업종: {ad.detected_industry} / 목적: {ad.detected_objective}\n"
             f"- 메시지: {ad.detected_message}\n"
             f"- 추정 타깃: {ad.detected_target}{_ad_feature_lines(ad, income)}"
+            f"{_brand_era_lines(ad)}"
             f"{_visual_lines(ad)}{_awareness_lines(ad, persona.age)}\n\n"
             "[출력 — 아래 JSON만, 설명·코드펜스 없이]\n"
             "{\n"
@@ -211,11 +230,14 @@ class GeminiReactionEngine:
             f'  "rejection_reason_tag": null 또는 [{_enum_values(RejectionReasonTag)}] 중 하나,\n'
             f'  "emotion_tag": [{_enum_values(EmotionTag)}] 중 하나,\n'
             '  "perceived_message": "내가 이해한 메시지", "perceived_target": "내가 느낀 타깃",\n'
+            '  "brand_recognized": bool,  // 이 광고가 어느 브랜드/제품 광고인지 명확히 알겠는가\n'
+            '  "perceived_brand": "내가 인식한 브랜드/제품명(모르겠으면 null)",\n'
             '  "noticed_first": "이 광고에서 내 성격·중시 소비가치상 '
             '가장 먼저 눈에 들어온 요소 한 가지",\n'
             '  "utterance": "한 문장 솔직한 반응"\n'
             "}\n"
             "주의: AISAS는 깔때기 — action=true면 attention·interest도 true여야 한다. "
+            "brand_recognized는 광고를 보고 '무슨 브랜드/제품 광고인지' 분명히 떠오를 때만 true. "
             "태그는 반드시 제시된 값에서만 고른다(새 값 금지). "
             "noticed_first 는 같은 광고라도 사람마다 다르다 — 내 성격·형편·중시 가치에 비추어 "
             "가장 먼저 주의가 가는 요소를 고른다(가격 민감하면 가격, 개방적이면 비주얼 식으로)."
@@ -243,6 +265,8 @@ class GeminiReactionEngine:
             emotion_tag=data.get("emotion_tag", EmotionTag.INDIFFERENCE),
             perceived_message=data.get("perceived_message"),
             perceived_target=data.get("perceived_target"),
+            brand_recognized=bool(data.get("brand_recognized", False)),
+            perceived_brand=data.get("perceived_brand"),
             noticed_first=data.get("noticed_first"),
             utterance=data.get("utterance"),
             qa_passed=True,  # QA 게이트가 별도 판정

@@ -172,6 +172,7 @@
 - 추정 타깃: 20대 직장인
 - 가격: 정가 30,000원 → 할인가 19,900원 (내 월소득 기준 판단) ← ad_features
 - 브랜드 언급: 있음 / 사회적 증거(후기·인기): high
+- 브랜드 시대성(전원 공유 사실): … (친숙/낯섦은 내 형성기로 판단)   ← Tier2 brand_era
 [광고 비주얼]                                            ← VLM visual_elements
 - 핵심 피사체: 제품 캔 클로즈업                            (피사체 추가)
 - 첫눈에 띄는 것: 파란 캔과 물방울
@@ -200,6 +201,8 @@
 - 숫자(구매의도·신뢰도)와 태그(감정·거부사유)는 **정해진 값(enum)으로만** 출력하게 강제 → 집계 엔진이 코드로 합산 가능(자유 텍스트 금지).
 - 호출은 `response_mime_type: application/json`으로 JSON만 받는다(`adapters/gemini/_common.py`).
 - 가격은 "내 월소득 기준으로 판단"처럼 **공식 없이** LLM이 적합도를 판단하게 둔다.
+- **세대 게이팅·말투(Tier 1)** — `_generation_lines(age)`가 형성기(15~25세)를 계산해 브랜드 친숙도·어투를 나이로 조건화. 시대착오("출생 전 브랜드 추억")를 막는다.
+- **브랜드 시대성 공유(Tier 2)** — `interpret_ad`가 `structured_analysis.brand_era`로 브랜드 전성기·세대 친숙도를 **1회** 추출해 전원에 동일 주입. 사실은 공유, 친숙/낯섦은 나이가 판단(`_brand_era_lines`). 무명·텍스트 광고면 미주입. 둘 다 PERSONA_COHORT_KNOWLEDGE_STRATEGY 참조.
 
 > **숫자는 코드, 문장만 LLM.** KPI(클릭의향률·구매의도 평균·CI)는 LLM이 만든 게 아니라, 이 JSON들을 집계 엔진(`tools/aggregation`)이 코드로 가중 평균·부트스트랩한 결과다.
 

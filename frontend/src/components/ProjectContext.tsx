@@ -2,11 +2,13 @@
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { getToken } from '@/lib/authApi';
+import { api } from '@/lib/api';
+import type { DebateSessionMeta } from '@/lib/types';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
-export type Project = { id: string; name: string; status: string; description?: string | null; created_at?: string; created_by_name: string | null; organization_name: string | null };
-export type SimRow = { id: string; status: string; sample_size: number; created_by_name: string | null; created_at: string };
+export type Project = { id: string; name: string; status: string; description?: string | null; created_at?: string; created_by_name: string | null; organization_name: string | null; team_id: string | null; team_name: string | null };
+export type SimRow = { id: string; status: string; sample_size: number; ad_title: string | null; created_by_name: string | null; created_at: string };
 export type GenRow = { id: string; status: string; product_name: string | null; created_by_name: string | null; created_at: string };
 
 export type TrashRow = { id: string; kind: 'sim' | 'gen'; label: string; deleted_at: string };
@@ -23,6 +25,9 @@ type ProjectContextValue = {
   selectedProjectId: string | null;
   selectedProject: Project | null;
   selectProject: (id: string | null) => void;
+  // 시뮬레이션별 토론 목록(DB 영속화) — 패널에서 lazy 로드. 키 = simulation_id.
+  debates: Record<string, DebateSessionMeta[]>;
+  loadDebates: (simulationId: string) => Promise<void>;
 };
 
 const ProjectContext = createContext<ProjectContextValue>({
@@ -36,6 +41,8 @@ const ProjectContext = createContext<ProjectContextValue>({
   selectedProjectId: null,
   selectedProject: null,
   selectProject: () => {},
+  debates: {},
+  loadDebates: async () => {},
 });
 
 export function ProjectProvider({ children }: { children: React.ReactNode }) {
@@ -43,6 +50,7 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(false);
   const [details, setDetails] = useState<Record<string, ProjectDetails>>({});
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  const [debates, setDebates] = useState<Record<string, DebateSessionMeta[]>>({});
   const fetchedRef = useRef(false);
 
   const fetchProjects = useCallback(async () => {
@@ -67,6 +75,18 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
     if (fetchedRef.current) return;
     fetchedRef.current = true;
     fetchProjects();
+  }, []);
+
+  // 활성 프로젝트를 localStorage에 고정 — 페이지 이동·새로고침 후에도 유지(생성 내역 누락 방지).
+  useEffect(() => {
+    const stored = localStorage.getItem('selectedProjectId');
+    if (stored) setSelectedProjectId(stored);
+  }, []);
+
+  const selectProject = useCallback((id: string | null) => {
+    setSelectedProjectId(id);
+    if (id) localStorage.setItem('selectedProjectId', id);
+    else localStorage.removeItem('selectedProjectId');
   }, []);
 
   const fetchDetailsForProject = async (projectId: string) => {
@@ -114,12 +134,23 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
     await Promise.all(unloaded.map(p => fetchDetailsForProject(p.id)));
   };
 
+  // 시뮬레이션별 토론 목록 lazy 로드(중복 호출 무해 — 갱신 시 덮어씀).
+  const loadDebates = useCallback(async (simulationId: string) => {
+    try {
+      const { debates: sessions } = await api.debate.bySimulation(simulationId);
+      setDebates(prev => ({ ...prev, [simulationId]: sessions }));
+    } catch {
+      // ignore — DB 미연동·네트워크 오류 시 빈 상태 유지
+    }
+  }, []);
+
   const selectedProject = projects.find(p => p.id === selectedProjectId) ?? null;
 
   return (
     <ProjectContext.Provider value={{
       projects, loading, details, loadDetails, loadAll, refreshDetails, refresh: fetchProjects,
-      selectedProjectId, selectedProject, selectProject: setSelectedProjectId,
+      selectedProjectId, selectedProject, selectProject,
+      debates, loadDebates,
     }}>
       {children}
     </ProjectContext.Provider>

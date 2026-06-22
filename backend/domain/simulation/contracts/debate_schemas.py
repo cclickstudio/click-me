@@ -4,9 +4,16 @@
 # 주고받는 내부 스키마를 한 곳에 모은다. 8·9·10-a·10-b는 결정론(LLM✗), 10-c·11만 LLM.
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
+
+from domain.simulation.contracts.schemas import (
+    AdInterpretation,
+    ObjectiveFit,
+    RubricScore,
+    SimulationAggregate,
+)
 
 # AISAS 5단계 — 퍼널 순서 고정(이 순서로만 인접 비교).
 AISAS_STAGES: list[str] = ["attention", "interest", "search", "action", "share"]
@@ -54,6 +61,21 @@ class RejectionBreakdown(BaseModel):
     distrust_count: int = 0  # emotion_tag == distrust 인원
 
 
+class BrandRecognition(BaseModel):
+    """조각 8 — 브랜드 식별 분해(Fluency, REPORT §2-5). 인원 기반(9의 가중 rate와 별개).
+
+    선언 브랜드명 입력이 없어 '정확 귀속 vs 오귀속' 자동 판정은 안 한다. 식별/미식별 +
+    인식한 브랜드명(perceived_brand) 분포만 결정론으로 센다(오인식 해석은 토론·사람 몫).
+    """
+
+    recognized_count: int  # brand_recognized == true 인원
+    recognition_rate: float  # recognized_count / total_n (인원 기반, 0~1)
+    unrecognized_count: int  # 미식별 인원
+    perceived_brands: dict[str, int] = Field(
+        default_factory=dict
+    )  # 인식한 브랜드/제품명 분포(상위)
+
+
 class MessageReception(BaseModel):
     """조각 8 — 메시지 수신 갭(의도 메시지가 어떻게 받아들여졌나). 결정론 신호, 해석은 토론(LLM).
 
@@ -80,6 +102,8 @@ class ReactionAnalysis(BaseModel):
     by_drop_stage: dict[str, int] = Field(default_factory=dict)
     by_drop_reason_tag: dict[str, int] = Field(default_factory=dict)
     emotion_dist: dict[str, int] = Field(default_factory=dict)
+    purchase_intent_dist: dict[int, int] = Field(default_factory=dict)  # 구매의도 1~5 분포(§2-2)
+    brand_recognition: BrandRecognition | None = None  # 브랜드 식별 분해(§2-5)
     rejection: RejectionBreakdown
     groups: GroupMembers
     message: MessageReception | None = None  # 메시지 수신 갭(ad_analysis 있을 때만)
@@ -124,17 +148,18 @@ class DebateParticipant(BaseModel):
     stance_score: float
     is_fallback: bool = False
     is_expert: bool = False  # 전문가(분석결과 grounded) / 일반인(실제 반응 grounded)
-    engine: str  # haiku / gpt / gemini (토론자). 역할 기반 라운드로빈(엔진 ⊥ 역할).
+    engine: str  # gpt (토론자, gpt-4o-mini 통일). haiku/gemini는 여분.
     persona_name: str  # 결정론 부여 이름(운영은 factory 이름 승계). 리포트 표시용.
     persona_profile: str  # 한 줄 프로필(전문가=카테고리 주입, 일반인=역할/인구 기반)
+    tone: str = ""  # 일반인 말투(표현 스타일). 전문가는 빈 값 — 같은 모델 통일 시 표현 다양성용.
 
 
 class AssignedPanel(BaseModel):
-    """조각 10-b 산출 — 엔진·이름 배정 끝난 토론 패널. judge는 별도 고정(Sonnet 4.6)."""
+    """조각 10-b 산출 — 엔진·이름 배정 끝난 토론 패널. judge는 별도 고정(Haiku)."""
 
     participants: list[DebateParticipant]
     pivot_id: str | None = None
-    judge_engine: str = "sonnet"
+    judge_engine: str = "haiku"
     critic_secured: bool = False
 
 
@@ -150,8 +175,12 @@ class DebateTopic(BaseModel):
     primary_signal: (
         str  # 주신호 종류: rejection / trust_action_gap / early_attrition / mid_attrition
     )
-    focus: dict[str, float | str | None] = Field(default_factory=dict)  # 근거 수치(병목·KPI)
+    focus: dict[str, float | str | None] = Field(default_factory=dict)  # 근거 수치(4대 KPI·병목)
     objective: str | None = None  # detected_objective(캠페인 목표)
+    # ── 광고 컨텍스트(토론자 grounding·analyze 응답) — "어떤 광고인지"를 주제와 함께 전달 ──
+    ad_title: str | None = None  # 광고 제목(제품명)
+    ad_description: str | None = None  # 광고 설명(제품 설명)
+    ad_interpretation: dict[str, Any] | None = None  # 광고 해석 요약(detected_* + structured)
     # ── 논제 후보(추가 토론 선택지)용 — 최초 토론(단일 주제)은 기본값 그대로 ──
     topic_id: str = ""  # 후보 식별자(추가 토론에서 사용자가 고른 논제 매칭용)
     ranking: int = 0  # 1~5 우선순위(0=미지정, 후보 정렬용)
@@ -234,6 +263,7 @@ class ReportKpi(BaseModel):
     purchase_intent: float
     trust_avg: float
     rejection_rate: float
+    brand_recognition_rate: float = 0.0  # 브랜드 식별률(§2-5 Fluency) — 가중 비율
     variance_warning: bool
     effective_n: float
 
@@ -245,6 +275,7 @@ class ReportQuote(BaseModel):
     role: str
     stance: Stance
     text: str
+    reason: str = ""  # 왜 그렇게 말했나(무엇에 대한 동의/반대인지 — 인용 맥락)
 
 
 class SimulationReport(BaseModel):
@@ -259,6 +290,14 @@ class SimulationReport(BaseModel):
     kpi: ReportKpi
     funnel: list[FunnelStage]
     bottleneck: Bottleneck | None = None
+    # ── §2 반응 집계 상세(이미 산출된 분석 데이터 노출 — 신규 합성 없음) ──
+    purchase_intent_dist: dict[int, int] = Field(default_factory=dict)  # §2-2 구매의도 분포
+    rejection: RejectionBreakdown | None = None  # §2-3 거부 사유 분해
+    by_drop_reason_tag: dict[str, int] = Field(default_factory=dict)  # 이탈 사유 분해
+    emotion_dist: dict[str, int] = Field(default_factory=dict)  # §2-4 감정 분포
+    brand_recognition: BrandRecognition | None = None  # §2-5 브랜드 식별 분해
+    # ── §4 크리에이티브 진단(루브릭 평가 패스 점수 — 토론 입력으로 주입 시) ──
+    rubric_scores: list[RubricScore] = Field(default_factory=list)
     consumer_groups: dict[str, int] = Field(default_factory=dict)  # 그룹별 인원
     debate_available: bool = False
     rounds_run: int = 0
@@ -267,3 +306,121 @@ class SimulationReport(BaseModel):
     dissent: list[str] = Field(default_factory=list)
     ranked_actions: list[RankedAction] = Field(default_factory=list)
     quotes: list[ReportQuote] = Field(default_factory=list)  # 참가자별 대표 발언
+
+
+# ── 통합 리포트(ReportView) — 시뮬+토론 종합, 화면·PDF 공용 단일 소스 ──
+
+
+class SegmentCell(BaseModel):
+    """연령대×성별 세그먼트 1칸 — personas×reactions 조인 후 가중 재집계(우리 제품 최대 차별점)."""
+
+    age_band: str
+    gender: str
+    n: int  # 셀 인원(QA 통과)
+    effective_n: float  # Kish 유효표본 — 얇은 셀 신뢰 경고용
+    click_intent_rate: float
+    purchase_intent: float
+    trust_avg: float
+    rejection_rate: float
+    attention_pass_rate: float
+    low_confidence: bool = False  # effective_n < 10
+
+
+class GroupProfile(BaseModel):
+    """소비자 그룹(완주/미온/거부/불신/초기이탈)의 인구통계 프로필."""
+
+    count: int
+    avg_age: float
+    gender_ratio: dict[str, float] = Field(default_factory=dict)
+    top_emotion: str | None = None
+
+
+class ContributionBar(BaseModel):
+    """목표 적합도 기여 신호 1개(워터폴) — contribution = value × weight."""
+
+    label: str
+    contribution: float
+    value: float
+    weight: float
+
+
+class ConversionStep(BaseModel):
+    """AISAS 인접 단계 전환율 — to.passed / from.passed."""
+
+    from_stage: str
+    to_stage: str
+    conversion: float
+
+
+class SummaryMetrics(BaseModel):
+    """분포 기반 파생 요약 묶음(평균 단언 대신 분포 요약 — CLAUDE.md 원칙)."""
+
+    top2box_purchase: float = 0.0  # 구매의도 4·5점 비율(강한 구매의향)
+    bottom2box_purchase: float = 0.0  # 1·2점 비율
+    positive_emotion_rate: float = 0.0
+    negative_emotion_rate: float = 0.0
+    neutral_emotion_rate: float = 0.0
+    trust_action_gap: float = 0.0  # trust_avg − click_intent_rate×5
+    trust_action_label: str = ""  # 믿는데 안 누름 / 안 믿는데 누름 / 균형
+    contribution_waterfall: list[ContributionBar] = Field(default_factory=list)
+    weakest_signal: str | None = None  # 최우선 개선 레버 후보
+    weakest_linked_action_rank: int | None = None
+    funnel_conversion: list[ConversionStep] = Field(default_factory=list)
+    target_match_rate: float | None = None  # detected vs perceived 타깃 일치율(exploratory)
+    discount_rate: float | None = None  # 1 − 할인가/정가
+
+
+class ConfidenceBadge(BaseModel):
+    """전 섹션 공통 신뢰 배지 — 과신 방지(실측 환산 금지 문구 포함)."""
+
+    level: str  # high / medium / low
+    ci_width: float
+    effective_n: float
+    total_n: int
+    warnings: list[str] = Field(default_factory=list)
+
+
+class DebateDigest(BaseModel):
+    """토론 1건 요약 — 합산 리포트용. 전문 대신 [주제 + 결론 + 대표 인용 1~2]만 담아 분량을 줄인다.
+
+    한 시뮬에 토론(기존+추가)이 여러 개면 각 토론이 1 digest가 되어 ReportView.debates에 누적된다.
+    """
+
+    debate_id: str | None = None
+    topic_headline: str  # 토론 주제(headline)
+    diagnosis: str = ""  # 진단부
+    rounds_run: int = 0
+    stop_reason: str | None = None
+    consensus: list[str] = Field(default_factory=list)
+    dissent: list[str] = Field(default_factory=list)
+    ranked_actions: list[RankedAction] = Field(default_factory=list)
+    quotes: list[ReportQuote] = Field(default_factory=list)  # 결론 대표 발언 1~2개(생생함만)
+
+
+class ReportView(BaseModel):
+    """시뮬+토론을 합친 단일 리포트 객체 — 프론트 '최종 결과' 화면과 PDF가 공유하는 진실 소스.
+
+    대부분 기존 산출의 매핑이고, segments·group_profiles·summary_metrics·confidence만 신규 파생.
+    objective_fit를 메인 판정으로, message_reception을 최상위로 승격(기존 리포트서 누락).
+    debates: 한 시뮬의 모든 토론(기존+추가) 요약 누적 — 토론할수록 늘어난다(옵셔널, 하위호환).
+    """
+
+    run_id: str
+    simulation_id: str | None = None
+    debate_id: str | None = None
+    report: SimulationReport
+    objective_fit: ObjectiveFit | None = None  # 메인 종합 판정(시뮬 result→토론 경로 직접 전달)
+    ad_analysis: AdInterpretation | None = None
+    ad: dict | None = None  # 광고 선언 입력(헤더)
+    topic: DebateTopic | None = None
+    segments: list[SegmentCell] = Field(default_factory=list)  # 연령×성별
+    group_profiles: dict[str, GroupProfile] = Field(default_factory=dict)
+    message_reception: MessageReception | None = None  # 의도 메시지 vs 저항(1순위 누락 데이터)
+    summary_metrics: SummaryMetrics
+    confidence: ConfidenceBadge
+    debate: DebateResult | None = None  # 최근(현재) 토론 전체 — 하위호환 단일 토론 경로
+    debates: list[DebateDigest] = Field(default_factory=list)  # 한 시뮬의 모든 토론 요약 누적
+    aggregate: SimulationAggregate
+    analysis: ReactionAnalysis
+    generated_at: str  # ISO8601(조립 시각)
+    report_view_version: str = "reportview-1"

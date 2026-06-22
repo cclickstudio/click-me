@@ -121,7 +121,7 @@ birth_year ≈ 현재연도 − age
 | Tier | 무엇 | 시점 | 비용 | 한계 |
 |---|---|---|---|---|
 | **1. 프롬프트 세대 게이팅 ✅ 적용 완료** | 형성기 구간 + **나이대 말투**를 프롬프트에 넣고 "네 나이에 비추어 친숙/생소를 판단, 모르면 모르는 대로 반응" 지시 (`reaction.py:_generation_lines`) | **완료(2026-06-19)** | 코드 몇 줄, 데이터 0 | LLM 자체 시대지식에 의존(브랜드 연대 오인 가능) |
-| **2. 브랜드 시대성 1회 추출** | `interpret_ad`가 브랜드 시대·세대 관련성도 추출("전세대 국민/Z세대 native/90s 전성기") → 전 페르소나 공유 주입 | 다음 | 해석 1콜 확장 | 브랜드 식별 실패 시 무력 |
+| **2. 브랜드 시대성 1회 추출 ✅ 적용 완료** | `interpret_ad`가 브랜드 시대·세대 관련성도 추출("전세대 국민/Z세대 native/90s 전성기") → `structured_analysis.brand_era`로 전 페르소나 공유 주입 (`reaction.py:_brand_era_lines`) | **완료(2026-06-19)** | 해석 1콜 확장 | 브랜드 식별 실패 시 무력(identified=false → 미주입) |
 | **3. 실데이터 주입** | 세대별 브랜드 인지도 실측(한국갤럽 브랜드 트래킹·대학내일20대연구소)을 페르소나에 주입 → 상세 [PERSONA_COHORT_TIER3_REALDATA_STRATEGY.md](./PERSONA_COHORT_TIER3_REALDATA_STRATEGY.md) | Phase 2 | 데이터 확보 비쌈 | 브랜드 단위 포괄 수집 난이도 |
 
 ### 4.3 Tier 1 — 적용 완료 (2026-06-19)
@@ -142,11 +142,23 @@ birth_year ≈ 현재연도 − age
 → LLM의 시대 지식(Flash·70B급이면 유명 브랜드는 충분)을 **세대로 게이팅**하고, 거기에 **나이대 말투**까지
 조건화해 utterance 리얼리티(§3 킬러 파트)를 끌어올린다. 무명 브랜드의 시대 오인은 Tier 2가 보완.
 
-### 4.4 Tier 2 — 다음 (철학에 가장 정합)
+### 4.4 Tier 2 — 적용 완료 (2026-06-19, 철학에 가장 정합)
 
 브랜드 시대성을 **해석 단계에서 1회** 뽑아 공유하면, 반응 = **페르소나 나이(데이터) × 공유된 브랜드 시대 사실**로
 계산된다. 페르소나마다 따로 검색하지 않으므로 일관성·재현성이 유지되고, 다양성은 나이(데이터)에서 나온다.
 이는 [VLM_PER_PERSONA_VISION.md](./VLM_PER_PERSONA_VISION.md)의 "공유 해석 1회 + 페르소나별 조건화" 패턴과 동일한 결.
+
+**구현** — `visual_elements`(§4-a)와 같은 방식으로 `structured_analysis`(JSONB)에 키만 추가, **계약/ORM 스키마·Alembic 변경 없음.**
+
+- `ad_interpreter.py` 해석 프롬프트에 `brand_era` 추출 추가
+  (`identified`·`era`·`generational_skew`·`note`). 유명 브랜드 특정 시에만, 못 하면 `identified=false`(시대 날조 금지).
+- `reaction.py:_brand_era_lines(ad)` 가 `structured_analysis.brand_era`를 읽어 `[광고]` 블록에
+  **전원 공유 사실**("브랜드 시대성: …")로 1줄 주입. **세대 편향(`generational_skew`)은 페르소나에 안 줌** —
+  친숙/낯섦은 §4.3 형성기 게이팅이 나이로 판단(가드레일 §5-2: 사실은 공유, 다양성은 나이).
+- 식별 실패·필드 없으면 빈 문자열 → 기존 동작 그대로(무명·텍스트 광고 안전).
+
+> 참고 — 반응 어댑터의 `brand_recognized`/`perceived_brand`(페르소나별 '내가 이 브랜드를 아는가')는
+> 본 공유 사실과 **다른 축**이다. 시대성은 전원 동일한 사실, 인식 여부는 페르소나별 결과.
 
 ---
 
@@ -175,9 +187,10 @@ birth_year ≈ 현재연도 − age
 ## 7. 미해결·결정 필요
 
 - **형성기 구간 폭** — 15~25세 잠정. 카테고리별로 조정 여부(예: 캐릭터/게임은 더 어린 시기).
-- **Tier 2 추출 스키마** — 브랜드 시대성을 어떤 enum/필드로 표현할지(`detected_brand_era` 등) → 해석 스키마 변경은
-  공통부 협업 규칙 + Alembic 대상인지 확인.
-- **무명 브랜드 fallback** — 식별 실패 시 "일반 신생 브랜드"로 둘지, 검색 1회를 해석 단계에 붙일지.
+- ~~**Tier 2 추출 스키마**~~ → **결정됨**. `detected_brand_era` 같은 신규 계약 필드 대신 `structured_analysis.brand_era`
+  (JSONB) 키로 담아 **계약/ORM·Alembic 변경 없음**(`visual_elements` §4-a와 동일 방식).
+- ~~**무명 브랜드 fallback**~~ → **결정됨**. 식별 실패 시 `brand_era.identified=false`로 두고 **반응 프롬프트에 미주입**
+  (시대 날조 금지). 검색 1회 부착은 보류(가드레일 §5-1: 반응 단계 검색 금지 유지).
 - **실데이터(Tier 3) 트리거** — 클라이언트가 브랜드 단위 정확도를 요구할 때만 착수. 전략 상세는 [PERSONA_COHORT_TIER3_REALDATA_STRATEGY.md](./PERSONA_COHORT_TIER3_REALDATA_STRATEGY.md).
 
 ---

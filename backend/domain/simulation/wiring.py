@@ -144,6 +144,20 @@ def build_debate_persistence(settings=None, session_factory=None):
     return DebateRepository(session_factory)
 
 
+def _resolve_session_factory(settings=None, session_factory=None) -> object | None:
+    """DB 세션 팩토리 결정 — 명시 주입 우선, 없으면 settings.database_url에서 파생(미구성이면 None).
+
+    report_view 재조립(get_saved_report)은 시뮬 결과를 같은 세션 팩토리로 재조회한다.
+    """
+    if session_factory is not None:
+        return session_factory
+    if settings is None or not getattr(settings, "database_url", None):
+        return None
+    from core.db import AsyncSessionLocal
+
+    return AsyncSessionLocal
+
+
 def build_debate_service(
     settings=None, *, store=None, use_mock=None, session_factory=None
 ) -> DebateService:
@@ -153,6 +167,7 @@ def build_debate_service(
     엔진 미주입이면 결정론 파이프라인(8~9·10-a·10-b·11)만 돌고 10-c는 placeholder.
     """
     store = store or InMemorySimulationStore()
+    sim_session_factory = _resolve_session_factory(settings, session_factory)
     persistence = build_debate_persistence(settings, session_factory)
     if _resolve_use_mock(settings, use_mock):
         from domain.simulation.adapters.mock_debate import MockDebater, MockJudge
@@ -162,6 +177,7 @@ def build_debate_service(
             debater_factory=lambda reactions: MockDebater(reactions),
             judge=MockJudge(),
             persistence=persistence,
+            sim_session_factory=sim_session_factory,
         )
 
     # 토론자 Haiku/GPT + Judge Sonnet (Gemini 제거 — 응답 실패 잦음)
@@ -178,6 +194,7 @@ def build_debate_service(
         debater_factory=lambda reactions: LLMDebater(reactions, clients=shared_clients),
         judge=LLMJudge(clients=shared_clients),
         persistence=persistence,
+        sim_session_factory=sim_session_factory,
         selector_rerank_fn=LLMSelector().choose,
         usage_clients=shared_clients,
     )

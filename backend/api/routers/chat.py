@@ -1,7 +1,7 @@
 import asyncio
 import json
 import threading
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Awaitable, Callable
 
 import google.generativeai as genai
 from fastapi import APIRouter
@@ -9,6 +9,8 @@ from fastapi.responses import StreamingResponse
 
 from core.config import settings
 from core.schemas import ChatRequest
+from domain.management.assistant.agent import build_management_agent
+from domain.management.assistant.contracts import AskRequest
 
 router = APIRouter()
 
@@ -39,6 +41,56 @@ _model = genai.GenerativeModel(
 
 _SENTINEL = object()
 
+# ── 최소 오케스트레이션: 매니지먼트 질문만 서브에이전트로 라우팅 ──
+# 공통 오케스트레이터 본체가 정해지기 전의 임시 연결. 시뮬/생성은 추후 같은 방식으로 추가.
+_MGMT_KEYWORDS: frozenset[str] = frozenset(
+    {
+        "캠페인",
+        "예산",
+        "소진",
+        "런레이트",
+        "페이싱",
+        "게재",
+        "광고",
+        "ctr",
+        "roas",
+        "cvr",
+        "클릭률",
+        "노출",
+        "지출",
+        "리드",
+        "성과",
+        "전환",
+        "잔액",
+        "일시중지",
+        "멈춰",
+        "증액",
+        "감액",
+        "소재",
+        "예측대로",
+        "매니지먼트",
+    }
+)
+
+_assistant = None
+
+
+def _get_assistant() -> Callable[[AskRequest], Awaitable[object]]:
+    global _assistant
+    if _assistant is None:
+        _assistant = build_management_agent(settings)
+    return _assistant
+
+
+def _is_management(text: str) -> bool:
+    low = text.lower()
+    return any(k in low for k in _MGMT_KEYWORDS)
+
+
+def _chunks(text: str, size: int = 24) -> list[str]:
+    """긴 답변을 SSE 토큰처럼 잘게 — 스트리밍 느낌 유지."""
+    return [text[i : i + size] for i in range(0, len(text), size)] or [""]
+
 
 @router.post("/complete")
 async def chat_complete(body: ChatRequest) -> StreamingResponse:
@@ -54,6 +106,42 @@ async def chat_complete(body: ChatRequest) -> StreamingResponse:
     last_message = body.messages[-1].content if body.messages else ""
 
     async def generate() -> AsyncGenerator[str, None]:
+        # 매니지먼트 질문이면 서브에이전트(실측 툴 + KB)로 답한다 — 숫자는 실측, 행동은 제안만.
+        if _is_management(last_message):
+            try:
+                result = await _get_assistant()(
+                    AskRequest(question=last_message, ad_id=body.context_ad_id)
+                )
+                meta = {
+                    "source": "management",
+                    "label": "매니지먼트 어시스턴트",
+                    "engine": "OpenAI · 실측+KB",
+                    "citations": [
+                        {"kind": c.kind, "source": c.source, "title": c.title}
+                        for c in result.citations
+                    ],
+                    "used_tools": result.used_tools,
+                    "requires_approval": result.requires_approval,  # HITL — 승인 게이트에서 멈춤
+                    "thread_id": result.thread_id,  # interrupt 재개 키(승인 경로에서 사용)
+                }
+                yield f"data: {json.dumps({'meta': meta}, ensure_ascii=False)}\n\n"
+                answer = result.answer
+                if result.suggested_action:
+                    sa = result.suggested_action
+                    gate = "사람 승인 필요" if sa.requires_approval else "낮은 위험"
+                    answer += f"\n\n추천 조치: {sa.action_type} ({gate}) — 실행은 승인 화면에서 확인하세요."
+                for piece in _chunks(answer):
+                    yield f"data: {json.dumps({'token': piece}, ensure_ascii=False)}\n\n"
+            except Exception as exc:  # noqa: BLE001 — 실패해도 채팅은 끊지 않는다
+                msg = f"매니지먼트 조회 중 문제가 발생했어요: {exc}"
+                yield f"data: {json.dumps({'token': msg}, ensure_ascii=False)}\n\n"
+            yield 'data: {"done": true}\n\n'
+            return
+
+        # 그 외는 기존 CLIO(Gemini)
+        clio_meta = {"source": "clio", "label": "CLIO", "engine": "Gemini"}
+        yield f"data: {json.dumps({'meta': clio_meta}, ensure_ascii=False)}\n\n"
+
         loop = asyncio.get_running_loop()
         queue: asyncio.Queue = asyncio.Queue()
 

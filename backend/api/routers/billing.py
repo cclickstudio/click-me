@@ -10,7 +10,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 
 from domain.billing.service.billing_service import BillingError, BillingService
-from domain.billing.toss_client import PaymentConfirmError, TossPaymentsHttpClient
+from domain.billing.toss_client import (
+    PaymentCancelError,
+    PaymentConfirmError,
+    TossPaymentsHttpClient,
+)
 
 router = APIRouter()
 
@@ -20,12 +24,20 @@ _service: BillingService | None = None
 
 
 def get_billing_service() -> BillingService:
-    """싱글턴 서비스 — 테스트는 dependency_overrides로 Fake 주입."""
+    """싱글턴 서비스 — 운영은 DB 영속, 테스트는 dependency_overrides로 Fake 주입."""
     global _service  # noqa: PLW0603
     if _service is None:
         from core.config import settings  # noqa: PLC0415 — 테스트에서 settings 미로드 허용
+        from domain.billing.db_repositories import (  # noqa: PLC0415 — DB 의존 지연 로드
+            DbLedgerRepository,
+            DbOrderRepository,
+        )
 
-        _service = BillingService(TossPaymentsHttpClient(settings.toss_secret_key))
+        _service = BillingService(
+            TossPaymentsHttpClient(settings.toss_secret_key),
+            orders=DbOrderRepository(),
+            ledger=DbLedgerRepository(),
+        )
     return _service
 
 
@@ -59,6 +71,18 @@ class ConfirmResponse(BaseModel):
     balance_krw: int
 
 
+class CancelRequest(BaseModel):
+    order_id: str
+    reason: str = Field(default="사용자 요청", min_length=1, max_length=200)
+
+
+class CancelResponse(BaseModel):
+    order_id: str
+    status: str
+    amount_krw: int
+    balance_krw: int
+
+
 class BalanceResponse(BaseModel):
     org_id: str
     balance_krw: int
@@ -69,7 +93,7 @@ async def create_order(
     body: OrderCreateRequest, service: BillingService = Depends(get_billing_service)
 ):
     try:
-        order = service.create_order(body.org_id, body.amount_krw)
+        order = await service.create_order(body.org_id, body.amount_krw)
     except BillingError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return OrderCreateResponse(
@@ -91,7 +115,25 @@ async def confirm_payment(
         order_id=order.order_id,
         status=str(order.status),
         amount_krw=order.amount_krw,
-        balance_krw=service.balance(order.org_id),
+        balance_krw=await service.balance(order.org_id),
+    )
+
+
+@router.post("/cancel", response_model=CancelResponse)
+async def cancel_payment(
+    body: CancelRequest, service: BillingService = Depends(get_billing_service)
+):
+    try:
+        order = await service.cancel(body.order_id, body.reason)
+    except BillingError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except PaymentCancelError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return CancelResponse(
+        order_id=order.order_id,
+        status=str(order.status),
+        amount_krw=order.amount_krw,
+        balance_krw=await service.balance(order.org_id),
     )
 
 
@@ -99,13 +141,14 @@ async def confirm_payment(
 async def get_balance(
     org_id: str = DEMO_ORG_ID, service: BillingService = Depends(get_billing_service)
 ):
-    return BalanceResponse(org_id=org_id, balance_krw=service.balance(org_id))
+    return BalanceResponse(org_id=org_id, balance_krw=await service.balance(org_id))
 
 
 @router.get("/history")
 async def get_history(
     org_id: str = DEMO_ORG_ID, service: BillingService = Depends(get_billing_service)
 ):
+    entries = await service.history(org_id)
     return {
         "org_id": org_id,
         "entries": [
@@ -117,6 +160,6 @@ async def get_history(
                 "ref_id": e.ref_id,
                 "created_at": e.created_at.isoformat(),
             }
-            for e in service.history(org_id)
+            for e in entries
         ],
     }

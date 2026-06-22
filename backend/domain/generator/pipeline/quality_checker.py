@@ -1,87 +1,72 @@
-from langsmith import traceable
-from openai import AsyncOpenAI
+# 광고 카피를 규칙 기반으로 품질 검증하는 노드 (LLM 호출 없음)
+from __future__ import annotations
 
 from domain.generator.contracts.pipeline_schemas import AdCopy, QualityCheckItem, QualityReport
-from tools.utils import safe_json_loads
-
-_client = AsyncOpenAI(timeout=60.0)
-
-_SYSTEM = """\
-당신은 광고 품질 검증 전문가입니다.
-광고 문구를 7개 항목으로 평가하고 반드시 JSON 형식으로만 응답하세요."""
-
-_USER_TEMPLATE = """\
-아래 광고 문구를 7개 항목으로 검증하세요.
-
-헤드라인: {headline}
-본문: {body}
-CTA: {cta}
-타겟: {target}
-
-각 항목을 JSON으로 반환하세요:
-{{
-  "typo_check": {{"passed": bool, "score": 0.0~1.0, "feedback": "설명"}},
-  "duplicate_check": {{"passed": bool, "score": 0.0~1.0, "feedback": "설명"}},
-  "cta_exists": {{"passed": bool, "score": 0.0~1.0, "feedback": "설명"}},
-  "readability": {{"passed": bool, "score": 0.0~1.0, "feedback": "설명"}},
-  "target_fit": {{"passed": bool, "score": 0.0~1.0, "feedback": "설명"}},
-  "text_length": {{"passed": bool, "score": 0.0~1.0, "feedback": "설명"}},
-  "brand_consistency": {{"passed": bool, "score": 0.0~1.0, "feedback": "설명"}}
-}}
-
-검증 기준:
-- typo_check: 오타·비문 없음
-- duplicate_check: 헤드라인/본문/CTA 간 문구 중복 없음
-- cta_exists: CTA 문구가 명확히 존재하고 행동 유도
-- readability: 누구나 쉽게 이해 가능한 문장
-- target_fit: 타겟 고객에게 적합한 표현
-- text_length: 헤드라인 20자 이내, 본문 50자 이내, CTA 10자 이내
-- brand_consistency: 헤드라인/본문/CTA 전체에서 톤앤매너·표현 방식이 일관됨"""
 
 
-def _parse_item(raw: dict) -> QualityCheckItem:
+def _check_text_length(ad_copy: AdCopy) -> QualityCheckItem:
+    h_ok = len(ad_copy.headline) <= 20
+    b_ok = len(ad_copy.body) <= 50
+    c_ok = len(ad_copy.cta) <= 10
+    passed = h_ok and b_ok and c_ok
+    issues = []
+    if not h_ok:
+        issues.append(f"헤드라인 {len(ad_copy.headline)}자 (20자 초과)")
+    if not b_ok:
+        issues.append(f"본문 {len(ad_copy.body)}자 (50자 초과)")
+    if not c_ok:
+        issues.append(f"CTA {len(ad_copy.cta)}자 (10자 초과)")
     return QualityCheckItem(
-        passed=bool(raw.get("passed", False)),
-        score=float(raw.get("score", 0.5)),
-        feedback=str(raw.get("feedback", "")),
+        passed=passed,
+        score=round(sum([h_ok, b_ok, c_ok]) / 3, 2),
+        feedback=", ".join(issues) if issues else "길이 적합",
     )
 
 
-@traceable(name="QualityChecker", metadata={"pipeline": "generator"})
-async def check_quality(
-    ad_copy: AdCopy,
-    target: str,
-) -> QualityReport:
-    response = await _client.chat.completions.create(
-        model="gpt-4o-mini",
-        temperature=0.1,
-        messages=[
-            {"role": "system", "content": _SYSTEM},
-            {
-                "role": "user",
-                "content": _USER_TEMPLATE.format(
-                    headline=ad_copy.headline,
-                    body=ad_copy.body,
-                    cta=ad_copy.cta,
-                    target=target,
-                ),
-            },
-        ],
-        response_format={"type": "json_object"},
+def _check_cta_exists(ad_copy: AdCopy) -> QualityCheckItem:
+    passed = bool(ad_copy.cta.strip())
+    return QualityCheckItem(
+        passed=passed,
+        score=1.0 if passed else 0.0,
+        feedback="CTA 존재" if passed else "CTA 없음",
     )
 
-    raw = safe_json_loads(response.choices[0].message.content)
 
-    items = {
-        "typo_check": _parse_item(raw.get("typo_check", {})),
-        "duplicate_check": _parse_item(raw.get("duplicate_check", {})),
-        "cta_exists": _parse_item(raw.get("cta_exists", {})),
-        "readability": _parse_item(raw.get("readability", {})),
-        "target_fit": _parse_item(raw.get("target_fit", {})),
-        "text_length": _parse_item(raw.get("text_length", {})),
-        "brand_consistency": _parse_item(raw.get("brand_consistency", {})),
-    }
+def _check_duplicate(ad_copy: AdCopy) -> QualityCheckItem:
+    h, b, c = ad_copy.headline.strip(), ad_copy.body.strip(), ad_copy.cta.strip()
+    overlaps = []
+    if h and b and (h in b or b in h):
+        overlaps.append("헤드라인↔본문")
+    if h and c and (h in c or c in h):
+        overlaps.append("헤드라인↔CTA")
+    if b and c and (b in c or c in b):
+        overlaps.append("본문↔CTA")
+    passed = not overlaps
+    return QualityCheckItem(
+        passed=passed,
+        score=1.0 if passed else 0.0,
+        feedback="중복 없음" if passed else f"중복 감지: {', '.join(overlaps)}",
+    )
 
-    overall_passed = all(v.passed for v in items.values())
 
-    return QualityReport(**items, overall_passed=overall_passed)
+def _skipped_item() -> QualityCheckItem:
+    return QualityCheckItem(passed=True, score=1.0, feedback="규칙 기반 검증 제외")
+
+
+def check_quality(ad_copy: AdCopy, target: str) -> QualityReport:
+    text_length = _check_text_length(ad_copy)
+    cta_exists = _check_cta_exists(ad_copy)
+    duplicate_check = _check_duplicate(ad_copy)
+
+    overall_passed = text_length.passed and cta_exists.passed and duplicate_check.passed
+
+    return QualityReport(
+        typo_check=_skipped_item(),
+        duplicate_check=duplicate_check,
+        cta_exists=cta_exists,
+        readability=_skipped_item(),
+        target_fit=_skipped_item(),
+        text_length=text_length,
+        brand_consistency=_skipped_item(),
+        overall_passed=overall_passed,
+    )

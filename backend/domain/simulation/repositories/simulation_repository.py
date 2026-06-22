@@ -6,15 +6,19 @@ import uuid
 from datetime import datetime
 from enum import Enum
 
+from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from domain.simulation import models
 from domain.simulation.contracts.schemas import (
     AdInterpretation,
+    Aisas,
+    Persona,
     PersonaReaction,
     RubricScore,
     SimulationAggregate,
 )
+from domain.simulation.tools.objective_fit import assess_objective_fit
 
 
 def _tag(value: Enum | str | None) -> str | None:
@@ -98,6 +102,8 @@ class SimulationRepository:
                     emotion_tag=_tag(r.emotion_tag),
                     perceived_message=r.perceived_message,
                     perceived_target=r.perceived_target,
+                    brand_recognized=r.brand_recognized,
+                    perceived_brand=r.perceived_brand,
                     utterance=r.utterance,
                     qa_passed=r.qa_passed,
                     qa_fail_reason=r.qa_fail_reason,
@@ -123,6 +129,7 @@ class SimulationRepository:
                 purchase_intent=aggregate.purchase_intent,
                 trust_avg=aggregate.trust_avg,
                 rejection_rate=aggregate.rejection_rate,
+                brand_recognition_rate=aggregate.brand_recognition_rate,
                 variance_warning=aggregate.variance_warning,
                 effective_n=aggregate.effective_n,
                 payload=aggregate.payload,
@@ -135,3 +142,161 @@ class SimulationRepository:
 
     async def get(self, simulation_id: uuid.UUID) -> models.Simulation | None:
         return await self._s.get(models.Simulation, simulation_id)
+
+    async def get_full_result(self, simulation_id: uuid.UUID) -> dict | None:
+        """simulation_id로 저장된 결과 전체를 SimRunResult 형태 dict로 재조립. 없으면 None.
+
+        새로고침·프로젝트 패널 재진입 시 인메모리 런이 사라져도 DB에서 복원한다.
+        objective_fit은 미저장이라 집계·반응으로 재계산한다.
+        """
+        sim = await self._s.get(models.Simulation, simulation_id)
+        if sim is None:
+            return None
+
+        # 광고해석(1) — ad_analysis_id로 단건.
+        ana = await self._s.get(models.AdAnalysis, sim.ad_analysis_id)
+
+        # 페르소나(N) — panel_id로 조회. id(UUID)→persona_id(str)로 통일해 반응과 조인.
+        persona_rows = (
+            (
+                await self._s.execute(
+                    select(models.Persona).where(models.Persona.panel_id == sim.panel_id)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        # 반응(N) — simulation_id로 조회. persona_id(UUID)→str로 통일.
+        reaction_rows = (
+            (
+                await self._s.execute(
+                    select(models.PersonaReaction).where(
+                        models.PersonaReaction.simulation_id == simulation_id
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        # 루브릭(N) — ad_analysis_id로 조회.
+        rubric_rows = (
+            (
+                await self._s.execute(
+                    select(models.RubricScore).where(
+                        models.RubricScore.ad_analysis_id == sim.ad_analysis_id
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
+        # 집계(1) — simulation_id로 단건.
+        aggregate_row = (
+            await self._s.execute(
+                select(models.SimulationAggregate).where(
+                    models.SimulationAggregate.simulation_id == simulation_id
+                )
+            )
+        ).scalar_one_or_none()
+
+        # DB row → contracts 스키마 복원 → model_dump.
+        ad_obj = (
+            AdInterpretation(
+                ad_id=str(ana.ad_id),
+                structured_analysis=ana.structured_analysis or {},
+                detected_industry=ana.detected_industry,
+                detected_objective=ana.detected_objective,
+                detected_target=ana.detected_target,
+                detected_message=ana.detected_message,
+                intent_mismatch=ana.intent_mismatch,
+                mismatch_detail=ana.mismatch_detail,
+                model_version=ana.model_version,
+            )
+            if ana is not None
+            else None
+        )
+
+        persona_objs = [
+            Persona(
+                persona_id=str(p.id),
+                age=p.age,
+                gender=p.gender,
+                region=p.region,
+                ocean=p.ocean or {},
+                media_behavior=p.media_behavior or {},
+                consumption_values=p.consumption_values or {},
+                socioeconomic=p.socioeconomic or {},
+                profile_narrative=p.profile_narrative or "",
+            )
+            for p in persona_rows
+        ]
+
+        reaction_objs = [
+            PersonaReaction(
+                persona_id=str(r.persona_id),
+                exposure_context=r.exposure_context,
+                weight=float(r.weight),
+                aisas=Aisas(**(r.aisas or {})),
+                drop_stage=r.drop_stage,
+                drop_reason_tag=r.drop_reason_tag,
+                purchase_intent=r.purchase_intent,
+                trust=r.trust,
+                rejected=r.rejected,
+                rejection_reason_tag=r.rejection_reason_tag,
+                emotion_tag=r.emotion_tag,
+                perceived_message=r.perceived_message,
+                perceived_target=r.perceived_target,
+                brand_recognized=r.brand_recognized,
+                perceived_brand=r.perceived_brand,
+                utterance=r.utterance,
+                qa_passed=r.qa_passed,
+                qa_fail_reason=r.qa_fail_reason,
+            )
+            for r in reaction_rows
+        ]
+
+        rubric_objs = [
+            RubricScore(dimension=s.dimension, score=s.score, evidence=s.evidence or {})
+            for s in rubric_rows
+        ]
+
+        aggregate_obj = (
+            SimulationAggregate(
+                click_intent_rate=float(aggregate_row.click_intent_rate),
+                ci_low=float(aggregate_row.ci_low),
+                ci_high=float(aggregate_row.ci_high),
+                purchase_intent=float(aggregate_row.purchase_intent),
+                trust_avg=float(aggregate_row.trust_avg),
+                rejection_rate=float(aggregate_row.rejection_rate),
+                brand_recognition_rate=float(aggregate_row.brand_recognition_rate),
+                variance_warning=aggregate_row.variance_warning,
+                effective_n=float(aggregate_row.effective_n),
+                payload=aggregate_row.payload or {},
+                engine_version=aggregate_row.engine_version,
+            )
+            if aggregate_row is not None
+            else None
+        )
+
+        sid = str(simulation_id)
+        result: dict = {
+            "run_id": sid,  # 원본 run_id는 DB 미보유 → simulation_id로 대체.
+            "simulation_id": sid,
+            "ad_analysis": ad_obj.model_dump() if ad_obj is not None else None,
+            "personas": [p.model_dump() for p in persona_objs],
+            "reactions": [r.model_dump() for r in reaction_objs],
+            "rubric_scores": [s.model_dump() for s in rubric_objs],
+            "aggregate": aggregate_obj.model_dump() if aggregate_obj is not None else None,
+        }
+
+        # objective_fit 재계산 — ads.ad_objective + 집계/반응 신호로(미저장이라 재계산).
+        ad_objective = (
+            await self._s.execute(
+                text("SELECT ad_objective FROM ads WHERE id = :id"), {"id": sim.ad_id}
+            )
+        ).scalar_one_or_none()
+        if ad_objective and aggregate_obj is not None:
+            fit = assess_objective_fit(ad_objective, aggregate_obj, reaction_objs)
+            result["objective_fit"] = fit.model_dump() if fit is not None else None
+
+        return result

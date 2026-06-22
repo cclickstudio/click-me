@@ -1,0 +1,19 @@
+<svg width="280" height="72" viewBox="0 0 280 72" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="ClickMe">
+  <defs>
+    <linearGradient id="cm-bg-full" x1="4" y1="4" x2="68" y2="68" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#3182F6"/>
+      <stop offset="1" stop-color="#1B6EEB"/>
+    </linearGradient>
+  </defs>
+  <!-- 아이콘 -->
+  <g transform="translate(4,4)">
+    <rect width="64" height="64" rx="16" fill="url(#cm-bg-full)"/>
+    <path d="M19 9 A10 10 0 0 0 9 19" stroke="#FFFFFF" stroke-width="2.6" stroke-linecap="round" fill="none" opacity="0.9"/>
+    <path d="M19 3 A16 16 0 0 0 3 19" stroke="#FFFFFF" stroke-width="2.6" stroke-linecap="round" fill="none" opacity="0.5"/>
+    <path d="M22 19 L22 50 L30 41.5 L36 54 L41 51.6 L35 39 L46 39 Z" fill="#FFFFFF" stroke="#1B6EEB" stroke-width="1.5" stroke-linejoin="round"/>
+  </g>
+  <!-- 워드마크 -->
+  <text x="84" y="47" font-family="'Segoe UI', 'Helvetica Neue', Arial, sans-serif" font-size="38" font-weight="700" letter-spacing="-1">
+    <tspan fill="#191F28">Click</tspan><tspan fill="#3182F6">Me</tspan>
+  </text>
+</svg>

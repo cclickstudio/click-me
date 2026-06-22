@@ -52,7 +52,7 @@ class Settings(BaseSettings):
         validation_alias=AliasChoices("LANGSMITH_API_KEY", "LANGCHAIN_API_KEY"),
     )
     LANGSMITH_PROJECT: str = Field(
-        default="clickme-v2",
+        default="clickme",
         validation_alias=AliasChoices("LANGSMITH_PROJECT", "LANGCHAIN_PROJECT"),
     )
 
@@ -88,19 +88,41 @@ class Settings(BaseSettings):
     meta_ad_account_id: str | None = None
     # Config
     meta_graph_api_version: str = "v23.0"
+    # 멀티테넌트 — 고객별 Meta 토큰 암호화 키(AES-256, base64 32B). 미설정이면 연결 저장 불가.
+    meta_token_encryption_key: str | None = None
+    # OAuth 콜백 완료 후 돌아갈 프론트 주소(개발=3000, 운영=https://clickme.co.kr).
+    frontend_base_url: str = "http://localhost:3000"
 
     # Management — Meta 광고 어댑터 (LIVE-ready). use_mock은 App 섹션에서 공용 선언.
     # use_mock=True면 reader=Mock·writer=DRY_RUN (Meta 접촉 0, wiring.py 분기).
     # 실집행은 use_mock=False + management_execution_mode=live + 토큰일 때만.
     management_execution_mode: str = "dry_run"  # dry_run | validate_only | live
+    # 진단 agent LLM ReAct 재현성 고정값 (합의문서 P6 — 빈칸 기입). 키 없으면 결정론 폴백.
+    management_diagnosis_model: str = "gpt-4o-mini"
+    management_diagnosis_temperature: float = 0.0
 
     # Generator (광고 생성)
+    # 생성 방식: pipeline=카피·이미지 단계 분리 / multimodal=한 모델이 이미지+카피 동시 생성
+    generator_gen_mode: str = "pipeline"  # pipeline | multimodal
+    # 텍스트(상품분석·전략·카피·QA·설명)
     generator_text_provider: str = "openai"  # openai | anthropic | google_genai ...
     generator_text_model: str = "gpt-4.1"
     generator_text_base_url: str | None = None  # 회사 OpenAI-호환 엔드포인트용
-    generator_image_provider: str = "openai"
-    generator_image_model: str = "gpt-image-1"
-    generator_image_quality: str = "medium"
+    # 비전(이미지 분석)
+    generator_vision_provider: str = "openai"  # openai | google_genai ...
+    generator_vision_model: str = "gpt-4o"
+    # 이미지 생성(배경)
+    generator_image_provider: str = "openai"  # openai | google_genai
+    generator_image_model: str = "gpt-image-2"
+    generator_image_quality: str = "medium"  # openai 전용(low|medium|high), google_genai는 무시
+    generator_image_timeout: float = 120.0  # 무거운 이미지 모델 대비 호출 타임아웃(초)
+    # 이미지 편집(텍스트존 인페인팅)
+    generator_image_edit_provider: str = "openai"  # openai
+    generator_image_edit_model: str = "gpt-image-1"
+    # 멀티모달 단일호출(이미지+카피) — GEN_MODE=multimodal 일 때만 사용
+    generator_multimodal_provider: str = "openai"  # openai | google_genai
+    generator_multimodal_model: str = "gpt-4o"  # Responses API 오케스트레이터(채팅 모델)
+    generator_multimodal_image_model: str = "gpt-image-1"  # image_generation 툴이 그릴 이미지 모델
     generator_font_dir: str | None = None  # 없으면 backend/assets/fonts 사용
 
     # Toss Payments — 테스트 키 전용 (기본값 = 토스 공식 문서 공개 샌드박스 키)

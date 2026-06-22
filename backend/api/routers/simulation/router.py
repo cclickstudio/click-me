@@ -8,12 +8,17 @@ import json
 import logging
 import os
 import tempfile
+import uuid
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
+from core.db import get_db
+from domain.simulation.adapters.category_repo import list_categories
 from domain.simulation.contracts.schemas import SimulationRunRequest
+from domain.simulation.repositories.simulation_repository import SimulationRepository
 from domain.simulation.service.analysis_view import to_analysis_payload
 from domain.simulation.wiring import _ensure_env, build_simulation_service
 
@@ -175,6 +180,12 @@ async def run_simulation(
     return to_analysis_payload(result) if shape == "analysis" else result
 
 
+@router.get("/categories")
+async def get_categories(session: AsyncSession = Depends(get_db)) -> list[dict]:
+    """광고 제품 카테고리 — 업종 대분류별 NICE 상품분류(45류). 2단계 선택(대분류→세부)용."""
+    return await list_categories(session)
+
+
 @router.get("/{run_id}/stream")
 async def stream_simulation(run_id: str) -> StreamingResponse:
     """SSE — 노드별 진행률(progress)·완료(completed)·에러 이벤트 스트림."""
@@ -201,3 +212,18 @@ async def get_simulation_result_analysis(run_id: str) -> dict:
     if result is None:
         raise HTTPException(status_code=404, detail="결과 없음 — 미완료이거나 잘못된 run_id")
     return to_analysis_payload(result)
+
+
+@router.get("/{simulation_id}/db-result")
+async def get_simulation_db_result(
+    simulation_id: str, session: AsyncSession = Depends(get_db)
+) -> dict:
+    """DB 영속 결과 재조회 — 새로고침·프로젝트 패널 재진입 시 SimRunResult 복원. 없으면 404."""
+    try:
+        sim_uuid = uuid.UUID(simulation_id)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=f"잘못된 simulation_id: {e}") from e
+    result = await SimulationRepository(session).get_full_result(sim_uuid)
+    if result is None:
+        raise HTTPException(status_code=404, detail="결과 없음 — 잘못된 simulation_id")
+    return result

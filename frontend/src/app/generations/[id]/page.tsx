@@ -20,12 +20,36 @@ type Candidate = {
   explanation: unknown;
 };
 
+type ProductAnalysis = {
+  product_name?: string;
+  core_values?: string[];
+  pain_points?: string[];
+  benefits?: string[];
+  target_audience?: string;
+  objective?: string;
+};
+
+type Strategy = {
+  strategy?: string;
+  strategy_description?: string;
+  rationale?: string;
+};
+
+// AdStrategy enum → 한국어 라벨
+const STRATEGY_LABELS: Record<string, string> = {
+  benefit: '혜택 강조',
+  problem_solving: '문제 해결',
+  social_proof: '사회적 증거',
+  fomo: '긴급성',
+  emotional: '감성 접근',
+};
+
 type GenDetail = {
   generation_id: string;
   status: string;
   input: Record<string, unknown>;
-  product_analysis: Record<string, unknown> | null;
-  strategies: unknown[] | null;
+  product_analysis: ProductAnalysis | null;
+  strategies: Strategy[] | null;
   candidates: Candidate[];
   selected_candidate_id: string | null;
   created_at: string;
@@ -87,7 +111,7 @@ function CandidateCard({ candidate, isSelected }: { candidate: Candidate; isSele
         <div className="relative w-full aspect-square bg-[#F9FAFB] dark:bg-[#161B27]">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={candidate.image_url}
+            src={candidate.image_url.startsWith('/') ? `${API_BASE}${candidate.image_url}` : candidate.image_url}
             alt={`광고 후보 ${candidate.idx + 1}`}
             className="w-full h-full object-contain"
           />
@@ -134,6 +158,61 @@ function CandidateCard({ candidate, isSelected }: { candidate: Candidate; isSele
           </span>
         )}
       </div>
+    </div>
+  );
+}
+
+function ChipList({ label, items }: { label: string; items?: string[] }) {
+  if (!items || items.length === 0) return null;
+  return (
+    <div className="flex items-start gap-4 py-3 border-b border-[#F2F4F6] dark:border-[#252D3D] last:border-0">
+      <span className="w-28 shrink-0 text-sm text-[#8B95A1] dark:text-[#6B7280]">{label}</span>
+      <div className="flex flex-wrap gap-1.5 flex-1">
+        {items.map((it, i) => (
+          <span
+            key={i}
+            className="px-2.5 py-1 rounded-full text-xs bg-[#EBF3FF] dark:bg-[#1E3A5F] text-[#3182F6]"
+          >
+            {it}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ProductAnalysisSection({ a }: { a: ProductAnalysis }) {
+  return (
+    <div className="space-y-0">
+      {a.target_audience && <InfoRow label="타겟 고객" value={a.target_audience} />}
+      {a.objective && <InfoRow label="캠페인 목표" value={a.objective} />}
+      <ChipList label="핵심 가치" items={a.core_values} />
+      <ChipList label="페인 포인트" items={a.pain_points} />
+      <ChipList label="기대 효익" items={a.benefits} />
+    </div>
+  );
+}
+
+function StrategyCard({ s, idx }: { s: Strategy; idx: number }) {
+  const label = s.strategy ? (STRATEGY_LABELS[s.strategy] ?? s.strategy) : `전략 ${idx + 1}`;
+  return (
+    <div className="rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] p-4">
+      <div className="flex items-center gap-2 mb-2">
+        <span className="text-xs font-semibold text-[#8B95A1]">전략 {idx + 1}</span>
+        <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-[#EBF3FF] dark:bg-[#1E3A5F] text-[#3182F6]">
+          {label}
+        </span>
+      </div>
+      {s.strategy_description && (
+        <p className="text-sm text-[#191F28] dark:text-[#F2F4F6] leading-relaxed">
+          {s.strategy_description}
+        </p>
+      )}
+      {s.rationale && (
+        <p className="text-xs text-[#8B95A1] dark:text-[#6B7280] leading-relaxed mt-2">
+          💡 {s.rationale}
+        </p>
+      )}
     </div>
   );
 }
@@ -298,9 +377,7 @@ export default function GenerationDetailPage() {
             <div className="bg-white dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748] rounded-2xl p-6 mb-6">
               <h2 className="text-base font-semibold text-[#191F28] dark:text-[#F2F4F6] mb-4">상품 분석</h2>
               {data.product_analysis ? (
-                <pre className="text-xs bg-[#F9FAFB] dark:bg-[#161B27] rounded-xl p-4 overflow-x-auto text-[#4E5968] dark:text-[#9CA3AF] leading-relaxed whitespace-pre-wrap">
-                  {JSON.stringify(data.product_analysis, null, 2)}
-                </pre>
+                <ProductAnalysisSection a={data.product_analysis} />
               ) : (
                 <div className="py-6 text-center text-sm text-[#B0B8C1] dark:text-[#4B5563]">
                   분석 데이터가 없습니다.
@@ -314,9 +391,11 @@ export default function GenerationDetailPage() {
                 광고 전략{data.strategies ? ` (${data.strategies.length}개)` : ''}
               </h2>
               {data.strategies && data.strategies.length > 0 ? (
-                <pre className="text-xs bg-[#F9FAFB] dark:bg-[#161B27] rounded-xl p-4 overflow-x-auto text-[#4E5968] dark:text-[#9CA3AF] leading-relaxed whitespace-pre-wrap">
-                  {JSON.stringify(data.strategies, null, 2)}
-                </pre>
+                <div className="space-y-3">
+                  {data.strategies.map((s, i) => (
+                    <StrategyCard key={i} s={s} idx={i} />
+                  ))}
+                </div>
               ) : (
                 <div className="py-6 text-center text-sm text-[#B0B8C1] dark:text-[#4B5563]">
                   {data.status === 'completed' ? '전략 데이터가 없습니다.' : '생성이 아직 완료되지 않았습니다.'}

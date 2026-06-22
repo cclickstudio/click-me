@@ -47,6 +47,15 @@ else:
     os.environ.setdefault("LANGSMITH_PROJECT", settings.LANGSMITH_PROJECT)
     os.environ["LANGSMITH_TRACING"] = "true" if settings.LANGSMITH_TRACING_V2 else "false"
 
+    # 전역 트레이싱 클라이언트를 기밀 마스킹 콜백과 함께 1회 생성한다. LangChain 트레이서와
+    # @traceable이 이 캐시 클라이언트를 공유하므로, 부모(re_evaluate)·진단·재생성 자식 트레이스
+    # 전부에서 예산·크리에이티브가 전송 전에 가려진다(평문 외부 유출 차단).
+    from langsmith.run_trees import get_cached_client
+
+    from core.trace_redaction import redact
+
+    get_cached_client(hide_inputs=redact, hide_outputs=redact)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -81,7 +90,9 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000", "https://*.vercel.app"],
+    # Starlette는 allow_origins에 glob(*)을 지원하지 않으므로 vercel 서브도메인은 regex로 매칭
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origin_regex=r"https://.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

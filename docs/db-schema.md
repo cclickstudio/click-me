@@ -1,50 +1,113 @@
 # ClickMe DB Schema
 
-| Version | v3.1 |
+| Version | v4.0 |
 |---|---|
-| Date | 2026-06-15 |
-| DB | NeonDB (PostgreSQL + pgvector) |
-| Source | information_schema 직접 조회 + persona_debate* 신설 |
+| Date | 2026-06-18 |
+| DB | NeonDB (PostgreSQL 18.4 + pgvector) |
+| Source | `pg_dump --schema-only` 실측 (public 스키마 전체) |
 
-> v3.1 변경 — 기존 `debate_sessions`·`debate_statements`·`debate_results`(전부 0행, 1:1·2인대립 구조) 제거하고,
-> `simulations` 1:N 페르소나 토론용 `persona_debates`·`persona_debate_participants`·`persona_debate_utterances` 신설.
+> v4.0 변경 — 실 DB를 pg_dump로 전량 재추출. 테이블 30 → **45개**, ENUM 타입 10종 명시.
+> 신규: `teams`·`project_members`·`refresh_tokens`·`user_settings`·`audit_logs`·`chat_messages`·`generated_ads`·`persona_templates`·`brand_profiles`·`calibration_data`·`ad_campaign_logs`·`kinds`·`categories`·`category_kinds`·`alembic_version`.
+> 변경: `users` `email`→`login_id`, `team_id`·`phone_num`·`user_email`·`must_change_password` 추가 / 여러 테이블에 `deleted_at` 소프트삭제 컬럼 추가.
 
 ---
 
-## 테이블 목록 (30개)
+## 테이블 목록 (45개)
 
+### 인증 · 사용자
 | 테이블 | 역할 |
 |---|---|
-| `users` | 사용자 |
+| `users` | 사용자 (로그인 ID = `login_id`) |
+| `teams` | 팀 (조직 하위 협업 단위) |
+| `refresh_tokens` | JWT 리프레시 토큰 |
+| `user_settings` | 사용자별 설정(테마·알림) |
+| `audit_logs` | 사용자 행위 감사 로그 |
+
+### 조직 · 빌링
+| 테이블 | 역할 |
+|---|---|
 | `organizations` | 기업(빌링 단위) |
 | `organization_members` | 기업-사용자 매핑 |
 | `organization_subscriptions` | 기업 구독 |
 | `subscription_plans` | 구독 플랜 정의 |
-| `projects` | 프로젝트 |
+| `project_members` | 프로젝트 협업 멤버(뷰어/에디터/오너) |
+
+### 프로젝트 · 광고
+| 테이블 | 역할 |
+|---|---|
+| `projects` | 프로젝트(캠페인 단위) |
 | `ads` | 광고 소재 |
 | `ad_analyses` | 광고 분석 결과 |
 | `ad_embeddings` | 광고 벡터 임베딩 |
+| `rubric_scores` | 광고 루브릭 점수 |
+
+### 시뮬레이션 (4-1)
+| 테이블 | 역할 |
+|---|---|
 | `panels` | 페르소나 패널 |
 | `personas` | 개별 페르소나 |
+| `persona_templates` | 페르소나 템플릿(클러스터·임베딩) |
 | `simulations` | 시뮬레이션 실행 단위 |
 | `persona_responses` | 페르소나별 반응 |
 | `simulation_aggregates` | 시뮬레이션 집계 결과 |
-| `simulation_results` | 시뮬레이션 결과 (분포/페르소나) |
+| `simulation_results` | 시뮬레이션 결과(분포/페르소나, 임시) |
 | `simulation_comparisons` | A/B 비교 |
-| `persona_debates` | 페르소나 토론 세션 (simulations 1:N) |
-| `persona_debate_participants` | 토론 패널 6명 |
-| `persona_debate_utterances` | 토론 발언 로그 (라운드×패널) |
 | `diagnoses` | 시뮬레이션 진단 |
-| `rubric_scores` | 광고 루브릭 점수 |
 | `recommendations` | 개선 추천 |
 | `reports` | PDF 리포트 |
-| `benchmarks` | 업종별 벤치마크 |
-| `rag_chunks` | RAG 청크 |
+
+### 페르소나 토론
+| 테이블 | 역할 |
+|---|---|
+| `persona_debates` | 페르소나 토론 세션 (simulations 1:N) |
+| `persona_debate_participants` | 토론 패널 |
+| `persona_debate_utterances` | 토론 발언 로그(라운드×패널) |
+
+### 광고 생성 (4-3) · 게시
+| 테이블 | 역할 |
+|---|---|
 | `ad_generations` | 광고 제너레이터 실행 |
 | `ad_generation_candidates` | 제너레이터 후보 |
-| `ad_publish_logs` | 광고 게시 이력 |
+| `ad_publish_logs` | 광고 게시 이력(IG) |
+| `ad_campaign_logs` | Meta Marketing API 집행 이력 |
+| `generated_ads` | 생성 이미지 광고(독립 저장) |
+| `brand_profiles` | 클라이언트 브랜드 프로필 |
+
+### 참조 · 기타
+| 테이블 | 역할 |
+|---|---|
+| `benchmarks` | 업종별 벤치마크 |
+| `rag_chunks` | RAG 청크 |
+| `calibration_data` | 예측↔실측 캘리브레이션 데이터 |
+| `kinds` | NICE 상품/서비스 분류 45류 |
+| `categories` | 업종 카테고리 묶음 |
+| `category_kinds` | 카테고리↔류 매핑(다대다) |
 | `chat_sessions` | 채팅 세션 |
+| `chat_messages` | 채팅 메시지 |
 | `inquiries` | 고객 문의 |
+| `alembic_version` | Alembic 마이그레이션 버전 |
+
+---
+
+## ENUM 타입 (10종)
+
+> DB에 타입은 정의돼 있으나, 대부분의 테이블은 `VARCHAR + 앱 레벨 검증`을 사용한다.
+> 실제 ENUM 컬럼은 `generated_ads.status`(ad_status) · `chat_messages.role`(chat_role) · `project_members.role`(project_member_role) 셋뿐.
+
+| 타입 | 값 | 사용처 |
+|---|---|---|
+| `ad_input_type` | image, text, video, url | (미사용 — `ads.media_type`는 VARCHAR) |
+| `ad_status` | pending, analyzing, completed, failed | `generated_ads.status` |
+| `campaign_objective` | awareness, conversion, lead_gen, app_install, retention, product_launch, promotion | (미사용) |
+| `chat_role` | user, assistant | `chat_messages.role` |
+| `plan_type` | free, professional, enterprise | (미사용 — VARCHAR 사용) |
+| `project_member_role` | owner, editor, viewer | `project_members.role` |
+| `project_status` | active, archived | (미사용) |
+| `simulation_status` | pending, running, completed, failed | (미사용) |
+| `simulation_type` | ad_reaction, survey | (미사용) |
+| `user_role` | admin, user | (미사용 — `users.role`는 VARCHAR) |
+
+확장: `uuid-ossp`, `vector`(pgvector, ivfflat/hnsw).
 
 ---
 
@@ -52,21 +115,74 @@
 
 ```sql
 -- ============================================================
--- users
+-- users  (⚠️ 로그인 식별자 = login_id, email 아님)
 -- ============================================================
 CREATE TABLE users (
-    id              UUID PRIMARY KEY,
-    email           VARCHAR(255) NOT NULL UNIQUE,
-    password_hash   VARCHAR(255) NOT NULL,
-    name            VARCHAR(100) NOT NULL,
-    role            VARCHAR(20)  NOT NULL,            -- ADMIN | COMPANY | USER
-    status          VARCHAR(20)  NOT NULL DEFAULT 'ACTIVE',  -- ACTIVE | PENDING | REJECTED
-    created_by      UUID REFERENCES users(id),
-    last_login_at   TIMESTAMP,
-    created_at      TIMESTAMP NOT NULL DEFAULT now(),
-    updated_at      TIMESTAMP NOT NULL DEFAULT now()
+    id                   UUID PRIMARY KEY,
+    login_id             VARCHAR(255) NOT NULL UNIQUE,    -- 로그인 ID
+    password_hash        VARCHAR(255) NOT NULL,
+    name                 VARCHAR(100) NOT NULL,
+    role                 VARCHAR(20)  NOT NULL,                    -- ADMIN | COMPANY | USER
+    status               VARCHAR(20)  NOT NULL DEFAULT 'ACTIVE',   -- ACTIVE | PENDING
+    must_change_password BOOLEAN      NOT NULL DEFAULT false,      -- 발급 계정 최초 로그인 시 변경 유도
+    team_id              UUID REFERENCES teams(id) ON DELETE SET NULL,  -- 소속 팀(USER, 미배정 NULL)
+    phone_num            VARCHAR(30),
+    user_email           VARCHAR(255),                    -- 연락용(로그인 아님)
+    created_by           UUID REFERENCES users(id),
+    last_login_at        TIMESTAMP,
+    created_at           TIMESTAMP NOT NULL DEFAULT now(),
+    updated_at           TIMESTAMP NOT NULL DEFAULT now()
 );
--- ⚠️ organization_id 컬럼 없음. 소속은 organization_members 경유.
+CREATE INDEX idx_users_team ON users(team_id);
+
+-- ============================================================
+-- teams
+-- ============================================================
+CREATE TABLE teams (
+    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    organization_id UUID         NOT NULL REFERENCES organizations(id),
+    name            VARCHAR(100) NOT NULL,
+    created_at      TIMESTAMP    NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_teams_org ON teams(organization_id);
+
+-- ============================================================
+-- refresh_tokens
+-- ============================================================
+CREATE TABLE refresh_tokens (
+    id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id    UUID         NOT NULL,            -- ⚠️ FK 미선언(컬럼만)
+    token_hash VARCHAR(255) NOT NULL UNIQUE,
+    expires_at TIMESTAMPTZ  NOT NULL,
+    revoked    BOOLEAN      NOT NULL,
+    created_at TIMESTAMPTZ  NOT NULL DEFAULT now()
+);
+
+-- ============================================================
+-- user_settings
+-- ============================================================
+CREATE TABLE user_settings (
+    id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id       UUID        NOT NULL UNIQUE,   -- ⚠️ FK 미선언
+    theme         VARCHAR(10) NOT NULL,
+    notifications JSONB       NOT NULL,
+    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- ============================================================
+-- audit_logs  (FK 미선언 — user_id/resource_id는 느슨 참조)
+-- ============================================================
+CREATE TABLE audit_logs (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id     UUID,
+    action      VARCHAR(100) NOT NULL,
+    resource    VARCHAR(50),
+    resource_id UUID,
+    metadata    JSONB,
+    ip_address  VARCHAR(45),
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 
 -- ============================================================
 -- organizations
@@ -80,7 +196,6 @@ CREATE TABLE organizations (
     created_at TIMESTAMP NOT NULL DEFAULT now(),
     updated_at TIMESTAMP NOT NULL DEFAULT now()
 );
--- ⚠️ plan_type 컬럼 없음. plan(VARCHAR) 사용.
 
 -- ============================================================
 -- organization_members
@@ -94,7 +209,7 @@ CREATE TABLE organization_members (
     status          VARCHAR(20) NOT NULL DEFAULT 'PENDING',  -- ACTIVE | PENDING | REJECTED
     joined_at       TIMESTAMP,
     created_at      TIMESTAMP NOT NULL DEFAULT now(),
-    UNIQUE (organization_id, user_id)
+    CONSTRAINT uq_org_member UNIQUE (organization_id, user_id)
 );
 
 -- ============================================================
@@ -126,7 +241,19 @@ CREATE TABLE organization_subscriptions (
 );
 
 -- ============================================================
--- projects
+-- project_members  (FK 미선언 — project_id/user_id는 느슨 참조)
+-- ============================================================
+CREATE TABLE project_members (
+    id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    project_id UUID NOT NULL,
+    user_id    UUID NOT NULL,
+    role       project_member_role NOT NULL,      -- owner | editor | viewer (ENUM)
+    joined_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT uq_project_members UNIQUE (project_id, user_id)
+);
+
+-- ============================================================
+-- projects  (소프트삭제: deleted_at)
 -- ============================================================
 CREATE TABLE projects (
     id              UUID PRIMARY KEY,
@@ -136,8 +263,10 @@ CREATE TABLE projects (
     status          VARCHAR(20)  NOT NULL DEFAULT 'ACTIVE',  -- ACTIVE | DELETED
     created_by      UUID         NOT NULL REFERENCES users(id),
     created_at      TIMESTAMP    NOT NULL DEFAULT now(),
-    updated_at      TIMESTAMP    NOT NULL DEFAULT now()
+    updated_at      TIMESTAMP    NOT NULL DEFAULT now(),
+    deleted_at      TIMESTAMP
 );
+CREATE INDEX idx_projects_deleted_at ON projects(deleted_at);
 
 -- ============================================================
 -- ads
@@ -149,31 +278,31 @@ CREATE TABLE ads (
     media_type        VARCHAR(20)  NOT NULL,           -- image | text | video | url
     asset_url         VARCHAR(500),
     copy_text         TEXT,
-    industry_category VARCHAR(100) NOT NULL,
-    product_category  VARCHAR(100) NOT NULL,
-    ad_objective      VARCHAR(50)  NOT NULL,
+    industry_category VARCHAR(100),
+    product_category  VARCHAR(100),
+    ad_objective      VARCHAR(50),
     target_filter     JSONB,
     status            VARCHAR(20)  NOT NULL DEFAULT 'DRAFT',  -- DRAFT | ACTIVE | ARCHIVED
-    created_by        UUID         NOT NULL REFERENCES users(id),
+    created_by        UUID REFERENCES users(id),
     created_at        TIMESTAMP    NOT NULL DEFAULT now(),
     updated_at        TIMESTAMP    NOT NULL DEFAULT now()
 );
--- ⚠️ ORM 모델의 ad_type → 실제 media_type / s3_key → asset_url / analysis 컬럼 없음(ad_analyses 테이블 분리)
 
 -- ============================================================
 -- ad_analyses
 -- ============================================================
 CREATE TABLE ad_analyses (
-    id                UUID PRIMARY KEY,
-    ad_id             UUID         NOT NULL REFERENCES ads(id),
-    structured_analysis JSONB      NOT NULL,
-    detected_industry VARCHAR(100),
-    detected_target   VARCHAR(100),
-    detected_message  TEXT,
-    intent_mismatch   BOOLEAN      NOT NULL DEFAULT false,
-    mismatch_detail   JSONB,
-    model_version     VARCHAR(50)  NOT NULL,
-    created_at        TIMESTAMP    NOT NULL DEFAULT now()
+    id                  UUID PRIMARY KEY,
+    ad_id               UUID         NOT NULL REFERENCES ads(id),
+    structured_analysis JSONB        NOT NULL,
+    detected_industry   VARCHAR(100),
+    detected_target     VARCHAR(100),
+    detected_message    TEXT,
+    intent_mismatch     BOOLEAN      NOT NULL DEFAULT false,
+    mismatch_detail     JSONB,
+    model_version       VARCHAR(50)  NOT NULL,
+    created_at          TIMESTAMP    NOT NULL DEFAULT now(),
+    detected_objective  VARCHAR(50)
 );
 
 -- ============================================================
@@ -181,7 +310,7 @@ CREATE TABLE ad_analyses (
 -- ============================================================
 CREATE TABLE ad_embeddings (
     id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    ad_id      UUID REFERENCES ads(id),
+    ad_id      UUID NOT NULL REFERENCES ads(id),
     content    TEXT,
     embedding  vector(1536),
     created_at TIMESTAMP DEFAULT now()
@@ -197,7 +326,7 @@ CREATE TABLE rubric_scores (
     score           INTEGER     NOT NULL,
     evidence        JSONB       NOT NULL,
     created_at      TIMESTAMP   NOT NULL DEFAULT now(),
-    UNIQUE (ad_analysis_id, dimension)
+    CONSTRAINT uq_rubric UNIQUE (ad_analysis_id, dimension)
 );
 
 -- ============================================================
@@ -228,17 +357,31 @@ CREATE TABLE personas (
     media_behavior     JSONB       NOT NULL,
     consumption_values JSONB       NOT NULL,
     profile_narrative  TEXT        NOT NULL,
-    created_at         TIMESTAMP   NOT NULL DEFAULT now()
+    created_at         TIMESTAMP   NOT NULL DEFAULT now(),
+    socioeconomic      JSONB       NOT NULL DEFAULT '{}'::jsonb
 );
 
 -- ============================================================
--- simulations
+-- persona_templates  (FK 미선언)
+-- ============================================================
+CREATE TABLE persona_templates (
+    id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    name       VARCHAR(100),
+    cluster_id VARCHAR(50),
+    attributes JSONB        NOT NULL,
+    embedding  vector(1536),
+    is_public  BOOLEAN      NOT NULL,
+    created_at TIMESTAMPTZ  NOT NULL DEFAULT now()
+);
+
+-- ============================================================
+-- simulations  (소프트삭제: deleted_at)
 -- ============================================================
 CREATE TABLE simulations (
     id                 UUID PRIMARY KEY,
     ad_id              UUID        NOT NULL REFERENCES ads(id),
     ad_analysis_id     UUID        NOT NULL REFERENCES ad_analyses(id),
-    panel_id           UUID        NOT NULL REFERENCES panels(id),  -- ⚠️ NOT NULL
+    panel_id           UUID        REFERENCES panels(id),         -- nullable
     organization_id    UUID        NOT NULL REFERENCES organizations(id),
     target_filter      JSONB,
     target_mode        VARCHAR(10) NOT NULL DEFAULT 'AUTO',
@@ -246,39 +389,40 @@ CREATE TABLE simulations (
     qa_passed_count    INTEGER,
     low_sample_warning BOOLEAN     NOT NULL DEFAULT false,
     status             VARCHAR(20) NOT NULL DEFAULT 'QUEUED',  -- QUEUED | RUNNING | COMPLETED | FAILED
-    model_version      VARCHAR(50) NOT NULL,                   -- ⚠️ NOT NULL, 기본값 없음
+    model_version      VARCHAR(50) NOT NULL DEFAULT 'gpt-4o-mini',
     error_detail       JSONB,
-    created_by         UUID        NOT NULL REFERENCES users(id),
+    created_by         UUID        REFERENCES users(id),         -- nullable
     started_at         TIMESTAMP,
     completed_at       TIMESTAMP,
-    created_at         TIMESTAMP   NOT NULL DEFAULT now()
+    created_at         TIMESTAMP   NOT NULL DEFAULT now(),
+    deleted_at         TIMESTAMP
 );
--- ⚠️ panel_id NOT NULL → 패널 없이 INSERT 불가. ALTER 필요 (하단 참고)
--- ⚠️ model_version NOT NULL, 기본값 없음 → INSERT 시 반드시 명시
+CREATE INDEX idx_simulations_deleted_at ON simulations(deleted_at);
 
 -- ============================================================
 -- persona_responses
 -- ============================================================
 CREATE TABLE persona_responses (
-    id                  UUID PRIMARY KEY,
-    simulation_id       UUID        NOT NULL REFERENCES simulations(id),
-    persona_id          UUID        NOT NULL REFERENCES personas(id),
-    exposure_context    VARCHAR(50),
-    aisas               JSONB       NOT NULL,
-    drop_stage          VARCHAR(20),
-    drop_reason_tag     VARCHAR(50),
-    purchase_intent     INTEGER     NOT NULL,
-    trust               INTEGER     NOT NULL,
-    rejected            BOOLEAN     NOT NULL DEFAULT false,
+    id                   UUID PRIMARY KEY,
+    simulation_id        UUID          NOT NULL REFERENCES simulations(id),
+    persona_id           UUID          NOT NULL REFERENCES personas(id),
+    exposure_context     VARCHAR(50),
+    aisas                JSONB         NOT NULL,
+    drop_stage           VARCHAR(20),
+    drop_reason_tag      VARCHAR(50),
+    purchase_intent      INTEGER       NOT NULL,
+    trust                INTEGER       NOT NULL,
+    rejected             BOOLEAN       NOT NULL DEFAULT false,
     rejection_reason_tag VARCHAR(50),
-    emotion_tag         VARCHAR(50) NOT NULL,
-    perceived_message   TEXT,
-    perceived_target    VARCHAR(100),
-    utterance           TEXT,
-    qa_passed           BOOLEAN     NOT NULL,
-    qa_fail_reason      VARCHAR(100),
-    created_at          TIMESTAMP   NOT NULL DEFAULT now(),
-    UNIQUE (simulation_id, persona_id)
+    emotion_tag          VARCHAR(50)   NOT NULL,
+    perceived_message    TEXT,
+    perceived_target     VARCHAR(100),
+    utterance            TEXT,
+    qa_passed            BOOLEAN       NOT NULL,
+    qa_fail_reason       VARCHAR(100),
+    created_at           TIMESTAMP     NOT NULL DEFAULT now(),
+    weight               NUMERIC(10,4) NOT NULL DEFAULT 1.0,
+    CONSTRAINT uq_response UNIQUE (simulation_id, persona_id)
 );
 
 -- ============================================================
@@ -286,17 +430,18 @@ CREATE TABLE persona_responses (
 -- ============================================================
 CREATE TABLE simulation_aggregates (
     id                  UUID PRIMARY KEY,
-    simulation_id       UUID     NOT NULL UNIQUE REFERENCES simulations(id),
-    click_intent_rate   NUMERIC  NOT NULL,
-    ci_low              NUMERIC  NOT NULL,
-    ci_high             NUMERIC  NOT NULL,
-    purchase_intent_avg NUMERIC  NOT NULL,
-    trust_avg           NUMERIC  NOT NULL,
-    rejection_rate      NUMERIC  NOT NULL,
-    variance_warning    BOOLEAN  NOT NULL DEFAULT false,
-    payload             JSONB    NOT NULL,
-    engine_version      VARCHAR(50) NOT NULL,
-    created_at          TIMESTAMP NOT NULL DEFAULT now()
+    simulation_id       UUID          NOT NULL UNIQUE REFERENCES simulations(id),
+    click_intent_rate   NUMERIC       NOT NULL,
+    ci_low              NUMERIC       NOT NULL,
+    ci_high             NUMERIC       NOT NULL,
+    purchase_intent_avg NUMERIC       NOT NULL,
+    trust_avg           NUMERIC       NOT NULL,
+    rejection_rate      NUMERIC       NOT NULL,
+    variance_warning    BOOLEAN       NOT NULL DEFAULT false,
+    payload             JSONB         NOT NULL,
+    engine_version      VARCHAR(50)   NOT NULL,
+    created_at          TIMESTAMP     NOT NULL DEFAULT now(),
+    effective_n         NUMERIC(10,1) NOT NULL DEFAULT 0.0
 );
 
 -- ============================================================
@@ -337,7 +482,7 @@ CREATE TABLE diagnoses (
     dissent_block   JSONB,
     evidence_refs   JSONB       NOT NULL,
     created_at      TIMESTAMP   NOT NULL DEFAULT now(),
-    UNIQUE (simulation_id, dimension)
+    CONSTRAINT uq_diagnosis UNIQUE (simulation_id, dimension)
 );
 
 -- ============================================================
@@ -371,35 +516,35 @@ CREATE TABLE reports (
 );
 
 -- ============================================================
--- persona_debates  (페르소나 토론 세션 = '토론 아이디', simulations 1:N)
+-- persona_debates  (페르소나 토론 세션, simulations 1:N)
 -- ============================================================
 CREATE TABLE persona_debates (
     id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    simulation_id UUID        NOT NULL REFERENCES simulations(id) ON DELETE CASCADE,  -- UNIQUE 없음 = 1:N
-    topic         TEXT,                              -- 토론 주제
-    rounds_run    INTEGER,                           -- 실제 돈 라운드(2~4)
-    stop_reason   VARCHAR(20),                       -- consensus | dissensus | max
-    judge_model   VARCHAR(50),                       -- Judge 모델 (claude-opus-4-8)
-    engines       JSONB,                             -- 토론자 엔진 ["haiku","gpt","gemini"]
-    judge_log     JSONB,                             -- 라운드별 Judge 중간 정리
-    final         JSONB,                             -- headline/consensus/dissent/ranked_actions
+    simulation_id UUID        NOT NULL REFERENCES simulations(id) ON DELETE CASCADE,
+    topic         TEXT,
+    rounds_run    INTEGER,                            -- 실제 돈 라운드(2~4)
+    stop_reason   VARCHAR(20),                        -- consensus | dissensus | max
+    judge_model   VARCHAR(50),
+    engines       JSONB,                              -- ["haiku","gpt","gemini"]
+    judge_log     JSONB,
+    final         JSONB,                              -- headline/consensus/dissent/ranked_actions
     status        VARCHAR(20) NOT NULL DEFAULT 'PENDING',  -- PENDING | RUNNING | COMPLETED | FAILED
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX idx_persona_debates_sim ON persona_debates(simulation_id);
 
 -- ============================================================
--- persona_debate_participants  (토론 패널 6명, debate 1:N)
+-- persona_debate_participants  (debate 1:N)
 -- ============================================================
 CREATE TABLE persona_debate_participants (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     debate_id       UUID        NOT NULL REFERENCES persona_debates(id) ON DELETE CASCADE,
-    persona_id      VARCHAR(50) NOT NULL,            -- "P-00011" (더미 문자열·실 UUID 양쪽 수용)
-    persona_name    VARCHAR(50),                     -- 이서연
-    persona_profile TEXT,                            -- "34세 직장인 여성·신뢰형"
+    persona_id      VARCHAR(50) NOT NULL,            -- "P-00011"(더미 문자열·실 UUID 양쪽)
+    persona_name    VARCHAR(50),
+    persona_profile TEXT,
     role            VARCHAR(20),                     -- 피벗/완주자/거부자/불신자/초기이탈/미온2
     engine          VARCHAR(20),                     -- haiku/gpt/gemini
-    UNIQUE (debate_id, persona_id)
+    CONSTRAINT persona_debate_participants_debate_id_persona_id_key UNIQUE (debate_id, persona_id)
 );
 
 -- ============================================================
@@ -412,45 +557,15 @@ CREATE TABLE persona_debate_utterances (
     round          INTEGER NOT NULL,                 -- 1~4
     phase          VARCHAR(10),                      -- 발산/반박/검증
     stance         VARCHAR(10),                      -- positive/neutral/negative
-    text           TEXT,                             -- 실제 발언
-    reason         TEXT,                             -- 왜 그렇게 말했나
-    lever          TEXT,                             -- 이 사람 움직일 개선 레버
+    text           TEXT,
+    reason         TEXT,
+    lever          TEXT,
     created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 CREATE INDEX idx_persona_debate_utt_debate ON persona_debate_utterances(debate_id);
 
 -- ============================================================
--- benchmarks
--- ============================================================
-CREATE TABLE benchmarks (
-    id          UUID PRIMARY KEY,
-    industry    VARCHAR(100) NOT NULL,
-    metric      VARCHAR(50)  NOT NULL,
-    value_low   NUMERIC      NOT NULL,
-    value_high  NUMERIC      NOT NULL,
-    unit        VARCHAR(20)  NOT NULL,
-    source_name VARCHAR(255) NOT NULL,
-    source_year INTEGER      NOT NULL,
-    created_at  TIMESTAMP    NOT NULL DEFAULT now(),
-    UNIQUE (industry, metric)
-);
-
--- ============================================================
--- rag_chunks
--- ============================================================
-CREATE TABLE rag_chunks (
-    chunk_id    VARCHAR(100) PRIMARY KEY,
-    tier        VARCHAR(10)  NOT NULL,
-    dimension   VARCHAR(50)  NOT NULL,
-    media_type  VARCHAR(20)  NOT NULL,
-    industry    VARCHAR(100),
-    source_name VARCHAR(255) NOT NULL,
-    content     TEXT         NOT NULL,
-    created_at  TIMESTAMP    NOT NULL DEFAULT now()
-);
-
--- ============================================================
--- ad_generations
+-- ad_generations  (소프트삭제: deleted_at)
 -- ============================================================
 CREATE TABLE ad_generations (
     id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -463,8 +578,10 @@ CREATE TABLE ad_generations (
     error_message         TEXT,
     created_at            TIMESTAMP DEFAULT now(),
     updated_at            TIMESTAMP DEFAULT now(),
-    created_by            UUID REFERENCES users(id)
+    created_by            UUID REFERENCES users(id),
+    deleted_at            TIMESTAMP
 );
+CREATE INDEX idx_ad_generations_deleted_at ON ad_generations(deleted_at);
 
 -- ============================================================
 -- ad_generation_candidates
@@ -483,6 +600,7 @@ CREATE TABLE ad_generation_candidates (
     explanation   JSONB,
     created_at    TIMESTAMP DEFAULT now()
 );
+CREATE INDEX idx_ad_generation_candidates_generation ON ad_generation_candidates(generation_id);
 
 -- ============================================================
 -- ad_publish_logs
@@ -503,6 +621,133 @@ CREATE TABLE ad_publish_logs (
 );
 
 -- ============================================================
+-- ad_campaign_logs  (Meta Marketing API 집행 이력)
+-- ============================================================
+CREATE TABLE ad_campaign_logs (
+    id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    generation_id    UUID REFERENCES ad_generations(id) ON DELETE SET NULL,
+    candidate_id     UUID REFERENCES ad_generation_candidates(id) ON DELETE SET NULL,
+    status           VARCHAR(20) NOT NULL,            -- created | failed | mocked
+    mocked           BOOLEAN     NOT NULL DEFAULT false,
+    campaign_id      VARCHAR(100),
+    adset_id         VARCHAR(100),
+    creative_id      VARCHAR(100),
+    ad_id            VARCHAR(100),                     -- 플랫폼 광고 ID(문자열)
+    budget           INTEGER,
+    objective        VARCHAR(50),
+    targeting        JSONB,
+    request_payload  JSONB,
+    response_payload JSONB,
+    error_message    TEXT,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_ad_campaign_logs_generation ON ad_campaign_logs(generation_id);
+
+-- ============================================================
+-- generated_ads  (이미지 생성 광고, FK 미선언)
+-- ============================================================
+CREATE TABLE generated_ads (
+    id               UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    project_id       UUID        NOT NULL,
+    created_by       UUID        NOT NULL,
+    prompt           TEXT        NOT NULL,
+    style            VARCHAR(50),
+    aspect_ratio     VARCHAR(10) NOT NULL,
+    status           ad_status   NOT NULL,            -- pending | analyzing | completed | failed (ENUM)
+    image_url        TEXT,
+    storage_path     TEXT,
+    is_saved         BOOLEAN     NOT NULL,
+    saved_at         TIMESTAMPTZ,
+    generation_model VARCHAR(50),
+    error_message    TEXT,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- ============================================================
+-- brand_profiles
+-- ============================================================
+CREATE TABLE brand_profiles (
+    client_id        VARCHAR(64) PRIMARY KEY,
+    brand_color      VARCHAR(20),
+    brand_logo_key   VARCHAR(512),
+    tone_and_manner  TEXT,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- ============================================================
+-- benchmarks
+-- ============================================================
+CREATE TABLE benchmarks (
+    id          UUID PRIMARY KEY,
+    industry    VARCHAR(100) NOT NULL,
+    metric      VARCHAR(50)  NOT NULL,
+    value_low   NUMERIC      NOT NULL,
+    value_high  NUMERIC      NOT NULL,
+    unit        VARCHAR(20)  NOT NULL,
+    source_name VARCHAR(255) NOT NULL,
+    source_year INTEGER      NOT NULL,
+    created_at  TIMESTAMP    NOT NULL DEFAULT now(),
+    CONSTRAINT uq_bench UNIQUE (industry, metric)
+);
+
+-- ============================================================
+-- rag_chunks
+-- ============================================================
+CREATE TABLE rag_chunks (
+    chunk_id    VARCHAR(100) PRIMARY KEY,
+    tier        VARCHAR(10)  NOT NULL,
+    dimension   VARCHAR(50)  NOT NULL,
+    media_type  VARCHAR(20)  NOT NULL,
+    industry    VARCHAR(100),
+    source_name VARCHAR(255) NOT NULL,
+    content     TEXT         NOT NULL,
+    created_at  TIMESTAMP    NOT NULL DEFAULT now()
+);
+
+-- ============================================================
+-- calibration_data  (예측 CTR ↔ 실측 CTR, FK 미선언)
+-- ============================================================
+CREATE TABLE calibration_data (
+    id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    simulation_id       UUID,
+    predicted_ctr_score DOUBLE PRECISION,
+    actual_ctr_percent  DOUBLE PRECISION,
+    industry            VARCHAR(50),
+    platform            VARCHAR(50),
+    ad_format           VARCHAR(30),
+    submitted_by        UUID,
+    verified            BOOLEAN     NOT NULL,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- ============================================================
+-- kinds  (NICE 상품/서비스 분류 45류)
+-- ============================================================
+CREATE TABLE kinds (
+    id          SMALLINT PRIMARY KEY,    -- 류 번호 1~45
+    description TEXT NOT NULL
+);
+
+-- ============================================================
+-- categories  (업종 카테고리 묶음)
+-- ============================================================
+CREATE TABLE categories (
+    id   SMALLINT PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE
+);
+
+-- ============================================================
+-- category_kinds  (카테고리 ↔ 류 다대다 매핑)
+-- ============================================================
+CREATE TABLE category_kinds (
+    category_id SMALLINT NOT NULL REFERENCES categories(id) ON DELETE CASCADE,
+    kind_id     SMALLINT NOT NULL REFERENCES kinds(id)      ON DELETE CASCADE,
+    PRIMARY KEY (category_id, kind_id)
+);
+CREATE INDEX idx_category_kinds_kind ON category_kinds(kind_id);
+
+-- ============================================================
 -- chat_sessions
 -- ============================================================
 CREATE TABLE chat_sessions (
@@ -510,6 +755,19 @@ CREATE TABLE chat_sessions (
     project_id UUID REFERENCES projects(id),
     messages   JSONB     DEFAULT '[]',
     created_at TIMESTAMP DEFAULT now()
+);
+
+-- ============================================================
+-- chat_messages  (FK 미선언 — session_id는 느슨 참조)
+-- ============================================================
+CREATE TABLE chat_messages (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    session_id  UUID        NOT NULL,
+    role        chat_role   NOT NULL,                -- user | assistant (ENUM)
+    content     TEXT        NOT NULL,
+    metadata    JSONB,
+    tokens_used INTEGER,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 -- ============================================================
@@ -522,46 +780,29 @@ CREATE TABLE inquiries (
     message    TEXT,
     created_at TIMESTAMP DEFAULT now()
 );
+
+-- ============================================================
+-- alembic_version  (마이그레이션 버전 추적)
+-- ============================================================
+CREATE TABLE alembic_version (
+    version_num VARCHAR(32) PRIMARY KEY
+);
 ```
 
 ---
 
-## ORM 모델 vs 실제 DB 불일치 목록
+## ORM 모델(`core/models.py`) vs 실제 DB
 
-| 테이블 | ORM 모델 컬럼 | 실제 DB 컬럼 | 비고 |
-|---|---|---|---|
-| `ads` | `ad_type` | `media_type` | 컬럼명 불일치 |
-| `ads` | `s3_key` | `asset_url` | 컬럼명 불일치 |
-| `ads` | `analysis` (JSONB) | 없음 | analysis는 ad_analyses 테이블로 분리됨 |
-| `ads` | — | `copy_text, industry_category, product_category, ad_objective, target_filter, status, created_by, updated_at` | ORM에 없는 실제 컬럼 |
-| `organizations` | `plan_type` | `plan` | 컬럼명 불일치 |
-| `projects` | `organization_id, name, created_at` only | `+ description, status, created_by, updated_at` | ORM 미반영 |
-| `simulations` | ORM 모델 없음 | 실제 존재 | Simulation ORM 모델 작성 필요 |
+> `core/models.py`는 전체 테이블의 일부만 선언한다. 시뮬레이션 핵심 테이블(`simulations`·`personas`·`panels`·`ad_analyses`·`persona_responses`·`simulation_aggregates`·`diagnoses`·`recommendations`·`reports` 등)은 도메인 모델/Alembic로만 관리되고 `core/models.py`엔 없다.
 
----
-
-## ALTER TABLE — 코드 동작에 필요한 수정
-
-현재 시뮬레이션 파이프라인이 `simulations` 테이블에 INSERT할 때 `panel_id`, `model_version` NOT NULL 제약으로 실패함.
-
-```sql
--- 1. panel_id: 패널 시스템 미구현 상태이므로 nullable로 변경
-ALTER TABLE simulations
-    ALTER COLUMN panel_id DROP NOT NULL;
-
--- 2. model_version: 기본값 추가
-ALTER TABLE simulations
-    ALTER COLUMN model_version SET DEFAULT 'gpt-4o-mini';
-
--- 3. ads 테이블: 시뮬레이션 파이프라인이 임시 ads 행을 INSERT할 때 필요한 NOT NULL 컬럼들 nullable로 변경
-ALTER TABLE ads
-    ALTER COLUMN industry_category DROP NOT NULL,
-    ALTER COLUMN product_category  DROP NOT NULL,
-    ALTER COLUMN ad_objective      DROP NOT NULL,
-    ALTER COLUMN created_by        DROP NOT NULL;
-```
-
-> 위 4개 ALTER를 실행하면 시뮬레이션 실행 → DB 저장 흐름이 정상 동작함.
+| 구분 | 내용 |
+|---|---|
+| **ORM에 선언, DB에 없음** | `action_proposals`·`approvals`·`audit_events`·`execution_runs`·`idempotency_keys` (management 모델 — 현재 public 스키마 덤프에 부재, **미생성 추정**) |
+| **DB에 있음, ORM(core) 없음** | `simulations`·`ad_analyses`·`panels`·`personas`·`persona_templates`·`persona_responses`·`simulation_aggregates`·`simulation_comparisons`·`diagnoses`·`recommendations`·`reports`·`benchmarks`·`rag_chunks`·`rubric_scores`·`subscription_plans`·`organization_subscriptions`·`calibration_data`·`brand_profiles`·`alembic_version` |
+| `ads` | ORM `ad_type`/`s3_key`/`analysis` → 실제 `media_type`/`asset_url` + `copy_text`·`industry_category`·`product_category`·`ad_objective`·`target_filter`·`status`·`created_by`·`updated_at` (불일치 지속) |
+| `projects` | ORM은 `organization_id`·`name`·`created_at`만 → 실제 `+ description`·`status`·`created_by`·`updated_at`·`deleted_at` |
+| `inquiries` | ORM `email` 컬럼 → 실제 `email` (일치) |
+| `users` | ORM·DB 모두 `login_id` 기준으로 정렬됨 (v3.1 `email` 표기 해소) |
 
 ---
 
@@ -569,25 +810,33 @@ ALTER TABLE ads
 
 ```
 organizations
-└── organization_members → users
-└── organization_subscriptions → subscription_plans
+├── teams ──────────────── users(team_id)
+├── organization_members → users
+├── organization_subscriptions → subscription_plans
 └── projects
-    └── ads
-        └── ad_analyses
-            └── rubric_scores
-        └── ad_embeddings
-        └── simulations (organization_id도 직접 참조)
-            └── persona_responses → personas → panels
-            └── simulation_aggregates
-            └── persona_debates → persona_debate_participants · persona_debate_utterances
-            └── diagnoses → recommendations
-            └── reports
-        └── simulation_results (ad_id 직접 참조)
-        └── simulation_comparisons
-    └── ad_generations
-        └── ad_generation_candidates
-        └── ad_publish_logs
+    ├── project_members (FK 미선언, 느슨 참조)
+    ├── ads
+    │   ├── ad_analyses
+    │   │   └── rubric_scores
+    │   ├── ad_embeddings
+    │   ├── simulation_results (ad_id 직접 참조)
+    │   └── simulations (organization_id도 직접 참조)
+    │       ├── persona_responses → personas → panels
+    │       ├── simulation_aggregates
+    │       ├── persona_debates → persona_debate_participants · persona_debate_utterances
+    │       ├── diagnoses → recommendations
+    │       ├── reports
+    │       └── simulation_comparisons
+    ├── ad_generations
+    │   ├── ad_generation_candidates
+    │   ├── ad_publish_logs
+    │   └── ad_campaign_logs
     └── chat_sessions
+
+categories ── category_kinds ── kinds        (업종↔NICE류 매핑, 독립)
+독립 테이블: users·refresh_tokens·user_settings·audit_logs·generated_ads·
+            brand_profiles·persona_templates·calibration_data·benchmarks·
+            rag_chunks·chat_messages·inquiries·alembic_version
 ```
 
 ---

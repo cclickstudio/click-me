@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import uuid
 
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from domain.simulation.contracts.schemas import (
@@ -53,7 +54,43 @@ class SimulationPersistence:
     ) -> uuid.UUID:
         """반환: 저장된 simulation_id. 호출자는 결과 dict에 실어 분석팀 핸드오프에 사용."""
         target_mode = getattr(request.target_mode, "value", str(request.target_mode))
+        ad_uuid = _as_uuid(request.ad_id)
         async with self._session_factory() as session:
+            # project의 organization_id 승계 — simulations.organization_id FK 충족.
+            project_uuid = _as_uuid(request.project_id)
+            org_row = (
+                await session.execute(
+                    text("SELECT organization_id FROM projects WHERE id = :pid"),
+                    {"pid": project_uuid},
+                )
+            ).first()
+            org_id = (
+                org_row[0] if org_row else _as_uuid(request.organization_id, fallback=_ORG_FALLBACK)
+            )
+            # ads 행 보장 — ad_analyses의 FK(ads.id) 충족. 없으면 현재 프로젝트에 광고 행 생성.
+            # 실 DB 스키마(media_type·status…)에 맞춰 raw SQL로 INSERT(core.models.Ad와 불일치).
+            ad_exists = (
+                await session.execute(text("SELECT 1 FROM ads WHERE id = :id"), {"id": ad_uuid})
+            ).first()
+            if ad_exists is None:
+                await session.execute(
+                    text(
+                        "INSERT INTO ads (id, project_id, title, media_type, "
+                        "asset_url, copy_text, product_category, ad_objective) "
+                        "VALUES (:id, :pid, :title, :mtype, :asset, :copy, :pcat, :obj)"
+                    ),
+                    {
+                        "id": ad_uuid,
+                        "pid": project_uuid,
+                        "title": (request.ad_title or "(제목 없음)")[:255],
+                        "mtype": "image" if request.ad_image_url else "text",
+                        "asset": request.ad_image_url,
+                        "copy": request.ad_content,
+                        "pcat": request.product_category,
+                        "obj": request.ad_objective,
+                    },
+                )
+                await session.flush()  # ads → ad_analyses 참조
             panel_id, id_map = await PanelRepository(session).create(
                 version=panel_version,
                 seed=panel_seed,
@@ -63,8 +100,8 @@ class SimulationPersistence:
                 personas=personas,
             )
             sim_id = await SimulationRepository(session).save_run(
-                ad_id=_as_uuid(request.ad_id),
-                organization_id=_as_uuid(request.organization_id, fallback=_ORG_FALLBACK),
+                ad_id=ad_uuid,
+                organization_id=org_id,
                 panel_id=panel_id,
                 target_filter=request.target_filter,
                 target_mode=target_mode,

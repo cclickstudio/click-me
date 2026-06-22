@@ -23,6 +23,26 @@ async def _get_user_org_id(user: User, db: AsyncSession) -> str:
     return str(member.organization_id)
 
 
+# ── 팀 단위 가시성 ────────────────────────────────
+# 프로젝트 < 팀 < 조직 < ADMIN. ADMIN=전체, COMPANY=조직 전체,
+# USER=자기 팀 프로젝트(+ 팀 미배정이면 본인이 만든 프로젝트만).
+
+
+def _project_access_ok(org_id, team_id, created_by, user: User, user_org_id: str) -> bool:
+    """프로젝트 메타(org/team/생성자)로 현재 사용자의 접근 가능 여부를 판정."""
+    role = user.role.upper()
+    if role == "ADMIN":
+        return True
+    if str(org_id) != user_org_id:
+        return False
+    if role == "COMPANY":
+        return True
+    # USER — 팀 단위. 팀이 지정된 프로젝트는 같은 팀만, 미지정이면 생성자 본인만.
+    if team_id is not None:
+        return bool(user.team_id) and str(team_id) == str(user.team_id)
+    return str(created_by) == str(user.id)
+
+
 # ── 하드 삭제 헬퍼 ────────────────────────────────
 # 대부분의 FK가 NO ACTION이라 DB가 자동 cascade하지 않는다.
 # 자식 테이블을 부모보다 먼저, FK 순서대로 직접 삭제해야 한다.
@@ -105,7 +125,20 @@ class ProjectRow(BaseModel):
     status: str
     created_by_name: str | None
     organization_name: str | None = None
+    team_id: str | None = None
+    team_name: str | None = None
     created_at: datetime
+
+
+_PROJECT_SELECT = """
+    SELECT p.id, p.name, p.description, p.status, p.created_at, p.team_id,
+           p.organization_id, p.created_by,
+           u.name AS created_by_name, o.name AS organization_name, t.name AS team_name
+    FROM projects p
+    LEFT JOIN users u ON u.id = p.created_by
+    LEFT JOIN organizations o ON o.id = p.organization_id
+    LEFT JOIN teams t ON t.id = p.team_id
+"""
 
 
 @router.get("", response_model=list[ProjectRow])
@@ -113,31 +146,32 @@ async def list_projects(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    if current_user.role.upper() == "ADMIN":
+    role = current_user.role.upper()
+    base_where = "p.status != 'DELETED' AND p.deleted_at IS NULL"
+    if role == "ADMIN":
         result = await db.execute(
-            text("""
-                SELECT p.id, p.name, p.description, p.status, p.created_at,
-                       u.name AS created_by_name, o.name AS organization_name
-                FROM projects p
-                LEFT JOIN users u ON u.id = p.created_by
-                LEFT JOIN organizations o ON o.id = p.organization_id
-                WHERE p.status != 'DELETED' AND p.deleted_at IS NULL
-                ORDER BY p.created_at DESC
-            """),
+            text(f"{_PROJECT_SELECT} WHERE {base_where} ORDER BY p.created_at DESC"),
         )
-    else:
+    elif role == "COMPANY":
         org_id = await _get_user_org_id(current_user, db)
         result = await db.execute(
-            text("""
-                SELECT p.id, p.name, p.description, p.status, p.created_at,
-                       u.name AS created_by_name, o.name AS organization_name
-                FROM projects p
-                LEFT JOIN users u ON u.id = p.created_by
-                LEFT JOIN organizations o ON o.id = p.organization_id
-                WHERE p.organization_id = :org_id AND p.status != 'DELETED' AND p.deleted_at IS NULL
-                ORDER BY p.created_at DESC
-            """),
+            text(
+                f"{_PROJECT_SELECT} WHERE p.organization_id = :org_id AND {base_where} "
+                "ORDER BY p.created_at DESC"
+            ),
             {"org_id": org_id},
+        )
+    else:
+        # USER — 자기 팀 프로젝트 + 팀 미배정이면 본인이 만든 프로젝트만
+        org_id = await _get_user_org_id(current_user, db)
+        team_id = str(current_user.team_id) if current_user.team_id else None
+        result = await db.execute(
+            text(
+                f"{_PROJECT_SELECT} WHERE p.organization_id = :org_id AND {base_where} "
+                "AND (p.team_id = :team_id OR (p.team_id IS NULL AND p.created_by = :uid)) "
+                "ORDER BY p.created_at DESC"
+            ),
+            {"org_id": org_id, "team_id": team_id, "uid": str(current_user.id)},
         )
     return [
         ProjectRow(
@@ -147,6 +181,8 @@ async def list_projects(
             status=r.status,
             created_by_name=r.created_by_name,
             organization_name=r.organization_name,
+            team_id=str(r.team_id) if r.team_id else None,
+            team_name=r.team_name,
             created_at=r.created_at,
         )
         for r in result
@@ -160,14 +196,18 @@ async def create_project(
     current_user: User = Depends(get_current_user),
 ):
     org_id = await _get_user_org_id(current_user, db)
+    team_id = str(current_user.team_id) if current_user.team_id else None
     result = await db.execute(
         text("""
-            INSERT INTO projects (id, organization_id, name, description, status, created_by)
-            VALUES (gen_random_uuid(), :org_id, :name, :description, 'ACTIVE', :created_by)
-            RETURNING id, name, description, status, created_at
+            INSERT INTO projects
+                (id, organization_id, team_id, name, description, status, created_by)
+            VALUES
+                (gen_random_uuid(), :org_id, :team_id, :name, :description, 'ACTIVE', :created_by)
+            RETURNING id, name, description, status, created_at, team_id
         """),
         {
             "org_id": org_id,
+            "team_id": team_id,
             "name": body.name,
             "description": body.description,
             "created_by": str(current_user.id),
@@ -175,12 +215,19 @@ async def create_project(
     )
     await db.commit()
     r = result.fetchone()
+    team_name = None
+    if r.team_id:
+        team_name = await db.scalar(
+            text("SELECT name FROM teams WHERE id = :tid"), {"tid": str(r.team_id)}
+        )
     return ProjectRow(
         id=str(r.id),
         name=r.name,
         description=r.description,
         status=r.status,
         created_by_name=current_user.name,
+        team_id=str(r.team_id) if r.team_id else None,
+        team_name=team_name,
         created_at=r.created_at,
     )
 
@@ -192,39 +239,26 @@ async def list_project_simulations(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    if current_user.role.upper() == "ADMIN":
-        result = await db.execute(
-            text("""
-                SELECT s.id, s.status, s.sample_size, s.created_at, u.name AS created_by_name
-                FROM simulations s
-                LEFT JOIN users u ON u.id = s.created_by
-                JOIN ads a ON a.id = s.ad_id
-                WHERE a.project_id = :project_id AND s.deleted_at IS NULL
-                ORDER BY s.created_at DESC
-                LIMIT :limit
-            """),
-            {"project_id": project_id, "limit": limit},
-        )
-    else:
-        org_id = await _get_user_org_id(current_user, db)
-        result = await db.execute(
-            text("""
-                SELECT s.id, s.status, s.sample_size, s.created_at, u.name AS created_by_name
-                FROM simulations s
-                LEFT JOIN users u ON u.id = s.created_by
-                JOIN ads a ON a.id = s.ad_id
-                JOIN projects p ON p.id = a.project_id
-                WHERE p.id = :project_id AND p.organization_id = :org_id AND s.deleted_at IS NULL
-                ORDER BY s.created_at DESC
-                LIMIT :limit
-            """),
-            {"project_id": project_id, "org_id": org_id, "limit": limit},
-        )
+    await _assert_project_access(db, project_id, current_user)
+    result = await db.execute(
+        text("""
+            SELECT s.id, s.status, s.sample_size, s.created_at,
+                   u.name AS created_by_name, a.title AS ad_title
+            FROM simulations s
+            LEFT JOIN users u ON u.id = s.created_by
+            JOIN ads a ON a.id = s.ad_id
+            WHERE a.project_id = :project_id AND s.deleted_at IS NULL
+            ORDER BY s.created_at DESC
+            LIMIT :limit
+        """),
+        {"project_id": project_id, "limit": limit},
+    )
     return [
         {
             "id": str(r.id),
             "status": r.status,
             "sample_size": r.sample_size,
+            "ad_title": r.ad_title,
             "created_by_name": r.created_by_name,
             "created_at": r.created_at.isoformat(),
         }
@@ -239,32 +273,18 @@ async def list_project_generations(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    if current_user.role.upper() == "ADMIN":
-        result = await db.execute(
-            text("""
-                SELECT g.id, g.status, g.input, g.created_at, u.name AS created_by_name
-                FROM ad_generations g
-                LEFT JOIN users u ON u.id = g.created_by
-                WHERE g.project_id = :project_id AND g.deleted_at IS NULL
-                ORDER BY g.created_at DESC
-                LIMIT :limit
-            """),
-            {"project_id": project_id, "limit": limit},
-        )
-    else:
-        org_id = await _get_user_org_id(current_user, db)
-        result = await db.execute(
-            text("""
-                SELECT g.id, g.status, g.input, g.created_at, u.name AS created_by_name
-                FROM ad_generations g
-                LEFT JOIN users u ON u.id = g.created_by
-                JOIN projects p ON p.id = g.project_id
-                WHERE p.id = :project_id AND p.organization_id = :org_id AND g.deleted_at IS NULL
-                ORDER BY g.created_at DESC
-                LIMIT :limit
-            """),
-            {"project_id": project_id, "org_id": org_id, "limit": limit},
-        )
+    await _assert_project_access(db, project_id, current_user)
+    result = await db.execute(
+        text("""
+            SELECT g.id, g.status, g.input, g.created_at, u.name AS created_by_name
+            FROM ad_generations g
+            LEFT JOIN users u ON u.id = g.created_by
+            WHERE g.project_id = :project_id AND g.deleted_at IS NULL
+            ORDER BY g.created_at DESC
+            LIMIT :limit
+        """),
+        {"project_id": project_id, "limit": limit},
+    )
     return [
         {
             "id": str(r.id),
@@ -283,26 +303,33 @@ async def get_simulation_detail(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    org_id = await _get_user_org_id(current_user, db)
+    # ADMIN은 조직 무관 조회(목록 핸들러와 동일 정책), 그 외는 조직/팀 단위로 제한
     result = await db.execute(
         text("""
             SELECT s.id, s.status, s.sample_size, s.created_at, s.deleted_at,
                    u.name AS created_by_name,
                    a.id AS ad_id, a.title AS ad_title,
                    p.id AS project_id, p.name AS project_name,
+                   p.organization_id, p.team_id, p.created_by AS project_created_by,
                    sr.distribution, sr.personas
             FROM simulations s
             LEFT JOIN users u ON u.id = s.created_by
             JOIN ads a ON a.id = s.ad_id
             JOIN projects p ON p.id = a.project_id
             LEFT JOIN simulation_results sr ON sr.ad_id = s.ad_id
-            WHERE s.id = :sim_id AND p.organization_id = :org_id
+            WHERE s.id = :sim_id
         """),
-        {"sim_id": simulation_id, "org_id": org_id},
+        {"sim_id": simulation_id},
     )
     r = result.fetchone()
     if not r:
         raise HTTPException(status_code=404, detail="시뮬레이션을 찾을 수 없습니다.")
+    if current_user.role.upper() != "ADMIN":
+        org_id = await _get_user_org_id(current_user, db)
+        if not _project_access_ok(
+            r.organization_id, r.team_id, r.project_created_by, current_user, org_id
+        ):
+            raise HTTPException(status_code=404, detail="시뮬레이션을 찾을 수 없습니다.")
     return {
         "id": str(r.id),
         "status": r.status,
@@ -326,18 +353,25 @@ async def delete_simulation(
     current_user: User = Depends(get_current_user),
 ):
     """시뮬레이션 1건 soft delete(휴지통 이동). 30일 후 _purge_expired_trash가 영구 삭제."""
-    if current_user.role.upper() == "ADMIN":
-        exists = await db.scalar(
-            text("SELECT 1 FROM simulations WHERE id = :id"), {"id": simulation_id}
-        )
-    else:
-        org_id = await _get_user_org_id(current_user, db)
-        exists = await db.scalar(
-            text("SELECT 1 FROM simulations WHERE id = :id AND organization_id = :org"),
-            {"id": simulation_id, "org": org_id},
-        )
-    if not exists:
+    meta = await db.execute(
+        text("""
+            SELECT p.organization_id, p.team_id, p.created_by AS project_created_by
+            FROM simulations s
+            JOIN ads a ON a.id = s.ad_id
+            JOIN projects p ON p.id = a.project_id
+            WHERE s.id = :id
+        """),
+        {"id": simulation_id},
+    )
+    m = meta.fetchone()
+    if not m:
         raise HTTPException(status_code=404, detail="시뮬레이션을 찾을 수 없습니다.")
+    if current_user.role.upper() != "ADMIN":
+        org_id = await _get_user_org_id(current_user, db)
+        if not _project_access_ok(
+            m.organization_id, m.team_id, m.project_created_by, current_user, org_id
+        ):
+            raise HTTPException(status_code=404, detail="시뮬레이션을 찾을 수 없습니다.")
 
     await db.execute(
         text("UPDATE simulations SET deleted_at = now() WHERE id = :id"), {"id": simulation_id}
@@ -377,22 +411,28 @@ async def get_generation_detail(
 ):
     from domain.generator.service import generator_service
 
-    org_id = await _get_user_org_id(current_user, db)
-    # 조직 소속 확인
+    # ADMIN은 조직 무관 조회(목록 핸들러와 동일 정책), 그 외는 조직/팀 단위로 제한
     meta = await db.execute(
         text("""
             SELECT g.id, g.deleted_at, u.name AS created_by_name,
-                   p.id AS project_id, p.name AS project_name
+                   p.id AS project_id, p.name AS project_name,
+                   p.organization_id, p.team_id, p.created_by AS project_created_by
             FROM ad_generations g
             LEFT JOIN users u ON u.id = g.created_by
             JOIN projects p ON p.id = g.project_id
-            WHERE g.id = :gen_id AND p.organization_id = :org_id
+            WHERE g.id = :gen_id
         """),
-        {"gen_id": generation_id, "org_id": org_id},
+        {"gen_id": generation_id},
     )
     r = meta.fetchone()
     if not r:
         raise HTTPException(status_code=404, detail="제너레이터 내역을 찾을 수 없습니다.")
+    if current_user.role.upper() != "ADMIN":
+        org_id = await _get_user_org_id(current_user, db)
+        if not _project_access_ok(
+            r.organization_id, r.team_id, r.project_created_by, current_user, org_id
+        ):
+            raise HTTPException(status_code=404, detail="제너레이터 내역을 찾을 수 없습니다.")
 
     # candidates + presigned image_url 포함 전체 상세 조회
     detail = await generator_service.get_detail(generation_id)
@@ -428,22 +468,24 @@ async def delete_generation(
     current_user: User = Depends(get_current_user),
 ):
     """제너레이터 내역 1건 soft delete(휴지통 이동). 30일 후 영구 삭제."""
-    if current_user.role.upper() == "ADMIN":
-        ok = await db.scalar(
-            text("SELECT 1 FROM ad_generations WHERE id = :id"), {"id": generation_id}
-        )
-    else:
-        org_id = await _get_user_org_id(current_user, db)
-        ok = await db.scalar(
-            text("""
-                SELECT 1 FROM ad_generations g
-                JOIN projects p ON p.id = g.project_id
-                WHERE g.id = :id AND p.organization_id = :org
-            """),
-            {"id": generation_id, "org": org_id},
-        )
-    if not ok:
+    meta = await db.execute(
+        text("""
+            SELECT p.organization_id, p.team_id, p.created_by AS project_created_by
+            FROM ad_generations g
+            JOIN projects p ON p.id = g.project_id
+            WHERE g.id = :id
+        """),
+        {"id": generation_id},
+    )
+    m = meta.fetchone()
+    if not m:
         raise HTTPException(status_code=404, detail="제너레이터 내역을 찾을 수 없습니다.")
+    if current_user.role.upper() != "ADMIN":
+        org_id = await _get_user_org_id(current_user, db)
+        if not _project_access_ok(
+            m.organization_id, m.team_id, m.project_created_by, current_user, org_id
+        ):
+            raise HTTPException(status_code=404, detail="제너레이터 내역을 찾을 수 없습니다.")
 
     await db.execute(
         text("UPDATE ad_generations SET deleted_at = now() WHERE id = :id"), {"id": generation_id}
@@ -619,16 +661,17 @@ class TrashAction(BaseModel):
 
 
 async def _assert_project_access(db: AsyncSession, project_id: str, current_user: User) -> None:
-    """프로젝트가 존재하고, (비ADMIN이면) 사용자 조직 소속인지 확인."""
+    """프로젝트가 존재하고, 현재 사용자가 접근 가능한지(조직/팀 단위) 확인."""
     row = await db.execute(
-        text("SELECT organization_id FROM projects WHERE id = :pid"), {"pid": project_id}
+        text("SELECT organization_id, team_id, created_by FROM projects WHERE id = :pid"),
+        {"pid": project_id},
     )
     p = row.fetchone()
     if not p:
         raise HTTPException(status_code=404, detail="프로젝트를 찾을 수 없습니다.")
     if current_user.role.upper() != "ADMIN":
         org_id = await _get_user_org_id(current_user, db)
-        if str(p.organization_id) != org_id:
+        if not _project_access_ok(p.organization_id, p.team_id, p.created_by, current_user, org_id):
             raise HTTPException(status_code=403, detail="접근 권한이 없습니다.")
 
 
@@ -722,34 +765,17 @@ async def get_project(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    if current_user.role.upper() == "ADMIN":
-        result = await db.execute(
-            text("""
-                SELECT p.id, p.name, p.description, p.status, p.created_at,
-                       u.name AS created_by_name, o.name AS organization_name
-                FROM projects p
-                LEFT JOIN users u ON u.id = p.created_by
-                LEFT JOIN organizations o ON o.id = p.organization_id
-                WHERE p.id = :id AND p.status != 'DELETED'
-            """),
-            {"id": project_id},
-        )
-    else:
-        org_id = await _get_user_org_id(current_user, db)
-        result = await db.execute(
-            text("""
-                SELECT p.id, p.name, p.description, p.status, p.created_at,
-                       u.name AS created_by_name, o.name AS organization_name
-                FROM projects p
-                LEFT JOIN users u ON u.id = p.created_by
-                LEFT JOIN organizations o ON o.id = p.organization_id
-                WHERE p.id = :id AND p.organization_id = :org_id AND p.status != 'DELETED'
-            """),
-            {"id": project_id, "org_id": org_id},
-        )
+    result = await db.execute(
+        text(f"{_PROJECT_SELECT} WHERE p.id = :id AND p.status != 'DELETED'"),
+        {"id": project_id},
+    )
     r = result.fetchone()
     if not r:
         raise HTTPException(status_code=404, detail="프로젝트를 찾을 수 없습니다.")
+    if current_user.role.upper() != "ADMIN":
+        org_id = await _get_user_org_id(current_user, db)
+        if not _project_access_ok(r.organization_id, r.team_id, r.created_by, current_user, org_id):
+            raise HTTPException(status_code=404, detail="프로젝트를 찾을 수 없습니다.")
     return ProjectRow(
         id=str(r.id),
         name=r.name,
@@ -757,6 +783,8 @@ async def get_project(
         status=r.status,
         created_by_name=r.created_by_name,
         organization_name=r.organization_name,
+        team_id=str(r.team_id) if r.team_id else None,
+        team_name=r.team_name,
         created_at=r.created_at,
     )
 

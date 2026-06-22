@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from domain.management.contracts.platform import AdPlatformReader, AdPlatformWriter
+    from domain.management.contracts.schemas import DiagnosisResult
     from domain.management.execution.audit_log import AuditSink
     from domain.management.execution.executor import IdempotencyStore
 
@@ -33,6 +34,33 @@ def build_writer(settings) -> AdPlatformWriter:
     return MetaAdsWriter(settings)
 
 
+def build_diagnosis_agent(settings):
+    """진단 LLM ReAct 러너 — ``async (prior, reader) -> DiagnosisResult``.
+
+    use_mock(데모) 또는 키 없음이면 결정론 폴백(prior 그대로) — 게이트 #9(키 없이 재현) 유지.
+    실모드 + 키면 INCONCLUSIVE 진단을 LLM이 메타 신호 tool로 재판정한다(P6 고정값 주입).
+    """
+    api_key = getattr(settings, "openai_api_key", None)
+    if getattr(settings, "use_mock", True) or not api_key:
+
+        async def _passthrough(prior: DiagnosisResult, _reader) -> DiagnosisResult:
+            return prior
+
+        return _passthrough
+
+    model = getattr(settings, "management_diagnosis_model", "gpt-4o-mini")
+    temperature = getattr(settings, "management_diagnosis_temperature", 0.0)
+
+    async def _run(prior: DiagnosisResult, reader) -> DiagnosisResult:
+        from domain.management.agents.diagnosis_llm import run_llm_diagnosis  # noqa: PLC0415
+
+        return await run_llm_diagnosis(
+            prior, reader, model=model, temperature=temperature, api_key=api_key
+        )
+
+    return _run
+
+
 def build_organic_reader(settings):
     """🅰 오가닉 인사이트 reader (OrganicInsightsReader) — use_mock 분기."""
     if getattr(settings, "use_mock", True):
@@ -51,6 +79,19 @@ def build_comparison_service(settings):
     )
 
     return ComparisonService(build_organic_reader(settings), build_reader(settings))
+
+
+def build_prediction_reader(settings):
+    """집행 전(시뮬 예측) reader — 시뮬 디커플링 슬롯의 교체 지점.
+
+    지금은 MockPredictionReader. 시뮬 KPI 안정화 후 이 줄만 SimPredictionReader로 바꾸면
+    compare 화면·API 변경 없이 실 예측이 들어온다.
+    """
+    from domain.management.comparison.prediction_adapters import (  # noqa: PLC0415
+        MockPredictionReader,
+    )
+
+    return MockPredictionReader()
 
 
 def build_idempotency_store(settings) -> IdempotencyStore:
@@ -75,3 +116,25 @@ def build_audit_sink(settings) -> AuditSink:
     from domain.management.execution.db_stores import DbAuditSink  # noqa: PLC0415
 
     return DbAuditSink()
+
+
+def build_checkpointer(settings):
+    """어시스턴트 ReAct 그래프의 checkpointer — interrupt(HITL) 재개에 필요.
+
+    1차는 인메모리(MemorySaver). Neon 영속(AsyncPostgresSaver)은 후속 — 이 분기만 바꾸면
+    interrupt로 멈춘 그래프가 프로세스 재시작 후에도 재개된다.
+    """
+    from langgraph.checkpoint.memory import MemorySaver  # noqa: PLC0415
+
+    return MemorySaver()
+
+
+def build_escalation_store(settings):
+    """에스컬레이션 사다리 저장소. 현재는 인메모리(데모·use_mock).
+
+    DB 영속(remediation_escalations 테이블·마이그레이션 008)은 준비돼 있으며, DbEscalationStore
+    구현 시 use_mock=False 분기를 여기 추가한다(후속). 그 전까지는 인메모리로 데모가 성립한다.
+    """
+    from domain.management.escalation import InMemoryEscalationStore  # noqa: PLC0415
+
+    return InMemoryEscalationStore()

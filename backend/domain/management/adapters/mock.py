@@ -10,7 +10,7 @@ import random
 from datetime import UTC, datetime
 
 from domain.management.comparison.schemas import PostInsights, PostType
-from domain.management.contracts.enums import CampaignState
+from domain.management.contracts.enums import CampaignState, RelevanceRank
 from domain.management.contracts.fault_injection import FaultConfig, FaultMode
 from domain.management.contracts.policy import (
     AUDIENCE_SIZE,
@@ -20,9 +20,16 @@ from domain.management.contracts.policy import (
     HOURLY_PACING,
 )
 from domain.management.contracts.schemas import (
+    AccountFunding,
     CampaignConfig,
+    CampaignInfo,
+    CreativePreview,
     DeliveryEstimate,
+    DeliveryStatusDetail,
+    DemographicMetrics,
     MetricsSnapshot,
+    PlatformMetrics,
+    RelevanceDiagnostics,
 )
 
 _FAULT_ONSET_HOUR = 14  # 고장 발현 시각 (일중 곡선상 오후 — 정상/이상 대비가 뚜렷)
@@ -35,17 +42,166 @@ class MockAdPlatform:
     def __init__(self, seed: int = 42) -> None:
         self._rng = random.Random(seed)
 
-    async def get_metrics(self, campaign_id: str, since: datetime) -> MetricsSnapshot:
+    async def get_metrics(
+        self, campaign_id: str, since: datetime, date_preset: str = "maximum"
+    ) -> MetricsSnapshot:
         """단일 누적 스냅샷 — 하루 생성 후 마지막 시간행(누적 reach·impressions)을 반환.
 
         AdPlatformReader Port 충족(비교 서비스가 await로 호출). fault 없는 정상 게재 기준.
+        date_preset은 실 reader 시그니처 일치용(데모는 무시).
         """
         snapshots = await self.fetch_hourly_metrics(campaign_id, since)
         return snapshots[-1]
 
+    async def get_account_spend(self, date_preset: str = "this_month") -> int:
+        """Port 충족 — 데모는 0(예산 페이싱은 live에서만 의미)."""
+        return 0
+
+    async def get_account_daily_spend(self, date_preset: str = "this_month") -> list[dict]:
+        """Port 충족 — 데모는 빈 곡선."""
+        return []
+
     async def get_state(self, campaign_id: str) -> CampaignState:
         """Port 충족 — mock은 항상 ACTIVE."""
         return CampaignState.ACTIVE
+
+    async def list_campaigns(self) -> list[CampaignInfo]:
+        """Port 충족 — 데모 캠페인 목록(고정). 라우터 데모 경로의 풍부한 고장 시나리오는
+        _CAMPAIGNS_DEMO(라우터 소유)에 있고, 여기는 Port 일반 소비자용 최소 목록.
+        """
+        return [
+            CampaignInfo(
+                campaign_id="camp_1",
+                name="여름 신상 원피스",
+                state=CampaignState.ACTIVE,
+                daily_budget_krw=200_000,
+            ),
+            CampaignInfo(
+                campaign_id="camp_2",
+                name="브랜드 데일리 룩",
+                state=CampaignState.ACTIVE,
+                daily_budget_krw=120_000,
+            ),
+        ]
+
+    async def get_platform_breakdown(
+        self, campaign_id: str, since: datetime
+    ) -> list[PlatformMetrics]:
+        """Port 충족 — 누적 지표를 IG/FB로 분해(데모 합성, 결정론 62/38)."""
+        m = await self.get_metrics(campaign_id, since)
+        split = (("instagram", 0.62), ("facebook", 0.38))
+        return [
+            PlatformMetrics(
+                platform=p,
+                impressions=int(m.impressions * f),
+                clicks=int(m.clicks * f),
+                spend_krw=int(m.spend_krw * f),
+                reach=int(m.cum_reach * f),
+            )
+            for p, f in split
+        ]
+
+    async def get_demographic_breakdown(
+        self, campaign_id: str, since: datetime
+    ) -> list[DemographicMetrics]:
+        """Port 충족 — 누적 지표를 연령×성별로 분해(데모 합성, 결정론 가중)."""
+        m = await self.get_metrics(campaign_id, since)
+        # 연령 버킷 가중 × 성별 분할(여 54 / 남 46) — 합 1.0
+        age_w = (
+            ("18-24", 0.22),
+            ("25-34", 0.34),
+            ("35-44", 0.24),
+            ("45-54", 0.13),
+            ("55-64", 0.07),
+        )
+        gender_w = (("female", 0.54), ("male", 0.46))
+        return [
+            DemographicMetrics(
+                age=age,
+                gender=gender,
+                impressions=int(m.impressions * aw * gw),
+                clicks=int(m.clicks * aw * gw),
+                spend_krw=int(m.spend_krw * aw * gw),
+                reach=int(m.cum_reach * aw * gw),
+            )
+            for age, aw in age_w
+            for gender, gw in gender_w
+        ]
+
+    async def get_creatives(self, campaign_id: str) -> list[CreativePreview]:
+        """Port 충족 — 데모 대표 시안 2개(이미지 없음 → 프론트 placeholder 카드)."""
+        return [
+            CreativePreview(
+                ad_id=f"{campaign_id}_ad1",
+                ad_name="메인 비주얼 A",
+                headline="여름 신상 최대 50% 할인",
+                primary_text="지금 만나보는 시즌 오프 특가, 놓치지 마세요.",
+            ),
+            CreativePreview(
+                ad_id=f"{campaign_id}_ad2",
+                ad_name="모델 컷 B",
+                headline="데일리룩 완성",
+                primary_text="가볍게 입기 좋은 데일리 아이템.",
+            ),
+        ]
+
+    async def get_account_funding(self) -> AccountFunding:
+        """Port 충족 — 데모는 잔액 충분(게재 차단 없음)."""
+        return AccountFunding(
+            account_status=1,
+            available_balance_krw=1_000_000,
+            spend_cap_krw=2_000_000,
+            amount_spent_krw=1_000_000,
+        )
+
+    async def get_relevance_diagnostics(self, campaign_id: str) -> RelevanceDiagnostics:
+        """Port 충족 — 데모 정상 캠페인은 평균 등급(오탐 방지). 합성 금지 원칙상 단정 안 함."""
+        return RelevanceDiagnostics(
+            campaign_id=campaign_id,
+            quality_ranking=RelevanceRank.AVERAGE,
+            engagement_rate_ranking=RelevanceRank.AVERAGE,
+            conversion_rate_ranking=RelevanceRank.AVERAGE,
+            as_of=datetime.now(UTC),
+        )
+
+    async def get_spend_cap(self, campaign_id: str) -> int | None:
+        """Port 충족 — 데모는 상한 미설정."""
+        return None
+
+    async def get_delivery_status_detail(self, campaign_id: str) -> DeliveryStatusDetail:
+        """Port 충족 — 데모는 정상 게재(ACTIVE, 이슈 없음)."""
+        return DeliveryStatusDetail(
+            campaign_id=campaign_id,
+            effective_status="ACTIVE",
+            issues_info=(),
+            learning_stage=None,
+            as_of=datetime.now(UTC),
+        )
+
+    async def fetch_daily_metrics(self, campaign_id: str) -> list[dict]:
+        """데모 일자별(3일) 합성(결정론) — 상세 차트·일자별 표용."""
+        base = sum(ord(ch) for ch in campaign_id) % 2000
+        out: list[dict] = []
+        for i in range(3):
+            impr = 900 + base + i * 120
+            clicks = 30 + (base % 40) + i * 5
+            spend = 4000 + base + i * 800
+            out.append(
+                {
+                    "label": f"{i + 1}일차",
+                    "impressions": impr,
+                    "clicks": clicks,
+                    "reach": int(impr * 0.95),
+                    "spend_krw": spend,
+                    "ctr": clicks / impr if impr else 0.0,
+                    "cpc_krw": spend // clicks if clicks else 0,
+                    "cpm_krw": int(spend / impr * 1000) if impr else 0,
+                    "conversions": None,  # 데모는 전환 추적 미설정
+                    "cvr": None,
+                    "roas": None,
+                }
+            )
+        return out
 
     async def get_estimate(self, config: CampaignConfig) -> DeliveryEstimate:
         """Port 충족 — audience 기반 간단 추정(결정론)."""

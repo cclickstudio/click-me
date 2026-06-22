@@ -51,7 +51,22 @@ export type ActionResult = {
   status: string;
   failure_reason: string | null;
   idempotency_key: string;
+  // 생성 결과 스냅샷 — campaign_meta_id(LIVE 생성 시 Meta 캠페인 id) 등.
+  platform_response_snapshot?: { campaign_meta_id?: string } & Record<string, unknown>;
 };
 export type AuditEvent = { event_id: string; category: string; occurred_at: string; payload: Record<string, unknown> };
 
 export type ViewMode = "user" | "arch";
+
+// action_type → 한국어 라벨 (에스컬레이션 사다리 신규 액션 포함). 미등록은 원문 노출.
+export const ACTION_LABELS: Record<string, string> = {
+  PAUSE_CAMPAIGN: "캠페인 끄기",
+  DECREASE_BUDGET: "예산 감액",
+  INCREASE_BUDGET: "예산 증액",
+  REPLACE_CREATIVE: "소재 교체",
+  CREATE_CAMPAIGN: "캠페인 재생성",
+  EXPAND_AUDIENCE: "타겟 범위 확장",
+  CHANGE_BID_STRATEGY: "입찰 전략 변경",
+};
+
+export const actionLabel = (actionType: string): string => ACTION_LABELS[actionType] ?? actionType;

@@ -5,9 +5,11 @@ from datetime import datetime
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import (
+    JSON,
     BigInteger,
     Boolean,
     DateTime,
+    Float,
     ForeignKey,
     Integer,
     SmallInteger,
@@ -111,6 +113,9 @@ class Project(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"))
+    team_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("teams.id"), nullable=True
+    )  # 소속 팀(팀 단위 공유, 미배정이면 NULL)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
@@ -154,6 +159,19 @@ class AdEmbedding(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     ad_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("ads.id"))
     content: Mapped[str] = mapped_column(Text)
+    embedding: Mapped[list[float]] = mapped_column(Vector(1536))
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class ManagementKbChunk(Base):
+    """매니지먼트 지식베이스 청크 (에이전틱 RAG) — 정책·플레이북·KPI 규칙의 벡터 검색."""
+
+    __tablename__ = "management_kb_chunks"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    source: Mapped[str] = mapped_column(String(128))  # 출처 파일명(인용용)
+    title: Mapped[str] = mapped_column(String(256))  # 섹션 제목(인용용)
+    chunk: Mapped[str] = mapped_column(Text)
     embedding: Mapped[list[float]] = mapped_column(Vector(1536))
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
@@ -280,6 +298,21 @@ class AdPublishLog(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
+class BrandProfileRow(Base):
+    """제너레이터 브랜드 설정 — 로그인 없이 client_id(브라우저 UUID)로 식별·영속."""
+
+    __tablename__ = "brand_profiles"
+
+    client_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    brand_color: Mapped[str | None] = mapped_column(String(20))
+    brand_logo_key: Mapped[str | None] = mapped_column(String(512))
+    tone_and_manner: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )
+
+
 # ──────────────────────────────────────────────
 # 광고 매니지먼트 (🤝 공동, R&R §7) — contracts/schemas.py 계약과 1:1
 # 컬럼 규칙: 타임스탬프=TIMESTAMPTZ / 금액=BIGINT KRW / 유연 페이로드=JSONB /
@@ -381,6 +414,35 @@ class IdempotencyKeyRow(Base):
     created_at: Mapped[datetime] = mapped_column(_TS, server_default=func.now())
 
 
+class RemediationEscalationRow(Base):
+    """🅱 시간축 에스컬레이션 사다리 진행 상태 — 캠페인당 active 1건 (re_evaluate 소유).
+
+    파괴도 낮은 조치부터 우선순위대로 시도하고, 회복(원래 anomaly 소멸)이 안 되면 다음 단계로
+    올린다. 회복 판정은 재탐지로만 하므로 baseline 스냅샷은 저장하지 않는다.
+    """
+
+    __tablename__ = "remediation_escalations"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    run_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
+    ad_account_id: Mapped[str] = mapped_column(String(64))
+    campaign_id: Mapped[str] = mapped_column(String(64), index=True)
+    anomaly_type: Mapped[str] = mapped_column(String(48))  # 사다리를 연 anomaly = 회복 판정 기준
+    ladder: Mapped[list] = mapped_column(JSONB)  # 우선순위 action_type 목록 스냅샷
+    current_rung_index: Mapped[int] = mapped_column(Integer, default=0)
+    rung_status: Mapped[str] = mapped_column(String(16))  # proposed | executed | rejected
+    rung_executed_at: Mapped[datetime | None] = mapped_column(_TS)
+    last_proposal_id: Mapped[str | None] = mapped_column(String(64))
+    last_approval_id: Mapped[str | None] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(16), index=True)  # active | recovered | exhausted
+    opened_at: Mapped[datetime] = mapped_column(_TS, server_default=func.now())
+    last_evaluated_at: Mapped[datetime | None] = mapped_column(_TS)
+    updated_at: Mapped[datetime] = mapped_column(
+        _TS, server_default=func.now(), onupdate=func.now()
+    )
+
+
 # ──────────────────────────────────────────────
 # Persona Debate (시뮬레이터 4-1 페르소나 토론, simulations 1:N) — db-schema v3.1
 # ──────────────────────────────────────────────
@@ -453,3 +515,123 @@ class PersonaDebateUtterance(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     debate: Mapped["PersonaDebate"] = relationship(back_populates="utterances")
+
+
+class MetaConnection(Base):
+    """테넌트(Organization)별 Meta 연결 — OAuth 장기 토큰을 암호화 저장 (멀티테넌트 (A)).
+
+    외부 광고주가 자기 Meta 자산을 연결하면 org당 1건 생성된다. access_token_enc는
+    AES-256-GCM 암호문(평문 토큰 저장·로그 금지 — CLAUDE.md 보안 규칙). scopes는 부여 권한
+    목록(JSONB, SQLite 테스트에선 JSON), token_expires_at은 장기토큰 만료(갱신 트리거용).
+    """
+
+    __tablename__ = "meta_connections"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, unique=True
+    )
+    access_token_enc: Mapped[str] = mapped_column(Text, nullable=False)
+    ad_account_id: Mapped[str | None] = mapped_column(String(64))
+    page_id: Mapped[str | None] = mapped_column(String(64))
+    ig_user_id: Mapped[str | None] = mapped_column(String(64))
+    scopes: Mapped[list | None] = mapped_column(JSONB().with_variant(JSON(), "sqlite"))
+    token_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="active"
+    )  # active | needs_reconnect
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class CampaignKpiOverride(Base):
+    """조직별 캠페인 수동 KPI(추정 CVR·ROAS) — 전환 추적 전 고객이 직접 넣는 값 영속.
+
+    실측이 아니라 고객 비즈니스 통계 기반 추정(스펙: CVR·ROAS 재정의 #2). org+campaign 유니크.
+    cvr=전환율(%), roas=투자수익률(배수). 둘 다 NULL이면 행 삭제(실측으로 복귀).
+    """
+
+    __tablename__ = "campaign_kpi_overrides"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+    )
+    campaign_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    cvr: Mapped[float | None] = mapped_column(Float)  # 전환율 % (수동 추정)
+    roas: Mapped[float | None] = mapped_column(Float)  # 투자수익률 배수 (수동 추정)
+    updated_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    __table_args__ = (
+        UniqueConstraint("organization_id", "campaign_id", name="uq_kpi_override_org_campaign"),
+    )
+
+
+class CreatedCampaign(Base):
+    """앱에서 생성한 캠페인 누적 기록 — 무엇을 언제 어떤 설정으로 만들었는지 영속.
+
+    대시보드는 Meta에서 실시간 조회하지만, 이 표는 "우리가 만든 것"의 이력(삭제돼도 남음).
+    tenant_id는 FK 없이 문자열(데모 테넌트도 수용). meta_campaign_id는 LIVE 생성 시 채워진다.
+    """
+
+    __tablename__ = "created_campaigns"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    meta_campaign_id: Mapped[str | None] = mapped_column(String(64))  # LIVE 생성 시 Meta id
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    objective: Mapped[str] = mapped_column(String(20), nullable=False)  # traffic | leads
+    ad_account_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    daily_budget_krw: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)  # success | failed
+    execution_mode: Mapped[str] = mapped_column(String(20), nullable=False)  # live | validate_only…
+    # 집행 전 시뮬 예측 연결용 — 이 캠페인이 어떤 광고(ad_id)로 만들어졌는지(없으면 미연결).
+    creative_ad_id: Mapped[str | None] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    # 소프트 삭제 — Meta에서 캠페인 삭제 시 행을 지우지 않고 시각만 찍는다(감사 이력 보존).
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+# ──────────────────────────────────────────────
+# Billing (크레딧 충전·집행 차감 영속)
+# ──────────────────────────────────────────────
+
+
+class PaymentOrderRow(Base):
+    """크레딧 충전 주문 — 서버가 기억하는 금액(FE 변조 대조)·승인 상태."""
+
+    __tablename__ = "payment_orders"
+
+    order_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    org_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    amount_krw: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False)  # ready|done|failed|canceled
+    payment_key: Mapped[str | None] = mapped_column(String(128))
+    raw_response: Mapped[dict | None] = mapped_column(JSONB)
+    cancel_response: Mapped[dict | None] = mapped_column(JSONB)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    canceled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class CreditLedgerRow(Base):
+    """크레딧 원장 — append-only(수정·삭제 경로 없음). 잔액은 delta 합으로 산출.
+
+    CHARGE는 양수, SPEND/REFUND는 음수. ref_id는 주문 id 또는 집행 참조(campaign 등).
+    """
+
+    __tablename__ = "credit_ledger"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    org_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    delta_krw: Mapped[int] = mapped_column(Integer, nullable=False)
+    balance_after_krw: Mapped[int] = mapped_column(Integer, nullable=False)
+    reason: Mapped[str] = mapped_column(String(16), nullable=False)  # charge|spend|refund
+    ref_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
