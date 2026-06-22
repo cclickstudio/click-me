@@ -151,7 +151,7 @@ class EscalationController:
         self._ladders = ACTIVE_LADDERS if ladders is None else ladders
         self._context_factory = context_factory
 
-    async def get_run(self, run_id: str):
+    async def get_run(self, run_id: str) -> EscalationRun | None:
         """run_id로 사다리 run 조회 — 라우터의 tenant 소유 검증용(읽기 전용)."""
         return await self._store.get_by_run_id(run_id)
 
