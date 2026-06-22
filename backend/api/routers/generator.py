@@ -18,6 +18,7 @@ from core.models import User
 from domain.generator.adapters.meta_ads import AdvertiseRequest
 from domain.generator.contracts.enums import GenerationMode
 from domain.generator.contracts.schemas import GenerationCreateRequest
+from domain.generator.pipeline.relayout import PLATFORM_SIZES
 from domain.generator.service import generator_service
 from domain.generator.service.brand_profile import get_profile, save_profile
 from tools.storage.s3 import brand_logo_key, download_bytes, upload_bytes
@@ -261,6 +262,25 @@ async def get_generation(generation_id: str):
     if detail is None:
         raise HTTPException(status_code=404, detail="Generation not found")
     return detail
+
+
+# ── 플랫폼별 리레이아웃 (온디맨드 PIL 렌더, LLM 재호출 없음) ──────────────────
+
+
+@router.get("/candidates/{candidate_id}/render")
+async def render_candidate(candidate_id: str, platform: str = "ig_feed"):
+    """후보를 지정 플랫폼 사이즈로 리레이아웃해 PNG로 반환. (img 태그 호환 — 인증 없음)"""
+    if platform not in PLATFORM_SIZES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"지원하지 않는 플랫폼: {platform} (가능: {', '.join(PLATFORM_SIZES)})",
+        )
+    data = await generator_service.render_candidate(candidate_id, platform)
+    if data is None:
+        raise HTTPException(
+            status_code=404, detail="리레이아웃할 base 이미지가 없습니다(신규 생성물부터 지원)."
+        )
+    return Response(content=data, media_type="image/png")
 
 
 @router.post("/generations/{generation_id}/select")
