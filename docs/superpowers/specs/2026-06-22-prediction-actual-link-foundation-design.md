@@ -2,7 +2,7 @@
 
 > **Goal:** 성과비교 탭의 "집행 전(시뮬 예측)" 슬롯에 진짜 시뮬 결과가 붙도록, 캠페인과 시뮬을 잇는 **연결 키를 영속화**하고 `SimPredictionReader`를 실구현해 `wiring`을 교체한다. 이번 단계는 *토대*만 — 키만 박히면 어디서 박혔든 예측이 자동으로 실측 옆에 붙는다.
 > **선행 논의:** 이 대화의 추적 결과 — 슬롯(`creative_ad_id`)과 시뮬 키(`simulations.ad_id`)가 서로 다른 id 공간이고, **둘을 이어주는 쓰기 경로가 없어** 예측이 영원히 "연결 대기"로 남는 구조.
-> **연계:** `docs/superpowers/specs/2026-06-22-simulator-management-handoff-design.md`(from-simulation) — 본 토대 위에 경로 1을 얹는 다음 단계.
+> **연계:** `from-simulation` 핸드오프는 **이미 구현됨**(`tests/management/test_from_simulation.py`). 제안의 `evidence_metrics["simulation_snapshot"]["simulation_id"]`에 시뮬 id를 담지만 `CreatedCampaign`에 영속하지 않는다 — 본 토대의 영속 코드가 그 키도 함께 읽으면 경로 1이 이번 단계에서 살아난다(§7 참고).
 
 ---
 
@@ -13,12 +13,11 @@
 - `SimPredictionReader` 실구현 — `simulation_id`로 `simulations`+`simulation_aggregates`를 **raw SQL**로 읽어 `PredictionSnapshot(source="sim")` 반환(없으면 `None`).
 - `wiring.build_prediction_reader` 를 `MockPredictionReader` → `SimPredictionReader`로 교체.
 - 조회 키 전환 — `PredictionReader` 포트와 호출부 2곳을 `creative_ad_id` 기반에서 **`simulation_id` 기반**으로 교체.
-- **쓰기 경로 1개(최소)** — 기존 `POST /campaigns/create-proposal` 요청에 옵셔널 `simulation_id`만 추가해, 들어온 경우 `CreatedCampaign.simulation_id`로 영속화. **새 UI 없음.**
-- E2E 검증 — `simulation_id`가 들어온 캠페인은 before-after·assistant tools에서 실제 시뮬 예측이 연결되어 표시된다.
+- **쓰기 경로 2개** — ① 기존 `POST /campaigns/create-proposal` 요청에 옵셔널 `simulation_id` 추가, ② 이미 구현된 from-simulation의 `simulation_snapshot.simulation_id`. `_record_created_campaign`이 두 키를 모두 읽어 `CreatedCampaign.simulation_id`로 영속. **새 UI 없음.**
+- E2E 검증 — `simulation_id`가 들어온 캠페인(수동·from-simulation)은 before-after·assistant tools에서 실제 시뮬 예측이 연결되어 표시된다.
 
 **다음 단계로 이연**
-- 경로 1 — from-simulation 핸드오프가 집행 시 `simulation_id` 자동 기록.
-- 경로 2 — 수동 캠페인 폼의 "내 시뮬 이력 선택" 드롭다운 + 시뮬 이력 조회 API.
+- 경로 2(UI) — 수동 캠페인 폼의 "내 시뮬 이력 선택" 드롭다운 + 시뮬 이력 조회 API.
 - `objective_fit_score`·`grade` 실값 채움(시뮬 파생 지표 노출).
 - **before-after / assistant 도구 엔드포인트의 org 인증·인가 정비(현재 무인증 — 후속 필수 이슈).** 본 토대의 reader org 대조는 예측 *노출* 방지용일 뿐, 엔드포인트 자체 인증을 대체하지 않는다.
 
@@ -174,16 +173,20 @@ evidence_metrics={
 }
 ```
 
-**`_record_created_campaign`** — 영속:
+**`_record_created_campaign`** — 영속(두 경로 모두 커버):
 ```python
+em = proposal.evidence_metrics
+sim_id = em.get("simulation_id") or (em.get("simulation_snapshot") or {}).get("simulation_id")
 CreatedCampaign(
     ...,
     creative_ad_id=cfg.get("creative_ad_id"),
-    simulation_id=proposal.evidence_metrics.get("simulation_id"),   # 신규
+    simulation_id=sim_id,   # 신규 — 수동 create-proposal 키 + from-simulation snapshot 키 둘 다
 )
 ```
 - `evidence_metrics`는 `ActionProposal`의 자유 dict 필드(18필드 락 위반 아님 — 값 내부 키 추가).
-- `simulation_id` 미전달이면 `None` 영속 → 기존 "연결 대기" 동작 유지(회귀 없음).
+- **두 경로 커버** — ① 수동 create-proposal의 형제 키 `evidence_metrics["simulation_id"]`, ② 이미 구현된 from-simulation의 `evidence_metrics["simulation_snapshot"]["simulation_id"]`. 우선순위는 ①>②(수동이 명시값).
+- 둘 다 없으면 `None` 영속 → 기존 "연결 대기" 동작 유지(회귀 없음).
+- from-simulation은 이미 org 소유권·verdict를 검증해 simulation_id를 담으므로(§연계), 추가 검증 불요. 수동 경로만 §7 쓰기 시점 org 검증 적용.
 
 ---
 
@@ -214,9 +217,10 @@ CreatedCampaign(
 - `simulation_id` 박힌 캠페인 → prediction(sim) + actual 짝, verdict 산출.
 - `simulation_id` 없는 캠페인 → prediction None(연결 대기), 실측은 표시.
 
-**E2E(1-b 쓰기 경로)**
-- create-proposal에 `simulation_id` 전달 → approve → execute → `CreatedCampaign.simulation_id` 영속 라운드트립 → before-after에서 예측 연결.
-- create-proposal에 `simulation_id` 미전달 → 영속 None → 연결 대기(회귀 없음).
+**E2E(쓰기 경로)**
+- `_record_created_campaign` 단위 — `evidence_metrics["simulation_id"]`(수동) 영속 / `evidence_metrics["simulation_snapshot"]["simulation_id"]`(from-simulation) 영속 / 둘 다 없으면 None / 둘 다 있으면 수동 우선.
+- create-proposal에 `simulation_id` 전달 → 제안 `evidence_metrics["simulation_id"]`에 실림(라우터 레벨).
+- create-proposal `simulation_id` 미존재/타 org → 422(쓰기 시점 org 검증).
 
 **회귀**
 - `MockPredictionReader` 시그니처 변경 후 기존 테스트 그린(데모 wiring).
