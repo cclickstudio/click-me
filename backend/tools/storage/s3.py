@@ -19,8 +19,13 @@ def brand_logo_key(client_id: str, ext: str) -> str:
 
 
 def candidate_key(generation_id: str, idx: int) -> str:
-    """생성 후보 이미지(PNG)의 S3 키."""
+    """생성 후보 이미지(PNG)의 S3 키 — 텍스트·로고까지 합성된 최종본."""
     return f"generated-ads/{generation_id}/candidate-{idx}.png"
+
+
+def candidate_base_key(generation_id: str, idx: int) -> str:
+    """후보의 텍스트 없는 base 이미지 S3 키 — 플랫폼별 리레이아웃 렌더의 원본."""
+    return f"generated-ads/{generation_id}/candidate-{idx}-base.png"
 
 
 def publish_key(generation_id: str, idx: int) -> str:

@@ -32,7 +32,7 @@ from domain.generator.pipeline.image_generator import (
 from domain.generator.pipeline.multimodal_generator import generate_image_and_copy
 from domain.generator.pipeline.quality_checker import check_quality
 from domain.generator.pipeline.text_overlay import render_ad_text
-from tools.storage.s3 import candidate_key, download_bytes, upload_bytes
+from tools.storage.s3 import candidate_base_key, candidate_key, download_bytes, upload_bytes
 
 logger = logging.getLogger("clickme")
 
@@ -130,7 +130,14 @@ async def generate_candidates(state: GenerationState, config: RunnableConfig) ->
                 cta=ad_copy.cta,
             )
 
-        # 3. 카피 텍스트를 PIL로 렌더 (AI는 텍스트 미생성 — 잘림·오탈자 방지)
+        # 3. 텍스트 없는 base 이미지를 별도 저장 — 플랫폼별 리레이아웃 렌더의 원본
+        base_key = candidate_base_key(generation_id, idx)
+        try:
+            await upload_bytes(image_bytes, base_key, content_type="image/png")
+        except Exception:
+            logger.exception("base 이미지 업로드 실패: key=%s", base_key)
+
+        # 4. 카피 텍스트를 PIL로 렌더 (AI는 텍스트 미생성 — 잘림·오탈자 방지)
         image_bytes = render_ad_text(
             image_bytes,
             headline=ad_copy.headline,
@@ -140,14 +147,14 @@ async def generate_candidates(state: GenerationState, config: RunnableConfig) ->
             brand_color=brand_color,
         )
 
-        # 4. 품질검증 (순수 동기 함수)
+        # 5. 품질검증 (순수 동기 함수)
         quality_report = check_quality(ad_copy=ad_copy, target=product_analysis.target_audience)
 
-        # 5. 로고 합성 (brand_logo_s3_key 제공 시)
+        # 6. 로고 합성 (brand_logo_s3_key 제공 시)
         if logo_image_bytes is not None:
             image_bytes = composite_logo(image_bytes, logo_image_bytes, plan.template)
 
-        # 6. S3 업로드
+        # 7. S3 업로드
         s3_key = candidate_key(generation_id, idx)
         try:
             await upload_bytes(image_bytes, s3_key, content_type="image/png")
