@@ -24,7 +24,13 @@ from api.routers.billing import DEMO_ORG_ID, get_billing_service
 from core.auth import get_current_user
 from core.config import settings
 from core.db import get_db
-from core.models import CampaignKpiOverride, CreatedCampaign, OrganizationMember, User
+from core.models import (
+    CampaignKpiOverride,
+    CreatedCampaign,
+    MetaConnection,
+    OrganizationMember,
+    User,
+)
 from domain.billing.service.billing_service import BillingError
 from domain.management.adapters.generator.client import (
     GeneratorUnavailableError,
@@ -1221,6 +1227,46 @@ async def _created_campaign_row(db: AsyncSession, campaign_id: str) -> CreatedCa
         .scalars()
         .first()
     )
+
+
+def _is_demo_campaign(campaign_id: str) -> bool:
+    """campaign_id가 데모 픽스처(_CAMPAIGNS_DEMO)에 존재하는지."""
+    return any(cid == campaign_id for cid, *_ in _CAMPAIGNS_DEMO)
+
+
+async def _require_org_id(user: User, db: AsyncSession) -> UUID:
+    """로그인 사용자의 소속 org — 없으면 409."""
+    org_id = await _resolve_org_id(user, db)
+    if org_id is None:
+        raise HTTPException(409, "소속 조직이 없습니다 — 조직 연결 후 시도하세요.")
+    return org_id
+
+
+async def _require_owned_campaign(
+    db: AsyncSession, org_id: UUID, campaign_id: str
+) -> CreatedCampaign | None:
+    """DB 적재 캠페인은 tenant 소유 검증.
+
+    DB 행 없음은 mock/demo fixture로 확인된 경우에만 None 허용.
+    """
+    row = await _created_campaign_row(db, campaign_id)
+    if row is not None:
+        if row.tenant_id != str(org_id):
+            raise HTTPException(403, "다른 조직의 캠페인입니다.")
+        return row
+    if getattr(settings, "use_mock", True) and _is_demo_campaign(campaign_id):
+        return None
+    raise HTTPException(404, "캠페인을 찾을 수 없습니다.")
+
+
+async def _require_ad_account(db: AsyncSession, org_id: UUID) -> str:
+    """org의 Meta 광고계정 — 연결에서 도출. live 미연결이면 데모 폴백 금지(fail-closed)."""
+    conn = await db.scalar(select(MetaConnection).where(MetaConnection.organization_id == org_id))
+    if conn is not None and conn.ad_account_id:
+        return conn.ad_account_id
+    if getattr(settings, "use_mock", True):
+        return _DEMO_AD_ACCOUNT
+    raise HTTPException(409, "Meta 광고계정 연결이 필요합니다 — 연결 후 시도하세요.")
 
 
 @router.post("/campaigns/{campaign_id}/activate")

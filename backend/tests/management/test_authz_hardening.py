@@ -1,0 +1,115 @@
+# 🅱 매니지먼트 인증·소유권 강화(Vuln 3) — 헬퍼 단위 + 엔드포인트 인증/소유권
+import uuid
+from types import SimpleNamespace
+
+import pytest
+from fastapi import HTTPException
+
+from api.routers import management
+
+
+class _FakeScalars:
+    def __init__(self, v):
+        self._v = v
+
+    def first(self):
+        return self._v
+
+    def all(self):
+        return [self._v] if self._v is not None else []
+
+
+class _FakeResult:
+    def __init__(self, v):
+        self._v = v
+
+    def scalars(self):
+        return _FakeScalars(self._v)
+
+
+class _FakeDB:
+    """db.scalar는 쿼리 대상 테이블로 분기, db.execute는 캠페인 행을 반환."""
+
+    def __init__(self, *, org_id=None, conn=None, campaign=None):
+        self._org_id = org_id
+        self._conn = conn
+        self._campaign = campaign
+
+    async def scalar(self, stmt, *a, **k):
+        s = str(stmt)
+        if "organization_members" in s:
+            return self._org_id
+        if "meta_connections" in s:
+            return self._conn
+        return None
+
+    async def execute(self, stmt, *a, **k):
+        return _FakeResult(self._campaign)
+
+    async def commit(self):
+        pass
+
+    async def rollback(self):
+        pass
+
+    async def delete(self, obj):
+        pass
+
+
+@pytest.mark.asyncio
+async def test_require_org_id_raises_409_without_org():
+    db = _FakeDB(org_id=None)
+    with pytest.raises(HTTPException) as exc:
+        await management._require_org_id(SimpleNamespace(id=uuid.uuid4()), db)
+    assert exc.value.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_require_owned_campaign_cross_tenant_403():
+    org = uuid.uuid4()
+    other = uuid.uuid4()
+    db = _FakeDB(campaign=SimpleNamespace(tenant_id=str(other), daily_budget_krw=1000, name="x"))
+    with pytest.raises(HTTPException) as exc:
+        await management._require_owned_campaign(db, org, "camp_x")
+    assert exc.value.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_require_owned_campaign_owned_returns_row():
+    org = uuid.uuid4()
+    db = _FakeDB(campaign=SimpleNamespace(tenant_id=str(org), daily_budget_krw=1000, name="x"))
+    row = await management._require_owned_campaign(db, org, "camp_x")
+    assert row.tenant_id == str(org)
+
+
+@pytest.mark.asyncio
+async def test_require_owned_campaign_unknown_404(monkeypatch):
+    monkeypatch.setattr(management.settings, "use_mock", True, raising=False)
+    db = _FakeDB(campaign=None)
+    with pytest.raises(HTTPException) as exc:
+        await management._require_owned_campaign(db, uuid.uuid4(), "totally_unknown")
+    assert exc.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_require_owned_campaign_demo_fixture_allows_none(monkeypatch):
+    monkeypatch.setattr(management.settings, "use_mock", True, raising=False)
+    db = _FakeDB(campaign=None)
+    demo_id = management._CAMPAIGNS_DEMO[0][0]
+    assert await management._require_owned_campaign(db, uuid.uuid4(), demo_id) is None
+
+
+@pytest.mark.asyncio
+async def test_require_ad_account_live_failclosed_without_connection(monkeypatch):
+    monkeypatch.setattr(management.settings, "use_mock", False, raising=False)
+    db = _FakeDB(conn=None)
+    with pytest.raises(HTTPException) as exc:
+        await management._require_ad_account(db, uuid.uuid4())
+    assert exc.value.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_require_ad_account_mock_falls_back_to_demo(monkeypatch):
+    monkeypatch.setattr(management.settings, "use_mock", True, raising=False)
+    db = _FakeDB(conn=None)
+    assert await management._require_ad_account(db, uuid.uuid4()) == management._DEMO_AD_ACCOUNT
