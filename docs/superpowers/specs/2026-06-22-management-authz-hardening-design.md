@@ -31,8 +31,8 @@ body/query에서 오며, 호출자가 해당 테넌트/조직 소속인지 검�
 | 9 | `GET /campaigns/{id}/sync` (1231) | **`org_id` 쿼리(공격자 통제)** | 인증 + org를 쿼리 대신 JWT에서 도출 |
 | 10 | `POST /budget/limit` (1466) | `TENANT_ID` | 인증 + 내 org tenant |
 | 11 | `POST /re-evaluate` (1637) | `body.tenant_id` | 인증 + tenant를 내 org로 강제 |
-| 12 | `POST /re-evaluate/executed` (1652) | `body.run_id` | 인증 (run 소유 검증은 best-effort, 4 참고) |
-| 13 | `POST /re-evaluate/rejected` (1661) | `body.run_id` | 인증 (run 소유 검증은 best-effort, 4 참고) |
+| 12 | `POST /re-evaluate/executed` (1652) | `body.run_id` | 인증 + run의 `tenant_id == 내 org` 검증 (3.5) |
+| 13 | `POST /re-evaluate/rejected` (1661) | `body.run_id` | 인증 + run의 `tenant_id == 내 org` 검증 (3.5) |
 
 ### 비목표
 
@@ -64,8 +64,10 @@ async def _require_owned_campaign(db, org_id, campaign_id) -> CreatedCampaign | 
 ### 3.2 tenant / ad_account 도출
 
 - `tenant_id`는 `str(org_id)`로 통일한다 (`models.py` 주석 `tenant_id = organization_id` 근거).
-- `ad_account_id`는 org의 `MetaConnection`(org당 1개)에서 도출, 실모드 미연결이면 기존
-  `_resolve_ad_account()` 폴백을 유지한다.
+- `ad_account_id`는 org의 `MetaConnection`(org당 1개)에서 도출한다.
+  - **mock 모드** — 연결이 없으면 기존 `_resolve_ad_account()`(데모 계정) 폴백 허용.
+  - **live 모드(`use_mock=False`)** — `MetaConnection`이 없으면 **데모 계정으로 폴백 금지**.
+    409/412로 fail-closed(연결 후 시도). 미연결 org의 작업이 데모 계정으로 새는 것을 막는다.
 - 제안 생산 경로(create-proposal, from-candidate, activate, pause)는 `TENANT_ID` 상수 대신
   `str(org_id)`로 `ActionProposal.tenant_id`를 채운다.
 - `approve(proposal, "user_demo", …)`의 승인자 ID를 `str(user.id)`로 교체(감사 정확도↑).
@@ -90,9 +92,14 @@ async def _require_owned_campaign(db, org_id, campaign_id) -> CreatedCampaign | 
 
 ### 3.5 escalation run 소유 검증 (12, 13)
 
-`/re-evaluate/executed|rejected`는 `run_id`(UUID, 추측 불가)로 동작한다. 에스컬레이션 store가 run에
-tenant를 보관하면 `str(org_id)` 일치를 검증하고, 보관하지 않으면 이번 범위에서는 **인증 게이트만**
-적용한다(UUID 추측 불가 전제). store 스키마 확장은 별도 작업으로 분리한다.
+`run_id`가 추측하기 어렵다는 점(UUID)을 **권한 검증의 근거로 삼지 않는다**(불투명성 ≠ 권한). 대신
+가능한 경우 **run 생성 시점에 `tenant_id`를 함께 저장**하고, `/re-evaluate/executed|rejected`에서
+해당 run의 `tenant_id == str(org_id)`를 **반드시 비교**한다(불일치 403).
+
+`EscalationRun`은 이미 `tenant_id`를 보관하고(escalation.py:78, 생성 시 171행 적재) `get_by_run_id`로
+읽을 수 있다. 따라서 **DB/모델 변경 없이** executed/rejected 핸들러에서 run을 조회해
+`run.tenant_id == str(org_id)`를 비교하면 된다(불일치 403). `re_evaluate`(11)가 tenant를 내 org로
+강제하므로 개시되는 run의 tenant도 자동으로 내 org가 된다. 인증 게이트만 두는 절충은 채택하지 않는다.
 
 ## 4. Vuln 2 핸드오프 (🅰)
 
@@ -117,11 +124,23 @@ tenant를 보관하면 `str(org_id)` 일치를 검증하고, 보관하지 않으
 
 ## 6. 코디네이션 / 리스크
 
-- `management.py`는 A/B 공유 파일 — **🅱 핸들러 + 신규 헬퍼만** 수정하고 🅰 엔드포인트는 무변경.
-  커밋은 🅰 영역과 섞지 않는다.
-- 프론트가 이 엔드포인트 호출에 Authorization 헤더를 싣는지 확인 필요(`AuthProvider` 존재). 누락 시
-  401이 발생하므로 프론트 `lib/api.ts` 호출부 점검이 후속으로 따라올 수 있다(별도 메모).
-- `core/models.py`·Alembic 무변경 — 공통부 사전 공지 규칙 회피.
+- **프론트 Authorization 헤더 누락 가능성** — 이 엔드포인트들이 인증 필수가 되면, 프론트가 호출 시
+  Authorization 헤더를 싣지 않으면 일괄 401이 난다. `AuthProvider`/`lib/api.ts` 호출부가 Bearer
+  토큰을 첨부하는지 점검이 후속으로 따라온다(이번 백엔드 범위 밖, 별도 메모).
+- **mock/demo와 live의 소유권 검증 분기** — 같은 엔드포인트가 모드에 따라 다르게 동작한다(3.4).
+  mock은 공유 픽스처라 행이 없어 인증+org까지만, live는 `CreatedCampaign.tenant_id`로 엄격 검증.
+  두 경로가 갈리는 만큼 테스트도 모드별로 나눠 검증한다.
+- **live 모드에서 `MetaConnection` 없을 때 fallback 금지** — 미연결 org가 데모 광고계정으로 새지
+  않도록 live는 fail-closed(3.2). mock 폴백 로직을 live에 재사용하지 않도록 분기를 명확히 둔다.
+- **`/sync`는 GET인데 정산(상태 변경)을 한다** — 크레딧 차감이라는 부수효과를 가진 GET은 의미상
+  부적절하다(브라우저 prefetch·캐시·재시도로 의도치 않은 정산 위험). 단, 인증을 Bearer 토큰으로
+  강제하면 ambient-credential 기반 CSRF는 차단된다. 이번 작업에서는 **인증 + org 도출**을 우선
+  적용하고, GET→POST 메서드 변경은 프론트 호출부 영향이 있어 후속 항목으로 분리한다.
+- **A/B 공유 파일 충돌 위험** — `management.py`는 A/B가 함께 쓰는 단일 파일이라 동시 수정 시 머지
+  충돌 가능성이 있다. **🅱 핸들러 + 신규 헬퍼만** 수정하고 🅰 엔드포인트(`/approve`, OAuth, detection)는
+  무변경. 작은 단독 커밋으로 분리하고 🅰와 작업 시점을 조율한다.
+- `core/models.py`·Alembic 무변경 — 공통부 사전 공지 규칙 회피. 3.5의 run tenant 비교는
+  `EscalationRun.tenant_id`(기존 필드) 재사용이라 스키마 변경이 필요 없다.
 
 ## 7. 완료 기준
 
