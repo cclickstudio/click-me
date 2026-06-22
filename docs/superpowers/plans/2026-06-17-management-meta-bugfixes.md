@@ -68,7 +68,7 @@
 
 - [x] **Step 1:** `reader.get_metrics` — params에 `time_range(since~today)` 추가, **time_increment 제거 → 단일 집계행**을 받는다(일별 다중행에서 rows[0]만 취하던 문제 해소). `as_of`는 date_stop.
 - [x] **Step 2:** `ComparisonService`가 받는 누적 reach/impressions가 요청 구간 기준으로 정합.
-- [x] **Step 3:** 계약 테스트 통과. 실 API로 요청 형태 유효 확인(아래 검증 로그) — 데이터 실증은 지출 캠페인 확보 후.
+- [x] **Step 3:** 계약 테스트 통과. 실 API로 요청 형태 유효 확인 + 실 지출 캠페인으로 단일 집계행 반환 실증 완료(아래 검증 로그).
 
 ## Task 6: act_ 접두사 이중 부착 [Fix 6 · Medium] — ✅
 
@@ -110,10 +110,11 @@
 
 - **KRW offset = 1 확정 [Task 10]** — `min_daily_budget=1521`(≈$1.1)이라 원 단위 그대로가 정답. offset=100이면 최소예산 ₩15로 비현실적. `currency_offset`은 계정 노드 필드가 아님(code=100 에러)이라 `min_daily_budget`으로 역산. → 코드 무변경, 주석 정정.
 - **get_metrics 요청 형태 유효 [Task 5]** — `time_range`(time_increment 없음) 요청을 Meta가 정상 수락(에러 없음). 다만 **계정에 캠페인·지출이 0이라 응답이 `[]`** → "단일 집계행 반환" 가정의 데이터 실증은 보류. 실 지출 캠페인 확보 후 `time_increment` 유무로 행 수 차이 재확인 필요(코드 문제 아님, 데이터 부재).
+- **get_metrics 집계·end-to-end 실증 완료 [Task 5] (2026-06-17 추가)** — 882 계정에 소액 트래픽 캠페인(`ClickMe Traffic Test - New Biz`) 게재 후 `meta_metrics_probe.py` 실행. `get_metrics`가 `time_range`로 **단일 집계행** 반환 확인(노출 218·클릭 4·지출 ₩1,552·도달 213·CTR 1.83%·CPM ₩7,119·CPC ₩388). `fetch_hourly_metrics`(시간별 2행) → 감지 파이프라인까지 **실데이터 end-to-end 정상**(이상구간 없음·정상 게재 판정). 지출 ₩1,552로 KRW offset=1도 실측 재확인.
 
 ## (주의 · 본 PR 밖 · 후속)
 
-- **남은 미검증 1건** — 실 지출 캠페인 확보 후 get_metrics 집계 동작 최종 실증.
+- ~~**남은 미검증 1건** — 실 지출 캠페인 확보 후 get_metrics 집계 동작 최종 실증.~~ ✅ 2026-06-17 실증 완료(위 검증 로그).
 - LIVE 모드 해금은 별도 — 본 수정은 DRY_RUN/SANDBOX 게이트 유지.
 - 일부 파일은 B(kuk9096) 작성분 — 수정 범위 합의 필요 시 공유.
 - cleanup(중복 `_to_int`·`dataclasses.replace`·`_stable_jitter`)는 별도.

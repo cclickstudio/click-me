@@ -4,6 +4,7 @@ import './globals.css';
 import ThemeProvider from '@/components/ThemeProvider';
 import { AuthProvider } from '@/components/AuthProvider';
 import { ProjectProvider } from '@/components/ProjectContext';
+import MetaPixel from '@/components/MetaPixel';
 
 // 로컬 NotoSansKR(self-host) — Tailwind sans(var(--font-sans))에 연결해 전역 한글 폰트로 사용.
 const notoSansKR = localFont({

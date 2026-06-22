@@ -159,7 +159,7 @@ META_API_VERSION=v21.0
 META_APP_ID=1364757435562410
 META_APP_SECRET=<Meta app secret>
 META_BUSINESS_ID=1735649427615338
-META_AD_ACCOUNT_ID=act_882248327559337
+META_AD_ACCOUNT_ID=act_882448327559337
 META_PAGE_ID=1206025682584276
 META_IG_USER_ID=<Instagram 비즈니스 계정 숫자 ID>
 ```
@@ -171,7 +171,7 @@ META_IG_USER_ID=<Instagram 비즈니스 계정 숫자 ID>
 | `META_API_VERSION` | `v21.0` |
 | `META_APP_ID` | `1364757435562410` |
 | `META_BUSINESS_ID` | `1735649427615338` |
-| `META_AD_ACCOUNT_ID` | `act_882248327559337` |
+| `META_AD_ACCOUNT_ID` | `act_882448327559337` |
 | `META_PAGE_ID` | `1206025682584276` |
 | `META_IG_USER_ID` | 미확인 |
 
@@ -208,7 +208,7 @@ GET /{META_PAGE_ID}?fields=instagram_business_account
 ### 광고 계정 Insights
 
 ```http
-GET /act_882248327559337/insights
+GET /act_882448327559337/insights
   ?fields=campaign_id,campaign_name,impressions,reach,clicks,spend,cpc,ctr
   &date_preset=last_7d
 ```

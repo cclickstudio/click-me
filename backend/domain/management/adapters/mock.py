@@ -20,9 +20,12 @@ from domain.management.contracts.policy import (
     HOURLY_PACING,
 )
 from domain.management.contracts.schemas import (
+    AccountFunding,
     CampaignConfig,
+    CampaignInfo,
     DeliveryEstimate,
     MetricsSnapshot,
+    PlatformMetrics,
 )
 
 _FAULT_ONSET_HOUR = 14  # 고장 발현 시각 (일중 곡선상 오후 — 정상/이상 대비가 뚜렷)
@@ -46,6 +49,71 @@ class MockAdPlatform:
     async def get_state(self, campaign_id: str) -> CampaignState:
         """Port 충족 — mock은 항상 ACTIVE."""
         return CampaignState.ACTIVE
+
+    async def list_campaigns(self) -> list[CampaignInfo]:
+        """Port 충족 — 데모 캠페인 목록(고정). 라우터 데모 경로의 풍부한 고장 시나리오는
+        _CAMPAIGNS_DEMO(라우터 소유)에 있고, 여기는 Port 일반 소비자용 최소 목록.
+        """
+        return [
+            CampaignInfo(
+                campaign_id="camp_1",
+                name="여름 신상 원피스",
+                state=CampaignState.ACTIVE,
+                daily_budget_krw=200_000,
+            ),
+            CampaignInfo(
+                campaign_id="camp_2",
+                name="브랜드 데일리 룩",
+                state=CampaignState.ACTIVE,
+                daily_budget_krw=120_000,
+            ),
+        ]
+
+    async def get_platform_breakdown(
+        self, campaign_id: str, since: datetime
+    ) -> list[PlatformMetrics]:
+        """Port 충족 — 누적 지표를 IG/FB로 분해(데모 합성, 결정론 62/38)."""
+        m = await self.get_metrics(campaign_id, since)
+        split = (("instagram", 0.62), ("facebook", 0.38))
+        return [
+            PlatformMetrics(
+                platform=p,
+                impressions=int(m.impressions * f),
+                clicks=int(m.clicks * f),
+                spend_krw=int(m.spend_krw * f),
+                reach=int(m.cum_reach * f),
+            )
+            for p, f in split
+        ]
+
+    async def get_account_funding(self) -> AccountFunding:
+        """Port 충족 — 데모는 잔액 충분(게재 차단 없음)."""
+        return AccountFunding(account_status=1, available_balance_krw=1_000_000)
+
+    async def fetch_daily_metrics(self, campaign_id: str) -> list[dict]:
+        """데모 일자별(3일) 합성(결정론) — 상세 차트·일자별 표용."""
+        base = sum(ord(ch) for ch in campaign_id) % 2000
+        out: list[dict] = []
+        for i in range(3):
+            impr = 900 + base + i * 120
+            clicks = 30 + (base % 40) + i * 5
+            spend = 4000 + base + i * 800
+            out.append(
+                {
+                    "label": f"{i + 1}일차",
+                    "impressions": impr,
+                    "clicks": clicks,
+                    "reach": int(impr * 0.95),
+                    "spend_krw": spend,
+                    "ctr": clicks / impr if impr else 0.0,
+                    "cpc_krw": spend // clicks if clicks else 0,
+                    "cpm_krw": int(spend / impr * 1000) if impr else 0,
+                    "conversions": None,  # 데모는 전환 추적 미설정
+                    "cvr": None,
+                    "roas": None,
+                }
+            )
+        return out
 
     async def get_estimate(self, config: CampaignConfig) -> DeliveryEstimate:
         """Port 충족 — audience 기반 간단 추정(결정론)."""

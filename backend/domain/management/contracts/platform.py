@@ -13,10 +13,13 @@ if TYPE_CHECKING:
 
     from domain.management.contracts.enums import CampaignState
     from domain.management.contracts.schemas import (
+        AccountFunding,
         ActionResult,
         CampaignConfig,
+        CampaignInfo,
         DeliveryEstimate,
         MetricsSnapshot,
+        PlatformMetrics,
     )
 
 
@@ -28,6 +31,14 @@ class AdPlatformReader(Protocol):
     async def get_estimate(self, config: CampaignConfig) -> DeliveryEstimate: ...
 
     async def get_state(self, campaign_id: str) -> CampaignState: ...
+
+    async def list_campaigns(self) -> list[CampaignInfo]: ...
+
+    async def get_platform_breakdown(
+        self, campaign_id: str, since: datetime
+    ) -> list[PlatformMetrics]: ...
+
+    async def get_account_funding(self) -> AccountFunding: ...
 
 
 class AdPlatformWriter(Protocol):
@@ -44,3 +55,8 @@ class AdPlatformWriter(Protocol):
     ) -> ActionResult: ...
 
     async def create_campaign(self, config: CampaignConfig, idem_key: str) -> ActionResult: ...
+
+    # ── 에스컬레이션 사다리 신규 액션 (direct, 크리에이티브 없음) ──
+    async def expand_audience(self, campaign_id: str, idem_key: str) -> ActionResult: ...
+
+    async def change_bid_strategy(self, campaign_id: str, idem_key: str) -> ActionResult: ...

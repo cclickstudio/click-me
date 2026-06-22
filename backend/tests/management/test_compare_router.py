@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 from api.routers import management
 
 _VERDICTS = {"pass", "caution", "fail"}
+_ACTIONS = {"scale_up", "hold", "pause"}
 
 
 @pytest.fixture()
@@ -16,6 +17,19 @@ def client():
     app = FastAPI()
     app.include_router(management.router, prefix="/api/management")
     return TestClient(app)
+
+
+def test_compare_one_returns_lift_and_recommendation(client):
+    res = client.get("/api/management/compare", params={"post_id": "ig_x", "campaign_id": "camp_x"})
+    assert res.status_code == 200
+    body = res.json()
+    lift = body["lift"]
+    rec = body["recommendation"]
+    assert lift["verdict"] in _VERDICTS
+    assert rec["recommended_action"] in _ACTIONS
+    # 묶음 일관성: 권고가 같은 리프트에서 파생
+    assert rec["verdict"] == lift["verdict"]
+    assert rec["reach_lift_ratio"] == lift["reach_lift_ratio"]
 
 
 def test_compare_board_returns_rows(client):
@@ -33,6 +47,10 @@ def test_compare_board_returns_rows(client):
         assert lift["reach_lift_abs"] == lift["paid"]["reach"] - lift["organic"]["reach"]
         assert lift["organic"]["spend_krw"] == 0
         assert lift["organic"]["clicks"] == 0
+        # 행마다 권고가 함께 (verdict와 일관)
+        rec = row["recommendation"]
+        assert rec["recommended_action"] in _ACTIONS
+        assert rec["verdict"] == lift["verdict"]
 
 
 def test_board_budget_spread_lowers_ratio(client):
