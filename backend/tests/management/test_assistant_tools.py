@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from domain.management.execution.assistant_tools import (
     check_regeneration,
     execution_history,
+    start_regeneration,
 )
 from domain.management.execution.audit_log import AuditEvent, InMemoryAuditLog
 from domain.management.execution.regeneration_jobs import (
@@ -16,6 +17,28 @@ from domain.management.execution.service.regeneration_job_service import (
 )
 
 NOW = datetime(2026, 6, 22, 9, 0, tzinfo=UTC)
+
+
+async def test_start_regeneration_returns_job_id_and_queued():
+    scheduled: list = []
+    store = InMemoryRegenerationJobStore()
+    svc = RegenerationJobService(
+        store=store,
+        agent=None,
+        clock=lambda: NOW,
+        scheduler=lambda coro: scheduled.append(coro),  # run_job 캡처(미실행)
+    )
+
+    class _Dx:
+        tenant_id = "org-1"
+        campaign_id = "camp-1"
+
+    out = await start_regeneration(svc, _Dx(), None)
+    assert out["status"] == "queued"
+    assert out["job_id"]
+    rec = await store.get(out["job_id"])
+    assert rec.status is JobStatus.QUEUED
+    scheduled[0].close()  # 코루틴 닫아 RuntimeWarning 방지
 
 
 async def test_check_regeneration_awaiting_returns_candidates():
