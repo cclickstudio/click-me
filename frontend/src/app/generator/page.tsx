@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import AppLayout from "@/components/AppLayout";
 import { useProjects } from "@/components/ProjectContext";
 import { api } from "@/lib/api";
+import { getToken } from "@/lib/authApi";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 import type {
@@ -13,6 +14,7 @@ import type {
   PublishResult,
   QualityCheckItem,
   QualityReport,
+  RankedAction,
   SSEProgressEvent,
 } from "@/lib/types";
 
@@ -635,7 +637,7 @@ function CandidateModal({
 const ACTIVE_GEN_KEY = "generator_active_gen";
 
 export default function GeneratorPage() {
-  const { selectedProject, projects, selectProject } = useProjects();
+  const { selectedProject, projects, selectProject, details, loadDetails } = useProjects();
   const [mode, setMode] = useState<GenMode>("create");
   const [phase, setPhase] = useState<Phase>("idle");
   const [error, setError] = useState("");
@@ -667,11 +669,17 @@ export default function GeneratorPage() {
   const [targetAudience, setTargetAudience] = useState("");
   const [objective, setObjective] = useState("conversion");
 
-  // 개선 모드 입력
-  const [existingS3Key, setExistingS3Key] = useState("");
-  const [simulationSummary, setSimulationSummary] = useState("");
+  // 개선 모드 입력 — 시뮬레이션 선택 → 자동 로드
+  const [selectedSimId, setSelectedSimId] = useState("");
+  const [improveData, setImproveData] = useState<{
+    ad_s3_key: string | null;
+    product_name: string;
+    summary: string;
+    improvement_direction: string;
+  } | null>(null);
+  const [improveLoading, setImproveLoading] = useState(false);
+  const [improveError, setImproveError] = useState("");
   const [fixRequests, setFixRequests] = useState("");
-  const [improveProductName, setImproveProductName] = useState("");
 
   // 진행 / 결과
   const [progress, setProgress] = useState({ stage: "", pct: 0, message: "" });
@@ -734,10 +742,75 @@ export default function GeneratorPage() {
     };
   }, []);
 
+  // 개선 모드: 프로젝트 선택 시 해당 프로젝트 시뮬 목록 로드 + 시뮬 선택 초기화
+  useEffect(() => {
+    setSelectedSimId("");
+    setImproveData(null);
+    setImproveError("");
+    if (mode === "improve" && selectedProject) {
+      loadDetails(selectedProject.id);
+    }
+  }, [mode, selectedProject?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const improveSims = (selectedProject && details[selectedProject.id]?.sims) || [];
+
+  function buildSimSummary(agg: Record<string, number | null>, n?: number): string {
+    const parts: string[] = [];
+    if (n) parts.push(`표본 ${n}명`);
+    if (agg.purchase_intent != null) parts.push(`구매의향 ${agg.purchase_intent.toFixed(2)}/5`);
+    if (agg.click_intent_rate != null) parts.push(`클릭의향 ${Math.round(agg.click_intent_rate * 100)}%`);
+    if (agg.trust_avg != null) parts.push(`신뢰도 ${agg.trust_avg.toFixed(2)}/5`);
+    if (agg.rejection_rate != null) parts.push(`거부율 ${Math.round(agg.rejection_rate * 100)}%`);
+    return parts.join(" · ");
+  }
+
+  // 시뮬 선택 → 제품명·결과요약·개선방향(토론 권고)·광고 이미지 자동 로드
+  async function loadSimulation(simId: string) {
+    setSelectedSimId(simId);
+    setImproveData(null);
+    setImproveError("");
+    if (!simId) return;
+    setImproveLoading(true);
+    try {
+      const headers = { Authorization: `Bearer ${getToken()}` };
+      const detail = await fetch(`${API_BASE}/api/projects/simulations/${simId}`, { headers }).then(
+        (r) => r.json(),
+      );
+      const agg = (detail.aggregate ?? {}) as Record<string, number | null>;
+      const productName: string = detail.ad_title ?? "";
+      const summary =
+        buildSimSummary(agg, detail.sample_size) || `${productName || "광고"} 시뮬레이션 결과`;
+
+      let direction = "";
+      const rep = await fetch(`${API_BASE}/api/debate/by-simulation/${simId}/report`, { headers });
+      if (rep.ok) {
+        const rv = (await rep.json()) as {
+          report?: { ranked_actions?: RankedAction[]; plain_summary?: string };
+        };
+        const actions = rv.report?.ranked_actions ?? [];
+        direction = actions.length
+          ? actions
+              .map((a, i) => `${i + 1}. ${a.action}${a.expected_effect ? ` — ${a.expected_effect}` : ""}`)
+              .join("\n")
+          : (rv.report?.plain_summary ?? "");
+      }
+      setImproveData({
+        ad_s3_key: detail.ad_s3_key ?? null,
+        product_name: productName,
+        summary,
+        improvement_direction: direction,
+      });
+    } catch {
+      setImproveError("시뮬레이션 정보를 불러오지 못했습니다.");
+    } finally {
+      setImproveLoading(false);
+    }
+  }
+
   const canSubmit =
     mode === "create"
       ? productName.trim() && productDescription.trim() && targetAudience.trim()
-      : existingS3Key.trim() && simulationSummary.trim();
+      : !!improveData?.ad_s3_key;
 
   // SSE 구독 — 시작/복원 공용. 완료·실패 시 localStorage 정리.
   function subscribe(generationId: string) {
@@ -880,9 +953,10 @@ export default function GeneratorPage() {
         : {
             ...common,
             mode: "improve",
-            product_name: improveProductName,
-            existing_ad_s3_key: existingS3Key,
-            simulation_summary: simulationSummary,
+            product_name: improveData?.product_name || "",
+            existing_ad_s3_key: improveData?.ad_s3_key || "",
+            simulation_summary: improveData?.summary || "",
+            improvement_direction: improveData?.improvement_direction || null,
             fix_requests: fixRequests || null,
           };
 
@@ -968,6 +1042,37 @@ export default function GeneratorPage() {
               ))}
             </div>
 
+            {/* ── 시뮬레이션 선택 (개선모드 전용) ── */}
+            {mode === "improve" && (
+              <div className={`${cardCls} p-6`}>
+                <label className={labelCls}>
+                  시뮬레이션 <span className="text-[#F74D4D]">*</span>
+                </label>
+                {!selectedProject ? (
+                  <p className="text-sm text-[#8B95A1] dark:text-[#6B7280]">
+                    프로젝트를 먼저 선택하세요.
+                  </p>
+                ) : improveSims.length === 0 ? (
+                  <p className="text-sm text-[#8B95A1] dark:text-[#6B7280]">
+                    이 프로젝트에 시뮬레이션이 없습니다.
+                  </p>
+                ) : (
+                  <select
+                    value={selectedSimId}
+                    onChange={(e) => loadSimulation(e.target.value)}
+                    className={inputCls}
+                  >
+                    <option value="">개선할 시뮬레이션을 선택하세요</option>
+                    {improveSims.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.ad_title ?? "시뮬레이션"} · {s.sample_size}명
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            )}
+
             <div className={`${cardCls} p-6 space-y-4`}>
               <div>
                 <h2 className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]">
@@ -976,7 +1081,7 @@ export default function GeneratorPage() {
                 <p className="text-xs text-[#8B95A1] dark:text-[#6B7280] mt-0.5">
                   {mode === "create"
                     ? "* 필수 항목"
-                    : "기존 광고 정보와 시뮬레이션 결과를 입력하세요"}
+                    : "프로젝트·시뮬레이션을 선택하면 정보가 자동으로 채워집니다"}
                 </p>
               </div>
 
@@ -1093,44 +1198,68 @@ export default function GeneratorPage() {
                 </>
               ) : (
                 <>
-                  <div>
-                    <label className={labelCls}>제품명</label>
-                    <input
-                      className={inputCls}
-                      value={improveProductName}
-                      onChange={(e) => setImproveProductName(e.target.value)}
-                      placeholder="예: 에어쿨 미니 서큘레이터"
-                    />
-                  </div>
-                  <div>
-                    <label className={labelCls}>
-                      기존 광고 S3 키 <span className="text-[#F74D4D]">*</span>
-                    </label>
-                    <input
-                      className={inputCls}
-                      value={existingS3Key}
-                      onChange={(e) => setExistingS3Key(e.target.value)}
-                      placeholder="예: generated-ads/생성ID/candidate-0.png"
-                    />
-                  </div>
-                  <div>
-                    <label className={labelCls}>
-                      시뮬레이션 결과 요약 <span className="text-[#F74D4D]">*</span>
-                    </label>
-                    <textarea
-                      className={`${inputCls} min-h-24 resize-y`}
-                      value={simulationSummary}
-                      onChange={(e) => setSimulationSummary(e.target.value)}
-                      placeholder="구매 의향 분포, 페르소나 반응, 주요 문제점 등을 입력하세요"
-                    />
-                  </div>
+                  {improveLoading && (
+                    <p className="text-sm text-[#8B95A1] dark:text-[#6B7280]">
+                      시뮬레이션 정보를 불러오는 중...
+                    </p>
+                  )}
+                  {improveError && <p className="text-sm text-red-500">{improveError}</p>}
+                  {improveData && (
+                    <>
+                      {improveData.ad_s3_key ? (
+                        <div>
+                          <label className={labelCls}>기존 광고 (참고)</label>
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={`${API_BASE}/api/generator/image?key=${encodeURIComponent(improveData.ad_s3_key)}`}
+                            alt="기존 광고"
+                            className="w-full max-w-[220px] rounded-xl border border-[#E5E8EB] dark:border-[#2D3748]"
+                          />
+                        </div>
+                      ) : (
+                        <p className="text-sm text-red-500">
+                          이 시뮬레이션의 광고 이미지가 없어 개선을 진행할 수 없어요.
+                        </p>
+                      )}
+                      <div>
+                        <label className={labelCls}>제품명</label>
+                        <input
+                          className={`${inputCls} bg-[#F9FAFB] dark:bg-[#161B27]`}
+                          value={improveData.product_name}
+                          readOnly
+                        />
+                      </div>
+                      <div>
+                        <label className={labelCls}>시뮬레이션 결과 요약</label>
+                        <textarea
+                          className={`${inputCls} min-h-16 bg-[#F9FAFB] dark:bg-[#161B27]`}
+                          value={improveData.summary}
+                          readOnly
+                        />
+                      </div>
+                      <div>
+                        <label className={labelCls}>개선 방향 (시뮬레이션)</label>
+                        {improveData.improvement_direction ? (
+                          <textarea
+                            className={`${inputCls} min-h-24 bg-[#F9FAFB] dark:bg-[#161B27]`}
+                            value={improveData.improvement_direction}
+                            readOnly
+                          />
+                        ) : (
+                          <p className="text-xs text-[#8B95A1] dark:text-[#6B7280]">
+                            이 시뮬레이션엔 개선 권고(토론)가 없어요. 수정 요청사항으로 개선 방향을 입력하세요.
+                          </p>
+                        )}
+                      </div>
+                    </>
+                  )}
                   <div>
                     <label className={labelCls}>수정 요청사항</label>
                     <textarea
                       className={`${inputCls} min-h-16 resize-y`}
                       value={fixRequests}
                       onChange={(e) => setFixRequests(e.target.value)}
-                      placeholder="추가로 수정하고 싶은 내용을 입력하세요"
+                      placeholder="이미지에 반영할 수정 요청을 입력하세요 (최우선 반영)"
                     />
                   </div>
                 </>
