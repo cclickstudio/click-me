@@ -58,7 +58,7 @@ def build_simulation_agent(settings):
         return _ask_fallback
 
     # ── 풀모드 — Tool-calling ReAct 그래프(결과조회 + pgvector KB) ──
-    from langchain_core.messages import HumanMessage  # noqa: PLC0415
+    from langchain_core.messages import AIMessage, HumanMessage  # noqa: PLC0415
     from langchain_openai import ChatOpenAI  # noqa: PLC0415 — 키 있을 때만 로드
 
     from domain.simulation.assistant.graph import build_graph, to_result  # noqa: PLC0415
@@ -75,11 +75,20 @@ def build_simulation_agent(settings):
             "tags": ["simulation", "assistant"],
             "metadata": {"simulation_id": req.context_id, "ad_id": req.ad_id},
         }
-        # context_id(simulation_id)를 질문에 실어 LLM이 get_simulation_result 인자로 쓰게 한다.
-        seed = (
-            f"[시뮬레이션 ID: {req.context_id}] {req.question}" if req.context_id else req.question
+        # 시드에 프로젝트 ID·시뮬 ID를 실어 LLM이 list/get 도구 인자로 쓰게 한다.
+        prefix = ""
+        if req.project_id:
+            prefix += f"[프로젝트 ID: {req.project_id}] "
+        if req.context_id:
+            prefix += f"[시뮬레이션 ID: {req.context_id}] "
+        # 직전 대화(최근 6개)를 맥락으로 앞에 붙인다(후속 질문 자연스럽게).
+        hist = [
+            (AIMessage if role == "assistant" else HumanMessage)(content=content)
+            for role, content in (req.history or [])[-6:]
+        ]
+        final = await graph.ainvoke(
+            {"messages": [*hist, HumanMessage(content=prefix + req.question)]}, config=config
         )
-        final = await graph.ainvoke({"messages": [HumanMessage(content=seed)]}, config=config)
         return to_result(final)
 
     return _ask

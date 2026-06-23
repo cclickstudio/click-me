@@ -6,6 +6,8 @@ from __future__ import annotations
 import uuid
 from typing import TYPE_CHECKING
 
+from sqlalchemy import text
+
 from core.db import AsyncSessionLocal
 from domain.simulation.repositories.simulation_repository import SimulationRepository
 
@@ -38,6 +40,34 @@ async def fetch_simulation_result(simulation_id: str) -> dict:
         "objective_fit": result.get("objective_fit"),
         "reaction_count": len(result.get("reactions") or []),
     }
+
+
+async def list_simulations(project_id: str, limit: int = 10) -> list[dict]:
+    """프로젝트의 최근 시뮬 목록(id·제목·표본수·상태·시각). 이름/최근으로 특정할 때 쓴다."""
+    if not project_id:
+        return []
+    async with AsyncSessionLocal() as db:
+        rows = await db.execute(
+            text("""
+                SELECT s.id, s.status, s.sample_size, s.created_at, a.title AS ad_title
+                FROM simulations s
+                JOIN ads a ON a.id = s.ad_id
+                WHERE a.project_id = :pid AND s.deleted_at IS NULL
+                ORDER BY s.created_at DESC
+                LIMIT :limit
+            """),
+            {"pid": project_id, "limit": max(1, min(limit, 50))},
+        )
+    return [
+        {
+            "id": str(r.id),
+            "title": r.ad_title or "제목 없음",
+            "sample_size": r.sample_size,
+            "status": r.status,
+            "created_at": r.created_at.isoformat() if r.created_at else None,
+        }
+        for r in rows
+    ]
 
 
 _sim_service = None

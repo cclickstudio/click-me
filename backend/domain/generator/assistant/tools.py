@@ -4,6 +4,40 @@
 from __future__ import annotations
 
 
+async def list_generations(project_id: str, limit: int = 10) -> list[dict]:
+    """프로젝트의 최근 광고 생성 목록(id·상품명·모드·상태·생성시각). 이름/최근으로 특정할 때 쓴다."""
+    if not project_id:
+        return []
+    from sqlalchemy import text  # noqa: PLC0415
+
+    from core.db import AsyncSessionLocal  # noqa: PLC0415
+
+    async with AsyncSessionLocal() as db:
+        rows = await db.execute(
+            text("""
+                SELECT g.id, g.status, g.input, g.created_at
+                FROM ad_generations g
+                WHERE g.project_id = :pid AND g.deleted_at IS NULL
+                ORDER BY g.created_at DESC
+                LIMIT :limit
+            """),
+            {"pid": project_id, "limit": max(1, min(limit, 50))},
+        )
+    out = []
+    for r in rows:
+        inp = r.input or {}
+        out.append(
+            {
+                "id": str(r.id),
+                "title": inp.get("product_name") or "제목 없음",
+                "mode": inp.get("mode", "create"),
+                "status": r.status,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+            }
+        )
+    return out
+
+
 async def fetch_generation_result(generation_id: str) -> dict:
     """generation_id로 저장된 생성 결과의 후보·전략·선택 요약. 없으면 error 키."""
     # lazy import — generator_service는 이미지 생성 파이프라인을 모듈 로드 시 끌어와 무겁다.

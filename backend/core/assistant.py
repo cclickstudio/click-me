@@ -14,6 +14,8 @@ class AssistantRequest(BaseModel):
     question: str
     context_id: str | None = None  # 도메인 맥락(시뮬=simulation_id, 생성=generation_id)
     ad_id: str | None = None
+    project_id: str | None = None  # 목록 조회 스코프(현재 프로젝트)
+    history: list[tuple[str, str]] = Field(default_factory=list)  # (role, content) 직전 대화
 
 
 class Citation(BaseModel):

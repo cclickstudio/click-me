@@ -21,8 +21,10 @@ _MAX_ROUNDS = 5
 _SYSTEM = (
     "너는 광고 시뮬레이션 분석가 CLIO다. 한국어로 간결하게 답한다.\n"
     "도구로 근거를 모은 뒤 답하라.\n"
+    "- 사용자가 특정 시뮬을 이름·최근 등으로 가리키면(예: '바나나우유 시뮬') "
+    "먼저 list_simulations로 목록을 조회해 해당 id를 찾는다.\n"
     "- 특정 시뮬 결과의 수치(4대 KPI·목표적합도)는 get_simulation_result로 조회해 "
-    "그 값만 인용한다. 추정·환각 금지.\n"
+    "그 값만 인용한다. 추정·환각 금지. '목표 수준' 같은 판단은 실제 수치로만 한다.\n"
     "- KPI 정의·해석·신뢰성·방법론은 search_kb로 근거를 찾아 설명한다.\n"
     "- 클릭 의향률을 실측 CTR로 환산하지 말 것. 구매의도 외 신호는 탐색적으로 다룬다.\n"
     "- 근거가 없으면 모른다고 말한다. 문장 끝에 콜론을 쓰지 말 것."
@@ -38,6 +40,13 @@ class _State(MessagesState, total=False):
 
 def build_graph(settings, retriever, llm):
     """ReAct 그래프 컴파일 — 도구는 retriever를 클로저로 바인딩한다."""
+
+    @tool
+    async def list_simulations(project_id: str, limit: int = 10) -> list[dict]:
+        """현재 프로젝트의 최근 시뮬레이션 목록(id·제목·표본수·상태·시각)을 조회한다.
+        '내가 돌린 시뮬 뭐 있어', 'X 시뮬' 처럼 이름·최근으로 찾을 때 먼저 쓴다.
+        project_id는 시드의 '프로젝트 ID'를 그대로 넣는다."""
+        return await sim_tools.list_simulations(project_id, limit)
 
     @tool
     async def get_simulation_result(simulation_id: str) -> dict:
@@ -56,7 +65,7 @@ def build_graph(settings, retriever, llm):
         except Exception:  # noqa: BLE001 — KB 미적재면 빈 결과로 진행(결과 도구만으로 답)
             return []
 
-    read_tools = [get_simulation_result, search_kb]
+    read_tools = [list_simulations, get_simulation_result, search_kb]
     bound = llm.bind_tools(read_tools)
     by_name = {t.name: t for t in read_tools}
 

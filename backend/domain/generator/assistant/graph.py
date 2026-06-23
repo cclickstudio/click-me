@@ -21,6 +21,7 @@ _MAX_ROUNDS = 5
 _SYSTEM = (
     "너는 광고 생성 분석가 CLIO다. 한국어로 간결하게 답한다.\n"
     "도구로 근거를 모은 뒤 답하라.\n"
+    "- 사용자가 특정 생성을 이름·최근 등으로 가리키면 먼저 list_generations로 목록을 조회해 id를 찾는다.\n"
     "- 특정 생성 결과(후보·전략·선택·QA)는 get_generation_result로 조회해 "
     "그 값만 인용한다. 추정·환각 금지.\n"
     "- 카피 전략·작성 원칙·브랜드 톤은 search_kb로 근거를 찾아 설명한다.\n"
@@ -39,6 +40,13 @@ def build_graph(settings, retriever, llm):
     """ReAct 그래프 컴파일 — 도구는 retriever를 클로저로 바인딩한다."""
 
     @tool
+    async def list_generations(project_id: str, limit: int = 10) -> list[dict]:
+        """현재 프로젝트의 최근 광고 생성 목록(id·상품명·모드·상태·시각)을 조회한다.
+        '내가 만든 시안 뭐 있어', 'X 생성' 처럼 이름·최근으로 찾을 때 먼저 쓴다.
+        project_id는 시드의 '프로젝트 ID'를 그대로 넣는다."""
+        return await gen_tools.list_generations(project_id, limit)
+
+    @tool
     async def get_generation_result(generation_id: str) -> dict:
         """저장된 광고 생성 결과의 후보·전략·선택·QA 요약을 조회한다.
         특정 생성 결과(어떤 시안이 나왔나, 왜 선택됐나)를 묻는 질문에 쓴다."""
@@ -55,7 +63,7 @@ def build_graph(settings, retriever, llm):
         except Exception:  # noqa: BLE001 — KB 미적재면 빈 결과로 진행(결과 도구만으로 답)
             return []
 
-    read_tools = [get_generation_result, search_kb]
+    read_tools = [list_generations, get_generation_result, search_kb]
     bound = llm.bind_tools(read_tools)
     by_name = {t.name: t for t in read_tools}
 
