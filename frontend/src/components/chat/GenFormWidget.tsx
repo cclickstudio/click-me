@@ -26,9 +26,11 @@ const btnCls =
 
 export default function GenFormWidget({
   initial,
+  initialImage,
   onResult,
 }: {
   initial?: Initial;
+  initialImage?: File; // 채팅에서 첨부한 상품 이미지
   onResult?: (summary: string) => void; // 완료 시 결과 요약을 채팅으로 보내 다음 단계 제안
 }) {
   const router = useRouter();
@@ -39,6 +41,10 @@ export default function GenFormWidget({
   const [desc, setDesc] = useState(initial?.product_description ?? '');
   const [target, setTarget] = useState(initial?.target_audience ?? '');
   const [objective, setObjective] = useState(initial?.campaign_objective ?? 'conversion');
+  const [image] = useState<File | null>(initialImage ?? null);
+  const [imagePreview] = useState<string | null>(() =>
+    initialImage ? URL.createObjectURL(initialImage) : null,
+  );
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectId, setProjectId] = useState('');
   const [pct, setPct] = useState(0);
@@ -84,12 +90,23 @@ export default function GenFormWidget({
     setPct(0);
     setStageMsg('광고 생성 시작...');
     try {
+      // 첨부 이미지가 있으면 상품 이미지로 업로드해 temp_key를 넘긴다(실패해도 이미지 없이 진행).
+      let productImageTempKey: string | undefined;
+      if (image) {
+        try {
+          const up = await api.generator.uploadProductImage(image);
+          productImageTempKey = up.temp_key;
+        } catch {
+          /* 업로드 실패 — 이미지 없이 생성 */
+        }
+      }
       const { generation_id } = (await api.generator.start({
         product_name: name,
         product_description: desc,
         target_audience: target,
         campaign_objective: objective,
         project_id: projectId,
+        product_image_temp_key: productImageTempKey ?? null,
       })) as { generation_id: string };
       setGenId(generation_id);
       setGenJob(generation_id); // 동시실행 슬롯 점유(생성 1개 제한)
@@ -135,6 +152,13 @@ export default function GenFormWidget({
             ({step + 1}/{totalSteps})
           </span>
         </p>
+        {imagePreview && (
+          <div className="mb-3 flex items-center gap-2">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={imagePreview} alt="첨부 이미지" className="w-12 h-12 rounded-lg object-cover border border-[#E5E8EB] dark:border-[#2D3748]" />
+            <span className="text-[11px] text-[#8B95A1]">채팅에서 첨부한 이미지를 상품 이미지로 사용해요</span>
+          </div>
+        )}
         <div className="min-h-[68px]">
           {step === 0 && (
             <div>

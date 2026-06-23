@@ -16,19 +16,30 @@ const labelCls = 'text-[11px] font-semibold text-[#8B95A1] dark:text-[#6B7280] m
 
 export default function SimFormWidget({
   initial,
+  initialImage,
   onResult,
 }: {
-  initial?: { ad_content?: string };
+  initial?: {
+    ad_content?: string;
+    ad_title?: string;
+    product_category?: string;
+    ad_objective?: string;
+  };
+  initialImage?: File; // 채팅에서 첨부한 광고 이미지
   onResult?: (summary: string) => void; // 완료 시 결과 요약을 채팅으로 보내 다음 단계 제안
 }) {
   const router = useRouter();
   const [phase, setPhase] = useState<Phase>('form');
   const [step, setStep] = useState(0);
   const [runId, setRunId] = useState<string | null>(null);
-  const [adTitle, setAdTitle] = useState('');
+  const [adTitle, setAdTitle] = useState(initial?.ad_title ?? '');
   const [adContent, setAdContent] = useState(initial?.ad_content ?? '');
-  const [category, setCategory] = useState('');
-  const [objective, setObjective] = useState('');
+  const [category, setCategory] = useState(initial?.product_category ?? '');
+  const [objective, setObjective] = useState(initial?.ad_objective ?? '');
+  const [image] = useState<File | null>(initialImage ?? null);
+  const [imagePreview] = useState<string | null>(() =>
+    initialImage ? URL.createObjectURL(initialImage) : null,
+  );
   const [sampleSize, setSampleSize] = useState(20);
   const [pct, setPct] = useState(0);
   const [stageMsg, setStageMsg] = useState('준비 중...');
@@ -74,6 +85,7 @@ export default function SimFormWidget({
         ad_id: `chat-${safeRandomUUID()}`,
         ad_title: adTitle || undefined,
         ad_content: adContent,
+        ad_image: image ?? undefined,
         product_category: category || undefined,
         ad_objective: objective || undefined,
         sample_size: sampleSize,
@@ -131,6 +143,13 @@ export default function SimFormWidget({
             ({step + 1}/{totalSteps})
           </span>
         </p>
+        {imagePreview && (
+          <div className="mb-3 flex items-center gap-2">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={imagePreview} alt="첨부 이미지" className="w-12 h-12 rounded-lg object-cover border border-[#E5E8EB] dark:border-[#2D3748]" />
+            <span className="text-[11px] text-[#8B95A1]">채팅에서 첨부한 이미지를 사용해요</span>
+          </div>
+        )}
         <div className="min-h-[68px]">
           {step === 0 && (
             <div>

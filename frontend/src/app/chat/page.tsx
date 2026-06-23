@@ -33,6 +33,9 @@ type WidgetSpec = {
   type: string;
   data?: {
     ad_content?: string;
+    ad_title?: string;
+    product_category?: string;
+    ad_objective?: string;
     product_name?: string;
     product_description?: string;
     target_audience?: string;
@@ -51,6 +54,8 @@ type Message = {
   role: 'user' | 'assistant';
   content: string;
   meta?: SourceMeta;
+  imageUrl?: string; // 사용자 메시지에 첨부된 이미지 미리보기(object URL)
+  imageFile?: File; // 위젯으로 넘길 첨부 이미지 원본(클라이언트 전용, DB 미저장)
 };
 
 function SendIcon() {
@@ -87,7 +92,20 @@ export default function Page() {
   const [slashIndex, setSlashIndex] = useState(0); // 드롭다운 하이라이트 위치
   const [sessions, setSessions] = useState<ChatSessionRow[]>([]); // 프로젝트별 채팅 목록
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null); // DB 세션 id
+  const [attachedImage, setAttachedImage] = useState<File | null>(null); // 입력바 첨부 이미지
+  const [attachedPreview, setAttachedPreview] = useState<string | null>(null);
+  const pendingImageRef = useRef<File | null>(null); // 이번 턴 위젯으로 넘길 이미지
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  // 이미지 첨부/해제 — object URL은 교체·해제 시 revoke.
+  const attachImage = (file: File | null) => {
+    setAttachedPreview((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return file ? URL.createObjectURL(file) : null;
+    });
+    setAttachedImage(file);
+  };
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -123,27 +141,30 @@ export default function Page() {
     : [];
 
   // 로컬 assistant 메시지 추가 (백엔드 호출 없이 위젯/안내 띄우기)
-  const addLocalAssistant = (content: string, meta?: SourceMeta) => {
-    setMessages((prev) => [...prev, { role: 'assistant', content, meta }]);
+  const addLocalAssistant = (content: string, meta?: SourceMeta, imageFile?: File) => {
+    setMessages((prev) => [...prev, { role: 'assistant', content, meta, imageFile }]);
   };
 
   const runSlashCommand = (cmd: string) => {
     setInput('');
     setSlashIndex(0);
+    const img = attachedImage ?? undefined; // 첨부 이미지가 있으면 위젯으로 전달
     switch (cmd) {
       case '/시뮬레이션':
-        addLocalAssistant('광고 시뮬레이션 입력 위젯입니다. 아래에서 실행하세요.', {
-          source: 'simulation',
-          label: '광고 시뮬레이터',
-          widget: { type: 'sim_form' },
-        });
+        addLocalAssistant(
+          '광고 시뮬레이션 입력 위젯입니다. 아래에서 실행하세요.',
+          { source: 'simulation', label: '광고 시뮬레이터', widget: { type: 'sim_form' } },
+          img,
+        );
+        attachImage(null);
         break;
       case '/제너레이터':
-        addLocalAssistant('광고 생성 입력 위젯입니다. 아래에서 실행하세요.', {
-          source: 'generator',
-          label: '광고 생성',
-          widget: { type: 'gen_form' },
-        });
+        addLocalAssistant(
+          '광고 생성 입력 위젯입니다. 아래에서 실행하세요.',
+          { source: 'generator', label: '광고 생성', widget: { type: 'gen_form' } },
+          img,
+        );
+        attachImage(null);
         break;
       case '/위젯':
         addLocalAssistant(
@@ -199,9 +220,14 @@ export default function Page() {
     const content = text ?? input.trim();
     if (!content || isStreaming || !selectedProject) return;
 
-    const newMessages: Message[] = [...messages, { role: 'user', content }];
+    // 첨부 이미지를 이번 턴 사용자 메시지에 싣고, 결과 위젯으로 넘길 수 있게 보관.
+    pendingImageRef.current = attachedImage;
+    const userMsg: Message = { role: 'user', content, imageUrl: attachedPreview ?? undefined };
+    const newMessages: Message[] = [...messages, userMsg];
     setMessages(newMessages);
     setInput('');
+    setAttachedImage(null);
+    setAttachedPreview(null);
     setIsStreaming(true);
 
     // 세션이 없으면(새 채팅) 먼저 DB 세션을 만들어 프로젝트에 귀속.
@@ -225,7 +251,10 @@ export default function Page() {
       const res = await fetch(`${API_BASE}/api/chat/complete`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ session_id: sid, messages: newMessages }),
+        body: JSON.stringify({
+          session_id: sid,
+          messages: newMessages.map((m) => ({ role: m.role, content: m.content })),
+        }),
       });
 
       if (!res.ok || !res.body) {
@@ -267,7 +296,11 @@ export default function Page() {
             } else if (data.meta) {
               setMessages((prev) => {
                 const last = prev[prev.length - 1];
-                return [...prev.slice(0, -1), { ...last, meta: data.meta }];
+                // 위젯이 오면 이번 턴 첨부 이미지를 그 위젯 메시지에 실어준다.
+                const imageFile = data.meta?.widget
+                  ? pendingImageRef.current ?? undefined
+                  : last.imageFile;
+                return [...prev.slice(0, -1), { ...last, meta: data.meta, imageFile }];
               });
             } else if (data.token) {
               setMessages((prev) => {
@@ -290,6 +323,7 @@ export default function Page() {
       ]);
     } finally {
       setIsStreaming(false);
+      pendingImageRef.current = null; // 위젯에 전달됐거나 미사용 — 어느 쪽이든 해제
       // 제목·갱신 시각이 바뀌었을 수 있으니 목록 갱신.
       if (selectedProject) loadSessions(selectedProject.id);
     }
@@ -451,6 +485,14 @@ export default function Page() {
                           {msg.meta.engine ? ` · ${msg.meta.engine}` : ''}
                         </span>
                       )}
+                      {msg.role === 'user' && msg.imageUrl && (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={msg.imageUrl}
+                          alt="첨부 이미지"
+                          className="max-w-[200px] max-h-[200px] rounded-2xl rounded-br-md object-cover border border-[#E5E8EB] dark:border-[#2D3748]"
+                        />
+                      )}
                       <div
                         className={`px-4 py-3 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap ${
                           msg.role === 'user'
@@ -461,10 +503,10 @@ export default function Page() {
                         {msg.content}
                       </div>
                       {msg.meta?.widget?.type === 'sim_form' && (
-                        <SimFormWidget initial={msg.meta.widget.data} onResult={handleSend} />
+                        <SimFormWidget initial={msg.meta.widget.data} initialImage={msg.imageFile} onResult={handleSend} />
                       )}
                       {msg.meta?.widget?.type === 'gen_form' && (
-                        <GenFormWidget initial={msg.meta.widget.data} onResult={handleSend} />
+                        <GenFormWidget initial={msg.meta.widget.data} initialImage={msg.imageFile} onResult={handleSend} />
                       )}
                       {msg.role === 'assistant' &&
                         msg.meta?.source === 'management' &&
@@ -496,6 +538,30 @@ export default function Page() {
 
         {/* ── Input bar ── */}
         <div className="border-t border-[#E5E8EB] dark:border-[#2D3748] bg-white dark:bg-[#1C2333] px-4 py-4 transition-colors">
+          {/* 첨부 이미지 미리보기 */}
+          {attachedPreview && (
+            <div className="max-w-2xl mx-auto mb-2 flex items-center gap-2">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={attachedPreview} alt="첨부 미리보기" className="w-14 h-14 rounded-lg object-cover border border-[#E5E8EB] dark:border-[#2D3748]" />
+              <button
+                onClick={() => attachImage(null)}
+                className="text-xs text-[#8B95A1] hover:text-[#F04452]"
+              >
+                이미지 제거 ✕
+              </button>
+            </div>
+          )}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0] ?? null;
+              attachImage(f);
+              e.target.value = ''; // 같은 파일 재선택 허용
+            }}
+          />
           <div className="max-w-2xl mx-auto flex items-end gap-3 relative">
             {/* 슬래시 커맨드 자동완성 드롭다운 */}
             {slashMatches.length > 0 && (
@@ -525,6 +591,16 @@ export default function Page() {
                 })}
               </div>
             )}
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isStreaming}
+              title="이미지 첨부"
+              className="p-3 rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] text-[#8B95A1] hover:text-[#3182F6] hover:border-[#3182F6] disabled:opacity-30 transition-all shrink-0"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+              </svg>
+            </button>
             <textarea
               value={input}
               onChange={(e) => {
