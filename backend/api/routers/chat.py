@@ -51,9 +51,14 @@ async def _persist(
     assistant_content: str,
     meta: dict | None,
     image_url: str | None = None,
+    result_ref: dict | None = None,
 ) -> None:
     """한 턴을 DB에 적재(best-effort) — 세션 없거나 실패해도 채팅은 진행."""
-    user_meta = {"image_url": image_url} if image_url else None
+    user_meta: dict = {}
+    if image_url:
+        user_meta["image_url"] = image_url
+    if result_ref:
+        user_meta["result"] = result_ref
     try:
         async with AsyncSessionLocal() as db:
             await history.append_turn(
@@ -93,7 +98,9 @@ async def chat_complete(body: ChatRequest) -> StreamingResponse:
         yield f"data: {json.dumps({'meta': meta}, ensure_ascii=False)}\n\n"
         for piece in _chunks(answer):
             yield f"data: {json.dumps({'token': piece}, ensure_ascii=False)}\n\n"
-        await _persist(body.session_id, last_message, answer, meta, body.image_url)
+        await _persist(
+            body.session_id, last_message, answer, meta, body.image_url, body.result_ref
+        )
         yield 'data: {"done": true}\n\n'
 
     return StreamingResponse(

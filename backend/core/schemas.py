@@ -152,6 +152,8 @@ class ChatRequest(BaseModel):
     context_ad_id: str | None = None
     context_simulation_id: str | None = None
     image_url: str | None = None  # 첨부 이미지 S3 URL(사용자 메시지에 영속화)
+    # 채팅으로 돌린 시뮬/생성 결과 참조 {"kind","id"} — 내역에 영속화(결과 보기 링크)
+    result_ref: dict | None = None
 
 
 class InquiryCreate(BaseModel):
