@@ -12,7 +12,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from openai import AsyncOpenAI
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 
 from core.config import settings
 from core.db import AsyncSessionLocal
@@ -54,14 +54,29 @@ def _chunk_markdown(text: str) -> list[tuple[str, str]]:
 async def ingest() -> int:
     client = AsyncOpenAI(api_key=settings.openai_api_key)
     total = 0
+    skipped = 0
     async with AsyncSessionLocal() as db:
         for md in sorted(_KB_DIR.glob("*.md")):
             source = md.name
             text = md.read_text(encoding="utf-8")
+            new_hash = _sha(text)
+            # 증분(content_hash 변경감지): 같은 출처 active 문서가 동일 해시면 재임베딩 스킵.
+            existing = (
+                await db.execute(
+                    select(ManagementKbDocument).where(
+                        ManagementKbDocument.title == source,
+                        ManagementKbDocument.status == "active",
+                    )
+                )
+            ).scalars().first()
+            if existing is not None and existing.content_hash == new_hash:
+                skipped += 1
+                print(f"  {source}: 변경 없음 — skip")
+                continue
             sections = _chunk_markdown(text)
             if not sections:
                 continue
-            # 재적재 멱등: 같은 출처의 문서 삭제(청크 cascade) + 옛 평면 청크 정리 후 재생성.
+            # 변경/신규 → 같은 출처의 문서 삭제(청크 cascade) + 옛 평면 청크 정리 후 재생성.
             await db.execute(
                 delete(ManagementKbDocument).where(ManagementKbDocument.title == source)
             )
@@ -106,7 +121,7 @@ async def ingest() -> int:
             total += len(sections)
             print(f"  {source} [{doc.source_type}]: {len(sections)} chunks")
         await db.commit()
-    print(f"적재 완료: {total} chunks")
+    print(f"적재 완료: {total} chunks (변경 없음 skip: {skipped})")
     return total
 
 
