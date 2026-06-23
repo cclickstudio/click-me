@@ -1097,6 +1097,25 @@ def _asset_config(name: str | None = None, image_hash: str | None = None) -> Cam
     )
 
 
+async def _upload_creative_or_502(
+    writer, config: CampaignConfig, image_bytes: bytes, filename: str
+) -> str | None:
+    """소재 이미지를 Meta(/adimages)에 업로드 — 실패는 사유와 함께 502로 변환.
+
+    /adimages는 validate_only가 안 먹는 실호출이라, 앱 권한 부족(#3) 등 MetaApiError가 raw 500으로
+    새지 않게 user_msg를 담아 502로 정리한다. dry_run/mock은 writer가 None을 반환(미전송, 정상).
+    """
+    try:
+        return await writer.upload_image(
+            config, image_bytes, filename, idem_key=f"img_{uuid4().hex[:8]}"
+        )
+    except MetaApiError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Meta 이미지 업로드 실패: {exc.user_msg or exc.message}",
+        ) from exc
+
+
 class CreateCampaignRequest(BaseModel):
     name: str
     objective: Literal["traffic", "leads"] = "traffic"  # 트래픽(클릭) / 리드(잠재고객)
@@ -1291,11 +1310,8 @@ async def from_candidate(
         raise HTTPException(status_code=422, detail="후보 이미지를 읽을 수 없습니다.") from exc
 
     writer = build_writer(settings)
-    image_hash = await writer.upload_image(
-        _asset_config(name=body.name),
-        image_bytes,
-        "candidate.png",
-        idem_key=f"img_{uuid4().hex[:8]}",
+    image_hash = await _upload_creative_or_502(
+        writer, _asset_config(name=body.name), image_bytes, "candidate.png"
     )
     if _is_sending_mode() and not image_hash:
         raise HTTPException(status_code=502, detail="Meta 이미지 업로드 실패.")
@@ -1490,11 +1506,8 @@ async def from_simulation(
         raise HTTPException(status_code=422, detail="시뮬 이미지를 읽을 수 없습니다.") from exc
 
     writer = build_writer(settings)
-    image_hash = await writer.upload_image(
-        _asset_config(name=body.name),
-        image_bytes,
-        "creative.png",
-        idem_key=f"img_{uuid4().hex[:8]}",
+    image_hash = await _upload_creative_or_502(
+        writer, _asset_config(name=body.name), image_bytes, "creative.png"
     )
     if _is_sending_mode() and not image_hash:
         raise HTTPException(status_code=502, detail="Meta 이미지 업로드 실패.")
