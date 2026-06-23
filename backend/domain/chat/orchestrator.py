@@ -13,6 +13,8 @@ import json
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 
+from domain.generator.assistant.agent import build_generator_agent
+from domain.generator.assistant.contracts import GenAskRequest
 from domain.management.assistant.agent import build_management_agent
 from domain.management.assistant.contracts import AskRequest, AskResult
 from domain.simulation.assistant.agent import build_simulation_agent
@@ -121,6 +123,19 @@ def _sim_meta(res) -> dict:
     }
 
 
+def _gen_meta(res) -> dict:
+    """GenAskResult → SSE meta(출처·인용)."""
+    return {
+        "source": "generator",
+        "label": "생성 어시스턴트",
+        "engine": "OpenAI · 결과+KB",
+        "citations": [
+            {"kind": c.kind, "source": c.source, "title": c.title} for c in res.citations
+        ],
+        "used_tools": res.used_tools,
+    }
+
+
 def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnswer | None]]:
     """오케스트레이터 진입점. 키+실모드면 OpenAI ReAct, 아니면 키워드 폴백."""
     api_key = getattr(settings, "openai_api_key", None)
@@ -152,6 +167,7 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
     model_name = getattr(settings, "chat_orchestrator_model", "gpt-4o-mini")
     llm = ChatOpenAI(model=model_name, temperature=0.2, api_key=api_key)
     sim = build_simulation_agent(settings)  # 시뮬 서브에이전트(폴백/풀모드 자동)
+    gen = build_generator_agent(settings)  # 생성 서브에이전트(폴백/풀모드 자동)
 
     @tool
     async def ask_management(question: str, campaign_id: str | None = None) -> dict:
@@ -167,8 +183,19 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
         res = await sim(SimAskRequest(question=question, simulation_id=simulation_id))
         return {"_answer": res.answer, "_meta": _sim_meta(res)}
 
-    bound = llm.bind_tools([ask_management, ask_simulation])
-    _subagents = {"ask_management": ask_management, "ask_simulation": ask_simulation}
+    @tool
+    async def ask_generator(question: str, generation_id: str | None = None) -> dict:
+        """광고 생성(개선 시안) 결과 해석·카피 전략·작성 원칙 질문에 답한다.
+        어떤 시안이 나왔나·왜 선택됐나·카피 전략·"어떤 카피가 좋나"에 쓴다."""
+        res = await gen(GenAskRequest(question=question, generation_id=generation_id))
+        return {"_answer": res.answer, "_meta": _gen_meta(res)}
+
+    bound = llm.bind_tools([ask_management, ask_simulation, ask_generator])
+    _subagents = {
+        "ask_management": ask_management,
+        "ask_simulation": ask_simulation,
+        "ask_generator": ask_generator,
+    }
 
     class _State(MessagesState, total=False):
         tool_meta: dict | None
