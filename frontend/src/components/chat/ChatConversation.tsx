@@ -8,6 +8,7 @@ import { api } from '@/lib/api';
 import SimFormWidget from './SimFormWidget';
 import GenFormWidget from './GenFormWidget';
 import SimGenListWidget from './SimGenListWidget';
+import ApprovalWidget, { type ApprovalSpec } from './ApprovalWidget';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
@@ -59,6 +60,7 @@ type SourceMeta = {
   citations?: Citation[];
   used_tools?: string[];
   widget?: WidgetSpec;
+  approval?: ApprovalSpec; // 개선 루프 HITL 수락/거절 카드
 };
 // 채팅으로 실제 돌린 시뮬/생성 결과 참조 — 내역에 남겨 재로드 시 "결과 보기" 링크로 렌더.
 type ResultRef = { kind: 'sim' | 'gen'; id: string };
@@ -203,6 +205,91 @@ export default function ChatConversation({
     }
   };
 
+  // SSE 스트림 1건을 소비해 마지막 어시스턴트 메시지에 토큰·meta·approval을 누적.
+  // 호출 전 빈 어시스턴트 메시지를 push해둔다(/complete·/approve 공용).
+  const consumeStream = useCallback(async (res: Response) => {
+    setMessages((prev) => [...prev, { role: 'assistant', content: '' }]);
+    const reader = res.body!.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() ?? '';
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        const raw = line.slice(6).trim();
+        if (!raw) continue;
+        try {
+          const data = JSON.parse(raw) as {
+            kind?: string;
+            token?: string;
+            done?: boolean;
+            meta?: SourceMeta;
+            approval?: ApprovalSpec;
+          };
+          // kind 우선 분기, 없으면 레거시 필드(token/meta/done)로 폴백.
+          const kind = data.kind ?? (data.done ? 'done' : data.meta ? 'meta' : 'text');
+          if (kind === 'done') {
+            setIsStreaming(false);
+          } else if (kind === 'meta' && data.meta) {
+            setMessages((prev) => {
+              const last = prev[prev.length - 1];
+              const imageFile = data.meta?.widget
+                ? pendingImageRef.current ?? undefined
+                : last.imageFile;
+              return [...prev.slice(0, -1), { ...last, meta: data.meta, imageFile }];
+            });
+          } else if (kind === 'approval' && data.approval) {
+            setMessages((prev) => {
+              const last = prev[prev.length - 1];
+              const meta = { ...(last.meta ?? { source: 'simulation', label: '개선 제안' }), approval: data.approval };
+              return [...prev.slice(0, -1), { ...last, meta }];
+            });
+          } else if (kind === 'text' && data.token) {
+            setMessages((prev) => {
+              const last = prev[prev.length - 1];
+              return [...prev.slice(0, -1), { ...last, content: last.content + data.token }];
+            });
+          }
+        } catch {
+          // ignore malformed SSE line
+        }
+      }
+    }
+  }, []);
+
+  // 개선 루프 수락 — POST /api/chat/approve 로 왕복 카운트를 올리고 다음 위젯을 스트리밍.
+  const handleApprove = useCallback(
+    async (action: string) => {
+      if (isStreaming || !sessionId) return;
+      setIsStreaming(true);
+      try {
+        const res = await fetch(`${API_BASE}/api/chat/approve`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action, session_id: sessionId, project_id: projectId }),
+        });
+        if (!res.ok || !res.body) {
+          setIsStreaming(false);
+          return;
+        }
+        await consumeStream(res);
+      } catch {
+        setMessages((prev) => [
+          ...prev,
+          { role: 'assistant', content: '진행 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.' },
+        ]);
+      } finally {
+        setIsStreaming(false);
+        onActivity?.();
+      }
+    },
+    [isStreaming, sessionId, projectId, consumeStream, onActivity],
+  );
+
   const handleSend = useCallback(
     async (text?: string, resultRef?: ResultRef) => {
       const content = text ?? input.trim();
@@ -275,52 +362,7 @@ export default function ChatConversation({
           return;
         }
 
-        setMessages((prev) => [...prev, { role: 'assistant', content: '' }]);
-
-        const reader = res.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = '';
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split('\n');
-          buffer = lines.pop() ?? '';
-          for (const line of lines) {
-            if (!line.startsWith('data: ')) continue;
-            const raw = line.slice(6).trim();
-            if (!raw) continue;
-            try {
-              const data = JSON.parse(raw) as {
-                kind?: string;
-                token?: string;
-                done?: boolean;
-                meta?: SourceMeta;
-              };
-              // kind 우선 분기, 없으면 레거시 필드(token/meta/done)로 폴백.
-              const kind = data.kind ?? (data.done ? 'done' : data.meta ? 'meta' : 'text');
-              if (kind === 'done') {
-                setIsStreaming(false);
-              } else if (kind === 'meta' && data.meta) {
-                setMessages((prev) => {
-                  const last = prev[prev.length - 1];
-                  const imageFile = data.meta?.widget
-                    ? pendingImageRef.current ?? undefined
-                    : last.imageFile;
-                  return [...prev.slice(0, -1), { ...last, meta: data.meta, imageFile }];
-                });
-              } else if (kind === 'text' && data.token) {
-                setMessages((prev) => {
-                  const last = prev[prev.length - 1];
-                  return [...prev.slice(0, -1), { ...last, content: last.content + data.token }];
-                });
-              }
-            } catch {
-              // ignore malformed SSE line
-            }
-          }
-        }
+        await consumeStream(res);
       } catch {
         setMessages((prev) => [
           ...prev,
@@ -332,7 +374,7 @@ export default function ChatConversation({
         onActivity?.();
       }
     },
-    [input, isStreaming, projectId, attachedImage, attachedPreview, messages, sessionId, onSessionCreated, onActivity],
+    [input, isStreaming, projectId, attachedImage, attachedPreview, messages, sessionId, onSessionCreated, onActivity, consumeStream],
   );
 
   return (
@@ -439,6 +481,13 @@ export default function ChatConversation({
                         mode={msg.meta.widget.mode ?? 'read'}
                         items={msg.meta.widget.data?.items ?? []}
                         onResult={handleSend}
+                      />
+                    )}
+                    {msg.meta?.approval && (
+                      <ApprovalWidget
+                        approval={msg.meta.approval}
+                        onAccept={handleApprove}
+                        disabled={isStreaming}
                       />
                     )}
                     {msg.role === 'assistant' &&

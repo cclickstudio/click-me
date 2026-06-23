@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 
 from core.assistant import AssistantRequest
 from domain.chat import history
+from domain.chat.loop_state import MAX_LOOP, get_loop_state
 from domain.generator.assistant.agent import build_generator_agent
 from domain.generator.assistant.tools import list_generations as _list_generations
 from domain.management.assistant.agent import build_management_agent
@@ -497,39 +498,69 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
             reasons.append(f"구매의도 {m.purchase_intent:.1f}/5 (목표 {_TARGET_PI})")
         if m.rejection_rate is not None and m.rejection_rate >= _HIGH_REJECTION:
             reasons.append(f"거부율 {m.rejection_rate * 100:.0f}%")
+        # 개선 루프 — 약하면 왕복 카운트 확인 후 HITL approval 제안, 충분하면 종료.
+        loop = get_loop_state(state.get("session_id"))
         if reasons:
-            answer = (
-                f"결과가 다소 약해요 — {', '.join(reasons)}.\n\n"
-                "개선 시안을 만들어볼까요? '광고 시안 만들어줘'라고 하시면 생성 위젯을 띄울게요."
-            )
-            meta = {
-                "source": "simulation",
-                "label": "결과 분석 · 개선 제안",
-                "engine": f"OpenAI · {model_name}",
-                "suggest": "generator",
-            }
+            loop.phase = "sim_done"
+            loop.weak_reasons = reasons
+            if loop.loop_count < MAX_LOOP:
+                answer = (
+                    f"결과가 다소 약해요 — {', '.join(reasons)}.\n\n"
+                    f"개선 시안을 만들어볼까요? (왕복 {loop.loop_count + 1}/{MAX_LOOP})"
+                )
+                meta = {
+                    "source": "simulation",
+                    "label": "결과 분석 · 개선 제안",
+                    "engine": f"OpenAI · {model_name}",
+                    "suggest": "generator",
+                    "approval": {
+                        "action": "run_generator",
+                        "label": "개선 시안 만들기",
+                        "reasons": reasons,
+                    },
+                }
+            else:
+                loop.phase = "finished"
+                answer = (
+                    f"개선 왕복을 {MAX_LOOP}회 모두 시도했어요 — "
+                    f"마지막 결과는 {', '.join(reasons)}.\n\n"
+                    "여기서 루프를 마무리할게요. 카피 방향을 직접 다듬어 다시 시도해보셔도 좋아요."
+                )
+                meta = {
+                    "source": "simulation",
+                    "label": "개선 루프 종료",
+                    "engine": f"OpenAI · {model_name}",
+                }
         else:
-            answer = "결과가 목표 수준이에요. 이대로 집행을 검토해도 좋아요."
+            loop.phase = "finished"
+            answer = "목표 도달이에요(구매의도·거부율 충족). 이대로 집행을 검토해도 좋아요."
             meta = {
                 "source": "simulation",
-                "label": "결과 분석",
+                "label": "결과 분석 · 목표 도달",
                 "engine": f"OpenAI · {model_name}",
             }
         return {"answer": answer, "meta": meta}
 
     async def gen_result_node(state) -> dict:
         # 위젯이 보낸 생성 결과 요약 → 새 시안으로 재시뮬 제안. 실행은 안 하고 제안만.
+        loop = get_loop_state(state.get("session_id"))
+        loop.phase = "gen_done"
+        meta = {
+            "source": "generator",
+            "label": "결과 분석 · 재시뮬 제안",
+            "engine": f"OpenAI · {model_name}",
+            "suggest": "simulation",
+        }
+        # 개선 루프 중이면(왕복 여력 있음) 재시뮬 approval을 함께 제안.
+        if loop.loop_count < MAX_LOOP:
+            meta["approval"] = {
+                "action": "rerun_simulation",
+                "label": "새 시안으로 재시뮬",
+                "reasons": loop.weak_reasons,
+            }
         return {
-            "answer": (
-                "새 시안이 준비됐네요. 새 시안으로 반응을 다시 예측해볼까요?\n\n"
-                "'시뮬레이션 돌려줘'라고 하시면 시뮬 위젯을 띄울게요."
-            ),
-            "meta": {
-                "source": "generator",
-                "label": "결과 분석 · 재시뮬 제안",
-                "engine": f"OpenAI · {model_name}",
-                "suggest": "simulation",
-            },
+            "answer": ("새 시안이 준비됐네요. 새 시안으로 반응을 다시 예측해볼까요?"),
+            "meta": meta,
         }
 
     async def advise_node(state) -> dict:

@@ -12,6 +12,7 @@ from core.config import settings
 from core.db import AsyncSessionLocal, get_db
 from core.schemas import ChatRequest
 from domain.chat import history
+from domain.chat.loop_state import get_loop_state
 from domain.chat.orchestrator import ChatTurn, build_chat_orchestrator
 from tools.storage.s3 import download_bytes, upload_bytes
 
@@ -104,7 +105,65 @@ async def chat_complete(body: ChatRequest) -> StreamingResponse:
         yield _sse("meta", meta=meta)
         for piece in _chunks(answer):
             yield _sse("text", token=piece)
+        # 개선 루프 HITL — 약한 결과면 meta.approval로 수락/거절 카드를 별도 이벤트로 보낸다.
+        if isinstance(meta, dict) and meta.get("approval"):
+            yield _sse("approval", approval=meta["approval"])
         await _persist(body.session_id, last_message, answer, meta, body.image_url, body.result_ref)
+        yield _sse("done")
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+class ApproveRequest(BaseModel):
+    action: str  # run_generator | rerun_simulation
+    session_id: str
+    project_id: str | None = None
+
+
+# 개선 루프 수락 시 합성할 질문 — 오케스트레이터 run 분기를 재사용해 입력 위젯을 띄운다.
+_APPROVE_PROMPTS: dict[str, str] = {
+    "run_generator": "개선 시안 만들어줘",
+    "rerun_simulation": "시뮬레이션 다시 돌려줘",
+}
+
+
+@router.post("/approve")
+async def chat_approve(body: ApproveRequest) -> StreamingResponse:
+    """개선 루프 수락 — 왕복 카운트를 올리고, 해당 액션의 입력 위젯을 스트리밍한다(HITL)."""
+    loop = get_loop_state(body.session_id)
+    if body.action == "run_generator":
+        loop.loop_count += 1  # 시뮬→제너 왕복 1회 확정
+        loop.phase = "gen_done"
+    question = _APPROVE_PROMPTS.get(body.action, "개선 시안 만들어줘")
+
+    async def generate() -> AsyncGenerator[str, None]:
+        try:
+            orch = await _get_orchestrator()(
+                ChatTurn(
+                    question=question,
+                    history=[],
+                    session_id=body.session_id,
+                    project_id=body.project_id,
+                )
+            )
+        except Exception as exc:  # noqa: BLE001 — 실패해도 안내로 마무리
+            print(f"[chat] approve orchestrator error: {exc!r}")
+            orch = None
+
+        if orch is not None:
+            answer, meta = orch.answer, orch.meta
+        else:
+            answer = "지금은 진행할 수 없어요. 잠시 후 다시 시도해주세요."
+            meta = {"source": "orchestrator", "label": "CLIO", "engine": "OpenAI"}
+
+        yield _sse("meta", meta=meta)
+        for piece in _chunks(answer):
+            yield _sse("text", token=piece)
+        await _persist(body.session_id, f"[수락] {question}", answer, meta)
         yield _sse("done")
 
     return StreamingResponse(
