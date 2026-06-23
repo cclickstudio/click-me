@@ -1,6 +1,7 @@
 import asyncio
 import json
 import threading
+import time
 from collections.abc import AsyncGenerator, Awaitable, Callable
 
 import google.generativeai as genai
@@ -11,6 +12,7 @@ from core.config import settings
 from core.schemas import ChatRequest
 from domain.management.assistant.agent import build_management_agent
 from domain.management.assistant.contracts import AskRequest
+from domain.management.assistant.history import record_turn
 
 router = APIRouter()
 
@@ -108,15 +110,18 @@ async def chat_complete(body: ChatRequest) -> StreamingResponse:
     async def generate() -> AsyncGenerator[str, None]:
         # 매니지먼트 질문이면 서브에이전트(실측 툴 + KB)로 답한다 — 숫자는 실측, 행동은 제안만.
         if _is_management(last_message):
+            thread_id = f"mgmt-{body.session_id}"
             try:
+                _t0 = time.perf_counter()
                 result = await _get_assistant()(
                     AskRequest(
                         question=last_message,
                         ad_id=body.context_ad_id,
                         # 멀티턴 — 같은 채팅 세션이면 같은 thread로 묶어 이전 맥락 유지(checkpointer).
-                        thread_id=f"mgmt-{body.session_id}",
+                        thread_id=thread_id,
                     )
                 )
+                _latency_ms = int((time.perf_counter() - _t0) * 1000)
                 meta = {
                     "source": "management",
                     "label": "매니지먼트 어시스턴트",
@@ -135,6 +140,24 @@ async def chat_complete(body: ChatRequest) -> StreamingResponse:
                     sa = result.suggested_action
                     gate = "사람 승인 필요" if sa.requires_approval else "낮은 위험"
                     answer += f"\n\n추천 조치: {sa.action_type} ({gate}) — 실행은 승인 화면에서 확인하세요."
+                # 대화·도구·인용·HITL을 DB에 적재(관측·평가). 실패해도 채팅은 그대로 진행.
+                await record_turn(
+                    thread_id=thread_id,
+                    question=last_message,
+                    answer=answer,
+                    model=getattr(settings, "management_assistant_model", "gpt-4o-mini"),
+                    latency_ms=_latency_ms,
+                    used_tools=list(result.used_tools),
+                    citations=[
+                        {"kind": c.kind, "source": c.source, "title": c.title}
+                        for c in result.citations
+                    ],
+                    suggested_action=(
+                        result.suggested_action.model_dump() if result.suggested_action else None
+                    ),
+                    requires_approval=result.requires_approval,
+                    ad_id=body.context_ad_id,
+                )
                 for piece in _chunks(answer):
                     yield f"data: {json.dumps({'token': piece}, ensure_ascii=False)}\n\n"
             except Exception as exc:  # noqa: BLE001 — 실패해도 채팅은 끊지 않는다

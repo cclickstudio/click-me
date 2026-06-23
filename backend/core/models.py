@@ -212,6 +212,68 @@ class ManagementKbChunk(Base):
     embedding_dimensions: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
+class ManagementChatSession(Base):
+    """매니지먼트 어시스턴트 대화 세션 (멀티턴·관측). 마이그 019."""
+
+    __tablename__ = "management_chat_sessions"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    user_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    project_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    thread_id: Mapped[str] = mapped_column(String(128))
+    campaign_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    ad_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    last_active_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class ManagementChatMessage(Base):
+    """대화 메시지 1건 (user|assistant|tool) + 모델·토큰·지연 관측. 마이그 019."""
+
+    __tablename__ = "management_chat_messages"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    session_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("management_chat_sessions.id", ondelete="CASCADE"), nullable=True
+    )
+    thread_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    role: Mapped[str] = mapped_column(String(16))
+    content: Mapped[str | None] = mapped_column(Text, nullable=True)
+    model: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    prompt_version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    tokens_in: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    tokens_out: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    campaign_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ManagementAgentRun(Base):
+    """에이전트 실행 1건 — 도구·검색·인용·HITL 상태. 마이그 019."""
+
+    __tablename__ = "management_agent_runs"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    session_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("management_chat_sessions.id", ondelete="CASCADE"), nullable=True
+    )
+    thread_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    message_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    tools_used: Mapped[list] = mapped_column(JSONB, default=list)
+    retrieved_chunks: Mapped[list] = mapped_column(JSONB, default=list)
+    citations: Mapped[list] = mapped_column(JSONB, default=list)
+    steps: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    interrupt_state: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    suggested_action: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    approved_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class ChatSession(Base):
     __tablename__ = "chat_sessions"
 
