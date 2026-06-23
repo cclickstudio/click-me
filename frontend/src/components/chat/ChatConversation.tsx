@@ -3,6 +3,7 @@
 // 채팅 대화 본체 — 메시지 렌더 + 입력 + 위젯 + 이미지 첨부 + SSE 전송. /chat 페이지와 플로팅 공용.
 // 세션은 props로 제어(sessionId=null이면 새 채팅). 사이드바·프로젝트 게이트는 바깥에서 처리.
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 import SimFormWidget from './SimFormWidget';
 import GenFormWidget from './GenFormWidget';
@@ -48,12 +49,15 @@ type SourceMeta = {
   used_tools?: string[];
   widget?: WidgetSpec;
 };
+// 채팅으로 실제 돌린 시뮬/생성 결과 참조 — 내역에 남겨 재로드 시 "결과 보기" 링크로 렌더.
+type ResultRef = { kind: 'sim' | 'gen'; id: string };
 type Message = {
   role: 'user' | 'assistant';
   content: string;
   meta?: SourceMeta;
   imageUrl?: string;
   imageFile?: File;
+  result?: ResultRef;
 };
 
 function SendIcon() {
@@ -102,6 +106,7 @@ export default function ChatConversation({
   const pendingImageRef = useRef<File | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const router = useRouter();
   // 이미 로드/생성한 세션 — prop이 같은 값으로 바뀌어도 재로드하지 않게 추적.
   const loadedRef = useRef<string | null | undefined>(undefined);
 
@@ -133,9 +138,11 @@ export default function ChatConversation({
             const rawMeta = m.meta as Record<string, unknown> | null;
             const imageUrl =
               typeof rawMeta?.image_url === 'string' ? rawMeta.image_url : undefined;
-            // 어시스턴트 메시지만 출처/위젯 meta로 사용. 사용자 메시지 meta는 이미지 URL 보관용.
+            const rr = rawMeta?.result as ResultRef | undefined;
+            const result = rr && (rr.kind === 'sim' || rr.kind === 'gen') && rr.id ? rr : undefined;
+            // 어시스턴트 메시지만 출처/위젯 meta로 사용. 사용자 메시지 meta는 이미지·결과 참조 보관용.
             const meta = m.role === 'assistant' ? (rawMeta as SourceMeta | null) ?? undefined : undefined;
-            return { role: m.role, content: m.content, meta, imageUrl };
+            return { role: m.role, content: m.content, meta, imageUrl, result };
           }),
         );
       } catch {
@@ -186,13 +193,19 @@ export default function ChatConversation({
   };
 
   const handleSend = useCallback(
-    async (text?: string) => {
+    async (text?: string, resultRef?: ResultRef) => {
       const content = text ?? input.trim();
       if (!content || isStreaming || !projectId) return;
 
       pendingImageRef.current = attachedImage;
       const imgFile = attachedImage; // S3 영속화용(위젯엔 pendingImageRef로 따로 전달)
-      const userMsg: Message = { role: 'user', content, imageUrl: attachedPreview ?? undefined };
+      // resultRef: 위젯이 실제 시뮬/생성을 돌린 결과 참조 — 메시지에 남겨 "결과 보기" 링크로.
+      const userMsg: Message = {
+        role: 'user',
+        content,
+        imageUrl: attachedPreview ?? undefined,
+        result: resultRef,
+      };
       const base = messages;
       const newMessages: Message[] = [...base, userMsg];
       setMessages(newMessages);
@@ -237,6 +250,7 @@ export default function ChatConversation({
             session_id: sid,
             messages: newMessages.map((m) => ({ role: m.role, content: m.content })),
             image_url: imageUrl,
+            result_ref: resultRef,
           }),
         });
 
@@ -372,6 +386,20 @@ export default function ChatConversation({
                     >
                       {msg.content}
                     </div>
+                    {msg.result && (
+                      <button
+                        onClick={() =>
+                          router.push(
+                            msg.result!.kind === 'sim'
+                              ? `/simulation/${msg.result!.id}`
+                              : `/generations/${msg.result!.id}`,
+                          )
+                        }
+                        className="self-start mt-0.5 inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-[#3182F6]/30 text-[#3182F6] text-xs font-semibold hover:bg-[#EBF3FF] dark:hover:bg-[#1E3A5F] transition-colors"
+                      >
+                        {msg.result.kind === 'sim' ? '시뮬레이션 결과 보기' : '생성 결과 보기'} →
+                      </button>
+                    )}
                     {msg.meta?.widget?.type === 'sim_form' && (
                       <SimFormWidget initial={msg.meta.widget.data} initialImage={msg.imageFile} onResult={handleSend} />
                     )}
