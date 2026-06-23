@@ -286,10 +286,10 @@ export default function Page() {
                         {msg.content}
                       </div>
                       {msg.meta?.widget?.type === 'sim_form' && (
-                        <SimFormWidget initial={msg.meta.widget.data} />
+                        <SimFormWidget initial={msg.meta.widget.data} onResult={handleSend} />
                       )}
                       {msg.meta?.widget?.type === 'gen_form' && (
-                        <GenFormWidget initial={msg.meta.widget.data} />
+                        <GenFormWidget initial={msg.meta.widget.data} onResult={handleSend} />
                       )}
                       {msg.role === 'assistant' &&
                         msg.meta?.source === 'management' &&

@@ -14,7 +14,13 @@ const inputCls =
   'w-full px-3 py-2 rounded-lg border border-[#E5E8EB] dark:border-[#2D3748] text-sm bg-white dark:bg-[#252D3D] text-[#191F28] dark:text-[#F2F4F6] focus:outline-none focus:border-[#3182F6]';
 const labelCls = 'text-[11px] font-semibold text-[#8B95A1] dark:text-[#6B7280] mb-1 block';
 
-export default function SimFormWidget({ initial }: { initial?: { ad_content?: string } }) {
+export default function SimFormWidget({
+  initial,
+  onResult,
+}: {
+  initial?: { ad_content?: string };
+  onResult?: (summary: string) => void; // 완료 시 결과 요약을 채팅으로 보내 다음 단계 제안
+}) {
   const router = useRouter();
   const [phase, setPhase] = useState<Phase>('form');
   const [step, setStep] = useState(0);
@@ -36,6 +42,17 @@ export default function SimFormWidget({ initial }: { initial?: { ad_content?: st
       const r = await api.simulation.result(rid);
       setResult(r);
       setPhase('done');
+      const agg = r.aggregate;
+      if (agg && onResult) {
+        const pi = agg.purchase_intent;
+        const cir = agg.click_intent_rate;
+        const rej = agg.rejection_rate;
+        onResult(
+          `[시뮬결과] 구매의도 ${pi != null ? pi.toFixed(1) : '?'}/5, ` +
+            `클릭의향률 ${cir != null ? (cir * 100).toFixed(0) : '?'}%, ` +
+            `거부율 ${rej != null ? (rej * 100).toFixed(0) : '?'}%`,
+        );
+      }
     } catch (e) {
       setErr(e instanceof Error ? e.message : '결과 조회 실패');
       setPhase('error');

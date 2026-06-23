@@ -24,7 +24,13 @@ const cardCls =
 const btnCls =
   'flex-1 py-2 rounded-lg bg-[#3182F6] text-white text-sm font-semibold hover:bg-[#1B6EEB] disabled:opacity-40 transition-colors';
 
-export default function GenFormWidget({ initial }: { initial?: Initial }) {
+export default function GenFormWidget({
+  initial,
+  onResult,
+}: {
+  initial?: Initial;
+  onResult?: (summary: string) => void; // 완료 시 결과 요약을 채팅으로 보내 다음 단계 제안
+}) {
   const router = useRouter();
   const [phase, setPhase] = useState<Phase>('form');
   const [step, setStep] = useState(0);
@@ -58,6 +64,9 @@ export default function GenFormWidget({ initial }: { initial?: Initial }) {
       const d = (await api.generator.detail(gid)) as GenerationDetail;
       setDetail(d);
       setPhase('done');
+      if (onResult) {
+        onResult(`[생성결과] 광고 시안 ${(d.candidates ?? []).length}개 생성 완료`);
+      }
     } catch (e) {
       setErr(e instanceof Error ? e.message : '결과 조회 실패');
       setPhase('error');
