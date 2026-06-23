@@ -152,57 +152,9 @@ def _assistant_meta(res, source: str, label: str) -> dict:
     }
 
 
-def _format_sim_run(ev: dict) -> str:
-    """run_simulation 결과 → 한국어 4대 KPI 요약."""
-    rid = str(ev.get("run_id") or "")[:8]
-    lines = [f"시뮬레이션을 돌렸어요 (run_id {rid}, 표본 {ev.get('effective_n')}명)."]
-    cir = ev.get("click_intent_rate")
-    if cir is not None:
-        lo = (ev.get("ci_low") or 0) * 100
-        hi = (ev.get("ci_high") or 0) * 100
-        lines.append(f"· 클릭 의향률 {cir * 100:.1f}% [{lo:.0f}~{hi:.0f}%]")
-    if ev.get("purchase_intent") is not None:
-        lines.append(f"· 구매의도 {ev['purchase_intent']:.2f}/5")
-    if ev.get("trust_avg") is not None:
-        lines.append(f"· 신뢰도 {ev['trust_avg']:.2f}/5")
-    if ev.get("rejection_rate") is not None:
-        lines.append(f"· 거부율 {ev['rejection_rate'] * 100:.1f}%")
-    return "\n".join(lines)
-
-
-# ── 개선 루프(closed loop) — 세션별 시뮬↔생성 왕복. 최대 3회·매 전환 수락(HITL)·목표 조기종료 ──
-_loops: dict[str, dict] = {}  # session_id → {stage, count, ad_content, gen_id}
-_MAX_LOOPS = 3
-_TARGET_PI = 3.5  # 목표 구매의도(이상이면 조기 종료) — sim_result 강약 판정에도 재활용
+# sim_result_node의 강약 판정 임계값 — 위젯이 보낸 시뮬 결과를 약함/충분으로 가른다.
+_TARGET_PI = 3.5  # 목표 구매의도(미만이면 약함 — 개선 제안)
 _HIGH_REJECTION = 0.3  # 거부율 임계값(이상이면 약함 — 개선 제안)
-
-
-def _is_yes(t: str) -> bool:
-    return any(
-        k in t for k in ("응", "네", "좋아", "해줘", "그래", "ㅇㅇ", "오케", "ok", "yes", "재시뮬")
-    )
-
-
-def _is_no(t: str) -> bool:
-    return any(k in t for k in ("아니", "안 해", "그만", "중단", "no", "싫", "됐"))
-
-
-def _loop_eval(session_id: str, loop: dict, ev: dict, answer: str) -> ChatAnswer:
-    """재시뮬 결과 평가 → 목표/3회면 종료, 아니면 다음 개선 제안."""
-    meta = {"source": "simulation", "label": "개선 루프", "engine": "Gemini · 실행"}
-    pi = ev.get("purchase_intent") or 0
-    if pi >= _TARGET_PI:
-        _loops.pop(session_id, None)
-        return ChatAnswer(
-            answer + f"\n\n목표(구매의도 {_TARGET_PI}+)를 충족했어요. 이대로 충분합니다.", meta
-        )
-    if loop.get("count", 0) >= _MAX_LOOPS:
-        _loops.pop(session_id, None)
-        return ChatAnswer(answer + f"\n\n{_MAX_LOOPS}회 개선을 마쳤어요. 현재가 최선입니다.", meta)
-    loop["stage"] = "propose_improve"
-    return ChatAnswer(
-        answer + "\n\n아직 약해요. 개선 시안을 또 만들까요? '응'이라고 하시면 만들어요.", meta
-    )
 
 
 def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnswer | None]]:
@@ -434,61 +386,8 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
         g.add_edge(_node, END)
     graph = g.compile()
 
-    async def _advance(turn: ChatTurn, loop: dict) -> ChatAnswer:
-        """루프 수락 시 다음 단계 — 개선 생성, 또는 생성 완료 후 새 시안 재시뮬."""
-        if loop["stage"] == "propose_improve":
-            gi = await llm.with_structured_output(_GenInput).ainvoke(
-                [
-                    SystemMessage(content=_GEN_EXTRACT_SYSTEM),
-                    HumanMessage(content=loop["ad_content"]),
-                ]
-            )
-            from domain.generator.assistant.tools import run_generation  # noqa: PLC0415
-
-            ev = await run_generation(
-                product_name=gi.product_name,
-                product_description=gi.product_description,
-                target_audience=gi.target_audience,
-                campaign_objective=gi.campaign_objective,
-            )
-            loop["stage"] = "propose_resim"
-            loop["gen_id"] = ev.get("generation_id")
-            gid = str(ev.get("generation_id") or "")[:8]
-            return ChatAnswer(
-                f"개선 시안 생성을 시작했어요 (gen {gid})."
-                " 완료 후 '응'이라고 하시면 새 시안으로 다시 반응을 볼게요.",
-                {"source": "generator", "label": "개선 루프·생성", "engine": "파이프라인"},
-            )
-        # propose_resim — 생성 완료 확인 후 새 시안 카피로 재시뮬
-        from domain.generator.assistant.tools import fetch_generation_result  # noqa: PLC0415
-        from domain.simulation.assistant.tools import run_simulation  # noqa: PLC0415
-
-        detail = await fetch_generation_result(loop.get("gen_id") or "")
-        if detail.get("status") != "completed":
-            return ChatAnswer(
-                "아직 시안을 만드는 중이에요. 잠시 후 다시 '응'이라고 해주세요.",
-                {"source": "generator", "label": "개선 루프", "engine": "-"},
-            )
-        cands = detail.get("candidates") or []
-        new_content = (cands[0].get("headline") if cands else None) or loop["ad_content"]
-        ev = await run_simulation(ad_content=new_content)
-        loop["count"] = loop.get("count", 0) + 1
-        loop["ad_content"] = new_content
-        return _loop_eval(turn.session_id, loop, ev, _format_sim_run(ev))
-
     async def _ask_full(turn: ChatTurn) -> ChatAnswer:
-        # 개선 루프 인터셉트 — 대기 상태에서 수락/거절이면 classify를 건너뛴다.
         sid = turn.session_id
-        loop = _loops.get(sid) if sid else None
-        if loop and _is_no(turn.question):
-            _loops.pop(sid, None)
-            return ChatAnswer(
-                "개선 루프를 멈췄어요.",
-                {"source": "orchestrator", "label": "개선 루프", "engine": "-"},
-            )
-        if loop and _is_yes(turn.question):
-            return await _advance(turn, loop)
-
         # 1턴 = 1 트레이스 루트(classify → route → 서브에이전트).
         final = await graph.ainvoke(
             {"question": turn.question, "session_id": sid},
