@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import AppLayout from '@/components/AppLayout';
 import { api } from '@/lib/api';
 import { BudgetGauge } from '@/components/manage/budget/BudgetGauge';
+import { OriginLegend, OriginTag } from '@/components/manage/ValueOrigin';
 import type { BudgetDecision, BudgetStatus } from '@/components/manage/budget/types';
 
 const WARNING: Record<Exclude<BudgetDecision, 'allow'>, { label: string; msg: string; cls: string }> = {
@@ -39,10 +40,23 @@ const REASON: Record<string, { label: string; cls: string }> = {
   refund: { label: '환불', cls: 'text-amber-600 dark:text-amber-400' },
 };
 
-function Tile({ label, value, sub }: { label: string; value: string; sub?: string }) {
+function Tile({
+  label,
+  value,
+  sub,
+  origin,
+}: {
+  label: string;
+  value: string;
+  sub?: string;
+  origin?: 'setting' | 'computed';
+}) {
   return (
     <div className="rounded-2xl border border-[#E5E8EB] dark:border-[#2D3748] px-4 py-3">
-      <p className="text-xs text-[#8B95A1]">{label}</p>
+      <p className="text-xs text-[#8B95A1]">
+        {label}
+        {origin && <OriginTag origin={origin} />}
+      </p>
       <p className="text-xl font-extrabold text-[#191F28] dark:text-[#F2F4F6] tabular-nums mt-1">{value}</p>
       {sub && <p className="text-[11px] text-[#B0B8C1] mt-0.5">{sub}</p>}
     </div>
@@ -150,11 +164,16 @@ export default function Page() {
               />
             </div>
 
+            <OriginLegend />
             <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
-              <Tile label="월 목표" value={`₩${target.toLocaleString()}`} />
+              <Tile label="월 목표" value={`₩${target.toLocaleString()}`} origin="setting" />
               <Tile label="이번 달 소진" value={`₩${status.spent_krw.toLocaleString()}`} />
-              <Tile label="잔여" value={`₩${status.remaining_krw.toLocaleString()}`} />
-              <Tile label="소진율" value={`${(status.ratio * 100).toFixed(0)}%`} />
+              <Tile label="잔여" value={`₩${status.remaining_krw.toLocaleString()}`} origin="computed" />
+              <Tile
+                label="월 목표 소진율"
+                value={`${(status.ratio * 100).toFixed(0)}%`}
+                origin="computed"
+              />
               <Tile
                 label="여력 (Meta 선불 잔액)"
                 value={`₩${(status.account_balance_krw ?? 0).toLocaleString()}`}

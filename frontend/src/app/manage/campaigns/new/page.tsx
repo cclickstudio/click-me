@@ -8,6 +8,7 @@ import { CampaignForm, type CampaignFormValues } from '@/components/manage/campa
 import { CreateProposalPreview } from '@/components/manage/campaigns/CreateProposalPreview';
 import type { Proposal, ActionResult } from '@/components/manage/types';
 import type { ActivateResponse } from '@/lib/api';
+import { setPendingActivation } from '@/lib/pendingActivation';
 
 type Step = 'form' | 'preview' | 'done';
 
@@ -93,7 +94,7 @@ export default function Page() {
     if (!metaCampaignId) return;
     if (
       !window.confirm(
-        `게재를 시작하면 광고가 실제로 노출되고, 집행분만큼 크레딧이 차감됩니다.\n이 캠페인 한도(spend_cap): ${commitKrw?.toLocaleString() ?? '-'}원\n계속할까요?`,
+        `게재를 시작하면 광고가 실제로 노출되고, 집행분만큼 선불 잔액에서 차감됩니다.\n이 캠페인 충전 한도: ${commitKrw?.toLocaleString() ?? '-'}원\n계속할까요?`,
       )
     )
       return;
@@ -135,8 +136,9 @@ export default function Page() {
                   <h2 className="font-bold text-[#191F28] dark:text-[#F2F4F6]">캠페인 생성됨 (PAUSED)</h2>
                 </div>
                 <p className="text-sm text-[#8B95A1]">
-                  생성 직후 크레딧 잔액을 확인해 <b>자동으로 게재를 시작</b>합니다. 잔액이 부족하면
-                  충전 페이지로 이동하고, 충전을 마치면 게재가 이어집니다(충전액만큼 상한 적용).
+                  생성 직후 <b>자동으로 게재를 시작</b>합니다. 게재에는 두 가지가 필요해요 —
+                  <b>예산 한도(ClickMe 크레딧)</b>와 <b>실광고비(Meta 선불 잔액)</b>. 부족한 쪽을
+                  채우면 게재가 이어집니다(크레딧만큼 집행 상한 적용).
                 </p>
 
                 {activating && (
@@ -170,7 +172,7 @@ export default function Page() {
                     </p>
                     <p className="text-xs text-green-600 dark:text-green-400 mt-1">
                       충전액 {activateResult.commit_krw.toLocaleString()}원까지 집행되며 소진되면 자동
-                      종료됩니다. 현재 크레딧 잔액 {activateResult.balance_krw.toLocaleString()}원.
+                      종료됩니다. 현재 선불 잔액 {activateResult.balance_krw.toLocaleString()}원.
                     </p>
                   </div>
                 )}
@@ -186,14 +188,31 @@ export default function Page() {
                         </li>
                       ))}
                     </ul>
+                    {/* 예산 한도(크레딧) 부족 → 인앱 충전(/payment), 충전 후 게재 자동 재개 */}
+                    {activateResult.causes.some((c) => c.code === 'INSUFFICIENT_CREDIT') && (
+                      <Link
+                        href="/payment"
+                        onClick={() =>
+                          metaCampaignId &&
+                          setPendingActivation({
+                            campaignId: metaCampaignId,
+                            commit: commitKrw ?? 0,
+                          })
+                        }
+                        className="inline-block mt-2 mr-2 px-3 py-1.5 bg-[#3182F6] text-white text-xs font-medium rounded-lg hover:bg-[#1B6EEB]"
+                      >
+                        📊 예산 한도(크레딧) 충전하기
+                      </Link>
+                    )}
+                    {/* 실광고비(Meta 선불) 부족 → Meta Ads Manager에서 충전(외부) */}
                     {activateResult.causes.some((c) => c.code === 'INSUFFICIENT_META_BALANCE') && (
                       <a
                         href="https://business.facebook.com/billing_hub/accounts"
                         target="_blank"
                         rel="noreferrer"
-                        className="inline-block mt-2 px-3 py-1.5 bg-[#3182F6] text-white text-xs font-medium rounded-lg hover:bg-[#1B6EEB]"
+                        className="inline-block mt-2 px-3 py-1.5 bg-[#191F28] text-white text-xs font-medium rounded-lg hover:bg-black"
                       >
-                        Meta 결제 설정 열기
+                        💳 실광고비(Meta 선불) 충전 — Ads Manager
                       </a>
                     )}
                   </div>

@@ -23,13 +23,15 @@ export interface DeliveryCause {
   code: string;
   message: string;
   need_krw?: number;
-  balance_krw?: number;
+  balance_krw?: number; // Meta 선불 잔액(실광고비)
+  credit_krw?: number; // ClickMe 크레딧 잔액(예산 한도)
   commit_krw?: number;
 }
 export interface ActivateResponse {
   serving: boolean;
   result: { status?: string; failure_reason?: string | null } | null;
-  balance_krw: number;
+  balance_krw: number; // Meta 선불 잔액(실광고비)
+  credit_krw?: number; // ClickMe 크레딧 잔액(예산 한도)
   commit_krw: number;
   causes: DeliveryCause[];
   error_message?: string;

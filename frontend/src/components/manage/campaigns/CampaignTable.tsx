@@ -14,6 +14,7 @@ import { fmtCvr, fmtRoas } from './types';
 import { StateBadge } from './StateBadge';
 import { CampaignDetail } from './CampaignDetail';
 import { KpiInput } from './KpiInput';
+import { OriginTag } from '../ValueOrigin';
 
 export function CampaignTable({
   campaigns,
@@ -53,7 +54,7 @@ export function CampaignTable({
           <tr className="bg-[#F9FAFB] dark:bg-[#1A202C] text-[#4E5968] dark:text-[#9CA3AF] text-xs">
             <th className="text-left font-semibold px-4 py-2.5 w-full">캠페인</th>
             <th className="text-left font-semibold px-3 py-2.5">상태</th>
-            <th className="text-right font-semibold px-3 py-2.5" title="하루 최대 한도 (총액 아님)">일일예산</th>
+            <th className="text-right font-semibold px-3 py-2.5" title="하루 최대 한도 (총액 아님)">일예산<OriginTag origin="setting" /></th>
             <th className="text-right font-semibold px-3 py-2.5">노출</th>
             <th className="text-right font-semibold px-3 py-2.5 hidden sm:table-cell">클릭</th>
             <th className="text-right font-semibold px-3 py-2.5">지출</th>
@@ -62,7 +63,7 @@ export function CampaignTable({
             <th className="text-right font-semibold px-3 py-2.5 hidden lg:table-cell">CPM<span className="block font-normal text-[11px] text-[#8B95A1] leading-tight">노출당비용</span></th>
             <th className="text-right font-semibold px-3 py-2.5 hidden lg:table-cell" title="전환율 = 전환수 ÷ 클릭수 (광고가 클릭을 전환으로 얼마나 잘 바꿨나). 전환 추적 전이면 셀에 직접 입력(추정)">CVR<span className="block font-normal text-[11px] text-[#8B95A1] leading-tight">전환율</span></th>
             <th className="text-right font-semibold px-3 py-2.5 hidden lg:table-cell" title="투자수익률 = (전환가치 × 전환수) ÷ 지출. 전환가치를 모르면 셀에 직접 입력(추정)">ROAS<span className="block font-normal text-[11px] text-[#8B95A1] leading-tight">투자수익률</span></th>
-            <th className="text-right font-semibold px-4 py-2.5" title="당일 일일예산(하루 상한) 대비 지출. 종료 캠페인은 의미 없어 '종료'로 표시">일예산 대비</th>
+            <th className="text-right font-semibold px-4 py-2.5" title="당일 일예산(하루 상한) 대비 지출(=지출÷일예산). 종료 캠페인은 의미 없어 '종료'로 표시">소진율<OriginTag origin="computed" /></th>
             <th className="px-2 py-2.5 w-8" aria-label="상세 토글"></th>
           </tr>
         </thead>

@@ -58,9 +58,9 @@ export type CampaignSummary = CampaignKpi & {
 export type ManualKpi = { cvr?: number; roas?: number }; // cvr=% , roas=배수
 export type ManualKpiMap = Record<string, ManualKpi>;
 
-// 계정 지갑 — 일일예산과 다른 '실제 충전·지출·잔액'(부가세 별도, KRW)
+// 계정 지갑 — 일예산과 다른 '실제 충전·지출·잔액'(부가세 별도, KRW)
 export type AccountWallet = {
-  available_balance_krw?: number | null; // 사용 가능 잔액
+  available_balance_krw?: number | null; // 선불 잔액
   spend_cap_krw?: number | null; // 지출 한도(선불 충전액, 부가세 제외)
   amount_spent_krw?: number | null; // 누적 지출(광고 집행분)
 };
