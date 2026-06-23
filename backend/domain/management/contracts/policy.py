@@ -31,10 +31,11 @@ AUTO_APPROVE_MAX_TIER = ActionTier.TIER_1
 PROPOSAL_TTL_MINUTES = 10
 APPROVAL_TTL_MINUTES = 5
 
-# ── Mock 앵커 (meta-data-sources.md §4.4 — 한국 인스타 트래픽 기준) ──
-CPM_ANCHOR_KRW = 8_000
-CPM_NORMAL_RANGE_KRW = (6_000, 14_000)
-BASE_CTR = 0.017
+# ── Mock 앵커 (meta-data-sources.md §4.4 — 한국 인스타 트래픽 실측 기준) ──
+# CPM: 한국 실측 lebesgue $5.80(₩7,800) ~ AdAmigo $10.20(₩13,770), 2026 → 중앙값 ₩10,800.
+CPM_ANCHOR_KRW = 10_800
+CPM_NORMAL_RANGE_KRW = (7_800, 13_800)  # 한국 실측 하한(lebesgue)~상한(AdAmigo)
+BASE_CTR = 0.017  # AdAmigo 2026 트래픽 목표 CTR 1.71%
 DAILY_BUDGET_KRW = 100_000
 AUDIENCE_SIZE = 1_750_000  # delivery_estimate estimate_mau 기반 데모 모수
 
