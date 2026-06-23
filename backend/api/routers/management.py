@@ -16,6 +16,7 @@ from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import RedirectResponse
+from langsmith import traceable
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -154,6 +155,7 @@ def _get_executor() -> Executor:
 
 
 @router.get("/run")
+@traceable(name="management.detection", run_type="chain", tags=["management"])
 async def run_detection(fault: str = "bid_loss"):
     """감지 사이클 1회 실행: Mock 게재 → 기대 곡선 비교 → 결정론 진단 → 제안 검증."""
     if fault not in _DEMO_FAULTS:
