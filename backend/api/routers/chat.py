@@ -4,11 +4,15 @@ import threading
 from collections.abc import AsyncGenerator, Awaitable, Callable
 
 import google.generativeai as genai
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
+from core.db import AsyncSessionLocal, get_db
 from core.schemas import ChatRequest
+from domain.chat import history
 from domain.chat.orchestrator import ChatTurn, build_chat_orchestrator
 
 router = APIRouter()
@@ -59,6 +63,17 @@ def _chunks(text: str, size: int = 24) -> list[str]:
     return [text[i : i + size] for i in range(0, len(text), size)] or [""]
 
 
+async def _persist(
+    session_id: str, user_content: str, assistant_content: str, meta: dict | None
+) -> None:
+    """한 턴을 DB에 적재(best-effort) — 세션 없거나 실패해도 채팅은 진행."""
+    try:
+        async with AsyncSessionLocal() as db:
+            await history.append_turn(db, session_id, user_content, assistant_content, meta)
+    except Exception as exc:  # noqa: BLE001 — 영속화 실패가 응답을 막지 않게
+        print(f"[chat] persist error: {exc!r}")
+
+
 @router.post("/complete")
 @assistant_router.post("/chat")
 async def chat_complete(body: ChatRequest) -> StreamingResponse:
@@ -92,6 +107,7 @@ async def chat_complete(body: ChatRequest) -> StreamingResponse:
             yield f"data: {json.dumps({'meta': orch.meta}, ensure_ascii=False)}\n\n"
             for piece in _chunks(orch.answer):
                 yield f"data: {json.dumps({'token': piece}, ensure_ascii=False)}\n\n"
+            await _persist(body.session_id, last_message, orch.answer, orch.meta)
             yield 'data: {"done": true}\n\n'
             return
 
@@ -99,6 +115,7 @@ async def chat_complete(body: ChatRequest) -> StreamingResponse:
         clio_meta = {"source": "clio", "label": "CLIO", "engine": "Gemini"}
         yield f"data: {json.dumps({'meta': clio_meta}, ensure_ascii=False)}\n\n"
 
+        buffer: list[str] = []  # 어시스턴트 답변 누적(영속화용)
         loop = asyncio.get_running_loop()
         queue: asyncio.Queue = asyncio.Queue()
 
@@ -129,8 +146,10 @@ async def chat_complete(body: ChatRequest) -> StreamingResponse:
                 break
             if isinstance(item, Exception):
                 break
+            buffer.append(item)
             yield f"data: {json.dumps({'token': item}, ensure_ascii=False)}\n\n"
 
+        await _persist(body.session_id, last_message, "".join(buffer), clio_meta)
         yield 'data: {"done": true}\n\n'
 
     return StreamingResponse(
@@ -140,11 +159,37 @@ async def chat_complete(body: ChatRequest) -> StreamingResponse:
     )
 
 
+class SessionCreate(BaseModel):
+    project_id: str | None = None
+    title: str | None = None
+
+
+@router.post("/sessions")
+async def create_session(body: SessionCreate, db: AsyncSession = Depends(get_db)) -> dict:
+    """새 채팅 세션 생성 — 프로젝트에 귀속."""
+    s = await history.create_session(db, body.project_id, body.title)
+    return {
+        "id": str(s.id),
+        "title": s.title,
+        "project_id": str(s.project_id) if s.project_id else None,
+        "created_at": s.created_at.isoformat() if s.created_at else None,
+        "updated_at": s.updated_at.isoformat() if s.updated_at else None,
+    }
+
+
 @router.get("/sessions")
-async def list_sessions() -> dict:
-    return {"sessions": []}
+async def list_sessions(project_id: str | None = None, db: AsyncSession = Depends(get_db)) -> dict:
+    """프로젝트의 채팅 세션 목록 — 최근 갱신 순."""
+    return {"sessions": await history.list_sessions(db, project_id)}
 
 
 @router.get("/sessions/{session_id}/messages")
-async def get_session_messages(session_id: str) -> dict:
-    return {"session_id": session_id, "messages": []}
+async def get_session_messages(session_id: str, db: AsyncSession = Depends(get_db)) -> dict:
+    """세션의 메시지 내역."""
+    return {"session_id": session_id, "messages": await history.get_messages(db, session_id)}
+
+
+@router.delete("/sessions/{session_id}")
+async def delete_session(session_id: str, db: AsyncSession = Depends(get_db)) -> dict:
+    """세션 삭제(메시지 CASCADE)."""
+    return {"deleted": await history.delete_session(db, session_id)}
