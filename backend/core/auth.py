@@ -58,6 +58,24 @@ async def get_current_user(
     return user
 
 
+async def get_current_user_optional(
+    creds: HTTPAuthorizationCredentials | None = Depends(bearer),
+    db: AsyncSession = Depends(get_db),
+) -> User | None:
+    """토큰이 있으면 유저, 없거나 무효면 None(401 미발생). 점진 도입 중 채팅 등에 사용."""
+    if not creds:
+        return None
+    try:
+        payload = decode_token(creds.credentials)
+        user_id: str = payload["sub"]
+    except JWTError:
+        return None
+    user = await db.scalar(select(User).where(User.id == user_id))
+    if not user or user.status != "ACTIVE":
+        return None
+    return user
+
+
 def require_admin(user: User = Depends(get_current_user)) -> User:
     if user.role != "ADMIN":
         raise HTTPException(

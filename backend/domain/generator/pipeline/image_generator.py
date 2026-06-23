@@ -1,9 +1,10 @@
 import base64
 import io
+from typing import Any
 
 from google import genai
 from google.genai import types as genai_types
-from langsmith import traceable
+from langsmith import get_current_run_tree, traceable
 from langsmith.wrappers import wrap_openai
 from openai import AsyncOpenAI
 from PIL import Image
@@ -650,6 +651,31 @@ async def _generate_with_openai(prompt: str, size: AdSize) -> bytes:
     return base64.b64decode(response.data[0].b64_json)
 
 
+def _record_genai_usage(resp: Any, model: str) -> None:
+    """google-genai 직접 호출(genai SDK)의 토큰·모델명을 현재 LangSmith run에 기록.
+
+    LangChain/wrap_openai를 거치지 않는 호출은 토큰·비용이 자동 집계되지 않으므로 수동 주입한다
+    (docs/langsmith-guide.md §7 표준 패턴). 이미지 전용 모델(Imagen 등)은 usage_metadata가 없을 수
+    있어 모델명(ls_model_name)만이라도 남겨 비용 계산·필터가 가능하게 한다. 트레이싱 OFF면 무동작.
+    """
+    run = get_current_run_tree()
+    if run is None:
+        return
+    meta = {"ls_model_name": model, "ls_provider": "google_genai"}
+    um = getattr(resp, "usage_metadata", None)
+    if um is None:
+        run.set(metadata=meta)
+        return
+    run.set(
+        usage_metadata={
+            "input_tokens": getattr(um, "prompt_token_count", None) or 0,
+            "output_tokens": getattr(um, "candidates_token_count", None) or 0,
+            "total_tokens": getattr(um, "total_token_count", None) or 0,
+        },
+        metadata=meta,
+    )
+
+
 async def _generate_with_gemini(prompt: str, size: AdSize) -> bytes:
     model = settings.generator_image_model
     if model.startswith("imagen-"):
@@ -667,6 +693,7 @@ async def _generate_with_gemini_native(model: str, prompt: str, size: AdSize) ->
             image_config=genai_types.ImageConfig(aspect_ratio=_GEMINI_NATIVE_ASPECT_RATIO[size]),
         ),
     )
+    _record_genai_usage(response, model)
     if not response.candidates:
         raise RuntimeError("Gemini 응답에 candidates가 없음")
     for part in response.candidates[0].content.parts:
@@ -685,6 +712,7 @@ async def _generate_with_imagen(model: str, prompt: str, size: AdSize) -> bytes:
             aspect_ratio=_IMAGEN_ASPECT_RATIO[size],
         ),
     )
+    _record_genai_usage(response, model)
     if not response.generated_images:
         raise RuntimeError("Imagen 응답에 이미지가 없음")
     return response.generated_images[0].image.image_bytes
@@ -709,7 +737,7 @@ async def remove_product_background(product_image_bytes: bytes) -> bytes:
     image_file = io.BytesIO(product_image_bytes)
     image_file.name = "product.png"
     response = await _openai_client.images.edit(
-        model=settings.generator_image_model,
+        model=settings.generator_image_edit_model,
         image=image_file,
         prompt=_REMOVE_BG_PROMPT,
         n=1,

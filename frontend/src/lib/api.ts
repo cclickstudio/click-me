@@ -4,6 +4,8 @@ import type { CampaignDetail, CampaignsResponse, CreativesResponse, Demographics
 import type { Proposal } from "@/components/manage/types";
 import type { BudgetStatus } from "@/components/manage/budget/types";
 import type {
+  BrandKit,
+  BrandKitInput,
   DebateResult,
   DebateSessionDetail,
   DebateSessionsResult,
@@ -590,6 +592,21 @@ export const api = {
         const data = (await res.json()) as { key: string; url: string };
         return { ...data, url: `${API_BASE}${data.url}` };
       },
+    },
+    brandKits: {
+      list: () => request<{ kits: BrandKit[] }>("/generator/brand-kits"),
+      create: (body: BrandKitInput) =>
+        request<BrandKit>("/generator/brand-kits", {
+          method: "POST",
+          body: JSON.stringify(body),
+        }),
+      update: (id: string, body: BrandKitInput) =>
+        request<BrandKit>(`/generator/brand-kits/${id}`, {
+          method: "PUT",
+          body: JSON.stringify(body),
+        }),
+      remove: (id: string) =>
+        request(`/generator/brand-kits/${id}`, { method: "DELETE" }),
     },
     uploadProductImage: async (file: File): Promise<{ temp_key: string }> => {
       const form = new FormData();

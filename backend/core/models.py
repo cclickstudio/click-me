@@ -363,6 +363,24 @@ class BrandProfileRow(Base):
     )
 
 
+class BrandKit(Base):
+    """브랜드 키트 — 조직 단위로 색·로고·톤을 명명 저장(여러 개 보유·선택)."""
+
+    __tablename__ = "brand_kits"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"))
+    name: Mapped[str] = mapped_column(String(100), nullable=False)
+    brand_color: Mapped[str | None] = mapped_column(String(20))
+    brand_logo_key: Mapped[str | None] = mapped_column(String(512))
+    tone_and_manner: Mapped[str | None] = mapped_column(Text)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )
+
+
 # ──────────────────────────────────────────────
 # 광고 매니지먼트 (🤝 공동, R&R §7) — contracts/schemas.py 계약과 1:1
 # 컬럼 규칙: 타임스탬프=TIMESTAMPTZ / 금액=BIGINT KRW / 유연 페이로드=JSONB /
