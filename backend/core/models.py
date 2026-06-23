@@ -176,6 +176,19 @@ class ManagementKbChunk(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
+class SimulationKbChunk(Base):
+    """시뮬레이션 지식베이스 청크 (에이전틱 RAG) — KPI 정의·해석·방법론의 벡터 검색."""
+
+    __tablename__ = "simulation_kb_chunks"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    source: Mapped[str] = mapped_column(String(128))  # 출처 파일명(인용용)
+    title: Mapped[str] = mapped_column(String(256))  # 섹션 제목(인용용)
+    chunk: Mapped[str] = mapped_column(Text)
+    embedding: Mapped[list[float]] = mapped_column(Vector(1536))
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
 class ChatSession(Base):
     __tablename__ = "chat_sessions"
 
