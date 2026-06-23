@@ -256,6 +256,21 @@ def _template_save_name(text: str, content: dict, ttype: str) -> str:
     return "시뮬 설정" if ttype == "sim" else "생성 설정"
 
 
+# 리포트(T13) — '이번 달 시뮬 결과 PDF로 뽑아줘' 류 발화 단서.
+def _is_report(text: str) -> bool:
+    s = text.replace(" ", "")
+    has_report = "리포트" in s or "보고서" in s or "pdf" in text.lower()
+    return (
+        has_report
+        and any(v in s for v in ("뽑", "만들", "생성", "다운", "내려", "받"))
+        or (has_report and "pdf" in text.lower())
+    )
+
+
+def _report_period(text: str) -> str:
+    return "month" if ("이번달" in text.replace(" ", "") or "월간" in text) else "all"
+
+
 # 배치 시뮬 — 새 광고 여러 버전을 한 번에 비교하려는 발화 단서(T11).
 def _is_batch_sim(text: str) -> bool:
     t = text.replace(" ", "")
@@ -791,6 +806,20 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
         sid = turn.session_id
         # 숏텀 메모리에서 윈도우 내역을 꺼내 노드에 전달(raw 전체 history 대신 최근 6턴).
         q = (turn.question or "").strip()
+        # 리포트 요청 — 다운로드 버튼 위젯을 띄운다(실제 파일은 /api/chat/report).
+        if _is_report(q):
+            period = _report_period(q)
+            return ChatAnswer(
+                answer="리포트를 준비했어요. 아래 버튼으로 다운로드하세요.",
+                meta={
+                    "source": "simulation",
+                    "label": "리포트",
+                    "widget": {
+                        "type": "report_ready",
+                        "data": {"project_id": turn.project_id, "period": period},
+                    },
+                },
+            )
         _tpl_meta = {"source": "simulation", "label": "템플릿", "engine": f"OpenAI · {model_name}"}
         # 템플릿 목록 — 저장된 설정 보여주기.
         if _is_template_list(q):
@@ -810,8 +839,7 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
             if tpl is None:
                 return ChatAnswer(
                     answer=(
-                        f"'{_load_name}' 템플릿을 찾지 못했어요. "
-                        "'내 템플릿 보여줘'로 확인해보세요."
+                        f"'{_load_name}' 템플릿을 찾지 못했어요. '내 템플릿 보여줘'로 확인해보세요."
                     ),
                     meta=_tpl_meta,
                 )

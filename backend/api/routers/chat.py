@@ -213,6 +213,19 @@ async def chat_sim_batch(body: BatchSimRequest) -> dict:
     return {"results": results}
 
 
+@router.get("/report")
+async def chat_report(project_id: str | None = None, period: str = "month") -> Response:
+    """채팅 트리거 프로젝트 리포트 다운로드(T13) — PDF(Chromium) 또는 HTML 폴백."""
+    from domain.chat.report import generate_project_report  # noqa: PLC0415
+
+    data, media, filename = await generate_project_report(project_id, period)
+    return Response(
+        content=data,
+        media_type=media,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 class TemplateCreate(BaseModel):
     project_id: str | None = None
     name: str

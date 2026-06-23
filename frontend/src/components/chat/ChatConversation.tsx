@@ -10,6 +10,7 @@ import GenFormWidget from './GenFormWidget';
 import SimGenListWidget from './SimGenListWidget';
 import ApprovalWidget, { type ApprovalSpec } from './ApprovalWidget';
 import BatchSimWidget from './BatchSimWidget';
+import ReportWidget from './ReportWidget';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
@@ -52,6 +53,8 @@ type WidgetSpec = {
     target_audience?: string;
     campaign_objective?: string;
     items?: ListItem[];
+    project_id?: string;
+    period?: string;
   };
 };
 type SourceMeta = {
@@ -486,6 +489,12 @@ export default function ChatConversation({
                     )}
                     {msg.meta?.widget?.type === 'batch_sim_form' && (
                       <BatchSimWidget projectId={projectId} />
+                    )}
+                    {msg.meta?.widget?.type === 'report_ready' && (
+                      <ReportWidget
+                        projectId={msg.meta.widget.data?.project_id ?? projectId}
+                        period={msg.meta.widget.data?.period}
+                      />
                     )}
                     {msg.meta?.approval && (
                       <ApprovalWidget
