@@ -580,6 +580,25 @@ export default function ChatConversation({
             e.target.value = '';
           }}
         />
+        {/* Quick Action 칩 — 자주 쓰는 명령을 한 번에 보낸다 */}
+        <div className="max-w-2xl mx-auto mb-2 flex gap-1.5 overflow-x-auto pb-0.5">
+          {[
+            { label: '🧪 시뮬 돌리기', run: () => handleSend('시뮬레이션 돌려줘') },
+            { label: '🎨 시안 만들기', run: () => handleSend('광고 시안 만들어줘') },
+            { label: '📋 내역 보기', run: () => handleSend('내가 돌린 시뮬레이션 뭐 있어?') },
+            { label: '📊 비교하기', run: () => runSlashCommand('/비교') },
+            { label: '❓ 도움말', run: () => runSlashCommand('/도움말') },
+          ].map((chip) => (
+            <button
+              key={chip.label}
+              onClick={chip.run}
+              disabled={isStreaming}
+              className="shrink-0 px-3 py-1.5 rounded-full border border-[#E5E8EB] dark:border-[#2D3748] text-xs text-[#4E5968] dark:text-[#9CA3AF] hover:border-[#3182F6] hover:text-[#3182F6] hover:bg-[#EBF3FF] dark:hover:bg-[#1E3A5F] disabled:opacity-40 transition-all whitespace-nowrap"
+            >
+              {chip.label}
+            </button>
+          ))}
+        </div>
         <div className="max-w-2xl mx-auto flex items-end gap-2 relative">
           {slashMatches.length > 0 && (
             <div className="absolute bottom-full left-0 right-0 mb-2 bg-white dark:bg-[#252D3D] border border-[#E5E8EB] dark:border-[#2D3748] rounded-xl shadow-lg overflow-hidden z-10">
