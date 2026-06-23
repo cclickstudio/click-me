@@ -257,6 +257,54 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
 
     classifier = classify_llm.with_structured_output(_Intent)
 
+    # ── 숏텀 메모리 — session_id 키로 윈도우 버퍼(k=6) 캐시 ──
+    # LangChain 1.x에서 ConversationBufferWindowMemory가 제거돼, 같은 의미(최근 k턴 윈도잉)를
+    # langchain_core 메시지로 직접 구현. 서버 프로세스 메모리에만 보관(재시작 시 초기화).
+    class _WindowMemory:
+        """최근 k턴(2k 메시지)만 유지하는 단순 버퍼 — save_context/load 의미 보존."""
+
+        def __init__(self, k: int = 6) -> None:
+            self.k = k
+            self.messages: list = []  # HumanMessage | AIMessage
+
+        def seed(self, history: list[tuple[str, str]]) -> None:
+            for role, content in history:
+                self.messages.append(
+                    AIMessage(content=content)
+                    if role == "assistant"
+                    else HumanMessage(content=content)
+                )
+            self._trim()
+
+        def save_context(self, user_input: str, output: str) -> None:
+            self.messages.append(HumanMessage(content=user_input))
+            self.messages.append(AIMessage(content=output))
+            self._trim()
+
+        def _trim(self) -> None:
+            limit = self.k * 2
+            if len(self.messages) > limit:
+                self.messages = self.messages[-limit:]
+
+        def load(self) -> list[tuple[str, str]]:
+            out: list[tuple[str, str]] = []
+            for m in self.messages:
+                role = "assistant" if isinstance(m, AIMessage) else "user"
+                out.append((role, m.content if isinstance(m.content, str) else str(m.content)))
+            return out
+
+    _short_term: dict[str, _WindowMemory] = {}
+
+    def _get_memory(session_id: str | None, seed: list[tuple[str, str]]) -> _WindowMemory:
+        key = session_id or "__ephemeral__"
+        mem = _short_term.get(key)
+        if mem is None:
+            mem = _WindowMemory(k=6)
+            # 새 메모리(서버 재시작/첫 턴)면 클라이언트가 보낸 내역으로 시드.
+            mem.seed(seed)
+            _short_term[key] = mem
+        return mem
+
     # 그래프 상태 — 메시지 누적이 아니라 분류→답변 1패스. 노드엔 어노테이트하지 않는다.
     class _State(TypedDict, total=False):
         question: str
@@ -509,13 +557,16 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
 
     async def _ask_full(turn: ChatTurn) -> ChatAnswer:
         sid = turn.session_id
+        # 숏텀 메모리에서 윈도우 내역을 꺼내 노드에 전달(raw 전체 history 대신 최근 6턴).
+        mem = _get_memory(sid, turn.history or [])
+        windowed = mem.load()
         # 1턴 = 1 트레이스 루트(classify → route → 서브에이전트).
         final = await graph.ainvoke(
             {
                 "question": turn.question,
                 "session_id": sid,
                 "project_id": turn.project_id,
-                "history": turn.history or [],
+                "history": windowed,
             },
             config={
                 "run_name": "assistant_chat",
@@ -528,6 +579,9 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
             "label": "CLIO",
             "engine": f"OpenAI · {model_name}",
         }
-        return ChatAnswer(answer=final.get("answer", ""), meta=meta)
+        answer = final.get("answer", "")
+        # 이번 턴을 메모리에 적재 — 다음 턴의 윈도우에 반영.
+        mem.save_context(turn.question, answer)
+        return ChatAnswer(answer=answer, meta=meta)
 
     return _ask_full
