@@ -12,9 +12,11 @@ from dataclasses import dataclass, field
 
 from core.assistant import AssistantRequest
 from domain.generator.assistant.agent import build_generator_agent
+from domain.generator.assistant.tools import list_generations as _list_generations
 from domain.management.assistant.agent import build_management_agent
 from domain.management.assistant.contracts import AskRequest, AskResult
 from domain.simulation.assistant.agent import build_simulation_agent
+from domain.simulation.assistant.tools import list_simulations as _list_simulations
 
 # 매니지먼트로 라우팅하는 키워드(폴백 전용) — 풀모드는 LLM이 도구 설명을 보고 스스로 판단한다.
 _MGMT_KEYWORDS: frozenset[str] = frozenset(
@@ -56,30 +58,31 @@ _CLASSIFY_SYSTEM = (
     "- management: 집행 '후' 실측 성과·운영. 집행된 캠페인의 예산·소진·CTR/ROAS/CVR 실적·"
     "페이싱·증액/감액·일시중지 등.\n"
     "- generator: 광고 시안 생성·카피 전략·작성 원칙·시안 만들기 요청.\n"
-    "- sim_result: 방금 돌린 시뮬 실행 '결과 보고' 메시지(수치 포함). "
-    "예: '[시뮬결과] 구매의도 2.3/5, 거부율 30%'\n"
-    "- gen_result: 방금 돌린 생성 실행 '결과 보고' 메시지. "
-    "예: '[생성결과] 개선 시안 5개 생성 완료'\n"
     "- advise: 위 어디에도 안 맞는 일반 광고 전략·마케팅 아이디어·잡담.\n\n"
     "[판단 기준]\n"
     "- '집행 전 예측·KPI 의미'면 simulation, '집행 후 실측 성과'면 management. "
     "헷갈리면 실측 수치(이미 집행된 광고의 실적) 언급 여부로 가른다.\n"
     "- KPI 용어(클릭 의향률/구매의도/신뢰도/거부율)의 '정의·해석'은 항상 simulation.\n"
+    "- 특정 과거 시뮬/생성의 결과를 묻거나 분석을 요청하면(예: '바나나우유 시뮬 반응 어땠어') "
+    "목록이 아니라 그 도메인의 ask다.\n"
     "- 단순 인사·범위 밖 일반 질문은 advise.\n\n"
     "[action]\n"
-    "- 질문·조회는 action=ask. 시뮬/생성을 실제 '돌려줘/실행/만들어줘'면 action=run.\n"
-    "- action=run이고 광고 카피·문구가 있으면 ad_content로 추출. "
-    "결과 ID가 있으면 context_id로 추출.\n\n"
+    "- ask: 질문·조회·결과 분석.\n"
+    "- run: 시뮬/생성을 실제 '돌려줘/실행/만들어줘'. 광고 카피·문구가 있으면 ad_content로, "
+    "결과 ID가 있으면 context_id로 추출.\n"
+    "- list: 내가 돌린/만든 것의 '목록'을 보려 할 때(예: '내가 돌린 시뮬 뭐 있어?').\n"
+    "- select: 과거 항목 중 하나를 '골라' 개선·이어가려 할 때"
+    "(예: '내가 돌린 시뮬 개선하고 싶어').\n\n"
     "[예시]\n"
     "'클릭 의향률이 무슨 뜻이야?' → simulation / ask\n"
-    "'구매의도 점수 어떻게 해석해?' → simulation / ask\n"
+    "'바나나우유 시뮬 반응 괜찮았어?' → simulation / ask\n"
     "'이 광고 반응 예측해줘 / 시뮬레이션 돌려줘' → simulation / run\n"
+    "'내가 돌린 시뮬레이션 뭐 있어?' → simulation / list\n"
+    "'내가 돌린 시뮬레이션 개선하고 싶어' → simulation / select\n"
     "'우리 캠페인 예산 소진율 알려줘' → management / ask\n"
-    "'CTR 떨어졌는데 캠페인 멈춰줘' → management / ask\n"
     "'전환율 높이는 카피 전략 알려줘' → generator / ask\n"
     "'수분크림 광고 시안 만들어줘' → generator / run\n"
-    "'[시뮬결과] 구매의도 2.1/5, 거부율 35%' → sim_result\n"
-    "'[생성결과] 시안 5개 완료' → gen_result\n"
+    "'내가 만든 시안 뭐 있어?' → generator / list\n"
     "'요즘 20대 마케팅 트렌드 뭐야?' → advise"
 )
 
@@ -129,6 +132,7 @@ class ChatTurn:
     )  # (role, content), role=user|assistant
     ad_id: str | None = None
     session_id: str | None = None  # 개선 루프 상태 키(턴 간 보존)
+    project_id: str | None = None  # 목록 조회 스코프(현재 프로젝트)
 
 
 @dataclass
@@ -207,7 +211,11 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
     # ── 풀모드 — classify_intent → route → 도메인 서브에이전트 / advise ──
     from typing import Literal, TypedDict  # noqa: PLC0415
 
-    from langchain_core.messages import HumanMessage, SystemMessage  # noqa: PLC0415 — 키 있을 때만
+    from langchain_core.messages import (  # noqa: PLC0415 — 키 있을 때만
+        AIMessage,
+        HumanMessage,
+        SystemMessage,
+    )
     from langchain_openai import ChatOpenAI  # noqa: PLC0415
     from langgraph.graph import END, START, StateGraph  # noqa: PLC0415
     from pydantic import BaseModel  # noqa: PLC0415
@@ -220,11 +228,10 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
     gen = build_generator_agent(settings)  # 생성 서브에이전트(폴백/풀모드 자동)
 
     # classify_intent 출력 스키마 — 도메인 분류 + 결과 식별자 추출.
+    # sim_result/gen_result는 LLM 분류 대상 아님(위젯의 [시뮬결과]/[생성결과] 접두사로 결정론 분기).
     class _Intent(BaseModel):
-        intent: Literal[
-            "management", "simulation", "generator", "sim_result", "gen_result", "advise"
-        ]
-        action: Literal["ask", "run"] = "ask"
+        intent: Literal["management", "simulation", "generator", "advise"]
+        action: Literal["ask", "run", "list", "select"] = "ask"
         context_id: str | None = None
         ad_content: str | None = None
 
@@ -254,6 +261,8 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
     class _State(TypedDict, total=False):
         question: str
         session_id: str | None
+        project_id: str | None
+        history: list[tuple[str, str]]
         intent: str
         action: str
         context_id: str | None
@@ -262,9 +271,18 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
         meta: dict
 
     async def classify(state) -> dict:
-        res = await classifier.ainvoke(
-            [SystemMessage(content=_CLASSIFY_SYSTEM), HumanMessage(content=state["question"])]
-        )
+        q = (state.get("question") or "").strip()
+        # 위젯이 보낸 결과 보고는 LLM 분류 없이 결정론 분기(일반 질문이 결과노드로 새는 것 방지).
+        if q.startswith("[시뮬결과]"):
+            return {"intent": "sim_result", "action": "ask"}
+        if q.startswith("[생성결과]"):
+            return {"intent": "gen_result", "action": "ask"}
+        # 직전 대화를 맥락으로 덧붙여 후속 질문(예: "그거 확실해?")도 제대로 분류한다.
+        msgs = [SystemMessage(content=_CLASSIFY_SYSTEM)]
+        for role, content in (state.get("history") or [])[-4:]:
+            msgs.append(HumanMessage(content=f"({role}) {content}"))
+        msgs.append(HumanMessage(content=q))
+        res = await classifier.ainvoke(msgs)
         return {
             "intent": res.intent,
             "action": res.action,
@@ -279,7 +297,26 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
         return {"answer": _mgmt_answer(res), "meta": _mgmt_meta(res)}
 
     async def simulation_node(state) -> dict:
-        if state.get("action") == "run":
+        action = state.get("action")
+        if action in ("list", "select"):
+            # 목록 위젯 — 읽기용(보기) / 선택용(개선 이어가기).
+            items = await _list_simulations(state.get("project_id") or "", limit=10)
+            mode = "select" if action == "select" else "read"
+            label = "시뮬레이션 선택" if mode == "select" else "내 시뮬레이션"
+            answer = (
+                "개선할 시뮬레이션을 골라주세요."
+                if mode == "select"
+                else ("최근 시뮬레이션 목록이에요." if items else "아직 돌린 시뮬레이션이 없어요.")
+            )
+            return {
+                "answer": answer,
+                "meta": {
+                    "source": "simulation",
+                    "label": label,
+                    "widget": {"type": "sim_list", "mode": mode, "data": {"items": items}},
+                },
+            }
+        if action == "run":
             # 채팅에 이미 준 값(제목·카피·카테고리·목표)을 추출해 위젯 초기값으로 채운다.
             extractor = llm.with_structured_output(_SimInput)
             si = await extractor.ainvoke(
@@ -306,7 +343,12 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
                 },
             }
         res = await sim(
-            AssistantRequest(question=state["question"], context_id=state.get("context_id"))
+            AssistantRequest(
+                question=state["question"],
+                context_id=state.get("context_id"),
+                project_id=state.get("project_id"),
+                history=state.get("history") or [],
+            )
         )
         return {
             "answer": res.answer,
@@ -314,7 +356,25 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
         }
 
     async def generator_node(state) -> dict:
-        if state.get("action") == "run":
+        action = state.get("action")
+        if action in ("list", "select"):
+            items = await _list_generations(state.get("project_id") or "", limit=10)
+            mode = "select" if action == "select" else "read"
+            label = "생성 선택" if mode == "select" else "내 광고 생성"
+            answer = (
+                "이어서 작업할 생성을 골라주세요."
+                if mode == "select"
+                else ("최근 광고 생성 목록이에요." if items else "아직 만든 시안이 없어요.")
+            )
+            return {
+                "answer": answer,
+                "meta": {
+                    "source": "generator",
+                    "label": label,
+                    "widget": {"type": "gen_list", "mode": mode, "data": {"items": items}},
+                },
+            }
+        if action == "run":
             extractor = llm.with_structured_output(_GenInput)
             gi = await extractor.ainvoke(
                 [
@@ -340,7 +400,12 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
                 },
             }
         res = await gen(
-            AssistantRequest(question=state["question"], context_id=state.get("context_id"))
+            AssistantRequest(
+                question=state["question"],
+                context_id=state.get("context_id"),
+                project_id=state.get("project_id"),
+                history=state.get("history") or [],
+            )
         )
         return {"answer": res.answer, "meta": _assistant_meta(res, "generator", "생성 어시스턴트")}
 
@@ -394,9 +459,13 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
         }
 
     async def advise_node(state) -> dict:
-        resp = await llm.ainvoke(
-            [SystemMessage(content=_ADVISE_SYSTEM), HumanMessage(content=state["question"])]
-        )
+        msgs = [SystemMessage(content=_ADVISE_SYSTEM)]
+        for role, content in (state.get("history") or [])[-6:]:
+            msgs.append(
+                AIMessage(content=content) if role == "assistant" else HumanMessage(content=content)
+            )
+        msgs.append(HumanMessage(content=state["question"]))
+        resp = await llm.ainvoke(msgs)
         ans = resp.content if isinstance(resp.content, str) else ""
         return {
             "answer": ans,
@@ -442,7 +511,12 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
         sid = turn.session_id
         # 1턴 = 1 트레이스 루트(classify → route → 서브에이전트).
         final = await graph.ainvoke(
-            {"question": turn.question, "session_id": sid},
+            {
+                "question": turn.question,
+                "session_id": sid,
+                "project_id": turn.project_id,
+                "history": turn.history or [],
+            },
             config={
                 "run_name": "assistant_chat",
                 "tags": ["chat", "orchestrator"],

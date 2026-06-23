@@ -82,6 +82,7 @@ async def chat_complete(body: ChatRequest) -> StreamingResponse:
                     history=[(m.role, m.content) for m in body.messages[:-1]],
                     ad_id=body.context_ad_id,
                     session_id=body.session_id,
+                    project_id=body.project_id,
                 )
             )
         except Exception as exc:  # noqa: BLE001 — 실패해도 스트림은 안내로 마무리
@@ -144,6 +145,20 @@ async def get_session_messages(session_id: str, db: AsyncSession = Depends(get_d
 async def delete_session(session_id: str, db: AsyncSession = Depends(get_db)) -> dict:
     """세션 삭제(메시지 CASCADE)."""
     return {"deleted": await history.delete_session(db, session_id)}
+
+
+@router.get("/result-summary")
+async def chat_result_summary(kind: str, id: str) -> dict:
+    """채팅 결과 위젯·카드용 결과 요약 — kind=sim(4대 KPI)·gen(후보 요약). 기존 도구 재사용."""
+    if kind == "sim":
+        from domain.simulation.assistant.tools import fetch_simulation_result  # noqa: PLC0415
+
+        return await fetch_simulation_result(id)
+    if kind == "gen":
+        from domain.generator.assistant.tools import fetch_generation_result  # noqa: PLC0415
+
+        return await fetch_generation_result(id)
+    raise HTTPException(status_code=400, detail="kind는 sim 또는 gen 이어야 합니다.")
 
 
 @router.post("/image")
