@@ -87,15 +87,19 @@ async def append_turn(
     user_content: str,
     assistant_content: str,
     meta: dict | None = None,
+    user_meta: dict | None = None,
 ) -> None:
-    """한 턴(사용자 발화 + 어시스턴트 답변)을 세션에 적재. 세션 없으면 무시(degrade)."""
+    """한 턴(사용자 발화 + 어시스턴트 답변)을 세션에 적재. 세션 없으면 무시(degrade).
+
+    user_meta: 사용자 메시지에 붙일 메타(예: 첨부 이미지 URL {"image_url": ...}).
+    """
     sid = _as_uuid(session_id)
     if sid is None:
         return
     session = await db.get(ChatSession, sid)
     if session is None:
         return
-    db.add(ChatMessage(session_id=sid, role="user", content=user_content))
+    db.add(ChatMessage(session_id=sid, role="user", content=user_content, meta=user_meta or None))
     db.add(
         ChatMessage(session_id=sid, role="assistant", content=assistant_content, meta=meta or None)
     )

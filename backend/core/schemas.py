@@ -151,6 +151,7 @@ class ChatRequest(BaseModel):
     messages: list[ChatMessage]
     context_ad_id: str | None = None
     context_simulation_id: str | None = None
+    image_url: str | None = None  # 첨부 이미지 S3 URL(사용자 메시지에 영속화)
 
 
 class InquiryCreate(BaseModel):

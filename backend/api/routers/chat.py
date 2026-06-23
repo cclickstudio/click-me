@@ -1,11 +1,13 @@
 import asyncio
 import json
 import threading
+import uuid
 from collections.abc import AsyncGenerator, Awaitable, Callable
+from urllib.parse import quote
 
 import google.generativeai as genai
-from fastapi import APIRouter, Depends
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -14,6 +16,16 @@ from core.db import AsyncSessionLocal, get_db
 from core.schemas import ChatRequest
 from domain.chat import history
 from domain.chat.orchestrator import ChatTurn, build_chat_orchestrator
+from tools.storage.s3 import download_bytes, upload_bytes
+
+# 채팅 첨부 이미지 — 허용 타입과 S3 프리픽스(프록시 게이트).
+_ALLOWED_IMAGE_TYPES: dict[str, str] = {
+    "image/png": "png",
+    "image/jpeg": "jpg",
+    "image/webp": "webp",
+    "image/gif": "gif",
+}
+_CHAT_IMAGE_PREFIX = "chat-images/"
 
 router = APIRouter()
 # 팀 구조 엔드포인트 — POST /api/assistant/chat (기존 /api/chat/complete와 동일 로직 공유)
@@ -64,12 +76,19 @@ def _chunks(text: str, size: int = 24) -> list[str]:
 
 
 async def _persist(
-    session_id: str, user_content: str, assistant_content: str, meta: dict | None
+    session_id: str,
+    user_content: str,
+    assistant_content: str,
+    meta: dict | None,
+    image_url: str | None = None,
 ) -> None:
     """한 턴을 DB에 적재(best-effort) — 세션 없거나 실패해도 채팅은 진행."""
+    user_meta = {"image_url": image_url} if image_url else None
     try:
         async with AsyncSessionLocal() as db:
-            await history.append_turn(db, session_id, user_content, assistant_content, meta)
+            await history.append_turn(
+                db, session_id, user_content, assistant_content, meta, user_meta=user_meta
+            )
     except Exception as exc:  # noqa: BLE001 — 영속화 실패가 응답을 막지 않게
         print(f"[chat] persist error: {exc!r}")
 
@@ -107,7 +126,7 @@ async def chat_complete(body: ChatRequest) -> StreamingResponse:
             yield f"data: {json.dumps({'meta': orch.meta}, ensure_ascii=False)}\n\n"
             for piece in _chunks(orch.answer):
                 yield f"data: {json.dumps({'token': piece}, ensure_ascii=False)}\n\n"
-            await _persist(body.session_id, last_message, orch.answer, orch.meta)
+            await _persist(body.session_id, last_message, orch.answer, orch.meta, body.image_url)
             yield 'data: {"done": true}\n\n'
             return
 
@@ -149,7 +168,7 @@ async def chat_complete(body: ChatRequest) -> StreamingResponse:
             buffer.append(item)
             yield f"data: {json.dumps({'token': item}, ensure_ascii=False)}\n\n"
 
-        await _persist(body.session_id, last_message, "".join(buffer), clio_meta)
+        await _persist(body.session_id, last_message, "".join(buffer), clio_meta, body.image_url)
         yield 'data: {"done": true}\n\n'
 
     return StreamingResponse(
@@ -193,3 +212,38 @@ async def get_session_messages(session_id: str, db: AsyncSession = Depends(get_d
 async def delete_session(session_id: str, db: AsyncSession = Depends(get_db)) -> dict:
     """세션 삭제(메시지 CASCADE)."""
     return {"deleted": await history.delete_session(db, session_id)}
+
+
+@router.post("/image")
+async def upload_chat_image(file: UploadFile = File(...)) -> dict:
+    """채팅 첨부 이미지 → S3 업로드 → 프록시 URL 반환(내역 영속화용)."""
+    ct = (file.content_type or "").split(";")[0].strip()
+    if ct not in _ALLOWED_IMAGE_TYPES:
+        raise HTTPException(status_code=400, detail="PNG·JPEG·WebP·GIF 이미지만 업로드 가능합니다.")
+    data = await file.read()
+    if len(data) > 8 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="이미지는 8MB 이하여야 합니다.")
+    ext = _ALLOWED_IMAGE_TYPES[ct]
+    key = f"{_CHAT_IMAGE_PREFIX}{uuid.uuid4().hex}.{ext}"
+    await upload_bytes(data, key, content_type=ct)
+    return {"key": key, "url": f"/api/chat/image?key={quote(key, safe='')}"}
+
+
+@router.get("/image")
+async def proxy_chat_image(key: str) -> Response:
+    """채팅 첨부 이미지 S3 프록시 — chat-images/ 프리픽스만 허용(오픈 프록시 방지)."""
+    if ".." in key or not key.startswith(_CHAT_IMAGE_PREFIX):
+        raise HTTPException(status_code=403, detail="허용되지 않은 이미지 경로입니다.")
+    try:
+        data = await download_bytes(key)
+    except Exception:
+        raise HTTPException(status_code=404, detail="이미지를 찾을 수 없습니다.") from None
+    if key.endswith((".jpg", ".jpeg")):
+        media = "image/jpeg"
+    elif key.endswith(".webp"):
+        media = "image/webp"
+    elif key.endswith(".gif"):
+        media = "image/gif"
+    else:
+        media = "image/png"
+    return Response(content=data, media_type=media)
