@@ -1,15 +1,12 @@
 # 채팅 오케스트레이터 — 매니지/시뮬/생성 서브에이전트를 도구로 부르는 LLM 라우터
 """build_chat_orchestrator(settings) → ask(ChatTurn) -> ChatAnswer | None.
 
-키+실모드면 OpenAI ReAct 그래프(LLM이 도구로 서브에이전트에 위임), 아니면 키워드 폴백.
-지금은 매니지먼트 서브에이전트만 도구로 등록(끝-to-끝 최소 연결).
-시뮬·생성은 같은 방식으로 추가한다.
-폴백에서 매니지 질문이 아니면 None을 반환하고, 라우터(chat.py)가 기존 CLIO(Gemini)로 답한다.
+키+실모드면 classify_intent → route → 도메인 서브에이전트(매니지·시뮬·생성) 또는 advise(일반 조언).
+아니면 키워드 폴백(매니지만 처리, 그 외 None → chat.py가 기존 CLIO(Gemini)로 답).
 """
 
 from __future__ import annotations
 
-import json
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 
@@ -49,14 +46,20 @@ _MGMT_KEYWORDS: frozenset[str] = frozenset(
     }
 )
 
-# 풀모드 오케스트레이터 시스템 프롬프트 — CLIO 페르소나 + 도구 위임 규칙.
-_ORCHESTRATOR_SYSTEM = (
+# classify_intent 분류 프롬프트 — 질문을 도메인으로 라우팅(팀 구조: classify → route).
+_CLASSIFY_SYSTEM = (
+    "사용자 질문을 한 도메인으로 분류하라.\n"
+    "- management: 집행된 광고의 성과·예산·소진·CTR·ROAS·캠페인 관리\n"
+    "- simulation: 집행 전 시뮬레이션 결과·구매의도·클릭의향률·신뢰도·거부율·KPI 정의\n"
+    "- generator: 광고 생성·카피 전략·시안·작성 원칙\n"
+    "- advise: 그 외 일반 광고 전략·아이디어\n"
+    "결과 ID(시뮬/생성 식별자)가 질문에 있으면 context_id로 함께 추출하라."
+)
+
+# advise(일반 조언) 프롬프트 — 도메인 도구 없이 직접 답.
+_ADVISE_SYSTEM = (
     "너는 ClickMe의 수석 광고 전략 AI 어드바이저 CLIO다. 한국어로 간결하게 답한다.\n"
-    "광고 캠페인의 성과·예산·집행·게재 상태·전환 등 '집행된 광고 관리' 질문이면 "
-    "ask_management 도구로 매니지먼트 어시스턴트에 위임하고, "
-    "그 결과(실측 숫자)를 그대로 인용해 답한다.\n"
-    "그 외 일반 광고 전략·해석·아이디어 질문은 도구 없이 직접 답한다.\n"
-    "도구가 돌려준 숫자만 인용하고 추정·환각하지 않는다. 문장 끝에 콜론을 쓰지 말 것."
+    "일반 광고 전략·해석·아이디어 질문에 도구 없이 직접 답한다. 문장 끝에 콜론을 쓰지 말 것."
 )
 
 
@@ -123,7 +126,7 @@ def _assistant_meta(res, source: str, label: str) -> dict:
 
 
 def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnswer | None]]:
-    """오케스트레이터 진입점. 키+실모드면 OpenAI ReAct, 아니면 키워드 폴백."""
+    """오케스트레이터 진입점. 키+실모드면 classify → route 그래프, 아니면 키워드 폴백."""
     api_key = getattr(settings, "openai_api_key", None)
     use_mock = getattr(settings, "use_mock", True)
     mgmt = build_management_agent(settings)  # 폴백/풀모드 자동 분기(같은 게이트)
@@ -139,121 +142,110 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
 
         return _ask_fallback
 
-    # ── 풀모드 — OpenAI ReAct, 매니지먼트를 도구로 위임 ──
-    from langchain_core.messages import (  # noqa: PLC0415 — 키 있을 때만 로드
-        AIMessage,
-        HumanMessage,
-        SystemMessage,
-        ToolMessage,
-    )
-    from langchain_core.tools import tool  # noqa: PLC0415
+    # ── 풀모드 — classify_intent → route → 도메인 서브에이전트 / advise ──
+    from typing import Literal, TypedDict  # noqa: PLC0415
+
+    from langchain_core.messages import HumanMessage, SystemMessage  # noqa: PLC0415 — 키 있을 때만
     from langchain_openai import ChatOpenAI  # noqa: PLC0415
-    from langgraph.graph import END, START, MessagesState, StateGraph  # noqa: PLC0415
+    from langgraph.graph import END, START, StateGraph  # noqa: PLC0415
+    from pydantic import BaseModel  # noqa: PLC0415
 
     model_name = getattr(settings, "chat_orchestrator_model", "gpt-4o-mini")
     llm = ChatOpenAI(model=model_name, temperature=0.2, api_key=api_key)
     sim = build_simulation_agent(settings)  # 시뮬 서브에이전트(폴백/풀모드 자동)
     gen = build_generator_agent(settings)  # 생성 서브에이전트(폴백/풀모드 자동)
 
-    @tool
-    async def ask_management(question: str, campaign_id: str | None = None) -> dict:
-        """집행된 광고의 성과·예산·집행·게재 상태 질문에 실측 데이터로 답한다.
-        캠페인·예산·소진·CTR·ROAS·전환·게재 등 운영 관리 질문에 쓴다."""
-        res = await mgmt(AskRequest(question=question, campaign_id=campaign_id))
-        return {"_answer": _mgmt_answer(res), "_meta": _mgmt_meta(res)}
+    # classify_intent 출력 스키마 — 도메인 분류 + 결과 식별자 추출.
+    class _Intent(BaseModel):
+        intent: Literal["management", "simulation", "generator", "advise"]
+        context_id: str | None = None
 
-    @tool
-    async def ask_simulation(question: str, simulation_id: str | None = None) -> dict:
-        """집행 전 AI 가상 소비자 시뮬레이션의 결과 해석·KPI 정의·방법론 질문에 답한다.
-        구매의도·클릭의향률·신뢰도·거부율·시뮬 결과 해석·"신뢰해도 되나"에 쓴다."""
-        res = await sim(AssistantRequest(question=question, context_id=simulation_id))
+    classifier = llm.with_structured_output(_Intent)
+
+    # 그래프 상태 — 메시지 누적이 아니라 분류→답변 1패스. 노드엔 어노테이트하지 않는다.
+    class _State(TypedDict, total=False):
+        question: str
+        intent: str
+        context_id: str | None
+        answer: str
+        meta: dict
+
+    async def classify(state) -> dict:
+        res = await classifier.ainvoke(
+            [SystemMessage(content=_CLASSIFY_SYSTEM), HumanMessage(content=state["question"])]
+        )
+        return {"intent": res.intent, "context_id": res.context_id}
+
+    async def management_node(state) -> dict:
+        res = await mgmt(
+            AskRequest(question=state["question"], campaign_id=state.get("context_id"))
+        )
+        return {"answer": _mgmt_answer(res), "meta": _mgmt_meta(res)}
+
+    async def simulation_node(state) -> dict:
+        res = await sim(
+            AssistantRequest(question=state["question"], context_id=state.get("context_id"))
+        )
         return {
-            "_answer": res.answer,
-            "_meta": _assistant_meta(res, "simulation", "시뮬레이션 어시스턴트"),
+            "answer": res.answer,
+            "meta": _assistant_meta(res, "simulation", "시뮬레이션 어시스턴트"),
         }
 
-    @tool
-    async def ask_generator(question: str, generation_id: str | None = None) -> dict:
-        """광고 생성(개선 시안) 결과 해석·카피 전략·작성 원칙 질문에 답한다.
-        어떤 시안이 나왔나·왜 선택됐나·카피 전략·"어떤 카피가 좋나"에 쓴다."""
-        res = await gen(AssistantRequest(question=question, context_id=generation_id))
+    async def generator_node(state) -> dict:
+        res = await gen(
+            AssistantRequest(question=state["question"], context_id=state.get("context_id"))
+        )
+        return {"answer": res.answer, "meta": _assistant_meta(res, "generator", "생성 어시스턴트")}
+
+    async def advise_node(state) -> dict:
+        resp = await llm.ainvoke(
+            [SystemMessage(content=_ADVISE_SYSTEM), HumanMessage(content=state["question"])]
+        )
+        ans = resp.content if isinstance(resp.content, str) else ""
         return {
-            "_answer": res.answer,
-            "_meta": _assistant_meta(res, "generator", "생성 어시스턴트"),
+            "answer": ans,
+            "meta": {"source": "orchestrator", "label": "CLIO", "engine": f"OpenAI · {model_name}"},
         }
-
-    bound = llm.bind_tools([ask_management, ask_simulation, ask_generator])
-    _subagents = {
-        "ask_management": ask_management,
-        "ask_simulation": ask_simulation,
-        "ask_generator": ask_generator,
-    }
-
-    class _State(MessagesState, total=False):
-        tool_meta: dict | None
-        rounds: int
-
-    # 노드 시그니처에 _State(로컬 클래스)를 어노테이트하지 않는다 —
-    # from __future__ annotations로 문자열화돼 langgraph가 런타임에 해석 못 함(NameError).
-    async def agent(state) -> dict:
-        msgs = state["messages"]
-        if not any(isinstance(m, SystemMessage) for m in msgs):
-            msgs = [SystemMessage(content=_ORCHESTRATOR_SYSTEM), *msgs]
-        # 라운드 상한(3) 초과 시 도구 없는 LLM으로 최종 답 강제(무한 루프 방지)
-        chosen = bound if state.get("rounds", 0) < 3 else llm
-        return {"messages": [await chosen.ainvoke(msgs)]}
-
-    async def tools_node(state) -> dict:
-        ai = state["messages"][-1]
-        tool_meta = state.get("tool_meta")
-        out: list[ToolMessage] = []
-        for call in ai.tool_calls:
-            fn = _subagents.get(call["name"])
-            if fn is None:
-                continue
-            payload = await fn.ainvoke(call.get("args", {}))
-            tool_meta = payload.get("_meta")
-            # LLM에는 답변 본문만 돌려준다(메타는 state에 보관해 SSE로 전달).
-            out.append(
-                ToolMessage(
-                    content=json.dumps({"answer": payload.get("_answer", "")}, ensure_ascii=False),
-                    tool_call_id=call["id"],
-                )
-            )
-        return {"messages": out, "tool_meta": tool_meta, "rounds": state.get("rounds", 0) + 1}
 
     def route(state) -> str:
-        last = state["messages"][-1]
-        return "tools" if isinstance(last, AIMessage) and last.tool_calls else END
+        return state.get("intent", "advise")
 
     g = StateGraph(_State)
-    g.add_node("agent", agent)
-    g.add_node("tools", tools_node)
-    g.add_edge(START, "agent")
-    g.add_conditional_edges("agent", route, {"tools": "tools", END: END})
-    g.add_edge("tools", "agent")
+    g.add_node("classify", classify)
+    g.add_node("management", management_node)
+    g.add_node("simulation", simulation_node)
+    g.add_node("generator", generator_node)
+    g.add_node("advise", advise_node)
+    g.add_edge(START, "classify")
+    g.add_conditional_edges(
+        "classify",
+        route,
+        {
+            "management": "management",
+            "simulation": "simulation",
+            "generator": "generator",
+            "advise": "advise",
+        },
+    )
+    for _node in ("management", "simulation", "generator", "advise"):
+        g.add_edge(_node, END)
     graph = g.compile()
 
     async def _ask_full(turn: ChatTurn) -> ChatAnswer:
-        history = [
-            HumanMessage(content=c) if role == "user" else AIMessage(content=c)
-            for role, c in turn.history
-        ]
+        # 1턴 = 1 트레이스 루트(classify → route → 서브에이전트).
         final = await graph.ainvoke(
-            {"messages": [*history, HumanMessage(content=turn.question)]},
+            {"question": turn.question},
             config={
-                "run_name": "chat_orchestrator",
+                "run_name": "assistant_chat",
                 "tags": ["chat", "orchestrator"],
                 "metadata": {"ad_id": turn.ad_id},
             },
         )
-        last = final["messages"][-1]
-        answer = last.content if isinstance(getattr(last, "content", None), str) else ""
-        meta = final.get("tool_meta") or {
+        meta = final.get("meta") or {
             "source": "orchestrator",
             "label": "CLIO",
             "engine": f"OpenAI · {model_name}",
         }
-        return ChatAnswer(answer=answer, meta=meta)
+        return ChatAnswer(answer=final.get("answer", ""), meta=meta)
 
     return _ask_full

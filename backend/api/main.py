@@ -113,6 +113,7 @@ app.include_router(billing.router, prefix="/api/billing", tags=["billing"])
 app.include_router(management.router, prefix="/api/management", tags=["management"])
 app.include_router(generator.router, prefix="/api/generator", tags=["generator"])
 app.include_router(debate.router, prefix="/api/debate", tags=["debate"])
+app.include_router(chat.assistant_router, prefix="/api/assistant", tags=["assistant"])
 
 
 @app.get("/health")

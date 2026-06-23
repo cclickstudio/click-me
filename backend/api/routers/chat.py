@@ -12,6 +12,8 @@ from core.schemas import ChatRequest
 from domain.chat.orchestrator import ChatTurn, build_chat_orchestrator
 
 router = APIRouter()
+# 팀 구조 엔드포인트 — POST /api/assistant/chat (기존 /api/chat/complete와 동일 로직 공유)
+assistant_router = APIRouter()
 
 genai.configure(api_key=settings.gemini_api_key or "")
 _model = genai.GenerativeModel(
@@ -58,6 +60,7 @@ def _chunks(text: str, size: int = 24) -> list[str]:
 
 
 @router.post("/complete")
+@assistant_router.post("/chat")
 async def chat_complete(body: ChatRequest) -> StreamingResponse:
     gemini_history = []
     for m in body.messages[:-1]:
