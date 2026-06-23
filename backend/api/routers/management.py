@@ -11,7 +11,7 @@ import calendar
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from random import Random
-from typing import Literal
+from typing import Any, Literal
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
@@ -539,6 +539,19 @@ async def management_assistant(body: AskRequest):
     return result.model_dump(mode="json")
 
 
+@router.post("/kb/refresh")
+async def kb_refresh() -> dict:
+    """KB 증분 재적재 — 변경된 문서만 재임베딩(content_hash diff). 운영자 트리거.
+
+    자동 스케줄러·외부 소스(웹) 수집은 후속(소스·파서·스케줄러 결정 필요). 현재는 로컬 KB
+    문서를 재적재하며, 증분이라 변경 없으면 비용 없이 즉시 반환한다.
+    """
+    from domain.management.assistant.kb_ingest import ingest  # noqa: PLC0415
+
+    ingested = await ingest()
+    return {"ok": True, "ingested_chunks": ingested}
+
+
 # ── 캠페인 목록·성과 대시보드 (🅰 reader 영역 데모 노출) ──────────────────
 # 백엔드에 "캠페인 목록" 능력이 없어(이름·상태 미보유) 데모 캠페인 상수 + MockAdPlatform로
 # 요약/시계열을 합성한다. 실연동 시 reader.list_campaigns로 교체.
@@ -638,82 +651,153 @@ def _real_summary(
     }
 
 
+async def _safe_meta(coro: Awaitable[Any]) -> tuple[Any, bool]:
+    """Meta 호출을 권한 거부에 안전하게 감싼다 — 권한 에러면 (None, True), 성공이면 (result, False).
+
+    인증·레이트리밋·기타 에러는 상위 핸들러가 처리하도록 그대로 전파한다.
+    """
+    try:
+        return await coro, False
+    except MetaApiError as exc:
+        if exc.is_permission_error:
+            return None, True
+        raise
+
+
+def _blocked_summary() -> dict:
+    """권한 거부로 지표를 못 읽은 캠페인의 요약 자리표시 — metrics_status로 '권한 없음' 표기용."""
+    return {
+        "impressions": 0,
+        "clicks": 0,
+        "reach": 0,
+        "spend_krw": 0,
+        "ctr": 0.0,
+        "cpc_krw": 0,
+        "cpm_krw": 0,
+        "conversions": None,
+        "cvr": None,
+        "roas": None,
+        "roas_estimated": False,
+        "target_roas": None,
+        "target_missed": False,
+        "conversion_tracking": False,
+        "frequency": 0.0,
+        "frequency_7d": 0.0,
+        "spend_today_krw": 0,
+        "pacing_pct": 0.0,
+    }
+
+
 async def _list_campaigns_real(
     conversion_value_krw: int | None = None,
     target_roas: float | None = None,
     date_preset: str = "maximum",
 ) -> dict:
-    """실연동 — Meta 캠페인 목록 + 캠페인별 실측 요약. date_preset=조회 기간(전체/30일/이번달)."""
+    """실연동 — Meta 캠페인 목록 + 캠페인별 실측 요약. date_preset=조회 기간(전체/30일/이번달).
+
+    계정 자금·캠페인별 지표는 권한 거부에 안전하게 감싸, 한 부분의 권한이 없어도 화면을
+    깨지 않고 그 부분만 '권한 없음'(account_unavailable·metrics_status)으로 표기한다.
+    """
     reader = build_reader(settings)
     since = _today_utc()
-    # 목록·계정 자금 병렬 → 캠페인별 지표 병렬 (순차면 캠페인 수만큼 직렬로 느림)
-    infos, funding = await asyncio.gather(
+    # 목록·계정 자금 병렬. 자금은 권한 거부가 잦아 _safe_meta로 격리(목록 권한 에러는 상위로 전파).
+    infos, (funding, funding_blocked) = await asyncio.gather(
         reader.list_campaigns(),
-        reader.get_account_funding(),
+        _safe_meta(reader.get_account_funding()),
     )
-    metrics = await asyncio.gather(
-        *(reader.get_metrics(c.campaign_id, since, date_preset=date_preset) for c in infos)
+    # 캠페인별 조회기간 지표 — 권한 거부면 해당 캠페인만 (None, True).
+    metric_pairs = await asyncio.gather(
+        *(
+            _safe_meta(reader.get_metrics(c.campaign_id, since, date_preset=date_preset))
+            for c in infos
+        )
     )
-    # 운영 신호는 조회기간과 분리한 고정 윈도로 산출 — 소진율=오늘 지출÷일예산(하루 단위),
-    # 노출 피로=최근 7일 빈도. active만 today·last_7d를 병렬 추가 조회(비활성은 오늘 게재 안 해 0).
+    # 운영 신호는 조회기간과 분리한 고정 윈도로 — 소진율=오늘 지출÷일예산, 노출 피로=최근 7일 빈도.
+    # 지표를 읽은 active만 today·last_7d 추가 조회(권한 거부·비활성은 건너뜀).
     today_spend = [0] * len(infos)
     freq_7d = [0.0] * len(infos)
-    active_idx = [i for i, c in enumerate(infos) if c.state == CampaignState.ACTIVE]
-    if active_idx:
-        today_ms, week_ms = await asyncio.gather(
+    elig = [
+        i for i, c in enumerate(infos) if c.state == CampaignState.ACTIVE and not metric_pairs[i][1]
+    ]
+    if elig:
+        today_pairs, week_pairs = await asyncio.gather(
             asyncio.gather(
                 *(
-                    reader.get_metrics(infos[i].campaign_id, since, date_preset="today")
-                    for i in active_idx
+                    _safe_meta(reader.get_metrics(infos[i].campaign_id, since, date_preset="today"))
+                    for i in elig
                 )
             ),
             asyncio.gather(
                 *(
-                    reader.get_metrics(infos[i].campaign_id, since, date_preset="last_7d")
-                    for i in active_idx
+                    _safe_meta(
+                        reader.get_metrics(infos[i].campaign_id, since, date_preset="last_7d")
+                    )
+                    for i in elig
                 )
             ),
         )
-        for k, i in enumerate(active_idx):
-            today_spend[i] = today_ms[k].spend_krw
-            freq_7d[i] = week_ms[k].frequency
+        for k, i in enumerate(elig):
+            tm, t_blocked = today_pairs[k]
+            wm, w_blocked = week_pairs[k]
+            if tm is not None and not t_blocked:
+                today_spend[i] = tm.spend_krw
+            if wm is not None and not w_blocked:
+                freq_7d[i] = wm.frequency
     out = []
     any_blocked = False
-    for idx, (info, m) in enumerate(zip(infos, metrics, strict=True)):
-        # 게재 차단: 계정 자금 막힘 + 캠페인이 켜져 있는데(ACTIVE) 안 도는 경우
-        # (게재 기간 종료 캠페인은 state가 ENDED라 제외 — 충전해도 재개 안 됨)
-        blocked = funding.delivery_blocked and info.state == CampaignState.ACTIVE
+    for idx, info in enumerate(infos):
+        m, m_blocked = metric_pairs[idx]
+        # 게재 차단: 계정 자금 막힘 + 캠페인이 켜져 있는데(ACTIVE) 안 도는 경우.
+        blocked = (
+            funding is not None and funding.delivery_blocked and info.state == CampaignState.ACTIVE
+        )
         any_blocked = any_blocked or blocked
+        if m_blocked or m is None:
+            summary, metrics_status = _blocked_summary(), "permission"
+        else:
+            summary = _real_summary(
+                m,
+                info.daily_budget_krw,
+                conversion_value_krw,
+                target_roas,
+                spend_today_krw=today_spend[idx],
+                frequency_7d=freq_7d[idx],
+            )
+            metrics_status = "ok"
         out.append(
             {
                 "campaign_id": info.campaign_id,
                 "name": info.name,
                 "state": info.state.value,
                 "daily_budget_krw": info.daily_budget_krw,
+                "lifetime_budget_krw": info.lifetime_budget_krw,
+                "budget_type": info.budget_type,
                 "ended_at": info.ended_at,
                 "delivery_blocked": blocked,
-                "block_reason": funding.block_reason if blocked else None,
-                **_real_summary(
-                    m,
-                    info.daily_budget_krw,
-                    conversion_value_krw,
-                    target_roas,
-                    spend_today_krw=today_spend[idx],
-                    frequency_7d=freq_7d[idx],
-                ),
+                "block_reason": funding.block_reason if (blocked and funding) else None,
+                "metrics_status": metrics_status,
+                **summary,
             }
         )
+    if funding_blocked or funding is None:
+        # 계정 자금 권한 없음 — 지갑은 '권한 없음'으로, 게재중단 배너는 판단 불가라 숨김.
+        account = None
+        account_unavailable = "권한 없음 — 계정 자금(잔액·한도·누적지출) 조회 권한이 없어요."
+    else:
+        # 계정 지갑(돈 개념 분리) — 일일예산과 다른 '실제 충전·지출·잔액'
+        account = {
+            "available_balance_krw": funding.available_balance_krw,
+            "spend_cap_krw": funding.spend_cap_krw,
+            "amount_spent_krw": funding.amount_spent_krw,
+        }
+        account_unavailable = None
     return {
         "campaigns": out,
         "source": "live",
         # 계정 배너는 실제로 막힌(진행중) 캠페인이 있을 때만 — 전부 종료면 노이즈라 숨김
-        "account_block_reason": funding.block_reason if any_blocked else None,
-        # 계정 지갑(돈 개념 분리) — 일일예산과 다른 '실제 충전·지출·잔액'
-        "account": {
-            "available_balance_krw": funding.available_balance_krw,
-            "spend_cap_krw": funding.spend_cap_krw,
-            "amount_spent_krw": funding.amount_spent_krw,
-        },
+        "account_block_reason": funding.block_reason if (funding and any_blocked) else None,
+        "account": account,
+        "account_unavailable": account_unavailable,
     }
 
 
@@ -756,20 +840,46 @@ async def _get_campaign_real(
     target_roas: float | None = None,
     date_preset: str = "maximum",
 ) -> dict:
-    """실연동 — 캠페인 상세(시간별 실측 + 기대곡선 + 요약 + 성과 미달 진단)."""
+    """실연동 — 캠페인 상세(시간별 실측 + 기대곡선 + 요약 + 성과 미달 진단).
+
+    예산(일/총)·상태는 목록에서, 지표 묶음은 권한 거부에 안전하게 감싸 분리한다 —
+    지표 권한이 없으면 상세 수치만 '권한 없음'으로 비우고 화면은 유지(budget·이름은 표시).
+    """
     reader = build_reader(settings)
     today = _today_utc()
-    # 독립 호출 3개 병렬 — 순차로 기다리면 토글 펼침이 느림(Meta 왕복 ×3).
-    campaigns, snaps, m, daily, week = await asyncio.gather(
-        reader.list_campaigns(),
-        reader.fetch_hourly_metrics(campaign_id, today),
-        reader.get_metrics(campaign_id, today, date_preset=date_preset),
-        reader.fetch_daily_metrics(campaign_id),
-        reader.get_metrics(campaign_id, today, date_preset="last_7d"),  # 노출 피로용 7일 빈도
-    )
+    campaigns = await reader.list_campaigns()
     info = next((c for c in campaigns if c.campaign_id == campaign_id), None)
     if info is None:
         raise HTTPException(status_code=404, detail=f"캠페인 없음: {campaign_id}")
+    budget_fields = {
+        "daily_budget_krw": info.daily_budget_krw,
+        "lifetime_budget_krw": info.lifetime_budget_krw,
+        "budget_type": info.budget_type,
+    }
+    # 시간별·일별·요약·7일 묶음 병렬 — 권한 거부면 상세 지표만 비우고 화면은 유지.
+    bundle, blocked = await _safe_meta(
+        asyncio.gather(
+            reader.fetch_hourly_metrics(campaign_id, today),
+            reader.get_metrics(campaign_id, today, date_preset=date_preset),
+            reader.fetch_daily_metrics(campaign_id),
+            reader.get_metrics(campaign_id, today, date_preset="last_7d"),  # 노출 피로용 7일 빈도
+        )
+    )
+    if blocked or bundle is None:
+        return {
+            "campaign_id": info.campaign_id,
+            "name": info.name,
+            "state": info.state.value,
+            **budget_fields,
+            "expected": [],
+            "actual": [],
+            "anomaly_hours": [],
+            "series": [],
+            "summary": _blocked_summary(),
+            "metrics_status": "permission",
+            "diagnosis": None,
+        }
+    snaps, m, daily, week = bundle
     actual = [s.impressions for s in snaps]
     expected = expected_hourly_impressions(info.daily_budget_krw)
     # 소진율은 오늘 지출 기준 — 이미 받은 시간행(snaps) 합으로 추가 호출 없이 산출.
@@ -786,12 +896,13 @@ async def _get_campaign_real(
         "campaign_id": info.campaign_id,
         "name": info.name,
         "state": info.state.value,
-        "daily_budget_krw": info.daily_budget_krw,
+        **budget_fields,
         "expected": [round(e, 1) for e in expected],
         "actual": actual,
         "anomaly_hours": find_anomaly_window(expected, actual) if actual else [],
         "series": daily,
         "summary": summary,
+        "metrics_status": "ok",
         "diagnosis": await _campaign_diagnosis(reader, campaign_id, summary, m.as_of),
     }
 
@@ -827,6 +938,18 @@ async def list_campaigns(
                     "source": "live",
                     "rate_limited": "Meta 요청 한도에 일시 도달했어요. 잠시 후 다시 불러옵니다.",
                 }
+            # 목록 자체를 권한 거부당한 경우 — 빈 목록 + '권한 없음' 안내(화면 깨지 않음).
+            if exc.is_permission_error:
+                return {
+                    "campaigns": [],
+                    "source": "live",
+                    "account": None,
+                    "account_unavailable": "권한 없음 — 계정 자금 조회 권한이 없어요.",
+                    "permission_error": (
+                        "권한 없음 — Meta 광고 데이터 접근 권한이 없어요. "
+                        "토큰 권한(스코프)·자산(광고계정) 권한을 확인해 주세요."
+                    ),
+                }
             raise
     out = []
     for i, (cid, name, state, budget, fault) in enumerate(_CAMPAIGNS_DEMO):
@@ -837,6 +960,9 @@ async def list_campaigns(
                 "name": name,
                 "state": state.value,
                 "daily_budget_krw": budget,
+                "lifetime_budget_krw": 0,
+                "budget_type": "daily",  # 데모는 모두 일예산
+                "metrics_status": "ok",
                 **_campaign_summary(snaps, budget),
             }
         )
@@ -1009,11 +1135,14 @@ async def get_campaign(
                 "name": name,
                 "state": state.value,
                 "daily_budget_krw": budget,
+                "lifetime_budget_krw": 0,
+                "budget_type": "daily",
                 "expected": [round(e, 1) for e in expected],
                 "actual": actual,
                 "anomaly_hours": find_anomaly_window(expected, actual),
                 "series": await MockAdPlatform().fetch_daily_metrics(cid),
                 "summary": _campaign_summary(snaps, budget),
+                "metrics_status": "ok",
             }
     raise HTTPException(status_code=404, detail=f"캠페인 없음: {campaign_id}")
 
