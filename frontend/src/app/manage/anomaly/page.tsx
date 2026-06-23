@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import AppLayout from '@/components/AppLayout';
-import { api } from '@/lib/api';
+import { api, type AnomalyScanItem } from '@/lib/api';
 import { AZone } from '@/components/manage/AZone';
 import { BZone } from '@/components/manage/BZone';
 import { ApprovalBridge } from '@/components/manage/ApprovalBridge';
@@ -38,6 +38,23 @@ export default function Page() {
   const [decided, setDecided] = useState<'approved' | 'rejected' | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // 실 캠페인 성과 이상 스캔 (데모와 별개 — live 전용)
+  const [scan, setScan] = useState<{ items: AnomalyScanItem[]; scanned: number; note?: string } | null>(
+    null,
+  );
+  const [scanBusy, setScanBusy] = useState(false);
+
+  const scanReal = async () => {
+    setScanBusy(true);
+    try {
+      const r = await api.management.anomalyScan(3.0);
+      setScan({ items: r.anomalies, scanned: r.scanned, note: r.note });
+    } catch (e) {
+      setScan({ items: [], scanned: 0, note: e instanceof Error ? e.message : '스캔 실패' });
+    } finally {
+      setScanBusy(false);
+    }
+  };
 
   const start = async () => {
     setBusy(true);
@@ -159,6 +176,59 @@ export default function Page() {
               {FAULT_OPTIONS.find((o) => o.value === fault)?.symptom}
             </span>
           </p>
+        </div>
+
+        {/* 실 캠페인 성과 이상 스캔 — 데모(고장주입)와 별개, 실 Meta 캠페인을 진단 */}
+        <div className="mb-4 rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] px-4 py-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]">
+                실 캠페인 성과 이상 스캔
+              </p>
+              <p className="text-[12px] text-[#8B95A1] mt-0.5">
+                실제 Meta 캠페인을 돌며 성과 진단(ROAS 미달·전환 저조)을 실측합니다. 위 데모와 별개.
+              </p>
+            </div>
+            <button
+              onClick={scanReal}
+              disabled={scanBusy}
+              className="px-3 py-1.5 bg-[#191F28] text-white text-[12px] font-medium rounded-lg hover:bg-black disabled:opacity-40"
+            >
+              {scanBusy ? '스캔 중…' : '실 캠페인 스캔'}
+            </button>
+          </div>
+          {scan && (
+            <div className="mt-3">
+              {scan.note && <p className="text-[12px] text-[#8B95A1]">{scan.note}</p>}
+              {!scan.note && (
+                <p className="text-[12px] text-[#8B95A1]">
+                  {scan.scanned}개 캠페인 스캔 · 이상 {scan.items.length}건
+                </p>
+              )}
+              <ul className="mt-2 space-y-1.5">
+                {scan.items.map((a) => (
+                  <li
+                    key={a.campaign_id}
+                    className="rounded-lg bg-amber-50 dark:bg-amber-900/20 px-3 py-2"
+                  >
+                    <p className="text-[12px] font-semibold text-amber-700 dark:text-amber-300">
+                      {a.name} — {a.diagnosis.anomaly_type}
+                    </p>
+                    {a.diagnosis.hypothesis && (
+                      <p className="text-[12px] text-amber-700 dark:text-amber-300">
+                        {a.diagnosis.hypothesis}
+                      </p>
+                    )}
+                  </li>
+                ))}
+              </ul>
+              {!scan.note && scan.items.length === 0 && (
+                <p className="mt-1 text-[12px] text-green-600 dark:text-green-400">
+                  성과 이상 없음 — 진단된 문제가 없습니다.
+                </p>
+              )}
+            </div>
+          )}
         </div>
 
         <KpiStrip run={run} />

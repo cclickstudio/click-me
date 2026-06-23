@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import AppLayout from '@/components/AppLayout';
-import { api } from '@/lib/api';
+import { api, type DatePreset } from '@/lib/api';
 import { MonitorKpis } from '@/components/manage/monitoring/MonitorKpis';
 import { HealthList } from '@/components/manage/monitoring/HealthList';
 import { runwayDays } from '@/components/manage/monitoring/pacing';
@@ -26,6 +26,7 @@ export default function Page() {
   const [now, setNow] = useState<Date>(() => new Date());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [datePreset, setDatePreset] = useState<DatePreset>('maximum'); // 조회 기간 토글
 
   // 캠페인별 일별 지출 시계열 — /campaigns/{id}.series에서 추출(스파크라인·델타용).
   // 호출이 N건이라 폴링(silent)에선 생략하고 최초·수동 새로고침에서만 갱신.
@@ -49,7 +50,7 @@ export default function Page() {
       if (!silent) setBusy(true);
       setError(null);
       try {
-        const r = await api.management.campaigns();
+        const r = await api.management.campaigns(undefined, undefined, datePreset);
         // Meta 요청 한도(일시) — 빈 목록으로 덮지 말고 기존 유지 + 배너만.
         if (r.rate_limited) {
           setRateLimited(r.rate_limited);
@@ -70,7 +71,7 @@ export default function Page() {
         if (!silent) setBusy(false);
       }
     },
-    [loadSeries],
+    [loadSeries, datePreset],
   );
 
   useEffect(() => {
@@ -111,6 +112,29 @@ export default function Page() {
             </p>
           </div>
           <div className="flex items-center gap-2">
+            {source === 'live' && (
+              <div className="flex rounded-lg border border-[#E5E8EB] dark:border-[#2D3748] overflow-hidden text-[12px]">
+                {(
+                  [
+                    ['maximum', '전체'],
+                    ['last_30d', '최근 30일'],
+                    ['this_month', '이번 달'],
+                  ] as [DatePreset, string][]
+                ).map(([key, label]) => (
+                  <button
+                    key={key}
+                    onClick={() => setDatePreset(key)}
+                    className={`px-2.5 py-1.5 ${
+                      datePreset === key
+                        ? 'bg-[#3182F6] text-white'
+                        : 'text-[#8B95A1] hover:bg-[#F2F4F6] dark:hover:bg-[#2D3748]'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            )}
             {source === 'live' && (
               <button
                 onClick={() => load(true)}
@@ -235,7 +259,9 @@ export default function Page() {
 
         <p className="mt-6 text-[12px] text-[#B0B8C1]">
           {source === 'live'
-            ? '실데이터 · Meta 라이브(전체 기간 누적) · 소진율=지출÷일예산 · 금액 KRW'
+            ? `실데이터 · Meta 라이브 · 기간=${
+                datePreset === 'last_30d' ? '최근 30일' : datePreset === 'this_month' ? '이번 달' : '전체 누적'
+              } · 소진율=지출÷일예산 · 금액 KRW`
             : '⚠ Mock 기반 데모 · 노출/지출은 일중 곡선 모델 기반 · "예측 CTR" 등 실측 환산 없음 · 금액 KRW'}
         </p>
       </div>

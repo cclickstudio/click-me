@@ -165,7 +165,7 @@ export default function Page() {
             </div>
 
             <OriginLegend />
-            <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+            <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
               <Tile label="월 목표" value={`₩${target.toLocaleString()}`} origin="setting" />
               <Tile label="이번 달 소진" value={`₩${status.spent_krw.toLocaleString()}`} />
               <Tile label="잔여" value={`₩${status.remaining_krw.toLocaleString()}`} origin="computed" />
@@ -173,6 +173,11 @@ export default function Page() {
                 label="월 목표 소진율"
                 value={`${(status.ratio * 100).toFixed(0)}%`}
                 origin="computed"
+              />
+              <Tile
+                label="크레딧 잔액 (집행 한도)"
+                value={`₩${(status.credit_balance_krw ?? 0).toLocaleString()}`}
+                sub="ClickMe 크레딧 — spend_cap"
               />
               <Tile
                 label="여력 (Meta 선불 잔액)"

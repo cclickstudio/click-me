@@ -198,6 +198,52 @@ async def run_detection(fault: str = "bid_loss"):
     return payload
 
 
+@router.get("/anomaly/scan")
+async def anomaly_scan(conversion_value_krw: int | None = None, target_roas: float | None = None):
+    """실 캠페인 성과 이상 스캔 — 실제 캠페인을 돌며 성과 진단(ROAS 미달·전환 저조 등)을 모은다.
+
+    데모(/run)는 고장주입이라 실 캠페인엔 못 쓴다. 이건 실 Meta 캠페인의 성과 이상을
+    _campaign_diagnosis(실 ROAS·relevance + LLM 재판정)로 실측 진단해 이상 있는 것만 반환.
+    use_mock이면 빈 결과(실 스캔은 live 전용).
+    """
+    if getattr(settings, "use_mock", True):
+        return {
+            "source": "mock",
+            "scanned": 0,
+            "anomalies": [],
+            "note": "실 캠페인 스캔은 live에서.",
+        }
+    reader = build_reader(settings)
+    now = datetime.now(UTC)
+    try:
+        infos = await reader.list_campaigns()
+    except MetaApiError as exc:
+        return {
+            "source": "live",
+            "scanned": 0,
+            "anomalies": [],
+            "note": exc.user_msg or exc.message,
+        }
+    anomalies: list[dict] = []
+    for c in infos:
+        try:
+            m = await reader.get_metrics(c.campaign_id, now)
+            summary = _real_summary(m, c.daily_budget_krw, conversion_value_krw, target_roas)
+            dx = await _campaign_diagnosis(reader, c.campaign_id, summary, m.as_of)
+        except Exception:  # noqa: BLE001 — 캠페인 1건 실패가 전체 스캔을 막지 않게
+            dx = None
+        if dx:  # 진단이 나온(=이상 있는) 캠페인만
+            anomalies.append(
+                {
+                    "campaign_id": c.campaign_id,
+                    "name": c.name,
+                    "state": c.state.value,
+                    "diagnosis": dx,
+                }
+            )
+    return {"source": "live", "scanned": len(infos), "anomalies": anomalies}
+
+
 class ApprovalRequest(BaseModel):
     proposal: ActionProposal
     approved: bool
@@ -382,6 +428,14 @@ _BOARD_DEMO: tuple[tuple[str, str, str, int], ...] = (
 
 def _today_utc() -> datetime:
     return datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
+
+
+# 대시보드 조회 기간 토글 — 프론트 전체/최근30일/이번달. Meta date_preset로 매핑. 기본=전체 누적.
+_ALLOWED_PRESETS = frozenset({"maximum", "last_30d", "this_month"})
+
+
+def _valid_preset(preset: str | None) -> str:
+    return preset if preset in _ALLOWED_PRESETS else "maximum"
 
 
 @router.get("/compare")
@@ -572,9 +626,11 @@ def _real_summary(
 
 
 async def _list_campaigns_real(
-    conversion_value_krw: int | None = None, target_roas: float | None = None
+    conversion_value_krw: int | None = None,
+    target_roas: float | None = None,
+    date_preset: str = "maximum",
 ) -> dict:
-    """실연동 — Meta 캠페인 목록 + 캠페인별 실측 요약."""
+    """실연동 — Meta 캠페인 목록 + 캠페인별 실측 요약. date_preset=조회 기간(전체/30일/이번달)."""
     reader = build_reader(settings)
     since = _today_utc()
     # 목록·계정 자금 병렬 → 캠페인별 지표 병렬 (순차면 캠페인 수만큼 직렬로 느림)
@@ -582,7 +638,9 @@ async def _list_campaigns_real(
         reader.list_campaigns(),
         reader.get_account_funding(),
     )
-    metrics = await asyncio.gather(*(reader.get_metrics(c.campaign_id, since) for c in infos))
+    metrics = await asyncio.gather(
+        *(reader.get_metrics(c.campaign_id, since, date_preset=date_preset) for c in infos)
+    )
     out = []
     any_blocked = False
     for info, m in zip(infos, metrics, strict=True):
@@ -650,7 +708,10 @@ async def _campaign_diagnosis(
 
 
 async def _get_campaign_real(
-    campaign_id: str, conversion_value_krw: int | None = None, target_roas: float | None = None
+    campaign_id: str,
+    conversion_value_krw: int | None = None,
+    target_roas: float | None = None,
+    date_preset: str = "maximum",
 ) -> dict:
     """실연동 — 캠페인 상세(시간별 실측 + 기대곡선 + 요약 + 성과 미달 진단)."""
     reader = build_reader(settings)
@@ -659,7 +720,7 @@ async def _get_campaign_real(
     campaigns, snaps, m, daily = await asyncio.gather(
         reader.list_campaigns(),
         reader.fetch_hourly_metrics(campaign_id, today),
-        reader.get_metrics(campaign_id, today),
+        reader.get_metrics(campaign_id, today, date_preset=date_preset),
         reader.fetch_daily_metrics(campaign_id),
     )
     info = next((c for c in campaigns if c.campaign_id == campaign_id), None)
@@ -683,7 +744,11 @@ async def _get_campaign_real(
 
 
 @router.get("/campaigns")
-async def list_campaigns(conversion_value_krw: int | None = None, target_roas: float | None = None):
+async def list_campaigns(
+    conversion_value_krw: int | None = None,
+    target_roas: float | None = None,
+    date_preset: str = "maximum",
+):
     """캠페인 목록 + 캠페인별 성과 요약 (단일 창구 대시보드).
 
     use_mock=False면 Meta 실측, True면 데모 합성. CVR은 실모드에선 전환 추적 전까지 None.
@@ -691,7 +756,9 @@ async def list_campaigns(conversion_value_krw: int | None = None, target_roas: f
     """
     if not getattr(settings, "use_mock", True):
         try:
-            return await _list_campaigns_real(conversion_value_krw, target_roas)
+            return await _list_campaigns_real(
+                conversion_value_krw, target_roas, _valid_preset(date_preset)
+            )
         except MetaApiError as exc:
             # 토큰 만료 등 인증 오류는 화면을 깨지 말고 '재연결 필요'로 안내(빈 목록 + auth_error).
             if exc.is_auth_error:
@@ -869,11 +936,16 @@ async def delete_campaign(campaign_id: str, db: AsyncSession = Depends(get_db)):
 
 @router.get("/campaigns/{campaign_id}")
 async def get_campaign(
-    campaign_id: str, conversion_value_krw: int | None = None, target_roas: float | None = None
+    campaign_id: str,
+    conversion_value_krw: int | None = None,
+    target_roas: float | None = None,
+    date_preset: str = "maximum",
 ):
-    """캠페인 상세 — 시간별 노출(기대 vs 실측, 이상구간) + 요약 KPI."""
+    """캠페인 상세 — 시간별 노출(기대 vs 실측, 이상구간) + 요약 KPI. date_preset=조회 기간."""
     if not getattr(settings, "use_mock", True):
-        return await _get_campaign_real(campaign_id, conversion_value_krw, target_roas)
+        return await _get_campaign_real(
+            campaign_id, conversion_value_krw, target_roas, _valid_preset(date_preset)
+        )
     for i, (cid, name, state, budget, fault) in enumerate(_CAMPAIGNS_DEMO):
         if cid == campaign_id:
             snaps = await _campaign_snapshots(cid, budget, fault, seed=40 + i)
@@ -1384,7 +1456,7 @@ async def campaign_leads(campaign_id: str):
 # 소진액은 데모 캠페인 지출 합산(레지스트리 커밋분은 데모에서 0). 한도는 _BUDGET에서
 # 읽고/쓰며(set_limit, 인메모리), BudgetAuthority.evaluate로 경고 레벨을 판정한다.
 async def _budget_status() -> dict:
-    # 실모드: 한도=총 충전 크레딧, 소진=실 Meta 집행액, 잔여=크레딧 잔액.
+    # 실모드: 한도=월 목표 예산(관제), 소진=실 Meta 집행액. 크레딧·Meta 선불은 별도 필드.
     if not getattr(settings, "use_mock", True):
         return await _budget_status_live()
     # 데모(mock): 합성 캠페인 지출 + 인메모리 한도.
@@ -1429,11 +1501,18 @@ async def _budget_status_live() -> dict:
         daily = await reader.get_account_daily_spend("this_month")
     except Exception:  # noqa: BLE001
         daily = []
-    # 여력 — Meta 선불 가용 잔액
+    # 여력 — Meta 선불 가용 잔액(실광고비)
     try:
         account_balance = (await reader.get_account_funding()).available_balance_krw or 0
     except Exception:  # noqa: BLE001
         account_balance = 0
+    # ClickMe 크레딧 — 집행 한도(spend 권한)·잔액. 월 목표(관제)·Meta 선불(실광고비)과 별개 개념.
+    try:
+        _billing = get_billing_service()
+        credit_charged = await _billing.total_charged(DEMO_ORG_ID)
+        credit_balance = await _billing.balance(DEMO_ORG_ID)
+    except Exception:  # noqa: BLE001 — 빌링 조회 실패면 0
+        credit_charged = credit_balance = 0
     # 캠페인별 이번 달 소진 + ROAS
     campaigns: list[dict] = []
     try:
@@ -1461,7 +1540,9 @@ async def _budget_status_live() -> dict:
         "remaining_krw": max(target - spent, 0),
         "ratio": round(spent / target, 3) if target else 0.0,
         "projection_krw": projection,
-        "account_balance_krw": account_balance,
+        "account_balance_krw": account_balance,  # Meta 선불 잔액(실광고비)
+        "credit_charged_krw": credit_charged,  # ClickMe 크레딧 총 충전(집행 한도)
+        "credit_balance_krw": credit_balance,  # ClickMe 크레딧 잔액
         "period": now.strftime("%Y-%m"),
         "daily": daily,
         "decision": decision,
