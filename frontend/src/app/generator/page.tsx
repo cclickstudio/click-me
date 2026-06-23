@@ -1343,25 +1343,31 @@ export default function GeneratorPage() {
                   {improveError && <p className="text-sm text-red-500">{improveError}</p>}
                   {improveData && (
                     <>
-                      {!improveData.ad_asset_url ? (
-                        <p className="text-sm text-red-500">
-                          이 시뮬레이션의 광고 이미지 정보가 없어 개선을 진행할 수 없어요.
-                        </p>
-                      ) : adRefImageSrc(improveData.ad_asset_url) ? (
-                        <div>
-                          <label className={labelCls}>기존 광고 (참고)</label>
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <div>
+                        <label className={labelCls}>기존 광고 (개선 대상)</label>
+                        {improveData.ad_asset_url && adRefImageSrc(improveData.ad_asset_url) ? (
+                          // eslint-disable-next-line @next/next/no-img-element
                           <img
                             src={adRefImageSrc(improveData.ad_asset_url)!}
                             alt="기존 광고"
-                            className="w-full max-w-[220px] rounded-xl border border-[#E5E8EB] dark:border-[#2D3748]"
+                            className="w-full rounded-xl border border-[#E5E8EB] dark:border-[#2D3748]"
                           />
-                        </div>
-                      ) : (
-                        <p className="text-xs text-[#8B95A1] dark:text-[#6B7280]">
-                          참고 이미지를 표시할 수 없어요(저장된 경로가 미리보기 불가). 개선 생성은 시뮬레이션 피드백 기준으로 진행됩니다.
-                        </p>
-                      )}
+                        ) : (
+                          <div className="w-full rounded-xl border-2 border-dashed border-[#E5E8EB] dark:border-[#2D3748] bg-[#F8F9FA] dark:bg-[#252D3D] flex flex-col items-center justify-center gap-2 text-center p-8 min-h-[180px]">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-[#B0B8C1] dark:text-[#4B5563]">
+                              <rect x="3" y="3" width="18" height="18" rx="2" />
+                              <circle cx="8.5" cy="8.5" r="1.5" />
+                              <path d="M21 15l-5-5L5 21" />
+                            </svg>
+                            <p className="text-xs font-medium text-[#8B95A1] dark:text-[#6B7280]">
+                              등록된 광고 이미지가 없습니다
+                            </p>
+                            <p className="text-[11px] text-[#B0B8C1] dark:text-[#4B5563]">
+                              시뮬레이션에서 광고 이미지를 업로드하면 여기에 표시됩니다
+                            </p>
+                          </div>
+                        )}
+                      </div>
                       <div>
                         <label className={labelCls}>제품명</label>
                         <input
@@ -1400,7 +1406,7 @@ export default function GeneratorPage() {
                       className={`${inputCls} min-h-16 resize-y`}
                       value={fixRequests}
                       onChange={(e) => setFixRequests(e.target.value)}
-                      placeholder="이미지에 반영할 수정 요청을 입력하세요 (최우선 반영)"
+                      placeholder={"예: 전체적으로 더 밝고 활기찬 분위기로 바꿔주세요\n제품을 더 크고 선명하게 부각해주세요\n색상을 브랜드 컬러에 맞게 통일해주세요\n\n비워두면 시뮬레이션 개선 방향만 반영됩니다"}
                     />
                   </div>
                 </>
