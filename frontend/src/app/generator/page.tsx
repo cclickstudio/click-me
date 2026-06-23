@@ -484,7 +484,7 @@ function CandidateModal({
             {/* Meta 광고 집행 */}
             <section className="space-y-3 pt-2 border-t border-[#E5E8EB] dark:border-[#2D3748]">
               <h3 className="text-xs font-bold text-[#8B95A1] dark:text-[#6B7280] uppercase tracking-widest">
-                Meta 광고 집행
+                캠페인 생성
               </h3>
               {advertiseResult ? (
                 <div
@@ -502,7 +502,8 @@ function CandidateModal({
                           캠페인 ID: {advertiseResult.platform_response_snapshot.campaign_meta_id}
                         </p>
                         <p className="text-xs opacity-80 mt-1">
-                          생성만 된 상태(미게재·과금 0)입니다. 게재는 매니지먼트 탭에서 활성화하세요.
+                          캠페인·광고세트가 PAUSED로 생성됐습니다(미게재·과금 0). 광고 소재(리드
+                          캠페인은 리드폼 포함)는 Meta Ads Manager에서 추가한 뒤 거기서 게재하세요.
                         </p>
                       </div>
                     ) : (
@@ -649,17 +650,17 @@ function CandidateModal({
                   {advertiseError && (
                     <p className="text-xs text-red-600 dark:text-red-400">{advertiseError}</p>
                   )}
+                  <p className="text-[11px] text-[#8B95A1] dark:text-[#6B7280]">
+                    예산·타겟까지 Meta에 캠페인을 만듭니다. 게재는 안 되며(PAUSED), 광고 소재는 Meta
+                    Ads Manager에서 추가하세요.
+                  </p>
                   <button
                     onClick={handleAdvertise}
                     disabled={advertising || adBudget < 1000}
                     className="w-full py-2.5 rounded-xl text-sm font-semibold text-white bg-[#3182F6] hover:bg-[#1B64DA] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                   >
-                    {advertising ? "광고 집행 중..." : "Meta 광고 집행"}
+                    {advertising ? "생성 중..." : "캠페인 생성하기"}
                   </button>
-                  <p className="text-xs text-[#F4A100]">
-                    ※ 집행은 매니지먼트 단일 경로(승인→실행)로 처리됩니다. 캠페인·광고세트·광고는
-                    PAUSED로 생성되어 비용이 발생하지 않으며, 게재 활성화는 매니지먼트 탭에서 합니다.
-                  </p>
                 </div>
               )}
             </section>
