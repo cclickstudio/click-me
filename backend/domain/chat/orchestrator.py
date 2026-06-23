@@ -52,6 +52,11 @@ _CLASSIFY_SYSTEM = (
     "- management: 집행된 광고의 성과·예산·소진·CTR·ROAS·캠페인 관리\n"
     "- simulation: 집행 전 시뮬레이션 결과·구매의도·클릭의향률·신뢰도·거부율·KPI 정의\n"
     "- generator: 광고 생성·카피 전략·시안·작성 원칙\n"
+    "- sim_result: 방금 돌린 시뮬레이션 실행 결과를 보고하는 요약 메시지"
+    "(구매의도·클릭의향률·거부율 등 수치가 담긴 결과 보고). "
+    "예: '[시뮬결과] 구매의도 2.3/5, 거부율 30%'\n"
+    "- gen_result: 방금 돌린 광고 생성 실행 결과를 보고하는 요약 메시지"
+    "(시안·후보가 만들어졌다는 보고). 예: '[생성결과] 개선 시안 5개 생성 완료'\n"
     "- advise: 그 외 일반 광고 전략·아이디어\n"
     "질문·조회는 action=ask, 시뮬/생성을 실제 실행·돌려달라는 요청은 action=run으로 분류하라.\n"
     "action=run이고 광고 카피·문구가 질문에 있으면 ad_content로 추출하라.\n"
@@ -72,6 +77,15 @@ _GEN_EXTRACT_SYSTEM = (
     "- target_audience: 타깃 고객\n"
     "- campaign_objective: 캠페인 목표(기본 conversion)\n"
     "명시되지 않은 항목은 요청 내용으로 합리적으로 채워라."
+)
+
+# 시뮬 결과 요약 메시지에서 KPI 수치 추출 프롬프트 — sim_result_node에서 강약 판정에 쓴다.
+_SIM_RESULT_EXTRACT_SYSTEM = (
+    "시뮬레이션 결과 요약 메시지에서 KPI 수치를 추출하라.\n"
+    "- purchase_intent: 구매의도(1~5점)\n"
+    "- click_intent_rate: 클릭 의향률(0~1 비율, 18% → 0.18)\n"
+    "- rejection_rate: 거부율(0~1 비율, 30% → 0.3)\n"
+    "메시지에 없는 항목은 null로 두라."
 )
 
 
@@ -159,7 +173,8 @@ def _format_sim_run(ev: dict) -> str:
 # ── 개선 루프(closed loop) — 세션별 시뮬↔생성 왕복. 최대 3회·매 전환 수락(HITL)·목표 조기종료 ──
 _loops: dict[str, dict] = {}  # session_id → {stage, count, ad_content, gen_id}
 _MAX_LOOPS = 3
-_TARGET_PI = 3.5  # 목표 구매의도(이상이면 조기 종료)
+_TARGET_PI = 3.5  # 목표 구매의도(이상이면 조기 종료) — sim_result 강약 판정에도 재활용
+_HIGH_REJECTION = 0.3  # 거부율 임계값(이상이면 약함 — 개선 제안)
 
 
 def _is_yes(t: str) -> bool:
@@ -222,10 +237,18 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
 
     # classify_intent 출력 스키마 — 도메인 분류 + 결과 식별자 추출.
     class _Intent(BaseModel):
-        intent: Literal["management", "simulation", "generator", "advise"]
+        intent: Literal[
+            "management", "simulation", "generator", "sim_result", "gen_result", "advise"
+        ]
         action: Literal["ask", "run"] = "ask"
         context_id: str | None = None
         ad_content: str | None = None
+
+    # 시뮬 결과 요약에서 강약 판정용 KPI 추출 스키마.
+    class _SimResult(BaseModel):
+        purchase_intent: float | None = None  # 1~5
+        click_intent_rate: float | None = None  # 0~1
+        rejection_rate: float | None = None  # 0~1
 
     # 생성 실행 입력 추출 스키마 — generator_node에서 question으로부터 채운다.
     class _GenInput(BaseModel):
@@ -317,6 +340,55 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
         )
         return {"answer": res.answer, "meta": _assistant_meta(res, "generator", "생성 어시스턴트")}
 
+    async def sim_result_node(state) -> dict:
+        # 위젯이 보낸 시뮬 결과 요약 → 수치 추출 후 강약 판정. 실행은 안 하고 제안만.
+        ext = llm.with_structured_output(_SimResult)
+        m = await ext.ainvoke(
+            [
+                SystemMessage(content=_SIM_RESULT_EXTRACT_SYSTEM),
+                HumanMessage(content=state["question"]),
+            ]
+        )
+        reasons = []
+        if m.purchase_intent is not None and m.purchase_intent < _TARGET_PI:
+            reasons.append(f"구매의도 {m.purchase_intent:.1f}/5 (목표 {_TARGET_PI})")
+        if m.rejection_rate is not None and m.rejection_rate >= _HIGH_REJECTION:
+            reasons.append(f"거부율 {m.rejection_rate * 100:.0f}%")
+        if reasons:
+            answer = (
+                f"결과가 다소 약해요 — {', '.join(reasons)}.\n\n"
+                "개선 시안을 만들어볼까요? '광고 시안 만들어줘'라고 하시면 생성 위젯을 띄울게요."
+            )
+            meta = {
+                "source": "simulation",
+                "label": "결과 분석 · 개선 제안",
+                "engine": f"OpenAI · {model_name}",
+                "suggest": "generator",
+            }
+        else:
+            answer = "결과가 목표 수준이에요. 이대로 집행을 검토해도 좋아요."
+            meta = {
+                "source": "simulation",
+                "label": "결과 분석",
+                "engine": f"OpenAI · {model_name}",
+            }
+        return {"answer": answer, "meta": meta}
+
+    async def gen_result_node(state) -> dict:
+        # 위젯이 보낸 생성 결과 요약 → 새 시안으로 재시뮬 제안. 실행은 안 하고 제안만.
+        return {
+            "answer": (
+                "새 시안이 준비됐네요. 새 시안으로 반응을 다시 예측해볼까요?\n\n"
+                "'시뮬레이션 돌려줘'라고 하시면 시뮬 위젯을 띄울게요."
+            ),
+            "meta": {
+                "source": "generator",
+                "label": "결과 분석 · 재시뮬 제안",
+                "engine": f"OpenAI · {model_name}",
+                "suggest": "simulation",
+            },
+        }
+
     async def advise_node(state) -> dict:
         resp = await llm.ainvoke(
             [SystemMessage(content=_ADVISE_SYSTEM), HumanMessage(content=state["question"])]
@@ -335,6 +407,8 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
     g.add_node("management", management_node)
     g.add_node("simulation", simulation_node)
     g.add_node("generator", generator_node)
+    g.add_node("sim_result", sim_result_node)
+    g.add_node("gen_result", gen_result_node)
     g.add_node("advise", advise_node)
     g.add_edge(START, "classify")
     g.add_conditional_edges(
@@ -344,10 +418,19 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
             "management": "management",
             "simulation": "simulation",
             "generator": "generator",
+            "sim_result": "sim_result",
+            "gen_result": "gen_result",
             "advise": "advise",
         },
     )
-    for _node in ("management", "simulation", "generator", "advise"):
+    for _node in (
+        "management",
+        "simulation",
+        "generator",
+        "sim_result",
+        "gen_result",
+        "advise",
+    ):
         g.add_edge(_node, END)
     graph = g.compile()
 
