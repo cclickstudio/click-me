@@ -59,6 +59,14 @@ const STAGES = [
   { key: "explain", label: "생성 이유 작성" },
 ];
 
+const CAROUSEL_STAGES = [
+  { key: "product_analysis", label: "상품 분석" },
+  { key: "strategy", label: "광고 전략 생성" },
+  { key: "template", label: "템플릿 선택" },
+  { key: "candidates", label: "카드뉴스 3장 생성" },
+  { key: "explain", label: "생성 이유 작성" },
+];
+
 const STRATEGY_LABELS: Record<string, string> = {
   benefit: "혜택 강조",
   problem_solving: "문제 해결",
@@ -1056,7 +1064,8 @@ export default function GeneratorPage() {
     }
   }
 
-  const currentIdx = STAGES.findIndex((s) => s.key === progress.stage);
+  const activeStages = format === "carousel" ? CAROUSEL_STAGES : STAGES;
+  const currentIdx = activeStages.findIndex((s) => s.key === progress.stage);
 
   return (
     <AppLayout>
@@ -1167,7 +1176,7 @@ export default function GeneratorPage() {
                       {(
                         [
                           ["single", "단일 광고"],
-                          ["carousel", "카드뉴스 (5장)"],
+                          ["carousel", "카드뉴스 (3장)"],
                         ] as const
                       ).map(([f, label]) => (
                         <button
@@ -1519,7 +1528,11 @@ export default function GeneratorPage() {
                 onClick={startGeneration}
                 className="w-full py-3 rounded-xl text-sm font-semibold bg-[#3182F6] text-white hover:bg-[#1B64DA] disabled:bg-[#E5E8EB] disabled:text-[#B0B8C1] dark:disabled:bg-[#252D3D] dark:disabled:text-[#4B5563] disabled:cursor-not-allowed transition-colors"
               >
-                {phase === "generating" ? "생성 중..." : "광고 후보 3종 생성하기"}
+                {phase === "generating"
+                  ? "생성 중..."
+                  : format === "carousel"
+                    ? "카드뉴스 생성하기"
+                    : "광고 후보 3종 생성하기"}
               </button>
             </div>
           </div>
@@ -1540,7 +1553,9 @@ export default function GeneratorPage() {
                 )}
               </div>
               <p className="text-xs text-[#8B95A1] dark:text-[#6B7280] mb-5">
-                전략이 서로 다른 광고 3종 · 카드를 클릭하면 게시·광고 집행을 할 수 있어요
+                {format === "carousel"
+                  ? "관심끌기·가치전달·행동유도 3장 구성 · 카드를 클릭하면 게시·광고 집행을 할 수 있어요"
+                  : "전략이 서로 다른 광고 3종 · 카드를 클릭하면 게시·광고 집행을 할 수 있어요"}
               </p>
 
               {error && (
@@ -1567,7 +1582,7 @@ export default function GeneratorPage() {
                     </div>
                   </div>
                   <ul className="space-y-3">
-                    {STAGES.map((s, i) => {
+                    {activeStages.map((s, i) => {
                       const done = currentIdx > i || progress.pct >= 100;
                       const active = currentIdx === i;
                       return (
@@ -1597,7 +1612,9 @@ export default function GeneratorPage() {
                     })}
                   </ul>
                   <p className="mt-6 text-xs text-[#8B95A1] dark:text-[#6B7280]">
-                    이미지 3장을 생성하는 데 2~3분 정도 걸릴 수 있어요.
+                    {format === "carousel"
+                      ? "카드뉴스 3장을 생성하는 데 1~2분 정도 걸릴 수 있어요."
+                      : "이미지 3장을 생성하는 데 2~3분 정도 걸릴 수 있어요."}
                   </p>
                 </div>
               )}
