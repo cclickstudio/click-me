@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from 'react';
 import AppLayout from '@/components/AppLayout';
 import { safeRandomUUID } from '@/lib/utils';
+import SimFormWidget from '@/components/chat/SimFormWidget';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
@@ -14,12 +15,14 @@ const quickPrompts = [
 ];
 
 type Citation = { kind: string; source: string; title?: string };
+type WidgetSpec = { type: string; data?: { ad_content?: string } };
 type SourceMeta = {
-  source: string; // management | clio
-  label: string; // 매니지먼트 어시스턴트 | CLIO
-  engine: string; // OpenAI · 실측+KB | Gemini
+  source: string; // management | clio | simulation | generator
+  label: string;
+  engine?: string;
   citations?: Citation[];
   used_tools?: string[];
+  widget?: WidgetSpec; // 기능 실행 위젯(sim_form 등)
 };
 type Message = {
   role: 'user' | 'assistant';
@@ -193,7 +196,7 @@ export default function Page() {
                         </svg>
                       </div>
                     )}
-                    <div className={`flex flex-col gap-1 max-w-sm ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
+                    <div className={`flex flex-col gap-1 ${msg.meta?.widget ? 'max-w-md w-full' : 'max-w-sm'} ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
                       {msg.role === 'assistant' && msg.meta && (
                         <span
                           className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${
@@ -202,7 +205,8 @@ export default function Page() {
                               : 'bg-[#F2E9FF] text-[#7C3AED] dark:bg-[#2E1F47] dark:text-[#C4A8F5]'
                           }`}
                         >
-                          {msg.meta.source === 'management' ? '⚙' : '🧠'} {msg.meta.label} · {msg.meta.engine}
+                          {msg.meta.source === 'management' ? '⚙' : '🧠'} {msg.meta.label}
+                          {msg.meta.engine ? ` · ${msg.meta.engine}` : ''}
                         </span>
                       )}
                       <div
@@ -214,6 +218,9 @@ export default function Page() {
                       >
                         {msg.content}
                       </div>
+                      {msg.meta?.widget?.type === 'sim_form' && (
+                        <SimFormWidget initial={msg.meta.widget.data} />
+                      )}
                       {msg.role === 'assistant' &&
                         msg.meta?.source === 'management' &&
                         (msg.meta.citations?.length || msg.meta.used_tools?.length) ? (
