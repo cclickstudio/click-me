@@ -228,7 +228,9 @@ class MockAdPlatform:
         # AUDIENCE_TOO_NARROW = 타겟 모수를 크게 줄여 reach 조기 포화 → frequency 폭등
         audience = AUDIENCE_SIZE
         if mode == FaultMode.AUDIENCE_TOO_NARROW:
-            audience = 1_500  # 하루 누적 노출(~8천) 대비 작아 frequency가 5+로 치솟음
+            # 실제 '좁은 모수'(수만)는 하루 안에 포화되지 않음 — 빈도 피로는 보통 수일에 걸쳐 발생.
+            # 단일일(24h) 데모라 하루 누적 노출보다 작은 값으로 압축해 frequency 3+ 피로를 재현한다.
+            audience = 1_500
 
         snapshots: list[MetricsSnapshot] = []
         cum_impressions = 0.0
