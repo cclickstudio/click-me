@@ -353,7 +353,6 @@ export default function ChatConversation({
                         }`}
                       >
                         {msg.meta.source === 'management' ? '⚙' : '🧠'} {msg.meta.label}
-                        {msg.meta.engine ? ` · ${msg.meta.engine}` : ''}
                       </span>
                     )}
                     {msg.role === 'user' && msg.imageUrl && (
