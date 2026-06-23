@@ -616,6 +616,7 @@ async def _list_campaigns_real(
     }
 
 
+@traceable(name="management.performance_diagnosis", run_type="chain", tags=["management"])
 async def _campaign_diagnosis(
     reader, campaign_id: str, summary: dict, as_of: datetime
 ) -> dict | None:
