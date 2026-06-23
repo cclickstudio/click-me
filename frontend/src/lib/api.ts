@@ -452,6 +452,43 @@ export const api = {
         method: "POST",
         body: JSON.stringify(body),
       }),
+    // generator 후보 → CREATE_CAMPAIGN 제안(시뮬 없는 빠른 집행). 승인·집행은 approve·execute 재사용.
+    fromCandidate: (body: {
+      generation_id: string;
+      candidate_id: string;
+      objective?: 'traffic' | 'leads';
+      link_url: string;
+      name: string;
+      daily_budget_krw: number;
+      start_date: string; // YYYY-MM-DD (Meta 광고세트 start_time)
+      end_date?: string | null; // YYYY-MM-DD (Meta 광고세트 end_time)
+      special_ad_category?: string;
+      country?: string;
+      age_min?: number;
+      age_max?: number;
+      gender?: 'all' | 'male' | 'female';
+    }) =>
+      request<{ proposal: Proposal }>("/management/campaign-proposals/from-candidate", {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+    // 시뮬 결과 → CREATE_CAMPAIGN 제안(집행 권장 판정 시에만). 권장 집행 경로.
+    fromSimulation: (body: {
+      simulation_id: string;
+      link_url: string;
+      name: string;
+      daily_budget_krw: number;
+      run_days: number;
+      special_ad_category?: string;
+      country?: string;
+      age_min?: number;
+      age_max?: number;
+      gender?: 'all' | 'male' | 'female';
+    }) =>
+      request<{ proposal: Proposal }>("/management/campaign-proposals/from-simulation", {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
     // 광고 소재 이미지 업로드 → image_hash (멀티파트, 무과금 자산 등록)
     uploadAdImage: (file: File) => {
       const form = new FormData();
@@ -509,22 +546,6 @@ export const api = {
         body: JSON.stringify({ candidate_id: candidateId, caption }),
       }),
     list: (limit = 20) => request(`/generator/generations?limit=${limit}`),
-    advertise: (
-      generationId: string,
-      body: {
-        candidate_id: string;
-        budget: number;
-        objective: string;
-        targeting: { age_min: number; age_max: number; genders: number[]; countries: string[] };
-        destination_url: string;
-        start_date: string;
-        end_date?: string | null;
-      },
-    ) =>
-      request(`/generator/generations/${generationId}/advertise`, {
-        method: "POST",
-        body: JSON.stringify(body),
-      }),
     brandProfile: {
       get: (clientId: string) =>
         request<{
