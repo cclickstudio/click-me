@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from 'react';
 import AppLayout from '@/components/AppLayout';
 import { safeRandomUUID } from '@/lib/utils';
 import SimFormWidget from '@/components/chat/SimFormWidget';
+import GenFormWidget from '@/components/chat/GenFormWidget';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
@@ -22,12 +23,21 @@ type SlashCommand = {
 };
 const slashCommands: SlashCommand[] = [
   { cmd: '/시뮬레이션', label: '/시뮬레이션', desc: '광고 시뮬레이션 입력 위젯을 띄웁니다' },
-  { cmd: '/제너레이터', label: '/제너레이터', desc: '광고 생성 입력 위젯을 띄웁니다 (준비 중)' },
+  { cmd: '/제너레이터', label: '/제너레이터', desc: '광고 생성 입력 위젯을 띄웁니다' },
   { cmd: '/위젯', label: '/위젯', desc: '사용 가능한 위젯 목록을 봅니다 (개발용)' },
 ];
 
 type Citation = { kind: string; source: string; title?: string };
-type WidgetSpec = { type: string; data?: { ad_content?: string } };
+type WidgetSpec = {
+  type: string;
+  data?: {
+    ad_content?: string;
+    product_name?: string;
+    product_description?: string;
+    target_audience?: string;
+    campaign_objective?: string;
+  };
+};
 type SourceMeta = {
   source: string; // management | clio | simulation | generator
   label: string;
@@ -104,9 +114,10 @@ export default function Page() {
         });
         break;
       case '/제너레이터':
-        addLocalAssistant('광고 생성 위젯은 준비 중입니다. 곧 제공될 예정이에요.', {
+        addLocalAssistant('광고 생성 입력 위젯입니다. 아래에서 실행하세요.', {
           source: 'generator',
           label: '광고 생성',
+          widget: { type: 'gen_form' },
         });
         break;
       case '/위젯':
@@ -276,6 +287,9 @@ export default function Page() {
                       </div>
                       {msg.meta?.widget?.type === 'sim_form' && (
                         <SimFormWidget initial={msg.meta.widget.data} />
+                      )}
+                      {msg.meta?.widget?.type === 'gen_form' && (
+                        <GenFormWidget initial={msg.meta.widget.data} />
                       )}
                       {msg.role === 'assistant' &&
                         msg.meta?.source === 'management' &&
