@@ -63,7 +63,7 @@ async def _generate_carousel(
     product_cutout_bytes: bytes | None,
     logo_image_bytes: bytes | None,
 ) -> dict:
-    """캐러셀 — 공통 배경 1장 생성 후 슬라이드별 PIL 텍스트로 5장 구성."""
+    """캐러셀 — 공통 배경 1장 생성 후 슬라이드별 PIL 텍스트로 3장 구성."""
     emit_progress(config, "candidates", 45, "캐러셀 배경 생성 중...")
     bg_bytes = await generate_image(
         product_analysis=product_analysis,
@@ -79,7 +79,7 @@ async def _generate_carousel(
     )
 
     emit_progress(config, "candidates", 60, "캐러셀 카피 생성 중...")
-    slides = (await generate_carousel_copy(product_analysis)).slides[:5]
+    slides = (await generate_carousel_copy(product_analysis)).slides[:3]
     if not slides:
         raise RuntimeError("캐러셀 카피 생성 실패")
     total = len(slides)
@@ -121,7 +121,7 @@ async def _generate_carousel(
             }
         )
         emit_progress(
-            config, "candidates", 60 + (idx + 1) * 7, f"캐러셀 슬라이드 {idx + 1}/{total}"
+            config, "candidates", 60 + (idx + 1) * 12, f"캐러셀 슬라이드 {idx + 1}/{total}"
         )
 
     return {"candidates": candidates, "qa_results": qa_results}
