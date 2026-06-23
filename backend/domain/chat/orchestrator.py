@@ -15,6 +15,8 @@ from dataclasses import dataclass, field
 
 from domain.management.assistant.agent import build_management_agent
 from domain.management.assistant.contracts import AskRequest, AskResult
+from domain.simulation.assistant.agent import build_simulation_agent
+from domain.simulation.assistant.contracts import SimAskRequest
 
 # 매니지먼트로 라우팅하는 키워드(폴백 전용) — 풀모드는 LLM이 도구 설명을 보고 스스로 판단한다.
 _MGMT_KEYWORDS: frozenset[str] = frozenset(
@@ -106,6 +108,19 @@ def _mgmt_meta(res: AskResult) -> dict:
     }
 
 
+def _sim_meta(res) -> dict:
+    """SimAskResult → SSE meta(출처·인용)."""
+    return {
+        "source": "simulation",
+        "label": "시뮬레이션 어시스턴트",
+        "engine": "OpenAI · 결과+KB",
+        "citations": [
+            {"kind": c.kind, "source": c.source, "title": c.title} for c in res.citations
+        ],
+        "used_tools": res.used_tools,
+    }
+
+
 def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnswer | None]]:
     """오케스트레이터 진입점. 키+실모드면 OpenAI ReAct, 아니면 키워드 폴백."""
     api_key = getattr(settings, "openai_api_key", None)
@@ -136,6 +151,7 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
 
     model_name = getattr(settings, "chat_orchestrator_model", "gpt-4o-mini")
     llm = ChatOpenAI(model=model_name, temperature=0.2, api_key=api_key)
+    sim = build_simulation_agent(settings)  # 시뮬 서브에이전트(폴백/풀모드 자동)
 
     @tool
     async def ask_management(question: str, campaign_id: str | None = None) -> dict:
@@ -144,10 +160,18 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
         res = await mgmt(AskRequest(question=question, campaign_id=campaign_id))
         return {"_answer": _mgmt_answer(res), "_meta": _mgmt_meta(res)}
 
-    bound = llm.bind_tools([ask_management])
+    @tool
+    async def ask_simulation(question: str, simulation_id: str | None = None) -> dict:
+        """집행 전 AI 가상 소비자 시뮬레이션의 결과 해석·KPI 정의·방법론 질문에 답한다.
+        구매의도·클릭의향률·신뢰도·거부율·시뮬 결과 해석·"신뢰해도 되나"에 쓴다."""
+        res = await sim(SimAskRequest(question=question, simulation_id=simulation_id))
+        return {"_answer": res.answer, "_meta": _sim_meta(res)}
+
+    bound = llm.bind_tools([ask_management, ask_simulation])
+    _subagents = {"ask_management": ask_management, "ask_simulation": ask_simulation}
 
     class _State(MessagesState, total=False):
-        mgmt_meta: dict | None
+        tool_meta: dict | None
         rounds: int
 
     # 노드 시그니처에 _State(로컬 클래스)를 어노테이트하지 않는다 —
@@ -162,13 +186,14 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
 
     async def tools_node(state) -> dict:
         ai = state["messages"][-1]
-        mgmt_meta = state.get("mgmt_meta")
+        tool_meta = state.get("tool_meta")
         out: list[ToolMessage] = []
         for call in ai.tool_calls:
-            if call["name"] != "ask_management":
+            fn = _subagents.get(call["name"])
+            if fn is None:
                 continue
-            payload = await ask_management.ainvoke(call.get("args", {}))
-            mgmt_meta = payload.get("_meta")
+            payload = await fn.ainvoke(call.get("args", {}))
+            tool_meta = payload.get("_meta")
             # LLM에는 답변 본문만 돌려준다(메타는 state에 보관해 SSE로 전달).
             out.append(
                 ToolMessage(
@@ -176,7 +201,7 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
                     tool_call_id=call["id"],
                 )
             )
-        return {"messages": out, "mgmt_meta": mgmt_meta, "rounds": state.get("rounds", 0) + 1}
+        return {"messages": out, "tool_meta": tool_meta, "rounds": state.get("rounds", 0) + 1}
 
     def route(state) -> str:
         last = state["messages"][-1]
@@ -205,7 +230,7 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
         )
         last = final["messages"][-1]
         answer = last.content if isinstance(getattr(last, "content", None), str) else ""
-        meta = final.get("mgmt_meta") or {
+        meta = final.get("tool_meta") or {
             "source": "orchestrator",
             "label": "CLIO",
             "engine": f"OpenAI · {model_name}",
