@@ -478,7 +478,8 @@ export const api = {
       link_url: string;
       name: string;
       daily_budget_krw: number;
-      run_days: number;
+      start_date: string; // YYYY-MM-DD (Meta 광고세트 start_time)
+      end_date?: string | null; // YYYY-MM-DD (Meta 광고세트 end_time)
       special_ad_category?: string;
       country?: string;
       age_min?: number;

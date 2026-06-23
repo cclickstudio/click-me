@@ -1401,7 +1401,9 @@ class FromSimulationRequest(BaseModel):
     link_url: HttpUrl | None = None
     name: str
     daily_budget_krw: int = Field(ge=1)
-    run_days: int = Field(ge=1, le=90)
+    # Meta 광고세트 start_time/end_time에 대응 — YYYY-MM-DD. 종료일 없으면 시작+7일.
+    start_date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
+    end_date: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
     special_ad_category: Literal[
         "NONE", "HOUSING", "EMPLOYMENT", "CREDIT", "ISSUES_ELECTIONS_POLITICS"
     ] = "NONE"
@@ -1499,6 +1501,18 @@ async def from_simulation(
     tenant_id = str(org_id)
     genders = {"all": (), "male": (1,), "female": (2,)}[body.gender]
     categories = () if body.special_ad_category == "NONE" else (body.special_ad_category,)
+    # Meta start_time/end_time 매핑 — 시작이 과거면 now로 끌어올림(writer가 추가로 24h 보정).
+    start_at = datetime.strptime(body.start_date, "%Y-%m-%d").replace(tzinfo=UTC)
+    if start_at < now:
+        start_at = now
+    end_at = (
+        datetime.strptime(body.end_date, "%Y-%m-%d").replace(tzinfo=UTC)
+        if body.end_date
+        else start_at + timedelta(days=7)
+    )
+    if end_at <= start_at:
+        raise HTTPException(status_code=422, detail="종료일은 시작일 이후여야 합니다.")
+    run_days = max(1, (end_at - start_at).days)  # spend_cap 산정용(일예산 × 일수)
     config = CampaignConfig(
         campaign_id=f"camp_sim_{uuid4().hex[:8]}",
         tenant_id=tenant_id,
@@ -1506,8 +1520,8 @@ async def from_simulation(
         name=body.name,
         objective="traffic",
         daily_budget_krw=body.daily_budget_krw,
-        start_at=now,
-        end_at=now + timedelta(days=body.run_days),
+        start_at=start_at,
+        end_at=end_at,
         image_hash=image_hash,
         headline=title,
         body=copy_text,
@@ -1548,7 +1562,7 @@ async def from_simulation(
             expected_state_version="state_v1",
             budget_before_krw=0,
             budget_after_krw=body.daily_budget_krw,
-            max_total_spend_krw=body.daily_budget_krw * body.run_days,
+            max_total_spend_krw=body.daily_budget_krw * run_days,
             expires_at=now + timedelta(minutes=PROPOSAL_TTL_MINUTES),
             approval_policy_version=APPROVAL_POLICY_VERSION,
         )

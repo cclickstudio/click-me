@@ -106,7 +106,8 @@ def _body(**over):
         "link_url": "https://shop.example.com",
         "name": "캠페인",
         "daily_budget_krw": 50000,
-        "run_days": 7,
+        "start_date": "2030-01-01",
+        "end_date": "2030-01-15",
     }
     base.update(over)
     return base
