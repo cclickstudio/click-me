@@ -18,7 +18,7 @@ _OK = {
         {
             "candidate_id": "c1",
             "idx": 0,
-            "strategy": "s",
+            "strategy": {"angle": "s"},
             "template_id": "t",
             "copy": {"headline": "h", "body": "b", "cta": "사기"},
             "s3_key": "generator/images/g1/0.png",
