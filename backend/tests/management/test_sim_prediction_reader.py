@@ -64,7 +64,6 @@ async def test_sim_reader_maps_aggregate():
     assert snap.purchase_intent == 3.8
     assert snap.trust_avg == 4.1
     assert snap.rejection_rate == 0.12
-    assert snap.objective_fit_score is None
 
 
 async def test_sim_reader_other_org_none():

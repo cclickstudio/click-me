@@ -15,14 +15,6 @@ from sqlalchemy import text
 from domain.management.comparison.schemas import PredictionSnapshot
 
 
-def _grade(score: int) -> str:
-    if score >= 70:
-        return "높음"
-    if score >= 45:
-        return "보통"
-    return "낮음"
-
-
 class MockPredictionReader:
     """simulation_id 기반 결정론 합성 예측 — 실 시뮬과 동일 필드(슬롯 채움, source='mock')."""
 
@@ -34,15 +26,12 @@ class MockPredictionReader:
         purchase = round(2.5 + (seed % 25) / 10, 1)  # 2.5~4.9
         trust = round(2.8 + (seed % 20) / 10, 1)  # 2.8~4.7
         rejection = round((seed % 30) / 100, 3)  # 0.00~0.29
-        score = 40 + (seed % 55)  # 40~94
         return PredictionSnapshot(
             ad_id=simulation_id,
             click_intent_rate=min(click_intent, 1.0),
             purchase_intent=min(purchase, 5.0),
             trust_avg=min(trust, 5.0),
             rejection_rate=min(rejection, 1.0),
-            objective_fit_score=score,
-            grade=_grade(score),
             as_of=datetime.now(UTC),
             source="mock",
         )
@@ -86,8 +75,6 @@ class SimPredictionReader:
             purchase_intent=float(row[4]),
             trust_avg=float(row[5]),
             rejection_rate=float(row[6]),
-            objective_fit_score=None,  # 시뮬 파생값 — 다음 단계
-            grade=None,
             as_of=as_of,
             source="sim",
         )

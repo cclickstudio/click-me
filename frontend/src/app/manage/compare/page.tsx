@@ -48,10 +48,10 @@ function BeforeAfterCard({ item }: { item: BeforeAfterItem }) {
           </p>
           {p ? (
             <div className="grid grid-cols-2 gap-2.5">
-              <Metric label="종합 적합도" value={`${p.objective_fit_score ?? '-'}점 ${p.grade ?? ''}`} />
               <Metric label="클릭 의향률" value={`${(p.click_intent_rate * 100).toFixed(0)}%`} />
               <Metric label="구매의도" value={`${p.purchase_intent.toFixed(1)}/5`} />
               <Metric label="신뢰도" value={`${p.trust_avg.toFixed(1)}/5`} />
+              <Metric label="거부율" value={`${(p.rejection_rate * 100).toFixed(0)}%`} />
             </div>
           ) : (
             <p className="text-xs text-[#B0B8C1] py-4 text-center">
@@ -81,6 +81,9 @@ function BeforeAfterCard({ item }: { item: BeforeAfterItem }) {
         </div>
       </div>
       <p className="mt-3 text-[12px] text-[#8B95A1]">{item.rationale}</p>
+      {item.interpretation && (
+        <p className="mt-1 text-[12px] text-[#B0B8C1] dark:text-[#6B7280]">↳ {item.interpretation}</p>
+      )}
     </div>
   );
 }

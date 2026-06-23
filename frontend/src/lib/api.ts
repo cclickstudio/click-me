@@ -72,8 +72,6 @@ export interface PredictionSnapshot {
   purchase_intent: number;
   trust_avg: number;
   rejection_rate: number;
-  objective_fit_score?: number | null;
-  grade?: string | null;
   as_of: string;
   source: string;
 }
@@ -97,6 +95,7 @@ export interface BeforeAfterItem {
   actual: ActualOutcome;
   verdict: 'aligned' | 'overperformed' | 'underperformed' | 'unknown';
   rationale: string;
+  interpretation?: string; // 보조 KPI 기반 결정론 해석 — 없으면 빈 문자열
 }
 export interface BeforeAfterResponse {
   items: BeforeAfterItem[];
