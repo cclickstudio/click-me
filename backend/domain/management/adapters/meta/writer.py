@@ -88,6 +88,7 @@ class MetaAdsWriter:
     ) -> None:
         configured = getattr(settings, "management_execution_mode", None)
         self._mode = mode or (ExecutionMode(configured) if configured else ExecutionMode.DRY_RUN)
+        self._create_ad = getattr(settings, "management_create_ad", False)
         # 전송 모드 + 토큰이 있을 때만 클라이언트를 구성한다. 토큰이 없으면 클라이언트
         # 없이 합성 결과로 폴백 — 오설정(모드만 LIVE/SANDBOX, 자격증명 없음)이 실수로
         # 네트워크를 때리지 않게 한다 (instagram.py의 "토큰 없으면 미전송" 관례와 동일).
@@ -397,6 +398,18 @@ class MetaAdsWriter:
             await self._rollback(cid, idem_key)
             return adset
         asid = _created_id(adset)
+        if not self._create_ad:
+            # 광고(소재) 스킵 — 캠페인+광고세트까지만.
+            # MANAGEMENT_CREATE_AD=true면 아래 광고 생성까지.
+            tagged = _tag_campaign(adset, cid)
+            snap = {
+                **(tagged.platform_response_snapshot or {}),
+                "adset_id": asid,
+                "ad_id": None,
+                "ad_creation_skipped": True,
+                "create_ad_enabled": False,
+            }
+            return tagged.model_copy(update={"platform_response_snapshot": snap})
         if config.objective != "leads":
             if config.link_url:
                 ad = await self.create_link_ad(

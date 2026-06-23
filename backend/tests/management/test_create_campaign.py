@@ -297,3 +297,57 @@ def test_config_roundtrips_through_evidence_metrics(ts):
     rebuilt = CampaignConfig(**cfg.model_dump(mode="json"))
     assert rebuilt.start_at == ts
     assert rebuilt.ad_account_id == cfg.ad_account_id
+
+
+# ── 광고 단계 스킵 플래그 ────────────────────────────────────────
+
+
+def _traffic_config() -> CampaignConfig:
+    # link_url이 있어도(원래라면 광고 생성) 플래그로 스킵되는지 검증하려고 link_url 설정.
+    return _config().model_copy(
+        update={"objective": "traffic", "link_url": "https://example.com/landing"}
+    )
+
+
+def test_create_full_campaign_skips_ad_when_flag_off():
+    """management_create_ad=False(기본)면 traffic이라도 광고세트에서 멈춘다."""
+    paths: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        paths.append(request.url.path)
+        return httpx.Response(200, json={"id": f"obj_{len(paths)}"})
+
+    client = MetaClient("EAAtest", transport=httpx.MockTransport(handler))
+    writer = MetaAdsWriter(
+        mode=ExecutionMode.LIVE, client=client
+    )  # settings 미주입 → create_ad=False
+    result = asyncio.run(
+        writer.create_full_campaign(_traffic_config(), "idem-skip", page_id="page1")
+    )
+
+    assert result.status is ResultStatus.SUCCESS
+    snap = result.platform_response_snapshot
+    assert snap["ad_creation_skipped"] is True
+    assert snap["create_ad_enabled"] is False
+    assert snap["ad_id"] is None
+    assert snap["campaign_meta_id"] == "obj_1"
+    assert snap["adset_id"] == "obj_2"
+    assert not any(p.endswith("/ads") for p in paths)
+
+
+def test_create_full_campaign_creates_ad_when_flag_on():
+    """management_create_ad=True면 기존대로 광고까지 생성(회귀 방지)."""
+    import types
+
+    paths: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        paths.append(request.url.path)
+        return httpx.Response(200, json={"id": f"obj_{len(paths)}"})
+
+    client = MetaClient("EAAtest", transport=httpx.MockTransport(handler))
+    settings = types.SimpleNamespace(management_create_ad=True)
+    writer = MetaAdsWriter(settings, mode=ExecutionMode.LIVE, client=client)
+    asyncio.run(writer.create_full_campaign(_traffic_config(), "idem-full", page_id="page1"))
+
+    assert any(p.endswith("/ads") for p in paths)

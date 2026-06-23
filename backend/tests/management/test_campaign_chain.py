@@ -44,7 +44,13 @@ def _capture_writer() -> tuple[MetaAdsWriter, list[tuple[str, bytes]]]:
 
 
 def _routing_writer() -> tuple[MetaAdsWriter, list[tuple[str, bytes]]]:
-    """경로별로 다른 id를 돌려주는 LIVE 시뮬 — 체인 id 스레딩 검증용."""
+    """경로별로 다른 id를 돌려주는 LIVE 시뮬 — 체인 id 스레딩 검증용.
+
+    management_create_ad=True를 주입해 전체 캠페인→광고세트→(폼→)광고 체인을 검증한다.
+    (기본값 False면 광고세트에서 멈춰 체인 계약 검증이 불완전해짐.)
+    """
+    import types
+
     calls: list[tuple[str, bytes]] = []
     table = {
         "/campaigns": "camp_1",
@@ -60,7 +66,8 @@ def _routing_writer() -> tuple[MetaAdsWriter, list[tuple[str, bytes]]]:
         return httpx.Response(200, json={"id": obj_id})
 
     client = MetaClient("EAAtest", transport=httpx.MockTransport(handler))
-    return MetaAdsWriter(mode=ExecutionMode.LIVE, client=client), calls
+    settings = types.SimpleNamespace(management_create_ad=True)
+    return MetaAdsWriter(settings, mode=ExecutionMode.LIVE, client=client), calls
 
 
 # ── Task4: 리드폼 · 광고 ─────────────────────────────────────────
