@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 import SimFormWidget from './SimFormWidget';
 import GenFormWidget from './GenFormWidget';
+import SimGenListWidget from './SimGenListWidget';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
@@ -28,8 +29,17 @@ const slashCommands: SlashCommand[] = [
 ];
 
 type Citation = { kind: string; source: string; title?: string };
+type ListItem = {
+  id: string;
+  title: string;
+  status?: string;
+  created_at?: string | null;
+  sample_size?: number;
+  mode?: string;
+};
 type WidgetSpec = {
   type: string;
+  mode?: 'read' | 'select';
   data?: {
     ad_content?: string;
     ad_title?: string;
@@ -39,6 +49,7 @@ type WidgetSpec = {
     product_description?: string;
     target_audience?: string;
     campaign_objective?: string;
+    items?: ListItem[];
   };
 };
 type SourceMeta = {
@@ -248,6 +259,7 @@ export default function ChatConversation({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             session_id: sid,
+            project_id: projectId,
             messages: newMessages.map((m) => ({ role: m.role, content: m.content })),
             image_url: imageUrl,
             result_ref: resultRef,
@@ -405,6 +417,22 @@ export default function ChatConversation({
                     )}
                     {msg.meta?.widget?.type === 'gen_form' && (
                       <GenFormWidget initial={msg.meta.widget.data} initialImage={msg.imageFile} onResult={handleSend} />
+                    )}
+                    {msg.meta?.widget?.type === 'sim_list' && (
+                      <SimGenListWidget
+                        domain="sim"
+                        mode={msg.meta.widget.mode ?? 'read'}
+                        items={msg.meta.widget.data?.items ?? []}
+                        onResult={handleSend}
+                      />
+                    )}
+                    {msg.meta?.widget?.type === 'gen_list' && (
+                      <SimGenListWidget
+                        domain="gen"
+                        mode={msg.meta.widget.mode ?? 'read'}
+                        items={msg.meta.widget.data?.items ?? []}
+                        onResult={handleSend}
+                      />
                     )}
                     {msg.role === 'assistant' &&
                     msg.meta?.source === 'management' &&

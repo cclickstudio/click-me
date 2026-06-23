@@ -358,6 +358,11 @@ export const api = {
       ),
     deleteSession: (sessionId: string) =>
       request<{ deleted: boolean }>(`/chat/sessions/${sessionId}`, { method: "DELETE" }),
+    // 결과 요약 — 채팅 목록/카드 위젯용(kind=sim: 4대 KPI, gen: 후보 요약).
+    resultSummary: (kind: 'sim' | 'gen', id: string) =>
+      request<Record<string, unknown>>(
+        `/chat/result-summary?kind=${kind}&id=${encodeURIComponent(id)}`,
+      ),
     // 첨부 이미지 S3 업로드 → 프록시 URL(상대경로) 반환. 내역 영속화에 사용.
     uploadImage: async (file: File): Promise<{ key: string; url: string }> => {
       const token = getToken();
