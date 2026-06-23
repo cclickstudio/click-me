@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useProjects, type SimRow } from './ProjectContext';
 import TrashSection from './TrashSection';
+import ProjectChatSection from './chat/ProjectChatSection';
 import { getToken } from '@/lib/authApi';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
@@ -182,14 +183,8 @@ function ProjectItem({
                 </div>
               )}
 
-              {/* 채팅 — 후순위(데이터 미연동, 칸만) */}
-              <div className="w-full flex items-center gap-1.5 px-2 py-1">
-                <span className="w-3 shrink-0" />
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-[#8B95A1] shrink-0">
-                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-                </svg>
-                <span className="text-xs font-semibold text-[#4E5968] dark:text-[#9CA3AF] uppercase tracking-wide">채팅 (0)</span>
-              </div>
+              {/* 채팅 — 프로젝트의 채팅 세션 목록(클릭 시 플로팅/대화 전환) */}
+              <ProjectChatSection projectId={project.id} />
 
               {/* 휴지통 — 펼치면 삭제된 시뮬/제너, 클릭 시 상세 */}
               <button
