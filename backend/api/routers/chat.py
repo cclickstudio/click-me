@@ -81,6 +81,7 @@ async def chat_complete(body: ChatRequest) -> StreamingResponse:
                     question=last_message,
                     history=[(m.role, m.content) for m in body.messages[:-1]],
                     ad_id=body.context_ad_id,
+                    session_id=body.session_id,
                 )
             )
         except Exception as exc:  # noqa: BLE001 — 오케스트레이터 실패해도 Gemini로 이어간다
