@@ -1095,7 +1095,35 @@ async def activate_campaign(
     if commit <= 0:
         raise HTTPException(status_code=422, detail="배정 금액(commit_krw)을 결정할 수 없습니다.")
 
-    # 1) 게이트 — Meta 광고계정 선불 잔액이 배정액보다 적으면 차단(예산·게재 기준 통일).
+    # 0) 크레딧 한도 게이트 (LIVE만) — ClickMe 충전 크레딧이 배정액보다 적으면 차단.
+    #    크레딧 = 예산 한도(인앱 /payment), Meta 선불 = 실광고비(Ads Manager). 두 충전 각각 게이트.
+    credit_balance = 0
+    if _resolved_execution_mode() is ExecutionMode.LIVE:
+        from api.routers.billing import get_billing_service  # noqa: PLC0415 — 순환 방지
+
+        credit_balance = await get_billing_service().balance(body.org_id)
+        if credit_balance < commit:
+            return {
+                "serving": False,
+                "result": None,
+                "balance_krw": 0,
+                "credit_krw": credit_balance,
+                "commit_krw": commit,
+                "causes": [
+                    {
+                        "code": "INSUFFICIENT_CREDIT",
+                        "message": (
+                            f"예산 한도(크레딧) 부족 — {commit - credit_balance:,}원 더 충전 필요. "
+                            "충전 페이지에서 크레딧을 채우면 게재가 이어집니다."
+                        ),
+                        "need_krw": commit - credit_balance,
+                        "credit_krw": credit_balance,
+                        "commit_krw": commit,
+                    }
+                ],
+            }
+
+    # 1) 게이트 — Meta 광고계정 선불 잔액이 배정액보다 적으면 차단(실광고비 = Meta 선불).
     try:
         funding = await build_reader(settings).get_account_funding()
         meta_balance = funding.available_balance_krw or 0
@@ -1106,6 +1134,7 @@ async def activate_campaign(
             "serving": False,
             "result": None,
             "balance_krw": meta_balance,
+            "credit_krw": credit_balance,
             "commit_krw": commit,
             "causes": [
                 {
@@ -1131,6 +1160,7 @@ async def activate_campaign(
             "serving": False,
             "result": cap.model_dump(mode="json"),
             "balance_krw": meta_balance,
+            "credit_krw": credit_balance,
             "commit_krw": commit,
             "causes": [
                 {
@@ -1177,6 +1207,7 @@ async def activate_campaign(
         "serving": serving,
         "result": result.model_dump(mode="json"),
         "balance_krw": meta_balance,
+        "credit_krw": credit_balance,
         "commit_krw": commit,
         "causes": [],
     }
