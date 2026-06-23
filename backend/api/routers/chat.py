@@ -99,6 +99,7 @@ async def chat_complete(
         session_id=body.session_id,
         user_id=str(user.id) if user else None,
         context_ad_id=body.context_ad_id,
+        improve_context=body.improve_context,
     )
 
     async def _projects() -> list[ProjectRef]:

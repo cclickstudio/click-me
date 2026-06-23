@@ -58,6 +58,9 @@ class SubagentRequest(BaseModel):
     org_id: str | None = None
     project_id: str | None = None  # 프론트가 활성 프로젝트를 줬다면(현재는 보통 None)
     context_ad_id: str | None = None  # 특정 광고 맥락(management 시뮬 예측 연결)
+    improve_context: dict | None = (
+        None  # 개선 모드 컨텍스트 {s3_key, simulation_summary, product_name?}
+    )
     available_projects: list[ProjectRef] = Field(
         default_factory=list
     )  # 되묻기용 — 오케스트레이터가 generate 라우팅 시 채운다

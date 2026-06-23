@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
+import { useSearchParams } from 'next/navigation';
 import AppLayout from '@/components/AppLayout';
 import { safeRandomUUID } from '@/lib/utils';
 import { getToken } from '@/lib/authApi';
@@ -69,6 +70,20 @@ function TypingIndicator() {
 }
 
 export default function Page() {
+  const searchParams = useSearchParams();
+
+  // 개선 모드 — URL 파라미터로 전달된 컨텍스트
+  const improveContext = useMemo(() => {
+    const s3_key = searchParams.get('improve_s3_key');
+    const simulation_summary = searchParams.get('improve_sim_summary');
+    if (!s3_key || !simulation_summary) return null;
+    return {
+      s3_key,
+      simulation_summary,
+      product_name: searchParams.get('improve_product_name') ?? '',
+    };
+  }, [searchParams]);
+
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
@@ -102,6 +117,18 @@ export default function Page() {
 
   // 저장된 대화 복원 — 마운트 시 세션 발급 후 히스토리 로드
   useEffect(() => {
+    // 개선 모드는 히스토리 복원 없이 새 세션 시작 + 안내 메시지 추가
+    if (improveContext) {
+      const name = improveContext.product_name || '기존 광고';
+      setMessages([
+        {
+          role: 'assistant',
+          content: `${name} 개선을 시작할게요.\n어떤 부분을 바꾸고 싶으신가요? (예시 — 색상을 더 밝게, 헤드라인을 더 강렬하게)`,
+          meta: { source: 'generator', label: '생성 어시스턴트', engine: 'Gemini · 슬롯필링' },
+        },
+      ]);
+      return;
+    }
     const sid = ensureSession();
     fetch(`${API_BASE}/api/chat/sessions/${sid}/messages`)
       .then((r) => (r.ok ? r.json() : { messages: [] }))
@@ -111,7 +138,7 @@ export default function Page() {
         }
       })
       .catch(() => {});
-  }, []);
+  }, [improveContext]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 생성 잡 핸드오프 — started_event를 받으면 생성 SSE 스트림을 구독해 진행률 갱신
   const subscribeGeneration = (streamUrl: string) => {
@@ -165,7 +192,11 @@ export default function Page() {
           'Content-Type': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
-        body: JSON.stringify({ session_id: sessionId.current, messages: newMessages }),
+        body: JSON.stringify({
+          session_id: sessionId.current,
+          messages: newMessages,
+          ...(improveContext ? { improve_context: improveContext } : {}),
+        }),
       });
 
       if (!res.ok || !res.body) {
@@ -255,6 +286,15 @@ export default function Page() {
   return (
     <AppLayout>
     <div className="h-screen bg-white dark:bg-[#0F1117] flex flex-col transition-colors">
+      {/* 개선 모드 배너 */}
+      {improveContext && (
+        <div className="flex items-center gap-2 px-4 py-2 bg-[#EBF3FF] dark:bg-[#1E3A5F] border-b border-[#C4D9F5] dark:border-[#2D5A9E] text-sm text-[#3182F6] font-medium shrink-0">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
+          </svg>
+          개선 모드 · {improveContext.product_name || '기존 광고'} 시뮬레이션 결과 기반
+        </div>
+      )}
       <div className="flex-1 flex flex-col overflow-hidden">
         {messages.length === 0 ? (
           /* ── Welcome state ── */
