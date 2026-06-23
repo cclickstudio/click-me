@@ -29,3 +29,32 @@ async def fetch_generation_result(generation_id: str) -> dict:
         ],
         "error_message": detail.get("error_message"),
     }
+
+
+async def run_generation(
+    product_name: str,
+    product_description: str,
+    target_audience: str,
+    campaign_objective: str = "conversion",
+    project_id: str | None = None,
+) -> dict:
+    """채팅에서 광고 시안 생성을 시작한다(백그라운드). generation_id 반환.
+
+    mode는 기본 CREATE, created_by 생략(anonymous), project_id 없으면 프로젝트 미귀속.
+    생성은 오래 걸려 동기 대기하지 않고 generation_id만 돌려준다(결과는 추후 조회).
+    """
+    from domain.generator.contracts.schemas import GenerationCreateRequest  # noqa: PLC0415
+    from domain.generator.service import generator_service  # noqa: PLC0415
+
+    req = GenerationCreateRequest(
+        product_name=product_name,
+        product_description=product_description,
+        target_audience=target_audience,
+        campaign_objective=campaign_objective,
+        project_id=project_id,
+    )
+    generation_id = await generator_service.start_generation(req)
+    return {
+        "generation_id": generation_id,
+        "stream_url": f"/api/generator/generations/{generation_id}/stream",
+    }

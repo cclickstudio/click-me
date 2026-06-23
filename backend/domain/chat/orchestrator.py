@@ -64,6 +64,16 @@ _ADVISE_SYSTEM = (
     "일반 광고 전략·해석·아이디어 질문에 도구 없이 직접 답한다. 문장 끝에 콜론을 쓰지 말 것."
 )
 
+# 생성 실행 입력 추출 프롬프트 — 사용자 요청에서 생성 파라미터 뽑기.
+_GEN_EXTRACT_SYSTEM = (
+    "사용자의 광고 생성 요청에서 입력을 추출하라.\n"
+    "- product_name: 상품·서비스 이름\n"
+    "- product_description: 상품 설명·특징\n"
+    "- target_audience: 타깃 고객\n"
+    "- campaign_objective: 캠페인 목표(기본 conversion)\n"
+    "명시되지 않은 항목은 요청 내용으로 합리적으로 채워라."
+)
+
 
 @dataclass
 class ChatTurn:
@@ -182,6 +192,13 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
         context_id: str | None = None
         ad_content: str | None = None
 
+    # 생성 실행 입력 추출 스키마 — generator_node에서 question으로부터 채운다.
+    class _GenInput(BaseModel):
+        product_name: str = ""
+        product_description: str = ""
+        target_audience: str = ""
+        campaign_objective: str = "conversion"
+
     classifier = llm.with_structured_output(_Intent)
 
     # 그래프 상태 — 메시지 누적이 아니라 분류→답변 1패스. 노드엔 어노테이트하지 않는다.
@@ -234,10 +251,26 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
 
     async def generator_node(state) -> dict:
         if state.get("action") == "run":
+            extractor = llm.with_structured_output(_GenInput)
+            gi = await extractor.ainvoke(
+                [
+                    SystemMessage(content=_GEN_EXTRACT_SYSTEM),
+                    HumanMessage(content=state["question"]),
+                ]
+            )
+            from domain.generator.assistant.tools import run_generation  # noqa: PLC0415
+
+            ev = await run_generation(
+                product_name=gi.product_name,
+                product_description=gi.product_description,
+                target_audience=gi.target_audience,
+                campaign_objective=gi.campaign_objective,
+            )
+            gid = str(ev.get("generation_id") or "")[:8]
             return {
-                "answer": "광고 시안 생성 실행은 곧 지원될 예정이에요."
-                " 지금은 생성 결과 해석·카피 전략 질문에 답할 수 있어요.",
-                "meta": {"source": "generator", "label": "생성", "engine": "-"},
+                "answer": f"광고 시안 생성을 시작했어요 (generation_id {gid})."
+                " 완료까지 시간이 걸려요 — 잠시 후 생성 결과를 물어보면 확인해 드릴게요.",
+                "meta": {"source": "generator", "label": "생성 실행", "engine": "파이프라인"},
             }
         res = await gen(
             AssistantRequest(question=state["question"], context_id=state.get("context_id"))
