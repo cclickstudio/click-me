@@ -5,6 +5,7 @@ import { useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 import { safeRandomUUID } from '@/lib/utils';
+import { getJobs, setSimJob } from '@/lib/runningJobs';
 import type { SimRunResult } from '@/lib/types';
 
 type Phase = 'form' | 'running' | 'done' | 'error';
@@ -16,6 +17,8 @@ const labelCls = 'text-[11px] font-semibold text-[#8B95A1] dark:text-[#6B7280] m
 export default function SimFormWidget({ initial }: { initial?: { ad_content?: string } }) {
   const router = useRouter();
   const [phase, setPhase] = useState<Phase>('form');
+  const [step, setStep] = useState(0);
+  const [runId, setRunId] = useState<string | null>(null);
   const [adTitle, setAdTitle] = useState('');
   const [adContent, setAdContent] = useState(initial?.ad_content ?? '');
   const [category, setCategory] = useState('');
@@ -27,9 +30,10 @@ export default function SimFormWidget({ initial }: { initial?: { ad_content?: st
   const [err, setErr] = useState('');
   const esRef = useRef<EventSource | null>(null);
 
-  const finish = async (runId: string) => {
+  const finish = async (rid: string) => {
+    setSimJob(null); // 완료 — 동시실행 슬롯 해제
     try {
-      const r = await api.simulation.result(runId);
+      const r = await api.simulation.result(rid);
       setResult(r);
       setPhase('done');
     } catch (e) {
@@ -40,6 +44,11 @@ export default function SimFormWidget({ initial }: { initial?: { ad_content?: st
 
   const run = async () => {
     if (!adContent.trim()) return;
+    if (getJobs().sim) {
+      setErr('이미 다른 시뮬레이션이 진행 중이에요. 끝난 뒤 다시 시도하세요.');
+      setPhase('error');
+      return;
+    }
     setPhase('running');
     setPct(0);
     setStageMsg('시뮬레이션 시작...');
@@ -52,6 +61,8 @@ export default function SimFormWidget({ initial }: { initial?: { ad_content?: st
         ad_objective: objective || undefined,
         sample_size: sampleSize,
       });
+      setRunId(run_id);
+      setSimJob(run_id); // 동시실행 슬롯 점유(시뮬 1개 제한)
       const es = api.simulation.stream(run_id);
       esRef.current = es;
       es.onmessage = ev => {
@@ -68,6 +79,7 @@ export default function SimFormWidget({ initial }: { initial?: { ad_content?: st
             void finish(run_id);
           } else if (d.event === 'error') {
             es.close();
+            setSimJob(null);
             setErr(d.message ?? '실행 오류');
             setPhase('error');
           }
@@ -80,6 +92,7 @@ export default function SimFormWidget({ initial }: { initial?: { ad_content?: st
         void finish(run_id); // 스트림 끊겨도 결과 조회 시도
       };
     } catch (e) {
+      setSimJob(null);
       setErr(e instanceof Error ? e.message : '시작 실패');
       setPhase('error');
     }
@@ -89,49 +102,78 @@ export default function SimFormWidget({ initial }: { initial?: { ad_content?: st
     'mt-1 w-full rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-white dark:bg-[#1C2333] p-4';
 
   if (phase === 'form') {
+    const totalSteps = 4;
+    const canNext = step !== 1 || adContent.trim().length > 0; // 설명(1단계)만 필수
+    const btnCls =
+      'flex-1 py-2 rounded-lg bg-[#3182F6] text-white text-sm font-semibold hover:bg-[#1B6EEB] disabled:opacity-40 transition-colors';
     return (
       <div className={cardCls}>
         <p className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6] mb-3">
-          🧪 시뮬레이션 정보 입력
+          🧪 시뮬레이션 정보 입력{' '}
+          <span className="text-[11px] font-normal text-[#8B95A1]">
+            ({step + 1}/{totalSteps})
+          </span>
         </p>
-        <div className="space-y-2.5">
-          <div>
-            <label className={labelCls}>제품명</label>
-            <input className={inputCls} value={adTitle} onChange={e => setAdTitle(e.target.value)} placeholder="예: 클릭미 신상 크림" />
-          </div>
-          <div>
-            <label className={labelCls}>광고 설명 *</label>
-            <textarea className={`${inputCls} resize-none`} rows={2} value={adContent} onChange={e => setAdContent(e.target.value)} placeholder="광고 카피·내용" />
-          </div>
-          <div className="grid grid-cols-2 gap-2">
+        <div className="min-h-[68px]">
+          {step === 0 && (
             <div>
-              <label className={labelCls}>카테고리</label>
-              <input className={inputCls} value={category} onChange={e => setCategory(e.target.value)} placeholder="예: 화장품" />
+              <label className={labelCls}>제품명</label>
+              <input className={inputCls} value={adTitle} onChange={e => setAdTitle(e.target.value)} placeholder="예: 클릭미 신상 크림" autoFocus />
             </div>
+          )}
+          {step === 1 && (
             <div>
-              <label className={labelCls}>광고 목표</label>
-              <input className={inputCls} value={objective} onChange={e => setObjective(e.target.value)} placeholder="예: 구매 전환" />
+              <label className={labelCls}>광고 설명 *</label>
+              <textarea className={`${inputCls} resize-none`} rows={3} value={adContent} onChange={e => setAdContent(e.target.value)} placeholder="광고 카피·내용" autoFocus />
             </div>
-          </div>
-          <div>
-            <label className={labelCls}>가상 소비자 수: {sampleSize}명</label>
-            <input type="range" min={1} max={200} value={sampleSize} onChange={e => setSampleSize(Number(e.target.value))} className="w-full" />
-          </div>
+          )}
+          {step === 2 && (
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className={labelCls}>카테고리</label>
+                <input className={inputCls} value={category} onChange={e => setCategory(e.target.value)} placeholder="예: 화장품" autoFocus />
+              </div>
+              <div>
+                <label className={labelCls}>광고 목표</label>
+                <input className={inputCls} value={objective} onChange={e => setObjective(e.target.value)} placeholder="예: 구매 전환" />
+              </div>
+            </div>
+          )}
+          {step === 3 && (
+            <div>
+              <label className={labelCls}>가상 소비자 수: {sampleSize}명</label>
+              <input type="range" min={1} max={200} value={sampleSize} onChange={e => setSampleSize(Number(e.target.value))} className="w-full" />
+            </div>
+          )}
         </div>
-        <button
-          onClick={run}
-          disabled={!adContent.trim()}
-          className="mt-3 w-full py-2 rounded-lg bg-[#3182F6] text-white text-sm font-semibold hover:bg-[#1B6EEB] disabled:opacity-40 transition-colors"
-        >
-          시뮬레이션 실행
-        </button>
+        <div className="flex gap-2 mt-3">
+          {step > 0 && (
+            <button onClick={() => setStep(step - 1)} className="px-3 py-2 rounded-lg border border-[#E5E8EB] dark:border-[#2D3748] text-sm text-[#8B95A1]">
+              이전
+            </button>
+          )}
+          {step < totalSteps - 1 ? (
+            <button onClick={() => setStep(step + 1)} disabled={!canNext} className={btnCls}>
+              다음
+            </button>
+          ) : (
+            <button onClick={run} disabled={!adContent.trim()} className={btnCls}>
+              시뮬레이션 실행
+            </button>
+          )}
+        </div>
       </div>
     );
   }
 
   if (phase === 'running') {
     return (
-      <div className={cardCls}>
+      <button
+        type="button"
+        onClick={() => runId && router.push(`/simulation/${runId}`)}
+        className={`${cardCls} w-full text-left hover:border-[#3182F6] transition-colors`}
+        title="클릭하면 시뮬레이션 페이지에서 자세히 봐요"
+      >
         <div className="flex items-center gap-3">
           <div className="w-6 h-6 border-[3px] border-[#E5E8EB] dark:border-[#2D3748] border-t-[#3182F6] rounded-full animate-spin" />
           <div className="flex-1">
@@ -142,7 +184,8 @@ export default function SimFormWidget({ initial }: { initial?: { ad_content?: st
           </div>
           <span className="text-xs text-[#8B95A1]">{pct}%</span>
         </div>
-      </div>
+        <p className="text-[10px] text-[#B0B8C1] mt-2">클릭하면 전체 화면에서 진행을 봐요 →</p>
+      </button>
     );
   }
 
