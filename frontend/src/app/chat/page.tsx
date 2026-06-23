@@ -73,12 +73,45 @@ export default function Page() {
   const [input, setInput] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
   const sessionId = useRef<string>("");
-  if (!sessionId.current) sessionId.current = safeRandomUUID();
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  // 세션 ID 복원/발급 — localStorage에 보존해 새로고침해도 같은 대화로 이어진다
+  const ensureSession = () => {
+    if (sessionId.current) return sessionId.current;
+    let sid = '';
+    try {
+      sid = localStorage.getItem('chat_session_id') ?? '';
+    } catch {
+      // localStorage 접근 불가(시크릿 등) — 무시
+    }
+    if (!sid) {
+      sid = safeRandomUUID();
+      try {
+        localStorage.setItem('chat_session_id', sid);
+      } catch {
+        // 무시
+      }
+    }
+    sessionId.current = sid;
+    return sid;
+  };
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isStreaming]);
+
+  // 저장된 대화 복원 — 마운트 시 세션 발급 후 히스토리 로드
+  useEffect(() => {
+    const sid = ensureSession();
+    fetch(`${API_BASE}/api/chat/sessions/${sid}/messages`)
+      .then((r) => (r.ok ? r.json() : { messages: [] }))
+      .then((d) => {
+        if (Array.isArray(d.messages) && d.messages.length > 0) {
+          setMessages(d.messages as Message[]);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   // 생성 잡 핸드오프 — started_event를 받으면 생성 SSE 스트림을 구독해 진행률 갱신
   const subscribeGeneration = (streamUrl: string) => {
@@ -118,6 +151,7 @@ export default function Page() {
     const content = text ?? input.trim();
     if (!content || isStreaming) return;
 
+    ensureSession();
     const newMessages: Message[] = [...messages, { role: 'user', content }];
     setMessages(newMessages);
     setInput('');
