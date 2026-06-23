@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+from datetime import UTC, datetime
 from pathlib import Path
 
 from openai import AsyncOpenAI
@@ -20,12 +21,13 @@ from domain.management.assistant.retriever import EMBEDDING_MODEL
 
 _KB_DIR = Path(__file__).parent / "kb"
 
-# 파일별 출처 유형 — 문서 메타(source_type). 미지정은 playbook.
-_SOURCE_TYPES = {
-    "meta_ad_policy.md": "meta_official",
-    "optimization_playbook.md": "playbook",
-    "kpi_measurement_rules.md": "internal_policy",
-    "remediation_actions.md": "internal_policy",
+# 파일별 출처 메타 — (source_type, source_url). 외부 공식 근거가 있으면 URL, 내부 작성물은 None.
+# 현 4문서는 사람이 작성한 요약/정책이라 대부분 내부(None). meta 정책 요약만 공식 표준 참조.
+_SOURCE_META: dict[str, tuple[str, str | None]] = {
+    "meta_ad_policy.md": ("meta_official", "https://transparency.meta.com/policies/ad-standards/"),
+    "optimization_playbook.md": ("playbook", None),
+    "kpi_measurement_rules.md": ("internal_policy", None),
+    "remediation_actions.md": ("internal_policy", None),
 }
 
 
@@ -64,15 +66,21 @@ async def ingest() -> int:
                 delete(ManagementKbDocument).where(ManagementKbDocument.title == source)
             )
             await db.execute(delete(ManagementKbChunk).where(ManagementKbChunk.source == source))
+            source_type, source_url = _SOURCE_META.get(source, ("playbook", None))
+            now = datetime.now(UTC)
             doc = ManagementKbDocument(
                 tenant_id=None,  # 공통(global) 지식
                 visibility="global",
-                source_type=_SOURCE_TYPES.get(source, "playbook"),
+                source_type=source_type,
+                source_url=source_url,  # 외부 공식 근거 URL(없으면 내부 작성물 → None)
                 title=source,
                 version=_sha(text)[:12],
                 status="active",
                 content_hash=_sha(text),
                 language="ko",
+                retrieved_at=now,  # 이 내용을 KB에 반영(확인)한 시각
+                effective_from=now,  # 유효 시작 — 자동수집 도입 시 버전별로 갱신
+                verified_by="manual",  # 사람이 작성·검수한 요약 (자동수집 아님)
             )
             db.add(doc)
             await db.flush()  # doc.id 확보

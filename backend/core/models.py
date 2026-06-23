@@ -178,10 +178,11 @@ class ManagementKbDocument(Base):
     language: Mapped[str] = mapped_column(String(16), default="ko")
     status: Mapped[str] = mapped_column(String(16), default="active")  # draft|active|deprecated
     content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    published_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    retrieved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    effective_from: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    # DB는 TIMESTAMPTZ — tz-aware datetime 인코딩 위해 timezone=True 필수.
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    retrieved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    effective_from: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     verified_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
     doc_metadata: Mapped[dict] = mapped_column("metadata", JSONB, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
