@@ -28,6 +28,8 @@ type SlashCommand = { cmd: string; label: string; desc: string };
 const slashCommands: SlashCommand[] = [
   { cmd: '/시뮬레이션', label: '/시뮬레이션', desc: '광고 시뮬레이션 입력 위젯을 띄웁니다' },
   { cmd: '/제너레이터', label: '/제너레이터', desc: '광고 생성 입력 위젯을 띄웁니다' },
+  { cmd: '/비교', label: '/비교', desc: '시뮬레이션 2개의 KPI를 나란히 비교합니다' },
+  { cmd: '/도움말', label: '/도움말', desc: '사용 가능한 명령어와 예시를 봅니다' },
   { cmd: '/위젯', label: '/위젯', desc: '사용 가능한 위젯 목록을 봅니다 (개발용)' },
 ];
 
@@ -42,7 +44,7 @@ type ListItem = {
 };
 type WidgetSpec = {
   type: string;
-  mode?: 'read' | 'select';
+  mode?: 'read' | 'select' | 'compare';
   data?: {
     ad_content?: string;
     ad_title?: string;
@@ -195,6 +197,10 @@ export default function ChatConversation({
           img,
         );
         attachImage(null);
+        break;
+      case '/비교':
+        // 백엔드로 보내 시뮬 목록(비교 모드) 위젯을 받는다.
+        handleSend('/비교');
         break;
       case '/위젯':
         addLocalAssistant(

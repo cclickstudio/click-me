@@ -4,6 +4,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
+import ComparisonWidget from './ComparisonWidget';
 
 type ListItem = {
   id: string;
@@ -98,6 +99,65 @@ function ReadRow({ domain, item }: { domain: Domain; item: ListItem }) {
   );
 }
 
+// 비교(compare) 모드 — 시뮬 2개를 체크 선택 → 비교 표 렌더.
+function CompareList({ items }: { items: ListItem[] }) {
+  const [picked, setPicked] = useState<string[]>([]);
+  const [confirmed, setConfirmed] = useState<{ id: string; title: string }[] | null>(null);
+
+  const toggle = (id: string) => {
+    setPicked((prev) =>
+      prev.includes(id) ? prev.filter((p) => p !== id) : prev.length < 2 ? [...prev, id] : prev,
+    );
+  };
+
+  if (confirmed) {
+    return <ComparisonWidget items={confirmed} />;
+  }
+
+  return (
+    <>
+      <div className="space-y-1.5">
+        {items.map((it) => {
+          const on = picked.includes(it.id);
+          return (
+            <button
+              key={it.id}
+              onClick={() => toggle(it.id)}
+              className={`w-full flex items-center gap-2 px-3 py-2 text-left rounded-lg border transition-colors ${
+                on
+                  ? 'border-[#3182F6] bg-[#EBF3FF] dark:bg-[#1E3A5F]'
+                  : 'border-[#E5E8EB] dark:border-[#2D3748] hover:border-[#3182F6]'
+              }`}
+            >
+              <span
+                className={`w-4 h-4 rounded border shrink-0 flex items-center justify-center text-[10px] ${
+                  on ? 'bg-[#3182F6] border-[#3182F6] text-white' : 'border-[#B0B8C1]'
+                }`}
+              >
+                {on ? '✓' : ''}
+              </span>
+              <span className="flex-1 min-w-0 text-sm text-[#191F28] dark:text-[#F2F4F6] truncate">
+                {it.title}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+      <button
+        disabled={picked.length !== 2}
+        onClick={() =>
+          setConfirmed(
+            picked.map((id) => ({ id, title: items.find((x) => x.id === id)?.title ?? id })),
+          )
+        }
+        className="mt-2 w-full py-2 rounded-lg bg-[#3182F6] text-white text-sm font-semibold hover:bg-[#1B6EEB] disabled:opacity-40 transition-colors"
+      >
+        비교하기 {picked.length}/2
+      </button>
+    </>
+  );
+}
+
 export default function SimGenListWidget({
   domain,
   mode,
@@ -105,7 +165,7 @@ export default function SimGenListWidget({
   onResult,
 }: {
   domain: Domain;
-  mode: 'read' | 'select';
+  mode: 'read' | 'select' | 'compare';
   items: ListItem[];
   onResult?: (message: string) => void; // 선택 시 후속 메시지를 채팅으로 보냄
 }) {
@@ -126,9 +186,13 @@ export default function SimGenListWidget({
   return (
     <div className={cardCls}>
       <p className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6] mb-2">
-        {domain === 'sim' ? '🧪 시뮬레이션' : '🎨 광고 생성'} {mode === 'select' ? '선택' : '목록'}
+        {domain === 'sim' ? '🧪 시뮬레이션' : '🎨 광고 생성'}{' '}
+        {mode === 'select' ? '선택' : mode === 'compare' ? '비교' : '목록'}
         <span className="text-[11px] font-normal text-[#8B95A1]"> ({items.length})</span>
       </p>
+      {mode === 'compare' ? (
+        <CompareList items={items} />
+      ) : (
       <div className="space-y-1.5">
         {mode === 'read'
           ? items.map((it) => <ReadRow key={it.id} domain={domain} item={it} />)
@@ -149,6 +213,7 @@ export default function SimGenListWidget({
               </button>
             ))}
       </div>
+      )}
     </div>
   );
 }

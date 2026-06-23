@@ -806,6 +806,22 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
         sid = turn.session_id
         # 숏텀 메모리에서 윈도우 내역을 꺼내 노드에 전달(raw 전체 history 대신 최근 6턴).
         q = (turn.question or "").strip()
+        # /비교 명령어 — 시뮬 목록을 다중 선택(compare) 모드로 띄운다(T14).
+        if q.replace(" ", "").startswith("/비교"):
+            items = await _list_simulations(turn.project_id or "", limit=10)
+            answer = (
+                "비교할 시뮬레이션을 2개 선택하세요."
+                if items
+                else "비교할 시뮬레이션이 아직 없어요."
+            )
+            return ChatAnswer(
+                answer=answer,
+                meta={
+                    "source": "simulation",
+                    "label": "시뮬레이션 비교",
+                    "widget": {"type": "sim_list", "mode": "compare", "data": {"items": items}},
+                },
+            )
         # 리포트 요청 — 다운로드 버튼 위젯을 띄운다(실제 파일은 /api/chat/report).
         if _is_report(q):
             period = _report_period(q)
