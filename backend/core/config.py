@@ -25,6 +25,10 @@ class Settings(BaseSettings):
 
     # 어댑터 모드 — True면 Mock(데모·기본), False면 실연동 어댑터. wiring.py 분기 기준.
     use_mock: bool = True
+    # 핸드오프/수동 캠페인 생성 시 광고(소재) 단계 생성 여부.
+    # False(기본): 캠페인+광고세트까지만(Meta access level 전 1885183 회피).
+    # True: 광고까지 풀 생성(Marketing API Access Tier/Advanced 확보 후).
+    management_create_ad: bool = False
 
     # Database
     database_url: str
