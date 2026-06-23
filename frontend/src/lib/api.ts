@@ -164,6 +164,7 @@ export type ChatSessionRow = {
   updated_at: string | null;
 };
 export type ChatHistoryMessage = {
+  id?: string;
   role: 'user' | 'assistant';
   content: string;
   meta?: unknown;
@@ -358,6 +359,12 @@ export const api = {
       ),
     deleteSession: (sessionId: string) =>
       request<{ deleted: boolean }>(`/chat/sessions/${sessionId}`, { method: "DELETE" }),
+    // 메시지 핀 토글(T19) — 세션 상단 고정.
+    pinMessage: (messageId: string, pinned: boolean) =>
+      request<{ id: string; pinned: boolean }>(`/chat/messages/${messageId}/pin`, {
+        method: "PATCH",
+        body: JSON.stringify({ pinned }),
+      }),
     // 결과 요약 — 채팅 목록/카드 위젯용(kind=sim: 4대 KPI, gen: 후보 요약).
     resultSummary: (kind: 'sim' | 'gen', id: string) =>
       request<Record<string, unknown>>(

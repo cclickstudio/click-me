@@ -215,6 +215,19 @@ async def chat_sim_batch(body: BatchSimRequest) -> dict:
     return {"results": results}
 
 
+class PinRequest(BaseModel):
+    pinned: bool = True
+
+
+@router.patch("/messages/{message_id}/pin")
+async def pin_chat_message(message_id: str, body: PinRequest) -> dict:
+    """메시지 핀 토글(T19) — 세션 상단 고정 표시용."""
+    ok = await history.pin_message(message_id, body.pinned)
+    if not ok:
+        raise HTTPException(status_code=404, detail="메시지를 찾을 수 없습니다.")
+    return {"id": message_id, "pinned": body.pinned}
+
+
 @router.get("/report")
 async def chat_report(project_id: str | None = None, period: str = "month") -> Response:
     """채팅 트리거 프로젝트 리포트 다운로드(T13) — PDF(Chromium) 또는 HTML 폴백."""

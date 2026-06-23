@@ -87,7 +87,10 @@ async def get_messages(db: AsyncSession, session_id: str) -> list[dict]:
         .where(ChatMessage.session_id == sid)
         .order_by(ChatMessage.created_at.asc())
     )
-    return [{"role": m.role, "content": m.content, "meta": m.meta} for m in rows.scalars()]
+    return [
+        {"id": str(m.id), "role": m.role, "content": m.content, "meta": m.meta}
+        for m in rows.scalars()
+    ]
 
 
 async def append_turn(
@@ -284,6 +287,26 @@ async def upsert_brand_profile(project_id: str | None, fields: dict) -> None:
             await db.commit()
     except Exception as exc:  # noqa: BLE001
         print(f"[chat] brand profile upsert error: {exc!r}")
+
+
+async def pin_message(message_id: str, pinned: bool) -> bool:
+    """메시지 핀 토글(T19) — ChatMessage.meta.pinned 갱신. 성공 시 True."""
+    mid = _as_uuid(message_id)
+    if mid is None:
+        return False
+    try:
+        async with AsyncSessionLocal() as db:
+            msg = await db.get(ChatMessage, mid)
+            if msg is None:
+                return False
+            meta = dict(msg.meta or {})
+            meta["pinned"] = pinned
+            msg.meta = meta
+            await db.commit()
+            return True
+    except Exception as exc:  # noqa: BLE001
+        print(f"[chat] pin message error: {exc!r}")
+        return False
 
 
 async def save_template(

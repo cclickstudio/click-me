@@ -71,12 +71,14 @@ type SourceMeta = {
 // 채팅으로 실제 돌린 시뮬/생성 결과 참조 — 내역에 남겨 재로드 시 "결과 보기" 링크로 렌더.
 type ResultRef = { kind: 'sim' | 'gen'; id: string };
 type Message = {
+  id?: string; // DB 메시지 id(영속된 메시지에만 — 핀 토글용)
   role: 'user' | 'assistant';
   content: string;
   meta?: SourceMeta;
   imageUrl?: string;
   imageFile?: File;
   result?: ResultRef;
+  pinned?: boolean;
 };
 
 function SendIcon() {
@@ -165,7 +167,8 @@ export default function ChatConversation({
             const result = rr && (rr.kind === 'sim' || rr.kind === 'gen') && rr.id ? rr : undefined;
             // 어시스턴트 메시지만 출처/위젯 meta로 사용. 사용자 메시지 meta는 이미지·결과 참조 보관용.
             const meta = m.role === 'assistant' ? (rawMeta as SourceMeta | null) ?? undefined : undefined;
-            return { role: m.role, content: m.content, meta, imageUrl, result };
+            const pinned = rawMeta?.pinned === true;
+            return { id: m.id, role: m.role, content: m.content, meta, imageUrl, result, pinned };
           }),
         );
       } catch {
@@ -330,6 +333,17 @@ export default function ChatConversation({
     [isStreaming, sessionId, projectId, consumeStream, onActivity, onProgress],
   );
 
+  // 핀 토글(T19) — DB 갱신 후 로컬 반영. 영속된(id 있는) 어시스턴트 메시지에만.
+  const togglePin = useCallback(async (id: string, next: boolean) => {
+    setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, pinned: next } : m)));
+    try {
+      await api.chat.pinMessage(id, next);
+    } catch {
+      // 실패 시 롤백
+      setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, pinned: !next } : m)));
+    }
+  }, []);
+
   const handleSend = useCallback(
     async (text?: string, resultRef?: ResultRef) => {
       const content = text ?? input.trim();
@@ -449,6 +463,21 @@ export default function ChatConversation({
       ) : (
         /* ── Messages ── */
         <div className="flex-1 overflow-y-auto">
+          {/* 핀 고정 미리보기 — 세션 상단(T19) */}
+          {messages.some((m) => m.pinned) && (
+            <div className="sticky top-0 z-10 bg-white/95 dark:bg-[#0F1117]/95 backdrop-blur border-b border-[#E5E8EB] dark:border-[#2D3748] px-4 py-2">
+              <div className="max-w-2xl mx-auto space-y-1">
+                {messages
+                  .filter((m) => m.pinned)
+                  .map((m, i) => (
+                    <div key={i} className="flex items-center gap-1.5 text-xs text-[#4E5968] dark:text-[#9CA3AF]">
+                      <span className="shrink-0">📌</span>
+                      <span className="truncate">{m.content}</span>
+                    </div>
+                  ))}
+              </div>
+            </div>
+          )}
           <div className="max-w-2xl mx-auto px-4 py-6 space-y-6">
             {messages.map((msg, i) => {
               if (msg.role === 'assistant' && msg.content === '') return null;
@@ -490,6 +519,17 @@ export default function ChatConversation({
                     >
                       {msg.content}
                     </div>
+                    {msg.role === 'assistant' && msg.id && (
+                      <button
+                        onClick={() => togglePin(msg.id!, !msg.pinned)}
+                        title={msg.pinned ? '핀 해제' : '핀 고정'}
+                        className={`self-start mt-0.5 inline-flex items-center gap-1 text-[11px] font-semibold transition-colors ${
+                          msg.pinned ? 'text-[#3182F6]' : 'text-[#B0B8C1] hover:text-[#3182F6]'
+                        }`}
+                      >
+                        📌 {msg.pinned ? '핀 해제' : '핀'}
+                      </button>
+                    )}
                     {msg.result && (
                       <button
                         onClick={() =>
