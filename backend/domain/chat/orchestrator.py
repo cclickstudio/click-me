@@ -120,8 +120,31 @@ _SIM_RESULT_EXTRACT_SYSTEM = (
     "- purchase_intent: 구매의도(1~5점)\n"
     "- click_intent_rate: 클릭 의향률(0~1 비율, 18% → 0.18)\n"
     "- rejection_rate: 거부율(0~1 비율, 30% → 0.3)\n"
+    "- product_category: 상품 카테고리(있을 때만, 예: 뷰티·식품)\n"
     "메시지에 없는 항목은 null로 두라."
 )
+
+
+def _copy_advice(reasons: list[str], brand: dict | None) -> str:
+    """약한 이유에 맞춘 구체적 카피 개선 방향(T10) — '개선하세요' 대신 원인·방향 제시."""
+    high_rej = any("거부율" in r for r in reasons)
+    low_pi = any("구매의도" in r for r in reasons)
+    cause: list[str] = []
+    direction: list[str] = []
+    if high_rej:
+        cause.append(
+            "거부율이 높을 때는 소구가 너무 직접적이거나 가격 언급이 과도한 경우가 많아요."
+        )
+        direction.append("가격·할인 전면 노출 대신 '경험·감성' 소구로 전환")
+    if low_pi:
+        cause.append("구매의도가 낮을 때는 혜택이 추상적이거나 차별점이 약한 경우가 많아요.")
+        direction.append("구체적 사용 상황·전후 변화로 베네핏을 또렷하게")
+    if brand and brand.get("target_audience"):
+        direction.append(f"타깃({brand['target_audience']})이 공감할 상황 묘사 추가")
+    parts = ["원인 분석:\n" + "\n".join(f"- {c}" for c in cause)] if cause else []
+    if direction:
+        parts.append("개선 방향:\n" + "\n".join(f"- {d}" for d in direction))
+    return "\n\n".join(parts)
 
 
 @dataclass
@@ -331,6 +354,7 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
         purchase_intent: float | None = None  # 1~5
         click_intent_rate: float | None = None  # 0~1
         rejection_rate: float | None = None  # 0~1
+        product_category: str | None = None  # KOBACO 벤치마크 대조용(있을 때만)
 
     # 생성 실행 입력 추출 스키마 — generator_node에서 question으로부터 채운다.
     class _GenInput(BaseModel):
@@ -572,16 +596,34 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
             reasons.append(f"구매의도 {m.purchase_intent:.1f}/5 (목표 {_TARGET_PI})")
         if m.rejection_rate is not None and m.rejection_rate >= _HIGH_REJECTION:
             reasons.append(f"거부율 {m.rejection_rate * 100:.0f}%")
+        # KOBACO 벤치마크 — 카테고리가 있으면 업계 평균과 자동 대조(T08).
+        bench_line = ""
+        if m.product_category:
+            from domain.simulation.assistant.tools import (  # noqa: PLC0415
+                fetch_kobaco_benchmark,
+            )
+
+            b = fetch_kobaco_benchmark(m.product_category)
+            if b.get("found") and m.purchase_intent is not None:
+                diff = m.purchase_intent - b["purchase_intent"]
+                sign = "+" if diff >= 0 else ""
+                bench_line = (
+                    f"\n\n{b['category']} 카테고리 평균(구매의도 {b['purchase_intent']}) "
+                    f"대비 {sign}{diff:.1f}."
+                )
         # 개선 루프 — 약하면 왕복 카운트 확인 후 HITL approval 제안, 충분하면 종료.
         loop = get_loop_state(state.get("session_id"))
+        brand = state.get("brand")
         if reasons:
             loop.phase = "sim_done"
             loop.weak_reasons = reasons
             if loop.loop_count < MAX_LOOP:
+                advice = _copy_advice(reasons, brand)
                 answer = (
-                    f"결과가 다소 약해요 — {', '.join(reasons)}.\n\n"
+                    f"결과가 다소 약해요 — {', '.join(reasons)}.{bench_line}\n\n"
+                    f"{advice}\n\n"
                     f"개선 시안을 만들어볼까요? (왕복 {loop.loop_count + 1}/{MAX_LOOP})"
-                )
+                ).replace("\n\n\n\n", "\n\n")
                 meta = {
                     "source": "simulation",
                     "label": "결과 분석 · 개선 제안",
@@ -607,7 +649,9 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
                 }
         else:
             loop.phase = "finished"
-            answer = "목표 도달이에요(구매의도·거부율 충족). 이대로 집행을 검토해도 좋아요."
+            answer = (
+                "목표 도달이에요(구매의도·거부율 충족). 이대로 집행을 검토해도 좋아요." + bench_line
+            )
             meta = {
                 "source": "simulation",
                 "label": "결과 분석 · 목표 도달",

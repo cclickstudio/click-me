@@ -65,7 +65,32 @@ def build_graph(settings, retriever, llm):
         except Exception:  # noqa: BLE001 — KB 미적재면 빈 결과로 진행(결과 도구만으로 답)
             return []
 
-    read_tools = [list_simulations, get_simulation_result, search_kb]
+    @tool
+    async def fetch_project_sim_patterns(project_id: str, limit: int = 20) -> dict:
+        """프로젝트의 약한 시뮬 결과(거부율 높음·구매의도 낮음)의 공통 패턴을 집계한다.
+        '거부율 높은 광고들 공통점 찾아줘' 류 질문에 쓴다. project_id는 시드 값을 넣는다."""
+        return await sim_tools.fetch_project_sim_patterns(project_id, limit)
+
+    @tool
+    async def fetch_project_summary(project_id: str, period: str = "month") -> dict:
+        """프로젝트 시뮬들의 기간 집계(평균 KPI·최고/최저 결과)를 조회한다.
+        '이번 달 시뮬 중 뭐가 제일 잘 나왔어' 류 질문에 쓴다. project_id는 시드 값을 넣는다."""
+        return await sim_tools.fetch_project_summary(project_id, period)
+
+    @tool
+    async def fetch_kobaco_benchmark(category: str) -> dict:
+        """카테고리별 KOBACO 업계 평균 KPI를 조회한다(구매의도·클릭의향률·거부율).
+        '뷰티 평균 대비 어때' 류 업계 대조 질문에 쓴다."""
+        return sim_tools.fetch_kobaco_benchmark(category)
+
+    read_tools = [
+        list_simulations,
+        get_simulation_result,
+        search_kb,
+        fetch_project_sim_patterns,
+        fetch_project_summary,
+        fetch_kobaco_benchmark,
+    ]
     bound = llm.bind_tools(read_tools)
     by_name = {t.name: t for t in read_tools}
 
