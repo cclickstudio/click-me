@@ -7,6 +7,7 @@ import AppLayout from '@/components/AppLayout';
 import { useProjects } from '@/components/ProjectContext';
 import { api } from '@/lib/api';
 import { saveSimResult } from '@/lib/simResultStore';
+import { getJobs, setSimJob } from '@/lib/runningJobs';
 import { SIM_CATEGORIES } from '@/lib/simCategories';
 import type { SimRunResult, SSEProgressEvent } from '@/lib/types';
 
@@ -107,6 +108,11 @@ export default function SimulationRunPage() {
   useEffect(() => () => esRef.current?.close(), []);
 
   async function run() {
+    // 동시실행 제한 — 시뮬은 한 번에 하나(채팅 위젯과 store 공유).
+    if (getJobs().sim) {
+      setError('이미 다른 시뮬레이션이 진행 중이에요. 끝난 뒤 다시 시도하세요.');
+      return;
+    }
     setError(null);
     setPct(0);
     setStageMsg('');
@@ -142,6 +148,8 @@ export default function SimulationRunPage() {
           typeof serviceClass === 'number' ? serviceClass : undefined,
       });
 
+      setSimJob(run_id); // 동시실행 슬롯 점유(시뮬 1개 제한)
+
       const es = api.simulation.stream(run_id);
       esRef.current = es;
 
@@ -164,6 +172,7 @@ export default function SimulationRunPage() {
           setError(data.message ?? '시뮬레이션 진행 중 오류');
           es.close();
           esRef.current = null;
+          setSimJob(null); // 동시실행 슬롯 해제
           setStep('setup');
           return;
         }
@@ -177,6 +186,7 @@ export default function SimulationRunPage() {
           setPct(100);
           es.close();
           esRef.current = null;
+          setSimJob(null); // 동시실행 슬롯 해제
           api.simulation
             .result(run_id)
             .then((r: SimRunResult) => {
@@ -201,10 +211,12 @@ export default function SimulationRunPage() {
           setError('스트림 연결이 끊겼습니다.');
           es.close();
           esRef.current = null;
+          setSimJob(null); // 동시실행 슬롯 해제
           setStep('setup');
         }
       };
     } catch (e) {
+      setSimJob(null); // 동시실행 슬롯 해제
       setError(e instanceof Error ? e.message : '시뮬레이션 실행 실패');
       setStep('setup');
     }

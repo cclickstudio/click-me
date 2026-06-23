@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import AppLayout from "@/components/AppLayout";
 import { useProjects } from "@/components/ProjectContext";
 import { api } from "@/lib/api";
+import { getJobs, setGenJob } from "@/lib/runningJobs";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 import type {
@@ -742,6 +743,7 @@ export default function GeneratorPage() {
   // SSE 구독 — 시작/복원 공용. 완료·실패 시 localStorage 정리.
   function subscribe(generationId: string) {
     esRef.current?.close();
+    setGenJob(generationId); // 동시실행 슬롯 점유(제너 1개 제한, 채팅 위젯과 store 공유)
     const es = api.generator.stream(generationId);
     esRef.current = es;
     es.onmessage = async (e) => {
@@ -751,6 +753,7 @@ export default function GeneratorPage() {
       } else if (data.event === "completed") {
         es.close();
         localStorage.removeItem(ACTIVE_GEN_KEY);
+        setGenJob(null); // 동시실행 슬롯 해제
         try {
           const d = (await api.generator.detail(generationId)) as GenerationDetail;
           setDetail(d);
@@ -762,6 +765,7 @@ export default function GeneratorPage() {
       } else if (data.event === "error") {
         es.close();
         localStorage.removeItem(ACTIVE_GEN_KEY);
+        setGenJob(null); // 동시실행 슬롯 해제
         setError(data.message ?? "광고 생성에 실패했습니다.");
         setPhase("idle");
       }
@@ -769,6 +773,7 @@ export default function GeneratorPage() {
     es.onerror = () => {
       es.close();
       localStorage.removeItem(ACTIVE_GEN_KEY);
+      setGenJob(null); // 동시실행 슬롯 해제
       setError("진행 상태 연결이 끊어졌습니다. 다시 시도해주세요.");
       setPhase("idle");
     };
@@ -849,6 +854,11 @@ export default function GeneratorPage() {
 
   async function startGeneration() {
     setError("");
+    // 동시실행 제한 — 제너는 한 번에 하나(채팅 위젯과 store 공유).
+    if (getJobs().gen) {
+      setError("이미 다른 광고 생성이 진행 중이에요. 끝난 뒤 다시 시도하세요.");
+      return;
+    }
     // 생성 내역이 프로젝트에 기록되도록 활성 프로젝트를 강제 — 미선택 시 차단(내역 누락 방지).
     if (!selectedProject) {
       setError("생성 내역을 저장할 프로젝트를 먼저 선택하세요.");
