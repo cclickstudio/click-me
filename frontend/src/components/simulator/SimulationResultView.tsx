@@ -269,7 +269,7 @@ export function SimulationResultView({
                   <img
                     src={result.ad_asset_url}
                     alt='광고 크리에이티브'
-                    className='mb-4 w-full max-h-72 object-contain rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-[#F9FAFB] dark:bg-[#11151F]'
+                    className='mb-4 h-auto max-h-56 w-full object-contain rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-[#F9FAFB] dark:bg-[#11151F]'
                   />
                 )}
                 <div className='grid grid-cols-2 md:grid-cols-4 gap-3 text-sm'>
