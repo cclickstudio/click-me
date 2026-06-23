@@ -23,13 +23,15 @@ export interface DeliveryCause {
   code: string;
   message: string;
   need_krw?: number;
-  balance_krw?: number;
+  balance_krw?: number; // Meta 선불 잔액(실광고비)
+  credit_krw?: number; // ClickMe 크레딧 잔액(예산 한도)
   commit_krw?: number;
 }
 export interface ActivateResponse {
   serving: boolean;
   result: { status?: string; failure_reason?: string | null } | null;
-  balance_krw: number;
+  balance_krw: number; // Meta 선불 잔액(실광고비)
+  credit_krw?: number; // ClickMe 크레딧 잔액(예산 한도)
   commit_krw: number;
   causes: DeliveryCause[];
   error_message?: string;
@@ -47,6 +49,19 @@ export interface PauseResponse {
   paused: boolean;
   result: { status?: string; failure_reason?: string | null } | null;
   error_message?: string;
+}
+// 실 캠페인 성과 이상 스캔
+export interface AnomalyScanItem {
+  campaign_id: string;
+  name: string;
+  state: string;
+  diagnosis: { anomaly_type: string; hypothesis?: string } & Record<string, unknown>;
+}
+export interface AnomalyScanResponse {
+  source: string;
+  scanned: number;
+  anomalies: AnomalyScanItem[];
+  note?: string;
 }
 export interface SyncResponse {
   campaign_id: string;
@@ -143,10 +158,18 @@ function buildSimForm(input: SimRunInput): FormData {
 }
 
 // 캠페인 조회 쿼리스트링 — 전환가치·목표 ROAS는 입력됐을 때만 붙인다.
-function _campaignQuery(conversionValueKrw?: number | null, targetRoas?: number | null): string {
+// 조회 기간 토글 — 전체 누적(maximum) / 최근 30일 / 이번 달. Ads Manager와 맞추기용.
+export type DatePreset = "maximum" | "last_30d" | "this_month";
+
+function _campaignQuery(
+  conversionValueKrw?: number | null,
+  targetRoas?: number | null,
+  datePreset?: DatePreset,
+): string {
   const p = new URLSearchParams();
   if (conversionValueKrw) p.set("conversion_value_krw", String(conversionValueKrw));
   if (targetRoas) p.set("target_roas", String(targetRoas));
+  if (datePreset && datePreset !== "maximum") p.set("date_preset", datePreset);
   const q = p.toString();
   return q ? `?${q}` : "";
 }
@@ -326,6 +349,14 @@ export const api = {
     complete: () => `${API_BASE}/api/chat/complete`,
     sessions: () => request<{ sessions: unknown[] }>("/chat/sessions"),
     messages: (sessionId: string) => request(`/chat/sessions/${sessionId}/messages`),
+    // 어시스턴트 답변 피드백(좋아요/싫어요) — RAG 품질 개선 적재.
+    feedback: (body: {
+      thread_id?: string;
+      rating?: number;
+      question?: string;
+      answer?: string;
+      failure_type?: string;
+    }) => request("/chat/feedback", { method: "POST", body: JSON.stringify(body) }),
   },
 
   inquiries: {
@@ -407,13 +438,27 @@ export const api = {
         age_max: number;
       }>("/management/campaign-policy"),
     // conversionValueKrw(전환 가치)→추정 ROAS, targetRoas(목표)→목표 미달 판정.
-    campaigns: (conversionValueKrw?: number | null, targetRoas?: number | null) =>
+    campaigns: (
+      conversionValueKrw?: number | null,
+      targetRoas?: number | null,
+      datePreset?: DatePreset,
+    ) =>
       request<CampaignsResponse>(
-        `/management/campaigns${_campaignQuery(conversionValueKrw, targetRoas)}`,
+        `/management/campaigns${_campaignQuery(conversionValueKrw, targetRoas, datePreset)}`,
       ),
-    campaign: (id: string, conversionValueKrw?: number | null, targetRoas?: number | null) =>
+    campaign: (
+      id: string,
+      conversionValueKrw?: number | null,
+      targetRoas?: number | null,
+      datePreset?: DatePreset,
+    ) =>
       request<CampaignDetail>(
-        `/management/campaigns/${id}${_campaignQuery(conversionValueKrw, targetRoas)}`,
+        `/management/campaigns/${id}${_campaignQuery(conversionValueKrw, targetRoas, datePreset)}`,
+      ),
+    // 실 캠페인 성과 이상 스캔 — live에서 캠페인별 성과 진단(ROAS 미달 등)을 모아 반환.
+    anomalyScan: (targetRoas?: number | null) =>
+      request<AnomalyScanResponse>(
+        `/management/anomaly/scan${targetRoas ? `?target_roas=${targetRoas}` : ""}`,
       ),
     campaignPlatforms: (id: string) =>
       request<PlatformsResponse>(`/management/campaigns/${id}/platforms`),

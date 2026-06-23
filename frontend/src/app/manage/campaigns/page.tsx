@@ -6,6 +6,7 @@ import AppLayout from '@/components/AppLayout';
 import { api } from '@/lib/api';
 import { CampaignTable } from '@/components/manage/campaigns/CampaignTable';
 import { CampaignCards } from '@/components/manage/campaigns/CampaignCards';
+import { OriginLegend } from '@/components/manage/ValueOrigin';
 import type {
   AccountWallet,
   CampaignDetail as Detail,
@@ -342,7 +343,7 @@ export default function Page() {
           </p>
         )}
 
-        {/* 계정 지갑 — 일일예산(하루 상한)과 다른 '실제 충전·지출·잔액' (부가세 별도). 전환가치·목표ROAS 입력 동거. */}
+        {/* 계정 지갑 — 일예산(하루 상한)과 다른 '실제 충전·지출·잔액' (부가세 별도). 전환가치·목표ROAS 입력 동거. */}
         {source === 'live' && account && (
           <div className="mb-4 rounded-xl border border-[#E5E8EB] bg-white px-4 py-3.5 dark:border-[#2D3748] dark:bg-[#1A1F28]">
             <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
@@ -351,7 +352,7 @@ export default function Page() {
                   계정 지갑
                 </span>
                 <span className="text-[15px] text-[#191F28] dark:text-[#F2F4F6]">
-                  사용 가능 잔액{' '}
+                  선불 잔액{' '}
                   <b className="tabular-nums">
                     ₩{(account.available_balance_krw ?? 0).toLocaleString()}
                   </b>
@@ -376,7 +377,7 @@ export default function Page() {
               </div>
             </div>
             <p className="mt-2 text-[13px] text-[#8B95A1]">
-              일일예산은 “하루 상한”일 뿐, 실제 돈은 위 잔액입니다. 충전액은 광고비 + 부가세 10%
+              일예산은 “하루 상한”일 뿐, 실제 돈은 위 잔액입니다. 충전액은 광고비 + 부가세 10%
               (예: 광고로 ₩10,000 쓰려면 ₩11,000 충전).
             </p>
             <p className="mt-1 text-[13px] text-[#8B95A1]">
@@ -389,6 +390,7 @@ export default function Page() {
 
         {!busy && !error && campaigns.length > 0 && (
           <div className="space-y-4">
+            <OriginLegend />
             {/* 입력은 둘뿐 — CVR·ROAS는 이 값으로 계산되는 결과(직접 입력 아님) */}
             <div className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] px-4 py-3">
               <label className="flex items-center gap-2 text-sm text-[#4E5968] dark:text-[#9CA3AF]">

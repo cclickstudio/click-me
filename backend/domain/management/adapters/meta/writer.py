@@ -4,9 +4,9 @@
 모드별 의미 (게이팅 §2):
   DRY_RUN          — 요청 빌드만, 미전송 (합성 결과 반환)
   VALIDATE_ONLY    — execution_options=['validate_only']로 실전송, 실제 변경 없음
-  LIVE             — 실제 변경. 코드 경로는 존재하나 executor 허용 모드 밖이라 봉인됨.
-LIVE 봉인은 executor.DEFAULT_ALLOWED_MODES + use_mock 이중 게이트가 담당한다.
-create_campaign(신규 캠페인 생성, PR2)은 v1에서 PAUSED 상태 객체 생성까지만 (§7 좁히기).
+  LIVE             — 실제 변경(실 게재·실과금). 실 게재 단계 진입으로 정식 허용(§7 갱신).
+LIVE 실집행 게이트는 use_mock=False + management_execution_mode=live opt-in이 담당한다.
+create_campaign(신규 캠페인 생성)은 PAUSED 상태 객체 생성까지 — 게재는 별도 활성화(activate).
 """
 
 from __future__ import annotations

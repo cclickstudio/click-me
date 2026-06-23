@@ -23,8 +23,10 @@ export type CampaignKpi = {
   target_roas?: number | null; // 고객이 입력한 목표 ROAS (없으면 null)
   target_missed?: boolean; // 실제 ROAS가 목표 대비 미달(목표×0.7 미만)이면 true
   conversion_tracking?: boolean; // 실모드에서 전환 추적 여부 (false면 cvr/conversions=null)
-  frequency: number;
-  pacing_pct: number;
+  frequency: number; // 조회기간 윈도 빈도(표시용)
+  frequency_7d: number; // 최근 7일 빈도(노출 피로 판정용) — 조회기간 토글과 무관
+  spend_today_krw: number; // 오늘 지출(소진율 분자) — 총 지출(spend_krw, 조회기간 누적)과 구분
+  pacing_pct: number; // 오늘 지출÷일예산(%) — 조회기간 토글과 무관
 };
 
 // 규칙 하나 — conversions null(추적 미설정)=「미설정」, 그 외는 측정값 표기(구매 0이면 0.0%/0.00x).
@@ -58,9 +60,9 @@ export type CampaignSummary = CampaignKpi & {
 export type ManualKpi = { cvr?: number; roas?: number }; // cvr=% , roas=배수
 export type ManualKpiMap = Record<string, ManualKpi>;
 
-// 계정 지갑 — 일일예산과 다른 '실제 충전·지출·잔액'(부가세 별도, KRW)
+// 계정 지갑 — 일예산과 다른 '실제 충전·지출·잔액'(부가세 별도, KRW)
 export type AccountWallet = {
-  available_balance_krw?: number | null; // 사용 가능 잔액
+  available_balance_krw?: number | null; // 선불 잔액
   spend_cap_krw?: number | null; // 지출 한도(선불 충전액, 부가세 제외)
   amount_spent_krw?: number | null; // 누적 지출(광고 집행분)
 };

@@ -12,6 +12,7 @@ import type {
 } from './types';
 import { fmtCvr, fmtRoas } from './types';
 import { StateBadge } from './StateBadge';
+import { OriginTag } from '../ValueOrigin';
 import { CampaignDetail } from './CampaignDetail';
 import { KpiInput } from './KpiInput';
 
@@ -131,7 +132,10 @@ export function CampaignCards({
             </div>
             <div className="mt-3">
               <div className="flex items-center justify-between text-[12px] text-[#8B95A1] mb-1">
-                <span title="하루 상한(일일예산) 대비 지출 — 총액 아님">일예산 소진(하루 상한)</span>
+                <span title="하루 상한(일예산) 대비 지출 — 총액 아님">
+                  소진율(하루 상한)
+                  <OriginTag origin="computed" />
+                </span>
                 {c.state === 'ended' ? (
                   <span className="tabular-nums">종료</span>
                 ) : (

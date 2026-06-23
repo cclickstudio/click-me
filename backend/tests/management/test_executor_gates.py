@@ -182,7 +182,8 @@ async def test_tampered_proposal_hash_detected():
     assert writer.calls == []
 
 
-async def test_live_mode_is_disabled():
+async def test_live_mode_is_allowed():
+    # 실 게재 단계 — LIVE 봉인 해제. LIVE 액션이 막히지 않고 writer에 도달한다.
     writer = FakeWriter()
     executor, _, _, _ = build_executor(writer)
     proposal = make_proposal()
@@ -190,8 +191,8 @@ async def test_live_mode_is_disabled():
 
     result = await executor.execute(action, proposal)
 
-    assert result.failure_reason is FailureReason.EXECUTION_MODE_DISABLED
-    assert writer.calls == []
+    assert result.failure_reason is not FailureReason.EXECUTION_MODE_DISABLED
+    assert writer.calls != []
 
 
 async def test_budget_hardcap_blocks_spend():

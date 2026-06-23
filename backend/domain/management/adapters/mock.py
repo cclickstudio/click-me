@@ -229,12 +229,19 @@ class MockAdPlatform:
 
         # AUDIENCE_TOO_NARROW = 타겟 모수를 크게 줄여 reach 조기 포화 → frequency 폭등
         audience = AUDIENCE_SIZE
+        cum_impressions = 0.0  # 다중일 누적 노출 베이스라인 (이전 날들의 reach 포화 반영)
         if mode == FaultMode.AUDIENCE_TOO_NARROW:
-            audience = 1_500  # 하루 누적 노출(~8천) 대비 작아 frequency가 5+로 치솟음
+            # 빈도 피로는 단일일이 아니라 수일 누적으로 발생한다. 현실적으로 좁은 모수(3만)에
+            # 이전 날들 누적 노출(모수×3 ≈ 9만)을 베이스라인으로 깔아, 관측일을 '모수를 이미 3회
+            # 회전한 성숙 캠페인 일자'로 둔다 → 오늘 frequency 3+ 관측(다중일 포화 반영).
+            audience = 30_000
+            cum_impressions = audience * 3.0
 
         snapshots: list[MetricsSnapshot] = []
-        cum_impressions = 0.0
         prev_frequency = 1.0
+        if cum_impressions > 0:  # 베이스라인 누적이 있으면 초기 빈도도 그에 맞춰 시작
+            _reach0 = audience * (1 - math.exp(-cum_impressions / audience))
+            prev_frequency = cum_impressions / _reach0 if _reach0 > 0 else 1.0
 
         for hour in range(24):
             cpm = CPM_ANCHOR_KRW * self._rng.uniform(0.92, 1.08)
