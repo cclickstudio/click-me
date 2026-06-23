@@ -85,6 +85,7 @@ class GenerationRow(BaseModel):
     id: str
     status: str
     product_name: str | None
+    mode: str  # create | improve (input JSONB에서 읽음)
     project_name: str | None
     created_by_name: str | None
     created_at: datetime
@@ -610,6 +611,7 @@ async def list_company_generations(
             id=str(r.id),
             status=r.status,
             product_name=(r.input or {}).get("product_name") if r.input else None,
+            mode=(r.input or {}).get("mode", "create") if r.input else "create",
             project_name=r.project_name,
             created_by_name=r.created_by_name,
             created_at=r.created_at,

@@ -22,9 +22,17 @@ from core.models import AdCampaignLog, AdGeneration, AdGenerationCandidate, AdPu
 from core.tracing import make_trace_config
 from domain.generator.adapters.instagram import build_publisher
 from domain.generator.adapters.meta_ads import AdvertiseRequest, build_ads_publisher
+from domain.generator.contracts.enums import TemplateType
 from domain.generator.contracts.schemas import GenerationCreateRequest
 from domain.generator.graph.pipeline import generation_graph
-from tools.storage.s3 import download_bytes, presign_get, publish_key, upload_bytes
+from domain.generator.pipeline.relayout import render_platform
+from tools.storage.s3 import (
+    candidate_base_key,
+    download_bytes,
+    presign_get,
+    publish_key,
+    upload_bytes,
+)
 
 logger = logging.getLogger("clickme")
 
@@ -279,6 +287,51 @@ async def get_detail(generation_id: str) -> dict | None:
             for log in publish_logs
         ],
     }
+
+
+async def render_candidate(candidate_id: str, platform: str) -> bytes | None:
+    """후보를 지정 플랫폼 사이즈로 리레이아웃해 PNG bytes 반환 (LLM 재호출 없음).
+
+    base(텍스트 없는 원본)·카피·브랜드를 DB/S3에서 조회해 PIL로 재구성.
+    base가 없으면(과거 생성물) None — 신규 생성물부터 지원.
+    """
+    try:
+        cid = uuid.UUID(candidate_id)
+    except ValueError:
+        return None
+
+    async with AsyncSessionLocal() as session:
+        candidate = await session.get(AdGenerationCandidate, cid)
+        if candidate is None:
+            return None
+        generation = await session.get(AdGeneration, candidate.generation_id)
+        gen_input = (generation.input or {}) if generation else {}
+        idx = candidate.idx
+        gen_id = str(candidate.generation_id)
+        copy = candidate.copy or {}
+        template_id = candidate.template_id
+
+    try:
+        base_bytes = await download_bytes(candidate_base_key(gen_id, idx))
+    except Exception:
+        return None  # base 없음(과거 생성물) → 리레이아웃 미지원
+
+    logo_bytes: bytes | None = None
+    logo_key = gen_input.get("brand_logo_s3_key")
+    if logo_key:
+        with suppress(Exception):
+            logo_bytes = await download_bytes(logo_key)
+
+    return render_platform(
+        base_bytes,
+        headline=copy.get("headline", ""),
+        body=copy.get("body", ""),
+        cta=copy.get("cta", ""),
+        template=TemplateType(template_id),
+        platform=platform,
+        brand_color=gen_input.get("brand_color"),
+        logo_bytes=logo_bytes,
+    )
 
 
 async def select_candidate(generation_id: str, candidate_id: str) -> bool:

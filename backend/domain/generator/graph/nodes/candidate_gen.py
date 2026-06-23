@@ -15,14 +15,17 @@ import uuid
 from langchain_core.runnables import RunnableConfig
 
 from core.config import settings
-from domain.generator.contracts.enums import AdSize
+from domain.generator.contracts.enums import AdSize, TemplateType
 from domain.generator.contracts.pipeline_schemas import (
+    AdCopy,
     ProductAnalysis,
     StrategyOutput,
     StrategyPlan,
 )
 from domain.generator.graph.nodes import emit_progress
 from domain.generator.graph.state import GenerationState
+from domain.generator.pipeline.carousel import render_carousel_slide
+from domain.generator.pipeline.carousel_copy import generate_carousel_copy
 from domain.generator.pipeline.copy_generator import generate_copies_batch
 from domain.generator.pipeline.image_generator import (
     composite_logo,
@@ -32,7 +35,7 @@ from domain.generator.pipeline.image_generator import (
 from domain.generator.pipeline.multimodal_generator import generate_image_and_copy
 from domain.generator.pipeline.quality_checker import check_quality
 from domain.generator.pipeline.text_overlay import render_ad_text
-from tools.storage.s3 import candidate_key, download_bytes, upload_bytes
+from tools.storage.s3 import candidate_base_key, candidate_key, download_bytes, upload_bytes
 
 logger = logging.getLogger("clickme")
 
@@ -44,6 +47,84 @@ def _map_ad_size(width: int, height: int) -> AdSize:
     if width == height:
         return AdSize.SQUARE
     return AdSize.LANDSCAPE if width > height else AdSize.PORTRAIT
+
+
+async def _generate_carousel(
+    config: RunnableConfig,
+    *,
+    generation_id: str,
+    product_analysis: ProductAnalysis,
+    plan: StrategyPlan,
+    gen_size: AdSize,
+    width: int,
+    height: int,
+    brand_color: str | None,
+    tone: str | None,
+    product_cutout_bytes: bytes | None,
+    logo_image_bytes: bytes | None,
+) -> dict:
+    """캐러셀 — 공통 배경 1장 생성 후 슬라이드별 PIL 텍스트로 5장 구성."""
+    emit_progress(config, "candidates", 45, "캐러셀 배경 생성 중...")
+    bg_bytes = await generate_image(
+        product_analysis=product_analysis,
+        strategy=plan.strategy,
+        template=TemplateType.A,
+        size=gen_size,
+        brand_color=brand_color,
+        tone=tone,
+        product_cutout_bytes=product_cutout_bytes,
+        headline="",
+        body="",
+        cta="",
+    )
+
+    emit_progress(config, "candidates", 60, "캐러셀 카피 생성 중...")
+    slides = (await generate_carousel_copy(product_analysis)).slides[:5]
+    if not slides:
+        raise RuntimeError("캐러셀 카피 생성 실패")
+    total = len(slides)
+
+    candidates: list[dict] = []
+    qa_results: list[dict] = []
+    for idx, slide in enumerate(slides):
+        slide_img = render_carousel_slide(bg_bytes, slide, idx + 1, total, brand_color)
+        if logo_image_bytes is not None:
+            slide_img = composite_logo(slide_img, logo_image_bytes, TemplateType.A)
+
+        s3_key = candidate_key(generation_id, idx)
+        await upload_bytes(slide_img, s3_key, content_type="image/png")
+        # 공통 배경을 슬라이드별 base로도 저장 → 슬라이드 리레이아웃 지원
+        await upload_bytes(
+            bg_bytes, candidate_base_key(generation_id, idx), content_type="image/png"
+        )
+
+        qa = check_quality(
+            ad_copy=AdCopy(headline=slide.headline, body=slide.body, cta=slide.cta or "보기"),
+            target=product_analysis.target_audience,
+        )
+        qa_results.append(qa.model_dump())
+        candidates.append(
+            {
+                "candidate_id": str(uuid.uuid4()),
+                "idx": idx,
+                "strategy": {
+                    "strategy_type": plan.strategy.value,
+                    "strategy_description": slide.role,
+                    "rationale": f"캐러셀 {idx + 1}/{total} — {slide.role}",
+                },
+                "template_id": TemplateType.A.value,
+                "copy": {"headline": slide.headline, "body": slide.body, "cta": slide.cta or ""},
+                "image_prompt": None,
+                "s3_key": s3_key,
+                "requested_size": f"{width}x{height}",
+                "rationale": slide.role,
+            }
+        )
+        emit_progress(
+            config, "candidates", 60 + (idx + 1) * 7, f"캐러셀 슬라이드 {idx + 1}/{total}"
+        )
+
+    return {"candidates": candidates, "qa_results": qa_results}
 
 
 async def generate_candidates(state: GenerationState, config: RunnableConfig) -> dict:
@@ -79,6 +160,22 @@ async def generate_candidates(state: GenerationState, config: RunnableConfig) ->
         except Exception:
             logger.exception("상품 누끼 실패 — 상품 없이 일반 생성으로 진행")
             product_cutout_bytes = None
+
+    # 캐러셀(카드뉴스) — 공통 배경 1장 + 슬라이드별 PIL 텍스트 (단일 흐름과 분기)
+    if req.get("format") == "carousel":
+        return await _generate_carousel(
+            config,
+            generation_id=generation_id,
+            product_analysis=product_analysis,
+            plan=plans[0],
+            gen_size=gen_size,
+            width=width,
+            height=height,
+            brand_color=brand_color,
+            tone=tone,
+            product_cutout_bytes=product_cutout_bytes,
+            logo_image_bytes=logo_image_bytes,
+        )
 
     # 카피 3개를 LLM 1회 호출로 일괄 생성 (pipeline 모드일 때만).
     # multimodal + 상품 이미지 없는 경우는 generate_image_and_copy 내부에서 카피를 만든다.
@@ -130,7 +227,14 @@ async def generate_candidates(state: GenerationState, config: RunnableConfig) ->
                 cta=ad_copy.cta,
             )
 
-        # 3. 카피 텍스트를 PIL로 렌더 (AI는 텍스트 미생성 — 잘림·오탈자 방지)
+        # 3. 텍스트 없는 base 이미지를 별도 저장 — 플랫폼별 리레이아웃 렌더의 원본
+        base_key = candidate_base_key(generation_id, idx)
+        try:
+            await upload_bytes(image_bytes, base_key, content_type="image/png")
+        except Exception:
+            logger.exception("base 이미지 업로드 실패: key=%s", base_key)
+
+        # 4. 카피 텍스트를 PIL로 렌더 (AI는 텍스트 미생성 — 잘림·오탈자 방지)
         image_bytes = render_ad_text(
             image_bytes,
             headline=ad_copy.headline,
@@ -140,14 +244,14 @@ async def generate_candidates(state: GenerationState, config: RunnableConfig) ->
             brand_color=brand_color,
         )
 
-        # 4. 품질검증 (순수 동기 함수)
+        # 5. 품질검증 (순수 동기 함수)
         quality_report = check_quality(ad_copy=ad_copy, target=product_analysis.target_audience)
 
-        # 5. 로고 합성 (brand_logo_s3_key 제공 시)
+        # 6. 로고 합성 (brand_logo_s3_key 제공 시)
         if logo_image_bytes is not None:
             image_bytes = composite_logo(image_bytes, logo_image_bytes, plan.template)
 
-        # 6. S3 업로드
+        # 7. S3 업로드
         s3_key = candidate_key(generation_id, idx)
         try:
             await upload_bytes(image_bytes, s3_key, content_type="image/png")

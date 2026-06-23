@@ -6,6 +6,7 @@ import AppLayout from '@/components/AppLayout';
 import { getToken } from '@/lib/authApi';
 import { useProjects } from '@/components/ProjectContext';
 import { useAuth } from '@/components/AuthProvider';
+import ModeBadge from '@/components/ModeBadge';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
@@ -27,6 +28,7 @@ type ProductAnalysis = {
   benefits?: string[];
   target_audience?: string;
   objective?: string;
+  improvement_guidance?: string; // 개선모드: 이미지로 적용 어려운 개선점 가이드
 };
 
 type Strategy = {
@@ -97,8 +99,39 @@ function InputSection({ input }: { input: Record<string, unknown> }) {
   );
 }
 
-function CandidateCard({ candidate, isSelected }: { candidate: Candidate; isSelected: boolean }) {
+// 플랫폼별 리레이아웃 미리보기 — ig_feed는 원본, 그 외는 온디맨드 렌더 엔드포인트
+const PLATFORMS = [
+  { key: 'ig_feed', label: 'IG 피드', aspect: 'aspect-square' },
+  { key: 'ig_story', label: 'IG 스토리', aspect: 'aspect-[9/16]' },
+  { key: 'fb_feed', label: 'Facebook', aspect: 'aspect-[1200/628]' },
+  { key: 'linkedin', label: 'LinkedIn', aspect: 'aspect-[1200/627]' },
+] as const;
+
+// 후보 이미지 src — ig_feed는 원본(프록시), 그 외는 온디맨드 리레이아웃 렌더
+function candidateImageSrc(candidate: Candidate, platform: string): string | null {
+  const original = candidate.image_url
+    ? candidate.image_url.startsWith('/')
+      ? `${API_BASE}${candidate.image_url}`
+      : candidate.image_url
+    : null;
+  return platform === 'ig_feed'
+    ? original
+    : `${API_BASE}/api/generator/candidates/${candidate.candidate_id}/render?platform=${platform}`;
+}
+
+function CandidateCard({
+  candidate,
+  isSelected,
+  platform,
+  aspect,
+}: {
+  candidate: Candidate;
+  isSelected: boolean;
+  platform: string;
+  aspect: string;
+}) {
   const copy = candidate.copy;
+  const imgSrc = candidateImageSrc(candidate, platform);
   return (
     <div
       className={`rounded-2xl border overflow-hidden bg-white dark:bg-[#1C2333] ${
@@ -107,11 +140,11 @@ function CandidateCard({ candidate, isSelected }: { candidate: Candidate; isSele
           : 'border-[#E5E8EB] dark:border-[#2D3748]'
       }`}
     >
-      {candidate.image_url ? (
-        <div className="relative w-full aspect-square bg-[#F9FAFB] dark:bg-[#161B27]">
+      {imgSrc ? (
+        <div className={`relative w-full ${aspect} bg-[#F9FAFB] dark:bg-[#161B27]`}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={candidate.image_url.startsWith('/') ? `${API_BASE}${candidate.image_url}` : candidate.image_url}
+            src={imgSrc}
             alt={`광고 후보 ${candidate.idx + 1}`}
             className="w-full h-full object-contain"
           />
@@ -122,7 +155,7 @@ function CandidateCard({ candidate, isSelected }: { candidate: Candidate; isSele
           )}
         </div>
       ) : (
-        <div className="w-full aspect-square bg-[#F2F4F6] dark:bg-[#161B27] flex items-center justify-center">
+        <div className={`w-full ${aspect} bg-[#F2F4F6] dark:bg-[#161B27] flex items-center justify-center`}>
           <span className="text-sm text-[#B0B8C1]">이미지 없음</span>
         </div>
       )}
@@ -217,6 +250,76 @@ function StrategyCard({ s, idx }: { s: Strategy; idx: number }) {
   );
 }
 
+function CarouselViewer({
+  candidates,
+  platform,
+  aspect,
+}: {
+  candidates: Candidate[];
+  platform: string;
+  aspect: string;
+}) {
+  const slides = [...candidates].sort((a, b) => a.idx - b.idx);
+  const [i, setI] = useState(0);
+  const cur = Math.min(i, slides.length - 1);
+  const c = slides[cur];
+  const imgSrc = candidateImageSrc(c, platform);
+  const role = (c.strategy as { strategy_description?: string } | null)?.strategy_description;
+  return (
+    <div className="max-w-sm">
+      <div
+        className={`relative w-full ${aspect} rounded-2xl overflow-hidden border border-[#E5E8EB] dark:border-[#2D3748] bg-[#F9FAFB] dark:bg-[#161B27]`}
+      >
+        {imgSrc && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={imgSrc} alt={`슬라이드 ${cur + 1}`} className="w-full h-full object-contain" />
+        )}
+        {cur > 0 && (
+          <button
+            onClick={() => setI(cur - 1)}
+            className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/50 text-white flex items-center justify-center hover:bg-black/70"
+          >
+            ‹
+          </button>
+        )}
+        {cur < slides.length - 1 && (
+          <button
+            onClick={() => setI(cur + 1)}
+            className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/50 text-white flex items-center justify-center hover:bg-black/70"
+          >
+            ›
+          </button>
+        )}
+      </div>
+      <div className="mt-3 text-center">
+        <p className="text-xs text-[#8B95A1] dark:text-[#6B7280]">
+          슬라이드 {cur + 1} / {slides.length}
+          {role ? ` · ${role}` : ''}
+        </p>
+        {c.copy?.headline && (
+          <p className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6] mt-1">
+            {c.copy.headline}
+          </p>
+        )}
+        {c.copy?.body && (
+          <p className="text-xs text-[#4E5968] dark:text-[#9CA3AF] mt-1">{c.copy.body}</p>
+        )}
+      </div>
+      <div className="flex items-center justify-center gap-1.5 mt-3">
+        {slides.map((s, idx) => (
+          <button
+            key={s.candidate_id}
+            onClick={() => setI(idx)}
+            className={`w-2 h-2 rounded-full transition-colors ${
+              idx === cur ? 'bg-[#3182F6]' : 'bg-[#E5E8EB] dark:bg-[#2D3748]'
+            }`}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function GenerationDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
@@ -229,6 +332,7 @@ export default function GenerationDetailPage() {
   const [error, setError] = useState('');
   const [deleting, setDeleting] = useState(false);
   const [restoring, setRestoring] = useState(false);
+  const [platform, setPlatform] = useState<string>('ig_feed');
 
   // 인증 없이 접근 가능한 generator 엔드포인트 사용 (candidates + image_url 포함)
   useEffect(() => {
@@ -255,6 +359,8 @@ export default function GenerationDetailPage() {
   const isDeleted = !!(projectId && details[projectId]?.trashed.some(t => t.kind === 'gen' && t.id === id));
 
   const productName = data?.input?.product_name as string | undefined;
+  const isCarousel = (data?.input?.format as string | undefined) === 'carousel';
+  const aspect = PLATFORMS.find(p => p.key === platform)?.aspect ?? 'aspect-square';
   const st = data
     ? (statusStyle[data.status] ?? { bg: 'bg-gray-50', text: 'text-gray-600', label: data.status })
     : null;
@@ -302,6 +408,7 @@ export default function GenerationDetailPage() {
               <div>
                 {project && <p className="text-xs text-[#8B95A1] mb-1">{project.name}</p>}
                 <h1 className="text-2xl font-bold text-[#191F28] dark:text-[#F2F4F6] flex items-center gap-2">
+                  <ModeBadge mode={data.input?.mode as string | undefined} />
                   {productName ?? '제너레이터 상세'}
                   {isDeleted && (
                     <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-red-50 dark:bg-red-900/20 text-red-600">삭제됨</span>
@@ -358,18 +465,56 @@ export default function GenerationDetailPage() {
             {/* 생성된 광고 후보 */}
             {data.candidates && data.candidates.length > 0 && (
               <div className="mb-6">
-                <h2 className="text-base font-semibold text-[#191F28] dark:text-[#F2F4F6] mb-3">
-                  생성된 광고 후보 ({data.candidates.length}개)
-                </h2>
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {data.candidates.map(c => (
-                    <CandidateCard
-                      key={c.candidate_id}
-                      candidate={c}
-                      isSelected={c.candidate_id === data.selected_candidate_id}
-                    />
-                  ))}
+                <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
+                  <h2 className="text-base font-semibold text-[#191F28] dark:text-[#F2F4F6]">
+                    {isCarousel
+                      ? `카드뉴스 (${data.candidates.length}장)`
+                      : `생성된 광고 후보 (${data.candidates.length}개)`}
+                  </h2>
+                  {/* 플랫폼별 리레이아웃 미리보기 토글 */}
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {PLATFORMS.map(p => (
+                      <button
+                        key={p.key}
+                        onClick={() => setPlatform(p.key)}
+                        className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+                          platform === p.key
+                            ? 'bg-[#3182F6] text-white'
+                            : 'bg-[#F2F4F6] dark:bg-[#252D3D] text-[#4E5968] dark:text-[#9CA3AF] hover:text-[#3182F6]'
+                        }`}
+                      >
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
+                {isCarousel ? (
+                  <CarouselViewer candidates={data.candidates} platform={platform} aspect={aspect} />
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                    {data.candidates.map(c => (
+                      <CandidateCard
+                        key={c.candidate_id}
+                        candidate={c}
+                        isSelected={c.candidate_id === data.selected_candidate_id}
+                        platform={platform}
+                        aspect={aspect}
+                      />
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* 개선 적용 가이드 (개선모드) */}
+            {data.product_analysis?.improvement_guidance && (
+              <div className="bg-[#FFF8EF] dark:bg-[#2A2114] border border-[#FCD9A8] dark:border-[#5A4420] rounded-2xl p-6 mb-6">
+                <h2 className="text-base font-semibold text-[#B45309] dark:text-[#F0A84B] mb-3 flex items-center gap-2">
+                  💡 개선 적용 가이드
+                </h2>
+                <p className="text-sm text-[#7A5418] dark:text-[#E8C896] leading-relaxed whitespace-pre-wrap">
+                  {data.product_analysis.improvement_guidance}
+                </p>
               </div>
             )}
 
