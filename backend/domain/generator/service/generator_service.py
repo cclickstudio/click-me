@@ -10,6 +10,7 @@ import io
 import json
 import logging
 import uuid
+import zipfile
 from collections.abc import AsyncIterator
 from contextlib import suppress
 from urllib.parse import quote
@@ -287,6 +288,29 @@ async def get_detail(generation_id: str) -> dict | None:
             for log in publish_logs
         ],
     }
+
+
+async def download_zip(generation_id: str) -> bytes | None:
+    """생성 결과의 모든 후보 이미지를 ZIP으로 묶어 bytes 반환. 없으면 None."""
+    detail = await get_detail(generation_id)
+    if detail is None:
+        return None
+
+    candidates = [c for c in detail["candidates"] if c.get("s3_key")]
+    if not candidates:
+        return None
+
+    async def _fetch(s3_key: str) -> bytes:
+        return await download_bytes(s3_key)
+
+    images = await asyncio.gather(*[_fetch(c["s3_key"]) for c in candidates])
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for candidate, data in zip(candidates, images, strict=True):
+            filename = f"image_{candidate['idx'] + 1}.png"
+            zf.writestr(filename, data)
+    return buf.getvalue()
 
 
 async def render_candidate(candidate_id: str, platform: str) -> bytes | None:

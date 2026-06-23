@@ -131,6 +131,18 @@ function QualityBadge({ item, label }: { item: QualityCheckItem; label: string }
   );
 }
 
+async function downloadImage(imageUrl: string, filename: string) {
+  const url = imageUrl.startsWith("/") ? `${API_BASE}${imageUrl}` : imageUrl;
+  const res = await fetch(url);
+  const blob = await res.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = objectUrl;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(objectUrl);
+}
+
 function CandidateCard({
   candidate,
   onClick,
@@ -142,6 +154,9 @@ function CandidateCard({
 }) {
   const letter = VARIANT_LETTERS[candidate.idx] ?? String(candidate.idx + 1);
   const label = isCarousel ? `슬라이드 ${candidate.idx + 1}` : `${letter}안`;
+  const filename = isCarousel
+    ? `slide_${candidate.idx + 1}.png`
+    : `ad_${letter}.png`;
   return (
     <div
       className="bg-white dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748] rounded-2xl overflow-hidden cursor-pointer group flex hover:border-[#3182F6] hover:shadow-md transition-all"
@@ -163,6 +178,21 @@ function CandidateCard({
             {label}
           </span>
         </div>
+        {candidate.image_url && (
+          <button
+            type="button"
+            className="absolute top-2 right-2 bg-black/50 hover:bg-black/70 text-white rounded-full w-7 h-7 flex items-center justify-center transition-colors"
+            title="이미지 다운로드"
+            onClick={(e) => {
+              e.stopPropagation();
+              downloadImage(candidate.image_url!, filename);
+            }}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
+              <path d="M8 1a.75.75 0 0 1 .75.75v6.69l1.97-1.97a.75.75 0 1 1 1.06 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0L4.22 7.53a.75.75 0 0 1 1.06-1.06l1.97 1.97V1.75A.75.75 0 0 1 8 1ZM2.5 13.75a.75.75 0 0 1 .75-.75h9.5a.75.75 0 0 1 0 1.5h-9.5a.75.75 0 0 1-.75-.75Z" />
+            </svg>
+          </button>
+        )}
       </div>
       <div className="flex-1 p-5 flex flex-col justify-between min-w-0">
         <div className="space-y-2">
@@ -1622,6 +1652,27 @@ export default function GeneratorPage() {
               {/* 결과 (후보 세로 정렬) */}
               {phase === "done" && detail && (
                 <div className="flex flex-col gap-3">
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      className="flex items-center gap-1.5 text-xs text-[#4E5968] dark:text-[#9CA3AF] border border-[#E5E8EB] dark:border-[#2D3748] rounded-lg px-3 py-1.5 hover:border-[#3182F6] hover:text-[#3182F6] transition-colors"
+                      onClick={async () => {
+                        const res = await fetch(`${API_BASE}/api/generator/generations/${detail.generation_id}/download-zip`);
+                        const blob = await res.blob();
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement("a");
+                        a.href = url;
+                        a.download = `ads-${detail.generation_id.slice(0, 8)}.zip`;
+                        a.click();
+                        URL.revokeObjectURL(url);
+                      }}
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
+                        <path d="M8 1a.75.75 0 0 1 .75.75v6.69l1.97-1.97a.75.75 0 1 1 1.06 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0L4.22 7.53a.75.75 0 0 1 1.06-1.06l1.97 1.97V1.75A.75.75 0 0 1 8 1ZM2.5 13.75a.75.75 0 0 1 .75-.75h9.5a.75.75 0 0 1 0 1.5h-9.5a.75.75 0 0 1-.75-.75Z" />
+                      </svg>
+                      전체 ZIP 다운로드
+                    </button>
+                  </div>
                   {detail.candidates.map((c) => (
                     <CandidateCard
                       key={c.candidate_id}

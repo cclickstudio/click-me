@@ -268,6 +268,19 @@ async def get_generation(generation_id: str):
     return detail
 
 
+@router.get("/generations/{generation_id}/download-zip")
+async def download_generation_zip(generation_id: str):
+    """생성된 모든 후보 이미지를 ZIP으로 묶어 다운로드."""
+    data = await generator_service.download_zip(generation_id)
+    if data is None:
+        raise HTTPException(status_code=404, detail="다운로드할 이미지가 없습니다.")
+    return Response(
+        content=data,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="ads-{generation_id[:8]}.zip"'},
+    )
+
+
 # ── 플랫폼별 리레이아웃 (온디맨드 PIL 렌더, LLM 재호출 없음) ──────────────────
 
 
