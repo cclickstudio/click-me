@@ -211,6 +211,16 @@ def _has_brand_cue(text: str) -> bool:
     return any(c in text for c in _BRAND_CUES)
 
 
+# 배치 시뮬 — 새 광고 여러 버전을 한 번에 비교하려는 발화 단서(T11).
+def _is_batch_sim(text: str) -> bool:
+    t = text.replace(" ", "")
+    if t.startswith("/비교"):  # 기존 시뮬 비교(T14)는 별도 처리 — 충돌 방지
+        return False
+    has_compare = "비교" in t or "버전" in t or "a/b" in text.lower() or "ab테스트" in t
+    has_multi = "두광고" in t or "두개" in t or "여러" in t or "두버전" in t or "광고들" in t
+    return has_compare and has_multi
+
+
 def _is_brand_show(text: str) -> bool:
     """'브랜드 설정 보여줘' 류 — 현재 프로파일 출력 요청."""
     t = text.replace(" ", "")
@@ -736,6 +746,16 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
         sid = turn.session_id
         # 숏텀 메모리에서 윈도우 내역을 꺼내 노드에 전달(raw 전체 history 대신 최근 6턴).
         q = (turn.question or "").strip()
+        # 배치 시뮬 요청은 그래프 없이 바로 입력 위젯을 띄운다(광고 2개 비교).
+        if _is_batch_sim(q):
+            return ChatAnswer(
+                answer="여러 광고를 한 번에 비교할게요. 아래에 광고 2개를 입력하고 실행하세요.",
+                meta={
+                    "source": "simulation",
+                    "label": "배치 시뮬",
+                    "widget": {"type": "batch_sim_form"},
+                },
+            )
         # 브랜드 설정 조회 요청은 그래프 없이 바로 현재 프로파일을 출력.
         if _is_brand_show(q):
             brand = await history.get_brand_profile(turn.project_id)

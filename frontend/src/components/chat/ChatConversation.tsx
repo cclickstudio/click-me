@@ -9,6 +9,7 @@ import SimFormWidget from './SimFormWidget';
 import GenFormWidget from './GenFormWidget';
 import SimGenListWidget from './SimGenListWidget';
 import ApprovalWidget, { type ApprovalSpec } from './ApprovalWidget';
+import BatchSimWidget from './BatchSimWidget';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
@@ -482,6 +483,9 @@ export default function ChatConversation({
                         items={msg.meta.widget.data?.items ?? []}
                         onResult={handleSend}
                       />
+                    )}
+                    {msg.meta?.widget?.type === 'batch_sim_form' && (
+                      <BatchSimWidget projectId={projectId} />
                     )}
                     {msg.meta?.approval && (
                       <ApprovalWidget

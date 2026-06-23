@@ -173,6 +173,46 @@ async def chat_approve(body: ApproveRequest) -> StreamingResponse:
     )
 
 
+class BatchSimAd(BaseModel):
+    ad_title: str | None = None
+    ad_content: str
+    product_category: str | None = None
+    ad_objective: str | None = None
+
+
+class BatchSimRequest(BaseModel):
+    ads: list[BatchSimAd]
+    project_id: str | None = None
+
+
+@router.post("/sim-batch")
+async def chat_sim_batch(body: BatchSimRequest) -> dict:
+    """배치 시뮬 — 광고 여러 버전을 순차 실행(동시 금지 정책 준수)해 KPI를 나란히 반환(T11).
+
+    경로는 명세(/api/simulations/batch) 대신 채팅 소유 경로로 둔다(채팅 위젯 전용).
+    """
+    from domain.simulation.assistant.tools import run_simulation  # noqa: PLC0415
+
+    if not body.ads or len(body.ads) < 2:
+        raise HTTPException(status_code=400, detail="비교할 광고를 2개 이상 입력하세요.")
+    if len(body.ads) > 4:
+        raise HTTPException(status_code=400, detail="배치 비교는 최대 4개까지 가능합니다.")
+    results: list[dict] = []
+    for ad in body.ads:  # 순차 실행 — 동시 시뮬 금지 정책 유지
+        try:
+            kpi = await run_simulation(
+                ad_content=ad.ad_content,
+                ad_title=ad.ad_title,
+                product_category=ad.product_category,
+                ad_objective=ad.ad_objective,
+            )
+            results.append({"ad_title": ad.ad_title or "광고", **kpi})
+        except Exception as exc:  # noqa: BLE001 — 한 건 실패가 전체를 막지 않게
+            print(f"[chat] batch sim error: {exc!r}")
+            results.append({"ad_title": ad.ad_title or "광고", "error": "failed"})
+    return {"results": results}
+
+
 class SessionCreate(BaseModel):
     project_id: str | None = None
     title: str | None = None
