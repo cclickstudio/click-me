@@ -14,6 +14,18 @@ const quickPrompts = [
   '광고 카피 개선 방법을 알려줘',
 ];
 
+// 입력창 "/" 자동완성으로 띄우는 슬래시 커맨드 목록
+type SlashCommand = {
+  cmd: string; // 매칭/표시용 (예: '/시뮬레이션')
+  label: string;
+  desc: string;
+};
+const slashCommands: SlashCommand[] = [
+  { cmd: '/시뮬레이션', label: '/시뮬레이션', desc: '광고 시뮬레이션 입력 위젯을 띄웁니다' },
+  { cmd: '/제너레이터', label: '/제너레이터', desc: '광고 생성 입력 위젯을 띄웁니다 (준비 중)' },
+  { cmd: '/위젯', label: '/위젯', desc: '사용 가능한 위젯 목록을 봅니다 (개발용)' },
+];
+
 type Citation = { kind: string; source: string; title?: string };
 type WidgetSpec = { type: string; data?: { ad_content?: string } };
 type SourceMeta = {
@@ -60,6 +72,7 @@ export default function Page() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
+  const [slashIndex, setSlashIndex] = useState(0); // 드롭다운 하이라이트 위치
   const sessionId = useRef<string>("");
   if (!sessionId.current) sessionId.current = safeRandomUUID();
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -67,6 +80,49 @@ export default function Page() {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isStreaming]);
+
+  // "/"로 시작하고 공백이 없을 때만 자동완성 후보를 노출
+  const showSlashMenu = input.startsWith('/') && !input.includes(' ');
+  const slashMatches = showSlashMenu
+    ? slashCommands.filter((c) => c.cmd.startsWith(input))
+    : [];
+
+  // 로컬 assistant 메시지 추가 (백엔드 호출 없이 위젯/안내 띄우기)
+  const addLocalAssistant = (content: string, meta?: SourceMeta) => {
+    setMessages((prev) => [...prev, { role: 'assistant', content, meta }]);
+  };
+
+  const runSlashCommand = (cmd: string) => {
+    setInput('');
+    setSlashIndex(0);
+    switch (cmd) {
+      case '/시뮬레이션':
+        addLocalAssistant('광고 시뮬레이션 입력 위젯입니다. 아래에서 실행하세요.', {
+          source: 'simulation',
+          label: '광고 시뮬레이터',
+          widget: { type: 'sim_form' },
+        });
+        break;
+      case '/제너레이터':
+        addLocalAssistant('광고 생성 위젯은 준비 중입니다. 곧 제공될 예정이에요.', {
+          source: 'generator',
+          label: '광고 생성',
+        });
+        break;
+      case '/위젯':
+        addLocalAssistant(
+          [
+            '사용 가능한 위젯 목록 (개발/테스트용)',
+            '',
+            ...slashCommands
+              .filter((c) => c.cmd !== '/위젯')
+              .map((c) => `${c.cmd} — ${c.desc}`),
+          ].join('\n'),
+          { source: 'simulation', label: '위젯 목록' },
+        );
+        break;
+    }
+  };
 
   const handleSend = async (text?: string) => {
     const content = text ?? input.trim();
@@ -251,17 +307,71 @@ export default function Page() {
 
         {/* ── Input bar ── */}
         <div className="border-t border-[#E5E8EB] dark:border-[#2D3748] bg-white dark:bg-[#1C2333] px-4 py-4 transition-colors">
-          <div className="max-w-2xl mx-auto flex items-end gap-3">
+          <div className="max-w-2xl mx-auto flex items-end gap-3 relative">
+            {/* 슬래시 커맨드 자동완성 드롭다운 */}
+            {slashMatches.length > 0 && (
+              <div className="absolute bottom-full left-0 right-0 mb-2 bg-white dark:bg-[#252D3D] border border-[#E5E8EB] dark:border-[#2D3748] rounded-xl shadow-lg overflow-hidden z-10">
+                {slashMatches.map((c, i) => {
+                  const active = i === Math.min(slashIndex, slashMatches.length - 1);
+                  return (
+                    <button
+                      key={c.cmd}
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        runSlashCommand(c.cmd);
+                      }}
+                      onMouseEnter={() => setSlashIndex(i)}
+                      className={`w-full flex flex-col items-start px-4 py-2.5 text-left transition-colors ${
+                        active
+                          ? 'bg-[#EBF3FF] dark:bg-[#1E3A5F]'
+                          : 'hover:bg-[#F9FAFB] dark:hover:bg-[#1C2333]'
+                      }`}
+                    >
+                      <span className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]">
+                        {c.label}
+                      </span>
+                      <span className="text-xs text-[#8B95A1] dark:text-[#6B7280]">{c.desc}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
             <textarea
               value={input}
-              onChange={(e) => setInput(e.target.value)}
+              onChange={(e) => {
+                setInput(e.target.value);
+                setSlashIndex(0);
+              }}
               onKeyDown={(e) => {
+                // 슬래시 메뉴가 열려 있으면 방향키/Enter로 항목 선택
+                if (slashMatches.length > 0) {
+                  if (e.key === 'ArrowDown') {
+                    e.preventDefault();
+                    setSlashIndex((i) => (i + 1) % slashMatches.length);
+                    return;
+                  }
+                  if (e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    setSlashIndex((i) => (i - 1 + slashMatches.length) % slashMatches.length);
+                    return;
+                  }
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    runSlashCommand(slashMatches[Math.min(slashIndex, slashMatches.length - 1)].cmd);
+                    return;
+                  }
+                  if (e.key === 'Escape') {
+                    e.preventDefault();
+                    setInput('');
+                    return;
+                  }
+                }
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault();
                   handleSend();
                 }
               }}
-              placeholder="메시지를 입력하세요... (Shift+Enter로 줄바꿈)"
+              placeholder="메시지를 입력하세요... (/로 명령어, Shift+Enter로 줄바꿈)"
               rows={1}
               disabled={isStreaming}
               className="flex-1 px-4 py-3 rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] text-sm text-[#191F28] dark:text-[#F2F4F6] placeholder-[#B0B8C1] dark:placeholder-[#4B5563] focus:outline-none focus:border-[#3182F6] focus:ring-2 focus:ring-[#3182F6]/10 transition-colors resize-none overflow-hidden bg-white dark:bg-[#252D3D] leading-relaxed disabled:opacity-60"
