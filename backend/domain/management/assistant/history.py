@@ -7,14 +7,27 @@ best-effort: 적재 실패가 채팅 응답을 끊지 않는다. 멀티턴은 th
 from __future__ import annotations
 
 import logging
+import uuid
 from datetime import UTC, datetime
 
 from sqlalchemy import select
 
 from core.db import AsyncSessionLocal
-from core.models import ManagementAgentRun, ManagementChatMessage, ManagementChatSession
+from core.models import (
+    ManagementAgentRun,
+    ManagementChatMessage,
+    ManagementChatSession,
+    ManagementKbFeedback,
+)
 
 logger = logging.getLogger("clickme")
+
+
+def _as_uuid(value: str | None) -> uuid.UUID | None:
+    try:
+        return uuid.UUID(value) if value else None
+    except (ValueError, TypeError):
+        return None
 
 
 async def record_turn(
@@ -83,3 +96,42 @@ async def record_turn(
             await db.commit()
     except Exception as exc:  # noqa: BLE001 — 관측 적재 실패가 채팅을 막지 않게
         logger.warning("어시스턴트 턴 적재 실패(무시): %s", exc)
+
+
+async def record_feedback(
+    *,
+    thread_id: str | None = None,
+    message_id: str | None = None,
+    question: str | None = None,
+    answer: str | None = None,
+    rating: int | None = None,
+    failure_type: str | None = None,
+    corrected_answer: str | None = None,
+) -> None:
+    """답변 피드백(좋아요/싫어요·실패유형·수정답안)을 적재 — RAG 품질 개선 루프. best-effort."""
+    try:
+        async with AsyncSessionLocal() as db:
+            session_id = None
+            if thread_id:
+                row = (
+                    await db.execute(
+                        select(ManagementChatSession.id).where(
+                            ManagementChatSession.thread_id == thread_id
+                        )
+                    )
+                ).first()
+                session_id = row[0] if row else None
+            db.add(
+                ManagementKbFeedback(
+                    session_id=session_id,
+                    message_id=_as_uuid(message_id),
+                    question=question,
+                    answer=answer,
+                    rating=rating,
+                    failure_type=failure_type,
+                    corrected_answer=corrected_answer,
+                )
+            )
+            await db.commit()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("피드백 적재 실패(무시): %s", exc)

@@ -274,6 +274,40 @@ class ManagementAgentRun(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class ManagementKbFeedback(Base):
+    """어시스턴트 답변 피드백 (RAG 품질 개선 루프). 마이그 019."""
+
+    __tablename__ = "management_kb_feedback"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    session_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    message_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    question: Mapped[str | None] = mapped_column(Text, nullable=True)
+    answer: Mapped[str | None] = mapped_column(Text, nullable=True)
+    rating: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)  # 1 like / -1 dislike
+    failure_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    corrected_answer: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ManagementKbEvalCase(Base):
+    """RAG 평가 케이스 (대표 질문→기대 도구·근거). 마이그 019."""
+
+    __tablename__ = "management_kb_eval_cases"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    question: Mapped[str] = mapped_column(Text)
+    expected_tools: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    expected_points: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    expected_citations: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    expected_campaign_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    expected_anomaly_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    fixture_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class ChatSession(Base):
     __tablename__ = "chat_sessions"
 

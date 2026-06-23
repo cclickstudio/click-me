@@ -7,12 +7,13 @@ from collections.abc import AsyncGenerator, Awaitable, Callable
 import google.generativeai as genai
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 
 from core.config import settings
 from core.schemas import ChatRequest
 from domain.management.assistant.agent import build_management_agent
 from domain.management.assistant.contracts import AskRequest
-from domain.management.assistant.history import record_turn
+from domain.management.assistant.history import record_feedback, record_turn
 
 router = APIRouter()
 
@@ -219,3 +220,28 @@ async def list_sessions() -> dict:
 @router.get("/sessions/{session_id}/messages")
 async def get_session_messages(session_id: str) -> dict:
     return {"session_id": session_id, "messages": []}
+
+
+class FeedbackRequest(BaseModel):
+    thread_id: str | None = None  # 채팅 세션 키(mgmt-{session_id})
+    message_id: str | None = None
+    question: str | None = None
+    answer: str | None = None
+    rating: int | None = None  # 1 좋아요 / -1 싫어요
+    failure_type: str | None = None  # wrong_tool|stale_doc|hallucinated_number|missing_citation 등
+    corrected_answer: str | None = None
+
+
+@router.post("/feedback")
+async def chat_feedback(body: FeedbackRequest) -> dict:
+    """어시스턴트 답변 피드백 적재 — RAG 품질 개선 루프(management_kb_feedback). best-effort."""
+    await record_feedback(
+        thread_id=body.thread_id,
+        message_id=body.message_id,
+        question=body.question,
+        answer=body.answer,
+        rating=body.rating,
+        failure_type=body.failure_type,
+        corrected_answer=body.corrected_answer,
+    )
+    return {"ok": True}
