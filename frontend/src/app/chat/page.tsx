@@ -301,7 +301,7 @@ export default function Page() {
                           </div>
                           {msg.generation.status === 'completed' && (
                             <a
-                              href="/generator"
+                              href={`/generations/${msg.generation.jobId}`}
                               className="inline-block mt-1.5 text-[#3182F6] font-semibold hover:underline"
                             >
                               생성 결과 보기 →

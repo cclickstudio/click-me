@@ -10,7 +10,7 @@ from api.assistant.contracts import Action, Intent, SubagentRequest, SubagentRes
 from api.assistant.orchestrator import Orchestrator
 from api.assistant.registry import Handler, SubagentRegistry
 
-_GEMINI_MODEL = "gemini-2.0-flash"
+_GEMINI_MODEL = "gemini-2.5-flash"
 
 
 def _build_classifier_llm(settings) -> object | None:

@@ -29,7 +29,7 @@ Starter = Callable[..., Awaitable[str]]
 
 _META = {"source": "generator", "label": "생성 어시스턴트", "engine": "Gemini · 슬롯필링"}
 
-_GEMINI_MODEL = "gemini-2.0-flash"
+_GEMINI_MODEL = "gemini-2.5-flash"
 
 _EXTRACT_SYSTEM = (
     "너는 광고 생성 요청에서 파라미터를 추출하는 도우미다. 대화 전체를 읽고 아래 필드를 채워라.\n"
