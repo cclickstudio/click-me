@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 from pathlib import Path
 
 from openai import AsyncOpenAI
@@ -14,10 +15,22 @@ from sqlalchemy import delete
 
 from core.config import settings
 from core.db import AsyncSessionLocal
-from core.models import ManagementKbChunk
+from core.models import ManagementKbChunk, ManagementKbDocument
 from domain.management.assistant.retriever import EMBEDDING_MODEL
 
 _KB_DIR = Path(__file__).parent / "kb"
+
+# 파일별 출처 유형 — 문서 메타(source_type). 미지정은 playbook.
+_SOURCE_TYPES = {
+    "meta_ad_policy.md": "meta_official",
+    "optimization_playbook.md": "playbook",
+    "kpi_measurement_rules.md": "internal_policy",
+    "remediation_actions.md": "internal_policy",
+}
+
+
+def _sha(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 def _chunk_markdown(text: str) -> list[tuple[str, str]]:
@@ -42,21 +55,48 @@ async def ingest() -> int:
     async with AsyncSessionLocal() as db:
         for md in sorted(_KB_DIR.glob("*.md")):
             source = md.name
-            sections = _chunk_markdown(md.read_text(encoding="utf-8"))
+            text = md.read_text(encoding="utf-8")
+            sections = _chunk_markdown(text)
             if not sections:
                 continue
+            # 재적재 멱등: 같은 출처의 문서 삭제(청크 cascade) + 옛 평면 청크 정리 후 재생성.
+            await db.execute(
+                delete(ManagementKbDocument).where(ManagementKbDocument.title == source)
+            )
+            await db.execute(delete(ManagementKbChunk).where(ManagementKbChunk.source == source))
+            doc = ManagementKbDocument(
+                tenant_id=None,  # 공통(global) 지식
+                visibility="global",
+                source_type=_SOURCE_TYPES.get(source, "playbook"),
+                title=source,
+                version=_sha(text)[:12],
+                status="active",
+                content_hash=_sha(text),
+                language="ko",
+            )
+            db.add(doc)
+            await db.flush()  # doc.id 확보
             resp = await client.embeddings.create(
                 model=EMBEDDING_MODEL, input=[c for _, c in sections]
             )
-            await db.execute(delete(ManagementKbChunk).where(ManagementKbChunk.source == source))
-            for (title, chunk), item in zip(sections, resp.data, strict=True):
+            for idx, ((title, chunk), item) in enumerate(zip(sections, resp.data, strict=True)):
                 db.add(
                     ManagementKbChunk(
-                        source=source, title=title, chunk=chunk, embedding=item.embedding
+                        source=source,
+                        title=title,
+                        chunk=chunk,
+                        embedding=item.embedding,
+                        document_id=doc.id,
+                        tenant_id=None,
+                        chunk_index=idx,
+                        heading_path=title,
+                        content_hash=_sha(chunk),
+                        embedding_model=EMBEDDING_MODEL,
+                        embedding_dimensions=len(item.embedding),
                     )
                 )
             total += len(sections)
-            print(f"  {source}: {len(sections)} chunks")
+            print(f"  {source} [{doc.source_type}]: {len(sections)} chunks")
         await db.commit()
     print(f"적재 완료: {total} chunks")
     return total

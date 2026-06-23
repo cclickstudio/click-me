@@ -163,8 +163,32 @@ class AdEmbedding(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
+class ManagementKbDocument(Base):
+    """매니지먼트 KB 문서(청크의 부모) — 테넌트·버전·출처·유효기간·상태 메타. 마이그 019."""
+
+    __tablename__ = "management_kb_documents"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[str | None] = mapped_column(String(64), nullable=True)  # NULL=공통(global)
+    visibility: Mapped[str] = mapped_column(String(16), default="global")
+    source_type: Mapped[str] = mapped_column(String(32))  # meta_official|internal_policy|benchmark|playbook
+    source_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    title: Mapped[str] = mapped_column(String(512))
+    version: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    language: Mapped[str] = mapped_column(String(16), default="ko")
+    status: Mapped[str] = mapped_column(String(16), default="active")  # draft|active|deprecated
+    content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    retrieved_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    effective_from: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    verified_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    doc_metadata: Mapped[dict] = mapped_column("metadata", JSONB, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
 class ManagementKbChunk(Base):
-    """매니지먼트 지식베이스 청크 (에이전틱 RAG) — 정책·플레이북·KPI 규칙의 벡터 검색."""
+    """매니지먼트 지식베이스 청크 (에이전틱 RAG) — 정책·플레이북·KPI 규칙의 벡터+키워드 검색."""
 
     __tablename__ = "management_kb_chunks"
 
@@ -174,6 +198,17 @@ class ManagementKbChunk(Base):
     chunk: Mapped[str] = mapped_column(Text)
     embedding: Mapped[list[float]] = mapped_column(Vector(1536))
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    # 마이그 019 — 문서 연결 + 메타(테넌트·버전·키워드검색). search_vector는 DB 생성열이라 미매핑.
+    document_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("management_kb_documents.id", ondelete="CASCADE"), nullable=True
+    )
+    tenant_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    chunk_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    heading_path: Mapped[str | None] = mapped_column(Text, nullable=True)
+    content_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    token_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    embedding_model: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    embedding_dimensions: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class ChatSession(Base):
