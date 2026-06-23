@@ -292,10 +292,17 @@ export default function ChatConversation({
             const raw = line.slice(6).trim();
             if (!raw) continue;
             try {
-              const data = JSON.parse(raw) as { token?: string; done?: boolean; meta?: SourceMeta };
-              if (data.done) {
+              const data = JSON.parse(raw) as {
+                kind?: string;
+                token?: string;
+                done?: boolean;
+                meta?: SourceMeta;
+              };
+              // kind 우선 분기, 없으면 레거시 필드(token/meta/done)로 폴백.
+              const kind = data.kind ?? (data.done ? 'done' : data.meta ? 'meta' : 'text');
+              if (kind === 'done') {
                 setIsStreaming(false);
-              } else if (data.meta) {
+              } else if (kind === 'meta' && data.meta) {
                 setMessages((prev) => {
                   const last = prev[prev.length - 1];
                   const imageFile = data.meta?.widget
@@ -303,7 +310,7 @@ export default function ChatConversation({
                     : last.imageFile;
                   return [...prev.slice(0, -1), { ...last, meta: data.meta, imageFile }];
                 });
-              } else if (data.token) {
+              } else if (kind === 'text' && data.token) {
                 setMessages((prev) => {
                   const last = prev[prev.length - 1];
                   return [...prev.slice(0, -1), { ...last, content: last.content + data.token }];

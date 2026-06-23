@@ -45,6 +45,11 @@ def _chunks(text: str, size: int = 24) -> list[str]:
     return [text[i : i + size] for i in range(0, len(text), size)] or [""]
 
 
+def _sse(kind: str, **payload: object) -> str:
+    """표준 SSE envelope — 모든 이벤트에 kind 이름표를 붙인다(meta·text·widget·approval·done)."""
+    return f"data: {json.dumps({'kind': kind, **payload}, ensure_ascii=False)}\n\n"
+
+
 async def _persist(
     session_id: str,
     user_content: str,
@@ -96,13 +101,11 @@ async def chat_complete(body: ChatRequest) -> StreamingResponse:
             answer = "지금은 답변을 생성할 수 없어요. 잠시 후 다시 시도해주세요."
             meta = {"source": "orchestrator", "label": "CLIO", "engine": "OpenAI"}
 
-        yield f"data: {json.dumps({'meta': meta}, ensure_ascii=False)}\n\n"
+        yield _sse("meta", meta=meta)
         for piece in _chunks(answer):
-            yield f"data: {json.dumps({'token': piece}, ensure_ascii=False)}\n\n"
-        await _persist(
-            body.session_id, last_message, answer, meta, body.image_url, body.result_ref
-        )
-        yield 'data: {"done": true}\n\n'
+            yield _sse("text", token=piece)
+        await _persist(body.session_id, last_message, answer, meta, body.image_url, body.result_ref)
+        yield _sse("done")
 
     return StreamingResponse(
         generate(),
