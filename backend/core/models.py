@@ -256,6 +256,28 @@ class ChatLongTermMemory(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class ChatBrandProfile(Base):
+    """채팅 브랜드 프로파일 — 프로젝트마다 브랜드 톤·타겟·카테고리 기억(매번 입력 불필요).
+
+    제너레이터 brand_profiles(client_id PK)와 충돌하지 않도록 별도 테이블. project_id UNIQUE.
+    """
+
+    __tablename__ = "chat_brand_profiles"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, unique=True
+    )
+    brand_name: Mapped[str | None] = mapped_column(String(200))
+    tone: Mapped[str | None] = mapped_column(String(100))  # "친근한", "전문적인" 등
+    target_audience: Mapped[str | None] = mapped_column(String(200))  # "20-30대 여성"
+    product_category: Mapped[str | None] = mapped_column(String(100))
+    keywords: Mapped[list | None] = mapped_column(JSONB)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
 class Inquiry(Base):
     __tablename__ = "inquiries"
 

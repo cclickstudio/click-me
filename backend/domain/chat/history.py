@@ -13,7 +13,9 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.db import AsyncSessionLocal
-from core.models import ChatLongTermMemory, ChatMessage, ChatSession
+from core.models import ChatBrandProfile, ChatLongTermMemory, ChatMessage, ChatSession
+
+_BRAND_FIELDS = ("brand_name", "tone", "target_audience", "product_category", "keywords")
 
 _DEFAULT_TITLE = "새 채팅"
 
@@ -226,6 +228,56 @@ async def get_long_term_memory(
     except Exception as exc:  # noqa: BLE001 — 조회 실패면 메모리 없이 진행
         print(f"[chat] long-term memory get error: {exc!r}")
         return []
+
+
+async def get_brand_profile(project_id: str | None) -> dict | None:
+    """프로젝트의 브랜드 프로파일 조회(없으면 None)."""
+    pid = _as_uuid(project_id)
+    if pid is None:
+        return None
+    try:
+        async with AsyncSessionLocal() as db:
+            row = await db.execute(
+                select(ChatBrandProfile).where(ChatBrandProfile.project_id == pid)
+            )
+            bp = row.scalar_one_or_none()
+            if bp is None:
+                return None
+            return {
+                "brand_name": bp.brand_name,
+                "tone": bp.tone,
+                "target_audience": bp.target_audience,
+                "product_category": bp.product_category,
+                "keywords": bp.keywords,
+            }
+    except Exception as exc:  # noqa: BLE001
+        print(f"[chat] brand profile get error: {exc!r}")
+        return None
+
+
+async def upsert_brand_profile(project_id: str | None, fields: dict) -> None:
+    """브랜드 프로파일 부분 업데이트(없으면 생성). 빈 값은 무시(기존 보존)."""
+    pid = _as_uuid(project_id)
+    if pid is None:
+        return
+    updates = {k: v for k, v in fields.items() if k in _BRAND_FIELDS and v}
+    if not updates:
+        return
+    try:
+        async with AsyncSessionLocal() as db:
+            row = await db.execute(
+                select(ChatBrandProfile).where(ChatBrandProfile.project_id == pid)
+            )
+            bp = row.scalar_one_or_none()
+            if bp is None:
+                bp = ChatBrandProfile(project_id=pid, **updates)
+                db.add(bp)
+            else:
+                for k, v in updates.items():
+                    setattr(bp, k, v)
+            await db.commit()
+    except Exception as exc:  # noqa: BLE001
+        print(f"[chat] brand profile upsert error: {exc!r}")
 
 
 async def delete_session(db: AsyncSession, session_id: str) -> bool:

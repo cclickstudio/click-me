@@ -169,6 +169,71 @@ def _format_ltm(ltm: list[dict]) -> str:
     return "이 프로젝트의 최근 맥락(참고용):\n" + "\n".join(lines) + "\n\n"
 
 
+# 브랜드 프로파일 — 자동 업데이트 트리거 키워드(이 단어가 있을 때만 추출 LLM 호출).
+_BRAND_CUES: frozenset[str] = frozenset(
+    {"타겟", "타깃", "톤", "브랜드", "카테고리", "키워드", "느낌으로", "분위기"}
+)
+_BRAND_EXTRACT_SYSTEM = (
+    "사용자 메시지에서 브랜드 설정을 추출하라(언급된 항목만, 없으면 빈 값).\n"
+    "- brand_name: 브랜드/제품명\n"
+    "- tone: 톤·매너(예: 친근한, 전문적인)\n"
+    "- target_audience: 타깃 고객(예: 20-30대 여성)\n"
+    "- product_category: 상품 카테고리\n"
+    "- keywords: 핵심 키워드 목록\n"
+    "명시되지 않은 항목은 비워라(지어내지 말 것)."
+)
+
+
+def _has_brand_cue(text: str) -> bool:
+    return any(c in text for c in _BRAND_CUES)
+
+
+def _is_brand_show(text: str) -> bool:
+    """'브랜드 설정 보여줘' 류 — 현재 프로파일 출력 요청."""
+    t = text.replace(" ", "")
+    has_brand = "브랜드" in t and ("설정" in t or "프로파일" in t or "프로필" in t)
+    return has_brand and any(v in t for v in ("보여", "뭐", "알려", "확인", "조회"))
+
+
+def _format_brand(brand: dict | None) -> str:
+    """브랜드 프로파일 → 시스템 프롬프트 앞 컨텍스트(없으면 빈 문자열)."""
+    if not brand:
+        return ""
+    parts = []
+    if brand.get("brand_name"):
+        parts.append(f"브랜드 {brand['brand_name']}")
+    if brand.get("tone"):
+        parts.append(f"톤 {brand['tone']}")
+    if brand.get("target_audience"):
+        parts.append(f"타깃 {brand['target_audience']}")
+    if brand.get("product_category"):
+        parts.append(f"카테고리 {brand['product_category']}")
+    if brand.get("keywords"):
+        parts.append(f"키워드 {', '.join(brand['keywords'])}")
+    if not parts:
+        return ""
+    return "이 프로젝트의 브랜드 설정(참고용): " + " · ".join(parts) + "\n\n"
+
+
+def _brand_show_text(brand: dict | None) -> str:
+    """'브랜드 설정 보여줘' 응답 텍스트."""
+    if not brand or not any(brand.get(k) for k in brand):
+        return "아직 저장된 브랜드 설정이 없어요. '타겟은 20대 여성이야'처럼 알려주시면 기억할게요."
+    lines = ["현재 브랜드 설정이에요."]
+    labels = {
+        "brand_name": "브랜드명",
+        "tone": "톤",
+        "target_audience": "타깃",
+        "product_category": "카테고리",
+        "keywords": "키워드",
+    }
+    for k, label in labels.items():
+        v = brand.get(k)
+        if v:
+            lines.append(f"- {label}: {', '.join(v) if isinstance(v, list) else v}")
+    return "\n".join(lines)
+
+
 def _is_management(text: str) -> bool:
     low = text.lower()
     return any(k in low for k in _MGMT_KEYWORDS)
@@ -281,6 +346,14 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
         product_category: str = ""
         ad_objective: str = ""
 
+    # 브랜드 프로파일 추출 스키마 — 사용자 발화에서 브랜드 설정 부분 업데이트.
+    class _BrandExtract(BaseModel):
+        brand_name: str = ""
+        tone: str = ""
+        target_audience: str = ""
+        product_category: str = ""
+        keywords: list[str] = []
+
     classifier = classify_llm.with_structured_output(_Intent)
 
     # ── 숏텀 메모리 — session_id 키로 윈도우 버퍼(k=6) 캐시 ──
@@ -338,6 +411,7 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
         project_id: str | None
         history: list[tuple[str, str]]
         ltm: list[dict]
+        brand: dict | None
         intent: str
         action: str
         context_id: str | None
@@ -564,8 +638,8 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
         }
 
     async def advise_node(state) -> dict:
-        # 롱텀 메모리 컨텍스트를 시스템 프롬프트 앞에 주입(프로젝트 최근 맥락).
-        preamble = _format_ltm(state.get("ltm") or [])
+        # 롱텀 메모리 + 브랜드 프로파일을 시스템 프롬프트 앞에 주입(프로젝트 맥락).
+        preamble = _format_brand(state.get("brand")) + _format_ltm(state.get("ltm") or [])
         msgs = [SystemMessage(content=preamble + _ADVISE_SYSTEM)]
         for role, content in (state.get("history") or [])[-6:]:
             msgs.append(
@@ -617,10 +691,32 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
     async def _ask_full(turn: ChatTurn) -> ChatAnswer:
         sid = turn.session_id
         # 숏텀 메모리에서 윈도우 내역을 꺼내 노드에 전달(raw 전체 history 대신 최근 6턴).
+        q = (turn.question or "").strip()
+        # 브랜드 설정 조회 요청은 그래프 없이 바로 현재 프로파일을 출력.
+        if _is_brand_show(q):
+            brand = await history.get_brand_profile(turn.project_id)
+            return ChatAnswer(
+                answer=_brand_show_text(brand),
+                meta={
+                    "source": "orchestrator",
+                    "label": "브랜드 설정",
+                    "engine": f"OpenAI · {model_name}",
+                },
+            )
+        # 브랜드 단서가 있으면 발화에서 설정을 추출해 자동 업데이트(부분 upsert).
+        if turn.project_id and _has_brand_cue(q):
+            try:
+                be = await llm.with_structured_output(_BrandExtract).ainvoke(
+                    [SystemMessage(content=_BRAND_EXTRACT_SYSTEM), HumanMessage(content=q)]
+                )
+                await history.upsert_brand_profile(turn.project_id, be.model_dump())
+            except Exception as exc:  # noqa: BLE001 — 추출 실패가 대화를 막지 않게
+                print(f"[chat] brand extract error: {exc!r}")
         mem = _get_memory(sid, turn.history or [])
         windowed = mem.load()
-        # 진입 시 프로젝트 롱텀 메모리 최근 3개 조회 → 노드에서 시스템 프롬프트 앞 주입.
+        # 진입 시 프로젝트 롱텀 메모리·브랜드 프로파일 조회 → 노드에서 시스템 프롬프트 앞 주입.
         ltm = await history.get_long_term_memory(turn.project_id, limit=3)
+        brand = await history.get_brand_profile(turn.project_id)
         # 1턴 = 1 트레이스 루트(classify → route → 서브에이전트).
         final = await graph.ainvoke(
             {
@@ -629,6 +725,7 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
                 "project_id": turn.project_id,
                 "history": windowed,
                 "ltm": ltm,
+                "brand": brand,
             },
             config={
                 "run_name": "assistant_chat",
