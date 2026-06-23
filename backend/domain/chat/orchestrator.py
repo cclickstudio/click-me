@@ -53,6 +53,8 @@ _CLASSIFY_SYSTEM = (
     "- simulation: 집행 전 시뮬레이션 결과·구매의도·클릭의향률·신뢰도·거부율·KPI 정의\n"
     "- generator: 광고 생성·카피 전략·시안·작성 원칙\n"
     "- advise: 그 외 일반 광고 전략·아이디어\n"
+    "질문·조회는 action=ask, 시뮬/생성을 실제 실행·돌려달라는 요청은 action=run으로 분류하라.\n"
+    "action=run이고 광고 카피·문구가 질문에 있으면 ad_content로 추출하라.\n"
     "결과 ID(시뮬/생성 식별자)가 질문에 있으면 context_id로 함께 추출하라."
 )
 
@@ -125,6 +127,24 @@ def _assistant_meta(res, source: str, label: str) -> dict:
     }
 
 
+def _format_sim_run(ev: dict) -> str:
+    """run_simulation 결과 → 한국어 4대 KPI 요약."""
+    rid = str(ev.get("run_id") or "")[:8]
+    lines = [f"시뮬레이션을 돌렸어요 (run_id {rid}, 표본 {ev.get('effective_n')}명)."]
+    cir = ev.get("click_intent_rate")
+    if cir is not None:
+        lo = (ev.get("ci_low") or 0) * 100
+        hi = (ev.get("ci_high") or 0) * 100
+        lines.append(f"· 클릭 의향률 {cir * 100:.1f}% [{lo:.0f}~{hi:.0f}%]")
+    if ev.get("purchase_intent") is not None:
+        lines.append(f"· 구매의도 {ev['purchase_intent']:.2f}/5")
+    if ev.get("trust_avg") is not None:
+        lines.append(f"· 신뢰도 {ev['trust_avg']:.2f}/5")
+    if ev.get("rejection_rate") is not None:
+        lines.append(f"· 거부율 {ev['rejection_rate'] * 100:.1f}%")
+    return "\n".join(lines)
+
+
 def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnswer | None]]:
     """오케스트레이터 진입점. 키+실모드면 classify → route 그래프, 아니면 키워드 폴백."""
     api_key = getattr(settings, "openai_api_key", None)
@@ -158,7 +178,9 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
     # classify_intent 출력 스키마 — 도메인 분류 + 결과 식별자 추출.
     class _Intent(BaseModel):
         intent: Literal["management", "simulation", "generator", "advise"]
+        action: Literal["ask", "run"] = "ask"
         context_id: str | None = None
+        ad_content: str | None = None
 
     classifier = llm.with_structured_output(_Intent)
 
@@ -166,7 +188,9 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
     class _State(TypedDict, total=False):
         question: str
         intent: str
+        action: str
         context_id: str | None
+        ad_content: str | None
         answer: str
         meta: dict
 
@@ -174,7 +198,12 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
         res = await classifier.ainvoke(
             [SystemMessage(content=_CLASSIFY_SYSTEM), HumanMessage(content=state["question"])]
         )
-        return {"intent": res.intent, "context_id": res.context_id}
+        return {
+            "intent": res.intent,
+            "action": res.action,
+            "context_id": res.context_id,
+            "ad_content": res.ad_content,
+        }
 
     async def management_node(state) -> dict:
         res = await mgmt(
@@ -183,6 +212,18 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
         return {"answer": _mgmt_answer(res), "meta": _mgmt_meta(res)}
 
     async def simulation_node(state) -> dict:
+        if state.get("action") == "run":
+            from domain.simulation.assistant.tools import run_simulation  # noqa: PLC0415
+
+            ev = await run_simulation(ad_content=state.get("ad_content") or state["question"])
+            return {
+                "answer": _format_sim_run(ev),
+                "meta": {
+                    "source": "simulation",
+                    "label": "시뮬레이션 실행",
+                    "engine": "Gemini · 실행",
+                },
+            }
         res = await sim(
             AssistantRequest(question=state["question"], context_id=state.get("context_id"))
         )
@@ -192,6 +233,12 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
         }
 
     async def generator_node(state) -> dict:
+        if state.get("action") == "run":
+            return {
+                "answer": "광고 시안 생성 실행은 곧 지원될 예정이에요."
+                " 지금은 생성 결과 해석·카피 전략 질문에 답할 수 있어요.",
+                "meta": {"source": "generator", "label": "생성", "engine": "-"},
+            }
         res = await gen(
             AssistantRequest(question=state["question"], context_id=state.get("context_id"))
         )
