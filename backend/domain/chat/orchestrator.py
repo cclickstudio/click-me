@@ -211,6 +211,51 @@ def _has_brand_cue(text: str) -> bool:
     return any(c in text for c in _BRAND_CUES)
 
 
+# ── 템플릿(T12) 발화 감지 ──
+def _is_template_list(text: str) -> bool:
+    s = text.replace(" ", "")
+    return "템플릿" in s and any(v in s for v in ("보여", "목록", "뭐있", "리스트", "내템플릿"))
+
+
+def _template_load_name(text: str) -> str | None:
+    """'여름 캠페인 템플릿으로 …' → '여름 캠페인'. 아니면 None."""
+    if "템플릿으로" not in text.replace(" ", ""):
+        return None
+    idx = text.find("템플릿")
+    if idx <= 0:
+        return None
+    name = text[:idx].strip().strip("'\"” ")
+    return name[-30:] if name else None
+
+
+def _is_template_save(text: str) -> bool:
+    s = text.replace(" ", "")
+    return "설정저장" in s or "템플릿저장" in s or ("저장" in s and "템플릿" in s)
+
+
+def _quoted(text: str) -> str | None:
+    """메시지에서 첫 따옴표 안 문자열을 뽑는다(정규식 없이)."""
+    for q in ("'", '"', "“"):
+        i = text.find(q)
+        if i != -1:
+            end = "”" if q == "“" else q
+            j = text.find(end, i + 1)
+            if j > i + 1:
+                return text[i + 1 : j].strip()
+    return None
+
+
+def _template_save_name(text: str, content: dict, ttype: str) -> str:
+    """저장할 템플릿 이름 — 따옴표 안 이름 우선, 없으면 내용/유형에서 유도."""
+    q = _quoted(text)
+    if q:
+        return q[:80]
+    base = content.get("ad_title") or content.get("product_name")
+    if base:
+        return str(base)[:80]
+    return "시뮬 설정" if ttype == "sim" else "생성 설정"
+
+
 # 배치 시뮬 — 새 광고 여러 버전을 한 번에 비교하려는 발화 단서(T11).
 def _is_batch_sim(text: str) -> bool:
     t = text.replace(" ", "")
@@ -746,6 +791,63 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
         sid = turn.session_id
         # 숏텀 메모리에서 윈도우 내역을 꺼내 노드에 전달(raw 전체 history 대신 최근 6턴).
         q = (turn.question or "").strip()
+        _tpl_meta = {"source": "simulation", "label": "템플릿", "engine": f"OpenAI · {model_name}"}
+        # 템플릿 목록 — 저장된 설정 보여주기.
+        if _is_template_list(q):
+            tpls = await history.list_templates(turn.project_id)
+            if not tpls:
+                ans = "아직 저장된 템플릿이 없어요. '이 설정 저장해줘'로 만들 수 있어요."
+            else:
+                ans = "저장된 템플릿이에요.\n" + "\n".join(
+                    f"- {t['name']} ({'시뮬' if t['template_type'] == 'sim' else '생성'})"
+                    for t in tpls
+                )
+            return ChatAnswer(answer=ans, meta=_tpl_meta)
+        # 템플릿으로 실행 — 이름으로 찾아 폼 초기값 채우기.
+        _load_name = _template_load_name(q)
+        if _load_name:
+            tpl = await history.get_template_by_name(turn.project_id, _load_name)
+            if tpl is None:
+                return ChatAnswer(
+                    answer=(
+                        f"'{_load_name}' 템플릿을 찾지 못했어요. "
+                        "'내 템플릿 보여줘'로 확인해보세요."
+                    ),
+                    meta=_tpl_meta,
+                )
+            wtype = "sim_form" if tpl["template_type"] == "sim" else "gen_form"
+            return ChatAnswer(
+                answer=f"'{tpl['name']}' 템플릿으로 채웠어요. 확인·수정 후 실행하세요.",
+                meta={
+                    "source": "simulation" if tpl["template_type"] == "sim" else "generator",
+                    "label": "템플릿 불러오기",
+                    "widget": {"type": wtype, "data": tpl["content"]},
+                },
+            )
+        # 설정 저장 — 최근 시뮬/생성 입력을 템플릿으로 보관.
+        if _is_template_save(q):
+            recent = await history.get_long_term_memory(turn.project_id, limit=5)
+            latest = next(
+                (m for m in recent if m.get("memory_type") in ("sim_input", "gen_input")), None
+            )
+            if latest is None:
+                return ChatAnswer(
+                    answer="저장할 설정이 없어요. 먼저 시뮬레이션이나 생성을 한 번 진행해주세요.",
+                    meta=_tpl_meta,
+                )
+            ttype = "sim" if latest["memory_type"] == "sim_input" else "gen"
+            name = _template_save_name(q, latest.get("content") or {}, ttype)
+            saved = await history.save_template(
+                turn.project_id, name, ttype, latest.get("content") or {}
+            )
+            ok_msg = (
+                f"'{name}' 템플릿으로 저장했어요. "
+                f"다음엔 '{name} 템플릿으로 시뮬 돌려줘'처럼 쓰세요."
+            )
+            return ChatAnswer(
+                answer=ok_msg if saved else "템플릿 저장에 실패했어요. 잠시 후 다시 시도해주세요.",
+                meta=_tpl_meta,
+            )
         # 배치 시뮬 요청은 그래프 없이 바로 입력 위젯을 띄운다(광고 2개 비교).
         if _is_batch_sim(q):
             return ChatAnswer(

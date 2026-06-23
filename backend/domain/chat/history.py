@@ -13,7 +13,13 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.db import AsyncSessionLocal
-from core.models import ChatBrandProfile, ChatLongTermMemory, ChatMessage, ChatSession
+from core.models import (
+    AdTemplate,
+    ChatBrandProfile,
+    ChatLongTermMemory,
+    ChatMessage,
+    ChatSession,
+)
 
 _BRAND_FIELDS = ("brand_name", "tone", "target_audience", "product_category", "keywords")
 
@@ -278,6 +284,81 @@ async def upsert_brand_profile(project_id: str | None, fields: dict) -> None:
             await db.commit()
     except Exception as exc:  # noqa: BLE001
         print(f"[chat] brand profile upsert error: {exc!r}")
+
+
+async def save_template(
+    project_id: str | None, name: str, template_type: str, content: dict
+) -> dict | None:
+    """광고 설정 템플릿 저장(T12). 같은 이름이 있으면 내용 갱신(upsert)."""
+    pid = _as_uuid(project_id)
+    if pid is None or not name:
+        return None
+    try:
+        async with AsyncSessionLocal() as db:
+            row = await db.execute(
+                select(AdTemplate).where(AdTemplate.project_id == pid, AdTemplate.name == name)
+            )
+            tpl = row.scalar_one_or_none()
+            if tpl is None:
+                tpl = AdTemplate(
+                    project_id=pid, name=name, template_type=template_type, content=content
+                )
+                db.add(tpl)
+            else:
+                tpl.template_type = template_type
+                tpl.content = content
+            await db.commit()
+            return {"name": name, "template_type": template_type}
+    except Exception as exc:  # noqa: BLE001
+        print(f"[chat] template save error: {exc!r}")
+        return None
+
+
+async def list_templates(project_id: str | None) -> list[dict]:
+    """프로젝트 템플릿 목록(최신순)."""
+    pid = _as_uuid(project_id)
+    if pid is None:
+        return []
+    try:
+        async with AsyncSessionLocal() as db:
+            rows = await db.execute(
+                select(AdTemplate)
+                .where(AdTemplate.project_id == pid)
+                .order_by(AdTemplate.created_at.desc())
+            )
+            return [
+                {
+                    "id": str(t.id),
+                    "name": t.name,
+                    "template_type": t.template_type,
+                    "content": t.content,
+                }
+                for t in rows.scalars()
+            ]
+    except Exception as exc:  # noqa: BLE001
+        print(f"[chat] template list error: {exc!r}")
+        return []
+
+
+async def get_template_by_name(project_id: str | None, name: str) -> dict | None:
+    """이름으로 템플릿 조회 — 부분일치(가장 최근). 없으면 None."""
+    pid = _as_uuid(project_id)
+    if pid is None or not name:
+        return None
+    try:
+        async with AsyncSessionLocal() as db:
+            rows = await db.execute(
+                select(AdTemplate)
+                .where(AdTemplate.project_id == pid, AdTemplate.name.ilike(f"%{name}%"))
+                .order_by(AdTemplate.created_at.desc())
+            )
+            t = rows.scalars().first()
+            if t is None:
+                return None
+            return {"name": t.name, "template_type": t.template_type, "content": t.content}
+    except Exception as exc:  # noqa: BLE001
+        print(f"[chat] template get error: {exc!r}")
+        return None
 
 
 async def delete_session(db: AsyncSession, session_id: str) -> bool:

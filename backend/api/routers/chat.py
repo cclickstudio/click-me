@@ -213,6 +213,32 @@ async def chat_sim_batch(body: BatchSimRequest) -> dict:
     return {"results": results}
 
 
+class TemplateCreate(BaseModel):
+    project_id: str | None = None
+    name: str
+    template_type: str = "sim"  # sim | gen
+    content: dict
+
+
+@router.post("/templates")
+async def create_template(body: TemplateCreate) -> dict:
+    """광고 설정 템플릿 저장(T12) — 같은 이름이면 갱신."""
+    saved = await history.save_template(
+        body.project_id, body.name, body.template_type, body.content
+    )
+    if saved is None:
+        raise HTTPException(
+            status_code=400, detail="템플릿을 저장할 수 없습니다(프로젝트·이름 확인)."
+        )
+    return saved
+
+
+@router.get("/templates")
+async def list_templates(project_id: str | None = None) -> dict:
+    """프로젝트 템플릿 목록(T12)."""
+    return {"templates": await history.list_templates(project_id)}
+
+
 class SessionCreate(BaseModel):
     project_id: str | None = None
     title: str | None = None

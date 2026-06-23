@@ -278,6 +278,21 @@ class ChatBrandProfile(Base):
     )
 
 
+class AdTemplate(Base):
+    """광고 설정 템플릿 — 자주 쓰는 시뮬/생성 입력을 명명 저장해 재사용(T12)."""
+
+    __tablename__ = "ad_templates"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    name: Mapped[str] = mapped_column(String(100))  # "여름 캠페인", "뷰티 기본"
+    template_type: Mapped[str] = mapped_column(String(10))  # "sim" | "gen"
+    content: Mapped[dict] = mapped_column(JSONB)  # 설정값(폼 초기값)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class Inquiry(Base):
     __tablename__ = "inquiries"
 
