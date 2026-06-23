@@ -9,6 +9,9 @@ import GenFormWidget from './GenFormWidget';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
+// 상대 프록시 URL(/api/...)은 API_BASE를 붙여 렌더. blob:·http:는 그대로 통과.
+const fullUrl = (u?: string) => (u && u.startsWith('/') ? `${API_BASE}${u}` : u);
+
 const quickPrompts = [
   '이 광고의 예상 CTR을 분석해줘',
   '20대 여성 타겟 광고 전략을 추천해줘',
@@ -126,11 +129,14 @@ export default function ChatConversation({
       try {
         const { messages: rows } = await api.chat.messages(sessionId);
         setMessages(
-          rows.map((m) => ({
-            role: m.role,
-            content: m.content,
-            meta: (m.meta as SourceMeta | null) ?? undefined,
-          })),
+          rows.map((m) => {
+            const rawMeta = m.meta as Record<string, unknown> | null;
+            const imageUrl =
+              typeof rawMeta?.image_url === 'string' ? rawMeta.image_url : undefined;
+            // 어시스턴트 메시지만 출처/위젯 meta로 사용. 사용자 메시지 meta는 이미지 URL 보관용.
+            const meta = m.role === 'assistant' ? (rawMeta as SourceMeta | null) ?? undefined : undefined;
+            return { role: m.role, content: m.content, meta, imageUrl };
+          }),
         );
       } catch {
         setMessages([]);
@@ -185,6 +191,7 @@ export default function ChatConversation({
       if (!content || isStreaming || !projectId) return;
 
       pendingImageRef.current = attachedImage;
+      const imgFile = attachedImage; // S3 영속화용(위젯엔 pendingImageRef로 따로 전달)
       const userMsg: Message = { role: 'user', content, imageUrl: attachedPreview ?? undefined };
       const base = messages;
       const newMessages: Message[] = [...base, userMsg];
@@ -212,6 +219,16 @@ export default function ChatConversation({
         }
       }
 
+      // 첨부 이미지를 S3에 1회 업로드 → 사용자 메시지에 영속화(실패해도 표시만 하고 진행).
+      let imageUrl: string | undefined;
+      if (imgFile) {
+        try {
+          imageUrl = (await api.chat.uploadImage(imgFile)).url;
+        } catch {
+          // 업로드 실패 — 이번 세션 표시는 유지되나 내역엔 안 남음
+        }
+      }
+
       try {
         const res = await fetch(`${API_BASE}/api/chat/complete`, {
           method: 'POST',
@@ -219,6 +236,7 @@ export default function ChatConversation({
           body: JSON.stringify({
             session_id: sid,
             messages: newMessages.map((m) => ({ role: m.role, content: m.content })),
+            image_url: imageUrl,
           }),
         });
 
@@ -341,7 +359,7 @@ export default function ChatConversation({
                     {msg.role === 'user' && msg.imageUrl && (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img
-                        src={msg.imageUrl}
+                        src={fullUrl(msg.imageUrl)}
                         alt="첨부 이미지"
                         className="max-w-[200px] max-h-[200px] rounded-2xl rounded-br-md object-cover border border-[#E5E8EB] dark:border-[#2D3748]"
                       />

@@ -358,6 +358,22 @@ export const api = {
       ),
     deleteSession: (sessionId: string) =>
       request<{ deleted: boolean }>(`/chat/sessions/${sessionId}`, { method: "DELETE" }),
+    // 첨부 이미지 S3 업로드 → 프록시 URL(상대경로) 반환. 내역 영속화에 사용.
+    uploadImage: async (file: File): Promise<{ key: string; url: string }> => {
+      const token = getToken();
+      const form = new FormData();
+      form.append("file", file);
+      const res = await fetch(`${API_BASE}/api/chat/image`, {
+        method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: form,
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: `HTTP ${res.status}` }));
+        throw new Error((err as { detail?: string }).detail ?? `HTTP ${res.status}`);
+      }
+      return res.json();
+    },
   },
 
   inquiries: {
