@@ -14,8 +14,15 @@ export default function FloatingChat() {
   const pathname = usePathname();
   const { selectedProject } = useProjects();
   const { user } = useAuth();
-  const { floatingOpen, setFloatingOpen, activeSessionId, setActiveSessionId, refreshSessions } =
-    useChatController();
+  const {
+    floatingOpen,
+    setFloatingOpen,
+    activeSessionId,
+    setActiveSessionId,
+    refreshSessions,
+    progress,
+    setProgress,
+  } = useChatController();
 
   // /chat 탭(페이지 자체가 채팅) + 비로그인 화면에선 숨김.
   const hidden = pathname === '/chat' || !user;
@@ -47,6 +54,10 @@ export default function FloatingChat() {
         title="AI 채팅 열기"
         className="fixed bottom-6 right-6 z-40 w-14 h-14 rounded-full bg-[#3182F6] text-white shadow-lg hover:bg-[#1B6EEB] flex items-center justify-center transition-colors"
       >
+        {/* 진행 중이면 회전 링 표시(T17) */}
+        {progress && (
+          <span className="absolute inset-0 rounded-full border-2 border-white/40 border-t-white animate-spin" />
+        )}
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
         </svg>
@@ -91,6 +102,19 @@ export default function FloatingChat() {
         </div>
       </div>
 
+      {/* 진행 트레이 — 백그라운드 작업 중 스피너 + 라벨(+진행률) (T17) */}
+      {progress && (
+        <div className="shrink-0 flex items-center gap-2 px-3 py-2 border-b border-[#E5E8EB] dark:border-[#2D3748] bg-[#F5F9FF] dark:bg-[#16243C]">
+          <span className="w-4 h-4 rounded-full border-2 border-[#3182F6]/30 border-t-[#3182F6] animate-spin shrink-0" />
+          <span className="text-xs text-[#3182F6] font-semibold truncate">{progress.label}</span>
+          {typeof progress.pct === 'number' && (
+            <span className="ml-auto text-xs text-[#3182F6] tabular-nums shrink-0">
+              {progress.pct}%
+            </span>
+          )}
+        </div>
+      )}
+
       {/* 본체 */}
       <div className="flex-1 min-h-0">
         {selectedProject ? (
@@ -102,6 +126,7 @@ export default function FloatingChat() {
               refreshSessions();
             }}
             onActivity={refreshSessions}
+            onProgress={setProgress}
           />
         ) : (
           <div className="h-full flex flex-col items-center justify-center px-6 text-center">

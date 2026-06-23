@@ -80,6 +80,8 @@ async def chat_complete(body: ChatRequest) -> StreamingResponse:
     last_message = body.messages[-1].content if body.messages else ""
 
     async def generate() -> AsyncGenerator[str, None]:
+        # 진행 중 표시 — 느릴 수 있는 오케스트레이터 호출 전에 스피너 트레이를 띄운다(T17).
+        yield _sse("progress", progress={"label": "생각 중 🔄", "pct": None})
         # 오케스트레이터(OpenAI) 단일 경로 — classify → route → 도메인 서브에이전트/advise.
         try:
             orch = await _get_orchestrator()(

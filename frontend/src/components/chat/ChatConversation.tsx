@@ -110,11 +110,13 @@ export default function ChatConversation({
   sessionId,
   onSessionCreated,
   onActivity,
+  onProgress,
 }: {
   projectId: string;
   sessionId: string | null; // null = 새 채팅
   onSessionCreated?: (id: string) => void; // 첫 전송으로 세션이 생성되면 알림
   onActivity?: () => void; // 전송 후(제목·갱신 변경) 세션 목록 새로고침 신호
+  onProgress?: (p: { label: string; pct?: number | null; run_id?: string } | null) => void; // 진행 트레이(T17)
 }) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
@@ -260,11 +262,15 @@ export default function ChatConversation({
             done?: boolean;
             meta?: SourceMeta;
             approval?: ApprovalSpec;
+            progress?: { label: string; pct?: number | null; run_id?: string };
           };
           // kind 우선 분기, 없으면 레거시 필드(token/meta/done)로 폴백.
           const kind = data.kind ?? (data.done ? 'done' : data.meta ? 'meta' : 'text');
           if (kind === 'done') {
             setIsStreaming(false);
+            onProgress?.(null); // 완료 → 진행 트레이 닫기
+          } else if (kind === 'progress') {
+            onProgress?.(data.progress ?? null);
           } else if (kind === 'meta' && data.meta) {
             setMessages((prev) => {
               const last = prev[prev.length - 1];
@@ -290,7 +296,7 @@ export default function ChatConversation({
         }
       }
     }
-  }, []);
+  }, [onProgress]);
 
   // 개선 루프 수락 — POST /api/chat/approve 로 왕복 카운트를 올리고 다음 위젯을 스트리밍.
   const handleApprove = useCallback(
@@ -315,10 +321,11 @@ export default function ChatConversation({
         ]);
       } finally {
         setIsStreaming(false);
+        onProgress?.(null);
         onActivity?.();
       }
     },
-    [isStreaming, sessionId, projectId, consumeStream, onActivity],
+    [isStreaming, sessionId, projectId, consumeStream, onActivity, onProgress],
   );
 
   const handleSend = useCallback(
@@ -401,11 +408,12 @@ export default function ChatConversation({
         ]);
       } finally {
         setIsStreaming(false);
+        onProgress?.(null);
         pendingImageRef.current = null;
         onActivity?.();
       }
     },
-    [input, isStreaming, projectId, attachedImage, attachedPreview, messages, sessionId, onSessionCreated, onActivity, consumeStream],
+    [input, isStreaming, projectId, attachedImage, attachedPreview, messages, sessionId, onSessionCreated, onActivity, onProgress, consumeStream],
   );
 
   return (
