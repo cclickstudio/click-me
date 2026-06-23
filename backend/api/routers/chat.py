@@ -110,7 +110,12 @@ async def chat_complete(body: ChatRequest) -> StreamingResponse:
         if _is_management(last_message):
             try:
                 result = await _get_assistant()(
-                    AskRequest(question=last_message, ad_id=body.context_ad_id)
+                    AskRequest(
+                        question=last_message,
+                        ad_id=body.context_ad_id,
+                        # 멀티턴 — 같은 채팅 세션이면 같은 thread로 묶어 이전 맥락 유지(checkpointer).
+                        thread_id=f"mgmt-{body.session_id}",
+                    )
                 )
                 meta = {
                     "source": "management",

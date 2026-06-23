@@ -119,11 +119,16 @@ def build_audit_sink(settings) -> AuditSink:
 
 
 def build_checkpointer(settings):
-    """어시스턴트 ReAct 그래프의 checkpointer — interrupt(HITL) 재개에 필요.
+    """어시스턴트 ReAct 그래프의 checkpointer — interrupt(HITL)·멀티턴 재개에 필요.
 
-    1차는 인메모리(MemorySaver). Neon 영속(AsyncPostgresSaver)은 후속 — 이 분기만 바꾸면
-    interrupt로 멈춘 그래프가 프로세스 재시작 후에도 재개된다.
+    앱 시작 시 init_pg_checkpointer가 성공했으면 Neon 영속(AsyncPostgresSaver) 싱글턴을,
+    아니면 인메모리(MemorySaver)로 폴백한다. (영속 = 재시작 후에도 같은 thread로 재개)
     """
+    from domain.management.assistant.checkpointer import get_pg_checkpointer  # noqa: PLC0415
+
+    saver = get_pg_checkpointer()
+    if saver is not None:
+        return saver
     from langgraph.checkpoint.memory import MemorySaver  # noqa: PLC0415
 
     return MemorySaver()

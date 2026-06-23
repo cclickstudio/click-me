@@ -1,0 +1,57 @@
+# 어시스턴트 그래프 영속 체크포인터 — Neon Postgres. interrupt(HITL)·멀티턴 상태를 재시작에도 보존.
+"""앱 시작 시 1회 풀+테이블을 준비하고, build_checkpointer가 이 싱글턴을 쓴다.
+
+MemorySaver는 프로세스 재시작 시 승인 대기(interrupt)·대화 맥락이 사라진다. AsyncPostgresSaver는
+Neon에 체크포인트를 저장해 재시작 후에도 같은 thread_id로 이어서 재개·대화할 수 있다.
+초기화 실패(연결 불가 등)면 None → MemorySaver 폴백(앱은 계속 뜬다).
+"""
+
+from __future__ import annotations
+
+import contextlib
+import logging
+
+logger = logging.getLogger("clickme")
+
+_saver = None  # AsyncPostgresSaver | None
+_pool = None
+
+
+async def init_pg_checkpointer(conn_str: str | None) -> None:
+    """앱 시작 시 호출 — Neon 풀 + AsyncPostgresSaver.setup()(체크포인트 테이블 멱등 생성)."""
+    global _saver, _pool
+    if not conn_str or _saver is not None:
+        return
+    try:
+        from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver  # noqa: PLC0415
+        from psycopg_pool import AsyncConnectionPool  # noqa: PLC0415
+
+        # SQLAlchemy는 asyncpg, langgraph 체크포인터는 psycopg 사용 → 드라이버 표기 정리.
+        pg = conn_str.replace("postgresql+asyncpg", "postgresql").replace(
+            "postgresql+psycopg2", "postgresql"
+        )
+        _pool = AsyncConnectionPool(
+            pg, open=False, kwargs={"autocommit": True, "prepare_threshold": 0}
+        )
+        # Windows psycopg-async는 ProactorEventLoop 비호환 → 빨리 실패해 폴백(운영 Linux는 정상).
+        await _pool.open(wait=True, timeout=5.0)
+        _saver = AsyncPostgresSaver(_pool)
+        await _saver.setup()  # checkpoints/checkpoint_writes/... 테이블 생성(멱등)
+        logger.info("Assistant checkpointer: AsyncPostgresSaver(Neon) — 영속·재시작 복구")
+    except Exception as exc:  # noqa: BLE001 — 초기화 실패는 치명 아님: 인메모리로 폴백
+        logger.warning("PG checkpointer 초기화 실패 → MemorySaver 폴백: %s", exc)
+        _saver = None
+
+
+async def close_pg_checkpointer() -> None:
+    """앱 종료 시 풀 정리."""
+    global _pool, _saver
+    if _pool is not None:
+        with contextlib.suppress(Exception):
+            await _pool.close()
+    _pool, _saver = None, None
+
+
+def get_pg_checkpointer():
+    """초기화된 AsyncPostgresSaver(없으면 None)."""
+    return _saver
