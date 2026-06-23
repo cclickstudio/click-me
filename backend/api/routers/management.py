@@ -157,6 +157,14 @@ def _resolved_execution_mode() -> ExecutionMode:
         return ExecutionMode.DRY_RUN
 
 
+def _is_sending_mode() -> bool:
+    """실제 Meta 전송이 일어나는 모드 — 이미지 업로드 등 실 호출 결과를 검증할 대상.
+
+    DRY_RUN/MOCK은 upload_image가 None을 반환(미전송, 의도된 동작)이라 image_hash 부재가 정상.
+    """
+    return _resolved_execution_mode() in (ExecutionMode.VALIDATE_ONLY, ExecutionMode.LIVE)
+
+
 def _get_executor() -> Executor:
     global _executor  # noqa: PLW0603
     if _executor is None:
@@ -1289,7 +1297,7 @@ async def from_candidate(
         "candidate.png",
         idem_key=f"img_{uuid4().hex[:8]}",
     )
-    if not getattr(settings, "use_mock", True) and not image_hash:
+    if _is_sending_mode() and not image_hash:
         raise HTTPException(status_code=502, detail="Meta 이미지 업로드 실패.")
 
     policy = await get_campaign_policy(build_reader(settings))
@@ -1488,7 +1496,7 @@ async def from_simulation(
         "creative.png",
         idem_key=f"img_{uuid4().hex[:8]}",
     )
-    if not getattr(settings, "use_mock", True) and not image_hash:
+    if _is_sending_mode() and not image_hash:
         raise HTTPException(status_code=502, detail="Meta 이미지 업로드 실패.")
 
     policy = await get_campaign_policy(build_reader(settings))
