@@ -57,8 +57,14 @@ export default function SimulationResultPage() {
       });
 
     // 1) 방금 실행한 결과(전체 데이터)가 sessionStorage에 있으면 그대로 사용.
+    //    단, 옛 코드 시절 캐시엔 presigned S3 URL이 박혀 있을 수 있으므로(자격증명 노출·만료),
+    //    그런 캐시는 무시하고 db-result(프록시 URL)로 새로 받는다.
     const stored = loadSimResult(id);
-    if (stored) {
+    const cachedAsset = stored?.result?.ad_asset_url ?? '';
+    const cachedIsPresigned =
+      cachedAsset.includes('amazonaws.com') ||
+      /[?&](X-Amz-|AWSAccessKeyId)/i.test(cachedAsset);
+    if (stored && !cachedIsPresigned) {
       setResult(stored.result);
       setAdTitle(stored.adTitle);
       setAdDescription(stored.adDescription);

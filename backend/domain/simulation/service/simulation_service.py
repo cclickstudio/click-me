@@ -11,6 +11,7 @@ import uuid
 from collections.abc import AsyncIterator
 
 from core.tracing import make_trace_config
+from domain.simulation.adapters.ad_image_store import proxy_url_for
 from domain.simulation.contracts.schemas import SimulationRunRequest
 from domain.simulation.tools.objective_fit import assess_objective_fit
 
@@ -171,8 +172,8 @@ class SimulationService:
                 "reactions": reactions,
                 "rubric_scores": rubric_dump,
                 "aggregate": aggregate_dump,
-                # 상세 페이지 표시용 — 업로드 시 presigned URL, 외부 URL이면 그대로, 로컬폴백이면 경로.
-                "ad_asset_url": request.ad_image_url,
+                # 상세 페이지 표시용 — S3 키는 프록시 URL로(자격증명 노출 방지), 외부 URL은 그대로.
+                "ad_asset_url": proxy_url_for(request.ad_image_key or request.ad_image_url),
             }
             # 캠페인 목표 달성 가능성(결정론 룰) — 목표 선언 + 집계가 있을 때만(exploratory).
             if request.ad_objective and aggregate_obj is not None:

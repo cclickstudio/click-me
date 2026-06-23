@@ -10,7 +10,7 @@ import os
 import uuid
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
@@ -21,6 +21,10 @@ from domain.simulation.contracts.schemas import SimulationRunRequest
 from domain.simulation.repositories.simulation_repository import SimulationRepository
 from domain.simulation.service.analysis_view import to_analysis_payload
 from domain.simulation.wiring import _ensure_env, build_simulation_service
+from tools.storage.s3 import download_bytes
+
+# 프록시 허용 S3 프리픽스 — 시뮬 광고 이미지만(오픈 프록시 방지)
+_SIM_IMAGE_PREFIX = "simulation/"
 
 logger = logging.getLogger("clickme")
 router = APIRouter()
@@ -187,6 +191,29 @@ async def run_simulation(
 async def get_categories(session: AsyncSession = Depends(get_db)) -> list[dict]:
     """광고 제품 카테고리 — 업종 대분류별 NICE 상품분류(45류). 2단계 선택(대분류→세부)용."""
     return await list_categories(session)
+
+
+@router.get("/image")
+async def proxy_simulation_image(key: str) -> Response:
+    """시뮬 광고 이미지 S3 프록시 — presigned URL을 브라우저에 노출하지 않기 위해 서버가 중계.
+
+    simulation/ 프리픽스만 허용(버킷 내 임의 객체 열람·자격증명 노출 방지).
+    """
+    if ".." in key or not key.startswith(_SIM_IMAGE_PREFIX):
+        raise HTTPException(status_code=403, detail="허용되지 않은 이미지 경로입니다.")
+    try:
+        data = await download_bytes(key)
+    except Exception:
+        raise HTTPException(status_code=404, detail="이미지를 찾을 수 없습니다.") from None
+    if key.endswith((".jpg", ".jpeg")):
+        media = "image/jpeg"
+    elif key.endswith(".webp"):
+        media = "image/webp"
+    elif key.endswith(".gif"):
+        media = "image/gif"
+    else:
+        media = "image/png"
+    return Response(content=data, media_type=media)
 
 
 @router.get("/{run_id}/stream")

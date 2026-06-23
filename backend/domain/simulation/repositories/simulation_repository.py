@@ -10,7 +10,7 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from domain.simulation import models
-from domain.simulation.adapters.ad_image_store import presigned_for
+from domain.simulation.adapters.ad_image_store import proxy_url_for
 from domain.simulation.contracts.schemas import (
     AdInterpretation,
     Aisas,
@@ -298,8 +298,8 @@ class SimulationRepository:
             )
         ).first()
         ad_objective = ad_row[0] if ad_row else None
-        # 저장된 asset 참조(s3 key 또는 외부 URL)를 표시용 presigned URL로 변환(없으면 None).
-        result["ad_asset_url"] = await presigned_for(ad_row[1] if ad_row else None)
+        # 저장된 asset 참조(s3 key 또는 외부 URL)를 표시용 프록시 URL로 변환(자격증명 노출 방지).
+        result["ad_asset_url"] = proxy_url_for(ad_row[1] if ad_row else None)
 
         # objective_fit 재계산 — ads.ad_objective + 집계/반응 신호로(미저장이라 재계산).
         if ad_objective and aggregate_obj is not None:

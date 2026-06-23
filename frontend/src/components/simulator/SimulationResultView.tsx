@@ -9,6 +9,11 @@ import { KpiCard } from '@/components/ui/KpiCard';
 import { formatPercent } from '@/lib/utils';
 import type { ObjectiveFit, ReportView, SimRunResult } from '@/lib/types';
 
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
+// 광고 이미지 URL — 백엔드 프록시 상대경로(/api/...)면 API_BASE를 붙인다. http(s)는 그대로.
+const assetSrc = (u?: string | null) =>
+  u && u.startsWith('/') ? `${API_BASE}${u}` : (u ?? undefined);
+
 /* ─── enum 한글 라벨(백엔드 contracts/enums.py 동기화) ─── */
 const EMOTION_LABEL: Record<string, string> = {
   curiosity: '호기심',
@@ -266,8 +271,9 @@ export function SimulationResultView({
                 </h2>
                 {result.ad_asset_url && (
                   // 업로드된 광고 크리에이티브 — presigned URL(~1h). 텍스트 시뮬이면 미표시.
+                  // eslint-disable-next-line @next/next/no-img-element
                   <img
-                    src={result.ad_asset_url}
+                    src={assetSrc(result.ad_asset_url)}
                     alt='광고 크리에이티브'
                     className='mb-4 h-auto max-h-56 w-full object-contain rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-[#F9FAFB] dark:bg-[#11151F]'
                   />
