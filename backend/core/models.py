@@ -18,7 +18,7 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.dialects.postgresql import ENUM, JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from core.db import Base
@@ -203,11 +203,35 @@ class GeneratorKbChunk(Base):
 
 
 class ChatSession(Base):
+    """채팅 세션 — 프로젝트에 귀속된 대화 하나. 메시지는 ChatMessage로 정규화 저장."""
+
     __tablename__ = "chat_sessions"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     project_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("projects.id"), nullable=True)
-    messages: Mapped[list] = mapped_column(JSONB, default=list)
+    title: Mapped[str] = mapped_column(String(200), default="새 채팅")  # 세션 목록 표시용
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )
+
+
+class ChatMessage(Base):
+    """채팅 메시지 — 세션에 귀속된 한 발화(user|assistant). meta에 출처·위젯·인용 보관."""
+
+    __tablename__ = "chat_messages"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    session_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("chat_sessions.id", ondelete="CASCADE")
+    )
+    role: Mapped[str] = mapped_column(
+        ENUM("user", "assistant", name="chat_role", create_type=False)
+    )
+    content: Mapped[str] = mapped_column(Text)
+    # 컬럼명은 metadata지만 SQLAlchemy 예약어라 속성은 meta로 매핑.
+    meta: Mapped[dict | None] = mapped_column("metadata", JSONB, nullable=True)
+    tokens_used: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
