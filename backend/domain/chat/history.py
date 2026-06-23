@@ -109,6 +109,71 @@ async def append_turn(
         session.title = user_content.strip()[:60]
     session.updated_at = datetime.now()
     await db.commit()
+    # 10턴 초과 시 앞 대화를 요약·압축(best-effort, 모크/키 없으면 생략).
+    await summarize_and_compress(str(sid), str(session.project_id) if session.project_id else None)
+
+
+_SUMMARY_THRESHOLD_TURNS = 10  # 이 턴 수 초과 시 앞 대화를 요약·압축
+_KEEP_RECENT_MSGS = 8  # 요약 후에도 원문 유지하는 최근 메시지 수(4턴)
+
+
+async def summarize_and_compress(session_id: str, project_id: str | None) -> None:
+    """대화가 10턴을 넘으면 앞부분을 LLM으로 요약해 session_summary 롱텀 메모리로 저장.
+
+    best-effort — 키 없음/모크/실패 시 조용히 생략. 이미 같은 범위를 요약했으면 재요약 안 함.
+    """
+    from core.config import settings  # noqa: PLC0415 — 지연 임포트(설정 의존 최소화)
+
+    key = getattr(settings, "openai_api_key", None)
+    if getattr(settings, "use_mock", True) or not key:
+        return
+    try:
+        async with AsyncSessionLocal() as db:
+            rows = await get_messages(db, session_id)
+    except Exception:  # noqa: BLE001
+        return
+    # 10턴(=20메시지) 이하면 요약 불필요.
+    if len(rows) <= _SUMMARY_THRESHOLD_TURNS * 2:
+        return
+    older = rows[:-_KEEP_RECENT_MSGS]
+    if not older:
+        return
+    # 같은 범위를 이미 요약했으면 스킵(중복 LLM 호출 방지).
+    existing = await get_long_term_memory(project_id, limit=1, memory_type="session_summary")
+    for e in existing:
+        c = e.get("content") or {}
+        if c.get("session_id") == session_id and (c.get("covered") or 0) >= len(older):
+            return
+    transcript = "\n".join(f"{m['role']}: {m['content']}" for m in older)
+    try:
+        from openai import AsyncOpenAI  # noqa: PLC0415
+
+        client = AsyncOpenAI(api_key=key)
+        model = getattr(settings, "chat_summary_model", "gpt-4o-mini")
+        resp = await client.chat.completions.create(
+            model=model,
+            temperature=0.2,
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "다음 대화를 3~5문장 한국어로 요약하라. 사용자의 의도·결정·"
+                        "언급한 광고/시뮬/생성 맥락을 보존하라. 문장 끝에 콜론을 쓰지 말 것."
+                    ),
+                },
+                {"role": "user", "content": transcript},
+            ],
+        )
+        summary = (resp.choices[0].message.content or "").strip()
+    except Exception as exc:  # noqa: BLE001 — 요약 실패가 채팅을 막지 않게
+        print(f"[chat] summarize error: {exc!r}")
+        return
+    if summary:
+        await save_long_term_memory(
+            project_id,
+            "session_summary",
+            {"session_id": session_id, "summary": summary, "covered": len(older)},
+        )
 
 
 async def save_long_term_memory(
