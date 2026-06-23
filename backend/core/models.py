@@ -235,6 +235,27 @@ class ChatMessage(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
+class ChatLongTermMemory(Base):
+    """채팅 롱텀 메모리 — 시뮬/생성 실행 입력·사용자 선호를 프로젝트 단위로 누적.
+
+    다음 대화에 컨텍스트로 주입(최근 N개 조회). memory_type:
+    sim_input | gen_input | user_pref | session_summary.
+    """
+
+    __tablename__ = "chat_long_term_memory"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    project_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    memory_type: Mapped[str] = mapped_column(String(32))
+    content: Mapped[dict] = mapped_column(JSONB)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class Inquiry(Base):
     __tablename__ = "inquiries"
 

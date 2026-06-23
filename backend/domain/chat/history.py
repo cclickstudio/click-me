@@ -12,7 +12,8 @@ from datetime import datetime
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.models import ChatMessage, ChatSession
+from core.db import AsyncSessionLocal
+from core.models import ChatLongTermMemory, ChatMessage, ChatSession
 
 _DEFAULT_TITLE = "새 채팅"
 
@@ -108,6 +109,58 @@ async def append_turn(
         session.title = user_content.strip()[:60]
     session.updated_at = datetime.now()
     await db.commit()
+
+
+async def save_long_term_memory(
+    project_id: str | None,
+    memory_type: str,
+    content: dict,
+    user_id: str | None = None,
+) -> None:
+    """롱텀 메모리 1건 적재(best-effort) — 자체 세션. 오케스트레이터(비요청 스코프)에서 호출."""
+    pid = _as_uuid(project_id)
+    if pid is None:
+        return  # 프로젝트 스코프 없으면 누적 의미 없음 — 생략
+    try:
+        async with AsyncSessionLocal() as db:
+            db.add(
+                ChatLongTermMemory(
+                    project_id=pid,
+                    user_id=_as_uuid(user_id),
+                    memory_type=memory_type,
+                    content=content,
+                )
+            )
+            await db.commit()
+    except Exception as exc:  # noqa: BLE001 — 메모리 적재 실패가 채팅을 막지 않게
+        print(f"[chat] long-term memory save error: {exc!r}")
+
+
+async def get_long_term_memory(
+    project_id: str | None, limit: int = 3, memory_type: str | None = None
+) -> list[dict]:
+    """프로젝트의 최근 롱텀 메모리 — 최신순. memory_type으로 필터(선택)."""
+    pid = _as_uuid(project_id)
+    if pid is None:
+        return []
+    try:
+        async with AsyncSessionLocal() as db:
+            stmt = select(ChatLongTermMemory).where(ChatLongTermMemory.project_id == pid)
+            if memory_type:
+                stmt = stmt.where(ChatLongTermMemory.memory_type == memory_type)
+            stmt = stmt.order_by(ChatLongTermMemory.created_at.desc()).limit(limit)
+            rows = await db.execute(stmt)
+            return [
+                {
+                    "memory_type": r.memory_type,
+                    "content": r.content,
+                    "created_at": r.created_at.isoformat() if r.created_at else None,
+                }
+                for r in rows.scalars()
+            ]
+    except Exception as exc:  # noqa: BLE001 — 조회 실패면 메모리 없이 진행
+        print(f"[chat] long-term memory get error: {exc!r}")
+        return []
 
 
 async def delete_session(db: AsyncSession, session_id: str) -> bool:

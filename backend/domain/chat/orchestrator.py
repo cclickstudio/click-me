@@ -11,6 +11,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 
 from core.assistant import AssistantRequest
+from domain.chat import history
 from domain.generator.assistant.agent import build_generator_agent
 from domain.generator.assistant.tools import list_generations as _list_generations
 from domain.management.assistant.agent import build_management_agent
@@ -141,6 +142,30 @@ class ChatAnswer:
 
     answer: str
     meta: dict
+
+
+def _format_ltm(ltm: list[dict]) -> str:
+    """롱텀 메모리 목록 → 시스템 프롬프트에 앞붙일 컨텍스트 문자열(없으면 빈 문자열)."""
+    if not ltm:
+        return ""
+    lines: list[str] = []
+    for m in ltm:
+        c = m.get("content") or {}
+        if m.get("memory_type") == "sim_input":
+            lines.append(
+                f"- 최근 시뮬 입력: 제목 '{c.get('ad_title', '')}', "
+                f"카테고리 '{c.get('product_category', '')}'"
+            )
+        elif m.get("memory_type") == "gen_input":
+            lines.append(
+                f"- 최근 생성 입력: 상품 '{c.get('product_name', '')}', "
+                f"타깃 '{c.get('target_audience', '')}'"
+            )
+        elif m.get("memory_type") == "session_summary":
+            lines.append(f"- 이전 대화 요약: {c.get('summary', '')}")
+        else:
+            lines.append(f"- 사용자 선호: {c}")
+    return "이 프로젝트의 최근 맥락(참고용):\n" + "\n".join(lines) + "\n\n"
 
 
 def _is_management(text: str) -> bool:
@@ -311,6 +336,7 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
         session_id: str | None
         project_id: str | None
         history: list[tuple[str, str]]
+        ltm: list[dict]
         intent: str
         action: str
         context_id: str | None
@@ -373,21 +399,21 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
                     HumanMessage(content=state["question"]),
                 ]
             )
+            sim_data = {
+                "ad_title": si.ad_title,
+                "ad_content": si.ad_content or (state.get("ad_content") or ""),
+                "product_category": si.product_category,
+                "ad_objective": si.ad_objective,
+            }
+            # 롱텀 메모리 — 시뮬 실행 입력을 프로젝트 단위로 누적(다음 대화 컨텍스트).
+            await history.save_long_term_memory(state.get("project_id"), "sim_input", sim_data)
             # 위젯 방식 — 백엔드 직접 실행 대신 입력 위젯을 띄운다(프론트가 기존 라우터로 실행).
             return {
                 "answer": "시뮬레이션을 돌릴게요. 아래에서 광고 정보를 확인·수정하고 실행하세요.",
                 "meta": {
                     "source": "simulation",
                     "label": "시뮬레이션",
-                    "widget": {
-                        "type": "sim_form",
-                        "data": {
-                            "ad_title": si.ad_title,
-                            "ad_content": si.ad_content or (state.get("ad_content") or ""),
-                            "product_category": si.product_category,
-                            "ad_objective": si.ad_objective,
-                        },
-                    },
+                    "widget": {"type": "sim_form", "data": sim_data},
                 },
             }
         res = await sim(
@@ -430,21 +456,21 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
                     HumanMessage(content=state["question"]),
                 ]
             )
+            gen_data = {
+                "product_name": gi.product_name,
+                "product_description": gi.product_description,
+                "target_audience": gi.target_audience,
+                "campaign_objective": gi.campaign_objective,
+            }
+            # 롱텀 메모리 — 생성 실행 입력을 프로젝트 단위로 누적(다음 대화 컨텍스트).
+            await history.save_long_term_memory(state.get("project_id"), "gen_input", gen_data)
             # 위젯 방식 — 추출한 값을 초기값으로 입력 위젯을 띄운다(프론트가 기존 라우터로 실행).
             return {
                 "answer": "광고 시안을 만들게요. 아래에서 생성 정보를 확인·수정하고 실행하세요.",
                 "meta": {
                     "source": "generator",
                     "label": "생성",
-                    "widget": {
-                        "type": "gen_form",
-                        "data": {
-                            "product_name": gi.product_name,
-                            "product_description": gi.product_description,
-                            "target_audience": gi.target_audience,
-                            "campaign_objective": gi.campaign_objective,
-                        },
-                    },
+                    "widget": {"type": "gen_form", "data": gen_data},
                 },
             }
         res = await gen(
@@ -507,7 +533,9 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
         }
 
     async def advise_node(state) -> dict:
-        msgs = [SystemMessage(content=_ADVISE_SYSTEM)]
+        # 롱텀 메모리 컨텍스트를 시스템 프롬프트 앞에 주입(프로젝트 최근 맥락).
+        preamble = _format_ltm(state.get("ltm") or [])
+        msgs = [SystemMessage(content=preamble + _ADVISE_SYSTEM)]
         for role, content in (state.get("history") or [])[-6:]:
             msgs.append(
                 AIMessage(content=content) if role == "assistant" else HumanMessage(content=content)
@@ -560,6 +588,8 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
         # 숏텀 메모리에서 윈도우 내역을 꺼내 노드에 전달(raw 전체 history 대신 최근 6턴).
         mem = _get_memory(sid, turn.history or [])
         windowed = mem.load()
+        # 진입 시 프로젝트 롱텀 메모리 최근 3개 조회 → 노드에서 시스템 프롬프트 앞 주입.
+        ltm = await history.get_long_term_memory(turn.project_id, limit=3)
         # 1턴 = 1 트레이스 루트(classify → route → 서브에이전트).
         final = await graph.ainvoke(
             {
@@ -567,6 +597,7 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
                 "session_id": sid,
                 "project_id": turn.project_id,
                 "history": windowed,
+                "ltm": ltm,
             },
             config={
                 "run_name": "assistant_chat",
