@@ -79,6 +79,16 @@ _GEN_EXTRACT_SYSTEM = (
     "명시되지 않은 항목은 요청 내용으로 합리적으로 채워라."
 )
 
+# 시뮬 실행 입력 추출 프롬프트 — 사용자 요청에서 시뮬 위젯 초기값 뽑기.
+_SIM_EXTRACT_SYSTEM = (
+    "사용자의 광고 시뮬레이션 요청에서 입력을 추출하라.\n"
+    "- ad_title: 광고/제품 제목 (예: \"'여름세일'이라는 제목으로\" → 여름세일)\n"
+    "- ad_content: 광고 카피·문구·설명\n"
+    "- product_category: 상품 카테고리(있을 때만)\n"
+    "- ad_objective: 광고 목표(있을 때만)\n"
+    "명시되지 않은 항목은 빈 문자열로 두라(지어내지 말 것)."
+)
+
 # 시뮬 결과 요약 메시지에서 KPI 수치 추출 프롬프트 — sim_result_node에서 강약 판정에 쓴다.
 _SIM_RESULT_EXTRACT_SYSTEM = (
     "시뮬레이션 결과 요약 메시지에서 KPI 수치를 추출하라.\n"
@@ -209,6 +219,13 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
         target_audience: str = ""
         campaign_objective: str = "conversion"
 
+    # 시뮬 실행 입력 추출 스키마 — simulation_node에서 위젯 초기값으로 채운다.
+    class _SimInput(BaseModel):
+        ad_title: str = ""
+        ad_content: str = ""
+        product_category: str = ""
+        ad_objective: str = ""
+
     classifier = llm.with_structured_output(_Intent)
 
     # 그래프 상태 — 메시지 누적이 아니라 분류→답변 1패스. 노드엔 어노테이트하지 않는다.
@@ -241,6 +258,14 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
 
     async def simulation_node(state) -> dict:
         if state.get("action") == "run":
+            # 채팅에 이미 준 값(제목·카피·카테고리·목표)을 추출해 위젯 초기값으로 채운다.
+            extractor = llm.with_structured_output(_SimInput)
+            si = await extractor.ainvoke(
+                [
+                    SystemMessage(content=_SIM_EXTRACT_SYSTEM),
+                    HumanMessage(content=state["question"]),
+                ]
+            )
             # 위젯 방식 — 백엔드 직접 실행 대신 입력 위젯을 띄운다(프론트가 기존 라우터로 실행).
             return {
                 "answer": "시뮬레이션을 돌릴게요. 아래에서 광고 정보를 확인·수정하고 실행하세요.",
@@ -249,7 +274,12 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
                     "label": "시뮬레이션",
                     "widget": {
                         "type": "sim_form",
-                        "data": {"ad_content": state.get("ad_content") or ""},
+                        "data": {
+                            "ad_title": si.ad_title,
+                            "ad_content": si.ad_content or (state.get("ad_content") or ""),
+                            "product_category": si.product_category,
+                            "ad_objective": si.ad_objective,
+                        },
                     },
                 },
             }
