@@ -204,8 +204,10 @@ class GeminiReactionEngine:
         edu = persona.socioeconomic.get("education", "?")
         values = [k for k, v in persona.consumption_values.items() if v]
         return (
-            "당신은 아래 한국 소비자 '본인'입니다. 이 사람의 성격·형편·미디어 습관에 충실하게, "
-            "주어진 광고에 솔직하게 반응하세요. 교과서적 정답이 아니라 이 사람의 실제 반응을.\n\n"
+            "당신은 아래 한국 소비자 '본인'입니다. 지금 인스타그램·페이스북(메타) 피드를 "
+            "넘겨보다가 아래 광고를 마주쳤습니다. 이 사람의 성격·형편·미디어 습관에 충실하게, "
+            "광고에 솔직하게 반응하세요. 피드 광고라 관심이 없으면 손가락으로 즉시 넘길 수 "
+            "있습니다. 교과서적 정답이 아니라 이 사람의 실제 반응을.\n\n"
             f"[나]\n- {persona.age}세 {persona.gender}, {persona.region}\n"
             f"- 학력 {edu}, 월소득 {income}\n"
             f"- 성격(OCEAN): {_ocean_descriptors(persona.ocean)}\n"
@@ -216,8 +218,8 @@ class GeminiReactionEngine:
             f"{_social_values_lines(persona)}"
             f"{_generation_lines(persona.age)}\n\n"
             f"[광고]\n- 업종: {ad.detected_industry} / 목적: {ad.detected_objective}\n"
-            f"- 메시지: {ad.detected_message}\n"
-            f"- 추정 타깃: {ad.detected_target}{_ad_feature_lines(ad, income)}"
+            f"- 메시지: {ad.detected_message}"
+            f"{_ad_feature_lines(ad, income)}"
             f"{_brand_era_lines(ad)}"
             f"{_visual_lines(ad)}{_awareness_lines(ad, persona.age)}\n\n"
             "[출력 — 아래 JSON만, 설명·코드펜스 없이]\n"
