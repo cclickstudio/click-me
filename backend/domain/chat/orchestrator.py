@@ -75,6 +75,7 @@ _CLASSIFY_SYSTEM = (
     "- list: 내가 돌린/만든 것의 '목록'을 보려 할 때(예: '내가 돌린 시뮬 뭐 있어?').\n"
     "- select: 과거 항목 중 하나를 '골라' 개선·이어가려 할 때"
     "(예: '내가 돌린 시뮬 개선하고 싶어').\n\n"
+    "[confidence] 분류 확신도 — 명확하면 high, 애매하면 medium, 거의 추측이면 low.\n\n"
     "[예시]\n"
     "'클릭 의향률이 무슨 뜻이야?' → simulation / ask\n"
     "'바나나우유 시뮬 반응 괜찮았어?' → simulation / ask\n"
@@ -416,6 +417,7 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
     class _Intent(BaseModel):
         intent: Literal["management", "simulation", "generator", "advise"]
         action: Literal["ask", "run", "list", "select"] = "ask"
+        confidence: Literal["high", "medium", "low"] = "high"  # 분류 확신도(라우팅 로그용)
         context_id: str | None = None
         ad_content: str | None = None
 
@@ -517,9 +519,9 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
         q = (state.get("question") or "").strip()
         # 위젯이 보낸 결과 보고는 LLM 분류 없이 결정론 분기(일반 질문이 결과노드로 새는 것 방지).
         if q.startswith("[시뮬결과]"):
-            return {"intent": "sim_result", "action": "ask"}
+            return {"intent": "sim_result", "action": "ask", "confidence": "high"}
         if q.startswith("[생성결과]"):
-            return {"intent": "gen_result", "action": "ask"}
+            return {"intent": "gen_result", "action": "ask", "confidence": "high"}
         # 직전 대화를 맥락으로 덧붙여 후속 질문(예: "그거 확실해?")도 제대로 분류한다.
         msgs = [SystemMessage(content=_CLASSIFY_SYSTEM)]
         for role, content in (state.get("history") or [])[-4:]:
@@ -529,6 +531,7 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
         return {
             "intent": res.intent,
             "action": res.action,
+            "confidence": res.confidence,
             "context_id": res.context_id,
             "ad_content": res.ad_content,
         }
@@ -948,6 +951,16 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
             "label": "CLIO",
             "engine": f"OpenAI · {model_name}",
         }
+        # 라우팅 정확도 로그(T20) — classify 결과를 meta에 실어 chat_messages.meta로 영속.
+        if final.get("intent"):
+            meta = {
+                **meta,
+                "routing": {
+                    "intent": final.get("intent"),
+                    "action": final.get("action"),
+                    "confidence": final.get("confidence", "high"),
+                },
+            }
         answer = final.get("answer", "")
         # 이번 턴을 메모리에 적재 — 다음 턴의 윈도우에 반영.
         mem.save_context(turn.question, answer)
