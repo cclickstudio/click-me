@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import AppLayout from '@/components/AppLayout';
-import { safeRandomUUID } from '@/lib/utils';
+import { useProjects } from '@/components/ProjectContext';
+import { api, type ChatSessionRow } from '@/lib/api';
 import SimFormWidget from '@/components/chat/SimFormWidget';
 import GenFormWidget from '@/components/chat/GenFormWidget';
 
@@ -79,17 +80,41 @@ function TypingIndicator() {
 }
 
 export default function Page() {
+  const { projects, selectedProject, selectProject } = useProjects();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
   const [slashIndex, setSlashIndex] = useState(0); // 드롭다운 하이라이트 위치
-  const sessionId = useRef<string>("");
-  if (!sessionId.current) sessionId.current = safeRandomUUID();
+  const [sessions, setSessions] = useState<ChatSessionRow[]>([]); // 프로젝트별 채팅 목록
+  const [currentSessionId, setCurrentSessionId] = useState<string | null>(null); // DB 세션 id
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isStreaming]);
+
+  // 프로젝트별 세션 목록 로드(최근 갱신 순).
+  const loadSessions = useCallback(async (projectId: string) => {
+    try {
+      const { sessions: rows } = await api.chat.sessions(projectId);
+      setSessions(rows);
+    } catch {
+      setSessions([]);
+    }
+  }, []);
+
+  // 프로젝트가 바뀌면 그 프로젝트의 채팅 목록을 다시 불러오고 현재 대화를 비운다.
+  useEffect(() => {
+    if (!selectedProject) {
+      setSessions([]);
+      setMessages([]);
+      setCurrentSessionId(null);
+      return;
+    }
+    setMessages([]);
+    setCurrentSessionId(null);
+    loadSessions(selectedProject.id);
+  }, [selectedProject, loadSessions]);
 
   // "/"로 시작하고 공백이 없을 때만 자동완성 후보를 노출
   const showSlashMenu = input.startsWith('/') && !input.includes(' ');
@@ -135,20 +160,72 @@ export default function Page() {
     }
   };
 
+  // 새 채팅 — 현재 대화·세션을 비운다(첫 전송 시 세션 생성).
+  const newChat = () => {
+    setMessages([]);
+    setCurrentSessionId(null);
+    setInput('');
+  };
+
+  // 기존 세션 열기 — DB 내역을 불러와 메시지로 복원.
+  const openSession = async (sessionId: string) => {
+    if (isStreaming) return;
+    try {
+      const { messages: rows } = await api.chat.messages(sessionId);
+      setMessages(
+        rows.map((m) => ({
+          role: m.role,
+          content: m.content,
+          meta: (m.meta as SourceMeta | null) ?? undefined,
+        })),
+      );
+      setCurrentSessionId(sessionId);
+    } catch {
+      // ignore — 내역 로드 실패 시 현재 상태 유지
+    }
+  };
+
+  const deleteSession = async (sessionId: string) => {
+    try {
+      await api.chat.deleteSession(sessionId);
+    } catch {
+      // ignore
+    }
+    if (currentSessionId === sessionId) newChat();
+    if (selectedProject) loadSessions(selectedProject.id);
+  };
+
   const handleSend = async (text?: string) => {
     const content = text ?? input.trim();
-    if (!content || isStreaming) return;
+    if (!content || isStreaming || !selectedProject) return;
 
     const newMessages: Message[] = [...messages, { role: 'user', content }];
     setMessages(newMessages);
     setInput('');
     setIsStreaming(true);
 
+    // 세션이 없으면(새 채팅) 먼저 DB 세션을 만들어 프로젝트에 귀속.
+    let sid = currentSessionId;
+    if (!sid) {
+      try {
+        const created = await api.chat.createSession(selectedProject.id);
+        sid = created.id;
+        setCurrentSessionId(sid);
+      } catch {
+        setMessages((prev) => [
+          ...prev,
+          { role: 'assistant', content: '채팅 세션을 만들지 못했습니다. 잠시 후 다시 시도해주세요.' },
+        ]);
+        setIsStreaming(false);
+        return;
+      }
+    }
+
     try {
       const res = await fetch(`${API_BASE}/api/chat/complete`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ session_id: sessionId.current, messages: newMessages }),
+        body: JSON.stringify({ session_id: sid, messages: newMessages }),
       });
 
       if (!res.ok || !res.body) {
@@ -213,13 +290,111 @@ export default function Page() {
       ]);
     } finally {
       setIsStreaming(false);
+      // 제목·갱신 시각이 바뀌었을 수 있으니 목록 갱신.
+      if (selectedProject) loadSessions(selectedProject.id);
     }
   };
 
+  // ── 프로젝트 미선택 — 채팅 시작 전 프로젝트를 먼저 고르게 한다 ──
+  if (!selectedProject) {
+    return (
+      <AppLayout>
+        <div className="h-screen flex flex-col items-center justify-center px-4 bg-white dark:bg-[#0F1117] transition-colors">
+          <div className="mb-3 w-12 h-12 flex items-center justify-center rounded-2xl bg-[#EBF3FF] dark:bg-[#1E3A5F]">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#3182F6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+            </svg>
+          </div>
+          <h2 className="text-xl font-bold text-[#191F28] dark:text-[#F2F4F6] mb-2">먼저 프로젝트를 선택하세요</h2>
+          <p className="text-sm text-[#8B95A1] dark:text-[#6B7280] mb-8 text-center leading-relaxed">
+            채팅은 프로젝트에 저장됩니다.<br />프로젝트를 고르면 그 프로젝트의 채팅 목록이 열립니다.
+          </p>
+          {projects.length === 0 ? (
+            <p className="text-sm text-[#B0B8C1]">사용 가능한 프로젝트가 없습니다. 먼저 프로젝트를 생성하세요.</p>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full max-w-lg">
+              {projects.map((p) => (
+                <button
+                  key={p.id}
+                  onClick={() => selectProject(p.id)}
+                  className="p-4 text-left bg-[#F9FAFB] dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748] rounded-xl hover:border-[#3182F6] hover:bg-[#EBF3FF] dark:hover:bg-[#1E3A5F] transition-all"
+                >
+                  <p className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]">{p.name}</p>
+                  {p.organization_name && (
+                    <p className="text-xs text-[#8B95A1] dark:text-[#6B7280] mt-0.5">{p.organization_name}</p>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </AppLayout>
+    );
+  }
+
   return (
     <AppLayout>
-    <div className="h-screen bg-white dark:bg-[#0F1117] flex flex-col transition-colors">
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="h-screen bg-white dark:bg-[#0F1117] flex transition-colors">
+        {/* ── 세션 사이드바 — 프로젝트별 채팅 목록 ── */}
+        <aside className="w-64 shrink-0 border-r border-[#E5E8EB] dark:border-[#2D3748] flex flex-col bg-[#F9FAFB] dark:bg-[#141925]">
+          <div className="px-4 py-4 border-b border-[#E5E8EB] dark:border-[#2D3748]">
+            <p className="text-[11px] font-semibold text-[#8B95A1] dark:text-[#6B7280] uppercase tracking-wide">프로젝트</p>
+            <div className="flex items-center justify-between gap-2 mt-1">
+              <p className="text-sm font-bold text-[#191F28] dark:text-[#F2F4F6] truncate">{selectedProject.name}</p>
+              <button
+                onClick={() => selectProject(null)}
+                className="text-[11px] text-[#8B95A1] hover:text-[#3182F6] shrink-0"
+                title="다른 프로젝트 선택"
+              >
+                변경
+              </button>
+            </div>
+          </div>
+          <button
+            onClick={newChat}
+            className="mx-3 mt-3 mb-1 py-2 rounded-lg bg-[#3182F6] text-white text-sm font-semibold hover:bg-[#1B6EEB] transition-colors"
+          >
+            + 새 채팅
+          </button>
+          <div className="flex-1 overflow-y-auto px-2 py-2 space-y-1">
+            {sessions.length === 0 ? (
+              <p className="px-2 py-3 text-xs text-[#B0B8C1] dark:text-[#4B5563]">아직 채팅이 없어요.</p>
+            ) : (
+              sessions.map((s) => {
+                const active = s.id === currentSessionId;
+                return (
+                  <div
+                    key={s.id}
+                    className={`group flex items-center gap-1 rounded-lg px-2 py-2 cursor-pointer transition-colors ${
+                      active
+                        ? 'bg-[#EBF3FF] dark:bg-[#1E3A5F]'
+                        : 'hover:bg-white dark:hover:bg-[#1C2333]'
+                    }`}
+                    onClick={() => openSession(s.id)}
+                  >
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm text-[#191F28] dark:text-[#F2F4F6] truncate">{s.title}</p>
+                      <p className="text-[10px] text-[#B0B8C1] dark:text-[#6B7280]">{s.message_count}개 메시지</p>
+                    </div>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        deleteSession(s.id);
+                      }}
+                      className="opacity-0 group-hover:opacity-100 text-[#B0B8C1] hover:text-[#F04452] text-xs shrink-0 px-1"
+                      title="삭제"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </aside>
+
+        {/* ── 채팅 영역 ── */}
+        <div className="flex-1 flex flex-col overflow-hidden">
         {messages.length === 0 ? (
           /* ── Welcome state ── */
           <div className="flex-1 flex flex-col items-center justify-center px-4 pb-28">
@@ -403,8 +578,8 @@ export default function Page() {
             AI 응답은 참고용이며 실제 광고 성과와 차이가 있을 수 있습니다
           </p>
         </div>
+        </div>
       </div>
-    </div>
     </AppLayout>
   );
 }

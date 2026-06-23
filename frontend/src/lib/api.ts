@@ -152,6 +152,21 @@ function _campaignQuery(conversionValueKrw?: number | null, targetRoas?: number 
   return q ? `?${q}` : "";
 }
 
+// 채팅 세션·메시지(DB 영속) — 프로젝트별 채팅 목록과 내역.
+export type ChatSessionRow = {
+  id: string;
+  title: string;
+  project_id: string | null;
+  message_count: number;
+  created_at: string | null;
+  updated_at: string | null;
+};
+export type ChatHistoryMessage = {
+  role: 'user' | 'assistant';
+  content: string;
+  meta?: unknown;
+};
+
 export const api = {
   ads: {
     upload: (file: File, projectId: string) => {
@@ -325,8 +340,22 @@ export const api = {
 
   chat: {
     complete: () => `${API_BASE}/api/chat/complete`,
-    sessions: () => request<{ sessions: unknown[] }>("/chat/sessions"),
-    messages: (sessionId: string) => request(`/chat/sessions/${sessionId}/messages`),
+    // 프로젝트별 세션 목록(최근 갱신 순).
+    sessions: (projectId: string) =>
+      request<{ sessions: ChatSessionRow[] }>(
+        `/chat/sessions?project_id=${encodeURIComponent(projectId)}`,
+      ),
+    createSession: (projectId: string, title?: string) =>
+      request<ChatSessionRow>("/chat/sessions", {
+        method: "POST",
+        body: JSON.stringify({ project_id: projectId, title }),
+      }),
+    messages: (sessionId: string) =>
+      request<{ session_id: string; messages: ChatHistoryMessage[] }>(
+        `/chat/sessions/${sessionId}/messages`,
+      ),
+    deleteSession: (sessionId: string) =>
+      request<{ deleted: boolean }>(`/chat/sessions/${sessionId}`, { method: "DELETE" }),
   },
 
   inquiries: {
