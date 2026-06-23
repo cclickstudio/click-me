@@ -266,32 +266,16 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
 
     async def simulation_node(state) -> dict:
         if state.get("action") == "run":
-            from domain.simulation.assistant.tools import run_simulation  # noqa: PLC0415
-
-            ev = await run_simulation(ad_content=state.get("ad_content") or state["question"])
-            answer = _format_sim_run(ev)
-            sid = state.get("session_id")
-            if sid:
-                pi = ev.get("purchase_intent") or 0
-                if pi >= _TARGET_PI:
-                    answer += f"\n\n목표(구매의도 {_TARGET_PI}+)를 충족해요. 이대로 충분합니다."
-                else:
-                    # 약하면 개선 루프 진입 — 다음 턴 '응'이면 개선 생성으로.
-                    _loops[sid] = {
-                        "stage": "propose_improve",
-                        "count": 0,
-                        "ad_content": state.get("ad_content") or state["question"],
-                    }
-                    answer += (
-                        "\n\n구매의도가 약해요. 개선 시안을 만들어볼까요?"
-                        " '응'이라고 하시면 만들어요."
-                    )
+            # 위젯 방식 — 백엔드 직접 실행 대신 입력 위젯을 띄운다(프론트가 기존 라우터로 실행).
             return {
-                "answer": answer,
+                "answer": "시뮬레이션을 돌릴게요. 아래에서 광고 정보를 확인·수정하고 실행하세요.",
                 "meta": {
                     "source": "simulation",
-                    "label": "시뮬레이션 실행",
-                    "engine": "Gemini · 실행",
+                    "label": "시뮬레이션",
+                    "widget": {
+                        "type": "sim_form",
+                        "data": {"ad_content": state.get("ad_content") or ""},
+                    },
                 },
             }
         res = await sim(
@@ -311,19 +295,22 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
                     HumanMessage(content=state["question"]),
                 ]
             )
-            from domain.generator.assistant.tools import run_generation  # noqa: PLC0415
-
-            ev = await run_generation(
-                product_name=gi.product_name,
-                product_description=gi.product_description,
-                target_audience=gi.target_audience,
-                campaign_objective=gi.campaign_objective,
-            )
-            gid = str(ev.get("generation_id") or "")[:8]
+            # 위젯 방식 — 추출한 값을 초기값으로 입력 위젯을 띄운다(프론트가 기존 라우터로 실행).
             return {
-                "answer": f"광고 시안 생성을 시작했어요 (generation_id {gid})."
-                " 완료까지 시간이 걸려요 — 잠시 후 생성 결과를 물어보면 확인해 드릴게요.",
-                "meta": {"source": "generator", "label": "생성 실행", "engine": "파이프라인"},
+                "answer": "광고 시안을 만들게요. 아래에서 생성 정보를 확인·수정하고 실행하세요.",
+                "meta": {
+                    "source": "generator",
+                    "label": "생성",
+                    "widget": {
+                        "type": "gen_form",
+                        "data": {
+                            "product_name": gi.product_name,
+                            "product_description": gi.product_description,
+                            "target_audience": gi.target_audience,
+                            "campaign_objective": gi.campaign_objective,
+                        },
+                    },
+                },
             }
         res = await gen(
             AssistantRequest(question=state["question"], context_id=state.get("context_id"))
