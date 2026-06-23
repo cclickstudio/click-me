@@ -7,6 +7,7 @@ import PendingScreen from './PendingScreen';
 import Sidebar from './Sidebar';
 import ProjectPanel from './ProjectPanel';
 import CompanyPanel from './CompanyPanel';
+import AdminPanel from './AdminPanel';
 import ChangePasswordModal from './ChangePasswordModal';
 
 // COMPANY 계정이 막아야 하는 경로 — 채팅·시뮬/제너 실행 + 내 정보 관리(USER 전용)
@@ -76,16 +77,17 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     );
   }
 
-  const isAdmin = user?.role === 'ADMIN';
+  const role = user?.role;
   const mainLeft = panelCollapsed ? 'pl-[274px]' : 'pl-[512px]';
+
+  // 역할별 좌측 패널 — ADMIN: 회사>팀>프로젝트 / COMPANY: 조직 전체(ALL·TEAM, 조회) / USER: 내 팀 프로젝트
+  const Panel =
+    role === 'ADMIN' ? AdminPanel : role === 'COMPANY' ? CompanyPanel : ProjectPanel;
 
   return (
     <div className="min-h-screen bg-[#F9FAFB] dark:bg-[#0F1117] transition-colors">
       <Sidebar />
-      {isAdmin
-        ? <CompanyPanel collapsed={panelCollapsed} onToggle={togglePanel} />
-        : <ProjectPanel collapsed={panelCollapsed} onToggle={togglePanel} />
-      }
+      <Panel collapsed={panelCollapsed} onToggle={togglePanel} />
       <main className={`${mainLeft} min-h-screen transition-all duration-200`}>
         {children}
       </main>

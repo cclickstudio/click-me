@@ -131,9 +131,14 @@ def _gender_for(persona_id: str) -> str:
     return "남성" if (h // 20) % 2 == 0 else "여성"
 
 
-def _name_for(persona_id: str, gender: str, taken: set[str]) -> str:
-    """persona_id 결정론 이름 — 성·성별 맞는 이름 선택, 패널 내 중복은 다음 후보로 회피."""
-    h = int(hashlib.sha256(persona_id.encode("utf-8")).hexdigest(), 16)
+def _name_for(persona_id: str, gender: str, taken: set[str], seed: str = "") -> str:
+    """persona_id 결정론 이름 — 성·성별 맞는 이름 선택, 패널 내 중복은 다음 후보로 회피.
+
+    seed(토론 run_id 등)를 섞으면 같은 persona라도 토론마다 이름이 달라진다.
+    seed가 같으면 결과도 같으므로 한 토론 안(스트림·결과·PDF)에서는 일관·재현된다.
+    성별은 persona_id로 고정(_gender_for)해 이름·프로필의 성별 일치는 유지한다.
+    """
+    h = int(hashlib.sha256((seed + persona_id).encode("utf-8")).hexdigest(), 16)
     surname = _SURNAMES[h % len(_SURNAMES)]
     pool = _MALE_GIVEN if gender == "남성" else _FEMALE_GIVEN
     gi = (h // 40) % len(pool)
@@ -161,8 +166,12 @@ def _tones_for_lays(lay_ids: list[str]) -> dict[str, str]:
     return {pid: _LAY_TONES[(offset + i) % len(_LAY_TONES)] for i, pid in enumerate(lay_ids)}
 
 
-def assign_panel(panel: SelectedPanel) -> AssignedPanel:
-    """패널에 엔진·이름·프로필을 결정론 부여 — 엔진은 slot 라운드로빈, 이름은 persona_id 해시."""
+def assign_panel(panel: SelectedPanel, seed: str = "") -> AssignedPanel:
+    """패널에 엔진·이름·프로필을 결정론 부여 — 엔진은 slot 라운드로빈, 이름은 persona_id 해시.
+
+    seed(토론 run_id)를 넘기면 이름 부여 해시에 섞여 토론마다 이름이 달라진다.
+    기본값("")은 기존 결정론 동작(검증·재현)을 그대로 유지한다.
+    """
     selected = sorted(panel.participants, key=lambda c: c.slot)
     # 일반인 말투 배정(전문가 제외) — slot 순 id로 비복원. 같은 모델이어도 표현이 겹치지 않게.
     lay_tones = _tones_for_lays([p.persona_id for p in selected if not p.is_expert])
@@ -172,7 +181,7 @@ def assign_panel(panel: SelectedPanel) -> AssignedPanel:
     participants: list[DebateParticipant] = []
     for p in selected:
         gender = _gender_for(p.persona_id)  # 이름·프로필이 같은 성별을 공유
-        name = _name_for(p.persona_id, gender, taken)
+        name = _name_for(p.persona_id, gender, taken, seed)
         taken.add(name)
         # 전문가는 카테고리 주입 프로필을 그대로, 일반인은 나이·직업·성향으로 생성.
         profile = (

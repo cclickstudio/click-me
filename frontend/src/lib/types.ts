@@ -278,6 +278,7 @@ export interface DebateReportQuote {
   role: string;
   stance: DebateStance;
   text: string;
+  reason?: string; // 왜 그렇게 말했나(무엇에 대한 동의/반대인지 — 인용 맥락)
 }
 
 export interface DebateReport {
@@ -450,7 +451,13 @@ export interface DebateDigest {
     expected_effect: string;
     supporting_personas: string[];
   }[];
-  quotes: { persona_name: string; role: string; stance: string; text: string }[];
+  quotes: {
+    persona_name: string;
+    role: string;
+    stance: string;
+    text: string;
+    reason?: string;
+  }[];
 }
 
 export interface ReportView {
