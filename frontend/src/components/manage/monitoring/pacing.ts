@@ -44,13 +44,28 @@ export const PACING_LABEL: Record<PacingStatus, string> = {
   unknown: '추정 보류',
 };
 
-// 계정 잔액 런웨이 — 현재 일지출 기준 며칠치 잔액인지(추정). 데이터 부족 시 null.
-export function runwayDays(account: AccountWallet | null, campaigns: CampaignSummary[]): number | null {
+// 최근 실 일평균 소진 — 일별 지출 시계열의 최근 7일(진행 중인 오늘은 제외) 평균.
+// 시계열이 없으면 계획 일예산으로 폴백(Meta는 일예산에 맞춰 페이싱 → 합리적 추정).
+function recentDailySpend(series: number[], dailyBudgetKrw: number): number {
+  const v = series.filter((x) => Number.isFinite(x));
+  if (v.length === 0) return dailyBudgetKrw;
+  const completed = v.length >= 2 ? v.slice(0, -1) : v; // 마지막=오늘(진행 중) → 평균서 제외
+  const window = completed.slice(-7);
+  const avg = window.reduce((a, b) => a + b, 0) / window.length;
+  return avg > 0 ? avg : dailyBudgetKrw;
+}
+
+// 계정 잔액 런웨이 — 최근 실 일평균 소진 기준 며칠치 잔액인지(추정). 데이터 부족 시 null.
+export function runwayDays(
+  account: AccountWallet | null,
+  campaigns: CampaignSummary[],
+  spendSeries: Record<string, number[]>,
+): number | null {
   const balance = account?.available_balance_krw;
   if (balance == null || balance <= 0) return null;
   const dailySpend = campaigns
     .filter((c) => c.state === 'active')
-    .reduce((a, c) => a + c.spend_krw, 0);
+    .reduce((a, c) => a + recentDailySpend(spendSeries[c.campaign_id] ?? [], c.daily_budget_krw), 0);
   if (dailySpend <= 0) return null;
   return balance / dailySpend;
 }

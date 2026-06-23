@@ -23,8 +23,10 @@ export type CampaignKpi = {
   target_roas?: number | null; // 고객이 입력한 목표 ROAS (없으면 null)
   target_missed?: boolean; // 실제 ROAS가 목표 대비 미달(목표×0.7 미만)이면 true
   conversion_tracking?: boolean; // 실모드에서 전환 추적 여부 (false면 cvr/conversions=null)
-  frequency: number;
-  pacing_pct: number;
+  frequency: number; // 조회기간 윈도 빈도(표시용)
+  frequency_7d: number; // 최근 7일 빈도(노출 피로 판정용) — 조회기간 토글과 무관
+  spend_today_krw: number; // 오늘 지출(소진율 분자) — 총 지출(spend_krw, 조회기간 누적)과 구분
+  pacing_pct: number; // 오늘 지출÷일예산(%) — 조회기간 토글과 무관
 };
 
 // 규칙 하나 — conversions null(추적 미설정)=「미설정」, 그 외는 측정값 표기(구매 0이면 0.0%/0.00x).

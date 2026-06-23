@@ -62,7 +62,9 @@ export function HealthList({
         const fatigue = frequencyFatigue(c);
         const pacing = c.state === 'active' ? pacingProjection(c.pacing_pct, now) : null;
         const series = spendSeries[c.campaign_id] ?? [];
-        const delta = trendDelta(series);
+        // 마지막 점은 진행 중인 '오늘'(부분치) — 추세·델타는 완료일끼리만 비교(오전 허위 하락 방지).
+        const trend = series.length >= 2 ? series.slice(0, -1) : series;
+        const delta = trendDelta(trend);
         return (
           <Link
             key={c.campaign_id}
@@ -115,7 +117,7 @@ export function HealthList({
               </div>
             </div>
             <div className="w-28 shrink-0 flex flex-col items-end gap-0.5">
-              <Sparkline values={series} />
+              <Sparkline values={trend} />
               <DeltaTag delta={delta} />
             </div>
             <div className="w-52 shrink-0 text-right">

@@ -75,24 +75,26 @@ export function campaignHealth(c: CampaignSummary): HealthSignal {
   return { level: 'ok', label: '정상', hint: '특이 신호 없이 게재 중입니다.' };
 }
 
-// 노출 피로 — 같은 사람에게 반복 노출(frequency)이 높으면 CTR 붕괴·CPM 상승. primary와 직교라
-// 별도 배지로 노출한다. 임계: 4.0+ 경고, 2.8+ 주의(업계 통용 휴리스틱 — 추정).
+// 노출 피로 — 같은 사람에게 반복 노출이 높으면 CTR 붕괴·CPM 상승. primary와 직교라 별도 배지.
+// 최근 7일 빈도(frequency_7d) 기준 — 조회기간 누적 빈도는 장기 캠페인서 부풀어 오탐이 난다.
+// 임계: 4.0+ 경고, 2.8+ 주의(업계 통용 휴리스틱 — 추정).
 export type FatigueSignal = { level: 'warn' | 'info'; label: string; hint: string } | null;
 
 export function frequencyFatigue(c: CampaignSummary): FatigueSignal {
-  if (c.state !== 'active' || !Number.isFinite(c.frequency)) return null;
-  if (c.frequency >= 4.0) {
+  const freq = c.frequency_7d;
+  if (c.state !== 'active' || !Number.isFinite(freq)) return null;
+  if (freq >= 4.0) {
     return {
       level: 'warn',
-      label: `피로 ${c.frequency.toFixed(1)}`,
-      hint: '동일인 반복 노출이 높아요 — 소재 교체·타겟 확장을 검토하세요.',
+      label: `피로 ${freq.toFixed(1)}`,
+      hint: '최근 7일 동일인 반복 노출이 높아요 — 소재 교체·타겟 확장을 검토하세요.',
     };
   }
-  if (c.frequency >= 2.8) {
+  if (freq >= 2.8) {
     return {
       level: 'info',
-      label: `빈도 ${c.frequency.toFixed(1)}`,
-      hint: '노출 빈도가 올라가는 중 — 곧 소재 피로가 올 수 있어요.',
+      label: `빈도 ${freq.toFixed(1)}`,
+      hint: '최근 7일 노출 빈도가 올라가는 중 — 곧 소재 피로가 올 수 있어요.',
     };
   }
   return null;

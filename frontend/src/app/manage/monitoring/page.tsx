@@ -222,12 +222,12 @@ export default function Page() {
                     </span>
                   )}
                   {(() => {
-                    const days = runwayDays(account, campaigns);
+                    const days = runwayDays(account, campaigns, spendSeries);
                     if (days == null) return null;
                     return (
                       <span
                         className={`text-[15px] ${days < 3 ? 'text-[#E5484D]' : 'text-[#191F28] dark:text-[#F2F4F6]'}`}
-                        title="현재 일지출이 이어진다는 가정의 추정값"
+                        title="최근 일평균 소진이 이어진다는 가정의 추정값"
                       >
                         잔액 런웨이
                         <OriginTag origin="computed" /> <b className="tabular-nums">약 {days.toFixed(1)}일</b>
@@ -261,7 +261,7 @@ export default function Page() {
           {source === 'live'
             ? `실데이터 · Meta 라이브 · 기간=${
                 datePreset === 'last_30d' ? '최근 30일' : datePreset === 'this_month' ? '이번 달' : '전체 누적'
-              } · 소진율=지출÷일예산 · 금액 KRW`
+              } · 소진율=오늘 지출÷일예산(기간 토글 무관) · 금액 KRW`
             : '⚠ Mock 기반 데모 · 노출/지출은 일중 곡선 모델 기반 · "예측 CTR" 등 실측 환산 없음 · 금액 KRW'}
         </p>
       </div>

@@ -582,6 +582,10 @@ def _campaign_summary(snaps: list[MetricsSnapshot], budget: int) -> dict:
         "cvr": round(conversions / total_inline, 5) if total_inline else 0.0,
         "roas": None,  # 매출(전환 가치) 추적 전 — 측정 불가, 합성 금지
         "frequency": last.frequency,
+        # mock은 하루치 합성이라 7일 빈도 개념이 없음 — 당일 빈도를 그대로 노출 피로 입력으로.
+        "frequency_7d": last.frequency,
+        # mock은 하루치(시간행) 합성이라 총 지출이 곧 오늘 지출 — 소진율 분자로 그대로 쓴다.
+        "spend_today_krw": total_spend,
         "pacing_pct": round(total_spend / budget * 100, 1) if budget else 0.0,
     }
 
@@ -591,6 +595,8 @@ def _real_summary(
     budget: int,
     conversion_value_krw: int | None = None,
     target_roas: float | None = None,
+    spend_today_krw: int = 0,
+    frequency_7d: float = 0.0,
 ) -> dict:
     """실 reader 단일 집계 스냅샷 → 대시보드 요약.
 
@@ -598,6 +604,9 @@ def _real_summary(
     매출이 측정 안 되는(구매 외) 전환은 ROAS가 None인데, 고객이 전환 가치를 입력하면
     그 통계가치로 ROAS를 추정해 채운다(roas_estimated=True로 '추정' 표기 책임을 넘김).
     target_roas(고객 목표) 입력 시 실제 ROAS가 목표 대비 미달이면 target_missed=True.
+    소진율(pacing)은 '오늘' 지출÷일예산 — 일예산은 하루 단위라 조회기간 누적(spend_krw)이
+    아니라 spend_today_krw로 계산한다(조회기간 토글과 무관).
+    노출 피로는 최근 7일 빈도(frequency_7d) — frequency(조회기간 윈도)와 분리해 고정 윈도로 판정.
     """
     roas = m.roas
     roas_estimated = False
@@ -621,7 +630,11 @@ def _real_summary(
         "target_missed": is_target_missed(roas, target_roas),
         "conversion_tracking": m.conversions is not None,
         "frequency": m.frequency,
-        "pacing_pct": round(m.spend_krw / budget * 100, 1) if budget else 0.0,
+        # frequency_7d=최근 7일 빈도(노출 피로용), frequency=조회기간 윈도 빈도(표시용).
+        "frequency_7d": frequency_7d,
+        # spend_today_krw=오늘 지출(소진율용), spend_krw=조회기간 누적(총 지출용)으로 분리.
+        "spend_today_krw": spend_today_krw,
+        "pacing_pct": round(spend_today_krw / budget * 100, 1) if budget else 0.0,
     }
 
 
@@ -641,9 +654,32 @@ async def _list_campaigns_real(
     metrics = await asyncio.gather(
         *(reader.get_metrics(c.campaign_id, since, date_preset=date_preset) for c in infos)
     )
+    # 운영 신호는 조회기간과 분리한 고정 윈도로 산출 — 소진율=오늘 지출÷일예산(하루 단위),
+    # 노출 피로=최근 7일 빈도. active만 today·last_7d를 병렬 추가 조회(비활성은 오늘 게재 안 해 0).
+    today_spend = [0] * len(infos)
+    freq_7d = [0.0] * len(infos)
+    active_idx = [i for i, c in enumerate(infos) if c.state == CampaignState.ACTIVE]
+    if active_idx:
+        today_ms, week_ms = await asyncio.gather(
+            asyncio.gather(
+                *(
+                    reader.get_metrics(infos[i].campaign_id, since, date_preset="today")
+                    for i in active_idx
+                )
+            ),
+            asyncio.gather(
+                *(
+                    reader.get_metrics(infos[i].campaign_id, since, date_preset="last_7d")
+                    for i in active_idx
+                )
+            ),
+        )
+        for k, i in enumerate(active_idx):
+            today_spend[i] = today_ms[k].spend_krw
+            freq_7d[i] = week_ms[k].frequency
     out = []
     any_blocked = False
-    for info, m in zip(infos, metrics, strict=True):
+    for idx, (info, m) in enumerate(zip(infos, metrics, strict=True)):
         # 게재 차단: 계정 자금 막힘 + 캠페인이 켜져 있는데(ACTIVE) 안 도는 경우
         # (게재 기간 종료 캠페인은 state가 ENDED라 제외 — 충전해도 재개 안 됨)
         blocked = funding.delivery_blocked and info.state == CampaignState.ACTIVE
@@ -657,7 +693,14 @@ async def _list_campaigns_real(
                 "ended_at": info.ended_at,
                 "delivery_blocked": blocked,
                 "block_reason": funding.block_reason if blocked else None,
-                **_real_summary(m, info.daily_budget_krw, conversion_value_krw, target_roas),
+                **_real_summary(
+                    m,
+                    info.daily_budget_krw,
+                    conversion_value_krw,
+                    target_roas,
+                    spend_today_krw=today_spend[idx],
+                    frequency_7d=freq_7d[idx],
+                ),
             }
         )
     return {
@@ -717,18 +760,28 @@ async def _get_campaign_real(
     reader = build_reader(settings)
     today = _today_utc()
     # 독립 호출 3개 병렬 — 순차로 기다리면 토글 펼침이 느림(Meta 왕복 ×3).
-    campaigns, snaps, m, daily = await asyncio.gather(
+    campaigns, snaps, m, daily, week = await asyncio.gather(
         reader.list_campaigns(),
         reader.fetch_hourly_metrics(campaign_id, today),
         reader.get_metrics(campaign_id, today, date_preset=date_preset),
         reader.fetch_daily_metrics(campaign_id),
+        reader.get_metrics(campaign_id, today, date_preset="last_7d"),  # 노출 피로용 7일 빈도
     )
     info = next((c for c in campaigns if c.campaign_id == campaign_id), None)
     if info is None:
         raise HTTPException(status_code=404, detail=f"캠페인 없음: {campaign_id}")
     actual = [s.impressions for s in snaps]
     expected = expected_hourly_impressions(info.daily_budget_krw)
-    summary = _real_summary(m, info.daily_budget_krw, conversion_value_krw, target_roas)
+    # 소진율은 오늘 지출 기준 — 이미 받은 시간행(snaps) 합으로 추가 호출 없이 산출.
+    spend_today = sum(s.spend_krw for s in snaps)
+    summary = _real_summary(
+        m,
+        info.daily_budget_krw,
+        conversion_value_krw,
+        target_roas,
+        spend_today_krw=spend_today,
+        frequency_7d=week.frequency,
+    )
     return {
         "campaign_id": info.campaign_id,
         "name": info.name,
