@@ -132,6 +132,8 @@ export interface SimRunResult {
   aggregate: SimAggregate | null;
   objective_fit?: ObjectiveFit | null;
   simulation_id?: string;
+  // 업로드된 광고 이미지의 표시용 URL(presigned, ~1h). 텍스트 시뮬·로컬폴백이면 없음.
+  ad_asset_url?: string | null;
 }
 
 export interface SimCategoryKind {

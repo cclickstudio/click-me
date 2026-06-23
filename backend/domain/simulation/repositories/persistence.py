@@ -84,7 +84,8 @@ class SimulationPersistence:
                         "pid": project_uuid,
                         "title": (request.ad_title or "(제목 없음)")[:255],
                         "mtype": "image" if request.ad_image_url else "text",
-                        "asset": request.ad_image_url,
+                        # 영구 식별자(s3 key) 우선 — presigned/로컬 경로는 만료·휘발이라 부적합.
+                        "asset": request.ad_image_key or request.ad_image_url,
                         "copy": request.ad_content,
                         "pcat": request.product_category,
                         "obj": request.ad_objective,

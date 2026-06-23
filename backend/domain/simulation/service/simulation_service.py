@@ -171,6 +171,8 @@ class SimulationService:
                 "reactions": reactions,
                 "rubric_scores": rubric_dump,
                 "aggregate": aggregate_dump,
+                # 상세 페이지 표시용 — 업로드 시 presigned URL, 외부 URL이면 그대로, 로컬폴백이면 경로.
+                "ad_asset_url": request.ad_image_url,
             }
             # 캠페인 목표 달성 가능성(결정론 룰) — 목표 선언 + 집계가 있을 때만(exploratory).
             if request.ad_objective and aggregate_obj is not None:
