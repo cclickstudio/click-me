@@ -190,7 +190,29 @@
 
 ---
 
-## 8. 참고
+## 8. 구현 현황 · 팀 구조 정렬 (2026-06-23)
+
+**백엔드 골조 완료** — 오케스트레이터(`domain/chat/orchestrator.py`) + 매니지·시뮬·생성 3개 서브에이전트를 도구(`ask_*`)로 연결. 채팅 질문이 LLM 판단으로 해당 어시스턴트에 라우팅된다(풀모드). 시뮬·생성 KB 테이블 생성·적재는 운영 작업으로 남음(없어도 degrade 동작).
+
+**팀 오케스트레이터 구조 채택** (팀 다이어그램 합의)
+
+- `POST /api/assistant/chat` 단일 엔드포인트 (현재 `/api/chat/complete` → 변경 예정).
+- `classify_intent`(명시 노드) → `route` → 도메인 서브에이전트. 현재는 LLM 암묵 라우팅 → 명시 노드로 분리 예정.
+- **공통 계약** `AssistantRequest`/`AssistantResult`(`core/assistant.py`, `context_id`로 도메인 식별자 통일) — 시뮬·생성 적용 완료. 매니지는 독립 개발 유지 → 추후 합류.
+- 도메인별 방식 — 생성: **슬롯형 실행(결정론)** + RAG 어시스턴트 공존 / 시뮬: 팀 결정 / 관리: 에이전틱 RAG.
+- 1턴 = 1 트레이스 루트(LangSmith).
+
+**완료 / 남은 작업**
+
+- ✅ 매니지·시뮬·생성 어시스턴트(질문답변·RAG) + 오케스트레이터 연결
+- ✅ 공통 계약(시뮬·생성)
+- ⬜ `classify_intent` 명시 노드 · 엔드포인트 `/api/assistant/chat`
+- ⬜ 실행 도구(`run_simulation`·`run_generator` 슬롯형) → 개선 루프(P2-5)
+- ⬜ 채팅 DB·프로젝트 귀속(P0) · 플로팅 UI·위젯(P1-5·P2-1)
+
+---
+
+## 9. 참고
 
 - 선행 spec — [docs/superpowers/specs/2026-06-21-chat-management-agentic-rag.md](../superpowers/specs/2026-06-21-chat-management-agentic-rag.md)
 - 매니지 서브에이전트 — `backend/domain/management/assistant/{agent,graph,tools,retriever}.py`
