@@ -1,4 +1,4 @@
-# 생성 어시스턴트 진입점 — build_generator_agent(settings) → ask(GenAskRequest) -> GenAskResult
+# 생성 어시스턴트 진입점 — build_generator_agent(settings) → ask(req) -> AssistantResult
 """오케스트레이터가 부를 단일 진입점. 키+실모드면 ReAct 그래프(LLM+KB), 아니면 결정론 폴백.
 
 폴백은 키·임베딩 없이 동작 — generation_id가 있으면 후보·전략을 요약한다(KB 검색은 실모드).
@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from domain.generator.assistant.contracts import Citation, GenAskRequest, GenAskResult
+from core.assistant import AssistantRequest, AssistantResult, Citation
 from domain.generator.assistant.tools import fetch_generation_result
 
 
@@ -23,21 +23,21 @@ def _summarize_generation(ev: dict) -> str:
 
 
 def build_generator_agent(settings):
-    """async ask(GenAskRequest) -> GenAskResult. 오케스트레이터/엔드포인트 공용 진입점."""
+    """async ask(AssistantRequest) -> AssistantResult. 오케스트레이터/엔드포인트 공용 진입점."""
     api_key = getattr(settings, "openai_api_key", None)
     use_mock = getattr(settings, "use_mock", True)
 
     # ── 폴백 — 결과 요약만(LLM·임베딩 없음). generation_id 없으면 안내 ──
     if use_mock or not api_key:
 
-        async def _ask_fallback(req: GenAskRequest) -> GenAskResult:
-            if not req.generation_id:
-                return GenAskResult(
+        async def _ask_fallback(req: AssistantRequest) -> AssistantResult:
+            if not req.context_id:
+                return AssistantResult(
                     answer="생성 결과 ID가 있으면 후보·전략을 요약해 드립니다."
                     " (카피 전략·원칙 검색은 실모드에서 동작합니다.)"
                 )
-            ev = await fetch_generation_result(req.generation_id)
-            return GenAskResult(
+            ev = await fetch_generation_result(req.context_id)
+            return AssistantResult(
                 answer=_summarize_generation(ev),
                 citations=[Citation(kind="result", source="get_generation_result")],
                 used_tools=["get_generation_result"],
@@ -58,16 +58,14 @@ def build_generator_agent(settings):
     retriever = GenKbRetriever(api_key=api_key)
     graph = build_graph(settings, retriever, llm)
 
-    async def _ask(req: GenAskRequest) -> GenAskResult:
+    async def _ask(req: AssistantRequest) -> AssistantResult:
         config = {
             "run_name": "generator_assistant",
             "tags": ["generator", "assistant"],
-            "metadata": {"generation_id": req.generation_id, "ad_id": req.ad_id},
+            "metadata": {"generation_id": req.context_id, "ad_id": req.ad_id},
         }
-        # generation_id를 질문에 실어 LLM이 get_generation_result 인자로 쓰게 한다.
-        seed = (
-            f"[생성 ID: {req.generation_id}] {req.question}" if req.generation_id else req.question
-        )
+        # context_id(generation_id)를 질문에 실어 LLM이 get_generation_result 인자로 쓰게 한다.
+        seed = f"[생성 ID: {req.context_id}] {req.question}" if req.context_id else req.question
         final = await graph.ainvoke({"messages": [HumanMessage(content=seed)]}, config=config)
         return to_result(final)
 

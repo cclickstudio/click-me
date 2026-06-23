@@ -12,8 +12,8 @@ from langchain_core.messages import AIMessage, SystemMessage, ToolMessage
 from langchain_core.tools import tool
 from langgraph.graph import END, START, MessagesState, StateGraph
 
+from core.assistant import AssistantResult, Citation
 from domain.generator.assistant import tools as gen_tools
-from domain.generator.assistant.contracts import Citation, GenAskResult
 
 #: 도구 호출 라운드 상한 — 초과 시 도구 없이 최종 답 강제(무한 루프 방지)
 _MAX_ROUNDS = 5
@@ -106,8 +106,8 @@ def build_graph(settings, retriever, llm):
     return g.compile()
 
 
-def to_result(state) -> GenAskResult:
-    """그래프 최종 state → GenAskResult(인용·근거 포함)."""
+def to_result(state) -> AssistantResult:
+    """그래프 최종 state → AssistantResult(인용·근거 포함)."""
     last = state["messages"][-1] if state.get("messages") else None
     answer = last.content if isinstance(getattr(last, "content", None), str) else ""
     citations = [
@@ -117,7 +117,7 @@ def to_result(state) -> GenAskResult:
         Citation(kind="kb", source=d["source"], title=d.get("title", ""))
         for d in state.get("kb_citations", [])
     ]
-    return GenAskResult(
+    return AssistantResult(
         answer=answer,
         citations=citations,
         used_tools=list(state.get("used_tools", [])),

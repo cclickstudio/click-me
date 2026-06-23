@@ -1,4 +1,4 @@
-# 시뮬 어시스턴트 진입점 — build_simulation_agent(settings) → ask(SimAskRequest) -> SimAskResult
+# 시뮬 어시스턴트 진입점 — build_simulation_agent(settings) → ask(req) -> AssistantResult
 """오케스트레이터가 부를 단일 진입점. 키+실모드면 ReAct 그래프(LLM+KB), 아니면 결정론 폴백.
 
 폴백은 키·임베딩 없이 동작 — simulation_id가 있으면 저장된 결과를 KPI로 요약한다(KB 검색은 실모드).
@@ -6,7 +6,7 @@
 
 from __future__ import annotations
 
-from domain.simulation.assistant.contracts import Citation, SimAskRequest, SimAskResult
+from core.assistant import AssistantRequest, AssistantResult, Citation
 from domain.simulation.assistant.tools import fetch_simulation_result
 
 
@@ -34,21 +34,21 @@ def _summarize_result(ev: dict) -> str:
 
 
 def build_simulation_agent(settings):
-    """async ask(SimAskRequest) -> SimAskResult. 오케스트레이터/엔드포인트 공용 진입점."""
+    """async ask(AssistantRequest) -> AssistantResult. 오케스트레이터/엔드포인트 공용 진입점."""
     api_key = getattr(settings, "openai_api_key", None)
     use_mock = getattr(settings, "use_mock", True)
 
     # ── 폴백 — 결과 요약만(LLM·임베딩 없음). simulation_id 없으면 안내 ──
     if use_mock or not api_key:
 
-        async def _ask_fallback(req: SimAskRequest) -> SimAskResult:
-            if not req.simulation_id:
-                return SimAskResult(
+        async def _ask_fallback(req: AssistantRequest) -> AssistantResult:
+            if not req.context_id:
+                return AssistantResult(
                     answer="시뮬레이션 결과 ID가 있으면 4대 KPI를 요약해 드립니다."
                     " (KPI 정의·해석 검색은 실모드에서 동작합니다.)"
                 )
-            ev = await fetch_simulation_result(req.simulation_id)
-            return SimAskResult(
+            ev = await fetch_simulation_result(req.context_id)
+            return AssistantResult(
                 answer=_summarize_result(ev),
                 citations=[Citation(kind="result", source="get_simulation_result")],
                 used_tools=["get_simulation_result"],
@@ -69,17 +69,15 @@ def build_simulation_agent(settings):
     retriever = SimKbRetriever(api_key=api_key)
     graph = build_graph(settings, retriever, llm)
 
-    async def _ask(req: SimAskRequest) -> SimAskResult:
+    async def _ask(req: AssistantRequest) -> AssistantResult:
         config = {
             "run_name": "simulation_assistant",
             "tags": ["simulation", "assistant"],
-            "metadata": {"simulation_id": req.simulation_id, "ad_id": req.ad_id},
+            "metadata": {"simulation_id": req.context_id, "ad_id": req.ad_id},
         }
-        # simulation_id를 질문에 실어 LLM이 get_simulation_result 인자로 쓰게 한다.
+        # context_id(simulation_id)를 질문에 실어 LLM이 get_simulation_result 인자로 쓰게 한다.
         seed = (
-            f"[시뮬레이션 ID: {req.simulation_id}] {req.question}"
-            if req.simulation_id
-            else req.question
+            f"[시뮬레이션 ID: {req.context_id}] {req.question}" if req.context_id else req.question
         )
         final = await graph.ainvoke({"messages": [HumanMessage(content=seed)]}, config=config)
         return to_result(final)

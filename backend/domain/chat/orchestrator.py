@@ -13,12 +13,11 @@ import json
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 
+from core.assistant import AssistantRequest
 from domain.generator.assistant.agent import build_generator_agent
-from domain.generator.assistant.contracts import GenAskRequest
 from domain.management.assistant.agent import build_management_agent
 from domain.management.assistant.contracts import AskRequest, AskResult
 from domain.simulation.assistant.agent import build_simulation_agent
-from domain.simulation.assistant.contracts import SimAskRequest
 
 # 매니지먼트로 라우팅하는 키워드(폴백 전용) — 풀모드는 LLM이 도구 설명을 보고 스스로 판단한다.
 _MGMT_KEYWORDS: frozenset[str] = frozenset(
@@ -110,24 +109,11 @@ def _mgmt_meta(res: AskResult) -> dict:
     }
 
 
-def _sim_meta(res) -> dict:
-    """SimAskResult → SSE meta(출처·인용)."""
+def _assistant_meta(res, source: str, label: str) -> dict:
+    """AssistantResult → SSE meta(출처·인용). 공통 계약 서브에이전트(시뮬·생성) 공용."""
     return {
-        "source": "simulation",
-        "label": "시뮬레이션 어시스턴트",
-        "engine": "OpenAI · 결과+KB",
-        "citations": [
-            {"kind": c.kind, "source": c.source, "title": c.title} for c in res.citations
-        ],
-        "used_tools": res.used_tools,
-    }
-
-
-def _gen_meta(res) -> dict:
-    """GenAskResult → SSE meta(출처·인용)."""
-    return {
-        "source": "generator",
-        "label": "생성 어시스턴트",
+        "source": source,
+        "label": label,
         "engine": "OpenAI · 결과+KB",
         "citations": [
             {"kind": c.kind, "source": c.source, "title": c.title} for c in res.citations
@@ -180,15 +166,21 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
     async def ask_simulation(question: str, simulation_id: str | None = None) -> dict:
         """집행 전 AI 가상 소비자 시뮬레이션의 결과 해석·KPI 정의·방법론 질문에 답한다.
         구매의도·클릭의향률·신뢰도·거부율·시뮬 결과 해석·"신뢰해도 되나"에 쓴다."""
-        res = await sim(SimAskRequest(question=question, simulation_id=simulation_id))
-        return {"_answer": res.answer, "_meta": _sim_meta(res)}
+        res = await sim(AssistantRequest(question=question, context_id=simulation_id))
+        return {
+            "_answer": res.answer,
+            "_meta": _assistant_meta(res, "simulation", "시뮬레이션 어시스턴트"),
+        }
 
     @tool
     async def ask_generator(question: str, generation_id: str | None = None) -> dict:
         """광고 생성(개선 시안) 결과 해석·카피 전략·작성 원칙 질문에 답한다.
         어떤 시안이 나왔나·왜 선택됐나·카피 전략·"어떤 카피가 좋나"에 쓴다."""
-        res = await gen(GenAskRequest(question=question, generation_id=generation_id))
-        return {"_answer": res.answer, "_meta": _gen_meta(res)}
+        res = await gen(AssistantRequest(question=question, context_id=generation_id))
+        return {
+            "_answer": res.answer,
+            "_meta": _assistant_meta(res, "generator", "생성 어시스턴트"),
+        }
 
     bound = llm.bind_tools([ask_management, ask_simulation, ask_generator])
     _subagents = {
