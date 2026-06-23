@@ -228,7 +228,7 @@ function TeamGroup({
   activeSimId: string | null;
   activeGenId: string | null;
 }) {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(false);
 
   return (
     <div>
@@ -274,7 +274,7 @@ function CompanyItem({
   activeSimId: string | null;
   activeGenId: string | null;
 }) {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(false);
 
   // 팀별 그룹핑 — 팀 미지정은 마지막
   const byTeam = projects.reduce<Record<string, PanelProject[]>>((acc, p) => {
