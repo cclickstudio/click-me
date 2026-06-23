@@ -25,7 +25,8 @@ class _FakeDB:
 _CAND = {
     "candidate_id": "c1",
     "idx": 0,
-    "strategy": "s",
+    # D1 계약은 strategy를 불투명 dict로만 취급 — 내부 구조는 generator가 정하고 가변.
+    "strategy": {},
     "template_id": "t",
     "copy": {"headline": "제목", "body": "본문", "cta": "사기"},
     "s3_key": "generator/images/g1/0.png",

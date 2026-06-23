@@ -36,8 +36,9 @@ class HandoffCopy(BaseModel):
 class HandoffCandidate(BaseModel):
     candidate_id: str
     idx: int
-    strategy: str = ""
-    template_id: str = ""
+    # generator 후보 모델 기준 — strategy는 JSONB dict(불투명), template_id는 nullable.
+    strategy: dict | None = None
+    template_id: str | None = None
     copy: HandoffCopy
     s3_key: str
 
