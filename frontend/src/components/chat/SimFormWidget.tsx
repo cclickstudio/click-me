@@ -26,7 +26,8 @@ export default function SimFormWidget({
     ad_objective?: string;
   };
   initialImage?: File; // 채팅에서 첨부한 광고 이미지
-  onResult?: (summary: string) => void; // 완료 시 결과 요약을 채팅으로 보내 다음 단계 제안
+  // 완료 시 결과 요약(+결과 참조)을 채팅으로 보내 내역 영속화·다음 단계 제안
+  onResult?: (summary: string, resultRef?: { kind: 'sim' | 'gen'; id: string }) => void;
 }) {
   const router = useRouter();
   const [phase, setPhase] = useState<Phase>('form');
@@ -62,6 +63,7 @@ export default function SimFormWidget({
           `[시뮬결과] 구매의도 ${pi != null ? pi.toFixed(1) : '?'}/5, ` +
             `클릭의향률 ${cir != null ? (cir * 100).toFixed(0) : '?'}%, ` +
             `거부율 ${rej != null ? (rej * 100).toFixed(0) : '?'}%`,
+          { kind: 'sim', id: r.simulation_id ?? rid },
         );
       }
     } catch (e) {

@@ -31,7 +31,8 @@ export default function GenFormWidget({
 }: {
   initial?: Initial;
   initialImage?: File; // 채팅에서 첨부한 상품 이미지
-  onResult?: (summary: string) => void; // 완료 시 결과 요약을 채팅으로 보내 다음 단계 제안
+  // 완료 시 결과 요약(+결과 참조)을 채팅으로 보내 내역 영속화·다음 단계 제안
+  onResult?: (summary: string, resultRef?: { kind: 'sim' | 'gen'; id: string }) => void;
 }) {
   const router = useRouter();
   const [phase, setPhase] = useState<Phase>('form');
@@ -71,7 +72,10 @@ export default function GenFormWidget({
       setDetail(d);
       setPhase('done');
       if (onResult) {
-        onResult(`[생성결과] 광고 시안 ${(d.candidates ?? []).length}개 생성 완료`);
+        onResult(`[생성결과] 광고 시안 ${(d.candidates ?? []).length}개 생성 완료`, {
+          kind: 'gen',
+          id: gid,
+        });
       }
     } catch (e) {
       setErr(e instanceof Error ? e.message : '결과 조회 실패');
