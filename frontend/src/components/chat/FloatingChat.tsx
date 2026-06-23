@@ -2,7 +2,7 @@
 
 // 우측 하단 플로팅 챗봇 — 접힘(버튼)/펼침(패널) 토글. /chat 탭에선 숨김.
 // 열 때 활성 세션이 없으면 현재 프로젝트의 가장 최근 세션을 이어받는다. 세션 목록은 패널에서 고른다.
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { usePathname } from 'next/navigation';
 import { useProjects } from '../ProjectContext';
 import { useAuth } from '../AuthProvider';
@@ -22,10 +22,22 @@ export default function FloatingChat() {
     refreshSessions,
     progress,
     setProgress,
+    unread,
+    pushUnread,
+    clearUnread,
   } = useChatController();
+
+  // 패널이 닫혀 있는지 추적(ref) — 결과 완료 콜백이 최신 열림 상태를 보게 한다.
+  const openRef = useRef(floatingOpen);
+  openRef.current = floatingOpen;
 
   // /chat 탭(페이지 자체가 채팅) + 비로그인 화면에선 숨김.
   const hidden = pathname === '/chat' || !user;
+
+  // 플로팅을 열면 쌓인 알림 배지를 비운다(T18).
+  useEffect(() => {
+    if (floatingOpen) clearUnread();
+  }, [floatingOpen, clearUnread]);
 
   // 플로팅을 열었는데 활성 세션이 없으면 가장 최근 세션을 이어받는다(없으면 새 채팅).
   useEffect(() => {
@@ -46,28 +58,38 @@ export default function FloatingChat() {
 
   if (hidden) return null;
 
-  // ── 접힘 — 버튼만 ──
-  if (!floatingOpen) {
-    return (
-      <button
-        onClick={() => setFloatingOpen(true)}
-        title="AI 채팅 열기"
-        className="fixed bottom-6 right-6 z-40 w-14 h-14 rounded-full bg-[#3182F6] text-white shadow-lg hover:bg-[#1B6EEB] flex items-center justify-center transition-colors"
-      >
-        {/* 진행 중이면 회전 링 표시(T17) */}
-        {progress && (
-          <span className="absolute inset-0 rounded-full border-2 border-white/40 border-t-white animate-spin" />
-        )}
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-        </svg>
-      </button>
-    );
-  }
-
-  // ── 펼침 — 패널 ──
+  // 패널은 접혀도 언마운트하지 않고 숨긴다(display:none) — 백그라운드 실행·완료 알림 유지(T18).
   return (
-    <div className="fixed bottom-6 right-6 z-40 w-[400px] max-w-[calc(100vw-2rem)] h-[600px] max-h-[calc(100vh-3rem)] flex flex-col rounded-2xl border border-[#E5E8EB] dark:border-[#2D3748] bg-white dark:bg-[#0F1117] shadow-2xl overflow-hidden">
+    <>
+      {/* 접힘 — 버튼(+진행 링 +알림 배지) */}
+      {!floatingOpen && (
+        <button
+          onClick={() => setFloatingOpen(true)}
+          title="AI 채팅 열기"
+          className="fixed bottom-6 right-6 z-40 w-14 h-14 rounded-full bg-[#3182F6] text-white shadow-lg hover:bg-[#1B6EEB] flex items-center justify-center transition-colors"
+        >
+          {/* 진행 중이면 회전 링 표시(T17) */}
+          {progress && (
+            <span className="absolute inset-0 rounded-full border-2 border-white/40 border-t-white animate-spin" />
+          )}
+          {/* 안 읽은 완료 알림 배지(T18) */}
+          {unread > 0 && (
+            <span className="absolute -top-1 -right-1 min-w-[20px] h-5 px-1 flex items-center justify-center rounded-full bg-[#F04452] text-white text-[11px] font-bold shadow">
+              {unread > 9 ? '9+' : unread}
+            </span>
+          )}
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+          </svg>
+        </button>
+      )}
+
+      {/* 펼침 — 패널(접히면 hidden) */}
+      <div
+        className={`fixed bottom-6 right-6 z-40 w-[400px] max-w-[calc(100vw-2rem)] h-[600px] max-h-[calc(100vh-3rem)] flex-col rounded-2xl border border-[#E5E8EB] dark:border-[#2D3748] bg-white dark:bg-[#0F1117] shadow-2xl overflow-hidden ${
+          floatingOpen ? 'flex' : 'hidden'
+        }`}
+      >
       {/* 헤더 */}
       <div className="h-12 shrink-0 flex items-center justify-between px-3 border-b border-[#E5E8EB] dark:border-[#2D3748] bg-[#F9FAFB] dark:bg-[#161B27]">
         <div className="flex items-center gap-2 min-w-0">
@@ -127,6 +149,10 @@ export default function FloatingChat() {
             }}
             onActivity={refreshSessions}
             onProgress={setProgress}
+            onResultComplete={() => {
+              // 결과 도착 — 패널이 닫혀 있으면 배지로 먼저 알린다(T18).
+              if (!openRef.current) pushUnread();
+            }}
           />
         ) : (
           <div className="h-full flex flex-col items-center justify-center px-6 text-center">
@@ -135,6 +161,7 @@ export default function FloatingChat() {
           </div>
         )}
       </div>
-    </div>
+      </div>
+    </>
   );
 }

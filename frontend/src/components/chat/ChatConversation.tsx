@@ -111,12 +111,14 @@ export default function ChatConversation({
   onSessionCreated,
   onActivity,
   onProgress,
+  onResultComplete,
 }: {
   projectId: string;
   sessionId: string | null; // null = 새 채팅
   onSessionCreated?: (id: string) => void; // 첫 전송으로 세션이 생성되면 알림
   onActivity?: () => void; // 전송 후(제목·갱신 변경) 세션 목록 새로고침 신호
   onProgress?: (p: { label: string; pct?: number | null; run_id?: string } | null) => void; // 진행 트레이(T17)
+  onResultComplete?: (ref: ResultRef) => void; // 시뮬/생성 결과가 도착했을 때(프로액티브 푸시, T18)
 }) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
@@ -401,6 +403,8 @@ export default function ChatConversation({
         }
 
         await consumeStream(res);
+        // 시뮬/생성 결과가 도착한 턴이면 완료 알림(플로팅 배지 등, T18).
+        if (resultRef) onResultComplete?.(resultRef);
       } catch {
         setMessages((prev) => [
           ...prev,
@@ -413,7 +417,7 @@ export default function ChatConversation({
         onActivity?.();
       }
     },
-    [input, isStreaming, projectId, attachedImage, attachedPreview, messages, sessionId, onSessionCreated, onActivity, onProgress, consumeStream],
+    [input, isStreaming, projectId, attachedImage, attachedPreview, messages, sessionId, onSessionCreated, onActivity, onProgress, onResultComplete, consumeStream],
   );
 
   return (
