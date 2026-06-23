@@ -26,16 +26,16 @@ feat/chat-doyeon  (작업 브랜치)
 | T08 | KOBACO 벤치마크 비교 | 인사이트 | ✅ |
 | T09 | 프로젝트 패턴 분석 | 인사이트 | ✅ |
 | T10 | 카피 개선 제안 구체화 | 인사이트 | ✅ |
-| T11 | 배치 시뮬 | 실행 | ⬜ |
-| T12 | 템플릿 저장·재사용 | 실행 | ⬜ |
-| T13 | 채팅 기반 리포트 | 실행 | ⬜ |
-| T14 | /비교 명령어 | UX | ⬜ |
-| T15 | /도움말 명령어 | UX | ⬜ |
-| T16 | Quick Action 칩 버튼 | UX | ⬜ |
-| T17 | 로딩 스피너 위젯 | UX | ⬜ |
-| T18 | 프로액티브 푸시 | UX | ⬜ |
-| T19 | 채팅 내 결과 핀 | UX | ⬜ |
-| T20 | 라우팅 정확도 로그 | 품질 | ⬜ |
+| T11 | 배치 시뮬 | 실행 | ✅ |
+| T12 | 템플릿 저장·재사용 | 실행 | ✅ |
+| T13 | 채팅 기반 리포트 | 실행 | ✅ |
+| T14 | /비교 명령어 | UX | ✅ |
+| T15 | /도움말 명령어 | UX | ✅ |
+| T16 | Quick Action 칩 버튼 | UX | ✅ |
+| T17 | 로딩 스피너 위젯 | UX | ✅ |
+| T18 | 프로액티브 푸시 | UX | ✅ |
+| T19 | 채팅 내 결과 핀 | UX | ✅ |
+| T20 | 라우팅 정확도 로그 | 품질 | ✅ |
 
 ---
 
@@ -523,7 +523,13 @@ cd backend && uv run alembic upgrade head
 
 ## 진행 메모 (루프 구현 중 결정·이탈)
 
-- **T01~T10 완료** (2026-06-24). 마이그레이션 022·023 NeonDB 적용 완료.
+- **T01~T20 전부 완료** (2026-06-24). 마이그레이션 022·023·024 NeonDB 적용 완료. 백엔드 446개 테스트 import 정상, app 라우터 155개 로드 확인.
+- **T11 배치 시뮬**: 경로는 명세(`/api/simulations/batch`) 대신 채팅 소유 `POST /api/chat/sim-batch`(순차 실행, 기존 run_simulation 재사용).
+- **T13 리포트**: 프로젝트-기간 PDF 생성기가 없어 신규(`domain/chat/report.py`). 기존 Playwright 렌더 방식 재사용, Chromium 없으면 HTML 폴백. `GET /api/chat/report`.
+- **T17/T18**: 진행 트레이·완료 배지는 `ChatController` 전역 상태로. FloatingChat은 접혀도 언마운트하지 않고 숨겨(백그라운드 실행·알림 유지).
+- **T20**: 별도 로그 테이블 없이 classify 결과를 `chat_messages.meta.routing`(intent·action·confidence)에 영속.
+- **공통 주의**: 풀 오케스트레이터 경로는 `use_mock=false` + OpenAI 키 필요. 현재 개발 환경은 `use_mock=true`라 슬래시·키워드 폴백만 동작 — 실연동 통합 테스트는 운영 환경에서 확인 필요.
+- **(이전) T01~T10 완료**. 마이그레이션 022·023.
 - **T02 숏텀 메모리**: LangChain 1.x에서 `ConversationBufferWindowMemory` 제거 → `langchain_core` 메시지로 동일 의미(k=6 윈도잉)의 `_WindowMemory` 자체 구현 (orchestrator.py 내부).
 - **T06 브랜드 프로파일**: 명세는 `brand_profiles` 테이블이나 제너레이터 `BrandProfileRow`가 이미 사용 중 → 충돌 방지로 **`chat_brand_profiles`** 테이블·`ChatBrandProfile` 모델 사용.
 - **T07/T09 도구 등록**: 명세는 `assistant/agent.py`라 했으나 실제 `@tool` 등록 지점은 `assistant/graph.py` → graph.py에 등록.
