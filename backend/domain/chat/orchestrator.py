@@ -47,20 +47,40 @@ _MGMT_KEYWORDS: frozenset[str] = frozenset(
 )
 
 # classify_intent 분류 프롬프트 — 질문을 도메인으로 라우팅(팀 구조: classify → route).
+# 정확도 핵심: 집행 전(simulation) vs 집행 후(management) 경계 + KPI 용어 정의는 항상 simulation.
 _CLASSIFY_SYSTEM = (
-    "사용자 질문을 한 도메인으로 분류하라.\n"
-    "- management: 집행된 광고의 성과·예산·소진·CTR·ROAS·캠페인 관리\n"
-    "- simulation: 집행 전 시뮬레이션 결과·구매의도·클릭의향률·신뢰도·거부율·KPI 정의\n"
-    "- generator: 광고 생성·카피 전략·시안·작성 원칙\n"
-    "- sim_result: 방금 돌린 시뮬레이션 실행 결과를 보고하는 요약 메시지"
-    "(구매의도·클릭의향률·거부율 등 수치가 담긴 결과 보고). "
+    "너는 ClickMe 광고 플랫폼의 라우터다. 사용자 메시지를 정확히 하나의 도메인으로 분류한다.\n\n"
+    "[도메인 정의]\n"
+    "- simulation: 집행 '전' 시뮬레이션. KPI(클릭 의향률·구매의도·신뢰도·거부율)의 의미·해석·"
+    "방법론 질문, 시뮬 결과 해석, 반응 예측·시뮬 실행 요청.\n"
+    "- management: 집행 '후' 실측 성과·운영. 집행된 캠페인의 예산·소진·CTR/ROAS/CVR 실적·"
+    "페이싱·증액/감액·일시중지 등.\n"
+    "- generator: 광고 시안 생성·카피 전략·작성 원칙·시안 만들기 요청.\n"
+    "- sim_result: 방금 돌린 시뮬 실행 '결과 보고' 메시지(수치 포함). "
     "예: '[시뮬결과] 구매의도 2.3/5, 거부율 30%'\n"
-    "- gen_result: 방금 돌린 광고 생성 실행 결과를 보고하는 요약 메시지"
-    "(시안·후보가 만들어졌다는 보고). 예: '[생성결과] 개선 시안 5개 생성 완료'\n"
-    "- advise: 그 외 일반 광고 전략·아이디어\n"
-    "질문·조회는 action=ask, 시뮬/생성을 실제 실행·돌려달라는 요청은 action=run으로 분류하라.\n"
-    "action=run이고 광고 카피·문구가 질문에 있으면 ad_content로 추출하라.\n"
-    "결과 ID(시뮬/생성 식별자)가 질문에 있으면 context_id로 함께 추출하라."
+    "- gen_result: 방금 돌린 생성 실행 '결과 보고' 메시지. "
+    "예: '[생성결과] 개선 시안 5개 생성 완료'\n"
+    "- advise: 위 어디에도 안 맞는 일반 광고 전략·마케팅 아이디어·잡담.\n\n"
+    "[판단 기준]\n"
+    "- '집행 전 예측·KPI 의미'면 simulation, '집행 후 실측 성과'면 management. "
+    "헷갈리면 실측 수치(이미 집행된 광고의 실적) 언급 여부로 가른다.\n"
+    "- KPI 용어(클릭 의향률/구매의도/신뢰도/거부율)의 '정의·해석'은 항상 simulation.\n"
+    "- 단순 인사·범위 밖 일반 질문은 advise.\n\n"
+    "[action]\n"
+    "- 질문·조회는 action=ask. 시뮬/생성을 실제 '돌려줘/실행/만들어줘'면 action=run.\n"
+    "- action=run이고 광고 카피·문구가 있으면 ad_content로 추출. "
+    "결과 ID가 있으면 context_id로 추출.\n\n"
+    "[예시]\n"
+    "'클릭 의향률이 무슨 뜻이야?' → simulation / ask\n"
+    "'구매의도 점수 어떻게 해석해?' → simulation / ask\n"
+    "'이 광고 반응 예측해줘 / 시뮬레이션 돌려줘' → simulation / run\n"
+    "'우리 캠페인 예산 소진율 알려줘' → management / ask\n"
+    "'CTR 떨어졌는데 캠페인 멈춰줘' → management / ask\n"
+    "'전환율 높이는 카피 전략 알려줘' → generator / ask\n"
+    "'수분크림 광고 시안 만들어줘' → generator / run\n"
+    "'[시뮬결과] 구매의도 2.1/5, 거부율 35%' → sim_result\n"
+    "'[생성결과] 시안 5개 완료' → gen_result\n"
+    "'요즘 20대 마케팅 트렌드 뭐야?' → advise"
 )
 
 # advise(일반 조언) 프롬프트 — 도메인 도구 없이 직접 답.
@@ -194,6 +214,8 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
 
     model_name = getattr(settings, "chat_orchestrator_model", "gpt-4o-mini")
     llm = ChatOpenAI(model=model_name, temperature=0.2, api_key=api_key)
+    # 분류는 결정론적으로(temperature 0) — 같은 질문이 매번 같은 도메인으로 가게 한다.
+    classify_llm = ChatOpenAI(model=model_name, temperature=0, api_key=api_key)
     sim = build_simulation_agent(settings)  # 시뮬 서브에이전트(폴백/풀모드 자동)
     gen = build_generator_agent(settings)  # 생성 서브에이전트(폴백/풀모드 자동)
 
@@ -226,7 +248,7 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
         product_category: str = ""
         ad_objective: str = ""
 
-    classifier = llm.with_structured_output(_Intent)
+    classifier = classify_llm.with_structured_output(_Intent)
 
     # 그래프 상태 — 메시지 누적이 아니라 분류→답변 1패스. 노드엔 어노테이트하지 않는다.
     class _State(TypedDict, total=False):
