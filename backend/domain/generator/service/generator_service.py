@@ -251,6 +251,8 @@ async def get_detail(generation_id: str) -> dict | None:
         )
 
     return {
+        # D1 계약 버전 — management from-candidate 핸드오프가 검증(불일치 시 409).
+        "schema_version": "1",
         "generation_id": str(generation.id),
         "status": generation.status,
         "input": generation.input,
