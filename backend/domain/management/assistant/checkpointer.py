@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
+import sys
 
 logger = logging.getLogger("clickme")
 
@@ -21,6 +22,11 @@ async def init_pg_checkpointer(conn_str: str | None) -> None:
     """앱 시작 시 호출 — Neon 풀 + AsyncPostgresSaver.setup()(체크포인트 테이블 멱등 생성)."""
     global _saver, _pool
     if not conn_str or _saver is not None:
+        return
+    if sys.platform == "win32":
+        # Windows psycopg-async는 ProactorEventLoop 비호환 → 로컬은 시도 자체를 건너뛰어
+        # 5초 연결 지연을 없앤다(즉시 MemorySaver). 운영(Linux EC2)에서만 Neon 영속.
+        logger.info("Windows 감지 — PG 체크포인터 건너뜀(MemorySaver). 운영(Linux)에서 영속.")
         return
     try:
         from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver  # noqa: PLC0415
