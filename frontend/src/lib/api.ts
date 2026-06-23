@@ -350,6 +350,14 @@ export const api = {
     complete: () => `${API_BASE}/api/chat/complete`,
     sessions: () => request<{ sessions: unknown[] }>("/chat/sessions"),
     messages: (sessionId: string) => request(`/chat/sessions/${sessionId}/messages`),
+    // 어시스턴트 답변 피드백(좋아요/싫어요) — RAG 품질 개선 적재.
+    feedback: (body: {
+      thread_id?: string;
+      rating?: number;
+      question?: string;
+      answer?: string;
+      failure_type?: string;
+    }) => request("/chat/feedback", { method: "POST", body: JSON.stringify(body) }),
   },
 
   inquiries: {
