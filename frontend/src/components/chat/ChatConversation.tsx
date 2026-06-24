@@ -16,6 +16,7 @@ import ApprovalWidget, { type ApprovalSpec } from './ApprovalWidget';
 import BatchSimWidget from './BatchSimWidget';
 import ReportWidget from './ReportWidget';
 import AnalysisSummaryWidget from './AnalysisSummaryWidget';
+import RecommendFormWidget from './RecommendFormWidget';
 import type { SimRunResult } from '@/lib/types';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
@@ -40,6 +41,7 @@ const slashCommands: SlashCommand[] = [
   { cmd: '/시뮬목록', label: '/시뮬목록', desc: '최근 시뮬레이션 목록을 봅니다' },
   { cmd: '/시안목록', label: '/시안목록', desc: '최근 생성 광고 시안 목록을 봅니다' },
   { cmd: '/분석', label: '/분석', desc: '과거 시뮬·생성 성과를 종합 요약합니다' },
+  { cmd: '/추천', label: '/추천', desc: '목표·예산을 입력하면 전략·플랫폼을 추천합니다' },
   { cmd: '/비교', label: '/비교', desc: '시뮬레이션 2개의 KPI를 나란히 비교합니다' },
   { cmd: '/도움말', label: '/도움말', desc: '사용 가능한 명령어와 예시를 봅니다' },
   { cmd: '/위젯', label: '/위젯', desc: '사용 가능한 위젯 목록을 봅니다 (개발용)' },
@@ -305,6 +307,13 @@ export default function ChatConversation({
           widget: { type: 'analysis_summary' },
         });
         break;
+      case '/추천':
+        addLocalAssistant('목표·예산을 알려주시면 전략·플랫폼을 추천해 드릴게요.', {
+          source: 'simulation',
+          label: '전략 추천',
+          widget: { type: 'recommend_form' },
+        });
+        break;
       case '/비교':
         // 백엔드로 보내 시뮬 목록(비교 모드) 위젯을 받는다.
         handleSend('/비교');
@@ -321,6 +330,7 @@ export default function ChatConversation({
             '/시뮬목록     최근 시뮬레이션 목록',
             '/시안목록     최근 광고 시안 목록',
             '/분석         시뮬·생성 성과 종합 요약',
+            '/추천         목표·예산 → 전략·플랫폼 추천',
             '/비교         시뮬레이션 2개 KPI 비교',
             '/도움말       이 화면',
             '',
@@ -844,6 +854,9 @@ export default function ChatConversation({
                     )}
                     {msg.meta?.widget?.type === 'analysis_summary' && (
                       <AnalysisSummaryWidget projectId={projectId} />
+                    )}
+                    {msg.meta?.widget?.type === 'recommend_form' && (
+                      <RecommendFormWidget onSubmit={handleSend} />
                     )}
                     {msg.meta?.approval && (
                       <ApprovalWidget
