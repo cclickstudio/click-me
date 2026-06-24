@@ -1,6 +1,6 @@
 # Composition Root — 어댑터를 골라 SimulationService에 주입하는 유일한 지점
 #
-# 시뮬레이션 경로는 항상 실 Gemini(mock 폴백 없음, 키 부재·실패 시 오류). 토론은 use_mock 유지.
+# 시뮬레이션 경로는 항상 실 LLM(gpt-4o-mini, mock 폴백 없음). 토론은 use_mock 유지.
 from __future__ import annotations
 
 import os
@@ -63,11 +63,11 @@ def _resolve_use_mock(settings, use_mock) -> bool:
 
 
 def build_reaction_subgraph(settings=None, *, use_llm_qa=None):
-    """반응+QA 재시도 서브그래프(컴파일본). 항상 실 Gemini 반응 + QA(§P4, mock 폴백 없음).
+    """반응+QA 재시도 서브그래프(컴파일본). 항상 실 LLM(gpt-4o-mini) 반응 + QA(§P4, mock 폴백 없음).
 
     QA 기본은 규칙(무콜). use_llm_qa=True(또는 settings.use_llm_qa)면 GeminiQaGate(콜 2배, opt-in).
     """
-    _ensure_env("GEMINI_API_KEY")
+    _ensure_env("OPENAI_API_KEY")
     from domain.simulation.adapters.gemini import (
         GeminiQaGate,
         GeminiReactionEngine,
@@ -100,12 +100,12 @@ def build_persistence(settings=None, session_factory=None):
 def build_simulation_service(
     settings=None, *, session_factory=None, use_llm_qa=None
 ) -> SimulationService:
-    """Composition Root. 광고해석·반응·루브릭을 항상 실 Gemini로 연결(§P4, mock 폴백 없음).
+    """Composition Root. 광고해석·반응·루브릭을 실 LLM(gpt-4o-mini)로 연결(§P4, mock 없음).
 
-    GEMINI_API_KEY 미설정 시 어댑터 생성 단계에서 RuntimeError(폴백 대신 오류).
+    OPENAI_API_KEY 미설정 시 어댑터 생성 단계에서 RuntimeError(폴백 대신 오류).
     use_llm_qa=True면 반응 QA를 LLM(GeminiQaGate)로(콜 2배, opt-in). 기본은 규칙 QA.
     """
-    _ensure_env("GEMINI_API_KEY")
+    _ensure_env("OPENAI_API_KEY")
     from domain.simulation.adapters.gemini import (
         GeminiAdInterpreter,
         GeminiRubricEvaluator,

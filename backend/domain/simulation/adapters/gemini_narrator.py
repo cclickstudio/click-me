@@ -1,15 +1,14 @@
-# 4-a 프로필 서사 생성 — 실 Gemini 어댑터(google-genai). 속성 묶음 → 한국어 인물 서사.
+# 4-a 프로필 서사 생성 — OpenAI gpt-4o-mini 어댑터. 속성 묶음 → 한국어 인물 서사.
 #
 # 원칙: LLM은 "주어진 속성을 말로 풀어주기만" 한다. 새 속성 생성 금지(동질화 원인).
-# core.config 미의존 — 키는 os.environ 또는 생성자 주입.
+# core.config 미의존 — 키는 os.environ 또는 생성자 주입. (구 Gemini → gpt-4o-mini 통일)
 from __future__ import annotations
 
 import os
 
 from domain.simulation.contracts.schemas import Persona
 
-# 재현성 위해 고정 버전 핀(alias -latest 회피). gemini-2.0-flash 는 퇴역.
-_DEFAULT_MODEL = "gemini-2.5-flash"
+_DEFAULT_MODEL = "gpt-4o-mini"  # 재현성 위해 버전 핀(구 gemini-2.5-flash 대체)
 
 
 def _build_prompt(persona: Persona) -> str:
@@ -27,20 +26,21 @@ def _build_prompt(persona: Persona) -> str:
 
 
 class GeminiNarrator:
-    """Gemini 2.0 Flash 로 4-a 서사 생성. 빌드 시 1회 호출(런타임 아님)."""
+    """gpt-4o-mini 로 4-a 서사 생성. 빌드 시 1회 호출(런타임 아님)."""
 
     def __init__(self, *, api_key: str | None = None, model: str = _DEFAULT_MODEL) -> None:
-        from google import genai
+        from openai import OpenAI
 
-        key = api_key or os.environ.get("GEMINI_API_KEY")
+        key = api_key or os.environ.get("OPENAI_API_KEY")
         if not key:
-            raise RuntimeError("GEMINI_API_KEY 미설정 — 서사 생성 불가")
+            raise RuntimeError("OPENAI_API_KEY 미설정 — 서사 생성 불가")
         self.version = model
         self._model = model
-        self._client = genai.Client(api_key=key)
+        self._client = OpenAI(api_key=key, timeout=120.0)
 
     def narrate(self, persona: Persona) -> str:
-        resp = self._client.models.generate_content(
-            model=self._model, contents=_build_prompt(persona)
+        resp = self._client.chat.completions.create(
+            model=self._model,
+            messages=[{"role": "user", "content": _build_prompt(persona)}],
         )
-        return (getattr(resp, "text", "") or "").strip()
+        return (resp.choices[0].message.content or "").strip()

@@ -6,7 +6,7 @@ from typing import Any
 from domain.simulation.adapters.gemini._common import (
     _DEFAULT_MODEL,
     _agen_json,
-    _load_image,
+    _image_part,
     _new_client,
 )
 from domain.simulation.contracts.schemas import (
@@ -68,10 +68,7 @@ class GeminiAdInterpreter:
         contents: Any = prompt
         used_vision = False
         if request.ad_image_url:
-            from google.genai import types
-
-            data, mime = await _load_image(request.ad_image_url)
-            contents = [prompt, types.Part.from_bytes(data=data, mime_type=mime)]
+            contents = [prompt, await _image_part(request.ad_image_url)]
             used_vision = True
         result = await _agen_json(self._client, self._model, contents)
         # 광고 특성은 result(structured_analysis)에 그대로 영속되고, 타입 객체로도 추려 흐른다.
