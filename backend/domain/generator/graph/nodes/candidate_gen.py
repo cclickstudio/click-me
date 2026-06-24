@@ -242,6 +242,7 @@ async def generate_candidates(state: GenerationState, config: RunnableConfig) ->
             cta=ad_copy.cta,
             template=plan.template,
             brand_color=brand_color,
+            strategy=plan.strategy,
         )
 
         # 5. 품질검증 (순수 동기 함수)

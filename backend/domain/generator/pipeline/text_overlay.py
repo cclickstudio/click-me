@@ -7,7 +7,8 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
-from domain.generator.contracts.enums import TemplateType
+from domain.generator.contracts.enums import AdStrategy, TemplateType
+from domain.generator.pipeline.style_profile import get_style
 
 _FONT_DIR = Path(__file__).resolve().parents[3] / "assets" / "fonts"
 _FONT_BOLD = str(_FONT_DIR / "Pretendard-Bold.otf")
@@ -206,12 +207,25 @@ def render_ad_text(
     cta: str,
     template: TemplateType,
     brand_color: str | None = None,
+    strategy: AdStrategy | None = None,
 ) -> bytes:
-    """광고 카피를 템플릿 영역에 PIL로 렌더링한 PNG bytes를 반환한다."""
+    """광고 카피를 템플릿 영역에 PIL로 렌더링한 PNG bytes를 반환한다.
+
+    strategy가 주어지면 StyleProfile로 텍스트 색·강조색을 분기한다.
+    1단계에서는 box 스타일만 프로필 색을 적용하고, floating/emotional은 박스 폴백(안전한 밝은 색).
+    """
     base = Image.open(io.BytesIO(image_bytes)).convert("RGBA")
     w, h = base.size
     spec = _TEMPLATE_SPECS[template]
-    accent = _parse_color(brand_color) or _DEFAULT_ACCENT
+
+    profile = get_style(strategy) if strategy is not None else None
+    # accent_override(예: FOMO 깊은 빨강)가 브랜드컬러보다 우선.
+    accent_hex = (profile.accent_override if profile else None) or brand_color
+    accent = _parse_color(accent_hex) or _DEFAULT_ACCENT
+    if profile is not None and profile.text_style == "box":
+        headline_color, body_color = profile.headline_color, profile.body_color
+    else:
+        headline_color, body_color = _WHITE, _LIGHT
 
     # 패널을 반투명 오버레이로 합성
     overlay = Image.new("RGBA", (w, h), (0, 0, 0, 0))
@@ -228,7 +242,7 @@ def render_ad_text(
         _px(spec.headline.box, w, h),
         _FONT_BOLD,
         int(h * spec.headline.max_ratio),
-        _WHITE,
+        headline_color,
         spec.headline.align,
     )
     _draw_block(
@@ -237,7 +251,7 @@ def render_ad_text(
         _px(spec.body.box, w, h),
         _FONT_REGULAR,
         int(h * spec.body.max_ratio),
-        _LIGHT,
+        body_color,
         spec.body.align,
     )
     _draw_cta(draw, cta, _px(spec.cta.box, w, h), accent, spec.cta.align, template)

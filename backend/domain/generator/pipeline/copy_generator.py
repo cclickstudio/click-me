@@ -4,13 +4,22 @@ from __future__ import annotations
 from langsmith import traceable
 from pydantic import BaseModel
 
-from domain.generator.contracts.enums import TemplateType
+from domain.generator.contracts.enums import AdStrategy, TemplateType
 from domain.generator.contracts.pipeline_schemas import (
     AdCopy,
     ProductAnalysis,
     StrategyOutput,
 )
 from domain.generator.llm.factory import build_text_llm
+
+# 전략별 카피 서브 키워드 — 문구(헤드라인·본문)의 소재 방향. 시각 스타일이 아니라 카피 주제.
+_STRATEGY_COPY_KEYWORDS: dict[AdStrategy, str] = {
+    AdStrategy.BENEFIT: "할인, 쿠폰, 무료배송, 증정품, 첫 구매 혜택",
+    AdStrategy.PROBLEM_SOLVING: "고민, 불편함, 개선, 변화, 해결",
+    AdStrategy.SOCIAL_PROOF: "후기, 리뷰, 평점, 베스트셀러, 구매자 수",
+    AdStrategy.EMOTIONAL: "감성, 행복, 추억, 여유, 특별한 순간",
+    AdStrategy.FOMO: "오늘 마감, 한정 수량, 마지막 기회, 플래시 세일, 기간 한정",
+}
 
 _TEMPLATE_COPY_GUIDE: dict[TemplateType, str] = {
     TemplateType.A: (
@@ -117,16 +126,19 @@ _BATCH_USER_TEMPLATE = """\
 ## 후보 1
 전략: {strategy_1}
 전략 근거: {rationale_1}
+서브 키워드(자연스럽게 1~2개 녹여서 반영): {keywords_1}
 레이아웃: {layout_1}
 
 ## 후보 2
 전략: {strategy_2}
 전략 근거: {rationale_2}
+서브 키워드(자연스럽게 1~2개 녹여서 반영): {keywords_2}
 레이아웃: {layout_2}
 
 ## 후보 3
 전략: {strategy_3}
 전략 근거: {rationale_3}
+서브 키워드(자연스럽게 1~2개 녹여서 반영): {keywords_3}
 레이아웃: {layout_3}"""
 
 
@@ -153,12 +165,15 @@ async def generate_copies_batch(
         improvement_section=improvement_section,
         strategy_1=s1.strategy_description,
         rationale_1=s1.rationale,
+        keywords_1=_STRATEGY_COPY_KEYWORDS.get(s1.strategy, ""),
         layout_1=_TEMPLATE_COPY_GUIDE[t1],
         strategy_2=s2.strategy_description,
         rationale_2=s2.rationale,
+        keywords_2=_STRATEGY_COPY_KEYWORDS.get(s2.strategy, ""),
         layout_2=_TEMPLATE_COPY_GUIDE[t2],
         strategy_3=s3.strategy_description,
         rationale_3=s3.rationale,
+        keywords_3=_STRATEGY_COPY_KEYWORDS.get(s3.strategy, ""),
         layout_3=_TEMPLATE_COPY_GUIDE[t3],
     )
     result = await _batch_llm.ainvoke([("system", _SYSTEM), ("user", prompt)])

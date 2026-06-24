@@ -12,6 +12,7 @@ from PIL import Image
 from core.config import settings
 from domain.generator.contracts.enums import AdSize, AdStrategy, TemplateType
 from domain.generator.contracts.pipeline_schemas import ProductAnalysis
+from domain.generator.pipeline.style_profile import get_style
 
 # wrap_openai로 감싸 이미지/Responses 호출의 토큰·비용 usage가 LangSmith에 기록되게 한다.
 _openai_client = wrap_openai(AsyncOpenAI(timeout=settings.generator_image_timeout))
@@ -45,24 +46,29 @@ _STRATEGY_DESCRIPTIONS: dict[AdStrategy, str] = {
 # 조명, 배경, 분위기 등 사진적 연출 방향을 전략에 맞게 정의한다.
 _STRATEGY_PHOTO_STYLE: dict[AdStrategy, str] = {
     AdStrategy.BENEFIT: (
-        "Clean, well-lit product photography with soft even shadows. "
-        "Bright, optimistic lighting that showcases product details and quality."
+        "Product-focused e-commerce photography: the product centered, large and hero. "
+        "Clean, well-lit with soft even shadows, bright optimistic lighting, "
+        "minimal uncluttered background that makes product details and quality pop."
     ),
     AdStrategy.PROBLEM_SOLVING: (
-        "Contrast lighting transitioning from dark to bright, symbolizing transformation. "
-        "Clean background with the product as the clear solution focal point."
+        "Lifestyle photography of a real, relatable everyday scene where the product "
+        "naturally solves a small frustration. Contrast lighting shifting from dull to bright "
+        "to suggest improvement and change. Natural, empathetic, true-to-life setting."
     ),
     AdStrategy.SOCIAL_PROOF: (
-        "Warm, natural lifestyle photography suggesting authentic everyday use. "
-        "Approachable, inviting atmosphere with real-world context."
+        "Authentic UGC-style photography that looks like a real Instagram post, not an ad. "
+        "Casual hand-held feel, real-world context, genuine everyday use. "
+        "Approachable and trustworthy, as if shared by a satisfied customer."
     ),
     AdStrategy.EMOTIONAL: (
-        "Soft bokeh background, warm golden tones, shallow depth of field. "
-        "Cinematic quality evoking aspiration, comfort, and emotional resonance."
+        "Emotional lifestyle photography with generous negative space and breathing room. "
+        "Natural light, warm tones, soft bokeh, shallow depth of field, cinematic premium mood. "
+        "The product appears subtly within an aspirational, comforting atmosphere."
     ),
     AdStrategy.FOMO: (
-        "Bold, high-energy, dramatic lighting with strong contrast. "
-        "Vibrant colors and dynamic composition creating urgency and excitement."
+        "Bold promotional photography for a flash-sale feel. Dramatic high-contrast lighting, "
+        "vibrant punchy colors, dynamic eye-grabbing composition that creates urgency. "
+        "High-conversion Meta promotion aesthetic."
     ),
 }
 
@@ -528,7 +534,9 @@ async def generate_image(
                 safe_zone=_TEMPLATE_SAFE_ZONES_COMPOSE[template],
             )
 
-        base_png, mask_png = _build_inpaint_base_and_mask(product_cutout_bytes, template, size)
+        base_png, mask_png = _build_inpaint_base_and_mask(
+            product_cutout_bytes, template, size, get_style(strategy).product_fill
+        )
         base_file = io.BytesIO(base_png)
         base_file.name = "base.png"
         mask_file = io.BytesIO(mask_png)
@@ -836,13 +844,22 @@ _PRODUCT_FILL = 0.92
 
 
 def _place_product(
-    product: Image.Image, w: int, h: int, template: TemplateType
+    product: Image.Image, w: int, h: int, template: TemplateType, product_fill: float
 ) -> tuple[Image.Image, int, int]:
-    """상품을 템플릿 박스에 비율 유지로 리사이즈하고 배치 좌표를 계산한다."""
+    """상품을 템플릿 박스에 비율 유지로 리사이즈하고 배치 좌표를 계산한다.
+
+    product_fill(전략별 상품 비중)은 프레임 짧은 변 대비 상품 최대 변의 목표 크기로,
+    템플릿 박스 한계와 함께 적용해 텍스트 영역 침범 없이 비중을 반영한다.
+    """
     x0, y0, x1, y1 = _COMPOSE_PRODUCT_BOXES[template]
     box_w = max(1, int(w * (x1 - x0) * _PRODUCT_FILL))
     box_h = max(1, int(h * (y1 - y0) * _PRODUCT_FILL))
-    scale = min(box_w / product.width, box_h / product.height)
+    target = max(1, int(min(w, h) * product_fill))  # 전략 비중 캡
+    scale = min(
+        box_w / product.width,
+        box_h / product.height,
+        target / max(product.width, product.height),
+    )
     new_w = max(1, int(product.width * scale))
     new_h = max(1, int(product.height * scale))
     product = product.resize((new_w, new_h), Image.LANCZOS)
@@ -852,12 +869,12 @@ def _place_product(
 
 
 def _build_inpaint_base_and_mask(
-    product_cutout_bytes: bytes, template: TemplateType, size: AdSize
+    product_cutout_bytes: bytes, template: TemplateType, size: AdSize, product_fill: float
 ) -> tuple[bytes, bytes]:
     """누끼 상품을 배치한 베이스 PNG와, 상품 실루엣만 보존하는 마스크 PNG를 만든다."""
     w, h = (int(v) for v in size.value.split("x"))
     product = Image.open(io.BytesIO(product_cutout_bytes)).convert("RGBA")
-    product, x, y = _place_product(product, w, h, template)
+    product, x, y = _place_product(product, w, h, template, product_fill)
 
     # 베이스: 중립 회색 위에 상품 배치 (배경 영역은 어차피 재생성됨)
     base = Image.new("RGBA", (w, h), (245, 245, 245, 255))
