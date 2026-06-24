@@ -4,12 +4,18 @@
 from __future__ import annotations
 
 import asyncio
+import uuid
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.auth import get_current_user, user_org_id
 from core.config import settings
+from core.db import get_db
+from core.models import User
 from domain.simulation.adapters.memory_store import InMemorySimulationStore
 from domain.simulation.contracts.debate_schemas import DebateTopic
 from domain.simulation.contracts.schemas import (
@@ -109,21 +115,48 @@ async def start_debate(body: DebateRequest, lay_count: int = 3) -> dict:
     return {"run_id": run_id, "stream_url": f"/api/debate/{run_id}/stream", "lay_count": lay_count}
 
 
+async def _verify_sim_org(simulation_id: str, user: User, session: AsyncSession) -> None:
+    """simulation_id가 로그인 org 소유인지 검증 — 아니면 404(멀티테넌시 격리).
+
+    도메인 ORM import 없이 simulations.organization_id를 raw SQL로 대조(경계 유지).
+    """
+    org_id = await user_org_id(user, session)  # core.auth 공용(없으면 None) — 복붙 제거
+    try:
+        sid = uuid.UUID(simulation_id)
+    except ValueError:
+        raise HTTPException(status_code=404, detail="시뮬레이션 없음") from None
+    sim_org = await session.scalar(
+        text("SELECT organization_id FROM simulations WHERE id = :sid"), {"sid": sid}
+    )
+    if org_id is None or sim_org is None or sim_org != org_id:
+        raise HTTPException(status_code=404, detail="시뮬레이션 없음")
+
+
 @router.get("/by-simulation/{simulation_id}")
-async def list_sessions(simulation_id: str) -> dict:
-    """simulation_id로 저장된(DB) 토론 목록 — 메타만(발언 제외). 영속화 미주입이면 빈 목록.
+async def list_sessions(
+    simulation_id: str,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """simulation_id로 저장된(DB) 토론 목록 — 메타만(발언 제외). 로그인 org 시뮬만.
 
     프로젝트 패널·세션 탭 복원용. {"debates": [{debate_id·topic·status·headline·…}, ...]}.
     """
+    await _verify_sim_org(simulation_id, user, session)
     return {"debates": await _service.list_saved(simulation_id)}
 
 
 @router.get("/by-simulation/{simulation_id}/report")
-async def get_saved_report(simulation_id: str) -> dict:
-    """simulation_id로 저장된 통합 리포트(report_view) — 새로고침·콜드 진입 시 최종 리포트 복원.
+async def get_saved_report(
+    simulation_id: str,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """simulation_id로 저장된 통합 리포트(report_view) — 새로고침·콜드 진입 시 복원. 로그인 org만.
 
     DB에 영속된 simulation_reports 1행의 report_view를 반환. 없으면 404(DB 미연동·미저장 포함).
     """
+    await _verify_sim_org(simulation_id, user, session)
     report_view = await _service.get_saved_report(simulation_id)
     if report_view is None:
         raise HTTPException(status_code=404, detail="저장된 리포트 없음(DB 미연동·미저장 가능)")

@@ -46,9 +46,17 @@ class HandoffCandidate(BaseModel):
 class GeneratorReadClient:
     """generator 응답을 검증·파싱해 HandoffCandidate를 돌려준다. generator 내부 타입 import 금지."""
 
-    def __init__(self, *, base_url: str, transport: httpx.AsyncBaseTransport | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        base_url: str,
+        transport: httpx.AsyncBaseTransport | None = None,
+        internal_token: str | None = None,
+    ) -> None:
         self._base_url = base_url.rstrip("/")
         self._transport = transport
+        # generator 조회가 org 스코프된 경우 내부 호출 우회용 헤더(설정 시에만 전송).
+        self._headers = {"X-Internal-Token": internal_token} if internal_token else {}
 
     async def get_candidate(self, generation_id: str, candidate_id: str) -> HandoffCandidate:
         data = await self._fetch(generation_id)
@@ -76,7 +84,7 @@ class GeneratorReadClient:
         async with httpx.AsyncClient(timeout=_TIMEOUT, transport=self._transport) as client:
             for _ in range(_RETRIES + 1):
                 try:
-                    resp = await client.get(url)
+                    resp = await client.get(url, headers=self._headers)
                 except httpx.HTTPError as exc:
                     last_exc = exc
                     continue

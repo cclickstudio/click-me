@@ -1,5 +1,6 @@
 """JWT 유틸 + 비밀번호 해싱 (Cognito 전환 전 임시 구현)."""
 
+import uuid
 from datetime import UTC, datetime, timedelta
 
 import bcrypt
@@ -11,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.config import settings
 from core.db import get_db
-from core.models import User
+from core.models import OrganizationMember, User
 
 bearer = HTTPBearer(auto_error=False)
 
@@ -56,6 +57,39 @@ async def get_current_user(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="유저를 찾을 수 없습니다."
         )
     return user
+
+
+async def optional_user(
+    creds: HTTPAuthorizationCredentials | None = Depends(bearer),
+    db: AsyncSession = Depends(get_db),
+) -> User | None:
+    """토큰 있으면 검증된 ACTIVE 유저, 없거나 무효면 None (401 안 냄) — 선택적 인증용.
+
+    mock/데모는 무인증 허용, live는 org 스코프 — 둘을 한 엔드포인트에서 가르는 공용 의존성.
+    """
+    if not creds:
+        return None
+    try:
+        user_id: str = decode_token(creds.credentials)["sub"]
+    except (JWTError, KeyError):
+        return None
+    user = await db.scalar(select(User).where(User.id == user_id))
+    return user if user and user.status == "ACTIVE" else None
+
+
+async def user_org_id(user: User, db: AsyncSession) -> uuid.UUID | None:
+    """로그인 유저의 소속 org id (없으면 None) — raise 없이 조회만(호출자가 404/409 결정)."""
+    return await db.scalar(
+        select(OrganizationMember.organization_id).where(OrganizationMember.user_id == user.id)
+    )
+
+
+async def require_user_org(user: User, db: AsyncSession) -> uuid.UUID:
+    """로그인 유저의 소속 org — 없으면 409. 라우터별 복붙 대신 이 공용 함수를 쓴다."""
+    org_id = await user_org_id(user, db)
+    if org_id is None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="소속 조직이 없습니다.")
+    return org_id
 
 
 def require_admin(user: User = Depends(get_current_user)) -> User:
