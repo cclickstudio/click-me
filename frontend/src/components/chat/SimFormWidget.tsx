@@ -64,6 +64,7 @@ export default function SimFormWidget({
   const [err, setErr] = useState('');
   const esRef = useRef<EventSource | null>(null);
   const completeFiredRef = useRef(false); // onSimComplete 1회 보장(SSE completed·onerror 중복 방지)
+  const streamRetryRef = useRef(0); // onerror 재구독 횟수 가드(무한 재구독 방지)
 
   const finish = async (rid: string) => {
     setSimJob(null); // 완료 — 동시실행 슬롯 해제
@@ -90,6 +91,7 @@ export default function SimFormWidget({
     es.onmessage = ev => {
       try {
         const d = JSON.parse(ev.data) as { event?: string; pct?: number; message?: string };
+        streamRetryRef.current = 0; // 정상 수신 — 재구독 예산 회복
         if (typeof d.pct === 'number') setPct(d.pct);
         if (d.message) setStageMsg(d.message);
         if (d.event === 'completed') {
@@ -106,9 +108,31 @@ export default function SimFormWidget({
         /* ignore malformed line */
       }
     };
-    es.onerror = () => {
+    es.onerror = async () => {
       es.close();
-      void finish(rid); // 스트림 끊겨도 결과 조회 시도
+      // 스트림 끊김 — 완료/진행/실패를 상태로 확인해 분기.
+      // ★ 새로고침·언로드로 끊긴 경우: 여기서 ACTIVE_SIM_KEY를 동기 삭제하면 안 됨
+      //   (그러면 새 페이지의 복원 로직이 진행중 런을 못 찾음). 비동기 상태 확인으로
+      //   언로드 시엔 키를 보존하고, 페이지가 살아있을 때만 완료/실패를 확정한다.
+      try {
+        const st = await api.simulation.status(rid);
+        if (st.status === 'COMPLETED') {
+          void finish(rid); // 완료라 끊긴 것 — 결과 조회
+        } else if (st.status === 'RUNNING') {
+          // 진행 중인데 네트워크 블립으로 끊긴 경우 — 한정 횟수 재구독(키 유지 → 새로고침 복원).
+          if (esRef.current === es && streamRetryRef.current < 5) {
+            streamRetryRef.current += 1;
+            subscribe(rid);
+          }
+        } else {
+          setSimJob(null);
+          localStorage.removeItem(ACTIVE_SIM_KEY);
+          setErr('실행 오류');
+          setPhase('error');
+        }
+      } catch {
+        /* 상태 확인 실패 — 키 유지(다음 새로고침에 복원 시도). */
+      }
     };
   };
 
