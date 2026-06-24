@@ -187,3 +187,64 @@ def build_regeneration_job_service(settings):
             agent=build_regeneration_agent(),  # 키 없으면 결정론 폴백
         )
     return _regeneration_job_service
+
+
+# ── 챗 오케스트레이터 공유 팩토리 (라우터와 병렬, 통합은 추후) ───────────────────────────
+
+
+def resolve_execution_mode(settings):
+    """settings 기반 실행 모드 — 라우터의 _resolved_execution_mode() 미러.
+
+    use_mock이면 무조건 MOCK(봉인). 실모드에서만 management_execution_mode를 따른다.
+    DRY_RUN을 폴백으로 사용한다.
+    """
+    from domain.management.contracts.enums import ExecutionMode  # noqa: PLC0415
+
+    if getattr(settings, "use_mock", True):
+        return ExecutionMode.MOCK
+    raw = getattr(settings, "management_execution_mode", "dry_run")
+    try:
+        return ExecutionMode(raw)
+    except ValueError:
+        return ExecutionMode.DRY_RUN
+
+
+async def state_version_v1(_ad_account_id: str) -> str:
+    """데모 고정 상태 버전 provider — 제안의 expected_state_version="state_v1"과 일치."""
+    return "state_v1"
+
+
+def build_executor(settings, *, budget=None, audit=None):
+    """비라우터 소비자(챗 오케스트레이터)용 Executor 팩토리.
+
+    라우터는 자체 _get_executor()를 유지하며, 이 함수는 그와 병렬로 존재한다
+    (통합은 추후 — 아키텍처 합의 후 단일 진입점으로 교체).
+    use_mock=True → MOCK writer + 인메모리 idempotency/audit (hermetic 테스트 지원).
+
+    주의: budget=None이면 호출마다 새 TenantBudgetRegistry(10M)를 만든다(예산 상태 분리).
+    챗은 wiring 계층에서 단일 인스턴스로만 호출할 것 — 반복 호출 시 budget을 주입하라.
+    """
+    from domain.management.contracts.enums import ExecutionMode  # noqa: PLC0415
+    from domain.management.contracts.policy import APPROVAL_POLICY_VERSION  # noqa: PLC0415
+    from domain.management.execution.executor import (  # noqa: PLC0415
+        DEFAULT_ALLOWED_MODES,
+        Executor,
+    )
+    from domain.management.execution.tier import TenantBudgetRegistry  # noqa: PLC0415
+
+    budget = budget or TenantBudgetRegistry(default_limit_krw=10_000_000)
+    audit = audit or build_audit_sink(settings)
+
+    allowed = DEFAULT_ALLOWED_MODES
+    if resolve_execution_mode(settings) is ExecutionMode.LIVE:
+        allowed = (*DEFAULT_ALLOWED_MODES, ExecutionMode.LIVE)
+
+    return Executor(
+        build_writer(settings),
+        idempotency=build_idempotency_store(settings),
+        audit=audit,
+        budget_for=budget.for_tenant,
+        state_version_provider=state_version_v1,
+        current_policy_version=APPROVAL_POLICY_VERSION,
+        allowed_modes=allowed,
+    )
