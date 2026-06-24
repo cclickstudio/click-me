@@ -41,3 +41,21 @@ def build_memory_store(s=settings):
     from domain.chat.adapters.pg_memory_store import PgMemoryStore
 
     return PgMemoryStore(embedder=build_embedding_provider(s))
+
+
+async def build_checkpointer(s=settings):
+    """그래프 체크포인터 — USE_MOCK/테스트는 MemorySaver, 실연동은 AsyncPostgresSaver.
+
+    awaitable — 반드시 await. AsyncPostgresSaver는 풀 정리가 필요하므로 (saver, close)를 반환한다.
+    """
+    if getattr(s, "use_mock", True):
+        from langgraph.checkpoint.memory import MemorySaver
+
+        async def _noop() -> None:
+            """MemorySaver는 정리 불필요 — close 계약을 맞추는 no-op."""
+
+        return MemorySaver(), _noop
+
+    from domain.chat.checkpointer import build_async_checkpointer
+
+    return await build_async_checkpointer(s.database_url)
