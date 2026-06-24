@@ -1,9 +1,9 @@
-# 🅱 generator HTTP 어댑터 — IMPROVE 호출·폴링·타임아웃·후보 매핑 + 폴백 검증
+# 🅱 generator HTTP 어댑터 — IMPROVE 호출·폴링·타임아웃·copy/idx 통과
 import pytest
 
+from domain.management.agents.outcome import OutcomeKind
 from domain.management.agents.regeneration import CreativeCandidate
 from domain.management.agents.regeneration_tools import (
-    FallbackCreativeGenerator,
     GeneratorHttpTool,
     GeneratorInputError,
 )
@@ -87,24 +87,36 @@ def build_tool(
     return tool, client
 
 
-async def test_completed_candidates_are_mapped():
+async def test_completed_candidates_pass_copy_object_and_idx_through():
     detail = _completed(
-        {"candidate_id": "g1", "copy": "새 카피1", "s3_key": "s3/a.png", "qa_passed": True},
-        {"candidate_id": "g2", "copy": "새 카피2", "s3_key": "s3/b.png", "qa_passed": True},
+        {
+            "candidate_id": "g1",
+            "idx": 0,
+            "copy": {"headline": "h", "body": "b", "cta": "지금"},
+            "s3_key": "s3/a.png",
+            "explanation": "근거0",
+        },
+        {"candidate_id": "g2", "idx": 1, "copy": "단일 카피", "s3_key": "s3/b.png"},
     )
     tool, _ = build_tool([detail])
 
     result = await tool.generate(make_diagnosis(), count=3)
 
-    assert result == [
-        CreativeCandidate(candidate_id="g1", ad_copy="새 카피1", image_ref="s3/a.png"),
-        CreativeCandidate(candidate_id="g2", ad_copy="새 카피2", image_ref="s3/b.png"),
-    ]
+    assert result[0] == CreativeCandidate(
+        candidate_id="g1",
+        copy={"headline": "h", "body": "b", "cta": "지금"},
+        idx=0,
+        image_ref="s3/a.png",
+        explanation="근거0",
+    )
+    assert result[1].candidate_id == "g2"
+    assert result[1].copy == "단일 카피"
+    assert result[1].idx == 1
 
 
 async def test_count_is_respected():
     detail = _completed(
-        *[{"candidate_id": f"g{i}", "copy": f"c{i}", "s3_key": None} for i in range(3)]
+        *[{"candidate_id": f"g{i}", "idx": i, "copy": f"c{i}", "s3_key": None} for i in range(3)]
     )
     tool, _ = build_tool([detail])
 
@@ -114,7 +126,9 @@ async def test_count_is_respected():
 
 
 async def test_improve_request_body_is_built_from_diagnosis():
-    tool, client = build_tool([_completed({"candidate_id": "g1", "copy": "c", "s3_key": None})])
+    tool, client = build_tool(
+        [_completed({"candidate_id": "g1", "idx": 0, "copy": "c", "s3_key": None})]
+    )
 
     await tool.generate(make_diagnosis(), count=1)
 
@@ -127,7 +141,7 @@ async def test_improve_request_body_is_built_from_diagnosis():
 
 async def test_polls_until_completed():
     running = {"status": "running", "candidates": []}
-    detail = _completed({"candidate_id": "g1", "copy": "c", "s3_key": None})
+    detail = _completed({"candidate_id": "g1", "idx": 0, "copy": "c", "s3_key": None})
     tool, client = build_tool([running, running, detail], clock_values=[0])
 
     result = await tool.generate(make_diagnosis(), count=1)
@@ -169,58 +183,20 @@ async def test_missing_s3_key_raises_input_error():
         await tool.generate(diagnosis, count=1)
 
 
-# ── 폴백 합성기 ──────────────────────────────────────────────────────
-
-
-class _Boom:
-    async def generate(self, diagnosis, count):
-        raise RuntimeError("primary down")
-
-
-class _Stub:
-    def __init__(self, candidates):
-        self.candidates = candidates
-        self.called = False
-
-    async def generate(self, diagnosis, count):
-        self.called = True
-        return self.candidates
-
-
-async def test_fallback_used_when_primary_fails():
-    fallback = _Stub([CreativeCandidate(candidate_id="t1", ad_copy="템플릿")])
-    gen = FallbackCreativeGenerator(primary=_Boom(), fallback=fallback)
-
-    result = await gen.generate(make_diagnosis(), count=1)
-
-    assert fallback.called is True
-    assert result[0].candidate_id == "t1"
-
-
-async def test_primary_used_when_ok():
-    primary = _Stub([CreativeCandidate(candidate_id="p1", ad_copy="실생성")])
-    fallback = _Stub([CreativeCandidate(candidate_id="t1", ad_copy="템플릿")])
-    gen = FallbackCreativeGenerator(primary=primary, fallback=fallback)
-
-    result = await gen.generate(make_diagnosis(), count=1)
-
-    assert result[0].candidate_id == "p1"
-    assert fallback.called is False
-
-
-# ── 조립 헬퍼 통합 — generator_client 주입 시 전체 agent 관통 ──────────
+# ── 조립 헬퍼 통합 — generator_client 주입 시 전체 agent 관통 (HITL) ──
 
 
 async def test_build_agent_with_generator_client_runs_end_to_end():
-    """generator HTTP 후보가 진짜 agent를 관통해 REPLACE_CREATIVE 제안까지 도달한다."""
+    """generator HTTP 후보가 agent를 관통해 REPLACE_CREATIVE 제안까지(선택 후) 도달한다."""
     from domain.management.agents.regeneration import RemediationContext
     from domain.management.agents.regeneration_tools import build_regeneration_agent
 
     detail = _completed(
-        {"candidate_id": "g1", "copy": "지금 바로 확인하세요", "s3_key": "s3/a.png"}
+        {"candidate_id": "g1", "idx": 0, "copy": "지금 바로 확인하세요", "s3_key": "s3/a.png"}
     )
     client = FakeHttpClient({"generation_id": "gen-1"}, [detail])
     agent = build_regeneration_agent(generator_client=client)
+    dx = make_diagnosis()
     ctx = RemediationContext(
         ad_account_id="act",
         target_object_ids=("camp-1",),
@@ -229,10 +205,13 @@ async def test_build_agent_with_generator_client_runs_end_to_end():
         run_days=7,
         expected_state_version="sv",
         approval_policy_version="v1",
+        action_type="REPLACE_CREATIVE",
     )
 
-    proposal = await agent.propose(make_diagnosis(), ctx)
+    ranked = await agent.rank(dx, ctx)
+    assert ranked.kind is OutcomeKind.AWAITING_SELECTION
+    out = await agent.package(ranked.selection_token, tenant_id=dx.tenant_id, selected_id="g1")
 
-    assert proposal is not None
-    assert proposal.action_type == "REPLACE_CREATIVE"
-    assert proposal.evidence_metrics["selected_candidate_id"] == "g1"
+    assert out.kind is OutcomeKind.PROPOSED
+    assert out.proposal.action_type == "REPLACE_CREATIVE"
+    assert out.proposal.evidence_metrics["selected_candidate_id"] == "g1"

@@ -44,7 +44,13 @@ def _capture_writer() -> tuple[MetaAdsWriter, list[tuple[str, bytes]]]:
 
 
 def _routing_writer() -> tuple[MetaAdsWriter, list[tuple[str, bytes]]]:
-    """경로별로 다른 id를 돌려주는 LIVE 시뮬 — 체인 id 스레딩 검증용."""
+    """경로별로 다른 id를 돌려주는 LIVE 시뮬 — 체인 id 스레딩 검증용.
+
+    management_create_ad=True를 주입해 전체 캠페인→광고세트→(폼→)광고 체인을 검증한다.
+    (기본값 False면 광고세트에서 멈춰 체인 계약 검증이 불완전해짐.)
+    """
+    import types
+
     calls: list[tuple[str, bytes]] = []
     table = {
         "/campaigns": "camp_1",
@@ -60,7 +66,8 @@ def _routing_writer() -> tuple[MetaAdsWriter, list[tuple[str, bytes]]]:
         return httpx.Response(200, json={"id": obj_id})
 
     client = MetaClient("EAAtest", transport=httpx.MockTransport(handler))
-    return MetaAdsWriter(mode=ExecutionMode.LIVE, client=client), calls
+    settings = types.SimpleNamespace(management_create_ad=True)
+    return MetaAdsWriter(settings, mode=ExecutionMode.LIVE, client=client), calls
 
 
 # ── Task4: 리드폼 · 광고 ─────────────────────────────────────────
@@ -122,6 +129,24 @@ def test_full_campaign_traffic_stops_at_adset():
     assert any(p.endswith("/adsets") for p in paths)
     assert not any(p.endswith("/leadgen_forms") for p in paths)  # 트래픽은 폼·광고 없음
     assert not any(p.endswith("/ads") for p in paths)
+
+
+def test_full_campaign_traffic_with_link_creates_link_ad():
+    # link_url 있으면 traffic도 링크광고까지 생성 — 실 writer 분기 검증(폼은 없음).
+    writer, calls = _routing_writer()
+    cfg = _config(objective="traffic").model_copy(
+        update={"link_url": "https://shop.example.com", "headline": "제목", "body": "본문"}
+    )
+    result = asyncio.run(writer.create_full_campaign(cfg, "idem-tl", page_id="P"))
+
+    paths = [p for p, _ in calls]
+    assert any(p.endswith("/adsets") for p in paths)
+    assert any(p.endswith("/ads") for p in paths)  # link_url → 광고 생성
+    assert not any(p.endswith("/leadgen_forms") for p in paths)  # 리드 아님 → 폼 없음
+    ad_body = next(b for p, b in calls if p.endswith("/ads"))
+    assert b"shop.example.com" in ad_body  # 목적지 link
+    assert b"adset_1" in ad_body  # 부모 광고세트 스레딩
+    assert result.status is ResultStatus.SUCCESS
 
 
 def test_activate_sets_status_active():

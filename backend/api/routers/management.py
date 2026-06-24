@@ -12,25 +12,37 @@ from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from random import Random
 from typing import Literal
+from urllib.parse import parse_qs, urlparse
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from fastapi.responses import RedirectResponse
-from pydantic import BaseModel, Field
-from sqlalchemy import func, select, update
+from pydantic import BaseModel, ConfigDict, Field, HttpUrl
+from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.routers.billing import DEMO_ORG_ID, get_billing_service
+from api.routers.billing import get_billing_service
 from core.auth import get_current_user
 from core.config import settings
 from core.db import get_db
-from core.models import CampaignKpiOverride, CreatedCampaign, OrganizationMember, User
+from core.models import (
+    CampaignKpiOverride,
+    CreatedCampaign,
+    MetaConnection,
+    OrganizationMember,
+    User,
+)
 from domain.billing.service.billing_service import BillingError
+from domain.management.adapters.generator.client import (
+    GeneratorUnavailableError,
+    InvalidGenerationError,
+)
 from domain.management.adapters.meta.client import MetaApiError
 from domain.management.adapters.meta.connection_flow import complete_meta_connection
 from domain.management.adapters.meta.oauth import build_login_url
 from domain.management.adapters.meta.token_crypto import TokenCipher
 from domain.management.adapters.mock import MockAdPlatform, MockOrganicReader
+from domain.management.agents.outcome import OutcomeKind
 from domain.management.agents.regeneration import RemediationContext
 from domain.management.agents.regeneration_tools import build_regeneration_agent
 from domain.management.approval import (
@@ -73,9 +85,17 @@ from domain.management.detection.exposure_model import (
     find_anomaly_window,
 )
 from domain.management.detection.performance_dx import diagnose_performance
-from domain.management.escalation import EscalationController
+from domain.management.escalation import EscalationController, EscalationRun
 from domain.management.escalation_demo import DemoScenarioDetector
+from domain.management.execution.assistant_tools import execution_history
 from domain.management.execution.executor import DEFAULT_ALLOWED_MODES, Executor
+from domain.management.execution.regeneration_jobs import (
+    CandidateNotInJob,
+    JobNotAwaitingSelection,
+    JobNotFound,
+    JobTenantMismatch,
+    SelectionContextExpired,
+)
 from domain.management.execution.tier import (
     ESCALATE_THRESHOLD,
     WARN_THRESHOLD,
@@ -87,11 +107,14 @@ from domain.management.wiring import (
     build_audit_sink,
     build_diagnosis_agent,
     build_escalation_store,
+    build_generator_client,
     build_idempotency_store,
     build_prediction_reader,
     build_reader,
+    build_regeneration_job_service,
     build_writer,
 )
+from tools.storage.s3 import download_bytes
 
 router = APIRouter()
 
@@ -132,6 +155,14 @@ def _resolved_execution_mode() -> ExecutionMode:
         return ExecutionMode(raw)
     except ValueError:
         return ExecutionMode.DRY_RUN
+
+
+def _is_sending_mode() -> bool:
+    """실제 Meta 전송이 일어나는 모드 — 이미지 업로드 등 실 호출 결과를 검증할 대상.
+
+    DRY_RUN/MOCK은 upload_image가 None을 반환(미전송, 의도된 동작)이라 image_hash 부재가 정상.
+    """
+    return _resolved_execution_mode() in (ExecutionMode.VALIDATE_ONLY, ExecutionMode.LIVE)
 
 
 def _get_executor() -> Executor:
@@ -224,11 +255,19 @@ class RegenerateRequest(BaseModel):
 
 
 @router.post("/regenerate")
-async def regenerate(body: RegenerateRequest):
-    """🅱 재생성 agent — 진단 수신 → 후보 생성·채점 → REPLACE_CREATIVE 제안 패키징."""
+async def regenerate(
+    body: RegenerateRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """🅱 재생성 agent — 진단 수신 → 4-3 위임 생성 → guard → AWAITING_SELECTION."""
+    org_id = await _require_org_id(user, db)
+    if body.diagnosis.tenant_id != str(org_id):
+        raise HTTPException(403, "다른 조직의 진단으로 재생성할 수 없습니다.")
+    ad_account = await _require_ad_account(db, org_id)
     agent = build_regeneration_agent()  # API 키 없으면 결정론 폴백
     context = RemediationContext(
-        ad_account_id="act_demo_001",
+        ad_account_id=ad_account,
         target_object_ids=(body.diagnosis.campaign_id,),
         budget_before_krw=DAILY_BUDGET_KRW,
         budget_after_krw=int(DAILY_BUDGET_KRW * 1.5),
@@ -237,10 +276,21 @@ async def regenerate(body: RegenerateRequest):
         approval_policy_version=APPROVAL_POLICY_VERSION,
         action_type="REPLACE_CREATIVE",
     )
-    proposal = await agent.propose(body.diagnosis, context)
-    if proposal is None:
-        raise HTTPException(status_code=422, detail="생존 후보 없음 — 재생성 빈손")
-    return {"proposal": proposal.model_dump(mode="json")}
+    outcome = await agent.rank(body.diagnosis, context)
+    # AWAITING_SELECTION: 자동 선택 금지 — 사람이 고를 수 있도록 후보 목록과 토큰을 그대로 반환.
+    if outcome.kind is OutcomeKind.AWAITING_SELECTION:
+        return {
+            "kind": outcome.kind.value,
+            "selection_token": outcome.selection_token,
+            "candidates": outcome.candidates,
+        }
+    # 비크리에이티브 가지(PROPOSED / OBSERVE 등)는 제안 또는 상태를 반환.
+    if outcome.kind is OutcomeKind.PROPOSED and outcome.proposal is not None:
+        return {"kind": outcome.kind.value, "proposal": outcome.proposal.model_dump(mode="json")}
+    raise HTTPException(
+        status_code=422,
+        detail={"kind": outcome.kind.value, "reason": outcome.reason and outcome.reason.value},
+    )
 
 
 class ExecuteRequest(BaseModel):
@@ -269,6 +319,15 @@ async def _record_created_campaign(db: AsyncSession, proposal: ActionProposal, r
     """캠페인 생성 결과를 created_campaigns에 누적 기록 — 실패해도 응답엔 영향 없음(best-effort)."""
     cfg = proposal.evidence_metrics.get("campaign_config") or {}
     meta_id = _find_in_snapshot(result.platform_response_snapshot, "campaign_meta_id")
+    em = proposal.evidence_metrics
+    # 두 경로 — 수동 create-proposal 형제 키(우선) + from-simulation snapshot 키.
+    raw_sim = em.get("simulation_id") or (em.get("simulation_snapshot") or {}).get("simulation_id")
+    sim_uuid = None
+    if raw_sim:
+        try:
+            sim_uuid = UUID(str(raw_sim))
+        except (ValueError, TypeError):
+            sim_uuid = None
     db.add(
         CreatedCampaign(
             tenant_id=proposal.tenant_id,
@@ -279,18 +338,25 @@ async def _record_created_campaign(db: AsyncSession, proposal: ActionProposal, r
             daily_budget_krw=int(cfg.get("daily_budget_krw") or proposal.budget_after_krw or 0),
             status=result.status.value if hasattr(result.status, "value") else str(result.status),
             execution_mode=str(_resolved_execution_mode().value),
-            creative_ad_id=cfg.get("creative_ad_id"),  # 집행 전 시뮬 예측 연결용
+            creative_ad_id=cfg.get("creative_ad_id"),  # Meta 기존 광고 재사용 귀속
+            simulation_id=sim_uuid,  # 시뮬 예측 연결 키(수동 + from-simulation)
         )
     )
     await db.commit()
 
 
 @router.post("/execute")
-async def execute(body: ExecuteRequest, db: AsyncSession = Depends(get_db)):
-    """🅱 executor — 승인 후 4단계 재검증 + 멱등 실행. 모든 지출 단일 경로.
-
-    CREATE_CAMPAIGN이면 결과를 created_campaigns(네온 DB)에 누적 기록한다.
-    """
+async def execute(
+    body: ExecuteRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """🅱 executor — 승인 후 4단계 재검증 + 멱등 실행. 모든 지출 단일 경로."""
+    org_id = await _require_org_id(user, db)
+    if body.proposal.tenant_id != str(org_id):
+        raise HTTPException(403, "다른 조직의 제안은 실행할 수 없습니다.")
+    if body.approved_action.tenant_id != str(org_id):
+        raise HTTPException(403, "다른 조직의 승인은 실행할 수 없습니다.")
     result = await _get_executor().execute(body.approved_action, body.proposal)
     if body.proposal.action_type == "CREATE_CAMPAIGN":
         try:
@@ -350,6 +416,107 @@ async def get_audit(approval_id: str):
             for e in events
         ]
     }
+
+
+def _job_http_error(exc: Exception) -> HTTPException:
+    """재생성 job 도메인 예외 → HTTPException. 라우터 분기 단일화."""
+    if isinstance(exc, (JobNotFound, JobTenantMismatch)):
+        return HTTPException(404, "job을 찾을 수 없습니다.")
+    if isinstance(exc, CandidateNotInJob):
+        return HTTPException(422, "선택한 후보가 이 job에 없습니다.")
+    if isinstance(exc, SelectionContextExpired):
+        return HTTPException(409, {"reason": "SELECTION_CONTEXT_EXPIRED"})
+    if isinstance(exc, JobNotAwaitingSelection):
+        return HTTPException(409, "선택 가능한 상태가 아닙니다.")
+    return HTTPException(500, "알 수 없는 오류")
+
+
+class StartRegenJobRequest(BaseModel):
+    diagnosis: DiagnosisResult
+
+
+class SelectRegenJobRequest(BaseModel):
+    selected_id: str
+
+
+@router.post("/regenerate/jobs")
+async def start_regen_job(
+    body: StartRegenJobRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """재생성 비동기 job 시작 → {job_id, status}. 무거운 생성은 백그라운드."""
+    org_id = await _require_org_id(user, db)
+    if body.diagnosis.tenant_id != str(org_id):
+        raise HTTPException(403, "다른 조직의 진단으로는 재생성할 수 없습니다.")
+    ad_account = await _require_ad_account(db, org_id)  # /regenerate와 동일 — live면 fail-closed
+    context = RemediationContext(
+        ad_account_id=ad_account,
+        target_object_ids=(body.diagnosis.campaign_id,),
+        budget_before_krw=DAILY_BUDGET_KRW,
+        budget_after_krw=int(DAILY_BUDGET_KRW * 1.5),
+        run_days=7,
+        expected_state_version="state_v1",
+        approval_policy_version=APPROVAL_POLICY_VERSION,
+        action_type="REPLACE_CREATIVE",
+    )
+    service = build_regeneration_job_service(settings)
+    job_id = await service.start(body.diagnosis, context)
+    return {"job_id": job_id, "status": "queued"}
+
+
+@router.get("/regenerate/jobs/{job_id}")
+async def get_regen_job(
+    job_id: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """재생성 job 진행 상태 조회(폴링) — org 스코프 강제."""
+    org_id = await _require_org_id(user, db)
+    service = build_regeneration_job_service(settings)
+    try:
+        rec = await service.get(job_id, tenant_id=str(org_id))
+    except (JobNotFound, JobTenantMismatch) as exc:
+        raise _job_http_error(exc) from exc
+    return {
+        "job_id": rec.id,
+        "status": rec.status.value,
+        "candidates": rec.candidates,
+        "proposal": rec.proposal,
+        "outcome_reason": rec.outcome_reason,
+    }
+
+
+@router.post("/regenerate/jobs/{job_id}/select")
+async def select_regen_job(
+    job_id: str,
+    body: SelectRegenJobRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    org_id = await _require_org_id(user, db)
+    service = build_regeneration_job_service(settings)
+    try:
+        rec = await service.select(job_id, body.selected_id, tenant_id=str(org_id))
+    except (
+        JobNotFound,
+        JobTenantMismatch,
+        JobNotAwaitingSelection,
+        CandidateNotInJob,
+        SelectionContextExpired,
+    ) as exc:
+        raise _job_http_error(exc) from exc
+    return {"job_id": rec.id, "status": rec.status.value, "proposal": rec.proposal}
+
+
+@router.get("/execution/history")
+async def execution_history_endpoint(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """테넌트의 최근 실행 감사 이력(읽기) — org 스코프 강제."""
+    org_id = await _require_org_id(user, db)
+    return await execution_history(_AUDIT_LOG, tenant_id=str(org_id))
 
 
 # ── 오가닉 vs 광고 비교 (🅰 comparison 도메인 노출) ──────────────────────
@@ -424,21 +591,25 @@ async def compare_before_after(db: AsyncSession = Depends(get_db)):
     reader = build_reader(settings)
     pred_reader = build_prediction_reader(settings)
     now = datetime.now(UTC)
-    # meta_campaign_id → creative_ad_id 매핑(앱에서 만든 캠페인의 시뮬 연결 키)
-    ad_by_meta: dict[str, str] = {}
+    # meta_campaign_id → creative_ad_id(실측 귀속) / (simulation_id, tenant_id)(예측 키)
+    creative_by_meta: dict[str, str] = {}
+    sim_by_meta: dict[str, tuple[str, str]] = {}
     try:
         rows = (
             (await db.execute(select(CreatedCampaign).where(CreatedCampaign.deleted_at.is_(None))))
             .scalars()
             .all()
         )
-        ad_by_meta = {
-            str(r.meta_campaign_id): r.creative_ad_id
-            for r in rows
-            if r.meta_campaign_id and r.creative_ad_id
-        }
+        for r in rows:
+            if not r.meta_campaign_id:
+                continue
+            if r.creative_ad_id:
+                creative_by_meta[str(r.meta_campaign_id)] = r.creative_ad_id
+            if r.simulation_id:
+                sim_by_meta[str(r.meta_campaign_id)] = (str(r.simulation_id), r.tenant_id)
     except Exception:  # noqa: BLE001 — 매핑 실패해도 실측은 보여준다
-        ad_by_meta = {}
+        creative_by_meta = {}
+        sim_by_meta = {}
     items: list[dict] = []
     try:
         campaigns = await reader.list_campaigns()
@@ -452,11 +623,13 @@ async def compare_before_after(db: AsyncSession = Depends(get_db)):
     for c in campaigns:
         cid = c.campaign_id
         try:
-            actual = _real_outcome(await reader.get_metrics(cid, now), cid, ad_by_meta.get(cid))
+            actual = _real_outcome(
+                await reader.get_metrics(cid, now), cid, creative_by_meta.get(cid)
+            )
         except Exception:  # noqa: BLE001 — 캠페인 1건 실측 실패가 전체를 막지 않게
             continue
-        ad_id = ad_by_meta.get(cid)
-        prediction = await pred_reader.get_prediction(ad_id) if ad_id else None
+        link = sim_by_meta.get(cid)
+        prediction = await pred_reader.get_prediction(link[0], link[1]) if link else None
         ba = compute_before_after(cid, c.name, prediction, actual)
         items.append(ba.model_dump(mode="json"))
     return {"items": items}
@@ -843,11 +1016,17 @@ async def put_kpi_override(
 
 
 @router.delete("/campaigns/{campaign_id}")
-async def delete_campaign(campaign_id: str, db: AsyncSession = Depends(get_db)):
+async def delete_campaign(
+    campaign_id: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     """캠페인 삭제 — 자식 광고세트·광고도 함께. LIVE 모드에서만 실제 Meta 삭제(그 외 무동작).
 
     적재 기록(created_campaigns)은 지우지 않고 deleted_at만 찍는다(감사 이력 — 만듦→지움 보존).
     """
+    org_id = await _require_org_id(user, db)
+    await _require_owned_campaign(db, org_id, campaign_id)
     writer = build_writer(settings)
     result = await writer.delete_campaign(campaign_id, idem_key=f"del_{campaign_id}")
     status = result.status.value if hasattr(result.status, "value") else str(result.status)
@@ -918,11 +1097,31 @@ def _asset_config(name: str | None = None, image_hash: str | None = None) -> Cam
     )
 
 
+async def _upload_creative_or_502(
+    writer, config: CampaignConfig, image_bytes: bytes, filename: str
+) -> str | None:
+    """소재 이미지를 Meta(/adimages)에 업로드 — 실패는 사유와 함께 502로 변환.
+
+    /adimages는 validate_only가 안 먹는 실호출이라, 앱 권한 부족(#3) 등 MetaApiError가 raw 500으로
+    새지 않게 user_msg를 담아 502로 정리한다. dry_run/mock은 writer가 None을 반환(미전송, 정상).
+    """
+    try:
+        return await writer.upload_image(
+            config, image_bytes, filename, idem_key=f"img_{uuid4().hex[:8]}"
+        )
+    except MetaApiError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Meta 이미지 업로드 실패: {exc.user_msg or exc.message}",
+        ) from exc
+
+
 class CreateCampaignRequest(BaseModel):
     name: str
     objective: Literal["traffic", "leads"] = "traffic"  # 트래픽(클릭) / 리드(잠재고객)
     daily_budget_krw: int = Field(ge=1)  # 실제 최소는 핸들러가 라이브 정책(Meta floor)으로 검증
     run_days: int = Field(ge=1, le=90)
+    simulation_id: str | None = None  # 이 캠페인이 연결될 시뮬 런(UUID). 없으면 예측 미연결.
     creative_ad_id: str | None = None
     image_hash: str | None = None  # /ad-image 업로드 결과 — 광고 소재 이미지
     # Meta 타겟·정책 — 폼 입력(단일값) → CampaignConfig로 매핑.
@@ -946,7 +1145,10 @@ _PREVIEW_FORMATS = ["MOBILE_FEED_STANDARD", "INSTAGRAM_STANDARD"]
 
 
 @router.post("/ad-image")
-async def upload_ad_image(file: UploadFile = File(...)):
+async def upload_ad_image(
+    file: UploadFile = File(...),
+    user: User = Depends(get_current_user),
+):
     """광고 소재 이미지를 Meta(/adimages)에 업로드 → image_hash 반환. 무과금(자산 등록)."""
     writer = build_writer(settings)
     data = await file.read()
@@ -977,8 +1179,13 @@ async def ad_preview(body: AdPreviewRequest):
 
 
 @router.post("/campaigns/create-proposal")
-async def create_campaign_proposal(body: CreateCampaignRequest):
-    """폼 입력 → CREATE_CAMPAIGN 제안(Tier 3) 패키징. 승인 후 /execute로 생성(기본 DRY_RUN)."""
+async def create_campaign_proposal(
+    body: CreateCampaignRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """폼 입력 → CREATE_CAMPAIGN 제안(Tier 3) 패키징."""
+    org_id = await _require_org_id(user, db)
     # Meta 최소 일예산 정책 — Meta에서 실시간 조회(자동 최신화). 미달이면 광고세트 거부 전 차단.
     policy = await get_campaign_policy(build_reader(settings))
     min_budget = min_daily_budget_for(body.objective, policy)
@@ -987,14 +1194,29 @@ async def create_campaign_proposal(body: CreateCampaignRequest):
             status_code=422,
             detail=f"{body.objective} 캠페인의 최소 일예산은 ₩{min_budget:,}입니다 (Meta 정책).",
         )
+    # 시뮬 연결 키 — 형식·org 소유 검증(방어 심층, 읽기 시점 대조와 이중).
+    if body.simulation_id is not None:
+        try:
+            sid = UUID(body.simulation_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail="simulation_id 형식 오류") from exc
+        owned = await db.scalar(
+            text("SELECT 1 FROM simulations WHERE id = :sid AND organization_id = :org"),
+            {"sid": str(sid), "org": str(org_id)},
+        )
+        if not owned:
+            raise HTTPException(
+                status_code=422, detail="해당 시뮬을 찾을 수 없거나 권한이 없습니다."
+            )
     now = datetime.now(UTC)
-    ad_account = _resolve_ad_account()
+    ad_account = await _require_ad_account(db, org_id)
+    tenant_id = str(org_id)
     # 폼 단일값 → Meta 타겟 코드로 매핑.
     genders = {"all": (), "male": (1,), "female": (2,)}[body.gender]
     categories = () if body.special_ad_category == "NONE" else (body.special_ad_category,)
     config = CampaignConfig(
         campaign_id=f"camp_new_{uuid4().hex[:8]}",
-        tenant_id=TENANT_ID,
+        tenant_id=tenant_id,
         ad_account_id=ad_account,
         name=body.name,
         objective=body.objective,
@@ -1012,7 +1234,7 @@ async def create_campaign_proposal(body: CreateCampaignRequest):
     proposal = finalize_proposal(
         ActionProposal(
             proposal_id=f"prop_{uuid4().hex[:8]}",
-            tenant_id=TENANT_ID,
+            tenant_id=tenant_id,
             ad_account_id=ad_account,
             target_object_ids=(ad_account,),  # 신규 — 대상은 광고계정 (옵션 A)
             action_type="CREATE_CAMPAIGN",
@@ -1020,6 +1242,7 @@ async def create_campaign_proposal(body: CreateCampaignRequest):
             evidence_metrics={
                 "campaign_config": config.model_dump(mode="json"),
                 "name": body.name,
+                "simulation_id": body.simulation_id,
             },
             metrics_as_of=now,
             hypothesis="사용자 신규 캠페인 생성 요청",
@@ -1028,6 +1251,339 @@ async def create_campaign_proposal(body: CreateCampaignRequest):
             budget_before_krw=0,
             budget_after_krw=body.daily_budget_krw,
             max_total_spend_krw=body.daily_budget_krw * body.run_days,
+            expires_at=now + timedelta(minutes=PROPOSAL_TTL_MINUTES),
+            approval_policy_version=APPROVAL_POLICY_VERSION,
+        )
+    )
+    return {"proposal": proposal.model_dump(mode="json")}
+
+
+class FromCandidateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    # self-call URL 경로에 박히므로 안전 문자만 — 경로 주입(../ 등) 차단.
+    generation_id: str = Field(pattern=r"^[A-Za-z0-9_-]+$")
+    candidate_id: str = Field(pattern=r"^[A-Za-z0-9_-]+$")
+    # writer _OBJECTIVE_MAP이 구현한 목적만 수신 — 그 외(인지도·판매 등)는 미지원(추후 해금).
+    objective: Literal["traffic", "leads"] = "traffic"
+    link_url: HttpUrl | None = None
+    name: str
+    daily_budget_krw: int = Field(ge=1)
+    # Meta 광고세트 start_time/end_time에 대응 — YYYY-MM-DD. 종료일 없으면 시작+7일.
+    start_date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
+    end_date: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    special_ad_category: Literal[
+        "NONE", "HOUSING", "EMPLOYMENT", "CREDIT", "ISSUES_ELECTIONS_POLITICS"
+    ] = "NONE"
+    country: str = "KR"
+    age_min: int = Field(default=18, ge=18, le=65)
+    age_max: int = Field(default=65, ge=18, le=65)
+    gender: Literal["all", "male", "female"] = "all"
+
+
+def _resolve_link_url(req_url: HttpUrl | None) -> str | None:
+    """목적지 URL — 요청값만 사용(없으면 None→422). 조직 기본값 prefill은 프론트 담당(스펙 §5.1)."""
+    return str(req_url) if req_url is not None else None
+
+
+@router.post("/campaign-proposals/from-candidate")
+async def from_candidate(
+    body: FromCandidateRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """generator 후보 → CREATE_CAMPAIGN(traffic) 제안. 승인·집행은 /approve·/execute 재사용."""
+    client = build_generator_client(settings)
+    try:
+        cand = await client.get_candidate(body.generation_id, body.candidate_id)
+    except InvalidGenerationError as exc:
+        raise HTTPException(status_code=exc.http_status, detail=exc.detail) from exc
+    except GeneratorUnavailableError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    link_url = _resolve_link_url(body.link_url)
+    if not link_url:
+        raise HTTPException(status_code=422, detail="목적지 URL(link_url)이 필요합니다.")
+
+    try:
+        image_bytes = await download_bytes(cand.s3_key)
+    except Exception as exc:  # noqa: BLE001 — S3 유실/손상은 입력 문제로 거부
+        raise HTTPException(status_code=422, detail="후보 이미지를 읽을 수 없습니다.") from exc
+
+    writer = build_writer(settings)
+    image_hash = await _upload_creative_or_502(
+        writer, _asset_config(name=body.name), image_bytes, "candidate.png"
+    )
+    if _is_sending_mode() and not image_hash:
+        raise HTTPException(status_code=502, detail="Meta 이미지 업로드 실패.")
+
+    policy = await get_campaign_policy(build_reader(settings))
+    min_budget = min_daily_budget_for(body.objective, policy)
+    if body.daily_budget_krw < min_budget:
+        raise HTTPException(status_code=422, detail=f"최소 일예산은 ₩{min_budget:,}입니다.")
+
+    now = datetime.now(UTC)
+    org_id = await _require_org_id(user, db)
+    ad_account = await _require_ad_account(db, org_id)
+    tenant_id = str(org_id)
+    genders = {"all": (), "male": (1,), "female": (2,)}[body.gender]
+    categories = () if body.special_ad_category == "NONE" else (body.special_ad_category,)
+    # Meta start_time/end_time 매핑 — 시작이 과거면 now로 끌어올림(writer가 추가로 24h 보정).
+    start_at = datetime.strptime(body.start_date, "%Y-%m-%d").replace(tzinfo=UTC)
+    if start_at < now:
+        start_at = now
+    end_at = (
+        datetime.strptime(body.end_date, "%Y-%m-%d").replace(tzinfo=UTC)
+        if body.end_date
+        else start_at + timedelta(days=7)
+    )
+    if end_at <= start_at:
+        raise HTTPException(status_code=422, detail="종료일은 시작일 이후여야 합니다.")
+    run_days = max(1, (end_at - start_at).days)  # spend_cap 산정용(일예산 × 일수)
+    config = CampaignConfig(
+        campaign_id=f"camp_cand_{uuid4().hex[:8]}",
+        tenant_id=tenant_id,
+        ad_account_id=ad_account,
+        name=body.name,
+        objective=body.objective,
+        daily_budget_krw=body.daily_budget_krw,
+        start_at=start_at,
+        end_at=end_at,
+        image_hash=image_hash,
+        headline=cand.copy.headline,
+        body=cand.copy.body,
+        link_url=link_url,
+        special_ad_categories=categories,
+        countries=(body.country,),
+        age_min=body.age_min,
+        age_max=body.age_max,
+        genders=genders,
+    )
+    snapshot = {
+        "generation_id": body.generation_id,
+        "candidate_id": cand.candidate_id,
+        "copy": cand.copy.model_dump(),
+        "s3_key": cand.s3_key,
+        "image_hash": image_hash,
+        "strategy": cand.strategy,
+        "template_id": cand.template_id,
+        "idx": cand.idx,
+    }
+    proposal = finalize_proposal(
+        ActionProposal(
+            proposal_id=f"prop_{uuid4().hex[:8]}",
+            tenant_id=tenant_id,
+            ad_account_id=ad_account,
+            target_object_ids=(ad_account,),
+            action_type="CREATE_CAMPAIGN",
+            action_tier=ActionTier.TIER_3,
+            evidence_metrics={
+                "campaign_config": config.model_dump(mode="json"),
+                "name": body.name,
+                "candidate_snapshot": snapshot,
+            },
+            metrics_as_of=now,
+            hypothesis="후보 기반 신규 캠페인",
+            confidence=1.0,
+            expected_state_version="state_v1",
+            budget_before_krw=0,
+            budget_after_krw=body.daily_budget_krw,
+            max_total_spend_krw=body.daily_budget_krw * run_days,
+            expires_at=now + timedelta(minutes=PROPOSAL_TTL_MINUTES),
+            approval_policy_version=APPROVAL_POLICY_VERSION,
+        )
+    )
+    return {"proposal": proposal.model_dump(mode="json")}
+
+
+# 우리 S3 영속 네임스페이스 — 이 prefix 키만 핸드오프 집행 허용(임시·외부는 차단).
+_DURABLE_KEY_PREFIXES = ("generator/", "ads/")
+
+
+def _resolve_sim_asset_key(asset_url: str | None) -> str | None:
+    """시뮬 asset_url에서 우리 S3 키만 추출 — generator 이미지 URL(?key=) 또는 우리 버킷 prefix 키.
+    임시 로컬 파일·외부 URL은 None(호출부 422). 임의 URL fetch 금지(SSRF 차단)."""
+    if not asset_url:
+        return None
+    parsed = urlparse(asset_url)
+    keys = parse_qs(parsed.query).get("key")
+    if keys:
+        key = keys[0]
+        return key if key.startswith(_DURABLE_KEY_PREFIXES) else None
+    if not parsed.scheme and asset_url.startswith(_DURABLE_KEY_PREFIXES):
+        return asset_url
+    return None
+
+
+def _is_executable_verdict(click_intent_rate: float, rejection_rate: float) -> bool:
+    """'집행 권장' 게이트 — 프론트 verdict()와 동일 임계값(백엔드 정본)."""
+    return click_intent_rate >= 0.2 and rejection_rate < 0.2
+
+
+class FromSimulationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    simulation_id: str = Field(pattern=r"^[A-Za-z0-9_-]+$")
+    link_url: HttpUrl | None = None
+    name: str
+    daily_budget_krw: int = Field(ge=1)
+    # Meta 광고세트 start_time/end_time에 대응 — YYYY-MM-DD. 종료일 없으면 시작+7일.
+    start_date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
+    end_date: str | None = Field(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$")
+    special_ad_category: Literal[
+        "NONE", "HOUSING", "EMPLOYMENT", "CREDIT", "ISSUES_ELECTIONS_POLITICS"
+    ] = "NONE"
+    country: str = "KR"
+    age_min: int = Field(default=18, ge=18, le=65)
+    age_max: int = Field(default=65, ge=18, le=65)
+    gender: Literal["all", "male", "female"] = "all"
+
+
+@router.post("/campaign-proposals/from-simulation")
+async def from_simulation(
+    body: FromSimulationRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """시뮬(generator-소스) → CREATE_CAMPAIGN(traffic) 제안. 승인·집행은 /approve·/execute 재사용.
+
+    Simulation/SimulationAggregate는 domain.simulation 내부 모델이라 import 금지 — raw SQL로만 읽음
+    (임시 결합, 추후 시뮬 read 계약으로 교체).
+    """
+    try:
+        sim_uuid = UUID(body.simulation_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="잘못된 simulation_id") from exc
+
+    org_id = await _require_org_id(user, db)
+
+    sim_row = (
+        await db.execute(
+            text("SELECT organization_id, ad_id FROM simulations WHERE id = :sid"),
+            {"sid": sim_uuid},
+        )
+    ).first()
+    if sim_row is None or sim_row[0] != org_id:
+        raise HTTPException(status_code=404, detail="시뮬레이션을 찾을 수 없습니다.")
+    ad_id = sim_row[1]
+
+    agg_row = (
+        await db.execute(
+            text(
+                "SELECT click_intent_rate, rejection_rate FROM simulation_aggregates "
+                "WHERE simulation_id = :sid"
+            ),
+            {"sid": sim_uuid},
+        )
+    ).first()
+    if agg_row is None:
+        raise HTTPException(status_code=409, detail="시뮬 집계가 없습니다(미완료).")
+    cir, rej = float(agg_row[0]), float(agg_row[1])
+    if not _is_executable_verdict(cir, rej):
+        raise HTTPException(status_code=409, detail="집행 권장 결과가 아닙니다.")
+
+    ad_row = (
+        await db.execute(
+            text("SELECT title, asset_url, copy_text FROM ads WHERE id = :aid"),
+            {"aid": ad_id},
+        )
+    ).first()
+    if ad_row is None:
+        raise HTTPException(status_code=404, detail="광고를 찾을 수 없습니다.")
+    title, asset_url, copy_text = ad_row[0], ad_row[1], ad_row[2]
+
+    s3_key = _resolve_sim_asset_key(asset_url)
+    if not s3_key:
+        raise HTTPException(
+            status_code=422, detail="durable S3 이미지가 아닙니다(업로드 광고 집행은 추후)."
+        )
+
+    link_url = _resolve_link_url(body.link_url)
+    if not link_url:
+        raise HTTPException(status_code=422, detail="목적지 URL(link_url)이 필요합니다.")
+
+    try:
+        image_bytes = await download_bytes(s3_key)
+    except Exception as exc:  # noqa: BLE001 — S3 유실/손상은 입력 문제로 거부
+        raise HTTPException(status_code=422, detail="시뮬 이미지를 읽을 수 없습니다.") from exc
+
+    writer = build_writer(settings)
+    image_hash = await _upload_creative_or_502(
+        writer, _asset_config(name=body.name), image_bytes, "creative.png"
+    )
+    if _is_sending_mode() and not image_hash:
+        raise HTTPException(status_code=502, detail="Meta 이미지 업로드 실패.")
+
+    policy = await get_campaign_policy(build_reader(settings))
+    min_budget = min_daily_budget_for("traffic", policy)
+    if body.daily_budget_krw < min_budget:
+        raise HTTPException(status_code=422, detail=f"최소 일예산은 ₩{min_budget:,}입니다.")
+
+    now = datetime.now(UTC)
+    ad_account = await _require_ad_account(db, org_id)
+    tenant_id = str(org_id)
+    genders = {"all": (), "male": (1,), "female": (2,)}[body.gender]
+    categories = () if body.special_ad_category == "NONE" else (body.special_ad_category,)
+    # Meta start_time/end_time 매핑 — 시작이 과거면 now로 끌어올림(writer가 추가로 24h 보정).
+    start_at = datetime.strptime(body.start_date, "%Y-%m-%d").replace(tzinfo=UTC)
+    if start_at < now:
+        start_at = now
+    end_at = (
+        datetime.strptime(body.end_date, "%Y-%m-%d").replace(tzinfo=UTC)
+        if body.end_date
+        else start_at + timedelta(days=7)
+    )
+    if end_at <= start_at:
+        raise HTTPException(status_code=422, detail="종료일은 시작일 이후여야 합니다.")
+    run_days = max(1, (end_at - start_at).days)  # spend_cap 산정용(일예산 × 일수)
+    config = CampaignConfig(
+        campaign_id=f"camp_sim_{uuid4().hex[:8]}",
+        tenant_id=tenant_id,
+        ad_account_id=ad_account,
+        name=body.name,
+        objective="traffic",
+        daily_budget_krw=body.daily_budget_krw,
+        start_at=start_at,
+        end_at=end_at,
+        image_hash=image_hash,
+        headline=title,
+        body=copy_text,
+        link_url=link_url,
+        special_ad_categories=categories,
+        countries=(body.country,),
+        age_min=body.age_min,
+        age_max=body.age_max,
+        genders=genders,
+    )
+    snapshot = {
+        "simulation_id": body.simulation_id,
+        "source_ad_id": str(ad_id),
+        "verdict": "집행 권장",
+        "source_asset": s3_key,
+        "image_hash": image_hash,
+        "headline": title,
+        "body": copy_text,
+        "click_intent_rate": cir,
+        "rejection_rate": rej,
+    }
+    proposal = finalize_proposal(
+        ActionProposal(
+            proposal_id=f"prop_{uuid4().hex[:8]}",
+            tenant_id=tenant_id,
+            ad_account_id=ad_account,
+            target_object_ids=(ad_account,),
+            action_type="CREATE_CAMPAIGN",
+            action_tier=ActionTier.TIER_3,
+            evidence_metrics={
+                "campaign_config": config.model_dump(mode="json"),
+                "name": body.name,
+                "simulation_snapshot": snapshot,
+            },
+            metrics_as_of=now,
+            hypothesis="시뮬 기반 신규 캠페인",
+            confidence=1.0,
+            expected_state_version="state_v1",
+            budget_before_krw=0,
+            budget_after_krw=body.daily_budget_krw,
+            max_total_spend_krw=body.daily_budget_krw * run_days,
             expires_at=now + timedelta(minutes=PROPOSAL_TTL_MINUTES),
             approval_policy_version=APPROVAL_POLICY_VERSION,
         )
@@ -1067,7 +1623,6 @@ class ActivateRequest(BaseModel):
     commit_krw: int | None = Field(
         default=None, ge=1
     )  # 이 캠페인에 배정(=spend_cap). 미지정 시 일예산.
-    org_id: str = DEMO_ORG_ID
 
 
 async def _created_campaign_row(db: AsyncSession, campaign_id: str) -> CreatedCampaign | None:
@@ -1082,12 +1637,68 @@ async def _created_campaign_row(db: AsyncSession, campaign_id: str) -> CreatedCa
     )
 
 
+def _is_demo_campaign(campaign_id: str) -> bool:
+    """campaign_id가 데모 픽스처(_CAMPAIGNS_DEMO)에 존재하는지."""
+    return any(cid == campaign_id for cid, *_ in _CAMPAIGNS_DEMO)
+
+
+async def _require_org_id(user: User, db: AsyncSession) -> UUID:
+    """로그인 사용자의 소속 org — 없으면 409."""
+    org_id = await _resolve_org_id(user, db)
+    if org_id is None:
+        raise HTTPException(409, "소속 조직이 없습니다 — 조직 연결 후 시도하세요.")
+    return org_id
+
+
+async def _require_owned_campaign(
+    db: AsyncSession, org_id: UUID, campaign_id: str
+) -> CreatedCampaign | None:
+    """DB 적재 캠페인은 tenant 소유 검증.
+
+    DB 행 없음은 mock/demo fixture로 확인된 경우에만 None 허용.
+    """
+    row = await _created_campaign_row(db, campaign_id)
+    if row is not None:
+        if row.tenant_id != str(org_id):
+            raise HTTPException(403, "다른 조직의 캠페인입니다.")
+        return row
+    if getattr(settings, "use_mock", True) and _is_demo_campaign(campaign_id):
+        return None
+    raise HTTPException(404, "캠페인을 찾을 수 없습니다.")
+
+
+async def _require_ad_account(db: AsyncSession, org_id: UUID) -> str:
+    """org의 Meta 광고계정 — 연결에서 도출. live 미연결이면 데모 폴백 금지(fail-closed)."""
+    conn = await db.scalar(select(MetaConnection).where(MetaConnection.organization_id == org_id))
+    if conn is not None and conn.ad_account_id:
+        return conn.ad_account_id
+    if getattr(settings, "use_mock", True):
+        return _DEMO_AD_ACCOUNT
+    raise HTTPException(409, "Meta 광고계정 연결이 필요합니다 — 연결 후 시도하세요.")
+
+
+async def _require_owned_run(
+    escalation: EscalationController, run_id: str, org_id: UUID
+) -> EscalationRun:
+    """사다리 run 소유 검증 — 없으면 404, 타 org면 403, 통과 시 run 반환."""
+    run = await escalation.get_run(run_id)
+    if run is None:
+        raise HTTPException(404, "run을 찾을 수 없습니다.")
+    if run.tenant_id != str(org_id):
+        raise HTTPException(403, "다른 조직의 run입니다.")
+    return run
+
+
 @router.post("/campaigns/{campaign_id}/activate")
 async def activate_campaign(
-    campaign_id: str, body: ActivateRequest, db: AsyncSession = Depends(get_db)
+    campaign_id: str,
+    body: ActivateRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
     """게재 시작 — Meta 선불 잔액 게이트 → spend_cap → 캠페인·세트·광고 ACTIVE. 실과금 시작점."""
-    row = await _created_campaign_row(db, campaign_id)
+    org_id = await _require_org_id(user, db)
+    row = await _require_owned_campaign(db, org_id, campaign_id)
     commit = body.commit_krw or (row.daily_budget_krw if row else 0)
     if commit <= 0:
         raise HTTPException(status_code=422, detail="배정 금액(commit_krw)을 결정할 수 없습니다.")
@@ -1141,11 +1752,11 @@ async def activate_campaign(
 
     # 3) 활성화 제안 → 승인 → 실행 (멱등·감사 단일 경로). 버튼 클릭 = Tier 3 사람 승인.
     now = datetime.now(UTC)
-    ad_account = _resolve_ad_account()
+    ad_account = await _require_ad_account(db, org_id)
     proposal = finalize_proposal(
         ActionProposal(
             proposal_id=f"prop_{uuid4().hex[:8]}",
-            tenant_id=TENANT_ID,
+            tenant_id=str(org_id),
             ad_account_id=ad_account,
             target_object_ids=(campaign_id,),
             action_type="ACTIVATE_CAMPAIGN",
@@ -1162,7 +1773,7 @@ async def activate_campaign(
             approval_policy_version=APPROVAL_POLICY_VERSION,
         )
     )
-    action = approve(proposal, "user_demo", execution_mode=_resolved_execution_mode())
+    action = approve(proposal, str(user.id), execution_mode=_resolved_execution_mode())
     result = await _get_executor().execute(action, proposal)
     status = result.status.value if hasattr(result.status, "value") else str(result.status)
     serving = status == "success"
@@ -1213,9 +1824,14 @@ async def delivery_status(campaign_id: str):
 
 @router.get("/campaigns/{campaign_id}/sync")
 async def sync_campaign(
-    campaign_id: str, org_id: str = DEMO_ORG_ID, db: AsyncSession = Depends(get_db)
+    campaign_id: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
     """Meta 누적 소진액 → 크레딧 차감 정산(증분) + 자동 종료 상태 반영."""
+    org_uuid = await _require_org_id(user, db)
+    await _require_owned_campaign(db, org_uuid, campaign_id)
+    org_id = str(org_uuid)
     reader = build_reader(settings)
     billing = get_billing_service()
     metrics = await reader.get_metrics(campaign_id, datetime.now(UTC))
@@ -1250,14 +1866,20 @@ async def sync_campaign(
 
 
 @router.post("/campaigns/{campaign_id}/pause")
-async def pause_campaign(campaign_id: str, db: AsyncSession = Depends(get_db)):
+async def pause_campaign(
+    campaign_id: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     """캠페인 즉시 일시중지(PAUSED) — 게재·과금 중단. 크레딧 게이트 불요(돈이 나가는 쪽 아님)."""
+    org_id = await _require_org_id(user, db)
+    await _require_owned_campaign(db, org_id, campaign_id)
     now = datetime.now(UTC)
-    ad_account = _resolve_ad_account()
+    ad_account = await _require_ad_account(db, org_id)
     proposal = finalize_proposal(
         ActionProposal(
             proposal_id=f"prop_{uuid4().hex[:8]}",
-            tenant_id=TENANT_ID,
+            tenant_id=str(org_id),
             ad_account_id=ad_account,
             target_object_ids=(campaign_id,),
             action_type="PAUSE_CAMPAIGN",
@@ -1274,7 +1896,7 @@ async def pause_campaign(campaign_id: str, db: AsyncSession = Depends(get_db)):
             approval_policy_version=APPROVAL_POLICY_VERSION,
         )
     )
-    action = approve(proposal, "user_demo", execution_mode=_resolved_execution_mode())
+    action = approve(proposal, str(user.id), execution_mode=_resolved_execution_mode())
     result = await _get_executor().execute(action, proposal)
     status = result.status.value if hasattr(result.status, "value") else str(result.status)
     if status == "success":
@@ -1447,8 +2069,13 @@ class BudgetLimitRequest(BaseModel):
 
 
 @router.post("/budget/limit")
-async def set_budget_limit(body: BudgetLimitRequest):
+async def set_budget_limit(
+    body: BudgetLimitRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     """예산 한도 설정 — 변경 후 경고 레벨(decision)이 즉시 반영(인메모리)."""
+    await _require_org_id(user, db)
     _BUDGET.set_limit(TENANT_ID, body.limit_krw)
     return await _budget_status()
 
@@ -1487,17 +2114,21 @@ def _escalation_payload(outcome) -> dict:
 
 
 class ReEvaluateRequest(BaseModel):
-    tenant_id: str = TENANT_ID
-    ad_account_id: str = _DEMO_AD_ACCOUNT
     campaign_id: str = CAMPAIGN_ID
     now: str | None = None  # ISO8601 — 데모 tick(시간 전진)
 
 
 @router.post("/re-evaluate")
-async def re_evaluate(body: ReEvaluateRequest):
+async def re_evaluate(
+    body: ReEvaluateRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     """사다리 1회 재평가 — 개시/다음단계 제안 / 보류(PENDING) / 회복 / 소진을 반환."""
+    org_id = await _require_org_id(user, db)
+    ad_account = await _require_ad_account(db, org_id)
     outcome = await _get_escalation().re_evaluate(
-        body.tenant_id, body.ad_account_id, body.campaign_id, now=_now_or(body.now)
+        str(org_id), ad_account, body.campaign_id, now=_now_or(body.now)
     )
     return _escalation_payload(outcome)
 
@@ -1509,18 +2140,30 @@ class RungOutcomeRequest(BaseModel):
 
 
 @router.post("/re-evaluate/executed")
-async def mark_rung_executed(body: RungOutcomeRequest):
+async def mark_rung_executed(
+    body: RungOutcomeRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     """현재 단계가 집행됐음을 사다리에 알린다 (다음 재평가에서 회복 판정 가능)."""
-    await _get_escalation().on_executed(
-        body.run_id, now=_now_or(body.now), approval_id=body.approval_id
-    )
+    org_id = await _require_org_id(user, db)
+    escalation = _get_escalation()
+    await _require_owned_run(escalation, body.run_id, org_id)
+    await escalation.on_executed(body.run_id, now=_now_or(body.now), approval_id=body.approval_id)
     return {"run_id": body.run_id, "rung_status": "executed"}
 
 
 @router.post("/re-evaluate/rejected")
-async def mark_rung_rejected(body: RungOutcomeRequest):
+async def mark_rung_rejected(
+    body: RungOutcomeRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     """현재 단계가 거절됐음을 알린다 (다음 재평가에서 즉시 다음 단계로 에스컬레이션)."""
-    await _get_escalation().on_rejected(body.run_id)
+    org_id = await _require_org_id(user, db)
+    escalation = _get_escalation()
+    await _require_owned_run(escalation, body.run_id, org_id)
+    await escalation.on_rejected(body.run_id)
     return {"run_id": body.run_id, "rung_status": "rejected"}
 
 

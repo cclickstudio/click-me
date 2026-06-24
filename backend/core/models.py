@@ -100,6 +100,7 @@ class Organization(Base):
     status: Mapped[str] = mapped_column(
         String(20), nullable=False, default="PENDING"
     )  # ACTIVE | PENDING
+    default_landing_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), onupdate=func.now()
@@ -414,6 +415,27 @@ class IdempotencyKeyRow(Base):
     created_at: Mapped[datetime] = mapped_column(_TS, server_default=func.now())
 
 
+class RegenerationJobRow(Base):
+    """🅱 채팅이 트리거한 재생성 비동기 job 상태(설계 2026-06-22). v1 in-process 전제."""
+
+    __tablename__ = "regeneration_jobs"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    campaign_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), index=True, nullable=False)
+    selection_token: Mapped[str | None] = mapped_column(String(64), unique=True)
+    candidates: Mapped[list | None] = mapped_column(JSONB)  # list[dict] — AWAITING_SELECTION 후보
+    selected_candidate_id: Mapped[str | None] = mapped_column(String(64))
+    proposal: Mapped[dict | None] = mapped_column(JSONB)
+    outcome_reason: Mapped[str | None] = mapped_column(String(48))
+    error: Mapped[str | None] = mapped_column(String(512))
+    created_at: Mapped[datetime] = mapped_column(_TS, index=True, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(_TS, server_default=func.now())
+    started_at: Mapped[datetime | None] = mapped_column(_TS)
+    finished_at: Mapped[datetime | None] = mapped_column(_TS)
+
+
 class RemediationEscalationRow(Base):
     """🅱 시간축 에스컬레이션 사다리 진행 상태 — 캠페인당 active 1건 (re_evaluate 소유).
 
@@ -593,6 +615,8 @@ class CreatedCampaign(Base):
     execution_mode: Mapped[str] = mapped_column(String(20), nullable=False)  # live | validate_only…
     # 집행 전 시뮬 예측 연결용 — 이 캠페인이 어떤 광고(ad_id)로 만들어졌는지(없으면 미연결).
     creative_ad_id: Mapped[str | None] = mapped_column(String(64))
+    # 집행 전 시뮬 예측 연결용 — 이 캠페인이 어떤 시뮬 런(simulations.id)으로 집행됐는지(없으면 미연결).
+    simulation_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     # 소프트 삭제 — Meta에서 캠페인 삭제 시 행을 지우지 않고 시각만 찍는다(감사 이력 보존).
     deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
