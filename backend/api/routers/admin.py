@@ -488,7 +488,7 @@ async def list_chats(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_admin),
 ):
-    from core.models import ChatSession
+    from domain.chat.models import ChatSession
 
     rows = await db.execute(
         select(ChatSession).order_by(ChatSession.created_at.desc()).limit(limit)
@@ -497,7 +497,7 @@ async def list_chats(
         ChatRow(
             id=str(r.id),
             project_id=str(r.project_id) if r.project_id else None,
-            message_count=len(r.messages) if r.messages else 0,
+            message_count=0,  # TODO: chat_messages COUNT로 교체(messages 제거됨, 3B 영속 후)
             created_at=r.created_at,
         )
         for r in rows.scalars()
