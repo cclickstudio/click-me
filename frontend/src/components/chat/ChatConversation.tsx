@@ -15,6 +15,7 @@ import SimGenListWidget from './SimGenListWidget';
 import ApprovalWidget, { type ApprovalSpec } from './ApprovalWidget';
 import BatchSimWidget from './BatchSimWidget';
 import ReportWidget from './ReportWidget';
+import AnalysisSummaryWidget from './AnalysisSummaryWidget';
 import type { SimRunResult } from '@/lib/types';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
@@ -38,6 +39,7 @@ const slashCommands: SlashCommand[] = [
   { cmd: '/리포트', label: '/리포트', desc: '시뮬·생성 성과를 PDF 리포트로 받습니다' },
   { cmd: '/시뮬목록', label: '/시뮬목록', desc: '최근 시뮬레이션 목록을 봅니다' },
   { cmd: '/시안목록', label: '/시안목록', desc: '최근 생성 광고 시안 목록을 봅니다' },
+  { cmd: '/분석', label: '/분석', desc: '과거 시뮬·생성 성과를 종합 요약합니다' },
   { cmd: '/비교', label: '/비교', desc: '시뮬레이션 2개의 KPI를 나란히 비교합니다' },
   { cmd: '/도움말', label: '/도움말', desc: '사용 가능한 명령어와 예시를 봅니다' },
   { cmd: '/위젯', label: '/위젯', desc: '사용 가능한 위젯 목록을 봅니다 (개발용)' },
@@ -296,6 +298,13 @@ export default function ChatConversation({
             .catch(() => {});
         }
         break;
+      case '/분석':
+        addLocalAssistant('이 프로젝트의 시뮬·생성 활동을 요약해 드릴게요.', {
+          source: 'simulation',
+          label: '활동 요약',
+          widget: { type: 'analysis_summary' },
+        });
+        break;
       case '/비교':
         // 백엔드로 보내 시뮬 목록(비교 모드) 위젯을 받는다.
         handleSend('/비교');
@@ -311,6 +320,7 @@ export default function ChatConversation({
             '/리포트       성과 PDF 리포트',
             '/시뮬목록     최근 시뮬레이션 목록',
             '/시안목록     최근 광고 시안 목록',
+            '/분석         시뮬·생성 성과 종합 요약',
             '/비교         시뮬레이션 2개 KPI 비교',
             '/도움말       이 화면',
             '',
@@ -831,6 +841,9 @@ export default function ChatConversation({
                         projectId={msg.meta.widget.data?.project_id ?? projectId}
                         period={msg.meta.widget.data?.period}
                       />
+                    )}
+                    {msg.meta?.widget?.type === 'analysis_summary' && (
+                      <AnalysisSummaryWidget projectId={projectId} />
                     )}
                     {msg.meta?.approval && (
                       <ApprovalWidget
