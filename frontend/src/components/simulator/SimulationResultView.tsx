@@ -5,6 +5,7 @@
 import { useEffect, useState } from 'react';
 import { DebatePanel } from '@/components/simulator/DebatePanel';
 import { SimulationReportView } from '@/components/simulator/SimulationReportView';
+import { ExecuteFromSimulation } from '@/components/manage/ExecuteFromSimulation';
 import { KpiCard } from '@/components/ui/KpiCard';
 import { formatPercent } from '@/lib/utils';
 import type { ObjectiveFit, ReportView, SimRunResult } from '@/lib/types';
@@ -125,8 +126,17 @@ export function SimulationResultView({
             통과 {passed.length}){result.simulation_id && ' · DB 저장됨'}
           </p>
         </div>
-        {(headerAction || onReset) && (
+        {(headerAction || onReset || result.simulation_id) && (
           <div className='flex items-center gap-2'>
+            {/* DB 저장된 시뮬만 집행 가능 — created_campaigns.simulation_id로 성과비교 연결. */}
+            {result.simulation_id && agg && (
+              <ExecuteFromSimulation
+                simulationId={result.simulation_id}
+                defaultName={adTitle}
+                clickIntentRate={agg.click_intent_rate}
+                rejectionRate={agg.rejection_rate}
+              />
+            )}
             {headerAction}
             {onReset && (
               <button

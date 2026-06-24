@@ -35,6 +35,7 @@ export default function Page() {
   const [blockDetailOpen, setBlockDetailOpen] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null); // Meta 토큰 만료 안내
   const [rateLimited, setRateLimited] = useState<string | null>(null); // Meta 요청 한도(일시)
+  const [permissionError, setPermissionError] = useState<string | null>(null); // 목록/자금 권한 없음
   const [account, setAccount] = useState<AccountWallet | null>(null); // 계정 지갑(잔액·한도·지출)
   // 전환 1건 가치(₩)·목표 ROAS — 고객이 입력하는 사업 통계. CVR·ROAS는 이 값으로 '계산'된다
   // (직접 입력 아님 — CVR=전환÷클릭 실측, ROAS=(전환×가치)÷지출 추정). 스펙: CVR·ROAS 재정의.
@@ -89,6 +90,7 @@ export default function Page() {
       setSource(r.source ?? 'mock');
       setAccountBlock(r.account_block_reason ?? null);
       setAuthError(r.auth_error ?? null);
+      setPermissionError(r.permission_error ?? r.account_unavailable ?? null);
       setAccount(r.account ?? null);
       setLastUpdated(new Date().toLocaleTimeString('ko-KR'));
     } catch (e) {
@@ -292,6 +294,14 @@ export default function Page() {
             <p className="text-sm text-amber-800 dark:text-amber-300">
               <span className="font-semibold">⚠ Meta 연결 만료</span> · {authError} 실데이터를
               불러올 수 없어요. 관리자가 Meta 액세스 토큰을 갱신하면 다시 표시됩니다.
+            </p>
+          </div>
+        )}
+
+        {permissionError && (
+          <div className="mb-4 rounded-xl border border-[#E5E8EB] bg-[#F9FAFB] px-4 py-3 dark:border-[#2D3748] dark:bg-[#1A1F28]">
+            <p className="text-sm text-[#4E5968] dark:text-[#9CA3AF]">
+              <span className="font-semibold">🔒 권한 없음</span> · {permissionError}
             </p>
           </div>
         )}

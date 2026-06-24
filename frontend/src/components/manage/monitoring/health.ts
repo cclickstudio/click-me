@@ -1,5 +1,6 @@
 // 캠페인 요약(/campaigns)에서 운영 건강신호를 도출 — 시간대 비의존, 실측 필드만 사용.
 import type { CampaignSummary } from '@/components/manage/campaigns/types';
+import { metricsBlocked } from '@/components/manage/campaigns/types';
 
 export type HealthLevel = 'critical' | 'warn' | 'info' | 'ok' | 'ended';
 
@@ -34,14 +35,23 @@ export function campaignHealth(c: CampaignSummary): HealthSignal {
       hint: c.block_reason ?? '계정 선불 잔액 부족 — 충전 전까지 게재되지 않습니다.',
     };
   }
-  if (c.pacing_pct >= 100) {
+  if (metricsBlocked(c)) {
+    return {
+      level: 'info',
+      label: '권한 없음',
+      hint: 'Meta 지표 조회 권한이 없어 상태를 확인할 수 없어요. 토큰·자산 권한을 확인하세요.',
+    };
+  }
+  // 소진율 기반 신호는 일예산(하루 단위) 캠페인만 — 총예산형은 하루 소진율 의미가 없어 제외.
+  const pacingDaily = (c.budget_type ?? 'daily') === 'daily';
+  if (pacingDaily && c.pacing_pct >= 100) {
     return {
       level: 'warn',
       label: '일예산 소진',
       hint: '오늘 일예산을 다 써 게재가 멈출 수 있어요. 증액을 검토하세요.',
     };
   }
-  if (c.pacing_pct >= 90) {
+  if (pacingDaily && c.pacing_pct >= 90) {
     return {
       level: 'warn',
       label: '소진 임박',
@@ -65,7 +75,7 @@ export function campaignHealth(c: CampaignSummary): HealthSignal {
       hint: '현재 게재되지 않는 상태입니다.',
     };
   }
-  if (c.pacing_pct < 15) {
+  if (pacingDaily && c.pacing_pct < 15) {
     return {
       level: 'info',
       label: '소진 더딤',

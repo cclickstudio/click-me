@@ -45,15 +45,48 @@ export const fmtRoas = (
 ): string =>
   conversions == null ? '미설정' : `${(roas ?? 0).toFixed(2)}x${estimated ? ' (추정)' : ''}`;
 
+export type MetricsStatus = 'ok' | 'permission'; // permission=권한 거부로 지표 못 불러옴
+export type BudgetType = 'daily' | 'lifetime' | 'none'; // 일예산 / 총예산 / 미상
+
 export type CampaignSummary = CampaignKpi & {
   campaign_id: string;
   name: string;
   state: CampaignState;
   daily_budget_krw: number;
+  lifetime_budget_krw?: number; // 총예산(일예산 대신 쓰는 캠페인)
+  budget_type?: BudgetType; // 일예산 표시·소진율 적용 분기
+  metrics_status?: MetricsStatus; // 'permission'이면 지표를 '권한 없음'으로 표기
   ended_at?: string | null; // 게재 종료일(ISO) — 종료 사유 표시용
   delivery_blocked?: boolean; // 계정 자금 막힘 + ACTIVE인데 게재 중단
   block_reason?: string | null; // "선불 잔액 부족" 등
 };
+
+// 권한 거부 등으로 지표를 못 불러온 행인지 — true면 셀에 '권한 없음'/'—' 표시.
+export const metricsBlocked = (c: { metrics_status?: MetricsStatus }): boolean =>
+  c.metrics_status === 'permission';
+
+// 예산 칸 표시 — 일예산 / 총예산 / 미상(—) 구분. 총예산 캠페인의 '일예산 ₩0' 오표기 방지.
+export function budgetLabel(c: {
+  daily_budget_krw: number;
+  lifetime_budget_krw?: number;
+  budget_type?: BudgetType;
+}): string {
+  if (c.budget_type === 'lifetime')
+    return `총예산 ₩${(c.lifetime_budget_krw ?? 0).toLocaleString()}`;
+  if (c.budget_type === 'none') return '—';
+  return `₩${c.daily_budget_krw.toLocaleString()}`;
+}
+
+// 소진율 의미 분기 — 종료/권한없음/총예산(=하루 단위 아님)은 퍼센트 대신 라벨로.
+export function pacingMeaningful(c: {
+  state: CampaignState;
+  budget_type?: BudgetType;
+  metrics_status?: MetricsStatus;
+}): boolean {
+  return (
+    c.state !== 'ended' && !metricsBlocked(c) && (!c.budget_type || c.budget_type === 'daily')
+  );
+}
 
 // 수동 입력 KPI — 전환 추적 전(0.0%/0.00x)인 캠페인에 고객이 직접 넣는 추정 CVR·ROAS.
 // 실측이 아니라 '추정'이며 캠페인별로 localStorage에 저장(스펙: CVR·ROAS 재정의 #2).
@@ -96,6 +129,9 @@ export type CampaignDetail = {
   name: string;
   state: CampaignState;
   daily_budget_krw: number;
+  lifetime_budget_krw?: number;
+  budget_type?: BudgetType;
+  metrics_status?: MetricsStatus;
   expected: number[];
   actual: number[];
   anomaly_hours: number[];
@@ -140,6 +176,8 @@ export type CampaignsResponse = {
   account_block_reason?: string | null; // 계정 전체 게재 중단 사유 (배너용)
   auth_error?: string | null; // Meta 토큰 만료 등 인증 오류 — 재연결 안내 배너용
   rate_limited?: string | null; // Meta 요청 한도(일시) — 기존 데이터 유지 + 안내 배너
-  account?: AccountWallet; // 계정 지갑(잔액·한도·지출)
+  permission_error?: string | null; // 목록 자체 권한 거부 — '권한 없음' 안내 배너용
+  account?: AccountWallet | null; // 계정 지갑(잔액·한도·지출)
+  account_unavailable?: string | null; // 계정 자금 권한 없음 — 지갑 자리에 '권한 없음' 표시
 };
 export type CampaignView = 'table' | 'cards';

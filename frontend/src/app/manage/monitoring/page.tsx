@@ -19,7 +19,9 @@ export default function Page() {
   const [source, setSource] = useState<CampaignSource>('mock');
   const [account, setAccount] = useState<AccountWallet | null>(null);
   const [accountBlock, setAccountBlock] = useState<string | null>(null);
+  const [accountUnavailable, setAccountUnavailable] = useState<string | null>(null);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [permissionError, setPermissionError] = useState<string | null>(null);
   const [rateLimited, setRateLimited] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [spendSeries, setSpendSeries] = useState<Record<string, number[]>>({});
@@ -61,7 +63,9 @@ export default function Page() {
         setSource(r.source ?? 'mock');
         setAccount(r.account ?? null);
         setAccountBlock(r.account_block_reason ?? null);
+        setAccountUnavailable(r.account_unavailable ?? null);
         setAuthError(r.auth_error ?? null);
+        setPermissionError(r.permission_error ?? null);
         setNow(new Date());
         setLastUpdated(new Date().toLocaleTimeString('ko-KR'));
         if (withSeries) await loadSeries(r.campaigns);
@@ -172,6 +176,14 @@ export default function Page() {
           </div>
         )}
 
+        {permissionError && (
+          <div className="mb-4 rounded-xl border border-[#E5E8EB] bg-[#F9FAFB] px-4 py-3 dark:border-[#2D3748] dark:bg-[#1A1F28]">
+            <p className="text-sm text-[#4E5968] dark:text-[#9CA3AF]">
+              <span className="font-semibold">🔒 권한 없음</span> · {permissionError}
+            </p>
+          </div>
+        )}
+
         {accountBlock && (
           <div className="mb-4 rounded-xl border border-red-300 bg-red-50 px-4 py-3 dark:border-red-900/50 dark:bg-red-900/20">
             <p className="text-sm text-red-700 dark:text-red-400">
@@ -192,6 +204,16 @@ export default function Page() {
           <>
             <OriginLegend className="mb-4" />
             <MonitorKpis campaigns={campaigns} />
+
+            {/* 계정 지갑 권한 없음 — 잔액·한도 조회 권한이 없을 때 자리 표시(빈 0과 구분). */}
+            {source === 'live' && !account && accountUnavailable && (
+              <div className="mb-6 rounded-xl border border-[#E5E8EB] bg-[#F9FAFB] px-4 py-3.5 dark:border-[#2D3748] dark:bg-[#1A1F28]">
+                <span className="text-[14px] font-semibold text-[#4E5968] dark:text-[#9CA3AF]">
+                  계정 지갑
+                </span>
+                <span className="ml-3 text-[14px] text-[#8B95A1]">{accountUnavailable}</span>
+              </div>
+            )}
 
             {/* 계정 지갑 — 실데이터일 때만. 일예산과 다른 '실제 충전·지출·잔액'. */}
             {source === 'live' && account && (

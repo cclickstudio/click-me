@@ -8,8 +8,12 @@ export function MonitorKpis({ campaigns }: { campaigns: CampaignSummary[] }) {
   const impressions = campaigns.reduce((a, c) => a + c.impressions, 0);
   const spend = campaigns.reduce((a, c) => a + c.spend_krw, 0); // 총 지출=조회기간 누적
   // 가중 소진율 — 일예산 합 대비 '오늘' 지출 합(예산가중). 일예산은 하루 단위라 분자도 오늘 지출.
-  const spendToday = campaigns.reduce((a, c) => a + (c.spend_today_krw ?? 0), 0);
-  const totalBudget = campaigns.reduce((a, c) => a + c.daily_budget_krw, 0);
+  // 일예산형(daily)·권한있음 캠페인만 — 총예산·권한없음은 하루 소진율 의미가 없어 제외.
+  const dailyOnly = campaigns.filter(
+    (c) => (c.budget_type ?? 'daily') === 'daily' && c.metrics_status !== 'permission',
+  );
+  const spendToday = dailyOnly.reduce((a, c) => a + (c.spend_today_krw ?? 0), 0);
+  const totalBudget = dailyOnly.reduce((a, c) => a + c.daily_budget_krw, 0);
   const pacing = totalBudget > 0 ? Math.round((spendToday / totalBudget) * 100) : 0;
   // 주의 = 시급 건강신호(게재중단·소진·목표미달) 또는 노출 피로 경고.
   const attention = campaigns.filter(
