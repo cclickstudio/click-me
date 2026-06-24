@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useProjects } from "@/components/ProjectContext";
 import { useChatController } from "@/components/chat/ChatController";
+import ErrorCard from "@/components/chat/ErrorCard";
 import { api } from "@/lib/api";
 import { getToken } from "@/lib/authApi";
 import { getJobs, setGenJob } from "@/lib/runningJobs";
@@ -1697,9 +1698,11 @@ export default function GeneratorPage() {
               </p>
 
               {error && (
-                <p className="mb-4 text-sm text-red-600 dark:text-red-400 p-3 bg-red-50 dark:bg-red-900/10 rounded-xl">
-                  {error}
-                </p>
+                <ErrorCard
+                  message={error}
+                  onRetry={phase === "idle" ? startGeneration : undefined}
+                  className="mb-4"
+                />
               )}
 
               {/* 진행 중 (SSE) */}

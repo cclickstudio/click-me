@@ -5,6 +5,7 @@ import { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useProjects } from '@/components/ProjectContext';
 import { useChatController } from '@/components/chat/ChatController';
+import ErrorCard from '@/components/chat/ErrorCard';
 import { api } from '@/lib/api';
 import { saveSimResult } from '@/lib/simResultStore';
 import { getJobs, setSimJob } from '@/lib/runningJobs';
@@ -294,11 +295,7 @@ export default function SimulationRunPage() {
             </p>
           </div>
 
-          {error && (
-            <div className='mb-5 px-4 py-2.5 bg-[#FEF2F2] dark:bg-[#3B0D0D] rounded-xl border border-[#FECACA] dark:border-[#7F1D1D] text-sm text-[#DC2626] dark:text-[#FCA5A5]'>
-              {error}
-            </div>
-          )}
+          {error && <ErrorCard message={error} onRetry={run} className="mb-5" />}
 
           {/* ── 프로젝트 선택 (광고 입력 위, 풀너비) ── */}
           <div className={`${cardCls} mb-5`}>

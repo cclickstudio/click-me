@@ -18,6 +18,7 @@ import BatchSimWidget from './BatchSimWidget';
 import ReportWidget from './ReportWidget';
 import AnalysisSummaryWidget from './AnalysisSummaryWidget';
 import RecommendFormWidget from './RecommendFormWidget';
+import ErrorCard from './ErrorCard';
 import type { SimRunResult } from '@/lib/types';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
@@ -86,6 +87,7 @@ type SourceMeta = {
   used_tools?: string[];
   widget?: WidgetSpec;
   approval?: ApprovalSpec; // 개선 루프 HITL 수락/거절 카드
+  error?: boolean; // 에러 메시지 — 공통 ErrorCard로 렌더 + 재시도(X1)
 };
 // 채팅으로 실제 돌린 시뮬/생성 결과 참조 — 내역에 남겨 재로드 시 "결과 보기" 링크로 렌더.
 type ResultRef = { kind: 'sim' | 'gen'; id: string };
@@ -162,6 +164,7 @@ export default function ChatConversation({
   const [toast, setToast] = useState<string | null>(null); // 완료 토스트(P9)
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [adviceUsage, setAdviceUsage] = useState<{ used: number; limit: number } | null>(null); // 비광고 한도(P12-3)
+  const lastSendRef = useRef<{ text: string; resultRef?: ResultRef } | null>(null); // 에러 재시도용(X1)
   const pendingImageRef = useRef<File | null>(null);
   const abortRef = useRef<AbortController | null>(null); // 스트리밍 중단(P3)
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -494,7 +497,11 @@ export default function ChatConversation({
         if ((e as Error)?.name !== 'AbortError') {
           setMessages((prev) => [
             ...prev,
-            { role: 'assistant', content: '진행 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.' },
+            {
+              role: 'assistant',
+              content: '진행 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.',
+              meta: { source: 'orchestrator', label: '오류', error: true },
+            },
           ]);
         }
       } finally {
@@ -658,6 +665,7 @@ export default function ChatConversation({
     async (text?: string, resultRef?: ResultRef) => {
       const content = text ?? input.trim();
       if (!content || isStreaming || !projectId) return;
+      lastSendRef.current = { text: content, resultRef }; // 에러 재시도용(X1)
 
       pendingImageRef.current = attachedImage;
       const imgFile = attachedImage; // S3 영속화용(위젯엔 pendingImageRef로 따로 전달)
@@ -689,7 +697,11 @@ export default function ChatConversation({
         } catch {
           setMessages((prev) => [
             ...prev,
-            { role: 'assistant', content: '채팅 세션을 만들지 못했습니다. 잠시 후 다시 시도해주세요.' },
+            {
+              role: 'assistant',
+              content: '채팅 세션을 만들지 못했습니다. 잠시 후 다시 시도해주세요.',
+              meta: { source: 'orchestrator', label: '오류', error: true },
+            },
           ]);
           setIsStreaming(false);
           return;
@@ -725,7 +737,11 @@ export default function ChatConversation({
         if (!res.ok || !res.body) {
           setMessages((prev) => [
             ...prev,
-            { role: 'assistant', content: '응답을 가져오는 중 오류가 발생했습니다.' },
+            {
+              role: 'assistant',
+              content: '응답을 가져오는 중 오류가 발생했습니다.',
+              meta: { source: 'orchestrator', label: '오류', error: true },
+            },
           ]);
           setIsStreaming(false);
           return;
@@ -739,7 +755,11 @@ export default function ChatConversation({
         if ((e as Error)?.name !== 'AbortError') {
           setMessages((prev) => [
             ...prev,
-            { role: 'assistant', content: '서버에 연결할 수 없습니다. 잠시 후 다시 시도해주세요.' },
+            {
+              role: 'assistant',
+              content: '서버에 연결할 수 없습니다. 잠시 후 다시 시도해주세요.',
+              meta: { source: 'orchestrator', label: '오류', error: true },
+            },
           ]);
         }
       } finally {
@@ -861,16 +881,31 @@ export default function ChatConversation({
                         className="max-w-[200px] max-h-[200px] rounded-2xl rounded-br-md object-cover border border-[#E5E8EB] dark:border-[#2D3748]"
                       />
                     )}
-                    <div
-                      className={`px-4 py-3 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap ${
-                        msg.role === 'user'
-                          ? 'bg-[#3182F6] text-white rounded-br-md'
-                          : 'bg-[#F2F4F6] dark:bg-[#252D3D] text-[#191F28] dark:text-[#F2F4F6] rounded-bl-md'
-                      }`}
-                    >
-                      {msg.content}
-                      {isStreamingMsg && <span className="typing-caret" aria-hidden />}
-                    </div>
+                    {msg.meta?.error ? (
+                      <ErrorCard
+                        message={msg.content}
+                        onRetry={
+                          i === messages.length - 1 && lastSendRef.current
+                            ? () =>
+                                handleSend(
+                                  lastSendRef.current?.text,
+                                  lastSendRef.current?.resultRef,
+                                )
+                            : undefined
+                        }
+                      />
+                    ) : (
+                      <div
+                        className={`px-4 py-3 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap ${
+                          msg.role === 'user'
+                            ? 'bg-[#3182F6] text-white rounded-br-md'
+                            : 'bg-[#F2F4F6] dark:bg-[#252D3D] text-[#191F28] dark:text-[#F2F4F6] rounded-bl-md'
+                        }`}
+                      >
+                        {msg.content}
+                        {isStreamingMsg && <span className="typing-caret" aria-hidden />}
+                      </div>
+                    )}
                     {msg.created_at && (
                       <span
                         className="px-1 text-[10px] text-[#B0B8C1] dark:text-[#4B5563]"
