@@ -67,6 +67,10 @@ _CLASSIFY_SYSTEM = (
     "- KPI 용어(클릭 의향률/구매의도/신뢰도/거부율)의 '정의·해석'은 항상 simulation.\n"
     "- 특정 과거 시뮬/생성의 결과를 묻거나 분석을 요청하면(예: '바나나우유 시뮬 반응 어땠어') "
     "목록이 아니라 그 도메인의 ask다.\n"
+    "- '시안 생성·카피 작성'은 generator지만, 그 시안을 '집행·게시·광고 운영'하라는 요청은 "
+    "management(집행 후)다. '집행/게시/운영/송출'이 핵심이면 시안 언급이 있어도 management.\n"
+    "- 결과를 'PDF·리포트로 뽑아줘'·'요약·분석해줘'는 새 실행이 아니라 "
+    "조회·정리이므로 action=ask(run 아님).\n"
     "- 단순 인사·범위 밖 일반 질문은 advise.\n\n"
     "[action]\n"
     "- ask: 질문·조회·결과 분석.\n"
@@ -91,6 +95,8 @@ _CLASSIFY_SYSTEM = (
     "'전환율 높이는 카피 전략 알려줘' → generator / ask\n"
     "'수분크림 광고 시안 만들어줘' → generator / run\n"
     "'내가 만든 시안 뭐 있어?' → generator / list\n"
+    "'내 시안 첫번째로 광고 집행해줘' → management / ask\n"
+    "'시뮬 결과 리포트로 뽑아줘 / 요약해줘' → simulation / ask\n"
     "'요즘 20대 마케팅 트렌드 뭐야?' → advise (is_ad_domain=true)\n"
     "'파이썬 정렬 코드 짜줘' / '오늘 점심 뭐 먹지?' → advise (is_ad_domain=false)"
 )
@@ -547,10 +553,10 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
             msgs.append(HumanMessage(content=f"({role}) {content}"))
         msgs.append(HumanMessage(content=q))
         res = await classifier.ainvoke(msgs)
-        # 라우팅·광고도메인 분류 로그(X4 연계) — 오분류 추적·P12 한도 카운트 근거.
+        # 라우팅·광고도메인 분류 로그(X4) — 질문 일부를 함께 남겨 오분류 추적 + P12 한도 근거.
         print(
             f"[chat] classify intent={res.intent} action={res.action} "
-            f"is_ad_domain={res.is_ad_domain} confidence={res.confidence}"
+            f"is_ad_domain={res.is_ad_domain} confidence={res.confidence} q={q[:40]!r}"
         )
         return {
             "intent": res.intent,
