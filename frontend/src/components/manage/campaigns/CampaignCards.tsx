@@ -10,8 +10,9 @@ import type {
   ManualKpiMap,
   PlatformMetrics,
 } from './types';
-import { fmtCvr, fmtRoas } from './types';
+import { budgetLabel, fmtCvr, fmtRoas, metricsBlocked, pacingMeaningful } from './types';
 import { StateBadge } from './StateBadge';
+import { OriginTag } from '../ValueOrigin';
 import { CampaignDetail } from './CampaignDetail';
 import { KpiInput } from './KpiInput';
 
@@ -60,6 +61,8 @@ export function CampaignCards({
       {campaigns.map((c) => {
         const pColor = c.pacing_pct >= 95 ? 'bg-red-500' : c.pacing_pct >= 80 ? 'bg-amber-500' : 'bg-[#3182F6]';
         const manual = manualKpi?.[c.campaign_id];
+        const blocked = metricsBlocked(c); // 권한 거부로 지표 못 불러옴 → '—'/'권한 없음'
+        const showPacing = pacingMeaningful(c);
         return (
           <Fragment key={c.campaign_id}>
           <button
@@ -87,18 +90,28 @@ export function CampaignCards({
                     목표 미달
                   </span>
                 )}
+                {blocked && (
+                  <span
+                    title="권한 없음 — Meta에서 이 캠페인 지표를 불러올 권한이 없어요."
+                    className="rounded-md bg-[#F2F4F6] px-1.5 py-0.5 text-[10px] font-semibold text-[#8B95A1] dark:bg-[#2D3748] dark:text-[#9CA3AF]"
+                  >
+                    권한 없음
+                  </span>
+                )}
                 <StateBadge state={c.state} />
               </span>
             </div>
             <div className="grid grid-cols-2 gap-y-2.5 gap-x-3">
-              <Metric label="노출" value={c.impressions.toLocaleString()} />
-              <Metric label="클릭" value={c.clicks.toLocaleString()} />
-              <Metric label="지출" value={`₩${c.spend_krw.toLocaleString()}`} />
-              <Metric label="CTR(클릭률)" value={`${(c.ctr * 100).toFixed(1)}%`} />
-              <Metric label="CPC(클릭당비용)" value={`₩${c.cpc_krw.toLocaleString()}`} />
-              <Metric label="CPM(노출당비용)" value={`₩${c.cpm_krw.toLocaleString()}`} />
-              {/* 실측 있으면 읽기전용, 미설정이면 직접 입력(추정) */}
-              {c.conversions == null ? (
+              <Metric label="노출" value={blocked ? '—' : c.impressions.toLocaleString()} />
+              <Metric label="클릭" value={blocked ? '—' : c.clicks.toLocaleString()} />
+              <Metric label="지출" value={blocked ? '—' : `₩${c.spend_krw.toLocaleString()}`} />
+              <Metric label="CTR(클릭률)" value={blocked ? '—' : `${(c.ctr * 100).toFixed(1)}%`} />
+              <Metric label="CPC(클릭당비용)" value={blocked ? '—' : `₩${c.cpc_krw.toLocaleString()}`} />
+              <Metric label="CPM(노출당비용)" value={blocked ? '—' : `₩${c.cpm_krw.toLocaleString()}`} />
+              {/* 권한 없음 > 실측 있으면 읽기전용 > 미설정이면 직접 입력(추정) */}
+              {blocked ? (
+                <Metric label="CVR(전환율)" value="—" />
+              ) : c.conversions == null ? (
                 <div>
                   <p className="text-[12px] text-[#8B95A1]">CVR(전환율)</p>
                   <KpiInput
@@ -110,7 +123,9 @@ export function CampaignCards({
               ) : (
                 <Metric label="CVR(전환율)" value={fmtCvr(c.cvr, c.conversions)} />
               )}
-              {c.conversions == null ? (
+              {blocked ? (
+                <Metric label="ROAS(투자수익률)" value="—" />
+              ) : c.conversions == null ? (
                 <div>
                   <p className="text-[12px] text-[#8B95A1]">ROAS(투자수익률)</p>
                   <KpiInput
@@ -131,20 +146,29 @@ export function CampaignCards({
             </div>
             <div className="mt-3">
               <div className="flex items-center justify-between text-[12px] text-[#8B95A1] mb-1">
-                <span title="하루 상한(일일예산) 대비 지출 — 총액 아님">일예산 소진(하루 상한)</span>
-                {c.state === 'ended' ? (
-                  <span className="tabular-nums">종료</span>
+                <span title="오늘 지출 ÷ 일예산(하루 상한). 총예산·종료·권한없음은 적용 불가(—)">
+                  소진율(하루 상한)
+                  <OriginTag origin="computed" />
+                </span>
+                {showPacing ? (
+                  <span className="tabular-nums">
+                    ₩{c.spend_today_krw.toLocaleString()} / {c.daily_budget_krw.toLocaleString()} (
+                    {c.pacing_pct.toFixed(0)}%)
+                  </span>
                 ) : (
                   <span className="tabular-nums">
-                    ₩{c.spend_krw.toLocaleString()} / {c.daily_budget_krw.toLocaleString()} (
-                    {c.pacing_pct.toFixed(0)}%)
+                    {c.state === 'ended'
+                      ? '종료'
+                      : blocked
+                        ? '권한 없음'
+                        : budgetLabel(c)}
                   </span>
                 )}
               </div>
               <div className="w-full h-1.5 rounded-full bg-[#F2F4F6] dark:bg-[#2D3748] overflow-hidden">
                 <div
-                  className={`h-full ${c.state === 'ended' ? 'bg-[#D1D6DB]' : pColor}`}
-                  style={{ width: `${Math.min(100, c.pacing_pct)}%` }}
+                  className={`h-full ${showPacing ? pColor : 'bg-[#D1D6DB]'}`}
+                  style={{ width: `${showPacing ? Math.min(100, c.pacing_pct) : 0}%` }}
                 />
               </div>
             </div>

@@ -1,10 +1,9 @@
 'use client';
 
-import { useState, useRef, useEffect, useMemo } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useState, useRef, useEffect } from 'react';
 import AppLayout from '@/components/AppLayout';
 import { safeRandomUUID } from '@/lib/utils';
-import { getToken } from '@/lib/authApi';
+import { api } from '@/lib/api';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
@@ -22,25 +21,12 @@ type SourceMeta = {
   engine: string; // OpenAI · 실측+KB | Gemini
   citations?: Citation[];
   used_tools?: string[];
-};
-type StartedEvent = {
-  event: string;
-  job_id: string;
-  stream_url: string;
-  domain: string;
-};
-type GenerationProgress = {
-  jobId: string;
-  streamUrl: string;
-  status: 'running' | 'completed' | 'failed';
-  stage: string;
-  resultUrl?: string;
+  thread_id?: string; // 피드백 적재 키
 };
 type Message = {
   role: 'user' | 'assistant';
   content: string;
   meta?: SourceMeta;
-  generation?: GenerationProgress;
 };
 
 function SendIcon() {
@@ -70,133 +56,48 @@ function TypingIndicator() {
 }
 
 export default function Page() {
-  const searchParams = useSearchParams();
-
-  // 개선 모드 — URL 파라미터로 전달된 컨텍스트
-  const improveContext = useMemo(() => {
-    const s3_key = searchParams.get('improve_s3_key');
-    const simulation_summary = searchParams.get('improve_sim_summary');
-    if (!s3_key || !simulation_summary) return null;
-    return {
-      s3_key,
-      simulation_summary,
-      product_name: searchParams.get('improve_product_name') ?? '',
-    };
-  }, [searchParams]);
-
   const [messages, setMessages] = useState<Message[]>([]);
+  const [fb, setFb] = useState<Record<number, number>>({}); // 메시지 index → 평가(1/-1)
+
+  // 어시스턴트 답변 평가 적재(좋아요/싫어요) — RAG 품질 개선.
+  const sendFeedback = async (i: number, rating: number) => {
+    const msg = messages[i];
+    setFb((p) => ({ ...p, [i]: rating }));
+    try {
+      await api.chat.feedback({
+        thread_id: msg.meta?.thread_id,
+        rating,
+        question: messages[i - 1]?.content,
+        answer: msg.content,
+      });
+    } catch {
+      /* 적재 실패는 조용히 무시 */
+    }
+  };
   const [input, setInput] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
   const sessionId = useRef<string>("");
+  if (!sessionId.current) sessionId.current = safeRandomUUID();
   const bottomRef = useRef<HTMLDivElement>(null);
-
-  // 세션 ID 복원/발급 — localStorage에 보존해 새로고침해도 같은 대화로 이어진다
-  const ensureSession = () => {
-    if (sessionId.current) return sessionId.current;
-    let sid = '';
-    try {
-      sid = localStorage.getItem('chat_session_id') ?? '';
-    } catch {
-      // localStorage 접근 불가(시크릿 등) — 무시
-    }
-    if (!sid) {
-      sid = safeRandomUUID();
-      try {
-        localStorage.setItem('chat_session_id', sid);
-      } catch {
-        // 무시
-      }
-    }
-    sessionId.current = sid;
-    return sid;
-  };
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isStreaming]);
 
-  // 저장된 대화 복원 — 마운트 시 세션 발급 후 히스토리 로드
-  useEffect(() => {
-    // 개선 모드는 히스토리 복원 없이 새 세션 시작 + 안내 메시지 추가
-    if (improveContext) {
-      const name = improveContext.product_name || '기존 광고';
-      setMessages([
-        {
-          role: 'assistant',
-          content: `${name} 개선을 시작할게요.\n어떤 부분을 바꾸고 싶으신가요? (예시 — 색상을 더 밝게, 헤드라인을 더 강렬하게)`,
-          meta: { source: 'generator', label: '생성 어시스턴트', engine: 'Gemini · 슬롯필링' },
-        },
-      ]);
-      return;
-    }
-    const sid = ensureSession();
-    fetch(`${API_BASE}/api/chat/sessions/${sid}/messages`)
-      .then((r) => (r.ok ? r.json() : { messages: [] }))
-      .then((d) => {
-        if (Array.isArray(d.messages) && d.messages.length > 0) {
-          setMessages(d.messages as Message[]);
-        }
-      })
-      .catch(() => {});
-  }, [improveContext]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // 생성 잡 핸드오프 — started_event를 받으면 생성 SSE 스트림을 구독해 진행률 갱신
-  const subscribeGeneration = (streamUrl: string) => {
-    const es = new EventSource(`${API_BASE}${streamUrl}`);
-    const updateGen = (patch: Partial<GenerationProgress>) => {
-      setMessages((prev) => {
-        const reverseIdx = [...prev].reverse().findIndex((m) => m.generation);
-        if (reverseIdx === -1) return prev;
-        const realIdx = prev.length - 1 - reverseIdx;
-        const target = prev[realIdx];
-        if (!target.generation) return prev;
-        const next = [...prev];
-        next[realIdx] = { ...target, generation: { ...target.generation, ...patch } };
-        return next;
-      });
-    };
-    es.onmessage = (e) => {
-      try {
-        const ev = JSON.parse(e.data) as { event?: string; message?: string; result_url?: string };
-        if (ev.event === 'completed') {
-          updateGen({ status: 'completed', stage: '완료', resultUrl: ev.result_url });
-          es.close();
-        } else if (ev.event === 'error') {
-          updateGen({ status: 'failed', stage: ev.message ?? '생성 실패' });
-          es.close();
-        } else if (ev.event) {
-          updateGen({ stage: ev.event });
-        }
-      } catch {
-        // ignore malformed SSE line
-      }
-    };
-    es.onerror = () => es.close();
-  };
-
   const handleSend = async (text?: string) => {
     const content = text ?? input.trim();
     if (!content || isStreaming) return;
 
-    ensureSession();
     const newMessages: Message[] = [...messages, { role: 'user', content }];
     setMessages(newMessages);
     setInput('');
     setIsStreaming(true);
 
     try {
-      const token = getToken();
       const res = await fetch(`${API_BASE}/api/chat/complete`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({
-          session_id: sessionId.current,
-          messages: newMessages,
-          ...(improveContext ? { improve_context: improveContext } : {}),
-        }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_id: sessionId.current, messages: newMessages }),
       });
 
       if (!res.ok || !res.body) {
@@ -232,28 +133,9 @@ export default function Page() {
               token?: string;
               done?: boolean;
               meta?: SourceMeta;
-              started_event?: StartedEvent;
             };
             if (data.done) {
               setIsStreaming(false);
-            } else if (data.started_event) {
-              const ev = data.started_event;
-              setMessages((prev) => {
-                const last = prev[prev.length - 1];
-                return [
-                  ...prev.slice(0, -1),
-                  {
-                    ...last,
-                    generation: {
-                      jobId: ev.job_id,
-                      streamUrl: ev.stream_url,
-                      status: 'running',
-                      stage: '생성 시작',
-                    },
-                  },
-                ];
-              });
-              subscribeGeneration(ev.stream_url);
             } else if (data.meta) {
               setMessages((prev) => {
                 const last = prev[prev.length - 1];
@@ -286,15 +168,6 @@ export default function Page() {
   return (
     <AppLayout>
     <div className="h-screen bg-white dark:bg-[#0F1117] flex flex-col transition-colors">
-      {/* 개선 모드 배너 */}
-      {improveContext && (
-        <div className="flex items-center gap-2 px-4 py-2 bg-[#EBF3FF] dark:bg-[#1E3A5F] border-b border-[#C4D9F5] dark:border-[#2D5A9E] text-sm text-[#3182F6] font-medium shrink-0">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
-          </svg>
-          개선 모드 · {improveContext.product_name || '기존 광고'} 시뮬레이션 결과 기반
-        </div>
-      )}
       <div className="flex-1 flex flex-col overflow-hidden">
         {messages.length === 0 ? (
           /* ── Welcome state ── */
@@ -360,29 +233,6 @@ export default function Page() {
                       >
                         {msg.content}
                       </div>
-                      {msg.generation && (
-                        <div className="mt-1 w-full px-3 py-2.5 rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-[#F9FAFB] dark:bg-[#1C2333] text-xs">
-                          <div className="flex items-center gap-2">
-                            {msg.generation.status === 'running' && (
-                              <span className="w-2 h-2 rounded-full bg-[#3182F6] animate-pulse" />
-                            )}
-                            {msg.generation.status === 'completed' && <span>✅</span>}
-                            {msg.generation.status === 'failed' && <span>⚠️</span>}
-                            <span className="font-semibold text-[#4E5968] dark:text-[#9CA3AF]">
-                              광고 생성 {msg.generation.status === 'running' ? '진행 중' : msg.generation.status === 'completed' ? '완료' : '실패'}
-                            </span>
-                            <span className="text-[#8B95A1] dark:text-[#6B7280]">· {msg.generation.stage}</span>
-                          </div>
-                          {msg.generation.status === 'completed' && (
-                            <a
-                              href={`/generations/${msg.generation.jobId}`}
-                              className="inline-block mt-1.5 text-[#3182F6] font-semibold hover:underline"
-                            >
-                              생성 결과 보기 →
-                            </a>
-                          )}
-                        </div>
-                      )}
                       {msg.role === 'assistant' &&
                         msg.meta?.source === 'management' &&
                         (msg.meta.citations?.length || msg.meta.used_tools?.length) ? (
@@ -395,6 +245,34 @@ export default function Page() {
                               .map((c) => c.title || c.source.replace('.md', '')),
                           ].join(' · ')}
                         </p>
+                      ) : null}
+                      {/* 매니지먼트 답변 평가(좋아요/싫어요) — RAG 개선 적재 */}
+                      {msg.role === 'assistant' && msg.meta?.source === 'management' && msg.content ? (
+                        <div className="flex items-center gap-1 px-1">
+                          <button
+                            onClick={() => sendFeedback(i, 1)}
+                            disabled={fb[i] !== undefined}
+                            className={`text-[12px] px-1.5 py-0.5 rounded ${
+                              fb[i] === 1 ? 'text-[#3182F6]' : 'text-[#B0B8C1] hover:text-[#3182F6]'
+                            } disabled:cursor-default`}
+                            title="도움이 됐어요"
+                          >
+                            👍
+                          </button>
+                          <button
+                            onClick={() => sendFeedback(i, -1)}
+                            disabled={fb[i] !== undefined}
+                            className={`text-[12px] px-1.5 py-0.5 rounded ${
+                              fb[i] === -1 ? 'text-red-500' : 'text-[#B0B8C1] hover:text-red-500'
+                            } disabled:cursor-default`}
+                            title="별로예요"
+                          >
+                            👎
+                          </button>
+                          {fb[i] !== undefined && (
+                            <span className="text-[10px] text-[#B0B8C1]">평가 감사합니다</span>
+                          )}
+                        </div>
                       ) : null}
                     </div>
                   </div>

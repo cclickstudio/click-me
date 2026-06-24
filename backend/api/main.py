@@ -66,7 +66,15 @@ async def lifespan(app: FastAPI):
         logger.warning(
             "Instagram publisher: Mock — .env에 META_ACCESS_TOKEN, META_IG_USER_ID 설정 필요"
         )
+    # 어시스턴트 영속 체크포인터(Neon) 준비 — 실패하면 MemorySaver 폴백(앱은 계속 뜬다).
+    from domain.management.assistant.checkpointer import (
+        close_pg_checkpointer,
+        init_pg_checkpointer,
+    )
+
+    await init_pg_checkpointer(settings.database_url)
     yield
+    await close_pg_checkpointer()
 
 
 app = FastAPI(

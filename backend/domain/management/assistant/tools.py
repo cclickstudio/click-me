@@ -109,7 +109,8 @@ async def live_before_after(settings) -> dict:
     reader = build_reader(settings)
     pred = build_prediction_reader(settings)
     now = datetime.now(UTC)
-    ad_by_meta: dict[str, str] = {}
+    creative_by_meta: dict[str, str] = {}
+    sim_by_meta: dict[str, tuple[str, str]] = {}
     try:
         async with AsyncSessionLocal() as db:
             rows = (
@@ -121,21 +122,26 @@ async def live_before_after(settings) -> dict:
                 .scalars()
                 .all()
             )
-            ad_by_meta = {
-                str(r.meta_campaign_id): r.creative_ad_id
-                for r in rows
-                if r.meta_campaign_id and r.creative_ad_id
-            }
+            for r in rows:
+                if not r.meta_campaign_id:
+                    continue
+                if r.creative_ad_id:
+                    creative_by_meta[str(r.meta_campaign_id)] = r.creative_ad_id
+                if r.simulation_id:
+                    sim_by_meta[str(r.meta_campaign_id)] = (str(r.simulation_id), r.tenant_id)
     except Exception:  # noqa: BLE001 — 매핑 실패해도 실측은 보여준다
-        ad_by_meta = {}
+        creative_by_meta = {}
+        sim_by_meta = {}
     try:
         items = []
         for c in await reader.list_campaigns():
             cid = c.campaign_id
             m = await reader.get_metrics(cid, now)
-            ad_id = ad_by_meta.get(cid)
-            prediction = await pred.get_prediction(ad_id) if ad_id else None
-            ba = compute_before_after(cid, c.name, prediction, _outcome(m, cid, ad_id))
+            link = sim_by_meta.get(cid)
+            prediction = await pred.get_prediction(link[0], link[1]) if link else None
+            ba = compute_before_after(
+                cid, c.name, prediction, _outcome(m, cid, creative_by_meta.get(cid))
+            )
             items.append({"name": ba.name, "verdict": ba.verdict.value, "rationale": ba.rationale})
         return {"items": items}
     except MetaApiError as e:

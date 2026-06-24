@@ -10,6 +10,7 @@ class AskRequest(BaseModel):
     question: str
     campaign_id: str | None = None  # 특정 캠페인 맥락(있으면 상세 우선)
     ad_id: str | None = None  # 시뮬 예측 연결 맥락
+    thread_id: str | None = None  # 멀티턴 키 — 같은 세션이면 같은 값(없으면 새로 생성)
 
 
 class Citation(BaseModel):

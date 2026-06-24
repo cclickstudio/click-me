@@ -1,4 +1,4 @@
-# LangSmith RunnableConfig 조립 헬퍼 — 팀 공통 Trace 이름·Metadata·Tags 표준화
+# LangSmith RunnableConfig 조립 헬퍼 — 전 도메인 공용 (docs/management LangSmith 가이드 §4)
 from __future__ import annotations
 
 from langchain_core.runnables import RunnableConfig
@@ -18,9 +18,10 @@ def make_trace_config(
     extra_tags: list[str] | None = None,
     configurable: dict | None = None,
 ) -> RunnableConfig:
-    """LangSmith 표준 RunnableConfig를 조립한다.
+    """LangSmith 표준 run_name·tags·metadata를 담은 RunnableConfig를 만든다.
 
-    run_name 형식: {domain}.{feature}[.{mode}]
+    run_name = ``{domain}.{feature}[.{mode}]``. tags·metadata는 가이드 §4·§5 표준 키를
+    채우고, 도메인별 추가 키는 extra_metadata / extra_tags로 합친다.
     configurable: LangGraph emit 콜백 등 그래프 내부 전달값.
     """
     run_name = f"{domain}.{feature}" + (f".{mode}" if mode else "")

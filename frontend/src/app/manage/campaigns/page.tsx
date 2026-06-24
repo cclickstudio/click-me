@@ -6,6 +6,7 @@ import AppLayout from '@/components/AppLayout';
 import { api } from '@/lib/api';
 import { CampaignTable } from '@/components/manage/campaigns/CampaignTable';
 import { CampaignCards } from '@/components/manage/campaigns/CampaignCards';
+import { OriginLegend } from '@/components/manage/ValueOrigin';
 import type {
   AccountWallet,
   CampaignDetail as Detail,
@@ -34,6 +35,7 @@ export default function Page() {
   const [blockDetailOpen, setBlockDetailOpen] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null); // Meta 토큰 만료 안내
   const [rateLimited, setRateLimited] = useState<string | null>(null); // Meta 요청 한도(일시)
+  const [permissionError, setPermissionError] = useState<string | null>(null); // 목록/자금 권한 없음
   const [account, setAccount] = useState<AccountWallet | null>(null); // 계정 지갑(잔액·한도·지출)
   // 전환 1건 가치(₩)·목표 ROAS — 고객이 입력하는 사업 통계. CVR·ROAS는 이 값으로 '계산'된다
   // (직접 입력 아님 — CVR=전환÷클릭 실측, ROAS=(전환×가치)÷지출 추정). 스펙: CVR·ROAS 재정의.
@@ -88,6 +90,7 @@ export default function Page() {
       setSource(r.source ?? 'mock');
       setAccountBlock(r.account_block_reason ?? null);
       setAuthError(r.auth_error ?? null);
+      setPermissionError(r.permission_error ?? r.account_unavailable ?? null);
       setAccount(r.account ?? null);
       setLastUpdated(new Date().toLocaleTimeString('ko-KR'));
     } catch (e) {
@@ -295,6 +298,14 @@ export default function Page() {
           </div>
         )}
 
+        {permissionError && (
+          <div className="mb-4 rounded-xl border border-[#E5E8EB] bg-[#F9FAFB] px-4 py-3 dark:border-[#2D3748] dark:bg-[#1A1F28]">
+            <p className="text-sm text-[#4E5968] dark:text-[#9CA3AF]">
+              <span className="font-semibold">🔒 권한 없음</span> · {permissionError}
+            </p>
+          </div>
+        )}
+
         {rateLimited && (
           <div className="mb-4 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 dark:border-amber-900/50 dark:bg-amber-900/20">
             <p className="text-sm text-amber-800 dark:text-amber-300">
@@ -342,7 +353,7 @@ export default function Page() {
           </p>
         )}
 
-        {/* 계정 지갑 — 일일예산(하루 상한)과 다른 '실제 충전·지출·잔액' (부가세 별도). 전환가치·목표ROAS 입력 동거. */}
+        {/* 계정 지갑 — 일예산(하루 상한)과 다른 '실제 충전·지출·잔액' (부가세 별도). 전환가치·목표ROAS 입력 동거. */}
         {source === 'live' && account && (
           <div className="mb-4 rounded-xl border border-[#E5E8EB] bg-white px-4 py-3.5 dark:border-[#2D3748] dark:bg-[#1A1F28]">
             <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
@@ -351,7 +362,7 @@ export default function Page() {
                   계정 지갑
                 </span>
                 <span className="text-[15px] text-[#191F28] dark:text-[#F2F4F6]">
-                  사용 가능 잔액{' '}
+                  선불 잔액{' '}
                   <b className="tabular-nums">
                     ₩{(account.available_balance_krw ?? 0).toLocaleString()}
                   </b>
@@ -376,7 +387,7 @@ export default function Page() {
               </div>
             </div>
             <p className="mt-2 text-[13px] text-[#8B95A1]">
-              일일예산은 “하루 상한”일 뿐, 실제 돈은 위 잔액입니다. 충전액은 광고비 + 부가세 10%
+              일예산은 “하루 상한”일 뿐, 실제 돈은 위 잔액입니다. 충전액은 광고비 + 부가세 10%
               (예: 광고로 ₩10,000 쓰려면 ₩11,000 충전).
             </p>
             <p className="mt-1 text-[13px] text-[#8B95A1]">
@@ -389,6 +400,7 @@ export default function Page() {
 
         {!busy && !error && campaigns.length > 0 && (
           <div className="space-y-4">
+            <OriginLegend />
             {/* 입력은 둘뿐 — CVR·ROAS는 이 값으로 계산되는 결과(직접 입력 아님) */}
             <div className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] px-4 py-3">
               <label className="flex items-center gap-2 text-sm text-[#4E5968] dark:text-[#9CA3AF]">

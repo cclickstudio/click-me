@@ -133,9 +133,12 @@ export default function Page() {
     <AppLayout>
       <div className="max-w-screen-md mx-auto px-6 py-8">
         <div className="mb-8">
-          <h1 className="text-2xl font-bold text-[#191F28] dark:text-[#F2F4F6]">크레딧 충전</h1>
+          <h1 className="text-2xl font-bold text-[#191F28] dark:text-[#F2F4F6]">
+            크레딧 충전 (예산 한도)
+          </h1>
           <p className="text-sm text-[#8B95A1] dark:text-[#6B7280] mt-1">
-            충전한 크레딧만큼 광고를 집행할 수 있습니다 · 테스트 키 사용 중
+            크레딧은 캠페인 <b>집행 상한(예산 한도)</b>입니다. 실제 광고비는 Meta 광고계정 선불
+            잔액에서 차감돼요 (Meta 선불 충전은 Ads Manager). · 테스트 키 사용 중
           </p>
           <p className="text-xs text-red-500 mt-2">
             카카오페이 등 외부 간편결제는 테스트 중에도 실제 잔액이 차감될 수 있습니다.
