@@ -25,7 +25,9 @@ def upgrade() -> None:
     op.execute("ALTER TABLE chat_sessions DROP COLUMN IF EXISTS messages")
     op.execute("ALTER TABLE chat_sessions ADD COLUMN IF NOT EXISTS user_id UUID")
     op.execute("ALTER TABLE chat_sessions ADD COLUMN IF NOT EXISTS organization_id UUID")
-    op.execute("ALTER TABLE chat_sessions ADD COLUMN IF NOT EXISTS title VARCHAR(200) DEFAULT '새 채팅'")
+    op.execute(
+        "ALTER TABLE chat_sessions ADD COLUMN IF NOT EXISTS title VARCHAR(200) DEFAULT '새 채팅'"
+    )
     op.execute("ALTER TABLE chat_sessions ADD COLUMN IF NOT EXISTS summary TEXT")
     op.execute(
         "ALTER TABLE chat_sessions ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()"
@@ -48,7 +50,9 @@ def upgrade() -> None:
     op.execute(
         "ALTER TABLE chat_long_term_memory ADD COLUMN IF NOT EXISTS salience DOUBLE PRECISION NOT NULL DEFAULT 0.5"
     )
-    op.execute("ALTER TABLE chat_long_term_memory ADD COLUMN IF NOT EXISTS last_used_at TIMESTAMPTZ")
+    op.execute(
+        "ALTER TABLE chat_long_term_memory ADD COLUMN IF NOT EXISTS last_used_at TIMESTAMPTZ"
+    )
     op.execute("ALTER TABLE chat_long_term_memory ADD COLUMN IF NOT EXISTS source_session_id UUID")
     op.execute(
         "CREATE INDEX IF NOT EXISTS ix_chat_ltm_salience ON chat_long_term_memory (salience DESC)"
@@ -79,4 +83,6 @@ def downgrade() -> None:
     op.execute("ALTER TABLE chat_sessions DROP COLUMN IF EXISTS title")
     op.execute("ALTER TABLE chat_sessions DROP COLUMN IF EXISTS organization_id")
     op.execute("ALTER TABLE chat_sessions DROP COLUMN IF EXISTS user_id")
-    op.execute("ALTER TABLE chat_sessions ADD COLUMN IF NOT EXISTS messages JSONB DEFAULT '[]'::jsonb")
+    op.execute(
+        "ALTER TABLE chat_sessions ADD COLUMN IF NOT EXISTS messages JSONB DEFAULT '[]'::jsonb"
+    )
