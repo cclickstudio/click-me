@@ -1,4 +1,4 @@
-# stream_turn: 2단계 SSE 이벤트 시퀀스·actionbar 마지막·final status
+# stream_turn SSE 스트리밍 테스트 — 이벤트 시퀀스·final status·결론 재조합
 import json
 
 import pytest
@@ -11,12 +11,13 @@ from domain.management.assistant.contracts import AskResult, Citation, Suggested
 def _parse(lines: list[str]) -> list[dict]:
     out = []
     for ln in lines:
-        assert ln.startswith("data: ") and ln.endswith("\n\n")
+        assert ln.startswith("data: "), f"expected 'data: ' prefix, got: {ln!r}"
+        assert ln.endswith("\n\n"), f"expected trailing blank line, got: {ln!r}"
         out.append(json.loads(ln[len("data: ") :].strip()))
     return out
 
 
-async def _collect(env) -> list[dict]:
+async def _collect(env: object) -> list[dict]:
     return _parse([chunk async for chunk in stream_turn(env)])
 
 
@@ -68,3 +69,14 @@ async def test_conclusion_streamed_in_chunks_reassembles():
     events = await _collect(env)
     text = "".join(e["text"] for e in events if e["event"] == "conclusion_delta")
     assert text == "a" * 60
+
+
+@pytest.mark.asyncio
+async def test_final_status_ok_with_no_cards():
+    # 카드 0개(인용·제안 모두 없음) read-only 턴도 final은 ok.
+    res = AskResult(answer="정상입니다.")
+    env = compose_turn(res, turn_id="t5")
+    assert env.cards == []
+    events = await _collect(env)
+    assert events[-1]["event"] == "final"
+    assert events[-1]["status"] == "ok"
