@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useProjects } from "@/components/ProjectContext";
+import { useChatController } from "@/components/chat/ChatController";
 import { api } from "@/lib/api";
 import { getToken } from "@/lib/authApi";
 import { getJobs, setGenJob } from "@/lib/runningJobs";
@@ -742,6 +743,12 @@ function adRefImageSrc(asset: string): string | null {
 
 export default function GeneratorPage() {
   const { selectedProject, projects, selectProject, details, loadDetails } = useProjects();
+  // N2 — 안읽음 뱃지(시뮬 경로와 대칭). 닫힘 여부는 ref로 최신값 읽음.
+  const { pushUnread, floatingOpen } = useChatController();
+  const floatingOpenRef = useRef(floatingOpen);
+  useEffect(() => {
+    floatingOpenRef.current = floatingOpen;
+  }, [floatingOpen]);
   const [mode, setMode] = useState<GenMode>("create");
   const [format, setFormat] = useState<"single" | "carousel">("single");
   const [phase, setPhase] = useState<Phase>("idle");
@@ -974,6 +981,9 @@ export default function GeneratorPage() {
                       },
                     },
                   ])
+                  .then(() => {
+                    if (!floatingOpenRef.current) pushUnread();
+                  })
                   .catch(() => {});
               });
             }

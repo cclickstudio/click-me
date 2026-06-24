@@ -4,6 +4,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useProjects } from '@/components/ProjectContext';
+import { useChatController } from '@/components/chat/ChatController';
 import { api } from '@/lib/api';
 import { saveSimResult } from '@/lib/simResultStore';
 import { getJobs, setSimJob } from '@/lib/runningJobs';
@@ -72,6 +73,13 @@ const AGE_BANDS: { label: string; min: number; max: number }[] = [
 export default function SimulationRunPage() {
   const { selectedProject, projects, selectProject } = useProjects();
   const router = useRouter();
+  // N2 — 안읽음 뱃지: 직접 실행 완료로 채팅에 제안을 주입할 때 플로팅이 닫혀 있으면
+  // pushUnread로 빨간 뱃지를 올린다. 닫힘 여부는 최신값을 ref로 읽는다(완료 콜백 클로저 staleness 회피).
+  const { pushUnread, floatingOpen } = useChatController();
+  const floatingOpenRef = useRef(floatingOpen);
+  useEffect(() => {
+    floatingOpenRef.current = floatingOpen;
+  }, [floatingOpen]);
   const [step, setStep] = useState<Step>('setup');
 
   // 광고 입력
@@ -229,6 +237,10 @@ export default function SimulationRunPage() {
                           },
                         },
                       ])
+                      .then(() => {
+                        // N2 — 패널이 닫혀 있으면 안읽음 뱃지를 올린다(2건 주입 → +1, 알림은 1회).
+                        if (!floatingOpenRef.current) pushUnread();
+                      })
                       .catch(() => {});
                   });
                 }
