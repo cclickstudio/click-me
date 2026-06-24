@@ -12,6 +12,7 @@ from pydantic import BaseModel
 from core.config import settings
 from core.schemas import ChatRequest
 from domain.management.assistant.agent import build_management_agent
+from domain.management.assistant.composer import compose_turn, stream_turn
 from domain.management.assistant.contracts import AskRequest
 from domain.management.assistant.history import record_feedback, record_turn
 
@@ -90,9 +91,76 @@ def _is_management(text: str) -> bool:
     return any(k in low for k in _MGMT_KEYWORDS)
 
 
-def _chunks(text: str, size: int = 24) -> list[str]:
-    """긴 답변을 SSE 토큰처럼 잘게 — 스트리밍 느낌 유지."""
-    return [text[i : i + size] for i in range(0, len(text), size)] or [""]
+async def _record_management_turn(*, thread_id, result, question, ad_id, latency_ms) -> None:
+    # 관측·평가용 적재. 실패해도 채팅은 진행(best-effort).
+    await record_turn(
+        thread_id=thread_id,
+        question=question,
+        answer=result.answer,
+        model=getattr(settings, "management_assistant_model", "gpt-4o-mini"),
+        latency_ms=latency_ms,
+        used_tools=list(result.used_tools),
+        citations=[
+            {"kind": c.kind, "source": c.source, "title": c.title} for c in result.citations
+        ],
+        suggested_action=(
+            result.suggested_action.model_dump() if result.suggested_action else None
+        ),
+        requires_approval=result.requires_approval,
+        ad_id=ad_id,
+    )
+
+
+async def _management_card_stream(
+    *, question, session_id, ad_id, assistant, record
+) -> AsyncGenerator[str, None]:
+    # 매니지먼트 한 턴을 카드 SSE로. assistant/record 주입 → 앱·DB 없이 테스트 가능.
+    thread_id = f"mgmt-{session_id}"
+
+    # 1) 어시스턴트 호출 + 봉투 조립 — 여기서 실패하면 진짜 턴 실패(아직 아무것도 yield 안 함).
+    try:
+        t0 = time.perf_counter()
+        result = await assistant(AskRequest(question=question, ad_id=ad_id, thread_id=thread_id))
+        latency_ms = int((time.perf_counter() - t0) * 1000)
+        env = compose_turn(result, turn_id=thread_id)
+    except Exception as exc:  # noqa: BLE001 — 어시스턴트/조립 실패 = 턴 실패
+        yield (
+            "data: "
+            + json.dumps(
+                {
+                    "event": "error",
+                    "scope": "turn",
+                    "code": "assistant_error",
+                    "message": f"매니지먼트 조회 중 문제가 발생했어요: {exc}",
+                },
+                ensure_ascii=False,
+            )
+            + "\n\n"
+        )
+        yield (
+            "data: "
+            + json.dumps(
+                {"event": "final", "turn_id": thread_id, "status": "failed"}, ensure_ascii=False
+            )
+            + "\n\n"
+        )
+        return
+
+    # 2) 관측 적재는 best-effort — 실패해도 답변 스트림은 그대로(원래 chat.py 동작 보존).
+    try:
+        await record(
+            thread_id=thread_id,
+            result=result,
+            question=question,
+            ad_id=ad_id,
+            latency_ms=latency_ms,
+        )
+    except Exception as exc:  # noqa: BLE001 — 적재 실패는 채팅을 끊지 않는다
+        print(f"[chat] record_turn failed (best-effort, ignored): {exc!r}")
+
+    # 3) 정상 답변 스트리밍.
+    async for chunk in stream_turn(env):
+        yield chunk
 
 
 @router.post("/complete")
@@ -109,62 +177,15 @@ async def chat_complete(body: ChatRequest) -> StreamingResponse:
     last_message = body.messages[-1].content if body.messages else ""
 
     async def generate() -> AsyncGenerator[str, None]:
-        # 매니지먼트 질문이면 서브에이전트(실측 툴 + KB)로 답한다 — 숫자는 실측, 행동은 제안만.
         if _is_management(last_message):
-            thread_id = f"mgmt-{body.session_id}"
-            try:
-                _t0 = time.perf_counter()
-                result = await _get_assistant()(
-                    AskRequest(
-                        question=last_message,
-                        ad_id=body.context_ad_id,
-                        # 멀티턴 — 같은 채팅 세션이면 같은 thread로 묶어 이전 맥락 유지(checkpointer).
-                        thread_id=thread_id,
-                    )
-                )
-                _latency_ms = int((time.perf_counter() - _t0) * 1000)
-                meta = {
-                    "source": "management",
-                    "label": "매니지먼트 어시스턴트",
-                    "engine": "OpenAI · 실측+KB",
-                    "citations": [
-                        {"kind": c.kind, "source": c.source, "title": c.title}
-                        for c in result.citations
-                    ],
-                    "used_tools": result.used_tools,
-                    "requires_approval": result.requires_approval,  # HITL — 승인 게이트에서 멈춤
-                    "thread_id": result.thread_id,  # interrupt 재개 키(승인 경로에서 사용)
-                }
-                yield f"data: {json.dumps({'meta': meta}, ensure_ascii=False)}\n\n"
-                answer = result.answer
-                if result.suggested_action:
-                    sa = result.suggested_action
-                    gate = "사람 승인 필요" if sa.requires_approval else "낮은 위험"
-                    answer += f"\n\n추천 조치: {sa.action_type} ({gate}) — 실행은 승인 화면에서 확인하세요."
-                # 대화·도구·인용·HITL을 DB에 적재(관측·평가). 실패해도 채팅은 그대로 진행.
-                await record_turn(
-                    thread_id=thread_id,
-                    question=last_message,
-                    answer=answer,
-                    model=getattr(settings, "management_assistant_model", "gpt-4o-mini"),
-                    latency_ms=_latency_ms,
-                    used_tools=list(result.used_tools),
-                    citations=[
-                        {"kind": c.kind, "source": c.source, "title": c.title}
-                        for c in result.citations
-                    ],
-                    suggested_action=(
-                        result.suggested_action.model_dump() if result.suggested_action else None
-                    ),
-                    requires_approval=result.requires_approval,
-                    ad_id=body.context_ad_id,
-                )
-                for piece in _chunks(answer):
-                    yield f"data: {json.dumps({'token': piece}, ensure_ascii=False)}\n\n"
-            except Exception as exc:  # noqa: BLE001 — 실패해도 채팅은 끊지 않는다
-                msg = f"매니지먼트 조회 중 문제가 발생했어요: {exc}"
-                yield f"data: {json.dumps({'token': msg}, ensure_ascii=False)}\n\n"
-            yield 'data: {"done": true}\n\n'
+            async for chunk in _management_card_stream(
+                question=last_message,
+                session_id=body.session_id,
+                ad_id=body.context_ad_id,
+                assistant=_get_assistant(),
+                record=_record_management_turn,
+            ):
+                yield chunk
             return
 
         # 그 외는 기존 CLIO(Gemini)
