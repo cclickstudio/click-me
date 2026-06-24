@@ -1,13 +1,16 @@
 # Composer — AskResult를 검증된 카드 봉투로 조립한다. 서술 가드·검수 게이트를 여기서 강제.
 from __future__ import annotations
 
+import json
 import re
+from collections.abc import AsyncGenerator
 from typing import TYPE_CHECKING
 
 from .chat_cards import (
     Card,
     CardKind,
     CardPayload,
+    CardStatus,
     TurnEnvelope,
     TurnOrigin,
     validate_card,
@@ -157,3 +160,24 @@ def compose_turn(
         conclusion=_descriptive_conclusion(res.answer),
         cards=cards,
     )
+
+
+def _sse(payload: dict) -> str:
+    return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+
+def _chunks(text: str, size: int = 24) -> list[str]:
+    return [text[i : i + size] for i in range(0, len(text), size)] or [""]
+
+
+def _final_status(env: TurnEnvelope) -> str:
+    return "partial" if any(c.status != CardStatus.OK for c in env.cards) else "ok"
+
+
+async def stream_turn(env: TurnEnvelope) -> AsyncGenerator[str, None]:
+    """카드 봉투를 2단계 SSE로 — 결론 먼저, 카드는 슬롯 순서(actionbar 마지막), final 항상."""
+    for piece in _chunks(env.conclusion):
+        yield _sse({"event": "conclusion_delta", "text": piece})
+    for card in env.cards:  # compose_turn이 이미 슬롯 순서·actionbar 마지막으로 정렬
+        yield _sse({"event": "card_ready", "card": card.model_dump(mode="json")})
+    yield _sse({"event": "final", "turn_id": env.turn_id, "status": _final_status(env)})
