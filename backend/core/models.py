@@ -118,7 +118,12 @@ class Project(Base):
         ForeignKey("teams.id"), nullable=True
     )  # 소속 팀(팀 단위 공유, 미배정이면 NULL)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(20), server_default="ACTIVE")
+    created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime)
 
     organization: Mapped["Organization"] = relationship(back_populates="projects")
     ads: Mapped[list["Ad"]] = relationship(back_populates="project")
@@ -130,13 +135,19 @@ class Ad(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"))
     title: Mapped[str] = mapped_column(String(255))
-    ad_type: Mapped[str] = mapped_column(String(50))  # image | text | video
-    s3_key: Mapped[str | None] = mapped_column(String(512))
-    analysis: Mapped[dict | None] = mapped_column(JSONB)
+    media_type: Mapped[str] = mapped_column(String(20))  # image | text | video
+    asset_url: Mapped[str | None] = mapped_column(String(500))
+    copy_text: Mapped[str | None] = mapped_column(Text)
+    industry_category: Mapped[str | None] = mapped_column(String(100))
+    product_category: Mapped[str | None] = mapped_column(String(100))
+    ad_objective: Mapped[str | None] = mapped_column(String(50))
+    target_filter: Mapped[dict | None] = mapped_column(JSONB)
+    status: Mapped[str] = mapped_column(String(20), server_default="DRAFT")
+    created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     project: Mapped["Project"] = relationship(back_populates="ads")
-    simulations: Mapped[list["SimulationResult"]] = relationship(back_populates="ad")
 
 
 class SimulationResult(Base):
@@ -149,7 +160,7 @@ class SimulationResult(Base):
     personas: Mapped[dict] = mapped_column(JSONB)  # 페르소나 배열
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
-    ad: Mapped["Ad"] = relationship(back_populates="simulations")
+    ad: Mapped["Ad"] = relationship()  # 단방향(Ad.simulations 레거시 관계 제거됨)
 
 
 class AdEmbedding(Base):
