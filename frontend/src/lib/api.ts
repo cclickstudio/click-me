@@ -441,7 +441,8 @@ export const api = {
   },
 
   projects: {
-    list: () => request<{ projects: unknown[] }>("/projects"),
+    // GET /projects 는 배열을 직접 반환한다(래핑 객체 아님).
+    list: () => request<unknown[]>("/projects"),
     create: (body: { name: string; description?: string }) =>
       request("/projects", { method: "POST", body: JSON.stringify(body) }),
     get: (id: string) => request(`/projects/${id}`),

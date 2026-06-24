@@ -58,7 +58,7 @@ export default function GenFormWidget({
     api.projects
       .list()
       .then(d => {
-        const ps = (d.projects as Project[]) ?? [];
+        const ps = (Array.isArray(d) ? d : []) as Project[];
         setProjects(ps);
         if (ps[0]) setProjectId(ps[0].id);
       })
@@ -69,6 +69,12 @@ export default function GenFormWidget({
     setGenJob(null);
     try {
       const d = (await api.generator.detail(gid)) as GenerationDetail;
+      // 실패했거나 후보가 하나도 없으면 에러 카드로 — "0개 생성 완료"·재시뮬 제안 오노출 방지.
+      if (d.status === 'failed' || (d.candidates ?? []).length === 0) {
+        setErr(d.error_message || '시안을 만들지 못했어요. 잠시 후 다시 시도해 주세요.');
+        setPhase('error');
+        return;
+      }
       setDetail(d);
       setPhase('done');
       if (onResult) {
