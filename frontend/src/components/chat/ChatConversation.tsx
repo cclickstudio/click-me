@@ -33,6 +33,11 @@ type SlashCommand = { cmd: string; label: string; desc: string };
 const slashCommands: SlashCommand[] = [
   { cmd: '/시뮬레이션', label: '/시뮬레이션', desc: '광고 시뮬레이션 입력 위젯을 띄웁니다' },
   { cmd: '/제너레이터', label: '/제너레이터', desc: '광고 생성 입력 위젯을 띄웁니다' },
+  { cmd: '/배치', label: '/배치 (별칭 /AB)', desc: '광고 2개를 동시에 비교 시뮬레이션합니다' },
+  { cmd: '/AB', label: '/AB', desc: '/배치와 동일 — 광고 2개 동시 비교 시뮬레이션' },
+  { cmd: '/리포트', label: '/리포트', desc: '시뮬·생성 성과를 PDF 리포트로 받습니다' },
+  { cmd: '/시뮬목록', label: '/시뮬목록', desc: '최근 시뮬레이션 목록을 봅니다' },
+  { cmd: '/시안목록', label: '/시안목록', desc: '최근 생성 광고 시안 목록을 봅니다' },
   { cmd: '/비교', label: '/비교', desc: '시뮬레이션 2개의 KPI를 나란히 비교합니다' },
   { cmd: '/도움말', label: '/도움말', desc: '사용 가능한 명령어와 예시를 봅니다' },
   { cmd: '/위젯', label: '/위젯', desc: '사용 가능한 위젯 목록을 봅니다 (개발용)' },
@@ -88,6 +93,17 @@ type Message = {
   result?: ResultRef;
   pinned?: boolean;
 };
+
+// 마지막에 추가한 목록 위젯 메시지(빈 items)에 비동기로 받아온 items를 채워 넣는다.
+function patchLastListWidget(messages: Message[], type: string, items: ListItem[]): Message[] {
+  const idx = messages.map(m => m.meta?.widget?.type).lastIndexOf(type);
+  if (idx < 0) return messages;
+  return messages.map((m, i) =>
+    i === idx && m.meta?.widget
+      ? { ...m, meta: { ...m.meta, widget: { ...m.meta.widget, data: { ...m.meta.widget.data, items } } } }
+      : m,
+  );
+}
 
 function SendIcon() {
   return (
@@ -223,6 +239,63 @@ export default function ChatConversation({
         );
         attachImage(null);
         break;
+      case '/배치':
+      case '/AB':
+        addLocalAssistant(
+          '광고 2개를 동시에 비교하는 배치 시뮬레이션이에요. 아래에서 입력·실행하세요.',
+          { source: 'simulation', label: '배치 시뮬레이션', widget: { type: 'batch_sim_form' } },
+        );
+        break;
+      case '/리포트':
+        addLocalAssistant(
+          '성과 리포트예요. 아래에서 PDF로 받을 수 있어요.',
+          { source: 'simulation', label: '리포트', widget: { type: 'report_ready' } },
+        );
+        break;
+      case '/시뮬목록':
+        addLocalAssistant('최근 시뮬레이션 목록을 불러올게요.', {
+          source: 'simulation',
+          label: '내 시뮬레이션',
+          widget: { type: 'sim_list', mode: 'read', data: { items: [] } },
+        });
+        if (projectId) {
+          void api.projects
+            .simulations(projectId)
+            .then(rows => {
+              const items = rows.map(r => ({
+                id: String(r.id),
+                title: (r.ad_title as string) || '(제목 없음)',
+                status: r.status as string | undefined,
+                created_at: r.created_at as string | undefined,
+                sample_size: r.sample_size as number | undefined,
+              }));
+              setMessages(prev => patchLastListWidget(prev, 'sim_list', items));
+            })
+            .catch(() => {});
+        }
+        break;
+      case '/시안목록':
+        addLocalAssistant('최근 생성 광고 시안 목록을 불러올게요.', {
+          source: 'generator',
+          label: '내 광고 생성',
+          widget: { type: 'gen_list', mode: 'read', data: { items: [] } },
+        });
+        if (projectId) {
+          void api.projects
+            .generations(projectId)
+            .then(rows => {
+              const items = rows.map(r => ({
+                id: String(r.id),
+                title: (r.product_name as string) || '(제목 없음)',
+                status: r.status as string | undefined,
+                created_at: r.created_at as string | undefined,
+                mode: r.mode as string | undefined,
+              }));
+              setMessages(prev => patchLastListWidget(prev, 'gen_list', items));
+            })
+            .catch(() => {});
+        }
+        break;
       case '/비교':
         // 백엔드로 보내 시뮬 목록(비교 모드) 위젯을 받는다.
         handleSend('/비교');
@@ -234,6 +307,10 @@ export default function ChatConversation({
             '',
             '/시뮬레이션   광고 반응 시뮬레이션 입력 위젯',
             '/제너레이터   광고 시안 생성 입력 위젯',
+            '/배치(/AB)    광고 2개 동시 비교 시뮬레이션',
+            '/리포트       성과 PDF 리포트',
+            '/시뮬목록     최근 시뮬레이션 목록',
+            '/시안목록     최근 광고 시안 목록',
             '/비교         시뮬레이션 2개 KPI 비교',
             '/도움말       이 화면',
             '',

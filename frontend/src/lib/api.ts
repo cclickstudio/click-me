@@ -446,6 +446,11 @@ export const api = {
     create: (body: { name: string; description?: string }) =>
       request("/projects", { method: "POST", body: JSON.stringify(body) }),
     get: (id: string) => request(`/projects/${id}`),
+    // 프로젝트별 시뮬/생성 목록(배열 직접 반환) — 채팅 슬래시 /시뮬목록·/시안목록용.
+    simulations: (id: string, limit = 20) =>
+      request<Record<string, unknown>[]>(`/projects/${id}/simulations?limit=${limit}`),
+    generations: (id: string, limit = 20) =>
+      request<Record<string, unknown>[]>(`/projects/${id}/generations?limit=${limit}`),
   },
 
   billing: {
