@@ -51,10 +51,21 @@ def _frame(obj: dict) -> str:
 class ChatOrchestratorService:
     """슈퍼바이저 그래프를 구동하고 SSE 프레임을 생성하는 서비스."""
 
-    def __init__(self, *, graph, repo: ChatRepo, settings=None) -> None:
+    def __init__(self, *, graph, repo: ChatRepo, settings=None, checkpointer_close=None) -> None:
         self._graph = graph
         self._repo = repo
         self._settings = settings
+        self._checkpointer_close = checkpointer_close
+
+    async def aclose(self) -> None:
+        """체크포인터 풀 등 외부 리소스를 정리한다(미주입·noop·재호출에 안전).
+
+        use_mock(MemorySaver)면 noop 콜백이라 무해, 실연동(AsyncPostgresSaver)이면
+        psycopg 커넥션 풀을 닫는다. lifespan 종료 단계에서 1회 호출.
+        """
+        if self._checkpointer_close is not None:
+            await self._checkpointer_close()
+            self._checkpointer_close = None
 
     # ── 내부 헬퍼 ────────────────────────────────────────────────────────────
 

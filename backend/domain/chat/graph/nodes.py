@@ -36,6 +36,7 @@ class ChatGraphDeps:
     subagents: dict[str, SubAgent] = field(default_factory=dict)
     executor: object | None = None
     settings: object | None = None
+    clio: object | None = None  # general 라우트용 CLIO callable — 없으면 결정론 폴백
 
 
 def _card(pending: dict) -> dict:
@@ -158,13 +159,26 @@ class _Nodes:
 
     # ── synthesize ────────────────────────────────────────────────────────────
     async def synthesize(self, state: dict, config: Optional[RunnableConfig] = None) -> dict:  # noqa: UP045
+        from domain.chat.contracts.agent_io import Route  # noqa: PLC0415
+
         sub_results: list[dict] = state.get("sub_results") or []
         execution_result: dict | None = state.get("execution_result")
+        deps = self._d
 
-        # 서브에이전트 답변 — 없으면 기본 인사
-        if sub_results:
+        # general 라우트 + CLIO 주입됨 + 서브에이전트 답변 없음 → CLIO 호출
+        if state.get("route") == Route.GENERAL.value and deps.clio is not None and not sub_results:
+            try:
+                answer = await deps.clio(
+                    _last_user_text(state["messages"]),
+                    state.get("short_term") or [],
+                )
+            except Exception:  # noqa: BLE001 — CLIO 실패 시 결정론 폴백
+                answer = "무엇을 도와드릴까요?"
+        elif sub_results:
+            # 서브에이전트 답변(management/simulation/generation 라우트)
             answer = sub_results[-1].get("answer") or "결과를 가져왔습니다."
         else:
+            # general + CLIO 없음 — 결정론 폴백
             answer = "무엇을 도와드릴까요?"
 
         # 집행 결과 한 줄 추가

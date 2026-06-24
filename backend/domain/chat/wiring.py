@@ -78,15 +78,17 @@ def build_subagents(s=settings) -> dict:
 async def build_orchestrator(s=settings):
     """ChatOrchestratorService 조립 — llm·repo·memory·subagents·executor·checkpointer 주입.
 
-    체크포인터 close 콜백은 v1에서 lifespan에 연결하지 않는다(MemorySaver는 noop,
-    AsyncPostgresSaver 풀은 프로세스 종료 시 회수 — 후속에 lifespan 연결).
+    체크포인터 close 콜백은 서비스에 주입해 `service.aclose()`로 노출한다 — 라우터가
+    싱글톤을 보관하고 FastAPI lifespan 종료 단계에서 aclose()를 호출(풀 누수 방지).
+    use_mock 경로는 noop 콜백이라 aclose()도 무해하게 통과한다.
     """
+    from domain.chat.adapters.clio import build_clio
     from domain.chat.adapters.llm_factory import build_supervisor_llm
     from domain.chat.graph.builder import ChatGraphDeps, build_chat_graph
     from domain.chat.service.orchestrator import ChatOrchestratorService
     from domain.management.wiring import build_executor
 
-    saver, _close = await build_checkpointer(s)
+    saver, close = await build_checkpointer(s)
     repo = build_chat_repo(s)
     deps = ChatGraphDeps(
         llm=build_supervisor_llm(s),
@@ -95,6 +97,7 @@ async def build_orchestrator(s=settings):
         subagents=build_subagents(s),
         executor=build_executor(s),
         settings=s,
+        clio=build_clio(s),
     )
     graph = build_chat_graph(deps, checkpointer=saver)
-    return ChatOrchestratorService(graph=graph, repo=repo, settings=s)
+    return ChatOrchestratorService(graph=graph, repo=repo, settings=s, checkpointer_close=close)
