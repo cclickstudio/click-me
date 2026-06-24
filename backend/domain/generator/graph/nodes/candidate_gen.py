@@ -62,6 +62,7 @@ async def _generate_carousel(
     tone: str | None,
     product_cutout_bytes: bytes | None,
     logo_image_bytes: bytes | None,
+    improvement_context: str | None = None,
 ) -> dict:
     """캐러셀 — 공통 배경 1장 생성 후 슬라이드별 PIL 텍스트로 3장 구성."""
     emit_progress(config, "candidates", 45, "캐러셀 배경 생성 중...")
@@ -73,6 +74,7 @@ async def _generate_carousel(
         brand_color=brand_color,
         tone=tone,
         product_cutout_bytes=product_cutout_bytes,
+        improvement_context=improvement_context,
         headline="",
         body="",
         cta="",
@@ -138,6 +140,7 @@ async def generate_candidates(state: GenerationState, config: RunnableConfig) ->
     gen_size = _map_ad_size(width, height)
     brand_color = req.get("brand_color")
     tone = req.get("tone_and_manner")
+    improvement_context: str | None = state.get("improvement_context")
     product_image_bytes: bytes | None = state.get("product_image_bytes")
 
     logo_s3_key = req.get("brand_logo_s3_key")
@@ -175,6 +178,7 @@ async def generate_candidates(state: GenerationState, config: RunnableConfig) ->
             tone=tone,
             product_cutout_bytes=product_cutout_bytes,
             logo_image_bytes=logo_image_bytes,
+            improvement_context=improvement_context,
         )
 
     # 카피 3개를 LLM 1회 호출로 일괄 생성 (pipeline 모드일 때만).
@@ -194,7 +198,7 @@ async def generate_candidates(state: GenerationState, config: RunnableConfig) ->
                 )
                 for plan in plans
             ],
-            improvement_context=req.get("improvement_context"),
+            improvement_context=improvement_context,
         )
 
     async def build(idx: int, variant_id: str, plan: StrategyPlan, ad_copy) -> dict:
@@ -210,6 +214,7 @@ async def generate_candidates(state: GenerationState, config: RunnableConfig) ->
                 size=gen_size,
                 brand_color=brand_color,
                 tone=tone,
+                improvement_context=improvement_context,
             )
         else:
             # 1. 카피는 이미 배치 생성됨 — 이미지만 생성
@@ -222,6 +227,7 @@ async def generate_candidates(state: GenerationState, config: RunnableConfig) ->
                 brand_color=brand_color,
                 tone=tone,
                 product_cutout_bytes=product_cutout_bytes,
+                improvement_context=improvement_context,
                 headline=ad_copy.headline,
                 body=ad_copy.body,
                 cta=ad_copy.cta,

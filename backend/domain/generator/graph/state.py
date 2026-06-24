@@ -17,3 +17,5 @@ class GenerationState(TypedDict, total=False):
     error: str | None
     # 상품 이미지 직접 주입 (테스트용 — 추후 S3 키 다운로드로 전환)
     product_image_bytes: bytes | None
+    # 개선모드 — 전략 노드가 만든 개선 컨텍스트(카피·이미지 생성까지 전달)
+    improvement_context: str | None
