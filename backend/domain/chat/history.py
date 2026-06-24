@@ -9,7 +9,7 @@ from __future__ import annotations
 import uuid
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.db import AsyncSessionLocal
@@ -81,6 +81,29 @@ async def list_sessions(db: AsyncSession, project_id: str | None) -> list[dict]:
         }
         for s, count in rows.all()
     ]
+
+
+async def count_advice_usage(project_id: str | None) -> int:
+    """프로젝트의 비광고(일반 업무) 답변 수 — meta.usage_type='advice' COUNT(P12 한도)."""
+    pid = _as_uuid(project_id)
+    if pid is None:
+        return 0
+    try:
+        async with AsyncSessionLocal() as db:
+            row = await db.execute(
+                text("""
+                    SELECT COUNT(m.id)
+                    FROM chat_messages m
+                    JOIN chat_sessions s ON s.id = m.session_id
+                    WHERE s.project_id = :pid
+                      AND m.role = 'assistant'
+                      AND m.metadata->>'usage_type' = 'advice'
+                """),
+                {"pid": str(pid)},
+            )
+            return int(row.scalar() or 0)
+    except Exception:  # noqa: BLE001 — 카운트 실패가 채팅을 막지 않게
+        return 0
 
 
 async def get_messages(db: AsyncSession, session_id: str) -> list[dict]:

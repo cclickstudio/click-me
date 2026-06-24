@@ -780,6 +780,26 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
         }
 
     async def advise_node(state) -> dict:
+        base_meta = {"source": "orchestrator", "label": "CLIO", "engine": f"OpenAI · {model_name}"}
+        # 비광고(일반 업무) 질문 한도(P12) — 광고 관련은 무제한, 비광고만 카운트·차단.
+        is_ad = state.get("is_ad_domain", True)
+        if not is_ad:
+            limit = getattr(settings, "chat_advice_usage_limit", 20)
+            used = await history.count_advice_usage(state.get("project_id"))
+            if used >= limit:
+                print(f"[chat] advice limit reached used={used} limit={limit} — blocked")
+                return {
+                    "answer": (
+                        f"일반 업무 질문은 {limit}회까지예요(현재 {used}/{limit} 사용). "
+                        "광고·마케팅 질문(전략·시뮬·시안)은 무제한이니 언제든 물어보세요."
+                    ),
+                    "meta": {
+                        **base_meta,
+                        "advice_blocked": True,
+                        "advice_used": used,
+                        "advice_limit": limit,
+                    },
+                }
         # 롱텀 메모리 + 브랜드 프로파일을 시스템 프롬프트 앞에 주입(프로젝트 맥락).
         preamble = _format_brand(state.get("brand")) + _format_ltm(state.get("ltm") or [])
         msgs = [SystemMessage(content=preamble + _ADVISE_SYSTEM)]
@@ -790,10 +810,11 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
         msgs.append(HumanMessage(content=state["question"]))
         resp = await llm.ainvoke(msgs)
         ans = resp.content if isinstance(resp.content, str) else ""
-        return {
-            "answer": ans,
-            "meta": {"source": "orchestrator", "label": "CLIO", "engine": f"OpenAI · {model_name}"},
-        }
+        # 비광고 답변은 한도 카운트 대상으로 태그(meta.usage_type — 스키마 무변경).
+        meta = dict(base_meta)
+        if not is_ad:
+            meta["usage_type"] = "advice"
+        return {"answer": ans, "meta": meta}
 
     def route(state) -> str:
         return state.get("intent", "advise")

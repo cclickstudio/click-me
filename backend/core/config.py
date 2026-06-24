@@ -73,6 +73,9 @@ class Settings(BaseSettings):
     default_persona_count: int = Field(default=20, ge=1, le=1000)
     max_persona_count: int = Field(default=1000, ge=1)
 
+    # Chat — 비광고(일반 업무) 질문 한도. 광고 관련 질문은 무제한(P12).
+    chat_advice_usage_limit: int = Field(default=20, ge=1)
+
     # Meta / Instagram (Generator) — 비우면 Mock 게시 모드
     # App
     meta_app_id: str | None = None
