@@ -11,9 +11,7 @@ def _pair(pid: str, dim_z: dict, action: bool, weight: float = 1.0, qa: bool = T
     """합성 (persona, reaction) 한 쌍 — dim_z로 특정 차원만 높/낮게 세팅(나머지 0)."""
     ocean = dict.fromkeys(_DIMS, 0.0)
     ocean.update(dim_z)
-    persona = Persona(
-        persona_id=pid, age=30, gender="M", region="서울", ocean=ocean, weight=weight
-    )
+    persona = Persona(persona_id=pid, age=30, gender="M", region="서울", ocean=ocean, weight=weight)
     reaction = PersonaReaction(
         persona_id=pid,
         weight=weight,
