@@ -124,9 +124,16 @@ class Settings(BaseSettings):
     generator_image_model: str = "gpt-image-2"
     generator_image_quality: str = "medium"  # openai 전용(low|medium|high), google_genai는 무시
     generator_image_timeout: float = 120.0  # 무거운 이미지 모델 대비 호출 타임아웃(초)
-    # 이미지 편집(텍스트존 인페인팅)
+    # 이미지 편집(누끼 배경제거 — remove_product_background)
     generator_image_edit_provider: str = "openai"  # openai
     generator_image_edit_model: str = "gpt-image-1"
+    # ── 작업별 이미지 모델 오버라이드 (operation 단위 스위칭) ──
+    # 미설정(None)이면 위 기존 설정으로 폴백 → 기본 동작 불변. 해석은 cutout_*/inpaint_* 프로퍼티.
+    generator_cutout_provider: str | None = None  # 누끼 — 폴백: image_edit_provider
+    generator_cutout_model: str | None = None  # 누끼 — 폴백: image_edit_model
+    generator_cutout_quality: str | None = None  # 누끼 — 폴백: image_quality
+    generator_inpaint_provider: str | None = None  # 인페인팅 — 폴백: image_provider
+    generator_inpaint_model: str | None = None  # 인페인팅 — 폴백: image_model
     # 멀티모달 단일호출(이미지+카피) — GEN_MODE=multimodal 일 때만 사용
     generator_multimodal_provider: str = "openai"  # openai | google_genai
     generator_multimodal_model: str = "gpt-4o"  # Responses API 오케스트레이터(채팅 모델)
@@ -147,6 +154,27 @@ class Settings(BaseSettings):
     @classmethod
     def _toss_keys_must_be_test(cls, value: str) -> str:
         return require_test_key(value)
+
+    # ── 작업별 이미지 설정 해석 (오버라이드 없으면 기존 설정으로 폴백) ──
+    @property
+    def cutout_provider(self) -> str:
+        return self.generator_cutout_provider or self.generator_image_edit_provider
+
+    @property
+    def cutout_model(self) -> str:
+        return self.generator_cutout_model or self.generator_image_edit_model
+
+    @property
+    def cutout_quality(self) -> str:
+        return self.generator_cutout_quality or self.generator_image_quality
+
+    @property
+    def inpaint_provider(self) -> str:
+        return self.generator_inpaint_provider or self.generator_image_provider
+
+    @property
+    def inpaint_model(self) -> str:
+        return self.generator_inpaint_model or self.generator_image_model
 
 
 settings = Settings()

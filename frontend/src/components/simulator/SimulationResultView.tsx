@@ -339,6 +339,14 @@ export function SimulationResultView({
                 <h2 className='text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6] mb-3'>
                   광고 해석 (VLM/LLM 감지)
                 </h2>
+                {result.ad_asset_url && (
+                  // 업로드된 광고 크리에이티브 — presigned URL(~1h). 텍스트 시뮬이면 미표시.
+                  <img
+                    src={result.ad_asset_url}
+                    alt='광고 크리에이티브'
+                    className='mb-4 h-auto max-h-56 w-full object-contain rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-[#F9FAFB] dark:bg-[#11151F]'
+                  />
+                )}
                 <div className='grid grid-cols-2 md:grid-cols-4 gap-3 text-sm'>
                   {[
                     ['감지 업종', ad.detected_industry],

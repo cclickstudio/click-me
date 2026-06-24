@@ -290,6 +290,7 @@ async def list_project_generations(
             "id": str(r.id),
             "status": r.status,
             "product_name": (r.input or {}).get("product_name") if r.input else None,
+            "mode": (r.input or {}).get("mode", "create") if r.input else "create",
             "created_by_name": r.created_by_name,
             "created_at": r.created_at.isoformat(),
         }
@@ -308,15 +309,17 @@ async def get_simulation_detail(
         text("""
             SELECT s.id, s.status, s.sample_size, s.created_at, s.deleted_at,
                    u.name AS created_by_name,
-                   a.id AS ad_id, a.title AS ad_title,
+                   a.id AS ad_id, a.title AS ad_title, a.asset_url AS ad_asset_url,
                    p.id AS project_id, p.name AS project_name,
                    p.organization_id, p.team_id, p.created_by AS project_created_by,
-                   sr.distribution, sr.personas
+                   sr.distribution, sr.personas,
+                   sa.purchase_intent_avg, sa.rejection_rate, sa.trust_avg, sa.click_intent_rate
             FROM simulations s
             LEFT JOIN users u ON u.id = s.created_by
             JOIN ads a ON a.id = s.ad_id
             JOIN projects p ON p.id = a.project_id
             LEFT JOIN simulation_results sr ON sr.ad_id = s.ad_id
+            LEFT JOIN simulation_aggregates sa ON sa.simulation_id = s.id
             WHERE s.id = :sim_id
         """),
         {"sim_id": simulation_id},
@@ -330,6 +333,10 @@ async def get_simulation_detail(
             r.organization_id, r.team_id, r.project_created_by, current_user, org_id
         ):
             raise HTTPException(status_code=404, detail="시뮬레이션을 찾을 수 없습니다.")
+
+    def _num(v: object) -> float | None:
+        return float(v) if v is not None else None
+
     return {
         "id": str(r.id),
         "status": r.status,
@@ -340,6 +347,13 @@ async def get_simulation_detail(
         "created_by_name": r.created_by_name,
         "ad_id": str(r.ad_id),
         "ad_title": r.ad_title,
+        "ad_asset_url": r.ad_asset_url,  # 광고 이미지(URL/S3키/로컬경로 — 형식 제각각)
+        "aggregate": {
+            "purchase_intent": _num(r.purchase_intent_avg),
+            "rejection_rate": _num(r.rejection_rate),
+            "trust_avg": _num(r.trust_avg),
+            "click_intent_rate": _num(r.click_intent_rate),
+        },
         "project_id": str(r.project_id),
         "project_name": r.project_name,
         "deleted_at": r.deleted_at.isoformat() if r.deleted_at else None,

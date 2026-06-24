@@ -59,22 +59,26 @@ async def get_current_user(
     return user
 
 
-async def optional_user(
+async def get_current_user_optional(
     creds: HTTPAuthorizationCredentials | None = Depends(bearer),
     db: AsyncSession = Depends(get_db),
 ) -> User | None:
-    """토큰 있으면 검증된 ACTIVE 유저, 없거나 무효면 None (401 안 냄) — 선택적 인증용.
-
-    mock/데모는 무인증 허용, live는 org 스코프 — 둘을 한 엔드포인트에서 가르는 공용 의존성.
-    """
+    """토큰이 있으면 유저, 없거나 무효면 None(401 미발생). 점진 도입 중 채팅 등에 사용."""
     if not creds:
         return None
     try:
-        user_id: str = decode_token(creds.credentials)["sub"]
-    except (JWTError, KeyError):
+        payload = decode_token(creds.credentials)
+        user_id: str = payload["sub"]
+    except JWTError:
         return None
     user = await db.scalar(select(User).where(User.id == user_id))
-    return user if user and user.status == "ACTIVE" else None
+    if not user or user.status != "ACTIVE":
+        return None
+    return user
+
+
+# 선택적 인증 별칭 — 라우터는 optional_user 이름으로 사용(get_current_user_optional과 동일).
+optional_user = get_current_user_optional
 
 
 async def user_org_id(user: User, db: AsyncSession) -> uuid.UUID | None:

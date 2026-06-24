@@ -39,13 +39,18 @@ _PROMPT_TEMPLATE = """\
 레이아웃: {layout}
 브랜드 컬러: {brand_color}
 톤앤매너: {tone}
-
+{improvement_section}
 규칙:
 - 글자·문자·숫자·타이포그래피·워터마크·로고·QR 일절 금지 (순수 배경+제품 이미지).
 - 레이아웃에 명시된 텍스트 영역은 깨끗이 비워둔다.
 - 이미지와 함께, 사용할 카피를 다음 JSON 한 줄로 출력하세요:
   {{"headline": "...(20자 이내)", "body": "...(50자 이내)", "cta": "...(10자 이내)"}}
 - 카피는 오탈자·비문 없는 자연스러운 한국어."""
+
+_IMPROVE_SECTION = """
+개선 방향 (최우선 반영): {improvement_context}
+기존 광고의 문제를 해결하는 방향으로 배경과 카피를 구성하세요.
+"""
 
 
 def _build_prompt(
@@ -54,7 +59,13 @@ def _build_prompt(
     template: TemplateType,
     brand_color: str | None,
     tone: str | None,
+    improvement_context: str | None = None,
 ) -> str:
+    improvement_section = (
+        _IMPROVE_SECTION.format(improvement_context=improvement_context)
+        if improvement_context
+        else ""
+    )
     return _PROMPT_TEMPLATE.format(
         product_name=product_analysis.product_name,
         core_values=", ".join(product_analysis.core_values) or "-",
@@ -64,6 +75,7 @@ def _build_prompt(
         layout=_TEMPLATE_LAYOUT[template],
         brand_color=brand_color or "지정 없음",
         tone=tone or "깔끔하고 신뢰감 있게",
+        improvement_section=improvement_section,
     )
 
 
@@ -78,6 +90,7 @@ async def generate_image_and_copy(
     size: AdSize = AdSize.SQUARE,
     brand_color: str | None = None,
     tone: str | None = None,
+    improvement_context: str | None = None,
 ) -> tuple[bytes, AdCopy]:
     """한 번의 모델 호출로 완성형 광고 이미지 + 카피를 생성한다.
 
@@ -87,7 +100,9 @@ async def generate_image_and_copy(
     if provider != "openai":
         raise NotImplementedError(f"멀티모달 미지원 프로바이더: {provider!r} (현재 openai만 구현)")
 
-    prompt = _build_prompt(product_analysis, strategy, template, brand_color, tone)
+    prompt = _build_prompt(
+        product_analysis, strategy, template, brand_color, tone, improvement_context
+    )
 
     response = await _client.responses.create(
         model=settings.generator_multimodal_model,

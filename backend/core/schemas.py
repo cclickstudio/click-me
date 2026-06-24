@@ -151,6 +151,9 @@ class ChatRequest(BaseModel):
     messages: list[ChatMessage]
     context_ad_id: str | None = None
     context_simulation_id: str | None = None
+    improve_context: dict | None = (
+        None  # 개선 모드 컨텍스트 {s3_key, simulation_summary, product_name?}
+    )
 
 
 class InquiryCreate(BaseModel):

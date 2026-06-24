@@ -2,6 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { getToken } from '@/lib/authApi';
+import { useAuth } from '@/components/AuthProvider';
 import { api } from '@/lib/api';
 import type { DebateSessionMeta } from '@/lib/types';
 
@@ -9,7 +10,7 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
 export type Project = { id: string; name: string; status: string; description?: string | null; created_at?: string; created_by_name: string | null; organization_name: string | null; team_id: string | null; team_name: string | null };
 export type SimRow = { id: string; status: string; sample_size: number; ad_title: string | null; created_by_name: string | null; created_at: string };
-export type GenRow = { id: string; status: string; product_name: string | null; created_by_name: string | null; created_at: string };
+export type GenRow = { id: string; status: string; product_name: string | null; mode: string; created_by_name: string | null; created_at: string };
 
 export type TrashRow = { id: string; kind: 'sim' | 'gen'; label: string; deleted_at: string };
 type ProjectDetails = { sims: SimRow[]; gens: GenRow[]; trashed: TrashRow[]; loaded: boolean };
@@ -51,7 +52,8 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
   const [details, setDetails] = useState<Record<string, ProjectDetails>>({});
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [debates, setDebates] = useState<Record<string, DebateSessionMeta[]>>({});
-  const fetchedRef = useRef(false);
+  const { token } = useAuth();
+  const fetchedTokenRef = useRef<string | null>(null);
 
   const fetchProjects = useCallback(async () => {
     const token = getToken();
@@ -71,11 +73,14 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
+  // 토큰이 준비된 시점에 프로젝트를 1회 로드 — 로그인/세션 복원 후 패널 데이터를 채운다.
+  // (앱 마운트 1회로 묶으면 로그인 전 토큰 부재로 스킵돼, 이후 페이지마다 강제 refresh가 필요해진다.)
   useEffect(() => {
-    if (fetchedRef.current) return;
-    fetchedRef.current = true;
+    if (!token) { fetchedTokenRef.current = null; return; }
+    if (fetchedTokenRef.current === token) return;
+    fetchedTokenRef.current = token;
     fetchProjects();
-  }, []);
+  }, [token, fetchProjects]);
 
   // 활성 프로젝트를 localStorage에 고정 — 페이지 이동·새로고침 후에도 유지(생성 내역 누락 방지).
   useEffect(() => {

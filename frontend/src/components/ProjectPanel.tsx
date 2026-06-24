@@ -6,6 +6,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useProjects, type SimRow } from './ProjectContext';
 import { useAuth } from './AuthProvider';
 import TrashSection from './TrashSection';
+import ModeBadge from './ModeBadge';
 import { getToken } from '@/lib/authApi';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
@@ -360,8 +361,9 @@ export function ProjectItem({
                       >
                         <span className={`w-2 h-2 rounded-full shrink-0 ${statusColor[g.status] ?? 'bg-[#B0B8C1]'}`} />
                         <div className="flex-1 min-w-0">
-                          <p className={`text-xs truncate ${isActive ? 'text-[#3182F6] font-medium' : 'text-[#4E5968] dark:text-[#9CA3AF] group-hover:text-[#3182F6]'}`}>
-                            {g.product_name ?? '—'} · {g.created_by_name ?? '—'}
+                          <p className={`text-xs truncate flex items-center gap-1.5 ${isActive ? 'text-[#3182F6] font-medium' : 'text-[#4E5968] dark:text-[#9CA3AF] group-hover:text-[#3182F6]'}`}>
+                            <ModeBadge mode={g.mode} />
+                            <span className="truncate">{g.product_name ?? '—'} · {g.created_by_name ?? '—'}</span>
                           </p>
                           <p className="text-[10px] text-[#B0B8C1] dark:text-[#4B5563]">{fmt(g.created_at)}</p>
                         </div>
