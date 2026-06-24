@@ -26,6 +26,9 @@ dependencies = [
     "psycopg2-binary>=2.9.0",
     "pgvector>=0.3.0",
     "alembic>=1.13.0",
+    # LangGraph 체크포인터(Postgres) — HITL thread 영속(checkpoints* 테이블)
+    "langgraph-checkpoint-postgres>=2.0.0",
+    "psycopg[binary,pool]>=3.2.0",
     # AWS
     "boto3>=1.35.0",
     "aioboto3>=13.0.0",

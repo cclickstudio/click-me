@@ -106,6 +106,21 @@ class Settings(BaseSettings):
     management_diagnosis_model: str = "gpt-4o-mini"
     management_diagnosis_temperature: float = 0.0
 
+    # Embedding (KB·LTM 공유 — 동일 모델·차원 필수. spec §6.1/§9)
+    # provider=bge_m3(기본): TEI/Ollama 로컬 서빙 1024차원.
+    # provider=openai: 1536(별도 마이그레이션 필요).
+    # USE_MOCK 또는 키 부재 시 wiring이 MockEmbeddingProvider(embedding_dim 차원) 반환.
+    embedding_provider: str = "bge_m3"  # bge_m3 | openai | mock
+    embedding_model: str = "bge-m3"
+    embedding_dim: int = 1024
+    embedding_base_url: str = "http://localhost:8080"  # TEI /embed 엔드포인트
+    openai_embedding_model: str = "text-embedding-3-small"  # provider=openai 폴백(1536)
+
+    # Chat orchestrator (Phase ③-B에서 사용 — 기반 단계는 설정만 선반영)
+    chat_orchestrator_provider: str = "anthropic"  # anthropic | openai | google_genai
+    chat_orchestrator_model: str = "claude-sonnet-4-6"
+    chat_orchestrator_temperature: float = 0.3
+
     # Generator (광고 생성)
     # 생성 방식: pipeline=카피·이미지 단계 분리 / multimodal=한 모델이 이미지+카피 동시 생성
     generator_gen_mode: str = "pipeline"  # pipeline | multimodal
