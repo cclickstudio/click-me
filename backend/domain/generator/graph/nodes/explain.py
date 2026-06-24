@@ -63,13 +63,19 @@ async def explain_candidates(state: GenerationState, config: RunnableConfig) -> 
     prompt = f"제품명: {product_name}\n타겟: {target}\n\n" + "\n\n".join(candidate_blocks)
     response = await _batch_llm.ainvoke([("system", _SYSTEM), ("user", prompt)])
 
+    # LLM이 후보 수와 다른 개수의 rationale을 반환할 수 있어 개수에 맞춰 정렬한다.
+    rationales = list(response.rationales)
     explanations = [
         CandidateExplanation(
             applied_target=meta["applied_target"],
             applied_strategy=meta["applied_strategy"],
             applied_template=meta["applied_template"],
-            rationale=rationale,
+            rationale=(
+                rationales[i]
+                if i < len(rationales)
+                else meta["applied_strategy"] or "해당 타겟에 적합한 전략을 적용했습니다."
+            ),
         ).model_dump()
-        for meta, rationale in zip(metas, response.rationales, strict=True)
+        for i, meta in enumerate(metas)
     ]
     return {"explanations": explanations}
