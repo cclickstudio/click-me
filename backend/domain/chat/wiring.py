@@ -1,5 +1,5 @@
 # 챗 Composition Root — 어댑터를 포트에 꽂는 유일한 지점(mock↔실연동 전환).
-"""build_embedding_provider만 우선. chat_repo·memory_store·checkpointer는 후속 Task에서 추가."""
+"""임베딩·repo·memory·checkpointer·subagents·graph·orchestrator 빌더의 단일 조립 지점."""
 
 from __future__ import annotations
 
@@ -59,3 +59,42 @@ async def build_checkpointer(s=settings):
     from domain.chat.checkpointer import build_async_checkpointer
 
     return await build_async_checkpointer(s.database_url)
+
+
+def build_subagents(s=settings) -> dict:
+    """라우트 값 → SubAgent. general은 서브에이전트 없음(synthesize 직행)."""
+    from domain.chat.adapters.generator_subagent import GeneratorSubAgent
+    from domain.chat.adapters.management_subagent import ManagementSubAgent
+    from domain.chat.adapters.simulation_subagent import SimulationSubAgent
+    from domain.chat.contracts.agent_io import Route
+
+    return {
+        Route.MANAGEMENT.value: ManagementSubAgent(settings=s),
+        Route.SIMULATION.value: SimulationSubAgent(),
+        Route.GENERATION.value: GeneratorSubAgent(),
+    }
+
+
+async def build_orchestrator(s=settings):
+    """ChatOrchestratorService 조립 — llm·repo·memory·subagents·executor·checkpointer 주입.
+
+    체크포인터 close 콜백은 v1에서 lifespan에 연결하지 않는다(MemorySaver는 noop,
+    AsyncPostgresSaver 풀은 프로세스 종료 시 회수 — 후속에 lifespan 연결).
+    """
+    from domain.chat.adapters.llm_factory import build_supervisor_llm
+    from domain.chat.graph.builder import ChatGraphDeps, build_chat_graph
+    from domain.chat.service.orchestrator import ChatOrchestratorService
+    from domain.management.wiring import build_executor
+
+    saver, _close = await build_checkpointer(s)
+    repo = build_chat_repo(s)
+    deps = ChatGraphDeps(
+        llm=build_supervisor_llm(s),
+        repo=repo,
+        memory=build_memory_store(s),
+        subagents=build_subagents(s),
+        executor=build_executor(s),
+        settings=s,
+    )
+    graph = build_chat_graph(deps, checkpointer=saver)
+    return ChatOrchestratorService(graph=graph, repo=repo, settings=s)
