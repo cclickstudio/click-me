@@ -179,3 +179,16 @@ async def test_generator_trigger_missing_fields_is_graceful():
         SubAgentRequest(question="시안 만들어줘")
     )  # product 필드 누락 → ValidationError
     assert out.route is Route.GENERATION and out.error is not None
+
+
+def test_simulation_subagent_get_service_import_path(monkeypatch):
+    # 회귀 가드 — _get_service의 build_simulation_service import 경로 유효성.
+    # 잘못된 모듈이면 ImportError. 키 없으면 RuntimeError(정상 — import는 성공).
+    monkeypatch.delenv("GEMINI_API_KEY", raising=False)
+    sub = SimulationSubAgent()
+    try:
+        sub._get_service()
+    except ImportError as e:  # noqa: TRY203
+        raise AssertionError(f"build_simulation_service import 경로 오류: {e}") from e
+    except Exception:  # noqa: BLE001  키 없음 등 — import 성공을 의미
+        pass

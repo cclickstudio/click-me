@@ -26,7 +26,7 @@ class SimulationSubAgent:
     def _get_service(self) -> Any:
         if self._service is None:
             from core.config import settings
-            from domain.simulation.service.simulation_service import build_simulation_service
+            from domain.simulation.wiring import build_simulation_service
 
             self._service = build_simulation_service(settings)
         return self._service
