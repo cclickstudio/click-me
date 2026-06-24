@@ -32,20 +32,19 @@ from tools.storage.s3 import (
     download_bytes,
     presign_get,
     publish_key,
+    temp_product_image_key,
     upload_bytes,
 )
 
 logger = logging.getLogger("clickme")
 
 _tasks: dict[str, dict] = {}
-# 상품 이미지 임시 저장소 — 테스트용, 추후 S3 방식으로 전환
-_product_image_store: dict[str, bytes] = {}
 
 
 async def store_temp_image(data: bytes) -> str:
-    """상품 이미지를 메모리에 임시 저장하고 temp_key를 반환한다."""
-    key = str(uuid.uuid4())
-    _product_image_store[key] = data
+    """상품 이미지를 S3에 임시 저장하고 S3 키를 반환한다."""
+    key = temp_product_image_key(str(uuid.uuid4()))
+    await upload_bytes(data, key, content_type="image/png")
     return key
 
 
@@ -77,15 +76,9 @@ async def start_generation(
         )
         await session.commit()
 
-    # 상품 이미지 bytes를 task store에 주입 (pipeline이 state로 전달받음)
-    product_image_bytes: bytes | None = None
-    if request.product_image_temp_key:
-        product_image_bytes = _product_image_store.get(request.product_image_temp_key)
-
     _tasks[generation_id] = {
         "status": "pending",
         "events": [],
-        "product_image_bytes": product_image_bytes,
     }
     asyncio.create_task(_run_pipeline(generation_id, request, created_by=created_by))
     return generation_id
@@ -118,9 +111,15 @@ async def _run_pipeline(
             "generation_id": generation_id,
             "request": request.model_dump(),
         }
-        product_image_bytes: bytes | None = store.pop("product_image_bytes", None)
-        if product_image_bytes is not None:
-            initial_state["product_image_bytes"] = product_image_bytes
+        if request.product_image_temp_key:
+            try:
+                product_image_bytes = await download_bytes(request.product_image_temp_key)
+                initial_state["product_image_bytes"] = product_image_bytes
+            except Exception:
+                logger.warning(
+                    "상품 이미지 S3 다운로드 실패, 상품 없이 진행: key=%s",
+                    request.product_image_temp_key,
+                )
 
         final_state = await generation_graph.ainvoke(initial_state, config=config)
 

@@ -35,6 +35,11 @@ def publish_key(generation_id: str, idx: int) -> str:
     return f"generated-ads/{generation_id}/candidate-{idx}-publish.jpg"
 
 
+def temp_product_image_key(temp_id: str) -> str:
+    """상품 이미지 임시 저장 S3 키 — 서버 재시작 후에도 유지, 생성 파이프라인 내부 전달용."""
+    return f"temp-product-images/{temp_id}.png"
+
+
 async def upload_bytes(data: bytes, key: str, content_type: str = "image/png") -> str:
     """바이트를 S3에 업로드하고 키를 반환한다."""
     async with _session.client("s3") as s3:
