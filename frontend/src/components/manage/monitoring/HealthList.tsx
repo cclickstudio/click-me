@@ -1,6 +1,7 @@
 // 캠페인 건강신호 리스트 — 심각도순 + 지출 추세 스파크라인·7일 델타·페이싱 추정·노출 피로.
 import Link from 'next/link';
 import type { CampaignSummary } from '@/components/manage/campaigns/types';
+import { metricsBlocked, pacingMeaningful } from '@/components/manage/campaigns/types';
 import { StateBadge } from '@/components/manage/campaigns/StateBadge';
 import { campaignHealth, frequencyFatigue, LEVEL_STYLE, SEVERITY } from './health';
 import { pacingProjection, PACING_LABEL } from './pacing';
@@ -60,7 +61,9 @@ export function HealthList({
         const h = campaignHealth(c);
         const s = LEVEL_STYLE[h.level];
         const fatigue = frequencyFatigue(c);
-        const pacing = c.state === 'active' ? pacingProjection(c.pacing_pct, now) : null;
+        const blocked = metricsBlocked(c);
+        const showPacing = pacingMeaningful(c); // 종료·권한없음·총예산은 소진율 의미 없음
+        const pacing = c.state === 'active' && showPacing ? pacingProjection(c.pacing_pct, now) : null;
         const series = spendSeries[c.campaign_id] ?? [];
         // 마지막 점은 진행 중인 '오늘'(부분치) — 추세·델타는 완료일끼리만 비교(오전 허위 하락 방지).
         const trend = series.length >= 2 ? series.slice(0, -1) : series;
@@ -80,12 +83,16 @@ export function HealthList({
             </div>
             <div className="flex-1 min-w-0">
               <div className="flex items-center justify-between text-[11px] text-[#8B95A1] mb-1">
-                <span>소진율 {c.pacing_pct.toFixed(0)}%</span>
+                <span>
+                  소진율 {showPacing ? `${c.pacing_pct.toFixed(0)}%` : blocked ? '권한 없음' : '—'}
+                </span>
                 <span className="tabular-nums">
-                  노출 {c.impressions.toLocaleString()} · ₩{c.spend_krw.toLocaleString()}
+                  {blocked
+                    ? '권한 없음'
+                    : `노출 ${c.impressions.toLocaleString()} · ₩${c.spend_krw.toLocaleString()}`}
                 </span>
               </div>
-              <PacingBar pct={c.pacing_pct} alert={c.pacing_pct >= 90} />
+              <PacingBar pct={showPacing ? c.pacing_pct : 0} alert={showPacing && c.pacing_pct >= 90} />
               <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
                 {pacing && pacing.status !== 'unknown' && (
                   <span

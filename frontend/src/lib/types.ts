@@ -164,6 +164,8 @@ export interface SimRunResult {
   // OCEAN 성향별 반응 분해(결과 해석) — 즉시 결과 경로에만 포함(콜드 DB 재로드 시 없음).
   ocean_segments?: OceanSegments | null;
   simulation_id?: string;
+  // 업로드된 광고 이미지의 표시용 URL(presigned, ~1h). 텍스트 시뮬·로컬폴백이면 없음.
+  ad_asset_url?: string | null;
 }
 
 export interface SimCategoryKind {
@@ -733,6 +735,22 @@ export interface GenerationDetail {
   created_at: string;
   candidates: GeneratorCandidate[];
   publish_logs: GenerationPublishLog[];
+}
+
+export interface BrandKit {
+  id: string;
+  name: string;
+  brand_color: string | null;
+  brand_logo_key: string | null;
+  tone_and_manner: string | null;
+  created_at: string;
+}
+
+export interface BrandKitInput {
+  name: string;
+  brand_color?: string | null;
+  brand_logo_key?: string | null;
+  tone_and_manner?: string | null;
 }
 
 export interface PublishResult {

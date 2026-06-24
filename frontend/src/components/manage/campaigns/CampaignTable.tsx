@@ -10,10 +10,11 @@ import type {
   ManualKpiMap,
   PlatformMetrics,
 } from './types';
-import { fmtCvr, fmtRoas } from './types';
+import { budgetLabel, fmtCvr, fmtRoas, metricsBlocked, pacingMeaningful } from './types';
 import { StateBadge } from './StateBadge';
 import { CampaignDetail } from './CampaignDetail';
 import { KpiInput } from './KpiInput';
+import { Blocked } from './MetricGuard';
 import { OriginTag } from '../ValueOrigin';
 
 export function CampaignTable({
@@ -95,32 +96,42 @@ export function CampaignTable({
                       목표 미달
                     </span>
                   )}
+                  {metricsBlocked(c) && (
+                    <span
+                      title="권한 없음 — Meta에서 이 캠페인 지표를 불러올 권한이 없어요."
+                      className="rounded-md bg-[#F2F4F6] px-1.5 py-0.5 text-[10px] font-semibold text-[#8B95A1] dark:bg-[#2D3748] dark:text-[#9CA3AF]"
+                    >
+                      권한 없음
+                    </span>
+                  )}
                 </span>
               </td>
               <td className="px-3 py-3 text-right tabular-nums text-[#191F28] dark:text-[#F2F4F6]">
-                ₩{c.daily_budget_krw.toLocaleString()}
+                {budgetLabel(c)}
               </td>
               <td className="px-3 py-3 text-right tabular-nums text-[#191F28] dark:text-[#F2F4F6]">
-                {c.impressions.toLocaleString()}
+                {metricsBlocked(c) ? <Blocked label="—" /> : c.impressions.toLocaleString()}
               </td>
               <td className="px-3 py-3 text-right tabular-nums text-[#191F28] dark:text-[#F2F4F6] hidden sm:table-cell">
-                {c.clicks.toLocaleString()}
+                {metricsBlocked(c) ? <Blocked label="—" /> : c.clicks.toLocaleString()}
               </td>
               <td className="px-3 py-3 text-right tabular-nums text-[#191F28] dark:text-[#F2F4F6]">
-                ₩{c.spend_krw.toLocaleString()}
+                {metricsBlocked(c) ? <Blocked label="—" /> : `₩${c.spend_krw.toLocaleString()}`}
               </td>
               <td className="px-3 py-3 text-right tabular-nums text-[#191F28] dark:text-[#F2F4F6] hidden md:table-cell">
-                {(c.ctr * 100).toFixed(1)}%
+                {metricsBlocked(c) ? <Blocked label="—" /> : `${(c.ctr * 100).toFixed(1)}%`}
               </td>
               <td className="px-3 py-3 text-right tabular-nums text-[#191F28] dark:text-[#F2F4F6] hidden md:table-cell">
-                ₩{c.cpc_krw.toLocaleString()}
+                {metricsBlocked(c) ? <Blocked label="—" /> : `₩${c.cpc_krw.toLocaleString()}`}
               </td>
               <td className="px-3 py-3 text-right tabular-nums text-[#191F28] dark:text-[#F2F4F6] hidden lg:table-cell">
-                ₩{c.cpm_krw.toLocaleString()}
+                {metricsBlocked(c) ? <Blocked label="—" /> : `₩${c.cpm_krw.toLocaleString()}`}
               </td>
               <td className="px-3 py-3 text-right tabular-nums text-[#191F28] dark:text-[#F2F4F6] hidden lg:table-cell">
-                {/* 실측(전환 데이터) 있으면 읽기전용, 미설정이면 직접 입력(추정) */}
-                {c.conversions == null ? (
+                {/* 권한 없음 > 실측 있으면 읽기전용 > 미설정이면 직접 입력(추정) */}
+                {metricsBlocked(c) ? (
+                  <Blocked label="—" />
+                ) : c.conversions == null ? (
                   <KpiInput
                     manual={manualKpi?.[c.campaign_id]?.cvr}
                     unit="%"
@@ -131,7 +142,9 @@ export function CampaignTable({
                 )}
               </td>
               <td className="px-3 py-3 text-right tabular-nums hidden lg:table-cell">
-                {c.conversions == null ? (
+                {metricsBlocked(c) ? (
+                  <Blocked label="—" />
+                ) : c.conversions == null ? (
                   <KpiInput
                     manual={manualKpi?.[c.campaign_id]?.roas}
                     unit="x"
@@ -149,10 +162,16 @@ export function CampaignTable({
                 )}
               </td>
               <td className="px-4 py-3 text-right">
-                {c.state === 'ended' ? (
-                  <span className="text-xs text-[#8B95A1]">종료</span>
-                ) : (
+                {pacingMeaningful(c) ? (
                   <PacingCell pct={c.pacing_pct} />
+                ) : (
+                  <span className="text-xs text-[#8B95A1]">
+                    {c.state === 'ended'
+                      ? '종료'
+                      : metricsBlocked(c)
+                        ? '권한 없음'
+                        : '—'}
+                  </span>
                 )}
               </td>
               <td className="px-2 py-3 text-center whitespace-nowrap">

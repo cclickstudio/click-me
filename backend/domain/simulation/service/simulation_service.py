@@ -181,6 +181,8 @@ class SimulationService:
                 "aggregate": aggregate_dump,
                 # OCEAN 성향별 반응 분해(결과 해석) — 연령×성별 외 '성격 축'. 빈 입력이면 빈 구조.
                 "ocean_segments": ocean_segment_breakdown(personas, reaction_objs),
+                # 상세 페이지 표시용 — 업로드 시 presigned URL, 외부 URL이면 그대로, 로컬폴백이면 경로.
+                "ad_asset_url": request.ad_image_url,
             }
             # 캠페인 목표 달성 가능성(결정론 룰) — 목표 선언 + 집계가 있을 때만(exploratory).
             if request.ad_objective and aggregate_obj is not None:

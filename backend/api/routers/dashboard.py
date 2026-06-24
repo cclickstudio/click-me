@@ -33,6 +33,7 @@ class RecentGeneration(BaseModel):
     id: str
     status: str
     product_name: str | None
+    mode: str  # create | improve (input JSONB에서 읽음)
     created_at: datetime
 
 
@@ -98,6 +99,7 @@ async def get_recent_generations(limit: int = 5, db: AsyncSession = Depends(get_
             id=str(r.id),
             status=r.status,
             product_name=(r.input or {}).get("product_name"),
+            mode=(r.input or {}).get("mode", "create"),
             created_at=r.created_at,
         )
         for r in rows

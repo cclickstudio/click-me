@@ -15,7 +15,7 @@ import type {
   ManualKpi,
   PlatformMetrics,
 } from './types';
-import { fmtCvr, fmtRoas } from './types';
+import { budgetLabel, fmtCvr, fmtRoas, metricsBlocked, pacingMeaningful } from './types';
 import { StateBadge } from './StateBadge';
 import { OriginLegend, OriginTag } from '../ValueOrigin';
 
@@ -112,6 +112,8 @@ export function CampaignDetail({
   onChanged?: () => void; // 게재시작/일시중지/정산 후 대시보드 목록·잔액 갱신
 }) {
   const s = detail.summary;
+  const dBlocked = metricsBlocked(detail); // 권한 거부로 상세 지표 못 불러옴
+  const showPacing = pacingMeaningful(detail); // 소진율 퍼센트 의미 있는 캠페인만
   const live = source === 'live';
   // 종료/중단 사유 — 데이터(상태·종료일·잔액)로 조립. 충전해도 재개 안 되는 경우 구분.
   const endReason = (() => {
@@ -348,42 +350,62 @@ export function CampaignDetail({
 
       {/* 전달 → 효율 → 전환·예산 순, 4×3 정렬 */}
       <OriginLegend className="mt-4" />
+      {dBlocked && (
+        <p className="mt-3 rounded-lg bg-[#F2F4F6] px-3 py-2 text-[12px] text-[#8B95A1] dark:bg-[#2D3748] dark:text-[#9CA3AF]">
+          <span className="font-semibold">권한 없음</span> · Meta에서 이 캠페인의 지표를 불러올
+          권한이 없어요. 토큰 권한(스코프)·광고계정 자산 권한을 확인해 주세요. (예산·상태는 표시됨)
+        </p>
+      )}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 mt-2">
-        <Tile label="노출" value={s.impressions.toLocaleString()} />
-        <Tile label="클릭" value={s.clicks.toLocaleString()} />
-        <Tile label="도달" value={s.reach.toLocaleString()} />
-        <Tile label="지출" value={`₩${s.spend_krw.toLocaleString()}`} />
-        <Tile label="CTR(클릭률)" value={`${(s.ctr * 100).toFixed(1)}%`} />
-        <Tile label="CPC(클릭당비용)" value={`₩${s.cpc_krw.toLocaleString()}`} />
-        <Tile label="CPM(노출당비용)" value={`₩${s.cpm_krw.toLocaleString()}`} />
-        <Tile label="빈도" value={s.frequency.toFixed(2)} />
+        <Tile label="노출" value={dBlocked ? '—' : s.impressions.toLocaleString()} />
+        <Tile label="클릭" value={dBlocked ? '—' : s.clicks.toLocaleString()} />
+        <Tile label="도달" value={dBlocked ? '—' : s.reach.toLocaleString()} />
+        <Tile label="지출" value={dBlocked ? '—' : `₩${s.spend_krw.toLocaleString()}`} />
+        <Tile label="CTR(클릭률)" value={dBlocked ? '—' : `${(s.ctr * 100).toFixed(1)}%`} />
+        <Tile label="CPC(클릭당비용)" value={dBlocked ? '—' : `₩${s.cpc_krw.toLocaleString()}`} />
+        <Tile label="CPM(노출당비용)" value={dBlocked ? '—' : `₩${s.cpm_krw.toLocaleString()}`} />
+        <Tile label="빈도" value={dBlocked ? '—' : s.frequency.toFixed(2)} />
         <Tile
           label="CVR(전환율)"
-          value={manualKpi?.cvr != null ? `${manualKpi.cvr}% (추정)` : fmtCvr(s.cvr, s.conversions)}
+          value={
+            dBlocked
+              ? '—'
+              : manualKpi?.cvr != null
+                ? `${manualKpi.cvr}% (추정)`
+                : fmtCvr(s.cvr, s.conversions)
+          }
         />
         <Tile
           label="ROAS(투자수익률)"
           value={
-            manualKpi?.roas != null
-              ? `${manualKpi.roas}x (추정)`
-              : fmtRoas(s.roas, s.conversions, s.roas_estimated) +
-                (s.target_missed ? ' · 목표↓' : '')
+            dBlocked
+              ? '—'
+              : manualKpi?.roas != null
+                ? `${manualKpi.roas}x (추정)`
+                : fmtRoas(s.roas, s.conversions, s.roas_estimated) +
+                  (s.target_missed ? ' · 목표↓' : '')
           }
         />
         <Tile
-          label="일예산(하루 상한)"
-          value={`₩${detail.daily_budget_krw.toLocaleString()}`}
+          label={detail.budget_type === 'lifetime' ? '총예산' : '일예산(하루 상한)'}
+          value={budgetLabel(detail)}
           origin="setting"
         />
         <div className="flex items-center gap-2.5 rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] px-3 py-2.5">
-          <PacingRing pct={detail.state === 'ended' ? 0 : s.pacing_pct} />
+          <PacingRing pct={showPacing ? s.pacing_pct : 0} />
           <div>
             <p className="text-[12px] text-[#8B95A1]">
-              {detail.state === 'ended' ? '게재' : '소진율'}
-              {detail.state !== 'ended' && <OriginTag origin="computed" />}
+              {showPacing ? '소진율' : '게재'}
+              {showPacing && <OriginTag origin="computed" />}
             </p>
             <p className="text-base font-bold text-[#191F28] dark:text-[#F2F4F6] tabular-nums mt-0.5">
-              {detail.state === 'ended' ? '종료' : `${s.pacing_pct.toFixed(0)}%`}
+              {showPacing
+                ? `${s.pacing_pct.toFixed(0)}%`
+                : detail.state === 'ended'
+                  ? '종료'
+                  : dBlocked
+                    ? '권한 없음'
+                    : '—'}
             </p>
           </div>
         </div>
