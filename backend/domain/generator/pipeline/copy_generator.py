@@ -121,24 +121,25 @@ _BATCH_USER_TEMPLATE = """\
 - "스마트 퀄랄리" ✗  ← 비문
 {improvement_section}
 ---
-아래 후보 3개 각각의 전략과 레이아웃에 맞는 카피를 작성해 copies 배열로 반환하세요.
+아래 후보 3개 각각의 전략·레이아웃에 맞는 카피를 작성해 copies 배열로 반환하세요.
+각 후보의 서브 키워드는 1~2개를 자연스럽게 문구에 녹이세요.
 
 ## 후보 1
 전략: {strategy_1}
 전략 근거: {rationale_1}
-서브 키워드(자연스럽게 1~2개 녹여서 반영): {keywords_1}
+서브 키워드: {keywords_1}
 레이아웃: {layout_1}
 
 ## 후보 2
 전략: {strategy_2}
 전략 근거: {rationale_2}
-서브 키워드(자연스럽게 1~2개 녹여서 반영): {keywords_2}
+서브 키워드: {keywords_2}
 레이아웃: {layout_2}
 
 ## 후보 3
 전략: {strategy_3}
 전략 근거: {rationale_3}
-서브 키워드(자연스럽게 1~2개 녹여서 반영): {keywords_3}
+서브 키워드: {keywords_3}
 레이아웃: {layout_3}"""
 
 
