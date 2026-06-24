@@ -7,6 +7,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import uuid
 from collections.abc import AsyncIterator
 
@@ -15,6 +16,10 @@ from domain.simulation.contracts.schemas import SimulationRunRequest
 from domain.simulation.tools.objective_fit import assess_objective_fit
 
 logger = logging.getLogger("clickme")
+
+# 반응 팬아웃 동시성 상한 — 과부하 엔드포인트에 1000콜을 한꺼번에 쏘지 않도록 제한(503 증폭 방지).
+# LangGraph가 config.max_concurrency 로 Send fan-out 병렬 수를 제한한다. 환경변수로 튜닝 가능.
+_MAX_REACTION_CONCURRENCY = int(os.getenv("SIMULATION_MAX_CONCURRENCY", "8"))
 
 
 def _ad_block(request: SimulationRunRequest) -> dict:
@@ -105,6 +110,8 @@ class SimulationService:
                 },
                 extra_tags=["batch"] if request.sample_size > 10 else None,
             )
+            # 반응 fan-out 병렬 수 제한(503 증폭 방지). preamble 노드는 단일이라 영향 없음.
+            trace_config["max_concurrency"] = _MAX_REACTION_CONCURRENCY
             ad_dump: dict | None = None
             rubric_dump: list[dict] = []
             reactions: list[dict] = []
