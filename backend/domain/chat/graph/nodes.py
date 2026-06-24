@@ -1,0 +1,187 @@
+# 슈퍼바이저 그래프 노드 팩토리 — load_context·supervisor·delegate·interrupt·execute·synthesize.
+"""ChatGraphDeps 클로저로 노드를 생성한다. 각 노드: async def(state, config=None).
+
+multi-step ReAct(연쇄 위임)는 deferred — v1은 단일 위임(1 turn)만 지원한다.
+"""
+
+from __future__ import annotations
+
+import uuid
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Optional
+
+from langchain_core.messages import AIMessage
+from langgraph.types import RunnableConfig, interrupt
+
+from domain.chat.adapters.execution import execute_chat_action
+from domain.chat.contracts.agent_io import ProposedAction, SubAgentRequest
+from domain.chat.graph.supervisor import _last_user_text, decide_route
+
+if TYPE_CHECKING:
+    from domain.chat.contracts.ports import ChatRepo, MemoryStore, SubAgent
+
+# 단일 위임 v1 안전망 — 다중 위임(ReAct) 구현 전까지 상한 도달 시 synthesize로 빠진다.
+# TODO(다중위임): _after_delegate에 delegations >= _MAX_DELEGATIONS 초과 시
+# synthesize로 분기 추가 — ReAct 도입 시 구현.
+_MAX_DELEGATIONS = 4
+
+
+@dataclass
+class ChatGraphDeps:
+    """그래프 빌더에 주입되는 의존성 묶음."""
+
+    llm: object
+    repo: ChatRepo | None
+    memory: MemoryStore | None
+    subagents: dict[str, SubAgent] = field(default_factory=dict)
+    executor: object | None = None
+    settings: object | None = None
+
+
+def _card(pending: dict) -> dict:
+    """승인 카드 요약 — interrupt 값으로 노출되는 최소 정보."""
+    return {
+        "tier": pending["tier"],
+        "action_type": pending["action_type"],
+        "target_campaign_id": pending.get("target_campaign_id"),
+        "rationale": pending["rationale"],
+    }
+
+
+class _Nodes:
+    """의존성을 클로저로 바인딩한 노드 컨테이너."""
+
+    def __init__(self, deps: ChatGraphDeps) -> None:
+        self._d = deps
+
+    # ── load_context ──────────────────────────────────────────────────────────
+    async def load_context(self, state: dict, config: Optional[RunnableConfig] = None) -> dict:  # noqa: UP045
+        deps = self._d
+        session_id = (config or {}).get("configurable", {}).get("thread_id")
+        short_term: list[dict] = []
+        long_term: list[dict] = []
+
+        if deps.repo and session_id:
+            try:
+                msgs = await deps.repo.get_messages(uuid.UUID(session_id), limit=20)
+                short_term = [{"role": m.role, "content": m.content} for m in msgs]
+            except Exception:  # noqa: BLE001 — DB 없으면 빈 리스트로 계속
+                short_term = []
+
+        if deps.memory:
+            try:
+                hits = await deps.memory.recall(
+                    query=_last_user_text(state["messages"]),
+                    project_id=state.get("project_id"),
+                    user_id=state.get("user_id"),
+                    k=5,
+                    salience_floor=0.9,
+                )
+                long_term = [h.content for h in hits]
+            except Exception:  # noqa: BLE001
+                long_term = []
+
+        return {
+            "short_term": short_term,
+            "long_term": long_term,
+            "pending_action": None,
+            "route": "",
+        }
+
+    # ── supervisor ───────────────────────────────────────────────────────────
+    async def supervisor(self, state: dict, config: Optional[RunnableConfig] = None) -> dict:  # noqa: UP045
+        route = await decide_route(state["messages"], self._d.llm)
+        return {"route": route.value}
+
+    # ── delegate ─────────────────────────────────────────────────────────────
+    async def delegate(self, state: dict, config: Optional[RunnableConfig] = None) -> dict:  # noqa: UP045
+        deps = self._d
+        route = state["route"]
+        sub = deps.subagents.get(route)
+        delegations = state.get("delegations", 0) + 1
+
+        if sub is None:
+            return {
+                "sub_results": [{"route": route, "error": "no subagent"}],
+                "delegations": delegations,
+            }
+
+        req = SubAgentRequest(
+            question=_last_user_text(state["messages"]),
+            context_ids=state.get("context_ids") or {},
+            knobs=(state.get("context_ids") or {}).get("knobs", {}),
+        )
+        result = await sub.run(req)
+        update: dict = {
+            "sub_results": [result.model_dump()],
+            "citations": [c.model_dump() for c in result.citations],
+            "delegations": delegations,
+        }
+
+        if result.proposed_action and result.proposed_action.requires_approval:
+            update["pending_action"] = result.proposed_action.model_dump()
+
+        return update
+
+    # ── interrupt_node ────────────────────────────────────────────────────────
+    async def interrupt_node(self, state: dict, config: Optional[RunnableConfig] = None) -> dict:  # noqa: UP045
+        # interrupt()는 반드시 첫 문장 — LangGraph가 이 지점에서 그래프를 멈추고
+        # resume 값을 이 함수의 반환값으로 주입한다(두 번째 ainvoke 시).
+        decision = interrupt({"approval_request": _card(state["pending_action"])})
+        return {"approval_decision": decision}
+
+    # ── execute ───────────────────────────────────────────────────────────────
+    async def execute(self, state: dict, config: Optional[RunnableConfig] = None) -> dict:  # noqa: UP045
+        deps = self._d
+        pa_dict = state["pending_action"]
+        decision = state.get("approval_decision") or {}
+        pa = ProposedAction(**pa_dict)
+
+        from domain.management.wiring import resolve_execution_mode  # noqa: PLC0415
+
+        mode = resolve_execution_mode(deps.settings)
+        try:
+            result = await execute_chat_action(
+                pa,
+                tenant_id=str(state.get("organization_id") or "org_demo"),
+                approver_id=str(decision.get("approver_id") or "user"),
+                executor=deps.executor,
+                execution_mode=mode,
+            )
+            return {
+                "execution_result": (
+                    result.model_dump(mode="json") if result is not None else {"deferred": True}
+                )
+            }
+        except Exception as e:  # noqa: BLE001
+            return {"execution_result": {"error": str(e)}}
+
+    # ── synthesize ────────────────────────────────────────────────────────────
+    async def synthesize(self, state: dict, config: Optional[RunnableConfig] = None) -> dict:  # noqa: UP045
+        sub_results: list[dict] = state.get("sub_results") or []
+        execution_result: dict | None = state.get("execution_result")
+
+        # 서브에이전트 답변 — 없으면 기본 인사
+        if sub_results:
+            answer = sub_results[-1].get("answer") or "결과를 가져왔습니다."
+        else:
+            answer = "무엇을 도와드릴까요?"
+
+        # 집행 결과 한 줄 추가
+        if execution_result:
+            if "error" in execution_result:
+                answer += f"\n집행 실패: {execution_result['error']}"
+            elif execution_result.get("deferred"):
+                answer += "\n매니지먼트 화면에서 완료하세요."
+            else:
+                answer += "\n집행 완료."
+
+        return {
+            "final_answer": answer,
+            "messages": [AIMessage(content=answer)],
+        }
+
+
+def make_nodes(deps: ChatGraphDeps) -> _Nodes:
+    """ChatGraphDeps → 바인딩된 노드 컨테이너 반환."""
+    return _Nodes(deps)
