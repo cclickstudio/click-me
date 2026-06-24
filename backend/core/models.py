@@ -150,31 +150,6 @@ class Ad(Base):
     project: Mapped["Project"] = relationship(back_populates="ads")
 
 
-class SimulationResult(Base):
-    __tablename__ = "simulation_results"
-
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    ad_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("ads.id"))
-    persona_count: Mapped[int] = mapped_column(Integer)
-    distribution: Mapped[dict] = mapped_column(JSONB)  # 구매의향 분포 데이터
-    personas: Mapped[dict] = mapped_column(JSONB)  # 페르소나 배열
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
-
-    ad: Mapped["Ad"] = relationship()  # 단방향(Ad.simulations 레거시 관계 제거됨)
-
-
-class AdEmbedding(Base):
-    """광고 벡터 임베딩 (RAG / A·B 비교용)."""
-
-    __tablename__ = "ad_embeddings"
-
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    ad_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("ads.id"))
-    content: Mapped[str] = mapped_column(Text)
-    embedding: Mapped[list[float]] = mapped_column(Vector(1536))
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
-
-
 class ManagementKbChunk(Base):
     """매니지먼트 지식베이스 청크 (에이전틱 RAG) — 정책·플레이북·KPI 규칙의 벡터 검색."""
 

@@ -163,9 +163,6 @@ async def delete_company(
         f"OR ad_id IN (SELECT id FROM ads WHERE project_id IN ({proj_sub}))",
         p,
     )
-    await db.execute(
-        text(f"DELETE FROM simulation_comparisons WHERE project_id IN ({proj_sub})"), p
-    )
     # 2. 프로젝트 하위 광고·생성·채팅
     await _purge_ads(db, f"SELECT id FROM ads WHERE project_id IN ({proj_sub})", p)
     await _purge_generations(
@@ -173,8 +170,7 @@ async def delete_company(
     )
     await db.execute(text(f"DELETE FROM chat_sessions WHERE project_id IN ({proj_sub})"), p)
     await db.execute(text("DELETE FROM projects WHERE organization_id = :org"), p)
-    # 3. 구독·멤버·유저 계정
-    await db.execute(text("DELETE FROM organization_subscriptions WHERE organization_id = :org"), p)
+    # 3. 멤버·유저 계정
     member_users = (
         (
             await db.execute(

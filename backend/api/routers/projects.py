@@ -56,14 +56,8 @@ async def _purge_simulations(db: AsyncSession, sim_ids_sql: str, params: dict) -
         f"DELETE FROM persona_debate_participants WHERE debate_id IN "
         f"(SELECT id FROM persona_debates WHERE simulation_id IN ({sim_ids_sql}))",
         f"DELETE FROM persona_debates WHERE simulation_id IN ({sim_ids_sql})",
-        f"DELETE FROM recommendations WHERE simulation_id IN ({sim_ids_sql}) "
-        f"OR diagnosis_id IN (SELECT id FROM diagnoses WHERE simulation_id IN ({sim_ids_sql}))",
-        f"DELETE FROM diagnoses WHERE simulation_id IN ({sim_ids_sql})",
         f"DELETE FROM persona_responses WHERE simulation_id IN ({sim_ids_sql})",
-        f"DELETE FROM reports WHERE simulation_id IN ({sim_ids_sql})",
         f"DELETE FROM simulation_aggregates WHERE simulation_id IN ({sim_ids_sql})",
-        f"DELETE FROM simulation_comparisons "
-        f"WHERE simulation_a_id IN ({sim_ids_sql}) OR simulation_b_id IN ({sim_ids_sql})",
         f"DELETE FROM simulations WHERE id IN ({sim_ids_sql})",
     ]
     for s in stmts:
@@ -73,8 +67,6 @@ async def _purge_simulations(db: AsyncSession, sim_ids_sql: str, params: dict) -
 async def _purge_ads(db: AsyncSession, ad_ids_sql: str, params: dict) -> None:
     """광고와 자식 레코드를 삭제. (시뮬은 먼저 _purge_simulations로 제거할 것)"""
     stmts = [
-        f"DELETE FROM simulation_results WHERE ad_id IN ({ad_ids_sql})",
-        f"DELETE FROM ad_embeddings WHERE ad_id IN ({ad_ids_sql})",
         f"DELETE FROM rubric_scores WHERE ad_analysis_id IN "
         f"(SELECT id FROM ad_analyses WHERE ad_id IN ({ad_ids_sql}))",
         f"DELETE FROM ad_analyses WHERE ad_id IN ({ad_ids_sql})",
@@ -100,7 +92,6 @@ async def _purge_project(db: AsyncSession, project_id: str) -> None:
         "SELECT id FROM simulations WHERE ad_id IN (SELECT id FROM ads WHERE project_id = :pid)",
         p,
     )
-    await db.execute(text("DELETE FROM simulation_comparisons WHERE project_id = :pid"), p)
     await _purge_ads(db, "SELECT id FROM ads WHERE project_id = :pid", p)
     await _purge_generations(db, "SELECT id FROM ad_generations WHERE project_id = :pid", p)
     await db.execute(text("DELETE FROM chat_sessions WHERE project_id = :pid"), p)
@@ -310,13 +301,11 @@ async def get_simulation_detail(
                    u.name AS created_by_name,
                    a.id AS ad_id, a.title AS ad_title,
                    p.id AS project_id, p.name AS project_name,
-                   p.organization_id, p.team_id, p.created_by AS project_created_by,
-                   sr.distribution, sr.personas
+                   p.organization_id, p.team_id, p.created_by AS project_created_by
             FROM simulations s
             LEFT JOIN users u ON u.id = s.created_by
             JOIN ads a ON a.id = s.ad_id
             JOIN projects p ON p.id = a.project_id
-            LEFT JOIN simulation_results sr ON sr.ad_id = s.ad_id
             WHERE s.id = :sim_id
         """),
         {"sim_id": simulation_id},
@@ -334,8 +323,8 @@ async def get_simulation_detail(
         "id": str(r.id),
         "status": r.status,
         "sample_size": r.sample_size,
-        "result": r.distribution,
-        "persona_results": r.personas,
+        "result": None,
+        "persona_results": None,
         "created_at": r.created_at.isoformat(),
         "created_by_name": r.created_by_name,
         "ad_id": str(r.ad_id),
