@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import io
+import math
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -20,6 +22,12 @@ _FONT_LIGHT = str(_FONT_LIGHT_PATH) if _FONT_LIGHT_PATH.exists() else _FONT_REGU
 _DEFAULT_ACCENT = (37, 99, 235)  # brand_color 없을 때 기본 강조색(파랑)
 _WHITE = (255, 255, 255, 255)
 _LIGHT = (235, 235, 235, 255)
+_GOLD = (245, 180, 40, 255)  # 별점 골드
+_INK = (34, 34, 34, 255)  # 리뷰 카드 본문 다크
+_GRAY = (110, 110, 110, 255)  # 리뷰 카드 보조 텍스트
+
+# 숫자 토큰(할인율·수량·기간 등) — 단어에 숫자가 포함되면 강조 대상으로 본다.
+_NUM_RE = re.compile(r"\d")
 
 
 def _contrast_stroke(color: tuple[int, int, int, int]) -> tuple[int, int, int, int]:
@@ -219,6 +227,131 @@ def _draw_cta(
     draw.text((bx + pad_x, by + (btn_h - text_h) // 2), line, font=font, fill=txt)
 
 
+def _draw_highlighted(
+    draw: ImageDraw.ImageDraw,
+    text: str,
+    rect: tuple[int, int, int, int],
+    font_path: str,
+    max_size: int,
+    base_color: tuple[int, int, int, int],
+    accent: tuple[int, int, int],
+    align: str,
+) -> None:
+    """헤드라인을 그리되 숫자가 포함된 단어만 강조색으로 칠한다(혜택 강조)."""
+    if not text:
+        return
+    x0, y0, x1, y1 = rect
+    box_w, box_h = x1 - x0, y1 - y0
+    font, _, line_h = _fit(draw, text, font_path, box_w, box_h, max_size)
+    space_w = draw.textlength(" ", font=font)
+    # 단어 단위 줄바꿈(숫자 포함 단어 = 강조)
+    lines: list[list[str]] = []
+    cur: list[str] = []
+    cur_w = 0.0
+    for word in text.split():
+        ww = draw.textlength(word, font=font)
+        add = ww + (space_w if cur else 0)
+        if cur and cur_w + add > box_w:
+            lines.append(cur)
+            cur, cur_w, add = [], 0.0, ww
+        cur.append(word)
+        cur_w += add
+    if cur:
+        lines.append(cur)
+
+    accent_rgba = (*accent, 255)
+    y = y0 + (box_h - line_h * len(lines)) // 2
+    for line in lines:
+        line_w = sum(draw.textlength(w, font=font) for w in line) + space_w * (len(line) - 1)
+        x = x0 + (box_w - int(line_w)) // 2 if align == "center" else x0
+        for word in line:
+            fill = accent_rgba if _NUM_RE.search(word) else base_color
+            draw.text((x, y), word, font=font, fill=fill)
+            x += int(draw.textlength(word, font=font) + space_w)
+        y += line_h
+
+
+def _draw_star(draw: ImageDraw.ImageDraw, x: float, y: float, s: float, color=_GOLD) -> None:
+    """좌상단 (x,y), 폭 s의 5각 별 하나를 채워 그린다."""
+    cx, cy = x + s / 2, y + s / 2
+    r_out, r_in = s / 2, s / 2 * 0.42
+    pts = []
+    for i in range(10):
+        r = r_out if i % 2 == 0 else r_in
+        ang = -math.pi / 2 + i * math.pi / 5
+        pts.append((cx + r * math.cos(ang), cy + r * math.sin(ang)))
+    draw.polygon(pts, fill=color)
+
+
+def _draw_stars(
+    draw: ImageDraw.ImageDraw, x: float, y: float, size: float, count: int = 5, color=_GOLD
+) -> None:
+    """별 count개를 가로로 나란히 그린다(별 한 개 폭 = size)."""
+    gap = size * 0.28
+    for i in range(count):
+        _draw_star(draw, x + i * (size + gap), y, size, color)
+
+
+def _draw_review_card(
+    base: Image.Image,
+    headline: str,
+    body: str,
+    cta: str,
+    accent: tuple[int, int, int],
+    w: int,
+    h: int,
+) -> Image.Image:
+    """UGC 리뷰 카드 — 반투명 흰 카드에 별점·인용·리뷰어·CTA를 배치(사회적 증거)."""
+    x0, y0 = int(0.06 * w), int(0.26 * h)
+    x1, y1 = int(0.52 * w), int(0.80 * h)
+    cw, ch = x1 - x0, y1 - y0
+    pad = int(cw * 0.07)
+    radius = int(min(cw, ch) * 0.05)
+
+    # 카드 배경은 오버레이로 합성해 반투명 알파를 보장.
+    overlay = Image.new("RGBA", base.size, (0, 0, 0, 0))
+    ImageDraw.Draw(overlay).rounded_rectangle(
+        [x0, y0, x1, y1], radius=radius, fill=(255, 255, 255, 235)
+    )
+    base = Image.alpha_composite(base, overlay)
+    draw = ImageDraw.Draw(base)
+
+    ix0, ix1 = x0 + pad, x1 - pad
+    ih = ch - 2 * pad
+    y = float(y0 + pad)
+
+    def zone(frac: float) -> tuple[int, int]:
+        nonlocal y
+        top = int(y)
+        y += ih * frac
+        return top, int(y)
+
+    t, b = zone(0.12)  # 별점
+    _draw_stars(draw, ix0, t, (b - t) * 0.9)
+    y += ih * 0.03
+    t, b = zone(0.30)  # 인용(헤드라인)
+    _draw_block(draw, headline, (ix0, t, ix1, b), _FONT_BOLD, int((b - t) * 0.42), _INK, "left")
+    y += ih * 0.02
+    t, b = zone(0.18)  # 본문
+    _draw_block(draw, body, (ix0, t, ix1, b), _FONT_REGULAR, int((b - t) * 0.5), _GRAY, "left")
+    y += ih * 0.03
+    t, b = zone(0.12)  # 리뷰어(아바타 + 닉네임)
+    av = b - t
+    name = "구매 고객"
+    draw.ellipse([ix0, t, ix0 + av, t + av], fill=(*accent, 255))
+    af = ImageFont.truetype(_FONT_BOLD, max(12, int(av * 0.5)))
+    aw = draw.textlength(name[0], font=af)
+    aasc, adesc = af.getmetrics()
+    draw.text((ix0 + (av - aw) / 2, t + (av - aasc - adesc) / 2), name[0], font=af, fill=_WHITE)
+    nf = ImageFont.truetype(_FONT_BOLD, max(12, int(av * 0.42)))
+    nasc, ndesc = nf.getmetrics()
+    draw.text((ix0 + av + pad * 0.4, t + (av - nasc - ndesc) / 2), name, font=nf, fill=_INK)
+    y += ih * 0.02
+    t, b = zone(0.16)  # CTA
+    _draw_cta(draw, cta, (ix0, t, ix1, b), accent, "left", TemplateType.A)
+    return base
+
+
 def render_ad_text(
     image_bytes: bytes,
     headline: str,
@@ -249,6 +382,13 @@ def render_ad_text(
     else:
         headline_color, body_color = _WHITE, _LIGHT
 
+    # review_card는 자체 카드 레이아웃을 그리고 바로 반환(템플릿 존 미사용).
+    if style == "review_card":
+        base = _draw_review_card(base, headline, body, cta, accent, w, h)
+        out = io.BytesIO()
+        base.save(out, format="PNG")
+        return out.getvalue()
+
     # 스타일별 폰트·여백·외곽선/그림자.
     if style == "emotional":
         head_font, body_font, size_factor = _FONT_LIGHT, _FONT_LIGHT, 0.82
@@ -268,17 +408,31 @@ def render_ad_text(
         base = Image.alpha_composite(base, overlay)
 
     draw = ImageDraw.Draw(base)
-    _draw_block(
-        draw,
-        headline,
-        _px(spec.headline.box, w, h),
-        head_font,
-        int(h * spec.headline.max_ratio * size_factor),
-        headline_color,
-        spec.headline.align,
-        stroke_fill=head_stroke,
-        shadow=floating,
-    )
+    highlight = profile is not None and profile.highlight_numbers and bool(_NUM_RE.search(headline))
+    if highlight:
+        # 혜택 강조 box — 헤드라인 숫자만 강조색으로(예: "첫 구매 50% 할인").
+        _draw_highlighted(
+            draw,
+            headline,
+            _px(spec.headline.box, w, h),
+            head_font,
+            int(h * spec.headline.max_ratio * size_factor),
+            headline_color,
+            accent,
+            spec.headline.align,
+        )
+    else:
+        _draw_block(
+            draw,
+            headline,
+            _px(spec.headline.box, w, h),
+            head_font,
+            int(h * spec.headline.max_ratio * size_factor),
+            headline_color,
+            spec.headline.align,
+            stroke_fill=head_stroke,
+            shadow=floating,
+        )
     _draw_block(
         draw,
         body,

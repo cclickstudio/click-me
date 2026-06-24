@@ -7,7 +7,7 @@ from typing import Literal
 
 from domain.generator.contracts.enums import AdStrategy
 
-TextStyle = Literal["box", "floating", "emotional"]
+TextStyle = Literal["box", "floating", "emotional", "review_card"]
 
 # 텍스트 색(RGBA) 팔레트
 _WHITE = (255, 255, 255, 255)
@@ -26,6 +26,7 @@ class StyleProfile:
     - product_fill: 누끼 compose에서 상품이 프레임에서 차지할 비중(0~1, 짧은 변 기준).
     - headline_color/body_color: 텍스트 색(RGBA). box 외 스타일은 2단계에서 사용.
     - accent_override: CTA·강조색 강제(브랜드컬러 무시). FOMO 깊은 빨강 등.
+    - highlight_numbers: 헤드라인 속 숫자(할인율·수량 등)를 강조색으로 렌더(혜택 강조용).
     """
 
     text_style: TextStyle
@@ -33,13 +34,14 @@ class StyleProfile:
     headline_color: tuple[int, int, int, int]
     body_color: tuple[int, int, int, int]
     accent_override: str | None = None
+    highlight_numbers: bool = False
 
 
 # 전략 5종의 확정 프로필 (context-notes.md 표 기준).
 STRATEGY_STYLE: dict[AdStrategy, StyleProfile] = {
-    AdStrategy.BENEFIT: StyleProfile("box", 0.55, _WHITE, _LIGHT),
+    AdStrategy.BENEFIT: StyleProfile("box", 0.55, _WHITE, _LIGHT, highlight_numbers=True),
     AdStrategy.PROBLEM_SOLVING: StyleProfile("floating", 0.25, _DARK_GRAY, _MID_GRAY),
-    AdStrategy.SOCIAL_PROOF: StyleProfile("floating", 0.25, _DARK_GRAY, _MID_GRAY),
+    AdStrategy.SOCIAL_PROOF: StyleProfile("review_card", 0.25, _DARK_GRAY, _MID_GRAY),
     AdStrategy.EMOTIONAL: StyleProfile("emotional", 0.20, _OFF_WHITE, _BROWN),
     AdStrategy.FOMO: StyleProfile("box", 0.45, _WHITE, _WHITE, accent_override="#C81E1E"),
 }
