@@ -328,25 +328,13 @@ def _draw_review_card(
 
     t, b = zone(0.12)  # 별점
     _draw_stars(draw, ix0, t, (b - t) * 0.9)
-    y += ih * 0.03
-    t, b = zone(0.30)  # 인용(헤드라인)
+    y += ih * 0.04
+    t, b = zone(0.34)  # 인용(헤드라인)
     _draw_block(draw, headline, (ix0, t, ix1, b), _FONT_BOLD, int((b - t) * 0.42), _INK, "left")
-    y += ih * 0.02
-    t, b = zone(0.18)  # 본문
+    y += ih * 0.04
+    t, b = zone(0.24)  # 본문
     _draw_block(draw, body, (ix0, t, ix1, b), _FONT_REGULAR, int((b - t) * 0.5), _GRAY, "left")
-    y += ih * 0.03
-    t, b = zone(0.12)  # 리뷰어(아바타 + 닉네임)
-    av = b - t
-    name = "구매 고객"
-    draw.ellipse([ix0, t, ix0 + av, t + av], fill=(*accent, 255))
-    af = ImageFont.truetype(_FONT_BOLD, max(12, int(av * 0.5)))
-    aw = draw.textlength(name[0], font=af)
-    aasc, adesc = af.getmetrics()
-    draw.text((ix0 + (av - aw) / 2, t + (av - aasc - adesc) / 2), name[0], font=af, fill=_WHITE)
-    nf = ImageFont.truetype(_FONT_BOLD, max(12, int(av * 0.42)))
-    nasc, ndesc = nf.getmetrics()
-    draw.text((ix0 + av + pad * 0.4, t + (av - nasc - ndesc) / 2), name, font=nf, fill=_INK)
-    y += ih * 0.02
+    y += ih * 0.04
     t, b = zone(0.16)  # CTA
     _draw_cta(draw, cta, (ix0, t, ix1, b), accent, "left", TemplateType.A)
     return base
