@@ -5,6 +5,7 @@ import psycopg2
 import pytest
 
 import core.models  # noqa: F401  매핑 등록
+import domain.chat.models  # noqa: F401  챗 ORM 등록(chat_sessions·messages·ltm·brand)
 from core.db import Base
 from domain.simulation.models import SimBase  # 시뮬은 별도 metadata(SimBase)
 
