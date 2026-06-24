@@ -157,6 +157,7 @@ export default function ChatConversation({
   const [attachedImage, setAttachedImage] = useState<File | null>(null);
   const [attachedPreview, setAttachedPreview] = useState<string | null>(null);
   const pendingImageRef = useRef<File | null>(null);
+  const abortRef = useRef<AbortController | null>(null); // 스트리밍 중단(P3)
   const fileInputRef = useRef<HTMLInputElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
@@ -424,10 +425,13 @@ export default function ChatConversation({
       const sid = sidRef.current;
       if (isStreaming || !sid) return;
       setIsStreaming(true);
+      const controller = new AbortController();
+      abortRef.current = controller;
       try {
         const res = await fetch(`${API_BASE}/api/chat/approve`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          signal: controller.signal,
           body: JSON.stringify({ action, session_id: sid, project_id: projectId }),
         });
         if (!res.ok || !res.body) {
@@ -435,12 +439,15 @@ export default function ChatConversation({
           return;
         }
         await consumeStream(res);
-      } catch {
-        setMessages((prev) => [
-          ...prev,
-          { role: 'assistant', content: '진행 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.' },
-        ]);
+      } catch (e) {
+        if ((e as Error)?.name !== 'AbortError') {
+          setMessages((prev) => [
+            ...prev,
+            { role: 'assistant', content: '진행 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.' },
+          ]);
+        }
       } finally {
+        abortRef.current = null;
         setIsStreaming(false);
         onProgress?.(null);
         onActivity?.();
@@ -647,10 +654,13 @@ export default function ChatConversation({
         }
       }
 
+      const controller = new AbortController();
+      abortRef.current = controller;
       try {
         const res = await fetch(`${API_BASE}/api/chat/complete`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          signal: controller.signal,
           body: JSON.stringify({
             session_id: sid,
             project_id: projectId,
@@ -672,12 +682,16 @@ export default function ChatConversation({
         await consumeStream(res);
         // 시뮬/생성 결과가 도착한 턴이면 완료 알림(플로팅 배지 등, T18).
         if (resultRef) onResultComplete?.(resultRef);
-      } catch {
-        setMessages((prev) => [
-          ...prev,
-          { role: 'assistant', content: '서버에 연결할 수 없습니다. 잠시 후 다시 시도해주세요.' },
-        ]);
+      } catch (e) {
+        // 사용자가 중단(■) → 부분 응답 유지, 에러 메시지 없음.
+        if ((e as Error)?.name !== 'AbortError') {
+          setMessages((prev) => [
+            ...prev,
+            { role: 'assistant', content: '서버에 연결할 수 없습니다. 잠시 후 다시 시도해주세요.' },
+          ]);
+        }
       } finally {
+        abortRef.current = null;
         setIsStreaming(false);
         onProgress?.(null);
         pendingImageRef.current = null;
@@ -1008,13 +1022,26 @@ export default function ChatConversation({
             className="flex-1 px-4 py-3 rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] text-sm text-[#191F28] dark:text-[#F2F4F6] placeholder-[#B0B8C1] dark:placeholder-[#4B5563] focus:outline-none focus:border-[#3182F6] focus:ring-2 focus:ring-[#3182F6]/10 transition-colors resize-none overflow-hidden bg-white dark:bg-[#252D3D] leading-relaxed disabled:opacity-60"
             style={{ maxHeight: '120px' }}
           />
-          <button
-            onClick={() => handleSend()}
-            disabled={!input.trim() || isStreaming}
-            className="p-3 bg-[#3182F6] text-white rounded-xl hover:bg-[#1B6EEB] disabled:opacity-30 disabled:cursor-not-allowed transition-all shrink-0"
-          >
-            <SendIcon />
-          </button>
+          {isStreaming ? (
+            <button
+              onClick={() => abortRef.current?.abort()}
+              aria-label="응답 중단"
+              title="응답 중단"
+              className="p-3 bg-[#F04452] text-white rounded-xl hover:bg-[#D93C48] transition-all shrink-0"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+                <rect x="6" y="6" width="12" height="12" rx="2" />
+              </svg>
+            </button>
+          ) : (
+            <button
+              onClick={() => handleSend()}
+              disabled={!input.trim()}
+              className="p-3 bg-[#3182F6] text-white rounded-xl hover:bg-[#1B6EEB] disabled:opacity-30 disabled:cursor-not-allowed transition-all shrink-0"
+            >
+              <SendIcon />
+            </button>
+          )}
         </div>
       </div>
     </div>
