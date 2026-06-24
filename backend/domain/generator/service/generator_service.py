@@ -23,7 +23,7 @@ from core.models import AdCampaignLog, AdGeneration, AdGenerationCandidate, AdPu
 from core.tracing import make_trace_config
 from domain.generator.adapters.instagram import build_publisher
 from domain.generator.adapters.meta_ads import AdvertiseRequest, build_ads_publisher
-from domain.generator.contracts.enums import TemplateType
+from domain.generator.contracts.enums import AdStrategy, TemplateType
 from domain.generator.contracts.schemas import GenerationCreateRequest
 from domain.generator.graph.pipeline import generation_graph
 from domain.generator.pipeline.relayout import render_platform
@@ -333,6 +333,13 @@ async def render_candidate(candidate_id: str, platform: str) -> bytes | None:
         gen_id = str(candidate.generation_id)
         copy = candidate.copy or {}
         template_id = candidate.template_id
+        strat_raw = (candidate.strategy or {}).get("strategy_type")
+
+    # strategy 복원 — 없거나 잘못된 값이면 None (box 폴백)
+    try:
+        strategy = AdStrategy(strat_raw) if strat_raw else None
+    except ValueError:
+        strategy = None
 
     try:
         base_bytes = await download_bytes(candidate_base_key(gen_id, idx))
@@ -354,6 +361,7 @@ async def render_candidate(candidate_id: str, platform: str) -> bytes | None:
         platform=platform,
         brand_color=gen_input.get("brand_color"),
         logo_bytes=logo_bytes,
+        strategy=strategy,
     )
 
 
