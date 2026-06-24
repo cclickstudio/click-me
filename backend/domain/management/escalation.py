@@ -157,7 +157,7 @@ class EscalationController:
         """run_id로 사다리 run 조회 — 라우터의 tenant 소유 검증용(읽기 전용)."""
         return await self._store.get_by_run_id(run_id)
 
-    @traceable(name="management.remediation", run_type="chain")
+    @traceable(name="management.remediation", run_type="chain", tags=["management"])
     async def re_evaluate(
         self, tenant_id: str, ad_account_id: str, campaign_id: str, *, now: datetime
     ) -> EscalationOutcome:

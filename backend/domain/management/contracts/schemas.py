@@ -91,6 +91,8 @@ class CampaignInfo(Contract):
     name: str
     state: CampaignState
     daily_budget_krw: int = Field(ge=0)
+    lifetime_budget_krw: int = Field(default=0, ge=0)  # 총예산(일예산 대신 쓰는 캠페인)
+    budget_type: str = "daily"  # "daily" | "lifetime" | "none" — 일예산 표시·소진율 적용 분기
     ended_at: str | None = None  # 게재 종료일(ISO) — 캠페인 stop_time 또는 광고세트 종료일
 
 
