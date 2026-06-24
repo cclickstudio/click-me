@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,6 +24,12 @@ from core.models import (
 _BRAND_FIELDS = ("brand_name", "tone", "target_audience", "product_category", "keywords")
 
 _DEFAULT_TITLE = "새 채팅"
+
+
+def _utcnow() -> datetime:
+    """naive UTC — DB의 created_at(server_default=func.now(), UTC)과 같은 기준으로 저장.
+    로컬 KST 머신의 datetime.now()(naive 로컬)와 달리 타임존이 일관돼 프론트 KST 변환이 맞다."""
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 def _as_uuid(value: str | uuid.UUID | None) -> uuid.UUID | None:
@@ -118,7 +124,7 @@ async def append_turn(
     # 첫 사용자 발화로 제목 자동 설정(기본 제목일 때만).
     if session.title == _DEFAULT_TITLE and user_content.strip():
         session.title = user_content.strip()[:60]
-    session.updated_at = datetime.now()
+    session.updated_at = _utcnow()
     await db.commit()
     # 10턴 초과 시 앞 대화를 요약·압축(best-effort, 모크/키 없으면 생략).
     await summarize_and_compress(str(sid), str(session.project_id) if session.project_id else None)
@@ -138,7 +144,7 @@ async def append_widget_messages(session_id: str, items: list[dict]) -> list[dic
             session = await db.get(ChatSession, sid)
             if session is None:
                 return []
-            base = datetime.now()
+            base = _utcnow()
             models: list[ChatMessage] = []
             for i, it in enumerate(items):
                 m = ChatMessage(
