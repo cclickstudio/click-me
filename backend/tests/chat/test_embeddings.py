@@ -1,4 +1,6 @@
 # 임베딩 어댑터 — mock 결정성 + TEI(BGE-M3) HTTP 계약(hermetic).
+import math
+
 import httpx
 import pytest
 
@@ -14,6 +16,8 @@ async def test_mock_provider_is_deterministic_and_right_dim():
     assert a == b  # 같은 입력 → 같은 벡터
     c = await p.embed(["다른 문장"])
     assert c[0] != a[0]
+    # 단위벡터(L2 정규화) — 코사인 유사도 비교 전제.
+    assert math.isclose(math.sqrt(sum(x * x for x in a[0])), 1.0, abs_tol=1e-6)
 
 
 @pytest.mark.asyncio

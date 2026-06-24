@@ -55,6 +55,10 @@ class TeiEmbeddingProvider:
         resp.raise_for_status()
         return resp.json()  # TEI: list[list[float]]
 
+    async def aclose(self) -> None:
+        """앱 종료 시 내부 생성 클라이언트 정리(주입 클라이언트는 호출측 소유)."""
+        await self._client.aclose()
+
 
 class OpenAIEmbeddingProvider:
     """OpenAI 폴백 — text-embedding-3-small(1536). provider=openai 시 embedding_dim=1536 필요."""
