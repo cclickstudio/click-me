@@ -417,6 +417,11 @@ export default function ChatConversation({
       },
     ) => {
       const simId = result.simulation_id;
+      // 입력 요약은 백엔드 결과(실제 제출값)를 우선 출처로, 폼 상태(input)는 폴백.
+      // 새로고침 중 완료된 런을 복원할 땐 폼 상태가 비어 있어(빈 initial로 재마운트)
+      // input만 쓰면 소비자 수만 남는다 → result.ad/result.simulation에서 복구한다.
+      const adBlock = (result.ad ?? {}) as Record<string, unknown>;
+      const simBlock = (result.simulation ?? {}) as Record<string, unknown>;
       const items: { content: string; meta: SourceMeta & { widget: WidgetSpec } }[] = [];
       // 숨겨진 입력 폼 자리 — 실제 돌린 입력값을 요약해 보여준다.
       items.push({
@@ -427,11 +432,11 @@ export default function ChatConversation({
           widget: {
             type: 'sim_input',
             data: {
-              ad_title: input.adTitle,
-              ad_content: input.adContent,
-              product_category: input.category,
-              ad_objective: input.objective,
-              sample_size: input.sampleSize,
+              ad_title: (adBlock.title as string) || input.adTitle,
+              ad_content: (adBlock.copy_text as string) || input.adContent,
+              product_category: (adBlock.product_category as string) || input.category,
+              ad_objective: (adBlock.ad_objective as string) || input.objective,
+              sample_size: (simBlock.sample_size as number) ?? input.sampleSize,
             },
           },
         },
