@@ -159,7 +159,8 @@ class ManagementKbChunk(Base):
     source: Mapped[str] = mapped_column(String(128))  # 출처 파일명(인용용)
     title: Mapped[str] = mapped_column(String(256))  # 섹션 제목(인용용)
     chunk: Mapped[str] = mapped_column(Text)
-    embedding: Mapped[list[float]] = mapped_column(Vector(1536))
+    # BGE-M3 1024 = settings.embedding_dim(KB·LTM 동일). 변경 시 Alembic 마이그레이션 + kb_ingest 재실행 필요.
+    embedding: Mapped[list[float]] = mapped_column(Vector(1024))
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 

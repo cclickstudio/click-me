@@ -9,13 +9,11 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
-from openai import AsyncOpenAI
 from sqlalchemy import delete
 
 from core.config import settings
 from core.db import AsyncSessionLocal
 from core.models import ManagementKbChunk
-from domain.management.assistant.retriever import EMBEDDING_MODEL
 
 _KB_DIR = Path(__file__).parent / "kb"
 
@@ -37,7 +35,9 @@ def _chunk_markdown(text: str) -> list[tuple[str, str]]:
 
 
 async def ingest() -> int:
-    client = AsyncOpenAI(api_key=settings.openai_api_key)
+    from domain.chat.wiring import build_embedding_provider
+
+    embedder = build_embedding_provider(settings)
     total = 0
     async with AsyncSessionLocal() as db:
         for md in sorted(_KB_DIR.glob("*.md")):
@@ -45,16 +45,10 @@ async def ingest() -> int:
             sections = _chunk_markdown(md.read_text(encoding="utf-8"))
             if not sections:
                 continue
-            resp = await client.embeddings.create(
-                model=EMBEDDING_MODEL, input=[c for _, c in sections]
-            )
+            vectors = await embedder.embed([c for _, c in sections])
             await db.execute(delete(ManagementKbChunk).where(ManagementKbChunk.source == source))
-            for (title, chunk), item in zip(sections, resp.data, strict=True):
-                db.add(
-                    ManagementKbChunk(
-                        source=source, title=title, chunk=chunk, embedding=item.embedding
-                    )
-                )
+            for (title, chunk), vec in zip(sections, vectors, strict=True):
+                db.add(ManagementKbChunk(source=source, title=title, chunk=chunk, embedding=vec))
             total += len(sections)
             print(f"  {source}: {len(sections)} chunks")
         await db.commit()
