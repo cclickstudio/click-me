@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Protocol
 if TYPE_CHECKING:
     import uuid
 
+    from domain.chat.contracts.agent_io import SubAgentRequest, SubAgentResult
     from domain.chat.contracts.schemas import MemoryHit, MemoryItem, MessageDTO, SessionDTO
 
 
@@ -65,3 +66,11 @@ class MemoryStore(Protocol):
         k: int,
         salience_floor: float,
     ) -> list[MemoryHit]: ...
+
+
+class SubAgent(Protocol):
+    """도메인 서브에이전트 — 슈퍼바이저가 위임하는 단일 진입점."""
+
+    route: str
+
+    async def run(self, req: SubAgentRequest) -> SubAgentResult: ...
