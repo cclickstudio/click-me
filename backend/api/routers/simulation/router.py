@@ -226,6 +226,14 @@ async def stream_simulation(run_id: str) -> StreamingResponse:
     )
 
 
+@router.get("/{run_id}/status")
+async def get_simulation_status(run_id: str) -> dict:
+    """실행 진행 상태(running/completed/failed). 새로고침 후 백그라운드 런 복원용.
+    서버 인메모리 기준이라 모르는 run(재시작·완료소실)은 status=unknown."""
+    st = _service.get_run_status(run_id)
+    return st or {"run_id": run_id, "status": "unknown", "pct": 0, "stage": None}
+
+
 @router.get("/{run_id}/result")
 async def get_simulation_result(run_id: str) -> dict:
     """완료된 실행 결과(반응·루브릭·집계). 미완료/없음이면 404."""

@@ -215,6 +215,27 @@ async def chat_sim_batch(body: BatchSimRequest) -> dict:
     return {"results": results}
 
 
+class WidgetItem(BaseModel):
+    content: str = ""
+    meta: dict | None = None
+
+
+class AppendWidgetsRequest(BaseModel):
+    session_id: str
+    items: list[WidgetItem]
+
+
+@router.post("/widget-messages")
+async def append_widget_messages(body: AppendWidgetsRequest) -> dict:
+    """단독 위젯 메시지(시뮬 결과·토론 stream·토론 요약 등)를 세션에 영속화 — 새로고침 복원용.
+
+    프론트가 시뮬/토론 완료 시점에 결과·토론 위젯을 별도 어시스턴트 메시지로 남긴다.
+    """
+    items = [{"content": it.content, "meta": it.meta} for it in body.items]
+    saved = await history.append_widget_messages(body.session_id, items)
+    return {"messages": saved}
+
+
 class PinRequest(BaseModel):
     pinned: bool = True
 

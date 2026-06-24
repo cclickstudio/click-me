@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -122,6 +122,45 @@ async def append_turn(
     await db.commit()
     # 10턴 초과 시 앞 대화를 요약·압축(best-effort, 모크/키 없으면 생략).
     await summarize_and_compress(str(sid), str(session.project_id) if session.project_id else None)
+
+
+async def append_widget_messages(session_id: str, items: list[dict]) -> list[dict]:
+    """단독 어시스턴트 위젯 메시지 여러 개를 세션에 적재(사용자 발화 없이). 저장된 메시지 반환.
+
+    시뮬 완료 후 결과 요약·토론 위젯을 별도 메시지로 DB에 남겨 새로고침 복원을 가능케 한다.
+    items: [{"content": str, "meta": {...}}]. created_at을 ms 단위로 증가시켜 표시 순서를 보장.
+    """
+    sid = _as_uuid(session_id)
+    if sid is None or not items:
+        return []
+    try:
+        async with AsyncSessionLocal() as db:
+            session = await db.get(ChatSession, sid)
+            if session is None:
+                return []
+            base = datetime.now()
+            models: list[ChatMessage] = []
+            for i, it in enumerate(items):
+                m = ChatMessage(
+                    session_id=sid,
+                    role="assistant",
+                    content=str(it.get("content") or ""),
+                    meta=it.get("meta") or None,
+                    created_at=base + timedelta(milliseconds=i),
+                )
+                db.add(m)
+                models.append(m)
+            session.updated_at = base + timedelta(milliseconds=len(items))
+            await db.commit()
+            for m in models:
+                await db.refresh(m)
+            return [
+                {"id": str(m.id), "role": m.role, "content": m.content, "meta": m.meta}
+                for m in models
+            ]
+    except Exception as exc:  # noqa: BLE001 — 영속화 실패가 채팅을 막지 않게
+        print(f"[chat] append widget messages error: {exc!r}")
+        return []
 
 
 _SUMMARY_THRESHOLD_TURNS = 10  # 이 턴 수 초과 시 앞 대화를 요약·압축

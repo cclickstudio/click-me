@@ -226,3 +226,16 @@ class SimulationService:
 
     def get_result(self, run_id: str) -> dict | None:
         return self._store.get_result(run_id)
+
+    def get_run_status(self, run_id: str) -> dict | None:
+        """진행 상태 — 새로고침 후 백그라운드 런 복원용. 모르는 run이면 None(서버 재시작·완료소실)."""
+        status = self._store.get_status(run_id)
+        if status is None:
+            return None
+        pct, stage = 0, None
+        for ev in self._store.get_events(run_id):
+            if isinstance(ev.get("pct"), int):
+                pct = ev["pct"]
+            if ev.get("stage"):
+                stage = ev["stage"]
+        return {"run_id": run_id, "status": status, "pct": pct, "stage": stage}
