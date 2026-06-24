@@ -186,6 +186,42 @@ export default function Page() {
               />
             </div>
 
+            {/* Meta 선불 계정 정합 — 충전 한도 − 누적 지출 = 잔액 (충전 한도는 결제액의 부가세 제외분) */}
+            {(status.account_spend_cap_krw ?? 0) > 0 && (
+              <div className="rounded-2xl border border-[#E5E8EB] dark:border-[#2D3748] p-5">
+                <p className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6] mb-3">
+                  Meta 선불 계정 정합
+                </p>
+                <div className="flex flex-wrap items-end gap-x-3 gap-y-2 tabular-nums">
+                  <div>
+                    <p className="text-[11px] text-[#8B95A1]">충전 한도</p>
+                    <p className="text-lg font-bold text-[#191F28] dark:text-[#F2F4F6]">
+                      ₩{(status.account_spend_cap_krw ?? 0).toLocaleString()}
+                    </p>
+                  </div>
+                  <span className="pb-1 text-lg text-[#8B95A1]">−</span>
+                  <div>
+                    <p className="text-[11px] text-[#8B95A1]">누적 지출</p>
+                    <p className="text-lg font-bold text-[#191F28] dark:text-[#F2F4F6]">
+                      ₩{(status.account_amount_spent_krw ?? 0).toLocaleString()}
+                    </p>
+                  </div>
+                  <span className="pb-1 text-lg text-[#8B95A1]">=</span>
+                  <div>
+                    <p className="text-[11px] text-[#8B95A1]">선불 잔액</p>
+                    <p className="text-lg font-extrabold text-[#3182F6]">
+                      ₩{(status.account_balance_krw ?? 0).toLocaleString()}
+                    </p>
+                  </div>
+                </div>
+                <p className="mt-3 text-[11px] text-[#B0B8C1]">
+                  충전 한도는 결제액의 <b>부가세(10%) 제외분</b>입니다 — 실제 결제액 ≈ 충전 한도 × 1.1 (예:
+                  충전 한도 ₩{(status.account_spend_cap_krw ?? 0).toLocaleString()} → 결제 ≈ ₩
+                  {Math.round((status.account_spend_cap_krw ?? 0) * 1.1).toLocaleString()}).
+                </p>
+              </div>
+            )}
+
             {/* 일자별 계획 vs 실제 */}
             {daily.length > 0 && (
               <div className="rounded-2xl border border-[#E5E8EB] dark:border-[#2D3748] p-5">

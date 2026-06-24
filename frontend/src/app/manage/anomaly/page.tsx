@@ -64,11 +64,15 @@ export default function Page() {
     setDecided(null);
     try {
       const r = (await api.management.run(fault)) as RunResult;
+      // 🅱 재생성 에이전트는 시연·트레이스용으로만 호출한다. 승인 대상은 /run의 검증된 제안을
+      // 그대로 쓴다 — 재생성 산출물은 시나리오에 따라 후보 선택(AWAITING_SELECTION)이거나
+      // 검증 단계가 따로 필요해, 데모 단순화·안정성을 위해 승인 제안으로는 사용하지 않는다.
       if (r.diagnosis) {
-        const { proposal } = (await api.management.regenerate(r.diagnosis)) as {
-          proposal: RunResult['proposal'];
-        };
-        r.proposal = proposal;
+        try {
+          await api.management.regenerate(r.diagnosis);
+        } catch {
+          // 재생성 실패해도 /run 제안으로 승인·실행은 진행
+        }
       }
       setRun(r);
     } catch (e) {
@@ -120,7 +124,7 @@ export default function Page() {
               </span>
             </div>
             <p className="text-sm text-[#8B95A1] mt-1">
-              이상 감지·진단·처방 시연 · 주입한 고장 시나리오 기준 (실데이터 아님)
+              주입한 고장 시나리오로 감지→진단→처방→승인→집행 시연 · 집행은 DRY-RUN(실 과금 없음)
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -157,7 +161,7 @@ export default function Page() {
               disabled={busy}
               className="px-4 py-2 bg-[#3182F6] text-white text-sm font-medium rounded-lg hover:bg-[#1B6EEB] disabled:opacity-40"
             >
-              {busy ? '실행 중…' : '▶ 데모 실행'}
+              {busy ? '실행 중…' : '▶ 이상 대응 실행'}
             </button>
           </div>
         </div>
@@ -166,7 +170,7 @@ export default function Page() {
         <div className="mb-4 rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-[#F9FAFB] dark:bg-[#1A202C] px-4 py-3">
           <p className="text-[12px] text-[#4E5968] dark:text-[#9CA3AF]">
             <span className="font-semibold text-[#3182F6]">시연 방법</span> · 문제 상황을 고르고{' '}
-            <b>데모 실행</b>을 누르면, 시스템이 <b>감지 → 진단 → 처방</b>하는 과정을 보여줍니다.
+            <b>이상 대응 실행</b>을 누르면, 시스템이 <b>감지 → 진단 → 처방</b>하는 과정을 보여줍니다.
           </p>
           <p className="mt-1.5 flex items-start gap-1.5 text-[12px]">
             <span className="shrink-0 px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 text-[11px] font-semibold">
@@ -186,7 +190,7 @@ export default function Page() {
                 실 캠페인 성과 이상 스캔
               </p>
               <p className="text-[12px] text-[#8B95A1] mt-0.5">
-                실제 Meta 캠페인을 돌며 성과 진단(ROAS 미달·전환 저조)을 실측합니다. 위 데모와 별개.
+                실제 Meta 캠페인을 돌며 성과 진단(ROAS 미달·전환 저조)을 실측합니다. 위 시연과 별개.
               </p>
             </div>
             <button
@@ -270,7 +274,7 @@ export default function Page() {
           </>
         ) : (
           <div className="rounded-2xl border border-[#E5E8EB] dark:border-[#2D3748] py-20 text-center text-sm text-[#8B95A1]">
-            &quot;데모 실행&quot;을 눌러 감지→진단→처방→승인→실행 사이클을 시작하세요
+            &quot;이상 대응 실행&quot;을 눌러 감지→진단→처방→승인→실행 사이클을 시작하세요
           </div>
         )}
 
@@ -280,7 +284,7 @@ export default function Page() {
           </p>
         )}
         <p className="mt-6 text-[11px] text-[#B0B8C1]">
-          ⚠ Mock 기반 데모 · 시뮬 점수는 실제 성과와 상관 미검증 · 예측 CTR 등 실측 환산 없음 · 금액 KRW
+          ⚠ 감지 입력은 주입 시나리오 · 재생성은 실 계정 컨텍스트 · 집행은 DRY-RUN(실 과금 없음) · 금액 KRW
         </p>
       </div>
     </AppLayout>

@@ -28,6 +28,9 @@ export function campaignHealth(c: CampaignSummary): HealthSignal {
   if (c.state === 'ended') {
     return { level: 'ended', label: '종료', hint: '게재가 끝난 캠페인입니다.' };
   }
+  if (c.state === 'archived') {
+    return { level: 'ended', label: '삭제됨', hint: '삭제·보관된 캠페인입니다(과거 데이터).' };
+  }
   if (c.delivery_blocked) {
     return {
       level: 'critical',
