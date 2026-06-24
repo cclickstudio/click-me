@@ -42,4 +42,6 @@ class MemoryHit(BaseModel):
     memory_type: str
     content: dict
     salience: float
-    score: float  # 코사인 유사도(1=동일); always-load 항목은 1.0
+    # 점수 [0,1]: top-k는 코사인 유사도(음수 0 클램프), always-load는 1.0 고정.
+    # 둘 다 1.0 가능 → score만으로 출처 구분 불가(필요 시 후속 source 필드 검토).
+    score: float

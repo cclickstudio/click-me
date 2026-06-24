@@ -34,3 +34,10 @@ def build_chat_repo(s=settings):  # s: 향후 커넥션 설정 주입 예정. �
     from domain.chat.adapters.pg_chat_repo import PgChatRepo
 
     return PgChatRepo()
+
+
+def build_memory_store(s=settings):
+    """롱텀 메모리 — EmbeddingProvider 주입(KB와 동일 구현)."""
+    from domain.chat.adapters.pg_memory_store import PgMemoryStore
+
+    return PgMemoryStore(embedder=build_embedding_provider(s))
