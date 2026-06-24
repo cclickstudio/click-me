@@ -19,6 +19,25 @@ const inputCls =
   'w-full px-3 py-2 rounded-lg border border-[#E5E8EB] dark:border-[#2D3748] text-sm bg-white dark:bg-[#252D3D] text-[#191F28] dark:text-[#F2F4F6] focus:outline-none focus:border-[#3182F6]';
 const labelCls = 'text-[11px] font-semibold text-[#8B95A1] dark:text-[#6B7280] mb-1 block';
 
+// 칩 스타일(/simulation 컨벤션 이식).
+const chipBase = 'px-2.5 py-1.5 rounded-lg border text-[11px] font-medium transition-colors';
+const chipActive = 'border-[#3182F6] bg-[#EEF4FF] dark:bg-[#1E3A5F] text-[#3182F6]';
+const chipIdle =
+  'border-[#E5E8EB] dark:border-[#2D3748] text-[#8B95A1] dark:text-[#6B7280] hover:border-[#3182F6]';
+
+// 광고 목표 — 일반인도 쉽게 고르는 단일 선택(/simulation의 AD_GOALS 이식).
+const AD_GOALS = ['관심 유도', '클릭 유도', '가입·문의 유도', '구매 전환', '재구매·단골'];
+
+// 연령대 → age_min/age_max 변환(다중 선택 시 하한~상한 범위).
+const AGE_BANDS: { label: string; min: number; max: number }[] = [
+  { label: '10대', min: 14, max: 19 },
+  { label: '20대', min: 20, max: 29 },
+  { label: '30대', min: 30, max: 39 },
+  { label: '40대', min: 40, max: 49 },
+  { label: '50대', min: 50, max: 59 },
+  { label: '60대 이상', min: 60, max: 84 },
+];
+
 export default function SimFormWidget({
   initial,
   initialImage,
@@ -60,7 +79,17 @@ export default function SimFormWidget({
   );
   const [serviceClass, setServiceClass] = useState<number | ''>('');
   const categoryName = SIM_CATEGORIES.find(c => c.id === categoryId)?.name ?? '';
-  const [objective, setObjective] = useState(initial?.ad_objective ?? '');
+  // 광고 목표 — 칩 단일 선택 + 기타 직접 입력. initial이 칩 값이면 그 칩, 아니면 기타로.
+  const _initGoalMatched = AD_GOALS.includes(initial?.ad_objective ?? '');
+  const [goalItem, setGoalItem] = useState<string>(
+    _initGoalMatched ? (initial?.ad_objective as string) : initial?.ad_objective ? '기타' : '',
+  );
+  const [customGoal, setCustomGoal] = useState(_initGoalMatched ? '' : (initial?.ad_objective ?? ''));
+  const objectiveValue = goalItem === '기타' ? customGoal.trim() : goalItem;
+  // 인구 생성 — 표본 수/추출 방식/연령대/성별(/simulation 이식).
+  const [allocation, setAllocation] = useState<'proportional' | 'stratified'>('proportional');
+  const [ageBands, setAgeBands] = useState<string[]>([]);
+  const [gender, setGender] = useState<'' | 'F' | 'M'>('');
   const [image] = useState<File | null>(initialImage ?? null);
   const [imagePreview] = useState<string | null>(() =>
     initialImage ? URL.createObjectURL(initialImage) : null,
@@ -86,7 +115,7 @@ export default function SimFormWidget({
           adTitle,
           adContent,
           category: categoryName,
-          objective,
+          objective: objectiveValue,
           sampleSize,
         });
       }
@@ -195,6 +224,15 @@ export default function SimFormWidget({
     setPhase('running');
     setPct(0);
     setStageMsg('시뮬레이션 시작...');
+    // 연령대·성별을 고르면 그 조건(MANUAL), 아무것도 안 고르면 자동 추정(AUTO).
+    const targetFilter: Record<string, unknown> = {};
+    const bands = AGE_BANDS.filter(b => ageBands.includes(b.label));
+    if (bands.length > 0) {
+      targetFilter.age_min = Math.min(...bands.map(b => b.min));
+      targetFilter.age_max = Math.max(...bands.map(b => b.max));
+    }
+    if (gender) targetFilter.gender = gender;
+    const targetMode = bands.length > 0 || gender !== '' ? 'MANUAL' : 'AUTO';
     try {
       const { run_id } = await api.simulation.start({
         ad_id: `chat-${safeRandomUUID()}`,
@@ -204,8 +242,11 @@ export default function SimFormWidget({
         project_id: projectId || undefined, // 프로젝트 귀속 → DB 저장(없으면 메모리 런)
         product_category: categoryName || undefined,
         service_class: typeof serviceClass === 'number' ? serviceClass : undefined,
-        ad_objective: objective || undefined,
+        ad_objective: objectiveValue || undefined,
         sample_size: sampleSize,
+        allocation,
+        target_filter: targetFilter,
+        target_mode: targetMode,
       });
       setRunId(run_id);
       setSimJob(run_id); // 동시실행 슬롯 점유(시뮬 1개 제한)
@@ -222,12 +263,13 @@ export default function SimFormWidget({
     'mt-1 w-full rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-white dark:bg-[#1C2333] p-4';
 
   if (phase === 'form') {
-    const totalSteps = 4;
-    // 제품명(0)·광고 설명(1) 필수, 카테고리(2)는 대분류+세부 류 모두 선택해야 다음 진행.
+    const totalSteps = 5;
+    // 0 제품명·1 광고설명 필수, 2 카테고리(대분류+세부 류), 3 광고 목표(칩 또는 기타 입력) 필수.
     const canNext =
       (step !== 0 || adTitle.trim().length > 0) &&
       (step !== 1 || adContent.trim().length > 0) &&
-      (step !== 2 || (categoryId !== '' && serviceClass !== ''));
+      (step !== 2 || (categoryId !== '' && serviceClass !== '')) &&
+      (step !== 3 || objectiveValue.length > 0);
     const btnCls =
       'flex-1 py-2 rounded-lg bg-[#3182F6] text-white text-sm font-semibold hover:bg-[#1B6EEB] disabled:opacity-40 transition-colors';
     return (
@@ -294,16 +336,110 @@ export default function SimFormWidget({
                   </select>
                 </div>
               </div>
-              <div>
-                <label className={labelCls}>광고 목표</label>
-                <input className={inputCls} value={objective} onChange={e => setObjective(e.target.value)} placeholder="예: 구매 전환" />
-              </div>
             </div>
           )}
           {step === 3 && (
             <div>
-              <label className={labelCls}>가상 소비자 수: {sampleSize}명</label>
-              <input type="range" min={1} max={200} value={sampleSize} onChange={e => setSampleSize(Number(e.target.value))} className="w-full" />
+              <label className={labelCls}>광고 목표 *</label>
+              <div className="flex flex-wrap gap-1.5">
+                {AD_GOALS.map(g => (
+                  <button
+                    key={g}
+                    type="button"
+                    onClick={() => setGoalItem(g)}
+                    className={`${chipBase} ${goalItem === g ? chipActive : chipIdle}`}
+                  >
+                    {g}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => setGoalItem('기타')}
+                  className={`${chipBase} ${goalItem === '기타' ? chipActive : chipIdle}`}
+                >
+                  기타
+                </button>
+              </div>
+              {goalItem === '기타' && (
+                <input
+                  className={`${inputCls} mt-2`}
+                  value={customGoal}
+                  onChange={e => setCustomGoal(e.target.value)}
+                  placeholder="광고 목표를 직접 입력하세요"
+                  autoFocus
+                />
+              )}
+            </div>
+          )}
+          {step === 4 && (
+            <div className="space-y-3">
+              <div>
+                <label className={labelCls}>가상 소비자 수: {sampleSize}명</label>
+                <input type="range" min={1} max={200} value={sampleSize} onChange={e => setSampleSize(Number(e.target.value))} className="w-full accent-[#3182F6]" />
+              </div>
+              <div>
+                <label className={labelCls}>표본 추출 방식</label>
+                <div className="flex gap-1.5">
+                  {(
+                    [
+                      ['proportional', '인구 비례'],
+                      ['stratified', '소수 그룹 보강'],
+                    ] as ['proportional' | 'stratified', string][]
+                  ).map(([v, lbl]) => (
+                    <button
+                      key={v}
+                      type="button"
+                      onClick={() => setAllocation(v)}
+                      className={`${chipBase} ${allocation === v ? chipActive : chipIdle}`}
+                    >
+                      {lbl}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className={labelCls}>연령대 (선택 · 복수 가능)</label>
+                <div className="flex flex-wrap gap-1.5">
+                  {AGE_BANDS.map(b => {
+                    const on = ageBands.includes(b.label);
+                    return (
+                      <button
+                        key={b.label}
+                        type="button"
+                        onClick={() =>
+                          setAgeBands(prev =>
+                            on ? prev.filter(x => x !== b.label) : [...prev, b.label],
+                          )
+                        }
+                        className={`${chipBase} ${on ? chipActive : chipIdle}`}
+                      >
+                        {b.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+              <div>
+                <label className={labelCls}>성별 (선택)</label>
+                <div className="flex gap-1.5">
+                  {(
+                    [
+                      ['', '전체'],
+                      ['F', '여성'],
+                      ['M', '남성'],
+                    ] as ['' | 'F' | 'M', string][]
+                  ).map(([v, lbl]) => (
+                    <button
+                      key={lbl}
+                      type="button"
+                      onClick={() => setGender(v)}
+                      className={`${chipBase} ${gender === v ? chipActive : chipIdle}`}
+                    >
+                      {lbl}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
           )}
         </div>
