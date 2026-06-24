@@ -947,6 +947,37 @@ export default function GeneratorPage() {
           const d = (await api.generator.detail(generationId)) as GenerationDetail;
           setDetail(d);
           setPhase("done");
+          // N1 — 전용 페이지 직접 생성이 끝나면, 프로젝트 채팅 세션에 결과 안내 +
+          // "다시 생성/개선" 제안을 자동 주입(프로액티브 개선 루프, 시뮬 경로와 대칭).
+          // NOTE: 제너레이터는 현재 OpenAI org-verification(403)로 완료 도달이 막혀 있어
+          // 이 경로는 코드만 준비된 상태(검증 보류). 별도 gen_result 위젯이 생기면 결과 위젯도 추가.
+          const pid = selectedProject?.id;
+          if (pid) {
+            const injectKey = `n1_gen_injected_${generationId}`; // 동일 생성 1회만
+            if (!localStorage.getItem(injectKey)) {
+              localStorage.setItem(injectKey, "1");
+              const count = (d.candidates ?? []).length;
+              api.chat.resolveActiveSession(pid).then((sid) => {
+                if (!sid) return;
+                void api.chat
+                  .appendWidgets(sid, [
+                    {
+                      content: `광고 시안 ${count}개가 생성됐어요. 채팅에서 이어서 개선해볼까요?`,
+                      meta: {
+                        source: "generator",
+                        label: "광고 생성",
+                        approval: {
+                          action: "run_generator",
+                          label: "개선 시안 다시 생성",
+                          reasons: ["전용 페이지에서 직접 만든 시안을 채팅에서 이어 개선할 수 있어요."],
+                        },
+                      },
+                    },
+                  ])
+                  .catch(() => {});
+              });
+            }
+          }
         } catch (err) {
           setError(err instanceof Error ? err.message : "생성 결과를 불러오지 못했습니다.");
           setPhase("idle");

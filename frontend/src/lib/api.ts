@@ -408,6 +408,17 @@ export const api = {
         method: "POST",
         body: JSON.stringify({ session_id: sessionId, items }),
       }),
+    // N1 — 프로젝트의 활성(최신) 채팅 세션 id 해석. 없으면 새로 만든다. 실패 시 null.
+    resolveActiveSession: async (projectId: string): Promise<string | null> => {
+      try {
+        const { sessions } = await api.chat.sessions(projectId);
+        if (sessions && sessions.length > 0) return sessions[0].id;
+        const created = await api.chat.createSession(projectId, "시뮬레이션 알림");
+        return created.id;
+      } catch {
+        return null;
+      }
+    },
     // 첨부 이미지 S3 업로드 → 프록시 URL(상대경로) 반환. 내역 영속화에 사용.
     uploadImage: async (file: File): Promise<{ key: string; url: string }> => {
       const token = getToken();

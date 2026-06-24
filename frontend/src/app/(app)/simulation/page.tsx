@@ -196,6 +196,43 @@ export default function SimulationRunPage() {
                 adTitle: adTitle || undefined,
                 adDescription: adContent || undefined,
               });
+              // N1 — 전용 페이지 직접 실행이 끝나면, 프로젝트 채팅 세션에
+              // 결과 + "개선해서 다시 돌리기" 제안을 자동 주입(프로액티브 개선 루프).
+              const pid = selectedProject?.id;
+              if (pid && r.simulation_id) {
+                const injectKey = `n1_injected_${run_id}`; // 동일 run 1회만(중복 주입 방지)
+                if (!localStorage.getItem(injectKey)) {
+                  localStorage.setItem(injectKey, '1');
+                  const simId = r.simulation_id;
+                  api.chat.resolveActiveSession(pid).then(sid => {
+                    if (!sid) return;
+                    void api.chat
+                      .appendWidgets(sid, [
+                        {
+                          content: '시뮬레이션 결과예요.',
+                          meta: {
+                            source: 'simulation',
+                            label: '시뮬레이션',
+                            widget: { type: 'sim_result', data: { simulation_id: simId } },
+                          },
+                        },
+                        {
+                          content: '결과를 바탕으로 광고를 개선해서 다시 돌려볼까요?',
+                          meta: {
+                            source: 'simulation',
+                            label: '개선 제안',
+                            approval: {
+                              action: 'rerun_simulation',
+                              label: '개선해서 다시 돌리기',
+                              reasons: ['전용 페이지에서 직접 돌린 결과를 채팅에서 이어 개선할 수 있어요.'],
+                            },
+                          },
+                        },
+                      ])
+                      .catch(() => {});
+                  });
+                }
+              }
               router.push(`/simulation/${routeId}`);
             })
             .catch(e => {
