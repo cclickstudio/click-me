@@ -27,3 +27,10 @@ def build_embedding_provider(s=settings) -> EmbeddingProvider:
     from domain.chat.adapters.embeddings import TeiEmbeddingProvider
 
     return TeiEmbeddingProvider(base_url=s.embedding_base_url, dim=dim)
+
+
+def build_chat_repo(s=settings):  # s: 향후 커넥션 설정 주입 예정. 현재 PgChatRepo는 미사용.
+    """세션·메시지 영속 — 단일 구현(PgChatRepo). 세션 팩토리는 core 기본."""
+    from domain.chat.adapters.pg_chat_repo import PgChatRepo
+
+    return PgChatRepo()
