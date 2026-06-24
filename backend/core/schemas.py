@@ -149,7 +149,12 @@ class ChatMessage(BaseModel):
 class ChatRequest(BaseModel):
     session_id: str
     messages: list[ChatMessage]
+    # 멀티테넌트 컨텍스트 — JWT 인증 도입 전 임시로 본문 수용(도입 시 서버 파생으로 교체).
+    project_id: str | None = None
+    user_id: str | None = None
+    organization_id: str | None = None
     context_ad_id: str | None = None
+    context_campaign_id: str | None = None
     context_simulation_id: str | None = None
 
 
