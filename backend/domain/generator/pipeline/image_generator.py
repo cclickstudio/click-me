@@ -1,33 +1,12 @@
-import base64
 import io
-from typing import Any
 
-from google import genai
-from google.genai import types as genai_types
-from langsmith import get_current_run_tree, traceable
-from langsmith.wrappers import wrap_openai
-from openai import AsyncOpenAI
+from langsmith import traceable
 from PIL import Image
 
 from core.config import settings
 from domain.generator.contracts.enums import AdSize, AdStrategy, TemplateType
 from domain.generator.contracts.pipeline_schemas import ProductAnalysis
-
-# wrap_openai로 감싸 이미지/Responses 호출의 토큰·비용 usage가 LangSmith에 기록되게 한다.
-_openai_client = wrap_openai(AsyncOpenAI(timeout=settings.generator_image_timeout))
-
-_GEMINI_NATIVE_ASPECT_RATIO: dict[AdSize, str] = {
-    AdSize.SQUARE: "1:1",
-    AdSize.LANDSCAPE: "3:2",
-    AdSize.PORTRAIT: "2:3",
-}
-
-# Imagen은 "1:1"/"3:4"/"4:3"/"9:16"/"16:9"만 지원 — AdSize 비율에 가장 가까운 값으로 매핑
-_IMAGEN_ASPECT_RATIO: dict[AdSize, str] = {
-    AdSize.SQUARE: "1:1",
-    AdSize.LANDSCAPE: "4:3",
-    AdSize.PORTRAIT: "3:4",
-}
+from domain.generator.pipeline import image_providers
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 전략별 메타데이터 매핑 (광고 전략 → 프롬프트 설명문)
@@ -529,19 +508,14 @@ async def generate_image(
             )
 
         base_png, mask_png = _build_inpaint_base_and_mask(product_cutout_bytes, template, size)
-        base_file = io.BytesIO(base_png)
-        base_file.name = "base.png"
-        mask_file = io.BytesIO(mask_png)
-        mask_file.name = "mask.png"
-        response = await _openai_client.images.edit(
+        return await image_providers.edit_with_mask(
+            base_png,
+            mask_png,
+            prompt,
+            size,
+            provider="openai",
             model=settings.generator_image_model,
-            image=base_file,
-            mask=mask_file,
-            prompt=prompt,
-            n=1,
-            size=size.value,
         )
-        return base64.b64decode(response.data[0].b64_json)
 
     # ── [개선 모드] Edit API ───────────────────────────────────────────────────
     if original_image_bytes is not None:
@@ -577,16 +551,13 @@ async def generate_image(
                 safe_zone=_TEMPLATE_SAFE_ZONES_EDIT[template],
             )
 
-        image_file = io.BytesIO(original_image_bytes)
-        image_file.name = "original.png"
-        response = await _openai_client.images.edit(
+        return await image_providers.edit(
+            original_image_bytes,
+            prompt,
+            size,
+            provider="openai",
             model=settings.generator_image_model,
-            image=image_file,
-            prompt=prompt,
-            n=1,
-            size=size.value,
         )
-        return base64.b64decode(response.data[0].b64_json)
 
     # ── [생성 모드] Generate API ──────────────────────────────────────────────
     target_audience = product_analysis.target_audience or "general audience"
@@ -629,93 +600,13 @@ async def generate_image(
             safe_zone=_TEMPLATE_SAFE_ZONES[template],
         )
 
-    provider = settings.generator_image_provider
-    if provider == "openai":
-        image_bytes = await _generate_with_openai(prompt, size)
-    elif provider == "google_genai":
-        image_bytes = await _generate_with_gemini(prompt, size)
-    else:
-        raise NotImplementedError(f"지원하지 않는 GENERATOR_IMAGE_PROVIDER: {provider!r}")
-
-    return image_bytes
-
-
-async def _generate_with_openai(prompt: str, size: AdSize) -> bytes:
-    model = settings.generator_image_model
-    kwargs: dict = {"model": model, "prompt": prompt, "n": 1, "size": size.value}
-    # gpt-image-1은 response_format 파라미터를 지원하지 않음 (항상 b64_json 반환)
-    if not model.startswith("gpt-image"):
-        kwargs["response_format"] = "b64_json"
-        kwargs["quality"] = settings.generator_image_quality
-    response = await _openai_client.images.generate(**kwargs)
-    return base64.b64decode(response.data[0].b64_json)
-
-
-def _record_genai_usage(resp: Any, model: str) -> None:
-    """google-genai 직접 호출(genai SDK)의 토큰·모델명을 현재 LangSmith run에 기록.
-
-    LangChain/wrap_openai를 거치지 않는 호출은 토큰·비용이 자동 집계되지 않으므로 수동 주입한다
-    (docs/langsmith-guide.md §7 표준 패턴). 이미지 전용 모델(Imagen 등)은 usage_metadata가 없을 수
-    있어 모델명(ls_model_name)만이라도 남겨 비용 계산·필터가 가능하게 한다. 트레이싱 OFF면 무동작.
-    """
-    run = get_current_run_tree()
-    if run is None:
-        return
-    meta = {"ls_model_name": model, "ls_provider": "google_genai"}
-    um = getattr(resp, "usage_metadata", None)
-    if um is None:
-        run.set(metadata=meta)
-        return
-    run.set(
-        usage_metadata={
-            "input_tokens": getattr(um, "prompt_token_count", None) or 0,
-            "output_tokens": getattr(um, "candidates_token_count", None) or 0,
-            "total_tokens": getattr(um, "total_token_count", None) or 0,
-        },
-        metadata=meta,
+    return await image_providers.generate(
+        prompt,
+        size,
+        provider=settings.generator_image_provider,
+        model=settings.generator_image_model,
+        quality=settings.generator_image_quality,
     )
-
-
-async def _generate_with_gemini(prompt: str, size: AdSize) -> bytes:
-    model = settings.generator_image_model
-    if model.startswith("imagen-"):
-        return await _generate_with_imagen(model, prompt, size)
-    return await _generate_with_gemini_native(model, prompt, size)
-
-
-async def _generate_with_gemini_native(model: str, prompt: str, size: AdSize) -> bytes:
-    client = genai.Client(api_key=settings.gemini_api_key)
-    response = await client.aio.models.generate_content(
-        model=model,
-        contents=prompt,
-        config=genai_types.GenerateContentConfig(
-            response_modalities=["IMAGE"],
-            image_config=genai_types.ImageConfig(aspect_ratio=_GEMINI_NATIVE_ASPECT_RATIO[size]),
-        ),
-    )
-    _record_genai_usage(response, model)
-    if not response.candidates:
-        raise RuntimeError("Gemini 응답에 candidates가 없음")
-    for part in response.candidates[0].content.parts:
-        if part.inline_data and part.inline_data.data:
-            return part.inline_data.data
-    raise RuntimeError("Gemini 응답에 이미지 데이터가 없음")
-
-
-async def _generate_with_imagen(model: str, prompt: str, size: AdSize) -> bytes:
-    client = genai.Client(api_key=settings.gemini_api_key)
-    response = await client.aio.models.generate_images(
-        model=model,
-        prompt=prompt,
-        config=genai_types.GenerateImagesConfig(
-            number_of_images=1,
-            aspect_ratio=_IMAGEN_ASPECT_RATIO[size],
-        ),
-    )
-    _record_genai_usage(response, model)
-    if not response.generated_images:
-        raise RuntimeError("Imagen 응답에 이미지가 없음")
-    return response.generated_images[0].image.image_bytes
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -724,26 +615,15 @@ async def _generate_with_imagen(model: str, prompt: str, size: AdSize) -> bytes:
 # AI 추출이라 픽셀이 완벽히 동일하진 않으나, 전체 재생성 대비 원본에 훨씬 가깝다.
 # ─────────────────────────────────────────────────────────────────────────────
 
-_REMOVE_BG_PROMPT = (
-    "Remove the background completely and keep ONLY the main product, "
-    "fully preserving its exact shape, colors, text, and details. "
-    "Output the product on a fully transparent background. "
-    "Do not add, redraw, or stylize anything — keep the product identical to the input."
-)
-
 
 async def remove_product_background(product_image_bytes: bytes) -> bytes:
     """상품 이미지의 배경을 제거하고 투명 PNG bytes를 반환한다."""
-    image_file = io.BytesIO(product_image_bytes)
-    image_file.name = "product.png"
-    response = await _openai_client.images.edit(
+    return await image_providers.remove_background(
+        product_image_bytes,
+        provider="openai",
         model=settings.generator_image_edit_model,
-        image=image_file,
-        prompt=_REMOVE_BG_PROMPT,
-        n=1,
-        background="transparent",
+        quality=settings.generator_image_quality,
     )
-    return base64.b64decode(response.data[0].b64_json)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
