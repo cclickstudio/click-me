@@ -610,7 +610,7 @@ export default function SimulationRunPage() {
         <div className='px-8 py-8 max-w-5xl mx-auto'>
           <div className={`${cardCls} flex flex-col gap-6 py-16`}>
             <div className='flex flex-col items-center gap-4'>
-              <div className='w-10 h-10 border-4 border-[#E5E8EB] dark:border-[#2D3748] border-t-[#3182F6] rounded-full animate-spin' />
+              <div className='w-10 h-10 border-4 border-[#E5E8EB] dark:border-[#2D3748] border-t-[#3182F6] dark:border-t-[#5B9DF9] rounded-full animate-spin' />
               <p className='text-sm font-medium text-[#4E5968] dark:text-[#9CA3AF]'>
                 {stageMsg || `${sampleSize}명 페르소나가 광고에 반응하는 중...`}
               </p>

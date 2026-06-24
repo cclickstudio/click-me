@@ -164,7 +164,7 @@ export default function SimulationResultPage() {
     <>
       {loading && (
         <div className='px-8 py-16 max-w-5xl mx-auto text-center'>
-          <div className='inline-block w-8 h-8 border-4 border-[#E5E8EB] dark:border-[#2D3748] border-t-[#3182F6] rounded-full animate-spin' />
+          <div className='inline-block w-8 h-8 border-4 border-[#E5E8EB] dark:border-[#2D3748] border-t-[#3182F6] dark:border-t-[#5B9DF9] rounded-full animate-spin' />
           <p className='mt-4 text-sm text-[#8B95A1] dark:text-[#6B7280]'>
             결과를 불러오는 중...
           </p>

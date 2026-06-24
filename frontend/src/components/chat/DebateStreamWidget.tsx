@@ -148,7 +148,7 @@ export default function DebateStreamWidget({
         </span>
         {phase === 'running' && (
           <>
-            <div className="w-3.5 h-3.5 border-2 border-[#E5E8EB] dark:border-[#2D3748] border-t-[#3182F6] rounded-full animate-spin" />
+            <div className="w-3.5 h-3.5 border-2 border-[#E5E8EB] dark:border-[#2D3748] border-t-[#3182F6] dark:border-t-[#5B9DF9] rounded-full animate-spin" />
             <span className="text-[11px] text-[#8B95A1]">{stageMsg}</span>
             <span className="ml-auto text-[11px] text-[#8B95A1]">{pct}%</span>
           </>

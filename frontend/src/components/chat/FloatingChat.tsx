@@ -128,7 +128,7 @@ export default function FloatingChat() {
       {/* 진행 트레이 — 백그라운드 작업 중 스피너 + 라벨(+진행률) (T17) */}
       {progress && (
         <div className="shrink-0 flex items-center gap-2 px-3 py-2 border-b border-[#E5E8EB] dark:border-[#2D3748] bg-[#F5F9FF] dark:bg-[#16243C]">
-          <span className="w-4 h-4 rounded-full border-2 border-[#3182F6]/30 border-t-[#3182F6] animate-spin shrink-0" />
+          <span className="w-4 h-4 rounded-full border-2 border-[#3182F6]/30 border-t-[#3182F6] dark:border-t-[#5B9DF9] animate-spin shrink-0" />
           <span className="text-xs text-[#3182F6] font-semibold truncate">{progress.label}</span>
           {typeof progress.pct === 'number' && (
             <span className="ml-auto text-xs text-[#3182F6] tabular-nums shrink-0">

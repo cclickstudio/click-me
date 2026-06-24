@@ -501,7 +501,7 @@ export default function SimFormWidget({
         title="클릭하면 시뮬레이션 페이지에서 자세히 봐요"
       >
         <div className="flex items-center gap-3">
-          <div className="w-6 h-6 border-[3px] border-[#E5E8EB] dark:border-[#2D3748] border-t-[#3182F6] rounded-full animate-spin" />
+          <div className="w-6 h-6 border-[3px] border-[#E5E8EB] dark:border-[#2D3748] border-t-[#3182F6] dark:border-t-[#5B9DF9] rounded-full animate-spin" />
           <div className="flex-1">
             <p className="text-sm text-[#191F28] dark:text-[#F2F4F6]">{stageMsg}</p>
             <div className="mt-1.5 h-1.5 rounded-full bg-[#F2F4F6] dark:bg-[#252D3D] overflow-hidden">

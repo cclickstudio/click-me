@@ -70,7 +70,7 @@ export default function AnalysisSummaryWidget({ projectId }: { projectId?: strin
     return (
       <div className={cardCls}>
         <div className="flex items-center gap-2 text-sm text-[#8B95A1]">
-          <span className="w-4 h-4 border-2 border-[#E5E8EB] dark:border-[#2D3748] border-t-[#3182F6] rounded-full animate-spin" />
+          <span className="w-4 h-4 border-2 border-[#E5E8EB] dark:border-[#2D3748] border-t-[#3182F6] dark:border-t-[#5B9DF9] rounded-full animate-spin" />
           성과를 분석하고 있어요...
         </div>
       </div>
