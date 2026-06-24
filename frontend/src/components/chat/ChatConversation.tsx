@@ -161,6 +161,7 @@ export default function ChatConversation({
   const [attachedPreview, setAttachedPreview] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null); // 완료 토스트(P9)
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [adviceUsage, setAdviceUsage] = useState<{ used: number; limit: number } | null>(null); // 비광고 한도(P12-3)
   const pendingImageRef = useRef<File | null>(null);
   const abortRef = useRef<AbortController | null>(null); // 스트리밍 중단(P3)
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -189,6 +190,20 @@ export default function ChatConversation({
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     toastTimerRef.current = setTimeout(() => setToast(null), 3000);
   }, []);
+
+  // 비광고(일반 업무) 한도 사용량 조회(P12-3) — 마운트·메시지 변화 시 갱신.
+  const refreshAdviceUsage = useCallback(() => {
+    if (!projectId) return;
+    api.chat
+      .adviceUsage(projectId)
+      .then(setAdviceUsage)
+      .catch(() => {});
+  }, [projectId]);
+
+  // 마운트·메시지 추가·스트림 종료(영속화 완료) 시 갱신 — 한도 실시간 반영.
+  useEffect(() => {
+    refreshAdviceUsage();
+  }, [refreshAdviceUsage, messages.length, isStreaming]);
 
   // 새 메시지·스트리밍 시 하단으로 — 단, 사용자가 위로 스크롤해 둔 상태면 유지(P11).
   useEffect(() => {
@@ -980,6 +995,25 @@ export default function ChatConversation({
 
       {/* ── Input bar ── */}
       <div className="border-t border-[#E5E8EB] dark:border-[#2D3748] bg-white dark:bg-[#1C2333] px-4 py-3 transition-colors shrink-0">
+        {/* 비광고 한도 progress bar(P12-3) — 광고 질문은 무제한 */}
+        {adviceUsage && adviceUsage.used > 0 && (
+          <div className="max-w-2xl mx-auto mb-2">
+            <div className="flex items-center justify-between text-[10px] text-[#8B95A1] dark:text-[#6B7280] mb-1">
+              <span>
+                일반 업무 질문 {adviceUsage.used}/{adviceUsage.limit}
+              </span>
+              {adviceUsage.used >= adviceUsage.limit && (
+                <span className="text-[#F04452]">한도 도달 · 광고 질문은 무제한</span>
+              )}
+            </div>
+            <div className="h-1 rounded-full bg-[#F2F4F6] dark:bg-[#252D3D] overflow-hidden">
+              <div
+                className={`h-full transition-all ${adviceUsage.used >= adviceUsage.limit ? 'bg-[#F04452]' : 'bg-[#3182F6]'}`}
+                style={{ width: `${Math.min(100, (adviceUsage.used / adviceUsage.limit) * 100)}%` }}
+              />
+            </div>
+          </div>
+        )}
         {attachedPreview && (
           <div className="max-w-2xl mx-auto mb-2 flex items-center gap-2">
             {/* eslint-disable-next-line @next/next/no-img-element */}

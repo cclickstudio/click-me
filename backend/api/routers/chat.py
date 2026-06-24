@@ -313,6 +313,13 @@ async def list_sessions(project_id: str | None = None, db: AsyncSession = Depend
     return {"sessions": await history.list_sessions(db, project_id)}
 
 
+@router.get("/advice-usage")
+async def advice_usage(project_id: str | None = None) -> dict:
+    """비광고(일반 업무) 질문 사용량 — progress bar용(P12). 광고 질문은 무제한."""
+    used = await history.count_advice_usage(project_id)
+    return {"used": used, "limit": settings.chat_advice_usage_limit}
+
+
 @router.get("/sessions/{session_id}/messages")
 async def get_session_messages(session_id: str, db: AsyncSession = Depends(get_db)) -> dict:
     """세션의 메시지 내역."""

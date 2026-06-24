@@ -385,6 +385,10 @@ export const api = {
       request<{ session_id: string; messages: ChatHistoryMessage[] }>(
         `/chat/sessions/${sessionId}/messages`,
       ),
+    adviceUsage: (projectId: string) =>
+      request<{ used: number; limit: number }>(
+        `/chat/advice-usage?project_id=${encodeURIComponent(projectId)}`,
+      ),
     deleteSession: (sessionId: string) =>
       request<{ deleted: boolean }>(`/chat/sessions/${sessionId}`, { method: "DELETE" }),
     // 메시지 핀 토글(T19) — 세션 상단 고정.
