@@ -1,6 +1,7 @@
 """광고 제너레이터 API — graph 파이프라인 기반.
 
-생성 시작(생성/개선) / SSE 스트림 / 결과 조회 / 후보 선택 / 게시 / 광고집행 / 이력.
+생성 시작(생성/개선) / SSE 스트림 / 결과 조회 / 후보 선택 / 게시 / 이력.
+집행은 management 단일 경로(approve→execute→executor)로 일원화 — generator 직접 집행 API 제거.
 """
 
 import io
@@ -12,12 +13,16 @@ from fastapi import APIRouter, Depends, File, Header, HTTPException, UploadFile
 from fastapi.responses import Response, StreamingResponse
 from PIL import Image
 from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.auth import get_current_user
-from core.models import User
-from domain.generator.adapters.meta_ads import AdvertiseRequest
+from core.db import get_db
+from core.models import OrganizationMember, User
 from domain.generator.contracts.enums import GenerationMode
 from domain.generator.contracts.schemas import GenerationCreateRequest
+from domain.generator.pipeline.relayout import PLATFORM_SIZES
+from domain.generator.service import brand_kit as brand_kit_service
 from domain.generator.service import generator_service
 from domain.generator.service.brand_profile import get_profile, save_profile
 from tools.storage.s3 import brand_logo_key, download_bytes, upload_bytes
@@ -263,21 +268,126 @@ async def get_generation(generation_id: str):
     return detail
 
 
+@router.get("/generations/{generation_id}/download-zip")
+async def download_generation_zip(generation_id: str):
+    """생성된 모든 후보 이미지를 ZIP으로 묶어 다운로드."""
+    data = await generator_service.download_zip(generation_id)
+    if data is None:
+        raise HTTPException(status_code=404, detail="다운로드할 이미지가 없습니다.")
+    return Response(
+        content=data,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="ads-{generation_id[:8]}.zip"'},
+    )
+
+
+# ── 플랫폼별 리레이아웃 (온디맨드 PIL 렌더, LLM 재호출 없음) ──────────────────
+
+
+@router.get("/candidates/{candidate_id}/render")
+async def render_candidate(candidate_id: str, platform: str = "ig_feed"):
+    """후보를 지정 플랫폼 사이즈로 리레이아웃해 PNG로 반환. (img 태그 호환 — 인증 없음)"""
+    if platform not in PLATFORM_SIZES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"지원하지 않는 플랫폼: {platform} (가능: {', '.join(PLATFORM_SIZES)})",
+        )
+    data = await generator_service.render_candidate(candidate_id, platform)
+    if data is None:
+        raise HTTPException(
+            status_code=404, detail="리레이아웃할 base 이미지가 없습니다(신규 생성물부터 지원)."
+        )
+    return Response(content=data, media_type="image/png")
+
+
+# ── 브랜드 키트 (조직 단위 — 색·로고·톤 저장/불러오기) ────────────────────────
+
+
+class BrandKitBody(BaseModel):
+    name: str
+    brand_color: str | None = None
+    brand_logo_key: str | None = None
+    tone_and_manner: str | None = None
+
+
+async def _org_id_for(user: User, db: AsyncSession) -> str:
+    member = await db.scalar(
+        select(OrganizationMember).where(OrganizationMember.user_id == user.id)
+    )
+    if not member:
+        raise HTTPException(status_code=404, detail="소속 조직을 찾을 수 없습니다.")
+    return str(member.organization_id)
+
+
+@router.get("/brand-kits")
+async def list_brand_kits(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    org_id = await _org_id_for(current_user, db)
+    return {"kits": await brand_kit_service.list_kits(org_id)}
+
+
+@router.post("/brand-kits")
+async def create_brand_kit(
+    body: BrandKitBody,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if not body.name.strip():
+        raise HTTPException(status_code=400, detail="키트 이름을 입력하세요.")
+    org_id = await _org_id_for(current_user, db)
+    return await brand_kit_service.create_kit(
+        org_id,
+        current_user.id,
+        name=body.name,
+        brand_color=body.brand_color,
+        brand_logo_key=body.brand_logo_key,
+        tone_and_manner=body.tone_and_manner,
+    )
+
+
+@router.put("/brand-kits/{kit_id}")
+async def update_brand_kit(
+    kit_id: str,
+    body: BrandKitBody,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if not body.name.strip():
+        raise HTTPException(status_code=400, detail="키트 이름을 입력하세요.")
+    org_id = await _org_id_for(current_user, db)
+    kit = await brand_kit_service.update_kit(
+        org_id,
+        kit_id,
+        name=body.name,
+        brand_color=body.brand_color,
+        brand_logo_key=body.brand_logo_key,
+        tone_and_manner=body.tone_and_manner,
+    )
+    if kit is None:
+        raise HTTPException(status_code=404, detail="브랜드 키트를 찾을 수 없습니다.")
+    return kit
+
+
+@router.delete("/brand-kits/{kit_id}")
+async def delete_brand_kit(
+    kit_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    org_id = await _org_id_for(current_user, db)
+    if not await brand_kit_service.delete_kit(org_id, kit_id):
+        raise HTTPException(status_code=404, detail="브랜드 키트를 찾을 수 없습니다.")
+    return {"ok": True}
+
+
 @router.post("/generations/{generation_id}/select")
 async def select_candidate(generation_id: str, body: CandidateSelectRequest):
     ok = await generator_service.select_candidate(generation_id, body.candidate_id)
     if not ok:
         raise HTTPException(status_code=404, detail="Candidate not found in this generation")
     return {"generation_id": generation_id, "selected_candidate_id": body.candidate_id}
-
-
-@router.post("/generations/{generation_id}/advertise")
-async def advertise_candidate(generation_id: str, body: AdvertiseRequest):
-    """사용자 승인 액션 — 선택된 후보를 Meta Marketing API로 광고 집행 (기본 PAUSED)."""
-    result = await generator_service.advertise_candidate(generation_id, body)
-    if result is None:
-        raise HTTPException(status_code=404, detail="Candidate not found in this generation")
-    return result
 
 
 @router.post("/generations/{generation_id}/publish")

@@ -63,12 +63,13 @@ _INSIGHTS_FIELDS = (
 # 시간별(hourly breakdown) 조회 필드 — date_stop 불필요
 _HOURLY_FIELDS = "impressions,clicks,inline_link_clicks,spend,reach,frequency,ctr,cpm,cpc"
 
-# 캠페인 목록 조회 필드 — 대시보드 목록(이름·상태·일예산·종료일). daily_budget은 KRW(offset=1) 전제.
+# 캠페인 목록 조회 필드 — 대시보드 목록(이름·상태·예산·종료일). budget은 KRW(offset=1) 전제.
+# lifetime_budget: 일예산 대신 총예산으로 설정된 캠페인(잠재고객/일정형) — 일예산 ₩0 오표기 방지.
 # stop_time: Meta는 게재 기간이 끝나도 effective_status를 ACTIVE로 유지 → 종료 판별에 필요.
-_CAMPAIGN_FIELDS = "id,name,effective_status,daily_budget,stop_time"
+_CAMPAIGN_FIELDS = "id,name,effective_status,daily_budget,lifetime_budget,stop_time"
 
 # 광고세트 예산·종료일 조회 필드 — 캠페인 노드에 예산/종료일이 없을 때(광고세트 일정) 보완.
-_ADSET_FIELDS = "daily_budget,campaign_id,end_time"
+_ADSET_FIELDS = "daily_budget,lifetime_budget,campaign_id,end_time"
 
 # 플랫폼별 분해 조회 필드 — publisher_platform breakdown (FB/IG 등)
 _PLATFORM_FIELDS = "impressions,clicks,spend,reach"
@@ -491,8 +492,8 @@ class MetaAdsReader:
     async def _adset_info(self, account: str) -> dict[str, dict[str, Any]]:
         """캠페인별 광고세트 일예산 합 + 종료일 목록 — 캠페인 노드 정보 보완용.
 
-        반환: ``{campaign_id: {"budget": int, "ends": [end_time | None, ...]}}``.
-        budget은 캠페인 노드에 예산이 없을 때(광고세트 예산), ends는 캠페인 stop_time이
+        반환: ``{campaign_id: {"budget": int, "lifetime": int, "ends": [end_time | None, ...]}}``.
+        budget/lifetime은 캠페인 노드에 예산이 없을 때(광고세트 예산), ends는 캠페인 stop_time이
         없을 때 게재 기간 종료 판별에 쓴다.
         """
         payload = await self._client.get(f"{account}/adsets", {"fields": _ADSET_FIELDS})
@@ -501,8 +502,9 @@ class MetaAdsReader:
             cid = str(row.get("campaign_id", ""))
             if not cid:
                 continue
-            entry = info.setdefault(cid, {"budget": 0, "ends": []})
+            entry = info.setdefault(cid, {"budget": 0, "lifetime": 0, "ends": []})
             entry["budget"] += _to_int(row.get("daily_budget"))  # KRW offset=1
+            entry["lifetime"] += _to_int(row.get("lifetime_budget"))  # 총예산 광고세트
             entry["ends"].append(row.get("end_time"))
         return info
 
@@ -554,8 +556,16 @@ class MetaAdsReader:
             campaign_stop = row.get("stop_time")
             # 표시용 종료일 — 캠페인 stop_time 우선, 없으면 광고세트 종료일 중 가장 늦은 것
             ended_at = campaign_stop or max([e for e in ends if e], default=None)
-            # 캠페인(CBO) 예산 우선, 없으면(0) 광고세트 일예산 합
-            budget = _to_int(row.get("daily_budget")) or info.get("budget", 0)
+            # 캠페인(CBO) 예산 우선, 없으면(0) 광고세트 예산 합 — 일예산·총예산 각각.
+            daily = _to_int(row.get("daily_budget")) or info.get("budget", 0)
+            lifetime = _to_int(row.get("lifetime_budget")) or info.get("lifetime", 0)
+            # 일예산 우선, 없으면 총예산, 둘 다 없으면 none(예산 미상 — '—'로 표시).
+            if daily > 0:
+                budget_type = "daily"
+            elif lifetime > 0:
+                budget_type = "lifetime"
+            else:
+                budget_type = "none"
             # 게재 기간이 끝났으면 effective_status가 ACTIVE라도 '종료'로 본다(충전해도 재개 안 됨).
             if self._schedule_ended(campaign_stop, ends):
                 state = CampaignState.ENDED
@@ -566,7 +576,9 @@ class MetaAdsReader:
                     campaign_id=cid,
                     name=str(row.get("name", "")),
                     state=state,
-                    daily_budget_krw=budget,
+                    daily_budget_krw=daily,
+                    lifetime_budget_krw=lifetime,
+                    budget_type=budget_type,
                     ended_at=ended_at,
                 )
             )

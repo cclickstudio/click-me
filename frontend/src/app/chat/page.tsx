@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect } from 'react';
 import AppLayout from '@/components/AppLayout';
 import { safeRandomUUID } from '@/lib/utils';
+import { api } from '@/lib/api';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
@@ -20,6 +21,7 @@ type SourceMeta = {
   engine: string; // OpenAI · 실측+KB | Gemini
   citations?: Citation[];
   used_tools?: string[];
+  thread_id?: string; // 피드백 적재 키
 };
 type Message = {
   role: 'user' | 'assistant';
@@ -55,6 +57,23 @@ function TypingIndicator() {
 
 export default function Page() {
   const [messages, setMessages] = useState<Message[]>([]);
+  const [fb, setFb] = useState<Record<number, number>>({}); // 메시지 index → 평가(1/-1)
+
+  // 어시스턴트 답변 평가 적재(좋아요/싫어요) — RAG 품질 개선.
+  const sendFeedback = async (i: number, rating: number) => {
+    const msg = messages[i];
+    setFb((p) => ({ ...p, [i]: rating }));
+    try {
+      await api.chat.feedback({
+        thread_id: msg.meta?.thread_id,
+        rating,
+        question: messages[i - 1]?.content,
+        answer: msg.content,
+      });
+    } catch {
+      /* 적재 실패는 조용히 무시 */
+    }
+  };
   const [input, setInput] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
   const sessionId = useRef<string>("");
@@ -226,6 +245,34 @@ export default function Page() {
                               .map((c) => c.title || c.source.replace('.md', '')),
                           ].join(' · ')}
                         </p>
+                      ) : null}
+                      {/* 매니지먼트 답변 평가(좋아요/싫어요) — RAG 개선 적재 */}
+                      {msg.role === 'assistant' && msg.meta?.source === 'management' && msg.content ? (
+                        <div className="flex items-center gap-1 px-1">
+                          <button
+                            onClick={() => sendFeedback(i, 1)}
+                            disabled={fb[i] !== undefined}
+                            className={`text-[12px] px-1.5 py-0.5 rounded ${
+                              fb[i] === 1 ? 'text-[#3182F6]' : 'text-[#B0B8C1] hover:text-[#3182F6]'
+                            } disabled:cursor-default`}
+                            title="도움이 됐어요"
+                          >
+                            👍
+                          </button>
+                          <button
+                            onClick={() => sendFeedback(i, -1)}
+                            disabled={fb[i] !== undefined}
+                            className={`text-[12px] px-1.5 py-0.5 rounded ${
+                              fb[i] === -1 ? 'text-red-500' : 'text-[#B0B8C1] hover:text-red-500'
+                            } disabled:cursor-default`}
+                            title="별로예요"
+                          >
+                            👎
+                          </button>
+                          {fb[i] !== undefined && (
+                            <span className="text-[10px] text-[#B0B8C1]">평가 감사합니다</span>
+                          )}
+                        </div>
                       ) : null}
                     </div>
                   </div>

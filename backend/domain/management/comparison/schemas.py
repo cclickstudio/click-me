@@ -82,9 +82,9 @@ class ComparisonReport(Contract):
 
 
 class PredictionSnapshot(Contract):
-    """집행 전 시뮬 예측 — 실 시뮬 KPI와 동일 필드(슬롯). 지금은 Mock, 추후 실 시뮬로 교체.
+    """집행 전 시뮬 예측 — 실 시뮬 KPI와 동일 필드(슬롯). Mock(데모) 또는 실 시뮬로 채움.
 
-    예측은 상대 지표(클릭의향률 0~1·구매의도/신뢰도 1~5·objective_fit 0~100)다.
+    예측은 상대 지표(클릭의향률 0~1·구매의도/신뢰도 1~5)다.
     실측(RealOutcome, 절대)과 스케일이 달라 환산하지 않고 나란히 둔다(CLAUDE.md).
     """
 
@@ -93,8 +93,6 @@ class PredictionSnapshot(Contract):
     purchase_intent: float = Field(ge=0.0)  # 1~5
     trust_avg: float = Field(ge=0.0)  # 1~5
     rejection_rate: float = Field(ge=0.0)  # 0~1
-    objective_fit_score: int | None = None  # 0~100 종합 적합도
-    grade: str | None = None  # 높음 / 보통 / 낮음
     as_of: UtcDatetime
     source: str = "mock"  # mock | sim — 슬롯이 무엇으로 채워졌는지
 
@@ -118,3 +116,4 @@ class BeforeAfter(Contract):
     actual: RealOutcome
     verdict: BeforeAfterVerdict
     rationale: str
+    interpretation: str = ""  # 보조 KPI(구매의도·신뢰도·거부율) 기반 결정론 해석 — 없으면 ""

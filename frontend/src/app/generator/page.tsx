@@ -4,17 +4,20 @@ import { useEffect, useRef, useState } from "react";
 import AppLayout from "@/components/AppLayout";
 import { useProjects } from "@/components/ProjectContext";
 import { api } from "@/lib/api";
+import { getToken } from "@/lib/authApi";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 import type {
-  CampaignResult,
+  BrandKit,
   GenerationDetail,
   GeneratorCandidate,
   PublishResult,
   QualityCheckItem,
   QualityReport,
+  RankedAction,
   SSEProgressEvent,
 } from "@/lib/types";
+import type { ActionResult } from "@/components/manage/types";
 
 // ── 타입 ─────────────────────────────────────────────────────────────────────
 
@@ -33,14 +36,16 @@ const OBJECTIVES = [
   { value: "promotion", label: "프로모션 반응" },
 ];
 
+// Meta 캠페인 목적 — 현재 집행(from-candidate)이 실제 지원하는 건 traffic·leads뿐.
+// 나머지는 로드맵 노출용으로 두되 disabled 처리(선택 불가) → 잘못된 값 전송 방지.
 const META_OBJECTIVES = [
-  { value: "OUTCOME_TRAFFIC", label: "트래픽" },
-  { value: "OUTCOME_AWARENESS", label: "인지도" },
-  { value: "OUTCOME_ENGAGEMENT", label: "참여" },
-  { value: "OUTCOME_LEADS", label: "리드" },
-  { value: "OUTCOME_SALES", label: "판매" },
-  { value: "OUTCOME_APP_PROMOTION", label: "앱 홍보" },
-];
+  { value: "traffic", label: "트래픽 (링크 클릭)", supported: true },
+  { value: "leads", label: "리드 (잠재고객 폼)", supported: true },
+  { value: "awareness", label: "인지도", supported: false },
+  { value: "engagement", label: "참여", supported: false },
+  { value: "sales", label: "판매", supported: false },
+  { value: "app_promotion", label: "앱 홍보", supported: false },
+] as const;
 
 const SIZES = [
   { label: "1:1 (1080×1080)", width: 1080, height: 1080 },
@@ -53,6 +58,14 @@ const STAGES = [
   { key: "strategy", label: "광고 전략 생성" },
   { key: "template", label: "템플릿 선택" },
   { key: "candidates", label: "광고 후보 3종 생성" },
+  { key: "explain", label: "생성 이유 작성" },
+];
+
+const CAROUSEL_STAGES = [
+  { key: "product_analysis", label: "상품 분석" },
+  { key: "strategy", label: "광고 전략 생성" },
+  { key: "template", label: "템플릿 선택" },
+  { key: "candidates", label: "카드뉴스 3장 생성" },
   { key: "explain", label: "생성 이유 작성" },
 ];
 
@@ -120,14 +133,32 @@ function QualityBadge({ item, label }: { item: QualityCheckItem; label: string }
   );
 }
 
+async function downloadImage(imageUrl: string, filename: string) {
+  const url = imageUrl.startsWith("/") ? `${API_BASE}${imageUrl}` : imageUrl;
+  const res = await fetch(url);
+  const blob = await res.blob();
+  const objectUrl = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = objectUrl;
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(objectUrl);
+}
+
 function CandidateCard({
   candidate,
   onClick,
+  isCarousel,
 }: {
   candidate: GeneratorCandidate;
   onClick: () => void;
+  isCarousel: boolean;
 }) {
   const letter = VARIANT_LETTERS[candidate.idx] ?? String(candidate.idx + 1);
+  const label = isCarousel ? `슬라이드 ${candidate.idx + 1}` : `${letter}안`;
+  const filename = isCarousel
+    ? `slide_${candidate.idx + 1}.png`
+    : `ad_${letter}.png`;
   return (
     <div
       className="bg-white dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748] rounded-2xl overflow-hidden cursor-pointer group flex hover:border-[#3182F6] hover:shadow-md transition-all"
@@ -138,7 +169,7 @@ function CandidateCard({
           // eslint-disable-next-line @next/next/no-img-element
           <img
             src={candidate.image_url?.startsWith("/") ? `${API_BASE}${candidate.image_url}` : candidate.image_url ?? undefined}
-            alt={`광고 ${letter}`}
+            alt={`광고 ${label}`}
             className="w-full h-full object-cover transition-opacity group-hover:opacity-90"
           />
         ) : (
@@ -146,19 +177,38 @@ function CandidateCard({
         )}
         <div className="absolute top-2 left-2">
           <span className="text-[11px] font-semibold bg-black/50 text-white px-2 py-0.5 rounded-full">
-            {letter}안
+            {label}
           </span>
         </div>
+        {candidate.image_url && (
+          <button
+            type="button"
+            className="absolute top-2 right-2 bg-black/50 hover:bg-black/70 text-white rounded-full w-7 h-7 flex items-center justify-center transition-colors"
+            title="이미지 다운로드"
+            onClick={(e) => {
+              e.stopPropagation();
+              downloadImage(candidate.image_url!, filename);
+            }}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
+              <path d="M8 1a.75.75 0 0 1 .75.75v6.69l1.97-1.97a.75.75 0 1 1 1.06 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0L4.22 7.53a.75.75 0 0 1 1.06-1.06l1.97 1.97V1.75A.75.75 0 0 1 8 1ZM2.5 13.75a.75.75 0 0 1 .75-.75h9.5a.75.75 0 0 1 0 1.5h-9.5a.75.75 0 0 1-.75-.75Z" />
+            </svg>
+          </button>
+        )}
       </div>
       <div className="flex-1 p-5 flex flex-col justify-between min-w-0">
         <div className="space-y-2">
           <div className="flex items-center gap-1.5 flex-wrap">
             <span className="text-[11px] bg-[#3182F6] text-white px-2 py-0.5 rounded-full">
-              {strategyLabel(candidate.strategy.strategy_type)}
+              {isCarousel
+                ? (candidate.strategy.strategy_description ?? `슬라이드 ${candidate.idx + 1}`)
+                : strategyLabel(candidate.strategy.strategy_type)}
             </span>
-            <span className="text-[11px] bg-[#F2F4F6] dark:bg-[#252D3D] text-[#8B95A1] dark:text-[#6B7280] px-2 py-0.5 rounded-full">
-              {TEMPLATE_LABELS[candidate.template_id] ?? `템플릿 ${candidate.template_id}`}
-            </span>
+            {!isCarousel && (
+              <span className="text-[11px] bg-[#F2F4F6] dark:bg-[#252D3D] text-[#8B95A1] dark:text-[#6B7280] px-2 py-0.5 rounded-full">
+                {TEMPLATE_LABELS[candidate.template_id] ?? `템플릿 ${candidate.template_id}`}
+              </span>
+            )}
             <span
               className={`text-[11px] font-semibold px-2 py-0.5 rounded-full ${
                 candidate.qa_passed
@@ -194,13 +244,16 @@ function CandidateModal({
   candidate,
   selectError,
   onClose,
+  isCarousel,
 }: {
   generationId: string;
   candidate: GeneratorCandidate;
   selectError: string | null;
   onClose: () => void;
+  isCarousel: boolean;
 }) {
   const letter = VARIANT_LETTERS[candidate.idx] ?? String(candidate.idx + 1);
+  const label = isCarousel ? `슬라이드 ${candidate.idx + 1}` : `${letter}안`;
   const qa = candidate.qa_result;
   const qualityKeys = Object.keys(QUALITY_LABELS) as (keyof typeof QUALITY_LABELS)[];
 
@@ -210,16 +263,18 @@ function CandidateModal({
   const [publishResult, setPublishResult] = useState<PublishResult | null>(null);
   const [publishError, setPublishError] = useState<string | null>(null);
 
-  // Meta 광고 집행
-  const [adObjective, setAdObjective] = useState("OUTCOME_TRAFFIC");
+  // Meta 광고 집행 — 시뮬 없는 빠른 집행(from-candidate→approve→execute, PAUSED 생성)
+  const [campaignName, setCampaignName] = useState(candidate.copy.headline);
+  const [adObjective, setAdObjective] = useState<"traffic" | "leads">("traffic");
+  const [linkUrl, setLinkUrl] = useState("");
   const [adBudget, setAdBudget] = useState(10000);
+  const [startDate, setStartDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [endDate, setEndDate] = useState<string | null>(null);
   const [ageMin, setAgeMin] = useState(18);
   const [ageMax, setAgeMax] = useState(65);
   const [countries, setCountries] = useState<string[]>(["KR"]);
-  const [startDate, setStartDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [endDate, setEndDate] = useState<string | null>(null);
   const [advertising, setAdvertising] = useState(false);
-  const [advertiseResult, setAdvertiseResult] = useState<CampaignResult | null>(null);
+  const [advertiseResult, setAdvertiseResult] = useState<ActionResult | null>(null);
   const [advertiseError, setAdvertiseError] = useState<string | null>(null);
 
   async function handlePublish() {
@@ -240,19 +295,36 @@ function CandidateModal({
   }
 
   async function handleAdvertise() {
+    if (!linkUrl.trim()) {
+      setAdvertiseError("목적지 URL(link_url)을 입력하세요.");
+      return;
+    }
     setAdvertising(true);
     setAdvertiseError(null);
+    setAdvertiseResult(null);
     try {
-      const result = (await api.generator.advertise(generationId, {
+      // 집행은 management 단일 경로로 일원화 — 후보를 제안으로 패키징한 뒤 승인·실행.
+      const { proposal } = await api.management.fromCandidate({
+        generation_id: generationId,
         candidate_id: candidate.candidate_id,
-        budget: adBudget,
         objective: adObjective,
-        targeting: { age_min: ageMin, age_max: ageMax, genders: [], countries },
-        destination_url: "https://example.com",
+        link_url: linkUrl.trim(),
+        name: campaignName.trim() || candidate.copy.headline,
+        daily_budget_krw: adBudget,
         start_date: startDate,
         end_date: endDate,
-      })) as CampaignResult;
-      setAdvertiseResult(result);
+        country: countries[0] ?? "KR",
+        age_min: ageMin,
+        age_max: ageMax,
+        gender: "all",
+      });
+      const a = (await api.management.approve(proposal, true)) as { approved_action: unknown };
+      const resp = (await api.management.execute(a.approved_action, proposal)) as {
+        result: ActionResult;
+        error_message?: string;
+      };
+      setAdvertiseResult(resp.result);
+      if (resp.error_message) setAdvertiseError(resp.error_message);
     } catch (e) {
       setAdvertiseError(e instanceof Error ? e.message : "Meta 광고 집행에 실패했습니다.");
     } finally {
@@ -284,7 +356,7 @@ function CandidateModal({
             // eslint-disable-next-line @next/next/no-img-element
             <img
               src={candidate.image_url?.startsWith("/") ? `${API_BASE}${candidate.image_url}` : candidate.image_url ?? undefined}
-              alt={`광고 ${letter}`}
+              alt={`광고 ${label}`}
               className="w-full h-full object-contain"
             />
           )}
@@ -292,13 +364,17 @@ function CandidateModal({
 
         <div className="flex-1 overflow-y-auto">
           <div className="sticky top-0 bg-white dark:bg-[#1C2333] border-b border-[#E5E8EB] dark:border-[#2D3748] px-6 py-4 flex items-center gap-2">
-            <span className="text-sm font-bold text-[#191F28] dark:text-[#F2F4F6]">{letter}안</span>
+            <span className="text-sm font-bold text-[#191F28] dark:text-[#F2F4F6]">{label}</span>
             <span className="text-[11px] bg-[#3182F6] text-white px-2 py-0.5 rounded-full">
-              {strategyLabel(candidate.strategy.strategy_type)}
+              {isCarousel
+                ? (candidate.strategy.strategy_description ?? `슬라이드 ${candidate.idx + 1}`)
+                : strategyLabel(candidate.strategy.strategy_type)}
             </span>
-            <span className="text-[11px] bg-[#F2F4F6] dark:bg-[#252D3D] text-[#4E5968] dark:text-[#9CA3AF] px-2 py-0.5 rounded-full">
-              {TEMPLATE_LABELS[candidate.template_id] ?? `템플릿 ${candidate.template_id}`}
-            </span>
+            {!isCarousel && (
+              <span className="text-[11px] bg-[#F2F4F6] dark:bg-[#252D3D] text-[#4E5968] dark:text-[#9CA3AF] px-2 py-0.5 rounded-full">
+                {TEMPLATE_LABELS[candidate.template_id] ?? `템플릿 ${candidate.template_id}`}
+              </span>
+            )}
           </div>
 
           <div className="p-6 space-y-6">
@@ -463,49 +539,55 @@ function CandidateModal({
             {/* Meta 광고 집행 */}
             <section className="space-y-3 pt-2 border-t border-[#E5E8EB] dark:border-[#2D3748]">
               <h3 className="text-xs font-bold text-[#8B95A1] dark:text-[#6B7280] uppercase tracking-widest">
-                Meta 광고 집행
+                캠페인 생성
               </h3>
               {advertiseResult ? (
                 <div
                   className={`px-3 py-3 rounded-xl text-sm ${
-                    advertiseResult.success
+                    advertiseResult.status === "success"
                       ? "bg-[#00C471]/10 text-[#00C471]"
                       : "bg-[#FFF0F0] dark:bg-[#3A2228] text-[#F74D4D]"
                   }`}
                 >
-                  {advertiseResult.mocked ? (
-                    <>
-                      <p className="font-semibold">Mock 모드로 광고 집행 시뮬레이션 완료</p>
-                      <p className="text-xs opacity-80 mt-1">
-                        META_AD_ACCOUNT_ID, META_PAGE_ID, META_INSTAGRAM_ACCOUNT_ID,
-                        META_ACCESS_TOKEN이 설정되어 있으면 실제 캠페인이 생성됩니다.
-                      </p>
-                    </>
-                  ) : advertiseResult.success ? (
-                    <div className="space-y-0.5">
-                      <p>캠페인 ID: {advertiseResult.campaign_id}</p>
-                      <p>광고세트 ID: {advertiseResult.adset_id}</p>
-                      <p>크리에이티브 ID: {advertiseResult.creative_id}</p>
-                      <p>광고 ID: {advertiseResult.ad_id}</p>
-                      {advertiseResult.ads_manager_url && (
-                        <p className="mt-1">
-                          <a
-                            href={advertiseResult.ads_manager_url}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-[#3182F6] hover:underline"
-                          >
-                            페이스북 Ads Manager 바로가기
-                          </a>
+                  {advertiseResult.status === "success" ? (
+                    advertiseResult.platform_response_snapshot?.campaign_meta_id ? (
+                      <div className="space-y-0.5">
+                        <p className="font-semibold">캠페인 생성 완료 (PAUSED)</p>
+                        <p>
+                          캠페인 ID: {advertiseResult.platform_response_snapshot.campaign_meta_id}
                         </p>
-                      )}
-                    </div>
+                        <p className="text-xs opacity-80 mt-1">
+                          캠페인·광고세트가 PAUSED로 생성됐습니다(미게재·과금 0). 광고 소재(리드
+                          캠페인은 리드폼 포함)는 Meta Ads Manager에서 추가한 뒤 거기서 게재하세요.
+                        </p>
+                      </div>
+                    ) : (
+                      <>
+                        <p className="font-semibold">캠페인 생성 절차 검증 완료</p>
+                        <p className="text-xs opacity-80 mt-1">
+                          현재 모드에선 실제 생성이 일어나지 않습니다(검증/모의). LIVE 모드일 때 실제
+                          Meta 캠페인이 PAUSED로 생성됩니다.
+                        </p>
+                      </>
+                    )
                   ) : (
-                    <p>광고 집행 실패: {advertiseResult.error}</p>
+                    <p>광고 집행 실패: {advertiseError ?? "알 수 없는 오류"}</p>
                   )}
                 </div>
               ) : (
                 <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-medium text-[#4E5968] dark:text-[#9CA3AF] mb-1">
+                      캠페인 이름
+                    </label>
+                    <input
+                      type="text"
+                      className={inputCls}
+                      value={campaignName}
+                      onChange={(e) => setCampaignName(e.target.value)}
+                      disabled={advertising}
+                    />
+                  </div>
                   <div>
                     <label className="block text-xs font-medium text-[#4E5968] dark:text-[#9CA3AF] mb-1">
                       광고 목적
@@ -513,14 +595,29 @@ function CandidateModal({
                     <select
                       className={inputCls}
                       value={adObjective}
-                      onChange={(e) => setAdObjective(e.target.value)}
+                      onChange={(e) => setAdObjective(e.target.value as "traffic" | "leads")}
+                      disabled={advertising}
                     >
                       {META_OBJECTIVES.map((o) => (
-                        <option key={o.value} value={o.value}>
+                        <option key={o.value} value={o.value} disabled={!o.supported}>
                           {o.label}
+                          {o.supported ? "" : " (준비 중)"}
                         </option>
                       ))}
                     </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-[#4E5968] dark:text-[#9CA3AF] mb-1">
+                      목적지 URL
+                    </label>
+                    <input
+                      type="url"
+                      placeholder="https://example.com/landing"
+                      className={inputCls}
+                      value={linkUrl}
+                      onChange={(e) => setLinkUrl(e.target.value)}
+                      disabled={advertising}
+                    />
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-[#4E5968] dark:text-[#9CA3AF] mb-1">
@@ -608,17 +705,17 @@ function CandidateModal({
                   {advertiseError && (
                     <p className="text-xs text-red-600 dark:text-red-400">{advertiseError}</p>
                   )}
+                  <p className="text-[11px] text-[#8B95A1] dark:text-[#6B7280]">
+                    예산·타겟까지 Meta에 캠페인을 만듭니다. 게재는 안 되며(PAUSED), 광고 소재는 Meta
+                    Ads Manager에서 추가하세요.
+                  </p>
                   <button
                     onClick={handleAdvertise}
                     disabled={advertising || adBudget < 1000}
                     className="w-full py-2.5 rounded-xl text-sm font-semibold text-white bg-[#3182F6] hover:bg-[#1B64DA] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                   >
-                    {advertising ? "광고 집행 중..." : "Meta 광고 집행"}
+                    {advertising ? "생성 중..." : "캠페인 생성하기"}
                   </button>
-                  <p className="text-xs text-[#F4A100]">
-                    ※ 모든 캠페인·광고세트·광고는 PAUSED 상태로 생성됩니다. 비용이 발생하지 않으며,
-                    활성화는 Facebook Ads Manager에서 직접 하셔야 합니다.
-                  </p>
                 </div>
               )}
             </section>
@@ -634,9 +731,19 @@ function CandidateModal({
 // 진행 중인 생성 ID — 페이지 이탈/새로고침 후 복원용
 const ACTIVE_GEN_KEY = "generator_active_gen";
 
+// 광고 asset_url(전체 URL / 프록시 경로 / S3 키 / 로컬 파일경로) → 미리보기 가능한 src.
+// 로컬 파일경로(C:\..., 백슬래시 포함) 등 표시 불가하면 null.
+function adRefImageSrc(asset: string): string | null {
+  if (/^https?:\/\//.test(asset)) return asset;
+  if (asset.startsWith("/")) return `${API_BASE}${asset}`;
+  if (/[\\]/.test(asset) || /^[A-Za-z]:/.test(asset)) return null;
+  return `${API_BASE}/api/generator/image?key=${encodeURIComponent(asset)}`;
+}
+
 export default function GeneratorPage() {
-  const { selectedProject, projects, selectProject } = useProjects();
+  const { selectedProject, projects, selectProject, details, loadDetails } = useProjects();
   const [mode, setMode] = useState<GenMode>("create");
+  const [format, setFormat] = useState<"single" | "carousel">("single");
   const [phase, setPhase] = useState<Phase>("idle");
   const [error, setError] = useState("");
 
@@ -645,7 +752,11 @@ export default function GeneratorPage() {
   const [logoS3Key, setLogoS3Key] = useState("");
   const [logoPreviewUrl, setLogoPreviewUrl] = useState("");
   const [logoUploading, setLogoUploading] = useState(false);
-  const [profileSaved, setProfileSaved] = useState(false);
+
+  // 브랜드 키트 (조직 단위 저장/불러오기)
+  const [kits, setKits] = useState<BrandKit[]>([]);
+  const [selectedKitId, setSelectedKitId] = useState("");
+  const [kitName, setKitName] = useState("");
   const logoInputRef = useRef<HTMLInputElement>(null);
   const esRef = useRef<EventSource | null>(null);
 
@@ -667,11 +778,17 @@ export default function GeneratorPage() {
   const [targetAudience, setTargetAudience] = useState("");
   const [objective, setObjective] = useState("conversion");
 
-  // 개선 모드 입력
-  const [existingS3Key, setExistingS3Key] = useState("");
-  const [simulationSummary, setSimulationSummary] = useState("");
+  // 개선 모드 입력 — 시뮬레이션 선택 → 자동 로드
+  const [selectedSimId, setSelectedSimId] = useState("");
+  const [improveData, setImproveData] = useState<{
+    ad_asset_url: string | null;
+    product_name: string;
+    summary: string;
+    improvement_direction: string;
+  } | null>(null);
+  const [improveLoading, setImproveLoading] = useState(false);
+  const [improveError, setImproveError] = useState("");
   const [fixRequests, setFixRequests] = useState("");
-  const [improveProductName, setImproveProductName] = useState("");
 
   // 진행 / 결과
   const [progress, setProgress] = useState({ stage: "", pct: 0, message: "" });
@@ -734,10 +851,83 @@ export default function GeneratorPage() {
     };
   }, []);
 
+  // 개선 모드: 프로젝트 선택 시 해당 프로젝트 시뮬 목록 로드 + 시뮬 선택 초기화
+  useEffect(() => {
+    setSelectedSimId("");
+    setImproveData(null);
+    setImproveError("");
+    if (mode === "improve" && selectedProject) {
+      loadDetails(selectedProject.id);
+    }
+  }, [mode, selectedProject?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const improveSims = (selectedProject && details[selectedProject.id]?.sims) || [];
+
+  function buildSimSummary(agg: Record<string, number | null>, n?: number): string {
+    const parts: string[] = [];
+    if (n) parts.push(`표본 ${n}명`);
+    if (agg.purchase_intent != null) parts.push(`구매의향 ${agg.purchase_intent.toFixed(2)}/5`);
+    if (agg.click_intent_rate != null) parts.push(`클릭의향 ${Math.round(agg.click_intent_rate * 100)}%`);
+    if (agg.trust_avg != null) parts.push(`신뢰도 ${agg.trust_avg.toFixed(2)}/5`);
+    if (agg.rejection_rate != null) parts.push(`거부율 ${Math.round(agg.rejection_rate * 100)}%`);
+    return parts.join(" · ");
+  }
+
+  // 시뮬 선택 → 제품명·결과요약·개선방향(토론 권고)·광고 이미지 자동 로드
+  async function loadSimulation(simId: string) {
+    setSelectedSimId(simId);
+    setImproveData(null);
+    setImproveError("");
+    if (!simId) return;
+    setImproveLoading(true);
+    try {
+      const headers = { Authorization: `Bearer ${getToken()}` };
+      const r = await fetch(`${API_BASE}/api/projects/simulations/${simId}`, { headers });
+      if (!r.ok) throw new Error(`시뮬레이션 조회 실패 (HTTP ${r.status})`);
+      const detail = await r.json();
+      const agg = (detail.aggregate ?? {}) as Record<string, number | null>;
+      const productName: string = detail.ad_title ?? "";
+      const summary =
+        buildSimSummary(agg, detail.sample_size) || `${productName || "광고"} 시뮬레이션 결과`;
+
+      // 개선방향(토론 리포트) — 토론 없거나 실패해도 무시(개선방향만 비움)
+      let direction = "";
+      try {
+        const rep = await fetch(`${API_BASE}/api/debate/by-simulation/${simId}/report`, { headers });
+        if (rep.ok) {
+          const rv = (await rep.json()) as {
+            report?: { ranked_actions?: RankedAction[]; plain_summary?: string };
+          };
+          const actions = rv.report?.ranked_actions ?? [];
+          direction = actions.length
+            ? actions
+                .map(
+                  (a, i) =>
+                    `${i + 1}. ${a.action}${a.expected_effect ? ` — ${a.expected_effect}` : ""}`,
+                )
+                .join("\n")
+            : (rv.report?.plain_summary ?? "");
+        }
+      } catch {
+        /* 토론 리포트 없음/실패 — 개선방향 비움 */
+      }
+      setImproveData({
+        ad_asset_url: detail.ad_asset_url ?? null,
+        product_name: productName,
+        summary,
+        improvement_direction: direction,
+      });
+    } catch {
+      setImproveError("시뮬레이션 정보를 불러오지 못했습니다.");
+    } finally {
+      setImproveLoading(false);
+    }
+  }
+
   const canSubmit =
     mode === "create"
       ? productName.trim() && productDescription.trim() && targetAudience.trim()
-      : existingS3Key.trim() && simulationSummary.trim();
+      : !!improveData?.ad_asset_url;
 
   // SSE 구독 — 시작/복원 공용. 완료·실패 시 localStorage 정리.
   function subscribe(generationId: string) {
@@ -778,6 +968,61 @@ export default function GeneratorPage() {
     setPhase("idle");
     setDetail(null);
     setError("");
+  }
+
+  // ── 브랜드 키트 ─────────────────────────────────────────────────────────────
+  async function loadKits() {
+    try {
+      const { kits } = await api.generator.brandKits.list();
+      setKits(kits);
+    } catch {
+      /* 미로그인·네트워크 오류 시 빈 목록 유지 */
+    }
+  }
+
+  useEffect(() => {
+    loadKits();
+  }, []);
+
+  function applyKit(id: string) {
+    setSelectedKitId(id);
+    const kit = kits.find((k) => k.id === id);
+    if (!kit) return;
+    setBrandColor(kit.brand_color ?? "");
+    setLogoS3Key(kit.brand_logo_key ?? "");
+    setLogoPreviewUrl(
+      kit.brand_logo_key
+        ? `${API_BASE}/api/generator/image?key=${encodeURIComponent(kit.brand_logo_key)}`
+        : "",
+    );
+    setToneAndManner(kit.tone_and_manner ?? "");
+  }
+
+  async function saveKit() {
+    if (!kitName.trim()) return;
+    try {
+      await api.generator.brandKits.create({
+        name: kitName.trim(),
+        brand_color: brandColor || null,
+        brand_logo_key: logoS3Key || null,
+        tone_and_manner: toneAndManner || null,
+      });
+      setKitName("");
+      await loadKits();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "브랜드 키트 저장에 실패했습니다.");
+    }
+  }
+
+  async function deleteKit() {
+    if (!selectedKitId) return;
+    try {
+      await api.generator.brandKits.remove(selectedKitId);
+      setSelectedKitId("");
+      await loadKits();
+    } catch {
+      /* 무시 */
+    }
   }
 
   async function handleProductImageChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -828,25 +1073,6 @@ export default function GeneratorPage() {
     }
   }
 
-  async function saveProfile() {
-    if (!clientId) return;
-    try {
-      await api.generator.brandProfile.save(clientId, {
-        brand_color: brandColor || null,
-        brand_logo_key: logoS3Key || null,
-        tone_and_manner: toneAndManner || null,
-      });
-      setProfileSaved(true);
-      setTimeout(() => setProfileSaved(false), 2000);
-    } catch (e) {
-      setError(
-        e instanceof Error
-          ? `브랜드 설정 저장에 실패했습니다: ${e.message}`
-          : "브랜드 설정 저장에 실패했습니다.",
-      );
-    }
-  }
-
   async function startGeneration() {
     setError("");
     // 생성 내역이 프로젝트에 기록되도록 활성 프로젝트를 강제 — 미선택 시 차단(내역 누락 방지).
@@ -871,6 +1097,7 @@ export default function GeneratorPage() {
         ? {
             ...common,
             mode: "create",
+            format,
             product_name: productName,
             product_description: productDescription,
             target_audience: targetAudience,
@@ -880,9 +1107,10 @@ export default function GeneratorPage() {
         : {
             ...common,
             mode: "improve",
-            product_name: improveProductName,
-            existing_ad_s3_key: existingS3Key,
-            simulation_summary: simulationSummary,
+            product_name: improveData?.product_name || "",
+            existing_ad_s3_key: improveData?.ad_asset_url || "",
+            simulation_summary: improveData?.summary || "",
+            improvement_direction: improveData?.improvement_direction || null,
             fix_requests: fixRequests || null,
           };
 
@@ -908,7 +1136,8 @@ export default function GeneratorPage() {
     }
   }
 
-  const currentIdx = STAGES.findIndex((s) => s.key === progress.stage);
+  const activeStages = format === "carousel" ? CAROUSEL_STAGES : STAGES;
+  const currentIdx = activeStages.findIndex((s) => s.key === progress.stage);
 
   return (
     <AppLayout>
@@ -968,6 +1197,37 @@ export default function GeneratorPage() {
               ))}
             </div>
 
+            {/* ── 시뮬레이션 선택 (개선모드 전용) ── */}
+            {mode === "improve" && (
+              <div className={`${cardCls} p-6`}>
+                <label className={labelCls}>
+                  시뮬레이션 <span className="text-[#F74D4D]">*</span>
+                </label>
+                {!selectedProject ? (
+                  <p className="text-sm text-[#8B95A1] dark:text-[#6B7280]">
+                    프로젝트를 먼저 선택하세요.
+                  </p>
+                ) : improveSims.length === 0 ? (
+                  <p className="text-sm text-[#8B95A1] dark:text-[#6B7280]">
+                    이 프로젝트에 시뮬레이션이 없습니다.
+                  </p>
+                ) : (
+                  <select
+                    value={selectedSimId}
+                    onChange={(e) => loadSimulation(e.target.value)}
+                    className={inputCls}
+                  >
+                    <option value="">개선할 시뮬레이션을 선택하세요</option>
+                    {improveSims.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.ad_title ?? "시뮬레이션"} · {s.sample_size}명
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            )}
+
             <div className={`${cardCls} p-6 space-y-4`}>
               <div>
                 <h2 className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]">
@@ -976,12 +1236,36 @@ export default function GeneratorPage() {
                 <p className="text-xs text-[#8B95A1] dark:text-[#6B7280] mt-0.5">
                   {mode === "create"
                     ? "* 필수 항목"
-                    : "기존 광고 정보와 시뮬레이션 결과를 입력하세요"}
+                    : "프로젝트·시뮬레이션을 선택하면 정보가 자동으로 채워집니다"}
                 </p>
               </div>
 
               {mode === "create" ? (
                 <>
+                  <div>
+                    <label className={labelCls}>형식</label>
+                    <div className="flex gap-2">
+                      {(
+                        [
+                          ["single", "단일 광고"],
+                          ["carousel", "카드뉴스 (3장)"],
+                        ] as const
+                      ).map(([f, label]) => (
+                        <button
+                          key={f}
+                          type="button"
+                          onClick={() => setFormat(f)}
+                          className={`flex-1 py-2 text-sm font-medium rounded-xl border transition-colors ${
+                            format === f
+                              ? "border-[#3182F6] text-[#3182F6] bg-[#EBF3FF] dark:bg-[#1E3A5F]"
+                              : "border-[#E5E8EB] dark:border-[#2D3748] text-[#8B95A1] dark:text-[#6B7280] hover:text-[#3182F6]"
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
                   <div>
                     <label className={labelCls}>
                       제품명 <span className="text-[#F74D4D]">*</span>
@@ -1093,46 +1377,91 @@ export default function GeneratorPage() {
                 </>
               ) : (
                 <>
-                  <div>
-                    <label className={labelCls}>제품명</label>
-                    <input
-                      className={inputCls}
-                      value={improveProductName}
-                      onChange={(e) => setImproveProductName(e.target.value)}
-                      placeholder="예: 에어쿨 미니 서큘레이터"
-                    />
-                  </div>
-                  <div>
-                    <label className={labelCls}>
-                      기존 광고 S3 키 <span className="text-[#F74D4D]">*</span>
-                    </label>
-                    <input
-                      className={inputCls}
-                      value={existingS3Key}
-                      onChange={(e) => setExistingS3Key(e.target.value)}
-                      placeholder="예: generated-ads/생성ID/candidate-0.png"
-                    />
-                  </div>
-                  <div>
-                    <label className={labelCls}>
-                      시뮬레이션 결과 요약 <span className="text-[#F74D4D]">*</span>
-                    </label>
-                    <textarea
-                      className={`${inputCls} min-h-24 resize-y`}
-                      value={simulationSummary}
-                      onChange={(e) => setSimulationSummary(e.target.value)}
-                      placeholder="구매 의향 분포, 페르소나 반응, 주요 문제점 등을 입력하세요"
-                    />
-                  </div>
+                  {improveLoading && (
+                    <p className="text-sm text-[#8B95A1] dark:text-[#6B7280]">
+                      시뮬레이션 정보를 불러오는 중...
+                    </p>
+                  )}
+                  {improveError && <p className="text-sm text-red-500">{improveError}</p>}
+                  {improveData && (
+                    <>
+                      <div>
+                        <label className={labelCls}>기존 광고 (개선 대상)</label>
+                        {improveData.ad_asset_url && adRefImageSrc(improveData.ad_asset_url) ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={adRefImageSrc(improveData.ad_asset_url)!}
+                            alt="기존 광고"
+                            className="w-full rounded-xl border border-[#E5E8EB] dark:border-[#2D3748]"
+                          />
+                        ) : (
+                          <div className="w-full rounded-xl border-2 border-dashed border-[#E5E8EB] dark:border-[#2D3748] bg-[#F8F9FA] dark:bg-[#252D3D] flex flex-col items-center justify-center gap-2 text-center p-8 min-h-[180px]">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-[#B0B8C1] dark:text-[#4B5563]">
+                              <rect x="3" y="3" width="18" height="18" rx="2" />
+                              <circle cx="8.5" cy="8.5" r="1.5" />
+                              <path d="M21 15l-5-5L5 21" />
+                            </svg>
+                            <p className="text-xs font-medium text-[#8B95A1] dark:text-[#6B7280]">
+                              등록된 광고 이미지가 없습니다
+                            </p>
+                            <p className="text-[11px] text-[#B0B8C1] dark:text-[#4B5563]">
+                              시뮬레이션에서 광고 이미지를 업로드하면 여기에 표시됩니다
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                      <div>
+                        <label className={labelCls}>제품명</label>
+                        <input
+                          className={`${inputCls} bg-[#F9FAFB] dark:bg-[#161B27]`}
+                          value={improveData.product_name}
+                          readOnly
+                        />
+                      </div>
+                      <div>
+                        <label className={labelCls}>시뮬레이션 결과 요약</label>
+                        <textarea
+                          className={`${inputCls} min-h-16 bg-[#F9FAFB] dark:bg-[#161B27]`}
+                          value={improveData.summary}
+                          readOnly
+                        />
+                      </div>
+                      <div>
+                        <label className={labelCls}>개선 방향 (시뮬레이션)</label>
+                        {improveData.improvement_direction ? (
+                          <textarea
+                            className={`${inputCls} min-h-24 bg-[#F9FAFB] dark:bg-[#161B27]`}
+                            value={improveData.improvement_direction}
+                            readOnly
+                          />
+                        ) : (
+                          <p className="text-xs text-[#8B95A1] dark:text-[#6B7280]">
+                            이 시뮬레이션엔 개선 권고(토론)가 없어요. 수정 요청사항으로 개선 방향을 입력하세요.
+                          </p>
+                        )}
+                      </div>
+                    </>
+                  )}
                   <div>
                     <label className={labelCls}>수정 요청사항</label>
                     <textarea
                       className={`${inputCls} min-h-16 resize-y`}
                       value={fixRequests}
                       onChange={(e) => setFixRequests(e.target.value)}
-                      placeholder="추가로 수정하고 싶은 내용을 입력하세요"
+                      placeholder={"예: 전체적으로 더 밝고 활기찬 분위기로 바꿔주세요\n제품을 더 크고 선명하게 부각해주세요\n색상을 브랜드 컬러에 맞게 통일해주세요\n\n비워두면 시뮬레이션 개선 방향만 반영됩니다"}
                     />
                   </div>
+                  {improveData?.ad_asset_url && (
+                    <a
+                      href={`/chat?improve_s3_key=${encodeURIComponent(improveData.ad_asset_url)}&improve_sim_summary=${encodeURIComponent(improveData.summary)}&improve_product_name=${encodeURIComponent(improveData.product_name)}`}
+                      className="flex items-center gap-1.5 text-xs font-medium text-[#3182F6] hover:underline"
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                      </svg>
+                      CLIO 채팅에서 개선하기
+                    </a>
+                  )}
                 </>
               )}
 
@@ -1149,6 +1478,50 @@ export default function GeneratorPage() {
 
               {showOptional && (
                 <div className="space-y-4 pt-1">
+                  {/* ── 브랜드 키트 (저장/불러오기) ── */}
+                  <div className="space-y-2 pb-4 border-b border-[#F2F4F6] dark:border-[#252D3D]">
+                    <label className={labelCls}>브랜드 키트</label>
+                    <div className="flex gap-2">
+                      <select
+                        value={selectedKitId}
+                        onChange={(e) => applyKit(e.target.value)}
+                        className={inputCls}
+                      >
+                        <option value="">저장된 키트 불러오기...</option>
+                        {kits.map((k) => (
+                          <option key={k.id} value={k.id}>
+                            {k.name}
+                          </option>
+                        ))}
+                      </select>
+                      {selectedKitId && (
+                        <button
+                          type="button"
+                          onClick={deleteKit}
+                          className="px-3 py-2 text-sm text-red-500 border border-red-200 dark:border-red-900/40 rounded-xl hover:bg-red-50 dark:hover:bg-red-900/20 shrink-0"
+                        >
+                          삭제
+                        </button>
+                      )}
+                    </div>
+                    <div className="flex gap-2">
+                      <input
+                        className={inputCls}
+                        value={kitName}
+                        onChange={(e) => setKitName(e.target.value)}
+                        placeholder="현재 설정을 새 키트로 저장 (이름)"
+                      />
+                      <button
+                        type="button"
+                        onClick={saveKit}
+                        disabled={!kitName.trim()}
+                        className="px-3 py-2 text-sm font-medium text-white bg-[#3182F6] rounded-xl hover:bg-[#1B6EEB] disabled:opacity-40 shrink-0"
+                      >
+                        저장
+                      </button>
+                    </div>
+                  </div>
+
                   <div>
                     <label className={labelCls}>브랜드 컬러</label>
                     <div className="flex gap-2">
@@ -1235,13 +1608,6 @@ export default function GeneratorPage() {
                     </div>
                   </div>
 
-                  <button
-                    type="button"
-                    onClick={saveProfile}
-                    className="w-full py-2 rounded-xl text-xs font-semibold border border-[#3182F6] text-[#3182F6] hover:bg-[#3182F6]/10 transition-colors"
-                  >
-                    {profileSaved ? "저장됨 ✓" : "이 브랜드 설정 저장"}
-                  </button>
                 </div>
               )}
 
@@ -1251,7 +1617,11 @@ export default function GeneratorPage() {
                 onClick={startGeneration}
                 className="w-full py-3 rounded-xl text-sm font-semibold bg-[#3182F6] text-white hover:bg-[#1B64DA] disabled:bg-[#E5E8EB] disabled:text-[#B0B8C1] dark:disabled:bg-[#252D3D] dark:disabled:text-[#4B5563] disabled:cursor-not-allowed transition-colors"
               >
-                {phase === "generating" ? "생성 중..." : "광고 후보 3종 생성하기"}
+                {phase === "generating"
+                  ? "생성 중..."
+                  : format === "carousel"
+                    ? "카드뉴스 생성하기"
+                    : "광고 후보 3종 생성하기"}
               </button>
             </div>
           </div>
@@ -1272,7 +1642,9 @@ export default function GeneratorPage() {
                 )}
               </div>
               <p className="text-xs text-[#8B95A1] dark:text-[#6B7280] mb-5">
-                전략이 서로 다른 광고 3종 · 카드를 클릭하면 게시·광고 집행을 할 수 있어요
+                {format === "carousel"
+                  ? "관심끌기·가치전달·행동유도 3장 구성 · 카드를 클릭하면 게시·광고 집행을 할 수 있어요"
+                  : "전략이 서로 다른 광고 3종 · 카드를 클릭하면 게시·광고 집행을 할 수 있어요"}
               </p>
 
               {error && (
@@ -1299,7 +1671,7 @@ export default function GeneratorPage() {
                     </div>
                   </div>
                   <ul className="space-y-3">
-                    {STAGES.map((s, i) => {
+                    {activeStages.map((s, i) => {
                       const done = currentIdx > i || progress.pct >= 100;
                       const active = currentIdx === i;
                       return (
@@ -1329,7 +1701,9 @@ export default function GeneratorPage() {
                     })}
                   </ul>
                   <p className="mt-6 text-xs text-[#8B95A1] dark:text-[#6B7280]">
-                    이미지 3장을 생성하는 데 2~3분 정도 걸릴 수 있어요.
+                    {format === "carousel"
+                      ? "카드뉴스 3장을 생성하는 데 1~2분 정도 걸릴 수 있어요."
+                      : "이미지 3장을 생성하는 데 2~3분 정도 걸릴 수 있어요."}
                   </p>
                 </div>
               )}
@@ -1337,11 +1711,33 @@ export default function GeneratorPage() {
               {/* 결과 (후보 세로 정렬) */}
               {phase === "done" && detail && (
                 <div className="flex flex-col gap-3">
+                  <div className="flex justify-end">
+                    <button
+                      type="button"
+                      className="flex items-center gap-1.5 text-xs text-[#4E5968] dark:text-[#9CA3AF] border border-[#E5E8EB] dark:border-[#2D3748] rounded-lg px-3 py-1.5 hover:border-[#3182F6] hover:text-[#3182F6] transition-colors"
+                      onClick={async () => {
+                        const res = await fetch(`${API_BASE}/api/generator/generations/${detail.generation_id}/download-zip`);
+                        const blob = await res.blob();
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement("a");
+                        a.href = url;
+                        a.download = `ads-${detail.generation_id.slice(0, 8)}.zip`;
+                        a.click();
+                        URL.revokeObjectURL(url);
+                      }}
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
+                        <path d="M8 1a.75.75 0 0 1 .75.75v6.69l1.97-1.97a.75.75 0 1 1 1.06 1.06l-3.25 3.25a.75.75 0 0 1-1.06 0L4.22 7.53a.75.75 0 0 1 1.06-1.06l1.97 1.97V1.75A.75.75 0 0 1 8 1ZM2.5 13.75a.75.75 0 0 1 .75-.75h9.5a.75.75 0 0 1 0 1.5h-9.5a.75.75 0 0 1-.75-.75Z" />
+                      </svg>
+                      전체 ZIP 다운로드
+                    </button>
+                  </div>
                   {detail.candidates.map((c) => (
                     <CandidateCard
                       key={c.candidate_id}
                       candidate={c}
                       onClick={() => openCandidate(c)}
+                      isCarousel={(detail.input?.format as string | undefined) === "carousel"}
                     />
                   ))}
                 </div>
@@ -1365,6 +1761,7 @@ export default function GeneratorPage() {
             candidate={modalCandidate}
             selectError={selectError}
             onClose={() => setModalCandidate(null)}
+            isCarousel={(detail.input?.format as string | undefined) === "carousel"}
           />
         )}
       </div>

@@ -3,10 +3,11 @@
 import { useEffect, useState } from 'react';
 import AppLayout from '@/components/AppLayout';
 import { getToken } from '@/lib/authApi';
+import ModeBadge from '@/components/ModeBadge';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
-type Row = { id: string; status: string; product_name: string | null; project_name: string | null; created_by_name: string | null; created_at: string };
+type Row = { id: string; status: string; product_name: string | null; mode: string; project_name: string | null; created_by_name: string | null; created_at: string };
 
 const fmt = (iso: string) => {
   const d = new Date(iso);
@@ -75,7 +76,12 @@ export default function CompanyGenerationsPage() {
               <tbody>
                 {list.map((r) => (
                   <tr key={r.id} className="border-b border-[#F9FAFB] dark:border-[#1C2333] last:border-0 hover:bg-[#F9FAFB] dark:hover:bg-[#252D3D] transition-colors">
-                    <td className="px-6 py-3 text-[#4E5968] dark:text-[#9CA3AF]">{r.product_name ?? '—'}</td>
+                    <td className="px-6 py-3 text-[#4E5968] dark:text-[#9CA3AF]">
+                      <span className="inline-flex items-center gap-2">
+                        <ModeBadge mode={r.mode} />
+                        <span>{r.product_name ?? '—'}</span>
+                      </span>
+                    </td>
                     <td className="px-4 py-3 text-[#4E5968] dark:text-[#9CA3AF]">{r.project_name ?? '—'}</td>
                     <td className="px-4 py-3 text-[#4E5968] dark:text-[#9CA3AF]">{r.created_by_name ?? '—'}</td>
                     <td className="px-4 py-3">

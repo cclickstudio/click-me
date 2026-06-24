@@ -5,6 +5,7 @@
 import { useEffect, useState } from 'react';
 import { DebatePanel } from '@/components/simulator/DebatePanel';
 import { SimulationReportView } from '@/components/simulator/SimulationReportView';
+import { ExecuteFromSimulation } from '@/components/manage/ExecuteFromSimulation';
 import { KpiCard } from '@/components/ui/KpiCard';
 import { formatPercent } from '@/lib/utils';
 import type { ObjectiveFit, ReportView, SimRunResult } from '@/lib/types';
@@ -107,6 +108,7 @@ export function SimulationResultView({
   const failed = reactions.filter(r => !r.qa_passed);
   const ad = result.ad_analysis;
   const fit = result.objective_fit ?? null;
+  const ocean = result.ocean_segments ?? null;
   const shown = showFailed ? reactions : passed;
   const personaMap = new Map(
     (result.personas ?? []).map(p => [p.persona_id, p])
@@ -124,8 +126,17 @@ export function SimulationResultView({
             통과 {passed.length}){result.simulation_id && ' · DB 저장됨'}
           </p>
         </div>
-        {(headerAction || onReset) && (
+        {(headerAction || onReset || result.simulation_id) && (
           <div className='flex items-center gap-2'>
+            {/* DB 저장된 시뮬만 집행 가능 — created_campaigns.simulation_id로 성과비교 연결. */}
+            {result.simulation_id && agg && (
+              <ExecuteFromSimulation
+                simulationId={result.simulation_id}
+                defaultName={adTitle}
+                clickIntentRate={agg.click_intent_rate}
+                rejectionRate={agg.rejection_rate}
+              />
+            )}
             {headerAction}
             {onReset && (
               <button
@@ -251,6 +262,70 @@ export function SimulationResultView({
             )}
           </div>
         </>
+      )}
+
+      {/* 성향별 반응(OCEAN) — 연령·성별로는 못 주는 성격 기반 분해. 비교 가능한 차원이 있을 때만 */}
+      {ocean && ocean.by_dimension.some(d => d.click_gap !== null) && (
+        <div className={cardCls}>
+          <div className='flex items-center justify-between mb-3'>
+            <h2 className='text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]'>
+              성향별 반응 (OCEAN)
+            </h2>
+            <span className='text-[11px] text-[#8B95A1] dark:text-[#6B7280]'>
+              성격 z-score 높음(≥+0.4)·낮음(≤−0.4) 비교
+            </span>
+          </div>
+          {ocean.top_driver && (
+            <div className='mb-4 px-4 py-3 rounded-xl bg-[#EBF3FF] dark:bg-[#1A2436] text-sm text-[#1B64DA] dark:text-[#7AB0FF]'>
+              가장 반응을 가르는 성향: <b>{ocean.top_driver.dimension_ko}</b> —{' '}
+              {ocean.top_driver.direction} (클릭의향 격차{' '}
+              {formatPercent(Math.abs(ocean.top_driver.click_gap))})
+            </div>
+          )}
+          <div className='space-y-2'>
+            <div className='grid grid-cols-[1fr_4rem_4rem_4rem] gap-3 text-[11px] text-[#8B95A1] dark:text-[#6B7280] px-1'>
+              <span>성향</span>
+              <span className='text-right'>높음 클릭</span>
+              <span className='text-right'>낮음 클릭</span>
+              <span className='text-right'>격차</span>
+            </div>
+            {ocean.by_dimension
+              .filter(d => d.click_gap !== null && d.high && d.low)
+              .map(d => (
+                <div
+                  key={d.dimension}
+                  className='grid grid-cols-[1fr_4rem_4rem_4rem] gap-3 items-center text-sm px-1'
+                >
+                  <span className='text-[#191F28] dark:text-[#F2F4F6]'>
+                    {d.dimension_ko}
+                    {d.low_confidence && (
+                      <span className='ml-1 text-[11px] text-[#F4A100]'>⚠</span>
+                    )}
+                  </span>
+                  <span className='text-right tabular-nums text-[#4E5968] dark:text-[#9CA3AF]'>
+                    {formatPercent(d.high!.click_intent_rate)}
+                  </span>
+                  <span className='text-right tabular-nums text-[#4E5968] dark:text-[#9CA3AF]'>
+                    {formatPercent(d.low!.click_intent_rate)}
+                  </span>
+                  <span
+                    className={`text-right tabular-nums font-semibold ${
+                      (d.click_gap ?? 0) >= 0
+                        ? 'text-[#1B64DA]'
+                        : 'text-[#E03131]'
+                    }`}
+                  >
+                    {(d.click_gap ?? 0) >= 0 ? '+' : ''}
+                    {formatPercent(d.click_gap ?? 0)}
+                  </span>
+                </div>
+              ))}
+          </div>
+          <p className='text-[11px] text-[#B0B8C1] dark:text-[#4B5563] mt-3'>
+            ⚠는 표본이 적어 신뢰가 낮은 성향입니다. 절대값이 아닌 성향 간 상대
+            비교로 참고하세요.
+          </p>
+        </div>
       )}
 
       {/* 분석 데이터(왼쪽) + 토론(오른쪽) 가로 배치 — stretch로 좌열이 우열 높이까지 확장 */}
