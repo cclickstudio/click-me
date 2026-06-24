@@ -7,14 +7,20 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import uuid
 from collections.abc import AsyncIterator
 
 from core.tracing import make_trace_config
 from domain.simulation.contracts.schemas import SimulationRunRequest
+from domain.simulation.tools.aggregation.ocean_segments import ocean_segment_breakdown
 from domain.simulation.tools.objective_fit import assess_objective_fit
 
 logger = logging.getLogger("clickme")
+
+# 반응 팬아웃 동시성 상한 — 과부하 엔드포인트에 1000콜을 한꺼번에 쏘지 않도록 제한(503 증폭 방지).
+# LangGraph가 config.max_concurrency 로 Send fan-out 병렬 수를 제한한다. 환경변수로 튜닝 가능.
+_MAX_REACTION_CONCURRENCY = int(os.getenv("SIMULATION_MAX_CONCURRENCY", "8"))
 
 
 def _ad_block(request: SimulationRunRequest) -> dict:
@@ -105,6 +111,8 @@ class SimulationService:
                 },
                 extra_tags=["batch"] if request.sample_size > 10 else None,
             )
+            # 반응 fan-out 병렬 수 제한(503 증폭 방지). preamble 노드는 단일이라 영향 없음.
+            trace_config["max_concurrency"] = _MAX_REACTION_CONCURRENCY
             ad_dump: dict | None = None
             rubric_dump: list[dict] = []
             reactions: list[dict] = []
@@ -171,6 +179,8 @@ class SimulationService:
                 "reactions": reactions,
                 "rubric_scores": rubric_dump,
                 "aggregate": aggregate_dump,
+                # OCEAN 성향별 반응 분해(결과 해석) — 연령×성별 외 '성격 축'. 빈 입력이면 빈 구조.
+                "ocean_segments": ocean_segment_breakdown(personas, reaction_objs),
             }
             # 캠페인 목표 달성 가능성(결정론 룰) — 목표 선언 + 집계가 있을 때만(exploratory).
             if request.ad_objective and aggregate_obj is not None:

@@ -21,6 +21,9 @@ CREATE TABLE `광고` (
 	`updated_at`	TIMESTAMP	NOT NULL
 );
 
+-- 페르소나 = 단계1~3 통계 샘플링(LLM✗) + 4-a 서사(profile_narrative만 LLM). 고정 패널(version) 단위 1회 저장·재사용(§3.6).
+-- social_values_deep(체면·동조·눈치, 작업4)·weight(표본 가중)은 페르소나 테이블에 미영속 —
+--   전자는 Phase2 프레임워크(값 비어 반응 무변화 — 데이터 주입 시 컬럼 추가 + Alembic), 후자는 페르소나반응.weight로 사본 저장.
 CREATE TABLE `페르소나` (
 	`ID`	UUID	NULL,
 	`panel_id`	UUID	NOT NULL,
@@ -30,6 +33,7 @@ CREATE TABLE `페르소나` (
 	`ocean`	JSONB	NOT NULL,
 	`media_behavior`	JSONB	NOT NULL,
 	`consumption_values`	JSONB	NOT NULL,
+	`socioeconomic`	JSONB	NOT NULL,	-- 소득구간·학력(KISDI) — 구매의도·가격적합 grounding (단계1 확장)
 	`profile_narrative`	TEXT	NOT NULL,
 	`created_at`	TIMESTAMP	NOT NULL
 );
@@ -54,16 +58,6 @@ CREATE TABLE `시뮬레이션` (
 	`created_at`	TIMESTAMP	NOT NULL
 );
 
-CREATE TABLE `토론세션` (
-	`ID`	UUID	NULL,
-	`시뮬레이션ID`	UUID	NOT NULL,
-	`상태`	VARCHAR(20)	NOT NULL	DEFAULT 'PENDING',
-	`MS결석여부`	BOOLEAN	NOT NULL,
-	`LLM콜수`	INT	NULL,
-	`모델버전`	VARCHAR(50)	NOT NULL,
-	`생성일시`	TIMESTAMP	NOT NULL
-);
-
 CREATE TABLE `조직멤버` (
 	`ID`	UUID	NULL,
 	`organization_id`	UUID	NOT NULL,
@@ -73,17 +67,6 @@ CREATE TABLE `조직멤버` (
 	`status`	VARCHAR(20)	NOT NULL	DEFAULT 'PENDING',
 	`joined_at`	TIMESTAMP	NULL,
 	`created_at`	TIMESTAMP	NOT NULL
-);
-
-CREATE TABLE `보고서` (
-	`ID`	UUID	NULL,
-	`시뮬레이션ID`	UUID	NOT NULL,
-	`양식버전`	VARCHAR(20)	NOT NULL,
-	`패널버전`	VARCHAR(20)	NOT NULL,
-	`모델버전`	VARCHAR(50)	NOT NULL,
-	`보고서데이터`	JSONB	NOT NULL,
-	`파일경로`	VARCHAR(500)	NULL,
-	`생성일시`	TIMESTAMP	NOT NULL
 );
 
 -- noticed_first(§4-b salience, 프로필상 가장 먼저 주의 간 요소)는 계약(PersonaReaction)·분석 핸드오프로만
@@ -109,18 +92,6 @@ CREATE TABLE `페르소나반응` (
 	`qa_passed`	BOOLEAN	NOT NULL,
 	`qa_fail_reason`	VARCHAR(100)	NULL,
 	`created_at`	TIMESTAMP	NOT NULL
-);
-
-CREATE TABLE `토론발언` (
-	`ID`	UUID	NULL,
-	`세션ID`	UUID	NOT NULL,
-	`에이전트`	VARCHAR(10)	NOT NULL,
-	`라운드`	INT	NOT NULL,
-	`주장`	TEXT	NOT NULL,
-	`반박대상발언ID`	UUID	NULL,
-	`인용근거`	JSONB	NOT NULL,
-	`판정`	VARCHAR(30)	NULL,
-	`생성일시`	TIMESTAMP	NOT NULL
 );
 
 CREATE TABLE `패널` (
@@ -213,31 +184,5 @@ CREATE TABLE `시뮬레이션집계` (
 	`payload`	JSONB	NOT NULL,
 	`engine_version`	VARCHAR(50)	NOT NULL,
 	`created_at`	TIMESTAMP	NOT NULL
-);
-
-CREATE TABLE `진단` (
-	`ID`	UUID	NULL,
-	`시뮬레이션ID`	UUID	NOT NULL,
-	`진단차원`	VARCHAR(50)	NOT NULL,
-	`루브릭점수`	INT	NOT NULL,
-	`벤치마크키`	VARCHAR(100)	NULL,
-	`진단문장`	TEXT	NOT NULL,
-	`합의유형`	VARCHAR(20)	NOT NULL,
-	`이견블록`	JSONB	NULL,
-	`인용근거`	JSONB	NOT NULL,
-	`생성일시`	TIMESTAMP	NOT NULL
-);
-
-CREATE TABLE `개선권고` (
-	`ID`	UUID	NULL,
-	`시뮬레이션ID`	UUID	NOT NULL,
-	`진단ID`	UUID	NOT NULL,
-	`진단차원`	VARCHAR(50)	NOT NULL,
-	`권고등급`	VARCHAR(20)	NOT NULL,
-	`우선순위`	INT	NOT NULL,
-	`권고문장`	TEXT	NOT NULL,
-	`진단근거`	JSONB	NOT NULL,
-	`처방근거`	JSONB	NULL,
-	`생성일시`	TIMESTAMP	NOT NULL
 );
 
