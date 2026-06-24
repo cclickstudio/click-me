@@ -113,7 +113,7 @@ function SectionLabel({ label }: { label: string }) {
   return <p className="px-3 pt-3 pb-1 text-[10px] font-semibold text-[#B0B8C1] dark:text-[#4B5563] uppercase tracking-wider">{label}</p>;
 }
 
-export default function Sidebar() {
+export default function Sidebar({ mobileOpen = false }: { mobileOpen?: boolean }) {
   const pathname = usePathname();
   const { theme, toggle } = useTheme();
   const { user, logout } = useAuth();
@@ -149,7 +149,11 @@ export default function Sidebar() {
   }, [isCompany]);
 
   return (
-    <aside className="fixed top-0 left-0 h-full w-56 bg-white dark:bg-[#1C2333] border-r border-[#E5E8EB] dark:border-[#2D3748] flex flex-col z-40 transition-colors">
+    <aside
+      className={`fixed top-0 left-0 h-full w-56 bg-white dark:bg-[#1C2333] border-r border-[#E5E8EB] dark:border-[#2D3748] flex flex-col z-40 transition-transform duration-200 md:translate-x-0 ${
+        mobileOpen ? 'max-md:translate-x-0' : 'max-md:-translate-x-full'
+      }`}
+    >
       {/* 로고 */}
       <div className="h-14 flex items-center px-5 border-b border-[#E5E8EB] dark:border-[#2D3748] shrink-0">
         <Link href="/dashboard" className="text-[#3182F6] font-bold text-lg tracking-tight">ClickMe</Link>
