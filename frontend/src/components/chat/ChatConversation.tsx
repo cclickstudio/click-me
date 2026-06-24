@@ -166,6 +166,8 @@ export default function ChatConversation({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null); // 멀티라인 자동 높이(P8)
   const bottomRef = useRef<HTMLDivElement>(null);
+  const scrollRef = useRef<HTMLDivElement>(null); // 메시지 스크롤 컨테이너(P11)
+  const [atBottom, setAtBottom] = useState(true); // 사용자가 하단 근처인지(자동 스크롤 판단)
   const router = useRouter();
   // 이미 로드/생성한 세션 — prop이 같은 값으로 바뀌어도 재로드하지 않게 추적.
   const loadedRef = useRef<string | null | undefined>(undefined);
@@ -188,9 +190,22 @@ export default function ChatConversation({
     toastTimerRef.current = setTimeout(() => setToast(null), 3000);
   }, []);
 
+  // 새 메시지·스트리밍 시 하단으로 — 단, 사용자가 위로 스크롤해 둔 상태면 유지(P11).
   useEffect(() => {
+    if (atBottom) bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, isStreaming, atBottom]);
+
+  const scrollToBottom = () => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, isStreaming]);
+    setAtBottom(true);
+  };
+
+  // 스크롤 위치 추적 — 하단 80px 이내면 atBottom.
+  const onMessagesScroll = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    setAtBottom(el.scrollHeight - el.scrollTop - el.clientHeight < 80);
+  };
 
   // 입력창 멀티라인 자동 높이(P8) — 내용에 맞춰 최대 120px까지 늘고, 비면 1줄로 복귀.
   useEffect(() => {
@@ -725,6 +740,20 @@ export default function ChatConversation({
 
   return (
     <div className="relative flex flex-col h-full min-h-0 bg-white dark:bg-[#0F1117] transition-colors">
+      {/* 맨 아래로 버튼(P11) — 메시지가 있고 사용자가 위로 스크롤했을 때만 */}
+      {messages.length > 0 && !atBottom && (
+        <button
+          onClick={scrollToBottom}
+          aria-label="맨 아래로"
+          title="맨 아래로"
+          className="absolute bottom-[88px] right-4 z-20 w-9 h-9 flex items-center justify-center rounded-full bg-white dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748] text-[#4E5968] dark:text-[#9CA3AF] shadow-md hover:text-[#3182F6] hover:border-[#3182F6] transition-colors"
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="12" y1="5" x2="12" y2="19" />
+            <polyline points="19 12 12 19 5 12" />
+          </svg>
+        </button>
+      )}
       {/* 완료 토스트(P9) — 입력창 위 중앙에 잠깐 나타났다 사라짐 */}
       {toast && (
         <div className="chat-pop pointer-events-none absolute bottom-24 left-1/2 -translate-x-1/2 z-30 px-4 py-2 rounded-full bg-[#191F28] dark:bg-[#F2F4F6] text-white dark:text-[#191F28] text-sm font-medium shadow-lg">
@@ -757,7 +786,7 @@ export default function ChatConversation({
         </div>
       ) : (
         /* ── Messages ── */
-        <div className="flex-1 overflow-y-auto">
+        <div ref={scrollRef} onScroll={onMessagesScroll} className="flex-1 overflow-y-auto">
           {/* 핀 고정 미리보기 — 세션 상단(T19) */}
           {messages.some((m) => m.pinned) && (
             <div className="sticky top-0 z-10 bg-white/95 dark:bg-[#0F1117]/95 backdrop-blur border-b border-[#E5E8EB] dark:border-[#2D3748] px-4 py-2">
