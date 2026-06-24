@@ -62,6 +62,7 @@ Frontend
 
 - `conclusion`은 항상 존재. 나머지 카드는 **그 턴이 실제로 생성했을 때만** 포함(progressive disclosure). 빈 카드 금지.
 - 카드 `status` ∈ `ok | degraded | failed`.
+- **능동 제안용 필드(§10)** — 턴은 `origin` ∈ `user | proactive`, 그리고 `proactive`일 때 `trigger`(`{anomaly, campaign_id, escalation_step}`)·`read_state` ∈ `unread | read`를 가진다. 사용자 발화 턴은 `origin="user"`, 나머지 필드 생략.
 
 ### 4.2 kind — 닫힌 집합 (슬롯)
 
@@ -152,7 +153,9 @@ B에서 시뮬 팀이 `result.kpi_distribution` v1을 추가할 때 **레지스�
 | Composer | 봉투 조립·검증·SSE emit | Agent 출력, `campaign_policy`·`target_check`·`approval` | `domain/management/assistant/composer.py` (신규) |
 | 카드 계약(레지스트리) | kind·payload.type·version 스키마 | 없음(순수, import 0) | `domain/management/assistant/contracts/chat_cards/` (신규) |
 | Chat 라우터 | SSE 전송·라우팅 | Composer | `api/routers/chat.py` (기존) |
-| Frontend 렌더러 | kind+type별 카드 렌더·액션 연결 | 카드 계약(타입 공유) | `frontend/` (신규) |
+| 트리거 invoker | demo/scheduled/SQS가 `re_evaluate` 호출(§10.3) | detection·escalation | `domain/management/assistant/proactive.py` (신규, 얇은 seam) |
+| 전달(delivery) 포트 | 능동 턴을 인박스(지금)·푸시(미구현)로 전달 | 영속 turn | 인박스 어댑터만 구현, 푸시 포트는 자리만 |
+| Frontend 렌더러 | kind+type별 카드 렌더·액션 연결·능동 턴 인박스 | 카드 계약(타입 공유) | `frontend/` (신규) |
 
 각 단위 검증 질문 — 무엇을 하는가 / 어떻게 쓰는가 / 무엇에 의존하는가가 한 문장으로 답되어야 한다. Composer 내부를 안 읽어도 "재료를 검증된 카드 봉투로 바꾼다"로 이해 가능해야 한다.
 
@@ -165,6 +168,7 @@ B에서 시뮬 팀이 `result.kpi_distribution` v1을 추가할 때 **레지스�
 - evidence 단계만 실패시켜도 result/actionbar는 정상 렌더, evidence는 `degraded/failed`로 표시되고 `final.status=partial`.
 - 정책 엔진 다운 시 `error(scope=turn)` + `final(status=failed)`가 전달된다.
 - `result.payload.type`/`version`이 미등록이면 계약 레벨에서 거부(또는 안전한 fallback 렌더).
+- **능동 제안** — 진단 트리거 시 `origin="proactive"` 턴이 영속되고 인박스에 `unread`로 뜬다(사용자 미접속에도 보존). 같은 anomaly/step이 미회복으로 매 tick 반복돼도 새 턴이 중복 생성되지 않는다(dedup). step이 올라가면 새 능동 턴 1건 생성. 능동 제안의 `실행`도 사용자 제안과 동일하게 실행 API 재검증으로만 집행된다(자동 집행 없음).
 
 ## 9. 테스트 전략
 
@@ -174,7 +178,49 @@ B에서 시뮬 팀이 `result.kpi_distribution` v1을 추가할 때 **레지스�
 - **계약** — `(kind, type, version)` 레지스트리 등록/미등록 케이스, `chat_cards`가 management를 import하지 않는지 의존성 테스트.
 - **프론트** — kind+type 렌더러 스냅샷, 도착 순서 셔플 시 레이아웃 안정성.
 
-## 10. 미해결/후속
+## 10. 능동 제안 (Proactive)
+
+사용자가 묻지 않아도 진단이 걸리면 채팅이 먼저 조치를 제안한다. 채팅을 **수동 응답형 → 능동 제안형**으로 확장.
+
+### 10.1 핵심 — "사용자 메시지 없는 턴"
+
+§3~§9의 카드 봉투/Composer/불변식을 **그대로 재사용**한다. 바뀌는 건 트리거 출처와 전달 경로뿐.
+
+```
+진단 트리거 (demo tick / scheduled tick / SQS consumer)
+  → detection (deterministic_dx·performance_dx·guardrails)
+  → escalation.re_evaluate() → ActionProposal      // 전송 독립 순수 함수, HITL 강제
+  → Composer (동일)
+  → turn = {
+       origin: "proactive",
+       trigger: { anomaly, campaign_id, escalation_step },
+       read_state: "unread",
+       conclusion: "A 캠페인 예산 페이싱 이상 감지 — 조치 제안",   // 서술만(불변식 ③)
+       cards: [ evidence, result(action_proposal), review(policy_check), actionbar ]
+     }
+  → 영속(history) + (선택)전달
+```
+
+이미 `escalation.re_evaluate`가 ActionProposal을 만들고 HITL을 강제하므로(승인 없는 자동 집행 없음), **능동 제안 = 제안만 자동, 실행은 여전히 승인 + 실행 API 재검증(불변식 ①)**.
+
+### 10.2 단계 — 지금 (가), 설계 방향 (다)
+
+- **지금 구현 (가) 인박스/알림 영속** — 능동 턴을 DB 영속(`history.py` 턴 기록 확장), 알림 배지·제안 피드로 표시. 사용자가 접속 안 해도 안 사라짐.
+- **설계 방향 (다) 영속 + 라이브 푸시** — 푸시는 **전달(delivery) 포트의 자리만** 정의하고 미구현. (다)로 설계하면 (가) 대비 달라지는 3가지(모두 저렴):
+
+  1. **영속이 정본, 푸시는 선택적 전달 포트.** 능동 턴 생성은 열린 SSE 연결에 의존하지 않는다(생성 = detection→Composer→영속으로 종료). `re_evaluate`가 전송 독립이라 자연 충족. UI는 인박스 엔드포인트에서 능동 턴을 읽고, 푸시는 "새 턴 있음 → refetch" 신호 또는 턴 동봉 — 카드 페이로드는 동일.
+  2. **턴 스키마에 `origin`/`trigger`/`read_state`(§4.1).** read_state는 인박스용이면서 푸시에도 호환.
+  3. **중복 억제(dedup) — (가)만 보면 빠뜨리는 함정.** scheduled/SQS는 같은 anomaly로 매 tick 반복 발화 → 인박스 도배. dedup 키 = **escalation state 재사용**(`campaign, anomaly, escalation_step`). escalation이 이미 회복 판정(목록 멤버십)을 가지므로 "같은 step 미회복이면 새 턴 생성 안 함, step이 올라갈 때만 새 능동 턴" 규칙으로 연결.
+
+### 10.3 트리거 진화
+
+`demo tick → scheduled tick → SQS consumer` 순. 셋 다 **동일한 `re_evaluate`를 호출**하고 다른 건 호출자(invoker)뿐. invoker만 교체 가능한 얇은 seam으로 두면 생성 로직 무변경으로 진화(escalation 설계 의도와 일치).
+
+### 10.4 불변식 재확인
+
+능동 제안도 §6 ①~④ 그대로 적용. 특히 ① 실행 권한 정본=실행 API(자동 집행 없음, escalation HITL과 일치), ③ 결론은 "감지됨"까지만 서술하고 "실행하라" 단정 금지.
+
+## 11. 미해결/후속
 
 - 액션 실행 엔드포인트의 멱등키 설계(`proposal_id` + `turn_id` 조합) — 구현 계획에서 구체화.
 - conclusion 강등 정책의 정확한 트리거(휴리스틱 vs Composer 후처리) — 1차는 시스템 프롬프트 + 사후 경고로 시작.
