@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
+import { formatRelativeKST, formatKSTFull } from '@/lib/datetime';
 import SimFormWidget from './SimFormWidget';
 import SimInputWidget from './SimInputWidget';
 import SimResultWidget from './SimResultWidget';
@@ -97,6 +98,7 @@ type Message = {
   imageFile?: File;
   result?: ResultRef;
   pinned?: boolean;
+  created_at?: string | null; // 영속 메시지의 생성 시각(상대시간 표시용, P9)
 };
 
 // 마지막에 추가한 목록 위젯 메시지(빈 items)에 비동기로 받아온 items를 채워 넣는다.
@@ -157,6 +159,8 @@ export default function ChatConversation({
   const [slashIndex, setSlashIndex] = useState(0);
   const [attachedImage, setAttachedImage] = useState<File | null>(null);
   const [attachedPreview, setAttachedPreview] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null); // 완료 토스트(P9)
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingImageRef = useRef<File | null>(null);
   const abortRef = useRef<AbortController | null>(null); // 스트리밍 중단(P3)
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -176,6 +180,13 @@ export default function ChatConversation({
     });
     setAttachedImage(file);
   };
+
+  // 완료 토스트(P9) — 3초 후 자동 사라짐.
+  const showToast = useCallback((msg: string) => {
+    setToast(msg);
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = setTimeout(() => setToast(null), 3000);
+  }, []);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -211,7 +222,7 @@ export default function ChatConversation({
             // 어시스턴트 메시지만 출처/위젯 meta로 사용. 사용자 메시지 meta는 이미지·결과 참조 보관용.
             const meta = m.role === 'assistant' ? (rawMeta as SourceMeta | null) ?? undefined : undefined;
             const pinned = rawMeta?.pinned === true;
-            return { id: m.id, role: m.role, content: m.content, meta, imageUrl, result, pinned };
+            return { id: m.id, role: m.role, content: m.content, meta, imageUrl, result, pinned, created_at: m.created_at };
           }),
         );
       } catch {
@@ -531,6 +542,7 @@ export default function ChatConversation({
       },
     ) => {
       const simId = result.simulation_id;
+      showToast('🧪 시뮬레이션이 완료됐어요');
       // 입력 요약은 백엔드 결과(실제 제출값)를 우선 출처로, 폼 상태(input)는 폴백.
       // 새로고침 중 완료된 런을 복원할 땐 폼 상태가 비어 있어(빈 initial로 재마운트)
       // input만 쓰면 소비자 수만 남는다 → result.ad/result.simulation에서 복구한다.
@@ -592,7 +604,7 @@ export default function ChatConversation({
       }
       if (items.length) await appendWidgetMessages(items);
     },
-    [appendWidgetMessages],
+    [appendWidgetMessages, showToast],
   );
 
   // 토론 요약 보기 — 토론 요약 위젯을 새 메시지로 추가(영속화).
@@ -712,7 +724,13 @@ export default function ChatConversation({
   );
 
   return (
-    <div className="flex flex-col h-full min-h-0 bg-white dark:bg-[#0F1117] transition-colors">
+    <div className="relative flex flex-col h-full min-h-0 bg-white dark:bg-[#0F1117] transition-colors">
+      {/* 완료 토스트(P9) — 입력창 위 중앙에 잠깐 나타났다 사라짐 */}
+      {toast && (
+        <div className="chat-pop pointer-events-none absolute bottom-24 left-1/2 -translate-x-1/2 z-30 px-4 py-2 rounded-full bg-[#191F28] dark:bg-[#F2F4F6] text-white dark:text-[#191F28] text-sm font-medium shadow-lg">
+          {toast}
+        </div>
+      )}
       {messages.length === 0 ? (
         /* ── Welcome state ── */
         <div className="flex-1 flex flex-col items-center justify-center px-4 pb-10 overflow-y-auto">
@@ -809,6 +827,14 @@ export default function ChatConversation({
                       {msg.content}
                       {isStreamingMsg && <span className="typing-caret" aria-hidden />}
                     </div>
+                    {msg.created_at && (
+                      <span
+                        className="px-1 text-[10px] text-[#B0B8C1] dark:text-[#4B5563]"
+                        title={formatKSTFull(msg.created_at)}
+                      >
+                        {formatRelativeKST(msg.created_at)}
+                      </span>
+                    )}
                     {msg.role === 'assistant' && msg.id && (
                       <button
                         onClick={() => togglePin(msg.id!, !msg.pinned)}

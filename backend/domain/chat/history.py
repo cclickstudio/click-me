@@ -94,7 +94,13 @@ async def get_messages(db: AsyncSession, session_id: str) -> list[dict]:
         .order_by(ChatMessage.created_at.asc())
     )
     return [
-        {"id": str(m.id), "role": m.role, "content": m.content, "meta": m.meta}
+        {
+            "id": str(m.id),
+            "role": m.role,
+            "content": m.content,
+            "meta": m.meta,
+            "created_at": m.created_at.isoformat() if m.created_at else None,
+        }
         for m in rows.scalars()
     ]
 

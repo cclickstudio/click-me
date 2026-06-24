@@ -190,6 +190,7 @@ export type ChatHistoryMessage = {
   role: 'user' | 'assistant';
   content: string;
   meta?: unknown;
+  created_at?: string | null;
 };
 
 export const api = {
