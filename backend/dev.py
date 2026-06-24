@@ -41,7 +41,7 @@ def main():
             "--reload-dir",
             "domain",
             "--port",
-            "8000",
+            "8001",
         ],
         check=True,
     )
