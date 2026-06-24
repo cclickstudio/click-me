@@ -13,10 +13,20 @@ from domain.generator.pipeline.style_profile import get_style
 _FONT_DIR = Path(__file__).resolve().parents[3] / "assets" / "fonts"
 _FONT_BOLD = str(_FONT_DIR / "Pretendard-Bold.otf")
 _FONT_REGULAR = str(_FONT_DIR / "Pretendard-Regular.otf")
+# 감성형 얇은 폰트 — 있으면 Light, 없으면 Regular로 폴백(나중에 .otf만 넣으면 자동 적용).
+_FONT_LIGHT_PATH = _FONT_DIR / "Pretendard-Light.otf"
+_FONT_LIGHT = str(_FONT_LIGHT_PATH) if _FONT_LIGHT_PATH.exists() else _FONT_REGULAR
 
 _DEFAULT_ACCENT = (37, 99, 235)  # brand_color 없을 때 기본 강조색(파랑)
 _WHITE = (255, 255, 255, 255)
 _LIGHT = (235, 235, 235, 255)
+
+
+def _contrast_stroke(color: tuple[int, int, int, int]) -> tuple[int, int, int, int]:
+    """텍스트 색의 밝기에 따라 대비되는 외곽선 색을 고른다(패널 없는 floating/emotional 가독성)."""
+    r, g, b = color[:3]
+    luminance = 0.299 * r + 0.587 * g + 0.114 * b
+    return (255, 255, 255, 230) if luminance < 140 else (0, 0, 0, 200)
 
 
 @dataclass(frozen=True)
@@ -152,17 +162,26 @@ def _draw_block(
     max_size: int,
     color: tuple[int, int, int, int],
     align: str,
+    stroke_fill: tuple[int, int, int, int] | None = None,
+    shadow: bool = False,
 ) -> None:
     if not text:
         return
     x0, y0, x1, y1 = rect
     box_w, box_h = x1 - x0, y1 - y0
     font, lines, line_h = _fit(draw, text, font_path, box_w, box_h, max_size)
+    # 패널 없는 floating/emotional은 외곽선+그림자로 사진 위 가독성을 확보.
+    stroke_w = max(2, font.size // 14) if stroke_fill else 0
+    shadow_off = max(1, font.size // 22)
     y = y0 + (box_h - line_h * len(lines)) // 2
     for line in lines:
         line_w = draw.textlength(line, font=font)
         x = x0 + (box_w - int(line_w)) // 2 if align == "center" else x0
-        draw.text((x, y), line, font=font, fill=color)
+        if shadow:
+            draw.text((x + shadow_off, y + shadow_off), line, font=font, fill=(0, 0, 0, 90))
+        draw.text(
+            (x, y), line, font=font, fill=color, stroke_width=stroke_w, stroke_fill=stroke_fill
+        )
         y += line_h
 
 
@@ -211,48 +230,65 @@ def render_ad_text(
 ) -> bytes:
     """광고 카피를 템플릿 영역에 PIL로 렌더링한 PNG bytes를 반환한다.
 
-    strategy가 주어지면 StyleProfile로 텍스트 색·강조색을 분기한다.
-    1단계에서는 box 스타일만 프로필 색을 적용하고, floating/emotional은 박스 폴백(안전한 밝은 색).
+    템플릿(A/B/C)이 텍스트 *위치*를, strategy의 StyleProfile이 *스타일*을 결정한다.
+    - box: 반투명 패널 + 굵은 폰트(현행).
+    - floating: 패널 없음 + 외곽선·그림자로 사진 위 가독성 확보.
+    - emotional: 패널 없음 + 얇은 폰트 + 여백(폰트 축소) + 외곽선·그림자.
     """
     base = Image.open(io.BytesIO(image_bytes)).convert("RGBA")
     w, h = base.size
     spec = _TEMPLATE_SPECS[template]
 
     profile = get_style(strategy) if strategy is not None else None
+    style = profile.text_style if profile else "box"
     # accent_override(예: FOMO 깊은 빨강)가 브랜드컬러보다 우선.
     accent_hex = (profile.accent_override if profile else None) or brand_color
     accent = _parse_color(accent_hex) or _DEFAULT_ACCENT
-    if profile is not None and profile.text_style == "box":
+    if profile is not None:
         headline_color, body_color = profile.headline_color, profile.body_color
     else:
         headline_color, body_color = _WHITE, _LIGHT
 
-    # 패널을 반투명 오버레이로 합성
-    overlay = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-    odraw = ImageDraw.Draw(overlay)
-    for box, color in spec.panels:
-        fill = color if color is not None else (*accent, 255)
-        odraw.rectangle(_px(box, w, h), fill=fill)
-    base = Image.alpha_composite(base, overlay)
+    # 스타일별 폰트·여백·외곽선/그림자.
+    if style == "emotional":
+        head_font, body_font, size_factor = _FONT_LIGHT, _FONT_LIGHT, 0.82
+    else:
+        head_font, body_font, size_factor = _FONT_BOLD, _FONT_REGULAR, 1.0
+    floating = style in ("floating", "emotional")
+    head_stroke = _contrast_stroke(headline_color) if floating else None
+    body_stroke = _contrast_stroke(body_color) if floating else None
+
+    # box 스타일만 반투명 패널을 합성. floating/emotional은 패널 없음.
+    if style == "box":
+        overlay = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        odraw = ImageDraw.Draw(overlay)
+        for box, color in spec.panels:
+            fill = color if color is not None else (*accent, 255)
+            odraw.rectangle(_px(box, w, h), fill=fill)
+        base = Image.alpha_composite(base, overlay)
 
     draw = ImageDraw.Draw(base)
     _draw_block(
         draw,
         headline,
         _px(spec.headline.box, w, h),
-        _FONT_BOLD,
-        int(h * spec.headline.max_ratio),
+        head_font,
+        int(h * spec.headline.max_ratio * size_factor),
         headline_color,
         spec.headline.align,
+        stroke_fill=head_stroke,
+        shadow=floating,
     )
     _draw_block(
         draw,
         body,
         _px(spec.body.box, w, h),
-        _FONT_REGULAR,
-        int(h * spec.body.max_ratio),
+        body_font,
+        int(h * spec.body.max_ratio * size_factor),
         body_color,
         spec.body.align,
+        stroke_fill=body_stroke,
+        shadow=floating,
     )
     _draw_cta(draw, cta, _px(spec.cta.box, w, h), accent, spec.cta.align, template)
 
