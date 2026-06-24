@@ -106,7 +106,6 @@ def test_review_records_decision_without_enabling_execute():
         AskResult(
             answer="x",
             suggested_action=_pause(requires_approval=True, tier="TIER_3"),
-            requires_approval=True,
         ),
         turn_id="t6",
     )

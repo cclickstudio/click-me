@@ -75,7 +75,7 @@ def _result_card(res: AskResult) -> Card:
     )
 
 
-def _review_card(res: AskResult) -> tuple[Card, str]:
+def _review_card(res: AskResult) -> Card:
     sa = res.suggested_action
     decision = "needs_approval" if sa.requires_approval else "auto_ok"
     card = Card(
@@ -86,7 +86,7 @@ def _review_card(res: AskResult) -> tuple[Card, str]:
             data={"decision": decision, "tier": sa.tier, "reasons": [sa.rationale]},
         ),
     )
-    return card, decision
+    return card
 
 
 def _actionbar_card(res: AskResult) -> Card:
@@ -144,7 +144,7 @@ def compose_turn(
 
     if res.suggested_action is not None:
         cards.append(_result_card(res))
-        review, _decision = _review_card(res)
+        review = _review_card(res)
         cards.append(review)
         cards.append(_actionbar_card(res))  # 항상 마지막
 
