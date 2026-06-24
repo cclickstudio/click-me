@@ -160,6 +160,7 @@ export default function ChatConversation({
   const pendingImageRef = useRef<File | null>(null);
   const abortRef = useRef<AbortController | null>(null); // 스트리밍 중단(P3)
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null); // 멀티라인 자동 높이(P8)
   const bottomRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
   // 이미 로드/생성한 세션 — prop이 같은 값으로 바뀌어도 재로드하지 않게 추적.
@@ -179,6 +180,14 @@ export default function ChatConversation({
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isStreaming]);
+
+  // 입력창 멀티라인 자동 높이(P8) — 내용에 맞춰 최대 120px까지 늘고, 비면 1줄로 복귀.
+  useEffect(() => {
+    const ta = textareaRef.current;
+    if (!ta) return;
+    ta.style.height = 'auto';
+    ta.style.height = `${Math.min(ta.scrollHeight, 120)}px`;
+  }, [input]);
 
   // sessionId가 바뀌면 그 세션의 DB 내역을 로드(또는 새 채팅이면 비움).
   useEffect(() => {
@@ -990,6 +999,7 @@ export default function ChatConversation({
             </svg>
           </button>
           <textarea
+            ref={textareaRef}
             value={input}
             onChange={(e) => {
               setInput(e.target.value);
@@ -1026,7 +1036,7 @@ export default function ChatConversation({
             placeholder="메시지를 입력하세요... (/로 명령어, Shift+Enter로 줄바꿈)"
             rows={1}
             disabled={isStreaming}
-            className="flex-1 px-4 py-3 rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] text-sm text-[#191F28] dark:text-[#F2F4F6] placeholder-[#B0B8C1] dark:placeholder-[#4B5563] focus:outline-none focus:border-[#3182F6] focus:ring-2 focus:ring-[#3182F6]/10 transition-colors resize-none overflow-hidden bg-white dark:bg-[#252D3D] leading-relaxed disabled:opacity-60"
+            className="flex-1 px-4 py-3 rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] text-sm text-[#191F28] dark:text-[#F2F4F6] placeholder-[#B0B8C1] dark:placeholder-[#4B5563] focus:outline-none focus:border-[#3182F6] focus:ring-2 focus:ring-[#3182F6]/10 transition-colors resize-none overflow-y-auto bg-white dark:bg-[#252D3D] leading-relaxed disabled:opacity-60"
             style={{ maxHeight: '120px' }}
           />
           {isStreaming ? (
