@@ -7,6 +7,7 @@ import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 import { safeRandomUUID } from '@/lib/utils';
 import { getJobs, setSimJob } from '@/lib/runningJobs';
+import { SIM_CATEGORIES } from '@/lib/simCategories';
 import type { SimRunResult } from '@/lib/types';
 
 type Phase = 'form' | 'running' | 'done' | 'error';
@@ -52,7 +53,13 @@ export default function SimFormWidget({
   const [runId, setRunId] = useState<string | null>(null);
   const [adTitle, setAdTitle] = useState(initial?.ad_title ?? '');
   const [adContent, setAdContent] = useState(initial?.ad_content ?? '');
-  const [category, setCategory] = useState(initial?.product_category ?? '');
+  // 카테고리 — /simulation과 동일한 2단 셀렉트(업종 대분류 → NICE 류).
+  // initial.product_category(이름)가 대분류명과 일치하면 대분류만 미리 선택(세부 류는 미보유).
+  const [categoryId, setCategoryId] = useState<number | ''>(
+    () => SIM_CATEGORIES.find(c => c.name === initial?.product_category)?.id ?? '',
+  );
+  const [serviceClass, setServiceClass] = useState<number | ''>('');
+  const categoryName = SIM_CATEGORIES.find(c => c.id === categoryId)?.name ?? '';
   const [objective, setObjective] = useState(initial?.ad_objective ?? '');
   const [image] = useState<File | null>(initialImage ?? null);
   const [imagePreview] = useState<string | null>(() =>
@@ -75,7 +82,13 @@ export default function SimFormWidget({
       // 결과를 채팅 컨트롤러로 넘겨 결과 요약 위젯 + 토론을 별도 메시지로 띄운다(1회만).
       if (!completeFiredRef.current) {
         completeFiredRef.current = true;
-        onSimComplete?.(r, { adTitle, adContent, category, objective, sampleSize });
+        onSimComplete?.(r, {
+          adTitle,
+          adContent,
+          category: categoryName,
+          objective,
+          sampleSize,
+        });
       }
     } catch (e) {
       setErr(e instanceof Error ? e.message : '결과 조회 실패');
@@ -189,7 +202,8 @@ export default function SimFormWidget({
         ad_content: adContent,
         ad_image: image ?? undefined,
         project_id: projectId || undefined, // 프로젝트 귀속 → DB 저장(없으면 메모리 런)
-        product_category: category || undefined,
+        product_category: categoryName || undefined,
+        service_class: typeof serviceClass === 'number' ? serviceClass : undefined,
         ad_objective: objective || undefined,
         sample_size: sampleSize,
       });
@@ -209,9 +223,11 @@ export default function SimFormWidget({
 
   if (phase === 'form') {
     const totalSteps = 4;
-    // 제품명(0단계)·광고 설명(1단계) 모두 필수.
+    // 제품명(0)·광고 설명(1) 필수, 카테고리(2)는 대분류+세부 류 모두 선택해야 다음 진행.
     const canNext =
-      (step !== 0 || adTitle.trim().length > 0) && (step !== 1 || adContent.trim().length > 0);
+      (step !== 0 || adTitle.trim().length > 0) &&
+      (step !== 1 || adContent.trim().length > 0) &&
+      (step !== 2 || (categoryId !== '' && serviceClass !== ''));
     const btnCls =
       'flex-1 py-2 rounded-lg bg-[#3182F6] text-white text-sm font-semibold hover:bg-[#1B6EEB] disabled:opacity-40 transition-colors';
     return (
@@ -243,10 +259,40 @@ export default function SimFormWidget({
             </div>
           )}
           {step === 2 && (
-            <div className="grid grid-cols-2 gap-2">
+            <div className="space-y-2">
               <div>
-                <label className={labelCls}>카테고리</label>
-                <input className={inputCls} value={category} onChange={e => setCategory(e.target.value)} placeholder="예: 화장품" autoFocus />
+                <label className={labelCls}>카테고리 *</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <select
+                    className={inputCls}
+                    value={categoryId}
+                    onChange={e => {
+                      setCategoryId(e.target.value ? Number(e.target.value) : '');
+                      setServiceClass('');
+                    }}
+                    autoFocus
+                  >
+                    <option value="">대분류 선택</option>
+                    {SIM_CATEGORIES.map(c => (
+                      <option key={c.id} value={c.id}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    className={`${inputCls} disabled:opacity-50`}
+                    value={serviceClass}
+                    onChange={e => setServiceClass(e.target.value ? Number(e.target.value) : '')}
+                    disabled={categoryId === ''}
+                  >
+                    <option value="">세부 분류 (NICE)</option>
+                    {(SIM_CATEGORIES.find(c => c.id === categoryId)?.kinds ?? []).map(k => (
+                      <option key={k.id} value={k.id}>
+                        {k.id}류 · {k.description}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
               <div>
                 <label className={labelCls}>광고 목표</label>
