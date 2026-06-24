@@ -49,6 +49,41 @@ def _card(pending: dict) -> dict:
     }
 
 
+def _safe_stream_writer() -> object | None:
+    """custom 스트림 writer — 구독 중이면 writer, 미구독/컨텍스트 밖이면 None."""
+    try:
+        from langgraph.config import get_stream_writer  # noqa: PLC0415
+
+        return get_stream_writer()
+    except Exception:  # noqa: BLE001
+        return None
+
+
+async def _general_answer(clio, text: str, history: list) -> str:
+    """CLIO general 답변 — 스트리밍 지원 시 토큰을 custom 스트림으로 흘리며 누적.
+
+    스트리밍 미지원(plain callable)이거나 custom 미구독이면 전체 호출로 폴백.
+    실패 시 표시=영속 일치를 위해 흘린 조각이 있으면 그것을, 없으면 폴백 문구를 돌려준다.
+    """
+    stream_fn = getattr(clio, "stream", None)
+    if stream_fn is not None:
+        writer = _safe_stream_writer()
+        if writer is not None:
+            parts: list[str] = []
+            try:
+                async for piece in stream_fn(text, history):
+                    parts.append(piece)
+                    writer({"token": piece})
+                return "".join(parts)
+            except Exception:  # noqa: BLE001 — 부분 스트림이면 그대로, 아니면 전체 호출
+                if parts:
+                    return "".join(parts)
+    try:
+        return await clio(text, history)
+    except Exception:  # noqa: BLE001 — CLIO 실패 시 결정론 폴백
+        return "무엇을 도와드릴까요?"
+
+
 class _Nodes:
     """의존성을 클로저로 바인딩한 노드 컨테이너."""
 
@@ -165,15 +200,13 @@ class _Nodes:
         execution_result: dict | None = state.get("execution_result")
         deps = self._d
 
-        # general 라우트 + CLIO 주입됨 + 서브에이전트 답변 없음 → CLIO 호출
+        # general 라우트 + CLIO 주입됨 + 서브에이전트 답변 없음 → CLIO 호출(스트리밍 우선)
         if state.get("route") == Route.GENERAL.value and deps.clio is not None and not sub_results:
-            try:
-                answer = await deps.clio(
-                    _last_user_text(state["messages"]),
-                    state.get("short_term") or [],
-                )
-            except Exception:  # noqa: BLE001 — CLIO 실패 시 결정론 폴백
-                answer = "무엇을 도와드릴까요?"
+            answer = await _general_answer(
+                deps.clio,
+                _last_user_text(state["messages"]),
+                state.get("short_term") or [],
+            )
         elif sub_results:
             # 서브에이전트 답변(management/simulation/generation 라우트)
             answer = sub_results[-1].get("answer") or "결과를 가져왔습니다."

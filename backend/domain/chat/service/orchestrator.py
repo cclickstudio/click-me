@@ -156,7 +156,20 @@ class ChatOrchestratorService:
                 }
             )
 
-            async for update in self._graph.astream(initial, config, stream_mode="updates"):
+            # synthesize가 토큰을 custom 스트림으로 흘렸으면 사후 청킹을 건너뛴다(중복 방지).
+            streamed = False
+            async for mode, payload in self._graph.astream(
+                initial, config, stream_mode=["updates", "custom"]
+            ):
+                # ── custom 스트림(진짜 LLM 토큰) ────────────────────────────
+                if mode == "custom":
+                    tok = payload.get("token") if isinstance(payload, dict) else None
+                    if tok:
+                        streamed = True
+                        yield _frame({"token": {"text": tok}})
+                    continue
+
+                update = payload
                 # ── interrupt 감지 ──────────────────────────────────────────
                 if "__interrupt__" in update:
                     interrupts = update["__interrupt__"]
@@ -232,8 +245,10 @@ class ChatOrchestratorService:
                 if "synthesize" in update:
                     syn_update = update["synthesize"]
                     final_answer = syn_update.get("final_answer") or ""
-                    for chunk in _chunks(final_answer):
-                        yield _frame({"token": {"text": chunk}})
+                    # custom으로 이미 토큰을 흘렸으면(general/CLIO 스트리밍) 청킹 생략.
+                    if not streamed:
+                        for chunk in _chunks(final_answer):
+                            yield _frame({"token": {"text": chunk}})
 
             # 루프 정상 종료 — 어시스턴트 메시지 영속
             await self._persist_assistant(

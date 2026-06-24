@@ -1,9 +1,15 @@
-# CLIO general 핸들러 — Gemini 2.5-flash 비스트리밍 답변(키 없으면 None → 결정론 폴백).
-"""general 라우트용. 그래프 synthesize가 주입받아 호출. 응답은 서비스가 토큰 청크로 분할."""
+# CLIO general 핸들러 — Gemini 2.5-flash 답변(키 없으면 None → 결정론 폴백).
+"""general 라우트용. 그래프 synthesize가 주입받아 호출.
+
+두 가지 호출면을 노출한다.
+- `await clio(text, history)` → 전체 답변(비스트리밍, 하위호환).
+- `async for piece in clio.stream(text, history)` → 토큰 조각(진짜 스트리밍).
+synthesize가 stream을 우선 사용해 토큰을 흘리고, 미지원이면 전체 호출로 폴백한다.
+"""
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator
 
 # chat.py에서 이관한 CLIO 시스템 프롬프트(verbatim).
 _CLIO_SYSTEM = """\
@@ -28,34 +34,54 @@ _CLIO_SYSTEM = """\
 """
 
 
-def build_clio(settings) -> Callable[[str, list], Awaitable[str]] | None:
-    """gemini_api_key 있으면 async clio(user_text, history)->str, 없으면 None."""
-    key = getattr(settings, "gemini_api_key", None)
-    if not key:
-        return None
+class _Clio:
+    """Gemini 2.5-flash 기반 CLIO — 비스트리밍 호출 + 토큰 스트리밍 둘 다 제공."""
 
-    async def clio(user_text: str, history: list) -> str:
-        import asyncio  # noqa: PLC0415
+    def __init__(self, api_key: str) -> None:
+        self._key = api_key
 
+    def _model(self) -> object:
         import google.generativeai as genai  # noqa: PLC0415
 
-        genai.configure(api_key=key)
-        model = genai.GenerativeModel(
-            model_name="gemini-2.5-flash", system_instruction=_CLIO_SYSTEM
-        )
-        # history: [{role, content}] → Gemini contents 매핑; 마지막 user_text 포함
-        contents = []
+        genai.configure(api_key=self._key)
+        return genai.GenerativeModel(model_name="gemini-2.5-flash", system_instruction=_CLIO_SYSTEM)
+
+    @staticmethod
+    def _contents(user_text: str, history: list) -> list[dict]:
+        # history: [{role, content}] → Gemini contents 매핑; 마지막 user_text 포함.
+        contents: list[dict] = []
         for h in history or []:
             role = "user" if h.get("role") in ("user", "human") else "model"
             contents.append({"role": role, "parts": [h.get("content", "")]})
         contents.append({"role": "user", "parts": [user_text]})
+        return contents
 
-        # generate_content_async 사용 — 없으면 asyncio.to_thread로 동기 폴백
+    async def __call__(self, user_text: str, history: list) -> str:
+        """전체 답변 — generate_content_async, 없으면 to_thread 동기 폴백."""
+        import asyncio  # noqa: PLC0415
+
+        model = self._model()
+        contents = self._contents(user_text, history)
         if hasattr(model, "generate_content_async"):
             resp = await model.generate_content_async(contents)
         else:
             resp = await asyncio.to_thread(model.generate_content, contents)
-
         return resp.text or ""
 
-    return clio
+    async def stream(self, user_text: str, history: list) -> AsyncIterator[str]:
+        """토큰 조각 — generate_content_async(stream=True)의 청크 텍스트를 yield."""
+        model = self._model()
+        contents = self._contents(user_text, history)
+        resp = await model.generate_content_async(contents, stream=True)
+        async for chunk in resp:
+            text = getattr(chunk, "text", "") or ""
+            if text:
+                yield text
+
+
+def build_clio(settings) -> _Clio | None:
+    """gemini_api_key 있으면 _Clio 인스턴스, 없으면 None(결정론 폴백)."""
+    key = getattr(settings, "gemini_api_key", None)
+    if not key:
+        return None
+    return _Clio(key)
