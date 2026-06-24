@@ -73,3 +73,35 @@ body {
 .chat-pop {
   animation: chatPop 0.28s ease-out;
 }
+
+/* 스트리밍 타이핑 커서 — 응답 생성 중 텍스트 끝에 깜빡이는 캐럿 */
+@keyframes typingBlink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}
+.typing-caret {
+  display: inline-block;
+  width: 0.5em;
+  height: 1em;
+  margin-left: 1px;
+  vertical-align: text-bottom;
+  background: currentColor;
+  border-radius: 1px;
+  animation: typingBlink 1s step-end infinite;
+}
+
+/* 접근성 — 모션 최소화 선호 시 등장 애니메이션·커서 깜빡임 비활성 */
+@media (prefers-reduced-motion: reduce) {
+  .chat-pop {
+    animation: none;
+  }
+  .typing-caret {
+    animation: none;
+    opacity: 0.6;
+  }
+}

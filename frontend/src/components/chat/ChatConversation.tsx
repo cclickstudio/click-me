@@ -756,8 +756,13 @@ export default function ChatConversation({
               ) {
                 return null;
               }
+              const isStreamingMsg =
+                isStreaming &&
+                i === messages.length - 1 &&
+                msg.role === 'assistant' &&
+                !msg.meta?.widget;
               return (
-                <div key={i} className={`flex gap-3 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                <div key={i} className={`chat-pop flex gap-3 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                   {msg.role === 'assistant' && (
                     <div className="w-7 h-7 shrink-0 flex items-center justify-center rounded-lg bg-[#EBF3FF] dark:bg-[#1E3A5F] text-[#3182F6] mt-1">
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -793,6 +798,7 @@ export default function ChatConversation({
                       }`}
                     >
                       {msg.content}
+                      {isStreamingMsg && <span className="typing-caret" aria-hidden />}
                     </div>
                     {msg.role === 'assistant' && msg.id && (
                       <button
