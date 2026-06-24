@@ -10,6 +10,7 @@ import io
 import json
 import logging
 import uuid
+import zipfile
 from collections.abc import AsyncIterator
 from contextlib import suppress
 from urllib.parse import quote
@@ -21,9 +22,17 @@ from core.db import AsyncSessionLocal
 from core.models import AdGeneration, AdGenerationCandidate, AdPublishLog
 from core.tracing import make_trace_config
 from domain.generator.adapters.instagram import build_publisher
+from domain.generator.contracts.enums import TemplateType
 from domain.generator.contracts.schemas import GenerationCreateRequest
 from domain.generator.graph.pipeline import generation_graph
-from tools.storage.s3 import download_bytes, presign_get, publish_key, upload_bytes
+from domain.generator.pipeline.relayout import render_platform
+from tools.storage.s3 import (
+    candidate_base_key,
+    download_bytes,
+    presign_get,
+    publish_key,
+    upload_bytes,
+)
 
 logger = logging.getLogger("clickme")
 
@@ -70,7 +79,7 @@ async def start_generation(
     # 상품 이미지 bytes를 task store에 주입 (pipeline이 state로 전달받음)
     product_image_bytes: bytes | None = None
     if request.product_image_temp_key:
-        product_image_bytes = _product_image_store.pop(request.product_image_temp_key, None)
+        product_image_bytes = _product_image_store.get(request.product_image_temp_key)
 
     _tasks[generation_id] = {
         "status": "pending",
@@ -127,6 +136,8 @@ async def _run_pipeline(
         store["status"] = "failed"
         await _update_status(generation_id, "failed", error_message=str(exc))
         emit({"event": "error", "message": str(exc)})
+    finally:
+        pass
 
 
 async def _update_status(generation_id: str, status: str, error_message: str | None = None) -> None:
@@ -278,6 +289,74 @@ async def get_detail(generation_id: str) -> dict | None:
             for log in publish_logs
         ],
     }
+
+
+async def download_zip(generation_id: str) -> bytes | None:
+    """생성 결과의 모든 후보 이미지를 ZIP으로 묶어 bytes 반환. 없으면 None."""
+    detail = await get_detail(generation_id)
+    if detail is None:
+        return None
+
+    candidates = [c for c in detail["candidates"] if c.get("s3_key")]
+    if not candidates:
+        return None
+
+    async def _fetch(s3_key: str) -> bytes:
+        return await download_bytes(s3_key)
+
+    images = await asyncio.gather(*[_fetch(c["s3_key"]) for c in candidates])
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for candidate, data in zip(candidates, images, strict=True):
+            filename = f"image_{candidate['idx'] + 1}.png"
+            zf.writestr(filename, data)
+    return buf.getvalue()
+
+
+async def render_candidate(candidate_id: str, platform: str) -> bytes | None:
+    """후보를 지정 플랫폼 사이즈로 리레이아웃해 PNG bytes 반환 (LLM 재호출 없음).
+
+    base(텍스트 없는 원본)·카피·브랜드를 DB/S3에서 조회해 PIL로 재구성.
+    base가 없으면(과거 생성물) None — 신규 생성물부터 지원.
+    """
+    try:
+        cid = uuid.UUID(candidate_id)
+    except ValueError:
+        return None
+
+    async with AsyncSessionLocal() as session:
+        candidate = await session.get(AdGenerationCandidate, cid)
+        if candidate is None:
+            return None
+        generation = await session.get(AdGeneration, candidate.generation_id)
+        gen_input = (generation.input or {}) if generation else {}
+        idx = candidate.idx
+        gen_id = str(candidate.generation_id)
+        copy = candidate.copy or {}
+        template_id = candidate.template_id
+
+    try:
+        base_bytes = await download_bytes(candidate_base_key(gen_id, idx))
+    except Exception:
+        return None  # base 없음(과거 생성물) → 리레이아웃 미지원
+
+    logo_bytes: bytes | None = None
+    logo_key = gen_input.get("brand_logo_s3_key")
+    if logo_key:
+        with suppress(Exception):
+            logo_bytes = await download_bytes(logo_key)
+
+    return render_platform(
+        base_bytes,
+        headline=copy.get("headline", ""),
+        body=copy.get("body", ""),
+        cta=copy.get("cta", ""),
+        template=TemplateType(template_id),
+        platform=platform,
+        brand_color=gen_input.get("brand_color"),
+        logo_bytes=logo_bytes,
+    )
 
 
 async def select_candidate(generation_id: str, candidate_id: str) -> bool:

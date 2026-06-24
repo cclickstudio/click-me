@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from langsmith import traceable
+from pydantic import BaseModel
 
 from domain.generator.contracts.enums import TemplateType
 from domain.generator.contracts.pipeline_schemas import (
@@ -75,6 +76,93 @@ _IMPROVEMENT_SECTION = """\
 기존 광고의 문제점을 해결하는 방향으로 카피를 작성하세요."""
 
 _llm = build_text_llm(temperature=0.5, max_tokens=150).with_structured_output(AdCopy)
+
+
+class _AdCopyBatch(BaseModel):
+    copies: list[AdCopy]
+
+
+_batch_llm = build_text_llm(temperature=0.5, max_tokens=450).with_structured_output(_AdCopyBatch)
+
+_BATCH_USER_TEMPLATE = """\
+## 제품 정보
+제품명: {product_name}
+핵심 가치: {core_values}
+혜택: {benefits}
+타겟: {target_audience}
+
+## 작성 규칙 (엄격히 준수)
+- 헤드라인: 실제 존재하는 한국어 단어만 사용, 20자 이내, 제품의 핵심 가치 전달
+- 본문: 실제 존재하는 한국어 문장, 50자 이내, 자연스러운 문장 구조
+- CTA: "지금 구매하기" / "자세히 보기" / "바로 시작하기" 등 명확한 한국어 행동 문구, 10자 이내
+- 제품명({product_name})을 직접 사용하거나 자연스럽게 변형할 것
+- 영어 단어를 한국어로 표기할 때 올바른 외래어 표기법 사용 (예: quality → 퀄리티)
+- 의미 없는 단어 나열 금지
+
+## 올바른 예시 (이와 같은 품질로 작성)
+- 헤드라인: "매일 함께하는 프리미엄 텀블러" ✓
+- 헤드라인: "퀄리티가 다른 보온 경험" ✓  ← quality = 퀄리티 (올바른 외래어)
+- 헤드라인: "지금이 아니면 늦습니다" ✓
+- 본문: "하루 종일 완벽한 온도를 유지하는 텀블러를 만나보세요." ✓
+- CTA: "지금 구매하기" ✓ / "자세히 보기" ✓
+
+## 잘못된 예시 (절대 사용 금지)
+- "퀄랄리", "퀄랄리티" ✗  ← quality의 잘못된 음차
+- "음다 음을", "스타일하게" ✗  ← 의미 없는 단어 조합
+- "스마트 퀄랄리" ✗  ← 비문
+{improvement_section}
+---
+아래 후보 3개 각각의 전략과 레이아웃에 맞는 카피를 작성해 copies 배열로 반환하세요.
+
+## 후보 1
+전략: {strategy_1}
+전략 근거: {rationale_1}
+레이아웃: {layout_1}
+
+## 후보 2
+전략: {strategy_2}
+전략 근거: {rationale_2}
+레이아웃: {layout_2}
+
+## 후보 3
+전략: {strategy_3}
+전략 근거: {rationale_3}
+레이아웃: {layout_3}"""
+
+
+@traceable(
+    name="generator:generate_copies_batch",
+    metadata={"pipeline": "generator", "prompt_version": "v1.0"},
+)
+async def generate_copies_batch(
+    product_analysis: ProductAnalysis,
+    strategy_outputs: list[tuple[StrategyOutput, TemplateType]],
+    improvement_context: str | None = None,
+) -> list[AdCopy]:
+    improvement_section = (
+        _IMPROVEMENT_SECTION.format(improvement_context=improvement_context)
+        if improvement_context
+        else ""
+    )
+    (s1, t1), (s2, t2), (s3, t3) = strategy_outputs
+    prompt = _BATCH_USER_TEMPLATE.format(
+        product_name=product_analysis.product_name,
+        core_values=", ".join(product_analysis.core_values),
+        benefits=", ".join(product_analysis.benefits),
+        target_audience=product_analysis.target_audience,
+        improvement_section=improvement_section,
+        strategy_1=s1.strategy_description,
+        rationale_1=s1.rationale,
+        layout_1=_TEMPLATE_COPY_GUIDE[t1],
+        strategy_2=s2.strategy_description,
+        rationale_2=s2.rationale,
+        layout_2=_TEMPLATE_COPY_GUIDE[t2],
+        strategy_3=s3.strategy_description,
+        rationale_3=s3.rationale,
+        layout_3=_TEMPLATE_COPY_GUIDE[t3],
+    )
+    result = await _batch_llm.ainvoke([("system", _SYSTEM), ("user", prompt)])
+    return result.copies
 
 
 @traceable(

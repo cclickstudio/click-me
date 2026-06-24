@@ -735,6 +735,22 @@ export interface GenerationDetail {
   publish_logs: GenerationPublishLog[];
 }
 
+export interface BrandKit {
+  id: string;
+  name: string;
+  brand_color: string | null;
+  brand_logo_key: string | null;
+  tone_and_manner: string | null;
+  created_at: string;
+}
+
+export interface BrandKitInput {
+  name: string;
+  brand_color?: string | null;
+  brand_logo_key?: string | null;
+  tone_and_manner?: string | null;
+}
+
 export interface PublishResult {
   generation_id: string;
   candidate_id: string;
