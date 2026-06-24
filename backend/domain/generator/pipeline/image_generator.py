@@ -513,8 +513,8 @@ async def generate_image(
             mask_png,
             prompt,
             size,
-            provider="openai",
-            model=settings.generator_image_model,
+            provider=settings.inpaint_provider,
+            model=settings.inpaint_model,
         )
 
     # ── [개선 모드] Edit API ───────────────────────────────────────────────────
@@ -620,9 +620,9 @@ async def remove_product_background(product_image_bytes: bytes) -> bytes:
     """상품 이미지의 배경을 제거하고 투명 PNG bytes를 반환한다."""
     return await image_providers.remove_background(
         product_image_bytes,
-        provider="openai",
-        model=settings.generator_image_edit_model,
-        quality=settings.generator_image_quality,
+        provider=settings.cutout_provider,
+        model=settings.cutout_model,
+        quality=settings.cutout_quality,
     )
 
 
