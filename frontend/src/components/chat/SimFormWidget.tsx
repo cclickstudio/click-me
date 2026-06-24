@@ -28,6 +28,9 @@ const chipIdle =
 // 광고 목표 — 일반인도 쉽게 고르는 단일 선택(/simulation의 AD_GOALS 이식).
 const AD_GOALS = ['관심 유도', '클릭 유도', '가입·문의 유도', '구매 전환', '재구매·단골'];
 
+// 5단계 진행 인디케이터 라벨(W3 — 사용자가 현재 위치·남은 단계를 한눈에).
+const STEP_LABELS = ['제품명', '광고 설명', '카테고리', '광고 목표', '대상 설정'];
+
 // 연령대 → age_min/age_max 변환(다중 선택 시 하한~상한 범위).
 const AGE_BANDS: { label: string; min: number; max: number }[] = [
   { label: '10대', min: 14, max: 19 },
@@ -274,12 +277,38 @@ export default function SimFormWidget({
       'flex-1 py-2 rounded-lg bg-[#3182F6] text-white text-sm font-semibold hover:bg-[#1B6EEB] disabled:opacity-40 transition-colors';
     return (
       <div className={cardCls}>
-        <p className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6] mb-3">
-          🧪 시뮬레이션 정보 입력{' '}
-          <span className="text-[11px] font-normal text-[#8B95A1]">
-            ({step + 1}/{totalSteps})
-          </span>
-        </p>
+        <div className="mb-3">
+          <p className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]">
+            🧪 시뮬레이션 정보 입력{' '}
+            <span className="text-[11px] font-normal text-[#8B95A1]">
+              {step + 1}/{totalSteps} · {STEP_LABELS[step]}
+            </span>
+          </p>
+          {/* 단계 진행 인디케이터 — 완료 단계는 클릭해 되돌아갈 수 있음. */}
+          <div className="mt-2 flex items-center gap-1.5">
+            {STEP_LABELS.map((lbl, i) => {
+              const done = i < step;
+              const current = i === step;
+              return (
+                <button
+                  key={lbl}
+                  type="button"
+                  onClick={() => done && setStep(i)}
+                  disabled={!done}
+                  title={lbl}
+                  aria-label={`${i + 1}단계 ${lbl}${current ? ' (현재)' : done ? ' (완료)' : ''}`}
+                  className={`h-1.5 flex-1 rounded-full transition-colors ${
+                    current
+                      ? 'bg-[#3182F6]'
+                      : done
+                        ? 'bg-[#3182F6]/50 hover:bg-[#3182F6] cursor-pointer'
+                        : 'bg-[#E5E8EB] dark:bg-[#2D3748] cursor-default'
+                  }`}
+                />
+              );
+            })}
+          </div>
+        </div>
         {imagePreview && (
           <div className="mb-3 flex items-center gap-2">
             {/* eslint-disable-next-line @next/next/no-img-element */}
