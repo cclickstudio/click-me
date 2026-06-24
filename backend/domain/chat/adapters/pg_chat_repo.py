@@ -17,10 +17,14 @@ class PgChatRepo:
         self._sf = session_factory
 
     async def create_session(
-        self, *, project_id, user_id, organization_id, title="새 채팅"
+        self, *, session_id=None, project_id, user_id, organization_id, title="새 채팅"
     ) -> SessionDTO:
         row = ChatSession(
-            project_id=project_id, user_id=user_id, organization_id=organization_id, title=title
+            id=session_id or uuid.uuid4(),
+            project_id=project_id,
+            user_id=user_id,
+            organization_id=organization_id,
+            title=title,
         )
         async with self._sf() as db:
             db.add(row)

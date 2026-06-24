@@ -27,6 +27,7 @@ class ChatRepo(Protocol):
     async def create_session(
         self,
         *,
+        session_id: uuid.UUID | None = None,
         project_id: uuid.UUID | None,
         user_id: uuid.UUID | None,
         organization_id: uuid.UUID | None,
