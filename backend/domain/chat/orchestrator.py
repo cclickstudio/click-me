@@ -76,6 +76,11 @@ _CLASSIFY_SYSTEM = (
     "- select: 과거 항목 중 하나를 '골라' 개선·이어가려 할 때"
     "(예: '내가 돌린 시뮬 개선하고 싶어').\n\n"
     "[confidence] 분류 확신도 — 명확하면 high, 애매하면 medium, 거의 추측이면 low.\n\n"
+    "[is_ad_domain] 광고/마케팅 관련 여부.\n"
+    "- management·simulation·generator로 분류되면 항상 true.\n"
+    "- advise라도 광고·마케팅·브랜딩·카피·캠페인·소비자·매체 등 광고 일반 지식이면 true.\n"
+    "- 광고와 무관한 잡담·코딩·번역·요리·일상 등 비광고 일반 업무면 false.\n"
+    "- 애매하면 보수적으로 true(광고로 본다).\n\n"
     "[예시]\n"
     "'클릭 의향률이 무슨 뜻이야?' → simulation / ask\n"
     "'바나나우유 시뮬 반응 괜찮았어?' → simulation / ask\n"
@@ -86,7 +91,8 @@ _CLASSIFY_SYSTEM = (
     "'전환율 높이는 카피 전략 알려줘' → generator / ask\n"
     "'수분크림 광고 시안 만들어줘' → generator / run\n"
     "'내가 만든 시안 뭐 있어?' → generator / list\n"
-    "'요즘 20대 마케팅 트렌드 뭐야?' → advise"
+    "'요즘 20대 마케팅 트렌드 뭐야?' → advise (is_ad_domain=true)\n"
+    "'파이썬 정렬 코드 짜줘' / '오늘 점심 뭐 먹지?' → advise (is_ad_domain=false)"
 )
 
 # advise(일반 조언) 프롬프트 — 도메인 도구 없이 직접 답.
@@ -418,6 +424,8 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
         intent: Literal["management", "simulation", "generator", "advise"]
         action: Literal["ask", "run", "list", "select"] = "ask"
         confidence: Literal["high", "medium", "low"] = "high"  # 분류 확신도(라우팅 로그용)
+        # 광고 관련(무제한) vs 비광고 일반 업무(한도) 판정(P12). 애매하면 광고로(True) 보수적.
+        is_ad_domain: bool = True
         context_id: str | None = None
         ad_content: str | None = None
 
@@ -510,6 +518,7 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
         brand: dict | None
         intent: str
         action: str
+        is_ad_domain: bool
         context_id: str | None
         ad_content: str | None
         answer: str
@@ -519,19 +528,35 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
         q = (state.get("question") or "").strip()
         # 위젯이 보낸 결과 보고는 LLM 분류 없이 결정론 분기(일반 질문이 결과노드로 새는 것 방지).
         if q.startswith("[시뮬결과]"):
-            return {"intent": "sim_result", "action": "ask", "confidence": "high"}
+            return {
+                "intent": "sim_result",
+                "action": "ask",
+                "confidence": "high",
+                "is_ad_domain": True,
+            }
         if q.startswith("[생성결과]"):
-            return {"intent": "gen_result", "action": "ask", "confidence": "high"}
+            return {
+                "intent": "gen_result",
+                "action": "ask",
+                "confidence": "high",
+                "is_ad_domain": True,
+            }
         # 직전 대화를 맥락으로 덧붙여 후속 질문(예: "그거 확실해?")도 제대로 분류한다.
         msgs = [SystemMessage(content=_CLASSIFY_SYSTEM)]
         for role, content in (state.get("history") or [])[-4:]:
             msgs.append(HumanMessage(content=f"({role}) {content}"))
         msgs.append(HumanMessage(content=q))
         res = await classifier.ainvoke(msgs)
+        # 라우팅·광고도메인 분류 로그(X4 연계) — 오분류 추적·P12 한도 카운트 근거.
+        print(
+            f"[chat] classify intent={res.intent} action={res.action} "
+            f"is_ad_domain={res.is_ad_domain} confidence={res.confidence}"
+        )
         return {
             "intent": res.intent,
             "action": res.action,
             "confidence": res.confidence,
+            "is_ad_domain": res.is_ad_domain,
             "context_id": res.context_id,
             "ad_content": res.ad_content,
         }
