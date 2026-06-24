@@ -1,7 +1,6 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import AppLayout from '@/components/AppLayout';
 import { getToken } from '@/lib/authApi';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
@@ -23,7 +22,6 @@ export default function AdminChatsPage() {
   }, []);
 
   return (
-    <AppLayout>
       <div className="px-8 py-8 max-w-5xl mx-auto">
         <div className="mb-6">
           <h1 className="text-2xl font-bold text-[#191F28] dark:text-[#F2F4F6]">채팅 내역</h1>
@@ -58,6 +56,5 @@ export default function AdminChatsPage() {
           )}
         </div>
       </div>
-    </AppLayout>
   );
 }

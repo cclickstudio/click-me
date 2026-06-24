@@ -3,7 +3,6 @@
 // 조직 관리 — 기업 승인·조직 목록 + 계정(ADMIN/COMPANY/USER) 직접 생성·삭제.
 
 import { useEffect, useState } from 'react';
-import AppLayout from '@/components/AppLayout';
 import { getToken } from '@/lib/authApi';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
@@ -287,7 +286,7 @@ export default function AdminCompaniesPage() {
   };
 
   return (
-    <AppLayout>
+    <>
       <div className="px-8 py-8 max-w-5xl mx-auto space-y-8">
         <div className="flex items-start justify-between gap-4">
           <div>
@@ -412,6 +411,6 @@ export default function AdminCompaniesPage() {
           onSaved={() => { setEditing(null); fetchList(); }}
         />
       )}
-    </AppLayout>
+    </>
   );
 }
