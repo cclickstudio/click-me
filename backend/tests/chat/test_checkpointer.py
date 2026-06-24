@@ -2,6 +2,7 @@
 import asyncio
 import os
 import sys
+import uuid
 
 import pytest
 
@@ -33,11 +34,13 @@ async def test_checkpointer_setup_and_roundtrip():
     from domain.chat.checkpointer import build_async_checkpointer
 
     saver, close = await build_async_checkpointer(os.environ["CHAT_TEST_DB_URL"])
+    thread_id = f"chat-3a-test-{uuid.uuid4().hex[:8]}"  # per-run 격리
+    config = {"configurable": {"thread_id": thread_id, "checkpoint_ns": ""}}
     try:
-        config = {"configurable": {"thread_id": "chat-3a-test-thread", "checkpoint_ns": ""}}
         cp = empty_checkpoint()
         await saver.aput(config, cp, {}, {})
         got = await saver.aget(config)
         assert got is not None and got["id"] == cp["id"]
     finally:
+        await saver.adelete_thread(thread_id)  # 공유 DB 잔여 checkpoints* 정리(자기정리 불변식)
         await close()
