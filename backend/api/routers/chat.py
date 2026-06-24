@@ -12,8 +12,8 @@ from pydantic import BaseModel
 from core.config import settings
 from core.schemas import ChatRequest
 from domain.management.assistant.agent import build_management_agent
-from domain.management.assistant.composer import compose_turn, stream_turn
-from domain.management.assistant.contracts import AskRequest
+from domain.management.assistant.composer import compose_turn, format_sse, stream_turn
+from domain.management.assistant.contracts import AskRequest, AskResult
 from domain.management.assistant.history import record_feedback, record_turn
 
 router = APIRouter()
@@ -91,8 +91,10 @@ def _is_management(text: str) -> bool:
     return any(k in low for k in _MGMT_KEYWORDS)
 
 
-async def _record_management_turn(*, thread_id, result, question, ad_id, latency_ms) -> None:
-    # 관측·평가용 적재. 실패해도 채팅은 진행(best-effort).
+async def _record_management_turn(
+    *, thread_id: str, result: AskResult, question: str, ad_id: str | None, latency_ms: int
+) -> None:
+    # record_turn 어댑터 — AskResult를 record_turn 인자로 매핑(기본 record 구현).
     await record_turn(
         thread_id=thread_id,
         question=question,
@@ -112,7 +114,12 @@ async def _record_management_turn(*, thread_id, result, question, ad_id, latency
 
 
 async def _management_card_stream(
-    *, question, session_id, ad_id, assistant, record
+    *,
+    question: str,
+    session_id: str,
+    ad_id: str | None,
+    assistant: Callable[[AskRequest], Awaitable[AskResult]],
+    record: Callable[..., Awaitable[None]],
 ) -> AsyncGenerator[str, None]:
     # 매니지먼트 한 턴을 카드 SSE로. assistant/record 주입 → 앱·DB 없이 테스트 가능.
     thread_id = f"mgmt-{session_id}"
@@ -124,26 +131,15 @@ async def _management_card_stream(
         latency_ms = int((time.perf_counter() - t0) * 1000)
         env = compose_turn(result, turn_id=thread_id)
     except Exception as exc:  # noqa: BLE001 — 어시스턴트/조립 실패 = 턴 실패
-        yield (
-            "data: "
-            + json.dumps(
-                {
-                    "event": "error",
-                    "scope": "turn",
-                    "code": "assistant_error",
-                    "message": f"매니지먼트 조회 중 문제가 발생했어요: {exc}",
-                },
-                ensure_ascii=False,
-            )
-            + "\n\n"
+        yield format_sse(
+            {
+                "event": "error",
+                "scope": "turn",
+                "code": "assistant_error",
+                "message": f"매니지먼트 조회 중 문제가 발생했어요: {exc}",
+            }
         )
-        yield (
-            "data: "
-            + json.dumps(
-                {"event": "final", "turn_id": thread_id, "status": "failed"}, ensure_ascii=False
-            )
-            + "\n\n"
-        )
+        yield format_sse({"event": "final", "turn_id": thread_id, "status": "failed"})
         return
 
     # 2) 관측 적재는 best-effort — 실패해도 답변 스트림은 그대로(원래 chat.py 동작 보존).

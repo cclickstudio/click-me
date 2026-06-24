@@ -162,7 +162,8 @@ def compose_turn(
     )
 
 
-def _sse(payload: dict) -> str:
+# SSE 한 줄 직렬화 — 와이어 포맷 단일 출처(라우터 오류 경로도 재사용).
+def format_sse(payload: dict) -> str:
     return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
 
@@ -177,7 +178,7 @@ def _final_status(env: TurnEnvelope) -> str:
 async def stream_turn(env: TurnEnvelope) -> AsyncGenerator[str, None]:
     """카드 봉투를 2단계 SSE로 — 결론 먼저, 카드는 슬롯 순서(actionbar 마지막), final 항상."""
     for piece in _chunks(env.conclusion):
-        yield _sse({"event": "conclusion_delta", "text": piece})
+        yield format_sse({"event": "conclusion_delta", "text": piece})
     for card in env.cards:  # compose_turn이 이미 슬롯 순서·actionbar 마지막으로 정렬
-        yield _sse({"event": "card_ready", "card": card.model_dump(mode="json")})
-    yield _sse({"event": "final", "turn_id": env.turn_id, "status": _final_status(env)})
+        yield format_sse({"event": "card_ready", "card": card.model_dump(mode="json")})
+    yield format_sse({"event": "final", "turn_id": env.turn_id, "status": _final_status(env)})

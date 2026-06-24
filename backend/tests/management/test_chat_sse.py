@@ -88,7 +88,9 @@ async def test_management_card_stream_emits_events_with_injected_deps():
 
     async def fake_assistant(req):
         assert req.question == "예산?"
-        return AskResult(answer="예산은 정상입니다.", citations=[Citation(kind="live", source="live_budget")])
+        return AskResult(
+            answer="예산은 정상입니다.", citations=[Citation(kind="live", source="live_budget")]
+        )
 
     recorded = []
 
@@ -98,8 +100,11 @@ async def test_management_card_stream_emits_events_with_injected_deps():
     chunks = [
         c
         async for c in _management_card_stream(
-            question="예산?", session_id="s1", ad_id=None,
-            assistant=fake_assistant, record=fake_record,
+            question="예산?",
+            session_id="s1",
+            ad_id=None,
+            assistant=fake_assistant,
+            record=fake_record,
         )
     ]
     events = _parse(chunks)
@@ -111,7 +116,7 @@ async def test_management_card_stream_emits_events_with_injected_deps():
 
 
 @pytest.mark.asyncio
-async def test_management_card_stream_failure_emits_error_and_final_failed():
+async def test_management_card_stream_assistant_or_compose_failure_emits_error_and_final_failed():
     from api.routers.chat import _management_card_stream
 
     async def boom(req):
@@ -123,7 +128,11 @@ async def test_management_card_stream_failure_emits_error_and_final_failed():
     chunks = [
         c
         async for c in _management_card_stream(
-            question="예산?", session_id="s1", ad_id=None, assistant=boom, record=fake_record,
+            question="예산?",
+            session_id="s1",
+            ad_id=None,
+            assistant=boom,
+            record=fake_record,
         )
     ]
     events = _parse(chunks)
@@ -137,7 +146,9 @@ async def test_management_card_stream_record_failure_is_best_effort():
     from api.routers.chat import _management_card_stream
 
     async def fake_assistant(req):
-        return AskResult(answer="예산은 정상입니다.", citations=[Citation(kind="live", source="live_budget")])
+        return AskResult(
+            answer="예산은 정상입니다.", citations=[Citation(kind="live", source="live_budget")]
+        )
 
     async def boom_record(**kw):
         raise RuntimeError("db down")
@@ -145,8 +156,11 @@ async def test_management_card_stream_record_failure_is_best_effort():
     chunks = [
         c
         async for c in _management_card_stream(
-            question="예산?", session_id="s1", ad_id=None,
-            assistant=fake_assistant, record=boom_record,
+            question="예산?",
+            session_id="s1",
+            ad_id=None,
+            assistant=fake_assistant,
+            record=boom_record,
         )
     ]
     events = _parse(chunks)
