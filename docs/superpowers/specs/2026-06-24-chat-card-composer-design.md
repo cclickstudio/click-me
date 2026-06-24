@@ -62,7 +62,9 @@ Frontend
 
 - `conclusion`은 항상 존재. 나머지 카드는 **그 턴이 실제로 생성했을 때만** 포함(progressive disclosure). 빈 카드 금지.
 - 카드 `status` ∈ `ok | degraded | failed`.
-- **능동 제안용 필드(§10)** — 턴은 `origin` ∈ `user | proactive`, 그리고 `proactive`일 때 `trigger`(`{anomaly, campaign_id, escalation_step}`)·`read_state` ∈ `unread | read`를 가진다. 사용자 발화 턴은 `origin="user"`, 나머지 필드 생략.
+- **능동 제안용 필드(§10)** — 턴은 `origin` ∈ `user | proactive`, **기본값 `user`**(필드가 없으면 `user`로 간주). `trigger`와 `read_state`는 **`origin="proactive"`일 때만 존재하는 전용 필드**다.
+  - `trigger` = `{anomaly, campaign_id, escalation_step}` — proactive 턴에만.
+  - `read_state` ∈ `unread | read` — 인박스용으로 proactive 턴에만 의미. `user` 턴엔 부재(읽음 개념 없음).
 
 ### 4.2 kind — 닫힌 집합 (슬롯)
 
@@ -90,6 +92,8 @@ B에서 시뮬 팀이 `result.kpi_distribution` v1을 추가할 때 **레지스�
 
 **레지스트리는 순수해야 한다** — `chat_cards`는 management 내부를 import하지 않는다(import 0개). 그래야 B에서 시뮬/생성 도메인이 management 내부에 의존하지 않고(협업 규칙: 타 도메인 내부 직접 import 금지) 계약만 공유할 수 있다. A 단계에선 `domain/management/assistant/contracts/chat_cards/`에 두되, B 진입 시 중립 위치로 **이동(move)만** 하면 되도록 의존성을 비워 둔다.
 
+> **TODO(impl)** — A 단계 위치는 `domain/management/assistant/contracts/chat_cards/`로 확정하되, ① import 0개를 의존성 테스트로 강제하고(§9), ② 파일 상단/README에 "B 진입 시 중립 위치로 이동 예정(공통부 변경 → 협업 규칙상 사전 공지 필요)"를 명시한다. 중립 위치 후보는 구현 시점에 결정(`domain/chat/contracts/` 신설 vs 기타).
+
 ## 5. SSE 이벤트 (2단계 스트리밍)
 
 처음에 결론을 빠르게 보여주고, 카드는 Composer 검증이 끝난 순서대로 붙인다. **`final`은 어떤 경우에도 항상 보낸다** — 클라이언트는 늘 종료 이벤트를 받고, `status`로 결과를 판별한다.
@@ -112,7 +116,10 @@ B에서 시뮬 팀이 `result.kpi_distribution` v1을 추가할 때 **레지스�
 이벤트 순서 규칙:
 
 1. `conclusion_delta`가 먼저(빠른 체감). `card_ready`는 검증 완료 순.
-2. **`actionbar` 카드는 `review` 계산 이후 항상 마지막에 emit**(액션 가용성이 검수 결과에 의존).
+2. **`actionbar` 카드는 `review` 계산 이후 항상 마지막에 emit**(액션 가용성이 검수 결과에 의존). 실패 케이스는 fail-safe(기본 거부):
+   - **`review`가 fail/degraded** — `actionbar`는 **여전히 emit**하되 상태변경 액션(`승인`/`실행`)은 비활성(검수 미통과 사유 표시), 안전 액션(`다시 생성`/`무시`)만 활성. 검수가 안 끝났다고 액션바 자체를 빠뜨리면 사용자가 종료 상태를 못 받으므로, 빈 손이 아니라 "축소된 액션바"를 보낸다.
+   - **`actionbar` 자체 조립 실패**(Composer 오류) — 카드 단위로 복구 불가하므로 턴 단위 실패로 승격: `error(scope=turn)` + `final(status="failed")`(§6-④). actionbar 없는 채로 `final(ok)`을 보내지 않는다.
+   - 어느 경우든 **실행 권한 정본은 실행 API**(불변식 ①)이므로, 비활성/누락된 액션바를 우회해 호출해도 서버가 거부한다.
 3. `final`은 턴 종료 신호 + `turn_id` 상관키. 후속 액션 호출이 이 키를 참조.
 
 ## 6. 설계에 못박는 4개 불변식
@@ -210,7 +217,11 @@ B에서 시뮬 팀이 `result.kpi_distribution` v1을 추가할 때 **레지스�
 
   1. **영속이 정본, 푸시는 선택적 전달 포트.** 능동 턴 생성은 열린 SSE 연결에 의존하지 않는다(생성 = detection→Composer→영속으로 종료). `re_evaluate`가 전송 독립이라 자연 충족. UI는 인박스 엔드포인트에서 능동 턴을 읽고, 푸시는 "새 턴 있음 → refetch" 신호 또는 턴 동봉 — 카드 페이로드는 동일.
   2. **턴 스키마에 `origin`/`trigger`/`read_state`(§4.1).** read_state는 인박스용이면서 푸시에도 호환.
-  3. **중복 억제(dedup) — (가)만 보면 빠뜨리는 함정.** scheduled/SQS는 같은 anomaly로 매 tick 반복 발화 → 인박스 도배. dedup 키 = **escalation state 재사용**(`campaign, anomaly, escalation_step`). escalation이 이미 회복 판정(목록 멤버십)을 가지므로 "같은 step 미회복이면 새 턴 생성 안 함, step이 올라갈 때만 새 능동 턴" 규칙으로 연결.
+  3. **중복 억제(dedup) — (가)만 보면 빠뜨리는 함정.** scheduled/SQS는 같은 anomaly로 매 tick 반복 발화 → 인박스 도배. dedup은 **active escalation state 기준**으로, "같은 step 미회복이면 새 턴 생성 안 함, step이 올라갈 때만 새 능동 턴". escalation이 이미 회복 판정(목록 멤버십)을 갖고 있어 그대로 연결.
+     - **개념 키 vs 실제 저장 키를 구분한다.**
+       - *개념 키(설계 의미)* — `campaign, anomaly, escalation_step`. "어떤 캠페인의 어떤 이상이 어느 단계인가".
+       - *실제 DB 키(저장·조회)* — 최소 `tenant_id + account_id + campaign_id + anomaly + escalation_step`. 멀티테넌시·계정 격리 때문에 tenant/account를 키에 반드시 포함해야 교차 오염·오매칭이 안 난다. 구현은 이 실제 키로 유니크 제약/조회.
+     - **window성 데이터(metric_window 등)는 dedup 키도 턴 생성 트리거도 아니다.** 측정 윈도우는 evidence 카드의 **서술 컨텍스트로만** 존재한다. 같은 step이 유지되는 동안 window가 갱신돼도 그건 evidence 내용 변화일 뿐 새 능동 턴이 아니다. window를 세밀하게 트리거로 쓰면 매 window마다 턴이 생겨 도배되므로 명시적으로 금지.
 
 ### 10.3 트리거 진화
 
