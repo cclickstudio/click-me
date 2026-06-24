@@ -9,9 +9,11 @@ from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+from api.orchestration.bootstrap import build_orchestration
+from api.orchestration.registry import AgentRegistry
+from api.orchestration.routing import Router
 from core.config import settings
 from core.schemas import ChatRequest
-from domain.management.assistant.agent import build_management_agent
 from domain.management.assistant.composer import compose_turn, format_sse, stream_turn
 from domain.management.assistant.contracts import AskRequest, AskResult
 from domain.management.assistant.history import record_feedback, record_turn
@@ -45,50 +47,21 @@ _model = genai.GenerativeModel(
 
 _SENTINEL = object()
 
-# ── 최소 오케스트레이션: 매니지먼트 질문만 서브에이전트로 라우팅 ──
-# 공통 오케스트레이터 본체가 정해지기 전의 임시 연결. 시뮬/생성은 추후 같은 방식으로 추가.
-_MGMT_KEYWORDS: frozenset[str] = frozenset(
-    {
-        "캠페인",
-        "예산",
-        "소진",
-        "런레이트",
-        "페이싱",
-        "게재",
-        "광고",
-        "ctr",
-        "roas",
-        "cvr",
-        "클릭률",
-        "노출",
-        "지출",
-        "리드",
-        "성과",
-        "전환",
-        "잔액",
-        "일시중지",
-        "멈춰",
-        "증액",
-        "감액",
-        "소재",
-        "예측대로",
-        "매니지먼트",
-    }
-)
-
-_assistant = None
+# ── 오케스트레이션: 점수 라우터 + 도메인 에이전트 레지스트리(합성은 bootstrap) ──
+# 도메인 추가는 bootstrap.build_orchestration의 매처/에이전트 등록으로. 여기선 판정·획득만.
+_orchestration = None
 
 
-def _get_assistant() -> Callable[[AskRequest], Awaitable[object]]:
-    global _assistant
-    if _assistant is None:
-        _assistant = build_management_agent(settings)
-    return _assistant
+def _get_orchestration() -> tuple[Router, AgentRegistry]:
+    global _orchestration
+    if _orchestration is None:
+        _orchestration = build_orchestration(settings)
+    return _orchestration
 
 
-def _is_management(text: str) -> bool:
-    low = text.lower()
-    return any(k in low for k in _MGMT_KEYWORDS)
+def _resolve_domain(text: str) -> str:
+    router, _ = _get_orchestration()
+    return router.route(text).domain
 
 
 async def _record_management_turn(
@@ -173,12 +146,21 @@ async def chat_complete(body: ChatRequest) -> StreamingResponse:
     last_message = body.messages[-1].content if body.messages else ""
 
     async def generate() -> AsyncGenerator[str, None]:
-        if _is_management(last_message):
+        # MVP 임시 분기 — sim/gen 도메인 에이전트 등록 전까지 management만 카드 스트림에 연결한다.
+        # (도메인 추가 시 이 분기를 레지스트리 디스패치로 일반화)
+        _, registry = _get_orchestration()
+        domain = _resolve_domain(last_message)
+        if domain == "management":
+            agent = registry.get(domain)
+            if agent is None:  # 정상 bootstrap이면 반드시 존재 — 없으면 설정 오류, 조용한 폴백 금지
+                raise RuntimeError(
+                    "management로 라우팅됐으나 에이전트 미등록 — bootstrap 설정 오류"
+                )
             async for chunk in _management_card_stream(
                 question=last_message,
                 session_id=body.session_id,
                 ad_id=body.context_ad_id,
-                assistant=_get_assistant(),
+                assistant=agent.ask,
                 record=_record_management_turn,
             ):
                 yield chunk
