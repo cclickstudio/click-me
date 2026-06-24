@@ -4,16 +4,16 @@ from __future__ import annotations
 from .models import Card, CardKind
 
 # (kind, type) -> 지원 version 집합. B 단계에서 result에 kpi_distribution/variants 등 추가.
-_REGISTRY: dict[tuple[CardKind, str], set[int]] = {
-    (CardKind.EVIDENCE, "rag_citations"): {1},
-    (CardKind.RESULT, "action_proposal"): {1},
-    (CardKind.REVIEW, "policy_check"): {1},
-    (CardKind.ACTIONBAR, "actions"): {1},
+_REGISTRY: dict[tuple[CardKind, str], frozenset[int]] = {
+    (CardKind.EVIDENCE, "rag_citations"): frozenset({1}),
+    (CardKind.RESULT, "action_proposal"): frozenset({1}),
+    (CardKind.REVIEW, "policy_check"): frozenset({1}),
+    (CardKind.ACTIONBAR, "actions"): frozenset({1}),
 }
 
 
 def is_registered(kind: CardKind, type_: str, version: int) -> bool:
-    return version in _REGISTRY.get((kind, type_), set())
+    return version in _REGISTRY.get((kind, type_), frozenset())
 
 
 def validate_card(card: Card) -> None:
