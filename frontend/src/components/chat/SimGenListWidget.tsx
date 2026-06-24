@@ -4,6 +4,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
+import { formatKST } from '@/lib/datetime';
 import ComparisonWidget from './ComparisonWidget';
 
 type ListItem = {
@@ -19,11 +20,7 @@ type Domain = 'sim' | 'gen';
 const cardCls =
   'mt-1 w-full rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-white dark:bg-[#1C2333] p-3';
 
-const fmtDate = (iso?: string | null) => {
-  if (!iso) return '';
-  const d = new Date(iso);
-  return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-};
+const fmtDate = formatKST;
 
 const pct = (n: unknown) => (typeof n === 'number' ? `${(n * 100).toFixed(0)}%` : '—');
 const sc = (n: unknown) => (typeof n === 'number' ? n.toFixed(2) : '—');

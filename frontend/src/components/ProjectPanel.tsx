@@ -9,6 +9,7 @@ import TrashSection from './TrashSection';
 import ModeBadge from './ModeBadge';
 import ProjectChatSection from './chat/ProjectChatSection';
 import { getToken } from '@/lib/authApi';
+import { formatKST } from '@/lib/datetime';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
@@ -19,10 +20,7 @@ const statusColor: Record<string, string> = {
   FAILED: 'bg-red-400', failed: 'bg-red-400',
 };
 
-const fmt = (iso: string) => {
-  const d = new Date(iso);
-  return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-};
+const fmt = (iso: string) => formatKST(iso);
 
 function ChevronIcon({ open }: { open: boolean }) {
   return (

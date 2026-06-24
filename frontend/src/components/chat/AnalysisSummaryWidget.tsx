@@ -5,26 +5,14 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
+import { formatKST } from '@/lib/datetime';
 
 const cardCls =
   'mt-1 w-full rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-[#F9FAFB] dark:bg-[#1C2333] p-4';
 
 type Row = { id: string; title: string; status?: string; created_at?: string; sample_size?: number };
 
-function fmtDate(iso?: string): string {
-  if (!iso) return '';
-  try {
-    return new Intl.DateTimeFormat('ko-KR', {
-      timeZone: 'Asia/Seoul',
-      month: 'numeric',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    }).format(new Date(iso));
-  } catch {
-    return '';
-  }
-}
+const fmtDate = formatKST;
 
 const isDone = (s?: string) => (s ?? '').toLowerCase() === 'completed';
 const isFailed = (s?: string) => (s ?? '').toLowerCase() === 'failed';

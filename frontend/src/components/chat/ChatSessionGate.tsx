@@ -6,12 +6,7 @@ import { useRouter } from 'next/navigation';
 import { useProjects } from '@/components/ProjectContext';
 import { useChatController } from '@/components/chat/ChatController';
 import { api, type ChatSessionRow } from '@/lib/api';
-
-const fmt = (iso?: string | null) => {
-  if (!iso) return '';
-  const d = new Date(iso);
-  return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-};
+import { formatKST as fmt } from '@/lib/datetime';
 
 export default function ChatSessionGate({ projectId }: { projectId: string }) {
   const router = useRouter();
