@@ -14,6 +14,7 @@ from core.schemas import ChatRequest
 from domain.chat import history
 from domain.chat.loop_state import get_loop_state
 from domain.chat.orchestrator import ChatTurn, build_chat_orchestrator
+from domain.management.assistant.history import record_feedback  # RAG 피드백 적재(/feedback)
 from tools.storage.s3 import download_bytes, upload_bytes
 
 # 채팅 첨부 이미지 — 허용 타입과 S3 프리픽스(프록시 게이트).
@@ -371,3 +372,28 @@ async def proxy_chat_image(key: str) -> Response:
     else:
         media = "image/png"
     return Response(content=data, media_type=media)
+
+
+class FeedbackRequest(BaseModel):
+    thread_id: str | None = None  # 채팅 세션 키(mgmt-{session_id})
+    message_id: str | None = None
+    question: str | None = None
+    answer: str | None = None
+    rating: int | None = None  # 1 좋아요 / -1 싫어요
+    failure_type: str | None = None  # wrong_tool|stale_doc|hallucinated_number|missing_citation 등
+    corrected_answer: str | None = None
+
+
+@router.post("/feedback")
+async def chat_feedback(body: FeedbackRequest) -> dict:
+    """어시스턴트 답변 피드백 적재 — RAG 품질 개선 루프(management_kb_feedback). best-effort."""
+    await record_feedback(
+        thread_id=body.thread_id,
+        message_id=body.message_id,
+        question=body.question,
+        answer=body.answer,
+        rating=body.rating,
+        failure_type=body.failure_type,
+        corrected_answer=body.corrected_answer,
+    )
+    return {"ok": True}

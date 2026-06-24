@@ -5,6 +5,10 @@
 import os
 
 os.environ["USE_MOCK"] = "true"
+# 테스트는 LangSmith로 트레이스를 보내지 않는다 — 노이즈·비용·외부 의존 차단.
+# load_dotenv(override=False) 전에 set → .env의 LANGCHAIN_TRACING_V2=true가 덮지 못함.
+os.environ["LANGCHAIN_TRACING_V2"] = "false"
+os.environ["LANGSMITH_TRACING"] = "false"
 
 import pytest_asyncio
 from dotenv import load_dotenv

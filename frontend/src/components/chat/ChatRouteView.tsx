@@ -2,7 +2,6 @@
 
 // URL(/chat/[pid]/[sid]) ↔ 전역 상태 동기화 래퍼 — 플로팅도 같은 activeSessionId를 읽어 세션이 이어진다.
 import { useEffect } from 'react';
-import AppLayout from '@/components/AppLayout';
 import { useProjects } from '@/components/ProjectContext';
 import { useChatController } from '@/components/chat/ChatController';
 import ChatConversation from '@/components/chat/ChatConversation';
@@ -28,21 +27,19 @@ export default function ChatRouteView({
   }, [sessionId, setActiveSessionId]);
 
   return (
-    <AppLayout>
-      <div className="h-screen">
-        <ChatConversation
-          projectId={projectId}
-          sessionId={sessionId}
-          onSessionCreated={(id) => {
-            setActiveSessionId(id);
-            refreshSessions();
-            // Next 라우터(router.replace)는 catch-all에서도 페이지를 리마운트시켜 진행 중 대화를 날린다.
-            // Next 14 공식 shallow routing(history.replaceState)으로 URL만 갱신 — 리마운트 없이 새로고침·딥링크 대응.
-            window.history.replaceState(null, '', `/chat/${projectId}/${id}`);
-          }}
-          onActivity={refreshSessions}
-        />
-      </div>
-    </AppLayout>
+    <div className="h-screen">
+      <ChatConversation
+        projectId={projectId}
+        sessionId={sessionId}
+        onSessionCreated={(id) => {
+          setActiveSessionId(id);
+          refreshSessions();
+          // Next 라우터(router.replace)는 catch-all에서도 페이지를 리마운트시켜 진행 중 대화를 날린다.
+          // Next 14 공식 shallow routing(history.replaceState)으로 URL만 갱신 — 리마운트 없이 새로고침·딥링크 대응.
+          window.history.replaceState(null, '', `/chat/${projectId}/${id}`);
+        }}
+        onActivity={refreshSessions}
+      />
+    </div>
   );
 }

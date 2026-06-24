@@ -62,22 +62,45 @@ def _resolve_use_mock(settings, use_mock) -> bool:
     return getattr(settings, "use_mock", True) if settings is not None else True
 
 
+def _reaction_fallback_enabled() -> bool:
+    """반응 GPT 폴백 사용 여부 — 기본 ON(opt-out). SIMULATION_REACTION_FALLBACK=0/false면 끈다."""
+    return os.environ.get("SIMULATION_REACTION_FALLBACK", "1").lower() not in ("0", "false", "no")
+
+
+def _build_reactor() -> object:
+    """반응 엔진 — 기본 gpt-4o-mini(GeminiReactionEngine은 _common 통해 OpenAI 호출).
+
+    폴백 ON이면 두 번째 OpenAI 모델(gpt-4.1-mini)을 뒤에 붙여 일시 오류 내성을 키운다.
+    primary가 자체 백오프 재시도를 다 쓰고도 실패하면 FallbackReactionEngine이 폴백한다.
+    """
+    from domain.simulation.adapters.gemini import GeminiReactionEngine
+
+    primary = GeminiReactionEngine()
+    if not _reaction_fallback_enabled():
+        return primary
+    _ensure_env("OPENAI_API_KEY")
+    if not os.environ.get("OPENAI_API_KEY"):
+        return primary
+    from domain.simulation.adapters.openai_reaction import OpenAIReactionEngine
+    from domain.simulation.adapters.reaction_fallback import FallbackReactionEngine
+
+    model = os.environ.get("SIMULATION_REACTION_FALLBACK_MODEL", "gpt-4.1-mini")
+    return FallbackReactionEngine([primary, OpenAIReactionEngine(model=model)])
+
+
 def build_reaction_subgraph(settings=None, *, use_llm_qa=None):
-    """반응+QA 재시도 서브그래프(컴파일본). 항상 실 LLM(gpt-4o-mini) 반응 + QA(§P4, mock 폴백 없음).
+    """반응+QA 재시도 서브그래프(컴파일본). gpt-4o-mini 반응(+GPT 폴백) + QA(§P4, mock 없음).
 
     QA 기본은 규칙(무콜). use_llm_qa=True(또는 settings.use_llm_qa)면 GeminiQaGate(콜 2배, opt-in).
+    반응 엔진은 _build_reactor가 결정(gpt-4o-mini 단독 또는 → gpt 폴백 체인).
     """
     _ensure_env("OPENAI_API_KEY")
-    from domain.simulation.adapters.gemini import (
-        GeminiQaGate,
-        GeminiReactionEngine,
-        RuleQaGate,
-    )
+    from domain.simulation.adapters.gemini import GeminiQaGate, RuleQaGate
 
     if use_llm_qa is None:
         use_llm_qa = getattr(settings, "use_llm_qa", False) if settings is not None else False
     qa = GeminiQaGate() if use_llm_qa else RuleQaGate()
-    return build_reaction_graph(reactor=GeminiReactionEngine(), qa=qa)
+    return build_reaction_graph(reactor=_build_reactor(), qa=qa)
 
 
 def build_persistence(settings=None, session_factory=None):

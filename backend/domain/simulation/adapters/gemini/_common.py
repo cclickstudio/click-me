@@ -14,8 +14,45 @@ from typing import Any
 
 import httpx
 from langsmith import get_current_run_tree, traceable
+from tenacity import (
+    AsyncRetrying,
+    retry_if_exception,
+    stop_after_attempt,
+    wait_random_exponential,
+)
 
 _DEFAULT_MODEL = "gpt-4o-mini"  # 재현성 위해 버전 핀(구 gemini-2.5-flash 대체)
+
+# Gemini 503(과부하)·429·5xx·네트워크 일시 오류 재시도 — 서버 과부하는 백오프로 대부분 복구된다.
+# (테스트는 _RETRY_WAIT_* 를 0으로 몽키패치해 무대기로 검증)
+_RETRY_STATUS = frozenset({429, 500, 502, 503, 504})
+_RETRY_ATTEMPTS = 5
+_RETRY_WAIT_MULTIPLIER = 1.0
+_RETRY_WAIT_MAX = 30.0
+
+
+def _is_transient(exc: BaseException) -> bool:
+    """일시 오류(재시도 대상)인가 — 503/429/5xx·네트워크. 안전블록·4xx(429 제외)는 비대상."""
+    if isinstance(exc, (httpx.TransportError, httpx.TimeoutException)):
+        return True
+    code = getattr(exc, "code", None) or getattr(exc, "status_code", None)
+    if isinstance(code, int) and code in _RETRY_STATUS:
+        return True
+    text = f"{type(exc).__name__} {exc}".lower()
+    return any(
+        k in text
+        for k in (
+            "unavailable",
+            "overloaded",
+            "503",
+            "502",
+            "504",
+            # OpenAI SDK 일시 오류(상태코드 없는 연결·타임아웃) 클래스명 매칭
+            "apiconnection",
+            "apitimeout",
+            "internalservererror",
+        )
+    )
 
 
 def _enum_values(enum_cls) -> str:
@@ -82,7 +119,16 @@ async def _agen_json(
     }
     if temperature is not None:
         kwargs["temperature"] = temperature
-    resp = await client.chat.completions.create(**kwargs)
+    # 429·5xx·네트워크 일시 오류는 지수 백오프로 재시도 — 파싱 실패 등 영속 오류는 비대상.
+    resp = None
+    async for attempt in AsyncRetrying(
+        retry=retry_if_exception(_is_transient),
+        wait=wait_random_exponential(multiplier=_RETRY_WAIT_MULTIPLIER, max=_RETRY_WAIT_MAX),
+        stop=stop_after_attempt(_RETRY_ATTEMPTS),
+        reraise=True,
+    ):
+        with attempt:
+            resp = await client.chat.completions.create(**kwargs)
     _record_usage(resp, model)
     return _parse_json(resp.choices[0].message.content or "")
 

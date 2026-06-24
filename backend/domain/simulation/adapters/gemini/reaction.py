@@ -49,22 +49,60 @@ def _ad_feature_lines(ad: AdInterpretation, income: str) -> str:
     return ("\n" + "\n".join(lines)) if lines else ""
 
 
-def _generation_lines(age: int) -> str:
-    """나이 → 형성기(reminiscence bump 15~25세) 게이팅 + 세대 말투 줄 (Tier 1).
+# 전 연령형(타깃 불명확) 포괄어 — 이게 들어간 detected_target은 '연령 단서 없음'으로 본다.
+# tools/debate/selector.py 에 유사 리스트가 있으나 동료(분석·토론) 소유라 import 않고 로컬 복제.
+_BROAD_TARGET_TERMS = (
+    "전 연령",
+    "전연령",
+    "일반 대중",
+    "일반 소비자",
+    "누구나",
+    "남녀노소",
+    "온 가족",
+    "전 국민",
+    "모든",
+    "전반",
+)
 
-    추가 데이터 없이 나이만으로 '어느 시대 브랜드가 native한가'와 '어떤 말투로 말하나'를 가른다.
-    사실(브랜드 시대성)이 아니라 친숙도·어투를 페르소나 나이로 조건화 — 다양성은 데이터(나이)에서.
+
+def _has_age_or_brand_cue(ad: AdInterpretation) -> bool:
+    """광고에 실제 연령·브랜드 단서가 있는가 — 있을 때만 세대 친숙도 프레임을 주입한다.
+
+    단서 없는(연령 무관·무명) 광고에 '내 세대 vs 젊은 세대' 틀을 무조건 심으면 40+가
+    엉뚱하게 '젊은 애들용'으로 수렴 → 단서 게이팅으로 과증폭을 막는다.
+    """
+    sa = ad.structured_analysis or {}
+    be = sa.get("brand_era")
+    if isinstance(be, dict) and be.get("identified"):
+        return True
+    aw = sa.get("awareness_by_age")
+    if isinstance(aw, dict) and aw:
+        return True
+    target = (ad.detected_target or "").strip()
+    return bool(target) and not any(t in target for t in _BROAD_TARGET_TERMS)
+
+
+def _generation_lines(age: int, ad: AdInterpretation) -> str:
+    """나이 → 형성기(reminiscence bump 15~25세) 문맥 + 말투(항상) + 세대 친숙도(조건부) (Tier 1).
+
+    말투·형성기 문맥은 전 페르소나에 유익하므로 항상 출력. '내 세대 vs 젊은 세대 친숙도/낯섦'
+    프레임만 _has_age_or_brand_cue(ad) 일 때 주입 — 다양성은 데이터(나이)에서, 과증폭은 게이팅으로.
     (PERSONA_COHORT_KNOWLEDGE_STRATEGY Tier 1)
     """
     birth_year = datetime.now().year - int(age)
     form_start, form_end = birth_year + 15, birth_year + 25
-    return (
-        "\n[내 세대]\n"
-        f"- 브랜드·문화 취향이 형성된 시기는 대략 {form_start}~{form_end}년입니다.\n"
+    familiarity = (
         "- 그 시기에 익숙했던 브랜드·캐릭터·트렌드와, "
         "요즘 젊은 세대가 쓰는 것에 대한 친숙도는 다릅니다. "
         "이 광고의 브랜드·소재가 '내 세대에 익숙한지'를 내 나이에 비추어 판단하고, "
         "잘 모르는 브랜드면 아는 척하지 말고 '낯섦'을 반영해 반응하세요.\n"
+        if _has_age_or_brand_cue(ad)
+        else ""
+    )
+    return (
+        "\n[내 세대]\n"
+        f"- 브랜드·문화 취향이 형성된 시기는 대략 {form_start}~{form_end}년입니다.\n"
+        f"{familiarity}"
         "- utterance(반응 문장)는 내 나이대가 실제로 쓰는 말투·어휘·어미로 말하세요. "
         "젊으면 젊은 대로, 나이 들면 그 세대의 자연스러운 어투로 — 단 과장된 유행어·밈 남발은 금지."
     )
@@ -188,6 +226,97 @@ def _media_line(mb: dict) -> str:
     return f"- 주 이용 미디어: {primary}"
 
 
+def _trust_anchor_line() -> str:
+    """trust(신뢰도) 1~5 척도 앵커 — 정의 없이 LLM 통념에 맡기던 걸 사람 관점 기준으로 고정."""
+    return (
+        "trust(신뢰도)는 1=과장·허위 같아 전혀 못 믿겠다, 3=반신반의, "
+        "5=내용이 사실 같고 충분히 믿을 만하다 기준으로 고른다. "
+    )
+
+
+def build_reaction_prompt(persona, ad: AdInterpretation, exposure: str | None) -> str:
+    """4-b 반응 프롬프트(프로바이더 무관) — Gemini·OpenAI 어댑터가 공유한다."""
+    income = persona.socioeconomic.get("income_bracket", "?")
+    edu = persona.socioeconomic.get("education", "?")
+    values = [k for k, v in persona.consumption_values.items() if v]
+    return (
+        "당신은 아래 한국 소비자 '본인'입니다. 지금 인스타그램·페이스북(메타) 피드를 "
+        "넘겨보다가 아래 광고를 마주쳤습니다. 이 사람의 성격·형편·미디어 습관에 충실하게, "
+        "광고에 솔직하게 반응하세요. 피드 광고라 관심이 없으면 손가락으로 즉시 넘길 수 "
+        "있습니다. 교과서적 정답이 아니라 이 사람의 실제 반응을.\n\n"
+        f"[나]\n- {persona.age}세 {persona.gender}, {persona.region}\n"
+        f"- 학력 {edu}, 월소득 {income}\n"
+        f"- 성격(OCEAN): {_ocean_descriptors(persona.ocean)}\n"
+        f"{_media_line(persona.media_behavior)}\n"
+        f"- 중시 소비가치: {values}\n"
+        f"- 서사: {persona.profile_narrative or '(없음)'}\n"
+        f"- 지금 노출 맥락: {exposure or '일반'}"
+        f"{_social_values_lines(persona)}"
+        f"{_generation_lines(persona.age, ad)}\n\n"
+        f"[광고]\n- 업종: {ad.detected_industry} / 목적: {ad.detected_objective}\n"
+        f"- 메시지: {ad.detected_message}"
+        f"{_ad_feature_lines(ad, income)}"
+        f"{_brand_era_lines(ad)}"
+        f"{_visual_lines(ad)}{_awareness_lines(ad, persona.age)}\n\n"
+        "[출력 — 아래 JSON만, 설명·코드펜스 없이]\n"
+        "{\n"
+        '  "aisas": {"attention": bool, "interest": bool, "search": bool, '
+        '"action": bool, "share": bool},\n'
+        f'  "drop_stage": null 또는 [{_enum_values(AisasStage)}] 중 이탈 단계,\n'
+        f'  "drop_reason_tag": null 또는 [{_enum_values(DropReasonTag)}] 중 하나,\n'
+        '  "purchase_intent": 1~5 정수, "trust": 1~5 정수, "rejected": bool,\n'
+        f'  "rejection_reason_tag": null 또는 [{_enum_values(RejectionReasonTag)}] 중 하나,\n'
+        f'  "emotion_tag": [{_enum_values(EmotionTag)}] 중 하나,\n'
+        '  "perceived_message": "내가 이해한 메시지", "perceived_target": "내가 느낀 타깃",\n'
+        '  "brand_recognized": bool,  // 이 광고가 어느 브랜드/제품 광고인지 명확히 알겠는가\n'
+        '  "perceived_brand": "내가 인식한 브랜드/제품명(모르겠으면 null)",\n'
+        '  "noticed_first": "이 광고에서 내 성격·중시 소비가치상 '
+        '가장 먼저 눈에 들어온 요소 한 가지",\n'
+        '  "utterance": "한 문장 솔직한 반응"\n'
+        "}\n"
+        "주의: AISAS는 깔때기 — action=true면 attention·interest도 true여야 한다. "
+        "brand_recognized는 광고를 보고 '무슨 브랜드/제품 광고인지' 분명히 떠오를 때만 true. "
+        f"{_trust_anchor_line()}"
+        "태그는 반드시 제시된 값에서만 고른다(새 값 금지). "
+        "noticed_first 는 같은 광고라도 사람마다 다르다 — 내 성격·형편·중시 가치에 비추어 "
+        "가장 먼저 주의가 가는 요소를 고른다(가격 민감하면 가격, 개방적이면 비주얼 식으로)."
+    )
+
+
+def build_persona_reaction(persona, exposure: str | None, data: dict) -> PersonaReaction:
+    """LLM JSON(data)을 §3.5 PersonaReaction으로 파싱(프로바이더 무관) — Gemini·OpenAI 공유."""
+    return PersonaReaction(
+        persona_id=persona.persona_id,
+        exposure_context=exposure,
+        aisas=Aisas(**data.get("aisas", {})),
+        drop_stage=data.get("drop_stage"),
+        drop_reason_tag=data.get("drop_reason_tag"),
+        purchase_intent=int(data["purchase_intent"]),
+        trust=int(data["trust"]),
+        rejected=bool(data.get("rejected", False)),
+        rejection_reason_tag=data.get("rejection_reason_tag"),
+        emotion_tag=data.get("emotion_tag", EmotionTag.INDIFFERENCE),
+        perceived_message=data.get("perceived_message"),
+        perceived_target=data.get("perceived_target"),
+        brand_recognized=bool(data.get("brand_recognized", False)),
+        perceived_brand=data.get("perceived_brand"),
+        noticed_first=data.get("noticed_first"),
+        utterance=data.get("utterance"),
+        qa_passed=True,  # QA 게이트가 별도 판정
+    )
+
+
+async def generate_reaction(json_call, persona, ad: AdInterpretation) -> PersonaReaction:
+    """반응 생성 오케스트레이션(프로바이더 무관) — 노출맥락 선택→프롬프트→json_call→파싱.
+
+    json_call: async (prompt:str)->dict. 이 함수만 갈아끼우면 프로바이더(Gemini/OpenAI)가 바뀐다.
+    """
+    rng = random.Random(persona.persona_id)
+    exposure = _pick_exposure(persona, rng)
+    data = await json_call(build_reaction_prompt(persona, ad, exposure))
+    return build_persona_reaction(persona, exposure, data)
+
+
 class GeminiReactionEngine:
     """4-b 반응 — §3.5 구조화 JSON 강제(비동기). temperature↑로 페르소나 간 응답 다양성 보존."""
 
@@ -199,77 +328,10 @@ class GeminiReactionEngine:
         self.version = model
         self._temperature = temperature
 
-    def _prompt(self, persona, ad: AdInterpretation, exposure: str | None) -> str:
-        income = persona.socioeconomic.get("income_bracket", "?")
-        edu = persona.socioeconomic.get("education", "?")
-        values = [k for k, v in persona.consumption_values.items() if v]
-        return (
-            "당신은 아래 한국 소비자 '본인'입니다. 지금 인스타그램·페이스북(메타) 피드를 "
-            "넘겨보다가 아래 광고를 마주쳤습니다. 이 사람의 성격·형편·미디어 습관에 충실하게, "
-            "광고에 솔직하게 반응하세요. 피드 광고라 관심이 없으면 손가락으로 즉시 넘길 수 "
-            "있습니다. 교과서적 정답이 아니라 이 사람의 실제 반응을.\n\n"
-            f"[나]\n- {persona.age}세 {persona.gender}, {persona.region}\n"
-            f"- 학력 {edu}, 월소득 {income}\n"
-            f"- 성격(OCEAN): {_ocean_descriptors(persona.ocean)}\n"
-            f"{_media_line(persona.media_behavior)}\n"
-            f"- 중시 소비가치: {values}\n"
-            f"- 서사: {persona.profile_narrative or '(없음)'}\n"
-            f"- 지금 노출 맥락: {exposure or '일반'}"
-            f"{_social_values_lines(persona)}"
-            f"{_generation_lines(persona.age)}\n\n"
-            f"[광고]\n- 업종: {ad.detected_industry} / 목적: {ad.detected_objective}\n"
-            f"- 메시지: {ad.detected_message}"
-            f"{_ad_feature_lines(ad, income)}"
-            f"{_brand_era_lines(ad)}"
-            f"{_visual_lines(ad)}{_awareness_lines(ad, persona.age)}\n\n"
-            "[출력 — 아래 JSON만, 설명·코드펜스 없이]\n"
-            "{\n"
-            '  "aisas": {"attention": bool, "interest": bool, "search": bool, '
-            '"action": bool, "share": bool},\n'
-            f'  "drop_stage": null 또는 [{_enum_values(AisasStage)}] 중 이탈 단계,\n'
-            f'  "drop_reason_tag": null 또는 [{_enum_values(DropReasonTag)}] 중 하나,\n'
-            '  "purchase_intent": 1~5 정수, "trust": 1~5 정수, "rejected": bool,\n'
-            f'  "rejection_reason_tag": null 또는 [{_enum_values(RejectionReasonTag)}] 중 하나,\n'
-            f'  "emotion_tag": [{_enum_values(EmotionTag)}] 중 하나,\n'
-            '  "perceived_message": "내가 이해한 메시지", "perceived_target": "내가 느낀 타깃",\n'
-            '  "brand_recognized": bool,  // 이 광고가 어느 브랜드/제품 광고인지 명확히 알겠는가\n'
-            '  "perceived_brand": "내가 인식한 브랜드/제품명(모르겠으면 null)",\n'
-            '  "noticed_first": "이 광고에서 내 성격·중시 소비가치상 '
-            '가장 먼저 눈에 들어온 요소 한 가지",\n'
-            '  "utterance": "한 문장 솔직한 반응"\n'
-            "}\n"
-            "주의: AISAS는 깔때기 — action=true면 attention·interest도 true여야 한다. "
-            "brand_recognized는 광고를 보고 '무슨 브랜드/제품 광고인지' 분명히 떠오를 때만 true. "
-            "태그는 반드시 제시된 값에서만 고른다(새 값 금지). "
-            "noticed_first 는 같은 광고라도 사람마다 다르다 — 내 성격·형편·중시 가치에 비추어 "
-            "가장 먼저 주의가 가는 요소를 고른다(가격 민감하면 가격, 개방적이면 비주얼 식으로)."
-        )
-
     async def react(self, persona, ad: AdInterpretation) -> PersonaReaction:
-        rng = random.Random(persona.persona_id)
-        exposure = _pick_exposure(persona, rng)
-        data = await _agen_json(
-            self._client,
-            self._model,
-            self._prompt(persona, ad, exposure),
-            temperature=self._temperature,
-        )
-        return PersonaReaction(
-            persona_id=persona.persona_id,
-            exposure_context=exposure,
-            aisas=Aisas(**data.get("aisas", {})),
-            drop_stage=data.get("drop_stage"),
-            drop_reason_tag=data.get("drop_reason_tag"),
-            purchase_intent=int(data["purchase_intent"]),
-            trust=int(data["trust"]),
-            rejected=bool(data.get("rejected", False)),
-            rejection_reason_tag=data.get("rejection_reason_tag"),
-            emotion_tag=data.get("emotion_tag", EmotionTag.INDIFFERENCE),
-            perceived_message=data.get("perceived_message"),
-            perceived_target=data.get("perceived_target"),
-            brand_recognized=bool(data.get("brand_recognized", False)),
-            perceived_brand=data.get("perceived_brand"),
-            noticed_first=data.get("noticed_first"),
-            utterance=data.get("utterance"),
-            qa_passed=True,  # QA 게이트가 별도 판정
-        )
+        async def _json(prompt: str) -> dict:
+            return await _agen_json(
+                self._client, self._model, prompt, temperature=self._temperature
+            )
+
+        return await generate_reaction(_json, persona, ad)

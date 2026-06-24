@@ -12,6 +12,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
+from langsmith import traceable
+
 from domain.management.contracts.enums import (
     AnomalyType,
     DiagnosisSource,
@@ -36,6 +38,7 @@ _BELOW_AVERAGE: frozenset[RelevanceRank] = frozenset(
 )
 
 
+@traceable(name="diagnose_performance", run_type="chain", tags=["management", "detection"])
 def diagnose_performance(
     tenant_id: str,
     campaign_id: str,

@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 
-/** 크레딧 잔액 + 충전 버튼 — 잔액이 곧 광고 집행 한도가 된다. */
+/** 크레딧 잔액 + 충전 버튼 — 크레딧은 '예산 한도'(집행 상한)다. 실광고비는 Meta 선불에서 차감된다. */
 export default function CreditBalance() {
   const [balance, setBalance] = useState<number | null>(null);
 
@@ -18,7 +18,7 @@ export default function CreditBalance() {
   return (
     <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-[#F9FAFB] dark:bg-[#252D3D]">
       <div className="min-w-0">
-        <p className="text-[10px] text-[#8B95A1] dark:text-[#6B7280]">크레딧 잔액</p>
+        <p className="text-[10px] text-[#8B95A1] dark:text-[#6B7280]">크레딧 잔액 (예산 한도)</p>
         <p className="text-sm font-bold text-[#191F28] dark:text-[#F2F4F6] truncate">
           {balance === null ? '-' : `${balance.toLocaleString()}원`}
         </p>

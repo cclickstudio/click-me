@@ -68,6 +68,8 @@ class AuditSink(Protocol):
 
     async def for_approval(self, approval_id: str) -> tuple[AuditEvent, ...]: ...
 
+    async def for_tenant(self, tenant_id: str) -> tuple[AuditEvent, ...]: ...
+
 
 class InMemoryAuditLog:
     """insert-only 인메모리 감사 로그 — 조회는 읽기 전용 튜플로만 노출.
@@ -88,3 +90,7 @@ class InMemoryAuditLog:
     async def for_approval(self, approval_id: str) -> tuple[AuditEvent, ...]:
         """게이트 #7 — 부분 실패·재시도 결과를 승인 단위로 추적."""
         return tuple(e for e in self._events if e.approval_id == approval_id)
+
+    async def for_tenant(self, tenant_id: str) -> tuple[AuditEvent, ...]:
+        """테넌트 단위 실행 이력 — execution_history(읽기) 토대. 삽입 순서(=시간순) 유지."""
+        return tuple(e for e in self._events if e.tenant_id == tenant_id)

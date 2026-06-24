@@ -3,7 +3,6 @@
 // /chat/[pid] 진입 게이트 — 기존 세션 이어가기 / 새 채팅 시작 선택.
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import AppLayout from '@/components/AppLayout';
 import { useProjects } from '@/components/ProjectContext';
 import { useChatController } from '@/components/chat/ChatController';
 import { api, type ChatSessionRow } from '@/lib/api';
@@ -39,9 +38,8 @@ export default function ChatSessionGate({ projectId }: { projectId: string }) {
   }, [projectId, sessionsVersion]);
 
   return (
-    <AppLayout>
-      <div className="h-screen flex flex-col items-center justify-center px-4 bg-white dark:bg-[#0F1117] transition-colors">
-        <div className="w-full max-w-lg">
+    <div className="h-screen flex flex-col items-center justify-center px-4 bg-white dark:bg-[#0F1117] transition-colors">
+      <div className="w-full max-w-lg">
           <p className="text-[11px] font-semibold text-[#8B95A1] dark:text-[#6B7280] uppercase tracking-wide mb-1">
             {projectName}
           </p>
@@ -87,8 +85,7 @@ export default function ChatSessionGate({ projectId }: { projectId: string }) {
               ))}
             </div>
           )}
-        </div>
       </div>
-    </AppLayout>
+    </div>
   );
 }
