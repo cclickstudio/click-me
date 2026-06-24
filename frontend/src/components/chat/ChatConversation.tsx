@@ -24,11 +24,12 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 // 상대 프록시 URL(/api/...)은 API_BASE를 붙여 렌더. blob:·http:는 그대로 통과.
 const fullUrl = (u?: string) => (u && u.startsWith('/') ? `${API_BASE}${u}` : u);
 
-const quickPrompts = [
-  '이 광고의 예상 CTR을 분석해줘',
-  '20대 여성 타겟 광고 전략을 추천해줘',
-  '경쟁사 광고와 비교 분석해줘',
-  '광고 카피 개선 방법을 알려줘',
+// 빈 상태 퀵스타트 — 예시 질문 프롬프트 대신 흐름을 바로 여는 액션 칩(P4/P14).
+const welcomeActions: { label: string; cmd: string }[] = [
+  { label: '🧪 시뮬 돌리기', cmd: '/시뮬레이션' },
+  { label: '🎨 시안 만들기', cmd: '/제너레이터' },
+  { label: '📊 리포트', cmd: '/리포트' },
+  { label: '💡 전략 추천', cmd: '/추천' },
 ];
 
 type SlashCommand = { cmd: string; label: string; desc: string };
@@ -713,16 +714,16 @@ export default function ChatConversation({
           </div>
           <h2 className="text-lg font-bold text-[#191F28] dark:text-[#F2F4F6] mb-2 mt-3">무엇을 도와드릴까요?</h2>
           <p className="text-sm text-[#8B95A1] dark:text-[#6B7280] mb-8 text-center leading-relaxed">
-            광고 분석, 성과 예측, 전략 제안까지<br />자유롭게 물어보세요
+            아래에서 바로 시작하거나,<br />광고에 대해 무엇이든 물어보세요
           </p>
-          <div className="grid grid-cols-2 gap-2 w-full max-w-lg">
-            {quickPrompts.map((prompt) => (
+          <div className="grid grid-cols-2 gap-2 w-full max-w-md">
+            {welcomeActions.map((a) => (
               <button
-                key={prompt}
-                onClick={() => handleSend(prompt)}
-                className="p-3 text-left text-xs text-[#4E5968] dark:text-[#9CA3AF] bg-[#F9FAFB] dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748] rounded-xl hover:border-[#3182F6] hover:text-[#3182F6] hover:bg-[#EBF3FF] dark:hover:bg-[#1E3A5F] transition-all"
+                key={a.cmd}
+                onClick={() => runSlashCommand(a.cmd)}
+                className="p-3 text-center text-sm font-medium text-[#4E5968] dark:text-[#9CA3AF] bg-[#F9FAFB] dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748] rounded-xl hover:border-[#3182F6] hover:text-[#3182F6] hover:bg-[#EBF3FF] dark:hover:bg-[#1E3A5F] transition-all"
               >
-                {prompt}
+                {a.label}
               </button>
             ))}
           </div>
