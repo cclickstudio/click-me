@@ -1,7 +1,9 @@
 'use client';
 
 // 채팅 컨트롤러 — 플로팅 열림 상태 + 활성 세션을 패널·플로팅·/chat이 공유하는 전역 컨텍스트
-import { createContext, useCallback, useContext, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useState } from 'react';
+
+const ACTIVE_SESSION_KEY = 'chat_active_session'; // 새로고침 후 보던 세션 복원용
 
 export type ChatProgress = { label: string; pct?: number | null; run_id?: string } | null;
 
@@ -23,21 +25,45 @@ type ChatControllerValue = {
 const ChatControllerContext = createContext<ChatControllerValue | null>(null);
 
 export function ChatControllerProvider({ children }: { children: React.ReactNode }) {
-  const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
+  const [activeSessionId, setActiveSessionIdState] = useState<string | null>(null);
   const [floatingOpen, setFloatingOpen] = useState(false);
   const [sessionsVersion, setSessionsVersion] = useState(0);
   const [progress, setProgress] = useState<ChatProgress>(null);
   const [unread, setUnread] = useState(0);
+
+  // 새로고침 후 보던 세션 복원(SSR 안전 위해 마운트 후 읽음).
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(ACTIVE_SESSION_KEY);
+      if (saved) setActiveSessionIdState(saved);
+    } catch {
+      /* localStorage 접근 불가 — 무시 */
+    }
+  }, []);
+
+  // 활성 세션 지정 + localStorage 동기화(새로고침 복원).
+  const setActiveSessionId = useCallback((id: string | null) => {
+    setActiveSessionIdState(id);
+    try {
+      if (id) localStorage.setItem(ACTIVE_SESSION_KEY, id);
+      else localStorage.removeItem(ACTIVE_SESSION_KEY);
+    } catch {
+      /* 무시 */
+    }
+  }, []);
 
   const refreshSessions = useCallback(() => setSessionsVersion((v) => v + 1), []);
   const pushUnread = useCallback(() => setUnread((n) => n + 1), []);
   const clearUnread = useCallback(() => setUnread(0), []);
 
   // 패널 등에서 세션 클릭/새 채팅 → 활성 세션 지정 + 플로팅 열기(/chat에선 플로팅이 숨겨져 무해).
-  const openChat = useCallback((sessionId: string | null) => {
-    setActiveSessionId(sessionId);
-    setFloatingOpen(true);
-  }, []);
+  const openChat = useCallback(
+    (sessionId: string | null) => {
+      setActiveSessionId(sessionId);
+      setFloatingOpen(true);
+    },
+    [setActiveSessionId],
+  );
 
   return (
     <ChatControllerContext.Provider

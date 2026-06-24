@@ -195,6 +195,7 @@ export default function Sidebar() {
             }
             const active =
               pathname === item.href ||
+              (item.href === '/chat' && pathname.startsWith('/chat/')) ||
               (item.href === '/simulation' && pathname.startsWith('/simulation/')) ||
               (item.href === '/generator' && pathname.startsWith('/generations/'));
             return <NavItem key={item.href} {...item} active={active} />;

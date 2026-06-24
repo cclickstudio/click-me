@@ -224,6 +224,11 @@ export const api = {
       });
     },
     stream: (runId: string) => new EventSource(`${API_BASE}/api/simulation/${runId}/stream`),
+    // 진행 상태(running/completed/failed/unknown) — 새로고침 후 백그라운드 런 복원용.
+    status: (
+      runId: string,
+    ): Promise<{ run_id: string; status: string; pct: number; stage: string | null }> =>
+      request(`/simulation/${runId}/status`),
     result: (runId: string): Promise<SimRunResult> =>
       request<SimRunResult>(`/simulation/${runId}/result`),
     // DB에 저장된 시뮬 결과를 simulation_id로 조회(콜드·패널 진입). 404=결과 없음.
@@ -370,6 +375,12 @@ export const api = {
       request<Record<string, unknown>>(
         `/chat/result-summary?kind=${kind}&id=${encodeURIComponent(id)}`,
       ),
+    // 단독 위젯 메시지 영속화(시뮬 결과·토론 stream·토론 요약) — 새로고침 복원용. 저장된 메시지 반환.
+    appendWidgets: (sessionId: string, items: { content?: string; meta?: object }[]) =>
+      request<{ messages: ChatHistoryMessage[] }>("/chat/widget-messages", {
+        method: "POST",
+        body: JSON.stringify({ session_id: sessionId, items }),
+      }),
     // 첨부 이미지 S3 업로드 → 프록시 URL(상대경로) 반환. 내역 영속화에 사용.
     uploadImage: async (file: File): Promise<{ key: string; url: string }> => {
       const token = getToken();

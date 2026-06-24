@@ -3,6 +3,7 @@
 // 프로젝트 패널의 채팅 섹션 — 그 프로젝트의 채팅 세션 목록 + 새 채팅.
 // 항목 클릭 시 /chat 라우팅이 아니라 컨트롤러로 활성 세션 전환(플로팅/대화가 그 세션으로 바뀜).
 import { useCallback, useEffect, useState } from 'react';
+import { usePathname, useRouter } from 'next/navigation';
 import { useProjects } from '../ProjectContext';
 import { useChatController } from './ChatController';
 import { api, type ChatSessionRow } from '@/lib/api';
@@ -20,6 +21,9 @@ function Chevron({ open }: { open: boolean }) {
 }
 
 export default function ProjectChatSection({ projectId }: { projectId: string }) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const onChatPage = pathname?.startsWith('/chat') ?? false;
   const { selectProject } = useProjects();
   const { activeSessionId, openChat, sessionsVersion, refreshSessions } = useChatController();
   const [open, setOpen] = useState(false);
@@ -45,15 +49,18 @@ export default function ProjectChatSection({ projectId }: { projectId: string })
     if (next && sessions === undefined) load();
   };
 
+  // /chat 페이지에선 URL 이동, 그 외 화면에선 플로팅(openChat)으로 전환.
   const startNew = (e: React.MouseEvent) => {
     e.stopPropagation();
     selectProject(projectId);
-    openChat(null);
+    if (onChatPage) router.push(`/chat/${projectId}/new`);
+    else openChat(null);
   };
 
   const openSession = (id: string) => {
     selectProject(projectId);
-    openChat(id);
+    if (onChatPage) router.push(`/chat/${projectId}/${id}`);
+    else openChat(id);
   };
 
   const remove = async (e: React.MouseEvent, id: string) => {

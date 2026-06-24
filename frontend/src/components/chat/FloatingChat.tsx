@@ -32,7 +32,8 @@ export default function FloatingChat() {
   openRef.current = floatingOpen;
 
   // /chat 탭(페이지 자체가 채팅) + 비로그인 화면에선 숨김.
-  const hidden = pathname === '/chat' || !user;
+  // /chat 전체(게이트·프로젝트·세션) 하위 경로에선 페이지 자체가 채팅이라 플로팅 숨김.
+  const hidden = (pathname?.startsWith('/chat') ?? false) || !user;
 
   // 플로팅을 열면 쌓인 알림 배지를 비운다(T18).
   useEffect(() => {

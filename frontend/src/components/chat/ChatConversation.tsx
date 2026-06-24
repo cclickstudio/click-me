@@ -6,11 +6,16 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 import SimFormWidget from './SimFormWidget';
+import SimInputWidget from './SimInputWidget';
+import SimResultWidget from './SimResultWidget';
+import DebateStreamWidget from './DebateStreamWidget';
+import DebateSummaryWidget from './DebateSummaryWidget';
 import GenFormWidget from './GenFormWidget';
 import SimGenListWidget from './SimGenListWidget';
 import ApprovalWidget, { type ApprovalSpec } from './ApprovalWidget';
 import BatchSimWidget from './BatchSimWidget';
 import ReportWidget from './ReportWidget';
+import type { SimRunResult } from '@/lib/types';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
@@ -57,6 +62,9 @@ type WidgetSpec = {
     items?: ListItem[];
     project_id?: string;
     period?: string;
+    simulation_id?: string; // sim_result·debate_stream 위젯 — 결과/토론 연결용
+    run_id?: string; // debate_stream·debate_summary 위젯 — 토론 스트림/결과 조회용
+    sample_size?: number; // sim_input 위젯 — 실제 돌린 가상 소비자 수
   };
 };
 type SourceMeta = {
@@ -134,6 +142,9 @@ export default function ChatConversation({
   const router = useRouter();
   // 이미 로드/생성한 세션 — prop이 같은 값으로 바뀌어도 재로드하지 않게 추적.
   const loadedRef = useRef<string | null | undefined>(undefined);
+  // 실제 활성 세션 id — 첫 전송으로 만든 세션은 shallow routing(URL만 갱신)이라 prop엔 안 들어온다.
+  // 후속 전송·승인은 prop 대신 이 ref를 써서 같은 세션을 이어간다.
+  const sidRef = useRef<string | null>(sessionId);
 
   const attachImage = (file: File | null) => {
     setAttachedPreview((prev) => {
@@ -151,6 +162,7 @@ export default function ChatConversation({
   useEffect(() => {
     if (loadedRef.current === sessionId) return; // 우리가 방금 만든/이미 연 세션 — 재로드 금지
     loadedRef.current = sessionId;
+    sidRef.current = sessionId; // prop으로 들어온 세션을 활성 세션으로 동기화
     if (!sessionId) {
       setMessages([]);
       return;
@@ -179,6 +191,12 @@ export default function ChatConversation({
 
   const showSlashMenu = input.startsWith('/') && !input.includes(' ');
   const slashMatches = showSlashMenu ? slashCommands.filter((c) => c.cmd.startsWith(input)) : [];
+
+  // 가장 최근 sim_form 위젯 인덱스 — 이 위젯만 새로고침 시 진행중 런을 복원(중복 방지).
+  const lastSimFormIdx = messages.reduce(
+    (acc, m, i) => (m.meta?.widget?.type === 'sim_form' ? i : acc),
+    -1,
+  );
 
   const addLocalAssistant = (content: string, meta?: SourceMeta, imageFile?: File) => {
     setMessages((prev) => [...prev, { role: 'assistant', content, meta, imageFile }]);
@@ -306,13 +324,14 @@ export default function ChatConversation({
   // 개선 루프 수락 — POST /api/chat/approve 로 왕복 카운트를 올리고 다음 위젯을 스트리밍.
   const handleApprove = useCallback(
     async (action: string) => {
-      if (isStreaming || !sessionId) return;
+      const sid = sidRef.current;
+      if (isStreaming || !sid) return;
       setIsStreaming(true);
       try {
         const res = await fetch(`${API_BASE}/api/chat/approve`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action, session_id: sessionId, project_id: projectId }),
+          body: JSON.stringify({ action, session_id: sid, project_id: projectId }),
         });
         if (!res.ok || !res.body) {
           setIsStreaming(false);
@@ -330,7 +349,7 @@ export default function ChatConversation({
         onActivity?.();
       }
     },
-    [isStreaming, sessionId, projectId, consumeStream, onActivity, onProgress],
+    [isStreaming, projectId, consumeStream, onActivity, onProgress],
   );
 
   // 핀 토글(T19) — DB 갱신 후 로컬 반영. 영속된(id 있는) 어시스턴트 메시지에만.
@@ -343,6 +362,136 @@ export default function ChatConversation({
       setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, pinned: !next } : m)));
     }
   }, []);
+
+  // 단독 위젯 메시지(결과 요약·토론·토론 요약)를 DB에 영속화하고 화면에도 추가 — 새로고침 복원 가능.
+  const appendWidgetMessages = useCallback(
+    async (items: { content: string; meta: SourceMeta & { widget: WidgetSpec } }[]) => {
+      const sid = sidRef.current;
+      // 화면엔 즉시 반영(영속화는 best-effort).
+      const local: Message[] = items.map((it) => ({
+        role: 'assistant',
+        content: it.content,
+        meta: it.meta,
+      }));
+      setMessages((prev) => [...prev, ...local]);
+      if (!sid) return;
+      try {
+        const { messages: saved } = await api.chat.appendWidgets(
+          sid,
+          items.map((it) => ({ content: it.content, meta: it.meta })),
+        );
+        // 저장된 id를 반영(핀 등) — 방금 추가한 같은 수의 말풍선을 교체.
+        if (saved?.length === local.length) {
+          setMessages((prev) => {
+            const next = [...prev];
+            for (let k = 0; k < saved.length; k++) {
+              const idx = next.length - saved.length + k;
+              const m = saved[k];
+              next[idx] = {
+                id: m.id,
+                role: 'assistant',
+                content: m.content,
+                meta: (m.meta as SourceMeta | null) ?? undefined,
+              };
+            }
+            return next;
+          });
+        }
+      } catch {
+        // 영속화 실패 — 화면 표시는 유지(새로고침 시 사라질 수 있음)
+      }
+    },
+    [],
+  );
+
+  // 시뮬 완료 → 토론 자동 시작 + 결과 요약 위젯·토론 stream 위젯을 별도 메시지로 띄운다(파이프라인).
+  const handleSimComplete = useCallback(
+    async (
+      result: SimRunResult,
+      input: {
+        adTitle: string;
+        adContent: string;
+        category: string;
+        objective: string;
+        sampleSize: number;
+      },
+    ) => {
+      const simId = result.simulation_id;
+      const items: { content: string; meta: SourceMeta & { widget: WidgetSpec } }[] = [];
+      // 숨겨진 입력 폼 자리 — 실제 돌린 입력값을 요약해 보여준다.
+      items.push({
+        content: '시뮬레이션 입력값이에요.',
+        meta: {
+          source: 'simulation',
+          label: '시뮬레이션',
+          widget: {
+            type: 'sim_input',
+            data: {
+              ad_title: input.adTitle,
+              ad_content: input.adContent,
+              product_category: input.category,
+              ad_objective: input.objective,
+              sample_size: input.sampleSize,
+            },
+          },
+        },
+      });
+      if (simId) {
+        items.push({
+          content: '시뮬레이션 결과예요.',
+          meta: {
+            source: 'simulation',
+            label: '시뮬레이션',
+            widget: { type: 'sim_result', data: { simulation_id: simId } },
+          },
+        });
+      }
+      // 반응이 있으면 토론을 시작해 stream 위젯으로 실시간 표시.
+      if (result.reactions?.length) {
+        try {
+          const { run_id } = await api.debate.start({
+            reactions: result.reactions,
+            ad_analysis: result.ad_analysis ?? undefined,
+            personas: result.personas?.length ? result.personas : undefined,
+            simulation_id: simId,
+            rubric_scores: result.rubric_scores?.length ? result.rubric_scores : undefined,
+            objective_fit: result.objective_fit ?? undefined,
+            ad_title: input.adTitle || undefined,
+            ad_description: input.adContent || undefined,
+          });
+          items.push({
+            content: 'AI 소비자 토론을 시작했어요.',
+            meta: {
+              source: 'simulation',
+              label: '토론',
+              widget: { type: 'debate_stream', data: { run_id, simulation_id: simId } },
+            },
+          });
+        } catch {
+          // 토론 시작 실패 — 결과 요약만 표시
+        }
+      }
+      if (items.length) await appendWidgetMessages(items);
+    },
+    [appendWidgetMessages],
+  );
+
+  // 토론 요약 보기 — 토론 요약 위젯을 새 메시지로 추가(영속화).
+  const handleDebateSummary = useCallback(
+    (runId: string) => {
+      void appendWidgetMessages([
+        {
+          content: '토론 요약이에요.',
+          meta: {
+            source: 'simulation',
+            label: '토론 요약',
+            widget: { type: 'debate_summary', data: { run_id: runId } },
+          },
+        },
+      ]);
+    },
+    [appendWidgetMessages],
+  );
 
   const handleSend = useCallback(
     async (text?: string, resultRef?: ResultRef) => {
@@ -367,12 +516,14 @@ export default function ChatConversation({
       setIsStreaming(true);
 
       // 세션이 없으면(새 채팅) 먼저 DB 세션을 만들어 프로젝트에 귀속.
-      let sid = sessionId;
+      // prop sessionId는 shallow routing 후에도 null이라 sidRef(생성된 실제 세션)를 우선 사용.
+      let sid = sidRef.current ?? sessionId;
       if (!sid) {
         try {
           const created = await api.chat.createSession(projectId);
           sid = created.id;
           loadedRef.current = sid; // prop 변경 시 재로드 방지(현재 대화 유지)
+          sidRef.current = sid; // 후속 전송이 같은 세션을 잇도록
           onSessionCreated?.(sid);
         } catch {
           setMessages((prev) => [
@@ -481,6 +632,13 @@ export default function ChatConversation({
           <div className="max-w-2xl mx-auto px-4 py-6 space-y-6">
             {messages.map((msg, i) => {
               if (msg.role === 'assistant' && msg.content === '') return null;
+              // 이미 결과가 나온 시뮬 입력 위젯은 메시지째 숨긴다 — 결과/토론 위젯이 대신 표시된다.
+              if (
+                msg.meta?.widget?.type === 'sim_form' &&
+                messages.slice(i + 1).some((m) => m.meta?.widget?.type === 'sim_result')
+              ) {
+                return null;
+              }
               return (
                 <div key={i} className={`flex gap-3 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                   {msg.role === 'assistant' && (
@@ -545,7 +703,24 @@ export default function ChatConversation({
                       </button>
                     )}
                     {msg.meta?.widget?.type === 'sim_form' && (
-                      <SimFormWidget initial={msg.meta.widget.data} initialImage={msg.imageFile} onResult={handleSend} />
+                      <SimFormWidget initial={msg.meta.widget.data} initialImage={msg.imageFile} projectId={projectId} latest={i === lastSimFormIdx} onSimComplete={handleSimComplete} />
+                    )}
+                    {msg.meta?.widget?.type === 'sim_input' && (
+                      <SimInputWidget data={msg.meta.widget.data} />
+                    )}
+                    {msg.meta?.widget?.type === 'sim_result' && msg.meta.widget.data?.simulation_id && (
+                      <SimResultWidget simulationId={msg.meta.widget.data.simulation_id} />
+                    )}
+                    {msg.meta?.widget?.type === 'debate_stream' && msg.meta.widget.data?.run_id && (
+                      <DebateStreamWidget
+                        runId={msg.meta.widget.data.run_id}
+                        onSummary={handleDebateSummary}
+                        onAccept={handleApprove}
+                        proposalDisabled={isStreaming}
+                      />
+                    )}
+                    {msg.meta?.widget?.type === 'debate_summary' && msg.meta.widget.data?.run_id && (
+                      <DebateSummaryWidget runId={msg.meta.widget.data.run_id} />
                     )}
                     {msg.meta?.widget?.type === 'gen_form' && (
                       <GenFormWidget initial={msg.meta.widget.data} initialImage={msg.imageFile} onResult={handleSend} />
