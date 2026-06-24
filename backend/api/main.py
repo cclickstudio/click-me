@@ -67,6 +67,8 @@ async def lifespan(app: FastAPI):
             "Instagram publisher: Mock — .env에 META_ACCESS_TOKEN, META_IG_USER_ID 설정 필요"
         )
     yield
+    # shutdown — 챗 오케스트레이터 체크포인터(psycopg) 풀 정리(누수 방지, 미생성이면 no-op)
+    await chat.close_orchestrator()
 
 
 app = FastAPI(
