@@ -9,6 +9,7 @@ import json
 import re
 
 from langsmith import traceable
+from langsmith.wrappers import wrap_openai
 from openai import AsyncOpenAI
 
 from core.config import settings
@@ -16,17 +17,19 @@ from domain.generator.contracts.enums import AdSize, AdStrategy, TemplateType
 from domain.generator.contracts.pipeline_schemas import AdCopy, ProductAnalysis
 from tools.utils import str_or_none
 
-_client = AsyncOpenAI(timeout=settings.generator_image_timeout)
+# wrap_openai로 감싸 Responses API(이미지+카피) 호출 usage가 LangSmith에 기록되게 한다.
+_client = wrap_openai(AsyncOpenAI(timeout=settings.generator_image_timeout))
 
 _TEMPLATE_LAYOUT: dict[TemplateType, str] = {
-    TemplateType.A: "제품을 화면 상단~중앙에 크게 배치하고, 헤드라인은 상단, 본문·CTA는 하단에 정렬.",
-    TemplateType.B: "상단 띠에 헤드라인(긴급성·이벤트), 중앙에 제품, 하단 띠에 본문·CTA 배치.",
-    TemplateType.C: "좌측 컬러 패널에 헤드라인·본문·CTA를 모두 배치하고, 우측에 제품·감성 이미지 배치.",
+    TemplateType.A: "제품을 화면 상단~중앙에 크게 배치하고, 하단 45%는 텍스트가 올라갈 영역이므로 비워둔다.",
+    TemplateType.B: "상단 20%와 하단 40%는 텍스트 띠 영역이므로 비우고, 중앙에 제품을 배치한다.",
+    TemplateType.C: "좌측 46%는 텍스트 패널 영역이므로 비우고, 우측에 제품·감성 이미지를 배치한다.",
 }
 
 _PROMPT_TEMPLATE = """\
 당신은 한국 시장용 광고 크리에이티브를 만드는 디자이너입니다.
-아래 정보로 **완성형 광고 이미지 1장**을 생성하세요. 헤드라인·본문·CTA 한국어 문구를 이미지 안에 또렷하게 렌더링합니다.
+아래 정보로 광고 **배경 이미지 1장**을 생성하세요.
+중요: 이미지 안에 글자·문자·숫자를 절대 넣지 마세요. 텍스트는 이후 별도로 합성됩니다.
 
 제품: {product_name}
 핵심 가치: {core_values}
@@ -38,10 +41,11 @@ _PROMPT_TEMPLATE = """\
 톤앤매너: {tone}
 
 규칙:
-- 헤드라인 20자 이내, 본문 50자 이내, CTA 10자 이내의 자연스러운 한국어.
-- 오탈자·비문 금지. 워터마크·로고·QR 금지.
-- 이미지 생성과 함께, 사용한 카피를 다음 JSON 한 줄로도 출력하세요:
-  {{"headline": "...", "body": "...", "cta": "..."}}"""
+- 글자·문자·숫자·타이포그래피·워터마크·로고·QR 일절 금지 (순수 배경+제품 이미지).
+- 레이아웃에 명시된 텍스트 영역은 깨끗이 비워둔다.
+- 이미지와 함께, 사용할 카피를 다음 JSON 한 줄로 출력하세요:
+  {{"headline": "...(20자 이내)", "body": "...(50자 이내)", "cta": "...(10자 이내)"}}
+- 카피는 오탈자·비문 없는 자연스러운 한국어."""
 
 
 def _build_prompt(
@@ -63,7 +67,10 @@ def _build_prompt(
     )
 
 
-@traceable(name="MultimodalGenerator", metadata={"pipeline": "generator"})
+@traceable(
+    name="generator:generate_multimodal",
+    metadata={"pipeline": "generator", "prompt_version": "v1.0"},
+)
 async def generate_image_and_copy(
     product_analysis: ProductAnalysis,
     strategy: AdStrategy,
@@ -85,7 +92,13 @@ async def generate_image_and_copy(
     response = await _client.responses.create(
         model=settings.generator_multimodal_model,
         input=prompt,
-        tools=[{"type": "image_generation", "size": size.value}],
+        tools=[
+            {
+                "type": "image_generation",
+                "size": size.value,
+                "model": settings.generator_multimodal_image_model,
+            }
+        ],
     )
 
     image_b64: str | None = None

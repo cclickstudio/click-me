@@ -112,7 +112,7 @@ async def _generate_batch(
     return [_parse_raw(raw, id_start + i - 1) for i, raw in enumerate(raw_list)]
 
 
-@traceable(name="PersonaFactoryAgent", metadata={"prompt_version": "v1.1"})
+@traceable(name="tools:persona_factory", metadata={"prompt_version": "v1.1"})
 async def run_persona_factory(
     simulation_id: str,
     count: int,

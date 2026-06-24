@@ -1,0 +1,16 @@
+{
+  "data": [
+    {
+      "id": "120250000000000001",
+      "name": "여름 세일",
+      "effective_status": "ACTIVE",
+      "daily_budget": "50000"
+    },
+    {
+      "id": "120250000000000002",
+      "name": "신상 런칭",
+      "effective_status": "PAUSED"
+    }
+  ],
+  "paging": { "cursors": { "before": "MA", "after": "MA" } }
+}

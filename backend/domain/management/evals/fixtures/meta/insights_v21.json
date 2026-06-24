@@ -1,0 +1,43 @@
+{
+  "data": [
+    {
+      "impressions": "12000",
+      "clicks": "204",
+      "inline_link_clicks": "180",
+      "spend": "95000",
+      "reach": "8000",
+      "frequency": "1.5",
+      "ctr": "1.7",
+      "cpm": "7916",
+      "cpc": "465",
+      "actions": [
+        {
+          "action_type": "offsite_conversion.fb_pixel_purchase",
+          "value": "9"
+        },
+        {
+          "action_type": "omni_purchase",
+          "value": "9"
+        }
+      ],
+      "action_values": [
+        {
+          "action_type": "offsite_conversion.fb_pixel_purchase",
+          "value": "475000"
+        },
+        {
+          "action_type": "omni_purchase",
+          "value": "475000"
+        }
+      ],
+      "purchase_roas": [
+        {
+          "action_type": "omni_purchase",
+          "value": "5.0"
+        }
+      ],
+      "date_stop": "2026-06-15"
+    }
+  ],
+  "paging": { "cursors": { "before": "MA", "after": "MA" } }
+}

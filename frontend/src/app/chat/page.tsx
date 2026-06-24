@@ -2,6 +2,8 @@
 
 import { useState, useRef, useEffect } from 'react';
 import AppLayout from '@/components/AppLayout';
+import { safeRandomUUID } from '@/lib/utils';
+import { getToken } from '@/lib/authApi';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
@@ -12,9 +14,32 @@ const quickPrompts = [
   '광고 카피 개선 방법을 알려줘',
 ];
 
+type Citation = { kind: string; source: string; title?: string };
+type SourceMeta = {
+  source: string; // management | clio
+  label: string; // 매니지먼트 어시스턴트 | CLIO
+  engine: string; // OpenAI · 실측+KB | Gemini
+  citations?: Citation[];
+  used_tools?: string[];
+};
+type StartedEvent = {
+  event: string;
+  job_id: string;
+  stream_url: string;
+  domain: string;
+};
+type GenerationProgress = {
+  jobId: string;
+  streamUrl: string;
+  status: 'running' | 'completed' | 'failed';
+  stage: string;
+  resultUrl?: string;
+};
 type Message = {
   role: 'user' | 'assistant';
   content: string;
+  meta?: SourceMeta;
+  generation?: GenerationProgress;
 };
 
 function SendIcon() {
@@ -47,26 +72,99 @@ export default function Page() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
-  const sessionId = useRef(crypto.randomUUID());
+  const sessionId = useRef<string>("");
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  // 세션 ID 복원/발급 — localStorage에 보존해 새로고침해도 같은 대화로 이어진다
+  const ensureSession = () => {
+    if (sessionId.current) return sessionId.current;
+    let sid = '';
+    try {
+      sid = localStorage.getItem('chat_session_id') ?? '';
+    } catch {
+      // localStorage 접근 불가(시크릿 등) — 무시
+    }
+    if (!sid) {
+      sid = safeRandomUUID();
+      try {
+        localStorage.setItem('chat_session_id', sid);
+      } catch {
+        // 무시
+      }
+    }
+    sessionId.current = sid;
+    return sid;
+  };
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isStreaming]);
 
+  // 저장된 대화 복원 — 마운트 시 세션 발급 후 히스토리 로드
+  useEffect(() => {
+    const sid = ensureSession();
+    fetch(`${API_BASE}/api/chat/sessions/${sid}/messages`)
+      .then((r) => (r.ok ? r.json() : { messages: [] }))
+      .then((d) => {
+        if (Array.isArray(d.messages) && d.messages.length > 0) {
+          setMessages(d.messages as Message[]);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  // 생성 잡 핸드오프 — started_event를 받으면 생성 SSE 스트림을 구독해 진행률 갱신
+  const subscribeGeneration = (streamUrl: string) => {
+    const es = new EventSource(`${API_BASE}${streamUrl}`);
+    const updateGen = (patch: Partial<GenerationProgress>) => {
+      setMessages((prev) => {
+        const reverseIdx = [...prev].reverse().findIndex((m) => m.generation);
+        if (reverseIdx === -1) return prev;
+        const realIdx = prev.length - 1 - reverseIdx;
+        const target = prev[realIdx];
+        if (!target.generation) return prev;
+        const next = [...prev];
+        next[realIdx] = { ...target, generation: { ...target.generation, ...patch } };
+        return next;
+      });
+    };
+    es.onmessage = (e) => {
+      try {
+        const ev = JSON.parse(e.data) as { event?: string; message?: string; result_url?: string };
+        if (ev.event === 'completed') {
+          updateGen({ status: 'completed', stage: '완료', resultUrl: ev.result_url });
+          es.close();
+        } else if (ev.event === 'error') {
+          updateGen({ status: 'failed', stage: ev.message ?? '생성 실패' });
+          es.close();
+        } else if (ev.event) {
+          updateGen({ stage: ev.event });
+        }
+      } catch {
+        // ignore malformed SSE line
+      }
+    };
+    es.onerror = () => es.close();
+  };
+
   const handleSend = async (text?: string) => {
     const content = text ?? input.trim();
     if (!content || isStreaming) return;
 
+    ensureSession();
     const newMessages: Message[] = [...messages, { role: 'user', content }];
     setMessages(newMessages);
     setInput('');
     setIsStreaming(true);
 
     try {
+      const token = getToken();
       const res = await fetch(`${API_BASE}/api/chat/complete`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify({ session_id: sessionId.current, messages: newMessages }),
       });
 
@@ -99,9 +197,37 @@ export default function Page() {
           const raw = line.slice(6).trim();
           if (!raw) continue;
           try {
-            const data = JSON.parse(raw) as { token?: string; done?: boolean };
+            const data = JSON.parse(raw) as {
+              token?: string;
+              done?: boolean;
+              meta?: SourceMeta;
+              started_event?: StartedEvent;
+            };
             if (data.done) {
               setIsStreaming(false);
+            } else if (data.started_event) {
+              const ev = data.started_event;
+              setMessages((prev) => {
+                const last = prev[prev.length - 1];
+                return [
+                  ...prev.slice(0, -1),
+                  {
+                    ...last,
+                    generation: {
+                      jobId: ev.job_id,
+                      streamUrl: ev.stream_url,
+                      status: 'running',
+                      stage: '생성 시작',
+                    },
+                  },
+                ];
+              });
+              subscribeGeneration(ev.stream_url);
+            } else if (data.meta) {
+              setMessages((prev) => {
+                const last = prev[prev.length - 1];
+                return [...prev.slice(0, -1), { ...last, meta: data.meta }];
+              });
             } else if (data.token) {
               setMessages((prev) => {
                 const last = prev[prev.length - 1];
@@ -173,14 +299,63 @@ export default function Page() {
                         </svg>
                       </div>
                     )}
-                    <div
-                      className={`max-w-sm px-4 py-3 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap ${
-                        msg.role === 'user'
-                          ? 'bg-[#3182F6] text-white rounded-br-md'
-                          : 'bg-[#F2F4F6] dark:bg-[#252D3D] text-[#191F28] dark:text-[#F2F4F6] rounded-bl-md'
-                      }`}
-                    >
-                      {msg.content}
+                    <div className={`flex flex-col gap-1 max-w-sm ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
+                      {msg.role === 'assistant' && msg.meta && (
+                        <span
+                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${
+                            msg.meta.source === 'management'
+                              ? 'bg-[#EBF3FF] text-[#3182F6] dark:bg-[#1E3A5F] dark:text-[#7BB4F5]'
+                              : 'bg-[#F2E9FF] text-[#7C3AED] dark:bg-[#2E1F47] dark:text-[#C4A8F5]'
+                          }`}
+                        >
+                          {msg.meta.source === 'management' ? '⚙' : '🧠'} {msg.meta.label} · {msg.meta.engine}
+                        </span>
+                      )}
+                      <div
+                        className={`px-4 py-3 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap ${
+                          msg.role === 'user'
+                            ? 'bg-[#3182F6] text-white rounded-br-md'
+                            : 'bg-[#F2F4F6] dark:bg-[#252D3D] text-[#191F28] dark:text-[#F2F4F6] rounded-bl-md'
+                        }`}
+                      >
+                        {msg.content}
+                      </div>
+                      {msg.generation && (
+                        <div className="mt-1 w-full px-3 py-2.5 rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-[#F9FAFB] dark:bg-[#1C2333] text-xs">
+                          <div className="flex items-center gap-2">
+                            {msg.generation.status === 'running' && (
+                              <span className="w-2 h-2 rounded-full bg-[#3182F6] animate-pulse" />
+                            )}
+                            {msg.generation.status === 'completed' && <span>✅</span>}
+                            {msg.generation.status === 'failed' && <span>⚠️</span>}
+                            <span className="font-semibold text-[#4E5968] dark:text-[#9CA3AF]">
+                              광고 생성 {msg.generation.status === 'running' ? '진행 중' : msg.generation.status === 'completed' ? '완료' : '실패'}
+                            </span>
+                            <span className="text-[#8B95A1] dark:text-[#6B7280]">· {msg.generation.stage}</span>
+                          </div>
+                          {msg.generation.status === 'completed' && (
+                            <a
+                              href={`/generations/${msg.generation.jobId}`}
+                              className="inline-block mt-1.5 text-[#3182F6] font-semibold hover:underline"
+                            >
+                              생성 결과 보기 →
+                            </a>
+                          )}
+                        </div>
+                      )}
+                      {msg.role === 'assistant' &&
+                        msg.meta?.source === 'management' &&
+                        (msg.meta.citations?.length || msg.meta.used_tools?.length) ? (
+                        <p className="text-[10px] text-[#B0B8C1] dark:text-[#6B7280] px-1">
+                          근거:{' '}
+                          {[
+                            ...(msg.meta.used_tools ?? []).map((t) => t.replace('live_', '실측·')),
+                            ...(msg.meta.citations ?? [])
+                              .filter((c) => c.kind === 'kb')
+                              .map((c) => c.title || c.source.replace('.md', '')),
+                          ].join(' · ')}
+                        </p>
+                      ) : null}
                     </div>
                   </div>
                 );

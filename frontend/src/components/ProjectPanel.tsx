@@ -3,9 +3,10 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { useProjects } from './ProjectContext';
+import { useProjects, type SimRow } from './ProjectContext';
 import { useAuth } from './AuthProvider';
 import TrashSection from './TrashSection';
+import ModeBadge from './ModeBadge';
 import { getToken } from '@/lib/authApi';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
@@ -31,6 +32,83 @@ function ChevronIcon({ open }: { open: boolean }) {
     >
       <polyline points="9 18 15 12 9 6" />
     </svg>
+  );
+}
+
+// ── 시뮬레이션 1건 + 토론 펼침 ─────────────────────────────────
+// 시뮬 행(상세 링크) 아래에 그 시뮬의 저장된 토론 목록을 lazy 로드해 펼친다(말풍선 토글).
+function SimEntry({ sim, isActive }: { sim: SimRow; isActive: boolean }) {
+  const { debates, loadDebates } = useProjects();
+  const [open, setOpen] = useState(false);
+  const list = debates[sim.id];
+
+  const toggle = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const next = !open;
+    setOpen(next);
+    if (next && list === undefined) loadDebates(sim.id);
+  };
+
+  return (
+    <div>
+      <div className={`flex items-center gap-1 rounded-md transition-colors ${
+        isActive ? 'bg-[#EBF3FF] dark:bg-[#1E3A5F]' : 'hover:bg-[#EBF3FF] dark:hover:bg-[#1E3A5F]'
+      }`}>
+        <Link href={`/simulation/${sim.id}`} className="flex items-center gap-2 px-2 py-1.5 flex-1 min-w-0 group">
+          <span className={`w-2 h-2 rounded-full shrink-0 ${statusColor[sim.status] ?? 'bg-[#B0B8C1]'}`} />
+          <div className="flex-1 min-w-0">
+            <p className={`text-xs truncate ${isActive ? 'text-[#3182F6] font-medium' : 'text-[#4E5968] dark:text-[#9CA3AF] group-hover:text-[#3182F6]'}`}>
+              {sim.ad_title || '제목 없음'}
+            </p>
+            <p className="text-[10px] text-[#B0B8C1] dark:text-[#4B5563] truncate">
+              {sim.sample_size}명 · {sim.created_by_name ?? '—'} · {fmt(sim.created_at)}
+            </p>
+          </div>
+          {isActive && <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-[#3182F6]" />}
+        </Link>
+        {/* 토론 펼침 토글(말풍선 + 건수) */}
+        <button
+          onClick={toggle}
+          title="토론 내역"
+          className="shrink-0 flex items-center gap-1 pr-2 pl-1 py-1.5 text-[#8B95A1] hover:text-[#3182F6] transition-colors"
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+          </svg>
+          {list && list.length > 0 && <span className="text-[10px] font-medium">{list.length}</span>}
+          <ChevronIcon open={open} />
+        </button>
+      </div>
+
+      {open && (
+        <div className="ml-6 pl-2 border-l border-[#E5E8EB] dark:border-[#2D3748] space-y-0.5 my-0.5">
+          {list === undefined ? (
+            <p className="text-[10px] text-[#B0B8C1] px-2 py-1">불러오는 중...</p>
+          ) : list.length === 0 ? (
+            <p className="text-[10px] text-[#B0B8C1] px-2 py-1">토론 내역 없음</p>
+          ) : (
+            list.map(d => (
+              <Link
+                key={d.debate_id}
+                href={`/simulation/${sim.id}`}
+                className="flex items-start gap-2 px-2 py-1 rounded-md hover:bg-[#EBF3FF] dark:hover:bg-[#1E3A5F] transition-colors group"
+              >
+                <span className={`mt-1 w-1.5 h-1.5 rounded-full shrink-0 ${statusColor[d.status] ?? 'bg-[#B0B8C1]'}`} />
+                <div className="min-w-0 flex-1">
+                  <p className="text-[11px] truncate text-[#4E5968] dark:text-[#9CA3AF] group-hover:text-[#3182F6]">
+                    {d.headline ?? d.topic ?? '토론'}
+                  </p>
+                  <p className="text-[10px] text-[#B0B8C1] dark:text-[#4B5563]">
+                    {d.rounds_run ? `${d.rounds_run}라운드` : '—'}{d.created_at ? ` · ${fmt(d.created_at)}` : ''}
+                  </p>
+                </div>
+              </Link>
+            ))
+          )}
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -104,7 +182,8 @@ function CreateProjectModal({ onClose, onCreated }: { onClose: () => void; onCre
 }
 
 // ── 프로젝트 아이템 ─────────────────────────────────────────────
-function ProjectItem({
+// CompanyPanel(조회 전용)에서도 재사용하므로 export.
+export function ProjectItem({
   project,
   activeSimId,
   activeGenId,
@@ -234,27 +313,9 @@ function ProjectItem({
                     <p className="text-xs text-[#B0B8C1] px-2 py-1">
                       {filterNames ? '해당 내역 없음' : '내역 없음'}
                     </p>
-                  ) : sims.map(s => {
-                    const isActive = s.id === activeSimId;
-                    return (
-                      <Link
-                        key={s.id}
-                        href={`/simulations/${s.id}`}
-                        className={`flex items-center gap-2 px-2 py-1.5 rounded-md transition-colors group ${
-                          isActive ? 'bg-[#EBF3FF] dark:bg-[#1E3A5F]' : 'hover:bg-[#EBF3FF] dark:hover:bg-[#1E3A5F]'
-                        }`}
-                      >
-                        <span className={`w-2 h-2 rounded-full shrink-0 ${statusColor[s.status] ?? 'bg-[#B0B8C1]'}`} />
-                        <div className="flex-1 min-w-0">
-                          <p className={`text-xs truncate ${isActive ? 'text-[#3182F6] font-medium' : 'text-[#4E5968] dark:text-[#9CA3AF] group-hover:text-[#3182F6]'}`}>
-                            {s.sample_size}명 · {s.created_by_name ?? '—'}
-                          </p>
-                          <p className="text-[10px] text-[#B0B8C1] dark:text-[#4B5563]">{fmt(s.created_at)}</p>
-                        </div>
-                        {isActive && <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-[#3182F6]" />}
-                      </Link>
-                    );
-                  })}
+                  ) : sims.map(s => (
+                    <SimEntry key={s.id} sim={s} isActive={s.id === activeSimId} />
+                  ))}
                   {canRun && (
                     <button
                       onClick={goToSim}
@@ -300,8 +361,9 @@ function ProjectItem({
                       >
                         <span className={`w-2 h-2 rounded-full shrink-0 ${statusColor[g.status] ?? 'bg-[#B0B8C1]'}`} />
                         <div className="flex-1 min-w-0">
-                          <p className={`text-xs truncate ${isActive ? 'text-[#3182F6] font-medium' : 'text-[#4E5968] dark:text-[#9CA3AF] group-hover:text-[#3182F6]'}`}>
-                            {g.product_name ?? '—'} · {g.created_by_name ?? '—'}
+                          <p className={`text-xs truncate flex items-center gap-1.5 ${isActive ? 'text-[#3182F6] font-medium' : 'text-[#4E5968] dark:text-[#9CA3AF] group-hover:text-[#3182F6]'}`}>
+                            <ModeBadge mode={g.mode} />
+                            <span className="truncate">{g.product_name ?? '—'} · {g.created_by_name ?? '—'}</span>
                           </p>
                           <p className="text-[10px] text-[#B0B8C1] dark:text-[#4B5563]">{fmt(g.created_at)}</p>
                         </div>
@@ -360,14 +422,12 @@ function ProjectItem({
 // ── 메인 패널 ───────────────────────────────────────────────────
 export default function ProjectPanel({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
   const pathname = usePathname();
-  const { projects, loading, details, loadDetails, loadAll, selectProject, refresh } = useProjects();
+  const { projects, loading, details, loadDetails, selectProject, refresh } = useProjects();
   const { user } = useAuth();
-  const [view, setView] = useState<'ALL' | 'TEAM' | 'MY'>('ALL');
-  const [teamNames, setTeamNames] = useState<string[]>([]);
   const [openProjectId, setOpenProjectId] = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
 
-  const simMatch = pathname.match(/^\/simulations\/([^/]+)/);
+  const simMatch = pathname.match(/^\/simulation\/([^/]+)/);
   const genMatch = pathname.match(/^\/generations\/([^/]+)/);
   const activeSimId = simMatch?.[1] ?? null;
   const activeGenId = genMatch?.[1] ?? null;
@@ -398,34 +458,6 @@ export default function ProjectPanel({ collapsed, onToggle }: { collapsed: boole
   const handleCreated = async () => {
     setShowModal(false);
     await refresh();
-  };
-
-  const myName = user?.name ?? null;
-
-  // TEAM 토글용 — 내 팀 멤버 이름 목록 (팀 없으면 빈 배열)
-  useEffect(() => {
-    fetch(`${API_BASE}/api/company/my-team-members`, { headers: { Authorization: `Bearer ${getToken()}` } })
-      .then(r => (r.ok ? r.json() : null))
-      .then(d => { if (d && Array.isArray(d.member_names)) setTeamNames(d.member_names); })
-      .catch(() => {});
-  }, []);
-
-  // null=전체(ALL), 배열=해당 이름만(MY/TEAM)
-  const filterNames: string[] | null =
-    view === 'ALL' ? null : view === 'MY' ? (myName ? [myName] : []) : teamNames;
-
-  const changeView = (v: 'ALL' | 'TEAM' | 'MY') => {
-    setView(v);
-    if (v !== 'ALL') loadAll();
-  };
-
-  const projectMatches = (p: { id: string; created_by_name?: string | null }) => {
-    if (!filterNames) return true;
-    if (p.created_by_name && filterNames.includes(p.created_by_name)) return true;
-    const d = details[p.id];
-    if (!d?.loaded) return true;
-    return d.sims.some(s => s.created_by_name != null && filterNames.includes(s.created_by_name))
-      || d.gens.some(g => g.created_by_name != null && filterNames.includes(g.created_by_name));
   };
 
   // ── 접힌 상태 ──
@@ -476,20 +508,6 @@ export default function ProjectPanel({ collapsed, onToggle }: { collapsed: boole
                 <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
               </svg>
             </button>
-            {/* ALL / TEAM / MY 토글 */}
-            <div className="flex items-center gap-0.5 bg-[#F2F4F6] dark:bg-[#252D3D] rounded-lg p-0.5">
-              {(['ALL', 'TEAM', 'MY'] as const).map(v => (
-                <button
-                  key={v}
-                  onClick={() => changeView(v)}
-                  className={`px-1.5 py-0.5 rounded-md text-[10px] font-medium transition-colors ${
-                    view === v
-                      ? 'bg-white dark:bg-[#1C2333] text-[#191F28] dark:text-[#F2F4F6] shadow-sm'
-                      : 'text-[#8B95A1] dark:text-[#6B7280]'
-                  }`}
-                >{v}</button>
-              ))}
-            </div>
 
             {/* + 버튼 */}
             <button
@@ -518,20 +536,16 @@ export default function ProjectPanel({ collapsed, onToggle }: { collapsed: boole
                 첫 프로젝트 만들기
               </button>
             </div>
-          ) : filterNames && projects.every(p => !projectMatches(p)) ? (
-            <p className="text-xs text-[#B0B8C1] px-3 py-2">
-              {view === 'TEAM' ? '우리 팀 작업 내역이 없습니다' : '참여한 프로젝트가 없습니다'}
-            </p>
           ) : (
             <div className="space-y-0.5">
-              {(filterNames ? projects.filter(projectMatches) : projects).map(p => (
+              {projects.map(p => (
                 <ProjectItem
                   key={p.id}
                   project={p}
                   activeSimId={activeSimId}
                   activeGenId={activeGenId}
                   autoOpen={p.id === activeProjectId}
-                  filterNames={filterNames}
+                  filterNames={null}
                   isAdmin={user?.role === 'ADMIN'}
                   canRun={user?.role !== 'COMPANY'}
                   isOpen={openProjectId === p.id}

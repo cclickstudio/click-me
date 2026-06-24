@@ -22,11 +22,14 @@ from api.routers import (
     admin,
     ads,
     auth,
+    billing,
     chat,
     company,
     dashboard,
+    debate,
     generator,
     inquiries,
+    management,
     personas,
     projects,
 )
@@ -43,6 +46,15 @@ else:
     os.environ.setdefault("LANGSMITH_ENDPOINT", settings.LANGSMITH_ENDPOINT)
     os.environ.setdefault("LANGSMITH_PROJECT", settings.LANGSMITH_PROJECT)
     os.environ["LANGSMITH_TRACING"] = "true" if settings.LANGSMITH_TRACING_V2 else "false"
+
+    # 전역 트레이싱 클라이언트를 기밀 마스킹 콜백과 함께 1회 생성한다. LangChain 트레이서와
+    # @traceable이 이 캐시 클라이언트를 공유하므로, 부모(re_evaluate)·진단·재생성 자식 트레이스
+    # 전부에서 예산·크리에이티브가 전송 전에 가려진다(평문 외부 유출 차단).
+    from langsmith.run_trees import get_cached_client
+
+    from core.trace_redaction import redact
+
+    get_cached_client(hide_inputs=redact, hide_outputs=redact)
 
 
 @asynccontextmanager
@@ -97,7 +109,10 @@ app.include_router(admin.router, prefix="/api/admin", tags=["admin"])
 app.include_router(inquiries.router, prefix="/api/inquiries", tags=["inquiries"])
 app.include_router(personas.router, prefix="/api/personas", tags=["personas"])
 app.include_router(projects.router, prefix="/api/projects", tags=["projects"])
+app.include_router(billing.router, prefix="/api/billing", tags=["billing"])
+app.include_router(management.router, prefix="/api/management", tags=["management"])
 app.include_router(generator.router, prefix="/api/generator", tags=["generator"])
+app.include_router(debate.router, prefix="/api/debate", tags=["debate"])
 
 
 @app.get("/health")

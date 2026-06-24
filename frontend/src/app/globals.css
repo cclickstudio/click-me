@@ -58,3 +58,18 @@ body {
   scrollbar-width: thin;
   scrollbar-color: var(--color-border) transparent;
 }
+
+/* 토론 채팅 — 새 메시지가 아래에서 올라오며 등장 */
+@keyframes chatPop {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.chat-pop {
+  animation: chatPop 0.28s ease-out;
+}

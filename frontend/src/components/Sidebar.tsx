@@ -6,6 +6,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useTheme } from './ThemeProvider';
 import { useAuth } from './AuthProvider';
 import { getToken } from '@/lib/authApi';
+import CreditBalance from './CreditBalance';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
@@ -32,6 +33,15 @@ const mainNav = [
   },
 ];
 
+// 광고 매니지먼트 하위 메뉴 — 부모는 토글(자체 페이지 없음), 실제 화면은 여기로.
+const manageChildren = [
+  { label: '캠페인', href: '/manage/campaigns' },
+  { label: '모니터링', href: '/manage/monitoring' },
+  { label: '예산 관리', href: '/manage/budget' },
+  { label: '성과 비교', href: '/manage/compare' },
+  { label: '연동', href: '/manage/connect' },
+];
+
 const adminNav = [
   {
     label: '조직 관리', href: '/admin/companies',
@@ -40,6 +50,14 @@ const adminNav = [
   {
     label: '채팅 내역', href: '/admin/chats',
     icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>,
+  },
+  {
+    label: '시뮬레이션 내역', href: '/simulations',
+    icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>,
+  },
+  {
+    label: '제너레이터 내역', href: '/admin/generations',
+    icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg>,
   },
 ];
 
@@ -50,6 +68,10 @@ const companyNav = [
   {
     label: '팀 관리', href: '/company/teams',
     icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="6" height="18" rx="1" /><rect x="10.5" y="3" width="6" height="12" rx="1" /><rect x="18" y="3" width="3" height="8" rx="1" /></svg>,
+  },
+  {
+    label: '프로젝트 관리', href: '/company/projects',
+    icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" /></svg>,
   },
 ];
 
@@ -72,6 +94,20 @@ function NavItem({ href, label, icon, active, badge }: { href: string; label: st
   );
 }
 
+function SubNavItem({ href, label, active }: { href: string; label: string; active: boolean }) {
+  return (
+    <Link href={href}
+      className={`flex items-center gap-2.5 pl-11 pr-3 py-2 rounded-xl text-sm transition-colors ${
+        active ? 'bg-[#EBF3FF] dark:bg-[#1E3A5F] text-[#3182F6] font-medium'
+               : 'text-[#8B95A1] dark:text-[#9CA3AF] hover:bg-[#F2F4F6] dark:hover:bg-[#252D3D] hover:text-[#191F28] dark:hover:text-[#F2F4F6]'
+      }`}
+    >
+      <span className="w-1.5 h-1.5 rounded-full bg-current opacity-60" />
+      <span className="flex-1">{label}</span>
+    </Link>
+  );
+}
+
 function SectionLabel({ label }: { label: string }) {
   return <p className="px-3 pt-3 pb-1 text-[10px] font-semibold text-[#B0B8C1] dark:text-[#4B5563] uppercase tracking-wider">{label}</p>;
 }
@@ -83,6 +119,7 @@ export default function Sidebar() {
   const router = useRouter();
   const [pendingCompanyCount, setPendingCompanyCount] = useState(0);
   const [pendingMemberCount, setPendingMemberCount] = useState(0);
+  const [manageOpen, setManageOpen] = useState(pathname.startsWith('/manage'));
 
   const handleLogout = () => { logout(); router.push('/'); };
 
@@ -123,9 +160,42 @@ export default function Sidebar() {
         {mainNav
           .filter((item) => !isCompany || !COMPANY_HIDDEN_NAV.includes(item.href))
           .map((item) => {
+            // 광고 매니지먼트 — 카테고리. 누르면 하위 메뉴만 토글(자체 페이지 없음).
+            if (item.href === '/manage') {
+              const sectionActive = pathname.startsWith('/manage');
+              return (
+                <div key="/manage">
+                  <button type="button" onClick={() => setManageOpen((o) => !o)}
+                    aria-label="광고 매니지먼트 하위 메뉴 토글" aria-expanded={manageOpen}
+                    className={`flex items-center w-full rounded-xl text-sm font-medium transition-colors ${
+                      sectionActive ? 'text-[#3182F6]'
+                                    : 'text-[#4E5968] dark:text-[#9CA3AF] hover:bg-[#F2F4F6] dark:hover:bg-[#252D3D] hover:text-[#191F28] dark:hover:text-[#F2F4F6]'
+                    }`}
+                  >
+                    <span className="flex items-center gap-3 flex-1 pl-3 py-2.5">
+                      <span className={sectionActive ? 'text-[#3182F6]' : ''}>{item.icon}</span>
+                      <span>{item.label}</span>
+                    </span>
+                    <span className="px-3 py-2.5 text-[#8B95A1]">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+                        className={`transition-transform ${manageOpen ? 'rotate-180' : ''}`}>
+                        <polyline points="6 9 12 15 18 9" />
+                      </svg>
+                    </span>
+                  </button>
+                  {manageOpen && (
+                    <div className="mt-0.5 space-y-0.5">
+                      {manageChildren.map((c) => (
+                        <SubNavItem key={c.href} href={c.href} label={c.label} active={pathname === c.href} />
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            }
             const active =
               pathname === item.href ||
-              (item.href === '/simulation' && pathname.startsWith('/simulations/')) ||
+              (item.href === '/simulation' && pathname.startsWith('/simulation/')) ||
               (item.href === '/generator' && pathname.startsWith('/generations/'));
             return <NavItem key={item.href} {...item} active={active} />;
           })}
@@ -182,6 +252,12 @@ export default function Sidebar() {
 
       {/* 하단 */}
       <div className="px-4 py-4 border-t border-[#E5E8EB] dark:border-[#2D3748] shrink-0 space-y-1">
+        {/* ClickMe 크레딧 잔액 — 광고 집행 한도. 충전(/payment)로 이동. */}
+        {user && (
+          <div className="mb-2">
+            <CreditBalance />
+          </div>
+        )}
         {user ? (
           <div className="px-3 py-2.5 rounded-xl bg-[#F9FAFB] dark:bg-[#252D3D] mb-1">
             <p className="text-xs font-semibold text-[#191F28] dark:text-[#F2F4F6] truncate">{user.name}</p>

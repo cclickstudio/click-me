@@ -49,12 +49,24 @@
 | 소스 | 제공 내용 | URL | 라이선스 |
 |---|---|---|---|
 | **서울대-카카오 OCEAN** (Nature Sci. Rep. 2026) | N=813,611, 연령대별 성격 분포 + 5개 유형(Average/Introverted-Open/Introverted-Reactive/Expressive/Conventional) | https://www.nature.com/articles/s41598-025-34511-4 | **CC BY-NC-ND 4.0** ⚠️ |
-| BFI-K 고령자 표본 (N=1,038) | 40~60대 P2 보완 | 학술 논문 검색 (BFI-K 고령자) | 학술 인용 |
+| **BFI-K 고령자 규준** (김선영 외, 생물정신의학 2010, N=1,038) | 노인 5요인 평균·SD (40+ P2 정성 prior) | https://koreascience.kr/article/JAKO201013067171117.page | 학술 원저(인용) |
 
-- **구현 메모:** 논문 본문·보충자료(supplementary)에서 연령대별 분포 수치를 추출. 표본 연령 분포: 14–19(162,619) / 20–29(396,653) / 30–39(172,623) / 40–49(54,407) / 50–59(21,059) / 60+(4,604).
+- **구현 메모:** 논문 본문에는 **밴드별 표본수**만 공개된다(14–19 162,619 / 20–29 396,653 / 30–39 172,623 / 40–49 54,407 / 50–59 21,059 / 60+ 4,604). **연령밴드별 유형비율·factor 평균은 본문·보충자료에 없음**(나이·성별은 회귀 공변량 통제만) → 저자 OSF 원자료에서 직접 산출했다(아래 ✅ OSF 참조).
 - **⚠️ 라이선스 주의 (가장 중요):** CC BY-NC-**ND**. NC=비상업, ND=변경금지. 발표·연구 인용은 자유. 단 ① 상업 서비스에 분포를 내장할 때, ② 수치를 가공·변형해 재배포할 때는 저자 허락 또는 별도 확인 필요. 서비스화 시점에 반드시 법무 검토.
 - **⚠️ 자기선택 편향:** 카카오 마음날씨 자발적 이용자 표본 → 전국 대표 표본 아님. 코드 주석·보고서 §7에 명시 (PERSONA §7 금지사항).
 - **참고:** 카카오 마음날씨 서비스 자체는 종료되었으나(https://together.kakao.com/big-five), 데이터는 논문에 보존되어 있어 확보에 지장 없음.
+- **✅ OSF 원자료 직접 확보(2026-06-22) — 연령밴드별 유형비율 해금:** 논문 본문·보충자료는 **연령밴드별 유형비율을 공개하지 않는다**(나이·성별은 회귀 공변량으로 통제만). 단 저자가 OSF에 개인단위 원자료를 view-only 공개 → 직접 산출.
+  - 데이터: OSF `data_withclassno.csv`(N=813,611, 컬럼 `age·gender·E·N·C·O·A·class`). 다운로드 https://osf.io/7qcv2/?view_only=2746dff86ad749928305eba950b819f4 (파일 `fkpg3`) · 분석코드 https://github.com/statpng/PersonalityTypes.
+  - 산출: `class`(GMM 배정) × `age` 직접 교차표 → 6개 연령밴드별 5유형 비율. class↔유형 매핑은 표본수·Table 1 프로파일 양쪽 일치 검증, 전체비율은 논문 default와 소수 4자리 일치(동일 출판 데이터 확인).
+  - 반영: `distributions/ocean_age_bands.json`의 `type_proportions.by_age_band`에 주입(`persona_sampler._sample_ocean`이 연령밴드 우선 적용, 없으면 default 폴백). 이전 '전 연령 동질'(Average 47% 고정) → 실측(Average 20대 46%→60+ 73%, 취약형 Introverted-Reactive 14%→3%).
+  - 저장: `raw/ocean_types_kakao_snu_2026_withclass.csv`(원본 127MB) · `ocean_types_kakao_snu_2026.json`(출처+검증) · `derive_ocean_band_proportions.py`(재현 스크립트) · `ocean_band_proportions.{json,csv}`(산출 결과). raw 전체 gitignore → 미커밋·로컬 참조용.
+  - **밴드 factor 잔차 offset 적용:** 유형비율 조건화만으론 성숙원리 factor 이동의 일부만 재현(60+ 성실성≈0.11 vs 실측 0.87). `band_factor_means`(실측 밴드평균)에서 유형혼합 함의 평균을 뺀 잔차를 `_sample_ocean`에서 factor score에 가산 → 밴드 marginal 평균을 실측에 정합(성실성·친화성↑·신경증↓ 정량 반영).
+  - ⚠️ **CC BY-NC-ND** — 파생물(밴드별 유형비율·factor 평균) 재배포 금지·내부 grounding 전용. 서비스화 시 법무 검토.
+- **✅ BFI-K 고령자 규준 직접 확보(2026-06-22):** 전문 PDF·추출 데이터를 `backend/domain/simulation/data/simulation/raw/`에 저장(raw 전체 gitignore → 미커밋·로컬 참조용).
+  - 출처: 김선영 외, 「노인에서 한국판 성격 5요인 척도의 표준화 및 타당도」, 생물정신의학 17(1):15–25, 2010. 페이지 https://koreascience.kr/article/JAKO201013067171117.page · PDF https://koreascience.kr/article/JAKO201013067171117.pdf
+  - 표본 N=1,038(평균 73.4±6.84세, 남 35%/여 65%, 광주 동구 2005–06, BFI-44 1~5점). 5요인 평균(SD): 외향 3.14(0.38)·친화 3.91(0.32)·성실 3.95(0.40)·신경 2.35(0.47)·개방 2.66(0.40).
+  - 저장 파일: `raw/bfik_elders_kim2010.pdf`(원문) · `raw/bfik_elders_kim2010.json`(출처+수치) · `raw/bfik_elders_kim2010.csv`(5요인 표).
+  - ⚠️ **직접 주입 금지** — raw Likert ≠ 표준화 factor score, 65+ 단일집계(40·50대 밴드 없음), 요인 평균이지 유형비율 아님, BFI-44 ≠ IPIP-120·2005–06 광주 단일지역(외향성 α 0.52). 노인기 경향(성실성·친화성↑, 개방성·신경증↓)을 40+/60+ 유형비율 보수적 조정의 **정성 prior**로만 사용.
 
 ---
 
@@ -72,6 +84,9 @@
 - **데이터 규모:** 2010년부터 매년 동일표본 추적. 2024년 기준 4,006가구·8,693명. 항목: 미디어 기기 보유, 서비스 가입·지출, 미디어 활용, **미디어 다이어리**(하루 매체 이용 시간대 기록).
 - **구현 메모:** raw를 받아 "연령 × 성별 × 미디어 이용 패턴" 교차표를 직접 계산해 Layer 2-β를 채운다(집계표 근사 불필요). **미디어 다이어리는 4-b 반응 생성의 `exposure_context`(어떤 매체 맥락에서 광고에 노출되는가)에 직접 활용** — 우선 검토.
 - **동일표본 추적조사라는 점이 발표 내러티브와 연결됨** — "우리의 고정 패널(PERSONA §3.6)은 실제 패널 조사를 모사한다."
+- **Meta 도달성(소셜피드 노출 비중) — 이미 보유.** 다이어리 행위 코드 `SNS`(21)·`동영상/개인방송`(9·10·41) × 매체 `스마트폰/PC`의 노출 비중이 셀별로 산출됨 → 단계1 도달성 추출(PERSONA §3.7-7)의 입력. **추가 수집 불필요.**
+- **⚠️ Meta 브랜드 특정(인스타/페북)은 KISDI에 없음.** 다이어리·본조사 모두 generic SNS(카톡·X·밴드 포함)만 구분(코드북 확인). 브랜드 단위 침투율(연령×성별)은 별도 확보 — 후보: **DMC미디어/오픈서베이 SNS·동영상 이용행태 리포트, 와이즈앱(앱별 사용시간), 나스미디어 NPR, KOSIS 인터넷이용실태조사.** 발표 후 reach 보정용(Tier 2). → **현재 로직:** `meta_reach.json`(연령 marginal, Meta 광고관리자 실측 — 통합)은 보유, IG/FB 분리는 `platform_specifics` 구조로 프레임워크만(빈 값, §Phase 2 표).
+- **소득·학력(socioeconomic)도 같은 KISDI raw 기반** — `distributions/socioeconomic.json`(연령×성별 소득 8구간·학력 6단계)에 적재, 구매의도 grounding·반응 프롬프트(월소득·학력) 입력. 추가 수집 불필요.
 
 ---
 
@@ -88,7 +103,8 @@
 | MDIS 추출·다운로드 이용법 | 공공용 자료 추출 방법 안내 | https://mdis.kostat.go.kr/pageLink.do?link=content/SISMN070100 | 가이드 |
 | 한국갤럽 데일리 오피니언 | 사회의식·소비 트렌드 | https://www.gallup.co.kr | 일부 공개 / raw는 유료·계약 |
 
-- **구현 메모:** 소비가치 분포는 대학내일20대연구소 응답률을 그대로 속성 분포로 사용. 체면·동조 등 깊은 심리 변수는 사회조사 가치관 문항(MDIS raw)으로 보완하거나 전문가 사전(prior)으로 보수적 설정.
+- **구현 메모:** 소비가치 분포는 대학내일20대연구소 응답률을 그대로 속성 분포로 사용(`consumption_values.json` — 성능·품질·편의 + Z세대 저렴한가격·취향덕질). 체면·동조 등 깊은 심리 변수는 사회조사 가치관 문항(MDIS raw)으로 보완하거나 전문가 사전(prior)으로 보수적 설정.
+- **현재 로직:** 체면·동조·눈치는 `social_values_deep.json`로 **프레임워크만 구현(값 비움)** — MDIS raw + 척도 정의 확보 시 `generation_specific` 주입하면 반응 프롬프트 `[내 성향(한국 특화)]`가 활성화(§Phase 2 표·`REACTION_WORKFLOW_AND_DATA_GUIDE.md`).
 - **⚠️ MDIS 정정 확인:** "200레코드 제한"은 다운로드 전 *미리보기 샘플*에만 적용. 공공용 데이터셋 전체는 회원가입 후 무료 다운로드 가능 (PERSONA §7.5와 일치 — 2026-06-11 재확인).
 
 ---
@@ -155,3 +171,21 @@
 | 플랫폼 가이드 (YouTube/Meta/네이버/카카오) | ✅ | ✅ (공개 가이드 참조) | RAG 근거로 사용 |
 
 > **핵심:** 발표·MVP 단계에서는 위 출처 모두 사용 가능. 단 **카카오 OCEAN(NC-ND)과 민간 자료(대학내일·갤럽)는 상업 서비스화 시점에 반드시 재확인.**
+
+---
+
+## Phase 2 프레임워크 데이터 게이트 (2026-06-22)
+
+코드 프레임워크는 구현 완료(빈 값·graceful fallback). 아래 데이터를 확보해 지정 파일에 주입하면 즉시 활성화된다. **Claude 자동 수집 불가** 항목은 사용자가 직접 신청·계약해야 한다.
+
+> **수집 주소(deep-link)·단계별 절차·넣는 JSON 형식**은 `docs/simulation/REACTION_WORKFLOW_AND_DATA_GUIDE.md` §3(직접/로그인/계약 분류)·§4(스키마) 참조. 거기에 반응 프롬프트의 어느 줄이 어느 데이터로 채워지는지(end-to-end)도 정리돼 있다.
+
+| 작업 | 필요 데이터 | 출처·접근 | 주입 위치 | Claude |
+|---|---|---|---|---|
+| Tier3 인지율 | 브랜드×연령 보조인지도 | 한국갤럽 브랜드 트래킹 / 오픈서베이(유료 계약) 또는 클라이언트 제공 | `distributions/brand_awareness.json` `brands` | ❌ |
+| Meta 플랫폼 침투율 | IG/FB 연령×성별 도달 | DMC미디어·오픈서베이·와이즈앱(유료) / Meta 광고관리자(클라이언트). 통계청 ICT 이용실태는 부분 공개 | `distributions/meta_reach.json` `platform_specifics` | ❌(통계청 ICT 부분 시도) |
+| social_values_deep | 체면·동조·눈치 분포(세대별) | MDIS 사회조사 raw(회원 다운로드) + 한국문화심리 척도 정의(전문가) | `distributions/social_values_deep.json` `generation_specific` | ❌ |
+| IPF raking(정밀) | 인구 결합 marginal / 행동 결합 | KOSIS(공개·OpenAPI) / KISDI raw(회원 다운로드) | `rake_to_census` 타깃 / 결합분포 | ✅ KOSIS / ❌ KISDI |
+| 40+ MDIS 상관 | 성격×소비·미디어 상관행렬 | MDIS 사회조사 raw(회원 다운로드) | (미구현 — 데이터 확보 후 `tools/`) | ❌ |
+
+> 데이터 0 상태에서도 모든 경로가 현재 동작을 보존(회귀 0)한다. 라이선스는 위 §라이선스 요약 준수 — 갤럽·DMC·오픈서베이는 계약서 범위, MDIS·KOSIS는 공공데이터.

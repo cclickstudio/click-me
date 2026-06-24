@@ -74,6 +74,7 @@ class AssignTeam(BaseModel):
 class SimulationRow(BaseModel):
     id: str
     ad_id: str
+    ad_title: str | None
     status: str
     sample_size: int
     created_by_name: str | None
@@ -84,6 +85,7 @@ class GenerationRow(BaseModel):
     id: str
     status: str
     product_name: str | None
+    mode: str  # create | improve (input JSONB에서 읽음)
     project_name: str | None
     created_by_name: str | None
     created_at: datetime
@@ -477,6 +479,45 @@ async def assign_member_team(
     return {"ok": True}
 
 
+@router.patch("/projects/{project_id}/team")
+async def assign_project_team(
+    project_id: str,
+    body: AssignTeam,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """프로젝트를 팀에 배정/이동 (칸반 드래그). team_id가 None이면 미배정으로. COMPANY 전용."""
+    if current_user.role != "COMPANY":
+        raise HTTPException(
+            status_code=403, detail="프로젝트 팀 배정은 기업(COMPANY) 계정만 가능합니다."
+        )
+    org = await _get_company_org(current_user, db)
+
+    proj = await db.execute(
+        text("SELECT organization_id FROM projects WHERE id = :pid AND deleted_at IS NULL"),
+        {"pid": project_id},
+    )
+    p = proj.fetchone()
+    if not p or str(p.organization_id) != str(org.id):
+        raise HTTPException(status_code=404, detail="프로젝트를 찾을 수 없습니다.")
+
+    team_uuid = None
+    if body.team_id:
+        team = await db.scalar(
+            select(Team).where(Team.id == body.team_id, Team.organization_id == org.id)
+        )
+        if not team:
+            raise HTTPException(status_code=404, detail="존재하지 않는 팀입니다.")
+        team_uuid = str(team.id)
+
+    await db.execute(
+        text("UPDATE projects SET team_id = :tid WHERE id = :pid"),
+        {"tid": team_uuid, "pid": project_id},
+    )
+    await db.commit()
+    return {"ok": True}
+
+
 class OrgInfo(BaseModel):
     id: str
     name: str
@@ -517,8 +558,10 @@ async def list_company_simulations(
 
     result = await db.execute(
         text("""
-            SELECT s.id, s.ad_id, s.status, s.sample_size, s.created_at, u.name AS created_by_name
+            SELECT s.id, s.ad_id, s.status, s.sample_size, s.created_at,
+                   a.title AS ad_title, u.name AS created_by_name
             FROM simulations s
+            LEFT JOIN ads a ON a.id = s.ad_id
             LEFT JOIN users u ON u.id = s.created_by
             WHERE s.organization_id = :org_id AND s.deleted_at IS NULL
             ORDER BY s.created_at DESC
@@ -530,6 +573,7 @@ async def list_company_simulations(
         SimulationRow(
             id=str(r.id),
             ad_id=str(r.ad_id),
+            ad_title=r.ad_title,
             status=r.status,
             sample_size=r.sample_size,
             created_by_name=r.created_by_name,
@@ -567,6 +611,7 @@ async def list_company_generations(
             id=str(r.id),
             status=r.status,
             product_name=(r.input or {}).get("product_name") if r.input else None,
+            mode=(r.input or {}).get("mode", "create") if r.input else "create",
             project_name=r.project_name,
             created_by_name=r.created_by_name,
             created_at=r.created_at,

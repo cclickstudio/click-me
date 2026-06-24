@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import uuid
+
 import aioboto3
 
 from core.config import settings
@@ -14,18 +16,28 @@ _session = aioboto3.Session(
 
 
 def brand_logo_key(client_id: str, ext: str) -> str:
-    """브랜드 로고의 S3 키."""
-    return f"brand-logos/{client_id}/logo.{ext.lstrip('.')}"
+    """브랜드 로고의 S3 키 — 업로드마다 고유(키트별 개별 로고 보존)."""
+    return f"brand-logos/{client_id}/{uuid.uuid4().hex}.{ext.lstrip('.')}"
 
 
 def candidate_key(generation_id: str, idx: int) -> str:
-    """생성 후보 이미지(PNG)의 S3 키."""
+    """생성 후보 이미지(PNG)의 S3 키 — 텍스트·로고까지 합성된 최종본."""
     return f"generated-ads/{generation_id}/candidate-{idx}.png"
+
+
+def candidate_base_key(generation_id: str, idx: int) -> str:
+    """후보의 텍스트 없는 base 이미지 S3 키 — 플랫폼별 리레이아웃 렌더의 원본."""
+    return f"generated-ads/{generation_id}/candidate-{idx}-base.png"
 
 
 def publish_key(generation_id: str, idx: int) -> str:
     """Instagram 게시용 JPEG 변환본의 S3 키."""
     return f"generated-ads/{generation_id}/candidate-{idx}-publish.jpg"
+
+
+def temp_product_image_key(temp_id: str) -> str:
+    """상품 이미지 임시 저장 S3 키 — 서버 재시작 후에도 유지, 생성 파이프라인 내부 전달용."""
+    return f"temp-product-images/{temp_id}.png"
 
 
 async def upload_bytes(data: bytes, key: str, content_type: str = "image/png") -> str:

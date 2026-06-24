@@ -1,1 +1,4 @@
-# Generator 챗봇 — 대화로 정보를 수집해 기존 파이프라인을 실행하는 안내 창구
+# 생성 채팅 서브에이전트 — 슬롯필링 진입점 노출
+from domain.generator.chat.slot_agent import build_generation_chat_agent
+
+__all__ = ["build_generation_chat_agent"]

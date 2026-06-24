@@ -1,6 +1,109 @@
 import { getToken } from "./authApi";
+import type { BoardResponse } from "@/components/manage/compare/types";
+import type { CampaignDetail, CampaignsResponse, CreativesResponse, DemographicsResponse, ManualKpiMap, PlatformsResponse } from "@/components/manage/campaigns/types";
+import type { Proposal } from "@/components/manage/types";
+import type { BudgetStatus } from "@/components/manage/budget/types";
+import type {
+  BrandKit,
+  BrandKitInput,
+  DebateResult,
+  DebateSessionDetail,
+  DebateSessionsResult,
+  DebateStartResult,
+  DebateTopic,
+  DebateTopicsResult,
+  QAEvent,
+  ReportView,
+  SimRunInput,
+  SimRunResult,
+} from "./types";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+export const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+
+// 게재 불가 원인 — code별 한국어 message. INSUFFICIENT_CREDIT는 부족액·잔액 동반.
+export interface DeliveryCause {
+  code: string;
+  message: string;
+  need_krw?: number;
+  balance_krw?: number;
+  commit_krw?: number;
+}
+export interface ActivateResponse {
+  serving: boolean;
+  result: { status?: string; failure_reason?: string | null } | null;
+  balance_krw: number;
+  commit_krw: number;
+  causes: DeliveryCause[];
+  error_message?: string;
+}
+export interface DeliveryStatusResponse {
+  campaign_id: string;
+  serving: boolean;
+  effective_status: string;
+  issues: string[];
+  causes: DeliveryCause[];
+  spend_cap_krw?: number | null;
+  balance_krw: number;
+}
+export interface PauseResponse {
+  paused: boolean;
+  result: { status?: string; failure_reason?: string | null } | null;
+  error_message?: string;
+}
+export interface SyncResponse {
+  campaign_id: string;
+  spend_krw: number;
+  charged_now_krw: number;
+  balance_krw: number;
+  effective_status: string;
+  ended: boolean;
+}
+export interface LeadRecord {
+  created_time: string;
+  fields: Record<string, string>;
+}
+export interface LeadsResponse {
+  leads: LeadRecord[];
+  count: number;
+  note?: string;
+}
+// 집행 전(시뮬 예측) — 실 시뮬 KPI와 동일 필드(슬롯). source=mock|sim
+export interface PredictionSnapshot {
+  ad_id: string;
+  click_intent_rate: number;
+  purchase_intent: number;
+  trust_avg: number;
+  rejection_rate: number;
+  objective_fit_score?: number | null;
+  grade?: string | null;
+  as_of: string;
+  source: string;
+}
+// 집행 후(실측)
+export interface ActualOutcome {
+  campaign_id: string;
+  impressions: number;
+  reach: number;
+  spend_krw: number;
+  ctr: number;
+  cpc_krw: number;
+  cpm_krw: number;
+  conversions?: number | null;
+  cvr?: number | null;
+  roas?: number | null;
+}
+export interface BeforeAfterItem {
+  campaign_id: string;
+  name: string;
+  prediction: PredictionSnapshot | null;
+  actual: ActualOutcome;
+  verdict: 'aligned' | 'overperformed' | 'underperformed' | 'unknown';
+  rationale: string;
+}
+export interface BeforeAfterResponse {
+  items: BeforeAfterItem[];
+  rate_limited?: string; // Meta 요청 한도 시 안내
+}
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const token = getToken();
@@ -21,6 +124,36 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json();
 }
 
+// 시뮬 multipart 폼 빌드 — run(동기)·start(비동기 SSE)가 공용으로 사용.
+function buildSimForm(input: SimRunInput): FormData {
+  const form = new FormData();
+  form.append("ad_id", input.ad_id);
+  if (input.ad_content) form.append("ad_content", input.ad_content);
+  if (input.ad_image) form.append("ad_image", input.ad_image);
+  if (input.ad_image_url) form.append("ad_image_url", input.ad_image_url);
+  if (input.organization_id) form.append("organization_id", input.organization_id);
+  if (input.project_id) form.append("project_id", input.project_id);
+  if (input.target_filter && Object.keys(input.target_filter).length > 0)
+    form.append("target_filter", JSON.stringify(input.target_filter));
+  if (input.target_mode) form.append("target_mode", input.target_mode);
+  if (input.sample_size != null) form.append("sample_size", String(input.sample_size));
+  if (input.allocation) form.append("allocation", input.allocation);
+  if (input.ad_title) form.append("ad_title", input.ad_title);
+  if (input.product_category) form.append("product_category", input.product_category);
+  if (input.ad_objective) form.append("ad_objective", input.ad_objective);
+  if (input.service_class != null) form.append("service_class", String(input.service_class));
+  return form;
+}
+
+// 캠페인 조회 쿼리스트링 — 전환가치·목표 ROAS는 입력됐을 때만 붙인다.
+function _campaignQuery(conversionValueKrw?: number | null, targetRoas?: number | null): string {
+  const p = new URLSearchParams();
+  if (conversionValueKrw) p.set("conversion_value_krw", String(conversionValueKrw));
+  if (targetRoas) p.set("target_roas", String(targetRoas));
+  const q = p.toString();
+  return q ? `?${q}` : "";
+}
+
 export const api = {
   ads: {
     upload: (file: File, projectId: string) => {
@@ -39,10 +172,157 @@ export const api = {
     generate: (body: object) => request("/personas/generate", { method: "POST", body: JSON.stringify(body) }),
   },
 
-  simulate: {
-    start: (body: object) => request("/simulate/reactions", { method: "POST", body: JSON.stringify(body) }),
-    result: (taskId: string) => request(`/simulate/${taskId}/result`),
-    stream: (taskId: string) => new EventSource(`${API_BASE}/api/simulate/${taskId}/stream`),
+  // 도메인 시뮬레이션(DDD) — multipart/form-data. run=동기(레거시), start=비동기 SSE.
+  simulation: {
+    // 동기 실행 — 끝까지 돌린 결과를 한 번에 반환(진행률 없음).
+    run: (input: SimRunInput): Promise<SimRunResult> => {
+      const token = getToken();
+      // Content-Type은 지정하지 않는다 — 브라우저가 multipart boundary를 자동 설정.
+      return fetch(`${API_BASE}/api/simulation/run`, {
+        method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: buildSimForm(input),
+      }).then(async (r) => {
+        if (!r.ok) {
+          const err = await r.json().catch(() => ({ detail: `HTTP ${r.status}` }));
+          throw new Error(err.detail ?? `HTTP ${r.status}`);
+        }
+        return r.json();
+      });
+    },
+    // 비동기 시작 — run_id 반환. 진행률은 stream(SSE), 결과는 result(GET).
+    start: (
+      input: SimRunInput,
+    ): Promise<{ run_id: string; stream_url: string; result_url: string; mode: string }> => {
+      const token = getToken();
+      return fetch(`${API_BASE}/api/simulation`, {
+        method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: buildSimForm(input),
+      }).then(async (r) => {
+        if (!r.ok) {
+          const err = await r.json().catch(() => ({ detail: `HTTP ${r.status}` }));
+          throw new Error(err.detail ?? `HTTP ${r.status}`);
+        }
+        return r.json();
+      });
+    },
+    stream: (runId: string) => new EventSource(`${API_BASE}/api/simulation/${runId}/stream`),
+    result: (runId: string): Promise<SimRunResult> =>
+      request<SimRunResult>(`/simulation/${runId}/result`),
+    // DB에 저장된 시뮬 결과를 simulation_id로 조회(콜드·패널 진입). 404=결과 없음.
+    dbResult: (simulationId: string): Promise<SimRunResult> =>
+      request<SimRunResult>(`/simulation/${simulationId}/db-result`),
+  },
+
+  // 페르소나 토론(/api/debate/*) — 시뮬 반응(reactions)을 받아 토론을 돌리고 결과를 낸다.
+  debate: {
+    // 추가 토론용 논제 후보 5개 → ranking 순. 안 호출하면 최초 토론(분석 headline 고정).
+    topics: (body: {
+      reactions: unknown[];
+      ad_analysis?: unknown;
+      personas?: unknown[];
+      ad_title?: string; // 광고 제목 — 후보 topic에 동봉(토론자 grounding)
+      ad_description?: string; // 광고 설명 — 동상
+    }): Promise<DebateTopicsResult> =>
+      request<DebateTopicsResult>("/debate/topics", {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+    // 시뮬 반응으로 토론 시작 → run_id. 토론은 항상 실 LLM, lay_count는 일반인 수(2|3|4).
+    // topic을 주면 그 논제로 추가 토론, 안 주면 최초 토론(분석 headline 고정).
+    start: (
+      body: {
+        reactions: unknown[];
+        ad_analysis?: unknown;
+        personas?: unknown[];
+        simulation_id?: string;
+        topic?: DebateTopic;
+        rubric_scores?: unknown[]; // §4 루브릭(있으면 리포트 진단에 실음)
+        objective_fit?: unknown; // 캠페인 목표 적합도(ReportView 메인 판정)
+        ad_title?: string; // 광고 제목 — 최초 토론 topic에 동봉(토론자 grounding)
+        ad_description?: string; // 광고 설명 — 동상
+      },
+      opts?: { layCount?: 2 | 3 | 4 },
+    ): Promise<DebateStartResult> => {
+      const q = new URLSearchParams();
+      if (opts?.layCount) q.set("lay_count", String(opts.layCount));
+      return request<DebateStartResult>(`/debate/start?${q.toString()}`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      });
+    },
+    stream: (runId: string) => new EventSource(`${API_BASE}/api/debate/${runId}/stream`),
+    result: (runId: string): Promise<DebateResult> => request<DebateResult>(`/debate/${runId}/result`),
+    // 시뮬의 저장된 토론 목록(메타) — 세션 탭·프로젝트 패널 복원용. DB 미연동이면 빈 목록.
+    bySimulation: (simulationId: string): Promise<DebateSessionsResult> =>
+      request<DebateSessionsResult>(`/debate/by-simulation/${simulationId}`),
+    // 저장된 토론 1건 상세(참가자·발언·judge_log·final) — 채팅·결과 복원용.
+    detail: (debateId: string): Promise<DebateSessionDetail> =>
+      request<DebateSessionDetail>(`/debate/${debateId}/detail`),
+    // 시뮬에 저장된 통합 리포트(ReportView) 복원 — 콜드·새로고침·패널 진입용.
+    // request 헬퍼는 404에 throw하므로 여기선 fetch 직접 호출 → 404·실패 시 null 반환(결과 화면은 떠야 함).
+    savedReport: async (simulationId: string): Promise<ReportView | null> => {
+      const token = getToken();
+      const res = await fetch(
+        `${API_BASE}/api/debate/by-simulation/${simulationId}/report`,
+        { headers: token ? { Authorization: `Bearer ${token}` } : {} },
+      );
+      if (!res.ok) return null;
+      return res.json() as Promise<ReportView>;
+    },
+    // 토론 종료 후 Q&A — POST라 EventSource 불가 → fetch + ReadableStream으로 "data: {json}\n\n" 파싱.
+    question: async (
+      runId: string,
+      body: { question: string; reactions: unknown[]; ad_analysis?: unknown },
+      onEvent: (ev: QAEvent) => void,
+    ): Promise<void> => {
+      const token = getToken();
+      const res = await fetch(`${API_BASE}/api/debate/${runId}/question`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify(body),
+      });
+      if (!res.ok || !res.body) {
+        const err = await res.json().catch(() => ({ detail: `HTTP ${res.status}` }));
+        throw new Error((err as { detail?: string }).detail ?? `HTTP ${res.status}`);
+      }
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      // "data: {json}\n\n" 단위로 끊어 파싱.
+      const flush = (chunk: string) => {
+        buffer += chunk;
+        let sep: number;
+        while ((sep = buffer.indexOf("\n\n")) !== -1) {
+          const raw = buffer.slice(0, sep);
+          buffer = buffer.slice(sep + 2);
+          for (const line of raw.split("\n")) {
+            const trimmed = line.trim();
+            if (!trimmed.startsWith("data:")) continue;
+            const payload = trimmed.slice(5).trim();
+            if (!payload) continue;
+            try {
+              onEvent(JSON.parse(payload) as QAEvent);
+            } catch {
+              // 부분 JSON·keep-alive는 무시.
+            }
+          }
+        }
+      };
+
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        flush(decoder.decode(value, { stream: true }));
+      }
+      flush(decoder.decode());
+    },
   },
 
   chat: {
@@ -67,6 +347,152 @@ export const api = {
     create: (body: { name: string; description?: string }) =>
       request("/projects", { method: "POST", body: JSON.stringify(body) }),
     get: (id: string) => request(`/projects/${id}`),
+  },
+
+  billing: {
+    createOrder: (amountKrw: number) =>
+      request<{ order_id: string; amount_krw: number; client_key: string }>("/billing/orders", {
+        method: "POST",
+        body: JSON.stringify({ amount_krw: amountKrw }),
+      }),
+    confirm: (body: { payment_key: string; order_id: string; amount_krw: number }) =>
+      request<{ order_id: string; status: string; amount_krw: number; balance_krw: number }>(
+        "/billing/confirm",
+        { method: "POST", body: JSON.stringify(body) },
+      ),
+    cancel: (orderId: string, reason = "사용자 요청") =>
+      request<{ order_id: string; status: string; amount_krw: number; balance_krw: number }>(
+        "/billing/cancel",
+        { method: "POST", body: JSON.stringify({ order_id: orderId, reason }) },
+      ),
+    balance: () => request<{ org_id: string; balance_krw: number }>("/billing/balance"),
+    history: () =>
+      request<{
+        org_id: string;
+        entries: {
+          entry_id: string;
+          delta_krw: number;
+          balance_after_krw: number;
+          reason: string;
+          ref_id: string;
+          created_at: string;
+        }[];
+      }>("/billing/history"),
+  },
+
+  management: {
+    run: (fault: string) => request(`/management/run?fault=${fault}`),
+    regenerate: (diagnosis: unknown) =>
+      request("/management/regenerate", { method: "POST", body: JSON.stringify({ diagnosis }) }),
+    approve: (proposal: unknown, approved: boolean) =>
+      request("/management/approve", {
+        method: "POST",
+        body: JSON.stringify({ proposal, approved, approver_id: "user_demo" }),
+      }),
+    execute: (approved_action: unknown, proposal: unknown) =>
+      request("/management/execute", {
+        method: "POST",
+        body: JSON.stringify({ approved_action, proposal }),
+      }),
+    audit: (approvalId: string) => request(`/management/audit?approval_id=${approvalId}`),
+    // 멀티테넌트 — 로그인 org로 Meta OAuth 로그인 URL을 받는다(인증 XHR). 프론트가 그 URL로 이동.
+    connectMeta: () => request<{ login_url: string; state: string }>("/management/meta/connect"),
+    compareBoard: () => request<BoardResponse>("/management/compare/board"),
+    // 집행 전(시뮬 예측) vs 후(실측) — ClickMe로 만든 캠페인별
+    beforeAfter: () => request<BeforeAfterResponse>("/management/compare/before-after"),
+    // 캠페인 생성 정책 — 최소예산(Meta 실시간)·특별광고카테고리·연령. 폼이 동적 검증에 사용.
+    campaignPolicy: () =>
+      request<{
+        min_daily_budget_krw: number;
+        min_by_objective_krw: Record<string, number>;
+        special_ad_categories: { value: string; label: string }[];
+        age_min: number;
+        age_max: number;
+      }>("/management/campaign-policy"),
+    // conversionValueKrw(전환 가치)→추정 ROAS, targetRoas(목표)→목표 미달 판정.
+    campaigns: (conversionValueKrw?: number | null, targetRoas?: number | null) =>
+      request<CampaignsResponse>(
+        `/management/campaigns${_campaignQuery(conversionValueKrw, targetRoas)}`,
+      ),
+    campaign: (id: string, conversionValueKrw?: number | null, targetRoas?: number | null) =>
+      request<CampaignDetail>(
+        `/management/campaigns/${id}${_campaignQuery(conversionValueKrw, targetRoas)}`,
+      ),
+    campaignPlatforms: (id: string) =>
+      request<PlatformsResponse>(`/management/campaigns/${id}/platforms`),
+    campaignDemographics: (id: string) =>
+      request<DemographicsResponse>(`/management/campaigns/${id}/demographics`),
+    campaignCreatives: (id: string) =>
+      request<CreativesResponse>(`/management/campaigns/${id}/creatives`),
+    // 캠페인 삭제 — 내 대시보드에서 삭제 = Meta에서도 삭제(LIVE 모드). 자식 광고세트·광고 함께.
+    deleteCampaign: (id: string) =>
+      request<{ result: { status: string; failure_reason?: string | null } }>(
+        `/management/campaigns/${id}`,
+        { method: "DELETE" },
+      ),
+    // 수동 KPI(추정 CVR·ROAS) — 조직 단위 DB 영속
+    kpiOverrides: () =>
+      request<{ overrides: ManualKpiMap }>(`/management/kpi-overrides`),
+    putKpiOverride: (id: string, body: { cvr: number | null; roas: number | null }) =>
+      request<{ campaign_id: string; cvr: number | null; roas: number | null }>(
+        `/management/campaigns/${id}/kpi-override`,
+        { method: "PUT", body: JSON.stringify(body) },
+      ),
+    createCampaignProposal: (body: {
+      name: string;
+      objective?: 'traffic' | 'leads'; // 리드면 잠재고객 폼까지 생성(전환·ROAS 측정용)
+      daily_budget_krw: number;
+      run_days: number;
+      creative_ad_id?: string;
+      image_hash?: string; // /ad-image 업로드 결과 — 광고 소재 이미지
+      special_ad_category?: string; // NONE | HOUSING | EMPLOYMENT | CREDIT | ISSUES_ELECTIONS_POLITICS
+      country?: string; // ISO2 (KR 등)
+      age_min?: number;
+      age_max?: number;
+      gender?: 'all' | 'male' | 'female';
+    }) =>
+      request<{ proposal: Proposal }>("/management/campaigns/create-proposal", {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+    // 광고 소재 이미지 업로드 → image_hash (멀티파트, 무과금 자산 등록)
+    uploadAdImage: (file: File) => {
+      const form = new FormData();
+      form.append('file', file);
+      return fetch(`${API_BASE}/api/management/ad-image`, { method: 'POST', body: form }).then(
+        (r) => r.json() as Promise<{ image_hash: string }>,
+      );
+    },
+    // 샘플 시안 — FB 피드·인스타 미리보기 HTML(Meta iframe)
+    adPreview: (imageHash: string, name?: string) =>
+      request<{ previews: { format: string; html: string }[] }>("/management/ad-preview", {
+        method: "POST",
+        body: JSON.stringify({ image_hash: imageHash, name }),
+      }),
+    budget: () => request<BudgetStatus>("/management/budget"),
+    setBudgetLimit: (limitKrw: number) =>
+      request<BudgetStatus>("/management/budget/limit", {
+        method: "POST",
+        body: JSON.stringify({ limit_krw: limitKrw }),
+      }),
+    // 게재 시작(활성화) — 크레딧 잔액 게이트 → spend_cap → 캠페인·세트·광고 ACTIVE
+    activate: (campaignId: string, commitKrw?: number) =>
+      request<ActivateResponse>(`/management/campaigns/${campaignId}/activate`, {
+        method: "POST",
+        body: JSON.stringify({ commit_krw: commitKrw }),
+      }),
+    // 게재 여부 + 불가 원인 + 크레딧 잔액
+    deliveryStatus: (campaignId: string) =>
+      request<DeliveryStatusResponse>(`/management/campaigns/${campaignId}/delivery-status`),
+    // Meta 소진액 → 크레딧 차감 정산 + 자동 종료 반영
+    syncCampaign: (campaignId: string) =>
+      request<SyncResponse>(`/management/campaigns/${campaignId}/sync`),
+    // 캠페인 즉시 일시중지(PAUSED) — 게재·과금 중단
+    pause: (campaignId: string) =>
+      request<PauseResponse>(`/management/campaigns/${campaignId}/pause`, { method: 'POST' }),
+    // 이 캠페인으로 제출된 잠재고객(리드) 명단 — Meta leadgen 조회(권한 필요 시 note)
+    leads: (campaignId: string) =>
+      request<LeadsResponse>(`/management/campaigns/${campaignId}/leads`),
   },
 
   generator: {
@@ -137,6 +563,21 @@ export const api = {
         const data = (await res.json()) as { key: string; url: string };
         return { ...data, url: `${API_BASE}${data.url}` };
       },
+    },
+    brandKits: {
+      list: () => request<{ kits: BrandKit[] }>("/generator/brand-kits"),
+      create: (body: BrandKitInput) =>
+        request<BrandKit>("/generator/brand-kits", {
+          method: "POST",
+          body: JSON.stringify(body),
+        }),
+      update: (id: string, body: BrandKitInput) =>
+        request<BrandKit>(`/generator/brand-kits/${id}`, {
+          method: "PUT",
+          body: JSON.stringify(body),
+        }),
+      remove: (id: string) =>
+        request(`/generator/brand-kits/${id}`, { method: "DELETE" }),
     },
     uploadProductImage: async (file: File): Promise<{ temp_key: string }> => {
       const form = new FormData();

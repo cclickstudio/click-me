@@ -1,1 +1,211 @@
-"""🅱 Meta 인증·토큰·HTTP 공통층 + 토큰 마스킹 (stub)."""
+# 🤝 Meta 인증·토큰·HTTP 공통층 + 토큰 마스킹 (게이트 #8 — 민감값 평문 노출 금지)
+"""🤝 Meta Graph API 인증·HTTP 공통층 — reader·writer 공용 (토큰 마스킹 포함).
+
+raw httpx로 Graph API를 직접 호출한다(신규 SDK 의존성 0). 테스트는 생성자에
+``httpx.MockTransport``를 주입해 네트워크 없이 녹화 응답으로 계약을 검증한다
+(generator/adapters/instagram.py의 transport 주입 패턴과 동일).
+
+토큰·앱 시크릿은 전송 payload에만 싣고 로그·예외에는 마스킹한다 (게이트 #8, CLAUDE.md 보안).
+"""
+
+from __future__ import annotations
+
+import time
+from typing import Any
+
+import httpx
+
+#: Meta GET 응답 단기 캐시 — 대시보드·예산·비교 탭이 같은 list_campaigns/insights/funding을
+#: 반복 호출하는 fan-out을 합쳐 요청 한도(rate limit, code 17 등)를 아낀다. 쓰기 시 무효화.
+_GET_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
+_GET_CACHE_TTL = 90.0  # seconds — 실측은 Meta 집계 지연이 있어 90초 staleness는 허용
+
+
+def mask_token(token: str | None) -> str:
+    """access_token을 로그용으로 마스킹 — 앞 4자만 남기고 가린다."""
+    if not token:
+        return "<none>"
+    return f"{token[:4]}…(masked)"
+
+
+def normalize_ad_account(account: str | None) -> str:
+    """ad account id에 ``act_`` 접두사를 보장한다(중복 부착 방지).
+
+    settings/.env의 META_AD_ACCOUNT_ID는 ``act_…`` 형태로 저장되지만 호출부가 또
+    ``act_``를 붙이면 ``act_act_…``가 돼 404가 난다. 입력에 접두사가 있으면 그대로 쓴다.
+    """
+    acct = account or ""
+    return acct if acct.startswith("act_") else f"act_{acct}"
+
+
+class MetaTokenError(RuntimeError):
+    """토큰/앱 자격 미설정 — 메시지에 비밀값 없음."""
+
+
+#: Meta 스로틀링/레이트리밋 error code (앱/유저/페이지/커스텀/BUC 광고 한도).
+_RATE_LIMIT_CODES: frozenset[int] = frozenset(
+    {4, 17, 32, 613, 80000, 80001, 80002, 80003, 80004, 80005, 80006, 80008, 80009, 80014}
+)
+
+#: 인증·토큰 만료 계열 error code — 재연결(토큰 갱신)이 필요한 경우.
+#: 190=토큰 만료/무효, 102=세션 무효, 463/467=토큰 만료·변경.
+_AUTH_ERROR_CODES: frozenset[int] = frozenset({190, 102, 463, 467})
+
+
+class MetaApiError(RuntimeError):
+    """Graph API 응답의 error 객체를 표준 예외로 변환 — 메시지에 토큰 미포함."""
+
+    def __init__(
+        self, code: int | None, subcode: int | None, message: str, user_msg: str | None = None
+    ) -> None:
+        self.code = code
+        self.subcode = subcode
+        self.message = message
+        self.user_msg = user_msg  # Meta error_user_msg — 어떤 파라미터가 왜 틀렸는지 사람용 설명
+        detail = f"Meta API error (code={code}, subcode={subcode}): {message}"
+        if user_msg:
+            detail += f" | {user_msg}"
+        super().__init__(detail)
+
+    @property
+    def is_rate_limited(self) -> bool:
+        """레이트리밋 계열 — executor 재시도(RATE_LIMITED) 매핑에 사용."""
+        return self.code in _RATE_LIMIT_CODES
+
+    @property
+    def is_auth_error(self) -> bool:
+        """토큰 만료·무효 계열 — 화면에 'Meta 재연결 필요' 안내로 매핑."""
+        return self.code in _AUTH_ERROR_CODES
+
+
+class MetaClient:
+    """Graph API 호출 공통층. path는 base 뒤에 붙는 상대 경로 (예: '{id}/insights')."""
+
+    def __init__(
+        self,
+        access_token: str,
+        *,
+        ad_account_id: str | None = None,
+        api_version: str = "v21.0",
+        app_id: str | None = None,
+        app_secret: str | None = None,
+        transport: httpx.AsyncBaseTransport | None = None,
+        timeout: float = 30.0,
+    ) -> None:
+        self._token = access_token
+        self.ad_account_id = ad_account_id
+        self._base = f"https://graph.facebook.com/{api_version}"
+        self._app_id = app_id
+        self._app_secret = app_secret
+        self._transport = transport  # 테스트용 httpx.MockTransport 주입 지점
+        self._timeout = timeout
+
+    def _cache_key(self, path: str, params: dict[str, Any]) -> str:
+        items = sorted((k, str(v)) for k, v in params.items())
+        return f"{self._token[:8]}|{path}|{items}"  # 토큰 앞자리로 계정 구분(평문 미저장)
+
+    async def get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+        params = params or {}
+        # 실 네트워크 호출(transport 미주입)만 캐시 — 테스트(MockTransport)·토큰검증은 제외.
+        cacheable = self._transport is None and "access_token" not in params
+        if cacheable:
+            key = self._cache_key(path, params)
+            hit = _GET_CACHE.get(key)
+            if hit and hit[0] > time.monotonic():
+                return hit[1]
+        # access_token 기본 주입 → 호출자 params가 덮어쓸 수 있음(앱 토큰 등 ⑤ 토큰검증).
+        query = {"access_token": self._token, **params}
+        async with httpx.AsyncClient(timeout=self._timeout, transport=self._transport) as client:
+            res = await client.get(f"{self._base}/{path}", params=query)
+            payload = self._handle(res)
+        if cacheable:
+            _GET_CACHE[key] = (time.monotonic() + _GET_CACHE_TTL, payload)
+        return payload
+
+    async def post(
+        self, path: str, data: dict[str, Any] | None = None, *, validate_only: bool = False
+    ) -> dict[str, Any]:
+        body: dict[str, Any] = {**(data or {}), "access_token": self._token}
+        if validate_only:
+            # Meta가 요청을 검증만 하고 실제 변경은 하지 않는다 (VALIDATE_ONLY의 핵심).
+            body["execution_options"] = '["validate_only"]'
+        async with httpx.AsyncClient(timeout=self._timeout, transport=self._transport) as client:
+            res = await client.post(f"{self._base}/{path}", data=body)
+            payload = self._handle(res)
+        if not validate_only and self._transport is None:
+            _GET_CACHE.clear()  # 상태 변경 → 캐시 무효화(다음 GET은 최신)
+        return payload
+
+    async def post_image(self, path: str, image_bytes: bytes, filename: str) -> dict[str, Any]:
+        """멀티파트 이미지 업로드 (/adimages) — data= 대신 files=로 전송.
+
+        Meta는 응답을 업로드 필드명(filename)으로 키잉한다: {images: {<filename>: {hash, url}}}.
+        """
+        async with httpx.AsyncClient(timeout=self._timeout, transport=self._transport) as client:
+            res = await client.post(
+                f"{self._base}/{path}",
+                data={"access_token": self._token},
+                files={filename: (filename, image_bytes, "image/jpeg")},
+            )
+            return self._handle(res)
+
+    async def delete(self, path: str) -> dict[str, Any]:
+        """객체 삭제 (HTTP DELETE). 캠페인 삭제 시 자식 광고세트·광고도 함께 삭제됨."""
+        async with httpx.AsyncClient(timeout=self._timeout, transport=self._transport) as client:
+            res = await client.delete(f"{self._base}/{path}", params={"access_token": self._token})
+            payload = self._handle(res)
+        if self._transport is None:
+            _GET_CACHE.clear()  # 삭제 → 캐시 무효화
+        return payload
+
+    @staticmethod
+    def _handle(res: httpx.Response) -> dict[str, Any]:
+        try:
+            payload = res.json()
+        except ValueError:  # 비JSON 에러 바디(HTML 5xx·게이트웨이 스로틀 페이지 등)
+            res.raise_for_status()  # 4xx/5xx면 httpx.HTTPStatusError로 표면화
+            raise MetaApiError(
+                None, None, f"non-JSON response (status={res.status_code})"
+            ) from None
+        if isinstance(payload, dict) and "error" in payload:
+            err = payload["error"]
+            raise MetaApiError(
+                err.get("code"),
+                err.get("error_subcode"),
+                err.get("message", "unknown error"),
+                err.get("error_user_msg") or err.get("error_user_title"),
+            )
+        res.raise_for_status()
+        return payload
+
+    @property
+    def app_access_token(self) -> str:
+        """app_id|app_secret — 토큰 디버그용 (⑤)."""
+        if not (self._app_id and self._app_secret):
+            raise MetaTokenError("META_APP_ID/META_APP_SECRET 미설정 — 앱 토큰 생성 불가")
+        return f"{self._app_id}|{self._app_secret}"
+
+    async def debug_token(self) -> dict[str, Any]:
+        """⑤ 토큰 검증 — 만료·스코프·유효성 조회 (앱 토큰으로 입력 토큰 점검)."""
+        payload = await self.get(
+            "debug_token",
+            {"input_token": self._token, "access_token": self.app_access_token},
+        )
+        return payload.get("data", payload)
+
+    def __repr__(self) -> str:  # 토큰 평문 노출 방지
+        return f"MetaClient(token={mask_token(self._token)}, ad_account_id={self.ad_account_id})"
+
+
+def build_meta_client(
+    settings: object, *, transport: httpx.AsyncBaseTransport | None = None
+) -> MetaClient:
+    """settings에서 자격증명을 읽어 MetaClient 생성 — reader·writer 공용 팩토리."""
+    return MetaClient(
+        access_token=getattr(settings, "meta_access_token", None) or "",
+        ad_account_id=getattr(settings, "meta_ad_account_id", None),
+        api_version=getattr(settings, "meta_graph_api_version", None) or "v21.0",
+        app_id=getattr(settings, "meta_app_id", None),
+        app_secret=getattr(settings, "meta_app_secret", None),
+        transport=transport,
+    )

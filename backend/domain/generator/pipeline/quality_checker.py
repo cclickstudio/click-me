@@ -53,7 +53,7 @@ def _skipped_item() -> QualityCheckItem:
     return QualityCheckItem(passed=True, score=1.0, feedback="규칙 기반 검증 제외")
 
 
-async def check_quality(ad_copy: AdCopy, target: str) -> QualityReport:
+def check_quality(ad_copy: AdCopy, target: str) -> QualityReport:
     text_length = _check_text_length(ad_copy)
     cta_exists = _check_cta_exists(ad_copy)
     duplicate_check = _check_duplicate(ad_copy)

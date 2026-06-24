@@ -12,11 +12,17 @@ from fastapi import APIRouter, Depends, File, Header, HTTPException, UploadFile
 from fastapi.responses import Response, StreamingResponse
 from PIL import Image
 from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.auth import get_current_user
-from core.models import User
+from core.db import get_db
+from core.models import OrganizationMember, User
 from domain.generator.adapters.meta_ads import AdvertiseRequest
+from domain.generator.contracts.enums import GenerationMode
 from domain.generator.contracts.schemas import GenerationCreateRequest
+from domain.generator.pipeline.relayout import PLATFORM_SIZES
+from domain.generator.service import brand_kit as brand_kit_service
 from domain.generator.service import generator_service
 from domain.generator.service.brand_profile import get_profile, save_profile
 from tools.storage.s3 import brand_logo_key, download_bytes, upload_bytes
@@ -198,9 +204,19 @@ async def langsmith_status():
     }
 
 
+# 프록시로 제공 가능한 S3 키 프리픽스 — 이 밖의 임의 객체 열람을 차단(오픈 프록시 방지).
+_ALLOWED_IMAGE_PREFIXES = ("generated-ads/", "brand-logos/")
+
+
 @router.get("/image")
 async def proxy_image(key: str):
-    """S3 이미지를 백엔드를 통해 제공 — AWS 자격증명 노출 방지."""
+    """S3 이미지를 백엔드를 통해 제공 — AWS 자격증명 노출 방지.
+
+    허용된 프리픽스(생성 광고·브랜드 로고)만 통과시켜 버킷 내 임의 객체 열람을 막는다.
+    (img 태그가 헤더를 못 보내 인증은 불가하나, UUID 경로라 실질 추측은 어렵다.)
+    """
+    if ".." in key or not key.startswith(_ALLOWED_IMAGE_PREFIXES):
+        raise HTTPException(status_code=403, detail="허용되지 않은 이미지 경로입니다.")
     try:
         data = await download_bytes(key)
     except Exception:
@@ -217,6 +233,12 @@ async def create_generation(
     body: GenerationCreateRequest,
     current_user: User = Depends(get_current_user),
 ):
+    # 사용자 생성(create)은 프로젝트에 저장돼야 하므로 project_id 필수 (프론트 우회 호출도 차단).
+    # improve(management 재생성 등 시스템 호출)는 프로젝트 컨텍스트가 없을 수 있어 제외.
+    if body.mode == GenerationMode.CREATE and not body.project_id:
+        raise HTTPException(
+            status_code=400, detail="생성 결과를 저장할 프로젝트를 먼저 선택해주세요."
+        )
     generation_id = await generator_service.start_generation(body, created_by=current_user.id)
     return GenerationTaskResponse(
         generation_id=generation_id,
@@ -244,6 +266,120 @@ async def get_generation(generation_id: str):
     if detail is None:
         raise HTTPException(status_code=404, detail="Generation not found")
     return detail
+
+
+@router.get("/generations/{generation_id}/download-zip")
+async def download_generation_zip(generation_id: str):
+    """생성된 모든 후보 이미지를 ZIP으로 묶어 다운로드."""
+    data = await generator_service.download_zip(generation_id)
+    if data is None:
+        raise HTTPException(status_code=404, detail="다운로드할 이미지가 없습니다.")
+    return Response(
+        content=data,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="ads-{generation_id[:8]}.zip"'},
+    )
+
+
+# ── 플랫폼별 리레이아웃 (온디맨드 PIL 렌더, LLM 재호출 없음) ──────────────────
+
+
+@router.get("/candidates/{candidate_id}/render")
+async def render_candidate(candidate_id: str, platform: str = "ig_feed"):
+    """후보를 지정 플랫폼 사이즈로 리레이아웃해 PNG로 반환. (img 태그 호환 — 인증 없음)"""
+    if platform not in PLATFORM_SIZES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"지원하지 않는 플랫폼: {platform} (가능: {', '.join(PLATFORM_SIZES)})",
+        )
+    data = await generator_service.render_candidate(candidate_id, platform)
+    if data is None:
+        raise HTTPException(
+            status_code=404, detail="리레이아웃할 base 이미지가 없습니다(신규 생성물부터 지원)."
+        )
+    return Response(content=data, media_type="image/png")
+
+
+# ── 브랜드 키트 (조직 단위 — 색·로고·톤 저장/불러오기) ────────────────────────
+
+
+class BrandKitBody(BaseModel):
+    name: str
+    brand_color: str | None = None
+    brand_logo_key: str | None = None
+    tone_and_manner: str | None = None
+
+
+async def _org_id_for(user: User, db: AsyncSession) -> str:
+    member = await db.scalar(
+        select(OrganizationMember).where(OrganizationMember.user_id == user.id)
+    )
+    if not member:
+        raise HTTPException(status_code=404, detail="소속 조직을 찾을 수 없습니다.")
+    return str(member.organization_id)
+
+
+@router.get("/brand-kits")
+async def list_brand_kits(
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    org_id = await _org_id_for(current_user, db)
+    return {"kits": await brand_kit_service.list_kits(org_id)}
+
+
+@router.post("/brand-kits")
+async def create_brand_kit(
+    body: BrandKitBody,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if not body.name.strip():
+        raise HTTPException(status_code=400, detail="키트 이름을 입력하세요.")
+    org_id = await _org_id_for(current_user, db)
+    return await brand_kit_service.create_kit(
+        org_id,
+        current_user.id,
+        name=body.name,
+        brand_color=body.brand_color,
+        brand_logo_key=body.brand_logo_key,
+        tone_and_manner=body.tone_and_manner,
+    )
+
+
+@router.put("/brand-kits/{kit_id}")
+async def update_brand_kit(
+    kit_id: str,
+    body: BrandKitBody,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if not body.name.strip():
+        raise HTTPException(status_code=400, detail="키트 이름을 입력하세요.")
+    org_id = await _org_id_for(current_user, db)
+    kit = await brand_kit_service.update_kit(
+        org_id,
+        kit_id,
+        name=body.name,
+        brand_color=body.brand_color,
+        brand_logo_key=body.brand_logo_key,
+        tone_and_manner=body.tone_and_manner,
+    )
+    if kit is None:
+        raise HTTPException(status_code=404, detail="브랜드 키트를 찾을 수 없습니다.")
+    return kit
+
+
+@router.delete("/brand-kits/{kit_id}")
+async def delete_brand_kit(
+    kit_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    org_id = await _org_id_for(current_user, db)
+    if not await brand_kit_service.delete_kit(org_id, kit_id):
+        raise HTTPException(status_code=404, detail="브랜드 키트를 찾을 수 없습니다.")
+    return {"ok": True}
 
 
 @router.post("/generations/{generation_id}/select")

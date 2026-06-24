@@ -1,0 +1,29 @@
+{
+  "data": [
+    {
+      "age": "25-34",
+      "gender": "female",
+      "impressions": "420",
+      "clicks": "31",
+      "spend": "2600",
+      "reach": "410"
+    },
+    {
+      "age": "25-34",
+      "gender": "male",
+      "impressions": "310",
+      "clicks": "18",
+      "spend": "1900",
+      "reach": "305"
+    },
+    {
+      "age": "35-44",
+      "gender": "female",
+      "impressions": "180",
+      "clicks": "9",
+      "spend": "1100",
+      "reach": "178"
+    }
+  ],
+  "paging": { "cursors": { "before": "MA", "after": "MA" } }
+}

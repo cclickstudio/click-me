@@ -1,0 +1,30 @@
+{
+  "data": [
+    {
+      "id": "23842000000000777",
+      "name": "여름 세일 · 메인 비주얼",
+      "creative": {
+        "id": "23842000000000901",
+        "title": "여름 세일 최대 50%",
+        "body": "시즌 오프 특가, 지금 만나보세요.",
+        "image_url": "https://scontent.example.com/ad_image_a.jpg",
+        "thumbnail_url": "https://scontent.example.com/ad_thumb_a.jpg",
+        "asset_feed_spec": {
+          "images": [{ "url": "https://scontent.example.com/ad_asset_hi_a.jpg" }]
+        }
+      }
+    },
+    {
+      "id": "23842000000000778",
+      "name": "여름 세일 · 모델 컷",
+      "creative": {
+        "id": "23842000000000902",
+        "title": "데일리룩 완성",
+        "body": "가볍게 입기 좋은 데일리 아이템.",
+        "image_url": "https://scontent.example.com/ad_image_b.jpg",
+        "thumbnail_url": "https://scontent.example.com/ad_thumb_b.jpg"
+      }
+    }
+  ],
+  "paging": { "cursors": { "before": "MA", "after": "MA" } }
+}

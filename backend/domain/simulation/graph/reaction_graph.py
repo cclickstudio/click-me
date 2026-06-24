@@ -1,7 +1,8 @@
 # 반응 유닛 — 페르소나 1명 반응 생성 + QA 게이트(재시도 루프) LangGraph 서브그래프
 #
 # 토폴로지: gen_reaction → qa_gate →(retry) gen_reaction /(done) END
-# 통과 또는 최대 시도 도달 시 종료. 포기 시 qa_passed=False로 반환 → 집계가 자동 제외.
+# 통과 또는 최대 시도 도달 시 종료. 최대 시도 소진 후에도 미통과면 마지막 반응을
+# 강제 포함(qa_passed=True, 원 실패 사유는 qa_fail_reason에 보존) → 페르소나 전부 집계 반영.
 # reactor·qa 는 덕타이핑 주입(Protocol 포트 없음). 실 LLM/QA 어댑터는 wiring.py에서 교체.
 from __future__ import annotations
 
@@ -11,7 +12,7 @@ from langgraph.graph import END, START, StateGraph
 
 from domain.simulation.contracts.schemas import AdInterpretation, Persona, PersonaReaction
 
-MAX_ATTEMPTS = 2
+MAX_ATTEMPTS = 3
 
 
 class ReactionState(TypedDict):
@@ -40,6 +41,10 @@ def build_reaction_graph(*, reactor, qa):
         passed, reason = await qa.check(
             state["reaction"], state["attempts"], persona=state["persona"], ad=state["ad"]
         )
+        # 최대 시도 소진 후에도 미통과면 마지막 반응을 강제 포함(페르소나 전부 집계 반영).
+        # qa_passed=True로 덮되 원 실패 사유(reason)는 qa_fail_reason에 남겨 추적 가능하게.
+        if not passed and state["attempts"] >= MAX_ATTEMPTS:
+            passed = True
         updated = state["reaction"].model_copy(
             update={"qa_passed": passed, "qa_fail_reason": reason}
         )
@@ -48,9 +53,7 @@ def build_reaction_graph(*, reactor, qa):
     def route(state: ReactionState) -> str:
         reaction = state["reaction"]
         if reaction.qa_passed:
-            return "done"
-        if state["attempts"] >= MAX_ATTEMPTS:
-            return "done"  # 포기 — qa_passed=False 유지, 집계에서 제외
+            return "done"  # 통과 또는 최대 시도 소진 후 qa_gate가 강제 포함시킨 경우
         return "retry"
 
     graph = StateGraph(ReactionState)
@@ -63,6 +66,16 @@ def build_reaction_graph(*, reactor, qa):
 
 
 async def run_reaction(graph, persona: Persona, ad: AdInterpretation) -> PersonaReaction:
-    """서브그래프 1회 실행 → 최종 PersonaReaction 반환."""
-    final = await graph.ainvoke({"persona": persona, "ad": ad, "attempts": 0, "reaction": None})
+    """서브그래프 1회 실행 → 최종 PersonaReaction 반환.
+
+    상위 시뮬레이션 Trace(simulation.simulate) 아래의 페르소나별 하위 Node로 묶인다
+    (run_name=simulation.react). 별도 Trace가 아니라 부모 컨텍스트에 자동 부착된다.
+    """
+    pid = getattr(persona, "id", None) or getattr(persona, "persona_id", None)
+    config: dict = {"run_name": "simulation.react"}
+    if pid:
+        config["metadata"] = {"persona_id": str(pid)}
+    final = await graph.ainvoke(
+        {"persona": persona, "ad": ad, "attempts": 0, "reaction": None}, config=config
+    )
     return final["reaction"]
