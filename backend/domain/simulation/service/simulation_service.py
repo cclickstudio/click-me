@@ -13,6 +13,7 @@ from collections.abc import AsyncIterator
 
 from core.tracing import make_trace_config
 from domain.simulation.contracts.schemas import SimulationRunRequest
+from domain.simulation.tools.aggregation.ocean_segments import ocean_segment_breakdown
 from domain.simulation.tools.objective_fit import assess_objective_fit
 
 logger = logging.getLogger("clickme")
@@ -178,6 +179,8 @@ class SimulationService:
                 "reactions": reactions,
                 "rubric_scores": rubric_dump,
                 "aggregate": aggregate_dump,
+                # OCEAN 성향별 반응 분해(결과 해석) — 연령×성별 외 '성격 축'. 빈 입력이면 빈 구조.
+                "ocean_segments": ocean_segment_breakdown(personas, reaction_objs),
             }
             # 캠페인 목표 달성 가능성(결정론 룰) — 목표 선언 + 집계가 있을 때만(exploratory).
             if request.ad_objective and aggregate_obj is not None:
