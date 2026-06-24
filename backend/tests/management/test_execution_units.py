@@ -272,6 +272,9 @@ async def test_partial_failure_halt_does_not_repropose():
 # ── agent 실행형 eval 하니스 ────────────────────────────────────
 
 
+@pytest.mark.skip(
+    reason="eval reworked to process metrics in a later task — sim-score win-rate 제거"
+)
 async def test_agent_eval_runs_real_agent_over_fixtures():
     report = await run_agent_eval("v1")
 

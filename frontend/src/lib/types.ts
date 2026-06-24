@@ -703,20 +703,6 @@ export interface GenerationDetail {
   publish_logs: GenerationPublishLog[];
 }
 
-export interface CampaignResult {
-  generation_id: string;
-  candidate_id: string;
-  status: "created" | "failed" | "mocked";
-  success: boolean;
-  mocked: boolean;
-  campaign_id: string | null;
-  adset_id: string | null;
-  creative_id: string | null;
-  ad_id: string | null;
-  error: string | null;
-  ads_manager_url: string | null;
-}
-
 export interface PublishResult {
   generation_id: string;
   candidate_id: string;

@@ -18,8 +18,10 @@ class OrganicInsightsReader(Protocol):
 class PredictionReader(Protocol):
     """집행 전 시뮬 예측 읽기 — 시뮬 디커플링 슬롯.
 
-    지금은 MockPredictionReader, 시뮬 안정화 후 SimPredictionReader로 교체(wiring 한 줄).
-    ad_id에 예측이 없으면 None(시뮬 미연결).
+    simulation_id로 해당 시뮬 런의 예측을 읽는다. tenant_id로 org 대조(타 org 노출 차단).
+    예측이 없거나 org 불일치면 None(시뮬 미연결).
     """
 
-    async def get_prediction(self, ad_id: str) -> PredictionSnapshot | None: ...
+    async def get_prediction(
+        self, simulation_id: str, tenant_id: str
+    ) -> PredictionSnapshot | None: ...

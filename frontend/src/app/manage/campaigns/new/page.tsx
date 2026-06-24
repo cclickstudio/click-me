@@ -20,6 +20,7 @@ export default function Page() {
   const [metaError, setMetaError] = useState<string | null>(null); // Meta 거부 사용자용 메시지
   const [activating, setActivating] = useState(false);
   const [activateResult, setActivateResult] = useState<ActivateResponse | null>(null);
+  const [adSkipped, setAdSkipped] = useState(false);
 
   const createProposal = async (v: CampaignFormValues) => {
     setBusy(true);
@@ -62,10 +63,12 @@ export default function Page() {
       };
       setResult(resp.result);
       if (resp.error_message) setMetaError(resp.error_message); // Meta 거부 사유 표시
-      setStep('done');
       // 생성(PAUSED) 성공 + LIVE(Meta id 존재)면 곧바로 게재 시도 → 부족하면 충전 페이지로.
       const metaId = resp.result?.platform_response_snapshot?.campaign_meta_id;
-      if (resp.result?.status === 'success' && metaId) {
+      const adSkippedFlag = resp.result?.platform_response_snapshot?.ad_creation_skipped === true;
+      setAdSkipped(adSkippedFlag);
+      setStep('done');
+      if (resp.result?.status === 'success' && metaId && !adSkippedFlag) {
         await runActivate(metaId, proposal.max_total_spend_krw);
       }
     } catch (e) {
@@ -81,6 +84,7 @@ export default function Page() {
     setError(null);
     setMetaError(null);
     setActivateResult(null);
+    setAdSkipped(false);
     setStep('form');
   };
 
@@ -146,7 +150,12 @@ export default function Page() {
                 {/* 게재 미시작(자동 시도 실패 등) 시의 수동 재시도 — 잔액 부족이면 충전 페이지로 이동 */}
                 {!activating && !activateResult && (
                   <div className="mt-4">
-                    {metaCampaignId ? (
+                    {adSkipped ? (
+                      <p className="text-xs text-[#8B95A1]">
+                        광고 소재가 없어 게재할 수 없습니다. Meta Ads Manager에서 소재를 추가한 뒤
+                        게재하세요.
+                      </p>
+                    ) : metaCampaignId ? (
                       <button
                         onClick={startDelivery}
                         disabled={activating}

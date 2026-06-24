@@ -1,6 +1,7 @@
 """광고 제너레이터 API — graph 파이프라인 기반.
 
-생성 시작(생성/개선) / SSE 스트림 / 결과 조회 / 후보 선택 / 게시 / 광고집행 / 이력.
+생성 시작(생성/개선) / SSE 스트림 / 결과 조회 / 후보 선택 / 게시 / 이력.
+집행은 management 단일 경로(approve→execute→executor)로 일원화 — generator 직접 집행 API 제거.
 """
 
 import io
@@ -15,7 +16,6 @@ from pydantic import BaseModel
 
 from core.auth import get_current_user
 from core.models import User
-from domain.generator.adapters.meta_ads import AdvertiseRequest
 from domain.generator.contracts.enums import GenerationMode
 from domain.generator.contracts.schemas import GenerationCreateRequest
 from domain.generator.service import generator_service
@@ -269,15 +269,6 @@ async def select_candidate(generation_id: str, body: CandidateSelectRequest):
     if not ok:
         raise HTTPException(status_code=404, detail="Candidate not found in this generation")
     return {"generation_id": generation_id, "selected_candidate_id": body.candidate_id}
-
-
-@router.post("/generations/{generation_id}/advertise")
-async def advertise_candidate(generation_id: str, body: AdvertiseRequest):
-    """사용자 승인 액션 — 선택된 후보를 Meta Marketing API로 광고 집행 (기본 PAUSED)."""
-    result = await generator_service.advertise_candidate(generation_id, body)
-    if result is None:
-        raise HTTPException(status_code=404, detail="Candidate not found in this generation")
-    return result
 
 
 @router.post("/generations/{generation_id}/publish")
