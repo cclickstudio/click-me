@@ -8,9 +8,10 @@
 import math
 import random
 from datetime import UTC, datetime
+from uuid import uuid4
 
 from domain.management.comparison.schemas import PostInsights, PostType
-from domain.management.contracts.enums import CampaignState, RelevanceRank
+from domain.management.contracts.enums import CampaignState, RelevanceRank, ResultStatus
 from domain.management.contracts.fault_injection import FaultConfig, FaultMode
 from domain.management.contracts.policy import (
     AUDIENCE_SIZE,
@@ -21,6 +22,7 @@ from domain.management.contracts.policy import (
 )
 from domain.management.contracts.schemas import (
     AccountFunding,
+    ActionResult,
     CampaignConfig,
     CampaignInfo,
     CreativePreview,
@@ -288,6 +290,41 @@ class MockAdPlatform:
                 )
             )
         return snapshots
+
+    def _ok(self, operation: str, idem_key: str) -> ActionResult:
+        """성공 ActionResult 합성 — mock 쓰기 메서드 공통 반환값."""
+        return ActionResult(
+            result_id=str(uuid4()),
+            approval_id="",
+            status=ResultStatus.SUCCESS,
+            platform_response_snapshot={"dry_run": True, "operation": operation},
+            executed_at=datetime.now(UTC),
+            idempotency_key=idem_key,
+        )
+
+    async def create_link_ad(
+        self,
+        config: CampaignConfig,
+        adset_id: str,
+        idem_key: str,
+        *,
+        page_id: str,
+        image_hash: str | None = None,
+    ) -> ActionResult:
+        """mock — traffic 링크광고 생성(항상 성공)."""
+        return self._ok("create_link_ad", idem_key)
+
+    async def create_full_campaign(
+        self, config: CampaignConfig, idem_key: str, *, page_id: str | None = None
+    ) -> ActionResult:
+        """mock 오케스트레이션 — 캠페인→광고세트→(traffic+link_url면 광고) 합성."""
+        adset_result = self._ok("create_adset", f"{idem_key}-adset")
+        if config.objective != "leads":
+            if config.link_url:
+                return self._ok("create_link_ad", f"{idem_key}-ad")
+            return adset_result
+        # leads: 폼→광고까지
+        return self._ok("create_ad", f"{idem_key}-ad")
 
 
 class MockOrganicReader:

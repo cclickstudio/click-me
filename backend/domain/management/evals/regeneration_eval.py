@@ -9,14 +9,14 @@ from __future__ import annotations
 
 import json
 from collections import Counter
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from pydantic import ValidationError
 
+from domain.management.agents.outcome import OutcomeKind
 from domain.management.agents.regeneration import (
-    BANNED_EXPRESSIONS,
     MAX_CANDIDATES,
     CreativeCandidate,
     RemediationAgent,
@@ -24,6 +24,7 @@ from domain.management.agents.regeneration import (
     RiskAppetite,
     decide_action,
 )
+from domain.management.agents.selection import InMemorySelectionRoundStore
 from domain.management.contracts.enums import FailureReason
 from domain.management.contracts.schemas import (
     ActionProposal,
@@ -120,24 +121,45 @@ def action_selection_accuracy(records: Sequence[RegenerationRecord]) -> float:
     return sum(1 for r in labeled if r.chosen_action == r.expected_action) / len(labeled)
 
 
+def guard_pass_rate(*, kept: int, total: int) -> float:
+    """가드 통과율 — 프로세스 지표(스펙 §11)."""
+    return kept / total if total else 0.0
+
+
+def execution_blocked_by_budget_rate(failure_reasons: list[str]) -> float:
+    """executor BUDGET_CAP_EXCEEDED 집계 → v1.5 budget preflight 칼리브레이션(스펙 §11)."""
+    if not failure_reasons:
+        return 0.0
+    blocked = sum(1 for r in failure_reasons if r == "BUDGET_CAP_EXCEEDED")
+    return blocked / len(failure_reasons)
+
+
+def rate(numerator: int, denominator: int) -> float:
+    """HITL 선택 메트릭 공용 비율 — outcome 로그 집계로 산출(스펙 §11):
+    awaiting_selection_emit_rate(AWAITING_SELECTION/전체 rank),
+    selection_package_success_rate(PROPOSED/claim 시도),
+    expired_selection_reject_rate(만료 거부/claim 시도)."""
+    return numerator / denominator if denominator else 0.0
+
+
 def failure_breakdown(records: Sequence[RegenerationRecord]) -> dict[str, int]:
     counter = Counter(str(r.failure_reason) for r in records if r.failure_reason is not None)
     return dict(counter)
 
 
 def summarize(records: Sequence[RegenerationRecord], fixture_version: str = "v1") -> EvalReport:
-    rate = win_rate(records)
+    win_rate_value = win_rate(records)
     return EvalReport(
         fixture_version=fixture_version,
         total_cases=len(records),
-        win_rate=rate,
+        win_rate=win_rate_value,
         guardrail_pass_rate=guardrail_pass_rate(records),
         schema_compliance_rate=schema_compliance_rate(records),
         tool_call_success_rate=tool_call_success_rate(records),
         tool_failure_recovery_rate=tool_failure_recovery_rate(records),
         action_selection_accuracy=action_selection_accuracy(records),
         failure_breakdown=failure_breakdown(records),
-        meets_win_rate_target=rate >= WIN_RATE_TARGET,
+        meets_win_rate_target=win_rate_value >= WIN_RATE_TARGET,
     )
 
 
@@ -190,23 +212,6 @@ class _CountingGenerator:
         return self.candidates
 
 
-@dataclass
-class _CountingScorer:
-    """결정론 시뮬 점수 tool 스텁 — fail_ids 후보는 매 호출 실패(폴백 유도)."""
-
-    scores: dict[str, float]
-    fail_ids: set[str] = field(default_factory=set)
-    calls: int = 0
-    failures: int = 0
-
-    async def score(self, candidate: CreativeCandidate) -> float:
-        self.calls += 1
-        if candidate.candidate_id in self.fail_ids:
-            self.failures += 1
-            raise TimeoutError("시뮬 tool 고장 주입")
-        return self.scores[candidate.candidate_id]
-
-
 _EVAL_CONTEXT_DEFAULTS = {
     "ad_account_id": "act_eval",
     "target_object_ids": ("camp-eval-1",),
@@ -219,22 +224,36 @@ _EVAL_CONTEXT_DEFAULTS = {
 }
 
 
-def _score_proposal(
-    proposal: ActionProposal | None, banned_ids: set[str]
-) -> tuple[tuple[float, ...], bool, bool]:
-    """(후보 점수들, 가드 통과 여부, 스키마 적합 여부) 관측."""
+async def _drive_to_proposal(
+    agent: RemediationAgent, diagnosis: DiagnosisResult, context: RemediationContext
+) -> ActionProposal | None:
+    """rank()→(크리에이티브면 idx 0 자동선택)package() → 제안 또는 빈손.
+
+    채점이 사라진 v1 — 순위는 4-3 idx 통과이므로 eval은 최상위 후보를 자동 선택해
+    제안 도달 여부(프로세스 지표)만 관측한다. 실제 HITL 선택은 데모/프론트에서.
+    """
+    outcome = await agent.rank(diagnosis, context)
+    if outcome.kind is OutcomeKind.AWAITING_SELECTION:
+        outcome = await agent.package(
+            outcome.selection_token,
+            tenant_id=diagnosis.tenant_id,
+            selected_id=outcome.candidates[0]["candidate_id"],
+        )
+    return outcome.proposal if outcome.kind is OutcomeKind.PROPOSED else None
+
+
+def _observe_proposal(proposal: ActionProposal | None) -> tuple[bool, bool]:
+    """(가드 통과 여부, 스키마 적합 여부) 관측 — 채점 없는 v1 프로세스 지표."""
     if proposal is None:
-        return (), True, True
-    evidence = proposal.evidence_metrics["candidates"]
-    scores = tuple(c["sim_score"] for c in evidence)
-    survivor_ids = {c["candidate_id"] for c in evidence}
-    guard_ok = not (banned_ids & survivor_ids) and len(evidence) <= MAX_CANDIDATES
+        return True, True
+    survivors = proposal.evidence_metrics.get("candidates", [])
+    guard_ok = len(survivors) <= MAX_CANDIDATES
     try:
         ActionProposal.model_validate(proposal.model_dump())
         valid = verify_proposal_hash(proposal)
     except ValidationError:
         valid = False
-    return scores, guard_ok, valid
+    return guard_ok, valid
 
 
 async def run_agent_eval(
@@ -243,8 +262,8 @@ async def run_agent_eval(
 ) -> EvalReport:
     """fixture 진단마다 진짜 agent를 실행해 RegenerationRecord를 생산·채점한다.
 
-    tool은 fixture가 정의한 결정론 스텁 — 실제 생성·시뮬 tool이 확정되면
-    ``agent_factory`` 주입으로 교체한다 (개선율 ≥70%는 그때부터 실측).
+    채점은 4-3로 이관됐다(B는 채점 안 함) — 이 하니스는 생성 위임·guard·복구의
+    프로세스 지표만 관측한다. tool은 fixture 후보를 통과시키는 결정론 스텁.
     """
     path = FIXTURES_DIR / f"diagnosis_cases_{fixture_version}.json"
     cases = json.loads(path.read_text(encoding="utf-8"))
@@ -252,40 +271,40 @@ async def run_agent_eval(
     for case in cases:
         diagnosis = DiagnosisResult.model_validate(case["diagnosis"])
         candidates = [
-            CreativeCandidate(candidate_id=c["candidate_id"], ad_copy=c["ad_copy"])
-            for c in case["candidates"]
+            CreativeCandidate(
+                candidate_id=c["candidate_id"],
+                # fixture 키 호환: "ad_copy"(구형) 또는 "copy"(현행) 모두 허용.
+                copy=c.get("copy") or c.get("ad_copy", ""),
+                idx=i,
+                # guard asset 규칙(GENERATED_NEW): image_ref가 있어야 통과 — mock s3_key 주입.
+                image_ref=c.get("image_ref") or f"s3/{c['candidate_id']}.png",
+            )
+            for i, c in enumerate(case["candidates"])
         ]
         generator = _CountingGenerator(
             candidates=candidates, fail_times=case.get("generator_fail_times", 0)
         )
-        scorer = _CountingScorer(
-            scores={c["candidate_id"]: c["score"] for c in case["candidates"]},
-            fail_ids=set(case.get("scorer_fail_ids", [])),
-        )
         if agent_factory is not None:
-            agent = agent_factory(generator=generator, scorer=scorer)
+            agent = agent_factory(generator=generator)
         else:
-            agent = RemediationAgent(generator=generator, scorer=scorer)
+            agent = RemediationAgent(
+                generator=generator, selection_store=InMemorySelectionRoundStore()
+            )
         context = RemediationContext(**_EVAL_CONTEXT_DEFAULTS)
 
-        proposal = await agent.propose(diagnosis, context)
+        proposal = await _drive_to_proposal(agent, diagnosis, context)
 
-        banned_ids = {
-            c["candidate_id"]
-            for c in case["candidates"]
-            if any(banned in c["ad_copy"] for banned in BANNED_EXPRESSIONS)
-        }
-        scores, guard_ok, valid = _score_proposal(proposal, banned_ids)
-        tool_failures = generator.failures + scorer.failures
+        guard_ok, valid = _observe_proposal(proposal)
+        tool_failures = generator.failures
         recovered = proposal is not None or tool_failures == 0
         records.append(
             RegenerationRecord(
                 case_id=case["case_id"],
                 baseline_score=case["baseline_score"],
-                candidate_scores=scores,
+                candidate_scores=(),
                 guardrail_passed=guard_ok,
                 proposal_valid=valid,
-                tool_calls=generator.calls + scorer.calls,
+                tool_calls=generator.calls,
                 tool_failures=tool_failures,
                 recovered=recovered,
                 failure_reason=None if recovered else FailureReason.TIMEOUT,
@@ -348,13 +367,13 @@ async def run_default_tools_eval(fixture_version: str = "v1") -> EvalReport:
     for case in cases:
         diagnosis = DiagnosisResult.model_validate(case["diagnosis"])
         context = RemediationContext(**_EVAL_CONTEXT_DEFAULTS)
-        proposal = await agent.propose(diagnosis, context)
-        scores, guard_ok, valid = _score_proposal(proposal, banned_ids=set())
+        proposal = await _drive_to_proposal(agent, diagnosis, context)
+        guard_ok, valid = _observe_proposal(proposal)
         records.append(
             RegenerationRecord(
                 case_id=case["case_id"],
                 baseline_score=case["baseline_score"],
-                candidate_scores=scores,
+                candidate_scores=(),
                 guardrail_passed=guard_ok,
                 proposal_valid=valid,
                 fixture_version=fixture_version,

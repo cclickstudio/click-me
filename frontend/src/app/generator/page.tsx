@@ -7,7 +7,6 @@ import { api } from "@/lib/api";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 import type {
-  CampaignResult,
   GenerationDetail,
   GeneratorCandidate,
   PublishResult,
@@ -15,6 +14,7 @@ import type {
   QualityReport,
   SSEProgressEvent,
 } from "@/lib/types";
+import type { ActionResult } from "@/components/manage/types";
 
 // ── 타입 ─────────────────────────────────────────────────────────────────────
 
@@ -33,14 +33,16 @@ const OBJECTIVES = [
   { value: "promotion", label: "프로모션 반응" },
 ];
 
+// Meta 캠페인 목적 — 현재 집행(from-candidate)이 실제 지원하는 건 traffic·leads뿐.
+// 나머지는 로드맵 노출용으로 두되 disabled 처리(선택 불가) → 잘못된 값 전송 방지.
 const META_OBJECTIVES = [
-  { value: "OUTCOME_TRAFFIC", label: "트래픽" },
-  { value: "OUTCOME_AWARENESS", label: "인지도" },
-  { value: "OUTCOME_ENGAGEMENT", label: "참여" },
-  { value: "OUTCOME_LEADS", label: "리드" },
-  { value: "OUTCOME_SALES", label: "판매" },
-  { value: "OUTCOME_APP_PROMOTION", label: "앱 홍보" },
-];
+  { value: "traffic", label: "트래픽 (링크 클릭)", supported: true },
+  { value: "leads", label: "리드 (잠재고객 폼)", supported: true },
+  { value: "awareness", label: "인지도", supported: false },
+  { value: "engagement", label: "참여", supported: false },
+  { value: "sales", label: "판매", supported: false },
+  { value: "app_promotion", label: "앱 홍보", supported: false },
+] as const;
 
 const SIZES = [
   { label: "1:1 (1080×1080)", width: 1080, height: 1080 },
@@ -210,16 +212,18 @@ function CandidateModal({
   const [publishResult, setPublishResult] = useState<PublishResult | null>(null);
   const [publishError, setPublishError] = useState<string | null>(null);
 
-  // Meta 광고 집행
-  const [adObjective, setAdObjective] = useState("OUTCOME_TRAFFIC");
+  // Meta 광고 집행 — 시뮬 없는 빠른 집행(from-candidate→approve→execute, PAUSED 생성)
+  const [campaignName, setCampaignName] = useState(candidate.copy.headline);
+  const [adObjective, setAdObjective] = useState<"traffic" | "leads">("traffic");
+  const [linkUrl, setLinkUrl] = useState("");
   const [adBudget, setAdBudget] = useState(10000);
+  const [startDate, setStartDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [endDate, setEndDate] = useState<string | null>(null);
   const [ageMin, setAgeMin] = useState(18);
   const [ageMax, setAgeMax] = useState(65);
   const [countries, setCountries] = useState<string[]>(["KR"]);
-  const [startDate, setStartDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [endDate, setEndDate] = useState<string | null>(null);
   const [advertising, setAdvertising] = useState(false);
-  const [advertiseResult, setAdvertiseResult] = useState<CampaignResult | null>(null);
+  const [advertiseResult, setAdvertiseResult] = useState<ActionResult | null>(null);
   const [advertiseError, setAdvertiseError] = useState<string | null>(null);
 
   async function handlePublish() {
@@ -240,19 +244,36 @@ function CandidateModal({
   }
 
   async function handleAdvertise() {
+    if (!linkUrl.trim()) {
+      setAdvertiseError("목적지 URL(link_url)을 입력하세요.");
+      return;
+    }
     setAdvertising(true);
     setAdvertiseError(null);
+    setAdvertiseResult(null);
     try {
-      const result = (await api.generator.advertise(generationId, {
+      // 집행은 management 단일 경로로 일원화 — 후보를 제안으로 패키징한 뒤 승인·실행.
+      const { proposal } = await api.management.fromCandidate({
+        generation_id: generationId,
         candidate_id: candidate.candidate_id,
-        budget: adBudget,
         objective: adObjective,
-        targeting: { age_min: ageMin, age_max: ageMax, genders: [], countries },
-        destination_url: "https://example.com",
+        link_url: linkUrl.trim(),
+        name: campaignName.trim() || candidate.copy.headline,
+        daily_budget_krw: adBudget,
         start_date: startDate,
         end_date: endDate,
-      })) as CampaignResult;
-      setAdvertiseResult(result);
+        country: countries[0] ?? "KR",
+        age_min: ageMin,
+        age_max: ageMax,
+        gender: "all",
+      });
+      const a = (await api.management.approve(proposal, true)) as { approved_action: unknown };
+      const resp = (await api.management.execute(a.approved_action, proposal)) as {
+        result: ActionResult;
+        error_message?: string;
+      };
+      setAdvertiseResult(resp.result);
+      if (resp.error_message) setAdvertiseError(resp.error_message);
     } catch (e) {
       setAdvertiseError(e instanceof Error ? e.message : "Meta 광고 집행에 실패했습니다.");
     } finally {
@@ -463,49 +484,55 @@ function CandidateModal({
             {/* Meta 광고 집행 */}
             <section className="space-y-3 pt-2 border-t border-[#E5E8EB] dark:border-[#2D3748]">
               <h3 className="text-xs font-bold text-[#8B95A1] dark:text-[#6B7280] uppercase tracking-widest">
-                Meta 광고 집행
+                캠페인 생성
               </h3>
               {advertiseResult ? (
                 <div
                   className={`px-3 py-3 rounded-xl text-sm ${
-                    advertiseResult.success
+                    advertiseResult.status === "success"
                       ? "bg-[#00C471]/10 text-[#00C471]"
                       : "bg-[#FFF0F0] dark:bg-[#3A2228] text-[#F74D4D]"
                   }`}
                 >
-                  {advertiseResult.mocked ? (
-                    <>
-                      <p className="font-semibold">Mock 모드로 광고 집행 시뮬레이션 완료</p>
-                      <p className="text-xs opacity-80 mt-1">
-                        META_AD_ACCOUNT_ID, META_PAGE_ID, META_INSTAGRAM_ACCOUNT_ID,
-                        META_ACCESS_TOKEN이 설정되어 있으면 실제 캠페인이 생성됩니다.
-                      </p>
-                    </>
-                  ) : advertiseResult.success ? (
-                    <div className="space-y-0.5">
-                      <p>캠페인 ID: {advertiseResult.campaign_id}</p>
-                      <p>광고세트 ID: {advertiseResult.adset_id}</p>
-                      <p>크리에이티브 ID: {advertiseResult.creative_id}</p>
-                      <p>광고 ID: {advertiseResult.ad_id}</p>
-                      {advertiseResult.ads_manager_url && (
-                        <p className="mt-1">
-                          <a
-                            href={advertiseResult.ads_manager_url}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-[#3182F6] hover:underline"
-                          >
-                            페이스북 Ads Manager 바로가기
-                          </a>
+                  {advertiseResult.status === "success" ? (
+                    advertiseResult.platform_response_snapshot?.campaign_meta_id ? (
+                      <div className="space-y-0.5">
+                        <p className="font-semibold">캠페인 생성 완료 (PAUSED)</p>
+                        <p>
+                          캠페인 ID: {advertiseResult.platform_response_snapshot.campaign_meta_id}
                         </p>
-                      )}
-                    </div>
+                        <p className="text-xs opacity-80 mt-1">
+                          캠페인·광고세트가 PAUSED로 생성됐습니다(미게재·과금 0). 광고 소재(리드
+                          캠페인은 리드폼 포함)는 Meta Ads Manager에서 추가한 뒤 거기서 게재하세요.
+                        </p>
+                      </div>
+                    ) : (
+                      <>
+                        <p className="font-semibold">캠페인 생성 절차 검증 완료</p>
+                        <p className="text-xs opacity-80 mt-1">
+                          현재 모드에선 실제 생성이 일어나지 않습니다(검증/모의). LIVE 모드일 때 실제
+                          Meta 캠페인이 PAUSED로 생성됩니다.
+                        </p>
+                      </>
+                    )
                   ) : (
-                    <p>광고 집행 실패: {advertiseResult.error}</p>
+                    <p>광고 집행 실패: {advertiseError ?? "알 수 없는 오류"}</p>
                   )}
                 </div>
               ) : (
                 <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-medium text-[#4E5968] dark:text-[#9CA3AF] mb-1">
+                      캠페인 이름
+                    </label>
+                    <input
+                      type="text"
+                      className={inputCls}
+                      value={campaignName}
+                      onChange={(e) => setCampaignName(e.target.value)}
+                      disabled={advertising}
+                    />
+                  </div>
                   <div>
                     <label className="block text-xs font-medium text-[#4E5968] dark:text-[#9CA3AF] mb-1">
                       광고 목적
@@ -513,14 +540,29 @@ function CandidateModal({
                     <select
                       className={inputCls}
                       value={adObjective}
-                      onChange={(e) => setAdObjective(e.target.value)}
+                      onChange={(e) => setAdObjective(e.target.value as "traffic" | "leads")}
+                      disabled={advertising}
                     >
                       {META_OBJECTIVES.map((o) => (
-                        <option key={o.value} value={o.value}>
+                        <option key={o.value} value={o.value} disabled={!o.supported}>
                           {o.label}
+                          {o.supported ? "" : " (준비 중)"}
                         </option>
                       ))}
                     </select>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-[#4E5968] dark:text-[#9CA3AF] mb-1">
+                      목적지 URL
+                    </label>
+                    <input
+                      type="url"
+                      placeholder="https://example.com/landing"
+                      className={inputCls}
+                      value={linkUrl}
+                      onChange={(e) => setLinkUrl(e.target.value)}
+                      disabled={advertising}
+                    />
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-[#4E5968] dark:text-[#9CA3AF] mb-1">
@@ -608,17 +650,17 @@ function CandidateModal({
                   {advertiseError && (
                     <p className="text-xs text-red-600 dark:text-red-400">{advertiseError}</p>
                   )}
+                  <p className="text-[11px] text-[#8B95A1] dark:text-[#6B7280]">
+                    예산·타겟까지 Meta에 캠페인을 만듭니다. 게재는 안 되며(PAUSED), 광고 소재는 Meta
+                    Ads Manager에서 추가하세요.
+                  </p>
                   <button
                     onClick={handleAdvertise}
                     disabled={advertising || adBudget < 1000}
                     className="w-full py-2.5 rounded-xl text-sm font-semibold text-white bg-[#3182F6] hover:bg-[#1B64DA] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                   >
-                    {advertising ? "광고 집행 중..." : "Meta 광고 집행"}
+                    {advertising ? "생성 중..." : "캠페인 생성하기"}
                   </button>
-                  <p className="text-xs text-[#F4A100]">
-                    ※ 모든 캠페인·광고세트·광고는 PAUSED 상태로 생성됩니다. 비용이 발생하지 않으며,
-                    활성화는 Facebook Ads Manager에서 직접 하셔야 합니다.
-                  </p>
                 </div>
               )}
             </section>
