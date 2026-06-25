@@ -179,18 +179,28 @@ def test_build_simulation_agent_none_without_key():
 
 
 @pytest.mark.asyncio
-async def test_generator_trigger_missing_fields_is_graceful():
+async def test_generator_no_product_no_id_is_graceful():
+    # product 정보·generation_id 모두 없음 → 트리거 대신 안내 답변(컨시어지 지향).
     async def fake_start(req, created_by=None):
-        raise AssertionError("필수 필드 누락이면 start_fn 호출되면 안 됨")
+        raise AssertionError("상품정보 없으면 트리거되면 안 됨")
 
     async def fake_detail(gid):
         return None
 
     sub = GeneratorSubAgent(start_fn=fake_start, detail_fn=fake_detail)
-    out = await sub.run(
-        SubAgentRequest(question="시안 만들어줘")
-    )  # product 필드 누락 → ValidationError
-    assert out.route is Route.GENERATION and out.error is not None
+    out = await sub.run(SubAgentRequest(question="시안 만들어줘"))
+    assert out.route is Route.GENERATION
+    assert out.error is None and out.answer  # start_fn 미호출 + 안내
+
+
+def test_build_generator_agent_none_without_key():
+    # 키 없음/use_mock이면 ReAct 미구성(None) → 서브에이전트가 구조화 폴백을 쓴다.
+    from types import SimpleNamespace
+
+    from domain.chat.adapters.gen_agent import build_generator_agent
+
+    assert build_generator_agent(SimpleNamespace(use_mock=True, anthropic_api_key="sk-x")) is None
+    assert build_generator_agent(SimpleNamespace(use_mock=False, anthropic_api_key=None)) is None
 
 
 def test_simulation_subagent_get_service_import_path(monkeypatch):

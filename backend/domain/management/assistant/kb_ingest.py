@@ -30,6 +30,7 @@ _SOURCE_META: dict[str, tuple[str, str | None]] = {
     # 챗 컨시어지(신규) — 내부 작성물(verified_by=manual, source_url 없음).
     "persona_methodology.md": ("persona_methodology", None),
     "simulation_trust.md": ("simulation_trust", None),
+    "platform_guide.md": ("platform_guide", None),
 }
 
 
