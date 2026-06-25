@@ -152,14 +152,13 @@ type SourceMeta = {
 // 채팅으로 실제 돌린 시뮬/생성 결과 참조 — 내역에 남겨 재로드 시 "결과 보기" 링크로 렌더.
 type ResultRef = { kind: 'sim' | 'gen'; id: string };
 type Message = {
-  id?: string; // DB 메시지 id(영속된 메시지에만 — 핀 토글용)
+  id?: string; // DB 메시지 id(영속된 메시지에만)
   role: 'user' | 'assistant';
   content: string;
   meta?: SourceMeta;
   imageUrl?: string;
   imageFile?: File;
   result?: ResultRef;
-  pinned?: boolean;
   created_at?: string | null; // 영속 메시지의 생성 시각(상대시간 표시용, P9)
 };
 
@@ -413,7 +412,6 @@ export default function ChatConversation({
               m.role === 'assistant'
                 ? ((rawMeta as SourceMeta | null) ?? undefined)
                 : undefined;
-            const pinned = rawMeta?.pinned === true;
             return {
               id: m.id,
               role: m.role,
@@ -421,7 +419,6 @@ export default function ChatConversation({
               meta,
               imageUrl,
               result,
-              pinned,
               created_at: m.created_at,
             };
           })
@@ -736,21 +733,6 @@ export default function ChatConversation({
     [isStreaming, projectId, consumeStream, onActivity, onProgress]
   );
 
-  // 핀 토글(T19) — DB 갱신 후 로컬 반영. 영속된(id 있는) 어시스턴트 메시지에만.
-  const togglePin = useCallback(async (id: string, next: boolean) => {
-    setMessages(prev =>
-      prev.map(m => (m.id === id ? { ...m, pinned: next } : m))
-    );
-    try {
-      await api.chat.pinMessage(id, next);
-    } catch {
-      // 실패 시 롤백
-      setMessages(prev =>
-        prev.map(m => (m.id === id ? { ...m, pinned: !next } : m))
-      );
-    }
-  }, []);
-
   // 단독 위젯 메시지(결과 요약·토론·토론 요약)를 DB에 영속화하고 화면에도 추가 — 새로고침 복원 가능.
   const appendWidgetMessages = useCallback(
     async (
@@ -782,7 +764,7 @@ export default function ChatConversation({
           sid,
           items.map(it => ({ content: it.content, meta: it.meta }))
         );
-        // 저장된 id를 반영(핀 등) — 방금 추가한 같은 수의 말풍선을 교체.
+        // 저장된 id를 반영 — 방금 추가한 같은 수의 말풍선을 교체.
         if (saved?.length === local.length) {
           setMessages(prev => {
             const next = [...prev];
@@ -1255,23 +1237,6 @@ export default function ChatConversation({
           ref={scrollRef}
           onScroll={onMessagesScroll}
           className='flex-1 overflow-y-auto'>
-          {/* 핀 고정 미리보기 — 세션 상단(T19) */}
-          {messages.some(m => m.pinned) && (
-            <div className='sticky top-0 z-10 bg-white/95 dark:bg-[#0F1117]/95 backdrop-blur border-b border-[#E5E8EB] dark:border-[#2D3748] px-4 py-2'>
-              <div className='max-w-2xl mx-auto space-y-1'>
-                {messages
-                  .filter(m => m.pinned)
-                  .map((m, i) => (
-                    <div
-                      key={i}
-                      className='flex items-center gap-1.5 text-xs text-[#4E5968] dark:text-[#9CA3AF]'>
-                      <span className='shrink-0'>📌</span>
-                      <span className='truncate'>{m.content}</span>
-                    </div>
-                  ))}
-              </div>
-            </div>
-          )}
           <div className='max-w-2xl mx-auto px-4 py-6 space-y-6'>
             {messages.map((msg, i) => {
               if (msg.role === 'assistant' && msg.content === '') return null;
@@ -1417,18 +1382,6 @@ export default function ChatConversation({
                           </button>
                         </div>
                       )}
-                    {msg.role === 'assistant' && msg.id && (
-                      <button
-                        onClick={() => togglePin(msg.id!, !msg.pinned)}
-                        title={msg.pinned ? '핀 해제' : '핀 고정'}
-                        className={`self-start mt-0.5 inline-flex items-center gap-1 text-[11px] font-semibold transition-colors ${
-                          msg.pinned
-                            ? 'text-[#3182F6]'
-                            : 'text-[#B0B8C1] hover:text-[#3182F6]'
-                        }`}>
-                        📌 {msg.pinned ? '핀 해제' : '핀'}
-                      </button>
-                    )}
                     {msg.result && (
                       <button
                         onClick={() =>
