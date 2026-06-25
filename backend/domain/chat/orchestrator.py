@@ -227,9 +227,7 @@ async def _format_clio_kb(question: str, api_key: str | None) -> tuple[str, list
     return (
         "[CLIO 지식베이스]\n"
         "아래 근거는 광고 일반 지식 질문에만 참고한다. "
-        "답변에는 필요한 내용만 자연스럽게 반영한다.\n"
-        + "\n\n".join(lines)
-        + "\n\n",
+        "답변에는 필요한 내용만 자연스럽게 반영한다.\n" + "\n\n".join(lines) + "\n\n",
         citations,
     )
 
@@ -435,7 +433,7 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
         return _ask_fallback
 
     # ── 풀모드 — classify_intent → route → 도메인 서브에이전트 / advise ──
-    from typing import Literal, TypedDict  # noqa: PLC0415
+    from typing import Literal  # noqa: PLC0415
 
     from langchain_core.messages import (  # noqa: PLC0415 — 키 있을 때만
         AIMessage,
@@ -443,7 +441,7 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
         SystemMessage,
     )
     from langchain_openai import ChatOpenAI  # noqa: PLC0415
-    from langgraph.graph import END, START, StateGraph  # noqa: PLC0415
+    from langgraph.graph import END, START, MessagesState, StateGraph  # noqa: PLC0415
     from pydantic import BaseModel  # noqa: PLC0415
 
     model_name = getattr(settings, "chat_orchestrator_model", "gpt-4o-mini")
@@ -543,8 +541,9 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
             _short_term[key] = mem
         return mem
 
-    # 그래프 상태 — 메시지 누적이 아니라 분류→답변 1패스. 노드엔 어노테이트하지 않는다.
-    class _State(TypedDict, total=False):
+    # 그래프 상태 — LangGraph 체크포인터가 messages 리듀서를 갖도록 MessagesState를 상속한다.
+    # 기존 커스텀 필드는 L2-2/3 전환 전까지 그대로 유지한다.
+    class _State(MessagesState, total=False):
         question: str
         session_id: str | None
         project_id: str | None
@@ -889,7 +888,19 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
         "advise",
     ):
         g.add_edge(_node, END)
-    graph = g.compile()
+
+    def _build_chat_checkpointer() -> object:
+        try:
+            from domain.management.wiring import build_checkpointer  # noqa: PLC0415
+
+            return build_checkpointer(settings)
+        except Exception as exc:  # noqa: BLE001 — 체크포인터 실패가 채팅 기동을 막지 않게
+            print(f"[chat] checkpointer fallback: {exc!r}")
+            from langgraph.checkpoint.memory import MemorySaver  # noqa: PLC0415
+
+            return MemorySaver()
+
+    graph = g.compile(checkpointer=_build_chat_checkpointer())
 
     async def _ask_full(turn: ChatTurn) -> ChatAnswer:
         sid = turn.session_id
@@ -1017,9 +1028,12 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
         ltm = await history.get_long_term_memory(turn.project_id, limit=3)
         brand = await history.get_brand_profile(turn.project_id)
         # 1턴 = 1 트레이스 루트(classify → route → 서브에이전트).
+        # L2-1: 체크포인터 필수 configurable을 제공한다. L2-2에서 session_id 계약으로 고정한다.
+        thread_id = sid or f"chat-transient:{turn.project_id or 'anonymous'}"
         final = await graph.ainvoke(
             {
                 "question": turn.question,
+                "messages": [HumanMessage(content=turn.question)],
                 "session_id": sid,
                 "project_id": turn.project_id,
                 "history": windowed,
@@ -1030,6 +1044,7 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
                 "run_name": "assistant_chat",
                 "tags": ["chat", "orchestrator"],
                 "metadata": {"ad_id": turn.ad_id},
+                "configurable": {"thread_id": thread_id},
             },
         )
         meta = final.get("meta") or {
