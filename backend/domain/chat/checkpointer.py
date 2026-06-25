@@ -18,7 +18,12 @@ def to_psycopg_conninfo(url: str) -> str:
 async def build_async_checkpointer(database_url: str):
     """(saver, close) 반환. saver는 setup() 완료 상태. close()로 풀 정리.
 
-    Neon pooler 대응: prepare_threshold=None(prepared statement 비활성, PgBouncer 안전).
+    Neon pooler 대응:
+    - prepare_threshold=None: prepared statement 비활성(PgBouncer 안전).
+    - check=check_connection: getconn 시 죽은 커넥션 검사·폐기(SQLAlchemy pool_pre_ping 등가).
+      Neon이 유휴 커넥션을 끊어도 다음 턴에서 살아있는 커넥션으로 자동 교체하여
+      "consuming input failed: SSL connection has been closed unexpectedly"를 방지.
+    - max_idle: 유휴 커넥션을 Neon 유휴 종료 전에 선제 회수.
     """
     from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
     from psycopg.rows import dict_row
@@ -27,8 +32,11 @@ async def build_async_checkpointer(database_url: str):
     conninfo = to_psycopg_conninfo(database_url)
     pool = AsyncConnectionPool(
         conninfo=conninfo,
+        min_size=1,
         max_size=5,
         open=False,
+        check=AsyncConnectionPool.check_connection,
+        max_idle=120.0,
         kwargs={"autocommit": True, "row_factory": dict_row, "prepare_threshold": None},
     )
     await pool.open()
