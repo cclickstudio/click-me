@@ -1,7 +1,7 @@
 # 챗 지식 RAG 설계 — `domain/chat/` 바운디드 컨텍스트 (Phase 1)
 
 > 작성 2026-06-25 · 브랜치 `feat/chat-boeun`
-> 챗(4-4) 어시스턴트가 Meta 공식 정책 + 일반 마케팅 지식을 근거로 답하도록, 큐레이션 마크다운을 임베딩해 DB에 저장하고 하이브리드 검색으로 인용 답변을 제공한다.
+> 챗(4-4) 어시스턴트가 Meta 정책 큐레이션 요약 + 일반 마케팅 지식을 근거로 답하도록, 큐레이션 마크다운을 임베딩해 DB에 저장하고 하이브리드 검색으로 인용 답변을 제공한다. (Phase 1은 사람이 요약한 큐레이션 — 공식 원문 자동수집은 Phase 2.)
 
 ---
 
@@ -149,7 +149,7 @@ class KnowledgeRetriever(Protocol):
 4. **문서 본문 `content_hash` 비교 → 재임베딩 여부 결정**. 메타데이터만 바뀐 경우 별도 처리(아래).
 5. `chat_knowledge_documents` + `chat_knowledge_chunks`에 적재. chunk row의 `embedding_model`에 상수 기록.
 
-**청킹 정책 (`##` + 최대 길이).** `## 섹션` 기준으로 자르되, 한 청크가 **최대 길이(초기값 약 1500자 / ≈500토큰)** 를 넘으면 문단(빈 줄) → 문장 순으로 **하위 분할**(인접 청크 소폭 overlap 허용). **한 문장 자체가 한도를 넘으면(긴 약관·URL) 마지막 폴백으로 하드 분할**해 모든 청크가 한도 내가 되도록 보장한다. 최대 길이는 설정 상수로 둬 튜닝 가능. **하위 분할 시 그 섹션의 `keywords`를 모든 하위 청크에 복사**한다(안 하면 뒤쪽 청크가 키워드 검색에서 약해짐).
+**청킹 정책 (`##` + 최대 길이).** `## 섹션` 기준으로 자르되, 한 청크가 **최대 길이(초기값 약 1500자 / ≈500토큰)** 를 넘으면 문단(빈 줄) → 문장 순으로 **하위 분할**(Phase 1은 **overlap 없음** — 단순·멱등 우선). **한 문장 자체가 한도를 넘으면(긴 약관·URL) 마지막 폴백으로 하드 분할**해 모든 청크가 한도 내가 되도록 보장한다. 최대 길이는 설정 상수로 둬 튜닝 가능. **하위 분할 시 그 섹션의 `keywords`를 모든 하위 청크에 복사**한다(안 하면 뒤쪽 청크가 키워드 검색에서 약해짐).
 
 **content_hash 기준 (정규화 마크다운, 확정).** `normalize.py`의 정규화 함수를 단일 기준으로(원문 그대로 해시 금지).
 - 정규화: ① CRLF→LF, ② 줄 끝 공백 제거, ③ 연속 3줄+ 빈 줄 → 1줄, ④ 앞뒤 빈 줄 제거.
@@ -193,8 +193,8 @@ management `retriever.py` 패턴 차용.
 1. 사용자 질문 → `chat_service`.
 2. `retriever.search(query, k, source_type?)` → 관련 청크 top-k.
 3. **근거 게이트** — 통과 못 하면 LLM 호출 전에 단락.
-4. 통과 시 청크(+출처)를 프롬프트에 넣어 **Gemini 2.0 Flash**가 인용하며 답변(provider 토글 `CHAT_PROVIDER`, gemini 기본).
-5. **SSE 스트리밍** 전송, 답변 본문에 `[1][2]` 인용 마커 + 끝에 출처 매핑.
+4. 통과 시 청크(+출처)를 프롬프트에 넣어 **주입 LLM 함수**가 인용하며 답변 생성(`[1][2]` 마커). *(구체 LLM = Gemini 2.0 Flash, provider 토글 `CHAT_PROVIDER` — 후속 어댑터.)*
+5. **호출자가 응답 전송** + 끝에 출처 매핑. *(SSE 스트리밍 배선은 후속.)*
 
 **근거 게이트 — 코사인 유사도(절대값) 기준.** RRF 점수는 상대 랭킹이라 절대 임계 부적합 → 벡터 코사인 유사도로 게이트.
 - **변환식** pgvector `<=>`는 코사인 **거리**(작을수록 유사). 따라서 `similarity = 1 - cosine_distance`. (threshold 반대 해석 방지용 명시.)
@@ -211,7 +211,7 @@ management `retriever.py` 패턴 차용.
 
 ## 12. 주기적 업데이트
 
-- **Phase 1** `ingestor`를 **스케줄(cron)** 로 주기 실행. 본문 `content_hash` 멱등이라 바뀐 md만 재임베딩, 메타만 바뀌면 update. advisory lock으로 중복 실행 안전.
+- **Phase 1** `ingestor` 재적재 **entrypoint**(`python -m domain.chat.knowledge.ingestor`) 제공 — 본문 `content_hash` 멱등이라 반복 안전(advisory lock). **cron 스케줄 등록은 운영 설정/후속**(코드 산출물 아님).
 - **Phase 2** Meta는 `MetaDocsFetchSource` fetch + ingest를 스케줄링.
 
 ## 13. 테스트
@@ -233,5 +233,5 @@ management `retriever.py` 패턴 차용.
 
 ## 14. 범위 정리
 
-- **포함** chat 도메인 골격, 신규 2테이블 + 마이그레이션, 임베딩 단일 상수 + 교체 정책(빌드 시그니처), 정규화 문서/청크 해시 멱등 + 메타·keywords-only update, `##`+길이제한 청킹(문장→하드 분할 폴백), `keywords` 보강 + title/chunk/keywords search_vector, 포트(`KnowledgeRetriever`/`KnowledgeIngestor`), documents-join 양채널 `status`+`source_type` 필터 하이브리드 검색, `1 - cosine_distance` `max(similarity)` 근거 게이트(초기 0.35), **LLM 주입 answer service**(게이트+chunk-id 인용), advisory lock cron 재적재, 큐레이션 md(마케팅+Meta 요약).
-- **제외(후속)** **구체 Gemini 어댑터·SSE 엔드포인트 배선**, 자동 크롤링(B), 한국어 특화 임베딩(BGE-m3/Upstage, 재색인 동반)·한국어 FTS(pg_trgm/pg_bigm/외부엔진), `tools/knowledge` 승격, 챗 오케스트레이터 본체, 대화 메모리/히스토리.
+- **포함** chat 도메인 골격, 신규 2테이블 + 마이그레이션, 임베딩 단일 상수 + 교체 정책(빌드 시그니처), 정규화 문서/청크 해시 멱등 + 메타·keywords-only update, `##`+길이제한 청킹(문장→하드 분할 폴백), `keywords` 보강 + title/chunk/keywords search_vector, 포트(`KnowledgeRetriever`/`KnowledgeIngestor`), documents-join 양채널 `status`+`source_type` 필터 하이브리드 검색, `1 - cosine_distance` `max(similarity)` 근거 게이트(초기 0.35), **LLM 주입 answer service**(게이트+chunk-id 인용+마커 검증), advisory lock 멱등 재적재 entrypoint, 큐레이션 md(마케팅+Meta 요약).
+- **제외(후속)** **구체 Gemini 어댑터·SSE 엔드포인트 배선**, **cron 스케줄 등록(운영 설정)**, 자동 크롤링(B), 한국어 특화 임베딩(BGE-m3/Upstage, 재색인 동반)·한국어 FTS(pg_trgm/pg_bigm/외부엔진), `tools/knowledge` 승격, 챗 오케스트레이터 본체, 대화 메모리/히스토리.
