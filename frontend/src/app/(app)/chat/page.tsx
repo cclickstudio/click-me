@@ -46,6 +46,89 @@ type Message = {
   meta?: SourceMeta;
 };
 
+// Web Speech API — 브라우저 내장, 무료, API 키 불필요. Chrome/Edge 지원.
+type SpeechRecCtor = new () => {
+  lang: string;
+  continuous: boolean;
+  interimResults: boolean;
+  onresult: ((e: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null;
+  onend: (() => void) | null;
+  onerror: (() => void) | null;
+  start(): void;
+  stop(): void;
+};
+type SpeechWindow = Window & {
+  SpeechRecognition?: SpeechRecCtor;
+  webkitSpeechRecognition?: SpeechRecCtor;
+};
+
+// AI 답변의 마크다운을 렌더링 — **bold**, *italic*, `code`, 리스트, 헤딩 지원
+function renderMarkdown(text: string) {
+  const parseInline = (s: string) =>
+    s.split(/(\*\*[^*\n]+\*\*|`[^`\n]+`|\*[^*\n]+\*)/).map((part, i) => {
+      if (part.startsWith('**') && part.endsWith('**'))
+        return <strong key={i}>{part.slice(2, -2)}</strong>;
+      if (part.startsWith('`') && part.endsWith('`'))
+        return (
+          <code key={i} className="text-[11px] bg-black/[0.07] dark:bg-white/10 px-1 py-0.5 rounded font-mono">
+            {part.slice(1, -1)}
+          </code>
+        );
+      if (part.startsWith('*') && part.endsWith('*'))
+        return <em key={i}>{part.slice(1, -1)}</em>;
+      return part;
+    });
+
+  const nodes = text.split('\n').map((line, i) => {
+    if (line.startsWith('### '))
+      return <p key={i} className="font-bold text-sm mt-1.5">{parseInline(line.slice(4))}</p>;
+    if (line.startsWith('## '))
+      return <p key={i} className="font-semibold text-sm mt-1.5">{parseInline(line.slice(3))}</p>;
+    if (line.startsWith('# '))
+      return <p key={i} className="font-bold mt-1.5">{parseInline(line.slice(2))}</p>;
+    if (line.startsWith('- ') || line.startsWith('• '))
+      return (
+        <p key={i} className="flex gap-1.5 pl-1">
+          <span className="shrink-0 opacity-50 mt-0.5">•</span>
+          <span>{parseInline(line.slice(2))}</span>
+        </p>
+      );
+    if (/^\d+\. /.test(line)) {
+      const m = line.match(/^(\d+)\. (.*)/)!;
+      return (
+        <p key={i} className="flex gap-1.5 pl-1">
+          <span className="shrink-0 opacity-50 tabular-nums">{m[1]}.</span>
+          <span>{parseInline(m[2])}</span>
+        </p>
+      );
+    }
+    if (line === '') return <div key={i} className="h-1.5" />;
+    return <p key={i}>{parseInline(line)}</p>;
+  });
+  return <>{nodes}</>;
+}
+
+function MicIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+      <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+      <line x1="12" y1="19" x2="12" y2="23" />
+      <line x1="8" y1="23" x2="16" y2="23" />
+    </svg>
+  );
+}
+
+function SpeakerIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+      <path d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+      <path d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+    </svg>
+  );
+}
+
 function SendIcon() {
   return (
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -91,15 +174,64 @@ export default function Page() {
       /* 적재 실패는 조용히 무시 */
     }
   };
+
   const [input, setInput] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
-  const sessionId = useRef<string>("");
+  const sessionId = useRef<string>('');
   if (!sessionId.current) sessionId.current = safeRandomUUID();
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  // Web Speech API 상태 — STT(마이크 입력) + TTS(읽어주기)
+  const [listening, setListening] = useState(false);
+  const recognitionRef = useRef<{ stop: () => void } | null>(null);
+  const [voiceSupported, setVoiceSupported] = useState(false);
+  const [ttsSupported, setTtsSupported] = useState(false);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isStreaming]);
+
+  useEffect(() => {
+    const sw = window as SpeechWindow;
+    setVoiceSupported(typeof sw.SpeechRecognition === 'function' || typeof sw.webkitSpeechRecognition === 'function');
+    setTtsSupported(typeof window.speechSynthesis !== 'undefined');
+  }, []);
+
+  // STT: 마이크 버튼 클릭 → 브라우저 Web Speech API → 입력창에 채움. 무료, API 키 없음.
+  const startVoice = () => {
+    const sw = window as SpeechWindow;
+    const Ctor = sw.SpeechRecognition ?? sw.webkitSpeechRecognition;
+    if (!Ctor) return;
+    const rec = new Ctor();
+    rec.lang = 'ko-KR';
+    rec.continuous = false;
+    rec.interimResults = true;
+    rec.onresult = (e) => {
+      let t = '';
+      for (let i = 0; i < e.results.length; i++) t += e.results[i][0].transcript;
+      setInput(t);
+    };
+    rec.onend = () => setListening(false);
+    rec.onerror = () => setListening(false);
+    recognitionRef.current = rec;
+    rec.start();
+    setListening(true);
+  };
+
+  const stopVoice = () => {
+    recognitionRef.current?.stop();
+    setListening(false);
+  };
+
+  // TTS: 브라우저 SpeechSynthesis로 AI 답변 읽어주기. 무료, API 키 없음.
+  const speakText = (text: string) => {
+    if (!window.speechSynthesis) return;
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = 'ko-KR';
+    u.rate = 1.1;
+    window.speechSynthesis.cancel(); // 이전 발화 중단
+    window.speechSynthesis.speak(u);
+  };
 
   const handleSend = async (text?: string) => {
     const content = text ?? input.trim();
@@ -240,15 +372,26 @@ export default function Page() {
                           {msg.meta.source === 'management' ? '⚙' : '🧠'} {msg.meta.label} · {msg.meta.engine}
                         </span>
                       )}
+                      {/* 메시지 버블 — 사용자: plain text, 어시스턴트: 마크다운 렌더링 */}
                       <div
-                        className={`px-4 py-3 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap ${
+                        className={`px-4 py-3 rounded-2xl text-sm leading-relaxed ${
                           msg.role === 'user'
-                            ? 'bg-[#3182F6] text-white rounded-br-md'
+                            ? 'bg-[#3182F6] text-white rounded-br-md whitespace-pre-wrap'
                             : 'bg-[#F2F4F6] dark:bg-[#252D3D] text-[#191F28] dark:text-[#F2F4F6] rounded-bl-md'
                         }`}
                       >
-                        {msg.content}
+                        {msg.role === 'user' ? msg.content : renderMarkdown(msg.content)}
                       </div>
+                      {/* TTS 읽어주기 버튼 — 브라우저 SpeechSynthesis, 무료 */}
+                      {msg.role === 'assistant' && msg.content && ttsSupported && (
+                        <button
+                          onClick={() => speakText(msg.content)}
+                          title="소리로 읽기"
+                          className="self-start text-[#B0B8C1] dark:text-[#4B5563] hover:text-[#3182F6] dark:hover:text-[#7BB4F5] px-1 py-0.5 transition-colors"
+                        >
+                          <SpeakerIcon />
+                        </button>
+                      )}
                       {msg.role === 'assistant' &&
                         msg.meta?.source === 'management' &&
                         (msg.meta.citations?.length || msg.meta.used_tools?.length) ? (
@@ -327,7 +470,7 @@ export default function Page() {
                         <div className="flex flex-wrap items-center gap-1 px-1">
                           <span className="text-[10px] text-[#B0B8C1] dark:text-[#6B7280]">캠페인:</span>
                           {(msg.meta.campaigns ?? []).map((c) => (
-                            <Link key={c.campaign_id} href="/manage/campaigns">
+                            <Link key={c.campaign_id} href={`/manage/campaigns?open=${c.campaign_id}`}>
                               <span
                                 className={`text-[10px] px-1.5 py-0.5 rounded border cursor-pointer transition-colors ${
                                   c.status === 'ACTIVE'
@@ -397,12 +540,26 @@ export default function Page() {
                   handleSend();
                 }
               }}
-              placeholder="메시지를 입력하세요... (Shift+Enter로 줄바꿈)"
+              placeholder={listening ? '듣는 중…' : '메시지를 입력하세요... (Shift+Enter로 줄바꿈)'}
               rows={1}
-              disabled={isStreaming}
-              className="flex-1 px-4 py-3 rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] text-sm text-[#191F28] dark:text-[#F2F4F6] placeholder-[#B0B8C1] dark:placeholder-[#4B5563] focus:outline-none focus:border-[#3182F6] focus:ring-2 focus:ring-[#3182F6]/10 transition-colors resize-none overflow-hidden bg-white dark:bg-[#252D3D] leading-relaxed disabled:opacity-60"
+              className="flex-1 px-4 py-3 rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] text-sm text-[#191F28] dark:text-[#F2F4F6] placeholder-[#B0B8C1] dark:placeholder-[#4B5563] focus:outline-none focus:border-[#3182F6] focus:ring-2 focus:ring-[#3182F6]/10 transition-colors resize-none overflow-hidden bg-white dark:bg-[#252D3D] leading-relaxed"
               style={{ maxHeight: '120px' }}
             />
+            {/* 음성 입력 버튼 — Web Speech API, 무료, Chrome/Edge 지원 */}
+            {voiceSupported && (
+              <button
+                onClick={listening ? stopVoice : startVoice}
+                disabled={isStreaming}
+                title={listening ? '음성 입력 중지' : '음성으로 입력 (ko-KR)'}
+                className={`p-3 rounded-xl transition-all shrink-0 ${
+                  listening
+                    ? 'bg-red-100 text-red-500 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-400 animate-pulse'
+                    : 'text-[#8B95A1] hover:text-[#3182F6] hover:bg-[#EBF3FF] dark:hover:bg-[#1E3A5F]'
+                } disabled:opacity-30 disabled:cursor-not-allowed`}
+              >
+                <MicIcon />
+              </button>
+            )}
             <button
               onClick={() => handleSend()}
               disabled={!input.trim() || isStreaming}
