@@ -160,10 +160,22 @@ async def test_generator_read_existing():
 
 
 @pytest.mark.asyncio
-async def test_simulation_trigger_without_ad_id_is_graceful():
+async def test_simulation_no_ids_is_graceful():
+    # id 없음 + 풀모드 에이전트 없음(use_mock) → 에러 대신 안내 답변(개선된 폴백, 컨시어지 지향).
     sub = SimulationSubAgent(service=_FakeSimService())
     out = await sub.run(SubAgentRequest(question="시뮬 돌려줘"))  # simulation_id·ad_id 모두 없음
-    assert out.route is Route.SIMULATION and out.error is not None and "ad_id" in out.error
+    assert out.route is Route.SIMULATION
+    assert out.error is None and out.answer
+
+
+def test_build_simulation_agent_none_without_key():
+    # 키 없음/use_mock이면 ReAct 미구성(None) → 서브에이전트가 구조화 폴백을 쓴다.
+    from types import SimpleNamespace
+
+    from domain.chat.adapters.sim_agent import build_simulation_agent
+
+    assert build_simulation_agent(SimpleNamespace(use_mock=True, anthropic_api_key="sk-x")) is None
+    assert build_simulation_agent(SimpleNamespace(use_mock=False, anthropic_api_key=None)) is None
 
 
 @pytest.mark.asyncio
