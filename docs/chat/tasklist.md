@@ -781,7 +781,8 @@
 > **정정**: 앞서 "403 해금"으로 판단했으나 **틀림**. 순수 텍스트 `responses.create(input='ping')`만 통과한 것에 속았다. V2 검증에서 실제 생성을 돌려 런타임 traceback을 잡은 결과:
 > - 실패 지점 `candidate_gen.py:210 → multimodal_generator.py:107 → _client.responses.create(model=gpt-4o-mini, tools=[{type:"image_generation", model:<이미지모델>}])` → **`openai.PermissionDeniedError 403` "organization must be verified"**.
 > - 즉 org 검증 403은 **`image_generation` 툴(이미지 생성 캡처)**를 게이팅한다. 텍스트 응답은 게이팅 안 됨. **제너 경로(V2·V3·G·F8·N제너·N3)는 여전히 외부 블로커.**
-> - **별도 코드 버그(마스킹)**: 실서버(tracing on)에서는 이 403이 langsmith run-tree 기록 중 `langchain_core/tracers/context.py`(→langsmith) ↔ `langsmith/run_trees.py:879`(→langchain_core.tracers.langchain) **순환 import**에 걸려 `No module named 'langchain_core.tracers.context'`로 둔갑한다(DB `ad_generations.error_message`에 그 문자열로 저장됨). langsmith 0.8.11 ↔ langchain_core 1.4.2 버전 조합 이슈. **제너 403과 별개**라, 403 풀려도 남는다. 수정 시 dep 버전 정렬 또는 startup eager-import 워크어라운드 필요(공유 인프라라 도연님 결정 후).
+> - **★ 순환 import 차단 버그 — 발견·수정 완료(0776162)**: 처음엔 "마스킹(비차단)"으로 봤으나 **틀림**. QA에서 시뮬도 같은 에러로 즉시 실패함을 확인 → 시뮬은 403이 없으니 이건 **핵심 기능을 깨는 차단 버그**였다. 원인: tracing on + `asyncio.gather`로 트레이싱 LLM 호출을 **동시 실행**할 때 `langchain_core/tracers/context.py`(→langsmith) ↔ `langsmith/run_trees.py:879`(→langchain_core.tracers.langchain) **순환 import를 여러 코루틴이 첫 import**하며 race → `No module named 'langchain_core.tracers.context'`. (단일 스레드 재현 안 됨 → 동시성 race라 못 봤던 것.) **수정**: `api/main.py` 시작 시 `tracers.context`·`tracers.langchain`을 미리 완전 import(저위험 append). **검증**: Preview에서 시뮬 실행 → 반응 20/20 완주 → 결과 위젯(클릭의향 0%·구매의도 1.65/5·신뢰도 2.65/5·거부율 65%)·토론 실시간 스트리밍 정상. **이전엔 즉시 실패하던 핵심 기능 복구.**
+> - **제너는 여전히 403**(이미지 생성 캡처) — 순환 import 수정과 별개. org 검증 전까지 제너 트랙(V2·V3·G·F8·N제너·N3) 보류.
 > - V2 검증 부산물(정상 동작 확인): 환경 셋업·doyeon 토큰 로그인·프로젝트 선택·"🎨 시안 만들기"→gen_form 4단계→실행→**실패 시 에러 카드+"다시 시도"** 정상. 실제 후보 생성만 403으로 미도달.
 
 ---
