@@ -6,7 +6,9 @@
 
 ---
 
-## 0. 전제 (매 세션 시작 시 확인)
+## 0. 전제 (세션 최초 1회만 — 통과하면 이후 반복은 생략)
+
+> ★ 아래는 **루프 첫 반복에서 한 번만** 확인한다. DB·서버·폰트·로그인이 한 번 정상이면 그 상태가 세션 내내 유지되므로 **매 반복 재확인하지 않는다**(서버·Preview·로그인 세션 재사용). 중간에 실제로 깨졌을 때만(서버 다운·500·토큰 만료) 재확인한다.
 
 - **DB는 개인 NeonDB** (`ep-soft-band-…`). 확인:
   `cd backend && uv run python -c "from core.config import settings;import re;print(re.search(r'@([^/]+)/',settings.database_url).group(1))"`
@@ -68,9 +70,7 @@
 | R4-2 | CLIO KB 광고 일반지식 적재(~100)         | RAG    | R4-1      | ✅   |
 | R4-3 | CLIO(기본 GPT) 응답에 CLIO RAG 연결     | RAG    | R4-2      | ✅   |
 | R5  | clio KB에 Meta(인스타/페북) 정책·용어 추가 적재 | RAG | —      | ⬜   |
-| R6-1 | `marketing_kb_chunks` 테이블+마이그(모델 append) | RAG | —    | ⬜   |
-| R6-2 | marketing KB 광고·마케팅 용어+정의 적재(~100) | RAG | R6-1   | ⬜   |
-| R6-3 | marketing retriever → advise_node 연결      | RAG    | R6-2      | ⬜   |
+| R6  | clio KB에 광고·마케팅 용어+정의 추가 적재(~100) | RAG | —     | ⬜   |
 | R7  | 기존 3 KB(sim/gen/manage) 덤프·점검·보강    | RAG    | —         | ⬜   |
 | W1  | 시뮬 위젯 카테고리 2단 셀렉트            | 위젯   | —         | ✅   |
 | W2  | 시뮬 위젯 5단계 재구성(카테고리/목표/인구) | 위젯   | W1        | ✅   |
@@ -142,7 +142,7 @@
 
 ```
 /loop docs/chat/tasklist.md 를 읽어. 분리 개발은 끝났고 이제 단일 브랜치(feat/chat-doyeon)에서 프론트·백 모두 자유롭게 고친다. 마감·데드라인 없음. 매 반복은 아래대로:
-1) "0. 전제" 확인 — 개인 DB(ep-soft-band)·서버(8000/3000)·폰트·토큰·OPENAI_API_KEY. Preview는 §0 "Preview 검증 표준 절차"대로 띄우고 3계정으로 로그인.
+1) **전제는 최초 1회만** — 첫 반복에서만 "0. 전제"(개인 DB ep-soft-band·서버 8000/3000·폰트·OPENAI_API_KEY) 확인 + Preview 띄워 3계정 로그인. **한 번 통과하면 이후 반복은 이 단계를 건너뛴다** — 서버·Preview·로그인 세션을 재사용하고 재기동·재로그인하지 않는다. 중간에 실제로 깨졌을 때(서버 다운·500·토큰 만료)만 재확인.
 2) "1. 전체 태스크 현황" 표에서 의존(앞 컬럼)이 모두 ✅ 이고 상태가 ⬜ 인 가장 위 태스크 1개 선택(권장 순서: V→W→G→S→P→N→X→F→R→C, L·R은 완료됨). R1·R3 완료로 P5·F6은 이제 해금.
 3) 그 태스크 명세(4·4-S·4-N·4-L장)를 끝까지 수행. **명세에 "확정 설계(플랜 2026-06-25)" 블록이 있으면 그 설계대로 구현한다**(N·CLIO(R4/P12) 등). 없으면 명세의 목표·완료 기준대로.
 - 코드 변경 시 ruff/tsc/lint 통과. 검증은 Claude Preview 직접 구동 + §0 "QA 철저성 원칙" 그대로 — 비동기는 완료까지 대기, 진행 중/완료 후 새로고침 복원, 엣지·에러 유발, 콘솔 무에러. "떴다"로 ✅ 금지.
@@ -157,7 +157,7 @@
 ### 2-2. 그룹만 돌리고 싶을 때
 
 - 검증만: 위 프롬프트에서 "표에서 … V로 시작하는 태스크만" 으로 한정.
-- RAG만: "R로 시작하는 태스크만"(R5·R6·R7 신규). R5=clio에 Meta 추가 적재(테이블 기존), R6=marketing_kb 신설(테이블→적재→연결), R7=기존 3 KB 덤프·보강. **용어+정의 사전을 loop가 작성**, 반복당 `.md` 1파일 → `kb_ingest`.
+- RAG만: "R로 시작하는 태스크만"(R5·R6·R7 신규). R5=clio에 Meta 정책·용어 추가 적재, R6=clio에 광고·마케팅 용어 추가 적재(별도 테이블 X·통합), R7=기존 3 KB 덤프·보강. 셋 다 **테이블/연결은 기존(R4) 재사용 — `.md` 추가 + 재인제스트만**. **용어+정의 사전을 loop가 작성**, 반복당 `.md` 1파일 → `kb_ingest`.
 - 기능만: "F로 시작하는 태스크만". (F6은 매니지먼트 RAG 연결 — R3 완료로 해금. F5 롱텀 메모리 점검도 백엔드 머지분 기반.)
 - 폴리시만: "P로 시작". (P5 RAG 인용 표시 — R1 완료로 해금.)
 
@@ -315,28 +315,16 @@
 **완료 기준** `select count(*) from clio_kb_chunks` 증가(Meta 항목 ~30~50 추가), `ClioKbRetriever`가 "인스타 광고 정책" 류 질문에 Meta 청크 top-k 반환. advise_node 응답에 Meta 근거+인용. Preview/스모크 확인.
 **주의** **management KB에 이미 `meta_ad_policy`(집행 후 운영 관점)가 있음** — clio는 **채팅 일반 질의응답 관점**의 플랫폼 정책·용어로, 운영 조치(증액/감액)와는 분리. 출처 불명 수치 단정 금지(정책 원칙·정의 위주, 정확한 수치는 "공식 정책 참조" 표기).
 
-### R6 — marketing_kb_chunks 신설 (광고·마케팅 용어 사전)
+### R6 — clio KB에 광고·마케팅 용어+정의 추가 적재 (~100)
 
-> 사용자 결정: **clio와 별개의 공용 마케팅 용어 사전 테이블**을 둔다. clio_kb = CLIO 채팅 어시스턴트의 광고 일반지식 + Meta 정책. marketing_kb = **광고·마케팅 개념/이론 용어 사전**(향후 도메인 공용 가능). 기존 R4(clio) 3분할 패턴(테이블→적재→연결)을 그대로 따른다.
-> **역할 분리 메모(중복 주의)**: clio의 기존 `advertising_general_knowledge`와 marketing 용어가 겹칠 수 있음. marketing은 **개념 단위 용어+정의**(예: STP·포지셔닝·CAC·LTV·퍼널·리타게팅·노출/도달/빈도·CPM/CPC/CTR/ROAS 정의)에 집중하고, clio는 플랫폼 정책·실무 가이드 중심으로 둔다. 순수 용어성 항목의 clio→marketing 이관은 선택(과한 재정리 금지).
+> 사용자 결정: **별도 marketing 테이블을 만들지 않고 clio_kb에 통합**한다. clio_kb = CLIO 채팅 어시스턴트의 광고·마케팅 통합 KB(일반지식 + Meta 정책 + 마케팅 용어). 테이블·ingest·retriever·advise 연결은 **이미 존재**(R4 완료)하므로 **`.md` 추가 + 재인제스트만** — 신규 테이블/retriever/연결 불필요.
 
-#### R6-1 — `marketing_kb_chunks` 테이블 + 마이그레이션
-
-**목표** 광고·마케팅 용어 전용 KB 청크 테이블 신설. 기존 `ClioKbChunk` 스키마와 동일(`source/title/chunk/embedding(1536)/created_at`).
-**구현** `core/models.py`에 `MarketingKbChunk` 모델 **append**(기존 컬럼 불변) + **Alembic 마이그레이션 026**(`down_revision=025_add_clio_kb_chunks`, raw DDL 직접 X). **단독 커밋**.
-**완료 기준** `marketing_kb_chunks` 테이블 생성, `import api.main` OK, 마이그 up/down 동작(개인 DB ep-soft-band에서 025↔026 검증).
-
-#### R6-2 — marketing KB 광고·마케팅 용어+정의 적재 (~100, R6-1 의존)
-
-**목표** `marketing_kb_chunks`에 **광고·마케팅 용어+정의 사전 ~100개**(각 `## 용어` + 1~2줄 정의). 용어 예: STP·타게팅·포지셔닝·USP·퍼널(AARRR)·AISAS·CAC·LTV·ROAS·CPM/CPC/CPA·노출/도달/빈도·리타게팅·룩어라이크·브랜드 인지/고려/전환·A/B 테스트·어트리뷰션·CTR/CVR 정의 등. **loop가 작성**(기획서·일반 마케팅 표준 근거).
-**방법** ingest 모듈 신설 = `domain/marketing/kb_ingest.py`(또는 `domain/chat/kb_ingest.py` 패턴 복제, 대상 테이블만 `MarketingKbChunk`, `_KB_DIR=<해당>/kb/`) → `.md` `## 섹션` 작성(반복당 1파일 ~30~50항목: `marketing_funnel_terms.md`·`metric_terms.md`·`targeting_terms.md` 등) → `uv run python -m <모듈>`.
-**완료 기준** 마케팅 핵심 용어 커버 + `select count(*) from marketing_kb_chunks` ≥ 50(목표 ~100), 각 항목이 용어+정의(단어 단독 금지). 출처 불명 수치 단정 금지.
-
-#### R6-3 — marketing retriever → advise_node 연결 (R6-2 의존)
-
-**목표** advise_node(CLIO)가 광고·마케팅 용어 질문 시 `marketing_kb_chunks`도 검색·인용하도록 연결.
-**구현** `MarketingKbRetriever`(R4-3 `ClioKbRetriever` 패턴 — `text-embedding-3-small`, pgvector 코사인 top-k=4, `{source,title,chunk,score}` 반환) 추가 → advise_node에서 clio KB와 **병행 검색**(또는 합쳐서 top-k), preamble에 `[마케팅 용어]` 섹션 주입, `meta.citations`에 source/title 기록(P5 인용 칩 연계).
-**완료 기준** "ROAS가 뭐야" 류 용어 질문에 marketing 청크 근거로 응답 + 인용. clio/도메인 RAG와 라우팅 충돌 없음. Preview/스모크 확인.
+**목표** clio KB에 **광고·마케팅 개념/이론 용어+정의 사전 ~100개**(각 `## 용어` + 1~2줄 정의)를 추가해, CLIO가 "ROAS가 뭐야" 류 용어 질문에 KB 근거로 답하게 한다. 용어 예: STP·타게팅·포지셔닝·USP·퍼널(AARRR)·AISAS·CAC·LTV·ROAS·CPM/CPC/CPA·노출/도달/빈도·리타게팅·룩어라이크·브랜드 인지/고려/전환·A/B 테스트·어트리뷰션·CTR/CVR 정의 등. **loop가 작성**(기획서·일반 마케팅 표준 근거).
+**방법**
+1. `backend/domain/chat/kb/`에 마케팅 용어 `.md` 작성 — 각 항목 `## 용어` + 1~2줄 정의(단어 나열 ❌). 기존 `advertising_general_knowledge.md` 스타일. 주제별 분할 권장(반복당 1파일 ~30~50항목): `marketing_funnel_terms.md`·`metric_terms.md`·`targeting_terms.md` 등.
+2. `cd backend && uv run python -m domain.chat.kb_ingest` 재실행 → **소스 파일명 기준 멱등**이라 기존 청크 유지·신규 source만 추가.
+**완료 기준** 마케팅 핵심 용어 커버 + `select count(*) from clio_kb_chunks` 증가(마케팅 용어 ~100 추가), 각 항목이 용어+정의(단어 단독 금지). `ClioKbRetriever`가 용어 질문에 신규 청크 top-k 반환, advise_node 응답에 근거+인용. Preview/스모크 확인.
+**주의** clio의 기존 `advertising_general_knowledge`(70청크)·R5 Meta와 **중복 항목 회피** — 같은 용어가 이미 있으면 새로 만들지 말고 보강. 출처 불명 수치 단정 금지(정의·원칙 위주). 단순성 우선(top-k=4라 잘 쓴 항목이 패딩보다 나음).
 
 ### R7 — 기존 3 KB(sim/gen/manage) 덤프·점검·보강
 
@@ -772,15 +760,21 @@
 **구현** `/위젯` 커맨드 정의·렌더·트리거 코드를 찾아 제거(`ChatConversation`/커맨드 정의 위치). 다른 커맨드(`/비교`·`/도움말`·S 그룹 등) 자동완성 목록에 영향 없게 수술적으로.
 **완료 기준** `/위젯` 입력 시 더 이상 동작·노출 안 함, 나머지 커맨드 정상. tsc/lint·Preview 확인.
 
-### C4 — 남은 태스크 정리 후 push (전부 의존)
+### C4 — 전수 QA 후 push (전부 의존)
 
-**목표** 진행 가능한 ⬜를 모두 소진하고(외부 블로커·타 팀 조율분만 ⬜로 남으면) 안정화한 뒤 push.
+**목표** 진행 가능한 ⬜를 모두 소진하고(외부 블로커·타 팀 조율분만 ⬜로 남으면), **완료된 모든 기능을 프로 QA처럼 Claude Preview로 전수 회귀 테스트해 회귀 없음을 확인한 뒤** push.
 **절차**
-1. 최종 검증 — `cd frontend && npx tsc --noEmit` + `cd backend && uv run ruff check . && uv run pytest tests/ -q`. 실패 시 고치고 커밋(못 고치면 깨진 미커밋 변경 stash해 직전 정상 커밋 상태로).
-2. 통과(컴파일되는 상태)면 `git push origin feat/chat-doyeon`. **main 직접 push·강제 push(`--force`) 금지.**
-3. "5. 진행 로그"에 인계 노트(완료/진행중 WIP/다음 시작점/블로커).
-4. 불필요 백업 브랜치 정리는 보류(로컬만, 원격 삭제는 사용자 확인).
-**주의** push는 **사용자 요청 시에만**(해당 브랜치 한정). **빌드 깨진 상태로는 push 금지** — 컴파일되는 마지막 상태로 정리 후 push.
+1. **★ 전수 QA(진짜 프로 QA처럼 — 아주 사소한 것도 빠짐없이)** — push 전에 완료된 **모든 ✅ 기능**을 Claude Preview로 end-to-end 회귀 테스트한다. §0 "QA 철저성 원칙" 그대로:
+   - **모든 흐름·슬래시·위젯·버튼을 실제로 한 번씩 구동**한다(빠짐없이). 예: 빈 상태 온보딩 칩 → 채팅 시뮬(입력 5단계 → 결과 KPI/분포/CI → 토론 실시간 → 요약 → 개선 제안) → 제너(403이면 에러 카드·재시도까지) → 슬래시 전종(`/배치`·`/AB`·`/리포트`·`/시뮬목록`·`/시안목록`·`/분석`·`/추천`·`/비교`·`/도움말`) → 세션 사이드바(전환·삭제·하이라이트) → 채팅 검색 → 메시지 액션 바(복사·재생성·👍👎) → 스트리밍 Stop → 자동 스크롤/맨아래 버튼 → 입력창(멀티라인·자동완성·첨부) → KPI 분포·신뢰구간 → RAG 인용 칩 → 한도 progress bar → 안읽음 뱃지 → 토스트·상대시간 → 위젯 애니메이션 → **다크/라이트 토글** → **모바일 375px** 등.
+   - **3역할(admin·company·user) 각각** 재현하고 역할 게이팅도 재확인. 역할 차이는 로그에 표기.
+   - **비동기는 완료까지 대기 + 진행 중/완료 후 새로고침 복원 + 엣지·에러 유발(빈 입력·중복 실행·키 없음·네트워크 끊김) + 콘솔/네트워크 무에러**까지 본다. "떴다"로 통과 처리 금지.
+   - 깨짐·회귀·콘솔 에러를 발견하면 **건너뛰지 말고 그 자리에서 원인 수정·커밋**한 뒤 다시 QA. **전부 통과할 때까지 반복.**
+   - QA 결과(테스트한 기능 목록·역할별 결과·발견·수정)를 "5. 진행 로그"에 요약한다.
+2. 코드 검증 — `cd frontend && npx tsc --noEmit` + `cd backend && uv run ruff check . && uv run pytest tests/ -q`. 실패 시 고치고 커밋(못 고치면 깨진 미커밋 변경 stash해 직전 정상 커밋 상태로).
+3. 통과(컴파일되는 상태)면 `git push origin feat/chat-doyeon`. **main 직접 push·강제 push(`--force`) 금지.**
+4. "5. 진행 로그"에 인계 노트(완료/진행중 WIP/다음 시작점/블로커).
+5. 불필요 백업 브랜치 정리는 보류(로컬만, 원격 삭제는 사용자 확인).
+**주의** push는 **사용자 요청 시에만**(해당 브랜치 한정). **전수 QA 미통과·빌드 깨진 상태로는 push 금지** — 모든 완료 기능이 회귀 없이 동작하고 컴파일되는 상태에서만 push.
 
 ---
 
