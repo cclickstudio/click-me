@@ -12,8 +12,10 @@ export type CardSection =
   | { kind: 'summary'; title?: string; text: string }
   | { kind: 'metrics'; title?: string; items: MetricItem[] }
   | { kind: 'entity'; title?: string; items: KeyValueItem[] }
-  | { kind: 'proposal'; title?: string; action_type: string; rationale?: string; proposal_id?: string }
+  | { kind: 'proposal'; title?: string; action_type: string; rationale?: string; proposal_id?: string;
+      preview_id?: string; tier?: string; budget_before_krw?: number; budget_after_krw?: number; executable?: boolean }
   | { kind: 'review'; title?: string; decision: string; rationale?: string }
+  | { kind: 'diagnosis'; title?: string; anomaly_type: string; status: string; confidence: number; hypothesis?: string }
   | { kind: 'evidence'; title?: string; citations?: Citation[]; used_tools?: string[] }
   | { kind: 'empty_state'; title?: string; text: string };
 

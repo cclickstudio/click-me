@@ -43,7 +43,17 @@ export const SECTION_RENDERERS: Registry = {
   proposal: (s) => (
     <div>
       <Title title={s.title} />
-      <p className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]">{s.action_type}</p>
+      <p className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]">
+        {s.action_type}
+        {s.executable === false && (
+          <span className="ml-2 text-[10px] font-normal text-[#8B95A1]">draft · 실행 미연결</span>
+        )}
+      </p>
+      {typeof s.budget_before_krw === 'number' && typeof s.budget_after_krw === 'number' && (
+        <p className="text-xs text-[#4E5968] dark:text-[#9CA3AF] mt-0.5">
+          예산 {s.budget_before_krw.toLocaleString()}원 → {s.budget_after_krw.toLocaleString()}원
+        </p>
+      )}
       {s.rationale && <p className="text-xs text-[#8B95A1] dark:text-[#6B7280] mt-0.5">근거: {s.rationale}</p>}
     </div>
   ),
@@ -52,6 +62,15 @@ export const SECTION_RENDERERS: Registry = {
       <Title title={s.title} />
       <p className="text-sm text-[#4E5968] dark:text-[#9CA3AF]">{s.decision}</p>
       {s.rationale && <p className="text-xs text-[#8B95A1] dark:text-[#6B7280] mt-0.5">{s.rationale}</p>}
+    </div>
+  ),
+  diagnosis: (s) => (
+    <div>
+      <Title title={s.title} />
+      <p className="text-sm text-[#191F28] dark:text-[#F2F4F6]">
+        {s.anomaly_type} · 신뢰도 {Math.round(s.confidence * 100)}%
+      </p>
+      {s.hypothesis && <p className="text-xs text-[#8B95A1] dark:text-[#6B7280] mt-0.5">{s.hypothesis}</p>}
     </div>
   ),
   evidence: (s) => {
