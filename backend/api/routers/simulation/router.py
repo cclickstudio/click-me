@@ -13,8 +13,11 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import Response, StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.access import assert_project_access, assert_simulation_access
+from core.auth import get_current_user
 from core.config import settings
 from core.db import get_db
+from core.models import User
 from domain.simulation.adapters.ad_image_store import persist_ad_image
 from domain.simulation.adapters.category_repo import list_categories
 from domain.simulation.contracts.schemas import SimulationRunRequest
@@ -111,8 +114,12 @@ async def start_simulation(
     product_category: str | None = Form(None),
     ad_objective: str | None = Form(None),
     service_class: int | None = Form(None),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> dict:
     """비동기 시작 — run_id 반환. 진행률은 /stream, 결과는 /result."""
+    if project_id:
+        await assert_project_access(db, project_id, current_user)
     ad_image_path, ad_image_key = await _save_upload(ad_image)
     req = _build_request(
         ad_id=ad_id,
@@ -157,11 +164,15 @@ async def run_simulation(
     ad_objective: str | None = Form(None),
     service_class: int | None = Form(None),
     shape: str = "full",
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> dict:
     """동기 실행 — 광고+세부사항 입력 → 끝까지 돌려 반응·루브릭·집계를 한 번에 반환.
 
     shape=analysis 면 분석팀 정리 스키마(중복 제거·평탄화)로 반환. 기본 full(원본).
     """
+    if project_id:
+        await assert_project_access(db, project_id, current_user)
     ad_image_path, ad_image_key = await _save_upload(ad_image)
     req = _build_request(
         ad_id=ad_id,
@@ -227,7 +238,10 @@ async def stream_simulation(run_id: str) -> StreamingResponse:
 
 
 @router.get("/{run_id}/status")
-async def get_simulation_status(run_id: str) -> dict:
+async def get_simulation_status(
+    run_id: str,
+    current_user: User = Depends(get_current_user),
+) -> dict:
     """실행 진행 상태(running/completed/failed). 새로고침 후 백그라운드 런 복원용.
     서버 인메모리 기준이라 모르는 run(재시작·완료소실)은 status=unknown."""
     st = _service.get_run_status(run_id)
@@ -235,7 +249,10 @@ async def get_simulation_status(run_id: str) -> dict:
 
 
 @router.get("/{run_id}/result")
-async def get_simulation_result(run_id: str) -> dict:
+async def get_simulation_result(
+    run_id: str,
+    current_user: User = Depends(get_current_user),
+) -> dict:
     """완료된 실행 결과(반응·루브릭·집계). 미완료/없음이면 404."""
     result = _service.get_result(run_id)
     if result is None:
@@ -244,7 +261,10 @@ async def get_simulation_result(run_id: str) -> dict:
 
 
 @router.get("/{run_id}/result/analysis")
-async def get_simulation_result_analysis(run_id: str) -> dict:
+async def get_simulation_result_analysis(
+    run_id: str,
+    current_user: User = Depends(get_current_user),
+) -> dict:
     """완료된 실행 결과를 분석팀 정리 스키마(중복 제거·평탄화)로 반환. 없으면 404."""
     result = _service.get_result(run_id)
     if result is None:
@@ -254,13 +274,16 @@ async def get_simulation_result_analysis(run_id: str) -> dict:
 
 @router.get("/{simulation_id}/db-result")
 async def get_simulation_db_result(
-    simulation_id: str, session: AsyncSession = Depends(get_db)
+    simulation_id: str,
+    session: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> dict:
     """DB 영속 결과 재조회 — 새로고침·프로젝트 패널 재진입 시 SimRunResult 복원. 없으면 404."""
     try:
         sim_uuid = uuid.UUID(simulation_id)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=f"잘못된 simulation_id: {e}") from e
+    await assert_simulation_access(session, simulation_id, current_user)
     result = await SimulationRepository(session).get_full_result(sim_uuid)
     if result is None:
         raise HTTPException(status_code=404, detail="결과 없음 — 잘못된 simulation_id")

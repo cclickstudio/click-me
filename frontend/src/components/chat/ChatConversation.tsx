@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
+import { getToken } from '@/lib/authApi';
 import { formatRelativeKST, formatKSTFull } from '@/lib/datetime';
 import SimFormWidget from './SimFormWidget';
 import SimInputWidget from './SimInputWidget';
@@ -697,7 +698,10 @@ export default function ChatConversation({
       try {
         const res = await fetch(`${API_BASE}/api/chat/approve`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            ...(getToken() ? { Authorization: `Bearer ${getToken()}` } : {}),
+          },
           signal: controller.signal,
           body: JSON.stringify({
             action,
@@ -1085,7 +1089,10 @@ export default function ChatConversation({
       try {
         const res = await fetch(`${API_BASE}/api/chat/complete`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            ...(getToken() ? { Authorization: `Bearer ${getToken()}` } : {}),
+          },
           signal: controller.signal,
           body: JSON.stringify({
             session_id: sid,

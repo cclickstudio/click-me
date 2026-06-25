@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/components/AuthProvider';
+import { getToken } from '@/lib/authApi';
 import { safeRandomUUID } from '@/lib/utils';
 import ModeBadge from '@/components/ModeBadge';
 
@@ -173,7 +174,10 @@ export default function DashboardPage() {
     try {
       const res = await fetch(`${API_BASE}/api/chat/complete`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(getToken() ? { Authorization: `Bearer ${getToken()}` } : {}),
+        },
         body: JSON.stringify({ session_id: sessionId.current, messages: newMessages }),
       });
 

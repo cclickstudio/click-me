@@ -16,7 +16,8 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.auth import get_current_user
+from core.access import assert_generation_access, assert_project_access
+from core.auth import get_current_user, require_admin
 from core.db import get_db
 from core.models import OrganizationMember, User
 from domain.generator.contracts.enums import GenerationMode
@@ -231,6 +232,7 @@ async def proxy_image(key: str):
 @router.post("/generations", response_model=GenerationTaskResponse)
 async def create_generation(
     body: GenerationCreateRequest,
+    db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     # 사용자 생성(create)은 프로젝트에 저장돼야 하므로 project_id 필수 (프론트 우회 호출도 차단).
@@ -239,6 +241,8 @@ async def create_generation(
         raise HTTPException(
             status_code=400, detail="생성 결과를 저장할 프로젝트를 먼저 선택해주세요."
         )
+    if body.project_id:
+        await assert_project_access(db, str(body.project_id), current_user)
     generation_id = await generator_service.start_generation(body, created_by=current_user.id)
     return GenerationTaskResponse(
         generation_id=generation_id,
@@ -247,7 +251,11 @@ async def create_generation(
 
 
 @router.get("/generations")
-async def list_generations(limit: int = 20):
+async def list_generations(
+    limit: int = 20,
+    _admin: User = Depends(require_admin),
+):
+    """전체 생성 내역(프로젝트 무관) — 관리자 전용. 프로젝트별 목록은 /projects/{id}/generations."""
     return {"generations": await generator_service.list_generations(limit=limit)}
 
 
@@ -261,7 +269,12 @@ async def stream_generation(generation_id: str):
 
 
 @router.get("/generations/{generation_id}")
-async def get_generation(generation_id: str):
+async def get_generation(
+    generation_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    await assert_generation_access(db, generation_id, current_user)
     detail = await generator_service.get_detail(generation_id)
     if detail is None:
         raise HTTPException(status_code=404, detail="Generation not found")
@@ -269,8 +282,13 @@ async def get_generation(generation_id: str):
 
 
 @router.get("/generations/{generation_id}/download-zip")
-async def download_generation_zip(generation_id: str):
+async def download_generation_zip(
+    generation_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     """생성된 모든 후보 이미지를 ZIP으로 묶어 다운로드."""
+    await assert_generation_access(db, generation_id, current_user)
     data = await generator_service.download_zip(generation_id)
     if data is None:
         raise HTTPException(status_code=404, detail="다운로드할 이미지가 없습니다.")
@@ -383,7 +401,13 @@ async def delete_brand_kit(
 
 
 @router.post("/generations/{generation_id}/select")
-async def select_candidate(generation_id: str, body: CandidateSelectRequest):
+async def select_candidate(
+    generation_id: str,
+    body: CandidateSelectRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    await assert_generation_access(db, generation_id, current_user)
     ok = await generator_service.select_candidate(generation_id, body.candidate_id)
     if not ok:
         raise HTTPException(status_code=404, detail="Candidate not found in this generation")
@@ -391,8 +415,14 @@ async def select_candidate(generation_id: str, body: CandidateSelectRequest):
 
 
 @router.post("/generations/{generation_id}/publish")
-async def publish_candidate(generation_id: str, body: PublishRequest):
+async def publish_candidate(
+    generation_id: str,
+    body: PublishRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     """사용자 승인 액션 — 선택된 후보를 Instagram에 게시한다."""
+    await assert_generation_access(db, generation_id, current_user)
     result = await generator_service.publish_candidate(
         generation_id, body.candidate_id, body.caption
     )

@@ -75,7 +75,7 @@
 | ★G6 | /new 생성 직후 gen_form 재노출 라이브 글리치 수정 | 제너 | G3 | ⬜ |
 | ★L9 | 롱텀 메모리(시뮬/제너 입력 기억→채팅 반영) 검증 | 검증 | F5,L8 | ⬜ |
 | ★LOOP | 시뮬↔제너 양방향 개선 루프(최대 3턴) 구현·검증 | 핵심 | V2 | ⬜ |
-| ★A1 | JWT 인증·인가 일관 적용(chat/gen/sim/personas 라우트 소유권 검증) | 보안 | — | ⬜ |
+| ★A1 | JWT 인증·인가 일관 적용(chat/gen/sim/personas 라우트 소유권 검증) | 보안 | — | ✅ |
 | ★G7 | 제너 시안 3개에 기대성과 순위 부여 | 제너 | V2 | ⬜ |
 | ★AB | A/B 테스트 — 두 시안을 같은 패널로 시뮬·비교·승자 판정 | 핵심 | V1 | ⬜ |
 | ★V6 | PDF 리포트 생성 end-to-end 검증(Playwright) | 검증 | — | ⬜ |
@@ -150,6 +150,14 @@
 **증상** 라우트마다 인증이 들쭉날쭉. `projects.py`는 `get_current_user`+`_project_access_ok`(org/team/생성자) 소유권 검증이 있으나, **`chat.py`·`generator.py`·`api/routers/simulation/*`·`personas.py`는 인증·스코핑이 전혀 없음**(`Depends(get_db)`만). 즉 `GET /chat/sessions?project_id=…`·`/chat/sessions/{id}/messages`·생성/시뮬 조회·삭제가 **토큰 없이/타인 ID 추측으로 접근 가능**. (CLAUDE.md "JWT 미적용·점진 도입"의 실체 — 보안 구멍.)
 **목표** projects 패턴을 chat/generator/simulation/personas에 일관 적용 — `get_current_user` 의존 + 해당 리소스(세션·생성·시뮬)의 프로젝트 소유권 검증(같은 org/team/생성자만). 또는 전역 인증 미들웨어 + 라우트별 인가.
 **완료 기준** 비인증 요청 401, 타 프로젝트 리소스 403. 3역할 정상 흐름 회귀(자기 데이터는 그대로). (범위가 크면 chat부터 단계 적용.)
+
+**✅ 완료(2026-06-25)** 공용 인가 헬퍼 `core/access.py` 신설(`assert_project_access`·`assert_session_access`·`assert_message_access`·`assert_simulation_access`·`assert_generation_access` — projects.py 패턴 분리, 미존재 404·권한없음 403). 토큰이 흐르는 모든 데이터 엔드포인트에 `get_current_user`+소유권 적용:
+- chat.py: sessions(목록/생성/메시지/삭제)·widget-messages·pin·advice-usage·result-summary·sim-batch·complete·approve·templates·keywords·feedback·kb-chunk·image 업로드.
+- simulation/router.py: start/run(+project 검증)·status/result/analysis(로그인)·db-result(+시뮬 소유권). generator.py: create(+project 검증)·detail·download-zip·select·publish(+생성 소유권), 글로벌 목록은 admin 전용. personas.py: generate(+시뮬 소유권).
+- 프론트 raw-fetch 5곳(`/chat/complete`×2·`/approve`·`/sim-batch`·`/download-zip`)에 `Authorization: Bearer` 부착.
+- **검증(라이브 HTTP, 실제 3역할 토큰)** 401(무토큰 4종)·403(USER doyeon·COMPANY yohan 타 조직)·200(본인·admin 전체)·404(미존재)·admin 전용 글로벌 목록(USER 403) 모두 통과. `/chat/complete` 무토큰 401·본인 200·타 조직 403. **Preview UI(doyeon)** 실채팅 흐름 회귀 없음(세션 생성·진입·메시지 전송 `/chat/complete` 200 스트리밍·widget-messages·db-result 200, 콘솔 무에러).
+- **미적용(헤더 전달 불가, 의도적 보류·문서화)** EventSource 스트림(`/simulation/{run_id}/stream`·`/generator/.../stream`) — 토큰 헤더 불가, 시작/생성 시점에 소유권 검증. `<img>`/`<a>` 미디어 프록시(`*/image`·`candidates/{id}/render`·`/chat/report` 다운로드) — S3 프리픽스 가드. `/simulation/categories`는 공개(레퍼런스). brand-profile/logo/product-image는 x_client_id 키(프로젝트 리소스 아님).
+- **별건 발견** `/simulation/categories`가 개인 DB(ep-soft-band)에서 500 — `relation "categories" does not exist`(categories/category_kinds/kinds 테이블 미시딩). A1과 무관한 개인 DB 시딩 누락(손대지 않은 엔드포인트).
 
 ### ★G7 — 제너 시안 3개에 기대성과 순위 부여 (확정: 3개 유지)
 

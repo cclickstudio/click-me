@@ -8,8 +8,17 @@ from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.access import (
+    assert_generation_access,
+    assert_message_access,
+    assert_project_access,
+    assert_session_access,
+    assert_simulation_access,
+)
+from core.auth import get_current_user
 from core.config import settings
 from core.db import AsyncSessionLocal, get_db
+from core.models import User
 from core.schemas import ChatRequest
 from domain.chat import history
 from domain.chat.loop_state import get_loop_state
@@ -84,7 +93,13 @@ async def _persist(
 
 @router.post("/complete")
 @assistant_router.post("/chat")
-async def chat_complete(body: ChatRequest) -> StreamingResponse:
+async def chat_complete(
+    body: ChatRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> StreamingResponse:
+    if body.project_id:
+        await assert_project_access(db, body.project_id, current_user)
     last_message = body.messages[-1].content if body.messages else ""
 
     async def generate() -> AsyncGenerator[str, None]:
@@ -144,8 +159,14 @@ _APPROVE_PROMPTS: dict[str, str] = {
 
 
 @router.post("/approve")
-async def chat_approve(body: ApproveRequest) -> StreamingResponse:
+async def chat_approve(
+    body: ApproveRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> StreamingResponse:
     """개선 루프 수락 — 왕복 카운트를 올리고, 해당 액션의 입력 위젯을 스트리밍한다(HITL)."""
+    if body.project_id:
+        await assert_project_access(db, body.project_id, current_user)
     loop = get_loop_state(body.session_id)
     if body.action == "run_generator":
         loop.loop_count += 1  # 시뮬→제너 왕복 1회 확정
@@ -199,13 +220,19 @@ class BatchSimRequest(BaseModel):
 
 
 @router.post("/sim-batch")
-async def chat_sim_batch(body: BatchSimRequest) -> dict:
+async def chat_sim_batch(
+    body: BatchSimRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
     """배치 시뮬 — 광고 여러 버전을 순차 실행(동시 금지 정책 준수)해 KPI를 나란히 반환(T11).
 
     경로는 명세(/api/simulations/batch) 대신 채팅 소유 경로로 둔다(채팅 위젯 전용).
     """
     from domain.simulation.assistant.tools import run_simulation  # noqa: PLC0415
 
+    if body.project_id:
+        await assert_project_access(db, body.project_id, current_user)
     if not body.ads or len(body.ads) < 2:
         raise HTTPException(status_code=400, detail="비교할 광고를 2개 이상 입력하세요.")
     if len(body.ads) > 4:
@@ -237,11 +264,16 @@ class AppendWidgetsRequest(BaseModel):
 
 
 @router.post("/widget-messages")
-async def append_widget_messages(body: AppendWidgetsRequest) -> dict:
+async def append_widget_messages(
+    body: AppendWidgetsRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
     """단독 위젯 메시지(시뮬 결과·토론 stream·토론 요약 등)를 세션에 영속화 — 새로고침 복원용.
 
     프론트가 시뮬/토론 완료 시점에 결과·토론 위젯을 별도 어시스턴트 메시지로 남긴다.
     """
+    await assert_session_access(db, body.session_id, current_user)
     items = [{"content": it.content, "meta": it.meta} for it in body.items]
     saved = await history.append_widget_messages(body.session_id, items)
     return {"messages": saved}
@@ -252,8 +284,14 @@ class PinRequest(BaseModel):
 
 
 @router.patch("/messages/{message_id}/pin")
-async def pin_chat_message(message_id: str, body: PinRequest) -> dict:
+async def pin_chat_message(
+    message_id: str,
+    body: PinRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
     """메시지 핀 토글(T19) — 세션 상단 고정 표시용."""
+    await assert_message_access(db, message_id, current_user)
     ok = await history.pin_message(message_id, body.pinned)
     if not ok:
         raise HTTPException(status_code=404, detail="메시지를 찾을 수 없습니다.")
@@ -281,8 +319,14 @@ class TemplateCreate(BaseModel):
 
 
 @router.post("/templates")
-async def create_template(body: TemplateCreate) -> dict:
+async def create_template(
+    body: TemplateCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
     """광고 설정 템플릿 저장(T12) — 같은 이름이면 갱신."""
+    if body.project_id:
+        await assert_project_access(db, body.project_id, current_user)
     saved = await history.save_template(
         body.project_id, body.name, body.template_type, body.content
     )
@@ -294,8 +338,14 @@ async def create_template(body: TemplateCreate) -> dict:
 
 
 @router.get("/templates")
-async def list_templates(project_id: str | None = None) -> dict:
+async def list_templates(
+    project_id: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
     """프로젝트 템플릿 목록(T12)."""
+    if project_id:
+        await assert_project_access(db, project_id, current_user)
     return {"templates": await history.list_templates(project_id)}
 
 
@@ -305,8 +355,14 @@ class SessionCreate(BaseModel):
 
 
 @router.post("/sessions")
-async def create_session(body: SessionCreate, db: AsyncSession = Depends(get_db)) -> dict:
+async def create_session(
+    body: SessionCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
     """새 채팅 세션 생성 — 프로젝트에 귀속."""
+    if body.project_id:
+        await assert_project_access(db, body.project_id, current_user)
     s = await history.create_session(db, body.project_id, body.title)
     return {
         "id": str(s.id),
@@ -318,46 +374,78 @@ async def create_session(body: SessionCreate, db: AsyncSession = Depends(get_db)
 
 
 @router.get("/sessions")
-async def list_sessions(project_id: str | None = None, db: AsyncSession = Depends(get_db)) -> dict:
+async def list_sessions(
+    project_id: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
     """프로젝트의 채팅 세션 목록 — 최근 갱신 순."""
+    if project_id:
+        await assert_project_access(db, project_id, current_user)
     return {"sessions": await history.list_sessions(db, project_id)}
 
 
 @router.get("/advice-usage")
-async def advice_usage(project_id: str | None = None) -> dict:
+async def advice_usage(
+    project_id: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
     """비광고(일반 업무) 질문 사용량 — progress bar용(P12). 광고 질문은 무제한."""
+    if project_id:
+        await assert_project_access(db, project_id, current_user)
     used = await history.count_advice_usage(project_id)
     return {"used": used, "limit": settings.chat_advice_usage_limit}
 
 
 @router.get("/sessions/{session_id}/messages")
-async def get_session_messages(session_id: str, db: AsyncSession = Depends(get_db)) -> dict:
+async def get_session_messages(
+    session_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
     """세션의 메시지 내역."""
+    await assert_session_access(db, session_id, current_user)
     return {"session_id": session_id, "messages": await history.get_messages(db, session_id)}
 
 
 @router.delete("/sessions/{session_id}")
-async def delete_session(session_id: str, db: AsyncSession = Depends(get_db)) -> dict:
+async def delete_session(
+    session_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
     """세션 삭제(메시지 CASCADE)."""
+    await assert_session_access(db, session_id, current_user)
     return {"deleted": await history.delete_session(db, session_id)}
 
 
 @router.get("/result-summary")
-async def chat_result_summary(kind: str, id: str) -> dict:
+async def chat_result_summary(
+    kind: str,
+    id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
     """채팅 결과 위젯·카드용 결과 요약 — kind=sim(4대 KPI)·gen(후보 요약). 기존 도구 재사용."""
     if kind == "sim":
         from domain.simulation.assistant.tools import fetch_simulation_result  # noqa: PLC0415
 
+        await assert_simulation_access(db, id, current_user)
         return await fetch_simulation_result(id)
     if kind == "gen":
         from domain.generator.assistant.tools import fetch_generation_result  # noqa: PLC0415
 
+        await assert_generation_access(db, id, current_user)
         return await fetch_generation_result(id)
     raise HTTPException(status_code=400, detail="kind는 sim 또는 gen 이어야 합니다.")
 
 
 @router.post("/image")
-async def upload_chat_image(file: UploadFile = File(...)) -> dict:
+async def upload_chat_image(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+) -> dict:
     """채팅 첨부 이미지 → S3 업로드 → 프록시 URL 반환(내역 영속화용)."""
     ct = (file.content_type or "").split(";")[0].strip()
     if ct not in _ALLOWED_IMAGE_TYPES:
@@ -402,7 +490,10 @@ class FeedbackRequest(BaseModel):
 
 
 @router.post("/feedback")
-async def chat_feedback(body: FeedbackRequest) -> dict:
+async def chat_feedback(
+    body: FeedbackRequest,
+    current_user: User = Depends(get_current_user),
+) -> dict:
     """어시스턴트 답변 피드백 적재 — RAG 품질 개선 루프(management_kb_feedback). best-effort."""
     await record_feedback(
         thread_id=body.thread_id,
@@ -418,7 +509,10 @@ async def chat_feedback(body: FeedbackRequest) -> dict:
 
 @router.get("/kb-chunk")
 async def get_kb_chunk(
-    source: str, title: str | None = None, db: AsyncSession = Depends(get_db)
+    source: str,
+    title: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ) -> dict:
     """P5 인용 칩 — 출처 파일(+섹션)로 KB 원문 청크를 조회해 펼침용으로 반환한다.
 
@@ -475,7 +569,10 @@ _KEYWORD_USER_TEMPLATE = """\
 
 
 @router.post("/keywords")
-async def suggest_keywords(body: KeywordRequest) -> dict:
+async def suggest_keywords(
+    body: KeywordRequest,
+    current_user: User = Depends(get_current_user),
+) -> dict:
     """F10 — 광고 맥락 기반 추천 해시태그·키워드(SNS 활용). gpt-4o-mini로 추출, 칩으로 복사."""
     from openai import AsyncOpenAI
 

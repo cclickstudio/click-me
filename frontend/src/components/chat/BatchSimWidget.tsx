@@ -2,6 +2,7 @@
 
 // 배치 시뮬 위젯 — 광고 2개를 입력해 한 번에(순차) 비교 시뮬, KPI를 나란히 표로 보여준다(T11)
 import { useState } from 'react';
+import { getToken } from '@/lib/authApi';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
@@ -42,7 +43,10 @@ export default function BatchSimWidget({ projectId }: { projectId?: string }) {
     try {
       const res = await fetch(`${API_BASE}/api/chat/sim-batch`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(getToken() ? { Authorization: `Bearer ${getToken()}` } : {}),
+        },
         body: JSON.stringify({ project_id: projectId, ads }),
       });
       if (!res.ok) {
