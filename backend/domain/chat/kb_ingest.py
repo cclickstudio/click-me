@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 from pathlib import Path
 
+from langsmith.wrappers import wrap_openai
 from openai import AsyncOpenAI
 from sqlalchemy import delete
 
@@ -37,7 +38,7 @@ def _chunk_markdown(text: str) -> list[tuple[str, str]]:
 
 
 async def ingest() -> int:
-    client = AsyncOpenAI(api_key=settings.openai_api_key)
+    client = wrap_openai(AsyncOpenAI(api_key=settings.openai_api_key))
     total = 0
     async with AsyncSessionLocal() as db:
         for md in sorted(_KB_DIR.glob("*.md")):

@@ -1019,6 +1019,8 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
                 "session_id": sid,
                 "thread_id": thread_id,
                 "conversation_id": thread_id,
+                "ls_model_name": model_name,
+                "ls_provider": "openai",
             },
             configurable={"thread_id": thread_id},
         )

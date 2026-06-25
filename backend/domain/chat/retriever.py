@@ -6,6 +6,7 @@ CLIO의 광고 일반 지식 답변에만 쓰며, 시뮬·제너·매니지 도�
 
 from __future__ import annotations
 
+from langsmith.wrappers import wrap_openai
 from openai import AsyncOpenAI
 from sqlalchemy import select
 
@@ -18,7 +19,8 @@ class ClioKbRetriever:
     """pgvector 코사인 검색 리트리버 — 세션 팩토리·임베딩 클라이언트 주입 가능."""
 
     def __init__(self, api_key: str | None = None, session_factory=AsyncSessionLocal) -> None:
-        self._client = AsyncOpenAI(api_key=api_key) if api_key else AsyncOpenAI()
+        client = AsyncOpenAI(api_key=api_key) if api_key else AsyncOpenAI()
+        self._client = wrap_openai(client)
         self._sf = session_factory
 
     async def embed(self, text: str) -> list[float]:

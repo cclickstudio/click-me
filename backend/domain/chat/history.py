@@ -231,9 +231,10 @@ async def summarize_and_compress(session_id: str, project_id: str | None) -> Non
             return
     transcript = "\n".join(f"{m['role']}: {m['content']}" for m in older)
     try:
+        from langsmith.wrappers import wrap_openai  # noqa: PLC0415
         from openai import AsyncOpenAI  # noqa: PLC0415
 
-        client = AsyncOpenAI(api_key=key)
+        client = wrap_openai(AsyncOpenAI(api_key=key))
         model = getattr(settings, "chat_summary_model", "gpt-4o-mini")
         resp = await client.chat.completions.create(
             model=model,
