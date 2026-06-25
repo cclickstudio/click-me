@@ -91,6 +91,15 @@ def test_conclusion_strips_execution_directive():
     assert "예산이 초과됐습니다." in text
 
 
+def test_directive_only_answer_degrades_to_neutral():
+    # 답변이 지시문뿐이면 원문을 흘리지 말고 중립 강등(원문 재노출 금지).
+    res = AskResult(answer="지금 실행하세요.", suggested_action=_pause())
+    card = compose_card(res, turn_id="t7b")
+    text = _section(card, "summary").text
+    assert "실행하세요" not in text
+    assert text == "자세한 내용은 아래 카드를 확인하세요."
+
+
 def test_evidence_section_carries_citations_and_tools():
     res = AskResult(
         answer="x",
