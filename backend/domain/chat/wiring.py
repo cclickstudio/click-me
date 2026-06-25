@@ -8,7 +8,7 @@ from domain.chat.contracts.ports import EmbeddingProvider
 
 
 def build_embedding_provider(s=settings) -> EmbeddingProvider:
-    """USE_MOCK/mock → Mock. bge_m3 → TEI. openai → OpenAI 폴백(1536)."""
+    """USE_MOCK/mock → Mock. bge_m3 → TEI. bge_m3_local → 인프로세스 BGE-M3. openai → 1536 폴백."""
     provider = getattr(s, "embedding_provider", "bge_m3")
     dim = getattr(s, "embedding_dim", 1024)
 
@@ -16,6 +16,11 @@ def build_embedding_provider(s=settings) -> EmbeddingProvider:
         from domain.chat.adapters.embeddings import MockEmbeddingProvider
 
         return MockEmbeddingProvider(dim=dim)
+
+    if provider == "bge_m3_local":  # TEI 서버 없이 sentence-transformers로 인프로세스 임베딩(1024)
+        from domain.chat.adapters.embeddings import LocalBgeEmbeddingProvider
+
+        return LocalBgeEmbeddingProvider(dim=dim)
 
     if provider == "openai":
         from domain.chat.adapters.embeddings import OpenAIEmbeddingProvider

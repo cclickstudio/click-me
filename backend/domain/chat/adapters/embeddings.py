@@ -5,8 +5,12 @@ from __future__ import annotations
 
 import hashlib
 import struct
+from typing import TYPE_CHECKING
 
 import httpx
+
+if TYPE_CHECKING:
+    from sentence_transformers import SentenceTransformer
 
 
 class MockEmbeddingProvider:
@@ -58,6 +62,41 @@ class TeiEmbeddingProvider:
     async def aclose(self) -> None:
         """앱 종료 시 내부 생성 클라이언트 정리(주입 클라이언트는 호출측 소유)."""
         await self._client.aclose()
+
+
+class LocalBgeEmbeddingProvider:
+    """인프로세스 BGE-M3(sentence-transformers) — TEI 서버 없이 로컬 임베딩(1024, CPU/GPU 자동).
+
+    provider=bge_m3_local 일 때 사용. 모델은 프로세스당 1회 로드(클래스 캐시) — 최초 호출 시 ~2.3GB
+    다운로드 + 로드 지연. 적재(kb_ingest)와 런타임(retriever)이 동일 임베딩 공간을 공유한다.
+    """
+
+    _model = None  # 프로세스 공유 — 1회만 로드
+
+    def __init__(self, *, model_name: str = "BAAI/bge-m3", dim: int = 1024) -> None:
+        self._model_name = model_name
+        self._dim = dim
+
+    @property
+    def dim(self) -> int:
+        return self._dim
+
+    def _get_model(self) -> SentenceTransformer:
+        if LocalBgeEmbeddingProvider._model is None:
+            from sentence_transformers import SentenceTransformer  # noqa: PLC0415
+
+            LocalBgeEmbeddingProvider._model = SentenceTransformer(self._model_name)
+        return LocalBgeEmbeddingProvider._model
+
+    async def embed(self, texts: list[str]) -> list[list[float]]:
+        import asyncio  # noqa: PLC0415
+
+        model = self._get_model()
+        # 정규화(코사인 검색용) — TEI BGE-M3 dense 출력과 동일 공간.
+        vecs = await asyncio.to_thread(
+            lambda: model.encode(texts, normalize_embeddings=True, batch_size=8)
+        )
+        return [list(map(float, v)) for v in vecs]
 
 
 class OpenAIEmbeddingProvider:
