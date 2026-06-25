@@ -21,6 +21,7 @@ from domain.simulation.contracts.debate_schemas import (
     DebateTopic,
     JudgeFinal,
     ParticipantDebate,
+    SelectedPanel,
     Utterance,
 )
 from domain.simulation.contracts.schemas import (
@@ -302,9 +303,25 @@ class DebateService:
 
             # ── 조각 10-a 구성(전문가 4 합성 + 일반인 lay_count 선발, personas 있으면 타깃 적합) ──
             # selector_rerank_fn 주입 시 동점 후보만 LLM 재랭킹(실 LLM 경로). mock은 None=결정론.
-            panel = select_panel(
-                reactions, ad_analysis, lay_count, personas, self._selector_rerank_fn
+            @traceable(
+                run_type="chain",
+                name="토론 대표 선발",
+                metadata={
+                    "domain": "simulation",
+                    "feature": "debate",
+                    "stage": "selection",
+                    "run_id": run_id,
+                    "lay_count": lay_count,
+                    "reaction_count": len(reactions),
+                    "has_personas": bool(personas),
+                },
             )
+            def _select_panel_traced() -> SelectedPanel:
+                return select_panel(
+                    reactions, ad_analysis, lay_count, personas, self._selector_rerank_fn
+                )
+
+            panel = _select_panel_traced()
             store.emit(
                 run_id,
                 {
