@@ -1,3 +1,9 @@
+# ── Playwright E2E ──────────────────────────────
+test-results/
+playwright-report/
+blob-report/
+/test/e2e/.auth-tokens.json
+
 # ── Python ──────────────────────────────────────
 __pycache__/
 *.py[cod]

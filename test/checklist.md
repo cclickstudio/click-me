@@ -6,7 +6,7 @@
 ## 단계
 
 - ✅ **P1** 백엔드 pytest — `GET /api/admin/chats`가 `updated_at`(최근활동) 내림차순인지. (`tests/admin/test_chats_ordering.py`, 실 DB 통합, 초록)
-- ⬜ **P2** Playwright 셋업 — `test/e2e/` + config + 토큰 로그인 헬퍼 + 건도연 진입 헬퍼, frontend `@playwright/test` devDep. (의존 없음)
+- ✅ **P2** Playwright 셋업 — `playwright.config.ts` + `test/e2e/`(global-setup 토큰발급·auth/project 헬퍼·smoke), frontend `@playwright/test` devDep. smoke 초록. (의존 없음)
 - ⬜ **P3** E2E① 시뮬 영속 + 새로고침 복원 (가장 중요). [P2]
 - ⬜ **P4** E2E② 위젯 타이밍 — 반응 완료 직후 결과 위젯 + 토론 위젯 둘 다 보임. [P2]
 - ⬜ **P5** E2E③ N4 세션 누수 — A 시뮬이 B 세션 선제 알림으로 안 뜸. [P3]
