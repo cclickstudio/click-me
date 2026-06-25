@@ -401,6 +401,8 @@ class ChatLongTermMemory(Base):
     )
     memory_type: Mapped[str] = mapped_column(String(32))
     content: Mapped[dict] = mapped_column(JSONB)
+    # 시맨틱 검색용 임베딩(text-embedding-3-small). nullable — 임베딩 전/실패 행은 최신순 폴백.
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(1536), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

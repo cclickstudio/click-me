@@ -21,6 +21,7 @@ from core.models import (
     ChatMessage,
     ChatSession,
 )
+from domain.chat.kb_ingest import EMBEDDING_MODEL
 
 _BRAND_FIELDS = ("brand_name", "tone", "target_audience", "product_category", "keywords")
 
@@ -265,16 +266,59 @@ async def summarize_and_compress(session_id: str, project_id: str | None) -> Non
         )
 
 
+def _memory_text(memory_type: str, content: dict) -> str:
+    """롱텀 메모리 1건을 임베딩·검색용 평문으로 직렬화(타입별 핵심 필드만)."""
+    c = content or {}
+    if memory_type == "sim_input":
+        return (
+            f"시뮬 입력 제목 {c.get('ad_title', '')} 카피 {c.get('ad_content', '')} "
+            f"카테고리 {c.get('product_category', '')} 목표 {c.get('ad_objective', '')}"
+        )
+    if memory_type == "gen_input":
+        return (
+            f"생성 입력 상품 {c.get('product_name', '')} 설명 {c.get('product_description', '')} "
+            f"타깃 {c.get('target_audience', '')} 목표 {c.get('campaign_objective', '')}"
+        )
+    if memory_type == "session_summary":
+        return f"이전 대화 요약 {c.get('summary', '')}"
+    if memory_type == "user_profile_inferred":
+        return f"사용자 프로파일 {c.get('profile') or c}"
+    return str(c)
+
+
+async def _embed_memory(text: str) -> list[float] | None:
+    """메모리/질문 텍스트 임베딩(풀모드+키일 때만). 미설정·실패·빈 텍스트면 None(폴백 유도)."""
+    from core.config import settings  # noqa: PLC0415 — 지연 임포트(설정 의존 최소화)
+
+    key = getattr(settings, "openai_api_key", None)
+    if getattr(settings, "use_mock", True) or not key or not text.strip():
+        return None
+    try:
+        from langsmith.wrappers import wrap_openai  # noqa: PLC0415
+        from openai import AsyncOpenAI  # noqa: PLC0415
+
+        client = wrap_openai(AsyncOpenAI(api_key=key))
+        resp = await client.embeddings.create(model=EMBEDDING_MODEL, input=[text])
+        return resp.data[0].embedding
+    except Exception as exc:  # noqa: BLE001 — 임베딩 실패가 저장/검색을 막지 않게
+        print(f"[chat] memory embed error: {exc!r}")
+        return None
+
+
 async def save_long_term_memory(
     project_id: str | None,
     memory_type: str,
     content: dict,
     user_id: str | None = None,
 ) -> None:
-    """롱텀 메모리 1건 적재(best-effort) — 자체 세션. 오케스트레이터(비요청 스코프)에서 호출."""
+    """롱텀 메모리 1건 적재(best-effort) — 자체 세션. 오케스트레이터(비요청 스코프)에서 호출.
+
+    시맨틱 검색용 임베딩을 함께 채운다(풀모드+키일 때만, 실패 시 NULL로 저장 — 조회는 최신순 폴백).
+    """
     pid = _as_uuid(project_id)
     if pid is None:
         return  # 프로젝트 스코프 없으면 누적 의미 없음 — 생략
+    embedding = await _embed_memory(_memory_text(memory_type, content))
     try:
         async with AsyncSessionLocal() as db:
             db.add(
@@ -283,11 +327,49 @@ async def save_long_term_memory(
                     user_id=_as_uuid(user_id),
                     memory_type=memory_type,
                     content=content,
+                    embedding=embedding,
                 )
             )
             await db.commit()
     except Exception as exc:  # noqa: BLE001 — 메모리 적재 실패가 채팅을 막지 않게
         print(f"[chat] long-term memory save error: {exc!r}")
+
+
+async def search_long_term_memory(
+    project_id: str | None, query: str, k: int = 4, memory_type: str | None = None
+) -> list[dict]:
+    """질문과 의미적으로 가까운 롱텀 메모리 top-k(pgvector 코사인).
+
+    임베딩/키 없음·실패 시 get_long_term_memory(최신순)로 폴백 — 항상 무언가는 돌려준다.
+    """
+    pid = _as_uuid(project_id)
+    if pid is None:
+        return []
+    emb = await _embed_memory(query)
+    if emb is None:
+        return await get_long_term_memory(project_id, limit=k, memory_type=memory_type)
+    try:
+        async with AsyncSessionLocal() as db:
+            dist = ChatLongTermMemory.embedding.cosine_distance(emb).label("dist")
+            stmt = select(ChatLongTermMemory, dist).where(
+                ChatLongTermMemory.project_id == pid,
+                ChatLongTermMemory.embedding.isnot(None),
+            )
+            if memory_type:
+                stmt = stmt.where(ChatLongTermMemory.memory_type == memory_type)
+            rows = (await db.execute(stmt.order_by(dist).limit(k))).all()
+            return [
+                {
+                    "memory_type": r[0].memory_type,
+                    "content": r[0].content,
+                    "created_at": r[0].created_at.isoformat() if r[0].created_at else None,
+                    "score": round(1.0 - float(r[1]), 3),
+                }
+                for r in rows
+            ]
+    except Exception as exc:  # noqa: BLE001 — 검색 실패면 최신순 폴백
+        print(f"[chat] long-term memory search error: {exc!r}")
+        return await get_long_term_memory(project_id, limit=k, memory_type=memory_type)
 
 
 async def get_long_term_memory(

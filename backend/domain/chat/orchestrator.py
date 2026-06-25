@@ -886,9 +886,10 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
             except Exception as exc:  # noqa: BLE001 — 추출 실패가 대화를 막지 않게
                 print(f"[chat] brand extract error: {exc!r}")
         # 진입 시 프로젝트 롱텀 메모리·브랜드 프로파일 조회 → 노드에서 시스템 프롬프트 앞 주입.
-        ltm = await history.get_long_term_memory(turn.project_id, limit=3)
+        # 최신순이 아니라 '이번 질문과 의미적으로 가까운' 메모리를 우선 끌어온다(시맨틱 검색).
+        ltm = await history.search_long_term_memory(turn.project_id, turn.question, k=4)
         # 이전 대화 요약(session_summary)은 매 실행마다 쌓이는 sim/gen_input에 밀려
-        # limit=3 최신순에서 빠지기 쉬워, 멀티턴 맥락 유지를 위해 별도로 보강 주입한다.
+        # 검색 top-k에서 빠질 수 있어, 멀티턴 맥락 유지를 위해 별도로 보강 주입한다.
         if not any(m.get("memory_type") == "session_summary" for m in ltm):
             summary_rows = await history.get_long_term_memory(
                 turn.project_id, limit=1, memory_type="session_summary"
