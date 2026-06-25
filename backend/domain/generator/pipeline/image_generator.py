@@ -541,15 +541,7 @@ async def generate_image(
         base_file.name = "base.png"
         mask_file = io.BytesIO(mask_png)
         mask_file.name = "mask.png"
-        response = await _openai_client.images.edit(
-            model=settings.generator_image_edit_model,
-            image=base_file,
-            mask=mask_file,
-            prompt=prompt,
-            n=1,
-            size=size.value,
-        )
-        return base64.b64decode(response.data[0].b64_json)
+        return await _edit_with_openai(base_file, prompt, size, mask_file=mask_file)
 
     # ── [개선 모드] Edit API ───────────────────────────────────────────────────
     if original_image_bytes is not None:
@@ -587,14 +579,7 @@ async def generate_image(
 
         image_file = io.BytesIO(original_image_bytes)
         image_file.name = "original.png"
-        response = await _openai_client.images.edit(
-            model=settings.generator_image_edit_model,
-            image=image_file,
-            prompt=prompt,
-            n=1,
-            size=size.value,
-        )
-        return base64.b64decode(response.data[0].b64_json)
+        return await _edit_with_openai(image_file, prompt, size)
 
     # ── [생성 모드] Generate API ──────────────────────────────────────────────
     target_audience = product_analysis.target_audience or "general audience"
@@ -658,7 +643,27 @@ async def _generate_with_openai(prompt: str, size: AdSize) -> bytes:
         kwargs["response_format"] = "b64_json"
         kwargs["quality"] = quality
     response = await _openai_client.images.generate(**kwargs)
-    _record_image_cost(model, "openai", size, quality)
+    _record_openai_usage(response, model, size, quality)
+    return base64.b64decode(response.data[0].b64_json)
+
+
+@traceable(name="image-model:openai-edit", run_type="llm")
+async def _edit_with_openai(
+    image_file: io.BytesIO, prompt: str, size: AdSize, mask_file: io.BytesIO | None = None
+) -> bytes:
+    """OpenAI images.edit 호출(컴포즈·개선·누끼 공통) — 모델명 런으로 분리해 토큰·시간·비용을 기록한다."""
+    model = settings.generator_image_edit_model
+    kwargs: dict = {
+        "model": model,
+        "image": image_file,
+        "prompt": prompt,
+        "n": 1,
+        "size": size.value,
+    }
+    if mask_file is not None:
+        kwargs["mask"] = mask_file
+    response = await _openai_client.images.edit(**kwargs)
+    _record_openai_usage(response, model, size, settings.generator_image_quality)
     return base64.b64decode(response.data[0].b64_json)
 
 
@@ -730,6 +735,44 @@ def _record_image_cost(model: str, provider: str, size: AdSize, quality: str | N
     )
 
 
+def _modality_breakdown(details: Any) -> dict[str, int]:
+    """google-genai의 *_tokens_details(모달리티별 토큰 리스트)를 {text, image, ...} 합계 dict로 변환."""
+    out: dict[str, int] = {}
+    for item in details or []:
+        modality = getattr(item, "modality", None)
+        name = (getattr(modality, "name", None) or str(modality)).lower()
+        out[name] = out.get(name, 0) + (getattr(item, "token_count", None) or 0)
+    return out
+
+
+def _record_openai_usage(resp: Any, model: str, size: AdSize, quality: str | None) -> None:
+    """OpenAI 이미지 호출(images.generate/edit)의 토큰·모델명·비용을 현재 LangSmith run에 기록.
+
+    Gemini의 _record_genai_usage와 동일 패턴 — 양쪽 provider가 같은 키(usage_metadata·estimated_cost_usd)로
+    찍혀 모델을 바꿔도 대시보드에서 토큰·비용을 나란히 비교할 수 있다. 트레이싱 OFF면 무동작.
+    """
+    _record_image_cost(model, "openai", size, quality)
+    run = get_current_run_tree()
+    if run is None:
+        return
+    usage = getattr(resp, "usage", None)
+    if usage is None:
+        return
+    payload: dict = {
+        "input_tokens": getattr(usage, "input_tokens", None) or 0,
+        "output_tokens": getattr(usage, "output_tokens", None) or 0,
+        "total_tokens": getattr(usage, "total_tokens", None) or 0,
+    }
+    # 입력 토큰을 텍스트/이미지로 분해 (출력은 전부 생성 이미지) — 모델별 토큰 구성 비교용.
+    details = getattr(usage, "input_tokens_details", None)
+    if details is not None:
+        payload["input_token_details"] = {
+            "text": getattr(details, "text_tokens", None) or 0,
+            "image": getattr(details, "image_tokens", None) or 0,
+        }
+    run.set(usage_metadata=payload)
+
+
 def _record_genai_usage(resp: Any, model: str, size: AdSize) -> None:
     """google-genai 직접 호출(genai SDK)의 토큰·모델명을 현재 LangSmith run에 기록.
 
@@ -744,13 +787,19 @@ def _record_genai_usage(resp: Any, model: str, size: AdSize) -> None:
     um = getattr(resp, "usage_metadata", None)
     if um is None:
         return
-    run.set(
-        usage_metadata={
-            "input_tokens": getattr(um, "prompt_token_count", None) or 0,
-            "output_tokens": getattr(um, "candidates_token_count", None) or 0,
-            "total_tokens": getattr(um, "total_token_count", None) or 0,
-        },
-    )
+    payload: dict = {
+        "input_tokens": getattr(um, "prompt_token_count", None) or 0,
+        "output_tokens": getattr(um, "candidates_token_count", None) or 0,
+        "total_tokens": getattr(um, "total_token_count", None) or 0,
+    }
+    # 모달리티(텍스트/이미지)별 분해 — 입력은 prompt_tokens_details, 출력은 candidates_tokens_details.
+    prompt_details = _modality_breakdown(getattr(um, "prompt_tokens_details", None))
+    if prompt_details:
+        payload["input_token_details"] = prompt_details
+    output_details = _modality_breakdown(getattr(um, "candidates_tokens_details", None))
+    if output_details:
+        payload["output_token_details"] = output_details
+    run.set(usage_metadata=payload)
 
 
 async def _generate_with_gemini(prompt: str, size: AdSize) -> bytes:
@@ -811,6 +860,7 @@ _REMOVE_BG_PROMPT = (
 )
 
 
+@traceable(name="image-model:remove-bg", run_type="llm")
 async def remove_product_background(product_image_bytes: bytes) -> bytes:
     """상품 이미지의 배경을 제거하고 투명 PNG bytes를 반환한다."""
     image_file = io.BytesIO(product_image_bytes)
@@ -821,6 +871,12 @@ async def remove_product_background(product_image_bytes: bytes) -> bytes:
         prompt=_REMOVE_BG_PROMPT,
         n=1,
         background="transparent",
+    )
+    _record_openai_usage(
+        response,
+        settings.generator_image_edit_model,
+        AdSize.SQUARE,
+        settings.generator_image_quality,
     )
     return base64.b64decode(response.data[0].b64_json)
 

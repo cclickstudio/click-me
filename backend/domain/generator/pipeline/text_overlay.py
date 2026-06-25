@@ -5,6 +5,7 @@ import io
 import math
 import re
 from dataclasses import dataclass
+from functools import cache
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
@@ -15,9 +16,53 @@ from domain.generator.pipeline.style_profile import get_style
 _FONT_DIR = Path(__file__).resolve().parents[3] / "assets" / "fonts"
 _FONT_BOLD = str(_FONT_DIR / "Pretendard-Bold.otf")
 _FONT_REGULAR = str(_FONT_DIR / "Pretendard-Regular.otf")
-# 감성형 얇은 폰트 — 있으면 Light, 없으면 Regular로 폴백(나중에 .otf만 넣으면 자동 적용).
-_FONT_LIGHT_PATH = _FONT_DIR / "Pretendard-Light.otf"
-_FONT_LIGHT = str(_FONT_LIGHT_PATH) if _FONT_LIGHT_PATH.exists() else _FONT_REGULAR
+
+# KB Typography System의 전략별 웨이트 → 실제 Pretendard 파일.
+# 웨이트별 굵기값(100~900)으로 보유 파일 중 가장 가까운 것을 고른다 → 누락 웨이트는
+# 자동 폴백되고, 해당 .otf를 fonts/에 넣으면 그 웨이트가 즉시 적용된다(현재는 Bold·Regular만 보유).
+_WEIGHT_VALUE: dict[str, int] = {
+    "thin": 100,
+    "extralight": 200,
+    "light": 300,
+    "regular": 400,
+    "medium": 500,
+    "semibold": 600,
+    "bold": 700,
+    "extrabold": 800,
+    "black": 900,
+}
+_WEIGHT_FILENAME: dict[str, str] = {
+    "thin": "Pretendard-Thin.otf",
+    "extralight": "Pretendard-ExtraLight.otf",
+    "light": "Pretendard-Light.otf",
+    "regular": "Pretendard-Regular.otf",
+    "medium": "Pretendard-Medium.otf",
+    "semibold": "Pretendard-SemiBold.otf",
+    "bold": "Pretendard-Bold.otf",
+    "extrabold": "Pretendard-ExtraBold.otf",
+    "black": "Pretendard-Black.otf",
+}
+
+
+@cache
+def _resolve_font(weight: str) -> str:
+    """전략이 지정한 폰트 웨이트를 실제 파일 경로로 해석한다.
+
+    해당 웨이트 .otf가 없으면 보유한 웨이트 중 굵기값이 가장 가까운 파일로 폴백한다
+    (동률이면 더 굵은 쪽). 보유 파일이 전혀 없으면 Regular. 누락 웨이트 .otf를
+    assets/fonts/에 추가하면 캐시만 비우면 자동 반영된다.
+    """
+    target = _WEIGHT_VALUE.get(weight, 700)
+    available = [
+        (_WEIGHT_VALUE[name], _FONT_DIR / fname)
+        for name, fname in _WEIGHT_FILENAME.items()
+        if (_FONT_DIR / fname).exists()
+    ]
+    if not available:
+        return _FONT_REGULAR
+    _, path = min(available, key=lambda vp: (abs(vp[0] - target), -vp[0]))
+    return str(path)
+
 
 _DEFAULT_ACCENT = (37, 99, 235)  # brand_color 없을 때 기본 강조색(파랑)
 _WHITE = (255, 255, 255, 255)
@@ -200,6 +245,7 @@ def _draw_cta(
     accent: tuple[int, int, int],
     align: str,
     template: TemplateType,
+    font_path: str = _FONT_BOLD,
 ) -> None:
     if not text:
         return
@@ -208,7 +254,7 @@ def _draw_cta(
     pad_x = int(box_h * 0.5)
     pad_y = int(box_h * 0.22)
     font, lines, _ = _fit(
-        draw, text, _FONT_BOLD, box_w - 2 * pad_x, box_h - 2 * pad_y, int(box_h * 0.55)
+        draw, text, font_path, box_w - 2 * pad_x, box_h - 2 * pad_y, int(box_h * 0.55)
     )
     line = lines[0] if lines else text
     text_w = int(draw.textlength(line, font=font))
@@ -300,6 +346,9 @@ def _draw_review_card(
     accent: tuple[int, int, int],
     w: int,
     h: int,
+    head_font: str = _FONT_BOLD,
+    body_font: str = _FONT_REGULAR,
+    cta_font: str = _FONT_BOLD,
 ) -> Image.Image:
     """UGC 리뷰 카드 — 반투명 흰 카드에 별점·인용·리뷰어·CTA를 배치(사회적 증거)."""
     x0, y0 = int(0.06 * w), int(0.26 * h)
@@ -330,13 +379,13 @@ def _draw_review_card(
     _draw_stars(draw, ix0, t, (b - t) * 0.9)
     y += ih * 0.04
     t, b = zone(0.34)  # 인용(헤드라인)
-    _draw_block(draw, headline, (ix0, t, ix1, b), _FONT_BOLD, int((b - t) * 0.42), _INK, "left")
+    _draw_block(draw, headline, (ix0, t, ix1, b), head_font, int((b - t) * 0.42), _INK, "left")
     y += ih * 0.04
     t, b = zone(0.24)  # 본문
-    _draw_block(draw, body, (ix0, t, ix1, b), _FONT_REGULAR, int((b - t) * 0.5), _GRAY, "left")
+    _draw_block(draw, body, (ix0, t, ix1, b), body_font, int((b - t) * 0.5), _GRAY, "left")
     y += ih * 0.04
     t, b = zone(0.16)  # CTA
-    _draw_cta(draw, cta, (ix0, t, ix1, b), accent, "left", TemplateType.A)
+    _draw_cta(draw, cta, (ix0, t, ix1, b), accent, "left", TemplateType.A, cta_font)
     return base
 
 
@@ -362,7 +411,7 @@ def render_ad_text(
 
     profile = get_style(strategy) if strategy is not None else None
     style = profile.text_style if profile else "box"
-    # accent_override(예: FOMO 깊은 빨강)가 브랜드컬러보다 우선.
+    # accent_override(예: FOMO 코랄 레드)가 브랜드컬러보다 우선.
     accent_hex = (profile.accent_override if profile else None) or brand_color
     accent = _parse_color(accent_hex) or _DEFAULT_ACCENT
     if profile is not None:
@@ -370,18 +419,25 @@ def render_ad_text(
     else:
         headline_color, body_color = _WHITE, _LIGHT
 
+    # 전략별 폰트 웨이트(KB Typography) → 실제 폰트 파일. 프로필 없으면 Bold/Regular 기본.
+    if profile is not None:
+        head_font = _resolve_font(profile.headline_weight)
+        body_font = _resolve_font(profile.body_weight)
+        cta_font = _resolve_font(profile.cta_weight)
+    else:
+        head_font, body_font, cta_font = _FONT_BOLD, _FONT_REGULAR, _FONT_BOLD
+
     # review_card는 자체 카드 레이아웃을 그리고 바로 반환(템플릿 존 미사용).
     if style == "review_card":
-        base = _draw_review_card(base, headline, body, cta, accent, w, h)
+        base = _draw_review_card(
+            base, headline, body, cta, accent, w, h, head_font, body_font, cta_font
+        )
         out = io.BytesIO()
         base.save(out, format="PNG")
         return out.getvalue()
 
-    # 스타일별 폰트·여백·외곽선/그림자.
-    if style == "emotional":
-        head_font, body_font, size_factor = _FONT_LIGHT, _FONT_LIGHT, 0.82
-    else:
-        head_font, body_font, size_factor = _FONT_BOLD, _FONT_REGULAR, 1.0
+    # 감성형은 여백을 위해 폰트를 축소. 그 외는 원래 크기.
+    size_factor = 0.82 if style == "emotional" else 1.0
     floating = style in ("floating", "emotional")
     head_stroke = _contrast_stroke(headline_color) if floating else None
     body_stroke = _contrast_stroke(body_color) if floating else None
@@ -432,7 +488,7 @@ def render_ad_text(
         stroke_fill=body_stroke,
         shadow=floating,
     )
-    _draw_cta(draw, cta, _px(spec.cta.box, w, h), accent, spec.cta.align, template)
+    _draw_cta(draw, cta, _px(spec.cta.box, w, h), accent, spec.cta.align, template, cta_font)
 
     out = io.BytesIO()
     base.save(out, format="PNG")
