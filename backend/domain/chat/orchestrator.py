@@ -1008,6 +1008,13 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
                 print(f"[chat] brand extract error: {exc!r}")
         # 진입 시 프로젝트 롱텀 메모리·브랜드 프로파일 조회 → 노드에서 시스템 프롬프트 앞 주입.
         ltm = await history.get_long_term_memory(turn.project_id, limit=3)
+        # 이전 대화 요약(session_summary)은 매 실행마다 쌓이는 sim/gen_input에 밀려
+        # limit=3 최신순에서 빠지기 쉬워, 멀티턴 맥락 유지를 위해 별도로 보강 주입한다.
+        if not any(m.get("memory_type") == "session_summary" for m in ltm):
+            summary_rows = await history.get_long_term_memory(
+                turn.project_id, limit=1, memory_type="session_summary"
+            )
+            ltm = summary_rows + ltm
         brand = await history.get_brand_profile(turn.project_id)
         # 1턴 = 1 트레이스 루트(classify → route → 서브에이전트).
         # L2-2: 체크포인터 thread_id는 채팅 session_id로 고정한다.
