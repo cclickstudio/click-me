@@ -13,7 +13,7 @@
 
 - preview 카드의 **명시적 "검토·승인" 버튼** → finalize 요청 → 서버가 **최신 진단으로** 정본 `ActionProposal` 생성·영속 → `proposal_id` 반환.
 - 그 `proposal_id`로 기존 `approve()` → `executor.execute()`가 **서버 측 orchestration**으로 동작한다(클라는 정본 본문을 들지 않는다).
-- 집행 결과는 서버가 **`execution_runs`(`ExecutionRunRow`)** 정본에서 조회해 **`execution_result` 카드**(구조화 필드 + 결정적 요약)로 챗에 되돌린다.
+- 집행 결과는 서버가 **`executor.execute()` 반환 `ActionResult`(1차 정본)** + 영속된 `ActionProposal`(예산·proposal_id)로 **`execution_result` 카드**(구조화 필드 + 결정적 요약)를 만들어 챗에 되돌린다(있으면 `ExecutionRunRow.run_id` 연결, 현재는 None 가능).
 - 같은 idempotency key 중복 → 정확히 1회 집행. 만료/이미 실행됨/실패/거절이 각각 구분돼 카드로 표현된다.
 - **finalize 시점·approve/execute 시점 양쪽 authz**를 통과한다. 어시스턴트 그래프는 writer/executor를 직접 호출하지 않는다.
 
@@ -24,6 +24,7 @@
 - **재시도 버튼·다중 액션 묶음** — `ActionProposal`(단일 액션) → 묶음 계약 변경 동반(후속).
 - **타임라인 UI·로그 펼침·toast 고도화·모바일 polish** — 새 UX 표면(후속).
 - **실 Meta 비동기 집행의 폴링 완성** — 본 스펙은 `submitted_pending_review` 상태 카드까지만(폴링은 후속).
+- **`execution_runs` 테이블 영속화** — 현재 `state_machine`이 인메모리. 결과 카드는 `ActionResult`로 만들고(§5.5), run 영속 전환은 후속 인프라 작업.
 
 ## 2. 안전·정직성 불변식 (이 스펙의 게이트)
 
@@ -92,7 +93,7 @@ POST /api/chat/management/proposals/{proposal_id}/decision
 | 1 | chat_management 라우터(신규) | `api/routers/chat_management.py` (🅱) | `/proposals/finalize`, `/proposals/{id}/decision`. deps: `get_current_user`·`get_db`·`settings`, org/tenant authz. main.py append-only include |
 | 2 | 정본 proposal 빌더(신규) | `domain/management/execution/proposal_builder.py` (🅱) | `build_action_proposal_from_diagnosis(dx, ctx) -> ActionProposal` — anomaly→action_type·예산델타·tier·TTL·state_version 매핑. `finalize_proposal`로 해시. 입력 못 구하면 정본 미생성 |
 | 3 | DB ProposalRepository(신규 구현) | `domain/management/execution/service/` (🅱) | `DbProposalRepository(ProposalRepository)` — `action_proposals`(ActionProposalRow) get/save. 포트 유지, 챗·실행 경로에 주입 |
-| 4 | 결과 카드 빌더 | `domain/management/assistant/composer.py` (🅱) | `ExecutionResultSection` + 결정적 요약 조립. source는 §5.5대로 분리(실행됨=execution_runs / 실행 전 terminal=action_proposals+audit). LLM 미경유 |
+| 4 | 결과 카드 빌더 | `domain/management/assistant/composer.py` (🅱) | `ExecutionResultSection` + 결정적 요약 조립. source는 §5.5대로(1차 정본=`ActionResult`, 예산·proposal_id=영속 `ActionProposal`, 실행 전 terminal=`ActionProposalRow`+`AuditEventRow`). LLM 미경유 |
 | 5 | 새 카드 섹션 계약 | `domain/management/assistant/chat_cards/models.py` (공유 카드 계약) | `ExecutionResultSection` 추가 → `CardSection` union. FE 렌더러도 대응 |
 | 6 | 상태·에러 매핑 | composer/router (🅱) | ResultStatus·FailureReason·ProposalStatus → 카드 status + 안전 문구. 결정적 |
 | 7 | 결과 이력 적재 | router (🅱) | execution_result 카드를 `management_chat_messages`에 적재(JSON 직렬화) |
@@ -149,17 +150,17 @@ class ExecutionResultSection(BaseModel):
 
 ### 5.5 결과 카드 source of truth (실행 여부로 분리)
 
-`expired`·`rejected`·일부 `already_executed`는 새 `execution_run`이 없을 수 있다. 따라서 카드 source를 상태로 가른다. (정본 테이블/ORM: 제안 `ActionProposalRow`/`action_proposals`, 감사 `AuditEventRow`/`audit_events`, 실행 `ExecutionRunRow`/`execution_runs`, 승인 `ApprovalRow`/`approvals`.)
+**1차 정본은 `executor.execute()`가 같은 요청에서 반환한 `ActionResult`다.** `execution_runs` 테이블은 아직 쓰는 코드가 없으므로(`state_machine`이 인메모리), run 조회를 카드의 전제로 삼지 않는다. (정본 테이블/ORM: 제안 `ActionProposalRow`/`action_proposals`, 감사 `AuditEventRow`/`audit_events`, 승인 `ApprovalRow`/`approvals`. 실행 `ExecutionRunRow`/`execution_runs`는 **있으면 연결**용.)
 
 | result_status | source of truth |
 |---|---|
-| `success` · `submitted_pending_review` | **`ExecutionRunRow`(`execution_runs`)** — run에서 `run_id`·결과 조립 |
-| `failed` | 실패 run이 적재됐으면 `ExecutionRunRow`, run 적재 전 예외면 `AuditEventRow` 필수(아래 규칙) |
-| `rejected` · `expired` · (실행 전) `already_executed` | **`ActionProposalRow` + `AuditEventRow`** 에서 결정적으로 조립(run 없음, `run_id=None`) |
+| `success` · `submitted_pending_review` · `failed` | **`ActionResult`(executor 반환, 1차 정본)** — status·failure_reason·snapshot. 예산·`proposal_id`는 영속 `ActionProposal`에서. `ExecutionRunRow`가 있으면 `run_id` 연결, 없으면 `run_id=None` |
+| `rejected` · `expired` · (실행 전) `already_executed` | **`ActionProposalRow` + `AuditEventRow`** 에서 결정적으로 조립(executor 미호출 → `ActionResult` 없음, `run_id=None`) |
 
 규칙
-- **기존 run이 있으면 항상 연결**(`run_id` 채움). run이 없는 실행 전 terminal은 proposal 상태·audit로만 만들고 `run_id=None`. 어느 경로든 LLM 미경유·결정적.
-- **`failed`는 run 없이 카드를 만들지 않는다.** executor가 run 적재 전 예외로 죽어도, 라우터가 **실패를 `AuditEventRow`로 반드시 남긴 뒤** 그 audit에서 `failed` 카드를 조립한다(run_id=None 허용). "근거 없는 실패 카드" 금지.
+- 어느 경로든 **LLM 미경유·결정적**. 예산 전후·`action_type`·`proposal_id`는 항상 영속 `ActionProposal`에서 읽는다.
+- **`failed`는 근거 없이 카드를 만들지 않는다.** executor가 `ActionResult`를 반환하면 그걸로 조립한다. 만약 executor가 `ActionResult` 반환 전 예외로 죽으면, 라우터가 **실패를 `AuditEventRow`로 반드시 남긴 뒤** 그 audit에서 `failed` 카드를 조립한다(`run_id=None` 허용). "근거 없는 실패 카드" 금지.
+- **`execution_runs` 영속화는 본 스펙 비목표(후속 인프라 작업).** 들어오면 `run_id` 연결만 자연히 채워진다.
 
 ## 6. idempotency
 
@@ -194,7 +195,7 @@ class ExecutionResultSection(BaseModel):
 6. finalize 최신 진단 재실행 — ok+anomaly만 정본 생성, unavailable/no_anomaly는 정본 미생성.
 7. **`proposal_id != preview_id`** — finalize 응답의 `proposal_id`는 정본이며 `preview_id`를 재사용하지 않는다(preview_id는 trace/fingerprint 비교에만).
 8. drift — `shown_budget_after_krw` ≠ 최신 → `drift=true`.
-9. 결과 카드 결정적 생성(LLM 미경유), 6상태 매핑 — **실행됨(success/submitted)은 `execution_runs`에서 `run_id` 연결, 실행 전 terminal(expired/rejected)은 `action_proposals`+`audit_events`에서 `run_id=None`으로 조립**(§5.5).
+9. 결과 카드는 **`ActionResult` + 영속 `ActionProposal`에서 결정적 생성(LLM 미경유)**, 6상태 매핑 — 실행 전 terminal(expired/rejected)은 `ActionProposalRow`+`AuditEventRow`에서 `run_id=None`으로 조립, run row가 있으면 `run_id` 연결(§5.5).
 10. 어시스턴트 그래프가 writer/executor 직접 호출 안 함(import-purity).
 11. 결과 카드 적재·재조회 동일 렌더(§8 회귀 기준).
 12. executor가 run 적재 전 예외 → 라우터가 `AuditEventRow`를 남기고 그 audit에서 `failed` 카드 조립(run 없는 failed 카드는 audit 필수, §5.5).
