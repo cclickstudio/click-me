@@ -295,6 +295,14 @@ def test_long_single_paragraph_subsplits_by_sentence():
     chunks = chunk_markdown(f"## 긴문단\n\n{para}", max_chars=300)
     assert len(chunks) >= 2  # 문단 한 덩어리지만 문장으로 쪼개져 분할됨
     assert max(len(c.text) for c in chunks) < len(para)
+
+
+def test_single_oversized_sentence_hard_splits():
+    # 경계 없는 한 문장이 max_chars 초과 → 하드 분할로 한도 내 청크 보장
+    sentence = "가" * 1000  # 문장/문단 경계 없음
+    chunks = chunk_markdown(f"## 약관\n\n{sentence}", max_chars=200)
+    assert len(chunks) >= 2
+    assert all(len(c.text) <= 200 for c in chunks)
 ```
 
 - [ ] **Step 2: 실패 확인**
@@ -341,6 +349,14 @@ def _split_section(title: str, body: str, max_chars: int) -> list[str]:
             units.append(para)
         else:
             units.extend(_sentence_split(para))
+    # 문장 하나가 예산 초과(긴 약관·URL)면 마지막 폴백으로 하드 분할 → 각 청크 한도 보장.
+    bounded: list[str] = []
+    for unit in units:
+        if len(unit) <= budget:
+            bounded.append(unit)
+        else:
+            bounded.extend(unit[i : i + budget] for i in range(0, len(unit), budget))
+    units = bounded
     pieces: list[str] = []
     buf = ""
     for unit in units:
@@ -387,7 +403,7 @@ def chunk_markdown(text: str, max_chars: int) -> list[Chunk]:
 - [ ] **Step 4: 통과 확인**
 
 Run: `cd backend && uv run pytest tests/chat/test_chunking.py -v`
-Expected: PASS (3 passed).
+Expected: PASS (4 passed).
 
 - [ ] **Step 5: Commit**
 
@@ -726,9 +742,22 @@ def _doc_hash(md: str) -> str:
     return hashlib.sha256(norm.encode("utf-8")).hexdigest()
 
 
+# 청킹 알고리즘 버전 — 알고리즘이 바뀌면 올린다(빌드 시그니처에 포함 → 재색인 유발).
+_CHUNKING_VERSION = "1"
+
+
+def _build_signature(model: str, max_chars: int) -> str:
+    """임베딩 모델·청킹 설정·알고리즘 버전을 묶은 빌드 시그니처. version 컬럼에 저장·비교.
+
+    본문이 같아도 모델/청킹이 바뀌면 시그니처가 달라져 재색인된다(스펙 §5 교체=재색인).
+    """
+    return f"c{_CHUNKING_VERSION}-{model}-{max_chars}"
+
+
 async def ingest() -> int:
     client = AsyncOpenAI(api_key=settings.openai_api_key)
     model = settings.chat_knowledge_embedding_model
+    signature = _build_signature(model, settings.chat_knowledge_max_chunk_chars)
     total = 0
     async with AsyncSessionLocal() as db:
         # 동시 실행 직렬화 — 트랜잭션 종료 시 자동 해제(xact lock).
@@ -757,8 +786,13 @@ async def ingest() -> int:
             if not chunks:
                 continue
 
-            # 본문 동일 → 재임베딩 skip. keywords/메타만 동기화.
-            if existing is not None and existing.content_hash == new_hash:
+            # 본문·빌드설정(모델·청킹) 동일 → 재임베딩 skip. keywords/메타만 동기화.
+            # 모델/청킹이 바뀌면 시그니처 불일치 → 아래 재색인 경로로 떨어진다(스펙 §5).
+            if (
+                existing is not None
+                and existing.content_hash == new_hash
+                and existing.version == signature
+            ):
                 if (existing.source_url, existing.source_type) != (source_url, source_type):
                     existing.source_url = source_url
                     existing.source_type = source_type
@@ -784,7 +818,7 @@ async def ingest() -> int:
                 title=source,
                 source_type=source_type,
                 source_url=source_url,
-                version=new_hash[:12],
+                version=signature,
                 status="active",
                 content_hash=new_hash,
                 retrieved_at=now,
@@ -947,7 +981,7 @@ class PgKnowledgeRetriever:
     """KnowledgeRetriever 구현 — 세션 팩토리·임베딩 클라이언트 주입 가능(테스트)."""
 
     def __init__(self, api_key: str | None = None, session_factory=AsyncSessionLocal) -> None:
-        self._client = AsyncOpenAI(api_key=api_key) if api_key else AsyncOpenAI()
+        self._client = AsyncOpenAI(api_key=api_key or settings.openai_api_key)
         self._sf = session_factory
         self._model = settings.chat_knowledge_embedding_model
 
@@ -1073,6 +1107,16 @@ async def test_grounded_answer_has_citations():
     assert res.grounded is True
     assert res.answer.startswith("리타게팅")
     assert res.citations[0]["chunk_id"] == "c1"
+
+
+@pytest.mark.asyncio
+async def test_keyword_only_first_but_similar_vector_is_grounded():
+    # RRF 1위가 keyword-only(sim=0)여도, 뒤에 충분히 유사한 청크가 있으면 grounded(max로 게이트)
+    chunks = [_chunk(0.0, "kw"), _chunk(0.82, "vec")]
+    res = await answer_knowledge_question(
+        "리타게팅", _FakeRetriever(chunks), _fake_llm, threshold=0.35
+    )
+    assert res.grounded is True
 ```
 
 - [ ] **Step 2: 실패 확인**
@@ -1144,7 +1188,10 @@ async def answer_knowledge_question(
 ) -> KnowledgeAnswer:
     """검색→게이트(top-1 similarity)→통과 시에만 LLM 호출. 인용 포함."""
     chunks = await retriever.search(question, k=k, source_type=source_type)
-    if not chunks or chunks[0].similarity < threshold:
+    # RRF 정렬 특성상 keyword-only(similarity=0)가 1위에 올 수 있어, top-1이 아니라
+    # 검색된 청크 중 최대 코사인 유사도로 게이트한다(false negative 방지).
+    best_sim = max((c.similarity for c in chunks), default=0.0)
+    if not chunks or best_sim < threshold:
         return KnowledgeAnswer(answer=_NO_GROUNDS, grounded=False, citations=[])
     answer = await llm(_build_prompt(question, chunks))
     return KnowledgeAnswer(answer=answer, grounded=True, citations=build_citations(chunks))
@@ -1153,7 +1200,7 @@ async def answer_knowledge_question(
 - [ ] **Step 4: 통과 확인**
 
 Run: `cd backend && uv run pytest tests/chat/test_chat_service.py -v`
-Expected: PASS (4 passed).
+Expected: PASS (5 passed).
 
 - [ ] **Step 5: 전체 챗 테스트 회귀 확인**
 
