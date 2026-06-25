@@ -17,6 +17,11 @@ class Citation(BaseModel):
     kind: str  # "kb"(문서) | "live"(실측 툴)
     source: str  # 문서 파일명 또는 툴 이름
     title: str = ""
+    # KB 근거의 신뢰도 — system_backed(단정 가능) | advisory(참고·단서 필수) | reference(구성만).
+    # live 인용엔 없음(None). 다운스트림(wiring/chat)은 기존 kind/source/title만 읽어도 무방.
+    trust: str | None = None
+    source_url: str | None = None  # 외부 출처 URL(있으면)
+    as_of: str | None = None  # 벤치마크 기준 시점(있으면)
 
 
 class SuggestedAction(BaseModel):

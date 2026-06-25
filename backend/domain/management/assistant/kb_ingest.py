@@ -21,13 +21,38 @@ from domain.management.assistant.retriever import EMBEDDING_MODEL
 
 _KB_DIR = Path(__file__).parent / "kb"
 
-# 파일별 출처 메타 — (source_type, source_url). 외부 공식 근거가 있으면 URL, 내부 작성물은 None.
-# 현 4문서는 사람이 작성한 요약/정책이라 대부분 내부(None). meta 정책 요약만 공식 표준 참조.
-_SOURCE_META: dict[str, tuple[str, str | None]] = {
-    "meta_ad_policy.md": ("meta_official", "https://transparency.meta.com/policies/ad-standards/"),
-    "optimization_playbook.md": ("playbook", None),
-    "kpi_measurement_rules.md": ("internal_policy", None),
-    "remediation_actions.md": ("internal_policy", None),
+# 파일별 출처 메타 — (source_type, source_url, trust, extra_meta).
+# trust: system_backed(코드 기준값 근거 → 단정 가능) | advisory(외부 참고 → 단서 필수) |
+#        reference(출처 있는 구성/통계 → 인용하되 효율 단정 금지).
+# extra_meta는 doc_metadata JSONB에 trust와 함께 병합된다(platform·as_of·confidence 등).
+_SOURCE_META: dict[str, tuple[str, str | None, str, dict]] = {
+    "meta_ad_policy.md": (
+        "meta_official",
+        "https://transparency.meta.com/policies/ad-standards/",
+        "system_backed",
+        {"platform": "meta"},
+    ),
+    "optimization_playbook.md": ("playbook", None, "system_backed", {"platform": "meta"}),
+    "kpi_measurement_rules.md": ("internal_policy", None, "system_backed", {"platform": "meta"}),
+    "remediation_actions.md": ("internal_policy", None, "system_backed", {"platform": "meta"}),
+    "benchmark_meta_industry.md": (
+        "benchmark",
+        "https://www.adamigo.ai/blog/meta-ads-benchmarks-2026-by-objective-and-placement",
+        "system_backed",
+        {"platform": "meta", "as_of": "2026-06", "confidence": "high"},
+    ),
+    "benchmark_multiplatform.md": (
+        "benchmark",
+        None,
+        "advisory",
+        {"platform": "cross", "as_of": "2026-06", "confidence": "low"},
+    ),
+    "segment_korea.md": (
+        "benchmark",
+        "https://adstat.kobaco.co.kr/mcr/portal/introPage.do",
+        "reference",
+        {"platform": "meta", "as_of": "2026-06", "confidence": "medium"},
+    ),
 }
 
 
@@ -62,16 +87,20 @@ async def ingest() -> int:
             new_hash = _sha(text)
             # 증분(content_hash 변경감지): 같은 출처 active 문서가 동일 해시면 재임베딩 스킵.
             existing = (
-                await db.execute(
-                    select(ManagementKbDocument).where(
-                        ManagementKbDocument.title == source,
-                        ManagementKbDocument.status == "active",
+                (
+                    await db.execute(
+                        select(ManagementKbDocument).where(
+                            ManagementKbDocument.title == source,
+                            ManagementKbDocument.status == "active",
+                        )
                     )
                 )
-            ).scalars().first()
+                .scalars()
+                .first()
+            )
             if existing is not None and existing.content_hash == new_hash:
                 skipped += 1
-                print(f"  {source}: 변경 없음 — skip")
+                print(f"  {source}: 변경 없음 - skip")
                 continue
             sections = _chunk_markdown(text)
             if not sections:
@@ -81,7 +110,9 @@ async def ingest() -> int:
                 delete(ManagementKbDocument).where(ManagementKbDocument.title == source)
             )
             await db.execute(delete(ManagementKbChunk).where(ManagementKbChunk.source == source))
-            source_type, source_url = _SOURCE_META.get(source, ("playbook", None))
+            source_type, source_url, trust, extra = _SOURCE_META.get(
+                source, ("playbook", None, "system_backed", {})
+            )
             now = datetime.now(UTC)
             doc = ManagementKbDocument(
                 tenant_id=None,  # 공통(global) 지식
@@ -96,6 +127,7 @@ async def ingest() -> int:
                 retrieved_at=now,  # 이 내용을 KB에 반영(확인)한 시각
                 effective_from=now,  # 유효 시작 — 자동수집 도입 시 버전별로 갱신
                 verified_by="manual",  # 사람이 작성·검수한 요약 (자동수집 아님)
+                doc_metadata={"trust": trust, **extra},  # 답변 인용 시 신뢰도 라벨
             )
             db.add(doc)
             await db.flush()  # doc.id 확보

@@ -31,10 +31,17 @@ _SYSTEM = (
     "(live_campaigns/live_budget/live_campaign_detail/live_before_after)로 조회해 그 값만 "
     "인용한다(추정·환각 금지).\n"
     "- 개념·용어·원인·방법·정책 질문(무엇/왜/어떻게)은 search_kb로 근거를 찾아 그 내용으로 답한다. "
+    "벤치마크·업종/플랫폼 단가·평균(CPM/CTR/CPC/ROAS 기준, 틱톡·구글 등)도 "
+    "네 지식으로 단정하지 말고 반드시 search_kb로 근거를 찾는다. "
     "이때 현재 캠페인 상태·목록·수치를 답에 덧붙이지 마라(사용자가 현황을 직접 물을 때만 붙인다).\n"
     "- 조치·권고는 search_kb 근거(플레이북·조치 문서)에 명시된 것만 제시한다. 근거에 없는 조치"
     "(임의의 일시중지 등)를 지어내지 마라.\n"
     "- 예측(상대 지표)과 실측(절대)을 수치로 환산하지 말 것.\n"
+    "- search_kb 근거에는 trust가 붙는다. trust=system_backed는 우리 기준값이라 단정 가능. "
+    "advisory(타 플랫폼 등)는 '참고 지식이며 우리가 직접 측정·관리하는 건 Meta다'라고 "
+    "밝히고 단정하지 마라. "
+    "reference(세그먼트)는 구성·구매의향만 인용하고 층별 성과효율은 단정하지 마라. "
+    "벤치마크 수치를 인용할 땐 as_of(기준 시점)와 신뢰구간(폭)을 함께 말한다.\n"
     "- 운영 변경(일시중지·게재시작·증액·감액·소재교체)은 propose_action으로 제안만 한다. "
     "직접 실행하지 않는다(실행은 사람 승인 경로).\n"
     "- 근거가 없으면 모른다고 말한다. 문장 끝에 콜론을 쓰지 말 것."
@@ -187,7 +194,14 @@ def to_result(state: dict[str, Any], thread_id: str | None = None) -> AskResult:
     answer = last.content if isinstance(getattr(last, "content", None), str) else ""
     citations = [Citation(kind="live", source=t) for t in state.get("used_tools", [])]
     citations += [
-        Citation(kind="kb", source=d["source"], title=d.get("title", ""))
+        Citation(
+            kind="kb",
+            source=d["source"],
+            title=d.get("title", ""),
+            trust=d.get("trust"),
+            source_url=d.get("source_url"),
+            as_of=d.get("as_of"),
+        )
         for d in state.get("kb_citations", [])
     ]
     sa = state.get("suggested_action")

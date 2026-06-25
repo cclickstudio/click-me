@@ -33,6 +33,9 @@ GOLDEN: list[tuple[str, str | None, set[str], str]] = [
     ("이 캠페인 왜 게재가 안 돼?", "camp_1", {"live_campaign_detail"}, "단일 캠페인 진단"),
     ("camp_1 지금 성과 어때?", "camp_1", {"live_campaign_detail"}, "단일 캠페인 성과"),
     ("예측대로 성과가 나왔는지 비교해줘", None, {"live_before_after"}, "전후비교"),
+    ("CPM이 12000원이면 비싼 거야?", None, {"search_kb"}, "벤치마크 CPM 기준"),
+    ("트래픽 광고 CTR 기준이 어떻게 돼?", None, {"search_kb"}, "벤치마크 CTR 기준"),
+    ("틱톡은 CPM이 어때?", None, {"search_kb"}, "advisory 멀티플랫폼"),
 ]
 
 
