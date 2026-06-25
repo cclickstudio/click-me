@@ -203,6 +203,7 @@ export default function Page() {
   const [listening, setListening] = useState(false);
   const recognitionRef = useRef<{ stop: () => void } | null>(null);
   const voiceTextRef = useRef(''); // STT 결과를 onend에서 자동전송하기 위한 ref
+  const voiceCancelledRef = useRef(false); // 수동 중지 시 자동전송 방지
   const [voiceSupported, setVoiceSupported] = useState(false);
   const [ttsSupported, setTtsSupported] = useState(false);
   const [voiceError, setVoiceError] = useState<string | null>(null);
@@ -239,12 +240,14 @@ export default function Page() {
       voiceTextRef.current = t;
       setInput(t);
     };
-    // 인식 완료 → 텍스트가 있으면 자동 전송 (음성으로 검색)
+    // 인식 완료 → 수동 중지가 아닌 경우에만 자동 전송 (음성으로 검색)
     rec.onend = () => {
       setListening(false);
       const text = voiceTextRef.current.trim();
+      const cancelled = voiceCancelledRef.current;
       voiceTextRef.current = '';
-      if (text) handleSend(text);
+      voiceCancelledRef.current = false;
+      if (text && !cancelled) handleSend(text);
     };
     rec.onerror = (e) => {
       setListening(false);
@@ -261,7 +264,8 @@ export default function Page() {
   };
 
   const stopVoice = () => {
-    voiceTextRef.current = ''; // 수동 중지 시 자동전송 방지
+    voiceCancelledRef.current = true; // onend에서 자동전송 방지
+    voiceTextRef.current = '';
     recognitionRef.current?.stop();
     setListening(false);
   };
