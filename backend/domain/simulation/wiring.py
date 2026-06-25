@@ -72,7 +72,16 @@ def _build_reactor() -> object:
 
     Gemini가 자체 백오프 재시도를 다 쓰고도 503/실패면 FallbackReactionEngine이 GPT로 폴백한다.
     키가 없으면 폴백 없이 Gemini 단독(기존 동작 보존).
+    SIMULATION_LLM_PROVIDER=openai면 반응 추출을 OpenAI 단독으로(Gemini 미사용).
     """
+    from domain.simulation.adapters.gemini._common import _use_openai
+
+    if _use_openai():
+        _ensure_env("OPENAI_API_KEY")
+        from domain.simulation.adapters.openai_reaction import OpenAIReactionEngine
+
+        model = os.environ.get("SIMULATION_REACTION_FALLBACK_MODEL", "gpt-4.1-mini")
+        return OpenAIReactionEngine(model=model)
     from domain.simulation.adapters.gemini import GeminiReactionEngine
 
     primary = GeminiReactionEngine()
@@ -94,7 +103,9 @@ def build_reaction_subgraph(settings=None, *, use_llm_qa=None):
     QA 기본은 규칙(무콜). use_llm_qa=True(또는 settings.use_llm_qa)면 GeminiQaGate(콜 2배, opt-in).
     반응 엔진은 _build_reactor가 결정(Gemini 단독 또는 Gemini→GPT 폴백 체인).
     """
-    _ensure_env("GEMINI_API_KEY")
+    _ensure_env(
+        "GEMINI_API_KEY", "SIMULATION_GEMINI_MODEL", "OPENAI_API_KEY", "SIMULATION_LLM_PROVIDER"
+    )
     from domain.simulation.adapters.gemini import GeminiQaGate, RuleQaGate
 
     if use_llm_qa is None:
@@ -128,7 +139,9 @@ def build_simulation_service(
     GEMINI_API_KEY 미설정 시 어댑터 생성 단계에서 RuntimeError(폴백 대신 오류).
     use_llm_qa=True면 반응 QA를 LLM(GeminiQaGate)로(콜 2배, opt-in). 기본은 규칙 QA.
     """
-    _ensure_env("GEMINI_API_KEY")
+    _ensure_env(
+        "GEMINI_API_KEY", "SIMULATION_GEMINI_MODEL", "OPENAI_API_KEY", "SIMULATION_LLM_PROVIDER"
+    )
     from domain.simulation.adapters.gemini import (
         GeminiAdInterpreter,
         GeminiRubricEvaluator,

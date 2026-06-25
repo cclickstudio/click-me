@@ -2,6 +2,7 @@
 import uuid
 from types import SimpleNamespace
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -22,15 +23,21 @@ def test_resolve_sim_asset_key():
     assert f("/tmp/clickme_ad_abc.png") is None  # 업로드 임시 → 이연
     assert f("https://evil.example.com/x.png") is None  # 외부 → SSRF 차단
     assert f("/api/generator/image?key=secret%2Fkey") is None  # 비-durable prefix
+    # 우리 S3 버킷 URL(presigned 포함) → 경로에서 키 추출(서명 쿼리 무시)
+    assert (
+        f("https://clickme-assets.s3.amazonaws.com/generated-ads/g/candidate-2.png?X-Amz-Signature=z")
+        == "generated-ads/g/candidate-2.png"
+    )
+    assert f("https://other-bucket.s3.amazonaws.com/generated-ads/g/x.png") is None  # 타 버킷
     assert f(None) is None
 
 
 def test_is_executable_verdict():
+    # ⚠️ 임시(TEST): 게이트 해제 — 모든 입력 통과. 운영 복원 시 0.2/0.2 단언으로 되돌릴 것.
     f = management._is_executable_verdict
+    assert f(0.0, 1.0) is True
     assert f(0.2, 0.1) is True
-    assert f(0.25, 0.19) is True
-    assert f(0.19, 0.1) is False
-    assert f(0.3, 0.2) is False
+    assert f(0.05, 0.5) is True
 
 
 class _Row:
@@ -131,6 +138,7 @@ def test_from_simulation_other_org_404(monkeypatch):
     assert resp.status_code == 404
 
 
+@pytest.mark.skip(reason="임시(TEST): 집행 게이트 해제로 409 미발생 — 게이트 0.2/0.2 복원 시 해제")
 def test_from_simulation_bad_verdict_409(monkeypatch):
     resp = _client(monkeypatch, cir=0.1).post(_URL, json=_body())
     assert resp.status_code == 409

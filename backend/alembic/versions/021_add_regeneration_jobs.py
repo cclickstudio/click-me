@@ -10,8 +10,8 @@ core/models.py의 RegenerationJobRow와 1:1. v1 in-process job(설계 2026-06-22
 
 from alembic import op
 
-revision = "020"
-down_revision = "019"
+revision = "021"
+down_revision = "020"
 branch_labels = None
 depends_on = None
 
