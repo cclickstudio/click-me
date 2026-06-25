@@ -290,7 +290,7 @@ def to_result(state: dict[str, Any], thread_id: str | None = None) -> AskResult:
     citations = [Citation(kind="live", source=t) for t in state.get("used_tools", [])]
     citations += [
         Citation(
-            kind="kb",
+            kind="web" if d.get("source") == "web" else "kb",
             source=d["source"],
             title=d.get("title", ""),
             trust=d.get("trust"),

@@ -30,6 +30,7 @@ def _append(obj: dict) -> None:
     with RESULTS.open("a", encoding="utf-8") as f:
         f.write(json.dumps(obj, ensure_ascii=False) + "\n")
 
+
 _JUDGE_PROMPT = """너는 RAG 답변의 환각 채점자다. 질문·근거·답변을 보고 JSON으로만 답하라.
 핵심 기준: 답변에 '환각'(근거와 모순되거나 거짓인 주장)이 있는가.
 - 감점 대상: 근거와 모순되는 내용, 사실 오류, '근거에 없는데 지어낸 구체 수치'(지출·CTR·ROAS 등).
@@ -99,8 +100,14 @@ async def run() -> dict:
             case_stds.append(std_c)
             mark = "✓" if is_faithful else "✗"
             _append(
-                {"i": i, "q": q, "score": round(mean_c, 2), "std": round(std_c, 2),
-                 "faithful": is_faithful, "votes": f"{sum(cf)}/{j_runs}"}
+                {
+                    "i": i,
+                    "q": q,
+                    "score": round(mean_c, 2),
+                    "std": round(std_c, 2),
+                    "faithful": is_faithful,
+                    "votes": f"{sum(cf)}/{j_runs}",
+                }
             )
             print(f"  {mark} [{mean_c:.1f}±{std_c:.1f}] {q[:22]:24s} faithful {sum(cf)}/{j_runs}")
         except Exception as exc:  # noqa: BLE001
