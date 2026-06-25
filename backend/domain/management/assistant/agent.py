@@ -12,7 +12,9 @@ from domain.management.assistant.tools import INTENT_TOOLS
 
 
 def _keyword_intent(q: str, campaign_id: str | None) -> str:
-    if any(k in q for k in ("진단", "이상", "왜", "노출이 안", "게재가 안")):
+    if any(
+        k in q for k in ("진단", "이상", "왜 안", "왜 노출", "왜 게재", "노출이 안", "게재가 안")
+    ):
         return "diagnosis"
     if campaign_id:
         return "campaign_detail"
