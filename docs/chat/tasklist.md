@@ -255,9 +255,9 @@
 ### 2-1. 루프 프롬프트 (집에서 — 복붙)
 
 ```
-/loop docs/chat/tasklist.md 를 읽어. 단일 브랜치(feat/chat-doyeon)에서 남은 ⬜를 끝까지 진행한다. 제너 403 해소됨(image_generation 실호출 OK). 매 반복:
-1) 전제는 최초 1회만 — 개인 DB(ep-soft-band)·서버(8000/3000)·폰트·OPENAI_API_KEY·Preview 로그인. 통과 후 생략.
-2) §1 표에서 의존 충족·⬜인 가장 위 1개. 권장 순서: A1→G5→G6→LOOP→AB→G7→F13→N5→N6→L9→V6→V7→G1→G2→G4→F8→V3→N3→C4. S2·S5·G8은 보류로 건너뛴다. 명세는 §1-A(새 작업 ★)·§4(기존).
+/loop docs/chat/tasklist.md 를 읽어. 단일 브랜치(feat/chat-doyeon)에서 남은 ⬜를 끝까지 진행한다. A1·G5는 완료(✅). 제너 403 해소됨(image_generation 실호출 OK). 매 반복:
+1) 전제는 최초 1회만 — 개인 DB(ep-soft-band)·서버(8000/3000)·폰트·OPENAI_API_KEY·Preview 로그인. 8000이 안 떠 있으면 cd backend && uv run dev.py로 클린 재기동부터(좀비 있으면 작업관리자/재부팅). 통과 후 생략.
+2) §1 표에서 의존 충족·⬜인 가장 위 1개. 권장 순서: G6→LOOP→AB→G7→F13→N5→N6→L9→V6→V7→G1→G2→G4→F8→V3→N3→X1→X2→C4. S2·S5·G8은 보류로 건너뛴다. 명세는 §1-A(새 작업 ★·X1·X2·C4)·§4(기존).
 3) 끝까지 구현. 코드 변경 시 ruff/tsc/lint 통과. **검증은 "떴다"로 끝내지 말 것** — Claude Preview 직접 구동 + 바닥 사실 확인(DB 직접 조회·새로고침 복원·엣지/에러 유발·콘솔 무에러), admin·company·user 3역할 재현. 무엇을 검증했고 무엇은 안 했는지 명시.
 - 제너는 이미지 생성이라 ~1~2분·비용 실호출 — 완료까지 대기, 불필요한 반복 자제.
 - 버그 발견하면 그 자리에서 고치고 커밋. 완료 시 ✅ + 시맨틱 커밋(타입: 한국어).
