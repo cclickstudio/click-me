@@ -205,6 +205,35 @@ def _format_ltm(ltm: list[dict]) -> str:
     return "이 프로젝트의 최근 맥락(참고용):\n" + "\n".join(lines) + "\n\n"
 
 
+async def _format_clio_kb(question: str, api_key: str | None) -> tuple[str, list[dict]]:
+    """CLIO 전용 KB 검색 결과 → 시스템 프롬프트 컨텍스트와 인용 메타."""
+    from domain.chat.retriever import ClioKbRetriever  # noqa: PLC0415
+
+    rows = await ClioKbRetriever(api_key=api_key).search(question, k=4)
+    if not rows:
+        return "", []
+    lines = []
+    citations = []
+    for idx, row in enumerate(rows, start=1):
+        lines.append(f"[{idx}] {row['title']} ({row['source']})\n{row['chunk']}")
+        citations.append(
+            {
+                "kind": "kb",
+                "source": row["source"],
+                "title": row["title"],
+                "score": row["score"],
+            }
+        )
+    return (
+        "[CLIO 지식베이스]\n"
+        "아래 근거는 광고 일반 지식 질문에만 참고한다. "
+        "답변에는 필요한 내용만 자연스럽게 반영한다.\n"
+        + "\n\n".join(lines)
+        + "\n\n",
+        citations,
+    )
+
+
 # 브랜드 프로파일 — 자동 업데이트 트리거 키워드(이 단어가 있을 때만 추출 LLM 호출).
 _BRAND_CUES: frozenset[str] = frozenset(
     {"타겟", "타깃", "톤", "브랜드", "카테고리", "키워드", "느낌으로", "분위기"}
@@ -806,8 +835,11 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
                         "advice_limit": limit,
                     },
                 }
-        # 롱텀 메모리 + 브랜드 프로파일을 시스템 프롬프트 앞에 주입(프로젝트 맥락).
-        preamble = _format_brand(state.get("brand")) + _format_ltm(state.get("ltm") or [])
+        # 광고 일반 질문에는 CLIO 전용 KB를, 프로젝트 질문에는 롱텀 메모리+브랜드 프로파일을 주입.
+        clio_kb, citations = ("", [])
+        if is_ad:
+            clio_kb, citations = await _format_clio_kb(state["question"], api_key)
+        preamble = clio_kb + _format_brand(state.get("brand")) + _format_ltm(state.get("ltm") or [])
         msgs = [SystemMessage(content=preamble + _ADVISE_SYSTEM)]
         for role, content in (state.get("history") or [])[-6:]:
             msgs.append(
@@ -818,6 +850,8 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
         ans = resp.content if isinstance(resp.content, str) else ""
         # 비광고 답변은 한도 카운트 대상으로 태그(meta.usage_type — 스키마 무변경).
         meta = dict(base_meta)
+        if citations:
+            meta["citations"] = citations
         if not is_ad:
             meta["usage_type"] = "advice"
         return {"answer": ans, "meta": meta}
