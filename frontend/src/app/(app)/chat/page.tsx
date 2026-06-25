@@ -187,6 +187,8 @@ export default function Page() {
   const [voiceSupported, setVoiceSupported] = useState(false);
   const [ttsSupported, setTtsSupported] = useState(false);
   const [voiceError, setVoiceError] = useState<string | null>(null);
+  // 시각장애 접근성 — 자동 읽기: AI 응답 완료 시 TTS 자동 재생
+  const [autoRead, setAutoRead] = useState(false);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -241,6 +243,26 @@ export default function Page() {
     window.speechSynthesis.cancel(); // 이전 발화 중단
     window.speechSynthesis.speak(u);
   };
+
+  // 운동장애 — Escape 키로 음성입력·TTS 즉시 중지
+  useEffect(() => {
+    const onEsc = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      if (listening) stopVoice();
+      if (window.speechSynthesis?.speaking) window.speechSynthesis.cancel();
+    };
+    document.addEventListener('keydown', onEsc);
+    return () => document.removeEventListener('keydown', onEsc);
+  }, [listening]);
+
+  // 시각장애 — 자동 읽기: 스트리밍 완료 후 마지막 AI 메시지 자동 TTS
+  useEffect(() => {
+    if (!autoRead || !ttsSupported || isStreaming) return;
+    const last = messages[messages.length - 1];
+    if (last?.role === 'assistant' && last.content) speakText(last.content);
+    // messages는 isStreaming이 false로 바뀌는 순간 최신 상태. 이 시점만 트리거.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isStreaming, autoRead, ttsSupported]);
 
   const handleSend = async (text?: string) => {
     const content = text ?? input.trim();
@@ -353,7 +375,8 @@ export default function Page() {
         ) : (
           /* ── Messages ── */
           <div className="flex-1 overflow-y-auto">
-            <div className="max-w-2xl mx-auto px-4 py-8 space-y-6">
+            {/* aria-live: 스크린리더가 새 AI 응답을 자동으로 읽어줌 (시각장애 접근성) */}
+            <div role="log" aria-live="polite" aria-atomic="false" aria-label="대화 내용" className="max-w-2xl mx-auto px-4 py-8 space-y-6">
               {messages.map((msg, i) => {
                 // 빈 assistant placeholder는 타이핑 인디케이터로 대체
                 if (msg.role === 'assistant' && msg.content === '') return null;
@@ -396,6 +419,7 @@ export default function Page() {
                         <button
                           onClick={() => speakText(msg.content)}
                           title="소리로 읽기"
+                          aria-label="이 답변 소리로 읽기"
                           className="self-start text-[#B0B8C1] dark:text-[#4B5563] hover:text-[#3182F6] dark:hover:text-[#7BB4F5] px-1 py-0.5 transition-colors"
                         >
                           <SpeakerIcon />
@@ -504,6 +528,7 @@ export default function Page() {
                               fb[i] === 1 ? 'text-[#3182F6]' : 'text-[#B0B8C1] hover:text-[#3182F6]'
                             } disabled:cursor-default`}
                             title="도움이 됐어요"
+                            aria-label="도움이 됐어요"
                           >
                             👍
                           </button>
@@ -514,6 +539,7 @@ export default function Page() {
                               fb[i] === -1 ? 'text-red-500' : 'text-[#B0B8C1] hover:text-red-500'
                             } disabled:cursor-default`}
                             title="별로예요"
+                            aria-label="별로예요"
                           >
                             👎
                           </button>
@@ -551,15 +577,34 @@ export default function Page() {
               }}
               placeholder={listening ? '듣는 중…' : '메시지를 입력하세요... (Shift+Enter로 줄바꿈)'}
               rows={1}
+              aria-label="메시지 입력창"
               className="flex-1 px-4 py-3 rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] text-sm text-[#191F28] dark:text-[#F2F4F6] placeholder-[#B0B8C1] dark:placeholder-[#4B5563] focus:outline-none focus:border-[#3182F6] focus:ring-2 focus:ring-[#3182F6]/10 transition-colors resize-none overflow-hidden bg-white dark:bg-[#252D3D] leading-relaxed"
               style={{ maxHeight: '120px' }}
             />
+            {/* 시각장애 자동읽기 토글 — AI 응답 완료 시 TTS 자동 재생 */}
+            {ttsSupported && (
+              <button
+                onClick={() => setAutoRead((v) => !v)}
+                title={autoRead ? '자동 읽기 끄기' : '자동 읽기 켜기'}
+                aria-label={autoRead ? '자동 읽기 끄기' : '자동 읽기 켜기'}
+                aria-pressed={autoRead}
+                className={`p-3 rounded-xl transition-all shrink-0 ${
+                  autoRead
+                    ? 'bg-[#EBF3FF] text-[#3182F6] dark:bg-[#1E3A5F] dark:text-[#7BB4F5]'
+                    : 'text-[#B0B8C1] hover:text-[#3182F6] hover:bg-[#EBF3FF] dark:hover:bg-[#1E3A5F]'
+                }`}
+              >
+                <SpeakerIcon />
+              </button>
+            )}
             {/* 음성 입력 버튼 — Web Speech API, 무료, Chrome/Edge 지원 */}
             {voiceSupported && (
               <button
                 onClick={listening ? stopVoice : startVoice}
                 disabled={isStreaming}
                 title={listening ? '음성 입력 중지' : '음성으로 입력 (ko-KR)'}
+                aria-label={listening ? '음성 입력 중지' : '음성 입력 시작'}
+                aria-pressed={listening}
                 className={`p-3 rounded-xl transition-all shrink-0 ${
                   listening
                     ? 'bg-red-100 text-red-500 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-400 animate-pulse'
@@ -572,6 +617,7 @@ export default function Page() {
             <button
               onClick={() => handleSend()}
               disabled={!input.trim() || isStreaming}
+              aria-label="메시지 전송"
               className="p-3 bg-[#3182F6] text-white rounded-xl hover:bg-[#1B6EEB] disabled:opacity-30 disabled:cursor-not-allowed transition-all shrink-0"
             >
               <SendIcon />
