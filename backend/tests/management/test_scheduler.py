@@ -36,10 +36,12 @@ async def test_run_scan_notifies_each_finding():
 
 
 @pytest.mark.asyncio
-async def test_run_scan_default_scanner_is_empty():
+async def test_run_scan_default_scanner_runs_and_is_consistent():
+    """기본 스캐너(활성 캠페인 게재 점검)가 mock reader로 돌고, 통지 수 == 발견 수."""
     sink = _FakeSink()
-    assert await run_scan(SimpleNamespace(), sink) == 0
-    assert sink.calls == []
+    n = await run_scan(SimpleNamespace(), sink)  # use_mock 기본 → mock reader
+    assert isinstance(n, int) and n >= 0
+    assert len(sink.calls) == n
 
 
 def test_scheduler_off_by_default_does_not_start():

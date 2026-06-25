@@ -18,9 +18,30 @@ logger = logging.getLogger("clickme")
 _Scanner = Callable[[object], Awaitable[list[dict]]]
 
 
-async def _default_scanner(_settings) -> list[dict]:
-    """기본 스캐너 — campaign-queryable 진단 연결 전까지 빈 결과(오탐 0)."""
-    return []
+async def _default_scanner(settings) -> list[dict]:
+    """기본 스캐너 — 활성 캠페인 게재 점검. 노출 0(미게재)을 명확한 이상으로 통지.
+
+    실측은 live_campaigns(reader)에서 — use_mock이면 mock, 실연동이면 Meta. ROAS 목표 대비 등
+    심화 진단은 campaign-queryable 진단 정비 후 확장(seam).
+    """
+    from domain.management.assistant import tools as live_tools  # noqa: PLC0415
+
+    data = await live_tools.live_campaigns(settings)
+    if data.get("error"):
+        return []  # 조회 실패(rate limit 등)는 통지 안 함 — 다음 틱에 재시도
+    findings: list[dict] = []
+    for c in data.get("campaigns", []):
+        if c.get("impressions", 0) == 0:
+            name = c.get("name") or c.get("campaign_id", "?")
+            findings.append(
+                {
+                    "tenant_id": "global",
+                    "title": f"게재 점검 — {name}",
+                    "body": "활성 캠페인인데 노출이 0입니다. 심사·예산·타깃을 점검하세요.",
+                    "meta": {"campaign_id": c.get("campaign_id")},
+                }
+            )
+    return findings
 
 
 async def run_scan(settings, sink: NotificationSink, *, scanner: _Scanner | None = None) -> int:
