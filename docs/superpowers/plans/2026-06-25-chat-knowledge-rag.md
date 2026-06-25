@@ -153,7 +153,7 @@ Create `backend/tests/chat/__init__.py` (빈 파일). Create `backend/tests/chat
 ```python
 # 챗 지식 RAG 정규화·해시 단위테스트
 from domain.chat.knowledge.normalize import (
-    embedding_content_hash,
+    hash_content,
     strip_keywords_lines,
     normalize_markdown,
 )
@@ -174,15 +174,15 @@ def test_strip_keywords_lines_removes_only_keywords():
     assert "본문이다" in strip_keywords_lines(md)
 
 
-def test_embedding_hash_ignores_keywords_and_whitespace():
-    # title+body 같으면 keywords·공백이 달라도 해시 동일
-    h1 = embedding_content_hash("리타게팅", "본문 A")
-    h2 = embedding_content_hash("리타게팅", "본문 A  ")
+def test_hash_content_ignores_keywords_and_whitespace():
+    # 본문 같으면 keywords 줄·줄끝 공백이 달라도 해시 동일
+    h1 = hash_content("리타게팅\n본문 A")
+    h2 = hash_content("리타게팅\nkeywords: 리타게팅, retargeting\n본문 A  ")
     assert h1 == h2
 
 
-def test_embedding_hash_changes_on_title():
-    assert embedding_content_hash("A", "본문") != embedding_content_hash("B", "본문")
+def test_hash_content_changes_on_text():
+    assert hash_content("리타게팅\n본문 A") != hash_content("리타게팅\n본문 B")
 ```
 
 - [ ] **Step 2: 실패 확인**
@@ -225,14 +225,13 @@ def _sha(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-def embedding_content_hash(title: str, body: str) -> str:
-    """청크 content_hash = sha256(정규화 title+본문, keywords 제외).
+def hash_content(text: str) -> str:
+    """정규화(+keywords 줄 제외) 후 sha256 — 문서(전체 md)·청크(text=title+본문) 공통 기준.
 
-    임베딩 입력 범위(title+body)와 동일 범위라 title 변경도 추적된다.
-    (문서 단위 재임베딩 게이트는 ingestor의 _doc_hash(전체 md) + 빌드 시그니처로 판단.)
+    청크는 `c.text`(이미 title+본문)를 그대로 받으므로 title 중복 부착이 없다.
+    (문서 재임베딩 게이트는 hash_content(전체 md) + 빌드 시그니처로 판단.)
     """
-    norm = normalize_markdown(strip_keywords_lines(f"{title}\n{body}"))
-    return _sha(norm)
+    return _sha(normalize_markdown(strip_keywords_lines(text)))
 ```
 
 - [ ] **Step 4: 통과 확인**
@@ -494,6 +493,8 @@ depends_on = None
 
 def upgrade() -> None:
     op.execute("CREATE EXTENSION IF NOT EXISTS vector")
+    # gen_random_uuid() 기본값 보장 — PG13+는 코어 내장이라 보통 불필요하나 구버전·이식성 대비.
+    op.execute("CREATE EXTENSION IF NOT EXISTS pgcrypto")
     op.execute("""
         CREATE TABLE IF NOT EXISTS chat_knowledge_documents (
             id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -632,10 +633,10 @@ Create `backend/tests/chat/test_sources.py`:
 from domain.chat.knowledge.sources import resolve_source
 
 
-def test_known_meta_file_maps_to_meta_official():
+def test_meta_summary_maps_to_curated_not_official():
     st, url = resolve_source("meta_ad_policy.md")
-    assert st == "meta_official"
-    assert url is not None
+    assert st == "meta_curated_summary"  # 큐레이션 요약 — 공식(meta_official) 아님
+    assert url is not None  # 공식 참고 URL은 유지
 
 
 def test_marketing_file_maps_to_general():
@@ -663,8 +664,13 @@ Create `backend/domain/chat/knowledge/sources.py`:
 from __future__ import annotations
 
 # 파일별 출처 메타. 외부 공식 근거가 있으면 URL, 내부 작성물은 None.
+# meta_ad_policy.md는 사람이 요약한 큐레이션 → meta_official 아님(공식 원문/발췌 전용은 Phase 2).
+# URL은 권위 단정이 아니라 "공식 참고" 포인터로 유지.
 _SOURCE_META: dict[str, tuple[str, str | None]] = {
-    "meta_ad_policy.md": ("meta_official", "https://transparency.meta.com/policies/ad-standards/"),
+    "meta_ad_policy.md": (
+        "meta_curated_summary",
+        "https://transparency.meta.com/policies/ad-standards/",
+    ),
     "marketing_basics.md": ("marketing_general", None),
 }
 
@@ -704,7 +710,7 @@ Create `backend/domain/chat/knowledge/ingestor.py`:
 """kb/*.md를 '## 섹션'(+최대길이) 청크화해 임베딩 후 적재한다.
 
 변경 종류별 처리:
-- title/본문 변경(embedding_content_hash 달라짐) → 문서·청크 재생성 + 재임베딩
+- title/본문 변경(문서 해시 달라짐) → 문서·청크 재생성 + 재임베딩
 - keywords만 변경 → 재임베딩 skip, chunks.keywords만 UPDATE(search_vector 자동 갱신)
 - 메타만 변경 → 재임베딩 skip, 문서 row UPDATE
 - 전부 동일 → 완전 skip
@@ -715,7 +721,6 @@ Create `backend/domain/chat/knowledge/ingestor.py`:
 from __future__ import annotations
 
 import asyncio
-import hashlib
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -726,21 +731,11 @@ from core.config import settings
 from core.db import AsyncSessionLocal
 from core.models import ChatKnowledgeChunk, ChatKnowledgeDocument
 from domain.chat.knowledge.chunking import chunk_markdown
-from domain.chat.knowledge.normalize import (
-    embedding_content_hash,
-    normalize_markdown,
-    strip_keywords_lines,
-)
+from domain.chat.knowledge.normalize import hash_content
 from domain.chat.knowledge.sources import resolve_source
 
 _KB_DIR = Path(__file__).parent / "kb"
 _LOCK_KEY = 0x0C8A7C0DE  # 챗 KB ingest 전용 advisory lock 고정 키
-
-
-def _doc_hash(md: str) -> str:
-    """문서 본문(전체) 임베딩 해시 — keywords 제외 정규화 전체."""
-    norm = normalize_markdown(strip_keywords_lines(md))
-    return hashlib.sha256(norm.encode("utf-8")).hexdigest()
 
 
 # 청킹 알고리즘 버전 — 알고리즘이 바뀌면 올린다(빌드 시그니처에 포함 → 재색인 유발).
@@ -766,7 +761,7 @@ async def ingest() -> int:
         for md_path in sorted(_KB_DIR.glob("*.md")):
             source = md_path.name
             raw = md_path.read_text(encoding="utf-8")
-            new_hash = _doc_hash(raw)
+            new_hash = hash_content(raw)
             source_type, source_url = resolve_source(source)
             now = datetime.now(UTC)
 
@@ -839,7 +834,7 @@ async def ingest() -> int:
                         embedding=item.embedding,
                         embedding_model=model,
                         chunk_index=c.chunk_index,
-                        content_hash=embedding_content_hash(c.title, c.text),
+                        content_hash=hash_content(c.text),
                     )
                 )
             total += len(chunks)
@@ -1118,6 +1113,27 @@ async def test_keyword_only_first_but_similar_vector_is_grounded():
         "리타게팅", _FakeRetriever(chunks), _fake_llm, threshold=0.35
     )
     assert res.grounded is True
+
+
+def test_has_valid_citation_range():
+    from domain.chat.service.chat_service import has_valid_citation
+
+    assert has_valid_citation("답변 [1] 근거", 2) is True
+    assert has_valid_citation("답변 [3] 근거", 2) is False  # 범위 밖 마커
+    assert has_valid_citation("인용 없음", 2) is False
+
+
+@pytest.mark.asyncio
+async def test_missing_citation_marker_falls_back_safely():
+    async def no_cite_llm(prompt):
+        return "리타게팅은 재방문 전략입니다."  # [n] 마커 없음
+
+    res = await answer_knowledge_question(
+        "리타게팅", _FakeRetriever([_chunk(0.82)]), no_cite_llm, threshold=0.35
+    )
+    assert res.grounded is True
+    assert "참고 출처" in res.answer
+    assert res.citations  # 출처는 제공
 ```
 
 - [ ] **Step 2: 실패 확인**
@@ -1137,6 +1153,7 @@ Create `backend/domain/chat/service/chat_service.py`:
 # 챗 지식 RAG 답변 — 검색→근거 게이트→LLM 인용 답변. LLM은 주입(테스트 가능).
 from __future__ import annotations
 
+import re
 from collections.abc import Awaitable, Callable
 
 from pydantic import BaseModel
@@ -1151,6 +1168,13 @@ SYSTEM_PROMPT = (
     "추측이나 일반지식으로 채우지 마세요. 사용한 근거는 [번호]로 인용하세요."
 )
 _NO_GROUNDS = "현재 지식 베이스에 해당 내용이 없습니다."
+_NO_CITATION = "근거를 인용한 답변을 만들지 못했어요. 아래 참고 출처를 확인해 주세요."
+_CITATION_RE = re.compile(r"\[(\d+)\]")
+
+
+def has_valid_citation(text: str, n: int) -> bool:
+    """답변에 1~n 범위의 유효 인용 마커 [i]가 하나라도 있으면 True."""
+    return any(1 <= int(m) <= n for m in _CITATION_RE.findall(text))
 
 
 class KnowledgeAnswer(BaseModel):
@@ -1185,9 +1209,14 @@ async def answer_knowledge_question(
     *,
     k: int = 4,
     source_type: str | None = None,
-    threshold: float = 0.35,
+    threshold: float | None = None,
 ) -> KnowledgeAnswer:
-    """검색→게이트(top-1 similarity)→통과 시에만 LLM 호출. 인용 포함."""
+    """검색→근거 게이트(max similarity)→통과 시에만 LLM 호출. 인용 마커 검증."""
+    if threshold is None:
+        # 미지정 시 설정값 사용(운영서 조정 가능). 명시 호출(테스트)은 settings 미로드.
+        from core.config import settings
+
+        threshold = settings.chat_knowledge_relevance_threshold
     chunks = await retriever.search(question, k=k, source_type=source_type)
     # RRF 정렬 특성상 keyword-only(similarity=0)가 1위에 올 수 있어, top-1이 아니라
     # 검색된 청크 중 최대 코사인 유사도로 게이트한다(false negative 방지).
@@ -1195,13 +1224,17 @@ async def answer_knowledge_question(
     if not chunks or best_sim < threshold:
         return KnowledgeAnswer(answer=_NO_GROUNDS, grounded=False, citations=[])
     answer = await llm(_build_prompt(question, chunks))
-    return KnowledgeAnswer(answer=answer, grounded=True, citations=build_citations(chunks))
+    citations = build_citations(chunks)
+    # 인용 보장 — LLM이 유효 [n]을 안 달면 안전 문구로 내리되 출처는 제공.
+    if not has_valid_citation(answer, len(chunks)):
+        return KnowledgeAnswer(answer=_NO_CITATION, grounded=True, citations=citations)
+    return KnowledgeAnswer(answer=answer, grounded=True, citations=citations)
 ```
 
 - [ ] **Step 4: 통과 확인**
 
 Run: `cd backend && uv run pytest tests/chat/test_chat_service.py -v`
-Expected: PASS (5 passed).
+Expected: PASS (7 passed).
 
 - [ ] **Step 5: 전체 챗 테스트 회귀 확인**
 
