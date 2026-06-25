@@ -10,7 +10,7 @@
 - ✅ **P3** E2E① 시뮬 영속 + 새로고침 복원 — `sim-persist.spec.ts`(실 시뮬 1회, 표본 1명). DB(`db_query.py`)로 sim_input·sim_result·debate_stream + ad_title 확인, 세션 URL 재진입 복원. 초록. [P2]
 - ✅ **P4** E2E② 위젯 타이밍 — `widget-timing.spec.ts`. 결과 위젯("✅ 시뮬레이션 결과"+KPI) 직후 토론 위젯("AI 소비자 토론을 시작했어요") 둘 다 보임. 초록. [P2]
 - ✅ **P5** E2E③ N4 세션 누수 — `session-leak.spec.ts`. A 완료→seen 등록 확인, B(가드 해제 폴링) 선제 알림 부재, 대조(seen에서 빼면 뜸)까지. 초록. [P3]
-- ⬜ **P6** CI(`.github/workflows/ci.yml`)에 테스트 스텝(E2E는 서버+브라우저+테스트DB 필요). [P3,P4,P5,P1]
+- ✅ **P6** CI — `ci.yml`에 `workflow_dispatch` + E2E 잡(수동 전용: DB·브라우저·서버 기동 후 `pnpm test:e2e`). P1은 기존 backend 잡에서 실행(실 DB 없으면 skip, 있으면 실행) + E2E 잡에서 실 DB로 재실행. YAML 검증·ruff 통과. [P3,P4,P5,P1]
 
 ## 메모
 

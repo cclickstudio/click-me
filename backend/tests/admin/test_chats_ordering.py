@@ -12,7 +12,7 @@ import pytest
 import pytest_asyncio
 from fastapi import FastAPI
 from httpx import ASGITransport
-from sqlalchemy import delete
+from sqlalchemy import delete, text
 
 from api.routers import admin
 from core.auth import require_admin
@@ -21,7 +21,21 @@ from core.models import ChatSession, User
 
 
 @pytest_asyncio.fixture
-async def seeded_sessions():
+async def require_db():
+    """실 Postgres 연결을 요구한다 — 없으면 통합 테스트를 건너뛴다(CI에서 DB 미제공 시).
+
+    임의 skip이 아니라 인프라 가용성 가드: 로컬·E2E 잡(실 DB)에선 그대로 실행되고,
+    DB 없는 공용 CI 잡에서만 깨끗이 skip된다.
+    """
+    try:
+        async with AsyncSessionLocal() as db:
+            await db.execute(text("SELECT 1"))
+    except Exception as e:  # noqa: BLE001 — 연결 불가 사유 무관, 통합 테스트 skip
+        pytest.skip(f"실 DB(Postgres) 미가용 — admin/chats 통합 테스트 건너뜀 ({type(e).__name__})")
+
+
+@pytest_asyncio.fixture
+async def seeded_sessions(require_db):
     """두 채팅 세션을 심는다.
 
     - A: 오래 전 생성(created_at = now-1h) + 방금 활동(updated_at = now)        → 위에 와야 함
