@@ -15,17 +15,48 @@ const quickPrompts = [
 
 type Citation = { kind: string; source: string; title?: string };
 type SourceMeta = {
-  source: string; // management | clio
-  label: string; // 매니지먼트 어시스턴트 | CLIO
-  engine: string; // OpenAI · 실측+KB | Gemini
+  route?: string; // general | management | simulation | generation
+  source: string; // 라우트 값(general | management | ...)
+  label: string; // 일반 답변 | 광고 매니지먼트 ...
+  engine: string; // direct | management_subagent ...
   citations?: Citation[];
   used_tools?: string[];
   thread_id?: string; // 피드백 적재 키
+  requires_approval?: boolean;
+};
+type StructuredResult = { kind: string; data: unknown };
+type ApprovalRequest = {
+  tier?: string;
+  action_type?: string;
+  target_campaign_id?: string | null;
+  thread_id?: string;
+  rationale?: string;
 };
 type Message = {
   role: 'user' | 'assistant';
   content: string;
   meta?: SourceMeta;
+  results?: StructuredResult[]; // result 프레임 누적(시뮬·생성·집행)
+  approval?: ApprovalRequest; // HITL 승인 카드(미결 시 존재)
+  approvalResolved?: boolean; // 승인/거부 처리 완료
+};
+
+// 오케스트레이터 SSE 프레임 — token/done은 중첩 객체(구버전 평면도 방어적 수용).
+type ChatFrame = {
+  meta?: SourceMeta;
+  token?: string | { text: string };
+  result?: StructuredResult;
+  tool_status?: { agent?: string; state?: string; label?: string };
+  approval_request?: ApprovalRequest;
+  done?: boolean | { finish_reason: string };
+  error?: { message: string };
+};
+
+// result 프레임 kind → 사람이 읽는 라벨(미매핑은 kind 그대로).
+const RESULT_LABEL: Record<string, string> = {
+  simulation_aggregate: '시뮬레이션 결과',
+  execution_result: '집행 결과',
+  generation_detail: '생성 결과',
 };
 
 function SendIcon() {
@@ -83,6 +114,56 @@ export default function Page() {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isStreaming]);
 
+  // 마지막 어시스턴트 메시지에만 변경 적용.
+  const applyToLast = (fn: (m: Message) => Message) =>
+    setMessages((prev) => {
+      const last = prev[prev.length - 1];
+      if (!last || last.role !== 'assistant') return prev;
+      return [...prev.slice(0, -1), fn(last)];
+    });
+
+  // 오케스트레이터 SSE 프레임 1개를 화면 상태에 반영.
+  const handleFrame = (data: ChatFrame) => {
+    if (data.meta) {
+      applyToLast((m) => ({ ...m, meta: data.meta }));
+    } else if (data.token !== undefined) {
+      const piece = typeof data.token === 'string' ? data.token : (data.token?.text ?? '');
+      applyToLast((m) => ({ ...m, content: m.content + piece }));
+    } else if (data.result) {
+      applyToLast((m) => ({ ...m, results: [...(m.results ?? []), data.result as StructuredResult] }));
+    } else if (data.approval_request) {
+      applyToLast((m) => ({ ...m, approval: data.approval_request }));
+    } else if (data.error) {
+      applyToLast((m) => ({ ...m, content: m.content + `\n⚠ ${data.error?.message ?? '오류'}` }));
+    }
+    // tool_status·done은 표시 상태에 영향 없음(스트림 종료는 reader가 처리).
+  };
+
+  // SSE 본문을 라인 단위로 파싱해 프레임을 반영(complete·resume 공유).
+  const readStream = async (res: Response) => {
+    if (!res.body) return;
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+      buffer = lines.pop() ?? '';
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        const raw = line.slice(6).trim();
+        if (!raw) continue;
+        try {
+          handleFrame(JSON.parse(raw) as ChatFrame);
+        } catch {
+          // 깨진 SSE 라인 무시
+        }
+      }
+    }
+  };
+
   const handleSend = async (text?: string) => {
     const content = text ?? input.trim();
     if (!content || isStreaming) return;
@@ -108,57 +189,37 @@ export default function Page() {
         return;
       }
 
-      // add empty assistant placeholder
+      // 빈 어시스턴트 placeholder 추가 후 스트림 처리(token/meta/result/approval).
       setMessages((prev) => [...prev, { role: 'assistant', content: '' }]);
-
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() ?? '';
-
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) continue;
-          const raw = line.slice(6).trim();
-          if (!raw) continue;
-          try {
-            const data = JSON.parse(raw) as {
-              token?: string;
-              done?: boolean;
-              meta?: SourceMeta;
-            };
-            if (data.done) {
-              setIsStreaming(false);
-            } else if (data.meta) {
-              setMessages((prev) => {
-                const last = prev[prev.length - 1];
-                return [...prev.slice(0, -1), { ...last, meta: data.meta }];
-              });
-            } else if (data.token) {
-              setMessages((prev) => {
-                const last = prev[prev.length - 1];
-                return [
-                  ...prev.slice(0, -1),
-                  { ...last, content: last.content + data.token },
-                ];
-              });
-            }
-          } catch {
-            // ignore malformed SSE line
-          }
-        }
-      }
+      await readStream(res);
     } catch {
       setMessages((prev) => [
         ...prev,
         { role: 'assistant', content: '서버에 연결할 수 없습니다. 잠시 후 다시 시도해주세요.' },
       ]);
+    } finally {
+      setIsStreaming(false);
+    }
+  };
+
+  // HITL 승인/거부 → /resume 스트림 재개(같은 어시스턴트 메시지에 이어붙임).
+  const handleResume = async (threadId: string, approved: boolean) => {
+    if (isStreaming || !threadId) return;
+    applyToLast((m) => ({ ...m, approvalResolved: true }));
+    setIsStreaming(true);
+    try {
+      const res = await fetch(`${API_BASE}/api/chat/${threadId}/resume`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ approved, approver_id: 'user' }),
+      });
+      if (!res.ok || !res.body) {
+        applyToLast((m) => ({ ...m, content: m.content + '\n응답을 가져오는 중 오류가 발생했습니다.' }));
+        return;
+      }
+      await readStream(res);
+    } catch {
+      applyToLast((m) => ({ ...m, content: m.content + '\n서버에 연결할 수 없습니다.' }));
     } finally {
       setIsStreaming(false);
     }
@@ -197,7 +258,13 @@ export default function Page() {
             <div className="max-w-2xl mx-auto px-4 py-8 space-y-6">
               {messages.map((msg, i) => {
                 // 빈 assistant placeholder는 타이핑 인디케이터로 대체
-                if (msg.role === 'assistant' && msg.content === '') return null;
+                if (
+                  msg.role === 'assistant' &&
+                  msg.content === '' &&
+                  !msg.approval &&
+                  !msg.results?.length
+                )
+                  return null;
                 return (
                   <div
                     key={i}
@@ -222,15 +289,64 @@ export default function Page() {
                           {msg.meta.source === 'management' ? '⚙' : '🧠'} {msg.meta.label} · {msg.meta.engine}
                         </span>
                       )}
-                      <div
-                        className={`px-4 py-3 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap ${
-                          msg.role === 'user'
-                            ? 'bg-[#3182F6] text-white rounded-br-md'
-                            : 'bg-[#F2F4F6] dark:bg-[#252D3D] text-[#191F28] dark:text-[#F2F4F6] rounded-bl-md'
-                        }`}
-                      >
-                        {msg.content}
-                      </div>
+                      {(msg.role === 'user' || msg.content) && (
+                        <div
+                          className={`px-4 py-3 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap ${
+                            msg.role === 'user'
+                              ? 'bg-[#3182F6] text-white rounded-br-md'
+                              : 'bg-[#F2F4F6] dark:bg-[#252D3D] text-[#191F28] dark:text-[#F2F4F6] rounded-bl-md'
+                          }`}
+                        >
+                          {msg.content}
+                        </div>
+                      )}
+                      {/* 구조화 결과 카드(시뮬·생성·집행) */}
+                      {msg.results?.map((r, ri) => (
+                        <div
+                          key={ri}
+                          className="w-full rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-[#F9FAFB] dark:bg-[#1C2333] px-3 py-2"
+                        >
+                          <p className="text-[10px] font-semibold text-[#8B95A1] dark:text-[#6B7280] mb-1">
+                            {RESULT_LABEL[r.kind] ?? r.kind}
+                          </p>
+                          <pre className="text-[11px] text-[#4E5968] dark:text-[#9CA3AF] whitespace-pre-wrap break-words max-h-48 overflow-y-auto">
+                            {JSON.stringify(r.data, null, 2)}
+                          </pre>
+                        </div>
+                      ))}
+                      {/* HITL 승인 카드 — 승인/거부 시 /resume 재개 */}
+                      {msg.approval && (
+                        <div className="w-full rounded-xl border border-[#F2C200] dark:border-[#7A5C00] bg-[#FFF8E1] dark:bg-[#2A2410] px-3 py-3">
+                          <p className="text-xs font-semibold text-[#191F28] dark:text-[#F2F4F6]">
+                            승인 필요: {msg.approval.action_type}
+                            {msg.approval.target_campaign_id ? ` · ${msg.approval.target_campaign_id}` : ''}
+                          </p>
+                          {msg.approval.rationale && (
+                            <p className="text-[11px] text-[#4E5968] dark:text-[#9CA3AF] mt-1">
+                              {msg.approval.rationale}
+                            </p>
+                          )}
+                          <div className="flex gap-2 mt-2">
+                            <button
+                              onClick={() => handleResume(msg.approval?.thread_id ?? '', true)}
+                              disabled={msg.approvalResolved || isStreaming}
+                              className="px-3 py-1 text-xs font-semibold rounded-lg bg-[#3182F6] text-white hover:bg-[#1B6EEB] disabled:opacity-40 disabled:cursor-not-allowed"
+                            >
+                              승인
+                            </button>
+                            <button
+                              onClick={() => handleResume(msg.approval?.thread_id ?? '', false)}
+                              disabled={msg.approvalResolved || isStreaming}
+                              className="px-3 py-1 text-xs font-semibold rounded-lg border border-[#E5E8EB] dark:border-[#2D3748] text-[#4E5968] dark:text-[#9CA3AF] hover:border-red-400 hover:text-red-500 disabled:opacity-40 disabled:cursor-not-allowed"
+                            >
+                              거부
+                            </button>
+                          </div>
+                          {msg.approvalResolved && (
+                            <p className="text-[10px] text-[#B0B8C1] mt-1">처리됨</p>
+                          )}
+                        </div>
+                      )}
                       {msg.role === 'assistant' &&
                         msg.meta?.source === 'management' &&
                         (msg.meta.citations?.length || msg.meta.used_tools?.length) ? (
