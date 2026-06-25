@@ -137,12 +137,12 @@
 ## 2. 루프 프롬프트 (단일 진행 — 워크트리 통합 완료)
 
 > 3개 워크트리(kb·be·fe)는 통합 완료(§5 머지 블록). 다시 `feat/chat-doyeon` **단일 브랜치**에서 남은 ⬜를 진행한다.
-> **★ 제너레이터 403 해금됨**(2026-06-25 확인 — Responses API gpt-4o-mini `RESPONSES_OK`). 그동안 403으로 막혀 있던 **V2·V3·G1~G4·F8·N(제너 경로)·N3 전부 진행 가능**. **S2·S5만 매니지먼트 조율(타 팀)로 보류.**
+> **⚠️ 제너레이터 403 미해소(2026-06-25 재확인)** — 순수 텍스트 `responses.create`는 통과하나, 제너의 실제 호출은 **`image_generation` 툴**(이미지 모델)을 써서 org 검증 403이 그대로다(`multimodal_generator.py:107`). 따라서 **V2·V3·G1~G4·F8·N(제너 경로)·N3은 여전히 외부 블로커로 보류.** S2·S5는 매니지먼트 조율로 보류. → 현재 단일 진행으로 자율 소진 가능한 ⬜는 사실상 없음(상세 §5).
 
 ### 2-1. 마스터 루프
 
 ```
-/loop docs/chat/tasklist.md 를 읽어. 워크트리 통합 완료, 단일 브랜치(feat/chat-doyeon)에서 남은 ⬜를 끝까지 진행한다. 제너 403 해금됨(Responses API 정상). 마감·데드라인 없음. 매 반복:
+/loop docs/chat/tasklist.md 를 읽어. 워크트리 통합 완료, 단일 브랜치(feat/chat-doyeon)에서 남은 ⬜를 끝까지 진행한다. ※제너 403은 미해소(image_generation 툴 게이팅, §5) — 제너 경로(V2·V3·G·F8·N제너·N3)는 외부 블로커로 건너뛴다. 마감·데드라인 없음. 매 반복:
 1) 전제는 최초 1회만 — 개인 DB(ep-soft-band)·서버(8000/3000)·폰트·OPENAI_API_KEY·Preview 3계정 로그인. 통과 후 생략, 깨지면만 재확인.
 2) §1 현황표에서 의존(앞 컬럼) 충족·⬜인 가장 위 1개 선택. 권장 순서: V2→G1→G2→G3→G4→V3→F8→N3→N1(제너)→N4(제너)→C4. **S2·S5는 매니지 조율 필요라 건너뛴다.**
 3) 명세(§4·4-S·4-N)대로 끝까지. "확정 설계(플랜 2026-06-25)" 블록 있으면 그대로(N·G4 status 등).
@@ -156,8 +156,9 @@
 
 ### 2-2. 보류 (블로커)
 
+- **제너레이터 403 (외부)** — V2·V3·G1~G4·F8·N(제너 경로)·N3. org 검증이 `image_generation` 툴 호출을 게이팅. 순수 텍스트 Responses는 통과하나 제너 실호출은 여전히 403. org 검증 완료 전까지 진행 불가.
 - **S2·S5** — 매니지먼트 도메인 조율 필요(타 팀 소유부). 채팅 측 라우팅·위젯 범위로만 가능, 내부 비교/조치 로직은 합의 후. 단독 진행 X.
-- (제너 403은 2026-06-25 해소 — 더 이상 블로커 아님.)
+- **별도 코드 이슈(비차단)** — tracing 켜진 상태에서 wrapped-openai 호출이 에러나면 `langsmith 0.8.11 ↔ langchain_core 1.4.2` 순환 import가 끼어들어 원에러(403)를 `No module named 'langchain_core.tracers.context'`로 가린다. 제너 403을 풀어도 별개로 남는 마스킹 버그(아래 §5).
 
 ---
 
@@ -775,9 +776,13 @@
 
 > 각 태스크 완료 시 한 줄: `YYYY-MM-DD HH:MM Vn ✅ — 요지/특이사항`.
 
-### ★ 제너레이터 403 해금 (2026-06-25)
+### ⚠️ 제너레이터 403 재확인 — 미해소 (2026-06-25, V2 검증 중 정정)
 
-> OpenAI 조직 검증 통과 확인 — `responses.create(model="gpt-4o-mini")`가 `RESPONSES_OK` 정상 응답. 그동안 `Your organization must be verified…` 403으로 막혀 있던 제너레이터 경로가 전부 풀림. **V2·V3·G1~G4·F8·N(제너 경로)·N3 진행 가능**으로 전환. 워크트리 통합 후 단일 브랜치에서 §2-1 마스터 루프로 소진 예정. S2·S5만 매니지 조율로 잔여 보류.
+> **정정**: 앞서 "403 해금"으로 판단했으나 **틀림**. 순수 텍스트 `responses.create(input='ping')`만 통과한 것에 속았다. V2 검증에서 실제 생성을 돌려 런타임 traceback을 잡은 결과:
+> - 실패 지점 `candidate_gen.py:210 → multimodal_generator.py:107 → _client.responses.create(model=gpt-4o-mini, tools=[{type:"image_generation", model:<이미지모델>}])` → **`openai.PermissionDeniedError 403` "organization must be verified"**.
+> - 즉 org 검증 403은 **`image_generation` 툴(이미지 생성 캡처)**를 게이팅한다. 텍스트 응답은 게이팅 안 됨. **제너 경로(V2·V3·G·F8·N제너·N3)는 여전히 외부 블로커.**
+> - **별도 코드 버그(마스킹)**: 실서버(tracing on)에서는 이 403이 langsmith run-tree 기록 중 `langchain_core/tracers/context.py`(→langsmith) ↔ `langsmith/run_trees.py:879`(→langchain_core.tracers.langchain) **순환 import**에 걸려 `No module named 'langchain_core.tracers.context'`로 둔갑한다(DB `ad_generations.error_message`에 그 문자열로 저장됨). langsmith 0.8.11 ↔ langchain_core 1.4.2 버전 조합 이슈. **제너 403과 별개**라, 403 풀려도 남는다. 수정 시 dep 버전 정렬 또는 startup eager-import 워크어라운드 필요(공유 인프라라 도연님 결정 후).
+> - V2 검증 부산물(정상 동작 확인): 환경 셋업·doyeon 토큰 로그인·프로젝트 선택·"🎨 시안 만들기"→gen_form 4단계→실행→**실패 시 에러 카드+"다시 시도"** 정상. 실제 후보 생성만 403으로 미도달.
 
 ---
 
