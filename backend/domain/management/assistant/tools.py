@@ -8,6 +8,7 @@ Meta 요청 한도(rate limit)면 {"error":"rate_limited"}로 표면화한다.
 from __future__ import annotations
 
 import calendar
+import logging
 from datetime import UTC, datetime
 from uuid import uuid4
 
@@ -20,8 +21,11 @@ from domain.management.assistant.contracts import DiagnosisView, DiagnosticResul
 from domain.management.comparison.service.before_after_service import compute_before_after
 from domain.management.contracts.policy import DAILY_BUDGET_KRW
 from domain.management.contracts.schemas import RealOutcome
+from domain.management.detection.guardrails import GuardVerdict
 from domain.management.detection.service.detection_service import run_detection
 from domain.management.wiring import build_prediction_reader, build_reader
+
+logger = logging.getLogger("clickme")
 
 
 def _outcome(m, campaign_id: str, creative_id: str | None) -> RealOutcome:
@@ -206,13 +210,13 @@ async def live_diagnosis(
             tenant_id or "org_eval", campaign_id, snapshots, daily_budget_krw=daily_budget
         )
     except Exception as exc:  # noqa: BLE001 — 외부(reader/detection) 실패만. raw 미노출.
-        print(f"[live_diagnosis] external failure: {exc!r}")
+        logger.warning("[live_diagnosis] external failure: %r", exc)
         return DiagnosticResult(
             diagnostic_status="failed", reason="진단 중 문제가 발생해 건너뛰었어요."
         )
 
     # 이하 결정적 — validator·빌더 버그는 raise(테스트·모니터링에서 잡힘).
-    if not snapshots or str(outcome.guard.verdict) == "insufficient_data":
+    if not snapshots or outcome.guard.verdict == GuardVerdict.INSUFFICIENT_DATA:
         return DiagnosticResult(
             diagnostic_status="unavailable", reason="데이터가 부족해 진단을 보류했어요."
         )

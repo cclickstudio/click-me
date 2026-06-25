@@ -34,6 +34,8 @@ async def test_anomaly_returns_ok_anomaly_with_preview(monkeypatch):
     assert res.proposal_preview is not None
     assert res.proposal_preview.executable is False
     assert res.proposal_preview.preview_id.startswith("preview_")
+    assert res.diagnosis.anomaly_type == "bid_loss"
+    assert res.proposal_preview.action_type == "INCREASE_BUDGET"
 
 
 @pytest.mark.asyncio
