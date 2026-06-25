@@ -7,7 +7,7 @@
 
 - ✅ **P1** 백엔드 pytest — `GET /api/admin/chats`가 `updated_at`(최근활동) 내림차순인지. (`tests/admin/test_chats_ordering.py`, 실 DB 통합, 초록)
 - ✅ **P2** Playwright 셋업 — `playwright.config.ts` + `test/e2e/`(global-setup 토큰발급·auth/project 헬퍼·smoke), frontend `@playwright/test` devDep. smoke 초록. (의존 없음)
-- ⬜ **P3** E2E① 시뮬 영속 + 새로고침 복원 (가장 중요). [P2]
+- ✅ **P3** E2E① 시뮬 영속 + 새로고침 복원 — `sim-persist.spec.ts`(실 시뮬 1회, 표본 1명). DB(`db_query.py`)로 sim_input·sim_result·debate_stream + ad_title 확인, 세션 URL 재진입 복원. 초록. [P2]
 - ⬜ **P4** E2E② 위젯 타이밍 — 반응 완료 직후 결과 위젯 + 토론 위젯 둘 다 보임. [P2]
 - ⬜ **P5** E2E③ N4 세션 누수 — A 시뮬이 B 세션 선제 알림으로 안 뜸. [P3]
 - ⬜ **P6** CI(`.github/workflows/ci.yml`)에 테스트 스텝(E2E는 서버+브라우저+테스트DB 필요). [P3,P4,P5,P1]
