@@ -12,8 +12,8 @@ import json
 from typing import Any
 
 _MAX_ROUNDS = 4
-# 시뮬 서브에이전트가 검색할 KB 네임스페이스 — 페르소나 방법론·신뢰 지표만.
-_SIM_KB_TYPES = ["persona_methodology", "simulation_trust"]
+# 시뮬 서브에이전트 검색 KB 네임스페이스 — 방법론·신뢰지표 + KOBACO·근거(제공 시).
+_SIM_KB_TYPES = ["persona_methodology", "simulation_trust", "kobaco_baseline", "evidence"]
 
 _SYSTEM = (
     "너는 ClickMe 광고 시뮬레이터 애널리스트다. 한국어로 간결하게 답한다.\n"

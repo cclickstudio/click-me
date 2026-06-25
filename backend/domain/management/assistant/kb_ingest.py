@@ -31,6 +31,11 @@ _SOURCE_META: dict[str, tuple[str, str | None]] = {
     "persona_methodology.md": ("persona_methodology", None),
     "simulation_trust.md": ("simulation_trust", None),
     "platform_guide.md": ("platform_guide", None),
+    # 외부 레퍼런스 — Meta는 공식 문서 기반 요약(작성 완료), 나머지는 사용자 제공 대기.
+    "meta_reference.md": ("meta_reference", "https://transparency.meta.com/policies/ad-standards/"),
+    # ↓ 사용자 제공 예정 — 해당 파일명으로 kb/external/에 넣으면 올바른 네임스페이스로 적재됨.
+    "kobaco_baseline.md": ("kobaco_baseline", "https://www.kobaco.co.kr/"),
+    "evidence.md": ("evidence", None),
 }
 
 
