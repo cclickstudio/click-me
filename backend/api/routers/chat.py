@@ -3,6 +3,8 @@ import json
 import threading
 import time
 from collections.abc import AsyncGenerator, Awaitable, Callable
+from datetime import UTC, datetime, timedelta
+from uuid import uuid4
 
 import google.generativeai as genai
 from fastapi import APIRouter
@@ -128,7 +130,13 @@ async def chat_complete(body: ChatRequest) -> StreamingResponse:
                     "label": "매니지먼트 어시스턴트",
                     "engine": "OpenAI · 실측+KB",
                     "citations": [
-                        {"kind": c.kind, "source": c.source, "title": c.title}
+                        {
+                            "kind": c.kind,
+                            "source": c.source,
+                            "title": c.title,
+                            "trust": c.trust,  # system_backed|advisory|reference (KB 근거 신뢰도)
+                            "as_of": c.as_of,
+                        }
                         for c in result.citations
                     ],
                     "used_tools": result.used_tools,
@@ -245,3 +253,65 @@ async def chat_feedback(body: FeedbackRequest) -> dict:
         corrected_answer=body.corrected_answer,
     )
     return {"ok": True}
+
+
+class ApproveActionRequest(BaseModel):
+    """채팅 추천 조치(suggested_action)를 사람이 승인해 실행 경로로 보낸다(HITL)."""
+
+    action_type: str  # PAUSE_CAMPAIGN / INCREASE_BUDGET / ACTIVATE_CAMPAIGN ...
+    campaign_id: str | None = None
+    thread_id: str | None = None  # mgmt-{session_id} — 관측 귀속용
+    approver_id: str = "chat-user"  # 버튼 클릭 = 사람 승인
+
+
+@router.post("/approve")
+async def chat_approve(body: ApproveActionRequest) -> dict:
+    """채팅 추천 조치 승인 → 실행(HITL). 실행 모드는 settings가 봉인한다 —
+    use_mock이면 MOCK(Meta 미접촉), 아니면 validate_only/live. 모든 write는 Executor 단일경로
+    (멱등키·감사·Tier 재검증)로만 나간다 — 어시스턴트는 직접 writer를 부르지 않는다.
+    """
+    # 지연 import — executor 배선·실행모드 봉인은 management 라우터가 단일 소스(중복 배선 금지).
+    from api.routers.management import _get_executor, _resolved_execution_mode  # noqa: PLC0415
+    from domain.management.approval import approve, judge_tier  # noqa: PLC0415
+    from domain.management.contracts.policy import (  # noqa: PLC0415
+        APPROVAL_POLICY_VERSION,
+        PROPOSAL_TTL_MINUTES,
+    )
+    from domain.management.contracts.schemas import (  # noqa: PLC0415
+        ActionProposal,
+        finalize_proposal,
+    )
+
+    now = datetime.now(UTC)
+    campaign = body.campaign_id or "demo_campaign"
+    proposal = finalize_proposal(
+        ActionProposal(
+            proposal_id=f"prop_{uuid4().hex[:8]}",
+            tenant_id="demo_org",
+            ad_account_id="act_demo",
+            target_object_ids=(campaign,),
+            action_type=body.action_type,
+            action_tier=judge_tier(body.action_type),  # 정책 단일원천(TIER_POLICY)
+            evidence_metrics={"source": "chat"},
+            metrics_as_of=now,
+            hypothesis="채팅 추천 조치 사용자 승인",
+            confidence=1.0,
+            expected_state_version="state_v1",
+            budget_before_krw=0,
+            budget_after_krw=0,
+            max_total_spend_krw=0,
+            expires_at=now + timedelta(minutes=PROPOSAL_TTL_MINUTES),
+            approval_policy_version=APPROVAL_POLICY_VERSION,
+        )
+    )
+    mode = _resolved_execution_mode()
+    action = approve(proposal, body.approver_id, execution_mode=mode)
+    result = await _get_executor().execute(action, proposal)
+    status = result.status.value if hasattr(result.status, "value") else str(result.status)
+    return {
+        "status": status,  # success | rejected | ...
+        "execution_mode": str(mode.value),
+        "action_type": body.action_type,
+        "campaign_id": campaign,
+        "result": result.model_dump(mode="json"),
+    }
