@@ -5,6 +5,7 @@ import time
 from collections.abc import AsyncGenerator, Awaitable, Callable
 
 import google.generativeai as genai
+from anthropic import AsyncAnthropic
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from openai import AsyncOpenAI
@@ -45,10 +46,11 @@ _CLIO_SYSTEM = """\
 
 genai.configure(api_key=settings.gemini_api_key or "")
 _model = genai.GenerativeModel(
-    model_name="gemini-2.5-flash",
+    model_name=settings.chat_gemini_model,
     system_instruction=_CLIO_SYSTEM,
 )
 _openai = AsyncOpenAI(api_key=settings.openai_api_key)
+_anthropic = AsyncAnthropic(api_key=settings.anthropic_api_key)
 
 _SENTINEL = object()
 
@@ -157,6 +159,29 @@ async def _clio_openai_stream(messages: list[ChatMessage]) -> AsyncGenerator[str
     yield 'data: {"done": true}\n\n'
 
 
+async def _clio_anthropic_stream(messages: list[ChatMessage]) -> AsyncGenerator[str, None]:
+    # CLIO를 Anthropic(Claude)로 — system은 별도 인자, 메시지는 user/assistant만. meta/token/done 동일.
+    yield f"data: {json.dumps({'meta': {'source': 'clio', 'label': 'CLIO', 'engine': 'Claude'}}, ensure_ascii=False)}\n\n"
+    claude_messages = [
+        {"role": "user" if m.role == "user" else "assistant", "content": m.content}
+        for m in messages
+    ]
+    try:
+        async with _anthropic.messages.stream(
+            model=settings.chat_anthropic_model,
+            max_tokens=2048,
+            system=_CLIO_SYSTEM,
+            messages=claude_messages,
+        ) as stream:
+            async for token in stream.text_stream:
+                if token:
+                    yield f"data: {json.dumps({'token': token}, ensure_ascii=False)}\n\n"
+    except Exception as exc:  # noqa: BLE001 — 스트림 실패를 정상 종료로 위장하지 않는다
+        print(f"[chat] anthropic stream error: {exc!r}")
+        yield f"data: {json.dumps({'error': 'Claude 응답 중 문제가 발생했어요.'}, ensure_ascii=False)}\n\n"
+    yield 'data: {"done": true}\n\n'
+
+
 @router.post("/complete")
 async def chat_complete(body: ChatRequest) -> StreamingResponse:
     gemini_history = []
@@ -191,9 +216,14 @@ async def chat_complete(body: ChatRequest) -> StreamingResponse:
                 yield chunk
             return
 
-        # 그 외는 CLIO 어드바이저 — provider 토글(기본 gemini, CHAT_PROVIDER=openai면 OpenAI).
+        # 그 외는 CLIO 어드바이저 — provider 토글(기본 gemini, CHAT_PROVIDER로 openai·anthropic 전환).
         if settings.chat_provider == "openai":
             async for chunk in _clio_openai_stream(body.messages):
+                yield chunk
+            return
+
+        if settings.chat_provider == "anthropic":
+            async for chunk in _clio_anthropic_stream(body.messages):
                 yield chunk
             return
 

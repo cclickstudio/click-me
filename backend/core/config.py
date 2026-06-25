@@ -42,9 +42,11 @@ class Settings(BaseSettings):
     # Google Gemini
     gemini_api_key: str | None = None
 
-    # 채팅 어드바이저(CLIO) 엔진 — 기본 gemini, CHAT_PROVIDER=openai면 OpenAI로 전환(테스트용).
-    chat_provider: str = "gemini"  # gemini | openai
+    # 채팅 어드바이저(CLIO) 엔진 — 기본 gemini, CHAT_PROVIDER로 openai·anthropic 전환(테스트용).
+    chat_provider: str = "gemini"  # gemini | openai | anthropic
+    chat_gemini_model: str = "gemini-2.5-flash"
     chat_openai_model: str = "gpt-4o-mini"
+    chat_anthropic_model: str = "claude-opus-4-8"
 
     # LangSmith — API 키 없으면 트레이싱 비활성(로컬 기동 가능)
     # LANGCHAIN_* 사용, LANGSMITH_*도 AliasChoices로 수용.
