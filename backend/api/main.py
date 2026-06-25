@@ -10,6 +10,13 @@ _BACKEND_ROOT = Path(__file__).resolve().parent.parent
 _ROOT_ENV = _BACKEND_ROOT.parent / ".env"
 load_dotenv(_ROOT_ENV if _ROOT_ENV.exists() else _BACKEND_ROOT / ".env")
 
+# langsmith ↔ langchain_core 순환 import(tracers.context) 선해소.
+# 시뮬/제너는 asyncio.gather로 트레이싱된 LLM 호출을 동시 실행하는데, 이때
+# langchain_core.tracers.context를 여러 코루틴이 첫 import하면 부분 초기화 모듈을
+# 관측해 "No module named 'langchain_core.tracers.context'"가 발생한다.
+# 서버 시작 시 단일 스레드에서 미리 완전 import 해 race를 제거한다.
+import langchain_core.tracers.context  # noqa: E402,F401
+import langchain_core.tracers.langchain  # noqa: E402,F401
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
