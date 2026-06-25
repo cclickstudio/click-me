@@ -25,13 +25,15 @@ export interface DeliveryCause {
   code: string;
   message: string;
   need_krw?: number;
-  balance_krw?: number;
+  balance_krw?: number; // Meta 선불 잔액(실광고비)
+  credit_krw?: number; // ClickMe 크레딧 잔액(예산 한도)
   commit_krw?: number;
 }
 export interface ActivateResponse {
   serving: boolean;
   result: { status?: string; failure_reason?: string | null } | null;
-  balance_krw: number;
+  balance_krw: number; // Meta 선불 잔액(실광고비)
+  credit_krw?: number; // ClickMe 크레딧 잔액(예산 한도)
   commit_krw: number;
   causes: DeliveryCause[];
   error_message?: string;
@@ -49,6 +51,19 @@ export interface PauseResponse {
   paused: boolean;
   result: { status?: string; failure_reason?: string | null } | null;
   error_message?: string;
+}
+// 실 캠페인 성과 이상 스캔
+export interface AnomalyScanItem {
+  campaign_id: string;
+  name: string;
+  state: string;
+  diagnosis: { anomaly_type: string; hypothesis?: string } & Record<string, unknown>;
+}
+export interface AnomalyScanResponse {
+  source: string;
+  scanned: number;
+  anomalies: AnomalyScanItem[];
+  note?: string;
 }
 export interface SyncResponse {
   campaign_id: string;
@@ -74,8 +89,6 @@ export interface PredictionSnapshot {
   purchase_intent: number;
   trust_avg: number;
   rejection_rate: number;
-  objective_fit_score?: number | null;
-  grade?: string | null;
   as_of: string;
   source: string;
 }
@@ -99,10 +112,39 @@ export interface BeforeAfterItem {
   actual: ActualOutcome;
   verdict: 'aligned' | 'overperformed' | 'underperformed' | 'unknown';
   rationale: string;
+  interpretation?: string; // 보조 KPI 기반 결정론 해석 — 없으면 빈 문자열
+  pred_strong?: boolean | null; // 클릭 의향률 강함(≥20%) 통과 — 예측 없으면 null
+  act_strong?: boolean | null; // 실측 CTR 양호(≥1%) 통과 — 판정 불가면 null
 }
 export interface BeforeAfterResponse {
   items: BeforeAfterItem[];
   rate_limited?: string; // Meta 요청 한도 시 안내
+}
+
+// 베이스라인 앵커 — 집행된 광고의 예측↔실측 쌍(절대 비교 금지, 순위 정합에만 사용)
+export interface CalibrationAnchor {
+  campaign_id: string;
+  name: string;
+  source: string;
+  predicted_click_intent: number; // 0~1
+  actual_ctr: number; // 0~1
+  predicted_purchase_intent: number; // 1~5
+  actual_cvr: number | null; // 0~1 (추적 전이면 null)
+  predicted_rejection: number; // 0~1
+  actual_impressions: number;
+  actual_spend_krw: number;
+}
+export interface CalibrationSummary {
+  n: number;
+  concordance_click: number | null; // 예측 클릭의향률 vs 실측 CTR 순위 일치율(0~1)
+  concordance_purchase: number | null; // 예측 구매의도 vs 실측 CVR 순위 일치율(0~1)
+  unlock_threshold: number;
+  unlocked: boolean;
+}
+export interface CalibrationResponse {
+  anchors: CalibrationAnchor[];
+  summary: CalibrationSummary;
+  rate_limited?: string;
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -119,7 +161,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: "Unknown error" }));
-    throw new Error(err.detail ?? `HTTP ${res.status}`);
+    // detail이 dict(예: {issues:[...]})면 그대로 두면 "[object Object]"가 되니 읽히게 직렬화.
+    const d = (err as { detail?: unknown }).detail;
+    const msg =
+      typeof d === "string" ? d : d != null ? JSON.stringify(d) : `HTTP ${res.status}`;
+    throw new Error(msg);
   }
   return res.json();
 }
@@ -146,10 +192,20 @@ function buildSimForm(input: SimRunInput): FormData {
 }
 
 // 캠페인 조회 쿼리스트링 — 전환가치·목표 ROAS는 입력됐을 때만 붙인다.
-function _campaignQuery(conversionValueKrw?: number | null, targetRoas?: number | null): string {
+// 조회 기간 토글 — 전체 누적(maximum) / 최근 30일 / 이번 달. Ads Manager와 맞추기용.
+export type DatePreset = "maximum" | "last_30d" | "this_month";
+
+function _campaignQuery(
+  conversionValueKrw?: number | null,
+  targetRoas?: number | null,
+  datePreset?: DatePreset,
+  includeArchived?: boolean,
+): string {
   const p = new URLSearchParams();
   if (conversionValueKrw) p.set("conversion_value_krw", String(conversionValueKrw));
   if (targetRoas) p.set("target_roas", String(targetRoas));
+  if (datePreset && datePreset !== "maximum") p.set("date_preset", datePreset);
+  if (includeArchived) p.set("include_archived", "true");
   const q = p.toString();
   return q ? `?${q}` : "";
 }
@@ -329,6 +385,14 @@ export const api = {
     complete: () => `${API_BASE}/api/chat/complete`,
     sessions: () => request<{ sessions: unknown[] }>("/chat/sessions"),
     messages: (sessionId: string) => request(`/chat/sessions/${sessionId}/messages`),
+    // 어시스턴트 답변 피드백(좋아요/싫어요) — RAG 품질 개선 적재.
+    feedback: (body: {
+      thread_id?: string;
+      rating?: number;
+      question?: string;
+      answer?: string;
+      failure_type?: string;
+    }) => request("/chat/feedback", { method: "POST", body: JSON.stringify(body) }),
   },
 
   inquiries: {
@@ -400,6 +464,8 @@ export const api = {
     compareBoard: () => request<BoardResponse>("/management/compare/board"),
     // 집행 전(시뮬 예측) vs 후(실측) — ClickMe로 만든 캠페인별
     beforeAfter: () => request<BeforeAfterResponse>("/management/compare/before-after"),
+    calibrationAnchors: () =>
+      request<CalibrationResponse>("/management/calibration/anchors"),
     // 캠페인 생성 정책 — 최소예산(Meta 실시간)·특별광고카테고리·연령. 폼이 동적 검증에 사용.
     campaignPolicy: () =>
       request<{
@@ -410,13 +476,28 @@ export const api = {
         age_max: number;
       }>("/management/campaign-policy"),
     // conversionValueKrw(전환 가치)→추정 ROAS, targetRoas(목표)→목표 미달 판정.
-    campaigns: (conversionValueKrw?: number | null, targetRoas?: number | null) =>
+    campaigns: (
+      conversionValueKrw?: number | null,
+      targetRoas?: number | null,
+      datePreset?: DatePreset,
+      includeArchived?: boolean,
+    ) =>
       request<CampaignsResponse>(
-        `/management/campaigns${_campaignQuery(conversionValueKrw, targetRoas)}`,
+        `/management/campaigns${_campaignQuery(conversionValueKrw, targetRoas, datePreset, includeArchived)}`,
       ),
-    campaign: (id: string, conversionValueKrw?: number | null, targetRoas?: number | null) =>
+    campaign: (
+      id: string,
+      conversionValueKrw?: number | null,
+      targetRoas?: number | null,
+      datePreset?: DatePreset,
+    ) =>
       request<CampaignDetail>(
-        `/management/campaigns/${id}${_campaignQuery(conversionValueKrw, targetRoas)}`,
+        `/management/campaigns/${id}${_campaignQuery(conversionValueKrw, targetRoas, datePreset)}`,
+      ),
+    // 실 캠페인 성과 이상 스캔 — live에서 캠페인별 성과 진단(ROAS 미달 등)을 모아 반환.
+    anomalyScan: (targetRoas?: number | null) =>
+      request<AnomalyScanResponse>(
+        `/management/anomaly/scan${targetRoas ? `?target_roas=${targetRoas}` : ""}`,
       ),
     campaignPlatforms: (id: string) =>
       request<PlatformsResponse>(`/management/campaigns/${id}/platforms`),
@@ -452,6 +533,44 @@ export const api = {
       gender?: 'all' | 'male' | 'female';
     }) =>
       request<{ proposal: Proposal }>("/management/campaigns/create-proposal", {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+    // generator 후보 → CREATE_CAMPAIGN 제안(시뮬 없는 빠른 집행). 승인·집행은 approve·execute 재사용.
+    fromCandidate: (body: {
+      generation_id: string;
+      candidate_id: string;
+      objective?: 'traffic' | 'leads';
+      link_url: string;
+      name: string;
+      daily_budget_krw: number;
+      start_date: string; // YYYY-MM-DD (Meta 광고세트 start_time)
+      end_date?: string | null; // YYYY-MM-DD (Meta 광고세트 end_time)
+      special_ad_category?: string;
+      country?: string;
+      age_min?: number;
+      age_max?: number;
+      gender?: 'all' | 'male' | 'female';
+    }) =>
+      request<{ proposal: Proposal }>("/management/campaign-proposals/from-candidate", {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+    // 시뮬 결과 → CREATE_CAMPAIGN 제안(집행 권장 판정 시에만). 권장 집행 경로.
+    fromSimulation: (body: {
+      simulation_id: string;
+      link_url: string;
+      name: string;
+      daily_budget_krw: number;
+      start_date: string; // YYYY-MM-DD (Meta 광고세트 start_time)
+      end_date?: string | null; // YYYY-MM-DD (Meta 광고세트 end_time)
+      special_ad_category?: string;
+      country?: string;
+      age_min?: number;
+      age_max?: number;
+      gender?: 'all' | 'male' | 'female';
+    }) =>
+      request<{ proposal: Proposal }>("/management/campaign-proposals/from-simulation", {
         method: "POST",
         body: JSON.stringify(body),
       }),
@@ -512,22 +631,6 @@ export const api = {
         body: JSON.stringify({ candidate_id: candidateId, caption }),
       }),
     list: (limit = 20) => request(`/generator/generations?limit=${limit}`),
-    advertise: (
-      generationId: string,
-      body: {
-        candidate_id: string;
-        budget: number;
-        objective: string;
-        targeting: { age_min: number; age_max: number; genders: number[]; countries: string[] };
-        destination_url: string;
-        start_date: string;
-        end_date?: string | null;
-      },
-    ) =>
-      request(`/generator/generations/${generationId}/advertise`, {
-        method: "POST",
-        body: JSON.stringify(body),
-      }),
     brandProfile: {
       get: (clientId: string) =>
         request<{

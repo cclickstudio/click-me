@@ -56,16 +56,23 @@ class StepDetector:
 
 class StubGenerator:
     async def generate(self, diagnosis, count):
-        return [CreativeCandidate(candidate_id="c1", ad_copy="여름맞이 신제품 출시")]
-
-
-class StubScorer:
-    async def score(self, candidate):
-        return 0.9
+        # 새 시안(GENERATED_NEW) — guard asset 규칙을 위해 image_ref를 채운다.
+        return [
+            CreativeCandidate(
+                candidate_id="c1", copy="여름맞이 신제품 출시", idx=0, image_ref="s3/new.png"
+            )
+        ]
 
 
 def build_controller(detector):
-    agent = RemediationAgent(generator=StubGenerator(), scorer=StubScorer(), clock=lambda: NOW)
+    from domain.management.agents.selection import InMemorySelectionRoundStore
+
+    # clock을 주입하지 않아 기본(real UTC)을 사용 — SelectionRound.expires_at이 항상 미래
+    # (InMemorySelectionRoundStore.claim()이 real wall-clock으로 만료를 검증하므로).
+    agent = RemediationAgent(
+        generator=StubGenerator(),
+        selection_store=InMemorySelectionRoundStore(),
+    )
     audit = InMemoryAuditLog()
     controller = EscalationController(
         store=InMemoryEscalationStore(),
@@ -161,3 +168,86 @@ async def test_escalation_eval_exhausts_without_recovery():
     assert report.terminal == "exhausted"
     assert report.visited_actions == ("CHANGE_BID_STRATEGY", "EXPAND_AUDIENCE", "CREATE_CAMPAIGN")
     assert report.order_ok
+
+
+async def test_escalation_auto_picks_idx0_when_awaiting_selection():
+    """FIX 2 — 사다리는 AWAITING_SELECTION 때 idx-0 후보를 자동 선택해 제안을 만든다(§5d 예외)."""
+    from domain.management.agents.outcome import OutcomeKind, RemediationOutcome
+
+    # AWAITING_SELECTION을 항상 반환하는 stub agent
+    class _AwaitingAgent:
+        _token = "tok-esc-auto"
+        _candidate_id = "c-auto-0"
+
+        async def rank(self, diagnosis, context):
+            return RemediationOutcome(
+                kind=OutcomeKind.AWAITING_SELECTION,
+                selection_token=self._token,
+                candidates=[{"candidate_id": self._candidate_id, "idx": 0, "copy": "테스트 카피"}],
+            )
+
+        async def package(self, selection_token, *, tenant_id, selected_id):
+            assert selection_token == self._token
+            assert selected_id == self._candidate_id
+            # 실 proposal은 빌드하기 무거우므로 PROPOSED outcome을 직접 반환
+            from uuid import uuid4
+
+            from domain.management.contracts.enums import ActionTier, ProposalStatus
+            from domain.management.contracts.schemas import ActionProposal, finalize_proposal
+            from tests.management.helpers import NOW
+
+            proposal = finalize_proposal(
+                ActionProposal(
+                    proposal_id=str(uuid4()),
+                    tenant_id=tenant_id,
+                    ad_account_id="act_esc_test",
+                    target_object_ids=("camp_esc_test",),
+                    action_type="REPLACE_CREATIVE",
+                    action_tier=ActionTier.TIER_1,
+                    evidence_metrics={"selected_candidate_id": selected_id},
+                    metrics_as_of=NOW,
+                    hypothesis="테스트",
+                    confidence=0.8,
+                    expected_state_version="sv1",
+                    budget_before_krw=10_000,
+                    budget_after_krw=10_000,
+                    max_total_spend_krw=70_000,
+                    expires_at=NOW,
+                    approval_policy_version="v1",
+                    status=ProposalStatus.PENDING,
+                )
+            )
+            return RemediationOutcome(kind=OutcomeKind.PROPOSED, proposal=proposal)
+
+    from types import SimpleNamespace
+
+    from domain.management.contracts.enums import AnomalyType
+    from domain.management.escalation import (
+        ACTIVE_LADDERS,
+        EscalationController,
+        EscalationStatus,
+        InMemoryEscalationStore,
+    )
+    from domain.management.execution.audit_log import InMemoryAuditLog
+    from tests.management.helpers import NOW
+
+    anomaly = AnomalyType.QUALITY_DEGRADED
+
+    class _ConstDetector:
+        async def detect(self, tenant_id, campaign_id, *, now, executed_steps):
+            return SimpleNamespace(
+                diagnosis=make_diagnosis(anomaly),
+            )
+
+    controller = EscalationController(
+        store=InMemoryEscalationStore(),
+        detector=_ConstDetector(),
+        agent=_AwaitingAgent(),
+        audit=InMemoryAuditLog(),
+        ladders={anomaly: ACTIVE_LADDERS[anomaly]},
+    )
+    outcome = await controller.re_evaluate(TENANT, ACCOUNT, "camp-fix2", now=NOW)
+    # 사다리가 AWAITING_SELECTION을 받아 자동 선택 → 제안 생성 → ESCALATED
+    assert outcome.status is EscalationStatus.ESCALATED
+    assert outcome.proposal is not None
+    assert outcome.proposal.action_type == "REPLACE_CREATIVE"

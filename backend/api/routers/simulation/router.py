@@ -7,15 +7,18 @@ from __future__ import annotations
 import json
 import logging
 import os
-import tempfile
 import uuid
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.auth import get_current_user, require_user_org
 from core.config import settings
 from core.db import get_db
+from core.models import User
+from domain.simulation.adapters.ad_image_store import persist_ad_image
 from domain.simulation.adapters.category_repo import list_categories
 from domain.simulation.contracts.schemas import SimulationRunRequest
 from domain.simulation.repositories.simulation_repository import SimulationRepository
@@ -36,18 +39,14 @@ logger.info("Simulation service: real(Gemini) 모드 (LLM QA=%s)", _USE_LLM_QA)
 _IMAGE_MAX_BYTES = 10 * 1024 * 1024  # 10MB
 
 
-async def _save_upload(ad_image: UploadFile | None) -> str | None:
-    """업로드된 광고 이미지를 임시 파일로 저장하고 경로 반환(VLM 입력용)."""
+async def _save_upload(ad_image: UploadFile | None) -> tuple[str | None, str | None]:
+    """업로드 광고 이미지를 S3에 영속화하고 (vlm_ref, s3_key)를 반환(미설정 시 로컬 폴백)."""
     if ad_image is None:
-        return None
+        return None, None
     data = await ad_image.read()
     if len(data) > _IMAGE_MAX_BYTES:
         raise HTTPException(status_code=413, detail="이미지가 너무 큽니다(최대 10MB)")
-    suffix = os.path.splitext(ad_image.filename or "")[1] or ".png"
-    fd, path = tempfile.mkstemp(prefix="clickme_ad_", suffix=suffix)
-    with os.fdopen(fd, "wb") as f:
-        f.write(data)
-    return path
+    return await persist_ad_image(data, ad_image.filename, ad_image.content_type)
 
 
 def _build_request(
@@ -55,6 +54,7 @@ def _build_request(
     ad_id: str,
     ad_content: str | None,
     ad_image_path: str | None,
+    ad_image_key: str | None,
     ad_image_url: str | None,
     organization_id: str | None,
     project_id: str | None,
@@ -77,7 +77,9 @@ def _build_request(
     return SimulationRunRequest(
         ad_id=ad_id,
         ad_content=ad_content,
-        ad_image_url=ad_image_path or ad_image_url,  # 업로드 파일 우선, 없으면 URL
+        ad_image_url=ad_image_path
+        or ad_image_url,  # VLM 입력: 업로드(presigned/로컬) 우선, 없으면 URL
+        ad_image_key=ad_image_key,  # S3 영구 식별자(업로드 시만) — DB 영속·재조회 presign 대상
         organization_id=organization_id,
         project_id=project_id,
         target_filter=tf,
@@ -110,10 +112,12 @@ async def start_simulation(
     service_class: int | None = Form(None),
 ) -> dict:
     """비동기 시작 — run_id 반환. 진행률은 /stream, 결과는 /result."""
+    ad_image_path, ad_image_key = await _save_upload(ad_image)
     req = _build_request(
         ad_id=ad_id,
         ad_content=ad_content,
-        ad_image_path=await _save_upload(ad_image),
+        ad_image_path=ad_image_path,
+        ad_image_key=ad_image_key,
         ad_image_url=ad_image_url,
         organization_id=organization_id,
         project_id=project_id,
@@ -157,10 +161,12 @@ async def run_simulation(
 
     shape=analysis 면 분석팀 정리 스키마(중복 제거·평탄화)로 반환. 기본 full(원본).
     """
+    ad_image_path, ad_image_key = await _save_upload(ad_image)
     req = _build_request(
         ad_id=ad_id,
         ad_content=ad_content,
-        ad_image_path=await _save_upload(ad_image),
+        ad_image_path=ad_image_path,
+        ad_image_key=ad_image_key,
         ad_image_url=ad_image_url,
         organization_id=organization_id,
         project_id=project_id,
@@ -214,15 +220,30 @@ async def get_simulation_result_analysis(run_id: str) -> dict:
     return to_analysis_payload(result)
 
 
+_require_user_org = require_user_org  # core.auth 공용(없으면 409) — 라우터 복붙 제거
+
+
 @router.get("/{simulation_id}/db-result")
 async def get_simulation_db_result(
-    simulation_id: str, session: AsyncSession = Depends(get_db)
+    simulation_id: str,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
 ) -> dict:
-    """DB 영속 결과 재조회 — 새로고침·프로젝트 패널 재진입 시 SimRunResult 복원. 없으면 404."""
+    """DB 영속 결과 재조회 — 새로고침·프로젝트 패널 재진입 시 SimRunResult 복원.
+
+    로그인 org의 시뮬만 조회(멀티테넌시 격리). 다른 org·없음이면 404.
+    """
     try:
         sim_uuid = uuid.UUID(simulation_id)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=f"잘못된 simulation_id: {e}") from e
+    org_id = await _require_user_org(user, session)
+    # 도메인 ORM import 없이 org 소유만 raw SQL로 검증(경계 유지).
+    sim_org = await session.scalar(
+        text("SELECT organization_id FROM simulations WHERE id = :sid"), {"sid": sim_uuid}
+    )
+    if sim_org is None or sim_org != org_id:
+        raise HTTPException(status_code=404, detail="결과 없음 — 잘못된 simulation_id")
     result = await SimulationRepository(session).get_full_result(sim_uuid)
     if result is None:
         raise HTTPException(status_code=404, detail="결과 없음 — 잘못된 simulation_id")

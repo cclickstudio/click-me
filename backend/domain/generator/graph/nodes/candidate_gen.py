@@ -63,6 +63,7 @@ async def _generate_carousel(
     tone: str | None,
     product_cutout_bytes: bytes | None,
     logo_image_bytes: bytes | None,
+    improvement_context: str | None = None,
 ) -> dict:
     """캐러셀 — 공통 배경 1장 생성 후 슬라이드별 PIL 텍스트로 3장 구성."""
     emit_progress(config, "candidates", 45, "캐러셀 배경 생성 중...")
@@ -74,6 +75,7 @@ async def _generate_carousel(
         brand_color=brand_color,
         tone=tone,
         product_cutout_bytes=product_cutout_bytes,
+        improvement_context=improvement_context,
         headline="",
         body="",
         cta="",
@@ -139,6 +141,7 @@ async def generate_candidates(state: GenerationState, config: RunnableConfig) ->
     gen_size = _map_ad_size(width, height)
     brand_color = req.get("brand_color")
     tone = req.get("tone_and_manner")
+    improvement_context: str | None = state.get("improvement_context")
     product_image_bytes: bytes | None = state.get("product_image_bytes")
 
     logo_s3_key = req.get("brand_logo_s3_key")
@@ -176,6 +179,7 @@ async def generate_candidates(state: GenerationState, config: RunnableConfig) ->
             tone=tone,
             product_cutout_bytes=product_cutout_bytes,
             logo_image_bytes=logo_image_bytes,
+            improvement_context=improvement_context,
         )
 
     # 카피 3개를 LLM 1회 호출로 일괄 생성 (pipeline 모드일 때만).
@@ -221,6 +225,7 @@ async def generate_candidates(state: GenerationState, config: RunnableConfig) ->
                 size=gen_size,
                 brand_color=brand_color,
                 tone=tone,
+                improvement_context=improvement_context,
             )
         else:
             # 1. 이미지부터 생성 — 텍스트 없이 만들고 카피는 이후 PIL로 렌더하므로 카피를 기다리지 않는다.
@@ -233,6 +238,7 @@ async def generate_candidates(state: GenerationState, config: RunnableConfig) ->
                 brand_color=brand_color,
                 tone=tone,
                 product_cutout_bytes=product_cutout_bytes,
+                improvement_context=improvement_context,
             )
             # 2. 병렬로 진행된 카피 배치 결과를 이 시점에 수령 (이미 완료돼 있을 가능성이 높다)
             ad_copy = (await copy_task)[idx]

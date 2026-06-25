@@ -6,6 +6,14 @@ from __future__ import annotations
 
 import os
 
+from tenacity import (
+    Retrying,
+    retry_if_exception,
+    stop_after_attempt,
+    wait_random_exponential,
+)
+
+from domain.simulation.adapters.gemini._common import _is_transient
 from domain.simulation.contracts.schemas import Persona
 
 # 재현성 위해 고정 버전 핀(alias -latest 회피). gemini-2.0-flash 는 퇴역.
@@ -40,7 +48,16 @@ class GeminiNarrator:
         self._client = genai.Client(api_key=key)
 
     def narrate(self, persona: Persona) -> str:
-        resp = self._client.models.generate_content(
-            model=self._model, contents=_build_prompt(persona)
-        )
+        # 503(과부하)·429·5xx 일시 오류 지수 백오프 재시도 — JSON 경로(_agen_json)와 동일 방어.
+        resp = None
+        for attempt in Retrying(
+            retry=retry_if_exception(_is_transient),
+            wait=wait_random_exponential(multiplier=1.0, max=30.0),
+            stop=stop_after_attempt(5),
+            reraise=True,
+        ):
+            with attempt:
+                resp = self._client.models.generate_content(
+                    model=self._model, contents=_build_prompt(persona)
+                )
         return (getattr(resp, "text", "") or "").strip()

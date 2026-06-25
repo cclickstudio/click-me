@@ -2,8 +2,10 @@
 'use client';
 
 import dynamic from 'next/dynamic';
+import Link from 'next/link';
 import { useEffect, useState } from 'react';
-import { api, type LeadRecord, type DeliveryStatusResponse } from '@/lib/api';
+import { api, type LeadRecord, type DeliveryStatusResponse, type DeliveryCause } from '@/lib/api';
+import { setPendingActivation } from '@/lib/pendingActivation';
 import type {
   AccountWallet,
   CampaignDetail as Detail,
@@ -13,8 +15,9 @@ import type {
   ManualKpi,
   PlatformMetrics,
 } from './types';
-import { fmtCvr, fmtRoas } from './types';
+import { budgetLabel, fmtCvr, fmtRoas, metricsBlocked, pacingMeaningful } from './types';
 import { StateBadge } from './StateBadge';
+import { OriginLegend, OriginTag } from '../ValueOrigin';
 
 // 차트는 펼칠 때만 로드(번들 분리, SSR 끄기 — Recharts는 DOM 측정형)
 const DeliveryChart = dynamic(() => import('./DeliveryChart'), {
@@ -63,10 +66,21 @@ function PacingRing({ pct }: { pct: number }) {
   );
 }
 
-function Tile({ label, value }: { label: string; value: string }) {
+function Tile({
+  label,
+  value,
+  origin,
+}: {
+  label: string;
+  value: string;
+  origin?: 'setting' | 'computed';
+}) {
   return (
     <div className="rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] px-3 py-2.5">
-      <p className="text-[12px] text-[#8B95A1]">{label}</p>
+      <p className="text-[12px] text-[#8B95A1]">
+        {label}
+        {origin && <OriginTag origin={origin} />}
+      </p>
       <p className="text-base font-bold text-[#191F28] dark:text-[#F2F4F6] tabular-nums mt-0.5">{value}</p>
     </div>
   );
@@ -98,6 +112,8 @@ export function CampaignDetail({
   onChanged?: () => void; // 게재시작/일시중지/정산 후 대시보드 목록·잔액 갱신
 }) {
   const s = detail.summary;
+  const dBlocked = metricsBlocked(detail); // 권한 거부로 상세 지표 못 불러옴
+  const showPacing = pacingMeaningful(detail); // 소진율 퍼센트 의미 있는 캠페인만
   const live = source === 'live';
   // 종료/중단 사유 — 데이터(상태·종료일·잔액)로 조립. 충전해도 재개 안 되는 경우 구분.
   const endReason = (() => {
@@ -108,7 +124,7 @@ export function CampaignDetail({
       if (!Number.isNaN(d.getTime())) parts.push(`게재 기간 종료(${d.getMonth() + 1}/${d.getDate()})`);
     }
     if ((account?.available_balance_krw ?? null) === 0 && (account?.amount_spent_krw ?? 0) > 0) {
-      parts.push('충전 잔액 소진(₩0)');
+      parts.push('선불 잔액 소진(₩0)');
     }
     return parts.length ? parts.join(' · ') : null;
   })();
@@ -147,6 +163,9 @@ export function CampaignDetail({
   const [dstatus, setDstatus] = useState<DeliveryStatusResponse | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
   const [actionMsg, setActionMsg] = useState<string | null>(null);
+  // 게재 실패 원인 + 배정액 — 예산 한도(크레딧)/실광고비(Meta) 충전 버튼 분기용.
+  const [actionCauses, setActionCauses] = useState<DeliveryCause[]>([]);
+  const [lastCommit, setLastCommit] = useState(0);
 
   const refreshStatus = () =>
     api.management.deliveryStatus(detail.campaign_id).then(setDstatus).catch(() => {});
@@ -175,11 +194,14 @@ export function CampaignDetail({
     if (!commit) return;
     setActionBusy(true);
     setActionMsg(null);
+    setActionCauses([]);
+    setLastCommit(commit);
     try {
       const r = await api.management.activate(detail.campaign_id, commit);
       if (!r.serving) {
-        // Meta 선불 잔액 부족 등 — 원인 메시지 표시(충전은 Meta Ads Manager 결제 설정).
+        // 원인별 충전 분기 — 크레딧(예산 한도)=/payment, Meta 선불(실광고비)=Ads Manager.
         setActionMsg(r.causes[0]?.message ?? r.error_message ?? '게재 시작 실패');
+        setActionCauses(r.causes);
       }
       await refreshStatus();
       onChanged?.();
@@ -243,11 +265,33 @@ export function CampaignDetail({
           <StateBadge state={detail.state} />
         </span>
       </div>
-      {/* 게재 불가 원인 + 충전 상한 대비 소진 진행률 (live) */}
+      {/* 게재 불가 원인 + 충전 한도 대비 소진 진행률 (live) */}
       {actionMsg && (
         <p className="mb-2 rounded-lg bg-red-50 px-3 py-2 text-[12px] text-red-600 dark:bg-red-900/20 dark:text-red-300">
           {actionMsg}
         </p>
+      )}
+      {/* 두 충전 구분 — 예산 한도(크레딧)=/payment, 실광고비(Meta 선불)=Ads Manager */}
+      {actionCauses.some((c) => c.code === 'INSUFFICIENT_CREDIT') && (
+        <Link
+          href="/payment"
+          onClick={() =>
+            setPendingActivation({ campaignId: detail.campaign_id, commit: lastCommit })
+          }
+          className="mb-2 mr-2 inline-block rounded-lg bg-[#3182F6] px-3 py-1.5 text-[12px] font-medium text-white hover:bg-[#1B6EEB]"
+        >
+          📊 예산 한도(크레딧) 충전하기
+        </Link>
+      )}
+      {actionCauses.some((c) => c.code === 'INSUFFICIENT_META_BALANCE') && (
+        <a
+          href="https://business.facebook.com/billing_hub/accounts"
+          target="_blank"
+          rel="noreferrer"
+          className="mb-2 inline-block rounded-lg bg-[#191F28] px-3 py-1.5 text-[12px] font-medium text-white hover:bg-black"
+        >
+          💳 실광고비(Meta 선불) 충전 — Ads Manager
+        </a>
       )}
       {dstatus && !dstatus.serving && dstatus.causes.length > 0 && (
         <div className="mb-2 rounded-lg bg-amber-50 px-3 py-2 dark:bg-amber-900/20">
@@ -264,7 +308,7 @@ export function CampaignDetail({
       {dstatus?.spend_cap_krw ? (
         <div className="mb-2">
           <div className="flex items-center justify-between text-[11px] text-[#8B95A1]">
-            <span>충전 상한 대비 소진</span>
+            <span>충전 한도 대비 소진</span>
             <span className="tabular-nums">
               ₩{s.spend_krw.toLocaleString()} / ₩{dstatus.spend_cap_krw.toLocaleString()} (
               {Math.min(100, Math.round((s.spend_krw / dstatus.spend_cap_krw) * 100))}%)
@@ -283,14 +327,14 @@ export function CampaignDetail({
 
       <DeliveryChart series={detail.series} dailyBudget={detail.daily_budget_krw} />
       <p className="mt-1 text-[12px] text-[#8B95A1]">
-        {live ? '실 캠페인' : '데모'} · 전체 기간 일자별 지출(막대)과 일일예산(점선).
+        {live ? '실 캠페인' : '데모'} · 전체 기간 일자별 지출(막대)과 일예산(점선).
         {blockReason ? ' 현재 게재 중단 — 선불 잔액 부족.' : ''}
       </p>
       {endReason && (
         <p className="mt-2 rounded-lg bg-[#F2F4F6] px-3 py-2 text-[12px] text-[#4E5968] dark:bg-[#2D3748] dark:text-[#C9CED6]">
           <span className="font-semibold">종료 사유</span> · {endReason}
           <span className="ml-1 text-[#8B95A1]">
-            (일일예산은 하루 상한이라 미사용분은 이월되지 않습니다)
+            (일예산은 하루 상한이라 미사용분은 이월되지 않습니다)
           </span>
         </p>
       )}
@@ -305,37 +349,63 @@ export function CampaignDetail({
       )}
 
       {/* 전달 → 효율 → 전환·예산 순, 4×3 정렬 */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 mt-4">
-        <Tile label="노출" value={s.impressions.toLocaleString()} />
-        <Tile label="클릭" value={s.clicks.toLocaleString()} />
-        <Tile label="도달" value={s.reach.toLocaleString()} />
-        <Tile label="지출" value={`₩${s.spend_krw.toLocaleString()}`} />
-        <Tile label="CTR(클릭률)" value={`${(s.ctr * 100).toFixed(1)}%`} />
-        <Tile label="CPC(클릭당비용)" value={`₩${s.cpc_krw.toLocaleString()}`} />
-        <Tile label="CPM(노출당비용)" value={`₩${s.cpm_krw.toLocaleString()}`} />
-        <Tile label="빈도" value={s.frequency.toFixed(2)} />
+      <OriginLegend className="mt-4" />
+      {dBlocked && (
+        <p className="mt-3 rounded-lg bg-[#F2F4F6] px-3 py-2 text-[12px] text-[#8B95A1] dark:bg-[#2D3748] dark:text-[#9CA3AF]">
+          <span className="font-semibold">권한 없음</span> · Meta에서 이 캠페인의 지표를 불러올
+          권한이 없어요. 토큰 권한(스코프)·광고계정 자산 권한을 확인해 주세요. (예산·상태는 표시됨)
+        </p>
+      )}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 mt-2">
+        <Tile label="노출" value={dBlocked ? '—' : s.impressions.toLocaleString()} />
+        <Tile label="클릭" value={dBlocked ? '—' : s.clicks.toLocaleString()} />
+        <Tile label="도달" value={dBlocked ? '—' : s.reach.toLocaleString()} />
+        <Tile label="지출" value={dBlocked ? '—' : `₩${s.spend_krw.toLocaleString()}`} />
+        <Tile label="CTR(클릭률)" value={dBlocked ? '—' : `${(s.ctr * 100).toFixed(1)}%`} />
+        <Tile label="CPC(클릭당비용)" value={dBlocked ? '—' : `₩${s.cpc_krw.toLocaleString()}`} />
+        <Tile label="CPM(노출당비용)" value={dBlocked ? '—' : `₩${s.cpm_krw.toLocaleString()}`} />
+        <Tile label="빈도" value={dBlocked ? '—' : s.frequency.toFixed(2)} />
         <Tile
           label="CVR(전환율)"
-          value={manualKpi?.cvr != null ? `${manualKpi.cvr}% (추정)` : fmtCvr(s.cvr, s.conversions)}
+          value={
+            dBlocked
+              ? '—'
+              : manualKpi?.cvr != null
+                ? `${manualKpi.cvr}% (추정)`
+                : fmtCvr(s.cvr, s.conversions)
+          }
         />
         <Tile
           label="ROAS(투자수익률)"
           value={
-            manualKpi?.roas != null
-              ? `${manualKpi.roas}x (추정)`
-              : fmtRoas(s.roas, s.conversions, s.roas_estimated) +
-                (s.target_missed ? ' · 목표↓' : '')
+            dBlocked
+              ? '—'
+              : manualKpi?.roas != null
+                ? `${manualKpi.roas}x (추정)`
+                : fmtRoas(s.roas, s.conversions, s.roas_estimated) +
+                  (s.target_missed ? ' · 목표↓' : '')
           }
         />
-        <Tile label="일일예산(하루 상한)" value={`₩${detail.daily_budget_krw.toLocaleString()}`} />
+        <Tile
+          label={detail.budget_type === 'lifetime' ? '총예산' : '일예산(하루 상한)'}
+          value={budgetLabel(detail)}
+          origin="setting"
+        />
         <div className="flex items-center gap-2.5 rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] px-3 py-2.5">
-          <PacingRing pct={detail.state === 'ended' ? 0 : s.pacing_pct} />
+          <PacingRing pct={showPacing ? s.pacing_pct : 0} />
           <div>
             <p className="text-[12px] text-[#8B95A1]">
-              {detail.state === 'ended' ? '게재' : '일예산 대비'}
+              {showPacing ? '소진율' : '게재'}
+              {showPacing && <OriginTag origin="computed" />}
             </p>
             <p className="text-base font-bold text-[#191F28] dark:text-[#F2F4F6] tabular-nums mt-0.5">
-              {detail.state === 'ended' ? '종료' : `${s.pacing_pct.toFixed(0)}%`}
+              {showPacing
+                ? `${s.pacing_pct.toFixed(0)}%`
+                : detail.state === 'ended'
+                  ? '종료'
+                  : dBlocked
+                    ? '권한 없음'
+                    : '—'}
             </p>
           </div>
         </div>

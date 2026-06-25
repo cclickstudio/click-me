@@ -53,6 +53,10 @@ async def generate_strategies(state: GenerationState, config: RunnableConfig) ->
     outputs = await plan_strategies(product_analysis, improvement_context=improvement_context)
     result: dict = {"strategies": [o.model_dump() for o in outputs]}
 
+    # 개선 컨텍스트를 state에 실어 카피·이미지 생성(candidate_gen)까지 전달
+    if improvement_context:
+        result["improvement_context"] = improvement_context
+
     # 이미지로 적용 어려운 개선점 가이드는 product_analysis JSONB에 함께 저장
     if guidance_lines:
         pa = dict(state["product_analysis"])

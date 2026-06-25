@@ -116,6 +116,56 @@ def build_generation_chat_agent(
         starter = generator_service.start_generation
 
     async def handle(req: SubagentRequest) -> SubagentResult:
+        # ── 개선 모드: improve_context가 주입된 경우 슬롯 필링 없이 IMPROVE로 직행 ──────
+        if req.improve_context:
+            ctx = req.improve_context
+            s3_key = (ctx.get("s3_key") or "").strip()
+            sim_summary = (ctx.get("simulation_summary") or "").strip()
+            product_name = (ctx.get("product_name") or "광고").strip()
+
+            if not s3_key or not sim_summary:
+                return SubagentResult(
+                    action=Action.ASK,
+                    message="개선할 광고 정보가 부족합니다. 시뮬레이션 페이지에서 다시 시도해 주세요.",
+                    meta=_META,
+                )
+
+            # 프로젝트 해결 — 마지막 메시지로 번호/이름 매칭, 없으면 되묻기
+            project_id = req.project_id
+            if not project_id:
+                matched = _match_project(req.last_user_text, req.available_projects)
+                if matched:
+                    project_id = matched.id
+            if not project_id:
+                return SubagentResult(action=Action.ASK, message=_ask_for_project(req), meta=_META)
+
+            # 첫 번째 사용자 메시지를 개선 요청(fix_requests)으로 사용
+            first_user_msg = next((m.content for m in req.messages if m.role == "user"), None)
+            fix_requests = first_user_msg or None
+
+            gen_req = GenerationCreateRequest(
+                mode=GenerationMode.IMPROVE,
+                project_id=project_id,
+                existing_ad_s3_key=s3_key,
+                simulation_summary=sim_summary,
+                fix_requests=fix_requests,
+            )
+            created_by = uuid.UUID(req.user_id) if req.user_id else None
+            generation_id = await starter(gen_req, created_by=created_by)
+            started = StartedEvent(
+                event="generation_started",
+                job_id=generation_id,
+                stream_url=f"/api/generator/generations/{generation_id}/stream",
+                domain="generator",
+            )
+            return SubagentResult(
+                action=Action.TRIGGER,
+                message=f"'{product_name}' 광고 개선을 시작했어요. 진행 상황은 곧 표시됩니다.",
+                meta=_META,
+                started_event=started,
+            )
+
+        # ── CREATE 모드: 슬롯 필링 ────────────────────────────────────────────────
         slots = await extractor(req.messages) if extractor else ExtractedSlots()
 
         # 1) 필수 콘텐츠 슬롯 먼저 — 부족하면 되묻기

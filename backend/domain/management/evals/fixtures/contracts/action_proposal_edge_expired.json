@@ -27,7 +27,7 @@
   "budget_after_krw": 70000,
   "max_total_spend_krw": 490000,
   "expires_at": "2026-06-12T08:59:00Z",
-  "proposal_hash": "716fc2b484c12dae03708d320f40fedca47c141bba134b3b1d6ca36bbe26711c",
+  "proposal_hash": "102f02e22656aa5cb3610657d74ba9e00f86d6b65bc7a40875b4649589839613",
   "approval_policy_version": "approval-policy-v1",
   "status": "pending"
 }

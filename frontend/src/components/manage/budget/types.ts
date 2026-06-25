@@ -18,7 +18,11 @@ export type BudgetStatus = {
   // 페이싱 확장(live)
   monthly_target_krw?: number;
   projection_krw?: number; // 런레이트 월말 예상 소진
-  account_balance_krw?: number; // Meta 선불 가용 잔액(여력)
+  account_balance_krw?: number; // Meta 선불 가용 잔액(여력=실광고비)
+  account_spend_cap_krw?: number; // Meta 충전 한도(부가세 제외 집행가능액)
+  account_amount_spent_krw?: number; // Meta 누적 지출
+  credit_charged_krw?: number; // ClickMe 크레딧 총 충전(집행 한도)
+  credit_balance_krw?: number; // ClickMe 크레딧 잔액
   period?: string; // 'YYYY-MM'
   daily?: BudgetDayPoint[];
 };

@@ -1,8 +1,14 @@
 # 🅱 처방 결정 코어 — 진단+의향 → action 선택 매핑 검증
+from datetime import UTC, datetime
+
 import pytest
 
-from domain.management.agents.regeneration import RiskAppetite, decide_action
-from domain.management.contracts.enums import AnomalyType
+from domain.management.agents.regeneration import (
+    RiskAppetite,
+    decide_action,
+    decide_with_confidence,
+)
+from domain.management.contracts.enums import AnomalyType, DiagnosisSource, DiagnosisStatus
 from domain.management.contracts.schemas import DiagnosisResult
 from tests.management.helpers import NOW
 
@@ -63,3 +69,35 @@ def test_budget_exhausted_follows_risk_appetite():
 )
 def test_observe_only_anomalies_return_none(anomaly):
     assert decide_action(make_diagnosis(anomaly), RiskAppetite.AGGRESSIVE) is None
+
+
+def _dx(anomaly: AnomalyType, confidence: float) -> DiagnosisResult:
+    return DiagnosisResult(
+        diagnosis_id="dx_1",
+        tenant_id="org_1",
+        campaign_id="camp_1",
+        anomaly_type=anomaly,
+        source=DiagnosisSource.AGENT,
+        confidence=confidence,
+        evidence_metrics={},
+        metrics_as_of=datetime.now(UTC),
+        status=DiagnosisStatus.CONFIRMED,
+    )
+
+
+def test_low_confidence_downgrades_increase_budget_to_observe():
+    dx = _dx(AnomalyType.BID_LOSS, confidence=0.2)
+    action = decide_with_confidence(dx, RiskAppetite.AGGRESSIVE)
+    assert action is None
+
+
+def test_high_confidence_keeps_increase_budget():
+    dx = _dx(AnomalyType.BID_LOSS, confidence=0.95)
+    action = decide_with_confidence(dx, RiskAppetite.AGGRESSIVE)
+    assert action == "INCREASE_BUDGET"
+
+
+def test_deterministic_path_confidence_one_never_downgrades():
+    dx = _dx(AnomalyType.BID_LOSS, confidence=1.0)
+    action = decide_with_confidence(dx, RiskAppetite.AGGRESSIVE)
+    assert action == "INCREASE_BUDGET"

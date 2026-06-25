@@ -8,9 +8,10 @@
 import math
 import random
 from datetime import UTC, datetime
+from uuid import uuid4
 
 from domain.management.comparison.schemas import PostInsights, PostType
-from domain.management.contracts.enums import CampaignState, RelevanceRank
+from domain.management.contracts.enums import CampaignState, RelevanceRank, ResultStatus
 from domain.management.contracts.fault_injection import FaultConfig, FaultMode
 from domain.management.contracts.policy import (
     AUDIENCE_SIZE,
@@ -21,6 +22,7 @@ from domain.management.contracts.policy import (
 )
 from domain.management.contracts.schemas import (
     AccountFunding,
+    ActionResult,
     CampaignConfig,
     CampaignInfo,
     CreativePreview,
@@ -65,9 +67,10 @@ class MockAdPlatform:
         """Port 충족 — mock은 항상 ACTIVE."""
         return CampaignState.ACTIVE
 
-    async def list_campaigns(self) -> list[CampaignInfo]:
+    async def list_campaigns(self, include_archived: bool = False) -> list[CampaignInfo]:  # noqa: ARG002
         """Port 충족 — 데모 캠페인 목록(고정). 라우터 데모 경로의 풍부한 고장 시나리오는
         _CAMPAIGNS_DEMO(라우터 소유)에 있고, 여기는 Port 일반 소비자용 최소 목록.
+        (mock은 보관 개념이 없어 include_archived 무시.)
         """
         return [
             CampaignInfo(
@@ -227,12 +230,19 @@ class MockAdPlatform:
 
         # AUDIENCE_TOO_NARROW = 타겟 모수를 크게 줄여 reach 조기 포화 → frequency 폭등
         audience = AUDIENCE_SIZE
+        cum_impressions = 0.0  # 다중일 누적 노출 베이스라인 (이전 날들의 reach 포화 반영)
         if mode == FaultMode.AUDIENCE_TOO_NARROW:
-            audience = 1_500  # 하루 누적 노출(~8천) 대비 작아 frequency가 5+로 치솟음
+            # 빈도 피로는 단일일이 아니라 수일 누적으로 발생한다. 현실적으로 좁은 모수(3만)에
+            # 이전 날들 누적 노출(모수×3 ≈ 9만)을 베이스라인으로 깔아, 관측일을 '모수를 이미 3회
+            # 회전한 성숙 캠페인 일자'로 둔다 → 오늘 frequency 3+ 관측(다중일 포화 반영).
+            audience = 30_000
+            cum_impressions = audience * 3.0
 
         snapshots: list[MetricsSnapshot] = []
-        cum_impressions = 0.0
         prev_frequency = 1.0
+        if cum_impressions > 0:  # 베이스라인 누적이 있으면 초기 빈도도 그에 맞춰 시작
+            _reach0 = audience * (1 - math.exp(-cum_impressions / audience))
+            prev_frequency = cum_impressions / _reach0 if _reach0 > 0 else 1.0
 
         for hour in range(24):
             cpm = CPM_ANCHOR_KRW * self._rng.uniform(0.92, 1.08)
@@ -288,6 +298,41 @@ class MockAdPlatform:
                 )
             )
         return snapshots
+
+    def _ok(self, operation: str, idem_key: str) -> ActionResult:
+        """성공 ActionResult 합성 — mock 쓰기 메서드 공통 반환값."""
+        return ActionResult(
+            result_id=str(uuid4()),
+            approval_id="",
+            status=ResultStatus.SUCCESS,
+            platform_response_snapshot={"dry_run": True, "operation": operation},
+            executed_at=datetime.now(UTC),
+            idempotency_key=idem_key,
+        )
+
+    async def create_link_ad(
+        self,
+        config: CampaignConfig,
+        adset_id: str,
+        idem_key: str,
+        *,
+        page_id: str,
+        image_hash: str | None = None,
+    ) -> ActionResult:
+        """mock — traffic 링크광고 생성(항상 성공)."""
+        return self._ok("create_link_ad", idem_key)
+
+    async def create_full_campaign(
+        self, config: CampaignConfig, idem_key: str, *, page_id: str | None = None
+    ) -> ActionResult:
+        """mock 오케스트레이션 — 캠페인→광고세트→(traffic+link_url면 광고) 합성."""
+        adset_result = self._ok("create_adset", f"{idem_key}-adset")
+        if config.objective != "leads":
+            if config.link_url:
+                return self._ok("create_link_ad", f"{idem_key}-ad")
+            return adset_result
+        # leads: 폼→광고까지
+        return self._ok("create_ad", f"{idem_key}-ad")
 
 
 class MockOrganicReader:
