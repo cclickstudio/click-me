@@ -55,7 +55,7 @@ backend/domain/chat/
 │   ├── normalize.py    # 마크다운 정규화 (content_hash 기준 단일 정의)
 │   └── sources.py      # 출처 레지스트리 — B(자동수집) 끼울 seam
 ├── service/
-│   └── chat_service.py # 질문 → 검색 → (근거 게이트) → Gemini 답변(인용) → SSE
+│   └── chat_service.py # 질문 → 검색 → 근거 게이트 → 주입 LLM 인용 답변 (Gemini 어댑터·SSE는 후속)
 └── wiring.py           # mock ↔ real 전환 단일 지점 (Composition Root)
 ```
 
@@ -100,15 +100,18 @@ management 스키마를 본떠 **공용화 가능한 메타데이터**를 갖는
 - **`search_vector` 정의** `to_tsvector('simple', coalesce(title,'') || ' ' || coalesce(chunk,'') || ' ' || coalesce(keywords,''))` STORED — title·chunk·keywords를 모두 키워드 검색 대상으로.
 - > `source_type`은 chunks에 두지 않는다(아래 §9 필터는 documents join으로 처리).
 
-**`source_type` enum (초기 3개로 잠금).** 초기에 값을 늘리지 않는다 — 필요해질 때만 추가.
+**`source_type` enum (초기 4개).** 초기엔 늘리지 않되 필요해질 때만 추가 — provenance 정직성을 위해 "큐레이션 요약"과 "공식 원문"을 분리한다.
 
 | 값 | 의미 |
 | --- | --- |
-| `meta_official` | Meta 공식 정책·문서 (요약, source_url 보유) |
+| `meta_official` | Meta 공식 **원문/발췌** — **Phase 2 자동수집 전용**, 큐레이션 요약엔 쓰지 않음 |
+| `meta_curated_summary` | 사람이 요약한 Meta 정책 큐레이션 (공식 참고 URL 보유, 권위 단정 금지) |
 | `marketing_general` | 일반 마케팅 지식 (큐레이션) |
 | `internal` | 내부 작성 정책/메모 |
 
 > ⚠️ **공통부 주의** `core/models.py`·Alembic 마이그레이션은 협업 규칙상 공통부다. 본인 브랜치에선 자유롭게 추가하되, **통합 시 사전 공지 + Alembic 리비전 조율** 항목으로 표시한다. 신규 테이블이라 기존 테이블 변경은 없음(충돌 위험 낮음).
+
+> **DB 확장·UUID 전략** 마이그레이션은 `CREATE EXTENSION IF NOT EXISTS vector`와 함께 **`pgcrypto`** 도 보장한다(테이블 기본값 `gen_random_uuid()`용 — PG13+는 코어 내장이라 보통 불필요하나 이식성 대비). ORM insert는 앱 측 `uuid.uuid4`(코드베이스 표준)를 쓰므로 DB 기본값은 폴백이다.
 
 ## 7. 큐레이션 마크다운 형식 (한국어 키워드 보강)
 
@@ -202,7 +205,7 @@ management `retriever.py` 패턴 차용.
 - 게이트 탈락 시: LLM 호출 안 함 — "현재 지식 베이스에 해당 내용이 없습니다"로 응답(또는 다른 경로 안내).
 - 호출 시에도 시스템 프롬프트에 **"제공된 컨텍스트에 근거해서만 답하라. 컨텍스트에 없으면 모른다고 답하라. 추측·일반지식으로 채우지 마라."** 명시.
 
-**인용 구조 (chunk id 기반).** 답변 본문에서 사용한 청크를 `[1]`,`[2]`로 표기하고 끝에 **`[n] → {chunk_id, source, title, source_url}`** 매핑을 첨부 → 문장-근거 추적 가능.
+**인용 구조 (chunk id 기반).** 답변 본문에서 사용한 청크를 `[1]`,`[2]`로 표기하고 끝에 **`[n] → {chunk_id, source, title, source_url}`** 매핑을 첨부 → 문장-근거 추적 가능. **응답 후처리에서 유효 인용 마커(1~k 범위 `[n]`)를 검사**하고, 없거나 범위 밖 번호만 있으면 **안전 문구로 내리되 출처는 제공**한다(없는 번호 날조·인용 누락 방지).
 
 > **구현 범위 경계.** 설계 의도는 위 흐름 전체(Gemini 2.0 Flash + SSE)다. 단, **Phase 1 구현(구현계획 Task 8)은 LLM을 주입받는 answer service**(검색 → 게이트 → 인용)까지를 제공하고, **구체 Gemini 어댑터·SSE 엔드포인트 배선은 즉시 후속**으로 분리한다(§13 범위·구현계획 후속 섹션 일치).
 
@@ -222,9 +225,10 @@ management `retriever.py` 패턴 차용.
 | 4 | 긴 섹션 하위분할 | 최대 길이 초과 섹션 → 2개+ 청크로 분할, keywords 전 청크 복사. |
 | 5 | keywords 검색 | `keywords`에만 있는 동의어로 질의 → 해당 청크 검색됨. |
 | 6 | 관련 청크 검색 | 알려진 질문 → 기대 출처 청크가 top-k에 포함. |
-| 7 | source_type 필터 | `meta_official` 검색 → 양 채널 documents join 필터, 마케팅 일반 청크 미포함. |
-| 8 | 근거 게이트 | top-1 similarity < 0.35인 무관 질문 → "지식 베이스에 없음", LLM 미호출. |
+| 7 | source_type 필터 | `meta_curated_summary` 검색 → 양 채널 documents join 필터, 마케팅 일반 청크 미포함. |
+| 8 | 근거 게이트 | `max(similarity)` < 0.35인 무관 질문 → "지식 베이스에 없음", LLM 미호출. |
 | 9 | 인용 추적 | 답변에 `[n]` 마커 + `chunk_id` 매핑 반환. |
+| 9b | 인용 검증 | LLM 응답에 유효 `[n]` 마커 없으면 안전 문구로 내리고 출처 제공. |
 | 10 | 동시 실행 | ingest 2개 동시 → advisory lock 직렬화, 중복/공백 없음. |
 
 ## 14. 범위 정리
