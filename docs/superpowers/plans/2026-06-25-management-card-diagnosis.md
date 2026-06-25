@@ -761,10 +761,10 @@ async def test_keyless_fallback_diagnosis_sets_diagnostic(monkeypatch):
 def _summarize_diagnostic(d) -> str:
     if d.diagnostic_status != "ok":
         return d.reason or "진단을 완료하지 못했어요."
-    if not d.anomaly:
+    if not d.anomaly or d.diagnosis is None:
         return "현재 이상 징후는 발견되지 않았어요."
-    dx = d.diagnosis or {}
-    return f"{dx.get('hypothesis') or '이상이 감지됐어요.'} (신뢰도 {dx.get('confidence', 0):.0%})"
+    dx = d.diagnosis  # DiagnosisView (typed)
+    return f"{dx.hypothesis or '이상이 감지됐어요.'} (신뢰도 {dx.confidence:.0%})"
 ```
 
 - [ ] **Step 4: 풀모드 그래프 툴 배선** — `backend/domain/management/assistant/graph.py`에서 기존 `live_budget` 등 툴 래퍼 옆에 `live_diagnosis` 래퍼를 추가하고 `read_tools` 목록에 포함:
