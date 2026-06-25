@@ -12,7 +12,7 @@
 ### 1.2 비목표 (스펙 3 이후)
 
 - **실행 API**(카드 approve/execute → approval→executor→writer 집행) — **스펙 3**.
-- 실제 인증 tenant 연동, 캠페인별 실제 일예산 reader 메서드 — 후속.
+- 실제 인증 tenant 연동, 계정 타임존 정렬 — 후속. (캠페인 일예산 소싱은 adversarial review 후 본 스펙에 포함됨.)
 - anomaly별 proposal action 정교 매핑 — 후속(현재는 단순화).
 - proactive(능동 제안) — 후속.
 
@@ -170,7 +170,8 @@ class DiagnosticResult(BaseModel):
 - **`INSUFFICIENT_DATA`(guard) / 스냅샷 빔 / 부분일** — `ok+no-anomaly`("이상 없음")로 보내지 않고 **`unavailable`**(판단 보류). 불변식 3의 핵심 경계.
 - **`unavailable`** — 정상 흐름(오류 아님). `empty_state` 섹션 + neutral. "이상 없음"과 구분.
 - **`failed`** — 툴이 `failed` 상태 반환(예외 raw 미노출). **composer가 결정적으로** empty_state + neutral로 표현(LLM 미경유). LLM은 summary 텍스트만 보조. 턴 자체는 정상 종료.
-- **실측 모드 일예산 미소싱** — `unavailable`(합성 금지). 현재 reader엔 계정 단위 `get_min_daily_budget`만 있어 실측 모드는 자주 `unavailable` — 한계로 명시(§10).
+- **실측 모드 일예산** — `reader.list_campaigns()`의 `CampaignInfo.daily_budget_krw`에서 소싱한다. 캠페인 미발견·총예산형(daily 아님)·0이면 **`unavailable`**(합성 금지). (adversarial review 반영 — 초기 설계의 "실측은 항상 unavailable" 가정은 오류였음.)
+- **스냅샷 시각 정렬** — detection이 `snapshots[h]`를 시각 인덱스로 읽으므로, 툴이 `as_of` 기준 0..마지막시각 dense 시리즈로 정규화(빈 시각=0 노출) 후 `run_detection`에 넘긴다. detection 코어 미수정(불변식 5).
 - **detection 예외** — 코어 미수정. 툴 래퍼에서 잡아 `failed`.
 
 ## 9. 테스트
@@ -185,6 +186,6 @@ class DiagnosticResult(BaseModel):
 ## 10. 후속 (스펙 3+)
 
 1. **실행 API(스펙 3)** — 카드 approve/execute → preview(draft)를 입력으로 **정본 ActionProposal을 finalize·persist** → approval→executor→writer 집행. dry_run 우선, HITL, 멱등성. **preview_id는 휘발성이고 스펙 3가 자기 정본 proposal_id를 새로 생성**한다(핸드오프 경계).
-2. **캠페인별 실제 일예산 reader 메서드** — 실측 모드 진단의 `unavailable` 해소.
+2. **계정 타임존 정렬** — 현재 시각 정규화는 UTC 기준. 계정/캠페인 타임존·데이터 지연 정합은 후속.
 3. **실 인증 tenant 연동** — `org_eval` placeholder 대체(영속·감사 시 필요).
 4. anomaly별 proposal action 매핑.
