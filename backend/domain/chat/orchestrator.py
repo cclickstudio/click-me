@@ -620,6 +620,7 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
             }
             # 롱텀 메모리 — 시뮬 실행 입력을 프로젝트 단위로 누적(다음 대화 컨텍스트).
             await history.save_long_term_memory(state.get("project_id"), "sim_input", sim_data)
+            await history.infer_profile_from_execution_history(state.get("project_id"))
             # 위젯 방식 — 백엔드 직접 실행 대신 입력 위젯을 띄운다(프론트가 기존 라우터로 실행).
             return _with_ai_message(
                 "시뮬레이션을 돌릴게요. 아래에서 광고 정보를 확인·수정하고 실행하세요.",
@@ -677,6 +678,7 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
             }
             # 롱텀 메모리 — 생성 실행 입력을 프로젝트 단위로 누적(다음 대화 컨텍스트).
             await history.save_long_term_memory(state.get("project_id"), "gen_input", gen_data)
+            await history.infer_profile_from_execution_history(state.get("project_id"))
             # 위젯 방식 — 추출한 값을 초기값으로 입력 위젯을 띄운다(프론트가 기존 라우터로 실행).
             return _with_ai_message(
                 "광고 시안을 만들게요. 아래에서 생성 정보를 확인·수정하고 실행하세요.",

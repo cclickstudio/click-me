@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import uuid
+from collections import Counter
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import func, select, text
@@ -24,6 +25,8 @@ from core.models import (
 _BRAND_FIELDS = ("brand_name", "tone", "target_audience", "product_category", "keywords")
 
 _DEFAULT_TITLE = "새 채팅"
+_INFER_LIMIT = 5
+_INFER_MIN_INPUTS = 2
 
 
 def _utcnow() -> datetime:
@@ -362,6 +365,84 @@ async def upsert_brand_profile(project_id: str | None, fields: dict) -> None:
             await db.commit()
     except Exception as exc:  # noqa: BLE001
         print(f"[chat] brand profile upsert error: {exc!r}")
+
+
+def _clean_text(value: object) -> str:
+    if value is None:
+        return ""
+    return str(value).strip()
+
+
+def _top_nonempty(values: list[str]) -> str:
+    cleaned = [v for v in (_clean_text(v) for v in values) if v]
+    if not cleaned:
+        return ""
+    return Counter(cleaned).most_common(1)[0][0]
+
+
+def _top_keywords(values: list[str], limit: int = 6) -> list[str]:
+    items: list[str] = []
+    for value in values:
+        text = _clean_text(value)
+        if not text:
+            continue
+        for sep in ("/", ",", "·", "|"):
+            text = text.replace(sep, " ")
+        items.extend(part.strip() for part in text.split() if len(part.strip()) >= 2)
+    return [word for word, _ in Counter(items).most_common(limit)]
+
+
+def _profile_from_execution_memory(rows: list[dict]) -> dict:
+    contents = [r.get("content") or {} for r in rows]
+    categories: list[str] = []
+    targets: list[str] = []
+    objectives: list[str] = []
+    product_terms: list[str] = []
+    for content in contents:
+        categories.append(_clean_text(content.get("product_category")))
+        targets.append(_clean_text(content.get("target_audience")))
+        objective = content.get("ad_objective") or content.get("campaign_objective")
+        objectives.append(_clean_text(objective))
+        product_terms.append(_clean_text(content.get("product_name") or content.get("ad_title")))
+        product_text = content.get("product_description") or content.get("ad_content")
+        product_terms.append(_clean_text(product_text))
+    category = _top_nonempty(categories)
+    target = _top_nonempty(targets)
+    keywords = _top_keywords(product_terms + categories + targets + objectives)
+    tone = "성과 중심" if "conversion" in objectives or "전환" in objectives else ""
+    brand_name = _top_nonempty(product_terms)[:200]
+    return {
+        "brand_name": brand_name,
+        "tone": tone,
+        "target_audience": target,
+        "product_category": category,
+        "keywords": keywords,
+    }
+
+
+async def infer_profile_from_execution_history(project_id: str | None) -> dict | None:
+    """최근 시뮬·생성 실행 입력을 집계해 프로젝트 브랜드 프로파일을 추론한다."""
+    sim_rows = await get_long_term_memory(project_id, limit=_INFER_LIMIT, memory_type="sim_input")
+    gen_rows = await get_long_term_memory(project_id, limit=_INFER_LIMIT, memory_type="gen_input")
+    rows = sorted(
+        sim_rows + gen_rows,
+        key=lambda item: item.get("created_at") or "",
+        reverse=True,
+    )[:_INFER_LIMIT]
+    if len(rows) < _INFER_MIN_INPUTS:
+        return None
+    profile = _profile_from_execution_memory(rows)
+    updates = {k: v for k, v in profile.items() if v}
+    if not updates:
+        return None
+    await upsert_brand_profile(project_id, updates)
+    evidence = {
+        "source_types": [r.get("memory_type") for r in rows],
+        "sample_count": len(rows),
+        "profile": updates,
+    }
+    await save_long_term_memory(project_id, "user_profile_inferred", evidence)
+    return evidence
 
 
 async def pin_message(message_id: str, pinned: bool) -> bool:
