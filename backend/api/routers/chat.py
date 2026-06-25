@@ -12,6 +12,8 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.assistant.contracts import Intent, SubagentRequest
+from api.assistant.intent import classify_intent
 from core.auth import optional_user, user_org_id
 from core.config import settings
 from core.db import get_db
@@ -51,53 +53,6 @@ _model = genai.GenerativeModel(
 
 _SENTINEL = object()
 
-# ── 최소 오케스트레이션: 매니지먼트 질문만 서브에이전트로 라우팅 ──
-# 공통 오케스트레이터 본체가 정해지기 전의 임시 연결. 시뮬/생성은 추후 같은 방식으로 추가.
-_MGMT_KEYWORDS: frozenset[str] = frozenset(
-    {
-        "캠페인",
-        "예산",
-        "소진",
-        "런레이트",
-        "페이싱",
-        "게재",
-        "광고",
-        "ctr",
-        "cpm",
-        "cpc",
-        "roas",
-        "cvr",
-        "클릭률",
-        "노출",
-        "지출",
-        "리드",
-        "성과",
-        "전환",
-        "잔액",
-        "일시중지",
-        "멈춰",
-        "증액",
-        "감액",
-        "소재",
-        "예측대로",
-        "매니지먼트",
-        # 벤치마크·플랫폼·세그먼트 질문도 RAG(OpenAI)로 — Gemini로 새지 않게.
-        "벤치마크",
-        "메타",
-        "틱톡",
-        "구글",
-        "네이버",
-        "카카오",
-        "업종",
-        "연령대",
-        "구매의향",
-        "입찰",
-        "타깃",
-        "타겟",
-        "오디언스",
-    }
-)
-
 _assistant = None
 
 
@@ -108,9 +63,35 @@ def _get_assistant() -> Callable[[AskRequest], Awaitable[object]]:
     return _assistant
 
 
-def _is_management(text: str) -> bool:
-    low = text.lower()
-    return any(k in low for k in _MGMT_KEYWORDS)
+# ── 의도 라우팅 — LLM(Gemini) 분류가 주, 키 없으면 intent.py 키워드 폴백 ──
+# 키워드 나열 대신 의미로 판정 → "프리퀀시 높으면?"처럼 키워드에 없는 질문도 RAG로 간다.
+_classifier_llm = None
+_classifier_built = False
+
+
+def _get_classifier() -> object | None:
+    global _classifier_llm, _classifier_built  # noqa: PLW0603
+    if not _classifier_built:
+        _classifier_built = True
+        key = getattr(settings, "gemini_api_key", None)
+        if key:
+            from langchain_google_genai import ChatGoogleGenerativeAI  # noqa: PLC0415
+
+            _classifier_llm = ChatGoogleGenerativeAI(
+                model="gemini-2.5-flash", google_api_key=key, temperature=0.0
+            )
+    return _classifier_llm
+
+
+async def _is_management(body: ChatRequest) -> bool:
+    """의도분류 — management면 True(RAG), 아니면 False(CLIO/Gemini). LLM 실패는 키워드 폴백."""
+    req = SubagentRequest(
+        messages=body.messages,
+        session_id=body.session_id,
+        context_ad_id=body.context_ad_id,
+    )
+    intent = await classify_intent(req, [Intent.MANAGE], llm=_get_classifier())
+    return intent == Intent.MANAGE
 
 
 def _chunks(text: str, size: int = 24) -> list[str]:
@@ -162,10 +143,12 @@ async def chat_complete(
         )
 
     last_message = body.messages[-1].content if body.messages else ""
+    # 의도분류는 스트리밍 전에(async) — management면 RAG, 아니면 CLIO(Gemini).
+    is_mgmt = await _is_management(body)
 
     async def generate() -> AsyncGenerator[str, None]:
         # 매니지먼트 질문이면 서브에이전트(실측 툴 + KB)로 답한다 — 숫자는 실측, 행동은 제안만.
-        if _is_management(last_message):
+        if is_mgmt:
             thread_id = f"mgmt-{body.session_id}"
             try:
                 _t0 = time.perf_counter()

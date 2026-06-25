@@ -43,6 +43,21 @@ _MANAGE_KW: frozenset[str] = frozenset(
         "소재",
         "예측대로",
         "매니지먼트",
+        "cpm",
+        "cpc",
+        "벤치마크",
+        "메타",
+        "틱톡",
+        "구글",
+        "네이버",
+        "카카오",
+        "업종",
+        "연령대",
+        "구매의향",
+        "입찰",
+        "타깃",
+        "타겟",
+        "오디언스",
     }
 )
 
@@ -68,9 +83,11 @@ async def _llm_classify(llm, req: SubagentRequest, registered: Sequence[Intent])
         "너는 광고 플랫폼 채팅의 의도 분류기다. 사용자의 마지막 메시지를 다음 중 하나로 분류한다.\n"
         f"허용 라벨: {allowed}.\n"
         "- generate: 새 광고/시안/카피/이미지를 만들어 달라는 요청.\n"
-        "- manage: 집행 중 캠페인의 예산·성과·상태 조회나 운영 변경.\n"
-        "- advise: 그 외 일반 질문·조언·해석.\n"
-        "확실하지 않으면 advise."
+        "- manage: 광고 운영 도메인 전반 — 집행 캠페인의 예산·성과·상태 조회나 운영 변경뿐 아니라, "
+        "광고 성과·정책·심사·최적화·빈도·CTR/CPM/ROAS·벤치마크·타깃·소재·플랫폼(메타/구글/틱톡)에 "
+        "대한 질문이나 조언도 포함한다.\n"
+        "- advise: 광고와 무관한 일반 질문·잡담.\n"
+        "광고 운영·성과·정책에 관한 것이면 manage, 광고와 무관하면 advise."
     )
     history = "\n".join(f"{m.role}: {m.content}" for m in req.messages[-6:])
     structured = llm.with_structured_output(_IntentPick)

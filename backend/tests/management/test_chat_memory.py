@@ -6,16 +6,30 @@
 
 import pytest
 
-from api.routers.chat import _format_memory, _get_memory, _is_management, _resolve_identity
+from api.assistant.contracts import Intent, SubagentRequest
+from api.assistant.intent import classify_intent
+from api.routers.chat import _format_memory, _get_memory, _resolve_identity
+from core.schemas import ChatMessage
 
 
-def test_is_management_routes_benchmark_and_platform_questions():
-    """CPM·메타·틱톡·벤치마크 질문은 RAG(OpenAI)로 — Gemini로 새지 않게."""
-    assert _is_management("메타는 cpm이 어때?")
-    assert _is_management("틱톡은 cpm이 어때?")
-    assert _is_management("CPM 벤치마크 알려줘")
-    assert _is_management("입찰 전략 바꿔줘")
-    assert not _is_management("오늘 날씨 어때?")  # 일반 질문은 Gemini
+def _req(text: str) -> SubagentRequest:
+    return SubagentRequest(messages=[ChatMessage(role="user", content=text)], session_id="t")
+
+
+@pytest.mark.asyncio
+async def test_keyword_fallback_routes_benchmark_to_manage():
+    """LLM 분류가 주 경로지만, 키 없을 때 키워드 폴백도 벤치마크·플랫폼을 MANAGE로 잡는다."""
+    for q in [
+        "메타는 cpm이 어때?",
+        "틱톡은 cpm이 어때?",
+        "CPM 벤치마크 알려줘",
+        "입찰 전략 바꿔줘",
+    ]:
+        assert await classify_intent(_req(q), [Intent.MANAGE], llm=None) == Intent.MANAGE
+    # 일반 질문은 ADVISE(→ Gemini CLIO)
+    assert (
+        await classify_intent(_req("오늘 날씨 어때?"), [Intent.MANAGE], llm=None) == Intent.ADVISE
+    )
 
 
 def test_format_memory_empty_returns_none():
