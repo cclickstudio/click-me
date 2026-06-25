@@ -3,6 +3,8 @@
 import { useState, useRef, useEffect } from 'react';
 import { safeRandomUUID } from '@/lib/utils';
 import { api } from '@/lib/api';
+import ChatCardView from '@/components/chat/ChatCardView';
+import { isCardEvent, type ChatCard } from '@/lib/chatCard';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
@@ -26,6 +28,7 @@ type Message = {
   role: 'user' | 'assistant';
   content: string;
   meta?: SourceMeta;
+  card?: ChatCard;
 };
 
 function SendIcon() {
@@ -128,25 +131,43 @@ export default function Page() {
           const raw = line.slice(6).trim();
           if (!raw) continue;
           try {
-            const data = JSON.parse(raw) as {
-              token?: string;
-              done?: boolean;
-              meta?: SourceMeta;
-            };
+            const data = JSON.parse(raw);
+
+            // 카드 프로토콜(매니지먼트) — isCardEvent로 분기. 아니면 CLIO(token/done/meta).
+            if (isCardEvent(data)) {
+              if (data.kind === 'summary_delta') {
+                setMessages((prev) => {
+                  const last = prev[prev.length - 1];
+                  return [...prev.slice(0, -1), { ...last, content: last.content + data.text }];
+                });
+              } else if (data.kind === 'card') {
+                setMessages((prev) => {
+                  const last = prev[prev.length - 1];
+                  return [...prev.slice(0, -1), { ...last, card: data.payload }];
+                });
+              } else if (data.kind === 'error') {
+                setMessages((prev) => {
+                  const last = prev[prev.length - 1];
+                  return [...prev.slice(0, -1), { ...last, content: data.message }];
+                });
+              } else if (data.kind === 'final') {
+                setIsStreaming(false);
+              }
+              continue;
+            }
+
+            // CLIO 경로(기존) — token/done/meta
             if (data.done) {
               setIsStreaming(false);
             } else if (data.meta) {
               setMessages((prev) => {
                 const last = prev[prev.length - 1];
-                return [...prev.slice(0, -1), { ...last, meta: data.meta }];
+                return [...prev.slice(0, -1), { ...last, meta: data.meta as SourceMeta }];
               });
             } else if (data.token) {
               setMessages((prev) => {
                 const last = prev[prev.length - 1];
-                return [
-                  ...prev.slice(0, -1),
-                  { ...last, content: last.content + data.token },
-                ];
+                return [...prev.slice(0, -1), { ...last, content: last.content + String(data.token) }];
               });
             }
           } catch {
@@ -197,7 +218,7 @@ export default function Page() {
             <div className="max-w-2xl mx-auto px-4 py-8 space-y-6">
               {messages.map((msg, i) => {
                 // 빈 assistant placeholder는 타이핑 인디케이터로 대체
-                if (msg.role === 'assistant' && msg.content === '') return null;
+                if (msg.role === 'assistant' && msg.content === '' && !msg.card) return null;
                 return (
                   <div
                     key={i}
@@ -222,15 +243,19 @@ export default function Page() {
                           {msg.meta.source === 'management' ? '⚙' : '🧠'} {msg.meta.label} · {msg.meta.engine}
                         </span>
                       )}
-                      <div
-                        className={`px-4 py-3 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap ${
-                          msg.role === 'user'
-                            ? 'bg-[#3182F6] text-white rounded-br-md'
-                            : 'bg-[#F2F4F6] dark:bg-[#252D3D] text-[#191F28] dark:text-[#F2F4F6] rounded-bl-md'
-                        }`}
-                      >
-                        {msg.content}
-                      </div>
+                      {msg.role === 'assistant' && msg.card ? (
+                        <ChatCardView card={msg.card} />
+                      ) : (
+                        <div
+                          className={`px-4 py-3 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap ${
+                            msg.role === 'user'
+                              ? 'bg-[#3182F6] text-white rounded-br-md'
+                              : 'bg-[#F2F4F6] dark:bg-[#252D3D] text-[#191F28] dark:text-[#F2F4F6] rounded-bl-md'
+                          }`}
+                        >
+                          {msg.content}
+                        </div>
+                      )}
                       {msg.role === 'assistant' &&
                         msg.meta?.source === 'management' &&
                         (msg.meta.citations?.length || msg.meta.used_tools?.length) ? (
