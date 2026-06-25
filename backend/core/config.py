@@ -108,6 +108,9 @@ class Settings(BaseSettings):
     # use_mock=True면 reader=Mock·writer=DRY_RUN (Meta 접촉 0, wiring.py 분기).
     # 실집행은 use_mock=False + management_execution_mode=live + 토큰일 때만.
     management_execution_mode: str = "dry_run"  # dry_run | validate_only | live
+    # 능동 스케줄러(주기 이상 스캔→알림) — 기본 off(테스트/CI/dev 안전). 운영에서만 켠다.
+    management_scheduler_enabled: bool = False
+    management_scan_interval_minutes: int = 60
     # 진단 agent LLM ReAct 재현성 고정값 (합의문서 P6 — 빈칸 기입). 키 없으면 결정론 폴백.
     management_diagnosis_model: str = "gpt-4o-mini"
     management_diagnosis_temperature: float = 0.0

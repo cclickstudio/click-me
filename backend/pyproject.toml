@@ -52,6 +52,7 @@ dependencies = [
     "langgraph-checkpoint-postgres>=3.1.0",
     "psycopg[binary,pool]>=3.3.4",
     "trafilatura>=2.1.0",
+    "apscheduler>=3.11.2",
 ]
 
 [dependency-groups]

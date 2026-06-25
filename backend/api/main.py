@@ -73,6 +73,10 @@ async def lifespan(app: FastAPI):
     )
 
     await init_pg_checkpointer(settings.database_url)
+    # 능동 매니지먼트 스케줄러 — 기본 off(management_scheduler_enabled일 때만 기동).
+    from domain.management.scheduler import start_scheduler  # noqa: PLC0415
+
+    start_scheduler(settings)
     yield
     await close_pg_checkpointer()
 
