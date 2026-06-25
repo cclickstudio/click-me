@@ -750,7 +750,6 @@ export default function ChatConversation({
     async (
       items: { content: string; meta: SourceMeta & { widget: WidgetSpec } }[]
     ) => {
-      const sid = sidRef.current;
       // 화면엔 즉시 반영(영속화는 best-effort).
       const local: Message[] = items.map(it => ({
         role: 'assistant',
@@ -758,7 +757,20 @@ export default function ChatConversation({
         meta: it.meta,
       }));
       setMessages(prev => [...prev, ...local]);
-      if (!sid) return;
+      // 세션이 없으면(빈 화면 칩으로 시작한 시뮬/제너 등) 먼저 DB 세션을 만든다.
+      // 없으면 위젯이 영속되지 않아 새로고침 시 전부 유실된다(시뮬 입력·결과·토론 누락).
+      let sid = sidRef.current;
+      if (!sid) {
+        try {
+          const created = await api.chat.createSession(projectId);
+          sid = created.id;
+          loadedRef.current = sid;
+          sidRef.current = sid;
+          onSessionCreated?.(sid);
+        } catch {
+          return; // 세션 생성 실패 — 화면 표시는 유지, 영속만 생략
+        }
+      }
       try {
         const { messages: saved } = await api.chat.appendWidgets(
           sid,
@@ -785,7 +797,7 @@ export default function ChatConversation({
         // 영속화 실패 — 화면 표시는 유지(새로고침 시 사라질 수 있음)
       }
     },
-    []
+    [projectId, onSessionCreated]
   );
 
   // 시뮬 완료 → 토론 자동 시작 + 결과 요약 위젯·토론 stream 위젯을 별도 메시지로 띄운다(파이프라인).
