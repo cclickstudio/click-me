@@ -179,6 +179,7 @@ async def chat_complete(
                             "source": c.source,
                             "title": c.title,
                             "trust": c.trust,  # system_backed|advisory|reference (KB 근거 신뢰도)
+                            "source_url": c.source_url,
                             "as_of": c.as_of,
                         }
                         for c in result.citations
@@ -186,6 +187,7 @@ async def chat_complete(
                     "used_tools": result.used_tools,
                     "requires_approval": result.requires_approval,  # HITL — 승인 게이트에서 멈춤
                     "thread_id": result.thread_id,  # interrupt 재개 키(승인 경로에서 사용)
+                    "campaigns": (result.evidence or {}).get("campaigns", []),
                 }
                 yield f"data: {json.dumps({'meta': meta}, ensure_ascii=False)}\n\n"
                 answer = result.answer

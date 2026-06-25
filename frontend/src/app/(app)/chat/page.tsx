@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
+import Link from 'next/link';
 import { safeRandomUUID } from '@/lib/utils';
 import { api } from '@/lib/api';
 
@@ -21,6 +22,15 @@ type Citation = {
   source_url?: string;
   as_of?: string;
 };
+type Campaign = {
+  campaign_id: string;
+  name: string;
+  status: string;
+  spend?: number;
+  impressions?: number;
+  clicks?: number;
+  ctr?: number;
+};
 type SourceMeta = {
   source: string; // management | clio
   label: string; // 매니지먼트 어시스턴트 | CLIO
@@ -28,6 +38,7 @@ type SourceMeta = {
   citations?: Citation[];
   used_tools?: string[];
   thread_id?: string; // 피드백 적재 키
+  campaigns?: Campaign[]; // live_campaigns 결과 — 클릭해서 관리 페이지로 이동
 };
 type Message = {
   role: 'user' | 'assistant';
@@ -308,6 +319,27 @@ export default function Page() {
                                 <span key={`c${ci}`}>{chip}</span>
                               );
                             })}
+                        </div>
+                      ) : null}
+                      {msg.role === 'assistant' &&
+                        msg.meta?.source === 'management' &&
+                        (msg.meta.campaigns?.length ?? 0) > 0 ? (
+                        <div className="flex flex-wrap items-center gap-1 px-1">
+                          <span className="text-[10px] text-[#B0B8C1] dark:text-[#6B7280]">캠페인:</span>
+                          {(msg.meta.campaigns ?? []).map((c) => (
+                            <Link key={c.campaign_id} href="/manage/campaigns">
+                              <span
+                                className={`text-[10px] px-1.5 py-0.5 rounded border cursor-pointer transition-colors ${
+                                  c.status === 'ACTIVE'
+                                    ? 'border-emerald-200 text-emerald-700 hover:bg-emerald-50 dark:border-emerald-800 dark:text-emerald-400 dark:hover:bg-emerald-900/20'
+                                    : 'border-[#E5E8EB] text-[#4E5968] hover:bg-[#EBF3FF] hover:text-[#3182F6] dark:border-[#2D3748] dark:text-[#9CA3AF] dark:hover:bg-[#1E3A5F]'
+                                }`}
+                                title={`${c.status}${c.spend != null ? ` · ${c.spend.toLocaleString()} KRW` : ''}`}
+                              >
+                                {c.name} →
+                              </span>
+                            </Link>
+                          ))}
                         </div>
                       ) : null}
                       {/* 매니지먼트 답변 평가(좋아요/싫어요) — RAG 개선 적재 */}
