@@ -97,3 +97,26 @@ async def test_decide_route_injects_capability_and_identity():
     assert route is Route.GENERATION
     assert "역량 카탈로그" in captured["sys"] and "광고 생성" in captured["sys"]
     assert "신원 스코프" in captured["sys"] and "현재 맥락 엔티티" in captured["sys"]
+
+
+# ---- 결정론 가드(PR3): 조회동사+도메인명사 페어룰 ----
+def test_route_guard_pair_rule():
+    from domain.chat.graph.supervisor import apply_route_guard
+
+    # 생성물 + 카운트 → GENERATION (LLM이 management로 새도 교정)
+    assert apply_route_guard(Route.MANAGEMENT, "내가 생성한 광고 몇개") is Route.GENERATION
+    # 캠페인 + 카운트 → MANAGEMENT 유지(대칭 오분류 방지)
+    assert apply_route_guard(Route.GENERATION, "캠페인 몇개야") is Route.MANAGEMENT
+    # 카운트 없음 → 원 라우트 존중
+    assert apply_route_guard(Route.GENERAL, "안녕 오늘 날씨") is Route.GENERAL
+    # 양쪽 도메인 명사 동시(모호) → 원 라우트 존중(LLM 신뢰)
+    assert apply_route_guard(Route.SIMULATION, "캠페인이랑 생성물 목록") is Route.SIMULATION
+
+
+@pytest.mark.asyncio
+async def test_decide_route_guard_overrides_llm_misroute():
+    # LLM이 management로 오분류해도 '생성한...몇개' 강신호로 교정(화면 버그 직접 대응).
+    route = await decide_route(
+        [HumanMessage(content="내가 생성한 광고 몇개")], llm=_FakeLLM("route_to_management")
+    )
+    assert route is Route.GENERATION

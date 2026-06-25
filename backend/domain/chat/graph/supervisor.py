@@ -154,18 +154,42 @@ def keyword_route(text: str) -> Route:
     return Route.GENERAL
 
 
+# 결정론 라우팅 가드 강신호 — "조회 의도동사" + "도메인 명사" 페어로만 발동(대칭 오분류 방지).
+_COUNT_WORDS = ("몇 개", "몇개", "몇 건", "목록", "개수", "갯수", "카운트", "리스트", "얼마나")
+_GEN_NOUNS = ("생성", "시안", "제너레이터", "크리에이티브", "만든", "만들었")
+_MGMT_NOUNS = ("캠페인", "예산", "성과", "소진", "집행", "게재")
+
+
+def apply_route_guard(route: Route, text: str) -> Route:
+    """라우트 위 결정론 보정 — '생성물 목록/개수'=GENERATION, '캠페인 목록/개수'=MANAGEMENT.
+
+    대칭 오분류('캠페인 몇개'→GEN)를 막기 위해 조회동사 + 한쪽 도메인 명사만 매칭될 때만 보정한다
+    (둘 다/둘 다 아님=모호 → 원 라우트 존중, LLM 신뢰).
+    """
+    low = text.lower()
+    if not any(w in low for w in _COUNT_WORDS):
+        return route
+    gen = any(n in low for n in _GEN_NOUNS)
+    mgmt = any(n in low for n in _MGMT_NOUNS)
+    if gen and not mgmt:
+        return Route.GENERATION
+    if mgmt and not gen:
+        return Route.MANAGEMENT
+    return route
+
+
 async def decide_route(messages: list, llm, *, capabilities=None, identity=None) -> Route:
     """라우트 결정 — llm None이면 키워드 폴백, 있으면 역량·신원 맥락을 주입한 정책 tool-calling.
 
     capabilities(레지스트리)·identity(신원/엔티티)는 라우팅 프롬프트에 보조 맥락으로 주입된다.
     산출은 단일 Route(불변) — SSE·그래프 위상 무영향.
     """
+    text = _last_user_text(messages)
     if llm is None:
-        return keyword_route(_last_user_text(messages))
+        return apply_route_guard(keyword_route(text), text)
     bound = llm.bind_tools(_ROUTING_TOOLS)
     system = _ROUTING_SYSTEM + _capability_block(capabilities) + _identity_block(identity)
     ai: AIMessage = await bound.ainvoke([SystemMessage(content=system), *messages])
     calls = getattr(ai, "tool_calls", None) or []
-    if calls:
-        return _TOOL_TO_ROUTE.get(calls[0]["name"], Route.GENERAL)
-    return Route.GENERAL
+    route = _TOOL_TO_ROUTE.get(calls[0]["name"], Route.GENERAL) if calls else Route.GENERAL
+    return apply_route_guard(route, text)
