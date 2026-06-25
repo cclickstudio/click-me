@@ -20,7 +20,7 @@ from domain.management.adapters.meta.client import MetaApiError
 from domain.management.assistant.contracts import DiagnosisView, DiagnosticResult, ProposalPreview
 from domain.management.comparison.service.before_after_service import compute_before_after
 from domain.management.contracts.policy import DAILY_BUDGET_KRW
-from domain.management.contracts.schemas import RealOutcome
+from domain.management.contracts.schemas import MetricsSnapshot, RealOutcome
 from domain.management.detection.guardrails import GuardVerdict
 from domain.management.detection.service.detection_service import run_detection
 from domain.management.wiring import build_prediction_reader, build_reader
@@ -183,31 +183,89 @@ def build_proposal_preview_from_diagnosis(dx, daily_budget_krw: int) -> Proposal
     )
 
 
+async def _resolve_daily_budget(settings, reader, campaign_id: str) -> int:
+    """일예산 소싱 — mock(데모)은 고정값, 실측은 캠페인 daily_budget_krw(list_campaigns).
+
+    미발견·총예산형·0이면 0 반환 → 호출부가 unavailable로 분리(합성 금지, 불변식 4).
+    """
+    if getattr(settings, "use_mock", True):
+        return DAILY_BUDGET_KRW
+    campaigns = await reader.list_campaigns()
+    match = next((c for c in campaigns if c.campaign_id == campaign_id), None)
+    if match and match.budget_type == "daily" and match.daily_budget_krw > 0:
+        return match.daily_budget_krw
+    return 0
+
+
+def _hour_aligned_snapshots(snapshots: list, campaign_id: str) -> list:
+    """as_of 시각 기준 0..마지막시각 dense 시리즈로 정규화한다.
+
+    detection이 ``snapshots[h]``를 시각 인덱스로 읽으므로(deterministic_dx), 빈 시각은
+    무노출(0) 스냅샷으로 채워 위치=시각을 보장한다. mock(이미 dense)엔 no-op,
+    detection 코어는 미수정(불변식 5) — 입력만 정돈한다.
+    """
+    if not snapshots:
+        return []
+    by_hour = {s.as_of.hour: s for s in snapshots}
+    base = snapshots[0].as_of
+    out: list = []
+    prev_cum_impr = prev_cum_reach = 0
+    for h in range(max(by_hour) + 1):
+        s = by_hour.get(h)
+        if s is not None:
+            out.append(s)
+            prev_cum_impr, prev_cum_reach = s.cum_impressions, s.cum_reach
+        else:
+            out.append(
+                MetricsSnapshot(
+                    campaign_id=campaign_id,
+                    as_of=base.replace(hour=h, minute=0, second=0, microsecond=0),
+                    impressions=0,
+                    clicks=0,
+                    inline_link_clicks=0,
+                    spend_krw=0,
+                    cum_impressions=prev_cum_impr,
+                    cum_reach=prev_cum_reach,
+                    frequency=0.0,
+                    ctr=0.0,
+                    cpm_krw=0,
+                    cpc_krw=0,
+                )
+            )
+    return out
+
+
 async def live_diagnosis(
     settings, campaign_id: str, tenant_id: str | None = None
 ) -> DiagnosticResult:
     """시간별 스냅샷으로 detection을 돌려 4-case 진단 결과를 낸다(코어는 호출만, 불변식 5).
 
-    기준 시각은 UTC. 데이터 부족·부분일은 guard가 INSUFFICIENT_DATA로 잡아 unavailable로 분리한다
-    (이상 없음과 혼동 금지). 계정 타임존 정렬은 후속.
+    기준 시각은 UTC. 일예산은 mock=고정값, 실측=캠페인 daily_budget(없으면 unavailable).
+    스냅샷은 시각 인덱스로 정규화 후 detection에 넘긴다. 데이터 부족·부분일은
+    guard INSUFFICIENT_DATA → unavailable(이상 없음과 혼동 금지). 계정 타임존 정렬은 후속.
     """
     if not campaign_id:
         return DiagnosticResult(
             diagnostic_status="unavailable", reason="대상 캠페인을 특정할 수 없어요."
         )
-    daily_budget = DAILY_BUDGET_KRW if getattr(settings, "use_mock", True) else None
-    if not daily_budget:
-        return DiagnosticResult(
-            diagnostic_status="unavailable",
-            reason="캠페인 일예산을 확인할 수 없어 진단을 건너뛰었어요.",
-        )
 
     # 외부 호출만 try로 — reader/detection I/O 실패만 failed. 계약 위반·빌더 버그는 아래에서 raise.
     try:
         reader = build_reader(settings)
-        snapshots = await reader.fetch_hourly_metrics(campaign_id, datetime.now(UTC))
-        outcome = run_detection(
-            tenant_id or "org_eval", campaign_id, snapshots, daily_budget_krw=daily_budget
+        daily_budget = await _resolve_daily_budget(settings, reader, campaign_id)
+        snapshots = (
+            _hour_aligned_snapshots(
+                await reader.fetch_hourly_metrics(campaign_id, datetime.now(UTC)), campaign_id
+            )
+            if daily_budget
+            else []
+        )
+        outcome = (
+            run_detection(
+                tenant_id or "org_eval", campaign_id, snapshots, daily_budget_krw=daily_budget
+            )
+            if daily_budget and snapshots
+            else None
         )
     except Exception as exc:  # noqa: BLE001 — 외부(reader/detection) 실패만. raw 미노출.
         logger.warning("[live_diagnosis] external failure: %r", exc)
@@ -216,7 +274,12 @@ async def live_diagnosis(
         )
 
     # 이하 결정적 — validator·빌더 버그는 raise(테스트·모니터링에서 잡힘).
-    if not snapshots or outcome.guard.verdict == GuardVerdict.INSUFFICIENT_DATA:
+    if not daily_budget:
+        return DiagnosticResult(
+            diagnostic_status="unavailable",
+            reason="캠페인 일예산을 확인할 수 없어 진단을 건너뛰었어요.",
+        )
+    if not snapshots or outcome is None or outcome.guard.verdict == GuardVerdict.INSUFFICIENT_DATA:
         return DiagnosticResult(
             diagnostic_status="unavailable", reason="데이터가 부족해 진단을 보류했어요."
         )
