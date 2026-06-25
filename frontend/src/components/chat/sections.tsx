@@ -1,6 +1,7 @@
 // 섹션 렌더러 레지스트리 — kind → 렌더러. 새 섹션 추가 = 여기 한 줄 등록(스펙 §5.1).
 import type { ReactNode } from 'react';
 import type { CardSection } from '@/lib/chatCard';
+import Markdown from './Markdown';
 
 type Renderer<K extends CardSection['kind']> = (s: Extract<CardSection, { kind: K }>) => ReactNode;
 type Registry = { [K in CardSection['kind']]?: Renderer<K> };
@@ -12,9 +13,9 @@ function Title({ title }: { title?: string }) {
 
 export const SECTION_RENDERERS: Registry = {
   summary: (s) => (
-    <div>
+    <div className="text-[#191F28] dark:text-[#F2F4F6]">
       <Title title={s.title} />
-      <p className="text-sm leading-relaxed text-[#191F28] dark:text-[#F2F4F6] whitespace-pre-wrap">{s.text}</p>
+      <Markdown>{s.text}</Markdown>
     </div>
   ),
   metrics: (s) => (

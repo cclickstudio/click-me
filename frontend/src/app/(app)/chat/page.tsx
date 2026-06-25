@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from 'react';
 import { safeRandomUUID } from '@/lib/utils';
 import { api } from '@/lib/api';
 import ChatCardView from '@/components/chat/ChatCardView';
+import Markdown from '@/components/chat/Markdown';
 import { isCardEvent, type ChatCard } from '@/lib/chatCard';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
@@ -253,7 +254,7 @@ export default function Page() {
                               : 'bg-[#F2F4F6] dark:bg-[#252D3D] text-[#191F28] dark:text-[#F2F4F6] rounded-bl-md'
                           }`}
                         >
-                          {msg.content}
+                          {msg.role === 'assistant' ? <Markdown>{msg.content}</Markdown> : msg.content}
                         </div>
                       )}
                       {msg.role === 'assistant' &&
