@@ -63,8 +63,9 @@ def _get_assistant() -> Callable[[AskRequest], Awaitable[object]]:
     return _assistant
 
 
-# ── 의도 라우팅 — LLM(Gemini) 분류가 주, 키 없으면 intent.py 키워드 폴백 ──
+# ── 의도 라우팅 — LLM(OpenAI) 분류가 주, 키 없으면 intent.py 키워드 폴백 ──
 # 키워드 나열 대신 의미로 판정 → "프리퀀시 높으면?"처럼 키워드에 없는 질문도 RAG로 간다.
+# 분류기도 매니지먼트 RAG와 같은 OpenAI 모델 — 일관·Gemini는 일반 CLIO 채팅에만.
 _classifier_llm = None
 _classifier_built = False
 
@@ -73,13 +74,12 @@ def _get_classifier() -> object | None:
     global _classifier_llm, _classifier_built  # noqa: PLW0603
     if not _classifier_built:
         _classifier_built = True
-        key = getattr(settings, "gemini_api_key", None)
+        key = getattr(settings, "openai_api_key", None)
         if key:
-            from langchain_google_genai import ChatGoogleGenerativeAI  # noqa: PLC0415
+            from langchain_openai import ChatOpenAI  # noqa: PLC0415
 
-            _classifier_llm = ChatGoogleGenerativeAI(
-                model="gemini-2.5-flash", google_api_key=key, temperature=0.0
-            )
+            model = getattr(settings, "management_assistant_model", "gpt-4o-mini")
+            _classifier_llm = ChatOpenAI(model=model, api_key=key, temperature=0.0)
     return _classifier_llm
 
 
