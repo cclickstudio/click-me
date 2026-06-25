@@ -1,8 +1,9 @@
 """KB 테넌트 행수준 보안(RLS) — kb_documents·kb_chunks 고객별 격리
 
-Revision ID: 020
-Revises: 019
+Revision ID: 029
+Revises: 028
 Create Date: 2026-06-23
+재번호(2026-06-25): dev 병합 시 rev 020 충돌 → 028(management_knowledge) 뒤로 이동.
 
 벡터/키워드 검색에서 다른 테넌트 문서가 섞이지 않게 RLS를 건다. 현재 데이터는 전부
 global(tenant_id NULL)이라 "NULL은 항상 보임" 정책으로 기존 동작은 유지된다(검증: chunks 17 그대로).
@@ -18,8 +19,8 @@ global(tenant_id NULL)이라 "NULL은 항상 보임" 정책으로 기존 동작�
 
 from alembic import op
 
-revision = "020"
-down_revision = "019"
+revision = "029"
+down_revision = "028"
 branch_labels = None
 depends_on = None
 

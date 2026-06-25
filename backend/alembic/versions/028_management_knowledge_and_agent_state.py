@@ -1,8 +1,9 @@
 """매니지먼트 지식·에이전트 상태 스키마 — 4개 층 기반 (additive)
 
-Revision ID: 019
-Revises: 018
+Revision ID: 028
+Revises: 027
 Create Date: 2026-06-23
+재번호(2026-06-25): dev 병합 시 rev 019 3중 충돌 → 027 뒤로 이동.
 
 에이전틱 RAG를 위해 KB를 문서/청크로 분리(테넌트·버전·출처·유효기간·키워드검색),
 채팅·에이전트 실행 상태, 평가·피드백을 관계형으로 적재한다. 전부 additive(IF NOT EXISTS)라
@@ -11,8 +12,8 @@ Create Date: 2026-06-23
 
 from alembic import op
 
-revision = "019"
-down_revision = "018"
+revision = "028"
+down_revision = "027"
 branch_labels = None
 depends_on = None
 

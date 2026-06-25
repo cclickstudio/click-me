@@ -1,14 +1,15 @@
 """add brand_kits table
 
-Revision ID: 019
-Revises: 018
+Revision ID: 027
+Revises: 026
 Create Date: 2026-06-23
+재번호(2026-06-25): dev 병합 시 rev 019 3중 충돌 → 026 뒤로 이동.
 """
 
 from alembic import op
 
-revision = "019"
-down_revision = "018"
+revision = "027"
+down_revision = "026"
 branch_labels = None
 depends_on = None
 
