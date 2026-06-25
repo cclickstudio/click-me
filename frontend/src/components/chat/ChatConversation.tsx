@@ -5,7 +5,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
-import { openReconnectingStream } from '@/lib/sse';
 import { formatRelativeKST, formatKSTFull } from '@/lib/datetime';
 import SimFormWidget from './SimFormWidget';
 import SimInputWidget from './SimInputWidget';
@@ -856,10 +855,7 @@ export default function ChatConversation({
       }
       if (resultItems.length) await appendWidgetMessages(resultItems);
 
-      // 2) 토론은 시작을 호출하되, 실제 첫 발언(utterance)이 올 때 위젯을 띄운다.
-      //    대표 선발 등 '준비 중' 단계에선 위젯을 띄우지 않는다. 백엔드 토론 스트림은
-      //    재구독 시 처음부터 리플레이되므로(새로고침 복원과 동일 원리), 늦게 붙는
-      //    위젯도 전체 발언을 빠짐없이 받는다.
+      // 2) 토론은 시작 즉시 stream 위젯을 띄운다(준비 중에도 진행 상태를 보이게).
       if (result.reactions?.length) {
         try {
           const { run_id } = await api.debate.start({
@@ -874,54 +870,19 @@ export default function ChatConversation({
             ad_title: input.adTitle || undefined,
             ad_description: input.adContent || undefined,
           });
-          await new Promise<void>(resolve => {
-            let appended = false;
-            const showDebate = () => {
-              if (appended) return;
-              appended = true;
-              void appendWidgetMessages([
-                {
-                  content: 'AI 소비자 토론을 시작했어요.',
-                  meta: {
-                    source: 'simulation',
-                    label: '토론',
-                    widget: {
-                      type: 'debate_stream',
-                      data: { run_id, simulation_id: simId },
-                    },
-                  },
+          await appendWidgetMessages([
+            {
+              content: 'AI 소비자 토론을 시작했어요.',
+              meta: {
+                source: 'simulation',
+                label: '토론',
+                widget: {
+                  type: 'debate_stream',
+                  data: { run_id, simulation_id: simId },
                 },
-              ]);
-            };
-            const close = openReconnectingStream(
-              () => api.debate.stream(run_id),
-              {
-                // 첫 발언 = 토론 시작 → 그때 위젯을 띄운다. 발언 없이 종료/에러로
-                // 끝나는 이상 케이스엔 그래도 띄워 결과 흐름을 잇는다.
-                onEvent: data => {
-                  const d = data as { stage?: string; event?: string };
-                  if (
-                    !appended &&
-                    (d.stage === 'utterance' ||
-                      d.event === 'completed' ||
-                      d.event === 'error')
-                  ) {
-                    showDebate();
-                    close();
-                    resolve();
-                  }
-                },
-                isTerminal: data => {
-                  const d = data as { event?: string };
-                  return d.event === 'completed' || d.event === 'error';
-                },
-                onGiveUp: () => {
-                  showDebate();
-                  resolve();
-                },
-              }
-            );
-          });
+              },
+            },
+          ]);
         } catch {
           // 토론 시작 실패 — 결과 요약만 표시
         }
