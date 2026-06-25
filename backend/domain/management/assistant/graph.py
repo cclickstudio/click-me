@@ -42,6 +42,8 @@ _SYSTEM = (
     "밝히고 단정하지 마라. "
     "reference(세그먼트)는 구성·구매의향만 인용하고 층별 성과효율은 단정하지 마라. "
     "벤치마크 수치를 인용할 땐 as_of(기준 시점)와 신뢰구간(폭)을 함께 말한다.\n"
+    "- KB(search_kb)에 근거가 없거나 최신 정보가 필요할 때만 web_search를 보조로 쓴다. "
+    "웹 결과는 advisory(참고)이므로 단정하지 말고 출처와 함께 참고로만 인용한다.\n"
     "- 운영 변경(일시중지·게재시작·증액·감액·소재교체)은 propose_action으로 제안만 한다. "
     "직접 실행하지 않는다(실행은 사람 승인 경로).\n"
     "- 근거가 없으면 모른다고 말한다. 문장 끝에 콜론을 쓰지 말 것."
@@ -111,6 +113,19 @@ def build_graph(settings, retriever, llm, checkpointer=None):
             return []
 
     @tool
+    async def web_search(query: str) -> list[dict]:
+        """KB에 근거가 없거나 최신/시의성 정보가 필요할 때만 쓰는 웹검색(참고용·advisory).
+        먼저 search_kb를 쓰고, 거기서 못 찾을 때 보조로만. 결과는 단정 말고 참고로 인용한다."""
+        from domain.management.assistant.web_search import (  # noqa: PLC0415
+            web_search as _web_search,
+        )
+
+        try:
+            return await _web_search(query, k=3)
+        except Exception:  # noqa: BLE001 — 키 없음/실패면 빈 결과로 진행(KB·live만으로 답)
+            return []
+
+    @tool
     async def propose_action(action_type: str, campaign_id: str | None = None) -> dict:
         """운영 변경을 '제안'한다(실행 안 함). 사람 승인이 필요한 Tier면 그래프가 멈춘다.
         action_type: PAUSE_CAMPAIGN|ACTIVATE_CAMPAIGN|INCREASE_BUDGET|DECREASE_BUDGET|
@@ -118,7 +133,14 @@ def build_graph(settings, retriever, llm, checkpointer=None):
         # 본체는 노드에서 인터셉트(interrupt 처리)되어 직접 실행되지 않는다.
         return {"action_type": action_type, "campaign_id": campaign_id}
 
-    read_tools = [live_campaigns, live_budget, live_campaign_detail, live_before_after, search_kb]
+    read_tools = [
+        live_campaigns,
+        live_budget,
+        live_campaign_detail,
+        live_before_after,
+        search_kb,
+        web_search,
+    ]
     bound = llm.bind_tools([*read_tools, propose_action])
     by_name = {t.name: t for t in read_tools}
 
@@ -158,7 +180,7 @@ def build_graph(settings, retriever, llm, checkpointer=None):
             result = await by_name[name].ainvoke(args)
             if name not in used:
                 used.append(name)
-            if name == "search_kb":
+            if name in ("search_kb", "web_search"):
                 kb_cites.extend(result if isinstance(result, list) else [])
             else:
                 evidence = result if isinstance(result, dict) else evidence

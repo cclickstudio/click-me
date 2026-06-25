@@ -42,6 +42,9 @@ class Settings(BaseSettings):
     # Google Gemini
     gemini_api_key: str | None = None
 
+    # Tavily 웹검색(매니지먼트 어시스턴트 web_search 도구) — 없으면 웹검색 graceful 비활성
+    tavily_api_key: str | None = None
+
     # LangSmith — API 키 없으면 트레이싱 비활성(로컬 기동 가능)
     # LANGCHAIN_* 사용, LANGSMITH_*도 AliasChoices로 수용.
     LANGSMITH_TRACING_V2: bool = Field(
