@@ -10,6 +10,8 @@ from .chat_cards import (
     Badge,
     ChatCard,
     Citation,
+    DiagnosisSection,
+    EmptyStateSection,
     EvidenceSection,
     MetricItem,
     MetricsSection,
@@ -20,7 +22,6 @@ from .chat_cards import (
 )
 
 if TYPE_CHECKING:
-    from .chat_cards import CardSection
     from .contracts import AskResult, SuggestedAction
 
 # 결론에서 제거할 실행 지시 마커. 행동 가능한 주장은 카드(proposal)로.
@@ -103,30 +104,93 @@ def _badges(sa: SuggestedAction | None) -> list[Badge]:
     ]
 
 
-def compose_card(res: AskResult, *, turn_id: str) -> ChatCard:
-    """AskResult를 ChatCard로. 섹션 순서 summary→metrics→proposal→review→evidence, 없으면 생략."""
-    sections: list[CardSection] = [
-        SummarySection(title="결론", text=_descriptive_conclusion(res.answer))
-    ]
+def derive_severity(diagnostic) -> str:
+    """진단만으로 severity 파생(tier 미사용). 계약상 info 없음 → neutral."""
+    if diagnostic is None or diagnostic.diagnostic_status != "ok" or not diagnostic.anomaly:
+        return "neutral"
+    dx = diagnostic.diagnosis  # DiagnosisView
+    if dx is not None and dx.status == "confirmed":
+        return "critical" if dx.confidence >= 0.8 else "warning"
+    return "neutral"
 
+
+def _diagnosis_section(dx) -> DiagnosisSection:  # dx: DiagnosisView
+    return DiagnosisSection(
+        title="진단",
+        anomaly_type=dx.anomaly_type,
+        status=dx.status,
+        confidence=dx.confidence,
+        hypothesis=dx.hypothesis,
+    )
+
+
+def _proposal_preview_section(pv) -> ProposalSection:  # pv: ProposalPreview
+    return ProposalSection(
+        title="제안(미리보기)",
+        action_type=pv.action_type,
+        rationale=pv.hypothesis or None,
+        preview_id=pv.preview_id,
+        tier=pv.tier,
+        budget_before_krw=pv.budget_before_krw,
+        budget_after_krw=pv.budget_after_krw,
+        executable=False,
+    )
+
+
+def compose_card(res: AskResult, *, turn_id: str) -> ChatCard:
+    sections: list = [SummarySection(title="결론", text=_descriptive_conclusion(res.answer))]
     metrics = _metrics_section(res.evidence or {})
     if metrics is not None:
         sections.append(metrics)
 
+    diag = res.diagnostic
+    status = derive_severity(diag)
+
+    if diag is not None and diag.diagnostic_status in ("unavailable", "failed"):
+        # 진단 불가/실패 — composer 결정적(empty_state + neutral). LLM 미경유.
+        sections.append(
+            EmptyStateSection(title="진단", text=diag.reason or "진단 데이터를 가져올 수 없어요.")
+        )
+        return ChatCard(
+            type="management",
+            status="neutral",
+            badges=[],
+            sections=sections,
+            trace=TraceInfo(turn_id=turn_id),
+        )
+
+    if (
+        diag is not None
+        and diag.diagnostic_status == "ok"
+        and diag.anomaly
+        and diag.diagnosis is not None
+    ):
+        sections.append(_diagnosis_section(diag.diagnosis))
+        if diag.proposal_preview is not None:
+            sections.append(_proposal_preview_section(diag.proposal_preview))
+        badges = [Badge(label=diag.diagnosis.anomaly_type, tone="warning")]
+        return ChatCard(
+            type="management",
+            status=status,
+            badges=badges,
+            sections=sections,
+            trace=TraceInfo(turn_id=turn_id),
+        )
+
+    # diag None(일반 질문) 또는 ok+no-anomaly → 기존 v0 경로(suggested_action/evidence)
     sa = res.suggested_action
     if sa is not None:
         sections.append(_proposal_section(sa))
         sections.append(_review_section(sa))
-
     evidence = _evidence_section(res)
     if evidence is not None:
         sections.append(evidence)
-
     return ChatCard(
         type="management",
+        status=(status if diag is not None else None),
         badges=_badges(sa),
         sections=sections,
-        trace=TraceInfo(turn_id=turn_id),  # v0 — raw 미전송
+        trace=TraceInfo(turn_id=turn_id),
     )
 
 
