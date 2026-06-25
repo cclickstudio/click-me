@@ -72,7 +72,7 @@
 | ★N6 | 제너 전용 세션에 시뮬 선제 알림 오는 버그 수정 | 능동 | N4 | ⬜ |
 | ★F13 | 채팅 세션 자동 제목(첫 user 메시지 LLM 요약) | 기능 | —      | ⬜   |
 | ★G5 | 제너 필수 입력값 확실히 받기·검증(누락 차단·안내) | 제너 | V2 | ✅ |
-| ★G6 | /new 생성 직후 gen_form 재노출 라이브 글리치 수정 | 제너 | G3 | ⬜ |
+| ★G6 | /new 생성 직후 gen_form 재노출 라이브 글리치 수정 | 제너 | G3 | ✅ |
 | ★L9 | 롱텀 메모리(시뮬/제너 입력 기억→채팅 반영) 검증 | 검증 | F5,L8 | ⬜ |
 | ★LOOP | 시뮬↔제너 양방향 개선 루프(최대 3턴) 구현·검증 | 핵심 | V2 | ⬜ |
 | ★A1 | JWT 인증·인가 일관 적용(chat/gen/sim/personas 라우트 소유권 검증) | 보안 | — | ✅ |
@@ -144,6 +144,11 @@
 **증상** `/new`에서 제너 **생성 직후(새로고침 전)** gen_form이 빈 폼(1/4)으로 잠깐 다시 보이고 gen_result 이미지 로딩이 지연됨. 새로고침하면 정상.
 **원인 추정** 세션 생성 전환(shallow routing) 중 로컬 gen_form 위젯 재마운트 + gen_result가 아직 숨김 처리 전. (sim은 매끄러운데 gen 경로 차이 확인 필요.)
 **완료 기준** 생성 직후 라이브로 gen_result 위젯이 자리에 표시되고 gen_form이 깜빡이지 않음(새로고침 불필요).
+
+**✅ 완료(2026-06-26)** 진짜 원인은 stale-closure 클로버였다. `handleGenComplete`가 `await appendWidgetMessages([gen_result])`로 결과 위젯을 붙인 직후 `handleSend("[생성결과]…")`를 부르는데, 생성 시작 시점에 캡처된 `handleSend` 클로저의 `const base = messages`가 **gen_result 추가 이전의 stale 스냅샷**이라 `setMessages(newMessages)`가 배열을 통째로 덮어써 gen_result를 지웠다 → gen_form 숨김 조건(뒤에 gen_result 있으면 숨김)이 false로 뒤집혀 gen_form이 다시 떴다(DB엔 남아 새로고침하면 정상). 시뮬은 `handleSimComplete`가 handleSend를 안 불러 무사.
+- **수정**([ChatConversation.tsx](frontend/src/components/chat/ChatConversation.tsx)) `handleSend`에서 `const base = messages`(stale) → `const base = messagesRef.current`(라이브 ref), 추가는 `setMessages(prev => [...prev, userMsg])` 함수형 업데이트로 변경(동시 append 비클로버). 요청 바디용 `newMessages`는 라이브 base로 구성. deps에서 `messages` 제거(콜백 안정화). tsc·lint 통과.
+- **검증(라이브 Preview, USER doyeon, /new)** MutationObserver로 완료 전환 구간 감시 → **빈 gen_form(1/4) 재노출 0회**(`everEmptyFormReshow:false`), gen_result 즉시 표시·유지(이미지 3장 1024² complete), 새로고침 후에도 복원, 콘솔 에러 0. **DB 직접 조회**로 세션 메시지 3건(gen_result 위젯 1·`[생성결과]` user 1·재시뮬 제안 1) 정확 영속 확인(중복·유실 없음).
+- **미검증(정직 표기)** admin·company 역할은 별도 유료 이미지 생성을 돌리지 않음 — 수정은 ChatConversation 공유 컴포넌트의 **역할 무관 클라이언트 상태 로직**이라 코드 경로가 동일. USER 1회로 충분히 결정적 확인.
 
 ### ★L9 — 롱텀 메모리(시뮬/제너 입력 기억 → 채팅 반영) 검증
 

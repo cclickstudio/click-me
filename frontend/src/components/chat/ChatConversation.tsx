@@ -1041,9 +1041,13 @@ export default function ChatConversation({
         imageUrl: attachedPreview ?? undefined,
         result: resultRef,
       };
-      const base = messages;
+      // 직전에 다른 경로(appendWidgetMessages 등)가 비동기로 메시지를 추가했을 수 있어
+      // 클로저의 stale `messages` 대신 살아있는 ref를 base로 쓰고, 추가는 함수형 업데이트로 한다.
+      // (G6) 제너 완료 시 handleGenComplete가 gen_result를 append한 직후 handleSend를 부르는데,
+      // 과거엔 stale base로 전체 배열을 덮어써 gen_result가 사라지고 gen_form이 다시 떴다.
+      const base = messagesRef.current;
       const newMessages: Message[] = [...base, userMsg];
-      setMessages(newMessages);
+      setMessages(prev => [...prev, userMsg]);
       setInput('');
       setAttachedImage(null);
       setAttachedPreview(null);
@@ -1148,7 +1152,6 @@ export default function ChatConversation({
       projectId,
       attachedImage,
       attachedPreview,
-      messages,
       sessionId,
       onSessionCreated,
       onActivity,
