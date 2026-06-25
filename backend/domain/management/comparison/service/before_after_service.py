@@ -67,10 +67,13 @@ def compute_before_after(
 ) -> BeforeAfter:
     """전(예측)·후(실측) 묶음 + 클릭 축 방향성 판정 + 보조 해석."""
     interpretation = ""
+    pred_strong: bool | None = None
+    act_strong: bool | None = None
     if prediction is None:
         verdict, rationale = BeforeAfterVerdict.UNKNOWN, "시뮬 미연결 — 예측 데이터 없음"
     elif actual.impressions == 0:
         verdict, rationale = BeforeAfterVerdict.UNKNOWN, "집행 데이터 부족 — 노출 0"
+        pred_strong = prediction.click_intent_rate >= CLICK_INTENT_STRONG
     else:
         pred_strong = prediction.click_intent_rate >= CLICK_INTENT_STRONG
         act_strong = _actual_strong(actual)
@@ -97,4 +100,6 @@ def compute_before_after(
         verdict=verdict,
         rationale=rationale,
         interpretation=interpretation,
+        pred_strong=pred_strong,
+        act_strong=act_strong,
     )

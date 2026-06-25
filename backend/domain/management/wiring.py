@@ -151,7 +151,8 @@ def build_generator_client(settings):
     from domain.management.adapters.generator.client import GeneratorReadClient  # noqa: PLC0415
 
     base = getattr(settings, "internal_api_base_url", "http://localhost:8000")
-    return GeneratorReadClient(base_url=base)
+    token = getattr(settings, "internal_service_token", None)
+    return GeneratorReadClient(base_url=base, internal_token=token)
 
 
 def build_regeneration_job_store(settings):

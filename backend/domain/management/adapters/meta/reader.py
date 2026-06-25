@@ -47,7 +47,7 @@ _STATE_MAP: dict[str, CampaignState] = {
     "WITH_ISSUES": CampaignState.ACTIVE_PENDING_REVIEW,
     "DISAPPROVED": CampaignState.PAUSED,
     "DELETED": CampaignState.ENDED,
-    "ARCHIVED": CampaignState.ENDED,
+    "ARCHIVED": CampaignState.ARCHIVED,
     "COMPLETED": CampaignState.ENDED,
 }
 
@@ -67,6 +67,14 @@ _HOURLY_FIELDS = "impressions,clicks,inline_link_clicks,spend,reach,frequency,ct
 # lifetime_budget: 일예산 대신 총예산으로 설정된 캠페인(잠재고객/일정형) — 일예산 ₩0 오표기 방지.
 # stop_time: Meta는 게재 기간이 끝나도 effective_status를 ACTIVE로 유지 → 종료 판별에 필요.
 _CAMPAIGN_FIELDS = "id,name,effective_status,daily_budget,lifetime_budget,stop_time"
+
+#: 보관 포함 조회용 effective_status — 기본 응답은 ACTIVE/PAUSED만이라 ARCHIVED를 명시 포함.
+_ARCHIVED_STATUSES = '["ACTIVE","PAUSED","ARCHIVED","IN_PROCESS","WITH_ISSUES"]'
+
+#: 데모 핀 — 삭제됐어도 전 페이지에 '종료됨'으로 고정 표시할 캠페인 id (발표용·운영 전 비우기).
+#: 데이터(노출·리드·소재)는 insights로 그대로 조회되되 상태는 ENDED로 정직하게 표기한다
+#: (실제 게재 중이 아니므로). 새로 추가되는 실 캠페인은 핀과 무관하게 실시간 상태로 유입된다.
+_DEMO_PINNED_CAMPAIGN_IDS: frozenset[str] = frozenset({"120251028376650729"})
 
 # 광고세트 예산·종료일 조회 필드 — 캠페인 노드에 예산/종료일이 없을 때(광고세트 일정) 보완.
 _ADSET_FIELDS = "daily_budget,lifetime_budget,campaign_id,end_time"
@@ -381,10 +389,18 @@ class MetaAdsReader:
         return out
 
     async def get_creatives(self, campaign_id: str) -> list[CreativePreview]:
-        """캠페인 대표 크리에이티브 — 산하 광고의 이름·썸네일(중첩 creative 필드)."""
+        """캠페인 대표 크리에이티브 — 산하 광고의 이름·썸네일(중첩 creative 필드).
+
+        삭제·보관된 캠페인의 광고도 소재(이미지)는 Meta에 남아 있어, effective_status에
+        ARCHIVED를 포함해 받아와 그전과 똑같이 대표 이미지를 보여준다.
+        """
         payload = await self._client.get(
             f"{campaign_id}/ads",
-            {"fields": _CREATIVE_FIELDS, "limit": _CREATIVE_LIMIT},
+            {
+                "fields": _CREATIVE_FIELDS,
+                "limit": _CREATIVE_LIMIT,
+                "effective_status": _ARCHIVED_STATUSES,
+            },
         )
         out: list[CreativePreview] = []
         for row in payload.get("data", []):
@@ -517,14 +533,20 @@ class MetaAdsReader:
         # (하나라도 무기한/미래면 진행 중)
         return bool(adset_ends) and all(e and _is_past(e) for e in adset_ends)
 
-    async def _all_campaign_rows(self, account: str) -> list[dict[str, Any]]:
+    async def _all_campaign_rows(
+        self, account: str, include_archived: bool = False
+    ) -> list[dict[str, Any]]:
         """계정의 모든 캠페인 행 — 페이징을 끝까지 따라가 25개(기본 limit) 초과도 빠짐없이.
 
         Meta GET /campaigns는 기본 25개씩 페이지로 준다. cursors.after로 next가 없을 때까지 순회.
+        include_archived=True면 보관(ARCHIVED, 삭제분 포함)도 effective_status 필터로 함께 받는다.
         (단 Ads Manager '임시 저장됨' 초안은 API가 반환하지 않아 게시 전엔 안 잡힌다.)
         """
         rows: list[dict[str, Any]] = []
         params: dict[str, Any] = {"fields": _CAMPAIGN_FIELDS, "limit": 100}
+        if include_archived:
+            # 기본은 ACTIVE/PAUSED만 — ARCHIVED 포함해야 삭제·보관 캠페인이 나온다.
+            params["effective_status"] = _ARCHIVED_STATUSES
         while True:
             payload = await self._client.get(f"{account}/campaigns", params)
             rows.extend(payload.get("data", []))
@@ -535,16 +557,19 @@ class MetaAdsReader:
             params = {**params, "after": after}
         return rows
 
-    async def list_campaigns(self) -> list[CampaignInfo]:
+    async def list_campaigns(self, include_archived: bool = False) -> list[CampaignInfo]:
         """광고계정의 캠페인 목록 — 대시보드용(이름·상태·일예산).
 
         Meta ``GET /act_{id}/campaigns``. daily_budget은 캠페인 예산 최적화(CBO) 시에만
         캠페인 노드에 존재 — 광고세트 예산이면 광고세트 일예산 합으로 보완한다.
+        include_archived=True면 보관/삭제(ARCHIVED) 캠페인도 포함('삭제됨' 표시·과거 데이터 조회용).
         """
         account = normalize_ad_account(self._client.ad_account_id)
+        # 데모 핀이 있으면 보관분도 받아와야(핀 캠페인이 보관 상태일 수 있음) 고정 표시가 된다.
+        fetch_archived = include_archived or bool(_DEMO_PINNED_CAMPAIGN_IDS)
         # 캠페인 목록(페이징 끝까지)·광고세트 정보 병렬 — 순차면 Meta 왕복이 직렬로 쌓임.
         rows, adset_info = await asyncio.gather(
-            self._all_campaign_rows(account),
+            self._all_campaign_rows(account, fetch_archived),
             self._adset_info(account),
         )
         out: list[CampaignInfo] = []
@@ -571,6 +596,12 @@ class MetaAdsReader:
                 state = CampaignState.ENDED
             else:
                 state = _STATE_MAP.get(status, CampaignState.DRAFT)
+            # 데모 핀: 삭제/보관이라도 데이터와 함께 고정 표시하되 상태는 '종료됨'(실 게재 아님).
+            # 핀 아닌 보관분은 토글(include_archived) 켤 때만 노출.
+            if cid in _DEMO_PINNED_CAMPAIGN_IDS:
+                state = CampaignState.ENDED
+            elif status == "ARCHIVED" and not include_archived:
+                continue
             out.append(
                 CampaignInfo(
                     campaign_id=cid,
