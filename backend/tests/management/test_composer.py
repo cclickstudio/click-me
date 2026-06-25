@@ -100,6 +100,21 @@ def test_directive_only_answer_degrades_to_neutral():
     assert text == "자세한 내용은 아래 카드를 확인하세요."
 
 
+def test_metrics_selects_only_present_keys_in_label_order():
+    # 일부 키만 있으면 그 키만, _METRIC_LABELS 순서대로. (런레이트 누락)
+    res = AskResult(answer="x", evidence={"account_balance_krw": 9, "this_month_spent_krw": 100})
+    metrics = _section(compose_card(res, turn_id="t"), "metrics")
+    assert [m.label for m in metrics.items] == ["이번 달 소진", "계정 잔액"]
+    assert metrics.title == "핵심 지표"  # period 없으면 기간 라벨 없음
+
+
+def test_metrics_ignores_bool_values():
+    # bool은 int 서브클래스지만 금액이 아니므로 지표에서 제외(KRW 정수만).
+    res = AskResult(answer="x", evidence={"this_month_spent_krw": True})
+    card = compose_card(res, turn_id="t")
+    assert "metrics" not in [s.kind for s in card.sections]
+
+
 def test_evidence_section_carries_citations_and_tools():
     res = AskResult(
         answer="x",

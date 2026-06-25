@@ -49,15 +49,15 @@ def _descriptive_conclusion(answer: str) -> str:
     return " ".join(kept).strip() or _NEUTRAL_CONCLUSION
 
 
-def _won(value: object) -> str:
-    return f"{int(value):,}원"
+def _won(value: float) -> str:
+    return f"{round(value):,}원"
 
 
 def _metrics_section(evidence: dict) -> MetricsSection | None:
     items = [
         MetricItem(label=label, value=_won(evidence[key]))
         for key, label in _METRIC_LABELS
-        if isinstance(evidence.get(key), (int, float))
+        if isinstance(evidence.get(key), (int, float)) and not isinstance(evidence.get(key), bool)
     ]
     if not items:
         return None
