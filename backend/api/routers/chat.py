@@ -414,3 +414,30 @@ async def chat_feedback(body: FeedbackRequest) -> dict:
         corrected_answer=body.corrected_answer,
     )
     return {"ok": True}
+
+
+@router.get("/kb-chunk")
+async def get_kb_chunk(
+    source: str, title: str | None = None, db: AsyncSession = Depends(get_db)
+) -> dict:
+    """P5 인용 칩 — 출처 파일(+섹션)로 KB 원문 청크를 조회해 펼침용으로 반환한다.
+
+    4개 KB 테이블(시뮬·제너·매니지·CLIO)을 순회하며 source(+title) 매칭 1건을 돌려준다. 읽기 전용.
+    """
+    from sqlalchemy import select
+
+    from core.models import (
+        ClioKbChunk,
+        GeneratorKbChunk,
+        ManagementKbChunk,
+        SimulationKbChunk,
+    )
+
+    for model in (SimulationKbChunk, GeneratorKbChunk, ManagementKbChunk, ClioKbChunk):
+        stmt = select(model.chunk, model.title).where(model.source == source)
+        if title:
+            stmt = stmt.where(model.title == title)
+        row = (await db.execute(stmt.limit(1))).first()
+        if row:
+            return {"source": source, "title": row[1], "chunk": row[0]}
+    raise HTTPException(status_code=404, detail="해당 인용 원문을 찾을 수 없습니다.")

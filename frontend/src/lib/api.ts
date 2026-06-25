@@ -435,6 +435,13 @@ export const api = {
       }
       return res.json();
     },
+    // P5 — 인용 칩 원문 펼침. 출처 파일(+섹션)로 KB 청크 텍스트를 조회.
+    kbChunk: (source: string, title?: string) =>
+      request<{ source: string; title: string; chunk: string }>(
+        `/chat/kb-chunk?source=${encodeURIComponent(source)}${
+          title ? `&title=${encodeURIComponent(title)}` : ""
+        }`,
+      ),
     // 어시스턴트 답변 피드백(좋아요/싫어요) — RAG 품질 개선 적재.
     feedback: (body: {
       thread_id?: string;

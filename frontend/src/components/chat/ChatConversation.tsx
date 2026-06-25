@@ -18,6 +18,7 @@ import BatchSimWidget from './BatchSimWidget';
 import ReportWidget from './ReportWidget';
 import AnalysisSummaryWidget from './AnalysisSummaryWidget';
 import RecommendFormWidget from './RecommendFormWidget';
+import CitationChips from './CitationChips';
 import ErrorCard from './ErrorCard';
 import type { SimRunResult } from '@/lib/types';
 
@@ -1316,20 +1317,12 @@ export default function ChatConversation({
                       />
                     )}
                     {msg.role === 'assistant' &&
-                    msg.meta?.source === 'management' &&
-                    (msg.meta.citations?.length ||
-                      msg.meta.used_tools?.length) ? (
-                      <p className='text-[10px] text-[#B0B8C1] dark:text-[#6B7280] px-1'>
-                        근거:{' '}
-                        {[
-                          ...(msg.meta.used_tools ?? []).map(t =>
-                            t.replace('live_', '실측·')
-                          ),
-                          ...(msg.meta.citations ?? [])
-                            .filter(c => c.kind === 'kb')
-                            .map(c => c.title || c.source.replace('.md', '')),
-                        ].join(' · ')}
-                      </p>
+                    (msg.meta?.citations?.length ||
+                      msg.meta?.used_tools?.length) ? (
+                      <CitationChips
+                        citations={msg.meta.citations}
+                        usedTools={msg.meta.used_tools}
+                      />
                     ) : null}
                   </div>
                 </div>
