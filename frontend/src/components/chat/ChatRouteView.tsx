@@ -5,6 +5,7 @@ import { useEffect } from 'react';
 import { useProjects } from '@/components/ProjectContext';
 import { useChatController } from '@/components/chat/ChatController';
 import ChatConversation from '@/components/chat/ChatConversation';
+import ChatSessionSidebar from '@/components/chat/ChatSessionSidebar';
 
 export default function ChatRouteView({
   projectId,
@@ -27,19 +28,23 @@ export default function ChatRouteView({
   }, [sessionId, setActiveSessionId]);
 
   return (
-    <div className="h-screen">
-      <ChatConversation
-        projectId={projectId}
-        sessionId={sessionId}
-        onSessionCreated={(id) => {
-          setActiveSessionId(id);
-          refreshSessions();
-          // Next 라우터(router.replace)는 catch-all에서도 페이지를 리마운트시켜 진행 중 대화를 날린다.
-          // Next 14 공식 shallow routing(history.replaceState)으로 URL만 갱신 — 리마운트 없이 새로고침·딥링크 대응.
-          window.history.replaceState(null, '', `/chat/${projectId}/${id}`);
-        }}
-        onActivity={refreshSessions}
-      />
+    <div className='h-screen flex'>
+      {/* 세션 사이드바(F2) — 목록·전환·삭제·현재 세션 하이라이트(md+에서 노출) */}
+      <ChatSessionSidebar projectId={projectId} />
+      <div className='flex-1 min-w-0'>
+        <ChatConversation
+          projectId={projectId}
+          sessionId={sessionId}
+          onSessionCreated={id => {
+            setActiveSessionId(id);
+            refreshSessions();
+            // Next 라우터(router.replace)는 catch-all에서도 페이지를 리마운트시켜 진행 중 대화를 날린다.
+            // Next 14 공식 shallow routing(history.replaceState)으로 URL만 갱신 — 리마운트 없이 새로고침·딥링크 대응.
+            window.history.replaceState(null, '', `/chat/${projectId}/${id}`);
+          }}
+          onActivity={refreshSessions}
+        />
+      </div>
     </div>
   );
 }
