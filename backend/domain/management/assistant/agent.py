@@ -167,9 +167,11 @@ def build_management_agent(settings):
             "tags": ["management", "assistant"],
             "metadata": {"campaign_id": req.campaign_id, "ad_id": req.ad_id},
         }
+        # 장기기억이 있으면 LLM 맥락에 주입(질문 앞에 붙임). 폴백 라우팅엔 영향 없음.
+        human = f"{req.memory_context}\n\n{req.question}" if req.memory_context else req.question
         final = await graph.ainvoke(
             {
-                "messages": [HumanMessage(content=req.question)],
+                "messages": [HumanMessage(content=human)],
                 "campaign_id": req.campaign_id,
             },
             config=config,

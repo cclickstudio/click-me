@@ -7,15 +7,20 @@ from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import google.generativeai as genai
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.auth import optional_user, user_org_id
 from core.config import settings
+from core.db import get_db
+from core.models import User
 from core.schemas import ChatRequest
 from domain.management.assistant.agent import build_management_agent
 from domain.management.assistant.contracts import AskRequest
 from domain.management.assistant.history import record_feedback, record_turn
+from domain.management.assistant.memory_store import ManagementMemory, build_memory_store
 
 router = APIRouter()
 
@@ -97,8 +102,40 @@ def _chunks(text: str, size: int = 24) -> list[str]:
     return [text[i : i + size] for i in range(0, len(text), size)] or [""]
 
 
+_memory = None
+
+
+def _get_memory() -> ManagementMemory:
+    global _memory  # noqa: PLW0603
+    if _memory is None:
+        _memory = build_memory_store(settings)
+    return _memory
+
+
+async def _resolve_identity(user: User | None, db: AsyncSession) -> tuple[str | None, str | None]:
+    """(tenant_id, user_id) — 로그인 상태면 org/user, 아니면 (None, None)=데모 네임스페이스."""
+    if user is None:
+        return None, None
+    org = await user_org_id(user, db)
+    return (str(org) if org else None), str(user.id)
+
+
+def _format_memory(mems: list[dict]) -> str | None:
+    """장기기억 dict들 → LLM 주입용 한 줄. 비어있으면 None."""
+    notes = [m.get("note") for m in mems if m.get("note")]
+    if not notes:
+        return None
+    return "[이전 대화에서 기억해둘 맥락: " + " · ".join(notes[:5]) + "]"
+
+
 @router.post("/complete")
-async def chat_complete(body: ChatRequest) -> StreamingResponse:
+async def chat_complete(
+    body: ChatRequest,
+    user: User | None = Depends(optional_user),
+    db: AsyncSession = Depends(get_db),
+) -> StreamingResponse:
+    # 식별자는 스트리밍 전에 해석(요청 db 사용) — 로그인 시 (org, user)로 장기기억 스코프.
+    tenant_id, user_id = await _resolve_identity(user, db)
     gemini_history = []
     for m in body.messages[:-1]:
         gemini_history.append(
@@ -116,12 +153,20 @@ async def chat_complete(body: ChatRequest) -> StreamingResponse:
             thread_id = f"mgmt-{body.session_id}"
             try:
                 _t0 = time.perf_counter()
+                # 세션 넘는 장기기억 회수(있으면 LLM 맥락에 주입). best-effort.
+                memory_context = None
+                try:
+                    mems = await _get_memory().recall(tenant_id, user_id, limit=5)
+                    memory_context = _format_memory(mems)
+                except Exception as mexc:  # noqa: BLE001 — 기억 회수 실패는 채팅 안 막음
+                    print(f"[chat] memory recall 실패(무시): {mexc!r}")
                 result = await _get_assistant()(
                     AskRequest(
                         question=last_message,
                         ad_id=body.context_ad_id,
                         # 멀티턴 — 같은 채팅 세션이면 같은 thread로 묶어 이전 맥락 유지(checkpointer).
                         thread_id=thread_id,
+                        memory_context=memory_context,
                     )
                 )
                 _latency_ms = int((time.perf_counter() - _t0) * 1000)
@@ -167,6 +212,14 @@ async def chat_complete(body: ChatRequest) -> StreamingResponse:
                     requires_approval=result.requires_approval,
                     ad_id=body.context_ad_id,
                 )
+                # 세션 넘는 장기기억 적재 — 질문 + 제안 액션을 한 줄 노트로. best-effort.
+                try:
+                    note = f"질문: {last_message[:60]}"
+                    if result.suggested_action:
+                        note += f" / 제안: {result.suggested_action.action_type}"
+                    await _get_memory().remember(tenant_id, user_id, uuid4().hex, {"note": note})
+                except Exception as mexc:  # noqa: BLE001 — 기억 적재 실패는 채팅 안 막음
+                    print(f"[chat] memory remember 실패(무시): {mexc!r}")
                 for piece in _chunks(answer):
                     yield f"data: {json.dumps({'token': piece}, ensure_ascii=False)}\n\n"
             except Exception as exc:  # noqa: BLE001 — 실패해도 채팅은 끊지 않는다
@@ -265,7 +318,9 @@ class ApproveActionRequest(BaseModel):
 
 
 @router.post("/approve")
-async def chat_approve(body: ApproveActionRequest) -> dict:
+async def chat_approve(
+    body: ApproveActionRequest, user: User | None = Depends(optional_user)
+) -> dict:
     """채팅 추천 조치 승인 → 실행(HITL). 실행 모드는 settings가 봉인한다 —
     use_mock이면 MOCK(Meta 미접촉), 아니면 validate_only/live. 모든 write는 Executor 단일경로
     (멱등키·감사·Tier 재검증)로만 나간다 — 어시스턴트는 직접 writer를 부르지 않는다.
@@ -305,7 +360,8 @@ async def chat_approve(body: ApproveActionRequest) -> dict:
         )
     )
     mode = _resolved_execution_mode()
-    action = approve(proposal, body.approver_id, execution_mode=mode)
+    approver = str(user.id) if user is not None else body.approver_id  # 로그인 시 실제 승인자 귀속
+    action = approve(proposal, approver, execution_mode=mode)
     result = await _get_executor().execute(action, proposal)
     status = result.status.value if hasattr(result.status, "value") else str(result.status)
     return {

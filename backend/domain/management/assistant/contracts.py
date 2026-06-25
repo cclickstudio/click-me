@@ -11,6 +11,8 @@ class AskRequest(BaseModel):
     campaign_id: str | None = None  # 특정 캠페인 맥락(있으면 상세 우선)
     ad_id: str | None = None  # 시뮬 예측 연결 맥락
     thread_id: str | None = None  # 멀티턴 키 — 같은 세션이면 같은 값(없으면 새로 생성)
+    # 세션 넘는 장기기억 회수 결과(있으면 react가 LLM 맥락에 주입). 폴백은 무시(라우팅 불변).
+    memory_context: str | None = None
 
 
 class Citation(BaseModel):

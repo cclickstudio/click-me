@@ -84,6 +84,16 @@ async def test_expand_audience_intent():
 
 
 @pytest.mark.asyncio
+async def test_fallback_ignores_memory_context():
+    """memory_context가 있어도 폴백 라우팅(질문 기준)은 불변 — 기억은 react만 주입."""
+    ask = build_management_agent(_SETTINGS)
+    res = await ask(
+        AskRequest(question="이번 달 예산 소진 얼마야?", memory_context="[이전: 무관한 맥락]")
+    )
+    assert res.used_tools == ["live_budget"]
+
+
+@pytest.mark.asyncio
 async def test_change_bid_intent_wins_over_replace():
     """'입찰 바꿔'는 generic 교체(REPLACE)가 아니라 CHANGE_BID_STRATEGY로 매칭돼야 한다."""
     ask = build_management_agent(_SETTINGS)

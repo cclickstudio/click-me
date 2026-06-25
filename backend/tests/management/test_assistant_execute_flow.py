@@ -13,7 +13,7 @@ from api.routers.chat import ApproveActionRequest, chat_approve
 async def test_chat_approve_tier1_executes_in_mock():
     """Tier 1(일시중지) 승인 → executor 실행, 모드는 MOCK 봉인."""
     res = await chat_approve(
-        ApproveActionRequest(action_type="PAUSE_CAMPAIGN", campaign_id="camp_1")
+        ApproveActionRequest(action_type="PAUSE_CAMPAIGN", campaign_id="camp_1"), user=None
     )
     assert res["execution_mode"] == "mock"  # use_mock 봉인 — Meta 미접촉
     assert res["action_type"] == "PAUSE_CAMPAIGN"
@@ -28,7 +28,8 @@ async def test_chat_approve_tier3_executes_with_human_approver():
     res = await chat_approve(
         ApproveActionRequest(
             action_type="INCREASE_BUDGET", campaign_id="camp_9", approver_id="user-42"
-        )
+        ),
+        user=None,
     )
     assert res["execution_mode"] == "mock"
     assert res["action_type"] == "INCREASE_BUDGET"
@@ -37,6 +38,6 @@ async def test_chat_approve_tier3_executes_with_human_approver():
 
 @pytest.mark.asyncio
 async def test_chat_approve_defaults_campaign_when_missing():
-    res = await chat_approve(ApproveActionRequest(action_type="PAUSE_CAMPAIGN"))
+    res = await chat_approve(ApproveActionRequest(action_type="PAUSE_CAMPAIGN"), user=None)
     assert res["campaign_id"] == "demo_campaign"
     assert res["execution_mode"] == "mock"
