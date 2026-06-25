@@ -145,18 +145,21 @@ class ExecutionResultSection(BaseModel):
 - **decision body에 approval_proof를 받지 않는다(스펙 3 비목표).** 별도 승인자·아웃오브밴드 증빙이 필요한 Tier(예: Tier 3)는 **챗 집행 대상이 아니다.**
 - **처리 방식**: finalize 응답 `requires_external_approval=true`(챗 집행 불가)면 **FE는 "집행" 버튼 대신 "정식 승인 화면으로" 안내**를 띄운다. 방어적으로 그래도 `decision=approve`가 들어오면 `approve()`가 거부하고 → 결과 카드 `rejected`(failure_reason="정식 승인 경로 필요") 로 닫힌다. 즉 **"Tier 3는 스펙 3에서 챗 집행 불가"** 를 정책(approve())이 강제하며 우회는 없다(게이트 #4).
 - Tier 1(자동승인 한도 내)·단일 승인자로 통과하는 제안만 챗에서 집행된다.
+- **`requires_external_approval=true`여도 정본은 영속한다.** 정식 승인 화면이 `proposal_id`로 인계받아야 하므로 finalize는 `ActionProposalRow`에 **`PENDING`으로 저장**한다(`ProposalStatus`엔 external 전용 상태가 없으므로 새로 만들지 않는다 — 잠금 계약 존중). 챗은 집행만 막고, 영속·핸드오프는 그대로.
 
 ### 5.5 결과 카드 source of truth (실행 여부로 분리)
 
-`expired`·`rejected`·일부 `already_executed`는 새 `execution_run`이 없을 수 있다. 따라서 카드 source를 상태로 가른다.
+`expired`·`rejected`·일부 `already_executed`는 새 `execution_run`이 없을 수 있다. 따라서 카드 source를 상태로 가른다. (정본 테이블/ORM: 제안 `ActionProposalRow`/`action_proposals`, 감사 `AuditEventRow`/`audit_events`, 실행 `ExecutionRunRow`/`execution_runs`, 승인 `ApprovalRow`/`approvals`.)
 
 | result_status | source of truth |
 |---|---|
-| `success` · `submitted_pending_review` | **`execution_runs`(`ExecutionRunRow`)** — run에서 run_id·결과 조립 |
-| `failed` | run이 생겼으면 `execution_runs`, 아니면 executor 반환 + audit |
-| `rejected` · `expired` · (실행 전) `already_executed` | **`action_proposals` + `audit_events`** 에서 결정적으로 조립(run 없음) |
+| `success` · `submitted_pending_review` | **`ExecutionRunRow`(`execution_runs`)** — run에서 `run_id`·결과 조립 |
+| `failed` | 실패 run이 적재됐으면 `ExecutionRunRow`, run 적재 전 예외면 `AuditEventRow` 필수(아래 규칙) |
+| `rejected` · `expired` · (실행 전) `already_executed` | **`ActionProposalRow` + `AuditEventRow`** 에서 결정적으로 조립(run 없음, `run_id=None`) |
 
-규칙 — **기존 run이 있으면 항상 연결**(`run_id` 채움). run이 없는 실행 전 terminal은 proposal 상태·audit로만 만들고 `run_id=None`. 어느 경로든 LLM 미경유·결정적.
+규칙
+- **기존 run이 있으면 항상 연결**(`run_id` 채움). run이 없는 실행 전 terminal은 proposal 상태·audit로만 만들고 `run_id=None`. 어느 경로든 LLM 미경유·결정적.
+- **`failed`는 run 없이 카드를 만들지 않는다.** executor가 run 적재 전 예외로 죽어도, 라우터가 **실패를 `AuditEventRow`로 반드시 남긴 뒤** 그 audit에서 `failed` 카드를 조립한다(run_id=None 허용). "근거 없는 실패 카드" 금지.
 
 ## 6. idempotency
 
@@ -194,6 +197,8 @@ class ExecutionResultSection(BaseModel):
 9. 결과 카드 결정적 생성(LLM 미경유), 6상태 매핑 — **실행됨(success/submitted)은 `execution_runs`에서 `run_id` 연결, 실행 전 terminal(expired/rejected)은 `action_proposals`+`audit_events`에서 `run_id=None`으로 조립**(§5.5).
 10. 어시스턴트 그래프가 writer/executor 직접 호출 안 함(import-purity).
 11. 결과 카드 적재·재조회 동일 렌더(§8 회귀 기준).
+12. executor가 run 적재 전 예외 → 라우터가 `AuditEventRow`를 남기고 그 audit에서 `failed` 카드 조립(run 없는 failed 카드는 audit 필수, §5.5).
+13. `requires_external_approval=true` 제안도 `ActionProposalRow`에 `PENDING`으로 영속(정식 승인 UI 인계용) — 챗 집행만 차단.
 
 **프론트**
 - finalize·decision 진행 중 버튼 disable, 이중 클릭 시 decision 1회.
