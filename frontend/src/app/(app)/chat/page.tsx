@@ -3,6 +3,8 @@
 import { useState, useRef, useEffect } from 'react';
 import { safeRandomUUID } from '@/lib/utils';
 import { api } from '@/lib/api';
+import { useAuth } from '@/components/AuthProvider';
+import { useProjects } from '@/components/ProjectContext';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
@@ -86,6 +88,9 @@ function TypingIndicator() {
 }
 
 export default function Page() {
+  // 로그인 유저의 org + 선택 프로젝트를 챗 요청에 실어 서브에이전트가 테넌트 스코프로 조회.
+  const { user } = useAuth();
+  const { selectedProjectId } = useProjects();
   const [messages, setMessages] = useState<Message[]>([]);
   const [fb, setFb] = useState<Record<number, number>>({}); // 메시지 index → 평가(1/-1)
 
@@ -177,7 +182,12 @@ export default function Page() {
       const res = await fetch(`${API_BASE}/api/chat/complete`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ session_id: sessionId.current, messages: newMessages }),
+        body: JSON.stringify({
+          session_id: sessionId.current,
+          messages: newMessages,
+          organization_id: user?.organization_id ?? null,
+          project_id: selectedProjectId ?? null,
+        }),
       });
 
       if (!res.ok || !res.body) {
