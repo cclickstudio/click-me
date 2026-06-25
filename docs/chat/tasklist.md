@@ -69,9 +69,9 @@
 | R4-1 | CLIO `clio_kb_chunks` 테이블+마이그(승인됨) | RAG | —         | ✅   |
 | R4-2 | CLIO KB 광고 일반지식 적재(~100)         | RAG    | R4-1      | ✅   |
 | R4-3 | CLIO(기본 GPT) 응답에 CLIO RAG 연결     | RAG    | R4-2      | ✅   |
-| R5  | clio KB에 Meta(인스타/페북) 정책·용어 추가 적재 | RAG | —      | ⬜   |
-| R6  | clio KB에 광고·마케팅 용어+정의 추가 적재(~100) | RAG | —     | ⬜   |
-| R7  | 기존 3 KB(sim/gen/manage) 덤프·점검·보강    | RAG    | —         | ⬜   |
+| R5  | clio KB에 Meta(인스타/페북) 정책·용어 추가 적재 | RAG | —      | ✅   |
+| R6  | clio KB에 광고·마케팅 용어+정의 추가 적재(~100) | RAG | —     | ✅   |
+| R7  | 기존 3 KB(sim/gen/manage) 덤프·점검·보강    | RAG    | —         | ✅   |
 | W1  | 시뮬 위젯 카테고리 2단 셀렉트            | 위젯   | —         | ✅   |
 | W2  | 시뮬 위젯 5단계 재구성(카테고리/목표/인구) | 위젯   | W1        | ✅   |
 | W3  | 사용자 친화 보조 위젯                    | 위젯   | W2        | ✅   |
@@ -775,6 +775,17 @@
 ## 5. 진행 로그 (루프가 갱신)
 
 > 각 태스크 완료 시 한 줄: `YYYY-MM-DD HH:MM Vn ✅ — 요지/특이사항`.
+
+### 🅰 KB 워크트리(feat/chat-kb) 완료분 머지 반영
+
+> 워크트리 A(R5·R6·R7) 머지(84c2134, fast-forward). 상세 로그는 `docs/chat/progress-kb.md`.
+
+- R5 ✅ — clio KB에 `meta_platform_policy.md`(Meta 인스타/페북 정책·형식·용어 41청크) 추가·인제스트. clio_kb_chunks 70→111. retriever 스모크 통과.
+- R6 ✅ — clio KB에 `marketing_terms.md`(광고·마케팅 지표·전략·애드테크 용어 92청크, **별도 테이블 없이 clio_kb 통합**) 추가·인제스트. clio_kb_chunks 111→203. 기존 70·R5 41과 중복 회피. retriever 스모크 통과(ROAS·LTV/CAC 등).
+- R7 ✅ — 기존 3 KB 덤프·점검(SIM 69·GEN 79·MANAGE 88). 핵심 주제를 용어+정의로 빠짐없이 커버, 명백한 누락 없어 "억지 패딩 금지·top-k=4" 원칙대로 **충분 판정**(보강 없음, 코드 변경 없음).
+- 결과: clio_kb_chunks **203청크**(advertising 70 + Meta 41 + marketing 92). 건드린 파일은 `domain/chat/kb/`의 신규 `.md` 2개뿐 — orchestrator/api/frontend 미수정(§2-2 경계 준수). B·C와 충돌 없음.
+
+---
 
 ### ★ 집 프론트엔드 세션 인계 노트 (2026-06-25 09:48 KST)
 
