@@ -233,8 +233,14 @@ class _Nodes:
                 build_general_context(state.get("long_term")),
             )
         elif sub_results:
-            # 서브에이전트 답변(management/simulation/generation 라우트)
-            answer = sub_results[-1].get("answer") or "결과를 가져왔습니다."
+            # 빈 답 + error면 에러를 표면화한다.
+            # (조용한 폴백이 ReAct 빌드/호출 실패를 가렸던 버그 방지.)
+            last = sub_results[-1]
+            answer = last.get("answer") or (
+                f"처리 중 문제가 발생했어요. ({last['error']})"
+                if last.get("error")
+                else "결과를 가져왔습니다."
+            )
         else:
             # general + CLIO 없음 — 결정론 폴백
             answer = "무엇을 도와드릴까요?"

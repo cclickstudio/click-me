@@ -178,6 +178,36 @@ def test_build_simulation_agent_none_without_key():
     assert build_simulation_agent(SimpleNamespace(use_mock=False, anthropic_api_key=None)) is None
 
 
+def _react_settings():
+    # ReAct 빌드용 최소 settings(Claude 호출·모델 로드 없음 — 그래프 컴파일만 검증).
+    from types import SimpleNamespace
+
+    return SimpleNamespace(
+        use_mock=False,
+        anthropic_api_key="sk-test",
+        chat_orchestrator_model="claude-sonnet-4-6",
+        chat_orchestrator_provider="anthropic",
+        embedding_provider="bge_m3_local",
+        embedding_dim=1024,
+        embedding_base_url="http://localhost:8080",
+    )
+
+
+def test_build_simulation_agent_compiles_with_key():
+    # 회귀 가드 — ReAct 그래프 컴파일 성공. route(state: _State) 로컬클래스 주석이
+    # langgraph get_type_hints에서 NameError를 내던 빌드 실패의 재발 방지.
+    from domain.chat.adapters.sim_agent import build_simulation_agent
+
+    assert callable(build_simulation_agent(_react_settings()))
+
+
+def test_build_generator_agent_compiles_with_key():
+    # 회귀 가드 — gen ReAct 그래프 컴파일 성공(동일 _State NameError 재발 방지).
+    from domain.chat.adapters.gen_agent import build_generator_agent
+
+    assert callable(build_generator_agent(_react_settings()))
+
+
 @pytest.mark.asyncio
 async def test_generator_no_product_no_id_is_graceful():
     # product 정보·generation_id 모두 없음 → 트리거 대신 안내 답변(컨시어지 지향).

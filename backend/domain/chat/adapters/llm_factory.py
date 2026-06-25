@@ -17,5 +17,6 @@ def build_supervisor_llm(settings):
     return init_chat_model(
         settings.chat_orchestrator_model,
         model_provider=settings.chat_orchestrator_provider,
+        api_key=settings.anthropic_api_key,  # os.environ 의존 제거 — 키를 명시 전달
         temperature=settings.chat_orchestrator_temperature,
     )

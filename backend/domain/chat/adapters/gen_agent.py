@@ -46,6 +46,7 @@ def build_generator_agent(settings) -> Any:
     llm = init_chat_model(
         settings.chat_orchestrator_model,
         model_provider=settings.chat_orchestrator_provider,
+        api_key=settings.anthropic_api_key,  # os.environ 의존 제거 — 키를 명시 전달
         temperature=0,
     )
 
@@ -121,7 +122,9 @@ def build_generator_agent(settings) -> Any:
             "tool_rounds": state.get("tool_rounds", 0) + 1,
         }
 
-    def route(state: _State) -> str:
+    def route(
+        state: dict,
+    ) -> str:  # _State(로컬 클래스) 주석 금지 — langgraph get_type_hints NameError
         last = state["messages"][-1]
         return "tools" if isinstance(last, AIMessage) and last.tool_calls else END
 
