@@ -578,8 +578,17 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
         }
 
     async def management_node(state) -> dict:
+        # 멀티턴 — 채팅 세션 단위로 매니지 서브에이전트 thread를 고정해 후속 매니지 질문의
+        # 맥락(이전 캠페인·조치 논의)을 유지한다. 채팅 그래프 체크포인터(thread_id=session_id)와
+        # 충돌하지 않도록 ':management' 네임스페이스로 분리한다.
+        sid = state.get("session_id")
+        mgmt_thread = f"{sid}:management" if sid else None
         res = await mgmt(
-            AskRequest(question=state["question"], campaign_id=state.get("context_id"))
+            AskRequest(
+                question=state["question"],
+                campaign_id=state.get("context_id"),
+                thread_id=mgmt_thread,
+            )
         )
         return _with_ai_message(_mgmt_answer(res), _mgmt_meta(res))
 
