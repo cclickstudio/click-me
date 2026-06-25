@@ -226,9 +226,10 @@ def _sha(text: str) -> str:
 
 
 def embedding_content_hash(title: str, body: str) -> str:
-    """재임베딩 게이트 해시 = sha256(정규화 title+본문, keywords 제외).
+    """청크 content_hash = sha256(정규화 title+본문, keywords 제외).
 
-    임베딩 입력 범위(title+body)와 동일하게 맞춰 title 변경도 재임베딩 대상이 되게 한다.
+    임베딩 입력 범위(title+body)와 동일 범위라 title 변경도 추적된다.
+    (문서 단위 재임베딩 게이트는 ingestor의 _doc_hash(전체 md) + 빌드 시그니처로 판단.)
     """
     norm = normalize_markdown(strip_keywords_lines(f"{title}\n{body}"))
     return _sha(norm)
