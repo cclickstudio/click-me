@@ -20,12 +20,16 @@ from core.models import ManagementKbChunk, ManagementKbDocument
 _KB_DIR = Path(__file__).parent / "kb"
 
 # 파일별 출처 메타 — (source_type, source_url). 외부 공식 근거가 있으면 URL, 내부 작성물은 None.
-# 현 4문서는 사람이 작성한 요약/정책이라 대부분 내부(None). meta 정책 요약만 공식 표준 참조.
+# source_type은 검색 네임스페이스로도 쓴다(retriever.search(source_types=[...])).
 _SOURCE_META: dict[str, tuple[str, str | None]] = {
+    # 매니지먼트(기존)
     "meta_ad_policy.md": ("meta_official", "https://transparency.meta.com/policies/ad-standards/"),
     "optimization_playbook.md": ("playbook", None),
     "kpi_measurement_rules.md": ("internal_policy", None),
     "remediation_actions.md": ("internal_policy", None),
+    # 챗 컨시어지(신규) — 내부 작성물(verified_by=manual, source_url 없음).
+    "persona_methodology.md": ("persona_methodology", None),
+    "simulation_trust.md": ("simulation_trust", None),
 }
 
 
@@ -56,19 +60,24 @@ async def ingest() -> int:
     total = 0
     skipped = 0
     async with AsyncSessionLocal() as db:
-        for md in sorted(_KB_DIR.glob("*.md")):
+        # rglob — 네임스페이스별 하위폴더(kb/persona/ 등)까지 재귀 수집. source=파일명(고유).
+        for md in sorted(_KB_DIR.rglob("*.md")):
             source = md.name
             text = md.read_text(encoding="utf-8")
             new_hash = _sha(text)
             # 증분(content_hash 변경감지): 같은 출처 active 문서가 동일 해시면 재임베딩 스킵.
             existing = (
-                await db.execute(
-                    select(ManagementKbDocument).where(
-                        ManagementKbDocument.title == source,
-                        ManagementKbDocument.status == "active",
+                (
+                    await db.execute(
+                        select(ManagementKbDocument).where(
+                            ManagementKbDocument.title == source,
+                            ManagementKbDocument.status == "active",
+                        )
                     )
                 )
-            ).scalars().first()
+                .scalars()
+                .first()
+            )
             if existing is not None and existing.content_hash == new_hash:
                 skipped += 1
                 print(f"  {source}: 변경 없음 — skip")

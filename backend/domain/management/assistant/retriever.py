@@ -10,10 +10,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from sqlalchemy import select, text
+from sqlalchemy import bindparam, select, text
 
 from core.db import AsyncSessionLocal
-from core.models import ManagementKbChunk
+from core.models import ManagementKbChunk, ManagementKbDocument
 
 if TYPE_CHECKING:
     # 타입 주석 전용 — management→chat 런타임 import 결합 회피(annotations future로 문자열화).
@@ -30,6 +30,17 @@ _KW_SQL = text(
     " ORDER BY rank DESC LIMIT :lim"
 )
 
+# 네임스페이스(source_type) 필터 버전 — documents 조인. 청크는 document_id로 연결됨.
+_KW_SQL_TYPED = text(
+    "SELECT c.id, c.source, c.title, c.chunk,"
+    " ts_rank(c.search_vector, websearch_to_tsquery('simple', :q)) AS rank"
+    " FROM management_kb_chunks c"
+    " JOIN management_kb_documents d ON c.document_id = d.id"
+    " WHERE c.search_vector @@ websearch_to_tsquery('simple', :q)"
+    " AND d.source_type IN :types"
+    " ORDER BY rank DESC LIMIT :lim"
+).bindparams(bindparam("types", expanding=True))
+
 
 class KbRetriever:
     """하이브리드(벡터+키워드) 리트리버 — EmbeddingProvider·세션 팩토리 주입(테스트)."""
@@ -42,25 +53,39 @@ class KbRetriever:
         out = await self._embedder.embed([text])
         return out[0]
 
-    async def search(self, query: str, k: int = 4) -> list[dict]:
+    async def search(
+        self, query: str, k: int = 4, source_types: list[str] | None = None
+    ) -> list[dict]:
+        """하이브리드 검색. source_types를 주면 해당 네임스페이스로만 한정(기본 None=전체).
+
+        source_types는 management_kb_documents.source_type 값
+        (예: platform_guide·persona_methodology·simulation_trust·meta_reference·kobaco_baseline).
+        """
         emb = await self.embed(query)
         pool = max(k * 3, 8)  # 융합 전 각 채널에서 넉넉히 가져온다
         dist = ManagementKbChunk.embedding.cosine_distance(emb).label("dist")
+        vec_stmt = select(
+            ManagementKbChunk.id,
+            ManagementKbChunk.source,
+            ManagementKbChunk.title,
+            ManagementKbChunk.chunk,
+            dist,
+        )
+        if source_types:
+            vec_stmt = vec_stmt.join(
+                ManagementKbDocument,
+                ManagementKbChunk.document_id == ManagementKbDocument.id,
+            ).where(ManagementKbDocument.source_type.in_(source_types))
+        vec_stmt = vec_stmt.order_by(dist).limit(pool)
+
+        if source_types:
+            kw_sql, kw_params = _KW_SQL_TYPED, {"q": query, "lim": pool, "types": source_types}
+        else:
+            kw_sql, kw_params = _KW_SQL, {"q": query, "lim": pool}
+
         async with self._sf() as db:
-            vec = (
-                await db.execute(
-                    select(
-                        ManagementKbChunk.id,
-                        ManagementKbChunk.source,
-                        ManagementKbChunk.title,
-                        ManagementKbChunk.chunk,
-                        dist,
-                    )
-                    .order_by(dist)
-                    .limit(pool)
-                )
-            ).all()
-            kw = (await db.execute(_KW_SQL, {"q": query, "lim": pool})).all()
+            vec = (await db.execute(vec_stmt)).all()
+            kw = (await db.execute(kw_sql, kw_params)).all()
         return self._fuse(vec, kw, k)
 
     @staticmethod
