@@ -255,10 +255,12 @@
 ### 2-1. 루프 프롬프트 (집에서 — 복붙)
 
 ```
-/loop docs/chat/tasklist.md 를 읽어. 단일 브랜치(feat/chat-doyeon)에서 남은 ⬜를 끝까지 진행한다. A1·G5는 완료(✅). 제너 403 해소됨(image_generation 실호출 OK). 매 반복:
-1) 전제는 최초 1회만 — 개인 DB(ep-soft-band)·서버(8000/3000)·폰트·OPENAI_API_KEY·Preview 로그인. 8000이 안 떠 있으면 cd backend && uv run dev.py로 클린 재기동부터(좀비 있으면 작업관리자/재부팅). 통과 후 생략.
+/loop docs/chat/tasklist.md 를 읽어. 단일 브랜치(feat/chat-doyeon)에서 남은 ⬜를 끝까지 진행한다. A1·G5는 완료(✅). 제너 403 해소됨(image_generation 실호출 OK).
+★ 서버는 도연님이 직접 띄워둠 — 프론트 3000(HMR), 백 8000(--reload). **새 dev 서버나 백그라운드 쉘을 띄우지 말 것.** 코드 변경은 reload/HMR로 자동 반영된다(ruff/tsc/lint 같은 1회성 명령은 실행 OK).
+매 반복:
+1) 전제는 최초 1회만 — 개인 DB(ep-soft-band)·폰트·OPENAI_API_KEY·Preview 로그인 확인. 서버는 이미 떠 있으니 기동/재기동하지 말 것. 통과 후 생략.
 2) §1 표에서 의존 충족·⬜인 가장 위 1개. 권장 순서: G6→LOOP→AB→G7→F13→N5→N6→L9→V6→V7→G1→G2→G4→F8→V3→N3→X1→X2→C4. S2·S5·G8은 보류로 건너뛴다. 명세는 §1-A(새 작업 ★·X1·X2·C4)·§4(기존).
-3) 끝까지 구현. 코드 변경 시 ruff/tsc/lint 통과. **검증은 "떴다"로 끝내지 말 것** — Claude Preview 직접 구동 + 바닥 사실 확인(DB 직접 조회·새로고침 복원·엣지/에러 유발·콘솔 무에러), admin·company·user 3역할 재현. 무엇을 검증했고 무엇은 안 했는지 명시.
+3) 끝까지 구현(코드 변경 시 ruff/tsc/lint 통과) → **태스크를 마칠 때마다 반드시 Claude Preview(preview_*)로 직접 테스트.** 떠 있는 3000/8000을 쓰고(preview_list로 기존 서버 재사용, 새로 띄우지 말 것), "떴다"로 끝내지 말 것 — 바닥 사실 확인(DB 직접 조회·새로고침 복원·엣지/에러 유발·콘솔 무에러), admin·company·user 3역할 재현. 무엇을 검증했고 무엇은 안 했는지 명시.
 - 제너는 이미지 생성이라 ~1~2분·비용 실호출 — 완료까지 대기, 불필요한 반복 자제.
 - 버그 발견하면 그 자리에서 고치고 커밋. 완료 시 ✅ + 시맨틱 커밋(타입: 한국어).
 - 한 반복 1태스크. 공유부(core/ 기존 컬럼·api/main.py·공용 tools/)는 append-only·시그니처 불변. push는 도연님 요청 시에만(main·--force 금지).
@@ -752,3 +754,140 @@
 ## 5. 완료 작업
 
 > 완료(✅) 태스크의 상세 명세·진행 로그는 git 로그 참조(이전 §5/§4-L 등). 남은/새 작업은 §1 표·§1-A·§4(부분)에 있다.
+
+---
+
+## 6. LangGraph 메모리 연결 (숏텀·롱텀·시맨틱) — 2026-06-26
+
+> 이 섹션은 **이 프로젝트를 처음 보는 사람/LLM**이 바로 이어서 작업할 수 있도록 self-contained 하게 작성했다.
+> 목표: 채팅 어시스턴트의 **숏텀 메모리(대화 맥락) + 롱텀 메모리(프로젝트 누적 지식)**를 LangGraph 오케스트레이터에 제대로 연결해 답변 품질을 올린다.
+> (§0~§4의 환경·계정·실행 명령·협업 규칙을 그대로 따른다. 여기선 메모리 작업만 다룬다.)
+
+### 6-0. 핵심 개념 (용어집)
+
+- **LangGraph 오케스트레이터** — 채팅 한 턴을 `classify(의도분류) → route → 도메인 노드(management/simulation/generator/gen_result/advise)`로 처리하는 상태 그래프. 본체 `backend/domain/chat/orchestrator.py`의 `build_chat_orchestrator()` → `_ask_full()`.
+- **체크포인터(checkpointer)** — LangGraph가 `thread_id`별로 그래프 상태(`messages` 등)를 저장·복원하는 장치. 다음 턴에 대화 맥락을 이어준다. `thread_id = 채팅 session_id`(매니지 서브에이전트만 `{session_id}:management`로 분리).
+- **숏텀 메모리** — "지금 이 대화"의 맥락(최근 메시지 + 10턴 초과 시 요약).
+- **롱텀 메모리** — 세션을 넘어 "이 프로젝트(project_id)" 단위로 누적되는 지식(과거 시뮬/생성 입력·사용자 선호·세션 요약).
+- **시맨틱 검색** — 질문을 임베딩(`text-embedding-3-small`, 1536차원)해 의미가 가까운 항목을 pgvector 코사인 유사도로 top-k 조회(최신순 정렬과 대비).
+
+### 6-1. 현재 메모리 아키텍처 (작업 시작 시점 상태)
+
+| 종류 | 저장소 | 코드 | 상태 |
+| --- | --- | --- | --- |
+| 숏텀 — 대화 기록(영구) | `chat_messages` 테이블 | `domain/chat/history.py append_turn` (라우터 `chat.py _persist`가 매 턴 호출) | ✅ 동작. 진짜 영구 기록 |
+| 숏텀 — 그래프 상태(캐시) | LangGraph 체크포인터 | `domain/management/assistant/checkpointer.py` | ✅ 단 **Windows 로컬=MemorySaver(휘발)**, 운영 Linux=AsyncPostgresSaver(Neon 영속) |
+| 숏텀 — 대화 요약 | `chat_long_term_memory(memory_type=session_summary)` | `history.summarize_and_compress` | ✅ 10턴 초과 시 앞부분 LLM 요약 |
+| 롱텀 — 실행 입력/프로파일 | `chat_long_term_memory` | `history.save_long_term_memory` · `infer_profile_from_execution_history` | ✅ sim/gen 실행 입력·프로파일 누적(`project_id` 있을 때만) |
+| 롱텀 — **시맨틱 검색** | `chat_long_term_memory.embedding vector(1536)` | `history.search_long_term_memory` | ⚠️ **코드 완료, DB 마이그레이션·백필 미적용**(M1·M2) |
+| 브랜드 프로파일 | `chat_brand_profiles` | `history.get/upsert_brand_profile` | ✅ 프로젝트별 톤·타깃·카테고리 기억 |
+| 도메인 KB(RAG) | `*_kb_chunks`(pgvector) | `domain/*/assistant/retriever.py`, `domain/chat/retriever.py` | ✅ ReAct 도구 `search_kb`로 검색 |
+
+**요청 한 턴 흐름** (메모리 주입 지점):
+```
+프론트 POST /api/chat/complete (SSE)
+ → api/routers/chat.py chat_complete()  (ChatTurn 구성, SSE 스트리밍, _persist→append_turn 저장)
+ → domain/chat/orchestrator.py _ask_full()
+     · (단축 분기) /비교·리포트·템플릿·배치시뮬·브랜드설정 → 위젯 즉시 반환
+     · ★메모리 주입: ltm = history.search_long_term_memory(project_id, question, k=4)   ← 시맨틱(완료)
+                     + session_summary 보강 + brand = get_brand_profile(project_id)
+     · LangGraph 그래프 ainvoke(thread_id = session_id)
+         classify → route →
+           ├─ advise_node     : ltm·brand·CLIO KB를 시스템 프롬프트에 주입 (★현재 메모리 쓰는 유일 노드)
+           ├─ management_node : management 서브에이전트(별도 thread) — 메모리 미주입(M3 대상)
+           ├─ simulation_node : 위젯/목록 or simulation 서브에이전트 — 메모리 미주입(M3 대상)
+           ├─ generator_node  : 위젯/목록 or generator 서브에이전트 — 메모리 미주입(M3 대상)
+           └─ gen_result_node : 생성결과 분석·재시뮬 제안
+```
+
+**핵심 파일 맵**
+| 파일 | 역할 |
+| --- | --- |
+| `backend/domain/chat/orchestrator.py` | LangGraph 오케스트레이터. 메모리 주입 지점(`_ask_full` 진입부·`advise_node`·`_format_ltm`/`_format_brand`) |
+| `backend/domain/chat/history.py` | 세션·메시지·롱텀메모리·브랜드·템플릿 영속화 + 요약 + **시맨틱 검색**(`_memory_text`·`_embed_memory`·`search_long_term_memory`) |
+| `backend/domain/chat/retriever.py` | CLIO KB pgvector 검색기(시맨틱 검색의 본보기 패턴) |
+| `backend/domain/chat/kb_ingest.py` | `EMBEDDING_MODEL = text-embedding-3-small` |
+| `backend/domain/management/assistant/checkpointer.py` | LangGraph 체크포인터 싱글턴(PG/Memory 분기) |
+| `backend/core/models.py` | ORM. `ChatLongTermMemory.embedding Vector(1536)` 추가됨 |
+| `backend/alembic/versions/026_add_chat_ltm_embedding.py` | 임베딩 컬럼 마이그레이션(head 025 → 026) |
+
+### 6-2. 이미 완료된 작업 (다시 하지 말 것)
+
+롱텀 **시맨틱 검색 코드** 구현 완료(2026-06-26, 미커밋 상태일 수 있음 — `git status` 확인):
+- `core/models.py` — `ChatLongTermMemory.embedding: Vector(1536)` nullable 컬럼.
+- `alembic/versions/026_add_chat_ltm_embedding.py` — 임베딩 컬럼 추가(`CREATE EXTENSION vector` + `ADD COLUMN IF NOT EXISTS`).
+- `history.py` — `_memory_text()`(직렬화), `_embed_memory()`(임베딩, 풀모드+키 best-effort), `search_long_term_memory()`(코사인 top-k, 임베딩/키 없으면 최신순 폴백), `save_long_term_memory()`에 임베딩 저장 추가.
+- `orchestrator.py` `_ask_full` 진입부: `get_long_term_memory(limit=3)` → `search_long_term_memory(question, k=4)` 교체.
+- Ruff 통과. (런타임 import 검증은 M0.)
+- 참고 노트: `docs/chat/semantic-ltm.md`(이 섹션으로 흡수됨 — 중복이면 정리 가능).
+
+### 6-3. 태스크 (M0~M6)
+
+> 각 태스크: 목적 / 배경 / 대상 파일 / 단계 / 완료 조건 / 검증 / 의존 / 주의.
+> 우선순위: 🔴 필수 · 🟡 품질 · 🟢 선택.
+
+#### 🔴 M0. 시맨틱 검색 코드 런타임 검증
+- **목적** 추가한 코드가 import·실행 단계에서 안 깨지는지 확인.
+- **단계** `cd backend && uv run python -c "from domain.chat import history, orchestrator; from core import models; print(hasattr(history,'search_long_term_memory'), hasattr(models.ChatLongTermMemory,'embedding'))"` → `True True`.
+- **완료 조건** import 성공 + 두 속성 존재.
+- **주의** `uv` 첫 import는 LangChain 로딩으로 수십 초 걸릴 수 있음. **반드시 절대경로**(`cd /c/doyeon/click-me/backend`)로 — 작업 디렉토리가 리셋되면 `No module named 'domain'` 발생.
+
+#### 🔴 M1. DB 마이그레이션 적용 (026)
+- **목적** `chat_long_term_memory.embedding` 컬럼을 실제 Neon DB에 생성. 적용 전엔 저장·검색이 실패한다.
+- **단계**
+  1. `cd backend && uv run alembic heads` 로 head 확인.
+  2. ⚠️ **이 프로젝트는 과거 병렬 브랜치로 리비전 번호가 일부 중복**(019·020·021 다수). `alembic upgrade head`가 *multiple heads* 에러를 낼 수 있다. heads가 2개 이상이면 체인 정리(또는 `alembic merge`) 먼저.
+  3. 단일(`026`)이면 `uv run alembic upgrade head`.
+  4. 우회(불가피 시): `CREATE EXTENSION IF NOT EXISTS vector; ALTER TABLE chat_long_term_memory ADD COLUMN IF NOT EXISTS embedding vector(1536);` (단 `alembic_version` 테이블과 어긋나지 않게).
+- **완료 조건** `\d chat_long_term_memory`에 `embedding vector(1536)` 존재.
+- **검증** 채팅에서 시뮬/생성 실행 → `SELECT memory_type,(embedding IS NOT NULL) FROM chat_long_term_memory ORDER BY created_at DESC LIMIT 5;` 신규 행에 임베딩 채워짐.
+- **의존** M0. **협업 주의** DB 모델·마이그레이션은 공통부 — 사전 공지(CLAUDE.md 협업 규칙).
+
+#### 🟡 M2. 기존 롱텀 메모리 행 임베딩 백필
+- **목적** 마이그레이션 이전 행은 `embedding=NULL`이라 시맨틱 검색에서 빠진다. 과거 메모리도 검색되게 채운다.
+- **대상** 일회성 스크립트 `backend/scripts/backfill_ltm_embedding.py`(신규).
+- **단계** `embedding IS NULL` 행 조회 → `history._memory_text(memory_type, content)` 텍스트화 → 임베딩 → `UPDATE ... SET embedding`. 배치(예 100건)·실패 skip·재실행 멱등.
+- **완료 조건** `SELECT count(*) FROM chat_long_term_memory WHERE embedding IS NULL;` 0(의도적 제외분 제외).
+- **검증** 과거에 다룬 주제를 질문 → 관련 과거 메모리가 top-k에 등장.
+- **의존** M1.
+
+#### 🟡 M3. 메모리 주입 범위를 도메인 노드로 확대
+- **목적** 현재 롱텀 메모리(`state["ltm"]`)는 `advise_node`에서만 주입(`_format_ltm`). 시뮬·생성·매니지 답변에도 같은 맥락을 주입해 전 영역 일관성 확보.
+- **배경** 도메인 노드는 별도 서브에이전트(`AssistantRequest`/`AskRequest` 계약)를 호출 → 메모리를 넘기려면 계약/시그니처를 손봐야 한다.
+- **대상** `orchestrator.py`(`simulation_node`·`generator_node`·`management_node`) · `core/assistant.py`(`AssistantRequest`) · `domain/management/assistant/contracts.py`(`AskRequest`) · 각 서브에이전트 `agent.py`/`graph.py`.
+- **단계**
+  1. `AssistantRequest`/`AskRequest`에 `memory_preamble: str | None`(기본 None → 하위호환) 옵션 필드 추가.
+  2. 노드에서 `_format_ltm(state.get("ltm"))` + `_format_brand(state.get("brand"))`를 preamble로 전달.
+  3. 서브에이전트가 preamble을 system 프롬프트 앞에 덧붙이도록 수정.
+- **완료 조건** 시뮬/생성/매니지 답변이 과거 프로젝트 맥락(타깃·카테고리)을 반영. 기존 호출부 무수정으로도 동작(옵션 필드).
+- **검증** 메모리가 쌓인 프로젝트에서 도메인 질문 → 답변에 맥락 반영. 기존 pytest 그린 유지.
+- **의존** M1. **경계 주의** 서브에이전트는 각 팀 소유 → `contracts/` 스키마로만 교환, 도메인 내부 직접 import 금지(CLAUDE.md 협업 규칙).
+
+#### 🟢 M4. 숏텀 체크포인터 로컬 영속화 (선택)
+- **목적** Windows 로컬에서도 그래프 상태를 재시작 후 유지(현재 MemorySaver=휘발, 운영 Linux만 Neon 영속).
+- **배경** psycopg-async가 Windows ProactorEventLoop와 비호환이라 로컬은 의도적으로 건너뜀. 단 `chat_messages` DB + 클라이언트 history 시드로 대화는 복원되므로 **실사용엔 문제 없음** → 선택.
+- **대상** `domain/management/assistant/checkpointer.py`.
+- **선택지** (a) 그대로 둔다(권장) (b) WSL2(Linux)에서 백엔드 실행 (c) `langgraph.checkpoint.sqlite AsyncSqliteSaver`로 로컬 파일 체크포인터 폴백 추가.
+- **완료 조건** (선택 시) 로컬 재시작 후에도 같은 `session_id`로 그래프 맥락 복원.
+
+#### 🟡 M5. 메모리 동작 테스트 추가
+- **목적** 회귀 방지(시맨틱 검색·폴백·요약 경로).
+- **대상** `backend/tests/`(기존 채팅 테스트 위치 확인 후 추가).
+- **단계** ① `_memory_text` 직렬화 단위 테스트 ② `search_long_term_memory` 키 없음(use_mock) → 최신순 폴백 반환(임베딩 mock) ③ `save_long_term_memory` project_id 없으면 no-op, 있으면 적재(임베딩 mock).
+- **완료 조건** `uv run pytest tests/ -v` 그린.
+- **의존** M0.
+
+#### 🟡 M6. 롱텀 메모리 end-to-end 검증 (기존 L9와 통합 가능)
+- **목적** 시뮬/제너 입력이 기억돼 명시 언급 없이도 채팅에 반영되는지 Preview로 확인. (§1-A의 ★L9와 동일 취지 — 시맨틱 적용 후 재검증.)
+- **단계** 프로젝트 선택 → 시뮬 1회·생성 1회 실행(롱텀 입력+임베딩 누적) → 10턴 이상 대화(`session_summary` 생성) → 과거 주제를 다시 질문 → 관련 메모리가 답변에 반영되는지 → DB에서 `embedding IS NOT NULL` 신규 행 확인.
+- **완료 조건** 명시 언급 없이 브랜드·제품군·과거 입력 인지 응답. (안 되면 끊긴 지점 수정 후 재검증.)
+- **의존** M1·M3.
+
+### 6-4. 진행 체크리스트
+- [ ] M0 런타임 import 검증
+- [ ] M1 마이그레이션 026 적용
+- [ ] M2 기존 행 임베딩 백필
+- [ ] M3 도메인 노드 메모리 주입 확대
+- [ ] M4 (선택) 로컬 체크포인터 영속화
+- [ ] M5 메모리 테스트 추가
+- [ ] M6 롱텀 메모리 E2E 검증
