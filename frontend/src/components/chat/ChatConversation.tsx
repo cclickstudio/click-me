@@ -92,11 +92,6 @@ const slashCommands: SlashCommand[] = [
     label: '/도움말',
     desc: '사용 가능한 명령어와 예시를 봅니다',
   },
-  {
-    cmd: '/위젯',
-    label: '/위젯',
-    desc: '사용 가능한 위젯 목록을 봅니다 (개발용)',
-  },
 ];
 
 type Citation = { kind: string; source: string; title?: string };
@@ -572,18 +567,6 @@ export default function ChatConversation({
             '  "이 설정 저장해줘"',
           ].join('\n'),
           { source: 'simulation', label: '도움말' }
-        );
-        break;
-      case '/위젯':
-        addLocalAssistant(
-          [
-            '사용 가능한 위젯 목록 (개발/테스트용)',
-            '',
-            ...slashCommands
-              .filter(c => c.cmd !== '/위젯')
-              .map(c => `${c.cmd} — ${c.desc}`),
-          ].join('\n'),
-          { source: 'simulation', label: '위젯 목록' }
         );
         break;
     }
