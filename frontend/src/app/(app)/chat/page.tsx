@@ -138,6 +138,24 @@ function SendIcon() {
   );
 }
 
+function StopStreamIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+      <rect x="4" y="4" width="16" height="16" rx="2" />
+    </svg>
+  );
+}
+
+function SpeakerOffIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" />
+      <line x1="23" y1="9" x2="17" y2="15" />
+      <line x1="17" y1="9" x2="23" y2="15" />
+    </svg>
+  );
+}
+
 function TypingIndicator() {
   return (
     <div className="flex gap-3 justify-start">
@@ -184,11 +202,15 @@ export default function Page() {
   // Web Speech API 상태 — STT(마이크 입력) + TTS(읽어주기)
   const [listening, setListening] = useState(false);
   const recognitionRef = useRef<{ stop: () => void } | null>(null);
+  const voiceTextRef = useRef(''); // STT 결과를 onend에서 자동전송하기 위한 ref
   const [voiceSupported, setVoiceSupported] = useState(false);
   const [ttsSupported, setTtsSupported] = useState(false);
   const [voiceError, setVoiceError] = useState<string | null>(null);
+  const [isSpeaking, setIsSpeaking] = useState(false); // TTS 재생 중 여부
   // 시각장애 접근성 — 자동 읽기: AI 응답 완료 시 TTS 자동 재생
   const [autoRead, setAutoRead] = useState(false);
+  // 스트리밍 중지용 AbortController
+  const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -206,6 +228,7 @@ export default function Page() {
     const sw = window as SpeechWindow;
     const Ctor = sw.SpeechRecognition ?? sw.webkitSpeechRecognition;
     if (!Ctor) return;
+    setVoiceError(null);
     const rec = new Ctor();
     rec.lang = 'ko-KR';
     rec.continuous = false;
@@ -213,11 +236,19 @@ export default function Page() {
     rec.onresult = (e) => {
       let t = '';
       for (let i = 0; i < e.results.length; i++) t += e.results[i][0].transcript;
+      voiceTextRef.current = t;
       setInput(t);
     };
-    rec.onend = () => setListening(false);
+    // 인식 완료 → 텍스트가 있으면 자동 전송 (음성으로 검색)
+    rec.onend = () => {
+      setListening(false);
+      const text = voiceTextRef.current.trim();
+      voiceTextRef.current = '';
+      if (text) handleSend(text);
+    };
     rec.onerror = (e) => {
       setListening(false);
+      voiceTextRef.current = '';
       if (e.error === 'not-allowed' || e.error === 'audio-capture') {
         setVoiceError('마이크 권한이 필요해요. 주소창 왼쪽 🔒 → 사이트 설정 → 마이크 허용 후 새로고침해 주세요.');
       } else if (e.error === 'no-speech') {
@@ -230,26 +261,45 @@ export default function Page() {
   };
 
   const stopVoice = () => {
+    voiceTextRef.current = ''; // 수동 중지 시 자동전송 방지
     recognitionRef.current?.stop();
     setListening(false);
   };
 
-  // TTS: 브라우저 SpeechSynthesis로 AI 답변 읽어주기. 무료, API 키 없음.
+  // TTS: 마크다운 기호 제거 후 음성으로 읽어주기. 무료, API 키 없음.
   const speakText = (text: string) => {
     if (!window.speechSynthesis) return;
-    const u = new SpeechSynthesisUtterance(text);
+    // 마크다운 제거 — **bold**, *italic*, `code`, ## heading, - bullet 등
+    const plain = text
+      .replace(/#{1,3}\s+/g, '')
+      .replace(/\*\*(.+?)\*\*/g, '$1')
+      .replace(/\*(.+?)\*/g, '$1')
+      .replace(/`(.+?)`/g, '$1')
+      .replace(/^[-•]\s+/gm, '')
+      .replace(/^\d+\.\s+/gm, '')
+      .trim();
+    window.speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(plain);
     u.lang = 'ko-KR';
     u.rate = 1.1;
-    window.speechSynthesis.cancel(); // 이전 발화 중단
+    u.onend = () => setIsSpeaking(false);
+    u.onerror = () => setIsSpeaking(false);
+    setIsSpeaking(true);
     window.speechSynthesis.speak(u);
   };
 
-  // 운동장애 — Escape 키로 음성입력·TTS 즉시 중지
+  const stopSpeak = () => {
+    window.speechSynthesis?.cancel();
+    setIsSpeaking(false);
+  };
+
+  // 운동장애 — Escape 키로 음성입력·TTS·스트리밍 즉시 중지
   useEffect(() => {
     const onEsc = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
       if (listening) stopVoice();
-      if (window.speechSynthesis?.speaking) window.speechSynthesis.cancel();
+      if (window.speechSynthesis?.speaking) { window.speechSynthesis.cancel(); setIsSpeaking(false); }
+      abortRef.current?.abort();
     };
     document.addEventListener('keydown', onEsc);
     return () => document.removeEventListener('keydown', onEsc);
@@ -264,6 +314,10 @@ export default function Page() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isStreaming, autoRead, ttsSupported]);
 
+  const handleStopStream = () => {
+    abortRef.current?.abort();
+  };
+
   const handleSend = async (text?: string) => {
     const content = text ?? input.trim();
     if (!content || isStreaming) return;
@@ -273,11 +327,15 @@ export default function Page() {
     setInput('');
     setIsStreaming(true);
 
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
+
     try {
       const res = await fetch(`${API_BASE}/api/chat/complete`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ session_id: sessionId.current, messages: newMessages }),
+        signal: ctrl.signal,
       });
 
       if (!res.ok || !res.body) {
@@ -335,13 +393,17 @@ export default function Page() {
           }
         }
       }
-    } catch {
-      setMessages((prev) => [
-        ...prev,
-        { role: 'assistant', content: '서버에 연결할 수 없습니다. 잠시 후 다시 시도해주세요.' },
-      ]);
+    } catch (e) {
+      // AbortError는 사용자가 직접 중지한 것 — 에러 메시지 불필요
+      if (!(e instanceof Error) || e.name !== 'AbortError') {
+        setMessages((prev) => [
+          ...prev,
+          { role: 'assistant', content: '서버에 연결할 수 없습니다. 잠시 후 다시 시도해주세요.' },
+        ]);
+      }
     } finally {
       setIsStreaming(false);
+      abortRef.current = null;
     }
   };
 
@@ -581,6 +643,17 @@ export default function Page() {
               className="flex-1 px-4 py-3 rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] text-sm text-[#191F28] dark:text-[#F2F4F6] placeholder-[#B0B8C1] dark:placeholder-[#4B5563] focus:outline-none focus:border-[#3182F6] focus:ring-2 focus:ring-[#3182F6]/10 transition-colors resize-none overflow-hidden bg-white dark:bg-[#252D3D] leading-relaxed"
               style={{ maxHeight: '120px' }}
             />
+            {/* 소리 정지 — TTS 재생 중일 때만 표시 */}
+            {isSpeaking && (
+              <button
+                onClick={stopSpeak}
+                title="소리 정지"
+                aria-label="소리 정지"
+                className="p-3 rounded-xl bg-red-100 text-red-500 hover:bg-red-200 dark:bg-red-900/30 dark:text-red-400 animate-pulse transition-all shrink-0"
+              >
+                <SpeakerOffIcon />
+              </button>
+            )}
             {/* 시각장애 자동읽기 토글 — AI 응답 완료 시 TTS 자동 재생 */}
             {ttsSupported && (
               <button
@@ -614,14 +687,26 @@ export default function Page() {
                 <MicIcon />
               </button>
             )}
-            <button
-              onClick={() => handleSend()}
-              disabled={!input.trim() || isStreaming}
-              aria-label="메시지 전송"
-              className="p-3 bg-[#3182F6] text-white rounded-xl hover:bg-[#1B6EEB] disabled:opacity-30 disabled:cursor-not-allowed transition-all shrink-0"
-            >
-              <SendIcon />
-            </button>
+            {/* 전송 버튼 — 스트리밍 중에는 중지 버튼으로 대체 */}
+            {isStreaming ? (
+              <button
+                onClick={handleStopStream}
+                title="응답 중지"
+                aria-label="AI 응답 중지"
+                className="p-3 bg-[#EF4444] text-white rounded-xl hover:bg-[#DC2626] transition-all shrink-0"
+              >
+                <StopStreamIcon />
+              </button>
+            ) : (
+              <button
+                onClick={() => handleSend()}
+                disabled={!input.trim()}
+                aria-label="메시지 전송"
+                className="p-3 bg-[#3182F6] text-white rounded-xl hover:bg-[#1B6EEB] disabled:opacity-30 disabled:cursor-not-allowed transition-all shrink-0"
+              >
+                <SendIcon />
+              </button>
+            )}
           </div>
           {voiceError && (
             <p className="text-center text-xs text-amber-600 dark:text-amber-400 mt-2">
