@@ -6,7 +6,16 @@
 
 import pytest
 
-from api.routers.chat import _format_memory, _get_memory, _resolve_identity
+from api.routers.chat import _format_memory, _get_memory, _is_management, _resolve_identity
+
+
+def test_is_management_routes_benchmark_and_platform_questions():
+    """CPM·메타·틱톡·벤치마크 질문은 RAG(OpenAI)로 — Gemini로 새지 않게."""
+    assert _is_management("메타는 cpm이 어때?")
+    assert _is_management("틱톡은 cpm이 어때?")
+    assert _is_management("CPM 벤치마크 알려줘")
+    assert _is_management("입찰 전략 바꿔줘")
+    assert not _is_management("오늘 날씨 어때?")  # 일반 질문은 Gemini
 
 
 def test_format_memory_empty_returns_none():

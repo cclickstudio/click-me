@@ -63,6 +63,8 @@ _MGMT_KEYWORDS: frozenset[str] = frozenset(
         "게재",
         "광고",
         "ctr",
+        "cpm",
+        "cpc",
         "roas",
         "cvr",
         "클릭률",
@@ -79,6 +81,20 @@ _MGMT_KEYWORDS: frozenset[str] = frozenset(
         "소재",
         "예측대로",
         "매니지먼트",
+        # 벤치마크·플랫폼·세그먼트 질문도 RAG(OpenAI)로 — Gemini로 새지 않게.
+        "벤치마크",
+        "메타",
+        "틱톡",
+        "구글",
+        "네이버",
+        "카카오",
+        "업종",
+        "연령대",
+        "구매의향",
+        "입찰",
+        "타깃",
+        "타겟",
+        "오디언스",
     }
 )
 
