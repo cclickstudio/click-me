@@ -71,7 +71,7 @@ def build_simulation_agent(settings):
 
     async def _ask(req: AssistantRequest) -> AssistantResult:
         config = {
-            "run_name": "simulation_assistant",
+            "run_name": "시뮬레이션 어시스턴트",
             "tags": ["simulation", "assistant"],
             "metadata": {"simulation_id": req.context_id, "ad_id": req.ad_id},
         }

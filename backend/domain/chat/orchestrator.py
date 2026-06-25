@@ -1010,7 +1010,7 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
         # L2-2: 체크포인터 thread_id는 채팅 session_id로 고정한다.
         thread_id = turn.thread_id or sid or f"chat-transient:{turn.project_id or 'anonymous'}"
         config = {
-            "run_name": "assistant_chat",
+            "run_name": "채팅",
             "tags": ["chat", "orchestrator"],
             "metadata": {
                 "ad_id": turn.ad_id,

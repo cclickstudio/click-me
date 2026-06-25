@@ -158,7 +158,7 @@ class DebateService:
 
         # Q&A 1회(참가자 순차 답변)를 LangSmith 단일 트레이스로 묶는다 — 내부 answer_question
         # LLM 호출(wrap된 클라이언트)이 이 부모 run의 자식으로 중첩된다(토론 묶기와 동일 패턴).
-        @traceable(run_type="chain", name="Q&A", metadata={"question": question[:100]})
+        @traceable(run_type="chain", name="토론 Q&A", metadata={"question": question[:100]})
         async def _qa_traced() -> AsyncIterator[str]:
             async for chunk in stream_qa(result, question, debater):
                 yield chunk
