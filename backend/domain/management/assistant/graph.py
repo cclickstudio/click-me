@@ -113,8 +113,8 @@ def build_graph(settings, retriever, llm, checkpointer=None):
     @tool
     async def propose_action(action_type: str, campaign_id: str | None = None) -> dict:
         """운영 변경을 '제안'한다(실행 안 함). 사람 승인이 필요한 Tier면 그래프가 멈춘다.
-        action_type: PAUSE_CAMPAIGN|ACTIVATE_CAMPAIGN|INCREASE_BUDGET|
-        DECREASE_BUDGET|REPLACE_CREATIVE."""
+        action_type: PAUSE_CAMPAIGN|ACTIVATE_CAMPAIGN|INCREASE_BUDGET|DECREASE_BUDGET|
+        REPLACE_CREATIVE|EXPAND_AUDIENCE|CHANGE_BID_STRATEGY|CREATE_CAMPAIGN."""
         # 본체는 노드에서 인터셉트(interrupt 처리)되어 직접 실행되지 않는다.
         return {"action_type": action_type, "campaign_id": campaign_id}
 
