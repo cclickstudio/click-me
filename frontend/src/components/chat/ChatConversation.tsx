@@ -12,6 +12,7 @@ import SimResultWidget from './SimResultWidget';
 import DebateStreamWidget from './DebateStreamWidget';
 import DebateSummaryWidget from './DebateSummaryWidget';
 import GenFormWidget from './GenFormWidget';
+import GenResultWidget from './GenResultWidget';
 import SimGenListWidget from './SimGenListWidget';
 import ApprovalWidget, { type ApprovalSpec } from './ApprovalWidget';
 import BatchSimWidget from './BatchSimWidget';
@@ -134,6 +135,7 @@ type WidgetSpec = {
     simulation_id?: string; // sim_result·debate_stream 위젯 — 결과/토론 연결용
     run_id?: string; // debate_stream·debate_summary 위젯 — 토론 스트림/결과 조회용
     sample_size?: number; // sim_input 위젯 — 실제 돌린 가상 소비자 수
+    generation_id?: string; // gen_result 위젯 — 생성 결과(후보·이미지) 조회용
   };
 };
 type SourceMeta = {
@@ -1149,6 +1151,30 @@ export default function ChatConversation({
     ]
   );
 
+  // 제너 완료 → 시뮬과 동일하게 어시스턴트가 결과를 준다.
+  // ① 결과를 assistant gen_result 위젯(가로 스크롤 이미지)으로 영속·표시.
+  // ② "[생성결과] …" 신호를 오케스트레이터에 보내 재시뮬 제안·루프 상태를 받는다
+  //    (이 user 메시지는 렌더에서 숨겨 버블로 안 보인다).
+  const handleGenComplete = useCallback(
+    async (gid: string, count: number) => {
+      await appendWidgetMessages([
+        {
+          content: `광고 시안 ${count}개가 나왔어요.`,
+          meta: {
+            source: 'generator',
+            label: '광고 생성',
+            widget: { type: 'gen_result', data: { generation_id: gid } },
+          },
+        },
+      ]);
+      handleSend(`[생성결과] 광고 시안 ${count}개 생성 완료`, {
+        kind: 'gen',
+        id: gid,
+      });
+    },
+    [appendWidgetMessages, handleSend]
+  );
+
   return (
     <div className='relative flex flex-col h-full min-h-0 bg-white dark:bg-[#0F1117] transition-colors'>
       {/* 맨 아래로 버튼(P11) — 메시지가 있고 사용자가 위로 스크롤했을 때만 */}
@@ -1239,12 +1265,26 @@ export default function ChatConversation({
           <div className='max-w-2xl mx-auto px-4 py-6 space-y-6'>
             {messages.map((msg, i) => {
               if (msg.role === 'assistant' && msg.content === '') return null;
+              // 생성 결과 신호([생성결과] …)는 오케스트레이터 재시뮬 제안용 system 메시지 —
+              // user 버블로 노출하지 않는다(결과는 assistant gen_result 위젯이 보여준다).
+              if (msg.role === 'user' && msg.content?.startsWith('[생성결과]')) {
+                return null;
+              }
               // 이미 결과가 나온 시뮬 입력 위젯은 메시지째 숨긴다 — 결과/토론 위젯이 대신 표시된다.
               if (
                 msg.meta?.widget?.type === 'sim_form' &&
                 messages
                   .slice(i + 1)
                   .some(m => m.meta?.widget?.type === 'sim_result')
+              ) {
+                return null;
+              }
+              // 제너도 동일 — 결과가 나온 gen_form은 숨기고 gen_result 위젯이 대신 표시된다.
+              if (
+                msg.meta?.widget?.type === 'gen_form' &&
+                messages
+                  .slice(i + 1)
+                  .some(m => m.meta?.widget?.type === 'gen_result')
               ) {
                 return null;
               }
@@ -1433,8 +1473,15 @@ export default function ChatConversation({
                         initial={msg.meta.widget.data}
                         initialImage={msg.imageFile}
                         onResult={handleSend}
+                        onComplete={handleGenComplete}
                       />
                     )}
+                    {msg.meta?.widget?.type === 'gen_result' &&
+                      msg.meta.widget.data?.generation_id && (
+                        <GenResultWidget
+                          generationId={msg.meta.widget.data.generation_id}
+                        />
+                      )}
                     {msg.meta?.widget?.type === 'sim_list' && (
                       <SimGenListWidget
                         domain='sim'

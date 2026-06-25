@@ -28,11 +28,14 @@ export default function GenFormWidget({
   initial,
   initialImage,
   onResult,
+  onComplete,
 }: {
   initial?: Initial;
   initialImage?: File; // 채팅에서 첨부한 상품 이미지
   // 완료 시 결과 요약(+결과 참조)을 채팅으로 보내 내역 영속화·다음 단계 제안
   onResult?: (summary: string, resultRef?: { kind: 'sim' | 'gen'; id: string }) => void;
+  // 완료 시 어시스턴트 결과 위젯을 띄우는 경로(시뮬과 동일). 있으면 onResult 대신 이걸 쓴다.
+  onComplete?: (generationId: string, candidateCount: number) => void;
 }) {
   const router = useRouter();
   const [phase, setPhase] = useState<Phase>('form');
@@ -77,8 +80,13 @@ export default function GenFormWidget({
       }
       setDetail(d);
       setPhase('done');
-      if (onResult) {
-        onResult(`[생성결과] 광고 시안 ${(d.candidates ?? []).length}개 생성 완료`, {
+      const count = (d.candidates ?? []).length;
+      // 어시스턴트 결과 위젯 경로(onComplete)가 있으면 그걸로 — 결과를 assistant가 준다.
+      // 없으면 구 경로(onResult: [생성결과] user 메시지) 폴백.
+      if (onComplete) {
+        onComplete(gid, count);
+      } else if (onResult) {
+        onResult(`[생성결과] 광고 시안 ${count}개 생성 완료`, {
           kind: 'gen',
           id: gid,
         });
