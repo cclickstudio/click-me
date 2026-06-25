@@ -63,6 +63,12 @@ class ProposalSection(BaseModel):
     action_type: str
     rationale: str | None = None
     proposal_id: str | None = None
+    # 스펙 2 — 미리보기(실행 미연결). 정본 ID(proposal_id) 아님.
+    preview_id: str | None = None
+    budget_before_krw: int | None = None
+    budget_after_krw: int | None = None
+    tier: str | None = None
+    executable: bool = False
 
 
 class ReviewSection(BaseModel):
@@ -85,6 +91,15 @@ class EmptyStateSection(BaseModel):
     text: str
 
 
+class DiagnosisSection(BaseModel):
+    kind: Literal["diagnosis"] = "diagnosis"
+    title: str | None = None
+    anomaly_type: str
+    status: str
+    confidence: float
+    hypothesis: str = ""
+
+
 CardSection = Annotated[
     SummarySection
     | MetricsSection
@@ -92,7 +107,8 @@ CardSection = Annotated[
     | ProposalSection
     | ReviewSection
     | EvidenceSection
-    | EmptyStateSection,
+    | EmptyStateSection
+    | DiagnosisSection,
     Field(discriminator="kind"),
 ]
 

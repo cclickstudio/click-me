@@ -60,3 +60,32 @@ def test_trace_info_turn_id_only():
     t = TraceInfo(turn_id="mgmt-s1")
     assert t.turn_id == "mgmt-s1"
     assert t.raw is None
+
+
+def test_diagnosis_section_round_trips():
+    from domain.management.assistant.chat_cards import ChatCard, DiagnosisSection
+
+    card = ChatCard(
+        sections=[
+            DiagnosisSection(
+                anomaly_type="bid_loss", status="confirmed", confidence=1.0, hypothesis="입찰 패배"
+            )
+        ]
+    )
+    d = card.model_dump(mode="json")["sections"][0]
+    assert d["kind"] == "diagnosis"
+    assert d["anomaly_type"] == "bid_loss" and d["confidence"] == 1.0
+
+
+def test_proposal_section_preview_fields():
+    from domain.management.assistant.chat_cards import ProposalSection
+
+    p = ProposalSection(
+        action_type="INCREASE_BUDGET",
+        preview_id="preview_x",
+        budget_before_krw=100,
+        budget_after_krw=150,
+    )
+    dumped = p.model_dump(mode="json")
+    assert dumped["preview_id"] == "preview_x"
+    assert dumped["budget_before_krw"] == 100 and dumped["executable"] is False
