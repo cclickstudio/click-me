@@ -282,6 +282,7 @@ def build_action_proposal_from_diagnosis(
     campaign_id: str,
     expected_state_version: str,
     approval_policy_version: str,
+    preview_id: str | None = None,
     run_days: int = 7,
     ttl: timedelta = timedelta(minutes=10),
     now: datetime | None = None,
@@ -301,8 +302,10 @@ def build_action_proposal_from_diagnosis(
             target_object_ids=(campaign_id,),
             action_type=pv.action_type,
             action_tier=tier,
+            # preview_id는 trace용(ActionProposal 18필드 잠금 → evidence_metrics에 보관, §4)
             evidence_metrics={"source": "chat_finalize",
-                              "confidence": dx.diagnosis.confidence if dx.diagnosis else 0.0},
+                              "confidence": dx.diagnosis.confidence if dx.diagnosis else 0.0,
+                              "preview_id": preview_id},
             metrics_as_of=now,
             hypothesis=dx.diagnosis.hypothesis if dx.diagnosis else "",
             confidence=dx.diagnosis.confidence if dx.diagnosis else 0.0,
@@ -371,7 +374,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.models import ActionProposalRow
@@ -391,7 +394,7 @@ class ProposalStore:
                 ad_account_id=p.ad_account_id,
                 action_type=p.action_type,
                 action_tier=int(p.action_tier),
-                status=str(p.status),
+                status=p.status.value,  # StrEnum .value 명시 — "pending"으로 저장(복원 일치)
                 budget_before_krw=p.budget_before_krw,
                 budget_after_krw=p.budget_after_krw,
                 max_total_spend_krw=p.max_total_spend_krw,
@@ -447,8 +450,25 @@ class ProposalStore:
             )
         ).scalar_one_or_none()
         if row is not None:
-            row.status = str(status)
+            row.status = status.value
             await self._db.commit()
+
+    async def try_claim(self, proposal_id: str) -> bool:
+        """원자적 PENDING→APPROVED 전이. 정확히 1회만 True(동시 요청·중복 클릭 가드).
+
+        executor 내부 멱등(approval_id 파생)은 approve()마다 키가 바뀌어 요청 간 보장이 약하므로,
+        proposal_id 단위 compare-and-set이 cross-request 정확히-1회의 정본 가드다(스펙 §6).
+        """
+        res = await self._db.execute(
+            update(ActionProposalRow)
+            .where(
+                ActionProposalRow.proposal_id == proposal_id,
+                ActionProposalRow.status == ProposalStatus.PENDING.value,
+            )
+            .values(status=ProposalStatus.APPROVED.value)
+        )
+        await self._db.commit()
+        return res.rowcount == 1
 ```
 
 - [ ] **Step 4: 통과 확인** → PASS
@@ -570,6 +590,7 @@ def build_execution_result_card(
         action_type=proposal.action_type,
         result_status=rs,
         proposal_id=proposal.proposal_id,
+        preview_id=proposal.evidence_metrics.get("preview_id"),  # trace(§4): preview_id→proposal_id→run_id
         budget_before_krw=proposal.budget_before_krw,
         budget_after_krw=proposal.budget_after_krw,
         run_id=run_id,
@@ -702,7 +723,7 @@ async def finalize_proposal_endpoint(
     proposal = build_action_proposal_from_diagnosis(
         dx, tenant_id=tenant_id, ad_account_id=ad_account_id, campaign_id=body.campaign_id,
         expected_state_version="state_v1", approval_policy_version=APPROVAL_POLICY_VERSION,
-        ttl=_TTL, now=now,
+        preview_id=body.preview_id, ttl=_TTL, now=now,
     )
     await ProposalStore(db).save(proposal)  # requires_external_approval여도 PENDING 영속(§5.4)
 
@@ -771,7 +792,42 @@ async def test_decision_approve_returns_success_card(db_session, monkeypatch):
         app.dependency_overrides.clear()
 ```
 
-(만료·reject·중복키 테스트도 같은 패턴으로 추가 — 만료는 `expires_at`을 과거로 저장, reject는 decision="reject"로 호출해 result_status=="rejected"·executor 미호출 확인, 중복키는 같은 키로 2회 호출 시 `calls["n"]==1` 확인.)
+추가 테스트(같은 패턴):
+- **만료**: `expires_at`을 과거로 저장 → approve 호출 시 `expired` 카드, executor 미호출.
+- **reject 멱등**: decision="reject" → `rejected`, executor 미호출. 같은 proposal에 reject 2회 → status REJECTED 유지·에러 없음.
+- **Tier3 서버 가드**(P1-3): `tier="TIER_3"`인 `_ok_anomaly_dx`로 finalize·저장 후 decision="approve" → `rejected` 카드, **`_execute` 미호출**(`calls["n"]==0`). FE 없이도 차단됨.
+- **병렬 중복 정확히-1회**(P1-2): 같은 proposal_id로 `decision="approve"`를 `asyncio.gather`로 10개 동시 호출 → `_execute`는 **정확히 1회**(`calls["n"]==1`), 나머지 9개는 `already_executed` 카드. (각 호출은 새 idempotency_key여도 try_claim이 1회만 통과.)
+
+```python
+@pytest.mark.asyncio
+async def test_concurrent_decisions_execute_exactly_once(db_session, monkeypatch):
+    p = build_action_proposal_from_diagnosis(
+        _ok_anomaly_dx(), tenant_id=TENANT_ID, ad_account_id="act_demo", campaign_id="camp_1",
+        expected_state_version="state_v1", approval_policy_version="v1")
+    await ProposalStore(db_session).save(p)
+    calls = {"n": 0}
+    async def fake_execute(approved, proposal, idempotency_key):
+        calls["n"] += 1
+        from domain.management.contracts.enums import ResultStatus
+        from domain.management.contracts.schemas import ActionResult
+        return ActionResult(result_id="r", approval_id="ap", status=ResultStatus.SUCCESS, idempotency_key=idempotency_key)
+    monkeypatch.setattr("api.routers.chat_management._execute", fake_execute)
+    app.dependency_overrides[get_current_user] = lambda: _fake_user()
+    app.dependency_overrides[get_db] = lambda: db_session
+    try:
+        import asyncio
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as ac:
+            from uuid import uuid4
+            async def fire():
+                return await ac.post(f"/api/chat/management/proposals/{p.proposal_id}/decision",
+                                     json={"decision": "approve", "idempotency_key": uuid4().hex, "thread_id": "mgmt-s1"})
+            await asyncio.gather(*[fire() for _ in range(10)])
+        assert calls["n"] == 1
+    finally:
+        app.dependency_overrides.clear()
+```
+
+> 병렬 테스트는 동일 `db_session`을 공유하면 SQLite 동시성 한계로 흔들릴 수 있다. Neon(Postgres) 테스트 DB거나, 세션당 분리 연결 픽스처에서 `try_claim`의 `UPDATE ... WHERE status='pending'` 원자성이 보장돼야 한다(게이트 정본). conftest 픽스처가 동시성을 못 받치면 Task4에서 Postgres 테스트 세션으로 보강.
 
 - [ ] **Step 2: 실패 확인** → FAIL
 
@@ -779,25 +835,38 @@ async def test_decision_approve_returns_success_card(db_session, monkeypatch):
 
 ```python
 # chat_management.py 에 추가
+from uuid import uuid4
+
 from domain.management.approval import approve
-from domain.management.assistant.chat_cards.models import ChatCard
+from domain.management.assistant.chat_cards.models import (
+    ChatCard, ExecutionResultSection, TraceInfo,
+)
 from domain.management.assistant.result_card import build_execution_result_card, map_result_status
 from domain.management.contracts.enums import ProposalStatus
 from domain.management.contracts.schemas import ActionResult, AUTO_APPROVER
 from domain.management.execution.executor import Executor
+from domain.management.execution.proposal_builder import requires_external_approval
 
 
 class DecisionRequest(BaseModel):
     decision: str            # "approve" | "reject"
-    idempotency_key: str
+    idempotency_key: str     # (proposal_id, idempotency_key) scope — 같은 클릭 재시도는 동일 값
     thread_id: str | None = None
 
 
-async def _execute(approved, proposal) -> ActionResult:
-    """executor 호출 격리 지점(테스트 monkeypatch). 기존 /execute와 동일 executor 사용."""
+async def _execute(approved, proposal, idempotency_key: str) -> ActionResult:
+    """executor 호출 격리 지점(테스트 monkeypatch). 기존 /execute와 동일 executor.
+
+    cross-request 정확히-1회는 라우터 try_claim이 보장한다(executor 내부 키는 approval_id 파생).
+    idempotency_key는 감사/추적 + 향후 결과 replay 키로 전달·기록한다.
+    """
     from api.routers.management import _get_executor
     executor: Executor = _get_executor()
     return await executor.execute(approved, proposal)
+
+
+def _new_turn_id() -> str:
+    return f"turn_{uuid4().hex[:12]}"  # 카드 trace id — thread/session id와 분리(§P2-3)
 
 
 @router.post("/proposals/{proposal_id}/decision")
@@ -810,14 +879,10 @@ async def decide_proposal(
     tenant_id, _ = await _resolve_tenant_account(user, db)  # execute 시점 authz
     store = ProposalStore(db)
     proposal = await store.get(proposal_id)
-    turn_id = body.thread_id or f"mgmt-{proposal_id}"
+    turn_id = _new_turn_id()  # 카드 trace(분리). 이력 저장 thread는 body.thread_id 사용(Task8).
 
     if proposal is None or proposal.tenant_id != tenant_id:
-        # 없거나 타 테넌트 — 정보 최소화: expired로 닫음(타 org 추적 차단)
-        from domain.management.contracts.schemas import ActionProposal  # 표시용 빈 카드 방지
-        raise_not_found = proposal is None
-        # 결정적 카드: proposal 없으면 만들 수 없으니 expired 안전 카드
-        return _terminal_card(proposal, "expired", turn_id) if proposal else _safe_expired(proposal_id, turn_id)
+        return _safe_expired(proposal_id, turn_id)  # 없거나 타 테넌트 — 추적 차단·안전 카드
 
     # reject — 멱등(PENDING→REJECTED 1회, 반복은 현재 상태)
     if body.decision == "reject":
@@ -825,17 +890,25 @@ async def decide_proposal(
             await store.set_status(proposal_id, ProposalStatus.REJECTED)
         return _terminal_card(proposal, "rejected", turn_id)
 
-    # approve 가드
+    # Tier3/chat-ineligible 서버 가드 — FE에만 기대지 않는다(§5.4). approve() 전에 즉시 차단.
+    if requires_external_approval(proposal.action_tier):
+        return _terminal_card(proposal, "rejected", turn_id)
+
+    # 이미 실행 / 만료 가드
     if proposal.status == ProposalStatus.EXECUTED:
         return _terminal_card(proposal, "already_executed", turn_id)
     if proposal.expires_at < datetime.now(UTC):
         await store.set_status(proposal_id, ProposalStatus.EXPIRED)
         return _terminal_card(proposal, "expired", turn_id)
 
-    # 서버 orchestration: approve()(정책 권위) → executor.execute()
+    # 원자적 claim — PENDING→APPROVED. 동시/중복은 정확히 1회만 통과(나머지는 already_executed).
+    if not await store.try_claim(proposal_id):
+        return _terminal_card(proposal, "already_executed", turn_id)
+
+    # 서버 orchestration: approve()(정책 권위·4단계 재검증) → executor.execute()
     approved = approve(proposal, approver_id=str(getattr(user, "id", AUTO_APPROVER)),
                        execution_mode=_exec_mode())
-    result = await _execute(approved, proposal)
+    result = await _execute(approved, proposal, body.idempotency_key)
     rs = map_result_status(result.status, result.failure_reason)
     await store.set_status(
         proposal_id,
@@ -849,12 +922,24 @@ def _terminal_card(proposal, result_status: str, turn_id: str) -> ChatCard:
                                        run_id=None, turn_id=turn_id, result_status=result_status)
 
 
+def _safe_expired(proposal_id: str, turn_id: str) -> ChatCard:
+    """proposal이 없거나 타 테넌트 — 최소 안전 카드(정보 최소화)."""
+    return ChatCard(
+        type="management", status="neutral",
+        sections=[ExecutionResultSection(
+            title="집행 결과", action_type="UNKNOWN", result_status="expired",
+            proposal_id=proposal_id, summary="제안을 찾을 수 없어요. 다시 검토를 요청해 주세요.",
+        )],
+        trace=TraceInfo(turn_id=turn_id),
+    )
+
+
 def _exec_mode():
     from api.routers.management import _resolved_execution_mode
     return _resolved_execution_mode()
 ```
 
-> `_safe_expired(proposal_id, turn_id)`는 proposal이 전혀 없을 때(드묾) 최소 안전 카드를 만든다. 단, 정상 흐름에선 finalize가 영속하므로 proposal은 존재한다. 구현은 `ExecutionResultSection`에 `proposal_id=proposal_id, action_type="UNKNOWN", result_status="expired", summary="제안을 찾을 수 없어요."`로 채운 ChatCard를 반환한다.
+> **정확히-1회 가드 정본은 `try_claim`(compare-and-set).** executor 내부 멱등(approval_id 파생)은 approve()마다 키가 달라 cross-request 보장이 약하고, `IdempotencyStore`도 인메모리다. 따라서 proposal_id 단위 원자적 전이로 동시·재시도 이중 집행을 막는다. `idempotency_key`는 `_execute`로 전달·기록(감사/추적)하되, executor 내부 변경(미수정 불변식)은 하지 않는다. 같은 클릭의 네트워크 재시도는 동일 key, 새 클릭은 새 key(§6) — claim 이후 재시도는 `already_executed`로 안전하게 닫힌다(이중 집행 없음).
 
 - [ ] **Step 4: 통과 확인** → PASS (approve/expired/reject/중복키 4 테스트)
 - [ ] **Step 5: 커밋**
@@ -895,7 +980,7 @@ async def _persist_card(db: AsyncSession, thread_id: str, card: ChatCard) -> Non
     await db.commit()
 ```
 
-decision의 모든 `return ... card` 직전에 `await _persist_card(db, turn_id, card)` 호출(또는 단일 종료 지점으로 모아 호출).
+decision의 모든 `return ... card` 직전에 **`await _persist_card(db, body.thread_id or proposal_id, card)`** 호출(이력 저장 키는 **세션 thread_id**, 카드 trace의 `turn_id`와 분리 — §P2-3). 반환 지점이 여럿이므로 `decide_proposal`을 내부 함수로 카드 생성 → 단일 종료에서 persist+return하도록 묶는 게 깔끔하다.
 
 - [ ] **Step 3: 재조회 역직렬화** — `chat.py`의 `get_session_messages` 스텁을 교체: thread_id로 `ManagementChatMessage`를 조회해, `content`가 카드 JSON이면 `{role, card}` 형태로 반환(역직렬화 실패 시 텍스트로 폴백).
 
@@ -1183,7 +1268,9 @@ git commit -m "add: ChatCardView에 proposal 집행 흐름 연결 (스펙3)"
 
 ## Self-Review
 
-**Spec coverage** — §3 흐름(finalize/decision)=Task6·7, §4 preview/proposal 경계=Task3·6(테스트 `proposal_id != preview_id`), §5.1 ExecutionResultSection=Task1, §5.2 FinalizeResult=Task2, §5.4 승인·Tier·external 영속=Task3·6·7, §5.5 결과 source(ActionResult)=Task5·7, §6 idempotency=Task7·9(키 규칙)·9, §7 FE 상태=Task9~12, §8 영속·재조회=Task8, §9 테스트 게이트=Task별 테스트, §10 경계=미수정 파일 손대지 않음.
+**Spec coverage** — §3 흐름(finalize/decision)=Task6·7, §4 preview/proposal 경계=Task3·6(테스트 `proposal_id != preview_id`, preview_id trace=evidence_metrics→결과카드), §5.1 ExecutionResultSection=Task1, §5.2 FinalizeResult=Task2, §5.4 승인·Tier·external 영속=Task3·6·7(**Tier3 서버 가드 = decision에서 approve() 전 즉시 rejected**), §5.5 결과 source(ActionResult)=Task5·7, §6 idempotency=**Task4 `try_claim`(원자적 compare-and-set) 정본 + 병렬 10회 테스트(Task7)**·키 규칙(Task9), §7 FE 상태=Task9~12, §8 영속·재조회=Task8(이력=thread_id, 카드 trace=turn_id 분리), §9 테스트 게이트=Task별 테스트, §10 경계=미수정 파일(approval.py·executor.py·detection·ActionProposal) 손대지 않음.
+
+**리뷰 반영(6건)** — (P1) idempotency_key를 `_execute`로 전달 + **정확히-1회는 `try_claim` 원자 전이**로 보장(executor 미수정), 병렬 중복 테스트 추가. (P1) Tier3/chat-ineligible **서버 가드**(FE 비의존). (P2) enum은 `.value`로 저장. (P2) `preview_id` trace를 evidence_metrics 경유로 결과 카드까지 전달. (P2) **thread_id(이력 저장)와 turn_id(카드 trace) 분리**.
 
 **Placeholder scan** — `_safe_expired`/`_fake_user`/`db_session` 픽스처는 해당 태스크 Step에 구현 지침을 명시(추상 미완 아님). FE Task12는 ChatCardView 실제 구조에 맞춰 결선(계약은 고정).
 
