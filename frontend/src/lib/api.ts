@@ -115,6 +115,8 @@ export interface BeforeAfterItem {
   interpretation?: string; // 보조 KPI 기반 결정론 해석 — 없으면 빈 문자열
   pred_strong?: boolean | null; // 클릭 의향률 강함(≥20%) 통과 — 예측 없으면 null
   act_strong?: boolean | null; // 실측 CTR 양호(≥1%) 통과 — 판정 불가면 null
+  purchase_pred_strong?: boolean | null; // 구매의도 강함(≥3.5/5) 통과 — 예측 없으면 null
+  purchase_act_strong?: boolean | null; // 실측 CVR 양호(≥2%) 통과 — CVR null(추적 전)·예측 미연결이면 null
 }
 export interface BeforeAfterResponse {
   items: BeforeAfterItem[];

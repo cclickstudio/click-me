@@ -86,6 +86,32 @@ function BeforeAfterCard({ item }: { item: BeforeAfterItem }) {
         </div>
       </div>
 
+      {/* 구매 방향성 — 구매의도(예측, /5) ⟷ CVR(실측, %). 척도가 달라 직접 환산 아님 — 각자 기준선 통과로만 비교. */}
+      <div className="rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-[#F9FAFB] dark:bg-[#252D3D] p-4 mb-3">
+        <p className="text-[11px] text-[#8B95A1] mb-2.5">
+          구매의도와 CVR은 서로 환산하지 않고, 각자 기준선 통과 여부만 봅니다.
+        </p>
+        <div className="flex items-center gap-3">
+          <div className="flex-1">
+            <p className="text-[11px] text-[#8B95A1]">구매의도 · 예측</p>
+            <p className="text-lg font-extrabold text-[#191F28] dark:text-[#F2F4F6] tabular-nums">
+              {p ? `${p.purchase_intent.toFixed(1)}/5` : '—'}
+            </p>
+            <StrongBadge strong={item.purchase_pred_strong} strongLabel="강함 ≥3.5" weakLabel="약함 <3.5" />
+          </div>
+          <span className="text-xl text-[#8B95A1] shrink-0">⟷</span>
+          <div className="flex-1 text-right">
+            <p className="text-[11px] text-[#8B95A1]">
+              CVR · 실측 <span className="text-[#3182F6]">(실 Meta)</span>
+            </p>
+            <p className="text-lg font-extrabold text-[#191F28] dark:text-[#F2F4F6] tabular-nums">
+              {a.cvr != null ? `${(a.cvr * 100).toFixed(1)}%` : '추적 전'}
+            </p>
+            <StrongBadge strong={item.purchase_act_strong} strongLabel="양호 ≥2%" weakLabel="약함 <2%" />
+          </div>
+        </div>
+      </div>
+
       {/* 보조 — 예측 KPI(판정 외) ↔ 실측 KPI */}
       <div className="grid grid-cols-2 gap-4">
         <div className="rounded-xl bg-[#F9FAFB] dark:bg-[#252D3D] p-3">
