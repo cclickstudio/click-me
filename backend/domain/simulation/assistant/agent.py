@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 from core.assistant import AssistantRequest, AssistantResult, Citation
+from core.tracing import make_trace_config
 from domain.simulation.assistant.tools import fetch_simulation_result
 
 
@@ -70,11 +71,14 @@ def build_simulation_agent(settings):
     graph = build_graph(settings, retriever, llm)
 
     async def _ask(req: AssistantRequest) -> AssistantResult:
-        config = {
-            "run_name": "시뮬레이션 어시스턴트",
-            "tags": ["simulation", "assistant"],
-            "metadata": {"simulation_id": req.context_id, "ad_id": req.ad_id},
-        }
+        config = make_trace_config(
+            domain="simulation",
+            feature="assistant",
+            ad_id=req.ad_id,
+            project_id=req.project_id,
+            extra_metadata={"simulation_id": req.context_id},
+        )
+        config["run_name"] = "시뮬레이션 어시스턴트"
         # 시드에 프로젝트 ID·시뮬 ID를 실어 LLM이 list/get 도구 인자로 쓰게 한다.
         prefix = ""
         if req.project_id:

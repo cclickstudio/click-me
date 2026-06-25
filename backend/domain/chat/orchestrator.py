@@ -11,6 +11,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 
 from core.assistant import AssistantRequest
+from core.tracing import make_trace_config
 from domain.chat import history
 from domain.chat.loop_state import MAX_LOOP, get_loop_state
 from domain.generator.assistant.agent import build_generator_agent
@@ -1009,18 +1010,19 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
         # 1턴 = 1 트레이스 루트(classify → route → 서브에이전트).
         # L2-2: 체크포인터 thread_id는 채팅 session_id로 고정한다.
         thread_id = turn.thread_id or sid or f"chat-transient:{turn.project_id or 'anonymous'}"
-        config = {
-            "run_name": "채팅",
-            "tags": ["chat", "orchestrator"],
-            "metadata": {
-                "ad_id": turn.ad_id,
-                "project_id": turn.project_id,
+        config = make_trace_config(
+            domain="chat",
+            feature="orchestrator",
+            ad_id=turn.ad_id,
+            project_id=turn.project_id,
+            extra_metadata={
                 "session_id": sid,
                 "thread_id": thread_id,
                 "conversation_id": thread_id,
             },
-            "configurable": {"thread_id": thread_id},
-        }
+            configurable={"thread_id": thread_id},
+        )
+        config["run_name"] = "채팅"
         # 서버 체크포인터가 비어 있는 첫 호출/재시작 직후에만 클라이언트 history로 시드한다.
         seed_messages = [HumanMessage(content=turn.question)]
         try:
