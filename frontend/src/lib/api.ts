@@ -435,6 +435,18 @@ export const api = {
       }
       return res.json();
     },
+    // F10 — 광고 맥락 기반 추천 해시태그·키워드(SNS 활용). 칩으로 복사.
+    keywords: (body: {
+      product?: string;
+      category?: string;
+      target?: string;
+      copy_text?: string;
+      context?: string;
+    }) =>
+      request<{ hashtags: string[]; keywords: string[] }>("/chat/keywords", {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
     // P5 — 인용 칩 원문 펼침. 출처 파일(+섹션)로 KB 청크 텍스트를 조회.
     kbChunk: (source: string, title?: string) =>
       request<{ source: string; title: string; chunk: string }>(

@@ -18,6 +18,7 @@ import BatchSimWidget from './BatchSimWidget';
 import ReportWidget from './ReportWidget';
 import AnalysisSummaryWidget from './AnalysisSummaryWidget';
 import RecommendFormWidget from './RecommendFormWidget';
+import KeywordWidget from './KeywordWidget';
 import CitationChips from './CitationChips';
 import ErrorCard from './ErrorCard';
 import type { SimRunResult } from '@/lib/types';
@@ -93,6 +94,11 @@ const slashCommands: SlashCommand[] = [
     cmd: '/비교',
     label: '/비교',
     desc: '시뮬레이션 2개의 KPI를 나란히 비교합니다',
+  },
+  {
+    cmd: '/키워드',
+    label: '/키워드',
+    desc: '광고 맥락 기반 SNS 해시태그·키워드를 추천받습니다',
   },
   {
     cmd: '/도움말',
@@ -557,6 +563,16 @@ export default function ChatConversation({
         // 백엔드로 보내 시뮬 목록(비교 모드) 위젯을 받는다.
         handleSend('/비교');
         break;
+      case '/키워드':
+        addLocalAssistant(
+          '광고 맥락을 알려주시면 SNS 해시태그·키워드를 추천해 드릴게요.',
+          {
+            source: 'generator',
+            label: '키워드 추천',
+            widget: { type: 'keyword_form' },
+          }
+        );
+        break;
       case '/도움말':
         addLocalAssistant(
           [
@@ -571,6 +587,7 @@ export default function ChatConversation({
             '/분석         시뮬·생성 성과 종합 요약',
             '/추천         목표·예산 → 전략·플랫폼 추천',
             '/비교         시뮬레이션 2개 KPI 비교',
+            '/키워드       광고 맥락 → SNS 해시태그·키워드 추천',
             '/도움말       이 화면',
             '',
             '이렇게 말해도 돼요',
@@ -1417,6 +1434,9 @@ export default function ChatConversation({
                     )}
                     {msg.meta?.widget?.type === 'recommend_form' && (
                       <RecommendFormWidget onSubmit={handleSend} />
+                    )}
+                    {msg.meta?.widget?.type === 'keyword_form' && (
+                      <KeywordWidget />
                     )}
                     {msg.meta?.approval && (
                       <ApprovalWidget

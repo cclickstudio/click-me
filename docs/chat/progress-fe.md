@@ -19,6 +19,23 @@
   - N2 연동: 주입 시 `onResultComplete` 호출 → 플로팅 닫혀 있으면 빨간 배지(`pushUnread`). 제너는 403 블로커라 보류, **시뮬 완료만** 대상(§2-2 준수).
   - 검증(Claude Preview, USER doyeon): 기존 세션 진입 3초 후 선제 메시지+sim_result(클릭의향률·구매의도·신뢰도·거부율) 자동 등장, 새로고침→DB 복원·가드로 중복 주입 없음(1건 유지), 대시보드(플로팅 닫힘)에서 선제 트리거→빨간 배지 "1"→열면 배지 0·메시지 표시, 콘솔 무에러. tsc·next lint 통과. (역할 분기 없는 ChatConversation 공용 로직 → 역할 무관.)
 
-## 진행 예정
+- ✅ **F10 — 해시태그·키워드 추천 위젯** (2026-06-25)
+  - 신규 `frontend/src/components/chat/KeywordWidget.tsx` — 제품·카테고리·타깃·카피 입력 폼 → 추천 실행 → SNS 해시태그/키워드 칩 렌더(개별 클릭 복사 + 전체 복사). 복사 로직은 기존 `copyMessage`(F1/P10)와 동일 패턴.
+  - 백엔드 append-only `backend/api/routers/chat.py` — `POST /api/chat/keywords`(gpt-4o-mini, JSON 응답: hashtags 12 + keywords 6). orchestrator/main/models 무수정. ruff 통과.
+  - `lib/api.ts` — `chat.keywords` 추가. `ChatConversation.tsx` — `/키워드` 슬래시 커맨드 + `keyword_form` 위젯 렌더 분기 + 도움말 한 줄.
+  - 검증(Claude Preview, USER doyeon): `/키워드`→폼 위젯 등장→4필드 입력→추천받기→해시태그 12칩+키워드 6칩 렌더, `POST /api/chat/keywords` 200(+CORS preflight 200), "다시 추천받기"/"전체 복사" 노출, 콘솔 무에러. tsc·next lint·ruff 통과.
+  - 제약: Preview는 비-제스처 클립보드 호출을 차단(NotAllowedError)해 "복사됨 ✓" 피드백 자동 확인은 불가 — 복사 코드는 앱에 이미 출시된 동일 패턴이라 실제 사용자 클릭에선 동작.
 
-- ⬜ F10 — 해시태그·키워드 추천 위젯
+---
+
+## 인계 노트 (C 워크트리 — P5·N4·F10 전부 ✅)
+
+- **브랜치** `feat/chat-fe`. 커밋 3건: P5(cce2b93)·N4(c9c9624)·F10(미커밋→이 노트와 함께 커밋). push는 요청 시에만.
+- **신규 파일** `CitationChips.tsx`·`KeywordWidget.tsx`. **수정** `ChatConversation.tsx`(인용 칩 교체·N4 폴링·/키워드)·`lib/api.ts`(kbChunk·keywords).
+- **백엔드 append-only**(`api/routers/chat.py`만): `GET /chat/kb-chunk`(P5 원문 조회)·`POST /chat/keywords`(F10). orchestrator/history·core/models.py·api/main.py **무수정**(§2-2 경계 준수). B 워크트리와 파일 충돌 없음.
+- **머지 시** 현황표(§1)에서 P5·N4·F10 ⬜→✅ 반영(이 파일이 아닌 tasklist.md). 백엔드 chat.py에 추가한 2개 엔드포인트는 append라 머지 충돌 거의 없음.
+- **주의/한계**:
+  - N4는 §2-2대로 **시뮬 완료만** 대상(제너 403 보류). 제너 403 해제 시 generations도 동일 로직에 추가 가능.
+  - N4 검증 중 doyeon 세션(5ecc56d8)에 선제 알림 테스트 메시지가 일부 남음(개인 DB 테스트 데이터, 무해).
+  - F10 복사 피드백은 Preview 클립보드 제약으로 자동검증 미완(코드는 검증된 패턴).
+  - `.claude/launch.json`(frontend, port 3000, autoPort:false) 생성함 — Preview 구동용.
