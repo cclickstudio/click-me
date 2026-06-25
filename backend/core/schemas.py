@@ -156,6 +156,9 @@ class ChatRequest(BaseModel):
     context_ad_id: str | None = None
     context_campaign_id: str | None = None
     context_simulation_id: str | None = None
+    # 채팅 첨부 이미지(시뮬 트리거용) — /api/chat/upload-image 응답을 그대로 실어 보낸다.
+    context_ad_image_url: str | None = None  # VLM 입력(presigned URL·로컬경로)
+    context_ad_image_key: str | None = None  # S3 영구 식별자(DB 영속)
     improve_context: dict | None = (
         None  # 개선 모드 컨텍스트 {s3_key, simulation_summary, product_name?}
     )

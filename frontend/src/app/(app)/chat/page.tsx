@@ -71,6 +71,16 @@ function SendIcon() {
   );
 }
 
+function ImageIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+      <circle cx="8.5" cy="8.5" r="1.5" />
+      <polyline points="21 15 16 10 5 21" />
+    </svg>
+  );
+}
+
 function TypingIndicator() {
   return (
     <div className="flex gap-3 justify-start">
@@ -94,6 +104,16 @@ export default function Page() {
   const { selectedProjectId } = useProjects();
   const [messages, setMessages] = useState<Message[]>([]);
   const [fb, setFb] = useState<Record<number, number>>({}); // 메시지 index → 평가(1/-1)
+  // 첨부 이미지(시뮬 트리거용) — /upload-image 응답 보관 후 다음 전송에 실어 보낸다.
+  const [attached, setAttached] = useState<{
+    ad_id: string;
+    ad_image_url: string | null;
+    ad_image_key: string | null;
+    preview: string;
+    name: string;
+  } | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // 어시스턴트 답변 평가 적재(좋아요/싫어요) — RAG 품질 개선.
   const sendFeedback = async (i: number, rating: number) => {
@@ -171,12 +191,15 @@ export default function Page() {
   };
 
   const handleSend = async (text?: string) => {
-    const content = text ?? input.trim();
+    // 이미지만 첨부하고 본문이 비면 시뮬 트리거 기본 문구로(라우팅=시뮬).
+    const content = (text ?? input.trim()) || (attached ? '이 광고로 시뮬레이션 돌려줘' : '');
     if (!content || isStreaming) return;
 
+    const sentImage = attached; // 전송 시점 캡처 후 입력 초기화
     const newMessages: Message[] = [...messages, { role: 'user', content }];
     setMessages(newMessages);
     setInput('');
+    setAttached(null);
     setIsStreaming(true);
 
     try {
@@ -188,6 +211,9 @@ export default function Page() {
           messages: newMessages,
           organization_id: user?.organization_id ?? null,
           project_id: selectedProjectId ?? null,
+          context_ad_id: sentImage?.ad_id ?? null,
+          context_ad_image_url: sentImage?.ad_image_url ?? null,
+          context_ad_image_key: sentImage?.ad_image_key ?? null,
         }),
       });
 
@@ -210,6 +236,34 @@ export default function Page() {
       ]);
     } finally {
       setIsStreaming(false);
+    }
+  };
+
+  // 이미지 첨부 — /upload-image로 S3 영속화 후 참조 보관(다음 전송에 실어 시뮬 트리거).
+  const handleImageSelect = async (file?: File) => {
+    if (!file || uploading) return;
+    setUploading(true);
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      const res = await fetch(`${API_BASE}/api/chat/upload-image`, { method: 'POST', body: form });
+      if (!res.ok) throw new Error('upload failed');
+      const data = await res.json();
+      setAttached({
+        ad_id: data.ad_id,
+        ad_image_url: data.ad_image_url ?? null,
+        ad_image_key: data.ad_image_key ?? null,
+        preview: URL.createObjectURL(file),
+        name: file.name,
+      });
+    } catch {
+      setMessages((prev) => [
+        ...prev,
+        { role: 'assistant', content: '이미지 업로드에 실패했습니다. 다시 시도해주세요.' },
+      ]);
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 
@@ -417,29 +471,67 @@ export default function Page() {
 
         {/* ── Input bar ── */}
         <div className="border-t border-[#E5E8EB] dark:border-[#2D3748] bg-white dark:bg-[#1C2333] px-4 py-4 transition-colors">
-          <div className="max-w-2xl mx-auto flex items-end gap-3">
-            <textarea
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' && !e.shiftKey) {
-                  e.preventDefault();
-                  handleSend();
+          <div className="max-w-2xl mx-auto">
+            {/* 첨부 이미지 칩 — 다음 전송에 실려 시뮬을 트리거 */}
+            {attached && (
+              <div className="flex items-center gap-2 mb-2 px-2.5 py-1.5 rounded-lg bg-[#F2F4F6] dark:bg-[#252D3D] w-fit">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={attached.preview} alt="" className="w-8 h-8 rounded object-cover" />
+                <span className="text-xs text-[#4E5968] dark:text-[#9CA3AF] max-w-[180px] truncate">
+                  {attached.name}
+                </span>
+                <button
+                  onClick={() => setAttached(null)}
+                  className="text-[#8B95A1] hover:text-[#191F28] dark:hover:text-white text-sm leading-none"
+                  aria-label="첨부 제거"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+            <div className="flex items-end gap-3">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                hidden
+                onChange={(e) => handleImageSelect(e.target.files?.[0])}
+              />
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isStreaming || uploading}
+                title="광고 이미지 첨부 — 시뮬레이션 실행"
+                className="p-3 rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] text-[#4E5968] dark:text-[#9CA3AF] hover:bg-[#F2F4F6] dark:hover:bg-[#252D3D] disabled:opacity-40 transition-colors shrink-0"
+              >
+                {uploading ? <span className="text-xs px-0.5">…</span> : <ImageIcon />}
+              </button>
+              <textarea
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSend();
+                  }
+                }}
+                placeholder={
+                  attached
+                    ? '예: 이 광고 시뮬레이션 돌려줘'
+                    : '메시지를 입력하세요... (Shift+Enter로 줄바꿈)'
                 }
-              }}
-              placeholder="메시지를 입력하세요... (Shift+Enter로 줄바꿈)"
-              rows={1}
-              disabled={isStreaming}
-              className="flex-1 px-4 py-3 rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] text-sm text-[#191F28] dark:text-[#F2F4F6] placeholder-[#B0B8C1] dark:placeholder-[#4B5563] focus:outline-none focus:border-[#3182F6] focus:ring-2 focus:ring-[#3182F6]/10 transition-colors resize-none overflow-hidden bg-white dark:bg-[#252D3D] leading-relaxed disabled:opacity-60"
-              style={{ maxHeight: '120px' }}
-            />
-            <button
-              onClick={() => handleSend()}
-              disabled={!input.trim() || isStreaming}
-              className="p-3 bg-[#3182F6] text-white rounded-xl hover:bg-[#1B6EEB] disabled:opacity-30 disabled:cursor-not-allowed transition-all shrink-0"
-            >
-              <SendIcon />
-            </button>
+                rows={1}
+                disabled={isStreaming}
+                className="flex-1 px-4 py-3 rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] text-sm text-[#191F28] dark:text-[#F2F4F6] placeholder-[#B0B8C1] dark:placeholder-[#4B5563] focus:outline-none focus:border-[#3182F6] focus:ring-2 focus:ring-[#3182F6]/10 transition-colors resize-none overflow-hidden bg-white dark:bg-[#252D3D] leading-relaxed disabled:opacity-60"
+                style={{ maxHeight: '120px' }}
+              />
+              <button
+                onClick={() => handleSend()}
+                disabled={(!input.trim() && !attached) || isStreaming}
+                className="p-3 bg-[#3182F6] text-white rounded-xl hover:bg-[#1B6EEB] disabled:opacity-30 disabled:cursor-not-allowed transition-all shrink-0"
+              >
+                <SendIcon />
+              </button>
+            </div>
           </div>
           <p className="text-center text-xs text-[#B0B8C1] dark:text-[#4B5563] mt-3">
             AI 응답은 참고용이며 실제 광고 성과와 차이가 있을 수 있습니다

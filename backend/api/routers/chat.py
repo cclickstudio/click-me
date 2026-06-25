@@ -1,7 +1,7 @@
 # 챗 라우터 — 오케스트레이터 구동 및 세션/메시지 조회 엔드포인트.
 import uuid
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, File, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
@@ -52,6 +52,8 @@ def _build_turn_request(body: ChatRequest) -> ChatTurnRequest:
         context_ad_id=body.context_ad_id,
         context_campaign_id=body.context_campaign_id,
         context_simulation_id=body.context_simulation_id,
+        context_ad_image_url=body.context_ad_image_url,
+        context_ad_image_key=body.context_ad_image_key,
     )
 
 
@@ -83,12 +85,31 @@ class ResumeRequest(BaseModel):
 _SSE_HEADERS = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
 
 
+_IMAGE_MAX_BYTES = 10 * 1024 * 1024  # 10MB
+
+
 @router.post("/complete")
 async def chat_complete(body: ChatRequest) -> StreamingResponse:
     """마지막 사용자 메시지를 오케스트레이터에 전달하고 SSE 스트림을 반환한다."""
     req = _build_turn_request(body)
     svc = await get_orchestrator()
     return StreamingResponse(svc.stream(req), media_type="text/event-stream", headers=_SSE_HEADERS)
+
+
+@router.post("/upload-image")
+async def chat_upload_image(file: UploadFile = File(...)) -> dict:
+    """채팅 첨부 이미지를 S3에 영속화하고 시뮬 트리거용 참조를 반환한다.
+
+    ad_id는 이 이미지로 돌릴 광고 식별자로 새로 발급. 프론트는 이 응답을 다음 /complete 요청의
+    context_ad_id·context_ad_image_url·context_ad_image_key로 실어 보내면 "시뮬 돌려줘"에 트리거된다.
+    """
+    from domain.simulation.adapters.ad_image_store import persist_ad_image
+
+    data = await file.read()
+    if len(data) > _IMAGE_MAX_BYTES:
+        raise HTTPException(status_code=413, detail="이미지가 너무 큽니다(최대 10MB)")
+    url, key = await persist_ad_image(data, file.filename, file.content_type)
+    return {"ad_id": str(uuid.uuid4()), "ad_image_url": url, "ad_image_key": key}
 
 
 @router.post("/{thread_id}/resume")

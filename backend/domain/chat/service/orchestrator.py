@@ -131,6 +131,8 @@ class ChatOrchestratorService:
                 "ad_id": req.context_ad_id,
                 "campaign_id": req.context_campaign_id,
                 "simulation_id": req.context_simulation_id,
+                "ad_image_url": req.context_ad_image_url,
+                "ad_image_key": req.context_ad_image_key,
             },
             "project_id": str(req.project_id) if req.project_id else None,
             "user_id": str(req.user_id) if req.user_id else None,

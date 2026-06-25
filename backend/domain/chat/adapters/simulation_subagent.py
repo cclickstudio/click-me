@@ -99,8 +99,11 @@ class SimulationSubAgent:
         sim_req = SimulationRunRequest(
             ad_id=ad_id,
             ad_content=req.knobs.get("ad_content"),
+            ad_image_url=req.context_ids.get("ad_image_url"),  # 채팅 첨부 이미지(VLM 입력)
+            ad_image_key=req.context_ids.get("ad_image_key"),  # S3 영구 식별자(DB 영속)
             sample_size=int(req.knobs.get("sample_size", 20)),
             project_id=req.context_ids.get("project_id"),
+            organization_id=req.context_ids.get("organization_id"),
         )
         run_id: str = await svc.start(sim_req)
         return SubAgentResult(

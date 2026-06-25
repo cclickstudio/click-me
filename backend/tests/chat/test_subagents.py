@@ -113,6 +113,31 @@ async def test_simulation_trigger_async():
     assert "run-123" in out.answer  # async start: run_id 안내
 
 
+@pytest.mark.asyncio
+async def test_simulation_trigger_passes_image_and_org():
+    # 채팅 첨부 이미지(context_ids) → SimulationRunRequest로 흘러 시뮬 트리거.
+    svc = _FakeSimService()
+    sub = SimulationSubAgent(service=svc)
+    sub._agent = None  # 폴백 트리거 경로 강제
+    out = await sub.run(
+        SubAgentRequest(
+            question="이 광고 시뮬 돌려줘",
+            context_ids={
+                "ad_id": "ad_9",
+                "ad_image_url": "https://s3/x.png",
+                "ad_image_key": "simulation/x.png",
+                "organization_id": "org-1",
+                "project_id": "proj-1",
+            },
+        )
+    )
+    assert svc.started.ad_id == "ad_9"
+    assert svc.started.ad_image_url == "https://s3/x.png"
+    assert svc.started.ad_image_key == "simulation/x.png"
+    assert svc.started.organization_id == "org-1"
+    assert "run-123" in out.answer
+
+
 # ---- generator ----
 @pytest.mark.asyncio
 async def test_generator_trigger():

@@ -33,6 +33,8 @@ class ChatTurnRequest(BaseModel):
     context_ad_id: str | None = None
     context_campaign_id: str | None = None
     context_simulation_id: str | None = None
+    context_ad_image_url: str | None = None  # 채팅 첨부 이미지(시뮬 트리거 VLM 입력)
+    context_ad_image_key: str | None = None  # S3 영구 식별자(DB 영속)
 
 
 class ProposedAction(BaseModel):
