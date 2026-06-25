@@ -11,6 +11,11 @@ const TONE_CLASS: Record<Tone, string> = {
   critical: 'bg-[#FEE2E2] text-[#B91C1C] dark:bg-[#3B1212] dark:text-[#FCA5A5]',
 };
 
+const STATUS_DOT: Record<string, string> = {
+  critical: 'bg-[#E5484D]',
+  warning: 'bg-[#F5A623]',
+};
+
 function renderSection(section: CardSection): ReactNode {
   const renderer = SECTION_RENDERERS[section.kind] as ((s: CardSection) => ReactNode) | undefined;
   if (!renderer) {
@@ -24,11 +29,15 @@ function renderSection(section: CardSection): ReactNode {
 }
 
 export default function ChatCardView({ card }: { card: ChatCard }) {
-  const hasHeader = Boolean(card.title) || (card.badges?.length ?? 0) > 0;
+  const hasStatusDot = Boolean(card.status && STATUS_DOT[card.status]);
+  const hasHeader = Boolean(card.title) || (card.badges?.length ?? 0) > 0 || hasStatusDot;
   return (
     <div className="flex flex-col gap-3 px-4 py-3 rounded-xl bg-[#F2F4F6] dark:bg-[#252D3D] max-w-sm">
       {hasHeader && (
         <div className="flex flex-wrap items-center gap-1.5">
+          {hasStatusDot && card.status && (
+            <span className={`inline-block w-2 h-2 rounded-full ${STATUS_DOT[card.status]}`} aria-hidden />
+          )}
           {card.title && <span className="text-sm font-bold text-[#191F28] dark:text-[#F2F4F6]">{card.title}</span>}
           {card.badges?.map((b, i) => (
             <span key={i} className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${TONE_CLASS[b.tone]}`}>
