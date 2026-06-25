@@ -112,6 +112,7 @@ async def test_management_card_stream_failure_emits_safe_error_then_final_failed
     assert err["scope"] == "turn"
     assert "SECRET_TOKEN" not in err["message"]  # raw exception 미노출
     assert events[-1]["kind"] == "final" and events[-1]["status"] == "failed"
+    assert not any(e["kind"] in ("summary_delta", "card") for e in events)  # 부분 스트림 없음
 
 
 @pytest.mark.asyncio
