@@ -501,7 +501,9 @@ async def list_chats(
         select(ChatSession, func.count(ChatMessage.id))
         .outerjoin(ChatMessage, ChatMessage.session_id == ChatSession.id)
         .group_by(ChatSession.id)
-        .order_by(ChatSession.created_at.desc())
+        # 최근 활동(메시지 추가 시 갱신되는 updated_at) 순 — 생성일순이면 오래전 만든
+        # 세션을 오늘 써도 목록 위로 안 올라와 "최근 채팅이 안 보인다"는 문제가 생긴다.
+        .order_by(ChatSession.updated_at.desc())
         .limit(limit)
     )
     return [
