@@ -128,38 +128,6 @@ _SIM_EXTRACT_SYSTEM = (
     "명시되지 않은 항목은 빈 문자열로 두라(지어내지 말 것)."
 )
 
-# 시뮬 결과 요약 메시지에서 KPI 수치 추출 프롬프트 — sim_result_node에서 강약 판정에 쓴다.
-_SIM_RESULT_EXTRACT_SYSTEM = (
-    "시뮬레이션 결과 요약 메시지에서 KPI 수치를 추출하라.\n"
-    "- purchase_intent: 구매의도(1~5점)\n"
-    "- click_intent_rate: 클릭 의향률(0~1 비율, 18% → 0.18)\n"
-    "- rejection_rate: 거부율(0~1 비율, 30% → 0.3)\n"
-    "- product_category: 상품 카테고리(있을 때만, 예: 뷰티·식품)\n"
-    "메시지에 없는 항목은 null로 두라."
-)
-
-
-def _copy_advice(reasons: list[str], brand: dict | None) -> str:
-    """약한 이유에 맞춘 구체적 카피 개선 방향(T10) — '개선하세요' 대신 원인·방향 제시."""
-    high_rej = any("거부율" in r for r in reasons)
-    low_pi = any("구매의도" in r for r in reasons)
-    cause: list[str] = []
-    direction: list[str] = []
-    if high_rej:
-        cause.append(
-            "거부율이 높을 때는 소구가 너무 직접적이거나 가격 언급이 과도한 경우가 많아요."
-        )
-        direction.append("가격·할인 전면 노출 대신 '경험·감성' 소구로 전환")
-    if low_pi:
-        cause.append("구매의도가 낮을 때는 혜택이 추상적이거나 차별점이 약한 경우가 많아요.")
-        direction.append("구체적 사용 상황·전후 변화로 베네핏을 또렷하게")
-    if brand and brand.get("target_audience"):
-        direction.append(f"타깃({brand['target_audience']})이 공감할 상황 묘사 추가")
-    parts = ["원인 분석:\n" + "\n".join(f"- {c}" for c in cause)] if cause else []
-    if direction:
-        parts.append("개선 방향:\n" + "\n".join(f"- {d}" for d in direction))
-    return "\n\n".join(parts)
-
 
 @dataclass
 class ChatTurn:
@@ -412,11 +380,6 @@ def _assistant_meta(res, source: str, label: str) -> dict:
     }
 
 
-# sim_result_node의 강약 판정 임계값 — 위젯이 보낸 시뮬 결과를 약함/충분으로 가른다.
-_TARGET_PI = 3.5  # 목표 구매의도(미만이면 약함 — 개선 제안)
-_HIGH_REJECTION = 0.3  # 거부율 임계값(이상이면 약함 — 개선 제안)
-
-
 def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnswer | None]]:
     """오케스트레이터 진입점. 키+실모드면 classify → route 그래프, 아니면 키워드 폴백."""
     api_key = getattr(settings, "openai_api_key", None)
@@ -454,7 +417,8 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
     gen = build_generator_agent(settings)  # 생성 서브에이전트(폴백/풀모드 자동)
 
     # classify_intent 출력 스키마 — 도메인 분류 + 결과 식별자 추출.
-    # sim_result/gen_result는 LLM 분류 대상 아님(위젯의 [시뮬결과]/[생성결과] 접두사로 결정론 분기).
+    # gen_result는 LLM 분류 대상 아님(위젯의 [생성결과] 접두사로 결정론 분기).
+    # (시뮬 결과는 프론트가 sim_result 위젯을 직접 렌더 — [시뮬결과] 텍스트 경로 없음.)
     class _Intent(BaseModel):
         intent: Literal["management", "simulation", "generator", "advise"]
         action: Literal["ask", "run", "list", "select"] = "ask"
@@ -463,13 +427,6 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
         is_ad_domain: bool = True
         context_id: str | None = None
         ad_content: str | None = None
-
-    # 시뮬 결과 요약에서 강약 판정용 KPI 추출 스키마.
-    class _SimResult(BaseModel):
-        purchase_intent: float | None = None  # 1~5
-        click_intent_rate: float | None = None  # 0~1
-        rejection_rate: float | None = None  # 0~1
-        product_category: str | None = None  # KOBACO 벤치마크 대조용(있을 때만)
 
     # 생성 실행 입력 추출 스키마 — generator_node에서 question으로부터 채운다.
     class _GenInput(BaseModel):
@@ -543,13 +500,6 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
     async def classify(state) -> dict:
         q = (state.get("question") or "").strip()
         # 위젯이 보낸 결과 보고는 LLM 분류 없이 결정론 분기(일반 질문이 결과노드로 새는 것 방지).
-        if q.startswith("[시뮬결과]"):
-            return {
-                "intent": "sim_result",
-                "action": "ask",
-                "confidence": "high",
-                "is_ad_domain": True,
-            }
         if q.startswith("[생성결과]"):
             return {
                 "intent": "gen_result",
@@ -578,8 +528,17 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
         }
 
     async def management_node(state) -> dict:
+        # 멀티턴 — 채팅 세션 단위로 매니지 서브에이전트 thread를 고정해 후속 매니지 질문의
+        # 맥락(이전 캠페인·조치 논의)을 유지한다. 채팅 그래프 체크포인터(thread_id=session_id)와
+        # 충돌하지 않도록 ':management' 네임스페이스로 분리한다.
+        sid = state.get("session_id")
+        mgmt_thread = f"{sid}:management" if sid else None
         res = await mgmt(
-            AskRequest(question=state["question"], campaign_id=state.get("context_id"))
+            AskRequest(
+                question=state["question"],
+                campaign_id=state.get("context_id"),
+                thread_id=mgmt_thread,
+            )
         )
         return _with_ai_message(_mgmt_answer(res), _mgmt_meta(res))
 
@@ -701,83 +660,6 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
             _assistant_meta(res, "generator", "생성 어시스턴트"),
         )
 
-    async def sim_result_node(state) -> dict:
-        # 위젯이 보낸 시뮬 결과 요약 → 수치 추출 후 강약 판정. 실행은 안 하고 제안만.
-        ext = llm.with_structured_output(_SimResult)
-        m = await ext.ainvoke(
-            [
-                SystemMessage(content=_SIM_RESULT_EXTRACT_SYSTEM),
-                HumanMessage(content=state["question"]),
-            ]
-        )
-        reasons = []
-        if m.purchase_intent is not None and m.purchase_intent < _TARGET_PI:
-            reasons.append(f"구매의도 {m.purchase_intent:.1f}/5 (목표 {_TARGET_PI})")
-        if m.rejection_rate is not None and m.rejection_rate >= _HIGH_REJECTION:
-            reasons.append(f"거부율 {m.rejection_rate * 100:.0f}%")
-        # KOBACO 벤치마크 — 카테고리가 있으면 업계 평균과 자동 대조(T08).
-        bench_line = ""
-        if m.product_category:
-            from domain.simulation.assistant.tools import (  # noqa: PLC0415
-                fetch_kobaco_benchmark,
-            )
-
-            b = fetch_kobaco_benchmark(m.product_category)
-            if b.get("found") and m.purchase_intent is not None:
-                diff = m.purchase_intent - b["purchase_intent"]
-                sign = "+" if diff >= 0 else ""
-                bench_line = (
-                    f"\n\n{b['category']} 카테고리 평균(구매의도 {b['purchase_intent']}) "
-                    f"대비 {sign}{diff:.1f}."
-                )
-        # 개선 루프 — 약하면 왕복 카운트 확인 후 HITL approval 제안, 충분하면 종료.
-        loop = get_loop_state(state.get("session_id"))
-        brand = state.get("brand")
-        if reasons:
-            loop.phase = "sim_done"
-            loop.weak_reasons = reasons
-            if loop.loop_count < MAX_LOOP:
-                advice = _copy_advice(reasons, brand)
-                answer = (
-                    f"결과가 다소 약해요 — {', '.join(reasons)}.{bench_line}\n\n"
-                    f"{advice}\n\n"
-                    f"개선 시안을 만들어볼까요? (왕복 {loop.loop_count + 1}/{MAX_LOOP})"
-                ).replace("\n\n\n\n", "\n\n")
-                meta = {
-                    "source": "simulation",
-                    "label": "결과 분석 · 개선 제안",
-                    "engine": f"OpenAI · {model_name}",
-                    "suggest": "generator",
-                    "approval": {
-                        "action": "run_generator",
-                        "label": "개선 시안 만들기",
-                        "reasons": reasons,
-                    },
-                }
-            else:
-                loop.phase = "finished"
-                answer = (
-                    f"개선 왕복을 {MAX_LOOP}회 모두 시도했어요 — "
-                    f"마지막 결과는 {', '.join(reasons)}.\n\n"
-                    "여기서 루프를 마무리할게요. 카피 방향을 직접 다듬어 다시 시도해보셔도 좋아요."
-                )
-                meta = {
-                    "source": "simulation",
-                    "label": "개선 루프 종료",
-                    "engine": f"OpenAI · {model_name}",
-                }
-        else:
-            loop.phase = "finished"
-            answer = (
-                "목표 도달이에요(구매의도·거부율 충족). 이대로 집행을 검토해도 좋아요." + bench_line
-            )
-            meta = {
-                "source": "simulation",
-                "label": "결과 분석 · 목표 도달",
-                "engine": f"OpenAI · {model_name}",
-            }
-        return _with_ai_message(answer, meta)
-
     async def gen_result_node(state) -> dict:
         # 위젯이 보낸 생성 결과 요약 → 새 시안으로 재시뮬 제안. 실행은 안 하고 제안만.
         loop = get_loop_state(state.get("session_id"))
@@ -847,7 +729,6 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
     g.add_node("management", management_node)
     g.add_node("simulation", simulation_node)
     g.add_node("generator", generator_node)
-    g.add_node("sim_result", sim_result_node)
     g.add_node("gen_result", gen_result_node)
     g.add_node("advise", advise_node)
     g.add_edge(START, "classify")
@@ -858,7 +739,6 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
             "management": "management",
             "simulation": "simulation",
             "generator": "generator",
-            "sim_result": "sim_result",
             "gen_result": "gen_result",
             "advise": "advise",
         },
@@ -867,7 +747,6 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
         "management",
         "simulation",
         "generator",
-        "sim_result",
         "gen_result",
         "advise",
     ):
@@ -1008,6 +887,13 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
                 print(f"[chat] brand extract error: {exc!r}")
         # 진입 시 프로젝트 롱텀 메모리·브랜드 프로파일 조회 → 노드에서 시스템 프롬프트 앞 주입.
         ltm = await history.get_long_term_memory(turn.project_id, limit=3)
+        # 이전 대화 요약(session_summary)은 매 실행마다 쌓이는 sim/gen_input에 밀려
+        # limit=3 최신순에서 빠지기 쉬워, 멀티턴 맥락 유지를 위해 별도로 보강 주입한다.
+        if not any(m.get("memory_type") == "session_summary" for m in ltm):
+            summary_rows = await history.get_long_term_memory(
+                turn.project_id, limit=1, memory_type="session_summary"
+            )
+            ltm = summary_rows + ltm
         brand = await history.get_brand_profile(turn.project_id)
         # 1턴 = 1 트레이스 루트(classify → route → 서브에이전트).
         # L2-2: 체크포인터 thread_id는 채팅 session_id로 고정한다.
