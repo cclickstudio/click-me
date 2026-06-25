@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 from typing import Any
 
@@ -15,6 +16,7 @@ from langchain_core.messages import AIMessage, SystemMessage, ToolMessage
 from langchain_core.tools import tool
 from langgraph.graph import END, START, MessagesState, StateGraph
 from langgraph.types import interrupt
+from pydantic import BaseModel
 
 from domain.management.approval import judge_tier, requires_human
 from domain.management.assistant import tools as live_tools
@@ -50,6 +52,46 @@ _SYSTEM = (
     "직접 실행하지 않는다(실행은 사람 승인 경로).\n"
     "- 근거가 없으면 모른다고 말한다. 문장 끝에 콜론을 쓰지 말 것."
 )
+
+
+# ── 자기교정 검색(CRAG-lite) — 근거를 평가하고 부족하면 재작성·재검색·신호 ──
+_INSUFFICIENT_SOURCE = "_insufficient"  # 인용에서 제외되는 신호 엔트리
+
+
+class _KbGrade(BaseModel):
+    """검색 근거 평가 — 충분성 + (부족 시) 재작성 쿼리."""
+
+    sufficient: bool
+    rewrite: str | None = None
+
+
+async def _grade_kb(llm, query: str, hits: list[dict]) -> _KbGrade:
+    """근거가 질문에 충분한지 LLM으로 평가. 실패하면 충분으로 간주(채팅 안 막음)."""
+    digest = "; ".join(f"{h.get('title', '')}: {h.get('chunk', '')[:80]}" for h in hits[:4])
+    system = (
+        "너는 검색 근거 평가자다. 사용자 질문에 대해 검색된 근거가 답하기에 충분한지 판단한다.\n"
+        "- 질문의 핵심에 답할 정보가 근거에 있으면 sufficient=true.\n"
+        "- 부족하거나 빗나갔으면 sufficient=false, 재검색용 한국어 재작성 쿼리를 rewrite에 제시."
+    )
+    try:
+        structured = llm.with_structured_output(_KbGrade)
+        return await structured.ainvoke(
+            [("system", system), ("human", f"질문: {query}\n근거: {digest}")],
+            config={"run_name": "assistant.grade_kb", "tags": ["management", "crag"]},
+        )
+    except Exception:  # noqa: BLE001 — 평가 실패는 통과(보수적: 확실한 부족일 때만 교정)
+        return _KbGrade(sufficient=True)
+
+
+def _dedup(hits: list[dict]) -> list[dict]:
+    seen: set = set()
+    out: list[dict] = []
+    for h in hits:
+        key = (h.get("source"), h.get("title"))
+        if key not in seen:
+            seen.add(key)
+            out.append(h)
+    return out
 
 
 class _State(MessagesState, total=False):
@@ -105,14 +147,38 @@ def build_graph(settings, retriever, llm, checkpointer=None):
 
     @tool
     async def search_kb(query: str) -> list[dict]:
-        """정책·최적화 플레이북·KPI 규칙 등 지식베이스 근거 문서 검색.
-        원인·방법·정책 설명에 쓴다."""
+        """정책·최적화 플레이북·KPI 규칙·벤치마크 등 지식베이스 근거 검색(자기교정).
+        근거가 부족하면 쿼리를 재작성해 재검색하고, 그래도 부족하면 신호를 남긴다."""
         if retriever is None:
             return []
         try:
-            return await retriever.search(query, k=4)
+            hits = await retriever.search(query, k=4)
         except Exception:  # noqa: BLE001 — KB 미적재면 빈 결과로 진행(live만으로 답)
             return []
+        if not hits:
+            return []
+        grade = await _grade_kb(llm, query, hits)
+        if grade.sufficient:
+            return hits
+        # 부족 → 쿼리 재작성 후 1회 재검색·병합·재평가(CRAG-lite)
+        if grade.rewrite:
+            with contextlib.suppress(Exception):
+                hits = _dedup(hits + await retriever.search(grade.rewrite, k=4))
+            if (await _grade_kb(llm, query, hits)).sufficient:
+                return hits
+        # 여전히 부족 → 에이전트에 신호(인용엔 안 섞임 — tools_node가 필터)
+        return [
+            *hits,
+            {
+                "source": _INSUFFICIENT_SOURCE,
+                "title": "",
+                "chunk": (
+                    "KB 근거가 부족하다. web_search로 보강하거나, "
+                    "충분한 근거가 없으면 모른다고 정직하게 답하라."
+                ),
+                "trust": None,
+            },
+        ]
 
     @tool
     async def web_search(query: str) -> list[dict]:
@@ -183,7 +249,12 @@ def build_graph(settings, retriever, llm, checkpointer=None):
             if name not in used:
                 used.append(name)
             if name in ("search_kb", "web_search"):
-                kb_cites.extend(result if isinstance(result, list) else [])
+                # _insufficient 신호는 인용에서 제외(에이전트는 ToolMessage로 보고 web/정직 폴백).
+                kb_cites.extend(
+                    c
+                    for c in (result if isinstance(result, list) else [])
+                    if c.get("source") != _INSUFFICIENT_SOURCE
+                )
             else:
                 evidence = result if isinstance(result, dict) else evidence
             out_msgs.append(
