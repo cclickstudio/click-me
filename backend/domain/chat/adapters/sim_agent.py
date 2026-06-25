@@ -23,6 +23,8 @@ _SYSTEM = (
     "- '무슨 데이터로 페르소나를 만들었나'는 sim_persona_basis(표본 분포)와 "
     "search_kb(데이터 출처·생성 방법)로 답한다.\n"
     "- '현재 시뮬레이션 현황'·'내 시뮬 목록/개수'는 sim_list로 조회한다(조직 전체).\n"
+    "- '방금/최근/마지막 시뮬 결과'는 sim_list로 최신 시뮬을 찾아 그 simulation_id로 sim_result로 "
+    "답한다. 방금 시작한 시뮬은 완료 전엔 목록에 없을 수 있다고 안내한다.\n"
     "- '이름이 X인 시뮬레이션'은 sim_find_by_name(X)로 후보를 찾고, 단건이면 그 simulation_id로 "
     "sim_result/sim_persona_basis로 상세를 답한다. 다건이면 후보를 나열하고, 없으면 "
     "'없음'으로 답한다.\n"

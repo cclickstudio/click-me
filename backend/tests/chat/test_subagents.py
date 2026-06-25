@@ -111,6 +111,7 @@ async def test_simulation_trigger_async():
     )
     assert svc.started is not None and svc.started.ad_id == "ad_9"
     assert "run-123" in out.answer  # async start: run_id 안내
+    assert "저장되지 않아요" in out.answer  # project_id 없음 → 영속 경고
 
 
 @pytest.mark.asyncio
@@ -136,6 +137,7 @@ async def test_simulation_trigger_passes_image_and_org():
     assert svc.started.ad_image_key == "simulation/x.png"
     assert svc.started.organization_id == "org-1"
     assert "run-123" in out.answer
+    assert "현재 시뮬레이션 현황" in out.answer  # project_id 있음 → 조회 유도
 
 
 # ---- generator ----
