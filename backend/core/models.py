@@ -172,7 +172,9 @@ class ManagementKbDocument(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[str | None] = mapped_column(String(64), nullable=True)  # NULL=공통(global)
     visibility: Mapped[str] = mapped_column(String(16), default="global")
-    source_type: Mapped[str] = mapped_column(String(32))  # meta_official|internal_policy|benchmark|playbook
+    source_type: Mapped[str] = mapped_column(
+        String(32)
+    )  # meta_official|internal_policy|benchmark|playbook
     source_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     title: Mapped[str] = mapped_column(String(512))
     version: Mapped[str | None] = mapped_column(String(64), nullable=True)
@@ -306,6 +308,19 @@ class ManagementKbEvalCase(Base):
     expected_campaign_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     expected_anomaly_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
     fixture_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ManagementUserMemory(Base):
+    """세션 넘는 장기기억 — (tenant, user) 스코프 노트. 마이그 025."""
+
+    __tablename__ = "management_user_memory"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[str | None] = mapped_column(String(64), nullable=True)  # NULL/global
+    user_id: Mapped[str | None] = mapped_column(String(64), nullable=True)  # NULL/anon
+    mem_key: Mapped[str] = mapped_column(String(128))  # 멱등/식별 키
+    content: Mapped[dict] = mapped_column(JSONB, default=dict)  # 기억 내용(노트 등)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 

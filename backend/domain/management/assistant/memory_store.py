@@ -1,12 +1,60 @@
-# 세션 넘는 장기기억 — (tenant, user) 네임스페이스 cross-session 메모리 (langgraph Store)
+# 세션 넘는 장기기억 — (tenant, user) 네임스페이스 cross-session 메모리
 """thread당 체크포인터(단기) 위에 세션을 넘는 장기기억을 둔다.
 
-기본은 InMemoryStore(프로세스 수명 — 단일 EC2에서 세션 간 유지). 영속은 AsyncPostgresStore로
-교체한다(체크포인터와 같은 seam). 식별자(tenant_id·user_id)는 호출자가 준다 — 채팅 인증(auth)이
-도입되면 거기서 흐른다. 인증 전엔 데모 네임스페이스로 동작한다.
+- 테스트/데모(use_mock): langgraph InMemoryStore(프로세스 수명, hermetic).
+- 실행(use_mock=false): SqlMemoryStore — SQLAlchemy(asyncpg)로 Neon에 영속(재시작 후에도 유지,
+  Windows에서도 동작). 둘 다 같은 인터페이스(aput/asearch)라 ManagementMemory는 그대로 쓴다.
+식별자(tenant_id·user_id)는 호출자가 준다 — 비로그인은 데모 네임스페이스(global/anon).
 """
 
 from __future__ import annotations
+
+
+class _MemHit:
+    """asearch 결과 항목 — langgraph Store의 Item처럼 .value를 노출."""
+
+    __slots__ = ("value",)
+
+    def __init__(self, value: dict) -> None:
+        self.value = value
+
+
+class SqlMemoryStore:
+    """SQLAlchemy(asyncpg) 백엔드 — Neon 영속. langgraph Store 인터페이스(aput/asearch) 호환."""
+
+    async def aput(self, namespace: tuple, key: str, value: dict) -> None:
+        from core.db import AsyncSessionLocal  # noqa: PLC0415
+        from core.models import ManagementUserMemory  # noqa: PLC0415
+
+        _, tenant, user = namespace
+        async with AsyncSessionLocal() as db:
+            db.add(ManagementUserMemory(tenant_id=tenant, user_id=user, mem_key=key, content=value))
+            await db.commit()
+
+    async def asearch(self, namespace: tuple, *, limit: int = 10, **_: object) -> list[_MemHit]:
+        from sqlalchemy import select  # noqa: PLC0415
+
+        from core.db import AsyncSessionLocal  # noqa: PLC0415
+        from core.models import ManagementUserMemory  # noqa: PLC0415
+
+        _, tenant, user = namespace
+        async with AsyncSessionLocal() as db:
+            rows = (
+                (
+                    await db.execute(
+                        select(ManagementUserMemory.content)
+                        .where(
+                            ManagementUserMemory.tenant_id == tenant,
+                            ManagementUserMemory.user_id == user,
+                        )
+                        .order_by(ManagementUserMemory.created_at.desc())
+                        .limit(limit)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        return [_MemHit(r) for r in rows]
 
 
 class ManagementMemory:
@@ -38,5 +86,7 @@ class ManagementMemory:
 
 
 def build_memory_store(settings) -> ManagementMemory:
-    """장기기억 빌더 — 기본 InMemory. 영속(AsyncPostgresStore) 분기는 후속(seam)."""
-    return ManagementMemory()
+    """장기기억 빌더 — 테스트/데모(use_mock)는 InMemory, 실행은 SqlMemoryStore(Neon 영속)."""
+    if getattr(settings, "use_mock", True):
+        return ManagementMemory()  # InMemoryStore — hermetic
+    return ManagementMemory(store=SqlMemoryStore())  # asyncpg 영속(Neon)

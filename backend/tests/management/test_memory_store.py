@@ -4,9 +4,23 @@
 cross-session = 별도 호출(다른 세션)에서 같은 네임스페이스로 회수됨. 다른 user/tenant는 격리.
 """
 
+from types import SimpleNamespace
+
 import pytest
 
-from domain.management.assistant.memory_store import ManagementMemory
+from domain.management.assistant.memory_store import (
+    ManagementMemory,
+    SqlMemoryStore,
+    build_memory_store,
+)
+
+
+def test_build_memory_store_branches_on_use_mock():
+    """use_mock=True → InMemory(hermetic), False → SqlMemoryStore(Neon 영속)."""
+    mock = build_memory_store(SimpleNamespace(use_mock=True))
+    assert not isinstance(mock._store, SqlMemoryStore)
+    live = build_memory_store(SimpleNamespace(use_mock=False))
+    assert isinstance(live._store, SqlMemoryStore)
 
 
 @pytest.mark.asyncio
