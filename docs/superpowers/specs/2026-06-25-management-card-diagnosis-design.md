@@ -63,13 +63,12 @@
 2. `snapshots = await reader.fetch_hourly_metrics(campaign_id, today)`.
 3. **일예산 소싱** — `use_mock=True`면 `DAILY_BUDGET_KRW`(데모 고정) 허용. `use_mock=False`면 캠페인 실제 일예산을 구하고, **없으면 `unavailable` 반환**(합성 금지, 불변식 4).
 4. 스냅샷이 비었거나 일예산이 없으면 `unavailable`.
-5. `outcome = run_detection(tenant_id, campaign_id, snapshots, daily_budget_krw)`. **`tenant_id`는 detection이 출력 라벨로만 쓴다**(검증: `deterministic_dx.py:89`·`performance_dx.py:106`이 `DiagnosisResult(tenant_id=...)`로 넣기만 하고, threshold/cache/feature config 조회엔 미사용 → 값이 진단 결과를 바꾸지 않음). 요청에서 tenant를 얻을 수 있으면 `tenant_id` 인자로 전달, 없으면 `org_eval`(비인증 placeholder). 스펙 2에선 영속·노출 안 함. 실 인증 tenant는 스펙 3+.
-6. `outcome.diagnosis is None` → `ok + anomaly=false`. 있으면 `ok + anomaly=true` + `proposal_preview = build_proposal_preview_from_diagnosis(outcome.diagnosis, daily_budget_krw)`.
-7. 전 과정 `try/except` — 예외는 `failed`(raw 미노출, `reason`은 안전 문구). detection 코어는 호출만.
+5. **외부 호출만 `try/except`** — `build_reader().fetch_hourly_metrics(campaign_id, datetime.now(UTC))` + `run_detection(...)`만 try로 감싸 reader/detection **I/O 실패만 `failed`**(raw 미노출)로 변환한다. **결과 조립·`DiagnosticResult`/`ProposalPreview` 생성은 try 밖** — validator·빌더 버그는 raise되게 둔다(계약 결함을 failed로 삼키지 않음). 기준 시각은 **UTC**. `tenant_id`는 detection이 출력 라벨로만 쓴다(검증: `deterministic_dx.py:89`·`performance_dx.py:106` — config 조회 미사용). 요청 tenant 있으면 전달, 없으면 `org_eval`(비인증 placeholder, 영속·노출 안 함, 실 tenant는 스펙 3+).
+6. **guard.verdict 매핑(불변식 3 — 이상없음≠진단불가)** — `INSUFFICIENT_DATA`(또는 스냅샷 빔) → **`unavailable`**(판단 보류, "이상 없음"으로 위장 금지). `NORMAL`(diagnosis None) → `ok+anomaly=false`. `DELIVERY_ANOMALY`(diagnosis 존재) → `ok+anomaly=true` + `build_proposal_preview_from_diagnosis(dx, daily_budget)`. 부분일/희소 데이터는 guard의 `INSUFFICIENT_DATA`가 걸러 `unavailable`로. 계정 타임존 정렬은 스펙 3+.
 
 > `campaign_id`는 풀모드에선 LLM이 `live_campaigns`로 얻어 전달, 무키 폴백에선 `req.campaign_id`. 없으면 `unavailable`.
 
-**`build_proposal_preview_from_diagnosis(dx, daily_budget_krw)`** — **정본 `ActionProposal`을 만들지 않고**(불변식 1) `DiagnosisResult`에서 직접 미리보기 dict를 조립한다. `build_sample_proposal`/`finalize_proposal`은 호출하지 않는다.
+**`build_proposal_preview_from_diagnosis(dx, daily_budget_krw) -> ProposalPreview`** — **정본 `ActionProposal`을 만들지 않고**(불변식 1) `DiagnosisResult`에서 직접 `ProposalPreview`(typed)를 조립한다. `build_sample_proposal`/`finalize_proposal`은 호출하지 않는다. 필드:
 ```python
 {
   "preview_id": "preview_<8hex>",         # 정본 ID 아님(휘발성). uuid4 즉석 생성.
@@ -85,31 +84,40 @@
 
 ### 4.2 운반 계약 — `AskResult`
 
-`backend/domain/management/assistant/contracts.py` — typed 모델 **`DiagnosticResult`** 를 정의하고 `AskResult`에 **`diagnostic: DiagnosticResult | None = None`** 추가(optional·하위호환). raw dict가 아니라 모델 + validator로 **불법 4-case 조합을 생성 시점에 거부**한다.
+`backend/domain/management/assistant/contracts.py` — **중첩까지 typed**: `DiagnosisView`(표시 필드만) · `ProposalPreview`(정본 아님/실행 불가를 타입으로 잠금) · `DiagnosticResult`(4-case validator). `AskResult`에 **`diagnostic: DiagnosticResult | None = None`** 추가(optional·하위호환). raw dict가 아니라 모델로 불법 값/조합을 생성 시점에 거부한다.
 
 ```python
+class DiagnosisView(BaseModel):           # 카드용 표시 필드만(정보 최소화)
+    anomaly_type: str; status: str; confidence: float; hypothesis: str = ""
+
+class ProposalPreview(BaseModel):         # 불변식 1·2를 타입으로 잠금
+    model_config = ConfigDict(extra="forbid")   # proposal_id 등 정본 키 주입 거부
+    preview_id: str; action_type: str; tier: str | None = None
+    budget_before_krw: int | None = None; budget_after_krw: int | None = None; hypothesis: str = ""
+    executable: Literal[False] = False; finalized: Literal[False] = False
+    persisted: Literal[False] = False; source: Literal["diagnostic_preview"] = "diagnostic_preview"
+
 class DiagnosticResult(BaseModel):
     diagnostic_status: Literal["ok", "unavailable", "failed"]
-    anomaly: bool = False            # diagnostic_status == "ok"일 때만 의미
-    diagnosis: dict | None = None    # DiagnosisResult.model_dump (ok+anomaly)
-    proposal_preview: dict | None = None
-    reason: str = ""                 # unavailable/failed 안전 문구
+    anomaly: bool = False
+    diagnosis: DiagnosisView | None = None
+    proposal_preview: ProposalPreview | None = None
+    reason: str = ""
 
     @model_validator(mode="after")
     def _legal_combo(self):
-        if self.diagnostic_status != "ok":
-            # 진단 불가/실패: diagnosis·proposal 없음, reason 필수
-            assert self.diagnosis is None and self.proposal_preview is None
-            assert self.reason
-            assert self.anomaly is False
-        elif self.anomaly:
-            assert self.diagnosis is not None  # 이상 → diagnosis 필수
-        else:
-            # ok+no-anomaly: diagnosis·proposal 없음
-            assert self.diagnosis is None and self.proposal_preview is None
+        if self.diagnostic_status != "ok":           # 진단 불가/실패
+            if self.diagnosis or self.proposal_preview: raise ValueError("payload forbidden")
+            if not self.reason: raise ValueError("reason required")
+            if self.anomaly: raise ValueError("anomaly must be False")
+        elif self.anomaly:                           # ok+anomaly ⇒ 둘 다 필수(카드 계약 일치)
+            if self.diagnosis is None or self.proposal_preview is None:
+                raise ValueError("ok+anomaly requires diagnosis AND proposal_preview")
+        else:                                        # ok+no-anomaly
+            if self.diagnosis or self.proposal_preview: raise ValueError("payload forbidden")
         return self
 ```
-> graph `to_result`/무키 폴백이 `live_diagnosis`의 `DiagnosticResult`를 `AskResult.diagnostic`에 싣는다. 기존 `suggested_action`은 유지(폴백·하위호환). (assert는 예시 — 구현 시 명시적 `ValueError`로.)
+> `ProposalPreview`는 `executable/finalized/persisted = Literal[False]` + `extra="forbid"`로 **executable=True·proposal_id 주입을 타입 에러**로 막는다(불변식 1·2를 코드로 잠금). graph `to_result`/무키 폴백이 `DiagnosticResult`를 `AskResult.diagnostic`에 싣는다. 기존 `suggested_action` 유지.
 
 ### 4.3 composer 확장
 
@@ -159,6 +167,7 @@ class DiagnosticResult(BaseModel):
 
 ## 8. 오류·엣지
 
+- **`INSUFFICIENT_DATA`(guard) / 스냅샷 빔 / 부분일** — `ok+no-anomaly`("이상 없음")로 보내지 않고 **`unavailable`**(판단 보류). 불변식 3의 핵심 경계.
 - **`unavailable`** — 정상 흐름(오류 아님). `empty_state` 섹션 + neutral. "이상 없음"과 구분.
 - **`failed`** — 툴이 `failed` 상태 반환(예외 raw 미노출). **composer가 결정적으로** empty_state + neutral로 표현(LLM 미경유). LLM은 summary 텍스트만 보조. 턴 자체는 정상 종료.
 - **실측 모드 일예산 미소싱** — `unavailable`(합성 금지). 현재 reader엔 계정 단위 `get_min_daily_budget`만 있어 실측 모드는 자주 `unavailable` — 한계로 명시(§10).

@@ -33,44 +33,72 @@
 - [ ] **Step 1: 실패 테스트 작성** — `backend/tests/management/test_diagnostic_result.py`:
 
 ```python
-# DiagnosticResult 4-case validator — 불법 조합 거부
+# DiagnosticResult 4-case validator + 중첩 typed 모델(ProposalPreview/DiagnosisView) — 불법 조합/값 거부
 import pytest
 from pydantic import ValidationError
 
-from domain.management.assistant.contracts import AskResult, DiagnosticResult
+from domain.management.assistant.contracts import (
+    AskResult,
+    DiagnosisView,
+    DiagnosticResult,
+    ProposalPreview,
+)
 
 
-def test_ok_anomaly_requires_diagnosis():
-    d = DiagnosticResult(diagnostic_status="ok", anomaly=True, diagnosis={"anomaly_type": "bid_loss"})
+def _view():
+    return DiagnosisView(anomaly_type="bid_loss", status="confirmed", confidence=1.0, hypothesis="입찰 패배")
+
+
+def _preview():
+    return ProposalPreview(preview_id="preview_1", action_type="INCREASE_BUDGET", budget_before_krw=100, budget_after_krw=150)
+
+
+def test_ok_anomaly_requires_diagnosis_and_proposal():
+    d = DiagnosticResult(diagnostic_status="ok", anomaly=True, diagnosis=_view(), proposal_preview=_preview())
     assert d.anomaly is True
+
+
+def test_ok_anomaly_without_proposal_rejected():
+    with pytest.raises(ValidationError):
+        DiagnosticResult(diagnostic_status="ok", anomaly=True, diagnosis=_view(), proposal_preview=None)
 
 
 def test_ok_anomaly_without_diagnosis_rejected():
     with pytest.raises(ValidationError):
-        DiagnosticResult(diagnostic_status="ok", anomaly=True, diagnosis=None)
+        DiagnosticResult(diagnostic_status="ok", anomaly=True, diagnosis=None, proposal_preview=_preview())
 
 
-def test_ok_no_anomaly_forbids_diagnosis_and_proposal():
+def test_ok_no_anomaly_forbids_payload():
     ok = DiagnosticResult(diagnostic_status="ok", anomaly=False)
     assert ok.diagnosis is None and ok.proposal_preview is None
     with pytest.raises(ValidationError):
-        DiagnosticResult(diagnostic_status="ok", anomaly=False, proposal_preview={"preview_id": "p"})
+        DiagnosticResult(diagnostic_status="ok", anomaly=False, proposal_preview=_preview())
 
 
-def test_unavailable_forbids_diagnosis_requires_reason():
+def test_unavailable_forbids_payload_requires_reason():
     u = DiagnosticResult(diagnostic_status="unavailable", reason="데이터 없음")
     assert u.diagnosis is None and u.anomaly is False
     with pytest.raises(ValidationError):
         DiagnosticResult(diagnostic_status="unavailable", reason="")
     with pytest.raises(ValidationError):
-        DiagnosticResult(diagnostic_status="unavailable", reason="x", diagnosis={"a": 1})
+        DiagnosticResult(diagnostic_status="unavailable", reason="x", diagnosis=_view())
 
 
-def test_failed_requires_reason_no_payload():
+def test_failed_requires_reason():
     f = DiagnosticResult(diagnostic_status="failed", reason="툴 오류")
     assert f.proposal_preview is None
     with pytest.raises(ValidationError):
         DiagnosticResult(diagnostic_status="failed", reason="")
+
+
+def test_proposal_preview_locks_safety_invariants():
+    # executable=True·proposal_id·임의 키는 타입/extra=forbid로 거부(정본/실행 가능 오인 차단)
+    with pytest.raises(ValidationError):
+        ProposalPreview(preview_id="p", action_type="X", executable=True)
+    with pytest.raises(ValidationError):
+        ProposalPreview(preview_id="p", action_type="X", proposal_id="prop_1")
+    pv = _preview()
+    assert pv.executable is False and pv.finalized is False and pv.persisted is False
 
 
 def test_askresult_diagnostic_optional_default_none():
@@ -79,16 +107,46 @@ def test_askresult_diagnostic_optional_default_none():
 
 - [ ] **Step 2: 실패 확인** — `cd backend && uv run pytest tests/management/test_diagnostic_result.py -v` → FAIL(`ImportError: DiagnosticResult`).
 
-- [ ] **Step 3: 구현** — `backend/domain/management/assistant/contracts.py` 상단 import에 `model_validator`가 없으면 추가(`from pydantic import BaseModel, Field, model_validator`), `Literal`(`from typing import Literal`) 확인 후, `AskResult` 클래스 **위**에 추가:
+- [ ] **Step 3: 구현** — `backend/domain/management/assistant/contracts.py` 상단 import 보강: `from pydantic import BaseModel, ConfigDict, Field, model_validator`, `from typing import Literal`. `AskResult` 클래스 **위**에 추가:
 
 ```python
+class DiagnosisView(BaseModel):
+    """카드용 진단 뷰 — DiagnosisResult에서 표시 필드만 추림(정보 최소화)."""
+
+    anomaly_type: str
+    status: str
+    confidence: float
+    hypothesis: str = ""
+
+
+class ProposalPreview(BaseModel):
+    """진단용 제안 미리보기 — 정본 아님/실행 불가를 타입으로 잠근다(불변식 1·2).
+
+    executable/finalized/persisted는 Literal[False]로 고정, extra=forbid로 proposal_id 등
+    정본 키 주입을 거부한다.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    preview_id: str
+    action_type: str
+    tier: str | None = None
+    budget_before_krw: int | None = None
+    budget_after_krw: int | None = None
+    hypothesis: str = ""
+    executable: Literal[False] = False
+    finalized: Literal[False] = False
+    persisted: Literal[False] = False
+    source: Literal["diagnostic_preview"] = "diagnostic_preview"
+
+
 class DiagnosticResult(BaseModel):
-    """live_diagnosis 4-case 결과 — 불법 조합을 validator로 거부한다(이상없음/진단불가/실패 구분)."""
+    """live_diagnosis 4-case 결과 — 불법 조합을 validator로 거부(이상없음/진단불가/실패 구분)."""
 
     diagnostic_status: Literal["ok", "unavailable", "failed"]
     anomaly: bool = False  # diagnostic_status == "ok"일 때만 의미
-    diagnosis: dict | None = None  # DiagnosisResult.model_dump (ok+anomaly)
-    proposal_preview: dict | None = None
+    diagnosis: DiagnosisView | None = None
+    proposal_preview: ProposalPreview | None = None
     reason: str = ""  # unavailable/failed 안전 문구
 
     @model_validator(mode="after")
@@ -101,8 +159,9 @@ class DiagnosticResult(BaseModel):
             if self.anomaly:
                 raise ValueError("unavailable/failed은 anomaly=False여야 한다")
         elif self.anomaly:
-            if self.diagnosis is None:
-                raise ValueError("ok+anomaly는 diagnosis가 필요하다")
+            # ok+anomaly ⇒ diagnosis AND proposal_preview 둘 다 필수(카드 계약 일치)
+            if self.diagnosis is None or self.proposal_preview is None:
+                raise ValueError("ok+anomaly는 diagnosis와 proposal_preview가 모두 필요하다")
         else:
             if self.diagnosis is not None or self.proposal_preview is not None:
                 raise ValueError("ok+no-anomaly는 diagnosis·proposal_preview를 가질 수 없다")
@@ -115,7 +174,7 @@ class DiagnosticResult(BaseModel):
     diagnostic: DiagnosticResult | None = None  # 진단 4-case 결과(없으면 v0 경로)
 ```
 
-- [ ] **Step 4: 통과 확인** — `cd backend && uv run pytest tests/management/test_diagnostic_result.py -v` → PASS(6 passed).
+- [ ] **Step 4: 통과 확인** — `cd backend && uv run pytest tests/management/test_diagnostic_result.py -v` → PASS(8 passed).
 
 - [ ] **Step 5: Ruff + 커밋**
 ```bash
@@ -170,10 +229,8 @@ async def test_anomaly_returns_ok_anomaly_with_preview(monkeypatch):
     assert res.anomaly is True
     assert res.diagnosis is not None
     assert res.proposal_preview is not None
-    assert res.proposal_preview["executable"] is False
-    assert res.proposal_preview["finalized"] is False
-    assert "preview_id" in res.proposal_preview
-    assert "proposal_id" not in res.proposal_preview
+    assert res.proposal_preview.executable is False  # ProposalPreview 타입(불변식 잠금)
+    assert res.proposal_preview.preview_id.startswith("preview_")
 
 
 @pytest.mark.asyncio
@@ -184,6 +241,22 @@ async def test_normal_returns_ok_no_anomaly(monkeypatch):
     assert res.diagnostic_status == "ok"
     assert res.anomaly is False
     assert res.diagnosis is None
+
+
+@pytest.mark.asyncio
+async def test_insufficient_data_maps_to_unavailable(monkeypatch):
+    # guard가 INSUFFICIENT_DATA면 "이상 없음"이 아니라 "진단 불가"(불변식 3).
+    from domain.management.detection.guardrails import GuardResult, GuardVerdict
+    from domain.management.detection.service.detection_service import DetectionOutcome
+
+    reader = MockAdPlatform(seed=1)
+    _patch_reader(monkeypatch, reader)
+    monkeypatch.setattr(
+        t, "run_detection",
+        lambda *a, **k: DetectionOutcome(GuardResult(GuardVerdict.INSUFFICIENT_DATA, reason="부족"), None, []),
+    )
+    res = await t.live_diagnosis(_Settings(), "camp_1")
+    assert res.diagnostic_status == "unavailable"
 
 
 @pytest.mark.asyncio
@@ -229,12 +302,12 @@ def test_preview_builder_makes_no_canonical_proposal():
         hypothesis="예산 소진", confidence=1.0, evidence_metrics={}, metrics_as_of=datetime.now(UTC),
         status=DiagnosisStatus.CONFIRMED,
     )
-    preview = t.build_proposal_preview_from_diagnosis(dx, 100_000)
-    assert preview["preview_id"].startswith("preview_")
-    assert preview["action_type"] == "INCREASE_BUDGET"
-    assert preview["budget_before_krw"] == 100_000
-    assert preview["executable"] is False and preview["persisted"] is False
-    assert preview["source"] == "diagnostic_preview"
+    preview = t.build_proposal_preview_from_diagnosis(dx, 100_000)  # ProposalPreview 반환
+    assert preview.preview_id.startswith("preview_")
+    assert preview.action_type == "INCREASE_BUDGET"
+    assert preview.budget_before_krw == 100_000
+    assert preview.executable is False and preview.persisted is False
+    assert preview.source == "diagnostic_preview"
 ```
 
 - [ ] **Step 2: 실패 확인** — `cd backend && uv run pytest tests/management/test_live_diagnosis.py -v` → FAIL(`AttributeError: live_diagnosis`).
@@ -244,7 +317,7 @@ def test_preview_builder_makes_no_canonical_proposal():
 ```python
 from uuid import uuid4
 
-from domain.management.assistant.contracts import DiagnosticResult
+from domain.management.assistant.contracts import DiagnosisView, DiagnosticResult, ProposalPreview
 from domain.management.contracts.policy import DAILY_BUDGET_KRW
 from domain.management.detection.service.detection_service import run_detection
 ```
@@ -263,61 +336,61 @@ _ANOMALY_ACTION = {
 }
 
 
-def build_proposal_preview_from_diagnosis(dx, daily_budget_krw: int) -> dict:
-    """정본 ActionProposal을 만들지 않고(불변식 1) DiagnosisResult에서 직접 미리보기 dict 조립."""
+def build_proposal_preview_from_diagnosis(dx, daily_budget_krw: int) -> ProposalPreview:
+    """정본 ActionProposal을 만들지 않고(불변식 1) DiagnosisResult에서 직접 ProposalPreview 조립."""
     action_type, tier = _ANOMALY_ACTION.get(str(dx.anomaly_type), ("REPLACE_CREATIVE", "TIER_2"))
     budget_after = round(daily_budget_krw * 1.5) if action_type == "INCREASE_BUDGET" else daily_budget_krw
-    return {
-        "preview_id": f"preview_{uuid4().hex[:8]}",
-        "action_type": action_type,
-        "tier": tier,
-        "budget_before_krw": daily_budget_krw,
-        "budget_after_krw": budget_after,
-        "hypothesis": dx.hypothesis,
-        "executable": False,
-        "finalized": False,
-        "persisted": False,
-        "source": "diagnostic_preview",
-    }
+    return ProposalPreview(
+        preview_id=f"preview_{uuid4().hex[:8]}",
+        action_type=action_type,
+        tier=tier,
+        budget_before_krw=daily_budget_krw,
+        budget_after_krw=budget_after,
+        hypothesis=dx.hypothesis,
+    )
 
 
 async def live_diagnosis(settings, campaign_id: str, tenant_id: str | None = None) -> DiagnosticResult:
-    """시간별 스냅샷으로 detection을 돌려 4-case 진단 결과를 낸다. detection 코어는 호출만(불변식 5)."""
+    """시간별 스냅샷으로 detection을 돌려 4-case 진단 결과를 낸다. detection 코어는 호출만(불변식 5).
+
+    기준 시각은 UTC(`datetime.now(UTC)`). 데이터 부족·부분일은 guard가 INSUFFICIENT_DATA로 잡아
+    `unavailable`로 분리한다(이상 없음과 혼동 금지, 불변식 3). 계정 타임존 정렬은 스펙 3+ 후속.
+    """
     if not campaign_id:
         return DiagnosticResult(diagnostic_status="unavailable", reason="대상 캠페인을 특정할 수 없어요.")
+    # 일예산 소싱(외부 I/O 아님) — 데모(mock)만 고정값 허용. 실측은 소스 없으면 진단 불가(합성 금지, 불변식 4).
+    daily_budget = DAILY_BUDGET_KRW if getattr(settings, "use_mock", True) else None
+    if not daily_budget:
+        return DiagnosticResult(
+            diagnostic_status="unavailable", reason="캠페인 일예산을 확인할 수 없어 진단을 건너뛰었어요."
+        )
+
+    # 외부 호출만 try로 — reader/detection I/O 실패만 failed. 계약 위반·빌더 버그는 아래에서 raise되게 둔다.
     try:
         reader = build_reader(settings)
-        # 일예산 소싱 — 데모(mock)만 고정값 허용. 실측은 캠페인 일예산 소스가 없으면 진단 불가(합성 금지, 불변식 4).
-        if getattr(settings, "use_mock", True):
-            daily_budget = DAILY_BUDGET_KRW
-        else:
-            daily_budget = None  # 실측 캠페인 일예산 reader 메서드 미존재(스펙 3+ 후속)
-        if not daily_budget:
-            return DiagnosticResult(
-                diagnostic_status="unavailable", reason="캠페인 일예산을 확인할 수 없어 진단을 건너뛰었어요."
-            )
         snapshots = await reader.fetch_hourly_metrics(campaign_id, datetime.now(UTC))
-        if not snapshots:
-            return DiagnosticResult(
-                diagnostic_status="unavailable", reason="시간별 데이터가 없어 진단할 수 없어요."
-            )
-        outcome = run_detection(
-            tenant_id or "org_eval", campaign_id, snapshots, daily_budget_krw=daily_budget
-        )
-        if outcome.diagnosis is None:
-            return DiagnosticResult(diagnostic_status="ok", anomaly=False)
-        dx = outcome.diagnosis
-        return DiagnosticResult(
-            diagnostic_status="ok",
-            anomaly=True,
-            diagnosis=dx.model_dump(mode="json"),
-            proposal_preview=build_proposal_preview_from_diagnosis(dx, daily_budget),
-        )
-    except Exception as exc:  # noqa: BLE001 — detection 코어 미수정, 래퍼에서 잡아 failed. raw 미노출.
-        print(f"[live_diagnosis] failed: {exc!r}")
-        return DiagnosticResult(
-            diagnostic_status="failed", reason="진단 중 문제가 발생해 건너뛰었어요."
-        )
+        outcome = run_detection(tenant_id or "org_eval", campaign_id, snapshots, daily_budget_krw=daily_budget)
+    except Exception as exc:  # noqa: BLE001 — 외부(reader/detection) 실패만. raw 미노출.
+        print(f"[live_diagnosis] external failure: {exc!r}")
+        return DiagnosticResult(diagnostic_status="failed", reason="진단 중 문제가 발생해 건너뛰었어요.")
+
+    # 이하 결정적 — validator·빌더 버그는 raise(테스트·모니터링에서 잡힘).
+    if not snapshots or str(outcome.guard.verdict) == "insufficient_data":
+        return DiagnosticResult(diagnostic_status="unavailable", reason="데이터가 부족해 진단을 보류했어요.")
+    if outcome.diagnosis is None:  # NORMAL → 이상 없음
+        return DiagnosticResult(diagnostic_status="ok", anomaly=False)
+    dx = outcome.diagnosis  # DELIVERY_ANOMALY
+    return DiagnosticResult(
+        diagnostic_status="ok",
+        anomaly=True,
+        diagnosis=DiagnosisView(
+            anomaly_type=str(dx.anomaly_type),
+            status=str(dx.status),
+            confidence=dx.confidence,
+            hypothesis=dx.hypothesis,
+        ),
+        proposal_preview=build_proposal_preview_from_diagnosis(dx, daily_budget),
+    )
 ```
 
 그리고 `INTENT_TOOLS`에 한 줄 추가:
@@ -325,7 +398,7 @@ async def live_diagnosis(settings, campaign_id: str, tenant_id: str | None = Non
     "diagnosis": ("live_diagnosis", live_diagnosis),
 ```
 
-- [ ] **Step 4: 통과 확인** — `cd backend && uv run pytest tests/management/test_live_diagnosis.py -v` → PASS(6 passed).
+- [ ] **Step 4: 통과 확인** — `cd backend && uv run pytest tests/management/test_live_diagnosis.py -v` → PASS(7 passed).
 
 - [ ] **Step 5: Ruff + 커밋**
 ```bash
@@ -533,31 +606,31 @@ def derive_severity(diagnostic) -> str:
     """진단만으로 severity 파생(tier 미사용). 계약상 info 없음 → neutral."""
     if diagnostic is None or diagnostic.diagnostic_status != "ok" or not diagnostic.anomaly:
         return "neutral"
-    dx = diagnostic.diagnosis or {}
-    if dx.get("status") == "confirmed":
-        return "critical" if (dx.get("confidence") or 0.0) >= 0.8 else "warning"
+    dx = diagnostic.diagnosis  # DiagnosisView
+    if dx is not None and dx.status == "confirmed":
+        return "critical" if dx.confidence >= 0.8 else "warning"
     return "neutral"
 
 
-def _diagnosis_section(dx: dict) -> DiagnosisSection:
+def _diagnosis_section(dx) -> DiagnosisSection:  # dx: DiagnosisView
     return DiagnosisSection(
         title="진단",
-        anomaly_type=str(dx.get("anomaly_type", "")),
-        status=str(dx.get("status", "")),
-        confidence=float(dx.get("confidence") or 0.0),
-        hypothesis=str(dx.get("hypothesis", "")),
+        anomaly_type=dx.anomaly_type,
+        status=dx.status,
+        confidence=dx.confidence,
+        hypothesis=dx.hypothesis,
     )
 
 
-def _proposal_preview_section(pv: dict) -> ProposalSection:
+def _proposal_preview_section(pv) -> ProposalSection:  # pv: ProposalPreview
     return ProposalSection(
         title="제안(미리보기)",
-        action_type=str(pv.get("action_type", "")),
-        rationale=pv.get("hypothesis"),
-        preview_id=pv.get("preview_id"),
-        tier=pv.get("tier"),
-        budget_before_krw=pv.get("budget_before_krw"),
-        budget_after_krw=pv.get("budget_after_krw"),
+        action_type=pv.action_type,
+        rationale=pv.hypothesis or None,
+        preview_id=pv.preview_id,
+        tier=pv.tier,
+        budget_before_krw=pv.budget_before_krw,
+        budget_after_krw=pv.budget_after_krw,
         executable=False,
     )
 ```
@@ -584,7 +657,7 @@ def compose_card(res: AskResult, *, turn_id: str) -> ChatCard:
         sections.append(_diagnosis_section(diag.diagnosis))
         if diag.proposal_preview:
             sections.append(_proposal_preview_section(diag.proposal_preview))
-        badges = [Badge(label=str(diag.diagnosis.get("anomaly_type", "")), tone="warning")]
+        badges = [Badge(label=diag.diagnosis.anomaly_type, tone="warning")]
         return ChatCard(type="management", status=status, badges=badges, sections=sections, trace=TraceInfo(turn_id=turn_id))
 
     # diag None(일반 질문) 또는 ok+no-anomaly → 기존 v0 경로(suggested_action/evidence)
