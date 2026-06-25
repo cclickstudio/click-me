@@ -883,8 +883,25 @@ export default function ChatConversation({
         }
       }
       if (items.length) await appendWidgetMessages(items);
+      // 이 시뮬은 실행한 바로 이 세션에 결과 위젯으로 표시됐다 → 프로젝트 seen 집합에
+      // 등록해 다른 세션에서 N4 선제 알림으로 다시 뜨지 않게 한다(세션 간 알림 누수 방지).
+      if (simId) {
+        try {
+          const seen: string[] = JSON.parse(
+            localStorage.getItem(proactiveSeenKey(projectId)) || '[]'
+          );
+          if (!seen.includes(simId)) {
+            localStorage.setItem(
+              proactiveSeenKey(projectId),
+              JSON.stringify([...seen, simId].slice(-200))
+            );
+          }
+        } catch {
+          /* localStorage 불가 — 무시 */
+        }
+      }
     },
-    [appendWidgetMessages, showToast]
+    [appendWidgetMessages, showToast, projectId]
   );
 
   // 토론 요약 보기 — 토론 요약 위젯을 새 메시지로 추가(영속화).
