@@ -89,13 +89,13 @@ management 스키마를 본떠 **공용화 가능한 메타데이터**를 갖는
 
 **`chat_knowledge_documents`** (청크의 부모)
 - `id` · `source`(파일명) · `title` · `source_type` · `source_url`(없으면 NULL)
-- `version` · `language` · `status`(`active`|`deprecated`) · `content_hash`(= `embedding_content_hash`, keywords 제외 본문 해시 — 재임베딩 게이트)
+- `version`(빌드 시그니처: 모델·청킹버전·`max_chunk_chars`) · `language` · `status`(`active`|`deprecated`) · `content_hash`(전체 md에서 keywords 제외한 정규화 해시)
 - `retrieved_at` · `effective_from` (TIMESTAMPTZ, tz-aware) — **B 자동수집 대비 버전 컬럼**
 - `created_at` · `updated_at`
 
 **`chat_knowledge_chunks`**
 - `id` · `document_id`(FK, cascade) · `source` · `title` · `chunk`(TEXT) · `keywords`(TEXT, NULL 가능)
-- `embedding vector(1536)` · `embedding_model` · `chunk_index` · `content_hash`(청크 정규화 해시)
+- `embedding vector(1536)` · `embedding_model` · `chunk_index` · `content_hash`(각 청크의 title+본문 정규화 해시)
 - `search_vector`(tsvector 생성열) · `created_at`
 - **`search_vector` 정의** `to_tsvector('simple', coalesce(title,'') || ' ' || coalesce(chunk,'') || ' ' || coalesce(keywords,''))` STORED — title·chunk·keywords를 모두 키워드 검색 대상으로.
 - > `source_type`은 chunks에 두지 않는다(아래 §9 필터는 documents join으로 처리).
@@ -146,12 +146,18 @@ class KnowledgeRetriever(Protocol):
 4. **문서 본문 `content_hash` 비교 → 재임베딩 여부 결정**. 메타데이터만 바뀐 경우 별도 처리(아래).
 5. `chat_knowledge_documents` + `chat_knowledge_chunks`에 적재. chunk row의 `embedding_model`에 상수 기록.
 
-**청킹 정책 (`##` + 최대 길이).** `## 섹션` 기준으로 자르되, 한 청크가 **최대 길이(초기값 약 1500자 / ≈500토큰)** 를 넘으면 문단(빈 줄) → 문장 순으로 **하위 분할**(인접 청크 소폭 overlap 허용). 최대 길이는 설정 상수로 둬 튜닝 가능. **하위 분할 시 그 섹션의 `keywords`를 모든 하위 청크에 복사**한다(안 하면 뒤쪽 청크가 키워드 검색에서 약해짐).
+**청킹 정책 (`##` + 최대 길이).** `## 섹션` 기준으로 자르되, 한 청크가 **최대 길이(초기값 약 1500자 / ≈500토큰)** 를 넘으면 문단(빈 줄) → 문장 순으로 **하위 분할**(인접 청크 소폭 overlap 허용). **한 문장 자체가 한도를 넘으면(긴 약관·URL) 마지막 폴백으로 하드 분할**해 모든 청크가 한도 내가 되도록 보장한다. 최대 길이는 설정 상수로 둬 튜닝 가능. **하위 분할 시 그 섹션의 `keywords`를 모든 하위 청크에 복사**한다(안 하면 뒤쪽 청크가 키워드 검색에서 약해짐).
 
 **content_hash 기준 (정규화 마크다운, 확정).** `normalize.py`의 정규화 함수를 단일 기준으로(원문 그대로 해시 금지).
 - 정규화: ① CRLF→LF, ② 줄 끝 공백 제거, ③ 연속 3줄+ 빈 줄 → 1줄, ④ 앞뒤 빈 줄 제거.
-- **임베딩 게이트 해시(`embedding_content_hash`)** = `sha256(정규화 `title + 본문`, `keywords:` 줄 제외)`. **임베딩 입력과 동일 범위**(title + 본문)를 덮어야 한다 — title이 임베딩에 들어가므로 title 변경도 재임베딩 대상. **재임베딩 여부는 이 해시로만 판단**, keywords는 임베딩 비대상이라 제외.
-- 청크 해시 = `sha256(정규화 `title + 청크 본문`)`(keywords 제외).
+- **문서 해시(`documents.content_hash`)** = `sha256`(전체 md에서 `keywords:` 줄 제외 후 정규화). 재임베딩 판단의 본문 기준(여러 `## 섹션` 포함).
+- **청크 해시(`chunks.content_hash`)** = `sha256`(정규화 title + 청크 본문, keywords 제외). 청크 단위 추적용.
+- title은 임베딩 입력에 포함되므로 두 해시 모두 title 변경에 반응한다(keywords는 임베딩 비대상이라 제외).
+
+**재임베딩 판단 = 문서 해시 + 빌드 시그니처.** 본문이 같아도 임베딩 모델·청킹 설정이 바뀌면 기존 벡터를 재사용하면 안 된다(§5 교체=재색인). skip은 아래를 **모두** 만족할 때만 허용:
+- `documents.content_hash` 동일, **그리고**
+- **빌드 시그니처 동일** = 임베딩 모델 + 청킹 알고리즘 버전 + `max_chunk_chars`. 시그니처는 `documents.version`에 저장·비교(동치: 모든 기존 `chunk.embedding_model` == 현재 모델 + 청킹 설정 동일).
+- 시그니처가 다르면(모델/청킹 변경) 재색인 경로로 떨어진다.
 
 **변경 종류별 처리 (불필요한 재임베딩 차단).**
 - **title/본문 변경**(`embedding_content_hash` 달라짐) → 해당 출처 문서·청크 재생성 + 재임베딩.
@@ -175,7 +181,7 @@ management `retriever.py` 패턴 차용.
 - **키워드 채널** `websearch_to_tsquery('simple', q)`로 GIN 검색 (title+chunk+keywords 대상).
 - **융합** Reciprocal Rank Fusion(K=60)으로 두 랭킹 합산.
 
-**source_type 필터 = documents join, 양 채널 모두.** `source_type`은 documents에만 있으므로, 벡터·키워드 쿼리 **둘 다 `chat_knowledge_documents`를 join해 `documents.source_type = :st`** 로 필터한다(융합 전). 한쪽만 필터하면 융합 시 다른 범위가 섞인다. (작은 KB라 join 비용 무시 가능.)
+**documents-join 필터 = 양 채널 모두 (`status` + `source_type`).** `status`·`source_type`은 documents에만 있으므로, 벡터·키워드 쿼리 **둘 다 `chat_knowledge_documents`를 join**해 **항상 `documents.status = 'active'`** (deprecated 제외), 지정 시 `documents.source_type = :st`로 필터한다(융합 전). 한쪽만 필터하면 융합 시 다른 범위가 섞인다. (작은 KB라 join 비용 무시 가능.)
 
 **한국어 키워드 검색 한계 (Phase 1 보강 + Phase 2 점검).** `simple` config는 한국어 형태소 분석을 못 한다. Phase 1은 ①벡터 채널이 의미를 커버 + ②`keywords` 컬럼으로 정확 토큰을 보강해 수용한다. Phase 2에서 **pg_trgm·pg_bigm·외부 검색엔진(OpenSearch/Nori 등)** 을 비교 검토하되, **pg_bigm은 사용 DB(NeonDB) 환경의 확장 지원 여부를 먼저 확인**한다.
 
@@ -189,7 +195,7 @@ management `retriever.py` 패턴 차용.
 
 **근거 게이트 — 코사인 유사도(절대값) 기준.** RRF 점수는 상대 랭킹이라 절대 임계 부적합 → 벡터 코사인 유사도로 게이트.
 - **변환식** pgvector `<=>`는 코사인 **거리**(작을수록 유사). 따라서 `similarity = 1 - cosine_distance`. (threshold 반대 해석 방지용 명시.)
-- **임계값** top-1 청크 `similarity < 0.35` → "근거 없음". **0.35는 초기 설정값** — 임베딩 모델·정규화·문서 길이에 따라 흔들리므로 **운영 전 소규모 eval로 조정**(설정 상수).
+- **임계값** 검색된 청크의 **최대 코사인 유사도 `max(similarity) < 0.35`** → "근거 없음". (top-1만 보면 RRF에서 keyword-only(similarity=0)가 1위일 때 false negative가 나므로 max로 판정.) **0.35는 초기 설정값** — 임베딩 모델·정규화·문서 길이에 따라 흔들리므로 **운영 전 소규모 eval로 조정**(설정 상수).
 - 검색 0건도 동일 처리.
 
 **근거 없음 정책 (강하게 유지).**
@@ -197,6 +203,8 @@ management `retriever.py` 패턴 차용.
 - 호출 시에도 시스템 프롬프트에 **"제공된 컨텍스트에 근거해서만 답하라. 컨텍스트에 없으면 모른다고 답하라. 추측·일반지식으로 채우지 마라."** 명시.
 
 **인용 구조 (chunk id 기반).** 답변 본문에서 사용한 청크를 `[1]`,`[2]`로 표기하고 끝에 **`[n] → {chunk_id, source, title, source_url}`** 매핑을 첨부 → 문장-근거 추적 가능.
+
+> **구현 범위 경계.** 설계 의도는 위 흐름 전체(Gemini 2.0 Flash + SSE)다. 단, **Phase 1 구현(구현계획 Task 8)은 LLM을 주입받는 answer service**(검색 → 게이트 → 인용)까지를 제공하고, **구체 Gemini 어댑터·SSE 엔드포인트 배선은 즉시 후속**으로 분리한다(§13 범위·구현계획 후속 섹션 일치).
 
 ## 12. 주기적 업데이트
 
@@ -221,5 +229,5 @@ management `retriever.py` 패턴 차용.
 
 ## 14. 범위 정리
 
-- **포함** chat 도메인 골격, 신규 2테이블 + 마이그레이션, 임베딩 단일 상수 + 교체 정책, 정규화 content_hash 멱등 + 메타-only update, `##`+길이제한 청킹, `keywords` 보강 + title/chunk/keywords search_vector, 포트(`KnowledgeRetriever`/`KnowledgeIngestor`), documents-join 양채널 source_type 필터 하이브리드 검색, `1 - cosine_distance` 근거 게이트(초기 0.35), chunk-id 인용, advisory lock cron 재적재, 큐레이션 md(마케팅+Meta 요약).
-- **제외(후속)** 자동 크롤링(B), 한국어 특화 임베딩(BGE-m3/Upstage, 재색인 동반)·한국어 FTS(pg_trgm/pg_bigm/외부엔진), `tools/knowledge` 승격, 챗 오케스트레이터 본체, 대화 메모리/히스토리.
+- **포함** chat 도메인 골격, 신규 2테이블 + 마이그레이션, 임베딩 단일 상수 + 교체 정책(빌드 시그니처), 정규화 문서/청크 해시 멱등 + 메타·keywords-only update, `##`+길이제한 청킹(문장→하드 분할 폴백), `keywords` 보강 + title/chunk/keywords search_vector, 포트(`KnowledgeRetriever`/`KnowledgeIngestor`), documents-join 양채널 `status`+`source_type` 필터 하이브리드 검색, `1 - cosine_distance` `max(similarity)` 근거 게이트(초기 0.35), **LLM 주입 answer service**(게이트+chunk-id 인용), advisory lock cron 재적재, 큐레이션 md(마케팅+Meta 요약).
+- **제외(후속)** **구체 Gemini 어댑터·SSE 엔드포인트 배선**, 자동 크롤링(B), 한국어 특화 임베딩(BGE-m3/Upstage, 재색인 동반)·한국어 FTS(pg_trgm/pg_bigm/외부엔진), `tools/knowledge` 승격, 챗 오케스트레이터 본체, 대화 메모리/히스토리.
