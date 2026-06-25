@@ -15,7 +15,7 @@ from api.orchestration.registry import AgentRegistry
 from api.orchestration.routing import Router
 from core.config import settings
 from core.schemas import ChatMessage, ChatRequest
-from domain.management.assistant.composer import compose_turn, format_sse, stream_turn
+from domain.management.assistant.composer import compose_card, format_sse, stream_card
 from domain.management.assistant.contracts import AskRequest, AskResult
 from domain.management.assistant.history import record_feedback, record_turn
 
@@ -102,25 +102,21 @@ async def _management_card_stream(
     # 매니지먼트 한 턴을 카드 SSE로. assistant/record 주입 → 앱·DB 없이 테스트 가능.
     thread_id = f"mgmt-{session_id}"
 
-    # 1) 어시스턴트 호출 + 봉투 조립 — 여기서 실패하면 진짜 턴 실패(아직 아무것도 yield 안 함).
+    # 1) 어시스턴트 호출 + 카드 조립 — 실패하면 안전 문구 error + final(failed). raw exception 미노출.
     try:
         t0 = time.perf_counter()
         result = await assistant(AskRequest(question=question, ad_id=ad_id, thread_id=thread_id))
         latency_ms = int((time.perf_counter() - t0) * 1000)
-        env = compose_turn(result, turn_id=thread_id)
-    except Exception as exc:  # noqa: BLE001 — 어시스턴트/조립 실패 = 턴 실패
+        card = compose_card(result, turn_id=thread_id)
+    except Exception as exc:  # noqa: BLE001 — 턴 실패. 상세는 로그로만.
+        print(f"[chat] management turn failed: {exc!r}")
         yield format_sse(
-            {
-                "event": "error",
-                "scope": "turn",
-                "code": "assistant_error",
-                "message": f"매니지먼트 조회 중 문제가 발생했어요: {exc}",
-            }
+            {"kind": "error", "scope": "turn", "message": "매니지먼트 조회 중 문제가 발생했어요."}
         )
-        yield format_sse({"event": "final", "turn_id": thread_id, "status": "failed"})
+        yield format_sse({"kind": "final", "turn_id": thread_id, "status": "failed"})
         return
 
-    # 2) 관측 적재는 best-effort — 실패해도 답변 스트림은 그대로(원래 chat.py 동작 보존).
+    # 2) 관측 적재는 best-effort — 실패해도 답변 스트림은 그대로.
     try:
         await record(
             thread_id=thread_id,
@@ -133,7 +129,7 @@ async def _management_card_stream(
         print(f"[chat] record_turn failed (best-effort, ignored): {exc!r}")
 
     # 3) 정상 답변 스트리밍.
-    async for chunk in stream_turn(env):
+    async for chunk in stream_card(card):
         yield chunk
 
 
