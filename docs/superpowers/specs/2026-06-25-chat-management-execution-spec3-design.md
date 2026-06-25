@@ -49,7 +49,7 @@ POST /api/chat/management/proposals/finalize
   · 최신 진단 → 정본 ActionProposal 조립(🅱 producer) → finalize_proposal(해시)
     → DB 영속(action_proposals, PENDING + expires_at TTL)
   · drift 판정: 최신 budget_after vs shown_budget_after_krw 다르면 drift=true
-  → FinalizeResult {status:"finalized", proposal_id, action_type, tier, requires_approval,
+  → FinalizeResult {status:"finalized", proposal_id, action_type, tier, requires_external_approval,
                     budget_before/after_krw, summary, expires_at, drift}
         │  ② 카드가 "정본 제안"으로 갱신(TTL 카운트다운).
         │     drift면 "값이 갱신됨" + "갱신값 확인" 버튼 1회 후 집행 활성.
@@ -59,11 +59,10 @@ POST /api/chat/management/proposals/{proposal_id}/decision
   body {decision: "approve"|"reject", idempotency_key, thread_id}
   · [authz] execute 시점 재확인(org/tenant 일치)
   · DB에서 proposal 로드 — 가드: 만료 아님·status==PENDING(아니면 expired/already_executed)
-  · decision=="reject" → action_proposals REJECTED 표기 + audit → "거절됨" 카드
+  · decision=="reject" → action_proposals REJECTED 표기 + audit → "거절됨" 카드(실행 전 → action_proposals+audit에서 조립)
   · decision=="approve" → approve()→ApprovedAction → executor.execute(action, proposal, idempotency_key)
        → execution_runs 적재 → proposal status 갱신(EXECUTED 등)
-  · execution_runs 조회 → execution_result 카드(결정적, 구조화 필드 + 요약) 조립
-    → 챗 이력(management_chat_messages) 적재
+  · 결과 카드 조립(§5.5 source of truth 분리) → 챗 이력(management_chat_messages) 적재
   → execution_result 카드
 ```
 
@@ -93,7 +92,7 @@ POST /api/chat/management/proposals/{proposal_id}/decision
 | 1 | chat_management 라우터(신규) | `api/routers/chat_management.py` (🅱) | `/proposals/finalize`, `/proposals/{id}/decision`. deps: `get_current_user`·`get_db`·`settings`, org/tenant authz. main.py append-only include |
 | 2 | 정본 proposal 빌더(신규) | `domain/management/execution/proposal_builder.py` (🅱) | `build_action_proposal_from_diagnosis(dx, ctx) -> ActionProposal` — anomaly→action_type·예산델타·tier·TTL·state_version 매핑. `finalize_proposal`로 해시. 입력 못 구하면 정본 미생성 |
 | 3 | DB ProposalRepository(신규 구현) | `domain/management/execution/service/` (🅱) | `DbProposalRepository(ProposalRepository)` — `action_proposals`(ActionProposalRow) get/save. 포트 유지, 챗·실행 경로에 주입 |
-| 4 | 결과 카드 빌더 | `domain/management/assistant/composer.py` (🅱) | `execution_runs`(ExecutionRunRow) 조회 → `ExecutionResultSection` + 결정적 요약. LLM 미경유 |
+| 4 | 결과 카드 빌더 | `domain/management/assistant/composer.py` (🅱) | `ExecutionResultSection` + 결정적 요약 조립. source는 §5.5대로 분리(실행됨=execution_runs / 실행 전 terminal=action_proposals+audit). LLM 미경유 |
 | 5 | 새 카드 섹션 계약 | `domain/management/assistant/chat_cards/models.py` (공유 카드 계약) | `ExecutionResultSection` 추가 → `CardSection` union. FE 렌더러도 대응 |
 | 6 | 상태·에러 매핑 | composer/router (🅱) | ResultStatus·FailureReason·ProposalStatus → 카드 status + 안전 문구. 결정적 |
 | 7 | 결과 이력 적재 | router (🅱) | execution_result 카드를 `management_chat_messages`에 적재(JSON 직렬화) |
@@ -119,8 +118,10 @@ class ExecutionResultSection(BaseModel):
 
 ### 5.2 finalize 응답 — `FinalizeResult` (로컬 계약, assistant/contracts.py)
 
-`{status, proposal_id?, action_type?, tier?, requires_approval?, budget_before_krw?, budget_after_krw?, summary?, expires_at?, drift?, reason?}`
+`{status, proposal_id?, action_type?, tier?, requires_external_approval?, budget_before_krw?, budget_after_krw?, summary?, expires_at?, drift?, reason?}`
 정본 본문(`ActionProposal`)은 **미포함**(서버 DB에만).
+
+> **`requires_external_approval` 의미 고정** — 이 제안이 **챗 밖의 별도 승인(별도 승인자·아웃오브밴드 증빙)이 필요해 챗에서 집행 불가**함을 뜻한다. **버튼 클릭 = HITL 승인 행위**(§5.4)와는 별개 축이다. `false`면 사용자의 "집행" 버튼 한 번으로 충분(챗 집행 가능), `true`면 챗 집행 대상이 아님(FE는 정식 승인 화면 안내). "사용자 승인으로 충분한 제안"과 "챗에서 처리 못 하는 제안"을 이 필드 하나로만 가른다.
 
 ### 5.3 상태 어휘 분리 규칙 (절대 안 섞음)
 
@@ -142,8 +143,20 @@ class ExecutionResultSection(BaseModel):
 
 - **"집행" 버튼 한 번 = "승인 + 집행" 단일 의도.** 그 클릭이 HITL 승인 *행위*이고, 서버는 `approve(proposal, approver_id=current_user)` → `executor.execute(...)` 순서로 실행한다. 승인의 *정책 권위*는 여전히 `approval.py`(🅰)이며 스펙 3은 정책을 바꾸지 않는다.
 - **decision body에 approval_proof를 받지 않는다(스펙 3 비목표).** 별도 승인자·아웃오브밴드 증빙이 필요한 Tier(예: Tier 3)는 **챗 집행 대상이 아니다.**
-- **처리 방식**: finalize 응답 `requires_approval=true`(챗이 충족 못 하는 승인 필요)면 **FE는 "집행" 버튼 대신 "정식 승인 화면으로" 안내**를 띄운다. 방어적으로 그래도 `decision=approve`가 들어오면 `approve()`가 거부하고 → 결과 카드 `rejected`(failure_reason="정식 승인 경로 필요") 로 닫힌다. 즉 **"Tier 3는 스펙 3에서 챗 집행 불가"** 를 정책(approve())이 강제하며 우회는 없다(게이트 #4).
+- **처리 방식**: finalize 응답 `requires_external_approval=true`(챗 집행 불가)면 **FE는 "집행" 버튼 대신 "정식 승인 화면으로" 안내**를 띄운다. 방어적으로 그래도 `decision=approve`가 들어오면 `approve()`가 거부하고 → 결과 카드 `rejected`(failure_reason="정식 승인 경로 필요") 로 닫힌다. 즉 **"Tier 3는 스펙 3에서 챗 집행 불가"** 를 정책(approve())이 강제하며 우회는 없다(게이트 #4).
 - Tier 1(자동승인 한도 내)·단일 승인자로 통과하는 제안만 챗에서 집행된다.
+
+### 5.5 결과 카드 source of truth (실행 여부로 분리)
+
+`expired`·`rejected`·일부 `already_executed`는 새 `execution_run`이 없을 수 있다. 따라서 카드 source를 상태로 가른다.
+
+| result_status | source of truth |
+|---|---|
+| `success` · `submitted_pending_review` | **`execution_runs`(`ExecutionRunRow`)** — run에서 run_id·결과 조립 |
+| `failed` | run이 생겼으면 `execution_runs`, 아니면 executor 반환 + audit |
+| `rejected` · `expired` · (실행 전) `already_executed` | **`action_proposals` + `audit_events`** 에서 결정적으로 조립(run 없음) |
+
+규칙 — **기존 run이 있으면 항상 연결**(`run_id` 채움). run이 없는 실행 전 terminal은 proposal 상태·audit로만 만들고 `run_id=None`. 어느 경로든 LLM 미경유·결정적.
 
 ## 6. idempotency
 
@@ -173,12 +186,12 @@ class ExecutionResultSection(BaseModel):
 1. 같은 idempotency_key 10회 → 정확히 1회 집행.
 2. 만료 proposal 집행 차단(`expired`).
 3. 타 org/tenant는 **finalize·decision 양쪽** 거부.
-4. **Tier 3 without required approval proof is rejected by `approve()`** (enforcement 유지).
+4. **Tier3/chat-ineligible proposal returns `requires_external_approval=true` at finalize, and a defensive `decision=approve` maps to `rejected` by `approve()`** (body에 approval_proof 없음 — §5.4, enforcement 유지).
 5. reject 멱등 — `PENDING→REJECTED` 1회 전이, 반복은 `REJECTED` 반환.
 6. finalize 최신 진단 재실행 — ok+anomaly만 정본 생성, unavailable/no_anomaly는 정본 미생성.
 7. **`proposal_id != preview_id`** — finalize 응답의 `proposal_id`는 정본이며 `preview_id`를 재사용하지 않는다(preview_id는 trace/fingerprint 비교에만).
 8. drift — `shown_budget_after_krw` ≠ 최신 → `drift=true`.
-9. 결과 카드는 `execution_runs`에서 결정적 생성(LLM 미경유), 6상태 매핑.
+9. 결과 카드 결정적 생성(LLM 미경유), 6상태 매핑 — **실행됨(success/submitted)은 `execution_runs`에서 `run_id` 연결, 실행 전 terminal(expired/rejected)은 `action_proposals`+`audit_events`에서 `run_id=None`으로 조립**(§5.5).
 10. 어시스턴트 그래프가 writer/executor 직접 호출 안 함(import-purity).
 11. 결과 카드 적재·재조회 동일 렌더(§8 회귀 기준).
 
@@ -186,7 +199,7 @@ class ExecutionResultSection(BaseModel):
 - finalize·decision 진행 중 버튼 disable, 이중 클릭 시 decision 1회.
 - drift 시 "갱신값 확인" 전 집행 비활성.
 - TTL 만료 시 집행 disable.
-- `requires_approval=true`(Tier 증빙 필요)면 집행 버튼 대신 "정식 승인 화면으로" 안내 노출.
+- `requires_external_approval=true`(챗 집행 불가)면 집행 버튼 대신 "정식 승인 화면으로" 안내 노출.
 - execution_result 6상태 렌더(proposal_id 표시 포함).
 
 ## 10. 경계·소유권
