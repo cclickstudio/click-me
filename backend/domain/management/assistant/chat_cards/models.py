@@ -1,47 +1,113 @@
-# 채팅 카드 봉투 계약 — kind(닫힌 슬롯) + payload.type/version(열린 확장점). 순수 계약 모듈.
+# 채팅 카드 봉투 — 도메인 비종속 섹션 구조. 프론트 범용 렌더러와 백엔드 composer가 공유하는 계약.
 from __future__ import annotations
 
-from enum import StrEnum
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field
 
+Tone = Literal["neutral", "muted", "success", "warning", "critical"]
+CardStatus = Literal["ok", "warning", "critical", "neutral"]
 
-class CardKind(StrEnum):
-    EVIDENCE = "evidence"
-    RESULT = "result"
-    REVIEW = "review"
-    ACTIONBAR = "actionbar"
-
-
-class CardStatus(StrEnum):
-    OK = "ok"
-    DEGRADED = "degraded"
-    FAILED = "failed"
+# trace.raw에 담아도 되는 키(스펙 2 대비). 토큰·계정 비밀·대량 row는 영구 제외(루트 규칙).
+TRACE_RAW_ALLOWLIST: frozenset[str] = frozenset({"turn_id", "period"})
 
 
-class TurnOrigin(StrEnum):
-    USER = "user"
-    PROACTIVE = "proactive"
+def filtered_trace_raw(raw: dict[str, Any]) -> dict[str, Any]:
+    """allowlist 키만 통과. composer가 trace.raw를 담을 땐 반드시 이 함수만 거친다."""
+    return {k: v for k, v in raw.items() if k in TRACE_RAW_ALLOWLIST}
 
 
-class CardPayload(BaseModel):
-    type: str  # 슬롯 안의 변종 (rag_citations / action_proposal / policy_check / actions ...)
-    version: int = 1
-    data: dict[str, Any] = Field(default_factory=dict)
+class Badge(BaseModel):
+    label: str
+    tone: Tone = "neutral"
 
 
-class Card(BaseModel):
-    kind: CardKind
-    status: CardStatus = CardStatus.OK
-    payload: CardPayload
+class MetricItem(BaseModel):
+    label: str
+    value: str  # 포맷 완료된 표시 문자열 (예 "29,082원")
+    hint: str | None = None
 
 
-class TurnEnvelope(BaseModel):
-    turn_id: str
-    origin: TurnOrigin = TurnOrigin.USER  # 기본 user — 필드 없으면 user로 간주
-    conclusion: str  # 항상, 서술만(불변식 ③ — Composer 서술 가드 통과)
-    cards: list[Card] = Field(default_factory=list)
-    # 능동 제안 전용(origin=proactive일 때만) — 후속 plan에서 채움
-    trigger: dict[str, Any] | None = None
-    read_state: Literal["unread", "read"] | None = None
+class KeyValueItem(BaseModel):
+    key: str
+    value: str
+
+
+class Citation(BaseModel):
+    kind: str
+    source: str
+    title: str = ""
+
+
+class SummarySection(BaseModel):
+    kind: Literal["summary"] = "summary"
+    title: str | None = None
+    text: str
+
+
+class MetricsSection(BaseModel):
+    kind: Literal["metrics"] = "metrics"
+    title: str | None = None
+    items: list[MetricItem]
+
+
+class EntitySection(BaseModel):
+    kind: Literal["entity"] = "entity"
+    title: str | None = None
+    items: list[KeyValueItem]
+
+
+class ProposalSection(BaseModel):
+    kind: Literal["proposal"] = "proposal"
+    title: str | None = None
+    action_type: str
+    rationale: str | None = None
+    proposal_id: str | None = None
+
+
+class ReviewSection(BaseModel):
+    kind: Literal["review"] = "review"
+    title: str | None = None
+    decision: str
+    rationale: str | None = None
+
+
+class EvidenceSection(BaseModel):
+    kind: Literal["evidence"] = "evidence"
+    title: str | None = None
+    citations: list[Citation] = Field(default_factory=list)
+    used_tools: list[str] = Field(default_factory=list)
+
+
+class EmptyStateSection(BaseModel):
+    kind: Literal["empty_state"] = "empty_state"
+    title: str | None = None
+    text: str
+
+
+CardSection = Annotated[
+    SummarySection
+    | MetricsSection
+    | EntitySection
+    | ProposalSection
+    | ReviewSection
+    | EvidenceSection
+    | EmptyStateSection,
+    Field(discriminator="kind"),
+]
+
+
+class TraceInfo(BaseModel):
+    turn_id: str | None = None
+    raw: dict[str, Any] | None = None  # v0 미사용 — 담을 땐 filtered_trace_raw만 거친다
+
+
+class ChatCard(BaseModel):
+    version: Literal[1] = 1
+    type: Literal["management", "report", "qa", "generic"] = "management"
+    title: str | None = None
+    status: CardStatus | None = None
+    badges: list[Badge] = Field(default_factory=list)
+    sections: list[CardSection]
+    trace: TraceInfo | None = None
+    # actions: v1 미직렬화 — 변경 액션 실행 정본은 실행 API. 모델에 두지 않는다.

@@ -1,23 +1,42 @@
-# chat_cards 공개 API — 카드 봉투 계약 + 레지스트리.
-# TODO(impl, B단계): 시뮬·생성 도메인도 이 계약을 공유하게 되면 중립 위치로 이동 예정.
-#   (management import 0개로 순수 유지 → 이동은 move-only. 공통부 변경이라 사전 공지 필요.)
+# chat_cards 공개 API — 섹션 기반 ChatCard 계약.
 from .models import (
-    Card,
-    CardKind,
-    CardPayload,
+    TRACE_RAW_ALLOWLIST,
+    Badge,
+    CardSection,
     CardStatus,
-    TurnEnvelope,
-    TurnOrigin,
+    ChatCard,
+    Citation,
+    EmptyStateSection,
+    EntitySection,
+    EvidenceSection,
+    KeyValueItem,
+    MetricItem,
+    MetricsSection,
+    ProposalSection,
+    ReviewSection,
+    SummarySection,
+    Tone,
+    TraceInfo,
+    filtered_trace_raw,
 )
-from .registry import is_registered, validate_card
 
 __all__ = [
-    "Card",
-    "CardKind",
-    "CardPayload",
+    "TRACE_RAW_ALLOWLIST",
+    "Badge",
+    "CardSection",
     "CardStatus",
-    "TurnEnvelope",
-    "TurnOrigin",
-    "is_registered",
-    "validate_card",
+    "ChatCard",
+    "Citation",
+    "EmptyStateSection",
+    "EntitySection",
+    "EvidenceSection",
+    "KeyValueItem",
+    "MetricItem",
+    "MetricsSection",
+    "ProposalSection",
+    "ReviewSection",
+    "SummarySection",
+    "Tone",
+    "TraceInfo",
+    "filtered_trace_raw",
 ]
