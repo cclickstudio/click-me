@@ -10,6 +10,8 @@ from __future__ import annotations
 import uuid
 from collections import Counter
 
+from sqlalchemy import text
+
 from core.db import AsyncSessionLocal
 
 _OCEAN_KEYS = ("openness", "conscientiousness", "extraversion", "agreeableness", "neuroticism")
@@ -107,3 +109,97 @@ async def sim_persona_basis(simulation_id: str) -> dict:
         "age_band_dist": dict(age_bands),
         "ocean_avg": ocean_avg,
     }
+
+
+# 목록/검색 공통 SELECT — 이름은 ads.title(시뮬엔 이름 없음), KPI는 집계 LEFT JOIN(미완도 노출).
+# org는 raw SQL 격리(ORM import 없이 경계 보존, 스펙 §4.4). CAST로 전역(None) 겸용.
+_SIM_LIST_SELECT = """
+SELECT s.id, s.status, s.sample_size, s.created_at,
+       u.name AS created_by_name, a.title AS ad_title,
+       agg.click_intent_rate, agg.ci_low, agg.ci_high,
+       agg.purchase_intent_avg, agg.trust_avg, agg.effective_n
+FROM simulations s
+LEFT JOIN users u ON u.id = s.created_by
+LEFT JOIN ads a ON a.id = s.ad_id
+LEFT JOIN simulation_aggregates agg ON agg.simulation_id = s.id
+WHERE s.deleted_at IS NULL
+  AND (CAST(:org AS uuid) IS NULL OR s.organization_id = CAST(:org AS uuid))
+"""
+
+
+def _sim_row(r) -> dict:
+    """SQL 행 → 목록 항목. KPI는 집계 존재(완료) 시에만, Numeric→float·datetime→isoformat."""
+    kpi = None
+    if r.click_intent_rate is not None:
+        kpi = {
+            "click_intent_rate": float(r.click_intent_rate),
+            "ci_low": float(r.ci_low) if r.ci_low is not None else None,
+            "ci_high": float(r.ci_high) if r.ci_high is not None else None,
+            "purchase_intent": float(r.purchase_intent_avg)
+            if r.purchase_intent_avg is not None
+            else None,
+            "trust_avg": float(r.trust_avg) if r.trust_avg is not None else None,
+            "effective_n": float(r.effective_n) if r.effective_n is not None else None,
+        }
+    return {
+        "simulation_id": str(r.id),
+        "ad_title": r.ad_title,
+        "status": r.status,
+        "sample_size": r.sample_size,
+        "created_at": r.created_at.isoformat() if r.created_at is not None else None,
+        "created_by_name": r.created_by_name,
+        "kpi": kpi,
+    }
+
+
+async def sim_list(limit: int = 10, org_id: str | None = None, status: str | None = None) -> dict:
+    """내 조직 시뮬레이션 현황 목록(시뮬ID·제목·상태·완료 시 KPI). org_id=None이면 전역."""
+    try:
+        oid = uuid.UUID(org_id) if org_id else None
+    except ValueError:
+        return {"error": "invalid_organization_id"}
+    sql = _SIM_LIST_SELECT + (
+        "  AND (CAST(:status AS text) IS NULL OR s.status = CAST(:status AS text))\n"
+        "ORDER BY s.created_at DESC\nLIMIT :limit"
+    )
+    try:
+        async with AsyncSessionLocal() as db:
+            rows = (
+                await db.execute(
+                    text(sql),
+                    {"org": str(oid) if oid else None, "status": status, "limit": limit},
+                )
+            ).all()
+    except Exception as e:  # noqa: BLE001 — 조회 오류 표면화
+        return {"error": "lookup_failed", "detail": str(e)}
+    sims = [_sim_row(r) for r in rows]
+    return {"simulations": sims, "count": len(sims)}
+
+
+async def sim_find_by_name(name: str, org_id: str | None = None, limit: int = 10) -> dict:
+    """광고 제목 부분일치(ILIKE)로 시뮬 검색 — 후보 목록 반환. org_id=None이면 전역."""
+    if not name or not name.strip():
+        return {"error": "need_name"}
+    try:
+        oid = uuid.UUID(org_id) if org_id else None
+    except ValueError:
+        return {"error": "invalid_organization_id"}
+    sql = _SIM_LIST_SELECT + (
+        "  AND a.title ILIKE :pattern\nORDER BY s.created_at DESC\nLIMIT :limit"
+    )
+    try:
+        async with AsyncSessionLocal() as db:
+            rows = (
+                await db.execute(
+                    text(sql),
+                    {
+                        "org": str(oid) if oid else None,
+                        "pattern": f"%{name.strip()}%",
+                        "limit": limit,
+                    },
+                )
+            ).all()
+    except Exception as e:  # noqa: BLE001
+        return {"error": "lookup_failed", "detail": str(e)}
+    sims = [_sim_row(r) for r in rows]
+    return {"simulations": sims, "count": len(sims), "query": name.strip()}

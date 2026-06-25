@@ -161,11 +161,42 @@ async def test_generator_read_existing():
 
 @pytest.mark.asyncio
 async def test_simulation_no_ids_is_graceful():
-    # id 없음 + 풀모드 에이전트 없음(use_mock) → 에러 대신 안내 답변(개선된 폴백, 컨시어지 지향).
+    # id 없음 + 풀모드 에이전트 없음 + org 맥락 없음 → 에러 대신 안내 답변(컨시어지 지향).
     sub = SimulationSubAgent(service=_FakeSimService())
-    out = await sub.run(SubAgentRequest(question="시뮬 돌려줘"))  # simulation_id·ad_id 모두 없음
+    sub._agent = None  # 풀모드 ReAct 미구성 강제(폴백 경로)
+    out = await sub.run(SubAgentRequest(question="시뮬 돌려줘"))  # sim_id·ad_id·org 모두 없음
     assert out.route is Route.SIMULATION
     assert out.error is None and out.answer
+
+
+@pytest.mark.asyncio
+async def test_simulation_fallback_lists_org_sims(monkeypatch):
+    # id 없음 + org 맥락 → sim_list 폴백으로 현황 나열(키없음/mock, 실 DB 대신 모킹).
+    import domain.chat.adapters.sim_tools as st
+
+    async def fake_list(limit=10, org_id=None, status=None):
+        assert org_id == "org-1"
+        return {
+            "simulations": [
+                {
+                    "simulation_id": "abcd1234-0000",
+                    "ad_title": "냐오옹 캠페인",
+                    "status": "COMPLETED",
+                    "kpi": {"click_intent_rate": 0.12},
+                }
+            ],
+            "count": 1,
+        }
+
+    monkeypatch.setattr(st, "sim_list", fake_list)
+    sub = SimulationSubAgent(service=_FakeSimService())
+    sub._agent = None  # 폴백 경로 강제
+    out = await sub.run(
+        SubAgentRequest(question="현재 시뮬레이션 현황", context_ids={"organization_id": "org-1"})
+    )
+    assert out.route is Route.SIMULATION and out.error is None
+    assert "냐오옹 캠페인" in out.answer
+    assert out.structured.get("kind") == "simulation_list"
 
 
 def test_build_simulation_agent_none_without_key():

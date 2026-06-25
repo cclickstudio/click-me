@@ -76,9 +76,20 @@ class SimulationSubAgent:
         # --- 폴백(키 없음/mock): 구조화 요약 ---
         if sim_id:
             return await self._fallback_read(sim_id)
+        # id 없음 + org 맥락 있으면 조직 시뮬 현황 목록으로 안내(실 DB, LLM 불필요).
+        org_id = req.context_ids.get("organization_id")
+        if org_id:
+            listing = await sim_tools.sim_list(limit=5, org_id=org_id)
+            sims = listing.get("simulations") or []
+            if sims:
+                return SubAgentResult(
+                    route=Route.SIMULATION,
+                    answer=_build_sim_list_summary(sims),
+                    structured={"kind": "simulation_list", "data": listing},
+                )
         return SubAgentResult(
             route=Route.SIMULATION,
-            answer="어떤 시뮬레이션이 궁금하신가요? simulation_id나 광고(ad_id)를 알려주세요.",
+            answer="어떤 시뮬레이션이 궁금하신가요? 시뮬 이름이나 simulation_id를 알려주세요.",
         )
 
     async def _start(self, req: SubAgentRequest, ad_id: str) -> SubAgentResult:  # type: ignore[name-defined]
@@ -123,6 +134,19 @@ class SimulationSubAgent:
             answer=_build_kpi_summary(data),
             structured={"kind": "simulation_aggregate", "data": data},
         )
+
+
+def _build_sim_list_summary(sims: list[dict]) -> str:
+    """시뮬 현황 목록을 한국어 마크다운 요약으로(폴백·LLM 없음)."""
+    lines = [f"현재 시뮬레이션 {len(sims)}건입니다."]
+    for s in sims:
+        title = s.get("ad_title") or "(제목 없음)"
+        status = s.get("status") or "-"
+        cir = (s.get("kpi") or {}).get("click_intent_rate")
+        kpi_str = f", 클릭의향률 {cir:.1%}" if isinstance(cir, (int, float)) else ""
+        sid = str(s.get("simulation_id") or "")[:8]
+        lines.append(f"- {title} — {status}{kpi_str} (id: {sid})")
+    return "\n".join(lines)
 
 
 def _build_kpi_summary(agg: dict) -> str:

@@ -22,6 +22,10 @@ _SYSTEM = (
     "sim_result로 조회해 그 값만 인용한다. 추정·환각 금지.\n"
     "- '무슨 데이터로 페르소나를 만들었나'는 sim_persona_basis(표본 분포)와 "
     "search_kb(데이터 출처·생성 방법)로 답한다.\n"
+    "- '현재 시뮬레이션 현황'·'내 시뮬 목록/개수'는 sim_list로 조회한다(조직 전체).\n"
+    "- '이름이 X인 시뮬레이션'은 sim_find_by_name(X)로 후보를 찾고, 단건이면 그 simulation_id로 "
+    "sim_result/sim_persona_basis로 상세를 답한다. 다건이면 후보를 나열하고, 없으면 "
+    "'없음'으로 답한다.\n"
     "- '신뢰할 수 있나'는 신뢰구간·effective_n·QA·variance_warning을 근거로 설명하고, "
     "방향성은 신뢰 가능하나 절대값 단언은 피한다고 안내한다.\n"
     "- 예측(상대)과 실측(절대)을 수치로 환산하지 말 것. 근거 없으면 모른다고 답한다.\n"
@@ -58,6 +62,7 @@ def build_simulation_agent(settings) -> Any:
 
     class _State(MessagesState, total=False):
         simulation_id: str | None
+        organization_id: str | None  # 서버 결정론 스코프(LLM 산출 무시) — 테넌트 격리
         used_tools: list[str]
         kb_citations: list[dict]
         sim_data: dict
@@ -78,6 +83,18 @@ def build_simulation_agent(settings) -> Any:
         return await sim_tools.sim_persona_basis(simulation_id)
 
     @tool
+    async def sim_list(
+        limit: int = 10, org_id: str | None = None, status: str | None = None
+    ) -> dict:
+        """내 조직 시뮬레이션 현황 목록(시뮬ID·광고제목·상태·완료 시 KPI)을 조회한다."""
+        return await sim_tools.sim_list(limit=limit, org_id=org_id, status=status)
+
+    @tool
+    async def sim_find_by_name(name: str, org_id: str | None = None, limit: int = 10) -> dict:
+        """광고 제목으로 시뮬레이션을 부분일치 검색해 후보 목록(시뮬ID 포함)을 반환한다."""
+        return await sim_tools.sim_find_by_name(name=name, org_id=org_id, limit=limit)
+
+    @tool
     async def search_kb(query: str) -> list[dict]:
         """페르소나 데이터 출처·생성 방법론·신뢰 지표 정의 등 지식베이스를 검색한다."""
         try:
@@ -85,7 +102,7 @@ def build_simulation_agent(settings) -> Any:
         except Exception:  # noqa: BLE001 — KB 미적재면 빈 결과로 진행
             return []
 
-    tools = [sim_result, sim_persona_basis, search_kb]
+    tools = [sim_result, sim_persona_basis, sim_list, sim_find_by_name, search_kb]
     bound = llm.bind_tools(tools)
     by_name = {t.name: t for t in tools}
 
@@ -102,12 +119,16 @@ def build_simulation_agent(settings) -> Any:
         kb = list(state.get("kb_citations", []))
         sim_data = dict(state.get("sim_data", {}))
         ctx_id = state.get("simulation_id")
+        org_id = state.get("organization_id")
         out: list[ToolMessage] = []
         for call in ai.tool_calls:
             name, args, cid = call["name"], dict(call.get("args", {})), call["id"]
             # 컨텍스트 simulation_id 주입 — LLM이 생략하면 턴 컨텍스트 값을 쓴다.
             if name in ("sim_result", "sim_persona_basis") and not args.get("simulation_id"):
                 args["simulation_id"] = ctx_id
+            # org 스코프는 서버가 결정론 주입(LLM 산출 무시) — 테넌트 격리.
+            if name in ("sim_list", "sim_find_by_name"):
+                args["org_id"] = org_id
             result = await by_name[name].ainvoke(args)
             if name not in used:
                 used.append(name)
@@ -145,6 +166,7 @@ def build_simulation_agent(settings) -> Any:
             {
                 "messages": [HumanMessage(content=question)],
                 "simulation_id": (context_ids or {}).get("simulation_id"),
+                "organization_id": (context_ids or {}).get("organization_id"),
             },
             config={"run_name": "simulation_subagent", "tags": ["chat", "simulation"]},
         )
