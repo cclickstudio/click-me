@@ -59,9 +59,10 @@ def _safe_stream_writer() -> object | None:
         return None
 
 
-async def _general_answer(clio, text: str, history: list) -> str:
+async def _general_answer(clio, text: str, history: list, context: str | None = None) -> str:
     """CLIO general 답변 — 스트리밍 지원 시 토큰을 custom 스트림으로 흘리며 누적.
 
+    context(플랫폼 맥락·기억)는 CLIO 시스템 프롬프트에 주입된다(컨시어지 인지).
     스트리밍 미지원(plain callable)이거나 custom 미구독이면 전체 호출로 폴백.
     실패 시 표시=영속 일치를 위해 흘린 조각이 있으면 그것을, 없으면 폴백 문구를 돌려준다.
     """
@@ -71,7 +72,7 @@ async def _general_answer(clio, text: str, history: list) -> str:
         if writer is not None:
             parts: list[str] = []
             try:
-                async for piece in stream_fn(text, history):
+                async for piece in stream_fn(text, history, context):
                     parts.append(piece)
                     writer({"token": piece})
                 return "".join(parts)
@@ -79,7 +80,7 @@ async def _general_answer(clio, text: str, history: list) -> str:
                 if parts:
                     return "".join(parts)
     try:
-        return await clio(text, history)
+        return await clio(text, history, context)
     except Exception:  # noqa: BLE001 — CLIO 실패 시 결정론 폴백
         return "무엇을 도와드릴까요?"
 
@@ -202,10 +203,13 @@ class _Nodes:
 
         # general 라우트 + CLIO 주입됨 + 서브에이전트 답변 없음 → CLIO 호출(스트리밍 우선)
         if state.get("route") == Route.GENERAL.value and deps.clio is not None and not sub_results:
+            from domain.chat.adapters.platform_context import build_general_context  # noqa: PLC0415
+
             answer = await _general_answer(
                 deps.clio,
                 _last_user_text(state["messages"]),
                 state.get("short_term") or [],
+                build_general_context(state.get("long_term")),
             )
         elif sub_results:
             # 서브에이전트 답변(management/simulation/generation 라우트)

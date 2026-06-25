@@ -16,10 +16,10 @@ class _FakeStreamingClio:
     def __init__(self, pieces: list[str]) -> None:
         self._pieces = pieces
 
-    async def __call__(self, user_text: str, history: list) -> str:
+    async def __call__(self, user_text: str, history: list, context: str | None = None) -> str:
         return "".join(self._pieces)
 
-    async def stream(self, user_text: str, history: list):
+    async def stream(self, user_text: str, history: list, context: str | None = None):
         for p in self._pieces:
             yield p
 

@@ -40,11 +40,13 @@ class _Clio:
     def __init__(self, api_key: str) -> None:
         self._key = api_key
 
-    def _model(self) -> object:
+    def _model(self, context: str | None = None) -> object:
         import google.generativeai as genai  # noqa: PLC0415
 
         genai.configure(api_key=self._key)
-        return genai.GenerativeModel(model_name="gemini-2.5-flash", system_instruction=_CLIO_SYSTEM)
+        # 동적 맥락(플랫폼 개요·기억)은 시스템 프롬프트에 덧붙인다(컨시어지 인지).
+        system = f"{_CLIO_SYSTEM}\n\n## 현재 맥락\n{context}" if context else _CLIO_SYSTEM
+        return genai.GenerativeModel(model_name="gemini-2.5-flash", system_instruction=system)
 
     @staticmethod
     def _contents(user_text: str, history: list) -> list[dict]:
@@ -56,11 +58,11 @@ class _Clio:
         contents.append({"role": "user", "parts": [user_text]})
         return contents
 
-    async def __call__(self, user_text: str, history: list) -> str:
+    async def __call__(self, user_text: str, history: list, context: str | None = None) -> str:
         """전체 답변 — generate_content_async, 없으면 to_thread 동기 폴백."""
         import asyncio  # noqa: PLC0415
 
-        model = self._model()
+        model = self._model(context)
         contents = self._contents(user_text, history)
         if hasattr(model, "generate_content_async"):
             resp = await model.generate_content_async(contents)
@@ -68,9 +70,11 @@ class _Clio:
             resp = await asyncio.to_thread(model.generate_content, contents)
         return resp.text or ""
 
-    async def stream(self, user_text: str, history: list) -> AsyncIterator[str]:
+    async def stream(
+        self, user_text: str, history: list, context: str | None = None
+    ) -> AsyncIterator[str]:
         """토큰 조각 — generate_content_async(stream=True)의 청크 텍스트를 yield."""
-        model = self._model()
+        model = self._model(context)
         contents = self._contents(user_text, history)
         resp = await model.generate_content_async(contents, stream=True)
         async for chunk in resp:

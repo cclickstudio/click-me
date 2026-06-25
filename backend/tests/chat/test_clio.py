@@ -36,7 +36,7 @@ def _config(s="sess-clio"):
 
 @pytest.mark.asyncio
 async def test_general_route_uses_clio_when_present():
-    async def fake_clio(user_text, history):
+    async def fake_clio(user_text, history, context=None):
         return f"CLIO 답변: {user_text}"
 
     deps = ChatGraphDeps(
