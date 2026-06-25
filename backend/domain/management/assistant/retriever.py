@@ -1,14 +1,16 @@
-# 매니지먼트 KB 벡터 검색 — pgvector 코사인 top-k (RAG retrieval)
-"""쿼리를 임베딩해 management_kb_chunks에서 코사인 유사 청크를 가져온다.
+# 매니지먼트 KB 하이브리드 검색 — pgvector 코사인 + GIN 키워드(tsvector), RRF 융합
+"""쿼리를 임베딩(의미)해 코사인 검색하고, 동시에 키워드(GIN)로 정확 용어를 잡아 RRF로 합친다.
 
-임베딩은 EmbeddingProvider(기본 BGE-M3 1024) — KB·LTM 동일 차원(spec §6.1/§9).
+벡터만 쓰면 ROAS·PENDING_REVIEW·BID_LOSS 같은 정확 토큰을 놓칠 수 있어, 키워드 검색을 더해
+재현율을 높인다. 숫자가 아니라 '판단·가이드'(정책·플레이북·KPI 규칙) 근거용 — 출처(source·title)로
+답변에 인용한다. 임베딩은 EmbeddingProvider(기본 BGE-M3 1024) — KB·LTM 동일 차원(spec §6.1/§9).
 """
 
 from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from sqlalchemy import select
+from sqlalchemy import select, text
 
 from core.db import AsyncSessionLocal
 from core.models import ManagementKbChunk
@@ -17,9 +19,20 @@ if TYPE_CHECKING:
     # 타입 주석 전용 — management→chat 런타임 import 결합 회피(annotations future로 문자열화).
     from domain.chat.contracts.ports import EmbeddingProvider
 
+_RRF_K = 60  # Reciprocal Rank Fusion 상수 (랭킹 합산 — 점수 스케일 정규화 불필요)
+
+# 키워드 검색(GIN). websearch_to_tsquery는 빈/특수문자 쿼리에도 안전.
+_KW_SQL = text(
+    "SELECT id, source, title, chunk,"
+    " ts_rank(search_vector, websearch_to_tsquery('simple', :q)) AS rank"
+    " FROM management_kb_chunks"
+    " WHERE search_vector @@ websearch_to_tsquery('simple', :q)"
+    " ORDER BY rank DESC LIMIT :lim"
+)
+
 
 class KbRetriever:
-    """pgvector 코사인 검색 리트리버 — EmbeddingProvider·세션 팩토리 주입(테스트)."""
+    """하이브리드(벡터+키워드) 리트리버 — EmbeddingProvider·세션 팩토리 주입(테스트)."""
 
     def __init__(self, embedder: EmbeddingProvider, session_factory=AsyncSessionLocal) -> None:
         self._embedder = embedder
@@ -31,15 +44,42 @@ class KbRetriever:
 
     async def search(self, query: str, k: int = 4) -> list[dict]:
         emb = await self.embed(query)
+        pool = max(k * 3, 8)  # 융합 전 각 채널에서 넉넉히 가져온다
         dist = ManagementKbChunk.embedding.cosine_distance(emb).label("dist")
         async with self._sf() as db:
-            rows = (await db.execute(select(ManagementKbChunk, dist).order_by(dist).limit(k))).all()
+            vec = (
+                await db.execute(
+                    select(
+                        ManagementKbChunk.id,
+                        ManagementKbChunk.source,
+                        ManagementKbChunk.title,
+                        ManagementKbChunk.chunk,
+                        dist,
+                    )
+                    .order_by(dist)
+                    .limit(pool)
+                )
+            ).all()
+            kw = (await db.execute(_KW_SQL, {"q": query, "lim": pool})).all()
+        return self._fuse(vec, kw, k)
+
+    @staticmethod
+    def _fuse(vec: list, kw: list, k: int) -> list[dict]:
+        """RRF — 두 랭킹의 (1/(K+순위)) 합으로 재정렬. 두 채널에 다 잡힌 청크가 상위로."""
+        fused: dict[str, dict] = {}
+        for rank, r in enumerate(vec):
+            fused.setdefault(str(r.id), {"r": r, "s": 0.0})["s"] += 1.0 / (_RRF_K + rank + 1)
+        for rank, r in enumerate(kw):
+            key = str(r.id)
+            entry = fused.setdefault(key, {"r": r, "s": 0.0})
+            entry["s"] += 1.0 / (_RRF_K + rank + 1)
+        top = sorted(fused.values(), key=lambda x: x["s"], reverse=True)[:k]
         return [
             {
-                "source": r.ManagementKbChunk.source,
-                "title": r.ManagementKbChunk.title,
-                "chunk": r.ManagementKbChunk.chunk,
-                "score": round(1.0 - float(r.dist), 3),
+                "source": x["r"].source,
+                "title": x["r"].title,
+                "chunk": x["r"].chunk,
+                "score": round(x["s"], 4),  # RRF 융합 점수(상대 랭킹용)
             }
-            for r in rows
+            for x in top
         ]

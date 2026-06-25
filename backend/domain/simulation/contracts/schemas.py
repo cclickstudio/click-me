@@ -26,6 +26,7 @@ class SimulationRunRequest(BaseModel):
     ad_id: str
     ad_content: str | None = None  # 실 광고 카피·설명(실 LLM 해석 입력). 없으면 mock/최소 해석.
     ad_image_url: str | None = None  # 광고 크리에이티브 이미지(URL·로컬경로) — VLM 해석 입력.
+    ad_image_key: str | None = None  # S3 영구 식별자(업로드 시) — DB 영속·재조회 시 presign 대상.
     project_id: str | None = None
     organization_id: str | None = None
     target_filter: dict[str, Any] | None = None

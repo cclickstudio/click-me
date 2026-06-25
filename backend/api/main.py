@@ -75,9 +75,17 @@ async def lifespan(app: FastAPI):
         logger.warning(
             "Instagram publisher: Mock — .env에 META_ACCESS_TOKEN, META_IG_USER_ID 설정 필요"
         )
+    # 어시스턴트 영속 체크포인터(Neon) 준비 — 실패하면 MemorySaver 폴백(앱은 계속 뜬다).
+    from domain.management.assistant.checkpointer import (
+        close_pg_checkpointer,
+        init_pg_checkpointer,
+    )
+
+    await init_pg_checkpointer(settings.database_url)
     yield
     # shutdown — 챗 오케스트레이터 체크포인터(psycopg) 풀 정리(누수 방지, 미생성이면 no-op)
     await chat.close_orchestrator()
+    await close_pg_checkpointer()
 
 
 app = FastAPI(
@@ -102,7 +110,12 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 app.add_middleware(
     CORSMiddleware,
     # Starlette는 allow_origins에 glob(*)을 지원하지 않으므로 vercel 서브도메인은 regex로 매칭
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:3001",
+        "http://127.0.0.1:3001",
+    ],
     allow_origin_regex=r"https://.*\.vercel\.app",
     allow_credentials=True,
     allow_methods=["*"],

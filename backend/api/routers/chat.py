@@ -10,6 +10,7 @@ from core.schemas import ChatRequest
 from domain.chat.contracts.agent_io import ChatTurnRequest
 from domain.chat.service.orchestrator import ChatOrchestratorService
 from domain.chat.wiring import build_chat_repo, build_orchestrator
+from domain.management.assistant.history import record_feedback
 
 router = APIRouter()
 
@@ -121,3 +122,28 @@ async def get_session_messages(session_id: str) -> dict:
     repo = build_chat_repo(settings)
     msgs = await repo.get_messages(session_uuid, limit=200)
     return {"session_id": session_id, "messages": [m.model_dump(mode="json") for m in msgs]}
+
+
+class FeedbackRequest(BaseModel):
+    thread_id: str | None = None  # 채팅 세션 키(mgmt-{session_id})
+    message_id: str | None = None
+    question: str | None = None
+    answer: str | None = None
+    rating: int | None = None  # 1 좋아요 / -1 싫어요
+    failure_type: str | None = None  # wrong_tool|stale_doc|hallucinated_number|missing_citation 등
+    corrected_answer: str | None = None
+
+
+@router.post("/feedback")
+async def chat_feedback(body: FeedbackRequest) -> dict:
+    """어시스턴트 답변 피드백 적재 — RAG 품질 개선 루프(management_kb_feedback). best-effort."""
+    await record_feedback(
+        thread_id=body.thread_id,
+        message_id=body.message_id,
+        question=body.question,
+        answer=body.answer,
+        rating=body.rating,
+        failure_type=body.failure_type,
+        corrected_answer=body.corrected_answer,
+    )
+    return {"ok": True}

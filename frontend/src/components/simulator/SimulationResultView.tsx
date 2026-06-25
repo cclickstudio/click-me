@@ -5,6 +5,7 @@
 import { useEffect, useState } from 'react';
 import { DebatePanel } from '@/components/simulator/DebatePanel';
 import { SimulationReportView } from '@/components/simulator/SimulationReportView';
+import { ExecuteFromSimulation } from '@/components/manage/ExecuteFromSimulation';
 import { KpiCard } from '@/components/ui/KpiCard';
 import { formatPercent } from '@/lib/utils';
 import type { ObjectiveFit, ReportView, SimRunResult } from '@/lib/types';
@@ -125,8 +126,17 @@ export function SimulationResultView({
             통과 {passed.length}){result.simulation_id && ' · DB 저장됨'}
           </p>
         </div>
-        {(headerAction || onReset) && (
+        {(headerAction || onReset || result.simulation_id) && (
           <div className='flex items-center gap-2'>
+            {/* DB 저장된 시뮬만 집행 가능 — created_campaigns.simulation_id로 성과비교 연결. */}
+            {result.simulation_id && agg && (
+              <ExecuteFromSimulation
+                simulationId={result.simulation_id}
+                defaultName={adTitle}
+                clickIntentRate={agg.click_intent_rate}
+                rejectionRate={agg.rejection_rate}
+              />
+            )}
             {headerAction}
             {onReset && (
               <button
@@ -329,6 +339,14 @@ export function SimulationResultView({
                 <h2 className='text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6] mb-3'>
                   광고 해석 (VLM/LLM 감지)
                 </h2>
+                {result.ad_asset_url && (
+                  // 업로드된 광고 크리에이티브 — presigned URL(~1h). 텍스트 시뮬이면 미표시.
+                  <img
+                    src={result.ad_asset_url}
+                    alt='광고 크리에이티브'
+                    className='mb-4 h-auto max-h-56 w-full object-contain rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-[#F9FAFB] dark:bg-[#11151F]'
+                  />
+                )}
                 <div className='grid grid-cols-2 md:grid-cols-4 gap-3 text-sm'>
                   {[
                     ['감지 업종', ad.detected_industry],
