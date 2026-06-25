@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Literal
 
 from pydantic import AliasChoices, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -43,7 +44,8 @@ class Settings(BaseSettings):
     gemini_api_key: str | None = None
 
     # 채팅 어드바이저(CLIO) 엔진 — 기본 gemini, CHAT_PROVIDER로 openai·anthropic 전환(테스트용).
-    chat_provider: str = "gemini"  # gemini | openai | anthropic
+    # Literal — 모르는 값(오타·대소문자·공백)은 로드에서 거부(조용한 Gemini fallback 방지).
+    chat_provider: Literal["gemini", "openai", "anthropic"] = "gemini"
     chat_gemini_model: str = "gemini-2.5-flash"
     chat_openai_model: str = "gpt-4o-mini"
     chat_anthropic_model: str = "claude-opus-4-8"
