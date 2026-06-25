@@ -1,4 +1,4 @@
-# Composer — AskResult를 검증된 카드 봉투로 조립한다. 서술 가드·검수 게이트를 여기서 강제.
+# Composer — AskResult를 도메인 비종속 ChatCard(섹션)로 normalize한다. 서술 가드는 여기서 강제.
 from __future__ import annotations
 
 import json
@@ -7,19 +7,23 @@ from collections.abc import AsyncGenerator
 from typing import TYPE_CHECKING
 
 from .chat_cards import (
-    Card,
-    CardKind,
-    CardPayload,
-    CardStatus,
-    TurnEnvelope,
-    TurnOrigin,
-    validate_card,
+    Badge,
+    ChatCard,
+    Citation,
+    EvidenceSection,
+    MetricItem,
+    MetricsSection,
+    ProposalSection,
+    ReviewSection,
+    SummarySection,
+    TraceInfo,
 )
 
 if TYPE_CHECKING:
-    from .contracts import AskResult
+    from .chat_cards import CardSection
+    from .contracts import AskResult, SuggestedAction
 
-# 불변식 ③ — 결론에서 제거할 실행 지시 마커(휴리스틱 1차). 행동 가능한 주장은 카드/액션바로.
+# 결론에서 제거할 실행 지시 마커. 행동 가능한 주장은 카드(proposal)로.
 _DIRECTIVE_MARKERS = (
     "실행하세요",
     "실행하면 됩니다",
@@ -29,136 +33,92 @@ _DIRECTIVE_MARKERS = (
     "집행하세요",
     "눌러서 실행",
 )
-# 전부 지시문이라 남길 서술이 없을 때의 중립 강등 문구. 원문(지시문) 재노출 금지.
 _NEUTRAL_CONCLUSION = "자세한 내용은 아래 카드를 확인하세요."
+
+# evidence dict 숫자 → 표시 라벨(KRW). 없는 키는 건너뛴다.
+_METRIC_LABELS: tuple[tuple[str, str], ...] = (
+    ("this_month_spent_krw", "이번 달 소진"),
+    ("runrate_projection_krw", "월말 예상"),
+    ("account_balance_krw", "계정 잔액"),
+)
 
 
 def _descriptive_conclusion(answer: str) -> str:
     sentences = [s for s in re.split(r"(?<=[.!?])\s+", answer.strip()) if s]
     kept = [s for s in sentences if not any(m in s for m in _DIRECTIVE_MARKERS)]
-    cleaned = " ".join(kept).strip()
-    return cleaned or _NEUTRAL_CONCLUSION  # 전부 지시문이면 중립 강등(원문 재노출 금지)
+    return " ".join(kept).strip() or _NEUTRAL_CONCLUSION
 
 
-def _evidence_card(res: AskResult) -> Card | None:
-    if not res.citations:
-        return None
-    return Card(
-        kind=CardKind.EVIDENCE,
-        payload=CardPayload(
-            type="rag_citations",
-            version=1,
-            data={
-                "citations": [
-                    {"kind": c.kind, "source": c.source, "title": c.title} for c in res.citations
-                ],
-                "used_tools": list(res.used_tools),
-            },
-        ),
-    )
+def _won(value: object) -> str:
+    return f"{int(value):,}원"
 
 
-def _result_card(res: AskResult) -> Card:
-    sa = res.suggested_action
-    return Card(
-        kind=CardKind.RESULT,
-        payload=CardPayload(
-            type="action_proposal",
-            version=1,
-            data={
-                "action_type": sa.action_type,
-                "target_campaign_id": sa.target_campaign_id,
-                "tier": sa.tier,
-                "rationale": sa.rationale,
-                # MVP — 아직 영속·검증된 proposal이 아님. "바로 실행 가능"으로 오해 금지.
-                "stage": "draft",
-                "executable": False,
-            },
-        ),
-    )
-
-
-def _review_card(res: AskResult) -> Card:
-    sa = res.suggested_action
-    decision = "needs_approval" if sa.requires_approval else "auto_ok"
-    card = Card(
-        kind=CardKind.REVIEW,
-        payload=CardPayload(
-            type="policy_check",
-            version=1,
-            data={"decision": decision, "tier": sa.tier, "reasons": [sa.rationale]},
-        ),
-    )
-    return card
-
-
-def _actionbar_card(res: AskResult) -> Card:
-    # MVP — 실행 API 미연결이라 변경 액션은 비활성(불변식 ①). proposal_draft로 Plan 2 배선 대비.
-    sa = res.suggested_action
-    draft = {
-        "action_type": sa.action_type,
-        "target_campaign_id": sa.target_campaign_id,
-        "tier": sa.tier,
-    }
-    pending = "실행 API 미연결 (Plan 2)"
-    actions = [
-        {
-            "id": "regenerate",
-            "label": "다시 생성",
-            "kind": "safe",
-            "enabled": True,
-            "wired": True,
-            "proposal_draft": None,
-        },
-        {
-            "id": "approve",
-            "label": "승인",
-            "kind": "mutating",
-            "enabled": False,
-            "wired": False,
-            "disabled_reason": pending,
-            "proposal_draft": draft,
-        },
-        {
-            "id": "execute",
-            "label": "실행",
-            "kind": "mutating",
-            "enabled": False,
-            "wired": False,
-            "disabled_reason": pending,
-            "proposal_draft": draft,
-        },
+def _metrics_section(evidence: dict) -> MetricsSection | None:
+    items = [
+        MetricItem(label=label, value=_won(evidence[key]))
+        for key, label in _METRIC_LABELS
+        if isinstance(evidence.get(key), (int, float))
     ]
-    return Card(
-        kind=CardKind.ACTIONBAR,
-        payload=CardPayload(type="actions", version=1, data={"actions": actions}),
+    if not items:
+        return None
+    period = evidence.get("period")
+    return MetricsSection(title=f"핵심 지표 ({period})" if period else "핵심 지표", items=items)
+
+
+def _proposal_section(sa: SuggestedAction) -> ProposalSection:
+    return ProposalSection(title="제안", action_type=sa.action_type, rationale=sa.rationale)
+
+
+def _review_section(sa: SuggestedAction) -> ReviewSection:
+    decision = "needs_approval" if sa.requires_approval else "auto_ok"
+    return ReviewSection(title="검수", decision=decision, rationale=sa.rationale)
+
+
+def _evidence_section(res: AskResult) -> EvidenceSection | None:
+    if not res.citations and not res.used_tools:
+        return None
+    return EvidenceSection(
+        title="근거",
+        citations=[Citation(kind=c.kind, source=c.source, title=c.title) for c in res.citations],
+        used_tools=list(res.used_tools),
     )
 
 
-def compose_turn(
-    res: AskResult, *, turn_id: str, origin: TurnOrigin = TurnOrigin.USER
-) -> TurnEnvelope:
-    """AskResult를 카드 봉투로 매핑. 슬롯 순서 고정, actionbar는 review 이후 항상 마지막."""
-    cards: list[Card] = []
+def _badges(sa: SuggestedAction | None) -> list[Badge]:
+    if sa is None:
+        return []
+    decision = "needs_approval" if sa.requires_approval else "auto_ok"
+    return [
+        Badge(label=sa.tier, tone="neutral"),
+        Badge(label="draft", tone="muted"),
+        Badge(label=decision, tone="success" if decision == "auto_ok" else "warning"),
+    ]
 
-    evidence = _evidence_card(res)
+
+def compose_card(res: AskResult, *, turn_id: str) -> ChatCard:
+    """AskResult를 ChatCard로. 섹션 순서 summary→metrics→proposal→review→evidence, 없으면 생략."""
+    sections: list[CardSection] = [
+        SummarySection(title="결론", text=_descriptive_conclusion(res.answer))
+    ]
+
+    metrics = _metrics_section(res.evidence or {})
+    if metrics is not None:
+        sections.append(metrics)
+
+    sa = res.suggested_action
+    if sa is not None:
+        sections.append(_proposal_section(sa))
+        sections.append(_review_section(sa))
+
+    evidence = _evidence_section(res)
     if evidence is not None:
-        cards.append(evidence)
+        sections.append(evidence)
 
-    if res.suggested_action is not None:
-        cards.append(_result_card(res))
-        review = _review_card(res)
-        cards.append(review)
-        cards.append(_actionbar_card(res))  # 항상 마지막
-
-    for card in cards:
-        validate_card(card)
-
-    return TurnEnvelope(
-        turn_id=turn_id,
-        origin=origin,
-        conclusion=_descriptive_conclusion(res.answer),
-        cards=cards,
+    return ChatCard(
+        type="management",
+        badges=_badges(sa),
+        sections=sections,
+        trace=TraceInfo(turn_id=turn_id),  # v0 — raw 미전송
     )
 
 
@@ -171,14 +131,17 @@ def _chunks(text: str, size: int = 24) -> list[str]:
     return [text[i : i + size] for i in range(0, len(text), size)] or [""]
 
 
-def _final_status(env: TurnEnvelope) -> str:
-    return "partial" if any(c.status != CardStatus.OK for c in env.cards) else "ok"
+def _summary_text(card: ChatCard) -> str:
+    for section in card.sections:
+        if section.kind == "summary":
+            return section.text
+    return ""
 
 
-async def stream_turn(env: TurnEnvelope) -> AsyncGenerator[str, None]:
-    """카드 봉투를 2단계 SSE로 — 결론 먼저, 카드는 슬롯 순서(actionbar 마지막), final 항상."""
-    for piece in _chunks(env.conclusion):
-        yield format_sse({"event": "conclusion_delta", "text": piece})
-    for card in env.cards:  # compose_turn이 이미 슬롯 순서·actionbar 마지막으로 정렬
-        yield format_sse({"event": "card_ready", "card": card.model_dump(mode="json")})
-    yield format_sse({"event": "final", "turn_id": env.turn_id, "status": _final_status(env)})
+async def stream_card(card: ChatCard) -> AsyncGenerator[str, None]:
+    """ChatCard를 2단계 SSE로 — summary 텍스트 스트리밍 → card → final(항상)."""
+    for piece in _chunks(_summary_text(card)):
+        yield format_sse({"kind": "summary_delta", "text": piece})
+    yield format_sse({"kind": "card", "payload": card.model_dump(mode="json")})
+    turn_id = card.trace.turn_id if card.trace else None
+    yield format_sse({"kind": "final", "turn_id": turn_id, "status": "ok"})
