@@ -112,6 +112,7 @@ class SimulationService:
                 },
                 extra_tags=["batch"] if request.sample_size > 10 else None,
             )
+            trace_config["run_name"] = "시뮬레이션"
             # 반응 fan-out 병렬 수 제한(503 증폭 방지). preamble 노드는 단일이라 영향 없음.
             trace_config["max_concurrency"] = _MAX_REACTION_CONCURRENCY
             ad_dump: dict | None = None

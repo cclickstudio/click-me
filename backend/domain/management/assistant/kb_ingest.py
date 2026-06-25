@@ -27,6 +27,7 @@ _SOURCE_META: dict[str, tuple[str, str | None]] = {
     "meta_ad_policy.md": ("meta_official", "https://transparency.meta.com/policies/ad-standards/"),
     "optimization_playbook.md": ("playbook", None),
     "kpi_measurement_rules.md": ("internal_policy", None),
+    "management_glossary.md": ("internal_policy", None),
     "remediation_actions.md": ("internal_policy", None),
 }
 
@@ -62,13 +63,17 @@ async def ingest() -> int:
             new_hash = _sha(text)
             # 증분(content_hash 변경감지): 같은 출처 active 문서가 동일 해시면 재임베딩 스킵.
             existing = (
-                await db.execute(
-                    select(ManagementKbDocument).where(
-                        ManagementKbDocument.title == source,
-                        ManagementKbDocument.status == "active",
+                (
+                    await db.execute(
+                        select(ManagementKbDocument).where(
+                            ManagementKbDocument.title == source,
+                            ManagementKbDocument.status == "active",
+                        )
                     )
                 )
-            ).scalars().first()
+                .scalars()
+                .first()
+            )
             if existing is not None and existing.content_hash == new_hash:
                 skipped += 1
                 print(f"  {source}: 변경 없음 — skip")

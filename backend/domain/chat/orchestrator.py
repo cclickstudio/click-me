@@ -11,6 +11,7 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 
 from core.assistant import AssistantRequest
+from core.tracing import make_trace_config
 from domain.chat import history
 from domain.chat.loop_state import MAX_LOOP, get_loop_state
 from domain.generator.assistant.agent import build_generator_agent
@@ -170,6 +171,7 @@ class ChatTurn:
     )  # (role, content), role=user|assistant
     ad_id: str | None = None
     session_id: str | None = None  # 개선 루프 상태 키(턴 간 보존)
+    thread_id: str | None = None  # LangGraph 체크포인터 스레드 키(session_id와 동일)
     project_id: str | None = None  # 목록 조회 스코프(현재 프로젝트)
 
 
@@ -203,6 +205,33 @@ def _format_ltm(ltm: list[dict]) -> str:
         else:
             lines.append(f"- 사용자 선호: {c}")
     return "이 프로젝트의 최근 맥락(참고용):\n" + "\n".join(lines) + "\n\n"
+
+
+async def _format_clio_kb(question: str, api_key: str | None) -> tuple[str, list[dict]]:
+    """CLIO 전용 KB 검색 결과 → 시스템 프롬프트 컨텍스트와 인용 메타."""
+    from domain.chat.retriever import ClioKbRetriever  # noqa: PLC0415
+
+    rows = await ClioKbRetriever(api_key=api_key).search(question, k=4)
+    if not rows:
+        return "", []
+    lines = []
+    citations = []
+    for idx, row in enumerate(rows, start=1):
+        lines.append(f"[{idx}] {row['title']} ({row['source']})\n{row['chunk']}")
+        citations.append(
+            {
+                "kind": "kb",
+                "source": row["source"],
+                "title": row["title"],
+                "score": row["score"],
+            }
+        )
+    return (
+        "[CLIO 지식베이스]\n"
+        "아래 근거는 광고 일반 지식 질문에만 참고한다. "
+        "답변에는 필요한 내용만 자연스럽게 반영한다.\n" + "\n\n".join(lines) + "\n\n",
+        citations,
+    )
 
 
 # 브랜드 프로파일 — 자동 업데이트 트리거 키워드(이 단어가 있을 때만 추출 LLM 호출).
@@ -406,7 +435,7 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
         return _ask_fallback
 
     # ── 풀모드 — classify_intent → route → 도메인 서브에이전트 / advise ──
-    from typing import Literal, TypedDict  # noqa: PLC0415
+    from typing import Literal  # noqa: PLC0415
 
     from langchain_core.messages import (  # noqa: PLC0415 — 키 있을 때만
         AIMessage,
@@ -414,7 +443,7 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
         SystemMessage,
     )
     from langchain_openai import ChatOpenAI  # noqa: PLC0415
-    from langgraph.graph import END, START, StateGraph  # noqa: PLC0415
+    from langgraph.graph import END, START, MessagesState, StateGraph  # noqa: PLC0415
     from pydantic import BaseModel  # noqa: PLC0415
 
     model_name = getattr(settings, "chat_orchestrator_model", "gpt-4o-mini")
@@ -466,60 +495,41 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
 
     classifier = classify_llm.with_structured_output(_Intent)
 
-    # ── 숏텀 메모리 — session_id 키로 윈도우 버퍼(k=6) 캐시 ──
-    # LangChain 1.x에서 ConversationBufferWindowMemory가 제거돼, 같은 의미(최근 k턴 윈도잉)를
-    # langchain_core 메시지로 직접 구현. 서버 프로세스 메모리에만 보관(재시작 시 초기화).
-    class _WindowMemory:
-        """최근 k턴(2k 메시지)만 유지하는 단순 버퍼 — save_context/load 의미 보존."""
+    def _content_text(value) -> str:
+        if isinstance(value, str):
+            return value
+        return str(value)
 
-        def __init__(self, k: int = 6) -> None:
-            self.k = k
-            self.messages: list = []  # HumanMessage | AIMessage
+    def _history_to_messages(rows: list[tuple[str, str]]) -> list:
+        messages = []
+        for role, content in rows:
+            messages.append(
+                AIMessage(content=content) if role == "assistant" else HumanMessage(content=content)
+            )
+        return messages
 
-        def seed(self, history: list[tuple[str, str]]) -> None:
-            for role, content in history:
-                self.messages.append(
-                    AIMessage(content=content)
-                    if role == "assistant"
-                    else HumanMessage(content=content)
-                )
-            self._trim()
+    def _recent_history(state, limit_messages: int = 12) -> list[tuple[str, str]]:
+        """체크포인터 messages에서 LLM에 넣을 최근 대화만 추출한다."""
+        rows: list[tuple[str, str]] = []
+        for msg in state.get("messages") or []:
+            if isinstance(msg, AIMessage):
+                rows.append(("assistant", _content_text(msg.content)))
+            elif isinstance(msg, HumanMessage):
+                rows.append(("user", _content_text(msg.content)))
+        question = state.get("question")
+        if rows and rows[-1] == ("user", question):
+            rows = rows[:-1]
+        return rows[-limit_messages:]
 
-        def save_context(self, user_input: str, output: str) -> None:
-            self.messages.append(HumanMessage(content=user_input))
-            self.messages.append(AIMessage(content=output))
-            self._trim()
+    def _with_ai_message(answer: str, meta: dict) -> dict:
+        """노드 답변을 그래프 messages에도 적재해 다음 턴 체크포인터 맥락으로 쓴다."""
+        return {"answer": answer, "meta": meta, "messages": [AIMessage(content=answer)]}
 
-        def _trim(self) -> None:
-            limit = self.k * 2
-            if len(self.messages) > limit:
-                self.messages = self.messages[-limit:]
-
-        def load(self) -> list[tuple[str, str]]:
-            out: list[tuple[str, str]] = []
-            for m in self.messages:
-                role = "assistant" if isinstance(m, AIMessage) else "user"
-                out.append((role, m.content if isinstance(m.content, str) else str(m.content)))
-            return out
-
-    _short_term: dict[str, _WindowMemory] = {}
-
-    def _get_memory(session_id: str | None, seed: list[tuple[str, str]]) -> _WindowMemory:
-        key = session_id or "__ephemeral__"
-        mem = _short_term.get(key)
-        if mem is None:
-            mem = _WindowMemory(k=6)
-            # 새 메모리(서버 재시작/첫 턴)면 클라이언트가 보낸 내역으로 시드.
-            mem.seed(seed)
-            _short_term[key] = mem
-        return mem
-
-    # 그래프 상태 — 메시지 누적이 아니라 분류→답변 1패스. 노드엔 어노테이트하지 않는다.
-    class _State(TypedDict, total=False):
+    # 그래프 상태 — LangGraph 체크포인터가 messages 리듀서로 숏텀 메모리를 보존한다.
+    class _State(MessagesState, total=False):
         question: str
         session_id: str | None
         project_id: str | None
-        history: list[tuple[str, str]]
         ltm: list[dict]
         brand: dict | None
         intent: str
@@ -549,7 +559,7 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
             }
         # 직전 대화를 맥락으로 덧붙여 후속 질문(예: "그거 확실해?")도 제대로 분류한다.
         msgs = [SystemMessage(content=_CLASSIFY_SYSTEM)]
-        for role, content in (state.get("history") or [])[-4:]:
+        for role, content in _recent_history(state, limit_messages=4):
             msgs.append(HumanMessage(content=f"({role}) {content}"))
         msgs.append(HumanMessage(content=q))
         res = await classifier.ainvoke(msgs)
@@ -571,7 +581,7 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
         res = await mgmt(
             AskRequest(question=state["question"], campaign_id=state.get("context_id"))
         )
-        return {"answer": _mgmt_answer(res), "meta": _mgmt_meta(res)}
+        return _with_ai_message(_mgmt_answer(res), _mgmt_meta(res))
 
     async def simulation_node(state) -> dict:
         action = state.get("action")
@@ -585,14 +595,14 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
                 if mode == "select"
                 else ("최근 시뮬레이션 목록이에요." if items else "아직 돌린 시뮬레이션이 없어요.")
             )
-            return {
-                "answer": answer,
-                "meta": {
+            return _with_ai_message(
+                answer,
+                {
                     "source": "simulation",
                     "label": label,
                     "widget": {"type": "sim_list", "mode": mode, "data": {"items": items}},
                 },
-            }
+            )
         if action == "run":
             # 채팅에 이미 준 값(제목·카피·카테고리·목표)을 추출해 위젯 초기값으로 채운다.
             extractor = llm.with_structured_output(_SimInput)
@@ -610,27 +620,28 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
             }
             # 롱텀 메모리 — 시뮬 실행 입력을 프로젝트 단위로 누적(다음 대화 컨텍스트).
             await history.save_long_term_memory(state.get("project_id"), "sim_input", sim_data)
+            await history.infer_profile_from_execution_history(state.get("project_id"))
             # 위젯 방식 — 백엔드 직접 실행 대신 입력 위젯을 띄운다(프론트가 기존 라우터로 실행).
-            return {
-                "answer": "시뮬레이션을 돌릴게요. 아래에서 광고 정보를 확인·수정하고 실행하세요.",
-                "meta": {
+            return _with_ai_message(
+                "시뮬레이션을 돌릴게요. 아래에서 광고 정보를 확인·수정하고 실행하세요.",
+                {
                     "source": "simulation",
                     "label": "시뮬레이션",
                     "widget": {"type": "sim_form", "data": sim_data},
                 },
-            }
+            )
         res = await sim(
             AssistantRequest(
                 question=state["question"],
                 context_id=state.get("context_id"),
                 project_id=state.get("project_id"),
-                history=state.get("history") or [],
+                history=_recent_history(state),
             )
         )
-        return {
-            "answer": res.answer,
-            "meta": _assistant_meta(res, "simulation", "시뮬레이션 어시스턴트"),
-        }
+        return _with_ai_message(
+            res.answer,
+            _assistant_meta(res, "simulation", "시뮬레이션 어시스턴트"),
+        )
 
     async def generator_node(state) -> dict:
         action = state.get("action")
@@ -643,14 +654,14 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
                 if mode == "select"
                 else ("최근 광고 생성 목록이에요." if items else "아직 만든 시안이 없어요.")
             )
-            return {
-                "answer": answer,
-                "meta": {
+            return _with_ai_message(
+                answer,
+                {
                     "source": "generator",
                     "label": label,
                     "widget": {"type": "gen_list", "mode": mode, "data": {"items": items}},
                 },
-            }
+            )
         if action == "run":
             extractor = llm.with_structured_output(_GenInput)
             gi = await extractor.ainvoke(
@@ -667,24 +678,28 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
             }
             # 롱텀 메모리 — 생성 실행 입력을 프로젝트 단위로 누적(다음 대화 컨텍스트).
             await history.save_long_term_memory(state.get("project_id"), "gen_input", gen_data)
+            await history.infer_profile_from_execution_history(state.get("project_id"))
             # 위젯 방식 — 추출한 값을 초기값으로 입력 위젯을 띄운다(프론트가 기존 라우터로 실행).
-            return {
-                "answer": "광고 시안을 만들게요. 아래에서 생성 정보를 확인·수정하고 실행하세요.",
-                "meta": {
+            return _with_ai_message(
+                "광고 시안을 만들게요. 아래에서 생성 정보를 확인·수정하고 실행하세요.",
+                {
                     "source": "generator",
                     "label": "생성",
                     "widget": {"type": "gen_form", "data": gen_data},
                 },
-            }
+            )
         res = await gen(
             AssistantRequest(
                 question=state["question"],
                 context_id=state.get("context_id"),
                 project_id=state.get("project_id"),
-                history=state.get("history") or [],
+                history=_recent_history(state),
             )
         )
-        return {"answer": res.answer, "meta": _assistant_meta(res, "generator", "생성 어시스턴트")}
+        return _with_ai_message(
+            res.answer,
+            _assistant_meta(res, "generator", "생성 어시스턴트"),
+        )
 
     async def sim_result_node(state) -> dict:
         # 위젯이 보낸 시뮬 결과 요약 → 수치 추출 후 강약 판정. 실행은 안 하고 제안만.
@@ -761,7 +776,7 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
                 "label": "결과 분석 · 목표 도달",
                 "engine": f"OpenAI · {model_name}",
             }
-        return {"answer": answer, "meta": meta}
+        return _with_ai_message(answer, meta)
 
     async def gen_result_node(state) -> dict:
         # 위젯이 보낸 생성 결과 요약 → 새 시안으로 재시뮬 제안. 실행은 안 하고 제안만.
@@ -780,10 +795,7 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
                 "label": "새 시안으로 재시뮬",
                 "reasons": loop.weak_reasons,
             }
-        return {
-            "answer": ("새 시안이 준비됐네요. 새 시안으로 반응을 다시 예측해볼까요?"),
-            "meta": meta,
-        }
+        return _with_ai_message("새 시안이 준비됐네요. 새 시안으로 반응을 다시 예측해볼까요?", meta)
 
     async def advise_node(state) -> dict:
         base_meta = {"source": "orchestrator", "label": "CLIO", "engine": f"OpenAI · {model_name}"}
@@ -794,22 +806,25 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
             used = await history.count_advice_usage(state.get("project_id"))
             if used >= limit:
                 print(f"[chat] advice limit reached used={used} limit={limit} — blocked")
-                return {
-                    "answer": (
+                return _with_ai_message(
+                    (
                         f"일반 업무 질문은 {limit}회까지예요(현재 {used}/{limit} 사용). "
                         "광고·마케팅 질문(전략·시뮬·시안)은 무제한이니 언제든 물어보세요."
                     ),
-                    "meta": {
+                    {
                         **base_meta,
                         "advice_blocked": True,
                         "advice_used": used,
                         "advice_limit": limit,
                     },
-                }
-        # 롱텀 메모리 + 브랜드 프로파일을 시스템 프롬프트 앞에 주입(프로젝트 맥락).
-        preamble = _format_brand(state.get("brand")) + _format_ltm(state.get("ltm") or [])
+                )
+        # 광고 일반 질문에는 CLIO 전용 KB를, 프로젝트 질문에는 롱텀 메모리+브랜드 프로파일을 주입.
+        clio_kb, citations = ("", [])
+        if is_ad:
+            clio_kb, citations = await _format_clio_kb(state["question"], api_key)
+        preamble = clio_kb + _format_brand(state.get("brand")) + _format_ltm(state.get("ltm") or [])
         msgs = [SystemMessage(content=preamble + _ADVISE_SYSTEM)]
-        for role, content in (state.get("history") or [])[-6:]:
+        for role, content in _recent_history(state, limit_messages=12):
             msgs.append(
                 AIMessage(content=content) if role == "assistant" else HumanMessage(content=content)
             )
@@ -818,9 +833,11 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
         ans = resp.content if isinstance(resp.content, str) else ""
         # 비광고 답변은 한도 카운트 대상으로 태그(meta.usage_type — 스키마 무변경).
         meta = dict(base_meta)
+        if citations:
+            meta["citations"] = citations
         if not is_ad:
             meta["usage_type"] = "advice"
-        return {"answer": ans, "meta": meta}
+        return _with_ai_message(ans, meta)
 
     def route(state) -> str:
         return state.get("intent", "advise")
@@ -855,7 +872,19 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
         "advise",
     ):
         g.add_edge(_node, END)
-    graph = g.compile()
+
+    def _build_chat_checkpointer() -> object:
+        try:
+            from domain.management.wiring import build_checkpointer  # noqa: PLC0415
+
+            return build_checkpointer(settings)
+        except Exception as exc:  # noqa: BLE001 — 체크포인터 실패가 채팅 기동을 막지 않게
+            print(f"[chat] checkpointer fallback: {exc!r}")
+            from langgraph.checkpoint.memory import MemorySaver  # noqa: PLC0415
+
+            return MemorySaver()
+
+    graph = g.compile(checkpointer=_build_chat_checkpointer())
 
     async def _ask_full(turn: ChatTurn) -> ChatAnswer:
         sid = turn.session_id
@@ -977,26 +1006,46 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
                 await history.upsert_brand_profile(turn.project_id, be.model_dump())
             except Exception as exc:  # noqa: BLE001 — 추출 실패가 대화를 막지 않게
                 print(f"[chat] brand extract error: {exc!r}")
-        mem = _get_memory(sid, turn.history or [])
-        windowed = mem.load()
         # 진입 시 프로젝트 롱텀 메모리·브랜드 프로파일 조회 → 노드에서 시스템 프롬프트 앞 주입.
         ltm = await history.get_long_term_memory(turn.project_id, limit=3)
         brand = await history.get_brand_profile(turn.project_id)
         # 1턴 = 1 트레이스 루트(classify → route → 서브에이전트).
+        # L2-2: 체크포인터 thread_id는 채팅 session_id로 고정한다.
+        thread_id = turn.thread_id or sid or f"chat-transient:{turn.project_id or 'anonymous'}"
+        config = make_trace_config(
+            domain="chat",
+            feature="orchestrator",
+            ad_id=turn.ad_id,
+            project_id=turn.project_id,
+            extra_metadata={
+                "session_id": sid,
+                "thread_id": thread_id,
+                "conversation_id": thread_id,
+                "ls_model_name": model_name,
+                "ls_provider": "openai",
+            },
+            configurable={"thread_id": thread_id},
+        )
+        config["run_name"] = "채팅"
+        # 서버 체크포인터가 비어 있는 첫 호출/재시작 직후에만 클라이언트 history로 시드한다.
+        seed_messages = [HumanMessage(content=turn.question)]
+        try:
+            snapshot = await graph.aget_state(config)
+            has_checkpoint_messages = bool((snapshot.values or {}).get("messages"))
+        except Exception:  # noqa: BLE001 — 상태 조회 실패 시 현재 턴만으로 진행
+            has_checkpoint_messages = True
+        if not has_checkpoint_messages and turn.history:
+            seed_messages = _history_to_messages(turn.history) + seed_messages
         final = await graph.ainvoke(
             {
                 "question": turn.question,
+                "messages": seed_messages,
                 "session_id": sid,
                 "project_id": turn.project_id,
-                "history": windowed,
                 "ltm": ltm,
                 "brand": brand,
             },
-            config={
-                "run_name": "assistant_chat",
-                "tags": ["chat", "orchestrator"],
-                "metadata": {"ad_id": turn.ad_id},
-            },
+            config=config,
         )
         meta = final.get("meta") or {
             "source": "orchestrator",
@@ -1013,9 +1062,8 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
                     "confidence": final.get("confidence", "high"),
                 },
             }
+        meta = {**meta, "thread_id": thread_id, "session_id": sid}
         answer = final.get("answer", "")
-        # 이번 턴을 메모리에 적재 — 다음 턴의 윈도우에 반영.
-        mem.save_context(turn.question, answer)
         return ChatAnswer(answer=answer, meta=meta)
 
     return _ask_full

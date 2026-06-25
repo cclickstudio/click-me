@@ -172,7 +172,9 @@ class ManagementKbDocument(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[str | None] = mapped_column(String(64), nullable=True)  # NULL=공통(global)
     visibility: Mapped[str] = mapped_column(String(16), default="global")
-    source_type: Mapped[str] = mapped_column(String(32))  # meta_official|internal_policy|benchmark|playbook
+    source_type: Mapped[str] = mapped_column(
+        String(32)
+    )  # meta_official|internal_policy|benchmark|playbook
     source_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     title: Mapped[str] = mapped_column(String(512))
     version: Mapped[str | None] = mapped_column(String(64), nullable=True)
@@ -326,6 +328,19 @@ class GeneratorKbChunk(Base):
     """광고 생성 지식베이스 청크 (에이전틱 RAG) — 카피 전략·원칙·톤의 벡터 검색."""
 
     __tablename__ = "generator_kb_chunks"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    source: Mapped[str] = mapped_column(String(128))  # 출처 파일명(인용용)
+    title: Mapped[str] = mapped_column(String(256))  # 섹션 제목(인용용)
+    chunk: Mapped[str] = mapped_column(Text)
+    embedding: Mapped[list[float]] = mapped_column(Vector(1536))
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class ClioKbChunk(Base):
+    """CLIO 지식베이스 청크 — 광고 일반 지식의 벡터 검색."""
+
+    __tablename__ = "clio_kb_chunks"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     source: Mapped[str] = mapped_column(String(128))  # 출처 파일명(인용용)

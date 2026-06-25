@@ -48,12 +48,16 @@ async def record_turn(
     try:
         async with AsyncSessionLocal() as db:
             sess = (
-                await db.execute(
-                    select(ManagementChatSession).where(
-                        ManagementChatSession.thread_id == thread_id
+                (
+                    await db.execute(
+                        select(ManagementChatSession).where(
+                            ManagementChatSession.thread_id == thread_id
+                        )
                     )
                 )
-            ).scalars().first()
+                .scalars()
+                .first()
+            )
             if sess is None:
                 sess = ManagementChatSession(
                     thread_id=thread_id, campaign_id=campaign_id, ad_id=ad_id
