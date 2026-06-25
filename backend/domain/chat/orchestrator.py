@@ -1012,7 +1012,13 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
         config = {
             "run_name": "assistant_chat",
             "tags": ["chat", "orchestrator"],
-            "metadata": {"ad_id": turn.ad_id},
+            "metadata": {
+                "ad_id": turn.ad_id,
+                "project_id": turn.project_id,
+                "session_id": sid,
+                "thread_id": thread_id,
+                "conversation_id": thread_id,
+            },
             "configurable": {"thread_id": thread_id},
         }
         # 서버 체크포인터가 비어 있는 첫 호출/재시작 직후에만 클라이언트 history로 시드한다.
