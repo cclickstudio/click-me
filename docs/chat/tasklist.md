@@ -49,10 +49,10 @@
 
 > 권장 순서: **검증(V) → 위젯(W) → 제너통일(G) → 슬래시(S) → 폴리시(P) → 능동(N) → 견고함(X) → 랭스미스(L) → 기능(F) → RAG(R) → 정리(C)**.
 > **S1(저비용 슬래시 4종)은 최우선 후보** — 위젯은 완성됐는데 진입점만 없어서, 슬래시 한 줄로 묻힌 기능이 살아남(프론트만, 백엔드 변경 거의 없음).
-> 검증으로 머지 후 상태를 먼저 확정 → 핵심 위젯/통일로 흐름 완성 → **눈에 띄는 폴리시(P)로 "빛나게"** → 견고함 → 랭스미스/랭체인(L) 관측·메모리 → 기능 → RAG는 분량이 커서 뒤로(밤새 자동 진행). 정리는 맨 마지막, **전부 끝나면 C4가 자동 push**(빌드/테스트 통과 시).
+> 검증으로 머지 후 상태를 먼저 확정 → 핵심 위젯/통일로 흐름 완성 → **눈에 띄는 폴리시(P)로 "빛나게"** → 견고함 → 기능 → 정리. **랭스미스(L)·RAG(R)는 백엔드 세션에서 완료됨**(머지 반영, §5 학원 완료분 참조).
 > 설계 원칙: **시뮬과 제너레이터를 같은 UX로** 간다 — 입력 위젯 → (입력 시 사라지고) 입력 확인 위젯 → 로딩 스피너 위젯 → 결과 요약 위젯, 그리고 status API로 새로고침에도 안 날아가게.
-> **랭스미스(L) 작업은 팀 기준 문서 `C:\Users\owner\Downloads\langsmith-guide.md`(ClickMe 팀 공통)를 정본으로 따른다** — Trace 이름·Node 이름·필수 Metadata/Tags·비용 기록 규칙.
-> 이 backlog는 **밤새 무인 자동 진행**용으로 과provision됨 — 다 못 끝내도 됨. 임팩트 큰 것(V·W·G·P)부터 소진한다.
+> **랭스미스(L) 작업 정본은 팀 기준 문서 `C:\Users\owner\Downloads\langsmith-guide.md`(ClickMe 팀 공통)** — Trace 이름·Node 이름·필수 Metadata/Tags·비용 기록 규칙. (L 전부 완료, 추가 트레이싱 시 참고.)
+> 남은 ⬜는 임팩트 큰 것(V·G·P·F)부터 소진. 외부 블로커(제너 403)·타 팀 조율(S2·S5)은 ⬜로 유지.
 
 | #   | 태스크                                   | 분류   | 의존      | 상태 |
 | --- | ---------------------------------------- | ------ | --------- | ---- |
@@ -61,12 +61,17 @@
 | V3  | 개선 루프 경로 검증(시뮬→토론→생성)      | 검증   | V1,V2     | ⬜   |
 | V4  | 프론트 전역 스모크((app) 재구성)         | 검증   | —         | ✅   |
 | V5  | 3계정(admin·company·user) 로그인·역할 스모크 | 검증 | —      | ✅   |
-| R1  | 시뮬 용어+정의 사전 ~100 (loop 작성)     | RAG    | —         | ⬜   |
-| R2  | 제너 용어+정의 사전 ~100 (loop 작성)     | RAG    | —         | ⬜   |
-| R3  | 매니지 용어+정의 사전 ~100 (loop 작성)   | RAG    | —         | ⬜   |
-| R4-1 | CLIO `clio_kb_chunks` 테이블+마이그(승인됨) | RAG | —         | ⬜   |
-| R4-2 | CLIO KB 광고 일반지식 적재(~100)         | RAG    | R4-1      | ⬜   |
-| R4-3 | CLIO(기본 GPT) 응답에 CLIO RAG 연결     | RAG    | R4-2      | ⬜   |
+| R1  | 시뮬 용어+정의 사전 ~100 (loop 작성)     | RAG    | —         | ✅   |
+| R2  | 제너 용어+정의 사전 ~100 (loop 작성)     | RAG    | —         | ✅   |
+| R3  | 매니지 용어+정의 사전 ~100 (loop 작성)   | RAG    | —         | ✅   |
+| R4-1 | CLIO `clio_kb_chunks` 테이블+마이그(승인됨) | RAG | —         | ✅   |
+| R4-2 | CLIO KB 광고 일반지식 적재(~100)         | RAG    | R4-1      | ✅   |
+| R4-3 | CLIO(기본 GPT) 응답에 CLIO RAG 연결     | RAG    | R4-2      | ✅   |
+| R5  | clio KB에 Meta(인스타/페북) 정책·용어 추가 적재 | RAG | —      | ⬜   |
+| R6-1 | `marketing_kb_chunks` 테이블+마이그(모델 append) | RAG | —    | ⬜   |
+| R6-2 | marketing KB 광고·마케팅 용어+정의 적재(~100) | RAG | R6-1   | ⬜   |
+| R6-3 | marketing retriever → advise_node 연결      | RAG    | R6-2      | ⬜   |
+| R7  | 기존 3 KB(sim/gen/manage) 덤프·점검·보강    | RAG    | —         | ⬜   |
 | W1  | 시뮬 위젯 카테고리 2단 셀렉트            | 위젯   | —         | ✅   |
 | W2  | 시뮬 위젯 5단계 재구성(카테고리/목표/인구) | 위젯   | W1        | ✅   |
 | W3  | 사용자 친화 보조 위젯                    | 위젯   | W2        | ✅   |
@@ -112,16 +117,16 @@
 | X2  | SSE 자동 재연결(backoff 재구독)         | 견고함 | —         | ✅   |
 | X3  | 동시실행 가드 통일(sim·gen 슬롯)         | 견고함 | —         | ✅   |
 | X4  | 라우팅 분류 정확도 개선 + 로그          | 견고함 | —         | ✅   |
-| L1  | `core/tracing.py` make_trace_config 헬퍼(⚠️공유) | 랭스미스 | —    | ⬜   |
-| L2-1 | 채팅 그래프 state + 체크포인터 배선     | 랭스미스 | —       | ⬜   |
-| L2-2 | thread_id=세션 매핑 + 영속/폴백         | 랭스미스 | L2-1    | ⬜   |
-| L2-3 | 기존 _trim·10턴요약 LangGraph로 정리    | 랭스미스 | L2-2    | ⬜   |
-| L3  | 세션 단위 LangSmith Thread 그룹핑       | 랭스미스 | L2-2    | ⬜   |
-| L4  | 토론 대표 선발 단일 trace + 한글 네임    | 랭스미스 | —       | ⬜   |
-| L5  | 트레이싱 이름 한글화 + 가이드 메타 정합  | 랭스미스 | L1      | ⬜   |
-| L6  | graph.ainvoke에 make_trace_config 적용  | 랭스미스 | L1      | ⬜   |
-| L7  | CLIO OpenAI wrap_openai 토큰/비용 기록   | 랭스미스 | —       | ⬜   |
-| L8  | 롱텀 메모리(실행기록 기반 사용자 프로파일) | 랭스미스 | L3    | ⬜   | 
+| L1  | `core/tracing.py` make_trace_config 헬퍼(⚠️공유) | 랭스미스 | —    | ✅   |
+| L2-1 | 채팅 그래프 state + 체크포인터 배선     | 랭스미스 | —       | ✅   |
+| L2-2 | thread_id=세션 매핑 + 영속/폴백         | 랭스미스 | L2-1    | ✅   |
+| L2-3 | 기존 _trim·10턴요약 LangGraph로 정리    | 랭스미스 | L2-2    | ✅   |
+| L3  | 세션 단위 LangSmith Thread 그룹핑       | 랭스미스 | L2-2    | ✅   |
+| L4  | 토론 대표 선발 단일 trace + 한글 네임    | 랭스미스 | —       | ✅   |
+| L5  | 트레이싱 이름 한글화 + 가이드 메타 정합  | 랭스미스 | L1      | ✅   |
+| L6  | graph.ainvoke에 make_trace_config 적용  | 랭스미스 | L1      | ✅   |
+| L7  | CLIO OpenAI wrap_openai 토큰/비용 기록   | 랭스미스 | —       | ✅   |
+| L8  | 롱텀 메모리(실행기록 기반 사용자 프로파일) | 랭스미스 | L3    | ✅   | 
 | C1  | sim_result_node 죽은 경로 정리          | 정리   | V1        | ⬜   |
 | C2  | CLAUDE.md "Chat LLM Gemini"→OpenAI       | 정리   | —         | ✅   |
 | C5  | /위젯 명령어 제거                        | 정리   | —         | ✅   |
@@ -131,50 +136,35 @@
 
 ## 2. 루프 프롬프트
 
+> 분리 개발 종료(프론트/백 머지 완료) → **단일 브랜치 `feat/chat-doyeon`에서 프론트·백 모두 자유롭게** 진행. 마감·데드라인 없음 — 남은 ⬜ 태스크를 의존 순서대로 끝까지 소진한다.
+
 ### 2-1. 마스터 루프 (권장 — 한 번에 한 태스크)
 
 ```
-/loop docs/chat/tasklist-2026-06-24.md 를 읽어. ★마감: 한국시간(KST) 09:00 하드 데드라인 — §2-4 "마감 규칙" 반드시 준수. 매 반복은 아래대로:
-0) **시각 확인** — `date`로 현재 KST 확인. 08:40 지났으면 새 태스크 시작 금지하고 §2-4 윈드다운·push로 간다.
+/loop docs/chat/tasklist.md 를 읽어. 분리 개발은 끝났고 이제 단일 브랜치(feat/chat-doyeon)에서 프론트·백 모두 자유롭게 고친다. 마감·데드라인 없음. 매 반복은 아래대로:
 1) "0. 전제" 확인 — 개인 DB(ep-soft-band)·서버(8000/3000)·폰트·토큰·OPENAI_API_KEY. Preview는 §0 "Preview 검증 표준 절차"대로 띄우고 3계정으로 로그인.
-2) "1. 전체 태스크 현황" 표에서 의존(앞 컬럼)이 모두 ✅ 이고 상태가 ⬜ 인 가장 위 태스크 1개 선택(권장 순서: V→W→G→S→P→N→X→L→F→R→C). 처음엔 V5(3계정 로그인·역할 게이팅)부터 깔아두면 이후 3역할 검증이 수월.
-3) 그 태스크 명세(4·4-S·4-N·4-L장)를 끝까지 수행. **명세에 "확정 설계(플랜 2026-06-25)" 블록이 있으면 그 설계대로 구현한다**(L2·N·CLIO(R4/P12)·L8). 없으면 명세의 목표·완료 기준대로.
+2) "1. 전체 태스크 현황" 표에서 의존(앞 컬럼)이 모두 ✅ 이고 상태가 ⬜ 인 가장 위 태스크 1개 선택(권장 순서: V→W→G→S→P→N→X→F→R→C, L·R은 완료됨). R1·R3 완료로 P5·F6은 이제 해금.
+3) 그 태스크 명세(4·4-S·4-N·4-L장)를 끝까지 수행. **명세에 "확정 설계(플랜 2026-06-25)" 블록이 있으면 그 설계대로 구현한다**(N·CLIO(R4/P12) 등). 없으면 명세의 목표·완료 기준대로.
 - 코드 변경 시 ruff/tsc/lint 통과. 검증은 Claude Preview 직접 구동 + §0 "QA 철저성 원칙" 그대로 — 비동기는 완료까지 대기, 진행 중/완료 후 새로고침 복원, 엣지·에러 유발, 콘솔 무에러. "떴다"로 ✅ 금지.
 - UI/흐름 검증은 admin·company·user 3계정 모두 재현. 역할 차이는 "5. 진행 로그"에 역할 표기.
 - Preview 중 버그/깨짐 발견하면 건너뛰지 말고 그 자리에서 고치고 커밋 → ✅. 한 태스크 여러 커밋 OK(원인수정+검증).
 - 완료하면 그 태스크 ✅ + "5. 진행 로그"에 한 줄 + 시맨틱 커밋(타입: 한국어 설명) 1개.
-- 한 반복 1태스크. **못 고치는 진짜 블로커(외부 키 한도 등)**만 ⬜ 유지·로그하고 다음 태스크로. 무인 진행이니 멈추지 말고 사용자에게 묻지 말고 합리적 기본값.
-- **게이트 없음(R4-1 승인됨 2026-06-25)** — 모든 태스크 자율 진행. R4-1은 `clio_kb_chunks` 신규 테이블을 **Alembic 마이그레이션으로** 추가(raw DDL 직접 X)하고 **단독 커밋**·검증(`import api.main` OK, up/down). L1(`core/tracing.py` 새 파일)·L8·P12도 진행 OK. 단 다른 공유부(`core/` 기존 모델 컬럼·`api/main.py`·공용 `tools/`)는 append-only·시그니처 불변으로 최소 변경, 기존 컬럼 변경 필요하면 멈추고 ⬜·로그.
-- **종료(둘 중 먼저 오는 것)**: ① 전부 ✅ 또는 ② **KST 09:00 데드라인**. 어느 쪽이든 §2-4대로 안정화 → `git push origin feat/chat-doyeon`(main·--force 금지) → 인계 노트 남기고 멈춰. **데드라인엔 미완성이어도 무조건 push.**
+- 한 반복 1태스크. **못 고치는 진짜 블로커(외부 키 한도·org 미검증 등)**만 ⬜ 유지·로그하고 다음 태스크로. 멈추지 말고 사용자에게 묻지 말고 합리적 기본값.
+- 공유부(`core/` 기존 모델 컬럼·`api/main.py`·공용 `tools/`)는 append-only·시그니처 불변으로 최소 변경. 기존 컬럼 변경이 필요하면 멈추고 ⬜·로그.
+- **종료**: 남은 ⬜가 외부 블로커(제너 403 등)·타 팀 조율(S2·S5)만 남으면 그것들은 ⬜로 두고 종료. 전부 정리되면 인계 노트 남기고 멈춰. (push는 사용자 요청 시에만.)
 ```
 
 ### 2-2. 그룹만 돌리고 싶을 때
 
 - 검증만: 위 프롬프트에서 "표에서 … V로 시작하는 태스크만" 으로 한정.
-- RAG만: "R로 시작하는 태스크만". (R1~R3은 **용어+정의 사전을 loop가 작성** → 반복당 `.md` 1파일 → `kb_ingest`. R4-1 승인됨 → R4 전체 자율.)
-- 랭스미스만: "L로 시작". (정본 `langsmith-guide.md` 준수. L2는 확정 설계 블록대로.)
+- RAG만: "R로 시작하는 태스크만"(R5·R6·R7 신규). R5=clio에 Meta 추가 적재(테이블 기존), R6=marketing_kb 신설(테이블→적재→연결), R7=기존 3 KB 덤프·보강. **용어+정의 사전을 loop가 작성**, 반복당 `.md` 1파일 → `kb_ingest`.
+- 기능만: "F로 시작하는 태스크만". (F6은 매니지먼트 RAG 연결 — R3 완료로 해금. F5 롱텀 메모리 점검도 백엔드 머지분 기반.)
+- 폴리시만: "P로 시작". (P5 RAG 인용 표시 — R1 완료로 해금.)
 
 ### 2-3. 주의
 
-- 루프는 **자기 도메인(채팅/시뮬 위젯/각 도메인 assistant·kb)만** 수정. 공통부(`core/`·`api/main.py`·공용 `tools/`) 변경은 최소·append-only·시그니처 불변.
-- **기존 KB 테이블(sim/gen/manage)은 적재만 — 자유.** 새 테이블 `clio_kb_chunks`는 **R4-1 승인됨** → Alembic 마이그로 추가(단독 커밋). 그 외 `core/models.py` 기존 컬럼 변경 필요하면 멈추고 ⬜·로그.
-
-### 2-4. ★ 마감 규칙 — KST 09:00 하드 데드라인
-
-> 사용자가 09:00에 학원에서 이 브랜치를 바로 인계받아 이어 작업한다. **09:00 전까지 "그 시점 상태"가 무조건 원격에 push돼 있어야 한다(미완성이어도).** 단, 망가진(빌드 깨진) 상태로 push하지 않는다.
-
-- **시각 기준**: 매 반복 시작에 `date`로 현재 KST 확인. (머신이 KST가 아니면 UTC+9로 환산.)
-- **08:40 KST — 윈드다운 시작**: **새 태스크 시작 금지.** 진행 중인 태스크만 처리.
-  - 큰 태스크는 08:20 이후 시작하지 말 것(못 끝낼 위험). 남은 시간이 짧으면 가벼운 ⬜(폴리시·정리 등)만.
-- **08:40 ~ 08:55 — 진행 중 태스크 마감**:
-  - 끝낼 수 있으면 끝내고 ✅ + 커밋.
-  - 못 끝내면: 변경분이 **빌드 통과**하면 `wip: <태스크ID> 중단(인계)` 커밋(✅ 아님, ⬜ 유지). **빌드 깨지면** 그 태스크 미커밋 변경을 `git stash`(또는 되돌림)해서 브랜치를 **마지막 ✅ 상태**로 정리.
-- **08:55 ~ 09:00 — 최종 push**:
-  1. `cd frontend && npx tsc --noEmit` + `cd backend && uv run ruff check . && uv run pytest tests/ -q`로 현재 커밋 상태 확인. 깨지면 직전 정상 커밋까지 정리(WIP stash).
-  2. `git push origin feat/chat-doyeon` (main·--force 금지).
-  3. **인계 노트**를 "5. 진행 로그" 맨 위에 작성: ✅ 완료 태스크 목록 / 진행 중이던 것(WIP 커밋 해시) / **다음 시작 태스크** / 미해결 블로커·주의. 한 문단이면 충분.
-  4. "마감 push 완료(09:00 KST)" 출력하고 멈춤.
-- **우선순위 힌트(시간 부족 대비)**: 망가지면 곤란한 위험 태스크(L2·N·CLIO 백엔드)는 **새벽 일찍** 끝내두고, 08:00 이후엔 **독립적·저위험(P 폴리시·R 용어사전·C 정리)** 위주로 채워 데드라인에 깔끔히 끊기 쉽게.
+- 단일 브랜치라 프론트·백 모두 수정 가능하나, 공통부(`core/` 기존 모델 컬럼·`api/main.py`·공용 `tools/`)는 최소·append-only·시그니처 불변 원칙 유지(협업 규칙).
+- **KB 테이블(sim/gen/manage/clio)은 모두 적재 완료** — 추가 적재는 자유, 스키마(기존 컬럼) 변경은 멈추고 ⬜·로그.
 
 ---
 
@@ -313,6 +303,64 @@
 **목표** CLIO(기본 GPT) 응답 경로에서, 광고 일반 질문이면 `clio_kb_chunks` 검색 → 컨텍스트 주입 + 인용(P5와 연계). 분류기가 "광고 일반 지식" 의도로 분류 시 CLIO RAG 사용.
 **구현** CLIO retriever(임베딩 `text-embedding-3-small`로 top-k) → 프롬프트에 근거 주입. 시뮬/제너/매니지 RAG와 라우팅 충돌 없게(그쪽은 도메인 작업, CLIO는 일반 지식).
 **완료 기준** 광고 일반 질문에 CLIO가 KB 근거로 응답 + 인용 칩. Preview 확인.
+
+### R5 — clio KB에 Meta(인스타/페북) 정책·용어 추가 적재
+
+> 전제: `clio_kb_chunks` 테이블·ingest·retriever는 **이미 존재**(R4-1/R4-2/R4-3 완료, `advertising_general_knowledge.md` 70청크 적재됨). 따라서 **테이블 생성 불필요 — `.md` 추가 후 재인제스트만**.
+
+**목표** CLIO(채팅 기본 어시스턴트)가 **Meta 플랫폼(인스타그램·페이스북) 광고 정책·용어**를 RAG로 답하도록 clio KB에 Meta 지식을 추가. 예: 광고 정책 위반 유형(금지 콘텐츠·과장 표현·개인 속성 타겟팅 제한)·광고 검수(review) 흐름·계정/픽셀·전환 API(CAPI)·Advantage+·광고 형식(피드/릴스/스토리/컬렉션)·도달·빈도·광고 게재 위치 등 **용어 + 1~2줄 정의**.
+**방법**
+1. `backend/domain/chat/kb/`에 `meta_platform_policy.md`(또는 주제별 `meta_ad_policy.md`·`meta_ad_formats.md`) 작성 — 각 항목 `## 용어/정책` + 1~2줄 정의(단어 나열 ❌). 기존 `advertising_general_knowledge.md` 스타일.
+2. `cd backend && uv run python -m domain.chat.kb_ingest` 재실행 → **소스 파일명 기준 멱등**(같은 source 삭제 후 재적재)이라 기존 70청크 유지·신규 source만 추가.
+**완료 기준** `select count(*) from clio_kb_chunks` 증가(Meta 항목 ~30~50 추가), `ClioKbRetriever`가 "인스타 광고 정책" 류 질문에 Meta 청크 top-k 반환. advise_node 응답에 Meta 근거+인용. Preview/스모크 확인.
+**주의** **management KB에 이미 `meta_ad_policy`(집행 후 운영 관점)가 있음** — clio는 **채팅 일반 질의응답 관점**의 플랫폼 정책·용어로, 운영 조치(증액/감액)와는 분리. 출처 불명 수치 단정 금지(정책 원칙·정의 위주, 정확한 수치는 "공식 정책 참조" 표기).
+
+### R6 — marketing_kb_chunks 신설 (광고·마케팅 용어 사전)
+
+> 사용자 결정: **clio와 별개의 공용 마케팅 용어 사전 테이블**을 둔다. clio_kb = CLIO 채팅 어시스턴트의 광고 일반지식 + Meta 정책. marketing_kb = **광고·마케팅 개념/이론 용어 사전**(향후 도메인 공용 가능). 기존 R4(clio) 3분할 패턴(테이블→적재→연결)을 그대로 따른다.
+> **역할 분리 메모(중복 주의)**: clio의 기존 `advertising_general_knowledge`와 marketing 용어가 겹칠 수 있음. marketing은 **개념 단위 용어+정의**(예: STP·포지셔닝·CAC·LTV·퍼널·리타게팅·노출/도달/빈도·CPM/CPC/CTR/ROAS 정의)에 집중하고, clio는 플랫폼 정책·실무 가이드 중심으로 둔다. 순수 용어성 항목의 clio→marketing 이관은 선택(과한 재정리 금지).
+
+#### R6-1 — `marketing_kb_chunks` 테이블 + 마이그레이션
+
+**목표** 광고·마케팅 용어 전용 KB 청크 테이블 신설. 기존 `ClioKbChunk` 스키마와 동일(`source/title/chunk/embedding(1536)/created_at`).
+**구현** `core/models.py`에 `MarketingKbChunk` 모델 **append**(기존 컬럼 불변) + **Alembic 마이그레이션 026**(`down_revision=025_add_clio_kb_chunks`, raw DDL 직접 X). **단독 커밋**.
+**완료 기준** `marketing_kb_chunks` 테이블 생성, `import api.main` OK, 마이그 up/down 동작(개인 DB ep-soft-band에서 025↔026 검증).
+
+#### R6-2 — marketing KB 광고·마케팅 용어+정의 적재 (~100, R6-1 의존)
+
+**목표** `marketing_kb_chunks`에 **광고·마케팅 용어+정의 사전 ~100개**(각 `## 용어` + 1~2줄 정의). 용어 예: STP·타게팅·포지셔닝·USP·퍼널(AARRR)·AISAS·CAC·LTV·ROAS·CPM/CPC/CPA·노출/도달/빈도·리타게팅·룩어라이크·브랜드 인지/고려/전환·A/B 테스트·어트리뷰션·CTR/CVR 정의 등. **loop가 작성**(기획서·일반 마케팅 표준 근거).
+**방법** ingest 모듈 신설 = `domain/marketing/kb_ingest.py`(또는 `domain/chat/kb_ingest.py` 패턴 복제, 대상 테이블만 `MarketingKbChunk`, `_KB_DIR=<해당>/kb/`) → `.md` `## 섹션` 작성(반복당 1파일 ~30~50항목: `marketing_funnel_terms.md`·`metric_terms.md`·`targeting_terms.md` 등) → `uv run python -m <모듈>`.
+**완료 기준** 마케팅 핵심 용어 커버 + `select count(*) from marketing_kb_chunks` ≥ 50(목표 ~100), 각 항목이 용어+정의(단어 단독 금지). 출처 불명 수치 단정 금지.
+
+#### R6-3 — marketing retriever → advise_node 연결 (R6-2 의존)
+
+**목표** advise_node(CLIO)가 광고·마케팅 용어 질문 시 `marketing_kb_chunks`도 검색·인용하도록 연결.
+**구현** `MarketingKbRetriever`(R4-3 `ClioKbRetriever` 패턴 — `text-embedding-3-small`, pgvector 코사인 top-k=4, `{source,title,chunk,score}` 반환) 추가 → advise_node에서 clio KB와 **병행 검색**(또는 합쳐서 top-k), preamble에 `[마케팅 용어]` 섹션 주입, `meta.citations`에 source/title 기록(P5 인용 칩 연계).
+**완료 기준** "ROAS가 뭐야" 류 용어 질문에 marketing 청크 근거로 응답 + 인용. clio/도메인 RAG와 라우팅 충돌 없음. Preview/스모크 확인.
+
+### R7 — 기존 3 KB(sim/gen/manage) 덤프·점검·보강
+
+**목표** 코덱스(다른 세션)가 적재한 기존 3 KB의 현재 내용을 **덤프해 직접 확인**하고, 커버리지 빈 곳(누락 용어·얕은 정의)을 보강. 현재 적재량(머지 시점): 시뮬 69 · 제너 79 · 매니지 88 청크.
+**방법**
+1. **덤프**(테이블별로 `M`만 교체 — `SimulationKbChunk`/`GeneratorKbChunk`/`ManagementKbChunk`):
+   ```
+   cd backend && uv run python -c "
+   import asyncio
+   from sqlalchemy import select
+   from core.db import AsyncSessionLocal
+   from core.models import SimulationKbChunk as M
+   async def main():
+       async with AsyncSessionLocal() as db:
+           rows = (await db.execute(select(M.source, M.title, M.chunk).order_by(M.source, M.title))).all()
+           print('total', len(rows))
+           for s, t, c in rows:
+               print(f'[{s}] ## {t}\n  {c[:140]}')
+   asyncio.run(main())
+   "
+   ```
+2. 덤프로 **누락 주제·정의 부실 항목**을 식별 → 각 도메인 `kb/`에 보강 `.md`(또는 기존 파일 확장) 작성 → 해당 ingest 재실행(`domain.simulation.assistant.kb_ingest` 등, 멱등). 매니지 신규 .md는 `kb_ingest.py`의 `_SOURCE_META` 항목 추가 필요.
+**완료 기준** 3 KB 덤프 결과를 진행 로그에 요약(테이블별 총량·주요 주제), 식별된 빈 곳에 용어+정의 보강(있을 경우), 보강 후 count 증가 확인. 보강할 게 없으면 "충분"으로 판정·기록(억지 패딩 금지).
+**주의** 각 도메인 KB는 원소유 팀 자산 — 적재(추가)는 자유, **스키마/기존 청크 의미 훼손 금지**. 단순성 우선(top-k=4라 잘 쓴 항목이 수백 패딩보다 나음).
 
 ### W1 — 시뮬 위젯 카테고리 2단 셀렉트
 
@@ -724,15 +772,15 @@
 **구현** `/위젯` 커맨드 정의·렌더·트리거 코드를 찾아 제거(`ChatConversation`/커맨드 정의 위치). 다른 커맨드(`/비교`·`/도움말`·S 그룹 등) 자동완성 목록에 영향 없게 수술적으로.
 **완료 기준** `/위젯` 입력 시 더 이상 동작·노출 안 함, 나머지 커맨드 정상. tsc/lint·Preview 확인.
 
-### C4 — 전부 완료 시 자동 push (전부 의존)
+### C4 — 남은 태스크 정리 후 push (전부 의존)
 
-**목표** **둘 중 먼저 오는 것에 push** — ① 전부 ✅, 또는 ② **KST 09:00 데드라인(§2-4)**. 데드라인엔 미완성이어도 push. (게이트 없음 — R4-1 승인됨.)
+**목표** 진행 가능한 ⬜를 모두 소진하고(외부 블로커·타 팀 조율분만 ⬜로 남으면) 안정화한 뒤 push.
 **절차**
-1. 최종 검증 — `cd frontend && npx tsc --noEmit` + `cd backend && uv run ruff check . && uv run pytest tests/ -q`. 실패 시: 시간 있으면 고치고 커밋, 데드라인 임박이면 깨진 미커밋 변경 stash해 직전 정상 커밋 상태로.
+1. 최종 검증 — `cd frontend && npx tsc --noEmit` + `cd backend && uv run ruff check . && uv run pytest tests/ -q`. 실패 시 고치고 커밋(못 고치면 깨진 미커밋 변경 stash해 직전 정상 커밋 상태로).
 2. 통과(컴파일되는 상태)면 `git push origin feat/chat-doyeon`. **main 직접 push·강제 push(`--force`) 금지.**
 3. "5. 진행 로그"에 인계 노트(완료/진행중 WIP/다음 시작점/블로커).
 4. 불필요 백업 브랜치 정리는 보류(로컬만, 원격 삭제는 사용자 확인).
-**주의** push는 사용자가 명시 승인함(해당 브랜치 한정). **빌드 깨진 상태로는 push 금지** — 데드라인이어도 컴파일되는 마지막 상태로 정리 후 push.
+**주의** push는 **사용자 요청 시에만**(해당 브랜치 한정). **빌드 깨진 상태로는 push 금지** — 컴파일되는 마지막 상태로 정리 후 push.
 
 ---
 
@@ -753,7 +801,30 @@
 - **N1 제너 경로·V2·V3·G계열·F8·N3**: 제너레이터 OpenAI org-verification 403 외부 블로커.
 - **S2·S5**: 매니지먼트 도메인(타 팀) 조율 필요.
 
-**머지 가이드**: [원격-병행-작업분배.md](원격-병행-작업분배.md) §4 참조. 핵심 — 집=`frontend/`·학원=`backend/`로 파일 분리돼 코드 충돌 거의 없음. 머지 후 통합 스모크: `cd frontend && pnpm install && pnpm build` + `cd backend && uv run pytest tests/ -v`. 그 뒤 P5·F10·N4를 백엔드 머지분 기반으로 마저 구현.
+**머지 가이드**: 집=`frontend/`·학원=`backend/`로 파일 분리돼 코드 충돌 거의 없음. 머지 후 통합 스모크: `cd frontend && pnpm install && pnpm build` + `cd backend && uv run pytest tests/ -v`. 그 뒤 P5(R1 완료로 해금)·F10·N4를 백엔드 머지분 기반으로 마저 구현.
+
+---
+
+### 🏫 학원 백엔드 세션 완료분 (머지 반영, 2026-06-25)
+
+> 백엔드 전담 세션(`feat/chat-backend`)에서 완료해 머지된 RAG·랭스미스 태스크. 분배표상 학원 몫이던 F5·F6은 미완료(⬜ 유지).
+
+- R4-1 ✅ — `ClioKbChunk` 모델과 Alembic 025 `clio_kb_chunks` 테이블 추가. 개인 DB(ep-soft-band)에서 024→025 up, 컬럼 확인, 025→024 down, 024→025 복구 검증 완료. `ruff check . --fix`, `import api.main` 통과.
+- R1 ✅ — 시뮬 용어+정의 사전 `simulation_glossary.md` 63개 항목 추가. `domain.simulation.assistant.kb_ingest`로 개인 DB(ep-soft-band) 적재 완료, `simulation_kb_chunks` 69청크 확인, `SimKbRetriever` 검색 스모크와 `import api.main` 통과.
+- R2 ✅ — 제너 용어+정의 사전 `creative_glossary.md` 72개 항목 추가. `domain.generator.assistant.kb_ingest`로 개인 DB(ep-soft-band) 적재 완료, `generator_kb_chunks` 79청크 확인, `GenKbRetriever` 검색 스모크와 `import api.main` 통과.
+- R3 ✅ — 매니지 용어+정의 사전 `management_glossary.md` 71개 항목 추가 및 `_SOURCE_META` 등록. 개인 DB(ep-soft-band)에 019 매니지 지식 스키마 적용 후 인제스트 완료, `management_kb_chunks` 88청크와 `document_id` 88건 연결 확인, `KbRetriever` 검색 스모크와 `ruff check . --fix`, `import api.main` 통과.
+- R4-2 ✅ — CLIO 전용 광고 일반지식 KB `advertising_general_knowledge.md` 70개 섹션과 `domain.chat.kb_ingest` 추가. 개인 DB(ep-soft-band)에 `clio_kb_chunks` 70청크 적재 확인, chunk parser 스모크와 `ruff check . --fix`, `import api.main; import domain.chat.kb_ingest` 통과.
+- R4-3 ✅ — `ClioKbRetriever` 추가 및 `advise_node`에 CLIO KB 컨텍스트 주입·`meta.citations` 연결. 광고 일반 질문은 `clio_kb_chunks` top-k 근거를 사용하고 비광고 한도 경로는 기존대로 유지. retriever 검색 스모크, 오케스트레이터 CLIO 응답 citations 스모크, `ruff check . --fix`, `import` 통과.
+- L1 ✅ — 기존 병합 이력의 `core.tracing.make_trace_config` 구현을 가이드 §4 기준으로 재검증. `tests/test_tracing.py` 5건, `ruff check core/tracing.py tests/test_tracing.py`, standalone import/config 스모크 통과.
+- L2-1 ✅ — 채팅 LangGraph `_State`를 `MessagesState` 상속으로 전환하고, 매니지먼트 `build_checkpointer()` 재사용 체크포인터를 `graph.compile(checkpointer=...)`에 연결. `graph.ainvoke`에 임시 `thread_id` configurable과 `messages` seed를 전달해 L2-2 전 API 계약 유지. `ruff format .`, `ruff check . --fix`, `import api.main`, graph compile 스모크 통과.
+- L2-2 ✅ — `/api/chat/complete`와 `/api/chat/approve`에서 체크포인터 `thread_id`를 채팅 `session_id`로 고정하고, `ChatRequest`/`ApproveRequest`에 구 `thread_id` 호환 입력 추가. 오케스트레이터 `ChatTurn.thread_id`와 응답 meta의 `thread_id`/`session_id` 연결. Windows 로컬 `InMemorySaver` 폴백, thread 매핑 스모크, ruff·`import api.main` 통과.
+- L2-3 ✅ — 채팅 오케스트레이터의 인프로세스 `_WindowMemory`·수동 `_trim()` 제거. LangGraph 체크포인터 `messages`에서 최근 대화만 추출해 classify/advise/서브에이전트에 전달하고, 각 답변 노드가 `AIMessage`를 반환해 다음 턴 state에 누적되게 정리. 서버 체크포인터가 비어 있을 때만 클라이언트 `history[]`로 1회 seed하는 과도기 폴백 유지. 10턴 요약은 `history.append_turn` 이후 DB 기반 트리거로 유지. graph compile 스모크, ruff·`import api.main` 통과.
+- L3 ✅ — 채팅 그래프 `graph.ainvoke` LangSmith metadata에 `session_id`·`thread_id`·`conversation_id`를 L2의 체크포인터 thread 키와 동일하게 주입해 세션 단위 Thread 그룹핑 근거 추가. thread metadata 소스 스모크, ruff·`import api.main` 통과.
+- L4 ✅ — 시뮬레이션 토론 대표 선발 `select_panel` 호출을 `@traceable(run_type="chain", name="토론 대표 선발")` wrapper로 감싸고 selection 메타(`domain`·`feature`·`stage`·`run_id`·`lay_count`·`reaction_count`·`has_personas`) 추가. selection 단계 순서·패널 스모크, ruff·`import api.main` 통과.
+- L5 ✅ — 권장안 A로 채팅·시뮬 trace 표시 이름을 한글화하고 영문 tags/metadata는 유지. `assistant_chat`→`채팅`, `simulation.simulate`→`시뮬레이션`, `simulation.react`→`페르소나 반응`, `simulation_assistant`→`시뮬레이션 어시스턴트`, `Q&A`→`토론 Q&A`. run_name/metadata 소스 스모크, ruff·`import api.main` 통과.
+- L6 ✅ — 채팅 오케스트레이터와 시뮬레이션 어시스턴트 `graph.ainvoke` config를 `core.tracing.make_trace_config` 기반으로 전환. L5 한글 `run_name`은 유지하고 표준 `domain`·`feature`·`env`·`ad_id`·`project_id` 메타와 tags를 helper로 조립. make_trace_config 소스 스모크, ruff·`import api.main` 통과.
+- L7 ✅ — CLIO/chat raw OpenAI 호출 지점(`retriever`·`history`·`kb_ingest`)을 `wrap_openai()`로 감싸 LangSmith 토큰·비용 집계 가능하도록 보강. 채팅 오케스트레이터 trace metadata에 `ls_model_name`·`ls_provider`를 추가해 모델명 누락 방지. 소스 스모크, ruff·`import api.main` 통과.
+- L8 ✅ — 최근 시뮬·생성 실행 입력(`sim_input`/`gen_input`)을 집계해 프로젝트 브랜드 프로파일을 자동 추론하는 `infer_profile_from_execution_history()` 추가. 매 실행 입력 저장 직후 프로파일을 갱신하고 `user_profile_inferred` 근거 메모리를 남겨 다음 대화의 기존 `_format_brand`/`_format_ltm` 주입 경로에 반영되도록 연결. 집계 standalone 스모크, ruff·`import api.main` 통과.
 
 ---
 - 2026-06-25 09:48 C2 ✅ — CLAUDE.md 채팅 LLM 표기 정정(USER doyeon, docs). "Chat Gemini 2.0 Flash(google-generativeai)" 3곳(Key Decisions·Tech Stack·env 주석) → **OpenAI gpt-4o-mini(chat.completions, SSE)** 로 수정(실제 구현 일치). ad-gen 이미지 모델 줄(Gemini Flash 3.0/GPT Image 2)은 채팅 범위 아니라 유지. 검증: git diff로 3줄 변경 확인. (frontend 무변경이라 tsc 무관.)
