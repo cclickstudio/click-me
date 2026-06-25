@@ -5,6 +5,7 @@ import { safeRandomUUID } from '@/lib/utils';
 import { api } from '@/lib/api';
 import { useAuth } from '@/components/AuthProvider';
 import { useProjects } from '@/components/ProjectContext';
+import { Markdown } from '@/components/Markdown';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
@@ -301,13 +302,14 @@ export default function Page() {
                       )}
                       {(msg.role === 'user' || msg.content) && (
                         <div
-                          className={`px-4 py-3 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap ${
+                          className={`px-4 py-3 rounded-2xl text-sm leading-relaxed ${
                             msg.role === 'user'
-                              ? 'bg-[#3182F6] text-white rounded-br-md'
+                              ? 'whitespace-pre-wrap bg-[#3182F6] text-white rounded-br-md'
                               : 'bg-[#F2F4F6] dark:bg-[#252D3D] text-[#191F28] dark:text-[#F2F4F6] rounded-bl-md'
                           }`}
                         >
-                          {msg.content}
+                          {/* 유저=평문, 어시스턴트=마크다운(LLM이 표·볼드 등 md 출력) */}
+                          {msg.role === 'user' ? msg.content : <Markdown>{msg.content}</Markdown>}
                         </div>
                       )}
                       {/* 구조화 결과 카드(시뮬·생성·집행) */}
