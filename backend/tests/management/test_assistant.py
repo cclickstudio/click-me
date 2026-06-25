@@ -34,7 +34,8 @@ async def test_campaigns_question_routes_to_campaigns_tool():
 @pytest.mark.asyncio
 async def test_campaign_id_routes_to_detail():
     ask = build_management_agent(_SETTINGS)
-    res = await ask(AskRequest(question="이 캠페인 왜 안 나와?", campaign_id="camp_1"))
+    # 진단 키워드("왜")가 없는 단순 현황 질문은 캠페인 상세로 라우팅된다.
+    res = await ask(AskRequest(question="이 캠페인 상태 알려줘", campaign_id="camp_1"))
     assert res.used_tools == ["live_campaign_detail"]
 
 

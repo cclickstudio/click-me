@@ -19,7 +19,12 @@ from langgraph.types import interrupt
 from domain.management.approval import judge_tier, requires_human
 from domain.management.assistant import tools as live_tools
 from domain.management.assistant.actions import _RATIONALE
-from domain.management.assistant.contracts import AskResult, Citation, SuggestedAction
+from domain.management.assistant.contracts import (
+    AskResult,
+    Citation,
+    DiagnosticResult,
+    SuggestedAction,
+)
 
 #: 도구 호출 라운드 상한 — 초과 시 도구 없이 최종 답을 강제(무한 루프 방지)
 _MAX_ROUNDS = 5
@@ -42,6 +47,7 @@ class _State(MessagesState, total=False):
     used_tools: list[str]
     kb_citations: list[dict]
     live_evidence: dict
+    diagnostic: dict
     suggested_action: dict | None
     tool_rounds: int
 
@@ -89,6 +95,12 @@ def build_graph(settings, retriever, llm, checkpointer=None):
         return await live_tools.live_before_after(settings)
 
     @tool
+    async def live_diagnosis(campaign_id: str) -> dict:
+        """캠페인 시간별 데이터로 이상 진단(anomaly_type·confidence·hypothesis). 수치는 실측."""
+        result = await live_tools.live_diagnosis(settings, campaign_id)
+        return result.model_dump(mode="json")
+
+    @tool
     async def search_kb(query: str) -> list[dict]:
         """정책·최적화 플레이북·KPI 규칙 등 지식베이스 근거 문서 검색.
         원인·방법·정책 설명에 쓴다."""
@@ -107,7 +119,14 @@ def build_graph(settings, retriever, llm, checkpointer=None):
         # 본체는 노드에서 인터셉트(interrupt 처리)되어 직접 실행되지 않는다.
         return {"action_type": action_type, "campaign_id": campaign_id}
 
-    read_tools = [live_campaigns, live_budget, live_campaign_detail, live_before_after, search_kb]
+    read_tools = [
+        live_campaigns,
+        live_budget,
+        live_campaign_detail,
+        live_before_after,
+        live_diagnosis,
+        search_kb,
+    ]
     bound = llm.bind_tools([*read_tools, propose_action])
     by_name = {t.name: t for t in read_tools}
 
@@ -124,6 +143,7 @@ def build_graph(settings, retriever, llm, checkpointer=None):
         used = list(state.get("used_tools", []))
         kb_cites = list(state.get("kb_citations", []))
         evidence = dict(state.get("live_evidence", {}))
+        diagnostic = state.get("diagnostic")
         suggested = state.get("suggested_action")
         out_msgs: list[ToolMessage] = []
 
@@ -149,6 +169,8 @@ def build_graph(settings, retriever, llm, checkpointer=None):
                 used.append(name)
             if name == "search_kb":
                 kb_cites.extend(result if isinstance(result, list) else [])
+            elif name == "live_diagnosis":
+                diagnostic = result if isinstance(result, dict) else diagnostic
             else:
                 evidence = result if isinstance(result, dict) else evidence
             out_msgs.append(
@@ -160,6 +182,7 @@ def build_graph(settings, retriever, llm, checkpointer=None):
             "used_tools": used,
             "kb_citations": kb_cites,
             "live_evidence": evidence,
+            "diagnostic": diagnostic,
             "suggested_action": suggested,
             "tool_rounds": state.get("tool_rounds", 0) + 1,
         }
@@ -187,6 +210,7 @@ def to_result(state: dict[str, Any], thread_id: str | None = None) -> AskResult:
         for d in state.get("kb_citations", [])
     ]
     sa = state.get("suggested_action")
+    dx = state.get("diagnostic")
     return AskResult(
         answer=answer,
         citations=citations,
@@ -194,5 +218,6 @@ def to_result(state: dict[str, Any], thread_id: str | None = None) -> AskResult:
         evidence=state.get("live_evidence", {}) or {},
         suggested_action=SuggestedAction(**sa) if sa else None,
         requires_approval=bool(sa and sa.get("requires_approval")),
+        diagnostic=DiagnosticResult.model_validate(dx) if dx else None,
         thread_id=thread_id,
     )

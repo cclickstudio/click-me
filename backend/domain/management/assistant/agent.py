@@ -12,6 +12,8 @@ from domain.management.assistant.tools import INTENT_TOOLS
 
 
 def _keyword_intent(q: str, campaign_id: str | None) -> str:
+    if any(k in q for k in ("진단", "이상", "왜", "노출이 안", "게재가 안")):
+        return "diagnosis"
     if campaign_id:
         return "campaign_detail"
     if any(k in q for k in ("예산", "소진", "런레이트", "페이싱", "budget")):
@@ -54,6 +56,15 @@ def _summarize(intent: str, live: dict) -> str:
     return "요청을 이해하지 못했습니다."
 
 
+def _summarize_diagnostic(d) -> str:
+    if d.diagnostic_status != "ok":
+        return d.reason or "진단을 완료하지 못했어요."
+    if not d.anomaly or d.diagnosis is None:
+        return "현재 이상 징후는 발견되지 않았어요."
+    dx = d.diagnosis  # DiagnosisView (typed)
+    return f"{dx.hypothesis or '이상이 감지됐어요.'} (신뢰도 {dx.confidence:.0%})"
+
+
 def build_management_agent(settings):
     """async ask(AskRequest) -> AskResult. 오케스트레이터/엔드포인트 공용 진입점."""
     api_key = getattr(settings, "openai_api_key", None)
@@ -63,6 +74,15 @@ def build_management_agent(settings):
         # 폴백 — 키워드 라우팅 + 실시간 툴 요약(LLM·임베딩 없음).
         async def _ask_fallback(req: AskRequest) -> AskResult:
             intent = _keyword_intent(req.question, req.campaign_id)
+            if intent == "diagnosis":
+                from domain.management.assistant.tools import live_diagnosis  # noqa: PLC0415
+
+                diagnostic = await live_diagnosis(settings, req.campaign_id or "")
+                return AskResult(
+                    answer=_summarize_diagnostic(diagnostic),
+                    used_tools=["live_diagnosis"],
+                    diagnostic=diagnostic,
+                )
             name, fn = INTENT_TOOLS[intent]
             live = await (
                 fn(settings, req.campaign_id or "")
