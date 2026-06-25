@@ -281,7 +281,6 @@ export default function Page() {
                 <p className="text-xs text-[#B0B8C1] mt-1">
                   캠페인을 게재하면 집행 후(실측)가 채워지고, 그 광고로 시뮬을 돌리면 집행 전(예측)이
                   나란히 표시됩니다.
-                  {baError ? ' (DB 마이그레이션 필요: alembic upgrade head)' : ''}
                 </p>
               </>
             )}

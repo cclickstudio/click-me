@@ -73,7 +73,7 @@ export function HealthList({
         return (
           <Link
             key={c.campaign_id}
-            href="/manage/campaigns"
+            href={`/manage/campaigns?open=${c.campaign_id}`}
             className="flex items-center gap-4 px-4 py-3.5 hover:bg-[#F9FAFB] dark:hover:bg-[#1A202C] transition-colors"
           >
             <span className={`shrink-0 w-2 h-2 rounded-full ${s.dot}`} />
