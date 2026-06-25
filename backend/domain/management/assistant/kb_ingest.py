@@ -27,6 +27,7 @@ _SOURCE_META: dict[str, tuple[str, str | None]] = {
     "meta_ad_policy.md": ("meta_official", "https://transparency.meta.com/policies/ad-standards/"),
     "optimization_playbook.md": ("playbook", None),
     "kpi_measurement_rules.md": ("internal_policy", None),
+    "management_glossary.md": ("internal_policy", None),
     "remediation_actions.md": ("internal_policy", None),
 }
 
