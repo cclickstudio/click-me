@@ -162,6 +162,13 @@ export default function GenFormWidget({
   if (phase === 'form') {
     const totalSteps = 4;
     const stepValid = [name.trim(), desc.trim(), target.trim(), projectId][step];
+    // 백엔드 필수값(상품명·상품설명·타깃·저장 프로젝트)과 일치 — 누락 시 실행 차단·안내.
+    const missing: string[] = [];
+    if (!name.trim()) missing.push('상품명');
+    if (!desc.trim()) missing.push('상품 설명');
+    if (!target.trim()) missing.push('타깃 고객');
+    if (!projectId) missing.push('저장할 프로젝트');
+    const allValid = missing.length === 0;
     return (
       <div className={cardCls}>
         <p className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6] mb-3">
@@ -212,10 +219,20 @@ export default function GenFormWidget({
                     </option>
                   ))}
                 </select>
+                {projects.length === 0 && (
+                  <p className="mt-1 text-[11px] text-[#F04452]">
+                    저장할 프로젝트가 없어요. 프로젝트를 먼저 만든 뒤 생성할 수 있어요.
+                  </p>
+                )}
               </div>
             </div>
           )}
         </div>
+        {step === totalSteps - 1 && !allValid && (
+          <p className="mt-2 text-[11px] text-[#F04452]">
+            필수 항목을 입력해주세요: {missing.join(', ')}
+          </p>
+        )}
         <div className="flex gap-2 mt-3">
           {step > 0 && (
             <button onClick={() => setStep(step - 1)} className="px-3 py-2 rounded-lg border border-[#E5E8EB] dark:border-[#2D3748] text-sm text-[#8B95A1]">
@@ -227,7 +244,7 @@ export default function GenFormWidget({
               다음
             </button>
           ) : (
-            <button onClick={run} disabled={!projectId} className={btnCls}>
+            <button onClick={run} disabled={!allValid} className={btnCls}>
               광고 생성 실행
             </button>
           )}

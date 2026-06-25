@@ -119,6 +119,23 @@ export interface BeforeAfterResponse {
   rate_limited?: string; // Meta 요청 한도 시 안내
 }
 
+// FastAPI 에러 detail 정규화 — 422는 detail이 배열({loc,msg,type})이라 그대로 두면 "[object Object]"로 깨진다.
+function errDetail(err: unknown, status: number): string {
+  const d = (err as { detail?: unknown })?.detail;
+  if (typeof d === "string") return d;
+  if (Array.isArray(d)) {
+    const msgs = d
+      .map((e) =>
+        e && typeof e === "object" && "msg" in e
+          ? String((e as { msg: unknown }).msg)
+          : null,
+      )
+      .filter(Boolean) as string[];
+    if (msgs.length) return msgs.join(", ");
+  }
+  return `HTTP ${status}`;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const token = getToken();
   const authHeader: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
@@ -133,7 +150,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: "Unknown error" }));
-    throw new Error(err.detail ?? `HTTP ${res.status}`);
+    throw new Error(errDetail(err, res.status));
   }
   return res.json();
 }

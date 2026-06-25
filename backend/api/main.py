@@ -18,6 +18,7 @@ load_dotenv(_ROOT_ENV if _ROOT_ENV.exists() else _BACKEND_ROOT / ".env")
 import langchain_core.tracers.context  # noqa: E402,F401
 import langchain_core.tracers.langchain  # noqa: E402,F401
 from fastapi import FastAPI, Request
+from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -100,7 +101,10 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         request.url.path,
         exc.errors(),
     )
-    return JSONResponse(status_code=422, content={"detail": exc.errors()})
+    # exc.errors()에는 model_validator가 던진 ValueError 등 직렬화 불가 객체가 ctx에 섞일 수 있다.
+    # jsonable_encoder 없이 그대로 넘기면 JSONResponse 인코딩이 깨져
+    # CORS 헤더 없는 빈 응답이 나가고 프론트는 "Failed to fetch"만 본다.
+    return JSONResponse(status_code=422, content={"detail": jsonable_encoder(exc.errors())})
 
 
 app.add_middleware(
