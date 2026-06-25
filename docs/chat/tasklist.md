@@ -56,109 +56,111 @@
 > **랭스미스(L) 작업 정본은 팀 기준 문서 `C:\Users\owner\Downloads\langsmith-guide.md`(ClickMe 팀 공통)** — Trace 이름·Node 이름·필수 Metadata/Tags·비용 기록 규칙. (L 전부 완료, 추가 트레이싱 시 참고.)
 > 남은 ⬜는 임팩트 큰 것(V·G·P·F)부터 소진. 외부 블로커(제너 403)·타 팀 조율(S2·S5)은 ⬜로 유지.
 
+> 완료(✅)분은 표에서 제거함 — 상세 명세·진행 로그는 git 로그 참조. 아래는 **남은 작업 + 그 의존(완료, dep 표기) + 새 작업(★)** 만 남긴다.
+
 | #   | 태스크                                   | 분류   | 의존      | 상태 |
 | --- | ---------------------------------------- | ------ | --------- | ---- |
-| V1  | 시뮬 전체 흐름 재검증(머지 코드)         | 검증   | —         | ✅   |
-| V2  | 제너레이터 직접 경로 검증                | 검증   | —         | ✅   |
-| V3  | 개선 루프 경로 검증(시뮬→토론→생성)      | 검증   | V1,V2     | ⬜   |
-| V4  | 프론트 전역 스모크((app) 재구성)         | 검증   | —         | ✅   |
-| V5  | 3계정(admin·company·user) 로그인·역할 스모크 | 검증 | —      | ✅   |
-| R1  | 시뮬 용어+정의 사전 ~100 (loop 작성)     | RAG    | —         | ✅   |
-| R2  | 제너 용어+정의 사전 ~100 (loop 작성)     | RAG    | —         | ✅   |
-| R3  | 매니지 용어+정의 사전 ~100 (loop 작성)   | RAG    | —         | ✅   |
-| R4-1 | CLIO `clio_kb_chunks` 테이블+마이그(승인됨) | RAG | —         | ✅   |
-| R4-2 | CLIO KB 광고 일반지식 적재(~100)         | RAG    | R4-1      | ✅   |
-| R4-3 | CLIO(기본 GPT) 응답에 CLIO RAG 연결     | RAG    | R4-2      | ✅   |
-| R5  | clio KB에 Meta(인스타/페북) 정책·용어 추가 적재 | RAG | —      | ✅   |
-| R6  | clio KB에 광고·마케팅 용어+정의 추가 적재(~100) | RAG | —     | ✅   |
-| R7  | 기존 3 KB(sim/gen/manage) 덤프·점검·보강    | RAG    | —         | ✅   |
-| W1  | 시뮬 위젯 카테고리 2단 셀렉트            | 위젯   | —         | ✅   |
-| W2  | 시뮬 위젯 5단계 재구성(카테고리/목표/인구) | 위젯   | W1        | ✅   |
-| W3  | 사용자 친화 보조 위젯                    | 위젯   | W2        | ✅   |
-| G1  | 제너 입력 확인 위젯(입력 위젯 교체)      | 제너통일 | V2      | ⬜   |
-| G2  | 제너 로딩 스피너 위젯                    | 제너통일 | G1      | ⬜   |
-| G3  | 제너 결과 요약 위젯(이미지 3장 가로스크롤) | 제너통일 | G1      | ✅   |
-| G4  | 제너 status API + 새로고침 복원          | 제너통일 | V2      | ⬜   |
-| S1  | 저비용 슬래시 4종(/배치·/리포트·/시뮬목록·/시안목록) | 슬래시 | — | ✅   |
-| S2  | /비교 캠페인 A/B 확장                    | 슬래시 | S1        | ⬜   |
-| S3  | /분석(과거 성과 종합 요약)              | 슬래시 | —         | ✅   |
-| S4  | /추천(목표·예산 입력 → 전략 추천)       | 슬래시 | —         | ✅   |
-| S5  | /액션(매니지먼트 조치 종류 확장)        | 슬래시 | —         | ⬜   |
-| F1  | 메시지 액션 바(복사·재생성·👍👎)         | 기능   | —         | ✅   |
-| F2  | 세션 사이드바(목록·전환·삭제)            | 기능   | —         | ✅   |
-| F5  | 랭체인 롱텀 메모리 점검·강화             | 기능   | —         | ✅   |
-| F6  | 채팅 ↔ 매니지먼트 RAG 연결               | 기능   | R3        | ✅   |
-| F7  | KPI 분포·신뢰구간 표현 점검             | 기능   | V1        | ✅   |
-| F8  | 시안 후보 선택 → 재시뮬                  | 기능   | V2        | ⬜   |
-| F10 | 해시태그·키워드 추천 위젯               | 기능   | —         | ✅   |
-| F11 | 채팅 검색(세션·메시지)                  | 기능   | F2        | ✅   |
-| F12 | 시뮬↔시뮬 비교 위젯(/비교 확장)         | 기능   | V1        | ✅   |
-| P1  | 모바일 반응형(채팅·위젯·레이아웃)       | 폴리시 | —         | ✅   |
-| P2  | 전역 KST 시간 표시(created_at 등)       | 폴리시 | —         | ✅   |
-| P3  | 스트리밍 Stop/취소 버튼                 | 폴리시 | —         | ✅   |
-| P4  | 빈 상태 온보딩 + 퀵스타트 칩            | 폴리시 | —         | ✅   |
-| P5  | RAG 인용 표시 위젯                       | 폴리시 | R1        | ✅   |
-| P6  | 위젯 등장 애니메이션 + 타이핑 커서      | 폴리시 | —         | ✅   |
-| P7  | 다크모드 일관성 점검                     | 폴리시 | —         | ✅   |
-| P8  | 입력창 강화(멀티라인·슬래시 자동완성)    | 폴리시 | —         | ✅   |
-| P9  | 완료 토스트 + 상대시간 타임스탬프        | 폴리시 | P2        | ✅   |
-| P10 | 결과 복사 버튼(KPI·카피·헤드라인)        | 폴리시 | —         | ✅   |
-| P11 | 자동 스크롤 + 스크롤-투-바텀 버튼        | 폴리시 | —         | ✅   |
-| P12-1 | CLIO 광고 vs 비광고 분류(분류기 확장)  | 폴리시 | —         | ✅   |
-| P12-2 | 비광고 사용량 카운팅·한도(백엔드)       | 폴리시 | P12-1     | ✅   |
-| P12-3 | 한도 progress bar 모니터링 UI+초과 안내 | 폴리시 | P12-2     | ✅   |
-| P13 | 다크모드 로딩 스피너 가시성 수정(버그)  | 폴리시 | —         | ✅   |
-| P14 | 빈 화면 중앙 추천 질문 메시지 제거       | 폴리시 | —         | ✅   |
-| N1  | 직접 실행(시뮬/제너) 완료 → 자동 개선 제안 | 능동 | V1,V2     | ✅(시뮬)·⬜(제너 403) |
-| N2  | 안읽음 빨간 뱃지 배선·검증(이미 구현됨)  | 능동   | N1        | ✅   |
-| N3  | 채팅이 sim/gen status 동기화(타 탭 진행) | 능동   | G4        | ⬜   |
-| N4  | 선제적 말걸기 챗봇(먼저 말 검)           | 능동   | N1,N2     | ✅(시뮬)·⬜(제너 403) |
-| X1  | 에러 UX 통일 + 재시도(sim/gen/chat)      | 견고함 | —         | ✅   |
-| X2  | SSE 자동 재연결(backoff 재구독)         | 견고함 | —         | ✅   |
-| X3  | 동시실행 가드 통일(sim·gen 슬롯)         | 견고함 | —         | ✅   |
-| X4  | 라우팅 분류 정확도 개선 + 로그          | 견고함 | —         | ✅   |
-| L1  | `core/tracing.py` make_trace_config 헬퍼(⚠️공유) | 랭스미스 | —    | ✅   |
-| L2-1 | 채팅 그래프 state + 체크포인터 배선     | 랭스미스 | —       | ✅   |
-| L2-2 | thread_id=세션 매핑 + 영속/폴백         | 랭스미스 | L2-1    | ✅   |
-| L2-3 | 기존 _trim·10턴요약 LangGraph로 정리    | 랭스미스 | L2-2    | ✅   |
-| L3  | 세션 단위 LangSmith Thread 그룹핑       | 랭스미스 | L2-2    | ✅   |
-| L4  | 토론 대표 선발 단일 trace + 한글 네임    | 랭스미스 | —       | ✅   |
-| L5  | 트레이싱 이름 한글화 + 가이드 메타 정합  | 랭스미스 | L1      | ✅   |
-| L6  | graph.ainvoke에 make_trace_config 적용  | 랭스미스 | L1      | ✅   |
-| L7  | CLIO OpenAI wrap_openai 토큰/비용 기록   | 랭스미스 | —       | ✅   |
-| L8  | 롱텀 메모리(실행기록 기반 사용자 프로파일) | 랭스미스 | L3    | ✅   | 
-| C1  | sim_result_node 죽은 경로 정리          | 정리   | V1        | ✅   |
-| C2  | CLAUDE.md "Chat LLM Gemini"→OpenAI       | 정리   | —         | ✅   |
-| C5  | /위젯 명령어 제거                        | 정리   | —         | ✅   |
-| C4  | 전부 완료 시 자동 push(feat/chat-doyeon) | 정리   | 전부      | ⬜   |
+| V1  | 시뮬 전체 흐름 검증 (dep)                | 검증   | —         | ✅   |
+| V2  | 제너 직접 경로 검증 (dep)                | 검증   | —         | ✅   |
+| S1  | 저비용 슬래시 4종 (dep)                  | 슬래시 | —         | ✅   |
+| N1  | 직접 실행 완료→자동 개선 제안 (dep, 제너 경로 잔여) | 능동 | V1,V2 | ✅(시뮬)·⬜(제너) |
+| N2  | 안읽음 빨간 뱃지 (dep)                   | 능동   | N1        | ✅   |
+| G3  | 제너 결과 위젯(가로 이미지) (dep)        | 제너   | —         | ✅   |
+| F5  | 랭체인 롱텀 메모리 (dep)                 | 기능   | —         | ✅   |
+| L8  | 롱텀 메모리(실행기록 프로파일) (dep)     | 메모리 | —         | ✅   |
+| ★N5 | 라우트 변경마다 알림 폴링 + 플로팅 챗 벨 버튼·알림 패널 | 능동 | N2 | ⬜ |
+| ★N6 | 제너 전용 세션에 시뮬 선제 알림 오는 버그 수정 | 능동 | N4 | ⬜ |
+| ★F13 | 채팅 세션 자동 제목(첫 user 메시지 LLM 요약) | 기능 | —      | ⬜   |
+| ★G5 | 제너 필수 입력값 확실히 받기·검증(누락 차단·안내) | 제너 | V2 | ⬜ |
+| ★G6 | /new 생성 직후 gen_form 재노출 라이브 글리치 수정 | 제너 | G3 | ⬜ |
+| ★L9 | 롱텀 메모리(시뮬/제너 입력 기억→채팅 반영) 검증 | 검증 | F5,L8 | ⬜ |
+| ★LOOP | 시뮬↔제너 양방향 개선 루프(최대 3턴) 구현·검증 | 핵심 | V2 | ⬜ |
+| G1  | 제너 입력 확인 위젯(입력 위젯 교체)      | 제너   | V2        | ⬜   |
+| G2  | 제너 로딩 스피너 위젯                    | 제너   | G1        | ⬜   |
+| G4  | 제너 status API + 새로고침 복원          | 제너   | V2        | ⬜   |
+| F8  | 시안 후보 선택 → 재시뮬(LOOP 일부)       | 기능   | V2,G3     | ⬜   |
+| V3  | 개선 루프 경로 검증(LOOP 완료 후)        | 검증   | LOOP      | ⬜   |
+| N3  | 채팅이 sim/gen status 동기화(타 탭)      | 능동   | G4        | ⬜   |
+| N4  | 선제적 말걸기(제너 경로 잔여)            | 능동   | N1,N2     | ✅(시뮬)·⬜(제너) |
+| S2  | /비교 캠페인 A/B (매니지 조율 — 보류)    | 슬래시 | S1        | ⬜   |
+| S5  | /액션 매니지 조치 확장(매니지 조율 — 보류) | 슬래시 | —        | ⬜   |
+| C4  | 전수 QA 후 push                          | 정리   | 전부      | ⬜   |
+
+> **상태 메모(2026-06-25)** — 제너 403 **해소됨**(org 인증 완료, image_generation gpt-4o-mini/gpt-image-1 실호출 OK). V2 검증 완료. 워크트리(kb·be·fe) 통합 완료. 브랜치 `feat/chat-doyeon`.
 
 ---
 
-## 2. 루프 프롬프트 (단일 진행 — 워크트리 통합 완료)
+## 1-A. 새 작업 명세 (★ — 집에서 진행)
 
-> 3개 워크트리(kb·be·fe)는 통합 완료(§5 머지 블록). 다시 `feat/chat-doyeon` **단일 브랜치**에서 남은 ⬜를 진행한다.
-> **⚠️ 제너레이터 403 미해소(2026-06-25 재확인)** — 순수 텍스트 `responses.create`는 통과하나, 제너의 실제 호출은 **`image_generation` 툴**(이미지 모델)을 써서 org 검증 403이 그대로다(`multimodal_generator.py:107`). 따라서 **V2·V3·G1~G4·F8·N(제너 경로)·N3은 여전히 외부 블로커로 보류.** S2·S5는 매니지먼트 조율로 보류. → 현재 단일 진행으로 자율 소진 가능한 ⬜는 사실상 없음(상세 §5).
+### ★N5 — 라우트 변경마다 알림 폴링 + 플로팅 챗 벨 버튼·알림 패널
 
-### 2-1. 마스터 루프
+**목표** 마운트/언마운트에 의존하지 말고 **라우트가 바뀔 때마다** 해당 사용자(프로젝트)의 미확인 채팅 알림을 받아와 배지로 표시. `/chat` 탭은 프로젝트>세션 배지, **플로팅 챗봇은 좌측에 작은 벨 버튼**을 두고 배지를 띄운다.
+**확정 방향(가장 사용자 친화 — 내 결정)** 플로팅 챗 벨은 **세션 선택기가 아니라 "알림 목록 패널"**. 벨 클릭 → 미확인 알림 리스트(프로젝트 › 세션 제목 › 미리보기 › 개수) → 항목 클릭 시 **해당 세션으로 이동(+읽음 처리)**. (세션을 직접 고르게 하지 않고, 알림을 보여주고 클릭으로 라우팅 — 가장 직관적.)
+**구현**
+- 백엔드: 세션별 미확인(마지막 열람 이후 새 메시지/선제 알림) 집계 — 예 `GET /api/chat/notifications?project_id=…` → `[{session_id, title, preview, unread_count}]`. last-read는 세션별로 저장(localStorage가 아닌 서버, 라우트·기기 무관 일관 위해).
+- 프론트: `usePathname()` 변경 시 폴링하는 훅(언마운트 무관). 배지: `/chat`은 사이드바 세션 행, 플로팅은 벨 버튼. 벨 클릭 → 드롭다운 패널 → 항목 클릭 → `router.push('/chat/{pid}/{sid}')` + 읽음.
+**완료 기준** 라우트 이동마다 미확인 알림 반영, 플로팅 벨 배지·패널→세션 이동·읽음 동작. (N6도 함께 해소될 수 있음 — 인라인 주입 대신 벨/배지 모델.)
+
+### ★N6 — 제너 전용 세션에 시뮬 선제 알림 오는 버그 수정
+
+**증상** 제너레이터만 돌린 채팅 세션인데 "확인하지 않은 시뮬레이션 결과가 있다"는 **선제 알림이 현재 열린 세션에 인라인 주입**됨(N4가 프로젝트 전체 미열람 시뮬을 현재 활성 세션에 주입하는 구조 잔재).
+**방향** N5의 벨/배지 모델로 전환하면 "현재 세션에 무관한 시뮬 알림 인라인 주입"이 사라져 근본 해소. 독립 처리 시: 선제 시뮬 알림을 현재 세션 도메인과 무관하게 주입하지 않도록(또는 벨로만 노출) 가드.
+**완료 기준** 제너 전용 세션에서 시뮬 선제 알림이 본문에 안 뜸. (N5와 연계.)
+
+### ★F13 — 채팅 세션 자동 제목 (첫 user 메시지 LLM 요약)
+
+**증상** 빈 화면 칩으로 새 채팅 열면 제목이 `새 채팅`이거나 첫 입력값이 그대로 제목이 됨.
+**목표** 여느 LLM처럼 **첫 user 메시지를 보고 작업을 짧게 요약한 제목**을 생성(예: "수분크림 광고 시안 생성", "20대 타깃 시뮬 분석").
+**구현** 세션의 첫 user 턴 직후(또는 첫 응답 후) gpt-4o-mini로 한 줄 제목 생성 → `ChatSession.title` 갱신(append-only, 한 번만). 위젯 트리거(시뮬/제너 폼)로 시작한 세션도 첫 의미 있는 입력 기준으로.
+**완료 기준** 새 세션 제목이 첫 작업을 요약한 자연어로 자동 설정, 사이드바 반영.
+
+### ★G5 — 제너 필수 입력값 확실히 받기·검증
+
+**목표** 제너레이터가 **필수 입력값**(상품명·상품설명·타깃·저장 프로젝트 등)을 누락 없이 받아 실행되게. 누락 시 실행 차단 + 명확한 안내.
+**구현** gen_form 필수 필드 검증(빈 값이면 "실행" 비활성·안내), 백엔드 `GenerationCreateRequest` 필수값 검증·422 메시지 정합. 어떤 값이 필수인지 폼·백엔드 일치.
+**완료 기준** 필수 누락 시 실행 불가·안내, 모두 채우면 정상 생성. 빈 입력 엣지 케이스 Preview 확인.
+
+### ★G6 — /new 생성 직후 gen_form 재노출 라이브 글리치 수정
+
+**증상** `/new`에서 제너 **생성 직후(새로고침 전)** gen_form이 빈 폼(1/4)으로 잠깐 다시 보이고 gen_result 이미지 로딩이 지연됨. 새로고침하면 정상.
+**원인 추정** 세션 생성 전환(shallow routing) 중 로컬 gen_form 위젯 재마운트 + gen_result가 아직 숨김 처리 전. (sim은 매끄러운데 gen 경로 차이 확인 필요.)
+**완료 기준** 생성 직후 라이브로 gen_result 위젯이 자리에 표시되고 gen_form이 깜빡이지 않음(새로고침 불필요).
+
+### ★L9 — 롱텀 메모리(시뮬/제너 입력 기억 → 채팅 반영) 검증
+
+**배경** F5(롱텀 메모리)·L8(실행기록 기반 프로파일 추론)은 구현 완료(✅). 본 태스크는 **검증만**.
+**목표** 사용자가 시뮬/제너를 돌릴 때 입력한 값(상품명·카테고리·타깃·브랜드 등)이 기억돼 다음 채팅 질을 올리는지 end-to-end 확인. LangGraph 체크포인터·`ChatLongTermMemory`·`ChatBrandProfile`·`infer_profile_from_execution_history` 경로가 실제로 채팅 컨텍스트에 주입되는지.
+**완료 기준** 시뮬/제너 수 회 실행 후, **명시 언급 없이도** 채팅이 사용자의 브랜드·제품군·과거 입력을 인지한 응답. (안 되면 끊긴 지점 수정 — 그 경우 검증→구현 태스크로 승격.)
+
+### ★LOOP — 시뮬 ↔ 제너 양방향 개선 루프 (최대 3턴)
+
+**목표** 두 방향 개선 루프를 확실히 연결하고 **최대 3턴**으로 제한.
+- **시뮬 → 제너(개선)**: 시뮬→토론→개선권고 → "개선 시안 만들기"로 제너(개선 모드)에 컨텍스트 전달.
+- **제너(생성) → 시뮬**: 생성 결과(또는 F8 "이 후보로 시뮬") → 재시뮬 → 토론 → 다시 개선 제너 → … 최대 3턴.
+**현황** 오케스트레이터에 `loop_count`·`MAX_LOOP`·`gen_result_node`(재시뮬 approval)·`run_generator`/`rerun_simulation` approval 경로 일부 존재. 양방향 연결·3턴 한도 enforce·UX 매끄러움을 완성·검증.
+**완료 기준** 시뮬↔제너를 오가며 개선이 누적되고, 3턴 도달 시 더 이상 루프 제안 안 함(차단·안내). Preview로 왕복 검증. (V3 = 이 루프의 최종 검증, F8 = 제너→시뮬 진입점.)
+
+---
+
+## 2. 진행 메모
+
+> 제너 403 해소·워크트리 통합 완료. `feat/chat-doyeon` 단일 브랜치. 권장 착수 순서(집): **G5(필수입력)·G6(글리치) → LOOP → F13(제목) → N5/N6(알림) → L9(검증) → G1·G2·G4·N3 → C4**. S2·S5는 매니지 조율로 보류.
+
+### 2-1. 루프 프롬프트 (집에서 — 복붙)
 
 ```
-/loop docs/chat/tasklist.md 를 읽어. 워크트리 통합 완료, 단일 브랜치(feat/chat-doyeon)에서 남은 ⬜를 끝까지 진행한다. ※제너 403은 미해소(image_generation 툴 게이팅, §5) — 제너 경로(V2·V3·G·F8·N제너·N3)는 외부 블로커로 건너뛴다. 마감·데드라인 없음. 매 반복:
-1) 전제는 최초 1회만 — 개인 DB(ep-soft-band)·서버(8000/3000)·폰트·OPENAI_API_KEY·Preview 3계정 로그인. 통과 후 생략, 깨지면만 재확인.
-2) §1 현황표에서 의존(앞 컬럼) 충족·⬜인 가장 위 1개 선택. 권장 순서: V2→G1→G2→G3→G4→V3→F8→N3→N1(제너)→N4(제너)→C4. **S2·S5는 매니지 조율 필요라 건너뛴다.**
-3) 명세(§4·4-S·4-N)대로 끝까지. "확정 설계(플랜 2026-06-25)" 블록 있으면 그대로(N·G4 status 등).
-- 코드 변경 시 ruff/tsc/lint 통과. 검증은 Claude Preview 직접 구동 + §0 QA 철저성(비동기는 완료까지 대기, 진행중/완료 후 새로고침 복원, 엣지·에러 유발, 콘솔 무에러), admin·company·user 3역할 재현. "떴다"로 ✅ 금지.
-- **제너는 이미지 생성이라 완료까지 수십 초~분** — 끝까지 대기하고 실제 후보 이미지·헤드라인·전략이 나오는지 확인. 비용 발생하는 실호출이니 불필요한 반복 자제.
-- 버그/깨짐 발견하면 그 자리에서 고치고 커밋 → ✅. 완료 시 ✅ + §5 한 줄 + 시맨틱 커밋(타입: 한국어).
-- 한 반복 1태스크. 진짜 블로커만 ⬜ 유지·로그하고 다음. 멈추지 말고 합리적 기본값.
-- 공유부(core/ 기존 컬럼·api/main.py·공용 tools/)는 append-only·시그니처 불변. 기존 컬럼 변경 필요하면 멈추고 ⬜·로그.
-- 종료: 진행 가능한 ⬜를 다 소진(S2·S5 매니지 조율만 남으면)하면 C4 전수 QA로 마무리. push는 도연님 요청 시에만(main·--force 금지).
+/loop docs/chat/tasklist.md 를 읽어. 단일 브랜치(feat/chat-doyeon)에서 남은 ⬜를 끝까지 진행한다. 제너 403 해소됨(image_generation 실호출 OK). 매 반복:
+1) 전제는 최초 1회만 — 개인 DB(ep-soft-band)·서버(8000/3000)·폰트·OPENAI_API_KEY·Preview 로그인. 통과 후 생략.
+2) §1 표에서 의존 충족·⬜인 가장 위 1개. 권장 순서: G5→G6→LOOP→F13→N5→N6→L9→G1→G2→G4→F8→V3→N3→C4. S2·S5는 매니지 조율이라 건너뛴다. 명세는 §1-A(새 작업 ★)·§4(기존).
+3) 끝까지 구현. 코드 변경 시 ruff/tsc/lint 통과. **검증은 "떴다"로 끝내지 말 것** — Claude Preview 직접 구동 + 바닥 사실 확인(DB 직접 조회·새로고침 복원·엣지/에러 유발·콘솔 무에러), admin·company·user 3역할 재현. 무엇을 검증했고 무엇은 안 했는지 명시.
+- 제너는 이미지 생성이라 ~1~2분·비용 실호출 — 완료까지 대기, 불필요한 반복 자제.
+- 버그 발견하면 그 자리에서 고치고 커밋. 완료 시 ✅ + 시맨틱 커밋(타입: 한국어).
+- 한 반복 1태스크. 공유부(core/ 기존 컬럼·api/main.py·공용 tools/)는 append-only·시그니처 불변. push는 도연님 요청 시에만(main·--force 금지).
 ```
 
-### 2-2. 보류 (블로커)
+### 2-2. 보류 (타 팀 조율)
 
-- **제너레이터 403 (외부)** — V2·V3·G1~G4·F8·N(제너 경로)·N3. org 검증이 `image_generation` 툴 호출을 게이팅. 순수 텍스트 Responses는 통과하나 제너 실호출은 여전히 403. org 검증 완료 전까지 진행 불가.
 - **S2·S5** — 매니지먼트 도메인 조율 필요(타 팀 소유부). 채팅 측 라우팅·위젯 범위로만 가능, 내부 비교/조치 로직은 합의 후. 단독 진행 X.
-- **별도 코드 이슈(비차단)** — tracing 켜진 상태에서 wrapped-openai 호출이 에러나면 `langsmith 0.8.11 ↔ langchain_core 1.4.2` 순환 import가 끼어들어 원에러(403)를 `No module named 'langchain_core.tracers.context'`로 가린다. 제너 403을 풀어도 별개로 남는 마스킹 버그(아래 §5).
 
 ---
 
@@ -640,298 +642,7 @@
 **목표** 오케스트레이터 의도 분류 오분류 보정("요약해줘"가 목록으로 새는 등). 분류 결과 로깅으로 추적(handoff T20 참고).
 **완료 기준** 대표 질문 셋에서 오분류 감소, 분류 로그 남김. Preview/로그 확인.
 
-## 4-L. 랭스미스·랭체인 (L) — 팀 가이드 정본 준수
 
-> 정본: `C:\Users\owner\Downloads\langsmith-guide.md`(ClickMe 팀 공통). LangSmith 프로젝트 `clickme`. 모든 L 태스크는 가이드의 Trace 이름·Node 이름·필수 Metadata/Tags·비용 기록 규칙을 따른다.
-> 소유권 주의: 채팅·시뮬은 자기 도메인이라 자유. **generator·management 도메인의 트레이싱 변경은 타 팀 소유 → 단독 수정 금지, 조율 필요(해당 태스크에 명시).**
+## 5. 완료 작업
 
-### L1 — `core/tracing.py` make_trace_config 헬퍼 (⚠️ 공유부)
-
-**목표** 가이드 §4의 `make_trace_config()` 헬퍼 신설 — `run_name`/`tags`/`metadata`(domain·feature·mode·env·user_id·ad_id·project_id) 표준 조립. 전 도메인이 import.
-**구현** 가이드의 코드 그대로 `backend/core/tracing.py` 신규 작성.
-**⚠️ 주의** `core/`는 공유부 — **새 파일 추가는 append 성격이라 비교적 안전하나 사전 공지 권장**. 단독 작은 커밋. 무인 루프는 진행하되 기존 파일 시그니처 변경은 금지.
-**완료 기준** `from core.tracing import make_trace_config` import OK, ruff 통과.
-
-### L2 — 채팅 숏텀 메모리 LangGraph 이관
-
-> 정정(조사 결과): 채팅 오케스트레이터는 **이미 LangGraph `StateGraph`를 사용**(orchestrator.py:776-806, classify→route→노드→END, 단일 턴). 다만 **숏텀 메모리는 LangGraph가 아닌 자체 `_WindowMemory`**(orchestrator.py:458-501, 클라이언트가 보낸 `history[]`로 시드, k×2=12로 trim) + DB 영속화(history.append_turn). 즉 이관 = "기존 그래프에 체크포인터+`MessagesState`+thread_id를 부착"이지 전면 재작성 아님.
-> 레퍼런스: 매니지먼트가 `AsyncPostgresSaver`를 [checkpointer.py](backend/domain/management/assistant/checkpointer.py)+[wiring.py](backend/domain/management/wiring.py)(`build_checkpointer`)로 배선, [api/main.py](backend/api/main.py) lifespan에서 `init_pg_checkpointer`, `agent.py`에서 `config={"configurable":{"thread_id":…}}` 전달. state는 `MessagesState`(messages+add_messages 내장).
-> **⚠️ 무인 자동 진행 OK(사용자 결정).** 단 채팅 핵심경로라 깨지면 이후 검증 줄줄이 막힘 → 이관 직후 Preview로 멀티턴·새 채팅·새로고침 재검증, **L2-1/2/3 각각 독립 커밋**(회귀 시 그 커밋만 revert). 검증 실패면 ⬜ 유지·로그·다음.
-
-**확정 설계(플랜 2026-06-25)**
-- **L2-1 (그래프 state + 체크포인터 배선)**
-  - 채팅 그래프 `_State`를 `MessagesState` 상속으로(messages+add_messages 리듀서 내장) — 기존 커스텀 state 필드(intent·brand·ltm·loop 등)는 `total=False`로 유지.
-  - `build_chat_orchestrator()`가 체크포인터를 주입받아 `graph.compile(checkpointer=…)`. 체크포인터는 매니지의 `get_pg_checkpointer()` 싱글턴 재사용(없으면 `MemorySaver`). **단일 `init_pg_checkpointer`로 채팅·매니지 공용**(테이블 `checkpoints`는 thread_id로 분리되므로 충돌 없음).
-  - 변경: `domain/chat/orchestrator.py`(state·compile·주입), `api/main.py`(이미 init됨 → 재사용 확인).
-- **L2-2 (thread_id=세션 매핑 + 영속/폴백)**
-  - `thread_id = session_id`로 고정. `/complete`·`/approve`(api/routers/chat.py)에서 `config={"configurable":{"thread_id": session_id}}` 전달.
-  - 클라이언트가 보내던 `history[]` 의존 제거(서버 상태풀) — 단 과도기엔 history도 받아 첫 시드 폴백. Windows는 MemorySaver(로컬), Linux Neon 영속.
-  - 변경: `api/routers/chat.py`, `core/schemas.py`(ChatRequest: session_id 필수화/ thread_id 호환).
-- **L2-3 (기존 _trim·요약 정리)**
-  - `_WindowMemory` 제거 → 컨텍스트 누적은 체크포인터 `messages`가 담당. **컨텍스트 폭주 방지는 LangGraph 패턴으로**: 노드 진입 시 `trim_messages`(토큰/턴 한도)로 잘라 LLM에 전달(상태엔 전체 보존). 10턴 요약(history.summarize)은 유지하되 트리거를 노드화.
-  - **위젯 메시지는 체크포인터 state에서 제외**(append_widget_messages는 DB만) — `messages` 리듀서에 위젯이 쌓여 토큰 폭증하는 것 방지.
-  - `loop_state.py`의 `_store`(phase·loop_count)는 체크포인터 state 필드로 흡수(thread별 자동 영속).
-  - 변경: `domain/chat/orchestrator.py`, `domain/chat/loop_state.py`, `domain/chat/history.py`(요약 트리거·append_turn 순서: 스트림 종료 후).
-- **리스크/주의**: ① SSE 스트림 도중 끊기면 state-DB 불일치 → 스트림 완료 후 저장 순서 보장. ② 위젯 메시지 누적 방지(위 제외). ③ 클라이언트 계약 변경(history→thread_id) — 프론트 `api.chat.complete` 호출부 점검. ④ Windows는 영속 미검증(MemorySaver) — 영속 검증은 Linux/운영.
-
-#### L2-1 — 채팅 그래프 state + 체크포인터 배선
-
-**목표** 채팅 오케스트레이터를 LangGraph 그래프로(또는 기존 그래프에 메시지 state) + state에 `messages` + `add_messages` 리듀서 + 체크포인터 attach.
-**구현** management의 `build_checkpointer`/`init_pg_checkpointer` 재사용. 그래프 `ainvoke`/`astream`에 `config`(thread_id) 전달.
-**완료 기준** 채팅이 LangGraph 그래프 + 체크포인터로 동작, 멀티턴 맥락 유지. Preview 확인.
-
-#### L2-2 — thread_id=세션 매핑 + 영속/폴백 (L2-1 의존)
-
-**목표** `thread_id` = 채팅 `session_id`로 매핑 → 세션별 대화가 체크포인터에 영속. Windows는 MemorySaver 폴백(가이드/기존 패턴).
-**완료 기준** 같은 세션 재진입·재시작 후 맥락 이어짐(운영 영속, 로컬 폴백). Preview 확인.
-
-#### L2-3 — 기존 _trim·10턴 요약 LangGraph로 정리 (L2-2 의존)
-
-**목표** 손으로 굴리던 `_trim()`·10턴 요약을 LangGraph 흐름에 맞게 정리(중복 제거 또는 노드화). 컨텍스트 윈도우 관리는 여전히 명시적으로 유지(트리밍/요약).
-**완료 기준** 긴 대화에서 토큰 폭주 없이 맥락 유지, 중복 로직 제거. Preview 확인.
-
-### L3 — 세션 단위 LangSmith Thread 그룹핑 (L2-2 의존)
-
-**목표** 한 채팅 세션의 N턴(예: 50메시지)이 **하나의 LangSmith Thread로 묶여** 보이게. (가이드 §6: HTTP 요청 1건=trace 1개 → 50턴이면 trace 50개. 이를 **Thread**로 그룹핑하는 것이 목표 — "하나의 trace"가 아니라 "하나의 Thread".)
-**구현** 매 턴 `config.metadata`에 LangSmith thread 키(`session_id`, LangSmith Threads는 `session_id`/`thread_id`/`conversation_id` 메타로 그룹핑)를 주입. L2의 thread_id와 일치시킴.
-**완료 기준** LangSmith Threads 뷰에서 한 세션의 모든 턴이 하나의 스레드로 묶여 표시. 대시보드 확인.
-
-### L4 — 토론 대표 선발 단일 trace + 한글 네임
-
-**목표** **현재 토론 대표 선발 과정이 하나로 안 묶이고 trace가 계속 쌓이는 문제** 해결. 대표 선발 전 과정을 **하나의 trace(또는 단일 부모 span)로 묶고**, run_name을 **`토론 대표 선발`**(한글)로.
-**구현** 대표 선발 로직을 `@traceable(name="토론 대표 선발")` 또는 단일 `RunnableConfig(run_name="토론 대표 선발")`로 감싸 하위 호출이 한 부모에 묶이게. 반복 호출이 개별 trace로 새지 않도록 부모 컨텍스트 안에서 실행.
-**소유권** 시뮬레이션 도메인(자기 도메인) — 진행 가능.
-**완료 기준** LangSmith에서 대표 선발이 `토론 대표 선발` 한 trace로 묶여 표시(개별 누적 사라짐). 대시보드 확인.
-
-### L5 — 트레이싱 이름 한글화 + 가이드 메타 정합 (L1 의존)
-
-**목표** 트레이싱 run_name을 **한글로**(예: `토론`, `토론 대표 선발`, `광고 생성`, `시뮬레이션`) — 사용자/팀이 한글 네임을 선호. 단 **가이드는 `{도메인}.{기능}.{모드}` 영문 점표기를 표준으로 명시** → **컨벤션 충돌**.
-**⚠️ 결정 필요** 두 안 중 택1(사용자/팀 확정):
-- (A) 한글 `run_name`(가독) + 가이드의 `tags`/`metadata`(domain/feature/env…)는 그대로 유지 → 대시보드 필터·비용 집계는 영문 메타로 동작, 표시만 한글. **권장(충돌 최소).**
-- (B) 가이드를 한글 표준으로 개정(팀 합의 필요).
-**완료 기준** 결정안대로 채팅·시뮬 trace 이름 한글화 + 메타/태그 정합. 미결이면 ⬜ 유지·로그.
-
-### L6 — graph.ainvoke에 make_trace_config 적용 (L1 의존)
-
-**목표** 가이드 §9 체크리스트 — 그래프 호출에 `make_trace_config()` 적용해 표준 run_name·tags·metadata 부착.
-**범위/소유권** **채팅·시뮬레이션 우선(자기 도메인)**. generator/management graph는 타 팀 소유 → 본 태스크에선 제외(조율 후 별도). 
-**완료 기준** 채팅·시뮬 그래프 실행에 표준 config 부착, LangSmith에 메타/태그 표시. 대시보드 확인.
-
-### L7 — CLIO OpenAI wrap_openai 토큰/비용 기록
-
-**목표** 가이드 §7 — CLIO(OpenAI) 호출에 `wrap_openai()` 적용해 토큰·비용 자동 기록(현재 누락 가능). 
-**구현** CLIO/채팅의 OpenAI 클라이언트를 `wrap_openai(OpenAI())`로 감싸기. `ls_model_name` 누락 없게.
-**완료 기준** LangSmith Runs에 CLIO 호출 Total Tokens·Cost 표시. 대시보드 확인.
-
-### L8 — 롱텀 메모리 (실행 기록 기반 사용자 프로파일, L3 의존)
-
-**목표** 사용자가 돌린 **시뮬레이션·제너레이션 실행 기록**을 바탕으로 "이 사용자는 어떤 브랜드·어떤 제품군 광고주인지" 프로파일을 추론·축적하는 **롱텀 메모리**. 다음 대화에 주입(브랜드/제품군 맥락).
-**구현** 실행 메타(상품명·카테고리·타깃·브랜드)를 집계 → 사용자/프로젝트 단위 프로파일로 저장(기존 롱텀 메모리 저장소 활용, F5와 통합). 채팅 컨텍스트에 주입.
-
-**확정 설계(플랜 2026-06-25) — 조사 결과 반영**
-- **인프라 이미 있음 → 스키마 변경 불필요.** 저장소: `ChatLongTermMemory`(memory_type별 JSONB, history.py:229-278) + `ChatBrandProfile`(프로젝트당 1행: brand_name/tone/target_audience/product_category/keywords). 주입: advise_node에서 `_format_ltm()`+`_format_brand()`(orchestrator.py:759)로 이미 프롬프트에 들어감.
-- **이미 저장 중**: 시뮬 실행 시 `sim_input`(ad_title/content/category/objective, orchestrator.py:565-581), 제너 실행 시 `gen_input`(product_name/desc/target/objective, :623-638)이 `chat_long_term_memory`에 적재됨.
-- **빠진 것(=L8 핵심)**: 지금은 **명시적 브랜드 언급**만 프로파일로(`_has_brand_cue`). L8은 **누적된 sim_input/gen_input을 자동 분석해 프로파일 추론**.
-- **구현 방안(스키마 무변경)**:
-  1. 추론 트리거 — 시뮬/제너 실행 N회(예: 3회)마다 또는 매 실행 후, `get_long_term_memory(project_id, memory_type="sim_input"/"gen_input", limit=5)` 집계.
-  2. LLM(또는 빈도 통계)으로 **제품군 affinity**("뷰티 60%·식품 30%")와 **브랜드/톤/타깃** 추론 → `upsert_brand_profile(project_id, …)`로 `ChatBrandProfile` 갱신(+ `memory_type="user_profile_inferred"`로 근거 보관).
-  3. 주입은 기존 경로 그대로(추가 작업 거의 없음) — 추론값이 `_format_brand`/`_format_ltm`에 자동 반영.
-- **변경 파일**: `domain/chat/history.py`(추론 집계·upsert 헬퍼), `domain/chat/orchestrator.py`(simulation_node/generator_node 저장 직후 추론 트리거 호출). **`core/models.py` 변경 없음**(게이트 회피).
-- **선택 개선(보류, 스키마 변경이라 게이트)**: confidence/last_inferred_at 컬럼·organization_id 스코프 — 필요 시 별도 승인.
-**완료 기준** 여러 번 시뮬/생성 후, 채팅이 사용자의 브랜드·제품군을 (명시 언급 없이) 인지한 응답. Preview 확인.
-
-### C1 — sim_result_node 죽은 경로 정리 (V1 의존)
-
-**목표** 오케스트레이터 `sim_result_node`가 이제 `[시뮬결과]`를 안 보내 죽은 경로 → 정리 또는 의도 확인 후 주석. 무관한 코드 임의 변경 금지(수술적).
-
-### C2 — CLAUDE.md "Chat LLM Gemini" → OpenAI
-
-**목표** 시뮬·채팅이 gpt 계열로 통일됐으므로 `CLAUDE.md`의 "Chat LLM Gemini 2.0 Flash" 표기를 실제(OpenAI/gpt-4o-mini)로 갱신. 공통부 문서라 **단독 작은 커밋**.
-
-### C5 — /위젯 명령어 제거
-
-**목표** 채팅의 **`/위젯` 커맨드 제거**. 등록·핸들러·자동완성 목록·도움말에서 모두 삭제.
-**구현** `/위젯` 커맨드 정의·렌더·트리거 코드를 찾아 제거(`ChatConversation`/커맨드 정의 위치). 다른 커맨드(`/비교`·`/도움말`·S 그룹 등) 자동완성 목록에 영향 없게 수술적으로.
-**완료 기준** `/위젯` 입력 시 더 이상 동작·노출 안 함, 나머지 커맨드 정상. tsc/lint·Preview 확인.
-
-### C4 — 전수 QA 후 push (전부 의존)
-
-**목표** 진행 가능한 ⬜를 모두 소진하고(외부 블로커·타 팀 조율분만 ⬜로 남으면), **완료된 모든 기능을 프로 QA처럼 Claude Preview로 전수 회귀 테스트해 회귀 없음을 확인한 뒤** push.
-**절차**
-1. **★ 전수 QA(진짜 프로 QA처럼 — 아주 사소한 것도 빠짐없이)** — push 전에 완료된 **모든 ✅ 기능**을 Claude Preview로 end-to-end 회귀 테스트한다. §0 "QA 철저성 원칙" 그대로:
-   - **모든 흐름·슬래시·위젯·버튼을 실제로 한 번씩 구동**한다(빠짐없이). 예: 빈 상태 온보딩 칩 → 채팅 시뮬(입력 5단계 → 결과 KPI/분포/CI → 토론 실시간 → 요약 → 개선 제안) → 제너(403이면 에러 카드·재시도까지) → 슬래시 전종(`/배치`·`/AB`·`/리포트`·`/시뮬목록`·`/시안목록`·`/분석`·`/추천`·`/비교`·`/도움말`) → 세션 사이드바(전환·삭제·하이라이트) → 채팅 검색 → 메시지 액션 바(복사·재생성·👍👎) → 스트리밍 Stop → 자동 스크롤/맨아래 버튼 → 입력창(멀티라인·자동완성·첨부) → KPI 분포·신뢰구간 → RAG 인용 칩 → 한도 progress bar → 안읽음 뱃지 → 토스트·상대시간 → 위젯 애니메이션 → **다크/라이트 토글** → **모바일 375px** 등.
-   - **3역할(admin·company·user) 각각** 재현하고 역할 게이팅도 재확인. 역할 차이는 로그에 표기.
-   - **비동기는 완료까지 대기 + 진행 중/완료 후 새로고침 복원 + 엣지·에러 유발(빈 입력·중복 실행·키 없음·네트워크 끊김) + 콘솔/네트워크 무에러**까지 본다. "떴다"로 통과 처리 금지.
-   - 깨짐·회귀·콘솔 에러를 발견하면 **건너뛰지 말고 그 자리에서 원인 수정·커밋**한 뒤 다시 QA. **전부 통과할 때까지 반복.**
-   - QA 결과(테스트한 기능 목록·역할별 결과·발견·수정)를 "5. 진행 로그"에 요약한다.
-2. 코드 검증 — `cd frontend && npx tsc --noEmit` + `cd backend && uv run ruff check . && uv run pytest tests/ -q`. 실패 시 고치고 커밋(못 고치면 깨진 미커밋 변경 stash해 직전 정상 커밋 상태로).
-3. 통과(컴파일되는 상태)면 `git push origin feat/chat-doyeon`. **main 직접 push·강제 push(`--force`) 금지.**
-4. "5. 진행 로그"에 인계 노트(완료/진행중 WIP/다음 시작점/블로커).
-5. 불필요 백업 브랜치 정리는 보류(로컬만, 원격 삭제는 사용자 확인).
-**주의** push는 **사용자 요청 시에만**(해당 브랜치 한정). **전수 QA 미통과·빌드 깨진 상태로는 push 금지** — 모든 완료 기능이 회귀 없이 동작하고 컴파일되는 상태에서만 push.
-
----
-
-## 5. 진행 로그 (루프가 갱신)
-
-> 각 태스크 완료 시 한 줄: `YYYY-MM-DD HH:MM Vn ✅ — 요지/특이사항`.
-
-### ✅ G3 제너 결과 위젯(가로 스크롤 이미지) + 결과를 assistant로 (2026-06-25, 39aed19)
-
-> 사용자 요청: 채팅 제너 결과를 (1) 상세페이지처럼 후보 이미지 가로 스크롤 위젯으로, (2) user `[생성결과]`가 아니라 시뮬처럼 assistant가 주게.
-
-- 신규 `GenResultWidget` — 후보 이미지 3장 가로 스크롤 카드(헤드라인·전략·QA·상세 보기). 이미지 `image_url`/`s3_key`로 `/api/generator/image`.
-- `handleGenComplete` — 제너 완료 시 assistant `gen_result` 위젯 영속·표시(시뮬 handleSimComplete 패턴). 이어 `[생성결과]` 신호를 보내 오케스트레이터 재시뮬 제안·루프 상태 유지. `[생성결과]` user 버블·결과 나온 gen_form은 렌더에서 숨김(sim_form 패턴).
-- **검증(Preview, 실제 생성)**: 세션 재진입(새로고침) 시 — 가로 이미지 3장 위젯·재시뮬 제안 표시, `[생성결과]` 버블·gen_form 숨김 확인. DB에 gen_result 위젯 영속 확인. tsc·lint 통과.
-- **⚠️ 미해결(관찰)**: /new에서 **생성 직후 라이브 전환 순간** gen_form이 빈 폼(1/4)으로 잠깐 다시 보이고 gen_result 이미지가 로딩 지연되는 정황. 새로고침하면 정상. 라이브 in-place 표시 매끄럽게 다듬을 여지(세션 생성 전환 중 로컬 gen_form 재마운트 추정). 별도 확인·수정 필요.
-
-### ✅ V2 제너레이터 직접 경로 검증 완료 (2026-06-25, 403 해소 후)
-
-> 제너 403 해소 확인 직후 채팅 "🎨 시안 만들기" 경로를 끝까지 실행·검증(USER doyeon).
-
-- gen_form 4단계(상품명→설명→타깃→목표/프로젝트) → "광고 생성 실행" → **3개 시안 생성 완료**(GEN 9d0cb244, status completed).
-- 후보 3종: 전략(benefit/fomo/social_proof)·헤드라인·카피(cta·body) + **실제 이미지 3장**(s3_key candidate-0/1/2.png 별개, qa_passed True). 파이프라인 분석→전략→이미지생성(gpt-image-1)→QA→저장 전부 동작.
-- 상세 페이지 `/generations/{id}`: 이미지 3장 **1024×1024 실제 렌더**(`/api/generator/image?key=…`). 채팅엔 "생성 결과 보기" 링크(result {id,kind:gen})·개선 제안(approval) 영속 → 세션 재진입 시 복원 확인. 콘솔 에러 0.
-- 미검증(저위험): 이미지 첨부 후 생성·동시실행 가드(비용 실호출이라 반복 자제). 생성 실패 에러카드는 403 시기에 확인됨.
-- V2 ✅ → V3·G1~G4·F8·N3·N1(제너)·N4(제너) 의존 해금.
-
-### 🔍 C4 전수 QA 결과 (2026-06-25, 3역할 · 제너 403 제외)
-
-> 순환 import 수정(0776162) 후 전수 회귀. 백엔드는 `--reload` 없이 기동(수정 반영·dev reloader 행 회피). 제너 트랙은 403이라 제외.
-
-- **USER(doyeon)** — ✅ 시뮬 전체 흐름 복구: 5단계 폼→**반응 20/20 완주**→결과 KPI(F7·P10 복사)→토론 실시간→요약→**개선 제안 ApprovalWidget**. **N4 선제 알림** 동작. 채팅 Q&A·F1 액션바·**P5 인용 칩 📄** 렌더. **F10 키워드 위젯 실행 확인**(/키워드 폼→추천→해시태그 12+키워드 6 생성·전체복사). 콘솔 에러 0.
-- **🔴 영속 버그 발견·수정(d69d9cd)** — ★앞 QA에서 "영속 OK"라 한 건 **틀림**(N4가 다른 세션에 주입한 결과를 본 것). 재검증: 고유명 시뮬을 **빈 화면 칩(🧪)으로 시작**하면 위젯이 DB에 **0건 영속**(widget-messages 호출 0·세션 미생성·URL /new 고정) → 새로고침 시 전부 유실. 원인: `appendWidgetMessages`가 `sidRef.current` 없으면 `if(!sid) return`으로 영속 스킵(칩 경로는 /complete를 안 타 세션 미생성). 수정: 세션 없으면 `createSession` 후 영속. **검증**: 칩 시뮬→세션 자동생성(396355bf)→sim_input·sim_result·debate 영속→세션 재진입 시 위젯·KPI 복원.
-- **🟡 admin 채팅 내역 정렬 수정(964b556)** — `created_at`순이라 오래전 생성·오늘 활동 세션이 위로 안 옴(="최근 채팅 안 보임") → `updated_at.desc()`로 변경. 검증: 최상단이 방금 영속된 시뮬 세션.
-- **🔵 시뮬 위젯 타이밍 수정(b7c8178 → 0ace60e 롤백)** — ① 결과 위젯이 `debate.start()`를 기다렸다 떠서 "토론 시작돼야 결과가 뜸"(준비 중 빈 상태처럼 보임) → **결과를 토론 시작 전에 먼저 append(유지)**. ② 토론 위젯을 첫 발언 때 띄우게 했더니(b7c8178) 준비 중에 화면이 멈춘 듯 보임 → **사용자 피드백으로 롤백(0ace60e): 토론 시작 즉시 위젯을 띄워 '준비 중' 진행을 바로 노출**. 검증(Preview): 반응 완료 직후 결과 위젯 + 토론 위젯(준비 중→발언 스트리밍) 동시 표시·완주·영속 확인.
-- **🟢 제너 403 해소 확인(2026-06-25 재확인)** — image_generation 툴(gpt-image-1) 실호출 `GEN_OK`. org 인증 전파 완료 → V2·V3·G1~G4·F8·N(제너) 트랙 해금. (앞선 "미해소"는 전파 전 시점 결과였음.)
-- **🟠 N4 선제 알림 세션 누수 수정(51cba76)** — A 세션에서 돌린 시뮬이 B 세션에 선제 알림으로 뜨던 버그(N4가 프로젝트 전체 미열람 시뮬을 현재 활성 세션에 주입, shownIds가 현재 세션만 체크). 수정: `handleSimComplete`에서 그 세션에 결과를 띄운 직후 simulation_id를 proactive `seen`에 등록 → 타 세션 재노출 차단. **검증(대조 실험)**: seen에 있을 때 B에 안 뜸 / 빼면 B에 다시 뜸. 한계: localStorage 기반(같은 브라우저 going-forward 유효), 기존 백로그·교차 브라우저 완전 차단은 백엔드 homed-sim 조회로 보강 여지.
-- **ADMIN(admin)** — ✅ /admin/dashboard(통계·최근 가입/시뮬/문의)·/admin/chats(전체 세션 테이블 로드) 렌더, 에러 0.
-- **COMPANY(yohan)** — ✅ 대시보드 렌더(매니지·팀관리·프로젝트관리 nav, 채팅/시뮬/제너 숨김). 게이팅 정상: /chat→/dashboard, /admin→/dashboard 차단.
-- **F6(채팅↔매니지먼트 RAG) — ✅ 검증**: "집행 캠페인 성과 분석+예산 조정" 질문 → **⚙ 매니지먼트 어시스턴트** 라우팅, 실측 데이터(4캠페인·트래픽 CTR 5.54%·예산 소진 29,082원·잔액 9원)로 성과 진단+증액 제안, **인용 칩(근거: 실측·campaigns/budget/before-after)** 표시. F1 액션바 포함. (F6+L8 thread 고정 동작.)
-- **⚠️ 사소한 발견(비차단)**: "ROAS가 뭐야?"가 **CLIO/마케팅이 아닌 시뮬레이션 어시스턴트로 라우팅**됨 → 답은 정확하나 인용 칩이 무관한 시뮬 용어(클릭의향률·AISAS·구매의도)로 표시. 크로스도메인 용어 라우팅/인용 관련성 개선 여지(X4 영역). 머지 회귀 아님.
-- **미검증(남음)**: 제너 트랙 전체(403), S2·S5(매니지 조율), 그리고 모바일/다크모드·일부 슬래시(/배치·/리포트·/비교 등)·세션 검색은 이번 패스에서 미수행 — 필요 시 추가 회귀.
-
----
-
-### ⚠️ 제너레이터 403 재확인 — 미해소 (2026-06-25, V2 검증 중 정정)
-
-> **정정**: 앞서 "403 해금"으로 판단했으나 **틀림**. 순수 텍스트 `responses.create(input='ping')`만 통과한 것에 속았다. V2 검증에서 실제 생성을 돌려 런타임 traceback을 잡은 결과:
-> - 실패 지점 `candidate_gen.py:210 → multimodal_generator.py:107 → _client.responses.create(model=gpt-4o-mini, tools=[{type:"image_generation", model:<이미지모델>}])` → **`openai.PermissionDeniedError 403` "organization must be verified"**.
-> - 즉 org 검증 403은 **`image_generation` 툴(이미지 생성 캡처)**를 게이팅한다. 텍스트 응답은 게이팅 안 됨. **제너 경로(V2·V3·G·F8·N제너·N3)는 여전히 외부 블로커.**
-> - **★ 순환 import 차단 버그 — 발견·수정 완료(0776162)**: 처음엔 "마스킹(비차단)"으로 봤으나 **틀림**. QA에서 시뮬도 같은 에러로 즉시 실패함을 확인 → 시뮬은 403이 없으니 이건 **핵심 기능을 깨는 차단 버그**였다. 원인: tracing on + `asyncio.gather`로 트레이싱 LLM 호출을 **동시 실행**할 때 `langchain_core/tracers/context.py`(→langsmith) ↔ `langsmith/run_trees.py:879`(→langchain_core.tracers.langchain) **순환 import를 여러 코루틴이 첫 import**하며 race → `No module named 'langchain_core.tracers.context'`. (단일 스레드 재현 안 됨 → 동시성 race라 못 봤던 것.) **수정**: `api/main.py` 시작 시 `tracers.context`·`tracers.langchain`을 미리 완전 import(저위험 append). **검증**: Preview에서 시뮬 실행 → 반응 20/20 완주 → 결과 위젯(클릭의향 0%·구매의도 1.65/5·신뢰도 2.65/5·거부율 65%)·토론 실시간 스트리밍 정상. **이전엔 즉시 실패하던 핵심 기능 복구.**
-> - **제너는 여전히 403**(이미지 생성 캡처) — 순환 import 수정과 별개. org 검증 전까지 제너 트랙(V2·V3·G·F8·N제너·N3) 보류.
-> - V2 검증 부산물(정상 동작 확인): 환경 셋업·doyeon 토큰 로그인·프로젝트 선택·"🎨 시안 만들기"→gen_form 4단계→실행→**실패 시 에러 카드+"다시 시도"** 정상. 실제 후보 생성만 403으로 미도달.
-
----
-
-### 🅲 프론트 워크트리(feat/chat-fe) 완료분 머지 반영
-
-> 워크트리 C(P5·N4·F10) 머지(a636247). 프론트 위젯 2종 신규 + `api/routers/chat.py` append-only 엔드포인트 2개. orchestrator/models/main 무수정(§2-2 경계 준수). 상세 로그는 `docs/chat/progress-fe.md`.
-
-- P5 ✅ — RAG 인용 표시 위젯. 신규 `CitationChips.tsx` — 전 도메인(시뮬·제너·매니지·CLIO) 답변의 KB 인용을 칩(📄 출처›섹션)으로 렌더, 클릭 시 원문 chunk 펼침(실측 live는 초록 칩). `ChatConversation`의 기존 management 텍스트 근거 블록을 칩으로 교체. 백엔드 `GET /api/chat/kb-chunk`(4 KB 테이블 원문 조회, 읽기 전용). Preview: 시뮬 KB 질문→칩 8개·펼침·새로고침 복원·다크 가독 확인.
-- N4 ✅(시뮬)·⬜(제너 403) — 선제적 말걸기. 활성 세션에서 프로젝트의 **미열람 완료 시뮬 결과**를 감지해 "🔔 아직 확인하지 않은 결과가 있어요" + sim_result 위젯 자동 주입(로드 3초 후 1회 + 60초 폴링). 빈도 가드(프로젝트당 20분 1회 + seen-set 중복 방지, 최근 48h). N2 연동(닫혀 있으면 빨간 배지). 제너는 403이라 시뮬만. Preview: 선제 메시지 등장·새로고침 중복 없음·플로팅 배지 동작 확인.
-- F10 ✅ — 해시태그·키워드 추천 위젯. 신규 `KeywordWidget.tsx`(제품·카테고리·타깃·카피 입력→해시태그 12·키워드 6 칩, 개별/전체 복사) + `/키워드` 슬래시. 백엔드 `POST /api/chat/keywords`(gpt-4o-mini JSON). Preview: 폼→추천→칩 렌더, 200 확인. (복사 피드백은 Preview 클립보드 제약으로 자동검증만 미완, 기출시 동일 패턴.)
-- 검증 한계: 단일 Preview는 USER(doyeon) 위주 — **admin·company 3역할 회귀는 통합(C4) 단계에서**. N4 검증 중 doyeon 세션에 테스트 메시지 일부 잔존(개인 DB, 무해).
-
----
-
-### 🅱 채팅 백엔드 워크트리(feat/chat-be) 완료분 머지 반영
-
-> 워크트리 B(F5·F6·C1) 머지(f7bf6cb). 변경은 `backend/domain/chat/orchestrator.py`만(소유 범위 내, 스키마 변경 없음). 상세 로그는 `docs/chat/progress-be.md`.
-
-- F5 ✅ — 롱텀 메모리 점검 + 보강. 진입부 `get_long_term_memory(limit=3)`가 memory_type 혼합 최신순이라 시뮬/생성 반복 시 `session_summary`가 상위 3에서 밀려 멀티턴 요약이 누락되던 갭 → `session_summary` 미포함 시 별도 1건 조회해 prepend(수술적). LTM 저장·조회·주입·브랜드 프로파일·실행기록 추론·10턴 요약 배선 동작 확인.
-- F6 ✅ — 채팅↔매니지먼트 RAG 연결. `management_node`가 import-ready 서브에이전트(`build_management_agent`)를 호출해 답변+인용+approval 게이트를 SSE meta로 전달함을 확인. 풀모드가 `AskRequest`에 `thread_id`를 안 넘겨 매 질문이 새 thread를 만들던 갭 → `{session_id}:management` thread_id 고정(채팅 그래프와 네임스페이스 분리). mock 스모크 통과.
-- C1 ✅ — `sim_result_node` 죽은 경로 제거. `[시뮬결과]`는 어디서도 발신되지 않아(시뮬 완료는 프론트가 `sim_result` 위젯 직접 렌더) 진입 불가 → classify 분기·노드·전용 헬퍼 일괄 제거. `gen_result_node`·개선 루프·approval은 유지. 풀모드 그래프 컴파일 + 멀티턴 e2e 스모크 정상.
-- 검증 한계: F5/F6 standalone·C1 풀모드 스모크까지. **Preview 3계정 회귀는 통합(C4) 단계에서 수행 권장.**
-
----
-
-### 🅰 KB 워크트리(feat/chat-kb) 완료분 머지 반영
-
-> 워크트리 A(R5·R6·R7) 머지(84c2134, fast-forward). 상세 로그는 `docs/chat/progress-kb.md`.
-
-- R5 ✅ — clio KB에 `meta_platform_policy.md`(Meta 인스타/페북 정책·형식·용어 41청크) 추가·인제스트. clio_kb_chunks 70→111. retriever 스모크 통과.
-- R6 ✅ — clio KB에 `marketing_terms.md`(광고·마케팅 지표·전략·애드테크 용어 92청크, **별도 테이블 없이 clio_kb 통합**) 추가·인제스트. clio_kb_chunks 111→203. 기존 70·R5 41과 중복 회피. retriever 스모크 통과(ROAS·LTV/CAC 등).
-- R7 ✅ — 기존 3 KB 덤프·점검(SIM 69·GEN 79·MANAGE 88). 핵심 주제를 용어+정의로 빠짐없이 커버, 명백한 누락 없어 "억지 패딩 금지·top-k=4" 원칙대로 **충분 판정**(보강 없음, 코드 변경 없음).
-- 결과: clio_kb_chunks **203청크**(advertising 70 + Meta 41 + marketing 92). 건드린 파일은 `domain/chat/kb/`의 신규 `.md` 2개뿐 — orchestrator/api/frontend 미수정(§2-2 경계 준수). B·C와 충돌 없음.
-
----
-
-### ★ 집 프론트엔드 세션 인계 노트 (2026-06-25 09:48 KST)
-
-**상태**: 집(`feat/chat-doyeon`, 프론트엔드 전담) 작업 목록 완료 — 학원 백엔드(`feat/chat-backend`) 머지 대기. 매 태스크 push 완료(최신 HEAD push됨).
-
-**이번 세션(병행 분배 후) 완료** — X4(분류정확도)·X1(에러UX ErrorCard)·X2(SSE재연결 sse.ts)·X3(슬롯누수회수)·F1(메시지 액션바)·F2(세션 사이드바)·F11(채팅검색)·F12(시뮬비교 델타)·F7(구매의도 분포)·C5(/위젯 제거)·C2(CLAUDE.md Chat=OpenAI 정정). 그 전 V·W·S·P(12)·P12트리오·P13·N1(시뮬)·N2 포함 총 다수 ✅.
-
-**집 보류(⬜) — 머지 후/추가 작업 필요**:
-- **F10**(해시태그·키워드 위젯): LLM 생성 칩 필요한데 백엔드 키워드 엔드포인트 없음 → 학원이 엔드포인트 추가하면 프론트 위젯 붙이는 게 깔끔.
-- **N4**(선제적 말걸기): 트리거가 시뮬 진행/방치 상태에 묶여 Preview 검증 fragile(synthetic 폼 제출 한계). 코드 골격은 N1/N2 자산 재사용 가능.
-- **P5**(RAG 인용 표시): R1(학원 용어사전) 의존 → 학원 R1 완료 후.
-- **N1 제너 경로·V2·V3·G계열·F8·N3**: 제너레이터 OpenAI org-verification 403 외부 블로커.
-- **S2·S5**: 매니지먼트 도메인(타 팀) 조율 필요.
-
-**머지 가이드**: 집=`frontend/`·학원=`backend/`로 파일 분리돼 코드 충돌 거의 없음. 머지 후 통합 스모크: `cd frontend && pnpm install && pnpm build` + `cd backend && uv run pytest tests/ -v`. 그 뒤 P5(R1 완료로 해금)·F10·N4를 백엔드 머지분 기반으로 마저 구현.
-
----
-
-### 🏫 학원 백엔드 세션 완료분 (머지 반영, 2026-06-25)
-
-> 백엔드 전담 세션(`feat/chat-backend`)에서 완료해 머지된 RAG·랭스미스 태스크. 분배표상 학원 몫이던 F5·F6은 미완료(⬜ 유지).
-
-- R4-1 ✅ — `ClioKbChunk` 모델과 Alembic 025 `clio_kb_chunks` 테이블 추가. 개인 DB(ep-soft-band)에서 024→025 up, 컬럼 확인, 025→024 down, 024→025 복구 검증 완료. `ruff check . --fix`, `import api.main` 통과.
-- R1 ✅ — 시뮬 용어+정의 사전 `simulation_glossary.md` 63개 항목 추가. `domain.simulation.assistant.kb_ingest`로 개인 DB(ep-soft-band) 적재 완료, `simulation_kb_chunks` 69청크 확인, `SimKbRetriever` 검색 스모크와 `import api.main` 통과.
-- R2 ✅ — 제너 용어+정의 사전 `creative_glossary.md` 72개 항목 추가. `domain.generator.assistant.kb_ingest`로 개인 DB(ep-soft-band) 적재 완료, `generator_kb_chunks` 79청크 확인, `GenKbRetriever` 검색 스모크와 `import api.main` 통과.
-- R3 ✅ — 매니지 용어+정의 사전 `management_glossary.md` 71개 항목 추가 및 `_SOURCE_META` 등록. 개인 DB(ep-soft-band)에 019 매니지 지식 스키마 적용 후 인제스트 완료, `management_kb_chunks` 88청크와 `document_id` 88건 연결 확인, `KbRetriever` 검색 스모크와 `ruff check . --fix`, `import api.main` 통과.
-- R4-2 ✅ — CLIO 전용 광고 일반지식 KB `advertising_general_knowledge.md` 70개 섹션과 `domain.chat.kb_ingest` 추가. 개인 DB(ep-soft-band)에 `clio_kb_chunks` 70청크 적재 확인, chunk parser 스모크와 `ruff check . --fix`, `import api.main; import domain.chat.kb_ingest` 통과.
-- R4-3 ✅ — `ClioKbRetriever` 추가 및 `advise_node`에 CLIO KB 컨텍스트 주입·`meta.citations` 연결. 광고 일반 질문은 `clio_kb_chunks` top-k 근거를 사용하고 비광고 한도 경로는 기존대로 유지. retriever 검색 스모크, 오케스트레이터 CLIO 응답 citations 스모크, `ruff check . --fix`, `import` 통과.
-- L1 ✅ — 기존 병합 이력의 `core.tracing.make_trace_config` 구현을 가이드 §4 기준으로 재검증. `tests/test_tracing.py` 5건, `ruff check core/tracing.py tests/test_tracing.py`, standalone import/config 스모크 통과.
-- L2-1 ✅ — 채팅 LangGraph `_State`를 `MessagesState` 상속으로 전환하고, 매니지먼트 `build_checkpointer()` 재사용 체크포인터를 `graph.compile(checkpointer=...)`에 연결. `graph.ainvoke`에 임시 `thread_id` configurable과 `messages` seed를 전달해 L2-2 전 API 계약 유지. `ruff format .`, `ruff check . --fix`, `import api.main`, graph compile 스모크 통과.
-- L2-2 ✅ — `/api/chat/complete`와 `/api/chat/approve`에서 체크포인터 `thread_id`를 채팅 `session_id`로 고정하고, `ChatRequest`/`ApproveRequest`에 구 `thread_id` 호환 입력 추가. 오케스트레이터 `ChatTurn.thread_id`와 응답 meta의 `thread_id`/`session_id` 연결. Windows 로컬 `InMemorySaver` 폴백, thread 매핑 스모크, ruff·`import api.main` 통과.
-- L2-3 ✅ — 채팅 오케스트레이터의 인프로세스 `_WindowMemory`·수동 `_trim()` 제거. LangGraph 체크포인터 `messages`에서 최근 대화만 추출해 classify/advise/서브에이전트에 전달하고, 각 답변 노드가 `AIMessage`를 반환해 다음 턴 state에 누적되게 정리. 서버 체크포인터가 비어 있을 때만 클라이언트 `history[]`로 1회 seed하는 과도기 폴백 유지. 10턴 요약은 `history.append_turn` 이후 DB 기반 트리거로 유지. graph compile 스모크, ruff·`import api.main` 통과.
-- L3 ✅ — 채팅 그래프 `graph.ainvoke` LangSmith metadata에 `session_id`·`thread_id`·`conversation_id`를 L2의 체크포인터 thread 키와 동일하게 주입해 세션 단위 Thread 그룹핑 근거 추가. thread metadata 소스 스모크, ruff·`import api.main` 통과.
-- L4 ✅ — 시뮬레이션 토론 대표 선발 `select_panel` 호출을 `@traceable(run_type="chain", name="토론 대표 선발")` wrapper로 감싸고 selection 메타(`domain`·`feature`·`stage`·`run_id`·`lay_count`·`reaction_count`·`has_personas`) 추가. selection 단계 순서·패널 스모크, ruff·`import api.main` 통과.
-- L5 ✅ — 권장안 A로 채팅·시뮬 trace 표시 이름을 한글화하고 영문 tags/metadata는 유지. `assistant_chat`→`채팅`, `simulation.simulate`→`시뮬레이션`, `simulation.react`→`페르소나 반응`, `simulation_assistant`→`시뮬레이션 어시스턴트`, `Q&A`→`토론 Q&A`. run_name/metadata 소스 스모크, ruff·`import api.main` 통과.
-- L6 ✅ — 채팅 오케스트레이터와 시뮬레이션 어시스턴트 `graph.ainvoke` config를 `core.tracing.make_trace_config` 기반으로 전환. L5 한글 `run_name`은 유지하고 표준 `domain`·`feature`·`env`·`ad_id`·`project_id` 메타와 tags를 helper로 조립. make_trace_config 소스 스모크, ruff·`import api.main` 통과.
-- L7 ✅ — CLIO/chat raw OpenAI 호출 지점(`retriever`·`history`·`kb_ingest`)을 `wrap_openai()`로 감싸 LangSmith 토큰·비용 집계 가능하도록 보강. 채팅 오케스트레이터 trace metadata에 `ls_model_name`·`ls_provider`를 추가해 모델명 누락 방지. 소스 스모크, ruff·`import api.main` 통과.
-- L8 ✅ — 최근 시뮬·생성 실행 입력(`sim_input`/`gen_input`)을 집계해 프로젝트 브랜드 프로파일을 자동 추론하는 `infer_profile_from_execution_history()` 추가. 매 실행 입력 저장 직후 프로파일을 갱신하고 `user_profile_inferred` 근거 메모리를 남겨 다음 대화의 기존 `_format_brand`/`_format_ltm` 주입 경로에 반영되도록 연결. 집계 standalone 스모크, ruff·`import api.main` 통과.
-
----
-- 2026-06-25 09:48 C2 ✅ — CLAUDE.md 채팅 LLM 표기 정정(USER doyeon, docs). "Chat Gemini 2.0 Flash(google-generativeai)" 3곳(Key Decisions·Tech Stack·env 주석) → **OpenAI gpt-4o-mini(chat.completions, SSE)** 로 수정(실제 구현 일치). ad-gen 이미지 모델 줄(Gemini Flash 3.0/GPT Image 2)은 채팅 범위 아니라 유지. 검증: git diff로 3줄 변경 확인. (frontend 무변경이라 tsc 무관.)
-
-- 2026-06-25 09:46 C5 ✅ — 개발용 `/위젯` 슬래시 명령어 제거(USER doyeon, 집 프론트). `ChatConversation`의 slashCommands 배열에서 `/위젯` 항목 + runSlashCommand `case '/위젯'`(위젯 목록 출력) 핸들러 삭제. 검증: 슬래시 자동완성 입력 시 목록=/비교·/시뮬레이션·/제너레이터·/배치·/AB·/리포트·/시뮬목록·/시안목록·/분석·/추천·/도움말 — **/위젯 미노출** 확인. tsc/lint OK. 역할 무관 → USER 대표.
-- 2026-06-25 09:41 F7 ✅ — KPI 분포·신뢰구간 표현 점검·보강(USER doyeon, 집 프론트). **점검**: [SimulationResultView](frontend/src/components/simulator/SimulationResultView.tsx)는 이미 클릭의향률 95% CI(ci_low~ci_high)·거부율 사유 분해(rejection/drop_reason_tag)·variance_warning·effective_n·low_confidence 경고를 표시(CLAUDE.md 통계 정직성 원칙 대부분 충족). **갭=구매의도 분포**: 평균(1.65)만 단언하고 1~5점 분포 전체 미표시였음(report 뷰엔 purchase_intent_dist 있으나 메인 KPI 뷰엔 없음). → `result.reactions`의 per-persona `purchase_intent`로 1~5 분포 집계해 **"구매의도 분포(1~5점)" 막대 히스토그램 + "평균값 하나로 단정 말라" 안내** 추가(QA통과 반응 기준). **검증**(Preview, 완료 시뮬 8f6a94eb db-result): 분포 카드 렌더 — 평균 1.65·표본 20명, 2점 13명(65%)·1점 7명(35%)·3~5점 0명 막대, 95% CI·응답집중 경고 병행 스크린샷 확인. tsc/lint/prettier OK. 역할: 결과 표시 역할 무관 → USER 대표.
-- 2026-06-25 09:33 F12 ✅ — 시뮬↔시뮬 비교 위젯 차이 표시 추가(USER doyeon, 집 프론트). `/비교`→compare 모드 sim_list→2개 선택→`ComparisonWidget`은 T14에 이미 KPI 나란히는 됐으나 **"차이(델타)" 미표시**였음 → [ComparisonWidget.tsx](frontend/src/components/chat/ComparisonWidget.tsx)에 차이 컬럼 추가(2번째−1번째, %p/점수 부호 표기, 개선=초록·악화=빨강, 거부율만 감소가 개선). **검증**(Preview): `/비교`→2개 선택(비교하기 2/2)→비교 테이블+차이 컬럼 렌더, 델타값(구매의도 −0.30·신뢰도 −0.19 빨강, 변화 0은 회색) 스크린샷 확인. tsc/lint/prettier OK. 역할: 비교 위젯 역할 무관 → USER 대표. **★F10(해시태그·키워드 위젯)은 ⬜ 유지** — LLM 생성 칩이 필요한데 백엔드 키워드 엔드포인트 없음(학원 소유라 신규 불가)+SSE-in-위젯 생성은 과복잡 → 머지 후 백엔드 엔드포인트로 깔끔히 하는 게 나아 보류, 가이드대로 F12로 진행.
-- 2026-06-25 09:25 F11 ✅ — 채팅 검색(USER doyeon, 집 프론트). F2 `ChatSessionSidebar`에 검색창 추가 — **세션 제목**은 즉시 클라이언트 필터(디바운스 250ms)+매칭 `<mark>` 하이라이트, **메시지 본문**은 세션별 메시지를 1회 지연 적재·`contentRef` 캐시(`api.chat.messages`, 기존 엔드포인트만 — backend 미수정)해 검색·"메시지 일치" 라벨. ✕ 지우기·"결과 없어요"·"검색 중…" 상태. (백엔드 검색 엔드포인트 없어 프론트 필터로 — 본문검색은 세션 메시지 lazy fetch, 데모 규모 OK.) **검증**(Preview): "시안" 입력→40→3 필터+제목 `<mark>시안</mark>` 하이라이트, 본문전용 "비빔밥"(제목 아닌 답변에만)→메시지 적재 후 1건+"메시지 일치" 라벨, ✕ 클리어→40 복원 확인. tsc/lint/prettier OK. 역할: 검색 역할 무관 → USER 대표.
-- 2026-06-25 09:19 F2 ✅ — 세션 사이드바(USER doyeon, 집 프론트). 신규 [ChatSessionSidebar.tsx](frontend/src/components/chat/ChatSessionSidebar.tsx)를 `ChatRouteView`(/chat/[pid]/[sid] 뷰) 좌측 컬럼으로 추가 — 프로젝트 세션 목록(`api.chat.sessions`)·새 채팅 버튼·클릭 전환(router push)·삭제(`api.chat.deleteSession`+refreshSessions, 현재 세션 삭제 시 /new로)·현재 세션 하이라이트(출처=ChatController.activeSessionId라 새 채팅 shallow URL 갱신에도 정확). md+에서만 노출(모바일은 기존 게이트). **검증**(Preview 클릭): 사이드바 렌더+세션 41개 목록+활성 하이라이트(파랑) 확인, 세션 클릭→URL 13e5005a→5ecc56d8 **전환** 확인, 삭제 버튼→`DELETE /chat/sessions/…`→200+목록 재조회로 41→40 **삭제** 확인, 스크린샷으로 레이아웃(nav·프로젝트패널·세션바·대화) 정상. tsc/lint/prettier OK. 역할: 세션 사이드바 역할 무관 → USER 대표. (F11 채팅검색 의존 해소.)
-- 2026-06-25 09:13 F1 ✅ — 메시지 액션 바(USER doyeon, 집 프론트). 어시스턴트 일반 텍스트 답변(위젯·에러·스트리밍 중 제외)에 **복사·재생성·👍·👎** 액션 바 추가([ChatConversation.tsx](frontend/src/components/chat/ChatConversation.tsx)). 복사=clipboard+execCommand 폴백(P10 패턴, "✓ 복사됨"), 재생성=마지막 답변에만 노출·lastSendRef(X1)+handleSend로 직전 질문 재요청, 👍/👎=`api.chat.feedback({thread_id,rating±1,question,answer})`(머지된 백엔드 `POST /chat/feedback`)·선택 시 하이라이트(rated 상태). N4(선제적 말걸기)는 검증이 시뮬 상태에 묶여 fragile이라 뒤로, F1 먼저(고확신). **검증**: 채팅 답변에 바 렌더(복사·재생성·👍👎 모두) 확인, 👍 클릭→opacity 0.5→1 하이라이트 + **`POST /api/chat/feedback`→200** 네트워크 확인, 재생성 클릭→스트리밍 재시작(재요청) 확인. 복사는 Preview iframe 클립보드 권한 없어 미점등(P10과 동일 env 한계, 코드 정상). tsc/lint/prettier OK. 역할: 액션 바 역할 무관 → USER 대표. (N4는 ⬜ 유지 — 추후/머지.)
-- 2026-06-25 09:05 X3 ✅ — 동시실행 가드 통일 + 슬롯 누수 자동 회수(USER doyeon, 집 프론트). 감사 결과 점유/해제·가드는 4곳(sim 페이지·gen 페이지·SimFormWidget·GenFormWidget)에 이미 완비 — 핵심 갭은 **누수 슬롯**(위젯 언마운트 중 런 완료 시 해제 콜백 못 받아 슬롯 영구 점유). [runningJobs.ts](frontend/src/lib/runningJobs.ts)에 점유 시각(at) 기록 + `getJobs()`가 `STALE_MS`(30분, 데모 시뮬보다 충분히 긴 상한) 초과 슬롯을 null로 자동 회수하도록 추가. **공개 API 불변**(getJobs→{sim,gen}, setSimJob/setGenJob 시그니처 그대로 — 4 consumer 무변경) + `useSyncExternalStore` 무한루프 방지 위해 값 바뀔 때만 새 snapshot 객체 반환(useRunningJobs는 현재 미사용이라 위험도 0). **검증**: freshId standalone — null/방금/29분=점유 유지, 31분=회수, 30분 경계=유지 확인. tsc/lint OK, 페이지 로드 무빌드에러(DebateStreamWidget 콘솔 파싱에러는 X2 중간편집 turbopack 스테일 캐시였음 — touch 재컴파일로 해소, 디스크/tsc 클린 확인). 역할: 슬롯 store 역할 무관 → USER 대표. **X 그룹 전부 ✅**(X1·X2·X3·X4).
-- 2026-06-25 08:58 X2 ✅ — SSE 자동 재연결(USER doyeon, 집 프론트). 공통 헬퍼 [frontend/src/lib/sse.ts](frontend/src/lib/sse.ts) `openReconnectingStream(makeES, opts)` 신규 — 끊기면 지수 backoff(1·2·4·8·15s cap, maxRetries 5)로 재구독, 종료이벤트(isTerminal=completed/error)면 중단, 초과 시 onGiveUp. **배선**: 시뮬 페이지(기존엔 onerror에서 즉시 포기 → 이제 재연결) + DebateStreamWidget(기존 "끊기면 완료 간주" → 재연결 후 실패해야 완료)를 헬퍼로 통일. esRef를 EventSource→close함수로 교체. **★발견·수정**: 처음엔 메시지 1건마다 retries 리셋 → 즉시 끊기는(flapping) 스트림이 무한 재연결(테스트서 attempt1 31회·give-up 안됨)되는 버그 → `onopen` 후 stabilityMs(3s) 유지돼야 리셋하도록 교정. **검증**: ① backoff 지연 standalone 1→2→4→8→15s 확인 ② 브라우저서 실제 EventSource를 잘못된 run_id로 구독 → backoff 5회(200·400·800·1600·2000ms) 후 **GAVEUP** 재현(교정 전엔 무한, 후엔 정상) ③ tsc/lint OK. 시뮬 happy-path 라이브 스트리밍은 Preview 폼 제출 한계로 미재현(onEvent 로직은 기존 onmessage 그대로 이동). 제너 경로는 403 보류. 역할: 스트림 재연결 역할 무관 → USER 대표.
-- 2026-06-25 08:48 X1 ✅ — 에러 UX 통일 + 재시도(USER doyeon, 집 프론트엔드 세션). 공통 `ErrorCard`([frontend/src/components/chat/ErrorCard.tsx](frontend/src/components/chat/ErrorCard.tsx)) 신규 — 원본 에러를 `friendlyError()`로 4분류(한도/quota·인증권한(403/key)·네트워크(끊김/fetch)·기타=원본) + ⓘ아이콘 + "다시 시도" 버튼. **3흐름 배선**: ① 시뮬 페이지 인라인 에러박스 → `<ErrorCard onRetry={run}>` ② 제너 페이지 에러 `<p>` → `<ErrorCard onRetry={startGeneration}>` ③ 채팅 에러 텍스트 메시지 4곳에 `meta.error:true` 태그 → 렌더 분기에서 ErrorCard로, 마지막 에러엔 `onRetry`(lastSendRef로 직전 입력 재전송). **검증**: friendlyError standalone 9/9 정분류, 제너 폼 제출→에러가 ErrorCard로 렌더(친화문구+다시시도 버튼, 다크 스타일) 스크린샷 확인. 시뮬·채팅은 동일 컴포넌트 재사용(tsc 통과). tsc/lint OK(기존 line860 subscribe 경고는 무관). 역할: 에러 UX 역할 무관 → USER 대표.
-- 2026-06-25 06:29 X4 ✅ — 라우팅 분류 정확도 개선 + 로그(USER doyeon). N3/N4 검증이 시뮬 완주에 묶여 fragile(picsum→ad_analysis 실패)이라 X로 전환, X4가 standalone 분류 측정으로 가장 확실해 우선 처리(X1~X3은 ⬜ 유지). **측정**: 대표 16셋 + 까다로운 14셋을 실제 분류기(`_CLASSIFY_SYSTEM`+temp0 `with_structured_output(_Intent)`, 라이브와 동일)로 측정 — 원셋은 0/16(요약/분석→list 누수 없음, 기존 규칙이 이미 방어), 까다로운 셋에서 **1건 오분류 발견**: "내 시안 첫번째로 광고 집행해줘"→generator/select(기대 management, 집행=집행후 도메인). **수정**: `_CLASSIFY_SYSTEM`에 ① 시안 '집행·게시·운영'은 management(시안 언급 있어도) ② 'PDF·리포트로 뽑아줘/요약·분석'은 action=ask(run 아님) 규칙 + 예시 2개 추가. 분류 **로그에 질문 일부(`q={q[:40]!r}`) 추가**해 오분류 추적 강화(기존 P12-1 로그 확장). **재측정 0/20(회귀 없음)** — 집행→management/ask·PDF→simulation/ask 교정 확인. 라이브 채팅 스모크(전환율 카피전략→generator/ask 정상 응답) 무회귀. ruff/import OK. 역할: 분류 역할 무관 → USER 대표. (X1 에러UX·X2 SSE재연결·X3 슬롯가드는 ⬜.)
-- 2026-06-25 06:19 N2 ✅ — 안읽음 빨간 뱃지 배선(USER doyeon). 뱃지 UI·`unread`/`pushUnread()`/`clearUnread()`는 [ChatController](frontend/src/components/chat/ChatController.tsx)에 이미 존재(전역 Context, 프로바이더=app/layout)·신규 구현 아님. **배선**: `/simulation`·`/generator` 페이지에서 `useChatController()`로 `pushUnread`·`floatingOpen` 취득, N1 주입(`appendWidgets`) 성공 `.then`에서 `if (!floatingOpenRef.current) pushUnread()` 호출(닫힘 여부는 ref로 최신값 — 완료 콜백 staleness 회피). 기존 in-chat 경로(FloatingChat `onResultComplete`→pushUnread)와 동일 함수 재사용. **검증**: ① `/simulation` 로드 시 `useChatController` 프로바이더 에러 없음(provider 접근 OK) ② 폼 제출이 실제 동작(`POST /api/simulation` 네트워크 확인) ③ N1 주입 경로(appendWidgets)는 N1에서 렌더·영속 검증완료 ④ pushUnread→뱃지는 기존 T18 검증 기능. **한계**: 페이지발 시뮬 완료→뱃지 점등 "시각" 캡처는 picsum 이미지가 ad_analysis에서 실패(랜덤 사진≠광고)해 완료 미도달 + 합법 광고 이미지 URL 부재로 보류 — 코드·배선·연결점은 전부 검증, 점등 비주얼만 env/data 제약(P10 클립보드와 동일 성격). tsc/lint OK. 역할: 뱃지 역할 무관 → USER 대표.
-- 2026-06-25 06:02 N1 ✅(시뮬 경로)·⬜(제너 경로 403) — 직접 실행 완료→자동 개선 제안(USER doyeon). §4-N 확정설계대로: `lib/api.ts`에 `chat.resolveActiveSession(projectId)`(GET sessions 최신, 없으면 createSession) 추가. **시뮬**: `/simulation` `completed` 핸들러에서 결과 조회 후 `selectedProject`·`simulation_id` 있으면 활성 세션 해석→`appendWidgets`로 `sim_result` 위젯 + `rerun_simulation` 개선 제안(ApprovalWidget) 주입, `localStorage n1_injected_<run_id>`로 중복 1회 가드. **검증**: 페이지가 보내는 것과 동일 엔드포인트/페이로드를 실제 API로 replicate(resolveActiveSession→최신 세션 13e5005a 반환, appendWidgets 저장 2건)→채팅 열어 **sim_result 위젯(4 KPI·상세보기)+"개선해서 다시 돌리기" 승인카드 렌더·영속 확인**(스크린샷). `append_widget_messages` 직접 호출로 정상 동작 확인(curl 0건은 셸 이스케이프 아티팩트). **제너**: `/generator` `completed`에 대칭 주입 코드 작성(announcement+`run_generator` 승인) — 단 OpenAI 403로 완료 도달 불가 + 채팅에 `gen_result` 위젯 미존재 → **검증 보류(코드만 ready)**. tsc/lint OK. 역할: 주입 로직 역할 무관 → USER 대표. (N2 안읽음 뱃지·N4 선제 말걸기로 이어짐.)
-- 2026-06-25 05:51 P13 ✅ — 다크모드 로딩 스피너 가시성(USER doyeon, 라이트/다크 양모드). 시뮬/제너/채팅의 회색 트랙+파란 헤드 스피너(SimFormWidget·GenFormWidget·DebateStreamWidget·AnalysisSummaryWidget·simulation page·[id] page·FloatingChat 진행 스피너 7개)에 `dark:border-t-[#5B9DF9]` 추가 — 다크에서 회전 헤드를 밝은 파랑으로 키워 어두운 트랙(#2D3748) 대비 또렷. **★발견·교정**: 처음엔 전체 페이지 로딩 스피너(파란 링+투명상단, Type A 5개)에도 `dark:border-[#5B9DF9]`를 넣었으나, 이게 `border-t-transparent`를 덮어써(다크에서 top까지 파랑) **갭이 사라져 회전이 안 보이는** 역효과 발견 → Type A는 원복(원래 #3182F6 링이 다크에서 이미 가독). 검증: 다크 주입 테스트로 head=rgb(91,157,249)·track=rgb(45,55,72)·갭 존재 확인+스크린샷 가독, 라이트 head 불변(rgb(49,130,246)) 확인. tsc/lint OK. **P 그룹 소진**(P5만 R1 의존으로 ⬜). 역할: 스피너 색 역할 무관 → USER 대표 검증.
-- 2026-06-25 05:46 P12-3 ✅ — 한도 progress bar UI + 카운트 조회 API(USER doyeon). 백엔드: `GET /api/chat/advice-usage?project_id=…`→`{used, limit}`(append-only 라우터, `count_advice_usage`+settings 재사용). 프론트: `api.chat.adviceUsage` + `ChatConversation` 입력바 위 progress bar("일반 업무 질문 N/한도", used>0일 때만 노출), 마운트·메시지 추가·**스트림 종료(isStreaming)** 시 갱신해 실시간 반영(★처음엔 messages.length만 의존해 영속화 전 조회→1 지연, /complete가 `_persist` 후 done 보내므로 isStreaming 의존 추가로 교정), 한도 도달 시 빨강+"한도 도달 · 광고 질문은 무제한". **검증**: 바 1/20→2/20→**3/20** 실시간 증가(비광고 책·영화 추천 후), API `{used:N,limit:20}` 정상. ruff/tsc/lint·import OK. **P12 트리오 완료**(분류→카운팅/한도→progress bar). 역할: 한도 UI 역할 무관 → USER 대표 검증.
-- 2026-06-25 05:37 P12-2 ✅ — 비광고 사용량 카운팅·한도(USER doyeon, 확정설계대로 스키마 무변경). `advise_node`에서 `is_ad_domain=false`면 ① `history.count_advice_usage(project_id)`로 기존 비광고 답변 수 조회 → 한도(`settings.chat_advice_usage_limit`, 기본 20) 도달 시 LLM 호출 없이 차단 안내 응답(meta.advice_blocked) ② 통과 시 답변 meta에 `usage_type="advice"` 태그(append_turn이 영속화). 카운트는 `chat_messages.metadata->>'usage_type'='advice'` JOIN sessions(프로젝트 스코프). **★발견·수정**: ChatMessage 컬럼은 속성 `meta`지만 DB 컬럼명은 `metadata`(SQLAlchemy 예약어 회피) → 카운트 raw SQL `m.meta`→`m.metadata` 수정(처음엔 try/except로 0 반환해 조용히 실패하던 것 교정). 설정 `chat_advice_usage_limit`는 core/config.py append-only 추가(컬럼 아님·기본값). **검증**: 비광고("점심 뭐 먹지") 답변 후 count 0→1 확인, 한도 1로 임시(.env override+리로드)→비광고("농담 해줘") **차단**("일반 업무 질문은 1회까지예요(1/1)…광고 질문은 무제한") 재현, 광고("인스타 광고 전략")는 한도 무관 정상 응답(생성 어시스턴트) 확인 후 .env 원복(limit 20). ruff/import OK. (P12-3 progress bar·카운트 조회 API로 이어짐.) 역할: 백엔드 한도 역할 무관 → USER 대표 검증.
-- 2026-06-25 05:24 P12-1 ✅ — CLIO 광고/비광고 분류기 확장(확정설계대로). `orchestrator._Intent`에 `is_ad_domain: bool=True`(기본 보수적) 추가 + `_CLASSIFY_SYSTEM`에 판정 규칙(management/simulation/generator=true, advise 중 광고·마케팅·브랜딩·카피·캠페인 일반=true, 비광고 잡담·코딩·번역·일상=false, 애매하면 true) + 비광고 예시. `classify`가 `is_ad_domain` 반환·상태 전파, `[chat] classify intent=… is_ad_domain=… confidence=…` 로그(X4 연계). 위젯 결과보고([시뮬결과]/[생성결과]) early-return도 is_ad_domain=True. **검증**(대표 질문셋 9개 standalone): 클릭의향률뜻·시안만들어줘·예산소진율·마케팅트렌드·인스타카피=true(intent 정확), 파이썬코드·점심메뉴·영어번역=false, 안녕!=true(보수적) — **명확 케이스 8/8 정답**. Preview 스모크: "타게팅 왜 중요?"→CLIO 정상 응답(라우팅 회귀 없음). ruff/import api.main OK. (P12-2 비광고 카운팅·P12-3 progress bar로 이어짐.) 역할: 분류기 역할 무관 → USER 대표 검증.
-- 2026-06-25 05:16 P11 ✅ — 자동 스크롤 + 맨 아래로 버튼(USER doyeon). 기존 무조건 `scrollIntoView`를 **사용자 위치 존중**으로 개선: `scrollRef`+`atBottom` 상태+`onMessagesScroll`(하단 80px 이내 판정), 새 메시지·스트리밍 시 atBottom일 때만 자동 스크롤(위로 올려뒀으면 유지). 우하단 **"맨 아래로" 원형 버튼**(아래 화살표) — 메시지 있고 !atBottom일 때만 노출, 클릭 시 하단 이동+atBottom 복귀. **검증**(짧은 뷰포트로 오버플로 유발): 스크롤 업→버튼 노출, 클릭→하단 이동·버튼 숨김, 하단 근처→버튼 숨김. tsc/lint 통과, 콘솔 무에러. 역할: 스크롤 역할 무관 → USER 대표 검증.
-- 2026-06-25 05:10 P10 ✅ — 결과 복사 버튼(USER doyeon). `SimResultWidget` 헤더에 "복사" 버튼 추가 — 4대 KPI(클릭 의향률·구매의도·신뢰도·거부율)를 실무용 텍스트("시뮬레이션 결과(클릭미)\n클릭 의향률: …\n…")로 클립보드 복사, 클릭 시 "✓ 복사됨" 1.8s 피드백. 클립보드 견고성: `navigator.clipboard.writeText` 실패 시 `execCommand('copy')` textarea 폴백(비보안 컨텍스트·iframe 대비). **검증**: 결과 위젯에 복사 버튼 렌더·KPI 표시 확인. ★단, **Preview iframe 샌드박스는 clipboard 쓰기를 차단**(execCommand standalone도 false=transient user activation 없음, 파일업로드처럼 합성 환경 한계) → 실제 클립보드 쓰기·"복사됨" 토글은 합성 클릭으로 재현 불가(코드 정확·실브라우저 localhost 보안컨텍스트+실클릭에선 동작). tsc/lint 통과. (제너 카피/헤드라인 복사는 제너 403 블로커라 보류 — 동일 패턴 적용 예정.) 역할: 결과 위젯 역할 무관 → USER 대표 검증.
-- 2026-06-25 05:03 P9 ✅ — 완료 토스트 + 메시지 상대시간(USER doyeon). **토스트**: `ChatConversation`에 toast 상태+`showToast`(3초 자동 사라짐) 추가, `handleSimComplete`에서 "🧪 시뮬레이션이 완료됐어요" 토스트 트리거. 입력창 위 중앙 pill(`chat-pop` 등장). **상대시간**: 백엔드 `history.get_messages`에 `created_at` 추가(append-only, UTC iso) + 프론트 `ChatHistoryMessage`/`Message` 타입·메시지 로드 매핑에 created_at, P2의 `formatRelativeKST`로 각 메시지 아래 "방금 전/N분 전"(hover 시 `formatKSTFull` 전체 KST). **검증**: 시뮬 실행→완료 시 토스트 노출 확인(toastSeen), 세션 재로드 후 메시지에 "방금 전"·"1분 전" 상대시간 렌더(스크린샷). ruff/tsc/lint 통과, import api.main OK. (제너 완료 토스트는 같은 패턴이나 제너 403 블로커라 미발생.) 역할: 토스트·시각 역할 무관 → USER 대표 검증.
-- 2026-06-25 04:54 P8 ✅ — 입력창 강화(USER doyeon). **기존 구현 확인**: 슬래시 자동완성 드롭다운(↑↓/Enter/Esc, S그룹 커맨드)·Enter 전송/Shift+Enter 줄바꿈·첨부 이미지 미리보기 썸네일+제거 버튼 모두 이미 존재. **빠진 부분 보강(P8 핵심)**: textarea가 `rows=1`+`overflow-hidden`이라 멀티라인 입력이 안 보이던 문제 → `textareaRef`+`input` 변화 시 자동 높이(`scrollHeight`, 최대 120px) effect 추가, `overflow-y-auto`로 변경. **검증**: 1줄 47px→여러 줄 입력 시 높이 증가(3줄 92px)·15줄 120px 캡·초과 시 스크롤·비우면 47px 복귀, Shift+Enter는 전송 안 함(줄바꿈)·Enter 전송 정상. tsc/lint 통과. 역할: 입력창 역할 무관 → USER 대표 검증.
-- 2026-06-25 04:47 P7 ✅(점검 결과: 코드 수정 불필요) — 다크모드 일관성 점검(USER doyeon, 라이트/다크 양모드). 테마는 클래스 기반(`ThemeProvider` localStorage `theme`+`.dark` 토글). **정적 감사**: 19개 채팅 위젯 전수 grep — `bg-white`·`bg-[#F9FAFB]`·`bg-[#F2F4F6]`·`border-[#E5E8EB]`·`text-[#191F28]`·`text-[#4E5968]` 등 라이트 색 클래스가 **같은 라인에 `dark:` 짝 없는 경우 0건**(신규 `AnalysisSummaryWidget`·`RecommendFormWidget` 포함 모두 dark: 완비). **시각 검증**: 다크모드(프리뷰 기본=prefers dark)는 그간 전 위젯 스크린샷에서 가독 확인, 라이트모드로 토글해 시뮬 입력·결과(KPI)·토론·활동요약(/분석)·사이드바·입력바·칩 모두 가독·대비 정상 확인. 누락/깨짐 없어 보정 코드 변경 없음. (다크 스피너 가시성은 별도 P13에서 처리.) 역할: 위젯 스타일 역할 무관 → USER 대표 검증.
-- 2026-06-25 04:41 P6 ✅ — 위젯 등장 애니메이션 + 타이핑 커서(USER doyeon). 기존 `chatPop`(fade+slide-up, globals.css)을 채팅 메시지/위젯 행에 `chat-pop` 클래스로 적용(새 메시지·위젯이 부드럽게 등장). 스트리밍 응답에 **타이핑 커서**(`.typing-caret`, `typingBlink` 깜빡임 keyframe) — 스트리밍 중 마지막 어시스턴트 텍스트 메시지 끝에만 표시(`isStreaming && 마지막 && assistant && !widget`). **접근성**: `@media (prefers-reduced-motion: reduce)`로 chat-pop·커서 깜빡임 비활성. **검증**: 메시지 행에 chat-pop 클래스 적용(user+assistant), 긴 CLIO 응답 스트리밍 중(첫 토큰 ~3-4s 지연 후) `.typing-caret` 등장·`animationName=typingBlink` 확인, 스트림 종료 시 커서 자동 제거. tsc/lint 통과. 역할: 채팅 애니메이션 역할 무관 → USER 대표 검증.
-- 2026-06-25 04:34 P4+P14 ✅ — 빈 상태 온보딩 액션 칩 + 추천질문 제거(USER doyeon). `ChatConversation` 빈 상태(messages 0)의 `quickPrompts`(예시 질문 4종: "예상 CTR 분석"·"타겟 전략 추천"·"경쟁사 비교"·"카피 개선")를 **완전 제거**(P14) → 흐름을 바로 여는 **액션 칩 4종**(🧪 시뮬 돌리기·🎨 시안 만들기·📊 리포트·💡 전략 추천)으로 교체(P4). 칩 클릭 시 기존 `runSlashCommand`(/시뮬레이션·/제너레이터·/리포트·/추천)로 위젯 트리거. 안내문도 "예시 질문" 뉘앙스 제거("아래에서 바로 시작하거나, 광고에 대해 무엇이든 물어보세요"). **검증**: /chat 빈 화면에 예시 질문 0개·액션 칩 4개 렌더, 💡 전략 추천 클릭→RecommendFormWidget 표시. FloatingChat이 ChatConversation을 임베드하므로 플로팅 채팅 빈 상태도 동일 적용(두 표면 일괄). tsc/lint 통과. P4는 예시 질문 프롬프트 재추가 안 함(액션 칩만) — P14와 정합. 역할: 빈 상태는 역할 무관 → USER 대표 검증.
-- 2026-06-25 04:27 P3 ✅ — 스트리밍 Stop/취소 버튼(USER doyeon, 채팅). `AbortController`(abortRef)를 `/chat/complete`·`/chat/approve` fetch에 연결 → 스트리밍 중 전송 버튼이 **빨간 ■ 중단 버튼**으로 바뀌고, 클릭 시 `abort()`로 즉시 중단. catch에서 `AbortError`는 에러 메시지 없이 부분 응답 유지(그 외 에러만 안내), finally에서 abortRef 정리·isStreaming 해제. **검증**: 긴 CLIO 응답 스트리밍 중(약 2.5s, 1234자 누적) ■ 클릭→텍스트 즉시 동결(1234=1234)·전송 버튼 복귀·입력창 재활성·콘솔 에러/연결오류 메시지 없음·부분 응답 보존. tsc/lint 통과. (시뮬/제너는 각 위젯이 자체 EventSource·running phase로 별도 — 채팅 응답 스트림에 Stop 적용이 P3 핵심.) 역할: 채팅 스트림 역할 무관 → USER 대표 검증.
-- 2026-06-25 04:21 P2 ✅ — 전역 KST 시간 표시(USER doyeon). **안전 경로(표시 KST, 모델 컬럼 불변)**: 신규 `lib/datetime.ts`의 `formatKST`(타임존 표기 없는 naive ISO는 **UTC로 간주**해 `Intl` Asia/Seoul 변환, "M/D HH:MM") + `formatKSTFull`·`formatRelativeKST`. 적용: `SimGenListWidget`·`ChatSessionGate`·`AnalysisSummaryWidget`·`ProjectPanel`의 자체 `new Date(iso)` 포맷터를 전부 `formatKST` 경유로. **검증**: /시뮬목록의 W2테스트제품 created_at(18:20 UTC) 표시가 기존 "6/24 18:20"(UTC를 KST로 오인) → **"6/25 03:20"(정확한 KST, 실제 실행시각)** 로 교정. **★발견·수정한 백엔드 불일치**: `domain/chat/history.py`가 세션 `updated_at`·위젯 메시지 `created_at`을 `datetime.now()`(로컬 KST 머신=KST naive)로 저장 → DB `func.now()`(UTC)인 created_at과 타임존 혼재(세션 게이트가 updated_at 렌더 → formatKST 이중변환으로 +9h). `_utcnow()`(naive UTC) 헬퍼로 통일(단독 커밋, ruff `datetime.UTC`·import api.main OK). 신규 세션 updated_at이 UTC(19:19)로 저장됨 확인. 기존 테스트데이터는 KST로 남아 표시 +9h이나 운영(UTC 서버)·신규 데이터는 정확. tsc/lint 통과. 역할: 표시 유틸 역할 무관 → USER 대표 검증.
-- 2026-06-25 04:07 P1 ✅ — 모바일 반응형(USER+ADMIN 확인). **문제**: (app) 공유 레이아웃이 고정 3컬럼(nav 사이드바 w-56 + 패널 + main pl-[512px])이라 375px에서 가로 overflow(scrollWidth 664)로 채팅이 화면 밖. **수정(md: 게이팅으로 데스크톱 불변 보장)**: ① `AppLayout` main `pl-[512px]`→`md:pl-[512px]`(모바일 풀폭) + 모바일 햄버거 버튼(`md:hidden`)·배경 오버레이·`mobileNavOpen` 상태(라우트 이동 시 닫힘). ② `Sidebar` aside에 `max-md:-translate-x-full`(off-canvas)↔`max-md:translate-x-0`(드로어 열림), `md:translate-x-0`로 데스크톱 항상 표시. ③ 좌측 패널(Admin/Company/Project)은 `max-md:hidden` 래퍼로 모바일 숨김(메인 콘텐츠가 선택 UI 제공). **검증**: 모바일 375px — 가로 overflow 0(scrollWidth=clientWidth=375), 채팅 풀폭·KPI 2열 그리드·폼 2단 셀렉트(131px씩)·칩 모두 위젯 내 overflow 0, 햄버거→사이드바 드로어 슬라이드인(left 0)·오버레이 클릭 닫힘(left -224). 데스크톱 복귀 — 사이드바 left0 w224·패널 표시·main pl-512·햄버거 display:none(회귀 없음). ADMIN 모바일도 overflow 0·햄버거 정상. tsc/lint 통과. 공유부지만 md: 게이팅이라 데스크톱/전역 회귀 없음(수술적). 비고: 매니지 등 타 도메인 페이지 내부 표 반응형은 각 팀 스코프.
-- 2026-06-25 03:54 S4 ✅ — /추천 전략 추천(USER doyeon). 신규 `RecommendFormWidget`(광고 목표 칩+월 예산+업종 입력) → 제출 시 자연어 추천 프롬프트 구성해 `handleSend`로 전송 → **advise(CLIO) 노드가 응답**. 슬래시 `/추천` 추가→폼→추천. 검증: 목표 '구매 전환'·예산 300만원·'20대 여성 수분 크림' 입력→제출→**"🧠 CLIO" 라벨로 라우팅 확인**, 메타·인스타·유튜브 플랫폼 추천 + 타겟팅·비주얼·인플루언서·리타겟팅·예산 고려 전략을 상세 응답(608자+). 목표·예산 미입력 시 제출 비활성. tsc/lint 통과, 백엔드 변경 없음(기존 advise 경로 재사용=chat.completions라 외부블로커 무관). 역할: 채팅 슬래시 역할 무관 → USER 대표 검증.
-- 2026-06-25 03:47 S3 ✅ — /분석 종합 요약(USER doyeon). 신규 `AnalysisSummaryWidget`(projectId로 시뮬·생성 목록 직접 조회=읽기 전용, BatchSim/Report처럼 self-fetch). 슬래시 `/분석` 추가→위젯 렌더. 집계: 시뮬 건수·완료수·누적 가상소비자(sample_size 합), 생성 건수·완료·실패, 전체 실행, 최근 시뮬/생성 3건씩(KST 날짜·클릭 시 상세 이동). 검증(건도연): 시뮬 30건(완료30)·생성 6건(완료3·실패3)·누적 1,240명·전체 36건·최근 목록 정상 렌더, 자동완성·도움말 갱신. tsc/lint 통과, 백엔드 변경 없음. 빈 프로젝트·미선택 빈상태 처리. 역할: 채팅 슬래시 역할 무관 → USER 대표 검증.
-- 2026-06-25 03:47 S2 ⬜(보류) — /비교 캠페인 A/B 확장. **조사 결과 매니지먼트에 "캠페인 A vs 캠페인 B" 비교 서비스가 없음**: `comparison_service`는 오가닉↔광고(lift), `before_after_service`는 전후 비교뿐, `/management/compare*`도 동일. 캠페인 A/B는 신규 비교 로직 필요 → (a) 매니지먼트 도메인 내부 추가(타 팀 소유, 조율 필요) 또는 (b) `/campaigns/{id}/outcome` 읽기로 채팅에 신규 비교 위젯 구축(미지의 도메인 데이터 위에 단독 구축 → 디테일 리스크). 협업 규칙(매니지 내부 수정 조율) + 데이터 정합 리스크로 **보류·다음 태스크 진행**. F12(시뮬↔시뮬 /비교)는 기존 동작. 재개 시: 매니지 팀과 campaign A/B 비교 계약 합의 후 채팅 위젯 연결.
-- 2026-06-25 03:39 S1 ✅ — 저비용 슬래시 4종+별칭(USER doyeon, 채팅). 완성돼 있던 위젯에 슬래시 진입점만 추가: `/배치`(별칭 `/AB`)→batch_sim_form, `/리포트`→report_ready, `/시뮬목록`→sim_list, `/시안목록`→gen_list. slashCommands 배열에 5개 항목 추가 + runSlashCommand 핸들러. **목록 위젯은 items를 받아야 렌더**(SimGenListWidget 자체조회 X) → 프론트에서 `api.projects.simulations/generations`(신규 래퍼, projects.py 기존 엔드포인트 호출)로 조회→`patchLastListWidget` 헬퍼로 마지막 목록 위젯 메시지에 items 주입. 검증: `/시뮬목록`→"🧪 시뮬레이션 목록 (20)" 실제 20건(제목·상태·소비자수·날짜·요약버튼), `/시안목록`→"🎨 광고 생성 목록 (6)" 실제 6건, `/배치`·`/AB`→배치 위젯(광고 A/B·비교 실행), `/리포트`→리포트 위젯(다운로드 버튼) 모두 정상 렌더, 자동완성 목록에 5종 표시. /도움말도 갱신. tsc/lint 통과. 백엔드 변경 없음(읽기전용 목록이라 제너 외부블로커 무관). 역할: 채팅 슬래시는 역할 무관 → USER 대표 검증.
-- 2026-06-25 03:28 W3 ✅ — 사용자 친화 보조 위젯(USER doyeon). W2로 5단계가 길어진 폼에 **단계 진행 인디케이터** 추가(실제 부족 지점만 좁게): 헤더에 "N/5 · 현재단계명"(STEP_LABELS 제품명/광고설명/카테고리/광고목표/대상설정), 그 아래 5세그먼트 진행 바. 현재 단계 파란색·완료 단계 반투명 파랑(클릭 시 해당 단계로 되돌아감, aria-label로 접근성)·미래 단계 회색(비활성). 검증: 단계 진행 시 현재/완료/미래 상태·라벨 갱신, step2(3/5)에서 disabled=[false,false,true,true,true](완료 0·1만 클릭 가능), 완료 dot 클릭→해당 단계 복귀+입력값 보존. tsc/lint 통과, 과한 추상화 없이 SimFormWidget 내부만 수술적 추가. 역할: sim 위젯 역할 무관 → USER 대표 검증.
-- 2026-06-25 03:21 W2 ✅ — 시뮬 위젯 5단계 재구성(USER doyeon). SimFormWidget을 4→5단계로: ①제품명 ②광고설명 ③카테고리(W1 2단 셀렉트) ④광고 목표 칩(AD_GOALS 5종 + 기타 직접입력) ⑤인구 생성(소비자 수 슬라이더 + 표본 추출 방식[인구비례/소수그룹보강] + 연령대 복수칩 + 성별). `/simulation/page.tsx`의 칩·인구 UI·target_filter 빌드 패턴 이식. 검증: 5단계 진행 표시(N/5)·다음/이전 양방향 이동·뒤로가기 시 입력값 보존 확인. 목표 미선택 시 다음 disabled(필수). 실행(뷰티/화장품 3류·구매 전환·소수그룹보강·20·30대·여성)→백엔드 result.ad{product_category:뷰티/미용/화장품, service_class:3, ad_objective:구매 전환}·simulation{target_filter:{age_min:20,age_max:39,gender:F}, target_mode:MANUAL} 정상 수신, **생성된 페르소나 20명이 실제로 20~37세·전원 여성**으로 필터 반영됨(옵션이 페르소나 생성에 실제 작용). sim_input 위젯에 카테고리·광고 목표 표시. tsc/lint 통과, 콘솔 무에러. 역할: sim 위젯 역할 무관 → USER 대표 검증.
-- 2026-06-25 03:13 W1 ✅ — 시뮬 위젯 카테고리 2단 셀렉트(USER doyeon, 채팅 sim_form). `SimFormWidget`의 자유텍스트 카테고리 input을 `/simulation`과 동일한 2단 셀렉트(`SIM_CATEGORIES`: 업종 대분류 → NICE 류)로 교체. `category` 자유입력 상태 제거 → `categoryId`(=product_category 이름)·`serviceClass`(=NICE 류 id) 상태로. 검증: 대분류 "뷰티/미용/화장품" 선택→세부 류 셀렉트 활성(12개 NICE 류 populate)·3류 화장품 선택→"다음" 활성, 둘 중 하나라도 미선택이면 "다음" disabled. 실행 후 백엔드 result.ad.product_category="뷰티/미용/화장품"·service_class=3 정상 수신, sim_input 위젯에도 카테고리 "뷰티/미용/화장품" 표시. tsc/lint 통과, 콘솔 에러 0(버퍼의 recharts 에러는 V4 pnpm install 이전 잔여라 무관). 광고 목표는 기존 자유입력 유지(W2에서 칩+5단계 재구성 예정). 역할: sim 위젯은 역할 무관(admin 채팅도 동일 위젯, company는 채팅 게이팅) → USER로 대표 검증.
-- 2026-06-25 03:02 V4 ✅ — 프론트 전역 스모크(3역할). **USER(doyeon)**: /dashboard·/simulation·/generator·/chat·/generations/[id](완료 시안 상세)·/simulation/[id](OCEAN 섹션 포함)·/my-org 전부 렌더, 콘솔 에러 0. /chat에서 플로팅 채팅 숨김·사이드바 "채팅" 하이라이트 정상, 그 외 화면에선 플로팅 노출. **ADMIN(admin)**: /admin/dashboard·/admin/companies(조직 관리)·/admin/chats(채팅 내역)·/admin/generations(제너 내역) 전부 렌더, 콘솔 에러 0. **COMPANY(yohan)**: /dashboard 렌더(사이드바 채팅/시뮬/제너 숨김·매니지먼트/팀관리/프로젝트관리만 노출), /chat→/dashboard·/admin→/dashboard 게이팅 리다이렉트 정상. **★깨짐 발견·수정**: `/manage/*`(campaigns·monitoring·compare·anomaly·budget) 화면이 **전부 백지**(bodyLen 0) — 원인은 `recharts` 모듈 미해결(`Module not found: recharts`). package.json엔 `recharts@^3.8.1`·`@tosspayments/tosspayments-sdk` 선언돼 있으나 **로컬 node_modules에 미설치**(폰트처럼 로컬 셋업 이슈, 브랜치 코드 결함 아님) → `pnpm install`로 설치 후 /manage/campaigns·/manage/monitoring 정상 렌더 확인. 추적 파일 변경 없음(lock에 이미 존재). **관찰(미수정)**: COMPANY는 채팅이 게이팅되는데 플로팅 채팅 버튼은 노출됨 → 열면 "프로젝트를 먼저 선택하세요" 빈 상태로 크래시 없음(경로기반 숨김 규칙상 일관, 게이팅 정책 결정사항이라 V4에선 보류). **다음 시작: V·검증 끝(V3은 외부 블로커) → W1(시뮬 위젯 카테고리 2단 셀렉트)부터.**
-- 2026-06-25 02:44 V2 ⬜(외부 블로커) — 제너레이터 직접 경로 검증(USER doyeon, /chat 건도연). **검증 가능 범위 통과**: "🎨 시안 만들기" 칩→gen_form 4단계 폼→프로젝트 선택→"광고 생성 실행" 트리거→진행률 스피너(25%)까지 정상. **생성 실패 시 에러 카드 + "다시 시도" 동작 확인**(다시 시도→폼 복귀). **★외부 블로커**: 광고 생성이 OpenAI 403으로 실패 — `Your organization must be verified to use the model gpt-4o-mini`(제너레이터가 `responses.create`=Responses API 사용 → org 검증 필요. 시뮬은 chat.completions라 정상). 조직 검증은 외부 계정 설정이라 수정 불가 → 실제 후보 생성·인라인 표시·상세 보기·이미지 첨부·결과보기 영속은 검증 보류. **검증 중 발견·수정한 실제 버그 2건**: ① `api.projects.list()`가 `{projects:[]}`로 타입됐으나 `/api/projects`는 배열 직접 반환 → GenFormWidget 프로젝트 셀렉트가 "프로젝트 없음"만 떠 생성 실행 불가(run 버튼 disabled) → api.ts 타입을 `unknown[]`로 고치고 위젯에서 `Array.isArray(d)`로 수신(셀렉트에 건도연 표시·실행 활성 확인). ② 생성 **실패(status=failed/후보 0개)인데도 finish()가 "✅ 0개 생성 완료" done 위젯 + 재시뮬 제안을 노출**하던 버그 → status/후보수 확인해 에러 카드로 분기(재시뮬 제안 오노출 차단) 확인. 콘솔 에러 0, tsc/lint 통과. (동시실행 가드는 코드상 `getJobs().gen` 체크 존재하나 생성이 ~10s만에 실패해 동시 재현 미검증.) **다음 시작: V3은 V2 의존이라 외부 블로커로 진행 불가 → V4(프론트 전역 스모크)부터.**
-- 2026-06-25 02:31 V1 ✅ — 시뮬 전체 흐름 재검증 완료(USER doyeon, /chat 건도연 프로젝트). 채팅에서 "시뮬레이션 돌려줘"→sim_form 4단계 입력→실행→sim_result(KPI: 클릭의향 0%·구매의도 2.11/5·신뢰도 3.00/5·거부율 53%)→토론 자동시작(debate_stream R1~R4 실시간 발언, 송은서·한승현·장하은 등)→완료→"토론 요약 보기"→debate_summary(결론·합의·이견·개선권고 3건)→개선 제안 ApprovalWidget("개선 시안 만들기 →") 노출. 새로고침 시 입력·결과·토론·요약·개선제안 위젯 모두 DB 복원, 콘솔 에러 0. **버그 2건 발견·수정**: ① 상세 리포트(/db-result)에 ocean_segments 누락 → SimulationResultView의 "성향별 반응(OCEAN)" 섹션이 안 뜸 → `simulation_repository.get_full_result`에 `ocean_segment_breakdown` 재계산 추가(개방성·성실성·외향성·친화성·신경증 5차원 렌더 확인). ② SimFormWidget의 SSE `onerror`가 페이지 언로드 시 `ACTIVE_SIM_KEY`를 동기 삭제 → **진행중 시뮬 새로고침 시 RUNNING 스피너 복원 실패**(빈 폼으로 리셋) → onerror에서 status 확인 후 분기(COMPLETED만 finish, RUNNING은 키 보존+한정 재구독)로 수정. 수정 후 진행중(5%) 새로고침→스피너(95%) 복원→완료→결과 위젯 전환까지 확인. ruff/tsc/lint 통과.
-- 2026-06-25 01:55 V5 ✅ — 3계정 로그인·역할 게이팅 검증 완료(코드 변경 없음, 게이팅 정상). **admin**: 실폼 로그인→`/admin/dashboard`(ADMIN 뱃지·조직관리/내역 nav·AdminPanel 4기업7프로젝트), `/chat` 접근 OK. **company(yohan/정요한)**: 대시보드(COMPANY 뱃지·기업관리 nav·CompanyPanel 팀별 프로젝트), `/chat`·`/admin` 모두 `/dashboard`로 차단(사이드바에서 채팅/시뮬/제너 숨김). **user(doyeon/권도연)**: 대시보드(USER 뱃지·채팅/시뮬/제너 nav·ProjectPanel 건도연), `/chat` 프로젝트선택→건도연 프로젝트 채팅(기존 세션목록) OK, `/admin` 차단. 콘솔 에러 0. 참고: Preview의 React 제어컴포넌트 폼이 합성 fill로는 onSubmit이 안 걸리는 경우 있어(앱 버그 아님 — admin은 실폼 성공, 백엔드 `/api/auth/login` 직접 호출 3역할 모두 200) company·user는 §0 토큰주입 대안으로 검증.
+> 완료(✅) 태스크의 상세 명세·진행 로그는 git 로그 참조(이전 §5/§4-L 등). 남은/새 작업은 §1 표·§1-A·§4(부분)에 있다.
