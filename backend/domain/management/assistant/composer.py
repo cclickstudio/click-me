@@ -43,10 +43,18 @@ _METRIC_LABELS: tuple[tuple[str, str], ...] = (
 )
 
 
-def _descriptive_conclusion(answer: str) -> str:
-    sentences = [s for s in re.split(r"(?<=[.!?])\s+", answer.strip()) if s]
+def _strip_directive_sentences(line: str) -> str:
+    # 한 줄 안에서 실행 지시 문장만 제거(줄 자체 구조는 보존).
+    sentences = [s for s in re.split(r"(?<=[.!?])\s+", line.strip()) if s]
     kept = [s for s in sentences if not any(m in s for m in _DIRECTIVE_MARKERS)]
-    return " ".join(kept).strip() or _NEUTRAL_CONCLUSION
+    return " ".join(kept)
+
+
+def _descriptive_conclusion(answer: str) -> str:
+    # 지시문은 제거하되 줄바꿈·목록 구조는 보존(프론트 마크다운 렌더 대비). 빈 줄 3+는 2로 정리.
+    lines = [_strip_directive_sentences(ln) for ln in answer.strip().split("\n")]
+    cleaned = re.sub(r"\n{3,}", "\n\n", "\n".join(lines)).strip()
+    return cleaned or _NEUTRAL_CONCLUSION
 
 
 def _won(value: float) -> str:

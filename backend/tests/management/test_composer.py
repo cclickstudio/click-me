@@ -91,6 +91,24 @@ def test_conclusion_strips_execution_directive():
     assert "예산이 초과됐습니다." in text
 
 
+def test_conclusion_preserves_newlines_and_list_structure():
+    # 마크다운 목록의 줄바꿈을 공백으로 뭉개지 않는다(프론트 렌더 가독성).
+    answer = "다음과 같습니다.\n\n1. 목표 설정\n2. 타겟 설정\n3. 예산 설정"
+    card = compose_card(AskResult(answer=answer), turn_id="t")
+    text = _section(card, "summary").text
+    assert "1. 목표 설정\n2. 타겟 설정\n3. 예산 설정" in text
+
+
+def test_conclusion_strips_directive_line_keeps_other_lines():
+    # 지시 문장이 있는 줄만 제거하고 나머지 줄은 보존.
+    answer = "예산이 초과됐습니다.\n지금 실행하세요.\n잔액은 9원입니다."
+    card = compose_card(AskResult(answer=answer), turn_id="t")
+    text = _section(card, "summary").text
+    assert "실행하세요" not in text
+    assert "예산이 초과됐습니다." in text
+    assert "잔액은 9원입니다." in text
+
+
 def test_directive_only_answer_degrades_to_neutral():
     # 답변이 지시문뿐이면 원문을 흘리지 말고 중립 강등(원문 재노출 금지).
     res = AskResult(answer="지금 실행하세요.", suggested_action=_pause())
