@@ -18,7 +18,7 @@
 
 ## 2. 안전·정직성 불변식 (이 스펙의 게이트)
 
-1. **proposal은 "미리보기(preview)"다.** 실행 정본 ActionProposal은 **스펙 3에서만** 생성·확정(finalize)·영속(persist)한다. 스펙 2의 제안은 `executable=false, finalized=false, persisted=false`.
+1. **proposal은 "미리보기(preview)"다.** 실행 정본 ActionProposal은 **스펙 3에서만** 생성·확정(finalize)·영속(persist)한다. 스펙 2의 제안은 `executable=false, finalized=false, persisted=false`. **스펙 2는 정본 `ActionProposal` 모델을 메모리에도 생성하지 않는다** — preview는 `DiagnosisResult`에서 직접 조립한다(`build_sample_proposal`/`finalize_proposal` 미사용).
 2. **"정식/실행 가능"으로 오인될 어휘 금지.** 카드/계약에서 `ActionProposal`이라 부르지 않고 **`proposal_preview`**, ID는 **`preview_id`**(정본 `proposal_id` 아님)로 노출한다.
 3. **이상 없음 ≠ 진단 불가.** fetch 실패·데이터 부족·일예산 미소싱은 "이상 없음"으로 위장하지 않고 **`unavailable`** 로 분리한다.
 4. **합성 금지(정직성).** `use_mock=False`(실측)에서 진단 입력(스냅샷·일예산)을 못 구하면 고정값으로 메우지 않고 **`unavailable`** 을 반환한다. 고정 일예산은 `use_mock=True`(데모)에서만 허용.
@@ -27,14 +27,16 @@
 
 ## 3. 진단 상태 모델 — 3 status + anomaly flag (4 cases)
 
-`live_diagnosis` 툴은 `diagnostic_status`(3값) + `anomaly`(ok일 때만 유효) 조합으로 **4 case**를 낸다. 단일 4-값 enum이 아니다.
+`live_diagnosis` 툴은 `diagnostic_status`(3값) + `anomaly`(ok일 때만 유효) 조합으로 **4 case**를 낸다. 단일 4-값 enum이 아니다. **이 조합은 typed 모델 `DiagnosticResult`의 validator로 강제**한다(§4.2) — 불법 조합(`ok+no-anomaly`인데 proposal_preview 존재, `unavailable`인데 diagnosis 존재 등)은 생성 시점에 거부된다.
 
 | diagnostic_status | anomaly | 의미 | 카드 |
 |---|---|---|---|
 | `ok` | `false` | 진단 완료, 이상 징후 없음 | summary("이상 없음") + metrics |
 | `ok` | `true` | 진단 완료, 이상 감지 | summary + metrics + **diagnosis** + **proposal_preview** + review |
-| `unavailable` | — | 데이터/설정 부족으로 진단 불가 | summary + `empty_state`("진단 데이터를 가져올 수 없어요"), severity=neutral |
-| `failed` | — | 툴 실행 예외 | 안전 문구 반영, diagnosis 섹션 생략 |
+| `unavailable` | — | 데이터/설정 부족으로 진단 불가 | **composer가 결정적으로** summary + `empty_state`("진단 데이터를 가져올 수 없어요"), severity=neutral |
+| `failed` | — | 툴 실행 예외 | **composer가 결정적으로** summary + `empty_state`(안전 문구), severity=neutral. diagnosis 섹션 생략 |
+
+> `unavailable`·`failed`의 **카드 표현은 composer가 결정적으로** 만든다(empty_state + neutral). LLM은 사용자-facing summary 텍스트만 보조하고, **실패/불가 상태를 카드 계약으로 소유하지 않는다**(LLM 경유 비결정성 배제).
 
 툴 결과 형태:
 ```python
@@ -53,7 +55,7 @@
 
 | 파일 | 책임 |
 |---|---|
-| `backend/domain/management/assistant/tools.py` | `live_diagnosis(settings, campaign_id) -> dict` + `build_diagnostic_proposal_preview(dx)` 래퍼 + `INTENT_TOOLS["diagnosis"]` 등록 |
+| `backend/domain/management/assistant/tools.py` | `live_diagnosis(settings, campaign_id, tenant_id=None) -> DiagnosticResult` + `build_proposal_preview_from_diagnosis(dx, daily_budget_krw)` + `INTENT_TOOLS["diagnosis"]` 등록 |
 | `backend/domain/management/assistant/graph.py` | LLM 바인딩 툴 목록에 `live_diagnosis(campaign_id)` 추가(풀모드) |
 
 **`live_diagnosis(settings, campaign_id)` 흐름**
@@ -61,29 +63,53 @@
 2. `snapshots = await reader.fetch_hourly_metrics(campaign_id, today)`.
 3. **일예산 소싱** — `use_mock=True`면 `DAILY_BUDGET_KRW`(데모 고정) 허용. `use_mock=False`면 캠페인 실제 일예산을 구하고, **없으면 `unavailable` 반환**(합성 금지, 불변식 4).
 4. 스냅샷이 비었거나 일예산이 없으면 `unavailable`.
-5. `outcome = run_detection(tenant_id, campaign_id, snapshots, daily_budget_krw)`. `tenant_id`는 **비인증 placeholder** `org_eval`(detection이 요구하는 데이터-스코핑 파라미터일 뿐, 스펙 2에선 영속·노출 안 함). 실 인증 tenant는 스펙 3+.
-6. `outcome.diagnosis is None` → `ok + anomaly=false`. 있으면 `ok + anomaly=true` + `proposal_preview = build_diagnostic_proposal_preview(outcome.diagnosis)`.
+5. `outcome = run_detection(tenant_id, campaign_id, snapshots, daily_budget_krw)`. **`tenant_id`는 detection이 출력 라벨로만 쓴다**(검증: `deterministic_dx.py:89`·`performance_dx.py:106`이 `DiagnosisResult(tenant_id=...)`로 넣기만 하고, threshold/cache/feature config 조회엔 미사용 → 값이 진단 결과를 바꾸지 않음). 요청에서 tenant를 얻을 수 있으면 `tenant_id` 인자로 전달, 없으면 `org_eval`(비인증 placeholder). 스펙 2에선 영속·노출 안 함. 실 인증 tenant는 스펙 3+.
+6. `outcome.diagnosis is None` → `ok + anomaly=false`. 있으면 `ok + anomaly=true` + `proposal_preview = build_proposal_preview_from_diagnosis(outcome.diagnosis, daily_budget_krw)`.
 7. 전 과정 `try/except` — 예외는 `failed`(raw 미노출, `reason`은 안전 문구). detection 코어는 호출만.
 
 > `campaign_id`는 풀모드에선 LLM이 `live_campaigns`로 얻어 전달, 무키 폴백에선 `req.campaign_id`. 없으면 `unavailable`.
 
-**`build_diagnostic_proposal_preview(dx)`** — 기존 `demo.build_sample_proposal(dx)`를 감싸 **미리보기 전용 dict**로 변환한다. 정본 `ActionProposal`/`proposal_id`를 그대로 노출하지 않고 아래만 추린다.
+**`build_proposal_preview_from_diagnosis(dx, daily_budget_krw)`** — **정본 `ActionProposal`을 만들지 않고**(불변식 1) `DiagnosisResult`에서 직접 미리보기 dict를 조립한다. `build_sample_proposal`/`finalize_proposal`은 호출하지 않는다.
 ```python
 {
-  "preview_id": "preview_<8hex>",         # 정본 ID 아님(휘발성)
-  "action_type": "INCREASE_BUDGET",       # 현재 sample 기반(단순화)
-  "tier": "TIER_1",                       # sample 라벨
-  "budget_before_krw": int,
-  "budget_after_krw": int,
-  "hypothesis": str,
+  "preview_id": "preview_<8hex>",         # 정본 ID 아님(휘발성). uuid4 즉석 생성.
+  "action_type": <anomaly_type→action 매핑>,  # v1 단순 매핑(예 budget_exhausted→INCREASE_BUDGET)
+  "tier": <action별 기본 tier>,           # 표시용 라벨(정책 판정 아님)
+  "budget_before_krw": daily_budget_krw,
+  "budget_after_krw": <heuristic, 예 *1.5>,
+  "hypothesis": dx.hypothesis,
   "executable": False, "finalized": False, "persisted": False,
-  "source": "diagnostic_sample_preview",  # trace: sample 기반임을 명시
+  "source": "diagnostic_preview",         # trace: 미리보기 출처 명시
 }
 ```
 
 ### 4.2 운반 계약 — `AskResult`
 
-`backend/domain/management/assistant/contracts.py` — `AskResult`에 **`diagnostic: dict | None = None`** 한 필드 추가(§3의 4-case 결과 전체). optional·하위호환. graph `to_result`/무키 폴백이 `live_diagnosis` 결과를 여기에 싣는다. 기존 `suggested_action`은 유지(폴백·하위호환).
+`backend/domain/management/assistant/contracts.py` — typed 모델 **`DiagnosticResult`** 를 정의하고 `AskResult`에 **`diagnostic: DiagnosticResult | None = None`** 추가(optional·하위호환). raw dict가 아니라 모델 + validator로 **불법 4-case 조합을 생성 시점에 거부**한다.
+
+```python
+class DiagnosticResult(BaseModel):
+    diagnostic_status: Literal["ok", "unavailable", "failed"]
+    anomaly: bool = False            # diagnostic_status == "ok"일 때만 의미
+    diagnosis: dict | None = None    # DiagnosisResult.model_dump (ok+anomaly)
+    proposal_preview: dict | None = None
+    reason: str = ""                 # unavailable/failed 안전 문구
+
+    @model_validator(mode="after")
+    def _legal_combo(self):
+        if self.diagnostic_status != "ok":
+            # 진단 불가/실패: diagnosis·proposal 없음, reason 필수
+            assert self.diagnosis is None and self.proposal_preview is None
+            assert self.reason
+            assert self.anomaly is False
+        elif self.anomaly:
+            assert self.diagnosis is not None  # 이상 → diagnosis 필수
+        else:
+            # ok+no-anomaly: diagnosis·proposal 없음
+            assert self.diagnosis is None and self.proposal_preview is None
+        return self
+```
+> graph `to_result`/무키 폴백이 `live_diagnosis`의 `DiagnosticResult`를 `AskResult.diagnostic`에 싣는다. 기존 `suggested_action`은 유지(폴백·하위호환). (assert는 예시 — 구현 시 명시적 `ValueError`로.)
 
 ### 4.3 composer 확장
 
@@ -95,8 +121,9 @@
 - **`compose_card` 분기**(diagnostic 상태별, §3 표):
   - `ok+anomaly` → summary + metrics + diagnosis + proposal_preview(+review).
   - `ok+no-anomaly` → summary + metrics.
-  - `unavailable` → summary + `empty_state`(reason).
-  - `failed`/`diagnostic=None` → 기존 v0 경로(스펙 1) 그대로(diagnosis 섹션 없음).
+  - `unavailable` → summary + `empty_state`(reason), severity=neutral. **(composer 결정적)**
+  - `failed` → summary + `empty_state`(안전 문구), severity=neutral. **(composer 결정적, LLM 미경유)**
+  - `diagnostic is None`(진단 툴 미호출 — 일반 질문) → 기존 v0 경로(스펙 1) 그대로(diagnosis 섹션 없음).
 
 ## 5. 컴포넌트 — 프론트
 
@@ -133,15 +160,16 @@
 ## 8. 오류·엣지
 
 - **`unavailable`** — 정상 흐름(오류 아님). `empty_state` 섹션 + neutral. "이상 없음"과 구분.
-- **`failed`** — 툴이 `failed` dict 반환(예외를 raw 노출 안 함). **풀모드는 LLM이, 무키 폴백은 composer가** 안전 문구로 반영하고 diagnosis 섹션은 생략. 턴 자체는 정상 종료.
+- **`failed`** — 툴이 `failed` 상태 반환(예외 raw 미노출). **composer가 결정적으로** empty_state + neutral로 표현(LLM 미경유). LLM은 summary 텍스트만 보조. 턴 자체는 정상 종료.
 - **실측 모드 일예산 미소싱** — `unavailable`(합성 금지). 현재 reader엔 계정 단위 `get_min_daily_budget`만 있어 실측 모드는 자주 `unavailable` — 한계로 명시(§10).
 - **detection 예외** — 코어 미수정. 툴 래퍼에서 잡아 `failed`.
 
 ## 9. 테스트
 
 - **`live_diagnosis`**(`tests/management/`) — mock fault 시드 → `ok+anomaly` + proposal_preview(executable=false). mock normal → `ok+anomaly=false`. campaign_id 없음/스냅샷 빔 → `unavailable`. 예외 주입 → `failed`(reason에 raw 미노출).
-- **`build_diagnostic_proposal_preview`** — `preview_id` 존재·`proposal_id` 부재·`executable/finalized/persisted=false`·`source` 표기.
-- **composer** — `ok+anomaly` → `[summary, metrics?, diagnosis, proposal, review]` + severity. `ok+no-anomaly` → summary+metrics, severity=neutral. `unavailable` → empty_state. `derive_severity` 3분기(진단만). `diagnosis` 섹션이 chat_cards 레지스트리에 등록됨.
+- **`DiagnosticResult` validator** — 불법 조합 거부: `unavailable`인데 diagnosis 있음 / `ok+no-anomaly`인데 proposal_preview 있음 / `failed`인데 reason 빔 → ValueError.
+- **`build_proposal_preview_from_diagnosis`** — `preview_id` 존재·`proposal_id`/`ActionProposal` 미생성·`executable/finalized/persisted=false`·`source` 표기. (정본 모델을 안 만드는지: `build_sample_proposal`/`finalize_proposal` 미호출 확인.)
+- **composer** — `ok+anomaly` → `[summary, metrics?, diagnosis, proposal, review]` + severity. `ok+no-anomaly` → summary+metrics, severity=neutral. `unavailable`·`failed` → summary+empty_state, severity=neutral(둘 다 composer 결정적, LLM 미경유). `diagnostic=None` → v0 경로. `derive_severity` 3분기(진단만, tier 미사용). `diagnosis` 섹션이 chat_cards 레지스트리에 등록됨.
 - **프론트** — `diagnosis` 렌더러·proposal preview 렌더, severity 톤, 미등록 kind 스킵 유지. lint·build.
 - **회귀** — 스펙 1 카드/CLIO 경로 무변경.
 
