@@ -9,14 +9,18 @@ from __future__ import annotations
 
 import calendar
 from datetime import UTC, datetime
+from uuid import uuid4
 
 from sqlalchemy import select
 
 from core.db import AsyncSessionLocal
 from core.models import CreatedCampaign
 from domain.management.adapters.meta.client import MetaApiError
+from domain.management.assistant.contracts import DiagnosisView, DiagnosticResult, ProposalPreview
 from domain.management.comparison.service.before_after_service import compute_before_after
+from domain.management.contracts.policy import DAILY_BUDGET_KRW
 from domain.management.contracts.schemas import RealOutcome
+from domain.management.detection.service.detection_service import run_detection
 from domain.management.wiring import build_prediction_reader, build_reader
 
 
@@ -148,10 +152,91 @@ async def live_before_after(settings) -> dict:
         return {"error": "rate_limited" if e.is_rate_limited else "meta_error", "detail": str(e)}
 
 
+# anomaly_type → 표시용 추천 액션(정책 판정 아님). v1 단순 매핑, 미지정은 REPLACE_CREATIVE.
+_ANOMALY_ACTION = {
+    "budget_exhausted": ("INCREASE_BUDGET", "TIER_2"),
+    "bid_loss": ("INCREASE_BUDGET", "TIER_2"),
+    "audience_too_narrow": ("EXPAND_AUDIENCE", "TIER_2"),
+    "quality_degraded": ("REPLACE_CREATIVE", "TIER_2"),
+    "performance_below_target": ("REPLACE_CREATIVE", "TIER_2"),
+    "review_rejected": ("REPLACE_CREATIVE", "TIER_3"),
+}
+
+
+def build_proposal_preview_from_diagnosis(dx, daily_budget_krw: int) -> ProposalPreview:
+    """정본 ActionProposal을 만들지 않고(불변식 1) DiagnosisResult에서 직접 ProposalPreview 조립."""
+    action_type, tier = _ANOMALY_ACTION.get(str(dx.anomaly_type), ("REPLACE_CREATIVE", "TIER_2"))
+    budget_after = (
+        round(daily_budget_krw * 1.5) if action_type == "INCREASE_BUDGET" else daily_budget_krw
+    )
+    return ProposalPreview(
+        preview_id=f"preview_{uuid4().hex[:8]}",
+        action_type=action_type,
+        tier=tier,
+        budget_before_krw=daily_budget_krw,
+        budget_after_krw=budget_after,
+        hypothesis=dx.hypothesis,
+    )
+
+
+async def live_diagnosis(
+    settings, campaign_id: str, tenant_id: str | None = None
+) -> DiagnosticResult:
+    """시간별 스냅샷으로 detection을 돌려 4-case 진단 결과를 낸다(코어는 호출만, 불변식 5).
+
+    기준 시각은 UTC. 데이터 부족·부분일은 guard가 INSUFFICIENT_DATA로 잡아 unavailable로 분리한다
+    (이상 없음과 혼동 금지). 계정 타임존 정렬은 후속.
+    """
+    if not campaign_id:
+        return DiagnosticResult(
+            diagnostic_status="unavailable", reason="대상 캠페인을 특정할 수 없어요."
+        )
+    daily_budget = DAILY_BUDGET_KRW if getattr(settings, "use_mock", True) else None
+    if not daily_budget:
+        return DiagnosticResult(
+            diagnostic_status="unavailable",
+            reason="캠페인 일예산을 확인할 수 없어 진단을 건너뛰었어요.",
+        )
+
+    # 외부 호출만 try로 — reader/detection I/O 실패만 failed. 계약 위반·빌더 버그는 아래에서 raise.
+    try:
+        reader = build_reader(settings)
+        snapshots = await reader.fetch_hourly_metrics(campaign_id, datetime.now(UTC))
+        outcome = run_detection(
+            tenant_id or "org_eval", campaign_id, snapshots, daily_budget_krw=daily_budget
+        )
+    except Exception as exc:  # noqa: BLE001 — 외부(reader/detection) 실패만. raw 미노출.
+        print(f"[live_diagnosis] external failure: {exc!r}")
+        return DiagnosticResult(
+            diagnostic_status="failed", reason="진단 중 문제가 발생해 건너뛰었어요."
+        )
+
+    # 이하 결정적 — validator·빌더 버그는 raise(테스트·모니터링에서 잡힘).
+    if not snapshots or str(outcome.guard.verdict) == "insufficient_data":
+        return DiagnosticResult(
+            diagnostic_status="unavailable", reason="데이터가 부족해 진단을 보류했어요."
+        )
+    if outcome.diagnosis is None:  # NORMAL → 이상 없음
+        return DiagnosticResult(diagnostic_status="ok", anomaly=False)
+    dx = outcome.diagnosis  # DELIVERY_ANOMALY
+    return DiagnosticResult(
+        diagnostic_status="ok",
+        anomaly=True,
+        diagnosis=DiagnosisView(
+            anomaly_type=str(dx.anomaly_type),
+            status=str(dx.status),
+            confidence=dx.confidence,
+            hypothesis=dx.hypothesis,
+        ),
+        proposal_preview=build_proposal_preview_from_diagnosis(dx, daily_budget),
+    )
+
+
 #: 라우팅 intent → 실시간 툴 (그래프의 retrieve_live가 선택 호출)
 INTENT_TOOLS = {
     "campaigns": ("live_campaigns", live_campaigns),
     "budget": ("live_budget", live_budget),
     "before_after": ("live_before_after", live_before_after),
     "campaign_detail": ("live_campaign_detail", live_campaign_detail),
+    "diagnosis": ("live_diagnosis", live_diagnosis),
 }
