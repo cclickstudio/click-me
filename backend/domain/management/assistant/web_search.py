@@ -23,6 +23,7 @@ async def _tavily_fetch(api_key: str, query: str, k: int) -> dict:
         "query": query,
         "max_results": k,
         "search_depth": "basic",
+        "days": 365,
     }
     async with httpx.AsyncClient() as client:
         resp = await client.post(_TAVILY_URL, json=payload, timeout=15.0)

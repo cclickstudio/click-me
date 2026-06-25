@@ -258,8 +258,23 @@ export default function Page() {
                             </span>
                           ))}
                           {(msg.meta.citations ?? [])
-                            .filter((c) => c.kind === 'kb')
+                            .filter((c) => c.kind === 'kb' || c.kind === 'web')
                             .map((c, ci) => {
+                              if (c.kind === 'web') {
+                                const label = (c.title || c.source_url || '웹') + ' · 웹';
+                                const chip = (
+                                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-sky-50 text-sky-700 dark:bg-sky-900/30 dark:text-sky-300">
+                                    🌐 {label}
+                                  </span>
+                                );
+                                return c.source_url ? (
+                                  <a key={`c${ci}`} href={c.source_url} target="_blank" rel="noreferrer" className="hover:underline" title={c.source_url}>
+                                    {chip}
+                                  </a>
+                                ) : (
+                                  <span key={`c${ci}`}>{chip}</span>
+                                );
+                              }
                               const trust = c.trust ?? 'system_backed';
                               const style =
                                 trust === 'advisory'
