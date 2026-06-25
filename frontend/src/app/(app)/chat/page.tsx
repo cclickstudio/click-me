@@ -53,7 +53,7 @@ type SpeechRecCtor = new () => {
   interimResults: boolean;
   onresult: ((e: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null;
   onend: (() => void) | null;
-  onerror: (() => void) | null;
+  onerror: ((e: { error: string }) => void) | null;
   start(): void;
   stop(): void;
 };
@@ -186,6 +186,7 @@ export default function Page() {
   const recognitionRef = useRef<{ stop: () => void } | null>(null);
   const [voiceSupported, setVoiceSupported] = useState(false);
   const [ttsSupported, setTtsSupported] = useState(false);
+  const [voiceError, setVoiceError] = useState<string | null>(null);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -199,6 +200,7 @@ export default function Page() {
 
   // STT: 마이크 버튼 클릭 → 브라우저 Web Speech API → 입력창에 채움. 무료, API 키 없음.
   const startVoice = () => {
+    setVoiceError(null);
     const sw = window as SpeechWindow;
     const Ctor = sw.SpeechRecognition ?? sw.webkitSpeechRecognition;
     if (!Ctor) return;
@@ -212,7 +214,14 @@ export default function Page() {
       setInput(t);
     };
     rec.onend = () => setListening(false);
-    rec.onerror = () => setListening(false);
+    rec.onerror = (e) => {
+      setListening(false);
+      if (e.error === 'not-allowed' || e.error === 'audio-capture') {
+        setVoiceError('마이크 권한이 필요해요. 주소창 왼쪽 🔒 → 사이트 설정 → 마이크 허용 후 새로고침해 주세요.');
+      } else if (e.error === 'no-speech') {
+        setVoiceError('소리가 감지되지 않았어요. 다시 눌러 말씀해 주세요.');
+      }
+    };
     recognitionRef.current = rec;
     rec.start();
     setListening(true);
@@ -568,7 +577,12 @@ export default function Page() {
               <SendIcon />
             </button>
           </div>
-          <p className="text-center text-xs text-[#B0B8C1] dark:text-[#4B5563] mt-3">
+          {voiceError && (
+            <p className="text-center text-xs text-amber-600 dark:text-amber-400 mt-2">
+              🎤 {voiceError}
+            </p>
+          )}
+          <p className="text-center text-xs text-[#B0B8C1] dark:text-[#4B5563] mt-1">
             AI 응답은 참고용이며 실제 광고 성과와 차이가 있을 수 있습니다
           </p>
         </div>
