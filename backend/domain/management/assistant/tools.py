@@ -64,6 +64,22 @@ async def live_campaigns(settings) -> dict:
         return {"error": "rate_limited" if e.is_rate_limited else "meta_error", "detail": str(e)}
 
 
+async def live_campaign_find_by_name(settings, name: str) -> dict:
+    """캠페인 이름 부분일치(대소문자 무시)로 검색 — campaign_id 해소(live_campaigns 경유).
+
+    캠페인은 Meta live 소스(DB 아님)라 목록을 받아 파이썬 필터. 반환 matches는
+    live_campaigns 항목(campaign_id·name·실측)이라 단순 '어느 캠페인?'은 추가 호출 없이 답 가능.
+    """
+    if not name or not name.strip():
+        return {"error": "need_name"}
+    res = await live_campaigns(settings)
+    if res.get("error"):
+        return res
+    q = name.strip().casefold()
+    matches = [c for c in res.get("campaigns", []) if q in (c.get("name") or "").casefold()]
+    return {"query": name.strip(), "matches": matches, "count": len(matches)}
+
+
 async def live_budget(settings) -> dict:
     """이번 달 소진·런레이트 예측·여력(Meta 선불 잔액)."""
     reader = build_reader(settings)

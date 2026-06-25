@@ -165,3 +165,31 @@ async def test_sim_find_by_name_empty_guard():
     from domain.chat.adapters import sim_tools
 
     assert await sim_tools.sim_find_by_name("  ") == {"error": "need_name"}
+
+
+# ---- 생성물 이름 조회(gen_find_by_name) ----
+@pytest.mark.asyncio
+async def test_gen_find_by_name_pattern_and_shape(monkeypatch):
+    captured = {}
+    row = SimpleNamespace(
+        id="gen-1",
+        status="completed",
+        product_name="비타민 광고",
+        created_by_name="홍길동",
+        created_at=datetime(2026, 1, 1),
+    )
+    from domain.chat.adapters import gen_tools
+
+    monkeypatch.setattr(gen_tools, "AsyncSessionLocal", lambda: _FakeSession([row], captured))
+    oid = str(uuid.uuid4())
+    out = await gen_tools.gen_find_by_name("비타민", org_id=oid)
+    assert captured["params"]["pattern"] == "%비타민%" and captured["params"]["org"] == oid
+    assert out["count"] == 1 and out["query"] == "비타민"
+    assert out["generations"][0]["product_name"] == "비타민 광고"
+
+
+@pytest.mark.asyncio
+async def test_gen_find_by_name_empty_guard():
+    from domain.chat.adapters import gen_tools
+
+    assert await gen_tools.gen_find_by_name("") == {"error": "need_name"}

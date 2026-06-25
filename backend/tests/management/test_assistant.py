@@ -46,6 +46,34 @@ async def test_result_has_live_citation():
 
 
 @pytest.mark.asyncio
+async def test_live_campaign_find_by_name_filters(monkeypatch):
+    # 캠페인 이름 부분·대소문자 무시 필터(live_campaigns 경유, DB 아님).
+    from domain.management.assistant import tools
+
+    async def fake_campaigns(_settings):
+        return {
+            "campaigns": [
+                {"campaign_id": "c1", "name": "여름 세일", "ctr": 0.05},
+                {"campaign_id": "c2", "name": "겨울 프로모션", "ctr": 0.03},
+            ],
+            "count": 2,
+        }
+
+    monkeypatch.setattr(tools, "live_campaigns", fake_campaigns)
+    r = await tools.live_campaign_find_by_name(None, "여름")
+    assert r["count"] == 1 and r["matches"][0]["campaign_id"] == "c1" and r["query"] == "여름"
+    # 빈 이름 가드
+    assert (await tools.live_campaign_find_by_name(None, "  "))["error"] == "need_name"
+
+    # live_campaigns 에러는 그대로 전파
+    async def err(_s):
+        return {"error": "rate_limited", "detail": "x"}
+
+    monkeypatch.setattr(tools, "live_campaigns", err)
+    assert (await tools.live_campaign_find_by_name(None, "여름"))["error"] == "rate_limited"
+
+
+@pytest.mark.asyncio
 async def test_action_intent_returns_suggestion_not_execution():
     """행동 의도 → 추천 액션 제안. 실행은 안 함(쓰기 툴 미호출)."""
     ask = build_management_agent(_SETTINGS)

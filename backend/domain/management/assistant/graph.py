@@ -29,6 +29,8 @@ _SYSTEM = (
     "도구를 적극 사용해 근거를 모은 뒤 답하라.\n"
     "- 현황·수치(예산·지출·CTR·ROAS·상태)는 반드시 live 도구(live_campaigns/live_budget/"
     "live_campaign_detail/live_before_after)로 조회해 그 값만 인용한다. 추정·환각 금지.\n"
+    "- 사용자가 캠페인을 이름으로 말하면 live_campaign_find_by_name로 campaign_id를 먼저 찾고, "
+    "다건이면 어느 것인지 되묻은 뒤 진행한다.\n"
     "- 원인·방법·정책은 search_kb로 근거를 찾아 설명한다.\n"
     "- 예측(상대 지표)과 실측(절대)을 수치로 환산하지 말 것.\n"
     "- 운영 변경(일시중지·게재시작·증액·감액·소재교체)은 propose_action으로 제안만 한다. "
@@ -83,6 +85,13 @@ def build_graph(settings, retriever, llm, checkpointer=None):
         return await live_tools.live_campaign_detail(settings, campaign_id)
 
     @tool
+    async def live_campaign_find_by_name(name: str) -> dict:
+        """캠페인을 '이름'으로 부분일치(대소문자 무시) 검색해 campaign_id를 해소한다.
+        사용자가 캠페인을 이름으로 지칭하면 먼저 이 툴로 후보를 찾고, 다건이면 되묻고,
+        상세가 필요하면 그 campaign_id로 live_campaign_detail을 쓴다."""
+        return await live_tools.live_campaign_find_by_name(settings, name)
+
+    @tool
     async def live_before_after() -> dict:
         """집행 전(시뮬 예측) vs 후(실측) 방향성을 캠페인별 비교.
         예측 적중·성과 검증 질문에 쓴다."""
@@ -107,7 +116,14 @@ def build_graph(settings, retriever, llm, checkpointer=None):
         # 본체는 노드에서 인터셉트(interrupt 처리)되어 직접 실행되지 않는다.
         return {"action_type": action_type, "campaign_id": campaign_id}
 
-    read_tools = [live_campaigns, live_budget, live_campaign_detail, live_before_after, search_kb]
+    read_tools = [
+        live_campaigns,
+        live_budget,
+        live_campaign_detail,
+        live_campaign_find_by_name,
+        live_before_after,
+        search_kb,
+    ]
     bound = llm.bind_tools([*read_tools, propose_action])
     by_name = {t.name: t for t in read_tools}
 

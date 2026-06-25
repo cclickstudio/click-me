@@ -9,6 +9,10 @@ from __future__ import annotations
 
 import uuid
 
+from sqlalchemy import text
+
+from core.db import AsyncSessionLocal
+
 
 async def gen_detail(generation_id: str, org_id: str | None = None) -> dict:
     """특정 생성 작업의 상세(상태·후보·QA·선택안). 없거나 타 org면 not_found."""
@@ -45,3 +49,54 @@ async def gen_list(limit: int = 10, org_id: str | None = None) -> dict:
         return {"error": "lookup_failed", "detail": str(e)}
     rows = rows or []
     return {"generations": rows, "count": len(rows)}
+
+
+# 이름 검색 — generation은 input JSONB->>'product_name'에 이름 보유(시뮬 ads.title와 다름).
+# org는 projects 조인 격리(ad_generations엔 org 컬럼 없음). sim_find 선례와 정합.
+_GEN_FIND_SQL = """
+SELECT g.id, g.status, g.input->>'product_name' AS product_name,
+       g.created_at, u.name AS created_by_name
+FROM ad_generations g
+LEFT JOIN users u ON u.id = g.created_by
+JOIN projects p ON p.id = g.project_id
+WHERE g.deleted_at IS NULL
+  AND (CAST(:org AS uuid) IS NULL OR p.organization_id = CAST(:org AS uuid))
+  AND g.input->>'product_name' ILIKE :pattern
+ORDER BY g.created_at DESC
+LIMIT :limit
+"""
+
+
+async def gen_find_by_name(name: str, org_id: str | None = None, limit: int = 10) -> dict:
+    """상품명 부분일치(ILIKE)로 생성물 검색 — 후보 목록 반환. org_id=None이면 전역."""
+    if not name or not name.strip():
+        return {"error": "need_name"}
+    try:
+        oid = uuid.UUID(org_id) if org_id else None
+    except ValueError:
+        return {"error": "invalid_organization_id"}
+    try:
+        async with AsyncSessionLocal() as db:
+            rows = (
+                await db.execute(
+                    text(_GEN_FIND_SQL),
+                    {
+                        "org": str(oid) if oid else None,
+                        "pattern": f"%{name.strip()}%",
+                        "limit": limit,
+                    },
+                )
+            ).all()
+    except Exception as e:  # noqa: BLE001
+        return {"error": "lookup_failed", "detail": str(e)}
+    gens = [
+        {
+            "generation_id": str(r.id),
+            "status": r.status,
+            "product_name": r.product_name,
+            "created_by_name": r.created_by_name,
+            "created_at": r.created_at.isoformat() if r.created_at is not None else None,
+        }
+        for r in rows
+    ]
+    return {"generations": gens, "count": len(gens), "query": name.strip()}

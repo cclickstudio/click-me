@@ -17,6 +17,8 @@ _SYSTEM = (
     "너는 ClickMe 광고 생성 어시스턴트다. 한국어로 간결하게 답한다.\n"
     "도구로 근거를 모은 뒤 답하라.\n"
     "- 생성 결과·후보·QA·목록은 gen_detail/gen_list로 조회해 그 값만 인용한다.\n"
+    "- '이름(상품명) X인 생성물'은 gen_find_by_name(X)로 찾아 단건이면 gen_detail로 상세, "
+    "다건이면 나열, 없으면 '없음'으로 답한다.\n"
     "- 생성 사용법·흐름·페이지는 search_kb로 설명한다.\n"
     "- 새 시안 생성(트리거)은 여기서 하지 않는다. 근거가 없으면 모른다고 답한다.\n"
     "문장 끝에 콜론을 쓰지 말 것."
@@ -71,6 +73,11 @@ def build_generator_agent(settings) -> Any:
         return await gen_tools.gen_list(limit=limit, org_id=org_id)
 
     @tool
+    async def gen_find_by_name(name: str, org_id: str | None = None, limit: int = 10) -> dict:
+        """상품명으로 생성물을 부분일치 검색해 후보 목록(generation_id 포함)을 반환한다."""
+        return await gen_tools.gen_find_by_name(name=name, org_id=org_id, limit=limit)
+
+    @tool
     async def search_kb(query: str) -> list[dict]:
         """광고 생성 사용법·흐름·페이지 등 플랫폼 가이드를 검색한다."""
         try:
@@ -78,7 +85,7 @@ def build_generator_agent(settings) -> Any:
         except Exception:  # noqa: BLE001 — KB 미적재면 빈 결과로 진행
             return []
 
-    tools = [gen_detail, gen_list, search_kb]
+    tools = [gen_detail, gen_list, gen_find_by_name, search_kb]
     bound = llm.bind_tools(tools)
     by_name = {t.name: t for t in tools}
 
@@ -102,7 +109,7 @@ def build_generator_agent(settings) -> Any:
             if name == "gen_detail" and not args.get("generation_id"):
                 args["generation_id"] = ctx_id
             # org 스코프는 서버가 결정론 주입(LLM 산출 무시) — 테넌트 격리.
-            if name in ("gen_detail", "gen_list"):
+            if name in ("gen_detail", "gen_list", "gen_find_by_name"):
                 args["org_id"] = org_id
             result = await by_name[name].ainvoke(args)
             if name not in used:
