@@ -60,10 +60,65 @@ async def latest_session(project_id: str) -> dict:
     }
 
 
+async def recent_completed_sim_ids(project_id: str) -> dict:
+    """프로젝트의 최근 48시간 내 COMPLETED 시뮬 id 목록(선제 알림 seen 사전 채움용).
+
+    프런트 api.projects.simulations와 동일한 출처(ads.project_id 조인)를 재현한다.
+    """
+    async with AsyncSessionLocal() as db:
+        rows = (
+            await db.execute(
+                text("""
+                    SELECT s.id
+                    FROM simulations s
+                    JOIN ads a ON a.id = s.ad_id
+                    WHERE a.project_id = :pid
+                      AND s.deleted_at IS NULL
+                      AND upper(s.status) = 'COMPLETED'
+                      AND s.created_at >= now() - interval '48 hours'
+                    ORDER BY s.created_at DESC
+                    LIMIT 50
+                """),
+                {"pid": project_id},
+            )
+        ).all()
+    return {"sim_ids": [str(r.id) for r in rows]}
+
+
+async def create_session(project_id: str) -> dict:
+    """선제 알림 대조용 빈 채팅 세션 B 생성."""
+    async with AsyncSessionLocal() as db:
+        sid = await db.scalar(
+            text(
+                "INSERT INTO chat_sessions (id, project_id, title) "
+                "VALUES (gen_random_uuid(), :pid, :title) RETURNING id"
+            ),
+            {"pid": project_id, "title": "[E2E] N4 대조 세션"},
+        )
+        await db.commit()
+    return {"session_id": str(sid)}
+
+
+async def delete_session(session_id: str) -> dict:
+    async with AsyncSessionLocal() as db:
+        await db.execute(
+            text("DELETE FROM chat_messages WHERE session_id = :sid"), {"sid": session_id}
+        )
+        await db.execute(text("DELETE FROM chat_sessions WHERE id = :sid"), {"sid": session_id})
+        await db.commit()
+    return {"ok": True}
+
+
 async def main() -> None:
     action = sys.argv[1] if len(sys.argv) > 1 else ""
     if action == "latest-session":
         result = await latest_session(sys.argv[2])
+    elif action == "recent-sim-ids":
+        result = await recent_completed_sim_ids(sys.argv[2])
+    elif action == "create-session":
+        result = await create_session(sys.argv[2])
+    elif action == "delete-session":
+        result = await delete_session(sys.argv[2])
     else:
         raise SystemExit(f"unknown action: {action}")
     # ensure_ascii=True(기본) — Windows 콘솔 인코딩(cp949)에서 한글이 깨지지 않게 \uXXXX로 출력.

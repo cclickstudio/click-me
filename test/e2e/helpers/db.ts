@@ -12,10 +12,28 @@ export type LatestSession = {
   message_count: number;
 };
 
-export function latestSession(projectId: string): LatestSession {
-  const out = execFileSync('uv', ['run', 'python', DB_QUERY, 'latest-session', projectId], {
+function run<T>(args: string[]): T {
+  const out = execFileSync('uv', ['run', 'python', DB_QUERY, ...args], {
     cwd: BACKEND_DIR,
     encoding: 'utf-8',
   });
-  return JSON.parse(out.trim().split(/\r?\n/).pop()!) as LatestSession;
+  return JSON.parse(out.trim().split(/\r?\n/).pop()!) as T;
+}
+
+export function latestSession(projectId: string): LatestSession {
+  return run<LatestSession>(['latest-session', projectId]);
+}
+
+/** 최근 48시간 내 COMPLETED 시뮬 id 목록 — 선제 알림 seen 사전 채움용. */
+export function recentSimIds(projectId: string): string[] {
+  return run<{ sim_ids: string[] }>(['recent-sim-ids', projectId]).sim_ids;
+}
+
+/** 대조용 빈 세션 B 생성 → session_id 반환. */
+export function createSession(projectId: string): string {
+  return run<{ session_id: string }>(['create-session', projectId]).session_id;
+}
+
+export function deleteSession(sessionId: string): void {
+  run<{ ok: boolean }>(['delete-session', sessionId]);
 }
