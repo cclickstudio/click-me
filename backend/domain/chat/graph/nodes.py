@@ -59,6 +59,17 @@ def _safe_stream_writer() -> object | None:
         return None
 
 
+# 신원(org/user/project)을 서브에이전트로 넘기는 단일 결정론 통로 — LLM 산출과 무관하게 항상 주입.
+# 인증 도입 시 orchestrator가 토큰 도출 org를 state에 실으면 자동 정렬(멀티테넌시 스펙).
+def _scope_context_ids(state: dict) -> dict:
+    """state 최상위 신원을 context_ids에 병합 — 서브에이전트 read 툴의 org 스코프 통로."""
+    ctx = dict(state.get("context_ids") or {})
+    for key in ("organization_id", "user_id", "project_id"):
+        if state.get(key):
+            ctx[key] = state[key]
+    return ctx
+
+
 async def _general_answer(clio, text: str, history: list, context: str | None = None) -> str:
     """CLIO general 답변 — 스트리밍 지원 시 토큰을 custom 스트림으로 흘리며 누적.
 
@@ -145,7 +156,7 @@ class _Nodes:
 
         req = SubAgentRequest(
             question=_last_user_text(state["messages"]),
-            context_ids=state.get("context_ids") or {},
+            context_ids=_scope_context_ids(state),
             knobs=(state.get("context_ids") or {}).get("knobs", {}),
         )
         result = await sub.run(req)

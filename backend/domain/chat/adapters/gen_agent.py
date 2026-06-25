@@ -51,22 +51,23 @@ def build_generator_agent(settings) -> Any:
 
     class _State(MessagesState, total=False):
         generation_id: str | None
+        organization_id: str | None  # 서버 결정론 스코프(LLM 산출 무시) — 테넌트 격리
         used_tools: list[str]
         kb_citations: list[dict]
         gen_data: dict
         tool_rounds: int
 
     @tool
-    async def gen_detail(generation_id: str | None = None) -> dict:
+    async def gen_detail(generation_id: str | None = None, org_id: str | None = None) -> dict:
         """특정 생성 작업의 상세(상태·후보 수·QA 통과·선택안)를 조회한다."""
         if not generation_id:
             return {"error": "need_generation_id"}
-        return await gen_tools.gen_detail(generation_id)
+        return await gen_tools.gen_detail(generation_id, org_id=org_id)
 
     @tool
-    async def gen_list(limit: int = 10) -> dict:
+    async def gen_list(limit: int = 10, org_id: str | None = None) -> dict:
         """최근 생성 작업 목록(generation_id·상태·상품명)을 조회한다."""
-        return await gen_tools.gen_list(limit=limit)
+        return await gen_tools.gen_list(limit=limit, org_id=org_id)
 
     @tool
     async def search_kb(query: str) -> list[dict]:
@@ -93,11 +94,15 @@ def build_generator_agent(settings) -> Any:
         kb = list(state.get("kb_citations", []))
         gen_data = dict(state.get("gen_data", {}))
         ctx_id = state.get("generation_id")
+        org_id = state.get("organization_id")
         out: list[ToolMessage] = []
         for call in ai.tool_calls:
             name, args, cid = call["name"], dict(call.get("args", {})), call["id"]
             if name == "gen_detail" and not args.get("generation_id"):
                 args["generation_id"] = ctx_id
+            # org 스코프는 서버가 결정론 주입(LLM 산출 무시) — 테넌트 격리.
+            if name in ("gen_detail", "gen_list"):
+                args["org_id"] = org_id
             result = await by_name[name].ainvoke(args)
             if name not in used:
                 used.append(name)
@@ -133,6 +138,7 @@ def build_generator_agent(settings) -> Any:
             {
                 "messages": [HumanMessage(content=question)],
                 "generation_id": (context_ids or {}).get("generation_id"),
+                "organization_id": (context_ids or {}).get("organization_id"),
             },
             config={"run_name": "generator_subagent", "tags": ["chat", "generation"]},
         )
