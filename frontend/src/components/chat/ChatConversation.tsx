@@ -24,7 +24,8 @@ import type { SimRunResult } from '@/lib/types';
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
 // 상대 프록시 URL(/api/...)은 API_BASE를 붙여 렌더. blob:·http:는 그대로 통과.
-const fullUrl = (u?: string) => (u && u.startsWith('/') ? `${API_BASE}${u}` : u);
+const fullUrl = (u?: string) =>
+  u && u.startsWith('/') ? `${API_BASE}${u}` : u;
 
 // 빈 상태 퀵스타트 — 예시 질문 프롬프트 대신 흐름을 바로 여는 액션 칩(P4/P14).
 const welcomeActions: { label: string; cmd: string }[] = [
@@ -36,18 +37,66 @@ const welcomeActions: { label: string; cmd: string }[] = [
 
 type SlashCommand = { cmd: string; label: string; desc: string };
 const slashCommands: SlashCommand[] = [
-  { cmd: '/시뮬레이션', label: '/시뮬레이션', desc: '광고 시뮬레이션 입력 위젯을 띄웁니다' },
-  { cmd: '/제너레이터', label: '/제너레이터', desc: '광고 생성 입력 위젯을 띄웁니다' },
-  { cmd: '/배치', label: '/배치 (별칭 /AB)', desc: '광고 2개를 동시에 비교 시뮬레이션합니다' },
-  { cmd: '/AB', label: '/AB', desc: '/배치와 동일 — 광고 2개 동시 비교 시뮬레이션' },
-  { cmd: '/리포트', label: '/리포트', desc: '시뮬·생성 성과를 PDF 리포트로 받습니다' },
-  { cmd: '/시뮬목록', label: '/시뮬목록', desc: '최근 시뮬레이션 목록을 봅니다' },
-  { cmd: '/시안목록', label: '/시안목록', desc: '최근 생성 광고 시안 목록을 봅니다' },
-  { cmd: '/분석', label: '/분석', desc: '과거 시뮬·생성 성과를 종합 요약합니다' },
-  { cmd: '/추천', label: '/추천', desc: '목표·예산을 입력하면 전략·플랫폼을 추천합니다' },
-  { cmd: '/비교', label: '/비교', desc: '시뮬레이션 2개의 KPI를 나란히 비교합니다' },
-  { cmd: '/도움말', label: '/도움말', desc: '사용 가능한 명령어와 예시를 봅니다' },
-  { cmd: '/위젯', label: '/위젯', desc: '사용 가능한 위젯 목록을 봅니다 (개발용)' },
+  {
+    cmd: '/시뮬레이션',
+    label: '/시뮬레이션',
+    desc: '광고 시뮬레이션 입력 위젯을 띄웁니다',
+  },
+  {
+    cmd: '/제너레이터',
+    label: '/제너레이터',
+    desc: '광고 생성 입력 위젯을 띄웁니다',
+  },
+  {
+    cmd: '/배치',
+    label: '/배치 (별칭 /AB)',
+    desc: '광고 2개를 동시에 비교 시뮬레이션합니다',
+  },
+  {
+    cmd: '/AB',
+    label: '/AB',
+    desc: '/배치와 동일 — 광고 2개 동시 비교 시뮬레이션',
+  },
+  {
+    cmd: '/리포트',
+    label: '/리포트',
+    desc: '시뮬·생성 성과를 PDF 리포트로 받습니다',
+  },
+  {
+    cmd: '/시뮬목록',
+    label: '/시뮬목록',
+    desc: '최근 시뮬레이션 목록을 봅니다',
+  },
+  {
+    cmd: '/시안목록',
+    label: '/시안목록',
+    desc: '최근 생성 광고 시안 목록을 봅니다',
+  },
+  {
+    cmd: '/분석',
+    label: '/분석',
+    desc: '과거 시뮬·생성 성과를 종합 요약합니다',
+  },
+  {
+    cmd: '/추천',
+    label: '/추천',
+    desc: '목표·예산을 입력하면 전략·플랫폼을 추천합니다',
+  },
+  {
+    cmd: '/비교',
+    label: '/비교',
+    desc: '시뮬레이션 2개의 KPI를 나란히 비교합니다',
+  },
+  {
+    cmd: '/도움말',
+    label: '/도움말',
+    desc: '사용 가능한 명령어와 예시를 봅니다',
+  },
+  {
+    cmd: '/위젯',
+    label: '/위젯',
+    desc: '사용 가능한 위젯 목록을 봅니다 (개발용)',
+  },
 ];
 
 type Citation = { kind: string; source: string; title?: string };
@@ -104,37 +153,66 @@ type Message = {
 };
 
 // 마지막에 추가한 목록 위젯 메시지(빈 items)에 비동기로 받아온 items를 채워 넣는다.
-function patchLastListWidget(messages: Message[], type: string, items: ListItem[]): Message[] {
+function patchLastListWidget(
+  messages: Message[],
+  type: string,
+  items: ListItem[]
+): Message[] {
   const idx = messages.map(m => m.meta?.widget?.type).lastIndexOf(type);
   if (idx < 0) return messages;
   return messages.map((m, i) =>
     i === idx && m.meta?.widget
-      ? { ...m, meta: { ...m.meta, widget: { ...m.meta.widget, data: { ...m.meta.widget.data, items } } } }
-      : m,
+      ? {
+          ...m,
+          meta: {
+            ...m.meta,
+            widget: {
+              ...m.meta.widget,
+              data: { ...m.meta.widget.data, items },
+            },
+          },
+        }
+      : m
   );
 }
 
 function SendIcon() {
   return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <line x1="22" y1="2" x2="11" y2="13" />
-      <polygon points="22 2 15 22 11 13 2 9 22 2" />
+    <svg
+      width='18'
+      height='18'
+      viewBox='0 0 24 24'
+      fill='none'
+      stroke='currentColor'
+      strokeWidth='2'
+      strokeLinecap='round'
+      strokeLinejoin='round'>
+      <line x1='22' y1='2' x2='11' y2='13' />
+      <polygon points='22 2 15 22 11 13 2 9 22 2' />
     </svg>
   );
 }
 
 function TypingIndicator() {
   return (
-    <div className="flex gap-3 justify-start">
-      <div className="w-7 h-7 shrink-0 flex items-center justify-center rounded-lg bg-[#EBF3FF] dark:bg-[#1E3A5F] text-[#3182F6] mt-1">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+    <div className='flex gap-3 justify-start'>
+      <div className='w-7 h-7 shrink-0 flex items-center justify-center rounded-lg bg-[#EBF3FF] dark:bg-[#1E3A5F] text-[#3182F6] mt-1'>
+        <svg
+          width='14'
+          height='14'
+          viewBox='0 0 24 24'
+          fill='none'
+          stroke='currentColor'
+          strokeWidth='2'
+          strokeLinecap='round'
+          strokeLinejoin='round'>
+          <path d='M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z' />
         </svg>
       </div>
-      <div className="px-4 py-3 rounded-2xl rounded-bl-md bg-[#F2F4F6] dark:bg-[#252D3D] flex items-center gap-1.5">
-        <span className="w-2 h-2 rounded-full bg-[#8B95A1] dark:bg-[#6B7280] animate-bounce [animation-delay:-0.3s]" />
-        <span className="w-2 h-2 rounded-full bg-[#8B95A1] dark:bg-[#6B7280] animate-bounce [animation-delay:-0.15s]" />
-        <span className="w-2 h-2 rounded-full bg-[#8B95A1] dark:bg-[#6B7280] animate-bounce" />
+      <div className='px-4 py-3 rounded-2xl rounded-bl-md bg-[#F2F4F6] dark:bg-[#252D3D] flex items-center gap-1.5'>
+        <span className='w-2 h-2 rounded-full bg-[#8B95A1] dark:bg-[#6B7280] animate-bounce [animation-delay:-0.3s]' />
+        <span className='w-2 h-2 rounded-full bg-[#8B95A1] dark:bg-[#6B7280] animate-bounce [animation-delay:-0.15s]' />
+        <span className='w-2 h-2 rounded-full bg-[#8B95A1] dark:bg-[#6B7280] animate-bounce' />
       </div>
     </div>
   );
@@ -152,7 +230,9 @@ export default function ChatConversation({
   sessionId: string | null; // null = 새 채팅
   onSessionCreated?: (id: string) => void; // 첫 전송으로 세션이 생성되면 알림
   onActivity?: () => void; // 전송 후(제목·갱신 변경) 세션 목록 새로고침 신호
-  onProgress?: (p: { label: string; pct?: number | null; run_id?: string } | null) => void; // 진행 트레이(T17)
+  onProgress?: (
+    p: { label: string; pct?: number | null; run_id?: string } | null
+  ) => void; // 진행 트레이(T17)
   onResultComplete?: (ref: ResultRef) => void; // 시뮬/생성 결과가 도착했을 때(프로액티브 푸시, T18)
 }) {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -163,8 +243,15 @@ export default function ChatConversation({
   const [attachedPreview, setAttachedPreview] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null); // 완료 토스트(P9)
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [adviceUsage, setAdviceUsage] = useState<{ used: number; limit: number } | null>(null); // 비광고 한도(P12-3)
-  const lastSendRef = useRef<{ text: string; resultRef?: ResultRef } | null>(null); // 에러 재시도용(X1)
+  const [adviceUsage, setAdviceUsage] = useState<{
+    used: number;
+    limit: number;
+  } | null>(null); // 비광고 한도(P12-3)
+  const lastSendRef = useRef<{ text: string; resultRef?: ResultRef } | null>(
+    null
+  ); // 에러 재시도용(X1)
+  const [rated, setRated] = useState<Record<number, number>>({}); // 메시지 피드백 ±1(F1, 인덱스 기준)
+  const [copiedIdx, setCopiedIdx] = useState<number | null>(null); // 복사 완료 표시(F1)
   const pendingImageRef = useRef<File | null>(null);
   const abortRef = useRef<AbortController | null>(null); // 스트리밍 중단(P3)
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -180,7 +267,7 @@ export default function ChatConversation({
   const sidRef = useRef<string | null>(sessionId);
 
   const attachImage = (file: File | null) => {
-    setAttachedPreview((prev) => {
+    setAttachedPreview(prev => {
       if (prev) URL.revokeObjectURL(prev);
       return file ? URL.createObjectURL(file) : null;
     });
@@ -207,6 +294,51 @@ export default function ChatConversation({
   useEffect(() => {
     refreshAdviceUsage();
   }, [refreshAdviceUsage, messages.length, isStreaming]);
+
+  // 메시지 본문 복사(F1) — 클립보드 API + execCommand 폴백(P10과 동일).
+  const copyMessage = useCallback(async (idx: number, text: string) => {
+    let ok = false;
+    try {
+      await navigator.clipboard.writeText(text);
+      ok = true;
+    } catch {
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        ta.style.position = 'fixed';
+        ta.style.opacity = '0';
+        document.body.appendChild(ta);
+        ta.select();
+        ok = document.execCommand('copy');
+        document.body.removeChild(ta);
+      } catch {
+        ok = false;
+      }
+    }
+    if (ok) {
+      setCopiedIdx(idx);
+      setTimeout(() => setCopiedIdx(c => (c === idx ? null : c)), 1500);
+    }
+  }, []);
+
+  // 좋아요/싫어요 피드백(F1) — POST /api/chat/feedback(rating ±1). 직전 사용자 질문을 맥락으로.
+  const sendFeedback = useCallback(
+    (idx: number, answer: string, rating: number) => {
+      setRated(prev => ({ ...prev, [idx]: rating }));
+      const question = [...messages.slice(0, idx)]
+        .reverse()
+        .find(m => m.role === 'user')?.content;
+      void api.chat
+        .feedback({
+          thread_id: sidRef.current ?? undefined,
+          rating,
+          question,
+          answer,
+        })
+        .catch(() => {});
+    },
+    [messages]
+  );
 
   // 새 메시지·스트리밍 시 하단으로 — 단, 사용자가 위로 스크롤해 둔 상태면 유지(P11).
   useEffect(() => {
@@ -246,17 +378,34 @@ export default function ChatConversation({
       try {
         const { messages: rows } = await api.chat.messages(sessionId);
         setMessages(
-          rows.map((m) => {
+          rows.map(m => {
             const rawMeta = m.meta as Record<string, unknown> | null;
             const imageUrl =
-              typeof rawMeta?.image_url === 'string' ? rawMeta.image_url : undefined;
+              typeof rawMeta?.image_url === 'string'
+                ? rawMeta.image_url
+                : undefined;
             const rr = rawMeta?.result as ResultRef | undefined;
-            const result = rr && (rr.kind === 'sim' || rr.kind === 'gen') && rr.id ? rr : undefined;
+            const result =
+              rr && (rr.kind === 'sim' || rr.kind === 'gen') && rr.id
+                ? rr
+                : undefined;
             // 어시스턴트 메시지만 출처/위젯 meta로 사용. 사용자 메시지 meta는 이미지·결과 참조 보관용.
-            const meta = m.role === 'assistant' ? (rawMeta as SourceMeta | null) ?? undefined : undefined;
+            const meta =
+              m.role === 'assistant'
+                ? ((rawMeta as SourceMeta | null) ?? undefined)
+                : undefined;
             const pinned = rawMeta?.pinned === true;
-            return { id: m.id, role: m.role, content: m.content, meta, imageUrl, result, pinned, created_at: m.created_at };
-          }),
+            return {
+              id: m.id,
+              role: m.role,
+              content: m.content,
+              meta,
+              imageUrl,
+              result,
+              pinned,
+              created_at: m.created_at,
+            };
+          })
         );
       } catch {
         setMessages([]);
@@ -265,16 +414,25 @@ export default function ChatConversation({
   }, [sessionId]);
 
   const showSlashMenu = input.startsWith('/') && !input.includes(' ');
-  const slashMatches = showSlashMenu ? slashCommands.filter((c) => c.cmd.startsWith(input)) : [];
+  const slashMatches = showSlashMenu
+    ? slashCommands.filter(c => c.cmd.startsWith(input))
+    : [];
 
   // 가장 최근 sim_form 위젯 인덱스 — 이 위젯만 새로고침 시 진행중 런을 복원(중복 방지).
   const lastSimFormIdx = messages.reduce(
     (acc, m, i) => (m.meta?.widget?.type === 'sim_form' ? i : acc),
-    -1,
+    -1
   );
 
-  const addLocalAssistant = (content: string, meta?: SourceMeta, imageFile?: File) => {
-    setMessages((prev) => [...prev, { role: 'assistant', content, meta, imageFile }]);
+  const addLocalAssistant = (
+    content: string,
+    meta?: SourceMeta,
+    imageFile?: File
+  ) => {
+    setMessages(prev => [
+      ...prev,
+      { role: 'assistant', content, meta, imageFile },
+    ]);
   };
 
   const runSlashCommand = (cmd: string) => {
@@ -285,16 +443,24 @@ export default function ChatConversation({
       case '/시뮬레이션':
         addLocalAssistant(
           '광고 시뮬레이션 입력 위젯입니다. 아래에서 실행하세요.',
-          { source: 'simulation', label: '광고 시뮬레이터', widget: { type: 'sim_form' } },
-          img,
+          {
+            source: 'simulation',
+            label: '광고 시뮬레이터',
+            widget: { type: 'sim_form' },
+          },
+          img
         );
         attachImage(null);
         break;
       case '/제너레이터':
         addLocalAssistant(
           '광고 생성 입력 위젯입니다. 아래에서 실행하세요.',
-          { source: 'generator', label: '광고 생성', widget: { type: 'gen_form' } },
-          img,
+          {
+            source: 'generator',
+            label: '광고 생성',
+            widget: { type: 'gen_form' },
+          },
+          img
         );
         attachImage(null);
         break;
@@ -302,14 +468,19 @@ export default function ChatConversation({
       case '/AB':
         addLocalAssistant(
           '광고 2개를 동시에 비교하는 배치 시뮬레이션이에요. 아래에서 입력·실행하세요.',
-          { source: 'simulation', label: '배치 시뮬레이션', widget: { type: 'batch_sim_form' } },
+          {
+            source: 'simulation',
+            label: '배치 시뮬레이션',
+            widget: { type: 'batch_sim_form' },
+          }
         );
         break;
       case '/리포트':
-        addLocalAssistant(
-          '성과 리포트예요. 아래에서 PDF로 받을 수 있어요.',
-          { source: 'simulation', label: '리포트', widget: { type: 'report_ready' } },
-        );
+        addLocalAssistant('성과 리포트예요. 아래에서 PDF로 받을 수 있어요.', {
+          source: 'simulation',
+          label: '리포트',
+          widget: { type: 'report_ready' },
+        });
         break;
       case '/시뮬목록':
         addLocalAssistant('최근 시뮬레이션 목록을 불러올게요.', {
@@ -363,11 +534,14 @@ export default function ChatConversation({
         });
         break;
       case '/추천':
-        addLocalAssistant('목표·예산을 알려주시면 전략·플랫폼을 추천해 드릴게요.', {
-          source: 'simulation',
-          label: '전략 추천',
-          widget: { type: 'recommend_form' },
-        });
+        addLocalAssistant(
+          '목표·예산을 알려주시면 전략·플랫폼을 추천해 드릴게요.',
+          {
+            source: 'simulation',
+            label: '전략 추천',
+            widget: { type: 'recommend_form' },
+          }
+        );
         break;
       case '/비교':
         // 백엔드로 보내 시뮬 목록(비교 모드) 위젯을 받는다.
@@ -397,7 +571,7 @@ export default function ChatConversation({
             '  "이번 달 시뮬 결과 PDF로 뽑아줘"',
             '  "이 설정 저장해줘"',
           ].join('\n'),
-          { source: 'simulation', label: '도움말' },
+          { source: 'simulation', label: '도움말' }
         );
         break;
       case '/위젯':
@@ -405,9 +579,11 @@ export default function ChatConversation({
           [
             '사용 가능한 위젯 목록 (개발/테스트용)',
             '',
-            ...slashCommands.filter((c) => c.cmd !== '/위젯').map((c) => `${c.cmd} — ${c.desc}`),
+            ...slashCommands
+              .filter(c => c.cmd !== '/위젯')
+              .map(c => `${c.cmd} — ${c.desc}`),
           ].join('\n'),
-          { source: 'simulation', label: '위젯 목록' },
+          { source: 'simulation', label: '위젯 목록' }
         );
         break;
     }
@@ -415,63 +591,83 @@ export default function ChatConversation({
 
   // SSE 스트림 1건을 소비해 마지막 어시스턴트 메시지에 토큰·meta·approval을 누적.
   // 호출 전 빈 어시스턴트 메시지를 push해둔다(/complete·/approve 공용).
-  const consumeStream = useCallback(async (res: Response) => {
-    setMessages((prev) => [...prev, { role: 'assistant', content: '' }]);
-    const reader = res.body!.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      buffer += decoder.decode(value, { stream: true });
-      const lines = buffer.split('\n');
-      buffer = lines.pop() ?? '';
-      for (const line of lines) {
-        if (!line.startsWith('data: ')) continue;
-        const raw = line.slice(6).trim();
-        if (!raw) continue;
-        try {
-          const data = JSON.parse(raw) as {
-            kind?: string;
-            token?: string;
-            done?: boolean;
-            meta?: SourceMeta;
-            approval?: ApprovalSpec;
-            progress?: { label: string; pct?: number | null; run_id?: string };
-          };
-          // kind 우선 분기, 없으면 레거시 필드(token/meta/done)로 폴백.
-          const kind = data.kind ?? (data.done ? 'done' : data.meta ? 'meta' : 'text');
-          if (kind === 'done') {
-            setIsStreaming(false);
-            onProgress?.(null); // 완료 → 진행 트레이 닫기
-          } else if (kind === 'progress') {
-            onProgress?.(data.progress ?? null);
-          } else if (kind === 'meta' && data.meta) {
-            setMessages((prev) => {
-              const last = prev[prev.length - 1];
-              const imageFile = data.meta?.widget
-                ? pendingImageRef.current ?? undefined
-                : last.imageFile;
-              return [...prev.slice(0, -1), { ...last, meta: data.meta, imageFile }];
-            });
-          } else if (kind === 'approval' && data.approval) {
-            setMessages((prev) => {
-              const last = prev[prev.length - 1];
-              const meta = { ...(last.meta ?? { source: 'simulation', label: '개선 제안' }), approval: data.approval };
-              return [...prev.slice(0, -1), { ...last, meta }];
-            });
-          } else if (kind === 'text' && data.token) {
-            setMessages((prev) => {
-              const last = prev[prev.length - 1];
-              return [...prev.slice(0, -1), { ...last, content: last.content + data.token }];
-            });
+  const consumeStream = useCallback(
+    async (res: Response) => {
+      setMessages(prev => [...prev, { role: 'assistant', content: '' }]);
+      const reader = res.body!.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() ?? '';
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const raw = line.slice(6).trim();
+          if (!raw) continue;
+          try {
+            const data = JSON.parse(raw) as {
+              kind?: string;
+              token?: string;
+              done?: boolean;
+              meta?: SourceMeta;
+              approval?: ApprovalSpec;
+              progress?: {
+                label: string;
+                pct?: number | null;
+                run_id?: string;
+              };
+            };
+            // kind 우선 분기, 없으면 레거시 필드(token/meta/done)로 폴백.
+            const kind =
+              data.kind ?? (data.done ? 'done' : data.meta ? 'meta' : 'text');
+            if (kind === 'done') {
+              setIsStreaming(false);
+              onProgress?.(null); // 완료 → 진행 트레이 닫기
+            } else if (kind === 'progress') {
+              onProgress?.(data.progress ?? null);
+            } else if (kind === 'meta' && data.meta) {
+              setMessages(prev => {
+                const last = prev[prev.length - 1];
+                const imageFile = data.meta?.widget
+                  ? (pendingImageRef.current ?? undefined)
+                  : last.imageFile;
+                return [
+                  ...prev.slice(0, -1),
+                  { ...last, meta: data.meta, imageFile },
+                ];
+              });
+            } else if (kind === 'approval' && data.approval) {
+              setMessages(prev => {
+                const last = prev[prev.length - 1];
+                const meta = {
+                  ...(last.meta ?? {
+                    source: 'simulation',
+                    label: '개선 제안',
+                  }),
+                  approval: data.approval,
+                };
+                return [...prev.slice(0, -1), { ...last, meta }];
+              });
+            } else if (kind === 'text' && data.token) {
+              setMessages(prev => {
+                const last = prev[prev.length - 1];
+                return [
+                  ...prev.slice(0, -1),
+                  { ...last, content: last.content + data.token },
+                ];
+              });
+            }
+          } catch {
+            // ignore malformed SSE line
           }
-        } catch {
-          // ignore malformed SSE line
         }
       }
-    }
-  }, [onProgress]);
+    },
+    [onProgress]
+  );
 
   // 개선 루프 수락 — POST /api/chat/approve 로 왕복 카운트를 올리고 다음 위젯을 스트리밍.
   const handleApprove = useCallback(
@@ -486,7 +682,11 @@ export default function ChatConversation({
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           signal: controller.signal,
-          body: JSON.stringify({ action, session_id: sid, project_id: projectId }),
+          body: JSON.stringify({
+            action,
+            session_id: sid,
+            project_id: projectId,
+          }),
         });
         if (!res.ok || !res.body) {
           setIsStreaming(false);
@@ -495,11 +695,12 @@ export default function ChatConversation({
         await consumeStream(res);
       } catch (e) {
         if ((e as Error)?.name !== 'AbortError') {
-          setMessages((prev) => [
+          setMessages(prev => [
             ...prev,
             {
               role: 'assistant',
-              content: '진행 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.',
+              content:
+                '진행 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.',
               meta: { source: 'orchestrator', label: '오류', error: true },
             },
           ]);
@@ -511,40 +712,46 @@ export default function ChatConversation({
         onActivity?.();
       }
     },
-    [isStreaming, projectId, consumeStream, onActivity, onProgress],
+    [isStreaming, projectId, consumeStream, onActivity, onProgress]
   );
 
   // 핀 토글(T19) — DB 갱신 후 로컬 반영. 영속된(id 있는) 어시스턴트 메시지에만.
   const togglePin = useCallback(async (id: string, next: boolean) => {
-    setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, pinned: next } : m)));
+    setMessages(prev =>
+      prev.map(m => (m.id === id ? { ...m, pinned: next } : m))
+    );
     try {
       await api.chat.pinMessage(id, next);
     } catch {
       // 실패 시 롤백
-      setMessages((prev) => prev.map((m) => (m.id === id ? { ...m, pinned: !next } : m)));
+      setMessages(prev =>
+        prev.map(m => (m.id === id ? { ...m, pinned: !next } : m))
+      );
     }
   }, []);
 
   // 단독 위젯 메시지(결과 요약·토론·토론 요약)를 DB에 영속화하고 화면에도 추가 — 새로고침 복원 가능.
   const appendWidgetMessages = useCallback(
-    async (items: { content: string; meta: SourceMeta & { widget: WidgetSpec } }[]) => {
+    async (
+      items: { content: string; meta: SourceMeta & { widget: WidgetSpec } }[]
+    ) => {
       const sid = sidRef.current;
       // 화면엔 즉시 반영(영속화는 best-effort).
-      const local: Message[] = items.map((it) => ({
+      const local: Message[] = items.map(it => ({
         role: 'assistant',
         content: it.content,
         meta: it.meta,
       }));
-      setMessages((prev) => [...prev, ...local]);
+      setMessages(prev => [...prev, ...local]);
       if (!sid) return;
       try {
         const { messages: saved } = await api.chat.appendWidgets(
           sid,
-          items.map((it) => ({ content: it.content, meta: it.meta })),
+          items.map(it => ({ content: it.content, meta: it.meta }))
         );
         // 저장된 id를 반영(핀 등) — 방금 추가한 같은 수의 말풍선을 교체.
         if (saved?.length === local.length) {
-          setMessages((prev) => {
+          setMessages(prev => {
             const next = [...prev];
             for (let k = 0; k < saved.length; k++) {
               const idx = next.length - saved.length + k;
@@ -563,7 +770,7 @@ export default function ChatConversation({
         // 영속화 실패 — 화면 표시는 유지(새로고침 시 사라질 수 있음)
       }
     },
-    [],
+    []
   );
 
   // 시뮬 완료 → 토론 자동 시작 + 결과 요약 위젯·토론 stream 위젯을 별도 메시지로 띄운다(파이프라인).
@@ -576,7 +783,7 @@ export default function ChatConversation({
         category: string;
         objective: string;
         sampleSize: number;
-      },
+      }
     ) => {
       const simId = result.simulation_id;
       showToast('🧪 시뮬레이션이 완료됐어요');
@@ -585,7 +792,10 @@ export default function ChatConversation({
       // input만 쓰면 소비자 수만 남는다 → result.ad/result.simulation에서 복구한다.
       const adBlock = (result.ad ?? {}) as Record<string, unknown>;
       const simBlock = (result.simulation ?? {}) as Record<string, unknown>;
-      const items: { content: string; meta: SourceMeta & { widget: WidgetSpec } }[] = [];
+      const items: {
+        content: string;
+        meta: SourceMeta & { widget: WidgetSpec };
+      }[] = [];
       // 숨겨진 입력 폼 자리 — 실제 돌린 입력값을 요약해 보여준다.
       items.push({
         content: '시뮬레이션 입력값이에요.',
@@ -597,7 +807,8 @@ export default function ChatConversation({
             data: {
               ad_title: (adBlock.title as string) || input.adTitle,
               ad_content: (adBlock.copy_text as string) || input.adContent,
-              product_category: (adBlock.product_category as string) || input.category,
+              product_category:
+                (adBlock.product_category as string) || input.category,
               ad_objective: (adBlock.ad_objective as string) || input.objective,
               sample_size: (simBlock.sample_size as number) ?? input.sampleSize,
             },
@@ -622,7 +833,9 @@ export default function ChatConversation({
             ad_analysis: result.ad_analysis ?? undefined,
             personas: result.personas?.length ? result.personas : undefined,
             simulation_id: simId,
-            rubric_scores: result.rubric_scores?.length ? result.rubric_scores : undefined,
+            rubric_scores: result.rubric_scores?.length
+              ? result.rubric_scores
+              : undefined,
             objective_fit: result.objective_fit ?? undefined,
             ad_title: input.adTitle || undefined,
             ad_description: input.adContent || undefined,
@@ -632,7 +845,10 @@ export default function ChatConversation({
             meta: {
               source: 'simulation',
               label: '토론',
-              widget: { type: 'debate_stream', data: { run_id, simulation_id: simId } },
+              widget: {
+                type: 'debate_stream',
+                data: { run_id, simulation_id: simId },
+              },
             },
           });
         } catch {
@@ -641,7 +857,7 @@ export default function ChatConversation({
       }
       if (items.length) await appendWidgetMessages(items);
     },
-    [appendWidgetMessages, showToast],
+    [appendWidgetMessages, showToast]
   );
 
   // 토론 요약 보기 — 토론 요약 위젯을 새 메시지로 추가(영속화).
@@ -658,7 +874,7 @@ export default function ChatConversation({
         },
       ]);
     },
-    [appendWidgetMessages],
+    [appendWidgetMessages]
   );
 
   const handleSend = useCallback(
@@ -695,11 +911,12 @@ export default function ChatConversation({
           sidRef.current = sid; // 후속 전송이 같은 세션을 잇도록
           onSessionCreated?.(sid);
         } catch {
-          setMessages((prev) => [
+          setMessages(prev => [
             ...prev,
             {
               role: 'assistant',
-              content: '채팅 세션을 만들지 못했습니다. 잠시 후 다시 시도해주세요.',
+              content:
+                '채팅 세션을 만들지 못했습니다. 잠시 후 다시 시도해주세요.',
               meta: { source: 'orchestrator', label: '오류', error: true },
             },
           ]);
@@ -728,14 +945,17 @@ export default function ChatConversation({
           body: JSON.stringify({
             session_id: sid,
             project_id: projectId,
-            messages: newMessages.map((m) => ({ role: m.role, content: m.content })),
+            messages: newMessages.map(m => ({
+              role: m.role,
+              content: m.content,
+            })),
             image_url: imageUrl,
             result_ref: resultRef,
           }),
         });
 
         if (!res.ok || !res.body) {
-          setMessages((prev) => [
+          setMessages(prev => [
             ...prev,
             {
               role: 'assistant',
@@ -753,7 +973,7 @@ export default function ChatConversation({
       } catch (e) {
         // 사용자가 중단(■) → 부분 응답 유지, 에러 메시지 없음.
         if ((e as Error)?.name !== 'AbortError') {
-          setMessages((prev) => [
+          setMessages(prev => [
             ...prev,
             {
               role: 'assistant',
@@ -770,50 +990,81 @@ export default function ChatConversation({
         onActivity?.();
       }
     },
-    [input, isStreaming, projectId, attachedImage, attachedPreview, messages, sessionId, onSessionCreated, onActivity, onProgress, onResultComplete, consumeStream],
+    [
+      input,
+      isStreaming,
+      projectId,
+      attachedImage,
+      attachedPreview,
+      messages,
+      sessionId,
+      onSessionCreated,
+      onActivity,
+      onProgress,
+      onResultComplete,
+      consumeStream,
+    ]
   );
 
   return (
-    <div className="relative flex flex-col h-full min-h-0 bg-white dark:bg-[#0F1117] transition-colors">
+    <div className='relative flex flex-col h-full min-h-0 bg-white dark:bg-[#0F1117] transition-colors'>
       {/* 맨 아래로 버튼(P11) — 메시지가 있고 사용자가 위로 스크롤했을 때만 */}
       {messages.length > 0 && !atBottom && (
         <button
           onClick={scrollToBottom}
-          aria-label="맨 아래로"
-          title="맨 아래로"
-          className="absolute bottom-[88px] right-4 z-20 w-9 h-9 flex items-center justify-center rounded-full bg-white dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748] text-[#4E5968] dark:text-[#9CA3AF] shadow-md hover:text-[#3182F6] hover:border-[#3182F6] transition-colors"
-        >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <line x1="12" y1="5" x2="12" y2="19" />
-            <polyline points="19 12 12 19 5 12" />
+          aria-label='맨 아래로'
+          title='맨 아래로'
+          className='absolute bottom-[88px] right-4 z-20 w-9 h-9 flex items-center justify-center rounded-full bg-white dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748] text-[#4E5968] dark:text-[#9CA3AF] shadow-md hover:text-[#3182F6] hover:border-[#3182F6] transition-colors'>
+          <svg
+            width='18'
+            height='18'
+            viewBox='0 0 24 24'
+            fill='none'
+            stroke='currentColor'
+            strokeWidth='2'
+            strokeLinecap='round'
+            strokeLinejoin='round'>
+            <line x1='12' y1='5' x2='12' y2='19' />
+            <polyline points='19 12 12 19 5 12' />
           </svg>
         </button>
       )}
       {/* 완료 토스트(P9) — 입력창 위 중앙에 잠깐 나타났다 사라짐 */}
       {toast && (
-        <div className="chat-pop pointer-events-none absolute bottom-24 left-1/2 -translate-x-1/2 z-30 px-4 py-2 rounded-full bg-[#191F28] dark:bg-[#F2F4F6] text-white dark:text-[#191F28] text-sm font-medium shadow-lg">
+        <div className='chat-pop pointer-events-none absolute bottom-24 left-1/2 -translate-x-1/2 z-30 px-4 py-2 rounded-full bg-[#191F28] dark:bg-[#F2F4F6] text-white dark:text-[#191F28] text-sm font-medium shadow-lg'>
           {toast}
         </div>
       )}
       {messages.length === 0 ? (
         /* ── Welcome state ── */
-        <div className="flex-1 flex flex-col items-center justify-center px-4 pb-10 overflow-y-auto">
-          <div className="mb-2 w-10 h-10 flex items-center justify-center rounded-2xl bg-[#EBF3FF] dark:bg-[#1E3A5F]">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#3182F6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+        <div className='flex-1 flex flex-col items-center justify-center px-4 pb-10 overflow-y-auto'>
+          <div className='mb-2 w-10 h-10 flex items-center justify-center rounded-2xl bg-[#EBF3FF] dark:bg-[#1E3A5F]'>
+            <svg
+              width='20'
+              height='20'
+              viewBox='0 0 24 24'
+              fill='none'
+              stroke='#3182F6'
+              strokeWidth='2'
+              strokeLinecap='round'
+              strokeLinejoin='round'>
+              <path d='M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z' />
             </svg>
           </div>
-          <h2 className="text-lg font-bold text-[#191F28] dark:text-[#F2F4F6] mb-2 mt-3">무엇을 도와드릴까요?</h2>
-          <p className="text-sm text-[#8B95A1] dark:text-[#6B7280] mb-8 text-center leading-relaxed">
-            아래에서 바로 시작하거나,<br />광고에 대해 무엇이든 물어보세요
+          <h2 className='text-lg font-bold text-[#191F28] dark:text-[#F2F4F6] mb-2 mt-3'>
+            무엇을 도와드릴까요?
+          </h2>
+          <p className='text-sm text-[#8B95A1] dark:text-[#6B7280] mb-8 text-center leading-relaxed'>
+            아래에서 바로 시작하거나,
+            <br />
+            광고에 대해 무엇이든 물어보세요
           </p>
-          <div className="grid grid-cols-2 gap-2 w-full max-w-md">
-            {welcomeActions.map((a) => (
+          <div className='grid grid-cols-2 gap-2 w-full max-w-md'>
+            {welcomeActions.map(a => (
               <button
                 key={a.cmd}
                 onClick={() => runSlashCommand(a.cmd)}
-                className="p-3 text-center text-sm font-medium text-[#4E5968] dark:text-[#9CA3AF] bg-[#F9FAFB] dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748] rounded-xl hover:border-[#3182F6] hover:text-[#3182F6] hover:bg-[#EBF3FF] dark:hover:bg-[#1E3A5F] transition-all"
-              >
+                className='p-3 text-center text-sm font-medium text-[#4E5968] dark:text-[#9CA3AF] bg-[#F9FAFB] dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748] rounded-xl hover:border-[#3182F6] hover:text-[#3182F6] hover:bg-[#EBF3FF] dark:hover:bg-[#1E3A5F] transition-all'>
                 {a.label}
               </button>
             ))}
@@ -821,29 +1072,36 @@ export default function ChatConversation({
         </div>
       ) : (
         /* ── Messages ── */
-        <div ref={scrollRef} onScroll={onMessagesScroll} className="flex-1 overflow-y-auto">
+        <div
+          ref={scrollRef}
+          onScroll={onMessagesScroll}
+          className='flex-1 overflow-y-auto'>
           {/* 핀 고정 미리보기 — 세션 상단(T19) */}
-          {messages.some((m) => m.pinned) && (
-            <div className="sticky top-0 z-10 bg-white/95 dark:bg-[#0F1117]/95 backdrop-blur border-b border-[#E5E8EB] dark:border-[#2D3748] px-4 py-2">
-              <div className="max-w-2xl mx-auto space-y-1">
+          {messages.some(m => m.pinned) && (
+            <div className='sticky top-0 z-10 bg-white/95 dark:bg-[#0F1117]/95 backdrop-blur border-b border-[#E5E8EB] dark:border-[#2D3748] px-4 py-2'>
+              <div className='max-w-2xl mx-auto space-y-1'>
                 {messages
-                  .filter((m) => m.pinned)
+                  .filter(m => m.pinned)
                   .map((m, i) => (
-                    <div key={i} className="flex items-center gap-1.5 text-xs text-[#4E5968] dark:text-[#9CA3AF]">
-                      <span className="shrink-0">📌</span>
-                      <span className="truncate">{m.content}</span>
+                    <div
+                      key={i}
+                      className='flex items-center gap-1.5 text-xs text-[#4E5968] dark:text-[#9CA3AF]'>
+                      <span className='shrink-0'>📌</span>
+                      <span className='truncate'>{m.content}</span>
                     </div>
                   ))}
               </div>
             </div>
           )}
-          <div className="max-w-2xl mx-auto px-4 py-6 space-y-6">
+          <div className='max-w-2xl mx-auto px-4 py-6 space-y-6'>
             {messages.map((msg, i) => {
               if (msg.role === 'assistant' && msg.content === '') return null;
               // 이미 결과가 나온 시뮬 입력 위젯은 메시지째 숨긴다 — 결과/토론 위젯이 대신 표시된다.
               if (
                 msg.meta?.widget?.type === 'sim_form' &&
-                messages.slice(i + 1).some((m) => m.meta?.widget?.type === 'sim_result')
+                messages
+                  .slice(i + 1)
+                  .some(m => m.meta?.widget?.type === 'sim_result')
               ) {
                 return null;
               }
@@ -853,32 +1111,43 @@ export default function ChatConversation({
                 msg.role === 'assistant' &&
                 !msg.meta?.widget;
               return (
-                <div key={i} className={`chat-pop flex gap-3 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                <div
+                  key={i}
+                  className={`chat-pop flex gap-3 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                   {msg.role === 'assistant' && (
-                    <div className="w-7 h-7 shrink-0 flex items-center justify-center rounded-lg bg-[#EBF3FF] dark:bg-[#1E3A5F] text-[#3182F6] mt-1">
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                    <div className='w-7 h-7 shrink-0 flex items-center justify-center rounded-lg bg-[#EBF3FF] dark:bg-[#1E3A5F] text-[#3182F6] mt-1'>
+                      <svg
+                        width='14'
+                        height='14'
+                        viewBox='0 0 24 24'
+                        fill='none'
+                        stroke='currentColor'
+                        strokeWidth='2'
+                        strokeLinecap='round'
+                        strokeLinejoin='round'>
+                        <path d='M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z' />
                       </svg>
                     </div>
                   )}
-                  <div className={`flex flex-col gap-1 ${msg.meta?.widget ? 'max-w-md w-full' : 'max-w-sm'} ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
+                  <div
+                    className={`flex flex-col gap-1 ${msg.meta?.widget ? 'max-w-md w-full' : 'max-w-sm'} ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
                     {msg.role === 'assistant' && msg.meta && (
                       <span
                         className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${
                           msg.meta.source === 'management'
                             ? 'bg-[#EBF3FF] text-[#3182F6] dark:bg-[#1E3A5F] dark:text-[#7BB4F5]'
                             : 'bg-[#F2E9FF] text-[#7C3AED] dark:bg-[#2E1F47] dark:text-[#C4A8F5]'
-                        }`}
-                      >
-                        {msg.meta.source === 'management' ? '⚙' : '🧠'} {msg.meta.label}
+                        }`}>
+                        {msg.meta.source === 'management' ? '⚙' : '🧠'}{' '}
+                        {msg.meta.label}
                       </span>
                     )}
                     {msg.role === 'user' && msg.imageUrl && (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img
                         src={fullUrl(msg.imageUrl)}
-                        alt="첨부 이미지"
-                        className="max-w-[200px] max-h-[200px] rounded-2xl rounded-br-md object-cover border border-[#E5E8EB] dark:border-[#2D3748]"
+                        alt='첨부 이미지'
+                        className='max-w-[200px] max-h-[200px] rounded-2xl rounded-br-md object-cover border border-[#E5E8EB] dark:border-[#2D3748]'
                       />
                     )}
                     {msg.meta?.error ? (
@@ -889,7 +1158,7 @@ export default function ChatConversation({
                             ? () =>
                                 handleSend(
                                   lastSendRef.current?.text,
-                                  lastSendRef.current?.resultRef,
+                                  lastSendRef.current?.resultRef
                                 )
                             : undefined
                         }
@@ -900,28 +1169,70 @@ export default function ChatConversation({
                           msg.role === 'user'
                             ? 'bg-[#3182F6] text-white rounded-br-md'
                             : 'bg-[#F2F4F6] dark:bg-[#252D3D] text-[#191F28] dark:text-[#F2F4F6] rounded-bl-md'
-                        }`}
-                      >
+                        }`}>
                         {msg.content}
-                        {isStreamingMsg && <span className="typing-caret" aria-hidden />}
+                        {isStreamingMsg && (
+                          <span className='typing-caret' aria-hidden />
+                        )}
                       </div>
                     )}
                     {msg.created_at && (
                       <span
-                        className="px-1 text-[10px] text-[#B0B8C1] dark:text-[#4B5563]"
-                        title={formatKSTFull(msg.created_at)}
-                      >
+                        className='px-1 text-[10px] text-[#B0B8C1] dark:text-[#4B5563]'
+                        title={formatKSTFull(msg.created_at)}>
                         {formatRelativeKST(msg.created_at)}
                       </span>
                     )}
+                    {/* 메시지 액션 바(F1) — 일반 텍스트 답변에 복사·재생성·피드백 */}
+                    {msg.role === 'assistant' &&
+                      !msg.meta?.widget &&
+                      !msg.meta?.error &&
+                      !!msg.content &&
+                      !isStreamingMsg && (
+                        <div className='self-start mt-0.5 flex items-center gap-2 text-[#B0B8C1] dark:text-[#6B7280]'>
+                          <button
+                            onClick={() => copyMessage(i, msg.content)}
+                            title='복사'
+                            className='inline-flex items-center gap-1 text-[11px] font-semibold hover:text-[#3182F6] transition-colors'>
+                            {copiedIdx === i ? '✓ 복사됨' : '복사'}
+                          </button>
+                          {i === messages.length - 1 && lastSendRef.current && (
+                            <button
+                              onClick={() =>
+                                handleSend(
+                                  lastSendRef.current?.text,
+                                  lastSendRef.current?.resultRef
+                                )
+                              }
+                              disabled={isStreaming}
+                              title='재생성'
+                              className='inline-flex items-center gap-1 text-[11px] font-semibold hover:text-[#3182F6] transition-colors disabled:opacity-40'>
+                              ↻ 재생성
+                            </button>
+                          )}
+                          <button
+                            onClick={() => sendFeedback(i, msg.content, 1)}
+                            title='좋아요'
+                            className={`text-[12px] transition-colors ${rated[i] === 1 ? 'opacity-100' : 'opacity-50 hover:opacity-100'}`}>
+                            👍
+                          </button>
+                          <button
+                            onClick={() => sendFeedback(i, msg.content, -1)}
+                            title='싫어요'
+                            className={`text-[12px] transition-colors ${rated[i] === -1 ? 'opacity-100' : 'opacity-50 hover:opacity-100'}`}>
+                            👎
+                          </button>
+                        </div>
+                      )}
                     {msg.role === 'assistant' && msg.id && (
                       <button
                         onClick={() => togglePin(msg.id!, !msg.pinned)}
                         title={msg.pinned ? '핀 해제' : '핀 고정'}
                         className={`self-start mt-0.5 inline-flex items-center gap-1 text-[11px] font-semibold transition-colors ${
-                          msg.pinned ? 'text-[#3182F6]' : 'text-[#B0B8C1] hover:text-[#3182F6]'
-                        }`}
-                      >
+                          msg.pinned
+                            ? 'text-[#3182F6]'
+                            : 'text-[#B0B8C1] hover:text-[#3182F6]'
+                        }`}>
                         📌 {msg.pinned ? '핀 해제' : '핀'}
                       </button>
                     )}
@@ -931,40 +1242,59 @@ export default function ChatConversation({
                           router.push(
                             msg.result!.kind === 'sim'
                               ? `/simulation/${msg.result!.id}`
-                              : `/generations/${msg.result!.id}`,
+                              : `/generations/${msg.result!.id}`
                           )
                         }
-                        className="self-start mt-0.5 inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-[#3182F6]/30 text-[#3182F6] text-xs font-semibold hover:bg-[#EBF3FF] dark:hover:bg-[#1E3A5F] transition-colors"
-                      >
-                        {msg.result.kind === 'sim' ? '시뮬레이션 결과 보기' : '생성 결과 보기'} →
+                        className='self-start mt-0.5 inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-[#3182F6]/30 text-[#3182F6] text-xs font-semibold hover:bg-[#EBF3FF] dark:hover:bg-[#1E3A5F] transition-colors'>
+                        {msg.result.kind === 'sim'
+                          ? '시뮬레이션 결과 보기'
+                          : '생성 결과 보기'}{' '}
+                        →
                       </button>
                     )}
                     {msg.meta?.widget?.type === 'sim_form' && (
-                      <SimFormWidget initial={msg.meta.widget.data} initialImage={msg.imageFile} projectId={projectId} latest={i === lastSimFormIdx} onSimComplete={handleSimComplete} />
+                      <SimFormWidget
+                        initial={msg.meta.widget.data}
+                        initialImage={msg.imageFile}
+                        projectId={projectId}
+                        latest={i === lastSimFormIdx}
+                        onSimComplete={handleSimComplete}
+                      />
                     )}
                     {msg.meta?.widget?.type === 'sim_input' && (
                       <SimInputWidget data={msg.meta.widget.data} />
                     )}
-                    {msg.meta?.widget?.type === 'sim_result' && msg.meta.widget.data?.simulation_id && (
-                      <SimResultWidget simulationId={msg.meta.widget.data.simulation_id} />
-                    )}
-                    {msg.meta?.widget?.type === 'debate_stream' && msg.meta.widget.data?.run_id && (
-                      <DebateStreamWidget
-                        runId={msg.meta.widget.data.run_id}
-                        onSummary={handleDebateSummary}
-                        onAccept={handleApprove}
-                        proposalDisabled={isStreaming}
-                      />
-                    )}
-                    {msg.meta?.widget?.type === 'debate_summary' && msg.meta.widget.data?.run_id && (
-                      <DebateSummaryWidget runId={msg.meta.widget.data.run_id} />
-                    )}
+                    {msg.meta?.widget?.type === 'sim_result' &&
+                      msg.meta.widget.data?.simulation_id && (
+                        <SimResultWidget
+                          simulationId={msg.meta.widget.data.simulation_id}
+                        />
+                      )}
+                    {msg.meta?.widget?.type === 'debate_stream' &&
+                      msg.meta.widget.data?.run_id && (
+                        <DebateStreamWidget
+                          runId={msg.meta.widget.data.run_id}
+                          onSummary={handleDebateSummary}
+                          onAccept={handleApprove}
+                          proposalDisabled={isStreaming}
+                        />
+                      )}
+                    {msg.meta?.widget?.type === 'debate_summary' &&
+                      msg.meta.widget.data?.run_id && (
+                        <DebateSummaryWidget
+                          runId={msg.meta.widget.data.run_id}
+                        />
+                      )}
                     {msg.meta?.widget?.type === 'gen_form' && (
-                      <GenFormWidget initial={msg.meta.widget.data} initialImage={msg.imageFile} onResult={handleSend} />
+                      <GenFormWidget
+                        initial={msg.meta.widget.data}
+                        initialImage={msg.imageFile}
+                        onResult={handleSend}
+                      />
                     )}
                     {msg.meta?.widget?.type === 'sim_list' && (
                       <SimGenListWidget
-                        domain="sim"
+                        domain='sim'
                         mode={msg.meta.widget.mode ?? 'read'}
                         items={msg.meta.widget.data?.items ?? []}
                         onResult={handleSend}
@@ -972,7 +1302,7 @@ export default function ChatConversation({
                     )}
                     {msg.meta?.widget?.type === 'gen_list' && (
                       <SimGenListWidget
-                        domain="gen"
+                        domain='gen'
                         mode={msg.meta.widget.mode ?? 'read'}
                         items={msg.meta.widget.data?.items ?? []}
                         onResult={handleSend}
@@ -983,7 +1313,9 @@ export default function ChatConversation({
                     )}
                     {msg.meta?.widget?.type === 'report_ready' && (
                       <ReportWidget
-                        projectId={msg.meta.widget.data?.project_id ?? projectId}
+                        projectId={
+                          msg.meta.widget.data?.project_id ?? projectId
+                        }
                         period={msg.meta.widget.data?.period}
                       />
                     )}
@@ -1002,14 +1334,17 @@ export default function ChatConversation({
                     )}
                     {msg.role === 'assistant' &&
                     msg.meta?.source === 'management' &&
-                    (msg.meta.citations?.length || msg.meta.used_tools?.length) ? (
-                      <p className="text-[10px] text-[#B0B8C1] dark:text-[#6B7280] px-1">
+                    (msg.meta.citations?.length ||
+                      msg.meta.used_tools?.length) ? (
+                      <p className='text-[10px] text-[#B0B8C1] dark:text-[#6B7280] px-1'>
                         근거:{' '}
                         {[
-                          ...(msg.meta.used_tools ?? []).map((t) => t.replace('live_', '실측·')),
+                          ...(msg.meta.used_tools ?? []).map(t =>
+                            t.replace('live_', '실측·')
+                          ),
                           ...(msg.meta.citations ?? [])
-                            .filter((c) => c.kind === 'kb')
-                            .map((c) => c.title || c.source.replace('.md', '')),
+                            .filter(c => c.kind === 'kb')
+                            .map(c => c.title || c.source.replace('.md', '')),
                         ].join(' · ')}
                       </p>
                     ) : null}
@@ -1021,7 +1356,9 @@ export default function ChatConversation({
             {isStreaming &&
               messages.length > 0 &&
               messages[messages.length - 1].role === 'assistant' &&
-              messages[messages.length - 1].content === '' && <TypingIndicator />}
+              messages[messages.length - 1].content === '' && (
+                <TypingIndicator />
+              )}
 
             <div ref={bottomRef} />
           </div>
@@ -1029,84 +1366,108 @@ export default function ChatConversation({
       )}
 
       {/* ── Input bar ── */}
-      <div className="border-t border-[#E5E8EB] dark:border-[#2D3748] bg-white dark:bg-[#1C2333] px-4 py-3 transition-colors shrink-0">
+      <div className='border-t border-[#E5E8EB] dark:border-[#2D3748] bg-white dark:bg-[#1C2333] px-4 py-3 transition-colors shrink-0'>
         {/* 비광고 한도 progress bar(P12-3) — 광고 질문은 무제한 */}
         {adviceUsage && adviceUsage.used > 0 && (
-          <div className="max-w-2xl mx-auto mb-2">
-            <div className="flex items-center justify-between text-[10px] text-[#8B95A1] dark:text-[#6B7280] mb-1">
+          <div className='max-w-2xl mx-auto mb-2'>
+            <div className='flex items-center justify-between text-[10px] text-[#8B95A1] dark:text-[#6B7280] mb-1'>
               <span>
                 일반 업무 질문 {adviceUsage.used}/{adviceUsage.limit}
               </span>
               {adviceUsage.used >= adviceUsage.limit && (
-                <span className="text-[#F04452]">한도 도달 · 광고 질문은 무제한</span>
+                <span className='text-[#F04452]'>
+                  한도 도달 · 광고 질문은 무제한
+                </span>
               )}
             </div>
-            <div className="h-1 rounded-full bg-[#F2F4F6] dark:bg-[#252D3D] overflow-hidden">
+            <div className='h-1 rounded-full bg-[#F2F4F6] dark:bg-[#252D3D] overflow-hidden'>
               <div
                 className={`h-full transition-all ${adviceUsage.used >= adviceUsage.limit ? 'bg-[#F04452]' : 'bg-[#3182F6]'}`}
-                style={{ width: `${Math.min(100, (adviceUsage.used / adviceUsage.limit) * 100)}%` }}
+                style={{
+                  width: `${Math.min(100, (adviceUsage.used / adviceUsage.limit) * 100)}%`,
+                }}
               />
             </div>
           </div>
         )}
         {attachedPreview && (
-          <div className="max-w-2xl mx-auto mb-2 flex items-center gap-2">
+          <div className='max-w-2xl mx-auto mb-2 flex items-center gap-2'>
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={attachedPreview} alt="첨부 미리보기" className="w-14 h-14 rounded-lg object-cover border border-[#E5E8EB] dark:border-[#2D3748]" />
-            <button onClick={() => attachImage(null)} className="text-xs text-[#8B95A1] hover:text-[#F04452]">
+            <img
+              src={attachedPreview}
+              alt='첨부 미리보기'
+              className='w-14 h-14 rounded-lg object-cover border border-[#E5E8EB] dark:border-[#2D3748]'
+            />
+            <button
+              onClick={() => attachImage(null)}
+              className='text-xs text-[#8B95A1] hover:text-[#F04452]'>
               이미지 제거 ✕
             </button>
           </div>
         )}
         <input
           ref={fileInputRef}
-          type="file"
-          accept="image/*"
-          className="hidden"
-          onChange={(e) => {
+          type='file'
+          accept='image/*'
+          className='hidden'
+          onChange={e => {
             const f = e.target.files?.[0] ?? null;
             attachImage(f);
             e.target.value = '';
           }}
         />
         {/* Quick Action 칩 — 자주 쓰는 명령을 한 번에 보낸다 */}
-        <div className="max-w-2xl mx-auto mb-2 flex gap-1.5 overflow-x-auto pb-0.5">
+        <div className='max-w-2xl mx-auto mb-2 flex gap-1.5 overflow-x-auto pb-0.5'>
           {[
-            { label: '🧪 시뮬 돌리기', run: () => handleSend('시뮬레이션 돌려줘') },
-            { label: '🎨 시안 만들기', run: () => handleSend('광고 시안 만들어줘') },
-            { label: '📋 내역 보기', run: () => handleSend('내가 돌린 시뮬레이션 뭐 있어?') },
+            {
+              label: '🧪 시뮬 돌리기',
+              run: () => handleSend('시뮬레이션 돌려줘'),
+            },
+            {
+              label: '🎨 시안 만들기',
+              run: () => handleSend('광고 시안 만들어줘'),
+            },
+            {
+              label: '📋 내역 보기',
+              run: () => handleSend('내가 돌린 시뮬레이션 뭐 있어?'),
+            },
             { label: '📊 비교하기', run: () => runSlashCommand('/비교') },
             { label: '❓ 도움말', run: () => runSlashCommand('/도움말') },
-          ].map((chip) => (
+          ].map(chip => (
             <button
               key={chip.label}
               onClick={chip.run}
               disabled={isStreaming}
-              className="shrink-0 px-3 py-1.5 rounded-full border border-[#E5E8EB] dark:border-[#2D3748] text-xs text-[#4E5968] dark:text-[#9CA3AF] hover:border-[#3182F6] hover:text-[#3182F6] hover:bg-[#EBF3FF] dark:hover:bg-[#1E3A5F] disabled:opacity-40 transition-all whitespace-nowrap"
-            >
+              className='shrink-0 px-3 py-1.5 rounded-full border border-[#E5E8EB] dark:border-[#2D3748] text-xs text-[#4E5968] dark:text-[#9CA3AF] hover:border-[#3182F6] hover:text-[#3182F6] hover:bg-[#EBF3FF] dark:hover:bg-[#1E3A5F] disabled:opacity-40 transition-all whitespace-nowrap'>
               {chip.label}
             </button>
           ))}
         </div>
-        <div className="max-w-2xl mx-auto flex items-end gap-2 relative">
+        <div className='max-w-2xl mx-auto flex items-end gap-2 relative'>
           {slashMatches.length > 0 && (
-            <div className="absolute bottom-full left-0 right-0 mb-2 bg-white dark:bg-[#252D3D] border border-[#E5E8EB] dark:border-[#2D3748] rounded-xl shadow-lg overflow-hidden z-10">
+            <div className='absolute bottom-full left-0 right-0 mb-2 bg-white dark:bg-[#252D3D] border border-[#E5E8EB] dark:border-[#2D3748] rounded-xl shadow-lg overflow-hidden z-10'>
               {slashMatches.map((c, i) => {
-                const active = i === Math.min(slashIndex, slashMatches.length - 1);
+                const active =
+                  i === Math.min(slashIndex, slashMatches.length - 1);
                 return (
                   <button
                     key={c.cmd}
-                    onMouseDown={(e) => {
+                    onMouseDown={e => {
                       e.preventDefault();
                       runSlashCommand(c.cmd);
                     }}
                     onMouseEnter={() => setSlashIndex(i)}
                     className={`w-full flex flex-col items-start px-4 py-2.5 text-left transition-colors ${
-                      active ? 'bg-[#EBF3FF] dark:bg-[#1E3A5F]' : 'hover:bg-[#F9FAFB] dark:hover:bg-[#1C2333]'
-                    }`}
-                  >
-                    <span className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]">{c.label}</span>
-                    <span className="text-xs text-[#8B95A1] dark:text-[#6B7280]">{c.desc}</span>
+                      active
+                        ? 'bg-[#EBF3FF] dark:bg-[#1E3A5F]'
+                        : 'hover:bg-[#F9FAFB] dark:hover:bg-[#1C2333]'
+                    }`}>
+                    <span className='text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]'>
+                      {c.label}
+                    </span>
+                    <span className='text-xs text-[#8B95A1] dark:text-[#6B7280]'>
+                      {c.desc}
+                    </span>
                   </button>
                 );
               })}
@@ -1115,35 +1476,47 @@ export default function ChatConversation({
           <button
             onClick={() => fileInputRef.current?.click()}
             disabled={isStreaming}
-            title="이미지 첨부"
-            className="p-3 rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] text-[#8B95A1] hover:text-[#3182F6] hover:border-[#3182F6] disabled:opacity-30 transition-all shrink-0"
-          >
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+            title='이미지 첨부'
+            className='p-3 rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] text-[#8B95A1] hover:text-[#3182F6] hover:border-[#3182F6] disabled:opacity-30 transition-all shrink-0'>
+            <svg
+              width='18'
+              height='18'
+              viewBox='0 0 24 24'
+              fill='none'
+              stroke='currentColor'
+              strokeWidth='2'
+              strokeLinecap='round'
+              strokeLinejoin='round'>
+              <path d='M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48' />
             </svg>
           </button>
           <textarea
             ref={textareaRef}
             value={input}
-            onChange={(e) => {
+            onChange={e => {
               setInput(e.target.value);
               setSlashIndex(0);
             }}
-            onKeyDown={(e) => {
+            onKeyDown={e => {
               if (slashMatches.length > 0) {
                 if (e.key === 'ArrowDown') {
                   e.preventDefault();
-                  setSlashIndex((i) => (i + 1) % slashMatches.length);
+                  setSlashIndex(i => (i + 1) % slashMatches.length);
                   return;
                 }
                 if (e.key === 'ArrowUp') {
                   e.preventDefault();
-                  setSlashIndex((i) => (i - 1 + slashMatches.length) % slashMatches.length);
+                  setSlashIndex(
+                    i => (i - 1 + slashMatches.length) % slashMatches.length
+                  );
                   return;
                 }
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault();
-                  runSlashCommand(slashMatches[Math.min(slashIndex, slashMatches.length - 1)].cmd);
+                  runSlashCommand(
+                    slashMatches[Math.min(slashIndex, slashMatches.length - 1)]
+                      .cmd
+                  );
                   return;
                 }
                 if (e.key === 'Escape') {
@@ -1157,29 +1530,32 @@ export default function ChatConversation({
                 handleSend();
               }
             }}
-            placeholder="메시지를 입력하세요... (/로 명령어, Shift+Enter로 줄바꿈)"
+            placeholder='메시지를 입력하세요... (/로 명령어, Shift+Enter로 줄바꿈)'
             rows={1}
             disabled={isStreaming}
-            className="flex-1 px-4 py-3 rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] text-sm text-[#191F28] dark:text-[#F2F4F6] placeholder-[#B0B8C1] dark:placeholder-[#4B5563] focus:outline-none focus:border-[#3182F6] focus:ring-2 focus:ring-[#3182F6]/10 transition-colors resize-none overflow-y-auto bg-white dark:bg-[#252D3D] leading-relaxed disabled:opacity-60"
+            className='flex-1 px-4 py-3 rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] text-sm text-[#191F28] dark:text-[#F2F4F6] placeholder-[#B0B8C1] dark:placeholder-[#4B5563] focus:outline-none focus:border-[#3182F6] focus:ring-2 focus:ring-[#3182F6]/10 transition-colors resize-none overflow-y-auto bg-white dark:bg-[#252D3D] leading-relaxed disabled:opacity-60'
             style={{ maxHeight: '120px' }}
           />
           {isStreaming ? (
             <button
               onClick={() => abortRef.current?.abort()}
-              aria-label="응답 중단"
-              title="응답 중단"
-              className="p-3 bg-[#F04452] text-white rounded-xl hover:bg-[#D93C48] transition-all shrink-0"
-            >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
-                <rect x="6" y="6" width="12" height="12" rx="2" />
+              aria-label='응답 중단'
+              title='응답 중단'
+              className='p-3 bg-[#F04452] text-white rounded-xl hover:bg-[#D93C48] transition-all shrink-0'>
+              <svg
+                width='18'
+                height='18'
+                viewBox='0 0 24 24'
+                fill='currentColor'
+                aria-hidden>
+                <rect x='6' y='6' width='12' height='12' rx='2' />
               </svg>
             </button>
           ) : (
             <button
               onClick={() => handleSend()}
               disabled={!input.trim()}
-              className="p-3 bg-[#3182F6] text-white rounded-xl hover:bg-[#1B6EEB] disabled:opacity-30 disabled:cursor-not-allowed transition-all shrink-0"
-            >
+              className='p-3 bg-[#3182F6] text-white rounded-xl hover:bg-[#1B6EEB] disabled:opacity-30 disabled:cursor-not-allowed transition-all shrink-0'>
               <SendIcon />
             </button>
           )}
