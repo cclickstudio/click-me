@@ -86,8 +86,8 @@
 | S5  | /액션(매니지먼트 조치 종류 확장)        | 슬래시 | —         | ⬜   |
 | F1  | 메시지 액션 바(복사·재생성·👍👎)         | 기능   | —         | ✅   |
 | F2  | 세션 사이드바(목록·전환·삭제)            | 기능   | —         | ✅   |
-| F5  | 랭체인 롱텀 메모리 점검·강화             | 기능   | —         | ⬜   |
-| F6  | 채팅 ↔ 매니지먼트 RAG 연결               | 기능   | R3        | ⬜   |
+| F5  | 랭체인 롱텀 메모리 점검·강화             | 기능   | —         | ✅   |
+| F6  | 채팅 ↔ 매니지먼트 RAG 연결               | 기능   | R3        | ✅   |
 | F7  | KPI 분포·신뢰구간 표현 점검             | 기능   | V1        | ✅   |
 | F8  | 시안 후보 선택 → 재시뮬                  | 기능   | V2        | ⬜   |
 | F10 | 해시태그·키워드 추천 위젯               | 기능   | —         | ⬜   |
@@ -127,7 +127,7 @@
 | L6  | graph.ainvoke에 make_trace_config 적용  | 랭스미스 | L1      | ✅   |
 | L7  | CLIO OpenAI wrap_openai 토큰/비용 기록   | 랭스미스 | —       | ✅   |
 | L8  | 롱텀 메모리(실행기록 기반 사용자 프로파일) | 랭스미스 | L3    | ✅   | 
-| C1  | sim_result_node 죽은 경로 정리          | 정리   | V1        | ⬜   |
+| C1  | sim_result_node 죽은 경로 정리          | 정리   | V1        | ✅   |
 | C2  | CLAUDE.md "Chat LLM Gemini"→OpenAI       | 정리   | —         | ✅   |
 | C5  | /위젯 명령어 제거                        | 정리   | —         | ✅   |
 | C4  | 전부 완료 시 자동 push(feat/chat-doyeon) | 정리   | 전부      | ⬜   |
@@ -775,6 +775,17 @@
 ## 5. 진행 로그 (루프가 갱신)
 
 > 각 태스크 완료 시 한 줄: `YYYY-MM-DD HH:MM Vn ✅ — 요지/특이사항`.
+
+### 🅱 채팅 백엔드 워크트리(feat/chat-be) 완료분 머지 반영
+
+> 워크트리 B(F5·F6·C1) 머지(f7bf6cb). 변경은 `backend/domain/chat/orchestrator.py`만(소유 범위 내, 스키마 변경 없음). 상세 로그는 `docs/chat/progress-be.md`.
+
+- F5 ✅ — 롱텀 메모리 점검 + 보강. 진입부 `get_long_term_memory(limit=3)`가 memory_type 혼합 최신순이라 시뮬/생성 반복 시 `session_summary`가 상위 3에서 밀려 멀티턴 요약이 누락되던 갭 → `session_summary` 미포함 시 별도 1건 조회해 prepend(수술적). LTM 저장·조회·주입·브랜드 프로파일·실행기록 추론·10턴 요약 배선 동작 확인.
+- F6 ✅ — 채팅↔매니지먼트 RAG 연결. `management_node`가 import-ready 서브에이전트(`build_management_agent`)를 호출해 답변+인용+approval 게이트를 SSE meta로 전달함을 확인. 풀모드가 `AskRequest`에 `thread_id`를 안 넘겨 매 질문이 새 thread를 만들던 갭 → `{session_id}:management` thread_id 고정(채팅 그래프와 네임스페이스 분리). mock 스모크 통과.
+- C1 ✅ — `sim_result_node` 죽은 경로 제거. `[시뮬결과]`는 어디서도 발신되지 않아(시뮬 완료는 프론트가 `sim_result` 위젯 직접 렌더) 진입 불가 → classify 분기·노드·전용 헬퍼 일괄 제거. `gen_result_node`·개선 루프·approval은 유지. 풀모드 그래프 컴파일 + 멀티턴 e2e 스모크 정상.
+- 검증 한계: F5/F6 standalone·C1 풀모드 스모크까지. **Preview 3계정 회귀는 통합(C4) 단계에서 수행 권장.**
+
+---
 
 ### 🅰 KB 워크트리(feat/chat-kb) 완료분 머지 반영
 
