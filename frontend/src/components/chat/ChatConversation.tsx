@@ -18,6 +18,8 @@ import BatchSimWidget from './BatchSimWidget';
 import ReportWidget from './ReportWidget';
 import AnalysisSummaryWidget from './AnalysisSummaryWidget';
 import RecommendFormWidget from './RecommendFormWidget';
+import KeywordWidget from './KeywordWidget';
+import CitationChips from './CitationChips';
 import ErrorCard from './ErrorCard';
 import type { SimRunResult } from '@/lib/types';
 
@@ -26,6 +28,12 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 // 상대 프록시 URL(/api/...)은 API_BASE를 붙여 렌더. blob:·http:는 그대로 통과.
 const fullUrl = (u?: string) =>
   u && u.startsWith('/') ? `${API_BASE}${u}` : u;
+
+// N4 선제적 말걸기 — 미열람 완료 시뮬 결과를 챗봇이 먼저 알린다. 빈도 가드로 스팸 방지.
+const PROACTIVE_GUARD_MS = 1000 * 60 * 20; // 프로젝트당 20분에 1회만 선제 알림
+const PROACTIVE_RECENCY_MS = 1000 * 60 * 60 * 48; // 최근 48시간 내 완료만 대상(오래된 결과 제외)
+const proactiveSeenKey = (pid: string) => `chat_proactive_seen_${pid}`; // 이미 알린 결과 id 집합
+const proactiveLastKey = (pid: string) => `chat_proactive_last_${pid}`; // 마지막 선제 알림 시각
 
 // 빈 상태 퀵스타트 — 예시 질문 프롬프트 대신 흐름을 바로 여는 액션 칩(P4/P14).
 const welcomeActions: { label: string; cmd: string }[] = [
@@ -86,6 +94,11 @@ const slashCommands: SlashCommand[] = [
     cmd: '/비교',
     label: '/비교',
     desc: '시뮬레이션 2개의 KPI를 나란히 비교합니다',
+  },
+  {
+    cmd: '/키워드',
+    label: '/키워드',
+    desc: '광고 맥락 기반 SNS 해시태그·키워드를 추천받습니다',
   },
   {
     cmd: '/도움말',
@@ -260,6 +273,14 @@ export default function ChatConversation({
   // 실제 활성 세션 id — 첫 전송으로 만든 세션은 shallow routing(URL만 갱신)이라 prop엔 안 들어온다.
   // 후속 전송·승인은 prop 대신 이 ref를 써서 같은 세션을 이어간다.
   const sidRef = useRef<string | null>(sessionId);
+  // N4 선제 알림 — 최신 메시지/스트리밍/콜백을 effect 재생성 없이 참조하기 위한 ref.
+  const messagesRef = useRef<Message[]>([]);
+  messagesRef.current = messages;
+  const streamingRef = useRef(false);
+  streamingRef.current = isStreaming;
+  const onResultCompleteRef = useRef(onResultComplete);
+  onResultCompleteRef.current = onResultComplete;
+  const proactiveBusyRef = useRef(false); // 동시 실행 방지
 
   const attachImage = (file: File | null) => {
     setAttachedPreview(prev => {
@@ -542,6 +563,16 @@ export default function ChatConversation({
         // 백엔드로 보내 시뮬 목록(비교 모드) 위젯을 받는다.
         handleSend('/비교');
         break;
+      case '/키워드':
+        addLocalAssistant(
+          '광고 맥락을 알려주시면 SNS 해시태그·키워드를 추천해 드릴게요.',
+          {
+            source: 'generator',
+            label: '키워드 추천',
+            widget: { type: 'keyword_form' },
+          }
+        );
+        break;
       case '/도움말':
         addLocalAssistant(
           [
@@ -556,6 +587,7 @@ export default function ChatConversation({
             '/분석         시뮬·생성 성과 종합 요약',
             '/추천         목표·예산 → 전략·플랫폼 추천',
             '/비교         시뮬레이션 2개 KPI 비교',
+            '/키워드       광고 맥락 → SNS 해시태그·키워드 추천',
             '/도움말       이 화면',
             '',
             '이렇게 말해도 돼요',
@@ -859,6 +891,101 @@ export default function ChatConversation({
     },
     [appendWidgetMessages]
   );
+
+  // N4 — 선제적 말걸기: 채팅에서 아직 안 본(미열람) 완료 시뮬 결과를 챗봇이 먼저 알린다.
+  // N1(실행 즉시 주입)이 못 잡은 경우(다른 화면에서 완료 등)를 폴링으로 보완. 빈도 가드로 스팸 방지.
+  // 제너레이터는 외부 403 블로커로 보류 → 동작하는 시뮬 완료만 대상으로 한다(N1·N2 자산 재사용).
+  useEffect(() => {
+    if (!projectId) return;
+    let cancelled = false;
+
+    const runProactiveCheck = async () => {
+      const sid = sidRef.current;
+      if (!sid || streamingRef.current || proactiveBusyRef.current) return;
+      // 빈도 가드 — 프로젝트당 일정 시간 1회.
+      let lastAt = 0;
+      try {
+        lastAt = Number(localStorage.getItem(proactiveLastKey(projectId)) || 0);
+      } catch {
+        /* localStorage 불가 — 가드 생략 */
+      }
+      if (Date.now() - lastAt < PROACTIVE_GUARD_MS) return;
+
+      proactiveBusyRef.current = true;
+      try {
+        const sims = await api.projects
+          .simulations(projectId, 20)
+          .catch(() => [] as Record<string, unknown>[]);
+        if (cancelled) return;
+        let seen: string[] = [];
+        try {
+          seen = JSON.parse(
+            localStorage.getItem(proactiveSeenKey(projectId)) || '[]'
+          );
+        } catch {
+          seen = [];
+        }
+        const seenSet = new Set(seen);
+        const now = Date.now();
+        const completed = sims.filter(s => {
+          if (String(s.status).toUpperCase() !== 'COMPLETED') return false;
+          if (typeof s.id !== 'string') return false;
+          const ts = Date.parse(String(s.created_at ?? ''));
+          return !Number.isNaN(ts) && now - ts <= PROACTIVE_RECENCY_MS;
+        });
+        // 이미 이 세션에 떠 있는 시뮬 id는 제외(N1 중복 주입 방지).
+        const shownIds = new Set(
+          messagesRef.current
+            .map(m => m.meta?.widget?.data?.simulation_id)
+            .filter((x): x is string => typeof x === 'string')
+        );
+        const unseen = completed.filter(
+          s => !seenSet.has(String(s.id)) && !shownIds.has(String(s.id))
+        );
+        if (unseen.length === 0) return;
+
+        // 목록은 최신순 — 가장 최근 완료 1건을 대표로 선제 알림.
+        const latest = unseen[0];
+        const simId = String(latest.id);
+        const title = (latest.ad_title as string) || '시뮬레이션';
+        const more =
+          unseen.length > 1 ? ` (확인 안 한 결과가 ${unseen.length}건 더 있어요)` : '';
+        await appendWidgetMessages([
+          {
+            content: `🔔 아직 확인하지 않은 시뮬레이션 결과가 있어요. "${title}" 결과를 정리해 드릴게요.${more}`,
+            meta: {
+              source: 'simulation',
+              label: '선제 알림',
+              widget: { type: 'sim_result', data: { simulation_id: simId } },
+            },
+          },
+        ]);
+        // 가드·seen 갱신 — 이번에 확인한 unseen 전부 seen 처리(다음부턴 새 완료만 알림).
+        try {
+          localStorage.setItem(proactiveLastKey(projectId), String(Date.now()));
+          const merged = Array.from(
+            new Set([...seen, ...unseen.map(s => String(s.id))])
+          ).slice(-200);
+          localStorage.setItem(proactiveSeenKey(projectId), JSON.stringify(merged));
+        } catch {
+          /* 영속 실패 — 다음 폴링에서 재시도될 수 있음 */
+        }
+        // 패널이 닫혀 있으면 빨간 배지로 알린다(N2).
+        onResultCompleteRef.current?.({ kind: 'sim', id: simId });
+      } finally {
+        proactiveBusyRef.current = false;
+      }
+    };
+
+    // 세션 로드 직후 한 번 + 주기 폴링(다른 화면에서 완료된 결과 캐치업).
+    const t = setTimeout(runProactiveCheck, 3000);
+    const iv = setInterval(runProactiveCheck, 60000);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+      clearInterval(iv);
+    };
+  }, [projectId, appendWidgetMessages]);
 
   const handleSend = useCallback(
     async (text?: string, resultRef?: ResultRef) => {
@@ -1308,6 +1435,9 @@ export default function ChatConversation({
                     {msg.meta?.widget?.type === 'recommend_form' && (
                       <RecommendFormWidget onSubmit={handleSend} />
                     )}
+                    {msg.meta?.widget?.type === 'keyword_form' && (
+                      <KeywordWidget />
+                    )}
                     {msg.meta?.approval && (
                       <ApprovalWidget
                         approval={msg.meta.approval}
@@ -1316,20 +1446,12 @@ export default function ChatConversation({
                       />
                     )}
                     {msg.role === 'assistant' &&
-                    msg.meta?.source === 'management' &&
-                    (msg.meta.citations?.length ||
-                      msg.meta.used_tools?.length) ? (
-                      <p className='text-[10px] text-[#B0B8C1] dark:text-[#6B7280] px-1'>
-                        근거:{' '}
-                        {[
-                          ...(msg.meta.used_tools ?? []).map(t =>
-                            t.replace('live_', '실측·')
-                          ),
-                          ...(msg.meta.citations ?? [])
-                            .filter(c => c.kind === 'kb')
-                            .map(c => c.title || c.source.replace('.md', '')),
-                        ].join(' · ')}
-                      </p>
+                    (msg.meta?.citations?.length ||
+                      msg.meta?.used_tools?.length) ? (
+                      <CitationChips
+                        citations={msg.meta.citations}
+                        usedTools={msg.meta.used_tools}
+                      />
                     ) : null}
                   </div>
                 </div>

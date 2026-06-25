@@ -414,3 +414,129 @@ async def chat_feedback(body: FeedbackRequest) -> dict:
         corrected_answer=body.corrected_answer,
     )
     return {"ok": True}
+
+
+@router.get("/kb-chunk")
+async def get_kb_chunk(
+    source: str, title: str | None = None, db: AsyncSession = Depends(get_db)
+) -> dict:
+    """P5 인용 칩 — 출처 파일(+섹션)로 KB 원문 청크를 조회해 펼침용으로 반환한다.
+
+    4개 KB 테이블(시뮬·제너·매니지·CLIO)을 순회하며 source(+title) 매칭 1건을 돌려준다. 읽기 전용.
+    """
+    from sqlalchemy import select
+
+    from core.models import (
+        ClioKbChunk,
+        GeneratorKbChunk,
+        ManagementKbChunk,
+        SimulationKbChunk,
+    )
+
+    for model in (SimulationKbChunk, GeneratorKbChunk, ManagementKbChunk, ClioKbChunk):
+        stmt = select(model.chunk, model.title).where(model.source == source)
+        if title:
+            stmt = stmt.where(model.title == title)
+        row = (await db.execute(stmt.limit(1))).first()
+        if row:
+            return {"source": source, "title": row[1], "chunk": row[0]}
+    raise HTTPException(status_code=404, detail="해당 인용 원문을 찾을 수 없습니다.")
+
+
+class KeywordRequest(BaseModel):
+    product: str | None = None  # 제품·서비스명
+    category: str | None = None  # 업종·카테고리
+    target: str | None = None  # 타깃 고객
+    copy_text: str | None = None  # 광고 카피·문구
+    context: str | None = None  # 자유 맥락(폴백)
+
+
+_KEYWORD_SYSTEM = (
+    "당신은 SNS 광고 마케터입니다. 주어진 광고 맥락에 맞는 인스타그램·유튜브 등 "
+    "SNS 노출에 효과적인 한국어 해시태그와 검색 키워드를 추천합니다. "
+    "트렌디하되 맥락과 무관한 과장·낚시성 표현은 피하고, 실제 검색·도달에 쓸 수 있는 것만 고릅니다. "
+    "반드시 JSON으로만 응답합니다."
+)
+
+_KEYWORD_USER_TEMPLATE = """\
+다음 광고 맥락에 맞는 SNS 해시태그와 키워드를 추천하세요.
+
+[광고 맥락]
+{context}
+
+아래 JSON 형식으로만 출력하세요.
+- hashtags: '#'으로 시작하는 해시태그 12개 (공백 없이, 한국어 위주)
+- keywords: '#' 없는 검색 키워드 6개
+
+{{
+  "hashtags": ["#키워드1", "#키워드2"],
+  "keywords": ["키워드1", "키워드2"]
+}}"""
+
+
+@router.post("/keywords")
+async def suggest_keywords(body: KeywordRequest) -> dict:
+    """F10 — 광고 맥락 기반 추천 해시태그·키워드(SNS 활용). gpt-4o-mini로 추출, 칩으로 복사."""
+    from openai import AsyncOpenAI
+
+    from tools.utils import safe_json_loads
+
+    parts = [
+        f"제품·서비스: {body.product.strip()}" if body.product and body.product.strip() else "",
+        f"업종·카테고리: {body.category.strip()}"
+        if body.category and body.category.strip()
+        else "",
+        f"타깃 고객: {body.target.strip()}" if body.target and body.target.strip() else "",
+        f"광고 카피: {body.copy_text.strip()}" if body.copy_text and body.copy_text.strip() else "",
+        f"추가 맥락: {body.context.strip()}" if body.context and body.context.strip() else "",
+    ]
+    context = "\n".join(p for p in parts if p)
+    if not context:
+        raise HTTPException(
+            status_code=400, detail="제품·카테고리·타깃·카피 중 하나는 입력해 주세요."
+        )
+
+    key = getattr(settings, "openai_api_key", None)
+    if not key:
+        raise HTTPException(status_code=503, detail="키워드 추천에 필요한 OpenAI 키가 없습니다.")
+
+    try:
+        client = AsyncOpenAI(api_key=key, timeout=30.0)
+        resp = await client.chat.completions.create(
+            model="gpt-4o-mini",
+            temperature=0.7,
+            messages=[
+                {"role": "system", "content": _KEYWORD_SYSTEM},
+                {"role": "user", "content": _KEYWORD_USER_TEMPLATE.format(context=context)},
+            ],
+            response_format={"type": "json_object"},
+        )
+        data = safe_json_loads(resp.choices[0].message.content)
+    except HTTPException:
+        raise
+    except Exception as e:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"키워드 추천 생성에 실패했어요: {e}") from e
+
+    def _clean(items: object, prefix: str) -> list[str]:
+        out: list[str] = []
+        seen: set[str] = set()
+        if isinstance(items, list):
+            for it in items:
+                s = str(it).strip()
+                if not s:
+                    continue
+                if prefix == "#":
+                    s = "#" + s.lstrip("#").replace(" ", "")
+                if s in seen:
+                    continue
+                seen.add(s)
+                out.append(s)
+        return out
+
+    hashtags = _clean(data.get("hashtags") if isinstance(data, dict) else None, "#")
+    keywords = _clean(data.get("keywords") if isinstance(data, dict) else None, "")
+    if not hashtags and not keywords:
+        raise HTTPException(
+            status_code=502, detail="키워드를 만들지 못했어요. 맥락을 더 구체적으로 적어 주세요."
+        )
+    return {"hashtags": hashtags, "keywords": keywords}

@@ -435,6 +435,25 @@ export const api = {
       }
       return res.json();
     },
+    // F10 — 광고 맥락 기반 추천 해시태그·키워드(SNS 활용). 칩으로 복사.
+    keywords: (body: {
+      product?: string;
+      category?: string;
+      target?: string;
+      copy_text?: string;
+      context?: string;
+    }) =>
+      request<{ hashtags: string[]; keywords: string[] }>("/chat/keywords", {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+    // P5 — 인용 칩 원문 펼침. 출처 파일(+섹션)로 KB 청크 텍스트를 조회.
+    kbChunk: (source: string, title?: string) =>
+      request<{ source: string; title: string; chunk: string }>(
+        `/chat/kb-chunk?source=${encodeURIComponent(source)}${
+          title ? `&title=${encodeURIComponent(title)}` : ""
+        }`,
+      ),
     // 어시스턴트 답변 피드백(좋아요/싫어요) — RAG 품질 개선 적재.
     feedback: (body: {
       thread_id?: string;
