@@ -1,2 +1,3 @@
 - 2026-06-25 09:09 R4-1 ✅ — `ClioKbChunk` 모델과 Alembic 025 `clio_kb_chunks` 테이블 추가. 개인 DB(ep-soft-band)에서 024→025 up, 컬럼 확인, 025→024 down, 024→025 복구 검증 완료. `ruff check . --fix`, `import api.main` 통과.
 - 2026-06-25 09:18 R1 ✅ — 시뮬 용어+정의 사전 `simulation_glossary.md` 63개 항목 추가. `domain.simulation.assistant.kb_ingest`로 개인 DB(ep-soft-band) 적재 완료, `simulation_kb_chunks` 69청크 확인, `SimKbRetriever` 검색 스모크와 `import api.main` 통과.
+- 2026-06-25 09:21 R2 ✅ — 제너 용어+정의 사전 `creative_glossary.md` 72개 항목 추가. `domain.generator.assistant.kb_ingest`로 개인 DB(ep-soft-band) 적재 완료, `generator_kb_chunks` 79청크 확인, `GenKbRetriever` 검색 스모크와 `import api.main` 통과.
