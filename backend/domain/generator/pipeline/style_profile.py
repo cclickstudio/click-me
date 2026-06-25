@@ -25,7 +25,7 @@ class StyleProfile:
     - text_style: 텍스트 렌더 방식 (box=패널, floating=그림자, emotional=얇은폰트·여백).
     - product_fill: 누끼 compose에서 상품이 프레임에서 차지할 비중(0~1, 짧은 변 기준).
     - headline_color/body_color: 텍스트 색(RGBA). box 외 스타일은 2단계에서 사용.
-    - accent_override: CTA·강조색 강제(브랜드컬러 무시). FOMO 깊은 빨강 등.
+    - accent_override: CTA·강조색 강제(브랜드컬러 무시). FOMO 코랄 레드 등.
     - highlight_numbers: 헤드라인 속 숫자(할인율·수량 등)를 강조색으로 렌더(혜택 강조용).
     """
 
@@ -43,7 +43,7 @@ STRATEGY_STYLE: dict[AdStrategy, StyleProfile] = {
     AdStrategy.PROBLEM_SOLVING: StyleProfile("floating", 0.25, _DARK_GRAY, _MID_GRAY),
     AdStrategy.SOCIAL_PROOF: StyleProfile("review_card", 0.25, _DARK_GRAY, _MID_GRAY),
     AdStrategy.EMOTIONAL: StyleProfile("emotional", 0.20, _OFF_WHITE, _BROWN),
-    AdStrategy.FOMO: StyleProfile("box", 0.45, _WHITE, _WHITE, accent_override="#C81E1E"),
+    AdStrategy.FOMO: StyleProfile("box", 0.45, _WHITE, _WHITE, accent_override="#E63946"),
 }
 
 # 프로필이 없는 전략이 들어와도 안전하게 동작하도록 기본값(box).

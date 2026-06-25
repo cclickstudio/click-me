@@ -362,7 +362,7 @@ def render_ad_text(
 
     profile = get_style(strategy) if strategy is not None else None
     style = profile.text_style if profile else "box"
-    # accent_override(예: FOMO 깊은 빨강)가 브랜드컬러보다 우선.
+    # accent_override(예: FOMO 코랄 레드)가 브랜드컬러보다 우선.
     accent_hex = (profile.accent_override if profile else None) or brand_color
     accent = _parse_color(accent_hex) or _DEFAULT_ACCENT
     if profile is not None:
