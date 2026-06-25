@@ -21,7 +21,7 @@ from core.models import User
 from core.schemas import ChatRequest
 from domain.management.assistant.agent import build_management_agent
 from domain.management.assistant.contracts import AskRequest
-from domain.management.assistant.history import record_feedback, record_turn
+from domain.management.assistant.history import record_feedback, record_turn, summarize_feedback
 from domain.management.assistant.memory_store import ManagementMemory, build_memory_store
 
 router = APIRouter()
@@ -305,6 +305,12 @@ async def chat_feedback(body: FeedbackRequest) -> dict:
         corrected_answer=body.corrected_answer,
     )
     return {"ok": True}
+
+
+@router.get("/feedback/summary")
+async def chat_feedback_summary(limit: int = 20) -> dict:
+    """RAG 품질 피드백 집계 — 좋아요율·실패유형 분해·최근 👎 리뷰 큐(개선 루프 가시화)."""
+    return await summarize_feedback(limit=limit)
 
 
 class ApproveActionRequest(BaseModel):
