@@ -65,12 +65,38 @@ _GEN_KEYWORDS: frozenset[str] = frozenset(
 
 _ROUTING_SYSTEM = (
     "너는 광고 플랫폼 챗의 라우터다. 사용자 요청 의도를 보고 도구 하나를 호출해 위임처를 정한다.\n"
-    "- 캠페인·예산·성과·집행(일시중지/증액 등) → route_to_management\n"
-    "- 광고 반응 예측·시뮬레이션·구매의도/신뢰도/거부율 KPI → route_to_simulation\n"
-    "- 새 광고 시안·카피·이미지 생성 → route_to_generation\n"
+    "- 캠페인·예산·성과·소진·집행(일시중지/증액 등) 조회·실행 → route_to_management\n"
+    "- 광고 반응 예측·시뮬레이션 실행·구매의도/신뢰도/거부율 KPI·페르소나 근거·시뮬 결과 조회 "
+    "→ route_to_simulation\n"
+    "- 새 광고 시안·카피·이미지 생성, 그리고 '내가/우리가 생성한' 시안·생성물의 "
+    "목록·개수·상세·상태 조회 → route_to_generation\n"
     "- 그 외 일반 대화·전략 자문 → answer_directly\n"
+    "주의: '몇 개/목록/내가 만든·생성한'이 생성물(시안)을 가리키면 캠페인(management)이 아니라 "
+    "route_to_generation 이다.\n"
     "반드시 도구 하나만 호출한다."
 )
+
+
+def _capability_block(capabilities: dict | None) -> str:
+    """역량 카탈로그를 라우팅 시스템 프롬프트에 붙일 블록으로(레지스트리 단일 진실원천)."""
+    if not capabilities:
+        return ""
+    lines = [f"- {c.get('label')}: {c.get('does')}" for c in capabilities.values()]
+    return "\n[역량 카탈로그]\n" + "\n".join(lines)
+
+
+def _identity_block(identity: dict | None) -> str:
+    """신원 스코프·현재 맥락 엔티티를 한 줄 블록으로(라우팅 판단 보조, 값 노출 아님)."""
+    if not identity:
+        return ""
+    scope = [k for k in ("organization_id", "user_id", "project_id") if identity.get(k)]
+    ents = [
+        k for k in ("simulation_id", "campaign_id", "ad_id", "generation_id") if identity.get(k)
+    ]
+    parts = [f"신원 스코프: {'·'.join(scope) if scope else '없음(무인증/전역)'}"]
+    if ents:
+        parts.append(f"현재 맥락 엔티티: {'·'.join(ents)}")
+    return "\n[맥락] " + " / ".join(parts)
 
 
 @tool
@@ -128,12 +154,17 @@ def keyword_route(text: str) -> Route:
     return Route.GENERAL
 
 
-async def decide_route(messages: list, llm) -> Route:
-    """라우트 결정 — llm None이면 키워드, 있으면 tool-calling."""
+async def decide_route(messages: list, llm, *, capabilities=None, identity=None) -> Route:
+    """라우트 결정 — llm None이면 키워드 폴백, 있으면 역량·신원 맥락을 주입한 정책 tool-calling.
+
+    capabilities(레지스트리)·identity(신원/엔티티)는 라우팅 프롬프트에 보조 맥락으로 주입된다.
+    산출은 단일 Route(불변) — SSE·그래프 위상 무영향.
+    """
     if llm is None:
         return keyword_route(_last_user_text(messages))
     bound = llm.bind_tools(_ROUTING_TOOLS)
-    ai: AIMessage = await bound.ainvoke([SystemMessage(content=_ROUTING_SYSTEM), *messages])
+    system = _ROUTING_SYSTEM + _capability_block(capabilities) + _identity_block(identity)
+    ai: AIMessage = await bound.ainvoke([SystemMessage(content=system), *messages])
     calls = getattr(ai, "tool_calls", None) or []
     if calls:
         return _TOOL_TO_ROUTE.get(calls[0]["name"], Route.GENERAL)

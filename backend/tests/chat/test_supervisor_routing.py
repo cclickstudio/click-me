@@ -67,3 +67,33 @@ async def test_decide_route_llm_no_toolcall_defaults_general():
 
     route = await decide_route([HumanMessage(content="x")], llm=_NoTool())
     assert route is Route.GENERAL
+
+
+# ---- 정책화(PR2): 역량 카탈로그·신원 맥락 주입 ----
+@pytest.mark.asyncio
+async def test_decide_route_injects_capability_and_identity():
+    # 레지스트리 역량 + 신원 스코프/엔티티가 라우팅 시스템 프롬프트에 주입되는지(값 노출 아님).
+    captured = {}
+
+    class _CapLLM:
+        def bind_tools(self, _t):
+            return self
+
+        async def ainvoke(self, msgs):
+            captured["sys"] = msgs[0].content
+            return AIMessage(
+                content="",
+                tool_calls=[{"name": "route_to_generation", "args": {"reason": "r"}, "id": "1"}],
+            )
+
+    from domain.chat.contracts.capabilities import CAPABILITIES
+
+    route = await decide_route(
+        [HumanMessage(content="내가 생성한 광고 몇개")],
+        llm=_CapLLM(),
+        capabilities=CAPABILITIES,
+        identity={"organization_id": "o1", "simulation_id": "s1"},
+    )
+    assert route is Route.GENERATION
+    assert "역량 카탈로그" in captured["sys"] and "광고 생성" in captured["sys"]
+    assert "신원 스코프" in captured["sys"] and "현재 맥락 엔티티" in captured["sys"]

@@ -15,6 +15,7 @@ from langgraph.types import RunnableConfig, interrupt
 
 from domain.chat.adapters.execution import execute_chat_action
 from domain.chat.contracts.agent_io import ProposedAction, SubAgentRequest
+from domain.chat.contracts.capabilities import CAPABILITIES
 from domain.chat.graph.supervisor import _last_user_text, decide_route
 
 if TYPE_CHECKING:
@@ -138,7 +139,16 @@ class _Nodes:
 
     # ── supervisor ───────────────────────────────────────────────────────────
     async def supervisor(self, state: dict, config: Optional[RunnableConfig] = None) -> dict:  # noqa: UP045
-        route = await decide_route(state["messages"], self._d.llm)
+        # 신원(state 최상위) + 현재 맥락 엔티티(context_ids)를 라우팅 정책 맥락으로 전달.
+        identity = {
+            "organization_id": state.get("organization_id"),
+            "user_id": state.get("user_id"),
+            "project_id": state.get("project_id"),
+            **(state.get("context_ids") or {}),
+        }
+        route = await decide_route(
+            state["messages"], self._d.llm, capabilities=CAPABILITIES, identity=identity
+        )
         return {"route": route.value}
 
     # ── delegate ─────────────────────────────────────────────────────────────
