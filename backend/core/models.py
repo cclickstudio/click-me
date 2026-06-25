@@ -335,6 +335,19 @@ class GeneratorKbChunk(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
+class ClioKbChunk(Base):
+    """CLIO 지식베이스 청크 — 광고 일반 지식의 벡터 검색."""
+
+    __tablename__ = "clio_kb_chunks"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    source: Mapped[str] = mapped_column(String(128))  # 출처 파일명(인용용)
+    title: Mapped[str] = mapped_column(String(256))  # 섹션 제목(인용용)
+    chunk: Mapped[str] = mapped_column(Text)
+    embedding: Mapped[list[float]] = mapped_column(Vector(1536))
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
 class ChatSession(Base):
     """채팅 세션 — 프로젝트에 귀속된 대화 하나. 메시지는 ChatMessage로 정규화 저장."""
 

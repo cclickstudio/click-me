@@ -1,0 +1,1 @@
+- 2026-06-25 09:09 R4-1 ✅ — `ClioKbChunk` 모델과 Alembic 025 `clio_kb_chunks` 테이블 추가. 개인 DB(ep-soft-band)에서 024→025 up, 컬럼 확인, 025→024 down, 024→025 복구 검증 완료. `ruff check . --fix`, `import api.main` 통과.
