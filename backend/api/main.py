@@ -1,5 +1,7 @@
+import asyncio
 import logging
 import os
+import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -9,6 +11,13 @@ _BACKEND_ROOT = Path(__file__).resolve().parent.parent
 # .env 는 프로젝트 루트 우선(현 배치), 없으면 backend/.env.
 _ROOT_ENV = _BACKEND_ROOT.parent / ".env"
 load_dotenv(_ROOT_ENV if _ROOT_ENV.exists() else _BACKEND_ROOT / ".env")
+
+# Windows 한정: 챗 오케스트레이터 체크포인터(langgraph AsyncPostgresSaver→psycopg async)는
+# 기본 ProactorEventLoop에서 InterfaceError를 내고, AsyncConnectionPool이 이를 재시도하다
+# 30초 PoolTimeout으로 가린다. SelectorEventLoop를 강제해 회피(배포 타깃 Linux EC2는 무영향).
+# 백엔드에 asyncio subprocess 사용처가 없어 selector 정책의 subprocess 비활성화 영향도 없음.
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError

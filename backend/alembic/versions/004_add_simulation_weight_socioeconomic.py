@@ -1,7 +1,7 @@
 """add simulation socioeconomic / weight / effective_n columns
 
 Revision ID: 004
-Revises: 003
+Revises: 003b
 Create Date: 2026-06-14
 
 시뮬레이터 정합(P8/§3.7) — 기존 테이블에 컬럼만 additive 추가(IF NOT EXISTS, 비파괴).
@@ -13,7 +13,7 @@ Create Date: 2026-06-14
 from alembic import op
 
 revision = "004"
-down_revision = "003"
+down_revision = "003b"
 branch_labels = None
 depends_on = None
 
