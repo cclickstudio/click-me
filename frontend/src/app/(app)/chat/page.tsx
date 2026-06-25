@@ -13,7 +13,14 @@ const quickPrompts = [
   '광고 카피 개선 방법을 알려줘',
 ];
 
-type Citation = { kind: string; source: string; title?: string };
+type Citation = {
+  kind: string;
+  source: string;
+  title?: string;
+  trust?: string; // system_backed | advisory | reference (KB 근거 신뢰도)
+  source_url?: string;
+  as_of?: string;
+};
 type SourceMeta = {
   source: string; // management | clio
   label: string; // 매니지먼트 어시스턴트 | CLIO
@@ -234,15 +241,59 @@ export default function Page() {
                       {msg.role === 'assistant' &&
                         msg.meta?.source === 'management' &&
                         (msg.meta.citations?.length || msg.meta.used_tools?.length) ? (
-                        <p className="text-[10px] text-[#B0B8C1] dark:text-[#6B7280] px-1">
-                          근거:{' '}
-                          {[
-                            ...(msg.meta.used_tools ?? []).map((t) => t.replace('live_', '실측·')),
-                            ...(msg.meta.citations ?? [])
-                              .filter((c) => c.kind === 'kb')
-                              .map((c) => c.title || c.source.replace('.md', '')),
-                          ].join(' · ')}
-                        </p>
+                        <div className="flex flex-wrap items-center gap-1 px-1">
+                          <span className="text-[10px] text-[#B0B8C1] dark:text-[#6B7280]">근거:</span>
+                          {(msg.meta.used_tools ?? []).map((t, ti) => (
+                            <span
+                              key={`t${ti}`}
+                              className="text-[10px] px-1.5 py-0.5 rounded bg-[#EAF2FF] text-[#3182F6] dark:bg-[#1E2A44] dark:text-[#8AB4F8]"
+                            >
+                              {t
+                                .replace('live_campaigns', '실측·캠페인')
+                                .replace('live_budget', '실측·예산')
+                                .replace('live_campaign_detail', '실측·캠페인')
+                                .replace('live_before_after', '실측·전후비교')
+                                .replace('search_kb', 'KB')
+                                .replace('web_search', '웹')}
+                            </span>
+                          ))}
+                          {(msg.meta.citations ?? [])
+                            .filter((c) => c.kind === 'kb')
+                            .map((c, ci) => {
+                              const trust = c.trust ?? 'system_backed';
+                              const style =
+                                trust === 'advisory'
+                                  ? 'bg-amber-50 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300'
+                                  : trust === 'reference'
+                                    ? 'bg-[#F2F4F6] text-[#6B7280] dark:bg-[#252D3D] dark:text-[#9CA3AF]'
+                                    : 'bg-emerald-50 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300';
+                              const tag =
+                                trust === 'advisory' ? '참고' : trust === 'reference' ? '구성' : '기준';
+                              const label =
+                                (c.title || c.source.replace('.md', '')) +
+                                (c.as_of ? ` · ${c.as_of}` : '') +
+                                ` · ${tag}`;
+                              const chip = (
+                                <span className={`text-[10px] px-1.5 py-0.5 rounded ${style}`}>
+                                  {label}
+                                </span>
+                              );
+                              return c.source_url ? (
+                                <a
+                                  key={`c${ci}`}
+                                  href={c.source_url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="hover:underline"
+                                  title={c.source_url}
+                                >
+                                  {chip}
+                                </a>
+                              ) : (
+                                <span key={`c${ci}`}>{chip}</span>
+                              );
+                            })}
+                        </div>
                       ) : null}
                       {/* 매니지먼트 답변 평가(좋아요/싫어요) — RAG 개선 적재 */}
                       {msg.role === 'assistant' && msg.meta?.source === 'management' && msg.content ? (
