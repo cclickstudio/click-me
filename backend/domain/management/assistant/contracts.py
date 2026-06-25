@@ -3,7 +3,9 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from typing import Literal
+
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class AskRequest(BaseModel):
@@ -33,6 +35,63 @@ class SuggestedAction(BaseModel):
     rationale: str
 
 
+class DiagnosisView(BaseModel):
+    """카드용 진단 뷰 — DiagnosisResult에서 표시 필드만 추림(정보 최소화)."""
+
+    anomaly_type: str
+    status: str
+    confidence: float
+    hypothesis: str = ""
+
+
+class ProposalPreview(BaseModel):
+    """진단용 제안 미리보기 — 정본 아님/실행 불가를 타입으로 잠근다(불변식 1·2).
+
+    executable/finalized/persisted는 Literal[False]로 고정, extra=forbid로 proposal_id 등
+    정본 키 주입을 거부한다.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    preview_id: str
+    action_type: str
+    tier: str | None = None
+    budget_before_krw: int | None = None
+    budget_after_krw: int | None = None
+    hypothesis: str = ""
+    executable: Literal[False] = False
+    finalized: Literal[False] = False
+    persisted: Literal[False] = False
+    source: Literal["diagnostic_preview"] = "diagnostic_preview"
+
+
+class DiagnosticResult(BaseModel):
+    """live_diagnosis 4-case 결과 — 불법 조합을 validator로 거부(이상없음/진단불가/실패 구분)."""
+
+    diagnostic_status: Literal["ok", "unavailable", "failed"]
+    anomaly: bool = False  # diagnostic_status == "ok"일 때만 의미
+    diagnosis: DiagnosisView | None = None
+    proposal_preview: ProposalPreview | None = None
+    reason: str = ""  # unavailable/failed 안전 문구
+
+    @model_validator(mode="after")
+    def _legal_combo(self) -> DiagnosticResult:
+        if self.diagnostic_status != "ok":
+            if self.diagnosis is not None or self.proposal_preview is not None:
+                raise ValueError("unavailable/failed은 diagnosis·proposal_preview를 가질 수 없다")
+            if not self.reason:
+                raise ValueError("unavailable/failed은 reason이 필요하다")
+            if self.anomaly:
+                raise ValueError("unavailable/failed은 anomaly=False여야 한다")
+        elif self.anomaly:
+            if self.diagnosis is None or self.proposal_preview is None:
+                raise ValueError("ok+anomaly는 diagnosis와 proposal_preview가 모두 필요하다")
+        else:
+            if self.diagnosis is not None or self.proposal_preview is not None:
+                raise ValueError("ok+no-anomaly는 diagnosis·proposal_preview를 가질 수 없다")
+        return self
+
+
 class AskResult(BaseModel):
     answer: str
     citations: list[Citation] = Field(default_factory=list)
@@ -40,4 +99,5 @@ class AskResult(BaseModel):
     evidence: dict = Field(default_factory=dict)  # 답에 쓰인 실측 수치(디버그·검증용)
     suggested_action: SuggestedAction | None = None  # 행동 의도 시 추천(실행은 승인 경로)
     requires_approval: bool = False  # write 제안이 사람 승인 게이트에서 멈췄는가(HITL)
+    diagnostic: DiagnosticResult | None = None  # 진단 4-case 결과(없으면 v0 경로)
     thread_id: str | None = None  # interrupt로 멈춘 그래프의 재개 키(승인 경로에서 사용)
