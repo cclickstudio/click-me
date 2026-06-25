@@ -256,7 +256,10 @@ def build_graph(settings, retriever, llm, checkpointer=None):
                     if c.get("source") != _INSUFFICIENT_SOURCE
                 )
             else:
-                evidence = result if isinstance(result, dict) else evidence
+                # 여러 live 도구를 연달아 호출해도 각 결과가 보존되도록 병합.
+                # (덮어쓰면 campaigns 호출 후 budget 호출 시 campaigns 키가 소실됨)
+                if isinstance(result, dict):
+                    evidence = {**evidence, **result}
             out_msgs.append(
                 ToolMessage(content=json.dumps(result, ensure_ascii=False), tool_call_id=cid)
             )

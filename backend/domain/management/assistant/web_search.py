@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime
 
 import httpx
 
@@ -39,6 +40,8 @@ def _to_hit(r: dict) -> dict:
         "content": r.get("content", ""),  # LLM 답변 근거(인용 dict에선 미사용)
         "trust": "advisory",
         "source_url": r.get("url"),
+        # 조회 시각 — 프론트 인용 칩에서 신선도 신호로 표시됨.
+        "as_of": datetime.now(UTC).isoformat(),
     }
 
 

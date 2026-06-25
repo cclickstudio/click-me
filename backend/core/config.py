@@ -114,6 +114,8 @@ class Settings(BaseSettings):
     # 진단 agent LLM ReAct 재현성 고정값 (합의문서 P6 — 빈칸 기입). 키 없으면 결정론 폴백.
     management_diagnosis_model: str = "gpt-4o-mini"
     management_diagnosis_temperature: float = 0.0
+    # 어시스턴트 ReAct 그래프 LLM 모델 — MANAGEMENT_ASSISTANT_MODEL 환경변수로 오버라이드 가능.
+    management_assistant_model: str = "gpt-4o-mini"
 
     # Generator (광고 생성)
     # 생성 방식: pipeline=카피·이미지 단계 분리 / multimodal=한 모델이 이미지+카피 동시 생성
