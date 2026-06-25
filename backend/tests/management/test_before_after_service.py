@@ -24,7 +24,7 @@ def _pred(click_intent_rate=0.5, purchase_intent=3.0, trust_avg=4.0, rejection_r
     )
 
 
-def _actual(ctr=0.02, impressions=1000):
+def _actual(ctr=0.02, impressions=1000, cvr=None):
     return RealOutcome(
         campaign_id="m1",
         impressions=impressions,
@@ -33,6 +33,7 @@ def _actual(ctr=0.02, impressions=1000):
         ctr=ctr,
         cpc_krw=500,
         cpm_krw=3000,
+        cvr=cvr,
         as_of=_NOW,
     )
 
@@ -75,6 +76,38 @@ def test_zero_impressions_unknown():
     ba = compute_before_after("m1", "C", _pred(), _actual(impressions=0))
     assert ba.verdict == BeforeAfterVerdict.UNKNOWN
     assert "노출 0" in ba.rationale
+
+
+# ── 구매 축 방향성 배지용 파생 필드 ──
+
+
+def test_purchase_direction_strong_when_purchase_intent_and_cvr_cross_baselines():
+    ba = compute_before_after("m1", "C", _pred(purchase_intent=3.5), _actual(cvr=0.02))
+    assert ba.purchase_pred_strong is True
+    assert ba.purchase_act_strong is True
+
+
+def test_purchase_prediction_weak_below_purchase_intent_baseline():
+    ba = compute_before_after("m1", "C", _pred(purchase_intent=3.4), _actual(cvr=0.02))
+    assert ba.purchase_pred_strong is False
+
+
+def test_purchase_actual_unknown_when_cvr_is_null():
+    ba = compute_before_after("m1", "C", _pred(purchase_intent=3.5), _actual(cvr=None))
+    assert ba.purchase_act_strong is None
+
+
+def test_purchase_prediction_unknown_when_prediction_is_missing():
+    ba = compute_before_after("m1", "C", None, _actual(cvr=0.02))
+    assert ba.purchase_pred_strong is None
+    assert ba.purchase_act_strong is None
+
+
+def test_purchase_direction_does_not_change_click_axis_verdict():
+    ba = compute_before_after(
+        "m1", "C", _pred(click_intent_rate=0.5, purchase_intent=3.5), _actual(ctr=0.005, cvr=0.03)
+    )
+    assert ba.verdict == BeforeAfterVerdict.UNDERPERFORMED
 
 
 # ── 보조 해석 (결정론) ──
