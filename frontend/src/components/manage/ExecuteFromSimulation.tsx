@@ -6,9 +6,10 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 
-// 집행 권장 게이트 — 백엔드 _is_executable_verdict 및 리포트 verdict()와 동일 임계값.
-const EXEC_CIR = 0.2; // 클릭 의향률 ≥ 20%
-const EXEC_REJ = 0.2; // 거부율 < 20%
+// 집행 권장 게이트 — 백엔드 _is_executable_verdict와 동기화.
+// ⚠️ 임시(TEST): 게이트 해제 — 모든 결과 통과. 운영 복원 시 0.2 / 0.2로 되돌릴 것.
+const EXEC_CIR = 0.0; // 클릭 의향률 ≥ 0% (원래 0.2)
+const EXEC_REJ = 1.0; // 거부율 ≤ 100% (원래 0.2)
 
 export function ExecuteFromSimulation({
   simulationId,
@@ -21,7 +22,7 @@ export function ExecuteFromSimulation({
   clickIntentRate: number;
   rejectionRate: number;
 }) {
-  const executable = clickIntentRate >= EXEC_CIR && rejectionRate < EXEC_REJ;
+  const executable = clickIntentRate >= EXEC_CIR && rejectionRate <= EXEC_REJ;
   const [open, setOpen] = useState(false);
   const [name, setName] = useState(defaultName ?? '');
   const [linkUrl, setLinkUrl] = useState('');

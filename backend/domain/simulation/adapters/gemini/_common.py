@@ -28,6 +28,11 @@ _RETRY_WAIT_MULTIPLIER = 1.0
 _RETRY_WAIT_MAX = 30.0
 
 
+def _use_openai() -> bool:
+    """시뮬 LLM 공급자 전환 — SIMULATION_LLM_PROVIDER=openai면 Gemini 대신 OpenAI를 1차로 쓴다."""
+    return os.environ.get("SIMULATION_LLM_PROVIDER", "gemini").lower() == "openai"
+
+
 def _is_transient(exc: BaseException) -> bool:
     """일시 오류(재시도 대상)인가 — 503/429/5xx·네트워크. 안전블록·4xx(429 제외)는 비대상."""
     if isinstance(exc, (httpx.TransportError, httpx.TimeoutException)):
@@ -86,29 +91,83 @@ def _new_client(api_key: str | None) -> Any:
     return genai.Client(api_key=key)
 
 
+async def _openai_json_fallback(contents: Any, temperature: float | None) -> dict:
+    """Gemini 일시 장애(503 등) 시 OpenAI로 동일 JSON 생성 — 텍스트+이미지(비전) 지원.
+
+    contents의 str은 텍스트로, google-genai Part(inline 이미지)는 data URL로 변환해 보낸다.
+    OPENAI_API_KEY 없으면 RuntimeError(원오류 재전파는 호출부에서).
+    """
+    import base64
+    import logging
+
+    from openai import AsyncOpenAI
+
+    key = os.environ.get("OPENAI_API_KEY")
+    if not key:
+        raise RuntimeError("OPENAI_API_KEY 미설정 — Gemini JSON 폴백 불가")
+    parts = contents if isinstance(contents, list) else [contents]
+    user_content: list[dict] = []
+    for p in parts:
+        if isinstance(p, str):
+            user_content.append({"type": "text", "text": p})
+            continue
+        inline = getattr(p, "inline_data", None)
+        if inline is not None and getattr(inline, "data", None):
+            mime = getattr(inline, "mime_type", None) or "image/jpeg"
+            b64 = base64.b64encode(inline.data).decode()
+            user_content.append(
+                {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{b64}"}}
+            )
+    model = os.environ.get("SIMULATION_OPENAI_JSON_MODEL", "gpt-4.1-mini")
+    resp = await AsyncOpenAI(api_key=key).chat.completions.create(
+        model=model,
+        messages=[
+            {"role": "system", "content": "Respond with a single valid JSON object only."},
+            {"role": "user", "content": user_content},
+        ],
+        response_format={"type": "json_object"},
+        temperature=0.0 if temperature is None else temperature,
+    )
+    logging.getLogger("clickme").info("Gemini→OpenAI JSON 폴백 성공(model=%s)", model)
+    return _parse_json(resp.choices[0].message.content or "")
+
+
 @traceable(run_type="llm", name="gemini.generate_content", process_inputs=_trace_inputs)
 async def _agen_json(
     client: Any, model: str, contents: Any, *, temperature: float | None = None
 ) -> dict:
     """google-genai 비동기 호출 + JSON 파싱. contents는 str 또는 [str, 이미지 Part] 리스트.
 
-    LangSmith LLM run으로 추적 — 응답 토큰량(usage_metadata)을 현재 run에 첨부한다.
+    Gemini가 일시 장애(503 등)면 OpenAI로 폴백(키 있을 때). LangSmith LLM run으로 추적.
+    공급자 전환(SIMULATION_LLM_PROVIDER=openai)이면 Gemini를 건너뛰고 바로 OpenAI로 생성한다.
     """
+    if _use_openai():
+        return await _openai_json_fallback(contents, temperature)
+    # 과부하(503) 우회용 모델 교체 — SIMULATION_GEMINI_MODEL 설정 시 그 모델로(미설정이면 핀 유지).
+    model = os.environ.get("SIMULATION_GEMINI_MODEL") or model
     config: dict[str, Any] = {"response_mime_type": "application/json"}
     if temperature is not None:
         config["temperature"] = temperature
-    # 503(과부하)·429·5xx는 지수 백오프로 재시도 — 파싱 실패(안전블록 등)는 재시도 안 함(영속).
+    # OpenAI 폴백이 가능하면 Gemini 재시도를 짧게(2회) 하고 빨리 폴백 — 없으면 끝까지 재시도.
+    has_fallback = bool(os.environ.get("OPENAI_API_KEY"))
+    attempts = 2 if has_fallback else _RETRY_ATTEMPTS
     resp = None
-    async for attempt in AsyncRetrying(
-        retry=retry_if_exception(_is_transient),
-        wait=wait_random_exponential(multiplier=_RETRY_WAIT_MULTIPLIER, max=_RETRY_WAIT_MAX),
-        stop=stop_after_attempt(_RETRY_ATTEMPTS),
-        reraise=True,
-    ):
-        with attempt:
-            resp = await client.aio.models.generate_content(
-                model=model, contents=contents, config=config
-            )
+    try:
+        async for attempt in AsyncRetrying(
+            retry=retry_if_exception(_is_transient),
+            wait=wait_random_exponential(multiplier=_RETRY_WAIT_MULTIPLIER, max=_RETRY_WAIT_MAX),
+            stop=stop_after_attempt(attempts),
+            reraise=True,
+        ):
+            with attempt:
+                resp = await client.aio.models.generate_content(
+                    model=model, contents=contents, config=config
+                )
+    except Exception as exc:
+        # Gemini 일시 장애 → OpenAI로 동일 JSON 생성(폴백). 영속 오류(파싱 등)는 그대로 전파.
+        if has_fallback and _is_transient(exc):
+            return await _openai_json_fallback(contents, temperature)
+        raise
     _record_usage(resp, model)
     return _parse_json(getattr(resp, "text", "") or "")
 

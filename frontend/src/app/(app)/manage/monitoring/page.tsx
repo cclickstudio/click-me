@@ -64,7 +64,7 @@ export default function Page() {
         setAccountBlock(r.account_block_reason ?? null);
         setAccountUnavailable(r.account_unavailable ?? null);
         setAuthError(r.auth_error ?? null);
-        setPermissionError(r.permission_error ?? null);
+        setPermissionError(r.permission_error ?? r.not_connected ?? null);
         setNow(new Date());
         setLastUpdated(new Date().toLocaleTimeString('ko-KR'));
         if (withSeries) await loadSeries(r.campaigns);

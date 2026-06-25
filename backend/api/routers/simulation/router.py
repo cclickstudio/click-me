@@ -11,10 +11,13 @@ import uuid
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.responses import StreamingResponse
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.auth import get_current_user, require_user_org
 from core.config import settings
 from core.db import get_db
+from core.models import User
 from domain.simulation.adapters.ad_image_store import persist_ad_image
 from domain.simulation.adapters.category_repo import list_categories
 from domain.simulation.contracts.schemas import SimulationRunRequest
@@ -217,15 +220,30 @@ async def get_simulation_result_analysis(run_id: str) -> dict:
     return to_analysis_payload(result)
 
 
+_require_user_org = require_user_org  # core.auth 공용(없으면 409) — 라우터 복붙 제거
+
+
 @router.get("/{simulation_id}/db-result")
 async def get_simulation_db_result(
-    simulation_id: str, session: AsyncSession = Depends(get_db)
+    simulation_id: str,
+    user: User = Depends(get_current_user),
+    session: AsyncSession = Depends(get_db),
 ) -> dict:
-    """DB 영속 결과 재조회 — 새로고침·프로젝트 패널 재진입 시 SimRunResult 복원. 없으면 404."""
+    """DB 영속 결과 재조회 — 새로고침·프로젝트 패널 재진입 시 SimRunResult 복원.
+
+    로그인 org의 시뮬만 조회(멀티테넌시 격리). 다른 org·없음이면 404.
+    """
     try:
         sim_uuid = uuid.UUID(simulation_id)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=f"잘못된 simulation_id: {e}") from e
+    org_id = await _require_user_org(user, session)
+    # 도메인 ORM import 없이 org 소유만 raw SQL로 검증(경계 유지).
+    sim_org = await session.scalar(
+        text("SELECT organization_id FROM simulations WHERE id = :sid"), {"sid": sim_uuid}
+    )
+    if sim_org is None or sim_org != org_id:
+        raise HTTPException(status_code=404, detail="결과 없음 — 잘못된 simulation_id")
     result = await SimulationRepository(session).get_full_result(sim_uuid)
     if result is None:
         raise HTTPException(status_code=404, detail="결과 없음 — 잘못된 simulation_id")
