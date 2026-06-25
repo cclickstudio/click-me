@@ -170,6 +170,7 @@ class ChatTurn:
     )  # (role, content), role=user|assistant
     ad_id: str | None = None
     session_id: str | None = None  # 개선 루프 상태 키(턴 간 보존)
+    thread_id: str | None = None  # LangGraph 체크포인터 스레드 키(session_id와 동일)
     project_id: str | None = None  # 목록 조회 스코프(현재 프로젝트)
 
 
@@ -1028,8 +1029,8 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
         ltm = await history.get_long_term_memory(turn.project_id, limit=3)
         brand = await history.get_brand_profile(turn.project_id)
         # 1턴 = 1 트레이스 루트(classify → route → 서브에이전트).
-        # L2-1: 체크포인터 필수 configurable을 제공한다. L2-2에서 session_id 계약으로 고정한다.
-        thread_id = sid or f"chat-transient:{turn.project_id or 'anonymous'}"
+        # L2-2: 체크포인터 thread_id는 채팅 session_id로 고정한다.
+        thread_id = turn.thread_id or sid or f"chat-transient:{turn.project_id or 'anonymous'}"
         final = await graph.ainvoke(
             {
                 "question": turn.question,
@@ -1062,6 +1063,7 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
                     "confidence": final.get("confidence", "high"),
                 },
             }
+        meta = {**meta, "thread_id": thread_id, "session_id": sid}
         answer = final.get("answer", "")
         # 이번 턴을 메모리에 적재 — 다음 턴의 윈도우에 반영.
         mem.save_context(turn.question, answer)

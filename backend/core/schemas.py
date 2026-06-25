@@ -148,6 +148,7 @@ class ChatMessage(BaseModel):
 
 class ChatRequest(BaseModel):
     session_id: str
+    thread_id: str | None = None  # L2-2 호환 필드. 서버는 session_id를 체크포인터 키로 우선 사용.
     messages: list[ChatMessage]
     project_id: str | None = None  # 목록 조회 스코프(현재 프로젝트)
     context_ad_id: str | None = None

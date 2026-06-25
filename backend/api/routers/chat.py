@@ -42,6 +42,13 @@ def _get_orchestrator() -> Callable[[ChatTurn], Awaitable[object]]:
     return _orchestrator
 
 
+def _thread_id_for_session(session_id: str, compat_thread_id: str | None = None) -> str:
+    """L2-2: 체크포인터 thread_id는 session_id로 고정하고, 구 thread_id 입력은 호환만 허용."""
+    if compat_thread_id and compat_thread_id != session_id:
+        print(f"[chat] thread_id ignored in favor of session_id: {compat_thread_id!r}")
+    return session_id
+
+
 def _chunks(text: str, size: int = 24) -> list[str]:
     """긴 답변을 SSE 토큰처럼 잘게 — 스트리밍 느낌 유지."""
     return [text[i : i + size] for i in range(0, len(text), size)] or [""]
@@ -91,6 +98,7 @@ async def chat_complete(body: ChatRequest) -> StreamingResponse:
                     history=[(m.role, m.content) for m in body.messages[:-1]],
                     ad_id=body.context_ad_id,
                     session_id=body.session_id,
+                    thread_id=_thread_id_for_session(body.session_id, body.thread_id),
                     project_id=body.project_id,
                 )
             )
@@ -124,6 +132,7 @@ async def chat_complete(body: ChatRequest) -> StreamingResponse:
 class ApproveRequest(BaseModel):
     action: str  # run_generator | rerun_simulation
     session_id: str
+    thread_id: str | None = None  # 호환 입력. 실제 체크포인터 키는 session_id.
     project_id: str | None = None
 
 
@@ -150,6 +159,7 @@ async def chat_approve(body: ApproveRequest) -> StreamingResponse:
                     question=question,
                     history=[],
                     session_id=body.session_id,
+                    thread_id=_thread_id_for_session(body.session_id, body.thread_id),
                     project_id=body.project_id,
                 )
             )
