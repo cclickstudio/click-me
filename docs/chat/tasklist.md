@@ -89,7 +89,7 @@
 | N4  | 선제적 말걸기(제너 경로 잔여)            | 능동   | N1,N2     | ✅(시뮬)·⬜(제너) |
 | S2  | /비교 캠페인 A/B (매니지 조율 — 보류)    | 슬래시 | S1        | ⬜   |
 | S5  | /액션 매니지 조치 확장(매니지 조율 — 보류) | 슬래시 | —        | ⬜   |
-| X1  | 미커밋 변경 정체 확인·정리(LTM 임베딩·alembic 026·`click-me/` 폴더) | 정리 | — | ⬜ |
+| X1  | 잘못 추가된 `click-me` 자기참조 gitlink 제거(깨진 서브모듈) | 정리 | — | ⬜ |
 | X2  | G5 라이브 HTTP 422 왕복 재검증(백엔드 클린 재기동 후) | 검증 | G5 | ⬜ |
 | C4  | 시뮬+채팅 전수 QA(대기업 QA 수준)·결함 리포트 후 push | 정리 | 전부 | ⬜ |
 
@@ -98,7 +98,7 @@
 > **세션 인계(2026-06-25 밤, 집)** — 다음 ⬜는 권장 순서상 **G6**(생성 직후 gen_form 깜빡임). 원인 가설: `ChatConversation.tsx` 렌더 key가 `key={i}`(인덱스)인데 낙관적 메시지엔 id가 없어(`Message.id`는 DB 영속분만), `/new` 세션 생성·refetch 시 GenFormWidget이 재마운트→내부 `phase`가 'form'(빈 폼 1/4)으로 리셋. sim 경로와 차이는 라이브로 확정 필요. **반드시 백엔드 클린 재기동 후 Claude Preview로 `/new` 제너 흐름 라이브 재현부터.**
 > - **G5 완료(✅, a1fc34e)** — 단, **라이브 HTTP 422 왕복은 미검증**(단위 검증만 완료). 당시 8000에 좀비 프로세스가 점유·reload 불응으로 수정본을 못 올림. → **X2**로 분리(백엔드 클린 재기동 후 확인).
 > - **환경 주의** — 8000 포트에 안 죽는 좀비(taskkill·--reload 불응) 이력 있음. 백엔드가 옛 코드를 들면 작업관리자에서 python.exe 종료 또는 재부팅 후 `uv run dev.py` 클린 재기동. 좀비 살아있으면 라이브 검증 무의미.
-> - **미커밋 변경 있음(내 작업 아님)** — `core/models.py`·`domain/chat/history.py`·`orchestrator.py` 수정, `alembic/versions/026_add_chat_ltm_embedding.py`·`docs/chat/semantic-ltm.md` 신규, `progress-{be,fe,kb}.md` 삭제, 루트에 중첩 `click-me/` 폴더. 정체 확인 전 커밋 금지 → **X1**.
+> - **LTM 미커밋 변경은 도연님이 `80c8264`로 커밋 완료** — 단 그 커밋에 잘못된 `click-me` 자기참조 gitlink(mode 160000, `.gitmodules` 없음)가 섞임 → **X1**로 제거 필요. 그 외 작업트리는 깨끗.
 
 ---
 
@@ -226,12 +226,11 @@
 **완료 기준** A~E 전 항목 3역할 재현·결함 리포트 작성, S3 즉시 수정 반영, 실측 완성도 재평가(코드존재 아닌 "실제 통과" 기준)·위험 결함 Top3 요약. **그 뒤** 도연님 확인 받고 push.
 **의존** 전부(구현 ⬜ 소진 후 마지막). 라이브 검증이 핵심이라 8000 좀비·환경 정상 전제.
 
-### X1 — 미커밋 변경 정체 확인·정리 (정리)
+### X1 — 잘못 추가된 `click-me` 자기참조 gitlink 제거 (정리)
 
-**배경** 이번 세션(2026-06-25) 작업트리에 **내가 만들지 않은** 미커밋 변경이 남아 있음 — 이전 세션의 채팅 롱텀 메모리(시맨틱 LTM) 작업으로 추정. G5/QA 커밋과 무관해 분리해 둠.
-**대상** `backend/core/models.py`·`backend/domain/chat/history.py`·`backend/domain/chat/orchestrator.py`(수정) · `backend/alembic/versions/026_add_chat_ltm_embedding.py`·`docs/chat/semantic-ltm.md`(신규) · `docs/chat/progress-{be,fe,kb}.md`(삭제) · 루트 중첩 `click-me/` 폴더(잘못 생긴 것일 수 있음 — 별도 확인).
-**할 일** `git diff`로 각 변경 정체·의도 확인 → 유효하면 의미 단위로 커밋(예: `add: 채팅 롱텀 메모리 임베딩(시맨틱 LTM)`), `click-me/` 중첩 폴더는 오생성이면 제거. **정체 확인 전 일괄 커밋 금지**(내용 보증 불가). alembic 026은 up/down·`import api.main` 검증 후 커밋.
-**완료 기준** 작업트리 미커밋 변경이 정체대로 정리(커밋 또는 제거)되고 `git status` 깨끗. 의심분은 도연님 확인 후 처리.
+**배경** LTM 미커밋 변경은 도연님이 `80c8264`(add: 채팅 롱텀 메모리 임베딩)으로 정상 커밋함. 단 그 커밋에 **루트 `click-me`가 mode 160000(gitlink/서브모듈 참조)으로 섞여 들어감** — `.gitmodules`도 없고 자기 자신의 옛 머지 커밋(`bcdc6dd`)을 가리키는 **깨진 자기참조**(중첩 `click-me/`에서 `git add`가 오인). 클론·CI에서 서브모듈 에러 유발 가능.
+**할 일** `git rm --cached click-me`로 인덱스의 gitlink 제거(작업트리 파일은 `--cached`라 안 건드림) → 루트에 물리 `click-me/` 디렉터리가 실제로 있으면 정체 확인 후 정리 → `edit: 잘못 추가된 click-me 자기참조 gitlink 제거` 커밋. `git ls-files -s click-me`가 비면 완료.
+**완료 기준** `git ls-files | grep '^click-me'` 없음, `git status` 깨끗, 클론 시 서브모듈 경고 없음.
 
 ### X2 — G5 라이브 HTTP 422 왕복 재검증 (검증)
 
