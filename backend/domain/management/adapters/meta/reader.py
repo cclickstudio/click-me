@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import math
 import re
 from datetime import UTC, datetime
 from typing import Any
@@ -789,7 +788,7 @@ class MetaAdsReader:
         leads/conversion 광고는 title이 object_story_spec.link_data.name에 있어
         _CREATIVE_FIELDS_FULL로 확장해서 조회한다.
         """
-        campaign_data, adset_data, ads_data, insights_data = await asyncio.gather(
+        campaign_data, adset_data, ads_data = await asyncio.gather(
             self._client.get(campaign_id, {"fields": "objective,name"}),
             self._client.get(
                 f"{campaign_id}/adsets",
@@ -807,10 +806,6 @@ class MetaAdsReader:
                     "limit": "1",
                     "effective_status": _ARCHIVED_STATUSES,
                 },
-            ),
-            self._client.get(
-                f"{campaign_id}/insights",
-                {"fields": "leads,reach", "date_preset": "maximum"},
             ),
         )
         targeting = {}
@@ -853,14 +848,36 @@ class MetaAdsReader:
         age_min = targeting.get("age_min") or 18
         age_max = targeting.get("age_max") or 65
 
-        # 가상 소비자 수 추천: leads 실측값 → reach 로그 스케일 → 기본 20
-        ins = (insights_data.get("data") or [{}])[0]
-        leads = _to_int(ins.get("leads"))
-        reach = _to_int(ins.get("reach"))
+        # 실제 소비자 수 — insights reach(도달) 기반.
+        # leads는 actions 파싱이 필요하고 권한에 따라 누락 가능 → reach 1차 사용.
+        # 실패해도 나머지 타겟팅 정보는 정상 반환.
+        reach = 0
+        leads = 0
+        try:
+            ins_data = await self._client.get(
+                f"{campaign_id}/insights",
+                {"fields": "reach,actions", "date_preset": "maximum"},
+            )
+            ins = (ins_data.get("data") or [{}])[0]
+            reach = _to_int(ins.get("reach"))
+            # leads: actions 배열에서 action_type이 lead 계열인 것 합산
+            _lead_types = frozenset(
+                {
+                    "lead",
+                    "onsite_conversion.lead_grouped",
+                    "offsite_conversion.fb_pixel_lead",
+                }
+            )
+            for act in ins.get("actions") or []:
+                if act.get("action_type") in _lead_types:
+                    leads += _to_int(act.get("value"))
+        except Exception:
+            pass
+
         if leads > 0:
             suggested_persona_count = min(200, max(10, leads))
         elif reach > 0:
-            suggested_persona_count = min(100, max(10, int(math.log10(reach + 1) * 25)))
+            suggested_persona_count = min(200, max(10, reach))
         else:
             suggested_persona_count = 20
 
