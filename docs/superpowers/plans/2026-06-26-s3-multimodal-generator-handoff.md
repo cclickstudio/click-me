@@ -12,7 +12,7 @@
 
 ## ⚠️ Precondition & Reconciliation (필독)
 
-본 계획은 **S2 구현 완료를 전제**한다(`2026-06-26-s2-multistep-orchestration-design.md`). S2가 코드로 없으면 Task 2·3·4·6·7은 실행 불가다. S2가 제공한다고 가정하는 산출물·시그니처(이게 다르면 **착수 시점에 실제 코드로 맞춰 reconcile** 후 진행):
+본 계획은 **S2 구현 완료를 전제**한다(`2026-06-26-s2-multistep-orchestration-design.md`). S2가 코드로 없으면 Task 3·4·5·6·7은 실행 불가다. **Task 1은 전송 스키마라 S2 무관, Task 2는 S2 타입을 import하지 않아 단독 테스트는 가능하지만 S2의 `ask(ctx, step)` 계약을 전제로 한다**(계약이 바뀌면 어댑터 시그니처도 reconcile). S2가 제공한다고 가정하는 산출물·시그니처(이게 다르면 **착수 시점에 실제 코드로 맞춰 reconcile** 후 진행):
 
 | S2 산출물 | 가정 시그니처/위치 |
 |---|---|
@@ -25,7 +25,9 @@
 | bootstrap | `GeneratorStubAgent`/`SimulationStubAgent` 등록 |
 | chat 통합 | `chat.py`가 `TurnContext`를 만들어 `run_turn(graph, route, ctx)` 호출, 결과를 카드로 스트림 |
 
-> Task 1·5는 **S2 비의존**(전송 스키마 / generator 도메인)이라 먼저 단독 실행 가능. Task 2·3·4·6·7은 S2 위에서만.
+> **Task 1**은 S2 무관(전송 스키마)이라 단독 실행 가능. **Task 2**는 S2 타입 import 없이 단독 테스트 가능하나 `ask(ctx, step)` 계약을 전제로 한다. **Task 3·4·5·6·7**은 S2 위에서만.
+>
+> **확정 사실(generator/storage 측, 실제 코드 확인됨 — reconcile 불필요):** `start_generation(req) -> str`(generation_id, `generator_service.py:57`) · `store_temp_image(data) -> str`(**async**, `generator_service.py:50`) · `download_bytes(key) -> bytes`(**async**, `tools/storage/s3.py:50`). 따라서 어댑터는 `await download_bytes(...)`·`await store_temp_image(...)`·`generation_id = await start_generation(...)`로 고정한다.
 
 ---
 
@@ -129,9 +131,9 @@ git commit -m "add: ChatRequest.attachments(s3_key) 멀티모달 계약 — S3"
 
 ---
 
-## Task 2: generator 실 어댑터 (s3→bytes→start_generation 핸드오프) — S2 비의존(계약만 덕타이핑)
+## Task 2: generator 실 어댑터 (s3→bytes→start_generation 핸드오프) — S2 `ask(ctx, step)` 계약 전제
 
-`ask(ctx, step)`는 S2 계약이지만 어댑터는 ctx/step을 **덕타이핑**(속성 접근)으로만 쓰므로 S2 타입 import 없이 단독 구현·테스트 가능하다.
+어댑터는 ctx/step을 **덕타이핑**(속성 접근)으로만 쓰므로 S2 타입을 import하지 않고 단독 테스트가 가능하다. 단 **`ask(ctx, step)` 계약 자체는 S2 산출물**이므로, S2가 계약을 바꾸면 어댑터 시그니처도 맞춘다.
 
 **Files:**
 - Create: `backend/domain/generator/chat/domain_agent.py`
@@ -222,6 +224,22 @@ async def test_no_attachment_skips_download(monkeypatch):
     out = await agent.ask(_Ctx(user_input="광고 만들어줘"), _step())
     assert out["task_id"] == "gen-9"
     assert out["status"] == "started"
+
+
+@pytest.mark.asyncio
+async def test_step_inputs_query_takes_priority_over_user_input(monkeypatch):
+    seen = {}
+
+    async def _fake_start(req):
+        seen["req"] = req
+        return "gen-2"
+
+    monkeypatch.setattr(mod, "start_generation", _fake_start)
+
+    agent = GeneratorDomainAgent()
+    ctx = _Ctx(user_input="대화 전체 맥락")
+    await agent.ask(ctx, _step(inputs={"query": "스텝 지정 설명"}))
+    assert seen["req"].product_description == "스텝 지정 설명"  # step.inputs 우선
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -268,7 +286,8 @@ class GeneratorDomainAgent:
         if s3_key:
             data = await download_bytes(s3_key)
             temp_key = await store_temp_image(data)
-        desc = (ctx.user_input or step.inputs.get("query") or "").strip() or "상품 광고"
+        # step.inputs.query 우선(Planner가 스텝별로 지정한 값) → 없으면 ctx.user_input → 기본
+        desc = (step.inputs.get("query") or ctx.user_input or "").strip() or "상품 광고"
         req = GenerationCreateRequest(
             mode=GenerationMode.CREATE,
             product_description=desc,
@@ -293,7 +312,7 @@ class GeneratorDomainAgent:
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `cd backend && uv run pytest tests/generator/test_chat_domain_agent.py -v`
-Expected: PASS (2 passed)
+Expected: PASS (3 passed)
 
 - [ ] **Step 5: Ruff + Commit**
 
@@ -374,11 +393,11 @@ Expected: FAIL — S2 `execute_plan`은 단락 없이 simulate까지 호출해 `
 
 - [ ] **Step 3: Write minimal implementation**
 
-`backend/api/orchestration/executor.py`의 S2 루프에서 `ctx.results[step.id] = out` **직후**에 단락 분기를 추가한다(루프 본문):
+`backend/api/orchestration/executor.py`의 S2 루프에서 **결과를 블랙보드에 적재하는 줄 직후**에 단락 분기를 추가한다. 적재가 `ctx.results[step.id] = out`이면 그대로, S2가 `ctx.remember(step, out)` 메서드를 도입했으면 **그 호출 직후**에 둔다(단락 로직 자체는 적재 방식과 무관 — 적재 후 `out`만 검사):
 
 ```python
         out = await agent.ask(ctx, step)
-        ctx.results[step.id] = out
+        ctx.results[step.id] = out          # ← S2가 ctx.remember(step, out)라면 그 줄로 reconcile
         if isinstance(out, dict) and out.get("status") == "started":
             return out  # 비동기 핸드오프 — 이후 스텝 미집행, 턴 종결(S3)
 ```
@@ -593,20 +612,27 @@ def _should_plan(route: RouteDecision, registry: AgentRegistry, *, has_image: bo
     return route.score > 0.0 and registry.get(route.domain) is not None
 ```
 
-(b) 핸드오프 카드 이벤트 헬퍼 추가:
+(b) 핸드오프 카드 이벤트 헬퍼 추가 — **기존 카드 SSE와 동일 envelope를 써야 FE 호환이 깨지지 않는다.**
+chat.py가 이미 import한 `format_sse`(`domain.management.assistant.composer`)로 이벤트를 감싼다(원시 `data: {...}`
+직접 덤프 금지). 착수 시 **FE가 기대하는 카드 SSE 스키마(`kind`/envelope/종결 이벤트)를 실제 `compose_card`·
+`stream_card` 출력과 대조**해 필드명을 맞춘다:
 
 ```python
 def _handoff_card_events(handoff: dict):
-    # generator 비동기 핸드오프 → "시안 생성 시작" 카드 SSE(FE가 stream_url 구독)
-    meta = {
-        "kind": "handoff",
-        "message": "시안 생성을 시작했어요. 진행 상황을 보여드릴게요.",
-        "task_id": handoff.get("task_id"),
-        "stream_url": handoff.get("stream_url"),
-    }
-    yield f"data: {json.dumps(meta, ensure_ascii=False)}\n\n"
-    yield 'data: {"done": true}\n\n'
+    # generator 비동기 핸드오프 → "시안 생성 시작" 카드. 기존 카드 envelope(format_sse) 재사용.
+    yield format_sse(
+        {
+            "kind": "handoff",
+            "message": "시안 생성을 시작했어요. 진행 상황을 보여드릴게요.",
+            "task_id": handoff.get("task_id"),
+            "stream_url": handoff.get("stream_url"),
+        }
+    )
+    yield format_sse({"kind": "final", "status": "started"})
 ```
+
+> reconcile — FE 카드 렌더러가 `kind:"handoff"`를 모르면 ① FE에 핸드오프 섹션 추가 또는 ② 기존 카드
+> 타입(예: 안내 텍스트 카드)으로 매핑. 종결 이벤트(`final`/`done`) 형태도 기존 스트림과 일치시킨다.
 
 (c) `generate()` 내부 plan 경로(S2)에서 — `has_image = any(a.kind == "image" for a in body.attachments)`로 `_should_plan(route, registry, has_image=has_image)` 호출, `TurnContext` 생성 시 `attachments=tuple(body.attachments)` 주입, run_turn 결과가 `status:"started"` 핸드오프면 `_handoff_card_events(result)`를 흘리고 아니면 기존 management 카드 경로. (정확한 결선은 S2 chat 통합에 맞춰 reconcile.)
 
@@ -648,6 +674,8 @@ Expected: PASS (core가 어떤 domain.*도 직접 import 안 함 — 어댑터�
 ## Self-Review (작성자 체크)
 
 - **스펙 커버리지** — 설계 §2(계약)=Task1, §4(generator 어댑터)=Task2, §5 단락=Task3, §3 게이트 A=Task4·6, bootstrap=Task5, 핸드오프 카드=Task6, §7 테스트(특히 §7-5 simulate 미집행)=Task3, 회귀·순수성=Task7. "job start만 보장"은 어댑터가 `start_generation` 트리거 후 즉시 핸드오프 반환(완료 await 없음)으로 충족.
-- **Placeholder** — S2 의존 지점은 "reconcile"로 **명시**(은폐된 TBD 아님). S2 비의존 Task(1·2)는 완전 구체.
+- **Placeholder** — S2 의존 지점은 "reconcile"로 **명시**(은폐된 TBD 아님). generator/storage 측 사실
+  (`start_generation→str`·`store_temp_image`/`download_bytes` async)은 **실제 코드 확인 완료**라 reconcile 대상
+  아님. Task 1은 완전 구체(S2 무관), Task 2는 `ask(ctx, step)` 계약만 전제하고 코드는 구체.
 - **타입 정합** — 핸드오프 dict 키(`status/step_id/domain/action/task_id/stream_url/ad_id`)가 Task2(생성)·Task3(단락 판정 `status`)·Task6(카드 `task_id/stream_url`)에서 일관. `_should_plan(route, registry, *, has_image)`·`_handoff_card_events(handoff)`·`GeneratorDomainAgent.ask(ctx, step)` 시그니처 일관.
 - **S2 의존 경고** — Task 3·4·5·6은 S2 미구현 시 실행 불가. 착수 전 Precondition 표로 실제 S2 코드와 reconcile 필수.
