@@ -5,6 +5,7 @@ import { useState, useRef, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useProjects } from '@/components/ProjectContext';
 import { api, API_BASE } from '@/lib/api';
+import { getToken } from '@/lib/authApi';
 import { saveSimResult } from '@/lib/simResultStore';
 import { SIM_CATEGORIES } from '@/lib/simCategories';
 import type { SimRunResult, SSEProgressEvent } from '@/lib/types';
@@ -132,6 +133,28 @@ export default function SimulationRunPage() {
   const [pct, setPct] = useState(0);
   const [stageMsg, setStageMsg] = useState('');
   const esRef = useRef<EventSource | null>(null);
+
+  // Meta 캠페인 이미지 미리보기 — <img> 태그는 인증 헤더 불가, fetch로 blob URL 생성.
+  const [metaPreviewUrl, setMetaPreviewUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (!fromCampaign || !imageUrl.startsWith('https://')) return;
+    let blobUrl: string | null = null;
+    const token = getToken();
+    fetch(`${API_BASE}/api/management/campaigns/${fromCampaign}/creative-image`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+      .then(r => (r.ok ? r.blob() : null))
+      .then(blob => {
+        if (blob) {
+          blobUrl = URL.createObjectURL(blob);
+          setMetaPreviewUrl(blobUrl);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      if (blobUrl) URL.revokeObjectURL(blobUrl);
+    };
+  }, [fromCampaign, imageUrl]);
 
   // 언마운트 시 스트림 정리.
   useEffect(() => () => esRef.current?.close(), []);
@@ -387,25 +410,24 @@ export default function SimulationRunPage() {
                 )}
                 {inputMode === 'url' && (
                   fromCampaign && imageUrl.startsWith('https://') ? (
-                    /* Meta 캠페인 이미지 — fbcdn CORS로 직접 로드 불가, 백엔드 프록시로 미리보기 */
+                    /* Meta 캠페인 이미지 — <img> 태그 인증 불가, fetch blob URL로 미리보기 */
                     <div className='relative flex flex-1 min-h-0 flex-col items-center justify-center border-2 border-dashed border-[#3182F6]/40 dark:border-[#3182F6]/30 rounded-xl overflow-hidden'>
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={`${API_BASE}/api/management/campaigns/${fromCampaign}/creative-image`}
-                        alt='Meta 광고 이미지'
-                        className='absolute inset-0 h-full w-full object-contain'
-                        onError={e => {
-                          (e.currentTarget as HTMLImageElement).style.display = 'none';
-                          e.currentTarget.nextElementSibling?.classList.remove('hidden');
-                        }}
-                      />
-                      <div className='hidden flex-col items-center gap-2 py-6'>
-                        <p className='text-sm font-medium text-[#3182F6]'>Meta 광고 이미지 연결됨</p>
-                        <p className='text-[11px] text-[#8B95A1] text-center px-4'>미리보기를 불러오지 못했지만 시뮬 실행 시 자동으로 사용됩니다</p>
-                      </div>
+                      {metaPreviewUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img
+                          src={metaPreviewUrl}
+                          alt='Meta 광고 이미지'
+                          className='absolute inset-0 h-full w-full object-contain'
+                        />
+                      ) : (
+                        <div className='flex flex-col items-center gap-2 py-6'>
+                          <p className='text-sm font-medium text-[#3182F6]'>Meta 광고 이미지 연결됨</p>
+                          <p className='text-[11px] text-[#8B95A1] text-center px-4'>이미지를 불러오는 중...</p>
+                        </div>
+                      )}
                       <button
                         type='button'
-                        onClick={() => { setImageUrl(''); setInputMode('image'); }}
+                        onClick={() => { setImageUrl(''); setInputMode('image'); setMetaPreviewUrl(null); }}
                         className='absolute bottom-2 right-2 text-[11px] bg-white/80 dark:bg-black/60 text-[#8B95A1] rounded px-2 py-0.5 hover:text-[#3182F6]'>
                         이미지 교체
                       </button>
