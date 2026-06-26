@@ -37,6 +37,9 @@ _SYSTEM = (
     "표본20·전체, 제목·설명은 ad_title·ad_description에 반영)으로 바로 실행한다.\n"
     "  실행 후 결과의 persisted가 false면 '프로젝트 미선택으로 결과가 저장되지 않았어요 — "
     "나중에 조회하려면 프로젝트를 선택해 다시 돌려주세요'라고 반드시 안내한다.\n"
+    "  실행 후엔 진행률이 화면에 표시되고 완료되면 좌측 선택된 프로젝트의 '시뮬레이션' 목록에 "
+    "추가된다고 안내한다. 사용자가 '다 됐어?/완료됐어?'라고 물으면 sim_status로 확인한다"
+    "(처리 중이면 '아직 처리 중', 완료면 KPI를 인용).\n"
     "  사용한 설정을 답에 명시하고 다른 설정을 원하면 함께 말해달라고 안내한다.\n"
     "  맥락에 첨부된 광고가 없으면 start_simulation을 호출하지 말고 먼저 이미지 첨부를 요청한다.\n"
     "- 페르소나 토론(debate)은 시뮬 결과와 별개 산출물이다. '토론 현황/목록'은 "
@@ -87,7 +90,6 @@ def build_simulation_agent(settings) -> Any:
         api_key=settings.anthropic_api_key,  # os.environ 의존 제거 — 키를 명시 전달
         temperature=0,
     )
-    _svc: dict = {}  # 지연 생성 sim 서비스 — 트리거(start_simulation) 실제 호출 시에만 build
 
     class _State(MessagesState, total=False):
         simulation_id: str | None
@@ -99,6 +101,7 @@ def build_simulation_agent(settings) -> Any:
         used_tools: list[str]
         kb_citations: list[dict]
         sim_data: dict
+        triggered: dict
         tool_rounds: int
 
     @tool
@@ -159,12 +162,9 @@ def build_simulation_agent(settings) -> Any:
         """
         if not ad_id:
             return {"error": "need_ad", "message": "먼저 광고 이미지를 첨부해 주세요."}
+        from domain.chat.adapters import sim_runtime  # noqa: PLC0415
         from domain.simulation.contracts.schemas import SimulationRunRequest  # noqa: PLC0415
 
-        if "svc" not in _svc:
-            from domain.simulation.wiring import build_simulation_service  # noqa: PLC0415
-
-            _svc["svc"] = build_simulation_service(settings)
         tf: dict = {}
         if target_age_min is not None:
             tf["age_min"] = target_age_min
@@ -185,13 +185,18 @@ def build_simulation_agent(settings) -> Any:
             project_id=project_id,
             organization_id=org_id,
         )
-        run_id = await _svc["svc"].start(req)
+        # 챗 전용 싱글톤으로 실행 — 챗 라우터가 같은 인스턴스로 진행/결과를 스트림한다.
+        svc = sim_runtime.get_chat_sim_service(settings)
+        run_id = await svc.start(req)
+        sim_runtime.set_last_run_id(run_id)
         return {
             "run_id": run_id,
             "sample_size": sample_size,
             "target": tf or "전체(AUTO)",
             "ad_title": ad_title,
             "persisted": bool(project_id),
+            "stream_url": f"/api/chat/sim/{run_id}/stream",
+            "result_url": f"/api/chat/sim/{run_id}/result",
         }
 
     @tool
@@ -213,6 +218,27 @@ def build_simulation_agent(settings) -> Any:
             return {"error": "need_simulation_id"}
         return await sim_tools.start_debate(simulation_id)
 
+    @tool
+    async def sim_status(run_id: str | None = None) -> dict:
+        """방금 트리거한 시뮬의 진행 상태(처리 중/완료)·완료 시 KPI를 확인한다.
+
+        run_id를 안 주면 가장 최근 챗 트리거 시뮬을 본다.
+        """
+        from domain.chat.adapters import sim_runtime  # noqa: PLC0415
+
+        rid = run_id or sim_runtime.get_last_run_id()
+        if not rid:
+            return {"error": "no_recent_run", "message": "최근 트리거한 시뮬이 없어요."}
+        svc = sim_runtime.get_chat_sim_service(settings)
+        result = svc.get_result(rid)
+        if result:
+            agg = result.get("aggregate") or {}
+            return {"status": "completed", "run_id": rid, "aggregate": agg}
+        db = await sim_tools.sim_result(rid)
+        if isinstance(db, dict) and "error" not in db:
+            return {"status": "completed", "run_id": rid, "aggregate": db}
+        return {"status": "processing", "run_id": rid}
+
     tools = [
         sim_result,
         sim_persona_basis,
@@ -223,6 +249,7 @@ def build_simulation_agent(settings) -> Any:
         sim_debate_list,
         sim_debate_detail,
         start_debate,
+        sim_status,
     ]
     bound = llm.bind_tools(tools)
     by_name = {t.name: t for t in tools}
@@ -239,6 +266,7 @@ def build_simulation_agent(settings) -> Any:
         used = list(state.get("used_tools", []))
         kb = list(state.get("kb_citations", []))
         sim_data = dict(state.get("sim_data", {}))
+        triggered = dict(state.get("triggered", {}))
         ctx_id = state.get("simulation_id")
         org_id = state.get("organization_id")
         out: list[ToolMessage] = []
@@ -265,6 +293,8 @@ def build_simulation_agent(settings) -> Any:
                 kb.extend(result if isinstance(result, list) else [])
             elif name == "sim_result" and isinstance(result, dict) and "error" not in result:
                 sim_data = result
+            elif name == "start_simulation" and isinstance(result, dict) and result.get("run_id"):
+                triggered = result  # 진행률 위젯용 — 서브에이전트가 structured 프레임으로 노출
             out.append(
                 ToolMessage(content=json.dumps(result, ensure_ascii=False), tool_call_id=cid)
             )
@@ -273,6 +303,7 @@ def build_simulation_agent(settings) -> Any:
             "used_tools": used,
             "kb_citations": kb,
             "sim_data": sim_data,
+            "triggered": triggered,
             "tool_rounds": state.get("tool_rounds", 0) + 1,
         }
 
@@ -309,6 +340,7 @@ def build_simulation_agent(settings) -> Any:
             "used_tools": list(final.get("used_tools", [])),
             "kb_citations": list(final.get("kb_citations", [])),
             "sim_data": final.get("sim_data", {}),
+            "triggered": final.get("triggered", {}),
         }
 
     return answer

@@ -61,7 +61,15 @@ class SimulationSubAgent:
 
             question = history_to_preamble(req.history) + req.question
             out = await agent(question, req.context_ids)
+            triggered = out.get("triggered") or {}
             sim_data = out.get("sim_data") or {}
+            # 트리거(진행률 위젯) 우선, 없으면 조회 집계를 structured로 노출.
+            if triggered:
+                structured = {"kind": "simulation_started", "data": triggered}
+            elif sim_data:
+                structured = {"kind": "simulation_aggregate", "data": sim_data}
+            else:
+                structured = {}
             return SubAgentResult(
                 route=Route.SIMULATION,
                 answer=out.get("answer") or "결과를 가져왔어요.",
@@ -70,7 +78,7 @@ class SimulationSubAgent:
                     for c in out.get("kb_citations", [])
                 ],
                 used_tools=list(out.get("used_tools", [])),
-                structured=({"kind": "simulation_aggregate", "data": sim_data} if sim_data else {}),
+                structured=structured,
             )
 
         # --- 폴백(키 없음/mock): 구조화(트리거는 고정 기본값) ---

@@ -168,3 +168,25 @@ async def chat_feedback(body: FeedbackRequest) -> dict:
         corrected_answer=body.corrected_answer,
     )
     return {"ok": True}
+
+
+@router.get("/sim/{run_id}/stream")
+async def chat_sim_stream(run_id: str) -> StreamingResponse:
+    """챗 트리거 시뮬의 진행률 SSE — 챗 전용 시뮬 서비스 인스턴스에서 이벤트를 흘린다.
+
+    챗에서 띄운 시뮬은 표준 시뮬 라우터와 다른 인스턴스라, 같은 인스턴스를 쓰는 이 경로로 본다.
+    """
+    from domain.chat.adapters.sim_runtime import get_chat_sim_service
+
+    svc = get_chat_sim_service(settings)
+    return StreamingResponse(svc.stream_events(run_id), media_type="text/event-stream")
+
+
+@router.get("/sim/{run_id}/result")
+async def chat_sim_result(run_id: str) -> dict:
+    """챗 트리거 시뮬의 결과(완료 후) — 인메모리 우선, 없으면 not_found."""
+    from domain.chat.adapters.sim_runtime import get_chat_sim_service
+
+    svc = get_chat_sim_service(settings)
+    result = svc.get_result(run_id)
+    return result or {"error": "not_found", "run_id": run_id}
