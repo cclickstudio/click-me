@@ -324,3 +324,79 @@ async def test_synthesize_clarify_returns_question():
     }
     out = await nodes.synthesize(state)
     assert out["final_answer"] == "시뮬레이션을 돌릴까요, 광고를 생성할까요?"
+
+
+@pytest.mark.asyncio
+async def test_load_context_resets_turn_scoped_state():
+    """체크포인터가 thread별 state 전체를 누적하므로 직전 턴의 위임 산출물을 매 턴 리셋한다.
+
+    리셋이 없으면 위임 턴 다음의 general 턴에서 stale sub_results가 남아
+    synthesize가 직전 서브에이전트 답을 복붙한다(턴 간 누수 버그).
+    """
+    from langchain_core.messages import HumanMessage
+
+    from domain.chat.graph.nodes import ChatGraphDeps, make_nodes
+
+    deps = ChatGraphDeps(llm=None, repo=None, memory=None)
+    nodes = make_nodes(deps)
+    state = {
+        "messages": [HumanMessage(content="안녕")],
+        "sub_results": [{"answer": "직전 턴 답"}],
+        "citations": [{"x": 1}],
+        "execution_result": {"done": True},
+        "delegations": 3,
+        "clarify_question": "직전 되물음?",
+        "final_answer": "직전 답",
+    }
+    out = await nodes.load_context(state, {"configurable": {"thread_id": "t"}})
+    assert out["sub_results"] == []
+    assert out["citations"] == []
+    assert out["execution_result"] is None
+    assert out["delegations"] == 0
+    assert out["clarify_question"] is None
+    assert out["final_answer"] == ""
+
+
+@pytest.mark.asyncio
+async def test_general_turn_after_delegation_does_not_echo_prev_subagent():
+    """E2E — 위임 턴 다음의 general 턴이 직전 서브에이전트 답을 복붙하지 않고 CLIO를 호출한다.
+
+    체크포인터(MemorySaver)로 같은 thread 2턴: 턴1 시뮬 위임 → sub_results 기록,
+    턴2 일반질문 → general(위임 없음). load_context 리셋이 없으면 stale sub_results로
+    턴1 답이 되풀이된다(화면의 복붙 버그 직접 재현).
+    """
+    from langchain_core.messages import HumanMessage
+    from langgraph.checkpoint.memory import MemorySaver
+
+    from domain.chat.contracts.agent_io import Route, SubAgentResult
+    from domain.chat.graph.builder import ChatGraphDeps, build_chat_graph
+
+    async def fake_clio(text, history, context=None):
+        return "일반 답변(CLIO)"
+
+    class FakeSub:
+        route = Route.SIMULATION
+
+        async def run(self, req):
+            return SubAgentResult(route=Route.SIMULATION, answer="턴1 시뮬 결과")
+
+    deps = ChatGraphDeps(
+        llm=None,
+        repo=None,
+        memory=None,
+        subagents={Route.SIMULATION.value: FakeSub()},
+        clio=fake_clio,
+    )
+    graph = build_chat_graph(deps, checkpointer=MemorySaver())
+    cfg = {"configurable": {"thread_id": "t-leak"}}
+
+    # 턴1: 시뮬 키워드 → simulation 위임 → sub_results 기록
+    await graph.ainvoke(
+        {"messages": [HumanMessage(content="이 광고 시뮬 돌려줘")], "context_ids": {}}, cfg
+    )
+    # 턴2: 일반 질문(시뮬/생성/매니지 키워드 없음) → general → CLIO 호출
+    out = await graph.ainvoke(
+        {"messages": [HumanMessage(content="고마워 잘 부탁해")], "context_ids": {}}, cfg
+    )
+    assert out["final_answer"] == "일반 답변(CLIO)"
+    assert "턴1 시뮬 결과" not in out["final_answer"]

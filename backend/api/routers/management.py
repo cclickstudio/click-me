@@ -760,6 +760,7 @@ async def compare_before_after(
         return {"items": []}
     except Exception:  # noqa: BLE001 — 그 외 목록 실패면 빈 결과
         return {"items": []}
+
     async def _row(c) -> dict | None:
         cid = c.campaign_id
         m, _blocked = await _safe_meta(reader.get_metrics(cid, now))
@@ -1021,9 +1022,7 @@ async def _reconcile_deleted_campaigns(
     """
     if org_id is None:
         return  # org 불명이면 미수행(크로스테넌트 오삭제 방지)
-    conn = await db.scalar(
-        select(MetaConnection).where(MetaConnection.organization_id == org_id)
-    )
+    conn = await db.scalar(select(MetaConnection).where(MetaConnection.organization_id == org_id))
     if conn is None or not conn.ad_account_id:
         return
     rows = (

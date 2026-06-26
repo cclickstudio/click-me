@@ -146,6 +146,15 @@ class _Nodes:
             "long_term": long_term,
             "pending_action": None,
             "route": "",
+            # 턴 스코프 리셋 — 체크포인터가 thread별 state 전체를 누적하므로, 직전 턴의
+            # 위임 산출물이 이번 턴(특히 위임 없는 general)으로 새지 않게 매 턴 비운다.
+            # 누락 시: 위임 턴 다음의 general 턴에서 stale sub_results로 직전 답이 복붙됨.
+            "sub_results": [],
+            "citations": [],
+            "execution_result": None,
+            "delegations": 0,
+            "clarify_question": None,
+            "final_answer": "",
         }
 
     # ── supervisor ───────────────────────────────────────────────────────────

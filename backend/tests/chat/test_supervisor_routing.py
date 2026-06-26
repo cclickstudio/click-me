@@ -150,3 +150,36 @@ def test_route_guard_skips_clarify():
 
     # 카운트 워드가 있어도 clarify는 가드가 건드리지 않는다(LLM 모호 판단 존중).
     assert apply_route_guard(Route.CLARIFY, "캠페인 목록 보여줘") is Route.CLARIFY
+
+
+# ---- 페르소나 생성 방식/데이터 질문 → simulation 라우팅 ----
+def test_keyword_route_persona_question_to_simulation():
+    # 키워드 폴백은 '페르소나'를 시뮬로 분류한다('생성' 겹침에도 시뮬 우선).
+    assert keyword_route("페르소나 생성은 무슨 데이터로 하지?") is Route.SIMULATION
+
+
+@pytest.mark.asyncio
+async def test_routing_prompt_guides_persona_generation_to_simulation():
+    """라우팅 프롬프트가 '페르소나가 어떻게/무슨 데이터로 생성되는지'를 simulation으로 안내한다.
+
+    LLM이 이를 일반 질문(answer_directly)으로 오판하던 화면 버그 대응 — 프롬프트에
+    페르소나 생성 방식·데이터 질문의 위임처를 명시한다.
+    """
+    captured = {}
+
+    class _Cap:
+        def bind_tools(self, _t):
+            return self
+
+        async def ainvoke(self, msgs):
+            captured["sys"] = msgs[0].content
+            return AIMessage(
+                content="",
+                tool_calls=[{"name": "route_to_simulation", "args": {"reason": "r"}, "id": "1"}],
+            )
+
+    route = await decide_route(
+        [HumanMessage(content="페르소나는 무슨 데이터로 생성되나요?")], llm=_Cap()
+    )
+    assert route is Route.SIMULATION
+    assert "무슨 데이터로 생성" in captured["sys"]  # 새 라우팅 가이드가 프롬프트에 포함
