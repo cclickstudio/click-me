@@ -6,6 +6,7 @@ from collections.abc import Awaitable, Callable
 
 from api.orchestration.registry import AgentRegistry
 from api.orchestration.routing import KeywordMatcher, Router
+from domain.generator.chat.domain_agent import GeneratorDomainAgent
 from domain.management.assistant.agent import build_management_agent
 from domain.management.assistant.contracts import AskRequest, AskResult
 
@@ -65,15 +66,6 @@ class ManagementDomainAgent:
         return await self._ask(req)
 
 
-class GeneratorStubAgent:
-    """generator 스텁 — 결정론 ad_id 반환(실 이미지 파이프라인은 S3)."""
-
-    domain = "generator"
-
-    async def ask(self, ctx, step) -> dict:
-        return {"ad_id": _stub_id("stub-ad", ctx.user_input), "candidates": []}
-
-
 class SimulationStubAgent:
     """simulation 스텁 — 블랙보드에서 generate ad_id를 읽어 KPI 더미 반환(실 KPI·게이트는 S4)."""
 
@@ -100,6 +92,6 @@ def build_orchestration(settings) -> tuple[Router, AgentRegistry]:
     )
     registry = AgentRegistry()
     registry.register(ManagementDomainAgent(build_management_agent(settings)))
-    registry.register(GeneratorStubAgent())
+    registry.register(GeneratorDomainAgent())
     registry.register(SimulationStubAgent())
     return router, registry

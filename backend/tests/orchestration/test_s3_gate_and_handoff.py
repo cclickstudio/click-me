@@ -72,3 +72,12 @@ def test_no_attachment_keeps_single_resolved_domain():
     route = Router([KeywordMatcher("management", frozenset({"캠페인"}))]).route("이번 캠페인 예산?")
     plan = build_plan(route, query="이번 캠페인 예산?")
     assert [s.action for s in plan.steps] == ["answer"]
+
+
+def test_bootstrap_registers_real_generator_agent():
+    from api.orchestration.bootstrap import build_orchestration
+    from domain.generator.chat.domain_agent import GeneratorDomainAgent
+
+    _, registry = build_orchestration(settings=object())
+    agent = registry.get("generator")
+    assert isinstance(agent, GeneratorDomainAgent)
