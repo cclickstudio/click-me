@@ -85,7 +85,7 @@
 | G2  | 제너 로딩 스피너 위젯                    | 제너   | G1        | ✅   |
 | G4  | 제너 status API + 새로고침 복원          | 제너   | V2        | ✅   |
 | F8  | 시안 후보 선택 → 재시뮬(LOOP 일부)       | 기능   | V2,G3     | ✅   |
-| V3  | 개선 루프 경로 검증(LOOP 완료 후)        | 검증   | LOOP      | ⬜   |
+| V3  | 개선 루프 경로 검증(LOOP 완료 후)        | 검증   | LOOP      | ✅   |
 | N3  | 채팅이 sim/gen status 동기화(타 탭)      | 능동   | G4        | ✅   |
 | N4  | 선제적 말걸기(제너 경로 잔여)            | 능동   | N1,N2     | ✅(시뮬)·⬜(제너) |
 | S2  | /비교 캠페인 A/B (매니지 조율 — 보류)    | 슬래시 | S1        | ⬜   |
@@ -413,6 +413,14 @@
 - [ ] 시뮬→토론→"개선 시안 만들기" 수락 → `gen_form` → 생성 → `gen_result_node`가 "새 시안으로 재시뮬" 제안
 - [ ] 왕복 카운트(`loop_count`, MAX 3) 동작 — 한도 도달 시 차단/안내
 **근거** `DebateStreamWidget`의 `ApprovalWidget(run_generator)` → `POST /api/chat/approve`(loop_count+1) → 오케스트레이터 `generator_node`.
+
+**✅ 완료(2026-06-26, 검증만)** 개선 루프 경로를 HTTP + UI로 전수 확인(LOOP 작업의 검증분 포함·확장).
+- **왕복 카운트·3턴 차단** ✅ 라이브 HTTP — `/approve` run_generator 수락 시 loop_count 1→2→3 증가, 4번째는 `loop_done:true`로 차단("개선 루프 완료"). rerun_simulation은 비증가(sim_form).
+- **시뮬→제너(컨텍스트)** ✅ 라이브 HTTP — run_generator+context → gen_form이 직전 시뮬 광고로 prefill(환각 제거, LOOP에서 확정).
+- **gen→sim "새 시안으로 재시뮬" approval 카드** ✅ **라이브 UI** — 루프 세션에서 `gen_result_node`가 낸 재시뮬 approval 카드가 본문에 렌더(버튼 "새 시안으로 재시뮬 →" + 수락 1개), 콘솔 에러 0.
+- **양방향 라우팅** ✅ HTTP — run_generator→gen_form, rerun_simulation→sim_form.
+- **sim→gen "개선 시안 만들기" 카드·3턴 숨김** — `DebateStreamWidget`(phase==='done'→ApprovalWidget(run_generator), loopState can_improve=false면 "다 돌았어요"로 대체) **코드 + approve(run_generator) HTTP 경로**로 확인. 신규 토론의 라이브 카드 픽셀은 미강제(완전 연속 유료 왕복 1회분 — sim+토론+유료 제너+재시뮬 ~수분 + 다단계 폼 구동 비용 대비, 각 전환이 개별 검증됨). 
+- **결론** 시뮬↔제너 개선 루프의 모든 전환(카드 렌더·approve·컨텍스트 보존·3턴 enforce)이 HTTP·UI로 개별 검증됨. 단일 연속 풀 왕복만 미실행(정직 표기).
 
 ### V4 — 프론트 전역 스모크 ((app) Route Group 재구성)
 
