@@ -32,12 +32,13 @@ type Campaign = {
   ctr?: number;
 };
 type SourceMeta = {
-  source: string; // management | clio
+  source: string; // management | clio | generator
   label: string; // 매니지먼트 어시스턴트 | CLIO
   engine: string; // OpenAI · 실측+KB | Gemini
   citations?: Citation[];
   used_tools?: string[];
-  thread_id?: string; // 피드백 적재 키
+  thread_id?: string; // HITL 재개 키 (interrupt 멈춤 시)
+  requires_approval?: boolean; // HITL — 사람 승인 필요
   campaigns?: Campaign[]; // live_campaigns 결과 — 클릭해서 관리 페이지로 이동
 };
 type Message = {

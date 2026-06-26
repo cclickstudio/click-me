@@ -993,6 +993,18 @@ async def kb_eval_run(k: int = 5) -> dict:
     return await evaluate(k=k)
 
 
+@router.get("/kb/eval/faithfulness")
+async def kb_eval_faithfulness(n: int = 30) -> dict:
+    """LLM as Judge — 에이전트 응답의 KB 근거 충실도(faithfulness) 측정.
+
+    사전조건: POST /kb/eval/generate로 QA쌍 생성 필요.
+    목표 기준: ≥ 0.85 발표 자료 기재 가능, 0.70~0.84 개선 여지, < 0.70 프로덕션 미달.
+    """
+    from domain.management.assistant.rag_eval import evaluate_faithfulness  # noqa: PLC0415
+
+    return await evaluate_faithfulness(n=n)
+
+
 # ── 캠페인 목록·성과 대시보드 (🅰 reader 영역 데모 노출) ──────────────────
 # 백엔드에 "캠페인 목록" 능력이 없어(이름·상태 미보유) 데모 캠페인 상수 + MockAdPlatform로
 # 요약/시계열을 합성한다. 실연동 시 reader.list_campaigns로 교체.
