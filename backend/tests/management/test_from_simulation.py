@@ -25,7 +25,9 @@ def test_resolve_sim_asset_key():
     assert f("/api/generator/image?key=secret%2Fkey") is None  # 비-durable prefix
     # 우리 S3 버킷 URL(presigned 포함) → 경로에서 키 추출(서명 쿼리 무시)
     assert (
-        f("https://clickme-assets.s3.amazonaws.com/generated-ads/g/candidate-2.png?X-Amz-Signature=z")
+        f(
+            "https://clickme-assets.s3.amazonaws.com/generated-ads/g/candidate-2.png?X-Amz-Signature=z"
+        )
         == "generated-ads/g/candidate-2.png"
     )
     assert f("https://other-bucket.s3.amazonaws.com/generated-ads/g/x.png") is None  # 타 버킷

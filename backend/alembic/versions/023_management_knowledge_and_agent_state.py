@@ -79,9 +79,7 @@ def upgrade() -> None:
         "CREATE INDEX IF NOT EXISTS ix_kb_chunks_document "
         "ON management_kb_chunks (document_id, chunk_index)"
     )
-    op.execute(
-        "CREATE INDEX IF NOT EXISTS ix_kb_chunks_tenant ON management_kb_chunks (tenant_id)"
-    )
+    op.execute("CREATE INDEX IF NOT EXISTS ix_kb_chunks_tenant ON management_kb_chunks (tenant_id)")
 
     # ── 3층: 채팅 세션 + 메시지 (멀티턴·관측) ──────────────────────────
     op.execute("""
@@ -98,8 +96,7 @@ def upgrade() -> None:
         )
     """)
     op.execute(
-        "CREATE INDEX IF NOT EXISTS ix_chat_sessions_thread "
-        "ON management_chat_sessions (thread_id)"
+        "CREATE INDEX IF NOT EXISTS ix_chat_sessions_thread ON management_chat_sessions (thread_id)"
     )
     op.execute(
         "CREATE INDEX IF NOT EXISTS ix_chat_sessions_tenant "

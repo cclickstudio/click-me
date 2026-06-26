@@ -1,18 +1,21 @@
-import asyncio
 import json
-import threading
 import time
 from collections.abc import AsyncGenerator, Awaitable, Callable, Iterator
 
-import google.generativeai as genai
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
+from openai import AsyncOpenAI
 from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.assistant.orchestrator import Orchestrator
 from api.assistant.wiring import build_assistant
-from core.assistant_contracts import Action, SubagentRequest, SubagentResult
+from core.assistant_contracts import Action, ProjectRef, SubagentRequest, SubagentResult
+from core.auth import optional_user
 from core.config import settings
+from core.db import get_db
+from core.models import OrganizationMember, User
 from core.schemas import ChatRequest
 from domain.management.assistant.agent import build_management_agent
 from domain.management.assistant.contracts import AskRequest
@@ -20,10 +23,7 @@ from domain.management.assistant.history import record_feedback, record_turn
 
 router = APIRouter()
 
-genai.configure(api_key=settings.gemini_api_key or "")
-_model = genai.GenerativeModel(
-    model_name="gemini-2.5-flash",
-    system_instruction="""\
+_CLIO_SYSTEM = """\
 당신은 ClickMe의 수석 광고 전략 AI 어드바이저 'CLIO'입니다.
 
 ## 정체성
@@ -48,10 +48,16 @@ _model = genai.GenerativeModel(
 - 매 턴마다 자기소개·역할 설명·배경 설명을 반복하지 않는다.
 - 정보를 수집해야 할 때는 질문을 **한 번에 하나씩**만 한다. 여러 항목을 번호 목록으로 한꺼번에 묻지 않는다.
 - 부연 설명이나 감탄사("아주 중요한 단계죠!" 등) 없이 바로 본론으로 들어간다.
-""",
-)
+"""
 
-_SENTINEL = object()
+_clio_client: AsyncOpenAI | None = None
+
+
+def _get_clio_client() -> AsyncOpenAI:
+    global _clio_client
+    if _clio_client is None:
+        _clio_client = AsyncOpenAI(api_key=settings.openai_api_key)
+    return _clio_client
 
 # ── 최소 오케스트레이션: 매니지먼트 질문만 서브에이전트로 라우팅 ──
 # 공통 오케스트레이터 본체가 정해지기 전의 임시 연결. 시뮬/생성은 추후 같은 방식으로 추가.
@@ -63,7 +69,6 @@ _MGMT_KEYWORDS: frozenset[str] = frozenset(
         "런레이트",
         "페이싱",
         "게재",
-        "광고",
         "ctr",
         "roas",
         "cvr",
@@ -134,17 +139,40 @@ def _subagent_sse_events(result: SubagentResult) -> Iterator[str]:
         yield _sse({"token": piece})
 
 
-@router.post("/complete")
-async def chat_complete(body: ChatRequest) -> StreamingResponse:
-    gemini_history = []
-    for m in body.messages[:-1]:
-        gemini_history.append(
-            {
-                "role": "user" if m.role == "user" else "model",
-                "parts": [m.content],
-            }
-        )
+async def _get_user_projects(user: User, db: AsyncSession) -> list[ProjectRef]:
+    """로그인 유저가 접근 가능한 프로젝트 목록 — 슬롯필링 되묻기용."""
+    from sqlalchemy import text  # noqa: PLC0415
 
+    base = "status != 'DELETED' AND deleted_at IS NULL"
+    if user.role.upper() == "ADMIN":
+        rows = await db.execute(
+            text(f"SELECT id, name FROM projects WHERE {base} ORDER BY created_at DESC LIMIT 20")
+        )
+    else:
+        member = await db.scalar(
+            select(OrganizationMember).where(OrganizationMember.user_id == user.id)
+        )
+        if not member:
+            return []
+        org_id = str(member.organization_id)
+        team_id = str(user.team_id) if user.team_id else None
+        rows = await db.execute(
+            text(
+                f"SELECT id, name FROM projects WHERE organization_id = :org AND {base} "
+                "AND (team_id = :team OR (team_id IS NULL AND created_by = :uid)) "
+                "ORDER BY created_at DESC LIMIT 20"
+            ),
+            {"org": org_id, "team": team_id, "uid": str(user.id)},
+        )
+    return [ProjectRef(id=str(r.id), name=r.name) for r in rows]
+
+
+@router.post("/complete")
+async def chat_complete(
+    body: ChatRequest,
+    user: User | None = Depends(optional_user),
+    db: AsyncSession = Depends(get_db),
+) -> StreamingResponse:
     last_message = body.messages[-1].content if body.messages else ""
 
     async def generate() -> AsyncGenerator[str, None]:
@@ -211,11 +239,21 @@ async def chat_complete(body: ChatRequest) -> StreamingResponse:
         sub_req = SubagentRequest(
             messages=body.messages,
             session_id=body.session_id,
+            user_id=str(user.id) if user else None,
             context_ad_id=body.context_ad_id,
             improve_context=body.improve_context,
+            product_image_temp_key=body.product_image_temp_key,
+            brand_logo_s3_key=body.brand_logo_s3_key,
+            skip_asset_prompt=body.skip_asset_prompt,
         )
+
+        async def _project_provider() -> list[ProjectRef]:
+            return await _get_user_projects(user, db) if user else []
+
         try:
-            _intent, result = await _get_orchestrator().run_turn(sub_req)
+            _intent, result = await _get_orchestrator().run_turn(
+                sub_req, project_provider=_project_provider
+            )
         except Exception as exc:  # noqa: BLE001 — 라우팅 실패는 CLIO로 폴백(채팅 안 끊김)
             print(f"[chat] orchestrator error: {exc!r}")
             result = None
@@ -225,41 +263,29 @@ async def chat_complete(body: ChatRequest) -> StreamingResponse:
             yield 'data: {"done": true}\n\n'
             return
 
-        # 그 외(advise/미등록)는 기존 CLIO(Gemini)
-        clio_meta = {"source": "clio", "label": "CLIO", "engine": "Gemini"}
-        yield f"data: {json.dumps({'meta': clio_meta}, ensure_ascii=False)}\n\n"
+        # 그 외(advise/미등록)는 CLIO(OpenAI)
+        clio_meta = {"source": "clio", "label": "CLIO", "engine": "OpenAI"}
+        yield _sse({"meta": clio_meta})
 
-        loop = asyncio.get_running_loop()
-        queue: asyncio.Queue = asyncio.Queue()
+        oai_messages = [{"role": "system", "content": _CLIO_SYSTEM}]
+        for m in body.messages:
+            oai_messages.append({
+                "role": "user" if m.role == "user" else "assistant",
+                "content": m.content,
+            })
 
-        def _run_sync() -> None:
-            try:
-                chat = _model.start_chat(history=gemini_history)
-                response = chat.send_message(last_message, stream=True)
-                for chunk in response:
-                    try:
-                        text = chunk.text
-                    except Exception as e:  # noqa: BLE001
-                        print(f"[chat] chunk.text error: {e!r}")
-                        continue
-                    print(f"[chat] chunk: {text!r}")
-                    if text:
-                        loop.call_soon_threadsafe(queue.put_nowait, text)
-            except Exception as exc:  # noqa: BLE001
-                print(f"[chat] _run_sync error: {exc!r}")
-                loop.call_soon_threadsafe(queue.put_nowait, exc)
-            finally:
-                loop.call_soon_threadsafe(queue.put_nowait, _SENTINEL)
-
-        threading.Thread(target=_run_sync, daemon=True).start()
-
-        while True:
-            item = await queue.get()
-            if item is _SENTINEL:
-                break
-            if isinstance(item, Exception):
-                break
-            yield f"data: {json.dumps({'token': item}, ensure_ascii=False)}\n\n"
+        try:
+            stream = await _get_clio_client().chat.completions.create(
+                model=getattr(settings, "chat_model", "gpt-4o-mini"),
+                messages=oai_messages,
+                stream=True,
+            )
+            async for chunk in stream:
+                text = chunk.choices[0].delta.content or ""
+                if text:
+                    yield _sse({"token": text})
+        except Exception as exc:  # noqa: BLE001
+            yield _sse({"token": f"CLIO 응답 중 문제가 발생했어요: {exc}"})
 
         yield 'data: {"done": true}\n\n'
 

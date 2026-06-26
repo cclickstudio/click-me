@@ -14,14 +14,14 @@ _GEMINI_MODEL = "gemini-2.5-flash"
 
 
 def _build_classifier_llm(settings) -> object | None:
-    """의도 분류용 Gemini. 키 없으면 None(키워드 폴백)."""
-    api_key = getattr(settings, "gemini_api_key", None)
+    """의도 분류용 OpenAI. 키 없으면 None(키워드 폴백)."""
+    api_key = getattr(settings, "openai_api_key", None)
     if not api_key:
         return None
-    from langchain_google_genai import ChatGoogleGenerativeAI  # noqa: PLC0415
+    from langchain_openai import ChatOpenAI  # noqa: PLC0415
 
-    model = getattr(settings, "chat_model", _GEMINI_MODEL)
-    return ChatGoogleGenerativeAI(model=model, google_api_key=api_key, temperature=0.0)
+    model = getattr(settings, "chat_model", "gpt-4o-mini")
+    return ChatOpenAI(model=model, openai_api_key=api_key, temperature=0.0)
 
 
 def _build_management_handler(settings) -> Handler:

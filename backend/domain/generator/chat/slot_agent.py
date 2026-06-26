@@ -29,8 +29,6 @@ Starter = Callable[..., Awaitable[str]]
 
 _META = {"source": "generator", "label": "생성 어시스턴트", "engine": "Gemini · 슬롯필링"}
 
-_GEMINI_MODEL = "gemini-2.5-flash"
-
 _EXTRACT_SYSTEM = (
     "너는 광고 생성 요청에서 파라미터를 추출하는 도우미다. 대화 전체를 읽고 아래 필드를 채워라.\n"
     "- product_name: 광고할 상품·서비스 이름\n"
@@ -43,16 +41,16 @@ _EXTRACT_SYSTEM = (
 )
 
 
-def _build_gemini_extractor(settings) -> Extractor | None:
-    """Gemini 구조화 출력 추출기. 키 없으면 None(폴백 — 항상 되묻기)."""
-    api_key = getattr(settings, "gemini_api_key", None)
+def _build_openai_extractor(settings) -> Extractor | None:
+    """OpenAI 구조화 출력 추출기. 키 없으면 None(폴백 — 항상 되묻기)."""
+    api_key = getattr(settings, "openai_api_key", None)
     if not api_key:
         return None
 
-    from langchain_google_genai import ChatGoogleGenerativeAI  # noqa: PLC0415 — 키 있을 때만 로드
+    from langchain_openai import ChatOpenAI  # noqa: PLC0415
 
-    model = getattr(settings, "chat_model", _GEMINI_MODEL)
-    llm = ChatGoogleGenerativeAI(model=model, google_api_key=api_key, temperature=0.0)
+    model = getattr(settings, "chat_model", "gpt-4o-mini")
+    llm = ChatOpenAI(model=model, openai_api_key=api_key, temperature=0.0)
     structured = llm.with_structured_output(ExtractedSlots)
 
     async def _extract(messages: list[ChatMessage]) -> ExtractedSlots:
@@ -109,7 +107,7 @@ def build_generation_chat_agent(
 ):
     """async handle(SubagentRequest) -> SubagentResult. 오케스트레이터가 generate로 디스패치."""
     if extractor is None:
-        extractor = _build_gemini_extractor(settings)
+        extractor = _build_openai_extractor(settings)
     if starter is None:
         from domain.generator.service import generator_service  # noqa: PLC0415
 
@@ -182,7 +180,19 @@ def build_generation_chat_agent(
         if not project_id:
             return SubagentResult(action=Action.ASK, message=_ask_for_project(req), meta=_META)
 
-        # 3) 전부 충족 — 생성 트리거 + 핸드오프
+        # 3) 이미지 수집 단계 — 로고가 없고 건너뛰기 플래그도 없으면 인라인 업로드 카드 요청
+        if not req.brand_logo_s3_key and not req.skip_asset_prompt:
+            return SubagentResult(
+                action=Action.ASK,
+                message=(
+                    "광고 시안 생성 준비가 됐어요.\n"
+                    "브랜드 로고를 업로드해주세요. 상품 이미지는 선택 사항이에요."
+                ),
+                meta={**_META, "needs_assets": True},
+            )
+
+        # 4) 전부 충족 — 생성 트리거 + 핸드오프
+        # 상품 이미지가 있으면 파이프라인이 compose 경로(누끼 제거·배치)를 자동으로 탄다.
         gen_req = GenerationCreateRequest(
             mode=GenerationMode.CREATE,
             project_id=project_id,
@@ -191,6 +201,8 @@ def build_generation_chat_agent(
             target_audience=slots.target_audience,
             campaign_objective=slots.campaign_objective or "conversion",
             format=slots.format or "single",
+            product_image_temp_key=req.product_image_temp_key,
+            brand_logo_s3_key=req.brand_logo_s3_key,
         )
         created_by = uuid.UUID(req.user_id) if req.user_id else None
         generation_id = await starter(gen_req, created_by=created_by)

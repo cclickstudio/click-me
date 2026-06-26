@@ -39,8 +39,11 @@ class Settings(BaseSettings):
     # Anthropic
     anthropic_api_key: str
 
-    # Google Gemini
+    # Google Gemini (현재 미사용)
     gemini_api_key: str | None = None
+
+    # 채팅 어드바이저(CLIO)·의도분류기·슬롯추출기 공통 모델
+    chat_model: str = "gpt-4o-mini"
 
     # LangSmith — API 키 없으면 트레이싱 비활성(로컬 기동 가능)
     # LANGCHAIN_* 사용, LANGSMITH_*도 AliasChoices로 수용.
