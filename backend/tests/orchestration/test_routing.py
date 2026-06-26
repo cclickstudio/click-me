@@ -48,3 +48,15 @@ def test_candidates_preserved_in_decision():
     assert d.candidates == tuple(sorted(d.candidates, key=lambda c: c.score, reverse=True))
     assert {c.domain for c in d.candidates} == {"zzz", "aaa"}
     assert all(isinstance(c, Candidate) for c in d.candidates)
+
+
+def test_router_ambiguity_margin_comes_from_policy(monkeypatch):
+    # 마진을 policy에서 읽는지 — 큰 값으로 패치하면 평소 비애매 케이스가 애매가 된다.
+    from api.orchestration import policy
+
+    monkeypatch.setattr(policy, "ROUTER_AMBIGUITY_MARGIN", 0.9)
+    r = Router(
+        [KeywordMatcher("a", frozenset({"x", "y", "z"})), KeywordMatcher("b", frozenset({"x"}))]
+    )
+    d = r.route("x y z")  # a=3hit→1.0, b=1hit→0.333, 차=0.667 < 0.9 → ambiguous
+    assert d.ambiguous is True

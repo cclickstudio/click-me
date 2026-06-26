@@ -4,6 +4,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol
 
+from api.orchestration import policy
+
 
 class IntentMatcher(Protocol):
     domain: str
@@ -54,5 +56,5 @@ class Router:
         if top is None or top.score == 0.0:
             return RouteDecision(self._default, 0.0, False, candidates)
         runner = candidates[1].score if len(candidates) > 1 else 0.0
-        ambiguous = runner > 0.0 and (top.score - runner) < 0.15
+        ambiguous = runner > 0.0 and (top.score - runner) < policy.ROUTER_AMBIGUITY_MARGIN
         return RouteDecision(top.domain, top.score, ambiguous, candidates)
