@@ -66,11 +66,8 @@ class GeneratorSubAgent:
         generation_id = req.context_ids.get("generation_id")
         product_name = (req.knobs or {}).get("product_name")
 
-        # --- 트리거: 생성 의도(product_name) + 기존 결과 없음 → 새 시안 비동기 시작(액션) ---
-        if product_name and not generation_id:
-            return await self._start(req)
-
-        # --- 풀모드 ReAct: 자연어 read 질의(생성 상세/목록/사용법) ---
+        # --- 풀모드 ReAct: 조회 + 트리거(슬롯필링 start_generation)를 모두 처리 ---
+        # (상품정보를 자연어로 받아 확인 후 start_generation으로 실행 — knobs 의존 없음)
         agent = self._get_agent()
         if agent is not None:
             out = await agent(req.question, req.context_ids)
@@ -87,7 +84,9 @@ class GeneratorSubAgent:
                 structured=({"kind": "generation_detail", "data": detail} if detail else {}),
             )
 
-        # --- 폴백(키 없음/mock): 구조화 요약 ---
+        # --- 폴백(키 없음/mock): 구조화(트리거는 knobs 상품정보 기반) ---
+        if product_name and not generation_id:
+            return await self._start(req)
         if generation_id:
             return await self._fallback_detail(generation_id)
         return SubAgentResult(

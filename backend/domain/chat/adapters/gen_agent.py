@@ -20,8 +20,10 @@ _SYSTEM = (
     "- '이름(상품명) X인 생성물'은 gen_find_by_name(X)로 찾아 단건이면 gen_detail로 상세, "
     "다건이면 나열, 없으면 '없음'으로 답한다.\n"
     "- 생성 사용법·흐름·페이지는 search_kb로 설명한다.\n"
-    "- 새 시안 생성(트리거)은 여기서 하지 않는다. 근거가 없으면 모른다고 답한다.\n"
-    "문장 끝에 콜론을 쓰지 말 것."
+    "- 사용자가 '새 시안/광고 만들어/생성해'를 원하면 start_generation으로 실행한다.\n"
+    "  실행 전 상품명·설명·타깃·목표를 확인하라(상품명은 필수). 값을 주거나 동의하면 실행하고 "
+    "사용한 설정을 답에 명시한다.\n"
+    "- 근거가 없으면 모른다고 답한다. 문장 끝에 콜론을 쓰지 말 것."
 )
 
 
@@ -55,6 +57,7 @@ def build_generator_agent(settings) -> Any:
     class _State(MessagesState, total=False):
         generation_id: str | None
         organization_id: str | None  # 서버 결정론 스코프(LLM 산출 무시) — 테넌트 격리
+        project_id: str | None  # 트리거 대상 프로젝트 — 서버 주입
         used_tools: list[str]
         kb_citations: list[dict]
         gen_data: dict
@@ -85,7 +88,43 @@ def build_generator_agent(settings) -> Any:
         except Exception:  # noqa: BLE001 — KB 미적재면 빈 결과로 진행
             return []
 
-    tools = [gen_detail, gen_list, gen_find_by_name, search_kb]
+    @tool
+    async def start_generation(
+        product_name: str,
+        product_description: str = "",
+        target_audience: str = "",
+        campaign_objective: str = "conversion",
+        project_id: str | None = None,
+    ) -> dict:
+        """새 광고 시안 생성을 실제로 실행(비동기)한다. 상품명 필수.
+
+        실행 전 상품명·설명·타깃·목표를 사용자에게 확인하라. project_id는 서버가 주입한다.
+        """
+        if not product_name or not product_name.strip():
+            return {"error": "need_product", "message": "상품명을 알려주세요."}
+        from pydantic import ValidationError  # noqa: PLC0415
+
+        from domain.generator.contracts.enums import GenerationMode  # noqa: PLC0415
+        from domain.generator.contracts.schemas import GenerationCreateRequest  # noqa: PLC0415
+        from domain.generator.service.generator_service import (  # noqa: PLC0415
+            start_generation as _start_gen,
+        )
+
+        try:
+            gen_req = GenerationCreateRequest(
+                mode=GenerationMode.CREATE,
+                product_name=product_name,
+                product_description=product_description,
+                target_audience=target_audience,
+                campaign_objective=campaign_objective or "conversion",
+                project_id=project_id,
+            )
+        except ValidationError as exc:
+            return {"error": "invalid", "detail": exc.errors()[0].get("msg", "")}
+        gid = await _start_gen(gen_req, created_by=None)
+        return {"generation_id": gid, "product_name": product_name}
+
+    tools = [gen_detail, gen_list, gen_find_by_name, search_kb, start_generation]
     bound = llm.bind_tools(tools)
     by_name = {t.name: t for t in tools}
 
@@ -111,6 +150,9 @@ def build_generator_agent(settings) -> Any:
             # org 스코프는 서버가 결정론 주입(LLM 산출 무시) — 테넌트 격리.
             if name in ("gen_detail", "gen_list", "gen_find_by_name"):
                 args["org_id"] = org_id
+            # 트리거: project는 서버가 컨텍스트에서 주입(LLM은 상품 정보만 채움).
+            if name == "start_generation":
+                args["project_id"] = state.get("project_id")
             result = await by_name[name].ainvoke(args)
             if name not in used:
                 used.append(name)
@@ -149,6 +191,7 @@ def build_generator_agent(settings) -> Any:
                 "messages": [HumanMessage(content=question)],
                 "generation_id": (context_ids or {}).get("generation_id"),
                 "organization_id": (context_ids or {}).get("organization_id"),
+                "project_id": (context_ids or {}).get("project_id"),
             },
             config={"run_name": "generator_subagent", "tags": ["chat", "generation"]},
         )

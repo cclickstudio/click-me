@@ -53,11 +53,8 @@ class SimulationSubAgent:
         sim_id = req.context_ids.get("simulation_id")
         ad_id = req.context_ids.get("ad_id")
 
-        # --- 트리거: 기존 시뮬 없이 ad_id만 → 비동기 시작(액션) ---
-        if ad_id and not sim_id:
-            return await self._start(req, ad_id)
-
-        # --- 풀모드 ReAct: 자연어 질문을 read 툴 + KB로 답 ---
+        # --- 풀모드 ReAct: 조회 + 트리거(슬롯필링 start_simulation)를 모두 처리 ---
+        # (ad_id가 있어도 즉발하지 않고 ReAct가 표본·타깃을 확인한 뒤 start_simulation으로 실행)
         agent = self._get_agent()
         if agent is not None:
             out = await agent(req.question, req.context_ids)
@@ -73,7 +70,9 @@ class SimulationSubAgent:
                 structured=({"kind": "simulation_aggregate", "data": sim_data} if sim_data else {}),
             )
 
-        # --- 폴백(키 없음/mock): 구조화 요약 ---
+        # --- 폴백(키 없음/mock): 구조화(트리거는 고정 기본값) ---
+        if ad_id and not sim_id:
+            return await self._start(req, ad_id)
         if sim_id:
             return await self._fallback_read(sim_id)
         # id 없음 + org 맥락 있으면 조직 시뮬 현황 목록으로 안내(실 DB, LLM 불필요).

@@ -28,6 +28,11 @@ _SYSTEM = (
     "- '이름이 X인 시뮬레이션'은 sim_find_by_name(X)로 후보를 찾고, 단건이면 그 simulation_id로 "
     "sim_result/sim_persona_basis로 상세를 답한다. 다건이면 후보를 나열하고, 없으면 "
     "'없음'으로 답한다.\n"
+    "- 광고(첨부 이미지)가 있고 사용자가 시뮬 '실행/돌려'를 원하면 start_simulation으로 실행한다.\n"
+    "  실행 전 표본수·타깃(연령대/성별)·제목·목표를 한 번 확인하라"
+    "(예: '표본 20명·전체 타깃으로 돌릴까요? 연령/성별을 지정할 수 있어요').\n"
+    "  사용자가 값을 주거나 동의하면 실행하고 사용한 설정을 답에 명시한다. "
+    "광고가 없으면 먼저 이미지 첨부를 요청한다.\n"
     "- '신뢰할 수 있나'는 신뢰구간·effective_n·QA·variance_warning을 근거로 설명하고, "
     "방향성은 신뢰 가능하나 절대값 단언은 피한다고 안내한다.\n"
     "- 예측(상대)과 실측(절대)을 수치로 환산하지 말 것. 근거 없으면 모른다고 답한다.\n"
@@ -61,10 +66,15 @@ def build_simulation_agent(settings) -> Any:
         api_key=settings.anthropic_api_key,  # os.environ 의존 제거 — 키를 명시 전달
         temperature=0,
     )
+    _svc: dict = {}  # 지연 생성 sim 서비스 — 트리거(start_simulation) 실제 호출 시에만 build
 
     class _State(MessagesState, total=False):
         simulation_id: str | None
         organization_id: str | None  # 서버 결정론 스코프(LLM 산출 무시) — 테넌트 격리
+        ad_id: str | None  # 첨부 광고(트리거 대상) — 서버 주입
+        ad_image_url: str | None
+        ad_image_key: str | None
+        project_id: str | None
         used_tools: list[str]
         kb_citations: list[dict]
         sim_data: dict
@@ -104,7 +114,71 @@ def build_simulation_agent(settings) -> Any:
         except Exception:  # noqa: BLE001 — KB 미적재면 빈 결과로 진행
             return []
 
-    tools = [sim_result, sim_persona_basis, sim_list, sim_find_by_name, search_kb]
+    @tool
+    async def start_simulation(
+        sample_size: int = 20,
+        target_age_min: int | None = None,
+        target_age_max: int | None = None,
+        target_gender: str | None = None,
+        ad_title: str | None = None,
+        ad_objective: str | None = None,
+        product_category: str | None = None,
+        ad_id: str | None = None,
+        ad_image_url: str | None = None,
+        ad_image_key: str | None = None,
+        project_id: str | None = None,
+        org_id: str | None = None,
+    ) -> dict:
+        """광고 시뮬레이션을 실제로 실행(큐 트리거)한다. 첨부 광고(ad_id)가 있을 때만.
+
+        실행 전 표본수·타깃(연령/성별)·제목·목표를 사용자에게 확인하라. 사용자가 값을 안 주거나
+        '그냥 돌려'라고 하면 기본(표본 20·전체 타깃)으로 실행하되 사용한 설정을 답에 명시한다.
+        ad_id·이미지·project·org는 서버가 주입 — LLM은 채우지 않는다.
+        """
+        if not ad_id:
+            return {"error": "need_ad", "message": "먼저 광고 이미지를 첨부해 주세요."}
+        from domain.simulation.contracts.schemas import SimulationRunRequest  # noqa: PLC0415
+
+        if "svc" not in _svc:
+            from domain.simulation.wiring import build_simulation_service  # noqa: PLC0415
+
+            _svc["svc"] = build_simulation_service(settings)
+        tf: dict = {}
+        if target_age_min is not None:
+            tf["age_min"] = target_age_min
+        if target_age_max is not None:
+            tf["age_max"] = target_age_max
+        if target_gender:
+            tf["gender"] = target_gender
+        req = SimulationRunRequest(
+            ad_id=ad_id,
+            ad_image_url=ad_image_url,
+            ad_image_key=ad_image_key,
+            sample_size=sample_size,
+            target_filter=tf or None,
+            ad_title=ad_title,
+            ad_objective=ad_objective,
+            product_category=product_category,
+            project_id=project_id,
+            organization_id=org_id,
+        )
+        run_id = await _svc["svc"].start(req)
+        return {
+            "run_id": run_id,
+            "sample_size": sample_size,
+            "target": tf or "전체(AUTO)",
+            "ad_title": ad_title,
+            "persisted": bool(project_id),
+        }
+
+    tools = [
+        sim_result,
+        sim_persona_basis,
+        sim_list,
+        sim_find_by_name,
+        search_kb,
+        start_simulation,
+    ]
     bound = llm.bind_tools(tools)
     by_name = {t.name: t for t in tools}
 
@@ -130,6 +204,13 @@ def build_simulation_agent(settings) -> Any:
                 args["simulation_id"] = ctx_id
             # org 스코프는 서버가 결정론 주입(LLM 산출 무시) — 테넌트 격리.
             if name in ("sim_list", "sim_find_by_name"):
+                args["org_id"] = org_id
+            # 트리거: 광고/스코프 식별자는 서버가 컨텍스트에서 강제 주입(LLM은 표본·타깃만 채움).
+            if name == "start_simulation":
+                args["ad_id"] = state.get("ad_id")
+                args["ad_image_url"] = state.get("ad_image_url")
+                args["ad_image_key"] = state.get("ad_image_key")
+                args["project_id"] = state.get("project_id")
                 args["org_id"] = org_id
             result = await by_name[name].ainvoke(args)
             if name not in used:
@@ -169,6 +250,10 @@ def build_simulation_agent(settings) -> Any:
                 "messages": [HumanMessage(content=question)],
                 "simulation_id": (context_ids or {}).get("simulation_id"),
                 "organization_id": (context_ids or {}).get("organization_id"),
+                "ad_id": (context_ids or {}).get("ad_id"),
+                "ad_image_url": (context_ids or {}).get("ad_image_url"),
+                "ad_image_key": (context_ids or {}).get("ad_image_key"),
+                "project_id": (context_ids or {}).get("project_id"),
             },
             config={"run_name": "simulation_subagent", "tags": ["chat", "simulation"]},
         )
