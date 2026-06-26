@@ -290,6 +290,9 @@ export default function Page() {
       if (t.age_min != null) params.set('age_min', String(t.age_min));
       if (t.age_max != null) params.set('age_max', String(t.age_max));
       if (t.gender) params.set('gender', t.gender);
+      if (t.ad_headline) params.set('ad_title', t.ad_headline);
+      if (t.ad_body) params.set('ad_content', t.ad_body);
+      if (t.ad_image_url) params.set('ad_image_url', t.ad_image_url);
       router.push(`/simulation?${params.toString()}`);
     } catch {
       alert('타겟팅 정보를 불러오지 못했습니다. 잠시 후 다시 시도해주세요.');

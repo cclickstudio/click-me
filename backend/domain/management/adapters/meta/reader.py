@@ -750,16 +750,21 @@ class MetaAdsReader:
         return out
 
     async def get_campaign_targeting(self, campaign_id: str) -> dict:
-        """캠페인 목표·광고세트 타겟팅 — 시뮬레이터 사전 입력용.
+        """캠페인 목표·광고세트 타겟팅·크리에이티브 — 시뮬레이터 사전 입력용.
 
-        캠페인 노드에서 objective, 첫 광고세트에서 targeting(age_min/max·genders)을 가져온다.
-        광고세트가 없거나 타겟팅 필드가 없으면 해당 키를 None으로 반환(시뮬 기본값 사용).
+        캠페인 노드에서 objective, 첫 광고세트에서 targeting(age_min/max·genders),
+        첫 광고에서 headline·body·image_url을 가져온다.
+        필드가 없으면 None 반환(시뮬 기본값 사용).
         """
-        campaign_data, adset_data = await asyncio.gather(
+        campaign_data, adset_data, ads_data = await asyncio.gather(
             self._client.get(campaign_id, {"fields": "objective,name"}),
             self._client.get(
                 f"{campaign_id}/adsets",
                 {"fields": "targeting", "limit": "1"},
+            ),
+            self._client.get(
+                f"{campaign_id}/ads",
+                {"fields": f"creative{{{_CREATIVE_FIELDS.split('creative{')[1]}", "limit": "1"},
             ),
         )
         targeting = {}
@@ -773,6 +778,18 @@ class MetaAdsReader:
             gender = "F"
         else:
             gender = ""
+
+        # 첫 광고 크리에이티브에서 headline·body·image 추출
+        ad_headline: str | None = None
+        ad_body: str | None = None
+        ad_image_url: str | None = None
+        ads = ads_data.get("data", [])
+        if ads:
+            creative = ads[0].get("creative") or {}
+            ad_headline = creative.get("title") or creative.get("name")
+            ad_body = creative.get("body")
+            ad_image_url = _pick_image(creative)
+
         return {
             "campaign_id": campaign_id,
             "campaign_name": campaign_data.get("name", ""),
@@ -780,6 +797,9 @@ class MetaAdsReader:
             "age_min": targeting.get("age_min"),
             "age_max": targeting.get("age_max"),
             "gender": gender,
+            "ad_headline": ad_headline,
+            "ad_body": ad_body,
+            "ad_image_url": ad_image_url,
         }
 
     async def get_account_spend(self, date_preset: str = "this_month") -> int:

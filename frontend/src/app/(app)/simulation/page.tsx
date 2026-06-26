@@ -88,11 +88,13 @@ export default function SimulationRunPage() {
 
   // 광고 입력
   const [adId] = useState(`AD-${Date.now()}`);
-  const [adContent, setAdContent] = useState('');
-  const [inputMode, setInputMode] = useState<InputMode>('image');
+  const [adContent, setAdContent] = useState(() => searchParams.get('ad_content') ?? '');
+  const [inputMode, setInputMode] = useState<InputMode>(() =>
+    searchParams.get('ad_image_url') ? 'url' : 'image'
+  );
   const [file, setFile] = useState<File | null>(null);
-  const [imageUrl, setImageUrl] = useState('');
-  const [adTitle, setAdTitle] = useState('');
+  const [imageUrl, setImageUrl] = useState(() => searchParams.get('ad_image_url') ?? '');
+  const [adTitle, setAdTitle] = useState(() => searchParams.get('ad_title') ?? '');
   const [categoryId, setCategoryId] = useState<number | ''>('');
   const [serviceClass, setServiceClass] = useState<number | ''>('');
   const categories = SIM_CATEGORIES; // 하드코딩 마스터(DB/API 대체).
@@ -239,14 +241,16 @@ export default function SimulationRunPage() {
   if (step === 'setup') {
     const previewUrl = file ? URL.createObjectURL(file) : null;
     // 광고 이미지는 선택 — 나머지(프로젝트·제품명·설명·카테고리·목표)는 필수.
+    // from_campaign(역방향 연결) 경로는 카테고리·세부분류를 선택사항으로 완화한다
+    // (Meta에 동일 개념이 없어 자동 입력 불가).
     const goalReady =
       goalItem === '기타' ? customGoal.trim() !== '' : goalItem !== '';
+    const categoryReady = fromCampaign ? true : categoryId !== '' && serviceClass !== '';
     const canRun =
       selectedProject !== null &&
       adTitle.trim() !== '' &&
       adContent.trim() !== '' &&
-      categoryId !== '' &&
-      serviceClass !== '' &&
+      categoryReady &&
       goalReady;
     return (
         <div className='px-8 py-8 max-w-5xl mx-auto'>

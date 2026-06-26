@@ -152,14 +152,38 @@ class MockAdPlatform:
         ]
 
     async def get_campaign_targeting(self, campaign_id: str) -> dict:
-        """Port 충족 — 데모 캠페인 타겟팅(결정론 고정값)."""
+        """Port 충족 — 데모 캠페인 타겟팅·크리에이티브(결정론 고정값)."""
         targeting_by_id = {
-            "camp_1": {"objective": "OUTCOME_SALES", "age_min": 20, "age_max": 39, "gender": "F"},
-            "camp_2": {"objective": "OUTCOME_TRAFFIC", "age_min": 20, "age_max": 49, "gender": ""},
+            "camp_1": {
+                "objective": "OUTCOME_SALES",
+                "age_min": 20,
+                "age_max": 39,
+                "gender": "F",
+                "ad_headline": "여름 신상 최대 50% 할인",
+                "ad_body": "지금 만나보는 시즌 오프 특가, 놓치지 마세요.",
+                "ad_image_url": None,
+            },
+            "camp_2": {
+                "objective": "OUTCOME_TRAFFIC",
+                "age_min": 20,
+                "age_max": 49,
+                "gender": "",
+                "ad_headline": "데일리룩 완성",
+                "ad_body": "가볍게 입기 좋은 데일리 아이템.",
+                "ad_image_url": None,
+            },
         }
         t = targeting_by_id.get(
             campaign_id,
-            {"objective": "OUTCOME_TRAFFIC", "age_min": None, "age_max": None, "gender": ""},
+            {
+                "objective": "OUTCOME_TRAFFIC",
+                "age_min": None,
+                "age_max": None,
+                "gender": "",
+                "ad_headline": None,
+                "ad_body": None,
+                "ad_image_url": None,
+            },
         )
         return {"campaign_id": campaign_id, "campaign_name": campaign_id, **t}
 

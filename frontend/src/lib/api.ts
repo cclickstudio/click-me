@@ -585,6 +585,9 @@ export const api = {
         age_min: number | null;
         age_max: number | null;
         gender: '' | 'M' | 'F';
+        ad_headline: string | null;
+        ad_body: string | null;
+        ad_image_url: string | null;
       }>(`/management/campaigns/${campaignId}/targeting`),
     // 기존 Meta 캠페인에 시뮬 역방향 연결
     linkSimulation: (campaignId: string, simulationId: string) =>
