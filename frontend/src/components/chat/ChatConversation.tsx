@@ -248,6 +248,8 @@ export default function ChatConversation({
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
+  // N7 — 새 채팅 진입 시 최근 시뮬/제너 기반 다음 단계 제안(시뮬 후 'improve', 제너 후 'simulate').
+  const [nextSuggest, setNextSuggest] = useState<'improve' | 'simulate' | null>(null);
   const [slashIndex, setSlashIndex] = useState(0);
   const [attachedImage, setAttachedImage] = useState<File | null>(null);
   const [attachedPreview, setAttachedPreview] = useState<string | null>(null);
@@ -437,6 +439,42 @@ export default function ChatConversation({
       }
     })();
   }, [sessionId]);
+
+  // N7 — 빈 채팅(새 채팅) 진입 시 최근 활동을 보고 다음 단계를 제안한다.
+  // 가장 최근이 시뮬이면 개선(제너) 제안, 제너면 시뮬 제안. 활동 없으면 미표시.
+  useEffect(() => {
+    if (messages.length > 0 || !projectId) {
+      setNextSuggest(null);
+      return;
+    }
+    let alive = true;
+    const latestTs = (rows: Record<string, unknown>[]) => {
+      let t = 0;
+      for (const r of rows) {
+        const ts = Date.parse(String(r.created_at ?? ''));
+        if (!Number.isNaN(ts) && ts > t) t = ts;
+      }
+      return t;
+    };
+    (async () => {
+      try {
+        const [sims, gens] = await Promise.all([
+          api.projects.simulations(projectId, 5).catch(() => [] as Record<string, unknown>[]),
+          api.projects.generations(projectId, 5).catch(() => [] as Record<string, unknown>[]),
+        ]);
+        if (!alive) return;
+        const simTs = latestTs(sims);
+        const genTs = latestTs(gens);
+        if (simTs === 0 && genTs === 0) setNextSuggest(null);
+        else setNextSuggest(simTs >= genTs ? 'improve' : 'simulate');
+      } catch {
+        if (alive) setNextSuggest(null);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [messages.length, projectId]);
 
   const showSlashMenu = input.startsWith('/') && !input.includes(' ');
   const slashMatches = showSlashMenu
@@ -1249,6 +1287,30 @@ export default function ChatConversation({
             <br />
             광고에 대해 무엇이든 물어보세요
           </p>
+          {/* N7 — 최근 시뮬/제너 활동 기반 다음 단계 제안 카드 */}
+          {nextSuggest && (
+            <button
+              onClick={() =>
+                runSlashCommand(nextSuggest === 'improve' ? '/제너레이터' : '/시뮬레이션')
+              }
+              className='w-full max-w-md mb-3 flex items-center gap-3 p-3 rounded-xl border border-[#3182F6]/30 bg-[#EBF3FF] dark:bg-[#1E3A5F]/40 text-left hover:border-[#3182F6] transition-all'>
+              <span className='text-lg shrink-0'>
+                {nextSuggest === 'improve' ? '✨' : '🧪'}
+              </span>
+              <span className='min-w-0'>
+                <span className='block text-sm font-semibold text-[#3182F6]'>
+                  {nextSuggest === 'improve'
+                    ? '방금 시뮬레이션을 돌리셨네요 — 개선하시겠어요?'
+                    : '광고 시안을 만드셨네요 — 시뮬레이션 해보시겠어요?'}
+                </span>
+                <span className='block text-[12px] text-[#4E5968] dark:text-[#9CA3AF] truncate'>
+                  {nextSuggest === 'improve'
+                    ? '결과를 반영해 개선 시안을 만들어 드릴게요.'
+                    : '새 시안의 소비자 반응을 예측해 드릴게요.'}
+                </span>
+              </span>
+            </button>
+          )}
           <div className='grid grid-cols-2 gap-2 w-full max-w-md'>
             {welcomeActions.map(a => (
               <button
