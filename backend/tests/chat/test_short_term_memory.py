@@ -109,3 +109,19 @@ async def test_delegate_passes_history_excluding_current():
         {"role": "assistant", "content": "표본 몇 명?"},
     ]
     assert req.question == "50명"  # 현재 턴은 history 제외, question으로 분리 전달
+
+
+@pytest.mark.asyncio
+async def test_load_context_short_term_from_state_no_db():
+    from langchain_core.messages import AIMessage, HumanMessage
+
+    from domain.chat.graph.nodes import ChatGraphDeps, make_nodes
+
+    deps = ChatGraphDeps(llm=None, repo=None, memory=None)  # repo=None → DB 의존 없음
+    nodes = make_nodes(deps)
+    state = {"messages": [HumanMessage(content="안녕"), AIMessage(content="네")]}
+    out = await nodes.load_context(state, {"configurable": {"thread_id": "t"}})
+    assert out["short_term"] == [
+        {"role": "user", "content": "안녕"},
+        {"role": "assistant", "content": "네"},
+    ]

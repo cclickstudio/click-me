@@ -6,7 +6,6 @@ multi-step ReAct(연쇄 위임)는 deferred — v1은 단일 위임(1 turn)만 �
 
 from __future__ import annotations
 
-import uuid
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Optional
 
@@ -124,16 +123,10 @@ class _Nodes:
     # ── load_context ──────────────────────────────────────────────────────────
     async def load_context(self, state: dict, config: Optional[RunnableConfig] = None) -> dict:  # noqa: UP045
         deps = self._d
-        session_id = (config or {}).get("configurable", {}).get("thread_id")
-        short_term: list[dict] = []
+        # 숏텀 메모리 = 체크포인터가 누적한 state["messages"]에서 파생(DB 조회 불필요).
+        # chat_messages 테이블은 표시·세션목록·리로드용으로 orchestrator가 별도 영속한다.
+        short_term: list[dict] = _messages_to_history(state.get("messages", []))
         long_term: list[dict] = []
-
-        if deps.repo and session_id:
-            try:
-                msgs = await deps.repo.get_messages(uuid.UUID(session_id), limit=20)
-                short_term = [{"role": m.role, "content": m.content} for m in msgs]
-            except Exception:  # noqa: BLE001 — DB 없으면 빈 리스트로 계속
-                short_term = []
 
         if deps.memory:
             try:
