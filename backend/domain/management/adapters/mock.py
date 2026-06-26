@@ -41,8 +41,9 @@ _REVIEW_DELAY_UNTIL = 10  # 심사 지연: 이 시각 전까지 노출 0
 class MockAdPlatform:
     """게재 시뮬레이터. 데모는 이 어댑터만으로 성립한다 (게이트 #9)."""
 
-    def __init__(self, seed: int = 42) -> None:
+    def __init__(self, seed: int = 42, daily_budget_krw: int = DAILY_BUDGET_KRW) -> None:
         self._rng = random.Random(seed)
+        self._budget = daily_budget_krw  # get_metrics 단일 스냅샷의 일예산(비교 데모가 주입)
 
     async def get_metrics(
         self, campaign_id: str, since: datetime, date_preset: str = "maximum"
@@ -52,7 +53,9 @@ class MockAdPlatform:
         AdPlatformReader Port 충족(비교 서비스가 await로 호출). fault 없는 정상 게재 기준.
         date_preset은 실 reader 시그니처 일치용(데모는 무시).
         """
-        snapshots = await self.fetch_hourly_metrics(campaign_id, since)
+        snapshots = await self.fetch_hourly_metrics(
+            campaign_id, since, daily_budget_krw=self._budget
+        )
         return snapshots[-1]
 
     async def get_account_spend(self, date_preset: str = "this_month") -> int:

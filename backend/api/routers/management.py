@@ -636,21 +636,6 @@ async def execution_history_endpoint(
 
 
 # ── 오가닉 vs 광고 비교 (🅰 comparison 도메인 노출) ──────────────────────
-# MockAdPlatform은 get_metrics 미구현(fetch_hourly_metrics만) → ComparisonService가
-# 요구하는 단일 스냅샷을 마지막(누적) 시간행으로 공급하는 얇은 어댑터로 우회한다.
-# 🅰가 MockAdPlatform.get_metrics를 추가하면 이 어댑터는 제거 가능.
-class _MockAdSnapshotReader:
-    """하루치 fetch_hourly_metrics의 마지막(누적) 스냅샷을 단일 지표로 반환."""
-
-    def __init__(self, daily_budget_krw: int = DAILY_BUDGET_KRW, seed: int = 42) -> None:
-        self._budget = daily_budget_krw
-        self._mock = MockAdPlatform(seed=seed)
-
-    async def get_metrics(self, campaign_id: str, since: datetime) -> MetricsSnapshot:
-        snaps = await self._mock.fetch_hourly_metrics(campaign_id, since, None, self._budget)
-        return snaps[-1]
-
-
 # 데모 보드 — (게시물 제목, 오가닉 post id, 광고 campaign id, 일예산). 예산 차이로
 # 광고 도달이 벌어져 통과/주의/미달이 고루 나오게 구성.
 _BOARD_DEMO: tuple[tuple[str, str, str, int], ...] = (
@@ -680,7 +665,7 @@ async def compare_one(post_id: str = "ig_demo_1", campaign_id: str = "camp_demo_
     제안 생성·집행은 🅱 — 여기는 분석 산출물(상세 리프트 + 권고)만 노출한다.
     비교는 매칭된 오가닉+부스트 쌍이 필요한 데모라 use_mock 무관하게 항상 mock 데이터.
     """
-    svc = ComparisonService(MockOrganicReader(), _MockAdSnapshotReader())
+    svc = ComparisonService(MockOrganicReader(), MockAdPlatform())
     report = await svc.compare_and_recommend(post_id, campaign_id, _today_utc())
     return report.model_dump(mode="json")
 
@@ -692,7 +677,7 @@ async def compare_board():
     since = _today_utc()
     rows = []
     for title, post_id, campaign_id, budget in _BOARD_DEMO:
-        svc = ComparisonService(organic_reader, _MockAdSnapshotReader(daily_budget_krw=budget))
+        svc = ComparisonService(organic_reader, MockAdPlatform(daily_budget_krw=budget))
         report = await svc.compare_and_recommend(post_id, campaign_id, since)
         rows.append(
             {
