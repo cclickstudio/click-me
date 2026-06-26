@@ -15,6 +15,9 @@ type Candidate = {
   copy: Record<string, string> | null;
   strategy: Record<string, unknown> | null;
   qa_passed: boolean | null;
+  rank?: number | null;
+  quality_score?: number | null;
+  performance_summary?: string | null;
 };
 type GenDetail = {
   id: string;
@@ -79,7 +82,10 @@ export default function GenResultWidget({
     );
   }
 
-  const cands = [...detail.candidates].sort((a, b) => a.idx - b.idx);
+  // 기대성과 순위(G7) 우선 정렬 — rank 없으면(구 데이터) idx 폴백.
+  const cands = [...detail.candidates].sort(
+    (a, b) => (a.rank ?? a.idx + 1) - (b.rank ?? b.idx + 1)
+  );
 
   return (
     <div className={CARD}>
@@ -131,9 +137,25 @@ export default function GenResultWidget({
                     </span>
                   )}
                 </div>
+                {/* 기대성과 순위 배지(G7) — 1순위는 강조, 나머지는 순위 표시 */}
+                {c.rank != null && (
+                  <span
+                    className={`inline-block text-[10px] px-1.5 py-0.5 rounded-full font-semibold ${
+                      c.rank === 1
+                        ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
+                        : 'bg-[#F2F4F6] text-[#8B95A1] dark:bg-[#252D3D] dark:text-[#9CA3AF]'
+                    }`}>
+                    {c.rank === 1 ? '⭐ 추천 1순위' : `${c.rank}순위`}
+                  </span>
+                )}
                 {headline && (
                   <p className='text-xs font-semibold text-[#191F28] dark:text-[#F2F4F6] leading-snug line-clamp-2'>
                     {headline}
+                  </p>
+                )}
+                {c.performance_summary && (
+                  <p className='text-[10px] text-[#8B95A1] dark:text-[#6B7280] leading-snug'>
+                    {c.performance_summary}
                   </p>
                 )}
               </div>

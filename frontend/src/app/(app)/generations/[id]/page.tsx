@@ -18,6 +18,9 @@ type Candidate = {
   strategy: Record<string, unknown> | null;
   qa_passed: boolean | null;
   explanation: unknown;
+  rank?: number | null;
+  quality_score?: number | null;
+  performance_summary?: string | null;
 };
 
 type ProductAnalysis = {
@@ -161,7 +164,21 @@ function CandidateCard({
 
       <div className="p-4 space-y-2">
         <div className="flex items-center justify-between">
-          <span className="text-xs font-semibold text-[#8B95A1]">후보 {candidate.idx + 1}</span>
+          <div className="flex items-center gap-1.5">
+            <span className="text-xs font-semibold text-[#8B95A1]">후보 {candidate.idx + 1}</span>
+            {/* 기대성과 순위 배지(G7) */}
+            {candidate.rank != null && (
+              <span
+                className={`text-xs px-2 py-0.5 rounded-full font-semibold ${
+                  candidate.rank === 1
+                    ? 'bg-amber-100 text-amber-700'
+                    : 'bg-[#F2F4F6] text-[#8B95A1]'
+                }`}
+              >
+                {candidate.rank === 1 ? '🏆 1순위 추천' : `${candidate.rank}순위`}
+              </span>
+            )}
+          </div>
           {candidate.qa_passed !== null && (
             <span
               className={`text-xs px-2 py-0.5 rounded-full font-medium ${
@@ -174,6 +191,12 @@ function CandidateCard({
             </span>
           )}
         </div>
+        {/* 기대성과 근거 한 줄(G7) */}
+        {candidate.performance_summary && (
+          <p className="text-xs text-[#8B95A1] dark:text-[#6B7280]">
+            기대성과 {candidate.performance_summary}
+          </p>
+        )}
         {copy?.headline && (
           <p className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6] leading-snug">
             {copy.headline}
@@ -333,9 +356,11 @@ export default function GenerationDetailPage() {
   const [restoring, setRestoring] = useState(false);
   const [platform, setPlatform] = useState<string>('ig_feed');
 
-  // 인증 없이 접근 가능한 generator 엔드포인트 사용 (candidates + image_url 포함)
+  // 생성 상세 로드 — A1로 소유권 인증이 붙어 토큰이 필요하다(미부착 시 401).
   useEffect(() => {
-    fetch(`${API_BASE}/api/generator/generations/${id}`)
+    fetch(`${API_BASE}/api/generator/generations/${id}`, {
+      headers: { Authorization: `Bearer ${getToken()}` },
+    })
       .then(r => { if (!r.ok) throw new Error('not found'); return r.json(); })
       .then(setData)
       .catch(() => setError('제너레이터 내역을 불러올 수 없습니다.'))

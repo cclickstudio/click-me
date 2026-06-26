@@ -76,7 +76,7 @@
 | ★L9 | 롱텀 메모리(시뮬/제너 입력 기억→채팅 반영) 검증 | 검증 | F5,L8 | ⬜ |
 | ★LOOP | 시뮬↔제너 양방향 개선 루프(최대 3턴) 구현·검증 | 핵심 | V2 | ✅ |
 | ★A1 | JWT 인증·인가 일관 적용(chat/gen/sim/personas 라우트 소유권 검증) | 보안 | — | ✅ |
-| ★G7 | 제너 시안 3개에 기대성과 순위 부여 | 제너 | V2 | ⬜ |
+| ★G7 | 제너 시안 3개에 기대성과 순위 부여 | 제너 | V2 | ✅ |
 | ★AB | A/B 테스트 — 두 시안을 같은 패널로 시뮬·비교·승자 판정 | 핵심 | V1 | ✅ |
 | ★V6 | PDF 리포트 생성 end-to-end 검증(Playwright) | 검증 | — | ⬜ |
 | ★V7 | 동시실행 가드(sim·gen 슬롯) 검증 | 검증 | — | ⬜ |
@@ -191,6 +191,12 @@
 **현황** 후보 **3개**(`copy_generator.py:115`·`explain.py`)로 확정(기획서 5개 → 사용자 결정 3개). 순위 로직이 약함.
 **목표** 3개 시안에 **기대성과 순위**(예측 반응·QA 기반 정렬 + 근거 한 줄) 부여 — 결과 위젯·상세 페이지에서 "추천 1순위" 등 표시.
 **완료 기준** 3개 시안이 기대성과 기준으로 정렬·근거 표시. (개수는 3 유지, 순위/근거만 보강.)
+
+**✅ 완료(2026-06-26)** DB 스키마 변경 없이(공유 core/models.py 불변) **조회 시 QA 신호로 순위 산출**. 이미지 모델은 예측 CTR을 못 내므로 **카피 품질(QA 7항목 평균) 기반 상대 순위**로 한정(실측 환산 아님 — 기획 준수).
+- **백엔드** [generator_service.py](backend/domain/generator/service/generator_service.py) `_rank_candidates`/`_candidate_quality` — get_detail에서 후보별 `quality_score`(QA 7항목 평균)·`rank`(QA통과→점수→idx 안정정렬)·`performance_summary`(만점 강점 상위 2개 + 품질점수) 부여 후 기대성과순 정렬. 둘 다 사용하는 GenResultWidget·상세가 동시 수혜.
+- **프론트** GenResultWidget(채팅)·상세 CandidateCard에 순위 배지(⭐/🏆 1순위 추천·N순위)·근거 한 줄 표시, rank순 정렬.
+- **별건 버그 발견·수정(fix)** 상세 페이지([generations/[id]/page.tsx](frontend/src/app/(app)/generations/[id]/page.tsx))가 `/api/generator/generations/{id}`를 **토큰 없이 raw fetch** → A1로 인증이 붙은 뒤 **401로 상세 페이지 전체가 "불러올 수 없습니다"로 깨져 있었음**(A1 누락분, 모든 사용자 영향). Authorization 헤더 부착으로 수정.
+- **검증(라이브 Preview, USER doyeon)** ① 백엔드 detail API HTTP 200·rank 1/2/3·summary 정상. ② **상세 페이지**: 401 수정 후 정상 로드, 배지 `🏆 1순위 추천/2순위/3순위`·`기대성과 CTA 명확 · 타깃 적합 · 품질 100점` 렌더. ③ **채팅 GenResultWidget**: 기존 [생성결과] 세션 열어 `⭐ 추천 1순위/2순위/3순위`·요약 렌더. ④ 콘솔 에러 0·tsc/eslint/ruff 통과. (이 생성은 3후보 QA 만점 동점이라 idx 안정정렬 — QA 차이 나면 순위 갈림.)
 
 ### ★AB — A/B 테스트 (두 시안을 같은 패널로 시뮬·비교·승자 판정)
 
