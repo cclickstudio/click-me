@@ -2,6 +2,20 @@
 import pytest
 
 
+def test_norm_gender_maps_and_drops():
+    from domain.chat.adapters.sim_agent import _norm_gender
+
+    assert _norm_gender("female") == "F"
+    assert _norm_gender("여성") == "F"
+    assert _norm_gender("male") == "M"
+    assert _norm_gender("남성") == "M"
+    # '전체/all/무관'은 None → target_filter에서 빠져 전 인구(엔진은 'M'/'F'만 매칭).
+    assert _norm_gender("전체") is None
+    assert _norm_gender("all") is None
+    assert _norm_gender(None) is None
+    assert _norm_gender("") is None
+
+
 def test_sim_runtime_last_run_id():
     from domain.chat.adapters import sim_runtime
 

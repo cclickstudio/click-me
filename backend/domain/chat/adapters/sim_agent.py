@@ -64,6 +64,22 @@ def _context_note(state: dict) -> str:
     return ("\n\n[현재 맥락]\n- " + "\n- ".join(notes)) if notes else ""
 
 
+def _norm_gender(g: str | None) -> str | None:
+    """타깃 성별 문자열 → 엔진 코드(M/F). 전체·무관·불명은 None(필터 없음).
+
+    엔진(persona_sampler)은 'M'/'F'만 매칭 — 'female'·'여성'·'전체' 등을 그대로 넘기면
+    모든 인구 셀이 제외돼 시뮬이 실패한다('모든 인구 셀을 제외'). 이 정규화로 방지한다.
+    """
+    if not g:
+        return None
+    s = str(g).strip().lower()
+    if s in ("m", "male", "man", "men", "남", "남성", "남자"):
+        return "M"
+    if s in ("f", "female", "woman", "women", "여", "여성", "여자"):
+        return "F"
+    return None  # 전체/all/무관/both/혼합/불명 → 필터 없음(전 인구)
+
+
 def build_simulation_agent(settings) -> Any:
     """async answer(question, context_ids)->dict 또는 None(폴백 신호). 키/실모드일 때만 ReAct."""
     if getattr(settings, "use_mock", True) or not getattr(settings, "anthropic_api_key", None):
@@ -165,13 +181,20 @@ def build_simulation_agent(settings) -> Any:
         from domain.chat.adapters import sim_runtime  # noqa: PLC0415
         from domain.simulation.contracts.schemas import SimulationRunRequest  # noqa: PLC0415
 
+        # 타깃 정규화 — 엔진은 성별 'M'/'F'만 매칭, 비정상 값·역전 연령은 전 인구 셀을 제외해
+        # 시뮬을 실패시킨다. 그대로 흘려보내지 않고 여기서 정규화·검증한다.
         tf: dict = {}
-        if target_age_min is not None:
-            tf["age_min"] = target_age_min
-        if target_age_max is not None:
-            tf["age_max"] = target_age_max
-        if target_gender:
-            tf["gender"] = target_gender
+        amin = target_age_min if isinstance(target_age_min, int) and target_age_min > 0 else None
+        amax = target_age_max if isinstance(target_age_max, int) and target_age_max > 0 else None
+        if amin is not None and amax is not None and amin > amax:
+            amin = amax = None  # 역전 범위는 무시(전 연령)
+        if amin is not None:
+            tf["age_min"] = amin
+        if amax is not None:
+            tf["age_max"] = amax
+        g = _norm_gender(target_gender)
+        if g:
+            tf["gender"] = g
         req = SimulationRunRequest(
             ad_id=ad_id,
             ad_image_url=ad_image_url,
