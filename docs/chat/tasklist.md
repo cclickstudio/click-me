@@ -79,7 +79,7 @@
 | ★A1 | JWT 인증·인가 일관 적용(chat/gen/sim/personas 라우트 소유권 검증) | 보안 | — | ✅ |
 | ★G7 | 제너 시안 3개에 기대성과 순위 부여 | 제너 | V2 | ✅ |
 | ★AB | A/B 테스트 — 두 시안을 같은 패널로 시뮬·비교·승자 판정 | 핵심 | V1 | ✅ |
-| ★V6 | PDF 리포트 생성 end-to-end 검증(Playwright) | 검증 | — | ⬜ |
+| ★V6 | PDF 리포트 생성 end-to-end 검증(Playwright) | 검증 | — | ✅ |
 | ★V7 | 동시실행 가드(sim·gen 슬롯) 검증 | 검증 | — | ⬜ |
 | G1  | 제너 입력 확인 위젯(입력 위젯 교체)      | 제너   | V2        | ⬜   |
 | G2  | 제너 로딩 스피너 위젯                    | 제너   | G1        | ⬜   |
@@ -250,6 +250,14 @@
 
 **목표** 시뮬/토론 결과의 **PDF 리포트**(백엔드 Playwright Chromium, `debate.py:161 /report.pdf`)가 끝까지 생성·다운로드되는지 검증(콜드·새로고침 진입의 saved report 폴백 포함). `/리포트`·report_ready 위젯 경로.
 **완료 기준** 리포트 다운로드 → 유효 PDF(내용·KPI·근거). 콜드 진입에서도 saved report로 재조립.
+
+**✅ 완료(2026-06-26) — 검증 + 성능 버그 수정(fix)** 세 경로 모두 유효 PDF 생성 라이브(HTTP) 확인.
+- **A) 프로젝트 리포트** `GET /api/chat/report?project_id=&period=month` → 200·application/pdf·42KB·`%PDF-1.4`. **단, 최초 93s+로 60s 타임아웃(HTTP 000)이던 것을 발견·수정** → 19s.
+- **B) 토론 리포트(Playwright)** `GET /api/debate/{sim_id}/report.pdf`(콜드 진입=sim_id로 saved report 재조립 후 Chromium 렌더) → 200·522KB·유효 PDF·12s. (debate run_id로 직접 호출은 인메모리 dead 시 404 — 설계대로 sim_id 폴백 경로가 정상.)
+- **C) saved report 폴백** `GET /api/debate/by-simulation/{sim_id}/report` → 200·full report JSON(run_id·report·objective_fit·ad_analysis·topic·segments) 5.9s.
+- **★성능 버그 발견·수정(fix)** 리포트가 93s 걸린 원인은 Playwright가 아니라(1.1s) **`fetch_project_summary`의 N+1**([tools.py](backend/domain/simulation/assistant/tools.py:116)) — 45개 시뮬을 순차로 `fetch_simulation_result`(시뮬당 full result+reactions 로드)해 93.7s. **세마포어(8) 동시성으로 병렬화 → 17.7s(5.3배)**. 시그니처 불변, 내부만 변경. ruff 통과.
+- **검증 방식** 단계별 프로파일(fetch_summary 93.7→17.7s, html_to_pdf 1.1s)로 병목 확정·수정 후 재측정. HTTP로 PDF 매직바이트·크기·시간 확인. **미검증(정직)** Preview UI 다운로드 버튼 클릭(파일 다운로드라 eval로 캡처 어려움) — 실제 PDF 생성은 HTTP로 결정적 확인. PDF **한글 본문 텍스트**는 CID 폰트 인코딩이라 추출 검증 못 함(구조·크기·생성은 유효).
+- **관찰(A1 범위, 결함 표기만)** `/api/chat/report`는 **인증 없음**(`<a>` 다운로드라 헤더 불가) — 프로젝트 KPI가 project_id만으로 노출. A1의 미디어 프록시 예외와 동류지만 KPI 데이터라 민감도↑. 별도 검토 권장(현 태스크 범위 밖).
 
 ### ★V7 — 동시실행 가드(sim·gen 슬롯) 검증
 

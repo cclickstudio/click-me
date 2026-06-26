@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import uuid
 from pathlib import Path
@@ -119,19 +120,23 @@ async def fetch_project_summary(project_id: str, period: str = "month") -> dict:
     실측 KPI는 저장된 시뮬 결과에서만 인용한다. 생성(gen)은 목록 수만 집계.
     """
     sims = await list_simulations(project_id, limit=50)
-    rows: list[dict] = []
-    for s in sims:
-        ev = await fetch_simulation_result(s["id"])
+    # 결과 조회를 제한된 동시성으로 병렬화 — 순차 N+1(시뮬당 full result 로드)은 수십 초가 걸린다.
+    # 세마포어로 DB 풀을 보호하면서 동시에 끌어와 리포트 생성을 초 단위로 단축한다.
+    sem = asyncio.Semaphore(8)
+
+    async def _row(s: dict) -> dict | None:
+        async with sem:
+            ev = await fetch_simulation_result(s["id"])
         if ev.get("error") or ev.get("purchase_intent") is None:
-            continue
-        rows.append(
-            {
-                "title": s.get("title"),
-                "purchase_intent": ev.get("purchase_intent"),
-                "rejection_rate": ev.get("rejection_rate"),
-                "click_intent_rate": ev.get("click_intent_rate"),
-            }
-        )
+            return None
+        return {
+            "title": s.get("title"),
+            "purchase_intent": ev.get("purchase_intent"),
+            "rejection_rate": ev.get("rejection_rate"),
+            "click_intent_rate": ev.get("click_intent_rate"),
+        }
+
+    rows = [r for r in await asyncio.gather(*(_row(s) for s in sims)) if r]
     if not rows:
         return {"count": 0, "note": "집계할 시뮬 결과가 없어요."}
     avg_pi = sum(r["purchase_intent"] for r in rows) / len(rows)
