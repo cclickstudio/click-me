@@ -238,10 +238,12 @@ class _Nodes:
         if state.get("route") == Route.GENERAL.value and deps.clio is not None and not sub_results:
             from domain.chat.adapters.platform_context import build_general_context  # noqa: PLC0415
 
+            # short_term은 현재 턴까지 포함 — CLIO가 현재 질문을 따로 append하므로
+            # 직전까지만 history로 넘긴다(현재 턴 중복 → 직전 답 되풀이 방지).
             answer = await _general_answer(
                 deps.clio,
                 _last_user_text(state["messages"]),
-                state.get("short_term") or [],
+                (state.get("short_term") or [])[:-1],
                 build_general_context(state.get("long_term")),
             )
         elif sub_results:

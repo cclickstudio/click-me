@@ -266,3 +266,44 @@ async def test_context_ids_persist_across_turns_via_reducer():
     )
     assert captured[0]["ad_id"] == "ad-X"  # 턴1
     assert captured[1]["ad_id"] == "ad-X"  # 턴2 — merge 리듀서로 생존(null이 못 지움)
+
+
+@pytest.mark.asyncio
+async def test_synthesize_general_excludes_current_turn_from_clio_history():
+    """general(CLIO) 경로는 현재 턴을 history에서 제외해야 한다 — CLIO가 현재 질문을
+    따로 append하므로 중복되면 직전 답을 되풀이하는 복붙 버그가 난다."""
+    from langchain_core.messages import AIMessage, HumanMessage
+
+    from domain.chat.contracts.agent_io import Route
+    from domain.chat.graph.nodes import ChatGraphDeps, make_nodes
+
+    captured = {}
+
+    async def fake_clio(text, history, context=None):
+        captured["text"] = text
+        captured["history"] = history
+        return "일반 답변"
+
+    deps = ChatGraphDeps(llm=None, repo=None, memory=None, clio=fake_clio)
+    nodes = make_nodes(deps)
+    state = {
+        "route": Route.GENERAL.value,
+        "messages": [
+            HumanMessage(content="안녕"),
+            AIMessage(content="네"),
+            HumanMessage(content="광고 만들어줘"),
+        ],
+        "short_term": [
+            {"role": "user", "content": "안녕"},
+            {"role": "assistant", "content": "네"},
+            {"role": "user", "content": "광고 만들어줘"},
+        ],
+        "long_term": [],
+    }
+    out = await nodes.synthesize(state)
+    assert captured["text"] == "광고 만들어줘"  # 현재 질문은 text로
+    assert captured["history"] == [
+        {"role": "user", "content": "안녕"},
+        {"role": "assistant", "content": "네"},
+    ]  # 현재 턴 제외(중복 방지)
+    assert out["final_answer"] == "일반 답변"
