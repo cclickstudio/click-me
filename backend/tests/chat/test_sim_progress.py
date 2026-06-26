@@ -83,3 +83,67 @@ async def test_simulation_subagent_query_stays_aggregate():
     sub._agent = fake_agent
     res = await sub.run(SubAgentRequest(question="결과 보여줘"))
     assert res.structured["kind"] == "simulation_aggregate"  # 트리거 없으면 조회 집계 유지
+
+
+def test_get_chat_debate_service_caches(monkeypatch):
+    import domain.simulation.wiring as simwiring
+    from domain.chat.adapters import sim_runtime
+
+    sim_runtime._state.pop("debate_svc", None)
+    calls = {"n": 0}
+
+    class FakeSvc:
+        pass
+
+    def fake_build(settings):
+        calls["n"] += 1
+        return FakeSvc()
+
+    monkeypatch.setattr(simwiring, "build_debate_service", fake_build)
+    a = sim_runtime.get_chat_debate_service(None)
+    b = sim_runtime.get_chat_debate_service(None)
+    assert a is b and calls["n"] == 1  # 1회만 빌드(같은 인스턴스 공유)
+    sim_runtime._state.pop("debate_svc", None)
+
+
+@pytest.mark.asyncio
+async def test_simulation_subagent_debate_triggered_to_started():
+    from domain.chat.adapters.simulation_subagent import SimulationSubAgent
+    from domain.chat.contracts.agent_io import SubAgentRequest
+
+    async def fake_agent(question, context_ids):
+        return {
+            "answer": "토론이 시작됐어요",
+            "used_tools": ["start_debate"],
+            "kb_citations": [],
+            "sim_data": {},
+            "triggered": {},
+            "debate_triggered": {"run_id": "d-1", "stream_url": "/api/chat/debate/d-1/stream"},
+        }
+
+    sub = SimulationSubAgent()
+    sub._agent = fake_agent
+    res = await sub.run(SubAgentRequest(question="토론까지 진행해"))
+    assert res.structured["kind"] == "debate_started"
+    assert res.structured["data"]["run_id"] == "d-1"
+
+
+@pytest.mark.asyncio
+async def test_generator_subagent_triggered_to_started():
+    from domain.chat.adapters.generator_subagent import GeneratorSubAgent
+    from domain.chat.contracts.agent_io import SubAgentRequest
+
+    async def fake_agent(question, context_ids):
+        return {
+            "answer": "시안 생성이 시작됐어요",
+            "used_tools": ["start_generation"],
+            "kb_citations": [],
+            "gen_data": {},
+            "triggered": {"generation_id": "g-1", "stream_url": "/api/chat/gen/g-1/stream"},
+        }
+
+    sub = GeneratorSubAgent()
+    sub._agent = fake_agent
+    res = await sub.run(SubAgentRequest(question="광고 생성해줘"))
+    assert res.structured["kind"] == "generation_started"
+    assert res.structured["data"]["generation_id"] == "g-1"

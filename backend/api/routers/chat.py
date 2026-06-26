@@ -190,3 +190,41 @@ async def chat_sim_result(run_id: str) -> dict:
     svc = get_chat_sim_service(settings)
     result = svc.get_result(run_id)
     return result or {"error": "not_found", "run_id": run_id}
+
+
+@router.get("/debate/{run_id}/stream")
+async def chat_debate_stream(run_id: str) -> StreamingResponse:
+    """챗 트리거 토론의 진행률 SSE — 챗 전용 토론 서비스 인스턴스(시뮬 도메인 무수정)."""
+    from domain.chat.adapters.sim_runtime import get_chat_debate_service
+
+    svc = get_chat_debate_service(settings)
+    return StreamingResponse(svc.stream_events(run_id), media_type="text/event-stream")
+
+
+@router.get("/debate/{run_id}/result")
+async def chat_debate_result(run_id: str) -> dict:
+    """챗 트리거 토론의 결과(완료 후) — 인메모리 우선, 없으면 not_found."""
+    from domain.chat.adapters.sim_runtime import get_chat_debate_service
+
+    svc = get_chat_debate_service(settings)
+    result = svc.get_result(run_id)
+    return result or {"error": "not_found", "run_id": run_id}
+
+
+@router.get("/gen/{generation_id}/stream")
+async def chat_gen_stream(generation_id: str) -> StreamingResponse:
+    """챗 트리거 생성의 진행률 SSE — generator_service 모듈 store 재사용(무인증 프록시)."""
+    from domain.generator.service import generator_service
+
+    return StreamingResponse(
+        generator_service.stream_events(generation_id), media_type="text/event-stream"
+    )
+
+
+@router.get("/gen/{generation_id}/result")
+async def chat_gen_result(generation_id: str) -> dict:
+    """챗 트리거 생성의 결과(상태·후보) — DB 기준(org 검증 생략, 내부 프록시)."""
+    from domain.generator.service import generator_service
+
+    detail = await generator_service.get_detail(generation_id)
+    return detail or {"error": "not_found", "generation_id": generation_id}

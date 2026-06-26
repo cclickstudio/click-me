@@ -118,6 +118,7 @@ def build_simulation_agent(settings) -> Any:
         kb_citations: list[dict]
         sim_data: dict
         triggered: dict
+        debate_triggered: dict
         tool_rounds: int
 
     @tool
@@ -290,6 +291,7 @@ def build_simulation_agent(settings) -> Any:
         kb = list(state.get("kb_citations", []))
         sim_data = dict(state.get("sim_data", {}))
         triggered = dict(state.get("triggered", {}))
+        debate_triggered = dict(state.get("debate_triggered", {}))
         ctx_id = state.get("simulation_id")
         org_id = state.get("organization_id")
         out: list[ToolMessage] = []
@@ -318,6 +320,8 @@ def build_simulation_agent(settings) -> Any:
                 sim_data = result
             elif name == "start_simulation" and isinstance(result, dict) and result.get("run_id"):
                 triggered = result  # 진행률 위젯용 — 서브에이전트가 structured 프레임으로 노출
+            elif name == "start_debate" and isinstance(result, dict) and result.get("run_id"):
+                debate_triggered = result  # 토론 진행률 위젯용
             out.append(
                 ToolMessage(content=json.dumps(result, ensure_ascii=False), tool_call_id=cid)
             )
@@ -327,6 +331,7 @@ def build_simulation_agent(settings) -> Any:
             "kb_citations": kb,
             "sim_data": sim_data,
             "triggered": triggered,
+            "debate_triggered": debate_triggered,
             "tool_rounds": state.get("tool_rounds", 0) + 1,
         }
 
@@ -364,6 +369,7 @@ def build_simulation_agent(settings) -> Any:
             "kb_citations": list(final.get("kb_citations", [])),
             "sim_data": final.get("sim_data", {}),
             "triggered": final.get("triggered", {}),
+            "debate_triggered": final.get("debate_triggered", {}),
         }
 
     return answer

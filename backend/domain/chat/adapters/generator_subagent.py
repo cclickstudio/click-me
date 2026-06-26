@@ -74,8 +74,16 @@ class GeneratorSubAgent:
 
             question = history_to_preamble(req.history) + req.question
             out = await agent(question, req.context_ids)
+            triggered = out.get("triggered") or {}
             gen_data = out.get("gen_data") or {}
             detail = gen_data.get("detail") if isinstance(gen_data, dict) else None
+            # 트리거(진행률 위젯) 우선, 없으면 조회 상세를 structured로 노출.
+            if triggered:
+                structured = {"kind": "generation_started", "data": triggered}
+            elif detail:
+                structured = {"kind": "generation_detail", "data": detail}
+            else:
+                structured = {}
             return SubAgentResult(
                 route=Route.GENERATION,
                 answer=out.get("answer") or "결과를 가져왔어요.",
@@ -84,7 +92,7 @@ class GeneratorSubAgent:
                     for c in out.get("kb_citations", [])
                 ],
                 used_tools=list(out.get("used_tools", [])),
-                structured=({"kind": "generation_detail", "data": detail} if detail else {}),
+                structured=structured,
             )
 
         # --- 폴백(키 없음/mock): 구조화(트리거는 knobs 상품정보 기반) ---

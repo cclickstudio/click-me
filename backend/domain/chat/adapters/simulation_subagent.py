@@ -62,9 +62,12 @@ class SimulationSubAgent:
             question = history_to_preamble(req.history) + req.question
             out = await agent(question, req.context_ids)
             triggered = out.get("triggered") or {}
+            debate_triggered = out.get("debate_triggered") or {}
             sim_data = out.get("sim_data") or {}
-            # 트리거(진행률 위젯) 우선, 없으면 조회 집계를 structured로 노출.
-            if triggered:
+            # 트리거(진행률 위젯) 우선 — 토론 > 시뮬 트리거 > 조회 집계.
+            if debate_triggered:
+                structured = {"kind": "debate_started", "data": debate_triggered}
+            elif triggered:
                 structured = {"kind": "simulation_started", "data": triggered}
             elif sim_data:
                 structured = {"kind": "simulation_aggregate", "data": sim_data}

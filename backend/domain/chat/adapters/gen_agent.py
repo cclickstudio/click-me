@@ -63,6 +63,7 @@ def build_generator_agent(settings) -> Any:
         used_tools: list[str]
         kb_citations: list[dict]
         gen_data: dict
+        triggered: dict
         tool_rounds: int
 
     @tool
@@ -124,7 +125,12 @@ def build_generator_agent(settings) -> Any:
         except ValidationError as exc:
             return {"error": "invalid", "detail": exc.errors()[0].get("msg", "")}
         gid = await _start_gen(gen_req, created_by=None)
-        return {"generation_id": gid, "product_name": product_name}
+        return {
+            "generation_id": gid,
+            "product_name": product_name,
+            "stream_url": f"/api/chat/gen/{gid}/stream",
+            "result_url": f"/api/chat/gen/{gid}/result",
+        }
 
     tools = [gen_detail, gen_list, gen_find_by_name, search_kb, start_generation]
     bound = llm.bind_tools(tools)
@@ -142,6 +148,7 @@ def build_generator_agent(settings) -> Any:
         used = list(state.get("used_tools", []))
         kb = list(state.get("kb_citations", []))
         gen_data = dict(state.get("gen_data", {}))
+        triggered = dict(state.get("triggered", {}))
         ctx_id = state.get("generation_id")
         org_id = state.get("organization_id")
         out: list[ToolMessage] = []
@@ -162,6 +169,12 @@ def build_generator_agent(settings) -> Any:
                 kb.extend(result if isinstance(result, list) else [])
             elif name == "gen_detail" and isinstance(result, dict) and "error" not in result:
                 gen_data = result
+            elif (
+                name == "start_generation"
+                and isinstance(result, dict)
+                and result.get("generation_id")
+            ):
+                triggered = result  # 진행률 위젯용
             out.append(
                 ToolMessage(content=json.dumps(result, ensure_ascii=False), tool_call_id=cid)
             )
@@ -170,6 +183,7 @@ def build_generator_agent(settings) -> Any:
             "used_tools": used,
             "kb_citations": kb,
             "gen_data": gen_data,
+            "triggered": triggered,
             "tool_rounds": state.get("tool_rounds", 0) + 1,
         }
 
@@ -203,6 +217,7 @@ def build_generator_agent(settings) -> Any:
             "used_tools": list(final.get("used_tools", [])),
             "kb_citations": list(final.get("kb_citations", [])),
             "gen_data": final.get("gen_data", {}),
+            "triggered": final.get("triggered", {}),
         }
 
     return answer

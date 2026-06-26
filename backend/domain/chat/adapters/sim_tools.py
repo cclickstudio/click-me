@@ -246,6 +246,7 @@ async def start_debate(simulation_id: str) -> dict:
     if not simulation_id:
         return {"error": "need_simulation_id"}
     from core.config import settings
+    from domain.chat.adapters import sim_runtime
     from domain.simulation.contracts.schemas import (
         AdInterpretation,
         ObjectiveFit,
@@ -253,7 +254,6 @@ async def start_debate(simulation_id: str) -> dict:
         PersonaReaction,
         RubricScore,
     )
-    from domain.simulation.wiring import build_debate_service
 
     try:
         full = await _full_result(simulation_id)
@@ -280,7 +280,8 @@ async def start_debate(simulation_id: str) -> dict:
             if full.get("objective_fit")
             else None
         )
-        svc = build_debate_service(settings)
+        # 챗 전용 토론 싱글톤 — 챗 라우터가 같은 인스턴스로 진행/결과를 스트림.
+        svc = sim_runtime.get_chat_debate_service(settings)
         run_id = await svc.start(
             reactions,
             ad_analysis,
@@ -291,4 +292,9 @@ async def start_debate(simulation_id: str) -> dict:
         )
     except Exception as e:  # noqa: BLE001 — 엔진·키 오류 등 표면화
         return {"error": "start_failed", "detail": str(e)}
-    return {"run_id": run_id, "simulation_id": simulation_id}
+    return {
+        "run_id": run_id,
+        "simulation_id": simulation_id,
+        "stream_url": f"/api/chat/debate/{run_id}/stream",
+        "result_url": f"/api/chat/debate/{run_id}/result",
+    }

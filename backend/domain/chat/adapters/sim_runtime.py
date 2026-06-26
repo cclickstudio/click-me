@@ -22,6 +22,15 @@ def get_chat_sim_service(settings) -> Any:
     return _state["svc"]
 
 
+def get_chat_debate_service(settings) -> Any:
+    """챗 트리거 토론을 돌리고 진행/결과를 보관하는 단일 인스턴스(인메모리 store 공유)."""
+    if "debate_svc" not in _state:
+        from domain.simulation.wiring import build_debate_service  # noqa: PLC0415
+
+        _state["debate_svc"] = build_debate_service(settings)
+    return _state["debate_svc"]
+
+
 def set_last_run_id(run_id: str) -> None:
     """가장 최근 챗 트리거 run_id 기록 — '방금 시뮬 다 됐어?'의 기본 대상(프로세스 스코프)."""
     _state["last_run_id"] = run_id
