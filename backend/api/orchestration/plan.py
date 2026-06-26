@@ -11,6 +11,13 @@ from typing import Any
 
 @dataclass(frozen=True)
 class PlanStep:
+    """Plan의 한 스텝(불변).
+
+    주의 — inputs가 MappingProxyType(해시 불가)라 PlanStep·Plan은 **해시 불가**다. set·dict 키로
+    쓰지 말 것. 필요해지면 inputs를 해시 가능한 형태로 변환하는 결정을 명시적으로 한다(동등성(==)·
+    plan_hash 비교로 충분).
+    """
+
     domain: str  # "management" | "simulation" | "generator"
     action: str  # "answer" | "generate" | "simulate" | "execute" ...
     inputs: Mapping[str, Any] = field(default_factory=dict)

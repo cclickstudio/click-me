@@ -31,3 +31,14 @@ async def test_run_turn_graph_executes_single_step_plan():
     result = await run_turn(graph, route, req=_Req(question="캠페인 예산"))
 
     assert result == {"answer": "handled:캠페인 예산"}
+
+
+@pytest.mark.asyncio
+async def test_run_turn_fails_loud_when_req_lacks_question():
+    # req에 .question이 없으면 조용한 폴백 없이 AttributeError로 터진다(plan_node fail-loud)
+    route = Router([KeywordMatcher("management", frozenset({"캠페인"}))]).route("캠페인 예산")
+    registry = AgentRegistry()
+    registry.register(_FakeAgent())
+    graph = build_orchestrator_graph(registry)
+    with pytest.raises(AttributeError):
+        await run_turn(graph, route, req=object())  # .question 없음
