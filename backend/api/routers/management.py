@@ -849,8 +849,9 @@ async def proxy_creative_image(
     creatives = await reader.get_creatives(campaign_id)
     image_url: str | None = None
     for c in creatives:
-        if c.image_url:
-            image_url = c.image_url
+        url = c.image_url or c.thumbnail_url  # leads 광고는 image_url=None, thumbnail_url만 있음
+        if url:
+            image_url = url
             break
     if not image_url:
         raise HTTPException(

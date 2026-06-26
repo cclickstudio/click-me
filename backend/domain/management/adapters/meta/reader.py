@@ -842,7 +842,11 @@ class MetaAdsReader:
                 or link_data.get("message")
                 or ((afs.get("bodies") or [{}])[0].get("text"))
             )
-            ad_image_url = _pick_image(creative) or link_data.get("picture")
+            ad_image_url = (
+                _pick_image(creative)
+                or link_data.get("picture")
+                or creative.get("thumbnail_url")  # leads 광고는 image_url 없고 thumbnail만 있음
+            )
 
         # Advantage+ 등 광역 타겟팅은 age 제약 없음 → Meta 기본값(18~65)으로 폴백
         age_min = targeting.get("age_min") or 18
