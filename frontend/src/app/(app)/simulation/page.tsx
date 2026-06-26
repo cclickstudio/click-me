@@ -685,10 +685,13 @@ export default function SimulationRunPage() {
             {selectedProject === null ? (
               <p className='text-[11px] text-[#F74D4D] text-center mt-2'>
                 위에서 프로젝트를 먼저 선택해 주세요.
+                {fromCampaign && ' 프로젝트를 선택해야 성과 비교에 예측이 자동 연결됩니다.'}
               </p>
             ) : (
               <p className='text-[11px] text-[#B0B8C1] dark:text-[#4B5563] text-center mt-2'>
-                가상 소비자 수에 따라 수 초~수십 초 걸립니다.
+                {fromCampaign
+                  ? '실행 완료 후 성과 비교 탭에 예측이 자동 연결됩니다.'
+                  : '가상 소비자 수에 따라 수 초~수십 초 걸립니다.'}
               </p>
             )}
           </div>
