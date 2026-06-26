@@ -813,12 +813,16 @@ class MetaAdsReader:
             )
             ad_image_url = _pick_image(creative) or link_data.get("picture")
 
+        # Advantage+ 등 광역 타겟팅은 age 제약 없음 → Meta 기본값(18~65)으로 폴백
+        age_min = targeting.get("age_min") or 18
+        age_max = targeting.get("age_max") or 65
+
         return {
             "campaign_id": campaign_id,
             "campaign_name": campaign_data.get("name", ""),
             "objective": campaign_data.get("objective", ""),
-            "age_min": targeting.get("age_min"),
-            "age_max": targeting.get("age_max"),
+            "age_min": age_min,
+            "age_max": age_max,
             "gender": gender,
             "ad_headline": ad_headline,
             "ad_body": ad_body,
