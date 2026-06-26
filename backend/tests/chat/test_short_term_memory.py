@@ -218,3 +218,51 @@ async def test_management_subagent_prepends_history():
     await sub.run(req)
     assert captured["q"].startswith("[이전 대화]")
     assert captured["q"].endswith("[현재 질문]\n예산 어때?")
+
+
+@pytest.mark.asyncio
+async def test_context_ids_persist_across_turns_via_reducer():
+    """E2E — 그래프를 같은 thread로 2턴 돌려 merge 리듀서가 ad_id를 턴 넘겨 살리는지 검증.
+
+    턴2 입력의 ad_id=None(프론트가 전송 후 비움)이 체크포인트된 ad_id를 못 지워야 한다.
+    llm=None(키워드 라우팅)·MemorySaver·가짜 서브에이전트로 결정론적.
+    """
+    from langchain_core.messages import HumanMessage
+    from langgraph.checkpoint.memory import MemorySaver
+
+    from domain.chat.contracts.agent_io import Route, SubAgentResult
+    from domain.chat.graph.builder import ChatGraphDeps, build_chat_graph
+
+    captured: list[dict] = []
+
+    class FakeSub:
+        route = Route.SIMULATION
+
+        async def run(self, req):
+            captured.append(dict(req.context_ids))
+            return SubAgentResult(route=Route.SIMULATION, answer="ok")
+
+    deps = ChatGraphDeps(
+        llm=None, repo=None, memory=None, subagents={Route.SIMULATION.value: FakeSub()}
+    )
+    graph = build_chat_graph(deps, checkpointer=MemorySaver())
+    cfg = {"configurable": {"thread_id": "t-persist"}}
+
+    # 턴1: ad_id 제공 + 시뮬 키워드 → simulation 위임
+    await graph.ainvoke(
+        {
+            "messages": [HumanMessage(content="이 광고 시뮬 돌려줘")],
+            "context_ids": {"session_id": "s", "ad_id": "ad-X"},
+        },
+        cfg,
+    )
+    # 턴2: ad_id=None(프론트가 비움) + 시뮬 키워드
+    await graph.ainvoke(
+        {
+            "messages": [HumanMessage(content="시뮬 50명으로")],
+            "context_ids": {"session_id": "s", "ad_id": None},
+        },
+        cfg,
+    )
+    assert captured[0]["ad_id"] == "ad-X"  # 턴1
+    assert captured[1]["ad_id"] == "ad-X"  # 턴2 — merge 리듀서로 생존(null이 못 지움)
