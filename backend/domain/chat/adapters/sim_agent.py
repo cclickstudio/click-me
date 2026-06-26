@@ -28,16 +28,26 @@ _SYSTEM = (
     "- '이름이 X인 시뮬레이션'은 sim_find_by_name(X)로 후보를 찾고, 단건이면 그 simulation_id로 "
     "sim_result/sim_persona_basis로 상세를 답한다. 다건이면 후보를 나열하고, 없으면 "
     "'없음'으로 답한다.\n"
-    "- 광고(첨부 이미지)가 있고 사용자가 시뮬 '실행/돌려'를 원하면 start_simulation으로 실행한다.\n"
-    "  실행 전 표본수·타깃(연령대/성별)·제목·목표를 한 번 확인하라"
-    "(예: '표본 20명·전체 타깃으로 돌릴까요? 연령/성별을 지정할 수 있어요').\n"
-    "  사용자가 값을 주거나 동의하면 실행하고 사용한 설정을 답에 명시한다. "
-    "광고가 없으면 먼저 이미지 첨부를 요청한다.\n"
+    "- [현재 맥락]에 '첨부된 광고 있음'이 보이고 사용자가 시뮬 '실행/돌려'를 원하면 "
+    "start_simulation으로 바로 실행한다(되묻지 말 것).\n"
+    "  메시지에 표본·타깃·제목·목표가 있으면 반영, 없으면 기본(표본20·전체)으로 실행한다.\n"
+    "  사용한 설정을 답에 명시하고 다른 설정을 원하면 함께 말해달라고 안내한다.\n"
+    "  맥락에 첨부된 광고가 없으면 start_simulation을 호출하지 말고 먼저 이미지 첨부를 요청한다.\n"
     "- '신뢰할 수 있나'는 신뢰구간·effective_n·QA·variance_warning을 근거로 설명하고, "
     "방향성은 신뢰 가능하나 절대값 단언은 피한다고 안내한다.\n"
     "- 예측(상대)과 실측(절대)을 수치로 환산하지 말 것. 근거 없으면 모른다고 답한다.\n"
     "문장 끝에 콜론을 쓰지 말 것."
 )
+
+
+def _context_note(state: dict) -> str:
+    """현재 맥락(첨부 광고·시뮬 id)을 LLM에 노출 — 안 보여주면 LLM이 첨부 유무를 모른다."""
+    notes = []
+    if state.get("ad_id"):
+        notes.append("첨부된 광고 있음(이미지 포함) — 시뮬 실행 가능(start_simulation).")
+    if state.get("simulation_id"):
+        notes.append("현재 맥락 simulation_id 보유 — 그 시뮬 조회 가능.")
+    return ("\n\n[현재 맥락]\n- " + "\n- ".join(notes)) if notes else ""
 
 
 def build_simulation_agent(settings) -> Any:
@@ -185,7 +195,7 @@ def build_simulation_agent(settings) -> Any:
     async def agent(state: _State) -> dict:
         msgs = state["messages"]
         if not any(isinstance(m, SystemMessage) for m in msgs):
-            msgs = [SystemMessage(content=_SYSTEM), *msgs]
+            msgs = [SystemMessage(content=_SYSTEM + _context_note(state)), *msgs]
         model = bound if state.get("tool_rounds", 0) < _MAX_ROUNDS else llm
         return {"messages": [await model.ainvoke(msgs)]}
 
