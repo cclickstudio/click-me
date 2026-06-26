@@ -53,6 +53,49 @@ _SOURCE_META: dict[str, tuple[str, str | None, str, dict]] = {
         "reference",
         {"platform": "meta", "as_of": "2026-06", "confidence": "medium"},
     ),
+    "conversion_tracking.md": (
+        "meta_official",
+        "https://www.facebook.com/business/help/attribution",
+        "system_backed",
+        {"platform": "meta", "as_of": "2026-06"},
+    ),
+    "campaign_structure.md": (
+        "playbook",
+        "https://www.facebook.com/business/ads/meta-advantage-plus/budget",
+        "advisory",
+        {"platform": "meta", "as_of": "2026-06"},
+    ),
+    "bid_strategies.md": ("playbook", None, "advisory", {"platform": "meta", "as_of": "2026-06"}),
+    "special_ad_categories.md": (
+        "meta_official",
+        "https://transparency.meta.com/policies/ad-standards/",
+        "system_backed",
+        {"platform": "meta", "as_of": "2026-06"},
+    ),
+    "targeting.md": (
+        "meta_official",
+        "https://www.facebook.com/business/help/targetingoverview",
+        "advisory",
+        {"platform": "meta", "as_of": "2026-06"},
+    ),
+    "relevance_diagnostics.md": (
+        "meta_official",
+        "https://www.facebook.com/business/help/403110480493160",
+        "system_backed",
+        {"platform": "meta", "as_of": "2026-06"},
+    ),
+    "campaign_objectives.md": (
+        "meta_official",
+        "https://www.facebook.com/business/help/1438417719786914",
+        "system_backed",
+        {"platform": "meta", "as_of": "2026-06"},
+    ),
+    "creative_best_practices.md": (
+        "playbook",
+        None,
+        "advisory",
+        {"platform": "meta", "as_of": "2026-06"},
+    ),
 }
 
 
