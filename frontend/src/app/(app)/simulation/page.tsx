@@ -243,9 +243,15 @@ export default function SimulationRunPage() {
               });
               // 성과 비교에서 넘어온 경우 — 시뮬 완료 후 Meta 캠페인에 자동 연결
               if (fromCampaign && r.simulation_id) {
-                await api.management
-                  .linkSimulation(fromCampaign, r.simulation_id)
-                  .catch(() => {}); // 연결 실패해도 결과 이동은 막지 않음
+                try {
+                  await api.management.linkSimulation(fromCampaign, r.simulation_id);
+                } catch {
+                  // 연결 실패해도 결과 이동은 막지 않음 — 콘솔에서 수동 연결 가능
+                  console.warn('[link-simulation 실패] campaign:', fromCampaign, 'sim:', r.simulation_id);
+                }
+              } else if (fromCampaign && !r.simulation_id) {
+                // 프로젝트 미선택 → DB 저장 안 됨 → simulation_id 없음
+                console.warn('[link-simulation skip] simulation_id 없음 — 프로젝트를 선택해야 DB에 저장됩니다.');
               }
               router.push(`/simulation/${routeId}`);
             })
