@@ -170,7 +170,7 @@ def _to_float(value: Any) -> float:
 # (category_id, service_class) 키워드 매핑 — SIM_CATEGORIES 순서와 동기화.
 # category_id는 프론트 simCategories.ts의 id(1-indexed), service_class는 NICE 류.
 _CATEGORY_KEYWORDS: list[tuple[list[str], int, int]] = [
-    (["댕댕", "강아지", "고양이", "반려", "애완", "펫", "pet"], 11, 45),
+    (["댕댕", "강아지", "고양이", "반려", "애완", "펫", "pet"], 11, 31),  # 31류: 사료 명시
     (["피부", "미용", "화장품", "스킨케어", "뷰티", "헤어", "네일", "향수", "성형"], 4, 44),
     (["의류", "패션", "옷", "원피스", "티셔츠", "청바지", "신발", "가방", "쇼핑몰"], 3, 25),
     (["음식", "식당", "카페", "배달", "맛집", "커피", "음료", "빵", "디저트", "베이커리"], 2, 43),
