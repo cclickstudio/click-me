@@ -48,6 +48,7 @@ class SimulationRepository:
         rubric: list[RubricScore],
         aggregate: SimulationAggregate,
         persona_uuid_by_ref: dict[str, uuid.UUID],
+        simulation_id: uuid.UUID | None = None,
     ) -> uuid.UUID:
         ana_id = uuid.uuid4()
         self._s.add(
@@ -67,7 +68,7 @@ class SimulationRepository:
         # 실 DB는 FK 강제(ORM은 FK 미선언) — 부모를 자식보다 먼저 flush해 INSERT 순서 보장.
         await self._s.flush()  # ad_analyses → simulations 참조
 
-        sim_id = uuid.uuid4()
+        sim_id = simulation_id or uuid.uuid4()  # 주입되면 run_id와 PK 통일(챗 즉시 조회)
         self._s.add(
             models.Simulation(
                 id=sim_id,

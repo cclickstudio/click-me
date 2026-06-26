@@ -51,8 +51,9 @@ class SimulationPersistence:
         panel_version: str,
         panel_seed: int = 0,
         grounding_meta: dict | None = None,
+        simulation_id: uuid.UUID | None = None,
     ) -> uuid.UUID:
-        """반환: 저장된 simulation_id. 호출자는 결과 dict에 실어 분석팀 핸드오프에 사용."""
+        """반환: 저장된 simulation_id. 주어지면 그 id를 PK로 사용(run_id와 통일 → 챗 즉시 조회)."""
         target_mode = getattr(request.target_mode, "value", str(request.target_mode))
         ad_uuid = _as_uuid(request.ad_id)
         async with self._session_factory() as session:
@@ -112,6 +113,7 @@ class SimulationPersistence:
                 rubric=rubric,
                 aggregate=aggregate,
                 persona_uuid_by_ref=id_map,
+                simulation_id=simulation_id,
             )
             await session.commit()
             return sim_id

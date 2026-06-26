@@ -106,11 +106,11 @@ class SimulationSubAgent:
             organization_id=req.context_ids.get("organization_id"),
         )
         run_id: str = await svc.start(sim_req)
-        # DB 영속은 완료 시 + project_id 있을 때만(ads→projects FK). 영속돼야 챗에서 재조회 가능.
+        # DB 영속은 완료+project_id일 때만(ads→projects FK). PK=run_id 통일 → 이 id로 조회 가능.
         if req.context_ids.get("project_id"):
             note = (
-                "백그라운드로 처리돼요(완료까지 잠시). 완료되면 '현재 시뮬레이션 현황'이나 "
-                "'방금 돌린 시뮬 결과'라고 물어보면 결과를 가져와 드려요."
+                "백그라운드로 처리돼요(완료까지 잠시). 완료되면 '방금 돌린 시뮬 결과'라고 묻거나 "
+                "위 id로 바로 조회할 수 있어요."
             )
         else:
             note = (
@@ -119,7 +119,7 @@ class SimulationSubAgent:
             )
         return SubAgentResult(
             route=Route.SIMULATION,
-            answer=f"시뮬레이션을 시작했어요 (run_id: {run_id}). {note}",
+            answer=f"시뮬레이션을 시작했어요 (id: {run_id}). {note}",
         )
 
     async def _fallback_read(self, sim_id: str) -> SubAgentResult:

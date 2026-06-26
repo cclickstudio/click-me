@@ -137,7 +137,7 @@ async def test_simulation_trigger_passes_image_and_org():
     assert svc.started.ad_image_key == "simulation/x.png"
     assert svc.started.organization_id == "org-1"
     assert "run-123" in out.answer
-    assert "현재 시뮬레이션 현황" in out.answer  # project_id 있음 → 조회 유도
+    assert "바로 조회" in out.answer  # project_id 있음 → id 즉시 조회 유도
 
 
 # ---- generator ----

@@ -204,6 +204,7 @@ class SimulationService:
                         rubric=rubric_objs,
                         aggregate=aggregate_obj,
                         panel_version=panel_version,
+                        simulation_id=uuid.UUID(run_id),  # DB PK=run_id 통일 → 챗 즉시 조회
                     )
                     result["simulation_id"] = str(sim_id)
                 except Exception:
