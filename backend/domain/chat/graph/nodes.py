@@ -186,6 +186,7 @@ class _Nodes:
             question=_last_user_text(state["messages"]),
             context_ids=_scope_context_ids(state),
             knobs=(state.get("context_ids") or {}).get("knobs", {}),
+            history=_messages_to_history(state.get("messages", [])[:-1]),
         )
         result = await sub.run(req)
         update: dict = {

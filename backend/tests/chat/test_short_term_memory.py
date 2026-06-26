@@ -1,4 +1,5 @@
 # 챗 숏텀 메모리(state 기반) — 계약·리듀서·헬퍼·delegate·어댑터 프리앰블 검증.
+import pytest
 
 
 def test_subagent_request_history_defaults_empty():
@@ -70,3 +71,41 @@ def test_history_to_preamble_format():
     assert "사용자: 이 광고 시뮬 돌려줘" in out
     assert "어시스턴트: 표본 몇 명으로 할까요?" in out
     assert out.endswith("[현재 질문]\n")
+
+
+@pytest.mark.asyncio
+async def test_delegate_passes_history_excluding_current():
+    from langchain_core.messages import AIMessage, HumanMessage
+
+    from domain.chat.contracts.agent_io import Route, SubAgentResult
+    from domain.chat.graph.nodes import ChatGraphDeps, make_nodes
+
+    captured = {}
+
+    class FakeSub:
+        route = Route.SIMULATION
+
+        async def run(self, req):
+            captured["req"] = req
+            return SubAgentResult(route=Route.SIMULATION, answer="ok")
+
+    deps = ChatGraphDeps(
+        llm=None, repo=None, memory=None, subagents={Route.SIMULATION.value: FakeSub()}
+    )
+    nodes = make_nodes(deps)
+    state = {
+        "route": Route.SIMULATION.value,
+        "messages": [
+            HumanMessage(content="시뮬 돌려줘"),
+            AIMessage(content="표본 몇 명?"),
+            HumanMessage(content="50명"),
+        ],
+        "context_ids": {},
+    }
+    await nodes.delegate(state)
+    req = captured["req"]
+    assert req.history == [
+        {"role": "user", "content": "시뮬 돌려줘"},
+        {"role": "assistant", "content": "표본 몇 명?"},
+    ]
+    assert req.question == "50명"  # 현재 턴은 history 제외, question으로 분리 전달
