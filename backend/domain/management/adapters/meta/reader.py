@@ -754,7 +754,8 @@ class MetaAdsReader:
 
         캠페인 노드에서 objective, 첫 광고세트에서 targeting(age_min/max·genders),
         첫 광고에서 headline·body·image_url을 가져온다.
-        필드가 없으면 None 반환(시뮬 기본값 사용).
+        leads/conversion 광고는 title이 object_story_spec.link_data.name에 있어
+        _CREATIVE_FIELDS_FULL로 확장해서 조회한다.
         """
         campaign_data, adset_data, ads_data = await asyncio.gather(
             self._client.get(campaign_id, {"fields": "objective,name"}),
@@ -764,7 +765,16 @@ class MetaAdsReader:
             ),
             self._client.get(
                 f"{campaign_id}/ads",
-                {"fields": f"creative{{{_CREATIVE_FIELDS.split('creative{')[1]}", "limit": "1"},
+                {
+                    "fields": (
+                        "name,creative{image_url,thumbnail_url,title,body,"
+                        "object_story_spec{link_data{name,message,picture},"
+                        "photo_data{url}},"
+                        "asset_feed_spec{images{url},bodies{text},titles{text}}}"
+                    ),
+                    "limit": "1",
+                    "effective_status": _ARCHIVED_STATUSES,
+                },
             ),
         )
         targeting = {}
@@ -780,15 +790,28 @@ class MetaAdsReader:
             gender = ""
 
         # 첫 광고 크리에이티브에서 headline·body·image 추출
+        # 우선순위: creative.title → oss.link_data.name → asset_feed_spec.titles
         ad_headline: str | None = None
         ad_body: str | None = None
         ad_image_url: str | None = None
         ads = ads_data.get("data", [])
         if ads:
             creative = ads[0].get("creative") or {}
-            ad_headline = creative.get("title") or creative.get("name")
-            ad_body = creative.get("body")
-            ad_image_url = _pick_image(creative)
+            oss = creative.get("object_story_spec") or {}
+            link_data = oss.get("link_data") or {}
+            afs = creative.get("asset_feed_spec") or {}
+
+            ad_headline = (
+                creative.get("title")
+                or link_data.get("name")
+                or ((afs.get("titles") or [{}])[0].get("text"))
+            )
+            ad_body = (
+                creative.get("body")
+                or link_data.get("message")
+                or ((afs.get("bodies") or [{}])[0].get("text"))
+            )
+            ad_image_url = _pick_image(creative) or link_data.get("picture")
 
         return {
             "campaign_id": campaign_id,
