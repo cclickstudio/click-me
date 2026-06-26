@@ -4,7 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from types import MappingProxyType
 from typing import Any
 
@@ -21,6 +21,7 @@ class PlanStep:
     domain: str  # "management" | "simulation" | "generator"
     action: str  # "answer" | "generate" | "simulate" | "execute" ...
     inputs: Mapping[str, Any] = field(default_factory=dict)
+    id: str = ""  # make_plan이 {action}-{n}(action별 1-based)로 채움. plan_hash 비포함.
 
     def __post_init__(self) -> None:
         # 불변성 보강 — 확정 후 inputs 변경을 막아 plan_hash 무결성 보장(읽기전용 + 사본).
@@ -45,5 +46,11 @@ def compute_plan_hash(steps: tuple[PlanStep, ...]) -> str:
 
 
 def make_plan(steps: list[PlanStep]) -> Plan:
-    frozen = tuple(steps)
+    # action별 1-based 순번을 step.id에 할당 — 블랙보드 참조 키.
+    counts: dict[str, int] = {}
+    rebuilt: list[PlanStep] = []
+    for s in steps:
+        counts[s.action] = counts.get(s.action, 0) + 1
+        rebuilt.append(replace(s, id=f"{s.action}-{counts[s.action]}"))
+    frozen = tuple(rebuilt)
     return Plan(steps=frozen, plan_hash=compute_plan_hash(frozen))
