@@ -1,11 +1,28 @@
-# Planner 셸 — RouteDecision으로 고정 Plan을 만든다(S1: 단일 도메인 1스텝)
+# Planner — RouteDecision으로 고정 Plan을 만든다(S2: 게이트 B면 멀티스텝, 아니면 단일)
 from __future__ import annotations
 
+from api.orchestration import policy
 from api.orchestration.plan import Plan, PlanStep, make_plan
 from api.orchestration.routing import RouteDecision
 
 
 def build_plan(route: RouteDecision, *, query: str) -> Plan:
-    # S1: 해석된 도메인으로 1스텝 Plan. CLIO 분기·멀티스텝 LLM 분해는 호출자/후속 슬라이스.
-    step = PlanStep(domain=route.domain, action="answer", inputs={"query": query})
+    nonzero = {c.domain for c in route.candidates if c.score > 0.0}
+    sequential = any(marker in query for marker in policy.SEQUENTIAL_MARKERS)
+
+    if len(nonzero) >= 2 or sequential:  # 게이트 B 진입
+        steps = [
+            PlanStep(domain=policy.ACTION_TO_DOMAIN[action], action=action, inputs={"query": query})
+            for action in policy.PIPELINE_ORDER
+            if policy.ACTION_TO_DOMAIN[action] in nonzero
+        ]
+        if len(steps) >= 2:  # 파이프라인 도메인 2개+ 매칭 시에만 멀티스텝
+            return make_plan(steps)
+        # 게이트 B지만 파이프라인 매칭 <2 → 아래 단일 스텝으로 fallback
+
+    step = PlanStep(
+        domain=route.domain,
+        action=policy.DOMAIN_TO_ACTION[route.domain],
+        inputs={"query": query},
+    )
     return make_plan([step])
