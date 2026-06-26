@@ -486,6 +486,10 @@ export default function ChatConversation({
     (acc, m, i) => (m.meta?.widget?.type === 'sim_form' ? i : acc),
     -1
   );
+  const lastGenFormIdx = messages.reduce(
+    (acc, m, i) => (m.meta?.widget?.type === 'gen_form' ? i : acc),
+    -1
+  );
 
   const addLocalAssistant = (
     content: string,
@@ -1527,6 +1531,7 @@ export default function ChatConversation({
                       <GenFormWidget
                         initial={msg.meta.widget.data}
                         initialImage={msg.imageFile}
+                        latest={i === lastGenFormIdx}
                         onResult={handleSend}
                         onComplete={handleGenComplete}
                       />

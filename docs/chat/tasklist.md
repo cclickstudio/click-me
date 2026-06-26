@@ -81,9 +81,9 @@
 | ★AB | A/B 테스트 — 두 시안을 같은 패널로 시뮬·비교·승자 판정 | 핵심 | V1 | ✅ |
 | ★V6 | PDF 리포트 생성 end-to-end 검증(Playwright) | 검증 | — | ✅ |
 | ★V7 | 동시실행 가드(sim·gen 슬롯) 검증 | 검증 | — | ✅ |
-| G1  | 제너 입력 확인 위젯(입력 위젯 교체)      | 제너   | V2        | ⬜   |
-| G2  | 제너 로딩 스피너 위젯                    | 제너   | G1        | ⬜   |
-| G4  | 제너 status API + 새로고침 복원          | 제너   | V2        | ⬜   |
+| G1  | 제너 입력 확인 위젯(입력 위젯 교체)      | 제너   | V2        | ✅   |
+| G2  | 제너 로딩 스피너 위젯                    | 제너   | G1        | ✅   |
+| G4  | 제너 status API + 새로고침 복원          | 제너   | V2        | ✅   |
 | F8  | 시안 후보 선택 → 재시뮬(LOOP 일부)       | 기능   | V2,G3     | ⬜   |
 | V3  | 개선 루프 경로 검증(LOOP 완료 후)        | 검증   | LOOP      | ⬜   |
 | N3  | 채팅이 sim/gen status 동기화(타 탭)      | 능동   | G4        | ⬜   |
@@ -577,7 +577,12 @@
 **근거** 시뮬: `SimFormWidget`의 `useEffect`(`latest` 복원)·`api.simulation.status`. 제너 status 엔드포인트가 이미 있으면 재사용, 없으면 추가(도메인 내부라 OK, 단 스키마 변경은 아님).
 **완료 기준** 생성 진행 중 새로고침 → status API로 스피너/진행률 복원, 완료 후 새로고침 → 결과 위젯 복원. Preview 확인.
 
-## 4-S. 슬래시 커맨드 (S) — "위젯은 있는데 진입점이 없다"
+**✅ G1·G2·G4 완료(2026-06-26, 프론트만)** — 별도 status 엔드포인트 추가 없이 기존 `api.generator.detail`(status: pending/running/completed/failed)로 복원.
+- **G2(스피너)** — 이미 `GenFormWidget`의 `phase==='running'` 블록이 스피너+진행률바+stage+클릭→/generations 이동을 표시. 추가 작업 불필요.
+- **G1(입력 확인)** — running 스피너 위젯에 **입력 echo**(🎨 상품명 · 타깃) 추가. 실행하면 폼이 사라지고 그 자리에 "무엇을 생성 중인지" 보이는 확인 위젯이 됨. (시뮬은 별도 sim_input 위젯, 제너는 단일 위젯의 running 페이즈에 echo — 같은 UX 효과.)
+- **G4(새로고침 복원)** — [GenFormWidget](frontend/src/components/chat/GenFormWidget.tsx)에 시뮬 패턴 이식: `latest` prop·`ACTIVE_GEN_KEY` localStorage·`subscribe(gid, fromRestore)` 추출·마운트 시 detail.status로 분기 복원. [ChatConversation](frontend/src/components/chat/ChatConversation.tsx)에 `lastGenFormIdx`+`latest` 전달.
+- **별건 버그 발견·수정(fix, G6 계열)** 새로고침 후 완료 처리 시 `finish→onComplete→handleGenComplete→handleSend([생성결과])`가 새 메시지를 추가해 `key={i}` 기반 gen_form이 **리마운트→폼 1/4로 리셋·결과 유실**되는 글리치 확인. `finish(gid, fireComplete)`·`subscribe(gid, fromRestore)` 플래그로 **복원 컨텍스트에선 결과만 인라인 표시**(onComplete 미발화)하게 분기.
+- **검증(라이브 Preview, 실 제너 실호출)** ① **완료 후 복원** — 완료된 gen 키 주입+리로드 → 폼 리셋 없이 "✅ 광고 시안 3개 생성 완료"+후보 3개 인라인. ② **진행 중 복원** — HTTP로 gen 시작·키 주입·gen_form 세션 리로드 → **스피너+진행률(40%) 복원**·키 유지. ③ 그 상태로 완료까지 대기 → **인라인 결과(후보 3개) 표시·폼 리셋 없음·키 정리·콘솔 에러 0**. tsc/eslint 통과.
 
 > 핵심: 현재 슬래시는 5개(`/시뮬레이션`·`/제너레이터`·`/비교`·`/도움말`·`/위젯`)인데 위젯은 10개. **위젯 5개가 자연어로만 뜨고 슬래시 진입점이 없음**. 진입점만 붙이면 묻힌 기능이 즉시 살아남.
 > 등록 위치: [ChatConversation.tsx:33](frontend/src/components/chat/ChatConversation.tsx) `slashCommands` 배열 + `runSlashCommand`. (※ `/위젯`은 C5에서 제거 예정 — S 작업 시 자동완성 목록에서 빠지는 것과 정합.)

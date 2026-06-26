@@ -16,6 +16,9 @@ type Initial = {
   campaign_objective?: string;
 };
 
+// 진행 중 생성 id 보관 키(G4) — 동시 1개 정책이라 단일 키로 충분(새로고침 복원용).
+const ACTIVE_GEN_KEY = 'clickme_active_gen';
+
 const inputCls =
   'w-full px-3 py-2 rounded-lg border border-[#E5E8EB] dark:border-[#2D3748] text-sm bg-white dark:bg-[#252D3D] text-[#191F28] dark:text-[#F2F4F6] focus:outline-none focus:border-[#3182F6]';
 const labelCls = 'text-[11px] font-semibold text-[#8B95A1] dark:text-[#6B7280] mb-1 block';
@@ -29,6 +32,7 @@ export default function GenFormWidget({
   initialImage,
   onResult,
   onComplete,
+  latest = false,
 }: {
   initial?: Initial;
   initialImage?: File; // 채팅에서 첨부한 상품 이미지
@@ -36,6 +40,7 @@ export default function GenFormWidget({
   onResult?: (summary: string, resultRef?: { kind: 'sim' | 'gen'; id: string }) => void;
   // 완료 시 어시스턴트 결과 위젯을 띄우는 경로(시뮬과 동일). 있으면 onResult 대신 이걸 쓴다.
   onComplete?: (generationId: string, candidateCount: number) => void;
+  latest?: boolean; // 가장 최근 gen_form만 새로고침 복원 대상(G4)
 }) {
   const router = useRouter();
   const [phase, setPhase] = useState<Phase>('form');
@@ -68,8 +73,11 @@ export default function GenFormWidget({
       .catch(() => {});
   }, []);
 
-  const finish = async (gid: string) => {
+  // fireComplete=false면 결과만 인라인으로 보여주고 onComplete(결과 위젯 append·오케스트레이터
+  // 재시뮬 신호)는 안 쏜다 — 새로고침 복원(G4)에서 중복 append·재시뮬 재요청을 막기 위함.
+  const finish = async (gid: string, fireComplete = true) => {
     setGenJob(null);
+    localStorage.removeItem(ACTIVE_GEN_KEY); // 완료 — 복원 키 정리
     try {
       const d = (await api.generator.detail(gid)) as GenerationDetail;
       // 실패했거나 후보가 하나도 없으면 에러 카드로 — "0개 생성 완료"·재시뮬 제안 오노출 방지.
@@ -83,18 +91,53 @@ export default function GenFormWidget({
       const count = (d.candidates ?? []).length;
       // 어시스턴트 결과 위젯 경로(onComplete)가 있으면 그걸로 — 결과를 assistant가 준다.
       // 없으면 구 경로(onResult: [생성결과] user 메시지) 폴백.
-      if (onComplete) {
-        onComplete(gid, count);
-      } else if (onResult) {
-        onResult(`[생성결과] 광고 시안 ${count}개 생성 완료`, {
-          kind: 'gen',
-          id: gid,
-        });
+      if (fireComplete) {
+        if (onComplete) {
+          onComplete(gid, count);
+        } else if (onResult) {
+          onResult(`[생성결과] 광고 시안 ${count}개 생성 완료`, {
+            kind: 'gen',
+            id: gid,
+          });
+        }
       }
     } catch (e) {
       setErr(e instanceof Error ? e.message : '결과 조회 실패');
       setPhase('error');
     }
+  };
+
+  // SSE 구독 — 최초 실행·새로고침 복원 공용. 진행률 갱신 + 완료/에러 처리(G4).
+  // fromRestore면 완료 시 결과만 인라인 표시(onComplete 미발화) — 새로고침 후 완료에서
+  // gen_result 중복 append·오케스트레이터 재시뮬 재요청·위젯 리마운트 글리치를 막는다.
+  const subscribe = (gid: string, fromRestore = false) => {
+    esRef.current?.close();
+    const es = api.generator.stream(gid);
+    esRef.current = es;
+    es.onmessage = ev => {
+      try {
+        const d = JSON.parse(ev.data) as { event?: string; pct?: number; message?: string };
+        if (typeof d.pct === 'number') setPct(d.pct);
+        if (d.message) setStageMsg(d.message);
+        if (d.event === 'completed') {
+          es.close();
+          void finish(gid, !fromRestore);
+        } else if (d.event === 'error') {
+          es.close();
+          setGenJob(null);
+          localStorage.removeItem(ACTIVE_GEN_KEY);
+          setErr(d.message ?? '실행 오류');
+          setPhase('error');
+        }
+      } catch {
+        /* ignore malformed line */
+      }
+    };
+    // 스트림 끊김(완료·네트워크) — 상태 조회 대신 detail로 완료/실패를 확정한다(finish 내부에서 분기).
+    es.onerror = () => {
+      es.close();
+      void finish(gid, !fromRestore);
+    };
   };
 
   const run = async () => {
@@ -128,36 +171,48 @@ export default function GenFormWidget({
       })) as { generation_id: string };
       setGenId(generation_id);
       setGenJob(generation_id); // 동시실행 슬롯 점유(생성 1개 제한)
-      const es = api.generator.stream(generation_id);
-      esRef.current = es;
-      es.onmessage = ev => {
-        try {
-          const d = JSON.parse(ev.data) as { event?: string; pct?: number; message?: string };
-          if (typeof d.pct === 'number') setPct(d.pct);
-          if (d.message) setStageMsg(d.message);
-          if (d.event === 'completed') {
-            es.close();
-            void finish(generation_id);
-          } else if (d.event === 'error') {
-            es.close();
-            setGenJob(null);
-            setErr(d.message ?? '실행 오류');
-            setPhase('error');
-          }
-        } catch {
-          /* ignore malformed line */
-        }
-      };
-      es.onerror = () => {
-        es.close();
-        void finish(generation_id);
-      };
+      localStorage.setItem(ACTIVE_GEN_KEY, generation_id); // 새로고침 복원용(G4)
+      subscribe(generation_id);
     } catch (e) {
       setGenJob(null);
+      localStorage.removeItem(ACTIVE_GEN_KEY);
       setErr(e instanceof Error ? e.message : '시작 실패');
       setPhase('error');
     }
   };
+
+  // 새로고침 복원(G4) — 최신 gen_form만, 진행 중 generation_id가 있으면 상태 조회 후 스피너/결과로 복원.
+  useEffect(() => {
+    if (!latest) return;
+    const gid = localStorage.getItem(ACTIVE_GEN_KEY);
+    if (!gid) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const d = (await api.generator.detail(gid)) as GenerationDetail;
+        if (cancelled) return;
+        if (d.status === 'running' || d.status === 'pending') {
+          setGenId(gid);
+          setGenJob(gid);
+          setStageMsg('광고 생성 진행 중...');
+          setPhase('running');
+          subscribe(gid, true); // 복원 구독 — 완료 시 인라인 결과(글리치 방지)
+        } else if (d.status === 'completed') {
+          // 복원 시엔 결과만 인라인 표시 — onComplete 재발화(중복 위젯·재시뮬 재요청) 방지.
+          setGenId(gid);
+          void finish(gid, false);
+        } else {
+          localStorage.removeItem(ACTIVE_GEN_KEY); // failed/unknown — 정리
+        }
+      } catch {
+        localStorage.removeItem(ACTIVE_GEN_KEY);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [latest]);
 
   if (phase === 'form') {
     const totalSteps = 4;
@@ -271,7 +326,14 @@ export default function GenFormWidget({
           </div>
           <span className="text-xs text-[#8B95A1]">{pct}%</span>
         </div>
-        <p className="text-[10px] text-[#B0B8C1] mt-2">클릭하면 전체 화면에서 진행을 봐요 →</p>
+        {/* G1 — 무엇을 생성 중인지 입력 확인(상품·타깃) */}
+        {(name || target) && (
+          <p className="text-[11px] text-[#4E5968] dark:text-[#9CA3AF] mt-2 truncate">
+            🎨 {name || '광고'}
+            {target ? ` · 타깃 ${target}` : ''}
+          </p>
+        )}
+        <p className="text-[10px] text-[#B0B8C1] mt-1">클릭하면 전체 화면에서 진행을 봐요 →</p>
       </button>
     );
   }
