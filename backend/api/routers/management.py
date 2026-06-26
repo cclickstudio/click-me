@@ -1080,13 +1080,14 @@ async def _list_campaigns_real(
             else {c.campaign_id for c in await reader.list_campaigns(include_archived=True)}
         )
         await _reconcile_deleted_campaigns(db, org_id, recon_ids)
-    # 캠페인별 조회기간 지표 — 권한 거부면 해당 캠페인만 (None, True).
-    metric_pairs = await asyncio.gather(
-        *(
-            _safe_meta(reader.get_metrics(c.campaign_id, since, date_preset=date_preset))
-            for c in infos
-        )
+    # 캠페인별 조회기간 지표 — 계정 단위 level=campaign 1콜(+페이징)로 N+1 제거.
+    # 권한 거부는 배치 전체가 막힘(계정 insights 권한은 균일) → 전 캠페인 (None, True).
+    ids = [c.campaign_id for c in infos]
+    metrics_map, metrics_blocked = await _safe_meta(
+        reader.get_metrics_by_campaign(ids, since, date_preset=date_preset)
     )
+    metrics_map = metrics_map or {}
+    metric_pairs = [(metrics_map.get(cid), metrics_blocked) for cid in ids]
     # 운영 신호는 조회기간과 분리한 고정 윈도로 — 소진율=오늘 지출÷일예산, 노출 피로=최근 7일 빈도.
     # 지표를 읽은 active만 today·last_7d 추가 조회(권한 거부·비활성은 건너뜀).
     today_spend = [0] * len(infos)
@@ -1095,28 +1096,20 @@ async def _list_campaigns_real(
         i for i, c in enumerate(infos) if c.state == CampaignState.ACTIVE and not metric_pairs[i][1]
     ]
     if elig:
-        today_pairs, week_pairs = await asyncio.gather(
-            asyncio.gather(
-                *(
-                    _safe_meta(reader.get_metrics(infos[i].campaign_id, since, date_preset="today"))
-                    for i in elig
-                )
-            ),
-            asyncio.gather(
-                *(
-                    _safe_meta(
-                        reader.get_metrics(infos[i].campaign_id, since, date_preset="last_7d")
-                    )
-                    for i in elig
-                )
-            ),
+        elig_ids = [infos[i].campaign_id for i in elig]
+        (today_map, _t_blocked), (week_map, _w_blocked) = await asyncio.gather(
+            _safe_meta(reader.get_metrics_by_campaign(elig_ids, since, date_preset="today")),
+            _safe_meta(reader.get_metrics_by_campaign(elig_ids, since, date_preset="last_7d")),
         )
-        for k, i in enumerate(elig):
-            tm, t_blocked = today_pairs[k]
-            wm, w_blocked = week_pairs[k]
-            if tm is not None and not t_blocked:
+        today_map = today_map or {}
+        week_map = week_map or {}
+        for i in elig:
+            cid = infos[i].campaign_id
+            tm = today_map.get(cid)
+            wm = week_map.get(cid)
+            if tm is not None:
                 today_spend[i] = tm.spend_krw
-            if wm is not None and not w_blocked:
+            if wm is not None:
                 freq_7d[i] = wm.frequency
     out = []
     any_blocked = False

@@ -263,7 +263,49 @@ class MetaAdsReader:
             },
         )
         rows = payload.get("data", [])
-        row: dict[str, Any] = rows[0] if rows else {}
+        return self._row_to_metrics(rows[0] if rows else {}, campaign_id, since)
+
+    async def get_metrics_by_campaign(
+        self, campaign_ids: list[str], since: datetime, date_preset: str = "maximum"
+    ) -> dict[str, MetricsSnapshot]:
+        """계정 단위 캠페인별 지표 — level=campaign으로 한 응답에 모든 캠페인 행(N+1 제거).
+
+        캠페인마다 /{id}/insights를 N번 부르던 걸 /act_{id}/insights 1콜(+페이징)로 대체한다.
+        응답에 행이 없는(미게재) 캠페인은 campaign_ids 기준 0 스냅샷으로 채워, 호출자가
+        누락 없이 캠페인별 룩업을 할 수 있게 한다(현 get_metrics 빈 데이터 동작과 동일).
+        """
+        account = normalize_ad_account(self._client.ad_account_id)
+        params: dict[str, Any] = {
+            "fields": f"{_INSIGHTS_FIELDS},campaign_id",
+            "level": "campaign",
+            "date_preset": date_preset,
+            "limit": 500,
+        }
+        out: dict[str, MetricsSnapshot] = {}
+        while True:
+            payload = await self._client.get(f"{account}/insights", params)
+            for row in payload.get("data", []):
+                cid = str(row.get("campaign_id", ""))
+                if not cid:
+                    continue
+                out[cid] = self._row_to_metrics(row, cid, since)
+            paging = payload.get("paging", {})
+            after = (paging.get("cursors") or {}).get("after")
+            if not after or not paging.get("next"):
+                break
+            params = {**params, "after": after}
+        # 미게재(행 없는) 캠페인 0 스냅샷 폴백 — 호출자 룩업 누락 방지.
+        for cid in campaign_ids:
+            out.setdefault(cid, self._row_to_metrics({}, cid, since))
+        return out
+
+    def _row_to_metrics(
+        self, row: dict[str, Any], campaign_id: str, since: datetime
+    ) -> MetricsSnapshot:
+        """insights 행 1개 → MetricsSnapshot 변환. get_metrics·get_metrics_by_campaign 공용.
+
+        빈 행({})이면 0 스냅샷 — 미게재 캠페인 폴백. since는 date_stop 없을 때 as_of 폴백.
+        """
         impressions = _to_int(row.get("impressions"))
         clicks = _to_int(row.get("clicks"))
         reach = _to_int(row.get("reach"))
