@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -146,6 +146,11 @@ class ChatMessage(BaseModel):
     content: str
 
 
+class Attachment(BaseModel):
+    s3_key: str
+    kind: Literal["image"] = "image"
+
+
 class ChatRequest(BaseModel):
     session_id: str
     messages: list[ChatMessage]
@@ -154,6 +159,7 @@ class ChatRequest(BaseModel):
     improve_context: dict | None = (
         None  # 개선 모드 컨텍스트 {s3_key, simulation_summary, product_name?}
     )
+    attachments: list[Attachment] = Field(default_factory=list)
 
 
 class InquiryCreate(BaseModel):
