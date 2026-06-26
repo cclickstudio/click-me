@@ -21,7 +21,10 @@ def build_orchestrator_graph(registry: AgentRegistry):
     # registry를 노드 클로저에 바인딩 — 그래프는 한 번 빌드해 재사용(호출자가 캐시).
     async def plan_node(state: TurnState) -> dict:
         # ctx.user_input 직접 접근 — 폴백 없음(ctx 비정상이면 AttributeError로 fail-loud).
-        return {"plan": build_plan(state["route"], query=state["ctx"].user_input)}
+        ctx = state["ctx"]
+        return {
+            "plan": build_plan(state["route"], query=ctx.user_input, attachments=ctx.attachments)
+        }
 
     async def execute_node(state: TurnState) -> dict:
         return {"result": await execute_plan(state["plan"], state["ctx"], registry=registry)}

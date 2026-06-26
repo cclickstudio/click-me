@@ -6,16 +6,22 @@ from api.orchestration.plan import Plan, PlanStep, make_plan
 from api.orchestration.routing import RouteDecision
 
 
-def build_plan(route: RouteDecision, *, query: str) -> Plan:
-    if route.domain not in policy.DOMAIN_TO_ACTION:
-        # build_plan은 도메인이 해석된 경우(route.score>0)에만 호출된다(chat._should_plan 가드).
-        # 미해석(clio 등)으로 들어오면 조용한 KeyError 대신 명시적 실패(fail-loud).
-        raise ValueError(
-            f"build_plan: 미해석 도메인({route.domain}) — 호출 전 _should_plan 가드 필요"
-        )
-    nonzero = {c.domain for c in route.candidates if c.score > 0.0}
-    sequential = any(marker in query for marker in policy.SEQUENTIAL_MARKERS)
+def _has_image_attachment(attachments) -> bool:
+    return any(getattr(a, "kind", None) == "image" for a in attachments)
 
+
+def build_plan(route: RouteDecision, *, query: str, attachments: tuple = ()) -> Plan:
+    has_image = _has_image_attachment(attachments)
+    nonzero = {c.domain for c in route.candidates if c.score > 0.0}
+    if has_image:
+        nonzero.add("generator")  # 게이트 A — 첨부 이미지 → generate 보장
+    if not nonzero:
+        # 미해석 도메인 & 첨부 없음 — 호출 전 _should_plan 가드 필요(fail-loud)
+        raise ValueError(
+            f"build_plan: 미해석 도메인({route.domain})·첨부 없음 — _should_plan 가드 필요"
+        )
+
+    sequential = any(marker in query for marker in policy.SEQUENTIAL_MARKERS)
     if len(nonzero) >= 2 or sequential:  # 게이트 B 진입
         steps = [
             PlanStep(domain=policy.ACTION_TO_DOMAIN[action], action=action, inputs={"query": query})
@@ -24,11 +30,9 @@ def build_plan(route: RouteDecision, *, query: str) -> Plan:
         ]
         if len(steps) >= 2:  # 파이프라인 도메인 2개+ 매칭 시에만 멀티스텝
             return make_plan(steps)
-        # 게이트 B지만 파이프라인 매칭 <2 → 아래 단일 스텝으로 fallback
+        # 게이트 B지만 매칭 <2 → 아래 단일 fallback
 
-    step = PlanStep(
-        domain=route.domain,
-        action=policy.DOMAIN_TO_ACTION[route.domain],
-        inputs={"query": query},
-    )
+    # 단일 스텝 — 첨부 있으면 generator 우선(generate), 아니면 해석된 route.domain
+    single = "generator" if has_image else route.domain
+    step = PlanStep(domain=single, action=policy.DOMAIN_TO_ACTION[single], inputs={"query": query})
     return make_plan([step])

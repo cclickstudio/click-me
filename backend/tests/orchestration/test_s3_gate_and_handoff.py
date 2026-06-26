@@ -6,7 +6,9 @@ import pytest
 from api.orchestration.context import TurnContext
 from api.orchestration.executor import execute_plan
 from api.orchestration.plan import PlanStep, make_plan
+from api.orchestration.planner import build_plan
 from api.orchestration.registry import AgentRegistry
+from api.orchestration.routing import KeywordMatcher, Router
 
 
 @dataclass
@@ -51,3 +53,22 @@ async def test_executor_short_circuits_on_started():
 
     assert out["status"] == "started"
     assert spy.calls == 0  # generate started → simulate 미집행 (S3 한계 가드)
+
+
+def _has_action(plan, action):
+    return any(s.action == action for s in plan.steps)
+
+
+def test_gate_a_attachment_forces_generate_step():
+    # "봐줄래"는 어떤 도메인 키워드도 아님 → route.domain=clio, score 0.
+    # 그래도 첨부 이미지가 있으면 generate 스텝이 들어간다(게이트 A).
+    route = Router([KeywordMatcher("management", frozenset({"캠페인"}))]).route("이거 좀 봐줄래")
+    plan = build_plan(route, query="이거 좀 봐줄래", attachments=(_Img("uploads/p.png"),))
+    assert _has_action(plan, "generate")
+
+
+def test_no_attachment_keeps_single_resolved_domain():
+    # 첨부 없고 management만 해석 → 기존 단일 answer 스텝(회귀 0)
+    route = Router([KeywordMatcher("management", frozenset({"캠페인"}))]).route("이번 캠페인 예산?")
+    plan = build_plan(route, query="이번 캠페인 예산?")
+    assert [s.action for s in plan.steps] == ["answer"]
