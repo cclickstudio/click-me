@@ -15,8 +15,9 @@ from typing import Any, Literal
 from urllib.parse import parse_qs, urlparse
 from uuid import UUID, uuid4
 
+import httpx
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, StreamingResponse
 from langsmith import traceable
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 from sqlalchemy import func, select, text, update
@@ -833,6 +834,41 @@ async def link_simulation(
         )
     await db.commit()
     return {"campaign_id": campaign_id, "simulation_id": str(sim_uuid), "linked": True}
+
+
+@router.get("/campaigns/{campaign_id}/creative-image")
+async def proxy_creative_image(
+    campaign_id: str,
+    reader=Depends(_request_reader),
+):
+    """Meta 크리에이티브 이미지 프록시 — 브라우저에서 직접 접근 불가한 fbcdn URL을 서버가 중계.
+
+    Meta CDN(fbcdn.net)은 CORS 제한과 세션 만료로 브라우저 직접 로드가 막힌다.
+    백엔드가 이미지를 받아 Content-Type 그대로 스트림으로 반환한다.
+    """
+    creatives = await reader.get_creatives(campaign_id)
+    image_url: str | None = None
+    for c in creatives:
+        if c.image_url:
+            image_url = c.image_url
+            break
+    if not image_url:
+        raise HTTPException(
+            status_code=404, detail="이미지 없음 — 크리에이티브에 이미지가 설정되지 않았습니다."
+        )
+    try:
+        async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+            resp = await client.get(image_url)
+        if resp.status_code != 200:
+            raise HTTPException(status_code=502, detail="Meta 이미지 조회 실패")
+        content_type = resp.headers.get("content-type", "image/jpeg")
+        return StreamingResponse(
+            iter([resp.content]),
+            media_type=content_type,
+            headers={"Cache-Control": "public, max-age=3600"},
+        )
+    except httpx.RequestError as exc:
+        raise HTTPException(status_code=502, detail="Meta 이미지 네트워크 오류") from exc
 
 
 @router.get("/calibration/anchors")

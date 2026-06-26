@@ -292,7 +292,11 @@ export default function Page() {
       if (t.gender) params.set('gender', t.gender);
       if (t.ad_headline) params.set('ad_title', t.ad_headline);
       if (t.ad_body) params.set('ad_content', t.ad_body);
-      if (t.ad_image_url) params.set('ad_image_url', t.ad_image_url);
+      // Meta 이미지는 fbcdn CORS 제한으로 직접 로드 불가 → 백엔드 프록시 URL 사용
+      if (t.ad_image_url) {
+        const proxyUrl = `${process.env.NEXT_PUBLIC_API_URL ?? ''}/api/management/campaigns/${campaignId}/creative-image`;
+        params.set('ad_image_url', proxyUrl);
+      }
       router.push(`/simulation?${params.toString()}`);
     } catch {
       alert('타겟팅 정보를 불러오지 못했습니다. 잠시 후 다시 시도해주세요.');
