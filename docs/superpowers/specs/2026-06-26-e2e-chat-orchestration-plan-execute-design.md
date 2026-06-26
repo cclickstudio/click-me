@@ -108,6 +108,58 @@ LangGraph 풀 기능을 쓰되 **전부 이 supervisor 그래프 하나에** 점
 - 비동기 백그라운드 잡(gen/sim SSE)을 장기 실행 노드로 가두지 않고 트리거·상관(§6)으로 처리.
 - deepagents 하네스·가상 파일시스템 메모리 미사용. swarm/네트워크 통신 없음(supervisor 단일 통제).
 
+### LangChain 사용 범위 (어디에 무엇을)
+
+원칙 — **"잎(leaf)은 LangChain, 제어 흐름은 LangGraph, raw SDK는 0."** LLM 호출·구조화 출력·프롬프트·
+검색 같은 말단만 LangChain으로, 노드 간 흐름·분기·HITL은 LangGraph가 소유한다. (LangChain은 이미
+부분 도입 — management 풀모드 `ChatOpenAI`·`langchain_core.messages` 등. 본 항목은 확대·표준화.)
+
+| 어디에 | 무엇을 | 슬라이스 |
+|---|---|---|
+| CLIO | raw SDK(google.generativeai/openai/anthropic) → `ChatX` + `.astream()` + provider 팩토리. **추적 누락 제거**(§6.3) | T |
+| Planner LLM | `with_structured_output(PlanModel)` → 타입 보장 Plan 산출 | S2/S4 |
+| 프롬프트 | CLIO·Planner 프롬프트를 `ChatPromptTemplate`로 중앙화·버전화 | T·S2 |
+| 메모리/검색 | LTM=LangMem, KB=retriever(management 하이브리드 보유) | M |
+| 도메인 내부 | management는 이미 LangChain tool-calling. generator/sim은 자기 구현 유지(계약으로만 연결) | 변경 없음 |
+
+> 안 하는 것 — 오케스트레이터 제어 흐름을 LCEL `Runnable` 체인으로 짜지 않음(LangGraph가 소유).
+> 도메인 서비스 내부를 LangChain으로 갈아엎지 않음(경계 규칙).
+
+### 계층 구조 — 잎(LangChain) · 제어(LangGraph) · 도메인 · 추적(LangSmith)
+
+```mermaid
+flowchart TB
+    subgraph LG["LangGraph · 제어 흐름 (supervisor StateGraph)"]
+        direction LR
+        plan["plan"] --> exec["execute"] --> gate{"gate (S4)"} --> hitl["execute · HITL (S5)"]
+        gate -->|"미달 · replan ≤3"| plan
+    end
+
+    subgraph LC["LangChain · 잎 (LLM·구조화·검색)"]
+        direction LR
+        pllm["Planner<br/>with_structured_output(Plan)"]
+        clio["CLIO ChatModel<br/>.astream()"]
+        mem["LangMem · retriever<br/>(LTM·KB)"]
+    end
+
+    subgraph DOM["도메인 서브에이전트 · 자기 구현, ask() 계약"]
+        direction LR
+        gen["generator"]
+        sim["simulation"]
+        mgmt["management (ReAct)"]
+    end
+
+    pllm -. "계획 산출" .-> plan
+    exec -. "ask()" .-> gen
+    exec -. "ask()" .-> sim
+    exec -. "ask()" .-> mgmt
+    hitl -. "승인 후" .-> bridge["집행 브릿지<br/>approval · executor"]
+    mgmt -. "uses" .-> mem
+
+    LG -. "트레이스" .-> LS(["LangSmith"])
+    LC -. "자동 계측" .-> LS
+```
+
 ---
 
 ## 3. Planner 진입 게이트
