@@ -2,13 +2,16 @@ import asyncio
 import json
 import threading
 import time
-from collections.abc import AsyncGenerator, Awaitable, Callable
+from collections.abc import AsyncGenerator, Awaitable, Callable, Iterator
 
 import google.generativeai as genai
 from fastapi import APIRouter
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+from api.assistant.orchestrator import Orchestrator
+from api.assistant.wiring import build_assistant
+from core.assistant_contracts import Action, SubagentRequest, SubagentResult
 from core.config import settings
 from core.schemas import ChatRequest
 from domain.management.assistant.agent import build_management_agent
@@ -101,6 +104,36 @@ def _chunks(text: str, size: int = 24) -> list[str]:
     return [text[i : i + size] for i in range(0, len(text), size)] or [""]
 
 
+_orchestrator = None
+
+
+def _get_orchestrator() -> Orchestrator:
+    """교통정리(오케스트레이터) 1회 빌드·캐시 — 생성·관리 서브에이전트 조립."""
+    global _orchestrator
+    if _orchestrator is None:
+        _orchestrator = build_assistant(settings)
+    return _orchestrator
+
+
+def _sse(obj: dict) -> str:
+    return f"data: {json.dumps(obj, ensure_ascii=False)}\n\n"
+
+
+def _subagent_sse_events(result: SubagentResult) -> Iterator[str]:
+    """서브에이전트 결과(ANSWER/ASK/TRIGGER)를 SSE 이벤트로 변환. done은 호출자가 붙인다.
+
+    - meta가 있으면 먼저 보낸다(출처·엔진·인용 표시).
+    - TRIGGER면 started_event(stream_url)를 방출 — 프론트가 그 잡 진행을 구독한다.
+    - message는 토큰처럼 잘게 스트리밍(되묻기 질문·확인·즉답 공통).
+    """
+    if result.meta:
+        yield _sse({"meta": result.meta})
+    if result.action == Action.TRIGGER and result.started_event is not None:
+        yield _sse({"started": result.started_event.model_dump()})
+    for piece in _chunks(result.message):
+        yield _sse({"token": piece})
+
+
 @router.post("/complete")
 async def chat_complete(body: ChatRequest) -> StreamingResponse:
     gemini_history = []
@@ -173,7 +206,26 @@ async def chat_complete(body: ChatRequest) -> StreamingResponse:
             yield 'data: {"done": true}\n\n'
             return
 
-        # 그 외는 기존 CLIO(Gemini)
+        # 생성·기타는 교통정리(오케스트레이터)로 — 관리는 위에서 이미 처리됨.
+        # 생성=슬롯필링(되묻기/트리거), advise/미등록=result None → 아래 CLIO 폴백.
+        sub_req = SubagentRequest(
+            messages=body.messages,
+            session_id=body.session_id,
+            context_ad_id=body.context_ad_id,
+            improve_context=body.improve_context,
+        )
+        try:
+            _intent, result = await _get_orchestrator().run_turn(sub_req)
+        except Exception as exc:  # noqa: BLE001 — 라우팅 실패는 CLIO로 폴백(채팅 안 끊김)
+            print(f"[chat] orchestrator error: {exc!r}")
+            result = None
+        if result is not None:
+            for ev in _subagent_sse_events(result):
+                yield ev
+            yield 'data: {"done": true}\n\n'
+            return
+
+        # 그 외(advise/미등록)는 기존 CLIO(Gemini)
         clio_meta = {"source": "clio", "label": "CLIO", "engine": "Gemini"}
         yield f"data: {json.dumps({'meta': clio_meta}, ensure_ascii=False)}\n\n"
 
