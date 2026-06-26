@@ -151,6 +151,18 @@ class MockAdPlatform:
             ),
         ]
 
+    async def get_campaign_targeting(self, campaign_id: str) -> dict:
+        """Port 충족 — 데모 캠페인 타겟팅(결정론 고정값)."""
+        targeting_by_id = {
+            "camp_1": {"objective": "OUTCOME_SALES", "age_min": 20, "age_max": 39, "gender": "F"},
+            "camp_2": {"objective": "OUTCOME_TRAFFIC", "age_min": 20, "age_max": 49, "gender": ""},
+        }
+        t = targeting_by_id.get(
+            campaign_id,
+            {"objective": "OUTCOME_TRAFFIC", "age_min": None, "age_max": None, "gender": ""},
+        )
+        return {"campaign_id": campaign_id, "campaign_name": campaign_id, **t}
+
     async def get_account_funding(self) -> AccountFunding:
         """Port 충족 — 데모는 잔액 충분(게재 차단 없음)."""
         return AccountFunding(

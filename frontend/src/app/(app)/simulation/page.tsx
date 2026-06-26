@@ -2,7 +2,7 @@
 // 도메인 시뮬레이터(/api/simulation/run) 동기 실행 화면 — 광고 입력 → 반응·루브릭·집계 표시
 
 import { useState, useRef, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useProjects } from '@/components/ProjectContext';
 import { api } from '@/lib/api';
 import { saveSimResult } from '@/lib/simResultStore';
@@ -71,7 +71,20 @@ const AGE_BANDS: { label: string; min: number; max: number }[] = [
 export default function SimulationRunPage() {
   const { selectedProject, projects, selectProject } = useProjects();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [step, setStep] = useState<Step>('setup');
+
+  // 성과 비교 "시뮬 돌리기"에서 넘어온 경우 — meta_campaign_id + 타겟팅 사전 입력
+  const fromCampaign = searchParams.get('from_campaign');
+  const fromCampaignName = searchParams.get('from_name') ?? fromCampaign ?? '';
+
+  // URL 파라미터로 초기값 설정하는 헬퍼
+  function _initAgeBands(ageMin: number | null, ageMax: number | null): string[] {
+    if (ageMin == null && ageMax == null) return [];
+    return AGE_BANDS.filter(
+      (b) => b.max >= (ageMin ?? 0) && b.min <= (ageMax ?? 99)
+    ).map((b) => b.label);
+  }
 
   // 광고 입력
   const [adId] = useState(`AD-${Date.now()}`);
@@ -84,7 +97,7 @@ export default function SimulationRunPage() {
   const [serviceClass, setServiceClass] = useState<number | ''>('');
   const categories = SIM_CATEGORIES; // 하드코딩 마스터(DB/API 대체).
   // 광고 목표 — 일반인도 쉽게 고르는 단일 선택(+ 기타 직접 입력).
-  const [goalItem, setGoalItem] = useState('');
+  const [goalItem, setGoalItem] = useState(() => searchParams.get('objective') ?? '');
   const [customGoal, setCustomGoal] = useState('');
 
   // 시뮬레이션 설정
@@ -92,8 +105,15 @@ export default function SimulationRunPage() {
   const [allocation, setAllocation] = useState<'proportional' | 'stratified'>(
     'proportional'
   );
-  const [ageBands, setAgeBands] = useState<string[]>([]);
-  const [gender, setGender] = useState<GenderFilter>('');
+  const [ageBands, setAgeBands] = useState<string[]>(() =>
+    _initAgeBands(
+      searchParams.get('age_min') ? Number(searchParams.get('age_min')) : null,
+      searchParams.get('age_max') ? Number(searchParams.get('age_max')) : null,
+    )
+  );
+  const [gender, setGender] = useState<GenderFilter>(
+    () => (searchParams.get('gender') as GenderFilter) ?? ''
+  );
 
   const [error, setError] = useState<string | null>(null);
 
@@ -178,7 +198,7 @@ export default function SimulationRunPage() {
           esRef.current = null;
           api.simulation
             .result(run_id)
-            .then((r: SimRunResult) => {
+            .then(async (r: SimRunResult) => {
               // DB 저장됐으면 simulation_id, 아니면 run_id로 키·라우팅(폴백).
               const routeId = r.simulation_id ?? r.run_id;
               saveSimResult(routeId, {
@@ -186,6 +206,12 @@ export default function SimulationRunPage() {
                 adTitle: adTitle || undefined,
                 adDescription: adContent || undefined,
               });
+              // 성과 비교에서 넘어온 경우 — 시뮬 완료 후 Meta 캠페인에 자동 연결
+              if (fromCampaign && r.simulation_id) {
+                await api.management
+                  .linkSimulation(fromCampaign, r.simulation_id)
+                  .catch(() => {}); // 연결 실패해도 결과 이동은 막지 않음
+              }
               router.push(`/simulation/${routeId}`);
             })
             .catch(e => {
@@ -232,6 +258,14 @@ export default function SimulationRunPage() {
               AI 가상 소비자에게 광고 반응을 미리 테스트합니다
             </p>
           </div>
+
+          {/* 성과 비교에서 넘어온 경우 안내 배너 */}
+          {fromCampaign && (
+            <div className='mb-5 px-4 py-2.5 bg-[#EEF4FF] dark:bg-[#1E3A5F] rounded-xl border border-[#BFDBFE] dark:border-[#1E3A5F] text-sm text-[#3182F6]'>
+              <span className='font-semibold'>{fromCampaignName}</span> 캠페인 기준으로 사전 설정됐습니다.
+              시뮬 완료 시 해당 캠페인에 자동 연결됩니다.
+            </div>
+          )}
 
           {error && (
             <div className='mb-5 px-4 py-2.5 bg-[#FEF2F2] dark:bg-[#3B0D0D] rounded-xl border border-[#FECACA] dark:border-[#7F1D1D] text-sm text-[#DC2626] dark:text-[#FCA5A5]'>

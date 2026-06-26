@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { api, type BeforeAfterItem, type CalibrationResponse } from '@/lib/api';
 
 const VERDICT: Record<BeforeAfterItem['verdict'], { label: string; cls: string }> = {
@@ -49,7 +50,15 @@ function StrongBadge({
   );
 }
 
-function BeforeAfterCard({ item }: { item: BeforeAfterItem }) {
+function BeforeAfterCard({
+  item,
+  onRunSim,
+  simLoading,
+}: {
+  item: BeforeAfterItem;
+  onRunSim: (campaignId: string) => void;
+  simLoading: string | null;
+}) {
   const v = VERDICT[item.verdict];
   const p = item.prediction;
   const a = item.actual;
@@ -128,9 +137,18 @@ function BeforeAfterCard({ item }: { item: BeforeAfterItem }) {
               <Metric label="거부율" value={`${(p.rejection_rate * 100).toFixed(0)}%`} />
             </div>
           ) : (
-            <p className="text-xs text-[#B0B8C1] py-4 text-center">
-              시뮬 연결 대기 — 이 광고로 시뮬을 돌리면 예측이 채워집니다
-            </p>
+            <div className="py-3 text-center">
+              <p className="text-xs text-[#B0B8C1] mb-2">
+                시뮬 연결 대기 — 이 광고로 시뮬을 돌리면 예측이 채워집니다
+              </p>
+              <button
+                onClick={() => onRunSim(item.campaign_id)}
+                disabled={simLoading === item.campaign_id}
+                className="px-3 py-1.5 rounded-lg bg-[#3182F6] hover:bg-[#1B64DA] disabled:opacity-60 text-white text-xs font-semibold transition-colors"
+              >
+                {simLoading === item.campaign_id ? '불러오는 중…' : '이 캠페인으로 시뮬 돌리기'}
+              </button>
+            </div>
           )}
         </div>
         <div className="rounded-xl bg-white dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748] p-3">
@@ -155,6 +173,11 @@ function BeforeAfterCard({ item }: { item: BeforeAfterItem }) {
       <p className="mt-3 text-[12px] text-[#8B95A1]">{item.rationale}</p>
       {item.interpretation && (
         <p className="mt-1 text-[12px] text-[#B0B8C1] dark:text-[#6B7280]">↳ {item.interpretation}</p>
+      )}
+      {!p && (
+        <p className="mt-2 text-[11px] text-[#B0B8C1]">
+          시뮬 미연결 — 예측 데이터 없음
+        </p>
       )}
     </div>
   );
@@ -239,11 +262,41 @@ function CalibrationCard({ calib }: { calib: CalibrationResponse }) {
   );
 }
 
+// Meta objective → 시뮬레이터 광고 목표 매핑
+const _OBJECTIVE_MAP: Record<string, string> = {
+  OUTCOME_AWARENESS: '관심 유도',
+  OUTCOME_TRAFFIC: '클릭 유도',
+  OUTCOME_ENGAGEMENT: '관심 유도',
+  OUTCOME_LEADS: '가입·문의 유도',
+  OUTCOME_APP_PROMOTION: '클릭 유도',
+  OUTCOME_SALES: '구매 전환',
+};
+
 export default function Page() {
+  const router = useRouter();
   const [items, setItems] = useState<BeforeAfterItem[] | null>(null);
   const [calib, setCalib] = useState<CalibrationResponse | null>(null);
   const [baError, setBaError] = useState<string | null>(null);
   const [rateLimited, setRateLimited] = useState<string | null>(null);
+  const [simLoading, setSimLoading] = useState<string | null>(null); // 로딩 중인 campaign_id
+
+  const handleRunSim = useCallback(async (campaignId: string) => {
+    setSimLoading(campaignId);
+    try {
+      const t = await api.management.campaignTargeting(campaignId);
+      const params = new URLSearchParams({ from_campaign: campaignId });
+      if (t.campaign_name) params.set('from_name', t.campaign_name);
+      if (t.objective) params.set('objective', _OBJECTIVE_MAP[t.objective] ?? '');
+      if (t.age_min != null) params.set('age_min', String(t.age_min));
+      if (t.age_max != null) params.set('age_max', String(t.age_max));
+      if (t.gender) params.set('gender', t.gender);
+      router.push(`/simulation?${params.toString()}`);
+    } catch {
+      alert('타겟팅 정보를 불러오지 못했습니다. 잠시 후 다시 시도해주세요.');
+    } finally {
+      setSimLoading(null);
+    }
+  }, [router]);
 
   useEffect(() => {
     let alive = true;
@@ -286,7 +339,12 @@ export default function Page() {
         {items !== null && items.length > 0 && (
           <div className="space-y-4">
             {items.map((it) => (
-              <BeforeAfterCard key={it.campaign_id} item={it} />
+              <BeforeAfterCard
+                key={it.campaign_id}
+                item={it}
+                onRunSim={handleRunSim}
+                simLoading={simLoading}
+              />
             ))}
           </div>
         )}

@@ -762,6 +762,79 @@ async def compare_before_after(
     return {"items": items}
 
 
+@router.get("/campaigns/{campaign_id}/targeting")
+async def get_campaign_targeting(
+    campaign_id: str,
+    reader=Depends(_request_reader),
+):
+    """Meta 캠페인 타겟팅 정보 — 시뮬레이터 사전 입력용.
+
+    objective·age_min·age_max·gender를 반환한다. 시뮬레이터 입력 폼에 그대로 매핑된다.
+    """
+    return await reader.get_campaign_targeting(campaign_id)
+
+
+class _LinkSimBody(BaseModel):
+    simulation_id: str
+
+
+@router.post("/campaigns/{campaign_id}/link-simulation")
+async def link_simulation(
+    campaign_id: str,
+    body: _LinkSimBody,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """기존 Meta 캠페인에 시뮬 결과를 역방향 연결 — management_created_campaigns에 기록.
+
+    ClickMe 밖에서 만든 캠페인도 시뮬 예측과 성과 비교가 가능해진다.
+    이미 연결된 캠페인은 simulation_id를 덮어쓴다(재시뮬 시).
+    """
+    org_id = await _require_org_id(user, db)
+    try:
+        sim_uuid = UUID(body.simulation_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="simulation_id 형식 오류") from exc
+    owned = await db.scalar(
+        text("SELECT 1 FROM simulations WHERE id = :sid AND organization_id = :org"),
+        {"sid": str(sim_uuid), "org": str(org_id)},
+    )
+    if not owned:
+        raise HTTPException(status_code=422, detail="해당 시뮬을 찾을 수 없거나 권한이 없습니다.")
+    existing = await db.scalar(
+        select(CreatedCampaign).where(
+            CreatedCampaign.meta_campaign_id == campaign_id,
+            CreatedCampaign.tenant_id == str(org_id),
+            CreatedCampaign.deleted_at.is_(None),
+        )
+    )
+    if existing:
+        existing.simulation_id = str(sim_uuid)
+    else:
+        conn = await db.scalar(
+            select(MetaConnection).where(
+                MetaConnection.organization_id == str(org_id),
+                MetaConnection.deleted_at.is_(None),
+            )
+        )
+        ad_account_id = conn.ad_account_id if conn else ""
+        db.add(
+            CreatedCampaign(
+                tenant_id=str(org_id),
+                meta_campaign_id=campaign_id,
+                simulation_id=str(sim_uuid),
+                name=campaign_id,
+                objective="unknown",
+                ad_account_id=ad_account_id,
+                daily_budget_krw=0,
+                status="linked",
+                execution_mode="manual_link",
+            )
+        )
+    await db.commit()
+    return {"campaign_id": campaign_id, "simulation_id": str(sim_uuid), "linked": True}
+
+
 @router.get("/calibration/anchors")
 async def calibration_anchors(
     reader=Depends(_request_reader),

@@ -576,6 +576,22 @@ export const api = {
         method: "POST",
         body: JSON.stringify(body),
       }),
+    // 기존 Meta 캠페인 타겟팅 정보 조회 — 시뮬레이터 사전 입력용
+    campaignTargeting: (campaignId: string) =>
+      request<{
+        campaign_id: string;
+        campaign_name: string;
+        objective: string;
+        age_min: number | null;
+        age_max: number | null;
+        gender: '' | 'M' | 'F';
+      }>(`/management/campaigns/${campaignId}/targeting`),
+    // 기존 Meta 캠페인에 시뮬 역방향 연결
+    linkSimulation: (campaignId: string, simulationId: string) =>
+      request<{ campaign_id: string; simulation_id: string; linked: boolean }>(
+        `/management/campaigns/${campaignId}/link-simulation`,
+        { method: 'POST', body: JSON.stringify({ simulation_id: simulationId }) },
+      ),
     // 광고 소재 이미지 업로드 → image_hash (멀티파트, 무과금 자산 등록)
     uploadAdImage: (file: File) => {
       const form = new FormData();

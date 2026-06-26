@@ -749,6 +749,39 @@ class MetaAdsReader:
             )
         return out
 
+    async def get_campaign_targeting(self, campaign_id: str) -> dict:
+        """캠페인 목표·광고세트 타겟팅 — 시뮬레이터 사전 입력용.
+
+        캠페인 노드에서 objective, 첫 광고세트에서 targeting(age_min/max·genders)을 가져온다.
+        광고세트가 없거나 타겟팅 필드가 없으면 해당 키를 None으로 반환(시뮬 기본값 사용).
+        """
+        campaign_data, adset_data = await asyncio.gather(
+            self._client.get(campaign_id, {"fields": "objective,name"}),
+            self._client.get(
+                f"{campaign_id}/adsets",
+                {"fields": "targeting", "limit": "1"},
+            ),
+        )
+        targeting = {}
+        adsets = adset_data.get("data", [])
+        if adsets:
+            targeting = adsets[0].get("targeting") or {}
+        genders_raw = targeting.get("genders") or []
+        if genders_raw == [1]:
+            gender = "M"
+        elif genders_raw == [2]:
+            gender = "F"
+        else:
+            gender = ""
+        return {
+            "campaign_id": campaign_id,
+            "campaign_name": campaign_data.get("name", ""),
+            "objective": campaign_data.get("objective", ""),
+            "age_min": targeting.get("age_min"),
+            "age_max": targeting.get("age_max"),
+            "gender": gender,
+        }
+
     async def get_account_spend(self, date_preset: str = "this_month") -> int:
         """계정 단위 기간 소진(KRW) — 예산 페이싱의 '이번 달 소진'. 1콜로 합계."""
         account = normalize_ad_account(self._client.ad_account_id)
