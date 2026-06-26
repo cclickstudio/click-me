@@ -259,7 +259,8 @@ async def chat_complete(body: ChatRequest) -> StreamingResponse:
                 for ev in _handoff_card_events(result):
                     yield ev
                 return
-            # 방어 — generator인데 핸드오프가 아니면(예상 밖) 아래 CLIO로 폴백
+            # 방어용 — GeneratorDomainAgent는 항상 started 핸드오프를 반환하므로 사실상 도달 불가.
+            # (혹시 모를 비핸드오프 결과는 아래 CLIO로 폴백)
 
         # 그 외는 CLIO 어드바이저 — LangChain 챗모델 SSE(기본 gemini, CHAT_PROVIDER로 전환).
         async for chunk in _clio_stream(body.messages, settings.chat_provider):

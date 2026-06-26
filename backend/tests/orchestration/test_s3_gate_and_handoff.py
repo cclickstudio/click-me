@@ -110,3 +110,20 @@ def test_handoff_card_events_contain_stream_url():
     joined = "".join(chunks)
     assert "gen-1" in joined
     assert "/api/generator/generations/gen-1/stream" in joined
+
+
+def test_management_plus_image_yields_single_generate():
+    # management 키워드 + 이미지 → management 의도는 양보,
+    # generate 단일 스텝(PIPELINE 필터로 answer 탈락)
+    route = Router([KeywordMatcher("management", frozenset({"캠페인"}))]).route(
+        "이 캠페인용 이미지"
+    )
+    plan = build_plan(route, query="이 캠페인용 이미지", attachments=(_Img("uploads/p.png"),))
+    assert [s.action for s in plan.steps] == ["generate"]
+
+
+def test_image_plus_simulation_yields_generate_then_simulate():
+    # simulation 키워드 + 이미지 → 게이트 B 멀티스텝 [generate, simulate]
+    route = Router([KeywordMatcher("simulation", frozenset({"시뮬"}))]).route("이걸로 시뮬 돌려줘")
+    plan = build_plan(route, query="이걸로 시뮬 돌려줘", attachments=(_Img("uploads/p.png"),))
+    assert [s.action for s in plan.steps] == ["generate", "simulate"]
