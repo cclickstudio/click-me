@@ -40,4 +40,6 @@ async def execute_plan(plan: Plan, ctx: TurnContext, *, registry: AgentRegistry)
         with _step_trace(step):  # 스텝별 트레이스 보장
             out = await agent.ask(ctx, step)
         ctx.results[step.id] = out  # 블랙보드 누적 — 다음 스텝이 output_of로 읽는다
+        if isinstance(out, dict) and out.get("status") == "started":
+            return out  # 비동기 핸드오프 — 이후 스텝 미집행, 턴 종결(S3)
     return out  # 마지막 스텝 산출
