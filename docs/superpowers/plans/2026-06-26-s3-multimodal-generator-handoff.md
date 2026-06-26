@@ -10,24 +10,27 @@
 
 ---
 
-## ⚠️ Precondition & Reconciliation (필독)
+## ✅ S2 의존 — 실제 시그니처 (코드 확인 완료)
 
-본 계획은 **S2 구현 완료를 전제**한다(`2026-06-26-s2-multistep-orchestration-design.md`). S2가 코드로 없으면 Task 3·4·5·6·7은 실행 불가다. **Task 1은 전송 스키마라 S2 무관, Task 2는 S2 타입을 import하지 않아 단독 테스트는 가능하지만 S2의 `ask(ctx, step)` 계약을 전제로 한다**(계약이 바뀌면 어댑터 시그니처도 reconcile). S2가 제공한다고 가정하는 산출물·시그니처(이게 다르면 **착수 시점에 실제 코드로 맞춰 reconcile** 후 진행):
+S2는 **구현 완료**(`feat/chat-boeun`에 머지됨). 본 계획은 아래 **실제 S2 시그니처**에 맞춰 작성됐다(추정 아님).
 
-| S2 산출물 | 가정 시그니처/위치 |
+| S2 산출물 | 실제 시그니처/위치 |
 |---|---|
-| `TurnContext` | `api/orchestration/context.py` — `user_input: str`, `attachments: tuple[Any,...]`, `results: dict[str,Any]`, `output_of(action)` |
-| `PlanStep` (+id) | `api/orchestration/plan.py` — `PlanStep(domain, action, inputs)` + `.id`(`{action}-{n}`) |
-| `DomainAgent` | `api/orchestration/contracts.py` — `async def ask(self, ctx, step) -> Any` |
-| `execute_plan` | `api/orchestration/executor.py` — `async def execute_plan(plan, ctx, *, registry)` 멀티스텝 순차 |
-| `build_plan` | `api/orchestration/planner.py` — `build_plan(route, ctx) -> Plan` |
-| `policy.py` | `api/orchestration/policy.py` — `PIPELINE_ORDER`, `DOMAIN_TO_ACTION`, `SEQUENTIAL_MARKERS` |
-| bootstrap | `GeneratorStubAgent`/`SimulationStubAgent` 등록 |
-| chat 통합 | `chat.py`가 `TurnContext`를 만들어 `run_turn(graph, route, ctx)` 호출, 결과를 카드로 스트림 |
+| `TurnContext` | `api/orchestration/context.py` — `user_input: str`, `session_id: str=""`, `ad_id: str\|None=None`, `attachments: tuple[Any,...]=()`, `results: dict`, `output_of(action)`. **`remember()` 없음** — 적재는 executor가 `ctx.results[step.id]=out`로 직접. |
+| `PlanStep` (+id) | `api/orchestration/plan.py` — `PlanStep(domain, action, inputs, id="")`. `make_plan`이 `id={action}-{n}`(action별 1-based) 부여. `plan_hash`엔 id 비포함. |
+| `DomainAgent` | `api/orchestration/contracts.py` — `async def ask(self, ctx, step) -> Any`(Protocol, `Any`). |
+| `execute_plan` | `api/orchestration/executor.py` — `async def execute_plan(plan, ctx, *, registry)`. 루프: `with _step_trace(step): out = await agent.ask(ctx, step)` 후 `ctx.results[step.id] = out`. |
+| `build_plan` | `api/orchestration/planner.py` — **`build_plan(route, *, query: str) -> Plan`** (ctx 아님, **query만**). 미해석 도메인이면 `ValueError`. 게이트 B: `len(nonzero)>=2 or sequential`. |
+| `policy.py` | `api/orchestration/policy.py` — `PIPELINE_ORDER=("generate","simulate")`, `DOMAIN_TO_ACTION`/`ACTION_TO_DOMAIN`(generator→generate, simulation→simulate, management→answer), `SEQUENTIAL_MARKERS`. |
+| bootstrap | `GeneratorStubAgent`/`SimulationStubAgent`/`ManagementDomainAgent` 등록(`build_orchestration`). |
+| turn | `run_turn(graph, route, *, ctx)`. `plan_node`가 `build_plan(route, query=ctx.user_input)` 호출. |
+| chat 통합 | `chat_complete().generate()`가 plan 경로를 **`_should_plan(route, registry) and route.domain == "management"`** 로 제한(gen/sim 렌더는 S3+). `_assistant` 클로저에서 `TurnContext` 생성 후 `run_turn`, `_management_card_stream`으로 렌더. |
 
-> **Task 1**은 S2 무관(전송 스키마)이라 단독 실행 가능. **Task 2**는 S2 타입 import 없이 단독 테스트 가능하나 `ask(ctx, step)` 계약을 전제로 한다. **Task 3·4·5·6·7**은 S2 위에서만.
->
-> **확정 사실(generator/storage 측, 실제 코드 확인됨 — reconcile 불필요):** `start_generation(req) -> str`(generation_id, `generator_service.py:57`) · `store_temp_image(data) -> str`(**async**, `generator_service.py:50`) · `download_bytes(key) -> bytes`(**async**, `tools/storage/s3.py:50`). 따라서 어댑터는 `await download_bytes(...)`·`await store_temp_image(...)`·`generation_id = await start_generation(...)`로 고정한다.
+**두 가지 핵심 delta(설계 추정과 다름) — 본 계획은 이미 반영:**
+1. `build_plan`이 `ctx`가 아니라 `query`만 받는다 → 게이트 A(첨부)는 build_plan에 `attachments` 인자를 추가하고 `turn.py` plan_node도 함께 수정한다(Task 4).
+2. chat 경로가 management로 잠겨 있다 → S3가 generator 핸드오프 분기를 **추가**한다(Task 6).
+
+**confirmed generator/storage 사실:** `start_generation(req) -> str`(generation_id, `generator_service.py:57`) · `store_temp_image(data) -> str`(**async**, `generator_service.py:50`) · `download_bytes(key) -> bytes`(**async**, `tools/storage/s3.py:50`).
 
 ---
 
@@ -324,9 +327,9 @@ git commit -m "add: generator 챗 어댑터(s3→start_generation 핸드오프) 
 
 ---
 
-## Task 3: executor 단락 — status:"started" 핸드오프 (S2 의존)
+## Task 3: executor 단락 — status:"started" 핸드오프
 
-S2의 멀티스텝 `execute_plan`에 단락 규칙을 더한다. **착수 시 실제 S2 `execute_plan` 본문에 맞춰 삽입 위치 reconcile.**
+S2 멀티스텝 `execute_plan`(executor.py)에 단락 규칙을 더한다 — 스텝이 `status:"started"`를 반환하면 이후 스텝을 집행하지 않고 그 핸드오프를 반환.
 
 **Files:**
 - Modify: `backend/api/orchestration/executor.py`
@@ -393,11 +396,12 @@ Expected: FAIL — S2 `execute_plan`은 단락 없이 simulate까지 호출해 `
 
 - [ ] **Step 3: Write minimal implementation**
 
-`backend/api/orchestration/executor.py`의 S2 루프에서 **결과를 블랙보드에 적재하는 줄 직후**에 단락 분기를 추가한다. 적재가 `ctx.results[step.id] = out`이면 그대로, S2가 `ctx.remember(step, out)` 메서드를 도입했으면 **그 호출 직후**에 둔다(단락 로직 자체는 적재 방식과 무관 — 적재 후 `out`만 검사):
+`backend/api/orchestration/executor.py` 루프의 `ctx.results[step.id] = out`(executor.py:42) **직후**에 단락 분기를 추가한다(실제 S2 executor는 `with _step_trace(step):` 블록 안에서 `ask`, 적재는 블록 밖):
 
 ```python
-        out = await agent.ask(ctx, step)
-        ctx.results[step.id] = out          # ← S2가 ctx.remember(step, out)라면 그 줄로 reconcile
+        with _step_trace(step):  # 기존 S2
+            out = await agent.ask(ctx, step)
+        ctx.results[step.id] = out  # 기존 S2 — 블랙보드 누적
         if isinstance(out, dict) and out.get("status") == "started":
             return out  # 비동기 핸드오프 — 이후 스텝 미집행, 턴 종결(S3)
 ```
@@ -417,17 +421,26 @@ git commit -m "edit: executor 단락(started 핸드오프 시 이후 스텝 미�
 
 ---
 
-## Task 4: 게이트 A — 첨부 시 generate 보장 (S2 의존)
+## Task 4: 게이트 A — 첨부 시 generate 보장 (build_plan + turn.py)
 
-S2 `build_plan(route, ctx)`에서 **첨부 이미지가 있으면 generator를 도메인 집합에 포함**해 `generate` 스텝을 보장한다.
+실제 `build_plan(route, *, query)`는 attachments를 받지 않는다. 게이트 A를 위해 **build_plan에 `attachments` 인자를 추가**하고, **`turn.py` plan_node가 `ctx.attachments`를 넘기도록** 함께 수정한다. 첨부 이미지가 있으면 generator를 도메인 집합에 넣고, 단일 fallback도 generator 우선으로 한다(미해석 도메인이라도 첨부가 있으면 `[generate]`).
 
 **Files:**
-- Modify: `backend/api/orchestration/planner.py`
+- Modify: `backend/api/orchestration/planner.py`, `backend/api/orchestration/turn.py`
 - Test: `backend/tests/orchestration/test_s3_gate_and_handoff.py` (Task 3 파일에 추가)
 
 - [ ] **Step 1: Write the failing test**
 
-Task 3의 테스트 파일 끝에 추가:
+Task 3 테스트 파일 상단(import 아래)에 헬퍼 추가:
+
+```python
+@dataclass
+class _Img:
+    s3_key: str
+    kind: str = "image"
+```
+
+테스트 파일 끝에 추가:
 
 ```python
 from api.orchestration.planner import build_plan
@@ -439,66 +452,86 @@ def _has_action(plan, action):
 
 
 def test_gate_a_attachment_forces_generate_step():
-    # 키워드 score 0(도메인 미해석)이라도 첨부가 있으면 generate 스텝이 들어간다
-    route = Router([KeywordMatcher("management", frozenset({"캠페인"}))]).route("이걸로 만들어줘")
-    ctx = TurnContext(
-        user_input="이걸로 만들어줘",
-        attachments=(_Img("uploads/p.png"),),
-    )
-    plan = build_plan(route, ctx)
+    # "봐줄래"는 어떤 도메인 키워드도 아님 → route.domain=clio, score 0.
+    # 그래도 첨부 이미지가 있으면 generate 스텝이 들어간다(게이트 A).
+    route = Router([KeywordMatcher("management", frozenset({"캠페인"}))]).route("이거 좀 봐줄래")
+    plan = build_plan(route, query="이거 좀 봐줄래", attachments=(_Img("uploads/p.png"),))
     assert _has_action(plan, "generate")
-```
 
-같은 파일 상단(import 아래)에 헬퍼 추가:
 
-```python
-@dataclass
-class _Img:
-    s3_key: str
-    kind: str = "image"
+def test_no_attachment_keeps_single_resolved_domain():
+    # 첨부 없고 management만 해석 → 기존 단일 answer 스텝(회귀 0)
+    route = Router([KeywordMatcher("management", frozenset({"캠페인"}))]).route("이번 캠페인 예산?")
+    plan = build_plan(route, query="이번 캠페인 예산?")
+    assert [s.action for s in plan.steps] == ["answer"]
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `cd backend && uv run pytest tests/orchestration/test_s3_gate_and_handoff.py::test_gate_a_attachment_forces_generate_step -v`
-Expected: FAIL — S2 build_plan은 첨부를 안 보므로 generate 스텝 없음(management 단일).
+Expected: FAIL — 현재 `build_plan`엔 `attachments` 인자가 없어 `TypeError`(또는 clio 라우트에 `ValueError`).
 
 - [ ] **Step 3: Write minimal implementation**
 
-`backend/api/orchestration/planner.py`에 헬퍼를 추가하고, `build_plan`에서 도메인 집합을 만든 직후 첨부면 generator를 더한다(S2 build_plan의 `nonzero` 도메인 집합 산출 지점에 reconcile):
+(a) `backend/api/orchestration/planner.py` — `build_plan` 전체를 아래로 교체(게이트 A + attachments 인자):
 
 ```python
 def _has_image_attachment(attachments) -> bool:
     return any(getattr(a, "kind", None) == "image" for a in attachments)
+
+
+def build_plan(route: RouteDecision, *, query: str, attachments: tuple = ()) -> Plan:
+    has_image = _has_image_attachment(attachments)
+    nonzero = {c.domain for c in route.candidates if c.score > 0.0}
+    if has_image:
+        nonzero.add("generator")  # 게이트 A — 첨부 이미지 → generate 보장
+    if not nonzero:
+        # 미해석 도메인 & 첨부 없음 — 호출 전 _should_plan 가드 필요(fail-loud)
+        raise ValueError(
+            f"build_plan: 미해석 도메인({route.domain})·첨부 없음 — _should_plan 가드 필요"
+        )
+
+    sequential = any(marker in query for marker in policy.SEQUENTIAL_MARKERS)
+    if len(nonzero) >= 2 or sequential:  # 게이트 B 진입
+        steps = [
+            PlanStep(domain=policy.ACTION_TO_DOMAIN[action], action=action, inputs={"query": query})
+            for action in policy.PIPELINE_ORDER
+            if policy.ACTION_TO_DOMAIN[action] in nonzero
+        ]
+        if len(steps) >= 2:  # 파이프라인 도메인 2개+ 매칭 시에만 멀티스텝
+            return make_plan(steps)
+        # 게이트 B지만 매칭 <2 → 아래 단일 fallback
+
+    # 단일 스텝 — 첨부 있으면 generator 우선(generate), 아니면 해석된 route.domain
+    single = "generator" if has_image else route.domain
+    step = PlanStep(domain=single, action=policy.DOMAIN_TO_ACTION[single], inputs={"query": query})
+    return make_plan([step])
 ```
 
-S2 `build_plan` 내부, nonzero 도메인 집합(`domains`)을 만든 직후:
+(b) `backend/api/orchestration/turn.py` — `plan_node`가 attachments를 넘기도록 수정:
 
 ```python
-    domains = {c.domain for c in route.candidates if c.score > 0}
-    if _has_image_attachment(ctx.attachments):
-        domains.add("generator")  # 게이트 A — 첨부 이미지 → generate 보장
-    # 이하 S2 로직: PIPELINE_ORDER ∩ domains 로 스텝 구성 …
+    async def plan_node(state: TurnState) -> dict:
+        ctx = state["ctx"]
+        return {"plan": build_plan(state["route"], query=ctx.user_input, attachments=ctx.attachments)}
 ```
 
-> S2 `build_plan`이 멀티스텝을 `len(domains 매칭) >= 2`일 때만 만든다면, generator 단독(domains={generator})은 단일 `[generate]`로 나와야 한다 — S2 단일 fallback 경로가 `route.domain` 기준이면, **첨부 단독 시 generate 단일 스텝**을 반환하도록 fallback도 generator 우선으로 reconcile(첨부가 있으면 단일 스텝 도메인 = generator).
+- [ ] **Step 4: Run test to verify it passes (+ 기존 planner 회귀)**
 
-- [ ] **Step 4: Run test to verify it passes**
-
-Run: `cd backend && uv run pytest tests/orchestration/test_s3_gate_and_handoff.py::test_gate_a_attachment_forces_generate_step -v`
-Expected: PASS
+Run: `cd backend && uv run pytest tests/orchestration/test_s3_gate_and_handoff.py -k "gate_a or no_attachment_keeps" tests/orchestration/test_planner.py -v`
+Expected: PASS — `attachments` 기본값 `()`라 기존 `build_plan(route, query=...)` 호출(test_planner.py)은 무파손.
 
 - [ ] **Step 5: Ruff + Commit**
 
 ```bash
-cd backend && uv run ruff format api/orchestration/planner.py tests/orchestration/test_s3_gate_and_handoff.py && uv run ruff check api/orchestration/planner.py tests/orchestration/test_s3_gate_and_handoff.py --fix
-git add backend/api/orchestration/planner.py tests/orchestration/test_s3_gate_and_handoff.py
-git commit -m "edit: 게이트 A(첨부 이미지→generate 스텝 보장) — S3"
+cd backend && uv run ruff format api/orchestration/planner.py api/orchestration/turn.py tests/orchestration/test_s3_gate_and_handoff.py && uv run ruff check api/orchestration/planner.py api/orchestration/turn.py tests/orchestration/test_s3_gate_and_handoff.py --fix
+git add backend/api/orchestration/planner.py backend/api/orchestration/turn.py tests/orchestration/test_s3_gate_and_handoff.py
+git commit -m "edit: 게이트 A(첨부→generate 보장, build_plan attachments 인자 + turn.py) — S3"
 ```
 
 ---
 
-## Task 5: bootstrap 등록 교체 (S2 스텁 → 실 어댑터) (S2 의존)
+## Task 5: bootstrap 등록 교체 (GeneratorStubAgent → GeneratorDomainAgent)
 
 **Files:**
 - Modify: `backend/api/orchestration/bootstrap.py`
@@ -551,9 +584,9 @@ git commit -m "edit: bootstrap에 generator 실 어댑터 등록(스텁 교체) 
 
 ---
 
-## Task 6: chat 게이트 A 진입 + ctx.attachments 주입 + 핸드오프 카드 분기 (S2 의존)
+## Task 6: chat 게이트 A 진입 + ctx.attachments 주입 + 핸드오프 카드 분기
 
-`chat.py`에서 ① `_should_plan`에 첨부 신호 추가 ② `TurnContext`에 `attachments` 주입 ③ run_turn 결과가 `status:"started"` 핸드오프면 핸드오프 카드 SSE. **S2의 실제 chat 통합(ctx 생성·run_turn 호출·카드 스트림)에 맞춰 reconcile.**
+`chat.py` `generate()`에서 ① `_should_plan`에 첨부 신호 추가 ② management 분기에 `and not has_image` ③ generator 핸드오프 분기 추가(`TurnContext`에 `attachments` 주입, `status:"started"`면 핸드오프 카드 SSE). 실제 S2 `generate()` 블록(management 잠금)을 아래 Step 3(c)대로 교체한다.
 
 **Files:**
 - Modify: `backend/api/routers/chat.py`
@@ -574,7 +607,7 @@ def test_should_plan_true_when_image_attachment(monkeypatch):
     registry.register(_StartedAgent())  # domain="generator"
     monkeypatch.setattr(chat, "_orchestration", (router, registry))
 
-    route = router.route("이걸로 만들어줘")  # score 0
+    route = router.route("이거 좀 봐줄래")  # 키워드 없음 → score 0
     assert chat._should_plan(route, registry, has_image=True) is True
     assert chat._should_plan(route, registry, has_image=False) is False
 
@@ -634,7 +667,55 @@ def _handoff_card_events(handoff: dict):
 > reconcile — FE 카드 렌더러가 `kind:"handoff"`를 모르면 ① FE에 핸드오프 섹션 추가 또는 ② 기존 카드
 > 타입(예: 안내 텍스트 카드)으로 매핑. 종결 이벤트(`final`/`done`) 형태도 기존 스트림과 일치시킨다.
 
-(c) `generate()` 내부 plan 경로(S2)에서 — `has_image = any(a.kind == "image" for a in body.attachments)`로 `_should_plan(route, registry, has_image=has_image)` 호출, `TurnContext` 생성 시 `attachments=tuple(body.attachments)` 주입, run_turn 결과가 `status:"started"` 핸드오프면 `_handoff_card_events(result)`를 흘리고 아니면 기존 management 카드 경로. (정확한 결선은 S2 chat 통합에 맞춰 reconcile.)
+(c) `generate()` 내부 — 실제 S2 plan 경로는 `route.domain == "management"`로 잠겨 있다. **management 분기는 유지(회귀 0)** 하되 첨부 시 양보하도록 `and not has_image`를 더하고, 그 뒤·CLIO 앞에 generator 핸드오프 분기를 추가한다. 기존 블록(chat.py:204-226)을 아래로 교체:
+
+```python
+        router, registry = _get_orchestration()
+        route = router.route(last_message)
+        has_image = any(getattr(a, "kind", None) == "image" for a in body.attachments)
+
+        # management 단일: 기존 카드 경로(회귀 0). 첨부가 있으면 generator로 양보.
+        if _should_plan(route, registry) and route.domain == "management" and not has_image:
+            graph = _get_orchestrator_graph()
+
+            async def _assistant(req: AskRequest) -> AskResult:
+                ctx = TurnContext(
+                    user_input=req.question,
+                    session_id=body.session_id,
+                    ad_id=req.ad_id,
+                )
+                return await run_turn(graph, route, ctx=ctx)
+
+            async for chunk in _management_card_stream(
+                question=last_message,
+                session_id=body.session_id,
+                ad_id=body.context_ad_id,
+                assistant=_assistant,
+                record=_record_management_turn,
+            ):
+                yield chunk
+            return
+
+        # generator 핸드오프: 첨부 이미지 또는 generator 라우팅 → 비동기 잡 트리거(S3)
+        if _should_plan(route, registry, has_image=has_image) and (
+            has_image or route.domain == "generator"
+        ):
+            graph = _get_orchestrator_graph()
+            ctx = TurnContext(
+                user_input=last_message,
+                session_id=body.session_id,
+                ad_id=body.context_ad_id,
+                attachments=tuple(body.attachments),
+            )
+            result = await run_turn(graph, route, ctx=ctx)
+            if isinstance(result, dict) and result.get("status") == "started":
+                for ev in _handoff_card_events(result):
+                    yield ev
+                return
+            # 방어 — generator인데 핸드오프가 아니면(예상 밖) 아래 CLIO로 폴백
+```
+
+(이후 기존 CLIO 블록 `async for chunk in _clio_stream(...)`이 그대로 이어진다.)
 
 - [ ] **Step 4: Run test to verify it passes**
 
@@ -651,7 +732,7 @@ git commit -m "edit: 챗 게이트 A 진입·attachments 주입·핸드오프 �
 
 ---
 
-## Task 7: 회귀 + import 순수성 확인 (S2 의존)
+## Task 7: 회귀 + import 순수성 확인
 
 - [ ] **Step 1: 전체 관련 스위트 실행**
 
@@ -667,15 +748,13 @@ Expected: PASS (core가 어떤 domain.*도 직접 import 안 함 — 어댑터�
 
 - [ ] **Step 3: 실패 시**
 
-`systematic-debugging` 스킬로 전체 에러·스택 확인 후 원인 수정. S2 시그니처 불일치면 Precondition 표와 대조해 reconcile.
+`systematic-debugging` 스킬로 전체 에러·스택 확인 후 원인 수정.
 
 ---
 
 ## Self-Review (작성자 체크)
 
 - **스펙 커버리지** — 설계 §2(계약)=Task1, §4(generator 어댑터)=Task2, §5 단락=Task3, §3 게이트 A=Task4·6, bootstrap=Task5, 핸드오프 카드=Task6, §7 테스트(특히 §7-5 simulate 미집행)=Task3, 회귀·순수성=Task7. "job start만 보장"은 어댑터가 `start_generation` 트리거 후 즉시 핸드오프 반환(완료 await 없음)으로 충족.
-- **Placeholder** — S2 의존 지점은 "reconcile"로 **명시**(은폐된 TBD 아님). generator/storage 측 사실
-  (`start_generation→str`·`store_temp_image`/`download_bytes` async)은 **실제 코드 확인 완료**라 reconcile 대상
-  아님. Task 1은 완전 구체(S2 무관), Task 2는 `ask(ctx, step)` 계약만 전제하고 코드는 구체.
-- **타입 정합** — 핸드오프 dict 키(`status/step_id/domain/action/task_id/stream_url/ad_id`)가 Task2(생성)·Task3(단락 판정 `status`)·Task6(카드 `task_id/stream_url`)에서 일관. `_should_plan(route, registry, *, has_image)`·`_handoff_card_events(handoff)`·`GeneratorDomainAgent.ask(ctx, step)` 시그니처 일관.
-- **S2 의존 경고** — Task 3·4·5·6은 S2 미구현 시 실행 불가. 착수 전 Precondition 표로 실제 S2 코드와 reconcile 필수.
+- **Placeholder** — S2·generator·storage 시그니처 **전부 실제 코드 확인 완료**(추정/은폐 TBD 없음). 모든 Task가 구체 코드.
+- **타입 정합** — 핸드오프 dict 키(`status/step_id/domain/action/task_id/stream_url/ad_id`)가 Task2(생성)·Task3(단락 판정 `status`)·Task6(카드 `task_id/stream_url`)에서 일관. `build_plan(route, *, query, attachments)`·`_should_plan(route, registry, *, has_image)`·`_handoff_card_events(handoff)`·`GeneratorDomainAgent.ask(ctx, step)` 시그니처가 실제 S2와 정합.
+- **실 S2 정합(2 delta 반영)** — ① `build_plan`이 `query`만 받으므로 attachments 인자 추가 + `turn.py` plan_node 동반 수정(Task4). ② chat plan 경로가 `route.domain=="management"`로 잠겨 있으므로 management 분기 유지+`not has_image`, generator 핸드오프 분기 신설(Task6). `TurnContext`는 `remember()` 없이 `ctx.results` 직접 적재(Task3).

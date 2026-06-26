@@ -76,7 +76,9 @@ class ChatRequest(BaseModel):
    시그니처에 첨부 여부를 더한다: `_should_plan(route, registry, *, has_image)`.
    - `has_image and registry.get("generator") is not None` → Plan.
    - 그 외는 S2 규칙(`score>0 && 등록`) 유지.
-2. **build_plan** — 첨부 있으면 `generate` 스텝을 Plan에 **보장**한다.
+2. **build_plan** — 첨부 있으면 `generate` 스텝을 Plan에 **보장**한다. 실제 S2 `build_plan(route, *, query)`는
+   attachments를 받지 않으므로 **`attachments` 인자를 추가**하고 **`turn.py` plan_node가 `ctx.attachments`를
+   넘기도록** 함께 수정한다(첨부면 `nonzero`에 generator 추가, 단일 fallback도 generator 우선).
    - 첨부 단독(복합/순차 신호 없음) → `[generate]` 단일 스텝.
    - 첨부 + 게이트 B(복합/순차, 예 "시안 만들고 시뮬 돌려줘") → `[generate, simulate]`(PIPELINE_ORDER).
      단, generate가 `started`를 반환하면 §5 executor 단락으로 **simulate는 집행되지 않는다**(S3 한계 명시).
@@ -133,8 +135,9 @@ class GeneratorDomainAgent:
 ### execute_plan 단락 규칙
 
 ```python
-out = await agent.ask(ctx, step)
-ctx.results[step.id] = out
+with _step_trace(step):              # 기존 S2
+    out = await agent.ask(ctx, step)
+ctx.results[step.id] = out           # 기존 S2 — 블랙보드 누적(remember() 없음)
 if isinstance(out, dict) and out.get("status") == "started":
     return out          # 비동기 핸드오프 — 이후 스텝 미집행, 턴 종결
 ```
@@ -144,11 +147,13 @@ if isinstance(out, dict) and out.get("status") == "started":
 
 ### 출력 포맷 분기 (챗 plan 경로)
 
-run_turn 결과 타입에 따라 챗이 카드를 분기한다.
+실제 S2 `generate()`는 plan 경로를 **`route.domain == "management"`로 잠가** 두었다(gen/sim 렌더는 S3+로 유보).
+S3는 그 management 분기를 유지(`+ not has_image`)하고, **그 뒤·CLIO 앞에 generator 핸드오프 분기를 신설**한다
+(management의 `_management_card_stream`은 `AskResult` 전용이라 핸드오프엔 재사용하지 않는다). 결과 타입 분기.
 
-- **management** → `AskResult` → `compose_card`(기존, 회귀 0).
-- **generator 핸드오프**(`status:"started"` dict) → **"시안 생성 시작" 핸드오프 카드** SSE(`stream_url`·
-  `task_id` 포함). FE는 기존 generator SSE를 구독해 진행률·시안 결과를 받는다.
+- **management** → `AskResult` → `_management_card_stream`/`compose_card`(기존, 회귀 0).
+- **generator 핸드오프**(`status:"started"` dict) → **"시안 생성 시작" 핸드오프 카드** SSE(기존 `format_sse`
+  envelope로 `stream_url`·`task_id` 포함). FE는 기존 generator SSE를 구독해 진행률·시안 결과를 받는다.
 - 트리거된 잡엔 `session_id`+`plan_hash`를 metadata로 주입(추적 상관, 에픽 §6.4).
 
 ```mermaid
