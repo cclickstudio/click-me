@@ -2,7 +2,17 @@
 import ast
 import pathlib
 
-_CORE = ("routing.py", "contracts.py", "registry.py", "plan.py", "planner.py", "executor.py", "turn.py")
+_CORE = (
+    "routing.py",
+    "contracts.py",
+    "registry.py",
+    "plan.py",
+    "planner.py",
+    "executor.py",
+    "turn.py",
+    "policy.py",
+    "context.py",
+)
 _FORBIDDEN = "domain.management"
 
 
