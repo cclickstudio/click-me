@@ -44,12 +44,15 @@ mock/테스트 `MemorySaver`(RAM) ([wiring.py:51-66](../../../backend/domain/cha
   HumanMessage)는 `question`으로 따로 가므로 제외하고, 최근 N개로 윈도잉한 뒤
   LangChain 메시지 → `{role, content}` dict로 변환해 `SubAgentRequest.history`에 싣는다.
   (계약은 직렬화 가능해야 하므로 LC 객체가 아닌 dict로 교환.)
-- **서브에이전트 시드**: `answer(question, context_ids, history)` 시그니처로 확장.
-  ReAct 진입 메시지를 `[SystemMessage(_SYSTEM + _context_note), *history→LC, HumanMessage(question)]`
-  로 구성. dict→LC 변환은 `user→HumanMessage`, `assistant→AIMessage`, 그 외 스킵.
-  적용 대상 — `sim_agent`·`gen_agent`·management `assistant`(패리티).
-- **프롬프트 전환(단일턴 → 되묻기)**: "필수 슬롯이 없으면 **한 번만** 되묻는다.
-  단, 히스토리에 이미 같은 질문을 했고 이번 메시지가 그 답이면 되묻지 말고 실행한다."
+- **서브에이전트 주입(프리앰블, 어댑터 계층)**: ReAct 내부를 건드리지 않고 **어댑터에서
+  히스토리를 질문 앞에 프리앰블로 붙인다** — `q = history_to_preamble(history) + question`을
+  기존 `agent(q, context_ids)`/`AskRequest(question=q)`에 전달. 사용자가 처음 말한
+  "최근 대화를 User 메시지 앞에 붙여" 방식 그대로다. 적용 대상 — `simulation_subagent`·
+  `generator_subagent`·`management_subagent`(셋 다 chat 도메인 어댑터, **타 도메인 내부
+  무수정** → 협업 규칙 준수). 히스토리가 비면 프리앰블=""이라 1턴 동작 불변.
+- **프롬프트 전환(단일턴 → 되묻기)**: `sim_agent`/`gen_agent`의 `_SYSTEM`을 "필수 슬롯이
+  없고 [이전 대화]에 아직 물어본 적 없으면 **한 번만** 되묻는다. [이전 대화]에 이미 그
+  질문이 있고 이번 메시지가 그 답(또는 '그냥/기본')이면 되묻지 말고 실행한다"로.
 
 ### B. 라우팅 연속성 — "50명"을 다시 같은 에이전트로 (B1, 프롬프트 규칙)
 
@@ -108,7 +111,7 @@ non-null id가 덮어쓰므로 정상 동작하고, 완전 새 대화는 새 ses
   └ load_context: short_term = window(state.messages)
   └ supervisor/decide_route: 직전 A가 시뮬 되묻기 + 짧은 답 → route=simulation (B1)
   └ delegate: history = window(messages[:-1])→dict, context_ids(ad_id 생존) 동봉
-      └ sim subagent: [System, *history, Human("50명")] → "50명"=표본 답 인식
+      └ sim subagent(어댑터): q = preamble(history) + "50명" → ReAct가 "50명"=표본 답 인식
                        + ad_image_url(생존) → start_simulation(sample_size=50) 실행
   └ synthesize → AIMessage 누적 → chat_messages 영속(표시용)
 ```
@@ -119,13 +122,17 @@ non-null id가 덮어쓰므로 정상 동작하고, 완전 새 대화는 새 ses
 - `domain/chat/contracts/agent_io.py` — `SubAgentRequest.history` 추가.
 - `domain/chat/graph/state.py` — `context_ids`에 `_merge_context` 리듀서.
 - `domain/chat/graph/nodes.py` — `load_context`(short_term=state 파생), `delegate`(history 동봉),
-  `_messages_to_history` 윈도우 헬퍼.
-- `domain/chat/graph/supervisor.py` — `decide_route` 프롬프트에 B1 연속성 규칙.
-- `domain/chat/adapters/sim_agent.py`·`gen_agent.py` — `answer(.., history)` 시드 + 되묻기 프롬프트.
-- `domain/management/assistant/graph.py`(또는 진입점) — `answer(.., history)` 패리티.
-- 윈도우 N은 `nodes.py` 로컬 상수(`_HISTORY_WINDOW`) — core/config.py 무변경.
+  `_messages_to_history` 윈도우 헬퍼, `_HISTORY_WINDOW` 로컬 상수.
+- `domain/chat/graph/supervisor.py` — `_ROUTING_SYSTEM`에 B1 연속성 규칙(프롬프트만).
+- `domain/chat/adapters/sim_agent.py`·`gen_agent.py` — `_SYSTEM` 되묻기 프롬프트(ReAct 내부 무변경).
+- `domain/chat/adapters/simulation_subagent.py`·`generator_subagent.py`·`management_subagent.py`
+  — 어댑터에서 히스토리 프리앰블을 질문 앞에 주입.
 
-**참조/무변경**: `wiring.py`(체크포인터 이미 배선), `core/`(공통부 미변경), `chat_messages` 영속부, 프론트(C가 백엔드 해결).
+**신규**
+- `domain/chat/adapters/history.py` — `history_to_preamble(history)` 포매터(3개 어댑터 공유).
+
+**참조/무변경**: `wiring.py`(체크포인터 이미 배선), `core/`(공통부 미변경), `domain/management/*`
+(타 팀 — 무수정), `chat_messages` 영속부, 프론트(C가 백엔드 해결).
 
 ## 7. 비범위 (YAGNI)
 
@@ -152,8 +159,9 @@ non-null id가 덮어쓰므로 정상 동작하고, 완전 새 대화는 새 ses
   - `_merge_context`: 옛 값 유지·새 non-null 덮어쓰기·null 무시.
   - `_messages_to_history`: LC→dict 변환·role 매핑·윈도우 슬라이스·현재 턴 제외.
   - `delegate`가 `SubAgentRequest.history`를 채우는지(가짜 서브에이전트로 캡처).
-  - 서브에이전트 `answer(history)` 시드가 `[System, *history, Human]` 형태인지(컴파일 가드 유지).
-  - `decide_route` B1 규칙: 직전 시뮬 되묻기 + "50명" → simulation.
+  - `history_to_preamble`: 빈 히스토리→"", 있으면 `[이전 대화]`·`[현재 질문]` 구획 포함.
+  - 어댑터가 프리앰블을 질문 앞에 붙여 agent에 넘기는지(가짜 agent로 캡처).
+  - `decide_route` B1 규칙은 LLM 전용 → 라이브 검증(hermetic 불가).
 - **라이브(실 Claude, 시뮬 실행은 가짜 서비스로 가로채 비용 0)**
   - 턴1 "이 광고 시뮬 돌려줘"(표본 미지정) → 되묻기 1회.
   - 턴2 "50명" → 같은 에이전트 라우팅 + `start_simulation(sample_size=50)` + ad_id 생존.
