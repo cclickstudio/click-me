@@ -292,6 +292,9 @@ export default function Page() {
       if (t.gender) params.set('gender', t.gender);
       if (t.ad_headline) params.set('ad_title', t.ad_headline);
       if (t.ad_body) params.set('ad_content', t.ad_body);
+      if (t.category_id) params.set('category_id', String(t.category_id));
+      if (t.service_class) params.set('service_class', String(t.service_class));
+      if (t.suggested_persona_count) params.set('persona_count', String(t.suggested_persona_count));
       // Meta 이미지는 fbcdn CORS 제한으로 직접 로드 불가 → 백엔드 프록시 URL 사용
       if (t.ad_image_url) {
         const proxyUrl = `${process.env.NEXT_PUBLIC_API_URL ?? ''}/api/management/campaigns/${campaignId}/creative-image`;

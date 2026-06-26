@@ -162,6 +162,9 @@ class MockAdPlatform:
                 "ad_headline": "여름 신상 최대 50% 할인",
                 "ad_body": "지금 만나보는 시즌 오프 특가, 놓치지 마세요.",
                 "ad_image_url": None,
+                "category_id": 3,
+                "service_class": 25,
+                "suggested_persona_count": 50,
             },
             "camp_2": {
                 "objective": "OUTCOME_TRAFFIC",
@@ -171,18 +174,24 @@ class MockAdPlatform:
                 "ad_headline": "데일리룩 완성",
                 "ad_body": "가볍게 입기 좋은 데일리 아이템.",
                 "ad_image_url": None,
+                "category_id": 3,
+                "service_class": 25,
+                "suggested_persona_count": 30,
             },
         }
         t = targeting_by_id.get(
             campaign_id,
             {
                 "objective": "OUTCOME_TRAFFIC",
-                "age_min": None,
-                "age_max": None,
+                "age_min": 18,
+                "age_max": 65,
                 "gender": "",
                 "ad_headline": None,
                 "ad_body": None,
                 "ad_image_url": None,
+                "category_id": 8,
+                "service_class": 45,
+                "suggested_persona_count": 20,
             },
         )
         return {"campaign_id": campaign_id, "campaign_name": campaign_id, **t}

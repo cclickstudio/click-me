@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
 import re
 from datetime import UTC, datetime
 from typing import Any
@@ -165,6 +166,37 @@ def _to_int(value: Any) -> int:
 
 def _to_float(value: Any) -> float:
     return float(value) if value not in (None, "") else 0.0
+
+
+# (category_id, service_class) 키워드 매핑 — SIM_CATEGORIES 순서와 동기화.
+# category_id는 프론트 simCategories.ts의 id(1-indexed), service_class는 NICE 류.
+_CATEGORY_KEYWORDS: list[tuple[list[str], int, int]] = [
+    (["댕댕", "강아지", "고양이", "반려", "애완", "펫", "pet"], 11, 45),
+    (["피부", "미용", "화장품", "스킨케어", "뷰티", "헤어", "네일", "향수", "성형"], 4, 44),
+    (["의류", "패션", "옷", "원피스", "티셔츠", "청바지", "신발", "가방", "쇼핑몰"], 3, 25),
+    (["음식", "식당", "카페", "배달", "맛집", "커피", "음료", "빵", "디저트", "베이커리"], 2, 43),
+    (
+        ["앱", "app", "플랫폼", "소프트웨어", "ai", "인공지능", "saas", "it서비스", "서비스앱"],
+        15,
+        42,
+    ),
+    (["교육", "학원", "강의", "학습", "공부", "과외", "유튜브", "콘텐츠", "강좌"], 7, 41),
+    (["여행", "관광", "호텔", "리조트", "운동", "스포츠", "피트니스", "헬스", "레저"], 6, 39),
+    (["자동차", "차량", "렌트카", "카쉐어링", "오토바이", "자전거", "드라이브"], 12, 12),
+    (["병원", "의원", "클리닉", "약국", "의료", "건강검진", "다이어트", "보험", "심리"], 5, 44),
+    (["아기", "육아", "유아", "출산", "임신", "어린이", "키즈"], 10, 28),
+    (["인테리어", "건축", "부동산", "가구", "이사", "리모델링", "청소"], 13, 36),
+    (["서비스", "신청", "가입", "상담", "문의", "예약", "이용권"], 8, 45),
+]
+
+
+def _guess_category(text: str) -> tuple[int, int]:
+    """광고 텍스트 → (category_id, service_class). 순서대로 첫 매칭."""
+    t = text.lower()
+    for keywords, cat_id, svc_cls in _CATEGORY_KEYWORDS:
+        if any(k in t for k in keywords):
+            return (cat_id, svc_cls)
+    return (8, 45)  # 기본: 생활/편의서비스
 
 
 def _extract_won(text: str) -> int | None:
@@ -757,7 +789,7 @@ class MetaAdsReader:
         leads/conversion 광고는 title이 object_story_spec.link_data.name에 있어
         _CREATIVE_FIELDS_FULL로 확장해서 조회한다.
         """
-        campaign_data, adset_data, ads_data = await asyncio.gather(
+        campaign_data, adset_data, ads_data, insights_data = await asyncio.gather(
             self._client.get(campaign_id, {"fields": "objective,name"}),
             self._client.get(
                 f"{campaign_id}/adsets",
@@ -775,6 +807,10 @@ class MetaAdsReader:
                     "limit": "1",
                     "effective_status": _ARCHIVED_STATUSES,
                 },
+            ),
+            self._client.get(
+                f"{campaign_id}/insights",
+                {"fields": "leads,reach", "date_preset": "maximum"},
             ),
         )
         targeting = {}
@@ -817,6 +853,21 @@ class MetaAdsReader:
         age_min = targeting.get("age_min") or 18
         age_max = targeting.get("age_max") or 65
 
+        # 가상 소비자 수 추천: leads 실측값 → reach 로그 스케일 → 기본 20
+        ins = (insights_data.get("data") or [{}])[0]
+        leads = _to_int(ins.get("leads"))
+        reach = _to_int(ins.get("reach"))
+        if leads > 0:
+            suggested_persona_count = min(200, max(10, leads))
+        elif reach > 0:
+            suggested_persona_count = min(100, max(10, int(math.log10(reach + 1) * 25)))
+        else:
+            suggested_persona_count = 20
+
+        # 광고 텍스트 기반 카테고리 추천
+        cat_text = " ".join(filter(None, [campaign_data.get("name"), ad_headline, ad_body]))
+        category_id, service_class = _guess_category(cat_text)
+
         return {
             "campaign_id": campaign_id,
             "campaign_name": campaign_data.get("name", ""),
@@ -827,6 +878,9 @@ class MetaAdsReader:
             "ad_headline": ad_headline,
             "ad_body": ad_body,
             "ad_image_url": ad_image_url,
+            "category_id": category_id,
+            "service_class": service_class,
+            "suggested_persona_count": suggested_persona_count,
         }
 
     async def get_account_spend(self, date_preset: str = "this_month") -> int:

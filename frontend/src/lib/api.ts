@@ -588,6 +588,9 @@ export const api = {
         ad_headline: string | null;
         ad_body: string | null;
         ad_image_url: string | null;
+        category_id: number;
+        service_class: number;
+        suggested_persona_count: number;
       }>(`/management/campaigns/${campaignId}/targeting`),
     // 기존 Meta 캠페인에 시뮬 역방향 연결
     linkSimulation: (campaignId: string, simulationId: string) =>

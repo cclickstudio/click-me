@@ -95,15 +95,24 @@ export default function SimulationRunPage() {
   const [file, setFile] = useState<File | null>(null);
   const [imageUrl, setImageUrl] = useState(() => searchParams.get('ad_image_url') ?? '');
   const [adTitle, setAdTitle] = useState(() => searchParams.get('ad_title') ?? '');
-  const [categoryId, setCategoryId] = useState<number | ''>('');
-  const [serviceClass, setServiceClass] = useState<number | ''>('');
+  const [categoryId, setCategoryId] = useState<number | ''>(() => {
+    const c = searchParams.get('category_id');
+    return c ? Number(c) : '';
+  });
+  const [serviceClass, setServiceClass] = useState<number | ''>(() => {
+    const s = searchParams.get('service_class');
+    return s ? Number(s) : '';
+  });
   const categories = SIM_CATEGORIES; // 하드코딩 마스터(DB/API 대체).
   // 광고 목표 — 일반인도 쉽게 고르는 단일 선택(+ 기타 직접 입력).
   const [goalItem, setGoalItem] = useState(() => searchParams.get('objective') ?? '');
   const [customGoal, setCustomGoal] = useState('');
 
   // 시뮬레이션 설정
-  const [sampleSize, setSampleSize] = useState(20);
+  const [sampleSize, setSampleSize] = useState(() => {
+    const p = searchParams.get('persona_count');
+    return p ? Math.min(200, Math.max(1, Number(p))) : 20;
+  });
   const [allocation, setAllocation] = useState<'proportional' | 'stratified'>(
     'proportional'
   );
