@@ -96,8 +96,8 @@ class GeneratorDomainAgent:
         s3_key = _first_image_key(ctx.attachments)        # 없으면 텍스트-only 생성
         temp_key = None
         if s3_key:
-            data = download_bytes(s3_key)                 # tools/storage/s3 (공용)
-            temp_key = _store_product_image(data)         # 기존 인메모리 store 재사용(brige)
+            data = await download_bytes(s3_key)           # tools/storage/s3 (async, 공용)
+            temp_key = await store_temp_image(data)       # 기존 인메모리 store 재사용(bridge, async)
         req = GenerationCreateRequest(
             mode=GenerationMode.CREATE,
             product_description=ctx.user_input or step.inputs.get("query", ""),
@@ -105,14 +105,14 @@ class GeneratorDomainAgent:
             target_audience="전체",                                # 기본값(품질=후속 LLM)
             product_image_temp_key=temp_key,
         )
-        task = await start_generation(req)                # 기존 비동기 잡
+        generation_id = await start_generation(req)       # 기존 비동기 잡 → generation_id(str)
         return {
             "status": "started",
             "step_id": step.id,        # 예 "generate-1" — 재합류(S4)·카드·추적 상관용
             "domain": step.domain,     # "generator"
             "action": step.action,     # "generate"
-            "task_id": task.task_id,
-            "stream_url": task.stream_url,
+            "task_id": generation_id,
+            "stream_url": f"/api/generator/generations/{generation_id}/stream",
             "ad_id": None,             # 아직 없음(잡 완료 후 generator SSE로)
         }
 ```
