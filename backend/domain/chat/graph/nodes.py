@@ -10,7 +10,7 @@ import uuid
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Optional
 
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.types import RunnableConfig, interrupt
 
 from domain.chat.adapters.execution import execute_chat_action
@@ -25,6 +25,24 @@ if TYPE_CHECKING:
 # TODO(다중위임): _after_delegate에 delegations >= _MAX_DELEGATIONS 초과 시
 # synthesize로 분기 추가 — ReAct 도입 시 구현.
 _MAX_DELEGATIONS = 4
+
+# 서브에이전트·short_term에 전달할 최근 메시지 수(=10턴). 무한 누적 state를 읽을 때 슬라이스.
+_HISTORY_WINDOW = 20
+
+
+def _messages_to_history(messages: list, window: int = _HISTORY_WINDOW) -> list[dict]:
+    """LangChain 메시지 → [{role, content}](user/assistant만), 최근 window개로 슬라이스."""
+    out: list[dict] = []
+    for m in messages[-window:]:
+        if isinstance(m, HumanMessage):
+            role = "user"
+        elif isinstance(m, AIMessage):
+            role = "assistant"
+        else:
+            continue
+        content = m.content if isinstance(m.content, str) else str(m.content)
+        out.append({"role": role, "content": content})
+    return out
 
 
 @dataclass

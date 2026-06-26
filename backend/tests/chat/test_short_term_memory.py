@@ -21,3 +21,52 @@ def test_merge_context_handles_none_old():
     from domain.chat.graph.state import _merge_context
 
     assert _merge_context(None, {"a": 1, "b": None}) == {"a": 1}
+
+
+def test_messages_to_history_maps_roles_and_windows():
+    from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+
+    from domain.chat.graph.nodes import _messages_to_history
+
+    msgs = [
+        SystemMessage(content="sys"),
+        HumanMessage(content="q1"),
+        AIMessage(content="a1"),
+        HumanMessage(content="q2"),
+    ]
+    out = _messages_to_history(msgs, window=2)  # 원시 마지막 2개(a1,q2)만
+    assert out == [
+        {"role": "assistant", "content": "a1"},
+        {"role": "user", "content": "q2"},
+    ]
+
+
+def test_messages_to_history_skips_non_chat_roles():
+    from langchain_core.messages import HumanMessage, SystemMessage
+
+    from domain.chat.graph.nodes import _messages_to_history
+
+    out = _messages_to_history([SystemMessage(content="s"), HumanMessage(content="q")], window=10)
+    assert out == [{"role": "user", "content": "q"}]
+
+
+def test_history_to_preamble_empty_is_blank():
+    from domain.chat.adapters.history import history_to_preamble
+
+    assert history_to_preamble([]) == ""
+    assert history_to_preamble(None) == ""
+
+
+def test_history_to_preamble_format():
+    from domain.chat.adapters.history import history_to_preamble
+
+    out = history_to_preamble(
+        [
+            {"role": "user", "content": "이 광고 시뮬 돌려줘"},
+            {"role": "assistant", "content": "표본 몇 명으로 할까요?"},
+        ]
+    )
+    assert out.startswith("[이전 대화]\n")
+    assert "사용자: 이 광고 시뮬 돌려줘" in out
+    assert "어시스턴트: 표본 몇 명으로 할까요?" in out
+    assert out.endswith("[현재 질문]\n")
