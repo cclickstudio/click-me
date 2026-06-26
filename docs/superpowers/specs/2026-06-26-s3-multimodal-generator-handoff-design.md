@@ -102,7 +102,7 @@ class GeneratorDomainAgent:
             temp_key = await store_temp_image(data)       # 기존 인메모리 store 재사용(bridge, async)
         req = GenerationCreateRequest(
             mode=GenerationMode.CREATE,
-            product_description=ctx.user_input or step.inputs.get("query", ""),
+            product_description=step.inputs.get("query") or ctx.user_input or "상품 광고",
             product_name=_derive_product_name(ctx.user_input),   # 문장에서 추정/"상품"
             target_audience="전체",                                # 기본값(품질=후속 LLM)
             product_image_temp_key=temp_key,
@@ -121,7 +121,7 @@ class GeneratorDomainAgent:
 
 - **s3_key → bytes → 기존 temp_key 브릿지** — generator 내부(`product_image_bytes` 소비)는 무변경.
   s3_key 계약은 챗 경계에서 충족하고, 어댑터가 다운로드해 기존 인메모리 store에 연결한다.
-- **최소 슬롯 충족** — `product_description=user_input`, `product_name` 추정/"상품", `target_audience="전체"`로
+- **최소 슬롯 충족** — `product_description=step.inputs.query 우선→user_input`, `product_name` 추정/"상품", `target_audience="전체"`로
   CREATE 검증 통과(파라미터 품질 향상은 후속 LLM 슬롯추출).
 - 외부 모델 호출은 `start_generation`(기존)에 위임 → **테스트는 `start_generation`·`download_bytes`를
   monkeypatch**(결정론·비용 0).
