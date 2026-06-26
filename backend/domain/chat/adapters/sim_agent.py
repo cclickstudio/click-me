@@ -29,14 +29,21 @@ _SYSTEM = (
     "sim_result/sim_persona_basis로 상세를 답한다. 다건이면 후보를 나열하고, 없으면 "
     "'없음'으로 답한다.\n"
     "- [현재 맥락]에 '첨부된 광고 있음'이 보이고 사용자가 시뮬 '실행/돌려'를 원할 때, "
-    "표본·타깃이 이번 메시지·[이전 대화] 어디에도 없고 [이전 대화]에서 아직 묻지 않았으면 "
-    "start_simulation을 호출하지 말고 '표본 몇 명으로, 어떤 타깃으로 돌릴까요? "
-    "(기본 표본 20·전체)'라고 한 번만 되묻는다.\n"
+    "표본·타깃·제목·설명이 이번 메시지·[이전 대화]에 없고 아직 묻지 않았으면 start_simulation을 "
+    "호출하지 말고 '표본 몇 명으로, 어떤 타깃(연령·성별)으로 돌릴까요? (기본 표본 20·전체) "
+    "광고 제목·간단 설명을 주시면 분석이 정확해져요(선택)'라고 한 번만 되묻는다.\n"
     "  [이전 대화]에 이미 그 되물음이 있고 이번 메시지가 그 답(또는 '그냥/기본/아무거나')이거나, "
-    "이번 메시지에 표본·타깃·제목·목표가 있으면, "
-    "그 값(없으면 기본 표본20·전체)으로 바로 실행한다.\n"
+    "이번 메시지·[이전 대화]에 표본·타깃·제목·설명·목표가 있으면, 그 값(표본·타깃 없으면 기본 "
+    "표본20·전체, 제목·설명은 ad_title·ad_description에 반영)으로 바로 실행한다.\n"
+    "  실행 후 결과의 persisted가 false면 '프로젝트 미선택으로 결과가 저장되지 않았어요 — "
+    "나중에 조회하려면 프로젝트를 선택해 다시 돌려주세요'라고 반드시 안내한다.\n"
     "  사용한 설정을 답에 명시하고 다른 설정을 원하면 함께 말해달라고 안내한다.\n"
     "  맥락에 첨부된 광고가 없으면 start_simulation을 호출하지 말고 먼저 이미지 첨부를 요청한다.\n"
+    "- 페르소나 토론(debate)은 시뮬 결과와 별개 산출물이다. '토론 현황/목록'은 "
+    "sim_debate_list(simulation_id)로, 특정 토론 상세(참가자·발언·판정)는 "
+    "sim_debate_detail(debate_id)로 조회한다. '토론 돌려/시작'은 start_debate(simulation_id)로 "
+    "트리거하되 완료된 시뮬이 있어야 하고 백그라운드라 '완료 후 토론 목록으로 확인'이라 안내한다. "
+    "토론 내용이 없다고 단정하지 말고 먼저 이 툴들로 확인한다.\n"
     "- '신뢰할 수 있나'는 신뢰구간·effective_n·QA·variance_warning을 근거로 설명하고, "
     "방향성은 신뢰 가능하나 절대값 단언은 피한다고 안내한다.\n"
     "- 예측(상대)과 실측(절대)을 수치로 환산하지 말 것. 근거 없으면 모른다고 답한다.\n"
@@ -137,6 +144,7 @@ def build_simulation_agent(settings) -> Any:
         ad_title: str | None = None,
         ad_objective: str | None = None,
         product_category: str | None = None,
+        ad_description: str | None = None,
         ad_id: str | None = None,
         ad_image_url: str | None = None,
         ad_image_key: str | None = None,
@@ -173,6 +181,7 @@ def build_simulation_agent(settings) -> Any:
             ad_title=ad_title,
             ad_objective=ad_objective,
             product_category=product_category,
+            ad_content=ad_description,  # 사용자가 준 광고 설명 → 분석 입력(VLM 보강)
             project_id=project_id,
             organization_id=org_id,
         )
@@ -185,6 +194,25 @@ def build_simulation_agent(settings) -> Any:
             "persisted": bool(project_id),
         }
 
+    @tool
+    async def sim_debate_list(simulation_id: str | None = None) -> dict:
+        """이 시뮬레이션의 페르소나 토론 목록(주제·상태·결론 요약)을 조회한다."""
+        if not simulation_id:
+            return {"error": "need_simulation_id"}
+        return await sim_tools.sim_debate_list(simulation_id)
+
+    @tool
+    async def sim_debate_detail(debate_id: str) -> dict:
+        """특정 토론의 상세(참가자·라운드별 발언·판정)를 조회한다."""
+        return await sim_tools.sim_debate_detail(debate_id)
+
+    @tool
+    async def start_debate(simulation_id: str | None = None) -> dict:
+        """완료된 시뮬레이션의 반응으로 페르소나 토론을 백그라운드로 시작(트리거)한다."""
+        if not simulation_id:
+            return {"error": "need_simulation_id"}
+        return await sim_tools.start_debate(simulation_id)
+
     tools = [
         sim_result,
         sim_persona_basis,
@@ -192,6 +220,9 @@ def build_simulation_agent(settings) -> Any:
         sim_find_by_name,
         search_kb,
         start_simulation,
+        sim_debate_list,
+        sim_debate_detail,
+        start_debate,
     ]
     bound = llm.bind_tools(tools)
     by_name = {t.name: t for t in tools}
@@ -214,7 +245,8 @@ def build_simulation_agent(settings) -> Any:
         for call in ai.tool_calls:
             name, args, cid = call["name"], dict(call.get("args", {})), call["id"]
             # 컨텍스트 simulation_id 주입 — LLM이 생략하면 턴 컨텍스트 값을 쓴다.
-            if name in ("sim_result", "sim_persona_basis") and not args.get("simulation_id"):
+            _ctx_sim_tools = ("sim_result", "sim_persona_basis", "sim_debate_list", "start_debate")
+            if name in _ctx_sim_tools and not args.get("simulation_id"):
                 args["simulation_id"] = ctx_id
             # org 스코프는 서버가 결정론 주입(LLM 산출 무시) — 테넌트 격리.
             if name in ("sim_list", "sim_find_by_name"):

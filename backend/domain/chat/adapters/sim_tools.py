@@ -203,3 +203,92 @@ async def sim_find_by_name(name: str, org_id: str | None = None, limit: int = 10
         return {"error": "lookup_failed", "detail": str(e)}
     sims = [_sim_row(r) for r in rows]
     return {"simulations": sims, "count": len(sims), "query": name.strip()}
+
+
+# ── 페르소나 토론(debate) — 시뮬과 별개 산출물(별도 테이블).
+# 시뮬 도메인 무수정, 크로스도메인 read.
+
+
+async def sim_debate_list(simulation_id: str) -> dict:
+    """시뮬레이션의 토론 목록(주제·상태·결론 요약). 없으면 빈 목록."""
+    if not simulation_id:
+        return {"error": "need_simulation_id"}
+    from domain.simulation.repositories.debate_repository import DebateRepository
+
+    try:
+        debates = await DebateRepository(AsyncSessionLocal).list_by_simulation(simulation_id)
+    except Exception as e:  # noqa: BLE001 — 조회 오류 표면화(read 계약)
+        return {"error": "lookup_failed", "detail": str(e)}
+    return {"debates": debates, "count": len(debates), "simulation_id": simulation_id}
+
+
+async def sim_debate_detail(debate_id: str) -> dict:
+    """토론 1건 상세 — 참가자·라운드별 발언·판정. 없으면 {"error":...}."""
+    if not debate_id:
+        return {"error": "need_debate_id"}
+    from domain.simulation.repositories.debate_repository import DebateRepository
+
+    try:
+        detail = await DebateRepository(AsyncSessionLocal).get_detail(debate_id)
+    except Exception as e:  # noqa: BLE001
+        return {"error": "lookup_failed", "detail": str(e)}
+    if detail is None:
+        return {"error": "not_found", "debate_id": debate_id}
+    return detail
+
+
+async def start_debate(simulation_id: str) -> dict:
+    """완료된 시뮬레이션의 반응으로 페르소나 토론을 백그라운드 실행(트리거).
+
+    토론은 시뮬과 별개 산출물 — 반응이 영속된 완료 시뮬이 있어야 한다.
+    완료 후 sim_debate_list로 조회.
+    """
+    if not simulation_id:
+        return {"error": "need_simulation_id"}
+    from core.config import settings
+    from domain.simulation.contracts.schemas import (
+        AdInterpretation,
+        ObjectiveFit,
+        Persona,
+        PersonaReaction,
+        RubricScore,
+    )
+    from domain.simulation.wiring import build_debate_service
+
+    try:
+        full = await _full_result(simulation_id)
+    except ValueError:
+        return {"error": "invalid_simulation_id"}
+    except Exception as e:  # noqa: BLE001
+        return {"error": "lookup_failed", "detail": str(e)}
+    if not full or not full.get("reactions"):
+        return {
+            "error": "sim_not_ready",
+            "message": "완료된 시뮬이 없어요 — 시뮬을 먼저 완료해야 토론을 돌릴 수 있어요.",
+        }
+    try:
+        reactions = [PersonaReaction.model_validate(r) for r in full["reactions"]]
+        ad_analysis = (
+            AdInterpretation.model_validate(full["ad_analysis"])
+            if full.get("ad_analysis")
+            else None
+        )
+        personas = [Persona.model_validate(p) for p in full.get("personas", [])]
+        rubric = [RubricScore.model_validate(s) for s in full.get("rubric_scores", [])]
+        objective_fit = (
+            ObjectiveFit.model_validate(full["objective_fit"])
+            if full.get("objective_fit")
+            else None
+        )
+        svc = build_debate_service(settings)
+        run_id = await svc.start(
+            reactions,
+            ad_analysis,
+            simulation_id=simulation_id,
+            personas=personas,
+            rubric=rubric,
+            objective_fit=objective_fit,
+        )
+    except Exception as e:  # noqa: BLE001 — 엔진·키 오류 등 표면화
+        return {"error": "start_failed", "detail": str(e)}
+    return {"run_id": run_id, "simulation_id": simulation_id}
