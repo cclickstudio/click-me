@@ -84,7 +84,7 @@
 | G1  | 제너 입력 확인 위젯(입력 위젯 교체)      | 제너   | V2        | ✅   |
 | G2  | 제너 로딩 스피너 위젯                    | 제너   | G1        | ✅   |
 | G4  | 제너 status API + 새로고침 복원          | 제너   | V2        | ✅   |
-| F8  | 시안 후보 선택 → 재시뮬(LOOP 일부)       | 기능   | V2,G3     | ⬜   |
+| F8  | 시안 후보 선택 → 재시뮬(LOOP 일부)       | 기능   | V2,G3     | ✅   |
 | V3  | 개선 루프 경로 검증(LOOP 완료 후)        | 검증   | LOOP      | ⬜   |
 | N3  | 채팅이 sim/gen status 동기화(타 탭)      | 능동   | G4        | ⬜   |
 | N4  | 선제적 말걸기(제너 경로 잔여)            | 능동   | N1,N2     | ✅(시뮬)·⬜(제너) |
@@ -656,6 +656,9 @@
 **목표** 생성된 광고 시안 후보 중 하나를 **사용자가 "이걸로" 선택**하면, 그 시안(헤드라인·카피·이미지)으로 바로 재시뮬을 돌려 개선 전후 KPI 비교. 개선 루프를 사용자 주도로.
 **구현** `GenResultWidget`(G3)의 각 후보에 "이걸로 시뮬" 버튼 → 선택 후보를 시뮬 입력에 주입해 `api.simulation.start`. 결과는 기존 시뮬 파이프라인(결과/토론).
 **완료 기준** 후보 선택 → 재시뮬 → 결과 위젯. Preview 확인.
+
+**✅ 완료(2026-06-26, 프론트만)** [GenResultWidget](frontend/src/components/chat/GenResultWidget.tsx)에 `onSimulate` prop + 후보 카드마다 **"🧪 이 시안으로 시뮬"** 버튼 추가(헤드라인→ad_title, headline+body+cta→ad_content). [ChatConversation](frontend/src/components/chat/ChatConversation.tsx) `handleSimulateCandidate`가 그 카피로 **sim_form 위젯을 띄움**(기존 시뮬 파이프라인 재사용 — 실행→결과→토론→개선루프로 연결). 제너→시뮬 진입점 확보(LOOP의 F8 부분).
+- **검증(라이브 Preview)** gen_result 세션에서 후보 3개에 F8 버튼 3개 렌더 → 클릭 → "이 시안으로 반응을 예측해볼게요" 안내 + **sim_form이 후보 헤드라인('수분을 채우다')으로 prefill**(ad_title) 확인. 콘솔 에러 0·tsc/eslint 통과. (실 시뮬 실행은 기존 검증된 시뮬 흐름이라 진입점만 확인.)
 
 ### F10 — 해시태그·키워드 추천 위젯
 

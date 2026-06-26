@@ -41,8 +41,11 @@ const CARD =
 
 export default function GenResultWidget({
   generationId,
+  onSimulate,
 }: {
   generationId: string;
+  // F8 — 후보 카피로 시뮬 진입(제너→시뮬 루프). 없으면 버튼 미표시.
+  onSimulate?: (adTitle: string, adContent: string) => void;
 }) {
   const [detail, setDetail] = useState<GenDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -157,6 +160,21 @@ export default function GenResultWidget({
                   <p className='text-[10px] text-[#8B95A1] dark:text-[#6B7280] leading-snug'>
                     {c.performance_summary}
                   </p>
+                )}
+                {/* F8 — 이 후보 카피로 시뮬 진입(제너→시뮬 루프) */}
+                {onSimulate && headline && (
+                  <button
+                    onClick={() =>
+                      onSimulate(
+                        headline,
+                        [headline, c.copy?.body, c.copy?.cta]
+                          .filter(Boolean)
+                          .join('\n')
+                      )
+                    }
+                    className='mt-1 w-full py-1.5 rounded-md border border-[#3182F6]/30 text-[#3182F6] text-[11px] font-semibold hover:bg-[#EBF3FF] dark:hover:bg-[#1E3A5F] transition-colors'>
+                    🧪 이 시안으로 시뮬
+                  </button>
                 )}
               </div>
             </div>
