@@ -6,7 +6,7 @@ import { api } from '@/lib/api';
 import { useAuth } from '@/components/AuthProvider';
 import { useProjects } from '@/components/ProjectContext';
 import { Markdown } from '@/components/Markdown';
-import { SimProgress } from '@/components/SimProgress';
+import { JobProgress, type JobKind } from '@/components/SimProgress';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
@@ -61,6 +61,13 @@ const RESULT_LABEL: Record<string, string> = {
   simulation_aggregate: '시뮬레이션 결과',
   execution_result: '집행 결과',
   generation_detail: '생성 결과',
+};
+
+// 트리거 결과 프레임 kind → 라이브 진행률 위젯 종류.
+const STARTED_KIND: Record<string, JobKind> = {
+  simulation_started: 'sim',
+  debate_started: 'debate',
+  generation_started: 'gen',
 };
 
 function SendIcon() {
@@ -367,17 +374,23 @@ export default function Page() {
                           {msg.role === 'user' ? msg.content : <Markdown>{msg.content}</Markdown>}
                         </div>
                       )}
-                      {/* 구조화 결과 카드(시뮬·생성·집행) — 시뮬 트리거는 라이브 진행률 위젯 */}
-                      {msg.results?.map((r, ri) =>
-                        r.kind === 'simulation_started' ? (
-                          <SimProgress
-                            key={ri}
-                            runId={(r.data as { run_id?: string })?.run_id ?? ''}
-                            onDone={() => {
-                              if (selectedProjectId) refreshDetails(selectedProjectId);
-                            }}
-                          />
-                        ) : (
+                      {/* 구조화 결과 — 시뮬·토론·생성 트리거는 라이브 진행률 위젯, 그 외는 카드 */}
+                      {msg.results?.map((r, ri) => {
+                        const jobKind = STARTED_KIND[r.kind];
+                        if (jobKind) {
+                          const d = r.data as { run_id?: string; generation_id?: string };
+                          return (
+                            <JobProgress
+                              key={ri}
+                              kind={jobKind}
+                              id={d?.run_id ?? d?.generation_id ?? ''}
+                              onDone={() => {
+                                if (selectedProjectId) refreshDetails(selectedProjectId);
+                              }}
+                            />
+                          );
+                        }
+                        return (
                           <div
                             key={ri}
                             className="w-full rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-[#F9FAFB] dark:bg-[#1C2333] px-3 py-2"
@@ -389,8 +402,8 @@ export default function Page() {
                               {JSON.stringify(r.data, null, 2)}
                             </pre>
                           </div>
-                        )
-                      )}
+                        );
+                      })}
                       {/* HITL 승인 카드 — 승인/거부 시 /resume 재개 */}
                       {msg.approval && (
                         <div className="w-full rounded-xl border border-[#F2C200] dark:border-[#7A5C00] bg-[#FFF8E1] dark:bg-[#2A2410] px-3 py-3">
