@@ -53,11 +53,13 @@ const cardCls =
 
 export default function DebateStreamWidget({
   runId,
+  sessionId,
   onSummary,
   onAccept,
   proposalDisabled,
 }: {
   runId: string;
+  sessionId?: string; // 개선 루프 3턴 한도 조회용(없으면 제안 그대로 노출)
   onSummary?: (runId: string) => void; // "토론 요약" 클릭 → 요약 위젯 메시지 추가
   onAccept?: (action: string) => void; // 개선 제안 수락(토론 종료 후) → 개선 루프 진행
   proposalDisabled?: boolean;
@@ -72,6 +74,12 @@ export default function DebateStreamWidget({
   );
   const [err, setErr] = useState('');
   const [summaryShown, setSummaryShown] = useState(false);
+  // 개선 루프 한도 — 토론 완료 시 조회. canImprove=false면 '개선 시안 만들기' 대신 완료 안내.
+  const [loop, setLoop] = useState<{
+    canImprove: boolean;
+    count: number;
+    max: number;
+  } | null>(null);
   const esRef = useRef<(() => void) | null>(null); // SSE 재연결 구독 close 함수(X2)
   const doneRef = useRef(false);
   const logRef = useRef<HTMLDivElement>(null);
@@ -141,6 +149,26 @@ export default function DebateStreamWidget({
 
     return () => esRef.current?.();
   }, [runId]);
+
+  // 토론 완료 후 개선 루프 한도 조회 — 3턴 도달 시 '개선 시안 만들기'를 숨긴다.
+  useEffect(() => {
+    if (phase !== 'done' || !sessionId || !onAccept) return;
+    let alive = true;
+    api.chat
+      .loopState(sessionId)
+      .then(s => {
+        if (alive)
+          setLoop({
+            canImprove: s.can_improve,
+            count: s.loop_count,
+            max: s.max_loop,
+          });
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [phase, sessionId, onAccept]);
 
   return (
     <div className={cardCls}>
@@ -243,19 +271,25 @@ export default function DebateStreamWidget({
               📝 토론 요약 보기
             </button>
           )}
-          {onAccept && (
-            <ApprovalWidget
-              approval={{
-                action: 'run_generator',
-                label: '개선 시안 만들기',
-                reasons: [
-                  '토론에서 나온 개선 방향을 반영해 새 시안을 만들어볼까요?',
-                ],
-              }}
-              onAccept={onAccept}
-              disabled={proposalDisabled}
-            />
-          )}
+          {onAccept &&
+            (loop && !loop.canImprove ? (
+              <div className='rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-[#F9FAFB] dark:bg-[#252D3D] px-3 py-2.5 text-[12px] text-[#4E5968] dark:text-[#9CA3AF]'>
+                ✅ 개선 루프 {loop.count}/{loop.max}턴을 다 돌았어요. 충분히 다듬었으니,
+                새 방향은 새 채팅에서 시작해 주세요.
+              </div>
+            ) : (
+              <ApprovalWidget
+                approval={{
+                  action: 'run_generator',
+                  label: '개선 시안 만들기',
+                  reasons: [
+                    '토론에서 나온 개선 방향을 반영해 새 시안을 만들어볼까요?',
+                  ],
+                }}
+                onAccept={onAccept}
+                disabled={proposalDisabled}
+              />
+            ))}
         </div>
       )}
     </div>

@@ -406,6 +406,14 @@ export const api = {
       request<{ used: number; limit: number }>(
         `/chat/advice-usage?project_id=${encodeURIComponent(projectId)}`,
       ),
+    // 개선 루프(시뮬↔제너) 상태 — 3턴 도달 시 '개선 시안 만들기' 제안을 숨기는 데 쓴다.
+    loopState: (sessionId: string) =>
+      request<{
+        loop_count: number;
+        max_loop: number;
+        can_improve: boolean;
+        phase: string;
+      }>(`/chat/loop-state?session_id=${encodeURIComponent(sessionId)}`),
     deleteSession: (sessionId: string) =>
       request<{ deleted: boolean }>(`/chat/sessions/${sessionId}`, { method: "DELETE" }),
     // 메시지 핀 토글(T19) — 세션 상단 고정.

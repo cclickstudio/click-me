@@ -664,19 +664,30 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
         # 위젯이 보낸 생성 결과 요약 → 새 시안으로 재시뮬 제안. 실행은 안 하고 제안만.
         loop = get_loop_state(state.get("session_id"))
         loop.phase = "gen_done"
+        # 3턴 한도 도달 — 재시뮬 제안 없이 완료 안내(오해 소지 있는 "다시 예측" 문구 제거).
+        if loop.loop_count >= MAX_LOOP:
+            return _with_ai_message(
+                f"개선 루프 {loop.loop_count}/{MAX_LOOP}턴을 다 돌았어요. 새 시안까지 충분히 "
+                "다듬었으니, 더 개선하려면 새 채팅에서 시작해 주세요.",
+                {
+                    "source": "generator",
+                    "label": "개선 루프 완료",
+                    "engine": f"OpenAI · {model_name}",
+                    "loop_done": True,
+                },
+            )
+        # 왕복 여력이 있으면 재시뮬 approval을 함께 제안.
         meta = {
             "source": "generator",
             "label": "결과 분석 · 재시뮬 제안",
             "engine": f"OpenAI · {model_name}",
             "suggest": "simulation",
-        }
-        # 개선 루프 중이면(왕복 여력 있음) 재시뮬 approval을 함께 제안.
-        if loop.loop_count < MAX_LOOP:
-            meta["approval"] = {
+            "approval": {
                 "action": "rerun_simulation",
                 "label": "새 시안으로 재시뮬",
                 "reasons": loop.weak_reasons,
-            }
+            },
+        }
         return _with_ai_message("새 시안이 준비됐네요. 새 시안으로 반응을 다시 예측해볼까요?", meta)
 
     async def advise_node(state) -> dict:

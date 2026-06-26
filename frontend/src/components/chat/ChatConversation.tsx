@@ -283,6 +283,13 @@ export default function ChatConversation({
   const onResultCompleteRef = useRef(onResultComplete);
   onResultCompleteRef.current = onResultComplete;
   const proactiveBusyRef = useRef(false); // 동시 실행 방지
+  // 개선 루프 컨텍스트 — 직전 시뮬 광고를 보관해 '개선 시안 만들기' 수락 시 제너 폼에 옮긴다.
+  // (없으면 백엔드가 맥락 없는 합성 질문으로 엉뚱한 상품을 환각함.)
+  const loopCtxRef = useRef<{
+    ad_title: string;
+    ad_content: string;
+    ad_objective: string;
+  } | null>(null);
 
   const attachImage = (file: File | null) => {
     setAttachedPreview(prev => {
@@ -704,6 +711,10 @@ export default function ChatConversation({
             action,
             session_id: sid,
             project_id: projectId,
+            // 시뮬→제너 개선 루프 — 직전 시뮬 광고 맥락을 함께 보내 폼을 실제 광고로 채운다.
+            ...(action === 'run_generator' && loopCtxRef.current
+              ? { context: loopCtxRef.current }
+              : {}),
           }),
         });
         if (!res.ok || !res.body) {
@@ -807,6 +818,12 @@ export default function ChatConversation({
       // input만 쓰면 소비자 수만 남는다 → result.ad/result.simulation에서 복구한다.
       const adBlock = (result.ad ?? {}) as Record<string, unknown>;
       const simBlock = (result.simulation ?? {}) as Record<string, unknown>;
+      // 개선 루프 — 방금 시뮬한 광고를 보관(이후 '개선 시안 만들기' 수락 시 제너 폼에 전달).
+      loopCtxRef.current = {
+        ad_title: (adBlock.title as string) || input.adTitle || '',
+        ad_content: (adBlock.copy_text as string) || input.adContent || '',
+        ad_objective: (adBlock.ad_objective as string) || input.objective || '',
+      };
       // 1) 결과(입력 요약 + 결과 KPI)는 준비되는 즉시 띄운다 — 토론 시작을 기다리지 않는다.
       const resultItems: {
         content: string;
@@ -1420,6 +1437,7 @@ export default function ChatConversation({
                       msg.meta.widget.data?.run_id && (
                         <DebateStreamWidget
                           runId={msg.meta.widget.data.run_id}
+                          sessionId={sidRef.current ?? sessionId ?? undefined}
                           onSummary={handleDebateSummary}
                           onAccept={handleApprove}
                           proposalDisabled={isStreaming}

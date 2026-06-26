@@ -21,7 +21,7 @@ from core.db import AsyncSessionLocal, get_db
 from core.models import User
 from core.schemas import ChatRequest
 from domain.chat import history
-from domain.chat.loop_state import get_loop_state
+from domain.chat.loop_state import MAX_LOOP, get_loop_state
 from domain.chat.orchestrator import ChatTurn, build_chat_orchestrator
 from domain.management.assistant.history import record_feedback  # RAG 피드백 적재(/feedback)
 from tools.storage.s3 import download_bytes, upload_bytes
@@ -149,6 +149,9 @@ class ApproveRequest(BaseModel):
     session_id: str
     thread_id: str | None = None  # 호환 입력. 실제 체크포인터 키는 session_id.
     project_id: str | None = None
+    # 개선 루프 컨텍스트 — 방금 시뮬한 광고({ad_title, ad_content, ad_objective, reasons}).
+    # 있으면 LLM 추출(맥락 없는 합성 질문 → 엉뚱한 상품 환각)을 건너뛰고 실제 광고를 폼에 옮긴다.
+    context: dict | None = None
 
 
 # 개선 루프 수락 시 합성할 질문 — 오케스트레이터 run 분기를 재사용해 입력 위젯을 띄운다.
@@ -156,6 +159,27 @@ _APPROVE_PROMPTS: dict[str, str] = {
     "run_generator": "개선 시안 만들어줘",
     "rerun_simulation": "시뮬레이션 다시 돌려줘",
 }
+
+
+def _gen_form_from_sim_context(ctx: dict) -> dict:
+    """시뮬→제너 개선 루프 — 방금 시뮬한 광고를 제너 입력값으로 옮긴다(상품 맥락 보존).
+
+    합성 질문 '개선 시안 만들어줘'엔 상품 정보가 없어 LLM 추출이 엉뚱한 상품을 지어낸다.
+    프론트가 직전 시뮬 광고를 context로 넘기면 그 광고를 그대로 폼 초기값으로 채운다.
+    target_audience는 시뮬 입력에 없으므로 비워 사용자가 채우게 한다(환각 대신).
+    """
+    reasons = ctx.get("reasons") or []
+    desc = (ctx.get("ad_content") or "").strip()
+    if reasons:
+        joined = " / ".join(str(r).strip() for r in reasons if str(r).strip())
+        if joined:
+            desc = f"{desc}\n\n개선 방향: {joined}".strip()
+    return {
+        "product_name": (ctx.get("ad_title") or "").strip(),
+        "product_description": desc,
+        "target_audience": (ctx.get("target_audience") or "").strip(),
+        "campaign_objective": "conversion",
+    }
 
 
 @router.post("/approve")
@@ -168,10 +192,64 @@ async def chat_approve(
     if body.project_id:
         await assert_project_access(db, body.project_id, current_user)
     loop = get_loop_state(body.session_id)
+    question = _APPROVE_PROMPTS.get(body.action, "개선 시안 만들어줘")
+
+    # 3턴 한도 — 도달 시 더 왕복하지 않고 안내만(authoritative 차단). 프론트가 버튼을 숨겨도
+    # 구(舊) 위젯·재시도로 들어올 수 있어 서버에서 최종 차단한다.
+    if loop.loop_count >= MAX_LOOP:
+        loop.phase = "finished"
+        done_answer = (
+            f"개선 루프는 최대 {MAX_LOOP}턴까지 돌려요(현재 {loop.loop_count}/{MAX_LOOP}턴 완료). "
+            "이미 충분히 다듬었어요 — 새 방향으로 가려면 새 채팅을 열어주세요."
+        )
+        done_meta = {
+            "source": "orchestrator",
+            "label": "개선 루프 완료",
+            "engine": "OpenAI",
+            "loop_done": True,
+        }
+
+        async def generate_done() -> AsyncGenerator[str, None]:
+            yield _sse("meta", meta=done_meta)
+            for piece in _chunks(done_answer):
+                yield _sse("text", token=piece)
+            await _persist(body.session_id, f"[수락] {question}", done_answer, done_meta)
+            yield _sse("done")
+
+        return StreamingResponse(
+            generate_done(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+
     if body.action == "run_generator":
         loop.loop_count += 1  # 시뮬→제너 왕복 1회 확정
         loop.phase = "gen_done"
-    question = _APPROVE_PROMPTS.get(body.action, "개선 시안 만들어줘")
+    elif body.action == "rerun_simulation":
+        loop.phase = "sim_done"
+
+    # 개선 컨텍스트가 오면 LLM 추출(상품 환각)을 건너뛰고 직전 시뮬 광고를 그대로 폼에 옮긴다.
+    if body.action == "run_generator" and body.context:
+        gen_data = _gen_form_from_sim_context(body.context)
+        ctx_answer = "토론에서 나온 개선 방향을 반영할게요. 아래에서 광고 정보를 확인·수정하고 다시 생성하세요."
+        ctx_meta = {
+            "source": "generator",
+            "label": "개선 생성",
+            "widget": {"type": "gen_form", "data": gen_data},
+        }
+
+        async def generate_ctx() -> AsyncGenerator[str, None]:
+            yield _sse("meta", meta=ctx_meta)
+            for piece in _chunks(ctx_answer):
+                yield _sse("text", token=piece)
+            await _persist(body.session_id, f"[수락] {question}", ctx_answer, ctx_meta)
+            yield _sse("done")
+
+        return StreamingResponse(
+            generate_ctx(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
 
     async def generate() -> AsyncGenerator[str, None]:
         try:
@@ -205,6 +283,23 @@ async def chat_approve(
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+@router.get("/loop-state")
+async def chat_loop_state(
+    session_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """개선 루프 상태 — 프론트가 3턴 도달 시 '개선 시안 만들기' 제안을 숨기는 데 쓴다."""
+    await assert_session_access(db, session_id, current_user)
+    loop = get_loop_state(session_id)
+    return {
+        "loop_count": loop.loop_count,
+        "max_loop": MAX_LOOP,
+        "can_improve": loop.loop_count < MAX_LOOP,
+        "phase": loop.phase,
+    }
 
 
 class BatchSimAd(BaseModel):

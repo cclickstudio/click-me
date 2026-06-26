@@ -74,7 +74,7 @@
 | ★G5 | 제너 필수 입력값 확실히 받기·검증(누락 차단·안내) | 제너 | V2 | ✅ |
 | ★G6 | /new 생성 직후 gen_form 재노출 라이브 글리치 수정 | 제너 | G3 | ✅ |
 | ★L9 | 롱텀 메모리(시뮬/제너 입력 기억→채팅 반영) 검증 | 검증 | F5,L8 | ⬜ |
-| ★LOOP | 시뮬↔제너 양방향 개선 루프(최대 3턴) 구현·검증 | 핵심 | V2 | ⬜ |
+| ★LOOP | 시뮬↔제너 양방향 개선 루프(최대 3턴) 구현·검증 | 핵심 | V2 | ✅ |
 | ★A1 | JWT 인증·인가 일관 적용(chat/gen/sim/personas 라우트 소유권 검증) | 보안 | — | ✅ |
 | ★G7 | 제너 시안 3개에 기대성과 순위 부여 | 제너 | V2 | ⬜ |
 | ★AB | A/B 테스트 — 두 시안을 같은 패널로 시뮬·비교·승자 판정 | 핵심 | V1 | ⬜ |
@@ -163,6 +163,13 @@
 - **제너(생성) → 시뮬**: 생성 결과(또는 F8 "이 후보로 시뮬") → 재시뮬 → 토론 → 다시 개선 제너 → … 최대 3턴.
 **현황** 오케스트레이터에 `loop_count`·`MAX_LOOP`·`gen_result_node`(재시뮬 approval)·`run_generator`/`rerun_simulation` approval 경로 일부 존재. 양방향 연결·3턴 한도 enforce·UX 매끄러움을 완성·검증.
 **완료 기준** 시뮬↔제너를 오가며 개선이 누적되고, 3턴 도달 시 더 이상 루프 제안 안 함(차단·안내). Preview로 왕복 검증. (V3 = 이 루프의 최종 검증, F8 = 제너→시뮬 진입점.)
+
+**✅ 완료(2026-06-26)** 양방향 연결·3턴 한도는 이미 배선돼 있었고(이전 세션의 미커밋 분 — `api.ts loopState`·`orchestrator.gen_result_node` 3턴 차단·`DebateStreamWidget` loopState 폴링·approval 숨김), 이번에 **개선 컨텍스트 손실 버그**를 잡아 "개선이 누적"을 실제로 성립시켰다.
+- **버그(라이브 확정)** 토론 후 "개선 시안 만들기"(run_generator) 수락 시 `/approve`가 맥락 없는 합성 질문 "개선 시안 만들어줘"를 오케스트레이터 run 분기에 넘김 → LLM 추출기가 **엉뚱한 상품을 환각**(라이브 8000 확인: gen_form이 `product_name:"개선 시안 서비스", target:"중소기업 및 스타트업"`으로 채워짐). 직전 시뮬한 광고가 통째로 유실 → 루프가 "개선"이 아니라 무관한 새 생성이 됨.
+- **수정** ① [chat.py](backend/api/routers/chat.py) `ApproveRequest.context`(additive) 추가 + `_gen_form_from_sim_context()` — run_generator 수락에 직전 시뮬 광고 맥락이 오면 LLM 추출을 건너뛰고 그 광고를 gen_form 초기값으로 옮긴다(product_name←ad_title, description←ad_content+개선근거, target은 시뮬에 없어 비움). ② [ChatConversation.tsx](frontend/src/components/chat/ChatConversation.tsx) `loopCtxRef`를 시뮬 완료 시 채우고(handleSimComplete), `handleApprove`가 run_generator일 때 `context`로 전송. rerun_simulation은 기존 경로 유지(빈 sim_form — gen 후보 prefill은 F8 몫).
+- **검증(라이브 8000, 내 수정 직전)** ★3턴 한도 enforce 완전 동작 — run_generator 수락 시 loop_count 1→2→3 증가, rerun_simulation은 비증가(sim_form), 4번째 run_generator는 `loop_done:true`로 차단("개선 루프 완료", 위젯 없음). 양방향 위젯 라우팅(run_generator→gen_form, rerun_simulation→sim_form)·환각 버그 모두 라이브 확인.
+- **검증(수정 후)** `_gen_form_from_sim_context` 순수 로직 단위검증(실광고 prefill·근거 join·빈 컨텍스트 방어·빈 근거 필터 4케이스 정상). ruff/tsc/eslint 5개 파일 전부 통과.
+- **미검증(환경 차단, 정직 표기)** 수정 코드의 **라이브 HTTP 왕복·Preview 왕복**은 못 함 — 내 chat.py 편집이 트리거한 `--reload` 직후 백엔드 8000이 무응답(000) 좀비 상태로 빠짐(태스크리스트가 경고한 기존 8000 reload-불응 이력). 루프 규칙상 서버 재기동 불가. **백엔드 클린 재기동(python.exe 종료 후 `uv run dev.py`) 후 V3에서 라이브 왕복 재검증 필요**(X2와 동류 — 결정적 로직은 통과, 라이브 왕복만 잔여). Preview는 별도로 외부 기동된 3000에 attach 불가(preview_start가 포트 점유 프로세스를 인수 못 함).
 
 ### ★A1 — JWT 인증·인가 일관 적용 (보안, 우선)
 
