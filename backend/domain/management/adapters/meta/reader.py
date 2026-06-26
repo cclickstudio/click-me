@@ -851,35 +851,21 @@ class MetaAdsReader:
         # 실제 소비자 수 — insights reach(도달) 기반.
         # leads는 actions 파싱이 필요하고 권한에 따라 누락 가능 → reach 1차 사용.
         # 실패해도 나머지 타겟팅 정보는 정상 반환.
+        # 실제 소비자 수 = reach(광고 도달 인원).
+        # CVR = conversions/clicks 는 시뮬 출력이므로 입력 N은 노출 모수인 reach가 맞다.
+        # leads(= reach × CVR)를 넣으면 이미 전환한 사람만 시뮬하게 되어 CVR 예측 의미 소실.
         reach = 0
-        leads = 0
         try:
             ins_data = await self._client.get(
                 f"{campaign_id}/insights",
-                {"fields": "reach,actions", "date_preset": "maximum"},
+                {"fields": "reach", "date_preset": "maximum"},
             )
             ins = (ins_data.get("data") or [{}])[0]
             reach = _to_int(ins.get("reach"))
-            # leads: actions 배열에서 action_type이 lead 계열인 것 합산
-            _lead_types = frozenset(
-                {
-                    "lead",
-                    "onsite_conversion.lead_grouped",
-                    "offsite_conversion.fb_pixel_lead",
-                }
-            )
-            for act in ins.get("actions") or []:
-                if act.get("action_type") in _lead_types:
-                    leads += _to_int(act.get("value"))
         except Exception:
             pass
 
-        if leads > 0:
-            suggested_persona_count = min(200, max(10, leads))
-        elif reach > 0:
-            suggested_persona_count = min(200, max(10, reach))
-        else:
-            suggested_persona_count = 20
+        suggested_persona_count = min(200, max(10, reach)) if reach > 0 else 20
 
         # 광고 텍스트 기반 카테고리 추천
         cat_text = " ".join(filter(None, [campaign_data.get("name"), ad_headline, ad_body]))
