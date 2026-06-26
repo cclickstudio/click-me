@@ -3,6 +3,7 @@ import json
 import threading
 import time
 from collections.abc import AsyncGenerator, Awaitable, Callable
+from typing import Any
 
 import google.generativeai as genai
 from anthropic import AsyncAnthropic
@@ -15,7 +16,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.orchestration.bootstrap import build_orchestration
 from api.orchestration.registry import AgentRegistry
-from api.orchestration.routing import Router
+from api.orchestration.routing import RouteDecision, Router
+from api.orchestration.turn import build_orchestrator_graph, run_turn
 from core.config import settings
 from core.db import get_db
 from core.models import ManagementChatMessage
@@ -70,9 +72,21 @@ def _get_orchestration() -> tuple[Router, AgentRegistry]:
     return _orchestration
 
 
-def _resolve_domain(text: str) -> str:
-    router, _ = _get_orchestration()
-    return router.route(text).domain
+def _should_plan(route: RouteDecision, registry: AgentRegistry) -> bool:
+    # 도메인이 해석되고(score>0) 그 도메인이 등록돼 있으면 Plan 경로. 아니면 CLIO.
+    return route.score > 0.0 and registry.get(route.domain) is not None
+
+
+_orchestrator_graph = None
+
+
+def _get_orchestrator_graph() -> Any:
+    # 컴파일된 StateGraph는 한 번만 빌드해 재사용(Router·Registry와 동일 lazy 패턴).
+    global _orchestrator_graph
+    if _orchestrator_graph is None:
+        _, registry = _get_orchestration()
+        _orchestrator_graph = build_orchestrator_graph(registry)
+    return _orchestrator_graph
 
 
 async def _record_management_turn(
@@ -200,21 +214,21 @@ async def chat_complete(body: ChatRequest) -> StreamingResponse:
     last_message = body.messages[-1].content if body.messages else ""
 
     async def generate() -> AsyncGenerator[str, None]:
-        # MVP 임시 분기 — sim/gen 도메인 에이전트 등록 전까지 management만 카드 스트림에 연결한다.
-        # (도메인 추가 시 이 분기를 레지스트리 디스패치로 일반화)
-        _, registry = _get_orchestration()
-        domain = _resolve_domain(last_message)
-        if domain == "management":
-            agent = registry.get(domain)
-            if agent is None:  # 정상 bootstrap이면 반드시 존재 — 없으면 설정 오류, 조용한 폴백 금지
-                raise RuntimeError(
-                    "management로 라우팅됐으나 에이전트 미등록 — bootstrap 설정 오류"
-                )
+        # 오케스트레이션 — 도메인이 해석·등록되면 고정 Plan 경로(turn 그래프)로, 아니면 CLIO.
+        # run_turn이 plan→execute를 assistant.chat.turn 루트 트레이스로 묶는다.
+        router, registry = _get_orchestration()
+        route = router.route(last_message)
+        if _should_plan(route, registry):
+            graph = _get_orchestrator_graph()
+
+            async def _assistant(req: Any) -> Any:
+                return await run_turn(graph, route, req=req)
+
             async for chunk in _management_card_stream(
                 question=last_message,
                 session_id=body.session_id,
                 ad_id=body.context_ad_id,
-                assistant=agent.ask,
+                assistant=_assistant,
                 record=_record_management_turn,
             ):
                 yield chunk
