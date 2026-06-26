@@ -4,20 +4,20 @@
 
 **Goal:** 챗 한 턴을 `Router → (고정 Plan) → Plan Executor`로 흘려, management 단일 스텝이 LangSmith 루트 트레이스(`assistant.chat.turn`) 아래에서 E2E로 동작하게 한다(기존 챗 동작 회귀 0).
 
-**Architecture:** 기존 `api/orchestration`(Router·Registry·DomainAgent 계약)은 그대로 두고, 위에 세 개의 작은 순수 모듈을 얹는다 — `plan.py`(구조화 Plan + plan_hash), `planner.py`(RouteDecision → 단일 스텝 Plan), `executor.py`(Plan 스텝을 Registry로 디스패치). `turn.py`가 `@traceable` 루트로 plan·execute를 한 트레이스에 묶는다. `chat.py`의 management 분기를 이 경로로 교체하되, 카드 SSE·관측 적재(`_management_card_stream`)는 그대로 재사용해 출력이 동일하게 유지된다.
+**Architecture:** 기존 `api/orchestration`(Router·Registry·DomainAgent 계약)은 그대로 두고, 위에 세 개의 작은 순수 모듈을 얹는다 — `plan.py`(구조화 Plan + plan_hash), `planner.py`(RouteDecision → 단일 스텝 Plan), `executor.py`(Plan 스텝을 Registry로 디스패치). `turn.py`가 **LangGraph `StateGraph`(plan·execute 노드)** 로 둘을 묶고, `run_turn`이 `assistant.chat.turn` 루트 트레이스로 호출한다. `chat.py`의 management 분기를 이 경로로 교체하되, 카드 SSE·관측 적재(`_management_card_stream`)는 그대로 재사용해 출력이 동일하게 유지된다.
 
-**Tech Stack:** Python 3.12, FastAPI, `langsmith.traceable`, pytest(`@pytest.mark.asyncio`), uv. 오케스트레이터 코어는 도메인 타입을 import하지 않는다(`Any`로 일반화 — import 순수성 유지).
+**Tech Stack:** Python 3.12, FastAPI, **LangGraph `StateGraph`**(이미 의존성), LangSmith(config 추적), pytest(`@pytest.mark.asyncio`), uv. 오케스트레이터 코어는 도메인 타입을 import하지 않는다(`Any`로 일반화 — import 순수성 유지).
 
-**범위 메모(YAGNI):** 진입 게이트(첨부·복합/순차·애매·약신호)는 도메인이 2개 이상 등록되는 **S2**에서 구현한다(S1은 단일 도메인이라 게이트가 무의미). LangGraph `StateGraph`는 첫 조건분기(게이트)가 생기는 **S4**에서 도입한다(S1은 선형 단일 스텝이라 `@traceable` 함수로 충분). 멀티스텝(스텝 간 산출 전달)은 S2+.
+**범위 메모(YAGNI):** 진입 게이트(첨부·복합/순차·애매·약신호)는 도메인이 2개 이상 등록되는 **S2**에서 구현한다(S1은 단일 도메인이라 게이트가 무의미). **LangGraph `StateGraph`는 S1부터 도입**하되 **stateless(checkpointer 없음)·노드 plan·execute 선형**까지만. 조건분기(게이트)·사이클(replan)은 **S4**, `interrupt`(HITL)는 **S5**, `checkpointer`(STM)는 **M**에서 같은 그래프에 얹는다. 멀티스텝(스텝 간 산출 전달)은 S2+.
 
 ```mermaid
 flowchart LR
     chat["chat.py<br/>/complete generate()"] --> route["Router.route(text)"]
     route --> sp{"_should_plan?<br/>score>0 && registry.get(domain)"}
     sp -->|아니오| clio["CLIO 경로<br/>(기존 그대로)"]
-    sp -->|예| rt["run_turn() @traceable<br/>assistant.chat.turn"]
-    rt --> bp["build_plan(route)<br/>→ 단일 스텝 Plan + plan_hash"]
-    bp --> ep["execute_plan()<br/>→ registry.get(domain).ask(req)"]
+    sp -->|예| rt["run_turn(graph, route, req)<br/>오케스트레이터 StateGraph<br/>루트 트레이스 assistant.chat.turn"]
+    rt --> bp["plan 노드: build_plan(route)<br/>→ 단일 스텝 Plan + plan_hash"]
+    bp --> ep["execute 노드: execute_plan()<br/>→ registry.get(domain).ask(req)"]
     ep --> card["_management_card_stream<br/>→ 카드 SSE + record_turn"]
 ```
 
@@ -32,7 +32,7 @@ flowchart LR
 | `backend/api/orchestration/plan.py` | `PlanStep`·`Plan` 구조 + `plan_hash` 계산 | 신규 |
 | `backend/api/orchestration/planner.py` | `RouteDecision` → 단일 스텝 `Plan` | 신규 |
 | `backend/api/orchestration/executor.py` | `Plan` 스텝을 `AgentRegistry`로 순차 디스패치 | 신규 |
-| `backend/api/orchestration/turn.py` | `@traceable` 루트(`assistant.chat.turn`)로 plan·execute 묶기 | 신규 |
+| `backend/api/orchestration/turn.py` | LangGraph `StateGraph`(plan·execute 노드) 빌드 + `run_turn`(루트 트레이스 `assistant.chat.turn`) | 신규 |
 | `backend/api/routers/chat.py` | management 분기를 plan→execute 경로로 교체 | 수정 |
 | `backend/tests/orchestration/test_plan.py` | plan_hash 결정론·순서민감 | 신규 |
 | `backend/tests/orchestration/test_planner.py` | build_plan 단일 스텝 | 신규 |
@@ -326,7 +326,9 @@ git commit -m "add: Plan Executor(단일 스텝 Registry 디스패치) — 오�
 
 ---
 
-## Task 4: Turn 오케스트레이터 (turn.py)
+## Task 4: Turn 그래프 오케스트레이터 (turn.py)
+
+LangGraph `StateGraph`로 plan·execute 두 노드를 묶는다. **stateless compile**(checkpointer 없음 — STM은 M 슬라이스). `run_turn`이 `assistant.chat.turn` 루트 트레이스로 그래프를 호출한다.
 
 **Files:**
 - Create: `backend/api/orchestration/turn.py`
@@ -337,12 +339,12 @@ git commit -m "add: Plan Executor(단일 스텝 Registry 디스패치) — 오�
 `backend/tests/orchestration/test_turn.py`:
 
 ```python
-# run_turn — 라우팅된 도메인의 단일 스텝 Plan을 만들어 집행, 에이전트 결과를 그대로 반환
+# run_turn — 오케스트레이터 StateGraph(plan→execute)가 단일 스텝 Plan을 집행해 에이전트 결과 반환
 import pytest
 
 from api.orchestration.registry import AgentRegistry
 from api.orchestration.routing import KeywordMatcher, Router
-from api.orchestration.turn import run_turn
+from api.orchestration.turn import build_orchestrator_graph, run_turn
 
 
 class _FakeAgent:
@@ -353,12 +355,13 @@ class _FakeAgent:
 
 
 @pytest.mark.asyncio
-async def test_run_turn_executes_single_step_plan():
+async def test_run_turn_graph_executes_single_step_plan():
     route = Router([KeywordMatcher("management", frozenset({"캠페인"}))]).route("캠페인 예산")
     registry = AgentRegistry()
     registry.register(_FakeAgent())
+    graph = build_orchestrator_graph(registry)
 
-    result = await run_turn(route, req="REQ", registry=registry)
+    result = await run_turn(graph, route, req="REQ")
 
     assert result == {"answer": "handled:REQ"}
 ```
@@ -373,24 +376,51 @@ Expected: FAIL (`ModuleNotFoundError: api.orchestration.turn`)
 `backend/api/orchestration/turn.py`:
 
 ```python
-# 오케스트레이션 1턴 — LangSmith 루트(assistant.chat.turn) 아래 plan·execute를 한 트레이스로 묶는다
+# 오케스트레이션 턴 그래프 — plan·execute 노드를 LangGraph로 묶어 트레이스·STM·HITL 토대를 만든다
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, TypedDict
 
-from langsmith import traceable
+from langgraph.graph import END, START, StateGraph
 
 from api.orchestration.executor import execute_plan
 from api.orchestration.planner import build_plan
 from api.orchestration.registry import AgentRegistry
-from api.orchestration.routing import RouteDecision
 
 
-@traceable(name="assistant.chat.turn", run_type="chain", tags=["assistant"])
-async def run_turn(route: RouteDecision, *, req: Any, registry: AgentRegistry) -> Any:
-    # 트레이싱이 꺼져 있으면 traceable은 무동작 통과(LANGCHAIN_TRACING_V2 미설정 환경 안전).
-    plan = build_plan(route, query=getattr(req, "question", str(req)))
-    return await execute_plan(plan, req=req, registry=registry)
+class TurnState(TypedDict, total=False):
+    route: Any
+    req: Any
+    plan: Any
+    result: Any
+
+
+def build_orchestrator_graph(registry: AgentRegistry):
+    # registry를 노드 클로저에 바인딩 — 그래프는 한 번 빌드해 재사용(호출자가 캐시).
+    async def plan_node(state: TurnState) -> dict:
+        query = getattr(state["req"], "question", "")
+        return {"plan": build_plan(state["route"], query=query)}
+
+    async def execute_node(state: TurnState) -> dict:
+        return {"result": await execute_plan(state["plan"], req=state["req"], registry=registry)}
+
+    g = StateGraph(TurnState)
+    g.add_node("plan", plan_node)
+    g.add_node("execute", execute_node)
+    g.add_edge(START, "plan")
+    g.add_edge("plan", "execute")
+    g.add_edge("execute", END)
+    # S1: stateless(checkpointer 없음). STM 체크포인터는 M 슬라이스에서 compile 인자로 추가.
+    return g.compile()
+
+
+async def run_turn(graph, route: Any, *, req: Any) -> Any:
+    # 루트 트레이스 — 노드(plan·execute)가 assistant.chat.turn 아래 자식 run으로 중첩된다.
+    final = await graph.ainvoke(
+        {"route": route, "req": req},
+        config={"run_name": "assistant.chat.turn", "tags": ["assistant"]},
+    )
+    return final["result"]
 ```
 
 - [ ] **Step 4: Run test to verify it passes**
@@ -403,7 +433,7 @@ Expected: PASS (1 passed)
 ```bash
 cd backend && uv run ruff format api/orchestration/turn.py tests/orchestration/test_turn.py && uv run ruff check api/orchestration/turn.py tests/orchestration/test_turn.py --fix
 git add backend/api/orchestration/turn.py backend/tests/orchestration/test_turn.py
-git commit -m "add: Turn 오케스트레이터(@traceable assistant.chat.turn) — 오케스트레이터 S1"
+git commit -m "add: Turn 그래프 오케스트레이터(LangGraph StateGraph plan·execute) — 오케스트레이터 S1"
 ```
 
 ---
@@ -507,8 +537,9 @@ Expected: FAIL (`AttributeError: module 'api.routers.chat' has no attribute '_sh
 `backend/api/routers/chat.py` 상단 import 블록(다른 `from api.orchestration...` 줄 옆)에 추가:
 
 ```python
+from api.orchestration.registry import AgentRegistry
 from api.orchestration.routing import RouteDecision
-from api.orchestration.turn import run_turn
+from api.orchestration.turn import build_orchestrator_graph, run_turn
 ```
 
 - [ ] **Step 4: Edit chat.py — `_resolve_domain` 제거·`_should_plan` 추가**
@@ -521,15 +552,25 @@ def _resolve_domain(text: str) -> str:
     return router.route(text).domain
 ```
 
-을 아래로 교체:
+을 아래로 교체(`_should_plan` + 컴파일된 그래프 캐시 헬퍼):
 
 ```python
 def _should_plan(route: RouteDecision, registry: AgentRegistry) -> bool:
     # 도메인이 해석되고(score>0) 그 도메인이 등록돼 있으면 Plan 경로. 아니면 CLIO.
     return route.score > 0.0 and registry.get(route.domain) is not None
-```
 
-상단 import에 `from api.orchestration.registry import AgentRegistry`가 없으면 추가(이미 `AgentRegistry`를 타입으로 쓰므로 필요).
+
+_orchestrator_graph = None
+
+
+def _get_orchestrator_graph():
+    # 컴파일된 StateGraph는 한 번만 빌드해 재사용(Router·Registry와 동일 lazy 패턴).
+    global _orchestrator_graph
+    if _orchestrator_graph is None:
+        _, registry = _get_orchestration()
+        _orchestrator_graph = build_orchestrator_graph(registry)
+    return _orchestrator_graph
+```
 
 - [ ] **Step 5: Edit chat.py — generate() 분기 교체**
 
@@ -560,14 +601,15 @@ def _should_plan(route: RouteDecision, registry: AgentRegistry) -> bool:
 을 아래로 교체:
 
 ```python
-        # 오케스트레이션 — 도메인이 해석·등록되면 고정 Plan 경로(turn.run_turn)로, 아니면 CLIO.
+        # 오케스트레이션 — 도메인이 해석·등록되면 고정 Plan 경로(turn 그래프)로, 아니면 CLIO.
         # run_turn이 plan→execute를 assistant.chat.turn 루트 트레이스로 묶는다.
         router, registry = _get_orchestration()
         route = router.route(last_message)
         if _should_plan(route, registry):
+            graph = _get_orchestrator_graph()
 
             async def _assistant(req):
-                return await run_turn(route, req=req, registry=registry)
+                return await run_turn(graph, route, req=req)
 
             async for chunk in _management_card_stream(
                 question=last_message,
@@ -615,6 +657,6 @@ Expected: 수집 에러 없음(순환 import·누락 없음).
 
 ## Self-Review (작성자 체크)
 
-- **스펙 커버리지** — 본 계획은 에픽 §11의 **S1**(Plan 계약 + Planner 셸 + 단일 스텝 E2E + 턴 루트 트레이스)만 다룬다. 진입 게이트(§3)=S2, StateGraph/HITL(§5·6)=S4·S5, 메모리(§7)=M 슬라이스로 명시 분리(YAGNI). S1 인수기준("management 단일스텝 Plan E2E·회귀 0·assistant.turn 루트") → Task 4·6·7로 충족.
+- **스펙 커버리지** — 본 계획은 에픽 §11의 **S1**(Plan 계약 + Planner 셸 + StateGraph 단일 스텝 E2E + 턴 루트 트레이스)만 다룬다. 진입 게이트(§3)=S2, 조건분기·사이클=S4, HITL `interrupt`=S5, STM `checkpointer`=M 슬라이스로 명시 분리(YAGNI). S1 인수기준("management 단일스텝 Plan E2E·회귀 0·assistant.turn 루트") → Task 4·6·7로 충족.
 - **Placeholder** — 없음. 모든 step에 실제 코드·명령·기대출력 포함.
-- **타입 정합** — `PlanStep`·`Plan`·`make_plan`·`compute_plan_hash`(Task1) → `build_plan`(Task2) → `execute_plan(plan, req, registry)`(Task3) → `run_turn(route, req, registry)`(Task4) → `_should_plan(route, registry)`·`_assistant(req)`(Task6) 시그니처가 일관. 코어는 도메인 타입 미import(`Any`), 순수성은 Task5가 잠금.
+- **타입 정합** — `PlanStep`·`Plan`·`make_plan`·`compute_plan_hash`(Task1) → `build_plan(route, query)`(Task2) → `execute_plan(plan, req, registry)`(Task3) → `build_orchestrator_graph(registry)`·`run_turn(graph, route, req)`(Task4) → `_should_plan(route, registry)`·`_get_orchestrator_graph()`·`_assistant(req)`(Task6) 시그니처가 일관. 코어는 도메인 타입 미import(`Any`), 순수성은 Task5가 잠금(turn.py는 langgraph만 import).

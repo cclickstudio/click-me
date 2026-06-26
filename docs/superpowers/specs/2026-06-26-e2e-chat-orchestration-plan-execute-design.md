@@ -88,6 +88,26 @@ flowchart TD
     CLIO --> OUT
 ```
 
+### LangGraph 사용 범위 (슬라이스별)
+
+LangGraph 풀 기능을 쓰되 **전부 이 supervisor 그래프 하나에** 점진적으로 얹는다(새 그래프를 여럿 만들지 않음).
+
+| 슬라이스 | 도입 기능 | 목적 |
+|---|---|---|
+| S1 | `StateGraph` + 노드(plan·execute), 선형, **stateless compile** | 그래프 골격 + 트레이스 자동 중첩 |
+| S2 | 노드의 registry 디스패치 일반화 · executor 멀티스텝 | 여러 도메인 스텝 순차 집행 |
+| S4 | **`add_conditional_edges`(게이트) + 사이클(replan 루프)** | KPI 통과→execute / 미달→replan(≤3) |
+| S5 | **`interrupt`(HITL)** | 집행 전 사람 승인 일시정지·재개 |
+| M | **`compile(checkpointer=AsyncPostgresSaver)`** + `thread_id` | STM 영속(멀티턴·HITL 재개) |
+| T | LangSmith config(`run_name`·`metadata`) | 추적(그래프면 거의 공짜) |
+
+**경계 — LangGraph로 흡수하지 않는 것.**
+
+- 도메인 서브에이전트 내부(management 자체 ReAct 그래프·generator 5단계 그래프·simulation 서비스)는
+  `ask()` 계약으로 **호출만** 한다(그래프 안에 그래프를 박지 않음).
+- 비동기 백그라운드 잡(gen/sim SSE)을 장기 실행 노드로 가두지 않고 트리거·상관(§6)으로 처리.
+- deepagents 하네스·가상 파일시스템 메모리 미사용. swarm/네트워크 통신 없음(supervisor 단일 통제).
+
 ---
 
 ## 3. Planner 진입 게이트
