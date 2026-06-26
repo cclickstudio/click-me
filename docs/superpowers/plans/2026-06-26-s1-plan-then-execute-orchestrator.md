@@ -54,7 +54,9 @@ flowchart LR
 `backend/tests/orchestration/test_plan.py`:
 
 ```python
-# Plan 구조 — plan_hash 결정론·스텝 순서 민감성 검증
+# Plan 구조 — plan_hash 결정론·스텝 순서 민감성 + inputs 불변성 검증
+import pytest
+
 from api.orchestration.plan import Plan, PlanStep, compute_plan_hash, make_plan
 
 
@@ -80,6 +82,21 @@ def test_plan_hash_is_order_sensitive():
     forward = compute_plan_hash(tuple(_steps()))
     reversed_ = compute_plan_hash(tuple(reversed(_steps())))
     assert forward != reversed_
+
+
+def test_plan_step_inputs_are_read_only():
+    # 불변성 — 확정 후 inputs 변경 시도는 거부(plan_hash 무결성 보장)
+    step = PlanStep(domain="management", action="answer", inputs={"query": "x"})
+    with pytest.raises(TypeError):
+        step.inputs["query"] = "mutated"
+
+
+def test_plan_step_copies_source_dict():
+    # 외부 dict를 나중에 바꿔도 step.inputs는 영향 없음(사본화)
+    src = {"query": "x"}
+    step = PlanStep(domain="management", action="answer", inputs=src)
+    src["query"] = "mutated"
+    assert step.inputs["query"] == "x"
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -97,14 +114,21 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass, field
+from types import MappingProxyType
+from typing import Any
 
 
 @dataclass(frozen=True)
 class PlanStep:
     domain: str  # "management" | "simulation" | "generator"
     action: str  # "answer" | "generate" | "simulate" | "execute" ...
-    inputs: dict = field(default_factory=dict)
+    inputs: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        # 불변성 보강 — 확정 후 inputs 변경을 막아 plan_hash 무결성 보장(읽기전용 + 사본).
+        object.__setattr__(self, "inputs", MappingProxyType(dict(self.inputs)))
 
 
 @dataclass(frozen=True)
@@ -114,8 +138,9 @@ class Plan:
 
 
 def compute_plan_hash(steps: tuple[PlanStep, ...]) -> str:
+    # MappingProxyType는 json 직렬화 불가 → dict()로 평탄화 후 해시.
     canonical = json.dumps(
-        [{"domain": s.domain, "action": s.action, "inputs": s.inputs} for s in steps],
+        [{"domain": s.domain, "action": s.action, "inputs": dict(s.inputs)} for s in steps],
         sort_keys=True,
         ensure_ascii=False,
         separators=(",", ":"),
@@ -131,7 +156,7 @@ def make_plan(steps: list[PlanStep]) -> Plan:
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `cd backend && uv run pytest tests/orchestration/test_plan.py -v`
-Expected: PASS (3 passed)
+Expected: PASS (5 passed)
 
 - [ ] **Step 5: Ruff + Commit**
 
@@ -271,6 +296,21 @@ async def test_execute_empty_plan_raises():
     empty = make_plan([])
     with pytest.raises(PlanExecutionError):
         await execute_plan(empty, req="REQ", registry=AgentRegistry())
+
+
+@pytest.mark.asyncio
+async def test_execute_multi_step_raises_in_s1():
+    # S1은 단일 스텝만 — 2스텝 이상은 조용히 마지막만 처리하지 않고 명시적 실패
+    registry = AgentRegistry()
+    registry.register(_FakeAgent("management", "ok"))
+    plan = make_plan(
+        [
+            PlanStep(domain="management", action="answer", inputs={}),
+            PlanStep(domain="management", action="answer", inputs={"x": "y"}),
+        ]
+    )
+    with pytest.raises(PlanExecutionError):
+        await execute_plan(plan, req="REQ", registry=registry)
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -283,7 +323,7 @@ Expected: FAIL (`ModuleNotFoundError: api.orchestration.executor`)
 `backend/api/orchestration/executor.py`:
 
 ```python
-# Plan Executor — 고정 Plan의 스텝을 순차 집행(S1: 단일 스텝을 Registry로 디스패치)
+# Plan Executor — 고정 Plan의 스텝을 집행(S1: 단일 스텝만 허용, 멀티스텝은 후속 슬라이스)
 from __future__ import annotations
 
 from typing import Any
@@ -293,28 +333,24 @@ from api.orchestration.registry import AgentRegistry
 
 
 class PlanExecutionError(RuntimeError):
-    """미등록 도메인 스텝·빈 Plan 등 집행 불가 상태(조용한 폴백 금지)."""
+    """단일 스텝 위반·미등록 도메인 등 집행 불가 상태(조용한 폴백 금지)."""
 
 
 async def execute_plan(plan: Plan, *, req: Any, registry: AgentRegistry) -> Any:
-    # S1: 단일 스텝만 디스패치. 멀티스텝(스텝 간 산출 전달)은 후속 슬라이스.
-    result: Any = None
-    executed = False
-    for step in plan.steps:
-        agent = registry.get(step.domain)
-        if agent is None:
-            raise PlanExecutionError(f"미등록 도메인 스텝: {step.domain}")
-        result = await agent.ask(req)
-        executed = True
-    if not executed:
-        raise PlanExecutionError("빈 Plan은 집행할 수 없다")
-    return result
+    # S1은 정확히 1스텝만 집행한다. 0개·2개+ 는 명시적 실패(멀티스텝 산출 전달은 후속 슬라이스).
+    if len(plan.steps) != 1:
+        raise PlanExecutionError(f"S1은 단일 스텝만 허용(받음: {len(plan.steps)}스텝)")
+    step = plan.steps[0]
+    agent = registry.get(step.domain)
+    if agent is None:
+        raise PlanExecutionError(f"미등록 도메인 스텝: {step.domain}")
+    return await agent.ask(req)
 ```
 
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `cd backend && uv run pytest tests/orchestration/test_executor.py -v`
-Expected: PASS (3 passed)
+Expected: PASS (4 passed)
 
 - [ ] **Step 5: Ruff + Commit**
 
@@ -340,6 +376,8 @@ LangGraph `StateGraph`로 plan·execute 두 노드를 묶는다. **stateless com
 
 ```python
 # run_turn — 오케스트레이터 StateGraph(plan→execute)가 단일 스텝 Plan을 집행해 에이전트 결과 반환
+from dataclasses import dataclass
+
 import pytest
 
 from api.orchestration.registry import AgentRegistry
@@ -347,11 +385,17 @@ from api.orchestration.routing import KeywordMatcher, Router
 from api.orchestration.turn import build_orchestrator_graph, run_turn
 
 
+@dataclass
+class _Req:
+    # AskRequest 대역 — run_turn은 req.question을 직접 읽는다(폴백 없음, fail-loud)
+    question: str
+
+
 class _FakeAgent:
     domain = "management"
 
     async def ask(self, req):
-        return {"answer": f"handled:{req}"}
+        return {"answer": f"handled:{req.question}"}
 
 
 @pytest.mark.asyncio
@@ -361,9 +405,9 @@ async def test_run_turn_graph_executes_single_step_plan():
     registry.register(_FakeAgent())
     graph = build_orchestrator_graph(registry)
 
-    result = await run_turn(graph, route, req="REQ")
+    result = await run_turn(graph, route, req=_Req(question="캠페인 예산"))
 
-    assert result == {"answer": "handled:REQ"}
+    assert result == {"answer": "handled:캠페인 예산"}
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -398,8 +442,8 @@ class TurnState(TypedDict, total=False):
 def build_orchestrator_graph(registry: AgentRegistry):
     # registry를 노드 클로저에 바인딩 — 그래프는 한 번 빌드해 재사용(호출자가 캐시).
     async def plan_node(state: TurnState) -> dict:
-        query = getattr(state["req"], "question", "")
-        return {"plan": build_plan(state["route"], query=query)}
+        # req.question 직접 접근 — 폴백 없음(req가 비정상이면 AttributeError로 fail-loud).
+        return {"plan": build_plan(state["route"], query=state["req"].question)}
 
     async def execute_node(state: TurnState) -> dict:
         return {"result": await execute_plan(state["plan"], req=state["req"], registry=registry)}
@@ -660,3 +704,4 @@ Expected: 수집 에러 없음(순환 import·누락 없음).
 - **스펙 커버리지** — 본 계획은 에픽 §11의 **S1**(Plan 계약 + Planner 셸 + StateGraph 단일 스텝 E2E + 턴 루트 트레이스)만 다룬다. 진입 게이트(§3)=S2, 조건분기·사이클=S4, HITL `interrupt`=S5, STM `checkpointer`=M 슬라이스로 명시 분리(YAGNI). S1 인수기준("management 단일스텝 Plan E2E·회귀 0·assistant.chat.turn 루트") → Task 4·6·7로 충족.
 - **Placeholder** — 없음. 모든 step에 실제 코드·명령·기대출력 포함.
 - **타입 정합** — `PlanStep`·`Plan`·`make_plan`·`compute_plan_hash`(Task1) → `build_plan(route, query)`(Task2) → `execute_plan(plan, req, registry)`(Task3) → `build_orchestrator_graph(registry)`·`run_turn(graph, route, req)`(Task4) → `_should_plan(route, registry)`·`_get_orchestrator_graph()`·`_assistant(req)`(Task6) 시그니처가 일관. 코어는 도메인 타입 미import(`Any`), 순수성은 Task5가 잠금(turn.py는 langgraph만 import).
+- **강건성(hardening)** — ① `PlanStep.inputs`는 `MappingProxyType`로 읽기전용+사본화(확정 후 변경 차단 → plan_hash 무결성). ② `execute_plan`은 S1에서 **정확히 1스텝**만 허용(0개·2개+ 명시적 실패, 멀티스텝 오작동 방지). ③ `run_turn`은 `req.question`을 직접 읽어 **fail-loud**(silent `""` 폴백 제거). ④ `_should_plan`은 `registry.get(domain)` 체크로 **등록된 도메인만** 통과(S1=management 한정, S2 전방호환 — 도메인 문자열 하드코딩 안 함).
