@@ -125,3 +125,96 @@ async def test_load_context_short_term_from_state_no_db():
         {"role": "user", "content": "안녕"},
         {"role": "assistant", "content": "네"},
     ]
+
+
+@pytest.mark.asyncio
+async def test_simulation_subagent_prepends_history():
+    from domain.chat.adapters.simulation_subagent import SimulationSubAgent
+    from domain.chat.contracts.agent_io import SubAgentRequest
+
+    captured = {}
+
+    async def fake_agent(question, context_ids):
+        captured["q"] = question
+        return {"answer": "ok", "used_tools": [], "kb_citations": [], "sim_data": {}}
+
+    sub = SimulationSubAgent()
+    sub._agent = fake_agent  # build 우회(키 불필요)
+    req = SubAgentRequest(
+        question="50명",
+        history=[
+            {"role": "user", "content": "시뮬 돌려줘"},
+            {"role": "assistant", "content": "표본 몇 명?"},
+        ],
+    )
+    await sub.run(req)
+    assert captured["q"].startswith("[이전 대화]")
+    assert captured["q"].endswith("[현재 질문]\n50명")
+
+
+@pytest.mark.asyncio
+async def test_simulation_subagent_no_history_unchanged():
+    from domain.chat.adapters.simulation_subagent import SimulationSubAgent
+    from domain.chat.contracts.agent_io import SubAgentRequest
+
+    captured = {}
+
+    async def fake_agent(question, context_ids):
+        captured["q"] = question
+        return {"answer": "ok", "used_tools": [], "kb_citations": [], "sim_data": {}}
+
+    sub = SimulationSubAgent()
+    sub._agent = fake_agent
+    await sub.run(SubAgentRequest(question="현황 보여줘"))
+    assert captured["q"] == "현황 보여줘"  # 빈 히스토리 → 질문 불변
+
+
+@pytest.mark.asyncio
+async def test_generator_subagent_prepends_history():
+    from domain.chat.adapters.generator_subagent import GeneratorSubAgent
+    from domain.chat.contracts.agent_io import SubAgentRequest
+
+    captured = {}
+
+    async def fake_agent(question, context_ids):
+        captured["q"] = question
+        return {"answer": "ok", "used_tools": [], "kb_citations": [], "gen_data": {}}
+
+    sub = GeneratorSubAgent()
+    sub._agent = fake_agent
+    req = SubAgentRequest(
+        question="비타민",
+        history=[
+            {"role": "user", "content": "광고 만들어줘"},
+            {"role": "assistant", "content": "어떤 상품을 만들까요?"},
+        ],
+    )
+    await sub.run(req)
+    assert captured["q"].startswith("[이전 대화]")
+    assert captured["q"].endswith("[현재 질문]\n비타민")
+
+
+@pytest.mark.asyncio
+async def test_management_subagent_prepends_history():
+    from types import SimpleNamespace
+
+    from domain.chat.adapters.management_subagent import ManagementSubAgent
+    from domain.chat.contracts.agent_io import SubAgentRequest
+
+    captured = {}
+
+    async def fake_ask(ask_req):
+        captured["q"] = ask_req.question
+        return SimpleNamespace(answer="ok", citations=[], used_tools=[], suggested_action=None)
+
+    sub = ManagementSubAgent(ask=fake_ask)
+    req = SubAgentRequest(
+        question="예산 어때?",
+        history=[
+            {"role": "user", "content": "캠페인 보여줘"},
+            {"role": "assistant", "content": "어느 캠페인이요?"},
+        ],
+    )
+    await sub.run(req)
+    assert captured["q"].startswith("[이전 대화]")
+    assert captured["q"].endswith("[현재 질문]\n예산 어때?")

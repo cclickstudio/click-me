@@ -57,7 +57,10 @@ class SimulationSubAgent:
         # (ad_id가 있어도 즉발하지 않고 ReAct가 표본·타깃을 확인한 뒤 start_simulation으로 실행)
         agent = self._get_agent()
         if agent is not None:
-            out = await agent(req.question, req.context_ids)
+            from domain.chat.adapters.history import history_to_preamble  # noqa: PLC0415
+
+            question = history_to_preamble(req.history) + req.question
+            out = await agent(question, req.context_ids)
             sim_data = out.get("sim_data") or {}
             return SubAgentResult(
                 route=Route.SIMULATION,

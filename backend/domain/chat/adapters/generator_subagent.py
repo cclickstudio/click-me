@@ -70,7 +70,10 @@ class GeneratorSubAgent:
         # (상품정보를 자연어로 받아 확인 후 start_generation으로 실행 — knobs 의존 없음)
         agent = self._get_agent()
         if agent is not None:
-            out = await agent(req.question, req.context_ids)
+            from domain.chat.adapters.history import history_to_preamble  # noqa: PLC0415
+
+            question = history_to_preamble(req.history) + req.question
+            out = await agent(question, req.context_ids)
             gen_data = out.get("gen_data") or {}
             detail = gen_data.get("detail") if isinstance(gen_data, dict) else None
             return SubAgentResult(

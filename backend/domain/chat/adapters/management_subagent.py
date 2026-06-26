@@ -47,11 +47,12 @@ class ManagementSubAgent:
             return SubAgentResult(route=Route.MANAGEMENT, error=str(exc))
 
     async def _dispatch(self, req: SubAgentRequest) -> SubAgentResult:  # type: ignore[name-defined]
-        from domain.management.assistant.contracts import AskRequest
+        from domain.chat.adapters.history import history_to_preamble  # noqa: PLC0415
+        from domain.management.assistant.contracts import AskRequest  # noqa: PLC0415
 
         ask = self._get_ask()
         ask_req = AskRequest(
-            question=req.question,
+            question=history_to_preamble(req.history) + req.question,
             campaign_id=req.context_ids.get("campaign_id"),
             ad_id=req.context_ids.get("ad_id"),
         )
