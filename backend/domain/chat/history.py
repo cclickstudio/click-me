@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from collections import Counter
 from datetime import UTC, datetime, timedelta
@@ -132,6 +133,67 @@ async def get_messages(db: AsyncSession, session_id: str) -> list[dict]:
     ]
 
 
+# ── 세션 자동 제목(F13) — 첫 user 메시지를 gpt-4o-mini로 짧게 요약 ──
+_TITLE_SYSTEM = (
+    "다음은 광고 플랫폼 채팅의 첫 사용자 메시지다. 이 대화의 주제를 한국어 명사구 한 줄"
+    "(최대 20자)로 요약해 제목을 지어라. 예: '수분크림 광고 시안 생성', '20대 타깃 시뮬 분석', "
+    "'CTR 개선 전략'. 따옴표·마침표·접두어 없이 제목만 출력한다."
+)
+_title_tasks: set[asyncio.Task] = set()  # 백그라운드 제목 생성 태스크 참조 보관(GC 방지)
+
+
+async def _generate_session_title(session_id: str, first_message: str, fallback: str) -> None:
+    """첫 user 메시지를 LLM으로 짧게 요약해 세션 제목을 갱신한다(best-effort·비차단).
+
+    실패·키없음·mock이면 조용히 fallback(원문 일부) 유지. 사용자가 그새 직접 바꿨으면 덮지 않는다.
+    """
+    from core.config import settings  # noqa: PLC0415
+
+    api_key = getattr(settings, "openai_api_key", None)
+    if not api_key or getattr(settings, "use_mock", True):
+        return
+    try:
+        from langchain_core.messages import HumanMessage, SystemMessage  # noqa: PLC0415
+        from langchain_openai import ChatOpenAI  # noqa: PLC0415
+
+        llm = ChatOpenAI(
+            model=getattr(settings, "chat_orchestrator_model", "gpt-4o-mini"),
+            temperature=0.3,
+            api_key=api_key,
+            max_tokens=24,
+            timeout=8,
+        )
+        resp = await llm.ainvoke(
+            [SystemMessage(content=_TITLE_SYSTEM), HumanMessage(content=first_message[:500])]
+        )
+        raw = resp.content if isinstance(resp.content, str) else ""
+        title = raw.strip().strip("'\"“”‘’").splitlines()[0].strip()[:40] if raw.strip() else ""
+        if not title:
+            return
+        sid = _as_uuid(session_id)
+        if sid is None:
+            return
+        async with AsyncSessionLocal() as db:
+            session = await db.get(ChatSession, sid)
+            # fallback 그대로일 때만 갱신 — 사용자가 직접 바꿨거나 세션 없으면 건드리지 않는다.
+            if session is None or session.title != fallback:
+                return
+            session.title = title
+            await db.commit()
+    except Exception as exc:  # noqa: BLE001 — 제목 생성 실패가 채팅을 막지 않게
+        print(f"[chat] title gen error: {exc!r}")
+
+
+def _spawn_title_generation(session_id: str, first_message: str, fallback: str) -> None:
+    """비차단 제목 생성 등록 — 응답 지연 없이 백그라운드 LLM 요약(루프 없으면 fallback 유지)."""
+    try:
+        task = asyncio.create_task(_generate_session_title(session_id, first_message, fallback))
+        _title_tasks.add(task)
+        task.add_done_callback(_title_tasks.discard)
+    except RuntimeError:
+        pass
+
+
 async def append_turn(
     db: AsyncSession,
     session_id: str,
@@ -154,11 +216,18 @@ async def append_turn(
     db.add(
         ChatMessage(session_id=sid, role="assistant", content=assistant_content, meta=meta or None)
     )
-    # 첫 사용자 발화로 제목 자동 설정(기본 제목일 때만).
+    # 첫 사용자 발화로 제목 자동 설정(기본 제목일 때만) — 우선 원문 일부를 즉시 넣고(fallback),
+    # 커밋 후 LLM 요약으로 비차단 업그레이드한다(F13).
+    title_seed: str | None = None
+    title_fallback: str | None = None
     if session.title == _DEFAULT_TITLE and user_content.strip():
-        session.title = user_content.strip()[:60]
+        title_seed = user_content.strip()
+        title_fallback = title_seed[:60]
+        session.title = title_fallback
     session.updated_at = _utcnow()
     await db.commit()
+    if title_seed and title_fallback:
+        _spawn_title_generation(str(sid), title_seed, title_fallback)
     # 10턴 초과 시 앞 대화를 요약·압축(best-effort, 모크/키 없으면 생략).
     await summarize_and_compress(str(sid), str(session.project_id) if session.project_id else None)
 
