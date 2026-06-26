@@ -811,7 +811,7 @@ async def _generate_with_gemini(prompt: str, size: AdSize) -> bytes:
 
 @traceable(name="image-model:gemini", run_type="llm")
 async def _generate_with_gemini_native(model: str, prompt: str, size: AdSize) -> bytes:
-    client = genai.Client(api_key=settings.gemini_api_key)
+    client = genai.Client(api_key=settings.generator_gemini_api_key or settings.gemini_api_key)
     response = await client.aio.models.generate_content(
         model=model,
         contents=prompt,
@@ -831,7 +831,7 @@ async def _generate_with_gemini_native(model: str, prompt: str, size: AdSize) ->
 
 @traceable(name="image-model:imagen", run_type="llm")
 async def _generate_with_imagen(model: str, prompt: str, size: AdSize) -> bytes:
-    client = genai.Client(api_key=settings.gemini_api_key)
+    client = genai.Client(api_key=settings.generator_gemini_api_key or settings.gemini_api_key)
     response = await client.aio.models.generate_images(
         model=model,
         prompt=prompt,
