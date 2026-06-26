@@ -969,6 +969,30 @@ async def kb_refresh() -> dict:
     return {"ok": True, "ingested_chunks": ingested}
 
 
+@router.post("/kb/eval/generate")
+async def kb_eval_generate(limit: int = 50) -> dict:
+    """KB 청크에서 QA쌍 생성 — LLM(gpt-4o-mini)으로 질문 자동 생성, DB 저장.
+
+    멱등: 이미 생성된 (source, title) 조합은 스킵.
+    limit: 최대 청크 수 (기본 50, 총 64청크 기준 모두 커버).
+    """
+    from domain.management.assistant.rag_eval import generate_qa_pairs  # noqa: PLC0415
+
+    created = await generate_qa_pairs(limit=limit)
+    return {"ok": True, "created": created}
+
+
+@router.get("/kb/eval/run")
+async def kb_eval_run(k: int = 5) -> dict:
+    """저장된 QA쌍으로 RAG 평가 실행 — Hit Rate@k, MRR, Context Precision.
+
+    사전조건: POST /kb/eval/generate로 QA쌍 생성 필요.
+    """
+    from domain.management.assistant.rag_eval import evaluate  # noqa: PLC0415
+
+    return await evaluate(k=k)
+
+
 # ── 캠페인 목록·성과 대시보드 (🅰 reader 영역 데모 노출) ──────────────────
 # 백엔드에 "캠페인 목록" 능력이 없어(이름·상태 미보유) 데모 캠페인 상수 + MockAdPlatform로
 # 요약/시계열을 합성한다. 실연동 시 reader.list_campaigns로 교체.
