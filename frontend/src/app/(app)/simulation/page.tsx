@@ -4,7 +4,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useProjects } from '@/components/ProjectContext';
-import { api } from '@/lib/api';
+import { api, API_BASE } from '@/lib/api';
 import { saveSimResult } from '@/lib/simResultStore';
 import { SIM_CATEGORIES } from '@/lib/simCategories';
 import type { SimRunResult, SSEProgressEvent } from '@/lib/types';
@@ -387,18 +387,27 @@ export default function SimulationRunPage() {
                 )}
                 {inputMode === 'url' && (
                   fromCampaign && imageUrl.startsWith('https://') ? (
-                    /* Meta 캠페인 이미지 — fbcdn CORS로 미리보기 불가, 시뮬 백엔드가 직접 fetch */
-                    <div className='flex flex-1 min-h-0 flex-col items-center justify-center border-2 border-dashed border-[#3182F6]/40 dark:border-[#3182F6]/30 rounded-xl bg-[#EBF3FF]/40 dark:bg-[#1E3A5F]/20 gap-2 py-6'>
-                      <span className='text-xl'>🖼️</span>
-                      <p className='text-sm font-medium text-[#3182F6]'>Meta 광고 이미지 연결됨</p>
-                      <p className='text-[11px] text-[#8B95A1] text-center px-4'>
-                        시뮬 실행 시 실제 광고 이미지가 자동으로 사용됩니다
-                      </p>
+                    /* Meta 캠페인 이미지 — fbcdn CORS로 직접 로드 불가, 백엔드 프록시로 미리보기 */
+                    <div className='relative flex flex-1 min-h-0 flex-col items-center justify-center border-2 border-dashed border-[#3182F6]/40 dark:border-[#3182F6]/30 rounded-xl overflow-hidden'>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={`${API_BASE}/api/management/campaigns/${fromCampaign}/creative-image`}
+                        alt='Meta 광고 이미지'
+                        className='absolute inset-0 h-full w-full object-contain'
+                        onError={e => {
+                          (e.currentTarget as HTMLImageElement).style.display = 'none';
+                          e.currentTarget.nextElementSibling?.classList.remove('hidden');
+                        }}
+                      />
+                      <div className='hidden flex-col items-center gap-2 py-6'>
+                        <p className='text-sm font-medium text-[#3182F6]'>Meta 광고 이미지 연결됨</p>
+                        <p className='text-[11px] text-[#8B95A1] text-center px-4'>미리보기를 불러오지 못했지만 시뮬 실행 시 자동으로 사용됩니다</p>
+                      </div>
                       <button
                         type='button'
                         onClick={() => { setImageUrl(''); setInputMode('image'); }}
-                        className='text-[11px] text-[#8B95A1] underline mt-1'>
-                        다른 이미지로 교체
+                        className='absolute bottom-2 right-2 text-[11px] bg-white/80 dark:bg-black/60 text-[#8B95A1] rounded px-2 py-0.5 hover:text-[#3182F6]'>
+                        이미지 교체
                       </button>
                     </div>
                   ) : (
