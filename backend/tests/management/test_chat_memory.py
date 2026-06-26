@@ -17,19 +17,16 @@ def _req(text: str) -> SubagentRequest:
 
 
 @pytest.mark.asyncio
-async def test_keyword_fallback_routes_benchmark_to_manage():
-    """LLM 분류가 주 경로지만, 키 없을 때 키워드 폴백도 벤치마크·플랫폼을 MANAGE로 잡는다."""
+async def test_llm_none_always_returns_advise():
+    """키워드 폴백 제거됨 — LLM 없으면 모든 질문이 ADVISE(→ Gemini CLIO)로 폴백."""
     for q in [
         "메타는 cpm이 어때?",
         "틱톡은 cpm이 어때?",
         "CPM 벤치마크 알려줘",
         "입찰 전략 바꿔줘",
+        "오늘 날씨 어때?",
     ]:
-        assert await classify_intent(_req(q), [Intent.MANAGE], llm=None) == Intent.MANAGE
-    # 일반 질문은 ADVISE(→ Gemini CLIO)
-    assert (
-        await classify_intent(_req("오늘 날씨 어때?"), [Intent.MANAGE], llm=None) == Intent.ADVISE
-    )
+        assert await classify_intent(_req(q), [Intent.MANAGE], llm=None) == Intent.ADVISE
 
 
 def test_format_memory_empty_returns_none():

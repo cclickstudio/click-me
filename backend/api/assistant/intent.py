@@ -104,10 +104,14 @@ async def _llm_classify(llm, req: SubagentRequest, registered: Sequence[Intent])
 
 
 async def classify_intent(req: SubagentRequest, registered: Sequence[Intent], llm=None) -> Intent:
-    """등록된 의도 중 하나(또는 advise)로 분류. llm 있으면 계측 LLM, 없으면 키워드."""
+    """등록된 의도 중 하나(또는 advise)로 분류. llm 있으면 시맨틱 분류, 없으면 advise 기본값.
+
+    키워드 폴백 제거 이유: 키워드 방식은 의미 분석이 불가능해 "프리퀀시 높으면?" 같은
+    질문을 잘못 분류함. LLM API 키가 없으면 CLIO(advise)로 처리한다.
+    """
     if llm is not None:
         try:
             return await _llm_classify(llm, req, registered)
-        except Exception:  # noqa: BLE001 — 분류 실패는 키워드로 폴백(채팅 끊지 않음)
+        except Exception:  # noqa: BLE001 — 분류 실패는 advise 폴백(채팅 끊지 않음)
             pass
-    return _keyword_classify(req.last_user_text, registered)
+    return Intent.ADVISE

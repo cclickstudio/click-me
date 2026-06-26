@@ -12,15 +12,12 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.assistant.contracts import Intent, SubagentRequest
-from api.assistant.intent import classify_intent
+from api.assistant.contracts import SubagentRequest
 from core.auth import optional_user, user_org_id
 from core.config import settings
 from core.db import get_db
 from core.models import User
 from core.schemas import ChatRequest
-from domain.management.assistant.agent import build_management_agent
-from domain.management.assistant.contracts import AskRequest
 from domain.management.assistant.history import record_feedback, record_turn, summarize_feedback
 from domain.management.assistant.memory_store import ManagementMemory, build_memory_store
 
@@ -53,45 +50,17 @@ _model = genai.GenerativeModel(
 
 _SENTINEL = object()
 
-_assistant = None
+# ── Deep Agent 오케스트레이터 — management·generate·advise 통합 라우팅 ──────
+_orchestrator = None
 
 
-def _get_assistant() -> Callable[[AskRequest], Awaitable[object]]:
-    global _assistant
-    if _assistant is None:
-        _assistant = build_management_agent(settings)
-    return _assistant
+def _get_orchestrator() -> Callable[[SubagentRequest], Awaitable[object]]:
+    global _orchestrator  # noqa: PLW0603
+    if _orchestrator is None:
+        from api.assistant.wiring import build_deep_agent  # noqa: PLC0415
 
-
-# ── 의도 라우팅 — LLM(OpenAI) 분류가 주, 키 없으면 intent.py 키워드 폴백 ──
-# 키워드 나열 대신 의미로 판정 → "프리퀀시 높으면?"처럼 키워드에 없는 질문도 RAG로 간다.
-# 분류기도 매니지먼트 RAG와 같은 OpenAI 모델 — 일관·Gemini는 일반 CLIO 채팅에만.
-_classifier_llm = None
-_classifier_built = False
-
-
-def _get_classifier() -> object | None:
-    global _classifier_llm, _classifier_built  # noqa: PLW0603
-    if not _classifier_built:
-        _classifier_built = True
-        key = getattr(settings, "openai_api_key", None)
-        if key:
-            from langchain_openai import ChatOpenAI  # noqa: PLC0415
-
-            model = getattr(settings, "management_assistant_model", "gpt-4o-mini")
-            _classifier_llm = ChatOpenAI(model=model, api_key=key, temperature=0.0)
-    return _classifier_llm
-
-
-async def _is_management(body: ChatRequest) -> bool:
-    """의도분류 — management면 True(RAG), 아니면 False(CLIO/Gemini). LLM 실패는 키워드 폴백."""
-    req = SubagentRequest(
-        messages=body.messages,
-        session_id=body.session_id,
-        context_ad_id=body.context_ad_id,
-    )
-    intent = await classify_intent(req, [Intent.MANAGE], llm=_get_classifier())
-    return intent == Intent.MANAGE
+        _orchestrator = build_deep_agent(settings)
+    return _orchestrator
 
 
 def _chunks(text: str, size: int = 24) -> list[str]:
@@ -143,93 +112,71 @@ async def chat_complete(
         )
 
     last_message = body.messages[-1].content if body.messages else ""
-    # 의도분류는 스트리밍 전에(async) — management면 RAG, 아니면 CLIO(Gemini).
-    is_mgmt = await _is_management(body)
 
     async def generate() -> AsyncGenerator[str, None]:
-        # 매니지먼트 질문이면 서브에이전트(실측 툴 + KB)로 답한다 — 숫자는 실측, 행동은 제안만.
-        if is_mgmt:
-            thread_id = f"mgmt-{body.session_id}"
-            try:
-                _t0 = time.perf_counter()
-                # 세션 넘는 장기기억 회수(있으면 LLM 맥락에 주입). best-effort.
-                memory_context = None
+        # Deep Agent 오케스트레이터 — management/generate/advise 통합 라우팅.
+        # advise(일반 질문)면 None 반환 → Gemini CLIO 폴백.
+        try:
+            _t0 = time.perf_counter()
+            orch_result = await _get_orchestrator()(
+                SubagentRequest(
+                    messages=body.messages,
+                    session_id=body.session_id or "",
+                    context_ad_id=body.context_ad_id,
+                    user_id=str(user.id) if user else None,
+                )
+            )
+            _latency_ms = int((time.perf_counter() - _t0) * 1000)
+        except Exception as exc:  # noqa: BLE001 — 오케스트레이터 실패 → CLIO 폴백
+            print(f"[chat] orchestrator 실패, CLIO 폴백: {exc!r}")
+            orch_result = None
+
+        if orch_result is not None:
+            # 오케스트레이터가 응답함 — management 또는 generator
+            meta = orch_result.meta or {}
+            yield f"data: {json.dumps({'meta': meta}, ensure_ascii=False)}\n\n"
+            answer = orch_result.message
+            for piece in _chunks(answer):
+                yield f"data: {json.dumps({'token': piece}, ensure_ascii=False)}\n\n"
+
+            # management 응답이면 기록·기억 적재
+            if meta.get("source") == "management":
+                thread_id = meta.get("thread_id") or f"mgmt-{body.session_id}"
                 try:
-                    mems = await _get_memory().recall(tenant_id, user_id, limit=5)
-                    memory_context = _format_memory(mems)
-                except Exception as mexc:  # noqa: BLE001 — 기억 회수 실패는 채팅 안 막음
-                    print(f"[chat] memory recall 실패(무시): {mexc!r}")
-                result = await _get_assistant()(
-                    AskRequest(
-                        question=last_message,
-                        ad_id=body.context_ad_id,
-                        # 멀티턴 — 같은 채팅 세션이면 같은 thread로 묶어 이전 맥락 유지(checkpointer).
+                    await record_turn(
                         thread_id=thread_id,
-                        memory_context=memory_context,
+                        question=last_message,
+                        answer=answer,
+                        model=getattr(settings, "management_assistant_model", "gpt-4o-mini"),
+                        latency_ms=_latency_ms,
+                        used_tools=meta.get("used_tools", []),
+                        citations=[
+                            {
+                                "kind": c.get("kind", ""),
+                                "source": c.get("source", ""),
+                                "title": c.get("title", ""),
+                            }
+                            for c in meta.get("citations", [])
+                        ],
+                        suggested_action=meta.get("suggested_action"),
+                        requires_approval=meta.get("requires_approval", False),
+                        ad_id=body.context_ad_id,
                     )
-                )
-                _latency_ms = int((time.perf_counter() - _t0) * 1000)
-                meta = {
-                    "source": "management",
-                    "label": "매니지먼트 어시스턴트",
-                    "engine": "OpenAI · 실측+KB",
-                    "citations": [
-                        {
-                            "kind": c.kind,
-                            "source": c.source,
-                            "title": c.title,
-                            "trust": c.trust,  # system_backed|advisory|reference (KB 근거 신뢰도)
-                            "source_url": c.source_url,
-                            "as_of": c.as_of,
-                        }
-                        for c in result.citations
-                    ],
-                    "used_tools": result.used_tools,
-                    "requires_approval": result.requires_approval,  # HITL — 승인 게이트에서 멈춤
-                    "thread_id": result.thread_id,  # interrupt 재개 키(승인 경로에서 사용)
-                    "campaigns": (result.evidence or {}).get("campaigns", []),
-                }
-                yield f"data: {json.dumps({'meta': meta}, ensure_ascii=False)}\n\n"
-                answer = result.answer
-                if result.suggested_action:
-                    sa = result.suggested_action
-                    gate = "사람 승인 필요" if sa.requires_approval else "낮은 위험"
-                    answer += f"\n\n추천 조치: {sa.action_type} ({gate}) — 실행은 승인 화면에서 확인하세요."
-                # 대화·도구·인용·HITL을 DB에 적재(관측·평가). 실패해도 채팅은 그대로 진행.
-                await record_turn(
-                    thread_id=thread_id,
-                    question=last_message,
-                    answer=answer,
-                    model=getattr(settings, "management_assistant_model", "gpt-4o-mini"),
-                    latency_ms=_latency_ms,
-                    used_tools=list(result.used_tools),
-                    citations=[
-                        {"kind": c.kind, "source": c.source, "title": c.title}
-                        for c in result.citations
-                    ],
-                    suggested_action=(
-                        result.suggested_action.model_dump() if result.suggested_action else None
-                    ),
-                    requires_approval=result.requires_approval,
-                    ad_id=body.context_ad_id,
-                )
-                # 세션 넘는 장기기억 적재 — 질문 + 제안 액션을 한 줄 노트로. best-effort.
+                except Exception as rexc:  # noqa: BLE001
+                    print(f"[chat] record_turn 실패(무시): {rexc!r}")
                 try:
                     note = f"질문: {last_message[:60]}"
-                    if result.suggested_action:
-                        note += f" / 제안: {result.suggested_action.action_type}"
+                    sa = meta.get("suggested_action")
+                    if sa:
+                        note += f" / 제안: {sa.get('action_type', '')}"
                     await _get_memory().remember(tenant_id, user_id, uuid4().hex, {"note": note})
-                except Exception as mexc:  # noqa: BLE001 — 기억 적재 실패는 채팅 안 막음
+                except Exception as mexc:  # noqa: BLE001
                     print(f"[chat] memory remember 실패(무시): {mexc!r}")
-                for piece in _chunks(answer):
-                    yield f"data: {json.dumps({'token': piece}, ensure_ascii=False)}\n\n"
-            except Exception as exc:  # noqa: BLE001 — 실패해도 채팅은 끊지 않는다
-                msg = f"매니지먼트 조회 중 문제가 발생했어요: {exc}"
-                yield f"data: {json.dumps({'token': msg}, ensure_ascii=False)}\n\n"
+
             yield 'data: {"done": true}\n\n'
             return
 
-        # 그 외는 기존 CLIO(Gemini)
+        # ADVISE — 기존 CLIO(Gemini)
         clio_meta = {"source": "clio", "label": "CLIO", "engine": "Gemini"}
         yield f"data: {json.dumps({'meta': clio_meta}, ensure_ascii=False)}\n\n"
 

@@ -289,8 +289,18 @@ def _state_to_result(state: _OState) -> SubagentResult:
     # management sub_result에서 meta 재구성
     mgt_meta = state["sub_results"].get("management", {})
     gen_meta = state["sub_results"].get("generator", {})
+    # 호출된 서브에이전트 중 주 소스를 source로 — frontend가 source로 분기하므로 유지
+    primary_source = (
+        mgt_meta.get("source", "management")
+        if mgt_meta
+        else gen_meta.get("source", "generator")
+        if gen_meta
+        else "deep-agent"
+    )
     combined_meta: dict = {
-        "source": "deep-agent",
+        "source": primary_source,
+        "label": mgt_meta.get("label", gen_meta.get("label", "오케스트레이터")),
+        "engine": mgt_meta.get("engine", gen_meta.get("engine", "Deep Agent")),
         "citations": mgt_meta.get("citations", []) + gen_meta.get("citations", []),
         "used_tools": (
             mgt_meta.get("used_tools", [])
