@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3.12, FastAPI, LangGraph `StateGraph`(이미 의존성), pytest(`@pytest.mark.asyncio`), uv. 오케스트레이터 코어는 도메인 타입을 import하지 않는다(`Any` 일반화).
 
-**범위 메모(YAGNI):** 실제 gen 이미지 파이프라인·게이트 A(첨부)=**S3**, KPI 게이트·replan 사이클=**S4**, HITL `interrupt`·신규 게재=**S5**, LLM Planner·게이트 C·D=후속, STM `checkpointer`=**M**. 본 계획은 **멀티스텝 기계 + 등록**만 다룬다. 스텝별 LangSmith run 네이밍(`assistant.plan.step.{action}`)은 스텝이 그래프 노드가 되는 **S4**로 미룬다(S2는 S1처럼 turn 루트 + plan/execute 노드 중첩만).
+**범위 메모(YAGNI):** 실제 gen 이미지 파이프라인·게이트 A(첨부)=**S3**, KPI 게이트·replan 사이클=**S4**, HITL `interrupt`·신규 게재=**S5**, LLM Planner·게이트 C·D=후속, STM `checkpointer`=**M**. 본 계획은 **멀티스텝 기계 + 등록**만 다룬다. 스텝별 LangSmith run(`assistant.plan.step.{action}`)은 executor가 각 스텝을 자식 run으로 감싸 **S2에서 보장**한다(`_step_trace`, Task 6).
 
 ```mermaid
 flowchart LR
@@ -82,9 +82,19 @@ def test_domain_to_action_covers_three_domains():
     assert policy.DOMAIN_TO_ACTION["simulation"] == "simulate"
 
 
-def test_pipeline_is_ordered_domain_action_pairs():
-    # S2 파이프라인 = generate→simulate (execute는 S5에서 추가)
-    assert policy.PIPELINE == (("generator", "generate"), ("simulation", "simulate"))
+def test_pipeline_order_is_actions_only():
+    # S2 파이프라인 = generate→simulate (execute는 S5에서 추가). 도메인은 ACTION_TO_DOMAIN으로.
+    assert policy.PIPELINE_ORDER == ("generate", "simulate")
+
+
+def test_action_to_domain_is_inverse_of_domain_to_action():
+    assert policy.ACTION_TO_DOMAIN == {
+        "answer": "management",
+        "generate": "generator",
+        "simulate": "simulation",
+    }
+    for domain, action in policy.DOMAIN_TO_ACTION.items():
+        assert policy.ACTION_TO_DOMAIN[action] == domain  # 역의 역은 자기 자신
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -108,24 +118,23 @@ SEQUENTIAL_MARKERS: frozenset[str] = frozenset(
 # 라우터 ambiguous 판정 마진 — top-runner 차가 이 값 미만이면 애매(routing.py가 읽음).
 ROUTER_AMBIGUITY_MARGIN: float = 0.15
 
-# 단일 스텝일 때 도메인 → 기본 액션.
+# 도메인 ↔ 단일스텝 액션 정본 매핑(양방향 단일 출처 — ACTION_TO_DOMAIN은 역매핑 자동 파생).
 DOMAIN_TO_ACTION: dict[str, str] = {
     "management": "answer",
     "generator": "generate",
     "simulation": "simulate",
 }
+ACTION_TO_DOMAIN: dict[str, str] = {action: domain for domain, action in DOMAIN_TO_ACTION.items()}
 
-# 멀티스텝 정규 순서 (domain, action). S5에서 ("management", "execute") 추가.
-PIPELINE: tuple[tuple[str, str], ...] = (
-    ("generator", "generate"),
-    ("simulation", "simulate"),
-)
+# 멀티스텝 정규 순서 — 액션만 나열. 도메인은 ACTION_TO_DOMAIN으로 해석(쌍 중복 제거).
+# S5에서 "execute" 추가.
+PIPELINE_ORDER: tuple[str, ...] = ("generate", "simulate")
 ```
 
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `cd backend && uv run pytest tests/orchestration/test_policy.py -v`
-Expected: PASS (4 passed)
+Expected: PASS (5 passed)
 
 - [ ] **Step 5: Ruff + Commit**
 
@@ -358,6 +367,22 @@ def test_output_of_isolates_by_action():
     assert ctx.output_of("generate") == {"x": 1}
 
 
+def test_output_of_handles_gaps_and_returns_max_n():
+    # replan으로 번호가 비어도 최대 n(최신)을 반환
+    ctx = TurnContext(user_input="q")
+    ctx.results["generate-1"] = {"v": 1}
+    ctx.results["generate-3"] = {"v": 3}
+    assert ctx.output_of("generate") == {"v": 3}
+
+
+def test_output_of_ignores_malformed_keys():
+    ctx = TurnContext(user_input="q")
+    ctx.results["generate-1"] = {"v": 1}
+    ctx.results["generate-x"] = {"bad": True}  # 숫자 아님 → 무시
+    ctx.results["weird"] = {"bad": True}  # 구분자 없음 → 무시
+    assert ctx.output_of("generate") == {"v": 1}
+
+
 def test_defaults_are_independent_per_instance():
     a = TurnContext(user_input="a")
     b = TurnContext(user_input="b")
@@ -407,7 +432,7 @@ class TurnContext:
 - [ ] **Step 4: Run test to verify it passes**
 
 Run: `cd backend && uv run pytest tests/orchestration/test_context.py -v`
-Expected: PASS (4 passed)
+Expected: PASS (6 passed)
 
 - [ ] **Step 5: Ruff + Commit**
 
@@ -501,9 +526,9 @@ def build_plan(route: RouteDecision, *, query: str) -> Plan:
 
     if len(nonzero) >= 2 or sequential:  # 게이트 B 진입
         steps = [
-            PlanStep(domain=domain, action=action, inputs={"query": query})
-            for domain, action in policy.PIPELINE
-            if domain in nonzero
+            PlanStep(domain=policy.ACTION_TO_DOMAIN[action], action=action, inputs={"query": query})
+            for action in policy.PIPELINE_ORDER
+            if policy.ACTION_TO_DOMAIN[action] in nonzero
         ]
         if len(steps) >= 2:  # 파이프라인 도메인 2개+ 매칭 시에만 멀티스텝
             return make_plan(steps)
@@ -625,6 +650,35 @@ async def test_empty_plan_raises():
     empty = make_plan([])
     with pytest.raises(PlanExecutionError):
         await execute_plan(empty, TurnContext(user_input="q"), registry=AgentRegistry())
+
+
+@pytest.mark.asyncio
+async def test_each_step_is_traced_with_action_and_domain(monkeypatch):
+    # 스텝별 트레이스 보장 — _step_trace가 스텝마다 (action, domain)으로 호출된다.
+    from contextlib import nullcontext
+
+    import api.orchestration.executor as executor
+
+    calls: list = []
+
+    def _fake_trace(step):
+        calls.append((step.action, step.domain))
+        return nullcontext()
+
+    monkeypatch.setattr(executor, "_step_trace", _fake_trace)
+
+    registry = AgentRegistry()
+    registry.register(_FakeAgent("generator", {"ad_id": "ad-1"}))
+    registry.register(_SimReadsGenerate())
+    plan = make_plan(
+        [
+            PlanStep(domain="generator", action="generate", inputs={}),
+            PlanStep(domain="simulation", action="simulate", inputs={}),
+        ]
+    )
+    await execute_plan(plan, TurnContext(user_input="q"), registry=registry)
+
+    assert calls == [("generate", "generator"), ("simulate", "simulation")]
 ```
 
 - [ ] **Step 2: Run test to verify it fails**
@@ -640,15 +694,31 @@ Expected: FAIL (현재 `execute_plan(plan, *, req, registry)` 시그니처·단�
 # Plan Executor — 고정 Plan의 스텝을 순차 집행, 산출을 블랙보드(step.id)에 누적(S2 멀티스텝)
 from __future__ import annotations
 
+from contextlib import nullcontext
 from typing import Any
 
 from api.orchestration.context import TurnContext
-from api.orchestration.plan import Plan
+from api.orchestration.plan import Plan, PlanStep
 from api.orchestration.registry import AgentRegistry
+
+try:  # LangSmith 미설치/비활성이어도 집행은 진행(트레이스만 생략).
+    from langsmith import trace as _langsmith_trace
+except Exception:  # noqa: BLE001
+    _langsmith_trace = None
 
 
 class PlanExecutionError(RuntimeError):
     """빈 Plan·미등록 도메인 등 집행 불가 상태(조용한 폴백 금지)."""
+
+
+def _step_trace(step: PlanStep):
+    # 스텝별 트레이스 보장 — assistant.plan.step.{action}, tag=[assistant, domain].
+    # turn 루트(assistant.chat.turn) 아래 각 스텝이 개별 자식 run으로 중첩된다.
+    if _langsmith_trace is None:
+        return nullcontext()
+    return _langsmith_trace(
+        name=f"assistant.plan.step.{step.action}", tags=["assistant", step.domain]
+    )
 
 
 async def execute_plan(plan: Plan, ctx: TurnContext, *, registry: AgentRegistry) -> Any:
@@ -660,7 +730,8 @@ async def execute_plan(plan: Plan, ctx: TurnContext, *, registry: AgentRegistry)
         agent = registry.get(step.domain)
         if agent is None:
             raise PlanExecutionError(f"미등록 도메인 스텝: {step.domain}")
-        out = await agent.ask(ctx, step)
+        with _step_trace(step):  # 스텝별 트레이스 보장
+            out = await agent.ask(ctx, step)
         ctx.results[step.id] = out  # 블랙보드 누적 — 다음 스텝이 output_of로 읽는다
     return out  # 마지막 스텝 산출
 ```
@@ -811,7 +882,7 @@ async def run_turn(graph, route: Any, *, ctx: Any) -> Any:
 - [ ] **Step 7: Run both suites to verify pass**
 
 Run: `cd backend && uv run pytest tests/orchestration/test_executor.py tests/orchestration/test_turn.py -v`
-Expected: PASS (executor 4 + turn 3 = 7 passed)
+Expected: PASS (executor 5 + turn 3 = 8 passed)
 
 - [ ] **Step 8: Ruff + Commit**
 
@@ -1080,11 +1151,11 @@ git commit -m "add: generator·simulation 스텁 어댑터+매처 등록, manage
 `_assistant`가 `TurnContext`를 만들어 `run_turn(ctx=)`를 호출하고, 라이브 카드 경로는 `route.domain == "management"`로 한정한다(gen/sim 스텁의 비-AskResult 산출이 management 카드 컴포저에 닿지 않게 — 회귀 0).
 
 **Files:**
-- Modify: `backend/api/routers/chat.py` (import 1줄, generate() 분기 약 217-235行)
+- Modify: `backend/api/routers/chat.py` (import 1줄, generate() 분기 약 200-219行 — 슬라이스 T 이후 현재 라인)
 
 - [ ] **Step 1: Edit chat.py — import 추가**
 
-`backend/api/routers/chat.py`의 orchestration import 블록(약 17-20行)에 추가:
+`backend/api/routers/chat.py`의 orchestration import 블록(약 14-17行, `from api.orchestration.turn ...` 옆)에 추가:
 
 ```python
 from api.orchestration.context import TurnContext
@@ -1092,7 +1163,7 @@ from api.orchestration.context import TurnContext
 
 - [ ] **Step 2: Edit chat.py — generate() 분기 교체**
 
-`generate()` 안의 다음 블록(약 217-235行):
+`generate()` 안의 다음 블록(약 200-219行):
 
 ```python
         # 오케스트레이션 — 도메인이 해석·등록되면 고정 Plan 경로(turn 그래프)로, 아니면 CLIO.
@@ -1186,12 +1257,12 @@ Expected: 수집 에러 없음(순환 import·누락 없음).
 - §2 TurnContext·output_of → Task 4 / step.id 키잉 → Task 3·6 / execute_plan → Task 6.
 - §3 계약·management 어댑터·gen/sim 스텁·등록 → Task 6·8.
 - §4 policy·게이트 B·build_plan·routing 마진 → Task 1·2·5.
-- §5 추적 — turn 루트+노드 중첩(S1 유지). **스텝별 run 네이밍은 S4로 명시 연기**(아래 deviation).
+- §5 추적 — turn 루트(assistant.chat.turn) + plan/execute 노드 중첩 + **스텝별 자식 run(assistant.plan.step.{action}) 보장**(Task 6 `_step_trace`).
 - §6 협업/리스크 — 계약 변경은 Task 6·8에 집중, 회귀는 Task 10이 잠금.
-- §7 테스트 11개 → 1·2(executor/turn multi+blackboard) · 3(make_plan id) · 4(plan_hash id 무관) · 5(planner 게이트 B/fallback) · 6(management 회귀=Task10) · 7(executor fail-loud) · 8(bootstrap 등록) · 9(routing 마진 policy) · 10(import 순수성) 매핑. 11(추적)은 graph 파생(S1 선례대로 별도 단위테스트 안 함).
+- §7 테스트 11개 → 1·2(executor/turn multi+blackboard) · 3(make_plan id) · 4(plan_hash id 무관) · 5(planner 게이트 B/fallback) · 6(management 회귀=Task10) · 7(executor fail-loud) · 8(bootstrap 등록) · 9(routing 마진 policy) · 10(import 순수성) 매핑. 11(추적)→ Task 6 test_each_step_is_traced(스텝별 트레이스 보장).
 
 **2. Placeholder 스캔** — 없음. 모든 코드 step에 실제 코드·명령·기대출력 포함.
 
 **3. 타입/시그니처 정합** — `PlanStep(+id)`·`make_plan`(Task3) → `TurnContext.output_of`(Task4) → `build_plan(route, *, query)`(Task5) → `execute_plan(plan, ctx, *, registry)`·`DomainAgent.ask(ctx, step)`·`run_turn(graph, route, *, ctx)`(Task6) → `ManagementDomainAgent.ask(ctx, step)`·`GeneratorStubAgent`·`SimulationStubAgent`(Task8) → chat `_assistant`가 `TurnContext` 빌드(Task9) 일관. 코어는 도메인 타입 미import(Task7 잠금).
 
-**4. 스펙 대비 의도적 deviation(투명 고지)** — ① `PIPELINE`을 (domain, action) 쌍으로 구현(스펙의 PIPELINE_ORDER를 gen→sim 부분집합으로 실현, execute=S5). ② 스텝별 LangSmith run 네이밍(`assistant.plan.step.{action}`)은 스텝이 그래프 노드가 되는 S4로 연기 — S2는 turn 루트+plan/execute 노드 중첩만. ③ **라이브 챗 출력은 management 단일 경로만**(gen/sim·멀티스텝 카드 렌더링은 실 어댑터가 오는 S3+); gen/sim 등록·멀티스텝 executor는 오케스트레이션 테스트 계층에서 증명. 모두 슬라이스 경계(S3/S4/S5)와 정합.
+**4. 스펙 대비 의도적 deviation(투명 고지)** — **라이브 챗 출력은 management 단일 경로만**(gen/sim·멀티스텝 카드 렌더링은 실 어댑터가 오는 S3+); gen/sim 등록·멀티스텝 executor·스텝 트레이스는 오케스트레이션 테스트 계층에서 증명. 슬라이스 경계(S3/S4/S5)와 정합. (PIPELINE_ORDER+ACTION_TO_DOMAIN·스텝별 트레이스 보장은 보강으로 스펙 §4·§5에 정합화 완료 — 이전 deviation 해소.)
