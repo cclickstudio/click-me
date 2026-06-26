@@ -54,6 +54,9 @@ class SubAgentRequest(BaseModel):
     question: str
     context_ids: dict = Field(default_factory=dict)
     knobs: dict = Field(default_factory=dict)
+    history: list[dict] = Field(
+        default_factory=list
+    )  # [{role, content}] 최근 윈도우(어댑터가 프리앰블화)
 
 
 class SubAgentResult(BaseModel):
