@@ -61,6 +61,33 @@ FE 단일 챗 ── POST /api/chat/complete
 - **라우터 1단계는 그대로 두고** 그 위에 Planner/Executor를 얹는다(기존 `api/orchestration` 무파손 확장).
 - **오케스트레이터를 LangGraph로 구현한다**(§6) — 추적·STM·HITL이 같은 메커니즘에서 따라온다.
 
+```mermaid
+flowchart TD
+    FE["FE 단일 챗<br/>POST /api/chat/complete<br/>messages · session_id · attachments[]"]
+    R{"① Router.route()<br/>키워드 점수 · 무비용 · 결정론"}
+    DIRECT["도메인 ask() 직행<br/>(명확 단일도메인 우회)"]
+    CLIO["CLIO 일반답변<br/>Gemini/OpenAI/Claude"]
+    P["② Planner (LLM)<br/>의도 분해 → 고정 Plan(DAG) + plan_hash"]
+    EX["③ Plan Executor<br/>스텝 순차 집행 (루프 없음)"]
+    GEN["generator.ask()<br/>시안 생성"]
+    SIM["simulation.ask()<br/>시뮬 KPI"]
+    GATE{"GATE<br/>KPI 임계 통과?"}
+    HITL["execute<br/>ActionProposal → HITL 승인 → executor"]
+    OUT["카드 SSE + record_turn + STM/LTM 승격"]
+
+    FE --> R
+    R -->|"명확 단일도메인"| DIRECT
+    R -->|"score==0 && 첨부없음"| CLIO
+    R -->|"게이트 충족(§3)"| P
+    P --> EX
+    EX --> GEN --> SIM --> GATE
+    GATE -->|"통과"| HITL
+    GATE -->|"미달 · replan ≤3"| P
+    DIRECT --> OUT
+    HITL --> OUT
+    CLIO --> OUT
+```
+
 ---
 
 ## 3. Planner 진입 게이트
@@ -82,6 +109,21 @@ FE 단일 챗 ── POST /api/chat/complete
 - **A가 우회조건2보다 우선** — `score==0`이라도 첨부가 있으면 Planner로(이미지가 생성/분석/시뮬의 강한 구조 신호).
 - 임계값(`router_low_confidence_threshold`·`router_clear_threshold`·`router_ambiguity_margin`)과
   `sequential_markers`는 **하드코딩 금지** → `contracts/policy.py` 단일 출처.
+
+```mermaid
+flowchart TD
+    Q["사용자 입력 + route 결과"] --> A{"첨부 image ≥ 1?"}
+    A -->|예| P["Planner 진입"]
+    A -->|아니오| B{"nonzero 도메인 ≥ 2<br/>또는 순차마커?"}
+    B -->|예| P
+    B -->|아니오| C{"route.ambiguous == True?"}
+    C -->|예| P
+    C -->|아니오| D{"0 < score < τ_low?"}
+    D -->|예| P
+    D -->|아니오| E{"score ≥ τ_clear<br/>단일 등록 도메인 · 첨부·마커 없음?"}
+    E -->|예| F["도메인 ask() 직행 (우회)"]
+    E -->|아니오| G["CLIO 직행"]
+```
 
 ---
 
@@ -112,6 +154,34 @@ FE 단일 챗 ── POST /api/chat/complete
   - **신규** — "신규 광고 게재" action_type + writer 확장(현재는 예산/중지 등만). 실지출 경로라 가장 신중히(S5).
 - **집행 자율도 = 항상 HITL**. KPI 통과해도 자동 집행하지 않는다. 오케스트레이터는 제안 카드까지,
   실지출은 사람이 승인 버튼을 눌러야 진행.
+
+### E2E 시나리오 흐름 ("제품사진 → 생성 → 시뮬 → 괜찮으면 집행")
+
+```mermaid
+sequenceDiagram
+    actor U as 사용자
+    participant O as 오케스트레이터
+    participant P as Planner
+    participant Gen as generator
+    participant Sim as simulation
+    participant Ex as 집행 브릿지(HITL)
+    U->>O: 제품사진(s3_key) + "생성→시뮬→괜찮으면 집행"
+    O->>P: route + 첨부 → 계획 요청
+    P-->>O: 고정 Plan [generate→simulate→gate→execute] + plan_hash
+    O->>Gen: generate(s3_key)
+    Gen-->>O: 시안 5개 + ad_id
+    O->>Sim: simulate(ad_id)
+    Sim-->>O: KPI 분포(click_intent·거부율 …)
+    alt KPI 임계 통과
+        O->>Ex: ActionProposal(plan_hash 바인딩)
+        Ex-->>U: 승인 카드 (HITL)
+        U->>Ex: 승인
+        Ex-->>O: 게재 결과(멱등·Tier 가드)
+    else KPI 미달
+        O->>P: replan(시안 개선, ≤3) 또는 결과 보고 후 종료
+    end
+    O-->>U: 결과 카드 SSE + 관측 적재
+```
 
 ---
 

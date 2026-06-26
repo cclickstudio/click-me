@@ -10,6 +10,19 @@
 
 **범위 메모(YAGNI):** 진입 게이트(첨부·복합/순차·애매·약신호)는 도메인이 2개 이상 등록되는 **S2**에서 구현한다(S1은 단일 도메인이라 게이트가 무의미). LangGraph `StateGraph`는 첫 조건분기(게이트)가 생기는 **S4**에서 도입한다(S1은 선형 단일 스텝이라 `@traceable` 함수로 충분). 멀티스텝(스텝 간 산출 전달)은 S2+.
 
+```mermaid
+flowchart LR
+    chat["chat.py<br/>/complete generate()"] --> route["Router.route(text)"]
+    route --> sp{"_should_plan?<br/>score>0 && registry.get(domain)"}
+    sp -->|아니오| clio["CLIO 경로<br/>(기존 그대로)"]
+    sp -->|예| rt["run_turn() @traceable<br/>assistant.chat.turn"]
+    rt --> bp["build_plan(route)<br/>→ 단일 스텝 Plan + plan_hash"]
+    bp --> ep["execute_plan()<br/>→ registry.get(domain).ask(req)"]
+    ep --> card["_management_card_stream<br/>→ 카드 SSE + record_turn"]
+```
+
+> 점선 밖(generator·simulation·게이트·HITL)은 S2~S5에서 이 `execute_plan` 루프를 멀티스텝으로 확장하며 붙는다. S1은 위 단일 경로만.
+
 ---
 
 ## File Structure
