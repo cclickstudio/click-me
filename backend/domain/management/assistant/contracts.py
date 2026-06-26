@@ -55,6 +55,7 @@ class ProposalPreview(BaseModel):
 
     preview_id: str
     action_type: str
+    campaign_id: str | None = None  # 진단 대상 캠페인(스펙3 finalize 결선용, additive)
     tier: str | None = None
     budget_before_krw: int | None = None
     budget_after_krw: int | None = None
@@ -101,3 +102,19 @@ class AskResult(BaseModel):
     requires_approval: bool = False  # write 제안이 사람 승인 게이트에서 멈췄는가(HITL)
     diagnostic: DiagnosticResult | None = None  # 진단 4-case 결과(없으면 v0 경로)
     thread_id: str | None = None  # interrupt로 멈춘 그래프의 재개 키(승인 경로에서 사용)
+
+
+class FinalizeResult(BaseModel):
+    """finalize 응답 — 정본 본문(ActionProposal) 미포함(서버 DB에만)."""
+
+    status: Literal["finalized", "unavailable", "no_anomaly"]
+    proposal_id: str | None = None
+    action_type: str | None = None
+    tier: str | None = None
+    requires_external_approval: bool = False
+    budget_before_krw: int | None = None
+    budget_after_krw: int | None = None
+    summary: str | None = None
+    expires_at: str | None = None  # ISO8601
+    drift: bool = False
+    reason: str = ""  # unavailable/no_anomaly 안전 문구

@@ -1,7 +1,9 @@
 // 범용 카드 렌더러 — 레지스트리로 섹션 위임. 미등록 kind는 스킵(전방호환) + dev 로그.
-import type { ReactNode } from 'react';
+'use client';
+import { useState, type ReactNode } from 'react';
 import type { CardSection, ChatCard, Tone } from '@/lib/chatCard';
 import { SECTION_RENDERERS } from './sections';
+import ProposalActions from './ProposalActions';
 
 const TONE_CLASS: Record<Tone, string> = {
   neutral: 'bg-[#F2F4F6] text-[#4E5968] dark:bg-[#2D3748] dark:text-[#9CA3AF]',
@@ -29,25 +31,40 @@ function renderSection(section: CardSection): ReactNode {
 }
 
 export default function ChatCardView({ card }: { card: ChatCard }) {
-  const hasStatusDot = Boolean(card.status && STATUS_DOT[card.status]);
-  const hasHeader = Boolean(card.title) || (card.badges?.length ?? 0) > 0 || hasStatusDot;
+  // 집행 결과 카드로 교체되면(onResult) 그걸 우선 렌더하고 ProposalActions는 숨긴다.
+  const [resultCard, setResultCard] = useState<ChatCard | null>(null);
+  const shown = resultCard ?? card;
+  const isResult = resultCard !== null;
+  const hasStatusDot = Boolean(shown.status && STATUS_DOT[shown.status]);
+  const hasHeader = Boolean(shown.title) || (shown.badges?.length ?? 0) > 0 || hasStatusDot;
   return (
     <div className="flex flex-col gap-3 px-4 py-3 rounded-xl bg-[#F2F4F6] dark:bg-[#252D3D] max-w-sm">
       {hasHeader && (
         <div className="flex flex-wrap items-center gap-1.5">
-          {hasStatusDot && card.status && (
-            <span className={`inline-block w-2 h-2 rounded-full ${STATUS_DOT[card.status]}`} aria-hidden />
+          {hasStatusDot && shown.status && (
+            <span className={`inline-block w-2 h-2 rounded-full ${STATUS_DOT[shown.status]}`} aria-hidden />
           )}
-          {card.title && <span className="text-sm font-bold text-[#191F28] dark:text-[#F2F4F6]">{card.title}</span>}
-          {card.badges?.map((b, i) => (
+          {shown.title && <span className="text-sm font-bold text-[#191F28] dark:text-[#F2F4F6]">{shown.title}</span>}
+          {shown.badges?.map((b, i) => (
             <span key={i} className={`px-2 py-0.5 rounded-full text-[10px] font-semibold ${TONE_CLASS[b.tone]}`}>
               {b.label}
             </span>
           ))}
         </div>
       )}
-      {card.sections.map((s, i) => (
-        <div key={i}>{renderSection(s)}</div>
+      {shown.sections.map((s, i) => (
+        <div key={i}>
+          {renderSection(s)}
+          {!isResult && s.kind === 'proposal' && s.preview_id && s.campaign_id && (
+            <ProposalActions
+              previewId={s.preview_id}
+              campaignId={s.campaign_id}
+              threadId={card.trace?.turn_id}
+              shownBudgetAfterKrw={s.budget_after_krw}
+              onResult={setResultCard}
+            />
+          )}
+        </div>
       ))}
     </div>
   );

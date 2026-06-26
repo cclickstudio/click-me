@@ -332,11 +332,11 @@ git commit -m "add: 진단→정본 ActionProposal 빌더 (스펙3)"
 
 ### Task 4: async `ProposalStore` (action_proposals 영속)
 
+> **⚠️ 계획 정정(실행 중 발견)** — 코드베이스의 DB 스토어 패턴은 `db_stores.py`다: 스토어가 `session_factory=AsyncSessionLocal`을 받아 **메서드별 짧은 세션**을 열고, 원자성은 Postgres 조건부 쓰기 rowcount로 보장하며, **DB 통합 테스트는 opt-in(`MANAGEMENT_DB_TEST=1`, `asyncio.run`)**, 단위 보증은 **InMemory async**가 담당한다(예: `DbIdempotencyStore`/`InMemoryIdempotencyStore`). 따라서 아래 "AsyncSession 주입 + db_session 픽스처" 안은 폐기하고, **InMemory + Db 두 구현(같은 Protocol) + opt-in DB 원자성 테스트**로 간다. 라우터는 `_get_proposal_store()`(monkeypatch 가능)로 스토어를 얻어 Task6/7 단위테스트는 공유 InMemory를 주입한다.
+
 **Files:**
 - Create: `backend/domain/management/execution/service/proposal_store.py`
-- Test: `backend/tests/management/test_chat_execution_bridge.py` (추가, DB 픽스처 사용)
-
-> 기존 `ExecutionService.ProposalRepository`(sync, in-memory)는 챗 경로에 없다. 챗 라우터는 AsyncSession으로 직접 영속/조회하므로 async store를 별도로 둔다(스펙 §5#3을 async로 실체화).
+- Test: `backend/tests/management/test_chat_execution_bridge.py` (InMemory 단위) + `backend/tests/management/test_db_stores.py` 또는 동일 파일 opt-in 블록(Db 원자성)
 
 - [ ] **Step 1: 실패 테스트 작성** (DB 세션 픽스처는 기존 conftest 재사용 — `db_session`)
 

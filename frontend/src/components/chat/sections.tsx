@@ -89,4 +89,27 @@ export const SECTION_RENDERERS: Registry = {
       <p className="text-sm text-[#8B95A1] dark:text-[#6B7280]">{s.text}</p>
     </div>
   ),
+  execution_result: (s) => {
+    const tone: Record<string, string> = {
+      success: 'text-[#15803D]',
+      submitted_pending_review: 'text-[#B45309]',
+      failed: 'text-[#DC2626]',
+      rejected: 'text-[#8B95A1]',
+      expired: 'text-[#8B95A1]',
+      already_executed: 'text-[#8B95A1]',
+    };
+    return (
+      <div>
+        <Title title={s.title} />
+        <p className={`text-sm font-semibold ${tone[s.result_status] ?? ''}`}>{s.summary}</p>
+        {typeof s.budget_before_krw === 'number' && typeof s.budget_after_krw === 'number' && (
+          <p className="text-xs text-[#4E5968] dark:text-[#9CA3AF] mt-0.5">
+            예산 {s.budget_before_krw.toLocaleString()}원 → {s.budget_after_krw.toLocaleString()}원
+          </p>
+        )}
+        {s.run_id && <p className="text-[11px] text-[#B0B8C1] mt-0.5">run · {s.run_id}</p>}
+        {s.failure_reason && <p className="text-xs text-[#8B95A1] mt-0.5">{s.failure_reason}</p>}
+      </div>
+    );
+  },
 };

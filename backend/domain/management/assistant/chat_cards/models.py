@@ -65,6 +65,7 @@ class ProposalSection(BaseModel):
     proposal_id: str | None = None
     # 스펙 2 — 미리보기(실행 미연결). 정본 ID(proposal_id) 아님.
     preview_id: str | None = None
+    campaign_id: str | None = None  # 스펙3 — finalize 결선용(additive, 없으면 실행 미연결)
     budget_before_krw: int | None = None
     budget_after_krw: int | None = None
     tier: str | None = None
@@ -100,6 +101,22 @@ class DiagnosisSection(BaseModel):
     hypothesis: str = ""
 
 
+class ExecutionResultSection(BaseModel):
+    kind: Literal["execution_result"] = "execution_result"
+    title: str | None = None
+    action_type: str
+    result_status: Literal[
+        "success", "submitted_pending_review", "failed", "rejected", "expired", "already_executed"
+    ]
+    proposal_id: str
+    preview_id: str | None = None
+    budget_before_krw: int | None = None
+    budget_after_krw: int | None = None
+    run_id: str | None = None
+    summary: str
+    failure_reason: str | None = None
+
+
 CardSection = Annotated[
     SummarySection
     | MetricsSection
@@ -108,7 +125,8 @@ CardSection = Annotated[
     | ReviewSection
     | EvidenceSection
     | EmptyStateSection
-    | DiagnosisSection,
+    | DiagnosisSection
+    | ExecutionResultSection,
     Field(discriminator="kind"),
 ]
 

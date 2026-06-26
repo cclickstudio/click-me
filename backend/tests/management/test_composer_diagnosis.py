@@ -20,6 +20,7 @@ def _ok_anomaly():
         proposal_preview={
             "preview_id": "preview_1",
             "action_type": "INCREASE_BUDGET",
+            "campaign_id": "camp_1",
             "tier": "TIER_2",
             "budget_before_krw": 100000,
             "budget_after_krw": 150000,
@@ -73,6 +74,8 @@ def test_ok_anomaly_builds_diagnosis_and_proposal_sections():
     assert card.status == "critical"
     proposal = next(s for s in card.sections if s.kind == "proposal")
     assert proposal.preview_id == "preview_1" and proposal.executable is False
+    # 스펙3 — campaign_id가 proposal 섹션까지 스레딩된다(FE finalize 결선용).
+    assert proposal.campaign_id == "camp_1"
 
 
 def test_ok_no_anomaly_summary_metrics_only():

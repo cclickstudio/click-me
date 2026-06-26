@@ -50,6 +50,8 @@ async def test_anomaly_returns_ok_anomaly_with_preview(monkeypatch):
     assert res.proposal_preview.preview_id.startswith("preview_")
     assert res.diagnosis.anomaly_type == "bid_loss"
     assert res.proposal_preview.action_type == "INCREASE_BUDGET"
+    # 스펙3 — 진단 입력 campaign_id가 preview까지 스레딩된다(finalize 결선용).
+    assert res.proposal_preview.campaign_id == "camp_1"
 
 
 @pytest.mark.asyncio

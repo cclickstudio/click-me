@@ -6,15 +6,19 @@ from collections.abc import AsyncGenerator, Awaitable, Callable
 
 import google.generativeai as genai
 from anthropic import AsyncAnthropic
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from openai import AsyncOpenAI
 from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.orchestration.bootstrap import build_orchestration
 from api.orchestration.registry import AgentRegistry
 from api.orchestration.routing import Router
 from core.config import settings
+from core.db import get_db
+from core.models import ManagementChatMessage
 from core.schemas import ChatMessage, ChatRequest
 from domain.management.assistant.composer import compose_card, format_sse, stream_card
 from domain.management.assistant.contracts import AskRequest, AskResult
@@ -277,9 +281,35 @@ async def list_sessions() -> dict:
     return {"sessions": []}
 
 
+def _content_to_card(content: str | None) -> dict | None:
+    """저장된 content가 카드 JSON이면 dict로 복원, 아니면 None(텍스트 메시지)."""
+    if not content:
+        return None
+    try:
+        parsed = json.loads(content)
+    except (ValueError, TypeError):
+        return None
+    return parsed if isinstance(parsed, dict) and parsed.get("version") == 1 else None
+
+
 @router.get("/sessions/{session_id}/messages")
-async def get_session_messages(session_id: str) -> dict:
-    return {"session_id": session_id, "messages": []}
+async def get_session_messages(session_id: str, db: AsyncSession = Depends(get_db)) -> dict:
+    rows = (
+        (
+            await db.execute(
+                select(ManagementChatMessage)
+                .where(ManagementChatMessage.thread_id == session_id)
+                .order_by(ManagementChatMessage.created_at)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    messages = []
+    for r in rows:
+        card = _content_to_card(r.content)
+        messages.append({"role": r.role, "content": None if card else r.content, "card": card})
+    return {"session_id": session_id, "messages": messages}
 
 
 class FeedbackRequest(BaseModel):

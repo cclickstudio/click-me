@@ -89,3 +89,22 @@ def test_proposal_section_preview_fields():
     dumped = p.model_dump(mode="json")
     assert dumped["preview_id"] == "preview_x"
     assert dumped["budget_before_krw"] == 100 and dumped["executable"] is False
+
+
+def test_execution_result_section_in_card():
+    from domain.management.assistant.chat_cards.models import ChatCard, ExecutionResultSection
+
+    sec = ExecutionResultSection(
+        title="집행 결과",
+        action_type="INCREASE_BUDGET",
+        result_status="success",
+        proposal_id="prop_1",
+        budget_before_krw=10000,
+        budget_after_krw=15000,
+        run_id=None,
+        summary="일예산을 10,000원에서 15,000원으로 올렸어요.",
+    )
+    card = ChatCard(type="management", status="ok", sections=[sec])
+    dumped = card.model_dump()
+    assert dumped["sections"][0]["kind"] == "execution_result"
+    assert dumped["sections"][0]["proposal_id"] == "prop_1"

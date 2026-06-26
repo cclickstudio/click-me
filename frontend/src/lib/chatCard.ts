@@ -13,11 +13,24 @@ export type CardSection =
   | { kind: 'metrics'; title?: string; items: MetricItem[] }
   | { kind: 'entity'; title?: string; items: KeyValueItem[] }
   | { kind: 'proposal'; title?: string; action_type: string; rationale?: string; proposal_id?: string;
-      preview_id?: string; tier?: string; budget_before_krw?: number; budget_after_krw?: number; executable?: boolean }
+      preview_id?: string; campaign_id?: string; tier?: string; budget_before_krw?: number; budget_after_krw?: number; executable?: boolean }
   | { kind: 'review'; title?: string; decision: string; rationale?: string }
   | { kind: 'diagnosis'; title?: string; anomaly_type: string; status: string; confidence: number; hypothesis?: string }
   | { kind: 'evidence'; title?: string; citations?: Citation[]; used_tools?: string[] }
-  | { kind: 'empty_state'; title?: string; text: string };
+  | { kind: 'empty_state'; title?: string; text: string }
+  | {
+      kind: 'execution_result';
+      title?: string;
+      action_type: string;
+      result_status: 'success' | 'submitted_pending_review' | 'failed' | 'rejected' | 'expired' | 'already_executed';
+      proposal_id: string;
+      preview_id?: string;
+      budget_before_krw?: number;
+      budget_after_krw?: number;
+      run_id?: string | null;
+      summary: string;
+      failure_reason?: string | null;
+    };
 
 export type ChatCard = {
   version: 1;

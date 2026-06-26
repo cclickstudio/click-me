@@ -130,6 +130,7 @@ def _proposal_preview_section(pv) -> ProposalSection:  # pv: ProposalPreview
         action_type=pv.action_type,
         rationale=pv.hypothesis or None,
         preview_id=pv.preview_id,
+        campaign_id=pv.campaign_id,
         tier=pv.tier,
         budget_before_krw=pv.budget_before_krw,
         budget_after_krw=pv.budget_after_krw,

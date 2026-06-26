@@ -167,7 +167,9 @@ _ANOMALY_ACTION = {
 }
 
 
-def build_proposal_preview_from_diagnosis(dx, daily_budget_krw: int) -> ProposalPreview:
+def build_proposal_preview_from_diagnosis(
+    dx, daily_budget_krw: int, campaign_id: str | None = None
+) -> ProposalPreview:
     """정본 ActionProposal을 만들지 않고(불변식 1) DiagnosisResult에서 직접 ProposalPreview 조립."""
     action_type, tier = _ANOMALY_ACTION.get(str(dx.anomaly_type), ("REPLACE_CREATIVE", "TIER_2"))
     budget_after = (
@@ -176,6 +178,7 @@ def build_proposal_preview_from_diagnosis(dx, daily_budget_krw: int) -> Proposal
     return ProposalPreview(
         preview_id=f"preview_{uuid4().hex[:8]}",
         action_type=action_type,
+        campaign_id=campaign_id,
         tier=tier,
         budget_before_krw=daily_budget_krw,
         budget_after_krw=budget_after,
@@ -295,7 +298,9 @@ async def live_diagnosis(
             confidence=dx.confidence,
             hypothesis=dx.hypothesis,
         ),
-        proposal_preview=build_proposal_preview_from_diagnosis(dx, daily_budget),
+        proposal_preview=build_proposal_preview_from_diagnosis(
+            dx, daily_budget, campaign_id=campaign_id
+        ),
     )
 
 
