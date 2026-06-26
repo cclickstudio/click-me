@@ -134,10 +134,11 @@ export default function SimulationRunPage() {
   const [stageMsg, setStageMsg] = useState('');
   const esRef = useRef<EventSource | null>(null);
 
-  // Meta 캠페인 이미지 미리보기 — <img> 태그는 인증 헤더 불가, fetch로 blob URL 생성.
+  // Meta 캠페인 이미지 미리보기 — fromCampaign이 있으면 항상 프록시로 fetch.
+  // <img> 태그는 인증 헤더 불가 → fetch+getToken으로 blob URL 생성.
   const [metaPreviewUrl, setMetaPreviewUrl] = useState<string | null>(null);
   useEffect(() => {
-    if (!fromCampaign || !imageUrl.startsWith('https://')) return;
+    if (!fromCampaign) return;
     let blobUrl: string | null = null;
     const token = getToken();
     fetch(`${API_BASE}/api/management/campaigns/${fromCampaign}/creative-image`, {
@@ -154,7 +155,7 @@ export default function SimulationRunPage() {
     return () => {
       if (blobUrl) URL.revokeObjectURL(blobUrl);
     };
-  }, [fromCampaign, imageUrl]);
+  }, [fromCampaign]);
 
   // 언마운트 시 스트림 정리.
   useEffect(() => () => esRef.current?.close(), []);
@@ -366,81 +367,83 @@ export default function SimulationRunPage() {
                 />
               </div>
 
-              {/* 이미지 입력 방식 — 남는 세로 공간을 채워 좌우 높이 정렬 */}
+              {/* 이미지 입력 — fromCampaign이면 Meta 프록시 preview, 아니면 업로드/URL 선택 */}
               <div className='flex flex-1 flex-col'>
                 <label className={labelCls}>광고 이미지 (선택)</label>
-                <div className='flex gap-2 mb-3'>
-                  {(
-                    [
-                      ['image', '파일 업로드'],
-                      ['url', '이미지 URL'],
-                    ] as [InputMode, string][]
-                  ).map(([m, lbl]) => (
-                    <button
-                      key={m}
-                      type='button'
-                      onClick={() => setInputMode(m)}
-                      className={`${chipBase} ${inputMode === m ? chipActive : chipIdle}`}>
-                      {lbl}
-                    </button>
-                  ))}
-                </div>
-
-                {inputMode === 'image' && (
-                  <label className='relative flex flex-1 min-h-0 flex-col items-center justify-center border-2 border-dashed border-[#E5E8EB] dark:border-[#2D3748] rounded-xl cursor-pointer hover:border-[#3182F6] transition-colors overflow-hidden'>
-                    {previewUrl ? (
+                {fromCampaign ? (
+                  /* Meta 캠페인에서 넘어온 경우 — 프록시로 실제 광고 이미지 표시 */
+                  <div className='relative flex flex-1 min-h-0 flex-col items-center justify-center border-2 border-dashed border-[#3182F6]/40 dark:border-[#3182F6]/30 rounded-xl overflow-hidden'>
+                    {metaPreviewUrl ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img
-                        src={previewUrl}
-                        alt='미리보기'
+                        src={metaPreviewUrl}
+                        alt='Meta 광고 이미지'
                         className='absolute inset-0 h-full w-full object-contain'
                       />
                     ) : (
-                      <span className='text-sm text-[#8B95A1] dark:text-[#6B7280]'>
-                        클릭하여 이미지 선택 (최대 10MB)
-                      </span>
+                      <div className='flex flex-col items-center gap-2 py-6'>
+                        <p className='text-sm font-medium text-[#3182F6]'>Meta 광고 이미지 연결됨</p>
+                        <p className='text-[11px] text-[#8B95A1] text-center px-4'>이미지를 불러오는 중...</p>
+                      </div>
                     )}
-                    <input
-                      type='file'
-                      accept='image/*'
-                      className='hidden'
-                      onChange={e => setFile(e.target.files?.[0] ?? null)}
-                    />
-                  </label>
-                )}
-                {inputMode === 'url' && (
-                  fromCampaign && imageUrl.startsWith('https://') ? (
-                    /* Meta 캠페인 이미지 — <img> 태그 인증 불가, fetch blob URL로 미리보기 */
-                    <div className='relative flex flex-1 min-h-0 flex-col items-center justify-center border-2 border-dashed border-[#3182F6]/40 dark:border-[#3182F6]/30 rounded-xl overflow-hidden'>
-                      {metaPreviewUrl ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img
-                          src={metaPreviewUrl}
-                          alt='Meta 광고 이미지'
-                          className='absolute inset-0 h-full w-full object-contain'
-                        />
-                      ) : (
-                        <div className='flex flex-col items-center gap-2 py-6'>
-                          <p className='text-sm font-medium text-[#3182F6]'>Meta 광고 이미지 연결됨</p>
-                          <p className='text-[11px] text-[#8B95A1] text-center px-4'>이미지를 불러오는 중...</p>
-                        </div>
-                      )}
-                      <button
-                        type='button'
-                        onClick={() => { setImageUrl(''); setInputMode('image'); setMetaPreviewUrl(null); }}
-                        className='absolute bottom-2 right-2 text-[11px] bg-white/80 dark:bg-black/60 text-[#8B95A1] rounded px-2 py-0.5 hover:text-[#3182F6]'>
-                        이미지 교체
-                      </button>
+                    <button
+                      type='button'
+                      onClick={() => { setInputMode('image'); setMetaPreviewUrl(null); }}
+                      className='absolute bottom-2 right-2 text-[11px] bg-white/80 dark:bg-black/60 text-[#8B95A1] rounded px-2 py-0.5 hover:text-[#3182F6]'>
+                      이미지 교체
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <div className='flex gap-2 mb-3'>
+                      {(
+                        [
+                          ['image', '파일 업로드'],
+                          ['url', '이미지 URL'],
+                        ] as [InputMode, string][]
+                      ).map(([m, lbl]) => (
+                        <button
+                          key={m}
+                          type='button'
+                          onClick={() => setInputMode(m)}
+                          className={`${chipBase} ${inputMode === m ? chipActive : chipIdle}`}>
+                          {lbl}
+                        </button>
+                      ))}
                     </div>
-                  ) : (
-                    <input
-                      type='text'
-                      value={imageUrl}
-                      onChange={e => setImageUrl(e.target.value)}
-                      placeholder='https://example.com/ad.png'
-                      className={inputCls}
-                    />
-                  )
+
+                    {inputMode === 'image' && (
+                      <label className='relative flex flex-1 min-h-0 flex-col items-center justify-center border-2 border-dashed border-[#E5E8EB] dark:border-[#2D3748] rounded-xl cursor-pointer hover:border-[#3182F6] transition-colors overflow-hidden'>
+                        {previewUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={previewUrl}
+                            alt='미리보기'
+                            className='absolute inset-0 h-full w-full object-contain'
+                          />
+                        ) : (
+                          <span className='text-sm text-[#8B95A1] dark:text-[#6B7280]'>
+                            클릭하여 이미지 선택 (최대 10MB)
+                          </span>
+                        )}
+                        <input
+                          type='file'
+                          accept='image/*'
+                          className='hidden'
+                          onChange={e => setFile(e.target.files?.[0] ?? null)}
+                        />
+                      </label>
+                    )}
+                    {inputMode === 'url' && (
+                      <input
+                        type='text'
+                        value={imageUrl}
+                        onChange={e => setImageUrl(e.target.value)}
+                        placeholder='https://example.com/ad.png'
+                        className={inputCls}
+                      />
+                    )}
+                  </>
                 )}
               </div>
             </div>
