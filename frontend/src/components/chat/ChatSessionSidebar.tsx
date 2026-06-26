@@ -196,14 +196,22 @@ export default function ChatSessionSidebar({
                   onClick={() => router.push(`/chat/${projectId}/${s.id}`)}
                   className='flex-1 min-w-0 text-left px-2.5 py-2'
                   title={s.title}>
-                  <p
-                    className={`text-[13px] truncate ${
-                      active
-                        ? 'text-[#3182F6] font-semibold'
-                        : 'text-[#191F28] dark:text-[#F2F4F6]'
-                    }`}>
-                    {highlight(s.title || '새 채팅', dQuery)}
-                  </p>
+                  <div className='flex items-center gap-1.5'>
+                    <p
+                      className={`flex-1 min-w-0 text-[13px] truncate ${
+                        active
+                          ? 'text-[#3182F6] font-semibold'
+                          : 'text-[#191F28] dark:text-[#F2F4F6]'
+                      }`}>
+                      {highlight(s.title || '새 채팅', dQuery)}
+                    </p>
+                    {/* N5 미확인 배지 — 활성 세션이 아닐 때만(활성은 보는 중이라 읽음) */}
+                    {!active && (s.unread_count ?? 0) > 0 && (
+                      <span className='shrink-0 min-w-[16px] h-4 px-1 flex items-center justify-center rounded-full bg-[#F04452] text-white text-[10px] font-bold'>
+                        {(s.unread_count ?? 0) > 9 ? '9+' : s.unread_count}
+                      </span>
+                    )}
+                  </div>
                   <p className='text-[10px] text-[#B0B8C1] dark:text-[#4B5563]'>
                     {s.message_count}개
                     {s.updated_at ? ` · ${fmt(s.updated_at)}` : ''}

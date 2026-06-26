@@ -399,6 +399,8 @@ export default function ChatConversation({
       setMessages([]);
       return;
     }
+    // N5 — 세션을 열면 읽음 처리(미확인 알림에서 제거). best-effort.
+    api.chat.markRead(sessionId).catch(() => {});
     (async () => {
       try {
         const { messages: rows } = await api.chat.messages(sessionId);
@@ -940,6 +942,16 @@ export default function ChatConversation({
     const runProactiveCheck = async () => {
       const sid = sidRef.current;
       if (!sid || streamingRef.current || proactiveBusyRef.current) return;
+      // N6 — 제너 전용 세션엔 시뮬 선제 알림을 본문에 주입하지 않는다(도메인 불일치 오염 방지).
+      // gen 위젯만 있고 sim 위젯이 없는 세션은 제너 전용으로 보고 스킵(알림은 N5 벨로 노출).
+      const wtypes = messagesRef.current
+        .map(m => m.meta?.widget?.type)
+        .filter((t): t is string => typeof t === 'string');
+      const hasGen = wtypes.some(t => t === 'gen_form' || t === 'gen_result');
+      const hasSim = wtypes.some(
+        t => t === 'sim_form' || t === 'sim_result' || t === 'debate_stream'
+      );
+      if (hasGen && !hasSim) return;
       // 빈도 가드 — 프로젝트당 일정 시간 1회.
       let lastAt = 0;
       try {

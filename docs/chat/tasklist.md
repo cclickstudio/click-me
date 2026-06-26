@@ -68,8 +68,8 @@
 | G3  | 제너 결과 위젯(가로 이미지) (dep)        | 제너   | —         | ✅   |
 | F5  | 랭체인 롱텀 메모리 (dep)                 | 기능   | —         | ✅   |
 | L8  | 롱텀 메모리(실행기록 프로파일) (dep)     | 메모리 | —         | ✅   |
-| ★N5 | 라우트 변경마다 알림 폴링 + 플로팅 챗 벨 버튼·알림 패널 | 능동 | N2 | ⬜ |
-| ★N6 | 제너 전용 세션에 시뮬 선제 알림 오는 버그 수정 | 능동 | N4 | ⬜ |
+| ★N5 | 라우트 변경마다 알림 폴링 + 플로팅 챗 벨 버튼·알림 패널 | 능동 | N2 | ✅ |
+| ★N6 | 제너 전용 세션에 시뮬 선제 알림 오는 버그 수정 | 능동 | N4 | ✅ |
 | ★F13 | 채팅 세션 자동 제목(첫 user 메시지 LLM 요약) | 기능 | —      | ✅   |
 | ★G5 | 제너 필수 입력값 확실히 받기·검증(누락 차단·안내) | 제너 | V2 | ✅ |
 | ★G6 | /new 생성 직후 gen_form 재노출 라이브 글리치 수정 | 제너 | G3 | ✅ |
@@ -118,6 +118,14 @@
 **증상** 제너레이터만 돌린 채팅 세션인데 "확인하지 않은 시뮬레이션 결과가 있다"는 **선제 알림이 현재 열린 세션에 인라인 주입**됨(N4가 프로젝트 전체 미열람 시뮬을 현재 활성 세션에 주입하는 구조 잔재).
 **방향** N5의 벨/배지 모델로 전환하면 "현재 세션에 무관한 시뮬 알림 인라인 주입"이 사라져 근본 해소. 독립 처리 시: 선제 시뮬 알림을 현재 세션 도메인과 무관하게 주입하지 않도록(또는 벨로만 노출) 가드.
 **완료 기준** 제너 전용 세션에서 시뮬 선제 알림이 본문에 안 뜸. (N5와 연계.)
+
+**✅ 완료(2026-06-26, N5·N6 함께)** 도연님이 **서버 저장(DB 마이그레이션) 승인** → 명세대로 server-side last-read로 구현.
+- **DB(승인됨)** `chat_sessions.last_read_at`(nullable) 추가 — [027 마이그레이션](backend/alembic/versions/027_add_chat_session_last_read.py)·[models.py](backend/core/models.py). NULL이면 전체 미확인. (개인 DB에 alembic upgrade 027 적용 완료. 리포에 다중 head 잔재 있어 `upgrade 027`로 타깃.)
+- **백엔드** [history.py](backend/domain/chat/history.py) `list_sessions`에 unread_count(마지막 열람 이후 assistant 메시지 수) 추가, `list_notifications`(unread>0 세션 {session_id,title,preview,unread_count}), `mark_session_read`. [chat.py](backend/api/routers/chat.py) `GET /chat/notifications`·`POST /chat/sessions/{id}/read`(소유권 검증).
+- **프론트(N5)** api.ts notifications·markRead. [FloatingChat.tsx](frontend/src/components/chat/FloatingChat.tsx) — usePathname 변경마다 알림 폴링, 접힘 상태 좌측 **벨 버튼+배지**, 클릭 시 **알림 패널**(제목·미리보기·개수) → 항목 클릭 시 `router.push(/chat/{pid}/{sid})`+읽음. [ChatSessionSidebar.tsx](frontend/src/components/chat/ChatSessionSidebar.tsx) 세션 행 **미확인 빨강 배지**(활성 세션 제외). [ChatConversation.tsx](frontend/src/components/chat/ChatConversation.tsx) 세션 열람 시 markRead.
+- **프론트(N6)** N4 선제 폴링(`runProactiveCheck`)에 **도메인 가드** 추가 — 세션 위젯이 gen만 있고 sim이 없으면(제너 전용) 즉시 return(시뮬 알림 본문 주입 안 함). sim/일반 세션은 종전대로.
+- **검증(라이브 Preview, USER doyeon)** ① 백엔드 HTTP: notifications 64건·sessions unread_count·mark_read 후 unread 0. ② **벨/패널**: /dashboard에서 벨 배지 '9+', 패널 '미확인 알림(63)'·항목 64개(제목·미리보기·개수), **항목 클릭→세션 이동(/chat/.../8a3b9995)**·DB last_read_at 세팅·unread 0 확인. ③ **사이드바**: /chat 세션 행 빨강 배지 63개(활성 제외). ④ **N6 A/B 실증**: 가드·seen 초기화 후 — **제너 전용 세션(95850606)→시뮬 알림 주입 0**(guard 미세팅=게이트 early return), **시뮬 세션(8a3b9995)→주입 O**(guard 세팅). 같은 조건 대조로 게이트 정확 동작 확인. ⑤ 콘솔 에러 0·tsc/eslint/ruff 통과.
+- **테스트 부산물** N6 positive control로 시뮬 세션(8a3b9995)에 선제 알림 1건 영속(무해, 그 세션은 원래 시뮬 알림 보유).
 
 ### ★F13 — 채팅 세션 자동 제목 (첫 user 메시지 LLM 요약)
 

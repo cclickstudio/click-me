@@ -199,6 +199,7 @@ export type ChatSessionRow = {
   title: string;
   project_id: string | null;
   message_count: number;
+  unread_count?: number; // N5 미확인(마지막 열람 이후 assistant 메시지 수)
   created_at: string | null;
   updated_at: string | null;
 };
@@ -414,6 +415,19 @@ export const api = {
         can_improve: boolean;
         phase: string;
       }>(`/chat/loop-state?session_id=${encodeURIComponent(sessionId)}`),
+    // 미확인 알림(N5) — 라우트 변경마다 폴링해 벨 배지·패널에 표시.
+    notifications: (projectId: string) =>
+      request<{
+        notifications: {
+          session_id: string;
+          title: string;
+          preview: string;
+          unread_count: number;
+        }[];
+      }>(`/chat/notifications?project_id=${encodeURIComponent(projectId)}`),
+    // 세션 열람 처리(N5) — 해당 세션을 미확인에서 제거.
+    markRead: (sessionId: string) =>
+      request<{ ok: boolean }>(`/chat/sessions/${sessionId}/read`, { method: "POST" }),
     deleteSession: (sessionId: string) =>
       request<{ deleted: boolean }>(`/chat/sessions/${sessionId}`, { method: "DELETE" }),
     // 메시지 핀 토글(T19) — 세션 상단 고정.

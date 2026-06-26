@@ -480,6 +480,30 @@ async def list_sessions(
     return {"sessions": await history.list_sessions(db, project_id)}
 
 
+@router.get("/notifications")
+async def list_notifications(
+    project_id: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """미확인 채팅 알림(N5) — unread>0 세션 목록(플로팅 벨·배지용). 라우트 변경 시 폴링."""
+    if project_id:
+        await assert_project_access(db, project_id, current_user)
+    return {"notifications": await history.list_notifications(db, project_id)}
+
+
+@router.post("/sessions/{session_id}/read")
+async def mark_session_read(
+    session_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """세션 열람 처리(N5) — last_read_at 갱신. 이후 그 세션은 미확인에서 빠진다."""
+    await assert_session_access(db, session_id, current_user)
+    await history.mark_session_read(session_id)
+    return {"ok": True}
+
+
 @router.get("/advice-usage")
 async def advice_usage(
     project_id: str | None = None,

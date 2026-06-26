@@ -11,7 +11,7 @@ import uuid
 from collections import Counter
 from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import func, select, text
+from sqlalchemy import and_, case, func, or_, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core.db import AsyncSessionLocal
@@ -64,12 +64,30 @@ async def create_session(
 
 
 async def list_sessions(db: AsyncSession, project_id: str | None) -> list[dict]:
-    """프로젝트의 세션 목록 — 최근 갱신 순, 메시지 수 포함."""
+    """프로젝트의 세션 목록 — 최근 갱신 순, 메시지 수 + 미확인(N5) 포함.
+
+    미확인(unread) = 마지막 열람(last_read_at) 이후의 assistant 메시지 수(본인 발화는 알림 아님).
+    last_read_at이 NULL이면 전체 assistant 메시지가 미확인.
+    """
     pid = _as_uuid(project_id)
     if pid is None:
         return []
+    unread_expr = func.count(
+        case(
+            (
+                and_(
+                    ChatMessage.role == "assistant",
+                    or_(
+                        ChatSession.last_read_at.is_(None),
+                        ChatMessage.created_at > ChatSession.last_read_at,
+                    ),
+                ),
+                ChatMessage.id,
+            )
+        )
+    )
     rows = await db.execute(
-        select(ChatSession, func.count(ChatMessage.id))
+        select(ChatSession, func.count(ChatMessage.id), unread_expr)
         .outerjoin(ChatMessage, ChatMessage.session_id == ChatSession.id)
         .where(ChatSession.project_id == pid)
         .group_by(ChatSession.id)
@@ -81,11 +99,53 @@ async def list_sessions(db: AsyncSession, project_id: str | None) -> list[dict]:
             "title": s.title,
             "project_id": str(s.project_id) if s.project_id else None,
             "message_count": count,
+            "unread_count": int(unread or 0),
             "created_at": s.created_at.isoformat() if s.created_at else None,
             "updated_at": s.updated_at.isoformat() if s.updated_at else None,
         }
-        for s, count in rows.all()
+        for s, count, unread in rows.all()
     ]
+
+
+async def list_notifications(db: AsyncSession, project_id: str | None) -> list[dict]:
+    """미확인 알림(N5) — unread>0 세션을 {session_id, title, preview, unread_count}로. 최근순."""
+    sessions = await list_sessions(db, project_id)
+    unread_sessions = [s for s in sessions if s.get("unread_count", 0) > 0]
+    result: list[dict] = []
+    for s in unread_sessions:
+        sid = _as_uuid(s["id"])
+        prow = await db.execute(
+            select(ChatMessage.content)
+            .where(ChatMessage.session_id == sid, ChatMessage.role == "assistant")
+            .order_by(ChatMessage.created_at.desc())
+            .limit(1)
+        )
+        preview = (prow.scalar() or "").strip().replace("\n", " ")[:60]
+        result.append(
+            {
+                "session_id": s["id"],
+                "title": s["title"],
+                "preview": preview,
+                "unread_count": s["unread_count"],
+            }
+        )
+    return result
+
+
+async def mark_session_read(session_id: str) -> None:
+    """세션을 열람 처리(N5) — last_read_at=now. 이후 그 세션은 미확인에서 빠진다(best-effort)."""
+    sid = _as_uuid(session_id)
+    if sid is None:
+        return
+    try:
+        async with AsyncSessionLocal() as db:
+            session = await db.get(ChatSession, sid)
+            if session is None:
+                return
+            session.last_read_at = _utcnow()
+            await db.commit()
+    except Exception as exc:  # noqa: BLE001 — 읽음 처리 실패가 채팅을 막지 않게
+        print(f"[chat] mark read error: {exc!r}")
 
 
 async def count_advice_usage(project_id: str | None) -> int:

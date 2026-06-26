@@ -362,6 +362,8 @@ class ChatSession(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), onupdate=func.now()
     )
+    # 마지막 열람 시각(N5) — 이후 추가된 메시지를 미확인 알림으로 집계. NULL이면 전부 미확인.
+    last_read_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class ChatMessage(Base):
