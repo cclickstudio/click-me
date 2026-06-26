@@ -4,7 +4,6 @@ import pytest
 import api.orchestration.bootstrap as bootstrap
 from api.orchestration.bootstrap import (
     MGMT_KEYWORDS,
-    GeneratorStubAgent,
     ManagementDomainAgent,
     SimulationStubAgent,
     build_orchestration,
@@ -40,17 +39,6 @@ async def test_management_adapter_translates_ctx_to_ask_request():
     assert captured["req"].ad_id == "ad-7"
     assert captured["req"].thread_id == "mgmt-s1"
     assert result is captured["req"]
-
-
-@pytest.mark.asyncio
-async def test_generator_stub_returns_ad_id_deterministically():
-    agent = GeneratorStubAgent()
-    ctx = TurnContext(user_input="시안 만들어")
-    step = PlanStep(domain="generator", action="generate", inputs={})
-    a = await agent.ask(ctx, step)
-    b = await GeneratorStubAgent().ask(TurnContext(user_input="시안 만들어"), step)
-    assert a["ad_id"] == b["ad_id"]  # 같은 입력 → 같은 ad_id(결정론)
-    assert a["ad_id"].startswith("stub-ad-")
 
 
 @pytest.mark.asyncio

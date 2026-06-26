@@ -34,6 +34,16 @@ def test_core_modules_do_not_import_management():
             assert not mod.startswith(_FORBIDDEN), f"{name} imports {mod}"
 
 
+def test_core_modules_do_not_import_any_domain():
+    # S3 추가 — generator 어댑터가 domain.generator에 있어도 core는 import 금지.
+    forbidden = ("domain.management", "domain.generator", "domain.simulation")
+    base = pathlib.Path(__file__).resolve().parents[2] / "api" / "orchestration"
+    for name in _CORE:
+        for mod in _imports(base / name):
+            for f in forbidden:
+                assert not mod.startswith(f), f"{name} imports {mod}"
+
+
 def test_bootstrap_is_allowed_to_import_management():
     # 대조군 — bootstrap(composition root)은 도메인 import가 허용됨
     base = pathlib.Path(__file__).resolve().parents[2] / "api" / "orchestration"
