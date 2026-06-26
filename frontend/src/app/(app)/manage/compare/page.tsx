@@ -295,8 +295,9 @@ export default function Page() {
       if (t.category_id) params.set('category_id', String(t.category_id));
       if (t.service_class) params.set('service_class', String(t.service_class));
       if (t.suggested_persona_count) params.set('persona_count', String(t.suggested_persona_count));
-      // Meta 이미지는 fbcdn CORS + 시뮬 백엔드 파일경로 오해석 문제로 제외.
-      // 시뮬레이터에서 이미지는 선택 항목이므로 미전달 처리.
+      // fbcdn CORS는 브라우저 제한 — 시뮬 백엔드는 서버끼리 직접 접근 가능.
+      // 실제 Meta CDN URL을 그대로 전달해 백엔드가 서버사이드로 이미지 가져오게 함.
+      if (t.ad_image_url) params.set('ad_image_url', t.ad_image_url);
       router.push(`/simulation?${params.toString()}`);
     } catch {
       alert('타겟팅 정보를 불러오지 못했습니다. 잠시 후 다시 시도해주세요.');
