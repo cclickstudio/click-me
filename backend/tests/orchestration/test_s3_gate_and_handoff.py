@@ -81,3 +81,32 @@ def test_bootstrap_registers_real_generator_agent():
     _, registry = build_orchestration(settings=object())
     agent = registry.get("generator")
     assert isinstance(agent, GeneratorDomainAgent)
+
+
+def test_should_plan_true_when_image_attachment(monkeypatch):
+    import api.routers.chat as chat
+    from api.orchestration.registry import AgentRegistry
+    from api.orchestration.routing import KeywordMatcher, Router
+
+    router = Router([KeywordMatcher("management", frozenset({"캠페인"}))])
+    registry = AgentRegistry()
+    registry.register(_StartedAgent())  # domain="generator"
+    monkeypatch.setattr(chat, "_orchestration", (router, registry))
+
+    route = router.route("이거 좀 봐줄래")  # 키워드 없음 → score 0
+    assert chat._should_plan(route, registry, has_image=True) is True
+    assert chat._should_plan(route, registry, has_image=False) is False
+
+
+def test_handoff_card_events_contain_stream_url():
+    import api.routers.chat as chat
+
+    handoff = {
+        "status": "started",
+        "task_id": "gen-1",
+        "stream_url": "/api/generator/generations/gen-1/stream",
+    }
+    chunks = list(chat._handoff_card_events(handoff))
+    joined = "".join(chunks)
+    assert "gen-1" in joined
+    assert "/api/generator/generations/gen-1/stream" in joined

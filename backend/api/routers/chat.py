@@ -1,6 +1,6 @@
 import json
 import time
-from collections.abc import AsyncGenerator, Awaitable, Callable
+from collections.abc import AsyncGenerator, Awaitable, Callable, Iterator
 from typing import Any
 
 from fastapi import APIRouter, Depends
@@ -94,8 +94,10 @@ def _get_orchestration() -> tuple[Router, AgentRegistry]:
     return _orchestration
 
 
-def _should_plan(route: RouteDecision, registry: AgentRegistry) -> bool:
-    # 도메인이 해석되고(score>0) 그 도메인이 등록돼 있으면 Plan 경로. 아니면 CLIO.
+def _should_plan(route: RouteDecision, registry: AgentRegistry, *, has_image: bool = False) -> bool:
+    # 첨부 이미지가 있으면(에픽 §3 A 우선) generator 등록 시 Plan 경로. 아니면 도메인 해석 기준.
+    if has_image and registry.get("generator") is not None:
+        return True
     return route.score > 0.0 and registry.get(route.domain) is not None
 
 
@@ -175,6 +177,19 @@ async def _management_card_stream(
         yield chunk
 
 
+def _handoff_card_events(handoff: dict) -> Iterator[str]:
+    # generator 비동기 핸드오프 → "시안 생성 시작" 카드. 기존 카드 envelope(format_sse) 재사용.
+    yield format_sse(
+        {
+            "kind": "handoff",
+            "message": "시안 생성을 시작했어요. 진행 상황을 보여드릴게요.",
+            "task_id": handoff.get("task_id"),
+            "stream_url": handoff.get("stream_url"),
+        }
+    )
+    yield format_sse({"kind": "final", "status": "started"})
+
+
 async def _clio_stream(messages: list[ChatMessage], provider: str) -> AsyncGenerator[str, None]:
     """CLIO 어드바이저 — provider별 LangChain 챗모델로 SSE 스트림(meta→token→done).
 
@@ -203,7 +218,10 @@ async def chat_complete(body: ChatRequest) -> StreamingResponse:
         # S2: 라이브 카드 렌더는 management 단일 경로만(회귀 0). gen/sim·멀티스텝 렌더링은 S3+.
         router, registry = _get_orchestration()
         route = router.route(last_message)
-        if _should_plan(route, registry) and route.domain == "management":
+        has_image = any(getattr(a, "kind", None) == "image" for a in body.attachments)
+
+        # management 단일: 기존 카드 경로(회귀 0). 첨부가 있으면 generator로 양보.
+        if _should_plan(route, registry) and route.domain == "management" and not has_image:
             graph = _get_orchestrator_graph()
 
             async def _assistant(req: AskRequest) -> AskResult:
@@ -224,6 +242,24 @@ async def chat_complete(body: ChatRequest) -> StreamingResponse:
             ):
                 yield chunk
             return
+
+        # generator 핸드오프: 첨부 이미지 또는 generator 라우팅 → 비동기 잡 트리거(S3)
+        if _should_plan(route, registry, has_image=has_image) and (
+            has_image or route.domain == "generator"
+        ):
+            graph = _get_orchestrator_graph()
+            ctx = TurnContext(
+                user_input=last_message,
+                session_id=body.session_id,
+                ad_id=body.context_ad_id,
+                attachments=tuple(body.attachments),
+            )
+            result = await run_turn(graph, route, ctx=ctx)
+            if isinstance(result, dict) and result.get("status") == "started":
+                for ev in _handoff_card_events(result):
+                    yield ev
+                return
+            # 방어 — generator인데 핸드오프가 아니면(예상 밖) 아래 CLIO로 폴백
 
         # 그 외는 CLIO 어드바이저 — LangChain 챗모델 SSE(기본 gemini, CHAT_PROVIDER로 전환).
         async for chunk in _clio_stream(body.messages, settings.chat_provider):
