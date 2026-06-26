@@ -72,7 +72,8 @@ class TurnContext:
 
 ### 스텝 인스턴스 고유 키
 
-- `PlanStep`에 **`id: str`** 추가. `make_plan`이 **`{action}-{index}`** 로 결정론 부여(위치 기반·재현 가능).
+- `PlanStep`에 **`id: str`** 추가. `make_plan`이 **`{action}-{n}`**(n = 해당 action의 등장 순번, **1-based**)로
+  결정론 부여. 예: `generate-1`, `simulate-1`, 재생성(S4 replan) 시 둘째 generate는 `generate-2`.
 - **`plan_hash`에는 id를 포함하지 않는다** — 해시는 `domain/action/inputs`만(순서는 이미 해시가 커버,
   id는 순서에서 파생되는 메타라 중복 산입 불필요). 즉 S1의 `compute_plan_hash` 로직·테스트는 무변경.
 - 블랙보드 `results`는 **`step.id`로 키잉**(인스턴스 충돌 0). 어댑터는 생성된 id를 몰라도 되고
@@ -101,7 +102,7 @@ async def execute_plan(plan, ctx: TurnContext, *, registry) -> Any:
 flowchart LR
     rt["run_turn(graph, route, ctx)"] --> bp["plan: build_plan(route, ctx)"]
     bp --> ep["execute: execute_plan(plan, ctx, registry)"]
-    ep --> s1["step generate-0<br/>generator.ask(ctx, step)<br/>→ results['generate-0']"]
+    ep --> s1["step generate-1<br/>generator.ask(ctx, step)<br/>→ results['generate-1']"]
     s1 --> s2["step simulate-1<br/>simulation.ask(ctx, step)<br/>ctx.output_of('generate') 읽음<br/>→ results['simulate-1']"]
     s2 --> card["_management_card_stream<br/>카드 SSE + record_turn"]
 ```
@@ -173,7 +174,7 @@ DOMAIN_TO_ACTION: dict[str, str] = {"generator": "generate", "simulation": "simu
 
 | 조건 | 술어 | S2 처리 |
 |---|---|---|
-| **B. 복합/순차** | `len(nonzero 도메인) >= 2` **또는** 순차마커(`policy.SEQUENTIAL_MARKERS`) 존재 | **멀티스텝 `build_plan`** |
+| **B. 복합/순차** | `len(nonzero 도메인) >= 2` **또는** 순차마커(`policy.SEQUENTIAL_MARKERS`) 존재 | **멀티스텝 `build_plan`** (단, 파이프라인 도메인 2개+ 매칭 시에만 멀티스텝, 아니면 단일 fallback) |
 | 명확 단일 | `len(nonzero)==1 && 첨부·마커 없음` | 결정론 단일스텝(S1 그대로) |
 | score==0 | nonzero 없음 | CLIO 직답(Plan 없음) |
 
@@ -186,16 +187,18 @@ DOMAIN_TO_ACTION: dict[str, str] = {"generator": "generate", "simulation": "simu
 def build_plan(route, ctx) -> Plan:
     nonzero = [c for c in route.candidates if c.score > 0]
     sequential = any(m in ctx.user_input for m in policy.SEQUENTIAL_MARKERS)
-    if len(nonzero) >= 2 or sequential:             # 게이트 B
+    if len(nonzero) >= 2 or sequential:             # 게이트 B 진입
         domains = {c.domain for c in nonzero}
         steps = [
             PlanStep(domain=_domain_for(action), action=action, inputs={"query": ctx.user_input})
             for action in policy.PIPELINE_ORDER
             if _domain_for(action) in domains
         ]
-        return make_plan(steps)                      # PIPELINE_ORDER로 정렬된 멀티스텝
+        if len(steps) >= 2:                          # 파이프라인 도메인 2개+ 매칭 시에만 멀티스텝
+            return make_plan(steps)                  # PIPELINE_ORDER로 정렬된 멀티스텝
+        # 게이트 B지만 파이프라인 매칭 <2 → 아래 단일 스텝으로 fallback(과생성·빈 Plan 방지)
     step = PlanStep(domain=route.domain, action=policy.DOMAIN_TO_ACTION[route.domain], inputs={"query": ctx.user_input})
-    return make_plan([step])                          # 단일(S1 동일)
+    return make_plan([step])                          # 단일(명확 단일 또는 게이트 B fallback)
 ```
 
 - 멀티스텝도 `plan_hash`는 순서민감이라 그대로 적용(S1 `compute_plan_hash` 무변경).
