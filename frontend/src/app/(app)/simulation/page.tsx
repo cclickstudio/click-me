@@ -386,13 +386,30 @@ export default function SimulationRunPage() {
                   </label>
                 )}
                 {inputMode === 'url' && (
-                  <input
-                    type='text'
-                    value={imageUrl}
-                    onChange={e => setImageUrl(e.target.value)}
-                    placeholder='https://example.com/ad.png'
-                    className={inputCls}
-                  />
+                  fromCampaign && imageUrl.startsWith('https://') ? (
+                    /* Meta 캠페인 이미지 — fbcdn CORS로 미리보기 불가, 시뮬 백엔드가 직접 fetch */
+                    <div className='flex flex-1 min-h-0 flex-col items-center justify-center border-2 border-dashed border-[#3182F6]/40 dark:border-[#3182F6]/30 rounded-xl bg-[#EBF3FF]/40 dark:bg-[#1E3A5F]/20 gap-2 py-6'>
+                      <span className='text-xl'>🖼️</span>
+                      <p className='text-sm font-medium text-[#3182F6]'>Meta 광고 이미지 연결됨</p>
+                      <p className='text-[11px] text-[#8B95A1] text-center px-4'>
+                        시뮬 실행 시 실제 광고 이미지가 자동으로 사용됩니다
+                      </p>
+                      <button
+                        type='button'
+                        onClick={() => { setImageUrl(''); setInputMode('image'); }}
+                        className='text-[11px] text-[#8B95A1] underline mt-1'>
+                        다른 이미지로 교체
+                      </button>
+                    </div>
+                  ) : (
+                    <input
+                      type='text'
+                      value={imageUrl}
+                      onChange={e => setImageUrl(e.target.value)}
+                      placeholder='https://example.com/ad.png'
+                      className={inputCls}
+                    />
+                  )
                 )}
               </div>
             </div>
