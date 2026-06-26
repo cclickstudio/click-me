@@ -7,6 +7,12 @@ from api.orchestration.routing import RouteDecision
 
 
 def build_plan(route: RouteDecision, *, query: str) -> Plan:
+    if route.domain not in policy.DOMAIN_TO_ACTION:
+        # build_plan은 도메인이 해석된 경우(route.score>0)에만 호출된다(chat._should_plan 가드).
+        # 미해석(clio 등)으로 들어오면 조용한 KeyError 대신 명시적 실패(fail-loud).
+        raise ValueError(
+            f"build_plan: 미해석 도메인({route.domain}) — 호출 전 _should_plan 가드 필요"
+        )
     nonzero = {c.domain for c in route.candidates if c.score > 0.0}
     sequential = any(marker in query for marker in policy.SEQUENTIAL_MARKERS)
 

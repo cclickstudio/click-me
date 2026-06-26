@@ -41,3 +41,14 @@ def test_sequential_marker_with_one_pipeline_domain_falls_back_to_single():
     plan = build_plan(route, query="시안 그리고 뭐")
     assert len(plan.steps) == 1
     assert plan.steps[0].domain == "generator"
+
+
+def test_build_plan_rejects_unresolved_domain():
+    import pytest
+
+    # 미해석 라우트(score 0 → clio) 호출 시 명시적 ValueError(silent KeyError 대신).
+    route = Router([KeywordMatcher("generator", frozenset({"시안"}))]).route("안녕")
+    assert route.domain == "clio"  # 전제 — 키워드 미매칭
+    with pytest.raises(ValueError):
+        # "그리고" 순차마커 → 게이트 B 진입하지만 도메인 없음
+        build_plan(route, query="그리고")
