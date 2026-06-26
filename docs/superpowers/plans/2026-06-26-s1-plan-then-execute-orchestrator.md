@@ -657,6 +657,6 @@ Expected: 수집 에러 없음(순환 import·누락 없음).
 
 ## Self-Review (작성자 체크)
 
-- **스펙 커버리지** — 본 계획은 에픽 §11의 **S1**(Plan 계약 + Planner 셸 + StateGraph 단일 스텝 E2E + 턴 루트 트레이스)만 다룬다. 진입 게이트(§3)=S2, 조건분기·사이클=S4, HITL `interrupt`=S5, STM `checkpointer`=M 슬라이스로 명시 분리(YAGNI). S1 인수기준("management 단일스텝 Plan E2E·회귀 0·assistant.turn 루트") → Task 4·6·7로 충족.
+- **스펙 커버리지** — 본 계획은 에픽 §11의 **S1**(Plan 계약 + Planner 셸 + StateGraph 단일 스텝 E2E + 턴 루트 트레이스)만 다룬다. 진입 게이트(§3)=S2, 조건분기·사이클=S4, HITL `interrupt`=S5, STM `checkpointer`=M 슬라이스로 명시 분리(YAGNI). S1 인수기준("management 단일스텝 Plan E2E·회귀 0·assistant.chat.turn 루트") → Task 4·6·7로 충족.
 - **Placeholder** — 없음. 모든 step에 실제 코드·명령·기대출력 포함.
 - **타입 정합** — `PlanStep`·`Plan`·`make_plan`·`compute_plan_hash`(Task1) → `build_plan(route, query)`(Task2) → `execute_plan(plan, req, registry)`(Task3) → `build_orchestrator_graph(registry)`·`run_turn(graph, route, req)`(Task4) → `_should_plan(route, registry)`·`_get_orchestrator_graph()`·`_assistant(req)`(Task6) 시그니처가 일관. 코어는 도메인 타입 미import(`Any`), 순수성은 Task5가 잠금(turn.py는 langgraph만 import).

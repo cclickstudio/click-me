@@ -65,7 +65,7 @@ FE 단일 챗 ── POST /api/chat/complete
 flowchart TD
     FE["FE 단일 챗<br/>POST /api/chat/complete<br/>messages · session_id · attachments[]"]
     R{"① Router.route()<br/>키워드 점수 · 무비용 · 결정론"}
-    DIRECT["도메인 ask() 직행<br/>(명확 단일도메인 우회)"]
+    DIRECT["결정론 단일스텝 Plan<br/>(LLM 분해 우회)"]
     CLIO["CLIO 일반답변<br/>Gemini/OpenAI/Claude"]
     P["② Planner (LLM)<br/>의도 분해 → 고정 Plan(DAG) + plan_hash"]
     EX["③ Plan Executor<br/>스텝 순차 집행 (루프 없음)"]
@@ -164,7 +164,13 @@ flowchart TB
 
 ## 3. Planner 진입 게이트
 
-`route = Router.route(text)`, `nonzero = score>0 후보`라 할 때, **아래 중 하나라도 참이면 Planner 진입**.
+> **용어 정리(충돌 방지).** 여기서 "Planner 진입"은 **LLM 다단계 분해**(generate→simulate→execute 같은
+> 멀티스텝 Plan 생성)를 켜는 것을 뜻한다. **우회해도 결정론 `build_plan`이 단일 스텝 Plan을 만들어
+> 같은 Executor로 집행한다 — 도메인이 해석되면 Plan은 항상 생성된다**(CLIO 직답만 Plan 없음). 즉 우회 =
+> "LLM 분해 생략"이지 "Plan 생략"이 아니다. S1은 LLM Planner가 없으므로 모든 해석된 도메인이 이 결정론
+> 단일 스텝 경로로 간다(게이트 A~D는 도메인 2개+ 인 S2부터 의미).
+
+`route = Router.route(text)`, `nonzero = score>0 후보`라 할 때, **아래 중 하나라도 참이면 LLM Planner 진입**.
 
 | 조건 | 술어 |
 |---|---|
@@ -175,8 +181,8 @@ flowchart TB
 
 **Planner 우회(빠른 경로) — 딱 두 경우.**
 
-1. **명확 단일 도메인** — `len(nonzero)==1 && route.score >= policy.router_clear_threshold && 첨부 없음 && 순차마커 없음` → 해당 도메인 `ask()` 직행.
-2. **순수 조언/잡담** — `route.score == 0 && 첨부 없음` → CLIO 직행.
+1. **명확 단일 도메인** — `len(nonzero)==1 && route.score >= policy.router_clear_threshold && 첨부 없음 && 순차마커 없음` → **LLM 분해 없이 결정론 단일 스텝 Plan으로 집행**.
+2. **순수 조언/잡담** — `route.score == 0 && 첨부 없음` → CLIO 직답(Plan 없음).
 
 - **A가 우회조건2보다 우선** — `score==0`이라도 첨부가 있으면 Planner로(이미지가 생성/분석/시뮬의 강한 구조 신호).
 - 임계값(`router_low_confidence_threshold`·`router_clear_threshold`·`router_ambiguity_margin`)과
@@ -193,8 +199,8 @@ flowchart TD
     C -->|아니오| D{"0 < score < τ_low?"}
     D -->|예| P
     D -->|아니오| E{"score ≥ τ_clear<br/>단일 등록 도메인 · 첨부·마커 없음?"}
-    E -->|예| F["도메인 ask() 직행 (우회)"]
-    E -->|아니오| G["CLIO 직행"]
+    E -->|예| F["결정론 단일스텝 Plan (LLM 분해 우회)"]
+    E -->|아니오| G["CLIO 직답"]
 ```
 
 ---
@@ -204,7 +210,11 @@ flowchart TD
 `Plan`/`PlanStep`을 **구조화 DAG**로 신설(자연어 아님 → 기계 검증 가능). 기존 `ActionProposal`의 안전
 규율을 차용(plan-then-execute 보안 연구 권고와 일치).
 
-- **plan_hash** — 확정 Plan을 해시·바인딩(변조 탐지, "Signed Plan Commitment"). 집행 로그를 hash에 묶는다.
+- **plan_hash (콘텐츠 해시 커밋)** — 확정된 Plan의 정규화 직렬화를 **SHA-256으로 해시**한 값. 키 기반
+  암호 서명이 아니라 **콘텐츠 해시 무결성 체크**다(`compute_plan_hash`, ActionProposal의 proposal_hash와
+  동일 방식). 역할 두 가지 — ① **불변 커밋**: 확정 후 Plan이 바뀌면 해시가 달라져 변조가 드러난다(plan
+  injection·중간 결과에 의한 의도 변경 차단). ② **집행 바인딩**: 집행 로그·ActionProposal이 이 해시를 들고
+  다녀, 어떤 Plan을 집행했는지 사후 대조 가능. (실제 디지털 서명이 필요해지면 후속에서 해시에 서명을 덧댄다.)
 - **bounded replan ≤ 3** — 시뮬 미달 시 시안 재생성 재계획 횟수 제한(무한루프·의도 drift 차단).
 - **TTL/승인 SLA** — 기존 proposal TTL(10분) 재사용. 만료 승인 무효.
 - **툴콜 검증** — 각 스텝은 Plan에 명시된 액션만 실행(계획 밖 호출 거부).
@@ -271,7 +281,7 @@ sequenceDiagram
    `ChatAnthropic`)로 교체해 자동 계측·토큰·비용까지 포착. Planner LLM도 동일.
 4. **비동기 잡 상관** — generator/simulation은 SSE 백그라운드 잡이라 완전 부모-자식 중첩이 어렵다.
    → 잡에 동일 `session_id`+`plan_hash`를 metadata로 주입해 thread로 상관(완전 중첩 대신).
-5. **네이밍 규약** — `assistant.turn` / `assistant.router` / `assistant.planner` /
+5. **네이밍 규약** — `assistant.chat.turn`(루트) / `assistant.router` / `assistant.planner` /
    `assistant.plan.step.{generate|simulate|execute}` / `assistant.gate`. `tags=["assistant", domain]`.
    `LANGCHAIN_PROJECT=clickme` 유지.
 6. **eval 훅** — 라우팅 정확도·plan 적합성을 LangSmith dataset으로(기존 management eval 패턴 확장).
@@ -363,7 +373,7 @@ class DomainAgent(Protocol):
 
 | 슬라이스 | 산출물 | 인수기준(핵심) |
 |---|---|---|
-| **S1** Plan 계약 + Planner 셸 + LangGraph 오케스트레이터 | `Plan`/`PlanStep`, `planner.py`, plan_hash, 턴 루트 트레이스 | management 단일스텝 Plan이 E2E 동작 · 기존 챗 회귀 0 · `assistant.turn` 루트 트레이스 형성 |
+| **S1** Plan 계약 + Planner 셸 + LangGraph 오케스트레이터 | `Plan`/`PlanStep`, `planner.py`, plan_hash, 턴 루트 트레이스 | management 단일스텝 Plan이 E2E 동작 · 기존 챗 회귀 0 · `assistant.chat.turn` 루트 트레이스 형성 |
 | **S2** generator·simulation `ask()` 등록 | 두 도메인 어댑터 + 매처 등록 | 매처 1줄로 라우팅 · 라우터 코드 무수정 |
 | **S3** 멀티모달 첨부 + 챗→generator 이미지 경로 | `attachments` 필드 + generator 이미지 슬롯 | 사진 첨부 시 generate 스텝이 시안 생성 |
 | **S4** 조건 게이트 + bounded replan | KPI 임계 정책 + critic 노드 | 미달→replan(≤3) · 통과→다음 스텝 |
@@ -386,7 +396,7 @@ class DomainAgent(Protocol):
 1. 게이트 A — 첨부 image 있으면 `score==0`이라도 Planner 진입.
 2. 게이트 B — 순차 마커("괜찮으면"·"하고")가 있으면 Planner 진입.
 3. 게이트 C/D — `ambiguous` 또는 `0<score<τ_low`면 Planner, `score==0 && 첨부없음`이면 CLIO 직행.
-4. 우회 — 명확 단일 management 질문(첨부·마커 없음)은 Planner 없이 `ask()` 직행(기존 회귀 0).
+4. 우회 — 명확 단일 management 질문(첨부·마커 없음)은 **LLM Planner 없이 결정론 단일 스텝 Plan으로 집행**(기존 회귀 0).
 5. Plan 불변 — 확정 plan_hash가 step 실행 중 변하지 않음 · 계획 밖 액션 거부.
 6. replan 경계 — 시뮬 미달 시 재계획 ≤ 3회 후 종료.
 7. 집행 — KPI 통과해도 자동 집행 없음(HITL 승인 전 executor 미호출) · 승인 후 멱등 10회=1집행.
