@@ -76,7 +76,7 @@ function BeforeAfterCard({
         </p>
         <div className="flex items-center gap-3">
           <div className="flex-1">
-            <p className="text-[11px] text-[#8B95A1]">클릭 의향률 · 예측</p>
+            <p className="text-[11px] text-[#8B95A1]">클릭 의향률(CIR) · 예측</p>
             <p className="text-lg font-extrabold text-[#191F28] dark:text-[#F2F4F6] tabular-nums">
               {p ? `${(p.click_intent_rate * 100).toFixed(0)}%` : '—'}
             </p>
@@ -85,7 +85,7 @@ function BeforeAfterCard({
           <span className="text-xl text-[#8B95A1] shrink-0">⟷</span>
           <div className="flex-1 text-right">
             <p className="text-[11px] text-[#8B95A1]">
-              CTR · 실측 <span className="text-[#3182F6]">(실 Meta)</span>
+              CTR(클릭률) · 실측 <span className="text-[#3182F6]">(실 Meta)</span>
             </p>
             <p className="text-lg font-extrabold text-[#191F28] dark:text-[#F2F4F6] tabular-nums">
               {`${(a.ctr * 100).toFixed(2)}%`}
@@ -102,7 +102,7 @@ function BeforeAfterCard({
         </p>
         <div className="flex items-center gap-3">
           <div className="flex-1">
-            <p className="text-[11px] text-[#8B95A1]">구매의도 · 예측</p>
+            <p className="text-[11px] text-[#8B95A1]">구매의도(PI) · 예측</p>
             <p className="text-lg font-extrabold text-[#191F28] dark:text-[#F2F4F6] tabular-nums">
               {p ? `${p.purchase_intent.toFixed(1)}/5` : '—'}
             </p>
@@ -111,7 +111,7 @@ function BeforeAfterCard({
           <span className="text-xl text-[#8B95A1] shrink-0">⟷</span>
           <div className="flex-1 text-right">
             <p className="text-[11px] text-[#8B95A1]">
-              CVR · 실측 <span className="text-[#3182F6]">(실 Meta)</span>
+              CVR(전환율) · 실측 <span className="text-[#3182F6]">(실 Meta)</span>
             </p>
             <p className="text-lg font-extrabold text-[#191F28] dark:text-[#F2F4F6] tabular-nums">
               {a.cvr != null ? `${(a.cvr * 100).toFixed(1)}%` : '추적 전'}
@@ -132,9 +132,9 @@ function BeforeAfterCard({
           </p>
           {p ? (
             <div className="grid grid-cols-3 gap-2">
-              <Metric label="구매의도" value={`${p.purchase_intent.toFixed(1)}/5`} />
-              <Metric label="신뢰도" value={`${p.trust_avg.toFixed(1)}/5`} />
-              <Metric label="거부율" value={`${(p.rejection_rate * 100).toFixed(0)}%`} />
+              <Metric label="구매의도(PI)" value={`${p.purchase_intent.toFixed(1)}/5`} />
+              <Metric label="신뢰도(Trust)" value={`${p.trust_avg.toFixed(1)}/5`} />
+              <Metric label="거부율(Rejection)" value={`${(p.rejection_rate * 100).toFixed(0)}%`} />
             </div>
           ) : (
             <div className="py-3 text-center">
@@ -156,9 +156,9 @@ function BeforeAfterCard({
             집행 후 · 실측 <span className="text-[10px] font-normal text-[#3182F6]">(실 Meta)</span>
           </p>
           <div className="grid grid-cols-3 gap-2">
-            <Metric label="지출" value={`₩${a.spend_krw.toLocaleString()}`} />
+            <Metric label="지출(Spend)" value={`₩${a.spend_krw.toLocaleString()}`} />
             <Metric
-              label="전환율(CVR)"
+              label="CVR(전환율)"
               value={a.cvr != null ? `${(a.cvr * 100).toFixed(1)}%` : '추적 전'}
               hint={a.cvr == null ? '전환 추적 필요' : undefined}
             />
