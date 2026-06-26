@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.orchestration.bootstrap import build_orchestration
+from api.orchestration.context import TurnContext
 from api.orchestration.registry import AgentRegistry
 from api.orchestration.routing import RouteDecision, Router
 from api.orchestration.turn import build_orchestrator_graph, run_turn
@@ -199,14 +200,20 @@ async def chat_complete(body: ChatRequest) -> StreamingResponse:
 
     async def generate() -> AsyncGenerator[str, None]:
         # 오케스트레이션 — 도메인이 해석·등록되면 고정 Plan 경로(turn 그래프)로, 아니면 CLIO.
-        # run_turn이 plan→execute를 assistant.chat.turn 루트 트레이스로 묶는다.
+        # S2: 라이브 카드 렌더는 management 단일 경로만(회귀 0). gen/sim·멀티스텝 렌더링은 S3+.
         router, registry = _get_orchestration()
         route = router.route(last_message)
-        if _should_plan(route, registry):
+        if _should_plan(route, registry) and route.domain == "management":
             graph = _get_orchestrator_graph()
 
-            async def _assistant(req: Any) -> Any:
-                return await run_turn(graph, route, req=req)
+            async def _assistant(req: AskRequest) -> AskResult:
+                # 블랙보드 컨텍스트로 변환 — management 어댑터가 ctx/step→AskRequest로 되번역.
+                ctx = TurnContext(
+                    user_input=req.question,
+                    session_id=body.session_id,
+                    ad_id=req.ad_id,
+                )
+                return await run_turn(graph, route, ctx=ctx)
 
             async for chunk in _management_card_stream(
                 question=last_message,
