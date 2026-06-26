@@ -90,8 +90,8 @@
 | N4  | 선제적 말걸기(제너 경로 잔여)            | 능동   | N1,N2     | ✅(시뮬)·⬜(제너) |
 | S2  | /비교 캠페인 A/B (매니지 조율 — 보류)    | 슬래시 | S1        | ⬜   |
 | S5  | /액션 매니지 조치 확장(매니지 조율 — 보류) | 슬래시 | —        | ⬜   |
-| X1  | 잘못 추가된 `click-me` 자기참조 gitlink 제거(깨진 서브모듈) | 정리 | — | ⬜ |
-| X2  | G5 라이브 HTTP 422 왕복 재검증(백엔드 클린 재기동 후) | 검증 | G5 | ⬜ |
+| X1  | 잘못 추가된 `click-me` 자기참조 gitlink 제거(깨진 서브모듈) | 정리 | — | ✅ |
+| X2  | G5 라이브 HTTP 422 왕복 재검증(백엔드 클린 재기동 후) | 검증 | G5 | ✅ |
 | C4  | 시뮬+채팅 전수 QA(대기업 QA 수준)·결함 리포트 후 push | 정리 | 전부 | ⬜ |
 
 > **상태 메모(2026-06-25)** — 제너 403 **해소됨**(org 인증 완료, image_generation gpt-4o-mini/gpt-image-1 실호출 OK). V2 검증 완료. 워크트리(kb·be·fe) 통합 완료. 브랜치 `feat/chat-doyeon`.
@@ -310,11 +310,15 @@
 **할 일** `git rm --cached click-me`로 인덱스의 gitlink 제거(작업트리 파일은 `--cached`라 안 건드림) → 루트에 물리 `click-me/` 디렉터리가 실제로 있으면 정체 확인 후 정리 → `edit: 잘못 추가된 click-me 자기참조 gitlink 제거` 커밋. `git ls-files -s click-me`가 비면 완료.
 **완료 기준** `git ls-files | grep '^click-me'` 없음, `git status` 깨끗, 클론 시 서브모듈 경고 없음.
 
+**✅ 완료(2026-06-26, d4646cc)** 물리 `click-me/`는 **루트에 잘못 들어온 전체 중첩 클론**(자체 `.git`·backend·frontend 등, `.gitmodules` 없음)이었다. `git rm --cached click-me`로 인덱스의 gitlink(160000→bcdc6dd) 제거(작업트리 보존), 되돌릴 수 없는 삭제는 피하고 `.gitignore`에 `/click-me/` 추가해 추적·재추가 차단. 검증: `git ls-files | grep '^click-me'` 없음·`git check-ignore click-me`=ignored·`git status` 깨끗. (물리 중첩 클론 디렉터리는 디스크에 남김 — 필요 시 도연님이 수동 삭제.)
+
 ### X2 — G5 라이브 HTTP 422 왕복 재검증 (검증)
 
 **배경** G5(✅ a1fc34e)에서 422 직렬화 버그를 단위 검증으로 확정·수정했으나, 당시 8000 좀비 프로세스로 **실행 중 백엔드에 수정본을 못 올려 라이브 HTTP 422 왕복은 미검증**으로 남김.
 **할 일** 백엔드 클린 재기동(좀비 정리 후 `uv run dev.py`) → Preview에서 제너 필수값 누락 요청을 cross-origin으로 보내 **422 + 한국어 메시지("생성모드 필수 필드 누락: …") + CORS 헤더**가 정상 수신되는지 확인(이전엔 "Failed to fetch"였음). gen_form UI 게이팅(빈 값 차단)도 3역할 재확인.
 **완료 기준** 라이브 422 응답이 한국어 메시지로 프론트에 도달(에러 카드 표기), 콘솔 무에러. (C4 전수 QA의 C 항목에도 포함되나 G5 직결이라 분리.)
+
+**✅ 완료(2026-06-26)** 백엔드는 도연님 재부팅으로 클린 상태. 라이브 HTTP(cross-origin)로 `POST /api/generator/generations`에 필수 3종(product_name·product_description·target_audience) 누락 요청 → **HTTP 422 + 본문 `"생성모드 필수 필드 누락: product_name, product_description, target_audience"`(한국어)** 수신. **G5 직렬화 버그 해소 확인** — `detail`이 유효 JSON 배열(`[object Object]` 아님), `ctx.error`가 비직렬화 ValueError 객체가 아닌 `{}`로 인코딩됨(jsonable_encoder 적용). **CORS 헤더 정상**(`access-control-allow-origin: http://localhost:3000`·`allow-credentials: true`) → 이전 "Failed to fetch"(CORS 없는 크래시 응답) 재현 안 됨. gen_form UI 게이팅은 G5에서 라이브 확인분(역할 무관 동일 컴포넌트) 유지.
 
 ### 🔎 결정된 보류 / 미정 (태스크 아님)
 
