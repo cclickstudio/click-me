@@ -1,15 +1,12 @@
-import asyncio
 import json
-import threading
 import time
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from typing import Any
 
-import google.generativeai as genai
-from anthropic import AsyncAnthropic
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
-from openai import AsyncOpenAI
+from langchain_core.language_models import BaseChatModel
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -28,7 +25,7 @@ from domain.management.assistant.history import record_feedback, record_turn
 
 router = APIRouter()
 
-# CLIO 시스템 프롬프트 — Gemini는 system_instruction, OpenAI는 system 메시지로 공유.
+# CLIO 시스템 프롬프트 — LangChain SystemMessage로 주입(provider 공통).
 _CLIO_SYSTEM = """\
 당신은 ClickMe의 수석 광고 전략 AI 어드바이저 'CLIO'입니다.
 
@@ -50,15 +47,39 @@ _CLIO_SYSTEM = """\
 - 한국어로 응답하며, 전문 용어는 자연스럽게 풀어서 설명
 """
 
-genai.configure(api_key=settings.gemini_api_key or "")
-_model = genai.GenerativeModel(
-    model_name=settings.chat_gemini_model,
-    system_instruction=_CLIO_SYSTEM,
-)
-_openai = AsyncOpenAI(api_key=settings.openai_api_key)
-_anthropic = AsyncAnthropic(api_key=settings.anthropic_api_key)
+_CLIO_ENGINE_LABEL = {"gemini": "Gemini", "openai": "OpenAI", "anthropic": "Claude"}
 
-_SENTINEL = object()
+
+def _clio_messages(messages: list[ChatMessage]) -> list:
+    """ChatMessage 목록을 LangChain 메시지로 — system(CLIO) + user/assistant 매핑."""
+    out: list = [SystemMessage(content=_CLIO_SYSTEM)]
+    for m in messages:
+        out.append(
+            HumanMessage(content=m.content) if m.role == "user" else AIMessage(content=m.content)
+        )
+    return out
+
+
+def _build_clio_llm(provider: str) -> BaseChatModel:
+    """provider별 LangChain 챗모델 — LangSmith 자동 계측·토큰·비용 포착(raw SDK 추적 누락 제거)."""
+    if provider == "openai":
+        from langchain_openai import ChatOpenAI  # noqa: PLC0415
+
+        return ChatOpenAI(model=settings.chat_openai_model, api_key=settings.openai_api_key)
+    if provider == "anthropic":
+        from langchain_anthropic import ChatAnthropic  # noqa: PLC0415
+
+        return ChatAnthropic(
+            model=settings.chat_anthropic_model,
+            api_key=settings.anthropic_api_key,
+            max_tokens=2048,
+        )
+    from langchain_google_genai import ChatGoogleGenerativeAI  # noqa: PLC0415
+
+    return ChatGoogleGenerativeAI(
+        model=settings.chat_gemini_model, google_api_key=settings.gemini_api_key
+    )
+
 
 # ── 오케스트레이션: 점수 라우터 + 도메인 에이전트 레지스트리(합성은 bootstrap) ──
 # 도메인 추가는 bootstrap.build_orchestration의 매처/에이전트 등록으로. 여기선 판정·획득만.
@@ -153,64 +174,27 @@ async def _management_card_stream(
         yield chunk
 
 
-async def _clio_openai_stream(messages: list[ChatMessage]) -> AsyncGenerator[str, None]:
-    # CLIO를 OpenAI로 — 네이티브 async 스트림(Gemini의 스레드/큐 우회 불필요). meta/token/done 동일.
-    yield f"data: {json.dumps({'meta': {'source': 'clio', 'label': 'CLIO', 'engine': 'OpenAI'}}, ensure_ascii=False)}\n\n"
-    oai_messages = [{"role": "system", "content": _CLIO_SYSTEM}]
-    for m in messages:
-        oai_messages.append(
-            {"role": "user" if m.role == "user" else "assistant", "content": m.content}
-        )
+async def _clio_stream(messages: list[ChatMessage], provider: str) -> AsyncGenerator[str, None]:
+    """CLIO 어드바이저 — provider별 LangChain 챗모델로 SSE 스트림(meta→token→done).
+
+    raw SDK 직접 호출을 제거해 LangSmith 추적 누락을 메우고, Gemini 스레드/큐 우회도 없앤다.
+    """
+    label = _CLIO_ENGINE_LABEL.get(provider, "Gemini")
+    yield f"data: {json.dumps({'meta': {'source': 'clio', 'label': 'CLIO', 'engine': label}}, ensure_ascii=False)}\n\n"
     try:
-        stream = await _openai.chat.completions.create(
-            model=settings.chat_openai_model, messages=oai_messages, stream=True
-        )
-        async for chunk in stream:
-            if not chunk.choices:  # usage-only 청크 등 — choices가 비는 경우 방어
-                continue
-            token = chunk.choices[0].delta.content
+        llm = _build_clio_llm(provider)
+        async for chunk in llm.astream(_clio_messages(messages)):
+            token = chunk.content
             if token:
                 yield f"data: {json.dumps({'token': token}, ensure_ascii=False)}\n\n"
     except Exception as exc:  # noqa: BLE001 — 스트림 실패를 정상 종료로 위장하지 않는다
-        print(f"[chat] openai stream error: {exc!r}")
-        yield f"data: {json.dumps({'error': 'OpenAI 응답 중 문제가 발생했어요.'}, ensure_ascii=False)}\n\n"
-    yield 'data: {"done": true}\n\n'
-
-
-async def _clio_anthropic_stream(messages: list[ChatMessage]) -> AsyncGenerator[str, None]:
-    # CLIO를 Anthropic(Claude)로 — system은 별도 인자, 메시지는 user/assistant만. meta/token/done 동일.
-    yield f"data: {json.dumps({'meta': {'source': 'clio', 'label': 'CLIO', 'engine': 'Claude'}}, ensure_ascii=False)}\n\n"
-    claude_messages = [
-        {"role": "user" if m.role == "user" else "assistant", "content": m.content}
-        for m in messages
-    ]
-    try:
-        async with _anthropic.messages.stream(
-            model=settings.chat_anthropic_model,
-            max_tokens=2048,
-            system=_CLIO_SYSTEM,
-            messages=claude_messages,
-        ) as stream:
-            async for token in stream.text_stream:
-                if token:
-                    yield f"data: {json.dumps({'token': token}, ensure_ascii=False)}\n\n"
-    except Exception as exc:  # noqa: BLE001 — 스트림 실패를 정상 종료로 위장하지 않는다
-        print(f"[chat] anthropic stream error: {exc!r}")
-        yield f"data: {json.dumps({'error': 'Claude 응답 중 문제가 발생했어요.'}, ensure_ascii=False)}\n\n"
+        print(f"[chat] clio stream error ({provider}): {exc!r}")
+        yield f"data: {json.dumps({'error': 'CLIO 응답 중 문제가 발생했어요.'}, ensure_ascii=False)}\n\n"
     yield 'data: {"done": true}\n\n'
 
 
 @router.post("/complete")
 async def chat_complete(body: ChatRequest) -> StreamingResponse:
-    gemini_history = []
-    for m in body.messages[:-1]:
-        gemini_history.append(
-            {
-                "role": "user" if m.role == "user" else "model",
-                "parts": [m.content],
-            }
-        )
-
     last_message = body.messages[-1].content if body.messages else ""
 
     async def generate() -> AsyncGenerator[str, None]:
@@ -234,54 +218,9 @@ async def chat_complete(body: ChatRequest) -> StreamingResponse:
                 yield chunk
             return
 
-        # 그 외는 CLIO 어드바이저 — provider 토글(기본 gemini, CHAT_PROVIDER로 openai·anthropic 전환).
-        if settings.chat_provider == "openai":
-            async for chunk in _clio_openai_stream(body.messages):
-                yield chunk
-            return
-
-        if settings.chat_provider == "anthropic":
-            async for chunk in _clio_anthropic_stream(body.messages):
-                yield chunk
-            return
-
-        # 기본 CLIO(Gemini)
-        clio_meta = {"source": "clio", "label": "CLIO", "engine": "Gemini"}
-        yield f"data: {json.dumps({'meta': clio_meta}, ensure_ascii=False)}\n\n"
-
-        loop = asyncio.get_running_loop()
-        queue: asyncio.Queue = asyncio.Queue()
-
-        def _run_sync() -> None:
-            try:
-                chat = _model.start_chat(history=gemini_history)
-                response = chat.send_message(last_message, stream=True)
-                for chunk in response:
-                    try:
-                        text = chunk.text
-                    except Exception as e:  # noqa: BLE001
-                        print(f"[chat] chunk.text error: {e!r}")
-                        continue
-                    print(f"[chat] chunk: {text!r}")
-                    if text:
-                        loop.call_soon_threadsafe(queue.put_nowait, text)
-            except Exception as exc:  # noqa: BLE001
-                print(f"[chat] _run_sync error: {exc!r}")
-                loop.call_soon_threadsafe(queue.put_nowait, exc)
-            finally:
-                loop.call_soon_threadsafe(queue.put_nowait, _SENTINEL)
-
-        threading.Thread(target=_run_sync, daemon=True).start()
-
-        while True:
-            item = await queue.get()
-            if item is _SENTINEL:
-                break
-            if isinstance(item, Exception):
-                break
-            yield f"data: {json.dumps({'token': item}, ensure_ascii=False)}\n\n"
-
-        yield 'data: {"done": true}\n\n'
+        # 그 외는 CLIO 어드바이저 — LangChain 챗모델 SSE(기본 gemini, CHAT_PROVIDER로 전환).
+        async for chunk in _clio_stream(body.messages, settings.chat_provider):
+            yield chunk
 
     return StreamingResponse(
         generate(),
