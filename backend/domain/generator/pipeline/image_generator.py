@@ -7,7 +7,7 @@ from google.genai import types as genai_types
 from langsmith import get_current_run_tree, traceable
 from langsmith.wrappers import wrap_openai
 from openai import AsyncOpenAI
-from PIL import Image
+from PIL import Image, ImageFilter
 
 from core.config import settings
 from domain.generator.contracts.enums import AdSize, AdStrategy, TemplateType
@@ -388,6 +388,35 @@ Output requirements:
 - CRITICAL: ALL three text elements (HEADLINE, BODY, CTA BUTTON) must be COMPLETELY visible — zero clipping"""
 
 
+# ── [컴포즈 모드 - Gemini] 배경 전용 프롬프트 ───────────────────────────────
+# Gemini는 마스크 인페인팅 API가 없으므로 배경만 생성하고 PIL로 상품을 paste한다.
+# OpenAI _COMPOSE_PROMPT_TEMPLATE("상품이 잠겨있다")과 달리 순수 배경만 요청.
+_COMPOSE_BG_PROMPT_TEMPLATE = """\
+The image provided is the actual product photo.
+Generate a complete professional {platform} advertisement image that naturally incorporates this product.
+
+Visual style: {style}
+Photography/scene style: {photo_style}
+Strategy: {strategy_desc}
+
+Product: {product_name}
+{core_values_line}Target audience: {target_audience}
+{color_line}
+{tone_line}
+
+Scene direction:
+{product_visual_context}
+
+{safe_zone}
+
+Requirements:
+- Keep the product clearly visible, well-lit, and as faithful to the original as possible
+- Add a professional background/scene that complements the product's colors and lighting
+- STRICTLY NO text, letters, words, numbers, or typography
+- No logos, watermarks, URLs, or QR codes
+- Clean, modern aesthetic suitable for Meta/Instagram feed"""
+
+
 # ── [텍스트 포함 개선 모드] 프롬프트 ────────────────────────────────────────
 # 원본 이미지를 Edit API로 수정하면서 텍스트도 함께 삽입할 때 사용.
 _EDIT_PROMPT_TEMPLATE_WITH_TEXT = """\
@@ -497,10 +526,34 @@ async def generate_image(
         else ""
     )
 
-    # ── [컴포즈 모드] 마스크 인페인팅 — 상품 잠금 + 주변 배경/텍스트 생성 ──────────
+    # ── [컴포즈 모드] 상품 픽셀 보존 + 주변 배경 생성 ────────────────────────────
+    # Gemini: 배경 전용 프롬프트로 생성 후 PIL paste (마스킹 없이 픽셀 완벽 보존)
+    # OpenAI: 마스크 인페인팅으로 상품 영역 잠금 후 배경 생성
     if product_cutout_bytes is not None:
         target_audience = product_analysis.target_audience or "general audience"
         product_visual_context = _build_product_visual_context(product_analysis, brand_color)
+
+        if settings.generator_image_provider == "google_genai":
+            bg_prompt = _COMPOSE_BG_PROMPT_TEMPLATE.format(
+                platform="Meta/Instagram",
+                style=_TEMPLATE_STYLE[template],
+                photo_style=_STRATEGY_PHOTO_STYLE[strategy],
+                strategy_desc=_STRATEGY_DESCRIPTIONS[strategy],
+                product_name=product_analysis.product_name,
+                core_values_line=core_values_line,
+                target_audience=target_audience,
+                color_line=color_line,
+                tone_line=tone_line,
+                product_visual_context=product_visual_context,
+                safe_zone=_TEMPLATE_SAFE_ZONES_COMPOSE[template],
+            )
+            return await _compose_with_gemini(
+                product_cutout_bytes,
+                bg_prompt,
+                size,
+                template,
+                get_style(strategy).product_fill,
+            )
 
         if has_text:
             prompt = _COMPOSE_PROMPT_TEMPLATE_WITH_TEXT.format(
@@ -811,7 +864,7 @@ async def _generate_with_gemini(prompt: str, size: AdSize) -> bytes:
 
 @traceable(name="image-model:gemini", run_type="llm")
 async def _generate_with_gemini_native(model: str, prompt: str, size: AdSize) -> bytes:
-    client = genai.Client(api_key=settings.gemini_api_key)
+    client = genai.Client(api_key=settings.gemini_image_api_key or settings.gemini_api_key)
     response = await client.aio.models.generate_content(
         model=model,
         contents=prompt,
@@ -831,7 +884,7 @@ async def _generate_with_gemini_native(model: str, prompt: str, size: AdSize) ->
 
 @traceable(name="image-model:imagen", run_type="llm")
 async def _generate_with_imagen(model: str, prompt: str, size: AdSize) -> bytes:
-    client = genai.Client(api_key=settings.gemini_api_key)
+    client = genai.Client(api_key=settings.gemini_image_api_key or settings.gemini_api_key)
     response = await client.aio.models.generate_images(
         model=model,
         prompt=prompt,
@@ -945,6 +998,67 @@ def _build_inpaint_base_and_mask(
     base.save(base_buf, format="PNG")
     mask.save(mask_buf, format="PNG")
     return base_buf.getvalue(), mask_buf.getvalue()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Gemini 컴포즈 — 배경 생성 후 PIL 상품 합성
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+def _add_soft_shadow(
+    bg: Image.Image,
+    product: Image.Image,
+    x: int,
+    y: int,
+    offset_y: int = 10,
+    blur_radius: int = 15,
+    opacity: int = 100,
+) -> None:
+    """상품 알파 실루엣을 아래로 offset해 가우시안 블러 그림자를 배경에 합성한다."""
+    shadow_layer = Image.new("RGBA", bg.size, (0, 0, 0, 0))
+    shadow_color = Image.new("RGBA", product.size, (0, 0, 0, opacity))
+    shadow_color.putalpha(product.getchannel("A"))
+    shadow_layer.paste(shadow_color, (x, y + offset_y), shadow_color)
+    shadow_layer = shadow_layer.filter(ImageFilter.GaussianBlur(blur_radius))
+    bg.alpha_composite(shadow_layer)
+
+
+@traceable(name="image-model:gemini-compose", run_type="llm")
+async def _compose_with_gemini(
+    product_image_bytes: bytes,
+    prompt: str,
+    size: AdSize,
+    template: TemplateType,
+    product_fill: float,
+) -> bytes:
+    """원본 상품 이미지를 Gemini에 넘겨 광고 이미지 전체를 한 번에 생성한다.
+
+    OpenAI 경로(누끼 → 마스크 인페인팅)와 달리 API 호출이 1회뿐이다.
+    누끼 제거 없이 원본 이미지를 인풋으로 사용하므로 OpenAI 개입이 전혀 없어
+    Gemini vs OpenAI 비교 시 순수한 Gemini 비용·시간·품질을 측정할 수 있다.
+    토큰·비용은 _record_genai_usage로 LangSmith에 기록된다.
+    """
+    model = settings.generator_image_model
+    client = genai.Client(api_key=settings.gemini_image_api_key or settings.gemini_api_key)
+    response = await client.aio.models.generate_content(
+        model=model,
+        contents=[
+            genai_types.Part.from_bytes(data=product_image_bytes, mime_type="image/png"),
+            prompt,
+        ],
+        config=genai_types.GenerateContentConfig(
+            response_modalities=["IMAGE"],
+            image_config=genai_types.ImageConfig(aspect_ratio=_GEMINI_NATIVE_ASPECT_RATIO[size]),
+        ),
+    )
+    _record_genai_usage(response, model, size)
+
+    if not response.candidates:
+        raise RuntimeError("Gemini 컴포즈: candidates 없음")
+    for part in response.candidates[0].content.parts:
+        if part.inline_data and part.inline_data.data:
+            return part.inline_data.data
+    raise RuntimeError("Gemini 컴포즈: 이미지 데이터 없음")
 
 
 # ─────────────────────────────────────────────────────────────────────────────

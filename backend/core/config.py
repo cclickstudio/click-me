@@ -36,6 +36,8 @@ class Settings(BaseSettings):
 
     # Google Gemini
     gemini_api_key: str | None = None
+    # 이미지 생성 전용 키 — 있으면 이미지 호출에 우선 사용, 없으면 gemini_api_key로 폴백
+    gemini_image_api_key: str | None = None
 
     # LangSmith — API 키 없으면 트레이싱 비활성(로컬 기동 가능)
     # LANGCHAIN_* 사용, LANGSMITH_*도 AliasChoices로 수용.

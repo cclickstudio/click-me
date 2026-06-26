@@ -153,14 +153,18 @@ async def generate_candidates(state: GenerationState, config: RunnableConfig) ->
     multimodal = settings.generator_gen_mode == "multimodal"
 
     # 상품 이미지 누끼는 후보 3종 공통 → gather 전 1회만 실행 (API 호출 절약).
-    # 상품 이미지가 있으면 모드와 무관하게 컴포즈(마스크 인페인팅) 경로를 탄다.
+    # Gemini 경로: 누끼 스킵 — 원본 이미지를 직접 Gemini에 넘겨 전체 광고를 한 번에 생성.
+    # OpenAI 경로: gpt-image-1로 누끼 후 마스크 인페인팅.
     product_cutout_bytes: bytes | None = None
     if product_image_bytes is not None:
-        try:
-            product_cutout_bytes = await remove_product_background(product_image_bytes)
-        except Exception:
-            logger.exception("상품 누끼 실패 — 상품 없이 일반 생성으로 진행")
-            product_cutout_bytes = None
+        if settings.generator_image_provider == "google_genai":
+            product_cutout_bytes = product_image_bytes  # 원본 그대로 전달
+        else:
+            try:
+                product_cutout_bytes = await remove_product_background(product_image_bytes)
+            except Exception:
+                logger.exception("상품 누끼 실패 — 상품 없이 일반 생성으로 진행")
+                product_cutout_bytes = None
 
     # 캐러셀(카드뉴스) — 공통 배경 1장 + 슬라이드별 PIL 텍스트 (단일 흐름과 분기)
     if req.get("format") == "carousel":
