@@ -28,6 +28,7 @@ class ChatState(TypedDict, total=False):
     organization_id: str | None
     context_ids: Annotated[dict, _merge_context]
     route: str
+    clarify_question: str | None  # route=clarify일 때 사용자에게 되물을 질문
     delegations: int
     sub_results: list[dict]
     citations: list[dict]

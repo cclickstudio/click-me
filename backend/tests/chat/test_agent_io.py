@@ -15,7 +15,13 @@ from domain.chat.contracts.ports import SubAgent
 
 
 def test_route_enum_values():
-    assert {r.value for r in Route} == {"general", "management", "simulation", "generation"}
+    assert {r.value for r in Route} == {
+        "general",
+        "management",
+        "simulation",
+        "generation",
+        "clarify",
+    }
 
 
 def test_chat_turn_request_defaults():

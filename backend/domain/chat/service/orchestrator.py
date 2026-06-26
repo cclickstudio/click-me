@@ -23,6 +23,7 @@ _ROUTE_LABEL: dict[str, str] = {
     Route.SIMULATION: "광고 시뮬레이터",
     Route.GENERATION: "광고 생성",
     Route.GENERAL: "일반 답변",
+    Route.CLARIFY: "확인 필요",
 }
 
 _ROUTE_ENGINE: dict[str, str] = {
@@ -30,6 +31,7 @@ _ROUTE_ENGINE: dict[str, str] = {
     Route.SIMULATION: "simulation_subagent",
     Route.GENERATION: "generator_subagent",
     Route.GENERAL: "direct",
+    Route.CLARIFY: "direct",
 }
 
 # synthesize 답변을 토큰 청크로 분할하는 크기

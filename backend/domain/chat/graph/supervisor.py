@@ -82,6 +82,9 @@ _ROUTING_SYSTEM = (
     "생성 상품명 확인)이고 이번 사용자 메시지가 그에 대한 답·확인·되물음"
     "(예: '50명', '그냥 기본', '제목도 필요해?')이면, 새 의도로 보지 말고 "
     "그 기능과 같은 위임처로 라우팅한다.\n"
+    "모호: 요청이 둘 이상의 기능에 걸쳐 어느 쪽인지 불명확하면(예: '시뮬 결과로 광고 생성'은 "
+    "시뮬·생성 양쪽) 추측하지 말고 route_to_clarify(question)로 한 번 되묻는다. "
+    "question에는 선택지를 담는다(예: '시뮬레이션을 돌릴까요, 광고를 생성할까요?').\n"
     "반드시 도구 하나만 호출한다."
 )
 
@@ -132,12 +135,25 @@ async def answer_directly(reason: str) -> str:
     return reason
 
 
-_ROUTING_TOOLS = [route_to_simulation, route_to_generation, route_to_management, answer_directly]
+@tool
+async def route_to_clarify(question: str) -> str:
+    """요청이 둘 이상의 기능에 걸쳐 모호하거나 불명확할 때 — 위임 대신 사용자에게 되물을 질문."""
+    return question
+
+
+_ROUTING_TOOLS = [
+    route_to_simulation,
+    route_to_generation,
+    route_to_management,
+    answer_directly,
+    route_to_clarify,
+]
 _TOOL_TO_ROUTE: dict[str, Route] = {
     "route_to_simulation": Route.SIMULATION,
     "route_to_generation": Route.GENERATION,
     "route_to_management": Route.MANAGEMENT,
     "answer_directly": Route.GENERAL,
+    "route_to_clarify": Route.CLARIFY,
 }
 
 
@@ -175,6 +191,8 @@ def apply_route_guard(route: Route, text: str) -> Route:
     대칭 오분류('캠페인 몇개'→GEN)를 막기 위해 조회동사 + 한쪽 도메인 명사만 매칭될 때만 보정한다
     (둘 다/둘 다 아님=모호 → 원 라우트 존중, LLM 신뢰).
     """
+    if route is Route.CLARIFY:  # 모호 되묻기는 가드가 건드리지 않는다(LLM 판단 존중).
+        return route
     low = text.lower()
     if not any(w in low for w in _COUNT_WORDS):
         return route
@@ -187,10 +205,13 @@ def apply_route_guard(route: Route, text: str) -> Route:
     return route
 
 
-async def decide_route(messages: list, llm, *, capabilities=None, identity=None) -> Route:
+async def decide_route(
+    messages: list, llm, *, capabilities=None, identity=None, sink=None
+) -> Route:
     """라우트 결정 — llm None이면 키워드 폴백, 있으면 역량·신원 맥락을 주입한 정책 tool-calling.
 
     capabilities(레지스트리)·identity(신원/엔티티)는 라우팅 프롬프트에 보조 맥락으로 주입된다.
+    sink(dict, 선택)가 주어지고 라우트가 CLARIFY면 sink["clarify_question"]에 되물을 질문을 담는다.
     산출은 단일 Route(불변) — SSE·그래프 위상 무영향.
     """
     text = _last_user_text(messages)
@@ -200,5 +221,10 @@ async def decide_route(messages: list, llm, *, capabilities=None, identity=None)
     system = _ROUTING_SYSTEM + _capability_block(capabilities) + _identity_block(identity)
     ai: AIMessage = await bound.ainvoke([SystemMessage(content=system), *messages])
     calls = getattr(ai, "tool_calls", None) or []
-    route = _TOOL_TO_ROUTE.get(calls[0]["name"], Route.GENERAL) if calls else Route.GENERAL
+    if not calls:
+        return Route.GENERAL
+    call = calls[0]
+    route = _TOOL_TO_ROUTE.get(call["name"], Route.GENERAL)
+    if route is Route.CLARIFY and sink is not None:
+        sink["clarify_question"] = call.get("args", {}).get("question") or ""
     return apply_route_guard(route, text)

@@ -120,3 +120,33 @@ async def test_decide_route_guard_overrides_llm_misroute():
         [HumanMessage(content="내가 생성한 광고 몇개")], llm=_FakeLLM("route_to_management")
     )
     assert route is Route.GENERATION
+
+
+# ---- 모호 되묻기(clarify) ----
+@pytest.mark.asyncio
+async def test_decide_route_clarify_captures_question():
+    class _ClarifyLLM:
+        def bind_tools(self, _t):
+            return self
+
+        async def ainvoke(self, _m):
+            return AIMessage(
+                content="",
+                tool_calls=[
+                    {"name": "route_to_clarify", "args": {"question": "시뮬? 생성?"}, "id": "1"}
+                ],
+            )
+
+    sink: dict = {}
+    route = await decide_route(
+        [HumanMessage(content="시뮬 결과로 광고 생성")], llm=_ClarifyLLM(), sink=sink
+    )
+    assert route is Route.CLARIFY
+    assert sink["clarify_question"] == "시뮬? 생성?"
+
+
+def test_route_guard_skips_clarify():
+    from domain.chat.graph.supervisor import apply_route_guard
+
+    # 카운트 워드가 있어도 clarify는 가드가 건드리지 않는다(LLM 모호 판단 존중).
+    assert apply_route_guard(Route.CLARIFY, "캠페인 목록 보여줘") is Route.CLARIFY

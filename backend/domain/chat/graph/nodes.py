@@ -13,7 +13,7 @@ from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.types import RunnableConfig, interrupt
 
 from domain.chat.adapters.execution import execute_chat_action
-from domain.chat.contracts.agent_io import ProposedAction, SubAgentRequest
+from domain.chat.contracts.agent_io import ProposedAction, Route, SubAgentRequest
 from domain.chat.contracts.capabilities import CAPABILITIES
 from domain.chat.graph.supervisor import _last_user_text, decide_route
 
@@ -157,10 +157,20 @@ class _Nodes:
             "project_id": state.get("project_id"),
             **(state.get("context_ids") or {}),
         }
+        sink: dict = {}
         route = await decide_route(
-            state["messages"], self._d.llm, capabilities=CAPABILITIES, identity=identity
+            state["messages"],
+            self._d.llm,
+            capabilities=CAPABILITIES,
+            identity=identity,
+            sink=sink,
         )
-        return {"route": route.value}
+        update: dict = {"route": route.value}
+        if route is Route.CLARIFY:
+            update["clarify_question"] = sink.get("clarify_question") or (
+                "요청을 어느 기능으로 처리할지 불분명해요. 무엇을 원하시는지 한 번 더 알려주세요."
+            )
+        return update
 
     # ── delegate ─────────────────────────────────────────────────────────────
     async def delegate(self, state: dict, config: Optional[RunnableConfig] = None) -> dict:  # noqa: UP045
@@ -228,14 +238,17 @@ class _Nodes:
 
     # ── synthesize ────────────────────────────────────────────────────────────
     async def synthesize(self, state: dict, config: Optional[RunnableConfig] = None) -> dict:  # noqa: UP045
-        from domain.chat.contracts.agent_io import Route  # noqa: PLC0415
-
         sub_results: list[dict] = state.get("sub_results") or []
         execution_result: dict | None = state.get("execution_result")
         deps = self._d
 
+        # clarify 라우트 — 위임 없이 슈퍼바이저가 만든 되물음을 그대로 답한다(모호 요청).
+        if state.get("route") == Route.CLARIFY.value:
+            answer = state.get("clarify_question") or "무엇을 도와드릴까요?"
         # general 라우트 + CLIO 주입됨 + 서브에이전트 답변 없음 → CLIO 호출(스트리밍 우선)
-        if state.get("route") == Route.GENERAL.value and deps.clio is not None and not sub_results:
+        elif (
+            state.get("route") == Route.GENERAL.value and deps.clio is not None and not sub_results
+        ):
             from domain.chat.adapters.platform_context import build_general_context  # noqa: PLC0415
 
             # short_term은 현재 턴까지 포함 — CLIO가 현재 질문을 따로 append하므로

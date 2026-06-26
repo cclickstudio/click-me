@@ -35,7 +35,12 @@ __all__ = ["ChatGraphDeps", "build_chat_graph"]
 
 
 def _after_supervisor(state: dict) -> str:
-    return "synthesize" if state.get("route") == Route.GENERAL.value else "delegate"
+    # general·clarify는 위임 없이 synthesize로(직접 답변/되묻기), 그 외는 delegate.
+    return (
+        "synthesize"
+        if state.get("route") in (Route.GENERAL.value, Route.CLARIFY.value)
+        else "delegate"
+    )
 
 
 def _after_delegate(state: dict) -> str:

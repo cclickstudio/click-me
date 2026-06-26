@@ -307,3 +307,20 @@ async def test_synthesize_general_excludes_current_turn_from_clio_history():
         {"role": "assistant", "content": "네"},
     ]  # 현재 턴 제외(중복 방지)
     assert out["final_answer"] == "일반 답변"
+
+
+@pytest.mark.asyncio
+async def test_synthesize_clarify_returns_question():
+    """clarify 라우트는 위임/CLIO 없이 슈퍼바이저가 만든 되물음을 그대로 답한다."""
+    from domain.chat.contracts.agent_io import Route
+    from domain.chat.graph.nodes import ChatGraphDeps, make_nodes
+
+    deps = ChatGraphDeps(llm=None, repo=None, memory=None)
+    nodes = make_nodes(deps)
+    state = {
+        "route": Route.CLARIFY.value,
+        "clarify_question": "시뮬레이션을 돌릴까요, 광고를 생성할까요?",
+        "messages": [],
+    }
+    out = await nodes.synthesize(state)
+    assert out["final_answer"] == "시뮬레이션을 돌릴까요, 광고를 생성할까요?"

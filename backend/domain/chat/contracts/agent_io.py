@@ -12,6 +12,7 @@ class Route(StrEnum):
     MANAGEMENT = "management"
     SIMULATION = "simulation"
     GENERATION = "generation"
+    CLARIFY = "clarify"  # 모호한 교차 요청 — 위임 대신 사용자에게 되묻기
 
 
 class Citation(BaseModel):
