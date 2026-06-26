@@ -6,6 +6,7 @@ import { api } from '@/lib/api';
 import { useAuth } from '@/components/AuthProvider';
 import { useProjects } from '@/components/ProjectContext';
 import { Markdown } from '@/components/Markdown';
+import { SimProgress } from '@/components/SimProgress';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
@@ -101,7 +102,7 @@ function TypingIndicator() {
 export default function Page() {
   // 로그인 유저의 org + 선택 프로젝트를 챗 요청에 실어 서브에이전트가 테넌트 스코프로 조회.
   const { user } = useAuth();
-  const { selectedProjectId } = useProjects();
+  const { selectedProjectId, refreshDetails } = useProjects();
   const [messages, setMessages] = useState<Message[]>([]);
   const [fb, setFb] = useState<Record<number, number>>({}); // 메시지 index → 평가(1/-1)
   // 첨부 이미지(시뮬 트리거용) — /upload-image 응답 보관 후 다음 전송에 실어 보낸다.
@@ -366,20 +367,30 @@ export default function Page() {
                           {msg.role === 'user' ? msg.content : <Markdown>{msg.content}</Markdown>}
                         </div>
                       )}
-                      {/* 구조화 결과 카드(시뮬·생성·집행) */}
-                      {msg.results?.map((r, ri) => (
-                        <div
-                          key={ri}
-                          className="w-full rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-[#F9FAFB] dark:bg-[#1C2333] px-3 py-2"
-                        >
-                          <p className="text-[10px] font-semibold text-[#8B95A1] dark:text-[#6B7280] mb-1">
-                            {RESULT_LABEL[r.kind] ?? r.kind}
-                          </p>
-                          <pre className="text-[11px] text-[#4E5968] dark:text-[#9CA3AF] whitespace-pre-wrap break-words max-h-48 overflow-y-auto">
-                            {JSON.stringify(r.data, null, 2)}
-                          </pre>
-                        </div>
-                      ))}
+                      {/* 구조화 결과 카드(시뮬·생성·집행) — 시뮬 트리거는 라이브 진행률 위젯 */}
+                      {msg.results?.map((r, ri) =>
+                        r.kind === 'simulation_started' ? (
+                          <SimProgress
+                            key={ri}
+                            runId={(r.data as { run_id?: string })?.run_id ?? ''}
+                            onDone={() => {
+                              if (selectedProjectId) refreshDetails(selectedProjectId);
+                            }}
+                          />
+                        ) : (
+                          <div
+                            key={ri}
+                            className="w-full rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-[#F9FAFB] dark:bg-[#1C2333] px-3 py-2"
+                          >
+                            <p className="text-[10px] font-semibold text-[#8B95A1] dark:text-[#6B7280] mb-1">
+                              {RESULT_LABEL[r.kind] ?? r.kind}
+                            </p>
+                            <pre className="text-[11px] text-[#4E5968] dark:text-[#9CA3AF] whitespace-pre-wrap break-words max-h-48 overflow-y-auto">
+                              {JSON.stringify(r.data, null, 2)}
+                            </pre>
+                          </div>
+                        )
+                      )}
                       {/* HITL 승인 카드 — 승인/거부 시 /resume 재개 */}
                       {msg.approval && (
                         <div className="w-full rounded-xl border border-[#F2C200] dark:border-[#7A5C00] bg-[#FFF8E1] dark:bg-[#2A2410] px-3 py-3">
