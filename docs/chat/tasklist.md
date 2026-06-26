@@ -77,7 +77,7 @@
 | ★LOOP | 시뮬↔제너 양방향 개선 루프(최대 3턴) 구현·검증 | 핵심 | V2 | ✅ |
 | ★A1 | JWT 인증·인가 일관 적용(chat/gen/sim/personas 라우트 소유권 검증) | 보안 | — | ✅ |
 | ★G7 | 제너 시안 3개에 기대성과 순위 부여 | 제너 | V2 | ⬜ |
-| ★AB | A/B 테스트 — 두 시안을 같은 패널로 시뮬·비교·승자 판정 | 핵심 | V1 | ⬜ |
+| ★AB | A/B 테스트 — 두 시안을 같은 패널로 시뮬·비교·승자 판정 | 핵심 | V1 | ✅ |
 | ★V6 | PDF 리포트 생성 end-to-end 검증(Playwright) | 검증 | — | ⬜ |
 | ★V7 | 동시실행 가드(sim·gen 슬롯) 검증 | 검증 | — | ⬜ |
 | G1  | 제너 입력 확인 위젯(입력 위젯 교체)      | 제너   | V2        | ⬜   |
@@ -205,6 +205,12 @@
 **기존 자산** `BatchSimWidget`·`ComparisonWidget`·`/배치`·`/AB`(ChatConversation runSlashCommand)·시뮬 결과 CI.
 **완료 기준** 두 시안을 동일 패널로 평가 → 4 KPI CI 비교 → 유의 기반 승자 판정·권고 위젯 표시. **유의차 없으면 "차이 없음"으로 표기(무조건 승자 단언 금지).** Preview로 A/B 한 쌍 검증.
 **소유권** 시뮬 도메인(자기). "동일 패널 재사용"만 백엔드 변경(append-only).
+
+**✅ 완료(2026-06-26)** 핵심 발견 — **"동일 패널 재사용"은 백엔드 변경 불필요**(이미 충족). `PanelSpec.seed` 기본값 0이고 `load_panel`이 시드를 덮지 않으며 `PersonaSampler.sample`의 유일한 엔트로피가 `random.Random(spec.seed)`, persona_id도 `P-{idx}` 결정적 → **같은 spec이면 완전히 동일한 패널**. 배치 시뮬은 두 광고 모두 기본값(size 10·필터 없음·proportional)으로 호출 → 같은 패널. **실증**: 동일 spec 2회 샘플링이 persona_id·OCEAN·인구 전부 일치 확인(탐색 에이전트의 "독립 표본" 주장은 오류). 따라서 공정 비교는 구조적으로 성립, 남은 건 **통계 승자 판정 위젯**뿐.
+- **구현(프론트만)** [BatchSimWidget.tsx](frontend/src/components/chat/BatchSimWidget.tsx) — ① 결과 표에 신뢰도(trust_avg) 추가(4 KPI 전부)·클릭 의향률에 CI(ci_low–ci_high) 동반 표기. ② `judgeWinner` — **클릭 의향률(유일한 CI 보유 KPI)의 CI 겹침**으로 유의성 판정: 겹치면 `유의차 없음`(tie), 분리되면 `우세(유의)`(win), CI 없으면 `참고용(유의성 판정 불가)`(weak), 한쪽 실패면 판정 없음. ③ `pointLead` — 작은 표본에서 클릭 의향률이 0/0로 겹쳐 'tie'만 나오는 한계 보완: 4지표 점추정 우세 개수를 **'참고(점추정)'로 명시**(유의성 아님) 별도 라인. ④ "같은 AI 소비자 패널로 평가" 주석·점추정 단언 금지 명시.
+- **검증(라이브 HTTP + 로직)** ① `/api/chat/sim-batch` 2광고(강/약) 실행 → **HTTP 200**, 두 광고 모두 `ci_low/ci_high/trust_avg/effective_n` 포함 반환(같은 패널). ② 그 **실데이터**(둘 다 click 0·CI[0,0])를 `judgeWinner`에 통과 → `유의차 없음`(클릭 의향률 진짜 동일) + `참고: A_강력 3/4`(거부율 12.5% vs 100%·구매 2.25 vs 1.3 반영) — 정직·유용 둘 다 성립. ③ judgeWinner/pointLead 5케이스(실데이터·CI분리→승자·CI겹침→무승부·CI없음→참고용·한쪽실패→null) 전부 정상. ④ tsc/eslint 통과.
+- **미검증(환경)** **Preview UI 렌더링**(배너·표 픽셀)은 못 함 — preview_start가 도연님이 외부 기동한 3000을 인수 못 함(포트 점유 거부, 재부팅 후에도 동일). 로직·데이터는 라이브로 결정적 확인, 픽셀만 미확인(표준 React·tsc/lint 통과로 저위험).
+- **미구현(범위 밖, 명시)** 입력 소스 ②제너 후보 2개·③기존 시뮬 2개(F12 경로) 선택은 미연결(현재 batch_sim_form 수동 2광고만) — 별 위젯/플로우라 분리. 승자→LOOP/F8 이어가기 버튼도 미연결(F8 몫).
 
 ### ★V6 — PDF 리포트 생성 end-to-end 검증
 
