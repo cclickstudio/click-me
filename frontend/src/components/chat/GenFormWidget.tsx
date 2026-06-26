@@ -2,7 +2,7 @@
 
 // 채팅 안 광고 생성 입력 위젯 — 단계별 폼 → api.generator.start → 진행률 → 결과 요약(+상세 링크)
 // 생성은 project_id 필수(라우터 400)라 프로젝트 선택을 포함한다.
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 import { getJobs, setGenJob } from '@/lib/runningJobs';
@@ -61,6 +61,8 @@ export default function GenFormWidget({
   const [detail, setDetail] = useState<GenerationDetail | null>(null);
   const [err, setErr] = useState('');
   const esRef = useRef<EventSource | null>(null);
+  const phaseRef = useRef(phase); // 콜백에서 최신 phase 참조(N3 동기화 가드)
+  phaseRef.current = phase;
 
   useEffect(() => {
     api.projects
@@ -181,38 +183,51 @@ export default function GenFormWidget({
     }
   };
 
-  // 새로고침 복원(G4) — 최신 gen_form만, 진행 중 generation_id가 있으면 상태 조회 후 스피너/결과로 복원.
-  useEffect(() => {
-    if (!latest) return;
+  // 진행 중 generation_id(localStorage)가 있으면 상태 조회 후 스피너/결과로 복원(G4·N3 공용).
+  // 유휴(form) 상태에서만 동작 — 이미 진행/완료를 다루는 중이면 무시(중복 구독 방지).
+  const restoreFromKey = useCallback(async () => {
+    if (!latest || phaseRef.current !== 'form') return;
     const gid = localStorage.getItem(ACTIVE_GEN_KEY);
     if (!gid) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const d = (await api.generator.detail(gid)) as GenerationDetail;
-        if (cancelled) return;
-        if (d.status === 'running' || d.status === 'pending') {
-          setGenId(gid);
-          setGenJob(gid);
-          setStageMsg('광고 생성 진행 중...');
-          setPhase('running');
-          subscribe(gid, true); // 복원 구독 — 완료 시 인라인 결과(글리치 방지)
-        } else if (d.status === 'completed') {
-          // 복원 시엔 결과만 인라인 표시 — onComplete 재발화(중복 위젯·재시뮬 재요청) 방지.
-          setGenId(gid);
-          void finish(gid, false);
-        } else {
-          localStorage.removeItem(ACTIVE_GEN_KEY); // failed/unknown — 정리
-        }
-      } catch {
-        localStorage.removeItem(ACTIVE_GEN_KEY);
+    try {
+      const d = (await api.generator.detail(gid)) as GenerationDetail;
+      if (phaseRef.current !== 'form') return;
+      if (d.status === 'running' || d.status === 'pending') {
+        setGenId(gid);
+        setGenJob(gid);
+        setStageMsg('광고 생성 진행 중...');
+        setPhase('running');
+        subscribe(gid, true); // 복원 구독 — 완료 시 인라인 결과(글리치 방지)
+      } else if (d.status === 'completed') {
+        // 복원 시엔 결과만 인라인 표시 — onComplete 재발화(중복 위젯·재시뮬 재요청) 방지.
+        setGenId(gid);
+        void finish(gid, false);
+      } else {
+        localStorage.removeItem(ACTIVE_GEN_KEY); // failed/unknown — 정리
       }
-    })();
-    return () => {
-      cancelled = true;
-    };
+    } catch {
+      /* 일시 실패 — 키 유지(다음 트리거에 재시도) */
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [latest]);
+
+  // 새로고침 복원(G4) + 타 탭·탭 복귀 동기화(N3) — 마운트·storage(타 탭 localStorage 변경)·
+  // visibilitychange(백그라운드→복귀) 시 진행 상태를 다시 맞춘다.
+  useEffect(() => {
+    void restoreFromKey();
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === ACTIVE_GEN_KEY) void restoreFromKey();
+    };
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void restoreFromKey();
+    };
+    window.addEventListener('storage', onStorage);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      window.removeEventListener('storage', onStorage);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [restoreFromKey]);
 
   if (phase === 'form') {
     const totalSteps = 4;

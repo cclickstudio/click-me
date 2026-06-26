@@ -2,7 +2,7 @@
 
 // 채팅 안 시뮬레이션 입력 위젯 — 폼 입력 → api.simulation.start → 진행률 → 결과 요약(+상세 링크)
 // 새로고침해도 백그라운드 실행 중이면 run_id(localStorage) + 상태 조회로 스피너를 복원한다.
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 import { safeRandomUUID } from '@/lib/utils';
@@ -102,6 +102,8 @@ export default function SimFormWidget({
   const [stageMsg, setStageMsg] = useState('준비 중...');
   const [err, setErr] = useState('');
   const esRef = useRef<EventSource | null>(null);
+  const phaseRef = useRef(phase); // 콜백에서 최신 phase 참조(N3 동기화 가드)
+  phaseRef.current = phase;
   const completeFiredRef = useRef(false); // onSimComplete 1회 보장(SSE completed·onerror 중복 방지)
   const streamRetryRef = useRef(0); // onerror 재구독 횟수 가드(무한 재구독 방지)
 
@@ -181,38 +183,51 @@ export default function SimFormWidget({
     };
   };
 
-  // 새로고침 복원 — 최신 위젯만, 진행 중 run_id가 있으면 상태 조회 후 스피너/결과로 복원.
-  useEffect(() => {
-    if (!latest) return;
+  // 진행 중 run_id(localStorage)가 있으면 상태 조회 후 스피너/결과로 복원(새로고침·N3 공용).
+  // 유휴(form) 상태에서만 동작 — 이미 진행/완료를 다루는 중이면 무시(중복 구독 방지).
+  const restoreFromKey = useCallback(async () => {
+    if (!latest || phaseRef.current !== 'form') return;
     const rid = localStorage.getItem(ACTIVE_SIM_KEY);
     if (!rid) return;
-    let cancelled = false;
-    (async () => {
-      try {
-        const st = await api.simulation.status(rid);
-        if (cancelled) return;
-        if (st.status === 'RUNNING') {
-          setRunId(rid);
-          setSimJob(rid);
-          setPct(st.pct ?? 0);
-          setStageMsg(st.stage ? `${st.stage} 진행 중...` : '시뮬레이션 진행 중...');
-          setPhase('running');
-          subscribe(rid);
-        } else if (st.status === 'COMPLETED') {
-          setRunId(rid);
-          void finish(rid);
-        } else {
-          localStorage.removeItem(ACTIVE_SIM_KEY); // unknown/failed — 정리
-        }
-      } catch {
-        localStorage.removeItem(ACTIVE_SIM_KEY);
+    try {
+      const st = await api.simulation.status(rid);
+      if (phaseRef.current !== 'form') return;
+      if (st.status === 'RUNNING') {
+        setRunId(rid);
+        setSimJob(rid);
+        setPct(st.pct ?? 0);
+        setStageMsg(st.stage ? `${st.stage} 진행 중...` : '시뮬레이션 진행 중...');
+        setPhase('running');
+        subscribe(rid);
+      } else if (st.status === 'COMPLETED') {
+        setRunId(rid);
+        void finish(rid);
+      } else {
+        localStorage.removeItem(ACTIVE_SIM_KEY); // unknown/failed — 정리
       }
-    })();
-    return () => {
-      cancelled = true;
-    };
+    } catch {
+      /* 일시 실패 — 키 유지(다음 트리거에 재시도) */
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [latest]);
+
+  // 새로고침 복원 + 타 탭·탭 복귀 동기화(N3) — 마운트·storage(타 탭 localStorage 변경)·
+  // visibilitychange(백그라운드→복귀) 시 진행 상태를 다시 맞춘다.
+  useEffect(() => {
+    void restoreFromKey();
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === ACTIVE_SIM_KEY) void restoreFromKey();
+    };
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void restoreFromKey();
+    };
+    window.addEventListener('storage', onStorage);
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      window.removeEventListener('storage', onStorage);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [restoreFromKey]);
 
   // 언마운트 시 스트림 정리(슬롯은 유지 — 백그라운드 런 동시실행 방지).
   useEffect(() => () => esRef.current?.close(), []);

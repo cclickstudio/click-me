@@ -86,7 +86,7 @@
 | G4  | 제너 status API + 새로고침 복원          | 제너   | V2        | ✅   |
 | F8  | 시안 후보 선택 → 재시뮬(LOOP 일부)       | 기능   | V2,G3     | ✅   |
 | V3  | 개선 루프 경로 검증(LOOP 완료 후)        | 검증   | LOOP      | ⬜   |
-| N3  | 채팅이 sim/gen status 동기화(타 탭)      | 능동   | G4        | ⬜   |
+| N3  | 채팅이 sim/gen status 동기화(타 탭)      | 능동   | G4        | ✅   |
 | N4  | 선제적 말걸기(제너 경로 잔여)            | 능동   | N1,N2     | ✅(시뮬)·⬜(제너) |
 | S2  | /비교 캠페인 A/B (매니지 조율 — 보류)    | 슬래시 | S1        | ⬜   |
 | S5  | /액션 매니지 조치 확장(매니지 조율 — 보류) | 슬래시 | —        | ⬜   |
@@ -813,6 +813,10 @@
 **목표** 사용자가 시뮬/제너를 돌리다 **다른 탭/페이지로 이동**해도, 채팅이 **status를 받아와** 진행 중이면 로딩 스피너, 완료되면 기존 **결과 요약 위젯**을 보여줌.
 **구현** 채팅이 진행 중 run_id/generation_id(localStorage/세션)를 알고 있으면 status 폴링(`/api/simulation/{id}/status`·제너 status[G4]) → RUNNING이면 스피너 위젯, COMPLETED면 결과 요약 위젯으로 전환. 표면(페이지) 바뀌어도 일관.
 **완료 기준** 전용 페이지에서 시작 → 채팅 탭으로 이동 시 진행 스피너 표시, 완료 후 결과 요약 위젯 표시. 진행 중 새로고침에도 유지. Preview로 멀티탭/이동 검증.
+
+**✅ 완료(2026-06-26, 프론트만, G4 위에)** G4의 mount 복원을 **타 탭·탭 복귀에도** 확장. [SimFormWidget](frontend/src/components/chat/SimFormWidget.tsx)·[GenFormWidget](frontend/src/components/chat/GenFormWidget.tsx)의 복원 로직을 `restoreFromKey()`로 추출하고 **`storage` 이벤트(타 탭 localStorage 변경)·`visibilitychange`(백그라운드→복귀)** 리스너에서 재호출. 유휴(phase==='form')일 때만 동작해 진행 중 위젯 방해·중복 구독 방지.
+- **검증(라이브 Preview)** 빈 gen_form(유휴) 띄운 뒤, **다른 탭이 active gen을 세팅한 상황을 `StorageEvent` 디스패치로 시뮬** → **리로드 없이** 위젯이 그 gen 상태로 동기화(완료분→인라인 결과)·콘솔 에러 0. running 분기·sim 측은 동일 `restoreFromKey` 경로(G4에서 running 스피너 복원 검증분 재사용). tsc/eslint 통과.
+- **범위 메모(정직)** 검증은 storage 동기화(타 탭) 중심. "전용 `/simulation`·`/generations` 페이지에서 시작 → 채팅"의 완전한 cross-surface는 그 페이지들이 같은 `ACTIVE_*_KEY`를 공유하고 채팅에 해당 위젯이 있을 때 성립(없으면 완료분은 N5 벨이 커버). 멀티탭 두 창 동시 실측은 단일 Preview 한계로 StorageEvent 시뮬로 대체.
 
 ### N4 — 선제적 말걸기 챗봇 (먼저 말 검, N1·N2 의존)
 
