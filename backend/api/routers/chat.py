@@ -45,6 +45,7 @@ def _sub_to_ask(message: str, meta: dict) -> AskResult:
         thread_id=meta.get("thread_id"),
     )
 
+
 router = APIRouter()
 
 _CLIO_MODEL = "gpt-4o-mini"
@@ -77,6 +78,7 @@ def _get_clio_client() -> AsyncOpenAI:
     if _openai_client is None:
         _openai_client = AsyncOpenAI(api_key=settings.openai_api_key)
     return _openai_client
+
 
 # ── Deep Agent 오케스트레이터 — management·generate·advise 통합 라우팅 ──────
 _orchestrator = None
@@ -153,6 +155,23 @@ async def chat_complete(
         if orch_result is not None:
             # 오케스트레이터가 응답함 — management 또는 generator
             meta = orch_result.meta or {}
+            # G6 — management/ADVISE 응답이면 카드 봉투를 서버에서 빌드(trust boundary:
+            # executable=False·승인버튼 비활성을 composer가 강제). meta.cards로 직렬화해
+            # 기존 {meta} 이벤트로 전달(SSE 프로토콜 불변). 프론트는 meta.cards를 렌더.
+            if meta.get("source") == "management":
+                try:
+                    from domain.management.assistant.chat_cards import (  # noqa: PLC0415
+                        TurnOrigin,
+                    )
+                    from domain.management.assistant.composer import (  # noqa: PLC0415
+                        compose_turn,
+                    )
+
+                    _ask = _sub_to_ask(orch_result.message, meta)
+                    _env = compose_turn(_ask, turn_id=uuid4().hex, origin=TurnOrigin.USER)
+                    meta["cards"] = [c.model_dump(mode="json") for c in _env.cards]
+                except Exception as cexc:  # noqa: BLE001 — 카드 빌드 실패는 답변 안 막음
+                    print(f"[chat] compose_turn 실패(무시): {cexc!r}")
             yield f"data: {json.dumps({'meta': meta}, ensure_ascii=False)}\n\n"
             answer = orch_result.message
             for piece in _chunks(answer):

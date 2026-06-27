@@ -31,6 +31,12 @@ type Campaign = {
   clicks?: number;
   ctr?: number;
 };
+// 서버 composer가 빌드한 카드(trust boundary) — kind 닫힌 슬롯 + payload.type 열린 변종.
+type ChatCard = {
+  kind: 'evidence' | 'result' | 'review' | 'actionbar';
+  status: 'ok' | 'degraded' | 'failed';
+  payload: { type: string; version: number; data: Record<string, unknown> };
+};
 type SourceMeta = {
   source: string; // management | clio | generator
   label: string; // 매니지먼트 어시스턴트 | CLIO
@@ -40,6 +46,7 @@ type SourceMeta = {
   thread_id?: string; // HITL 재개 키 (interrupt 멈춤 시)
   requires_approval?: boolean; // HITL — 사람 승인 필요
   campaigns?: Campaign[]; // live_campaigns 결과 — 클릭해서 관리 페이지로 이동
+  cards?: ChatCard[]; // 서버 composer 카드(result/review/actionbar). evidence는 citations로 대체.
 };
 type Message = {
   role: 'user' | 'assistant';
@@ -169,6 +176,70 @@ function TypingIndicator() {
         <span className="w-2 h-2 rounded-full bg-[#8B95A1] dark:bg-[#6B7280] animate-bounce [animation-delay:-0.3s]" />
         <span className="w-2 h-2 rounded-full bg-[#8B95A1] dark:bg-[#6B7280] animate-bounce [animation-delay:-0.15s]" />
         <span className="w-2 h-2 rounded-full bg-[#8B95A1] dark:bg-[#6B7280] animate-bounce" />
+      </div>
+    </div>
+  );
+}
+
+// 추천 조치 카드 — RESULT(제안)+REVIEW(검수)+ACTIONBAR(버튼). evidence는 citations로 대체.
+// trust boundary: 버튼 enabled는 서버 composer가 결정(승인·실행은 비활성=실행 API 미연결).
+// 미지 kind는 무시(전방호환) — 시뮬·생성 카드 추가돼도 안 깨짐.
+function SuggestedActionCards({ cards }: { cards: ChatCard[] }) {
+  const result = cards.find((c) => c.kind === 'result');
+  const review = cards.find((c) => c.kind === 'review');
+  const actionbar = cards.find((c) => c.kind === 'actionbar');
+  if (!result && !actionbar) return null;
+
+  const rd = (result?.payload.data ?? {}) as {
+    action_type?: string;
+    tier?: string;
+    rationale?: string;
+  };
+  const vd = (review?.payload.data ?? {}) as { decision?: string };
+  const actions = (actionbar?.payload.data?.actions ?? []) as Array<{
+    id: string;
+    label: string;
+    enabled?: boolean;
+    disabled_reason?: string;
+  }>;
+
+  const tierStyle =
+    rd.tier === 'TIER_1'
+      ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300'
+      : 'bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300';
+  const needsApproval = vd.decision === 'needs_approval';
+
+  return (
+    <div className="mt-1 rounded-xl border border-amber-200 bg-amber-50 p-3 dark:border-amber-900/40 dark:bg-amber-900/15">
+      <div className="flex flex-wrap items-center gap-1.5 mb-1.5">
+        <span className="text-xs font-semibold text-amber-800 dark:text-amber-300">
+          ● {(rd.action_type ?? '추천 조치').replace(/_/g, ' ')}
+        </span>
+        {rd.tier ? (
+          <span className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${tierStyle}`}>
+            {rd.tier}
+          </span>
+        ) : null}
+        <span className="text-[10px] text-amber-700 dark:text-amber-400">
+          {needsApproval ? '사람 승인 필요' : '자동 승인 한도 내'}
+        </span>
+      </div>
+      {rd.rationale ? (
+        <p className="text-xs leading-relaxed text-[#4E5968] dark:text-[#9CA3AF] mb-2">
+          {rd.rationale}
+        </p>
+      ) : null}
+      <div className="flex flex-wrap gap-1.5">
+        {actions.map((a) => (
+          <button
+            key={a.id}
+            disabled={!a.enabled}
+            title={a.enabled ? undefined : a.disabled_reason}
+            className="rounded-lg border border-[#E5E8EB] px-3 py-1.5 text-xs font-medium text-[#4E5968] disabled:cursor-not-allowed disabled:opacity-40 enabled:hover:bg-white dark:border-[#2D3748] dark:text-[#9CA3AF] dark:enabled:hover:bg-[#252D3D]"
+          >
+            {a.label}
+          </button>
+        ))}
       </div>
     </div>
   );
@@ -563,6 +634,11 @@ export default function Page() {
                               );
                             })}
                         </div>
+                      ) : null}
+                      {msg.role === 'assistant' &&
+                      msg.meta?.source === 'management' &&
+                      (msg.meta.cards?.length ?? 0) > 0 ? (
+                        <SuggestedActionCards cards={msg.meta.cards ?? []} />
                       ) : null}
                       {msg.role === 'assistant' &&
                         msg.meta?.source === 'management' &&
