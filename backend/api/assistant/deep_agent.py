@@ -12,6 +12,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Awaitable, Callable
 from typing import Annotated, Any
+from uuid import uuid4
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langgraph.checkpoint.memory import MemorySaver
@@ -273,7 +274,11 @@ def build_deep_agent_graph(
                 "session_id": req.session_id,
                 "iteration_budget": MAX_ITER,
             },
-            "configurable": {"thread_id": req.session_id or "default"},
+            # M4 — 요청별 고유 thread_id. 프론트가 매 턴 풀히스토리를 재전송하므로 오케스트레이터는
+            # 요청 단위로 독립(stateless)이어야 한다. session_id로 고정하면 체크포인터가 누적하고
+            # add_messages가 ID 미부여로 dedup 못 해 메시지가 중복된다. HITL 재개는 management
+            # 서브그래프(mgmt-{session_id} thread)가 담당하므로 오케스트레이터 thread는 일회용.
+            "configurable": {"thread_id": f"orch-{req.session_id or 'anon'}-{uuid4().hex[:8]}"},
         }
 
         final: _OState = await graph.ainvoke(initial, config=config)
