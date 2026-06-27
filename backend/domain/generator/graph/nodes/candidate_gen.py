@@ -1,8 +1,8 @@
 """노드 4 — 광고 후보 3종 생성.
 
 생성 방식(GENERATOR_GEN_MODE)에 따라 변종마다 둘 중 하나로 동작한다.
-- pipeline: 카피 생성 → 제품 이미지 생성(단계 분리) → 품질검증 → S3 업로드.
-- multimodal: 한 모델 호출로 카피+이미지 동시 생성 → 품질검증 → S3 업로드.
+- openai: 카피 생성 → 이미지 생성(상품있음 인페인팅 / 없음 0부터, 단계 분리) → 품질검증 → S3.
+- gemini: 한 Gemini 호출로 카피+이미지 동시 생성(상품있음 멀티모달 입력) → 품질검증 → S3.
 품질검증(QualityReport)은 이 노드에서 qa_results로 함께 산출한다(별도 run_qa 노드 없음).
 """
 
@@ -61,24 +61,39 @@ async def _generate_carousel(
     brand_color: str | None,
     tone: str | None,
     product_cutout_bytes: bytes | None,
+    product_image_bytes: bytes | None,
     logo_image_bytes: bytes | None,
+    gemini: bool,
     improvement_context: str | None = None,
 ) -> dict:
     """캐러셀 — 공통 배경 1장 생성 후 슬라이드별 PIL 텍스트로 3장 구성."""
     emit_progress(config, "candidates", 45, "캐러셀 배경 생성 중...")
-    bg_bytes = await generate_image(
-        product_analysis=product_analysis,
-        strategy=plan.strategy,
-        template=TemplateType.A,
-        size=gen_size,
-        brand_color=brand_color,
-        tone=tone,
-        product_cutout_bytes=product_cutout_bytes,
-        improvement_context=improvement_context,
-        headline="",
-        body="",
-        cta="",
-    )
+    if gemini:
+        # gemini 모드 — Gemini로 배경 생성. 카피는 슬라이드별로 따로 만들므로 함께 나온 카피는 버린다.
+        bg_bytes, _ = await generate_image_and_copy(
+            product_analysis=product_analysis,
+            strategy=plan.strategy,
+            template=TemplateType.A,
+            size=gen_size,
+            brand_color=brand_color,
+            tone=tone,
+            improvement_context=improvement_context,
+            product_image_bytes=product_image_bytes,
+        )
+    else:
+        bg_bytes = await generate_image(
+            product_analysis=product_analysis,
+            strategy=plan.strategy,
+            template=TemplateType.A,
+            size=gen_size,
+            brand_color=brand_color,
+            tone=tone,
+            product_cutout_bytes=product_cutout_bytes,
+            improvement_context=improvement_context,
+            headline="",
+            body="",
+            cta="",
+        )
 
     emit_progress(config, "candidates", 60, "캐러셀 카피 생성 중...")
     slides = (await generate_carousel_copy(product_analysis)).slides[:3]
@@ -152,12 +167,12 @@ async def generate_candidates(state: GenerationState, config: RunnableConfig) ->
             logo_image_bytes = None
 
     done = 0
-    multimodal = settings.generator_gen_mode == "multimodal"
+    gemini = settings.generator_gen_mode == "gemini"
 
-    # 상품 이미지 누끼는 후보 3종 공통 → gather 전 1회만 실행 (API 호출 절약).
-    # 상품 이미지가 있으면 모드와 무관하게 컴포즈(마스크 인페인팅) 경로를 탄다.
+    # 누끼(배경제거)는 openai 모드 + 상품있음일 때만 — 마스크 인페인팅용, 후보 3종 공통 1회.
+    # gemini 모드는 원본 상품 이미지를 그대로 멀티모달 입력으로 쓰므로 누끼 단계가 없다.
     product_cutout_bytes: bytes | None = None
-    if product_image_bytes is not None:
+    if product_image_bytes is not None and not gemini:
         try:
             product_cutout_bytes = await remove_product_background(product_image_bytes)
         except Exception:
@@ -177,14 +192,16 @@ async def generate_candidates(state: GenerationState, config: RunnableConfig) ->
             brand_color=brand_color,
             tone=tone,
             product_cutout_bytes=product_cutout_bytes,
+            product_image_bytes=product_image_bytes,
             logo_image_bytes=logo_image_bytes,
+            gemini=gemini,
             improvement_context=improvement_context,
         )
 
-    # 카피 3개를 LLM 1회 호출로 일괄 생성 (pipeline 모드일 때만).
-    # multimodal + 상품 이미지 없는 경우는 generate_image_and_copy 내부에서 카피를 만든다.
+    # 카피 3개를 LLM 1회 호출로 일괄 생성 (openai 모드만).
+    # gemini 모드는 generate_image_and_copy가 이미지와 함께 카피를 만든다.
     batch_copies = [None, None, None]
-    if not (multimodal and product_cutout_bytes is None):
+    if not gemini:
         batch_copies = await generate_copies_batch(
             product_analysis=product_analysis,
             strategy_outputs=[
@@ -204,9 +221,9 @@ async def generate_candidates(state: GenerationState, config: RunnableConfig) ->
     async def build(idx: int, variant_id: str, plan: StrategyPlan, ad_copy) -> dict:
         nonlocal done
 
-        # multimodal 한방 생성은 상품 픽셀 보존이 불가하므로, 상품 이미지가 있으면 사용하지 않는다.
-        if multimodal and product_cutout_bytes is None:
-            # 1+2. 한 모델 호출로 카피·이미지 동시 생성 (스타일 일관성)
+        if gemini:
+            # gemini 모드 — 한 Gemini 호출로 카피·이미지 동시 생성.
+            # 상품 이미지가 있으면 원본을 멀티모달 입력으로 함께 넣어 참조(픽셀 보존은 보장 안 됨).
             image_bytes, ad_copy = await generate_image_and_copy(
                 product_analysis=product_analysis,
                 strategy=plan.strategy,
@@ -215,10 +232,11 @@ async def generate_candidates(state: GenerationState, config: RunnableConfig) ->
                 brand_color=brand_color,
                 tone=tone,
                 improvement_context=improvement_context,
+                product_image_bytes=product_image_bytes,
             )
         else:
-            # 1. 카피는 이미 배치 생성됨 — 이미지만 생성
-            # 2. 이미지 생성 — 상품 이미지가 있으면 마스크 인페인팅으로 상품 보존하며 생성
+            # openai 모드 — 카피는 이미 배치 생성됨, 이미지만 생성.
+            # 상품 이미지가 있으면 마스크 인페인팅으로 상품 픽셀 보존하며 생성.
             image_bytes = await generate_image(
                 product_analysis=product_analysis,
                 strategy=plan.strategy,
