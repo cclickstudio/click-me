@@ -107,8 +107,9 @@ class Settings(BaseSettings):
     management_diagnosis_temperature: float = 0.0
 
     # Generator (광고 생성)
-    # 생성 방식: pipeline=카피·이미지 단계 분리 / multimodal=한 모델이 이미지+카피 동시 생성
-    generator_gen_mode: str = "pipeline"  # pipeline | multimodal
+    # 생성 방식: openai=OpenAI 이미지(상품있음 누끼·인페인팅 / 없음 0부터)
+    #            gemini=Gemini 멀티모달(이미지+카피 동시 생성)
+    generator_gen_mode: str = "openai"  # openai | gemini
     # 텍스트(상품분석·전략·카피·QA·설명)
     generator_text_provider: str = "openai"  # openai | anthropic | google_genai ...
     generator_text_model: str = "gpt-4.1"
@@ -124,6 +125,9 @@ class Settings(BaseSettings):
     # 이미지 편집(누끼 배경제거 — remove_product_background)
     generator_image_edit_provider: str = "openai"  # openai
     generator_image_edit_model: str = "gpt-image-1"
+    # 이미지 생성(gemini 모드) — GEN_MODE=gemini 일 때 사용.
+    # native 모델이 이미지+카피를 한 호출로 출력. gemini-3-pro-image 등으로 교체 가능.
+    generator_gemini_image_model: str = "gemini-2.5-flash-image"
     # ── 작업별 이미지 모델 오버라이드 (operation 단위 스위칭) ──
     # 미설정(None)이면 위 기존 설정으로 폴백 → 기본 동작 불변. 해석은 cutout_*/inpaint_* 프로퍼티.
     generator_cutout_provider: str | None = None  # 누끼 — 폴백: image_edit_provider
