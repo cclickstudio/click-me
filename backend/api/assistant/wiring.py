@@ -108,6 +108,7 @@ def _build_management_handler(settings) -> Handler:
                 question=req.last_user_text,
                 ad_id=req.context_ad_id,
                 thread_id=thread_id,
+                memory_context=req.memory_context,  # M1 — 장기기억(있으면 react가 LLM 맥락 주입)
             )
         )
         answer = result.answer

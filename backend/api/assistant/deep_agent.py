@@ -90,6 +90,7 @@ class _OState(TypedDict):
     requires_approval: bool
     session_id: str
     context_ad_id: str | None
+    memory_context: str | None  # 장기기억(M1) — 서브에이전트 req로 전달
 
 
 def _chat_to_lc(m: ChatMessage) -> HumanMessage | AIMessage:
@@ -176,6 +177,7 @@ def build_deep_agent_graph(
                         messages=state["orig_messages"],
                         session_id=state["session_id"],
                         context_ad_id=args.get("campaign_id") or state["context_ad_id"],
+                        memory_context=state.get("memory_context"),  # M1 — 장기기억 주입
                     )
                     result: SubagentResult = await _mgt_handler(req)
                     new_sub["management"] = result.meta
@@ -261,6 +263,7 @@ def build_deep_agent_graph(
             "requires_approval": False,
             "session_id": req.session_id or "",
             "context_ad_id": req.context_ad_id,
+            "memory_context": req.memory_context,
         }
 
         config = {

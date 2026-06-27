@@ -137,6 +137,15 @@ async def chat_complete(
     async def generate() -> AsyncGenerator[str, None]:
         # Deep Agent 오케스트레이터 — management/generate/advise 통합 라우팅.
         # advise(일반 질문)면 None 반환 → OpenAI CLIO 폴백.
+        # M1·M3 — 장기기억 회수는 로그인 사용자(user_id)만. 비로그인은 (global,anon) 공유라
+        # cross-user 누출 위험 → 회수·주입 안 함(M3 격리). 회수 실패는 무시(채팅 안 막음).
+        memory_context: str | None = None
+        if user_id is not None:
+            try:
+                mems = await _get_memory().recall(tenant_id, user_id, limit=5)
+                memory_context = _format_memory(mems)
+            except Exception as mexc:  # noqa: BLE001
+                print(f"[chat] memory recall 실패(무시): {mexc!r}")
         try:
             _t0 = time.perf_counter()
             orch_result = await _get_orchestrator()(
@@ -145,6 +154,7 @@ async def chat_complete(
                     session_id=body.session_id or "",
                     context_ad_id=body.context_ad_id,
                     user_id=str(user.id) if user else None,
+                    memory_context=memory_context,
                 )
             )
             _latency_ms = int((time.perf_counter() - _t0) * 1000)
@@ -202,14 +212,18 @@ async def chat_complete(
                     )
                 except Exception as rexc:  # noqa: BLE001
                     print(f"[chat] record_turn 실패(무시): {rexc!r}")
-                try:
-                    note = f"질문: {last_message[:60]}"
-                    sa = meta.get("suggested_action")
-                    if sa:
-                        note += f" / 제안: {sa.get('action_type', '')}"
-                    await _get_memory().remember(tenant_id, user_id, uuid4().hex, {"note": note})
-                except Exception as mexc:  # noqa: BLE001
-                    print(f"[chat] memory remember 실패(무시): {mexc!r}")
+                # M3 — 장기기억 적재는 로그인 사용자만(비로그인 (global,anon) 공유 누출 방지).
+                if user_id is not None:
+                    try:
+                        note = f"질문: {last_message[:60]}"
+                        sa = meta.get("suggested_action")
+                        if sa:
+                            note += f" / 제안: {sa.get('action_type', '')}"
+                        await _get_memory().remember(
+                            tenant_id, user_id, uuid4().hex, {"note": note}
+                        )
+                    except Exception as mexc:  # noqa: BLE001
+                        print(f"[chat] memory remember 실패(무시): {mexc!r}")
 
             yield 'data: {"done": true}\n\n'
             return
