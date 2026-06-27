@@ -252,6 +252,7 @@ async def evaluate_faithfulness(n: int = 30) -> dict[str, Any]:
         return {"error": "QA쌍 없음 — POST /kb/eval/generate 먼저 실행"}
 
     faithful_count = 0
+    error_count = 0
     not_faithful_examples: list[dict] = []
 
     for case in cases:
@@ -278,15 +279,14 @@ async def evaluate_faithfulness(n: int = 30) -> dict[str, Any]:
             )
             answer = ans_resp.choices[0].message.content.strip()
 
-            # LLM as Judge — Gemini 사용 (OpenAI 답변 생성과 judge 분리)
+            # LLM as Judge — Gemini 사용 (OpenAI 답변 생성과 judge 분리).
+            # gemini-2.0-flash-lite는 2026 단종(404) → 현행 gemini-2.5-flash-lite로 교체.
             import google.generativeai as genai  # noqa: PLC0415
 
             genai.configure(api_key=settings.gemini_api_key or "")
-            judge_model = genai.GenerativeModel("gemini-2.0-flash-lite")
+            judge_model = genai.GenerativeModel("gemini-2.5-flash-lite")
             judge_resp_raw = judge_model.generate_content(
-                _FAITHFULNESS_PROMPT.format(
-                    question=case.question, answer=answer, context=context
-                ),
+                _FAITHFULNESS_PROMPT.format(question=case.question, answer=answer, context=context),
                 generation_config={"temperature": 0.0, "max_output_tokens": 10},
             )
             verdict = (judge_resp_raw.text or "").strip().lower()
@@ -298,12 +298,15 @@ async def evaluate_faithfulness(n: int = 30) -> dict[str, Any]:
                         {"question": case.question[:80], "answer": answer[:120]}
                     )
         except Exception as e:  # noqa: BLE001
-            faithful_count += 1  # 오류는 faithful로 처리 (비관적 판단 방지)
-            print(f"  판단 오류(faithful 처리): {e}")
+            # 오류는 not_faithful로 보수 처리 — judge 고장(모델 단종 등)이 가짜 고득점으로
+            # 가려지지 않게 한다. 과거 'faithful 처리'가 죽은 judge의 1.00을 만들었다.
+            error_count += 1
+            print(f"  판단 오류(not_faithful 처리): {e}")
 
     return {
         "faithfulness": round(faithful_count / len(cases), 4),
         "n_cases": len(cases),
+        "n_error": error_count,  # judge 호출 실패 수 — >0이면 측정 신뢰 불가(고장 신호)
         "not_faithful_examples": not_faithful_examples,
         "target": 0.85,
     }
