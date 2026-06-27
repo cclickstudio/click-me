@@ -96,12 +96,31 @@ _SOURCE_META: dict[str, tuple[str, str | None, str, dict]] = {
         "advisory",
         {"platform": "meta", "as_of": "2026-06"},
     ),
+    "marketing_basics.md": (
+        "playbook",
+        None,
+        "advisory",
+        {"platform": "meta", "as_of": "2026-06"},
+    ),
     # 서브디렉토리 파일(태호 체리픽) — management 적합한 것만 등록·적재.
     "external/meta_reference.md": (
         "meta_official",
         "https://www.facebook.com/business/help/447834205249495",
         "system_backed",
         {"platform": "meta", "as_of": "2026-06"},
+    ),
+    # 일반 광고·마케팅 지식(도연 체리픽) — ADVISE 경로 근거. 단정 아닌 참고(advisory).
+    "external/advertising_general_knowledge.md": (
+        "general_knowledge",
+        None,
+        "advisory",
+        {"scope": "general"},
+    ),
+    "external/marketing_terms.md": (
+        "general_knowledge",
+        None,
+        "advisory",
+        {"scope": "general"},
     ),
 }
 
@@ -111,8 +130,8 @@ _SOURCE_META: dict[str, tuple[str, str | None, str, dict]] = {
 _SUBDIR_ALLOWLIST: frozenset[str] = frozenset(
     {
         "external/meta_reference.md",  # Meta 지표·심사·정책 레퍼런스(태호) — management 적합
-        # G5에서 도연 일반 KB 추가 예정:
-        # "external/advertising_general_knowledge.md", "external/marketing_terms.md"
+        "external/advertising_general_knowledge.md",  # 일반 광고·마케팅 개념(도연) — ADVISE 근거
+        "external/marketing_terms.md",  # 광고·마케팅 용어 사전(도연) — ADVISE 근거
     }
 )
 
