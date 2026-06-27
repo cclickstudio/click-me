@@ -137,6 +137,16 @@ async def test_with_product_appends_image_input(patch_genai):
     assert len(contents) == 2  # 프롬프트 + 상품 이미지 part
 
 
+async def test_with_existing_ad_appends_image_and_improve_prompt(patch_genai):
+    fake = patch_genai([_Part(image=b"img"), _Part(text="{}")])
+    await mg.generate_image_and_copy(
+        _product(), AdStrategy.BENEFIT, TemplateType.A, existing_ad_bytes=b"EXISTING_AD"
+    )
+    contents = fake.client.models.calls[-1]["contents"]
+    assert len(contents) == 2  # 프롬프트 + 기존 광고 이미지 part
+    assert "기존 광고" in contents[0]  # 개선 모드 프롬프트 섹션 포함
+
+
 # ── 이미지 누락 시 실패 ─────────────────────────────────────────────────────────
 async def test_raises_when_no_image(patch_genai):
     patch_genai([_Part(text='{"headline": "x", "body": "y", "cta": "z"}')])
