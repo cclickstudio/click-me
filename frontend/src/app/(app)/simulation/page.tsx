@@ -4,6 +4,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useProjects } from '@/components/ProjectContext';
+import { useAuth } from '@/components/AuthProvider';
 import { api, API_BASE } from '@/lib/api';
 import { getToken } from '@/lib/authApi';
 import { saveSimResult } from '@/lib/simResultStore';
@@ -71,6 +72,7 @@ const AGE_BANDS: { label: string; min: number; max: number }[] = [
 
 export default function SimulationRunPage() {
   const { selectedProject, projects, selectProject } = useProjects();
+  const { user } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
   const [step, setStep] = useState<Step>('setup');
@@ -182,6 +184,7 @@ export default function SimulationRunPage() {
         ad_content: adContent || undefined,
         ad_image: inputMode === 'image' ? file : undefined,
         ad_image_url: inputMode === 'url' ? imageUrl || undefined : undefined,
+        organization_id: user?.organization_id ?? undefined,
         project_id: selectedProject?.id ?? undefined,
         target_filter: targetFilter,
         target_mode: targetMode,
@@ -194,6 +197,7 @@ export default function SimulationRunPage() {
           categories.find(c => c.id === categoryId)?.name || undefined,
         service_class:
           typeof serviceClass === 'number' ? serviceClass : undefined,
+        from_campaign_id: fromCampaign ?? undefined,
       });
 
       const es = api.simulation.stream(run_id);
@@ -241,18 +245,6 @@ export default function SimulationRunPage() {
                 adTitle: adTitle || undefined,
                 adDescription: adContent || undefined,
               });
-              // 성과 비교에서 넘어온 경우 — 시뮬 완료 후 Meta 캠페인에 자동 연결
-              if (fromCampaign && r.simulation_id) {
-                try {
-                  await api.management.linkSimulation(fromCampaign, r.simulation_id);
-                } catch {
-                  // 연결 실패해도 결과 이동은 막지 않음 — 콘솔에서 수동 연결 가능
-                  console.warn('[link-simulation 실패] campaign:', fromCampaign, 'sim:', r.simulation_id);
-                }
-              } else if (fromCampaign && !r.simulation_id) {
-                // 프로젝트 미선택 → DB 저장 안 됨 → simulation_id 없음
-                console.warn('[link-simulation skip] simulation_id 없음 — 프로젝트를 선택해야 DB에 저장됩니다.');
-              }
               router.push(`/simulation/${routeId}`);
             })
             .catch(e => {

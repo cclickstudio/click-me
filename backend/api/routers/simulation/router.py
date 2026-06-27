@@ -66,6 +66,7 @@ def _build_request(
     product_category: str | None,
     ad_objective: str | None,
     service_class: int | None,
+    from_campaign_id: str | None = None,
 ) -> SimulationRunRequest:
     """multipart 폼 값들을 도메인 요청 DTO로 조립. target_filter는 JSON 문자열."""
     tf = None
@@ -91,6 +92,7 @@ def _build_request(
         product_category=product_category,
         ad_objective=ad_objective,
         service_class=service_class,
+        from_campaign_id=from_campaign_id,
     )
 
 
@@ -110,6 +112,7 @@ async def start_simulation(
     product_category: str | None = Form(None),
     ad_objective: str | None = Form(None),
     service_class: int | None = Form(None),
+    from_campaign_id: str | None = Form(None),  # 관리 탭 진입 시 — 완료 후 서버가 자동 링크
 ) -> dict:
     """비동기 시작 — run_id 반환. 진행률은 /stream, 결과는 /result."""
     ad_image_path, ad_image_key = await _save_upload(ad_image)
@@ -129,6 +132,7 @@ async def start_simulation(
         product_category=product_category,
         ad_objective=ad_objective,
         service_class=service_class,
+        from_campaign_id=from_campaign_id,
     )
     run_id = await _service.start(req)
     return {

@@ -190,6 +190,7 @@ function buildSimForm(input: SimRunInput): FormData {
   if (input.product_category) form.append("product_category", input.product_category);
   if (input.ad_objective) form.append("ad_objective", input.ad_objective);
   if (input.service_class != null) form.append("service_class", String(input.service_class));
+  if (input.from_campaign_id) form.append("from_campaign_id", input.from_campaign_id);
   return form;
 }
 
