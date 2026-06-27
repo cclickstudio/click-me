@@ -16,8 +16,34 @@ from core.config import settings
 from core.db import get_db
 from core.models import User
 from core.schemas import ChatRequest
+from domain.management.assistant.contracts import AskResult, Citation, SuggestedAction
 from domain.management.assistant.history import record_feedback, record_turn, summarize_feedback
 from domain.management.assistant.memory_store import ManagementMemory, build_memory_store
+
+_CITATION_FIELDS = ("kind", "source", "title", "trust", "source_url", "as_of")
+
+
+def _sub_to_ask(message: str, meta: dict) -> AskResult:
+    """SubagentResult(message, meta) → AskResult — composer.compose_turn 입력 타입 맞춤(G3).
+
+    meta는 임의 키를 담을 수 있어 Citation/SuggestedAction은 알려진 필드만 골라 생성(여분 키 무시).
+    """
+    citations = [
+        Citation(**{k: c[k] for k in _CITATION_FIELDS if k in c})
+        for c in meta.get("citations", [])
+        if isinstance(c, dict) and c.get("source")
+    ]
+    raw_sa = meta.get("suggested_action")
+    sa = SuggestedAction(**raw_sa) if isinstance(raw_sa, dict) else None
+    return AskResult(
+        answer=message or "",
+        citations=citations,
+        used_tools=list(meta.get("used_tools", [])),
+        evidence=meta.get("evidence", {}) or {},
+        suggested_action=sa,
+        requires_approval=bool(meta.get("requires_approval", False)),
+        thread_id=meta.get("thread_id"),
+    )
 
 router = APIRouter()
 
