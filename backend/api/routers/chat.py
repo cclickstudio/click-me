@@ -168,6 +168,32 @@ async def _extract_memory(question: str, answer: str) -> dict | None:
     }
 
 
+async def _summarize_session(messages: list) -> str | None:
+    """대화를 사용자 관심사·진행 중심으로 2문장 요약(M6 episodic). 실패는 None.
+
+    도연 session_summary 패턴 — recency 회수에 쓰인다. 임베딩 시맨틱 회수는 Alembic 029 후속.
+    """
+    convo = "\n".join(f"{m.role}: {m.content[:200]}" for m in messages[-10:])
+    try:
+        resp = await _get_clio_client().chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {
+                    "role": "user",
+                    "content": (
+                        "다음 대화를 사용자 관심사·진행 상황 중심으로 2문장 이내 한국어로 "
+                        "요약하라. 단발 사실 나열 말고 맥락 위주.\n\n" + convo
+                    ),
+                }
+            ],
+            temperature=0.0,
+            max_tokens=150,
+        )
+        return (resp.choices[0].message.content or "").strip() or None
+    except Exception:  # noqa: BLE001
+        return None
+
+
 @router.post("/complete")
 async def chat_complete(
     body: ChatRequest,
@@ -271,6 +297,20 @@ async def chat_complete(
                             )
                     except Exception as mexc:  # noqa: BLE001
                         print(f"[chat] memory remember 실패(무시): {mexc!r}")
+                    # M6 — 세션 요약(episodic). 멀티턴(≥8 메시지)이 쌓이면 4메시지마다 갱신
+                    # (dedup_key=summary:session → upsert, 비용 통제). 임베딩 회수는 Alembic 029.
+                    if len(body.messages) >= 8 and len(body.messages) % 4 == 0:
+                        try:
+                            summ = await _summarize_session(body.messages)
+                            if summ:
+                                await _get_memory().remember(
+                                    tenant_id,
+                                    user_id,
+                                    f"summary:{body.session_id}",
+                                    {"kind": "episodic", "fact": summ},
+                                )
+                        except Exception as sexc:  # noqa: BLE001
+                            print(f"[chat] 세션 요약 실패(무시): {sexc!r}")
 
             yield 'data: {"done": true}\n\n'
             return
