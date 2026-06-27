@@ -278,21 +278,18 @@ async def evaluate_faithfulness(n: int = 30) -> dict[str, Any]:
             )
             answer = ans_resp.choices[0].message.content.strip()
 
-            # LLM as Judge
-            judge_resp = await client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[
-                    {
-                        "role": "user",
-                        "content": _FAITHFULNESS_PROMPT.format(
-                            question=case.question, answer=answer, context=context
-                        ),
-                    }
-                ],
-                temperature=0.0,
-                max_tokens=10,
+            # LLM as Judge — Gemini 사용 (OpenAI 답변 생성과 judge 분리)
+            import google.generativeai as genai  # noqa: PLC0415
+
+            genai.configure(api_key=settings.gemini_api_key or "")
+            judge_model = genai.GenerativeModel("gemini-2.0-flash-lite")
+            judge_resp_raw = judge_model.generate_content(
+                _FAITHFULNESS_PROMPT.format(
+                    question=case.question, answer=answer, context=context
+                ),
+                generation_config={"temperature": 0.0, "max_output_tokens": 10},
             )
-            verdict = judge_resp.choices[0].message.content.strip().lower()
+            verdict = (judge_resp_raw.text or "").strip().lower()
             if "faithful" in verdict and "not" not in verdict:
                 faithful_count += 1
             else:

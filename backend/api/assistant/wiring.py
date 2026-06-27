@@ -10,18 +10,17 @@ from api.assistant.contracts import Action, Intent, SubagentRequest, SubagentRes
 from api.assistant.orchestrator import Orchestrator
 from api.assistant.registry import Handler, SubagentRegistry
 
-_GEMINI_MODEL = "gemini-2.5-flash"
+_CLASSIFIER_MODEL = "gpt-4o-mini"
 
 
 def _build_classifier_llm(settings) -> object | None:
-    """의도 분류용 Gemini. 키 없으면 None(키워드 폴백)."""
-    api_key = getattr(settings, "gemini_api_key", None)
+    """의도 분류용 OpenAI. 키 없으면 None(ADVISE 폴백)."""
+    api_key = getattr(settings, "openai_api_key", None)
     if not api_key:
         return None
-    from langchain_google_genai import ChatGoogleGenerativeAI  # noqa: PLC0415
+    from langchain_openai import ChatOpenAI  # noqa: PLC0415
 
-    model = getattr(settings, "chat_model", _GEMINI_MODEL)
-    return ChatGoogleGenerativeAI(model=model, google_api_key=api_key, temperature=0.0)
+    return ChatOpenAI(model=_CLASSIFIER_MODEL, api_key=api_key, temperature=0.0)
 
 
 def _build_management_handler(settings) -> Handler:

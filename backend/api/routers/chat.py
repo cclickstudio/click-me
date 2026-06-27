@@ -1,14 +1,12 @@
-import asyncio
 import json
-import threading
 import time
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
-import google.generativeai as genai
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
+from openai import AsyncOpenAI
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -23,10 +21,8 @@ from domain.management.assistant.memory_store import ManagementMemory, build_mem
 
 router = APIRouter()
 
-genai.configure(api_key=settings.gemini_api_key or "")
-_model = genai.GenerativeModel(
-    model_name="gemini-2.5-flash",
-    system_instruction="""\
+_CLIO_MODEL = "gpt-4o-mini"
+_CLIO_SYSTEM = """\
 당신은 ClickMe의 수석 광고 전략 AI 어드바이저 'CLIO'입니다.
 
 ## 정체성
@@ -45,10 +41,16 @@ _model = genai.GenerativeModel(
 - 수치를 제시할 때는 비교 기준(업계 평균, KOBACO 기준선)과 함께 언급
 - 실행 가능한 제안을 항상 포함
 - 한국어로 응답하며, 전문 용어는 자연스럽게 풀어서 설명
-""",
-)
+"""
 
-_SENTINEL = object()
+_openai_client: AsyncOpenAI | None = None
+
+
+def _get_clio_client() -> AsyncOpenAI:
+    global _openai_client  # noqa: PLW0603
+    if _openai_client is None:
+        _openai_client = AsyncOpenAI(api_key=settings.openai_api_key)
+    return _openai_client
 
 # ── Deep Agent 오케스트레이터 — management·generate·advise 통합 라우팅 ──────
 _orchestrator = None
@@ -102,20 +104,11 @@ async def chat_complete(
 ) -> StreamingResponse:
     # 식별자는 스트리밍 전에 해석(요청 db 사용) — 로그인 시 (org, user)로 장기기억 스코프.
     tenant_id, user_id = await _resolve_identity(user, db)
-    gemini_history = []
-    for m in body.messages[:-1]:
-        gemini_history.append(
-            {
-                "role": "user" if m.role == "user" else "model",
-                "parts": [m.content],
-            }
-        )
-
     last_message = body.messages[-1].content if body.messages else ""
 
     async def generate() -> AsyncGenerator[str, None]:
         # Deep Agent 오케스트레이터 — management/generate/advise 통합 라우팅.
-        # advise(일반 질문)면 None 반환 → Gemini CLIO 폴백.
+        # advise(일반 질문)면 None 반환 → OpenAI CLIO 폴백.
         try:
             _t0 = time.perf_counter()
             orch_result = await _get_orchestrator()(
@@ -176,41 +169,29 @@ async def chat_complete(
             yield 'data: {"done": true}\n\n'
             return
 
-        # ADVISE — 기존 CLIO(Gemini)
-        clio_meta = {"source": "clio", "label": "CLIO", "engine": "Gemini"}
+        # ADVISE — CLIO (OpenAI GPT, async 스트리밍)
+        clio_meta = {"source": "clio", "label": "CLIO", "engine": "OpenAI GPT"}
         yield f"data: {json.dumps({'meta': clio_meta}, ensure_ascii=False)}\n\n"
 
-        loop = asyncio.get_running_loop()
-        queue: asyncio.Queue = asyncio.Queue()
+        oai_messages = [{"role": "system", "content": _CLIO_SYSTEM}]
+        for m in body.messages[:-1]:
+            oai_messages.append({"role": m.role, "content": m.content})
+        oai_messages.append({"role": "user", "content": last_message})
 
-        def _run_sync() -> None:
-            try:
-                chat = _model.start_chat(history=gemini_history)
-                response = chat.send_message(last_message, stream=True)
-                for chunk in response:
-                    try:
-                        text = chunk.text
-                    except Exception as e:  # noqa: BLE001
-                        print(f"[chat] chunk.text error: {e!r}")
-                        continue
-                    print(f"[chat] chunk: {text!r}")
-                    if text:
-                        loop.call_soon_threadsafe(queue.put_nowait, text)
-            except Exception as exc:  # noqa: BLE001
-                print(f"[chat] _run_sync error: {exc!r}")
-                loop.call_soon_threadsafe(queue.put_nowait, exc)
-            finally:
-                loop.call_soon_threadsafe(queue.put_nowait, _SENTINEL)
-
-        threading.Thread(target=_run_sync, daemon=True).start()
-
-        while True:
-            item = await queue.get()
-            if item is _SENTINEL:
-                break
-            if isinstance(item, Exception):
-                break
-            yield f"data: {json.dumps({'token': item}, ensure_ascii=False)}\n\n"
+        try:
+            stream = await _get_clio_client().chat.completions.create(
+                model=_CLIO_MODEL,
+                messages=oai_messages,
+                stream=True,
+                temperature=0.7,
+            )
+            async for chunk in stream:
+                text = (chunk.choices[0].delta.content or "") if chunk.choices else ""
+                if text:
+                    yield f"data: {json.dumps({'token': text}, ensure_ascii=False)}\n\n"
+        except Exception as exc:  # noqa: BLE001
+            print(f"[chat] CLIO 오류: {exc!r}")
+            yield f"data: {json.dumps({'token': '(응답 오류)'}, ensure_ascii=False)}\n\n"
 
         yield 'data: {"done": true}\n\n'
 
