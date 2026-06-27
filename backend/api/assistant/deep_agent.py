@@ -309,6 +309,11 @@ def _state_to_result(state: _OState) -> SubagentResult:
         ),
         "requires_approval": state["requires_approval"],
         "thread_id": state["thread_id"],
+        # G2 — suggested_action/evidence/campaigns 캐리. 누락 시 RESULT/REVIEW/ACTIONBAR
+        # 카드가 영영 안 뜨고(chat.py compose_turn 입력 부재), record_turn·메모리 노트도 빈값.
+        "suggested_action": mgt_meta.get("suggested_action"),
+        "evidence": mgt_meta.get("evidence", {}),
+        "campaigns": mgt_meta.get("campaigns", []),
         "sub_results": {
             "management": _compact_meta(mgt_meta),
             "generator": _compact_meta(gen_meta),
