@@ -112,9 +112,7 @@ async def classify_intent(req: SubagentRequest, registered: Sequence[Intent], ll
     """
     if llm is not None:
         try:
-            result = await _llm_classify(llm, req, registered)
-            print(f"[intent] {req.last_user_text[:40]!r} → {result}", flush=True)
-            return result
-        except Exception as e:  # noqa: BLE001 — 분류 실패는 advise 폴백(채팅 끊지 않음)
-            print(f"[intent] 분류 실패 → ADVISE: {e!r}", flush=True)
+            return await _llm_classify(llm, req, registered)
+        except Exception:  # noqa: BLE001 — 분류 실패는 advise 폴백(채팅 끊지 않음)
+            pass
     return Intent.ADVISE

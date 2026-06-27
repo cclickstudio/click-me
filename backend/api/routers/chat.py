@@ -121,10 +121,7 @@ async def chat_complete(
             )
             _latency_ms = int((time.perf_counter() - _t0) * 1000)
         except Exception as exc:  # noqa: BLE001 — 오케스트레이터 실패 → CLIO 폴백
-            import traceback  # noqa: PLC0415
-
-            traceback.print_exc()
-            print(f"[chat] orchestrator 실패, CLIO 폴백: {exc!r}", flush=True)
+            print(f"[chat] orchestrator 실패, CLIO 폴백: {exc!r}")
             orch_result = None
 
         if orch_result is not None:
