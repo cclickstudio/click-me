@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { api, type BeforeAfterItem, type CalibrationResponse } from '@/lib/api';
+import { api, type BeforeAfterItem, type CalibrationResponse, type PredictionSnapshot, type ActualOutcome } from '@/lib/api';
 
 const VERDICT: Record<BeforeAfterItem['verdict'], { label: string; cls: string }> = {
   aligned: { label: '예측대로', cls: 'bg-[#EBF3FF] text-[#3182F6] dark:bg-[#1E3A5F] dark:text-[#7BB4F5]' },
@@ -50,6 +50,154 @@ function StrongBadge({
   );
 }
 
+// 판정 이유 — 클릭/구매 축 기준선 통과 여부를 구조적으로 설명
+function VerdictReason({ item, p, a }: { item: BeforeAfterItem; p: PredictionSnapshot | null; a: ActualOutcome }) {
+  const cirVal = p ? `${(p.click_intent_rate * 100).toFixed(0)}%` : '—';
+  const ctrVal = `${(a.ctr * 100).toFixed(2)}%`;
+  const piVal = p ? `${p.purchase_intent.toFixed(1)}/5` : '—';
+  const cvrVal = a.cvr != null ? `${(a.cvr * 100).toFixed(1)}%` : '추적 전';
+
+  const clickPredIcon = item.pred_strong === true ? '✅' : item.pred_strong === false ? '❌' : '—';
+  const clickActIcon = item.act_strong === true ? '✅' : item.act_strong === false ? '❌' : '—';
+  const purchPredIcon = item.purchase_pred_strong === true ? '✅' : item.purchase_pred_strong === false ? '❌' : '—';
+  const purchActIcon = item.purchase_act_strong === true ? '✅' : item.purchase_act_strong === false ? '❌' : '—';
+
+  const verdictDesc: Record<BeforeAfterItem['verdict'], string> = {
+    overperformed: '예측보다 실측이 좋음 — 집행 후 성과가 시뮬 예측을 상회했습니다.',
+    underperformed: '예측보다 실측이 약함 — 시뮬 예측에 비해 실제 집행 성과가 낮습니다.',
+    aligned: '예측·실측 방향 일치 — 시뮬 예측대로 집행 결과가 나왔습니다.',
+    unknown: '판단 보류 — 데이터 부족 또는 클릭·구매 축이 반대 방향이어서 단순 판정이 어렵습니다.',
+  };
+
+  return (
+    <div className="mt-3 rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-[#F9FAFB] dark:bg-[#1C2333] p-4 space-y-3">
+      <p className="text-xs font-semibold text-[#4E5968] dark:text-[#9CA3AF]">판정 기준 · 이유</p>
+
+      {/* 클릭 축 */}
+      <div className="space-y-1">
+        <p className="text-[11px] font-semibold text-[#191F28] dark:text-[#F2F4F6]">클릭 축</p>
+        <div className="flex gap-4 text-[11px] text-[#4E5968] dark:text-[#9CA3AF]">
+          <span>
+            {clickPredIcon} 예측 CIR <strong>{cirVal}</strong>
+            {item.pred_strong != null && (
+              <span className="ml-1 text-[#B0B8C1]">
+                (기준 20% {item.pred_strong ? '통과 → 강함' : '미달 → 약함'})
+              </span>
+            )}
+          </span>
+          <span className="text-[#B0B8C1]">⟷</span>
+          <span>
+            {clickActIcon} 실측 CTR <strong>{ctrVal}</strong>
+            {item.act_strong != null && (
+              <span className="ml-1 text-[#B0B8C1]">
+                (기준 1% {item.act_strong ? '통과 → 양호' : '미달 → 약함'})
+              </span>
+            )}
+          </span>
+        </div>
+      </div>
+
+      {/* 구매 축 */}
+      <div className="space-y-1">
+        <p className="text-[11px] font-semibold text-[#191F28] dark:text-[#F2F4F6]">구매 축</p>
+        <div className="flex gap-4 text-[11px] text-[#4E5968] dark:text-[#9CA3AF]">
+          <span>
+            {purchPredIcon} 예측 PI <strong>{piVal}</strong>
+            {item.purchase_pred_strong != null && (
+              <span className="ml-1 text-[#B0B8C1]">
+                (기준 3.5/5 {item.purchase_pred_strong ? '통과 → 강함' : '미달 → 약함'})
+              </span>
+            )}
+          </span>
+          <span className="text-[#B0B8C1]">⟷</span>
+          <span>
+            {purchActIcon} 실측 CVR <strong>{cvrVal}</strong>
+            {item.purchase_act_strong != null && (
+              <span className="ml-1 text-[#B0B8C1]">
+                (기준 2% {item.purchase_act_strong ? '통과 → 양호' : '미달 → 약함'})
+              </span>
+            )}
+          </span>
+        </div>
+      </div>
+
+      <p className="text-[11px] text-[#3182F6] font-medium border-t border-[#E5E8EB] dark:border-[#2D3748] pt-2">
+        → {verdictDesc[item.verdict]}
+      </p>
+      {item.rationale && (
+        <p className="text-[11px] text-[#8B95A1]">{item.rationale}</p>
+      )}
+      {item.interpretation && (
+        <p className="text-[11px] text-[#B0B8C1] dark:text-[#6B7280]">↳ {item.interpretation}</p>
+      )}
+    </div>
+  );
+}
+
+// 집행 전 시뮬 전체 상세 패널
+function SimDetail({ p }: { p: PredictionSnapshot }) {
+  const date = new Date(p.as_of).toLocaleDateString('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit' });
+  return (
+    <div className="rounded-xl bg-[#F9FAFB] dark:bg-[#252D3D] p-3">
+      <p className="text-xs font-semibold text-[#4E5968] dark:text-[#9CA3AF] mb-2.5">
+        집행 전 · 시뮬 전체 결과{' '}
+        <span className="text-[10px] font-normal text-[#B0B8C1]">({p.source === 'sim' ? '실 시뮬' : '예측(목)'} · {date})</span>
+      </p>
+      <div className="grid grid-cols-4 gap-3">
+        <Metric
+          label="클릭 의향률(CIR)"
+          value={`${(p.click_intent_rate * 100).toFixed(0)}%`}
+          hint="기준 ≥20% 강함"
+        />
+        <Metric
+          label="구매의도(PI)"
+          value={`${p.purchase_intent.toFixed(1)}/5`}
+          hint="기준 ≥3.5 강함"
+        />
+        <Metric label="신뢰도(Trust)" value={`${p.trust_avg.toFixed(1)}/5`} />
+        <Metric
+          label="거부율(Rejection)"
+          value={`${(p.rejection_rate * 100).toFixed(0)}%`}
+          hint="낮을수록 좋음"
+        />
+      </div>
+    </div>
+  );
+}
+
+// 집행 후 실측 전체 상세 패널
+function ActDetail({ a }: { a: ActualOutcome }) {
+  return (
+    <div className="rounded-xl bg-white dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748] p-3">
+      <p className="text-xs font-semibold text-[#4E5968] dark:text-[#9CA3AF] mb-2.5">
+        집행 후 · 실측 전체{' '}
+        <span className="text-[10px] font-normal text-[#3182F6]">(실 Meta)</span>
+      </p>
+      <div className="grid grid-cols-4 gap-3">
+        <Metric label="노출수" value={a.impressions.toLocaleString()} />
+        <Metric label="도달수(Reach)" value={a.reach.toLocaleString()} />
+        <Metric label="지출(Spend)" value={`₩${a.spend_krw.toLocaleString()}`} />
+        <Metric label="CTR(클릭률)" value={`${(a.ctr * 100).toFixed(2)}%`} hint="기준 ≥1% 양호" />
+        <Metric label="CPC" value={`₩${a.cpc_krw.toLocaleString()}`} />
+        <Metric label="CPM" value={`₩${a.cpm_krw.toLocaleString()}`} />
+        <Metric
+          label="CVR(전환율)"
+          value={a.cvr != null ? `${(a.cvr * 100).toFixed(1)}%` : '추적 전'}
+          hint={a.cvr != null ? '기준 ≥2% 양호' : '전환 추적 필요'}
+        />
+        <Metric
+          label="ROAS"
+          value={a.roas != null ? `${a.roas.toFixed(1)}x` : '추적 전'}
+          hint={a.roas == null ? '전환가치 필요' : undefined}
+        />
+      </div>
+      {a.conversions != null && (
+        <p className="mt-2 text-[11px] text-[#8B95A1]">전환수: {a.conversions.toLocaleString()}건</p>
+      )}
+    </div>
+  );
+}
+
 function BeforeAfterCard({
   item,
   onRunSim,
@@ -59,6 +207,7 @@ function BeforeAfterCard({
   onRunSim: (campaignId: string) => void;
   simLoading: string | null;
 }) {
+  const [showDetail, setShowDetail] = useState(false);
   const v = VERDICT[item.verdict];
   const p = item.prediction;
   const a = item.actual;
@@ -121,7 +270,7 @@ function BeforeAfterCard({
         </div>
       </div>
 
-      {/* 보조 — 예측 KPI(판정 외) ↔ 실측 KPI */}
+      {/* 보조 — 예측 KPI(판정 외) ↔ 실측 KPI 요약 */}
       <div className="grid grid-cols-2 gap-4">
         <div className="rounded-xl bg-[#F9FAFB] dark:bg-[#252D3D] p-3">
           <p className="text-xs font-semibold text-[#4E5968] dark:text-[#9CA3AF] mb-2">
@@ -170,14 +319,22 @@ function BeforeAfterCard({
           </div>
         </div>
       </div>
-      <p className="mt-3 text-[12px] text-[#8B95A1]">{item.rationale}</p>
-      {item.interpretation && (
-        <p className="mt-1 text-[12px] text-[#B0B8C1] dark:text-[#6B7280]">↳ {item.interpretation}</p>
-      )}
-      {!p && (
-        <p className="mt-2 text-[11px] text-[#B0B8C1]">
-          시뮬 미연결 — 예측 데이터 없음
-        </p>
+
+      {/* 상세 토글 버튼 */}
+      <button
+        onClick={() => setShowDetail((v) => !v)}
+        className="mt-3 w-full flex items-center justify-center gap-1 py-1.5 rounded-lg border border-[#E5E8EB] dark:border-[#2D3748] text-[11px] text-[#8B95A1] hover:bg-[#F9FAFB] dark:hover:bg-[#252D3D] transition-colors"
+      >
+        {showDetail ? '▲ 접기' : '▼ 판정 이유 · 상세 보기'}
+      </button>
+
+      {/* 접이식 상세 패널 */}
+      {showDetail && (
+        <div className="mt-3 space-y-3">
+          <VerdictReason item={item} p={p} a={a} />
+          {p && <SimDetail p={p} />}
+          <ActDetail a={a} />
+        </div>
       )}
     </div>
   );
