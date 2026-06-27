@@ -117,11 +117,13 @@ def build_deep_agent_graph(
     llm,
     management_handler: Handler | None = None,
     generator_handler: Handler | None = None,
+    checkpointer=None,
 ) -> Callable[[SubagentRequest], Awaitable[SubagentResult]]:
     """Deep Agent 팩토리 — graph를 빌드하고 run(SubagentRequest) → SubagentResult를 반환.
 
     management_handler / generator_handler가 None이면 mock 핸들러로 대체.
     실 구현이 들어오면 wiring.py에서 실 핸들러를 주입해 교체.
+    checkpointer가 None이면 MemorySaver(인메모리). wiring이 PG 싱글턴을 주입하면 영속·멀티턴.
     """
     _mgt_handler = management_handler or _mock_management
     _gen_handler = generator_handler or _mock_generator
@@ -241,8 +243,8 @@ def build_deep_agent_graph(
     builder.add_conditional_edges("orchestrate", route, {"dispatch": "dispatch", END: END})
     builder.add_edge("dispatch", "orchestrate")
 
-    checkpointer = MemorySaver()
-    graph = builder.compile(checkpointer=checkpointer)
+    # 외부 주입(PG 싱글턴) 우선, 없으면 인메모리 폴백(Windows 로컬·테스트).
+    graph = builder.compile(checkpointer=checkpointer or MemorySaver())
 
     # ── 공개 인터페이스 ───────────────────────────────────────────────────────
 

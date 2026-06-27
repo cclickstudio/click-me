@@ -163,12 +163,17 @@ def build_deep_agent(settings):
     from api.assistant.deep_agent import build_deep_agent_graph  # noqa: PLC0415
     from api.assistant.intent import classify_intent  # noqa: PLC0415
     from domain.generator.chat import build_generation_chat_agent  # noqa: PLC0415
+    from domain.management.wiring import build_checkpointer  # noqa: PLC0415
 
     management_handler = _build_management_handler(settings)
     generator_handler = build_generation_chat_agent(settings)
     llm = _build_classifier_llm(settings)
 
-    deep_run = build_deep_agent_graph(llm, management_handler, generator_handler)
+    # PG 싱글턴(get_pg_checkpointer) 주입 — management 그래프와 동일 체크포인터 공유(단일화).
+    # main.py lifespan에서 init 완료된 싱글턴을 build_checkpointer가 반환(없으면 MemorySaver).
+    deep_run = build_deep_agent_graph(
+        llm, management_handler, generator_handler, checkpointer=build_checkpointer(settings)
+    )
 
     async def run(req: SubagentRequest) -> SubagentResult | None:
         # LLM 없으면(키 미설정) 분류 불가 → CLIO 폴백
