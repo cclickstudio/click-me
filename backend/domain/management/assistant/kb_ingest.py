@@ -96,7 +96,25 @@ _SOURCE_META: dict[str, tuple[str, str | None, str, dict]] = {
         "advisory",
         {"platform": "meta", "as_of": "2026-06"},
     ),
+    # 서브디렉토리 파일(태호 체리픽) — management 적합한 것만 등록·적재.
+    "external/meta_reference.md": (
+        "meta_official",
+        "https://www.facebook.com/business/help/447834205249495",
+        "system_backed",
+        {"platform": "meta", "as_of": "2026-06"},
+    ),
 }
+
+# 서브디렉토리 적재 화이트리스트 — 루트 *.md는 항상 적재, 서브디렉토리는 여기 등록된 것만.
+# 시뮬 도메인 지식(kb/external/evidence·kobaco_baseline, kb/persona/*)이 management 검색을
+# 오염시키지 않게 차단한다(spec §6 거버넌스). 새 서브디렉토리 파일은 명시 등록해야 적재됨.
+_SUBDIR_ALLOWLIST: frozenset[str] = frozenset(
+    {
+        "external/meta_reference.md",  # Meta 지표·심사·정책 레퍼런스(태호) — management 적합
+        # G5에서 도연 일반 KB 추가 예정:
+        # "external/advertising_general_knowledge.md", "external/marketing_terms.md"
+    }
+)
 
 
 def _sha(text: str) -> str:
@@ -124,8 +142,13 @@ async def ingest() -> int:
     total = 0
     skipped = 0
     async with AsyncSessionLocal() as db:
-        for md in sorted(_KB_DIR.glob("*.md")):
-            source = md.name
+        for md in sorted(_KB_DIR.rglob("*.md")):
+            # 루트는 "name.md", 서브디렉토리는 "external/name.md" 형식(prefix 보존).
+            source = md.relative_to(_KB_DIR).as_posix()
+            # 서브디렉토리 파일은 화이트리스트 등록분만 — 도메인 경계(spec §6).
+            if "/" in source and source not in _SUBDIR_ALLOWLIST:
+                print(f"  {source}: 서브디렉토리 미허용 — skip (도메인 경계)")
+                continue
             text = md.read_text(encoding="utf-8")
             new_hash = _sha(text)
             # 증분(content_hash 변경감지): 같은 출처 active 문서가 동일 해시면 재임베딩 스킵.
