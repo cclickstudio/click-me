@@ -27,6 +27,7 @@ _KW_SQL = text(
     " FROM management_kb_chunks c"
     " LEFT JOIN management_kb_documents d ON c.document_id = d.id"
     " WHERE c.search_vector @@ websearch_to_tsquery('simple', :q)"
+    " AND d.status = 'active'"
     " ORDER BY rank DESC LIMIT :lim"
 )
 
@@ -84,6 +85,7 @@ class KbRetriever:
                         ManagementKbChunk.document_id == ManagementKbDocument.id,
                         isouter=True,
                     )
+                    .where(ManagementKbDocument.status == "active")
                     .order_by(dist)
                     .limit(pool)
                 )
@@ -96,16 +98,19 @@ class KbRetriever:
         """RRF — 두 랭킹의 (1/(K+순위)) 합으로 재정렬. 두 채널에 다 잡힌 청크가 상위로."""
         fused: dict[str, dict] = {}
         for rank, r in enumerate(vec):
-            fused.setdefault(str(r.id), {"r": r, "s": 0.0})["s"] += 1.0 / (_RRF_K + rank + 1)
+            entry = fused.setdefault(str(r.id), {"r": r, "s": 0.0, "cos": None})
+            entry["s"] += 1.0 / (_RRF_K + rank + 1)
+            # cosine_distance → cosine_similarity (1 - dist). KB 게이트 threshold 판단용.
+            entry["cos"] = round(1.0 - float(r.dist), 4)
         for rank, r in enumerate(kw):
             key = str(r.id)
-            entry = fused.setdefault(key, {"r": r, "s": 0.0})
+            entry = fused.setdefault(key, {"r": r, "s": 0.0, "cos": None})
             entry["s"] += 1.0 / (_RRF_K + rank + 1)
         top = sorted(fused.values(), key=lambda x: x["s"], reverse=True)[:k]
-        return [KbRetriever._to_hit(x["r"], x["s"]) for x in top]
+        return [KbRetriever._to_hit(x["r"], x["s"], x["cos"]) for x in top]
 
     @staticmethod
-    def _to_hit(r, score: float) -> dict:
+    def _to_hit(r, score: float, cosine_score: float | None = None) -> dict:
         """검색 row → 답변 인용용 dict. 문서 신뢰도(trust)·출처·시점을 함께 싣는다."""
         meta = getattr(r, "doc_metadata", None) or {}
         return {
@@ -113,6 +118,7 @@ class KbRetriever:
             "title": r.title,
             "chunk": r.chunk,
             "score": round(score, 4),  # RRF 융합 점수(상대 랭킹용)
+            "cosine_score": cosine_score,  # 코사인 유사도(KB 게이트 threshold 판단용, 벡터 채널만)
             # trust: system_backed(단정) | advisory(참고·단서) | reference(구성만)
             "trust": meta.get("trust", "system_backed"),
             "source_url": getattr(r, "source_url", None),
