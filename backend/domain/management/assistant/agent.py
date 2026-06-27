@@ -106,9 +106,14 @@ def build_management_agent(settings):
             intent = _keyword_intent(req.question, req.campaign_id)
             if intent == "kb":
                 # 지식 질문 — 키워드 전용 KB 검색(임베딩 불필요). search_kb로 인용.
-                from domain.management.assistant.retriever import KbRetriever  # noqa: PLC0415
+                from domain.management.assistant.retriever import (  # noqa: PLC0415
+                    MANAGEMENT_SOURCE_TYPES,
+                    KbRetriever,
+                )
 
-                hits = await KbRetriever().keyword_search(req.question, k=4)
+                hits = await KbRetriever().keyword_search(
+                    req.question, k=4, source_types=MANAGEMENT_SOURCE_TYPES
+                )
                 return AskResult(
                     answer=_summarize_kb(hits),
                     citations=[

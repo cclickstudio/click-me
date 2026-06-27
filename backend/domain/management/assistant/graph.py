@@ -22,6 +22,7 @@ from domain.management.approval import judge_tier, requires_human
 from domain.management.assistant import tools as live_tools
 from domain.management.assistant.actions import _RATIONALE
 from domain.management.assistant.contracts import AskResult, Citation, SuggestedAction
+from domain.management.assistant.retriever import MANAGEMENT_SOURCE_TYPES
 
 #: 도구 호출 라운드 상한 — 초과 시 도구 없이 최종 답을 강제(무한 루프 방지)
 _MAX_ROUNDS = 5
@@ -152,7 +153,8 @@ def build_graph(settings, retriever, llm, checkpointer=None):
         if retriever is None:
             return []
         try:
-            hits = await retriever.search(query, k=4)
+            # management 특화 풀만 검색 — 일반지식(general_knowledge, ADVISE 전용) 오염 차단.
+            hits = await retriever.search(query, k=4, source_types=MANAGEMENT_SOURCE_TYPES)
         except Exception:  # noqa: BLE001 — KB 미적재면 빈 결과로 진행(live만으로 답)
             return []
         if not hits:
@@ -163,7 +165,12 @@ def build_graph(settings, retriever, llm, checkpointer=None):
         # 부족 → 쿼리 재작성 후 1회 재검색·병합·재평가(CRAG-lite)
         if grade.rewrite:
             with contextlib.suppress(Exception):
-                hits = _dedup(hits + await retriever.search(grade.rewrite, k=4))
+                hits = _dedup(
+                    hits
+                    + await retriever.search(
+                        grade.rewrite, k=4, source_types=MANAGEMENT_SOURCE_TYPES
+                    )
+                )
             if (await _grade_kb(llm, query, hits)).sufficient:
                 return hits
         # 여전히 부족 → 에이전트에 신호(인용엔 안 섞임 — tools_node가 필터)

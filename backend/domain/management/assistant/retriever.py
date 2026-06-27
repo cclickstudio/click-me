@@ -9,7 +9,7 @@
 from __future__ import annotations
 
 from openai import AsyncOpenAI
-from sqlalchemy import select, text
+from sqlalchemy import TextClause, select, text
 
 from core.db import AsyncSessionLocal
 from core.models import ManagementKbChunk, ManagementKbDocument
@@ -17,19 +17,32 @@ from core.models import ManagementKbChunk, ManagementKbDocument
 EMBEDDING_MODEL = "text-embedding-3-small"  # 1536차원 — Vector(1536)와 일치
 _RRF_K = 60  # Reciprocal Rank Fusion 상수 (랭킹 합산 — 점수 스케일 정규화 불필요)
 
-# 키워드 검색(GIN). websearch_to_tsquery는 빈/특수문자 쿼리에도 안전.
-# 문서(management_kb_documents) LEFT JOIN으로 출처·신뢰도(trust)를 함께 가져온다 — 벡터 채널과
-# alias·순서를 동일하게 맞춰 _fuse가 양쪽 row를 같은 속성으로 읽게 한다.
-_KW_SQL = text(
-    "SELECT c.id, c.source, c.title, c.chunk,"
-    " d.source_type, d.source_url, d.effective_from, d.metadata AS doc_metadata,"
-    " ts_rank(c.search_vector, websearch_to_tsquery('simple', :q)) AS rank"
-    " FROM management_kb_chunks c"
-    " LEFT JOIN management_kb_documents d ON c.document_id = d.id"
-    " WHERE c.search_vector @@ websearch_to_tsquery('simple', :q)"
-    " AND d.status = 'active'"
-    " ORDER BY rank DESC LIMIT :lim"
-)
+# source_type 스코프 — ADVISE(일반지식)와 MANAGE(특화) 검색 풀을 분리해 상호 오염을 막는다.
+# general_knowledge는 ADVISE 전용. management 검색(search_kb·eval)은 아래 특화 타입만 본다.
+# (kb_ingest._SOURCE_META의 source_type과 일치 — 신규 management 타입 추가 시 여기 갱신.)
+GENERAL_SOURCE_TYPE = "general_knowledge"
+MANAGEMENT_SOURCE_TYPES = frozenset({"meta_official", "playbook", "benchmark", "internal_policy"})
+
+
+def _kw_sql(has_type_filter: bool) -> TextClause:
+    """키워드 검색(GIN) SQL — source_type 필터 유무에 따라 동적 생성.
+
+    websearch_to_tsquery는 빈/특수문자 쿼리에도 안전. 문서 LEFT JOIN으로 출처·신뢰도(trust)를
+    함께 가져온다 — 벡터 채널과 alias·순서를 동일하게 맞춰 _fuse가 양쪽 row를 같게 읽게 한다.
+    """
+    sql = (
+        "SELECT c.id, c.source, c.title, c.chunk,"
+        " d.source_type, d.source_url, d.effective_from, d.metadata AS doc_metadata,"
+        " ts_rank(c.search_vector, websearch_to_tsquery('simple', :q)) AS rank"
+        " FROM management_kb_chunks c"
+        " LEFT JOIN management_kb_documents d ON c.document_id = d.id"
+        " WHERE c.search_vector @@ websearch_to_tsquery('simple', :q)"
+        " AND d.status = 'active'"
+    )
+    if has_type_filter:
+        sql += " AND d.source_type = ANY(:types)"  # 양 채널 동일 필터(융합 전 범위 일치)
+    sql += " ORDER BY rank DESC LIMIT :lim"
+    return text(sql)
 
 
 class KbRetriever:
@@ -53,44 +66,61 @@ class KbRetriever:
         resp = await self._client.embeddings.create(model=EMBEDDING_MODEL, input=[text])
         return resp.data[0].embedding
 
-    async def keyword_search(self, query: str, k: int = 4) -> list[dict]:
+    async def keyword_search(
+        self, query: str, k: int = 4, source_types: frozenset[str] | None = None
+    ) -> list[dict]:
         """임베딩 없는 키워드(GIN) 전용 검색 — 키 없는 폴백·데모 재현용(게이트 #9).
 
         벡터 채널을 못 쓰는 환경에서 정확 토큰(CPM·CTR·BID_LOSS 등)으로 KB 근거를 잡는다.
+        source_types로 검색 풀 한정(예: management 특화만, 또는 general_knowledge만).
         """
+        types = list(source_types) if source_types else None
+        params: dict = {"q": query, "lim": max(k * 3, 8)}
+        if types:
+            params["types"] = types
         async with self._sf() as db:
-            kw = (await db.execute(_KW_SQL, {"q": query, "lim": max(k * 3, 8)})).all()
+            kw = (await db.execute(_kw_sql(bool(types)), params)).all()
         return [self._to_hit(r, 1.0 / (i + 1)) for i, r in enumerate(kw[:k])]
 
-    async def search(self, query: str, k: int = 4) -> list[dict]:
+    async def search(
+        self, query: str, k: int = 4, source_types: frozenset[str] | None = None
+    ) -> list[dict]:
+        """하이브리드 검색. source_types로 검색 풀 한정(None=전체).
+
+        ADVISE는 general_knowledge만, MANAGE(search_kb·eval)는 MANAGEMENT_SOURCE_TYPES만 넘겨
+        일반지식↔특화 상호 오염을 막는다(양 채널 동일 필터 → 융합 전 범위 일치).
+        """
         emb = await self.embed(query)
         pool = max(k * 3, 8)  # 융합 전 각 채널에서 넉넉히 가져온다
+        types = list(source_types) if source_types else None
         dist = ManagementKbChunk.embedding.cosine_distance(emb).label("dist")
         async with self._sf() as db:
-            vec = (
-                await db.execute(
-                    select(
-                        ManagementKbChunk.id,
-                        ManagementKbChunk.source,
-                        ManagementKbChunk.title,
-                        ManagementKbChunk.chunk,
-                        ManagementKbDocument.source_type,
-                        ManagementKbDocument.source_url,
-                        ManagementKbDocument.effective_from,
-                        ManagementKbDocument.doc_metadata,
-                        dist,
-                    )
-                    .join(
-                        ManagementKbDocument,
-                        ManagementKbChunk.document_id == ManagementKbDocument.id,
-                        isouter=True,
-                    )
-                    .where(ManagementKbDocument.status == "active")
-                    .order_by(dist)
-                    .limit(pool)
+            vq = (
+                select(
+                    ManagementKbChunk.id,
+                    ManagementKbChunk.source,
+                    ManagementKbChunk.title,
+                    ManagementKbChunk.chunk,
+                    ManagementKbDocument.source_type,
+                    ManagementKbDocument.source_url,
+                    ManagementKbDocument.effective_from,
+                    ManagementKbDocument.doc_metadata,
+                    dist,
                 )
-            ).all()
-            kw = (await db.execute(_KW_SQL, {"q": query, "lim": pool})).all()
+                .join(
+                    ManagementKbDocument,
+                    ManagementKbChunk.document_id == ManagementKbDocument.id,
+                    isouter=True,
+                )
+                .where(ManagementKbDocument.status == "active")
+            )
+            if types:
+                vq = vq.where(ManagementKbDocument.source_type.in_(types))
+            vec = (await db.execute(vq.order_by(dist).limit(pool))).all()
+            kw_params: dict = {"q": query, "lim": pool}
+            if types:
+                kw_params["types"] = types
+            kw = (await db.execute(_kw_sql(bool(types)), kw_params)).all()
         return self._fuse(vec, kw, k)
 
     @staticmethod

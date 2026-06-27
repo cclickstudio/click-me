@@ -23,7 +23,7 @@ from sqlalchemy import select
 from core.config import settings
 from core.db import AsyncSessionLocal
 from core.models import ManagementKbChunk, ManagementKbEvalCase
-from domain.management.assistant.retriever import KbRetriever
+from domain.management.assistant.retriever import MANAGEMENT_SOURCE_TYPES, KbRetriever
 
 # ── 프롬프트 템플릿 ──────────────────────────────────────────────────────────
 
@@ -199,7 +199,8 @@ async def evaluate(k: int = 5) -> dict[str, Any]:
 
     for case in cases:
         try:
-            hits = await retriever.search(case.question, k=k)
+            # eval = management 특화 KB 품질 측정 → general_knowledge 제외(search_kb와 동일 스코프).
+            hits = await retriever.search(case.question, k=k, source_types=MANAGEMENT_SOURCE_TYPES)
             rank = _match_rank(hits, case.expected_citations)
             ranks.append(rank if rank is not None and rank <= k else None)
             if rank is None or rank > k:
@@ -257,8 +258,8 @@ async def evaluate_faithfulness(n: int = 30) -> dict[str, Any]:
 
     for case in cases:
         try:
-            # KB 검색 → 컨텍스트 구성
-            hits = await retriever.search(case.question, k=3)
+            # KB 검색 → 컨텍스트 구성 (management 특화 스코프 — search_kb와 동일)
+            hits = await retriever.search(case.question, k=3, source_types=MANAGEMENT_SOURCE_TYPES)
             context = "\n\n".join(h["chunk"][:400] for h in hits) if hits else "(검색 결과 없음)"
 
             # GPT-4o-mini로 답변 생성
