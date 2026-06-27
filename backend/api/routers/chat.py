@@ -117,11 +117,55 @@ async def _resolve_identity(user: User | None, db: AsyncSession) -> tuple[str | 
 
 
 def _format_memory(mems: list[dict]) -> str | None:
-    """장기기억 dict들 → LLM 주입용 한 줄. 비어있으면 None."""
-    notes = [m.get("note") for m in mems if m.get("note")]
+    """장기기억 dict들 → LLM 주입용 한 줄. 비어있으면 None. note(구) / fact(M2 신) 모두 지원."""
+    notes = [m.get("fact") or m.get("note") for m in mems if m.get("fact") or m.get("note")]
     if not notes:
         return None
     return "[이전 대화에서 기억해둘 맥락: " + " · ".join(notes[:5]) + "]"
+
+
+_EXTRACT_PROMPT = (
+    "이 대화 턴에서 사용자에 대해 '세션을 넘어 기억할 가치가 있는 사실'이 있으면 추출하라.\n"
+    "- semantic: 지속 선호·속성(목표·플랫폼·예산대·톤). dedup_key로 같은 속성은 갱신.\n"
+    "- episodic: 한 일·결정(예: camp_1 일시중지 승인).\n"
+    "- 단발 현황 질문('이번 달 예산?')·잡담·인사는 should_store=false.\n"
+    "확신 없으면 should_store=false(과적재보다 누락이 안전).\n"
+    'JSON만 출력: {{"should_store": bool, "kind": "semantic|episodic|none", '
+    '"fact": "정규화된 한 문장 또는 null", "dedup_key": "pref:objective 같은 키 또는 null"}}\n\n'
+    "[질문]\n{q}\n\n[답변]\n{a}"
+)
+
+
+async def _extract_memory(question: str, answer: str) -> dict | None:
+    """턴에서 장기 저장할 사실을 LLM(gpt-4o-mini)으로 추출(M2). 저장 가치 없으면 None.
+
+    매 턴 '질문 60자' 덤프를 폐기 — 선호·결정만 추출해 dedup_key로 upsert(무한증가 차단).
+    """
+    import json as _json  # noqa: PLC0415
+
+    try:
+        resp = await _get_clio_client().chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {
+                    "role": "user",
+                    "content": _EXTRACT_PROMPT.format(q=question[:300], a=answer[:300]),
+                }
+            ],
+            temperature=0.0,
+            max_tokens=120,
+            response_format={"type": "json_object"},
+        )
+        data = _json.loads(resp.choices[0].message.content or "{}")
+    except Exception:  # noqa: BLE001 — 추출 실패는 저장 안 함(보수)
+        return None
+    if not data.get("should_store") or not data.get("fact"):
+        return None
+    return {
+        "kind": data.get("kind", "semantic"),
+        "fact": data["fact"],
+        "dedup_key": data.get("dedup_key"),
+    }
 
 
 @router.post("/complete")
@@ -212,16 +256,19 @@ async def chat_complete(
                     )
                 except Exception as rexc:  # noqa: BLE001
                     print(f"[chat] record_turn 실패(무시): {rexc!r}")
-                # M3 — 장기기억 적재는 로그인 사용자만(비로그인 (global,anon) 공유 누출 방지).
+                # M2·M3 — 장기기억 적재는 로그인 사용자만(M3 격리). 매 턴 덤프 대신 LLM 추출
+                # 게이트(M2): 선호·결정만 저장하고, dedup_key로 upsert해 무한증가를 막는다.
                 if user_id is not None:
                     try:
-                        note = f"질문: {last_message[:60]}"
-                        sa = meta.get("suggested_action")
-                        if sa:
-                            note += f" / 제안: {sa.get('action_type', '')}"
-                        await _get_memory().remember(
-                            tenant_id, user_id, uuid4().hex, {"note": note}
-                        )
+                        extracted = await _extract_memory(last_message, answer)
+                        if extracted:
+                            key = extracted.get("dedup_key") or uuid4().hex
+                            await _get_memory().remember(
+                                tenant_id,
+                                user_id,
+                                key,
+                                {"kind": extracted["kind"], "fact": extracted["fact"]},
+                            )
                     except Exception as mexc:  # noqa: BLE001
                         print(f"[chat] memory remember 실패(무시): {mexc!r}")
 

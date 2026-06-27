@@ -23,12 +23,33 @@ class SqlMemoryStore:
     """SQLAlchemy(asyncpg) 백엔드 — Neon 영속. langgraph Store 인터페이스(aput/asearch) 호환."""
 
     async def aput(self, namespace: tuple, key: str, value: dict) -> None:
+        from sqlalchemy import select  # noqa: PLC0415
+
         from core.db import AsyncSessionLocal  # noqa: PLC0415
         from core.models import ManagementUserMemory  # noqa: PLC0415
 
         _, tenant, user = namespace
         async with AsyncSessionLocal() as db:
-            db.add(ManagementUserMemory(tenant_id=tenant, user_id=user, mem_key=key, content=value))
+            # upsert — 같은 (tenant,user,key)면 갱신(M2 dedup_key 동작). uuid 키는 항상 신규.
+            existing = (
+                (
+                    await db.execute(
+                        select(ManagementUserMemory).where(
+                            ManagementUserMemory.tenant_id == tenant,
+                            ManagementUserMemory.user_id == user,
+                            ManagementUserMemory.mem_key == key,
+                        )
+                    )
+                )
+                .scalars()
+                .first()
+            )
+            if existing is not None:
+                existing.content = value
+            else:
+                db.add(
+                    ManagementUserMemory(tenant_id=tenant, user_id=user, mem_key=key, content=value)
+                )
             await db.commit()
 
     async def asearch(self, namespace: tuple, *, limit: int = 10, **_: object) -> list[_MemHit]:
