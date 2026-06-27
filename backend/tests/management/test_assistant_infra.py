@@ -25,7 +25,8 @@ def test_valid_preset_allows_known_and_falls_back():
 
 
 def _row(i: int):
-    return SimpleNamespace(id=i, source=f"s{i}.md", title=f"t{i}", chunk=f"c{i}")
+    # dist = cosine_distance — 벡터 채널 row가 가지는 필드(_fuse가 cosine_score 산출에 사용).
+    return SimpleNamespace(id=i, source=f"s{i}.md", title=f"t{i}", chunk=f"c{i}", dist=0.1 * i)
 
 
 def test_rrf_fuse_boosts_overlap_and_includes_keyword_only():

@@ -2,7 +2,9 @@
 import ast
 import pathlib
 
-_CORE = ("routing.py", "contracts.py", "registry.py")
+# 우리 브랜치는 보은 orchestration 중 routing.py만 체리픽(contracts/registry/bootstrap은
+# 거부 — 키워드 plan-execute 모델, LLM Deep Agent와 충돌). 존재하는 파일만 검사.
+_CORE = ("routing.py",)
 _FORBIDDEN = "domain.management"
 
 
@@ -22,9 +24,3 @@ def test_core_modules_do_not_import_management():
     for name in _CORE:
         for mod in _imports(base / name):
             assert not mod.startswith(_FORBIDDEN), f"{name} imports {mod}"
-
-
-def test_bootstrap_is_allowed_to_import_management():
-    # 대조군 — bootstrap(composition root)은 도메인 import가 허용됨
-    base = pathlib.Path(__file__).resolve().parents[2] / "api" / "orchestration"
-    assert any(m.startswith(_FORBIDDEN) for m in _imports(base / "bootstrap.py"))
