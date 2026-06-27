@@ -98,11 +98,11 @@ export default function SimulationRunPage() {
   const [adTitle, setAdTitle] = useState(() => searchParams.get('ad_title') ?? '');
   const [categoryId, setCategoryId] = useState<number | ''>(() => {
     const c = searchParams.get('category_id');
-    return c ? Number(c) : '';
+    return c ? (Number(c) || '') : '';
   });
   const [serviceClass, setServiceClass] = useState<number | ''>(() => {
     const s = searchParams.get('service_class');
-    return s ? Number(s) : '';
+    return s ? (Number(s) || '') : '';
   });
   const categories = SIM_CATEGORIES; // 하드코딩 마스터(DB/API 대체).
   // 광고 목표 — 일반인도 쉽게 고르는 단일 선택(+ 기타 직접 입력).
