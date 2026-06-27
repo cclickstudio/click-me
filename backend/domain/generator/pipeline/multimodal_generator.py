@@ -4,11 +4,13 @@
 # 상품 이미지가 있으면 inline_data로 함께 입력해 참조 생성(픽셀 단위 보존은 보장하지 않음).
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 
 from google import genai
 from google.genai import types as genai_types
+from google.genai.errors import ServerError
 from langsmith import traceable
 
 from core.config import settings
@@ -91,6 +93,45 @@ def _build_prompt(
     return prompt
 
 
+# 이미지 누락·503(과부하) 대비 재시도 백오프(초). 동시생성(이미지+카피) 구조는 유지.
+_RETRY_BACKOFF = [2, 4, 6]
+
+
+async def _generate_once(
+    client: genai.Client, contents: list, size: AdSize
+) -> tuple[bytes, AdCopy] | None:
+    """Gemini 1회 호출 — 이미지+카피를 파싱해 반환. 이미지가 없으면 None(재시도 신호)."""
+    response = await client.aio.models.generate_content(
+        model=settings.generator_gemini_image_model,
+        contents=contents,
+        config=genai_types.GenerateContentConfig(
+            response_modalities=["IMAGE", "TEXT"],
+            image_config=genai_types.ImageConfig(aspect_ratio=_GEMINI_NATIVE_ASPECT_RATIO[size]),
+        ),
+    )
+    _record_genai_usage(response, settings.generator_gemini_image_model)
+
+    if not response.candidates:
+        return None
+    image_bytes: bytes | None = None
+    text_parts: list[str] = []
+    for part in response.candidates[0].content.parts:
+        if part.inline_data and part.inline_data.data:
+            image_bytes = part.inline_data.data
+        elif part.text:
+            text_parts.append(part.text)
+    if not image_bytes:
+        return None
+
+    raw = _parse_copy_json("\n".join(text_parts))
+    ad_copy = AdCopy(
+        headline=str_or_none(raw.get("headline")) or "",
+        body=str_or_none(raw.get("body")) or "",
+        cta=str_or_none(raw.get("cta")) or "지금 바로 확인하기",
+    )
+    return image_bytes, ad_copy
+
+
 @traceable(
     name="generator:generate_multimodal",
     metadata={"pipeline": "generator", "prompt_version": "v2.0-gemini"},
@@ -109,6 +150,7 @@ async def generate_image_and_copy(
 
     상품 이미지가 있으면 inline_data로 함께 입력해 참조 생성(픽셀 보존은 보장 안 됨).
     이미지엔 글자를 넣지 않으며(프롬프트 지시), 카피 텍스트는 호출자가 PIL로 합성한다.
+    Gemini가 간헐적으로 이미지를 빠뜨리거나(텍스트만) 503(과부하)을 내므로 짧게 재시도한다.
     """
     prompt = _build_prompt(
         product_analysis,
@@ -127,37 +169,19 @@ async def generate_image_and_copy(
         )
 
     client = genai.Client(api_key=settings.gemini_api_key)
-    response = await client.aio.models.generate_content(
-        model=settings.generator_gemini_image_model,
-        contents=contents,
-        config=genai_types.GenerateContentConfig(
-            response_modalities=["IMAGE", "TEXT"],
-            image_config=genai_types.ImageConfig(aspect_ratio=_GEMINI_NATIVE_ASPECT_RATIO[size]),
-        ),
-    )
-    _record_genai_usage(response, settings.generator_gemini_image_model)
-
-    if not response.candidates:
-        raise RuntimeError("멀티모달 응답에 candidates가 없습니다.")
-
-    image_bytes: bytes | None = None
-    text_parts: list[str] = []
-    for part in response.candidates[0].content.parts:
-        if part.inline_data and part.inline_data.data:
-            image_bytes = part.inline_data.data
-        elif part.text:
-            text_parts.append(part.text)
-
-    if not image_bytes:
-        raise RuntimeError("멀티모달 응답에 이미지가 없습니다.")
-
-    raw = _parse_copy_json("\n".join(text_parts))
-    ad_copy = AdCopy(
-        headline=str_or_none(raw.get("headline")) or "",
-        body=str_or_none(raw.get("body")) or "",
-        cta=str_or_none(raw.get("cta")) or "지금 바로 확인하기",
-    )
-    return image_bytes, ad_copy
+    for attempt in range(len(_RETRY_BACKOFF) + 1):
+        try:
+            result = await _generate_once(client, contents, size)
+        except ServerError:
+            # 503 등 5xx 과부하 — 일시적. 마지막 시도면 원예외 전파.
+            if attempt >= len(_RETRY_BACKOFF):
+                raise
+            result = None
+        if result is not None:
+            return result
+        if attempt < len(_RETRY_BACKOFF):
+            await asyncio.sleep(_RETRY_BACKOFF[attempt])
+    raise RuntimeError("멀티모달 응답에 이미지가 없습니다 (재시도 소진).")
 
 
 def _parse_copy_json(text: str) -> dict:
