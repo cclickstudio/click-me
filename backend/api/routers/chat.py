@@ -212,7 +212,8 @@ async def chat_complete(
         memory_context: str | None = None
         if user_id is not None:
             try:
-                mems = await _get_memory().recall(tenant_id, user_id, limit=5)
+                # M6 — query(현재 메시지)로 시맨틱 회수(임베딩 있으면), 없으면 recency 폴백.
+                mems = await _get_memory().recall(tenant_id, user_id, query=last_message, limit=5)
                 memory_context = _format_memory(mems)
             except Exception as mexc:  # noqa: BLE001
                 print(f"[chat] memory recall 실패(무시): {mexc!r}")
