@@ -22,6 +22,9 @@ _RRF_K = 60  # Reciprocal Rank Fusion 상수 (랭킹 합산 — 점수 스케일
 # (kb_ingest._SOURCE_META의 source_type과 일치 — 신규 management 타입 추가 시 여기 갱신.)
 GENERAL_SOURCE_TYPE = "general_knowledge"
 MANAGEMENT_SOURCE_TYPES = frozenset({"meta_official", "playbook", "benchmark", "internal_policy"})
+# ADVISE(일반 질문) 게이트 검색 풀 — 일반지식 + 큐레이션 레퍼런스(Meta 공식·벤치마크).
+# 운영 특화(playbook·internal_policy)는 제외(사용자 캠페인 맥락이 아닌 지식 질문이므로).
+ADVISE_SOURCE_TYPES = frozenset({GENERAL_SOURCE_TYPE, "meta_official", "benchmark"})
 
 
 def _kw_sql(has_type_filter: bool) -> TextClause:

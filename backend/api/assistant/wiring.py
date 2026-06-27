@@ -6,11 +6,78 @@
 
 from __future__ import annotations
 
+import re
+
 from api.assistant.contracts import Action, Intent, SubagentRequest, SubagentResult
 from api.assistant.orchestrator import Orchestrator
 from api.assistant.registry import Handler, SubagentRegistry
 
 _CLASSIFIER_MODEL = "gpt-4o-mini"
+
+_ADVISE_THRESHOLD = 0.35  # 코사인 유사도 — 미달 시 None(CLIO 폴백). RRF score 아님.
+_CITE_PATTERN = re.compile(r"\[([1-9]\d*)\]")  # [1]~[k] 인용 마커
+_ADVISE_PROMPT = (
+    "다음 근거 문서에 있는 내용만으로 질문에 답하세요. 근거에 없으면 모른다고 답하고 "
+    "지어내지 마세요. 정확한 수치가 근거에 없으면 추정·단정하지 마세요. "
+    "사용한 문서 번호를 [1][2] 형식으로 본문에 인용하세요.\n\n질문: {q}\n\n근거:\n{ctx}"
+)
+
+
+async def _try_kb_advise(req: SubagentRequest, settings, llm) -> SubagentResult | None:
+    """ADVISE 경로 KB 게이트 — 일반지식 KB에 근거 있으면 인용 답변, 없으면 None(CLIO 폴백).
+
+    cosine_score max ≥ 0.35일 때만 LLM 호출(비용↓·환각↓). top-1이 keyword-only(cosine=None)여도
+    false negative 안 나게 max로 판정. 인용 마커 누락/범위밖이면 안전 문구로 강등(날조 방지).
+    """
+    from domain.management.assistant.retriever import (  # noqa: PLC0415
+        ADVISE_SOURCE_TYPES,
+        KbRetriever,
+    )
+
+    retriever = KbRetriever(api_key=getattr(settings, "openai_api_key", None))
+    try:
+        hits = await retriever.search(req.last_user_text, k=4, source_types=ADVISE_SOURCE_TYPES)
+    except Exception:  # noqa: BLE001 — KB 미적재/검색 실패면 CLIO 폴백
+        return None
+    top_cosine = max((h.get("cosine_score") or 0.0 for h in hits), default=0.0) if hits else 0.0
+    if not hits or top_cosine < _ADVISE_THRESHOLD:
+        return None
+
+    used = hits[:3]
+    ctx = "\n\n".join(f"[{i + 1}] {h['title']}\n{h['chunk']}" for i, h in enumerate(used))
+    resp = await llm.ainvoke(_ADVISE_PROMPT.format(q=req.last_user_text, ctx=ctx))
+    answer = resp.content if hasattr(resp, "content") else str(resp)
+
+    # 인용 마커 검증 — 없거나 범위 밖이면 출처 문구로 강등(보은 RAG 설계 §11)
+    valid = set(range(1, len(used) + 1))
+    found = {int(m) for m in _CITE_PATTERN.findall(answer)}
+    if not found or not found.issubset(valid):
+        answer = answer + "\n\n*(출처: " + ", ".join(h["title"] for h in used) + ")*"
+
+    citations = [
+        {
+            "kind": "kb",
+            "source": h["source"],
+            "title": h["title"],
+            "trust": h.get("trust"),
+            "source_url": h.get("source_url"),
+        }
+        for h in used
+    ]
+    return SubagentResult(
+        action=Action.ANSWER,
+        message=answer,
+        meta={
+            "source": "management",
+            "label": "마케팅 지식 베이스",
+            "engine": "GPT-4o-mini · KB",
+            "citations": citations,
+            "used_tools": ["search_kb"],
+            "requires_approval": False,
+            "thread_id": None,
+            "suggested_action": None,
+        },
+    )
 
 
 def _build_classifier_llm(settings) -> object | None:
@@ -109,7 +176,8 @@ def build_deep_agent(settings):
             return None
         intent = await classify_intent(req, [Intent.MANAGE, Intent.GENERATE], llm=llm)
         if intent == Intent.ADVISE:
-            return None
+            # KB 게이트 — 일반지식 근거 있으면 인용 답변, 없으면 None(chat.py가 CLIO 폴백).
+            return await _try_kb_advise(req, settings, llm)
         return await deep_run(req)
 
     return run
