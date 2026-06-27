@@ -80,14 +80,15 @@ def _keyword_classify(text: str, registered: Sequence[Intent]) -> Intent:
 async def _llm_classify(llm, req: SubagentRequest, registered: Sequence[Intent]) -> Intent:
     allowed = ", ".join([*[i.value for i in registered], Intent.ADVISE.value])
     system = (
-        "너는 광고 플랫폼 채팅의 의도 분류기다. 사용자의 마지막 메시지를 다음 중 하나로 분류한다.\n"
-        f"허용 라벨: {allowed}.\n"
-        "- generate: 새 광고/시안/카피/이미지를 만들어 달라는 요청.\n"
-        "- manage: 광고 운영 도메인 전반 — 집행 캠페인의 예산·성과·상태 조회나 운영 변경뿐 아니라, "
-        "광고 성과·정책·심사·최적화·빈도·CTR/CPM/ROAS·벤치마크·타깃·소재·플랫폼(메타/구글/틱톡)에 "
-        "대한 질문이나 조언도 포함한다.\n"
-        "- advise: 광고와 무관한 일반 질문·잡담.\n"
-        "광고 운영·성과·정책에 관한 것이면 manage, 광고와 무관하면 advise."
+        "너는 광고 플랫폼 채팅의 의도 분류기다. 사용자의 마지막 메시지를 정확히 하나로 분류한다.\n"
+        f"허용 라벨: {allowed}.\n\n"
+        "분류 규칙 (우선순위 순):\n"
+        "1. generate: '만들어', '만들어줘', '생성해', '제작해', '시안', '카피', '이미지 생성' 등 "
+        "새 광고물·시안·카피·이미지를 만드는 요청.\n"
+        "2. manage: 집행 중인 캠페인의 예산·성과·CTR/ROAS/CPC·이상 탐지·정책·벤치마크·타깃 등 "
+        "운영 관련 질문 또는 조치(일시중지·예산증액 등) 요청.\n"
+        "3. advise: 위 둘에 해당하지 않는 일반 질문이나 광고와 무관한 잡담.\n\n"
+        "반드시 하나의 라벨만 출력한다. '만들어' 포함이면 generate 우선."
     )
     history = "\n".join(f"{m.role}: {m.content}" for m in req.messages[-6:])
     structured = llm.with_structured_output(_IntentPick)
@@ -111,7 +112,9 @@ async def classify_intent(req: SubagentRequest, registered: Sequence[Intent], ll
     """
     if llm is not None:
         try:
-            return await _llm_classify(llm, req, registered)
-        except Exception:  # noqa: BLE001 — 분류 실패는 advise 폴백(채팅 끊지 않음)
-            pass
+            result = await _llm_classify(llm, req, registered)
+            print(f"[intent] {req.last_user_text[:40]!r} → {result}", flush=True)
+            return result
+        except Exception as e:  # noqa: BLE001 — 분류 실패는 advise 폴백(채팅 끊지 않음)
+            print(f"[intent] 분류 실패 → ADVISE: {e!r}", flush=True)
     return Intent.ADVISE

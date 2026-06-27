@@ -121,9 +121,9 @@ async def generate_qa_pairs(limit: int = 50) -> int:
                     )
                 )
                 created += 1
-                print(f"  생성: [{chunk.source}] {chunk.title[:40]} → {question[:60]}...")
+                print(f"  생성: [{chunk.source}] {chunk.title[:40]} -> {question[:60]}...")
             except Exception as e:  # noqa: BLE001
-                print(f"  스킵: {chunk.title} — {e}")
+                print(f"  스킵: {chunk.title} - {e}")
 
         await db.commit()
 
