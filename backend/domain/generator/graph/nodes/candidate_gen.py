@@ -62,6 +62,7 @@ async def _generate_carousel(
     tone: str | None,
     product_cutout_bytes: bytes | None,
     product_image_bytes: bytes | None,
+    existing_ad_bytes: bytes | None,
     logo_image_bytes: bytes | None,
     gemini: bool,
     improvement_context: str | None = None,
@@ -79,6 +80,7 @@ async def _generate_carousel(
             tone=tone,
             improvement_context=improvement_context,
             product_image_bytes=product_image_bytes,
+            existing_ad_bytes=existing_ad_bytes,
         )
     else:
         bg_bytes = await generate_image(
@@ -89,6 +91,7 @@ async def _generate_carousel(
             brand_color=brand_color,
             tone=tone,
             product_cutout_bytes=product_cutout_bytes,
+            original_image_bytes=existing_ad_bytes,
             improvement_context=improvement_context,
             headline="",
             body="",
@@ -157,6 +160,7 @@ async def generate_candidates(state: GenerationState, config: RunnableConfig) ->
     tone = req.get("tone_and_manner")
     improvement_context: str | None = state.get("improvement_context")
     product_image_bytes: bytes | None = state.get("product_image_bytes")
+    existing_ad_bytes: bytes | None = state.get("existing_ad_bytes")
 
     logo_s3_key = req.get("brand_logo_s3_key")
     logo_image_bytes: bytes | None = None
@@ -193,6 +197,7 @@ async def generate_candidates(state: GenerationState, config: RunnableConfig) ->
             tone=tone,
             product_cutout_bytes=product_cutout_bytes,
             product_image_bytes=product_image_bytes,
+            existing_ad_bytes=existing_ad_bytes,
             logo_image_bytes=logo_image_bytes,
             gemini=gemini,
             improvement_context=improvement_context,
@@ -233,10 +238,12 @@ async def generate_candidates(state: GenerationState, config: RunnableConfig) ->
                 tone=tone,
                 improvement_context=improvement_context,
                 product_image_bytes=product_image_bytes,
+                existing_ad_bytes=existing_ad_bytes,
             )
         else:
             # openai 모드 — 카피는 이미 배치 생성됨, 이미지만 생성.
             # 상품 이미지가 있으면 마스크 인페인팅으로 상품 픽셀 보존하며 생성.
+            # 개선 모드(existing_ad_bytes)면 기존 광고를 edit으로 직접 수정한다.
             image_bytes = await generate_image(
                 product_analysis=product_analysis,
                 strategy=plan.strategy,
@@ -245,6 +252,7 @@ async def generate_candidates(state: GenerationState, config: RunnableConfig) ->
                 brand_color=brand_color,
                 tone=tone,
                 product_cutout_bytes=product_cutout_bytes,
+                original_image_bytes=existing_ad_bytes,
                 improvement_context=improvement_context,
                 headline=ad_copy.headline,
                 body=ad_copy.body,

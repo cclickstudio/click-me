@@ -62,6 +62,12 @@ _PRODUCT_IMAGE_SECTION = """
 상품의 형태·색·로고를 최대한 유지하되, 이미지 안에 글자는 넣지 마세요.
 """
 
+# 기존 광고 이미지가 함께 입력될 때(개선 모드) 덧붙이는 지시 — 기존 디자인을 참조해 개선.
+_EXISTING_AD_SECTION = """
+첨부된 기존 광고 이미지를 참고하여, 전반적인 구도·분위기의 장점은 살리되 개선 방향을 반영한
+더 나은 광고 배경을 생성하세요. 기존 광고의 글자는 무시하고(이미지 안에 글자는 넣지 않음) 배경만 다룹니다.
+"""
+
 
 def _build_prompt(
     product_analysis: ProductAnalysis,
@@ -71,6 +77,7 @@ def _build_prompt(
     tone: str | None,
     improvement_context: str | None = None,
     has_product_image: bool = False,
+    has_existing_ad: bool = False,
 ) -> str:
     improvement_section = (
         _IMPROVE_SECTION.format(improvement_context=improvement_context)
@@ -90,6 +97,8 @@ def _build_prompt(
     )
     if has_product_image:
         prompt += "\n" + _PRODUCT_IMAGE_SECTION
+    if has_existing_ad:
+        prompt += "\n" + _EXISTING_AD_SECTION
     return prompt
 
 
@@ -145,11 +154,12 @@ async def generate_image_and_copy(
     tone: str | None = None,
     improvement_context: str | None = None,
     product_image_bytes: bytes | None = None,
+    existing_ad_bytes: bytes | None = None,
 ) -> tuple[bytes, AdCopy]:
     """Gemini 한 번의 호출로 광고 배경 이미지 + 카피를 생성한다.
 
-    상품 이미지가 있으면 inline_data로 함께 입력해 참조 생성(픽셀 보존은 보장 안 됨).
-    이미지엔 글자를 넣지 않으며(프롬프트 지시), 카피 텍스트는 호출자가 PIL로 합성한다.
+    상품 이미지(생성) 또는 기존 광고 이미지(개선)가 있으면 inline_data로 함께 입력해 참조 생성
+    (픽셀 보존은 보장 안 됨). 이미지엔 글자를 넣지 않으며(프롬프트 지시), 카피는 호출자가 PIL로 합성한다.
     Gemini가 간헐적으로 이미지를 빠뜨리거나(텍스트만) 503(과부하)을 내므로 짧게 재시도한다.
     """
     prompt = _build_prompt(
@@ -160,6 +170,7 @@ async def generate_image_and_copy(
         tone,
         improvement_context,
         has_product_image=product_image_bytes is not None,
+        has_existing_ad=existing_ad_bytes is not None,
     )
 
     contents: list = [prompt]
@@ -167,6 +178,8 @@ async def generate_image_and_copy(
         contents.append(
             genai_types.Part.from_bytes(data=product_image_bytes, mime_type="image/png")
         )
+    if existing_ad_bytes is not None:
+        contents.append(genai_types.Part.from_bytes(data=existing_ad_bytes, mime_type="image/png"))
 
     client = genai.Client(api_key=settings.gemini_api_key)
     for attempt in range(len(_RETRY_BACKOFF) + 1):
