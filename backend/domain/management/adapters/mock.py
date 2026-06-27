@@ -67,9 +67,10 @@ class MockAdPlatform:
         """Port 충족 — mock은 항상 ACTIVE."""
         return CampaignState.ACTIVE
 
-    async def list_campaigns(self) -> list[CampaignInfo]:
+    async def list_campaigns(self, include_archived: bool = False) -> list[CampaignInfo]:  # noqa: ARG002
         """Port 충족 — 데모 캠페인 목록(고정). 라우터 데모 경로의 풍부한 고장 시나리오는
         _CAMPAIGNS_DEMO(라우터 소유)에 있고, 여기는 Port 일반 소비자용 최소 목록.
+        (mock은 보관 개념이 없어 include_archived 무시.)
         """
         return [
             CampaignInfo(

@@ -97,6 +97,9 @@ class Settings(BaseSettings):
     meta_token_encryption_key: str | None = None
     # OAuth 콜백 완료 후 돌아갈 프론트 주소(개발=3000, 운영=https://clickme.co.kr).
     frontend_base_url: str = "http://localhost:3000"
+    # 내부 서비스 호출 토큰 — 매니지먼트→제너레이터(from-candidate) 같은 무인증 내부 HTTP 호출용.
+    # 설정 시 generator 조회가 org 스코프되며 이 헤더만 우회 허용. 미설정(dev)이면 우회 검사 생략.
+    internal_service_token: str | None = None
 
     # Management — Meta 광고 어댑터 (LIVE-ready). use_mock은 App 섹션에서 공용 선언.
     # use_mock=True면 reader=Mock·writer=DRY_RUN (Meta 접촉 0, wiring.py 분기).

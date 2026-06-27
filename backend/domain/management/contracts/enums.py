@@ -35,6 +35,7 @@ class CampaignState(StrEnum):
     ACTIVE_PENDING_REVIEW = "active_pending_review"
     PAUSED = "paused"
     ENDED = "ended"
+    ARCHIVED = "archived"  # 보관/삭제(Meta가 ARCHIVED로 보고) — 목록 '삭제됨 포함' 시 노출
 
 
 class AnomalyType(StrEnum):

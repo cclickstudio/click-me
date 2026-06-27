@@ -6,7 +6,8 @@ export type CampaignState =
   | 'active'
   | 'active_pending_review'
   | 'paused'
-  | 'ended';
+  | 'ended'
+  | 'archived'; // 보관/삭제 — '삭제됨 포함' 보기에서 노출
 
 export type CampaignKpi = {
   impressions: number;
@@ -84,7 +85,10 @@ export function pacingMeaningful(c: {
   metrics_status?: MetricsStatus;
 }): boolean {
   return (
-    c.state !== 'ended' && !metricsBlocked(c) && (!c.budget_type || c.budget_type === 'daily')
+    c.state !== 'ended' &&
+    c.state !== 'archived' &&
+    !metricsBlocked(c) &&
+    (!c.budget_type || c.budget_type === 'daily')
   );
 }
 
@@ -177,6 +181,7 @@ export type CampaignsResponse = {
   auth_error?: string | null; // Meta 토큰 만료 등 인증 오류 — 재연결 안내 배너용
   rate_limited?: string | null; // Meta 요청 한도(일시) — 기존 데이터 유지 + 안내 배너
   permission_error?: string | null; // 목록 자체 권한 거부 — '권한 없음' 안내 배너용
+  not_connected?: string | null; // 로그인 org에 Meta 연결 없음 — '연결 필요' 안내 배너용
   account?: AccountWallet | null; // 계정 지갑(잔액·한도·지출)
   account_unavailable?: string | null; // 계정 자금 권한 없음 — 지갑 자리에 '권한 없음' 표시
 };
