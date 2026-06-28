@@ -154,6 +154,9 @@ class ChatRequest(BaseModel):
     improve_context: dict | None = (
         None  # 개선 모드 컨텍스트 {s3_key, simulation_summary, product_name?}
     )
+    product_image_temp_key: str | None = None  # 상품 이미지 → compose 경로 활성화
+    brand_logo_s3_key: str | None = None  # 로고 S3 키
+    skip_asset_prompt: bool = False  # True면 이미지 요청 단계를 건너뛴다
 
 
 class InquiryCreate(BaseModel):

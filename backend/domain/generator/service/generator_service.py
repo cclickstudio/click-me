@@ -15,7 +15,6 @@ from collections.abc import AsyncIterator
 from contextlib import suppress
 from urllib.parse import quote
 
-import httpx
 from PIL import Image
 from sqlalchemy import select
 
@@ -29,7 +28,7 @@ from core.models import (
 )
 from core.tracing import make_trace_config
 from domain.generator.adapters.instagram import build_publisher
-from domain.generator.contracts.enums import AdStrategy, GenerationMode, TemplateType
+from domain.generator.contracts.enums import AdStrategy, TemplateType
 from domain.generator.contracts.schemas import GenerationCreateRequest
 from domain.generator.graph.pipeline import generation_graph
 from domain.generator.pipeline.relayout import render_platform
@@ -38,37 +37,20 @@ from tools.storage.s3 import (
     download_bytes,
     presign_get,
     publish_key,
+    temp_product_image_key,
     upload_bytes,
 )
 
 logger = logging.getLogger("clickme")
 
 _tasks: dict[str, dict] = {}
-# 상품 이미지 임시 저장소 — 테스트용, 추후 S3 방식으로 전환
-_product_image_store: dict[str, bytes] = {}
 
 
 async def store_temp_image(data: bytes) -> str:
-    """상품 이미지를 메모리에 임시 저장하고 temp_key를 반환한다."""
-    key = str(uuid.uuid4())
-    _product_image_store[key] = data
+    """상품 이미지를 S3에 임시 저장하고 S3 키를 반환한다."""
+    key = temp_product_image_key(str(uuid.uuid4()))
+    await upload_bytes(data, key, content_type="image/png")
     return key
-
-
-async def _load_existing_ad(ref: str) -> bytes | None:
-    """개선 모드 기존 광고 이미지를 로드 — http(s)는 httpx, 그 외는 S3 key(download_bytes)."""
-    try:
-        if ref.startswith(("http://", "https://")):
-            async with httpx.AsyncClient(timeout=30) as client:
-                resp = await client.get(ref)
-                resp.raise_for_status()
-                return resp.content
-        return await download_bytes(ref)
-    except Exception:
-        logger.warning(
-            "기존 광고 이미지 로드 실패 — 개선을 0부터 재생성으로 진행: ref=%s", ref[:80]
-        )
-        return None
 
 
 async def start_generation(
@@ -99,22 +81,7 @@ async def start_generation(
         )
         await session.commit()
 
-    # 상품 이미지 bytes를 task store에 주입 (pipeline이 state로 전달받음)
-    product_image_bytes: bytes | None = None
-    if request.product_image_temp_key:
-        product_image_bytes = _product_image_store.get(request.product_image_temp_key)
-
-    # 개선 모드 — 기존 광고 이미지를 로드(s3 key 또는 http URL)해 task store에 주입
-    existing_ad_bytes: bytes | None = None
-    if request.mode == GenerationMode.IMPROVE and request.existing_ad_s3_key:
-        existing_ad_bytes = await _load_existing_ad(request.existing_ad_s3_key)
-
-    _tasks[generation_id] = {
-        "status": "pending",
-        "events": [],
-        "product_image_bytes": product_image_bytes,
-        "existing_ad_bytes": existing_ad_bytes,
-    }
+    _tasks[generation_id] = {"status": "pending", "events": []}
     asyncio.create_task(_run_pipeline(generation_id, request, created_by=created_by))
     return generation_id
 
@@ -138,21 +105,23 @@ async def _run_pipeline(
             feature="generate",
             mode=request.mode.value,
             user_id=str(created_by) if created_by else "anonymous",
-            ad_id=request.existing_ad_s3_key if request.existing_ad_s3_key else None,
             project_id=request.project_id,
             extra_metadata={"generation_id": generation_id},
             configurable={"emit": emit},
         )
-        initial_state = {
+        initial_state: dict = {
             "generation_id": generation_id,
             "request": request.model_dump(),
         }
-        product_image_bytes: bytes | None = store.pop("product_image_bytes", None)
-        if product_image_bytes is not None:
-            initial_state["product_image_bytes"] = product_image_bytes
-        existing_ad_bytes: bytes | None = store.pop("existing_ad_bytes", None)
-        if existing_ad_bytes is not None:
-            initial_state["existing_ad_bytes"] = existing_ad_bytes
+        if request.product_image_temp_key:
+            try:
+                product_image_bytes = await download_bytes(request.product_image_temp_key)
+                initial_state["product_image_bytes"] = product_image_bytes
+            except Exception:
+                logger.warning(
+                    "상품 이미지 S3 다운로드 실패, 상품 없이 진행: key=%s",
+                    request.product_image_temp_key,
+                )
 
         final_state = await generation_graph.ainvoke(initial_state, config=config)
 
