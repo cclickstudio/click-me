@@ -45,6 +45,7 @@ from tools.storage.s3 import (
 logger = logging.getLogger("clickme")
 
 _tasks: dict[str, dict] = {}
+_background_tasks: set[asyncio.Task] = set()
 
 
 async def store_temp_image(data: bytes) -> str:
@@ -120,7 +121,9 @@ async def start_generation(
         "product_image_bytes": product_image_bytes,
         "existing_ad_bytes": existing_ad_bytes,
     }
-    asyncio.create_task(_run_pipeline(generation_id, request, created_by=created_by))
+    task = asyncio.create_task(_run_pipeline(generation_id, request, created_by=created_by))
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
     return generation_id
 
 
@@ -242,6 +245,14 @@ async def stream_events(generation_id: str) -> AsyncIterator[str]:
             break
 
         await asyncio.sleep(0.5)
+
+    async def _deferred_cleanup(gid: str) -> None:
+        await asyncio.sleep(30)
+        _tasks.pop(gid, None)
+
+    cleanup = asyncio.create_task(_deferred_cleanup(generation_id))
+    _background_tasks.add(cleanup)
+    cleanup.add_done_callback(_background_tasks.discard)
 
 
 async def get_detail(generation_id: str, org_id: uuid.UUID | None = None) -> dict | None:

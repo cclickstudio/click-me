@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import asyncio
+import io
 import json
 import re
 
@@ -12,6 +13,7 @@ from google import genai
 from google.genai import types as genai_types
 from google.genai.errors import ServerError
 from langsmith import traceable
+from PIL import Image
 
 from core.config import settings
 from domain.generator.contracts.enums import AdSize, AdStrategy, TemplateType
@@ -23,6 +25,12 @@ from domain.generator.pipeline.image_providers import (
     _record_genai_usage,
 )
 from tools.utils import str_or_none
+
+
+def _detect_mime(data: bytes) -> str:
+    fmt = Image.open(io.BytesIO(data)).format or "PNG"
+    return {"JPEG": "image/jpeg", "WEBP": "image/webp"}.get(fmt, "image/png")
+
 
 _TEMPLATE_LAYOUT: dict[TemplateType, str] = {
     TemplateType.A: "제품을 화면 상단~중앙에 크게 배치하고, 하단 45%는 텍스트가 올라갈 영역이므로 비워둔다.",
@@ -176,10 +184,16 @@ async def generate_image_and_copy(
     contents: list = [prompt]
     if product_image_bytes is not None:
         contents.append(
-            genai_types.Part.from_bytes(data=product_image_bytes, mime_type="image/png")
+            genai_types.Part.from_bytes(
+                data=product_image_bytes, mime_type=_detect_mime(product_image_bytes)
+            )
         )
     if existing_ad_bytes is not None:
-        contents.append(genai_types.Part.from_bytes(data=existing_ad_bytes, mime_type="image/png"))
+        contents.append(
+            genai_types.Part.from_bytes(
+                data=existing_ad_bytes, mime_type=_detect_mime(existing_ad_bytes)
+            )
+        )
 
     client = genai.Client(api_key=settings.gemini_api_key)
     for attempt in range(len(_RETRY_BACKOFF) + 1):

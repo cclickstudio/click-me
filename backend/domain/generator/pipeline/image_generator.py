@@ -561,8 +561,8 @@ async def generate_image(
             original_image_bytes,
             prompt,
             size,
-            provider="openai",
-            model=settings.generator_image_model,
+            provider=settings.generator_image_edit_provider,
+            model=settings.generator_image_edit_model,
         )
 
     # ── [생성 모드] Generate API ──────────────────────────────────────────────

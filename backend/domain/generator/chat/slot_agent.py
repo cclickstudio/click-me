@@ -146,6 +146,7 @@ def build_generation_chat_agent(
             gen_req = GenerationCreateRequest(
                 mode=GenerationMode.IMPROVE,
                 project_id=project_id,
+                product_name=product_name,
                 existing_ad_s3_key=s3_key,
                 simulation_summary=sim_summary,
                 fix_requests=fix_requests,
