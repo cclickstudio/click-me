@@ -1,34 +1,12 @@
-import base64
 import io
-from typing import Any
 
-from google import genai
-from google.genai import types as genai_types
-from langsmith import get_current_run_tree, traceable
-from langsmith.wrappers import wrap_openai
-from openai import AsyncOpenAI
+from langsmith import traceable
 from PIL import Image
 
 from core.config import settings
 from domain.generator.contracts.enums import AdSize, AdStrategy, TemplateType
 from domain.generator.contracts.pipeline_schemas import ProductAnalysis
-from domain.generator.pipeline.style_profile import get_style
-
-# wrap_openai로 감싸 이미지/Responses 호출의 토큰·비용 usage가 LangSmith에 기록되게 한다.
-_openai_client = wrap_openai(AsyncOpenAI(timeout=settings.generator_image_timeout))
-
-_GEMINI_NATIVE_ASPECT_RATIO: dict[AdSize, str] = {
-    AdSize.SQUARE: "1:1",
-    AdSize.LANDSCAPE: "3:2",
-    AdSize.PORTRAIT: "2:3",
-}
-
-# Imagen은 "1:1"/"3:4"/"4:3"/"9:16"/"16:9"만 지원 — AdSize 비율에 가장 가까운 값으로 매핑
-_IMAGEN_ASPECT_RATIO: dict[AdSize, str] = {
-    AdSize.SQUARE: "1:1",
-    AdSize.LANDSCAPE: "4:3",
-    AdSize.PORTRAIT: "3:4",
-}
+from domain.generator.pipeline import image_providers
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 전략별 메타데이터 매핑 (광고 전략 → 프롬프트 설명문)
@@ -46,29 +24,24 @@ _STRATEGY_DESCRIPTIONS: dict[AdStrategy, str] = {
 # 조명, 배경, 분위기 등 사진적 연출 방향을 전략에 맞게 정의한다.
 _STRATEGY_PHOTO_STYLE: dict[AdStrategy, str] = {
     AdStrategy.BENEFIT: (
-        "Product-focused e-commerce photography: the product centered, large and hero. "
-        "Clean, well-lit with soft even shadows, bright optimistic lighting, "
-        "minimal uncluttered background that makes product details and quality pop."
+        "Clean, well-lit product photography with soft even shadows. "
+        "Bright, optimistic lighting that showcases product details and quality."
     ),
     AdStrategy.PROBLEM_SOLVING: (
-        "Lifestyle photography of a real, relatable everyday scene where the product "
-        "naturally solves a small frustration. Contrast lighting shifting from dull to bright "
-        "to suggest improvement and change. Natural, empathetic, true-to-life setting."
+        "Contrast lighting transitioning from dark to bright, symbolizing transformation. "
+        "Clean background with the product as the clear solution focal point."
     ),
     AdStrategy.SOCIAL_PROOF: (
-        "Authentic UGC-style photography that looks like a real Instagram post, not an ad. "
-        "Casual hand-held feel, real-world context, genuine everyday use. "
-        "Approachable and trustworthy, as if shared by a satisfied customer."
+        "Warm, natural lifestyle photography suggesting authentic everyday use. "
+        "Approachable, inviting atmosphere with real-world context."
     ),
     AdStrategy.EMOTIONAL: (
-        "Emotional lifestyle photography with generous negative space and breathing room. "
-        "Natural light, warm tones, soft bokeh, shallow depth of field, cinematic premium mood. "
-        "The product appears subtly within an aspirational, comforting atmosphere."
+        "Soft bokeh background, warm golden tones, shallow depth of field. "
+        "Cinematic quality evoking aspiration, comfort, and emotional resonance."
     ),
     AdStrategy.FOMO: (
-        "Bold promotional photography for a flash-sale feel. Dramatic high-contrast lighting, "
-        "vibrant punchy colors, dynamic eye-grabbing composition that creates urgency. "
-        "High-conversion Meta promotion aesthetic."
+        "Bold, high-energy, dramatic lighting with strong contrast. "
+        "Vibrant colors and dynamic composition creating urgency and excitement."
     ),
 }
 
@@ -534,14 +507,15 @@ async def generate_image(
                 safe_zone=_TEMPLATE_SAFE_ZONES_COMPOSE[template],
             )
 
-        base_png, mask_png = _build_inpaint_base_and_mask(
-            product_cutout_bytes, template, size, get_style(strategy).product_fill
+        base_png, mask_png = _build_inpaint_base_and_mask(product_cutout_bytes, template, size)
+        return await image_providers.edit_with_mask(
+            base_png,
+            mask_png,
+            prompt,
+            size,
+            provider=settings.inpaint_provider,
+            model=settings.inpaint_model,
         )
-        base_file = io.BytesIO(base_png)
-        base_file.name = "base.png"
-        mask_file = io.BytesIO(mask_png)
-        mask_file.name = "mask.png"
-        return await _edit_with_openai(base_file, prompt, size, mask_file=mask_file)
 
     # ── [개선 모드] Edit API ───────────────────────────────────────────────────
     if original_image_bytes is not None:
@@ -577,9 +551,13 @@ async def generate_image(
                 safe_zone=_TEMPLATE_SAFE_ZONES_EDIT[template],
             )
 
-        image_file = io.BytesIO(original_image_bytes)
-        image_file.name = "original.png"
-        return await _edit_with_openai(image_file, prompt, size)
+        return await image_providers.edit(
+            original_image_bytes,
+            prompt,
+            size,
+            provider="openai",
+            model=settings.generator_image_model,
+        )
 
     # ── [생성 모드] Generate API ──────────────────────────────────────────────
     target_audience = product_analysis.target_audience or "general audience"
@@ -622,213 +600,13 @@ async def generate_image(
             safe_zone=_TEMPLATE_SAFE_ZONES[template],
         )
 
-    provider = settings.generator_image_provider
-    if provider == "openai":
-        image_bytes = await _generate_with_openai(prompt, size)
-    elif provider == "google_genai":
-        image_bytes = await _generate_with_gemini(prompt, size)
-    else:
-        raise NotImplementedError(f"지원하지 않는 GENERATOR_IMAGE_PROVIDER: {provider!r}")
-
-    return image_bytes
-
-
-@traceable(name="image-model:openai", run_type="llm")
-async def _generate_with_openai(prompt: str, size: AdSize) -> bytes:
-    model = settings.generator_image_model
-    quality = settings.generator_image_quality
-    kwargs: dict = {"model": model, "prompt": prompt, "n": 1, "size": size.value}
-    # gpt-image-1은 response_format 파라미터를 지원하지 않음 (항상 b64_json 반환)
-    if not model.startswith("gpt-image"):
-        kwargs["response_format"] = "b64_json"
-        kwargs["quality"] = quality
-    response = await _openai_client.images.generate(**kwargs)
-    _record_openai_usage(response, model, size, quality)
-    return base64.b64decode(response.data[0].b64_json)
-
-
-@traceable(name="image-model:openai-edit", run_type="llm")
-async def _edit_with_openai(
-    image_file: io.BytesIO, prompt: str, size: AdSize, mask_file: io.BytesIO | None = None
-) -> bytes:
-    """OpenAI images.edit 호출(컴포즈·개선·누끼 공통) — 모델명 런으로 분리해 토큰·시간·비용을 기록한다."""
-    model = settings.generator_image_edit_model
-    kwargs: dict = {
-        "model": model,
-        "image": image_file,
-        "prompt": prompt,
-        "n": 1,
-        "size": size.value,
-    }
-    if mask_file is not None:
-        kwargs["mask"] = mask_file
-    response = await _openai_client.images.edit(**kwargs)
-    _record_openai_usage(response, model, size, settings.generator_image_quality)
-    return base64.b64decode(response.data[0].b64_json)
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# 이미지 모델 단가표 — 모델/사이즈/품질 → USD/장
-# 이미지 API는 토큰 기반이 아니라 LangSmith 자동 집계가 안 되므로 직접 계산해 주입한다.
-# 가격 변경 시 이 테이블만 업데이트하면 된다. (공식 출처: platform.openai.com/docs/pricing)
-# ─────────────────────────────────────────────────────────────────────────────
-_IMAGE_COST_TABLE: dict[str, dict[str, float]] = {
-    # OpenAI — images.generate / images.edit (per image)
-    "gpt-image-1": {
-        "1024x1024_low": 0.011,
-        "1024x1024_medium": 0.042,
-        "1024x1024_high": 0.167,
-        "1536x1024_low": 0.016,
-        "1536x1024_medium": 0.063,
-        "1536x1024_high": 0.250,
-        "1024x1536_low": 0.016,
-        "1024x1536_medium": 0.063,
-        "1024x1536_high": 0.250,
-    },
-    "gpt-image-2": {
-        "1024x1024_low": 0.020,
-        "1024x1024_medium": 0.040,
-        "1024x1024_high": 0.080,
-        "1536x1024_low": 0.030,
-        "1536x1024_medium": 0.060,
-        "1536x1024_high": 0.120,
-        "1024x1536_low": 0.030,
-        "1024x1536_medium": 0.060,
-        "1024x1536_high": 0.120,
-    },
-    # Google — Gemini native (이미지 출력 토큰 기반, 장당 근사값)
-    "gemini-2.0-flash-preview-image-generation": {"default": 0.039},
-    "gemini-2.5-flash-preview-05-20": {"default": 0.039},
-    # Google — Imagen (per image, google.com/pricing 기준)
-    "imagen-3.0-generate-002": {"default": 0.040},
-    "imagen-4.0-generate-preview-06-05": {"default": 0.040},
-}
-
-
-def _lookup_image_cost(model: str, size: AdSize, quality: str | None) -> float:
-    """단가표에서 이미지 1장의 예상 비용(USD)을 조회한다. 미등록 모델은 0.0."""
-    table = _IMAGE_COST_TABLE.get(model)
-    if not table:
-        return 0.0
-    key = f"{size.value}_{quality}" if quality else "default"
-    return table.get(key) or table.get("default") or 0.0
-
-
-def _record_image_cost(model: str, provider: str, size: AdSize, quality: str | None) -> None:
-    """이미지 생성 비용을 LangSmith 현재 run에 메타데이터로 주입한다."""
-    run = get_current_run_tree()
-    if run is None:
-        return
-    run.set(
-        metadata={
-            "ls_model_name": model,
-            "ls_provider": provider,
-            "image_size": size.value,
-            "image_quality": quality or "default",
-            "image_count": 1,
-            "estimated_cost_usd": _lookup_image_cost(model, size, quality),
-        }
+    return await image_providers.generate(
+        prompt,
+        size,
+        provider=settings.generator_image_provider,
+        model=settings.generator_image_model,
+        quality=settings.generator_image_quality,
     )
-
-
-def _modality_breakdown(details: Any) -> dict[str, int]:
-    """google-genai의 *_tokens_details(모달리티별 토큰 리스트)를 {text, image, ...} 합계 dict로 변환."""
-    out: dict[str, int] = {}
-    for item in details or []:
-        modality = getattr(item, "modality", None)
-        name = (getattr(modality, "name", None) or str(modality)).lower()
-        out[name] = out.get(name, 0) + (getattr(item, "token_count", None) or 0)
-    return out
-
-
-def _record_openai_usage(resp: Any, model: str, size: AdSize, quality: str | None) -> None:
-    """OpenAI 이미지 호출의 토큰·모델명·비용을 현재 LangSmith run에 기록."""
-    _record_image_cost(model, "openai", size, quality)
-    run = get_current_run_tree()
-    if run is None:
-        return
-    usage = getattr(resp, "usage", None)
-    if usage is None:
-        return
-    payload: dict = {
-        "input_tokens": getattr(usage, "input_tokens", None) or 0,
-        "output_tokens": getattr(usage, "output_tokens", None) or 0,
-        "total_tokens": getattr(usage, "total_tokens", None) or 0,
-    }
-    details = getattr(usage, "input_tokens_details", None)
-    if details is not None:
-        payload["input_token_details"] = {
-            "text": getattr(details, "text_tokens", None) or 0,
-            "image": getattr(details, "image_tokens", None) or 0,
-        }
-    run.set(usage_metadata=payload)
-
-
-def _record_genai_usage(resp: Any, model: str, size: AdSize) -> None:
-    """google-genai 직접 호출의 토큰·모델명을 현재 LangSmith run에 기록."""
-    _record_image_cost(model, "google_genai", size, None)
-    run = get_current_run_tree()
-    if run is None:
-        return
-    um = getattr(resp, "usage_metadata", None)
-    if um is None:
-        return
-    payload: dict = {
-        "input_tokens": getattr(um, "prompt_token_count", None) or 0,
-        "output_tokens": getattr(um, "candidates_token_count", None) or 0,
-        "total_tokens": getattr(um, "total_token_count", None) or 0,
-    }
-    prompt_details = _modality_breakdown(getattr(um, "prompt_tokens_details", None))
-    if prompt_details:
-        payload["input_token_details"] = prompt_details
-    output_details = _modality_breakdown(getattr(um, "candidates_tokens_details", None))
-    if output_details:
-        payload["output_token_details"] = output_details
-    run.set(usage_metadata=payload)
-
-
-async def _generate_with_gemini(prompt: str, size: AdSize) -> bytes:
-    model = settings.generator_image_model
-    if model.startswith("imagen-"):
-        return await _generate_with_imagen(model, prompt, size)
-    return await _generate_with_gemini_native(model, prompt, size)
-
-
-@traceable(name="image-model:gemini", run_type="llm")
-async def _generate_with_gemini_native(model: str, prompt: str, size: AdSize) -> bytes:
-    client = genai.Client(api_key=settings.gemini_api_key)
-    response = await client.aio.models.generate_content(
-        model=model,
-        contents=prompt,
-        config=genai_types.GenerateContentConfig(
-            response_modalities=["IMAGE"],
-            image_config=genai_types.ImageConfig(aspect_ratio=_GEMINI_NATIVE_ASPECT_RATIO[size]),
-        ),
-    )
-    _record_genai_usage(response, model, size)
-    if not response.candidates:
-        raise RuntimeError("Gemini 응답에 candidates가 없음")
-    for part in response.candidates[0].content.parts:
-        if part.inline_data and part.inline_data.data:
-            return part.inline_data.data
-    raise RuntimeError("Gemini 응답에 이미지 데이터가 없음")
-
-
-@traceable(name="image-model:imagen", run_type="llm")
-async def _generate_with_imagen(model: str, prompt: str, size: AdSize) -> bytes:
-    client = genai.Client(api_key=settings.gemini_api_key)
-    response = await client.aio.models.generate_images(
-        model=model,
-        prompt=prompt,
-        config=genai_types.GenerateImagesConfig(
-            number_of_images=1,
-            aspect_ratio=_IMAGEN_ASPECT_RATIO[size],
-        ),
-    )
-    _record_genai_usage(response, model, size)
-    if not response.generated_images:
-        raise RuntimeError("Imagen 응답에 이미지가 없음")
-    return response.generated_images[0].image.image_bytes
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -837,33 +615,15 @@ async def _generate_with_imagen(model: str, prompt: str, size: AdSize) -> bytes:
 # AI 추출이라 픽셀이 완벽히 동일하진 않으나, 전체 재생성 대비 원본에 훨씬 가깝다.
 # ─────────────────────────────────────────────────────────────────────────────
 
-_REMOVE_BG_PROMPT = (
-    "Remove the background completely and keep ONLY the main product, "
-    "fully preserving its exact shape, colors, text, and details. "
-    "Output the product on a fully transparent background. "
-    "Do not add, redraw, or stylize anything — keep the product identical to the input."
-)
 
-
-@traceable(name="image-model:remove-bg", run_type="llm")
 async def remove_product_background(product_image_bytes: bytes) -> bytes:
     """상품 이미지의 배경을 제거하고 투명 PNG bytes를 반환한다."""
-    image_file = io.BytesIO(product_image_bytes)
-    image_file.name = "product.png"
-    response = await _openai_client.images.edit(
-        model=settings.generator_image_edit_model,
-        image=image_file,
-        prompt=_REMOVE_BG_PROMPT,
-        n=1,
-        background="transparent",
+    return await image_providers.remove_background(
+        product_image_bytes,
+        provider=settings.cutout_provider,
+        model=settings.cutout_model,
+        quality=settings.cutout_quality,
     )
-    _record_openai_usage(
-        response,
-        settings.generator_image_edit_model,
-        AdSize.SQUARE,
-        settings.generator_image_quality,
-    )
-    return base64.b64decode(response.data[0].b64_json)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -885,22 +645,13 @@ _PRODUCT_FILL = 0.92
 
 
 def _place_product(
-    product: Image.Image, w: int, h: int, template: TemplateType, product_fill: float
+    product: Image.Image, w: int, h: int, template: TemplateType
 ) -> tuple[Image.Image, int, int]:
-    """상품을 템플릿 박스에 비율 유지로 리사이즈하고 배치 좌표를 계산한다.
-
-    product_fill(전략별 상품 비중)은 프레임 짧은 변 대비 상품 최대 변의 목표 크기로,
-    템플릿 박스 한계와 함께 적용해 텍스트 영역 침범 없이 비중을 반영한다.
-    """
+    """상품을 템플릿 박스에 비율 유지로 리사이즈하고 배치 좌표를 계산한다."""
     x0, y0, x1, y1 = _COMPOSE_PRODUCT_BOXES[template]
     box_w = max(1, int(w * (x1 - x0) * _PRODUCT_FILL))
     box_h = max(1, int(h * (y1 - y0) * _PRODUCT_FILL))
-    target = max(1, int(min(w, h) * product_fill))  # 전략 비중 캡
-    scale = min(
-        box_w / product.width,
-        box_h / product.height,
-        target / max(product.width, product.height),
-    )
+    scale = min(box_w / product.width, box_h / product.height)
     new_w = max(1, int(product.width * scale))
     new_h = max(1, int(product.height * scale))
     product = product.resize((new_w, new_h), Image.LANCZOS)
@@ -910,12 +661,12 @@ def _place_product(
 
 
 def _build_inpaint_base_and_mask(
-    product_cutout_bytes: bytes, template: TemplateType, size: AdSize, product_fill: float
+    product_cutout_bytes: bytes, template: TemplateType, size: AdSize
 ) -> tuple[bytes, bytes]:
     """누끼 상품을 배치한 베이스 PNG와, 상품 실루엣만 보존하는 마스크 PNG를 만든다."""
     w, h = (int(v) for v in size.value.split("x"))
     product = Image.open(io.BytesIO(product_cutout_bytes)).convert("RGBA")
-    product, x, y = _place_product(product, w, h, template, product_fill)
+    product, x, y = _place_product(product, w, h, template)
 
     # 베이스: 중립 회색 위에 상품 배치 (배경 영역은 어차피 재생성됨)
     base = Image.new("RGBA", (w, h), (245, 245, 245, 255))

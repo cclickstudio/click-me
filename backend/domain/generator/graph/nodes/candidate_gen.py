@@ -23,7 +23,6 @@ from domain.generator.contracts.pipeline_schemas import (
     StrategyPlan,
 )
 from domain.generator.graph.nodes import emit_progress
-from domain.generator.graph.nodes.explain import generate_explanations
 from domain.generator.graph.state import GenerationState
 from domain.generator.pipeline.carousel import render_carousel_slide
 from domain.generator.pipeline.carousel_copy import generate_carousel_copy
@@ -204,37 +203,27 @@ async def generate_candidates(state: GenerationState, config: RunnableConfig) ->
             improvement_context=improvement_context,
         )
 
-    # 카피 3개를 LLM 1회 호출로 일괄 생성 (pipeline 모드일 때만).
-    # 이미지는 텍스트 없이 생성되고(카피는 이후 PIL 렌더) 카피 완성을 기다릴 필요가 없으므로,
-    # 카피 배치를 task로 띄워 이미지 생성과 병렬 진행 → 카피 LLM 왕복을 임계 경로에서 제거한다.
-    # multimodal + 상품 이미지 없는 경우는 generate_image_and_copy 내부에서 카피를 만든다.
-    copy_task: asyncio.Task | None = None
-    if not (gemini and product_cutout_bytes is None):
+    # 카피 3개를 LLM 1회 호출로 일괄 생성 (openai 모드만).
+    # gemini 모드는 generate_image_and_copy가 이미지와 함께 카피를 만든다.
+    batch_copies = [None, None, None]
+    if not gemini:
+        batch_copies = await generate_copies_batch(
+            product_analysis=product_analysis,
+            strategy_outputs=[
+                (
+                    StrategyOutput(
+                        strategy=plan.strategy,
+                        strategy_description=plan.strategy_description,
+                        rationale=plan.rationale,
+                    ),
+                    plan.template,
+                )
+                for plan in plans
+            ],
+            improvement_context=improvement_context,
+        )
 
-        async def _generate_copies() -> list[AdCopy]:
-            copies = await generate_copies_batch(
-                product_analysis=product_analysis,
-                strategy_outputs=[
-                    (
-                        StrategyOutput(
-                            strategy=plan.strategy,
-                            strategy_description=plan.strategy_description,
-                            rationale=plan.rationale,
-                        ),
-                        plan.template,
-                    )
-                    for plan in plans
-                ],
-                improvement_context=req.get("improvement_context"),
-            )
-            # 카피를 idx로 직접 인덱싱·zip하므로 개수가 다르면 명확히 실패시킨다(strict zip 대체).
-            if len(copies) != len(plans):
-                raise RuntimeError(f"카피 생성 개수 불일치: {len(copies)} != {len(plans)}")
-            return copies
-
-        copy_task = asyncio.create_task(_generate_copies())
-
-    async def build(idx: int, variant_id: str, plan: StrategyPlan) -> dict:
+    async def build(idx: int, variant_id: str, plan: StrategyPlan, ad_copy) -> dict:
         nonlocal done
 
         if gemini:
@@ -252,8 +241,9 @@ async def generate_candidates(state: GenerationState, config: RunnableConfig) ->
                 existing_ad_bytes=existing_ad_bytes,
             )
         else:
-            # 1. 이미지부터 생성 — 텍스트 없이 만들고 카피는 이후 PIL로 렌더하므로 카피를 기다리지 않는다.
-            #    (상품 이미지가 있으면 마스크 인페인팅으로 상품 보존하며 생성)
+            # openai 모드 — 카피는 이미 배치 생성됨, 이미지만 생성.
+            # 상품 이미지가 있으면 마스크 인페인팅으로 상품 픽셀 보존하며 생성.
+            # 개선 모드(existing_ad_bytes)면 기존 광고를 edit으로 직접 수정한다.
             image_bytes = await generate_image(
                 product_analysis=product_analysis,
                 strategy=plan.strategy,
@@ -264,9 +254,10 @@ async def generate_candidates(state: GenerationState, config: RunnableConfig) ->
                 product_cutout_bytes=product_cutout_bytes,
                 original_image_bytes=existing_ad_bytes,
                 improvement_context=improvement_context,
+                headline=ad_copy.headline,
+                body=ad_copy.body,
+                cta=ad_copy.cta,
             )
-            # 2. 병렬로 진행된 카피 배치 결과를 이 시점에 수령 (이미 완료돼 있을 가능성이 높다)
-            ad_copy = (await copy_task)[idx]
 
         # 3. 텍스트 없는 base 이미지를 별도 저장 — 플랫폼별 리레이아웃 렌더의 원본
         base_key = candidate_base_key(generation_id, idx)
@@ -283,7 +274,6 @@ async def generate_candidates(state: GenerationState, config: RunnableConfig) ->
             cta=ad_copy.cta,
             template=plan.template,
             brand_color=brand_color,
-            strategy=plan.strategy,
         )
 
         # 5. 품질검증 (순수 동기 함수)
@@ -322,40 +312,14 @@ async def generate_candidates(state: GenerationState, config: RunnableConfig) ->
             "_quality_report": quality_report.model_dump(),
         }
 
-    # 생성 이유 설명은 카피·전략·QA만 필요하고 렌더 이미지가 불필요하다.
-    # → 이미지 생성과 병렬로 미리 계산해 explain 노드의 LLM 왕복을 임계 경로에서 제거한다.
-    # 카피가 빌드보다 먼저 준비되는 pipeline 경로에서만 선계산(멀티모달은 explain 노드가 폴백 처리).
-    async def _precompute_explanations() -> list[dict]:
-        copies = await copy_task
-        target = req.get("target_audience") or "기존 타겟"
-        product_name = req.get("product_name") or "(개선모드)"
-        rows = [
-            {
-                "template": plan.template,
-                "strategy_description": plan.strategy_description,
-                "rationale": plan.rationale,
-                "headline": copy.headline,
-                "qa_passed": check_quality(
-                    ad_copy=copy, target=product_analysis.target_audience
-                ).overall_passed,
-            }
-            for plan, copy in zip(plans, copies, strict=True)
+    results = await asyncio.gather(
+        *[
+            build(i, vid, plan, copy)
+            for i, (vid, plan, copy) in enumerate(
+                zip(_VARIANT_IDS, plans, batch_copies, strict=True)
+            )
         ]
-        return await generate_explanations(product_name, target, rows)
-
-    build_coros = [
-        build(i, vid, plan) for i, (vid, plan) in enumerate(zip(_VARIANT_IDS, plans, strict=True))
-    ]
-    explanations: list[dict] | None = None
-    if copy_task is not None:
-        # 선계산을 별도 task로 띄우지 않고 같은 gather에 코루틴으로 넘겨 빌드와 동일하게 관리한다.
-        *results, explanations = await asyncio.gather(*build_coros, _precompute_explanations())
-    else:
-        results = list(await asyncio.gather(*build_coros))
-
+    )
     candidates = sorted(results, key=lambda c: c["idx"])
     qa_results = [c.pop("_quality_report") for c in candidates]
-    out: dict = {"candidates": candidates, "qa_results": qa_results}
-    if explanations is not None:
-        out["explanations"] = explanations
-    return out
+    return {"candidates": candidates, "qa_results": qa_results}
