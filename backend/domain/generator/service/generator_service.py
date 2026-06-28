@@ -1,4 +1,4 @@
-"""광고 생성 서비스 — graph 파이프라인 실행, SSE 진행률, DB 영속화, 후보 선택·게시·집행.
+"""광고 생성 서비스 — graph 파이프라인 실행, SSE 진행률, DB 영속화, 후보 선택·게시.
 
 생성/개선 모두 graph(LangGraph) 파이프라인으로 처리한다(GenerationCreateRequest.mode로 분기).
 """
@@ -15,15 +15,21 @@ from collections.abc import AsyncIterator
 from contextlib import suppress
 from urllib.parse import quote
 
+import httpx
 from PIL import Image
 from sqlalchemy import select
 
 from core.db import AsyncSessionLocal
-from core.models import AdCampaignLog, AdGeneration, AdGenerationCandidate, AdPublishLog
+from core.models import (
+    AdGeneration,
+    AdGenerationCandidate,
+    AdPublishLog,
+    OrganizationMember,
+    Project,
+)
 from core.tracing import make_trace_config
 from domain.generator.adapters.instagram import build_publisher
-from domain.generator.adapters.meta_ads import AdvertiseRequest, build_ads_publisher
-from domain.generator.contracts.enums import AdStrategy, TemplateType
+from domain.generator.contracts.enums import AdStrategy, GenerationMode, TemplateType
 from domain.generator.contracts.schemas import GenerationCreateRequest
 from domain.generator.graph.pipeline import generation_graph
 from domain.generator.pipeline.relayout import render_platform
@@ -46,6 +52,22 @@ async def store_temp_image(data: bytes) -> str:
     key = temp_product_image_key(str(uuid.uuid4()))
     await upload_bytes(data, key, content_type="image/png")
     return key
+
+
+async def _load_existing_ad(ref: str) -> bytes | None:
+    """개선 모드 기존 광고 이미지를 로드 — http(s)는 httpx, 그 외는 S3 key(download_bytes)."""
+    try:
+        if ref.startswith(("http://", "https://")):
+            async with httpx.AsyncClient(timeout=30) as client:
+                resp = await client.get(ref)
+                resp.raise_for_status()
+                return resp.content
+        return await download_bytes(ref)
+    except Exception:
+        logger.warning(
+            "기존 광고 이미지 로드 실패 — 개선을 0부터 재생성으로 진행: ref=%s", ref[:80]
+        )
+        return None
 
 
 async def start_generation(
@@ -76,9 +98,27 @@ async def start_generation(
         )
         await session.commit()
 
+    # 상품 이미지 bytes를 task store에 주입 (pipeline이 state로 전달받음)
+    product_image_bytes: bytes | None = None
+    if request.product_image_temp_key:
+        try:
+            product_image_bytes = await download_bytes(request.product_image_temp_key)
+        except Exception:
+            logger.warning(
+                "상품 이미지 S3 다운로드 실패, 상품 없이 진행: key=%s",
+                request.product_image_temp_key,
+            )
+
+    # 개선 모드 — 기존 광고 이미지를 로드(s3 key 또는 http URL)해 task store에 주입
+    existing_ad_bytes: bytes | None = None
+    if request.mode == GenerationMode.IMPROVE and request.existing_ad_s3_key:
+        existing_ad_bytes = await _load_existing_ad(request.existing_ad_s3_key)
+
     _tasks[generation_id] = {
         "status": "pending",
         "events": [],
+        "product_image_bytes": product_image_bytes,
+        "existing_ad_bytes": existing_ad_bytes,
     }
     asyncio.create_task(_run_pipeline(generation_id, request, created_by=created_by))
     return generation_id
@@ -111,15 +151,12 @@ async def _run_pipeline(
             "generation_id": generation_id,
             "request": request.model_dump(),
         }
-        if request.product_image_temp_key:
-            try:
-                product_image_bytes = await download_bytes(request.product_image_temp_key)
-                initial_state["product_image_bytes"] = product_image_bytes
-            except Exception:
-                logger.warning(
-                    "상품 이미지 S3 다운로드 실패, 상품 없이 진행: key=%s",
-                    request.product_image_temp_key,
-                )
+        product_image_bytes: bytes | None = store.pop("product_image_bytes", None)
+        if product_image_bytes is not None:
+            initial_state["product_image_bytes"] = product_image_bytes
+        existing_ad_bytes: bytes | None = store.pop("existing_ad_bytes", None)
+        if existing_ad_bytes is not None:
+            initial_state["existing_ad_bytes"] = existing_ad_bytes
 
         final_state = await generation_graph.ainvoke(initial_state, config=config)
 
@@ -207,8 +244,12 @@ async def stream_events(generation_id: str) -> AsyncIterator[str]:
         await asyncio.sleep(0.5)
 
 
-async def get_detail(generation_id: str) -> dict | None:
-    """생성 결과 상세 — DB 기준 (서버 재시작 후에도 조회 가능)."""
+async def get_detail(generation_id: str, org_id: uuid.UUID | None = None) -> dict | None:
+    """생성 결과 상세 — DB 기준 (서버 재시작 후에도 조회 가능).
+
+    org_id가 주어지면 해당 생성물의 프로젝트 org와 일치할 때만 반환(멀티테넌시 격리).
+    org_id=None이면 검증 생략 — 내부 서비스 호출(from-candidate) 전용.
+    """
     try:
         gid = uuid.UUID(generation_id)
     except ValueError:
@@ -218,6 +259,22 @@ async def get_detail(generation_id: str) -> dict | None:
         generation = await session.get(AdGeneration, gid)
         if generation is None:
             return None
+        if org_id is not None:
+            if generation.project_id is None:
+                # 프로젝트 없는(improve 등) 생성물 — 생성자(created_by)의 org로 검증해 노출.
+                if generation.created_by is None:
+                    return None
+                member_org = await session.scalar(
+                    select(OrganizationMember.organization_id).where(
+                        OrganizationMember.user_id == generation.created_by
+                    )
+                )
+                if member_org != org_id:
+                    return None
+            else:
+                project = await session.get(Project, generation.project_id)
+                if project is None or project.organization_id != org_id:
+                    return None
 
         candidates = (
             (
@@ -262,6 +319,8 @@ async def get_detail(generation_id: str) -> dict | None:
         )
 
     return {
+        # D1 계약 버전 — management from-candidate 핸드오프가 검증(불일치 시 409).
+        "schema_version": "1",
         "generation_id": str(generation.id),
         "status": generation.status,
         "input": generation.input,
@@ -385,18 +444,16 @@ async def select_candidate(generation_id: str, candidate_id: str) -> bool:
         return True
 
 
-async def list_generations(limit: int = 20) -> list[dict]:
-    """생성 이력 목록 (최신순)."""
+async def list_generations(limit: int = 20, org_id: uuid.UUID | None = None) -> list[dict]:
+    """생성 이력 목록 (최신순). org_id가 주어지면 그 org 프로젝트 생성물만(멀티테넌시 격리)."""
     async with AsyncSessionLocal() as session:
-        generations = (
-            (
-                await session.execute(
-                    select(AdGeneration).order_by(AdGeneration.created_at.desc()).limit(limit)
-                )
+        stmt = select(AdGeneration).order_by(AdGeneration.created_at.desc())
+        if org_id is not None:
+            # 프로젝트→org 조인으로 로그인 org 생성물만. 프로젝트 없는 생성물은 자동 제외.
+            stmt = stmt.join(Project, AdGeneration.project_id == Project.id).where(
+                Project.organization_id == org_id
             )
-            .scalars()
-            .all()
-        )
+        generations = (await session.execute(stmt.limit(limit))).scalars().all()
 
     return [
         {
@@ -418,78 +475,6 @@ def png_to_jpeg(png_bytes: bytes, quality: int = 90) -> bytes:
     buffer = io.BytesIO()
     image.save(buffer, format="JPEG", quality=quality)
     return buffer.getvalue()
-
-
-async def advertise_candidate(generation_id: str, req: AdvertiseRequest) -> dict | None:
-    """선택된 후보를 Meta Marketing API로 광고 집행 (기본 PAUSED)."""
-    try:
-        gid = uuid.UUID(generation_id)
-        cid = uuid.UUID(req.candidate_id)
-    except ValueError:
-        return None
-
-    async with AsyncSessionLocal() as session:
-        generation = await session.get(AdGeneration, gid)
-        candidate = await session.get(AdGenerationCandidate, cid)
-        if generation is None or candidate is None or candidate.generation_id != gid:
-            return None
-
-    image_url = await presign_get(candidate.s3_key, expires_in=3600)
-    copy = candidate.copy or {}
-
-    publisher = build_ads_publisher()
-    outcome = await publisher.create_ad_campaign(image_url, copy, req)
-
-    status = "mocked" if outcome.mocked else ("created" if outcome.success else "failed")
-
-    async with AsyncSessionLocal() as session:
-        session.add(
-            AdCampaignLog(
-                generation_id=gid,
-                candidate_id=cid,
-                status=status,
-                mocked=outcome.mocked,
-                campaign_id=outcome.campaign_id,
-                adset_id=outcome.adset_id,
-                creative_id=outcome.creative_id,
-                ad_id=outcome.ad_id,
-                budget=req.budget,
-                objective=req.objective,
-                targeting=req.targeting,
-                request_payload={
-                    "objective": req.objective,
-                    "budget": req.budget,
-                    "targeting": req.targeting,
-                    "destination_url": req.destination_url,
-                    "start_date": req.start_date,
-                    "end_date": req.end_date,
-                },
-                response_payload=outcome.raw,
-                error_message=outcome.error,
-            )
-        )
-        await session.commit()
-
-    from core.config import settings as cfg
-
-    ads_manager_url: str | None = None
-    if cfg.meta_ad_account_id:
-        act_id = str(cfg.meta_ad_account_id).removeprefix("act_")
-        ads_manager_url = f"https://www.facebook.com/adsmanager/manage/campaigns?act={act_id}"
-
-    return {
-        "generation_id": generation_id,
-        "candidate_id": req.candidate_id,
-        "status": status,
-        "success": outcome.success,
-        "mocked": outcome.mocked,
-        "campaign_id": outcome.campaign_id,
-        "adset_id": outcome.adset_id,
-        "creative_id": outcome.creative_id,
-        "ad_id": outcome.ad_id,
-        "error": outcome.error,
-        "ads_manager_url": ads_manager_url,
-    }
 
 
 async def publish_candidate(generation_id: str, candidate_id: str, caption: str) -> dict | None:

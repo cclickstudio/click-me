@@ -237,12 +237,11 @@ def test_executor_rejects_create_campaign_without_config():
 
 class _StubGen:
     async def generate(self, _diagnosis, _count):
-        return [CreativeCandidate(candidate_id="c1", ad_copy="여름 신상 런칭")]
-
-
-class _StubScore:
-    async def score(self, _cand):
-        return 0.9
+        return [
+            CreativeCandidate(
+                candidate_id="c1", copy="여름 신상 런칭", idx=0, image_ref="s3/new.png"
+            )
+        ]
 
 
 def test_regeneration_packages_create_campaign_with_config():
@@ -269,9 +268,20 @@ def test_regeneration_packages_create_campaign_with_config():
         metrics_as_of=NOW,
         status="confirmed",
     )
-    agent = RemediationAgent(generator=_StubGen(), scorer=_StubScore(), clock=lambda: NOW)
+    from domain.management.agents.selection import InMemorySelectionRoundStore
 
-    proposal = asyncio.run(agent.propose(diagnosis, context))
+    # clock을 주입하지 않아 기본(real UTC)을 사용 — SelectionRound.expires_at이 항상 미래
+    # (InMemorySelectionRoundStore.claim()이 real wall-clock으로 만료를 검증하므로).
+    agent = RemediationAgent(generator=_StubGen(), selection_store=InMemorySelectionRoundStore())
+
+    async def _run():
+        ranked = await agent.rank(diagnosis, context)
+        return await agent.package(
+            ranked.selection_token, tenant_id=diagnosis.tenant_id, selected_id="c1"
+        )
+
+    out = asyncio.run(_run())
+    proposal = out.proposal
 
     assert proposal is not None
     assert proposal.action_type == "CREATE_CAMPAIGN"
@@ -287,3 +297,57 @@ def test_config_roundtrips_through_evidence_metrics(ts):
     rebuilt = CampaignConfig(**cfg.model_dump(mode="json"))
     assert rebuilt.start_at == ts
     assert rebuilt.ad_account_id == cfg.ad_account_id
+
+
+# ── 광고 단계 스킵 플래그 ────────────────────────────────────────
+
+
+def _traffic_config() -> CampaignConfig:
+    # link_url이 있어도(원래라면 광고 생성) 플래그로 스킵되는지 검증하려고 link_url 설정.
+    return _config().model_copy(
+        update={"objective": "traffic", "link_url": "https://example.com/landing"}
+    )
+
+
+def test_create_full_campaign_skips_ad_when_flag_off():
+    """management_create_ad=False(기본)면 traffic이라도 광고세트에서 멈춘다."""
+    paths: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        paths.append(request.url.path)
+        return httpx.Response(200, json={"id": f"obj_{len(paths)}"})
+
+    client = MetaClient("EAAtest", transport=httpx.MockTransport(handler))
+    writer = MetaAdsWriter(
+        mode=ExecutionMode.LIVE, client=client
+    )  # settings 미주입 → create_ad=False
+    result = asyncio.run(
+        writer.create_full_campaign(_traffic_config(), "idem-skip", page_id="page1")
+    )
+
+    assert result.status is ResultStatus.SUCCESS
+    snap = result.platform_response_snapshot
+    assert snap["ad_creation_skipped"] is True
+    assert snap["create_ad_enabled"] is False
+    assert snap["ad_id"] is None
+    assert snap["campaign_meta_id"] == "obj_1"
+    assert snap["adset_id"] == "obj_2"
+    assert not any(p.endswith("/ads") for p in paths)
+
+
+def test_create_full_campaign_creates_ad_when_flag_on():
+    """management_create_ad=True면 기존대로 광고까지 생성(회귀 방지)."""
+    import types
+
+    paths: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        paths.append(request.url.path)
+        return httpx.Response(200, json={"id": f"obj_{len(paths)}"})
+
+    client = MetaClient("EAAtest", transport=httpx.MockTransport(handler))
+    settings = types.SimpleNamespace(management_create_ad=True)
+    writer = MetaAdsWriter(settings, mode=ExecutionMode.LIVE, client=client)
+    asyncio.run(writer.create_full_campaign(_traffic_config(), "idem-full", page_id="page1"))
+
+    assert any(p.endswith("/ads") for p in paths)

@@ -6,6 +6,8 @@
 
 from uuid import uuid4
 
+from langsmith import traceable
+
 from domain.management.contracts.enums import AnomalyType, DiagnosisSource, DiagnosisStatus
 from domain.management.contracts.policy import CPM_ANCHOR_KRW
 from domain.management.contracts.schemas import DiagnosisResult, MetricsSnapshot
@@ -15,6 +17,7 @@ _CPM_SURGE_RATIO = 1.3
 _FREQUENCY_FATIGUE = 3.0
 
 
+@traceable(name="diagnose", run_type="chain", tags=["management", "detection"])
 def diagnose(
     tenant_id: str,
     campaign_id: str,

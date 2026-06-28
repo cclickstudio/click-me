@@ -1,8 +1,8 @@
 """노드 4 — 광고 후보 3종 생성.
 
 생성 방식(GENERATOR_GEN_MODE)에 따라 변종마다 둘 중 하나로 동작한다.
-- pipeline: 카피 생성 → 제품 이미지 생성(단계 분리) → 품질검증 → S3 업로드.
-- multimodal: 한 모델 호출로 카피+이미지 동시 생성 → 품질검증 → S3 업로드.
+- openai: 카피 생성 → 이미지 생성(상품있음 인페인팅 / 없음 0부터, 단계 분리) → 품질검증 → S3.
+- gemini: 한 Gemini 호출로 카피+이미지 동시 생성(상품있음 멀티모달 입력) → 품질검증 → S3.
 품질검증(QualityReport)은 이 노드에서 qa_results로 함께 산출한다(별도 run_qa 노드 없음).
 """
 
@@ -62,22 +62,42 @@ async def _generate_carousel(
     brand_color: str | None,
     tone: str | None,
     product_cutout_bytes: bytes | None,
+    product_image_bytes: bytes | None,
+    existing_ad_bytes: bytes | None,
     logo_image_bytes: bytes | None,
+    gemini: bool,
+    improvement_context: str | None = None,
 ) -> dict:
     """캐러셀 — 공통 배경 1장 생성 후 슬라이드별 PIL 텍스트로 3장 구성."""
     emit_progress(config, "candidates", 45, "캐러셀 배경 생성 중...")
-    bg_bytes = await generate_image(
-        product_analysis=product_analysis,
-        strategy=plan.strategy,
-        template=TemplateType.A,
-        size=gen_size,
-        brand_color=brand_color,
-        tone=tone,
-        product_cutout_bytes=product_cutout_bytes,
-        headline="",
-        body="",
-        cta="",
-    )
+    if gemini:
+        # gemini 모드 — Gemini로 배경 생성. 카피는 슬라이드별로 따로 만들므로 함께 나온 카피는 버린다.
+        bg_bytes, _ = await generate_image_and_copy(
+            product_analysis=product_analysis,
+            strategy=plan.strategy,
+            template=TemplateType.A,
+            size=gen_size,
+            brand_color=brand_color,
+            tone=tone,
+            improvement_context=improvement_context,
+            product_image_bytes=product_image_bytes,
+            existing_ad_bytes=existing_ad_bytes,
+        )
+    else:
+        bg_bytes = await generate_image(
+            product_analysis=product_analysis,
+            strategy=plan.strategy,
+            template=TemplateType.A,
+            size=gen_size,
+            brand_color=brand_color,
+            tone=tone,
+            product_cutout_bytes=product_cutout_bytes,
+            original_image_bytes=existing_ad_bytes,
+            improvement_context=improvement_context,
+            headline="",
+            body="",
+            cta="",
+        )
 
     emit_progress(config, "candidates", 60, "캐러셀 카피 생성 중...")
     slides = (await generate_carousel_copy(product_analysis)).slides[:3]
@@ -139,7 +159,9 @@ async def generate_candidates(state: GenerationState, config: RunnableConfig) ->
     gen_size = _map_ad_size(width, height)
     brand_color = req.get("brand_color")
     tone = req.get("tone_and_manner")
+    improvement_context: str | None = state.get("improvement_context")
     product_image_bytes: bytes | None = state.get("product_image_bytes")
+    existing_ad_bytes: bytes | None = state.get("existing_ad_bytes")
 
     logo_s3_key = req.get("brand_logo_s3_key")
     logo_image_bytes: bytes | None = None
@@ -150,21 +172,17 @@ async def generate_candidates(state: GenerationState, config: RunnableConfig) ->
             logo_image_bytes = None
 
     done = 0
-    multimodal = settings.generator_gen_mode == "multimodal"
+    gemini = settings.generator_gen_mode == "gemini"
 
-    # 상품 이미지 누끼는 후보 3종 공통 → gather 전 1회만 실행 (API 호출 절약).
-    # Gemini 경로: 누끼 스킵 — 원본 이미지를 직접 Gemini에 넘겨 전체 광고를 한 번에 생성.
-    # OpenAI 경로: gpt-image-1로 누끼 후 마스크 인페인팅.
+    # 누끼(배경제거)는 openai 모드 + 상품있음일 때만 — 마스크 인페인팅용, 후보 3종 공통 1회.
+    # gemini 모드는 원본 상품 이미지를 그대로 멀티모달 입력으로 쓰므로 누끼 단계가 없다.
     product_cutout_bytes: bytes | None = None
-    if product_image_bytes is not None:
-        if settings.generator_image_provider == "google_genai":
-            product_cutout_bytes = product_image_bytes  # 원본 그대로 전달
-        else:
-            try:
-                product_cutout_bytes = await remove_product_background(product_image_bytes)
-            except Exception:
-                logger.exception("상품 누끼 실패 — 상품 없이 일반 생성으로 진행")
-                product_cutout_bytes = None
+    if product_image_bytes is not None and not gemini:
+        try:
+            product_cutout_bytes = await remove_product_background(product_image_bytes)
+        except Exception:
+            logger.exception("상품 누끼 실패 — 상품 없이 일반 생성으로 진행")
+            product_cutout_bytes = None
 
     # 캐러셀(카드뉴스) — 공통 배경 1장 + 슬라이드별 PIL 텍스트 (단일 흐름과 분기)
     if req.get("format") == "carousel":
@@ -179,45 +197,39 @@ async def generate_candidates(state: GenerationState, config: RunnableConfig) ->
             brand_color=brand_color,
             tone=tone,
             product_cutout_bytes=product_cutout_bytes,
+            product_image_bytes=product_image_bytes,
+            existing_ad_bytes=existing_ad_bytes,
             logo_image_bytes=logo_image_bytes,
+            gemini=gemini,
+            improvement_context=improvement_context,
         )
 
-    # 카피 3개를 LLM 1회 호출로 일괄 생성 (pipeline 모드일 때만).
-    # 이미지는 텍스트 없이 생성되고(카피는 이후 PIL 렌더) 카피 완성을 기다릴 필요가 없으므로,
-    # 카피 배치를 task로 띄워 이미지 생성과 병렬 진행 → 카피 LLM 왕복을 임계 경로에서 제거한다.
-    # multimodal + 상품 이미지 없는 경우는 generate_image_and_copy 내부에서 카피를 만든다.
-    copy_task: asyncio.Task | None = None
-    if not (multimodal and product_cutout_bytes is None):
-
-        async def _generate_copies() -> list[AdCopy]:
-            copies = await generate_copies_batch(
-                product_analysis=product_analysis,
-                strategy_outputs=[
-                    (
-                        StrategyOutput(
-                            strategy=plan.strategy,
-                            strategy_description=plan.strategy_description,
-                            rationale=plan.rationale,
-                        ),
-                        plan.template,
-                    )
-                    for plan in plans
-                ],
-                improvement_context=req.get("improvement_context"),
-            )
-            # 카피를 idx로 직접 인덱싱·zip하므로 개수가 다르면 명확히 실패시킨다(strict zip 대체).
-            if len(copies) != len(plans):
-                raise RuntimeError(f"카피 생성 개수 불일치: {len(copies)} != {len(plans)}")
-            return copies
-
-        copy_task = asyncio.create_task(_generate_copies())
+    # 카피 3개를 LLM 1회 호출로 일괄 생성 (openai 모드만).
+    # gemini 모드는 generate_image_and_copy가 이미지와 함께 카피를 만든다.
+    batch_copies: list = [None, None, None]
+    if not gemini:
+        batch_copies = await generate_copies_batch(
+            product_analysis=product_analysis,
+            strategy_outputs=[
+                (
+                    StrategyOutput(
+                        strategy=plan.strategy,
+                        strategy_description=plan.strategy_description,
+                        rationale=plan.rationale,
+                    ),
+                    plan.template,
+                )
+                for plan in plans
+            ],
+            improvement_context=improvement_context,
+        )
 
     async def build(idx: int, variant_id: str, plan: StrategyPlan) -> dict:
         nonlocal done
 
-        # multimodal 한방 생성은 상품 픽셀 보존이 불가하므로, 상품 이미지가 있으면 사용하지 않는다.
-        if multimodal and product_cutout_bytes is None:
-            # 1+2. 한 모델 호출로 카피·이미지 동시 생성 (스타일 일관성)
+        if gemini:
+            # gemini 모드 — 한 Gemini 호출로 카피·이미지 동시 생성.
+            # 상품 이미지가 있으면 원본을 멀티모달 입력으로 함께 넣어 참조(픽셀 보존은 보장 안 됨).
             image_bytes, ad_copy = await generate_image_and_copy(
                 product_analysis=product_analysis,
                 strategy=plan.strategy,
@@ -225,10 +237,15 @@ async def generate_candidates(state: GenerationState, config: RunnableConfig) ->
                 size=gen_size,
                 brand_color=brand_color,
                 tone=tone,
+                improvement_context=improvement_context,
+                product_image_bytes=product_image_bytes,
+                existing_ad_bytes=existing_ad_bytes,
             )
         else:
-            # 1. 이미지부터 생성 — 텍스트 없이 만들고 카피는 이후 PIL로 렌더하므로 카피를 기다리지 않는다.
-            #    (상품 이미지가 있으면 마스크 인페인팅으로 상품 보존하며 생성)
+            # openai 모드 — 카피는 이미 배치 생성됨, 이미지만 생성.
+            # 상품 이미지가 있으면 마스크 인페인팅으로 상품 픽셀 보존하며 생성.
+            # 개선 모드(existing_ad_bytes)면 기존 광고를 edit으로 직접 수정한다.
+            ad_copy = batch_copies[idx]
             image_bytes = await generate_image(
                 product_analysis=product_analysis,
                 strategy=plan.strategy,
@@ -237,9 +254,12 @@ async def generate_candidates(state: GenerationState, config: RunnableConfig) ->
                 brand_color=brand_color,
                 tone=tone,
                 product_cutout_bytes=product_cutout_bytes,
+                original_image_bytes=existing_ad_bytes,
+                improvement_context=improvement_context,
+                headline=ad_copy.headline,
+                body=ad_copy.body,
+                cta=ad_copy.cta,
             )
-            # 2. 병렬로 진행된 카피 배치 결과를 이 시점에 수령 (이미 완료돼 있을 가능성이 높다)
-            ad_copy = (await copy_task)[idx]
 
         # 3. 텍스트 없는 base 이미지를 별도 저장 — 플랫폼별 리레이아웃 렌더의 원본
         base_key = candidate_base_key(generation_id, idx)
@@ -295,11 +315,10 @@ async def generate_candidates(state: GenerationState, config: RunnableConfig) ->
             "_quality_report": quality_report.model_dump(),
         }
 
-    # 생성 이유 설명은 카피·전략·QA만 필요하고 렌더 이미지가 불필요하다.
-    # → 이미지 생성과 병렬로 미리 계산해 explain 노드의 LLM 왕복을 임계 경로에서 제거한다.
-    # 카피가 빌드보다 먼저 준비되는 pipeline 경로에서만 선계산(멀티모달은 explain 노드가 폴백 처리).
+    # openai 모드에서만 선계산 — 카피가 이미 준비돼 있어 이미지 생성과 병렬로 실행 가능.
+    # gemini 모드는 build 내부에서 카피가 만들어지므로 explain 노드가 폴백 처리한다.
     async def _precompute_explanations() -> list[dict]:
-        copies = await copy_task
+        copies = batch_copies
         target = req.get("target_audience") or "기존 타겟"
         product_name = req.get("product_name") or "(개선모드)"
         rows = [
@@ -320,8 +339,7 @@ async def generate_candidates(state: GenerationState, config: RunnableConfig) ->
         build(i, vid, plan) for i, (vid, plan) in enumerate(zip(_VARIANT_IDS, plans, strict=True))
     ]
     explanations: list[dict] | None = None
-    if copy_task is not None:
-        # 선계산을 별도 task로 띄우지 않고 같은 gather에 코루틴으로 넘겨 빌드와 동일하게 관리한다.
+    if not gemini:
         *results, explanations = await asyncio.gather(*build_coros, _precompute_explanations())
     else:
         results = list(await asyncio.gather(*build_coros))

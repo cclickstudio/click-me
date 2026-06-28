@@ -1,10 +1,12 @@
 """광고 제너레이터 API — graph 파이프라인 기반.
 
-생성 시작(생성/개선) / SSE 스트림 / 결과 조회 / 후보 선택 / 게시 / 광고집행 / 이력.
+생성 시작(생성/개선) / SSE 스트림 / 결과 조회 / 후보 선택 / 게시 / 이력.
+집행은 management 단일 경로(approve→execute→executor)로 일원화 — generator 직접 집행 API 제거.
 """
 
 import io
 import os
+import uuid
 from pathlib import Path
 from urllib.parse import quote
 
@@ -15,10 +17,10 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.auth import get_current_user
+from core.auth import get_current_user, optional_user, require_user_org
+from core.config import settings
 from core.db import get_db
-from core.models import OrganizationMember, User
-from domain.generator.adapters.meta_ads import AdvertiseRequest
+from core.models import OrganizationMember, Project, User
 from domain.generator.contracts.enums import GenerationMode
 from domain.generator.contracts.schemas import GenerationCreateRequest
 from domain.generator.pipeline.relayout import PLATFORM_SIZES
@@ -31,6 +33,11 @@ from tools.storage.s3 import brand_logo_key, download_bytes, upload_bytes
 def _proxy_url(key: str) -> str:
     """S3 키를 백엔드 프록시 URL로 변환 — AWS 자격증명 노출 방지."""
     return f"/api/generator/image?key={quote(key, safe='')}"
+
+
+# ── 멀티테넌시: 로그인 org 해석 + 선택적 인증은 core.auth 공용 함수 사용(라우터 복붙 제거) ──
+_require_user_org = require_user_org
+_optional_user = optional_user
 
 
 router = APIRouter()
@@ -232,6 +239,7 @@ async def proxy_image(key: str):
 async def create_generation(
     body: GenerationCreateRequest,
     current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
     # 사용자 생성(create)은 프로젝트에 저장돼야 하므로 project_id 필수 (프론트 우회 호출도 차단).
     # improve(management 재생성 등 시스템 호출)는 프로젝트 컨텍스트가 없을 수 있어 제외.
@@ -239,6 +247,16 @@ async def create_generation(
         raise HTTPException(
             status_code=400, detail="생성 결과를 저장할 프로젝트를 먼저 선택해주세요."
         )
+    # 프로젝트가 로그인 org 소유인지 검증 — 타 org 프로젝트에 귀속 생성 차단(멀티테넌시 정합).
+    if body.project_id:
+        org_id = await _require_user_org(current_user, db)
+        try:
+            proj_uuid = uuid.UUID(str(body.project_id))
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=400, detail="잘못된 project_id") from None
+        project = await db.get(Project, proj_uuid)
+        if project is None or project.organization_id != org_id:
+            raise HTTPException(status_code=404, detail="프로젝트를 찾을 수 없습니다.")
     generation_id = await generator_service.start_generation(body, created_by=current_user.id)
     return GenerationTaskResponse(
         generation_id=generation_id,
@@ -247,12 +265,20 @@ async def create_generation(
 
 
 @router.get("/generations")
-async def list_generations(limit: int = 20):
-    return {"generations": await generator_service.list_generations(limit=limit)}
+async def list_generations(
+    limit: int = 20,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """생성 이력 — 로그인 org 프로젝트 생성물만(멀티테넌시 격리)."""
+    org_id = await _require_user_org(user, db)
+    return {"generations": await generator_service.list_generations(limit=limit, org_id=org_id)}
 
 
 @router.get("/generations/{generation_id}/stream")
 async def stream_generation(generation_id: str):
+    # SSE(EventSource)는 표준 브라우저 API가 Authorization 헤더를 못 보내 토큰 인증 불가.
+    # generation_id는 UUID라 추측이 사실상 불가 — 현행 유지(완전 토큰화는 서명 URL 필요).
     return StreamingResponse(
         generator_service.stream_events(generation_id),
         media_type="text/event-stream",
@@ -261,8 +287,25 @@ async def stream_generation(generation_id: str):
 
 
 @router.get("/generations/{generation_id}")
-async def get_generation(generation_id: str):
-    detail = await generator_service.get_detail(generation_id)
+async def get_generation(
+    generation_id: str,
+    x_internal_token: str | None = Header(default=None, alias="X-Internal-Token"),
+    user: User | None = Depends(_optional_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """상세 — 로그인 유저는 자기 org만(불일치 404). 내부 호출은 서비스 토큰으로 우회."""
+    internal = settings.internal_service_token
+    use_mock = getattr(settings, "use_mock", True)
+    if user is not None:
+        detail = await generator_service.get_detail(
+            generation_id, await _require_user_org(user, db)
+        )
+    elif (internal and x_internal_token == internal) or use_mock:
+        # 내부 토큰 일치(운영 서비스 호출) 또는 mock/dev(실 테넌트 데이터 없음) → org 검증 우회.
+        # live에서 토큰 미설정이면 우회 불가(무인증 크로스org 조회 차단) — 운영은 토큰 설정 필수.
+        detail = await generator_service.get_detail(generation_id)
+    else:
+        raise HTTPException(status_code=401, detail="인증이 필요합니다.")
     if detail is None:
         raise HTTPException(status_code=404, detail="Generation not found")
     return detail
@@ -383,25 +426,32 @@ async def delete_brand_kit(
 
 
 @router.post("/generations/{generation_id}/select")
-async def select_candidate(generation_id: str, body: CandidateSelectRequest):
+async def select_candidate(
+    generation_id: str,
+    body: CandidateSelectRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    org_id = await _require_user_org(user, db)
+    if await generator_service.get_detail(generation_id, org_id) is None:
+        raise HTTPException(status_code=404, detail="Generation not found")
     ok = await generator_service.select_candidate(generation_id, body.candidate_id)
     if not ok:
         raise HTTPException(status_code=404, detail="Candidate not found in this generation")
     return {"generation_id": generation_id, "selected_candidate_id": body.candidate_id}
 
 
-@router.post("/generations/{generation_id}/advertise")
-async def advertise_candidate(generation_id: str, body: AdvertiseRequest):
-    """사용자 승인 액션 — 선택된 후보를 Meta Marketing API로 광고 집행 (기본 PAUSED)."""
-    result = await generator_service.advertise_candidate(generation_id, body)
-    if result is None:
-        raise HTTPException(status_code=404, detail="Candidate not found in this generation")
-    return result
-
-
 @router.post("/generations/{generation_id}/publish")
-async def publish_candidate(generation_id: str, body: PublishRequest):
+async def publish_candidate(
+    generation_id: str,
+    body: PublishRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
     """사용자 승인 액션 — 선택된 후보를 Instagram에 게시한다."""
+    org_id = await _require_user_org(user, db)
+    if await generator_service.get_detail(generation_id, org_id) is None:
+        raise HTTPException(status_code=404, detail="Generation not found")
     result = await generator_service.publish_candidate(
         generation_id, body.candidate_id, body.caption
     )

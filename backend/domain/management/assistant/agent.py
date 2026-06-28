@@ -96,7 +96,8 @@ def build_management_agent(settings):
     graph = build_graph(settings, retriever, llm, checkpointer=build_checkpointer(settings))
 
     async def _ask(req: AskRequest) -> AskResult:
-        thread_id = uuid4().hex
+        # 멀티턴: 클라이언트가 thread_id를 주면 재사용(이전 대화 맥락 유지), 없으면 새로 생성.
+        thread_id = req.thread_id or uuid4().hex
         config = {
             "configurable": {"thread_id": thread_id},
             "run_name": "management_assistant",

@@ -6,10 +6,10 @@ from domain.generator.pipeline.carousel_copy import (
 )
 
 
-def test_roles_fixed_five():
-    assert len(CAROUSEL_ROLES) == 5
-    assert CAROUSEL_ROLES[0] == "문제 제기"
-    assert CAROUSEL_ROLES[-1] == "CTA"
+def test_roles_fixed_three():
+    assert len(CAROUSEL_ROLES) == 3
+    assert CAROUSEL_ROLES[0] == "관심끌기"
+    assert CAROUSEL_ROLES[-1] == "행동유도"
 
 
 def test_script_schema_roundtrip():

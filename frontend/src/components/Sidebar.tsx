@@ -37,6 +37,7 @@ const mainNav = [
 const manageChildren = [
   { label: '캠페인', href: '/manage/campaigns' },
   { label: '모니터링', href: '/manage/monitoring' },
+  { label: '이상 감지', href: '/manage/anomaly' },
   { label: '예산 관리', href: '/manage/budget' },
   { label: '성과 비교', href: '/manage/compare' },
   { label: '연동', href: '/manage/connect' },

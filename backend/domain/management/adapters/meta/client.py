@@ -51,6 +51,10 @@ _RATE_LIMIT_CODES: frozenset[int] = frozenset(
 #: 190=토큰 만료/무효, 102=세션 무효, 463/467=토큰 만료·변경.
 _AUTH_ERROR_CODES: frozenset[int] = frozenset({190, 102, 463, 467})
 
+#: 권한·접근 거부 계열 error code — 토큰은 유효하나 해당 리소스/필드 권한이 없는 경우.
+#: 10=앱 권한 없음, 200/272/294=권한 거부. 100+subcode 33=객체/필드 접근 불가(아래 별도 판정).
+_PERMISSION_ERROR_CODES: frozenset[int] = frozenset({10, 200, 272, 294})
+
 
 class MetaApiError(RuntimeError):
     """Graph API 응답의 error 객체를 표준 예외로 변환 — 메시지에 토큰 미포함."""
@@ -76,6 +80,16 @@ class MetaApiError(RuntimeError):
     def is_auth_error(self) -> bool:
         """토큰 만료·무효 계열 — 화면에 'Meta 재연결 필요' 안내로 매핑."""
         return self.code in _AUTH_ERROR_CODES
+
+    @property
+    def is_permission_error(self) -> bool:
+        """권한·접근 거부 — 토큰은 유효하나 리소스·필드 권한이 없어 값을 못 읽는 경우.
+
+        화면에 '권한 없음'으로 별도 표기(실제 0·미설정과 구분)하는 데 쓴다.
+        """
+        if self.code in _PERMISSION_ERROR_CODES:
+            return True
+        return self.code == 100 and self.subcode == 33
 
 
 class MetaClient:
