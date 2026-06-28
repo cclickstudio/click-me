@@ -52,11 +52,13 @@ SUPPORTED_ACTION_TYPES: Final[tuple[str, ...]] = (
     "CHANGE_BID_STRATEGY",  # 에스컬레이션 사다리 2순위 — 입찰 전략 변경 (direct)
 )
 
-#: v1에서 Writer 도달이 허용되는 실행 모드 — LIVE는 비활성 (§7 Must)
+#: Writer 도달이 허용되는 실행 모드. 실 게재 단계 진입(§7 갱신) — LIVE 정식 허용.
+#: ⚠️ LIVE는 실제 게재·실과금. 실집행은 use_mock=False + mode=live opt-in일 때만.
 DEFAULT_ALLOWED_MODES: Final[tuple[ExecutionMode, ...]] = (
     ExecutionMode.MOCK,
     ExecutionMode.DRY_RUN,
     ExecutionMode.VALIDATE_ONLY,
+    ExecutionMode.LIVE,
 )
 
 

@@ -8,6 +8,7 @@ const STYLE: Record<CampaignState, { label: string; cls: string; dot: string }> 
   paused: { label: '일시정지', cls: 'bg-[#F2F4F6] text-[#4E5968] dark:bg-[#2D3748] dark:text-[#9CA3AF]', dot: 'bg-[#8B95A1]' },
   draft: { label: '초안', cls: 'bg-[#F2F4F6] text-[#4E5968] dark:bg-[#2D3748] dark:text-[#9CA3AF]', dot: 'bg-[#8B95A1]' },
   ended: { label: '종료', cls: 'bg-[#F2F4F6] text-[#8B95A1] dark:bg-[#2D3748] dark:text-[#6B7280]', dot: 'bg-[#B0B8C1]' },
+  archived: { label: '삭제됨', cls: 'bg-red-50 text-red-600 dark:bg-red-900/20 dark:text-red-400', dot: 'bg-red-400' },
 };
 
 export function StateBadge({ state }: { state: CampaignState }) {

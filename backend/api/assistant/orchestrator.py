@@ -24,7 +24,11 @@ class Orchestrator:
     async def run_turn(
         self, req: SubagentRequest, *, project_provider: ProjectProvider | None = None
     ) -> tuple[Intent, SubagentResult | None]:
-        intent = await classify_intent(req, self.registry.intents, self.classifier_llm)
+        # 개선 모드 컨텍스트가 있으면 의도분류 생략하고 generate로 직접 라우팅
+        if req.improve_context and Intent.GENERATE in self.registry.intents:
+            intent = Intent.GENERATE
+        else:
+            intent = await classify_intent(req, self.registry.intents, self.classifier_llm)
         handler = self.registry.get(intent)
         if handler is None:
             return intent, None  # advise/미등록 → 호출자가 폴백 처리

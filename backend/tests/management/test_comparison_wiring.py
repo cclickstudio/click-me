@@ -21,3 +21,13 @@ def test_build_comparison_service_mock_compare_returns_lift():
     assert isinstance(result, LiftResult)
     # mock 광고측은 누적 reach/impressions가 있어야(0 분모 회피) 비교가 성립
     assert result.paid.reach > 0
+
+
+def test_build_prediction_reader_is_sim():
+    from types import SimpleNamespace
+
+    from domain.management.comparison.prediction_adapters import SimPredictionReader
+    from domain.management.wiring import build_prediction_reader
+
+    reader = build_prediction_reader(SimpleNamespace(use_mock=True))
+    assert isinstance(reader, SimPredictionReader)

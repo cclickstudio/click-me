@@ -69,6 +69,9 @@ class CampaignConfig(Contract):
     end_at: UtcDatetime
     creative_ad_id: str | None = None  # core Ad 느슨 참조 (FK 없음)
     image_hash: str | None = None  # Meta /adimages 업로드 해시 — 광고 소재 이미지(없으면 텍스트만)
+    headline: str | None = None  # 광고 제목 (Meta link_data.name)
+    body: str | None = None  # 광고 본문 (Meta link_data.message)
+    link_url: str | None = None  # traffic 광고 목적지 (Meta link_data.link). 없으면 광고 미생성
     # Meta 타겟·정책 — 광고세트 targeting + 캠페인 special_ad_categories로 매핑된다.
     special_ad_categories: tuple[str, ...] = ()  # () | ("HOUSING",) | ("EMPLOYMENT",) 등
     countries: tuple[str, ...] = ("KR",)  # geo_locations.countries (ISO2)
@@ -88,6 +91,8 @@ class CampaignInfo(Contract):
     name: str
     state: CampaignState
     daily_budget_krw: int = Field(ge=0)
+    lifetime_budget_krw: int = Field(default=0, ge=0)  # 총예산(일예산 대신 쓰는 캠페인)
+    budget_type: str = "daily"  # "daily" | "lifetime" | "none" — 일예산 표시·소진율 적용 분기
     ended_at: str | None = None  # 게재 종료일(ISO) — 캠페인 stop_time 또는 광고세트 종료일
 
 
@@ -313,9 +318,28 @@ class FaultConfig(Contract):
 _HASH_EXCLUDED: Final[frozenset[str]] = frozenset({"proposal_hash", "status", "action_tier"})
 
 
+def _canon_numbers(obj: Any) -> Any:
+    """숫자를 float로 통일 — JS JSON.stringify가 1.0→1로 접어도(특히 dict[str,Any]) 해시 일치.
+
+    bool은 int 하위형이라 별도 보존. 생성·검증이 같은 정규화를 거치므로 결과가 일관된다.
+    """
+    if isinstance(obj, bool):
+        return obj
+    if isinstance(obj, (int, float)):
+        return float(obj)
+    if isinstance(obj, dict):
+        return {k: _canon_numbers(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_canon_numbers(v) for v in obj]
+    return obj
+
+
 def compute_proposal_hash(proposal: ActionProposal) -> str:
-    """status·proposal_hash를 제외한 정규화 JSON의 sha256 — 제안 변조 감지."""
-    payload = proposal.model_dump(mode="json", exclude=set(_HASH_EXCLUDED))
+    """status·proposal_hash를 제외한 정규화 JSON의 sha256 — 제안 변조 감지.
+
+    숫자는 float로 정규화 — 프론트(JS) 왕복에서 1.0이 1로 바뀌어도 해시가 안 깨진다.
+    """
+    payload = _canon_numbers(proposal.model_dump(mode="json", exclude=set(_HASH_EXCLUDED)))
     canonical = json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 

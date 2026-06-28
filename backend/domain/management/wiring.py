@@ -82,16 +82,17 @@ def build_comparison_service(settings):
 
 
 def build_prediction_reader(settings):
-    """집행 전(시뮬 예측) reader — 시뮬 디커플링 슬롯의 교체 지점.
+    """집행 전(시뮬 예측) reader — simulation_aggregates를 raw SQL로 읽는 SimPredictionReader.
 
-    지금은 MockPredictionReader. 시뮬 KPI 안정화 후 이 줄만 SimPredictionReader로 바꾸면
-    compare 화면·API 변경 없이 실 예측이 들어온다.
+    실데이터가 있으면 실 예측, 없으면 None(연결 대기). 데모/단위 테스트는 MockPredictionReader를
+    직접 주입해 사용(가짜 예측 합성은 테스트 전용 — 운영은 합성 금지).
     """
+    from core.db import AsyncSessionLocal  # noqa: PLC0415
     from domain.management.comparison.prediction_adapters import (  # noqa: PLC0415
-        MockPredictionReader,
+        SimPredictionReader,
     )
 
-    return MockPredictionReader()
+    return SimPredictionReader(AsyncSessionLocal)
 
 
 def build_idempotency_store(settings) -> IdempotencyStore:
@@ -119,11 +120,16 @@ def build_audit_sink(settings) -> AuditSink:
 
 
 def build_checkpointer(settings):
-    """어시스턴트 ReAct 그래프의 checkpointer — interrupt(HITL) 재개에 필요.
+    """어시스턴트 ReAct 그래프의 checkpointer — interrupt(HITL)·멀티턴 재개에 필요.
 
-    1차는 인메모리(MemorySaver). Neon 영속(AsyncPostgresSaver)은 후속 — 이 분기만 바꾸면
-    interrupt로 멈춘 그래프가 프로세스 재시작 후에도 재개된다.
+    앱 시작 시 init_pg_checkpointer가 성공했으면 Neon 영속(AsyncPostgresSaver) 싱글턴을,
+    아니면 인메모리(MemorySaver)로 폴백한다. (영속 = 재시작 후에도 같은 thread로 재개)
     """
+    from domain.management.assistant.checkpointer import get_pg_checkpointer  # noqa: PLC0415
+
+    saver = get_pg_checkpointer()
+    if saver is not None:
+        return saver
     from langgraph.checkpoint.memory import MemorySaver  # noqa: PLC0415
 
     return MemorySaver()
@@ -138,3 +144,52 @@ def build_escalation_store(settings):
     from domain.management.escalation import InMemoryEscalationStore  # noqa: PLC0415
 
     return InMemoryEscalationStore()
+
+
+def build_generator_client(settings):
+    """generator D1 계약 HTTP 클라이언트 — base_url은 internal_api_base_url."""
+    from domain.management.adapters.generator.client import GeneratorReadClient  # noqa: PLC0415
+
+    base = getattr(settings, "internal_api_base_url", "http://localhost:8000")
+    token = getattr(settings, "internal_service_token", None)
+    return GeneratorReadClient(base_url=base, internal_token=token)
+
+
+def build_regeneration_job_store(settings):
+    """재생성 job store — use_mock이면 인메모리, 아니면 DB(regeneration_jobs)."""
+    if getattr(settings, "use_mock", True):
+        from domain.management.execution.regeneration_jobs import (  # noqa: PLC0415
+            InMemoryRegenerationJobStore,
+        )
+
+        return InMemoryRegenerationJobStore()
+    from domain.management.execution.db_stores import (  # noqa: PLC0415
+        DbRegenerationJobStore,
+    )
+
+    return DbRegenerationJobStore()
+
+
+#: 재생성 job 서비스 싱글톤 — RemediationAgent._pending이 인메모리라 프로세스 1개로 고정.
+_regeneration_job_service = None
+
+
+def build_regeneration_job_service(settings):
+    """프로세스 싱글톤. rank·select가 같은 agent 인스턴스를 공유해야 한다(설계 §2.3).
+
+    최초 호출의 settings로만 초기화 — 이후 호출의 settings는 무시(전 프로세스 단일).
+    """
+    global _regeneration_job_service  # noqa: PLW0603
+    if _regeneration_job_service is None:
+        from domain.management.agents.regeneration_tools import (  # noqa: PLC0415
+            build_regeneration_agent,
+        )
+        from domain.management.execution.service.regeneration_job_service import (  # noqa: PLC0415
+            RegenerationJobService,
+        )
+
+        _regeneration_job_service = RegenerationJobService(
+            store=build_regeneration_job_store(settings),
+            agent=build_regeneration_agent(),  # 키 없으면 결정론 폴백
+        )
+    return _regeneration_job_service

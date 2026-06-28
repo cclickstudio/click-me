@@ -10,6 +10,7 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from domain.simulation import models
+from domain.simulation.adapters.ad_image_store import presigned_for
 from domain.simulation.contracts.schemas import (
     AdInterpretation,
     Aisas,
@@ -289,12 +290,18 @@ class SimulationRepository:
             "aggregate": aggregate_obj.model_dump() if aggregate_obj is not None else None,
         }
 
-        # objective_fit 재계산 — ads.ad_objective + 집계/반응 신호로(미저장이라 재계산).
-        ad_objective = (
+        # 광고 메타 재조회 — ad_objective(objective_fit 재계산용) + asset_url(이미지 표시용).
+        ad_row = (
             await self._s.execute(
-                text("SELECT ad_objective FROM ads WHERE id = :id"), {"id": sim.ad_id}
+                text("SELECT ad_objective, asset_url FROM ads WHERE id = :id"),
+                {"id": sim.ad_id},
             )
-        ).scalar_one_or_none()
+        ).first()
+        ad_objective = ad_row[0] if ad_row else None
+        # 저장된 asset 참조(s3 key 또는 외부 URL)를 표시용 presigned URL로 변환(없으면 None).
+        result["ad_asset_url"] = await presigned_for(ad_row[1] if ad_row else None)
+
+        # objective_fit 재계산 — ads.ad_objective + 집계/반응 신호로(미저장이라 재계산).
         if ad_objective and aggregate_obj is not None:
             fit = assess_objective_fit(ad_objective, aggregate_obj, reaction_objs)
             result["objective_fit"] = fit.model_dump() if fit is not None else None
