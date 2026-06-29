@@ -315,7 +315,7 @@ export default function DashboardPage() {
           <div className="bg-white dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748] rounded-2xl overflow-hidden">
             <div className="flex items-center justify-between px-5 py-4 border-b border-[#E5E8EB] dark:border-[#2D3748]">
               <p className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]">최근 제너레이터</p>
-              <Link href="/generator" className="text-xs text-[#3182F6] hover:underline font-medium">전체 보기 →</Link>
+              <Link href={isAdmin ? '/admin/generations' : '/company/generations'} className="text-xs text-[#3182F6] hover:underline font-medium">전체 보기 →</Link>
             </div>
             {recentGens.length === 0 ? (
               <div className="py-12 text-center text-xs text-[#B0B8C1] dark:text-[#4B5563]">
