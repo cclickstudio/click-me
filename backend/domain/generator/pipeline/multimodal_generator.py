@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import random
 import re
 
 from google import genai
@@ -102,8 +103,13 @@ def _build_prompt(
     return prompt
 
 
-# 이미지 누락·503(과부하) 대비 재시도 백오프(초). 동시생성(이미지+카피) 구조는 유지.
-_RETRY_BACKOFF = [2, 4, 6]
+# Gemini 이미지 모델은 동시 호출이 겹치면 503·이미지누락이 급증한다 → 전역 동시 호출 수 제한.
+# (후보 3종이 asyncio.gather로 동시에 때리는 것을 직렬화해 과부하를 막는다. 필요 시 상향.)
+_MAX_CONCURRENT = 1
+_semaphore = asyncio.Semaphore(_MAX_CONCURRENT)
+
+# 이미지 누락·503 대비 재시도 백오프(초) — 지터를 더해 병렬 재시도 동기화를 방지.
+_RETRY_BACKOFF = [3, 6, 10]
 
 
 async def _generate_once(
@@ -160,7 +166,8 @@ async def generate_image_and_copy(
 
     상품 이미지(생성) 또는 기존 광고 이미지(개선)가 있으면 inline_data로 함께 입력해 참조 생성
     (픽셀 보존은 보장 안 됨). 이미지엔 글자를 넣지 않으며(프롬프트 지시), 카피는 호출자가 PIL로 합성한다.
-    Gemini가 간헐적으로 이미지를 빠뜨리거나(텍스트만) 503(과부하)을 내므로 짧게 재시도한다.
+    Gemini가 간헐적으로 이미지를 빠뜨리거나(텍스트만) 503(과부하)을 내므로, 전역 동시 호출을
+    제한(_semaphore)하고 지터 백오프로 재시도한다.
     """
     prompt = _build_prompt(
         product_analysis,
@@ -182,18 +189,20 @@ async def generate_image_and_copy(
         contents.append(genai_types.Part.from_bytes(data=existing_ad_bytes, mime_type="image/png"))
 
     client = genai.Client(api_key=settings.gemini_api_key)
-    for attempt in range(len(_RETRY_BACKOFF) + 1):
-        try:
-            result = await _generate_once(client, contents, size)
-        except ServerError:
-            # 503 등 5xx 과부하 — 일시적. 마지막 시도면 원예외 전파.
-            if attempt >= len(_RETRY_BACKOFF):
-                raise
-            result = None
-        if result is not None:
-            return result
-        if attempt < len(_RETRY_BACKOFF):
-            await asyncio.sleep(_RETRY_BACKOFF[attempt])
+    # 동시 호출 제한 — 후보 3종 동시 생성 시 과부하로 인한 503·이미지누락을 막는다.
+    async with _semaphore:
+        for attempt in range(len(_RETRY_BACKOFF) + 1):
+            try:
+                result = await _generate_once(client, contents, size)
+            except ServerError:
+                # 503 등 5xx 과부하 — 일시적. 마지막 시도면 원예외 전파.
+                if attempt >= len(_RETRY_BACKOFF):
+                    raise
+                result = None
+            if result is not None:
+                return result
+            if attempt < len(_RETRY_BACKOFF):
+                await asyncio.sleep(_RETRY_BACKOFF[attempt] + random.uniform(0, 1.5))
     raise RuntimeError("멀티모달 응답에 이미지가 없습니다 (재시도 소진).")
 
 
