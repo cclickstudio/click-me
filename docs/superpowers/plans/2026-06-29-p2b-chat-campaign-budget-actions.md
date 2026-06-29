@@ -5,7 +5,7 @@
 
 **Goal:** 챗에서 "이 캠페인 예산 올려줘/내려줘"류 발화로 캠페인 **일 예산을 변경**한다. 이미지의 "검토·승인 → 집행" 카드 — 현재 예산 → 변경 예산을 **프리뷰로 보여주고 사람이 승인**하면 `/approve`+`/execute`로 집행. INCREASE/DECREASE는 직접 엔드포인트가 없으므로 **서버가 proposal을 빌드·finalize(hash)** 한다.
 
-**Architecture:** P2 패턴 확장. `manage_campaign` 툴 action enum에 `increase_budget`·`decrease_budget`를 추가하고 예산 인자(`new_daily_budget_krw` 또는 `pct`)를 받는다. 신규 빌드 전용 엔드포인트 `POST /campaigns/{id}/budget-proposal`이 `budget_before_krw`(카드가 표시한 현재 예산·실데이터)와 목표 예산으로 **`ActionProposal`을 `finalize_proposal`(proposal_hash)** 해 반환(미집행). 프론트 `ChatBudgetProposalCard`가 프리뷰(현재→변경·Tier) 표시 후 **기존** `api.management.approve`+`execute` 호출. **§3 불변식**: 서버가 proposal 빌드, 프리뷰=집행 대상은 hash 결속, 사람 승인이 게이트. 집행값은 `budget_after`(절대값)라 안전. **`chat.py`·executor·`/approve`·`/execute` 미수정.**
+**Architecture:** P2 패턴 확장. `manage_campaign` 툴 action enum에 `increase_budget`·`decrease_budget`를 추가하고 예산 인자(`new_daily_budget_krw` 또는 `pct`)를 받는다. 신규 빌드 전용 엔드포인트 `POST /campaigns/{id}/budget-proposal`이 **현재 일예산을 서버 정본(DB)에서 조회**하고, **방향(선언 action=목표 방향)·no-op·범위를 검증**한 뒤 `ActionProposal`을 `finalize_proposal`(proposal_hash)해 반환(미집행). 프론트 `ChatBudgetProposalCard`가 프리뷰(현재→변경·Tier) 표시 후 **기존** `api.management.approve`+`execute` 호출. **§3 불변식**: 현재값·proposal 모두 서버가 정본(클라/LLM 입력 불신), 프리뷰=집행 대상은 hash 결속, 사람 승인이 게이트, 집행값은 `budget_after`(절대값). **`chat.py`·executor·`/approve`·`/execute` 미수정.**
 
 **Tech Stack:** FastAPI(`management.py`·`deep_agent.py`)·Next.js/TS·Tailwind. 백엔드 pytest, 프론트 `pnpm lint`+`build`+수동.
 
@@ -94,16 +94,27 @@
                         if k in ("action", "campaign_id", "campaign_name", "new_daily_budget_krw", "pct")
                         and v is not None
                     }
-                    if action_payload.get("action") not in (
-                        "pause",
-                        "activate",
-                        "increase_budget",
-                        "decrease_budget",
-                    ):
-                        action_payload["action"] = "pause"
+                    _VALID = ("pause", "activate", "increase_budget", "decrease_budget")
+                    if action_payload.get("action") not in _VALID:
+                        # 파싱 깨졌을 때 pause로 떨어뜨리지 않는다(안전 fallback 아님). 카드 미생성 →
+                        # campaign_action을 세팅하지 않고 ToolMessage로 재질문을 유도한다.
+                        tool_msgs.append(
+                            ToolMessage(
+                                content="어떤 조치인지 명확하지 않아요. 무엇을(중지/게재/예산 변경) 어느 캠페인에 할지 다시 알려 주세요.",
+                                tool_call_id=tool_id,
+                            )
+                        )
+                        return {
+                            "messages": tool_msgs,
+                            "sub_results": new_sub,
+                            "thread_id": new_thread_id,
+                            "requires_approval": new_requires,
+                            # create_prefill/campaign_action 미설정 → 카드 없음, orchestrate가 정상 답변 합성
+                        }
 ```
 
 > `and v` → `and v is not None`로 바꾼다(예산 0·pct 0이 떨어지지 않게; 음수 pct 보존). 상태 액션엔 영향 없음.
+> **[리뷰 반영] invalid action을 pause로 강등하지 않는다** — 카드 미생성 + 재질문(예산 파싱 실패 시 엉뚱한 중지 방지).
 
 - [ ] **Step 3: 린트** — `cd backend && uv run ruff format api/assistant/deep_agent.py && uv run ruff check api/assistant/deep_agent.py`. (테스트는 Task 2에서 빌더와 함께.)
 
@@ -128,9 +139,10 @@ from domain.management.contracts.schemas import verify_proposal_hash
 
 
 def test_increase_proposal():
+    # 빌더는 선언된 action_type을 그대로 쓴다(방향 재판정 안 함). 검증·방향강제는 엔드포인트.
     p = _build_budget_proposal(
         tenant_id="org_1", ad_account_id="act_1", campaign_id="c_1",
-        budget_before_krw=40000, new_daily_budget_krw=50000,
+        action_type="INCREASE_BUDGET", budget_before_krw=40000, new_daily_budget_krw=50000,
     )
     assert p.action_type == "INCREASE_BUDGET"
     assert p.action_tier == ActionTier.TIER_3
@@ -142,7 +154,7 @@ def test_increase_proposal():
 def test_decrease_proposal():
     p = _build_budget_proposal(
         tenant_id="org_1", ad_account_id="act_1", campaign_id="c_1",
-        budget_before_krw=50000, new_daily_budget_krw=30000,
+        action_type="DECREASE_BUDGET", budget_before_krw=50000, new_daily_budget_krw=30000,
     )
     assert p.action_type == "DECREASE_BUDGET"
     assert p.action_tier == ActionTier.TIER_1
@@ -154,12 +166,25 @@ def test_decrease_proposal():
 - [ ] **Step 3: 빌더 + 엔드포인트 구현** — `management.py`에 추가(`/pause` 근처). 빌더는 순수 함수로 분리(테스트 가능):
 
 ```python
+_MIN_DAILY_BUDGET_KRW = 1_521  # 계정 floor(가능하면 campaign_policy 조회로 대체)
+_MAX_DAILY_BUDGET_KRW = 100_000_000
+
+
+async def _current_daily_budget(db: AsyncSession, campaign_id: str) -> int:
+    """현재 일예산 정본 — created_campaigns에서 조회(없으면 0=빌더 진입 전 거부)."""
+    row = (
+        await db.execute(
+            select(CreatedCampaign).where(CreatedCampaign.meta_campaign_id == campaign_id)
+        )
+    ).scalar_one_or_none()
+    return int(row.daily_budget_krw) if row and row.daily_budget_krw else 0
+
+
 def _build_budget_proposal(
     *, tenant_id: str, ad_account_id: str, campaign_id: str,
-    budget_before_krw: int, new_daily_budget_krw: int, run_days: int = 7,
+    action_type: str, budget_before_krw: int, new_daily_budget_krw: int, run_days: int = 7,
 ) -> ActionProposal:
-    """현재→목표 일예산으로 INCREASE/DECREASE 정본 proposal을 빌드(finalize). 집행값은 budget_after."""
-    action_type = "INCREASE_BUDGET" if new_daily_budget_krw > budget_before_krw else "DECREASE_BUDGET"
+    """선언된 action_type 그대로 정본 proposal 빌드(방향 재판정 안 함). 검증은 엔드포인트가 끝낸 상태."""
     now = datetime.now(UTC)
     return finalize_proposal(
         ActionProposal(
@@ -184,8 +209,9 @@ def _build_budget_proposal(
 
 
 class BudgetProposalRequest(BaseModel):
-    budget_before_krw: int  # 카드가 표시한 현재 일예산(캠페인 목록 실데이터)
-    new_daily_budget_krw: int  # 목표 일예산(절대값 — 집행은 이 값으로)
+    action: Literal["increase_budget", "decrease_budget"]  # 선언된 의도 — 서버가 방향 강제
+    new_daily_budget_krw: int  # 목표 일예산(절대값 — 집행값)
+    shown_budget_before_krw: int | None = None  # 카드 표시값(drift 비교용, 정본 아님)
 
 
 @router.post("/campaigns/{campaign_id}/budget-proposal")
@@ -195,18 +221,37 @@ async def budget_proposal(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """예산 변경 proposal을 빌드해 반환(미집행). 프론트가 프리뷰 후 /approve+/execute로 집행."""
+    """예산 변경 proposal을 빌드해 반환(미집행). 현재 예산은 서버 정본, 방향·no-op·범위 검증 후 finalize."""
     org_id = await _require_org_id(user, db)
     await _require_owned_campaign(db, org_id, campaign_id)
     ad_account = await _require_ad_account(db, org_id)
+    before = await _current_daily_budget(db, campaign_id)  # [리뷰1] 현재값은 서버 정본
+    new = body.new_daily_budget_krw
+    if before <= 0:
+        raise HTTPException(409, "현재 일예산을 확인할 수 없어 예산 변경을 진행할 수 없어요.")
+    if new < _MIN_DAILY_BUDGET_KRW or new > _MAX_DAILY_BUDGET_KRW:  # [리뷰4] 범위 검증
+        raise HTTPException(
+            422, f"일예산은 {_MIN_DAILY_BUDGET_KRW:,}~{_MAX_DAILY_BUDGET_KRW:,}원 사이여야 해요."
+        )
+    if new == before:  # [리뷰3] no-op 거부
+        raise HTTPException(409, "현재 예산과 같아 변경할 게 없어요.")
+    declared = "INCREASE_BUDGET" if body.action == "increase_budget" else "DECREASE_BUDGET"
+    actual = "INCREASE_BUDGET" if new > before else "DECREASE_BUDGET"
+    if declared != actual:  # [리뷰5] 선언 방향 ≠ 목표 방향 → 재확인
+        raise HTTPException(
+            409,
+            f"요청({body.action})과 목표가 안 맞아요(현재 {before:,}원 → {new:,}원). 다시 확인해 주세요.",
+        )
     proposal = _build_budget_proposal(
         tenant_id=str(org_id), ad_account_id=ad_account, campaign_id=campaign_id,
-        budget_before_krw=body.budget_before_krw, new_daily_budget_krw=body.new_daily_budget_krw,
+        action_type=declared, budget_before_krw=before, new_daily_budget_krw=new,
     )
-    return {"proposal": proposal.model_dump(mode="json")}
+    drift = body.shown_budget_before_krw is not None and body.shown_budget_before_krw != before
+    return {"proposal": proposal.model_dump(mode="json"), "budget_before_krw": before, "drift": drift}
 ```
 
-> `judge_tier`·`BaseModel`·`get_current_user`·`User` 등이 이미 임포트됐는지 확인하고, 없으면 상단 임포트에 추가(append-only).
+> 임포트 확인(없으면 append-only 추가): `Literal`(typing), `select`(sqlalchemy), `CreatedCampaign`(core.models), `HTTPException`(fastapi), `judge_tier`·`BaseModel`·`get_current_user`·`User`.
+> **[리뷰 반영]** 현재 예산은 **서버 정본**(클라 입력 불신), no-op·범위·방향 **서버 검증**, 빌더는 선언 action을 그대로 써 **silent 방향 변경 없음**. 응답의 `budget_before_krw`(정본)·`drift`로 카드가 표시값을 갱신.
 
 - [ ] **Step 4: 통과 확인** — `cd backend && uv run pytest tests/management/test_budget_proposal.py -v` → PASS(2)
 
@@ -225,11 +270,14 @@ async def budget_proposal(
 - [ ] **Step 1: api 메서드** — `api.management`에 추가(`approve`/`execute` 근처):
 
 ```ts
-    budgetProposal: (campaignId: string, body: { budget_before_krw: number; new_daily_budget_krw: number }) =>
-      request<{ proposal: Proposal }>(`/management/campaigns/${campaignId}/budget-proposal`, {
-        method: "POST",
-        body: JSON.stringify(body),
-      }),
+    budgetProposal: (
+      campaignId: string,
+      body: { action: 'increase_budget' | 'decrease_budget'; new_daily_budget_krw: number; shown_budget_before_krw?: number },
+    ) =>
+      request<{ proposal: Proposal; budget_before_krw: number; drift: boolean }>(
+        `/management/campaigns/${campaignId}/budget-proposal`,
+        { method: "POST", body: JSON.stringify(body) },
+      ),
 ```
 
 - [ ] **Step 2: `ChatBudgetProposalCard` 작성** — 전체 내용:
@@ -384,7 +432,14 @@ export default function ChatBudgetProposalCard({ action }: { action: BudgetActio
 }
 ```
 
-> **검증(Task 0 식):** `api.management.campaigns()` 항목에 `daily_budget_krw`가 실제로 있는지 확인(없으면 현재 예산을 못 집으므로, 캠페인 상세 호출 또는 `budget_before`를 다른 경로로 얻도록 조정). `state` 필드는 P2에서 확인됨. radius/톤은 `CreateProposalPreview` 따른다.
+> **검증(Task 0 식):** `state` 필드는 P2에서 확인됨. radius/톤은 `CreateProposalPreview` 따른다.
+>
+> **[리뷰 반영] 카드 필수 변경(위 코드를 기준으로 적용):**
+> 1. **현재 예산은 서버 정본** — 카드는 list의 예산을 신뢰하지 않는다. `review()`가 `budgetProposal(id, { action: action.action, new_daily_budget_krw: target, shown_budget_before_krw: before ?? undefined })`를 호출하고, **응답의 `budget_before_krw`(정본)로 `before`를 갱신**한 뒤 프리뷰(현재→변경)를 그 값으로 그린다. `drift===true`면 "현재 예산이 갱신됐어요" 한 줄 표시.
+> 2. **목표 예산 입력 필드(리뷰6)** — `action.new_daily_budget_krw`·`pct`가 둘 다 없으면 `target`이 null이라 진행 불가 → **숫자 입력 필드**(`manualTarget` state)를 두어 사용자가 목표 일예산을 입력하게 한다. "예산 좀 내려줘"(목표 없음)도 카드에서 진행 가능해야 함.
+> 3. **증액 문구(리뷰7)** — `action.action === 'increase_budget'`이면 프리뷰에 "일 예산이 증가해 추가 지출이 발생할 수 있어요" 안내를 둔다(별도 ack 아님, 프리뷰 문구).
+> 4. **방향/검증 에러 표면** — 서버가 422/409(범위·no-op·방향불일치)면 그 메시지를 카드 에러로 보여주고 `proposal` 미설정 유지(집행 버튼 안 뜸).
+> 5. `daily_budget_krw`를 list에서 못 얻어도 무방 — 현재값은 `review()` 응답으로 받는다(서버 정본).
 
 - [ ] **Step 3: 린트·빌드** — `cd frontend && pnpm lint && pnpm build` → 통과.
 
@@ -434,9 +489,10 @@ import ChatBudgetProposalCard, { type BudgetActionPayload } from '@/components/c
 - [ ] **Step 2: 시나리오** — `/chat`:
   1. **"가을세일 캠페인 예산 25% 올려줘"** → 카드에 **현재→변경 예산**(예 40,000 → 50,000) + 7일 예상 최대 지출 표시 → "검토·승인" → "집행" → ✓ + 승인 ID.
   2. **"예산 5만원으로 올려줘"**(절대값) → target=50,000으로 표시.
-  3. 이름 미언급 → 캠페인 선택기 → 선택 시 현재 예산 자동 표시.
-  4. **"이 캠페인 예산 좀 내려줘"** → 감액(DECREASE, TIER_1).
-- [ ] **Step 3: 승인 동등성(§3)** — `/execute` 결과 `approval_id`·집행 후 대시보드 예산이 `budget_after`로 바뀌었는지.
-- [ ] **Step 4: 회귀** — pause/activate(P2)·create(P1.5)·일반 질문 정상.
+  3. 이름 미언급 → 캠페인 선택기 → "검토·승인" 시 **서버 정본 현재 예산**으로 프리뷰 갱신.
+  4. **"이 캠페인 예산 좀 내려줘"**(목표 없음) → **카드에서 목표 예산 입력** → 감액(DECREASE, TIER_1).
+- [ ] **Step 3: 검증 거부 케이스** — (a) 목표=현재 동일 → no-op 거부 메시지, (b) "증액인데 더 낮은 값" → 방향불일치 거부, (c) 0·음수·과대값 → 범위 거부. 모두 카드 에러로 표시되고 집행 버튼 안 뜸.
+- [ ] **Step 4: 승인 동등성(§3)** — `/execute` 결과 `approval_id`·집행 후 대시보드 예산이 `budget_after`로 바뀌었는지. 증액 프리뷰에 추가지출 문구가 보이는지.
+- [ ] **Step 5: 회귀** — pause/activate(P2)·create(P1.5)·일반 질문 정상.
 
 > **P3 예고:** REPLACE_CREATIVE(소재 후보 출처)·EXPAND_AUDIENCE·CHANGE_BID_STRATEGY는 각 신규 프리뷰 + 파라미터가 필요 — 별도 plan(이 카드·툴 패턴 재사용).
