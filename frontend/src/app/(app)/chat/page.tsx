@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { safeRandomUUID } from '@/lib/utils';
 import { api } from '@/lib/api';
 import ChatCreateCampaignCard from '@/components/chat/ChatCreateCampaignCard';
+import type { CampaignPrefill } from '@/components/manage/campaigns/CampaignForm';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
@@ -48,12 +49,15 @@ type SourceMeta = {
   requires_approval?: boolean; // HITL — 사람 승인 필요
   campaigns?: Campaign[]; // live_campaigns 결과 — 클릭해서 관리 페이지로 이동
   cards?: ChatCard[]; // 서버 composer 카드(result/review/actionbar). evidence는 citations로 대체.
+  embed?: 'create_campaign'; // 오케스트레이터 create_campaign 툴 신호
+  prefill?: CampaignPrefill; // 툴이 추출한 폼 초기값
 };
 type Message = {
   role: 'user' | 'assistant';
   content: string;
   meta?: SourceMeta;
   embed?: 'create_campaign'; // 임베드 카드 종류(P1: 신규 캠페인 생성)
+  prefill?: CampaignPrefill;
 };
 
 // Web Speech API — 브라우저 내장, 무료, API 키 불필요. Chrome/Edge 지원.
@@ -464,9 +468,15 @@ export default function Page() {
             if (data.done) {
               setIsStreaming(false);
             } else if (data.meta) {
+              const meta = data.meta;
               setMessages((prev) => {
                 const last = prev[prev.length - 1];
-                return [...prev.slice(0, -1), { ...last, meta: data.meta }];
+                const patch: Partial<Message> = { meta };
+                if (meta.embed === 'create_campaign') {
+                  patch.embed = 'create_campaign';
+                  patch.prefill = meta.prefill;
+                }
+                return [...prev.slice(0, -1), { ...last, ...patch }];
               });
             } else if (data.token) {
               setMessages((prev) => {
@@ -576,7 +586,7 @@ export default function Page() {
                         </div>
                       )}
                       {isCreateCampaignEmbed && (
-                        <ChatCreateCampaignCard />
+                        <ChatCreateCampaignCard prefill={msg.prefill} />
                       )}
                       {/* TTS 읽어주기 버튼 — 브라우저 SpeechSynthesis, 무료 */}
                       {msg.role === 'assistant' && msg.content && ttsSupported && (

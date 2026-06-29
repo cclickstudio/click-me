@@ -4,13 +4,13 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
-import { CampaignForm, type CampaignFormValues } from '@/components/manage/campaigns/CampaignForm';
+import { CampaignForm, type CampaignFormValues, type CampaignPrefill } from '@/components/manage/campaigns/CampaignForm';
 import { CreateProposalPreview } from '@/components/manage/campaigns/CreateProposalPreview';
 import type { Proposal, ActionResult } from '@/components/manage/types';
 
 type Phase = 'form' | 'preview' | 'done';
 
-export default function ChatCreateCampaignCard() {
+export default function ChatCreateCampaignCard({ prefill }: { prefill?: CampaignPrefill }) {
   const [phase, setPhase] = useState<Phase>('form');
   const [proposal, setProposal] = useState<Proposal | null>(null);
   const [result, setResult] = useState<ActionResult | null>(null);
@@ -63,7 +63,7 @@ export default function ChatCreateCampaignCard() {
   if (phase === 'form') {
     return (
       <div className="mt-1">
-        <CampaignForm onSubmit={createProposal} busy={busy} />
+        <CampaignForm onSubmit={createProposal} busy={busy} initial={prefill} />
         {error && <p className="mt-2 text-sm text-red-500">{error}</p>}
       </div>
     );
