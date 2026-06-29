@@ -72,6 +72,10 @@
      가 있는지. `result`에 `approval_id`·`status`가 실리는지.
   4. `ResultStatus` 문자열: `success`·`pending_review`·`failed`·`rejected`. 생성 성공 시 **mock/demo는 `success`,
      라이브는 `pending_review`** 가능 — Task 1의 성공 판정이 둘 다 다루는지 확인.
+  5. `api.management.audit(approvalId)`(`GET /management/audit?approval_id=`) helper가 `api.ts`에 **있는지** 확인.
+     - **있으면**(현재 `api.ts`에 존재): Task 4 동등성 검증에 그대로 사용.
+     - **없으면**: **프론트 API를 새로 추가하지 않는다**(P1 프론트 전용 원칙 유지). 대신 Task 4 검증을 DevTools
+       Network(`/management/audit` 직접 호출)·백엔드 로그·DB 조회로 대체한다.
 - [ ] **Step 2: 불일치 기록** — 차이가 있으면 이 plan의 Task 1 코드 블록을 수정한 뒤 진행(커밋 불필요, 다음 태스크에 반영).
 
 ---
@@ -217,6 +221,9 @@ export default function ChatCreateCampaignCard() {
 }
 ```
 
+> **디자인 노트:** 결과 카드 `rounded-2xl`은 기존 `CreateProposalPreview`·챗 버블과 동일한 라운딩이라 일관된다.
+> 혹시 코드베이스 톤과 어긋나면 `CreateProposalPreview`의 radius/보더 톤을 그대로 따른다.
+
 - [ ] **Step 2: 린트·빌드 확인**
 
 Run: `cd frontend && pnpm lint && pnpm build`
@@ -226,7 +233,7 @@ Expected: 통과(이 컴포넌트는 아직 어디서도 import 안 하므로 �
 
 ```bash
 git add frontend/src/components/chat/ChatCreateCampaignCard.tsx
-git commit -m "add: 챗 임베드 신규 캠페인 생성 카드(폼→프리뷰→집행) — P1"
+git commit -m "add: P1 챗 임베드 신규 캠페인 생성 카드(폼-프리뷰-결과)"
 ```
 
 ---
@@ -292,7 +299,7 @@ Expected: 통과. (아직 트리거가 없어 카드는 화면에 안 뜨지만 
 
 ```bash
 git add frontend/src/app/(app)/chat/page.tsx
-git commit -m "edit: 챗에 신규 캠페인 생성 카드 임베드 렌더 배선 — P1"
+git commit -m "edit: P1 챗에 신규 캠페인 생성 카드 임베드 렌더 배선"
 ```
 
 ---
@@ -362,7 +369,7 @@ Expected: 통과.
 
 ```bash
 git add frontend/src/app/(app)/chat/page.tsx
-git commit -m "add: 챗 신규 캠페인 생성 트리거(웰컴·입력바 버튼) — P1"
+git commit -m "add: P1 챗 신규 캠페인 생성 트리거 버튼(웰컴/입력바)"
 ```
 
 ---
@@ -376,11 +383,11 @@ git commit -m "add: 챗 신규 캠페인 생성 트리거(웰컴·입력바 버�
 Run: `cd frontend && pnpm dev` (백엔드도 필요: 별도 터미널 `cd backend && uv run uvicorn api.main:app --reload --port 8000`)
 
 - [ ] **Step 2: 수동 시나리오 확인** — 로그인 후 `/chat` 진입:
-  1. 웰컴 화면 "➕ 새 캠페인 만들기" 클릭 → 대화에 사용자 메시지 + 생성 폼 카드가 인라인으로 뜬다.
+  1. 웰컴 화면 "새 캠페인 만들기" 버튼 클릭 → 대화에 사용자 메시지 + 생성 폼 카드가 인라인으로 뜬다.
   2. 폼에 이름·예산 입력 후 "제안 생성 →" → 프리뷰 카드(Tier 3 · 사람 승인)로 전환.
   3. "승인하고 생성" → 결과 카드("✓ 캠페인 생성됨 (PAUSED)" 또는 실패 사유) 표시.
   4. "다시 만들기"로 폼 복귀, "대시보드로"로 `/manage/campaigns` 이동.
-  5. 입력바 "＋" 버튼으로도 카드가 열린다. 스트리밍 중엔 비활성.
+  5. 입력 바 위 "+ 새 캠페인 만들기" 칩으로도 카드가 열린다. 스트리밍 중엔 비활성.
   6. (확인) `/manage/campaigns` 대시보드 또는 `/manage` 에서 방금 생성된 캠페인(PAUSED)이 보인다 — 정식 경로와 동일 결과.
   7. **[승인 레코드 동등성 — 핵심]** 챗 생성이 정식 route와 **같은 승인/감사 아티팩트**를 남기는지 확인(엄브렐러 §3):
      - 결과 카드에 **승인 ID(`result.approval_id`)** 가 표시된다(빈 값이 아님).
