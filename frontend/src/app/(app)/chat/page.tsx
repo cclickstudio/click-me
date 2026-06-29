@@ -396,6 +396,16 @@ export default function Page() {
     abortRef.current?.abort();
   };
 
+  // 신규 캠페인 생성 카드를 대화에 인라인으로 연다(퀵 액션). 백엔드 호출 없음 — 카드 내부에서 정식 흐름 호출.
+  const openCreateCampaign = () => {
+    if (isStreaming) return;
+    setMessages((prev) => [
+      ...prev,
+      { role: 'user', content: '새 캠페인 만들기' },
+      { role: 'assistant', content: '', embed: 'create_campaign' },
+    ]);
+  };
+
   const handleSend = async (text?: string) => {
     const content = text ?? input.trim();
     if (!content || isStreaming) return;
@@ -511,6 +521,12 @@ export default function Page() {
                 </button>
               ))}
             </div>
+            <button
+              onClick={openCreateCampaign}
+              className="mt-3 w-full max-w-lg p-4 text-left text-sm font-medium text-[#3182F6] bg-[#EBF3FF] dark:bg-[#1E3A5F] border border-[#3182F6]/30 rounded-xl hover:bg-[#DCEBFF] dark:hover:bg-[#234876] transition-all"
+            >
+              새 캠페인 만들기
+            </button>
           </div>
         ) : (
           /* ── Messages ── */
@@ -713,6 +729,15 @@ export default function Page() {
 
         {/* ── Input bar ── */}
         <div className="border-t border-[#E5E8EB] dark:border-[#2D3748] bg-white dark:bg-[#1C2333] px-4 py-4 transition-colors">
+          <div className="max-w-2xl mx-auto mb-2">
+            <button
+              onClick={openCreateCampaign}
+              disabled={isStreaming}
+              className="text-xs font-medium text-[#3182F6] bg-[#EBF3FF] dark:bg-[#1E3A5F] hover:bg-[#DCEBFF] dark:hover:bg-[#234876] rounded-full px-3 py-1.5 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+            >
+              + 새 캠페인 만들기
+            </button>
+          </div>
           <div className="max-w-2xl mx-auto flex items-end gap-3">
             <textarea
               value={input}
