@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import { safeRandomUUID } from '@/lib/utils';
 import { api } from '@/lib/api';
+import ChatCreateCampaignCard from '@/components/chat/ChatCreateCampaignCard';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
@@ -52,6 +53,7 @@ type Message = {
   role: 'user' | 'assistant';
   content: string;
   meta?: SourceMeta;
+  embed?: 'create_campaign'; // 임베드 카드 종류(P1: 신규 캠페인 생성)
 };
 
 // Web Speech API — 브라우저 내장, 무료, API 키 불필요. Chrome/Edge 지원.
@@ -517,7 +519,7 @@ export default function Page() {
             <div role="log" aria-live="polite" aria-atomic="false" aria-label="대화 내용" className="max-w-2xl mx-auto px-4 py-8 space-y-6">
               {messages.map((msg, i) => {
                 // 빈 assistant placeholder는 타이핑 인디케이터로 대체
-                if (msg.role === 'assistant' && msg.content === '') return null;
+                if (msg.role === 'assistant' && msg.content === '' && !msg.embed) return null;
                 return (
                   <div
                     key={i}
@@ -552,6 +554,9 @@ export default function Page() {
                       >
                         {msg.role === 'user' ? msg.content : renderMarkdown(msg.content)}
                       </div>
+                      {msg.role === 'assistant' && msg.embed === 'create_campaign' && (
+                        <ChatCreateCampaignCard />
+                      )}
                       {/* TTS 읽어주기 버튼 — 브라우저 SpeechSynthesis, 무료 */}
                       {msg.role === 'assistant' && msg.content && ttsSupported && (
                         <button
