@@ -1161,7 +1161,7 @@ import 추가(파일 상단 기존 import 그룹에): `from domain.management.ad
 - [ ] **Step 4: 통과 확인**
 
 Run: `cd backend && uv run pytest tests/management/test_replace_creative_proposal.py -v`
-Expected: PASS (3 tests)
+Expected: PASS (6 tests: builds_tier3·rejects_unowned·rejects_other_org·rejects_empty_copy·409_no_ads·501_sending)
 
 - [ ] **Step 5: 커밋**
 

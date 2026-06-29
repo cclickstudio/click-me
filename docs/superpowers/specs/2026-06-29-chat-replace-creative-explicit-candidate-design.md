@@ -31,7 +31,7 @@
 ### 빌드 시점 (라우터/서비스, 승인 전)
 
 1. **캠페인 소유권 검증** — `_require_owned_campaign(db, org_id, campaign_id)`로 "자기 캠페인만 교체"(파괴적 행위 차단).
-2. **후보 핸드오프 (org 스코프)** — `GeneratorReadClient.get_candidate(generation_id, candidate_id, org_id=org_id)`. **org_id를 전달**해 generator GET이 내부 호출에도 `get_detail_for_org`로 스코프 → 타 org 후보면 404(§6-③). 프론트 `candidate_id` 불신.
+2. **후보 핸드오프 (org 스코프)** — `GeneratorReadClient.get_candidate(generation_id, candidate_id, org_id=org_id)`. **org_id를 전달**해 generator GET이 내부 호출에도 `get_detail(generation_id, org_id)`로 스코프 → 타 org 후보면 404(§6-③). 프론트 `candidate_id` 불신.
 3. **이미지 규격 검증** — 최소 사이즈·비율·파일크기·색상모드·alpha·JPEG 품질 확인(§6-⑥). 실패 시 **proposal 생성 실패(422), 집행 없음.**
 4. **이미지 업로드 (mock 합성 해시)** — PNG→JPEG 변환 후 `upload_image`. **B-1은 non-sending(mock)에서만 호출** — 이때 `MetaAdsWriter.upload_image`는 실 `/adimages`를 치지 않고 `None`을 반환한다(실 Meta 자산 미생성). **`image_hash`는 REPLACE의 핵심(이미지 교체)이라 엔드포인트가 항상 채운다** — upload가 `None`이면 합성(`mockhash_<candidate_id>`)으로 폴백. 따라서 executor는 `image_hash`를 **필수**로 검사한다(없으면 계약 위반). `_is_sending_mode()`(validate/live)면 엔드포인트가 **501로 차단**(§6-⑦) — LIVE 범위.
 5. **영향 광고 해상·결속** — `reader.get_creatives(campaign/ads)`로 광고 목록을 얻어 **`affected_ad_ids`(+candidate 요약)를 evidence_metrics에 결속**한다. `compute_proposal_hash`가 evidence_metrics를 덮으므로(`schemas.py:318`, 제외=proposal_hash/status/action_tier) **프리뷰가 본 광고 = 집행 대상**이 hash로 묶인다. `target_object_ids`는 캠페인 id 단일(멱등 키 정체성용, §4).
@@ -64,13 +64,15 @@
 - `POST /campaigns/{id}/replace-creative-proposal` — `budget_proposal`(`management.py:2699`) 미러. proposal만 빌드해 반환(즉시 집행 안 함). 집행은 기존 `/approve`+`/execute` 재사용(미수정).
 - Tier = TIER_3(기존 정책 불변). 사람이 프리뷰에서 승인.
 
-## 6. 리뷰 반영 결정 (B-0 라운드)
+## 6. 리뷰 반영 결정
+
+> 번호 ①~⑩은 **리뷰 항목 id**(추가된 순서)이지 우선순위·읽는 순서가 아니다. ⑥⑦은 초기(B-0) 항목이라 나중에 추가된 ⑧⑨⑩ 뒤에 온다. 본문 교차참조(§3 등)는 이 id로 가리킨다.
 
 - **① 고아 자산** — §3 집행 시점 생성으로 원천 차단. LIVE 정리정책: 부분 실패로 creative_id가 생긴 뒤 일부 광고만 교체된 경우, **생성된 creative_id를 결과 스냅샷·`audit_events`에 tag**한다. 삭제 가능하면 삭제, 아니면 **orphan 허용 + tag 추적**(LIVE 시 확정 — B-1은 mock이라 미발생).
 - **② 계약 변경** — §4에 blast radius·무마이그레이션 명시.
 - **③ 소유권/토큰 결속 (두 층)** —
   - **캠페인 소유권** — `_require_owned_campaign(db, org_id, campaign_id)`로 자기 캠페인만 교체.
-  - **후보-org 누출 차단 (B-1에서 닫음)** — 확인된 활성 누출: generator `GET /generations/{id}`(`generator.py:289`)는 로그인 유저엔 org 스코프(불일치 404)지만 **내부 토큰 일치 또는 `use_mock`이면 org 검증을 우회**(`generator.py:303~306`)한다. management는 내부 토큰으로 호출하고 B-1 mock은 `use_mock=true`라 **임의 generation_id로 타 org 후보를 가져와 프리뷰 노출** 가능(기밀 누출, mock에서도 발생). → **수정:** generator GET이 **내부 호출에도 org 스코프**되게 한다. management가 `X-Org-Id`로 호출 org를 보내면, generator 내부 토큰 분기가 기존 `get_detail_for_org(generation_id, org_id)`로 스코프(타 org면 404). `GeneratorReadClient.get_candidate`에 `org_id` 인자 추가. **이 변경은 generator 도메인을 건드린다(크로스팀 CODEOWNERS) — generator 팀 리뷰 + mock seed 데이터의 org 연결 확인 필요.** 같은 수정으로 기존 `from_candidate` 누출도 닫힌다.
+  - **후보-org 누출 차단 (B-1에서 닫음)** — 확인된 활성 누출: generator `GET /generations/{id}`(`generator.py:289`)는 로그인 유저엔 org 스코프(불일치 404)지만 **내부 토큰 일치 또는 `use_mock`이면 org 검증을 우회**(`generator.py:303~306`)한다. management는 내부 토큰으로 호출하고 B-1 mock은 `use_mock=true`라 **임의 generation_id로 타 org 후보를 가져와 프리뷰 노출** 가능(기밀 누출, mock에서도 발생). → **수정:** generator GET이 **내부 호출에도 org 스코프**되게 한다. management가 `X-Org-Id`로 호출 org를 보내면, generator GET이 기존 `get_detail(generation_id, org_id)`(`generator_service.py:216` — org_id 주면 검증·None이면 우회)로 스코프(타 org면 None→404). `GeneratorReadClient.get_candidate`에 `org_id` 인자 추가. **이 변경은 generator 도메인을 건드린다(크로스팀 CODEOWNERS) — generator 팀 리뷰 + mock seed 데이터의 org 연결 확인 필요.** 같은 수정으로 기존 `from_candidate` 누출도 닫힌다. **경로별 정책(라운드3 확정):** internal 토큰 경로는 X-Org-Id 필수(없으면 400), 유저 세션·use_mock 무인증 브라우징은 헤더 없이 허용(§8·⑩·§9).
 - **④ no-op** — 집행 시점 생성이라 creative_id는 항상 새값 → id 비교 no-op 무의미. **v1은 하드 no-op 게이트 없음.** 대신 **프리뷰가 현재/신규 소재를 나란히** 보여줘(§6-⑤) 사용자가 동일 여부를 눈으로 판단한다(v1은 자동 판정 안 함). LIVE 자동 판정 기준만 문서화: no-op = 후보 콘텐츠(이미지 s3_key + 카피)가 현재 광고 creative와 동일.
 - **⑤ 프리뷰 정보** — `reader.get_creatives(campaign_id)`(`reader.py:465`)가 광고별 `ad_id·ad_name·image_url·thumbnail_url·headline·primary_text`(`CreativePreview`)를 반환(확인됨). 프리뷰 = 광고별 현재 썸네일/이름 + 새 후보 이미지.
 - **⑧ 프리뷰=집행 결속 (재해상 divergence 차단, B-1 라운드 ①④)** — 빌드 시점 `affected_ad_ids`(+candidate 요약)를 evidence_metrics에 넣어 proposal_hash로 덮는다(`schemas.py:318` 확인). executor는 **결속된 ad_ids로 fan-out**(집행 시점 재조회 안 함) → 사용자가 프리뷰에서 본 광고와 실제 교체 대상이 일치하고, 감사/재검이 hash로 가능하다. **이는 "재해상 divergence" 차단이지 실세계 라이브 드리프트 차단이 아니다** — 라이브 드리프트(승인 전후 광고 증감/이동) 집행 시점 재검증은 LIVE 후속(§9).
@@ -81,13 +83,13 @@
 
 ## 7. 건드리는 파일
 
-- `adapters/meta/writer.py` — `create_ad_creative` 신규, `replace_creative` 시그니처 정정.
+- `adapters/meta/writer.py` — `create_ad_creative`·`replace_creative_tree` 신규, `replace_creative` 시그니처 정정(`campaign_id`→`ad_id`), 모듈 헬퍼 `_synthetic_creative_id`.
 - 변환 유틸 — PNG→JPEG(`png_to_jpeg`는 generator 소유 → `tools/`로 이동 또는 management 인라인) + 이미지 규격 검증.
 - `api/routers/management.py` — `replace-creative-proposal` 엔드포인트(캠페인 소유권·org 스코프 핸드오프·규격검증·mock 업로드·광고 해상·proposal 빌드 오케스트레이션).
 - `execution/executor.py` — REPLACE_CREATIVE 분기를 **`replace_creative_tree(campaign_id, ...)` 호출로 교체**. 기존 `replace_creative(target, selected_candidate_id)` **직접 호출은 제거**. target=캠페인, 소재 필드는 evidence_metrics에서.
 - `contracts/platform.py` — Port 시그니처(`replace_creative`(ad_id), `create_ad_creative`, `replace_creative_tree`).
 - `adapters/generator/client.py` — `get_candidate`에 `org_id` 인자 + `X-Org-Id` 헤더(§6-③).
-- **generator(크로스팀)** — `api/routers/generator.py` GET `/generations/{id}` 내부 토큰 분기를 `X-Org-Id` 기반 `get_detail_for_org`로 스코프(§6-③).
+- **generator(크로스팀)** — `api/routers/generator.py` GET `/generations/{id}` 내부 토큰 분기를 `X-Org-Id` 기반 `get_detail(generation_id, org_id)`로 스코프(§6-③).
 - 프론트 — P3 P1 포팅 카드(`ProposalActions`)에 후보 picker + 선택 소재·영향 광고 프리뷰 섹션(후속, P1 의존).
 - 테스트 — `helpers.py`(mock writer) + `test_meta_writer.py`·`test_executor_gates.py` 갱신, 신규 라우터/흐름 테스트.
 
