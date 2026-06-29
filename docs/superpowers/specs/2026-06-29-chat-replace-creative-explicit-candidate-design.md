@@ -40,8 +40,10 @@
 
 ### 집행 시점 (executor → writer, 승인 후)
 
-8. **adcreative 생성** — `create_ad_creative(image_hash, copy)` → `creative_id`. **승인된 건에 대해서만** 생성 → 취소/만료 건은 아무것도 안 만들어져 **고아 없음**.
-9. **fan-out 교체** — executor의 per-target 루프가 각 광고에 `replace_creative(ad_id, creative_id)`. `target_object_ids`가 광고 id라 기존 루프·멱등이 그대로 처리.
+8. **오케스트레이션 = writer `replace_creative_tree(campaign_id, ...)`** (`activate_tree` 패턴). executor의 REPLACE_CREATIVE 분기는 target=캠페인으로 이 메서드 1개를 호출(executor 변경 최소).
+9. writer 내부: **adcreative 1회 생성**(`create_ad_creative` → creative_id, **승인된 건만** → 고아 없음) → `_child_ids(campaign/ads)`로 하위 광고 해상 → 각 광고에 **ad 단위 `replace_creative(ad_id, creative_id)`** fan-out.
+
+> executor를 per-target 루프로 바꾸려면 "creative 1회 생성"을 루프 밖으로 빼는 배선이 필요해 변경이 커진다. 기존 `activate_tree`가 이미 "한 번 처리 후 자식 fan-out"을 writer 안에서 하므로, 동일 패턴으로 writer에 위임해 executor를 최소 변경한다.
 
 > **왜 집행 시점인가.** 빌드 시점 생성은 취소/TTL 만료 시 orphan adcreative를 남긴다(B-0 리뷰 ①). 프리뷰는
 > Meta creative가 미리 있을 필요가 없다(후보 S3 이미지로 충분). 따라서 adcreative 생성을 승인 후로 미뤄
@@ -49,12 +51,12 @@
 
 ## 4. 데이터 계약 변경 (blast radius 명시)
 
-- **REPLACE_CREATIVE의 `target_object_ids` = 광고(ad) id 목록**(기존: 캠페인 id). 빌드 시점 §3-5에서 해상.
-- **`writer.replace_creative` 시그니처 정정 `campaign_id` → `ad_id`.** 동시 갱신 대상(확인됨):
+- **REPLACE_CREATIVE의 `target_object_ids` = 캠페인 id**(단일). 하위 광고 fan-out은 writer `replace_creative_tree`가 내부에서 한다(§3-9). evidence_metrics에 소재 필드(image_hash·headline·body·link_url) 적재.
+- **`writer.replace_creative` 시그니처 정정 `campaign_id` → `ad_id`**(ad 단위 의미로 명확화, fan-out의 단위 호출). 동시 갱신 대상(확인됨):
   - `contracts/platform.py:70`(Port) · `adapters/meta/writer.py:123`(impl) · `execution/executor.py:392`(분기)
   - `tests/management/helpers.py:92`(mock) · `tests/management/test_meta_writer.py:65~78` · `tests/management/test_executor_gates.py:384·403`
+- **신규 Writer 메서드 2종** — `create_ad_creative`(소재→creative_id) · `replace_creative_tree`(생성+fan-out 오케스트레이션). Port + impl + mock 추가.
 - **마이그레이션 불요** — 제안은 영속되지 않고 request body로 집행된다(P3 §4-C). 하위호환 대상 없음.
-- **`create_ad_creative`는 신규 Writer 메서드**(Port + impl + mock 추가).
 
 ## 5. 제안 엔드포인트
 
@@ -65,7 +67,7 @@
 
 - **① 고아 자산** — §3 집행 시점 생성으로 원천 차단. LIVE 정리정책: 부분 실패로 creative_id가 생긴 뒤 일부 광고만 교체된 경우, **생성된 creative_id를 결과 스냅샷·`audit_events`에 tag**한다. 삭제 가능하면 삭제, 아니면 **orphan 허용 + tag 추적**(LIVE 시 확정 — B-1은 mock이라 미발생).
 - **② 계약 변경** — §4에 blast radius·무마이그레이션 명시.
-- **③ 소유권/토큰 결속** — 빌드 시점에 `generation`의 org/tenant 소유를 서버 검증(프론트 candidate_id 불신). `GeneratorReadClient`는 내부 토큰(`X-Internal-Token`) 지원(B-0 Q0.3). **주의:** 기존 `from_candidate`도 동일 소유권 검증이 빠져 있다(`management.py:1906`은 org 스코프 없이 get_candidate) — 공용 검증 헬퍼로 묶으면 함께 보강(별도 합의).
+- **③ 소유권/토큰 결속** — **B-1은 캠페인 소유권만 강제**한다: `_require_owned_campaign(db, org_id, campaign_id)`로 "자기 캠페인만 교체"(파괴적 행위 차단). **후보-org 검증은 불가 → 후속.** 이유: `GeneratorReadClient.get_candidate`(`client.py:61`)는 org 스코프가 없고, generator D1 응답 계약(`schema_version`·`status`·`candidates`)에 project/org가 없어 management가 후보 소유를 검증할 정보가 없다(내부 토큰은 오히려 스코프 우회용). 후보-org 검증은 **generator D1 계약 확장**(응답에 project/org)이 선결인 크로스팀 작업이라 별도로 뺀다. **잔여 리스크:** 자기 캠페인에 타 org 후보 이미지를 쓸 수 있음(기밀 열람) — 후속 계약 확장에서 차단. 기존 `from_candidate`도 동일 갭.
 - **④ no-op** — 집행 시점 생성이라 creative_id는 항상 새값 → id 비교 no-op 무의미. **v1은 하드 no-op 게이트 없음.** LIVE 기준만 문서화: no-op = 후보 콘텐츠(이미지 s3_key + 카피)가 현재 광고 creative와 동일.
 - **⑤ 프리뷰 정보** — `reader.get_creatives(campaign_id)`(`reader.py:465`)가 광고별 `ad_id·ad_name·image_url·thumbnail_url·headline·primary_text`(`CreativePreview`)를 반환(확인됨). 프리뷰 = 광고별 현재 썸네일/이름 + 새 후보 이미지.
 - **⑥ 이미지 규격 검증** — 변환 단계(빌드 시점 §3-3)에서 검증. 실패·규격 불가 → proposal 생성 실패, 집행 없음.
@@ -83,7 +85,7 @@
 
 ## 8. 테스트 (mock)
 
-- 후보 핸드오프 + 소유권 검증(타 org 후보 거부).
+- 후보 핸드오프 + 캠페인 소유권 검증(타 org 캠페인 거부). 후보-org 검증은 후속(범위 밖).
 - 이미지 규격 검증 실패 → proposal 생성 실패(집행 없음).
 - 빌드된 proposal에 image_hash·copy·광고 target 적재, Tier-3.
 - 집행: executor가 create_ad_creative(합성 id) → 각 광고 fan-out replace, 멱등.
