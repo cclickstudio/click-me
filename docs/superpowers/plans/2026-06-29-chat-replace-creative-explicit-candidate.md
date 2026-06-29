@@ -149,18 +149,41 @@ async def get_generation(
 
 (아래쪽 기존 `org_id = await _require_org_id(user, db)` 중복 줄은 제거.)
 
-- [ ] **Step 6: 통과 확인 + 회귀**
+- [ ] **Step 6: generator 라우터 org 스코프 테스트 (리뷰 ②ⓑ)**
 
-Run: `cd backend && uv run pytest tests/management/test_generator_client.py tests/management/test_management_router.py -v`
-Expected: PASS (신규 org 헤더 + 기존 from_candidate 회귀)
+헤더가 나가는지(client)만이 아니라, **generator 라우터가 internal/use_mock 경로에서도 org mismatch를 404로 막는지** 검증한다. `tests/generator/`(또는 라우터 테스트가 있는 위치)에 추가:
+
+```python
+async def test_get_generation_internal_wrong_org_404(client, seeded_generation):
+    # seeded_generation은 org-A 소속. internal 토큰 + 잘못된 org → 404.
+    resp = await client.get(
+        f"/api/generator/generations/{seeded_generation.id}",
+        headers={"X-Internal-Token": INTERNAL_TOKEN, "X-Org-Id": str(OTHER_ORG_ID)},
+    )
+    assert resp.status_code == 404
+
+async def test_get_generation_internal_correct_org_200(client, seeded_generation):
+    resp = await client.get(
+        f"/api/generator/generations/{seeded_generation.id}",
+        headers={"X-Internal-Token": INTERNAL_TOKEN, "X-Org-Id": str(seeded_generation.org_id)},
+    )
+    assert resp.status_code == 200
+```
+
+> 픽스처(`seeded_generation`·`INTERNAL_TOKEN`·org id)는 generator 테스트의 기존 시드 패턴에 맞춘다. `get_detail(generation_id, org_id)`가 org 불일치 시 `None` → 라우터 404.
+
+- [ ] **Step 7: 통과 확인 + 회귀**
+
+Run: `cd backend && uv run pytest tests/management/test_generator_client.py tests/generator/ tests/management/test_management_router.py -v`
+Expected: PASS (client 헤더 + 라우터 org 스코프 + from_candidate 회귀)
 
 > **mock seed 데이터 주의:** generator GET을 X-Org-Id로 스코프하면, 테스트/시드 generation이 호출 org와 연결돼 있어야 404가 안 난다. 기존 from_candidate 테스트가 쓰는 generation이 동일 org 소속인지 확인하고, 아니면 픽스처를 맞춘다.
 
-- [ ] **Step 7: 커밋**
+- [ ] **Step 8: 커밋**
 
 ```bash
 cd backend && uv run ruff format . && uv run ruff check . --fix
-git add backend/api/routers/generator.py backend/domain/management/adapters/generator/client.py backend/api/routers/management.py backend/tests/management/test_generator_client.py
+git add backend/api/routers/generator.py backend/domain/management/adapters/generator/client.py backend/api/routers/management.py backend/tests/management/test_generator_client.py backend/tests/generator/
 git commit -m "fix: generator GET 내부호출 org 스코프 — 타 org 후보 누출 차단(B-1 선결)"
 ```
 
@@ -286,7 +309,7 @@ Expected: FAIL — `AttributeError: 'MetaAdsWriter' object has no attribute 'cre
 - [ ] **Step 6: 통과 확인**
 
 Run: `cd backend && uv run pytest tests/management/test_meta_writer.py -k create_ad_creative -v`
-Expected: PASS (2 tests)
+Expected: PASS (3 tests)
 
 - [ ] **Step 7: 커밋**
 
@@ -440,10 +463,11 @@ async def test_replace_creative_param_is_ad_id():
     assert result.platform_response_snapshot["creative_id"] == "creative-9"
 
 async def test_replace_creative_tree_dry_run_creates_one_creative():
-    # mock(DRY_RUN)은 자식 조회 불가 → tree orchestration(creative 1회 생성 + 캠페인 결과)까지만 검증.
+    # DRY_RUN — adcreative 1회 합성 생성 + 결속 ad_ids fan-out(dry는 각 ad 합성 성공).
     writer = MetaAdsWriter(mode=ExecutionMode.DRY_RUN)
     result = await writer.replace_creative_tree(
         "camp-1",
+        ad_ids=["ad-1", "ad-2"],
         ad_account_id="act_1",
         image_hash="h",
         headline="제목",
@@ -455,28 +479,27 @@ async def test_replace_creative_tree_dry_run_creates_one_creative():
     snap = result.platform_response_snapshot
     assert snap["operation"] == "replace_creative"
     assert snap["creative_id"].startswith("mockcreative_")  # 1회 생성된 합성 creative
+    assert snap["ad_count"] == 2
 
 
 class _StubClient:
-    """fan-out 검증용 — 실 Meta 대신 자식 ad 2개를 돌려주고 POST 경로를 기록."""
+    """fan-out 검증용 — POST 경로만 기록(실 Meta 미호출). ad_ids는 인자로 결속되므로 get 불필요."""
 
     def __init__(self):
         self.posts: list[str] = []
-
-    async def get(self, path, params=None):
-        return {"data": [{"id": "ad-1"}, {"id": "ad-2"}]}
 
     async def post(self, path, data, validate_only=False):
         self.posts.append(path)
         return {"id": "obj-1"}
 
 
-async def test_replace_creative_tree_fans_out_to_each_ad():
-    # fan-out 계약 — sending mode + stub client에서 하위 ad마다 creative 교체 POST(LIVE 미호출).
+async def test_replace_creative_tree_fans_out_over_bound_ad_ids():
+    # fan-out 계약(리뷰 ①③) — 결속된 ad_ids 각각에 creative 교체 POST(_child_ids 재조회 없음).
     stub = _StubClient()
     writer = MetaAdsWriter(mode=ExecutionMode.VALIDATE_ONLY, client=stub)
     result = await writer.replace_creative_tree(
         "camp-1",
+        ad_ids=["ad-1", "ad-2"],
         ad_account_id="act_1",
         image_hash="h",
         headline="제목",
@@ -485,9 +508,10 @@ async def test_replace_creative_tree_fans_out_to_each_ad():
         idem_key="key-1",
     )
     assert result.status is ResultStatus.SUCCESS
-    # adcreatives 생성 1회 + 하위 ad-1·ad-2 각각 교체 POST.
+    # adcreatives 생성 1회 + 결속된 ad-1·ad-2 각각 교체 POST.
     assert "ad-1" in stub.posts and "ad-2" in stub.posts
     assert any("adcreatives" in p for p in stub.posts)
+    assert result.platform_response_snapshot["ad_count"] == 2
 ```
 
 - [ ] **Step 2: 실패 확인**
@@ -532,6 +556,7 @@ platform.py Port 추가:
         self,
         campaign_id: str,
         *,
+        ad_ids: list[str],
         ad_account_id: str,
         image_hash: str | None,
         headline: str,
@@ -548,6 +573,7 @@ writer.py 구현:
         self,
         campaign_id: str,
         *,
+        ad_ids: list[str],
         ad_account_id: str,
         image_hash: str | None,
         headline: str,
@@ -555,10 +581,11 @@ writer.py 구현:
         link_url: str,
         idem_key: str,
     ) -> ActionResult:
-        """adcreative 1회 생성 → 캠페인 하위 광고에 fan-out 교체 (activate_tree 패턴).
+        """adcreative 1회 생성 → **결속된 ad_ids** 각각에 fan-out 교체.
 
         고아 방지 — 승인 후 집행 시점에만 호출되므로 취소/만료 건은 creative를 만들지 않는다.
-        DRY_RUN/mock은 자식 조회 불가 → creative 1회 생성(합성)·캠페인 단위 결과만.
+        ad_ids는 빌드 시점 get_creatives로 해상돼 evidence_metrics에 결속된 목록(proposal_hash가 덮음)
+        → 프리뷰=집행 대상 일치, 집행 시점 _child_ids 재조회 안 함(drift 차단). dry/mock도 fan-out 실행.
         """
         self._require_writable(idem_key)
         creative_id = await self.create_ad_creative(
@@ -569,11 +596,6 @@ writer.py 구현:
             link_url=link_url,
             idem_key=f"{idem_key}-creative",
         )
-        if self._mode not in _SENDING_MODES or self._client is None:
-            return self._result(
-                "replace_creative", campaign_id, idem_key, dry_run=True, creative_id=creative_id
-            )
-        ad_ids = await self._child_ids(f"{campaign_id}/ads")
         for i, ad_id in enumerate(ad_ids):
             r = await self.replace_creative(ad_id, creative_id, f"{idem_key}-ad-{i}")
             if r.status is not ResultStatus.SUCCESS:
@@ -582,7 +604,7 @@ writer.py 구현:
             "replace_creative",
             campaign_id,
             idem_key,
-            dry_run=False,
+            dry_run=self._mode not in _SENDING_MODES,
             creative_id=creative_id,
             ad_count=len(ad_ids),
         )
@@ -590,20 +612,23 @@ writer.py 구현:
 
 - [ ] **Step 5: FakeWriter 갱신** (`helpers.py`)
 
-`replace_creative` 파라미터명 `campaign_id`→`ad_id`(본문 동일) + `replace_creative_tree` 추가:
+`replace_creative` 파라미터명 `campaign_id`→`ad_id`(본문 동일) + `replace_creative_tree`(ad_ids fan-out 기록) 추가:
 
 ```python
     async def replace_creative(self, ad_id: str, creative_id: str, idem_key: str) -> ActionResult:
         return self._respond("REPLACE_CREATIVE", ad_id, idem_key)
 
     async def replace_creative_tree(
-        self, campaign_id: str, *, ad_account_id, image_hash, headline, body, link_url, idem_key: str
+        self, campaign_id: str, *, ad_ids, ad_account_id, image_hash, headline, body, link_url, idem_key: str
     ) -> ActionResult:
         await self.create_ad_creative(
             ad_account_id, image_hash=image_hash, headline=headline,
             body=body, link_url=link_url, idem_key=f"{idem_key}-creative",
         )
-        return self._respond("REPLACE_CREATIVE", campaign_id, idem_key)
+        last = None
+        for i, ad_id in enumerate(ad_ids):  # 결속 ad_ids 각각 기록(fan-out 검증용)
+            last = self._respond("REPLACE_CREATIVE", ad_id, f"{idem_key}-ad-{i}")
+        return last or self._respond("REPLACE_CREATIVE", campaign_id, idem_key)
 ```
 
 - [ ] **Step 6: 통과 확인 + 기존 회귀**
@@ -634,28 +659,32 @@ git commit -m "add: replace_creative_tree(집행시점 변환+fan-out) + replace
 기존 `test_replace_creative_dispatches_to_writer`를 소재 필드 기반으로 갱신하고, 누락 검증 테스트를 교체한다.
 
 ```python
-async def test_replace_creative_calls_tree_with_creative_fields():
+def _replace_evidence(**overrides):
+    base = {
+        "image_hash": "h", "headline": "제목", "body": "본문",
+        "link_url": "https://clickme.co.kr",
+        "generation_id": "g1", "candidate_id": "c1",
+        "affected_ad_ids": ["ad-1", "ad-2"],
+    }
+    base.update(overrides)
+    return base
+
+async def test_replace_creative_fans_out_over_bound_ad_ids():
     writer = FakeWriter()
     executor = _build_executor(writer)  # 기존 헬퍼
     proposal = make_proposal(
         action_type="REPLACE_CREATIVE",
         action_tier=ActionTier.TIER_3,
         target_object_ids=("camp-1",),
-        evidence_metrics={
-            "image_hash": "h",
-            "headline": "제목",
-            "body": "본문",
-            "link_url": "https://clickme.co.kr",
-            "generation_id": "g1",
-            "candidate_id": "c1",
-        },
+        evidence_metrics=_replace_evidence(),
     )
     action = approved_for(proposal, approver_id="user-1")  # 사람 승인(AUTO 아님)
     result = await executor.execute(action, proposal)
     assert result.status is ResultStatus.SUCCESS
-    assert ("create_ad_creative", proposal.ad_account_id, ANY) in [
-        (c[0], c[1], c[2]) for c in writer.calls
-    ] or any(c[0] == "create_ad_creative" for c in writer.calls)
+    # adcreative 1회 생성 + 결속된 ad-1·ad-2 각각 교체(fan-out, 리뷰 ①③).
+    assert any(c[0] == "create_ad_creative" for c in writer.calls)
+    replaced = {c[1] for c in writer.calls if c[0] == "REPLACE_CREATIVE"}
+    assert {"ad-1", "ad-2"} <= replaced
 
 async def test_replace_creative_missing_fields_fails():
     writer = FakeWriter()
@@ -664,7 +693,7 @@ async def test_replace_creative_missing_fields_fails():
         action_type="REPLACE_CREATIVE",
         action_tier=ActionTier.TIER_3,
         target_object_ids=("camp-1",),
-        evidence_metrics={"headline": "제목"},  # body/link_url 누락
+        evidence_metrics={"headline": "제목"},  # image_hash/body/link_url/affected_ad_ids 누락
     )
     action = approved_for(proposal, approver_id="user-1")
     result = await executor.execute(action, proposal)
@@ -678,10 +707,7 @@ async def test_replace_creative_idempotent_replay():
         action_type="REPLACE_CREATIVE",
         action_tier=ActionTier.TIER_3,
         target_object_ids=("camp-1",),
-        evidence_metrics={
-            "image_hash": "h", "headline": "제목", "body": "본문",
-            "link_url": "https://clickme.co.kr",
-        },
+        evidence_metrics=_replace_evidence(),
     )
     action = approved_for(proposal, approver_id="user-1")
     first = await executor.execute(action, proposal)
@@ -707,14 +733,17 @@ Expected: FAIL — 현재 분기가 `selected_candidate_id`를 읽어 `replace_c
             headline = em.get("headline")
             body = em.get("body")
             link_url = em.get("link_url")
-            # 빌드 단계가 항상 채우는 소재 필드 — 없으면 계약 위반(_validate 통과분 방어).
-            # image_hash 필수: REPLACE는 "후보 이미지로 교체"가 핵심이라 텍스트-only는 불허.
-            if not image_hash or not headline or not body or not link_url:
+            ad_ids = em.get("affected_ad_ids")
+            # 빌드 단계가 항상 채우는 필드 — 없으면 계약 위반(_validate 통과분 방어).
+            # image_hash 필수(텍스트-only 불허). affected_ad_ids 필수: 결속된 광고로만 fan-out
+            # → 프리뷰=집행 대상 일치(drift 차단, 리뷰 ①). 집행 시점 _child_ids 재조회 안 함.
+            if not image_hash or not headline or not body or not link_url or not ad_ids:
                 raise ValueError(
-                    "REPLACE_CREATIVE 제안에 소재 필드(image_hash/headline/body/link_url) 없음"
+                    "REPLACE_CREATIVE 제안 필드 누락(image_hash/headline/body/link_url/affected_ad_ids)"
                 )
             return await self._writer.replace_creative_tree(
-                target,  # 캠페인 id — writer가 하위 ad로 fan-out
+                target,  # 캠페인 id(멱등 키 정체성) — fan-out 대상은 결속된 ad_ids
+                ad_ids=[str(a) for a in ad_ids],
                 ad_account_id=proposal.ad_account_id,
                 image_hash=str(image_hash),
                 headline=str(headline),
@@ -724,12 +753,12 @@ Expected: FAIL — 현재 분기가 `selected_candidate_id`를 읽어 `replace_c
             )
 ```
 
-기존 주석(executor.py:42)의 "selected_candidate_id 참조"도 소재 필드 기반으로 한 줄 갱신.
+기존 주석(executor.py:42)의 "selected_candidate_id 참조"도 "소재 필드 + 결속 affected_ad_ids 기반"으로 한 줄 갱신.
 
 - [ ] **Step 4: 통과 확인 + 전체 게이트 회귀**
 
 Run: `cd backend && uv run pytest tests/management/test_executor_gates.py -v`
-Expected: PASS (신규 2 + 기존 게이트 회귀)
+Expected: PASS (신규 3: fans_out·missing_fields·idempotent_replay + 기존 게이트 회귀)
 
 - [ ] **Step 5: 커밋**
 
@@ -856,6 +885,9 @@ async def replace_creative_proposal(
 
     reader = await _require_reader(db, org_id)
     affected = await reader.get_creatives(campaign_id)  # 프리뷰: 영향 광고(현재 썸네일/이름)
+    affected_ad_ids = [a.ad_id for a in affected if a.ad_id]
+    if not affected_ad_ids:
+        raise HTTPException(status_code=409, detail="교체할 광고가 없습니다(캠페인에 ad 없음).")
 
     now = datetime.now(UTC)
     proposal = finalize_proposal(
@@ -863,7 +895,7 @@ async def replace_creative_proposal(
             proposal_id=f"prop_{uuid4().hex[:8]}",
             tenant_id=str(org_id),
             ad_account_id=ad_account,
-            target_object_ids=(campaign_id,),  # 캠페인 — writer가 하위 ad로 fan-out
+            target_object_ids=(campaign_id,),  # 캠페인(멱등 키 정체성) — fan-out 대상은 결속된 affected_ad_ids
             action_type="REPLACE_CREATIVE",
             action_tier=ActionTier.TIER_3,
             evidence_metrics={
@@ -873,7 +905,10 @@ async def replace_creative_proposal(
                 "link_url": str(body.link_url),
                 "generation_id": body.generation_id,
                 "candidate_id": cand.candidate_id,
-                "affected_ad_count": len(affected),
+                # 결속(리뷰 ①④) — proposal_hash가 덮음 → 프리뷰=집행 대상 일치·감사 가능.
+                "affected_ad_ids": affected_ad_ids,
+                "affected_ad_count": len(affected_ad_ids),
+                "candidate_summary": {"headline": cand.copy.headline, "s3_key": cand.s3_key},
             },
             metrics_as_of=now,
             hypothesis="후보 기반 소재 교체",
@@ -939,8 +974,8 @@ git commit -m "fix: B-1 회귀·lint 정리"
 
 ## Self-Review (작성자 확인 완료)
 
-- **Spec 커버리지:** spec §3 빌드/집행 분리 → Task 5(빌드)·Task 3·4(집행). §4 계약변경(replace_creative ad_id·신규 메서드) → Task 1·3. §6① 고아차단(집행시점) → Task 3·4. §6② 후보-org 누출 차단(generator org 스코프) → **Task 0**. §6③ 캠페인 소유권 → Task 5(`_require_owned_campaign`). §6④ no-op 하드게이트 없음 → 미구현(의도적). §6⑤ 프리뷰 → Task 5(`get_creatives`). §6⑥ 규격검증 → Task 2·5. §6⑦ LIVE 게이트=execution_mode → Task 1·3(`_is_sending_mode`) + Task 5(sending mode 501 차단). §3-10 멱등 결정성 → Task 1(determinism 테스트). §8 mock 테스트 → 각 태스크.
-- **No-placeholder:** 모든 코드 스텝에 실제 코드. 픽스처는 기존 패턴 재사용을 명시(추정 금지·실제 헬퍼에 맞추라 지시). Task 0의 mock seed org 연결은 Step 6 주의로 명시.
-- **타입 일관:** `create_ad_creative`(ad_account_id, *, image_hash, headline, body, link_url, idem_key)→str / `replace_creative`(ad_id, creative_id, idem_key) / `replace_creative_tree`(campaign_id, *, ad_account_id, image_hash, headline, body, link_url, idem_key) / `get_candidate`(generation_id, candidate_id, org_id=None) — Task 0·1·3·4·5·helpers 전반 동일.
+- **Spec 커버리지:** spec §3 빌드/집행 분리 → Task 5(빌드)·Task 3·4(집행). §4 계약변경(replace_creative ad_id·신규 메서드·affected_ad_ids 결속) → Task 1·3·5. §6① 고아차단(집행시점) → Task 3·4. §6② 후보-org 누출 차단(generator org 스코프 + 라우터 테스트) → **Task 0**. §6③ 캠페인 소유권 → Task 5. §6④ no-op 하드게이트 없음 → 미구현(의도적). §6⑤ 프리뷰 → Task 5(`get_creatives`). §6⑥ 규격검증 → Task 2·5. §6⑦ LIVE 게이트=execution_mode → Task 1·3 + Task 5(501 차단). §6⑧ 프리뷰=집행 결속(affected_ad_ids·proposal_hash) → Task 4·5 + fan-out 테스트(Task 3·4). §3-10 멱등 결정성 → Task 1·4. §8 mock 테스트 → 각 태스크.
+- **No-placeholder:** 모든 코드 스텝에 실제 코드. 픽스처는 기존 패턴 재사용을 명시. Task 0 mock seed org 연결은 Step 7 주의로 명시.
+- **타입 일관:** `create_ad_creative`(ad_account_id, *, image_hash, headline, body, link_url, idem_key)→str / `replace_creative`(ad_id, creative_id, idem_key) / `replace_creative_tree`(campaign_id, *, ad_ids, ad_account_id, image_hash, headline, body, link_url, idem_key) / `get_candidate`(generation_id, candidate_id, org_id=None) — Task 0·1·3·4·5·helpers 전반 동일. evidence_metrics 키(image_hash·headline·body·link_url·affected_ad_ids·generation_id·candidate_id)는 Task 4(읽기)·5(쓰기) 일치.
 - **범위:** 프론트 카드·LIVE adcreative·LIVE 멱등 dedup은 후속으로 명시(YAGNI). 후보-org 누출은 Task 0에서 닫음(크로스팀 generator 변경 — 리뷰 필요).
 - **실행 순서:** Task 0(generator 선결) → 1 → 2 → 3 → 4 → 5 → 6.
