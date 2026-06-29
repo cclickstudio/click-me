@@ -29,3 +29,18 @@ def test_state_to_result_no_prefill_has_no_embed():
     }
     result = _state_to_result(state)
     assert "embed" not in result.meta
+
+
+def test_state_to_result_create_prefill_forces_deep_agent_source():
+    # 멀티툴 턴 — management 결과가 sub_results에 있어도 create 신호가 source를 deep-agent로 고정해
+    # chat.py의 management 게이트가 잘못 발동하지 않게 한다.
+    state = {
+        "messages": [AIMessage(content="새 캠페인 생성 폼을 준비했어요.")],
+        "sub_results": {"management": {"source": "management", "suggested_action": {"x": 1}}},
+        "requires_approval": False,
+        "thread_id": None,
+        "create_prefill": {"objective": "leads"},
+    }
+    result = _state_to_result(state)
+    assert result.meta["source"] == "deep-agent"
+    assert result.meta["embed"] == "create_campaign"

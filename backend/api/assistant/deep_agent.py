@@ -256,6 +256,8 @@ def build_deep_agent_graph(
                         for k, v in args.items()
                         if k in ("name", "objective", "total_budget_krw") and v
                     }
+                    if prefill.get("objective") not in ("traffic", "leads"):
+                        prefill.pop("objective", None)  # enum 밖 값은 폼 기본값에 맡긴다
                     tool_msgs.append(
                         ToolMessage(content="생성 폼을 준비했습니다.", tool_call_id=tool_id)
                     )
@@ -387,6 +389,9 @@ def _state_to_result(state: _OState) -> SubagentResult:
     if state.get("create_prefill") is not None:
         combined_meta["embed"] = "create_campaign"
         combined_meta["prefill"] = state["create_prefill"]
+        # create 신호가 권위 — 멀티툴 턴에서도 source를 deep-agent로 고정해
+        # chat.py의 management 게이트(카드 빌드·record_turn) 오발동을 막는다.
+        combined_meta["source"] = "deep-agent"
 
     return SubagentResult(
         action=Action.ANSWER,
