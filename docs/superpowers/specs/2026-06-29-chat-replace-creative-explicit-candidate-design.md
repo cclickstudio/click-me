@@ -41,7 +41,7 @@
 ### 집행 시점 (executor → writer, 승인 후)
 
 8. **오케스트레이션 = writer `replace_creative_tree(campaign_id, ad_ids=…, ...)`**. executor의 REPLACE_CREATIVE 분기는 evidence_metrics의 결속된 `affected_ad_ids`를 넘겨 이 메서드 1개를 호출(executor 변경 최소).
-9. writer 내부: **adcreative 1회 생성**(`create_ad_creative` → creative_id, **승인된 건만** → 고아 없음) → **결속된 `ad_ids`(빌드 시점 값)** 각각에 **ad 단위 `replace_creative(ad_id, creative_id)`** fan-out. **집행 시점 `_child_ids` 재조회 안 함** — 프리뷰=집행 대상이 hash로 결속돼 drift가 없다. (LIVE에서 빌드~집행 사이 Meta 광고 추가/삭제 같은 라이브 드리프트 재검은 후속 §9. fan-out이 ad_ids를 직접 도므로 dry/mock에서도 fan-out이 실제로 돈다 → 검증 가능.)
+9. writer 내부: **adcreative 1회 생성**(`create_ad_creative` → creative_id, **승인된 건만** → 고아 없음) → **결속된 `ad_ids`(빌드 시점 값)** 각각에 **ad 단위 `replace_creative(ad_id, creative_id)`** fan-out. **집행 시점 `_child_ids` 재조회 안 함** → 재해상에 의한 프리뷰↔집행 divergence가 없다. **단 이는 실세계 라이브 드리프트(승인 전후 Meta 광고 추가/삭제/이동) 차단이 아니다** — 그 경우 stale ad를 바꾸거나 새 ad를 놓칠 수 있어, **LIVE는 집행 시점 재검증(ad의 campaign/org 소속·현재 child set/version 비교, mismatch면 실패)을 추가**한다(§9). fan-out이 ad_ids를 직접 도므로 dry/mock도 fan-out 실행 → 검증 가능. 부분 실패 시 `succeeded_ad_ids`/`failed_ad_id`를 결과에 남기고 재시도는 같은 creative_id 재적용(멱등)으로 안전.
 10. **멱등** — `create_ad_creative`는 같은 idem_key면 같은 creative_id를 돌려준다(mock: `mockcreative_{idem_key}` 결정적). 집행 retry(timeout/rate)나 멱등 재생 시 creative가 중복 생성되지 않는다. LIVE 멱등(Meta adcreatives create는 native idem 없음 → 이름 기반 dedup 또는 사전 조회)은 후속(§9).
 
 > executor를 per-target 루프로 바꾸려면 "creative 1회 생성"을 루프 밖으로 빼는 배선이 필요해 변경이 커진다. 기존 `activate_tree`가 이미 "한 번 처리 후 자식 fan-out"을 writer 안에서 하므로, 동일 패턴으로 writer에 위임해 executor를 최소 변경한다.
@@ -73,7 +73,8 @@
   - **후보-org 누출 차단 (B-1에서 닫음)** — 확인된 활성 누출: generator `GET /generations/{id}`(`generator.py:289`)는 로그인 유저엔 org 스코프(불일치 404)지만 **내부 토큰 일치 또는 `use_mock`이면 org 검증을 우회**(`generator.py:303~306`)한다. management는 내부 토큰으로 호출하고 B-1 mock은 `use_mock=true`라 **임의 generation_id로 타 org 후보를 가져와 프리뷰 노출** 가능(기밀 누출, mock에서도 발생). → **수정:** generator GET이 **내부 호출에도 org 스코프**되게 한다. management가 `X-Org-Id`로 호출 org를 보내면, generator 내부 토큰 분기가 기존 `get_detail_for_org(generation_id, org_id)`로 스코프(타 org면 404). `GeneratorReadClient.get_candidate`에 `org_id` 인자 추가. **이 변경은 generator 도메인을 건드린다(크로스팀 CODEOWNERS) — generator 팀 리뷰 + mock seed 데이터의 org 연결 확인 필요.** 같은 수정으로 기존 `from_candidate` 누출도 닫힌다.
 - **④ no-op** — 집행 시점 생성이라 creative_id는 항상 새값 → id 비교 no-op 무의미. **v1은 하드 no-op 게이트 없음.** 대신 **프리뷰가 현재/신규 소재를 나란히** 보여줘(§6-⑤) 사용자가 동일 여부를 눈으로 판단한다(v1은 자동 판정 안 함). LIVE 자동 판정 기준만 문서화: no-op = 후보 콘텐츠(이미지 s3_key + 카피)가 현재 광고 creative와 동일.
 - **⑤ 프리뷰 정보** — `reader.get_creatives(campaign_id)`(`reader.py:465`)가 광고별 `ad_id·ad_name·image_url·thumbnail_url·headline·primary_text`(`CreativePreview`)를 반환(확인됨). 프리뷰 = 광고별 현재 썸네일/이름 + 새 후보 이미지.
-- **⑧ 프리뷰=집행 결속 (drift 차단, B-1 라운드 ①④)** — 빌드 시점 `affected_ad_ids`(+candidate 요약)를 evidence_metrics에 넣어 proposal_hash로 덮는다(`schemas.py:318` 확인). executor는 **결속된 ad_ids로 fan-out**(집행 시점 재조회 안 함) → 사용자가 프리뷰에서 본 광고와 실제 교체 대상이 정확히 일치하고, 감사/재검이 hash로 가능하다. LIVE 라이브 드리프트(빌드~집행 사이 Meta 광고 추가/삭제) 재검은 후속(§9).
+- **⑧ 프리뷰=집행 결속 (재해상 divergence 차단, B-1 라운드 ①④)** — 빌드 시점 `affected_ad_ids`(+candidate 요약)를 evidence_metrics에 넣어 proposal_hash로 덮는다(`schemas.py:318` 확인). executor는 **결속된 ad_ids로 fan-out**(집행 시점 재조회 안 함) → 사용자가 프리뷰에서 본 광고와 실제 교체 대상이 일치하고, 감사/재검이 hash로 가능하다. **이는 "재해상 divergence" 차단이지 실세계 라이브 드리프트 차단이 아니다** — 라이브 드리프트(승인 전후 광고 증감/이동) 집행 시점 재검증은 LIVE 후속(§9).
+- **⑨ affected_ad_ids 타입 방어 (B-1 라운드 P2-a)** — executor가 `affected_ad_ids`를 순회하기 전 **list/tuple이고 모든 원소가 비어있지 않은 문자열**인지 검증(문자열이 오면 글자 단위 fan-out 방지).
 - **⑥ 이미지 규격 검증** — 변환 단계(빌드 시점 §3-3)에서 검증. 실패·규격 불가 → proposal 생성 실패, 집행 없음.
 - **⑦ LIVE 차단 기준** — 코드 게이트는 **`execution_mode`**(`writer._SENDING_MODES=(VALIDATE_ONLY, LIVE)` + `management_execution_mode` + `use_mock`), 앱 모드가 아니다(앱 개발모드는 LIVE를 코드가 허용해도 Meta가 거부하는 외부 사유). B-1은 mock(`use_mock` 또는 execution_mode≠live)에서 돈다. `create_ad_creative`는 `_is_sending_mode()`일 때만 Meta 호출, 아니면 합성 creative_id 반환.
 
@@ -107,6 +108,7 @@
 - 경로 ① 자동선택 + 역링크(= B-2 후속).
 - LIVE adcreative 생성·검증(Meta 앱 Live 모드 전환 후) + LIVE 멱등 dedup(§3-10).
 - **LIVE 집행 시점 ad 재검증(후속)** — 결속된 `affected_ad_ids`가 집행 시점에도 같은 campaign/org 소속이며 존재하는지 재확인(라이브 드리프트: 빌드~집행 사이 Meta 광고 추가/삭제/이전). B-1 mock은 결속 ad_ids를 그대로 fan-out하고 LIVE에서 이 재검증을 추가한다.
-- **`use_mock` 내부경로 우회 점검(후속, 보안)** — generator GET이 `use_mock`이면 internal token 없이도 내부 경로가 열린다(org 스코프로 누출은 막았으나). `use_mock` 우회가 테스트/dev 환경 전용인지 별도 점검(B-1 범위 밖).
+- **`use_mock` 내부경로 우회 점검(후속, 보안)** — generator GET이 `use_mock`이면 internal token 없이도 내부 경로가 열린다(B-1은 X-Org-Id 필수화로 org 누출은 막음). `use_mock` 우회 자체가 테스트/dev 전용인지 별도 점검(B-1 범위 밖).
+- **승인 전 side effect 제거(후속, P2-b)** — B-1은 이미지 업로드(adimages→image_hash)를 빌드 시점에 하되 mock(501 sending 차단)이라 실 자산이 안 생긴다. **LIVE를 열면 "외부 side effect는 승인 후에만" 원칙을 위해 업로드도 executor(집행 시점, create_ad_creative와 함께)로 이동**한다. 그 경우 evidence_metrics는 image_hash 대신 s3_key를 결속.
 - 신규 generation 무거운 비동기 풀체인(이미 존재하는 후보 우선).
 - generator D1 응답에 project/org를 **싣는** 계약 확장(B-1은 `X-Org-Id` 요청 스코프로 충분 — 응답 스키마는 안 바꾼다).
