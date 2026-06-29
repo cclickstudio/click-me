@@ -7,7 +7,6 @@ import { useAuth } from '@/components/AuthProvider';
 import { getToken } from '@/lib/authApi';
 import { safeRandomUUID } from '@/lib/utils';
 import ModeBadge from '@/components/ModeBadge';
-import { getToken } from '@/lib/authApi';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
