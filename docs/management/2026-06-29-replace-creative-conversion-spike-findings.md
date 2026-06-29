@@ -11,9 +11,9 @@
 | Q0.2 | 변환 책임 위치 | ⬜ | |
 | Q0.3 | 크로스도메인 핸드오프 | ⬜ | |
 | Q0.4 | /adcreatives POST·validate_only | ⬜ | |
-| Q0b.1 | ad fan-out 방식 | ⬜ | |
+| Q0b.1 | ad fan-out 방식 | ✅ 확정 | writer.py:478~505 |
 | Q0b.2 | ad creative 교체 방식 | ⬜ | |
-| Q0b.3 | 영향 ad 조회 | ⬜ | |
+| Q0b.3 | 영향 ad 조회 | ✅ 확정 | reader.py:465~492; writer.py:498~505 |
 
 ## Q0.1 변환 단계
 
@@ -46,9 +46,54 @@
 
 ## Q0b.1 ad fan-out 방식
 
+**상태: ✅ 확정** — `activate_tree`의 `_child_ids` 패턴이 REPLACE_CREATIVE fan-out에 그대로 재사용 가능.
+
+### 확인 내용
+
+`activate_tree`(writer.py:478~496)는 다음 패턴으로 하위 ad에 쓰기를 fan-out한다.
+
+```python
+# writer.py:491~495
+for prefix, path in (("adset", f"{campaign_id}/adsets"), ("ad", f"{campaign_id}/ads")):
+    for i, child_id in enumerate(await self._child_ids(path)):
+        result = await self.activate(child_id, f"{idem_key}-{prefix}-{i}")
+        if result.status is not ResultStatus.SUCCESS:
+            return _tag_campaign(result, campaign_id)
+```
+
+`_child_ids(path)`(writer.py:498~505)는 `GET /{path}?fields=id&limit=200` 로 id 목록을 반환한다.
+
+```python
+# writer.py:498~505
+async def _child_ids(self, path: str) -> list[str]:
+    try:
+        payload = await self._client.get(path, {"fields": "id", "limit": 200})
+    except (httpx.HTTPError, MetaApiError):
+        logger.warning("자식 id 조회 실패: %s", path)
+        return []
+    return [str(row["id"]) for row in payload.get("data", []) if row.get("id")]
+```
+
+**결정:** REPLACE_CREATIVE fan-out은 동일 패턴 — `_child_ids(f"{campaign_id}/ads")`로 하위 ad id 목록을 얻고, 각 ad에 `POST /{ad_id} {creative:{creative_id}}`를 보낸다. executor 또는 service 레이어가 `_child_ids` 기반 순회를 담당하고, writer에는 ad 단위 `replace_creative(ad_id, creative_id, idem_key)` 메서드를 추가한다(현재 writer의 `replace_creative`는 campaign_id를 받아 campaign 노드에 직접 POST함 — ad 단위 시그니처로 정정 필요).
+
+**대안(특정 ad만 선택 교체):** v1 범위 밖. 전체 fan-out으로 단순화.
+
 ## Q0b.2 ad creative 교체 방식
 
 ## Q0b.3 영향 ad 조회
+
+**상태: ✅ 확정** — 두 가지 경로 확인됨.
+
+### 확인 내용
+
+1. **프리뷰용 ad 목록** — `reader.get_creatives(campaign_id)`(reader.py:465~492)가 `GET /{campaign_id}/ads?fields=name,creative{...}&limit=6`로 광고 목록과 크리에이티브를 반환한다. 이미 퍼블릭 메서드로 존재.
+
+2. **id 카운트 전용** — `_child_ids(f"{campaign_id}/ads")`(writer.py:498~505)가 ad id 목록을 반환하므로 `len()` 으로 개수를 얻을 수 있다. 단, `_child_ids`는 private 메서드라 외부에서 직접 호출하려면 노출이 필요하다.
+
+**결정:**
+- 프리뷰 "영향받는 광고 목록" → `reader.get_creatives` 재사용(이미 있음).
+- 프리뷰 "개수만" → B-1이 `_child_ids` 기반 공개 카운트 메서드를 writer 또는 reader에 추가하거나, `get_creatives` 결과 len()으로 충분하면 별도 추가 불필요.
+- reader에 ad 단위 퍼블릭 목록 메서드(`GET /{campaign_id}/ads`) 는 `get_creatives` 외에 없음 — 별도 `list_ads` 메서드는 현재 없음(확인: reader.py 전체에 `list_ads` 없음).
 
 ## 결론 — B-1 경로 ① go/no-go
 
