@@ -9,7 +9,7 @@
 |---|---|---|---|
 | Q0.1 | 변환 단계 사슬 | 🟡 추정 | writer.py:330,49,304; client.py:153; generator_service.py:433 |
 | Q0.2 | 변환 책임 위치 | ✅ 확정 | CLAUDE.md 협업규칙; writer.py:330,49; instagram.py:1 |
-| Q0.3 | 크로스도메인 핸드오프 | ⬜ | |
+| Q0.3 | 크로스도메인 핸드오프 | ✅ 확정 | management.py:1897~2004; adapters/generator/client.py:46~101 |
 | Q0.4 | /adcreatives POST·validate_only | ⬜ | |
 | Q0b.1 | ad fan-out 방식 | ✅ 확정 | writer.py:478~505 |
 | Q0b.2 | ad creative 교체 방식 | ⬜ | |
@@ -56,6 +56,38 @@
 3. **executor 단일 경로 §4 불변** — management CLAUDE.md Invariant 1: "All spend goes through executor.py — agents/services must never call a Writer directly". executor가 writer를 호출하는 구조가 이미 확립. 여기에 `create_ad_creative` 메서드를 추가하면 기존 구조 그대로 따름.
 
 ## Q0.3 크로스도메인 핸드오프
+
+**상태: ✅ 확정** — **(a) HTTP contract** 추천 잠금. 기존 `from_candidate` 패턴과 동일.
+
+### 3안 비교
+
+| 옵션 | 설명 | 판정 |
+|---|---|---|
+| **(a) HTTP contract** | management가 `GeneratorReadClient`(adapters/generator/client.py:46~101)로 generator의 `GET /api/generator/generations/{id}` 를 호출해 `HandoffCandidate.s3_key + copy`를 얻음 | **채택** |
+| **(b) S3 키 직접 전달** | 챗/카드가 `candidate_id`와 함께 `s3_key`를 페이로드에 실어 보냄. management가 S3에서 직접 download. | 보류 — 챗 payload 구조 변경 필요. 현재 REPLACE_CREATIVE 제안의 `evidence_metrics["selected_candidate_id"]`(executor.py:388)가 이미 있어, 여기에 s3_key를 추가 적재하면 가능. 그러나 챗 에이전트가 S3 키를 알아야 하는 결합이 생김. |
+| **(c) contracts 스키마** | 공유 `contracts/` 스키마로 직접 교환 | 기각 — `contracts/` 변경은 양측 합의 + 별도 PR 필요(management CLAUDE.md §Shared). 가장 무거운 경로. |
+
+### 기존 선례 — `from_candidate` (management.py:1897~2004)
+
+`management.py:1897`의 `from_candidate` 엔드포인트가 이미 (a) 패턴을 확립함:
+
+```python
+# management.py:1904~1907
+client = build_generator_client(settings)
+cand = await client.get_candidate(body.generation_id, body.candidate_id)
+# → HandoffCandidate(s3_key=..., copy=HandoffCopy(headline=..., body=..., cta=...))
+image_bytes = await download_bytes(cand.s3_key)  # management.py:1918
+```
+
+`GeneratorReadClient`(adapters/generator/client.py)는 management 소유 어댑터로, generator 내부 타입을 import하지 않고 HTTP+스키마 검증으로만 `HandoffCandidate`를 파싱한다. 계약 버전(`schema_version`, client.py:63)도 검증한다.
+
+### REPLACE_CREATIVE에 적용
+
+REPLACE_CREATIVE 요청이 `generation_id + candidate_id`를 `evidence_metrics`에 담으면, executor → writer 호출 전에 동일 `GeneratorReadClient.get_candidate()`로 `s3_key + copy`를 얻을 수 있다. `from_simulation`(management.py:2073)은 raw SQL 패턴(임시)을 쓰지만 코멘트에 "추후 시뮬 read 계약으로 교체"가 명시돼 있어, generator 방향은 이미 (a)로 정착된 것으로 볼 수 있다.
+
+### 보안 정합
+
+`GeneratorReadClient`는 내부 토큰(`X-Internal-Token`) 헤더를 지원한다(client.py:59). Open 4(보안 토큰 결속)와 충돌 없이 정합.
 
 ## Q0.4 /adcreatives POST·validate_only
 
