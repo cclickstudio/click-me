@@ -36,7 +36,7 @@ _SYS_ORCHESTRATOR = """\
 - 광고 운영·성과·예산·정책 질문 → ask_management 호출
 - 광고 시안·카피 생성 요청 → ask_generator 호출
 - 새 캠페인 생성 요청("캠페인 만들어줘" 등) → create_campaign 호출(발화의 값을 인자로)
-- 기존 캠페인 일시중지·게재 시작 요청 → manage_campaign 호출(pause|activate, 알면 campaign_id)
+- 기존 캠페인 일시중지·게재 시작·예산 증액/감액 요청 → manage_campaign 호출
 - 이미 충분한 정보가 있으면 추가 호출 없이 답합니다
 - 최종 답변에 수치·근거가 있으면 도구 결과에서 그대로 인용합니다
 """
@@ -105,19 +105,30 @@ _TOOL_SPECS = [
     {
         "name": "manage_campaign",
         "description": (
-            "기존 캠페인 상태 변경 요청에 호출한다."
-            " 일시중지는 action='pause', 게재 시작은 action='activate'."
-            " 특정 가능하면 campaign_id를 채우고, 모르면 비운다(사용자가 카드에서 고른다)."
-            " 예산 변경·생성엔 호출하지 않는다."
+            "기존 캠페인 상태·예산 변경 요청에 호출한다. action='pause'|'activate'|"
+            "'increase_budget'|'decrease_budget'."
+            " 예산 변경이면 new_daily_budget_krw 또는 pct를 채운다."
+            " 특정 가능하면 campaign_id, 모르면 비운다. 생성엔 호출하지 않는다."
         ),
         "parameters": {
             "type": "object",
             "properties": {
-                "action": {"type": "string", "enum": ["pause", "activate"]},
+                "action": {
+                    "type": "string",
+                    "enum": ["pause", "activate", "increase_budget", "decrease_budget"],
+                },
                 "campaign_id": {"type": "string", "description": "대상 캠페인 ID(알면)"},
                 "campaign_name": {
                     "type": "string",
                     "description": "사용자가 말한 캠페인 이름(있으면)",
+                },
+                "new_daily_budget_krw": {
+                    "type": "integer",
+                    "description": "예산 변경 시 목표 일예산 원(언급 시, '5만원'=50000)",
+                },
+                "pct": {
+                    "type": "integer",
+                    "description": "예산 변경 비율 %(언급 시, '25% 올려'=25, 내림은 음수)",
                 },
             },
             "required": ["action"],
@@ -305,15 +316,26 @@ def build_deep_agent_graph(
                     action_payload = {
                         k: v
                         for k, v in args.items()
-                        if k in ("action", "campaign_id", "campaign_name") and v
+                        if k
+                        in (
+                            "action",
+                            "campaign_id",
+                            "campaign_name",
+                            "new_daily_budget_krw",
+                            "pct",
+                        )
+                        and v is not None
                     }
-                    if action_payload.get("action") not in ("pause", "activate"):
+                    valid_actions = ("pause", "activate", "increase_budget", "decrease_budget")
+                    if action_payload.get("action") not in valid_actions:
+                        # 파싱 깨졌을 때 pause로 떨어뜨리지 않는다(안전 fallback 아님).
+                        # 카드 미생성 → campaign_action 미설정, ToolMessage로 재질문을 유도한다.
                         tool_msgs.append(
                             ToolMessage(
                                 content=(
-                                    "캠페인에 어떤 조치를 할지 명확하지 않습니다. "
-                                    "일시중지 또는 게재 시작 중 어떤 작업을 "
-                                    "어떤 캠페인에 할지 알려주세요."
+                                    "어떤 조치인지 명확하지 않아요. "
+                                    "무엇을(중지/게재/예산 변경) 어느 캠페인에 할지 "
+                                    "다시 알려 주세요."
                                 ),
                                 tool_call_id=tool_id,
                             )

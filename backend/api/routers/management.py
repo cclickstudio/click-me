@@ -56,6 +56,7 @@ from domain.management.agents.regeneration import RemediationContext
 from domain.management.agents.regeneration_tools import build_regeneration_agent
 from domain.management.approval import (
     approve,
+    judge_tier,
     relabel_if_mismatch,
     requires_human,
     validate_proposal,
@@ -2627,6 +2628,184 @@ async def pause_campaign(
         if msg:
             resp["error_message"] = str(msg)
     return resp
+
+
+_MIN_DAILY_BUDGET_KRW = 1_521
+_MAX_DAILY_BUDGET_KRW = 100_000_000
+
+
+async def _current_daily_budget(reader: AdPlatformReader, campaign_id: str) -> int:
+    """현재 일예산 정본 — /campaigns와 동일 소스(리더 목록)에서 조회(없으면 0=진입 전 거부)."""
+    if getattr(settings, "use_mock", True):
+        demo = next(
+            (
+                budget
+                for cid, _name, _state, budget, _fault in _CAMPAIGNS_DEMO
+                if cid == campaign_id
+            ),
+            0,
+        )
+        return int(demo)
+    campaigns = await reader.list_campaigns(include_archived=True)
+    info = next((c for c in campaigns if c.campaign_id == campaign_id), None)
+    return int(info.daily_budget_krw) if info and info.daily_budget_krw else 0
+
+
+def _build_budget_proposal(
+    *,
+    tenant_id: str,
+    ad_account_id: str,
+    campaign_id: str,
+    action_type: str,
+    budget_before_krw: int,
+    new_daily_budget_krw: int,
+    run_days: int = 7,
+) -> ActionProposal:
+    """Build a finalized budget proposal after endpoint validation."""
+    now = datetime.now(UTC)
+    return finalize_proposal(
+        ActionProposal(
+            proposal_id=f"prop_{uuid4().hex[:8]}",
+            tenant_id=tenant_id,
+            ad_account_id=ad_account_id,
+            target_object_ids=(campaign_id,),
+            action_type=action_type,
+            action_tier=judge_tier(action_type),
+            evidence_metrics={"source": "chat", "name": campaign_id},
+            metrics_as_of=now,
+            hypothesis="사용자 예산 변경 요청",
+            confidence=1.0,
+            expected_state_version="state_v1",
+            budget_before_krw=budget_before_krw,
+            budget_after_krw=new_daily_budget_krw,
+            max_total_spend_krw=max(0, new_daily_budget_krw - budget_before_krw) * run_days,
+            expires_at=now + timedelta(minutes=PROPOSAL_TTL_MINUTES),
+            approval_policy_version=APPROVAL_POLICY_VERSION,
+        )
+    )
+
+
+class BudgetProposalRequest(BaseModel):
+    action: Literal["increase_budget", "decrease_budget"]
+    new_daily_budget_krw: int
+    shown_budget_before_krw: int | None = None
+
+
+async def _validate_budget_change(
+    reader: AdPlatformReader,
+    campaign_id: str,
+    body: BudgetProposalRequest,
+    *,
+    reject_shown_drift: bool = False,
+) -> tuple[int, str]:
+    """현재값(서버 정본)으로 방향·no-op·범위를 검증하고 (현재값, 정본 action_type)을 반환.
+
+    before<=0(현재값 불명)→409, 표시값 drift(커밋)→409, 범위 밖→422, no-op→409,
+    선언 방향≠목표 방향→409. 호출부는 executor 선택보다 먼저 이 검증을 통과해야 한다.
+    """
+    before = await _current_daily_budget(reader, campaign_id)
+    new = body.new_daily_budget_krw
+    if before <= 0:
+        raise HTTPException(409, "현재 일예산을 확인할 수 없어 예산 변경을 진행할 수 없어요.")
+    if (
+        reject_shown_drift
+        and body.shown_budget_before_krw is not None
+        and body.shown_budget_before_krw != before
+    ):
+        raise HTTPException(
+            409,
+            f"현재 예산이 {before:,}원으로 바뀌었어요. 다시 검토한 뒤 집행해 주세요.",
+        )
+    if new < _MIN_DAILY_BUDGET_KRW or new > _MAX_DAILY_BUDGET_KRW:
+        raise HTTPException(
+            422,
+            f"일예산은 {_MIN_DAILY_BUDGET_KRW:,}~{_MAX_DAILY_BUDGET_KRW:,}원 사이여야 해요.",
+        )
+    if new == before:
+        raise HTTPException(409, "현재 예산과 같아 변경할 게 없어요.")
+    declared = "INCREASE_BUDGET" if body.action == "increase_budget" else "DECREASE_BUDGET"
+    actual = "INCREASE_BUDGET" if new > before else "DECREASE_BUDGET"
+    if declared != actual:
+        raise HTTPException(
+            409,
+            f"요청({body.action})과 목표가 안 맞아요. 현재 {before:,}원, 목표 {new:,}원.",
+        )
+    return before, declared
+
+
+@router.post("/campaigns/{campaign_id}/budget-proposal")
+async def budget_proposal(
+    campaign_id: str,
+    body: BudgetProposalRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Build a display-only budget proposal."""
+    org_id = await _require_org_id(user, db)
+    await _require_owned_campaign(db, org_id, campaign_id)
+    ad_account = await _require_ad_account(db, org_id)
+    reader = await _require_reader(db, org_id)
+    before, declared = await _validate_budget_change(reader, campaign_id, body)
+    new = body.new_daily_budget_krw
+    proposal = _build_budget_proposal(
+        tenant_id=str(org_id),
+        ad_account_id=ad_account,
+        campaign_id=campaign_id,
+        action_type=declared,
+        budget_before_krw=before,
+        new_daily_budget_krw=new,
+    )
+    drift = body.shown_budget_before_krw is not None and body.shown_budget_before_krw != before
+    return {
+        "proposal": proposal.model_dump(mode="json"),
+        "budget_before_krw": before,
+        "drift": drift,
+    }
+
+
+@router.post("/campaigns/{campaign_id}/budget-commit")
+async def budget_commit(
+    campaign_id: str,
+    body: BudgetProposalRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Validate, approve, and execute a budget change from live state."""
+    org_id = await _require_org_id(user, db)
+    await _require_owned_campaign(db, org_id, campaign_id)
+    reader = await _require_reader(db, org_id)
+    before, declared = await _validate_budget_change(
+        reader, campaign_id, body, reject_shown_drift=True
+    )
+    new = body.new_daily_budget_krw
+    ad_account = await _require_ad_account(db, org_id)
+    proposal = _build_budget_proposal(
+        tenant_id=str(org_id),
+        ad_account_id=ad_account,
+        campaign_id=campaign_id,
+        action_type=declared,
+        budget_before_krw=before,
+        new_daily_budget_krw=new,
+    )
+    action = approve(proposal, str(user.id), execution_mode=_resolved_execution_mode())
+    is_demo = proposal.tenant_id == TENANT_ID
+    executor = (
+        _get_executor()
+        if is_demo or getattr(settings, "use_mock", True)
+        else _get_executor(await _require_writer(db, org_id))
+    )
+    result = await executor.execute(action, proposal)
+    response: dict[str, object] = {
+        "result": result.model_dump(mode="json"),
+        "budget_before_krw": before,
+        "budget_after_krw": new,
+    }
+    status = result.status.value if hasattr(result.status, "value") else str(result.status)
+    if status != "success":
+        msg = _find_in_snapshot(result.platform_response_snapshot, "user_msg")
+        if msg:
+            response["error_message"] = str(msg)
+    return response
 
 
 @router.get("/campaigns/{campaign_id}/leads")
