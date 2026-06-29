@@ -9,6 +9,7 @@ act-first 전략: 첫 이터레이션에 management 질문이면 즉시 호출�
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from collections.abc import Awaitable, Callable
 from typing import Annotated, Any
@@ -80,6 +81,40 @@ _TOOL_SPECS = [
     },
 ]
 
+# ── Memory(딥에이전트 ③기둥) — 에이전트가 도구로 장기기억을 직접 읽고 쓴다 ──────
+_MEMORY_TOOL_SPECS = [
+    {
+        "name": "remember",
+        "description": (
+            "다음 대화에서도 기억할 가치가 있는 사용자 선호·결정·반복 관심을 장기기억에 저장한다."
+            " 일회성 정보·인사·잡담은 저장하지 않는다."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "fact": {"type": "string", "description": "한 줄 사실(선호·결정 등)"},
+                "kind": {
+                    "type": "string",
+                    "enum": ["semantic", "episodic", "profile"],
+                    "description": "semantic(사실·선호) | episodic(사건) | profile(지속 프로필)",
+                },
+            },
+            "required": ["fact"],
+        },
+    },
+    {
+        "name": "recall",
+        "description": "과거 세션에서 저장한 사용자 장기기억을 의미 기반으로 조회한다.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "조회할 맥락·주제"},
+            },
+            "required": ["query"],
+        },
+    },
+]
+
 # ── Planning(딥에이전트 ①기둥) — 요청을 명시적 할일로 분해 ─────────────────────
 _SYS_PLANNER = """\
 당신은 ClickMe 광고 플랫폼 오케스트레이터의 플래너입니다.
@@ -140,6 +175,8 @@ class _OState(TypedDict):
     memory_context: str | None  # 장기기억(M1) — 서브에이전트 req로 전달
     plan: list[dict]  # Planning — todo 리스트 [{step, status}], 단순 요청은 []
     iter_budget: int  # 동적 루프 상한(계획 길이에 맞춰 plan 노드가 설정)
+    user_id: str | None  # Memory 스코프 — remember/recall 도구가 사용
+    tenant_id: str | None
 
 
 def _chat_to_lc(m: ChatMessage) -> HumanMessage | AIMessage:
@@ -168,18 +205,22 @@ def build_deep_agent_graph(
     management_handler: Handler | None = None,
     generator_handler: Handler | None = None,
     checkpointer=None,
+    memory=None,
 ) -> Callable[[SubagentRequest], Awaitable[SubagentResult]]:
     """Deep Agent 팩토리 — graph를 빌드하고 run(SubagentRequest) → SubagentResult를 반환.
 
     management_handler / generator_handler가 None이면 mock 핸들러로 대체.
     실 구현이 들어오면 wiring.py에서 실 핸들러를 주입해 교체.
     checkpointer가 None이면 MemorySaver(인메모리). wiring이 PG 싱글턴을 주입하면 영속·멀티턴.
+    memory(ManagementMemory) 주입 시 remember/recall 도구를 노출(딥에이전트 Memory 기둥).
     """
     _mgt_handler = management_handler or _mock_management
     _gen_handler = generator_handler or _mock_generator
 
     # ── LLM 준비 (function calling 바인딩) ──────────────────────────────────
-    llm_with_tools = llm.bind_tools(_TOOL_SPECS)
+    # memory 주입 시에만 remember/recall 도구를 노출(미주입 배포엔 유령 도구 안 생김).
+    tool_specs = [*_TOOL_SPECS, *(_MEMORY_TOOL_SPECS if memory else [])]
+    llm_with_tools = llm.bind_tools(tool_specs)
     llm_plain = llm  # MAX_ITER 도달 시 도구 없이 최종 답 생성
 
     # ── 노드 정의 ────────────────────────────────────────────────────────────
@@ -289,6 +330,46 @@ def build_deep_agent_graph(
                             "thread_id": new_thread_id,
                             "requires_approval": new_requires,
                         }
+
+                elif name == "remember":
+                    # Memory 기둥 — 에이전트가 장기기억에 직접 저장. dedup_key=fact 해시(upsert).
+                    fact = (args.get("fact") or "").strip()
+                    if memory and state.get("user_id") and fact:
+                        kind = args.get("kind") or "semantic"
+                        key = f"{kind}:{hashlib.sha1(fact.encode()).hexdigest()[:16]}"
+                        await memory.remember(
+                            state.get("tenant_id"),
+                            state["user_id"],
+                            key,
+                            {"kind": kind, "fact": fact},
+                        )
+                        tool_msgs.append(ToolMessage(content="기억했습니다.", tool_call_id=tool_id))
+                    else:
+                        tool_msgs.append(
+                            ToolMessage(
+                                content="저장 생략(내용 없음/비로그인).", tool_call_id=tool_id
+                            )
+                        )
+                    continue
+
+                elif name == "recall":
+                    facts: list[str] = []
+                    if memory and state.get("user_id"):
+                        rows = await memory.recall(
+                            state.get("tenant_id"),
+                            state["user_id"],
+                            query=args.get("query"),
+                            limit=5,
+                        )
+                        facts = [r.get("fact") for r in rows if r.get("fact")]
+                    tool_msgs.append(
+                        ToolMessage(
+                            content="\n".join(f"- {f}" for f in facts) or "(저장된 기억 없음)",
+                            tool_call_id=tool_id,
+                        )
+                    )
+                    continue
+
                 else:
                     result = SubagentResult(
                         action=Action.ANSWER,
@@ -347,6 +428,8 @@ def build_deep_agent_graph(
             "memory_context": req.memory_context,
             "plan": [],
             "iter_budget": MAX_ITER,
+            "user_id": req.user_id,
+            "tenant_id": req.org_id,
         }
 
         config = {

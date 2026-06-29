@@ -193,6 +193,7 @@ def build_chat_deep_runner(settings):
     run(SubagentRequest) → SubagentResult 를 반환. 키 없으면 None(호출자가 advise 폴백).
     """
     from api.assistant.deep_agent import build_deep_agent_graph  # noqa: PLC0415
+    from domain.management.assistant.memory_store import build_memory_store  # noqa: PLC0415
     from domain.management.wiring import build_checkpointer  # noqa: PLC0415
 
     llm = _build_classifier_llm(settings)
@@ -203,6 +204,7 @@ def build_chat_deep_runner(settings):
         _build_management_handler(settings),
         _build_generator_handler(settings),
         checkpointer=build_checkpointer(settings),
+        memory=build_memory_store(settings),  # Memory 기둥 — remember/recall 도구
     )
 
 
@@ -222,6 +224,7 @@ def build_deep_agent(settings):
     """
     from api.assistant.deep_agent import build_deep_agent_graph  # noqa: PLC0415
     from api.assistant.intent import classify_intent  # noqa: PLC0415
+    from domain.management.assistant.memory_store import build_memory_store  # noqa: PLC0415
     from domain.management.wiring import build_checkpointer  # noqa: PLC0415
 
     management_handler = _build_management_handler(settings)
@@ -231,7 +234,11 @@ def build_deep_agent(settings):
     # PG 싱글턴(get_pg_checkpointer) 주입 — management 그래프와 동일 체크포인터 공유(단일화).
     # main.py lifespan에서 init 완료된 싱글턴을 build_checkpointer가 반환(없으면 MemorySaver).
     deep_run = build_deep_agent_graph(
-        llm, management_handler, generator_handler, checkpointer=build_checkpointer(settings)
+        llm,
+        management_handler,
+        generator_handler,
+        checkpointer=build_checkpointer(settings),
+        memory=build_memory_store(settings),  # Memory 기둥 — remember/recall 도구
     )
 
     async def run(req: SubagentRequest) -> SubagentResult | None:

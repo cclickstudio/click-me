@@ -29,6 +29,8 @@ from domain.management.assistant.history import record_feedback  # RAG 피드백
 from tools.storage.s3 import download_bytes, upload_bytes
 
 if TYPE_CHECKING:
+    from openai import AsyncOpenAI
+
     from domain.management.assistant.memory_store import ManagementMemory
 
 # 채팅 첨부 이미지 — 허용 타입과 S3 프리픽스(프록시 게이트).
@@ -49,6 +51,7 @@ assistant_router = APIRouter()
 _orchestrator = None
 _memory = None  # 세션 넘는 장기기억(management memory_store) 싱글톤
 _bg_tasks: set[asyncio.Task] = set()  # remember 백그라운드 — GC 방지 강참조
+_clio_client = None  # 메모리 추출·요약용 OpenAI(gpt-4o-mini) 싱글톤
 
 
 def _get_orchestrator() -> Callable[[ChatTurn], Awaitable[object]]:
@@ -118,6 +121,123 @@ def _spawn_remember(body: ChatRequest, meta: dict | None, current_user: User) ->
             )
         except Exception as exc:  # noqa: BLE001 — 적재 실패가 응답을 막지 않게
             print(f"[chat] remember error: {exc!r}")
+
+    task = asyncio.create_task(_run())
+    _bg_tasks.add(task)
+    task.add_done_callback(_bg_tasks.discard)
+
+
+def _get_clio_client() -> "AsyncOpenAI | None":
+    """메모리 추출·요약용 OpenAI(gpt-4o-mini) 싱글톤. 키 없으면 None."""
+    global _clio_client  # noqa: PLW0603
+    if _clio_client is None:
+        key = getattr(settings, "openai_api_key", None)
+        if not key:
+            return None
+        from openai import AsyncOpenAI  # noqa: PLC0415
+
+        _clio_client = AsyncOpenAI(api_key=key)
+    return _clio_client
+
+
+_EXTRACT_PROMPT = (
+    "이 대화 턴에서 사용자에 대해 '세션을 넘어 기억할 가치가 있는 사실'이 있으면 추출하라.\n"
+    "- semantic: 지속 선호·속성(목표·플랫폼·예산대·톤). dedup_key로 같은 속성은 갱신.\n"
+    "- episodic: 한 일·결정(예: camp_1 일시중지 승인).\n"
+    "- 단발 현황 질문('이번 달 예산?')·잡담·인사는 should_store=false.\n"
+    "확신 없으면 should_store=false(과적재보다 누락이 안전).\n"
+    'JSON만 출력: {{"should_store": bool, "kind": "semantic|episodic|none", '
+    '"fact": "정규화된 한 문장 또는 null", "dedup_key": "pref:objective 같은 키 또는 null"}}\n\n'
+    "[질문]\n{q}\n\n[답변]\n{a}"
+)
+
+
+async def _extract_memory(question: str, answer: str) -> dict | None:
+    """턴에서 장기 저장할 사실을 LLM(gpt-4o-mini)으로 추출(M2). 저장 가치 없으면 None."""
+    import json as _json  # noqa: PLC0415
+
+    client = _get_clio_client()
+    if client is None:
+        return None
+    try:
+        resp = await client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {
+                    "role": "user",
+                    "content": _EXTRACT_PROMPT.format(q=question[:300], a=answer[:300]),
+                }
+            ],
+            temperature=0.0,
+            max_tokens=120,
+            response_format={"type": "json_object"},
+        )
+        data = _json.loads(resp.choices[0].message.content or "{}")
+    except Exception:  # noqa: BLE001 — 추출 실패는 저장 안 함(보수)
+        return None
+    if not data.get("should_store") or not data.get("fact"):
+        return None
+    return {
+        "kind": data.get("kind", "semantic"),
+        "fact": data["fact"],
+        "dedup_key": data.get("dedup_key"),
+    }
+
+
+async def _summarize_session(messages: list) -> str | None:
+    """대화를 사용자 관심사·진행 중심으로 2문장 요약(M6 episodic). 실패는 None."""
+    client = _get_clio_client()
+    if client is None:
+        return None
+    convo = "\n".join(f"{m.role}: {m.content[:200]}" for m in messages[-10:])
+    try:
+        resp = await client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {
+                    "role": "user",
+                    "content": (
+                        "다음 대화를 사용자 관심사·진행 상황 중심으로 2문장 이내 한국어로 "
+                        "요약하라. 단발 사실 나열 말고 맥락 위주.\n\n" + convo
+                    ),
+                }
+            ],
+            temperature=0.0,
+            max_tokens=150,
+        )
+        return (resp.choices[0].message.content or "").strip() or None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _spawn_memory_capture(
+    body: ChatRequest, question: str, answer: str, current_user: User
+) -> None:
+    """전 라우트 자동 LTM 캡처(백그라운드) — M2 사실 추출 + M6 세션 요약. 로그인 유저만."""
+    tenant_id, user_id = _memory_ids(body, current_user)
+    if not user_id:
+        return
+
+    async def _run() -> None:
+        try:
+            extracted = await _extract_memory(question, answer)
+            if extracted:
+                key = extracted.get("dedup_key") or uuid.uuid4().hex
+                await _get_memory().remember(
+                    tenant_id, user_id, key, {"kind": extracted["kind"], "fact": extracted["fact"]}
+                )
+            # M6 — 멀티턴(≥8 메시지)이 쌓이면 4메시지마다 세션 요약 upsert(비용 통제).
+            if len(body.messages) >= 8 and len(body.messages) % 4 == 0:
+                summ = await _summarize_session(body.messages)
+                if summ:
+                    await _get_memory().remember(
+                        tenant_id,
+                        user_id,
+                        f"summary:{body.session_id}",
+                        {"kind": "episodic", "fact": summ},
+                    )
+        except Exception as exc:  # noqa: BLE001 — 캡처 실패가 응답을 막지 않게
+            print(f"[chat] memory capture error: {exc!r}")
 
     task = asyncio.create_task(_run())
     _bg_tasks.add(task)
@@ -253,6 +373,8 @@ async def chat_complete(
         await _persist(body.session_id, last_message, answer, meta, body.image_url, body.result_ref)
         # 행동 제안이 나온 턴을 장기기억에 적재(백그라운드) — 다음 세션 recall에 반영.
         _spawn_remember(body, meta, current_user)
+        # 전 라우트 자동 LTM 캡처(M2 사실추출 + M6 세션요약) — 단일 도메인 턴도 기억.
+        _spawn_memory_capture(body, last_message, answer, current_user)
         yield _sse("done")
 
     return StreamingResponse(
