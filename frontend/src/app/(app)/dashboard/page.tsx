@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useAuth } from '@/components/AuthProvider';
 import { safeRandomUUID } from '@/lib/utils';
 import ModeBadge from '@/components/ModeBadge';
+import { getToken } from '@/lib/authApi';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
@@ -146,10 +147,12 @@ export default function DashboardPage() {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    // 최근 내역은 organization 스코프(비-admin) → 토큰 필요. stats는 전역이라 토큰 불필요.
+    const authHeaders = { Authorization: `Bearer ${getToken()}` };
     Promise.all([
       fetch(`${API_BASE}/api/dashboard/stats`).then((r) => r.json()).catch(() => null),
-      fetch(`${API_BASE}/api/dashboard/recent-simulations?limit=5`).then((r) => r.json()).catch(() => []),
-      fetch(`${API_BASE}/api/dashboard/recent-generations?limit=5`).then((r) => r.json()).catch(() => []),
+      fetch(`${API_BASE}/api/dashboard/recent-simulations?limit=5`, { headers: authHeaders }).then((r) => r.json()).catch(() => []),
+      fetch(`${API_BASE}/api/dashboard/recent-generations?limit=5`, { headers: authHeaders }).then((r) => r.json()).catch(() => []),
     ]).then(([s, sims, gens]) => {
       if (s) setStats(s);
       if (Array.isArray(sims)) setRecentSims(sims);
