@@ -411,6 +411,7 @@ export default function Page() {
     if (!content || isStreaming) return;
 
     const newMessages: Message[] = [...messages, { role: 'user', content }];
+    const serverMessages = newMessages.filter((m) => m.content !== '' && !m.embed);
     setMessages(newMessages);
     setInput('');
     setIsStreaming(true);
@@ -422,7 +423,7 @@ export default function Page() {
       const res = await fetch(`${API_BASE}/api/chat/complete`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ session_id: sessionId.current, messages: newMessages }),
+        body: JSON.stringify({ session_id: sessionId.current, messages: serverMessages }),
         signal: ctrl.signal,
       });
 
@@ -534,6 +535,8 @@ export default function Page() {
             {/* aria-live: 스크린리더가 새 AI 응답을 자동으로 읽어줌 (시각장애 접근성) */}
             <div role="log" aria-live="polite" aria-atomic="false" aria-label="대화 내용" className="max-w-2xl mx-auto px-4 py-8 space-y-6">
               {messages.map((msg, i) => {
+                const isCreateCampaignEmbed = msg.role === 'assistant' && msg.embed === 'create_campaign';
+                const shouldRenderBubble = msg.content !== '' || !msg.embed;
                 // 빈 assistant placeholder는 타이핑 인디케이터로 대체
                 if (msg.role === 'assistant' && msg.content === '' && !msg.embed) return null;
                 return (
@@ -548,7 +551,7 @@ export default function Page() {
                         </svg>
                       </div>
                     )}
-                    <div className={`flex flex-col gap-1 max-w-sm ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
+                    <div className={`flex flex-col gap-1 ${isCreateCampaignEmbed ? 'w-full max-w-xl' : 'max-w-sm'} ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
                       {msg.role === 'assistant' && msg.meta && (
                         <span
                           className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${
@@ -561,16 +564,18 @@ export default function Page() {
                         </span>
                       )}
                       {/* 메시지 버블 — 사용자: plain text, 어시스턴트: 마크다운 렌더링 */}
-                      <div
-                        className={`px-4 py-3 rounded-2xl text-sm leading-relaxed ${
-                          msg.role === 'user'
-                            ? 'bg-[#3182F6] text-white rounded-br-md whitespace-pre-wrap'
-                            : 'bg-[#F2F4F6] dark:bg-[#252D3D] text-[#191F28] dark:text-[#F2F4F6] rounded-bl-md'
-                        }`}
-                      >
-                        {msg.role === 'user' ? msg.content : renderMarkdown(msg.content)}
-                      </div>
-                      {msg.role === 'assistant' && msg.embed === 'create_campaign' && (
+                      {shouldRenderBubble && (
+                        <div
+                          className={`px-4 py-3 rounded-2xl text-sm leading-relaxed ${
+                            msg.role === 'user'
+                              ? 'bg-[#3182F6] text-white rounded-br-md whitespace-pre-wrap'
+                              : 'bg-[#F2F4F6] dark:bg-[#252D3D] text-[#191F28] dark:text-[#F2F4F6] rounded-bl-md'
+                          }`}
+                        >
+                          {msg.role === 'user' ? msg.content : renderMarkdown(msg.content)}
+                        </div>
+                      )}
+                      {isCreateCampaignEmbed && (
                         <ChatCreateCampaignCard />
                       )}
                       {/* TTS 읽어주기 버튼 — 브라우저 SpeechSynthesis, 무료 */}
