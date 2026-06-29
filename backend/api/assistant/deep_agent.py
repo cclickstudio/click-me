@@ -35,6 +35,7 @@ _SYS_ORCHESTRATOR = """\
 규칙:
 - 광고 운영·성과·예산·정책 질문 → ask_management 호출
 - 광고 시안·카피 생성 요청 → ask_generator 호출
+- 새 캠페인 생성 요청("캠페인 만들어줘" 등) → create_campaign 호출(발화의 값을 인자로)
 - 이미 충분한 정보가 있으면 추가 호출 없이 답합니다
 - 최종 답변에 수치·근거가 있으면 도구 결과에서 그대로 인용합니다
 """
@@ -77,6 +78,29 @@ _TOOL_SPECS = [
             "required": ["query"],
         },
     },
+    {
+        "name": "create_campaign",
+        "description": (
+            "사용자가 '새 광고 캠페인을 만들어 달라'고 요청할 때 호출한다."
+            " 캠페인 생성 폼 카드를 띄운다. 발화에 값이 있으면 인자로 채우고, 없으면 생략한다."
+            " (생성 방법 질문·성과 분석엔 호출하지 않는다.)"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "캠페인 이름(언급 시)"},
+                "objective": {
+                    "type": "string",
+                    "enum": ["traffic", "leads"],
+                    "description": "traffic=클릭, leads=잠재고객·전환",
+                },
+                "total_budget_krw": {
+                    "type": "integer",
+                    "description": "총 예산 원 단위 정수(언급 시, '5만원'=50000)",
+                },
+            },
+        },
+    },
 ]
 
 
@@ -92,6 +116,7 @@ class _OState(TypedDict):
     session_id: str
     context_ad_id: str | None
     memory_context: str | None  # 장기기억(M1) — 서브에이전트 req로 전달
+    create_prefill: dict | None  # create_campaign 툴이 채운 폼 초기값(없으면 None)
 
 
 def _chat_to_lc(m: ChatMessage) -> HumanMessage | AIMessage:
@@ -138,6 +163,16 @@ def build_deep_agent_graph(
 
     async def orchestrate(state: _OState) -> dict:
         """LLM이 도구 호출 여부를 결정하는 노드."""
+        # create_campaign 툴이 발동했으면 추가 LLM 합성 없이 고정 안내로 종료한다.
+        if state.get("create_prefill") is not None:
+            return {
+                "messages": [
+                    AIMessage(
+                        content="새 캠페인 생성 폼을 준비했어요. 값을 확인하고 승인해 주세요."
+                    )
+                ],
+                "iteration": state["iteration"] + 1,
+            }
         if state["iteration"] >= MAX_ITER or state["requires_approval"]:
             # 더 이상 도구 호출 없이 최종 합성
             resp = await llm_plain.ainvoke(state["messages"])
@@ -213,6 +248,24 @@ def build_deep_agent_graph(
                             "thread_id": new_thread_id,
                             "requires_approval": new_requires,
                         }
+
+                elif name == "create_campaign":
+                    # 폼 prefill만 추출(빈 값 제거). DB 미접촉 — 카드를 띄우는 신호일 뿐.
+                    prefill = {
+                        k: v
+                        for k, v in args.items()
+                        if k in ("name", "objective", "total_budget_krw") and v
+                    }
+                    tool_msgs.append(
+                        ToolMessage(content="생성 폼을 준비했습니다.", tool_call_id=tool_id)
+                    )
+                    return {
+                        "messages": tool_msgs,
+                        "sub_results": new_sub,
+                        "thread_id": new_thread_id,
+                        "requires_approval": new_requires,
+                        "create_prefill": prefill,
+                    }
                 else:
                     result = SubagentResult(
                         action=Action.ANSWER,
@@ -265,6 +318,7 @@ def build_deep_agent_graph(
             "session_id": req.session_id or "",
             "context_ad_id": req.context_ad_id,
             "memory_context": req.memory_context,
+            "create_prefill": None,
         }
 
         config = {
@@ -329,6 +383,10 @@ def _state_to_result(state: _OState) -> SubagentResult:
             "generator": _compact_meta(gen_meta),
         },
     }
+
+    if state.get("create_prefill") is not None:
+        combined_meta["embed"] = "create_campaign"
+        combined_meta["prefill"] = state["create_prefill"]
 
     return SubagentResult(
         action=Action.ANSWER,
