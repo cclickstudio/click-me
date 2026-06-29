@@ -85,10 +85,15 @@ LLM이 폼/파라미터를 제안하더라도 안전 경계는 사람 승인과 
 | `INCREASE_BUDGET` | 3 | `live_diagnosis`→`finalize` | `ProposalActions` ✅있음 | `decision`(approve→execute) | — |
 | `DECREASE_BUDGET` | 1 | 〃 | 〃 | 〃 | — |
 | `PAUSE_CAMPAIGN` | 1 | 〃 | 〃 | 〃 | — |
-| `ACTIVATE_CAMPAIGN` | 3 | 〃 | 〃 | 〃 | 실과금 confirm 1줄(기존 `window.confirm` 패턴) |
+| `ACTIVATE_CAMPAIGN` | 3 | 〃 | 〃 +실과금 확인 항목 | 〃 | 프리뷰 내부 실과금 시작 확인(hash 결속) |
 | `REPLACE_CREATIVE` | 3 | 재생성 후보 | **신규 프리뷰 필요** | `approve`+`execute` | `selected_candidate_id`(교체 소재) |
 | `EXPAND_AUDIENCE` | 3 | 에스컬레이션 사다리 | **신규 프리뷰 필요** | `approve`+`execute` | 타깃 확장 파라미터 |
 | `CHANGE_BID_STRATEGY` | 3 | 에스컬레이션 사다리 | **신규 프리뷰 필요** | `approve`+`execute` | 입찰 전략 파라미터 |
+
+> **`ACTIVATE_CAMPAIGN` 실과금 확인 (프리뷰 내부).** 게재 시작은 과금이 0→시작되므로 프리뷰 안에 "지금부터 실제
+> 과금이 시작됩니다 — 이해" 확인 항목을 둔다. 확인 상태는 승인 제출 시 `proposal_hash`와 **함께** 전송되고,
+> 서버는 **미확인 또는 drift(표시값 변경)이면 승인을 거부**한다. 별도 ack 계약(트랙 S)이 아니라 **프리뷰 승인의
+> 한 필드**다 — §3 결속을 그대로 따른다.
 
 ---
 
@@ -104,7 +109,11 @@ LLM이 폼/파라미터를 제안하더라도 안전 경계는 사람 승인과 
 | `estimated_daily_spend_cap_krw` | int(KRW)\|null | **일 지출 상한**(예측 아님) | 없으면 `null`(0 대체 금지) |
 
 표시값 `cap × days` = "N일 기준 예상 최대 지출 / 지출 상한"(cap=상한 의미를 코드 주석에 명기). `null`·`0`·음수·
-`lifetime`/`unknown`이면 풀어쓰기를 **표시하지 않는다**(집행은 막지 않음 — 게이트는 프리뷰).
+`lifetime`/`unknown`이면 풀어쓰기를 **표시하지 않는다**.
+
+> **중요 — 집행 차단 사유 아님.** lifetime/지출정보 부족은 트랙 H에서 "셀프승인 부적격"이 아니라 **단지 지출
+> 풀어쓰기를 못 그리는 것**일 뿐이다. 집행은 **프리뷰 사람 승인으로 정상 진행**한다. 이 세 필드의 결측을 집행
+> 게이트로 쓰지 않는다(게이트는 오직 프리뷰 승인). (이전 트랙 S의 `unsupported_budget_basis` 차단 개념은 폐기.)
 
 ---
 
@@ -115,18 +124,25 @@ LLM이 폼/파라미터를 제안하더라도 안전 경계는 사람 승인과 
 ### P0 — 재사용 경계 확인 (리스크 낮음)
 - `ChatCardView`/`ProposalActions`/`sections`가 **일반 챗(`chat/page.tsx`)에 마운트**되는지 확인.
 - 임베드 가능한 폼/프리뷰/엔드포인트(CREATE·진단형)와 호출 payload를 매핑.
-- **종료 기준**: P1이 손댈 파일·컴포넌트·엔드포인트 경계가 문서로 고정됨.
+- **챗 `decision` 경로가 정식 `approval` route와 동일한 승인 상태를 만드는지 검증** — 같은 `ActionProposal`
+  영속·`approval_id`·감사(`audit_events`) 아티팩트가 생기는지 대조(§2 정책 논거의 전제). 어긋나면 P1 전에 메운다.
+- **종료 기준**: P1이 손댈 파일·컴포넌트·엔드포인트 경계가 문서로 고정되고, **챗=정식 승인 상태 동등성**이 확인됨.
 
 ### P1 — `CREATE_CAMPAIGN` 임베드 (리스크 중간, 의존: P0)
 - `CampaignForm` + `CreateProposalPreview`를 **챗 카드로 임베드** → `create-proposal` → `approve`+`execute`.
-  (가장 완성된 정식 플로우라 첫 타자.) LLM은 폼 prefill만, 최종 승인은 사람.
+  (가장 완성된 정식 플로우라 첫 타자. 단 폼 필드가 많고 prefill 검증이 있어 UX 리스크는 낮지 않다.) LLM은 폼
+  prefill만, 최종 승인은 사람.
 - §3 불변식 적용: 프리뷰=집행 결속, 서버 빌드 proposal, 사람 승인 필수.
-- **종료 기준**: 챗에서 폼 작성→프리뷰 승인으로 캠페인이 정식 경로와 동일하게 생성됨(PAUSED).
+- **종료 기준**: 챗에서 폼 작성→프리뷰 승인으로 캠페인이 정식 경로와 동일하게 생성됨(PAUSED). **LLM prefill은
+  사용자가 카드 안에서 수정 가능**하고, **서버 validation 실패가 카드 안에서 회복 가능**(에러 표시→수정→재제출,
+  챗 흐름 이탈 없이).
 
 ### P2 — 예산·상태 4종 (리스크 중간, 의존: P1)
 - `INCREASE`/`DECREASE`/`PAUSE`/`ACTIVATE` — spec3 `finalize`/`decision` + `ProposalActions` 재사용해 챗 카드로.
-  `ACTIVATE`는 실과금 confirm 1줄 유지. (선택) §7 지출 풀어쓰기 표시.
-- **종료 기준**: 4종이 챗 프리뷰 승인으로 집행됨. 부적격(lifetime/지출부족)은 서버가 안내.
+  `ACTIVATE`는 **프리뷰 내부에 실과금 시작 확인 항목**을 포함(§6) — 확인 상태를 `proposal_hash`와 함께 제출,
+  서버가 미확인·drift 시 승인 거부. (선택) §7 지출 풀어쓰기 표시.
+- **종료 기준**: 4종이 챗 프리뷰 승인으로 집행됨. lifetime/지출정보 부족은 **풀어쓰기 표시만 생략**하고 집행은
+  프리뷰 승인으로 정상(집행 차단 사유 아님 — §7).
 
 ### P3 — 나머지 3종 (리스크 중간~높음, 의존: P2)
 - `REPLACE_CREATIVE`(소재 후보 선택 연계) · `EXPAND_AUDIENCE` · `CHANGE_BID_STRATEGY`. 각 제안 빌더 + **신규 프리뷰**.
