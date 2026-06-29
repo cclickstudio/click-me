@@ -321,6 +321,8 @@ export default function ChatCampaignActionCard({ action }: { action: CampaignAct
 ```
 
 > **검증 항목(Task 0 식):** 구현 전 `api.management.campaigns()` 반환이 `{ campaigns: [...] }`이고 항목에 `campaign_id`/`name`/`status`가 있는지, `pause`/`activate` 반환 형태(`paused`/`serving`)가 위 가정과 맞는지 실제 소스로 확인하고 다르면 맞춘다.
+>
+> **디자인 노트:** 카드 `rounded-2xl`은 `CreateProposalPreview`·`ChatCreateCampaignCard`·챗 버블과 동일 라운딩이라 일관된다. 어긋나면 `CreateProposalPreview`의 radius/보더 톤을 따른다.
 
 - [ ] **Step 2: 린트·빌드** — `cd frontend && pnpm lint && pnpm build` → 통과(미사용 import 경고 없게).
 
@@ -403,7 +405,8 @@ git commit -m "add: P2 챗 campaign_action 카드 렌더 배선"
   2. **"캠페인 하나 중지해줘"**(이름 없음) → 카드에 **캠페인 선택기** 등장 → 선택 후 중지.
   3. **"이 캠페인 게재 시작해줘"** → **실과금 확인 체크박스** 보임, 체크 전엔 버튼 비활성 → 체크 후 게재. 크레딧/잔액 부족이면 사유 표시.
   4. **"이 캠페인 성과 어때?"** → 카드 안 뜨고 일반 답변(오발동 없음).
-- [ ] **Step 3: 회귀** — P1.5 생성("캠페인 만들어줘")·일반 management 질문이 여전히 정상인지(오케스트레이터 라우팅 회귀 없음).
-- [ ] **Step 4: 결과 기록.**
+- [ ] **Step 3: 승인 아티팩트 동등성(엄브렐러 §3)** — `/pause`·`/activate`는 기존 정식 엔드포인트라 내부에서 `approve`+`execute`를 수행하므로, 대시보드 경로와 **동일한 승인/감사 레코드**가 생긴다(같은 엔드포인트라 구조적으로 보장). 확인: DevTools Network에서 `/pause`(또는 `/activate`) 응답 `result`에 `approval_id`·`status`가 있는지, 대시보드(`/manage/campaigns`)에서 같은 조치를 했을 때와 동일한지 한 번 대조.
+- [ ] **Step 4: 회귀** — P1.5 생성("캠페인 만들어줘")·일반 management 질문이 여전히 정상인지(오케스트레이터 라우팅 회귀 없음).
+- [ ] **Step 5: 결과 기록.**
 
 > **P2b 예고(범위 밖):** INCREASE/DECREASE는 직접 엔드포인트가 없어 **proposal 빌더 신설 + 프리뷰 카드**(이미지의 "검토·승인 → 집행")가 필요 — 이 plan의 `manage_campaign` 툴·`ChatCampaignActionCard`·선택기를 재사용해 별도 plan에서 얹는다.
