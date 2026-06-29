@@ -113,10 +113,40 @@ export interface BeforeAfterItem {
   verdict: 'aligned' | 'overperformed' | 'underperformed' | 'unknown';
   rationale: string;
   interpretation?: string; // 보조 KPI 기반 결정론 해석 — 없으면 빈 문자열
+  pred_strong?: boolean | null; // 클릭 의향률 강함(≥20%) 통과 — 예측 없으면 null
+  act_strong?: boolean | null; // 실측 CTR 양호(≥1%) 통과 — 판정 불가면 null
+  purchase_pred_strong?: boolean | null; // 구매의도 강함(≥3.5/5) 통과 — 예측 없으면 null
+  purchase_act_strong?: boolean | null; // 실측 CVR 양호(≥2%) 통과 — CVR null(추적 전)·예측 미연결이면 null
 }
 export interface BeforeAfterResponse {
   items: BeforeAfterItem[];
   rate_limited?: string; // Meta 요청 한도 시 안내
+}
+
+// 베이스라인 앵커 — 집행된 광고의 예측↔실측 쌍(절대 비교 금지, 순위 정합에만 사용)
+export interface CalibrationAnchor {
+  campaign_id: string;
+  name: string;
+  source: string;
+  predicted_click_intent: number; // 0~1
+  actual_ctr: number; // 0~1
+  predicted_purchase_intent: number; // 1~5
+  actual_cvr: number | null; // 0~1 (추적 전이면 null)
+  predicted_rejection: number; // 0~1
+  actual_impressions: number;
+  actual_spend_krw: number;
+}
+export interface CalibrationSummary {
+  n: number;
+  concordance_click: number | null; // 예측 클릭의향률 vs 실측 CTR 순위 일치율(0~1)
+  concordance_purchase: number | null; // 예측 구매의도 vs 실측 CVR 순위 일치율(0~1)
+  unlock_threshold: number;
+  unlocked: boolean;
+}
+export interface CalibrationResponse {
+  anchors: CalibrationAnchor[];
+  summary: CalibrationSummary;
+  rate_limited?: string;
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -133,7 +163,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: "Unknown error" }));
-    throw new Error(err.detail ?? `HTTP ${res.status}`);
+    // detail이 dict(예: {issues:[...]})면 그대로 두면 "[object Object]"가 되니 읽히게 직렬화.
+    const d = (err as { detail?: unknown }).detail;
+    const msg =
+      typeof d === "string" ? d : d != null ? JSON.stringify(d) : `HTTP ${res.status}`;
+    throw new Error(msg);
   }
   return res.json();
 }
@@ -156,6 +190,7 @@ function buildSimForm(input: SimRunInput): FormData {
   if (input.product_category) form.append("product_category", input.product_category);
   if (input.ad_objective) form.append("ad_objective", input.ad_objective);
   if (input.service_class != null) form.append("service_class", String(input.service_class));
+  if (input.from_campaign_id) form.append("from_campaign_id", input.from_campaign_id);
   return form;
 }
 
@@ -167,11 +202,13 @@ function _campaignQuery(
   conversionValueKrw?: number | null,
   targetRoas?: number | null,
   datePreset?: DatePreset,
+  includeArchived?: boolean,
 ): string {
   const p = new URLSearchParams();
   if (conversionValueKrw) p.set("conversion_value_krw", String(conversionValueKrw));
   if (targetRoas) p.set("target_roas", String(targetRoas));
   if (datePreset && datePreset !== "maximum") p.set("date_preset", datePreset);
+  if (includeArchived) p.set("include_archived", "true");
   const q = p.toString();
   return q ? `?${q}` : "";
 }
@@ -430,6 +467,8 @@ export const api = {
     compareBoard: () => request<BoardResponse>("/management/compare/board"),
     // 집행 전(시뮬 예측) vs 후(실측) — ClickMe로 만든 캠페인별
     beforeAfter: () => request<BeforeAfterResponse>("/management/compare/before-after"),
+    calibrationAnchors: () =>
+      request<CalibrationResponse>("/management/calibration/anchors"),
     // 캠페인 생성 정책 — 최소예산(Meta 실시간)·특별광고카테고리·연령. 폼이 동적 검증에 사용.
     campaignPolicy: () =>
       request<{
@@ -444,9 +483,10 @@ export const api = {
       conversionValueKrw?: number | null,
       targetRoas?: number | null,
       datePreset?: DatePreset,
+      includeArchived?: boolean,
     ) =>
       request<CampaignsResponse>(
-        `/management/campaigns${_campaignQuery(conversionValueKrw, targetRoas, datePreset)}`,
+        `/management/campaigns${_campaignQuery(conversionValueKrw, targetRoas, datePreset, includeArchived)}`,
       ),
     campaign: (
       id: string,
@@ -537,6 +577,28 @@ export const api = {
         method: "POST",
         body: JSON.stringify(body),
       }),
+    // 기존 Meta 캠페인 타겟팅 정보 조회 — 시뮬레이터 사전 입력용
+    campaignTargeting: (campaignId: string) =>
+      request<{
+        campaign_id: string;
+        campaign_name: string;
+        objective: string;
+        age_min: number | null;
+        age_max: number | null;
+        gender: '' | 'M' | 'F';
+        ad_headline: string | null;
+        ad_body: string | null;
+        ad_image_url: string | null;
+        category_id: number;
+        service_class: number;
+        suggested_persona_count: number;
+      }>(`/management/campaigns/${campaignId}/targeting`),
+    // 기존 Meta 캠페인에 시뮬 역방향 연결
+    linkSimulation: (campaignId: string, simulationId: string) =>
+      request<{ campaign_id: string; simulation_id: string; linked: boolean }>(
+        `/management/campaigns/${campaignId}/link-simulation`,
+        { method: 'POST', body: JSON.stringify({ simulation_id: simulationId }) },
+      ),
     // 광고 소재 이미지 업로드 → image_hash (멀티파트, 무과금 자산 등록)
     uploadAdImage: (file: File) => {
       const form = new FormData();

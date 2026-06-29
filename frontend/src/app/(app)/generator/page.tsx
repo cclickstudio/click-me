@@ -1449,17 +1449,6 @@ export default function GeneratorPage() {
                       placeholder={"예: 전체적으로 더 밝고 활기찬 분위기로 바꿔주세요\n제품을 더 크고 선명하게 부각해주세요\n색상을 브랜드 컬러에 맞게 통일해주세요\n\n비워두면 시뮬레이션 개선 방향만 반영됩니다"}
                     />
                   </div>
-                  {improveData?.ad_asset_url && (
-                    <a
-                      href={`/chat?improve_s3_key=${encodeURIComponent(improveData.ad_asset_url)}&improve_sim_summary=${encodeURIComponent(improveData.summary)}&improve_product_name=${encodeURIComponent(improveData.product_name)}`}
-                      className="flex items-center gap-1.5 text-xs font-medium text-[#3182F6] hover:underline"
-                    >
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-                      </svg>
-                      CLIO 채팅에서 개선하기
-                    </a>
-                  )}
                 </>
               )}
 

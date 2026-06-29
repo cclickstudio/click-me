@@ -15,15 +15,21 @@ from typing import Any, Literal
 from urllib.parse import parse_qs, urlparse
 from uuid import UUID, uuid4
 
+import httpx
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, StreamingResponse
 from langsmith import traceable
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.routers.billing import DEMO_ORG_ID, get_billing_service
-from core.auth import get_current_user
+from core.auth import (
+    get_current_user,
+    optional_user,
+    require_user_org,
+    user_org_id,
+)
 from core.config import settings
 from core.db import get_db
 from core.models import (
@@ -40,6 +46,8 @@ from domain.management.adapters.generator.client import (
 )
 from domain.management.adapters.meta.client import MetaApiError
 from domain.management.adapters.meta.connection_flow import complete_meta_connection
+from domain.management.adapters.meta.connection_repository import MetaConnectionRepository
+from domain.management.adapters.meta.credentials import MetaCredentials
 from domain.management.adapters.meta.oauth import build_login_url
 from domain.management.adapters.meta.token_crypto import TokenCipher
 from domain.management.adapters.mock import MockAdPlatform, MockOrganicReader
@@ -55,6 +63,7 @@ from domain.management.approval import (
 from domain.management.assistant.agent import build_management_agent
 from domain.management.assistant.contracts import AskRequest, AskResult
 from domain.management.campaign_policy import get_campaign_policy, min_daily_budget_for
+from domain.management.comparison.calibration import CalibrationAnchor, build_summary
 from domain.management.comparison.service.before_after_service import compute_before_after
 from domain.management.comparison.service.comparison_service import ComparisonService
 from domain.management.contracts.enums import (
@@ -64,6 +73,7 @@ from domain.management.contracts.enums import (
     ExecutionMode,
 )
 from domain.management.contracts.fault_injection import FaultConfig, FaultMode
+from domain.management.contracts.platform import AdPlatformReader, AdPlatformWriter
 from domain.management.contracts.policy import (
     APPROVAL_POLICY_VERSION,
     DAILY_BUDGET_KRW,
@@ -139,6 +149,38 @@ _BUDGET = TenantBudgetRegistry(default_limit_krw=10_000_000)
 _executor: Executor | None = None
 
 
+# ── 멀티테넌시: 요청 단위 org 스코프 리더/라이터 의존성 ──────────────────────
+# mock 모드는 무인증·전역 mock 유지(테스트·데모 보존). live는 로그인 org의 Meta 연결
+# (토큰·계정)로만 동작 — 남의 전역 계정 노출 금지. 실제 자격증명 해석은 아래 _require_reader/
+# _require_writer(파일 뒤편, 런타임 호출)에서 한다.
+# 선택적 인증·org 해석은 core.auth 공용 함수 사용(라우터 복붙 제거 — 한 곳에서 규칙 변경).
+_optional_user = optional_user
+
+
+async def _request_reader(
+    user: User | None = Depends(_optional_user),
+    db: AsyncSession = Depends(get_db),
+) -> AdPlatformReader:
+    """요청 단위 리더 — mock이면 전역 mock(무인증), live면 로그인 org 연결 기반(미연결 409)."""
+    if getattr(settings, "use_mock", True):
+        return build_reader(settings)
+    if user is None:
+        raise HTTPException(401, "인증 토큰이 없습니다.")
+    return await _require_reader(db, await _require_org_id(user, db))
+
+
+async def _request_writer(
+    user: User | None = Depends(_optional_user),
+    db: AsyncSession = Depends(get_db),
+) -> AdPlatformWriter:
+    """요청 단위 라이터 — mock이면 전역 DRY_RUN(무인증), live면 로그인 org 연결 기반(미연결 409)."""
+    if getattr(settings, "use_mock", True):
+        return build_writer(settings)
+    if user is None:
+        raise HTTPException(401, "인증 토큰이 없습니다.")
+    return await _require_writer(db, await _require_org_id(user, db))
+
+
 async def _state_version(_ad_account_id: str) -> str:
     return "state_v1"  # 데모 고정 — 제안의 expected_state_version과 일치
 
@@ -166,13 +208,25 @@ def _is_sending_mode() -> bool:
     return _resolved_execution_mode() in (ExecutionMode.VALIDATE_ONLY, ExecutionMode.LIVE)
 
 
-def _get_executor() -> Executor:
+def _get_executor(writer=None) -> Executor:
     global _executor  # noqa: PLW0603
+    # LIVE는 명시 opt-in(use_mock=False + mode=live)일 때만 executor 게이트를 통과시킨다.
+    allowed = DEFAULT_ALLOWED_MODES
+    if _resolved_execution_mode() is ExecutionMode.LIVE:
+        allowed = (*DEFAULT_ALLOWED_MODES, ExecutionMode.LIVE)
+    if writer is not None:
+        # org 스코프(라이브) — org 연결 writer로 매 요청 새 executor. 멱등은 DB-백이라 무상태,
+        # 전역 싱글턴을 오염시키지 않는다(멀티테넌시 정합).
+        return Executor(
+            writer,
+            idempotency=build_idempotency_store(settings),
+            audit=_AUDIT_LOG,
+            budget_for=_BUDGET.for_tenant,
+            state_version_provider=_state_version,
+            current_policy_version=APPROVAL_POLICY_VERSION,
+            allowed_modes=allowed,
+        )
     if _executor is None:
-        # LIVE는 명시 opt-in(use_mock=False + mode=live)일 때만 executor 게이트를 통과시킨다.
-        allowed = DEFAULT_ALLOWED_MODES
-        if _resolved_execution_mode() is ExecutionMode.LIVE:
-            allowed = (*DEFAULT_ALLOWED_MODES, ExecutionMode.LIVE)
         _executor = Executor(
             build_writer(settings),
             idempotency=build_idempotency_store(settings),
@@ -230,7 +284,11 @@ async def run_detection(fault: str = "bid_loss"):
 
 
 @router.get("/anomaly/scan")
-async def anomaly_scan(conversion_value_krw: int | None = None, target_roas: float | None = None):
+async def anomaly_scan(
+    conversion_value_krw: int | None = None,
+    target_roas: float | None = None,
+    reader=Depends(_request_reader),
+):
     """실 캠페인 성과 이상 스캔 — 실제 캠페인을 돌며 성과 진단(ROAS 미달·전환 저조 등)을 모은다.
 
     데모(/run)는 고장주입이라 실 캠페인엔 못 쓴다. 이건 실 Meta 캠페인의 성과 이상을
@@ -244,7 +302,6 @@ async def anomaly_scan(conversion_value_krw: int | None = None, target_roas: flo
             "anomalies": [],
             "note": "실 캠페인 스캔은 live에서.",
         }
-    reader = build_reader(settings)
     now = datetime.now(UTC)
     try:
         infos = await reader.list_campaigns()
@@ -310,7 +367,8 @@ async def regenerate(
 ):
     """🅱 재생성 agent — 진단 수신 → 4-3 위임 생성 → guard → AWAITING_SELECTION."""
     org_id = await _require_org_id(user, db)
-    if body.diagnosis.tenant_id != str(org_id):
+    # 시연 진단(TENANT_ID 센티넬)은 누구나 자기 계정으로 재생성 허용 — 단 타 실 org 진단은 차단.
+    if body.diagnosis.tenant_id not in (str(org_id), TENANT_ID):
         raise HTTPException(403, "다른 조직의 진단으로 재생성할 수 없습니다.")
     ad_account = await _require_ad_account(db, org_id)
     agent = build_regeneration_agent()  # API 키 없으면 결정론 폴백
@@ -401,11 +459,21 @@ async def execute(
 ):
     """🅱 executor — 승인 후 4단계 재검증 + 멱등 실행. 모든 지출 단일 경로."""
     org_id = await _require_org_id(user, db)
-    if body.proposal.tenant_id != str(org_id):
-        raise HTTPException(403, "다른 조직의 제안은 실행할 수 없습니다.")
-    if body.approved_action.tenant_id != str(org_id):
-        raise HTTPException(403, "다른 조직의 승인은 실행할 수 없습니다.")
-    result = await _get_executor().execute(body.approved_action, body.proposal)
+    # 시연 제안(TENANT_ID 센티넬, 고장주입)은 org 체크 면제 + 항상 DRY_RUN — 데모 캠페인은
+    # 실 계정에 없어 실집행이 불가·불필요하다. 실 제안만 org 일치 강제 + 연결 writer로 집행.
+    is_demo = body.proposal.tenant_id == TENANT_ID
+    if not is_demo:
+        if body.proposal.tenant_id != str(org_id):
+            raise HTTPException(403, "다른 조직의 제안은 실행할 수 없습니다.")
+        if body.approved_action.tenant_id != str(org_id):
+            raise HTTPException(403, "다른 조직의 승인은 실행할 수 없습니다.")
+    # 시연·mock은 전역 DRY_RUN executor, 실 제안(live)은 로그인 org 연결 writer로 집행.
+    executor = (
+        _get_executor()
+        if is_demo or getattr(settings, "use_mock", True)
+        else _get_executor(await _require_writer(db, org_id))
+    )
+    result = await executor.execute(body.approved_action, body.proposal)
     if body.proposal.action_type == "CREATE_CAMPAIGN":
         try:
             await _record_created_campaign(db, body.proposal, result)
@@ -495,7 +563,8 @@ async def start_regen_job(
 ):
     """재생성 비동기 job 시작 → {job_id, status}. 무거운 생성은 백그라운드."""
     org_id = await _require_org_id(user, db)
-    if body.diagnosis.tenant_id != str(org_id):
+    # 시연 진단(TENANT_ID 센티넬)은 누구나 자기 계정으로 재생성 허용 — 단 타 실 org 진단은 차단.
+    if body.diagnosis.tenant_id not in (str(org_id), TENANT_ID):
         raise HTTPException(403, "다른 조직의 진단으로는 재생성할 수 없습니다.")
     ad_account = await _require_ad_account(db, org_id)  # /regenerate와 동일 — live면 fail-closed
     context = RemediationContext(
@@ -568,21 +637,6 @@ async def execution_history_endpoint(
 
 
 # ── 오가닉 vs 광고 비교 (🅰 comparison 도메인 노출) ──────────────────────
-# MockAdPlatform은 get_metrics 미구현(fetch_hourly_metrics만) → ComparisonService가
-# 요구하는 단일 스냅샷을 마지막(누적) 시간행으로 공급하는 얇은 어댑터로 우회한다.
-# 🅰가 MockAdPlatform.get_metrics를 추가하면 이 어댑터는 제거 가능.
-class _MockAdSnapshotReader:
-    """하루치 fetch_hourly_metrics의 마지막(누적) 스냅샷을 단일 지표로 반환."""
-
-    def __init__(self, daily_budget_krw: int = DAILY_BUDGET_KRW, seed: int = 42) -> None:
-        self._budget = daily_budget_krw
-        self._mock = MockAdPlatform(seed=seed)
-
-    async def get_metrics(self, campaign_id: str, since: datetime) -> MetricsSnapshot:
-        snaps = await self._mock.fetch_hourly_metrics(campaign_id, since, None, self._budget)
-        return snaps[-1]
-
-
 # 데모 보드 — (게시물 제목, 오가닉 post id, 광고 campaign id, 일예산). 예산 차이로
 # 광고 도달이 벌어져 통과/주의/미달이 고루 나오게 구성.
 _BOARD_DEMO: tuple[tuple[str, str, str, int], ...] = (
@@ -612,7 +666,7 @@ async def compare_one(post_id: str = "ig_demo_1", campaign_id: str = "camp_demo_
     제안 생성·집행은 🅱 — 여기는 분석 산출물(상세 리프트 + 권고)만 노출한다.
     비교는 매칭된 오가닉+부스트 쌍이 필요한 데모라 use_mock 무관하게 항상 mock 데이터.
     """
-    svc = ComparisonService(MockOrganicReader(), _MockAdSnapshotReader())
+    svc = ComparisonService(MockOrganicReader(), MockAdPlatform())
     report = await svc.compare_and_recommend(post_id, campaign_id, _today_utc())
     return report.model_dump(mode="json")
 
@@ -624,7 +678,7 @@ async def compare_board():
     since = _today_utc()
     rows = []
     for title, post_id, campaign_id, budget in _BOARD_DEMO:
-        svc = ComparisonService(organic_reader, _MockAdSnapshotReader(daily_budget_krw=budget))
+        svc = ComparisonService(organic_reader, MockAdPlatform(daily_budget_krw=budget))
         report = await svc.compare_and_recommend(post_id, campaign_id, since)
         rows.append(
             {
@@ -636,27 +690,21 @@ async def compare_board():
     return {"rows": rows}
 
 
-@router.get("/compare/before-after")
-async def compare_before_after(db: AsyncSession = Depends(get_db)):
-    """집행 전(시뮬 예측) vs 후(실측) — 실제 Meta 캠페인별.
+async def _campaign_links(
+    db: AsyncSession, org_id: UUID | None
+) -> tuple[dict[str, str], dict[str, tuple[str, str]]]:
+    """created_campaigns에서 meta_id→creative_ad_id, meta_id→(simulation_id, tenant_id) 매핑.
 
-    후=실 Meta 실측(list_campaigns→get_metrics→RealOutcome). 전=PredictionReader(지금 Mock 슬롯,
-    추후 실 시뮬). 예측·실측 스케일이 달라 환산 없이 나란히 + 정성 판정(compute_before_after).
-    예측 링크(creative_ad_id)는 created_campaigns에서 meta_id로 매핑(없으면 시뮬 미연결).
+    live(org_id 주어짐)는 tenant=org 행만 로드 — 타 org 행을 meta_id로 잘못 매칭할 여지를 차단.
+    mock(org_id=None)은 전체(데모). 매핑 실패는 빈 dict(실측은 그대로 보여줌).
     """
-    reader = build_reader(settings)
-    pred_reader = build_prediction_reader(settings)
-    now = datetime.now(UTC)
-    # meta_campaign_id → creative_ad_id(실측 귀속) / (simulation_id, tenant_id)(예측 키)
+    stmt = select(CreatedCampaign).where(CreatedCampaign.deleted_at.is_(None))
+    if org_id is not None:
+        stmt = stmt.where(CreatedCampaign.tenant_id == str(org_id))
     creative_by_meta: dict[str, str] = {}
     sim_by_meta: dict[str, tuple[str, str]] = {}
     try:
-        rows = (
-            (await db.execute(select(CreatedCampaign).where(CreatedCampaign.deleted_at.is_(None))))
-            .scalars()
-            .all()
-        )
-        for r in rows:
+        for r in (await db.execute(stmt)).scalars().all():
             if not r.meta_campaign_id:
                 continue
             if r.creative_ad_id:
@@ -664,8 +712,30 @@ async def compare_before_after(db: AsyncSession = Depends(get_db)):
             if r.simulation_id:
                 sim_by_meta[str(r.meta_campaign_id)] = (str(r.simulation_id), r.tenant_id)
     except Exception:  # noqa: BLE001 — 매핑 실패해도 실측은 보여준다
-        creative_by_meta = {}
-        sim_by_meta = {}
+        return {}, {}
+    return creative_by_meta, sim_by_meta
+
+
+@router.get("/compare/before-after")
+async def compare_before_after(
+    reader=Depends(_request_reader),
+    user: User | None = Depends(_optional_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """집행 전(시뮬 예측) vs 후(실측) — 실제 Meta 캠페인별(로그인 org 연결 계정).
+
+    후=실 Meta 실측(list_campaigns→get_metrics→RealOutcome). 전=실 시뮬(SimPredictionReader).
+    예측·실측 스케일이 달라 환산 없이 나란히 + 정성 판정(compute_before_after).
+    예측 링크는 로그인 org의 created_campaigns에서 meta_id로 매핑(없으면 시뮬 미연결).
+    """
+    pred_reader = build_prediction_reader(settings)
+    now = datetime.now(UTC)
+    org_id = (
+        await _require_org_id(user, db)
+        if user is not None and not getattr(settings, "use_mock", True)
+        else None
+    )
+    creative_by_meta, sim_by_meta = await _campaign_links(db, org_id)
     items: list[dict] = []
     try:
         campaigns = await reader.list_campaigns()
@@ -676,19 +746,193 @@ async def compare_before_after(db: AsyncSession = Depends(get_db)):
         return {"items": []}
     except Exception:  # noqa: BLE001 — 그 외 목록 실패면 빈 결과
         return {"items": []}
-    for c in campaigns:
+
+    async def _row(c) -> dict | None:
         cid = c.campaign_id
-        try:
-            actual = _real_outcome(
-                await reader.get_metrics(cid, now), cid, creative_by_meta.get(cid)
-            )
-        except Exception:  # noqa: BLE001 — 캠페인 1건 실측 실패가 전체를 막지 않게
-            continue
+        m, _blocked = await _safe_meta(reader.get_metrics(cid, now))
+        if m is None:  # 캠페인 1건 실측 실패/권한거부는 건너뜀(전체를 막지 않게)
+            return None
         link = sim_by_meta.get(cid)
         prediction = await pred_reader.get_prediction(link[0], link[1]) if link else None
-        ba = compute_before_after(cid, c.name, prediction, actual)
-        items.append(ba.model_dump(mode="json"))
+        actual = _real_outcome(m, cid, creative_by_meta.get(cid))
+        return compute_before_after(cid, c.name, prediction, actual).model_dump(mode="json")
+
+    # 캠페인 단위 병렬 — 순차 N회 Meta 왕복이 직렬로 쌓이지 않게(_list_campaigns_real과 동일).
+    rows = await asyncio.gather(*(_row(c) for c in campaigns))
+    items = [r for r in rows if r is not None]
     return {"items": items}
+
+
+@router.get("/campaigns/{campaign_id}/targeting")
+async def get_campaign_targeting(
+    campaign_id: str,
+    reader=Depends(_request_reader),
+):
+    """Meta 캠페인 타겟팅 정보 — 시뮬레이터 사전 입력용.
+
+    objective·age_min·age_max·gender를 반환한다. 시뮬레이터 입력 폼에 그대로 매핑된다.
+    """
+    return await reader.get_campaign_targeting(campaign_id)
+
+
+class _LinkSimBody(BaseModel):
+    simulation_id: str
+
+
+@router.post("/campaigns/{campaign_id}/link-simulation")
+async def link_simulation(
+    campaign_id: str,
+    body: _LinkSimBody,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """기존 Meta 캠페인에 시뮬 결과를 역방향 연결 — management_created_campaigns에 기록.
+
+    ClickMe 밖에서 만든 캠페인도 시뮬 예측과 성과 비교가 가능해진다.
+    이미 연결된 캠페인은 simulation_id를 덮어쓴다(재시뮬 시).
+    """
+    org_id = await _require_org_id(user, db)
+    try:
+        sim_uuid = UUID(body.simulation_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="simulation_id 형식 오류") from exc
+    owned = await db.scalar(
+        text("SELECT 1 FROM simulations WHERE id = :sid AND organization_id = :org"),
+        {"sid": str(sim_uuid), "org": str(org_id)},
+    )
+    if not owned:
+        raise HTTPException(status_code=422, detail="해당 시뮬을 찾을 수 없거나 권한이 없습니다.")
+    existing = await db.scalar(
+        select(CreatedCampaign).where(
+            CreatedCampaign.meta_campaign_id == campaign_id,
+            CreatedCampaign.tenant_id == str(org_id),
+            CreatedCampaign.deleted_at.is_(None),
+        )
+    )
+    if existing:
+        existing.simulation_id = str(sim_uuid)
+    else:
+        conn = await db.scalar(
+            select(MetaConnection).where(
+                MetaConnection.organization_id == str(org_id),
+                MetaConnection.deleted_at.is_(None),
+            )
+        )
+        ad_account_id = conn.ad_account_id if conn else ""
+        db.add(
+            CreatedCampaign(
+                tenant_id=str(org_id),
+                meta_campaign_id=campaign_id,
+                simulation_id=str(sim_uuid),
+                name=campaign_id,
+                objective="unknown",
+                ad_account_id=ad_account_id,
+                daily_budget_krw=0,
+                status="linked",
+                execution_mode="manual_link",
+            )
+        )
+    await db.commit()
+    return {"campaign_id": campaign_id, "simulation_id": str(sim_uuid), "linked": True}
+
+
+@router.get("/campaigns/{campaign_id}/creative-image")
+async def proxy_creative_image(
+    campaign_id: str,
+    reader=Depends(_request_reader),
+):
+    """Meta 크리에이티브 이미지 프록시 — 브라우저에서 직접 접근 불가한 fbcdn URL을 서버가 중계.
+
+    Meta CDN(fbcdn.net)은 CORS 제한과 세션 만료로 브라우저 직접 로드가 막힌다.
+    백엔드가 이미지를 받아 Content-Type 그대로 스트림으로 반환한다.
+    """
+    creatives = await reader.get_creatives(campaign_id)
+    image_url: str | None = None
+    for c in creatives:
+        url = c.image_url or c.thumbnail_url  # leads 광고는 image_url=None, thumbnail_url만 있음
+        if url:
+            image_url = url
+            break
+    if not image_url:
+        raise HTTPException(
+            status_code=404, detail="이미지 없음 — 크리에이티브에 이미지가 설정되지 않았습니다."
+        )
+    try:
+        async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+            resp = await client.get(image_url)
+        if resp.status_code != 200:
+            raise HTTPException(status_code=502, detail="Meta 이미지 조회 실패")
+        content_type = resp.headers.get("content-type", "image/jpeg")
+        return StreamingResponse(
+            iter([resp.content]),
+            media_type=content_type,
+            headers={"Cache-Control": "public, max-age=3600"},
+        )
+    except httpx.RequestError as exc:
+        raise HTTPException(status_code=502, detail="Meta 이미지 네트워크 오류") from exc
+
+
+@router.get("/calibration/anchors")
+async def calibration_anchors(
+    reader=Depends(_request_reader),
+    user: User | None = Depends(_optional_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """베이스라인 앵커 자동 수집 — 연결된(시뮬↔캠페인) 광고의 예측↔실측 쌍 + 방향성 정합.
+
+    compare와 동일 연결 키(로그인 org created_campaigns.simulation_id → SimPredictionReader).
+    노출 0·미연결은 제외(판정 불가). 절대 환산 없이 순위 일치율(concordance)만 계산.
+    별도 영속 없이 매번 모으므로, 연결 캠페인이 늘면 앵커도 자동 누적된다.
+    """
+    pred_reader = build_prediction_reader(settings)
+    now = datetime.now(UTC)
+    org_id = (
+        await _require_org_id(user, db)
+        if user is not None and not getattr(settings, "use_mock", True)
+        else None
+    )
+    _, sim_by_meta = await _campaign_links(db, org_id)
+
+    empty = {"anchors": [], "summary": build_summary([]).model_dump(mode="json")}
+    try:
+        campaigns = await reader.list_campaigns()
+    except MetaApiError as exc:
+        if exc.is_rate_limited:
+            return {**empty, "rate_limited": "Meta 요청 한도 — 잠시 후 다시 시도하세요."}
+        return empty
+    except Exception:  # noqa: BLE001
+        return empty
+
+    async def _anchor(c) -> CalibrationAnchor | None:
+        link = sim_by_meta.get(c.campaign_id)
+        if not link:
+            return None
+        prediction = await pred_reader.get_prediction(link[0], link[1])
+        if prediction is None:
+            return None
+        m, _blocked = await _safe_meta(reader.get_metrics(c.campaign_id, now))
+        if m is None or m.impressions == 0:  # 실측 실패·권한거부·노출 0은 판정 불가 — 제외
+            return None
+        return CalibrationAnchor(
+            campaign_id=c.campaign_id,
+            name=c.name,
+            source=prediction.source,
+            predicted_click_intent=prediction.click_intent_rate,
+            actual_ctr=m.ctr,
+            predicted_purchase_intent=prediction.purchase_intent,
+            actual_cvr=m.cvr,
+            predicted_rejection=prediction.rejection_rate,
+            actual_impressions=m.impressions,
+            actual_spend_krw=m.spend_krw,
+        )
+
+    # 캠페인 단위 병렬 — 순차 Meta 왕복 누적 방지.
+    collected = [a for a in await asyncio.gather(*(_anchor(c) for c in campaigns)) if a is not None]
+    summary = build_summary(collected)
+    return {
+        "anchors": [a.model_dump(mode="json") for a in collected],
+        "summary": summary.model_dump(mode="json"),
+    }
 
 
 _assistant = None
@@ -723,6 +967,42 @@ async def kb_refresh() -> dict:
 
     ingested = await ingest()
     return {"ok": True, "ingested_chunks": ingested}
+
+
+@router.post("/kb/eval/generate")
+async def kb_eval_generate(limit: int = 50) -> dict:
+    """KB 청크에서 QA쌍 생성 — LLM(gpt-4o-mini)으로 질문 자동 생성, DB 저장.
+
+    멱등: 이미 생성된 (source, title) 조합은 스킵.
+    limit: 최대 청크 수 (기본 50, 총 64청크 기준 모두 커버).
+    """
+    from domain.management.assistant.rag_eval import generate_qa_pairs  # noqa: PLC0415
+
+    created = await generate_qa_pairs(limit=limit)
+    return {"ok": True, "created": created}
+
+
+@router.get("/kb/eval/run")
+async def kb_eval_run(k: int = 5) -> dict:
+    """저장된 QA쌍으로 RAG 평가 실행 — Hit Rate@k, MRR, Context Precision.
+
+    사전조건: POST /kb/eval/generate로 QA쌍 생성 필요.
+    """
+    from domain.management.assistant.rag_eval import evaluate  # noqa: PLC0415
+
+    return await evaluate(k=k)
+
+
+@router.get("/kb/eval/faithfulness")
+async def kb_eval_faithfulness(n: int = 30) -> dict:
+    """LLM as Judge — 에이전트 응답의 KB 근거 충실도(faithfulness) 측정.
+
+    사전조건: POST /kb/eval/generate로 QA쌍 생성 필요.
+    목표 기준: ≥ 0.85 발표 자료 기재 가능, 0.70~0.84 개선 여지, < 0.70 프로덕션 미달.
+    """
+    from domain.management.assistant.rag_eval import evaluate_faithfulness  # noqa: PLC0415
+
+    return await evaluate_faithfulness(n=n)
 
 
 # ── 캠페인 목록·성과 대시보드 (🅰 reader 영역 데모 노출) ──────────────────
@@ -861,30 +1141,84 @@ def _blocked_summary() -> dict:
     }
 
 
+async def _reconcile_deleted_campaigns(
+    db: AsyncSession, org_id: UUID | None, live_campaign_ids: set[str]
+) -> None:
+    """Meta에 없는(외부 삭제된) 적재 캠페인을 소프트삭제로 동기화 — 양방향 삭제(Meta→앱·DB).
+
+    Meta Ads Manager에서 직접 삭제하면 앱 미경유라 DB 기록이 '활성'으로 남는다. 목록을
+    성공적으로 받아온 시점에, 이 계정의 활성 기록 중 Meta 목록에 없는 것을 deleted_at 처리.
+    org_id로 로그인 org 연결 계정만 스코프(전역 lookup 금지 — 타 org 캠페인 오삭제 방지).
+    live_campaign_ids는 '보관 포함' 전체 id여야 한다 — 보관(미삭제)을 외부삭제로 오인하지 않게.
+    """
+    if org_id is None:
+        return  # org 불명이면 미수행(크로스테넌트 오삭제 방지)
+    conn = await db.scalar(select(MetaConnection).where(MetaConnection.organization_id == org_id))
+    if conn is None or not conn.ad_account_id:
+        return
+    rows = (
+        (
+            await db.execute(
+                select(CreatedCampaign).where(
+                    CreatedCampaign.tenant_id == str(org_id),
+                    CreatedCampaign.ad_account_id == conn.ad_account_id,
+                    CreatedCampaign.meta_campaign_id.is_not(None),
+                    CreatedCampaign.deleted_at.is_(None),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    changed = False
+    for r in rows:
+        if r.meta_campaign_id not in live_campaign_ids:
+            r.deleted_at = func.now()
+            changed = True
+    if changed:
+        await db.commit()
+
+
 async def _list_campaigns_real(
+    reader,
     conversion_value_krw: int | None = None,
     target_roas: float | None = None,
     date_preset: str = "maximum",
+    db: AsyncSession | None = None,
+    include_archived: bool = False,
+    org_id: UUID | None = None,
 ) -> dict:
     """실연동 — Meta 캠페인 목록 + 캠페인별 실측 요약. date_preset=조회 기간(전체/30일/이번달).
 
+    reader는 호출자(로그인 org 연결)가 주입 — 멀티테넌시 정합(전역 settings 계정 금지).
+    include_archived=True면 보관/삭제 캠페인도 '삭제됨'으로 포함(과거 데이터 조회용).
     계정 자금·캠페인별 지표는 권한 거부에 안전하게 감싸, 한 부분의 권한이 없어도 화면을
     깨지 않고 그 부분만 '권한 없음'(account_unavailable·metrics_status)으로 표기한다.
+    db가 주어지면 외부(Meta) 삭제분을 DB에 소프트삭제로 동기화한다(양방향 삭제).
     """
-    reader = build_reader(settings)
     since = _today_utc()
     # 목록·계정 자금 병렬. 자금은 권한 거부가 잦아 _safe_meta로 격리(목록 권한 에러는 상위로 전파).
     infos, (funding, funding_blocked) = await asyncio.gather(
-        reader.list_campaigns(),
+        reader.list_campaigns(include_archived),
         _safe_meta(reader.get_account_funding()),
     )
-    # 캠페인별 조회기간 지표 — 권한 거부면 해당 캠페인만 (None, True).
-    metric_pairs = await asyncio.gather(
-        *(
-            _safe_meta(reader.get_metrics(c.campaign_id, since, date_preset=date_preset))
-            for c in infos
+    # 외부(Meta) 삭제분 → DB 소프트삭제 동기화(양방향 삭제, 로그인 org만).
+    # 비교 id는 '보관 포함' 전체로 — 보관(미삭제)을 외부삭제로 오인해 링크가 끊기지 않게.
+    if db is not None and org_id is not None:
+        recon_ids = (
+            {info.campaign_id for info in infos}
+            if include_archived
+            else {c.campaign_id for c in await reader.list_campaigns(include_archived=True)}
         )
+        await _reconcile_deleted_campaigns(db, org_id, recon_ids)
+    # 캠페인별 조회기간 지표 — 계정 단위 level=campaign 1콜(+페이징)로 N+1 제거.
+    # 권한 거부는 배치 전체가 막힘(계정 insights 권한은 균일) → 전 캠페인 (None, True).
+    ids = [c.campaign_id for c in infos]
+    metrics_map, metrics_blocked = await _safe_meta(
+        reader.get_metrics_by_campaign(ids, since, date_preset=date_preset)
     )
+    metrics_map = metrics_map or {}
+    metric_pairs = [(metrics_map.get(cid), metrics_blocked) for cid in ids]
     # 운영 신호는 조회기간과 분리한 고정 윈도로 — 소진율=오늘 지출÷일예산, 노출 피로=최근 7일 빈도.
     # 지표를 읽은 active만 today·last_7d 추가 조회(권한 거부·비활성은 건너뜀).
     today_spend = [0] * len(infos)
@@ -893,28 +1227,20 @@ async def _list_campaigns_real(
         i for i, c in enumerate(infos) if c.state == CampaignState.ACTIVE and not metric_pairs[i][1]
     ]
     if elig:
-        today_pairs, week_pairs = await asyncio.gather(
-            asyncio.gather(
-                *(
-                    _safe_meta(reader.get_metrics(infos[i].campaign_id, since, date_preset="today"))
-                    for i in elig
-                )
-            ),
-            asyncio.gather(
-                *(
-                    _safe_meta(
-                        reader.get_metrics(infos[i].campaign_id, since, date_preset="last_7d")
-                    )
-                    for i in elig
-                )
-            ),
+        elig_ids = [infos[i].campaign_id for i in elig]
+        (today_map, _t_blocked), (week_map, _w_blocked) = await asyncio.gather(
+            _safe_meta(reader.get_metrics_by_campaign(elig_ids, since, date_preset="today")),
+            _safe_meta(reader.get_metrics_by_campaign(elig_ids, since, date_preset="last_7d")),
         )
-        for k, i in enumerate(elig):
-            tm, t_blocked = today_pairs[k]
-            wm, w_blocked = week_pairs[k]
-            if tm is not None and not t_blocked:
+        today_map = today_map or {}
+        week_map = week_map or {}
+        for i in elig:
+            cid = infos[i].campaign_id
+            tm = today_map.get(cid)
+            wm = week_map.get(cid)
+            if tm is not None:
                 today_spend[i] = tm.spend_krw
-            if wm is not None and not w_blocked:
+            if wm is not None:
                 freq_7d[i] = wm.frequency
     out = []
     any_blocked = False
@@ -1008,6 +1334,7 @@ async def _campaign_diagnosis(
 
 
 async def _get_campaign_real(
+    reader,
     campaign_id: str,
     conversion_value_krw: int | None = None,
     target_roas: float | None = None,
@@ -1015,12 +1342,13 @@ async def _get_campaign_real(
 ) -> dict:
     """실연동 — 캠페인 상세(시간별 실측 + 기대곡선 + 요약 + 성과 미달 진단).
 
-    예산(일/총)·상태는 목록에서, 지표 묶음은 권한 거부에 안전하게 감싸 분리한다 —
-    지표 권한이 없으면 상세 수치만 '권한 없음'으로 비우고 화면은 유지(budget·이름은 표시).
+    reader는 호출자(로그인 org 연결)가 주입 — 멀티테넌시 정합. 예산(일/총)·상태는 목록에서,
+    지표 묶음은 권한 거부에 안전하게 감싸 분리한다 — 지표 권한이 없으면 상세 수치만
+    '권한 없음'으로 비우고 화면은 유지(budget·이름은 표시).
     """
-    reader = build_reader(settings)
     today = _today_utc()
-    campaigns = await reader.list_campaigns()
+    # 보관/삭제 캠페인 상세도 열 수 있게 archived 포함 조회(상세는 by-id라 데이터는 그대로 조회됨).
+    campaigns = await reader.list_campaigns(include_archived=True)
     info = next((c for c in campaigns if c.campaign_id == campaign_id), None)
     if info is None:
         raise HTTPException(status_code=404, detail=f"캠페인 없음: {campaign_id}")
@@ -1085,16 +1413,33 @@ async def list_campaigns(
     conversion_value_krw: int | None = None,
     target_roas: float | None = None,
     date_preset: str = "maximum",
+    include_archived: bool = False,
+    user: User | None = Depends(_optional_user),
+    db: AsyncSession = Depends(get_db),
 ):
     """캠페인 목록 + 캠페인별 성과 요약 (단일 창구 대시보드).
 
-    use_mock=False면 Meta 실측, True면 데모 합성. CVR은 실모드에선 전환 추적 전까지 None.
-    conversion_value_krw(전환 1건 가치) 입력 시 구매 외 전환의 ROAS를 추정해 채운다.
+    live는 로그인 org의 Meta 연결 계정만 보여준다(멀티테넌시 정합 — 전역 settings 계정 금지).
+    비로그인·미연결 org는 빈 목록 + 안내(남의 계정 노출 금지). mock은 무인증 데모 유지.
+    include_archived=True면 보관/삭제 캠페인도 '삭제됨'으로 포함(과거 데이터 조회용).
+    목록 조회 시 외부(Meta) 삭제분을 DB에 소프트삭제로 동기화한다(양방향 삭제).
     """
     if not getattr(settings, "use_mock", True):
+        if user is None:
+            return {"campaigns": [], "source": "live", "auth_error": "로그인이 필요합니다."}
+        org_id = await _require_org_id(user, db)
+        reader = await _resolve_reader(db, org_id)
+        if reader is None:
+            return {"campaigns": [], "source": "live", "not_connected": _NOT_CONNECTED_MSG}
         try:
             return await _list_campaigns_real(
-                conversion_value_krw, target_roas, _valid_preset(date_preset)
+                reader,
+                conversion_value_krw,
+                target_roas,
+                _valid_preset(date_preset),
+                db,
+                include_archived,
+                org_id=org_id,
             )
         except MetaApiError as exc:
             # 토큰 만료 등 인증 오류는 화면을 깨지 말고 '재연결 필요'로 안내(빈 목록 + auth_error).
@@ -1161,34 +1506,36 @@ def _real_outcome(m: MetricsSnapshot, campaign_id: str, creative_id: str | None)
 
 
 @router.get("/campaigns/{campaign_id}/outcome")
-async def get_campaign_outcome(campaign_id: str, creative_id: str | None = None):
+async def get_campaign_outcome(
+    campaign_id: str, creative_id: str | None = None, reader=Depends(_request_reader)
+):
     """집행 후 실측 성과(RealOutcome) — 시뮬 예측 vs 실측 캘리브레이션 소비용 seam.
 
     wiring 경유라 use_mock=False면 Meta 실측, True면 데모. creative_id는 집행한 크리에이티브
     귀속(생성→집행 경로가 stamp; 없으면 None).
     """
-    m = await build_reader(settings).get_metrics(campaign_id, _today_utc())
+    m = await reader.get_metrics(campaign_id, _today_utc())
     return _real_outcome(m, campaign_id, creative_id).model_dump(mode="json")
 
 
 @router.get("/campaigns/{campaign_id}/platforms")
-async def get_campaign_platforms(campaign_id: str):
+async def get_campaign_platforms(campaign_id: str, reader=Depends(_request_reader)):
     """게재 플랫폼별(FB/IG 등) 노출·클릭·지출·도달 분해 (publisher_platform)."""
-    rows = await build_reader(settings).get_platform_breakdown(campaign_id, _today_utc())
+    rows = await reader.get_platform_breakdown(campaign_id, _today_utc())
     return {"platforms": [r.model_dump(mode="json") for r in rows]}
 
 
 @router.get("/campaigns/{campaign_id}/demographics")
-async def get_campaign_demographics(campaign_id: str):
+async def get_campaign_demographics(campaign_id: str, reader=Depends(_request_reader)):
     """연령×성별(age,gender) 노출·클릭·지출·도달 분해."""
-    rows = await build_reader(settings).get_demographic_breakdown(campaign_id, _today_utc())
+    rows = await reader.get_demographic_breakdown(campaign_id, _today_utc())
     return {"demographics": [r.model_dump(mode="json") for r in rows]}
 
 
 @router.get("/campaigns/{campaign_id}/creatives")
-async def get_campaign_creatives(campaign_id: str):
+async def get_campaign_creatives(campaign_id: str, reader=Depends(_request_reader)):
     """캠페인 대표 크리에이티브 — 광고 시안 이름·썸네일."""
-    rows = await build_reader(settings).get_creatives(campaign_id)
+    rows = await reader.get_creatives(campaign_id)
     return {"creatives": [r.model_dump(mode="json") for r in rows]}
 
 
@@ -1200,11 +1547,7 @@ class KpiOverrideBody(BaseModel):
     roas: float | None = None  # 투자수익률 배수 (수동 추정)
 
 
-async def _resolve_org_id(user: User, db: AsyncSession) -> UUID | None:
-    """로그인 사용자의 소속 조직 — 없으면 None."""
-    return await db.scalar(
-        select(OrganizationMember.organization_id).where(OrganizationMember.user_id == user.id)
-    )
+_resolve_org_id = user_org_id  # core.auth 공용(없으면 None) — 라우터 복붙 제거
 
 
 @router.get("/kpi-overrides")
@@ -1276,7 +1619,7 @@ async def delete_campaign(
     """
     org_id = await _require_org_id(user, db)
     await _require_owned_campaign(db, org_id, campaign_id)
-    writer = build_writer(settings)
+    writer = await _require_writer(db, org_id)
     result = await writer.delete_campaign(campaign_id, idem_key=f"del_{campaign_id}")
     status = result.status.value if hasattr(result.status, "value") else str(result.status)
     if status == "success":
@@ -1298,11 +1641,19 @@ async def get_campaign(
     conversion_value_krw: int | None = None,
     target_roas: float | None = None,
     date_preset: str = "maximum",
+    user: User | None = Depends(_optional_user),
+    db: AsyncSession = Depends(get_db),
 ):
-    """캠페인 상세 — 시간별 노출(기대 vs 실측, 이상구간) + 요약 KPI. date_preset=조회 기간."""
+    """캠페인 상세 — 시간별 노출(기대 vs 실측, 이상구간) + 요약 KPI. date_preset=조회 기간.
+
+    live는 로그인 org 연결 계정 기준(멀티테넌시 정합) — 미연결이면 409.
+    """
     if not getattr(settings, "use_mock", True):
+        if user is None:
+            raise HTTPException(401, "인증 토큰이 없습니다.")
+        reader = await _require_reader(db, await _require_org_id(user, db))
         return await _get_campaign_real(
-            campaign_id, conversion_value_krw, target_roas, _valid_preset(date_preset)
+            reader, campaign_id, conversion_value_krw, target_roas, _valid_preset(date_preset)
         )
     for i, (cid, name, state, budget, fault) in enumerate(_CAMPAIGNS_DEMO):
         if cid == campaign_id:
@@ -1392,9 +1743,9 @@ class CreateCampaignRequest(BaseModel):
 
 
 @router.get("/campaign-policy")
-async def campaign_policy():
+async def campaign_policy(reader=Depends(_request_reader)):
     """캠페인 생성 정책 — 최소 일예산(Meta 실시간)·특별광고카테고리·연령. 폼이 동적 검증에 사용."""
-    return await get_campaign_policy(build_reader(settings))
+    return await get_campaign_policy(reader)
 
 
 # 미리보기 포맷 — 페이스북 피드 + 인스타그램(자동 배치라 둘 다 노출됨).
@@ -1405,9 +1756,10 @@ _PREVIEW_FORMATS = ["MOBILE_FEED_STANDARD", "INSTAGRAM_STANDARD"]
 async def upload_ad_image(
     file: UploadFile = File(...),
     user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
     """광고 소재 이미지를 Meta(/adimages)에 업로드 → image_hash 반환. 무과금(자산 등록)."""
-    writer = build_writer(settings)
+    writer = await _require_writer(db, await _require_org_id(user, db))
     data = await file.read()
     image_hash = await writer.upload_image(
         _asset_config(), data, file.filename or "ad.jpg", idem_key=f"img_{uuid4().hex[:8]}"
@@ -1423,9 +1775,8 @@ class AdPreviewRequest(BaseModel):
 
 
 @router.post("/ad-preview")
-async def ad_preview(body: AdPreviewRequest):
+async def ad_preview(body: AdPreviewRequest, writer=Depends(_request_writer)):
     """샘플 시안 — 업로드 이미지로 FB 피드·인스타 미리보기(Meta 호스팅 iframe). 무과금(읽기)."""
-    writer = build_writer(settings)
     page_id = getattr(settings, "meta_page_id", None)
     if not page_id:
         raise HTTPException(status_code=422, detail="META_PAGE_ID 미설정 — 미리보기 불가.")
@@ -1444,7 +1795,7 @@ async def create_campaign_proposal(
     """폼 입력 → CREATE_CAMPAIGN 제안(Tier 3) 패키징."""
     org_id = await _require_org_id(user, db)
     # Meta 최소 일예산 정책 — Meta에서 실시간 조회(자동 최신화). 미달이면 광고세트 거부 전 차단.
-    policy = await get_campaign_policy(build_reader(settings))
+    policy = await get_campaign_policy(await _require_reader(db, org_id))
     min_budget = min_daily_budget_for(body.objective, policy)
     if body.daily_budget_krw < min_budget:
         raise HTTPException(
@@ -1566,20 +1917,20 @@ async def from_candidate(
     except Exception as exc:  # noqa: BLE001 — S3 유실/손상은 입력 문제로 거부
         raise HTTPException(status_code=422, detail="후보 이미지를 읽을 수 없습니다.") from exc
 
-    writer = build_writer(settings)
+    org_id = await _require_org_id(user, db)
+    writer = await _require_writer(db, org_id)
     image_hash = await _upload_creative_or_502(
         writer, _asset_config(name=body.name), image_bytes, "candidate.png"
     )
     if _is_sending_mode() and not image_hash:
         raise HTTPException(status_code=502, detail="Meta 이미지 업로드 실패.")
 
-    policy = await get_campaign_policy(build_reader(settings))
+    policy = await get_campaign_policy(await _require_reader(db, org_id))
     min_budget = min_daily_budget_for(body.objective, policy)
     if body.daily_budget_krw < min_budget:
         raise HTTPException(status_code=422, detail=f"최소 일예산은 ₩{min_budget:,}입니다.")
 
     now = datetime.now(UTC)
-    org_id = await _require_org_id(user, db)
     ad_account = await _require_ad_account(db, org_id)
     tenant_id = str(org_id)
     genders = {"all": (), "male": (1,), "female": (2,)}[body.gender]
@@ -1653,7 +2004,9 @@ async def from_candidate(
 
 
 # 우리 S3 영속 네임스페이스 — 이 prefix 키만 핸드오프 집행 허용(임시·외부는 차단).
-_DURABLE_KEY_PREFIXES = ("generator/", "ads/")
+# generated-ads/ = 제너레이터 실제 저장 접두사(tools/storage/s3.py candidate_key). 누락 시
+# 제너레이터 광고도 "durable 아님"으로 집행이 막혀, 양식을 맞춰 포함한다.
+_DURABLE_KEY_PREFIXES = ("generator/", "ads/", "generated-ads/")
 
 
 def _resolve_sim_asset_key(asset_url: str | None) -> str | None:
@@ -1668,12 +2021,28 @@ def _resolve_sim_asset_key(asset_url: str | None) -> str | None:
         return key if key.startswith(_DURABLE_KEY_PREFIXES) else None
     if not parsed.scheme and asset_url.startswith(_DURABLE_KEY_PREFIXES):
         return asset_url
+    # 우리 S3 버킷 URL(presigned 포함)이면 경로에서 키 추출 — 서명 쿼리는 무시, 객체는 키로 재취득.
+    host = parsed.netloc.lower()
+    bucket = (settings.s3_bucket_name or "").lower()
+    if bucket and host.endswith("amazonaws.com"):
+        path_key = parsed.path.lstrip("/")
+        if path_key.startswith(bucket + "/"):  # path-style: /bucket/key
+            path_key = path_key[len(bucket) + 1 :]
+        elif bucket not in host:  # virtual-hosted는 host에 버킷명이 있어야 함
+            path_key = ""
+        if path_key.startswith(_DURABLE_KEY_PREFIXES):
+            return path_key
     return None
 
 
 def _is_executable_verdict(click_intent_rate: float, rejection_rate: float) -> bool:
-    """'집행 권장' 게이트 — 프론트 verdict()와 동일 임계값(백엔드 정본)."""
-    return click_intent_rate >= 0.2 and rejection_rate < 0.2
+    """'집행 권장' 게이트 — 집행 가능 여부 판정(백엔드 정본).
+
+    ⚠️ 임시(TEST): 게이트 해제 — 모든 시뮬 결과 통과(클릭≥0·거부≤100%).
+    운영 복원: ``return click_intent_rate >= 0.2 and rejection_rate < 0.2``.
+    프론트 EXEC_CIR/EXEC_REJ(ExecuteFromSimulation.tsx)도 함께 0/1 → 0.2/0.2로 되돌릴 것.
+    """
+    return click_intent_rate >= 0.0 and rejection_rate <= 1.0
 
 
 class FromSimulationRequest(BaseModel):
@@ -1762,14 +2131,14 @@ async def from_simulation(
     except Exception as exc:  # noqa: BLE001 — S3 유실/손상은 입력 문제로 거부
         raise HTTPException(status_code=422, detail="시뮬 이미지를 읽을 수 없습니다.") from exc
 
-    writer = build_writer(settings)
+    writer = await _require_writer(db, org_id)
     image_hash = await _upload_creative_or_502(
         writer, _asset_config(name=body.name), image_bytes, "creative.png"
     )
     if _is_sending_mode() and not image_hash:
         raise HTTPException(status_code=502, detail="Meta 이미지 업로드 실패.")
 
-    policy = await get_campaign_policy(build_reader(settings))
+    policy = await get_campaign_policy(await _require_reader(db, org_id))
     min_budget = min_daily_budget_for("traffic", policy)
     if body.daily_budget_krw < min_budget:
         raise HTTPException(status_code=422, detail=f"최소 일예산은 ₩{min_budget:,}입니다.")
@@ -1899,12 +2268,7 @@ def _is_demo_campaign(campaign_id: str) -> bool:
     return any(cid == campaign_id for cid, *_ in _CAMPAIGNS_DEMO)
 
 
-async def _require_org_id(user: User, db: AsyncSession) -> UUID:
-    """로그인 사용자의 소속 org — 없으면 409."""
-    org_id = await _resolve_org_id(user, db)
-    if org_id is None:
-        raise HTTPException(409, "소속 조직이 없습니다 — 조직 연결 후 시도하세요.")
-    return org_id
+_require_org_id = require_user_org  # core.auth 공용(없으면 409) — 라우터 복붙 제거
 
 
 async def _require_owned_campaign(
@@ -1932,6 +2296,63 @@ async def _require_ad_account(db: AsyncSession, org_id: UUID) -> str:
     if getattr(settings, "use_mock", True):
         return _DEMO_AD_ACCOUNT
     raise HTTPException(409, "Meta 광고계정 연결이 필요합니다 — 연결 후 시도하세요.")
+
+
+# ── org 스코프 Meta 리더/라이터 — 로그인 org의 연결(토큰·계정)로 멀티테넌시 정합 ──
+# mock 모드는 전역 mock 유지. live는 org 연결 자격증명(load_credentials) 기반 — 미연결이면 None.
+_NOT_CONNECTED_MSG = "Meta 광고 계정이 연결되지 않았어요. 연결 후 다시 시도하세요."
+
+
+async def _org_credentials(db: AsyncSession, org_id: UUID) -> MetaCredentials | None:
+    """org 연결의 Meta 자격증명(복호화) — build_meta_client 드롭인. 키/연결 없으면 None."""
+    key = getattr(settings, "meta_token_encryption_key", None)
+    if not key:
+        return None
+    repo = MetaConnectionRepository(db, TokenCipher.from_base64_key(key))
+    return await repo.load_credentials(org_id, settings)
+
+
+async def _resolve_reader(db: AsyncSession, org_id: UUID) -> AdPlatformReader | None:
+    """org 스코프 리더 — mock이면 전역 mock, live면 org 연결 기반(미연결이면 None)."""
+    if getattr(settings, "use_mock", True):
+        return build_reader(settings)
+    creds = await _org_credentials(db, org_id)
+    if creds is None:
+        return None
+    from domain.management.adapters.meta.reader import MetaAdsReader  # noqa: PLC0415
+
+    return MetaAdsReader(creds)
+
+
+async def _resolve_writer(db: AsyncSession, org_id: UUID) -> AdPlatformWriter | None:
+    """org 스코프 라이터 — mock이면 전역 DRY_RUN, live면 org 연결 기반(미연결이면 None)."""
+    if getattr(settings, "use_mock", True):
+        return build_writer(settings)
+    creds = await _org_credentials(db, org_id)
+    if creds is None:
+        return None
+    from domain.management.adapters.meta.client import build_meta_client  # noqa: PLC0415
+    from domain.management.adapters.meta.writer import MetaAdsWriter  # noqa: PLC0415
+
+    # 실행모드·page_id·create_ad는 settings에서, 실제 API 호출은 org 연결 client로 주입한다.
+    # creds엔 management_execution_mode가 없어 그대로 넘기면 LIVE라도 DRY_RUN으로 강등됨.
+    return MetaAdsWriter(settings, client=build_meta_client(creds))
+
+
+async def _require_reader(db: AsyncSession, org_id: UUID) -> AdPlatformReader:
+    """org 리더 — 미연결이면 409 (fail-closed: 남의 전역 계정 노출 금지)."""
+    reader = await _resolve_reader(db, org_id)
+    if reader is None:
+        raise HTTPException(409, _NOT_CONNECTED_MSG)
+    return reader
+
+
+async def _require_writer(db: AsyncSession, org_id: UUID) -> AdPlatformWriter:
+    """org 라이터 — 미연결이면 409 (fail-closed)."""
+    writer = await _resolve_writer(db, org_id)
+    if writer is None:
+        raise HTTPException(409, _NOT_CONNECTED_MSG)
+    return writer
 
 
 async def _require_owned_run(
@@ -1989,8 +2410,9 @@ async def activate_campaign(
             }
 
     # 1) 게이트 — Meta 광고계정 선불 잔액이 배정액보다 적으면 차단(실광고비 = Meta 선불).
+    reader = await _require_reader(db, org_id)
     try:
-        funding = await build_reader(settings).get_account_funding()
+        funding = await reader.get_account_funding()
         meta_balance = funding.available_balance_krw or 0
     except Exception:  # noqa: BLE001 — 자금 조회 실패 시 0으로 보아 차단(안전)
         meta_balance = 0
@@ -2016,7 +2438,7 @@ async def activate_campaign(
         }
 
     # 2) 지출 상한 — 충전액만큼만 집행되도록(소진 시 자동 종료). 실패 시 활성화 중단(무한집행 방지).
-    writer = build_writer(settings)
+    writer = await _require_writer(db, org_id)
     cap = await writer.set_spend_cap(campaign_id, commit, idem_key=f"cap_{uuid4().hex[:8]}")
     cap_status = cap.status.value if hasattr(cap.status, "value") else str(cap.status)
     if cap_status != "success":
@@ -2084,9 +2506,8 @@ async def activate_campaign(
 
 
 @router.get("/campaigns/{campaign_id}/delivery-status")
-async def delivery_status(campaign_id: str):
+async def delivery_status(campaign_id: str, reader=Depends(_request_reader)):
     """게재 여부 + 불가 원인 + Meta 선불 잔액 — 대시보드/게재 화면이 원인을 그대로 표시."""
-    reader = build_reader(settings)
     detail = await reader.get_delivery_status_detail(campaign_id)
     try:
         funding = await reader.get_account_funding()
@@ -2120,7 +2541,7 @@ async def sync_campaign(
     org_uuid = await _require_org_id(user, db)
     await _require_owned_campaign(db, org_uuid, campaign_id)
     org_id = str(org_uuid)
-    reader = build_reader(settings)
+    reader = await _require_reader(db, org_uuid)
     billing = get_billing_service()
     metrics = await reader.get_metrics(campaign_id, datetime.now(UTC))
     spent = max(0, metrics.spend_krw or 0)
@@ -2259,10 +2680,11 @@ async def campaign_leads(campaign_id: str):
 # ── 예산 관리·페이싱 (테넌트 한도 대비 캠페인 합산 소진 + 90/95/100% 판정) ────
 # 소진액은 데모 캠페인 지출 합산(레지스트리 커밋분은 데모에서 0). 한도는 _BUDGET에서
 # 읽고/쓰며(set_limit, 인메모리), BudgetAuthority.evaluate로 경고 레벨을 판정한다.
-async def _budget_status() -> dict:
+async def _budget_status(reader, budget_key: str = TENANT_ID) -> dict:
     # 실모드: 한도=월 목표 예산(관제), 소진=실 Meta 집행액. 크레딧·Meta 선불은 별도 필드.
+    # budget_key는 인메모리 월 목표의 org별 키 — live는 org_id, mock은 TENANT_ID(전역 공유 방지).
     if not getattr(settings, "use_mock", True):
-        return await _budget_status_live()
+        return await _budget_status_live(reader, budget_key)
     # 데모(mock): 합성 캠페인 지출 + 인메모리 한도.
     spent = 0
     campaigns = []
@@ -2285,16 +2707,17 @@ async def _budget_status() -> dict:
     }
 
 
-async def _budget_status_live() -> dict:
+async def _budget_status_live(reader, budget_key: str = TENANT_ID) -> dict:
     """실데이터 예산 현황 — 월 목표 예산 대비 이번 달 실소진 페이싱(관제).
 
+    reader는 호출자(로그인 org 연결)가 주입 — 멀티테넌시 정합.
+    budget_key(org_id)별 월 목표 — 전역 TENANT_ID 공유 시 org끼리 목표가 섞이는 문제 방지.
     한도=월 목표 예산(설정), 소진=이번 달 Meta 집행, 잔여=목표−소진, 여력=Meta 선불 잔액.
     런레이트(projection)로 "이 페이스면 월말 얼마"를 예측한다. 캠페인별은 이번 달 소진·ROAS.
     """
-    reader = build_reader(settings)
     now = datetime.now(UTC)
     days_in_month = calendar.monthrange(now.year, now.month)[1]
-    target = _BUDGET.for_tenant(TENANT_ID).limit_krw  # 월 목표(미설정 0) — v1 in-memory
+    target = _BUDGET.for_tenant(budget_key).limit_krw  # 월 목표(미설정 0) — org별 인메모리
 
     # 이번 달 실소진(계정 단위 1콜) + 일자별 곡선
     try:
@@ -2305,11 +2728,15 @@ async def _budget_status_live() -> dict:
         daily = await reader.get_account_daily_spend("this_month")
     except Exception:  # noqa: BLE001
         daily = []
-    # 여력 — Meta 선불 가용 잔액(실광고비)
+    # 여력 — Meta 선불 가용 잔액 + 충전 한도(spend_cap, 부가세 제외 집행가능액)·누적 지출.
+    # 충전 한도 − 누적 지출 = 잔액으로 정합 표시(충전 한도는 결제액의 부가세 제외분).
     try:
-        account_balance = (await reader.get_account_funding()).available_balance_krw or 0
+        _funding = await reader.get_account_funding()
+        account_balance = _funding.available_balance_krw or 0
+        account_spend_cap = _funding.spend_cap_krw or 0
+        account_amount_spent = _funding.amount_spent_krw or 0
     except Exception:  # noqa: BLE001
-        account_balance = 0
+        account_balance = account_spend_cap = account_amount_spent = 0
     # ClickMe 크레딧 — 집행 한도(spend 권한)·잔액. 월 목표(관제)·Meta 선불(실광고비)과 별개 개념.
     try:
         _billing = get_billing_service()
@@ -2345,6 +2772,8 @@ async def _budget_status_live() -> dict:
         "ratio": round(spent / target, 3) if target else 0.0,
         "projection_krw": projection,
         "account_balance_krw": account_balance,  # Meta 선불 잔액(실광고비)
+        "account_spend_cap_krw": account_spend_cap,  # Meta 충전 한도(부가세 제외 집행가능액)
+        "account_amount_spent_krw": account_amount_spent,  # Meta 누적 지출
         "credit_charged_krw": credit_charged,  # ClickMe 크레딧 총 충전(집행 한도)
         "credit_balance_krw": credit_balance,  # ClickMe 크레딧 잔액
         "period": now.strftime("%Y-%m"),
@@ -2356,9 +2785,16 @@ async def _budget_status_live() -> dict:
 
 
 @router.get("/budget")
-async def get_budget():
-    """테넌트 예산 한도 대비 캠페인 합산 소진 + 90/95/100% 판정."""
-    return await _budget_status()
+async def get_budget(
+    reader=Depends(_request_reader),
+    user: User | None = Depends(_optional_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """org 예산 한도 대비 캠페인 합산 소진 + 90/95/100% 판정 (월 목표는 org별)."""
+    budget_key = TENANT_ID
+    if not getattr(settings, "use_mock", True) and user is not None:
+        budget_key = str(await _require_org_id(user, db))
+    return await _budget_status(reader, budget_key)
 
 
 class BudgetLimitRequest(BaseModel):
@@ -2372,9 +2808,12 @@ async def set_budget_limit(
     db: AsyncSession = Depends(get_db),
 ):
     """예산 한도 설정 — 변경 후 경고 레벨(decision)이 즉시 반영(인메모리)."""
-    await _require_org_id(user, db)
-    _BUDGET.set_limit(TENANT_ID, body.limit_krw)
-    return await _budget_status()
+    org_id = await _require_org_id(user, db)
+    if getattr(settings, "use_mock", True):
+        _BUDGET.set_limit(TENANT_ID, body.limit_krw)
+        return await _budget_status(build_reader(settings))
+    _BUDGET.set_limit(str(org_id), body.limit_krw)  # org별 월 목표(전역 공유 금지)
+    return await _budget_status(await _require_reader(db, org_id), str(org_id))
 
 
 # ── 시간축 자동 에스컬레이션 (re_evaluate — 엔드포인트·tick·추후 SQS 동일 함수) ────

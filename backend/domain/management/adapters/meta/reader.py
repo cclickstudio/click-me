@@ -47,7 +47,7 @@ _STATE_MAP: dict[str, CampaignState] = {
     "WITH_ISSUES": CampaignState.ACTIVE_PENDING_REVIEW,
     "DISAPPROVED": CampaignState.PAUSED,
     "DELETED": CampaignState.ENDED,
-    "ARCHIVED": CampaignState.ENDED,
+    "ARCHIVED": CampaignState.ARCHIVED,
     "COMPLETED": CampaignState.ENDED,
 }
 
@@ -67,6 +67,14 @@ _HOURLY_FIELDS = "impressions,clicks,inline_link_clicks,spend,reach,frequency,ct
 # lifetime_budget: 일예산 대신 총예산으로 설정된 캠페인(잠재고객/일정형) — 일예산 ₩0 오표기 방지.
 # stop_time: Meta는 게재 기간이 끝나도 effective_status를 ACTIVE로 유지 → 종료 판별에 필요.
 _CAMPAIGN_FIELDS = "id,name,effective_status,daily_budget,lifetime_budget,stop_time"
+
+#: 보관 포함 조회용 effective_status — 기본 응답은 ACTIVE/PAUSED만이라 ARCHIVED를 명시 포함.
+_ARCHIVED_STATUSES = '["ACTIVE","PAUSED","ARCHIVED","IN_PROCESS","WITH_ISSUES"]'
+
+#: 데모 핀 — 삭제됐어도 전 페이지에 '종료됨'으로 고정 표시할 캠페인 id (발표용·운영 전 비우기).
+#: 데이터(노출·리드·소재)는 insights로 그대로 조회되되 상태는 ENDED로 정직하게 표기한다
+#: (실제 게재 중이 아니므로). 새로 추가되는 실 캠페인은 핀과 무관하게 실시간 상태로 유입된다.
+_DEMO_PINNED_CAMPAIGN_IDS: frozenset[str] = frozenset({"120251028376650729"})
 
 # 광고세트 예산·종료일 조회 필드 — 캠페인 노드에 예산/종료일이 없을 때(광고세트 일정) 보완.
 _ADSET_FIELDS = "daily_budget,lifetime_budget,campaign_id,end_time"
@@ -157,6 +165,38 @@ def _to_int(value: Any) -> int:
 
 def _to_float(value: Any) -> float:
     return float(value) if value not in (None, "") else 0.0
+
+
+# (category_id, service_class) 키워드 매핑 — SIM_CATEGORIES 순서와 동기화.
+# category_id는 프론트 simCategories.ts의 id(1-indexed), service_class는 NICE 류.
+_CATEGORY_KEYWORDS: list[tuple[list[str], int, int]] = [
+    # 31류: 반려동물 사료·용품
+    (["댕댕", "강아지", "고양이", "반려", "애완", "펫", "pet", "야옹", "멍멍", "사료"], 11, 31),
+    (["피부", "미용", "화장품", "스킨케어", "뷰티", "헤어", "네일", "향수", "성형"], 4, 44),
+    (["의류", "패션", "옷", "원피스", "티셔츠", "청바지", "신발", "가방", "쇼핑몰"], 3, 25),
+    (["음식", "식당", "카페", "배달", "맛집", "커피", "음료", "빵", "디저트", "베이커리"], 2, 43),
+    (
+        ["앱", "app", "플랫폼", "소프트웨어", "ai", "인공지능", "saas", "it서비스", "서비스앱"],
+        15,
+        42,
+    ),
+    (["교육", "학원", "강의", "학습", "공부", "과외", "유튜브", "콘텐츠", "강좌"], 7, 41),
+    (["여행", "관광", "호텔", "리조트", "운동", "스포츠", "피트니스", "헬스", "레저"], 6, 39),
+    (["자동차", "차량", "렌트카", "카쉐어링", "오토바이", "자전거", "드라이브"], 12, 12),
+    (["병원", "의원", "클리닉", "약국", "의료", "건강검진", "다이어트", "보험", "심리"], 5, 44),
+    (["아기", "육아", "유아", "출산", "임신", "어린이", "키즈"], 10, 28),
+    (["인테리어", "건축", "부동산", "가구", "이사", "리모델링", "청소"], 13, 36),
+    (["서비스", "신청", "가입", "상담", "문의", "예약", "이용권"], 8, 45),
+]
+
+
+def _guess_category(text: str) -> tuple[int, int]:
+    """광고 텍스트 → (category_id, service_class). 순서대로 첫 매칭."""
+    t = text.lower()
+    for keywords, cat_id, svc_cls in _CATEGORY_KEYWORDS:
+        if any(k in t for k in keywords):
+            return (cat_id, svc_cls)
+    return (0, 0)  # 매칭 실패 — 프론트에서 0은 미선택으로 처리됨
 
 
 def _extract_won(text: str) -> int | None:
@@ -255,7 +295,49 @@ class MetaAdsReader:
             },
         )
         rows = payload.get("data", [])
-        row: dict[str, Any] = rows[0] if rows else {}
+        return self._row_to_metrics(rows[0] if rows else {}, campaign_id, since)
+
+    async def get_metrics_by_campaign(
+        self, campaign_ids: list[str], since: datetime, date_preset: str = "maximum"
+    ) -> dict[str, MetricsSnapshot]:
+        """계정 단위 캠페인별 지표 — level=campaign으로 한 응답에 모든 캠페인 행(N+1 제거).
+
+        캠페인마다 /{id}/insights를 N번 부르던 걸 /act_{id}/insights 1콜(+페이징)로 대체한다.
+        응답에 행이 없는(미게재) 캠페인은 campaign_ids 기준 0 스냅샷으로 채워, 호출자가
+        누락 없이 캠페인별 룩업을 할 수 있게 한다(현 get_metrics 빈 데이터 동작과 동일).
+        """
+        account = normalize_ad_account(self._client.ad_account_id)
+        params: dict[str, Any] = {
+            "fields": f"{_INSIGHTS_FIELDS},campaign_id",
+            "level": "campaign",
+            "date_preset": date_preset,
+            "limit": 500,
+        }
+        out: dict[str, MetricsSnapshot] = {}
+        while True:
+            payload = await self._client.get(f"{account}/insights", params)
+            for row in payload.get("data", []):
+                cid = str(row.get("campaign_id", ""))
+                if not cid:
+                    continue
+                out[cid] = self._row_to_metrics(row, cid, since)
+            paging = payload.get("paging", {})
+            after = (paging.get("cursors") or {}).get("after")
+            if not after or not paging.get("next"):
+                break
+            params = {**params, "after": after}
+        # 미게재(행 없는) 캠페인 0 스냅샷 폴백 — 호출자 룩업 누락 방지.
+        for cid in campaign_ids:
+            out.setdefault(cid, self._row_to_metrics({}, cid, since))
+        return out
+
+    def _row_to_metrics(
+        self, row: dict[str, Any], campaign_id: str, since: datetime
+    ) -> MetricsSnapshot:
+        """insights 행 1개 → MetricsSnapshot 변환. get_metrics·get_metrics_by_campaign 공용.
+
+        빈 행({})이면 0 스냅샷 — 미게재 캠페인 폴백. since는 date_stop 없을 때 as_of 폴백.
+        """
         impressions = _to_int(row.get("impressions"))
         clicks = _to_int(row.get("clicks"))
         reach = _to_int(row.get("reach"))
@@ -381,10 +463,18 @@ class MetaAdsReader:
         return out
 
     async def get_creatives(self, campaign_id: str) -> list[CreativePreview]:
-        """캠페인 대표 크리에이티브 — 산하 광고의 이름·썸네일(중첩 creative 필드)."""
+        """캠페인 대표 크리에이티브 — 산하 광고의 이름·썸네일(중첩 creative 필드).
+
+        삭제·보관된 캠페인의 광고도 소재(이미지)는 Meta에 남아 있어, effective_status에
+        ARCHIVED를 포함해 받아와 그전과 똑같이 대표 이미지를 보여준다.
+        """
         payload = await self._client.get(
             f"{campaign_id}/ads",
-            {"fields": _CREATIVE_FIELDS, "limit": _CREATIVE_LIMIT},
+            {
+                "fields": _CREATIVE_FIELDS,
+                "limit": _CREATIVE_LIMIT,
+                "effective_status": _ARCHIVED_STATUSES,
+            },
         )
         out: list[CreativePreview] = []
         for row in payload.get("data", []):
@@ -517,14 +607,20 @@ class MetaAdsReader:
         # (하나라도 무기한/미래면 진행 중)
         return bool(adset_ends) and all(e and _is_past(e) for e in adset_ends)
 
-    async def _all_campaign_rows(self, account: str) -> list[dict[str, Any]]:
+    async def _all_campaign_rows(
+        self, account: str, include_archived: bool = False
+    ) -> list[dict[str, Any]]:
         """계정의 모든 캠페인 행 — 페이징을 끝까지 따라가 25개(기본 limit) 초과도 빠짐없이.
 
         Meta GET /campaigns는 기본 25개씩 페이지로 준다. cursors.after로 next가 없을 때까지 순회.
+        include_archived=True면 보관(ARCHIVED, 삭제분 포함)도 effective_status 필터로 함께 받는다.
         (단 Ads Manager '임시 저장됨' 초안은 API가 반환하지 않아 게시 전엔 안 잡힌다.)
         """
         rows: list[dict[str, Any]] = []
         params: dict[str, Any] = {"fields": _CAMPAIGN_FIELDS, "limit": 100}
+        if include_archived:
+            # 기본은 ACTIVE/PAUSED만 — ARCHIVED 포함해야 삭제·보관 캠페인이 나온다.
+            params["effective_status"] = _ARCHIVED_STATUSES
         while True:
             payload = await self._client.get(f"{account}/campaigns", params)
             rows.extend(payload.get("data", []))
@@ -535,16 +631,19 @@ class MetaAdsReader:
             params = {**params, "after": after}
         return rows
 
-    async def list_campaigns(self) -> list[CampaignInfo]:
+    async def list_campaigns(self, include_archived: bool = False) -> list[CampaignInfo]:
         """광고계정의 캠페인 목록 — 대시보드용(이름·상태·일예산).
 
         Meta ``GET /act_{id}/campaigns``. daily_budget은 캠페인 예산 최적화(CBO) 시에만
         캠페인 노드에 존재 — 광고세트 예산이면 광고세트 일예산 합으로 보완한다.
+        include_archived=True면 보관/삭제(ARCHIVED) 캠페인도 포함('삭제됨' 표시·과거 데이터 조회용).
         """
         account = normalize_ad_account(self._client.ad_account_id)
+        # 데모 핀이 있으면 보관분도 받아와야(핀 캠페인이 보관 상태일 수 있음) 고정 표시가 된다.
+        fetch_archived = include_archived or bool(_DEMO_PINNED_CAMPAIGN_IDS)
         # 캠페인 목록(페이징 끝까지)·광고세트 정보 병렬 — 순차면 Meta 왕복이 직렬로 쌓임.
         rows, adset_info = await asyncio.gather(
-            self._all_campaign_rows(account),
+            self._all_campaign_rows(account, fetch_archived),
             self._adset_info(account),
         )
         out: list[CampaignInfo] = []
@@ -571,6 +670,12 @@ class MetaAdsReader:
                 state = CampaignState.ENDED
             else:
                 state = _STATE_MAP.get(status, CampaignState.DRAFT)
+            # 데모 핀: 삭제/보관이라도 데이터와 함께 고정 표시하되 상태는 '종료됨'(실 게재 아님).
+            # 핀 아닌 보관분은 토글(include_archived) 켤 때만 노출.
+            if cid in _DEMO_PINNED_CAMPAIGN_IDS:
+                state = CampaignState.ENDED
+            elif status == "ARCHIVED" and not include_archived:
+                continue
             out.append(
                 CampaignInfo(
                     campaign_id=cid,
@@ -675,6 +780,116 @@ class MetaAdsReader:
                 }
             )
         return out
+
+    async def get_campaign_targeting(self, campaign_id: str) -> dict:
+        """캠페인 목표·광고세트 타겟팅·크리에이티브 — 시뮬레이터 사전 입력용.
+
+        캠페인 노드에서 objective, 첫 광고세트에서 targeting(age_min/max·genders),
+        첫 광고에서 headline·body·image_url을 가져온다.
+        leads/conversion 광고는 title이 object_story_spec.link_data.name에 있어
+        _CREATIVE_FIELDS_FULL로 확장해서 조회한다.
+        """
+        campaign_data, adset_data, ads_data = await asyncio.gather(
+            self._client.get(campaign_id, {"fields": "objective,name"}),
+            self._client.get(
+                f"{campaign_id}/adsets",
+                {"fields": "targeting", "limit": "1"},
+            ),
+            self._client.get(
+                f"{campaign_id}/ads",
+                {
+                    "fields": (
+                        "name,creative{image_url,thumbnail_url,title,body,"
+                        "object_story_spec{link_data{name,message,picture},"
+                        "photo_data{url}},"
+                        "asset_feed_spec{images{url},bodies{text},titles{text}}}"
+                    ),
+                    "limit": "1",
+                    "effective_status": _ARCHIVED_STATUSES,
+                },
+            ),
+        )
+        targeting = {}
+        adsets = adset_data.get("data", [])
+        if adsets:
+            targeting = adsets[0].get("targeting") or {}
+        genders_raw = targeting.get("genders") or []
+        if genders_raw == [1]:
+            gender = "M"
+        elif genders_raw == [2]:
+            gender = "F"
+        else:
+            gender = ""
+
+        # 첫 광고 크리에이티브에서 headline·body·image 추출
+        # 우선순위: creative.title → oss.link_data.name → asset_feed_spec.titles
+        ad_headline: str | None = None
+        ad_body: str | None = None
+        ad_image_url: str | None = None
+        ads = ads_data.get("data", [])
+        if ads:
+            creative = ads[0].get("creative") or {}
+            oss = creative.get("object_story_spec") or {}
+            link_data = oss.get("link_data") or {}
+            afs = creative.get("asset_feed_spec") or {}
+
+            ad_headline = (
+                creative.get("title")
+                or link_data.get("name")
+                or ((afs.get("titles") or [{}])[0].get("text"))
+            )
+            ad_body = (
+                creative.get("body")
+                or link_data.get("message")
+                or ((afs.get("bodies") or [{}])[0].get("text"))
+            )
+            ad_image_url = (
+                _pick_image(creative)
+                or link_data.get("picture")
+                or creative.get("thumbnail_url")  # leads 광고는 image_url 없고 thumbnail만 있음
+            )
+
+        # Advantage+ 등 광역 타겟팅은 age 제약 없음 → Meta 기본값(18~65)으로 폴백
+        age_min = targeting.get("age_min") or 18
+        age_max = targeting.get("age_max") or 65
+
+        # 실제 소비자 수 — insights reach(도달) 기반.
+        # leads는 actions 파싱이 필요하고 권한에 따라 누락 가능 → reach 1차 사용.
+        # 실패해도 나머지 타겟팅 정보는 정상 반환.
+        # 실제 소비자 수 = reach(광고 도달 인원).
+        # CVR = conversions/clicks 는 시뮬 출력이므로 입력 N은 노출 모수인 reach가 맞다.
+        # leads(= reach × CVR)를 넣으면 이미 전환한 사람만 시뮬하게 되어 CVR 예측 의미 소실.
+        reach = 0
+        try:
+            ins_data = await self._client.get(
+                f"{campaign_id}/insights",
+                {"fields": "reach", "date_preset": "maximum"},
+            )
+            ins = (ins_data.get("data") or [{}])[0]
+            reach = _to_int(ins.get("reach"))
+        except Exception:
+            pass
+
+        suggested_persona_count = min(200, max(10, reach)) if reach > 0 else 20
+
+        # 광고 텍스트 기반 카테고리 추천
+        cat_text = " ".join(filter(None, [campaign_data.get("name"), ad_headline, ad_body]))
+        category_id, service_class = _guess_category(cat_text)
+
+        return {
+            "campaign_id": campaign_id,
+            "campaign_name": campaign_data.get("name", ""),
+            "objective": campaign_data.get("objective", ""),
+            "age_min": age_min,
+            "age_max": age_max,
+            "gender": gender,
+            "ad_headline": ad_headline,
+            "ad_body": ad_body,
+            "ad_image_url": ad_image_url,
+            "category_id": category_id,
+            "service_class": service_class,
+            "suggested_persona_count": suggested_persona_count,
+        }
 
     async def get_account_spend(self, date_preset: str = "this_month") -> int:
         """계정 단위 기간 소진(KRW) — 예산 페이싱의 '이번 달 소진'. 1콜로 합계."""

@@ -6,6 +6,12 @@ import pytest
 from domain.simulation.adapters.gemini import _common
 
 
+@pytest.fixture(autouse=True)
+def _force_gemini_provider(monkeypatch):
+    # 이 파일은 Gemini 경로(재시도) 단위테스트 — .env의 SIMULATION_LLM_PROVIDER 영향 차단.
+    monkeypatch.delenv("SIMULATION_LLM_PROVIDER", raising=False)
+
+
 def test_is_transient_status_codes() -> None:
     class StatusError(Exception):
         def __init__(self, code: int) -> None:
@@ -53,7 +59,8 @@ class _TransientError(Exception):
 
 
 async def test_agen_json_retries_then_succeeds(monkeypatch) -> None:
-    # 무대기로(백오프 0) 빠르게 검증.
+    # 무대기로(백오프 0) 빠르게 검증. OpenAI 폴백은 끄고 순수 Gemini 재시도만 본다.
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.setattr(_common, "_RETRY_WAIT_MULTIPLIER", 0.0)
     monkeypatch.setattr(_common, "_RETRY_WAIT_MAX", 0.0)
 
@@ -69,6 +76,8 @@ async def test_agen_json_retries_then_succeeds(monkeypatch) -> None:
 
 
 async def test_agen_json_gives_up_after_attempts(monkeypatch) -> None:
+    # OpenAI 폴백 없을 때 — 재시도 상한 소진 후 그대로 전파(폴백 경로는 별도).
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.setattr(_common, "_RETRY_WAIT_MULTIPLIER", 0.0)
     monkeypatch.setattr(_common, "_RETRY_WAIT_MAX", 0.0)
     monkeypatch.setattr(_common, "_RETRY_ATTEMPTS", 3)

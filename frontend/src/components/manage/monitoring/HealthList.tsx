@@ -65,13 +65,15 @@ export function HealthList({
         const showPacing = pacingMeaningful(c); // 종료·권한없음·총예산은 소진율 의미 없음
         const pacing = c.state === 'active' && showPacing ? pacingProjection(c.pacing_pct, now) : null;
         const series = spendSeries[c.campaign_id] ?? [];
-        // 마지막 점은 진행 중인 '오늘'(부분치) — 추세·델타는 완료일끼리만 비교(오전 허위 하락 방지).
-        const trend = series.length >= 2 ? series.slice(0, -1) : series;
+        // 진행 중(active)일 때만 마지막 점=오늘(부분치)이라 제외(오전 허위 하락 방지).
+        // 종료·일시정지·삭제는 마지막도 완료일이라 그대로 둬야 추세가 빈다고 오인되지 않는다.
+        const isDelivering = c.state === 'active' || c.state === 'active_pending_review';
+        const trend = isDelivering && series.length >= 2 ? series.slice(0, -1) : series;
         const delta = trendDelta(trend);
         return (
           <Link
             key={c.campaign_id}
-            href="/manage/campaigns"
+            href={`/manage/campaigns?open=${c.campaign_id}`}
             className="flex items-center gap-4 px-4 py-3.5 hover:bg-[#F9FAFB] dark:hover:bg-[#1A202C] transition-colors"
           >
             <span className={`shrink-0 w-2 h-2 rounded-full ${s.dot}`} />

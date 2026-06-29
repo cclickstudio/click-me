@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import os
 from contextlib import asynccontextmanager
@@ -73,6 +74,17 @@ async def lifespan(app: FastAPI):
     )
 
     await init_pg_checkpointer(settings.database_url)
+    # 능동 매니지먼트 스케줄러 — 기본 off(management_scheduler_enabled일 때만 기동).
+    from domain.management.scheduler import start_scheduler  # noqa: PLC0415
+
+    start_scheduler(settings)
+    # KB 인제스터 — 비차단 백그라운드 태스크(서버 시작 안 막음). 키 없으면 graceful 스킵.
+    try:
+        from domain.management.assistant.kb_ingest import ingest  # noqa: PLC0415
+
+        asyncio.create_task(ingest())
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[startup] KB ingest 스킵: %s", e)
     yield
     await close_pg_checkpointer()
 

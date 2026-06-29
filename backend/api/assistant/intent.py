@@ -43,6 +43,21 @@ _MANAGE_KW: frozenset[str] = frozenset(
         "소재",
         "예측대로",
         "매니지먼트",
+        "cpm",
+        "cpc",
+        "벤치마크",
+        "메타",
+        "틱톡",
+        "구글",
+        "네이버",
+        "카카오",
+        "업종",
+        "연령대",
+        "구매의향",
+        "입찰",
+        "타깃",
+        "타겟",
+        "오디언스",
     }
 )
 
@@ -65,12 +80,15 @@ def _keyword_classify(text: str, registered: Sequence[Intent]) -> Intent:
 async def _llm_classify(llm, req: SubagentRequest, registered: Sequence[Intent]) -> Intent:
     allowed = ", ".join([*[i.value for i in registered], Intent.ADVISE.value])
     system = (
-        "너는 광고 플랫폼 채팅의 의도 분류기다. 사용자의 마지막 메시지를 다음 중 하나로 분류한다.\n"
-        f"허용 라벨: {allowed}.\n"
-        "- generate: 새 광고/시안/카피/이미지를 만들어 달라는 요청.\n"
-        "- manage: 집행 중 캠페인의 예산·성과·상태 조회나 운영 변경.\n"
-        "- advise: 그 외 일반 질문·조언·해석.\n"
-        "확실하지 않으면 advise."
+        "너는 광고 플랫폼 채팅의 의도 분류기다. 사용자의 마지막 메시지를 정확히 하나로 분류한다.\n"
+        f"허용 라벨: {allowed}.\n\n"
+        "분류 규칙 (우선순위 순):\n"
+        "1. generate: '만들어', '만들어줘', '생성해', '제작해', '시안', '카피', '이미지 생성' 등 "
+        "새 광고물·시안·카피·이미지를 만드는 요청.\n"
+        "2. manage: 집행 중인 캠페인의 예산·성과·CTR/ROAS/CPC·이상 탐지·정책·벤치마크·타깃 등 "
+        "운영 관련 질문 또는 조치(일시중지·예산증액 등) 요청.\n"
+        "3. advise: 위 둘에 해당하지 않는 일반 질문이나 광고와 무관한 잡담.\n\n"
+        "반드시 하나의 라벨만 출력한다. '만들어' 포함이면 generate 우선."
     )
     history = "\n".join(f"{m.role}: {m.content}" for m in req.messages[-6:])
     structured = llm.with_structured_output(_IntentPick)
@@ -87,10 +105,14 @@ async def _llm_classify(llm, req: SubagentRequest, registered: Sequence[Intent])
 
 
 async def classify_intent(req: SubagentRequest, registered: Sequence[Intent], llm=None) -> Intent:
-    """등록된 의도 중 하나(또는 advise)로 분류. llm 있으면 계측 LLM, 없으면 키워드."""
+    """등록된 의도 중 하나(또는 advise)로 분류. llm 있으면 시맨틱 분류, 없으면 advise 기본값.
+
+    키워드 폴백 제거 이유: 키워드 방식은 의미 분석이 불가능해 "프리퀀시 높으면?" 같은
+    질문을 잘못 분류함. LLM API 키가 없으면 CLIO(advise)로 처리한다.
+    """
     if llm is not None:
         try:
             return await _llm_classify(llm, req, registered)
-        except Exception:  # noqa: BLE001 — 분류 실패는 키워드로 폴백(채팅 끊지 않음)
+        except Exception:  # noqa: BLE001 — 분류 실패는 advise 폴백(채팅 끊지 않음)
             pass
-    return _keyword_classify(req.last_user_text, registered)
+    return Intent.ADVISE

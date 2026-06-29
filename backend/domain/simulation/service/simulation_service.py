@@ -206,6 +206,25 @@ class SimulationService:
                         panel_version=panel_version,
                     )
                     result["simulation_id"] = str(sim_id)
+                    # 성과 비교 자동 연결 — fromCampaign 경로 진입 시 서버에서 직접 링크.
+                    if request.from_campaign_id and request.organization_id:
+                        try:
+                            await self._persistence.link_to_campaign(
+                                sim_id,
+                                request.from_campaign_id,
+                                request.organization_id,
+                            )
+                            logger.info(
+                                "campaign 자동 링크 완료 sim=%s campaign=%s",
+                                sim_id,
+                                request.from_campaign_id,
+                            )
+                        except Exception:
+                            logger.exception(
+                                "campaign 링크 실패(런은 유지) sim=%s campaign=%s",
+                                sim_id,
+                                request.from_campaign_id,
+                            )
                 except Exception:
                     logger.exception("영속화 실패(런은 유지) run_id=%s", run_id)
 

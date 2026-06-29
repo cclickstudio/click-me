@@ -35,6 +35,7 @@ export default function Page() {
   const [authError, setAuthError] = useState<string | null>(null); // Meta 토큰 만료 안내
   const [rateLimited, setRateLimited] = useState<string | null>(null); // Meta 요청 한도(일시)
   const [permissionError, setPermissionError] = useState<string | null>(null); // 목록/자금 권한 없음
+  const [includeArchived, setIncludeArchived] = useState(false); // 삭제됨(보관) 캠페인 포함 보기
   const [account, setAccount] = useState<AccountWallet | null>(null); // 계정 지갑(잔액·한도·지출)
   // 전환 1건 가치(₩)·목표 ROAS — 고객이 입력하는 사업 통계. CVR·ROAS는 이 값으로 '계산'된다
   // (직접 입력 아님 — CVR=전환÷클릭 실측, ROAS=(전환×가치)÷지출 추정). 스펙: CVR·ROAS 재정의.
@@ -78,7 +79,7 @@ export default function Page() {
     if (!silent) setBusy(true);
     setError(null);
     try {
-      const r = await api.management.campaigns(convValue, targetRoas);
+      const r = await api.management.campaigns(convValue, targetRoas, undefined, includeArchived);
       // Meta 요청 한도(일시) — 빈 목록으로 덮지 말고 기존 데이터 유지 + 배너만(폴링이 곧 복구).
       if (r.rate_limited) {
         setRateLimited(r.rate_limited);
@@ -89,7 +90,7 @@ export default function Page() {
       setSource(r.source ?? 'mock');
       setAccountBlock(r.account_block_reason ?? null);
       setAuthError(r.auth_error ?? null);
-      setPermissionError(r.permission_error ?? r.account_unavailable ?? null);
+      setPermissionError(r.permission_error ?? r.not_connected ?? r.account_unavailable ?? null);
       setAccount(r.account ?? null);
       setLastUpdated(new Date().toLocaleTimeString('ko-KR'));
     } catch (e) {
@@ -97,11 +98,17 @@ export default function Page() {
     } finally {
       if (!silent) setBusy(false);
     }
-  }, [convValue, targetRoas]);
+  }, [convValue, targetRoas, includeArchived]);
 
   useEffect(() => {
     load();
   }, [load]);
+
+  // 채팅 캠페인 칩 딥링크 — ?open=<campaign_id> 로 진입 시 해당 캠페인 상세 자동 열기.
+  useEffect(() => {
+    const openId = new URLSearchParams(window.location.search).get('open');
+    if (openId) setSelected(openId);
+  }, []);
 
   // 실데이터일 때만 120초 폴링 — Meta는 분 단위 갱신이라 잦게 안 함(rate limit 절감).
   // 탭이 숨겨져 있으면(다른 탭/최소화) 폴링하지 않아 불필요한 Meta 호출을 막는다.
@@ -254,6 +261,19 @@ export default function Page() {
             </p>
           </div>
           <div className="flex items-center gap-2">
+            {source === 'live' && (
+              <button
+                onClick={() => setIncludeArchived((v) => !v)}
+                title="삭제·보관된 캠페인을 과거 데이터와 함께 표시"
+                className={`text-[12px] px-2.5 py-1.5 rounded-lg border ${
+                  includeArchived
+                    ? 'border-[#3182F6] text-[#3182F6] bg-[#EBF3FF] dark:bg-[#1E3A5F]'
+                    : 'border-[#E5E8EB] dark:border-[#2D3748] text-[#8B95A1] hover:text-[#191F28] dark:hover:text-[#F2F4F6]'
+                }`}
+              >
+                {includeArchived ? '✓ 삭제됨 포함' : '삭제됨 포함'}
+              </button>
+            )}
             {source === 'live' && (
               <button
                 onClick={() => load(true)}

@@ -318,9 +318,28 @@ class FaultConfig(Contract):
 _HASH_EXCLUDED: Final[frozenset[str]] = frozenset({"proposal_hash", "status", "action_tier"})
 
 
+def _canon_numbers(obj: Any) -> Any:
+    """숫자를 float로 통일 — JS JSON.stringify가 1.0→1로 접어도(특히 dict[str,Any]) 해시 일치.
+
+    bool은 int 하위형이라 별도 보존. 생성·검증이 같은 정규화를 거치므로 결과가 일관된다.
+    """
+    if isinstance(obj, bool):
+        return obj
+    if isinstance(obj, (int, float)):
+        return float(obj)
+    if isinstance(obj, dict):
+        return {k: _canon_numbers(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_canon_numbers(v) for v in obj]
+    return obj
+
+
 def compute_proposal_hash(proposal: ActionProposal) -> str:
-    """status·proposal_hash를 제외한 정규화 JSON의 sha256 — 제안 변조 감지."""
-    payload = proposal.model_dump(mode="json", exclude=set(_HASH_EXCLUDED))
+    """status·proposal_hash를 제외한 정규화 JSON의 sha256 — 제안 변조 감지.
+
+    숫자는 float로 정규화 — 프론트(JS) 왕복에서 1.0이 1로 바뀌어도 해시가 안 깨진다.
+    """
+    payload = _canon_numbers(proposal.model_dump(mode="json", exclude=set(_HASH_EXCLUDED)))
     canonical = json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 

@@ -117,3 +117,9 @@ class BeforeAfter(Contract):
     verdict: BeforeAfterVerdict
     rationale: str
     interpretation: str = ""  # 보조 KPI(구매의도·신뢰도·거부율) 기반 결정론 해석 — 없으면 ""
+    pred_strong: bool | None = None  # 클릭 의향률 강함(≥0.2) 통과 — 예측 없으면 None
+    act_strong: bool | None = None  # 실측 CTR 양호(≥1%) 통과 — 판정 불가(노출0·미연결)면 None
+    purchase_pred_strong: bool | None = None  # 구매의도 강함(≥3.5/5) 통과 — 예측 없으면 None
+    purchase_act_strong: bool | None = (
+        None  # 실측 CVR 양호(≥2%) 통과 — CVR null(추적 전)·예측 미연결이면 None
+    )

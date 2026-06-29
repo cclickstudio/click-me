@@ -18,8 +18,8 @@ global(tenant_id NULL)이라 "NULL은 항상 보임" 정책으로 기존 동작�
 
 from alembic import op
 
-revision = "020"
-down_revision = "019"
+revision = "024"
+down_revision = "023"
 branch_labels = None
 depends_on = None
 
