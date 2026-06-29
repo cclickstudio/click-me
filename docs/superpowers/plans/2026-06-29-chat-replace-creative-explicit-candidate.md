@@ -586,6 +586,7 @@ writer.py 구현:
         고아 방지 — 승인 후 집행 시점에만 호출되므로 취소/만료 건은 creative를 만들지 않는다.
         ad_ids는 빌드 시점 get_creatives로 해상돼 evidence_metrics에 결속된 목록(proposal_hash가 덮음)
         → 프리뷰=집행 대상 일치, 집행 시점 _child_ids 재조회 안 함(drift 차단). dry/mock도 fan-out 실행.
+        (LIVE 후속 — 집행 시점 ad_ids의 campaign/org 소속·존재 재검증 추가; spec §9.)
         """
         self._require_writable(idem_key)
         creative_id = await self.create_ad_creative(
@@ -801,6 +802,10 @@ async def test_replace_creative_proposal_builds_tier3_with_creative_fields(clien
     em = proposal["evidence_metrics"]
     assert em["headline"] and em["body"] and em["link_url"]
     assert em["generation_id"] == "g1" and em["candidate_id"] == "c1"
+    # affected_ad_ids 결속(리뷰 ②) — proposal에 실리고 preview와 개수가 일치해야 감사 가능.
+    preview = resp.json()["preview"]
+    assert em["affected_ad_ids"]  # 비어있지 않음
+    assert em["affected_ad_count"] == len(em["affected_ad_ids"]) == len(preview["affected_ads"])
 
 
 async def test_replace_creative_proposal_rejects_unowned_campaign(client, other_org_campaign):
@@ -908,7 +913,11 @@ async def replace_creative_proposal(
                 # 결속(리뷰 ①④) — proposal_hash가 덮음 → 프리뷰=집행 대상 일치·감사 가능.
                 "affected_ad_ids": affected_ad_ids,
                 "affected_ad_count": len(affected_ad_ids),
-                "candidate_summary": {"headline": cand.copy.headline, "s3_key": cand.s3_key},
+                "candidate_summary": {
+                    "headline": cand.copy.headline,
+                    "body": cand.copy.body,  # 감사 가독성(리뷰 ③) — 무엇으로 바꿨는지 한눈에
+                    "s3_key": cand.s3_key,
+                },
             },
             metrics_as_of=now,
             hypothesis="후보 기반 소재 교체",

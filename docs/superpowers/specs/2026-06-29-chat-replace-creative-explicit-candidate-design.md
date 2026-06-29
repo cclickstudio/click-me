@@ -105,6 +105,8 @@
 ## 9. Non-goals
 
 - 경로 ① 자동선택 + 역링크(= B-2 후속).
-- LIVE adcreative 생성·검증(Meta 앱 Live 모드 전환 후) + LIVE 멱등 dedup(§3-10) + LIVE 라이브 드리프트 재검(빌드~집행 사이 Meta 광고 추가/삭제 시 결속 ad_ids vs 현재 _child_ids 비교).
+- LIVE adcreative 생성·검증(Meta 앱 Live 모드 전환 후) + LIVE 멱등 dedup(§3-10).
+- **LIVE 집행 시점 ad 재검증(후속)** — 결속된 `affected_ad_ids`가 집행 시점에도 같은 campaign/org 소속이며 존재하는지 재확인(라이브 드리프트: 빌드~집행 사이 Meta 광고 추가/삭제/이전). B-1 mock은 결속 ad_ids를 그대로 fan-out하고 LIVE에서 이 재검증을 추가한다.
+- **`use_mock` 내부경로 우회 점검(후속, 보안)** — generator GET이 `use_mock`이면 internal token 없이도 내부 경로가 열린다(org 스코프로 누출은 막았으나). `use_mock` 우회가 테스트/dev 환경 전용인지 별도 점검(B-1 범위 밖).
 - 신규 generation 무거운 비동기 풀체인(이미 존재하는 후보 우선).
 - generator D1 응답에 project/org를 **싣는** 계약 확장(B-1은 `X-Org-Id` 요청 스코프로 충분 — 응답 스키마는 안 바꾼다).
