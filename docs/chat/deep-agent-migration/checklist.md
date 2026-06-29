@@ -37,12 +37,14 @@
 
 ## 3단계 — 프론트 전환
 
-- [ ] ChatConversation SSE 파싱이 deep 경로 meta(위젯·approval)를 기존대로 처리하는지 확인 (대부분 무변경 기대)
-- [ ] (결정 시) meta.cards 렌더 신설: EVIDENCE/RESULT/REVIEW/ACTIONBAR 카드 컴포넌트
-- [ ] suggested_action → 기존 ApprovalWidget/위젯으로 매핑 렌더
-- [ ] 위젯 14개 기존 렌더 회귀 없음 확인
-- [ ] 검증: `pnpm tsc --noEmit` + `pnpm build`
-- [ ] 커밋: `add: 추천 조치 카드 렌더 + Deep Agent SSE 연결` (또는 edit)
+- [x] ChatConversation SSE 파싱이 deep 경로 meta를 기존대로 처리 — `kind='meta'`가 `data.meta`를 통째로 첨부해 **cards 자동 포함**(무변경). 영속도 백엔드가 meta 통째로 저장→복원 시 따라옴
+- [x] meta.cards 렌더 신설: `ActionCards.tsx`(RESULT/REVIEW/ACTIONBAR). EVIDENCE는 기존 CitationChips와 중복이라 제외. ApprovalWidget 톤 따름(Toss 스타일·dark 대응)
+- [x] SourceMeta에 `cards?: ActionCard[]` 추가, approval 앞에 `<ActionCards>` 렌더(assistant만)
+- [x] 위젯 14개·기존 렌더 무변경(렌더 분기에 cards 한 줄만 삽입, 기존 경로 불변)
+- [x] 검증: `tsc --noEmit` 0 에러 · ESLint 0 errors(ActionCards 깨끗, 기존 useEffect warning 1)
+  - 곁가지 fix: 무관한 `dashboard/page.tsx` getToken 중복 import(baseline부터 build 차단) 제거 → **별도 커밋**으로 분리
+  - ⏭ 카드 시각 e2e는 4단계로(백엔드 suggested_action 트리거에 실 데이터·키 필요 → 백엔드+프론트 동시 기동 시 종합 검증)
+- [ ] 커밋: `add: 추천 조치 카드(meta.cards) 렌더`
 
 ---
 

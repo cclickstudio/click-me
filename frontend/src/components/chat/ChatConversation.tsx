@@ -15,6 +15,7 @@ import DebateSummaryWidget from './DebateSummaryWidget';
 import GenFormWidget from './GenFormWidget';
 import GenResultWidget from './GenResultWidget';
 import SimGenListWidget from './SimGenListWidget';
+import ActionCards, { type ActionCard } from './ActionCards';
 import ApprovalWidget, { type ApprovalSpec } from './ApprovalWidget';
 import BatchSimWidget from './BatchSimWidget';
 import ReportWidget from './ReportWidget';
@@ -147,6 +148,7 @@ type SourceMeta = {
   used_tools?: string[];
   widget?: WidgetSpec;
   approval?: ApprovalSpec; // 개선 루프 HITL 수락/거절 카드
+  cards?: ActionCard[]; // Deep Agent·매니지먼트 추천 조치 카드(RESULT/REVIEW/ACTIONBAR)
   error?: boolean; // 에러 메시지 — 공통 ErrorCard로 렌더 + 재시도(X1)
 };
 // 채팅으로 실제 돌린 시뮬/생성 결과 참조 — 내역에 남겨 재로드 시 "결과 보기" 링크로 렌더.
@@ -1573,6 +1575,9 @@ export default function ChatConversation({
                     {msg.meta?.widget?.type === 'keyword_form' && (
                       <KeywordWidget />
                     )}
+                    {msg.role === 'assistant' && msg.meta?.cards?.length ? (
+                      <ActionCards cards={msg.meta.cards} />
+                    ) : null}
                     {msg.meta?.approval && (
                       <ApprovalWidget
                         approval={msg.meta.approval}
