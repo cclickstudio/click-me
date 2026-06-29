@@ -42,7 +42,7 @@
 
 8. **오케스트레이션 = writer `replace_creative_tree(campaign_id, ad_ids=…, ...)`**. executor의 REPLACE_CREATIVE 분기는 evidence_metrics의 결속된 `affected_ad_ids`를 넘겨 이 메서드 1개를 호출(executor 변경 최소).
 9. writer 내부: **adcreative 1회 생성**(`create_ad_creative` → creative_id, **승인된 건만** → 고아 없음) → **결속된 `ad_ids`(빌드 시점 값)** 각각에 **ad 단위 `replace_creative(ad_id, creative_id)`** fan-out. **집행 시점 `_child_ids` 재조회 안 함** → 재해상에 의한 프리뷰↔집행 divergence가 없다. **단 이는 실세계 라이브 드리프트(승인 전후 Meta 광고 추가/삭제/이동) 차단이 아니다** — 그 경우 stale ad를 바꾸거나 새 ad를 놓칠 수 있어, **LIVE는 집행 시점 재검증(ad의 campaign/org 소속·현재 child set/version 비교, mismatch면 실패)을 추가**한다(§9). fan-out이 ad_ids를 직접 도므로 dry/mock도 fan-out 실행 → 검증 가능. 부분 실패 시 `succeeded_ad_ids`/`failed_ad_id`를 결과에 남기고 재시도는 같은 creative_id 재적용(멱등)으로 안전.
-10. **멱등** — `create_ad_creative`는 같은 idem_key면 같은 creative_id를 돌려준다(mock: `mockcreative_{idem_key}` 결정적). 집행 retry(timeout/rate)나 멱등 재생 시 creative가 중복 생성되지 않는다. LIVE 멱등(Meta adcreatives create는 native idem 없음 → 이름 기반 dedup 또는 사전 조회)은 후속(§9).
+10. **멱등** — `create_ad_creative`는 같은 idem_key면 같은 creative_id를 돌려준다(mock: `mockcreative_{sha256(idem_key)[:16]}` — full-key digest로 충돌 회피, 리뷰 P1-b). 집행 retry(timeout/rate)나 멱등 재생 시 creative가 중복 생성되지 않는다. LIVE 멱등(Meta adcreatives create는 native idem 없음 → 이름 기반 dedup 또는 사전 조회)은 후속(§9).
 
 > executor를 per-target 루프로 바꾸려면 "creative 1회 생성"을 루프 밖으로 빼는 배선이 필요해 변경이 커진다. 기존 `activate_tree`가 이미 "한 번 처리 후 자식 fan-out"을 writer 안에서 하므로, 동일 패턴으로 writer에 위임해 executor를 최소 변경한다.
 
@@ -93,7 +93,7 @@
 ## 8. 테스트 (mock)
 
 - **캠페인 소유권** — 타 org 캠페인 교체 요청 거부(403/404).
-- **후보-org 누출 차단(§6-②, 두 층)** — ⓐ `GeneratorReadClient.get_candidate`가 `X-Org-Id`를 보낸다. ⓑ **generator 라우터 테스트**: internal token + 잘못된 X-Org-Id → 404, 올바른 org → 200(`get_detail` org 스코프). B-1에서 닫으므로 라우터 레벨 테스트 필수.
+- **후보-org 누출 차단(§6-②, 두 층)** — ⓐ `GeneratorReadClient.get_candidate`가 `X-Org-Id`를 보낸다(라우터 테스트로 org 전달 캡처·단언). ⓑ **generator 라우터 경로별 테스트**: **internal token** 경로 → X-Org-Id 필수(없으면 400), 잘못된 org → 404, 올바른 org → 200. **유저 경로**(세션 org)·**use_mock 무인증 브라우징** → X-Org-Id 없이 200(기존 프론트/mock 안 깨짐, 리뷰 P2-c). 누출면(무스코프)은 internal 경로에서만 닫고 mock 우회 자체는 후속 점검(§9).
 - 이미지 규격 검증 실패 → proposal 생성 실패(집행 없음).
 - 빌드된 proposal: `target_object_ids`=캠페인 단일, evidence_metrics에 image_hash·copy·link_url·generation/candidate·**affected_ad_ids**·affected_ad_count, Tier-3.
 - sending mode면 엔드포인트 501 차단(§6-⑦).

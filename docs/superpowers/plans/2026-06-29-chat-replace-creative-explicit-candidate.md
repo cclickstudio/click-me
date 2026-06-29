@@ -4,7 +4,7 @@
 
 **Goal:** 기존 캠페인의 소재를 사용자가 고른 generator 후보로 교체하는 REPLACE_CREATIVE를, 승인 후 집행 시점에 adcreative를 만들어 캠페인 하위 광고에 fan-out 적용하는 백엔드를 mock으로 완성한다.
 
-**Architecture:** 빌드 시점(라우터)은 캠페인 소유권 검증·후보 핸드오프·이미지 규격검증·이미지 업로드·proposal 빌드까지만 하고 adcreative는 만들지 않는다. 집행 시점(executor→writer `replace_creative_tree`)에 adcreative를 1회 생성하고 `_child_ids`로 하위 광고에 fan-out 교체한다(`activate_tree` 패턴). 변환을 승인 후로 미뤄 고아 adcreative를 원천 차단한다.
+**Architecture:** 빌드 시점(라우터)은 캠페인 소유권 검증·후보 핸드오프·이미지 규격검증·이미지 업로드·**영향 광고 해상(affected_ad_ids 결속)**·proposal 빌드까지만 하고 adcreative는 만들지 않는다. 집행 시점(executor→writer `replace_creative_tree`)에 adcreative를 1회 생성하고 **proposal에 결속된 `affected_ad_ids`** 로 하위 광고에 fan-out 교체한다(집행 시점 `_child_ids` 재해상 안 함 → 프리뷰=집행 대상 결속). 변환을 승인 후로 미뤄 고아 adcreative를 원천 차단한다.
 
 **Tech Stack:** Python(uv) · FastAPI · Pillow(PNG→JPEG) · Meta Graph API v23(mock에선 미호출) · pytest.
 
@@ -116,13 +116,20 @@ async def get_generation(
         detail = await generator_service.get_detail(
             generation_id, await _require_user_org(user, db)
         )
-    elif (internal and x_internal_token == internal) or use_mock:
-        # 내부/mock 경로도 X-Org-Id 필수 — 무스코프 조회 누출면 제거(리뷰 P1-a).
-        # 헤더 없으면 거부(과거의 org=None 우회 폐지). 무스코프가 꼭 필요하면 별도 admin 경로로.
+    elif internal and x_internal_token == internal:
+        # prod 내부 서비스 호출 — X-Org-Id 필수(무스코프 누출면 제거, 리뷰 P1-a).
         if not x_org_id:
             raise HTTPException(status_code=400, detail="내부 호출에 X-Org-Id 필요")
         try:
             org = uuid.UUID(x_org_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="잘못된 X-Org-Id") from exc
+        detail = await generator_service.get_detail(generation_id, org)
+    elif use_mock:
+        # dev/mock — 실 테넌트 없음. X-Org-Id 있으면 스코프(B-1 테스트·관리 호출), 없으면 우회
+        # (기존 무인증 mock 브라우징 유지, 리뷰 P2-c). use_mock 우회 자체 점검은 후속(spec §9).
+        try:
+            org = uuid.UUID(x_org_id) if x_org_id else None
         except ValueError as exc:
             raise HTTPException(status_code=400, detail="잘못된 X-Org-Id") from exc
         detail = await generator_service.get_detail(generation_id, org)
@@ -178,13 +185,26 @@ async def test_get_generation_internal_correct_org_200(client, seeded_generation
     assert resp.status_code == 200
 
 async def test_get_generation_internal_missing_org_400(client, seeded_generation):
-    # X-Org-Id 없는 내부 경로는 거부(무스코프 우회면 제거, 리뷰 P1-a).
+    # internal 토큰 경로는 X-Org-Id 없으면 거부(무스코프 우회면 제거, 리뷰 P1-a).
     resp = await client.get(
         f"/api/generator/generations/{seeded_generation.id}",
         headers={"X-Internal-Token": INTERNAL_TOKEN},
     )
     assert resp.status_code == 400
+
+async def test_get_generation_user_path_needs_no_org_header(user_client, seeded_generation):
+    # 로그인 유저 경로는 세션 org를 쓰므로 X-Org-Id 불필요(프론트 정상, 리뷰 P2-c).
+    resp = await user_client.get(f"/api/generator/generations/{seeded_generation.id}")
+    assert resp.status_code == 200
+
+async def test_get_generation_mock_no_user_no_header_ok(mock_client, seeded_generation):
+    # use_mock + 무인증 + 헤더 없음 = 기존 dev 브라우징 — 400 아님(리뷰 P2-c).
+    # (mock_client: use_mock=True, internal_service_token 미설정/불일치, 비로그인)
+    resp = await mock_client.get(f"/api/generator/generations/{seeded_generation.id}")
+    assert resp.status_code == 200
 ```
+
+> 픽스처 `user_client`(로그인·seeded_generation의 org 소속)·`mock_client`(use_mock·무인증·internal 토큰 불일치)는 generator 테스트 conftest 패턴에 맞춘다. 핵심은 **유저 경로·mock 브라우징은 X-Org-Id 없이 통과**(P2-c 회귀), **internal 토큰 경로만 필수**임을 못박는 것.
 
 > 픽스처(`seeded_generation`·`INTERNAL_TOKEN`·org id)는 generator 테스트의 기존 시드 패턴에 맞춘다. `get_detail(generation_id, org_id)`가 org 불일치 시 `None` → 라우터 404.
 
@@ -298,7 +318,9 @@ Expected: FAIL — `AttributeError: 'MetaAdsWriter' object has no attribute 'cre
             },
         }
         if self._mode not in _SENDING_MODES or self._client is None:
-            return f"mockcreative_{idem_key[:12]}"
+            # 멱등 + 충돌 회피(리뷰 P1-b) — prefix[:12] 대신 full-key sha256 digest.
+            # (파일 상단에 `import hashlib` 필요.)
+            return f"mockcreative_{hashlib.sha256(idem_key.encode()).hexdigest()[:16]}"
         account = normalize_ad_account(ad_account_id)
         resp = await self._client.post(
             f"{account}/adcreatives",
@@ -674,14 +696,22 @@ writer.py 구현:
     async def replace_creative_tree(
         self, campaign_id: str, *, ad_ids, ad_account_id, image_hash, headline, body, link_url, idem_key: str
     ) -> ActionResult:
+        # real writer 부분실패 동작 반영(리뷰 P2-b) — fail_targets에 든 ad에서 실패하고
+        # succeeded_ad_ids/failed_ad_id snapshot을 남긴다(executor 부분실패·재시도 테스트용).
         await self.create_ad_creative(
             ad_account_id, image_hash=image_hash, headline=headline,
             body=body, link_url=link_url, idem_key=f"{idem_key}-creative",
         )
-        last = None
+        succeeded: list[str] = []
         for i, ad_id in enumerate(ad_ids):  # 결속 ad_ids 각각 기록(fan-out 검증용)
-            last = self._respond("REPLACE_CREATIVE", ad_id, f"{idem_key}-ad-{i}")
-        return last or self._respond("REPLACE_CREATIVE", campaign_id, idem_key)
+            r = self._respond("REPLACE_CREATIVE", ad_id, f"{idem_key}-ad-{i}")
+            if r.status is not ResultStatus.SUCCESS:
+                return r.model_copy(update={"platform_response_snapshot": {
+                    **(r.platform_response_snapshot or {}),
+                    "succeeded_ad_ids": succeeded, "failed_ad_id": ad_id,
+                }})
+            succeeded.append(ad_id)
+        return self._respond("REPLACE_CREATIVE", campaign_id, idem_key)
 ```
 
 - [ ] **Step 6: 통과 확인 + 기존 회귀**
@@ -879,6 +909,9 @@ async def test_replace_creative_proposal_builds_tier3_with_creative_fields(clien
     preview = resp.json()["preview"]
     assert em["affected_ad_ids"]  # 비어있지 않음
     assert em["affected_ad_count"] == len(em["affected_ad_ids"]) == len(preview["affected_ads"])
+    # org 전달 검증(리뷰 P2-a) — 라우터가 get_candidate(org_id=…)로 호출 org를 넘겼는지 캡처 단언.
+    # fake_generator는 get_candidate 호출의 org_id를 last_org_id에 기록하도록 구성.
+    assert fake_generator.last_org_id is not None and fake_generator.last_org_id != ""
 
 
 async def test_replace_creative_proposal_rejects_unowned_campaign(client, other_org_campaign):
@@ -1059,6 +1092,7 @@ git commit -m "fix: B-1 회귀·lint 정리"
 - **Spec 커버리지:** spec §3 빌드/집행 분리 → Task 5(빌드)·Task 3·4(집행). §4 계약변경(replace_creative ad_id·신규 메서드·affected_ad_ids 결속) → Task 1·3·5. §6① 고아차단(집행시점) → Task 3·4. §6② 후보-org 누출 차단(generator org 스코프 + 라우터 테스트) → **Task 0**. §6③ 캠페인 소유권 → Task 5. §6④ no-op 하드게이트 없음 → 미구현(의도적). §6⑤ 프리뷰 → Task 5(`get_creatives`). §6⑥ 규격검증 → Task 2·5. §6⑦ LIVE 게이트=execution_mode → Task 1·3 + Task 5(501 차단). §6⑧ 프리뷰=집행 결속(affected_ad_ids·proposal_hash) → Task 4·5 + fan-out 테스트(Task 3·4). §3-10 멱등 결정성 → Task 1·4. §8 mock 테스트 → 각 태스크.
 - **No-placeholder:** 모든 코드 스텝에 실제 코드. 픽스처는 기존 패턴 재사용을 명시. Task 0 mock seed org 연결은 Step 7 주의로 명시.
 - **타입 일관:** `create_ad_creative`(ad_account_id, *, image_hash, headline, body, link_url, idem_key)→str / `replace_creative`(ad_id, creative_id, idem_key) / `replace_creative_tree`(campaign_id, *, ad_ids, ad_account_id, image_hash, headline, body, link_url, idem_key) / `get_candidate`(generation_id, candidate_id, org_id=None) — Task 0·1·3·4·5·helpers 전반 동일. evidence_metrics 키(image_hash·headline·body·link_url·affected_ad_ids·generation_id·candidate_id)는 Task 4(읽기)·5(쓰기) 일치.
-- **B-1 라운드 추가 반영:** P1-a 내부 GET X-Org-Id 필수화(누출면 제거)+호출자 audit → Task 0. P1-b "drift" 문구 정정(재해상 divergence만 차단, 라이브 드리프트 재검은 LIVE 후속) → spec §3-9/§6⑧/§9. P1-c fan-out 부분실패 succeeded/failed 기록+멱등 재시도 → Task 3(+테스트). P2-a affected_ad_ids 타입 방어 → Task 4(+테스트). P2-b 승인 전 업로드 side effect는 LIVE에서 executor 이동 후속 → spec §9.
+- **B-1 라운드 추가 반영(1차):** P1-a 내부 GET X-Org-Id 필수화 → Task 0. P1-b "drift" 문구 정정 → spec. P1-c fan-out 부분실패 기록 → Task 3. P2-a affected_ad_ids 타입 방어 → Task 4. P2-b 업로드 executor 이동 후속 → spec §9.
+- **B-1 라운드 추가 반영(2차):** P1-a' architecture 헤더 `_child_ids` 문구 제거(결속 affected_ad_ids로 통일). P1-b' mock creative id `sha256(idem_key)[:16]`(prefix 충돌 회피). P2-a' 경로 분리 — internal만 X-Org-Id 필수, **유저/use_mock 무인증 브라우징은 헤더 없이 200**(기존 프론트/mock 회귀 방지) + 경로별 테스트. P2-b' Task 5 org 전달 캡처 단언. P2-c' FakeWriter가 부분실패 snapshot(succeeded/failed) 반영.
 - **범위:** 프론트 카드·LIVE adcreative·LIVE 멱등/드리프트 재검·업로드 executor 이동은 후속(YAGNI). 후보-org 누출은 Task 0에서 닫음(크로스팀 generator 변경 — 리뷰 필요).
 - **실행 순서:** Task 0(generator 선결) → 1 → 2 → 3 → 4 → 5 → 6.
