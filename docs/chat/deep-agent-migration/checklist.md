@@ -20,14 +20,17 @@
 
 ## 2단계 — 백엔드 전환
 
-- [ ] `domain/chat/orchestrator.py`: classify에 `deep` intent 추가 + deep_node에서 build_deep_agent 루프 호출
-- [ ] deep_node 결과(SubagentResult) → 우리 ChatAnswer.meta로 변환 (위젯/approval/cards 매핑)
-- [ ] Deep Agent generator TRIGGER → meta.widget=gen_form, 시뮬 트리거 → meta.widget=sim_form 변환
-- [ ] 단일 도메인·결정론 경로(시뮬/생성 실행·템플릿·리포트·비교·키워드)는 **무변경** 보존 확인
-- [ ] 장기기억 배선: 턴 시작 recall→memory_context 주입 / 턴 종료 remember(백그라운드)
-- [ ] management ours 유지 확정 (dev 전환 안 함) — memory_store/recall 경로 검증
-- [ ] chat.py 22 엔드포인트 유지 확인 (complete/approve 내부 오케 호출만 deep 분기)
-- [ ] 검증: 백엔드 import + `uv run ruff check` + `uv run pytest tests/ -v`
+- [x] `domain/chat/orchestrator.py`: classify에 `deep` intent + deep_node(주입된 deep_runner 호출). domain→api 역의존 회피 위해 deep_runner를 **포트로 주입**(api가 조립)
+- [x] deep_node 결과(SubagentResult) → ChatAnswer.meta로 변환(source/label/engine setdefault, 실패·None은 advise 폴백)
+- [x] **위젯 보존 전략 확정**: deep는 실제 시뮬/생성을 트리거하지 않음(조회·합성·제안만). 실행은 기존 위젯 경로(sim_form/gen_form)가 담당 → 위젯 100% 무변경
+- [x] 단일 도메인·결정론 경로(시뮬/생성 실행·템플릿·리포트·비교·키워드)는 **무변경** 보존
+- [x] 장기기억 배선: chat.py가 recall→memory_context 주입(ChatTurn), 턴 종료 remember(suggested_action 있을 때, 백그라운드)
+- [x] management **ours 유지** — memory_store/recall 그대로, management_node에 memory_context 주입 + _mgmt_meta에 suggested_action 노출
+- [x] meta.cards 합성(chat.py `_cards_from_meta` → composer.compose_turn 재사용) — 행동 제안 있을 때만
+- [x] `api/assistant/wiring.py`: 깨진 `build_generation_chat_agent` import 제거(우리 generator 어댑트), `build_chat_deep_runner` 추가
+- [x] chat.py 22 엔드포인트 유지(complete 내부 오케 호출만 deep 분기 + recall/cards/remember)
+- [x] 검증: import OK + ruff OK + 관련 pytest 61 passed
+  - ⚠️ dev 미정합 테스트 3종(test_chat_memory·test_crag·test_assistant_execute_flow)은 **baseline(1edaacc)부터 collection 에러**(우리 노선에 없는 심볼 import). 4단계에서 우리 함수명에 맞춰 정리.
 - [ ] 커밋: `edit: chat 오케스트레이터 Deep Agent 도구루프 흡수 + 장기기억 배선`
 
 ---
@@ -45,6 +48,7 @@
 
 ## 4단계 — 마이그레이션·검증
 
+- [ ] dev 미정합 테스트 정리: test_chat_memory(우리 `_recall_memory_context`/`_memory_ids`에 맞춰 재작성), test_crag·test_assistant_execute_flow(우리 management graph 심볼 대조 후 갱신/삭제)
 - [ ] alembic 선형 재번호 (dev primary + feat 후행 삽입, 단일 head)
 - [ ] 029(management_user_memory.embedding, M6) 적용
 - [ ] `uv run alembic heads` → 단일 head 확인 / `alembic upgrade head` 통과

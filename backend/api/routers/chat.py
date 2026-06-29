@@ -1,6 +1,8 @@
+import asyncio
 import json
 import uuid
 from collections.abc import AsyncGenerator, Awaitable, Callable
+from typing import TYPE_CHECKING
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
@@ -26,6 +28,9 @@ from domain.chat.orchestrator import ChatTurn, build_chat_orchestrator
 from domain.management.assistant.history import record_feedback  # RAG 피드백 적재(/feedback)
 from tools.storage.s3 import download_bytes, upload_bytes
 
+if TYPE_CHECKING:
+    from domain.management.assistant.memory_store import ManagementMemory
+
 # 채팅 첨부 이미지 — 허용 타입과 S3 프리픽스(프록시 게이트).
 _ALLOWED_IMAGE_TYPES: dict[str, str] = {
     "image/png": "png",
@@ -42,13 +47,116 @@ assistant_router = APIRouter()
 # 채팅 답변 엔진은 OpenAI 오케스트레이터로 일원화(Gemini 경로 제거).
 # 풀모드면 classify → route → 도메인 서브에이전트/advise, 키 없으면 키워드 폴백(매니지).
 _orchestrator = None
+_memory = None  # 세션 넘는 장기기억(management memory_store) 싱글톤
+_bg_tasks: set[asyncio.Task] = set()  # remember 백그라운드 — GC 방지 강참조
 
 
 def _get_orchestrator() -> Callable[[ChatTurn], Awaitable[object]]:
     global _orchestrator
     if _orchestrator is None:
-        _orchestrator = build_chat_orchestrator(settings)
+        # Deep Agent 도구루프 실행기를 api 계층에서 조립해 주입(domain→api 역의존 회피).
+        # 빌드 실패(키 없음 등)면 None — 오케스트레이터가 deep 분기를 advise로 폴백한다.
+        deep_runner = None
+        try:
+            from api.assistant.wiring import build_chat_deep_runner  # noqa: PLC0415
+
+            deep_runner = build_chat_deep_runner(settings)
+        except Exception as exc:  # noqa: BLE001 — deep 미가동이 채팅 기동을 막지 않게
+            print(f"[chat] deep_runner build failed: {exc!r}")
+        _orchestrator = build_chat_orchestrator(settings, deep_runner=deep_runner)
     return _orchestrator
+
+
+def _get_memory() -> "ManagementMemory":
+    """장기기억(ManagementMemory) 싱글톤 — recall/remember 공용."""
+    global _memory
+    if _memory is None:
+        from domain.management.assistant.memory_store import build_memory_store  # noqa: PLC0415
+
+        _memory = build_memory_store(settings)
+    return _memory
+
+
+def _memory_ids(body: ChatRequest, current_user: User) -> tuple[str | None, str | None]:
+    """장기기억 네임스페이스 키 (tenant_id, user_id) — 본문 우선, 인증 유저 폴백."""
+    user_id = body.user_id or (str(current_user.id) if getattr(current_user, "id", None) else None)
+    tenant_id = body.organization_id or getattr(current_user, "organization_id", None)
+    return (str(tenant_id) if tenant_id else None), user_id
+
+
+async def _recall_memory_context(body: ChatRequest, query: str, current_user: User) -> str | None:
+    """로그인 사용자의 세션 넘는 장기기억을 시맨틱 회수해 맥락 문자열로 포맷(없으면 None)."""
+    tenant_id, user_id = _memory_ids(body, current_user)
+    if not user_id:
+        return None
+    try:
+        rows = await _get_memory().recall(tenant_id, user_id, query=query, limit=5)
+    except Exception as exc:  # noqa: BLE001 — 회수 실패가 답변을 막지 않게
+        print(f"[chat] recall error: {exc!r}")
+        return None
+    lines = [
+        f"- {fact}" for r in rows if (fact := r.get("fact") or r.get("note") or r.get("summary"))
+    ]
+    if not lines:
+        return None
+    return "이 사용자의 장기기억(참고용):\n" + "\n".join(lines)
+
+
+def _spawn_remember(body: ChatRequest, meta: dict | None, current_user: User) -> None:
+    """행동 제안이 나온 턴을 장기기억에 적재(백그라운드, best-effort) — 과거 결정 요약 누적."""
+    sa = meta.get("suggested_action") if isinstance(meta, dict) else None
+    tenant_id, user_id = _memory_ids(body, current_user)
+    if not user_id or not sa:
+        return
+
+    async def _run() -> None:
+        try:
+            key = f"action:{body.session_id}:{sa.get('action_type', 'unknown')}"
+            fact = f"{sa.get('action_type', '')} 제안 — {str(sa.get('rationale', ''))[:120]}"
+            await _get_memory().remember(
+                tenant_id, user_id, key, {"fact": fact, "suggested_action": sa}
+            )
+        except Exception as exc:  # noqa: BLE001 — 적재 실패가 응답을 막지 않게
+            print(f"[chat] remember error: {exc!r}")
+
+    task = asyncio.create_task(_run())
+    _bg_tasks.add(task)
+    task.add_done_callback(_bg_tasks.discard)
+
+
+def _cards_from_meta(meta: dict | None) -> list[dict]:
+    """meta.suggested_action → 추천 조치 카드(EVIDENCE/RESULT/REVIEW/ACTIONBAR) 합성.
+
+    행동 제안이 있을 때만 카드를 만든다(인용만 있는 답변은 기존 citations 칩으로 충분).
+    management 단일 경로·deep 경로 모두 동일 meta 형식을 내므로 한 곳에서 합성한다.
+    """
+    if not isinstance(meta, dict) or not meta.get("suggested_action"):
+        return []
+    from domain.management.assistant.composer import compose_turn  # noqa: PLC0415
+    from domain.management.assistant.contracts import (  # noqa: PLC0415
+        AskResult,
+        Citation,
+        SuggestedAction,
+    )
+
+    sa = meta["suggested_action"]
+    _cite_keys = ("kind", "source", "title", "trust", "source_url", "as_of")
+    try:
+        res = AskResult(
+            answer="",
+            citations=[
+                Citation(**{k: c[k] for k in _cite_keys if k in c})
+                for c in (meta.get("citations") or [])
+            ],
+            used_tools=list(meta.get("used_tools") or []),
+            evidence=meta.get("evidence") or {},
+            suggested_action=SuggestedAction(**sa),
+        )
+        env = compose_turn(res, turn_id=uuid.uuid4().hex[:12])
+        return [c.model_dump(mode="json") for c in env.cards]
+    except Exception as exc:  # noqa: BLE001 — 카드 합성 실패가 답변을 막지 않게
+        print(f"[chat] cards build error: {exc!r}")
+        return []
 
 
 def _thread_id_for_session(session_id: str, compat_thread_id: str | None = None) -> str:
@@ -105,7 +213,9 @@ async def chat_complete(
     async def generate() -> AsyncGenerator[str, None]:
         # 진행 중 표시 — 느릴 수 있는 오케스트레이터 호출 전에 스피너 트레이를 띄운다(T17).
         yield _sse("progress", progress={"label": "생각 중 🔄", "pct": None})
-        # 오케스트레이터(OpenAI) 단일 경로 — classify → route → 도메인 서브에이전트/advise.
+        # 세션 넘는 장기기억 회수 — deep/management 맥락에 끼울 문자열(로그인 사용자만, best-effort).
+        memory_context = await _recall_memory_context(body, last_message, current_user)
+        # 오케스트레이터(OpenAI) 단일 경로 — classify → route → 도메인 서브에이전트/advise/deep.
         try:
             orch = await _get_orchestrator()(
                 ChatTurn(
@@ -115,6 +225,7 @@ async def chat_complete(
                     session_id=body.session_id,
                     thread_id=_thread_id_for_session(body.session_id, body.thread_id),
                     project_id=body.project_id,
+                    memory_context=memory_context,
                 )
             )
         except Exception as exc:  # noqa: BLE001 — 실패해도 스트림은 안내로 마무리
@@ -128,6 +239,11 @@ async def chat_complete(
             answer = "지금은 답변을 생성할 수 없어요. 잠시 후 다시 시도해주세요."
             meta = {"source": "orchestrator", "label": "CLIO", "engine": "OpenAI"}
 
+        # 추천 조치 카드 — 행동 제안(suggested_action)이 있으면 meta.cards로 합성(프론트가 렌더).
+        cards = _cards_from_meta(meta)
+        if cards:
+            meta = {**meta, "cards": cards}
+
         yield _sse("meta", meta=meta)
         for piece in _chunks(answer):
             yield _sse("text", token=piece)
@@ -135,6 +251,8 @@ async def chat_complete(
         if isinstance(meta, dict) and meta.get("approval"):
             yield _sse("approval", approval=meta["approval"])
         await _persist(body.session_id, last_message, answer, meta, body.image_url, body.result_ref)
+        # 행동 제안이 나온 턴을 장기기억에 적재(백그라운드) — 다음 세션 recall에 반영.
+        _spawn_remember(body, meta, current_user)
         yield _sse("done")
 
     return StreamingResponse(

@@ -13,6 +13,8 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 
 from core.assistant import AssistantRequest
+from core.assistant_contracts import SubagentRequest, SubagentResult
+from core.schemas import ChatMessage
 from core.tracing import make_trace_config
 from domain.chat import history
 from domain.chat.loop_state import MAX_LOOP, get_loop_state
@@ -87,6 +89,7 @@ def _spawn_persist(project_id: str | None, mem_type: str, data: dict) -> None:
     _bg_tasks.add(task)
     task.add_done_callback(_bg_tasks.discard)
 
+
 _CLASSIFY_SYSTEM = (
     "너는 ClickMe 광고 플랫폼의 라우터다. 사용자 메시지를 정확히 하나의 도메인으로 분류한다.\n\n"
     "[도메인 정의]\n"
@@ -95,6 +98,9 @@ _CLASSIFY_SYSTEM = (
     "- management: 집행 '후' 실측 성과·운영. 집행된 캠페인의 예산·소진·CTR/ROAS/CVR 실적·"
     "페이싱·증액/감액·일시중지 등.\n"
     "- generator: 광고 시안 생성·카피 전략·작성 원칙·시안 만들기 요청.\n"
+    "- deep: 여러 도메인을 한 번에 엮어야 하는 복합 요청. 예: 집행 후 성과를 조회해 그 결과로 "
+    "개선 시안·전략까지 한 번에 요구하거나, 매니지먼트 성과와 생성/시뮬을 연계 분석. "
+    "단일 도메인으로 충분하면 deep로 보내지 말 것(보수적으로 단일 도메인 우선).\n"
     "- advise: 위 어디에도 안 맞는 일반 광고 전략·마케팅 아이디어·잡담.\n\n"
     "[판단 기준]\n"
     "- '집행 전 예측·KPI 의미'면 simulation, '집행 후 실측 성과'면 management. "
@@ -132,6 +138,7 @@ _CLASSIFY_SYSTEM = (
     "'내가 만든 시안 뭐 있어?' → generator / list\n"
     "'내 시안 첫번째로 광고 집행해줘' → management / ask\n"
     "'시뮬 결과 리포트로 뽑아줘 / 요약해줘' → simulation / ask\n"
+    "'성과 안 좋은 캠페인 찾아서 개선 시안 방향까지 잡아줘' → deep / ask\n"
     "'요즘 20대 마케팅 트렌드 뭐야?' → advise (is_ad_domain=true)\n"
     "'파이썬 정렬 코드 짜줘' / '오늘 점심 뭐 먹지?' → advise (is_ad_domain=false)"
 )
@@ -175,6 +182,8 @@ class ChatTurn:
     session_id: str | None = None  # 개선 루프 상태 키(턴 간 보존)
     thread_id: str | None = None  # LangGraph 체크포인터 스레드 키(session_id와 동일)
     project_id: str | None = None  # 목록 조회 스코프(현재 프로젝트)
+    # 세션 넘는 장기기억 회수 결과(api 계층이 recall→포맷해 주입). deep/management 맥락에 끼운다.
+    memory_context: str | None = None
 
 
 @dataclass
@@ -387,7 +396,7 @@ def _mgmt_answer(res: AskResult) -> str:
 
 
 def _mgmt_meta(res: AskResult) -> dict:
-    """AskResult → SSE meta(출처·인용·승인 게이트)."""
+    """AskResult → SSE meta(출처·인용·승인 게이트). suggested_action/evidence는 추천 카드 생성용."""
     return {
         "source": "management",
         "label": "매니지먼트 어시스턴트",
@@ -398,6 +407,9 @@ def _mgmt_meta(res: AskResult) -> dict:
         "used_tools": res.used_tools,
         "requires_approval": res.requires_approval,
         "thread_id": res.thread_id,
+        # api 계층(chat.py)이 이 값으로 meta.cards(RESULT/REVIEW/ACTIONBAR)를 합성한다.
+        "suggested_action": (res.suggested_action.model_dump() if res.suggested_action else None),
+        "evidence": res.evidence,
     }
 
 
@@ -414,8 +426,15 @@ def _assistant_meta(res, source: str, label: str) -> dict:
     }
 
 
-def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnswer | None]]:
-    """오케스트레이터 진입점. 키+실모드면 classify → route 그래프, 아니면 키워드 폴백."""
+def build_chat_orchestrator(
+    settings,
+    deep_runner: Callable[[SubagentRequest], Awaitable[SubagentResult | None]] | None = None,
+) -> Callable[[ChatTurn], Awaitable[ChatAnswer | None]]:
+    """오케스트레이터 진입점. 키+실모드면 classify → route 그래프, 아니면 키워드 폴백.
+
+    deep_runner(포트) — 복합 질의(여러 도메인 동시 요구)를 Deep Agent 도구루프로 합성하는 실행기.
+    api 계층이 조립해 주입(domain→api 역의존 회피). None이면 deep 분기를 advise로 폴백한다.
+    """
     api_key = getattr(settings, "openai_api_key", None)
     use_mock = getattr(settings, "use_mock", True)
     mgmt = build_management_agent(settings)  # 폴백/풀모드 자동 분기(같은 게이트)
@@ -466,7 +485,7 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
     # gen_result는 LLM 분류 대상 아님(위젯의 [생성결과] 접두사로 결정론 분기).
     # (시뮬 결과는 프론트가 sim_result 위젯을 직접 렌더 — [시뮬결과] 텍스트 경로 없음.)
     class _Intent(BaseModel):
-        intent: Literal["management", "simulation", "generator", "advise"]
+        intent: Literal["management", "simulation", "generator", "advise", "deep"]
         action: Literal["ask", "run", "list", "select"] = "ask"
         confidence: Literal["high", "medium", "low"] = "high"  # 분류 확신도(라우팅 로그용)
         # 광고 관련(무제한) vs 비광고 일반 업무(한도) 판정(P12). 애매하면 광고로(True) 보수적.
@@ -535,6 +554,7 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
         project_id: str | None
         ltm: list[dict]
         brand: dict | None
+        memory_context: str | None  # 세션 넘는 장기기억(deep·management 맥락 주입)
         intent: str
         action: str
         is_ad_domain: bool
@@ -593,6 +613,7 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
                 question=state["question"],
                 campaign_id=state.get("context_id"),
                 thread_id=mgmt_thread,
+                memory_context=state.get("memory_context"),  # 장기기억(있으면 LLM 맥락 주입)
             )
         )
         return _with_ai_message(_mgmt_answer(res), _mgmt_meta(res))
@@ -782,6 +803,37 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
             meta["citations"] = citations
         return _with_ai_message(ans, meta)
 
+    async def deep_node(state) -> dict:
+        # 복합 질의 — Deep Agent 도구루프(management+generator 합성, act-first)로 처리한다.
+        # 실제 시뮬/생성 실행은 트리거하지 않고(위젯 경로 보존) 조회·합성·제안만 한다.
+        # deep_runner 미주입(키 없음)·실패·ADVISE(None)면 일반 조언으로 폴백한다.
+        if deep_runner is None:
+            return await advise_node(state)
+        msgs = [
+            ChatMessage(role=role, content=content)
+            for role, content in _recent_history(state, limit_messages=12)
+        ]
+        msgs.append(ChatMessage(role="user", content=state["question"]))
+        req = SubagentRequest(
+            messages=msgs,
+            session_id=state.get("session_id") or "",
+            project_id=state.get("project_id"),
+            context_ad_id=state.get("context_id"),
+            memory_context=state.get("memory_context"),
+        )
+        try:
+            result: SubagentResult | None = await deep_runner(req)
+        except Exception as exc:  # noqa: BLE001 — deep 실패가 대화를 끊지 않게 advise 폴백
+            print(f"[chat] deep_runner error: {exc!r}")
+            result = None
+        if result is None or not (result.message or "").strip():
+            return await advise_node(state)
+        meta = dict(result.meta or {})
+        meta.setdefault("source", "orchestrator")
+        meta.setdefault("label", "오케스트레이터")
+        meta.setdefault("engine", engine_label)
+        return _with_ai_message(result.message, meta)
+
     def route(state) -> str:
         return state.get("intent", "advise")
 
@@ -792,6 +844,7 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
     g.add_node("generator", generator_node)
     g.add_node("gen_result", gen_result_node)
     g.add_node("advise", advise_node)
+    g.add_node("deep", deep_node)
     g.add_edge(START, "classify")
     g.add_conditional_edges(
         "classify",
@@ -802,6 +855,7 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
             "generator": "generator",
             "gen_result": "gen_result",
             "advise": "advise",
+            "deep": "deep",
         },
     )
     for _node in (
@@ -810,6 +864,7 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
         "generator",
         "gen_result",
         "advise",
+        "deep",
     ):
         g.add_edge(_node, END)
 
@@ -992,6 +1047,7 @@ def build_chat_orchestrator(settings) -> Callable[[ChatTurn], Awaitable[ChatAnsw
                 "project_id": turn.project_id,
                 "ltm": ltm,
                 "brand": brand,
+                "memory_context": turn.memory_context,
             },
             config=config,
         )
