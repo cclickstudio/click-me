@@ -10,6 +10,11 @@ import { KpiCard } from '@/components/ui/KpiCard';
 import { formatPercent } from '@/lib/utils';
 import type { ObjectiveFit, ReportView, SimRunResult } from '@/lib/types';
 
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
+// 광고 이미지 URL — 백엔드 프록시 상대경로(/api/...)면 API_BASE를 붙인다. http(s)는 그대로.
+const assetSrc = (u?: string | null) =>
+  u && u.startsWith('/') ? `${API_BASE}${u}` : (u ?? undefined);
+
 /* ─── enum 한글 라벨(백엔드 contracts/enums.py 동기화) ─── */
 const EMOTION_LABEL: Record<string, string> = {
   curiosity: '호기심',
@@ -105,6 +110,20 @@ export function SimulationResultView({
   const agg = result.aggregate;
   const reactions = result.reactions ?? [];
   const passed = reactions.filter(r => r.qa_passed);
+
+  // 구매의도 1~5 분포(F7) — 평균만 단언하지 말고 분포 전체를 보여준다. QA 통과 반응 우선.
+  const purchaseDist = (() => {
+    const counts = [0, 0, 0, 0, 0];
+    let total = 0;
+    for (const r of passed.length ? passed : reactions) {
+      const pi = Math.round(r.purchase_intent);
+      if (pi >= 1 && pi <= 5) {
+        counts[pi - 1] += 1;
+        total += 1;
+      }
+    }
+    return { counts, total };
+  })();
   const failed = reactions.filter(r => !r.qa_passed);
   const ad = result.ad_analysis;
   const fit = result.objective_fit ?? null;
@@ -264,6 +283,48 @@ export function SimulationResultView({
         </>
       )}
 
+      {/* 구매의도 분포(F7) — 평균 옆에 1~5점 분포 전체를 막대로. 평균 단언 방지 */}
+      {agg && purchaseDist.total > 0 && (
+        <div className={cardCls}>
+          <div className='flex items-center justify-between mb-1'>
+            <h2 className='text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]'>
+              구매의도 분포 (1~5점)
+            </h2>
+            <span className='text-[11px] text-[#8B95A1] dark:text-[#6B7280]'>
+              평균 {agg.purchase_intent.toFixed(2)}점 · 표본{' '}
+              {purchaseDist.total}명
+            </span>
+          </div>
+          <p className='text-[11px] text-[#8B95A1] dark:text-[#6B7280] mb-3'>
+            평균값 하나로 단정하지 말고, 점수가 어떻게 퍼져 있는지 함께 보세요.
+          </p>
+          <div className='space-y-1.5'>
+            {[5, 4, 3, 2, 1].map(score => {
+              const c = purchaseDist.counts[score - 1];
+              const ratio = purchaseDist.total
+                ? (c / purchaseDist.total) * 100
+                : 0;
+              return (
+                <div key={score} className='flex items-center gap-2 text-xs'>
+                  <span className='w-7 shrink-0 text-right text-[#4E5968] dark:text-[#9CA3AF]'>
+                    {score}점
+                  </span>
+                  <div className='flex-1 h-3.5 rounded bg-[#F2F4F6] dark:bg-[#252D3D] overflow-hidden'>
+                    <div
+                      className='h-full rounded bg-[#3182F6] dark:bg-[#5B9DF9] transition-all'
+                      style={{ width: `${ratio}%` }}
+                    />
+                  </div>
+                  <span className='w-16 shrink-0 text-right tabular-nums text-[#8B95A1] dark:text-[#6B7280]'>
+                    {c}명 ({ratio.toFixed(0)}%)
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       {/* 성향별 반응(OCEAN) — 연령·성별로는 못 주는 성격 기반 분해. 비교 가능한 차원이 있을 때만 */}
       {ocean && ocean.by_dimension.some(d => d.click_gap !== null) && (
         <div className={cardCls}>
@@ -294,8 +355,7 @@ export function SimulationResultView({
               .map(d => (
                 <div
                   key={d.dimension}
-                  className='grid grid-cols-[1fr_4rem_4rem_4rem] gap-3 items-center text-sm px-1'
-                >
+                  className='grid grid-cols-[1fr_4rem_4rem_4rem] gap-3 items-center text-sm px-1'>
                   <span className='text-[#191F28] dark:text-[#F2F4F6]'>
                     {d.dimension_ko}
                     {d.low_confidence && (
@@ -313,8 +373,7 @@ export function SimulationResultView({
                       (d.click_gap ?? 0) >= 0
                         ? 'text-[#1B64DA]'
                         : 'text-[#E03131]'
-                    }`}
-                  >
+                    }`}>
                     {(d.click_gap ?? 0) >= 0 ? '+' : ''}
                     {formatPercent(d.click_gap ?? 0)}
                   </span>
@@ -341,8 +400,9 @@ export function SimulationResultView({
                 </h2>
                 {result.ad_asset_url && (
                   // 업로드된 광고 크리에이티브 — presigned URL(~1h). 텍스트 시뮬이면 미표시.
+                  // eslint-disable-next-line @next/next/no-img-element
                   <img
-                    src={result.ad_asset_url}
+                    src={assetSrc(result.ad_asset_url)}
                     alt='광고 크리에이티브'
                     className='mb-4 h-auto max-h-56 w-full object-contain rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-[#F9FAFB] dark:bg-[#11151F]'
                   />

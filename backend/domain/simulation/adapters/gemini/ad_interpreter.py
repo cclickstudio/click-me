@@ -73,7 +73,9 @@ class GeminiAdInterpreter:
             data, mime = await _load_image(request.ad_image_url)
             contents = [prompt, types.Part.from_bytes(data=data, mime_type=mime)]
             used_vision = True
-        result = await _agen_json(self._client, self._model, contents)
+        result = await _agen_json(
+            self._client, self._model, contents, langsmith_extra={"name": "simulation.ad_interpret"}
+        )
         # 광고 특성은 result(structured_analysis)에 그대로 영속되고, 타입 객체로도 추려 흐른다.
         features = AdFeatures(**{k: result[k] for k in _FEATURE_KEYS if k in result})
         return AdInterpretation(

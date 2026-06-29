@@ -44,7 +44,7 @@ function TeamSection({
   openProjectId: string | null;
   onToggleOpen: (id: string) => void;
 }) {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(false);
 
   return (
     <div>
