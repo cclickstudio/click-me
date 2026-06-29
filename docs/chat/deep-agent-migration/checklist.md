@@ -50,24 +50,19 @@
 
 ## 4단계 — 마이그레이션·검증
 
-- [ ] dev 미정합 테스트 정리: test_chat_memory(우리 `_recall_memory_context`/`_memory_ids`에 맞춰 재작성), test_crag·test_assistant_execute_flow(우리 management graph 심볼 대조 후 갱신/삭제)
-- [ ] alembic 선형 재번호 (dev primary + feat 후행 삽입, 단일 head)
-- [ ] 029(management_user_memory.embedding, M6) 적용
-- [ ] `uv run alembic heads` → 단일 head 확인 / `alembic upgrade head` 통과
-- [ ] 백엔드: import + ruff + pytest
-- [ ] 프론트: tsc + build
-- [ ] e2e: preview_* 로 실제 chat 띄워 — 자유질문·시뮬위젯·생성위젯·개선루프·멀티도메인(deep)·장기기억 회수 증거(스냅샷/로그)
-- [ ] 커밋: `fix: alembic multiple heads 선형 재번호 + management_user_memory 적용`
+- [x] dev 미정합 테스트 정리: test_chat_memory **재작성**(우리 `_memory_ids`/`_get_memory` 검증, 4 passed), test_crag·test_assistant_execute_flow **삭제**(ours에 `_dedup`/`_grade_kb`/`ApproveActionRequest` 전무 = dev 노선 잔재)
+- [x] **실 DB 진단**: alembic_version=027이나 스키마는 **feat+dev 혼합**, management_user_memory 없음 → 사용자 결정 **최소 조치**(전면 재번호 보류)
+- [x] **management_user_memory(+embedding) 멱등 DDL 실 Neon 적용**(CREATE TABLE/COLUMN IF NOT EXISTS, 비파괴) — 테이블·embedding·인덱스 생성 확인
+- [x] **장기기억 라운드트립 검증**(실 DB+임베딩): semantic=True, "예산" 쿼리에 예산 fact top-1 회수 ✅
+- [x] 백엔드: import OK · ruff OK · **pytest 708 passed, 12 skipped**(collection 에러 0)
+  - ⚠️ `tests/simulation/test_gemini_common.py` 2 failed — **chat 작업과 무관**(내 커밋 simulation 무변경, `git diff --stat` 공집합). 별도 task로 플래그(task_e35c6708)
+- [x] 프론트: tsc 0에러 · build 성공(전 페이지)
+- [ ] e2e: preview로 실제 chat — deep·카드·장기기억 시각 확인
+- [ ] 커밋: 테스트 정리분
 
-### alembic 재번호 초안 (dev primary 기준)
-```
-018 → 019(landing_url,dev) → 020(chat_normalize,dev) → 021 → 022 → 023(brand_profiles)
-    → 024(ad_templates,dev) → 025(clio_chunks,dev)
-    → 026(chat_schema_convergence,feat) → 027(brand_kits,dev) → 028(last_read,feat)
-    → 029(management_kb+state,feat) → 030(prefix_tables,dev)
-    → 031(management_user_memory,dev) → 032(kb_rls,feat) → 033(user_memory_embedding,feat·M6)
-```
-※ 각 파일 down_revision 갱신으로 선형화. merge revision 불필요. 번호 충돌 파일명도 함께 재명명.
+### ⏭ 별도 작업 (이번 범위 밖, 사용자 합의 = 최소 조치)
+- **alembic 중복 revision id 전면 정리** — 019·020·024·025·026·027·028·029 중복 파일 유니크화 + 단일 head + 혼합 실 DB의 alembic_version 동기화. 고위험이라 발표 일정·신중함 고려해 분리. (당장의 장기기억은 멱등 DDL 적용으로 작동하므로 chat 전환은 영향 없음.)
+- 재번호 초안(참고): dev primary 기준 018→landing_url→chat_normalize→…→management_user_memory→user_memory_embedding 선형화 + 각 down_revision 갱신.
 
 ---
 
