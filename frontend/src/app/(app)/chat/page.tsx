@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { safeRandomUUID } from '@/lib/utils';
 import { api } from '@/lib/api';
 import ChatCreateCampaignCard from '@/components/chat/ChatCreateCampaignCard';
+import ChatCampaignActionCard, { type CampaignActionPayload } from '@/components/chat/ChatCampaignActionCard';
 import type { CampaignPrefill } from '@/components/manage/campaigns/CampaignForm';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
@@ -49,15 +50,17 @@ type SourceMeta = {
   requires_approval?: boolean; // HITL — 사람 승인 필요
   campaigns?: Campaign[]; // live_campaigns 결과 — 클릭해서 관리 페이지로 이동
   cards?: ChatCard[]; // 서버 composer 카드(result/review/actionbar). evidence는 citations로 대체.
-  embed?: 'create_campaign'; // 오케스트레이터 create_campaign 툴 신호
+  embed?: 'create_campaign' | 'campaign_action'; // 오케스트레이터 create_campaign·manage_campaign 툴 신호
   prefill?: CampaignPrefill; // 툴이 추출한 폼 초기값
+  action?: CampaignActionPayload; // manage_campaign 툴 페이로드
 };
 type Message = {
   role: 'user' | 'assistant';
   content: string;
   meta?: SourceMeta;
-  embed?: 'create_campaign'; // 임베드 카드 종류(P1: 신규 캠페인 생성)
+  embed?: 'create_campaign' | 'campaign_action'; // 임베드 카드 종류(P1: 생성, P2: 상태 조치)
   prefill?: CampaignPrefill;
+  action?: CampaignActionPayload;
 };
 
 // Web Speech API — 브라우저 내장, 무료, API 키 불필요. Chrome/Edge 지원.
@@ -476,6 +479,10 @@ export default function Page() {
                   patch.embed = 'create_campaign';
                   patch.prefill = meta.prefill;
                 }
+                if (meta.embed === 'campaign_action') {
+                  patch.embed = 'campaign_action';
+                  patch.action = meta.action;
+                }
                 return [...prev.slice(0, -1), { ...last, ...patch }];
               });
             } else if (data.token) {
@@ -546,6 +553,8 @@ export default function Page() {
             <div role="log" aria-live="polite" aria-atomic="false" aria-label="대화 내용" className="max-w-2xl mx-auto px-4 py-8 space-y-6">
               {messages.map((msg, i) => {
                 const isCreateCampaignEmbed = msg.role === 'assistant' && msg.embed === 'create_campaign';
+                const isCampaignActionEmbed = msg.role === 'assistant' && msg.embed === 'campaign_action';
+                const isWideEmbed = isCreateCampaignEmbed || isCampaignActionEmbed;
                 const shouldRenderBubble = msg.content !== '' || !msg.embed;
                 // 빈 assistant placeholder는 타이핑 인디케이터로 대체
                 if (msg.role === 'assistant' && msg.content === '' && !msg.embed) return null;
@@ -561,7 +570,7 @@ export default function Page() {
                         </svg>
                       </div>
                     )}
-                    <div className={`flex flex-col gap-1 ${isCreateCampaignEmbed ? 'w-full max-w-xl' : 'max-w-sm'} ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
+                    <div className={`flex flex-col gap-1 ${isWideEmbed ? 'w-full max-w-xl' : 'max-w-sm'} ${msg.role === 'user' ? 'items-end' : 'items-start'}`}>
                       {msg.role === 'assistant' && msg.meta && (
                         <span
                           className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${
@@ -587,6 +596,9 @@ export default function Page() {
                       )}
                       {isCreateCampaignEmbed && (
                         <ChatCreateCampaignCard prefill={msg.prefill} />
+                      )}
+                      {msg.role === 'assistant' && msg.embed === 'campaign_action' && msg.action && (
+                        <ChatCampaignActionCard action={msg.action} />
                       )}
                       {/* TTS 읽어주기 버튼 — 브라우저 SpeechSynthesis, 무료 */}
                       {msg.role === 'assistant' && msg.content && ttsSupported && (
