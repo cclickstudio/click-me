@@ -2,8 +2,11 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useProjects } from "@/components/ProjectContext";
+import { useChatController } from "@/components/chat/ChatController";
+import ErrorCard from "@/components/chat/ErrorCard";
 import { api } from "@/lib/api";
 import { getToken } from "@/lib/authApi";
+import { getJobs, setGenJob } from "@/lib/runningJobs";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 import type {
@@ -741,6 +744,12 @@ function adRefImageSrc(asset: string): string | null {
 
 export default function GeneratorPage() {
   const { selectedProject, projects, selectProject, details, loadDetails } = useProjects();
+  // N2 — 안읽음 뱃지(시뮬 경로와 대칭). 닫힘 여부는 ref로 최신값 읽음.
+  const { pushUnread, floatingOpen } = useChatController();
+  const floatingOpenRef = useRef(floatingOpen);
+  useEffect(() => {
+    floatingOpenRef.current = floatingOpen;
+  }, [floatingOpen]);
   const [mode, setMode] = useState<GenMode>("create");
   const [format, setFormat] = useState<"single" | "carousel">("single");
   const [phase, setPhase] = useState<Phase>("idle");
@@ -931,6 +940,7 @@ export default function GeneratorPage() {
   // SSE 구독 — 시작/복원 공용. 완료·실패 시 localStorage 정리.
   function subscribe(generationId: string) {
     esRef.current?.close();
+    setGenJob(generationId); // 동시실행 슬롯 점유(제너 1개 제한, 채팅 위젯과 store 공유)
     const es = api.generator.stream(generationId);
     esRef.current = es;
     es.onmessage = async (e) => {
@@ -940,10 +950,45 @@ export default function GeneratorPage() {
       } else if (data.event === "completed") {
         es.close();
         localStorage.removeItem(ACTIVE_GEN_KEY);
+        setGenJob(null); // 동시실행 슬롯 해제
         try {
           const d = (await api.generator.detail(generationId)) as GenerationDetail;
           setDetail(d);
           setPhase("done");
+          // N1 — 전용 페이지 직접 생성이 끝나면, 프로젝트 채팅 세션에 결과 안내 +
+          // "다시 생성/개선" 제안을 자동 주입(프로액티브 개선 루프, 시뮬 경로와 대칭).
+          // NOTE: 제너레이터는 현재 OpenAI org-verification(403)로 완료 도달이 막혀 있어
+          // 이 경로는 코드만 준비된 상태(검증 보류). 별도 gen_result 위젯이 생기면 결과 위젯도 추가.
+          const pid = selectedProject?.id;
+          if (pid) {
+            const injectKey = `n1_gen_injected_${generationId}`; // 동일 생성 1회만
+            if (!localStorage.getItem(injectKey)) {
+              localStorage.setItem(injectKey, "1");
+              const count = (d.candidates ?? []).length;
+              api.chat.resolveActiveSession(pid).then((sid) => {
+                if (!sid) return;
+                void api.chat
+                  .appendWidgets(sid, [
+                    {
+                      content: `광고 시안 ${count}개가 생성됐어요. 채팅에서 이어서 개선해볼까요?`,
+                      meta: {
+                        source: "generator",
+                        label: "광고 생성",
+                        approval: {
+                          action: "run_generator",
+                          label: "개선 시안 다시 생성",
+                          reasons: ["전용 페이지에서 직접 만든 시안을 채팅에서 이어 개선할 수 있어요."],
+                        },
+                      },
+                    },
+                  ])
+                  .then(() => {
+                    if (!floatingOpenRef.current) pushUnread();
+                  })
+                  .catch(() => {});
+              });
+            }
+          }
         } catch (err) {
           setError(err instanceof Error ? err.message : "생성 결과를 불러오지 못했습니다.");
           setPhase("idle");
@@ -951,6 +996,7 @@ export default function GeneratorPage() {
       } else if (data.event === "error") {
         es.close();
         localStorage.removeItem(ACTIVE_GEN_KEY);
+        setGenJob(null); // 동시실행 슬롯 해제
         setError(data.message ?? "광고 생성에 실패했습니다.");
         setPhase("idle");
       }
@@ -958,6 +1004,7 @@ export default function GeneratorPage() {
     es.onerror = () => {
       es.close();
       localStorage.removeItem(ACTIVE_GEN_KEY);
+      setGenJob(null); // 동시실행 슬롯 해제
       setError("진행 상태 연결이 끊어졌습니다. 다시 시도해주세요.");
       setPhase("idle");
     };
@@ -1074,6 +1121,11 @@ export default function GeneratorPage() {
 
   async function startGeneration() {
     setError("");
+    // 동시실행 제한 — 제너는 한 번에 하나(채팅 위젯과 store 공유).
+    if (getJobs().gen) {
+      setError("이미 다른 광고 생성이 진행 중이에요. 끝난 뒤 다시 시도하세요.");
+      return;
+    }
     // 생성 내역이 프로젝트에 기록되도록 활성 프로젝트를 강제 — 미선택 시 차단(내역 누락 방지).
     if (!selectedProject) {
       setError("생성 내역을 저장할 프로젝트를 먼저 선택하세요.");
@@ -1449,17 +1501,6 @@ export default function GeneratorPage() {
                       placeholder={"예: 전체적으로 더 밝고 활기찬 분위기로 바꿔주세요\n제품을 더 크고 선명하게 부각해주세요\n색상을 브랜드 컬러에 맞게 통일해주세요\n\n비워두면 시뮬레이션 개선 방향만 반영됩니다"}
                     />
                   </div>
-                  {improveData?.ad_asset_url && (
-                    <a
-                      href={`/chat?improve_s3_key=${encodeURIComponent(improveData.ad_asset_url)}&improve_sim_summary=${encodeURIComponent(improveData.summary)}&improve_product_name=${encodeURIComponent(improveData.product_name)}`}
-                      className="flex items-center gap-1.5 text-xs font-medium text-[#3182F6] hover:underline"
-                    >
-                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
-                      </svg>
-                      CLIO 채팅에서 개선하기
-                    </a>
-                  )}
                 </>
               )}
 
@@ -1646,9 +1687,11 @@ export default function GeneratorPage() {
               </p>
 
               {error && (
-                <p className="mb-4 text-sm text-red-600 dark:text-red-400 p-3 bg-red-50 dark:bg-red-900/10 rounded-xl">
-                  {error}
-                </p>
+                <ErrorCard
+                  message={error}
+                  onRetry={phase === "idle" ? startGeneration : undefined}
+                  className="mb-4"
+                />
               )}
 
               {/* 진행 중 (SSE) */}
@@ -1714,7 +1757,9 @@ export default function GeneratorPage() {
                       type="button"
                       className="flex items-center gap-1.5 text-xs text-[#4E5968] dark:text-[#9CA3AF] border border-[#E5E8EB] dark:border-[#2D3748] rounded-lg px-3 py-1.5 hover:border-[#3182F6] hover:text-[#3182F6] transition-colors"
                       onClick={async () => {
-                        const res = await fetch(`${API_BASE}/api/generator/generations/${detail.generation_id}/download-zip`);
+                        const res = await fetch(`${API_BASE}/api/generator/generations/${detail.generation_id}/download-zip`, {
+                          headers: getToken() ? { Authorization: `Bearer ${getToken()}` } : {},
+                        });
                         const blob = await res.blob();
                         const url = URL.createObjectURL(blob);
                         const a = document.createElement("a");

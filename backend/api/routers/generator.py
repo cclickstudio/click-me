@@ -293,13 +293,18 @@ async def get_generation(
     user: User | None = Depends(_optional_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """상세 — 로그인 유저는 자기 org만(불일치 404). 내부 호출은 서비스 토큰으로 우회."""
+    """상세 — ADMIN은 조직 무관 조회, 그 외 로그인 유저는 자기 org만(불일치 404).
+    내부 호출은 서비스 토큰으로 우회."""
     internal = settings.internal_service_token
     use_mock = getattr(settings, "use_mock", True)
     if user is not None:
-        detail = await generator_service.get_detail(
-            generation_id, await _require_user_org(user, db)
-        )
+        if user.role.upper() == "ADMIN":
+            # ADMIN은 조직 무관 조회(admin은 org 미소속일 수 있음 — projects.py와 동일 정책)
+            detail = await generator_service.get_detail(generation_id)
+        else:
+            detail = await generator_service.get_detail(
+                generation_id, await _require_user_org(user, db)
+            )
     elif (internal and x_internal_token == internal) or use_mock:
         # 내부 토큰 일치(운영 서비스 호출) 또는 mock/dev(실 테넌트 데이터 없음) → org 검증 우회.
         # live에서 토큰 미설정이면 우회 불가(무인증 크로스org 조회 차단) — 운영은 토큰 설정 필수.

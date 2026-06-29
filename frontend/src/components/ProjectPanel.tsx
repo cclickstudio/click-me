@@ -7,7 +7,9 @@ import { useProjects, type SimRow } from './ProjectContext';
 import { useAuth } from './AuthProvider';
 import TrashSection from './TrashSection';
 import ModeBadge from './ModeBadge';
+import ProjectChatSection from './chat/ProjectChatSection';
 import { getToken } from '@/lib/authApi';
+import { formatKST } from '@/lib/datetime';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
@@ -18,10 +20,7 @@ const statusColor: Record<string, string> = {
   FAILED: 'bg-red-400', failed: 'bg-red-400',
 };
 
-const fmt = (iso: string) => {
-  const d = new Date(iso);
-  return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-};
+const fmt = (iso: string) => formatKST(iso);
 
 function ChevronIcon({ open }: { open: boolean }) {
   return (
@@ -193,6 +192,7 @@ export function ProjectItem({
   canRun,
   isOpen,
   onToggleOpen,
+  showChat = false,
 }: {
   project: { id: string; name: string; status: string; organization_name: string | null };
   isAdmin: boolean;
@@ -203,6 +203,7 @@ export function ProjectItem({
   filterNames: string[] | null; // null=전체, 배열=해당 이름만(MY/TEAM)
   isOpen: boolean;
   onToggleOpen: (id: string) => void;
+  showChat?: boolean; // 채팅 섹션 노출 여부(ProjectPanel=true, CompanyPanel=false)
 }) {
   const { details, loadDetails, refreshDetails, selectedProjectId, selectProject } = useProjects();
   const router = useRouter();
@@ -385,14 +386,8 @@ export function ProjectItem({
                 </div>
               )}
 
-              {/* 채팅 — 후순위(데이터 미연동, 칸만) */}
-              <div className="w-full flex items-center gap-2 px-2 py-1.5">
-                <span className="w-[13px] shrink-0" />
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-[#8B95A1] shrink-0">
-                  <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
-                </svg>
-                <span className="text-xs font-semibold text-[#4E5968] dark:text-[#9CA3AF] uppercase tracking-wide">채팅 (0)</span>
-              </div>
+              {/* 채팅 — 프로젝트의 채팅 세션 목록(클릭 시 플로팅/대화 전환) */}
+              {showChat && <ProjectChatSection projectId={project.id} />}
 
               {/* 휴지통 — 펼치면 삭제된 시뮬/제너, 클릭 시 상세 */}
               <button
@@ -550,6 +545,7 @@ export default function ProjectPanel({ collapsed, onToggle }: { collapsed: boole
                   canRun={user?.role !== 'COMPANY'}
                   isOpen={openProjectId === p.id}
                   onToggleOpen={(id) => setOpenProjectId(prev => prev === id ? null : id)}
+                  showChat
                 />
               ))}
             </div>

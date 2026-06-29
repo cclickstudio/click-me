@@ -56,7 +56,9 @@ class GeminiQaGate:
             f"인식메시지 '{reaction.perceived_message}', 발화 '{reaction.utterance}'"
         )
         try:
-            data = await _agen_json(self._client, self._model, prompt)
+            data = await _agen_json(
+                self._client, self._model, prompt, langsmith_extra={"name": "simulation.qa"}
+            )
         except Exception:
             return True, None  # LLM QA 실패 시 보수적 통과(런 유지) — 규칙은 이미 통과
         if data.get("pass", True):
