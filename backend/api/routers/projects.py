@@ -328,6 +328,12 @@ async def get_simulation_detail(
     def _num(v: object) -> float | None:
         return float(v) if v is not None else None
 
+    # asset_url은 S3 key/외부 URL/로컬경로가 섞여 저장됨 → 표시·재로드 가능한 presigned URL로 변환.
+    # (S3 key는 presign, http(s)는 그대로, 로컬경로 등은 None)
+    from domain.simulation.adapters.ad_image_store import presigned_for  # noqa: PLC0415
+
+    ad_asset_url = await presigned_for(r.ad_asset_url)
+
     return {
         "id": str(r.id),
         "status": r.status,
@@ -338,7 +344,7 @@ async def get_simulation_detail(
         "created_by_name": r.created_by_name,
         "ad_id": str(r.ad_id),
         "ad_title": r.ad_title,
-        "ad_asset_url": r.ad_asset_url,  # 광고 이미지(URL/S3키/로컬경로 — 형식 제각각)
+        "ad_asset_url": ad_asset_url,  # 표시·재로드용 presigned URL
         "aggregate": {
             "purchase_intent": _num(r.purchase_intent_avg),
             "rejection_rate": _num(r.rejection_rate),

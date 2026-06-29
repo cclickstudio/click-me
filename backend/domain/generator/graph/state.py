@@ -19,3 +19,5 @@ class GenerationState(TypedDict, total=False):
     product_image_bytes: bytes | None
     # 개선모드 — 전략 노드가 만든 개선 컨텍스트(카피·이미지 생성까지 전달)
     improvement_context: str | None
+    # 개선모드 — 기존 광고 이미지 bytes (existing_ad_s3_key에서 로드, openai edit/gemini 멀티모달 입력)
+    existing_ad_bytes: bytes | None

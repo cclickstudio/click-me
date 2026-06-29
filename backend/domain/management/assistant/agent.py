@@ -10,6 +10,29 @@ from domain.management.assistant.actions import suggest_action
 from domain.management.assistant.contracts import AskRequest, AskResult, Citation
 from domain.management.assistant.tools import INTENT_TOOLS
 
+# 벤치마크·정책 등 '지식' 질문 키워드 — 폴백에서 KB(키워드 검색)로 보낸다.
+_KB_KEYWORDS = (
+    "CPM",
+    "cpm",
+    "CTR",
+    "ctr",
+    "CPC",
+    "cpc",
+    "ROAS",
+    "roas",
+    "벤치마크",
+    "비싼",
+    "비싸",
+    "틱톡",
+    "구글",
+    "네이버",
+    "카카오",
+    "업종",
+    "연령대",
+    "구매의향",
+    "평균",
+)
+
 
 def _keyword_intent(q: str, campaign_id: str | None) -> str:
     if campaign_id:
@@ -18,9 +41,27 @@ def _keyword_intent(q: str, campaign_id: str | None) -> str:
         return "budget"
     if any(k in q for k in ("예측", "비교", "전후", "before")):
         return "before_after"
+    if any(k in q for k in _KB_KEYWORDS):
+        return "kb"
     if any(k in q for k in ("왜", "게재", "안 나", "원인", "거절", "심사")):
         return "campaign_detail"
     return "campaigns"
+
+
+def _summarize_kb(hits: list[dict]) -> str:
+    """폴백 KB 요약 — 최상위 근거 한 토막. advisory면 단서를 덧붙인다."""
+    if not hits:
+        return "관련 근거 문서를 찾지 못했습니다."
+    top = hits[0]
+    body = top.get("chunk", "")
+    # 청크 첫 줄은 섹션 제목이라 본문만 발췌
+    excerpt = body.split("\n", 1)[-1].strip()[:200]
+    note = (
+        " (참고 지식이며 직접 측정·관리하는 건 Meta입니다.)"
+        if top.get("trust") == "advisory"
+        else ""
+    )
+    return f"[{top.get('title', '')}] {excerpt}…{note}"
 
 
 def _summarize(intent: str, live: dict) -> str:
@@ -63,6 +104,32 @@ def build_management_agent(settings):
         # 폴백 — 키워드 라우팅 + 실시간 툴 요약(LLM·임베딩 없음).
         async def _ask_fallback(req: AskRequest) -> AskResult:
             intent = _keyword_intent(req.question, req.campaign_id)
+            if intent == "kb":
+                # 지식 질문 — 키워드 전용 KB 검색(임베딩 불필요). search_kb로 인용.
+                from domain.management.assistant.retriever import (  # noqa: PLC0415
+                    MANAGEMENT_SOURCE_TYPES,
+                    KbRetriever,
+                )
+
+                hits = await KbRetriever().keyword_search(
+                    req.question, k=4, source_types=MANAGEMENT_SOURCE_TYPES
+                )
+                return AskResult(
+                    answer=_summarize_kb(hits),
+                    citations=[
+                        Citation(
+                            kind="kb",
+                            source=h["source"],
+                            title=h.get("title", ""),
+                            trust=h.get("trust"),
+                            source_url=h.get("source_url"),
+                            as_of=h.get("as_of"),
+                        )
+                        for h in hits
+                    ],
+                    used_tools=["search_kb"],
+                    suggested_action=suggest_action(req.question, req.campaign_id),
+                )
             name, fn = INTENT_TOOLS[intent]
             live = await (
                 fn(settings, req.campaign_id or "")
@@ -107,9 +174,11 @@ def build_management_agent(settings):
             "tags": ["management", "assistant"],
             "metadata": {"campaign_id": req.campaign_id, "ad_id": req.ad_id},
         }
+        # 장기기억이 있으면 LLM 맥락에 주입(질문 앞에 붙임). 폴백 라우팅엔 영향 없음.
+        human = f"{req.memory_context}\n\n{req.question}" if req.memory_context else req.question
         final = await graph.ainvoke(
             {
-                "messages": [HumanMessage(content=req.question)],
+                "messages": [HumanMessage(content=human)],
                 "campaign_id": req.campaign_id,
             },
             config=config,

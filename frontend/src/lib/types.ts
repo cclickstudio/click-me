@@ -197,6 +197,7 @@ export interface SimRunInput {
   product_category?: string;
   ad_objective?: string;
   service_class?: number;
+  from_campaign_id?: string;  // 관리 탭 진입 시 — 완료 후 서버가 자동으로 성과 비교 링크 생성
 }
 
 /* ─── Debate (페르소나 토론 /api/debate/*) ─── */

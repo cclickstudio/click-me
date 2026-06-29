@@ -26,6 +26,8 @@ _AskFn = Callable[[AskRequest], Awaitable[AskResult]]
 
 # 골든셋 — (질문, campaign_id, 반드시 호출해야 하는 도구 집합, 설명).
 # expected ⊆ used_tools 이면 통과. ReAct는 보강 도구(search_kb 등)를 더 부를 수 있다.
+# ※ web_search 케이스(마지막 2개)는 react 모드에서만 통과 — fallback은 web_search 경로 없음.
+#   총 11케이스 중 fallback 실패 2개 → accuracy 9/11≈0.82(≥0.80 게이트 통과).
 GOLDEN: list[tuple[str, str | None, set[str], str]] = [
     ("이번 달 예산 소진 얼마야?", None, {"live_budget"}, "예산 페이싱"),
     ("런레이트로 보면 월말 예상 지출은?", None, {"live_budget"}, "런레이트"),
@@ -33,6 +35,13 @@ GOLDEN: list[tuple[str, str | None, set[str], str]] = [
     ("이 캠페인 왜 게재가 안 돼?", "camp_1", {"live_campaign_detail"}, "단일 캠페인 진단"),
     ("camp_1 지금 성과 어때?", "camp_1", {"live_campaign_detail"}, "단일 캠페인 성과"),
     ("예측대로 성과가 나왔는지 비교해줘", None, {"live_before_after"}, "전후비교"),
+    ("CPM이 12000원이면 비싼 거야?", None, {"search_kb"}, "벤치마크 CPM 기준"),
+    ("트래픽 광고 CTR 기준이 어떻게 돼?", None, {"search_kb"}, "벤치마크 CTR 기준"),
+    ("틱톡은 CPM이 어때?", None, {"search_kb"}, "advisory 멀티플랫폼"),
+    # 시의성(web_search) — react 모드에서 LLM이 web_search를 선택하는지 검증.
+    # 시스템 프롬프트: '최근·요즘·트렌드' 키워드 시 search_kb + web_search 병행.
+    ("요즘 Meta 광고 CPM 트렌드 어때?", None, {"web_search"}, "시의성 CPM 트렌드"),
+    ("최근 Meta 정책 바뀐 게 있어?", None, {"web_search"}, "시의성 정책 업데이트"),
 ]
 
 

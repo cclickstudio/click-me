@@ -42,6 +42,9 @@ class Settings(BaseSettings):
     # Google Gemini
     gemini_api_key: str | None = None
 
+    # Tavily 웹검색(매니지먼트 어시스턴트 web_search 도구) — 없으면 웹검색 graceful 비활성
+    tavily_api_key: str | None = None
+
     # LangSmith — API 키 없으면 트레이싱 비활성(로컬 기동 가능)
     # LANGCHAIN_* 사용, LANGSMITH_*도 AliasChoices로 수용.
     LANGSMITH_TRACING_V2: bool = Field(
@@ -105,9 +108,14 @@ class Settings(BaseSettings):
     # use_mock=True면 reader=Mock·writer=DRY_RUN (Meta 접촉 0, wiring.py 분기).
     # 실집행은 use_mock=False + management_execution_mode=live + 토큰일 때만.
     management_execution_mode: str = "dry_run"  # dry_run | validate_only | live
+    # 능동 스케줄러(주기 이상 스캔→알림) — 기본 off(테스트/CI/dev 안전). 운영에서만 켠다.
+    management_scheduler_enabled: bool = False
+    management_scan_interval_minutes: int = 60
     # 진단 agent LLM ReAct 재현성 고정값 (합의문서 P6 — 빈칸 기입). 키 없으면 결정론 폴백.
     management_diagnosis_model: str = "gpt-4o-mini"
     management_diagnosis_temperature: float = 0.0
+    # 어시스턴트 ReAct 그래프 LLM 모델 — MANAGEMENT_ASSISTANT_MODEL 환경변수로 오버라이드 가능.
+    management_assistant_model: str = "gpt-4o-mini"
 
     # Embedding (KB·LTM 공유 — 동일 모델·차원 필수. spec §6.1/§9)
     # provider=bge_m3(기본): TEI/Ollama 로컬 서빙 1024차원.
@@ -126,8 +134,9 @@ class Settings(BaseSettings):
     chat_orchestrator_temperature: float = 0.3
 
     # Generator (광고 생성)
-    # 생성 방식: pipeline=카피·이미지 단계 분리 / multimodal=한 모델이 이미지+카피 동시 생성
-    generator_gen_mode: str = "pipeline"  # pipeline | multimodal
+    # 생성 방식: openai=OpenAI 이미지(상품있음 누끼·인페인팅 / 없음 0부터)
+    #            gemini=Gemini 멀티모달(이미지+카피 동시 생성)
+    generator_gen_mode: str = "openai"  # openai | gemini
     # 텍스트(상품분석·전략·카피·QA·설명)
     generator_text_provider: str = "openai"  # openai | anthropic | google_genai ...
     generator_text_model: str = "gpt-4.1"
@@ -143,6 +152,9 @@ class Settings(BaseSettings):
     # 이미지 편집(누끼 배경제거 — remove_product_background)
     generator_image_edit_provider: str = "openai"  # openai
     generator_image_edit_model: str = "gpt-image-1"
+    # 이미지 생성(gemini 모드) — GEN_MODE=gemini 일 때 사용.
+    # native 모델이 이미지+카피를 한 호출로 출력. gemini-3-pro-image 등으로 교체 가능.
+    generator_gemini_image_model: str = "gemini-2.5-flash-image"
     # ── 작업별 이미지 모델 오버라이드 (operation 단위 스위칭) ──
     # 미설정(None)이면 위 기존 설정으로 폴백 → 기본 동작 불변. 해석은 cutout_*/inpaint_* 프로퍼티.
     generator_cutout_provider: str | None = None  # 누끼 — 폴백: image_edit_provider
@@ -150,10 +162,6 @@ class Settings(BaseSettings):
     generator_cutout_quality: str | None = None  # 누끼 — 폴백: image_quality
     generator_inpaint_provider: str | None = None  # 인페인팅 — 폴백: image_provider
     generator_inpaint_model: str | None = None  # 인페인팅 — 폴백: image_model
-    # 멀티모달 단일호출(이미지+카피) — GEN_MODE=multimodal 일 때만 사용
-    generator_multimodal_provider: str = "openai"  # openai | google_genai
-    generator_multimodal_model: str = "gpt-4o"  # Responses API 오케스트레이터(채팅 모델)
-    generator_multimodal_image_model: str = "gpt-image-1"  # image_generation 툴이 그릴 이미지 모델
     generator_font_dir: str | None = None  # 없으면 backend/assets/fonts 사용
 
     # Toss Payments — 테스트 키 전용 (기본값 = 토스 공식 문서 공개 샌드박스 키)

@@ -75,7 +75,7 @@ class EscalationStatus(StrEnum):
 
 @dataclass
 class EscalationRun:
-    """캠페인당 active 1건의 사다리 진행 상태 (RemediationEscalationRow 인메모리 미러)."""
+    """캠페인당 active 1건의 사다리 진행 상태 (인메모리)."""
 
     tenant_id: str
     ad_account_id: str

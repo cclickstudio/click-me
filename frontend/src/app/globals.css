@@ -59,6 +59,20 @@ body {
   scrollbar-color: var(--color-border) transparent;
 }
 
+/* ── 키보드 접근성 (운동장애 사용자) ──────────────────────────────────────
+   마우스 클릭 포커스는 outline 숨기고, 키보드 Tab/Enter 포커스만 링 표시.
+   focus:outline-none 클래스보다 우선하도록 !important 사용.               */
+:focus:not(:focus-visible) {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-primary) !important;
+  outline-offset: 2px !important;
+  border-radius: 6px !important;
+}
+
 /* 토론 채팅 — 새 메시지가 아래에서 올라오며 등장 */
 @keyframes chatPop {
   from {

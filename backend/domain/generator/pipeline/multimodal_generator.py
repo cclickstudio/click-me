@@ -1,24 +1,29 @@
-# 멀티모달 단일호출 — 한 모델이 광고 이미지(카피 렌더링 포함)와 카피 텍스트를 함께 생성
+# 멀티모달 단일호출 — Gemini 한 모델이 광고 배경 이미지와 카피(JSON)를 함께 생성
 #
-# GENERATOR_GEN_MODE=multimodal 일 때만 사용. 기본(pipeline) 경로와 독립.
-# ⚠️ OpenAI Responses API의 image_generation 툴 경로는 실 키로 런타임 검증이 필요한 스파이크다.
+# GENERATOR_GEN_MODE=gemini 일 때만 사용. 기본(openai) 경로와 독립.
+# 상품 이미지가 있으면 inline_data로 함께 입력해 참조 생성(픽셀 단위 보존은 보장하지 않음).
 from __future__ import annotations
 
-import base64
+import asyncio
 import json
+import random
 import re
 
+from google import genai
+from google.genai import types as genai_types
+from google.genai.errors import ServerError
 from langsmith import traceable
-from langsmith.wrappers import wrap_openai
-from openai import AsyncOpenAI
 
 from core.config import settings
 from domain.generator.contracts.enums import AdSize, AdStrategy, TemplateType
 from domain.generator.contracts.pipeline_schemas import AdCopy, ProductAnalysis
-from tools.utils import str_or_none
 
-# wrap_openai로 감싸 Responses API(이미지+카피) 호출 usage가 LangSmith에 기록되게 한다.
-_client = wrap_openai(AsyncOpenAI(timeout=settings.generator_image_timeout))
+# 같은 도메인 pipeline 내부 헬퍼 재사용 — 비율 매핑·LangSmith usage 수동 기록.
+from domain.generator.pipeline.image_providers import (
+    _GEMINI_NATIVE_ASPECT_RATIO,
+    _record_genai_usage,
+)
+from tools.utils import str_or_none
 
 _TEMPLATE_LAYOUT: dict[TemplateType, str] = {
     TemplateType.A: "제품을 화면 상단~중앙에 크게 배치하고, 하단 45%는 텍스트가 올라갈 영역이므로 비워둔다.",
@@ -52,6 +57,18 @@ _IMPROVE_SECTION = """
 기존 광고의 문제를 해결하는 방향으로 배경과 카피를 구성하세요.
 """
 
+# 상품 이미지가 함께 입력될 때 덧붙이는 지시 — 첨부 상품을 참조해 배치.
+_PRODUCT_IMAGE_SECTION = """
+첨부된 상품 이미지를 참고하여, 동일한 상품이 자연스럽게 보이도록 배경에 배치하세요.
+상품의 형태·색·로고를 최대한 유지하되, 이미지 안에 글자는 넣지 마세요.
+"""
+
+# 기존 광고 이미지가 함께 입력될 때(개선 모드) 덧붙이는 지시 — 기존 디자인을 참조해 개선.
+_EXISTING_AD_SECTION = """
+첨부된 기존 광고 이미지를 참고하여, 전반적인 구도·분위기의 장점은 살리되 개선 방향을 반영한
+더 나은 광고 배경을 생성하세요. 기존 광고의 글자는 무시하고(이미지 안에 글자는 넣지 않음) 배경만 다룹니다.
+"""
+
 
 def _build_prompt(
     product_analysis: ProductAnalysis,
@@ -60,13 +77,15 @@ def _build_prompt(
     brand_color: str | None,
     tone: str | None,
     improvement_context: str | None = None,
+    has_product_image: bool = False,
+    has_existing_ad: bool = False,
 ) -> str:
     improvement_section = (
         _IMPROVE_SECTION.format(improvement_context=improvement_context)
         if improvement_context
         else ""
     )
-    return _PROMPT_TEMPLATE.format(
+    prompt = _PROMPT_TEMPLATE.format(
         product_name=product_analysis.product_name,
         core_values=", ".join(product_analysis.core_values) or "-",
         benefits=", ".join(product_analysis.benefits) or "-",
@@ -77,11 +96,60 @@ def _build_prompt(
         tone=tone or "깔끔하고 신뢰감 있게",
         improvement_section=improvement_section,
     )
+    if has_product_image:
+        prompt += "\n" + _PRODUCT_IMAGE_SECTION
+    if has_existing_ad:
+        prompt += "\n" + _EXISTING_AD_SECTION
+    return prompt
+
+
+# Gemini 이미지 모델은 동시 호출이 겹치면 503·이미지누락이 급증한다 → 전역 동시 호출 수 제한.
+# (후보 3종이 asyncio.gather로 동시에 때리는 것을 직렬화해 과부하를 막는다. 필요 시 상향.)
+_MAX_CONCURRENT = 1
+_semaphore = asyncio.Semaphore(_MAX_CONCURRENT)
+
+# 이미지 누락·503 대비 재시도 백오프(초) — 지터를 더해 병렬 재시도 동기화를 방지.
+_RETRY_BACKOFF = [3, 6, 10]
+
+
+async def _generate_once(
+    client: genai.Client, contents: list, size: AdSize
+) -> tuple[bytes, AdCopy] | None:
+    """Gemini 1회 호출 — 이미지+카피를 파싱해 반환. 이미지가 없으면 None(재시도 신호)."""
+    response = await client.aio.models.generate_content(
+        model=settings.generator_gemini_image_model,
+        contents=contents,
+        config=genai_types.GenerateContentConfig(
+            response_modalities=["IMAGE", "TEXT"],
+            image_config=genai_types.ImageConfig(aspect_ratio=_GEMINI_NATIVE_ASPECT_RATIO[size]),
+        ),
+    )
+    _record_genai_usage(response, settings.generator_gemini_image_model)
+
+    if not response.candidates:
+        return None
+    image_bytes: bytes | None = None
+    text_parts: list[str] = []
+    for part in response.candidates[0].content.parts:
+        if part.inline_data and part.inline_data.data:
+            image_bytes = part.inline_data.data
+        elif part.text:
+            text_parts.append(part.text)
+    if not image_bytes:
+        return None
+
+    raw = _parse_copy_json("\n".join(text_parts))
+    ad_copy = AdCopy(
+        headline=str_or_none(raw.get("headline")) or "",
+        body=str_or_none(raw.get("body")) or "",
+        cta=str_or_none(raw.get("cta")) or "지금 바로 확인하기",
+    )
+    return image_bytes, ad_copy
 
 
 @traceable(
     name="generator:generate_multimodal",
-    metadata={"pipeline": "generator", "prompt_version": "v1.0"},
+    metadata={"pipeline": "generator", "prompt_version": "v2.0-gemini"},
 )
 async def generate_image_and_copy(
     product_analysis: ProductAnalysis,
@@ -91,53 +159,51 @@ async def generate_image_and_copy(
     brand_color: str | None = None,
     tone: str | None = None,
     improvement_context: str | None = None,
+    product_image_bytes: bytes | None = None,
+    existing_ad_bytes: bytes | None = None,
 ) -> tuple[bytes, AdCopy]:
-    """한 번의 모델 호출로 완성형 광고 이미지 + 카피를 생성한다.
+    """Gemini 한 번의 호출로 광고 배경 이미지 + 카피를 생성한다.
 
-    현재 openai(Responses API image_generation 툴)만 구현. 그 외 프로바이더는 NotImplementedError.
+    상품 이미지(생성) 또는 기존 광고 이미지(개선)가 있으면 inline_data로 함께 입력해 참조 생성
+    (픽셀 보존은 보장 안 됨). 이미지엔 글자를 넣지 않으며(프롬프트 지시), 카피는 호출자가 PIL로 합성한다.
+    Gemini가 간헐적으로 이미지를 빠뜨리거나(텍스트만) 503(과부하)을 내므로, 전역 동시 호출을
+    제한(_semaphore)하고 지터 백오프로 재시도한다.
     """
-    provider = settings.generator_multimodal_provider
-    if provider != "openai":
-        raise NotImplementedError(f"멀티모달 미지원 프로바이더: {provider!r} (현재 openai만 구현)")
-
     prompt = _build_prompt(
-        product_analysis, strategy, template, brand_color, tone, improvement_context
+        product_analysis,
+        strategy,
+        template,
+        brand_color,
+        tone,
+        improvement_context,
+        has_product_image=product_image_bytes is not None,
+        has_existing_ad=existing_ad_bytes is not None,
     )
 
-    response = await _client.responses.create(
-        model=settings.generator_multimodal_model,
-        input=prompt,
-        tools=[
-            {
-                "type": "image_generation",
-                "size": size.value,
-                "model": settings.generator_multimodal_image_model,
-            }
-        ],
-    )
+    contents: list = [prompt]
+    if product_image_bytes is not None:
+        contents.append(
+            genai_types.Part.from_bytes(data=product_image_bytes, mime_type="image/png")
+        )
+    if existing_ad_bytes is not None:
+        contents.append(genai_types.Part.from_bytes(data=existing_ad_bytes, mime_type="image/png"))
 
-    image_b64: str | None = None
-    text_parts: list[str] = []
-    for item in response.output:
-        item_type = getattr(item, "type", None)
-        if item_type == "image_generation_call":
-            image_b64 = getattr(item, "result", None)
-        elif item_type == "message":
-            for block in getattr(item, "content", []) or []:
-                text = getattr(block, "text", None)
-                if text:
-                    text_parts.append(text)
-
-    if not image_b64:
-        raise RuntimeError("멀티모달 응답에 이미지가 없습니다.")
-
-    raw = _parse_copy_json("\n".join(text_parts))
-    ad_copy = AdCopy(
-        headline=str_or_none(raw.get("headline")) or "",
-        body=str_or_none(raw.get("body")) or "",
-        cta=str_or_none(raw.get("cta")) or "지금 바로 확인하기",
-    )
-    return base64.b64decode(image_b64), ad_copy
+    client = genai.Client(api_key=settings.gemini_api_key)
+    # 동시 호출 제한 — 후보 3종 동시 생성 시 과부하로 인한 503·이미지누락을 막는다.
+    async with _semaphore:
+        for attempt in range(len(_RETRY_BACKOFF) + 1):
+            try:
+                result = await _generate_once(client, contents, size)
+            except ServerError:
+                # 503 등 5xx 과부하 — 일시적. 마지막 시도면 원예외 전파.
+                if attempt >= len(_RETRY_BACKOFF):
+                    raise
+                result = None
+            if result is not None:
+                return result
+            if attempt < len(_RETRY_BACKOFF):
+                await asyncio.sleep(_RETRY_BACKOFF[attempt] + random.uniform(0, 1.5))
+    raise RuntimeError("멀티모달 응답에 이미지가 없습니다 (재시도 소진).")
 
 
 def _parse_copy_json(text: str) -> dict:

@@ -38,6 +38,8 @@ class SimulationRunRequest(BaseModel):
     product_category: str | None = None  # 제품 카테고리 → category 차원
     ad_objective: str | None = None  # 캠페인 목표 → objective 차원
     service_class: int | None = None  # 상품·서비스 분류(NICE 1~45) — 메타데이터(교차검증 차원 아님)
+    # 성과 비교 자동 연결 — Meta 캠페인 ID(관리 탭에서 진입 시). 시뮬 저장 직후 서버가 직접 링크.
+    from_campaign_id: str | None = None
 
     @model_validator(mode="after")
     def _resolve_allocation(self) -> SimulationRunRequest:

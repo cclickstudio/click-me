@@ -7,8 +7,9 @@ from pydantic import BaseModel
 from sqlalchemy import func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core.auth import get_current_user, user_org_id
 from core.db import get_db
-from core.models import AdGeneration
+from core.models import AdGeneration, Project, User
 
 router = APIRouter()
 
@@ -54,19 +55,30 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/recent-simulations", response_model=list[RecentSimulation])
-async def get_recent_simulations(limit: int = 5, db: AsyncSession = Depends(get_db)):
+async def get_recent_simulations(
+    limit: int = 5,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    # ADMIN은 전역, 그 외는 자기 organization 내역만(org 없으면 빈 결과).
+    is_admin = user.role.upper() == "ADMIN"
+    org_id = None if is_admin else await user_org_id(user, db)
+    if not is_admin and org_id is None:
+        return []
     rows = await db.execute(
         text("""
             SELECT s.id, s.ad_id, s.sample_size, s.status, s.created_at,
                    a.title AS ad_title, sa.purchase_intent_avg
             FROM simulations s
             JOIN ads a ON a.id = s.ad_id
+            JOIN projects p ON p.id = a.project_id
             LEFT JOIN simulation_aggregates sa ON sa.simulation_id = s.id
             WHERE s.deleted_at IS NULL
+              AND (CAST(:org AS uuid) IS NULL OR p.organization_id = CAST(:org AS uuid))
             ORDER BY s.created_at DESC
             LIMIT :limit
         """),
-        {"limit": limit},
+        {"limit": limit, "org": str(org_id) if org_id else None},
     )
     return [
         RecentSimulation(
@@ -85,13 +97,23 @@ async def get_recent_simulations(limit: int = 5, db: AsyncSession = Depends(get_
 
 
 @router.get("/recent-generations", response_model=list[RecentGeneration])
-async def get_recent_generations(limit: int = 5, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(
-        select(AdGeneration)
-        .where(text("deleted_at IS NULL"))
-        .order_by(AdGeneration.created_at.desc())
-        .limit(limit)
-    )
+async def get_recent_generations(
+    limit: int = 5,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    # ADMIN은 전역, 그 외는 자기 organization 내역만(org 없으면 빈 결과).
+    is_admin = user.role.upper() == "ADMIN"
+    org_id = None if is_admin else await user_org_id(user, db)
+    if not is_admin and org_id is None:
+        return []
+    stmt = select(AdGeneration).where(text("ad_generations.deleted_at IS NULL"))
+    if not is_admin:
+        stmt = stmt.join(Project, Project.id == AdGeneration.project_id).where(
+            Project.organization_id == org_id
+        )
+    stmt = stmt.order_by(AdGeneration.created_at.desc()).limit(limit)
+    result = await db.execute(stmt)
     rows = result.scalars().all()
 
     return [

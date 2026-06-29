@@ -7,6 +7,7 @@ import { useAuth } from '@/components/AuthProvider';
 import { getToken } from '@/lib/authApi';
 import { safeRandomUUID } from '@/lib/utils';
 import ModeBadge from '@/components/ModeBadge';
+import { getToken } from '@/lib/authApi';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
@@ -147,10 +148,12 @@ export default function DashboardPage() {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    // 최근 내역은 organization 스코프(비-admin) → 토큰 필요. stats는 전역이라 토큰 불필요.
+    const authHeaders = { Authorization: `Bearer ${getToken()}` };
     Promise.all([
       fetch(`${API_BASE}/api/dashboard/stats`).then((r) => r.json()).catch(() => null),
-      fetch(`${API_BASE}/api/dashboard/recent-simulations?limit=5`).then((r) => r.json()).catch(() => []),
-      fetch(`${API_BASE}/api/dashboard/recent-generations?limit=5`).then((r) => r.json()).catch(() => []),
+      fetch(`${API_BASE}/api/dashboard/recent-simulations?limit=5`, { headers: authHeaders }).then((r) => r.json()).catch(() => []),
+      fetch(`${API_BASE}/api/dashboard/recent-generations?limit=5`, { headers: authHeaders }).then((r) => r.json()).catch(() => []),
     ]).then(([s, sims, gens]) => {
       if (s) setStats(s);
       if (Array.isArray(sims)) setRecentSims(sims);
@@ -319,7 +322,7 @@ export default function DashboardPage() {
           <div className="bg-white dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748] rounded-2xl overflow-hidden">
             <div className="flex items-center justify-between px-5 py-4 border-b border-[#E5E8EB] dark:border-[#2D3748]">
               <p className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]">최근 제너레이터</p>
-              <Link href="/generator" className="text-xs text-[#3182F6] hover:underline font-medium">전체 보기 →</Link>
+              <Link href={isAdmin ? '/admin/generations' : '/company/generations'} className="text-xs text-[#3182F6] hover:underline font-medium">전체 보기 →</Link>
             </div>
             {recentGens.length === 0 ? (
               <div className="py-12 text-center text-xs text-[#B0B8C1] dark:text-[#4B5563]">

@@ -102,6 +102,58 @@ async def record_turn(
         logger.warning("어시스턴트 턴 적재 실패(무시): %s", exc)
 
 
+def _aggregate_feedback(rows: list, limit: int) -> dict:
+    """피드백 row들 → 집계(좋아요율·실패유형 분해·최근 👎 샘플). 순수 함수(테스트 가능)."""
+    likes = sum(1 for r in rows if r.rating == 1)
+    dislikes = sum(1 for r in rows if r.rating == -1)
+    total = likes + dislikes
+    failure_types: dict[str, int] = {}
+    negatives: list[dict] = []
+    for r in rows:
+        if r.rating != -1:
+            continue
+        if r.failure_type:
+            failure_types[r.failure_type] = failure_types.get(r.failure_type, 0) + 1
+        if len(negatives) < limit:
+            negatives.append(
+                {
+                    "question": r.question,
+                    "answer": (r.answer or "")[:120],
+                    "failure_type": r.failure_type,
+                    "corrected_answer": r.corrected_answer,
+                }
+            )
+    return {
+        "total": total,
+        "likes": likes,
+        "dislikes": dislikes,
+        "like_rate": round(likes / total, 3) if total else None,
+        "failure_types": failure_types,  # 어디서 실패하는지 → KB·프롬프트 개선 우선순위
+        "recent_negatives": negatives,  # 사람 리뷰 큐
+    }
+
+
+async def summarize_feedback(limit: int = 20) -> dict:
+    """RAG 품질 피드백 집계 — 좋아요율·실패유형·최근 👎. 루프를 닫는 consumer."""
+    try:
+        async with AsyncSessionLocal() as db:
+            rows = (
+                (
+                    await db.execute(
+                        select(ManagementKbFeedback).order_by(
+                            ManagementKbFeedback.created_at.desc()
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+        return _aggregate_feedback(list(rows), limit)
+    except Exception as exc:  # noqa: BLE001 — 조회 실패는 빈 집계로(엔드포인트 안 죽임)
+        logger.warning("피드백 집계 실패(무시): %s", exc)
+        return _aggregate_feedback([], limit)
+
+
 async def record_feedback(
     *,
     thread_id: str | None = None,

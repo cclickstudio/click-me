@@ -19,6 +19,7 @@ env/
 
 # uv
 .uv/
+.python-version
 
 # Distribution / packaging
 dist/
