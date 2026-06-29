@@ -33,7 +33,7 @@
 1. **캠페인 소유권 검증** — `_require_owned_campaign(db, org_id, campaign_id)`로 "자기 캠페인만 교체"(파괴적 행위 차단).
 2. **후보 핸드오프 (org 스코프)** — `GeneratorReadClient.get_candidate(generation_id, candidate_id, org_id=org_id)`. **org_id를 전달**해 generator GET이 내부 호출에도 `get_detail_for_org`로 스코프 → 타 org 후보면 404(§6-③). 프론트 `candidate_id` 불신.
 3. **이미지 규격 검증** — 최소 사이즈·비율·파일크기·색상모드·alpha·JPEG 품질 확인(§6-⑥). 실패 시 **proposal 생성 실패(422), 집행 없음.**
-4. **이미지 업로드 (mock 합성 해시)** — PNG→JPEG 변환 후 `upload_image`. **B-1은 non-sending(mock)에서만 호출** — 이때 `MetaAdsWriter.upload_image`는 실 `/adimages`를 치지 않고 **`None`(또는 합성 해시)을 반환**(writer의 non-sending 경로). 즉 mock에선 실 Meta 자산이 안 생긴다. `_is_sending_mode()`(validate/live)면 엔드포인트가 **501로 차단**(§6-⑦) — LIVE 범위. `create_ad_creative`는 `image_hash=None`이면 object_story_spec에서 image_hash를 생략한다.
+4. **이미지 업로드 (mock 합성 해시)** — PNG→JPEG 변환 후 `upload_image`. **B-1은 non-sending(mock)에서만 호출** — 이때 `MetaAdsWriter.upload_image`는 실 `/adimages`를 치지 않고 `None`을 반환한다(실 Meta 자산 미생성). **`image_hash`는 REPLACE의 핵심(이미지 교체)이라 엔드포인트가 항상 채운다** — upload가 `None`이면 합성(`mockhash_<candidate_id>`)으로 폴백. 따라서 executor는 `image_hash`를 **필수**로 검사한다(없으면 계약 위반). `_is_sending_mode()`(validate/live)면 엔드포인트가 **501로 차단**(§6-⑦) — LIVE 범위.
 5. **영향 광고 해상 (프리뷰·evidence용)** — `reader.get_creatives(campaign 하위 ads)`로 광고 목록을 얻어 **evidence_metrics(`affected_ad_count`)·프리뷰에만** 싣는다. **`target_object_ids`는 캠페인 id 단일**(§4) — 하위 광고 fan-out은 집행 시점 writer가 한다.
 6. **proposal 빌드** — `budget_proposal` 미러로 서버가 빌드·finalize(아래 §5). evidence_metrics에 image_hash·copy(headline/body)·link_url·generation_id·candidate_id·영향 광고 수.
 7. **프리뷰** — 후보 이미지 + 영향 광고별 현재 썸네일/이름(§6-⑤).
@@ -95,7 +95,9 @@
 - 이미지 규격 검증 실패 → proposal 생성 실패(집행 없음).
 - 빌드된 proposal: `target_object_ids`=캠페인 단일, evidence_metrics에 image_hash·copy·link_url·generation/candidate·affected_ad_count, Tier-3.
 - sending mode면 엔드포인트 501 차단(§6-⑦).
+- **fan-out** — writer 단위 테스트(**stub client + validate_only**)로 하위 ad마다 creative 교체 POST를 확인(LIVE 미호출). **mock(DRY_RUN)은 자식 조회 불가 → tree orchestration(creative 1회 생성 + 캠페인 결과)까지만** 검증. executor 테스트는 `replace_creative_tree` 호출까지(fan-out은 writer 단위 책임).
 - **집행 멱등(두 축)** — ⓐ `create_ad_creative`가 같은 idem_key면 같은 creative_id 반환. ⓑ 같은 승인/idem으로 재실행 시 executor 멱등 재생으로 **중복 side effect 없이 같은 결과 스냅샷**(writer 재호출 없음).
+- **image_hash 필수** — REPLACE 제안에 image_hash 누락 시 executor가 거부(텍스트-only creative 불허).
 - 승인 게이트: 미승인 Tier-3 거부(기존 게이트 #4 회귀).
 - LIVE 호출 없음.
 

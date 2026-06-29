@@ -11,7 +11,7 @@
 **참조:** spec `docs/superpowers/specs/2026-06-29-chat-replace-creative-explicit-candidate-design.md` · spike findings `docs/management/2026-06-29-replace-creative-conversion-spike-findings.md`.
 
 **범위 메모:**
-- 후보-org 소유권 검증은 generator D1 계약 확장 필요 → **후속**(B-1은 캠페인 소유권만 강제).
+- 후보-org 누출은 **Task 0에서 닫는다**(generator GET을 `X-Org-Id`로 org 스코프 — 타 org 후보 404). 캠페인 소유권은 Task 5에서 강제.
 - 프론트 챗 카드(후보 picker·프리뷰)는 P3 P1 포팅 카드 의존 → **후속**(본 plan은 백엔드 + mock 테스트).
 - LIVE 없음. `create_ad_creative`/`replace_creative_tree`는 `_is_sending_mode()`일 때만 Meta 호출, 아니면 합성 결과.
 
@@ -440,6 +440,7 @@ async def test_replace_creative_param_is_ad_id():
     assert result.platform_response_snapshot["creative_id"] == "creative-9"
 
 async def test_replace_creative_tree_dry_run_creates_one_creative():
+    # mock(DRY_RUN)은 자식 조회 불가 → tree orchestration(creative 1회 생성 + 캠페인 결과)까지만 검증.
     writer = MetaAdsWriter(mode=ExecutionMode.DRY_RUN)
     result = await writer.replace_creative_tree(
         "camp-1",
@@ -454,6 +455,39 @@ async def test_replace_creative_tree_dry_run_creates_one_creative():
     snap = result.platform_response_snapshot
     assert snap["operation"] == "replace_creative"
     assert snap["creative_id"].startswith("mockcreative_")  # 1회 생성된 합성 creative
+
+
+class _StubClient:
+    """fan-out 검증용 — 실 Meta 대신 자식 ad 2개를 돌려주고 POST 경로를 기록."""
+
+    def __init__(self):
+        self.posts: list[str] = []
+
+    async def get(self, path, params=None):
+        return {"data": [{"id": "ad-1"}, {"id": "ad-2"}]}
+
+    async def post(self, path, data, validate_only=False):
+        self.posts.append(path)
+        return {"id": "obj-1"}
+
+
+async def test_replace_creative_tree_fans_out_to_each_ad():
+    # fan-out 계약 — sending mode + stub client에서 하위 ad마다 creative 교체 POST(LIVE 미호출).
+    stub = _StubClient()
+    writer = MetaAdsWriter(mode=ExecutionMode.VALIDATE_ONLY, client=stub)
+    result = await writer.replace_creative_tree(
+        "camp-1",
+        ad_account_id="act_1",
+        image_hash="h",
+        headline="제목",
+        body="본문",
+        link_url="https://clickme.co.kr",
+        idem_key="key-1",
+    )
+    assert result.status is ResultStatus.SUCCESS
+    # adcreatives 생성 1회 + 하위 ad-1·ad-2 각각 교체 POST.
+    assert "ad-1" in stub.posts and "ad-2" in stub.posts
+    assert any("adcreatives" in p for p in stub.posts)
 ```
 
 - [ ] **Step 2: 실패 확인**
@@ -669,16 +703,20 @@ Expected: FAIL — 현재 분기가 `selected_candidate_id`를 읽어 `replace_c
 ```python
         if proposal.action_type == "REPLACE_CREATIVE":
             em = proposal.evidence_metrics
+            image_hash = em.get("image_hash")
             headline = em.get("headline")
             body = em.get("body")
             link_url = em.get("link_url")
-            if not headline or not body or not link_url:
-                # 빌드 단계가 항상 채우는 소재 필드 — 없으면 계약 위반(_validate 통과분 방어)
-                raise ValueError("REPLACE_CREATIVE 제안에 소재 필드(headline/body/link_url) 없음")
+            # 빌드 단계가 항상 채우는 소재 필드 — 없으면 계약 위반(_validate 통과분 방어).
+            # image_hash 필수: REPLACE는 "후보 이미지로 교체"가 핵심이라 텍스트-only는 불허.
+            if not image_hash or not headline or not body or not link_url:
+                raise ValueError(
+                    "REPLACE_CREATIVE 제안에 소재 필드(image_hash/headline/body/link_url) 없음"
+                )
             return await self._writer.replace_creative_tree(
                 target,  # 캠페인 id — writer가 하위 ad로 fan-out
                 ad_account_id=proposal.ad_account_id,
-                image_hash=em.get("image_hash"),
+                image_hash=str(image_hash),
                 headline=str(headline),
                 body=str(body),
                 link_url=str(link_url),
@@ -778,12 +816,13 @@ async def replace_creative_proposal(
 ):
     """generator 후보 → REPLACE_CREATIVE 제안. adcreative 생성은 집행 시점(executor)에서.
 
-    소유권: 자기 캠페인만 교체(파괴적 행위 차단). 후보-org 검증은 generator D1 계약 확장 후속.
+    소유권: 자기 캠페인만 교체(파괴적 행위 차단) + 후보-org는 Task 0의 X-Org-Id 스코프로 닫힘(타 org면 404).
     """
     org_id = await _require_org_id(user, db)
     await _require_owned_campaign(db, org_id, campaign_id)  # 캠페인 소유권(필수)
 
     # B-1은 mock 계약 고정 — sending mode(validate/live)면 실 /adimages 호출이 되므로 차단(리뷰 ③).
+    # _is_sending_mode()는 기존 모듈 헬퍼(management.py:204) — use_mock·management_execution_mode 기준.
     if _is_sending_mode():
         raise HTTPException(status_code=501, detail="REPLACE_CREATIVE LIVE는 미지원(B-1 mock 범위).")
 
@@ -809,10 +848,11 @@ async def replace_creative_proposal(
 
     ad_account = await _require_ad_account(db, org_id)
     writer = await _require_writer(db, org_id)
-    # non-sending(mock)이라 업로드는 합성 해시(또는 None) — 실 Meta 미호출.
+    # non-sending(mock)에서 MetaAdsWriter.upload_image는 실 /adimages 미호출(None 반환 가능).
+    # image_hash는 REPLACE 핵심(이미지 교체)이라 항상 채운다 — mock이면 합성 해시로 폴백(executor가 필수 검사).
     image_hash = await _upload_creative_or_502(
         writer, _asset_config(name=cand.candidate_id), jpeg, "candidate.jpg"
-    )
+    ) or f"mockhash_{cand.candidate_id}"
 
     reader = await _require_reader(db, org_id)
     affected = await reader.get_creatives(campaign_id)  # 프리뷰: 영향 광고(현재 썸네일/이름)
@@ -860,7 +900,7 @@ import 추가(파일 상단 기존 import 그룹에): `from domain.management.ad
 - [ ] **Step 4: 통과 확인**
 
 Run: `cd backend && uv run pytest tests/management/test_replace_creative_proposal.py -v`
-Expected: PASS (2 tests)
+Expected: PASS (3 tests)
 
 - [ ] **Step 5: 커밋**
 
