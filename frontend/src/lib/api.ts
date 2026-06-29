@@ -1,7 +1,7 @@
 import { getToken } from "./authApi";
 import type { BoardResponse } from "@/components/manage/compare/types";
 import type { CampaignDetail, CampaignsResponse, CreativesResponse, DemographicsResponse, ManualKpiMap, PlatformsResponse } from "@/components/manage/campaigns/types";
-import type { Proposal } from "@/components/manage/types";
+import type { ActionResult, Proposal } from "@/components/manage/types";
 import type { BudgetStatus } from "@/components/manage/budget/types";
 import type {
   BrandKit,
@@ -19,6 +19,16 @@ import type {
 } from "./types";
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number,
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
 
 // 게재 불가 원인 — code별 한국어 message. INSUFFICIENT_CREDIT는 부족액·잔액 동반.
 export interface DeliveryCause {
@@ -167,7 +177,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     const d = (err as { detail?: unknown }).detail;
     const msg =
       typeof d === "string" ? d : d != null ? JSON.stringify(d) : `HTTP ${res.status}`;
-    throw new Error(msg);
+    throw new ApiError(msg, res.status);
   }
   return res.json();
 }
@@ -460,6 +470,35 @@ export const api = {
       request("/management/execute", {
         method: "POST",
         body: JSON.stringify({ approved_action, proposal }),
+      }),
+    budgetProposal: (
+      campaignId: string,
+      body: {
+        action: 'increase_budget' | 'decrease_budget';
+        new_daily_budget_krw: number;
+        shown_budget_before_krw?: number;
+      },
+    ) =>
+      request<{ proposal: Proposal; budget_before_krw: number; drift: boolean }>(
+        `/management/campaigns/${campaignId}/budget-proposal`,
+        { method: "POST", body: JSON.stringify(body) },
+      ),
+    budgetCommit: (
+      campaignId: string,
+      body: {
+        action: 'increase_budget' | 'decrease_budget';
+        new_daily_budget_krw: number;
+        shown_budget_before_krw?: number;
+      },
+    ) =>
+      request<{
+        result: ActionResult;
+        error_message?: string;
+        budget_before_krw: number;
+        budget_after_krw: number;
+      }>(`/management/campaigns/${campaignId}/budget-commit`, {
+        method: "POST",
+        body: JSON.stringify(body),
       }),
     audit: (approvalId: string) => request(`/management/audit?approval_id=${approvalId}`),
     // 멀티테넌트 — 로그인 org로 Meta OAuth 로그인 URL을 받는다(인증 XHR). 프론트가 그 URL로 이동.

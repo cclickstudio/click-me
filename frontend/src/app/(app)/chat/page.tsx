@@ -6,6 +6,7 @@ import { safeRandomUUID } from '@/lib/utils';
 import { api } from '@/lib/api';
 import ChatCreateCampaignCard from '@/components/chat/ChatCreateCampaignCard';
 import ChatCampaignActionCard, { type CampaignActionPayload } from '@/components/chat/ChatCampaignActionCard';
+import ChatBudgetProposalCard, { type BudgetActionPayload } from '@/components/chat/ChatBudgetProposalCard';
 import type { CampaignPrefill } from '@/components/manage/campaigns/CampaignForm';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
@@ -52,7 +53,7 @@ type SourceMeta = {
   cards?: ChatCard[]; // 서버 composer 카드(result/review/actionbar). evidence는 citations로 대체.
   embed?: 'create_campaign' | 'campaign_action'; // 오케스트레이터 create_campaign·manage_campaign 툴 신호
   prefill?: CampaignPrefill; // 툴이 추출한 폼 초기값
-  action?: CampaignActionPayload; // manage_campaign 툴 페이로드
+  action?: CampaignActionPayload | BudgetActionPayload; // manage_campaign 툴 페이로드(상태·예산)
 };
 type Message = {
   role: 'user' | 'assistant';
@@ -60,7 +61,7 @@ type Message = {
   meta?: SourceMeta;
   embed?: 'create_campaign' | 'campaign_action'; // 임베드 카드 종류(P1: 생성, P2: 상태 조치)
   prefill?: CampaignPrefill;
-  action?: CampaignActionPayload;
+  action?: CampaignActionPayload | BudgetActionPayload;
 };
 
 // Web Speech API — 브라우저 내장, 무료, API 키 불필요. Chrome/Edge 지원.
@@ -597,9 +598,12 @@ export default function Page() {
                       {isCreateCampaignEmbed && (
                         <ChatCreateCampaignCard prefill={msg.prefill} />
                       )}
-                      {msg.role === 'assistant' && msg.embed === 'campaign_action' && msg.action && (
-                        <ChatCampaignActionCard action={msg.action} />
-                      )}
+                      {msg.role === 'assistant' && msg.embed === 'campaign_action' && msg.action &&
+                        (msg.action.action === 'increase_budget' || msg.action.action === 'decrease_budget' ? (
+                          <ChatBudgetProposalCard action={msg.action as BudgetActionPayload} />
+                        ) : (
+                          <ChatCampaignActionCard action={msg.action as CampaignActionPayload} />
+                        ))}
                       {/* TTS 읽어주기 버튼 — 브라우저 SpeechSynthesis, 무료 */}
                       {msg.role === 'assistant' && msg.content && ttsSupported && (
                         <button
