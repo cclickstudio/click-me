@@ -1,57 +1,47 @@
-# 채팅 장기기억 배선 — 식별자 해석·포맷·remember/recall 롱트립 검증
-"""optional_user로 도출한 (tenant, user) 네임스페이스에 기억을 적재·회수하는 채팅 헬퍼를 본다.
+# 채팅 장기기억 배선(우리 노선) — 식별자 도출·remember/recall 라운드트립 검증
+"""chat.py가 (tenant, user) 네임스페이스를 도출해 memory_store에 적재·회수하는 헬퍼를 본다.
 
-비로그인은 (None, None)=데모 네임스페이스로 graceful. memory_store 자체는 test_memory_store가 검증.
+비로그인/익명은 (None, None)=데모 네임스페이스로 graceful 처리한다.
+memory_store 자체(분기·격리)는 test_memory_store가 검증한다.
 """
+
+from types import SimpleNamespace
 
 import pytest
 
-from api.assistant.contracts import Intent, SubagentRequest
-from api.assistant.intent import classify_intent
-from api.routers.chat import _format_memory, _get_memory, _resolve_identity
-from core.schemas import ChatMessage
+from api.routers.chat import _get_memory, _memory_ids
+from core.schemas import ChatMessage, ChatRequest
 
 
-def _req(text: str) -> SubagentRequest:
-    return SubagentRequest(messages=[ChatMessage(role="user", content=text)], session_id="t")
+def _body(**kw) -> ChatRequest:
+    return ChatRequest(session_id="s", messages=[ChatMessage(role="user", content="hi")], **kw)
 
 
-@pytest.mark.asyncio
-async def test_llm_none_always_returns_advise():
-    """키워드 폴백 제거됨 — LLM 없으면 모든 질문이 ADVISE(→ Gemini CLIO)로 폴백."""
-    for q in [
-        "메타는 cpm이 어때?",
-        "틱톡은 cpm이 어때?",
-        "CPM 벤치마크 알려줘",
-        "입찰 전략 바꿔줘",
-        "오늘 날씨 어때?",
-    ]:
-        assert await classify_intent(_req(q), [Intent.MANAGE], llm=None) == Intent.ADVISE
+def test_memory_ids_anonymous_is_none():
+    # 본문·인증유저 모두 식별자 없음 → (None, None) 데모 네임스페이스로 graceful.
+    ids = _memory_ids(_body(), SimpleNamespace(id=None, organization_id=None))
+    assert ids == (None, None)
 
 
-def test_format_memory_empty_returns_none():
-    assert _format_memory([]) is None
-    assert _format_memory([{"x": 1}]) is None  # note 키 없음
+def test_memory_ids_body_takes_priority():
+    # 본문(JWT 도입 전 임시)이 인증유저보다 우선.
+    ids = _memory_ids(
+        _body(user_id="u1", organization_id="org1"),
+        SimpleNamespace(id="u2", organization_id="org2"),
+    )
+    assert ids == ("org1", "u1")
 
 
-def test_format_memory_joins_notes():
-    out = _format_memory([{"note": "A"}, {"note": "B"}])
-    assert out is not None
-    assert "A" in out and "B" in out
-    assert out.startswith("[이전 대화")
-
-
-@pytest.mark.asyncio
-async def test_resolve_identity_anonymous_is_none():
-    # 비로그인(user=None)이면 db를 건드리지 않고 (None, None).
-    assert await _resolve_identity(None, None) == (None, None)
+def test_memory_ids_falls_back_to_current_user():
+    ids = _memory_ids(_body(), SimpleNamespace(id="u2", organization_id="org2"))
+    assert ids == ("org2", "u2")
 
 
 @pytest.mark.asyncio
 async def test_memory_roundtrip_via_chat_store():
+    # chat.py 싱글톤 store로 적재→회수, 다른 user는 격리.
     mem = _get_memory()
     await mem.remember("t-chat", "u-chat", "k1", {"note": "질문: 예산 / 제안: PAUSE_CAMPAIGN"})
     got = await mem.recall("t-chat", "u-chat")
-    assert any("PAUSE_CAMPAIGN" in g["note"] for g in got)
-    # 다른 user는 격리
+    assert any("PAUSE_CAMPAIGN" in g.get("note", "") for g in got)
     assert await mem.recall("t-chat", "other") == []

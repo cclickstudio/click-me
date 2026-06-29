@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -11,7 +12,23 @@ _BACKEND_ROOT = Path(__file__).resolve().parent.parent
 _ROOT_ENV = _BACKEND_ROOT.parent / ".env"
 load_dotenv(_ROOT_ENV if _ROOT_ENV.exists() else _BACKEND_ROOT / ".env")
 
+# langsmith ↔ langchain_core 순환 import(tracers.context) 선해소.
+# 시뮬/제너는 asyncio.gather로 트레이싱된 LLM 호출을 동시 실행하는데, 이때
+# langchain_core.tracers.context를 여러 코루틴이 첫 import하면 부분 초기화 모듈을
+# 관측해 "No module named 'langchain_core.tracers.context'"가 발생한다.
+# 서버 시작 시 단일 스레드에서 미리 완전 import 해 race를 제거한다.
+import langchain_core.tracers.context  # noqa: E402,F401
+import langchain_core.tracers.langchain  # noqa: E402,F401
+
+# Windows 한정: 챗 오케스트레이터 체크포인터(langgraph AsyncPostgresSaver→psycopg async)는
+# 기본 ProactorEventLoop에서 InterfaceError를 내고, AsyncConnectionPool이 이를 재시도하다
+# 30초 PoolTimeout으로 가린다. SelectorEventLoop를 강제해 회피(배포 타깃 Linux EC2는 무영향).
+# 백엔드에 asyncio subprocess 사용처가 없어 selector 정책의 subprocess 비활성화 영향도 없음.
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
 from fastapi import FastAPI, Request
+from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -74,18 +91,9 @@ async def lifespan(app: FastAPI):
     )
 
     await init_pg_checkpointer(settings.database_url)
-    # 능동 매니지먼트 스케줄러 — 기본 off(management_scheduler_enabled일 때만 기동).
-    from domain.management.scheduler import start_scheduler  # noqa: PLC0415
-
-    start_scheduler(settings)
-    # KB 인제스터 — 비차단 백그라운드 태스크(서버 시작 안 막음). 키 없으면 graceful 스킵.
-    try:
-        from domain.management.assistant.kb_ingest import ingest  # noqa: PLC0415
-
-        asyncio.create_task(ingest())
-    except Exception as e:  # noqa: BLE001
-        logger.warning("[startup] KB ingest 스킵: %s", e)
     yield
+    # shutdown — 챗 오케스트레이터 체크포인터(psycopg) 풀 정리(누수 방지, 미생성이면 no-op)
+    await chat.close_orchestrator()
     await close_pg_checkpointer()
 
 
@@ -105,7 +113,10 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         request.url.path,
         exc.errors(),
     )
-    return JSONResponse(status_code=422, content={"detail": exc.errors()})
+    # exc.errors()에는 model_validator가 던진 ValueError 등 직렬화 불가 객체가 ctx에 섞일 수 있다.
+    # jsonable_encoder 없이 그대로 넘기면 JSONResponse 인코딩이 깨져
+    # CORS 헤더 없는 빈 응답이 나가고 프론트는 "Failed to fetch"만 본다.
+    return JSONResponse(status_code=422, content={"detail": jsonable_encoder(exc.errors())})
 
 
 app.add_middleware(
@@ -138,6 +149,7 @@ app.include_router(billing.router, prefix="/api/billing", tags=["billing"])
 app.include_router(management.router, prefix="/api/management", tags=["management"])
 app.include_router(generator.router, prefix="/api/generator", tags=["generator"])
 app.include_router(debate.router, prefix="/api/debate", tags=["debate"])
+app.include_router(chat.assistant_router, prefix="/api/assistant", tags=["assistant"])
 
 
 @app.get("/health")

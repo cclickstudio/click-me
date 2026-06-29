@@ -26,6 +26,31 @@
 
 ---
 
+## 0.5 확보 상태 & 데이터 사용처 종합 (2026-06-24 코드 기준)
+
+> 각 데이터가 **파이프라인 어디에 쓰이는지**와 **실제 코드 적재 여부**를 한 줄로 정리한다. 확보 상태는 추정이 아니라 `backend/domain/simulation/data/simulation/distributions/*.json`의 실제 값(`is_placeholder`·빈 dict 여부)으로 판정했다.
+>
+> **범례** — ✅ 확보 완료(실값 적재) · ◐ 부분 확보(일부만 / raw는 gitignore·로컬) · ☐ 미확보(프레임워크만, 값 비움)
+
+| 확보 | 데이터 | 주입 파일 | 파이프라인 사용처(어디에 쓰이나) |
+|:---:|---|---|---|
+| ✅ | **인구 연령×성별×지역**(단계1) | `population_age_sex.json` | `target_filter` 조건부 샘플링의 **모집단**(연령밴드×성별 가중치, 지역). 행안부 원본 CSV 적재 완료(전국 5,109만 일치), 로더가 raw CSV 자동 우선(sources.md ②). raw는 gitignore라 미커밋이고 커밋 fixture는 placeholder 폴백. |
+| ✅ | **OCEAN 성격**(단계2-α) | `ocean_age_bands.json` | `persona_sampler._sample_ocean`의 **연령 조건부 성격 샘플링**. OSF 원자료로 산출한 밴드별 5유형 비율 + factor 잔차 offset 주입(20대 Average 46%→60+ 73% 등). |
+| ◐ | **BFI-K 고령자 규준**(단계2-α P2) | `raw/bfik_elders_kim2010.*`(gitignore) | 40+/60+ 유형비율 **보수적 조정의 정성 prior**(직접 주입 금지 — raw Likert≠factor score). raw 미커밋·로컬 참조용. |
+| ✅ | **미디어·소비 행동**(단계2-β) | `media_behavior.json` | 연령×성별 셀별 **매체 사용시간** + 4-b 반응의 `exposure_context`(시간대·매체·행위·장소 노출맥락). KISDI 2024 raw build(`build_media_behavior.py`). |
+| ✅ | **Meta 도달성(연령 marginal)** | `meta_reach.json` | `reachability_sampling` ON 시 **단계1 연령 marginal을 도달 점유율로 대체**. Meta 광고관리자 실측(통합 reach). |
+| ☐ | **Meta IG/FB 브랜드 침투율** | `meta_reach.json` `platform_specifics` | 플랫폼 분리 reach 보정(Tier 2). 빈 값(framework만) → DMC·오픈서베이·와이즈앱 등 외부 데이터 필요. |
+| ✅ | **소득·학력**(단계1 확장) | `socioeconomic.json` | 연령×성별 소득(8구간)·학력(6단계) 분포 → **구매의도 grounding**·반응 프롬프트(월소득·학력) 입력. KISDI raw build. |
+| ✅ | **소비가치**(단계3) | `consumption_values.json` | 긍정 응답률을 **속성 보유 확률**로 통계 샘플링(LLM 아님). 대학내일20대연구소 공개 %. |
+| ☐ | **심층 소비심리**(체면·동조·눈치, 단계3) | `social_values_deep.json` `generation_specific` | 반응 프롬프트 `[내 성향(한국 특화)]` 조건화. 빈 dict → 무변화. MDIS 사회조사 raw + 척도 정의 필요. |
+| ☐ | **브랜드 보조인지율**(Tier3) | `brand_awareness.json` `brands` | `interpret_ad`에서 룩업→`structured_analysis.awareness_by_age` 부착(페르소나가 자기 연령칸만 읽음). 빈 dict → Tier2(LLM 추정) 폴백. 갤럽·오픈서베이·클라이언트 제공 필요. |
+| ☐ | **처방 RAG T1 플랫폼 가이드** | (벡터DB, 미적재) | `dimension`+`media_type` 메타필터 후 벡터검색 → 진단 차원별 처방 근거(ANALYSIS §6-3). 공개 문서라 확보 가능, 청킹·임베딩 적재 필요. |
+| ☐ | **벤치마크 DB**(§6-5) | (정적 JSON, 미작성) | `BENCH.{industry}.{metric}` 키로 보고서 §6-A 벤치마크 비교. 손 큐레이션 JSON 1개 작성 필요(출처명+기준연도 필수). |
+
+> **요약** — 페르소나 생성 핵심(인구·OCEAN·미디어·소득·소비가치)은 확보 완료, 단계3 심층 심리·브랜드 인지·처방 RAG·벤치마크는 미확보(코드 프레임워크만, graceful fallback로 회귀 0). 미확보 항목의 수집 절차는 §Phase 2 프레임워크 데이터 게이트와 `sources.md`·`REACTION_WORKFLOW_AND_DATA_GUIDE.md` 참조.
+
+---
+
 ## 단계 1 — 인구통계 뼈대 (Layer 1)
 
 **필요 데이터:** 연령 × 성별 × 지역 인구 비율 (실제 분포) → `target_filter` 조건부 샘플링의 모집단

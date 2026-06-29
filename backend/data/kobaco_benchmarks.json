@@ -1,0 +1,13 @@
+{
+  "_note": "KOBACO 카테고리별 평균 KPI 임시 하드코딩(추후 실제 출처 교체). purchase_intent 1~5, click_intent_rate·rejection_rate 0~1.",
+  "뷰티": { "purchase_intent": 3.2, "click_intent_rate": 0.22, "rejection_rate": 0.18 },
+  "패션": { "purchase_intent": 3.1, "click_intent_rate": 0.2, "rejection_rate": 0.2 },
+  "식품": { "purchase_intent": 3.4, "click_intent_rate": 0.25, "rejection_rate": 0.15 },
+  "음료": { "purchase_intent": 3.5, "click_intent_rate": 0.26, "rejection_rate": 0.14 },
+  "전자제품": { "purchase_intent": 3.0, "click_intent_rate": 0.18, "rejection_rate": 0.22 },
+  "생활용품": { "purchase_intent": 3.3, "click_intent_rate": 0.21, "rejection_rate": 0.17 },
+  "금융": { "purchase_intent": 2.8, "click_intent_rate": 0.15, "rejection_rate": 0.28 },
+  "여행": { "purchase_intent": 3.3, "click_intent_rate": 0.24, "rejection_rate": 0.16 },
+  "교육": { "purchase_intent": 2.9, "click_intent_rate": 0.17, "rejection_rate": 0.24 },
+  "기타": { "purchase_intent": 3.1, "click_intent_rate": 0.2, "rejection_rate": 0.2 }
+}

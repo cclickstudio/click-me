@@ -1,0 +1,5 @@
+{
+  "mcpServers": {
+    "chwijung": { "command": "npx", "args": ["-y", "chwijung-mcp"] }
+  }
+}

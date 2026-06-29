@@ -159,7 +159,9 @@ def build_management_agent(settings):
 
     model = getattr(settings, "management_assistant_model", "gpt-4o-mini")
     llm = ChatOpenAI(model=model, temperature=0.0, api_key=api_key)
-    retriever = KbRetriever(api_key=api_key)
+    from domain.management.assistant.embeddings import build_embedding_provider  # noqa: PLC0415
+
+    retriever = KbRetriever(embedder=build_embedding_provider(settings))
     graph = build_graph(settings, retriever, llm, checkpointer=build_checkpointer(settings))
 
     async def _ask(req: AskRequest) -> AskResult:

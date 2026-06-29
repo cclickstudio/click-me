@@ -20,11 +20,17 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [panelCollapsed, setPanelCollapsed] = useState(false);
   const [pwDismissed, setPwDismissed] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false); // 모바일 사이드바 드로어
 
   useEffect(() => {
     const stored = localStorage.getItem('panelCollapsed');
     if (stored === 'true') setPanelCollapsed(true);
   }, []);
+
+  // 라우트 이동 시 모바일 드로어 닫기.
+  useEffect(() => {
+    setMobileNavOpen(false);
+  }, [pathname]);
 
   // COMPANY는 채팅·시뮬/제너 실행만 차단(프로젝트·상세·삭제·팀 관리는 허용)
   // 정확 일치만 — /simulation/[id](결과 대시보드)는 허용해야 COMPANY도 시뮬 결과를 본다.
@@ -78,7 +84,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   }
 
   const role = user?.role;
-  const mainLeft = panelCollapsed ? 'pl-[274px]' : 'pl-[512px]';
+  // 데스크톱(md+)에만 좌측 패널 폭만큼 패딩 — 모바일은 풀폭(드로어로 사이드바 접근).
+  const mainLeft = panelCollapsed ? 'md:pl-[274px]' : 'md:pl-[512px]';
 
   // 역할별 좌측 패널 — ADMIN: 회사>팀>프로젝트 / COMPANY: 조직 전체(ALL·TEAM, 조회) / USER: 내 팀 프로젝트
   const Panel =
@@ -86,8 +93,32 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen bg-[#F9FAFB] dark:bg-[#0F1117] transition-colors">
-      <Sidebar />
-      <Panel collapsed={panelCollapsed} onToggle={togglePanel} />
+      {/* 모바일 햄버거 — 사이드바 드로어 토글(데스크톱 숨김) */}
+      <button
+        type="button"
+        onClick={() => setMobileNavOpen(true)}
+        aria-label="메뉴 열기"
+        className="md:hidden fixed top-3 left-3 z-50 w-10 h-10 flex items-center justify-center rounded-lg bg-white dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748] text-[#4E5968] dark:text-[#9CA3AF] shadow-sm"
+      >
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+          <line x1="3" y1="6" x2="21" y2="6" />
+          <line x1="3" y1="12" x2="21" y2="12" />
+          <line x1="3" y1="18" x2="21" y2="18" />
+        </svg>
+      </button>
+      {/* 모바일 드로어 배경 오버레이 */}
+      {mobileNavOpen && (
+        <div
+          onClick={() => setMobileNavOpen(false)}
+          className="md:hidden fixed inset-0 z-30 bg-black/40"
+          aria-hidden
+        />
+      )}
+      <Sidebar mobileOpen={mobileNavOpen} />
+      {/* 좌측 컨텍스트 패널 — 모바일에선 숨김(메인 콘텐츠가 선택 UI 제공) */}
+      <div className="max-md:hidden">
+        <Panel collapsed={panelCollapsed} onToggle={togglePanel} />
+      </div>
       <main className={`${mainLeft} min-h-screen transition-all duration-200`}>
         {children}
       </main>

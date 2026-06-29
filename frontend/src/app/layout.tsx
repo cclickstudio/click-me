@@ -4,6 +4,8 @@ import './globals.css';
 import ThemeProvider from '@/components/ThemeProvider';
 import { AuthProvider } from '@/components/AuthProvider';
 import { ProjectProvider } from '@/components/ProjectContext';
+import { ChatControllerProvider } from '@/components/chat/ChatController';
+import FloatingChat from '@/components/chat/FloatingChat';
 import MetaPixel from '@/components/MetaPixel';
 
 // 로컬 NotoSansKR(self-host) — Tailwind sans(var(--font-sans))에 연결해 전역 한글 폰트로 사용.
@@ -39,7 +41,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         />
       </head>
       <body className="font-sans">
-        <ThemeProvider><AuthProvider><ProjectProvider>{children}</ProjectProvider></AuthProvider></ThemeProvider>
+        <ThemeProvider><AuthProvider><ProjectProvider><ChatControllerProvider>{children}<FloatingChat /></ChatControllerProvider></ProjectProvider></AuthProvider></ThemeProvider>
       </body>
     </html>
   );
