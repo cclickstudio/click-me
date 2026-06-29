@@ -37,6 +37,8 @@ _SOURCE_META: dict[str, tuple[str, str | None]] = {
     # ↓ 사용자 제공 예정 — 해당 파일명으로 kb/external/에 넣으면 올바른 네임스페이스로 적재됨.
     "kobaco_baseline.md": ("kobaco_baseline", "https://www.kobaco.co.kr/"),
     "evidence.md": ("evidence", None),
+    # ADVISE(일반지식) 게이트 검색 풀 — general_knowledge 네임스페이스로 적재.
+    "advertising_general_knowledge.md": ("general_knowledge", None),
 }
 
 

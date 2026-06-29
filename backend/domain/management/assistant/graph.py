@@ -8,6 +8,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 from typing import Any
 
@@ -15,11 +16,13 @@ from langchain_core.messages import AIMessage, SystemMessage, ToolMessage
 from langchain_core.tools import tool
 from langgraph.graph import END, START, MessagesState, StateGraph
 from langgraph.types import interrupt
+from pydantic import BaseModel
 
 from domain.management.approval import judge_tier, requires_human
 from domain.management.assistant import tools as live_tools
 from domain.management.assistant.actions import _RATIONALE
 from domain.management.assistant.contracts import AskResult, Citation, SuggestedAction
+from domain.management.assistant.retriever import MANAGEMENT_SOURCE_TYPES
 
 #: 도구 호출 라운드 상한 — 초과 시 도구 없이 최종 답을 강제(무한 루프 방지)
 _MAX_ROUNDS = 5
@@ -32,11 +35,57 @@ _SYSTEM = (
     "- 사용자가 캠페인을 이름으로 말하면 live_campaign_find_by_name로 campaign_id를 먼저 찾고, "
     "다건이면 어느 것인지 되묻은 뒤 진행한다.\n"
     "- 원인·방법·정책은 search_kb로 근거를 찾아 설명한다.\n"
+    "- '최근·요즘·올해·이번 달·새로 바뀐·트렌드·발표' 등 시의성 질문은 KB 문서가 오래됐을 수 "
+    "있으니 search_kb에 더해 web_search도 함께 써서 최신 근거를 확인한다. 그 외에는 KB(search_kb) "
+    "우선이고, KB에 근거가 없을 때만 web_search를 보조로 쓴다. "
+    "웹 결과는 advisory(참고)이므로 단정하지 말고 출처와 함께 참고로만 인용한다.\n"
     "- 예측(상대 지표)과 실측(절대)을 수치로 환산하지 말 것.\n"
     "- 운영 변경(일시중지·게재시작·증액·감액·소재교체)은 propose_action으로 제안만 한다. "
     "직접 실행하지 않는다(실행은 사람 승인 경로).\n"
     "- 근거가 없으면 모른다고 말한다. 문장 끝에 콜론을 쓰지 말 것."
 )
+
+
+# ── 자기교정 검색(CRAG-lite) — 근거를 평가하고 부족하면 재작성·재검색·신호 ──
+_INSUFFICIENT_SOURCE = "_insufficient"  # 인용에서 제외되는 신호 엔트리
+
+
+class _KbGrade(BaseModel):
+    """검색 근거 평가 — 충분성 + (부족 시) 재작성 쿼리."""
+
+    sufficient: bool
+    rewrite: str | None = None
+
+
+async def _grade_kb(llm, query: str, hits: list[dict]) -> _KbGrade:
+    """근거가 질문에 충분한지 LLM으로 평가. 실패하면 충분으로 간주(채팅 안 막음)."""
+    digest = "; ".join(f"{h.get('title', '')}: {h.get('chunk', '')[:80]}" for h in hits[:4])
+    system = (
+        "너는 검색 근거 평가자다. 사용자 질문에 대해 검색된 근거가 답하기에 충분한지 판단한다.\n"
+        "- 질문의 핵심에 답할 정보가 근거에 있으면 sufficient=true.\n"
+        "- 부족하거나 빗나갔으면 sufficient=false, 재검색용 한국어 재작성 쿼리를 rewrite에 제시."
+    )
+    try:
+        structured = llm.with_structured_output(_KbGrade)
+        return await structured.ainvoke(
+            [("system", system), ("human", f"질문: {query}\n근거: {digest}")],
+            config={"run_name": "assistant.grade_kb", "tags": ["management", "crag"]},
+        )
+    except Exception:  # noqa: BLE001 — 평가 실패는 통과(보수적: 확실한 부족일 때만 교정)
+        return _KbGrade(sufficient=True)
+
+
+def _dedup(hits: list[dict]) -> list[dict]:
+    """(source, title) 기준 중복 제거 — 재검색 병합 시 같은 청크 중복 방지."""
+    seen: set = set()
+    out: list[dict] = []
+    for h in hits:
+        key = (h.get("source"), h.get("title"))
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(h)
+    return out
 
 
 class _State(MessagesState, total=False):
@@ -99,13 +148,57 @@ def build_graph(settings, retriever, llm, checkpointer=None):
 
     @tool
     async def search_kb(query: str) -> list[dict]:
-        """정책·최적화 플레이북·KPI 규칙 등 지식베이스 근거 문서 검색.
+        """정책·최적화 플레이북·KPI 규칙 등 지식베이스 근거 문서 검색(자기교정).
+        근거가 부족하면 쿼리를 재작성해 재검색하고, 그래도 부족하면 신호를 남긴다.
         원인·방법·정책 설명에 쓴다."""
         if retriever is None:
             return []
         try:
-            return await retriever.search(query, k=4)
+            # management 특화 풀만 검색 — 시뮬 도메인 지식 오염 차단.
+            hits = await retriever.search(query, k=4, source_types=MANAGEMENT_SOURCE_TYPES)
         except Exception:  # noqa: BLE001 — KB 미적재면 빈 결과로 진행(live만으로 답)
+            return []
+        if not hits:
+            return []
+        grade = await _grade_kb(llm, query, hits)
+        if grade.sufficient:
+            return hits
+        # 부족 → 쿼리 재작성 후 1회 재검색·병합·재평가(CRAG-lite)
+        if grade.rewrite:
+            with contextlib.suppress(Exception):
+                hits = _dedup(
+                    hits
+                    + await retriever.search(
+                        grade.rewrite, k=4, source_types=MANAGEMENT_SOURCE_TYPES
+                    )
+                )
+            if (await _grade_kb(llm, query, hits)).sufficient:
+                return hits
+        # 여전히 부족 → 에이전트에 신호(인용엔 안 섞임 — tools_node가 필터)
+        return [
+            *hits,
+            {
+                "source": _INSUFFICIENT_SOURCE,
+                "title": "",
+                "chunk": (
+                    "KB 근거가 부족하다. web_search로 보강하거나, "
+                    "충분한 근거가 없으면 모른다고 정직하게 답하라."
+                ),
+                "trust": None,
+            },
+        ]
+
+    @tool
+    async def web_search(query: str) -> list[dict]:
+        """KB에 근거가 없거나 최신·시의성 정보가 필요할 때만 쓰는 웹검색(참고용·advisory).
+        먼저 search_kb를 쓰고, 거기서 못 찾을 때 보조로만. 결과는 단정 말고 참고로 인용한다."""
+        from domain.management.assistant.web_search import (  # noqa: PLC0415
+            web_search as _web_search,
+        )
+
+        try:
+            return await _web_search(query, k=3, api_key=getattr(settings, "tavily_api_key", None))
+        except Exception:  # noqa: BLE001 — 키 없음/실패면 빈 결과로 진행(KB·live만으로 답)
             return []
 
     @tool
@@ -123,6 +216,7 @@ def build_graph(settings, retriever, llm, checkpointer=None):
         live_campaign_find_by_name,
         live_before_after,
         search_kb,
+        web_search,
     ]
     bound = llm.bind_tools([*read_tools, propose_action])
     by_name = {t.name: t for t in read_tools}
@@ -163,8 +257,13 @@ def build_graph(settings, retriever, llm, checkpointer=None):
             result = await by_name[name].ainvoke(args)
             if name not in used:
                 used.append(name)
-            if name == "search_kb":
-                kb_cites.extend(result if isinstance(result, list) else [])
+            if name in ("search_kb", "web_search"):
+                # _insufficient 신호는 인용에서 제외(에이전트는 ToolMessage로 보고 web/정직 폴백).
+                kb_cites.extend(
+                    c
+                    for c in (result if isinstance(result, list) else [])
+                    if c.get("source") != _INSUFFICIENT_SOURCE
+                )
             else:
                 evidence = result if isinstance(result, dict) else evidence
             out_msgs.append(
@@ -199,7 +298,14 @@ def to_result(state: dict[str, Any], thread_id: str | None = None) -> AskResult:
     answer = last.content if isinstance(getattr(last, "content", None), str) else ""
     citations = [Citation(kind="live", source=t) for t in state.get("used_tools", [])]
     citations += [
-        Citation(kind="kb", source=d["source"], title=d.get("title", ""))
+        Citation(
+            kind="web" if d.get("source") == "web" else "kb",
+            source=d["source"],
+            title=d.get("title", ""),
+            trust=d.get("trust"),
+            source_url=d.get("source_url"),
+            as_of=d.get("as_of"),
+        )
         for d in state.get("kb_citations", [])
     ]
     sa = state.get("suggested_action")

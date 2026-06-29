@@ -29,12 +29,15 @@ async def _try_kb_advise(req: SubagentRequest, settings, llm) -> SubagentResult 
     cosine_score max ≥ 0.35일 때만 LLM 호출(비용↓·환각↓). top-1이 keyword-only(cosine=None)여도
     false negative 안 나게 max로 판정. 인용 마커 누락/범위밖이면 안전 문구로 강등(날조 방지).
     """
+    from domain.management.assistant.embeddings import (  # noqa: PLC0415
+        build_embedding_provider,
+    )
     from domain.management.assistant.retriever import (  # noqa: PLC0415
         ADVISE_SOURCE_TYPES,
         KbRetriever,
     )
 
-    retriever = KbRetriever(api_key=getattr(settings, "openai_api_key", None))
+    retriever = KbRetriever(embedder=build_embedding_provider(settings))
     try:
         hits = await retriever.search(req.last_user_text, k=4, source_types=ADVISE_SOURCE_TYPES)
     except Exception:  # noqa: BLE001 — KB 미적재/검색 실패면 CLIO 폴백
