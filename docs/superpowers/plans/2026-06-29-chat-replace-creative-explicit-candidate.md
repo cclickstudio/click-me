@@ -19,6 +19,8 @@
 
 ## 파일 구조
 
+- **Modify (generator, 크로스팀)** `backend/api/routers/generator.py` — GET `/generations/{id}` 내부 분기를 `X-Org-Id`로 org 스코프.
+- **Modify** `backend/domain/management/adapters/generator/client.py` — `get_candidate`에 `org_id` 인자 + `X-Org-Id` 헤더.
 - **Modify** `backend/domain/management/contracts/platform.py` — Port에 `create_ad_creative`·`replace_creative_tree` 추가, `replace_creative` 파라미터 `campaign_id`→`ad_id`.
 - **Modify** `backend/domain/management/adapters/meta/writer.py` — 위 3개 구현.
 - **Create** `backend/domain/management/adapters/meta/creative_image.py` — PNG→JPEG 변환 + 이미지 규격 검증(management 소유).
@@ -29,6 +31,138 @@
 - **Create** `backend/tests/management/test_replace_creative_proposal.py` — 엔드포인트 테스트.
 
 > 모든 백엔드 `.py` 수정 후 커밋 전 Ruff 제안 규칙(루트 CLAUDE.md) 적용. 각 태스크 커밋 메시지는 `add`/`edit`/`fix` 한국어 컨벤션.
+
+---
+
+## Task 0: 후보-org 누출 차단 (generator GET org 스코프 + client org_id)
+
+generator GET을 내부 호출에도 org 스코프하고, management 클라이언트가 `org_id`를 전달한다. 기존 `from_candidate` 누출도 함께 닫는다. **generator 도메인 변경 — 크로스팀 CODEOWNERS, generator 팀 리뷰 필요.**
+
+**Files:**
+- Modify: `backend/api/routers/generator.py` (`get_generation`, line 289~311)
+- Modify: `backend/domain/management/adapters/generator/client.py` (`get_candidate`·`_fetch`)
+- Modify: `backend/api/routers/management.py` (`from_candidate`의 `get_candidate` 호출에 org_id)
+- Test: `backend/tests/management/test_generator_client.py`
+
+- [ ] **Step 1: 실패 테스트 작성** (`test_generator_client.py`에 추가 — 기존 transport 모킹 패턴 사용)
+
+```python
+async def test_get_candidate_sends_org_header():
+    captured = {}
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        captured["org"] = request.headers.get("X-Org-Id")
+        return httpx.Response(200, json={
+            "schema_version": "1", "status": "completed",
+            "candidates": [{
+                "candidate_id": "c1", "idx": 0, "copy": {"headline": "h", "body": "b"},
+                "s3_key": "generated-ads/g1/0.png",
+            }],
+        })
+
+    client = GeneratorReadClient(base_url="http://gen", transport=httpx.MockTransport(handler))
+    await client.get_candidate("g1", "c1", org_id="org-9")
+    assert captured["org"] == "org-9"
+```
+
+- [ ] **Step 2: 실패 확인**
+
+Run: `cd backend && uv run pytest tests/management/test_generator_client.py -k org_header -v`
+Expected: FAIL — `get_candidate()`가 `org_id` 인자를 안 받음(TypeError)
+
+- [ ] **Step 3: client에 org_id 전달** (`adapters/generator/client.py`)
+
+```python
+    async def get_candidate(
+        self, generation_id: str, candidate_id: str, org_id: str | None = None
+    ) -> HandoffCandidate:
+        data = await self._fetch(generation_id, org_id)
+        # ... (이하 기존 본문 동일)
+```
+
+`_fetch`에 org_id 헤더 추가:
+
+```python
+    async def _fetch(self, generation_id: str, org_id: str | None = None) -> dict:
+        url = f"{self._base_url}/api/generator/generations/{generation_id}"
+        headers = dict(self._headers)
+        if org_id:
+            headers["X-Org-Id"] = str(org_id)
+        last_exc: Exception | None = None
+        async with httpx.AsyncClient(timeout=_TIMEOUT, transport=self._transport) as client:
+            for _ in range(_RETRIES + 1):
+                try:
+                    resp = await client.get(url, headers=headers)
+                # ... (이하 기존 본문 동일)
+```
+
+- [ ] **Step 4: generator GET을 org 스코프** (`generator.py` `get_generation`, line 289~311)
+
+`x_org_id` 헤더를 받아 내부 분기에서 `get_detail(generation_id, org)`로 스코프(타 org면 None→404). `get_detail`은 이미 `org_id=None`이면 우회, 주면 검증한다(`generator_service.py:216`).
+
+```python
+@router.get("/generations/{generation_id}")
+async def get_generation(
+    generation_id: str,
+    x_internal_token: str | None = Header(default=None, alias="X-Internal-Token"),
+    x_org_id: str | None = Header(default=None, alias="X-Org-Id"),
+    user: User | None = Depends(_optional_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """상세 — 로그인 유저는 자기 org만(불일치 404). 내부 호출도 X-Org-Id 있으면 org 스코프."""
+    internal = settings.internal_service_token
+    use_mock = getattr(settings, "use_mock", True)
+    if user is not None:
+        detail = await generator_service.get_detail(
+            generation_id, await _require_user_org(user, db)
+        )
+    elif (internal and x_internal_token == internal) or use_mock:
+        # 내부 호출도 X-Org-Id가 있으면 org 스코프(타 org 후보 누출 차단). 없으면 기존 우회.
+        try:
+            org = uuid.UUID(x_org_id) if x_org_id else None
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="잘못된 X-Org-Id") from exc
+        detail = await generator_service.get_detail(generation_id, org)
+    else:
+        raise HTTPException(status_code=401, detail="인증이 필요합니다.")
+    if detail is None:
+        raise HTTPException(status_code=404, detail="Generation not found")
+    return detail
+```
+
+(generator.py 상단에 `import uuid`가 없으면 추가.)
+
+- [ ] **Step 5: `from_candidate`도 org 전달** (`management.py:1897~1906`)
+
+`org_id` 해석을 `get_candidate` 호출 앞으로 끌어올리고 전달:
+
+```python
+    org_id = await _require_org_id(user, db)
+    client = build_generator_client(settings)
+    try:
+        cand = await client.get_candidate(body.generation_id, body.candidate_id, org_id=str(org_id))
+    except InvalidGenerationError as exc:
+        raise HTTPException(status_code=exc.http_status, detail=exc.detail) from exc
+    except GeneratorUnavailableError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+```
+
+(아래쪽 기존 `org_id = await _require_org_id(user, db)` 중복 줄은 제거.)
+
+- [ ] **Step 6: 통과 확인 + 회귀**
+
+Run: `cd backend && uv run pytest tests/management/test_generator_client.py tests/management/test_management_router.py -v`
+Expected: PASS (신규 org 헤더 + 기존 from_candidate 회귀)
+
+> **mock seed 데이터 주의:** generator GET을 X-Org-Id로 스코프하면, 테스트/시드 generation이 호출 org와 연결돼 있어야 404가 안 난다. 기존 from_candidate 테스트가 쓰는 generation이 동일 org 소속인지 확인하고, 아니면 픽스처를 맞춘다.
+
+- [ ] **Step 7: 커밋**
+
+```bash
+cd backend && uv run ruff format . && uv run ruff check . --fix
+git add backend/api/routers/generator.py backend/domain/management/adapters/generator/client.py backend/api/routers/management.py backend/tests/management/test_generator_client.py
+git commit -m "fix: generator GET 내부호출 org 스코프 — 타 org 후보 누출 차단(B-1 선결)"
+```
 
 ---
 
@@ -64,6 +198,15 @@ async def test_create_ad_creative_requires_idem_key():
             "act_1", image_hash="h", headline="t", body="b",
             link_url="https://x", idem_key="",
         )
+
+async def test_create_ad_creative_deterministic_per_idem_key():
+    # 멱등(리뷰 ④) — 같은 idem_key면 같은 creative id(집행 retry 시 중복 생성 방지).
+    writer = MetaAdsWriter(mode=ExecutionMode.DRY_RUN)
+    a = await writer.create_ad_creative("act_1", image_hash="h", headline="t",
+                                        body="b", link_url="https://x", idem_key="key-AAAAAAAA")
+    b = await writer.create_ad_creative("act_1", image_hash="h2", headline="t2",
+                                        body="b2", link_url="https://y", idem_key="key-AAAAAAAA")
+    assert a == b  # 같은 idem_key면 입력이 달라도 같은 합성 id
 ```
 
 - [ ] **Step 2: 실패 확인**
@@ -611,9 +754,14 @@ async def replace_creative_proposal(
     org_id = await _require_org_id(user, db)
     await _require_owned_campaign(db, org_id, campaign_id)  # 캠페인 소유권(필수)
 
+    # B-1은 mock 계약 고정 — sending mode(validate/live)면 실 /adimages 호출이 되므로 차단(리뷰 ③).
+    if _is_sending_mode():
+        raise HTTPException(status_code=501, detail="REPLACE_CREATIVE LIVE는 미지원(B-1 mock 범위).")
+
     client = build_generator_client(settings)
     try:
-        cand = await client.get_candidate(body.generation_id, body.candidate_id)
+        # org 전달 — generator가 내부 호출도 org 스코프(타 org 후보 누출 차단, 리뷰 ②).
+        cand = await client.get_candidate(body.generation_id, body.candidate_id, org_id=str(org_id))
     except InvalidGenerationError as exc:
         raise HTTPException(status_code=exc.http_status, detail=exc.detail) from exc
     except GeneratorUnavailableError as exc:
@@ -625,18 +773,17 @@ async def replace_creative_proposal(
         raise HTTPException(status_code=422, detail="후보 이미지를 읽을 수 없습니다.") from exc
 
     try:
-        validate_image_spec(image_bytes)  # 규격 위반이면 집행 없이 거부
+        validate_image_spec(image_bytes)  # 규격 위반이면 집행 없이 거부(리뷰 ⑥)
         jpeg = to_meta_jpeg(image_bytes)
     except ImageSpecError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     ad_account = await _require_ad_account(db, org_id)
     writer = await _require_writer(db, org_id)
+    # non-sending(mock)이라 업로드는 합성 해시(또는 None) — 실 Meta 미호출.
     image_hash = await _upload_creative_or_502(
         writer, _asset_config(name=cand.candidate_id), jpeg, "candidate.jpg"
     )
-    if _is_sending_mode() and not image_hash:
-        raise HTTPException(status_code=502, detail="Meta 이미지 업로드 실패.")
 
     reader = await _require_reader(db, org_id)
     affected = await reader.get_creatives(campaign_id)  # 프리뷰: 영향 광고(현재 썸네일/이름)
@@ -723,7 +870,8 @@ git commit -m "fix: B-1 회귀·lint 정리"
 
 ## Self-Review (작성자 확인 완료)
 
-- **Spec 커버리지:** spec §3 빌드/집행 분리 → Task 5(빌드)·Task 3·4(집행). §4 계약변경(replace_creative ad_id·신규 메서드) → Task 1·3. §6① 고아차단(집행시점) → Task 3·4. §6③ 소유권=캠페인 → Task 5(`_require_owned_campaign`), 후보-org는 후속 명시. §6④ no-op 하드게이트 없음 → 미구현(의도적). §6⑤ 프리뷰 → Task 5(`get_creatives`). §6⑥ 규격검증 → Task 2·5. §6⑦ LIVE 게이트=execution_mode → Task 1·3(`_is_sending_mode`). §8 mock 테스트 → 각 태스크.
-- **No-placeholder:** 모든 코드 스텝에 실제 코드. 픽스처는 기존 패턴 재사용을 명시(추정 금지·실제 헬퍼에 맞추라 지시).
-- **타입 일관:** `create_ad_creative`(ad_account_id, *, image_hash, headline, body, link_url, idem_key)→str / `replace_creative`(ad_id, creative_id, idem_key) / `replace_creative_tree`(campaign_id, *, ad_account_id, image_hash, headline, body, link_url, idem_key) — Task 1·3·4·5·helpers 전반 동일.
-- **범위:** 프론트 카드·후보-org 검증·LIVE는 후속으로 명시(YAGNI).
+- **Spec 커버리지:** spec §3 빌드/집행 분리 → Task 5(빌드)·Task 3·4(집행). §4 계약변경(replace_creative ad_id·신규 메서드) → Task 1·3. §6① 고아차단(집행시점) → Task 3·4. §6② 후보-org 누출 차단(generator org 스코프) → **Task 0**. §6③ 캠페인 소유권 → Task 5(`_require_owned_campaign`). §6④ no-op 하드게이트 없음 → 미구현(의도적). §6⑤ 프리뷰 → Task 5(`get_creatives`). §6⑥ 규격검증 → Task 2·5. §6⑦ LIVE 게이트=execution_mode → Task 1·3(`_is_sending_mode`) + Task 5(sending mode 501 차단). §3-10 멱등 결정성 → Task 1(determinism 테스트). §8 mock 테스트 → 각 태스크.
+- **No-placeholder:** 모든 코드 스텝에 실제 코드. 픽스처는 기존 패턴 재사용을 명시(추정 금지·실제 헬퍼에 맞추라 지시). Task 0의 mock seed org 연결은 Step 6 주의로 명시.
+- **타입 일관:** `create_ad_creative`(ad_account_id, *, image_hash, headline, body, link_url, idem_key)→str / `replace_creative`(ad_id, creative_id, idem_key) / `replace_creative_tree`(campaign_id, *, ad_account_id, image_hash, headline, body, link_url, idem_key) / `get_candidate`(generation_id, candidate_id, org_id=None) — Task 0·1·3·4·5·helpers 전반 동일.
+- **범위:** 프론트 카드·LIVE adcreative·LIVE 멱등 dedup은 후속으로 명시(YAGNI). 후보-org 누출은 Task 0에서 닫음(크로스팀 generator 변경 — 리뷰 필요).
+- **실행 순서:** Task 0(generator 선결) → 1 → 2 → 3 → 4 → 5 → 6.
