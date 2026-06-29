@@ -35,7 +35,7 @@
 | 필드 | 타입 | 의미 | 결측·기본 |
 |---|---|---|---|
 | `budget_basis` | enum `daily` \| `lifetime` \| `unknown` | 예산 해석 기준. 인라인 적격은 `daily`만(v1). | 산출 불가 시 `unknown`(= 인라인 차단 사유) |
-| `spend_horizon_days` | int (days) | 인라인에서 지출 상한을 풀어 보여줄 기간. | 기본 `7`(목업 기준) |
+| `spend_horizon_days` | positive int (days) | 인라인에서 지출 상한을 풀어 보여줄 기간. | **v1 서버 고정 상수 `7`** |
 | `estimated_daily_spend_cap_krw` | int(KRW) \| null | **일 단위 지출 상한/환산 상한**(예측 아님). Meta 진단이 산출. | 없으면 `null`. **0으로 대체 금지** |
 
 ### 표기 주의 — "cap"의 의미
@@ -49,6 +49,12 @@
 
 `estimated_daily_spend_cap_krw == null` 또는 `budget_basis ∈ {lifetime, unknown}`이면 **인라인 풀어쓰기·셀프승인을
 산출하지 않는다**. null을 0으로 메우지 않는다(0은 "상한 0"이라는 잘못된 단정이 된다). 이 경우 시나리오 ③ 경로.
+
+**검증 규칙.**
+- `estimated_daily_spend_cap_krw` — 정수 KRW. `null`은 결측(③ 경로). `0`·음수는 **무효 → ③ 차단**(0 대체 금지).
+- `spend_horizon_days` — **v1은 서버 고정 상수 7**(클라이언트 입력 안 받음 → 비정상값 원천 차단). 향후 동적화 시
+  `positive int` + 허용 범위(예 1..30) 검증, 벗어나면(`null`·`0`·음수·과대값) **fallback 7 또는 차단**.
+- `budget_basis` — 위 enum 외 값은 `unknown`으로 정규화(③ 경로). 임의 문자열을 그대로 신뢰하지 않는다.
 
 ---
 
@@ -88,8 +94,19 @@ inline_self_approval_eligible(proposal, profile, ack) :=
   AND ( action is paid_launch  ⇒  ack 충족(§6) )
 ```
 
-- **정책 권위는 `approval.py`(Tier)에 그대로 남는다.** 위 술어는 그 위에 얹는 "챗 인라인에서만 통하는" 추가 관문이며,
-  하나라도 거짓이면 정식 승인 화면으로 보낸다.
+**누가 TIER_3를 통과시키나 (호출 위치 명시).** `approval.py`는 그대로 둔다 — 검증(`validate_proposal`)·자동승인
+한도는 불변이고, **TIER_3 기본 deny도 유지**한다. 인라인 예외는 approval.py를 완화하는 게 아니라, **챗 decision
+경로(`chat_management.decide_proposal`)에 있는 단일 게이트**에서 평가된다. 구체적으로 현재의 평면 차단
+`requires_external_approval(tier) → reject`를 다음으로 바꾼다.
+
+```
+tier > CHAT_EXECUTABLE_MAX_TIER  AND NOT inline_self_approval_eligible(...)  → 정식화면(reject)
+```
+
+즉 TIER_3는 **이 예외 게이트가 참일 때만** execute 경로로 통과하고, 그 판정·강제는 챗 라우터 한 곳에 모인다.
+approval.py·executor·Tier 정책 본체는 미수정.
+
+- 위 술어는 Tier 천장 위에 얹는 "챗 인라인에서만 통하는" 추가 관문이며, 하나라도 거짓이면 정식 승인 화면으로 보낸다.
 - **Feature flag / kill switch**: `settings.chat_inline_self_approval`(기본 off). 운영 중 즉시 인라인 셀프승인을 전면
   비활성화할 수 있어야 한다(P3 진입 전에 골격만 P1에 둬도 됨).
 - 술어가 거짓인 경로는 전부 **서버가 거부 + 사유 코드 + 감사**로 닫는다(§3 권위 분리).
@@ -98,21 +115,27 @@ inline_self_approval_eligible(proposal, profile, ack) :=
 
 ## 6. 실과금 ack — 스냅샷 결속 서버 계약 (P2의 핵심)
 
-### 적용 범위 — "과금이 새로 시작되는" 조치에만
+### 적용 범위 — `paid_launch`(start_live 신규 과금 시작)에만
 
 실과금 ack은 **상태가 아니라 집행 전 동의 게이트**다. "이 조치는 지금부터 실제 과금을 시작합니다 — 이해했습니다"를
-사용자가 확인하는 한 단계다. **`paid_launch` 조치(= 지출이 새로 시작/증가하는 방향)에만 적용**한다.
+사용자가 확인하는 한 단계다.
 
-| action_type | 집행 효과 | 지출 방향 | ack(`paid_launch`) |
+**ack의 축은 "지출이 늘어나냐"가 아니라 "정지 상태에서 과금이 새로 시작되냐(`profile == start_live`)"다.**
+즉 `paid_launch` = 안 쓰던 캠페인을 게재 시작해 **과금이 0→시작되는 조치**(신규 게재)에만 ack를 건다.
+이미 게재 중인 캠페인의 예산 변경(`modify_live`)은 — 증액이라도 — ack를 걸지 않는다. 목업 시나리오 ①이
+"profile modify_live → ack 없이 검토→집행"으로 못박은 정의를 그대로 따른다.
+
+| action_type | profile | 집행 효과 | ack(`paid_launch`) |
 |---|---|---|---|
-| `ACTIVATE_CAMPAIGN` (신규 게재) | 게재 시작 | 새로 시작(실과금) | ✅ 필요 |
-| `INCREASE_BUDGET` | 일 예산 ↑ | 증가 | ✅ 필요(라이브 변경) |
-| `PAUSE_CAMPAIGN` | 정지 | 멈춤(안전 방향) | ❌ 불필요 |
-| `DECREASE_BUDGET` | 일 예산 ↓ | 감소(안전 방향) | ❌ 불필요 |
+| `ACTIVATE_CAMPAIGN` (신규 게재) | `start_live` | 정지→게재, 과금 0→시작 | ✅ 필요 |
+| `INCREASE_BUDGET` | `modify_live` | 일 예산 ↑ (이미 게재 중) | ❌ 불필요 |
+| `DECREASE_BUDGET` | `modify_live` | 일 예산 ↓ | ❌ 불필요 |
+| `PAUSE_CAMPAIGN` | — | 정지 | ❌ 불필요 |
 
 - **승인·집행 = "제안된 action_type을 그대로 실행"**. 승인이 항상 정지(pause)를 의미하지 않는다 — PAUSE 제안은 정지로,
-  ACTIVATE 제안은 게재 시작으로 간다. ack는 그중 **돈이 새로 나가기 시작하는 방향**에만 붙는다.
-- 정지·감액 등 **지출을 줄이는 안전 방향**은 ack 없이 기존 인라인 흐름(§7 P1)으로 집행한다.
+  ACTIVATE 제안은 게재 시작으로 간다. ack는 그중 **start_live(과금 0→시작)** 에만 붙는다.
+- `modify_live` 예산 변경의 값 오인(증액인데 다른 금액으로 봄)은 **ack가 아니라 아래 스냅샷 결속(drift 검사)** 이
+  막는다 — 마찰 단계를 더 끼우지 않는다.
 
 ### 스냅샷 결속 (ack 위·변조 방지)
 
@@ -148,10 +171,15 @@ ack는 **사용자가 본 바로 그 제안 스냅샷에 결속**된다.
 - **실행 권한 불변** — 기존 적격 범위만 표시가 풍부해질 뿐, 새 집행 권한 없음.
 - **종료 기준**: 적격 제안은 풀어쓰기가 보이고, 부적격은 서버가 막고 화면이 정식화면으로 안내.
 
-### P2 — 실과금 ack 마찰 (리스크 중간, 의존: P1)
-- 시나리오 ② start_live: ack 체크박스(UI 안내) + **§6 스냅샷 결속 서버 계약** + `ack_missing` 차단 + 감사.
-- **단, 이 페이즈는 정책을 넓히지 않는다** — ack는 "현재 인라인 적격인 조치"에 마찰을 더하는 것까지.
-- **종료 기준**: paid_launch 조치는 일치하는 ack 없이는 어떤 경로로도 집행 안 됨(서버 강제 + 감사).
+### P2 — 실과금 ack 서버 계약 (리스크 중간, 의존: P1)
+- **§6 스냅샷 결속 ack 서버 계약**을 구축·검증한다: ack-스냅샷 일치 검사 + `ack_missing` 차단 + 감사
+  (`chat.inline.ack`). ack 체크박스(UI 안내)·payload 형태도 이 페이즈에서 정의.
+- **정책은 넓히지 않는다.** ack가 붙는 `paid_launch`(start_live)는 P3 전까지 인라인 집행 대상이 아니므로,
+  실제 사용자 흐름에는 아직 ack가 노출되지 않는다 — 이 페이즈는 **계약·게이트를 먼저 만든다**.
+- **독립 검증 방법**: 서버 ack 계약을 **테스트 + flag-gated/테스트 전용 경로**로 검증한다(end-user 노출은 P3).
+  스냅샷 일치 시 통과, drift·미충족·재사용 시 `ack_missing` 차단을 단위/통합 테스트로 게이트.
+- **종료 기준**: paid_launch 조치는 일치하는 ack 없이는 어떤 경로로도 집행 안 됨이 **테스트로 증명**됨
+  (서버 강제 + 감사). start_live의 사용자 노출은 P3에서 적격 술어를 켤 때 활성.
 
 ### P3 — 좁은 인라인 셀프승인 정책 (리스크 높음, 의존: P2)
 - §5 적격 술어 + feature flag/kill switch 도입. profile/budget_basis/spend/ack 조건을 다 만족할 때만
