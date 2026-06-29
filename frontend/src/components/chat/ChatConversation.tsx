@@ -23,6 +23,7 @@ import AnalysisSummaryWidget from './AnalysisSummaryWidget';
 import RecommendFormWidget from './RecommendFormWidget';
 import KeywordWidget from './KeywordWidget';
 import CitationChips from './CitationChips';
+import PlanChecklist, { type PlanStep } from './PlanChecklist';
 import ErrorCard from './ErrorCard';
 import type { SimRunResult } from '@/lib/types';
 
@@ -165,6 +166,7 @@ type SourceMeta = {
   widget?: WidgetSpec;
   approval?: ApprovalSpec; // 개선 루프 HITL 수락/거절 카드
   cards?: ActionCard[]; // Deep Agent·매니지먼트 추천 조치 카드(RESULT/REVIEW/ACTIONBAR)
+  plan?: PlanStep[]; // Deep Agent 실행 계획(plan→act→observe) — 체크리스트로 표시
   error?: boolean; // 에러 메시지 — 공통 ErrorCard로 렌더 + 재시도(X1)
 };
 // 채팅으로 실제 돌린 시뮬/생성 결과 참조 — 내역에 남겨 재로드 시 "결과 보기" 링크로 렌더.
@@ -1759,6 +1761,9 @@ export default function ChatConversation({
                     {msg.meta?.widget?.type === 'keyword_form' && (
                       <KeywordWidget />
                     )}
+                    {msg.role === 'assistant' && msg.meta?.plan?.length ? (
+                      <PlanChecklist plan={msg.meta.plan} />
+                    ) : null}
                     {msg.role === 'assistant' && msg.meta?.cards?.length ? (
                       <ActionCards cards={msg.meta.cards} />
                     ) : null}
