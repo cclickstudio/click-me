@@ -57,8 +57,9 @@
 - [x] 백엔드: import OK · ruff OK · **pytest 708 passed, 12 skipped**(collection 에러 0)
   - ⚠️ `tests/simulation/test_gemini_common.py` 2 failed — **chat 작업과 무관**(내 커밋 simulation 무변경, `git diff --stat` 공집합). 별도 task로 플래그(task_e35c6708)
 - [x] 프론트: tsc 0에러 · build 성공(전 페이지)
-- [ ] e2e: preview로 실제 chat — deep·카드·장기기억 시각 확인
-- [ ] 커밋: 테스트 정리분
+- [x] e2e: 풀스택 기동(백엔드 docs 200 · 프론트 200) + **장기기억 실 DB 라운드트립**(시맨틱 top-1) + **ActionCards 시각 검증**(임시 프리뷰로 RESULT/REVIEW/ACTIONBAR mock 렌더 → 스크린샷 확인, 콘솔 에러 0, 검증 후 삭제)
+  - deep 응답의 실데이터 시각(suggested_action 트리거 = 벤치마크 미달 시나리오)은 로그인·캠페인 데이터 의존 → 발표 데모 환경에서 확인
+- [x] 커밋: 테스트 정리분(21e5223)
 
 ### ⏭ 별도 작업 (이번 범위 밖, 사용자 합의 = 최소 조치)
 - **alembic 중복 revision id 전면 정리** — 019·020·024·025·026·027·028·029 중복 파일 유니크화 + 단일 head + 혼합 실 DB의 alembic_version 동기화. 고위험이라 발표 일정·신중함 고려해 분리. (당장의 장기기억은 멱등 DDL 적용으로 작동하므로 chat 전환은 영향 없음.)
