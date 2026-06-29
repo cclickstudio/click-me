@@ -115,3 +115,45 @@ class SimulationPersistence:
             )
             await session.commit()
             return sim_id
+
+    async def link_to_campaign(self, sim_id: uuid.UUID, campaign_id: str, org_id: str) -> None:
+        """시뮬 저장 직후 management_created_campaigns에 링크를 서버 사이드에서 직접 생성.
+
+        JWT 없이 서버에서 처리하므로 토큰 만료 문제 없음. 기존 행이 있으면 simulation_id 갱신.
+        """
+        async with self._session_factory() as session:
+            existing_id = await session.scalar(
+                text(
+                    "SELECT id FROM management_created_campaigns"
+                    " WHERE meta_campaign_id = :cid AND tenant_id = :org AND deleted_at IS NULL"
+                ),
+                {"cid": campaign_id, "org": org_id},
+            )
+            if existing_id:
+                await session.execute(
+                    text(
+                        "UPDATE management_created_campaigns"
+                        " SET simulation_id = :sid"
+                        " WHERE id = :rid"
+                    ),
+                    {"sid": str(sim_id), "rid": str(existing_id)},
+                )
+            else:
+                await session.execute(
+                    text(
+                        "INSERT INTO management_created_campaigns"
+                        " (id, tenant_id, meta_campaign_id, simulation_id,"
+                        "  name, objective, ad_account_id,"
+                        "  daily_budget_krw, status, execution_mode)"
+                        " VALUES"
+                        " (:id, :org, :cid, :sid,"
+                        "  :cid, 'unknown', '', 0, 'linked', 'manual_link')"
+                    ),
+                    {
+                        "id": str(uuid.uuid4()),
+                        "org": org_id,
+                        "cid": campaign_id,
+                        "sid": str(sim_id),
+                    },
+                )
+            await session.commit()

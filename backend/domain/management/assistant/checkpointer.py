@@ -30,14 +30,26 @@ async def init_pg_checkpointer(conn_str: str | None) -> None:
         return
     try:
         from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver  # noqa: PLC0415
+        from psycopg.rows import dict_row  # noqa: PLC0415
         from psycopg_pool import AsyncConnectionPool  # noqa: PLC0415
 
         # SQLAlchemy는 asyncpg, langgraph 체크포인터는 psycopg 사용 → 드라이버 표기 정리.
         pg = conn_str.replace("postgresql+asyncpg", "postgresql").replace(
             "postgresql+psycopg2", "postgresql"
         )
+        # Neon pooler 견고 config(태호 설계 차용):
+        # - check=check_connection: 유휴로 죽은 커넥션을 getconn 시 검사·교체 →
+        #   Neon 유휴 종료 후 "SSL connection has been closed unexpectedly" 방지.
+        # - max_idle=120: Neon 유휴 종료 전에 선제 회수.
+        # - prepare_threshold=0: PgBouncer 안전(prepared statement 비활성).
         _pool = AsyncConnectionPool(
-            pg, open=False, kwargs={"autocommit": True, "prepare_threshold": 0}
+            pg,
+            min_size=1,
+            max_size=5,
+            open=False,
+            check=AsyncConnectionPool.check_connection,
+            max_idle=120.0,
+            kwargs={"autocommit": True, "row_factory": dict_row, "prepare_threshold": 0},
         )
         # Windows psycopg-async는 ProactorEventLoop 비호환 → 빨리 실패해 폴백(운영 Linux는 정상).
         await _pool.open(wait=True, timeout=5.0)

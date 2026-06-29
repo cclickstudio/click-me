@@ -172,7 +172,9 @@ class ManagementKbDocument(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[str | None] = mapped_column(String(64), nullable=True)  # NULL=공통(global)
     visibility: Mapped[str] = mapped_column(String(16), default="global")
-    source_type: Mapped[str] = mapped_column(String(32))  # meta_official|internal_policy|benchmark|playbook
+    source_type: Mapped[str] = mapped_column(
+        String(32)
+    )  # meta_official|internal_policy|benchmark|playbook
     source_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     title: Mapped[str] = mapped_column(String(512))
     version: Mapped[str | None] = mapped_column(String(64), nullable=True)
@@ -306,6 +308,21 @@ class ManagementKbEvalCase(Base):
     expected_campaign_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     expected_anomaly_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
     fixture_version: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ManagementUserMemory(Base):
+    """세션 넘는 장기기억 — (tenant, user) 스코프 노트. 마이그 025."""
+
+    __tablename__ = "management_user_memory"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    tenant_id: Mapped[str | None] = mapped_column(String(64), nullable=True)  # NULL/global
+    user_id: Mapped[str | None] = mapped_column(String(64), nullable=True)  # NULL/anon
+    mem_key: Mapped[str] = mapped_column(String(128))  # 멱등/식별 키
+    content: Mapped[dict] = mapped_column(JSONB, default=dict)  # 기억 내용(노트 등)
+    # 시맨틱 회수용 임베딩(M6, 마이그 029). nullable — 없으면 recency 폴백.
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(1536), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -473,56 +490,10 @@ class BrandKit(Base):
 _TS = DateTime(timezone=True)
 
 
-class ActionProposalRow(Base):
-    """🅱 생산 제안 (ActionProposal 계약). 판정·조인 신호는 컬럼, 나머지는 payload."""
-
-    __tablename__ = "action_proposals"
-
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    proposal_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
-    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
-    ad_account_id: Mapped[str] = mapped_column(String(64))
-    action_type: Mapped[str] = mapped_column(String(48))
-    action_tier: Mapped[int] = mapped_column(Integer)
-    status: Mapped[str] = mapped_column(String(24), index=True)
-    budget_before_krw: Mapped[int] = mapped_column(BigInteger)
-    budget_after_krw: Mapped[int] = mapped_column(BigInteger)
-    max_total_spend_krw: Mapped[int] = mapped_column(BigInteger)
-    expected_state_version: Mapped[str] = mapped_column(String(48))
-    proposal_hash: Mapped[str] = mapped_column(String(64))
-    approval_policy_version: Mapped[str] = mapped_column(String(16))
-    expires_at: Mapped[datetime] = mapped_column(_TS, index=True)
-    # evidence_metrics · hypothesis · confidence · metrics_as_of · target_object_ids
-    payload: Mapped[dict] = mapped_column(JSONB)
-    created_at: Mapped[datetime] = mapped_column(_TS, server_default=func.now())
-
-
-class ApprovalRow(Base):
-    """🅰 승인 기록 (ApprovedAction 계약). 복합 UNIQUE = 중복승인 멱등 (R&R P2)."""
-
-    __tablename__ = "approvals"
-    __table_args__ = (
-        UniqueConstraint("proposal_id", "approval_policy_version", name="uq_approval_idem"),
-    )
-
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    approval_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)  # 계약 PK
-    proposal_id: Mapped[str] = mapped_column(String(64), index=True)
-    proposal_hash: Mapped[str] = mapped_column(String(64))  # executor 재검증용
-    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
-    approver_id: Mapped[str] = mapped_column(String(64))  # 사용자 ID 또는 "AUTO"
-    action_tier: Mapped[int] = mapped_column(Integer)
-    approval_policy_version: Mapped[str] = mapped_column(String(16))
-    expected_state_version: Mapped[str] = mapped_column(String(48))
-    execution_mode: Mapped[str] = mapped_column(String(20))
-    expires_at: Mapped[datetime] = mapped_column(_TS)  # 승인 자체 만료 (제안 TTL보다 짧음)
-    approved_at: Mapped[datetime] = mapped_column(_TS, server_default=func.now())
-
-
 class AuditEventRow(Base):
     """append-only 감사 로그 (게이트 #7). UPDATE/DELETE 코드 경로 없음."""
 
-    __tablename__ = "audit_events"
+    __tablename__ = "management_audit_events"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     event_id: Mapped[str | None] = mapped_column(String(64), index=True)  # AuditEvent.event_id
@@ -537,26 +508,10 @@ class AuditEventRow(Base):
     at: Mapped[datetime] = mapped_column(_TS, server_default=func.now())  # occurred_at
 
 
-class ExecutionRunRow(Base):
-    """🅱 실행 워크플로 상태 + 플랫폼 스냅샷(부분 실패 보존)."""
-
-    __tablename__ = "execution_runs"
-
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    run_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
-    approval_id: Mapped[str] = mapped_column(String(64), index=True)
-    proposal_id: Mapped[str] = mapped_column(String(64), index=True)
-    status: Mapped[str] = mapped_column(String(24))  # WorkflowStatus
-    result_status: Mapped[str | None] = mapped_column(String(24))  # ResultStatus
-    failure_reason: Mapped[str | None] = mapped_column(String(48))
-    platform_snapshot: Mapped[dict] = mapped_column(JSONB)
-    executed_at: Mapped[datetime] = mapped_column(_TS, server_default=func.now())
-
-
 class IdempotencyKeyRow(Base):
     """멱등키 선점 — key UNIQUE(PK) + INSERT ON CONFLICT DO NOTHING (게이트 #1)."""
 
-    __tablename__ = "idempotency_keys"
+    __tablename__ = "management_idempotency_keys"
 
     key: Mapped[str] = mapped_column(String(80), primary_key=True)
     approval_id: Mapped[str] = mapped_column(String(64), index=True)
@@ -568,7 +523,7 @@ class IdempotencyKeyRow(Base):
 class RegenerationJobRow(Base):
     """🅱 채팅이 트리거한 재생성 비동기 job 상태(설계 2026-06-22). v1 in-process 전제."""
 
-    __tablename__ = "regeneration_jobs"
+    __tablename__ = "management_regeneration_jobs"
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     tenant_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
@@ -584,35 +539,6 @@ class RegenerationJobRow(Base):
     updated_at: Mapped[datetime] = mapped_column(_TS, server_default=func.now())
     started_at: Mapped[datetime | None] = mapped_column(_TS)
     finished_at: Mapped[datetime | None] = mapped_column(_TS)
-
-
-class RemediationEscalationRow(Base):
-    """🅱 시간축 에스컬레이션 사다리 진행 상태 — 캠페인당 active 1건 (re_evaluate 소유).
-
-    파괴도 낮은 조치부터 우선순위대로 시도하고, 회복(원래 anomaly 소멸)이 안 되면 다음 단계로
-    올린다. 회복 판정은 재탐지로만 하므로 baseline 스냅샷은 저장하지 않는다.
-    """
-
-    __tablename__ = "remediation_escalations"
-
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    run_id: Mapped[str] = mapped_column(String(64), unique=True, index=True)
-    tenant_id: Mapped[str] = mapped_column(String(64), index=True)
-    ad_account_id: Mapped[str] = mapped_column(String(64))
-    campaign_id: Mapped[str] = mapped_column(String(64), index=True)
-    anomaly_type: Mapped[str] = mapped_column(String(48))  # 사다리를 연 anomaly = 회복 판정 기준
-    ladder: Mapped[list] = mapped_column(JSONB)  # 우선순위 action_type 목록 스냅샷
-    current_rung_index: Mapped[int] = mapped_column(Integer, default=0)
-    rung_status: Mapped[str] = mapped_column(String(16))  # proposed | executed | rejected
-    rung_executed_at: Mapped[datetime | None] = mapped_column(_TS)
-    last_proposal_id: Mapped[str | None] = mapped_column(String(64))
-    last_approval_id: Mapped[str | None] = mapped_column(String(64))
-    status: Mapped[str] = mapped_column(String(16), index=True)  # active | recovered | exhausted
-    opened_at: Mapped[datetime] = mapped_column(_TS, server_default=func.now())
-    last_evaluated_at: Mapped[datetime | None] = mapped_column(_TS)
-    updated_at: Mapped[datetime] = mapped_column(
-        _TS, server_default=func.now(), onupdate=func.now()
-    )
 
 
 # ──────────────────────────────────────────────
@@ -697,7 +623,7 @@ class MetaConnection(Base):
     목록(JSONB, SQLite 테스트에선 JSON), token_expires_at은 장기토큰 만료(갱신 트리거용).
     """
 
-    __tablename__ = "meta_connections"
+    __tablename__ = "management_meta_connections"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     organization_id: Mapped[uuid.UUID] = mapped_column(
@@ -725,7 +651,7 @@ class CampaignKpiOverride(Base):
     cvr=전환율(%), roas=투자수익률(배수). 둘 다 NULL이면 행 삭제(실측으로 복귀).
     """
 
-    __tablename__ = "campaign_kpi_overrides"
+    __tablename__ = "management_campaign_kpi_overrides"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     organization_id: Mapped[uuid.UUID] = mapped_column(
@@ -752,7 +678,7 @@ class CreatedCampaign(Base):
     tenant_id는 FK 없이 문자열(데모 테넌트도 수용). meta_campaign_id는 LIVE 생성 시 채워진다.
     """
 
-    __tablename__ = "created_campaigns"
+    __tablename__ = "management_created_campaigns"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     tenant_id: Mapped[str] = mapped_column(String(64), nullable=False)

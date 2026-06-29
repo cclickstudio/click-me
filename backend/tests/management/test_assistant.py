@@ -73,6 +73,36 @@ async def test_read_question_has_no_suggestion():
     assert res.suggested_action is None
 
 
+@pytest.mark.asyncio
+async def test_expand_audience_intent():
+    """타깃 확장 의도 → EXPAND_AUDIENCE 제안(Tier 3 승인)."""
+    ask = build_management_agent(_SETTINGS)
+    res = await ask(AskRequest(question="타깃 좀 확장해줘", campaign_id="camp_1"))
+    assert res.suggested_action is not None
+    assert res.suggested_action.action_type == "EXPAND_AUDIENCE"
+    assert res.suggested_action.requires_approval is True  # Tier 3
+
+
+@pytest.mark.asyncio
+async def test_fallback_ignores_memory_context():
+    """memory_context가 있어도 폴백 라우팅(질문 기준)은 불변 — 기억은 react만 주입."""
+    ask = build_management_agent(_SETTINGS)
+    res = await ask(
+        AskRequest(question="이번 달 예산 소진 얼마야?", memory_context="[이전: 무관한 맥락]")
+    )
+    assert res.used_tools == ["live_budget"]
+
+
+@pytest.mark.asyncio
+async def test_change_bid_intent_wins_over_replace():
+    """'입찰 바꿔'는 generic 교체(REPLACE)가 아니라 CHANGE_BID_STRATEGY로 매칭돼야 한다."""
+    ask = build_management_agent(_SETTINGS)
+    res = await ask(AskRequest(question="입찰 전략 바꿔줘", campaign_id="camp_1"))
+    assert res.suggested_action is not None
+    assert res.suggested_action.action_type == "CHANGE_BID_STRATEGY"
+    assert res.suggested_action.requires_approval is True  # Tier 3
+
+
 # ── 풀모드 ReAct 그래프 — 가짜 LLM으로 도구 루프·HITL 검증(OpenAI 키 불필요) ──
 
 from langchain_core.messages import AIMessage, HumanMessage  # noqa: E402

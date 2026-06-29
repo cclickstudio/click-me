@@ -96,6 +96,66 @@ def test_get_metrics_maps_insights_json():
     assert snap.as_of == datetime(2026, 6, 15, tzinfo=UTC)
 
 
+def test_get_metrics_by_campaign_keys_rows_and_zero_fills_missing():
+    # 계정 단위 level=campaign insights — 한 응답에 여러 캠페인 행, campaign_id로 매핑.
+    # 응답에 없는 캠페인은 0 스냅샷으로 폴백(현 get_metrics 빈 데이터 동작과 동일).
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "/insights" in request.url.path:
+            assert request.url.params.get("level") == "campaign"
+            return httpx.Response(
+                200,
+                json={
+                    "data": [
+                        {
+                            "campaign_id": "111",
+                            "impressions": "1000",
+                            "clicks": "20",
+                            "inline_link_clicks": "18",
+                            "spend": "5000",
+                            "reach": "900",
+                            "frequency": "1.1",
+                            "ctr": "2.0",
+                            "cpm": "5555",
+                            "cpc": "250",
+                            "date_stop": "2026-06-20",
+                        },
+                        {
+                            "campaign_id": "222",
+                            "impressions": "200",
+                            "clicks": "4",
+                            "inline_link_clicks": "3",
+                            "spend": "800",
+                            "reach": "180",
+                            "frequency": "1.0",
+                            "ctr": "2.0",
+                            "cpm": "4000",
+                            "cpc": "200",
+                            "date_stop": "2026-06-20",
+                        },
+                    ],
+                    "paging": {"cursors": {"after": "MA"}},  # next 없음 → 단일 페이지
+                },
+            )
+        return httpx.Response(200, json={"data": []})
+
+    client = MetaClient(
+        "EAAtest",
+        ad_account_id="111222333",
+        api_version="v21.0",
+        transport=httpx.MockTransport(handler),
+    )
+    reader = MetaAdsReader(client=client)
+    m = asyncio.run(reader.get_metrics_by_campaign(["111", "222", "333"], datetime.now(UTC)))
+    assert set(m) == {"111", "222", "333"}
+    assert m["111"].impressions == 1000
+    assert m["111"].spend_krw == 5000
+    assert m["111"].ctr == pytest.approx(0.02)  # 백분율 → 비율
+    assert m["222"].clicks == 4
+    # 응답에 행이 없는 캠페인(333)은 0 스냅샷 폴백
+    assert m["333"].impressions == 0
+    assert m["333"].spend_krw == 0
+
+
 def test_count_conversions_autodetects_lead_when_no_purchase():
     # 구매를 안 파는 캠페인 — 리드가 잡히면 그걸 전환으로 센다.
     actions = [{"action_type": "onsite_conversion.lead_grouped", "value": "7"}]

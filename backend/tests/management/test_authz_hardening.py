@@ -42,7 +42,7 @@ class _FakeDB:
         s = str(stmt)
         if "organization_members" in s:
             return self._org_id
-        if "meta_connections" in s:
+        if "management_meta_connections" in s:
             return self._conn
         return None
 

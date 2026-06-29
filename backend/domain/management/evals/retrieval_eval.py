@@ -45,6 +45,17 @@ CASES: list[tuple[str, str, str]] = [
     ("위험한 변경은 어떻게 처리돼", "remediation_actions.md", "안전"),
     ("증상별 권고 조치 알려줘", "remediation_actions.md", "증상"),
     ("성과 좋은 캠페인은 어떤 조치를 해", "remediation_actions.md", "증상"),
+    # benchmark_meta_industry.md (system_backed)
+    ("CPM이 12000원이면 비싼 거야", "benchmark_meta_industry.md", "CPM 정상 기준"),
+    ("트래픽 광고 CTR은 보통 얼마야", "benchmark_meta_industry.md", "트래픽 CTR"),
+    ("릴스랑 피드 중에 뭐가 더 싸", "benchmark_meta_industry.md", "지면별"),
+    ("빈도가 몇이면 피로한 거야", "benchmark_meta_industry.md", "빈도 피로"),
+    # benchmark_multiplatform.md (advisory)
+    ("틱톡 광고 단가는 어때", "benchmark_multiplatform.md", "TikTok"),
+    ("구글 광고 CTR은 얼마나 돼", "benchmark_multiplatform.md", "Google"),
+    # segment_korea.md (reference)
+    ("인스타 주 사용자 연령대가 어떻게 돼", "segment_korea.md", "구성"),
+    ("구매의향은 어떤 데이터로 봐", "segment_korea.md", "KOBACO"),
 ]
 
 

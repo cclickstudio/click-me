@@ -41,8 +41,9 @@ _REVIEW_DELAY_UNTIL = 10  # 심사 지연: 이 시각 전까지 노출 0
 class MockAdPlatform:
     """게재 시뮬레이터. 데모는 이 어댑터만으로 성립한다 (게이트 #9)."""
 
-    def __init__(self, seed: int = 42) -> None:
+    def __init__(self, seed: int = 42, daily_budget_krw: int = DAILY_BUDGET_KRW) -> None:
         self._rng = random.Random(seed)
+        self._budget = daily_budget_krw  # get_metrics 단일 스냅샷의 일예산(비교 데모가 주입)
 
     async def get_metrics(
         self, campaign_id: str, since: datetime, date_preset: str = "maximum"
@@ -52,7 +53,9 @@ class MockAdPlatform:
         AdPlatformReader Port 충족(비교 서비스가 await로 호출). fault 없는 정상 게재 기준.
         date_preset은 실 reader 시그니처 일치용(데모는 무시).
         """
-        snapshots = await self.fetch_hourly_metrics(campaign_id, since)
+        snapshots = await self.fetch_hourly_metrics(
+            campaign_id, since, daily_budget_krw=self._budget
+        )
         return snapshots[-1]
 
     async def get_account_spend(self, date_preset: str = "this_month") -> int:
@@ -147,6 +150,51 @@ class MockAdPlatform:
                 primary_text="가볍게 입기 좋은 데일리 아이템.",
             ),
         ]
+
+    async def get_campaign_targeting(self, campaign_id: str) -> dict:
+        """Port 충족 — 데모 캠페인 타겟팅·크리에이티브(결정론 고정값)."""
+        targeting_by_id = {
+            "camp_1": {
+                "objective": "OUTCOME_SALES",
+                "age_min": 20,
+                "age_max": 39,
+                "gender": "F",
+                "ad_headline": "여름 신상 최대 50% 할인",
+                "ad_body": "지금 만나보는 시즌 오프 특가, 놓치지 마세요.",
+                "ad_image_url": None,
+                "category_id": 3,
+                "service_class": 25,
+                "suggested_persona_count": 50,
+            },
+            "camp_2": {
+                "objective": "OUTCOME_TRAFFIC",
+                "age_min": 20,
+                "age_max": 49,
+                "gender": "",
+                "ad_headline": "데일리룩 완성",
+                "ad_body": "가볍게 입기 좋은 데일리 아이템.",
+                "ad_image_url": None,
+                "category_id": 3,
+                "service_class": 25,
+                "suggested_persona_count": 30,
+            },
+        }
+        t = targeting_by_id.get(
+            campaign_id,
+            {
+                "objective": "OUTCOME_TRAFFIC",
+                "age_min": 18,
+                "age_max": 65,
+                "gender": "",
+                "ad_headline": None,
+                "ad_body": None,
+                "ad_image_url": None,
+                "category_id": 8,
+                "service_class": 45,
+                "suggested_persona_count": 20,
+            },
+        )
+        return {"campaign_id": campaign_id, "campaign_name": campaign_id, **t}
 
     async def get_account_funding(self) -> AccountFunding:
         """Port 충족 — 데모는 잔액 충분(게재 차단 없음)."""
