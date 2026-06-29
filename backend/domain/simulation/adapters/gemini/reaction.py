@@ -341,7 +341,11 @@ class GeminiReactionEngine:
     async def react(self, persona, ad: AdInterpretation) -> PersonaReaction:
         async def _json(prompt: str) -> dict:
             return await _agen_json(
-                self._client, self._model, prompt, temperature=self._temperature
+                self._client,
+                self._model,
+                prompt,
+                temperature=self._temperature,
+                langsmith_extra={"name": "simulation.reaction"},
             )
 
         return await generate_reaction(_json, persona, ad)

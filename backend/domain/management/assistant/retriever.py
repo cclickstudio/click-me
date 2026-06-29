@@ -16,8 +16,7 @@ from core.db import AsyncSessionLocal
 from core.models import ManagementKbChunk, ManagementKbDocument
 
 if TYPE_CHECKING:
-    # 타입 주석 전용 — management→chat 런타임 import 결합 회피(annotations future로 문자열화).
-    from domain.chat.contracts.ports import EmbeddingProvider
+    from domain.management.assistant.embeddings import EmbeddingProvider
 
 _RRF_K = 60  # Reciprocal Rank Fusion 상수 (랭킹 합산 — 점수 스케일 정규화 불필요)
 

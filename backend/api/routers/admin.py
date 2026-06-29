@@ -488,17 +488,26 @@ async def list_chats(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_admin),
 ):
-    from domain.chat.models import ChatSession
+    from sqlalchemy import func
 
+    from core.models import ChatMessage, ChatSession
+
+    # 정규화 후 메시지 수는 chat_messages 카운트로 — 세션별 LEFT JOIN 집계.
     rows = await db.execute(
-        select(ChatSession).order_by(ChatSession.created_at.desc()).limit(limit)
+        select(ChatSession, func.count(ChatMessage.id))
+        .outerjoin(ChatMessage, ChatMessage.session_id == ChatSession.id)
+        .group_by(ChatSession.id)
+        # 최근 활동(메시지 추가 시 갱신되는 updated_at) 순 — 생성일순이면 오래전 만든
+        # 세션을 오늘 써도 목록 위로 안 올라와 "최근 채팅이 안 보인다"는 문제가 생긴다.
+        .order_by(ChatSession.updated_at.desc())
+        .limit(limit)
     )
     return [
         ChatRow(
-            id=str(r.id),
-            project_id=str(r.project_id) if r.project_id else None,
-            message_count=0,  # TODO: chat_messages COUNT로 교체(messages 제거됨, 3B 영속 후)
-            created_at=r.created_at,
+            id=str(s.id),
+            project_id=str(s.project_id) if s.project_id else None,
+            message_count=count,
+            created_at=s.created_at,
         )
-        for r in rows.scalars()
+        for s, count in rows.all()
     ]

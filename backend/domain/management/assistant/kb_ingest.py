@@ -26,6 +26,7 @@ _SOURCE_META: dict[str, tuple[str, str | None]] = {
     "meta_ad_policy.md": ("meta_official", "https://transparency.meta.com/policies/ad-standards/"),
     "optimization_playbook.md": ("playbook", None),
     "kpi_measurement_rules.md": ("internal_policy", None),
+    "management_glossary.md": ("internal_policy", None),
     "remediation_actions.md": ("internal_policy", None),
     # 챗 컨시어지(신규) — 내부 작성물(verified_by=manual, source_url 없음).
     "persona_methodology.md": ("persona_methodology", None),
@@ -60,7 +61,7 @@ def _chunk_markdown(text: str) -> list[tuple[str, str]]:
 
 
 async def ingest() -> int:
-    from domain.chat.wiring import build_embedding_provider
+    from domain.management.assistant.embeddings import build_embedding_provider
 
     embedder = build_embedding_provider(settings)
     total = 0

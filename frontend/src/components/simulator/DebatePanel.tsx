@@ -897,7 +897,6 @@ function ChatBubble({ msg }: { msg: ChatMsg }) {
               {msg.role}
             </span>
           )}
-          {msg.engine && <span className={engineBadge}>{msg.engine}</span>}
           <span className='flex items-center gap-1 text-[10px] text-[#8B95A1] dark:text-[#6B7280]'>
             <span className={`w-1.5 h-1.5 rounded-full ${st.dot}`} />
             {st.label}
@@ -934,16 +933,6 @@ function DebateOutcome({ result }: { result: DebateResult }) {
         {rep.stop_reason && (
           <span className='px-2.5 py-1 rounded-full bg-[#F2F4F6] dark:bg-[#252D3D] text-[#4E5968] dark:text-[#9CA3AF]'>
             {STOP_LABEL[rep.stop_reason] ?? rep.stop_reason}
-          </span>
-        )}
-        {debate?.models.judge && (
-          <span className='px-2.5 py-1 rounded-full bg-[#F2F4F6] dark:bg-[#252D3D] text-[#4E5968] dark:text-[#9CA3AF]'>
-            Judge {debate.models.judge}
-          </span>
-        )}
-        {debate?.models.engines && (
-          <span className='px-2.5 py-1 rounded-full bg-[#F2F4F6] dark:bg-[#252D3D] text-[#4E5968] dark:text-[#9CA3AF]'>
-            토론자 {debate.models.engines.join('·')}
           </span>
         )}
       </div>

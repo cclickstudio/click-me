@@ -1,7 +1,7 @@
 'use client';
 // LLM 답변(마크다운)을 채팅 말풍선에 맞게 렌더 — 표·목록·코드·강조를 Tailwind로 스타일.
 
-import ReactMarkdown from 'react-markdown';
+import ReactMarkdown, { type Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 
 export function Markdown({ children }: { children: string }) {
@@ -55,7 +55,7 @@ export function Markdown({ children }: { children: string }) {
             </blockquote>
           ),
           hr: () => <hr className="my-3 border-[#E5E8EB] dark:border-[#333D4B]" />,
-        }}
+        } satisfies Components}
       >
         {children}
       </ReactMarkdown>

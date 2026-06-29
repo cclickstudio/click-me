@@ -148,9 +148,10 @@ class ChatMessage(BaseModel):
 
 class ChatRequest(BaseModel):
     session_id: str
+    thread_id: str | None = None  # L2-2 호환 필드. 서버는 session_id를 체크포인터 키로 우선 사용.
     messages: list[ChatMessage]
     # 멀티테넌트 컨텍스트 — JWT 인증 도입 전 임시로 본문 수용(도입 시 서버 파생으로 교체).
-    project_id: str | None = None
+    project_id: str | None = None  # 목록 조회 스코프(현재 프로젝트)
     user_id: str | None = None
     organization_id: str | None = None
     context_ad_id: str | None = None
@@ -159,6 +160,9 @@ class ChatRequest(BaseModel):
     # 채팅 첨부 이미지(시뮬 트리거용) — /api/chat/upload-image 응답을 그대로 실어 보낸다.
     context_ad_image_url: str | None = None  # VLM 입력(presigned URL·로컬경로)
     context_ad_image_key: str | None = None  # S3 영구 식별자(DB 영속)
+    image_url: str | None = None  # 첨부 이미지 S3 URL(사용자 메시지에 영속화)
+    # 채팅으로 돌린 시뮬/생성 결과 참조 {"kind","id"} — 내역에 영속화(결과 보기 링크)
+    result_ref: dict | None = None
     improve_context: dict | None = (
         None  # 개선 모드 컨텍스트 {s3_key, simulation_summary, product_name?}
     )
