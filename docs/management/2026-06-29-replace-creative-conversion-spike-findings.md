@@ -8,7 +8,7 @@
 | Q | 주제 | 상태 | 근거 |
 |---|---|---|---|
 | Q0.1 | 변환 단계 사슬 | 🟡 추정 | writer.py:330,49,304; client.py:153; generator_service.py:433 |
-| Q0.2 | 변환 책임 위치 | ⬜ | |
+| Q0.2 | 변환 책임 위치 | ✅ 확정 | CLAUDE.md 협업규칙; writer.py:330,49; instagram.py:1 |
 | Q0.3 | 크로스도메인 핸드오프 | ⬜ | |
 | Q0.4 | /adcreatives POST·validate_only | ⬜ | |
 | Q0b.1 | ad fan-out 방식 | ✅ 확정 | writer.py:478~505 |
@@ -39,6 +39,21 @@
 > 추정 근거: Meta Graph API 문서상 `/adimages`는 JPEG/PNG 모두 허용하나, 코드가 JPEG만 전송하므로 PNG-as-JPEG 동작이 통과하는지 Q0.4 라이브 probe로 재확인.
 
 ## Q0.2 변환 책임 위치
+
+**상태: ✅ 확정** — **management writer 소유** 추천 잠금.
+
+### 후보 비교
+
+| 후보 | 근거 | 판정 |
+|---|---|---|
+| **management writer 소유** | `upload_image`(writer.py:330)·`_build_link_creative`(writer.py:49) 이미 보유. 모든 Meta Ads 쓰기가 writer 단일 경로(§4 불변, management CLAUDE.md §Invariants 1). adcreative는 Ads 자산이라 결이 같음. executor→writer 단일 경로가 이미 확립되어 있어 새 메서드를 여기에 추가하는 것이 자연스러움. | **채택** |
+| **generator 소유** | generator는 **Instagram Content Publishing**(`instagram.py:1` 독스트링 — "Meta Graph API Content Publishing") 전용이고 Meta Ads adcreative를 만들지 않음. generator가 Ads 책임을 떠안으면 도메인 경계 흐림. CLAUDE.md 협업 규칙: "타 도메인 내부 직접 import 금지 → contracts/ 스키마로만 교환". | **기각** |
+
+### 추천 근거 (3가지)
+
+1. **도메인 경계** — CLAUDE.md: "타 도메인 내부 직접 import 금지". generator가 Ads writer를 import하거나 Ads API를 호출하면 경계 위반.
+2. **기존 자산 재사용** — `upload_image`(POST /adimages, writer.py:330)·`_build_link_creative`(object_story_spec 빌드, writer.py:49)가 이미 management writer에 있음. 추가할 메서드는 두 부품을 연결하는 `/adcreatives` POST 하나뿐.
+3. **executor 단일 경로 §4 불변** — management CLAUDE.md Invariant 1: "All spend goes through executor.py — agents/services must never call a Writer directly". executor가 writer를 호출하는 구조가 이미 확립. 여기에 `create_ad_creative` 메서드를 추가하면 기존 구조 그대로 따름.
 
 ## Q0.3 크로스도메인 핸드오프
 
