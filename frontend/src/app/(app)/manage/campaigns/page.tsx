@@ -104,6 +104,12 @@ export default function Page() {
     load();
   }, [load]);
 
+  // 채팅 캠페인 칩 딥링크 — ?open=<campaign_id> 로 진입 시 해당 캠페인 상세 자동 열기.
+  useEffect(() => {
+    const openId = new URLSearchParams(window.location.search).get('open');
+    if (openId) setSelected(openId);
+  }, []);
+
   // 실데이터일 때만 120초 폴링 — Meta는 분 단위 갱신이라 잦게 안 함(rate limit 절감).
   // 탭이 숨겨져 있으면(다른 탭/최소화) 폴링하지 않아 불필요한 Meta 호출을 막는다.
   useEffect(() => {

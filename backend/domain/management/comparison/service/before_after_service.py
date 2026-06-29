@@ -20,6 +20,9 @@ from domain.management.contracts.schemas import RealOutcome
 CLICK_INTENT_STRONG = 0.2
 #: 실측 "양호" — CTR 1%.
 CTR_STRONG = 0.01
+#: 구매 축 실측 "양호" 기준선 — 이 화면의 운영 기준일 뿐 "절대적으로 좋은 CVR"이 아니다
+#: (제품·업종·퍼널에 따라 달라짐). CTR_STRONG과 같은 자리, 각 축 독립(척도 환산 아님).
+CVR_STRONG = 0.02
 #: 보조 해석 임계.
 REJECTION_HIGH = 0.2  # 거부율 "높음"
 TRUST_LOW = 3.0  # 신뢰도 "낮음" (1~5)
@@ -33,6 +36,13 @@ _MAX_NOTES = 2
 def _actual_strong(actual: RealOutcome) -> bool:
     """클릭 축 실측 양호 = CTR 기준 단독(ROAS는 구매 축이라 판정에서 제외)."""
     return actual.ctr >= CTR_STRONG
+
+
+def _purchase_actual_strong(actual: RealOutcome) -> bool | None:
+    """구매 축 실측 양호 = CVR 기준 단독. CVR 미추적(None)이면 판정 불가(None)."""
+    if actual.cvr is None:
+        return None
+    return actual.cvr >= CVR_STRONG
 
 
 def _interpretation(prediction: PredictionSnapshot, act_strong: bool) -> str:
@@ -69,14 +79,20 @@ def compute_before_after(
     interpretation = ""
     pred_strong: bool | None = None
     act_strong: bool | None = None
+    purchase_pred_strong: bool | None = None
+    purchase_act_strong: bool | None = None
     if prediction is None:
         verdict, rationale = BeforeAfterVerdict.UNKNOWN, "시뮬 미연결 — 예측 데이터 없음"
     elif actual.impressions == 0:
         verdict, rationale = BeforeAfterVerdict.UNKNOWN, "집행 데이터 부족 — 노출 0"
         pred_strong = prediction.click_intent_rate >= CLICK_INTENT_STRONG
+        purchase_pred_strong = prediction.purchase_intent >= PURCHASE_HIGH
+        purchase_act_strong = _purchase_actual_strong(actual)
     else:
         pred_strong = prediction.click_intent_rate >= CLICK_INTENT_STRONG
         act_strong = _actual_strong(actual)
+        purchase_pred_strong = prediction.purchase_intent >= PURCHASE_HIGH
+        purchase_act_strong = _purchase_actual_strong(actual)
         if pred_strong and act_strong:
             verdict, rationale = BeforeAfterVerdict.ALIGNED, "예측대로 좋음 — 실측이 뒷받침"
         elif pred_strong and not act_strong:
@@ -102,4 +118,6 @@ def compute_before_after(
         interpretation=interpretation,
         pred_strong=pred_strong,
         act_strong=act_strong,
+        purchase_pred_strong=purchase_pred_strong,
+        purchase_act_strong=purchase_act_strong,
     )

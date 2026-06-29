@@ -44,6 +44,9 @@ class Settings(BaseSettings):
     # 이미지 생성 전용 키 — 있으면 이미지 호출에 우선 사용, 없으면 gemini_api_key로 폴백
     gemini_image_api_key: str | None = None
 
+    # Tavily 웹검색(매니지먼트 어시스턴트 web_search 도구) — 없으면 웹검색 graceful 비활성
+    tavily_api_key: str | None = None
+
     # LangSmith — API 키 없으면 트레이싱 비활성(로컬 기동 가능)
     # LANGCHAIN_* 사용, LANGSMITH_*도 AliasChoices로 수용.
     LANGSMITH_TRACING_V2: bool = Field(
@@ -107,9 +110,14 @@ class Settings(BaseSettings):
     # use_mock=True면 reader=Mock·writer=DRY_RUN (Meta 접촉 0, wiring.py 분기).
     # 실집행은 use_mock=False + management_execution_mode=live + 토큰일 때만.
     management_execution_mode: str = "dry_run"  # dry_run | validate_only | live
+    # 능동 스케줄러(주기 이상 스캔→알림) — 기본 off(테스트/CI/dev 안전). 운영에서만 켠다.
+    management_scheduler_enabled: bool = False
+    management_scan_interval_minutes: int = 60
     # 진단 agent LLM ReAct 재현성 고정값 (합의문서 P6 — 빈칸 기입). 키 없으면 결정론 폴백.
     management_diagnosis_model: str = "gpt-4o-mini"
     management_diagnosis_temperature: float = 0.0
+    # 어시스턴트 ReAct 그래프 LLM 모델 — MANAGEMENT_ASSISTANT_MODEL 환경변수로 오버라이드 가능.
+    management_assistant_model: str = "gpt-4o-mini"
 
     # Generator (광고 생성)
     # 생성 방식: openai=OpenAI 이미지(상품있음 누끼·인페인팅 / 없음 0부터)

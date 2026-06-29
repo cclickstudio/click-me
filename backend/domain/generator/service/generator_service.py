@@ -146,6 +146,7 @@ async def _run_pipeline(
             feature="generate",
             mode=request.mode.value,
             user_id=str(created_by) if created_by else "anonymous",
+            ad_id=request.existing_ad_s3_key if request.existing_ad_s3_key else None,
             project_id=request.project_id,
             extra_metadata={"generation_id": generation_id},
             configurable={"emit": emit},

@@ -2,9 +2,11 @@
 // 도메인 시뮬레이터(/api/simulation/run) 동기 실행 화면 — 광고 입력 → 반응·루브릭·집계 표시
 
 import { useState, useRef, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useProjects } from '@/components/ProjectContext';
-import { api } from '@/lib/api';
+import { useAuth } from '@/components/AuthProvider';
+import { api, API_BASE } from '@/lib/api';
+import { getToken } from '@/lib/authApi';
 import { saveSimResult } from '@/lib/simResultStore';
 import { SIM_CATEGORIES } from '@/lib/simCategories';
 import type { SimRunResult, SSEProgressEvent } from '@/lib/types';
@@ -70,30 +72,62 @@ const AGE_BANDS: { label: string; min: number; max: number }[] = [
 
 export default function SimulationRunPage() {
   const { selectedProject, projects, selectProject } = useProjects();
+  const { user } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [step, setStep] = useState<Step>('setup');
+
+  // 성과 비교 "시뮬 돌리기"에서 넘어온 경우 — meta_campaign_id + 타겟팅 사전 입력
+  const fromCampaign = searchParams.get('from_campaign');
+  const fromCampaignName = searchParams.get('from_name') ?? fromCampaign ?? '';
+
+  // URL 파라미터로 초기값 설정하는 헬퍼
+  function _initAgeBands(ageMin: number | null, ageMax: number | null): string[] {
+    if (ageMin == null && ageMax == null) return [];
+    return AGE_BANDS.filter(
+      (b) => b.max >= (ageMin ?? 0) && b.min <= (ageMax ?? 99)
+    ).map((b) => b.label);
+  }
 
   // 광고 입력
   const [adId] = useState(`AD-${Date.now()}`);
-  const [adContent, setAdContent] = useState('');
-  const [inputMode, setInputMode] = useState<InputMode>('image');
+  const [adContent, setAdContent] = useState(() => searchParams.get('ad_content') ?? '');
+  const [inputMode, setInputMode] = useState<InputMode>(() =>
+    searchParams.get('ad_image_url') ? 'url' : 'image'
+  );
   const [file, setFile] = useState<File | null>(null);
-  const [imageUrl, setImageUrl] = useState('');
-  const [adTitle, setAdTitle] = useState('');
-  const [categoryId, setCategoryId] = useState<number | ''>('');
-  const [serviceClass, setServiceClass] = useState<number | ''>('');
+  const [imageUrl, setImageUrl] = useState(() => searchParams.get('ad_image_url') ?? '');
+  const [adTitle, setAdTitle] = useState(() => searchParams.get('ad_title') ?? '');
+  const [categoryId, setCategoryId] = useState<number | ''>(() => {
+    const c = searchParams.get('category_id');
+    return c ? (Number(c) || '') : '';
+  });
+  const [serviceClass, setServiceClass] = useState<number | ''>(() => {
+    const s = searchParams.get('service_class');
+    return s ? (Number(s) || '') : '';
+  });
   const categories = SIM_CATEGORIES; // 하드코딩 마스터(DB/API 대체).
   // 광고 목표 — 일반인도 쉽게 고르는 단일 선택(+ 기타 직접 입력).
-  const [goalItem, setGoalItem] = useState('');
+  const [goalItem, setGoalItem] = useState(() => searchParams.get('objective') ?? '');
   const [customGoal, setCustomGoal] = useState('');
 
   // 시뮬레이션 설정
-  const [sampleSize, setSampleSize] = useState(20);
+  const [sampleSize, setSampleSize] = useState(() => {
+    const p = searchParams.get('persona_count');
+    return p ? Math.min(200, Math.max(1, Number(p))) : 20;
+  });
   const [allocation, setAllocation] = useState<'proportional' | 'stratified'>(
     'proportional'
   );
-  const [ageBands, setAgeBands] = useState<string[]>([]);
-  const [gender, setGender] = useState<GenderFilter>('');
+  const [ageBands, setAgeBands] = useState<string[]>(() =>
+    _initAgeBands(
+      searchParams.get('age_min') ? Number(searchParams.get('age_min')) : null,
+      searchParams.get('age_max') ? Number(searchParams.get('age_max')) : null,
+    )
+  );
+  const [gender, setGender] = useState<GenderFilter>(
+    () => (searchParams.get('gender') as GenderFilter) ?? ''
+  );
 
   const [error, setError] = useState<string | null>(null);
 
@@ -101,6 +135,29 @@ export default function SimulationRunPage() {
   const [pct, setPct] = useState(0);
   const [stageMsg, setStageMsg] = useState('');
   const esRef = useRef<EventSource | null>(null);
+
+  // Meta 캠페인 이미지 미리보기 — fromCampaign이 있으면 항상 프록시로 fetch.
+  // <img> 태그는 인증 헤더 불가 → fetch+getToken으로 blob URL 생성.
+  const [metaPreviewUrl, setMetaPreviewUrl] = useState<string | null>(null);
+  useEffect(() => {
+    if (!fromCampaign) return;
+    let blobUrl: string | null = null;
+    const token = getToken();
+    fetch(`${API_BASE}/api/management/campaigns/${fromCampaign}/creative-image`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+      .then(r => (r.ok ? r.blob() : null))
+      .then(blob => {
+        if (blob) {
+          blobUrl = URL.createObjectURL(blob);
+          setMetaPreviewUrl(blobUrl);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      if (blobUrl) URL.revokeObjectURL(blobUrl);
+    };
+  }, [fromCampaign]);
 
   // 언마운트 시 스트림 정리.
   useEffect(() => () => esRef.current?.close(), []);
@@ -127,6 +184,7 @@ export default function SimulationRunPage() {
         ad_content: adContent || undefined,
         ad_image: inputMode === 'image' ? file : undefined,
         ad_image_url: inputMode === 'url' ? imageUrl || undefined : undefined,
+        organization_id: user?.organization_id ?? undefined,
         project_id: selectedProject?.id ?? undefined,
         target_filter: targetFilter,
         target_mode: targetMode,
@@ -139,6 +197,7 @@ export default function SimulationRunPage() {
           categories.find(c => c.id === categoryId)?.name || undefined,
         service_class:
           typeof serviceClass === 'number' ? serviceClass : undefined,
+        from_campaign_id: fromCampaign ?? undefined,
       });
 
       const es = api.simulation.stream(run_id);
@@ -178,7 +237,7 @@ export default function SimulationRunPage() {
           esRef.current = null;
           api.simulation
             .result(run_id)
-            .then((r: SimRunResult) => {
+            .then(async (r: SimRunResult) => {
               // DB 저장됐으면 simulation_id, 아니면 run_id로 키·라우팅(폴백).
               const routeId = r.simulation_id ?? r.run_id;
               saveSimResult(routeId, {
@@ -213,14 +272,16 @@ export default function SimulationRunPage() {
   if (step === 'setup') {
     const previewUrl = file ? URL.createObjectURL(file) : null;
     // 광고 이미지는 선택 — 나머지(프로젝트·제품명·설명·카테고리·목표)는 필수.
+    // from_campaign(역방향 연결) 경로는 카테고리·세부분류를 선택사항으로 완화한다
+    // (Meta에 동일 개념이 없어 자동 입력 불가).
     const goalReady =
       goalItem === '기타' ? customGoal.trim() !== '' : goalItem !== '';
+    const categoryReady = fromCampaign ? true : categoryId !== '' && serviceClass !== '';
     const canRun =
       selectedProject !== null &&
       adTitle.trim() !== '' &&
       adContent.trim() !== '' &&
-      categoryId !== '' &&
-      serviceClass !== '' &&
+      categoryReady &&
       goalReady;
     return (
         <div className='px-8 py-8 max-w-5xl mx-auto'>
@@ -232,6 +293,14 @@ export default function SimulationRunPage() {
               AI 가상 소비자에게 광고 반응을 미리 테스트합니다
             </p>
           </div>
+
+          {/* 성과 비교에서 넘어온 경우 안내 배너 */}
+          {fromCampaign && (
+            <div className='mb-5 px-4 py-2.5 bg-[#EEF4FF] dark:bg-[#1E3A5F] rounded-xl border border-[#BFDBFE] dark:border-[#1E3A5F] text-sm text-[#3182F6]'>
+              <span className='font-semibold'>{fromCampaignName}</span> 캠페인 기준으로 사전 설정됐습니다.
+              시뮬 완료 시 해당 캠페인에 자동 연결됩니다.
+            </div>
+          )}
 
           {error && (
             <div className='mb-5 px-4 py-2.5 bg-[#FEF2F2] dark:bg-[#3B0D0D] rounded-xl border border-[#FECACA] dark:border-[#7F1D1D] text-sm text-[#DC2626] dark:text-[#FCA5A5]'>
@@ -296,56 +365,83 @@ export default function SimulationRunPage() {
                 />
               </div>
 
-              {/* 이미지 입력 방식 — 남는 세로 공간을 채워 좌우 높이 정렬 */}
+              {/* 이미지 입력 — fromCampaign이면 Meta 프록시 preview, 아니면 업로드/URL 선택 */}
               <div className='flex flex-1 flex-col'>
                 <label className={labelCls}>광고 이미지 (선택)</label>
-                <div className='flex gap-2 mb-3'>
-                  {(
-                    [
-                      ['image', '파일 업로드'],
-                      ['url', '이미지 URL'],
-                    ] as [InputMode, string][]
-                  ).map(([m, lbl]) => (
-                    <button
-                      key={m}
-                      type='button'
-                      onClick={() => setInputMode(m)}
-                      className={`${chipBase} ${inputMode === m ? chipActive : chipIdle}`}>
-                      {lbl}
-                    </button>
-                  ))}
-                </div>
-
-                {inputMode === 'image' && (
-                  <label className='relative flex flex-1 min-h-0 flex-col items-center justify-center border-2 border-dashed border-[#E5E8EB] dark:border-[#2D3748] rounded-xl cursor-pointer hover:border-[#3182F6] transition-colors overflow-hidden'>
-                    {previewUrl ? (
+                {fromCampaign ? (
+                  /* Meta 캠페인에서 넘어온 경우 — 프록시로 실제 광고 이미지 표시 */
+                  <div className='relative flex flex-1 min-h-0 flex-col items-center justify-center border-2 border-dashed border-[#3182F6]/40 dark:border-[#3182F6]/30 rounded-xl overflow-hidden'>
+                    {metaPreviewUrl ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img
-                        src={previewUrl}
-                        alt='미리보기'
+                        src={metaPreviewUrl}
+                        alt='Meta 광고 이미지'
                         className='absolute inset-0 h-full w-full object-contain'
                       />
                     ) : (
-                      <span className='text-sm text-[#8B95A1] dark:text-[#6B7280]'>
-                        클릭하여 이미지 선택 (최대 10MB)
-                      </span>
+                      <div className='flex flex-col items-center gap-2 py-6'>
+                        <p className='text-sm font-medium text-[#3182F6]'>Meta 광고 이미지 연결됨</p>
+                        <p className='text-[11px] text-[#8B95A1] text-center px-4'>이미지를 불러오는 중...</p>
+                      </div>
                     )}
-                    <input
-                      type='file'
-                      accept='image/*'
-                      className='hidden'
-                      onChange={e => setFile(e.target.files?.[0] ?? null)}
-                    />
-                  </label>
-                )}
-                {inputMode === 'url' && (
-                  <input
-                    type='text'
-                    value={imageUrl}
-                    onChange={e => setImageUrl(e.target.value)}
-                    placeholder='https://example.com/ad.png'
-                    className={inputCls}
-                  />
+                    <button
+                      type='button'
+                      onClick={() => { setInputMode('image'); setMetaPreviewUrl(null); }}
+                      className='absolute bottom-2 right-2 text-[11px] bg-white/80 dark:bg-black/60 text-[#8B95A1] rounded px-2 py-0.5 hover:text-[#3182F6]'>
+                      이미지 교체
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    <div className='flex gap-2 mb-3'>
+                      {(
+                        [
+                          ['image', '파일 업로드'],
+                          ['url', '이미지 URL'],
+                        ] as [InputMode, string][]
+                      ).map(([m, lbl]) => (
+                        <button
+                          key={m}
+                          type='button'
+                          onClick={() => setInputMode(m)}
+                          className={`${chipBase} ${inputMode === m ? chipActive : chipIdle}`}>
+                          {lbl}
+                        </button>
+                      ))}
+                    </div>
+
+                    {inputMode === 'image' && (
+                      <label className='relative flex flex-1 min-h-0 flex-col items-center justify-center border-2 border-dashed border-[#E5E8EB] dark:border-[#2D3748] rounded-xl cursor-pointer hover:border-[#3182F6] transition-colors overflow-hidden'>
+                        {previewUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={previewUrl}
+                            alt='미리보기'
+                            className='absolute inset-0 h-full w-full object-contain'
+                          />
+                        ) : (
+                          <span className='text-sm text-[#8B95A1] dark:text-[#6B7280]'>
+                            클릭하여 이미지 선택 (최대 10MB)
+                          </span>
+                        )}
+                        <input
+                          type='file'
+                          accept='image/*'
+                          className='hidden'
+                          onChange={e => setFile(e.target.files?.[0] ?? null)}
+                        />
+                      </label>
+                    )}
+                    {inputMode === 'url' && (
+                      <input
+                        type='text'
+                        value={imageUrl}
+                        onChange={e => setImageUrl(e.target.value)}
+                        placeholder='https://example.com/ad.png'
+                        className={inputCls}
+                      />
+                    )}
+                  </>
                 )}
               </div>
             </div>
@@ -581,10 +677,13 @@ export default function SimulationRunPage() {
             {selectedProject === null ? (
               <p className='text-[11px] text-[#F74D4D] text-center mt-2'>
                 위에서 프로젝트를 먼저 선택해 주세요.
+                {fromCampaign && ' 프로젝트를 선택해야 성과 비교에 예측이 자동 연결됩니다.'}
               </p>
             ) : (
               <p className='text-[11px] text-[#B0B8C1] dark:text-[#4B5563] text-center mt-2'>
-                가상 소비자 수에 따라 수 초~수십 초 걸립니다.
+                {fromCampaign
+                  ? '실행 완료 후 성과 비교 탭에 예측이 자동 연결됩니다.'
+                  : '가상 소비자 수에 따라 수 초~수십 초 걸립니다.'}
               </p>
             )}
           </div>
