@@ -36,6 +36,7 @@ _SYS_ORCHESTRATOR = """\
 - 광고 운영·성과·예산·정책 질문 → ask_management 호출
 - 광고 시안·카피 생성 요청 → ask_generator 호출
 - 새 캠페인 생성 요청("캠페인 만들어줘" 등) → create_campaign 호출(발화의 값을 인자로)
+- 기존 캠페인 일시중지·게재 시작 요청 → manage_campaign 호출(pause|activate, 알면 campaign_id)
 - 이미 충분한 정보가 있으면 추가 호출 없이 답합니다
 - 최종 답변에 수치·근거가 있으면 도구 결과에서 그대로 인용합니다
 """
@@ -101,6 +102,27 @@ _TOOL_SPECS = [
             },
         },
     },
+    {
+        "name": "manage_campaign",
+        "description": (
+            "기존 캠페인 상태 변경 요청에 호출한다."
+            " 일시중지는 action='pause', 게재 시작은 action='activate'."
+            " 특정 가능하면 campaign_id를 채우고, 모르면 비운다(사용자가 카드에서 고른다)."
+            " 예산 변경·생성엔 호출하지 않는다."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "action": {"type": "string", "enum": ["pause", "activate"]},
+                "campaign_id": {"type": "string", "description": "대상 캠페인 ID(알면)"},
+                "campaign_name": {
+                    "type": "string",
+                    "description": "사용자가 말한 캠페인 이름(있으면)",
+                },
+            },
+            "required": ["action"],
+        },
+    },
 ]
 
 
@@ -117,6 +139,7 @@ class _OState(TypedDict):
     context_ad_id: str | None
     memory_context: str | None  # 장기기억(M1) — 서브에이전트 req로 전달
     create_prefill: dict | None  # create_campaign 툴이 채운 폼 초기값(없으면 None)
+    campaign_action: dict | None  # manage_campaign 툴 페이로드(action·campaign_id·campaign_name)
 
 
 def _chat_to_lc(m: ChatMessage) -> HumanMessage | AIMessage:
@@ -169,6 +192,15 @@ def build_deep_agent_graph(
                 "messages": [
                     AIMessage(
                         content="새 캠페인 생성 폼을 준비했어요. 값을 확인하고 승인해 주세요."
+                    )
+                ],
+                "iteration": state["iteration"] + 1,
+            }
+        if state.get("campaign_action") is not None:
+            return {
+                "messages": [
+                    AIMessage(
+                        content="요청하신 캠페인 조치를 확인 카드로 준비했어요. 확인해 주세요."
                     )
                 ],
                 "iteration": state["iteration"] + 1,
@@ -268,6 +300,40 @@ def build_deep_agent_graph(
                         "requires_approval": new_requires,
                         "create_prefill": prefill,
                     }
+
+                elif name == "manage_campaign":
+                    action_payload = {
+                        k: v
+                        for k, v in args.items()
+                        if k in ("action", "campaign_id", "campaign_name") and v
+                    }
+                    if action_payload.get("action") not in ("pause", "activate"):
+                        tool_msgs.append(
+                            ToolMessage(
+                                content=(
+                                    "캠페인에 어떤 조치를 할지 명확하지 않습니다. "
+                                    "일시중지 또는 게재 시작 중 어떤 작업을 "
+                                    "어떤 캠페인에 할지 알려주세요."
+                                ),
+                                tool_call_id=tool_id,
+                            )
+                        )
+                        return {
+                            "messages": tool_msgs,
+                            "sub_results": new_sub,
+                            "thread_id": new_thread_id,
+                            "requires_approval": new_requires,
+                        }
+                    tool_msgs.append(
+                        ToolMessage(content="조치 확인 카드를 준비했습니다.", tool_call_id=tool_id)
+                    )
+                    return {
+                        "messages": tool_msgs,
+                        "sub_results": new_sub,
+                        "thread_id": new_thread_id,
+                        "requires_approval": new_requires,
+                        "campaign_action": action_payload,
+                    }
                 else:
                     result = SubagentResult(
                         action=Action.ANSWER,
@@ -321,6 +387,7 @@ def build_deep_agent_graph(
             "context_ad_id": req.context_ad_id,
             "memory_context": req.memory_context,
             "create_prefill": None,
+            "campaign_action": None,
         }
 
         config = {
@@ -391,6 +458,11 @@ def _state_to_result(state: _OState) -> SubagentResult:
         combined_meta["prefill"] = state["create_prefill"]
         # create 신호가 권위 — 멀티툴 턴에서도 source를 deep-agent로 고정해
         # chat.py의 management 게이트(카드 빌드·record_turn) 오발동을 막는다.
+        combined_meta["source"] = "deep-agent"
+
+    if state.get("campaign_action") is not None:
+        combined_meta["embed"] = "campaign_action"
+        combined_meta["action"] = state["campaign_action"]
         combined_meta["source"] = "deep-agent"
 
     return SubagentResult(
