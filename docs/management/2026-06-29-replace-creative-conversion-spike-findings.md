@@ -10,9 +10,9 @@
 | Q0.1 | 변환 단계 사슬 | 🟡 추정 | writer.py:330,49,304; client.py:153; generator_service.py:433 |
 | Q0.2 | 변환 책임 위치 | ✅ 확정 | CLAUDE.md 협업규칙; writer.py:330,49; instagram.py:1 |
 | Q0.3 | 크로스도메인 핸드오프 | ✅ 확정 | management.py:1897~2004; adapters/generator/client.py:46~101 |
-| Q0.4 | /adcreatives POST·validate_only | ⬜ | |
+| Q0.4 | /adcreatives POST·validate_only | 🟡 부분 | 라이브 probe: 앱 **개발 모드**라 거부(code100/subcode1885183) — Live 전환 선결 |
 | Q0b.1 | ad fan-out 방식 | ✅ 확정 | writer.py:478~505 |
-| Q0b.2 | ad creative 교체 방식 | ⬜ | |
+| Q0b.2 | ad creative 교체 방식 | ✅ 확정 | 라이브 probe: `POST /{ad_id}{creative:{creative_id}}`+validate_only → `success:true` |
 | Q0b.3 | 영향 ad 조회 | ✅ 확정 | reader.py:465~492; writer.py:498~505 |
 
 ## Q0.1 변환 단계
@@ -91,6 +91,24 @@ REPLACE_CREATIVE 요청이 `generation_id + candidate_id`를 `evidence_metrics`�
 
 ## Q0.4 /adcreatives POST·validate_only
 
+**상태: 🟡 부분** — payload는 형태 거부 안 됨(앱모드 게이트까지 도달). 그러나 **앱이 개발(Development) 모드라 adcreative 생성 자체가 차단**됨 → **새 환경 블로커**. validate_only 존중 여부는 이 게이트에 먼저 막혀 미확인.
+
+### 라이브 probe 결과 (validate_only, scratchpad·비커밋)
+
+- **토큰 권한 (GET /me/permissions, 200):** `ads_management`·`ads_read`·`pages_manage_ads`·`business_management` 등 광고 쓰기 권한 **전부 보유**. 권한 부족은 아님.
+- **`POST /act_882448327559337/adcreatives` (execution_options=['validate_only'], 400):**
+  - `code=100, error_subcode=1885183`
+  - `error_user_title`: "광고 크리에이티브 게시물이 개발 모드인 앱에서 만들어졌습니다"
+  - `error_user_msg`: "…이 광고를 만들려면 공개(Live) 모드여야 합니다"
+  - → 객체 미생성(id 미반환, cleanup 불요).
+
+### 해석
+
+1. **payload 형태는 유효 추정** — `object_story_spec`(`_build_link_creative` 형태)이 malformed로 거부되지 않고 **앱-모드 검사 단계까지 도달**했다. 즉 페이로드 구조 문제는 아님.
+2. **환경 블로커(코드 아님):** adcreative 생성은 **Meta 앱을 Live/공개 모드로 전환**해야 가능하다(개발 모드 차단). B-1의 코드 작업과 무관한 **운영/앱설정 선결조건**이다.
+3. **validate_only 미확인:** 앱-모드 게이트에 먼저 막혀 `/adcreatives`가 validate_only를 존중하는지 확인 못함 — 앱 Live 전환 후 재확인 항목.
+4. **Q0.1 PNG→JPEG도 미확인:** `/adimages` 업로드는 별도 probe 안 함(adcreatives가 앞서 막힘). PNG-as-JPEG 통과 여부는 여전히 추정.
+
 ## Q0b.1 ad fan-out 방식
 
 **상태: ✅ 확정** — `activate_tree`의 `_child_ids` 패턴이 REPLACE_CREATIVE fan-out에 그대로 재사용 가능.
@@ -127,6 +145,20 @@ async def _child_ids(self, path: str) -> list[str]:
 
 ## Q0b.2 ad creative 교체 방식
 
+**상태: ✅ 확정** — 기존 ad의 creative 교체는 `POST /{ad_id} {creative:{creative_id}}` 가 맞다. "새 ad 생성/비활성" 대안 불필요.
+
+### 라이브 probe 결과 (validate_only, 실변경 0)
+
+- **대상:** 계정 내 기존 ad `120250726096510729`(status=ACTIVE), 현재 creative `1594694062659930`.
+- **요청:** `POST /{ad_id}` `data={creative: {"creative_id": 1594694062659930}, execution_options:['validate_only']}` — **자기 creative_id를 그대로** 써서 validate_only(실변경 0).
+- **응답 (200):** `{"success": true}`.
+
+### 해석
+
+1. **메커니즘 확정:** ad의 creative는 `POST /{ad_id}`에 `creative={creative_id}`로 **교체 가능**(요청 형태·권한 validate_only로 통과). 별도 새 ad 생성 패턴 불필요.
+2. **fan-out 결속:** Q0b.1의 `_child_ids(f"{campaign_id}/ads")`로 얻은 각 ad_id에 이 호출을 보내면 캠페인 단위 교체가 성립.
+3. **단, 갈아끼울 `creative_id`는 Q0.4(adcreative 생성)가 풀려야 실값이 생긴다** — Q0b.2는 "교체 메커니즘"을 확정했을 뿐, 새 creative 발급은 Q0.4(앱 Live 모드) 선결.
+
 ## Q0b.3 영향 ad 조회
 
 **상태: ✅ 확정** — 두 가지 경로 확인됨.
@@ -144,4 +176,48 @@ async def _child_ids(self, path: str) -> list[str]:
 
 ## 결론 — B-1 경로 ① go/no-go
 
+**판정: 코드 GO (조건부) — 단, LIVE 종단 검증은 앱 Live 모드 전환 후.**
+
+### 확정된 것 (코드 사슬 전부 규명)
+
+- **변환 책임 = management writer**(Q0.2 확정). 부품 `upload_image`·`_build_link_creative` 이미 보유, 추가할 건 `/adcreatives` POST 하나.
+- **핸드오프 = HTTP contract**(Q0.3 확정). 기존 `GeneratorReadClient`/`from_candidate` 패턴 그대로 — 신규 데이터모델 불요.
+- **ad fan-out = `_child_ids`**(Q0b.1 확정), **영향 ad 조회 = `get_creatives`**(Q0b.3 확정).
+- **ad creative 교체 메커니즘 = `POST /{ad_id}{creative:{creative_id}}` (Q0b.2 라이브 확정).** 별도 ad 재생성 불요.
+
+### 새로 드러난 블로커 (정적 분석으로는 못 잡았음)
+
+- **[환경 블로커] Meta 앱이 개발(Development) 모드 → `/adcreatives` 생성 차단**(Q0.4, subcode 1885183). B-1 코드와 무관한 **운영/앱설정 선결** — 앱을 Live/공개 모드로 전환(필요 시 앱 심사)해야 새 creative 발급이 LIVE에서 동작한다.
+  - 그 전까지 B-1은 **mock/validate로 ad-replace 단계까지 빌드·테스트 가능**하나, create-adcreative 단계의 LIVE 검증은 불가.
+  - `/adcreatives`의 validate_only 존중 여부도 앱 Live 전환 후 재확인.
+
+### 남은 선결 (범위 밖, 별도)
+
+- **Open 1 — generation↔campaign 역링크**: 경로 ①(연결된 시안 자동 선택)의 데이터 선결. 본 spike 범위 밖(별도 처리). 없으면 경로 ① 보류하고 ②③(명시적 후보/업로드)부터 가능.
+
+### 한 줄 요약
+
+코드 사슬은 전부 규명·ad교체는 라이브 확정 → **B-1 착수 가능**. 단 **LIVE 풀체인은 (1) 앱 Live 모드 전환 (2) 역링크(경로 ① 한정)** 두 선결에 막힌다.
+
 ## B-1이 만들 Port/메서드 제안 (추천, 잠금은 B-1)
+
+```python
+# AdPlatformWriter 추가/정정 후보 (시그니처 잠금은 B-1)
+
+async def create_ad_creative(
+    self, config: CampaignConfig, *, image_hash: str | None, idem_key: str
+) -> str:
+    """object_story_spec 빌드(_build_link_creative 재사용) → POST /act_{id}/adcreatives → creative_id 반환.
+    ⚠ 앱 Live 모드 전제(Q0.4). 개발 모드면 code100/subcode1885183."""
+
+async def replace_creative(self, ad_id: str, creative_id: str, idem_key: str) -> ActionResult:
+    """현재 시그니처(campaign_id) → ad_id 단위로 정정. POST /{ad_id}{creative:{creative_id}} (Q0b.2 확정).
+    캠페인 단위 fan-out은 executor/service가 _child_ids(f'{campaign_id}/ads')로 순회(Q0b.1)."""
+```
+
+부수 작업(코드):
+- **PNG→JPEG**: `png_to_jpeg`(generator_service.py:433, generator 소유)를 `tools/`로 이동 또는 management 인라인 — `client.post_image`가 JPEG 하드코딩(client.py:162)이라 업로드 전 변환 필수.
+- **executor REPLACE_CREATIVE 분기(executor.py:388)**: `selected_candidate_id`(UUID) → `GeneratorReadClient.get_candidate()`로 s3_key+copy 해석 → upload_image → create_ad_creative → 얻은 creative_id로 fan-out replace.
+- **영향 ad 개수**: 프리뷰용으로 `get_creatives` 결과 len() 재사용(별도 메서드 불요).
+
+운영 선결(코드 아님): **Meta 앱 Live 모드 전환**(+필요 시 앱 심사) — Q0.4 블로커 해제 전제.
