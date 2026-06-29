@@ -17,6 +17,12 @@
 - `@/components/manage/campaigns/CampaignForm` — `CampaignForm({ onSubmit: (v: CampaignFormValues) => void, busy: boolean })`. `CampaignFormValues = { name, objective:'traffic'|'leads', daily_budget_krw, run_days, creative_ad_id?, image_hash?, special_ad_category, country, age_min, age_max, gender }`.
 - `@/components/manage/campaigns/CreateProposalPreview` — `CreateProposalPreview({ proposal: Proposal, onApprove: () => void, onCancel: () => void, busy: boolean })`.
 - `@/components/manage/types` — `Proposal`, `ActionResult`(`{ result_id, approval_id, status, failure_reason, idempotency_key, platform_response_snapshot? }`).
+- **`ResultStatus`(백엔드 `enums.py`)** = `success` | `failed` | `rejected` | `pending_review`(Meta 비동기 심사). 즉
+  생성 결과는 `success`(즉시 완료, mock/demo)뿐 아니라 **`pending_review`(라이브 심사 중)** 일 수 있다 — 성공 판정에
+  둘 다 "정상 처리"로 다뤄야 한다.
+- **승인 아티팩트**(엄브렐러 §3 동등성): `ActionResult.approval_id` 존재 + `api.management.audit(approval_id)`
+  (`GET /management/audit?approval_id=`)로 감사 이벤트 조회. P1 검증의 핵심 — "예쁜 카드"가 아니라 정식 route와
+  같은 승인/감사 레코드가 생기는지 확인한다.
 - `@/lib/api` `api.management`:
   - `createCampaignProposal(body) → { proposal: Proposal }` (body = `CampaignFormValues` 형태).
   - `approve(proposal: unknown, approved: boolean) → { status, approved_action }`.
@@ -33,6 +39,40 @@
 |---|---|---|
 | `frontend/src/components/chat/ChatCreateCampaignCard.tsx` | 신규 | 챗 임베드 생성 플로우(폼→프리뷰→결과). 기존 컴포넌트·api 재사용 |
 | `frontend/src/app/(app)/chat/page.tsx` | 수정 | `Message.embed` 타입 + 임베드 렌더 + 퀵 액션 트리거 |
+
+---
+
+## P1 범위·한계 (구현 전 합의)
+
+- **클라이언트 로컬 임베드** — 카드는 `chat/page.tsx`의 로컬 메시지 상태에만 존재한다. **새로고침·세션 재조회 시
+  카드 상태는 복원하지 않는다**(메시지 persistence/서버 재수화 대상 아님). 생성된 캠페인 자체는 정식 경로로 영속되니
+  대시보드에는 남는다 — 사라지는 건 챗 안의 카드 UI 상태뿐.
+- **승인/감사 영속은 백엔드(정식 route)가 담당** — P1은 프론트만 바꾸지만, 집행은 `/approve`+`/execute`를 타므로
+  `approval_id`·감사 레코드는 정식과 동일하게 생긴다(Task 4에서 검증).
+
+---
+
+## Task 0: 실제 컴포넌트 소스 확인 (구현 전 필수)
+
+> 코드는 변하므로 **구현 전에 실물 시그니처를 직접 확인**한다. 추측 금지.
+
+**Files:** (읽기 전용)
+- `frontend/src/components/manage/campaigns/CampaignForm.tsx`
+- `frontend/src/components/manage/campaigns/CreateProposalPreview.tsx`
+- `frontend/src/app/(app)/manage/campaigns/new/page.tsx`
+- `frontend/src/lib/api.ts` (`management.createCampaignProposal`/`approve`/`execute`/`audit`)
+- `backend/domain/management/contracts/enums.py` (`ResultStatus`)
+
+- [ ] **Step 1: 확인 항목 체크** — 다음이 plan의 가정과 일치하는지 확인하고, 다르면 Task 1 코드를 그에 맞춰 조정:
+  1. `CampaignForm` props가 `{ onSubmit: (v: CampaignFormValues) => void, busy: boolean }` 인지. **자체 submit 버튼**
+     문구("제안 생성 →")·`valid` validation(이름 필수·`sendDaily >= minBudget`·`1 ≤ sendDays ≤ 90`)·기본값(예산
+     floor ₩1,521 등)을 폼이 **내부적으로** 갖는지 → 임베드 카드는 폼 검증을 다시 만들지 않는다.
+  2. `CreateProposalPreview` props가 `{ proposal, onApprove, onCancel, busy }` 인지.
+  3. `api.management.approve(proposal, true)` 반환에 `approved_action`이, `execute(...)` 반환에 `{ result, error_message? }`
+     가 있는지. `result`에 `approval_id`·`status`가 실리는지.
+  4. `ResultStatus` 문자열: `success`·`pending_review`·`failed`·`rejected`. 생성 성공 시 **mock/demo는 `success`,
+     라이브는 `pending_review`** 가능 — Task 1의 성공 판정이 둘 다 다루는지 확인.
+- [ ] **Step 2: 불일치 기록** — 차이가 있으면 이 plan의 Task 1 코드 블록을 수정한 뒤 진행(커밋 불필요, 다음 태스크에 반영).
 
 ---
 
@@ -131,14 +171,24 @@ export default function ChatCreateCampaignCard() {
     );
   }
 
-  // done
-  const success = result?.status === 'success';
+  // done — ResultStatus: success(즉시) | pending_review(Meta 심사 중) 둘 다 "정상 처리". 나머지는 실패.
+  const status = result?.status;
+  const ok = status === 'success' || status === 'pending_review';
   return (
     <div className="mt-1 rounded-2xl border border-[#E5E8EB] dark:border-[#2D3748] p-4 max-w-xl">
-      {success ? (
+      {ok ? (
         <>
-          <p className="font-bold text-[#191F28] dark:text-[#F2F4F6]">✓ 캠페인 생성됨 (PAUSED)</p>
-          <p className="mt-1 text-sm text-[#8B95A1]">대시보드에서 게재를 시작할 수 있어요.</p>
+          <p className="font-bold text-[#191F28] dark:text-[#F2F4F6]">
+            {status === 'pending_review' ? '⏳ 캠페인 제출됨 (심사 중)' : '✓ 캠페인 생성됨 (PAUSED)'}
+          </p>
+          <p className="mt-1 text-sm text-[#8B95A1]">
+            {status === 'pending_review'
+              ? 'Meta 심사가 끝나면 게재할 수 있어요.'
+              : '대시보드에서 게재를 시작할 수 있어요.'}
+          </p>
+          {result?.approval_id && (
+            <p className="mt-1 text-[11px] text-[#B0B8C1]">승인 ID: {result.approval_id}</p>
+          )}
         </>
       ) : (
         <>
@@ -270,31 +320,37 @@ const openCreateCampaign = () => {
 
 - [ ] **Step 2: 웰컴 화면에 트리거 버튼 추가**
 
-웰컴 상태의 퀵 프롬프트 그리드(`quickPrompts.map(...)`로 버튼들을 그리는 `<div className="grid grid-cols-2 ...">`)를 찾는다. 그 그리드 **다음**에 별도 버튼을 추가:
+웰컴 상태의 퀵 프롬프트 그리드(`quickPrompts.map(...)`로 버튼들을 그리는 `<div className="grid grid-cols-2 ...">`)를 찾는다.
+기존 퀵 프롬프트 버튼은 **플레인 텍스트**(이모지 없음) 스타일이다. 그 그리드 **다음**에, 같은 텍스트 스타일을 따르되
+강조색으로 구분되는 버튼을 추가(이모지 대신 텍스트 라벨):
 
 ```tsx
 <button
   onClick={openCreateCampaign}
   className="mt-3 w-full max-w-lg p-4 text-left text-sm font-medium text-[#3182F6] bg-[#EBF3FF] dark:bg-[#1E3A5F] border border-[#3182F6]/30 rounded-xl hover:bg-[#DCEBFF] dark:hover:bg-[#234876] transition-all"
 >
-  ➕ 새 캠페인 만들기
+  새 캠페인 만들기
 </button>
 ```
 
-- [ ] **Step 3: 대화 중에도 열 수 있는 입력창 옆 버튼 추가(선택, 최소)**
+- [ ] **Step 3: 대화 중에도 열 수 있는 트리거 (라벨 명시)**
 
-입력 바(textarea가 있는 `<div className="max-w-2xl mx-auto flex items-end gap-3">`) 안, 전송 버튼 그룹 앞에 추가:
+> **주의:** 입력바에 **의미가 넓은 단독 `＋` 아이콘은 쓰지 않는다**(앱은 아이콘 라이브러리 없이 인라인 SVG·텍스트
+> 버튼을 쓰고, `＋`만으론 "새 캠페인"인지 불명확). 대신 **텍스트 라벨이 보이는 칩 버튼**을 입력 바 위에 둔다.
+
+입력 바 컨테이너(`<div className="border-t ... px-4 py-4 ...">`)의 `max-w-2xl mx-auto` 입력 행 **바로 위**에, 텍스트가
+보이는 작은 칩을 추가:
 
 ```tsx
-<button
-  onClick={openCreateCampaign}
-  disabled={isStreaming}
-  title="새 캠페인 만들기"
-  aria-label="새 캠페인 만들기"
-  className="p-3 rounded-xl text-[#3182F6] bg-[#EBF3FF] dark:bg-[#1E3A5F] hover:bg-[#DCEBFF] dark:hover:bg-[#234876] disabled:opacity-30 disabled:cursor-not-allowed transition-all shrink-0 font-bold"
->
-  ＋
-</button>
+<div className="max-w-2xl mx-auto mb-2">
+  <button
+    onClick={openCreateCampaign}
+    disabled={isStreaming}
+    className="text-xs font-medium text-[#3182F6] bg-[#EBF3FF] dark:bg-[#1E3A5F] hover:bg-[#DCEBFF] dark:hover:bg-[#234876] rounded-full px-3 py-1.5 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
+  >
+    + 새 캠페인 만들기
+  </button>
+</div>
 ```
 
 - [ ] **Step 4: 린트·빌드 확인**
@@ -326,6 +382,12 @@ Run: `cd frontend && pnpm dev` (백엔드도 필요: 별도 터미널 `cd backen
   4. "다시 만들기"로 폼 복귀, "대시보드로"로 `/manage/campaigns` 이동.
   5. 입력바 "＋" 버튼으로도 카드가 열린다. 스트리밍 중엔 비활성.
   6. (확인) `/manage/campaigns` 대시보드 또는 `/manage` 에서 방금 생성된 캠페인(PAUSED)이 보인다 — 정식 경로와 동일 결과.
+  7. **[승인 레코드 동등성 — 핵심]** 챗 생성이 정식 route와 **같은 승인/감사 아티팩트**를 남기는지 확인(엄브렐러 §3):
+     - 결과 카드에 **승인 ID(`result.approval_id`)** 가 표시된다(빈 값이 아님).
+     - 브라우저 DevTools Network 또는 콘솔에서 `/management/execute` 응답 `result`에 `approval_id`·`status`가 있고,
+       이어서 `GET /management/audit?approval_id=<그 값>`(`api.management.audit`)이 **감사 이벤트를 반환**하는지 확인.
+     - 같은 폼을 정식 화면(`/manage/campaigns/new`)에서 생성했을 때와 **동일한 승인/감사 레코드 형태**가 나오는지 대조.
+     - 통과 못 하면 P1은 미완 — "예쁜 카드만 생기고 정책 논거가 빈" 상태이므로, 재배선이 정식 경로를 정확히 타는지 점검.
 
 - [ ] **Step 3: 결과 기록**
 
