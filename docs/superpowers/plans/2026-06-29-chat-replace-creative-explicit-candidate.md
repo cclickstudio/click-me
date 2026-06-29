@@ -635,6 +635,26 @@ async def test_replace_creative_missing_fields_fails():
     action = approved_for(proposal, approver_id="user-1")
     result = await executor.execute(action, proposal)
     assert result.status is ResultStatus.FAILED
+
+async def test_replace_creative_idempotent_replay():
+    # 멱등(리뷰 ④-ⓑ) — 같은 승인/idem 재실행은 결과 재생, writer 재호출 없음.
+    writer = FakeWriter()
+    executor = _build_executor(writer)
+    proposal = make_proposal(
+        action_type="REPLACE_CREATIVE",
+        action_tier=ActionTier.TIER_3,
+        target_object_ids=("camp-1",),
+        evidence_metrics={
+            "image_hash": "h", "headline": "제목", "body": "본문",
+            "link_url": "https://clickme.co.kr",
+        },
+    )
+    action = approved_for(proposal, approver_id="user-1")
+    first = await executor.execute(action, proposal)
+    calls_after_first = list(writer.calls)
+    second = await executor.execute(action, proposal)
+    assert second.result_id == first.result_id  # 재생된 동일 결과
+    assert writer.calls == calls_after_first  # writer 재호출 없음(중복 side effect 없음)
 ```
 
 > 기존 테스트의 헬퍼명(`make_proposal`/`approved_for`/`_build_executor`)이 다르면 파일 내 실제 헬퍼에 맞춘다 — `test_executor_gates.py` 상단 헬퍼를 그대로 사용.
@@ -722,6 +742,15 @@ async def test_replace_creative_proposal_rejects_unowned_campaign(client, other_
         json={"generation_id": "g1", "candidate_id": "c1", "link_url": "https://clickme.co.kr"},
     )
     assert resp.status_code in (403, 404)
+
+async def test_replace_creative_proposal_rejects_other_org_candidate(client, owned_campaign, fake_generator):
+    # 후보-org 누출 차단(리뷰 ②) — 타 org generation은 generator org 스코프로 404.
+    # fake_generator는 호출 org와 다른 generation_id면 InvalidGenerationError(404)를 던지게 구성.
+    resp = await client.post(
+        f"/api/management/campaigns/{owned_campaign}/replace-creative-proposal",
+        json={"generation_id": "other-org-gen", "candidate_id": "c1", "link_url": "https://clickme.co.kr"},
+    )
+    assert resp.status_code == 404
 ```
 
 > 픽스처(`client`·`owned_campaign`·`other_org_campaign`·`fake_generator`)는 기존 `test_management_router.py`/`conftest.py`의 동일 패턴을 재사용한다. 없으면 `from_candidate` 테스트가 쓰는 픽스처를 참고해 맞춘다.

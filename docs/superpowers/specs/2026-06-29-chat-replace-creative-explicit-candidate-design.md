@@ -17,7 +17,7 @@
 
 - **경로 = 명시적 후보 선택.** 사용자가 기존 generation의 후보를 고른다(신규 generation의 무거운 비동기는 최소화).
 - **UX = 챗 카드 임베드.** 후보 목록·선택·프리뷰·승인을 카드 안에서 완결.
-- **검증 = mock.** LIVE adcreative 생성은 Meta 앱 개발모드로 차단됨(B-0 Q0.4). 따라서 B-1은 mock에서 계약·흐름만 고정한다.
+- **검증 = mock.** B-1의 코드 게이트는 **`execution_mode`/`use_mock`** — non-sending(mock)에서만 계약·흐름을 검증한다(§6-⑦). (참고: LIVE라도 Meta 앱이 개발모드면 adcreative 생성이 거부되지만(B-0 Q0.4), 그건 코드 게이트가 아니라 외부 사유다.)
 
 ### 후속으로 미루는 것 (명시)
 
@@ -33,7 +33,7 @@
 1. **캠페인 소유권 검증** — `_require_owned_campaign(db, org_id, campaign_id)`로 "자기 캠페인만 교체"(파괴적 행위 차단).
 2. **후보 핸드오프 (org 스코프)** — `GeneratorReadClient.get_candidate(generation_id, candidate_id, org_id=org_id)`. **org_id를 전달**해 generator GET이 내부 호출에도 `get_detail_for_org`로 스코프 → 타 org 후보면 404(§6-③). 프론트 `candidate_id` 불신.
 3. **이미지 규격 검증** — 최소 사이즈·비율·파일크기·색상모드·alpha·JPEG 품질 확인(§6-⑥). 실패 시 **proposal 생성 실패(422), 집행 없음.**
-4. **이미지 업로드 (mock 한정)** — PNG→JPEG 변환 후 `upload_image`(adimages) → `image_hash`. **B-1은 non-sending(mock)에서만 업로드한다** — `_is_sending_mode()`(validate/live)면 실제 `/adimages` 호출이 되므로 **sending mode는 LIVE 범위로 차단**(§6-⑦). (업로드 자산은 해시 dedupe라 고아 위험 낮음.)
+4. **이미지 업로드 (mock 합성 해시)** — PNG→JPEG 변환 후 `upload_image`. **B-1은 non-sending(mock)에서만 호출** — 이때 `MetaAdsWriter.upload_image`는 실 `/adimages`를 치지 않고 **`None`(또는 합성 해시)을 반환**(writer의 non-sending 경로). 즉 mock에선 실 Meta 자산이 안 생긴다. `_is_sending_mode()`(validate/live)면 엔드포인트가 **501로 차단**(§6-⑦) — LIVE 범위. `create_ad_creative`는 `image_hash=None`이면 object_story_spec에서 image_hash를 생략한다.
 5. **영향 광고 해상 (프리뷰·evidence용)** — `reader.get_creatives(campaign 하위 ads)`로 광고 목록을 얻어 **evidence_metrics(`affected_ad_count`)·프리뷰에만** 싣는다. **`target_object_ids`는 캠페인 id 단일**(§4) — 하위 광고 fan-out은 집행 시점 writer가 한다.
 6. **proposal 빌드** — `budget_proposal` 미러로 서버가 빌드·finalize(아래 §5). evidence_metrics에 image_hash·copy(headline/body)·link_url·generation_id·candidate_id·영향 광고 수.
 7. **프리뷰** — 후보 이미지 + 영향 광고별 현재 썸네일/이름(§6-⑤).
@@ -71,7 +71,7 @@
 - **③ 소유권/토큰 결속 (두 층)** —
   - **캠페인 소유권** — `_require_owned_campaign(db, org_id, campaign_id)`로 자기 캠페인만 교체.
   - **후보-org 누출 차단 (B-1에서 닫음)** — 확인된 활성 누출: generator `GET /generations/{id}`(`generator.py:289`)는 로그인 유저엔 org 스코프(불일치 404)지만 **내부 토큰 일치 또는 `use_mock`이면 org 검증을 우회**(`generator.py:303~306`)한다. management는 내부 토큰으로 호출하고 B-1 mock은 `use_mock=true`라 **임의 generation_id로 타 org 후보를 가져와 프리뷰 노출** 가능(기밀 누출, mock에서도 발생). → **수정:** generator GET이 **내부 호출에도 org 스코프**되게 한다. management가 `X-Org-Id`로 호출 org를 보내면, generator 내부 토큰 분기가 기존 `get_detail_for_org(generation_id, org_id)`로 스코프(타 org면 404). `GeneratorReadClient.get_candidate`에 `org_id` 인자 추가. **이 변경은 generator 도메인을 건드린다(크로스팀 CODEOWNERS) — generator 팀 리뷰 + mock seed 데이터의 org 연결 확인 필요.** 같은 수정으로 기존 `from_candidate` 누출도 닫힌다.
-- **④ no-op** — 집행 시점 생성이라 creative_id는 항상 새값 → id 비교 no-op 무의미. **v1은 하드 no-op 게이트 없음.** LIVE 기준만 문서화: no-op = 후보 콘텐츠(이미지 s3_key + 카피)가 현재 광고 creative와 동일.
+- **④ no-op** — 집행 시점 생성이라 creative_id는 항상 새값 → id 비교 no-op 무의미. **v1은 하드 no-op 게이트 없음.** 대신 **프리뷰가 현재/신규 소재를 나란히** 보여줘(§6-⑤) 사용자가 동일 여부를 눈으로 판단한다(v1은 자동 판정 안 함). LIVE 자동 판정 기준만 문서화: no-op = 후보 콘텐츠(이미지 s3_key + 카피)가 현재 광고 creative와 동일.
 - **⑤ 프리뷰 정보** — `reader.get_creatives(campaign_id)`(`reader.py:465`)가 광고별 `ad_id·ad_name·image_url·thumbnail_url·headline·primary_text`(`CreativePreview`)를 반환(확인됨). 프리뷰 = 광고별 현재 썸네일/이름 + 새 후보 이미지.
 - **⑥ 이미지 규격 검증** — 변환 단계(빌드 시점 §3-3)에서 검증. 실패·규격 불가 → proposal 생성 실패, 집행 없음.
 - **⑦ LIVE 차단 기준** — 코드 게이트는 **`execution_mode`**(`writer._SENDING_MODES=(VALIDATE_ONLY, LIVE)` + `management_execution_mode` + `use_mock`), 앱 모드가 아니다(앱 개발모드는 LIVE를 코드가 허용해도 Meta가 거부하는 외부 사유). B-1은 mock(`use_mock` 또는 execution_mode≠live)에서 돈다. `create_ad_creative`는 `_is_sending_mode()`일 때만 Meta 호출, 아니면 합성 creative_id 반환.
@@ -90,10 +90,12 @@
 
 ## 8. 테스트 (mock)
 
-- 후보 핸드오프 + 캠페인 소유권 검증(타 org 캠페인 거부). 후보-org 검증은 후속(범위 밖).
+- **캠페인 소유권** — 타 org 캠페인 교체 요청 거부(403/404).
+- **후보-org 누출 차단(§6-②)** — `GeneratorReadClient.get_candidate`가 `X-Org-Id`를 보낸다 + **타 org generation/candidate 요청 시 404/거부**(generator org 스코프). B-1에서 닫으므로 테스트 필수.
 - 이미지 규격 검증 실패 → proposal 생성 실패(집행 없음).
-- 빌드된 proposal에 image_hash·copy·광고 target 적재, Tier-3.
-- 집행: executor가 create_ad_creative(합성 id) → 각 광고 fan-out replace, 멱등.
+- 빌드된 proposal: `target_object_ids`=캠페인 단일, evidence_metrics에 image_hash·copy·link_url·generation/candidate·affected_ad_count, Tier-3.
+- sending mode면 엔드포인트 501 차단(§6-⑦).
+- **집행 멱등(두 축)** — ⓐ `create_ad_creative`가 같은 idem_key면 같은 creative_id 반환. ⓑ 같은 승인/idem으로 재실행 시 executor 멱등 재생으로 **중복 side effect 없이 같은 결과 스냅샷**(writer 재호출 없음).
 - 승인 게이트: 미승인 Tier-3 거부(기존 게이트 #4 회귀).
 - LIVE 호출 없음.
 
