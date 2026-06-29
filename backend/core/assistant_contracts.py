@@ -61,6 +61,8 @@ class SubagentRequest(BaseModel):
     improve_context: dict | None = (
         None  # 개선 모드 컨텍스트 {s3_key, simulation_summary, product_name?}
     )
+    # 세션 넘는 장기기억 회수 결과(로그인 사용자만, chat.py가 recall→포맷해 주입). 비로그인은 None.
+    memory_context: str | None = None
     available_projects: list[ProjectRef] = Field(
         default_factory=list
     )  # 되묻기용 — 오케스트레이터가 generate 라우팅 시 채운다

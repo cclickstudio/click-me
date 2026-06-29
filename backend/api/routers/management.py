@@ -15,8 +15,9 @@ from typing import Any, Literal
 from urllib.parse import parse_qs, urlparse
 from uuid import UUID, uuid4
 
+import httpx
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, StreamingResponse
 from langsmith import traceable
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 from sqlalchemy import func, select, text, update
@@ -636,21 +637,6 @@ async def execution_history_endpoint(
 
 
 # ── 오가닉 vs 광고 비교 (🅰 comparison 도메인 노출) ──────────────────────
-# MockAdPlatform은 get_metrics 미구현(fetch_hourly_metrics만) → ComparisonService가
-# 요구하는 단일 스냅샷을 마지막(누적) 시간행으로 공급하는 얇은 어댑터로 우회한다.
-# 🅰가 MockAdPlatform.get_metrics를 추가하면 이 어댑터는 제거 가능.
-class _MockAdSnapshotReader:
-    """하루치 fetch_hourly_metrics의 마지막(누적) 스냅샷을 단일 지표로 반환."""
-
-    def __init__(self, daily_budget_krw: int = DAILY_BUDGET_KRW, seed: int = 42) -> None:
-        self._budget = daily_budget_krw
-        self._mock = MockAdPlatform(seed=seed)
-
-    async def get_metrics(self, campaign_id: str, since: datetime) -> MetricsSnapshot:
-        snaps = await self._mock.fetch_hourly_metrics(campaign_id, since, None, self._budget)
-        return snaps[-1]
-
-
 # 데모 보드 — (게시물 제목, 오가닉 post id, 광고 campaign id, 일예산). 예산 차이로
 # 광고 도달이 벌어져 통과/주의/미달이 고루 나오게 구성.
 _BOARD_DEMO: tuple[tuple[str, str, str, int], ...] = (
@@ -680,7 +666,7 @@ async def compare_one(post_id: str = "ig_demo_1", campaign_id: str = "camp_demo_
     제안 생성·집행은 🅱 — 여기는 분석 산출물(상세 리프트 + 권고)만 노출한다.
     비교는 매칭된 오가닉+부스트 쌍이 필요한 데모라 use_mock 무관하게 항상 mock 데이터.
     """
-    svc = ComparisonService(MockOrganicReader(), _MockAdSnapshotReader())
+    svc = ComparisonService(MockOrganicReader(), MockAdPlatform())
     report = await svc.compare_and_recommend(post_id, campaign_id, _today_utc())
     return report.model_dump(mode="json")
 
@@ -692,7 +678,7 @@ async def compare_board():
     since = _today_utc()
     rows = []
     for title, post_id, campaign_id, budget in _BOARD_DEMO:
-        svc = ComparisonService(organic_reader, _MockAdSnapshotReader(daily_budget_krw=budget))
+        svc = ComparisonService(organic_reader, MockAdPlatform(daily_budget_krw=budget))
         report = await svc.compare_and_recommend(post_id, campaign_id, since)
         rows.append(
             {
@@ -760,6 +746,7 @@ async def compare_before_after(
         return {"items": []}
     except Exception:  # noqa: BLE001 — 그 외 목록 실패면 빈 결과
         return {"items": []}
+
     async def _row(c) -> dict | None:
         cid = c.campaign_id
         m, _blocked = await _safe_meta(reader.get_metrics(cid, now))
@@ -774,6 +761,115 @@ async def compare_before_after(
     rows = await asyncio.gather(*(_row(c) for c in campaigns))
     items = [r for r in rows if r is not None]
     return {"items": items}
+
+
+@router.get("/campaigns/{campaign_id}/targeting")
+async def get_campaign_targeting(
+    campaign_id: str,
+    reader=Depends(_request_reader),
+):
+    """Meta 캠페인 타겟팅 정보 — 시뮬레이터 사전 입력용.
+
+    objective·age_min·age_max·gender를 반환한다. 시뮬레이터 입력 폼에 그대로 매핑된다.
+    """
+    return await reader.get_campaign_targeting(campaign_id)
+
+
+class _LinkSimBody(BaseModel):
+    simulation_id: str
+
+
+@router.post("/campaigns/{campaign_id}/link-simulation")
+async def link_simulation(
+    campaign_id: str,
+    body: _LinkSimBody,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """기존 Meta 캠페인에 시뮬 결과를 역방향 연결 — management_created_campaigns에 기록.
+
+    ClickMe 밖에서 만든 캠페인도 시뮬 예측과 성과 비교가 가능해진다.
+    이미 연결된 캠페인은 simulation_id를 덮어쓴다(재시뮬 시).
+    """
+    org_id = await _require_org_id(user, db)
+    try:
+        sim_uuid = UUID(body.simulation_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="simulation_id 형식 오류") from exc
+    owned = await db.scalar(
+        text("SELECT 1 FROM simulations WHERE id = :sid AND organization_id = :org"),
+        {"sid": str(sim_uuid), "org": str(org_id)},
+    )
+    if not owned:
+        raise HTTPException(status_code=422, detail="해당 시뮬을 찾을 수 없거나 권한이 없습니다.")
+    existing = await db.scalar(
+        select(CreatedCampaign).where(
+            CreatedCampaign.meta_campaign_id == campaign_id,
+            CreatedCampaign.tenant_id == str(org_id),
+            CreatedCampaign.deleted_at.is_(None),
+        )
+    )
+    if existing:
+        existing.simulation_id = str(sim_uuid)
+    else:
+        conn = await db.scalar(
+            select(MetaConnection).where(
+                MetaConnection.organization_id == str(org_id),
+                MetaConnection.deleted_at.is_(None),
+            )
+        )
+        ad_account_id = conn.ad_account_id if conn else ""
+        db.add(
+            CreatedCampaign(
+                tenant_id=str(org_id),
+                meta_campaign_id=campaign_id,
+                simulation_id=str(sim_uuid),
+                name=campaign_id,
+                objective="unknown",
+                ad_account_id=ad_account_id,
+                daily_budget_krw=0,
+                status="linked",
+                execution_mode="manual_link",
+            )
+        )
+    await db.commit()
+    return {"campaign_id": campaign_id, "simulation_id": str(sim_uuid), "linked": True}
+
+
+@router.get("/campaigns/{campaign_id}/creative-image")
+async def proxy_creative_image(
+    campaign_id: str,
+    reader=Depends(_request_reader),
+):
+    """Meta 크리에이티브 이미지 프록시 — 브라우저에서 직접 접근 불가한 fbcdn URL을 서버가 중계.
+
+    Meta CDN(fbcdn.net)은 CORS 제한과 세션 만료로 브라우저 직접 로드가 막힌다.
+    백엔드가 이미지를 받아 Content-Type 그대로 스트림으로 반환한다.
+    """
+    creatives = await reader.get_creatives(campaign_id)
+    image_url: str | None = None
+    for c in creatives:
+        url = c.image_url or c.thumbnail_url  # leads 광고는 image_url=None, thumbnail_url만 있음
+        if url:
+            image_url = url
+            break
+    if not image_url:
+        raise HTTPException(
+            status_code=404, detail="이미지 없음 — 크리에이티브에 이미지가 설정되지 않았습니다."
+        )
+    try:
+        async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+            resp = await client.get(image_url)
+        if resp.status_code != 200:
+            raise HTTPException(status_code=502, detail="Meta 이미지 조회 실패")
+        content_type = resp.headers.get("content-type", "image/jpeg")
+        return StreamingResponse(
+            iter([resp.content]),
+            media_type=content_type,
+            headers={"Cache-Control": "public, max-age=3600"},
+        )
+    except httpx.RequestError as exc:
+        raise HTTPException(status_code=502, detail="Meta 이미지 네트워크 오류") from exc
 
 
 @router.get("/calibration/anchors")
@@ -871,6 +967,42 @@ async def kb_refresh() -> dict:
 
     ingested = await ingest()
     return {"ok": True, "ingested_chunks": ingested}
+
+
+@router.post("/kb/eval/generate")
+async def kb_eval_generate(limit: int = 50) -> dict:
+    """KB 청크에서 QA쌍 생성 — LLM(gpt-4o-mini)으로 질문 자동 생성, DB 저장.
+
+    멱등: 이미 생성된 (source, title) 조합은 스킵.
+    limit: 최대 청크 수 (기본 50, 총 64청크 기준 모두 커버).
+    """
+    from domain.management.assistant.rag_eval import generate_qa_pairs  # noqa: PLC0415
+
+    created = await generate_qa_pairs(limit=limit)
+    return {"ok": True, "created": created}
+
+
+@router.get("/kb/eval/run")
+async def kb_eval_run(k: int = 5) -> dict:
+    """저장된 QA쌍으로 RAG 평가 실행 — Hit Rate@k, MRR, Context Precision.
+
+    사전조건: POST /kb/eval/generate로 QA쌍 생성 필요.
+    """
+    from domain.management.assistant.rag_eval import evaluate  # noqa: PLC0415
+
+    return await evaluate(k=k)
+
+
+@router.get("/kb/eval/faithfulness")
+async def kb_eval_faithfulness(n: int = 30) -> dict:
+    """LLM as Judge — 에이전트 응답의 KB 근거 충실도(faithfulness) 측정.
+
+    사전조건: POST /kb/eval/generate로 QA쌍 생성 필요.
+    목표 기준: ≥ 0.85 발표 자료 기재 가능, 0.70~0.84 개선 여지, < 0.70 프로덕션 미달.
+    """
+    from domain.management.assistant.rag_eval import evaluate_faithfulness  # noqa: PLC0415
+
+    return await evaluate_faithfulness(n=n)
 
 
 # ── 캠페인 목록·성과 대시보드 (🅰 reader 영역 데모 노출) ──────────────────
@@ -1021,9 +1153,7 @@ async def _reconcile_deleted_campaigns(
     """
     if org_id is None:
         return  # org 불명이면 미수행(크로스테넌트 오삭제 방지)
-    conn = await db.scalar(
-        select(MetaConnection).where(MetaConnection.organization_id == org_id)
-    )
+    conn = await db.scalar(select(MetaConnection).where(MetaConnection.organization_id == org_id))
     if conn is None or not conn.ad_account_id:
         return
     rows = (
@@ -1081,13 +1211,14 @@ async def _list_campaigns_real(
             else {c.campaign_id for c in await reader.list_campaigns(include_archived=True)}
         )
         await _reconcile_deleted_campaigns(db, org_id, recon_ids)
-    # 캠페인별 조회기간 지표 — 권한 거부면 해당 캠페인만 (None, True).
-    metric_pairs = await asyncio.gather(
-        *(
-            _safe_meta(reader.get_metrics(c.campaign_id, since, date_preset=date_preset))
-            for c in infos
-        )
+    # 캠페인별 조회기간 지표 — 계정 단위 level=campaign 1콜(+페이징)로 N+1 제거.
+    # 권한 거부는 배치 전체가 막힘(계정 insights 권한은 균일) → 전 캠페인 (None, True).
+    ids = [c.campaign_id for c in infos]
+    metrics_map, metrics_blocked = await _safe_meta(
+        reader.get_metrics_by_campaign(ids, since, date_preset=date_preset)
     )
+    metrics_map = metrics_map or {}
+    metric_pairs = [(metrics_map.get(cid), metrics_blocked) for cid in ids]
     # 운영 신호는 조회기간과 분리한 고정 윈도로 — 소진율=오늘 지출÷일예산, 노출 피로=최근 7일 빈도.
     # 지표를 읽은 active만 today·last_7d 추가 조회(권한 거부·비활성은 건너뜀).
     today_spend = [0] * len(infos)
@@ -1096,28 +1227,20 @@ async def _list_campaigns_real(
         i for i, c in enumerate(infos) if c.state == CampaignState.ACTIVE and not metric_pairs[i][1]
     ]
     if elig:
-        today_pairs, week_pairs = await asyncio.gather(
-            asyncio.gather(
-                *(
-                    _safe_meta(reader.get_metrics(infos[i].campaign_id, since, date_preset="today"))
-                    for i in elig
-                )
-            ),
-            asyncio.gather(
-                *(
-                    _safe_meta(
-                        reader.get_metrics(infos[i].campaign_id, since, date_preset="last_7d")
-                    )
-                    for i in elig
-                )
-            ),
+        elig_ids = [infos[i].campaign_id for i in elig]
+        (today_map, _t_blocked), (week_map, _w_blocked) = await asyncio.gather(
+            _safe_meta(reader.get_metrics_by_campaign(elig_ids, since, date_preset="today")),
+            _safe_meta(reader.get_metrics_by_campaign(elig_ids, since, date_preset="last_7d")),
         )
-        for k, i in enumerate(elig):
-            tm, t_blocked = today_pairs[k]
-            wm, w_blocked = week_pairs[k]
-            if tm is not None and not t_blocked:
+        today_map = today_map or {}
+        week_map = week_map or {}
+        for i in elig:
+            cid = infos[i].campaign_id
+            tm = today_map.get(cid)
+            wm = week_map.get(cid)
+            if tm is not None:
                 today_spend[i] = tm.spend_krw
-            if wm is not None and not w_blocked:
+            if wm is not None:
                 freq_7d[i] = wm.frequency
     out = []
     any_blocked = False

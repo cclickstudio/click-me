@@ -115,6 +115,8 @@ export interface BeforeAfterItem {
   interpretation?: string; // 보조 KPI 기반 결정론 해석 — 없으면 빈 문자열
   pred_strong?: boolean | null; // 클릭 의향률 강함(≥20%) 통과 — 예측 없으면 null
   act_strong?: boolean | null; // 실측 CTR 양호(≥1%) 통과 — 판정 불가면 null
+  purchase_pred_strong?: boolean | null; // 구매의도 강함(≥3.5/5) 통과 — 예측 없으면 null
+  purchase_act_strong?: boolean | null; // 실측 CVR 양호(≥2%) 통과 — CVR null(추적 전)·예측 미연결이면 null
 }
 export interface BeforeAfterResponse {
   items: BeforeAfterItem[];
@@ -188,6 +190,7 @@ function buildSimForm(input: SimRunInput): FormData {
   if (input.product_category) form.append("product_category", input.product_category);
   if (input.ad_objective) form.append("ad_objective", input.ad_objective);
   if (input.service_class != null) form.append("service_class", String(input.service_class));
+  if (input.from_campaign_id) form.append("from_campaign_id", input.from_campaign_id);
   return form;
 }
 
@@ -574,6 +577,28 @@ export const api = {
         method: "POST",
         body: JSON.stringify(body),
       }),
+    // 기존 Meta 캠페인 타겟팅 정보 조회 — 시뮬레이터 사전 입력용
+    campaignTargeting: (campaignId: string) =>
+      request<{
+        campaign_id: string;
+        campaign_name: string;
+        objective: string;
+        age_min: number | null;
+        age_max: number | null;
+        gender: '' | 'M' | 'F';
+        ad_headline: string | null;
+        ad_body: string | null;
+        ad_image_url: string | null;
+        category_id: number;
+        service_class: number;
+        suggested_persona_count: number;
+      }>(`/management/campaigns/${campaignId}/targeting`),
+    // 기존 Meta 캠페인에 시뮬 역방향 연결
+    linkSimulation: (campaignId: string, simulationId: string) =>
+      request<{ campaign_id: string; simulation_id: string; linked: boolean }>(
+        `/management/campaigns/${campaignId}/link-simulation`,
+        { method: 'POST', body: JSON.stringify({ simulation_id: simulationId }) },
+      ),
     // 광고 소재 이미지 업로드 → image_hash (멀티파트, 무과금 자산 등록)
     uploadAdImage: (file: File) => {
       const form = new FormData();

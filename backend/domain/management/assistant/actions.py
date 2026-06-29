@@ -17,6 +17,9 @@ _RULES: list[tuple[tuple[str, ...], str]] = [
     (("게재 시작", "게재시작", "켜", "활성화", "시작해", "내보내"), "ACTIVATE_CAMPAIGN"),
     (("증액", "예산 올", "예산올", "올려", "늘려", "늘리"), "INCREASE_BUDGET"),
     (("감액", "예산 줄", "줄여", "내려", "낮춰"), "DECREASE_BUDGET"),
+    # 구체 의도(입찰·확장)를 generic "바꿔/교체"(REPLACE)보다 먼저 매칭한다.
+    (("입찰", "비딩", "bid"), "CHANGE_BID_STRATEGY"),
+    (("타깃 확", "타겟 확", "오디언스 확", "모수 확", "도달 확", "확장"), "EXPAND_AUDIENCE"),
     (("소재", "크리에이티브", "교체", "바꿔", "갈아"), "REPLACE_CREATIVE"),
 ]
 
@@ -26,6 +29,9 @@ _RATIONALE = {
     "INCREASE_BUDGET": "예산을 증액합니다",
     "DECREASE_BUDGET": "예산을 감액합니다",
     "REPLACE_CREATIVE": "광고 소재를 교체합니다",
+    "EXPAND_AUDIENCE": "타깃 오디언스를 확장합니다",
+    "CHANGE_BID_STRATEGY": "입찰 전략을 변경합니다",
+    "CREATE_CAMPAIGN": "새 캠페인을 생성합니다",
 }
 
 

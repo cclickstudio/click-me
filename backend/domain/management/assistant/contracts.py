@@ -11,12 +11,19 @@ class AskRequest(BaseModel):
     campaign_id: str | None = None  # 특정 캠페인 맥락(있으면 상세 우선)
     ad_id: str | None = None  # 시뮬 예측 연결 맥락
     thread_id: str | None = None  # 멀티턴 키 — 같은 세션이면 같은 값(없으면 새로 생성)
+    # 세션 넘는 장기기억 회수 결과(있으면 react가 LLM 맥락에 주입). 폴백은 무시(라우팅 불변).
+    memory_context: str | None = None
 
 
 class Citation(BaseModel):
     kind: str  # "kb"(문서) | "live"(실측 툴)
     source: str  # 문서 파일명 또는 툴 이름
     title: str = ""
+    # KB 근거의 신뢰도 — system_backed(단정 가능) | advisory(참고·단서 필수) | reference(구성만).
+    # live 인용엔 없음(None). 다운스트림(wiring/chat)은 기존 kind/source/title만 읽어도 무방.
+    trust: str | None = None
+    source_url: str | None = None  # 외부 출처 URL(있으면)
+    as_of: str | None = None  # 벤치마크 기준 시점(있으면)
 
 
 class SuggestedAction(BaseModel):

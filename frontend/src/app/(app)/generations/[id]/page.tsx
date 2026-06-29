@@ -333,9 +333,11 @@ export default function GenerationDetailPage() {
   const [restoring, setRestoring] = useState(false);
   const [platform, setPlatform] = useState<string>('ig_feed');
 
-  // 인증 없이 접근 가능한 generator 엔드포인트 사용 (candidates + image_url 포함)
+  // generator 상세 — USE_MOCK=false면 org 스코프 인증 필요(머지 후) → 토큰 헤더 전달.
   useEffect(() => {
-    fetch(`${API_BASE}/api/generator/generations/${id}`)
+    fetch(`${API_BASE}/api/generator/generations/${id}`, {
+      headers: { Authorization: `Bearer ${getToken()}` },
+    })
       .then(r => { if (!r.ok) throw new Error('not found'); return r.json(); })
       .then(setData)
       .catch(() => setError('제너레이터 내역을 불러올 수 없습니다.'))
