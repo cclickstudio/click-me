@@ -74,20 +74,22 @@ Expected: FAIL — `get_candidate()`가 `org_id` 인자를 안 받음(TypeError)
 
 ```python
     async def get_candidate(
-        self, generation_id: str, candidate_id: str, org_id: str | None = None
+        self, generation_id: str, candidate_id: str, org_id: str
     ) -> HandoffCandidate:
+        # org_id 필수(리뷰 P1-3) — management는 무스코프 조회를 절대 하지 않는다.
+        # 무스코프(admin/debug)가 필요하면 별도 명시 메서드를 둔다(현재 없음).
+        if not org_id:
+            raise ValueError("get_candidate: org_id 필수")
         data = await self._fetch(generation_id, org_id)
         # ... (이하 기존 본문 동일)
 ```
 
-`_fetch`에 org_id 헤더 추가:
+`_fetch`에 org_id 헤더 추가(필수):
 
 ```python
-    async def _fetch(self, generation_id: str, org_id: str | None = None) -> dict:
+    async def _fetch(self, generation_id: str, org_id: str) -> dict:
         url = f"{self._base_url}/api/generator/generations/{generation_id}"
-        headers = dict(self._headers)
-        if org_id:
-            headers["X-Org-Id"] = str(org_id)
+        headers = {**self._headers, "X-Org-Id": str(org_id)}
         last_exc: Exception | None = None
         async with httpx.AsyncClient(timeout=_TIMEOUT, transport=self._transport) as client:
             for _ in range(_RETRIES + 1):
@@ -266,6 +268,28 @@ async def test_create_ad_creative_deterministic_per_idem_key():
     b = await writer.create_ad_creative("act_1", image_hash="h2", headline="t2",
                                         body="b2", link_url="https://y", idem_key="key-AAAAAAAA")
     assert a == b  # 같은 idem_key면 입력이 달라도 같은 합성 id
+
+
+class _RecordingClient:
+    """validate_only 인자를 기록하는 stub(실 생성 방지 검증용, 리뷰 P1-1)."""
+
+    def __init__(self):
+        self.validate_flags: list[bool] = []
+
+    async def post(self, path, data, validate_only=False):
+        self.validate_flags.append(validate_only)
+        return {"id": "real-creative-1"}
+
+
+async def test_create_ad_creative_validate_only_passes_flag():
+    # VALIDATE_ONLY 모드는 client.post에 validate_only=True를 넘겨 실 adcreative 생성을 막아야 한다.
+    stub = _RecordingClient()
+    writer = MetaAdsWriter(mode=ExecutionMode.VALIDATE_ONLY, client=stub)
+    await writer.create_ad_creative(
+        "act_1", image_hash="h", headline="t", body="b",
+        link_url="https://x", idem_key="key-1",
+    )
+    assert stub.validate_flags == [True]
 ```
 
 - [ ] **Step 2: 실패 확인**
@@ -303,10 +327,14 @@ Expected: FAIL — `AttributeError: 'MetaAdsWriter' object has no attribute 'cre
     ) -> str:
         """소재(이미지+카피)로 독립 adcreative 생성 → creative_id. 승인 후 집행 시점에만 호출.
 
-        mock/dry는 합성 id 반환(Meta 미호출). LIVE/validate는 /act_{id}/adcreatives POST.
+        mock/dry는 합성 id 반환(Meta 미호출·Meta 설정 불요). LIVE/validate는 /act_{id}/adcreatives POST.
+        ⚠ VALIDATE_ONLY는 execution_options=['validate_only']로 실생성 안 함(리뷰 P1-1).
         ⚠ LIVE는 Meta 앱 Live 모드 전제(B-0 Q0.4 — 개발모드면 code100/subcode1885183).
         """
         self._require_writable(idem_key)
+        # dry/mock 먼저 — Meta 설정(page_id/account) 없이도 동작(리뷰 P2-4). 합성 id는 멱등 digest.
+        if self._mode not in _SENDING_MODES or self._client is None:
+            return _synthetic_creative_id(idem_key)
         spec = {
             "page_id": self._page_id,
             "link_data": {
@@ -317,20 +345,25 @@ Expected: FAIL — `AttributeError: 'MetaAdsWriter' object has no attribute 'cre
                 **({"image_hash": image_hash} if image_hash else {}),
             },
         }
-        if self._mode not in _SENDING_MODES or self._client is None:
-            # 멱등 + 충돌 회피(리뷰 P1-b) — prefix[:12] 대신 full-key sha256 digest.
-            # (파일 상단에 `import hashlib` 필요.)
-            return f"mockcreative_{hashlib.sha256(idem_key.encode()).hexdigest()[:16]}"
         account = normalize_ad_account(ad_account_id)
         resp = await self._client.post(
             f"{account}/adcreatives",
             {"name": f"clickme-creative-{idem_key[:8]}", "object_story_spec": json.dumps(spec)},
+            validate_only=self._mode is ExecutionMode.VALIDATE_ONLY,  # 실생성 차단(P1-1)
         )
         cid = resp.get("id") if isinstance(resp, dict) else None
         if not cid:
-            raise ValueError("adcreative 생성 응답에 id 없음")
+            # VALIDATE_ONLY는 id가 없을 수 있음 — 합성 id로 폴백(검증만 통과).
+            return _synthetic_creative_id(idem_key)
         return str(cid)
 ```
+
+> **공유 헬퍼** (`writer.py` 모듈 상단, `import hashlib` 추가). FakeWriter도 같은 함수를 쓴다(리뷰 P2-3).
+> ```python
+> def _synthetic_creative_id(idem_key: str) -> str:
+>     """dry/mock·validate 폴백용 결정적 creative id — full-key sha256(충돌 회피, P1-b)."""
+>     return f"mockcreative_{hashlib.sha256(idem_key.encode()).hexdigest()[:16]}"
+> ```
 
 - [ ] **Step 5: FakeWriter에 추가** (`helpers.py`, `FakeWriter` 내부)
 
@@ -341,13 +374,15 @@ Expected: FAIL — `AttributeError: 'MetaAdsWriter' object has no attribute 'cre
         if not idem_key:
             raise ValueError("idem_key 필수")
         self.calls.append(("create_ad_creative", ad_account_id, idem_key))
-        return f"fakecreative_{idem_key[:8]}"
+        return _synthetic_creative_id(idem_key)  # real writer와 동일 digest(리뷰 P2-3)
 ```
+
+(helpers.py 상단에 `from domain.management.adapters.meta.writer import _synthetic_creative_id` import.)
 
 - [ ] **Step 6: 통과 확인**
 
 Run: `cd backend && uv run pytest tests/management/test_meta_writer.py -k create_ad_creative -v`
-Expected: PASS (3 tests)
+Expected: PASS (4 tests: dry_run·requires_idem·deterministic·validate_only)
 
 - [ ] **Step 7: 커밋**
 
@@ -399,6 +434,12 @@ def test_validate_rejects_extreme_ratio():
         validate_image_spec(_png(1080, 100))
 
 
+def test_validate_rejects_oversized_dimensions():
+    # 픽셀/차원 상한(리뷰 P3-2) — 압축폭탄 방지. _MAX_SIDE 초과는 거부.
+    with pytest.raises(ImageSpecError, match="너무 큼"):
+        validate_image_spec(_png(7000, 1080))
+
+
 def test_to_meta_jpeg_converts_rgba_to_rgb_jpeg():
     out = to_meta_jpeg(_png(1080, 1080, mode="RGBA"))
     img = Image.open(io.BytesIO(out))
@@ -423,9 +464,14 @@ from PIL import Image
 
 # Meta 권장 기준(보수적 v1) — 정사각/세로 피드 최소.
 _MIN_SIDE = 600
+_MAX_SIDE = 6000  # 한 변 상한(초대형 거부)
+_MAX_PIXELS = 30_000_000  # 총 픽셀 상한 — 압축폭탄 방지(리뷰 P3-2)
 _MIN_RATIO, _MAX_RATIO = 0.5, 1.91  # 세로 1:2 ~ 가로 1.91:1
 _MAX_BYTES = 30 * 1024 * 1024  # 30MB
 _JPEG_QUALITY = 90
+
+# 디코드 폭탄 방어 — PIL 전역 상한도 보수적으로 낮춘다(임계 초과 시 DecompressionBombError).
+Image.MAX_IMAGE_PIXELS = _MAX_PIXELS
 
 
 class ImageSpecError(ValueError):
@@ -436,12 +482,17 @@ def validate_image_spec(image_bytes: bytes) -> None:
     if len(image_bytes) > _MAX_BYTES:
         raise ImageSpecError(f"파일 크기 초과(최대 {_MAX_BYTES // (1024 * 1024)}MB)")
     try:
-        img = Image.open(io.BytesIO(image_bytes))
-        img.verify()  # 손상 검사
-        img = Image.open(io.BytesIO(image_bytes))  # verify 후 재오픈 필요
-    except Exception as exc:  # noqa: BLE001 — 손상/비이미지
-        raise ImageSpecError("이미지를 열 수 없음(손상/비이미지)") from exc
-    w, h = img.size
+        # 헤더만으로 크기 확인(전체 디코드 전) — 차원/픽셀 상한 위반은 디코드 없이 거부.
+        with Image.open(io.BytesIO(image_bytes)) as probe:
+            w, h = probe.size
+        if w > _MAX_SIDE or h > _MAX_SIDE or (w * h) > _MAX_PIXELS:
+            raise ImageSpecError(f"이미지가 너무 큼(최대 {_MAX_SIDE}px·{_MAX_PIXELS}px², 현재 {w}x{h})")
+        with Image.open(io.BytesIO(image_bytes)) as verifier:
+            verifier.verify()  # 손상 검사
+    except ImageSpecError:
+        raise
+    except Exception as exc:  # noqa: BLE001 — 손상/비이미지/폭탄
+        raise ImageSpecError("이미지를 열 수 없음(손상/비이미지/초대형)") from exc
     if min(w, h) < _MIN_SIDE:
         raise ImageSpecError(f"최소 한 변 {_MIN_SIDE}px 필요(현재 {w}x{h})")
     ratio = w / h if h else 0
@@ -450,7 +501,10 @@ def validate_image_spec(image_bytes: bytes) -> None:
 
 
 def to_meta_jpeg(image_bytes: bytes) -> bytes:
-    """RGBA/팔레트/투명 alpha를 흰 배경 RGB로 합성 후 JPEG 인코딩(Meta는 JPEG 권장)."""
+    """RGBA/팔레트/투명 alpha를 흰 배경 RGB로 합성 후 JPEG 인코딩(Meta는 JPEG 권장).
+
+    호출 전 validate_image_spec로 차원/픽셀 상한을 먼저 통과시킨다(압축폭탄 디코드 방지, P3-2).
+    """
     img = Image.open(io.BytesIO(image_bytes))
     if img.mode in ("RGBA", "LA", "P"):
         rgba = img.convert("RGBA")
@@ -467,14 +521,14 @@ def to_meta_jpeg(image_bytes: bytes) -> bytes:
 - [ ] **Step 4: 통과 확인**
 
 Run: `cd backend && uv run pytest tests/management/test_creative_image.py -v`
-Expected: PASS (3 tests)
+Expected: PASS (4 tests: too_small·extreme_ratio·oversized·rgba_jpeg)
 
 - [ ] **Step 5: 커밋**
 
 ```bash
 cd backend && uv run ruff format . && uv run ruff check . --fix
 git add backend/domain/management/adapters/meta/creative_image.py backend/tests/management/test_creative_image.py
-git commit -m "add: 소재 이미지 규격 검증 + PNG→JPEG 변환 유틸"
+git commit -m "add: 소재 이미지 규격 검증(차원/픽셀 상한 포함) + PNG→JPEG 변환 유틸"
 ```
 
 ---
@@ -497,7 +551,9 @@ async def test_replace_creative_param_is_ad_id():
     writer = MetaAdsWriter(mode=ExecutionMode.DRY_RUN)
     result = await writer.replace_creative("ad-1", "creative-9", "key-1")
     assert result.status is ResultStatus.SUCCESS
-    assert result.platform_response_snapshot["campaign_id"] == "ad-1"  # _dispatch 라벨 키(대상 id)
+    # ⚠ legacy 키: _dispatch가 대상 id를 여전히 "campaign_id" 키로 스냅샷에 적재한다(리뷰 P3-1).
+    # 이제 의미는 ad_id다. 키 이름은 _dispatch 공용이라 본 plan에서 안 바꾸고, 의미만 주석으로 고정.
+    assert result.platform_response_snapshot["campaign_id"] == "ad-1"  # = 대상 ad_id(legacy 키명)
     assert result.platform_response_snapshot["creative_id"] == "creative-9"
 
 async def test_replace_creative_tree_dry_run_creates_one_creative():
@@ -573,6 +629,18 @@ async def test_replace_creative_tree_partial_failure_records_progress():
     snap = result.platform_response_snapshot
     assert snap["succeeded_ad_ids"] == ["ad-1"]
     assert snap["failed_ad_id"] == "ad-2"
+
+
+async def test_replace_creative_tree_empty_ad_ids_makes_no_creative():
+    # 빈 ad_ids는 creative 생성 前에 거부(리뷰 P1-2) — 고아 adcreative 방지.
+    stub = _StubClient()
+    writer = MetaAdsWriter(mode=ExecutionMode.VALIDATE_ONLY, client=stub)
+    with pytest.raises(ValueError, match="ad_ids"):
+        await writer.replace_creative_tree(
+            "camp-1", ad_ids=[], ad_account_id="act_1", image_hash="h",
+            headline="t", body="b", link_url="https://x", idem_key="k",
+        )
+    assert stub.posts == []  # adcreatives POST조차 없음
 ```
 
 (테스트 상단에 `import httpx`가 없으면 추가.)
@@ -648,10 +716,13 @@ writer.py 구현:
 
         고아 방지 — 승인 후 집행 시점에만 호출되므로 취소/만료 건은 creative를 만들지 않는다.
         ad_ids는 빌드 시점 get_creatives로 해상돼 evidence_metrics에 결속된 목록(proposal_hash가 덮음)
-        → 프리뷰=집행 대상 일치, 집행 시점 _child_ids 재조회 안 함(drift 차단). dry/mock도 fan-out 실행.
-        (LIVE 후속 — 집행 시점 ad_ids의 campaign/org 소속·존재 재검증 추가; spec §9.)
+        → 재해상 divergence 없음(집행 시점 _child_ids 재조회 안 함). dry/mock도 fan-out 실행.
+        (실세계 라이브 드리프트 차단 아님 — LIVE 집행 시점 ad campaign/org 재검증은 후속; spec §9.)
         """
         self._require_writable(idem_key)
+        # ad_ids 선검증(리뷰 P1-2) — creative 생성 前에 막아 빈 리스트로 고아 adcreative가 생기지 않게.
+        if not ad_ids or not all(isinstance(a, str) and a for a in ad_ids):
+            raise ValueError("replace_creative_tree: ad_ids는 비어있지 않은 문자열 리스트여야 함")
         creative_id = await self.create_ad_creative(
             ad_account_id,
             image_hash=image_hash,
@@ -698,7 +769,10 @@ writer.py 구현:
     ) -> ActionResult:
         # real writer 부분실패 동작 반영(리뷰 P2-b) — fail_targets에 든 ad에서 실패하고
         # succeeded_ad_ids/failed_ad_id snapshot을 남긴다(executor 부분실패·재시도 테스트용).
-        await self.create_ad_creative(
+        # real writer와 동일하게 ad_ids 선검증(P1-2).
+        if not ad_ids or not all(isinstance(a, str) and a for a in ad_ids):
+            raise ValueError("replace_creative_tree: ad_ids는 비어있지 않은 문자열 리스트여야 함")
+        creative_id = await self.create_ad_creative(
             ad_account_id, image_hash=image_hash, headline=headline,
             body=body, link_url=link_url, idem_key=f"{idem_key}-creative",
         )
@@ -708,10 +782,15 @@ writer.py 구현:
             if r.status is not ResultStatus.SUCCESS:
                 return r.model_copy(update={"platform_response_snapshot": {
                     **(r.platform_response_snapshot or {}),
-                    "succeeded_ad_ids": succeeded, "failed_ad_id": ad_id,
+                    "succeeded_ad_ids": succeeded, "failed_ad_id": ad_id, "creative_id": creative_id,
                 }})
             succeeded.append(ad_id)
-        return self._respond("REPLACE_CREATIVE", campaign_id, idem_key)
+        # real writer 성공 snapshot과 같은 키(creative_id·ad_count·succeeded_ad_ids) 반환(리뷰 P2-2).
+        ok = self._respond("REPLACE_CREATIVE", campaign_id, idem_key)
+        return ok.model_copy(update={"platform_response_snapshot": {
+            **(ok.platform_response_snapshot or {}),
+            "creative_id": creative_id, "ad_count": len(ad_ids), "succeeded_ad_ids": succeeded,
+        }})
 ```
 
 - [ ] **Step 6: 통과 확인 + 기존 회귀**
@@ -929,7 +1008,33 @@ async def test_replace_creative_proposal_rejects_other_org_candidate(client, own
         json={"generation_id": "other-org-gen", "candidate_id": "c1", "link_url": "https://clickme.co.kr"},
     )
     assert resp.status_code == 404
+
+async def test_replace_creative_proposal_rejects_empty_candidate_copy(client, owned_campaign, fake_generator_blank_copy):
+    # 후보 copy(body) 빈값이면 승인 후 집행 실패하므로 빌드 단계에서 422 거부(리뷰 P1-4).
+    resp = await client.post(
+        f"/api/management/campaigns/{owned_campaign}/replace-creative-proposal",
+        json={"generation_id": "g1", "candidate_id": "c1", "link_url": "https://clickme.co.kr"},
+    )
+    assert resp.status_code == 422
+
+async def test_replace_creative_proposal_409_when_no_ads(client, empty_campaign, fake_generator):
+    # 캠페인에 ad가 없으면 교체 대상 없음 → 409(테스트 갭).
+    resp = await client.post(
+        f"/api/management/campaigns/{empty_campaign}/replace-creative-proposal",
+        json={"generation_id": "g1", "candidate_id": "c1", "link_url": "https://clickme.co.kr"},
+    )
+    assert resp.status_code == 409
+
+async def test_replace_creative_proposal_501_in_sending_mode(sending_client, owned_campaign, fake_generator):
+    # sending mode(validate/live)면 501 차단(B-1 mock 범위, 테스트 갭).
+    resp = await sending_client.post(
+        f"/api/management/campaigns/{owned_campaign}/replace-creative-proposal",
+        json={"generation_id": "g1", "candidate_id": "c1", "link_url": "https://clickme.co.kr"},
+    )
+    assert resp.status_code == 501
 ```
+
+> 추가 픽스처: `fake_generator_blank_copy`(body="" 후보 반환)·`empty_campaign`(ad 없음 reader)·`sending_client`(`_is_sending_mode()`=True 설정). 이미지 규격 422는 Task 2 단위테스트로 커버되므로 엔드포인트 레벨은 위 4종으로 충분.
 
 > 픽스처(`client`·`owned_campaign`·`other_org_campaign`·`fake_generator`)는 기존 `test_management_router.py`/`conftest.py`의 동일 패턴을 재사용한다. 없으면 `from_candidate` 테스트가 쓰는 픽스처를 참고해 맞춘다.
 
@@ -975,6 +1080,11 @@ async def replace_creative_proposal(
     except GeneratorUnavailableError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
+    # 후보 copy 필수 검증(리뷰 P1-4) — body/headline 빈값이면 executor가 집행 시 실패하므로
+    # 승인 전에 422로 거부(승인까지 했는데 집행 실패하는 케이스 차단). executor와 같은 규칙.
+    if not (cand.copy.headline or "").strip() or not (cand.copy.body or "").strip():
+        raise HTTPException(status_code=422, detail="후보 소재의 제목/본문이 비어 교체할 수 없습니다.")
+
     try:
         image_bytes = await download_bytes(cand.s3_key)
     except Exception as exc:  # noqa: BLE001 — S3 유실/손상은 입력 문제로 거부
@@ -996,7 +1106,8 @@ async def replace_creative_proposal(
 
     reader = await _require_reader(db, org_id)
     affected = await reader.get_creatives(campaign_id)  # 프리뷰: 영향 광고(현재 썸네일/이름)
-    affected_ad_ids = [a.ad_id for a in affected if a.ad_id]
+    # 중복 제거(순서 보존) — 같은 ad가 두 번 fan-out되지 않게(테스트 갭: dedup 결정).
+    affected_ad_ids = list(dict.fromkeys(a.ad_id for a in affected if a.ad_id))
     if not affected_ad_ids:
         raise HTTPException(status_code=409, detail="교체할 광고가 없습니다(캠페인에 ad 없음).")
 
@@ -1094,5 +1205,6 @@ git commit -m "fix: B-1 회귀·lint 정리"
 - **타입 일관:** `create_ad_creative`(ad_account_id, *, image_hash, headline, body, link_url, idem_key)→str / `replace_creative`(ad_id, creative_id, idem_key) / `replace_creative_tree`(campaign_id, *, ad_ids, ad_account_id, image_hash, headline, body, link_url, idem_key) / `get_candidate`(generation_id, candidate_id, org_id=None) — Task 0·1·3·4·5·helpers 전반 동일. evidence_metrics 키(image_hash·headline·body·link_url·affected_ad_ids·generation_id·candidate_id)는 Task 4(읽기)·5(쓰기) 일치.
 - **B-1 라운드 추가 반영(1차):** P1-a 내부 GET X-Org-Id 필수화 → Task 0. P1-b "drift" 문구 정정 → spec. P1-c fan-out 부분실패 기록 → Task 3. P2-a affected_ad_ids 타입 방어 → Task 4. P2-b 업로드 executor 이동 후속 → spec §9.
 - **B-1 라운드 추가 반영(2차):** P1-a' architecture 헤더 `_child_ids` 문구 제거(결속 affected_ad_ids로 통일). P1-b' mock creative id `sha256(idem_key)[:16]`(prefix 충돌 회피). P2-a' 경로 분리 — internal만 X-Org-Id 필수, **유저/use_mock 무인증 브라우징은 헤더 없이 200**(기존 프론트/mock 회귀 방지) + 경로별 테스트. P2-b' Task 5 org 전달 캡처 단언. P2-c' FakeWriter가 부분실패 snapshot(succeeded/failed) 반영.
+- **B-1 라운드 추가 반영(3차):** P1-1 `create_ad_creative` VALIDATE_ONLY에 validate_only 전달(실생성 차단)+stub 검증. P1-2 `replace_creative_tree`가 creative 생성 전 ad_ids 검증(+빈 리스트 no-creative 테스트). P1-3 `GeneratorReadClient.get_candidate` org_id 필수. P1-4 후보 copy 빈값 422(Task 5)+테스트. P2-1 재시도 creative 재생성 mock 안전·LIVE 후속 명시. P2-2/2-3 FakeWriter 성공 snapshot·digest를 real writer와 정합. P2-4 create_ad_creative dry 분기 선반환(Meta 설정 불요). P3-1 snapshot `campaign_id` legacy 키 주석. P3-2 이미지 차원/픽셀 상한+테스트. 테스트 갭(501·409·copy 빈값·empty ad_ids·validate_only) 보강. affected_ad_ids 중복 제거(순서 보존).
 - **범위:** 프론트 카드·LIVE adcreative·LIVE 멱등/드리프트 재검·업로드 executor 이동은 후속(YAGNI). 후보-org 누출은 Task 0에서 닫음(크로스팀 generator 변경 — 리뷰 필요).
 - **실행 순서:** Task 0(generator 선결) → 1 → 2 → 3 → 4 → 5 → 6.
