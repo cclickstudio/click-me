@@ -5,6 +5,7 @@ from datetime import datetime
 from pathlib import Path
 
 import pytest
+from management.helpers import make_proposal
 from pydantic import ValidationError
 
 from domain.management.contracts.schemas import (
@@ -14,10 +15,10 @@ from domain.management.contracts.schemas import (
     FaultConfig,
     verify_proposal_hash,
 )
-from tests.management.helpers import make_proposal
 
 FIXTURES = (
-    Path(__file__).resolve().parents[2]
+    Path(__file__).resolve().parents[3]
+    / "backend"
     / "domain"
     / "management"
     / "evals"

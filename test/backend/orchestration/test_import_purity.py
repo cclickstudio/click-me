@@ -20,7 +20,7 @@ def _imports(path: pathlib.Path) -> list[str]:
 
 
 def test_core_modules_do_not_import_management():
-    base = pathlib.Path(__file__).resolve().parents[2] / "api" / "orchestration"
+    base = pathlib.Path(__file__).resolve().parents[3] / "backend" / "api" / "orchestration"
     for name in _CORE:
         for mod in _imports(base / name):
             assert not mod.startswith(_FORBIDDEN), f"{name} imports {mod}"

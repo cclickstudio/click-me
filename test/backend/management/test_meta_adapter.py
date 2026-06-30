@@ -20,7 +20,9 @@ from domain.management.adapters.meta.writer import MetaAdsWriter
 from domain.management.contracts.enums import CampaignState, ExecutionMode
 from domain.management.contracts.schemas import CampaignConfig
 
-_FIXTURES = Path(__file__).parents[1].parent / "domain/management/evals/fixtures/meta"
+_FIXTURES = (
+    Path(__file__).resolve().parents[3] / "backend" / "domain/management/evals/fixtures/meta"
+)
 
 
 def _load(name: str) -> dict:

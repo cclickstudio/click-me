@@ -2,6 +2,7 @@
 from datetime import UTC, datetime
 
 import pytest
+from management.helpers import NOW
 
 from domain.management.agents.regeneration import (
     RiskAppetite,
@@ -10,7 +11,6 @@ from domain.management.agents.regeneration import (
 )
 from domain.management.contracts.enums import AnomalyType, DiagnosisSource, DiagnosisStatus
 from domain.management.contracts.schemas import DiagnosisResult
-from tests.management.helpers import NOW
 
 
 def make_diagnosis(anomaly: AnomalyType, **overrides) -> DiagnosisResult:

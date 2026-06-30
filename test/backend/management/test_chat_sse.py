@@ -80,4 +80,3 @@ async def test_final_status_ok_with_no_cards():
     events = await _collect(env)
     assert events[-1]["event"] == "final"
     assert events[-1]["status"] == "ok"
-

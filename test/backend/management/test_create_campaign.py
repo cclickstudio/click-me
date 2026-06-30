@@ -11,6 +11,15 @@ from datetime import UTC, datetime, timedelta
 
 import httpx
 import pytest
+from management.helpers import (
+    NOW,
+    POLICY_VERSION,
+    STATE_VERSION,
+    FakeWriter,
+    build_executor,
+    make_action,
+    make_proposal,
+)
 
 from domain.management.adapters.meta.client import MetaClient
 from domain.management.adapters.meta.writer import MetaAdsWriter
@@ -26,15 +35,6 @@ from domain.management.contracts.schemas import (
     CampaignConfig,
     DiagnosisResult,
     verify_proposal_hash,
-)
-from tests.management.helpers import (
-    NOW,
-    POLICY_VERSION,
-    STATE_VERSION,
-    FakeWriter,
-    build_executor,
-    make_action,
-    make_proposal,
 )
 
 

@@ -6,6 +6,8 @@ V1 사다리(기존 액션만: QUALITY_DEGRADED → REPLACE_CREATIVE → CREATE_
 
 from types import SimpleNamespace
 
+from management.helpers import NOW
+
 from domain.management.agents.regeneration import (
     CreativeCandidate,
     RemediationAgent,
@@ -19,7 +21,6 @@ from domain.management.escalation import (
     InMemoryEscalationStore,
 )
 from domain.management.execution.audit_log import InMemoryAuditLog
-from tests.management.helpers import NOW
 
 TENANT = "org-1111"
 ACCOUNT = "act_001"
@@ -192,9 +193,10 @@ async def test_escalation_auto_picks_idx0_when_awaiting_selection():
             # 실 proposal은 빌드하기 무거우므로 PROPOSED outcome을 직접 반환
             from uuid import uuid4
 
+            from management.helpers import NOW
+
             from domain.management.contracts.enums import ActionTier, ProposalStatus
             from domain.management.contracts.schemas import ActionProposal, finalize_proposal
-            from tests.management.helpers import NOW
 
             proposal = finalize_proposal(
                 ActionProposal(
@@ -221,6 +223,8 @@ async def test_escalation_auto_picks_idx0_when_awaiting_selection():
 
     from types import SimpleNamespace
 
+    from management.helpers import NOW
+
     from domain.management.contracts.enums import AnomalyType
     from domain.management.escalation import (
         ACTIVE_LADDERS,
@@ -229,7 +233,6 @@ async def test_escalation_auto_picks_idx0_when_awaiting_selection():
         InMemoryEscalationStore,
     )
     from domain.management.execution.audit_log import InMemoryAuditLog
-    from tests.management.helpers import NOW
 
     anomaly = AnomalyType.QUALITY_DEGRADED
 
