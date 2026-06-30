@@ -25,7 +25,7 @@ const fmt = (iso: string) => {
 function ChevronIcon({ open }: { open: boolean }) {
   return (
     <svg
-      width="12" height="12" viewBox="0 0 24 24" fill="none"
+      width="13" height="13" viewBox="0 0 24 24" fill="none"
       stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
       className={`transition-transform duration-150 shrink-0 ${open ? 'rotate-90' : ''}`}
     >
@@ -97,10 +97,10 @@ function ProjectItem({
               {/* 시뮬레이션 */}
               <button
                 onClick={() => setSimOpen(v => !v)}
-                className="w-full flex items-center gap-1.5 px-2 py-1 hover:bg-[#F2F4F6] dark:hover:bg-[#252D3D] rounded-md transition-colors"
+                className="w-full flex items-center gap-2 px-2 py-1.5 hover:bg-[#F2F4F6] dark:hover:bg-[#252D3D] rounded-md transition-colors"
               >
                 <ChevronIcon open={simOpen} />
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-[#8B95A1] shrink-0">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-[#8B95A1] shrink-0">
                   <circle cx="12" cy="12" r="10" /><polygon points="10 8 16 12 10 16 10 8" />
                 </svg>
                 <span className="text-xs font-semibold text-[#4E5968] dark:text-[#9CA3AF] uppercase tracking-wide">
@@ -108,7 +108,7 @@ function ProjectItem({
                 </span>
               </button>
               {simOpen && (
-                <div className="ml-3 space-y-0.5">
+                <div className="ml-4 space-y-0.5">
                   {sims.length === 0 ? (
                     <p className="text-xs text-[#B0B8C1] px-2 py-1">내역 없음</p>
                   ) : sims.map(s => {
@@ -146,10 +146,10 @@ function ProjectItem({
               {/* 제너레이터 */}
               <button
                 onClick={() => setGenOpen(v => !v)}
-                className="w-full flex items-center gap-1.5 px-2 py-1 hover:bg-[#F2F4F6] dark:hover:bg-[#252D3D] rounded-md transition-colors"
+                className="w-full flex items-center gap-2 px-2 py-1.5 hover:bg-[#F2F4F6] dark:hover:bg-[#252D3D] rounded-md transition-colors"
               >
                 <ChevronIcon open={genOpen} />
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-[#8B95A1] shrink-0">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-[#8B95A1] shrink-0">
                   <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
                 </svg>
                 <span className="text-xs font-semibold text-[#4E5968] dark:text-[#9CA3AF] uppercase tracking-wide">
@@ -157,7 +157,7 @@ function ProjectItem({
                 </span>
               </button>
               {genOpen && (
-                <div className="ml-3 space-y-0.5">
+                <div className="ml-4 space-y-0.5">
                   {gens.length === 0 ? (
                     <p className="text-xs text-[#B0B8C1] px-2 py-1">내역 없음</p>
                   ) : gens.map(g => {
@@ -189,10 +189,10 @@ function ProjectItem({
               {/* 휴지통 — 펼치면 삭제된 시뮬/제너, 클릭 시 상세 */}
               <button
                 onClick={() => setTrashOpen(v => !v)}
-                className="w-full flex items-center gap-1.5 px-2 py-1 hover:bg-[#F2F4F6] dark:hover:bg-[#252D3D] rounded-md transition-colors"
+                className="w-full flex items-center gap-2 px-2 py-1.5 hover:bg-[#F2F4F6] dark:hover:bg-[#252D3D] rounded-md transition-colors"
               >
                 <ChevronIcon open={trashOpen} />
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-[#8B95A1] shrink-0">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-[#8B95A1] shrink-0">
                   <polyline points="3 6 5 6 21 6" />
                   <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
                 </svg>
