@@ -303,13 +303,11 @@ async def get_simulation_detail(
                    a.id AS ad_id, a.title AS ad_title, a.asset_url AS ad_asset_url,
                    p.id AS project_id, p.name AS project_name,
                    p.organization_id, p.team_id, p.created_by AS project_created_by,
-                   sr.distribution, sr.personas,
                    sa.purchase_intent_avg, sa.rejection_rate, sa.trust_avg, sa.click_intent_rate
             FROM simulations s
             LEFT JOIN users u ON u.id = s.created_by
             JOIN ads a ON a.id = s.ad_id
             JOIN projects p ON p.id = a.project_id
-            LEFT JOIN simulation_results sr ON sr.ad_id = s.ad_id
             LEFT JOIN simulation_aggregates sa ON sa.simulation_id = s.id
             WHERE s.id = :sim_id
         """),
