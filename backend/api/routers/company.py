@@ -7,7 +7,8 @@ from pydantic import BaseModel
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.auth import get_current_user, hash_password
+from core import cognito_admin
+from core.auth import get_current_user
 from core.db import get_db
 from core.models import Organization, OrganizationMember, Team, User
 
@@ -33,14 +34,6 @@ async def _get_company_org(company_user: User, db: AsyncSession) -> Organization
 
 
 # ── Schemas ──────────────────────────────────
-
-
-class PendingMember(BaseModel):
-    member_id: str
-    user_id: str
-    user_name: str
-    login_id: str
-    created_at: datetime
 
 
 class MemberRow(BaseModel):
@@ -94,88 +87,6 @@ class GenerationRow(BaseModel):
 # ── Endpoints ────────────────────────────────
 
 
-@router.get("/pending-members", response_model=list[PendingMember])
-async def list_pending_members(
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """승인 대기 중인 USER 목록."""
-    org = await _get_company_org(current_user, db)
-
-    rows = await db.execute(
-        select(OrganizationMember, User)
-        .join(User, User.id == OrganizationMember.user_id)
-        .where(
-            OrganizationMember.organization_id == org.id,
-            OrganizationMember.status == "PENDING",
-            User.role == "USER",
-        )
-    )
-    return [
-        PendingMember(
-            member_id=str(m.id),
-            user_id=str(u.id),
-            user_name=u.name,
-            login_id=u.login_id,
-            created_at=m.created_at,
-        )
-        for m, u in rows.all()
-    ]
-
-
-@router.post("/approve-member/{member_id}")
-async def approve_member(
-    member_id: str,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """USER 멤버 승인 — org_member.status + user.status → ACTIVE."""
-    org = await _get_company_org(current_user, db)
-
-    member = await db.scalar(
-        select(OrganizationMember).where(
-            OrganizationMember.id == member_id,
-            OrganizationMember.organization_id == org.id,
-        )
-    )
-    if not member:
-        raise HTTPException(status_code=404, detail="멤버를 찾을 수 없습니다.")
-
-    user = await db.scalar(select(User).where(User.id == member.user_id))
-    if not user:
-        raise HTTPException(status_code=404, detail="유저를 찾을 수 없습니다.")
-
-    member.status = "ACTIVE"
-    member.joined_at = datetime.utcnow()
-    user.status = "ACTIVE"
-    return {"ok": True}
-
-
-@router.post("/reject-member/{member_id}")
-async def reject_member(
-    member_id: str,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """USER 멤버 반려."""
-    org = await _get_company_org(current_user, db)
-
-    member = await db.scalar(
-        select(OrganizationMember).where(
-            OrganizationMember.id == member_id,
-            OrganizationMember.organization_id == org.id,
-        )
-    )
-    if not member:
-        raise HTTPException(status_code=404, detail="멤버를 찾을 수 없습니다.")
-
-    user = await db.scalar(select(User).where(User.id == member.user_id))
-    if user:
-        user.status = "REJECTED"
-    member.status = "REJECTED"
-    return {"ok": True}
-
-
 class UpdateMember(BaseModel):
     name: str | None = None
     password: str | None = None  # 값이 있으면 비밀번호 재설정
@@ -212,7 +123,8 @@ async def update_member(
     if body.password:
         if len(body.password) < 8:
             raise HTTPException(status_code=400, detail="비밀번호는 8자 이상이어야 합니다.")
-        user.password_hash = hash_password(body.password)
+        # cognito 모드면 Cognito 비번도 재설정. 실패 시 502 → DB 롤백(불일치 방지).
+        await cognito_admin.set_password(user.login_id, body.password)
 
     await db.flush()
     await db.refresh(member)
@@ -253,6 +165,8 @@ async def delete_member(
     uid = str(member.user_id)
     if uid == str(current_user.id):
         raise HTTPException(status_code=400, detail="본인 계정은 제거할 수 없습니다.")
+    # Cognito 삭제용 login_id 확보(DB 삭제 전에 미리 읽어둔다).
+    login_id = await db.scalar(select(User.login_id).where(User.id == uid))
 
     reassign = {"uid": uid, "actor": str(current_user.id)}
     # 멤버가 만든 콘텐츠 소유권 이전 (created_by NOT NULL → 작업자에게)
@@ -271,6 +185,9 @@ async def delete_member(
     await db.execute(text("DELETE FROM organization_members WHERE id = :mid"), {"mid": member_id})
     await db.execute(text("DELETE FROM users WHERE id = :uid"), {"uid": uid})
     await db.commit()
+    # cognito 모드면 Cognito 사용자도 제거(best-effort — 실패해도 DB 삭제는 유지).
+    if login_id:
+        await cognito_admin.delete_user(login_id)
     return {"ok": True}
 
 
@@ -310,7 +227,6 @@ async def create_member(
 
     user = User(
         login_id=body.login_id,
-        password_hash=hash_password(body.password),
         name=body.name,
         role="USER",
         status="ACTIVE",
@@ -331,6 +247,8 @@ async def create_member(
     db.add(member)
     await db.flush()
     await db.refresh(member)
+    # cognito 모드면 Cognito에도 동일 계정 생성(username=login_id). 실패 시 502 → DB 롤백.
+    await cognito_admin.create_user(user.login_id, body.password, "USER")
 
     return MemberRow(
         member_id=str(member.id),
