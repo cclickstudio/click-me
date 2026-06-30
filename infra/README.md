@@ -56,6 +56,25 @@ scp -i infra/clickme-key.pem backend/.env ubuntu@<EC2_HOST>:/home/ubuntu/clickme
 `backend/.env`에는 최소 `APP_ENV=production`, `DATABASE_URL`(NeonDB), `OPENAI_API_KEY`,
 `CORS_ALLOW_ORIGINS=http://<EC2_HOST>` 가 채워져 있어야 한다.
 
+## Portainer 접근 (SSH 터널)
+
+컨테이너 상태·로그를 GUI로 보려면 Portainer를 쓴다. Portainer는 EC2에서 `127.0.0.1:9000`에만
+바인딩돼 외부로 열려 있지 않으므로(보안), SSH 포트 포워딩으로 로컬에서 접근한다.
+`provision_ec2.py` 실행으로 생긴 `infra/clickme-key.pem`(현재 사용자 단독 ACL로 잠김)을 그대로 쓴다.
+
+```bash
+cd click-me
+ssh -i "infra\clickme-key.pem" -N -L 9000:localhost:9000 ubuntu@<EC2_HOST>
+```
+
+- 터널을 띄운 채(`-N`은 명령 없이 포워딩만, 창은 켜 둔다) 브라우저에서 **http://localhost:9000** 접속.
+- `<EC2_HOST>`는 EC2 퍼블릭 IP(Elastic IP면 고정값, 예: `35.161.11.82`).
+- `Bad permissions / UNPROTECTED PRIVATE KEY` 오류가 나면 키 ACL이 풀린 것 →
+  `provision_ec2.py`를 다시 실행하거나, 아래 한 줄로 현재 사용자 단독 권한으로 재설정한다.
+  ```powershell
+  icacls "infra\clickme-key.pem" /reset; icacls "infra\clickme-key.pem" /inheritance:r; icacls "infra\clickme-key.pem" /grant:r "${env:USERNAME}:F"
+  ```
+
 ## 배포 흐름과의 관계
 
 ```
