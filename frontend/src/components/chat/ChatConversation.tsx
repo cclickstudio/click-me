@@ -23,7 +23,13 @@ import AnalysisSummaryWidget from './AnalysisSummaryWidget';
 import RecommendFormWidget from './RecommendFormWidget';
 import KeywordWidget from './KeywordWidget';
 import CitationChips from './CitationChips';
+import PlanChecklist, { type PlanStep } from './PlanChecklist';
 import ErrorCard from './ErrorCard';
+// 챗→매니지먼트 카드(재이식) — widget.type=create_campaign|campaign_action으로 렌더.
+import ChatCreateCampaignCard from './ChatCreateCampaignCard';
+import ChatCampaignActionCard, { type CampaignActionPayload } from './ChatCampaignActionCard';
+import ChatBudgetProposalCard, { type BudgetActionPayload } from './ChatBudgetProposalCard';
+import type { CampaignPrefill } from '@/components/manage/campaigns/CampaignForm';
 import type { SimRunResult } from '@/lib/types';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
@@ -45,6 +51,22 @@ const welcomeActions: { label: string; cmd: string }[] = [
   { label: '📊 리포트', cmd: '/리포트' },
   { label: '💡 전략 추천', cmd: '/추천' },
 ];
+
+// Web Speech API — 브라우저 내장, 무료, API 키 불필요. Chrome/Edge 지원.
+type SpeechRecCtor = new () => {
+  lang: string;
+  continuous: boolean;
+  interimResults: boolean;
+  onresult: ((e: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void) | null;
+  onend: (() => void) | null;
+  onerror: ((e: { error: string }) => void) | null;
+  start(): void;
+  stop(): void;
+};
+type SpeechWindow = Window & {
+  SpeechRecognition?: SpeechRecCtor;
+  webkitSpeechRecognition?: SpeechRecCtor;
+};
 
 type SlashCommand = { cmd: string; label: string; desc: string };
 const slashCommands: SlashCommand[] = [
@@ -138,6 +160,8 @@ type WidgetSpec = {
     run_id?: string; // debate_stream·debate_summary 위젯 — 토론 스트림/결과 조회용
     sample_size?: number; // sim_input 위젯 — 실제 돌린 가상 소비자 수
     generation_id?: string; // gen_result 위젯 — 생성 결과(후보·이미지) 조회용
+    prefill?: CampaignPrefill; // create_campaign 위젯 — 캠페인 생성 폼 초기값
+    action?: CampaignActionPayload | BudgetActionPayload; // campaign_action 위젯 — 조치 페이로드
   };
 };
 type SourceMeta = {
@@ -149,6 +173,7 @@ type SourceMeta = {
   widget?: WidgetSpec;
   approval?: ApprovalSpec; // 개선 루프 HITL 수락/거절 카드
   cards?: ActionCard[]; // Deep Agent·매니지먼트 추천 조치 카드(RESULT/REVIEW/ACTIONBAR)
+  plan?: PlanStep[]; // Deep Agent 실행 계획(plan→act→observe) — 체크리스트로 표시
   error?: boolean; // 에러 메시지 — 공통 ErrorCard로 렌더 + 재시도(X1)
 };
 // 채팅으로 실제 돌린 시뮬/생성 결과 참조 — 내역에 남겨 재로드 시 "결과 보기" 링크로 렌더.
@@ -201,6 +226,43 @@ function SendIcon() {
       strokeLinejoin='round'>
       <line x1='22' y1='2' x2='11' y2='13' />
       <polygon points='22 2 15 22 11 13 2 9 22 2' />
+    </svg>
+  );
+}
+
+function MicIcon() {
+  return (
+    <svg
+      width='18'
+      height='18'
+      viewBox='0 0 24 24'
+      fill='none'
+      stroke='currentColor'
+      strokeWidth='2'
+      strokeLinecap='round'
+      strokeLinejoin='round'>
+      <path d='M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z' />
+      <path d='M19 10v2a7 7 0 0 1-14 0v-2' />
+      <line x1='12' y1='19' x2='12' y2='23' />
+      <line x1='8' y1='23' x2='16' y2='23' />
+    </svg>
+  );
+}
+
+function SpeakerIcon() {
+  return (
+    <svg
+      width='13'
+      height='13'
+      viewBox='0 0 24 24'
+      fill='none'
+      stroke='currentColor'
+      strokeWidth='2'
+      strokeLinecap='round'
+      strokeLinejoin='round'>
+      <polygon points='11 5 6 9 2 9 2 15 6 15 11 19 11 5' />
+      <path d='M15.54 8.46a5 5 0 0 1 0 7.07' />
+      <path d='M19.07 4.93a10 10 0 0 1 0 14.14' />
     </svg>
   );
 }
@@ -265,6 +327,17 @@ export default function ChatConversation({
   const pendingImageRef = useRef<File | null>(null);
   const abortRef = useRef<AbortController | null>(null); // 스트리밍 중단(P3)
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // ── Web Speech API: STT(마이크 입력) + TTS(읽어주기). 무료, API 키 불필요 ──
+  const [listening, setListening] = useState(false);
+  const recognitionRef = useRef<{ stop: () => void } | null>(null);
+  const voiceTextRef = useRef(''); // STT 결과를 onend에서 자동전송하기 위한 ref
+  const voiceCancelledRef = useRef(false); // 수동 중지 시 자동전송 방지
+  const [voiceSupported, setVoiceSupported] = useState(false);
+  const [ttsSupported, setTtsSupported] = useState(false);
+  const [voiceError, setVoiceError] = useState<string | null>(null);
+  const [isSpeaking, setIsSpeaking] = useState(false); // TTS 재생 중 여부
+  const [autoRead, setAutoRead] = useState(false); // 시각장애 접근성 — 응답 완료 시 자동 읽기
   const textareaRef = useRef<HTMLTextAreaElement>(null); // 멀티라인 자동 높이(P8)
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null); // 메시지 스크롤 컨테이너(P11)
@@ -1210,6 +1283,114 @@ export default function ChatConversation({
     ]
   );
 
+  // ── 음성(STT/TTS) — 옛 chat/page.tsx에서 포팅. Web Speech API, 무료, ko-KR ──
+  // 브라우저 지원 여부 감지(마운트 1회). 미지원이면 버튼 자체를 숨긴다.
+  useEffect(() => {
+    const sw = window as SpeechWindow;
+    setVoiceSupported(
+      typeof sw.SpeechRecognition === 'function' ||
+        typeof sw.webkitSpeechRecognition === 'function'
+    );
+    setTtsSupported(typeof window.speechSynthesis !== 'undefined');
+  }, []);
+
+  // STT: 마이크 버튼 → Web Speech API로 입력창 채움 → 인식 완료 시 자동 전송.
+  const startVoice = () => {
+    setVoiceError(null);
+    const sw = window as SpeechWindow;
+    const Ctor = sw.SpeechRecognition ?? sw.webkitSpeechRecognition;
+    if (!Ctor) return;
+    const rec = new Ctor();
+    rec.lang = 'ko-KR';
+    rec.continuous = false;
+    rec.interimResults = true;
+    rec.onresult = e => {
+      let t = '';
+      for (let i = 0; i < e.results.length; i++) t += e.results[i][0].transcript;
+      voiceTextRef.current = t;
+      setInput(t);
+    };
+    // 인식 완료 → 수동 중지가 아닐 때만 자동 전송(음성으로 검색).
+    rec.onend = () => {
+      setListening(false);
+      const text = voiceTextRef.current.trim();
+      const cancelled = voiceCancelledRef.current;
+      voiceTextRef.current = '';
+      voiceCancelledRef.current = false;
+      if (text && !cancelled) handleSend(text);
+    };
+    rec.onerror = e => {
+      setListening(false);
+      voiceTextRef.current = '';
+      if (e.error === 'not-allowed' || e.error === 'audio-capture') {
+        setVoiceError(
+          '마이크 권한이 필요해요. 주소창 왼쪽 🔒 → 사이트 설정 → 마이크 허용 후 새로고침해 주세요.'
+        );
+      } else if (e.error === 'no-speech') {
+        setVoiceError('소리가 감지되지 않았어요. 다시 눌러 말씀해 주세요.');
+      }
+    };
+    recognitionRef.current = rec;
+    rec.start();
+    setListening(true);
+  };
+
+  const stopVoice = () => {
+    voiceCancelledRef.current = true; // onend에서 자동전송 방지
+    voiceTextRef.current = '';
+    recognitionRef.current?.stop();
+    setListening(false);
+  };
+
+  // TTS: 마크다운 기호 제거 후 음성으로 읽어주기. 무료, API 키 없음.
+  const speakText = (text: string) => {
+    if (!window.speechSynthesis) return;
+    const plain = text
+      .replace(/#{1,3}\s+/g, '')
+      .replace(/\*\*(.+?)\*\*/g, '$1')
+      .replace(/\*(.+?)\*/g, '$1')
+      .replace(/`(.+?)`/g, '$1')
+      .replace(/^[-•]\s+/gm, '')
+      .replace(/^\d+\.\s+/gm, '')
+      .trim();
+    window.speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(plain);
+    u.lang = 'ko-KR';
+    u.rate = 1.1;
+    u.onend = () => setIsSpeaking(false);
+    u.onerror = () => setIsSpeaking(false);
+    setIsSpeaking(true);
+    window.speechSynthesis.speak(u);
+  };
+
+  const stopSpeak = () => {
+    window.speechSynthesis?.cancel();
+    setIsSpeaking(false);
+  };
+
+  // 운동장애 접근성 — Escape 키로 음성입력·TTS·스트리밍 즉시 중지.
+  useEffect(() => {
+    const onEsc = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      if (listening) stopVoice();
+      if (window.speechSynthesis?.speaking) {
+        window.speechSynthesis.cancel();
+        setIsSpeaking(false);
+      }
+      abortRef.current?.abort();
+    };
+    document.addEventListener('keydown', onEsc);
+    return () => document.removeEventListener('keydown', onEsc);
+  }, [listening]);
+
+  // 시각장애 접근성 — 자동 읽기: 스트리밍 완료 후 마지막 AI 메시지 자동 TTS.
+  useEffect(() => {
+    if (!autoRead || !ttsSupported || isStreaming) return;
+    const last = messagesRef.current[messagesRef.current.length - 1];
+    if (last?.role === 'assistant' && last.content) speakText(last.content);
+    // isStreaming이 false로 바뀌는 순간만 트리거.
+  }, [isStreaming, autoRead, ttsSupported]);
+
   // 제너 완료 → 시뮬과 동일하게 어시스턴트가 결과를 준다.
   // ① 결과를 assistant gen_result 위젯(가로 스크롤 이미지)으로 영속·표시.
   // ② "[생성결과] …" 신호를 오케스트레이터에 보내 재시뮬 제안·루프 상태를 받는다
@@ -1471,6 +1652,18 @@ export default function ChatConversation({
                             className={`text-[12px] transition-colors ${rated[i] === -1 ? 'opacity-100' : 'opacity-50 hover:opacity-100'}`}>
                             👎
                           </button>
+                          {/* 읽어주기(TTS) — 브라우저 SpeechSynthesis, 무료 */}
+                          {ttsSupported && (
+                            <button
+                              onClick={() =>
+                                isSpeaking ? stopSpeak() : speakText(msg.content)
+                              }
+                              title={isSpeaking ? '읽기 중지' : '읽어주기'}
+                              className='inline-flex items-center gap-1 text-[11px] font-semibold hover:text-[#3182F6] transition-colors'>
+                              <SpeakerIcon />
+                              {isSpeaking ? '중지' : '읽기'}
+                            </button>
+                          )}
                         </div>
                       )}
                     {msg.result && (
@@ -1575,6 +1768,31 @@ export default function ChatConversation({
                     {msg.meta?.widget?.type === 'keyword_form' && (
                       <KeywordWidget />
                     )}
+                    {/* 챗→매니지먼트 카드(재이식) — deep_agent의 create_campaign/manage_campaign 신호 */}
+                    {msg.meta?.widget?.type === 'create_campaign' && (
+                      <ChatCreateCampaignCard
+                        prefill={msg.meta.widget.data?.prefill}
+                      />
+                    )}
+                    {msg.meta?.widget?.type === 'campaign_action' &&
+                      (() => {
+                        const a = msg.meta.widget.data?.action;
+                        if (!a) return null;
+                        if (a.action === 'pause' || a.action === 'activate')
+                          return (
+                            <ChatCampaignActionCard
+                              action={a as CampaignActionPayload}
+                            />
+                          );
+                        return (
+                          <ChatBudgetProposalCard
+                            action={a as BudgetActionPayload}
+                          />
+                        );
+                      })()}
+                    {msg.role === 'assistant' && msg.meta?.plan?.length ? (
+                      <PlanChecklist plan={msg.meta.plan} />
+                    ) : null}
                     {msg.role === 'assistant' && msg.meta?.cards?.length ? (
                       <ActionCards cards={msg.meta.cards} />
                     ) : null}
@@ -1612,6 +1830,17 @@ export default function ChatConversation({
 
       {/* ── Input bar ── */}
       <div className='border-t border-[#E5E8EB] dark:border-[#2D3748] bg-white dark:bg-[#1C2333] px-4 py-3 transition-colors shrink-0'>
+        {voiceError && (
+          <div className='max-w-2xl mx-auto mb-2 flex items-start gap-2 rounded-lg bg-[#FEF3F2] dark:bg-[#3A1A1F] px-3 py-2 text-xs text-[#B42318] dark:text-[#FDA29B]'>
+            <span className='flex-1'>{voiceError}</span>
+            <button
+              onClick={() => setVoiceError(null)}
+              className='shrink-0 opacity-60 hover:opacity-100'
+              aria-label='닫기'>
+              ✕
+            </button>
+          </div>
+        )}
         {attachedPreview && (
           <div className='max-w-2xl mx-auto mb-2 flex items-center gap-2'>
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -1758,6 +1987,38 @@ export default function ChatConversation({
             className='flex-1 px-4 py-3 rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] text-sm text-[#191F28] dark:text-[#F2F4F6] placeholder-[#B0B8C1] dark:placeholder-[#4B5563] focus:outline-none focus:border-[#3182F6] focus:ring-2 focus:ring-[#3182F6]/10 transition-colors resize-none overflow-y-auto bg-white dark:bg-[#252D3D] leading-relaxed disabled:opacity-60'
             style={{ maxHeight: '120px' }}
           />
+          {/* 음성 입력(STT) — Web Speech API, 무료. 미지원 브라우저는 숨김 */}
+          {voiceSupported && (
+            <button
+              onClick={listening ? stopVoice : startVoice}
+              aria-label={listening ? '음성 입력 중지' : '음성으로 입력'}
+              title={listening ? '음성 입력 중지' : '음성으로 입력 (ko-KR)'}
+              className={`p-3 rounded-xl border transition-all shrink-0 ${
+                listening
+                  ? 'border-[#F04452] bg-[#FEE] text-[#F04452] animate-pulse dark:bg-[#3A1A1F]'
+                  : 'border-[#E5E8EB] dark:border-[#2D3748] text-[#8B95A1] hover:text-[#3182F6] hover:border-[#3182F6]'
+              }`}>
+              <MicIcon />
+            </button>
+          )}
+          {/* 자동 읽기(TTS) 토글 — 응답 완료 시 자동 음성 재생. 미지원 브라우저는 숨김 */}
+          {ttsSupported && (
+            <button
+              onClick={() => {
+                if (isSpeaking) stopSpeak();
+                setAutoRead(v => !v);
+              }}
+              aria-label={autoRead ? '자동 읽기 끄기' : '자동 읽기 켜기'}
+              aria-pressed={autoRead}
+              title={autoRead ? '자동 읽기 끄기' : '자동 읽기 켜기'}
+              className={`p-3 rounded-xl border transition-all shrink-0 ${
+                autoRead
+                  ? 'border-[#3182F6] bg-[#EBF3FF] text-[#3182F6] dark:bg-[#1E3A5F]'
+                  : 'border-[#E5E8EB] dark:border-[#2D3748] text-[#8B95A1] hover:text-[#3182F6] hover:border-[#3182F6]'
+              }`}>
+              <SpeakerIcon />
+            </button>
+          )}
           {isStreaming ? (
             <button
               onClick={() => abortRef.current?.abort()}

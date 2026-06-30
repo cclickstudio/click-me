@@ -9,6 +9,7 @@ act-first 전략: 첫 이터레이션에 management 질문이면 즉시 호출�
 
 from __future__ import annotations
 
+import hashlib
 import logging
 from collections.abc import Awaitable, Callable
 from typing import Annotated, Any
@@ -18,6 +19,7 @@ from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, Tool
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
+from pydantic import BaseModel, Field
 from typing_extensions import TypedDict
 
 from api.assistant.contracts import Action, SubagentRequest, SubagentResult
@@ -35,6 +37,8 @@ _SYS_ORCHESTRATOR = """\
 규칙:
 - 광고 운영·성과·예산·정책 질문 → ask_management 호출
 - 광고 시안·카피 생성 요청 → ask_generator 호출
+- 새 캠페인 생성 요청("캠페인 만들어줘" 등) → create_campaign 호출(발화의 값을 인자로)
+- 기존 캠페인 일시중지·게재 시작·예산 증액/감액 요청 → manage_campaign 호출
 - 이미 충분한 정보가 있으면 추가 호출 없이 답합니다
 - 최종 답변에 수치·근거가 있으면 도구 결과에서 그대로 인용합니다
 """
@@ -77,7 +81,141 @@ _TOOL_SPECS = [
             "required": ["query"],
         },
     },
+    {
+        "name": "create_campaign",
+        "description": (
+            "사용자가 '새 광고 캠페인을 만들어 달라'고 요청할 때 호출한다."
+            " 캠페인 생성 폼 카드를 띄운다. 발화에 값이 있으면 인자로 채우고, 없으면 생략한다."
+            " (생성 방법 질문·성과 분석엔 호출하지 않는다.)"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string", "description": "캠페인 이름(언급 시)"},
+                "objective": {
+                    "type": "string",
+                    "enum": ["traffic", "leads"],
+                    "description": "traffic=클릭, leads=잠재고객·전환",
+                },
+                "total_budget_krw": {
+                    "type": "integer",
+                    "description": "총 예산 원 단위 정수(언급 시, '5만원'=50000)",
+                },
+            },
+        },
+    },
+    {
+        "name": "manage_campaign",
+        "description": (
+            "기존 캠페인 상태·예산 변경 요청에 호출한다. action='pause'|'activate'|"
+            "'increase_budget'|'decrease_budget'."
+            " 예산 변경이면 new_daily_budget_krw 또는 pct를 채운다."
+            " 특정 가능하면 campaign_id, 모르면 비운다. 생성엔 호출하지 않는다."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": ["pause", "activate", "increase_budget", "decrease_budget"],
+                },
+                "campaign_id": {"type": "string", "description": "대상 캠페인 ID(알면)"},
+                "campaign_name": {
+                    "type": "string",
+                    "description": "사용자가 말한 캠페인 이름(있으면)",
+                },
+                "new_daily_budget_krw": {
+                    "type": "integer",
+                    "description": "예산 변경 시 목표 일예산 원(언급 시, '5만원'=50000)",
+                },
+                "pct": {
+                    "type": "integer",
+                    "description": "예산 변경 비율 %(언급 시, '25% 올려'=25, 내림은 음수)",
+                },
+            },
+            "required": ["action"],
+        },
+    },
 ]
+
+# ── Memory(딥에이전트 ③기둥) — 에이전트가 도구로 장기기억을 직접 읽고 쓴다 ──────
+_MEMORY_TOOL_SPECS = [
+    {
+        "name": "remember",
+        "description": (
+            "다음 대화에서도 기억할 가치가 있는 사용자 선호·결정·반복 관심을 장기기억에 저장한다."
+            " 일회성 정보·인사·잡담은 저장하지 않는다."
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "fact": {"type": "string", "description": "한 줄 사실(선호·결정 등)"},
+                "kind": {
+                    "type": "string",
+                    "enum": ["semantic", "episodic", "profile"],
+                    "description": "semantic(사실·선호) | episodic(사건) | profile(지속 프로필)",
+                },
+            },
+            "required": ["fact"],
+        },
+    },
+    {
+        "name": "recall",
+        "description": "과거 세션에서 저장한 사용자 장기기억을 의미 기반으로 조회한다.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "조회할 맥락·주제"},
+            },
+            "required": ["query"],
+        },
+    },
+]
+
+# ── Planning(딥에이전트 ①기둥) — 요청을 명시적 할일로 분해 ─────────────────────
+_SYS_PLANNER = """\
+당신은 ClickMe 광고 플랫폼 오케스트레이터의 플래너입니다.
+사용자 요청을 실행 가능한 할일(todo)로 분해합니다.
+가용 능력: ask_management(운영·성과·예산·이상·정책), ask_generator(시안·카피 생성), 직접 답변.
+
+규칙:
+- 여러 능력이 필요하거나 순서가 있는 다단계 요청만 2~5개 단계로 쪼갠다.
+- 단순·단일 질문, 인사, 되묻기, 잡담은 빈 리스트([])를 반환한다(계획 불필요).
+- 각 단계는 한국어 동사구 한 줄(예: "운영 캠페인 실측 조회").
+"""
+
+
+class _Plan(BaseModel):
+    """플래너 구조화 출력 — 다단계면 단계 목록, 단순 요청이면 빈 리스트."""
+
+    steps: list[str] = Field(default_factory=list)
+
+
+_STATUS_MARK = {"pending": "⬜", "in_progress": "⏳", "completed": "✅"}
+
+
+def _render_plan(plan: list[dict]) -> str:
+    """계획을 오케스트레이터 컨텍스트·프론트 표시용 텍스트로."""
+    return "\n".join(
+        f"{_STATUS_MARK.get(p['status'], '⬜')} {i + 1}. {p['step']}" for i, p in enumerate(plan)
+    )
+
+
+def _advance_plan(plan: list[dict]) -> list[dict]:
+    """한 dispatch 라운드 = 한 단계 진행. in_progress→completed, 다음 pending→in_progress."""
+    out = [dict(p) for p in plan]
+    advanced = False
+    for p in out:
+        if p["status"] == "in_progress":
+            p["status"] = "completed"
+            advanced = True
+            break
+    if advanced:
+        for p in out:
+            if p["status"] == "pending":
+                p["status"] = "in_progress"
+                break
+    return out
 
 
 class _OState(TypedDict):
@@ -92,6 +230,12 @@ class _OState(TypedDict):
     session_id: str
     context_ad_id: str | None
     memory_context: str | None  # 장기기억(M1) — 서브에이전트 req로 전달
+    plan: list[dict]  # Planning — todo 리스트 [{step, status}], 단순 요청은 []
+    iter_budget: int  # 동적 루프 상한(계획 길이에 맞춰 plan 노드가 설정)
+    user_id: str | None  # Memory 스코프 — remember/recall 도구가 사용
+    tenant_id: str | None
+    create_prefill: dict | None  # create_campaign 툴이 채운 폼 초기값(없으면 None)
+    campaign_action: dict | None  # manage_campaign 툴 페이로드(action·campaign_id·campaign_name)
 
 
 def _chat_to_lc(m: ChatMessage) -> HumanMessage | AIMessage:
@@ -120,39 +264,91 @@ def build_deep_agent_graph(
     management_handler: Handler | None = None,
     generator_handler: Handler | None = None,
     checkpointer=None,
+    memory=None,
 ) -> Callable[[SubagentRequest], Awaitable[SubagentResult]]:
     """Deep Agent 팩토리 — graph를 빌드하고 run(SubagentRequest) → SubagentResult를 반환.
 
     management_handler / generator_handler가 None이면 mock 핸들러로 대체.
     실 구현이 들어오면 wiring.py에서 실 핸들러를 주입해 교체.
     checkpointer가 None이면 MemorySaver(인메모리). wiring이 PG 싱글턴을 주입하면 영속·멀티턴.
+    memory(ManagementMemory) 주입 시 remember/recall 도구를 노출(딥에이전트 Memory 기둥).
     """
     _mgt_handler = management_handler or _mock_management
     _gen_handler = generator_handler or _mock_generator
 
     # ── LLM 준비 (function calling 바인딩) ──────────────────────────────────
-    llm_with_tools = llm.bind_tools(_TOOL_SPECS)
+    # memory 주입 시에만 remember/recall 도구를 노출(미주입 배포엔 유령 도구 안 생김).
+    tool_specs = [*_TOOL_SPECS, *(_MEMORY_TOOL_SPECS if memory else [])]
+    llm_with_tools = llm.bind_tools(tool_specs)
     llm_plain = llm  # MAX_ITER 도달 시 도구 없이 최종 답 생성
 
     # ── 노드 정의 ────────────────────────────────────────────────────────────
 
+    async def plan_node(state: _OState) -> dict:
+        """Planning — 요청을 명시적 할일로 분해(다단계만). 단순 요청은 빈 계획."""
+        try:
+            structured = llm.with_structured_output(_Plan)
+            result: _Plan = await structured.ainvoke(
+                [SystemMessage(content=_SYS_PLANNER), *state["messages"]],
+                config={"run_name": "deep-agent.plan", "tags": ["deep-agent", "planning"]},
+            )
+            steps = [s.strip() for s in result.steps if s.strip()][:5]
+        except Exception:  # noqa: BLE001 — 계획 실패는 빈 계획으로 진행(기존 동작과 동일)
+            steps = []
+        plan = [{"step": s, "status": "pending"} for s in steps]
+        if plan:
+            plan[0]["status"] = "in_progress"  # 첫 단계 착수
+        # 다단계면 계획 길이에 맞춰 루프 예산 확장(얕은 MAX_ITER로 안 잘리게)
+        return {"plan": plan, "iter_budget": max(MAX_ITER, len(plan) + 1)}
+
+    def _orchestrator_sys(state: _OState, extra: str = "") -> SystemMessage:
+        """오케스트레이터 시스템 메시지 — 현재 계획·상태를 함께 주입(plan→act→observe)."""
+        content = _SYS_ORCHESTRATOR
+        plan = state.get("plan") or []
+        if plan:
+            content += (
+                f"\n\n현재 계획:\n{_render_plan(plan)}\n"
+                "다음 미완료(⏳/⬜) 단계를 진행하라. 모든 단계가 끝났으면 최종 답변을 작성하라."
+            )
+        return SystemMessage(content=content + extra)
+
     async def orchestrate(state: _OState) -> dict:
-        """LLM이 도구 호출 여부를 결정하는 노드."""
-        if state["iteration"] >= MAX_ITER or state["requires_approval"]:
+        """LLM이 도구 호출 여부를 결정하는 노드(현재 계획을 컨텍스트로 본다)."""
+        # 카드 신호(create_campaign/manage_campaign 툴)가 세팅되면 추가 LLM 합성·루프 없이
+        # 고정 안내로 즉시 종료(신호 툴은 sub-agent 아님 — 더 돌면 무의미한 재합성/무한루프).
+        if state.get("create_prefill") is not None:
+            return {
+                "messages": [
+                    AIMessage(
+                        content="새 캠페인 생성 폼을 준비했어요. 값을 확인하고 승인해 주세요."
+                    )
+                ],
+                "iteration": state["iteration"] + 1,
+            }
+        if state.get("campaign_action") is not None:
+            return {
+                "messages": [
+                    AIMessage(
+                        content="요청하신 캠페인 조치를 확인 카드로 준비했어요. 확인해 주세요."
+                    )
+                ],
+                "iteration": state["iteration"] + 1,
+            }
+        budget = state.get("iter_budget") or MAX_ITER
+        if state["iteration"] >= budget or state["requires_approval"]:
             # 더 이상 도구 호출 없이 최종 합성
             resp = await llm_plain.ainvoke(state["messages"])
             return {"messages": [resp], "iteration": state["iteration"] + 1}
 
-        # act-first: 첫 이터레이션에서 management 키워드 감지 시 즉시 힌트
+        # act-first: 첫 이터레이션에서 도구 선택을 유도 + 계획 주입
         messages = list(state["messages"])
         if state["iteration"] == 0 and not state["sub_results"]:
-            # 시스템 힌트: 첫 이터레이션에서 도구 선택을 유도
             messages = [
-                SystemMessage(
-                    content=_SYS_ORCHESTRATOR + "\n첫 응답에서 적합한 도구를 즉시 호출하세요."
-                ),
+                _orchestrator_sys(state, "\n첫 응답에서 적합한 도구를 즉시 호출하세요."),
                 *messages,
             ]
+        elif state.get("plan"):
+            messages = [_orchestrator_sys(state), *messages]
 
         resp = await llm_with_tools.ainvoke(messages)
         return {"messages": [resp], "iteration": state["iteration"] + 1}
@@ -213,6 +409,111 @@ def build_deep_agent_graph(
                             "thread_id": new_thread_id,
                             "requires_approval": new_requires,
                         }
+
+                elif name == "remember":
+                    # Memory 기둥 — 에이전트가 장기기억에 직접 저장. dedup_key=fact 해시(upsert).
+                    fact = (args.get("fact") or "").strip()
+                    if memory and state.get("user_id") and fact:
+                        kind = args.get("kind") or "semantic"
+                        key = f"{kind}:{hashlib.sha1(fact.encode()).hexdigest()[:16]}"
+                        await memory.remember(
+                            state.get("tenant_id"),
+                            state["user_id"],
+                            key,
+                            {"kind": kind, "fact": fact},
+                        )
+                        tool_msgs.append(ToolMessage(content="기억했습니다.", tool_call_id=tool_id))
+                    else:
+                        tool_msgs.append(
+                            ToolMessage(
+                                content="저장 생략(내용 없음/비로그인).", tool_call_id=tool_id
+                            )
+                        )
+                    continue
+
+                elif name == "recall":
+                    facts: list[str] = []
+                    if memory and state.get("user_id"):
+                        rows = await memory.recall(
+                            state.get("tenant_id"),
+                            state["user_id"],
+                            query=args.get("query"),
+                            limit=5,
+                        )
+                        facts = [r.get("fact") for r in rows if r.get("fact")]
+                    tool_msgs.append(
+                        ToolMessage(
+                            content="\n".join(f"- {f}" for f in facts) or "(저장된 기억 없음)",
+                            tool_call_id=tool_id,
+                        )
+                    )
+                    continue
+
+                elif name == "create_campaign":
+                    # 폼 prefill만 추출(빈 값 제거). DB 미접촉 — 카드를 띄우는 신호일 뿐.
+                    prefill = {
+                        k: v
+                        for k, v in args.items()
+                        if k in ("name", "objective", "total_budget_krw") and v
+                    }
+                    if prefill.get("objective") not in ("traffic", "leads"):
+                        prefill.pop("objective", None)  # enum 밖 값은 폼 기본값에 맡긴다
+                    tool_msgs.append(
+                        ToolMessage(content="생성 폼을 준비했습니다.", tool_call_id=tool_id)
+                    )
+                    return {
+                        "messages": tool_msgs,
+                        "sub_results": new_sub,
+                        "thread_id": new_thread_id,
+                        "requires_approval": new_requires,
+                        "create_prefill": prefill,
+                    }
+
+                elif name == "manage_campaign":
+                    action_payload = {
+                        k: v
+                        for k, v in args.items()
+                        if k
+                        in (
+                            "action",
+                            "campaign_id",
+                            "campaign_name",
+                            "new_daily_budget_krw",
+                            "pct",
+                        )
+                        and v is not None
+                    }
+                    valid_actions = ("pause", "activate", "increase_budget", "decrease_budget")
+                    if action_payload.get("action") not in valid_actions:
+                        # 파싱 깨졌을 때 pause로 떨어뜨리지 않는다(안전 fallback 아님).
+                        # 카드 미생성 → campaign_action 미설정, ToolMessage로 재질문을 유도한다.
+                        tool_msgs.append(
+                            ToolMessage(
+                                content=(
+                                    "어떤 조치인지 명확하지 않아요. "
+                                    "무엇을(중지/게재/예산 변경) 어느 캠페인에 할지 "
+                                    "다시 알려 주세요."
+                                ),
+                                tool_call_id=tool_id,
+                            )
+                        )
+                        return {
+                            "messages": tool_msgs,
+                            "sub_results": new_sub,
+                            "thread_id": new_thread_id,
+                            "requires_approval": new_requires,
+                        }
+                    tool_msgs.append(
+                        ToolMessage(content="조치 확인 카드를 준비했습니다.", tool_call_id=tool_id)
+                    )
+                    return {
+                        "messages": tool_msgs,
+                        "sub_results": new_sub,
+                        "thread_id": new_thread_id,
+                        "requires_approval": new_requires,
+                        "campaign_action": action_payload,
+                    }
+
                 else:
                     result = SubagentResult(
                         action=Action.ANSWER,
@@ -229,6 +530,8 @@ def build_deep_agent_graph(
             "sub_results": new_sub,
             "thread_id": new_thread_id,
             "requires_approval": new_requires,
+            # observe — 한 라운드 끝났으니 계획 한 단계 전진(있을 때만).
+            "plan": _advance_plan(state["plan"]) if state.get("plan") else [],
         }
 
     def route(state: _OState) -> str:
@@ -238,11 +541,13 @@ def build_deep_agent_graph(
             return "dispatch"
         return END
 
-    # ── 그래프 빌드 ──────────────────────────────────────────────────────────
+    # ── 그래프 빌드 ── plan(계획) → orchestrate(act) ⇄ dispatch(observe) ──────
     builder = StateGraph(_OState)
+    builder.add_node("plan", plan_node)
     builder.add_node("orchestrate", orchestrate)
     builder.add_node("dispatch", dispatch)
-    builder.add_edge(START, "orchestrate")
+    builder.add_edge(START, "plan")
+    builder.add_edge("plan", "orchestrate")
     builder.add_conditional_edges("orchestrate", route, {"dispatch": "dispatch", END: END})
     builder.add_edge("dispatch", "orchestrate")
 
@@ -265,6 +570,12 @@ def build_deep_agent_graph(
             "session_id": req.session_id or "",
             "context_ad_id": req.context_ad_id,
             "memory_context": req.memory_context,
+            "plan": [],
+            "iter_budget": MAX_ITER,
+            "user_id": req.user_id,
+            "tenant_id": req.org_id,
+            "create_prefill": None,
+            "campaign_action": None,
         }
 
         config = {
@@ -319,6 +630,11 @@ def _state_to_result(state: _OState) -> SubagentResult:
         ),
         "requires_approval": state["requires_approval"],
         "thread_id": state["thread_id"],
+        # Planning(딥에이전트 ①기둥) — 프론트 체크리스트 위젯용. 최종 답이 나왔으면 전부 완료 처리.
+        "plan": [
+            {**p, "status": "completed" if not state["requires_approval"] else p["status"]}
+            for p in (state.get("plan") or [])
+        ],
         # G2 — suggested_action/evidence/campaigns 캐리. 누락 시 RESULT/REVIEW/ACTIONBAR
         # 카드가 영영 안 뜨고(chat.py compose_turn 입력 부재), record_turn·메모리 노트도 빈값.
         "suggested_action": mgt_meta.get("suggested_action"),
@@ -329,6 +645,23 @@ def _state_to_result(state: _OState) -> SubagentResult:
             "generator": _compact_meta(gen_meta),
         },
     }
+
+    # 챗→매니지먼트 카드 신호(재이식) — 3k 프론트의 meta.widget 통로로 흘려보낸다(W0).
+    # 프론트 ChatConversation이 widget.type으로 분기해 카드를 렌더한다.
+    if state.get("create_prefill") is not None:
+        combined_meta["widget"] = {
+            "type": "create_campaign",
+            "data": {"prefill": state["create_prefill"]},
+        }
+        # create 신호가 권위 — 멀티툴 턴에서도 source를 deep-agent로 고정해
+        # chat.py의 management 게이트(카드 빌드·record_turn) 오발동을 막는다.
+        combined_meta["source"] = "deep-agent"
+    if state.get("campaign_action") is not None:
+        combined_meta["widget"] = {
+            "type": "campaign_action",
+            "data": {"action": state["campaign_action"]},
+        }
+        combined_meta["source"] = "deep-agent"
 
     return SubagentResult(
         action=Action.ANSWER,

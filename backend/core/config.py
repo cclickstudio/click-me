@@ -95,7 +95,7 @@ class Settings(BaseSettings):
     # Marketing (Phase 6 광고 집행용)
     meta_ad_account_id: str | None = None
     # Config
-    meta_graph_api_version: str = "v23.0"
+    meta_graph_api_version: str = "v21.0"
     # 멀티테넌트 — 고객별 Meta 토큰 암호화 키(AES-256, base64 32B). 미설정이면 연결 저장 불가.
     meta_token_encryption_key: str | None = None
     # OAuth 콜백 완료 후 돌아갈 프론트 주소(개발=3000, 운영=https://clickme.co.kr).

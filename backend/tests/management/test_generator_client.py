@@ -34,17 +34,51 @@ def _client(handler):
 @pytest.mark.asyncio
 async def test_resolve_candidate_ok():
     client = _client(lambda req: httpx.Response(200, json=_OK))
-    cand = await client.get_candidate("g1", "c1")
+    cand = await client.get_candidate("g1", "c1", org_id="org-1")
     assert isinstance(cand, HandoffCandidate)
     assert cand.s3_key == "generator/images/g1/0.png"
     assert cand.copy.headline == "h"
 
 
 @pytest.mark.asyncio
+async def test_get_candidate_sends_org_header():
+    captured = {}
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        captured["org"] = request.headers.get("X-Org-Id")
+        return httpx.Response(
+            200,
+            json={
+                "schema_version": "1",
+                "status": "completed",
+                "candidates": [
+                    {
+                        "candidate_id": "c1",
+                        "idx": 0,
+                        "copy": {"headline": "h", "body": "b"},
+                        "s3_key": "generated-ads/g1/0.png",
+                    }
+                ],
+            },
+        )
+
+    client = GeneratorReadClient(base_url="http://gen", transport=httpx.MockTransport(handler))
+    await client.get_candidate("g1", "c1", org_id="org-9")
+    assert captured["org"] == "org-9"
+
+
+@pytest.mark.asyncio
+async def test_get_candidate_requires_org_id():
+    client = _client(lambda req: httpx.Response(200, json=_OK))
+    with pytest.raises(ValueError, match="org_id"):
+        await client.get_candidate("g1", "c1", org_id="")
+
+
+@pytest.mark.asyncio
 async def test_not_found_raises_invalid_404():
     client = _client(lambda req: httpx.Response(404, json={"detail": "x"}))
     with pytest.raises(InvalidGenerationError) as ei:
-        await client.get_candidate("gX", "c1")
+        await client.get_candidate("gX", "c1", org_id="org-1")
     assert ei.value.http_status == 404
 
 
@@ -52,7 +86,7 @@ async def test_not_found_raises_invalid_404():
 async def test_not_completed_raises_409():
     client = _client(lambda req: httpx.Response(200, json={**_OK, "status": "running"}))
     with pytest.raises(InvalidGenerationError) as ei:
-        await client.get_candidate("g1", "c1")
+        await client.get_candidate("g1", "c1", org_id="org-1")
     assert ei.value.http_status == 409
 
 
@@ -60,7 +94,7 @@ async def test_not_completed_raises_409():
 async def test_bad_schema_version_raises_409():
     client = _client(lambda req: httpx.Response(200, json={**_OK, "schema_version": "2"}))
     with pytest.raises(InvalidGenerationError) as ei:
-        await client.get_candidate("g1", "c1")
+        await client.get_candidate("g1", "c1", org_id="org-1")
     assert ei.value.http_status == 409
 
 
@@ -68,7 +102,7 @@ async def test_bad_schema_version_raises_409():
 async def test_candidate_not_in_generation_raises_404():
     client = _client(lambda req: httpx.Response(200, json=_OK))
     with pytest.raises(InvalidGenerationError) as ei:
-        await client.get_candidate("g1", "c-other")
+        await client.get_candidate("g1", "c-other", org_id="org-1")
     assert ei.value.http_status == 404
 
 
@@ -76,7 +110,7 @@ async def test_candidate_not_in_generation_raises_404():
 async def test_upstream_5xx_raises_unavailable():
     client = _client(lambda req: httpx.Response(503, json={"detail": "down"}))
     with pytest.raises(GeneratorUnavailableError):
-        await client.get_candidate("g1", "c1")
+        await client.get_candidate("g1", "c1", org_id="org-1")
 
 
 def test_build_generator_client_uses_settings():

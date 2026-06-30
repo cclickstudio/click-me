@@ -4,7 +4,13 @@
 import { useState } from 'react';
 import { api } from '@/lib/api';
 
-type Citation = { kind: string; source: string; title?: string };
+type Citation = {
+  kind: string;
+  source: string;
+  title?: string;
+  source_url?: string; // web(Tavily) 인용 외부 링크
+  trust?: string; // advisory 등
+};
 
 type ChunkState = { loading: boolean; text?: string; error?: string };
 
@@ -27,11 +33,13 @@ export default function CitationChips({
       ...(usedTools ?? []).filter(t => t.startsWith('live_')),
     ])
   ).map(t => t.replace('live_', '실측·').replace(/_/g, ' '));
+  // 웹(Tavily) 인용 — advisory(참고). 외부 링크로 새 탭에 연다.
+  const web = (citations ?? []).filter(c => c.kind === 'web');
 
   const [open, setOpen] = useState<number | null>(null);
   const [chunks, setChunks] = useState<Record<number, ChunkState>>({});
 
-  if (kb.length === 0 && liveLabels.length === 0) return null;
+  if (kb.length === 0 && liveLabels.length === 0 && web.length === 0) return null;
 
   const toggle = async (i: number, c: Citation) => {
     if (open === i) {
@@ -89,6 +97,27 @@ export default function CitationChips({
             {t}
           </span>
         ))}
+        {web.map((c, i) =>
+          c.source_url ? (
+            <a
+              key={`web-${i}`}
+              href={c.source_url}
+              target='_blank'
+              rel='noopener noreferrer'
+              title={`${c.title || c.source_url} (웹 · 참고)`}
+              className='inline-flex items-center gap-1 max-w-[220px] rounded-full border border-[#FCE7B5] bg-[#FFF8E6] px-2 py-0.5 text-[11px] text-[#B45309] hover:border-[#F59E0B] dark:bg-[#2A220F] dark:border-[#4D3D1B] dark:text-[#FBBF24]'>
+              <span aria-hidden>🌐</span>
+              <span className='truncate'>{c.title || '웹 출처'}</span>
+            </a>
+          ) : (
+            <span
+              key={`web-${i}`}
+              className='inline-flex items-center gap-1 rounded-full border border-[#FCE7B5] bg-[#FFF8E6] px-2 py-0.5 text-[11px] text-[#B45309] dark:bg-[#2A220F] dark:border-[#4D3D1B] dark:text-[#FBBF24]'>
+              <span aria-hidden>🌐</span>
+              {c.title || '웹 출처'}
+            </span>
+          )
+        )}
       </div>
       {active && (
         <div className='rounded-lg border border-[#E5E8EB] bg-[#F9FAFB] dark:bg-[#1A1F2B] dark:border-[#2D3748] p-2.5'>

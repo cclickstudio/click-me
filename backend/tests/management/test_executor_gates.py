@@ -381,37 +381,115 @@ async def test_unsupported_action_type_rejected(unsupported):
     assert writer.calls == []
 
 
-async def test_replace_creative_dispatches_to_writer():
-    """재생성→실행 루프: REPLACE_CREATIVE 제안이 selected_candidate_id로 writer 호출."""
+def _replace_evidence(**overrides):
+    base = {
+        "image_hash": "h",
+        "headline": "제목",
+        "body": "본문",
+        "link_url": "https://clickme.co.kr",
+        "generation_id": "g1",
+        "candidate_id": "c1",
+        "affected_ad_ids": ["ad-1", "ad-2"],
+    }
+    base.update(overrides)
+    return base
+
+
+async def test_replace_creative_fans_out_over_bound_ad_ids():
     writer = FakeWriter()
     executor, _, _, _ = build_executor(writer)
     proposal = make_proposal(
         action_type="REPLACE_CREATIVE",
         action_tier=ActionTier.TIER_3,
-        evidence_metrics={"ctr": 0.001, "selected_candidate_id": "cand-42"},
+        target_object_ids=("camp-1",),
+        evidence_metrics=_replace_evidence(),
     )
-    action = make_action(proposal)
-
+    action = make_action(proposal, approver_id="user-1")  # 사람 승인(AUTO 아님)
     result = await executor.execute(action, proposal)
-
     assert result.status is ResultStatus.SUCCESS
-    assert len(writer.calls) == 1
-    assert writer.calls[0][0] == "REPLACE_CREATIVE"
-    assert writer.calls[0][1] == "camp-001"
+    # adcreative 1회 생성 + 결속된 ad-1·ad-2 각각 교체(fan-out, 리뷰 ①③).
+    assert any(c[0] == "create_ad_creative" for c in writer.calls)
+    replaced = {c[1] for c in writer.calls if c[0] == "REPLACE_CREATIVE"}
+    assert {"ad-1", "ad-2"} <= replaced
 
 
-async def test_replace_creative_without_selected_candidate_fails():
-    """selected_candidate_id 누락 = 계약 위반 — Writer 도달은 막되 결과는 실패로 변환."""
+async def test_replace_creative_missing_fields_fails():
     writer = FakeWriter()
     executor, _, _, _ = build_executor(writer)
     proposal = make_proposal(
         action_type="REPLACE_CREATIVE",
         action_tier=ActionTier.TIER_3,
-        evidence_metrics={"ctr": 0.001},  # selected_candidate_id 없음
+        target_object_ids=("camp-1",),
+        evidence_metrics={"headline": "제목"},  # image_hash/body/link_url/affected_ad_ids 누락
     )
-    action = make_action(proposal)
-
+    action = make_action(proposal, approver_id="user-1")
     result = await executor.execute(action, proposal)
-
     assert result.status is ResultStatus.FAILED
-    assert writer.calls == []
+
+
+async def test_replace_creative_rejects_string_ad_ids():
+    # 타입 방어(리뷰 P2-a) — affected_ad_ids가 문자열이면 글자 단위 fan-out하지 않고 실패.
+    writer = FakeWriter()
+    executor, _, _, _ = build_executor(writer)
+    proposal = make_proposal(
+        action_type="REPLACE_CREATIVE",
+        action_tier=ActionTier.TIER_3,
+        target_object_ids=("camp-1",),
+        evidence_metrics=_replace_evidence(affected_ad_ids="ad-1"),  # str(잘못된 타입)
+    )
+    action = make_action(proposal, approver_id="user-1")
+    result = await executor.execute(action, proposal)
+    assert result.status is ResultStatus.FAILED
+    assert not any(c[1] in ("a", "d", "-", "1") for c in writer.calls)  # 글자 단위 호출 없음
+
+
+async def test_replace_creative_idempotent_replay():
+    # 멱등(리뷰 ④-ⓑ) — 같은 승인/idem 재실행은 결과 재생, writer 재호출 없음.
+    writer = FakeWriter()
+    executor, _, _, _ = build_executor(writer)
+    proposal = make_proposal(
+        action_type="REPLACE_CREATIVE",
+        action_tier=ActionTier.TIER_3,
+        target_object_ids=("camp-1",),
+        evidence_metrics=_replace_evidence(),
+    )
+    action = make_action(proposal, approver_id="user-1")
+    first = await executor.execute(action, proposal)
+    calls_after_first = list(writer.calls)
+    second = await executor.execute(action, proposal)
+    assert second.result_id == first.result_id  # 재생된 동일 결과
+    assert writer.calls == calls_after_first  # writer 재호출 없음(중복 side effect 없음)
+
+
+async def test_legacy_replace_rejected_in_sending_mode():
+    # codex 리뷰 #4 — 레거시 selected_candidate_id REPLACE(campaign target)는 실 모드에서
+    # 캠페인 id를 ad로 보내 Meta에서 깨진다 → 승인 전 fail-fast 거부(writer 미호출).
+    writer = FakeWriter()
+    executor, _, _, _ = build_executor(writer)
+    proposal = make_proposal(
+        action_type="REPLACE_CREATIVE",
+        action_tier=ActionTier.TIER_3,
+        target_object_ids=("camp-1",),
+        evidence_metrics={"selected_candidate_id": "cand-1"},  # 레거시(affected_ad_ids 없음)
+    )
+    action = make_action(proposal, approver_id="user-1", execution_mode=ExecutionMode.LIVE)
+    result = await executor.execute(action, proposal)
+    assert result.status is ResultStatus.REJECTED
+    assert result.failure_reason is FailureReason.UNSUPPORTED_ACTION
+    assert not any(c[0] == "REPLACE_CREATIVE" for c in writer.calls)
+
+
+async def test_legacy_replace_allowed_in_mock():
+    # mock 데모(재생성 루프)는 그대로 동작 — 레거시 단건 교체.
+    writer = FakeWriter()
+    executor, _, _, _ = build_executor(writer)
+    proposal = make_proposal(
+        action_type="REPLACE_CREATIVE",
+        action_tier=ActionTier.TIER_3,
+        target_object_ids=("camp-1",),
+        evidence_metrics={"selected_candidate_id": "cand-1"},
+    )
+    action = make_action(proposal, approver_id="user-1")  # 기본 MOCK
+    result = await executor.execute(action, proposal)
+    assert result.status is ResultStatus.SUCCESS
+    assert any(c[0] == "REPLACE_CREATIVE" for c in writer.calls)

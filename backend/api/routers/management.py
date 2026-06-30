@@ -47,6 +47,10 @@ from domain.management.adapters.generator.client import (
 from domain.management.adapters.meta.client import MetaApiError
 from domain.management.adapters.meta.connection_flow import complete_meta_connection
 from domain.management.adapters.meta.connection_repository import MetaConnectionRepository
+from domain.management.adapters.meta.creative_image import (
+    ImageSpecError,
+    to_meta_jpeg,
+)
 from domain.management.adapters.meta.credentials import MetaCredentials
 from domain.management.adapters.meta.oauth import build_login_url
 from domain.management.adapters.meta.token_crypto import TokenCipher
@@ -56,6 +60,7 @@ from domain.management.agents.regeneration import RemediationContext
 from domain.management.agents.regeneration_tools import build_regeneration_agent
 from domain.management.approval import (
     approve,
+    judge_tier,
     relabel_if_mismatch,
     requires_human,
     validate_proposal,
@@ -1505,6 +1510,17 @@ def _real_outcome(m: MetricsSnapshot, campaign_id: str, creative_id: str | None)
     )
 
 
+def _campaign_meta_error(exc: MetaApiError, campaign_id: str) -> HTTPException:
+    """캠페인 detail 조회 시 Meta 오류를 HTTP로 변환 — 없는/잘못된 ID는 404(raw 500 방지)."""
+    if exc.code == 100:  # 객체 없음·접근불가(subcode 33 = does not exist)
+        return HTTPException(404, f"캠페인을 찾을 수 없습니다: {campaign_id}")
+    if exc.is_auth_error:
+        return HTTPException(401, "Meta 재연결이 필요합니다.")
+    if exc.is_rate_limited:
+        return HTTPException(429, "Meta 요청 한도 초과 — 잠시 후 다시 시도하세요.")
+    return HTTPException(502, "Meta API 오류")
+
+
 @router.get("/campaigns/{campaign_id}/outcome")
 async def get_campaign_outcome(
     campaign_id: str, creative_id: str | None = None, reader=Depends(_request_reader)
@@ -1514,28 +1530,40 @@ async def get_campaign_outcome(
     wiring 경유라 use_mock=False면 Meta 실측, True면 데모. creative_id는 집행한 크리에이티브
     귀속(생성→집행 경로가 stamp; 없으면 None).
     """
-    m = await reader.get_metrics(campaign_id, _today_utc())
+    try:
+        m = await reader.get_metrics(campaign_id, _today_utc())
+    except MetaApiError as exc:
+        raise _campaign_meta_error(exc, campaign_id) from exc
     return _real_outcome(m, campaign_id, creative_id).model_dump(mode="json")
 
 
 @router.get("/campaigns/{campaign_id}/platforms")
 async def get_campaign_platforms(campaign_id: str, reader=Depends(_request_reader)):
     """게재 플랫폼별(FB/IG 등) 노출·클릭·지출·도달 분해 (publisher_platform)."""
-    rows = await reader.get_platform_breakdown(campaign_id, _today_utc())
+    try:
+        rows = await reader.get_platform_breakdown(campaign_id, _today_utc())
+    except MetaApiError as exc:
+        raise _campaign_meta_error(exc, campaign_id) from exc
     return {"platforms": [r.model_dump(mode="json") for r in rows]}
 
 
 @router.get("/campaigns/{campaign_id}/demographics")
 async def get_campaign_demographics(campaign_id: str, reader=Depends(_request_reader)):
     """연령×성별(age,gender) 노출·클릭·지출·도달 분해."""
-    rows = await reader.get_demographic_breakdown(campaign_id, _today_utc())
+    try:
+        rows = await reader.get_demographic_breakdown(campaign_id, _today_utc())
+    except MetaApiError as exc:
+        raise _campaign_meta_error(exc, campaign_id) from exc
     return {"demographics": [r.model_dump(mode="json") for r in rows]}
 
 
 @router.get("/campaigns/{campaign_id}/creatives")
 async def get_campaign_creatives(campaign_id: str, reader=Depends(_request_reader)):
     """캠페인 대표 크리에이티브 — 광고 시안 이름·썸네일."""
-    rows = await reader.get_creatives(campaign_id)
+    try:
+        rows = await reader.get_creatives(campaign_id)
+    except MetaApiError as exc:
+        raise _campaign_meta_error(exc, campaign_id) from exc
     return {"creatives": [r.model_dump(mode="json") for r in rows]}
 
 
@@ -1900,9 +1928,10 @@ async def from_candidate(
     db: AsyncSession = Depends(get_db),
 ):
     """generator 후보 → CREATE_CAMPAIGN(traffic) 제안. 승인·집행은 /approve·/execute 재사용."""
+    org_id = await _require_org_id(user, db)
     client = build_generator_client(settings)
     try:
-        cand = await client.get_candidate(body.generation_id, body.candidate_id)
+        cand = await client.get_candidate(body.generation_id, body.candidate_id, org_id=str(org_id))
     except InvalidGenerationError as exc:
         raise HTTPException(status_code=exc.http_status, detail=exc.detail) from exc
     except GeneratorUnavailableError as exc:
@@ -1917,7 +1946,6 @@ async def from_candidate(
     except Exception as exc:  # noqa: BLE001 — S3 유실/손상은 입력 문제로 거부
         raise HTTPException(status_code=422, detail="후보 이미지를 읽을 수 없습니다.") from exc
 
-    org_id = await _require_org_id(user, db)
     writer = await _require_writer(db, org_id)
     image_hash = await _upload_creative_or_502(
         writer, _asset_config(name=body.name), image_bytes, "candidate.png"
@@ -2001,6 +2029,130 @@ async def from_candidate(
         )
     )
     return {"proposal": proposal.model_dump(mode="json")}
+
+
+class ReplaceCreativeRequest(BaseModel):
+    generation_id: str
+    candidate_id: str
+    link_url: HttpUrl
+
+
+@router.post("/campaigns/{campaign_id}/replace-creative-proposal")
+async def replace_creative_proposal(
+    campaign_id: str,
+    body: ReplaceCreativeRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """generator 후보 → REPLACE_CREATIVE 제안. adcreative 생성은 집행 시점(executor)에서.
+
+    소유권: 자기 캠페인만 교체(파괴적 차단) + 후보-org는 Task 0 X-Org-Id 스코프로 닫힘(타 org 404).
+    """
+    org_id = await _require_org_id(user, db)
+    await _require_owned_campaign(db, org_id, campaign_id)  # 캠페인 소유권(필수)
+
+    # B-1은 mock 계약 고정 — sending mode(validate/live)면 실 /adimages 호출이 되므로 차단(리뷰 ③).
+    if _is_sending_mode():
+        raise HTTPException(
+            status_code=501, detail="REPLACE_CREATIVE LIVE는 미지원(B-1 mock 범위)."
+        )
+
+    client = build_generator_client(settings)
+    try:
+        # org 전달 — generator가 내부 호출도 org 스코프(타 org 후보 누출 차단, 리뷰 ②).
+        cand = await client.get_candidate(body.generation_id, body.candidate_id, org_id=str(org_id))
+    except InvalidGenerationError as exc:
+        raise HTTPException(status_code=exc.http_status, detail=exc.detail) from exc
+    except GeneratorUnavailableError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    # 후보 copy 필수 검증(리뷰 P1-4) — body/headline 빈값이면 executor가 집행 시 실패하므로
+    # 승인 전에 422로 거부(승인까지 했는데 집행 실패하는 케이스 차단). executor와 같은 규칙.
+    if not (cand.copy.headline or "").strip() or not (cand.copy.body or "").strip():
+        raise HTTPException(
+            status_code=422, detail="후보 소재의 제목/본문이 비어 교체할 수 없습니다."
+        )
+
+    try:
+        image_bytes = await download_bytes(cand.s3_key)
+    except Exception as exc:  # noqa: BLE001 — S3 유실/손상은 입력 문제로 거부
+        raise HTTPException(status_code=422, detail="후보 이미지를 읽을 수 없습니다.") from exc
+
+    try:
+        # to_meta_jpeg가 디코드 전 validate_image_spec를 스스로 호출(중복 검증 제거, 코드리뷰 Q1).
+        jpeg = to_meta_jpeg(image_bytes)
+    except ImageSpecError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    ad_account = await _require_ad_account(db, org_id)
+    writer = await _require_writer(db, org_id)
+    # non-sending(mock)에서 upload_image는 실 /adimages 미호출(None 반환 가능).
+    # image_hash는 REPLACE 핵심이라 항상 채운다 — mock이면 합성 해시 폴백(executor가 필수 검사).
+    image_hash = (
+        await _upload_creative_or_502(
+            writer, _asset_config(name=cand.candidate_id), jpeg, "candidate.jpg"
+        )
+        or f"mockhash_{cand.candidate_id}"
+    )
+
+    reader = await _require_reader(db, org_id)
+    raw = await reader.get_creatives(campaign_id)  # 영향 광고(현재 썸네일/이름)
+    # ad_id 기준 중복 제거(첫 등장 유지) — affected_ad_ids와 preview를 같은 목록에서 만들어
+    # affected_ad_count == len(affected_ad_ids) == len(preview.affected_ads)를 보장(리뷰 P2-dedup).
+    seen: set[str] = set()
+    affected = [c for c in raw if c.ad_id and not (c.ad_id in seen or seen.add(c.ad_id))]
+    affected_ad_ids = [c.ad_id for c in affected]
+    if not affected_ad_ids:
+        raise HTTPException(status_code=409, detail="교체할 광고가 없습니다(캠페인에 ad 없음).")
+
+    now = datetime.now(UTC)
+    proposal = finalize_proposal(
+        ActionProposal(
+            proposal_id=f"prop_{uuid4().hex[:8]}",
+            tenant_id=str(org_id),
+            ad_account_id=ad_account,
+            # 캠페인(멱등 키 정체성) — fan-out 대상은 결속된 affected_ad_ids
+            target_object_ids=(campaign_id,),
+            action_type="REPLACE_CREATIVE",
+            action_tier=ActionTier.TIER_3,
+            evidence_metrics={
+                "image_hash": image_hash,
+                "headline": cand.copy.headline,
+                "body": cand.copy.body,
+                "link_url": str(body.link_url),
+                "generation_id": body.generation_id,
+                "candidate_id": cand.candidate_id,
+                # 결속(리뷰 ①④) — proposal_hash가 덮음 → 프리뷰=집행 대상 일치·감사 가능.
+                "affected_ad_ids": affected_ad_ids,
+                "affected_ad_count": len(affected_ad_ids),
+                "candidate_summary": {
+                    "headline": cand.copy.headline,
+                    "body": cand.copy.body,  # 감사 가독성(리뷰 ③) — 무엇으로 바꿨는지 한눈에
+                    "s3_key": cand.s3_key,
+                },
+            },
+            metrics_as_of=now,
+            hypothesis="후보 기반 소재 교체",
+            confidence=1.0,
+            expected_state_version="state_v1",
+            budget_before_krw=0,
+            budget_after_krw=0,
+            max_total_spend_krw=0,
+            expires_at=now + timedelta(minutes=PROPOSAL_TTL_MINUTES),
+            approval_policy_version=APPROVAL_POLICY_VERSION,
+        )
+    )
+    return {
+        "proposal": proposal.model_dump(mode="json"),
+        "preview": {
+            "candidate": {
+                "headline": cand.copy.headline,
+                "body": cand.copy.body,
+                "s3_key": cand.s3_key,
+            },
+            "affected_ads": [a.model_dump(mode="json") for a in affected],
+        },
+    }
 
 
 # 우리 S3 영속 네임스페이스 — 이 prefix 키만 핸드오프 집행 허용(임시·외부는 차단).
@@ -2627,6 +2779,184 @@ async def pause_campaign(
         if msg:
             resp["error_message"] = str(msg)
     return resp
+
+
+_MIN_DAILY_BUDGET_KRW = 1_521
+_MAX_DAILY_BUDGET_KRW = 100_000_000
+
+
+async def _current_daily_budget(reader: AdPlatformReader, campaign_id: str) -> int:
+    """현재 일예산 정본 — /campaigns와 동일 소스(리더 목록)에서 조회(없으면 0=진입 전 거부)."""
+    if getattr(settings, "use_mock", True):
+        demo = next(
+            (
+                budget
+                for cid, _name, _state, budget, _fault in _CAMPAIGNS_DEMO
+                if cid == campaign_id
+            ),
+            0,
+        )
+        return int(demo)
+    campaigns = await reader.list_campaigns(include_archived=True)
+    info = next((c for c in campaigns if c.campaign_id == campaign_id), None)
+    return int(info.daily_budget_krw) if info and info.daily_budget_krw else 0
+
+
+def _build_budget_proposal(
+    *,
+    tenant_id: str,
+    ad_account_id: str,
+    campaign_id: str,
+    action_type: str,
+    budget_before_krw: int,
+    new_daily_budget_krw: int,
+    run_days: int = 7,
+) -> ActionProposal:
+    """Build a finalized budget proposal after endpoint validation."""
+    now = datetime.now(UTC)
+    return finalize_proposal(
+        ActionProposal(
+            proposal_id=f"prop_{uuid4().hex[:8]}",
+            tenant_id=tenant_id,
+            ad_account_id=ad_account_id,
+            target_object_ids=(campaign_id,),
+            action_type=action_type,
+            action_tier=judge_tier(action_type),
+            evidence_metrics={"source": "chat", "name": campaign_id},
+            metrics_as_of=now,
+            hypothesis="사용자 예산 변경 요청",
+            confidence=1.0,
+            expected_state_version="state_v1",
+            budget_before_krw=budget_before_krw,
+            budget_after_krw=new_daily_budget_krw,
+            max_total_spend_krw=max(0, new_daily_budget_krw - budget_before_krw) * run_days,
+            expires_at=now + timedelta(minutes=PROPOSAL_TTL_MINUTES),
+            approval_policy_version=APPROVAL_POLICY_VERSION,
+        )
+    )
+
+
+class BudgetProposalRequest(BaseModel):
+    action: Literal["increase_budget", "decrease_budget"]
+    new_daily_budget_krw: int
+    shown_budget_before_krw: int | None = None
+
+
+async def _validate_budget_change(
+    reader: AdPlatformReader,
+    campaign_id: str,
+    body: BudgetProposalRequest,
+    *,
+    reject_shown_drift: bool = False,
+) -> tuple[int, str]:
+    """현재값(서버 정본)으로 방향·no-op·범위를 검증하고 (현재값, 정본 action_type)을 반환.
+
+    before<=0(현재값 불명)→409, 표시값 drift(커밋)→409, 범위 밖→422, no-op→409,
+    선언 방향≠목표 방향→409. 호출부는 executor 선택보다 먼저 이 검증을 통과해야 한다.
+    """
+    before = await _current_daily_budget(reader, campaign_id)
+    new = body.new_daily_budget_krw
+    if before <= 0:
+        raise HTTPException(409, "현재 일예산을 확인할 수 없어 예산 변경을 진행할 수 없어요.")
+    if (
+        reject_shown_drift
+        and body.shown_budget_before_krw is not None
+        and body.shown_budget_before_krw != before
+    ):
+        raise HTTPException(
+            409,
+            f"현재 예산이 {before:,}원으로 바뀌었어요. 다시 검토한 뒤 집행해 주세요.",
+        )
+    if new < _MIN_DAILY_BUDGET_KRW or new > _MAX_DAILY_BUDGET_KRW:
+        raise HTTPException(
+            422,
+            f"일예산은 {_MIN_DAILY_BUDGET_KRW:,}~{_MAX_DAILY_BUDGET_KRW:,}원 사이여야 해요.",
+        )
+    if new == before:
+        raise HTTPException(409, "현재 예산과 같아 변경할 게 없어요.")
+    declared = "INCREASE_BUDGET" if body.action == "increase_budget" else "DECREASE_BUDGET"
+    actual = "INCREASE_BUDGET" if new > before else "DECREASE_BUDGET"
+    if declared != actual:
+        raise HTTPException(
+            409,
+            f"요청({body.action})과 목표가 안 맞아요. 현재 {before:,}원, 목표 {new:,}원.",
+        )
+    return before, declared
+
+
+@router.post("/campaigns/{campaign_id}/budget-proposal")
+async def budget_proposal(
+    campaign_id: str,
+    body: BudgetProposalRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Build a display-only budget proposal."""
+    org_id = await _require_org_id(user, db)
+    await _require_owned_campaign(db, org_id, campaign_id)
+    ad_account = await _require_ad_account(db, org_id)
+    reader = await _require_reader(db, org_id)
+    before, declared = await _validate_budget_change(reader, campaign_id, body)
+    new = body.new_daily_budget_krw
+    proposal = _build_budget_proposal(
+        tenant_id=str(org_id),
+        ad_account_id=ad_account,
+        campaign_id=campaign_id,
+        action_type=declared,
+        budget_before_krw=before,
+        new_daily_budget_krw=new,
+    )
+    drift = body.shown_budget_before_krw is not None and body.shown_budget_before_krw != before
+    return {
+        "proposal": proposal.model_dump(mode="json"),
+        "budget_before_krw": before,
+        "drift": drift,
+    }
+
+
+@router.post("/campaigns/{campaign_id}/budget-commit")
+async def budget_commit(
+    campaign_id: str,
+    body: BudgetProposalRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Validate, approve, and execute a budget change from live state."""
+    org_id = await _require_org_id(user, db)
+    await _require_owned_campaign(db, org_id, campaign_id)
+    reader = await _require_reader(db, org_id)
+    before, declared = await _validate_budget_change(
+        reader, campaign_id, body, reject_shown_drift=True
+    )
+    new = body.new_daily_budget_krw
+    ad_account = await _require_ad_account(db, org_id)
+    proposal = _build_budget_proposal(
+        tenant_id=str(org_id),
+        ad_account_id=ad_account,
+        campaign_id=campaign_id,
+        action_type=declared,
+        budget_before_krw=before,
+        new_daily_budget_krw=new,
+    )
+    action = approve(proposal, str(user.id), execution_mode=_resolved_execution_mode())
+    is_demo = proposal.tenant_id == TENANT_ID
+    executor = (
+        _get_executor()
+        if is_demo or getattr(settings, "use_mock", True)
+        else _get_executor(await _require_writer(db, org_id))
+    )
+    result = await executor.execute(action, proposal)
+    response: dict[str, object] = {
+        "result": result.model_dump(mode="json"),
+        "budget_before_krw": before,
+        "budget_after_krw": new,
+    }
+    status = result.status.value if hasattr(result.status, "value") else str(result.status)
+    if status != "success":
+        msg = _find_in_snapshot(result.platform_response_snapshot, "user_msg")
+        if msg:
+            response["error_message"] = str(msg)
+    return response
 
 
 @router.get("/campaigns/{campaign_id}/leads")

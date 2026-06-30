@@ -38,7 +38,7 @@ _URL = "/api/management/campaign-proposals/from-candidate"
 def _client(monkeypatch):
     from domain.management.adapters.generator.client import GeneratorReadClient, HandoffCandidate
 
-    async def fake_get_candidate(self, gen_id, cand_id):
+    async def fake_get_candidate(self, gen_id, cand_id, org_id=None):
         return HandoffCandidate.model_validate(_CAND)
 
     async def fake_download(key):

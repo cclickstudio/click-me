@@ -39,7 +39,7 @@ from domain.management.execution.state_machine import ExecutionRun, RunStatus
 from domain.management.execution.tier import BudgetAuthority, BudgetDecision
 
 #: v1 executor가 실행 가능한 action_type — 어휘 정본은 contracts/policy.py TIER_POLICY (P1)
-#: REPLACE_CREATIVE는 Port.replace_creative로 실행(재생성 루프 닫기) — selected_candidate_id 참조.
+#: REPLACE_CREATIVE는 replace_creative_tree로 실행 — 소재 필드 + 결속 affected_ad_ids 기반 fan-out.
 #: 그 밖의 미등록 action_type은 Writer 도달 전 UNSUPPORTED_ACTION으로 차단.
 SUPPORTED_ACTION_TYPES: Final[tuple[str, ...]] = (
     "PAUSE_CAMPAIGN",
@@ -270,6 +270,23 @@ class Executor:
             return FailureReason.INVALID_TIER, "Tier 2 자동 실행은 v1 비활성"
         if action.action_tier is ActionTier.TIER_3 and action.approver_id == AUTO_APPROVER:
             return FailureReason.UNAPPROVED_ACTION, "Tier 3은 건별 사용자 승인 필수 (게이트 #4)"
+        # 레거시 REPLACE(selected_candidate_id·campaign target)는 Meta ad/creative 모델과 안 맞아
+        # 실 모드(validate/live)에서 캠페인 id를 ad로 보내 승인 후 Meta에서 깨진다(codex 리뷰 high).
+        # → mock 데모는 허용하되 실 모드는 승인 전 fail-fast 거부(신규 affected_ad_ids 계약 필요).
+        em = proposal.evidence_metrics
+        legacy_replace = (
+            proposal.action_type == "REPLACE_CREATIVE"
+            and "affected_ad_ids" not in em
+            and "selected_candidate_id" in em
+        )
+        if legacy_replace and action.execution_mode in (
+            ExecutionMode.VALIDATE_ONLY,
+            ExecutionMode.LIVE,
+        ):
+            return (
+                FailureReason.UNSUPPORTED_ACTION,
+                "레거시 selected_candidate_id REPLACE는 mock 전용(실 모드는 신규 계약 필요)",
+            )
         return None
 
     # ── 7)단계 Writer 호출 ───────────────────────────────────────
@@ -385,11 +402,43 @@ class Executor:
         if proposal.action_type in ("DECREASE_BUDGET", "INCREASE_BUDGET"):
             return await self._writer.adjust_budget(target, proposal.budget_after_krw, idem_key)
         if proposal.action_type == "REPLACE_CREATIVE":
-            creative_id = proposal.evidence_metrics.get("selected_candidate_id")
-            if not creative_id:
-                # 재생성 패키징이 항상 채우는 값 — 없으면 변조·계약 위반 (_validate 통과분 방어)
-                raise ValueError("REPLACE_CREATIVE 제안에 selected_candidate_id 없음")
-            return await self._writer.replace_creative(target, str(creative_id), idem_key)
+            em = proposal.evidence_metrics
+            # 경로 판별(코드리뷰 #5) — 신규 명시-후보 계약은 affected_ad_ids로 식별(엔드포인트가
+            # 항상 결속). 없고 selected_candidate_id만 있으면 레거시 재생성 단건 교체.
+            # image_hash 유무에 결합하지 않아, 레거시가 image_hash를 실어도 안전.
+            if "affected_ad_ids" not in em and "selected_candidate_id" in em:
+                creative_id = em.get("selected_candidate_id")
+                if not creative_id:
+                    raise ValueError("REPLACE_CREATIVE 제안에 selected_candidate_id 없음")
+                return await self._writer.replace_creative(target, str(creative_id), idem_key)
+            image_hash = em.get("image_hash")
+            headline = em.get("headline")
+            body = em.get("body")
+            link_url = em.get("link_url")
+            ad_ids = em.get("affected_ad_ids")
+            # 빌드 단계가 항상 채우는 필드 — 없으면 계약 위반(_validate 통과분 방어).
+            # image_hash 필수(텍스트-only 불허). 결속된 광고로만 fan-out → 프리뷰=집행 대상 결속.
+            if not image_hash or not headline or not body or not link_url:
+                raise ValueError(
+                    "REPLACE_CREATIVE 제안 소재 필드 누락(image_hash/headline/body/link_url)"
+                )
+            # 타입 방어(리뷰 P2-a) — 문자열이 들어오면 글자 단위 fan-out되므로 명시 검증.
+            if (
+                not isinstance(ad_ids, (list, tuple))
+                or not ad_ids
+                or not all(isinstance(a, str) and a for a in ad_ids)
+            ):
+                raise ValueError("affected_ad_ids는 비어있지 않은 문자열 리스트여야 함")
+            return await self._writer.replace_creative_tree(
+                target,  # 캠페인 id(멱등 키 정체성) — fan-out 대상은 결속된 ad_ids
+                ad_ids=[str(a) for a in ad_ids],
+                ad_account_id=proposal.ad_account_id,
+                image_hash=str(image_hash),
+                headline=str(headline),
+                body=str(body),
+                link_url=str(link_url),
+                idem_key=idem_key,
+            )
         if proposal.action_type == "CREATE_CAMPAIGN":
             # 옵션 A — 신규 캠페인은 대상 id가 없어 config를 evidence_metrics로 받는다.
             raw = proposal.evidence_metrics.get("campaign_config")
