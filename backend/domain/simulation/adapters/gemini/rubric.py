@@ -52,7 +52,9 @@ class GeminiRubricEvaluator:
             '형식: {"category_alignment": {"score": int, "note": "근거"}, ...} '
             "(주어진 차원만 출력)"
         )
-        data = await _agen_json(self._client, self._model, prompt)
+        data = await _agen_json(
+            self._client, self._model, prompt, langsmith_extra={"name": "simulation.rubric"}
+        )
         scores: list[RubricScore] = []
         for dim, dec, det in pairs:
             item = data.get(dim) or {}

@@ -23,7 +23,7 @@ AI 기반 광고 성과 예측 플랫폼. 가상 소비자(페르소나)에게 �
 
 ```bash
 # 백엔드
-cd backend && uv run uvicorn api.main:app --reload --port 8000
+cd backend && uv run dev.py
 
 # 프론트엔드
 cd frontend && pnpm dev

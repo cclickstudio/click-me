@@ -1,8 +1,16 @@
 import asyncio
 import logging
 import os
-from contextlib import asynccontextmanager
+import sys
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
+
+# Windows 콘솔(cp949 등) 코드페이지에서 한글·em-dash 같은 비ASCII print가
+# UnicodeEncodeError로 백그라운드 태스크를 죽이지 않도록 표준 출력을 UTF-8로 고정한다.
+# (서버 로그 인코딩은 OS 콘솔 코드페이지와 무관해야 함. pytest 캡처 등 reconfigure 불가 환경은 무시)
+for _stream in (sys.stdout, sys.stderr):
+    with suppress(AttributeError, ValueError):
+        _stream.reconfigure(encoding="utf-8", errors="replace")
 
 from dotenv import load_dotenv
 
@@ -11,7 +19,23 @@ _BACKEND_ROOT = Path(__file__).resolve().parent.parent
 _ROOT_ENV = _BACKEND_ROOT.parent / ".env"
 load_dotenv(_ROOT_ENV if _ROOT_ENV.exists() else _BACKEND_ROOT / ".env")
 
+# langsmith ↔ langchain_core 순환 import(tracers.context) 선해소.
+# 시뮬/제너는 asyncio.gather로 트레이싱된 LLM 호출을 동시 실행하는데, 이때
+# langchain_core.tracers.context를 여러 코루틴이 첫 import하면 부분 초기화 모듈을
+# 관측해 "No module named 'langchain_core.tracers.context'"가 발생한다.
+# 서버 시작 시 단일 스레드에서 미리 완전 import 해 race를 제거한다.
+import langchain_core.tracers.context  # noqa: E402,F401
+import langchain_core.tracers.langchain  # noqa: E402,F401
+
+# Windows 한정: 챗 오케스트레이터 체크포인터(langgraph AsyncPostgresSaver→psycopg async)는
+# 기본 ProactorEventLoop에서 InterfaceError를 내고, AsyncConnectionPool이 이를 재시도하다
+# 30초 PoolTimeout으로 가린다. SelectorEventLoop를 강제해 회피(배포 타깃 Linux EC2는 무영향).
+# 백엔드에 asyncio subprocess 사용처가 없어 selector 정책의 subprocess 비활성화 영향도 없음.
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
 from fastapi import FastAPI, Request
+from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -78,14 +102,22 @@ async def lifespan(app: FastAPI):
     from domain.management.scheduler import start_scheduler  # noqa: PLC0415
 
     start_scheduler(settings)
-    # KB 인제스터 — 비차단 백그라운드 태스크(서버 시작 안 막음). 키 없으면 graceful 스킵.
-    try:
-        from domain.management.assistant.kb_ingest import ingest  # noqa: PLC0415
 
-        asyncio.create_task(ingest())
-    except Exception as e:  # noqa: BLE001
-        logger.warning("[startup] KB ingest 스킵: %s", e)
+    # KB 인제스터 — 비차단 백그라운드 태스크(서버 시작 안 막음). 키 없으면 graceful 스킵.
+    async def _run_kb_ingest() -> None:
+        # fire-and-forget 태스크라 런타임 예외를 여기서 잡아 로깅한다.
+        # (안 잡으면 "Task exception was never retrieved"로 조용히 사라져 KB가 미적재됨)
+        try:
+            from domain.management.assistant.kb_ingest import ingest  # noqa: PLC0415
+
+            await ingest()
+        except Exception:
+            logger.exception("[startup] KB ingest 실패")
+
+    asyncio.create_task(_run_kb_ingest())
     yield
+    # shutdown — 챗 오케스트레이터 체크포인터(psycopg) 풀 정리(누수 방지, 미생성이면 no-op)
+    await chat.close_orchestrator()
     await close_pg_checkpointer()
 
 
@@ -105,7 +137,10 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         request.url.path,
         exc.errors(),
     )
-    return JSONResponse(status_code=422, content={"detail": exc.errors()})
+    # exc.errors()에는 model_validator가 던진 ValueError 등 직렬화 불가 객체가 ctx에 섞일 수 있다.
+    # jsonable_encoder 없이 그대로 넘기면 JSONResponse 인코딩이 깨져
+    # CORS 헤더 없는 빈 응답이 나가고 프론트는 "Failed to fetch"만 본다.
+    return JSONResponse(status_code=422, content={"detail": jsonable_encoder(exc.errors())})
 
 
 app.add_middleware(
@@ -138,6 +173,7 @@ app.include_router(billing.router, prefix="/api/billing", tags=["billing"])
 app.include_router(management.router, prefix="/api/management", tags=["management"])
 app.include_router(generator.router, prefix="/api/generator", tags=["generator"])
 app.include_router(debate.router, prefix="/api/debate", tags=["debate"])
+app.include_router(chat.assistant_router, prefix="/api/assistant", tags=["assistant"])
 
 
 @app.get("/health")

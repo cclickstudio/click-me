@@ -11,6 +11,7 @@ create_campaign(신규 캠페인 생성)은 PAUSED 상태 객체 생성까지 �
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 from datetime import UTC, datetime, timedelta
@@ -44,6 +45,11 @@ _ADSET_OPTIMIZATION = {"traffic": "LINK_CLICKS", "leads": "LEAD_GENERATION"}
 _PRIVACY_POLICY_URL = "https://clickme.co.kr/privacy"
 
 _CTA_BY_OBJECTIVE = {"traffic": "LEARN_MORE", "leads": "SIGN_UP"}
+
+
+def synthetic_creative_id(idem_key: str) -> str:
+    """dry/mock·validate 폴백용 결정적 creative id — full-key sha256(충돌 회피, P1-b)."""
+    return f"mockcreative_{hashlib.sha256(idem_key.encode()).hexdigest()[:16]}"
 
 
 def _build_link_creative(config, *, page_id: str, image_hash: str | None) -> dict:
@@ -120,20 +126,139 @@ class MetaAdsWriter:
             amount_krw=amount_krw,
         )
 
-    async def replace_creative(
-        self, campaign_id: str, creative_id: str, idem_key: str
-    ) -> ActionResult:
-        """재생성 agent(🅱)가 고른 selected_candidate_id를 게재에 반영.
+    async def replace_creative(self, ad_id: str, creative_id: str, idem_key: str) -> ActionResult:
+        """광고(ad) 단위 creative 교체 — POST /{ad_id}{creative:{creative_id}} (B-0 Q0b.2 확정).
 
-        실 Meta에선 Ad 객체의 creative 갱신 — v1은 대상에 creative 참조를 거는 수준.
+        호출 주체는 executor 단일 경로 또는 replace_creative_tree(캠페인 fan-out).
         """
         self._require_writable(idem_key)
         return await self._dispatch(
             "replace_creative",
-            campaign_id,
+            ad_id,
             idem_key,
             {"creative": {"creative_id": creative_id}},
             creative_id=creative_id,
+        )
+
+    async def create_ad_creative(
+        self,
+        ad_account_id: str,
+        *,
+        image_hash: str | None,
+        headline: str,
+        body: str,
+        link_url: str,
+        idem_key: str,
+    ) -> str:
+        """소재(이미지+카피)로 독립 adcreative 생성 → creative_id. 승인 후 집행 시점에만 호출.
+
+        mock/dry는 합성 id 반환(Meta 미호출). LIVE/validate는 /act_{id}/adcreatives POST.
+        ⚠ VALIDATE_ONLY는 execution_options=['validate_only']로 실생성 안 함(리뷰 P1-1).
+        ⚠ LIVE는 Meta 앱 Live 모드 전제(B-0 Q0.4 — 개발모드면 code100/subcode1885183).
+        """
+        self._require_writable(idem_key)
+        # dry/mock 먼저 — Meta 설정(page_id/account) 없이도 동작(리뷰 P2-4). 합성 id는 멱등 digest.
+        if self._mode not in _SENDING_MODES or self._client is None:
+            return synthetic_creative_id(idem_key)
+        spec = {
+            "page_id": self._page_id,
+            "link_data": {
+                "message": body or headline or "지금 확인하세요",
+                "name": headline,
+                "link": link_url,
+                "call_to_action": {"type": "LEARN_MORE"},
+                **({"image_hash": image_hash} if image_hash else {}),
+            },
+        }
+        account = normalize_ad_account(ad_account_id)
+        resp = await self._client.post(
+            f"{account}/adcreatives",
+            {"name": f"clickme-creative-{idem_key[:8]}", "object_story_spec": json.dumps(spec)},
+            validate_only=self._mode is ExecutionMode.VALIDATE_ONLY,  # 실생성 차단(P1-1)
+        )
+        cid = resp.get("id") if isinstance(resp, dict) else None
+        if not cid:
+            # VALIDATE_ONLY는 id가 없을 수 있음 — 합성 id로 폴백(검증만 통과).
+            return synthetic_creative_id(idem_key)
+        return str(cid)
+
+    async def replace_creative_tree(
+        self,
+        campaign_id: str,
+        *,
+        ad_ids: list[str],
+        ad_account_id: str,
+        image_hash: str | None,
+        headline: str,
+        body: str,
+        link_url: str,
+        idem_key: str,
+    ) -> ActionResult:
+        """adcreative 1회 생성 → **결속된 ad_ids** 각각에 fan-out 교체.
+
+        고아 방지 — 승인 후 집행 시점에만 호출되므로 취소/만료 건은 creative를 만들지 않는다.
+        ad_ids는 빌드 시점 get_creatives로 해상돼 evidence_metrics에 결속된 목록(proposal_hash)
+        → 재해상 divergence 없음(집행 시점 _child_ids 재조회 안 함). dry/mock도 fan-out 실행.
+        (실세계 라이브 드리프트 차단 아님 — LIVE 집행 시점 ad campaign/org 재검증은 후속; spec §9.)
+        """
+        self._require_writable(idem_key)
+        # ad_ids 선검증(리뷰 P1-2·P1-1) — creative 생성 前에 막는다(빈 리스트로 고아 방지).
+        # ⚠ str은 list/tuple이 아니므로 isinstance 체크가 문자열 글자 단위 순회를 차단(P1-1).
+        if (
+            not isinstance(ad_ids, (list, tuple))
+            or not ad_ids
+            or not all(isinstance(a, str) and a for a in ad_ids)
+        ):
+            raise ValueError("replace_creative_tree: ad_ids는 비어있지 않은 문자열 리스트여야 함")
+        creative_id = await self.create_ad_creative(
+            ad_account_id,
+            image_hash=image_hash,
+            headline=headline,
+            body=body,
+            link_url=link_url,
+            idem_key=f"{idem_key}-creative",
+        )
+        # VALIDATE_ONLY인데 create가 실 id 없이 합성 id를 돌려줬다(creative 미영속): 그 합성 id로는
+        # 각 ad 교체를 실제로 검증할 수 없다(타깃 ad·권한·소재 호환성 미검증). 성공으로 보고하면
+        # false-green preflight → 실 fan-out 첫 시도에서 부분 실패(codex 리뷰 medium). → 명시적
+        # 미검증 실패로 반환한다(success 아님). 실 검증은 LIVE 앱 모드 + 실 creative 후.
+        if self._mode is ExecutionMode.VALIDATE_ONLY and creative_id.startswith("mockcreative_"):
+            return self._failure(
+                "replace_creative",
+                campaign_id,
+                idem_key,
+                FailureReason.PLATFORM_ERROR,
+                creative_id=creative_id,
+                ad_count=len(ad_ids),
+                validate_note="creative 미영속 — fan-out 미검증(validate_only)",
+            )
+        succeeded: list[str] = []
+        for i, ad_id in enumerate(ad_ids):
+            r = await self.replace_creative(ad_id, creative_id, f"{idem_key}-ad-{i}")
+            if r.status is not ResultStatus.SUCCESS:
+                # 부분 교체(리뷰 P1-c) — 이미 성공한 ad를 결과에 남긴다. 같은 creative_id 재적용은
+                # 멱등이라 재시도가 안전(이미 바뀐 ad는 동일 값으로 재설정·실질 no-op).
+                snap = {
+                    **(r.platform_response_snapshot or {}),
+                    "succeeded_ad_ids": succeeded,
+                    "failed_ad_id": ad_id,
+                    "creative_id": creative_id,
+                }
+                # 일부 ad가 바뀐 뒤 실패면 PARTIAL_FAILURE(코드리뷰 #1) — executor가 결과를
+                # 박제하고 멱등키를 안 푼다. 첫 ad부터 실패면 부작용 0이라 원래 사유 유지.
+                failure_reason = FailureReason.PARTIAL_FAILURE if succeeded else r.failure_reason
+                return r.model_copy(
+                    update={"failure_reason": failure_reason, "platform_response_snapshot": snap}
+                )
+            succeeded.append(ad_id)
+        return self._result(
+            "replace_creative",
+            campaign_id,
+            idem_key,
+            dry_run=self._mode not in _SENDING_MODES,
+            creative_id=creative_id,
+            ad_count=len(ad_ids),
+            succeeded_ad_ids=succeeded,
         )
 
     async def create_campaign(self, config: CampaignConfig, idem_key: str) -> ActionResult:

@@ -85,6 +85,7 @@ class Simulation(SimBase):
     started_at: Mapped[datetime | None] = mapped_column(DateTime)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime)  # soft delete (실 DB 정합)
 
 
 class PersonaReaction(SimBase):

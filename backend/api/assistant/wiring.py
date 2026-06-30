@@ -29,12 +29,15 @@ async def _try_kb_advise(req: SubagentRequest, settings, llm) -> SubagentResult 
     cosine_score max ≥ 0.35일 때만 LLM 호출(비용↓·환각↓). top-1이 keyword-only(cosine=None)여도
     false negative 안 나게 max로 판정. 인용 마커 누락/범위밖이면 안전 문구로 강등(날조 방지).
     """
+    from domain.management.assistant.embeddings import (  # noqa: PLC0415
+        build_embedding_provider,
+    )
     from domain.management.assistant.retriever import (  # noqa: PLC0415
         ADVISE_SOURCE_TYPES,
         KbRetriever,
     )
 
-    retriever = KbRetriever(api_key=getattr(settings, "openai_api_key", None))
+    retriever = KbRetriever(embedder=build_embedding_provider(settings))
     try:
         hits = await retriever.search(req.last_user_text, k=4, source_types=ADVISE_SOURCE_TYPES)
     except Exception:  # noqa: BLE001 — KB 미적재/검색 실패면 CLIO 폴백
@@ -145,12 +148,109 @@ def _build_management_handler(settings) -> Handler:
     return handle
 
 
+def _build_generator_handler(settings) -> Handler:
+    """우리 generator 어시스턴트를 공통 계약으로 어댑트(AssistantRequest/Result → SubagentResult).
+
+    실제 시안 생성(이미지)은 트리거하지 않고 조회·전략·카피 조언만 답한다(ANSWER). 실제 실행은
+    채팅 위젯(gen_form) 경로가 담당하므로 Deep Agent 도구는 '무엇을 만들지' 판단·합성만 한다.
+    """
+    from core.assistant import AssistantRequest  # noqa: PLC0415
+    from domain.generator.assistant.agent import build_generator_agent  # noqa: PLC0415
+
+    ask = build_generator_agent(settings)
+
+    async def handle(req: SubagentRequest) -> SubagentResult:
+        res = await ask(
+            AssistantRequest(
+                question=req.last_user_text,
+                context_id=req.context_ad_id,
+                project_id=req.project_id,
+                history=[(m.role, m.content) for m in req.messages[:-1]],
+            )
+        )
+        return SubagentResult(
+            action=Action.ANSWER,
+            message=res.answer,
+            meta={
+                "source": "generator",
+                "label": "생성 어시스턴트",
+                "engine": "OpenAI · 결과+KB",
+                "citations": [
+                    {"kind": c.kind, "source": c.source, "title": c.title} for c in res.citations
+                ],
+                "used_tools": list(res.used_tools),
+            },
+        )
+
+    return handle
+
+
+def _build_simulation_handler(settings) -> Handler:
+    """우리 simulation 어시스턴트를 공통 계약으로 어댑트(AssistantRequest/Result → SubagentResult).
+
+    집행 전 시뮬 결과·KPI(클릭 의향률·구매의도·신뢰도·거부율) 조회·해석만 답한다(ANSWER).
+    실제 시뮬 실행은 트리거하지 않는다 — 채팅 위젯(sim_form) 경로가 담당하므로 Deep Agent 도구는
+    '무엇을·어떻게 해석할지'만 판단·합성한다. 새 시뮬 실행은 run_simulation 신호 도구가 폼을 띄운다.
+    """
+    from core.assistant import AssistantRequest  # noqa: PLC0415
+    from domain.simulation.assistant.agent import build_simulation_agent  # noqa: PLC0415
+
+    ask = build_simulation_agent(settings)
+
+    async def handle(req: SubagentRequest) -> SubagentResult:
+        res = await ask(
+            AssistantRequest(
+                question=req.last_user_text,
+                context_id=req.context_ad_id,
+                project_id=req.project_id,
+                history=[(m.role, m.content) for m in req.messages[:-1]],
+            )
+        )
+        return SubagentResult(
+            action=Action.ANSWER,
+            message=res.answer,
+            meta={
+                "source": "simulation",
+                "label": "시뮬레이션 어시스턴트",
+                "engine": "OpenAI · 결과+KB",
+                "citations": [
+                    {"kind": c.kind, "source": c.source, "title": c.title} for c in res.citations
+                ],
+                "used_tools": list(res.used_tools),
+            },
+        )
+
+    return handle
+
+
+def build_chat_deep_runner(settings):
+    """채팅 오케스트레이터(domain/chat)에 주입할 Deep Agent 도구루프 실행기.
+
+    의도 분류는 호출자(채팅 오케스트레이터)가 이미 했으므로 여기선 순수 도구루프만 빌드한다.
+    management(ours, 장기기억 memory_context 지원) + generator(조언) 핸들러를 도구로 등록하고
+    run(SubagentRequest) → SubagentResult 를 반환. 키 없으면 None(호출자가 advise 폴백).
+    """
+    from api.assistant.deep_agent import build_deep_agent_graph  # noqa: PLC0415
+    from domain.management.assistant.memory_store import build_memory_store  # noqa: PLC0415
+    from domain.management.wiring import build_checkpointer  # noqa: PLC0415
+
+    llm = _build_classifier_llm(settings)
+    if llm is None:
+        return None
+    return build_deep_agent_graph(
+        llm,
+        _build_management_handler(settings),
+        _build_generator_handler(settings),
+        _build_simulation_handler(settings),
+        checkpointer=build_checkpointer(settings),
+        memory=build_memory_store(settings),  # Memory 기둥 — remember/recall 도구
+    )
+
+
 def build_assistant(settings) -> Orchestrator:
     """레지스트리 + 오케스트레이터 조립. generate/manage 등록, advise는 폴백(미등록)."""
-    from domain.generator.chat import build_generation_chat_agent  # noqa: PLC0415
-
     registry = SubagentRegistry()
-    registry.register(Intent.GENERATE, build_generation_chat_agent(settings))
+    registry.register(Intent.GENERATE, _build_generator_handler(settings))
     registry.register(Intent.MANAGE, _build_management_handler(settings))
     return Orchestrator(registry, classifier_llm=_build_classifier_llm(settings))
 
@@ -163,17 +263,23 @@ def build_deep_agent(settings):
     """
     from api.assistant.deep_agent import build_deep_agent_graph  # noqa: PLC0415
     from api.assistant.intent import classify_intent  # noqa: PLC0415
-    from domain.generator.chat import build_generation_chat_agent  # noqa: PLC0415
+    from domain.management.assistant.memory_store import build_memory_store  # noqa: PLC0415
     from domain.management.wiring import build_checkpointer  # noqa: PLC0415
 
     management_handler = _build_management_handler(settings)
-    generator_handler = build_generation_chat_agent(settings)
+    generator_handler = _build_generator_handler(settings)
+    simulation_handler = _build_simulation_handler(settings)
     llm = _build_classifier_llm(settings)
 
     # PG 싱글턴(get_pg_checkpointer) 주입 — management 그래프와 동일 체크포인터 공유(단일화).
     # main.py lifespan에서 init 완료된 싱글턴을 build_checkpointer가 반환(없으면 MemorySaver).
     deep_run = build_deep_agent_graph(
-        llm, management_handler, generator_handler, checkpointer=build_checkpointer(settings)
+        llm,
+        management_handler,
+        generator_handler,
+        simulation_handler,
+        checkpointer=build_checkpointer(settings),
+        memory=build_memory_store(settings),  # Memory 기둥 — remember/recall 도구
     )
 
     async def run(req: SubagentRequest) -> SubagentResult | None:

@@ -16,6 +16,13 @@ export type CampaignFormValues = {
   gender: 'all' | 'male' | 'female';
 };
 
+// 챗 prefill 초기값 — 폼이 외부에서 받을 수 있는 일부 필드(나머지는 폼 기본값 유지).
+export type CampaignPrefill = {
+  name?: string;
+  objective?: 'traffic' | 'leads';
+  total_budget_krw?: number; // 간편 모드 총 예산(원)
+};
+
 // 특별 광고 카테고리 — 라벨은 백엔드 정책(/campaign-policy)에서 받아온다(정책 변경 시 자동 반영).
 // 아래는 정책 도착 전 폴백일 뿐. 실제 표시는 서버 값 우선.
 type Category = { value: string; label: string };
@@ -48,16 +55,17 @@ const inputCls =
 export function CampaignForm({
   onSubmit,
   busy,
+  initial,
 }: {
   onSubmit: (v: CampaignFormValues) => void;
   busy: boolean;
+  initial?: CampaignPrefill;
 }) {
-  const [name, setName] = useState('');
-  const [objective, setObjective] = useState<'traffic' | 'leads'>('traffic');
-  // 기본(자동): 총 예산만 받고 일 예산=Meta 최소·일수=최대한 길게로 폼이 자동 최적화(전략).
-  // 기본값은 최소 금액(Meta floor) — 사용자가 직접 만지기 전까진 minBudget을 따라간다.
-  const [total, setTotal] = useState(1_521);
-  const [totalTouched, setTotalTouched] = useState(false); // 사용자가 총예산을 직접 만졌는가
+  const [name, setName] = useState(initial?.name ?? '');
+  const [objective, setObjective] = useState<'traffic' | 'leads'>(initial?.objective ?? 'traffic');
+  // prefill 있으면 그 총예산으로 시드 + totalTouched=true(자동 최소화에 안 덮이게).
+  const [total, setTotal] = useState(initial?.total_budget_krw ?? 1_521);
+  const [totalTouched, setTotalTouched] = useState(initial?.total_budget_krw != null); // 사용자가 총예산을 직접 만졌는가
   const [advanced, setAdvanced] = useState(false); // 고급 — 일예산·일수 직접 설정
   // 고급 모드 전용(자동 모드에선 floor·계산값을 씀).
   const [budget, setBudget] = useState(0);

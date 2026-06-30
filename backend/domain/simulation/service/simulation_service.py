@@ -12,6 +12,7 @@ import uuid
 from collections.abc import AsyncIterator
 
 from core.tracing import make_trace_config
+from domain.simulation.adapters.ad_image_store import proxy_url_for
 from domain.simulation.contracts.schemas import SimulationRunRequest
 from domain.simulation.tools.aggregation.ocean_segments import ocean_segment_breakdown
 from domain.simulation.tools.objective_fit import assess_objective_fit
@@ -111,6 +112,7 @@ class SimulationService:
                 },
                 extra_tags=["batch"] if request.sample_size > 10 else None,
             )
+            trace_config["run_name"] = "시뮬레이션"
             # 반응 fan-out 병렬 수 제한(503 증폭 방지). preamble 노드는 단일이라 영향 없음.
             trace_config["max_concurrency"] = _MAX_REACTION_CONCURRENCY
             ad_dump: dict | None = None
@@ -181,8 +183,8 @@ class SimulationService:
                 "aggregate": aggregate_dump,
                 # OCEAN 성향별 반응 분해(결과 해석) — 연령×성별 외 '성격 축'. 빈 입력이면 빈 구조.
                 "ocean_segments": ocean_segment_breakdown(personas, reaction_objs),
-                # 상세 페이지 표시용 — 업로드 시 presigned URL, 외부 URL이면 그대로, 로컬폴백이면 경로.
-                "ad_asset_url": request.ad_image_url,
+                # 상세 페이지 표시용 — S3 키는 프록시 URL로(자격증명 노출 방지), 외부 URL은 그대로.
+                "ad_asset_url": proxy_url_for(request.ad_image_key or request.ad_image_url),
             }
             # 캠페인 목표 달성 가능성(결정론 룰) — 목표 선언 + 집계가 있을 때만(exploratory).
             if request.ad_objective and aggregate_obj is not None:
@@ -204,6 +206,7 @@ class SimulationService:
                         rubric=rubric_objs,
                         aggregate=aggregate_obj,
                         panel_version=panel_version,
+                        simulation_id=uuid.UUID(run_id),  # DB PK=run_id 통일 → 챗 즉시 조회
                     )
                     result["simulation_id"] = str(sim_id)
                     # 성과 비교 자동 연결 — fromCampaign 경로 진입 시 서버에서 직접 링크.
@@ -254,3 +257,16 @@ class SimulationService:
 
     def get_result(self, run_id: str) -> dict | None:
         return self._store.get_result(run_id)
+
+    def get_run_status(self, run_id: str) -> dict | None:
+        """진행 상태 — 새로고침 후 백그라운드 런 복원용. 모르는 run이면 None(서버 재시작·완료소실)."""
+        status = self._store.get_status(run_id)
+        if status is None:
+            return None
+        pct, stage = 0, None
+        for ev in self._store.get_events(run_id):
+            if isinstance(ev.get("pct"), int):
+                pct = ev["pct"]
+            if ev.get("stage"):
+                stage = ev["stage"]
+        return {"run_id": run_id, "status": status, "pct": pct, "stage": stage}
