@@ -148,7 +148,7 @@ class Settings(BaseSettings):
     generator_vision_model: str = "gpt-4o"
     # 이미지 생성(배경)
     generator_image_provider: str = "openai"  # openai | google_genai
-    generator_image_model: str = "gpt-image-2"
+    generator_image_model: str = "gpt-image-1"
     generator_image_quality: str = "medium"  # openai 전용(low|medium|high), google_genai는 무시
     generator_image_timeout: float = 120.0  # 무거운 이미지 모델 대비 호출 타임아웃(초)
     # 이미지 편집(누끼 배경제거 — remove_product_background)
