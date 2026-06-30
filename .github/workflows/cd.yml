@@ -106,6 +106,17 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      # EC2는 리포를 체크아웃하지 않으므로 compose 파일을 매 배포마다 최신으로 복사
+      # (비밀 없는 파일만. backend/.env 는 EC2에 1회 수동 배치 — 리포에 없음)
+      - name: Copy compose file to EC2
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          source: docker-compose.prod.yml
+          target: /home/${{ secrets.EC2_USER }}/clickme
+
       - name: Deploy to EC2
         uses: appleboy/ssh-action@v1
         env:

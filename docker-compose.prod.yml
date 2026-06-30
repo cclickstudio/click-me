@@ -1,27 +1,40 @@
+# 운영(EC2) 배포용 compose — ECR 이미지를 pull해서 backend/frontend 실행
+#
+# 전제(EC2 ~/clickme/ 에 위치):
+#   - REGISTRY 환경변수 또는 ~/clickme/.env 에 REGISTRY=<account>.dkr.ecr.us-west-2.amazonaws.com
+#     (cd.yml의 배포 스크립트는 REGISTRY를 셸 env로 넘겨주므로 자동 주입됨)
+#   - ~/clickme/backend/.env  : 백엔드 운영 환경변수(DATABASE_URL·OPENAI_API_KEY·AWS 등)
+#   - frontend의 NEXT_PUBLIC_API_URL은 *이미지 빌드 시점*에 박힘(cd.yml build-arg) → 여기선 런타임 주입 불가
+#
+# 수동 실행: cd ~/clickme && docker compose -f docker-compose.prod.yml up -d
+
 services:
   backend:
-    image: ${DOCKERHUB_USERNAME}/clickme-backend:latest
+    image: ${REGISTRY}/clickme-backend:latest
     restart: unless-stopped
     ports:
-      - "8000:8000"
+      - '8000:8000'
     env_file:
       - ./backend/.env
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      # 이미지에 curl이 없어 python으로 체크
+      test:
+        [
+          'CMD',
+          'python',
+          '-c',
+          "import sys,urllib.request; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health').status==200 else 1)",
+        ]
       interval: 30s
       timeout: 10s
       retries: 3
       start_period: 20s
 
   frontend:
-    image: ${DOCKERHUB_USERNAME}/clickme-frontend:latest
+    image: ${REGISTRY}/clickme-frontend:latest
     restart: unless-stopped
     ports:
-      - "3000:3000"
-    env_file:
-      - ./frontend/.env.local
-    environment:
-      - NEXT_PUBLIC_API_URL=http://backend:8000
+      - '3000:3000'
     depends_on:
       backend:
         condition: service_healthy
