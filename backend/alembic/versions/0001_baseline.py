@@ -5,8 +5,10 @@ Revision ID: 0001_baseline
 Revises:
 Create Date: 2026-06-29
 
-기존 001~029(중복 id 다수)를 단일 baseline으로 대체한다. 스키마 진실은 ORM(core.models +
-domain.simulation.models). 빈 DB는 이 한 파일로 현재 스키마를 재현하고, 기존 실 DB는 stamp만 한다.
+기존 001~029(중복 id 다수)와 후속 0002(kb 임베딩 1536)·0003(chat 스키마 보정)을 단일
+baseline으로 흡수·대체한다. 스키마 진실은 ORM(core.models + domain.simulation.models)이며,
+create_all이 0002(Vector(1536))·0003(chat_sessions 컬럼·신규 테이블)을 이미 포함하므로 빈 DB는
+이 한 파일로 현재 스키마 전체를 재현하고, 기존 실 DB는 stamp만 한다.
 create_all은 checkfirst=True라 멱등 — 이미 있는 테이블은 건너뛴다.
 """
 
@@ -21,6 +23,19 @@ depends_on = None
 def upgrade() -> None:
     op.execute("CREATE EXTENSION IF NOT EXISTS vector")
     op.execute('CREATE EXTENSION IF NOT EXISTS "uuid-ossp"')
+
+    # chat_messages.role 은 create_type=False 인 네이티브 ENUM이라 create_all이 만들지 않는다.
+    # 테이블보다 먼저 멱등 생성(CREATE TYPE에는 IF NOT EXISTS가 없어 DO 블록으로 가드).
+    op.execute(
+        """
+        DO $$ BEGIN
+            IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'chat_role') THEN
+                CREATE TYPE chat_role AS ENUM ('user', 'assistant');
+            END IF;
+        END $$;
+        """
+    )
+
     bind = op.get_bind()
     from core.models import Base as CoreBase  # noqa: PLC0415
     from domain.simulation.models import SimBase  # noqa: PLC0415
@@ -37,3 +52,4 @@ def downgrade() -> None:
 
     SimBase.metadata.drop_all(bind)
     CoreBase.metadata.drop_all(bind)
+    op.execute("DROP TYPE IF EXISTS chat_role")
