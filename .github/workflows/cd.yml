@@ -143,15 +143,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4 # compose 파일 복사용
 
-      # EC2는 리포를 체크아웃하지 않으므로 compose 파일을 매 배포마다 최신으로 복사
+      # EC2는 리포를 체크아웃하지 않으므로 compose·nginx 설정을 매 배포마다 최신으로 복사
       # (비밀 없는 파일만. backend/.env 는 EC2에 1회 배치 — 리포에 없음)
-      - name: Copy compose file to EC2
+      - name: Copy compose & nginx config to EC2
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
-          source: docker-compose.prod.yml
+          source: |
+            docker-compose.prod.yml
+            deploy/nginx.conf
           target: /home/${{ secrets.EC2_USER }}/clickme
 
       - name: Deploy to EC2

@@ -187,8 +187,9 @@ def create_security_group() -> str:
         "--output",
         "text",
     )
-    # 22: CD 배포(Actions 러너 IP 동적) → 0.0.0.0/0 (key 인증만 허용). 80/443/8000/3000.
-    for port in (22, 80, 443, 8000, 3000):
+    # nginx 단일 진입점: 22(SSH/CD)·80(웹)·443(추후 HTTPS)만. 8000/3000은 내부 전용이라 안 엶.
+    # 22는 CD 배포(Actions 러너 IP 동적)라 0.0.0.0/0 (key 인증만 허용).
+    for port in (22, 80, 443):
         aws(
             "ec2",
             "authorize-security-group-ingress",

@@ -121,11 +121,16 @@ async def lifespan(app: FastAPI):
     await close_pg_checkpointer()
 
 
+_is_prod = settings.app_env == "production"
 app = FastAPI(
     title="ClickMe API",
     version="2.0.0",
     description="AI Ad Simulation Platform",
     lifespan=lifespan,
+    # 운영에선 Swagger/OpenAPI 비활성화(외부 노출 방지). nginx에서도 한 겹 차단.
+    docs_url=None if _is_prod else "/docs",
+    redoc_url=None if _is_prod else "/redoc",
+    openapi_url=None if _is_prod else "/openapi.json",
 )
 
 
