@@ -7,10 +7,11 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from core import cognito_admin
 from core.auth import (
     create_access_token,
     get_current_user,
-    hash_password,
+    password_hash_for_storage,
     verify_password,
 )
 from core.db import get_db
@@ -152,6 +153,8 @@ async def change_password(
     """본인 비밀번호 변경 — 변경 후 must_change_password 해제."""
     if len(body.new_password) < 8:
         raise HTTPException(status_code=400, detail="비밀번호는 8자 이상이어야 합니다.")
-    user.password_hash = hash_password(body.new_password)
+    # cognito 모드면 Cognito 비번을 바꾸고 DB엔 placeholder. 실패 시 502(롤백).
+    await cognito_admin.set_password(user.login_id, body.new_password)
+    user.password_hash = password_hash_for_storage(body.new_password)
     user.must_change_password = False
     return {"ok": True}

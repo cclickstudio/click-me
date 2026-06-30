@@ -28,12 +28,28 @@ bearer = HTTPBearer(auto_error=False)
 _jwks_cache: dict | None = None
 
 
+# cognito 모드에서 password_hash 자리에 넣는 placeholder — 비번은 Cognito가 관리(DB에 해시 미저장).
+# 컬럼은 NOT NULL이라 값은 채워야 하므로 무의미 상수를 둔다. (컬럼 자체 제거는 Alembic에서)
+COGNITO_MANAGED_HASH = "cognito-managed"
+
+
 def hash_password(plain: str) -> str:
     return bcrypt.hashpw(plain.encode(), bcrypt.gensalt()).decode()
 
 
+def password_hash_for_storage(plain: str) -> str:
+    """저장용 password_hash 산출. cognito면 placeholder(실해시 미저장), local이면 bcrypt."""
+    if settings.auth_provider == "cognito":
+        return COGNITO_MANAGED_HASH
+    return hash_password(plain)
+
+
 def verify_password(plain: str, hashed: str) -> bool:
-    return bcrypt.checkpw(plain.encode(), hashed.encode())
+    try:
+        return bcrypt.checkpw(plain.encode(), hashed.encode())
+    except ValueError:
+        # bcrypt 형식이 아닌 해시(예: cognito-managed placeholder) — 매칭 불가로 처리.
+        return False
 
 
 def create_access_token(user_id: str, role: str) -> str:
