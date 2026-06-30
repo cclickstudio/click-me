@@ -1,7 +1,7 @@
 import asyncio
 import json
 import uuid
-from collections.abc import AsyncGenerator, Awaitable, Callable
+from collections.abc import AsyncGenerator
 from typing import TYPE_CHECKING
 from urllib.parse import quote
 
@@ -22,9 +22,8 @@ from core.config import settings
 from core.db import AsyncSessionLocal, get_db
 from core.models import User
 from core.schemas import ChatRequest
-from domain.chat import history, result_callback
+from domain.chat import history, result_callback, widgets
 from domain.chat.loop_state import MAX_LOOP, get_loop_state
-from domain.chat.orchestrator import ChatTurn, build_chat_orchestrator
 from domain.management.assistant.history import record_feedback  # RAG 피드백 적재(/feedback)
 from tools.storage.s3 import download_bytes, upload_bytes
 
@@ -46,28 +45,9 @@ router = APIRouter()
 # 팀 구조 엔드포인트 — POST /api/assistant/chat (기존 /api/chat/complete와 동일 로직 공유)
 assistant_router = APIRouter()
 
-# 채팅 답변 엔진은 OpenAI 오케스트레이터로 일원화(Gemini 경로 제거).
-# 풀모드면 classify → route → 도메인 서브에이전트/advise, 키 없으면 키워드 폴백(매니지).
-_orchestrator = None
 _memory = None  # 세션 넘는 장기기억(management memory_store) 싱글톤
 _bg_tasks: set[asyncio.Task] = set()  # remember 백그라운드 — GC 방지 강참조
 _clio_client = None  # 메모리 추출·요약용 OpenAI(gpt-4o-mini) 싱글톤
-
-
-def _get_orchestrator() -> Callable[[ChatTurn], Awaitable[object]]:
-    global _orchestrator
-    if _orchestrator is None:
-        # Deep Agent 도구루프 실행기를 api 계층에서 조립해 주입(domain→api 역의존 회피).
-        # 빌드 실패(키 없음 등)면 None — 오케스트레이터가 deep 분기를 advise로 폴백한다.
-        deep_runner = None
-        try:
-            from api.assistant.wiring import build_chat_deep_runner  # noqa: PLC0415
-
-            deep_runner = build_chat_deep_runner(settings)
-        except Exception as exc:  # noqa: BLE001 — deep 미가동이 채팅 기동을 막지 않게
-            print(f"[chat] deep_runner build failed: {exc!r}")
-        _orchestrator = build_chat_orchestrator(settings, deep_runner=deep_runner)
-    return _orchestrator
 
 
 # ── 통합 채팅 에이전트(deepagents) — chat_complete의 실 경로 ──────────────────────
@@ -121,7 +101,11 @@ def _to_lc_messages(messages: list) -> list:
 
     out: list = []
     for m in messages:
-        out.append(AIMessage(content=m.content) if m.role == "assistant" else HumanMessage(content=m.content))
+        out.append(
+            AIMessage(content=m.content)
+            if m.role == "assistant"
+            else HumanMessage(content=m.content)
+        )
     return out
 
 
@@ -373,13 +357,6 @@ def _cards_from_meta(meta: dict | None) -> list[dict]:
     except Exception as exc:  # noqa: BLE001 — 카드 합성 실패가 답변을 막지 않게
         print(f"[chat] cards build error: {exc!r}")
         return []
-
-
-def _thread_id_for_session(session_id: str, compat_thread_id: str | None = None) -> str:
-    """L2-2: 체크포인터 thread_id는 session_id로 고정하고, 구 thread_id 입력은 호환만 허용."""
-    if compat_thread_id and compat_thread_id != session_id:
-        print(f"[chat] thread_id ignored in favor of session_id: {compat_thread_id!r}")
-    return session_id
 
 
 def _chunks(text: str, size: int = 24) -> list[str]:
@@ -635,26 +612,30 @@ async def chat_approve(
         )
 
     async def generate() -> AsyncGenerator[str, None]:
-        try:
-            orch = await _get_orchestrator()(
-                ChatTurn(
-                    question=question,
-                    history=[],
-                    session_id=body.session_id,
-                    thread_id=_thread_id_for_session(body.session_id, body.thread_id),
-                    project_id=body.project_id,
-                )
+        # 수락 액션을 결정론으로 입력 위젯에 매핑(LLM 불필요) — rerun=시뮬 폼, run_generator=생성 폼.
+        if body.action == "rerun_simulation":
+            frag = widgets.sim_form(
+                {"ad_title": None, "ad_content": "", "product_category": None, "ad_objective": None}
             )
-        except Exception as exc:  # noqa: BLE001 — 실패해도 안내로 마무리
-            print(f"[chat] approve orchestrator error: {exc!r}")
-            orch = None
-
-        if orch is not None:
-            answer, meta = orch.answer, orch.meta
-        else:
-            answer = "지금은 진행할 수 없어요. 잠시 후 다시 시도해주세요."
-            meta = {"source": "orchestrator", "label": "CLIO", "engine": "OpenAI"}
-
+            answer = "새 시안으로 다시 예측할게요. 아래에서 광고 정보를 확인·수정하고 실행하세요."
+            label = "재시뮬"
+        else:  # run_generator (개선 컨텍스트가 없는 경우)
+            frag = widgets.gen_form(
+                {
+                    "product_name": None,
+                    "product_description": None,
+                    "target_audience": None,
+                    "campaign_objective": None,
+                }
+            )
+            answer = "개선 시안을 만들게요. 아래에서 생성 정보를 확인·수정하고 실행하세요."
+            label = "개선 생성"
+        meta = {
+            "source": frag["source"],
+            "label": label,
+            "engine": _engine_label(),
+            "widget": frag["widget"],
+        }
         yield _sse("meta", meta=meta)
         for piece in _chunks(answer):
             yield _sse("text", token=piece)

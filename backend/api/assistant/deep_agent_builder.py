@@ -1,7 +1,7 @@
 # 통합 채팅 에이전트 빌더 — create_deep_agent 조립(정책 프롬프트 + tool + 커스텀 상태 + 체크포인터)
 """build_unified_chat_agent(settings) → 컴파일된 LangGraph(astream/ainvoke 가능) | None.
 
-기존 build_chat_orchestrator + build_chat_deep_runner를 대체한다.
+기존 채팅 오케스트레이터(domain/chat)·수제 deep agent를 대체한다.
 키 없으면 None(chat.py가 CLIO 폴백). deepagents 부재/충돌 시 create_agent 폴백을 둔다.
 """
 
