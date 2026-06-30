@@ -1,5 +1,7 @@
-# 공통 오케스트레이터 Deep Agent — deepagents create_deep_agent 기반 도구 루프
-"""단일 패스 Orchestrator를 대체하는 Deep Agent(정식 deepagents 라이브러리).
+# 최상위 오케스트레이터 CLIO(Deep Agent) — deepagents create_deep_agent 기반 도구 루프
+"""ClickMe 챗의 최상위 어드바이저 CLIO. 단일 패스 Orchestrator를 대체하는 Deep Agent.
+
+CLIO는 도메인 서브에이전트를 도구로 부르고, 도구가 필요 없는 일반 광고/마케팅 질문엔 직접 답한다.
 
 서브에이전트(ask_management/ask_simulation/ask_generator)와 신호 도구(create_campaign/
 manage_campaign/run_simulation), 장기기억 도구(remember/recall)를 LangChain 도구로 등록하고
@@ -31,9 +33,10 @@ MAX_ITER = 3
 _RECURSION_LIMIT = 25
 
 _SYS_ORCHESTRATOR = """\
-당신은 ClickMe 광고 플랫폼의 오케스트레이터 AI입니다.
-도구(ask_management, ask_simulation, ask_generator)를 호출해 정보를 수집한 뒤,
-한국어로 최종 답변을 작성합니다.
+당신은 ClickMe의 수석 광고 전략 AI 어드바이저 CLIO입니다.
+도구(ask_management, ask_simulation, ask_generator)로 정보를 수집해 한국어로 답하되,
+도구가 필요 없는 일반 광고·마케팅 전략·아이디어 질문이나 잡담에는 직접 간결히 답합니다.
+문장 끝에 콜론을 쓰지 않습니다.
 
 규칙:
 - 광고 운영·성과·예산·정책 질문 → ask_management 호출
@@ -43,6 +46,7 @@ _SYS_ORCHESTRATOR = """\
 - 새 캠페인 생성 요청("캠페인 만들어줘" 등) → create_campaign 호출(발화의 값을 인자로)
 - 기존 캠페인 일시중지·게재 시작·예산 증액/감액 요청 → manage_campaign 호출
 - 새 시뮬레이션 실행 요청("이 광고 시뮬 돌려줘" 등) → run_simulation 호출(발화의 값을 인자로)
+- 위 도구 어디에도 안 맞는 일반 광고/마케팅 질문은 도구 없이 CLIO로서 직접 답합니다
 - 이미 충분한 정보가 있으면 추가 호출 없이 답합니다
 - 최종 답변에 수치·근거가 있으면 도구 결과에서 그대로 인용합니다
 - 신호 도구(create_campaign/manage_campaign/run_simulation/run_generator)를 호출했으면,
@@ -74,13 +78,15 @@ def build_deep_agent_graph(
     simulation_handler: Handler | None = None,
     checkpointer=None,
     memory=None,
+    clio_kb_search: Callable[[str], Awaitable[list[dict]]] | None = None,
 ) -> Callable[[SubagentRequest], Awaitable[SubagentResult]]:
-    """Deep Agent 팩토리 — deepagents 그래프를 빌드하고 run(SubagentRequest) → SubagentResult 반환.
+    """CLIO(Deep Agent) 팩토리 — deepagents 그래프를 빌드하고 run(SubagentRequest) → SubagentResult.
 
     management_handler / generator_handler / simulation_handler가 None이면 mock 핸들러로 대체.
     실 구현이 들어오면 wiring.py에서 실 핸들러를 주입해 교체.
     checkpointer가 None이면 비영속(요청별 고유 thread). memory(ManagementMemory) 주입 시
     remember/recall 도구를 노출(딥에이전트 Memory 기둥).
+    clio_kb_search(query)→rows 주입 시 search_clio_kb 도구를 노출(CLIO 일반지식 인용).
     """
     from langchain_core.tools import tool  # noqa: PLC0415
 
@@ -286,6 +292,34 @@ def build_deep_agent_graph(
 
         tools += [remember, recall]
 
+    # CLIO 일반지식 KB(RAG) — clio_kb_search 주입 시에만 노출. CLIO가 일반 광고/마케팅 질문에
+    # 근거가 필요하면 호출해 인용 칩을 단다(시뮬·제너·매니지 도메인 KB와 분리).
+    if clio_kb_search:
+
+        @tool
+        async def search_clio_kb(query: str) -> str:
+            """일반 광고·마케팅 지식(용어·전략·정책)의 근거가 필요할 때 호출한다.
+
+            도메인(시뮬·운영·생성)에 속하지 않는 일반지식 질문에만 쓰며, 결과를 인용해 답한다.
+            """
+            _, acc = _ctx()
+            rows = await clio_kb_search(query)
+            if not rows:
+                return "(관련 일반지식 근거 없음)"
+            for r in rows[:4]:
+                acc["extra_citations"].append(
+                    {
+                        "kind": "kb",
+                        "source": r.get("source"),
+                        "title": r.get("title"),
+                        "score": r.get("score"),
+                    }
+                )
+            acc["extra_used_tools"].append("search_clio_kb")
+            return "\n\n".join(f"[{r.get('title', '?')}] {r.get('chunk', '')}" for r in rows[:4])
+
+        tools += [search_clio_kb]
+
     agent = create_deep_agent(
         model=llm,
         tools=tools,
@@ -304,6 +338,8 @@ def build_deep_agent_graph(
             "sim_form": None,
             "gen_form": None,
             "plan": [],
+            "extra_citations": [],
+            "extra_used_tools": [],
         }
         messages = [{"role": m.role, "content": m.content} for m in req.messages]
         config = {
@@ -358,22 +394,22 @@ def _state_to_result(state: dict) -> SubagentResult:
     )
     combined_meta: dict = {
         "source": primary_source,
-        "label": mgt_meta.get(
-            "label", sim_meta.get("label", gen_meta.get("label", "오케스트레이터"))
-        ),
+        "label": mgt_meta.get("label", sim_meta.get("label", gen_meta.get("label", "CLIO"))),
         "engine": mgt_meta.get(
-            "engine", sim_meta.get("engine", gen_meta.get("engine", "Deep Agent"))
+            "engine", sim_meta.get("engine", gen_meta.get("engine", "CLIO · Deep Agent"))
         ),
         "citations": (
             mgt_meta.get("citations", [])
             + sim_meta.get("citations", [])
             + gen_meta.get("citations", [])
+            + state.get("extra_citations", [])  # CLIO 일반지식(search_clio_kb) 인용
         ),
         "used_tools": (
             mgt_meta.get("used_tools", [])
             + (["ask_management"] if mgt_meta else [])
             + (["ask_simulation"] if sim_meta else [])
             + (["ask_generator"] if gen_meta else [])
+            + state.get("extra_used_tools", [])
         ),
         "requires_approval": state["requires_approval"],
         "thread_id": state["thread_id"],
