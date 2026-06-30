@@ -18,7 +18,12 @@ if db_url and db_url.startswith("postgresql+asyncpg"):
     db_url = db_url.replace("postgresql+asyncpg", "postgresql+psycopg2", 1)
 config.set_main_option("sqlalchemy.url", db_url or "")
 
-target_metadata = None
+# autogenerate(=alembic check) 비교 기준. baseline은 create_all 기반이라 ORM 메타데이터가
+# 곧 진실 — CoreBase·SimBase 두 MetaData를 함께 넘겨 ORM과 마이그레이션 정합을 검증한다.
+from core.models import Base as _CoreBase  # noqa: E402
+from domain.simulation.models import SimBase as _SimBase  # noqa: E402
+
+target_metadata = [_CoreBase.metadata, _SimBase.metadata]
 
 
 def run_migrations_offline() -> None:

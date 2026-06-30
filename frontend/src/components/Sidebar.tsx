@@ -1,14 +1,11 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useTheme } from './ThemeProvider';
 import { useAuth } from './AuthProvider';
-import { getToken } from '@/lib/authApi';
 import CreditBalance from './CreditBalance';
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
 const mainNav = [
   {
@@ -76,7 +73,7 @@ const companyNav = [
   },
 ];
 
-function NavItem({ href, label, icon, active, badge }: { href: string; label: string; icon: React.ReactNode; active: boolean; badge?: number }) {
+function NavItem({ href, label, icon, active }: { href: string; label: string; icon: React.ReactNode; active: boolean }) {
   return (
     <Link href={href}
       className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${
@@ -86,11 +83,6 @@ function NavItem({ href, label, icon, active, badge }: { href: string; label: st
     >
       <span className={active ? 'text-[#3182F6]' : ''}>{icon}</span>
       <span className="flex-1">{label}</span>
-      {badge != null && badge > 0 && (
-        <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-[#F74D4D] text-white text-[10px] font-bold leading-none">
-          {badge > 99 ? '99+' : badge}
-        </span>
-      )}
     </Link>
   );
 }
@@ -118,8 +110,6 @@ export default function Sidebar({ mobileOpen = false }: { mobileOpen?: boolean }
   const { theme, toggle } = useTheme();
   const { user, logout } = useAuth();
   const router = useRouter();
-  const [pendingCompanyCount, setPendingCompanyCount] = useState(0);
-  const [pendingMemberCount, setPendingMemberCount] = useState(0);
   const [manageOpen, setManageOpen] = useState(pathname.startsWith('/manage'));
 
   const handleLogout = () => { logout(); router.push('/'); };
@@ -127,26 +117,6 @@ export default function Sidebar({ mobileOpen = false }: { mobileOpen?: boolean }
   const isAdmin = user?.role === 'ADMIN';
   const isCompany = user?.role === 'COMPANY';
   const isUser = user?.role === 'USER';
-
-  useEffect(() => {
-    if (!isAdmin) return;
-    fetch(`${API_BASE}/api/admin/pending-companies`, {
-      headers: { Authorization: `Bearer ${getToken()}` },
-    })
-      .then((r) => r.json())
-      .then((data) => { if (Array.isArray(data)) setPendingCompanyCount(data.length); })
-      .catch(() => {});
-  }, [isAdmin]);
-
-  useEffect(() => {
-    if (!isCompany) return;
-    fetch(`${API_BASE}/api/company/pending-members`, {
-      headers: { Authorization: `Bearer ${getToken()}` },
-    })
-      .then((r) => r.json())
-      .then((data) => { if (Array.isArray(data)) setPendingMemberCount(data.length); })
-      .catch(() => {});
-  }, [isCompany]);
 
   return (
     <aside
@@ -215,7 +185,6 @@ export default function Sidebar({ mobileOpen = false }: { mobileOpen?: boolean }
                 key={item.href}
                 {...item}
                 active={pathname === item.href}
-                badge={item.href === '/admin/companies' ? pendingCompanyCount : undefined}
               />
             ))}
           </>
@@ -230,7 +199,6 @@ export default function Sidebar({ mobileOpen = false }: { mobileOpen?: boolean }
                 key={item.href}
                 {...item}
                 active={pathname === item.href}
-                badge={item.href === '/company/members' ? pendingMemberCount : undefined}
               />
             ))}
           </>

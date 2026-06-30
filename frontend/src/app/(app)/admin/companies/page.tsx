@@ -32,10 +32,8 @@ function formatDate(iso: string) {
 
 const orgStatusStyle: Record<string, string> = {
   ACTIVE: 'text-emerald-500 bg-emerald-50 dark:bg-emerald-900/20',
-  PENDING: 'text-yellow-500 bg-yellow-50 dark:bg-yellow-900/20',
-  REJECTED: 'text-red-500 bg-red-50 dark:bg-red-900/20',
 };
-const orgStatusLabel: Record<string, string> = { ACTIVE: '활성', PENDING: '대기', REJECTED: '반려' };
+const orgStatusLabel: Record<string, string> = { ACTIVE: '활성' };
 
 const roleStyle: Record<AccountRole, string> = {
   ADMIN: 'text-purple-500 bg-purple-50 dark:bg-purple-900/20',

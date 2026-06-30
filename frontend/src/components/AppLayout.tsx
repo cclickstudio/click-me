@@ -3,7 +3,6 @@
 import { useEffect, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useAuth } from './AuthProvider';
-import PendingScreen from './PendingScreen';
 import Sidebar from './Sidebar';
 import ProjectPanel from './ProjectPanel';
 import CompanyPanel from './CompanyPanel';
@@ -72,8 +71,6 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       </div>
     );
   }
-
-  if (user?.status === 'PENDING') return <PendingScreen />;
 
   if (companyBlocked) {
     return (
