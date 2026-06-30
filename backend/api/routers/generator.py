@@ -270,8 +270,8 @@ async def list_generations(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """생성 이력 — 로그인 org 프로젝트 생성물만(멀티테넌시 격리)."""
-    org_id = await _require_user_org(user, db)
+    """생성 이력 — ADMIN은 전체, 그 외는 로그인 org 프로젝트 생성물만(멀티테넌시 격리)."""
+    org_id = None if user.role.upper() == "ADMIN" else await _require_user_org(user, db)
     return {"generations": await generator_service.list_generations(limit=limit, org_id=org_id)}
 
 
@@ -451,7 +451,8 @@ async def select_candidate(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    org_id = await _require_user_org(user, db)
+    # ADMIN은 조직 무관 접근(get_generation 상세와 동일 정책), 그 외는 org 소유만.
+    org_id = None if user.role.upper() == "ADMIN" else await _require_user_org(user, db)
     if await generator_service.get_detail(generation_id, org_id) is None:
         raise HTTPException(status_code=404, detail="Generation not found")
     ok = await generator_service.select_candidate(generation_id, body.candidate_id)
@@ -468,7 +469,8 @@ async def publish_candidate(
     db: AsyncSession = Depends(get_db),
 ):
     """사용자 승인 액션 — 선택된 후보를 Instagram에 게시한다."""
-    org_id = await _require_user_org(user, db)
+    # ADMIN은 조직 무관 접근(get_generation 상세와 동일 정책), 그 외는 org 소유만.
+    org_id = None if user.role.upper() == "ADMIN" else await _require_user_org(user, db)
     if await generator_service.get_detail(generation_id, org_id) is None:
         raise HTTPException(status_code=404, detail="Generation not found")
     result = await generator_service.publish_candidate(

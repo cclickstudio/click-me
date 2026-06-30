@@ -120,11 +120,19 @@ async def _verify_sim_org(simulation_id: str, user: User, session: AsyncSession)
 
     도메인 ORM import 없이 simulations.organization_id를 raw SQL로 대조(경계 유지).
     """
-    org_id = await user_org_id(user, session)  # core.auth 공용(없으면 None) — 복붙 제거
     try:
         sid = uuid.UUID(simulation_id)
     except ValueError:
         raise HTTPException(status_code=404, detail="시뮬레이션 없음") from None
+    # ADMIN은 조직 무관 전체 열람(db-result·상세 핸들러와 동일 정책) — 존재만 확인.
+    if user.role.upper() == "ADMIN":
+        exists = await session.scalar(
+            text("SELECT 1 FROM simulations WHERE id = :sid"), {"sid": sid}
+        )
+        if not exists:
+            raise HTTPException(status_code=404, detail="시뮬레이션 없음")
+        return
+    org_id = await user_org_id(user, session)  # core.auth 공용(없으면 None) — 복붙 제거
     sim_org = await session.scalar(
         text("SELECT organization_id FROM simulations WHERE id = :sid"), {"sid": sid}
     )
