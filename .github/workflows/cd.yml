@@ -12,6 +12,9 @@ name: CD
 #   - EC2_USER               : EC2 접속 유저 (ubuntu / ec2-user)
 #   - EC2_SSH_KEY            : EC2 PEM 키 전체 내용
 #   - NEXT_PUBLIC_API_URL    : 운영 API 주소 (프론트 빌드 인자)
+#   - NEXT_PUBLIC_COGNITO_USER_POOL_ID : Cognito User Pool ID (프론트 빌드 인자, 공개돼도 무방)
+#   - NEXT_PUBLIC_COGNITO_CLIENT_ID    : Cognito App Client ID (프론트 빌드 인자, 공개돼도 무방)
+# (NEXT_PUBLIC_AUTH_PROVIDER=cognito, NEXT_PUBLIC_COGNITO_REGION=us-west-2 는 비밀 아님 → 평문)
 #
 # 사전 준비:
 #   - EC2에 docker · docker compose · awscli 설치 + ECR read 권한(IAM Role 권장)
@@ -20,9 +23,9 @@ name: CD
 # 참고: 장기 키 대신 GitHub OIDC + IAM assume-role 방식이 더 안전(추후 전환 가능).
 
 on:
-  workflow_dispatch: # 준비되면 아래 push 트리거 주석 해제
-  # push:
-  #   branches: [main]
+  workflow_dispatch:
+  push:
+    branches: [main]
 
 env:
   ECR_BACKEND: clickme-backend
@@ -124,6 +127,10 @@ jobs:
             ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_FRONTEND }}:${{ github.sha }}
           build-args: |
             NEXT_PUBLIC_API_URL=${{ secrets.NEXT_PUBLIC_API_URL }}
+            NEXT_PUBLIC_AUTH_PROVIDER=cognito
+            NEXT_PUBLIC_COGNITO_REGION=us-west-2
+            NEXT_PUBLIC_COGNITO_USER_POOL_ID=${{ secrets.NEXT_PUBLIC_COGNITO_USER_POOL_ID }}
+            NEXT_PUBLIC_COGNITO_CLIENT_ID=${{ secrets.NEXT_PUBLIC_COGNITO_CLIENT_ID }}
           cache-from: type=gha,scope=frontend
           cache-to: type=gha,mode=max,scope=frontend
 
