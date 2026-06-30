@@ -19,7 +19,7 @@ export default function SignInPage() {
     setError('');
     setLoading(true);
     try {
-      const res = await authApi.login({ login_id: loginId, password });
+      const res = await authApi.signIn(loginId, password);
       login(res.access_token, res.user);
       router.push('/dashboard');
     } catch (err) {
