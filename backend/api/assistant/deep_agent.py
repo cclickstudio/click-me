@@ -46,6 +46,8 @@ _SYS_ORCHESTRATOR = """\
 - 새 캠페인 생성 요청("캠페인 만들어줘" 등) → create_campaign 호출(발화의 값을 인자로)
 - 기존 캠페인 일시중지·게재 시작·예산 증액/감액 요청 → manage_campaign 호출
 - 새 시뮬레이션 실행 요청("이 광고 시뮬 돌려줘" 등) → run_simulation 호출(발화의 값을 인자로)
+- 내가 '돌린 시뮬/만든 시안 목록'을 보거나 과거 항목을 골라 개선·비교하려는 요청
+  → list_simulations / list_generations 호출(보기=read·고르기=select·비교=compare)
 - 위 도구 어디에도 안 맞는 일반 광고/마케팅 질문은 도구 없이 CLIO로서 직접 답합니다
 - 이미 충분한 정보가 있으면 추가 호출 없이 답합니다
 - 최종 답변에 수치·근거가 있으면 도구 결과에서 그대로 인용합니다
@@ -79,6 +81,7 @@ def build_deep_agent_graph(
     checkpointer=None,
     memory=None,
     clio_kb_search: Callable[[str], Awaitable[list[dict]]] | None = None,
+    list_items: Callable[[str, str | None], Awaitable[list[dict]]] | None = None,
 ) -> Callable[[SubagentRequest], Awaitable[SubagentResult]]:
     """CLIO(Deep Agent) 팩토리 — deepagents 그래프를 빌드하고 run(SubagentRequest) → SubagentResult.
 
@@ -87,6 +90,7 @@ def build_deep_agent_graph(
     checkpointer가 None이면 비영속(요청별 고유 thread). memory(ManagementMemory) 주입 시
     remember/recall 도구를 노출(딥에이전트 Memory 기둥).
     clio_kb_search(query)→rows 주입 시 search_clio_kb 도구를 노출(CLIO 일반지식 인용).
+    list_items(kind, project_id)→items 주입 시 list_simulations/list_generations 도구를 노출.
     """
     from langchain_core.tools import tool  # noqa: PLC0415
 
@@ -320,6 +324,41 @@ def build_deep_agent_graph(
 
         tools += [search_clio_kb]
 
+    # 목록·선택 — list_items 주입 시에만 노출. 내가 돌린/만든 것의 목록 위젯을 띄운다.
+    if list_items:
+
+        @tool
+        async def list_simulations(mode: str = "read") -> str:
+            """내가 돌린 시뮬레이션 '목록'을 띄운다.
+
+            mode='read'(보기)|'select'(과거 시뮬을 골라 개선·이어가기)|'compare'(2개 골라 비교).
+            (KPI 의미·특정 결과 해석은 ask_simulation. 새 실행은 run_simulation.)
+            """
+            req, acc = _ctx()
+            items = await list_items("sim", req.project_id)
+            acc["sim_list"] = {
+                "mode": mode if mode in ("read", "select", "compare") else "read",
+                "items": items,
+            }
+            return f"시뮬레이션 {len(items)}건을 목록으로 띄웠습니다."
+
+        @tool
+        async def list_generations(mode: str = "read") -> str:
+            """내가 만든 광고 생성(시안) '목록'을 띄운다.
+
+            mode='read'(그냥 보기)|'select'(과거 시안을 골라 이어 작업하기).
+            (카피 전략 질문은 ask_generator. 새 생성은 run_generator.)
+            """
+            req, acc = _ctx()
+            items = await list_items("gen", req.project_id)
+            acc["gen_list"] = {
+                "mode": mode if mode in ("read", "select") else "read",
+                "items": items,
+            }
+            return f"광고 생성 {len(items)}건을 목록으로 띄웠습니다."
+
+        tools += [list_simulations, list_generations]
+
     agent = create_deep_agent(
         model=llm,
         tools=tools,
@@ -337,11 +376,17 @@ def build_deep_agent_graph(
             "campaign_action": None,
             "sim_form": None,
             "gen_form": None,
+            "sim_list": None,
+            "gen_list": None,
             "plan": [],
             "extra_citations": [],
             "extra_used_tools": [],
         }
-        messages = [{"role": m.role, "content": m.content} for m in req.messages]
+        # 장기기억·브랜드·프로젝트 맥락(memory_context)을 CLIO LLM 컨텍스트 선두에 주입.
+        messages: list[dict] = []
+        if req.memory_context:
+            messages.append({"role": "system", "content": req.memory_context})
+        messages += [{"role": m.role, "content": m.content} for m in req.messages]
         config = {
             "run_name": "deep-agent-turn",
             "tags": ["deep-agent", "orchestrator", "management"],
@@ -460,6 +505,21 @@ def _state_to_result(state: dict) -> SubagentResult:
         combined_meta["widget"] = {
             "type": "gen_form",
             "data": state["gen_form"],
+        }
+        combined_meta["source"] = "generator"
+    # 목록·선택(list_simulations/list_generations) — sim_list/gen_list 위젯(mode는 위젯 형제 키).
+    if state.get("sim_list") is not None:
+        combined_meta["widget"] = {
+            "type": "sim_list",
+            "mode": state["sim_list"]["mode"],
+            "data": {"items": state["sim_list"]["items"]},
+        }
+        combined_meta["source"] = "simulation"
+    if state.get("gen_list") is not None:
+        combined_meta["widget"] = {
+            "type": "gen_list",
+            "mode": state["gen_list"]["mode"],
+            "data": {"items": state["gen_list"]["items"]},
         }
         combined_meta["source"] = "generator"
 
