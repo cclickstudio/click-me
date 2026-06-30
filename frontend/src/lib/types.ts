@@ -155,6 +155,9 @@ export interface OceanSegments {
 
 export interface SimRunResult {
   run_id: string;
+  // 선언 입력(광고/실행 메타) 블록 — 새로고침 복원 시 입력 요약을 결과에서 복구하는 출처.
+  ad?: Record<string, unknown> | null;
+  simulation?: Record<string, unknown> | null;
   ad_analysis: SimAdAnalysis | null;
   personas: SimPersona[];
   reactions: SimPersonaReaction[];

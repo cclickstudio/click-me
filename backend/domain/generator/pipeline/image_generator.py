@@ -616,6 +616,10 @@ async def generate_image(
 # ─────────────────────────────────────────────────────────────────────────────
 
 
+@traceable(
+    name="generator:remove_background",
+    metadata={"pipeline": "generator", "step": "background_removal"},
+)
 async def remove_product_background(product_image_bytes: bytes) -> bytes:
     """상품 이미지의 배경을 제거하고 투명 PNG bytes를 반환한다."""
     return await image_providers.remove_background(

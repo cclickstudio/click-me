@@ -223,6 +223,24 @@ function _campaignQuery(
   return q ? `?${q}` : "";
 }
 
+// 채팅 세션·메시지(DB 영속) — 프로젝트별 채팅 목록과 내역.
+export type ChatSessionRow = {
+  id: string;
+  title: string;
+  project_id: string | null;
+  message_count: number;
+  unread_count?: number; // N5 미확인(마지막 열람 이후 assistant 메시지 수)
+  created_at: string | null;
+  updated_at: string | null;
+};
+export type ChatHistoryMessage = {
+  id?: string;
+  role: 'user' | 'assistant';
+  content: string;
+  meta?: unknown;
+  created_at?: string | null;
+};
+
 export const api = {
   ads: {
     upload: (file: File, projectId: string) => {
@@ -277,6 +295,11 @@ export const api = {
       });
     },
     stream: (runId: string) => new EventSource(`${API_BASE}/api/simulation/${runId}/stream`),
+    // 진행 상태(running/completed/failed/unknown) — 새로고침 후 백그라운드 런 복원용.
+    status: (
+      runId: string,
+    ): Promise<{ run_id: string; status: string; pct: number; stage: string | null }> =>
+      request(`/simulation/${runId}/status`),
     result: (runId: string): Promise<SimRunResult> =>
       request<SimRunResult>(`/simulation/${runId}/result`),
     // DB에 저장된 시뮬 결과를 simulation_id로 조회(콜드·패널 진입). 404=결과 없음.
@@ -396,8 +419,106 @@ export const api = {
 
   chat: {
     complete: () => `${API_BASE}/api/chat/complete`,
-    sessions: () => request<{ sessions: unknown[] }>("/chat/sessions"),
-    messages: (sessionId: string) => request(`/chat/sessions/${sessionId}/messages`),
+    // 프로젝트별 세션 목록(최근 갱신 순).
+    sessions: (projectId: string) =>
+      request<{ sessions: ChatSessionRow[] }>(
+        `/chat/sessions?project_id=${encodeURIComponent(projectId)}`,
+      ),
+    createSession: (projectId: string, title?: string) =>
+      request<ChatSessionRow>("/chat/sessions", {
+        method: "POST",
+        body: JSON.stringify({ project_id: projectId, title }),
+      }),
+    messages: (sessionId: string) =>
+      request<{ session_id: string; messages: ChatHistoryMessage[] }>(
+        `/chat/sessions/${sessionId}/messages`,
+      ),
+    // 개선 루프(시뮬↔제너) 상태 — 3턴 도달 시 '개선 시안 만들기' 제안을 숨기는 데 쓴다.
+    loopState: (sessionId: string) =>
+      request<{
+        loop_count: number;
+        max_loop: number;
+        can_improve: boolean;
+        phase: string;
+      }>(`/chat/loop-state?session_id=${encodeURIComponent(sessionId)}`),
+    // 미확인 알림(N5) — 라우트 변경마다 폴링해 벨 배지·패널에 표시.
+    notifications: (projectId: string) =>
+      request<{
+        notifications: {
+          session_id: string;
+          title: string;
+          preview: string;
+          unread_count: number;
+        }[];
+      }>(`/chat/notifications?project_id=${encodeURIComponent(projectId)}`),
+    // 세션 열람 처리(N5) — 해당 세션을 미확인에서 제거.
+    markRead: (sessionId: string) =>
+      request<{ ok: boolean }>(`/chat/sessions/${sessionId}/read`, { method: "POST" }),
+    deleteSession: (sessionId: string) =>
+      request<{ deleted: boolean }>(`/chat/sessions/${sessionId}`, { method: "DELETE" }),
+    // 메시지 핀 토글(T19) — 세션 상단 고정.
+    pinMessage: (messageId: string, pinned: boolean) =>
+      request<{ id: string; pinned: boolean }>(`/chat/messages/${messageId}/pin`, {
+        method: "PATCH",
+        body: JSON.stringify({ pinned }),
+      }),
+    // 결과 요약 — 채팅 목록/카드 위젯용(kind=sim: 4대 KPI, gen: 후보 요약).
+    resultSummary: (kind: 'sim' | 'gen', id: string) =>
+      request<Record<string, unknown>>(
+        `/chat/result-summary?kind=${kind}&id=${encodeURIComponent(id)}`,
+      ),
+    // 단독 위젯 메시지 영속화(시뮬 결과·토론 stream·토론 요약) — 새로고침 복원용. 저장된 메시지 반환.
+    appendWidgets: (sessionId: string, items: { content?: string; meta?: object }[]) =>
+      request<{ messages: ChatHistoryMessage[] }>("/chat/widget-messages", {
+        method: "POST",
+        body: JSON.stringify({ session_id: sessionId, items }),
+      }),
+    // N1 — 프로젝트의 활성(최신) 채팅 세션 id 해석. 없으면 새로 만든다. 실패 시 null.
+    resolveActiveSession: async (projectId: string): Promise<string | null> => {
+      try {
+        const { sessions } = await api.chat.sessions(projectId);
+        if (sessions && sessions.length > 0) return sessions[0].id;
+        const created = await api.chat.createSession(projectId, "시뮬레이션 알림");
+        return created.id;
+      } catch {
+        return null;
+      }
+    },
+    // 첨부 이미지 S3 업로드 → 프록시 URL(상대경로) 반환. 내역 영속화에 사용.
+    uploadImage: async (file: File): Promise<{ key: string; url: string }> => {
+      const token = getToken();
+      const form = new FormData();
+      form.append("file", file);
+      const res = await fetch(`${API_BASE}/api/chat/image`, {
+        method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: form,
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ detail: `HTTP ${res.status}` }));
+        throw new Error((err as { detail?: string }).detail ?? `HTTP ${res.status}`);
+      }
+      return res.json();
+    },
+    // F10 — 광고 맥락 기반 추천 해시태그·키워드(SNS 활용). 칩으로 복사.
+    keywords: (body: {
+      product?: string;
+      category?: string;
+      target?: string;
+      copy_text?: string;
+      context?: string;
+    }) =>
+      request<{ hashtags: string[]; keywords: string[] }>("/chat/keywords", {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+    // P5 — 인용 칩 원문 펼침. 출처 파일(+섹션)로 KB 청크 텍스트를 조회.
+    kbChunk: (source: string, title?: string) =>
+      request<{ source: string; title: string; chunk: string }>(
+        `/chat/kb-chunk?source=${encodeURIComponent(source)}${
+          title ? `&title=${encodeURIComponent(title)}` : ""
+        }`,
+      ),
     // 어시스턴트 답변 피드백(좋아요/싫어요) — RAG 품질 개선 적재.
     feedback: (body: {
       thread_id?: string;
@@ -420,10 +541,16 @@ export const api = {
   },
 
   projects: {
-    list: () => request<{ projects: unknown[] }>("/projects"),
+    // GET /projects 는 배열을 직접 반환한다(래핑 객체 아님).
+    list: () => request<unknown[]>("/projects"),
     create: (body: { name: string; description?: string }) =>
       request("/projects", { method: "POST", body: JSON.stringify(body) }),
     get: (id: string) => request(`/projects/${id}`),
+    // 프로젝트별 시뮬/생성 목록(배열 직접 반환) — 채팅 슬래시 /시뮬목록·/시안목록용.
+    simulations: (id: string, limit = 20) =>
+      request<Record<string, unknown>[]>(`/projects/${id}/simulations?limit=${limit}`),
+    generations: (id: string, limit = 20) =>
+      request<Record<string, unknown>[]>(`/projects/${id}/generations?limit=${limit}`),
   },
 
   billing: {

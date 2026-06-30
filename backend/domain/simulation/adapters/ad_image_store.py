@@ -8,6 +8,7 @@ import logging
 import os
 import tempfile
 import uuid
+from urllib.parse import quote
 
 from core.config import settings
 from tools.storage.s3 import presign_get, upload_bytes
@@ -72,6 +73,27 @@ async def presigned_for(asset_ref: str | None) -> str | None:
         return None
     if asset_ref.startswith(("http://", "https://")):
         return asset_ref
+    # 로컬 파일 경로(과거 S3 미설정 시 폴백 잔재)는 S3 키가 아니다 — presign하면 엉터리 URL이
+    # 되므로 제외. S3 키는 "simulation/...png"처럼 드라이브문자(:)·역슬래시·선행 슬래시가 없다.
+    if asset_ref.startswith("/") or "\\" in asset_ref or ":" in asset_ref:
+        return None
     if not _s3_configured():
         return None
     return await presign_get(asset_ref, expires_in=_PRESIGN_TTL)
+
+
+def proxy_url_for(asset_ref: str | None) -> str | None:
+    """저장된 asset 참조를 브라우저 표시용 URL로 변환한다(자격증명 노출 방지).
+
+    S3 키면 백엔드 프록시 경로(/api/simulation/image?key=…)를 돌려준다 — presigned URL을
+    브라우저에 직접 노출하지 않기 위함(제너·채팅 이미지와 동일 패턴).
+    http(s) URL은 그대로(외부), 로컬 경로·None은 표시 불가이므로 None.
+    """
+    if not asset_ref:
+        return None
+    if asset_ref.startswith(("http://", "https://")):
+        return asset_ref
+    # 로컬 파일 경로(과거 S3 미설정 폴백 잔재)는 S3 키가 아니다.
+    if asset_ref.startswith("/") or "\\" in asset_ref or ":" in asset_ref:
+        return None
+    return f"/api/simulation/image?key={quote(asset_ref, safe='')}"

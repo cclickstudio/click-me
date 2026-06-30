@@ -56,14 +56,8 @@ async def _purge_simulations(db: AsyncSession, sim_ids_sql: str, params: dict) -
         f"DELETE FROM persona_debate_participants WHERE debate_id IN "
         f"(SELECT id FROM persona_debates WHERE simulation_id IN ({sim_ids_sql}))",
         f"DELETE FROM persona_debates WHERE simulation_id IN ({sim_ids_sql})",
-        f"DELETE FROM recommendations WHERE simulation_id IN ({sim_ids_sql}) "
-        f"OR diagnosis_id IN (SELECT id FROM diagnoses WHERE simulation_id IN ({sim_ids_sql}))",
-        f"DELETE FROM diagnoses WHERE simulation_id IN ({sim_ids_sql})",
         f"DELETE FROM persona_responses WHERE simulation_id IN ({sim_ids_sql})",
-        f"DELETE FROM reports WHERE simulation_id IN ({sim_ids_sql})",
         f"DELETE FROM simulation_aggregates WHERE simulation_id IN ({sim_ids_sql})",
-        f"DELETE FROM simulation_comparisons "
-        f"WHERE simulation_a_id IN ({sim_ids_sql}) OR simulation_b_id IN ({sim_ids_sql})",
         f"DELETE FROM simulations WHERE id IN ({sim_ids_sql})",
     ]
     for s in stmts:
@@ -73,8 +67,6 @@ async def _purge_simulations(db: AsyncSession, sim_ids_sql: str, params: dict) -
 async def _purge_ads(db: AsyncSession, ad_ids_sql: str, params: dict) -> None:
     """광고와 자식 레코드를 삭제. (시뮬은 먼저 _purge_simulations로 제거할 것)"""
     stmts = [
-        f"DELETE FROM simulation_results WHERE ad_id IN ({ad_ids_sql})",
-        f"DELETE FROM ad_embeddings WHERE ad_id IN ({ad_ids_sql})",
         f"DELETE FROM rubric_scores WHERE ad_analysis_id IN "
         f"(SELECT id FROM ad_analyses WHERE ad_id IN ({ad_ids_sql}))",
         f"DELETE FROM ad_analyses WHERE ad_id IN ({ad_ids_sql})",
@@ -100,7 +92,6 @@ async def _purge_project(db: AsyncSession, project_id: str) -> None:
         "SELECT id FROM simulations WHERE ad_id IN (SELECT id FROM ads WHERE project_id = :pid)",
         p,
     )
-    await db.execute(text("DELETE FROM simulation_comparisons WHERE project_id = :pid"), p)
     await _purge_ads(db, "SELECT id FROM ads WHERE project_id = :pid", p)
     await _purge_generations(db, "SELECT id FROM ad_generations WHERE project_id = :pid", p)
     await db.execute(text("DELETE FROM chat_sessions WHERE project_id = :pid"), p)
@@ -337,17 +328,23 @@ async def get_simulation_detail(
     def _num(v: object) -> float | None:
         return float(v) if v is not None else None
 
+    # asset_url은 S3 key/외부 URL/로컬경로가 섞여 저장됨 → 표시·재로드 가능한 presigned URL로 변환.
+    # (S3 key는 presign, http(s)는 그대로, 로컬경로 등은 None)
+    from domain.simulation.adapters.ad_image_store import presigned_for  # noqa: PLC0415
+
+    ad_asset_url = await presigned_for(r.ad_asset_url)
+
     return {
         "id": str(r.id),
         "status": r.status,
         "sample_size": r.sample_size,
-        "result": r.distribution,
-        "persona_results": r.personas,
+        "result": None,
+        "persona_results": None,
         "created_at": r.created_at.isoformat(),
         "created_by_name": r.created_by_name,
         "ad_id": str(r.ad_id),
         "ad_title": r.ad_title,
-        "ad_asset_url": r.ad_asset_url,  # 광고 이미지(URL/S3키/로컬경로 — 형식 제각각)
+        "ad_asset_url": ad_asset_url,  # 표시·재로드용 presigned URL
         "aggregate": {
             "purchase_intent": _num(r.purchase_intent_avg),
             "rejection_rate": _num(r.rejection_rate),

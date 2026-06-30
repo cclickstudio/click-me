@@ -26,7 +26,10 @@ from core.config import settings
 from domain.generator.contracts.enums import AdSize
 
 # wrap_openai로 감싸 이미지 호출의 토큰·비용 usage가 LangSmith에 기록되게 한다.
-_openai_client = wrap_openai(AsyncOpenAI(timeout=settings.generator_image_timeout))
+# 키는 settings(.env)에서 명시 — os.environ엔 OPENAI_API_KEY가 없어 무인자 생성은 실패한다.
+_openai_client = wrap_openai(
+    AsyncOpenAI(api_key=settings.openai_api_key, timeout=settings.generator_image_timeout)
+)
 
 _GEMINI_NATIVE_ASPECT_RATIO: dict[AdSize, str] = {
     AdSize.SQUARE: "1:1",

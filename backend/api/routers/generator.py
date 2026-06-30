@@ -294,15 +294,20 @@ async def get_generation(
     user: User | None = Depends(_optional_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """상세 — 로그인 유저는 자기 org만(불일치 404). 내부 호출도 X-Org-Id 있으면 org 스코프."""
+    """상세 — ADMIN은 조직 무관 조회, 그 외 로그인 유저는 자기 org만(불일치 404).
+    내부 호출도 X-Org-Id 있으면 org 스코프(타 org 후보 누출 차단, B-1)."""
     internal = settings.internal_service_token
     use_mock = getattr(settings, "use_mock", True)
     if user is not None:
-        detail = await generator_service.get_detail(
-            generation_id, await _require_user_org(user, db)
-        )
+        if user.role.upper() == "ADMIN":
+            # ADMIN은 조직 무관 조회(admin은 org 미소속일 수 있음 — projects.py와 동일 정책)
+            detail = await generator_service.get_detail(generation_id)
+        else:
+            detail = await generator_service.get_detail(
+                generation_id, await _require_user_org(user, db)
+            )
     elif internal and x_internal_token == internal:
-        # prod 내부 서비스 호출 — X-Org-Id 필수(무스코프 누출면 제거, 리뷰 P1-a).
+        # prod 내부 서비스 호출 — X-Org-Id 필수(무스코프 누출면 제거, B-1).
         if not x_org_id:
             raise HTTPException(status_code=400, detail="내부 호출에 X-Org-Id 필요")
         try:
@@ -312,7 +317,7 @@ async def get_generation(
         detail = await generator_service.get_detail(generation_id, org)
     elif use_mock:
         # dev/mock — 실 테넌트 없음. X-Org-Id 있으면 스코프(B-1 테스트·관리 호출), 없으면 우회
-        # (기존 무인증 mock 브라우징 유지, 리뷰 P2-c). use_mock 우회 자체 점검은 후속(spec §9).
+        # (기존 무인증 mock 브라우징 유지). use_mock 우회 자체 점검은 후속(spec §9).
         try:
             org = uuid.UUID(x_org_id) if x_org_id else None
         except ValueError as exc:

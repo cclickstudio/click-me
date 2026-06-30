@@ -1,4 +1,4 @@
-# create_campaign 툴 결과가 meta.embed/prefill로 합성되는지 — 오케스트레이터 순수 변환만 검증.
+# create_campaign 툴 결과가 meta.widget(3k 통로)로 합성되는지 — 오케스트레이터 순수 변환만 검증.
 from langchain_core.messages import AIMessage
 
 from api.assistant.deep_agent import _state_to_result
@@ -15,11 +15,13 @@ def test_state_to_result_carries_create_prefill():
         "create_prefill": {"objective": "leads", "total_budget_krw": 50000},
     }
     result = _state_to_result(state)
-    assert result.meta["embed"] == "create_campaign"
-    assert result.meta["prefill"] == {"objective": "leads", "total_budget_krw": 50000}
+    assert result.meta["widget"] == {
+        "type": "create_campaign",
+        "data": {"prefill": {"objective": "leads", "total_budget_krw": 50000}},
+    }
 
 
-def test_state_to_result_no_prefill_has_no_embed():
+def test_state_to_result_no_prefill_has_no_widget():
     state = {
         "messages": [AIMessage(content="일반 답변")],
         "sub_results": {},
@@ -28,7 +30,7 @@ def test_state_to_result_no_prefill_has_no_embed():
         "create_prefill": None,
     }
     result = _state_to_result(state)
-    assert "embed" not in result.meta
+    assert "widget" not in result.meta
 
 
 def test_state_to_result_create_prefill_forces_deep_agent_source():
@@ -43,4 +45,4 @@ def test_state_to_result_create_prefill_forces_deep_agent_source():
     }
     result = _state_to_result(state)
     assert result.meta["source"] == "deep-agent"
-    assert result.meta["embed"] == "create_campaign"
+    assert result.meta["widget"]["type"] == "create_campaign"

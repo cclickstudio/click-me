@@ -1,3 +1,9 @@
+# ── Playwright E2E ──────────────────────────────
+test-results/
+playwright-report/
+blob-report/
+/test/e2e/.auth-tokens.json
+
 # ── Python ──────────────────────────────────────
 __pycache__/
 *.py[cod]
@@ -70,3 +76,6 @@ pnpm-debug.log*
 fonts/
 
 *.tsbuildinfo
+
+# 루트에 잘못 들어온 중첩 클론(X1) — 추적·재추가 방지
+/click-me/

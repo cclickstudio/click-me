@@ -18,7 +18,7 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
-from sqlalchemy.dialects.postgresql import JSONB, UUID
+from sqlalchemy.dialects.postgresql import ENUM, JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from core.db import Base
@@ -118,7 +118,12 @@ class Project(Base):
         ForeignKey("teams.id"), nullable=True
     )  # 소속 팀(팀 단위 공유, 미배정이면 NULL)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(20), server_default="ACTIVE")
+    created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime)
 
     organization: Mapped["Organization"] = relationship(back_populates="projects")
     ads: Mapped[list["Ad"]] = relationship(back_populates="project")
@@ -130,38 +135,19 @@ class Ad(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id"))
     title: Mapped[str] = mapped_column(String(255))
-    ad_type: Mapped[str] = mapped_column(String(50))  # image | text | video
-    s3_key: Mapped[str | None] = mapped_column(String(512))
-    analysis: Mapped[dict | None] = mapped_column(JSONB)
+    media_type: Mapped[str] = mapped_column(String(20))  # image | text | video
+    asset_url: Mapped[str | None] = mapped_column(String(500))
+    copy_text: Mapped[str | None] = mapped_column(Text)
+    industry_category: Mapped[str | None] = mapped_column(String(100))
+    product_category: Mapped[str | None] = mapped_column(String(100))
+    ad_objective: Mapped[str | None] = mapped_column(String(50))
+    target_filter: Mapped[dict | None] = mapped_column(JSONB)
+    status: Mapped[str] = mapped_column(String(20), server_default="DRAFT")
+    created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
     project: Mapped["Project"] = relationship(back_populates="ads")
-    simulations: Mapped[list["SimulationResult"]] = relationship(back_populates="ad")
-
-
-class SimulationResult(Base):
-    __tablename__ = "simulation_results"
-
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    ad_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("ads.id"))
-    persona_count: Mapped[int] = mapped_column(Integer)
-    distribution: Mapped[dict] = mapped_column(JSONB)  # 구매의향 분포 데이터
-    personas: Mapped[dict] = mapped_column(JSONB)  # 페르소나 배열
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
-
-    ad: Mapped["Ad"] = relationship(back_populates="simulations")
-
-
-class AdEmbedding(Base):
-    """광고 벡터 임베딩 (RAG / A·B 비교용)."""
-
-    __tablename__ = "ad_embeddings"
-
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    ad_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("ads.id"))
-    content: Mapped[str] = mapped_column(Text)
-    embedding: Mapped[list[float]] = mapped_column(Vector(1536))
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
 class ManagementKbDocument(Base):
@@ -200,6 +186,7 @@ class ManagementKbChunk(Base):
     source: Mapped[str] = mapped_column(String(128))  # 출처 파일명(인용용)
     title: Mapped[str] = mapped_column(String(256))  # 섹션 제목(인용용)
     chunk: Mapped[str] = mapped_column(Text)
+    # OpenAI text-embedding-3-small 1536 = settings.embedding_dim(KB·LTM 동일). 변경 시 Alembic 마이그레이션 + kb_ingest 재실행 필요.
     embedding: Mapped[list[float]] = mapped_column(Vector(1536))
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     # 마이그 019 — 문서 연결 + 메타(테넌트·버전·키워드검색). search_vector는 DB 생성열이라 미매핑.
@@ -311,6 +298,45 @@ class ManagementKbEvalCase(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
+class SimulationKbChunk(Base):
+    """시뮬레이션 지식베이스 청크 (에이전틱 RAG) — KPI 정의·해석·방법론의 벡터 검색."""
+
+    __tablename__ = "simulation_kb_chunks"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    source: Mapped[str] = mapped_column(String(128))  # 출처 파일명(인용용)
+    title: Mapped[str] = mapped_column(String(256))  # 섹션 제목(인용용)
+    chunk: Mapped[str] = mapped_column(Text)
+    embedding: Mapped[list[float]] = mapped_column(Vector(1536))
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class GeneratorKbChunk(Base):
+    """광고 생성 지식베이스 청크 (에이전틱 RAG) — 카피 전략·원칙·톤의 벡터 검색."""
+
+    __tablename__ = "generator_kb_chunks"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    source: Mapped[str] = mapped_column(String(128))  # 출처 파일명(인용용)
+    title: Mapped[str] = mapped_column(String(256))  # 섹션 제목(인용용)
+    chunk: Mapped[str] = mapped_column(Text)
+    embedding: Mapped[list[float]] = mapped_column(Vector(1536))
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class ClioKbChunk(Base):
+    """CLIO 지식베이스 청크 — 광고 일반 지식의 벡터 검색."""
+
+    __tablename__ = "clio_kb_chunks"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    source: Mapped[str] = mapped_column(String(128))  # 출처 파일명(인용용)
+    title: Mapped[str] = mapped_column(String(256))  # 섹션 제목(인용용)
+    chunk: Mapped[str] = mapped_column(Text)
+    embedding: Mapped[list[float]] = mapped_column(Vector(1536))
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
 class ManagementUserMemory(Base):
     """세션 넘는 장기기억 — (tenant, user) 스코프 노트. 마이그 025."""
 
@@ -327,12 +353,98 @@ class ManagementUserMemory(Base):
 
 
 class ChatSession(Base):
+    """채팅 세션 — 프로젝트에 귀속된 대화 하나. 메시지는 ChatMessage로 정규화 저장."""
+
     __tablename__ = "chat_sessions"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     project_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("projects.id"), nullable=True)
-    messages: Mapped[list] = mapped_column(JSONB, default=list)
+    title: Mapped[str] = mapped_column(String(200), default="새 채팅")  # 세션 목록 표시용
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, server_default=func.now(), onupdate=func.now()
+    )
+    # 마지막 열람 시각(N5) — 이후 추가된 메시지를 미확인 알림으로 집계. NULL이면 전부 미확인.
+    last_read_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class ChatMessage(Base):
+    """채팅 메시지 — 세션에 귀속된 한 발화(user|assistant). meta에 출처·위젯·인용 보관."""
+
+    __tablename__ = "chat_messages"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    session_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("chat_sessions.id", ondelete="CASCADE")
+    )
+    role: Mapped[str] = mapped_column(
+        ENUM("user", "assistant", name="chat_role", create_type=False)
+    )
+    content: Mapped[str] = mapped_column(Text)
+    # 컬럼명은 metadata지만 SQLAlchemy 예약어라 속성은 meta로 매핑.
+    meta: Mapped[dict | None] = mapped_column("metadata", JSONB, nullable=True)
+    tokens_used: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+
+class ChatLongTermMemory(Base):
+    """채팅 롱텀 메모리 — 시뮬/생성 실행 입력·사용자 선호를 프로젝트 단위로 누적.
+
+    다음 대화에 컨텍스트로 주입(최근 N개 조회). memory_type:
+    sim_input | gen_input | user_pref | session_summary.
+    """
+
+    __tablename__ = "chat_long_term_memory"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    project_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    memory_type: Mapped[str] = mapped_column(String(32))
+    content: Mapped[dict] = mapped_column(JSONB)
+    # 시맨틱 검색용 임베딩(text-embedding-3-small). nullable — 임베딩 전/실패 행은 최신순 폴백.
+    embedding: Mapped[list[float] | None] = mapped_column(Vector(1536), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ChatBrandProfile(Base):
+    """채팅 브랜드 프로파일 — 프로젝트마다 브랜드 톤·타겟·카테고리 기억(매번 입력 불필요).
+
+    제너레이터 brand_profiles(client_id PK)와 충돌하지 않도록 별도 테이블. project_id UNIQUE.
+    """
+
+    __tablename__ = "chat_brand_profiles"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, unique=True
+    )
+    brand_name: Mapped[str | None] = mapped_column(String(200))
+    tone: Mapped[str | None] = mapped_column(String(100))  # "친근한", "전문적인" 등
+    target_audience: Mapped[str | None] = mapped_column(String(200))  # "20-30대 여성"
+    product_category: Mapped[str | None] = mapped_column(String(100))
+    keywords: Mapped[list | None] = mapped_column(JSONB)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class AdTemplate(Base):
+    """광고 설정 템플릿 — 자주 쓰는 시뮬/생성 입력을 명명 저장해 재사용(T12)."""
+
+    __tablename__ = "ad_templates"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    name: Mapped[str] = mapped_column(String(100))  # "여름 캠페인", "뷰티 기본"
+    template_type: Mapped[str] = mapped_column(String(10))  # "sim" | "gen"
+    content: Mapped[dict] = mapped_column(JSONB)  # 설정값(폼 초기값)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class Inquiry(Base):

@@ -10,7 +10,7 @@
 - **Sim engine** Deepsona(OCEAN) + SSR(arXiv 2510.08338). **Scoring** SSR(임베딩 기반, no LLM, not DLR). **Output** 스칼라 아닌 분포.
 - **구매의도 검증** KOBACO 베이스라인 대비. 그 외 신호는 탐색적(exploratory) 표기.
 - **인증(타깃)** JWT + 관리자 직접 계정 생성(자가가입·소셜 없음), Admin/User 역할. **(현재)** UI만, 실 JWT 미적용·점진 도입.
-- **A/B** UI 선반영, YouTube RAG 실기능은 최종 단계. **Chat** Gemini 2.0 Flash·CLIO·SSE — 오케스트레이터 본체는 **후순위(미정)**, 단 매니지먼트는 **에이전틱 RAG 서브에이전트로 구현**(읽기+행동 제안, import-ready).
+- **A/B** UI 선반영, YouTube RAG 실기능은 최종 단계. **Chat** OpenAI gpt-4o-mini·CLIO·SSE — 오케스트레이터 본체는 **후순위(미정)**, 단 매니지먼트는 **에이전틱 RAG 서브에이전트로 구현**(읽기+행동 제안, import-ready).
 - **Ad gen** 개선 시안 5개 자동생성+순위 (Gemini Flash 3.0 / GPT Image 2 / Gemini Omni). **PDF** 전체 생성 포함. **문의** in-app 폼 → DB.
 
 ## 핵심 기능 (기획서 v1.3)
@@ -42,7 +42,7 @@
 
 - **Frontend** Next.js(TS) + Tailwind (pnpm) / **Backend+AI** FastAPI + LangGraph (uv).
 - **DB** NeonDB(PostgreSQL + pgvector, vector(1536)) / **MQ** AWS SQS / **Storage** AWS S3.
-- **Deploy** 단일 EC2 + Nginx / **CI/CD** GitHub Actions(Docker) / **Tracing** LangSmith / **Chat LLM** Gemini 2.0 Flash(`google-generativeai>=0.8.0`).
+- **Deploy** 단일 EC2 + Nginx / **CI/CD** GitHub Actions(Docker) / **Tracing** LangSmith / **Chat LLM** OpenAI gpt-4o-mini(`openai` chat.completions, SSE).
 
 ## 백엔드 아키텍처 (DDD)
 
@@ -80,7 +80,7 @@ backend/
 ```bash
 # backend/.env
 APP_ENV=development
-OPENAI_API_KEY= / ANTHROPIC_API_KEY= / GEMINI_API_KEY=   # 채팅(Gemini 2.0 Flash)
+OPENAI_API_KEY= / ANTHROPIC_API_KEY= / GEMINI_API_KEY=   # 채팅·CLIO=OpenAI(gpt-4o-mini). GEMINI는 예비.
 DATABASE_URL=postgresql+asyncpg://user:pw@host/db?sslmode=require
 AWS_ACCESS_KEY_ID= / AWS_SECRET_ACCESS_KEY= / AWS_REGION=ap-northeast-2
 S3_BUCKET_NAME= / SQS_SIMULATION_QUEUE_URL=

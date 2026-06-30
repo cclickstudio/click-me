@@ -23,6 +23,7 @@ from sqlalchemy import select
 from core.config import settings
 from core.db import AsyncSessionLocal
 from core.models import ManagementKbChunk, ManagementKbEvalCase
+from domain.management.assistant.embeddings import build_embedding_provider
 from domain.management.assistant.retriever import MANAGEMENT_SOURCE_TYPES, KbRetriever
 
 # ── 프롬프트 템플릿 ──────────────────────────────────────────────────────────
@@ -176,7 +177,7 @@ async def evaluate(k: int = 5) -> dict[str, Any]:
     Returns:
         {hit_rate_at_k, mrr, context_precision, n_cases, k, misses: [...]}
     """
-    retriever = KbRetriever()
+    retriever = KbRetriever(embedder=build_embedding_provider(settings))
 
     async with AsyncSessionLocal() as db:
         cases = (
@@ -234,7 +235,7 @@ async def evaluate_faithfulness(n: int = 30) -> dict[str, Any]:
     from domain.management.assistant.retriever import KbRetriever  # noqa: PLC0415
 
     client = AsyncOpenAI(api_key=settings.openai_api_key)
-    retriever = KbRetriever()
+    retriever = KbRetriever(embedder=build_embedding_provider(settings))
 
     async with AsyncSessionLocal() as db:
         cases = (

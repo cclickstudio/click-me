@@ -106,12 +106,15 @@ def build_management_agent(settings):
             intent = _keyword_intent(req.question, req.campaign_id)
             if intent == "kb":
                 # 지식 질문 — 키워드 전용 KB 검색(임베딩 불필요). search_kb로 인용.
+                from domain.management.assistant.embeddings import (  # noqa: PLC0415
+                    build_embedding_provider,
+                )
                 from domain.management.assistant.retriever import (  # noqa: PLC0415
                     MANAGEMENT_SOURCE_TYPES,
                     KbRetriever,
                 )
 
-                hits = await KbRetriever().keyword_search(
+                hits = await KbRetriever(embedder=build_embedding_provider(settings)).search(
                     req.question, k=4, source_types=MANAGEMENT_SOURCE_TYPES
                 )
                 return AskResult(
@@ -159,7 +162,9 @@ def build_management_agent(settings):
 
     model = getattr(settings, "management_assistant_model", "gpt-4o-mini")
     llm = ChatOpenAI(model=model, temperature=0.0, api_key=api_key)
-    retriever = KbRetriever(api_key=api_key)
+    from domain.management.assistant.embeddings import build_embedding_provider  # noqa: PLC0415
+
+    retriever = KbRetriever(embedder=build_embedding_provider(settings))
     graph = build_graph(settings, retriever, llm, checkpointer=build_checkpointer(settings))
 
     async def _ask(req: AskRequest) -> AskResult:

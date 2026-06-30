@@ -66,8 +66,15 @@ def test_get_generation_internal_missing_org_400(monkeypatch):
 
 
 def test_get_generation_user_path_needs_no_org_header(monkeypatch):
-    # 로그인 유저 경로는 세션 org를 쓰므로 X-Org-Id 불필요(프론트 정상, 리뷰 P2-c).
-    client = _app(monkeypatch, user=SimpleNamespace(id=uuid.uuid4()))
+    # 로그인 유저(비ADMIN) 경로는 세션 org를 쓰므로 X-Org-Id 불필요(프론트 정상, 리뷰 P2-c).
+    client = _app(monkeypatch, user=SimpleNamespace(id=uuid.uuid4(), role="USER"))
+    resp = client.get(_URL)
+    assert resp.status_code == 200
+
+
+def test_get_generation_admin_org_agnostic(monkeypatch):
+    # ADMIN은 조직 무관 조회(3k 머지) — org 스코프 없이 200.
+    client = _app(monkeypatch, user=SimpleNamespace(id=uuid.uuid4(), role="ADMIN"))
     resp = client.get(_URL)
     assert resp.status_code == 200
 

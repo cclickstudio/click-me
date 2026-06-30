@@ -26,6 +26,9 @@ dependencies = [
     "psycopg2-binary>=2.9.0",
     "pgvector>=0.3.0",
     "alembic>=1.13.0",
+    # LangGraph 체크포인터(Postgres) — HITL thread 영속(checkpoints* 테이블)
+    "langgraph-checkpoint-postgres>=3.1.0",
+    "psycopg[binary,pool]>=3.3.4",
     # AWS
     "boto3>=1.35.0",
     "aioboto3>=13.0.0",
@@ -100,6 +103,7 @@ ignore = [
 "alembic/**" = ["E501"]
 # 한국어 시스템 프롬프트 / 긴 emit 문자열 허용
 "api/routers/chat.py" = ["E501"]
+"domain/chat/adapters/clio.py" = ["E501"]
 "domain/simulation/service/simulation_service.py" = ["E501"]
 "domain/generator/pipeline/strategy_planner.py" = ["E501"]
 # 도구 파일 내 긴 문자열 허용
