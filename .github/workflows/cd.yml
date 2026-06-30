@@ -35,8 +35,6 @@ jobs:
   build-backend:
     name: Build & push backend (ECR)
     runs-on: ubuntu-latest
-    outputs:
-      registry: ${{ steps.login-ecr.outputs.registry }}
     steps:
       - uses: actions/checkout@v4
 
@@ -141,7 +139,19 @@ jobs:
       group: deploy-production
       cancel-in-progress: false
     steps:
-      - uses: actions/checkout@v4 # compose 파일 복사용
+      - uses: actions/checkout@v4 # compose·nginx 설정 복사용
+
+      # ECR registry 호스트네임을 이 잡 안에서 얻는다(잡 간 output은 secret 마스킹돼 비어짐)
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Log in to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
 
       # EC2는 리포를 체크아웃하지 않으므로 compose·nginx 설정을 매 배포마다 최신으로 복사
       # (비밀 없는 파일만. backend/.env 는 EC2에 1회 배치 — 리포에 없음)
@@ -151,15 +161,13 @@ jobs:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
-          source: |
-            docker-compose.prod.yml
-            deploy/nginx.conf
+          source: 'docker-compose.prod.yml,deploy/nginx.conf'
           target: /home/${{ secrets.EC2_USER }}/clickme
 
       - name: Deploy to EC2
         uses: appleboy/ssh-action@v1
         env:
-          REGISTRY: ${{ needs.build-backend.outputs.registry }}
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           AWS_REGION: ${{ secrets.AWS_REGION }}
         with:
           host: ${{ secrets.EC2_HOST }}
