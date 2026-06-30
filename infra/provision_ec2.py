@@ -145,15 +145,29 @@ def create_key_pair() -> None:
 
 
 def _lock_pem_permissions() -> None:
-    """PEM 권한 제한. ssh가 '권한 너무 열림'으로 키를 거부하지 않도록."""
+    """PEM 권한 제한. ssh가 '권한 너무 열림'으로 키를 거부하지 않도록.
+
+    Windows: NTFS DACL을 '현재 사용자 단독'으로 재설정한다.
+      reset(명시적 ACE 정리) → setowner(소유권 회수, best-effort) →
+      inheritance:r(상속 ACE 제거) → grant:r {user}:F(읽기+삭제 가능).
+    reset 없이 inheritance:r만 하면 샌드박스/복사 잔재의 *명시적* ACE(UNKNOWN SID)가
+    남아 ssh가 계속 'too open'으로 거부하고 파일 삭제도 막힌다. :R 대신 :F를 줘야
+    본인이 키를 지우거나 교체할 수 있다(소유자 Full은 ssh의 'too open' 대상이 아님).
+    """
     if os.name == "nt":
-        # Windows: NTFS ACL — 상속 제거 후 현재 사용자만 읽기 (chmod로는 안 됨)
-        user = os.environ.get("USERNAME", "")
-        subprocess.run(["icacls", str(PEM_PATH), "/inheritance:r"], capture_output=True)
+        path = str(PEM_PATH)
+        user = os.environ.get("USERNAME") or ""
+        if not user:
+            try:
+                user = os.getlogin()
+            except OSError:
+                user = ""
+        subprocess.run(["icacls", path, "/reset"], capture_output=True)
         if user:
-            subprocess.run(
-                ["icacls", str(PEM_PATH), "/grant:r", f"{user}:R"], capture_output=True
-            )
+            subprocess.run(["icacls", path, "/setowner", user], capture_output=True)
+        subprocess.run(["icacls", path, "/inheritance:r"], capture_output=True)
+        if user:
+            subprocess.run(["icacls", path, "/grant:r", f"{user}:F"], capture_output=True)
     else:
         try:
             PEM_PATH.chmod(0o400)
