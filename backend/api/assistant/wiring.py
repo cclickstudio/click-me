@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Awaitable, Callable
 
 from api.assistant.contracts import Action, Intent, SubagentRequest, SubagentResult
 from api.assistant.orchestrator import Orchestrator
@@ -223,6 +224,40 @@ def _build_simulation_handler(settings) -> Handler:
     return handle
 
 
+def _build_clio_kb_search(settings) -> Callable[[str], Awaitable[list[dict]]] | None:
+    """CLIO 일반지식 KB 검색 콜백 — search_clio_kb 도구로 주입한다. 키 없으면 None(도구 미노출)."""
+    api_key = getattr(settings, "openai_api_key", None)
+    if not api_key:
+        return None
+    from domain.chat.retriever import ClioKbRetriever  # noqa: PLC0415
+
+    retriever = ClioKbRetriever(api_key=api_key)
+
+    async def _search(query: str) -> list[dict]:
+        try:
+            return await retriever.search(query, k=4)
+        except Exception:  # noqa: BLE001 — KB 미적재/검색 실패면 인용 없이 진행
+            return []
+
+    return _search
+
+
+def _build_list_items(settings) -> Callable[[str, str | None], Awaitable[list[dict]]]:
+    """목록 위젯 데이터 콜백 — list_simulations/list_generations 도구로 주입. kind='sim'|'gen'."""
+    from domain.generator.assistant.tools import list_generations  # noqa: PLC0415
+    from domain.simulation.assistant.tools import list_simulations  # noqa: PLC0415
+
+    async def _list(kind: str, project_id: str | None) -> list[dict]:
+        try:
+            if kind == "sim":
+                return await list_simulations(project_id or "", limit=5)
+            return await list_generations(project_id or "", limit=5)
+        except Exception:  # noqa: BLE001 — 목록 조회 실패면 빈 목록(위젯은 빈 상태로)
+            return []
+
+    return _list
+
+
 def build_chat_deep_runner(settings):
     """채팅 오케스트레이터(domain/chat)에 주입할 Deep Agent 도구루프 실행기.
 
@@ -244,6 +279,8 @@ def build_chat_deep_runner(settings):
         _build_simulation_handler(settings),
         checkpointer=build_checkpointer(settings),
         memory=build_memory_store(settings),  # Memory 기둥 — remember/recall 도구
+        clio_kb_search=_build_clio_kb_search(settings),  # CLIO 일반지식 인용
+        list_items=_build_list_items(settings),  # 목록·선택 위젯
     )
 
 
@@ -280,6 +317,8 @@ def build_deep_agent(settings):
         simulation_handler,
         checkpointer=build_checkpointer(settings),
         memory=build_memory_store(settings),  # Memory 기둥 — remember/recall 도구
+        clio_kb_search=_build_clio_kb_search(settings),  # CLIO 일반지식 인용
+        list_items=_build_list_items(settings),  # 목록·선택 위젯
     )
 
     async def run(req: SubagentRequest) -> SubagentResult | None:
