@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [master, main, develop, ci-cd]
+    branches: [main, ci-cd]
   pull_request:
-    branches: [master, main]
+    branches: [main, ci-cd]
   workflow_dispatch: {} # E2E(Playwright) 잡 수동 실행용
 
 jobs:
