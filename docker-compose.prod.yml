@@ -47,9 +47,12 @@ services:
     image: nginx:alpine
     restart: unless-stopped
     ports:
-      - '80:80' # 외부 진입점(추후 443 추가)
+      - '80:80' # HTTP — ACME 챌린지 + HTTPS 리다이렉트
+      - '443:443' # HTTPS 진입점
     volumes:
       - ./deploy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro # Let's Encrypt 인증서(호스트 영속)
+      - ./deploy/certbot-www:/var/www/certbot:ro # ACME webroot 챌린지(갱신 무중단)
     depends_on:
       - backend
       - frontend
