@@ -223,73 +223,9 @@ def _build_simulation_handler(settings) -> Handler:
     return handle
 
 
-def build_chat_deep_runner(settings):
-    """채팅 오케스트레이터(domain/chat)에 주입할 Deep Agent 도구루프 실행기.
-
-    의도 분류는 호출자(채팅 오케스트레이터)가 이미 했으므로 여기선 순수 도구루프만 빌드한다.
-    management(ours, 장기기억 memory_context 지원) + generator(조언) 핸들러를 도구로 등록하고
-    run(SubagentRequest) → SubagentResult 를 반환. 키 없으면 None(호출자가 advise 폴백).
-    """
-    from api.assistant.deep_agent import build_deep_agent_graph  # noqa: PLC0415
-    from domain.management.assistant.memory_store import build_memory_store  # noqa: PLC0415
-    from domain.management.wiring import build_checkpointer  # noqa: PLC0415
-
-    llm = _build_classifier_llm(settings)
-    if llm is None:
-        return None
-    return build_deep_agent_graph(
-        llm,
-        _build_management_handler(settings),
-        _build_generator_handler(settings),
-        _build_simulation_handler(settings),
-        checkpointer=build_checkpointer(settings),
-        memory=build_memory_store(settings),  # Memory 기둥 — remember/recall 도구
-    )
-
-
 def build_assistant(settings) -> Orchestrator:
     """레지스트리 + 오케스트레이터 조립. generate/manage 등록, advise는 폴백(미등록)."""
     registry = SubagentRegistry()
     registry.register(Intent.GENERATE, _build_generator_handler(settings))
     registry.register(Intent.MANAGE, _build_management_handler(settings))
     return Orchestrator(registry, classifier_llm=_build_classifier_llm(settings))
-
-
-def build_deep_agent(settings):
-    """Deep Agent 오케스트레이터 조립 — LangGraph 루프 + 서브에이전트 도구 등록.
-
-    반환 함수: run(SubagentRequest) → SubagentResult | None
-    None이면 ADVISE — 호출자(chat.py)가 Gemini CLIO로 폴백.
-    """
-    from api.assistant.deep_agent import build_deep_agent_graph  # noqa: PLC0415
-    from api.assistant.intent import classify_intent  # noqa: PLC0415
-    from domain.management.assistant.memory_store import build_memory_store  # noqa: PLC0415
-    from domain.management.wiring import build_checkpointer  # noqa: PLC0415
-
-    management_handler = _build_management_handler(settings)
-    generator_handler = _build_generator_handler(settings)
-    simulation_handler = _build_simulation_handler(settings)
-    llm = _build_classifier_llm(settings)
-
-    # PG 싱글턴(get_pg_checkpointer) 주입 — management 그래프와 동일 체크포인터 공유(단일화).
-    # main.py lifespan에서 init 완료된 싱글턴을 build_checkpointer가 반환(없으면 MemorySaver).
-    deep_run = build_deep_agent_graph(
-        llm,
-        management_handler,
-        generator_handler,
-        simulation_handler,
-        checkpointer=build_checkpointer(settings),
-        memory=build_memory_store(settings),  # Memory 기둥 — remember/recall 도구
-    )
-
-    async def run(req: SubagentRequest) -> SubagentResult | None:
-        # LLM 없으면(키 미설정) 분류 불가 → CLIO 폴백
-        if llm is None:
-            return None
-        intent = await classify_intent(req, [Intent.MANAGE, Intent.GENERATE], llm=llm)
-        if intent == Intent.ADVISE:
-            # KB 게이트 — 일반지식 근거 있으면 인용 답변, 없으면 None(chat.py가 CLIO 폴백).
-            return await _try_kb_advise(req, settings, llm)
-        return await deep_run(req)
-
-    return run
