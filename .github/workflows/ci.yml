@@ -49,6 +49,10 @@ jobs:
             curl -fL --retry 3 -o "assets/fonts/Pretendard-$w.otf" "$base/Pretendard-$w.otf"
           done
 
+      # PDF 리포트는 Playwright(Chromium)로 HTML→PDF 렌더 → 브라우저 바이너리 필요
+      - name: Install Playwright Chromium
+        run: uv run playwright install --with-deps chromium
+
       - name: Run tests
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
