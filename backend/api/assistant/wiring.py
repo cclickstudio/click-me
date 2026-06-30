@@ -185,6 +185,44 @@ def _build_generator_handler(settings) -> Handler:
     return handle
 
 
+def _build_simulation_handler(settings) -> Handler:
+    """우리 simulation 어시스턴트를 공통 계약으로 어댑트(AssistantRequest/Result → SubagentResult).
+
+    집행 전 시뮬 결과·KPI(클릭 의향률·구매의도·신뢰도·거부율) 조회·해석만 답한다(ANSWER).
+    실제 시뮬 실행은 트리거하지 않는다 — 채팅 위젯(sim_form) 경로가 담당하므로 Deep Agent 도구는
+    '무엇을·어떻게 해석할지'만 판단·합성한다. 새 시뮬 실행은 run_simulation 신호 도구가 폼을 띄운다.
+    """
+    from core.assistant import AssistantRequest  # noqa: PLC0415
+    from domain.simulation.assistant.agent import build_simulation_agent  # noqa: PLC0415
+
+    ask = build_simulation_agent(settings)
+
+    async def handle(req: SubagentRequest) -> SubagentResult:
+        res = await ask(
+            AssistantRequest(
+                question=req.last_user_text,
+                context_id=req.context_ad_id,
+                project_id=req.project_id,
+                history=[(m.role, m.content) for m in req.messages[:-1]],
+            )
+        )
+        return SubagentResult(
+            action=Action.ANSWER,
+            message=res.answer,
+            meta={
+                "source": "simulation",
+                "label": "시뮬레이션 어시스턴트",
+                "engine": "OpenAI · 결과+KB",
+                "citations": [
+                    {"kind": c.kind, "source": c.source, "title": c.title} for c in res.citations
+                ],
+                "used_tools": list(res.used_tools),
+            },
+        )
+
+    return handle
+
+
 def build_chat_deep_runner(settings):
     """채팅 오케스트레이터(domain/chat)에 주입할 Deep Agent 도구루프 실행기.
 
@@ -203,6 +241,7 @@ def build_chat_deep_runner(settings):
         llm,
         _build_management_handler(settings),
         _build_generator_handler(settings),
+        _build_simulation_handler(settings),
         checkpointer=build_checkpointer(settings),
         memory=build_memory_store(settings),  # Memory 기둥 — remember/recall 도구
     )
@@ -229,6 +268,7 @@ def build_deep_agent(settings):
 
     management_handler = _build_management_handler(settings)
     generator_handler = _build_generator_handler(settings)
+    simulation_handler = _build_simulation_handler(settings)
     llm = _build_classifier_llm(settings)
 
     # PG 싱글턴(get_pg_checkpointer) 주입 — management 그래프와 동일 체크포인터 공유(단일화).
@@ -237,6 +277,7 @@ def build_deep_agent(settings):
         llm,
         management_handler,
         generator_handler,
+        simulation_handler,
         checkpointer=build_checkpointer(settings),
         memory=build_memory_store(settings),  # Memory 기둥 — remember/recall 도구
     )

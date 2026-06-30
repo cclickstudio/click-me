@@ -32,13 +32,16 @@ MAX_ITER = 3
 
 _SYS_ORCHESTRATOR = """\
 당신은 ClickMe 광고 플랫폼의 오케스트레이터 AI입니다.
-도구(ask_management, ask_generator)를 호출해 정보를 수집한 뒤, 한국어로 최종 답변을 작성합니다.
+도구(ask_management, ask_simulation, ask_generator)를 호출해 정보를 수집한 뒤,
+한국어로 최종 답변을 작성합니다.
 
 규칙:
 - 광고 운영·성과·예산·정책 질문 → ask_management 호출
+- 집행 전 시뮬 결과·KPI(클릭의향률·구매의도·신뢰도·거부율) 해석 → ask_simulation 호출
 - 광고 시안·카피 생성 요청 → ask_generator 호출
 - 새 캠페인 생성 요청("캠페인 만들어줘" 등) → create_campaign 호출(발화의 값을 인자로)
 - 기존 캠페인 일시중지·게재 시작·예산 증액/감액 요청 → manage_campaign 호출
+- 새 시뮬레이션 실행 요청("이 광고 시뮬 돌려줘" 등) → run_simulation 호출(발화의 값을 인자로)
 - 이미 충분한 정보가 있으면 추가 호출 없이 답합니다
 - 최종 답변에 수치·근거가 있으면 도구 결과에서 그대로 인용합니다
 """
@@ -58,6 +61,25 @@ _TOOL_SPECS = [
                 "campaign_id": {
                     "type": "string",
                     "description": "특정 캠페인 ID (선택)",
+                },
+            },
+            "required": ["query"],
+        },
+    },
+    {
+        "name": "ask_simulation",
+        "description": (
+            "집행 '전' 시뮬레이션 결과·예측·KPI(클릭 의향률·구매의도·신뢰도·거부율)의"
+            " 의미·해석 질문. 이미 돌린 시뮬 결과를 조회·해석해 근거와 함께 답한다."
+            " (새 시뮬을 돌리는 게 아니라 기존 결과 조회·해석. 실행은 run_simulation.)"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "질문 내용"},
+                "simulation_id": {
+                    "type": "string",
+                    "description": "특정 시뮬레이션 ID (선택)",
                 },
             },
             "required": ["query"],
@@ -136,6 +158,26 @@ _TOOL_SPECS = [
             "required": ["action"],
         },
     },
+    {
+        "name": "run_simulation",
+        "description": (
+            "사용자가 '이 광고로 시뮬레이션을 돌려 달라'고 요청할 때 호출한다."
+            " 시뮬 입력 폼 카드를 띄운다. 발화에 값이 있으면 인자로 채우고, 없으면 생략한다."
+            " (KPI 의미·기존 결과 해석 질문엔 호출하지 않는다 — 그건 ask_simulation.)"
+        ),
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "ad_title": {"type": "string", "description": "광고 제목(언급 시)"},
+                "ad_content": {"type": "string", "description": "광고 카피·문구(언급 시)"},
+                "product_category": {
+                    "type": "string",
+                    "description": "제품 카테고리(언급 시)",
+                },
+                "ad_objective": {"type": "string", "description": "광고 목표(언급 시)"},
+            },
+        },
+    },
 ]
 
 # ── Memory(딥에이전트 ③기둥) — 에이전트가 도구로 장기기억을 직접 읽고 쓴다 ──────
@@ -176,7 +218,8 @@ _MEMORY_TOOL_SPECS = [
 _SYS_PLANNER = """\
 당신은 ClickMe 광고 플랫폼 오케스트레이터의 플래너입니다.
 사용자 요청을 실행 가능한 할일(todo)로 분해합니다.
-가용 능력: ask_management(운영·성과·예산·이상·정책), ask_generator(시안·카피 생성), 직접 답변.
+가용 능력: ask_management(운영·성과·예산·이상·정책), ask_simulation(집행 전 시뮬 결과·KPI 해석),
+ask_generator(시안·카피 생성), 직접 답변.
 
 규칙:
 - 여러 능력이 필요하거나 순서가 있는 다단계 요청만 2~5개 단계로 쪼갠다.
@@ -236,6 +279,7 @@ class _OState(TypedDict):
     tenant_id: str | None
     create_prefill: dict | None  # create_campaign 툴이 채운 폼 초기값(없으면 None)
     campaign_action: dict | None  # manage_campaign 툴 페이로드(action·campaign_id·campaign_name)
+    sim_form: dict | None  # run_simulation 툴이 채운 시뮬 입력 폼 초기값(없으면 None)
 
 
 def _chat_to_lc(m: ChatMessage) -> HumanMessage | AIMessage:
@@ -263,18 +307,20 @@ def build_deep_agent_graph(
     llm,
     management_handler: Handler | None = None,
     generator_handler: Handler | None = None,
+    simulation_handler: Handler | None = None,
     checkpointer=None,
     memory=None,
 ) -> Callable[[SubagentRequest], Awaitable[SubagentResult]]:
     """Deep Agent 팩토리 — graph를 빌드하고 run(SubagentRequest) → SubagentResult를 반환.
 
-    management_handler / generator_handler가 None이면 mock 핸들러로 대체.
+    management_handler / generator_handler / simulation_handler가 None이면 mock 핸들러로 대체.
     실 구현이 들어오면 wiring.py에서 실 핸들러를 주입해 교체.
     checkpointer가 None이면 MemorySaver(인메모리). wiring이 PG 싱글턴을 주입하면 영속·멀티턴.
     memory(ManagementMemory) 주입 시 remember/recall 도구를 노출(딥에이전트 Memory 기둥).
     """
     _mgt_handler = management_handler or _mock_management
     _gen_handler = generator_handler or _mock_generator
+    _sim_handler = simulation_handler or _mock_simulation
 
     # ── LLM 준비 (function calling 바인딩) ──────────────────────────────────
     # memory 주입 시에만 remember/recall 도구를 노출(미주입 배포엔 유령 도구 안 생김).
@@ -334,6 +380,17 @@ def build_deep_agent_graph(
                 ],
                 "iteration": state["iteration"] + 1,
             }
+        if state.get("sim_form") is not None:
+            return {
+                "messages": [
+                    AIMessage(
+                        content=(
+                            "시뮬레이션 입력 폼을 준비했어요. 광고 정보를 확인하고 실행해 주세요."
+                        )
+                    )
+                ],
+                "iteration": state["iteration"] + 1,
+            }
         budget = state.get("iter_budget") or MAX_ITER
         if state["iteration"] >= budget or state["requires_approval"]:
             # 더 이상 도구 호출 없이 최종 합성
@@ -382,6 +439,16 @@ def build_deep_agent_graph(
                         new_thread_id = result.meta["thread_id"]
                     if result.meta.get("requires_approval"):
                         new_requires = True
+
+                elif name == "ask_simulation":
+                    # 집행 전 시뮬 결과·KPI 조회·해석(조언형). 실행은 run_simulation 신호 도구.
+                    req = SubagentRequest(
+                        messages=state["orig_messages"],
+                        session_id=state["session_id"],
+                        context_ad_id=args.get("simulation_id") or state["context_ad_id"],
+                    )
+                    result = await _sim_handler(req)
+                    new_sub["simulation"] = result.meta
 
                 elif name == "ask_generator":
                     mgt_ctx = args.get("management_context") or (
@@ -514,6 +581,28 @@ def build_deep_agent_graph(
                         "campaign_action": action_payload,
                     }
 
+                elif name == "run_simulation":
+                    # 시뮬 입력값만 추출. DB 미접촉 — sim_form 카드를 띄우는 신호일 뿐.
+                    # 실제 실행은 프론트가 기존 시뮬 라우터로(create_campaign과 동일 신호 패턴).
+                    sim_data = {
+                        "ad_title": args.get("ad_title") or None,
+                        "ad_content": args.get("ad_content") or "",
+                        "product_category": args.get("product_category") or None,
+                        "ad_objective": args.get("ad_objective") or None,
+                    }
+                    tool_msgs.append(
+                        ToolMessage(
+                            content="시뮬레이션 입력 폼을 준비했습니다.", tool_call_id=tool_id
+                        )
+                    )
+                    return {
+                        "messages": tool_msgs,
+                        "sub_results": new_sub,
+                        "thread_id": new_thread_id,
+                        "requires_approval": new_requires,
+                        "sim_form": sim_data,
+                    }
+
                 else:
                     result = SubagentResult(
                         action=Action.ANSWER,
@@ -576,6 +665,7 @@ def build_deep_agent_graph(
             "tenant_id": req.org_id,
             "create_prefill": None,
             "campaign_action": None,
+            "sim_form": None,
         }
 
         config = {
@@ -609,23 +699,35 @@ def _state_to_result(state: _OState) -> SubagentResult:
 
     # management sub_result에서 meta 재구성
     mgt_meta = state["sub_results"].get("management", {})
+    sim_meta = state["sub_results"].get("simulation", {})
     gen_meta = state["sub_results"].get("generator", {})
     # 호출된 서브에이전트 중 주 소스를 source로 — frontend가 source로 분기하므로 유지
     primary_source = (
         mgt_meta.get("source", "management")
         if mgt_meta
+        else sim_meta.get("source", "simulation")
+        if sim_meta
         else gen_meta.get("source", "generator")
         if gen_meta
         else "deep-agent"
     )
     combined_meta: dict = {
         "source": primary_source,
-        "label": mgt_meta.get("label", gen_meta.get("label", "오케스트레이터")),
-        "engine": mgt_meta.get("engine", gen_meta.get("engine", "Deep Agent")),
-        "citations": mgt_meta.get("citations", []) + gen_meta.get("citations", []),
+        "label": mgt_meta.get(
+            "label", sim_meta.get("label", gen_meta.get("label", "오케스트레이터"))
+        ),
+        "engine": mgt_meta.get(
+            "engine", sim_meta.get("engine", gen_meta.get("engine", "Deep Agent"))
+        ),
+        "citations": (
+            mgt_meta.get("citations", [])
+            + sim_meta.get("citations", [])
+            + gen_meta.get("citations", [])
+        ),
         "used_tools": (
             mgt_meta.get("used_tools", [])
             + (["ask_management"] if mgt_meta else [])
+            + (["ask_simulation"] if sim_meta else [])
             + (["ask_generator"] if gen_meta else [])
         ),
         "requires_approval": state["requires_approval"],
@@ -642,6 +744,7 @@ def _state_to_result(state: _OState) -> SubagentResult:
         "campaigns": mgt_meta.get("campaigns", []),
         "sub_results": {
             "management": _compact_meta(mgt_meta),
+            "simulation": _compact_meta(sim_meta),
             "generator": _compact_meta(gen_meta),
         },
     }
@@ -662,6 +765,15 @@ def _state_to_result(state: _OState) -> SubagentResult:
             "data": {"action": state["campaign_action"]},
         }
         combined_meta["source"] = "deep-agent"
+    # 시뮬 실행 신호(run_simulation) — 기존 sim_form 위젯 통로로 흘려보낸다.
+    # source는 "simulation" 고정 — 기존 simulation_node와 동일 조합이라
+    # 프론트·chat.py가 그대로 처리한다.
+    if state.get("sim_form") is not None:
+        combined_meta["widget"] = {
+            "type": "sim_form",
+            "data": state["sim_form"],
+        }
+        combined_meta["source"] = "simulation"
 
     return SubagentResult(
         action=Action.ANSWER,
@@ -697,5 +809,20 @@ async def _mock_generator(req: SubagentRequest) -> SubagentResult:
     )
 
 
+async def _mock_simulation(req: SubagentRequest) -> SubagentResult:
+    """simulation 실 구현 전 mock — wiring.py에서 실 핸들러로 교체."""
+    return SubagentResult(
+        action=Action.ANSWER,
+        message=f"[MOCK-SIM] 시뮬레이션 응답 (query={req.last_user_text[:40]}...)",
+        meta={"source": "simulation", "citations": [], "used_tools": ["mock"]},
+    )
+
+
 # ── 공개 심볼 ────────────────────────────────────────────────────────────────
-__all__ = ["build_deep_agent_graph", "MAX_ITER", "_mock_management", "_mock_generator"]
+__all__ = [
+    "build_deep_agent_graph",
+    "MAX_ITER",
+    "_mock_management",
+    "_mock_generator",
+    "_mock_simulation",
+]

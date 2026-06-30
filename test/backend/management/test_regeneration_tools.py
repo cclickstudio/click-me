@@ -2,6 +2,8 @@
 
 from datetime import UTC, datetime
 
+from management.helpers import NOW, POLICY_VERSION, STATE_VERSION
+
 from domain.management.agents.outcome import OutcomeKind
 from domain.management.agents.regeneration import (
     BANNED_EXPRESSIONS,
@@ -21,7 +23,6 @@ from domain.management.contracts.enums import (
     DiagnosisStatus,
 )
 from domain.management.contracts.schemas import DiagnosisResult, verify_proposal_hash
-from tests.management.helpers import NOW, POLICY_VERSION, STATE_VERSION
 
 
 def make_diagnosis(anomaly: AnomalyType = AnomalyType.QUALITY_DEGRADED) -> DiagnosisResult:

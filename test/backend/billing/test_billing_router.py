@@ -1,12 +1,12 @@
 """billing 라우터 — 엔드포인트 왕복 검증 (서비스는 Fake 토스 주입, api.main 미사용)."""
 
 import pytest
+from billing.test_billing_service import FakeToss
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from api.routers import billing
 from domain.billing.service.billing_service import BillingService
-from tests.billing.test_billing_service import FakeToss
 
 
 @pytest.fixture()

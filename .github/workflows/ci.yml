@@ -35,10 +35,10 @@ jobs:
         run: uv sync --frozen
 
       - name: Lint (ruff)
-        run: uv run ruff check .
+        run: uv run ruff check . ../test/backend
 
       - name: Format check (ruff)
-        run: uv run ruff format --check .
+        run: uv run ruff format --check . ../test/backend
 
       - name: Run tests
         env:
@@ -50,7 +50,8 @@ jobs:
           AWS_ACCESS_KEY_ID: 'dummy'
           AWS_SECRET_ACCESS_KEY: 'dummy'
           SQS_SIMULATION_QUEUE_URL: 'https://sqs.ap-northeast-2.amazonaws.com/dummy/dummy'
-        run: uv run pytest tests/ -v --tb=short
+        # testpaths(../test/backend)를 pyproject가 가리킴 → 인자 없이 실행
+        run: uv run pytest -v --tb=short
 
   # ─────────────────────────────────────────
   # Frontend: lint + build
@@ -165,7 +166,8 @@ jobs:
       # P1 — admin/chats 정렬 통합 테스트는 실 DB가 있는 이 잡에서 실제로 돈다.
       - name: Backend integration test (P1)
         working-directory: backend
-        run: uv run pytest tests/admin -v
+        # 부분 실행은 config(pyproject)를 자동 탐색 못 함 → -c로 명시(pythonpath 적용)
+        run: uv run pytest -c pyproject.toml ../test/backend/admin -v
 
       - name: Start backend (uvicorn)
         working-directory: backend

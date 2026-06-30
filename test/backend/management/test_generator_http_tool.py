@@ -1,5 +1,6 @@
 # 🅱 generator HTTP 어댑터 — IMPROVE 호출·폴링·타임아웃·copy/idx 통과
 import pytest
+from management.helpers import NOW
 
 from domain.management.agents.outcome import OutcomeKind
 from domain.management.agents.regeneration import CreativeCandidate
@@ -9,7 +10,6 @@ from domain.management.agents.regeneration_tools import (
 )
 from domain.management.contracts.enums import AnomalyType
 from domain.management.contracts.schemas import DiagnosisResult
-from tests.management.helpers import NOW
 
 
 def make_diagnosis(**evidence) -> DiagnosisResult:

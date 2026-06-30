@@ -1,4 +1,6 @@
 # 🅱 처방 agent — guard 6종 + 자율 action 결정 + 가지별 라우팅(생성/직접/관망)
+from management.helpers import NOW, POLICY_VERSION, STATE_VERSION
+
 from domain.management.agents.outcome import OutcomeKind, OutcomeReason
 from domain.management.agents.regeneration import (
     CreativeCandidate,
@@ -10,7 +12,6 @@ from domain.management.agents.regeneration import (
 from domain.management.agents.selection import InMemorySelectionRoundStore
 from domain.management.contracts.enums import ActionTier, AnomalyType
 from domain.management.contracts.schemas import DiagnosisResult, verify_proposal_hash
-from tests.management.helpers import NOW, POLICY_VERSION, STATE_VERSION
 
 
 def make_diagnosis(anomaly: AnomalyType, **overrides) -> DiagnosisResult:

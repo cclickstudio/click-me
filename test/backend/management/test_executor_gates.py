@@ -3,6 +3,13 @@
 from datetime import timedelta
 
 import pytest
+from management.helpers import (
+    NOW,
+    FakeWriter,
+    build_executor,
+    make_action,
+    make_proposal,
+)
 
 from domain.management.contracts.enums import (
     ActionTier,
@@ -12,13 +19,6 @@ from domain.management.contracts.enums import (
     ResultStatus,
 )
 from domain.management.contracts.schemas import AUTO_APPROVER, FaultConfig
-from tests.management.helpers import (
-    NOW,
-    FakeWriter,
-    build_executor,
-    make_action,
-    make_proposal,
-)
 
 # ── 게이트 #1: 같은 멱등키 10회 → 실행 1건 ──────────────────────
 
