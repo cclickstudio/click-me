@@ -122,6 +122,7 @@ async def _generate_carousel(
         qa = check_quality(
             ad_copy=AdCopy(headline=slide.headline, body=slide.body, cta=slide.cta or "보기"),
             target=product_analysis.target_audience,
+            product_name=product_analysis.product_name,
         )
         qa_results.append(qa.model_dump())
         candidates.append(
@@ -280,7 +281,11 @@ async def generate_candidates(state: GenerationState, config: RunnableConfig) ->
         )
 
         # 5. 품질검증 (순수 동기 함수)
-        quality_report = check_quality(ad_copy=ad_copy, target=product_analysis.target_audience)
+        quality_report = check_quality(
+            ad_copy=ad_copy,
+            target=product_analysis.target_audience,
+            product_name=product_analysis.product_name,
+        )
 
         # 6. 로고 합성 (brand_logo_s3_key 제공 시)
         if logo_image_bytes is not None:
@@ -328,7 +333,9 @@ async def generate_candidates(state: GenerationState, config: RunnableConfig) ->
                 "rationale": plan.rationale,
                 "headline": copy.headline,
                 "qa_passed": check_quality(
-                    ad_copy=copy, target=product_analysis.target_audience
+                    ad_copy=copy,
+                    target=product_analysis.target_audience,
+                    product_name=product_analysis.product_name,
                 ).overall_passed,
             }
             for plan, copy in zip(plans, copies, strict=True)

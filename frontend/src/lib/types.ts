@@ -694,6 +694,7 @@ export interface QualityReport {
   text_length: QualityCheckItem;
   brand_consistency: QualityCheckItem;
   overall_passed: boolean;
+  policy_warnings?: string[];
 }
 
 export interface GeneratorCandidate {

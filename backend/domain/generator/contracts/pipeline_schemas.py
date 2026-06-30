@@ -74,3 +74,4 @@ class QualityReport(BaseModel):
     text_length: QualityCheckItem
     brand_consistency: QualityCheckItem
     overall_passed: bool
+    policy_warnings: list[str] = []

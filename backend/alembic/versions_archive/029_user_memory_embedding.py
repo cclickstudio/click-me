@@ -19,9 +19,7 @@ depends_on = None
 
 def upgrade() -> None:
     op.execute("CREATE EXTENSION IF NOT EXISTS vector")
-    op.execute(
-        "ALTER TABLE management_user_memory ADD COLUMN IF NOT EXISTS embedding vector(1536)"
-    )
+    op.execute("ALTER TABLE management_user_memory ADD COLUMN IF NOT EXISTS embedding vector(1536)")
 
 
 def downgrade() -> None:
