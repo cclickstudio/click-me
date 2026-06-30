@@ -151,6 +151,8 @@ app.add_middleware(
         "http://127.0.0.1:3000",
         "http://localhost:3001",
         "http://127.0.0.1:3001",
+        # 운영 배포 주소 등은 env(CORS_ALLOW_ORIGINS, 콤마 구분)로 추가
+        *[o.strip() for o in settings.cors_allow_origins.split(",") if o.strip()],
     ],
     allow_origin_regex=r"https://.*\.vercel\.app",
     allow_credentials=True,

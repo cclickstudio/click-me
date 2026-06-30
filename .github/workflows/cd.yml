@@ -11,7 +11,6 @@ name: CD
 #   - EC2_USER               : EC2 접속 유저 (ubuntu / ec2-user)
 #   - EC2_SSH_KEY            : EC2 PEM 키 전체 내용
 #   - NEXT_PUBLIC_API_URL    : 운영 API 주소 (프론트 빌드 인자)
-#   - DISCORD_WEBHOOK_URL    : (선택) 디스코드 알림
 #
 # 사전 준비:
 #   - ECR 리포지토리 clickme-backend / clickme-frontend (없으면 아래 ensure 스텝이 자동 생성)
@@ -137,14 +136,3 @@ jobs:
             docker pull "$REGISTRY/clickme-frontend:latest"
             docker compose -f docker-compose.prod.yml up -d --remove-orphans
             docker image prune -f
-
-      - name: Notify deploy result
-        if: always()
-        uses: sarisia/actions-status-discord@v1
-        continue-on-error: true
-        with:
-          webhook: ${{ secrets.DISCORD_WEBHOOK_URL }}
-          status: ${{ job.status }}
-          title: 'ClickMe 배포 (ECR)'
-          description: 'Branch: `${{ github.ref_name }}` | Commit: `${{ github.sha }}`'
-          url: '${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}'
