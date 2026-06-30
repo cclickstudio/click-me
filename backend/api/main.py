@@ -1,8 +1,16 @@
 import asyncio
 import logging
 import os
-from contextlib import asynccontextmanager
+import sys
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
+
+# Windows 콘솔(cp949 등) 코드페이지에서 한글·em-dash 같은 비ASCII print가
+# UnicodeEncodeError로 백그라운드 태스크를 죽이지 않도록 표준 출력을 UTF-8로 고정한다.
+# (서버 로그 인코딩은 OS 콘솔 코드페이지와 무관해야 함. pytest 캡처 등 reconfigure 불가 환경은 무시)
+for _stream in (sys.stdout, sys.stderr):
+    with suppress(AttributeError, ValueError):
+        _stream.reconfigure(encoding="utf-8", errors="replace")
 
 from dotenv import load_dotenv
 
@@ -78,13 +86,19 @@ async def lifespan(app: FastAPI):
     from domain.management.scheduler import start_scheduler  # noqa: PLC0415
 
     start_scheduler(settings)
-    # KB 인제스터 — 비차단 백그라운드 태스크(서버 시작 안 막음). 키 없으면 graceful 스킵.
-    try:
-        from domain.management.assistant.kb_ingest import ingest  # noqa: PLC0415
 
-        asyncio.create_task(ingest())
-    except Exception as e:  # noqa: BLE001
-        logger.warning("[startup] KB ingest 스킵: %s", e)
+    # KB 인제스터 — 비차단 백그라운드 태스크(서버 시작 안 막음). 키 없으면 graceful 스킵.
+    async def _run_kb_ingest() -> None:
+        # fire-and-forget 태스크라 런타임 예외를 여기서 잡아 로깅한다.
+        # (안 잡으면 "Task exception was never retrieved"로 조용히 사라져 KB가 미적재됨)
+        try:
+            from domain.management.assistant.kb_ingest import ingest  # noqa: PLC0415
+
+            await ingest()
+        except Exception:
+            logger.exception("[startup] KB ingest 실패")
+
+    asyncio.create_task(_run_kb_ingest())
     yield
     await close_pg_checkpointer()
 

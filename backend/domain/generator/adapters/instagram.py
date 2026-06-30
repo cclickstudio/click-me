@@ -15,7 +15,7 @@ import httpx
 from dotenv import dotenv_values
 from pydantic import BaseModel, Field
 
-from core.config import ENV_FILE, Settings
+from core.config import ENV_FILE, Settings, settings
 
 logger = logging.getLogger("clickme")
 
@@ -132,7 +132,10 @@ def load_meta_credentials() -> tuple[str | None, str | None, str]:
         ig_account_id = (
             vals.get("META_INSTAGRAM_ACCOUNT_ID") or vals.get("META_IG_USER_ID") or ""
         ).strip() or None
-        api_version = (vals.get("META_GRAPH_API_VERSION") or "v23.0").strip()
+        # 키 부재 시 폴백은 하드코딩 대신 단일 출처(config 기본=v21.0)로 — 버전 분산 방지.
+        api_version = (
+            vals.get("META_GRAPH_API_VERSION") or settings.meta_graph_api_version
+        ).strip()
         return token, ig_account_id, api_version
     cfg = Settings()
     token = (cfg.meta_access_token or "").strip() or None

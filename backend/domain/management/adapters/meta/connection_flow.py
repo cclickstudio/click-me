@@ -85,7 +85,7 @@ async def complete_meta_connection(
     code: str,
     organization_id: uuid.UUID,
     ad_account_id: str | None = None,
-    api_version: str = "v23.0",
+    api_version: str = "v21.0",
     transport: httpx.AsyncBaseTransport | None = None,
 ) -> MetaConnection:
     """콜백 code를 장기 토큰으로 교환하고 연결 자산을 조회해 org 연결로 암호화 저장한다(커밋 포함).

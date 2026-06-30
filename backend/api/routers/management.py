@@ -1510,6 +1510,17 @@ def _real_outcome(m: MetricsSnapshot, campaign_id: str, creative_id: str | None)
     )
 
 
+def _campaign_meta_error(exc: MetaApiError, campaign_id: str) -> HTTPException:
+    """캠페인 detail 조회 시 Meta 오류를 HTTP로 변환 — 없는/잘못된 ID는 404(raw 500 방지)."""
+    if exc.code == 100:  # 객체 없음·접근불가(subcode 33 = does not exist)
+        return HTTPException(404, f"캠페인을 찾을 수 없습니다: {campaign_id}")
+    if exc.is_auth_error:
+        return HTTPException(401, "Meta 재연결이 필요합니다.")
+    if exc.is_rate_limited:
+        return HTTPException(429, "Meta 요청 한도 초과 — 잠시 후 다시 시도하세요.")
+    return HTTPException(502, "Meta API 오류")
+
+
 @router.get("/campaigns/{campaign_id}/outcome")
 async def get_campaign_outcome(
     campaign_id: str, creative_id: str | None = None, reader=Depends(_request_reader)
@@ -1519,28 +1530,40 @@ async def get_campaign_outcome(
     wiring 경유라 use_mock=False면 Meta 실측, True면 데모. creative_id는 집행한 크리에이티브
     귀속(생성→집행 경로가 stamp; 없으면 None).
     """
-    m = await reader.get_metrics(campaign_id, _today_utc())
+    try:
+        m = await reader.get_metrics(campaign_id, _today_utc())
+    except MetaApiError as exc:
+        raise _campaign_meta_error(exc, campaign_id) from exc
     return _real_outcome(m, campaign_id, creative_id).model_dump(mode="json")
 
 
 @router.get("/campaigns/{campaign_id}/platforms")
 async def get_campaign_platforms(campaign_id: str, reader=Depends(_request_reader)):
     """게재 플랫폼별(FB/IG 등) 노출·클릭·지출·도달 분해 (publisher_platform)."""
-    rows = await reader.get_platform_breakdown(campaign_id, _today_utc())
+    try:
+        rows = await reader.get_platform_breakdown(campaign_id, _today_utc())
+    except MetaApiError as exc:
+        raise _campaign_meta_error(exc, campaign_id) from exc
     return {"platforms": [r.model_dump(mode="json") for r in rows]}
 
 
 @router.get("/campaigns/{campaign_id}/demographics")
 async def get_campaign_demographics(campaign_id: str, reader=Depends(_request_reader)):
     """연령×성별(age,gender) 노출·클릭·지출·도달 분해."""
-    rows = await reader.get_demographic_breakdown(campaign_id, _today_utc())
+    try:
+        rows = await reader.get_demographic_breakdown(campaign_id, _today_utc())
+    except MetaApiError as exc:
+        raise _campaign_meta_error(exc, campaign_id) from exc
     return {"demographics": [r.model_dump(mode="json") for r in rows]}
 
 
 @router.get("/campaigns/{campaign_id}/creatives")
 async def get_campaign_creatives(campaign_id: str, reader=Depends(_request_reader)):
     """캠페인 대표 크리에이티브 — 광고 시안 이름·썸네일."""
-    rows = await reader.get_creatives(campaign_id)
+    try:
+        rows = await reader.get_creatives(campaign_id)
+    except MetaApiError as exc:
+        raise _campaign_meta_error(exc, campaign_id) from exc
     return {"creatives": [r.model_dump(mode="json") for r in rows]}
 
 
