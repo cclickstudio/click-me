@@ -1,4 +1,4 @@
-"""인증 — JWT 발급/검증 + 비밀번호 해싱.
+"""인증 — JWT 발급/검증.
 
 auth_provider 설정으로 두 모드를 병행 지원(점진 도입):
 - "local"(기본): 자체 HS256 JWT(create_access_token 발급 + HS256 decode).
@@ -9,7 +9,6 @@ auth_provider 설정으로 두 모드를 병행 지원(점진 도입):
 import uuid
 from datetime import UTC, datetime, timedelta
 
-import bcrypt
 import httpx
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -26,30 +25,6 @@ bearer = HTTPBearer(auto_error=False)
 # Cognito JWKS 캐시 — 공개키는 거의 안 바뀌므로 프로세스 수명 동안 캐시.
 # 검증 실패 시 1회 강제 갱신(키 회전 대비).
 _jwks_cache: dict | None = None
-
-
-# cognito 모드에서 password_hash 자리에 넣는 placeholder — 비번은 Cognito가 관리(DB에 해시 미저장).
-# 컬럼은 NOT NULL이라 값은 채워야 하므로 무의미 상수를 둔다. (컬럼 자체 제거는 Alembic에서)
-COGNITO_MANAGED_HASH = "cognito-managed"
-
-
-def hash_password(plain: str) -> str:
-    return bcrypt.hashpw(plain.encode(), bcrypt.gensalt()).decode()
-
-
-def password_hash_for_storage(plain: str) -> str:
-    """저장용 password_hash 산출. cognito면 placeholder(실해시 미저장), local이면 bcrypt."""
-    if settings.auth_provider == "cognito":
-        return COGNITO_MANAGED_HASH
-    return hash_password(plain)
-
-
-def verify_password(plain: str, hashed: str) -> bool:
-    try:
-        return bcrypt.checkpw(plain.encode(), hashed.encode())
-    except ValueError:
-        # bcrypt 형식이 아닌 해시(예: cognito-managed placeholder) — 매칭 불가로 처리.
-        return False
 
 
 def create_access_token(user_id: str, role: str) -> str:

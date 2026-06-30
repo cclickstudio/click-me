@@ -8,7 +8,7 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core import cognito_admin
-from core.auth import get_current_user, password_hash_for_storage
+from core.auth import get_current_user
 from core.db import get_db
 from core.models import Organization, OrganizationMember, Team, User
 
@@ -123,7 +123,6 @@ async def update_member(
     if body.password:
         if len(body.password) < 8:
             raise HTTPException(status_code=400, detail="비밀번호는 8자 이상이어야 합니다.")
-        user.password_hash = password_hash_for_storage(body.password)
         # cognito 모드면 Cognito 비번도 재설정. 실패 시 502 → DB 롤백(불일치 방지).
         await cognito_admin.set_password(user.login_id, body.password)
 
@@ -228,7 +227,6 @@ async def create_member(
 
     user = User(
         login_id=body.login_id,
-        password_hash=password_hash_for_storage(body.password),
         name=body.name,
         role="USER",
         status="ACTIVE",

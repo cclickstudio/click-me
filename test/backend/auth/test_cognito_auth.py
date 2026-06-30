@@ -11,12 +11,9 @@ from jose import jwt as jose_jwt
 from core import auth as auth_mod
 from core import cognito_admin
 from core.auth import (
-    COGNITO_MANAGED_HASH,
     _resolve_user,
     create_access_token,
     decode_token,
-    password_hash_for_storage,
-    verify_password,
 )
 from core.config import settings
 
@@ -124,21 +121,6 @@ async def test_resolve_user_cognito_missing_username_returns_none(monkeypatch):
     monkeypatch.setattr(settings, "auth_provider", "cognito")
     resolved = await _resolve_user({"sub": "x"}, _FakeDB(SimpleNamespace()))
     assert resolved is None
-
-
-def test_password_hash_for_storage_cognito(monkeypatch):
-    # cognito 모드 — 실해시 대신 placeholder, verify는 예외 없이 False.
-    monkeypatch.setattr(settings, "auth_provider", "cognito")
-    assert password_hash_for_storage("anything") == COGNITO_MANAGED_HASH
-    assert verify_password("anything", COGNITO_MANAGED_HASH) is False
-
-
-def test_password_hash_for_storage_local(monkeypatch):
-    # local 모드 — 정상 bcrypt 저장·검증.
-    monkeypatch.setattr(settings, "auth_provider", "local")
-    h = password_hash_for_storage("secret123")
-    assert h.startswith("$2")
-    assert verify_password("secret123", h) is True
 
 
 @pytest.mark.asyncio

@@ -1,6 +1,4 @@
-"""로그인 / 내 정보 API. (회원가입은 없음 — 계정은 ADMIN·COMPANY가 직접 생성)"""
-
-from datetime import datetime
+"""내 정보 API. (회원가입·자체 로그인 없음 — 계정은 ADMIN·COMPANY가 직접 생성, 인증은 Cognito)"""
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
@@ -8,12 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from core import cognito_admin
-from core.auth import (
-    create_access_token,
-    get_current_user,
-    password_hash_for_storage,
-    verify_password,
-)
+from core.auth import get_current_user
 from core.db import get_db
 from core.models import OrganizationMember, User
 
@@ -21,11 +14,6 @@ router = APIRouter()
 
 
 # ── Schemas ──────────────────────────────────
-
-
-class LoginRequest(BaseModel):
-    login_id: str
-    password: str
 
 
 class UserOut(BaseModel):
@@ -53,12 +41,6 @@ class UpdateProfileRequest(BaseModel):
     user_email: str | None = None
 
 
-class AuthResponse(BaseModel):
-    access_token: str
-    token_type: str = "bearer"
-    user: UserOut
-
-
 # ── Helpers ──────────────────────────────────
 
 
@@ -71,31 +53,6 @@ async def _get_org_id_for_user(user: User, db: AsyncSession) -> str | None:
 
 
 # ── Endpoints ────────────────────────────────
-
-
-@router.post("/login", response_model=AuthResponse)
-async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)):
-    user = await db.scalar(select(User).where(User.login_id == body.login_id))
-    if not user or not verify_password(body.password, user.password_hash):
-        raise HTTPException(status_code=401, detail="아이디 또는 비밀번호가 올바르지 않습니다.")
-
-    user.last_login_at = datetime.utcnow()
-    org_id = await _get_org_id_for_user(user, db)
-
-    token = create_access_token(str(user.id), user.role)
-    user_out = UserOut(
-        id=str(user.id),
-        login_id=user.login_id,
-        name=user.name,
-        role=user.role,
-        status=user.status,
-        must_change_password=user.must_change_password,
-        phone_num=user.phone_num,
-        user_email=user.user_email,
-        team_id=str(user.team_id) if user.team_id else None,
-        organization_id=org_id,
-    )
-    return AuthResponse(access_token=token, user=user_out)
 
 
 @router.get("/me", response_model=UserOut)
@@ -155,6 +112,5 @@ async def change_password(
         raise HTTPException(status_code=400, detail="비밀번호는 8자 이상이어야 합니다.")
     # cognito 모드면 Cognito 비번을 바꾸고 DB엔 placeholder. 실패 시 502(롤백).
     await cognito_admin.set_password(user.login_id, body.new_password)
-    user.password_hash = password_hash_for_storage(body.new_password)
     user.must_change_password = False
     return {"ok": True}
