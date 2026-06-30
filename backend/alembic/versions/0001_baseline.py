@@ -12,6 +12,8 @@ create_all이 0002(Vector(1536))·0003(chat_sessions 컬럼·신규 테이블)�
 create_all은 checkfirst=True라 멱등 — 이미 있는 테이블은 건너뛴다.
 """
 
+import sqlalchemy as sa
+
 from alembic import op
 
 revision = "0001_baseline"
@@ -43,6 +45,13 @@ def upgrade() -> None:
     # core 먼저(ads/projects 등) → SimBase(core를 FK 참조) 순으로 생성.
     CoreBase.metadata.create_all(bind)
     SimBase.metadata.create_all(bind)
+
+    # users.password_hash는 인증 Cognito 단일화로 ORM에서 제거됨(비번은 Cognito가 단일 관리).
+    # create_all은 ORM을 따르므로 빈 DB엔 처음부터 없다. 이전 스키마(컬럼 존재)인 DB를
+    # baseline으로 올릴 때만 대비해 멱등 drop — 있으면 제거, 없으면 no-op.
+    insp = sa.inspect(bind)
+    if any(c["name"] == "password_hash" for c in insp.get_columns("users")):
+        op.drop_column("users", "password_hash")
 
 
 def downgrade() -> None:

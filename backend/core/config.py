@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from pydantic import AliasChoices, Field, field_validator
+from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from domain.billing.toss_client import require_test_key
@@ -171,15 +171,46 @@ class Settings(BaseSettings):
     toss_client_key: str = "test_gck_docs_Ovk5rk1EwkEbP0W43n07xlzm"
     toss_secret_key: str = "test_gsk_docs_OaPz8L5KdmQXkzRz3y47BMw6"
 
-    # JWT (Cognito 전환 전 임시)
+    # JWT (auth_provider=local 일 때 — 자체 HS256 발급/검증)
     jwt_secret: str = "clickme-dev-secret-change-in-prod"
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 60 * 24 * 7  # 7일
+
+    # ── Auth provider (점진 도입) ──────────────────────────────
+    # "local"(기본): 자체 HS256 JWT. "cognito": AWS Cognito User Pool 토큰(JWKS·RS256) 검증.
+    # 기본이 local이라 Cognito 미설정 시 기존 인증이 그대로 동작한다.
+    auth_provider: str = "local"  # local | cognito
+    # Cognito (auth_provider=cognito 일 때만 사용). User Pool은 콘솔에서 생성하고 값은 .env로 주입.
+    # 매핑 규약: Cognito username = 우리 User.login_id (스키마 변경 없이 sub↔User 해결).
+    cognito_region: str | None = None  # 미설정 시 aws_region 사용
+    cognito_user_pool_id: str | None = None  # 예: ap-northeast-2_xxxxxxxxx
+    cognito_app_client_id: str | None = None  # ID 토큰 audience(aud) 검증값
 
     @field_validator("toss_client_key", "toss_secret_key")
     @classmethod
     def _toss_keys_must_be_test(cls, value: str) -> str:
         return require_test_key(value)
+
+    @model_validator(mode="after")
+    def _check_cognito_config(self) -> "Settings":
+        # cognito 모드를 켰는데 필수 값이 비면 기동 시점에 명확히 실패(런타임 401 디버깅 방지).
+        if self.auth_provider == "cognito" and not (
+            self.cognito_user_pool_id and self.cognito_app_client_id
+        ):
+            raise ValueError(
+                "AUTH_PROVIDER=cognito 면 COGNITO_USER_POOL_ID·COGNITO_APP_CLIENT_ID 가 필요합니다."
+            )
+        return self
+
+    # ── Cognito 파생값 (region + pool_id 로 구성) ──
+    @property
+    def cognito_issuer(self) -> str:
+        region = self.cognito_region or self.aws_region
+        return f"https://cognito-idp.{region}.amazonaws.com/{self.cognito_user_pool_id}"
+
+    @property
+    def cognito_jwks_uri(self) -> str:
+        return f"{self.cognito_issuer}/.well-known/jwks.json"
 
     # ── 작업별 이미지 설정 해석 (오버라이드 없으면 기존 설정으로 폴백) ──
     @property
