@@ -105,6 +105,12 @@ async def delete_company(
         .scalars()
         .all()
     )
+    # Cognito 삭제용 login_id 확보(users 삭제 전에 미리 읽어둔다).
+    cognito_login_ids: list[str] = []
+    if member_users:
+        cognito_login_ids = list(
+            (await db.scalars(select(User.login_id).where(User.id.in_(member_users)))).all()
+        )
     await db.execute(text("DELETE FROM organization_members WHERE organization_id = :org"), p)
     for uid in member_users:
         await db.execute(
@@ -114,6 +120,9 @@ async def delete_company(
     # 4. 조직
     await db.execute(text("DELETE FROM organizations WHERE id = :org"), p)
     await db.commit()
+    # cognito 모드면 소속 유저들도 Cognito에서 제거(best-effort — 실패해도 DB 삭제는 유지).
+    for lid in cognito_login_ids:
+        await cognito_admin.delete_user(lid)
     return {"ok": True}
 
 
