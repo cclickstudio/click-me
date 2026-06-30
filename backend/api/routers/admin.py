@@ -26,15 +26,6 @@ def _slugify(name: str) -> str:
 # ── Schemas ──────────────────────────────────
 
 
-class PendingCompany(BaseModel):
-    user_id: str
-    user_name: str
-    login_id: str
-    company_name: str
-    organization_id: str
-    created_at: datetime
-
-
 class UserRow(BaseModel):
     id: str
     login_id: str
@@ -69,74 +60,7 @@ class ChatRow(BaseModel):
     created_at: datetime
 
 
-# ── COMPANY 승인 ──────────────────────────────
-
-
-@router.get("/pending-companies", response_model=list[PendingCompany])
-async def list_pending_companies(
-    db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_admin),
-):
-    """승인 대기 중인 COMPANY 계정 목록."""
-    rows = await db.execute(
-        select(User, Organization)
-        .join(OrganizationMember, OrganizationMember.user_id == User.id)
-        .join(Organization, Organization.id == OrganizationMember.organization_id)
-        .where(User.role == "COMPANY", User.status == "PENDING")
-    )
-    result = []
-    for user, org in rows.all():
-        result.append(
-            PendingCompany(
-                user_id=str(user.id),
-                user_name=user.name,
-                login_id=user.login_id,
-                company_name=org.name,
-                organization_id=str(org.id),
-                created_at=user.created_at,
-            )
-        )
-    return result
-
-
-@router.post("/approve-company/{user_id}")
-async def approve_company(
-    user_id: str,
-    db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_admin),
-):
-    """COMPANY 계정 승인 — user.status + org.status → ACTIVE."""
-    user = await db.scalar(select(User).where(User.id == user_id, User.role == "COMPANY"))
-    if not user:
-        raise HTTPException(status_code=404, detail="해당 COMPANY 유저를 찾을 수 없습니다.")
-
-    member = await db.scalar(
-        select(OrganizationMember).where(OrganizationMember.user_id == user.id)
-    )
-    if not member:
-        raise HTTPException(status_code=404, detail="조직 멤버 정보를 찾을 수 없습니다.")
-
-    org = await db.scalar(select(Organization).where(Organization.id == member.organization_id))
-    if not org:
-        raise HTTPException(status_code=404, detail="조직을 찾을 수 없습니다.")
-
-    user.status = "ACTIVE"
-    org.status = "ACTIVE"
-    return {"ok": True}
-
-
-@router.post("/reject-company/{user_id}")
-async def reject_company(
-    user_id: str,
-    db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_admin),
-):
-    """COMPANY 계정 반려."""
-    user = await db.scalar(select(User).where(User.id == user_id, User.role == "COMPANY"))
-    if not user:
-        raise HTTPException(status_code=404, detail="해당 COMPANY 유저를 찾을 수 없습니다.")
-    user.status = "REJECTED"
-    return {"ok": True}
+# ── 회사(조직) 삭제 ───────────────────────────
 
 
 @router.delete("/companies/{org_id}")

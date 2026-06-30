@@ -35,14 +35,6 @@ async def _get_company_org(company_user: User, db: AsyncSession) -> Organization
 # ── Schemas ──────────────────────────────────
 
 
-class PendingMember(BaseModel):
-    member_id: str
-    user_id: str
-    user_name: str
-    login_id: str
-    created_at: datetime
-
-
 class MemberRow(BaseModel):
     member_id: str
     user_id: str
@@ -92,88 +84,6 @@ class GenerationRow(BaseModel):
 
 
 # ── Endpoints ────────────────────────────────
-
-
-@router.get("/pending-members", response_model=list[PendingMember])
-async def list_pending_members(
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """승인 대기 중인 USER 목록."""
-    org = await _get_company_org(current_user, db)
-
-    rows = await db.execute(
-        select(OrganizationMember, User)
-        .join(User, User.id == OrganizationMember.user_id)
-        .where(
-            OrganizationMember.organization_id == org.id,
-            OrganizationMember.status == "PENDING",
-            User.role == "USER",
-        )
-    )
-    return [
-        PendingMember(
-            member_id=str(m.id),
-            user_id=str(u.id),
-            user_name=u.name,
-            login_id=u.login_id,
-            created_at=m.created_at,
-        )
-        for m, u in rows.all()
-    ]
-
-
-@router.post("/approve-member/{member_id}")
-async def approve_member(
-    member_id: str,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """USER 멤버 승인 — org_member.status + user.status → ACTIVE."""
-    org = await _get_company_org(current_user, db)
-
-    member = await db.scalar(
-        select(OrganizationMember).where(
-            OrganizationMember.id == member_id,
-            OrganizationMember.organization_id == org.id,
-        )
-    )
-    if not member:
-        raise HTTPException(status_code=404, detail="멤버를 찾을 수 없습니다.")
-
-    user = await db.scalar(select(User).where(User.id == member.user_id))
-    if not user:
-        raise HTTPException(status_code=404, detail="유저를 찾을 수 없습니다.")
-
-    member.status = "ACTIVE"
-    member.joined_at = datetime.utcnow()
-    user.status = "ACTIVE"
-    return {"ok": True}
-
-
-@router.post("/reject-member/{member_id}")
-async def reject_member(
-    member_id: str,
-    db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """USER 멤버 반려."""
-    org = await _get_company_org(current_user, db)
-
-    member = await db.scalar(
-        select(OrganizationMember).where(
-            OrganizationMember.id == member_id,
-            OrganizationMember.organization_id == org.id,
-        )
-    )
-    if not member:
-        raise HTTPException(status_code=404, detail="멤버를 찾을 수 없습니다.")
-
-    user = await db.scalar(select(User).where(User.id == member.user_id))
-    if user:
-        user.status = "REJECTED"
-    member.status = "REJECTED"
-    return {"ok": True}
 
 
 class UpdateMember(BaseModel):

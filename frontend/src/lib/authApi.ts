@@ -1,7 +1,7 @@
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
 export type UserRole = 'ADMIN' | 'COMPANY' | 'USER';
-export type UserStatus = 'ACTIVE' | 'PENDING' | 'REJECTED';
+export type UserStatus = 'ACTIVE';
 
 export type UserOut = {
   id: string;
