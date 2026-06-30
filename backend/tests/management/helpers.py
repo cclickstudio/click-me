@@ -3,6 +3,7 @@
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
+from domain.management.adapters.meta.writer import synthetic_creative_id
 from domain.management.contracts.enums import (
     ActionTier,
     ExecutionMode,
@@ -89,10 +90,77 @@ class FakeWriter:
     async def adjust_budget(self, campaign_id: str, amount_krw: int, idem_key: str) -> ActionResult:
         return self._respond("INCREASE_BUDGET", campaign_id, idem_key)
 
-    async def replace_creative(
-        self, campaign_id: str, creative_id: str, idem_key: str
+    async def replace_creative(self, ad_id: str, creative_id: str, idem_key: str) -> ActionResult:
+        return self._respond("REPLACE_CREATIVE", ad_id, idem_key)
+
+    async def create_ad_creative(
+        self, ad_account_id: str, *, image_hash, headline, body, link_url, idem_key: str
+    ) -> str:
+        if not idem_key:
+            raise ValueError("idem_key 필수")
+        self.calls.append(("create_ad_creative", ad_account_id, idem_key))
+        return synthetic_creative_id(idem_key)  # real writer와 동일 digest(리뷰 P2-3)
+
+    async def replace_creative_tree(
+        self,
+        campaign_id: str,
+        *,
+        ad_ids,
+        ad_account_id,
+        image_hash,
+        headline,
+        body,
+        link_url,
+        idem_key: str,
     ) -> ActionResult:
-        return self._respond("REPLACE_CREATIVE", campaign_id, idem_key)
+        # real writer 부분실패 동작 반영(리뷰 P2-b) — fail_targets에 든 ad에서 실패하고
+        # succeeded_ad_ids/failed_ad_id snapshot을 남긴다(executor 부분실패·재시도 테스트용).
+        # real writer와 동일하게 ad_ids 선검증(P1-2·P1-1 — str은 list/tuple 아니라 차단).
+        if (
+            not isinstance(ad_ids, (list, tuple))
+            or not ad_ids
+            or not all(isinstance(a, str) and a for a in ad_ids)
+        ):
+            raise ValueError("replace_creative_tree: ad_ids는 비어있지 않은 문자열 리스트여야 함")
+        creative_id = await self.create_ad_creative(
+            ad_account_id,
+            image_hash=image_hash,
+            headline=headline,
+            body=body,
+            link_url=link_url,
+            idem_key=f"{idem_key}-creative",
+        )
+        succeeded: list[str] = []
+        for i, ad_id in enumerate(ad_ids):  # 결속 ad_ids 각각 기록(fan-out 검증용)
+            r = self._respond("REPLACE_CREATIVE", ad_id, f"{idem_key}-ad-{i}")
+            if r.status is not ResultStatus.SUCCESS:
+                # real writer와 동일하게 일부 성공 후 실패면 PARTIAL_FAILURE(코드리뷰 #1) —
+                # executor가 결과를 박제하고 멱등키를 풀지 않게 한다.
+                failure_reason = FailureReason.PARTIAL_FAILURE if succeeded else r.failure_reason
+                return r.model_copy(
+                    update={
+                        "failure_reason": failure_reason,
+                        "platform_response_snapshot": {
+                            **(r.platform_response_snapshot or {}),
+                            "succeeded_ad_ids": succeeded,
+                            "failed_ad_id": ad_id,
+                            "creative_id": creative_id,
+                        },
+                    }
+                )
+            succeeded.append(ad_id)
+        # real writer 성공 snapshot과 같은 키(creative_id·ad_count·succeeded_ad_ids) 반환.
+        ok = self._respond("REPLACE_CREATIVE", campaign_id, idem_key)
+        return ok.model_copy(
+            update={
+                "platform_response_snapshot": {
+                    **(ok.platform_response_snapshot or {}),
+                    "creative_id": creative_id,
+                    "ad_count": len(ad_ids),
+                    "succeeded_ad_ids": succeeded,
+                }
+            }
+        )
 
     async def create_campaign(self, config, idem_key: str) -> ActionResult:
         return self._respond("CREATE_CAMPAIGN", config.campaign_id, idem_key)

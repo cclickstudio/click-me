@@ -58,8 +58,14 @@ class GeneratorReadClient:
         # generator 조회가 org 스코프된 경우 내부 호출 우회용 헤더(설정 시에만 전송).
         self._headers = {"X-Internal-Token": internal_token} if internal_token else {}
 
-    async def get_candidate(self, generation_id: str, candidate_id: str) -> HandoffCandidate:
-        data = await self._fetch(generation_id)
+    async def get_candidate(
+        self, generation_id: str, candidate_id: str, org_id: str
+    ) -> HandoffCandidate:
+        # org_id 필수(리뷰 P1-3) — management는 무스코프 조회를 절대 하지 않는다.
+        # 무스코프(admin/debug)가 필요하면 별도 명시 메서드를 둔다(현재 없음).
+        if not org_id:
+            raise ValueError("get_candidate: org_id 필수")
+        data = await self._fetch(generation_id, org_id)
         if data.get("schema_version") != _EXPECTED_SCHEMA:
             # 스펙 D1 — 계약 버전 불일치는 generator 팀 알림 대상. 감사/모니터링용 로그.
             logger.error(
@@ -78,13 +84,14 @@ class GeneratorReadClient:
                 return HandoffCandidate.model_validate(c)
         raise InvalidGenerationError(404, "candidate가 해당 generation에 없음")
 
-    async def _fetch(self, generation_id: str) -> dict:
+    async def _fetch(self, generation_id: str, org_id: str) -> dict:
         url = f"{self._base_url}/api/generator/generations/{generation_id}"
+        headers = {**self._headers, "X-Org-Id": str(org_id)}
         last_exc: Exception | None = None
         async with httpx.AsyncClient(timeout=_TIMEOUT, transport=self._transport) as client:
             for _ in range(_RETRIES + 1):
                 try:
-                    resp = await client.get(url, headers=self._headers)
+                    resp = await client.get(url, headers=headers)
                 except httpx.HTTPError as exc:
                     last_exc = exc
                     continue
