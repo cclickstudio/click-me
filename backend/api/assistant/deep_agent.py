@@ -38,14 +38,15 @@ _SYS_ORCHESTRATOR = """\
 규칙:
 - 광고 운영·성과·예산·정책 질문 → ask_management 호출
 - 집행 전 시뮬 결과·KPI(클릭의향률·구매의도·신뢰도·거부율) 해석 → ask_simulation 호출
-- 광고 시안·카피 생성 요청 → ask_generator 호출
+- 광고 시안·카피 '작성 원칙·전략' 질문 → ask_generator 호출
+- 시안·카피를 실제로 '만들어 달라'는 요청("시안 만들어줘") → run_generator 호출(발화 값을 인자로)
 - 새 캠페인 생성 요청("캠페인 만들어줘" 등) → create_campaign 호출(발화의 값을 인자로)
 - 기존 캠페인 일시중지·게재 시작·예산 증액/감액 요청 → manage_campaign 호출
 - 새 시뮬레이션 실행 요청("이 광고 시뮬 돌려줘" 등) → run_simulation 호출(발화의 값을 인자로)
 - 이미 충분한 정보가 있으면 추가 호출 없이 답합니다
 - 최종 답변에 수치·근거가 있으면 도구 결과에서 그대로 인용합니다
-- 신호 도구(create_campaign/manage_campaign/run_simulation)를 호출했으면, 추가 도구 호출 없이
-  한 문장으로 마무리합니다(폼·확인 카드는 이미 준비됨)
+- 신호 도구(create_campaign/manage_campaign/run_simulation/run_generator)를 호출했으면,
+  추가 도구 호출 없이 한 문장으로 마무리합니다(폼·확인 카드는 이미 준비됨)
 """
 
 # 요청 스코프 컨텍스트 — 매 run마다 {"req", "acc"}를 주입(asyncio 태스크 안전).
@@ -224,6 +225,27 @@ def build_deep_agent_graph(
         }
         return "시뮬레이션 입력 폼을 준비했습니다."
 
+    @tool
+    def run_generator(
+        product_name: str | None = None,
+        product_description: str | None = None,
+        target_audience: str | None = None,
+        campaign_objective: str | None = None,
+    ) -> str:
+        """사용자가 '광고 시안·카피를 만들어 달라'고 요청할 때 호출한다.
+
+        생성 입력 폼 카드를 띄운다. 발화에 값이 있으면 인자로 채우고, 없으면 생략한다.
+        (카피 전략·작성 원칙 '질문'엔 호출하지 않는다 — 그건 ask_generator.)
+        """
+        _, acc = _ctx()
+        acc["gen_form"] = {
+            "product_name": product_name or None,
+            "product_description": product_description or None,
+            "target_audience": target_audience or None,
+            "campaign_objective": campaign_objective or "conversion",
+        }
+        return "생성 입력 폼을 준비했습니다."
+
     tools = [
         ask_management,
         ask_simulation,
@@ -231,6 +253,7 @@ def build_deep_agent_graph(
         create_campaign,
         manage_campaign,
         run_simulation,
+        run_generator,
     ]
 
     # Memory(딥에이전트 기둥) — memory 주입 시에만 노출(미주입 배포엔 유령 도구 안 생김).
@@ -279,6 +302,7 @@ def build_deep_agent_graph(
             "create_prefill": None,
             "campaign_action": None,
             "sim_form": None,
+            "gen_form": None,
             "plan": [],
         }
         messages = [{"role": m.role, "content": m.content} for m in req.messages]
@@ -395,6 +419,13 @@ def _state_to_result(state: dict) -> SubagentResult:
             "data": state["sim_form"],
         }
         combined_meta["source"] = "simulation"
+    # 생성 실행 신호(run_generator) — 기존 gen_form 위젯 통로로 흘려보낸다(source="generator").
+    if state.get("gen_form") is not None:
+        combined_meta["widget"] = {
+            "type": "gen_form",
+            "data": state["gen_form"],
+        }
+        combined_meta["source"] = "generator"
 
     return SubagentResult(
         action=Action.ANSWER,
