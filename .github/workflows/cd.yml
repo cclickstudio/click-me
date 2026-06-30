@@ -11,7 +11,7 @@ name: CD
 #   - EC2_HOST               : EC2 퍼블릭 IP 또는 도메인
 #   - EC2_USER               : EC2 접속 유저 (ubuntu / ec2-user)
 #   - EC2_SSH_KEY            : EC2 PEM 키 전체 내용
-#   - NEXT_PUBLIC_API_URL    : 운영 API 주소 (프론트 빌드 인자)
+#   (NEXT_PUBLIC_API_URL은 더 이상 secret으로 쓰지 않음 — 빈 값으로 빌드해 /api 상대경로 호출 → same-origin)
 #   - NEXT_PUBLIC_COGNITO_USER_POOL_ID : Cognito User Pool ID (프론트 빌드 인자, 공개돼도 무방)
 #   - NEXT_PUBLIC_COGNITO_CLIENT_ID    : Cognito App Client ID (프론트 빌드 인자, 공개돼도 무방)
 # (NEXT_PUBLIC_AUTH_PROVIDER=cognito, NEXT_PUBLIC_COGNITO_REGION=us-west-2 는 비밀 아님 → 평문)
@@ -117,6 +117,9 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      # NEXT_PUBLIC_API_URL은 의도적으로 빈 값 → 프론트가 /api 상대경로로 호출.
+      # nginx 단일 진입점이라 어떤 호스트(IP·퍼블릭 DNS·도메인)로 접속해도 same-origin → CORS 미발생.
+      # (build-args 블록 안에는 # 주석을 못 넣음 — 리터럴로 전달되므로 여기 step에 둠)
       - name: Build & push frontend
         uses: docker/build-push-action@v6
         with:
@@ -126,7 +129,7 @@ jobs:
             ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_FRONTEND }}:latest
             ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_FRONTEND }}:${{ github.sha }}
           build-args: |
-            NEXT_PUBLIC_API_URL=${{ secrets.NEXT_PUBLIC_API_URL }}
+            NEXT_PUBLIC_API_URL=
             NEXT_PUBLIC_AUTH_PROVIDER=cognito
             NEXT_PUBLIC_COGNITO_REGION=us-west-2
             NEXT_PUBLIC_COGNITO_USER_POOL_ID=${{ secrets.NEXT_PUBLIC_COGNITO_USER_POOL_ID }}
