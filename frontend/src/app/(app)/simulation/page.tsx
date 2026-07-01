@@ -515,7 +515,9 @@ export default function SimulationRunPage() {
 
             {/* 이미지 입력 방식 — 남는 세로 공간을 채워 좌우 높이 정렬 */}
             <div className='flex flex-1 flex-col'>
-              <label className={labelCls}>광고 이미지 *</label>
+              <label className={labelCls}>
+                광고 이미지 <span className='text-[#F74D4D]'>*</span>
+              </label>
               <div className='flex gap-2 mb-3'>
                 {(
                   [

@@ -4,6 +4,8 @@
 // 세션은 props로 제어(sessionId=null이면 새 채팅). 사이드바·프로젝트 게이트는 바깥에서 처리.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { api } from '@/lib/api';
 import { getToken } from '@/lib/authApi';
 import { formatRelativeKST, formatKSTFull } from '@/lib/datetime';
@@ -37,6 +39,39 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 // 상대 프록시 URL(/api/...)은 API_BASE를 붙여 렌더. blob:·http:는 그대로 통과.
 const fullUrl = (u?: string) =>
   u && u.startsWith('/') ? `${API_BASE}${u}` : u;
+
+// 어시스턴트 답변 마크다운 렌더 — 굵게·목록·제목·링크·코드를 GFM으로 표시(typography 플러그인 없이 arbitrary variant로 스타일).
+const MD_CLS =
+  'text-sm leading-relaxed break-words ' +
+  '[&_p]:my-1 [&_p:first-child]:mt-0 [&_p:last-child]:mb-0 ' +
+  '[&_strong]:font-semibold ' +
+  '[&_ul]:my-1 [&_ul]:pl-5 [&_ul]:list-disc [&_ol]:my-1 [&_ol]:pl-5 [&_ol]:list-decimal ' +
+  '[&_li]:my-0.5 ' +
+  '[&_h1]:text-base [&_h1]:font-bold [&_h1]:mt-2 [&_h1]:mb-1 ' +
+  '[&_h2]:text-sm [&_h2]:font-bold [&_h2]:mt-2 [&_h2]:mb-1 ' +
+  '[&_h3]:text-sm [&_h3]:font-semibold [&_h3]:mt-2 [&_h3]:mb-1 ' +
+  '[&_a]:text-[#3182F6] [&_a]:underline ' +
+  '[&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded [&_code]:bg-black/10 dark:[&_code]:bg-white/10 [&_code]:text-[0.85em] ' +
+  '[&_pre]:my-1.5 [&_pre]:p-2.5 [&_pre]:rounded-lg [&_pre]:bg-black/80 [&_pre]:text-white [&_pre]:overflow-x-auto [&_pre_code]:bg-transparent [&_pre_code]:p-0 ' +
+  '[&_blockquote]:border-l-2 [&_blockquote]:border-[#B0B8C1] [&_blockquote]:pl-3 [&_blockquote]:text-[#4E5968] dark:[&_blockquote]:text-[#8B95A1] ' +
+  '[&_table]:my-1.5 [&_table]:border-collapse [&_th]:border [&_td]:border [&_th]:border-[#D1D6DB] [&_td]:border-[#D1D6DB] [&_th]:px-2 [&_th]:py-1 [&_td]:px-2 [&_td]:py-1';
+
+function ChatMarkdown({ content }: { content: string }) {
+  return (
+    <div className={MD_CLS}>
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        components={{
+          // 링크는 새 탭 + 안전 속성
+          a: ({ ...props }) => (
+            <a {...props} target='_blank' rel='noopener noreferrer' />
+          ),
+        }}>
+        {content}
+      </ReactMarkdown>
+    </div>
+  );
+}
 
 // N4 선제적 말걸기 — 미열람 완료 시뮬 결과를 챗봇이 먼저 알린다. 빈도 가드로 스팸 방지.
 const PROACTIVE_GUARD_MS = 1000 * 60 * 20; // 프로젝트당 20분에 1회만 선제 알림
@@ -1597,12 +1632,16 @@ export default function ChatConversation({
                       />
                     ) : (
                       <div
-                        className={`px-4 py-3 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap ${
+                        className={`px-4 py-3 rounded-2xl ${
                           msg.role === 'user'
-                            ? 'bg-[#3182F6] text-white rounded-br-md'
+                            ? 'text-sm leading-relaxed whitespace-pre-wrap bg-[#3182F6] text-white rounded-br-md'
                             : 'bg-[#F2F4F6] dark:bg-[#252D3D] text-[#191F28] dark:text-[#F2F4F6] rounded-bl-md'
                         }`}>
-                        {msg.content}
+                        {msg.role === 'assistant' ? (
+                          <ChatMarkdown content={msg.content} />
+                        ) : (
+                          msg.content
+                        )}
                         {isStreamingMsg && (
                           <span className='typing-caret' aria-hidden />
                         )}
