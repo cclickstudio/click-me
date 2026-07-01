@@ -1786,9 +1786,11 @@ export default function GeneratorPage() {
                     })}
                   </ul>
                   <p className="mt-6 text-xs text-[#8B95A1] dark:text-[#6B7280]">
-                    {format === "carousel"
-                      ? "카드뉴스 3장을 생성하는 데 1~2분 정도 걸릴 수 있어요."
-                      : "이미지 3장을 생성하는 데 2~3분 정도 걸릴 수 있어요."}
+                    {mode === "improve"
+                      ? "이미지 1장을 생성하는 데 1분 정도 걸릴 수 있어요."
+                      : format === "carousel"
+                        ? "카드뉴스 3장을 생성하는 데 1~2분 정도 걸릴 수 있어요."
+                        : "이미지 3장을 생성하는 데 2~3분 정도 걸릴 수 있어요."}
                   </p>
                 </div>
               )}
