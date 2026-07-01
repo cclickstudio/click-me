@@ -1077,7 +1077,9 @@ export default function ChatConversation({
         const sims = await api.projects
           .simulations(projectId, 20)
           .catch(() => [] as Record<string, unknown>[]);
-        if (cancelled) return;
+        // await 도중 채팅 스트리밍이 시작됐으면 알림 주입을 미룬다 — 안 그러면
+        // consumeStream이 이어붙이는 말풍선에 선제 알림이 끼어들어 답변과 한 덩어리로 렌더된다.
+        if (cancelled || streamingRef.current) return;
         let seen: string[] = [];
         try {
           seen = JSON.parse(
