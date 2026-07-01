@@ -352,3 +352,91 @@ def test_record_admin_read_access_only_for_all_org(monkeypatch):
     )
     assert len(events) == 1
     assert events[0]["endpoint"] == "created-campaigns" and events[0]["actor"] == str(admin.id)
+
+
+class _RowsDB:
+    """created_campaigns용 — execute(stmt) 캡처. scalar_value는 org 검증/멤버십 조회 반환."""
+
+    def __init__(self, rows, scalar_value=None):
+        self._rows = rows
+        self._scalar_value = scalar_value
+        self.stmt = None
+
+    async def scalar(self, *_a, **_k):
+        return self._scalar_value
+
+    async def execute(self, stmt, *_a, **_k):
+        self.stmt = stmt
+        rows = self._rows
+
+        class _R:
+            def scalars(self):
+                class _S:
+                    def all(self):
+                        return rows
+
+                return _S()
+
+        return _R()
+
+
+def _mk_campaign(tenant, name):
+    from datetime import UTC, datetime
+
+    return SimpleNamespace(
+        id=uuid.uuid4(),
+        tenant_id=str(tenant),
+        meta_campaign_id="m1",
+        name=name,
+        objective="o",
+        ad_account_id="act",
+        daily_budget_krw=0,
+        status="linked",
+        execution_mode="manual_link",
+        created_at=datetime.now(UTC),
+        deleted_at=None,
+    )
+
+
+def _app_with(user, db):
+    app = FastAPI()
+    app.include_router(management.router, prefix="/api/management")
+    app.dependency_overrides[get_current_user] = lambda: user
+    app.dependency_overrides[get_db] = lambda: db
+    return app
+
+
+def test_created_campaigns_requires_auth():
+    app = FastAPI()
+    app.include_router(management.router, prefix="/api/management")
+    assert TestClient(app).get("/api/management/created-campaigns").status_code == 401
+
+
+def test_created_campaigns_admin_all_org_has_no_where():
+    admin = SimpleNamespace(id=uuid.uuid4(), role="ADMIN")
+    db = _RowsDB([_mk_campaign(uuid.uuid4(), "A"), _mk_campaign(uuid.uuid4(), "B")])
+    res = TestClient(_app_with(admin, db)).get("/api/management/created-campaigns")  # 무헤더=전체
+    assert res.status_code == 200
+    items = res.json()["items"]
+    assert len(items) == 2 and all("tenant_id" in it for it in items)
+    assert db.stmt.whereclause is None  # 전 org = WHERE 없음
+
+
+def test_created_campaigns_admin_header_scopes_by_org():
+    admin = SimpleNamespace(id=uuid.uuid4(), role="ADMIN")
+    org = uuid.uuid4()
+    db = _RowsDB([_mk_campaign(org, "A")], scalar_value="ACTIVE")  # _validated_org(status)
+    res = TestClient(_app_with(admin, db)).get(
+        "/api/management/created-campaigns", headers={"X-Org-Id": str(org)}
+    )
+    assert res.status_code == 200
+    assert db.stmt.whereclause is not None  # 특정 org = WHERE 있음
+
+
+def test_created_campaigns_admin_all_org_records_access_log(monkeypatch):
+    events = []
+    monkeypatch.setattr(management, "_ACCESS_LOG_SINK", lambda **kw: events.append(kw))
+    admin = SimpleNamespace(id=uuid.uuid4(), role="ADMIN")
+    db = _RowsDB([_mk_campaign(uuid.uuid4(), "A")])
+    TestClient(_app_with(admin, db)).get("/api/management/created-campaigns")
+    assert len(events) == 1 and events[0]["endpoint"] == "created-campaigns"

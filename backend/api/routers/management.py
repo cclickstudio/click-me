@@ -515,13 +515,25 @@ async def execute(
 
 
 @router.get("/created-campaigns")
-async def created_campaigns(db: AsyncSession = Depends(get_db)):
-    """앱에서 생성한 캠페인 누적 기록 (최신순) — 네온 DB 영속."""
-    rows = (
-        (await db.execute(select(CreatedCampaign).order_by(CreatedCampaign.created_at.desc())))
-        .scalars()
-        .all()
+async def created_campaigns(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    limit: int = 50,
+    offset: int = 0,
+):
+    """앱 생성 캠페인 누적(최신순). 비-ADMIN=자기 org / ADMIN 무헤더=전 org / ADMIN 헤더=그 org."""
+    limit, offset = _clamp_limit_offset(limit, offset)
+    scope = await _scope_org_or_all(user, db)  # UUID | None(전체)
+    _record_admin_read_access(user, "created-campaigns", scope, limit=limit, offset=offset)
+    stmt = select(CreatedCampaign)
+    if scope is not None:
+        stmt = stmt.where(CreatedCampaign.tenant_id == str(scope))
+    stmt = (
+        stmt.order_by(CreatedCampaign.created_at.desc(), CreatedCampaign.id.desc())
+        .limit(limit)
+        .offset(offset)
     )
+    rows = (await db.execute(stmt)).scalars().all()
     return {
         "items": [
             {
