@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from langchain_core.runnables import RunnableConfig
+from langsmith import get_current_run_tree
 
 from core.config import settings
 
@@ -12,6 +13,9 @@ def make_trace_config(
     feature: str,
     mode: str | None = None,
     user_id: str = "anonymous",
+    login_id: str | None = None,
+    user_name: str | None = None,
+    role: str | None = None,
     ad_id: str | None = None,
     project_id: str | None = None,
     extra_metadata: dict | None = None,
@@ -22,6 +26,7 @@ def make_trace_config(
 
     run_name = ``{domain}.{feature}[.{mode}]``. tags·metadata는 가이드 §4·§5 표준 키를
     채우고, 도메인별 추가 키는 extra_metadata / extra_tags로 합친다.
+    login_id·user_name·role: 사용자별 필터·그룹용(사람이 읽는 식별자). user_id는 UUID.
     configurable: LangGraph emit 콜백 등 그래프 내부 전달값.
     """
     run_name = f"{domain}.{feature}" + (f".{mode}" if mode else "")
@@ -37,6 +42,13 @@ def make_trace_config(
         "ad_id": ad_id,
         "project_id": project_id,
     }
+    # 사람이 읽는 사용자 식별자 — 있을 때만 실어 LangSmith에서 user별 필터/그룹에 쓴다.
+    if login_id:
+        metadata["login_id"] = login_id
+    if user_name:
+        metadata["user_name"] = user_name
+    if role:
+        metadata["role"] = role
     if mode:
         metadata["mode"] = mode
     if extra_metadata:
@@ -48,3 +60,69 @@ def make_trace_config(
         metadata=metadata,
         configurable=configurable or {},
     )
+
+
+# ── 이미지 생성 비용 기록 ──────────────────────────────────────────────────────
+# LangSmith는 이미지 모델 단가를 자동 계산하지 못해(토큰 기반 텍스트 모델만) 수동으로
+# cost_usd를 노드 메타에 싣는다. 단가는 OpenAI/Google 공개가(기준 2026-06, 변동 시 갱신).
+# gpt-image 계열: size×quality별 이미지당 USD. gemini image: 이미지당 근사 정액.
+_IMAGE_PRICE_USD: dict[str, dict[tuple[str, str], float]] = {
+    "gpt-image-1": {
+        ("1024x1024", "low"): 0.011,
+        ("1024x1024", "medium"): 0.042,
+        ("1024x1024", "high"): 0.167,
+        ("1024x1536", "low"): 0.016,
+        ("1024x1536", "medium"): 0.063,
+        ("1024x1536", "high"): 0.25,
+        ("1536x1024", "low"): 0.016,
+        ("1536x1024", "medium"): 0.063,
+        ("1536x1024", "high"): 0.25,
+    },
+}
+# gpt-image-2 단가 미공개 — 확정 전 gpt-image-1과 동일 가정(확정 시 갱신).
+_IMAGE_PRICE_USD["gpt-image-2"] = _IMAGE_PRICE_USD["gpt-image-1"]
+# 토큰 기반(gemini image): 토큰 실측이 있으면 그걸로 계산, 없으면 이미지당 근사 정액.
+_GEMINI_IMAGE_USD_PER_1K_TOK = 0.03  # ~$30 / 1M 출력 토큰
+_IMAGE_FLAT_USD: dict[str, float] = {
+    "gemini-2.5-flash-image": 0.039,  # ~1290 tok/이미지 근사
+}
+
+
+def _lookup_image_price(model: str, size: str, quality: str) -> float | None:
+    """모델·size·quality로 이미지당 USD 조회. 표에 없으면 None."""
+    table = _IMAGE_PRICE_USD.get(model)
+    if table is None:
+        return _IMAGE_FLAT_USD.get(model)
+    return table.get((size, quality))
+
+
+def record_image_cost(
+    *,
+    model: str,
+    size: str | None = None,
+    quality: str | None = None,
+    n: int = 1,
+    tokens: int | None = None,
+) -> None:
+    """현재 트레이스 노드에 이미지 생성 cost_usd를 기록(best-effort).
+
+    gpt-image 계열은 size×quality 단가표로, gemini image는 tokens 실측(있으면) 또는
+    정액으로 계산한다. 활성 run이 없으면(트레이싱 off) 조용히 무시한다.
+    """
+    run = get_current_run_tree()
+    if run is None:
+        return
+    size = (size or "1024x1024").lower()
+    quality = (quality or "medium").lower()
+
+    if tokens and model not in _IMAGE_PRICE_USD:
+        # 토큰 실측이 있는 토큰 기반 이미지 모델(gemini) — 실측으로 계산.
+        cost = round(tokens / 1000 * _GEMINI_IMAGE_USD_PER_1K_TOK, 6)
+    else:
+        unit = _lookup_image_price(model, size, quality)
+        cost = round(unit * n, 6) if unit is not None else None
+
+    meta: dict = {"image_model": model, "image_count": n, "image_size": size}
+    if cost is not None:
+        meta["cost_usd"] = cost
+    run.set(metadata=meta)
