@@ -71,8 +71,6 @@ class Settings(BaseSettings):
     aws_secret_access_key: str
     aws_region: str = "ap-northeast-2"
     s3_bucket_name: str = "clickme-assets"
-    sqs_simulation_queue_url: str | None = None
-    sqs_max_workers: int = 10
 
     # Simulation
     default_persona_count: int = Field(default=20, ge=1, le=1000)
