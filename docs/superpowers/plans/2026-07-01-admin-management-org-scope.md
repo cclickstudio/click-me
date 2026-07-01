@@ -763,6 +763,8 @@ git commit -m "fix: created-campaigns 인증+org 스코프+pagination (테넌트
 
 **결정:** all-org는 campaign_id 키 충돌·shape 파손으로 제외(YAGNI). admin은 **헤더로 org 선택** 시 조회, 무헤더면 빈 결과.
 
+**추가(매트릭스 리뷰 #1):** 같은 org 컨텍스트에서 admin **KPI 저장(PUT)**도 허용한다 — `put_kpi_override`(1614)의 `org_id = await _resolve_org_id(user, db)`(None→409)를 `org_id = await _require_org_id_write(user, db, action="kpi_override")`로 치환(admin 선택 org 저장 + 감사, 비-admin 미소속 409 동일). 이 태스크의 Files에 `put_kpi_override`(1606-1638) 추가, 테스트: admin+헤더 PUT → 그 org에 저장·감사 / admin 무헤더 PUT → 400 / 비-admin 미소속 → 409.
+
 - [ ] **Step 1: 실패 테스트 작성** (append)
 
 ```python
