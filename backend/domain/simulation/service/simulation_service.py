@@ -103,6 +103,10 @@ class SimulationService:
             trace_config = make_trace_config(
                 domain="simulation",
                 feature="simulate",
+                user_id=request.user_id or "anonymous",
+                login_id=request.login_id,
+                user_name=request.user_name,
+                role=request.role,
                 ad_id=request.ad_id,
                 project_id=request.project_id,
                 extra_metadata={

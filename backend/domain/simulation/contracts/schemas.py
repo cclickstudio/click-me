@@ -29,6 +29,11 @@ class SimulationRunRequest(BaseModel):
     ad_image_key: str | None = None  # S3 영구 식별자(업로드 시) — DB 영속·재조회 시 presign 대상.
     project_id: str | None = None
     organization_id: str | None = None
+    # 사용자 식별(LangSmith 사용자별 필터용) — 라우터가 인증 사용자에서 채움(없으면 익명).
+    user_id: str | None = None
+    login_id: str | None = None
+    user_name: str | None = None
+    role: str | None = None
     target_filter: dict[str, Any] | None = None
     target_mode: TargetMode = TargetMode.AUTO
     sample_size: int = Field(default=20, ge=1, le=1000)
