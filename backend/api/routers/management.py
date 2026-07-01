@@ -37,6 +37,7 @@ from core.models import (
     CampaignKpiOverride,
     CreatedCampaign,
     MetaConnection,
+    Organization,
     OrganizationMember,
     User,
 )
@@ -2433,6 +2434,20 @@ async def _created_campaign_row(db: AsyncSession, campaign_id: str) -> CreatedCa
 def _is_demo_campaign(campaign_id: str) -> bool:
     """campaign_id가 데모 픽스처(_CAMPAIGNS_DEMO)에 존재하는지."""
     return any(cid == campaign_id for cid, *_ in _CAMPAIGNS_DEMO)
+
+
+async def _validated_org(db, sel: str, *, require_active: bool) -> UUID:
+    """X-Org-Id 검증. operational(require_active=True)은 ACTIVE만, read는 존재만."""
+    try:
+        org_uuid = UUID(sel)
+    except ValueError as exc:
+        raise HTTPException(400, "X-Org-Id 형식 오류") from exc
+    status = await db.scalar(select(Organization.status).where(Organization.id == org_uuid))
+    if status is None:
+        raise HTTPException(404, "선택한 조직을 찾을 수 없습니다.")
+    if require_active and str(status).upper() != "ACTIVE":
+        raise HTTPException(409, "비활성 조직은 선택할 수 없습니다.")
+    return org_uuid
 
 
 _require_org_id = require_user_org  # core.auth 공용(없으면 409) — 라우터 복붙 제거

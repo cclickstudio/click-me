@@ -1,4 +1,6 @@
 # admin org 스코프 — 헤더 캡처·해석기·검증·전역뷰 테스트
+import uuid
+
 import pytest
 from fastapi import APIRouter, Depends, FastAPI
 from fastapi.testclient import TestClient
@@ -29,3 +31,47 @@ def test_header_captured_during_and_reset_after():
     TestClient(app).get("/__ctxprobe", headers={"X-Org-Id": "org-abc"})
     assert seen["during"] == "org-abc"
     assert management._selected_org_ctx.get() is None  # 요청 후 reset
+
+
+class _OrgDB:
+    """Organization.status 조회만 흉내내는 최소 FakeDB."""
+
+    def __init__(self, status):
+        self._status = status
+
+    async def scalar(self, *_a, **_k):
+        return self._status
+
+
+@pytest.mark.asyncio
+async def test_validated_org_bad_uuid_400():
+    from fastapi import HTTPException
+
+    with pytest.raises(HTTPException) as e:
+        await management._validated_org(_OrgDB("ACTIVE"), "not-a-uuid", require_active=True)
+    assert e.value.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_validated_org_missing_404():
+    from fastapi import HTTPException
+
+    with pytest.raises(HTTPException) as e:
+        await management._validated_org(_OrgDB(None), str(uuid.uuid4()), require_active=True)
+    assert e.value.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_validated_org_inactive_blocked_for_operational_409():
+    from fastapi import HTTPException
+
+    with pytest.raises(HTTPException) as e:
+        await management._validated_org(_OrgDB("SUSPENDED"), str(uuid.uuid4()), require_active=True)
+    assert e.value.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_validated_org_inactive_allowed_for_read():
+    org = uuid.uuid4()
+    got = await management._validated_org(_OrgDB("SUSPENDED"), str(org), require_active=False)
+    assert got == org
