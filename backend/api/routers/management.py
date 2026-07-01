@@ -106,6 +106,7 @@ from domain.management.detection.performance_dx import diagnose_performance
 from domain.management.escalation import EscalationController, EscalationRun
 from domain.management.escalation_demo import DemoScenarioDetector
 from domain.management.execution.assistant_tools import execution_history
+from domain.management.execution.audit_log import AuditEvent
 from domain.management.execution.executor import DEFAULT_ALLOWED_MODES, Executor
 from domain.management.execution.regeneration_jobs import (
     CandidateNotInJob,
@@ -479,7 +480,7 @@ async def execute(
     db: AsyncSession = Depends(get_db),
 ):
     """🅱 executor — 승인 후 4단계 재검증 + 멱등 실행. 모든 지출 단일 경로."""
-    org_id = await _require_org_id(user, db)
+    org_id = await _require_org_id_write(user, db, action="execute")
     # 시연 제안(TENANT_ID 센티넬, 고장주입)은 org 체크 면제 + 항상 DRY_RUN — 데모 캠페인은
     # 실 계정에 없어 실집행이 불가·불필요하다. 실 제안만 org 일치 강제 + 연결 writer로 집행.
     is_demo = body.proposal.tenant_id == TENANT_ID
@@ -812,7 +813,7 @@ async def link_simulation(
     ClickMe 밖에서 만든 캠페인도 시뮬 예측과 성과 비교가 가능해진다.
     이미 연결된 캠페인은 simulation_id를 덮어쓴다(재시뮬 시).
     """
-    org_id = await _require_org_id(user, db)
+    org_id = await _require_org_id_write(user, db, action="link_simulation")
     try:
         sim_uuid = UUID(body.simulation_id)
     except ValueError as exc:
@@ -1661,7 +1662,7 @@ async def delete_campaign(
 
     적재 기록(created_campaigns)은 지우지 않고 deleted_at만 찍는다(감사 이력 — 만듦→지움 보존).
     """
-    org_id = await _require_org_id(user, db)
+    org_id = await _require_org_id_write(user, db, action="delete_campaign")
     await _require_owned_campaign(db, org_id, campaign_id)
     writer = await _require_writer(db, org_id)
     result = await writer.delete_campaign(campaign_id, idem_key=f"del_{campaign_id}")
@@ -1803,7 +1804,9 @@ async def upload_ad_image(
     db: AsyncSession = Depends(get_db),
 ):
     """광고 소재 이미지를 Meta(/adimages)에 업로드 → image_hash 반환. 무과금(자산 등록)."""
-    writer = await _require_writer(db, await _require_org_id(user, db))
+    writer = await _require_writer(
+        db, await _require_org_id_write(user, db, action="upload_ad_image")
+    )
     data = await file.read()
     image_hash = await writer.upload_image(
         _asset_config(), data, file.filename or "ad.jpg", idem_key=f"img_{uuid4().hex[:8]}"
@@ -1944,7 +1947,7 @@ async def from_candidate(
     db: AsyncSession = Depends(get_db),
 ):
     """generator 후보 → CREATE_CAMPAIGN(traffic) 제안. 승인·집행은 /approve·/execute 재사용."""
-    org_id = await _require_org_id(user, db)
+    org_id = await _require_org_id_write(user, db, action="from_candidate")
     client = build_generator_client(settings)
     try:
         cand = await client.get_candidate(body.generation_id, body.candidate_id, org_id=str(org_id))
@@ -2064,7 +2067,7 @@ async def replace_creative_proposal(
 
     소유권: 자기 캠페인만 교체(파괴적 차단) + 후보-org는 Task 0 X-Org-Id 스코프로 닫힘(타 org 404).
     """
-    org_id = await _require_org_id(user, db)
+    org_id = await _require_org_id_write(user, db, action="replace_creative_proposal")
     await _require_owned_campaign(db, org_id, campaign_id)  # 캠페인 소유권(필수)
 
     # B-1은 mock 계약 고정 — sending mode(validate/live)면 실 /adimages 호출이 되므로 차단(리뷰 ③).
@@ -2247,7 +2250,7 @@ async def from_simulation(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail="잘못된 simulation_id") from exc
 
-    org_id = await _require_org_id(user, db)
+    org_id = await _require_org_id_write(user, db, action="from_simulation")
 
     sim_row = (
         await db.execute(
@@ -2460,6 +2463,28 @@ async def _require_org_id(user, db) -> UUID:
     return await require_user_org(user, db)
 
 
+async def _emit_impersonation_audit(user, org_id, *, action: str) -> None:
+    """admin이 org를 선택(impersonate)해 수행하려는 write/실행을 감사에 남긴다.
+    org 해석 직후 호출이라 '시도'(outcome=attempted)를 기록 — 토큰/컨텍스트 접근 사실이
+    감사 대상."""
+    if (getattr(user, "role", "") or "").upper() != "ADMIN":
+        return
+    await _AUDIT_LOG.append(
+        AuditEvent(
+            category="impersonation",
+            tenant_id=str(org_id),
+            payload={"actor": str(user.id), "action": action, "outcome": "attempted"},
+        )
+    )
+
+
+async def _require_org_id_write(user, db, *, action: str) -> UUID:
+    """operational WRITE용 org 해석 — org 확정 후 impersonation 감사를 원자적으로 남긴다."""
+    org_id = await _require_org_id(user, db)
+    await _emit_impersonation_audit(user, org_id, action=action)
+    return org_id
+
+
 async def _require_owned_campaign(
     db: AsyncSession, org_id: UUID, campaign_id: str
 ) -> CreatedCampaign | None:
@@ -2564,7 +2589,7 @@ async def activate_campaign(
     db: AsyncSession = Depends(get_db),
 ):
     """게재 시작 — Meta 선불 잔액 게이트 → spend_cap → 캠페인·세트·광고 ACTIVE. 실과금 시작점."""
-    org_id = await _require_org_id(user, db)
+    org_id = await _require_org_id_write(user, db, action="activate_campaign")
     row = await _require_owned_campaign(db, org_id, campaign_id)
     commit = body.commit_krw or (row.daily_budget_krw if row else 0)
     if commit <= 0:
@@ -2770,7 +2795,7 @@ async def pause_campaign(
     db: AsyncSession = Depends(get_db),
 ):
     """캠페인 즉시 일시중지(PAUSED) — 게재·과금 중단. 크레딧 게이트 불요(돈이 나가는 쪽 아님)."""
-    org_id = await _require_org_id(user, db)
+    org_id = await _require_org_id_write(user, db, action="pause_campaign")
     await _require_owned_campaign(db, org_id, campaign_id)
     now = datetime.now(UTC)
     ad_account = await _require_ad_account(db, org_id)
@@ -2959,7 +2984,7 @@ async def budget_commit(
     db: AsyncSession = Depends(get_db),
 ):
     """Validate, approve, and execute a budget change from live state."""
-    org_id = await _require_org_id(user, db)
+    org_id = await _require_org_id_write(user, db, action="budget_commit")
     await _require_owned_campaign(db, org_id, campaign_id)
     reader = await _require_reader(db, org_id)
     before, declared = await _validate_budget_change(
@@ -3175,7 +3200,7 @@ async def set_budget_limit(
     db: AsyncSession = Depends(get_db),
 ):
     """예산 한도 설정 — 변경 후 경고 레벨(decision)이 즉시 반영(인메모리)."""
-    org_id = await _require_org_id(user, db)
+    org_id = await _require_org_id_write(user, db, action="set_budget_limit")
     if getattr(settings, "use_mock", True):
         _BUDGET.set_limit(TENANT_ID, body.limit_krw)
         return await _budget_status(build_reader(settings))
@@ -3228,7 +3253,7 @@ async def re_evaluate(
     db: AsyncSession = Depends(get_db),
 ):
     """사다리 1회 재평가 — 개시/다음단계 제안 / 보류(PENDING) / 회복 / 소진을 반환."""
-    org_id = await _require_org_id(user, db)
+    org_id = await _require_org_id_write(user, db, action="re_evaluate")
     ad_account = await _require_ad_account(db, org_id)
     outcome = await _get_escalation().re_evaluate(
         str(org_id), ad_account, body.campaign_id, now=_now_or(body.now)
@@ -3249,7 +3274,7 @@ async def mark_rung_executed(
     db: AsyncSession = Depends(get_db),
 ):
     """현재 단계가 집행됐음을 사다리에 알린다 (다음 재평가에서 회복 판정 가능)."""
-    org_id = await _require_org_id(user, db)
+    org_id = await _require_org_id_write(user, db, action="mark_rung_executed")
     escalation = _get_escalation()
     await _require_owned_run(escalation, body.run_id, org_id)
     await escalation.on_executed(body.run_id, now=_now_or(body.now), approval_id=body.approval_id)
@@ -3263,7 +3288,7 @@ async def mark_rung_rejected(
     db: AsyncSession = Depends(get_db),
 ):
     """현재 단계가 거절됐음을 알린다 (다음 재평가에서 즉시 다음 단계로 에스컬레이션)."""
-    org_id = await _require_org_id(user, db)
+    org_id = await _require_org_id_write(user, db, action="mark_rung_rejected")
     escalation = _get_escalation()
     await _require_owned_run(escalation, body.run_id, org_id)
     await escalation.on_rejected(body.run_id)

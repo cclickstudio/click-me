@@ -139,3 +139,66 @@ def test_admin_cannot_impersonate_meta_connect(monkeypatch):
         "/api/management/meta/connect", headers={"X-Org-Id": str(uuid.uuid4())}
     )
     assert res.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_emit_impersonation_audit_records(monkeypatch):
+    captured = []
+
+    class _Sink:
+        async def append(self, event):
+            captured.append(event)
+
+    monkeypatch.setattr(management, "_AUDIT_LOG", _Sink())
+    admin = SimpleNamespace(id=uuid.uuid4(), role="ADMIN")
+    org = uuid.uuid4()
+    await management._emit_impersonation_audit(admin, org, action="approve")
+    assert len(captured) == 1
+    ev = captured[0]
+    assert ev.category == "impersonation"
+    assert ev.tenant_id == str(org)
+    assert ev.payload["actor"] == str(admin.id)
+    assert ev.payload["action"] == "approve"
+    assert ev.payload["outcome"] == "attempted"
+
+
+@pytest.mark.asyncio
+async def test_emit_impersonation_audit_noop_for_non_admin(monkeypatch):
+    captured = []
+
+    class _Sink:
+        async def append(self, event):
+            captured.append(event)
+
+    monkeypatch.setattr(management, "_AUDIT_LOG", _Sink())
+    user = SimpleNamespace(id=uuid.uuid4(), role="USER")
+    await management._emit_impersonation_audit(user, uuid.uuid4(), action="approve")
+    assert captured == []
+
+
+@pytest.mark.asyncio
+async def test_require_org_id_write_resolves_and_emits(monkeypatch):
+    calls = []
+
+    async def _spy(user, org_id, *, action):
+        calls.append((str(org_id), action))
+
+    monkeypatch.setattr(management, "_emit_impersonation_audit", _spy)
+    sel = uuid.uuid4()
+    management._selected_org_ctx.set(str(sel))
+    admin = SimpleNamespace(id=uuid.uuid4(), role="ADMIN")
+    got = await management._require_org_id_write(admin, _OrgDB("ACTIVE"), action="approve")
+    assert got == sel
+    assert calls == [(str(sel), "approve")]
+
+
+@pytest.mark.asyncio
+async def test_require_org_id_write_non_admin_returns_org(monkeypatch):
+    async def _spy(*_a, **_k):
+        return None
+
+    monkeypatch.setattr(management, "_emit_impersonation_audit", _spy)
+    own = uuid.uuid4()
+    user = SimpleNamespace(id=uuid.uuid4(), role="USER")
+    got = await management._require_org_id_write(user, _MembershipDB(own), action="approve")
+    assert got == own
