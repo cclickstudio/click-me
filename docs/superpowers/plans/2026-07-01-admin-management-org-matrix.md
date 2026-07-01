@@ -122,7 +122,7 @@ grep 히트는 **org 해석 호출부만** 잡는다. 부류 (b)의 신원 기�
 - [ ] 3229 `mark_rung_rejected`
 
 **blanket seam 제외(타깃 감사 별도):**
-- [ ] 2693 `sync_campaign` — `_require_org_id`로 해석, 실 크레딧 차감 분기에서만 `_emit_impersonation_audit(action="sync_credit_adjust")` (리뷰 #3)
+- [x] 2693 `sync_campaign` — `_require_org_id`로 해석, 실 크레딧 차감(`record_spend` 성공) 분기에서만 `_emit_impersonation_audit(action="sync_credit_adjust")` (리뷰 #3 / T6 후속 커밋 2921e5a에서 구현)
 
 **제외(감사 대상 아님):** 186 `_request_writer`/`ad_preview`(무과금 preview, 리뷰 #2) · 570 `start_regen_job`·619 `select_regen_job`(내부 job store, 외부 토큰 미접근, 리뷰 #4).
 
