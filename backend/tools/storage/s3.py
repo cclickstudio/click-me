@@ -40,6 +40,11 @@ def temp_product_image_key(temp_id: str) -> str:
     return f"temp-product-images/{temp_id}.png"
 
 
+def product_cutout_key(generation_id: str) -> str:
+    """누끼(배경 제거) 상품 이미지 S3 키 — 생성 모드에서 저장, 개선 모드에서 재사용."""
+    return f"temp-product-images/{generation_id}-cutout.png"
+
+
 async def upload_bytes(data: bytes, key: str, content_type: str = "image/png") -> str:
     """바이트를 S3에 업로드하고 키를 반환한다."""
     async with _session.client("s3") as s3:

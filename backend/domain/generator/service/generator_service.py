@@ -15,7 +15,6 @@ from collections.abc import AsyncIterator
 from contextlib import suppress
 from urllib.parse import quote
 
-import httpx
 from PIL import Image
 from sqlalchemy import select
 
@@ -29,7 +28,7 @@ from core.models import (
 )
 from core.tracing import make_trace_config
 from domain.generator.adapters.instagram import build_publisher
-from domain.generator.contracts.enums import AdStrategy, GenerationMode, TemplateType
+from domain.generator.contracts.enums import AdStrategy, TemplateType
 from domain.generator.contracts.schemas import GenerationCreateRequest
 from domain.generator.graph.pipeline import generation_graph
 from domain.generator.pipeline.relayout import render_platform
@@ -37,6 +36,7 @@ from tools.storage.s3 import (
     candidate_base_key,
     download_bytes,
     presign_get,
+    product_cutout_key,
     publish_key,
     temp_product_image_key,
     upload_bytes,
@@ -53,22 +53,6 @@ async def store_temp_image(data: bytes) -> str:
     key = temp_product_image_key(str(uuid.uuid4()))
     await upload_bytes(data, key, content_type="image/png")
     return key
-
-
-async def _load_existing_ad(ref: str) -> bytes | None:
-    """개선 모드 기존 광고 이미지를 로드 — http(s)는 httpx, 그 외는 S3 key(download_bytes)."""
-    try:
-        if ref.startswith(("http://", "https://")):
-            async with httpx.AsyncClient(timeout=30) as client:
-                resp = await client.get(ref)
-                resp.raise_for_status()
-                return resp.content
-        return await download_bytes(ref)
-    except Exception:
-        logger.warning(
-            "기존 광고 이미지 로드 실패 — 개선을 0부터 재생성으로 진행: ref=%s", ref[:80]
-        )
-        return None
 
 
 async def start_generation(
@@ -110,16 +94,10 @@ async def start_generation(
                 request.product_image_temp_key,
             )
 
-    # 개선 모드 — 기존 광고 이미지를 로드(s3 key 또는 http URL)해 task store에 주입
-    existing_ad_bytes: bytes | None = None
-    if request.mode == GenerationMode.IMPROVE and request.existing_ad_s3_key:
-        existing_ad_bytes = await _load_existing_ad(request.existing_ad_s3_key)
-
     _tasks[generation_id] = {
         "status": "pending",
         "events": [],
         "product_image_bytes": product_image_bytes,
-        "existing_ad_bytes": existing_ad_bytes,
     }
     task = asyncio.create_task(_run_pipeline(generation_id, request, created_by=created_by))
     _background_tasks.add(task)
@@ -158,9 +136,6 @@ async def _run_pipeline(
         product_image_bytes: bytes | None = store.pop("product_image_bytes", None)
         if product_image_bytes is not None:
             initial_state["product_image_bytes"] = product_image_bytes
-        existing_ad_bytes: bytes | None = store.pop("existing_ad_bytes", None)
-        if existing_ad_bytes is not None:
-            initial_state["existing_ad_bytes"] = existing_ad_bytes
 
         final_state = await generation_graph.ainvoke(initial_state, config=config)
 
@@ -383,6 +358,12 @@ async def get_detail(generation_id: str, org_id: uuid.UUID | None = None) -> dic
     # 기대성과 순위 부여(G7) — QA 점수 기준 정렬 + rank·근거 한 줄. 완료 상태에서만 의미 있음.
     candidate_dicts = _rank_candidates(candidate_dicts)
 
+    _gen_input = generation.input or {}
+    # 생성 모드에서 상품 이미지가 있었던 경우에만 누끼 키를 반환 (개선 모드 재사용을 위해)
+    _cutout_s3_key: str | None = None
+    if _gen_input.get("mode", "create") == "create" and _gen_input.get("product_image_temp_key"):
+        _cutout_s3_key = product_cutout_key(str(generation.id))
+
     return {
         # D1 계약 버전 — management from-candidate 핸드오프가 검증(불일치 시 409).
         "schema_version": "1",
@@ -394,6 +375,7 @@ async def get_detail(generation_id: str, org_id: uuid.UUID | None = None) -> dic
         "selected_candidate_id": (
             str(generation.selected_candidate_id) if generation.selected_candidate_id else None
         ),
+        "product_cutout_s3_key": _cutout_s3_key,
         "error_message": generation.error_message,
         "created_at": generation.created_at.isoformat(),
         "candidates": candidate_dicts,

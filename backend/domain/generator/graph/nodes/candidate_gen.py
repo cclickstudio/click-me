@@ -15,19 +15,20 @@ import uuid
 from langchain_core.runnables import RunnableConfig
 
 from core.config import settings
-from domain.generator.contracts.enums import AdSize, TemplateType
+from domain.generator.contracts.enums import AdSize, GenerationMode, TemplateType
 from domain.generator.contracts.pipeline_schemas import (
     AdCopy,
     ProductAnalysis,
     StrategyOutput,
     StrategyPlan,
 )
+from domain.generator.contracts.schemas import CandidateExplanation
 from domain.generator.graph.nodes import emit_progress
 from domain.generator.graph.nodes.explain import generate_explanations
 from domain.generator.graph.state import GenerationState
 from domain.generator.pipeline.carousel import render_carousel_slide
 from domain.generator.pipeline.carousel_copy import generate_carousel_copy
-from domain.generator.pipeline.copy_generator import generate_copies_batch
+from domain.generator.pipeline.copy_generator import generate_copies_batch, generate_copy
 from domain.generator.pipeline.image_generator import (
     composite_logo,
     generate_image,
@@ -36,7 +37,13 @@ from domain.generator.pipeline.image_generator import (
 from domain.generator.pipeline.multimodal_generator import generate_image_and_copy
 from domain.generator.pipeline.quality_checker import check_quality
 from domain.generator.pipeline.text_overlay import render_ad_text
-from tools.storage.s3 import candidate_base_key, candidate_key, download_bytes, upload_bytes
+from tools.storage.s3 import (
+    candidate_base_key,
+    candidate_key,
+    download_bytes,
+    product_cutout_key,
+    upload_bytes,
+)
 
 logger = logging.getLogger("clickme")
 
@@ -63,7 +70,6 @@ async def _generate_carousel(
     tone: str | None,
     product_cutout_bytes: bytes | None,
     product_image_bytes: bytes | None,
-    existing_ad_bytes: bytes | None,
     logo_image_bytes: bytes | None,
     gemini: bool,
     improvement_context: str | None = None,
@@ -81,7 +87,6 @@ async def _generate_carousel(
             tone=tone,
             improvement_context=improvement_context,
             product_image_bytes=product_image_bytes,
-            existing_ad_bytes=existing_ad_bytes,
         )
     else:
         bg_bytes = await generate_image(
@@ -92,7 +97,6 @@ async def _generate_carousel(
             brand_color=brand_color,
             tone=tone,
             product_cutout_bytes=product_cutout_bytes,
-            original_image_bytes=existing_ad_bytes,
             improvement_context=improvement_context,
             headline="",
             body="",
@@ -150,8 +154,13 @@ async def _generate_carousel(
 
 
 async def generate_candidates(state: GenerationState, config: RunnableConfig) -> dict:
-    emit_progress(config, "candidates", 40, "광고 후보 생성 중 (0/3)")
     req = state["request"]
+
+    # 개선 모드는 단일 후보 전용 경로로 분기
+    if req.get("mode") == GenerationMode.IMPROVE:
+        return await _generate_improve_candidate(state, config)
+
+    emit_progress(config, "candidates", 40, "광고 후보 생성 중 (0/3)")
     generation_id = state["generation_id"]
     product_analysis = ProductAnalysis(**state["product_analysis"])
     plans = [StrategyPlan(**p) for p in state["plans"]]
@@ -162,7 +171,6 @@ async def generate_candidates(state: GenerationState, config: RunnableConfig) ->
     tone = req.get("tone_and_manner")
     improvement_context: str | None = state.get("improvement_context")
     product_image_bytes: bytes | None = state.get("product_image_bytes")
-    existing_ad_bytes: bytes | None = state.get("existing_ad_bytes")
 
     logo_s3_key = req.get("brand_logo_s3_key")
     logo_image_bytes: bytes | None = None
@@ -181,6 +189,15 @@ async def generate_candidates(state: GenerationState, config: RunnableConfig) ->
     if product_image_bytes is not None and not gemini:
         try:
             product_cutout_bytes = await remove_product_background(product_image_bytes)
+            # 개선 모드에서 재사용할 수 있도록 누끼본을 S3에 보존
+            cutout_key = product_cutout_key(generation_id)
+            try:
+                await upload_bytes(product_cutout_bytes, cutout_key, content_type="image/png")
+                logger.info("누끼 이미지 S3 저장 완료: key=%s", cutout_key)
+            except Exception:
+                logger.warning(
+                    "누끼 이미지 S3 저장 실패 — 개선 모드에서 재사용 불가: key=%s", cutout_key
+                )
         except Exception:
             logger.exception("상품 누끼 실패 — 상품 없이 일반 생성으로 진행")
             product_cutout_bytes = None
@@ -199,7 +216,6 @@ async def generate_candidates(state: GenerationState, config: RunnableConfig) ->
             tone=tone,
             product_cutout_bytes=product_cutout_bytes,
             product_image_bytes=product_image_bytes,
-            existing_ad_bytes=existing_ad_bytes,
             logo_image_bytes=logo_image_bytes,
             gemini=gemini,
             improvement_context=improvement_context,
@@ -240,12 +256,10 @@ async def generate_candidates(state: GenerationState, config: RunnableConfig) ->
                 tone=tone,
                 improvement_context=improvement_context,
                 product_image_bytes=product_image_bytes,
-                existing_ad_bytes=existing_ad_bytes,
             )
         else:
             # openai 모드 — 카피는 이미 배치 생성됨, 이미지만 생성.
             # 상품 이미지가 있으면 마스크 인페인팅으로 상품 픽셀 보존하며 생성.
-            # 개선 모드(existing_ad_bytes)면 기존 광고를 edit으로 직접 수정한다.
             ad_copy = batch_copies[idx]
             image_bytes = await generate_image(
                 product_analysis=product_analysis,
@@ -255,7 +269,6 @@ async def generate_candidates(state: GenerationState, config: RunnableConfig) ->
                 brand_color=brand_color,
                 tone=tone,
                 product_cutout_bytes=product_cutout_bytes,
-                original_image_bytes=existing_ad_bytes,
                 improvement_context=improvement_context,
                 headline=ad_copy.headline,
                 body=ad_copy.body,
@@ -357,3 +370,134 @@ async def generate_candidates(state: GenerationState, config: RunnableConfig) ->
     if explanations is not None:
         out["explanations"] = explanations
     return out
+
+
+async def _generate_improve_candidate(state: GenerationState, config: RunnableConfig) -> dict:
+    """개선 모드 전용 — 항상 OpenAI 경로, 누끼 로드, 단일 후보 1장 생성."""
+    emit_progress(config, "candidates", 40, "개선 이미지 생성 중...")
+    req = state["request"]
+    generation_id = state["generation_id"]
+    product_analysis = ProductAnalysis(**state["product_analysis"])
+    plans = [StrategyPlan(**p) for p in state["plans"]]
+    plan = plans[0]  # strategy 노드에서 주입한 더미 플랜 1개
+
+    width, height = req["width"], req["height"]
+    gen_size = _map_ad_size(width, height)
+    brand_color = req.get("brand_color")
+    tone = req.get("tone_and_manner")
+    improvement_context: str | None = state.get("improvement_context")
+
+    logo_s3_key = req.get("brand_logo_s3_key")
+    logo_image_bytes: bytes | None = None
+    if logo_s3_key:
+        try:
+            logo_image_bytes = await download_bytes(logo_s3_key)
+        except Exception:
+            logo_image_bytes = None
+
+    # 누끼 이미지 로드 (생성 모드에서 저장된 S3 키)
+    product_cutout_s3_key: str | None = req.get("product_cutout_s3_key")
+    product_cutout_bytes: bytes | None = None
+    if product_cutout_s3_key:
+        try:
+            product_cutout_bytes = await download_bytes(product_cutout_s3_key)
+        except Exception:
+            logger.exception(
+                "개선 모드 누끼 로드 실패 — 상품 없이 배경 자유 생성으로 진행: key=%s",
+                product_cutout_s3_key,
+            )
+
+    emit_progress(config, "candidates", 55, "개선 카피 생성 중...")
+    ad_copy = await generate_copy(
+        product_analysis=product_analysis,
+        strategy_output=StrategyOutput(
+            strategy=plan.strategy,
+            strategy_description=plan.strategy_description,
+            rationale=plan.rationale,
+        ),
+        template=None,
+        improvement_context=improvement_context,
+    )
+
+    emit_progress(config, "candidates", 68, "개선 이미지 생성 중...")
+    image_bytes = await generate_image(
+        product_analysis=product_analysis,
+        strategy=plan.strategy,
+        template=None,
+        size=gen_size,
+        brand_color=brand_color,
+        tone=tone,
+        product_cutout_bytes=product_cutout_bytes,
+        improvement_context=improvement_context,
+        headline="",
+        body="",
+        cta="",
+    )
+
+    base_key = candidate_base_key(generation_id, 0)
+    try:
+        await upload_bytes(image_bytes, base_key, content_type="image/png")
+    except Exception:
+        logger.exception("개선 base 이미지 업로드 실패: key=%s", base_key)
+
+    emit_progress(config, "candidates", 82, "텍스트·로고 합성 중...")
+    image_bytes = render_ad_text(
+        image_bytes,
+        headline=ad_copy.headline,
+        body=ad_copy.body,
+        cta=ad_copy.cta,
+        template=None,
+        brand_color=brand_color,
+        strategy=plan.strategy,
+    )
+
+    quality_report = check_quality(
+        ad_copy=ad_copy,
+        target=product_analysis.target_audience,
+        product_name=product_analysis.product_name,
+    )
+
+    if logo_image_bytes is not None:
+        image_bytes = composite_logo(image_bytes, logo_image_bytes, None)
+
+    s3_key = candidate_key(generation_id, 0)
+    await upload_bytes(image_bytes, s3_key, content_type="image/png")
+    logger.info("개선 후보 S3 업로드 완료: key=%s", s3_key)
+
+    emit_progress(config, "candidates", 90, "완료")
+
+    candidate = {
+        "candidate_id": str(uuid.uuid4()),
+        "idx": 0,
+        "strategy": {
+            "strategy_type": plan.strategy.value,
+            "strategy_description": plan.strategy_description,
+            "rationale": plan.rationale,
+        },
+        "template_id": TemplateType.A.value,  # 텍스트 오버레이가 A 폴백이므로 A로 저장
+        "copy": ad_copy.model_dump(),
+        "image_prompt": None,
+        "s3_key": s3_key,
+        "requested_size": f"{width}x{height}",
+        "rationale": plan.rationale,
+    }
+
+    # 개선 모드 설명 — LLM 재호출 없이 고정 텍스트 (explain 노드의 pre 조기반환 활용)
+    target = req.get("target_audience") or "기존 타겟"
+    _last = target[-1] if target else ""
+    _code = ord(_last) - 0xAC00
+    particle = "을" if 0 <= _code <= 11171 and _code % 28 != 0 else "를"
+    explanations = [
+        CandidateExplanation(
+            applied_target=f"{target}{particle} 주요 타겟으로 설정",
+            applied_strategy=plan.strategy_description,
+            applied_template="자유 레이아웃 (개선 모드)",
+            rationale="시뮬레이션 피드백과 수정 요청을 반영해 약점을 보완한 새 광고 이미지를 생성했습니다.",
+        ).model_dump()
+    ]
+
+    return {
+        "candidates": [candidate],
+        "qa_results": [quality_report.model_dump()],
+        "explanations": explanations,
+    }

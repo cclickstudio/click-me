@@ -793,9 +793,13 @@ export default function GeneratorPage() {
     product_name: string;
     summary: string;
     improvement_direction: string;
+    plain_summary: string | null;
+    product_cutout_s3_key: string | null;
   } | null>(null);
   const [improveLoading, setImproveLoading] = useState(false);
   const [improveError, setImproveError] = useState("");
+  // CREATE 모드 생성 완료 시 누끼 S3 키 보관 (개선 모드에서 재사용)
+  const lastProductCutoutKeyRef = useRef<string | null>(null);
   const [fixRequests, setFixRequests] = useState("");
 
   // 진행 / 결과
@@ -898,23 +902,25 @@ export default function GeneratorPage() {
       const summary =
         buildSimSummary(agg, detail.sample_size) || `${productName || "광고"} 시뮬레이션 결과`;
 
-      // 개선방향(토론 리포트) — 토론 없거나 실패해도 무시(개선방향만 비움)
+      // 개선방향·AI 분석(토론 리포트) — 토론 없거나 실패해도 무시(개선방향만 비움)
       let direction = "";
+      let plainSummary: string | null = null;
       try {
         const rep = await fetch(`${API_BASE}/api/debate/by-simulation/${simId}/report`, { headers });
         if (rep.ok) {
           const rv = (await rep.json()) as {
             report?: { ranked_actions?: RankedAction[]; plain_summary?: string };
           };
+          plainSummary = rv.report?.plain_summary ?? null;
           const actions = rv.report?.ranked_actions ?? [];
-          direction = actions.length
-            ? actions
-                .map(
-                  (a, i) =>
-                    `${i + 1}. ${a.action}${a.expected_effect ? ` — ${a.expected_effect}` : ""}`,
-                )
-                .join("\n")
-            : (rv.report?.plain_summary ?? "");
+          if (actions.length) {
+            direction = actions
+              .map(
+                (a, i) =>
+                  `${i + 1}. ${a.action}${a.expected_effect ? ` — ${a.expected_effect}` : ""}`,
+              )
+              .join("\n");
+          }
         }
       } catch {
         /* 토론 리포트 없음/실패 — 개선방향 비움 */
@@ -924,6 +930,8 @@ export default function GeneratorPage() {
         product_name: productName,
         summary,
         improvement_direction: direction,
+        plain_summary: plainSummary,
+        product_cutout_s3_key: lastProductCutoutKeyRef.current,
       });
     } catch {
       setImproveError("시뮬레이션 정보를 불러오지 못했습니다.");
@@ -935,7 +943,7 @@ export default function GeneratorPage() {
   const canSubmit =
     mode === "create"
       ? productName.trim() && productDescription.trim() && targetAudience.trim()
-      : !!improveData?.ad_asset_url;
+      : !!improveData?.summary;
 
   // SSE 구독 — 시작/복원 공용. 완료·실패 시 localStorage 정리.
   function subscribe(generationId: string) {
@@ -953,6 +961,10 @@ export default function GeneratorPage() {
         setGenJob(null); // 동시실행 슬롯 해제
         try {
           const d = (await api.generator.detail(generationId)) as GenerationDetail;
+          // CREATE 완료 시 누끼 S3 키 보관 — 개선 모드에서 재사용
+          if (d.product_cutout_s3_key) {
+            lastProductCutoutKeyRef.current = d.product_cutout_s3_key;
+          }
           setDetail(d);
           setPhase("done");
           // N1 — 전용 페이지 직접 생성이 끝나면, 프로젝트 채팅 세션에 결과 안내 +
@@ -1159,10 +1171,11 @@ export default function GeneratorPage() {
             ...common,
             mode: "improve",
             product_name: improveData?.product_name || "",
-            existing_ad_s3_key: improveData?.ad_asset_url || "",
             simulation_summary: improveData?.summary || "",
+            plain_summary: improveData?.plain_summary || null,
             improvement_direction: improveData?.improvement_direction || null,
             fix_requests: fixRequests || null,
+            product_cutout_s3_key: improveData?.product_cutout_s3_key || null,
           };
 
     try {
@@ -1490,6 +1503,25 @@ export default function GeneratorPage() {
                           </p>
                         )}
                       </div>
+                      {improveData.plain_summary && (
+                        <div>
+                          <label className={labelCls}>AI 광고 분석</label>
+                          <div className="rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-[#F8F9FA] dark:bg-[#161B27] p-3 text-xs text-[#4B5563] dark:text-[#9CA3AF] whitespace-pre-wrap leading-relaxed">
+                            {improveData.plain_summary}
+                          </div>
+                        </div>
+                      )}
+                      {improveData.product_cutout_s3_key && (
+                        <div>
+                          <label className={labelCls}>제품 컷아웃 (개선 소재)</label>
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={adRefImageSrc(improveData.product_cutout_s3_key)!}
+                            alt="제품 누끼"
+                            className="w-full max-h-48 object-contain rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-[#F0F0F0] dark:bg-[#1A1F2E]"
+                          />
+                        </div>
+                      )}
                     </>
                   )}
                   <div>

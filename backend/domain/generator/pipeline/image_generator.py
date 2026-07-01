@@ -293,6 +293,35 @@ Output requirements:
 - Product clearly visible and well-lit
 - CRITICAL: ALL three text elements (HEADLINE, BODY, CTA BUTTON) must be COMPLETELY visible within the image — zero clipping or cutoff allowed under any circumstance"""
 
+# ── [개선 모드 컴포즈] 프롬프트 — template 없는 자유 레이아웃 ──────────────────
+# template=None일 때 compose 경로(누끼 있음)에서 사용.
+# safe zone·레이아웃 지시 없이 AI가 구도를 자유롭게 결정.
+_IMPROVE_COMPOSE_TEMPLATE = """\
+This image already contains a REAL product photo that is LOCKED and must not change.
+DO NOT alter, move, redraw, recolor, or stylize the product in any way.
+Your task: generate a professional Meta/Instagram advertisement BACKGROUND around the locked product,
+optimized for the improvement directives below.
+
+Product: {product_name}
+{core_values_line}Target audience: {target_audience}
+{color_line}
+{tone_line}
+
+Background direction:
+{product_visual_context}
+
+Improvement directives (apply to the visual composition):
+{improvement_context}
+
+Requirements:
+- Keep the locked product EXACTLY as-is — zero modification to its pixels
+- Build a cohesive background that matches the product's lighting and perspective
+- Add a natural soft contact shadow under the product so it sits naturally in the scene
+- STRICTLY NO text, letters, words, numbers, or typography anywhere in the background
+- No logos, watermarks, URLs, or QR codes
+- You have FULL FREEDOM over composition and layout — optimize purely for the improvement directives
+- Clean, modern aesthetic suitable for Meta/Instagram feed"""
+
 # ── [컴포즈 모드] 프롬프트 (마스크 인페인팅) ─────────────────────────────────
 # 실제 상품 PNG를 캔버스에 미리 배치하고 마스크로 잠근 뒤 Edit API에 넘긴다.
 # AI는 잠긴 상품은 그대로 두고, 그 주위 배경·조명·그림자(+텍스트)를 한 패스로 생성한다.
@@ -449,7 +478,7 @@ def _build_product_visual_context(
 async def generate_image(
     product_analysis: ProductAnalysis,
     strategy: AdStrategy,
-    template: TemplateType,
+    template: TemplateType | None,
     size: AdSize = AdSize.SQUARE,
     brand_color: str | None = None,
     tone: str | None = None,
@@ -481,7 +510,18 @@ async def generate_image(
         target_audience = product_analysis.target_audience or "general audience"
         product_visual_context = _build_product_visual_context(product_analysis, brand_color)
 
-        if has_text:
+        if template is None:
+            # 개선 모드 — 자유 레이아웃, safe zone 없이 분류기 지시문 기반
+            prompt = _IMPROVE_COMPOSE_TEMPLATE.format(
+                product_name=product_analysis.product_name,
+                core_values_line=core_values_line,
+                target_audience=target_audience,
+                color_line=color_line,
+                tone_line=tone_line,
+                product_visual_context=product_visual_context,
+                improvement_context=improvement_context or "광고 전반의 품질을 개선하세요.",
+            )
+        elif has_text:
             prompt = _COMPOSE_PROMPT_TEMPLATE_WITH_TEXT.format(
                 platform="Meta/Instagram",
                 style=_TEMPLATE_STYLE[template],
@@ -566,13 +606,15 @@ async def generate_image(
         )
 
     # ── [생성 모드] Generate API ──────────────────────────────────────────────
+    # 개선 모드에서 누끼 없이 도달한 경우(product_cutout_s3_key 미제공 등) TemplateType.A 폴백
+    effective_template = template if template is not None else TemplateType.A
     target_audience = product_analysis.target_audience or "general audience"
     product_visual_context = _build_product_visual_context(product_analysis, brand_color)
 
     if has_text:
         prompt = _PROMPT_TEMPLATE_WITH_TEXT.format(
             platform="Meta/Instagram",
-            style=_TEMPLATE_STYLE[template],
+            style=_TEMPLATE_STYLE[effective_template],
             photo_style=_STRATEGY_PHOTO_STYLE[strategy],
             strategy_desc=_STRATEGY_DESCRIPTIONS[strategy],
             product_name=product_analysis.product_name,
@@ -581,7 +623,7 @@ async def generate_image(
             color_line=color_line,
             tone_line=tone_line,
             product_visual_context=product_visual_context,
-            text_layout=_TEXT_LAYOUT[template],
+            text_layout=_TEXT_LAYOUT[effective_template],
             headline=headline,
             body=body,
             cta=cta,
@@ -594,7 +636,7 @@ async def generate_image(
         )
         prompt = _PROMPT_TEMPLATE.format(
             platform="Meta/Instagram",
-            style=_TEMPLATE_STYLE[template],
+            style=_TEMPLATE_STYLE[effective_template],
             photo_style=_STRATEGY_PHOTO_STYLE[strategy],
             strategy_desc=_STRATEGY_DESCRIPTIONS[strategy],
             product_name=product_analysis.product_name,
@@ -603,7 +645,7 @@ async def generate_image(
             color_line=color_line,
             tone_line=tone_line,
             product_visual_context=product_visual_context + improvement_line,
-            safe_zone=_TEMPLATE_SAFE_ZONES[template],
+            safe_zone=_TEMPLATE_SAFE_ZONES[effective_template],
         )
 
     return await image_providers.generate(
@@ -649,16 +691,20 @@ _COMPOSE_PRODUCT_BOXES: dict[TemplateType, tuple[float, float, float, float]] = 
     TemplateType.B: (0.16, 0.20, 0.84, 0.74),  # 중앙 영역(텍스트는 상·하 밴드)
     TemplateType.C: (0.52, 0.16, 0.96, 0.84),  # 우측 영역(텍스트는 좌측 패널)
 }
+# 개선 모드 — template=None일 때 사용하는 중앙 상단 배치 박스(AI가 배경 구도 자유 결정)
+_IMPROVE_PRODUCT_BOX: tuple[float, float, float, float] = (0.10, 0.06, 0.90, 0.72)
 
 # 박스 대비 상품이 차지할 최대 비율(여백 확보).
 _PRODUCT_FILL = 0.92
 
 
 def _place_product(
-    product: Image.Image, w: int, h: int, template: TemplateType, product_fill: float
+    product: Image.Image, w: int, h: int, template: TemplateType | None, product_fill: float
 ) -> tuple[Image.Image, int, int]:
     """상품을 템플릿 박스에 비율 유지로 리사이즈하고 배치 좌표를 계산한다."""
-    x0, y0, x1, y1 = _COMPOSE_PRODUCT_BOXES[template]
+    x0, y0, x1, y1 = (
+        _COMPOSE_PRODUCT_BOXES[template] if template is not None else _IMPROVE_PRODUCT_BOX
+    )
     box_w = max(1, int(w * (x1 - x0) * _PRODUCT_FILL))
     box_h = max(1, int(h * (y1 - y0) * _PRODUCT_FILL))
     target = max(1, int(min(w, h) * product_fill))  # 전략 비중 캡
@@ -676,7 +722,7 @@ def _place_product(
 
 
 def _build_inpaint_base_and_mask(
-    product_cutout_bytes: bytes, template: TemplateType, size: AdSize
+    product_cutout_bytes: bytes, template: TemplateType | None, size: AdSize
 ) -> tuple[bytes, bytes]:
     """누끼 상품을 배치한 베이스 PNG와, 상품 실루엣만 보존하는 마스크 PNG를 만든다."""
     w, h = (int(v) for v in size.value.split("x"))
@@ -742,11 +788,14 @@ def _composite_logo_pil(
     ad.paste(logo, (x, y), logo)
 
 
-def composite_logo(image_bytes: bytes, logo_bytes: bytes, template: TemplateType) -> bytes:
-    """로고를 광고 이미지에 합성하여 PNG bytes로 반환한다."""
+def composite_logo(image_bytes: bytes, logo_bytes: bytes, template: TemplateType | None) -> bytes:
+    """로고를 광고 이미지에 합성하여 PNG bytes로 반환한다.
+
+    template=None(개선 모드)이면 Template A와 같이 좌상단에 배치한다.
+    """
     ad = Image.open(io.BytesIO(image_bytes)).convert("RGBA")
     logo = Image.open(io.BytesIO(logo_bytes)).convert("RGBA")
-    _composite_logo_pil(logo, ad, template)
+    _composite_logo_pil(logo, ad, template if template is not None else TemplateType.A)
     buf = io.BytesIO()
     ad.save(buf, format="PNG")
     return buf.getvalue()

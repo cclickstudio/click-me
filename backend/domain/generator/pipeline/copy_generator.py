@@ -21,6 +21,11 @@ _STRATEGY_COPY_KEYWORDS: dict[AdStrategy, str] = {
     AdStrategy.FOMO: "오늘 마감, 한정 수량, 마지막 기회, 플래시 세일, 기간 한정",
 }
 
+_IMPROVE_COPY_GUIDE = (
+    "자유 레이아웃 (개선 모드). 시뮬레이션 피드백 기반으로 가장 효과적인 카피를 작성하세요. "
+    "헤드라인은 강렬하고 간결하게, 본문은 핵심 개선 메시지 1~2문장, CTA는 명확한 행동 유도."
+)
+
 _TEMPLATE_COPY_GUIDE: dict[TemplateType, str] = {
     TemplateType.A: (
         "하단 오버레이 레이아웃. 헤드라인은 강렬하고 간결하게, "
@@ -151,7 +156,7 @@ _BATCH_USER_TEMPLATE = """\
 )
 async def generate_copies_batch(
     product_analysis: ProductAnalysis,
-    strategy_outputs: list[tuple[StrategyOutput, TemplateType]],
+    strategy_outputs: list[tuple[StrategyOutput, TemplateType | None]],
     improvement_context: str | None = None,
 ) -> list[AdCopy]:
     improvement_section = (
@@ -160,6 +165,10 @@ async def generate_copies_batch(
         else ""
     )
     (s1, t1), (s2, t2), (s3, t3) = strategy_outputs
+
+    def _guide(t: TemplateType | None) -> str:
+        return _TEMPLATE_COPY_GUIDE[t] if t is not None else _IMPROVE_COPY_GUIDE
+
     prompt = _BATCH_USER_TEMPLATE.format(
         product_name=product_analysis.product_name,
         core_values=", ".join(product_analysis.core_values),
@@ -169,15 +178,15 @@ async def generate_copies_batch(
         strategy_1=s1.strategy_description,
         rationale_1=s1.rationale,
         keywords_1=_STRATEGY_COPY_KEYWORDS.get(s1.strategy, ""),
-        layout_1=_TEMPLATE_COPY_GUIDE[t1],
+        layout_1=_guide(t1),
         strategy_2=s2.strategy_description,
         rationale_2=s2.rationale,
         keywords_2=_STRATEGY_COPY_KEYWORDS.get(s2.strategy, ""),
-        layout_2=_TEMPLATE_COPY_GUIDE[t2],
+        layout_2=_guide(t2),
         strategy_3=s3.strategy_description,
         rationale_3=s3.rationale,
         keywords_3=_STRATEGY_COPY_KEYWORDS.get(s3.strategy, ""),
-        layout_3=_TEMPLATE_COPY_GUIDE[t3],
+        layout_3=_guide(t3),
     )
     result = await _batch_llm.ainvoke([("system", _SYSTEM), ("user", prompt)])
     return result.copies
@@ -189,7 +198,7 @@ async def generate_copies_batch(
 async def generate_copy(
     product_analysis: ProductAnalysis,
     strategy_output: StrategyOutput,
-    template: TemplateType,
+    template: TemplateType | None,
     improvement_context: str | None = None,
 ) -> AdCopy:
     improvement_section = (
@@ -197,6 +206,7 @@ async def generate_copy(
         if improvement_context
         else ""
     )
+    layout_guide = _TEMPLATE_COPY_GUIDE[template] if template is not None else _IMPROVE_COPY_GUIDE
     prompt = _USER_TEMPLATE.format(
         product_name=product_analysis.product_name,
         core_values=", ".join(product_analysis.core_values),
@@ -204,7 +214,7 @@ async def generate_copy(
         target_audience=product_analysis.target_audience,
         strategy_description=strategy_output.strategy_description,
         rationale=strategy_output.rationale,
-        layout_guide=_TEMPLATE_COPY_GUIDE[template],
+        layout_guide=layout_guide,
         improvement_section=improvement_section,
     )
     return await _llm.ainvoke([("system", _SYSTEM), ("user", prompt)])

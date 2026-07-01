@@ -740,6 +740,7 @@ export interface GenerationDetail {
   created_at: string;
   candidates: GeneratorCandidate[];
   publish_logs: GenerationPublishLog[];
+  product_cutout_s3_key?: string | null;
 }
 
 export interface BrandKit {

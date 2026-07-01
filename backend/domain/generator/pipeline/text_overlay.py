@@ -394,20 +394,21 @@ def render_ad_text(
     headline: str,
     body: str,
     cta: str,
-    template: TemplateType,
+    template: TemplateType | None,
     brand_color: str | None = None,
     strategy: AdStrategy | None = None,
 ) -> bytes:
     """광고 카피를 템플릿 영역에 PIL로 렌더링한 PNG bytes를 반환한다.
 
     템플릿(A/B/C)이 텍스트 *위치*를, strategy의 StyleProfile이 *스타일*을 결정한다.
+    template=None(개선 모드 자유 레이아웃)이면 Template A 레이아웃으로 폴백.
     - box: 반투명 패널 + 굵은 폰트(현행).
     - floating: 패널 없음 + 외곽선·그림자로 사진 위 가독성 확보.
     - emotional: 패널 없음 + 얇은 폰트 + 여백(폰트 축소) + 외곽선·그림자.
     """
     base = Image.open(io.BytesIO(image_bytes)).convert("RGBA")
     w, h = base.size
-    spec = _TEMPLATE_SPECS[template]
+    spec = _TEMPLATE_SPECS[template if template is not None else TemplateType.A]
 
     profile = get_style(strategy) if strategy is not None else None
     style = profile.text_style if profile else "box"
@@ -488,7 +489,15 @@ def render_ad_text(
         stroke_fill=body_stroke,
         shadow=floating,
     )
-    _draw_cta(draw, cta, _px(spec.cta.box, w, h), accent, spec.cta.align, template, cta_font)
+    _draw_cta(
+        draw,
+        cta,
+        _px(spec.cta.box, w, h),
+        accent,
+        spec.cta.align,
+        template if template is not None else TemplateType.A,
+        cta_font,
+    )
 
     out = io.BytesIO()
     base.save(out, format="PNG")
