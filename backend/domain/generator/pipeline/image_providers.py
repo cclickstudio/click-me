@@ -23,10 +23,14 @@ from langsmith.wrappers import wrap_openai
 from openai import AsyncOpenAI
 
 from core.config import settings
+from core.tracing import record_image_cost
 from domain.generator.contracts.enums import AdSize
 
 # wrap_openai로 감싸 이미지 호출의 토큰·비용 usage가 LangSmith에 기록되게 한다.
-_openai_client = wrap_openai(AsyncOpenAI(timeout=settings.generator_image_timeout))
+# 키는 settings(.env)에서 명시 — os.environ엔 OPENAI_API_KEY가 없어 무인자 생성은 실패한다.
+_openai_client = wrap_openai(
+    AsyncOpenAI(api_key=settings.openai_api_key, timeout=settings.generator_image_timeout)
+)
 
 _GEMINI_NATIVE_ASPECT_RATIO: dict[AdSize, str] = {
     AdSize.SQUARE: "1:1",
@@ -71,6 +75,7 @@ async def edit(
     response = await _openai_client.images.edit(
         model=model, image=image_file, prompt=prompt, n=1, size=size.value
     )
+    record_image_cost(model=model, size=size.value)
     return base64.b64decode(response.data[0].b64_json)
 
 
@@ -89,6 +94,7 @@ async def edit_with_mask(
     response = await _openai_client.images.edit(
         model=model, image=base_file, mask=mask_file, prompt=prompt, n=1, size=size.value
     )
+    record_image_cost(model=model, size=size.value)
     return base64.b64decode(response.data[0].b64_json)
 
 
@@ -113,6 +119,8 @@ async def remove_background(
     if not model.startswith("gpt-image"):
         kwargs["quality"] = quality
     response = await _openai_client.images.edit(**kwargs)
+    # 누끼는 입력 크기를 따라 출력 — 정확 size 미상, 단가는 기본(1024²) 근사.
+    record_image_cost(model=model, quality=quality)
     return base64.b64decode(response.data[0].b64_json)
 
 
@@ -124,6 +132,7 @@ async def _openai_generate(prompt: str, size: AdSize, model: str, quality: str) 
         kwargs["response_format"] = "b64_json"
         kwargs["quality"] = quality
     response = await _openai_client.images.generate(**kwargs)
+    record_image_cost(model=model, size=size.value, quality=quality)
     return base64.b64decode(response.data[0].b64_json)
 
 
@@ -170,6 +179,8 @@ async def _genai_native(model: str, prompt: str, size: AdSize) -> bytes:
         ),
     )
     _record_genai_usage(response, model)
+    _um = getattr(response, "usage_metadata", None)
+    record_image_cost(model=model, tokens=getattr(_um, "total_token_count", None) if _um else None)
     if not response.candidates:
         raise RuntimeError("Gemini 응답에 candidates가 없음")
     for part in response.candidates[0].content.parts:

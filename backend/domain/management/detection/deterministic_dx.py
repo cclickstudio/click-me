@@ -17,7 +17,7 @@ _CPM_SURGE_RATIO = 1.3
 _FREQUENCY_FATIGUE = 3.0
 
 
-@traceable(name="diagnose", run_type="chain", tags=["management", "detection"])
+@traceable(name="management:diagnose", run_type="chain", tags=["management", "detection"])
 def diagnose(
     tenant_id: str,
     campaign_id: str,

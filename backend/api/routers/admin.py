@@ -9,7 +9,8 @@ from pydantic import BaseModel
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.auth import hash_password, require_admin
+from core import cognito_admin
+from core.auth import require_admin
 from core.db import get_db
 from core.models import Organization, OrganizationMember, User
 
@@ -24,15 +25,6 @@ def _slugify(name: str) -> str:
 
 
 # ── Schemas ──────────────────────────────────
-
-
-class PendingCompany(BaseModel):
-    user_id: str
-    user_name: str
-    login_id: str
-    company_name: str
-    organization_id: str
-    created_at: datetime
 
 
 class UserRow(BaseModel):
@@ -69,74 +61,7 @@ class ChatRow(BaseModel):
     created_at: datetime
 
 
-# ── COMPANY 승인 ──────────────────────────────
-
-
-@router.get("/pending-companies", response_model=list[PendingCompany])
-async def list_pending_companies(
-    db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_admin),
-):
-    """승인 대기 중인 COMPANY 계정 목록."""
-    rows = await db.execute(
-        select(User, Organization)
-        .join(OrganizationMember, OrganizationMember.user_id == User.id)
-        .join(Organization, Organization.id == OrganizationMember.organization_id)
-        .where(User.role == "COMPANY", User.status == "PENDING")
-    )
-    result = []
-    for user, org in rows.all():
-        result.append(
-            PendingCompany(
-                user_id=str(user.id),
-                user_name=user.name,
-                login_id=user.login_id,
-                company_name=org.name,
-                organization_id=str(org.id),
-                created_at=user.created_at,
-            )
-        )
-    return result
-
-
-@router.post("/approve-company/{user_id}")
-async def approve_company(
-    user_id: str,
-    db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_admin),
-):
-    """COMPANY 계정 승인 — user.status + org.status → ACTIVE."""
-    user = await db.scalar(select(User).where(User.id == user_id, User.role == "COMPANY"))
-    if not user:
-        raise HTTPException(status_code=404, detail="해당 COMPANY 유저를 찾을 수 없습니다.")
-
-    member = await db.scalar(
-        select(OrganizationMember).where(OrganizationMember.user_id == user.id)
-    )
-    if not member:
-        raise HTTPException(status_code=404, detail="조직 멤버 정보를 찾을 수 없습니다.")
-
-    org = await db.scalar(select(Organization).where(Organization.id == member.organization_id))
-    if not org:
-        raise HTTPException(status_code=404, detail="조직을 찾을 수 없습니다.")
-
-    user.status = "ACTIVE"
-    org.status = "ACTIVE"
-    return {"ok": True}
-
-
-@router.post("/reject-company/{user_id}")
-async def reject_company(
-    user_id: str,
-    db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_admin),
-):
-    """COMPANY 계정 반려."""
-    user = await db.scalar(select(User).where(User.id == user_id, User.role == "COMPANY"))
-    if not user:
-        raise HTTPException(status_code=404, detail="해당 COMPANY 유저를 찾을 수 없습니다.")
-    user.status = "REJECTED"
-    return {"ok": True}
+# ── 회사(조직) 삭제 ───────────────────────────
 
 
 @router.delete("/companies/{org_id}")
@@ -163,9 +88,6 @@ async def delete_company(
         f"OR ad_id IN (SELECT id FROM ads WHERE project_id IN ({proj_sub}))",
         p,
     )
-    await db.execute(
-        text(f"DELETE FROM simulation_comparisons WHERE project_id IN ({proj_sub})"), p
-    )
     # 2. 프로젝트 하위 광고·생성·채팅
     await _purge_ads(db, f"SELECT id FROM ads WHERE project_id IN ({proj_sub})", p)
     await _purge_generations(
@@ -173,8 +95,7 @@ async def delete_company(
     )
     await db.execute(text(f"DELETE FROM chat_sessions WHERE project_id IN ({proj_sub})"), p)
     await db.execute(text("DELETE FROM projects WHERE organization_id = :org"), p)
-    # 3. 구독·멤버·유저 계정
-    await db.execute(text("DELETE FROM organization_subscriptions WHERE organization_id = :org"), p)
+    # 3. 멤버·유저 계정
     member_users = (
         (
             await db.execute(
@@ -184,6 +105,12 @@ async def delete_company(
         .scalars()
         .all()
     )
+    # Cognito 삭제용 login_id 확보(users 삭제 전에 미리 읽어둔다).
+    cognito_login_ids: list[str] = []
+    if member_users:
+        cognito_login_ids = list(
+            (await db.scalars(select(User.login_id).where(User.id.in_(member_users)))).all()
+        )
     await db.execute(text("DELETE FROM organization_members WHERE organization_id = :org"), p)
     for uid in member_users:
         await db.execute(
@@ -193,6 +120,9 @@ async def delete_company(
     # 4. 조직
     await db.execute(text("DELETE FROM organizations WHERE id = :org"), p)
     await db.commit()
+    # cognito 모드면 소속 유저들도 Cognito에서 제거(best-effort — 실패해도 DB 삭제는 유지).
+    for lid in cognito_login_ids:
+        await cognito_admin.delete_user(lid)
     return {"ok": True}
 
 
@@ -285,7 +215,6 @@ async def create_user(
 
     user = User(
         login_id=body.login_id,
-        password_hash=hash_password(body.password),
         name=body.name,
         role=role,
         status="ACTIVE",
@@ -332,6 +261,8 @@ async def create_user(
 
     await db.flush()
     await db.refresh(user)
+    # cognito 모드면 Cognito에도 동일 계정 생성(username=login_id). 실패 시 502 → DB 롤백.
+    await cognito_admin.create_user(user.login_id, body.password, role)
     return UserRow(
         id=str(user.id),
         login_id=user.login_id,
@@ -364,7 +295,8 @@ async def update_user(
     if body.password:
         if len(body.password) < 8:
             raise HTTPException(status_code=400, detail="비밀번호는 8자 이상이어야 합니다.")
-        user.password_hash = hash_password(body.password)
+        # cognito 모드면 Cognito 비번도 재설정. 실패 시 502 → DB 롤백(불일치 방지).
+        await cognito_admin.set_password(user.login_id, body.password)
 
     await db.flush()
     await db.refresh(user)
@@ -414,6 +346,8 @@ async def delete_user(
         text("DELETE FROM organization_members WHERE user_id = :uid"), {"uid": user_id}
     )
     await db.execute(text("DELETE FROM users WHERE id = :uid"), {"uid": user_id})
+    # cognito 모드면 Cognito 사용자도 제거(best-effort — 실패해도 DB 삭제는 유지).
+    await cognito_admin.delete_user(user.login_id)
     return {"ok": True}
 
 
@@ -492,17 +426,26 @@ async def list_chats(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_admin),
 ):
-    from core.models import ChatSession
+    from sqlalchemy import func
 
+    from core.models import ChatMessage, ChatSession
+
+    # 정규화 후 메시지 수는 chat_messages 카운트로 — 세션별 LEFT JOIN 집계.
     rows = await db.execute(
-        select(ChatSession).order_by(ChatSession.created_at.desc()).limit(limit)
+        select(ChatSession, func.count(ChatMessage.id))
+        .outerjoin(ChatMessage, ChatMessage.session_id == ChatSession.id)
+        .group_by(ChatSession.id)
+        # 최근 활동(메시지 추가 시 갱신되는 updated_at) 순 — 생성일순이면 오래전 만든
+        # 세션을 오늘 써도 목록 위로 안 올라와 "최근 채팅이 안 보인다"는 문제가 생긴다.
+        .order_by(ChatSession.updated_at.desc())
+        .limit(limit)
     )
     return [
         ChatRow(
-            id=str(r.id),
-            project_id=str(r.project_id) if r.project_id else None,
-            message_count=len(r.messages) if r.messages else 0,
-            created_at=r.created_at,
+            id=str(s.id),
+            project_id=str(s.project_id) if s.project_id else None,
+            message_count=count,
+            created_at=s.created_at,
         )
-        for r in rows.scalars()
+        for s, count in rows.all()
     ]

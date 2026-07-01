@@ -10,7 +10,7 @@
 - **Sim engine** Deepsona(OCEAN) + SSR(arXiv 2510.08338). **Scoring** SSR(임베딩 기반, no LLM, not DLR). **Output** 스칼라 아닌 분포.
 - **구매의도 검증** KOBACO 베이스라인 대비. 그 외 신호는 탐색적(exploratory) 표기.
 - **인증(타깃)** JWT + 관리자 직접 계정 생성(자가가입·소셜 없음), Admin/User 역할. **(현재)** UI만, 실 JWT 미적용·점진 도입.
-- **A/B** UI 선반영, YouTube RAG 실기능은 최종 단계. **Chat** Gemini 2.0 Flash·CLIO·SSE — 오케스트레이터 본체는 **후순위(미정)**, 단 매니지먼트는 **에이전틱 RAG 서브에이전트로 구현**(읽기+행동 제안, import-ready).
+- **A/B** UI 선반영, YouTube RAG 실기능은 최종 단계. **Chat** OpenAI gpt-4o-mini·CLIO·SSE — 오케스트레이터 본체는 **후순위(미정)**, 단 매니지먼트는 **에이전틱 RAG 서브에이전트로 구현**(읽기+행동 제안, import-ready).
 - **Ad gen** 개선 시안 5개 자동생성+순위 (Gemini Flash 3.0 / GPT Image 2 / Gemini Omni). **PDF** 전체 생성 포함. **문의** in-app 폼 → DB.
 
 ## 핵심 기능 (기획서 v1.3)
@@ -42,7 +42,7 @@
 
 - **Frontend** Next.js(TS) + Tailwind (pnpm) / **Backend+AI** FastAPI + LangGraph (uv).
 - **DB** NeonDB(PostgreSQL + pgvector, vector(1536)) / **MQ** AWS SQS / **Storage** AWS S3.
-- **Deploy** 단일 EC2 + Nginx / **CI/CD** GitHub Actions(Docker) / **Tracing** LangSmith / **Chat LLM** Gemini 2.0 Flash(`google-generativeai>=0.8.0`).
+- **Deploy** 단일 EC2 + Nginx / **CI/CD** GitHub Actions(Docker) / **Tracing** LangSmith / **Chat LLM** OpenAI gpt-4o-mini(`openai` chat.completions, SSE).
 
 ## 백엔드 아키텍처 (DDD)
 
@@ -80,7 +80,7 @@ backend/
 ```bash
 # backend/.env
 APP_ENV=development
-OPENAI_API_KEY= / ANTHROPIC_API_KEY= / GEMINI_API_KEY=   # 채팅(Gemini 2.0 Flash)
+OPENAI_API_KEY= / ANTHROPIC_API_KEY= / GEMINI_API_KEY=   # 채팅·CLIO=OpenAI(gpt-4o-mini). GEMINI는 예비.
 DATABASE_URL=postgresql+asyncpg://user:pw@host/db?sslmode=require
 AWS_ACCESS_KEY_ID= / AWS_SECRET_ACCESS_KEY= / AWS_REGION=ap-northeast-2
 S3_BUCKET_NAME= / SQS_SIMULATION_QUEUE_URL=
@@ -109,6 +109,11 @@ NEXT_PUBLIC_API_URL=http://localhost:8000
 **③ GitHub Issue 요청 시** — 먼저 `gh --version`으로 설치 확인. 미설치면 OS별 설치 안내(winget `GitHub.cli` / brew `gh` / apt `gh` → `gh auth login`) 후 `gh issue create` 제공. label은 `enhancement`/`bug`/`refactor`/`chore` 중 선택.
 
 **④ Issue 일괄 생성 스크립트** — 반드시 **Python(`.py`)** 으로 제공(`.ps1`/`.sh` 금지). 백엔드에 포함된 `httpx`로 GitHub REST API(`POST /repos/{repo}/issues`, `Bearer` 토큰) 호출, `uv run python create_issues.py` 실행.
+
+**⑤ 테스트·검증 요청 시 (IMPORTANT)** — "테스트 돌려줘 / 확인해줘" 류 요청이면 Ruff·pytest·E2E뿐 아니라, **브라우저에서 확인 가능한 변경(프론트·백엔드 화면/응답)이면 Claude Preview(`preview_*` 도구)로 실제 화면을 띄워 유저가 눈으로 볼 수 있게 하는 검증**도 함께 제안한다: *"실제 화면도 Claude Preview로 띄워서 동작을 보여드릴까요?"*
+- 수락(응/해줘/yes/ㅇㅇ) → `preview_start`로 dev 서버를 띄우고 `preview_*` 도구로 동작을 관찰한 뒤, 스크린샷·콘솔/네트워크 로그·스냅샷을 **증거로 공유**한다. "이걸 눌러보세요" 식 수동 체크리스트로 떠넘기지 않는다.
+- 거절(나중에/ㄴㄴ) → Ruff·pytest·E2E 등 기존 검증만.
+- 왜: 화면으로 확인되는 변경은 유저가 결과를 직접 보는 게 가장 확실. 브라우저로 확인 불가한 변경(타입·툴링·순수 로직)이면 제안을 생략한다.
 
 ## AI 작업 규칙 (행동 가이드라인)
 

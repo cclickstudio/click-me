@@ -1,14 +1,11 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import { useTheme } from './ThemeProvider';
 import { useAuth } from './AuthProvider';
-import { getToken } from '@/lib/authApi';
 import CreditBalance from './CreditBalance';
-
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
 const mainNav = [
   {
@@ -76,7 +73,7 @@ const companyNav = [
   },
 ];
 
-function NavItem({ href, label, icon, active, badge }: { href: string; label: string; icon: React.ReactNode; active: boolean; badge?: number }) {
+function NavItem({ href, label, icon, active }: { href: string; label: string; icon: React.ReactNode; active: boolean }) {
   return (
     <Link href={href}
       className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${
@@ -86,11 +83,6 @@ function NavItem({ href, label, icon, active, badge }: { href: string; label: st
     >
       <span className={active ? 'text-[#3182F6]' : ''}>{icon}</span>
       <span className="flex-1">{label}</span>
-      {badge != null && badge > 0 && (
-        <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-[#F74D4D] text-white text-[10px] font-bold leading-none">
-          {badge > 99 ? '99+' : badge}
-        </span>
-      )}
     </Link>
   );
 }
@@ -113,13 +105,11 @@ function SectionLabel({ label }: { label: string }) {
   return <p className="px-3 pt-3 pb-1 text-[10px] font-semibold text-[#B0B8C1] dark:text-[#4B5563] uppercase tracking-wider">{label}</p>;
 }
 
-export default function Sidebar() {
+export default function Sidebar({ mobileOpen = false }: { mobileOpen?: boolean }) {
   const pathname = usePathname();
   const { theme, toggle } = useTheme();
   const { user, logout } = useAuth();
   const router = useRouter();
-  const [pendingCompanyCount, setPendingCompanyCount] = useState(0);
-  const [pendingMemberCount, setPendingMemberCount] = useState(0);
   const [manageOpen, setManageOpen] = useState(pathname.startsWith('/manage'));
 
   const handleLogout = () => { logout(); router.push('/'); };
@@ -128,28 +118,12 @@ export default function Sidebar() {
   const isCompany = user?.role === 'COMPANY';
   const isUser = user?.role === 'USER';
 
-  useEffect(() => {
-    if (!isAdmin) return;
-    fetch(`${API_BASE}/api/admin/pending-companies`, {
-      headers: { Authorization: `Bearer ${getToken()}` },
-    })
-      .then((r) => r.json())
-      .then((data) => { if (Array.isArray(data)) setPendingCompanyCount(data.length); })
-      .catch(() => {});
-  }, [isAdmin]);
-
-  useEffect(() => {
-    if (!isCompany) return;
-    fetch(`${API_BASE}/api/company/pending-members`, {
-      headers: { Authorization: `Bearer ${getToken()}` },
-    })
-      .then((r) => r.json())
-      .then((data) => { if (Array.isArray(data)) setPendingMemberCount(data.length); })
-      .catch(() => {});
-  }, [isCompany]);
-
   return (
-    <aside className="fixed top-0 left-0 h-full w-56 bg-white dark:bg-[#1C2333] border-r border-[#E5E8EB] dark:border-[#2D3748] flex flex-col z-40 transition-colors">
+    <aside
+      className={`fixed top-0 left-0 h-full w-56 bg-white dark:bg-[#1C2333] border-r border-[#E5E8EB] dark:border-[#2D3748] flex flex-col z-40 transition-transform duration-200 md:translate-x-0 ${
+        mobileOpen ? 'max-md:translate-x-0' : 'max-md:-translate-x-full'
+      }`}
+    >
       {/* 로고 */}
       <div className="h-14 flex items-center px-5 border-b border-[#E5E8EB] dark:border-[#2D3748] shrink-0">
         <Link href="/dashboard" className="text-[#3182F6] font-bold text-lg tracking-tight">ClickMe</Link>
@@ -196,6 +170,7 @@ export default function Sidebar() {
             }
             const active =
               pathname === item.href ||
+              (item.href === '/chat' && pathname.startsWith('/chat/')) ||
               (item.href === '/simulation' && pathname.startsWith('/simulation/')) ||
               (item.href === '/generator' && pathname.startsWith('/generations/'));
             return <NavItem key={item.href} {...item} active={active} />;
@@ -210,7 +185,6 @@ export default function Sidebar() {
                 key={item.href}
                 {...item}
                 active={pathname === item.href}
-                badge={item.href === '/admin/companies' ? pendingCompanyCount : undefined}
               />
             ))}
           </>
@@ -225,7 +199,6 @@ export default function Sidebar() {
                 key={item.href}
                 {...item}
                 active={pathname === item.href}
-                badge={item.href === '/company/members' ? pendingMemberCount : undefined}
               />
             ))}
           </>

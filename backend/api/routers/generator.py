@@ -257,7 +257,13 @@ async def create_generation(
         project = await db.get(Project, proj_uuid)
         if project is None or project.organization_id != org_id:
             raise HTTPException(status_code=404, detail="프로젝트를 찾을 수 없습니다.")
-    generation_id = await generator_service.start_generation(body, created_by=current_user.id)
+    generation_id = await generator_service.start_generation(
+        body,
+        created_by=current_user.id,
+        created_by_login=current_user.login_id,
+        created_by_name=current_user.name,
+        created_by_role=current_user.role,
+    )
     return GenerationTaskResponse(
         generation_id=generation_id,
         stream_url=f"/api/generator/generations/{generation_id}/stream",
@@ -270,8 +276,8 @@ async def list_generations(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """생성 이력 — 로그인 org 프로젝트 생성물만(멀티테넌시 격리)."""
-    org_id = await _require_user_org(user, db)
+    """생성 이력 — ADMIN은 전체, 그 외는 로그인 org 프로젝트 생성물만(멀티테넌시 격리)."""
+    org_id = None if user.role.upper() == "ADMIN" else await _require_user_org(user, db)
     return {"generations": await generator_service.list_generations(limit=limit, org_id=org_id)}
 
 
@@ -290,11 +296,12 @@ async def stream_generation(generation_id: str):
 async def get_generation(
     generation_id: str,
     x_internal_token: str | None = Header(default=None, alias="X-Internal-Token"),
+    x_org_id: str | None = Header(default=None, alias="X-Org-Id"),
     user: User | None = Depends(_optional_user),
     db: AsyncSession = Depends(get_db),
 ):
     """상세 — ADMIN은 조직 무관 조회, 그 외 로그인 유저는 자기 org만(불일치 404).
-    내부 호출은 서비스 토큰으로 우회."""
+    내부 호출도 X-Org-Id 있으면 org 스코프(타 org 후보 누출 차단, B-1)."""
     internal = settings.internal_service_token
     use_mock = getattr(settings, "use_mock", True)
     if user is not None:
@@ -305,10 +312,23 @@ async def get_generation(
             detail = await generator_service.get_detail(
                 generation_id, await _require_user_org(user, db)
             )
-    elif (internal and x_internal_token == internal) or use_mock:
-        # 내부 토큰 일치(운영 서비스 호출) 또는 mock/dev(실 테넌트 데이터 없음) → org 검증 우회.
-        # live에서 토큰 미설정이면 우회 불가(무인증 크로스org 조회 차단) — 운영은 토큰 설정 필수.
-        detail = await generator_service.get_detail(generation_id)
+    elif internal and x_internal_token == internal:
+        # prod 내부 서비스 호출 — X-Org-Id 필수(무스코프 누출면 제거, B-1).
+        if not x_org_id:
+            raise HTTPException(status_code=400, detail="내부 호출에 X-Org-Id 필요")
+        try:
+            org = uuid.UUID(x_org_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="잘못된 X-Org-Id") from exc
+        detail = await generator_service.get_detail(generation_id, org)
+    elif use_mock:
+        # dev/mock — 실 테넌트 없음. X-Org-Id 있으면 스코프(B-1 테스트·관리 호출), 없으면 우회
+        # (기존 무인증 mock 브라우징 유지). use_mock 우회 자체 점검은 후속(spec §9).
+        try:
+            org = uuid.UUID(x_org_id) if x_org_id else None
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail="잘못된 X-Org-Id") from exc
+        detail = await generator_service.get_detail(generation_id, org)
     else:
         raise HTTPException(status_code=401, detail="인증이 필요합니다.")
     if detail is None:
@@ -437,7 +457,8 @@ async def select_candidate(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    org_id = await _require_user_org(user, db)
+    # ADMIN은 조직 무관 접근(get_generation 상세와 동일 정책), 그 외는 org 소유만.
+    org_id = None if user.role.upper() == "ADMIN" else await _require_user_org(user, db)
     if await generator_service.get_detail(generation_id, org_id) is None:
         raise HTTPException(status_code=404, detail="Generation not found")
     ok = await generator_service.select_candidate(generation_id, body.candidate_id)
@@ -454,7 +475,8 @@ async def publish_candidate(
     db: AsyncSession = Depends(get_db),
 ):
     """사용자 승인 액션 — 선택된 후보를 Instagram에 게시한다."""
-    org_id = await _require_user_org(user, db)
+    # ADMIN은 조직 무관 접근(get_generation 상세와 동일 정책), 그 외는 org 소유만.
+    org_id = None if user.role.upper() == "ADMIN" else await _require_user_org(user, db)
     if await generator_service.get_detail(generation_id, org_id) is None:
         raise HTTPException(status_code=404, detail="Generation not found")
     result = await generator_service.publish_candidate(

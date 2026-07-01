@@ -11,6 +11,8 @@ import os
 import re
 from typing import TYPE_CHECKING, Any
 
+from langsmith import traceable
+
 if TYPE_CHECKING:
     from anthropic import Anthropic
     from google.genai import Client as GenaiClient
@@ -147,6 +149,7 @@ class _Clients:
             self._gemini = genai.Client(api_key=os.environ["GEMINI_API_KEY"])
         return self._gemini
 
+    @traceable(run_type="llm", name="simulation.debate")
     def complete(
         self, engine: str, system: str, user: str, *, json_mode: bool, max_tokens: int = 500
     ) -> str:

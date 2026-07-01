@@ -40,6 +40,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     clearToken();
     setToken(null);
     setUser(null);
+    // cognito 모드면 Cognito 로컬 세션도 정리(fire-and-forget, local 모드는 no-op).
+    import('@/lib/cognito').then((m) => m.cognitoSignOut()).catch(() => {});
   }, []);
 
   return <Ctx.Provider value={{ user, token, loading, login, logout }}>{children}</Ctx.Provider>;

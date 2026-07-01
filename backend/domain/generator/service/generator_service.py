@@ -74,6 +74,9 @@ async def _load_existing_ad(ref: str) -> bytes | None:
 async def start_generation(
     request: GenerationCreateRequest,
     created_by: uuid.UUID | None = None,
+    created_by_login: str | None = None,
+    created_by_name: str | None = None,
+    created_by_role: str | None = None,
 ) -> str:
     """생성 파이프라인 시작 — DB 행 생성 후 백그라운드 실행, generation_id 반환."""
     generation_id = str(uuid.uuid4())
@@ -115,7 +118,16 @@ async def start_generation(
         "product_image_bytes": product_image_bytes,
         "existing_ad_bytes": existing_ad_bytes,
     }
-    asyncio.create_task(_run_pipeline(generation_id, request, created_by=created_by))
+    asyncio.create_task(
+        _run_pipeline(
+            generation_id,
+            request,
+            created_by=created_by,
+            created_by_login=created_by_login,
+            created_by_name=created_by_name,
+            created_by_role=created_by_role,
+        )
+    )
     return generation_id
 
 
@@ -123,6 +135,9 @@ async def _run_pipeline(
     generation_id: str,
     request: GenerationCreateRequest,
     created_by: uuid.UUID | None = None,
+    created_by_login: str | None = None,
+    created_by_name: str | None = None,
+    created_by_role: str | None = None,
 ) -> None:
     store = _tasks[generation_id]
 
@@ -138,6 +153,9 @@ async def _run_pipeline(
             feature="generate",
             mode=request.mode.value,
             user_id=str(created_by) if created_by else "anonymous",
+            login_id=created_by_login,
+            user_name=created_by_name,
+            role=created_by_role,
             ad_id=request.existing_ad_s3_key if request.existing_ad_s3_key else None,
             project_id=request.project_id,
             extra_metadata={"generation_id": generation_id},
@@ -240,6 +258,56 @@ async def stream_events(generation_id: str) -> AsyncIterator[str]:
         await asyncio.sleep(0.5)
 
 
+# 기대성과 순위(G7) — QA 점수로 후보를 정렬·근거 한 줄 부여. DB 스키마 변경 없이 조회 시 산출.
+# (이미지 모델은 카피 품질만 평가 가능 — 예측 CTR 환산 아님. 품질 신호 기반 상대 순위.)
+_QA_STRENGTH_LABELS: dict[str, str] = {
+    "target_fit": "타깃 적합",
+    "readability": "가독성 우수",
+    "cta_exists": "CTA 명확",
+    "text_length": "분량 적정",
+    "brand_consistency": "브랜드 일관",
+    "duplicate_check": "중복 없음",
+    "typo_check": "오탈자 없음",
+}
+
+
+def _candidate_quality(qa: object) -> tuple[float, list[str]]:
+    """qa_result(JSONB) → (평균 품질점수 0~1, 강점 라벨 목록). 신호 없으면 (0, [])."""
+    if not isinstance(qa, dict):
+        return 0.0, []
+    items = [(k, v) for k, v in qa.items() if isinstance(v, dict) and "score" in v]
+    if not items:
+        return 0.0, []
+    avg = sum(float(v.get("score") or 0.0) for _, v in items) / len(items)
+    strengths = [
+        _QA_STRENGTH_LABELS[k]
+        for k, v in sorted(items, key=lambda kv: kv[1].get("score") or 0.0, reverse=True)
+        if k in _QA_STRENGTH_LABELS and (v.get("score") or 0.0) >= 0.99
+    ][:2]
+    return avg, strengths
+
+
+def _rank_candidates(cands: list[dict]) -> list[dict]:
+    """후보에 rank·quality_score·performance_summary를 부여하고 기대성과 높은 순으로 정렬한다.
+
+    정렬 기준 — QA 통과 여부 → 평균 품질점수 → idx(안정). 동점이면 원래 순서 유지.
+    근거 한 줄(performance_summary): 만점 QA 항목 상위 2개 강점 + 품질 점수.
+    """
+
+    def _key(c: dict) -> tuple[int, float, int]:
+        score, _ = _candidate_quality(c.get("qa_result"))
+        return (1 if c.get("qa_passed") else 0, score, -int(c.get("idx") or 0))
+
+    ordered = sorted(cands, key=_key, reverse=True)
+    for rank, c in enumerate(ordered, start=1):
+        score, strengths = _candidate_quality(c.get("qa_result"))
+        c["rank"] = rank
+        c["quality_score"] = round(score, 3)
+        pts = f"품질 {round(score * 100)}점"
+        c["performance_summary"] = " · ".join([*strengths, pts]) if strengths else pts
+    return ordered
+
+
 async def get_detail(generation_id: str, org_id: uuid.UUID | None = None) -> dict | None:
     """생성 결과 상세 — DB 기준 (서버 재시작 후에도 조회 가능).
 
@@ -313,6 +381,9 @@ async def get_detail(generation_id: str, org_id: uuid.UUID | None = None) -> dic
                 "explanation": candidate.explanation,
             }
         )
+
+    # 기대성과 순위 부여(G7) — QA 점수 기준 정렬 + rank·근거 한 줄. 완료 상태에서만 의미 있음.
+    candidate_dicts = _rank_candidates(candidate_dicts)
 
     return {
         # D1 계약 버전 — management from-candidate 핸드오프가 검증(불일치 시 409).
