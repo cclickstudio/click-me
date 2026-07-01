@@ -8,6 +8,7 @@
 
 import asyncio
 import calendar
+import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextvars import ContextVar
 from datetime import UTC, datetime, timedelta
@@ -169,6 +170,8 @@ _DEMO_FAULTS = {"bid_loss", "review_rejected", "none"}
 _AUDIT_LOG = build_audit_sink(settings)
 _BUDGET = TenantBudgetRegistry(default_limit_krw=10_000_000)
 _executor: Executor | None = None
+
+logger = logging.getLogger("clickme")
 
 
 # ── 멀티테넌시: 요청 단위 org 스코프 리더/라이터 의존성 ──────────────────────
@@ -2483,6 +2486,30 @@ async def _require_org_id_write(user, db, *, action: str) -> UUID:
     org_id = await _require_org_id(user, db)
     await _emit_impersonation_audit(user, org_id, action=action)
     return org_id
+
+
+async def _scope_org_or_all(user, db) -> UUID | None:
+    """리스트/집계 3-값 스코프. 비-ADMIN→자기 org / ADMIN+헤더→그 org(read, inactive 허용) /
+    ADMIN+무헤더→None(전체)."""
+    if (getattr(user, "role", "") or "").upper() == "ADMIN":
+        sel = _selected_org_ctx.get()
+        return await _validated_org(db, sel, require_active=False) if sel else None
+    return await require_user_org(user, db)
+
+
+def _clamp_limit_offset(limit: int, offset: int) -> tuple[int, int]:
+    """pagination 상·하한. limit 1..200, offset ≥ 0."""
+    return max(1, min(limit, 200)), max(0, offset)
+
+
+def _ACCESS_LOG_SINK(**kw: object) -> None:  # noqa: N802  (테스트 monkeypatch 주입점)
+    logger.info("admin_all_org_read", extra=kw)
+
+
+def _record_admin_read_access(user, endpoint: str, scope, limit: int, offset: int) -> None:
+    """admin 전 org(scope=None) 조회만 경량 access log 1건."""
+    if (getattr(user, "role", "") or "").upper() == "ADMIN" and scope is None:
+        _ACCESS_LOG_SINK(actor=str(user.id), endpoint=endpoint, limit=limit, offset=offset)
 
 
 async def _require_owned_campaign(

@@ -312,3 +312,43 @@ def test_sync_campaign_no_charge_no_audit(monkeypatch):
     )
     assert res.status_code == 200
     assert emitted == []
+
+
+@pytest.mark.asyncio
+async def test_scope_non_admin_returns_own_org():
+    own = uuid.uuid4()
+    user = SimpleNamespace(id=uuid.uuid4(), role="USER")
+    assert await management._scope_org_or_all(user, _MembershipDB(own)) == own
+
+
+@pytest.mark.asyncio
+async def test_scope_admin_no_header_returns_none():
+    user = SimpleNamespace(id=uuid.uuid4(), role="ADMIN")
+    assert await management._scope_org_or_all(user, _OrgDB("ACTIVE")) is None
+
+
+@pytest.mark.asyncio
+async def test_scope_admin_header_allows_inactive_org():
+    sel = uuid.uuid4()
+    management._selected_org_ctx.set(str(sel))
+    user = SimpleNamespace(id=uuid.uuid4(), role="ADMIN")
+    assert await management._scope_org_or_all(user, _OrgDB("SUSPENDED")) == sel
+
+
+def test_clamp_limit_offset():
+    assert management._clamp_limit_offset(9999, 0) == (200, 0)
+    assert management._clamp_limit_offset(0, 0) == (1, 0)
+    assert management._clamp_limit_offset(50, -5) == (50, 0)
+    assert management._clamp_limit_offset(50, 10) == (50, 10)
+
+
+def test_record_admin_read_access_only_for_all_org(monkeypatch):
+    events = []
+    monkeypatch.setattr(management, "_ACCESS_LOG_SINK", lambda **kw: events.append(kw))
+    admin = SimpleNamespace(id=uuid.uuid4(), role="ADMIN")
+    management._record_admin_read_access(admin, "created-campaigns", None, limit=50, offset=0)
+    management._record_admin_read_access(
+        admin, "created-campaigns", uuid.uuid4(), limit=50, offset=0
+    )
+    assert len(events) == 1
+    assert events[0]["endpoint"] == "created-campaigns" and events[0]["actor"] == str(admin.id)
