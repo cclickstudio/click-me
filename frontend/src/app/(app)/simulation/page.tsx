@@ -405,7 +405,9 @@ export default function SimulationRunPage() {
   /* ─── STEP: setup ─── */
   if (step === 'setup') {
     const previewUrl = file ? URL.createObjectURL(file) : null;
-    // 광고 이미지는 선택 — 나머지(프로젝트·제품명·설명·카테고리·목표)는 필수.
+    // 광고 이미지 필수 — 개선 모드가 시뮬 이미지를 개선 대상으로 불러오므로 항상 있어야 한다.
+    const imageReady =
+      inputMode === 'image' ? file !== null : imageUrl.trim() !== '';
     const goalReady =
       goalItem === '기타' ? customGoal.trim() !== '' : goalItem !== '';
     // persona_set은 세그먼트가 2개 이상, 각 라벨·표본수가 유효해야 비교가 의미 있다.
@@ -416,6 +418,7 @@ export default function SimulationRunPage() {
       selectedProject !== null &&
       adTitle.trim() !== '' &&
       adContent.trim() !== '' &&
+      imageReady &&
       categoryId !== '' &&
       serviceClass !== '' &&
       goalReady &&
@@ -512,7 +515,7 @@ export default function SimulationRunPage() {
 
             {/* 이미지 입력 방식 — 남는 세로 공간을 채워 좌우 높이 정렬 */}
             <div className='flex flex-1 flex-col'>
-              <label className={labelCls}>광고 이미지 (선택)</label>
+              <label className={labelCls}>광고 이미지 *</label>
               <div className='flex gap-2 mb-3'>
                 {(
                   [

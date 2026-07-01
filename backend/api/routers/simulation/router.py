@@ -51,6 +51,16 @@ async def _save_upload(ad_image: UploadFile | None) -> tuple[str | None, str | N
     return await persist_ad_image(data, ad_image.filename, ad_image.content_type)
 
 
+def _require_ad_image(
+    ad_image_path: str | None, ad_image_key: str | None, ad_image_url: str | None
+) -> None:
+    """광고 이미지 필수 — 파일 업로드나 URL 중 하나는 있어야 한다(개선 모드가 base로 재사용)."""
+    if not (ad_image_path or ad_image_key or (ad_image_url and ad_image_url.strip())):
+        raise HTTPException(
+            status_code=422, detail="광고 이미지는 필수입니다(파일 업로드 또는 이미지 URL)."
+        )
+
+
 def _build_request(
     *,
     ad_id: str,
@@ -130,6 +140,7 @@ async def start_simulation(
 ) -> dict:
     """비동기 시작 — run_id 반환. 진행률은 /stream, 결과는 /result."""
     ad_image_path, ad_image_key = await _save_upload(ad_image)
+    _require_ad_image(ad_image_path, ad_image_key, ad_image_url)
     req = _build_request(
         ad_id=ad_id,
         ad_content=ad_content,
@@ -186,6 +197,7 @@ async def run_simulation(
     shape=analysis 면 분석팀 정리 스키마(중복 제거·평탄화)로 반환. 기본 full(원본).
     """
     ad_image_path, ad_image_key = await _save_upload(ad_image)
+    _require_ad_image(ad_image_path, ad_image_key, ad_image_url)
     req = _build_request(
         ad_id=ad_id,
         ad_content=ad_content,
@@ -245,6 +257,7 @@ async def compare_simulation(
     except (ValidationError, TypeError) as e:
         raise HTTPException(status_code=422, detail=f"segments 항목 오류: {e}") from e
     ad_image_path, ad_image_key = await _save_upload(ad_image)
+    _require_ad_image(ad_image_path, ad_image_key, ad_image_url)
     base_req = _build_request(
         ad_id=ad_id,
         ad_content=ad_content,
