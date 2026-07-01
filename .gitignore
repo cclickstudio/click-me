@@ -80,6 +80,9 @@ fonts/
 
 *.tsbuildinfo
 
+# ── understand-anything 지식 그래프(로컬 산출물) — 커밋 금지 ──
+.understand-anything/
+
 # 루트에 잘못 들어온 중첩 클론(X1) — 추적·재추가 방지
 /click-me/
 
