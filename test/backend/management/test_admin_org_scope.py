@@ -440,3 +440,79 @@ def test_created_campaigns_admin_all_org_records_access_log(monkeypatch):
     db = _RowsDB([_mk_campaign(uuid.uuid4(), "A")])
     TestClient(_app_with(admin, db)).get("/api/management/created-campaigns")
     assert len(events) == 1 and events[0]["endpoint"] == "created-campaigns"
+
+
+class _KpiDB:
+    """kpi-overrides용 — scalars(stmt) 캡처. scalar_value는 org 검증/멤버십 조회 반환."""
+
+    def __init__(self, rows, scalar_value=None):
+        self._rows = rows
+        self._scalar_value = scalar_value
+        self.stmt = None
+
+    async def scalar(self, *_a, **_k):
+        return self._scalar_value  # _validated_org(status) 또는 require_user_org(org)
+
+    async def scalars(self, stmt, *_a, **_k):
+        self.stmt = stmt
+        rows = self._rows
+
+        class _S:
+            def all(self):
+                return rows
+
+        return _S()
+
+
+def _mk_kpi(org, campaign, cvr=0.1, roas=2.0):
+    return SimpleNamespace(organization_id=org, campaign_id=campaign, cvr=cvr, roas=roas)
+
+
+def test_kpi_overrides_admin_header_scopes_to_org():
+    admin = SimpleNamespace(id=uuid.uuid4(), role="ADMIN")
+    org = uuid.uuid4()
+    db = _KpiDB([_mk_kpi(org, "c1")], scalar_value="ACTIVE")  # _validated_org(status)
+    res = TestClient(_app_with(admin, db)).get(
+        "/api/management/kpi-overrides", headers={"X-Org-Id": str(org)}
+    )
+    assert res.status_code == 200
+    assert res.json()["overrides"]["c1"]["cvr"] == 0.1
+    assert db.stmt.whereclause is not None  # WHERE org 적용
+
+
+def test_kpi_overrides_admin_no_header_empty():
+    admin = SimpleNamespace(id=uuid.uuid4(), role="ADMIN")
+    db = _KpiDB([], scalar_value=None)
+    res = TestClient(_app_with(admin, db)).get("/api/management/kpi-overrides")  # 무헤더
+    assert res.status_code == 200
+    assert res.json()["overrides"] == {}
+
+
+def test_kpi_overrides_non_admin_scopes_to_own_org():
+    """비-ADMIN은 X-Org-Id 무시, 멤버십 org로 스코프."""
+    user = SimpleNamespace(id=uuid.uuid4(), role="USER")
+    own = uuid.uuid4()
+    db = _KpiDB([_mk_kpi(own, "c1")], scalar_value=own)  # require_user_org → org
+    res = TestClient(_app_with(user, db)).get("/api/management/kpi-overrides")
+    assert res.status_code == 200
+    assert res.json()["overrides"]["c1"]["cvr"] == 0.1
+    assert db.stmt.whereclause is not None
+
+
+def test_put_kpi_override_admin_without_header_400():
+    admin = SimpleNamespace(id=uuid.uuid4(), role="ADMIN")
+    db = _KpiDB([], scalar_value=None)
+    res = TestClient(_app_with(admin, db)).put(
+        "/api/management/campaigns/c1/kpi-override", json={"cvr": 0.2, "roas": 3.0}
+    )
+    assert res.status_code == 400  # admin은 X-Org-Id 필요 (_require_org_id_write)
+
+
+def test_put_kpi_override_non_admin_no_org_409():
+    """비-ADMIN 무소속은 여전히 409 (require_user_org)."""
+    user = SimpleNamespace(id=uuid.uuid4(), role="USER")
+    db = _KpiDB([], scalar_value=None)  # 멤버십 없음
+    res = TestClient(_app_with(user, db)).put(
+        "/api/management/campaigns/c1/kpi-override", json={"cvr": 0.2, "roas": 3.0}
+    )
+    assert res.status_code == 409

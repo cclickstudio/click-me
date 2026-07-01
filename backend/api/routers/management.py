@@ -30,7 +30,6 @@ from core.auth import (
     get_current_user,
     optional_user,
     require_user_org,
-    user_org_id,
 )
 from core.config import settings
 from core.db import get_db
@@ -1607,21 +1606,19 @@ class KpiOverrideBody(BaseModel):
     roas: float | None = None  # 투자수익률 배수 (수동 추정)
 
 
-_resolve_org_id = user_org_id  # core.auth 공용(없으면 None) — 라우터 복붙 제거
-
-
 @router.get("/kpi-overrides")
 async def list_kpi_overrides(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """로그인 조직의 캠페인별 수동 KPI(추정 CVR·ROAS) — {campaign_id: {cvr, roas}}."""
-    org_id = await _resolve_org_id(user, db)
-    if org_id is None:
+    """캠페인별 수동 KPI. 비-ADMIN=자기 org / ADMIN=X-Org-Id로 선택한 org(미선택 시 빈 결과).
+    all-org 미지원(campaign_id가 org 간 충돌)."""
+    scope = await _scope_org_or_all(user, db)  # UUID | None
+    if scope is None:  # admin 무헤더 — impersonate 미선택
         return {"overrides": {}}
     rows = (
         await db.scalars(
-            select(CampaignKpiOverride).where(CampaignKpiOverride.organization_id == org_id)
+            select(CampaignKpiOverride).where(CampaignKpiOverride.organization_id == scope)
         )
     ).all()
     return {
@@ -1643,9 +1640,7 @@ async def put_kpi_override(
     db: AsyncSession = Depends(get_db),
 ):
     """캠페인 수동 KPI 저장(업서트). cvr·roas 둘 다 비면 행 삭제(실측으로 복귀)."""
-    org_id = await _resolve_org_id(user, db)
-    if org_id is None:
-        raise HTTPException(409, "소속 조직이 없습니다 — 조직 연결 후 시도하세요.")
+    org_id = await _require_org_id_write(user, db, action="kpi_override")
     row = await db.scalar(
         select(CampaignKpiOverride).where(
             CampaignKpiOverride.organization_id == org_id,
