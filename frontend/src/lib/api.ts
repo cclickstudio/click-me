@@ -321,6 +321,9 @@ export const api = {
     // DB에 저장된 시뮬 결과를 simulation_id로 조회(콜드·패널 진입). 404=결과 없음.
     dbResult: (simulationId: string): Promise<SimRunResult> =>
       request<SimRunResult>(`/simulation/${simulationId}/db-result`),
+    // VLM이 이 URL 이미지를 읽을 수 있는지 사전 확인(백엔드가 직접 GET — 미리보기와 별개).
+    checkImage: (url: string): Promise<{ ok: boolean; mime?: string; reason?: string }> =>
+      request(`/simulation/check-image?url=${encodeURIComponent(url)}`),
   },
 
   // 페르소나 토론(/api/debate/*) — 시뮬 반응(reactions)을 받아 토론을 돌리고 결과를 낸다.

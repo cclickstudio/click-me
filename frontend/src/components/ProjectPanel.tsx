@@ -363,7 +363,7 @@ export function ProjectItem({
                         <span className={`w-2 h-2 rounded-full shrink-0 ${statusColor[g.status] ?? 'bg-[#B0B8C1]'}`} />
                         <div className="flex-1 min-w-0">
                           <p className={`text-xs truncate flex items-center gap-1.5 ${isActive ? 'text-[#3182F6] font-medium' : 'text-[#4E5968] dark:text-[#9CA3AF] group-hover:text-[#3182F6]'}`}>
-                            <ModeBadge mode={g.mode} />
+                            <ModeBadge mode={g.mode} format={g.format} />
                             <span className="truncate">{g.product_name ?? '—'} · {g.created_by_name ?? '—'}</span>
                           </p>
                           <p className="text-[10px] text-[#B0B8C1] dark:text-[#4B5563]">{fmt(g.created_at)}</p>

@@ -10,7 +10,7 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
 export type Project = { id: string; name: string; status: string; description?: string | null; created_at?: string; created_by_name: string | null; organization_name: string | null; team_id: string | null; team_name: string | null };
 export type SimRow = { id: string; status: string; sample_size: number; ad_title: string | null; created_by_name: string | null; created_at: string };
-export type GenRow = { id: string; status: string; product_name: string | null; mode: string; created_by_name: string | null; created_at: string };
+export type GenRow = { id: string; status: string; product_name: string | null; mode: string; format: string; created_by_name: string | null; created_at: string };
 
 export type TrashRow = { id: string; kind: 'sim' | 'gen'; label: string; deleted_at: string };
 type ProjectDetails = { sims: SimRow[]; gens: GenRow[]; trashed: TrashRow[]; loaded: boolean };

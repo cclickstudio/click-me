@@ -62,7 +62,6 @@ jobs:
           LANGSMITH_API_KEY: 'dummy'
           AWS_ACCESS_KEY_ID: 'dummy'
           AWS_SECRET_ACCESS_KEY: 'dummy'
-          SQS_SIMULATION_QUEUE_URL: 'https://sqs.ap-northeast-2.amazonaws.com/dummy/dummy'
         # testpaths(../test/backend)를 pyproject가 가리킴 → 인자 없이 실행
         run: uv run pytest -v --tb=short
 
@@ -148,7 +147,6 @@ jobs:
       AWS_ACCESS_KEY_ID: 'dummy'
       AWS_SECRET_ACCESS_KEY: 'dummy'
       AWS_REGION: 'ap-northeast-2'
-      SQS_SIMULATION_QUEUE_URL: 'https://sqs.ap-northeast-2.amazonaws.com/dummy/dummy'
 
     steps:
       - uses: actions/checkout@v4

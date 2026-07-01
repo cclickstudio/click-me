@@ -44,6 +44,7 @@ const AGE_BANDS: { label: string; min: number; max: number }[] = [
 export default function SimFormWidget({
   initial,
   initialImage,
+  initialImageUrl,
   projectId,
   latest,
   onSimComplete,
@@ -55,6 +56,7 @@ export default function SimFormWidget({
     ad_objective?: string;
   };
   initialImage?: File; // 채팅에서 첨부한 광고 이미지
+  initialImageUrl?: string; // 생성 후보 등 URL 기반 광고 이미지(파일 대신)
   projectId?: string; // 현재 프로젝트 — DB 영속화·결과 상세 조회에 필요
   latest?: boolean; // 가장 최근 시뮬 위젯만 새로고침 시 진행중 런을 복원(중복 방지)
   // 완료 시 결과를 채팅 컨트롤러로 넘긴다 — 입력 요약·결과 요약·토론을 별도 메시지로 띄우게.
@@ -97,6 +99,10 @@ export default function SimFormWidget({
   const [imagePreview, setImagePreview] = useState<string | null>(() =>
     initialImage ? URL.createObjectURL(initialImage) : null,
   );
+  // 생성 후보 등 URL 기반 이미지 — 파일 업로드가 있으면 파일이 우선한다.
+  const imageUrl = initialImageUrl ?? '';
+  const hasImage = !!image || !!imageUrl;
+  const previewSrc = imagePreview ?? (imageUrl || null);
   const [sampleSize, setSampleSize] = useState(20);
   const [pct, setPct] = useState(0);
   const [stageMsg, setStageMsg] = useState('준비 중...');
@@ -240,7 +246,7 @@ export default function SimFormWidget({
   };
 
   const run = async () => {
-    if (!adTitle.trim() || !adContent.trim() || !image) return;
+    if (!adTitle.trim() || !adContent.trim() || !hasImage) return;
     if (getJobs().sim) {
       setErr('이미 다른 시뮬레이션이 진행 중이에요. 끝난 뒤 다시 시도하세요.');
       setPhase('error');
@@ -264,6 +270,8 @@ export default function SimFormWidget({
         ad_title: adTitle || undefined,
         ad_content: adContent,
         ad_image: image ?? undefined,
+        // 파일이 없고 URL 이미지(생성 후보 등)만 있으면 URL을 VLM 입력으로 전달.
+        ad_image_url: !image && imageUrl ? imageUrl : undefined,
         project_id: projectId || undefined, // 프로젝트 귀속 → DB 저장(없으면 메모리 런)
         product_category: categoryName || undefined,
         service_class: typeof serviceClass === 'number' ? serviceClass : undefined,
@@ -301,7 +309,7 @@ export default function SimFormWidget({
     const goNext = () => {
       if (step < totalSteps - 1) {
         if (canNext) setStep(step + 1);
-      } else if (adTitle.trim() && adContent.trim() && image) {
+      } else if (adTitle.trim() && adContent.trim() && hasImage) {
         void run();
       }
     };
@@ -346,10 +354,10 @@ export default function SimFormWidget({
         </div>
         <div className="mb-3">
           <label className={labelCls}>광고 이미지 *</label>
-          {imagePreview ? (
+          {previewSrc ? (
             <div className="flex items-center gap-2">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={imagePreview} alt="광고 이미지" className="w-12 h-12 rounded-lg object-cover border border-[#E5E8EB] dark:border-[#2D3748]" />
+              <img src={previewSrc} alt="광고 이미지" className="w-12 h-12 rounded-lg object-cover border border-[#E5E8EB] dark:border-[#2D3748]" />
               <label className="text-xs text-[#3182F6] cursor-pointer hover:underline">
                 이미지 변경
                 <input type="file" accept="image/*" className="hidden" onChange={onPickImage} />
@@ -529,7 +537,7 @@ export default function SimFormWidget({
               다음
             </button>
           ) : (
-            <button onClick={run} disabled={!adTitle.trim() || !adContent.trim() || !image} className={btnCls}>
+            <button onClick={run} disabled={!adTitle.trim() || !adContent.trim() || !hasImage} className={btnCls}>
               시뮬레이션 실행
             </button>
           )}

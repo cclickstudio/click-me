@@ -40,6 +40,14 @@ def gen_list(items: list, mode: str = "read") -> dict:
     }
 
 
+def gen_loop(loop_id: str, stream_url: str) -> dict:
+    """자동 개선 루프 진행 카드 — 반복별 품질점수를 stream_url(SSE)로 관찰."""
+    return {
+        "widget": {"type": "gen_loop", "data": {"loop_id": loop_id, "stream_url": stream_url}},
+        "source": GENERATOR,
+    }
+
+
 def report_ready(project_id: str | None, period: str) -> dict:
     """리포트 다운로드 버튼 — 실제 파일은 /api/chat/report. period=month|all."""
     return {
