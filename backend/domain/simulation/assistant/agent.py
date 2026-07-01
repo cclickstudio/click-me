@@ -78,7 +78,7 @@ def build_simulation_agent(settings):
             project_id=req.project_id,
             extra_metadata={"simulation_id": req.context_id},
         )
-        config["run_name"] = "시뮬레이션 어시스턴트"
+        # run_name은 make_trace_config 표준(simulation.assistant)을 그대로 사용.
         # 시드에 프로젝트 ID·시뮬 ID를 실어 LLM이 list/get 도구 인자로 쓰게 한다.
         prefix = ""
         if req.project_id:

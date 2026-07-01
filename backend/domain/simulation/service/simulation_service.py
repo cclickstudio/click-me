@@ -103,6 +103,10 @@ class SimulationService:
             trace_config = make_trace_config(
                 domain="simulation",
                 feature="simulate",
+                user_id=request.user_id or "anonymous",
+                login_id=request.login_id,
+                user_name=request.user_name,
+                role=request.role,
                 ad_id=request.ad_id,
                 project_id=request.project_id,
                 extra_metadata={
@@ -112,7 +116,7 @@ class SimulationService:
                 },
                 extra_tags=["batch"] if request.sample_size > 10 else None,
             )
-            trace_config["run_name"] = "시뮬레이션"
+            # run_name은 make_trace_config 표준(simulation.simulate)을 그대로 사용.
             # 반응 fan-out 병렬 수 제한(503 증폭 방지). preamble 노드는 단일이라 영향 없음.
             trace_config["max_concurrency"] = _MAX_REACTION_CONCURRENCY
             ad_dump: dict | None = None

@@ -14,7 +14,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.auth import get_current_user, require_user_org
+from core.auth import get_current_user, optional_user, require_user_org
 from core.config import settings
 from core.db import get_db
 from core.models import User
@@ -68,6 +68,7 @@ def _build_request(
     ad_objective: str | None,
     service_class: int | None,
     from_campaign_id: str | None = None,
+    user: User | None = None,
 ) -> SimulationRunRequest:
     """multipart 폼 값들을 도메인 요청 DTO로 조립. target_filter는 JSON 문자열."""
     tf = None
@@ -83,6 +84,11 @@ def _build_request(
         or ad_image_url,  # VLM 입력: 업로드(presigned/로컬) 우선, 없으면 URL
         ad_image_key=ad_image_key,  # S3 영구 식별자(업로드 시만) — DB 영속·재조회 presign 대상
         organization_id=organization_id,
+        # 사용자 식별(LangSmith 사용자별 필터) — 인증 시에만 채움(비인증은 익명).
+        user_id=str(user.id) if user else None,
+        login_id=user.login_id if user else None,
+        user_name=user.name if user else None,
+        role=user.role if user else None,
         project_id=project_id,
         target_filter=tf,
         target_mode=target_mode,
@@ -114,6 +120,7 @@ async def start_simulation(
     ad_objective: str | None = Form(None),
     service_class: int | None = Form(None),
     from_campaign_id: str | None = Form(None),  # 관리 탭 진입 시 — 완료 후 서버가 자동 링크
+    current_user: User | None = Depends(optional_user),  # 인증 시 트레이스에 사용자 식별
 ) -> dict:
     """비동기 시작 — run_id 반환. 진행률은 /stream, 결과는 /result."""
     ad_image_path, ad_image_key = await _save_upload(ad_image)
@@ -134,6 +141,7 @@ async def start_simulation(
         ad_objective=ad_objective,
         service_class=service_class,
         from_campaign_id=from_campaign_id,
+        user=current_user,
     )
     run_id = await _service.start(req)
     return {
@@ -161,6 +169,7 @@ async def run_simulation(
     ad_objective: str | None = Form(None),
     service_class: int | None = Form(None),
     shape: str = "full",
+    current_user: User | None = Depends(optional_user),  # 인증 시 트레이스에 사용자 식별
 ) -> dict:
     """동기 실행 — 광고+세부사항 입력 → 끝까지 돌려 반응·루브릭·집계를 한 번에 반환.
 
@@ -183,6 +192,7 @@ async def run_simulation(
         product_category=product_category,
         ad_objective=ad_objective,
         service_class=service_class,
+        user=current_user,
     )
     try:
         result = await _service.run(req)
