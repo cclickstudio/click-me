@@ -8,7 +8,8 @@
 
 import asyncio
 import calendar
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextvars import ContextVar
 from datetime import UTC, datetime, timedelta
 from random import Random
 from typing import Any, Literal
@@ -16,7 +17,7 @@ from urllib.parse import parse_qs, urlparse
 from uuid import UUID, uuid4
 
 import httpx
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Header, HTTPException, Request, UploadFile
 from fastapi.responses import RedirectResponse, StreamingResponse
 from langsmith import traceable
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl
@@ -132,7 +133,21 @@ from domain.management.wiring import (
 )
 from tools.storage.s3 import download_bytes
 
-router = APIRouter()
+_selected_org_ctx: ContextVar[str | None] = ContextVar("selected_org", default=None)
+
+
+async def _capture_selected_org(
+    x_org_id: str | None = Header(None, alias="X-Org-Id"),
+) -> AsyncIterator[None]:
+    """요청당 1회 X-Org-Id를 ContextVar에 캡처, 종료 시 reset (누수 방지)."""
+    token = _selected_org_ctx.set(x_org_id)
+    try:
+        yield
+    finally:
+        _selected_org_ctx.reset(token)
+
+
+router = APIRouter(dependencies=[Depends(_capture_selected_org)])
 
 # 멀티테넌트 Meta 연결 요청 스코프 — App Review 승인 권한과 일치해야 한다.
 _META_CONNECT_SCOPES = [
