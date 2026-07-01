@@ -1001,10 +1001,22 @@ export default function GeneratorPage() {
         setPhase("idle");
       }
     };
-    es.onerror = () => {
+    es.onerror = async () => {
       es.close();
       localStorage.removeItem(ACTIVE_GEN_KEY);
       setGenJob(null); // 동시실행 슬롯 해제
+      // 스트림이 끊긴 이유가 서버측 생성 실패(error 이벤트가 종료 전 유실)일 수 있다.
+      // 상태를 조회해 실제 실패 원인이 있으면 그걸 우선 노출 — "네트워크 끊김"으로 오인 방지.
+      try {
+        const d = (await api.generator.detail(generationId)) as GenerationDetail;
+        if (d.status === "failed") {
+          setError(d.error_message || "광고 생성에 실패했습니다.");
+          setPhase("idle");
+          return;
+        }
+      } catch {
+        // 조회 실패 시 아래 일반 안내로 폴백
+      }
       setError("진행 상태 연결이 끊어졌습니다. 다시 시도해주세요.");
       setPhase("idle");
     };
