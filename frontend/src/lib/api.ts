@@ -159,14 +159,30 @@ export interface CalibrationResponse {
   rate_limited?: string;
 }
 
+// admin이 impersonate로 선택한 org id — management 요청에만 X-Org-Id로 실림. sessionStorage=탭 종료 시 소멸.
+export function getAdminOrgId(): string | null {
+  if (typeof window === "undefined") return null;
+  return window.sessionStorage.getItem("adminOrgId");
+}
+export function setAdminOrgId(orgId: string | null): void {
+  if (typeof window === "undefined") return;
+  if (orgId) window.sessionStorage.setItem("adminOrgId", orgId);
+  else window.sessionStorage.removeItem("adminOrgId");
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const token = getToken();
   const authHeader: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+  const orgId = getAdminOrgId();
+  // 계약: path는 /api 이후 상대경로. management 요청 & adminOrgId 있을 때만 부착(비-management 라우터로 누출 금지).
+  const orgHeader: Record<string, string> =
+    orgId && path.startsWith("/management") ? { "X-Org-Id": orgId } : {};
   const { headers: initHeaders, ...restInit } = init ?? {};
   const res = await fetch(`${API_BASE}/api${path}`, {
     headers: {
       "Content-Type": "application/json",
       ...authHeader,
+      ...orgHeader,
       ...(initHeaders as Record<string, string> | undefined),
     },
     ...restInit,

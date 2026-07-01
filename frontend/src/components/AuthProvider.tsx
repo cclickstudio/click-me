@@ -2,6 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { authApi, clearToken, getToken, saveToken, type UserOut } from '@/lib/authApi';
+import { setAdminOrgId } from '@/lib/api';
 
 type AuthCtx = {
   user: UserOut | null;
@@ -38,6 +39,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = useCallback(() => {
     clearToken();
+    setAdminOrgId(null); // admin impersonation 선택도 함께 소멸 — 비-admin 재로그인 시 누출 방지.
     setToken(null);
     setUser(null);
     // cognito 모드면 Cognito 로컬 세션도 정리(fire-and-forget, local 모드는 no-op).
