@@ -122,7 +122,13 @@ def record_image_cost(
         unit = _lookup_image_price(model, size, quality)
         cost = round(unit * n, 6) if unit is not None else None
 
-    meta: dict = {"image_model": model, "image_count": n, "image_size": size}
+    # 한 노드에서 이미지가 여러 번 생성될 수 있어 cost_usd·image_count를 누적(덮어쓰기 방지).
+    prev_meta = (getattr(run, "extra", None) or {}).get("metadata") or {}
+    meta: dict = {
+        "image_model": model,
+        "image_count": (prev_meta.get("image_count") or 0) + n,
+        "image_size": size,
+    }
     if cost is not None:
-        meta["cost_usd"] = cost
+        meta["cost_usd"] = round((prev_meta.get("cost_usd") or 0) + cost, 6)
     run.set(metadata=meta)

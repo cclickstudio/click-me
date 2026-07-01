@@ -1,7 +1,8 @@
 # core.tracing.make_trace_config 표준 조립 + 이미지 비용 조회 검증
 
+import core.tracing as tracing
 from core.config import settings
-from core.tracing import _lookup_image_price, make_trace_config
+from core.tracing import _lookup_image_price, make_trace_config, record_image_cost
 
 
 def test_run_name_without_mode():
@@ -76,3 +77,30 @@ def test_image_price_lookup_gpt_image():
 def test_image_price_lookup_flat_and_unknown():
     assert _lookup_image_price("gemini-2.5-flash-image", "1024x1024", "medium") == 0.039
     assert _lookup_image_price("unknown-model", "1024x1024", "medium") is None
+
+
+class _FakeRun:
+    """record_image_cost 누적 검증용 가짜 run tree(extra.metadata 병합)."""
+
+    def __init__(self):
+        self.extra = {"metadata": {}}
+
+    def set(self, *, metadata=None, **_kw):
+        if metadata:
+            self.extra["metadata"].update(metadata)
+
+
+def test_record_image_cost_accumulates(monkeypatch):
+    fake = _FakeRun()
+    monkeypatch.setattr(tracing, "get_current_run_tree", lambda: fake)
+    record_image_cost(model="gpt-image-1", size="1024x1024", quality="medium")  # 0.042
+    record_image_cost(model="gpt-image-1", size="1024x1024", quality="high")  # +0.167
+    md = fake.extra["metadata"]
+    assert md["cost_usd"] == round(0.042 + 0.167, 6)
+    assert md["image_count"] == 2
+
+
+def test_record_image_cost_noop_without_run(monkeypatch):
+    monkeypatch.setattr(tracing, "get_current_run_tree", lambda: None)
+    # 활성 run 없으면 예외 없이 무시.
+    record_image_cost(model="gpt-image-1", size="1024x1024", quality="high")
