@@ -22,6 +22,7 @@ from core.config import settings
 from core.db import AsyncSessionLocal, get_db
 from core.models import User
 from core.schemas import ChatRequest
+from core.tracing import make_trace_config
 from domain.chat import history, result_callback, widgets
 from domain.chat.loop_state import MAX_LOOP, get_loop_state
 from domain.management.assistant.history import record_feedback  # RAG 피드백 적재(/feedback)
@@ -441,11 +442,20 @@ async def chat_complete(
         tenant_id, user_id = _memory_ids(body, current_user)
         # 요청별 일회용 thread — 프론트가 매 턴 풀히스토리를 재전송하므로 누적 dedup 불필요(구 deep_agent와 동일).
         thread_id = f"chat-{body.session_id or 'anon'}-{uuid.uuid4().hex[:8]}"
-        config = {
-            "configurable": {"thread_id": thread_id},
-            "run_name": "채팅",
-            "tags": ["chat", "unified-agent"],
-        }
+        # LangSmith 표준 트레이스 — 루트 chat.assistant + 사용자/기능 필터용 메타(가이드 §4).
+        config = make_trace_config(
+            domain="chat",
+            feature="assistant",
+            user_id=user_id or "anonymous",
+            login_id=getattr(current_user, "login_id", None),
+            user_name=getattr(current_user, "name", None),
+            role=getattr(current_user, "role", None),
+            project_id=body.project_id,
+            ad_id=body.context_ad_id,
+            extra_metadata={"session_id": body.session_id, "org_id": tenant_id},
+            extra_tags=["unified-agent"],
+            configurable={"thread_id": thread_id},
+        )
         initial = {
             "messages": _to_lc_messages(body.messages),
             "session_id": body.session_id,
