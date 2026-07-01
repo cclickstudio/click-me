@@ -202,3 +202,113 @@ async def test_require_org_id_write_non_admin_returns_org(monkeypatch):
     user = SimpleNamespace(id=uuid.uuid4(), role="USER")
     got = await management._require_org_id_write(user, _MembershipDB(own), action="approve")
     assert got == own
+
+
+def test_sync_campaign_admin_charge_emits_targeted_audit(monkeypatch):
+    """admin이 X-Org-Id로 sync해서 실제 크레딧 차감이 나면 sync_credit_adjust 감사 1건."""
+    emitted = []
+
+    async def _spy(user, org_id, *, action):
+        emitted.append((str(org_id), action))
+
+    org = uuid.uuid4()
+
+    async def _fake_require_org_id(user, db):
+        return org
+
+    class _Reader:
+        async def get_metrics(self, *_a, **_k):
+            return SimpleNamespace(spend_krw=10_000, as_of=None)
+
+        async def get_delivery_status_detail(self, *_a, **_k):
+            return SimpleNamespace(effective_status="ACTIVE")
+
+    class _Billing:
+        async def spent_for(self, *_a, **_k):
+            return 0
+
+        async def balance(self, *_a, **_k):
+            return 100_000
+
+        async def record_spend(self, *_a, **_k):
+            return None
+
+    async def _noop(*_a, **_k):
+        return None
+
+    async def _reader(*_a, **_k):
+        return _Reader()
+
+    monkeypatch.setattr(management, "_emit_impersonation_audit", _spy)
+    monkeypatch.setattr(management, "_require_org_id", _fake_require_org_id)
+    monkeypatch.setattr(management, "_require_owned_campaign", _noop)
+    monkeypatch.setattr(management, "_require_reader", _reader)
+    monkeypatch.setattr(management, "get_billing_service", lambda: _Billing())
+    monkeypatch.setattr(management, "_created_campaign_row", _noop)
+
+    admin = SimpleNamespace(id=uuid.uuid4(), role="ADMIN")
+
+    class _DB:
+        async def scalar(self, *_a, **_k):
+            return "ACTIVE"
+
+    res = _client(admin, _DB()).get(
+        "/api/management/campaigns/camp_x/sync", headers={"X-Org-Id": str(org)}
+    )
+    assert res.status_code == 200
+    assert emitted == [(str(org), "sync_credit_adjust")]
+
+
+def test_sync_campaign_no_charge_no_audit(monkeypatch):
+    """차감이 0이면(이미 정산됨) 감사 없음."""
+    emitted = []
+
+    async def _spy(user, org_id, *, action):
+        emitted.append(action)
+
+    org = uuid.uuid4()
+
+    async def _fake_require_org_id(user, db):
+        return org
+
+    class _Reader:
+        async def get_metrics(self, *_a, **_k):
+            return SimpleNamespace(spend_krw=5_000, as_of=None)
+
+        async def get_delivery_status_detail(self, *_a, **_k):
+            return SimpleNamespace(effective_status="ACTIVE")
+
+    class _Billing:
+        async def spent_for(self, *_a, **_k):
+            return 5_000  # already == spent → delta 0 → no charge
+
+        async def balance(self, *_a, **_k):
+            return 100_000
+
+        async def record_spend(self, *_a, **_k):
+            return None
+
+    async def _noop(*_a, **_k):
+        return None
+
+    async def _reader(*_a, **_k):
+        return _Reader()
+
+    monkeypatch.setattr(management, "_emit_impersonation_audit", _spy)
+    monkeypatch.setattr(management, "_require_org_id", _fake_require_org_id)
+    monkeypatch.setattr(management, "_require_owned_campaign", _noop)
+    monkeypatch.setattr(management, "_require_reader", _reader)
+    monkeypatch.setattr(management, "get_billing_service", lambda: _Billing())
+    monkeypatch.setattr(management, "_created_campaign_row", _noop)
+
+    admin = SimpleNamespace(id=uuid.uuid4(), role="ADMIN")
+
+    class _DB:
+        async def scalar(self, *_a, **_k):
+            return "ACTIVE"
+
+    res = _client(admin, _DB()).get(
+        "/api/management/campaigns/camp_x/sync", headers={"X-Org-Id": str(org)}
+    )
+    assert res.status_code == 200
+    assert emitted == []

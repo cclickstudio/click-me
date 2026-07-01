@@ -2768,6 +2768,7 @@ async def sync_campaign(
             try:
                 await billing.record_spend(org_id, amount, ref_id=campaign_id)
                 charged = amount
+                await _emit_impersonation_audit(user, org_uuid, action="sync_credit_adjust")
             except BillingError:
                 charged = 0
     detail = await reader.get_delivery_status_detail(campaign_id)
