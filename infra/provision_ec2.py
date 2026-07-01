@@ -56,6 +56,10 @@ PROFILE_NAME = f"{PROJECT}-ec2-profile"
 INSTANCE_NAME = f"{PROJECT}-prod"
 PEM_PATH = Path(__file__).resolve().parent / f"{KEY_NAME}.pem"
 
+# Windows에서 subprocess로 aws CLI를 호출하면 출력이 파이프로 캡처돼도 페이저(more)가
+# 뜨면서 입력 대기로 멈추는 경우가 있어, 자식 프로세스에서만 페이저를 끈다.
+_AWS_ENV = {**os.environ, "AWS_PAGER": ""}
+
 # 인스턴스 부팅 시 자동 셋업 (docker / compose plugin / awscli v2 / swap / 배포 디렉토리)
 USER_DATA = r"""#!/bin/bash
 set -eux
@@ -94,7 +98,7 @@ echo "clickme bootstrap done" > /home/ubuntu/clickme/.bootstrap-ok
 def aws(*args: str, capture: bool = True) -> str:
     """aws CLI 호출. 실패 시 예외."""
     cmd = ["aws", "--region", REGION, *args]
-    res = subprocess.run(cmd, capture_output=True, text=True)
+    res = subprocess.run(cmd, capture_output=True, text=True, env=_AWS_ENV)
     if res.returncode != 0:
         raise RuntimeError(f"$ {' '.join(cmd)}\n{res.stderr.strip()}")
     return res.stdout.strip() if capture else ""
@@ -102,7 +106,9 @@ def aws(*args: str, capture: bool = True) -> str:
 
 def aws_ok(*args: str) -> tuple[bool, str]:
     """실패해도 예외 없이 (성공여부, 출력/에러) 반환."""
-    res = subprocess.run(["aws", "--region", REGION, *args], capture_output=True, text=True)
+    res = subprocess.run(
+        ["aws", "--region", REGION, *args], capture_output=True, text=True, env=_AWS_ENV
+    )
     return res.returncode == 0, (res.stdout if res.returncode == 0 else res.stderr).strip()
 
 
@@ -239,7 +245,9 @@ def create_iam_role() -> bool:
         "iam", "create-role", "--role-name", ROLE_NAME, "--assume-role-policy-document", trust
     )
     if not ok and "EntityAlreadyExists" not in err:
-        print(f"[!] IAM Role 생성 실패(권한 부족 가능) — ECR pull은 EC2에서 수동 처리 필요:\n    {err}")
+        print(
+            f"[!] IAM Role 생성 실패(권한 부족 가능) — ECR pull은 EC2에서 수동 처리 필요:\n    {err}"
+        )
         return False
     aws_ok(
         "iam",
@@ -355,7 +363,9 @@ def wait_and_report(instance_id: str) -> None:
     print("   확인: ssh 접속 후 'cat ~/clickme/.bootstrap-ok' / 'docker --version'")
     print(" - ECR 리포(clickme-backend/frontend)는 cd.yml이 자동 생성합니다.")
     print(" - EC2 ~/clickme/docker-compose.prod.yml 은 아직 없습니다(다음 단계).")
-    print(" - 안 쓸 땐: aws ec2 stop-instances --region %s --instance-ids %s" % (REGION, instance_id))
+    print(
+        " - 안 쓸 땐: aws ec2 stop-instances --region %s --instance-ids %s" % (REGION, instance_id)
+    )
 
 
 # ─────────────────────────── 철거 ───────────────────────────
