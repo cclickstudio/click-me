@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Awaitable, Callable
 
 from api.assistant.contracts import Action, Intent, SubagentRequest, SubagentResult
 from api.assistant.orchestrator import Orchestrator
