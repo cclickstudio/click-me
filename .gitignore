@@ -86,5 +86,11 @@ fonts/
 # 루트에 잘못 들어온 중첩 클론(X1) — 추적·재추가 방지
 /click-me/
 
+# DailyLog-MCP — 별도 리포(중첩 클론), 추적 제외
+/DailyLog-MCP/
+
+# .mcp.json — 개인 로컬 MCP 서버 경로 포함, 팀 공유 안 함
+/.mcp.json
+
 
 .understand-anything
