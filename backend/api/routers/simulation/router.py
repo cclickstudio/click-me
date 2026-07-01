@@ -11,6 +11,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
 from fastapi.responses import StreamingResponse
+from pydantic import ValidationError
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -20,7 +21,7 @@ from core.db import get_db
 from core.models import User
 from domain.simulation.adapters.ad_image_store import persist_ad_image
 from domain.simulation.adapters.category_repo import list_categories
-from domain.simulation.contracts.schemas import SimulationRunRequest
+from domain.simulation.contracts.schemas import SegmentSpec, SimulationRunRequest
 from domain.simulation.repositories.simulation_repository import SimulationRepository
 from domain.simulation.service.analysis_view import to_analysis_payload
 from domain.simulation.wiring import _ensure_env, build_simulation_service
@@ -68,6 +69,7 @@ def _build_request(
     ad_objective: str | None,
     service_class: int | None,
     from_campaign_id: str | None = None,
+    analysis_mode: str = "synthetic",
     user: User | None = None,
 ) -> SimulationRunRequest:
     """multipart 폼 값들을 도메인 요청 DTO로 조립. target_filter는 JSON 문자열."""
@@ -100,6 +102,7 @@ def _build_request(
         ad_objective=ad_objective,
         service_class=service_class,
         from_campaign_id=from_campaign_id,
+        analysis_mode=analysis_mode,
     )
 
 
@@ -120,6 +123,9 @@ async def start_simulation(
     ad_objective: str | None = Form(None),
     service_class: int | None = Form(None),
     from_campaign_id: str | None = Form(None),  # 관리 탭 진입 시 — 완료 후 서버가 자동 링크
+    analysis_mode: str = Form(
+        "synthetic"
+    ),  # synthetic(기본)/individual(표본1 강제). persona_set은 /compare
     current_user: User | None = Depends(optional_user),  # 인증 시 트레이스에 사용자 식별
 ) -> dict:
     """비동기 시작 — run_id 반환. 진행률은 /stream, 결과는 /result."""
@@ -141,6 +147,7 @@ async def start_simulation(
         ad_objective=ad_objective,
         service_class=service_class,
         from_campaign_id=from_campaign_id,
+        analysis_mode=analysis_mode,
         user=current_user,
     )
     run_id = await _service.start(req)
@@ -168,6 +175,9 @@ async def run_simulation(
     product_category: str | None = Form(None),
     ad_objective: str | None = Form(None),
     service_class: int | None = Form(None),
+    analysis_mode: str = Form(
+        "synthetic"
+    ),  # synthetic(기본)/individual(표본1 강제). persona_set은 /compare
     shape: str = "full",
     current_user: User | None = Depends(optional_user),  # 인증 시 트레이스에 사용자 식별
 ) -> dict:
@@ -192,6 +202,7 @@ async def run_simulation(
         product_category=product_category,
         ad_objective=ad_objective,
         service_class=service_class,
+        analysis_mode=analysis_mode,
         user=current_user,
     )
     try:
@@ -199,6 +210,67 @@ async def run_simulation(
     except RuntimeError as e:
         raise HTTPException(status_code=500, detail=str(e)) from e
     return to_analysis_payload(result) if shape == "analysis" else result
+
+
+@router.post("/compare")
+async def compare_simulation(
+    segments: str = Form(
+        ...
+    ),  # JSON [{label, target_filter:{age_min,age_max,gender}, sample_size}]
+    ad_id: str = Form(...),
+    ad_content: str | None = Form(None),
+    ad_image: UploadFile | None = File(None),
+    ad_image_url: str | None = Form(None),
+    ad_title: str | None = Form(None),
+    product_category: str | None = Form(None),
+    ad_objective: str | None = Form(None),
+    service_class: int | None = Form(None),
+    allocation: str = Form("auto"),
+    project_id: str | None = Form(None),
+    organization_id: str | None = Form(None),
+    current_user: User | None = Depends(optional_user),  # 인증 시 트레이스에 사용자 식별
+) -> dict:
+    """persona_set 3-모드 — 세그먼트 배열마다 개별 시뮬을 돌려 대조. run_id 반환.
+
+    진행률은 /stream(세그먼트 메타 포함), 결과는 /result(mode=persona_set 형태)로 조회한다.
+    """
+    try:
+        raw = json.loads(segments)
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=422, detail=f"segments JSON 오류: {e}") from e
+    if not isinstance(raw, list) or not raw:
+        raise HTTPException(status_code=422, detail="segments는 비어있지 않은 배열이어야 합니다.")
+    try:
+        specs = [SegmentSpec(**s) for s in raw]
+    except (ValidationError, TypeError) as e:
+        raise HTTPException(status_code=422, detail=f"segments 항목 오류: {e}") from e
+    ad_image_path, ad_image_key = await _save_upload(ad_image)
+    base_req = _build_request(
+        ad_id=ad_id,
+        ad_content=ad_content,
+        ad_image_path=ad_image_path,
+        ad_image_key=ad_image_key,
+        ad_image_url=ad_image_url,
+        organization_id=organization_id,
+        project_id=project_id,
+        target_filter=None,  # 세그먼트별 target_filter가 각 런에서 덮어씀
+        target_mode="AUTO",
+        sample_size=20,  # 세그먼트별 sample_size가 각 런에서 덮어씀
+        allocation=allocation,
+        ad_title=ad_title,
+        product_category=product_category,
+        ad_objective=ad_objective,
+        service_class=service_class,
+        analysis_mode="persona_set",
+        user=current_user,
+    )
+    run_id = await _service.start_comparison(base_req, specs)
+    return {
+        "run_id": run_id,
+        "mode": "persona_set",
+        "stream_url": f"/api/simulation/{run_id}/stream",
+        "result_url": f"/api/simulation/{run_id}/result",
+    }
 
 
 @router.get("/categories")
@@ -219,7 +291,11 @@ async def stream_simulation(run_id: str) -> StreamingResponse:
 
 @router.get("/{run_id}/result")
 async def get_simulation_result(run_id: str) -> dict:
-    """완료된 실행 결과(반응·루브릭·집계). 미완료/없음이면 404."""
+    """완료된 실행 결과(반응·루브릭·집계). 미완료/없음이면 404.
+
+    persona_set 런이면 서비스가 {mode:"persona_set", run_id, segments:[{label, target_filter,
+    sample_size, result}]} 형태로 저장하므로 그대로 반환된다(synthetic/individual은 기존 그대로).
+    """
     result = _service.get_result(run_id)
     if result is None:
         raise HTTPException(status_code=404, detail="결과 없음 — 미완료이거나 잘못된 run_id")
