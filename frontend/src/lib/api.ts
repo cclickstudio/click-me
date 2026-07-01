@@ -14,6 +14,8 @@ import type {
   DebateTopicsResult,
   QAEvent,
   ReportView,
+  SimCompareInput,
+  SimComparisonResult,
   SimRunInput,
   SimRunResult,
 } from "./types";
@@ -200,7 +202,25 @@ function buildSimForm(input: SimRunInput): FormData {
   if (input.product_category) form.append("product_category", input.product_category);
   if (input.ad_objective) form.append("ad_objective", input.ad_objective);
   if (input.service_class != null) form.append("service_class", String(input.service_class));
+  if (input.analysis_mode) form.append("analysis_mode", input.analysis_mode);
   if (input.from_campaign_id) form.append("from_campaign_id", input.from_campaign_id);
+  return form;
+}
+
+// Persona Set 비교 multipart 폼 — 광고 공통 필드 + segments JSON.
+function buildCompareForm(input: SimCompareInput): FormData {
+  const form = new FormData();
+  form.append("ad_id", input.ad_id);
+  if (input.ad_content) form.append("ad_content", input.ad_content);
+  if (input.ad_image) form.append("ad_image", input.ad_image);
+  if (input.ad_image_url) form.append("ad_image_url", input.ad_image_url);
+  if (input.organization_id) form.append("organization_id", input.organization_id);
+  if (input.project_id) form.append("project_id", input.project_id);
+  if (input.ad_title) form.append("ad_title", input.ad_title);
+  if (input.product_category) form.append("product_category", input.product_category);
+  if (input.ad_objective) form.append("ad_objective", input.ad_objective);
+  if (input.service_class != null) form.append("service_class", String(input.service_class));
+  form.append("segments", JSON.stringify(input.segments));
   return form;
 }
 
@@ -294,6 +314,25 @@ export const api = {
         return r.json();
       });
     },
+    // Persona Set 비교 시작 — 세그먼트 배열로 compare, run_id 반환.
+    // 진행률은 stream(run_id) 재사용(이벤트에 segment_* 추가), 결과는 compareResult(run_id).
+    compare: (input: SimCompareInput): Promise<{ run_id: string }> => {
+      const token = getToken();
+      return fetch(`${API_BASE}/api/simulation/compare`, {
+        method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: buildCompareForm(input),
+      }).then(async (r) => {
+        if (!r.ok) {
+          const err = await r.json().catch(() => ({ detail: `HTTP ${r.status}` }));
+          throw new Error(err.detail ?? `HTTP ${r.status}`);
+        }
+        return r.json();
+      });
+    },
+    // compare 결과 — mode:"persona_set" + 세그먼트별 SimRunResult.
+    compareResult: (runId: string): Promise<SimComparisonResult> =>
+      request<SimComparisonResult>(`/simulation/${runId}/result`),
     stream: (runId: string) => new EventSource(`${API_BASE}/api/simulation/${runId}/stream`),
     // 진행 상태(running/completed/failed/unknown) — 새로고침 후 백그라운드 런 복원용.
     status: (
