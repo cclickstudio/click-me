@@ -745,7 +745,7 @@ function adRefImageSrc(asset: string): string | null {
 export default function GeneratorPage() {
   const { selectedProject, projects, selectProject, details, loadDetails } = useProjects();
   // N2 — 안읽음 뱃지(시뮬 경로와 대칭). 닫힘 여부는 ref로 최신값 읽음.
-  const { pushUnread, floatingOpen } = useChatController();
+  const { pushUnread, floatingOpen, openChat } = useChatController();
   const floatingOpenRef = useRef(floatingOpen);
   useEffect(() => {
     floatingOpenRef.current = floatingOpen;
@@ -965,6 +965,14 @@ export default function GeneratorPage() {
             if (!localStorage.getItem(injectKey)) {
               localStorage.setItem(injectKey, "1");
               const count = (d.candidates ?? []).length;
+              // 첫 후보를 시뮬 제안 프리필로 — 시안 카피 + 이미지 URL(시뮬 이미지 필수 충족).
+              const c0 = (d.candidates ?? [])[0];
+              const simImgRaw = c0?.image_url ?? null;
+              const simImg = simImgRaw
+                ? simImgRaw.startsWith("/")
+                  ? `${API_BASE}${simImgRaw}`
+                  : simImgRaw
+                : undefined;
               api.chat.resolveActiveSession(pid).then((sid) => {
                 if (!sid) return;
                 void api.chat
@@ -981,6 +989,29 @@ export default function GeneratorPage() {
                         },
                       },
                     },
+                    // #3 — 생성 완료 시 시뮬레이션 제안(첫 시안 프리필). 이미지 URL로 시뮬 즉시 실행 가능.
+                    ...(c0
+                      ? [
+                          {
+                            content:
+                              "생성한 시안으로 소비자 반응을 미리 예측해볼까요? 아래에서 확인·실행하세요.",
+                            meta: {
+                              source: "simulation",
+                              label: "시뮬레이션",
+                              widget: {
+                                type: "sim_form",
+                                data: {
+                                  ad_title: c0.copy.headline,
+                                  ad_content: [c0.copy.headline, c0.copy.body, c0.copy.cta]
+                                    .filter(Boolean)
+                                    .join("\n"),
+                                  ad_image_url: simImg,
+                                },
+                              },
+                            },
+                          },
+                        ]
+                      : []),
                   ])
                   .then(() => {
                     if (!floatingOpenRef.current) pushUnread();
@@ -1764,7 +1795,20 @@ export default function GeneratorPage() {
               {/* 결과 (후보 세로 정렬) */}
               {phase === "done" && detail && (
                 <div className="flex flex-col gap-3">
-                  <div className="flex justify-end">
+                  <div className="flex justify-end gap-2">
+                    {/* #2 — 생성 시안으로 시뮬레이션 돌리기(채팅의 시뮬 제안으로 이동, 첫 시안 프리필) */}
+                    <button
+                      type="button"
+                      className="flex items-center gap-1.5 text-xs text-[#3182F6] border border-[#3182F6]/40 rounded-lg px-3 py-1.5 hover:bg-[#EBF3FF] dark:hover:bg-[#1E3A5F] transition-colors"
+                      onClick={async () => {
+                        const pid = selectedProject?.id;
+                        if (!pid) return;
+                        const sid = await api.chat.resolveActiveSession(pid);
+                        openChat(sid ?? null);
+                      }}
+                    >
+                      🧪 시뮬레이션 돌리기
+                    </button>
                     <button
                       type="button"
                       className="flex items-center gap-1.5 text-xs text-[#4E5968] dark:text-[#9CA3AF] border border-[#E5E8EB] dark:border-[#2D3748] rounded-lg px-3 py-1.5 hover:border-[#3182F6] hover:text-[#3182F6] transition-colors"

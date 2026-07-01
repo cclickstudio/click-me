@@ -44,6 +44,7 @@ const AGE_BANDS: { label: string; min: number; max: number }[] = [
 export default function SimFormWidget({
   initial,
   initialImage,
+  initialImageUrl,
   projectId,
   latest,
   onSimComplete,
@@ -55,6 +56,7 @@ export default function SimFormWidget({
     ad_objective?: string;
   };
   initialImage?: File; // 채팅에서 첨부한 광고 이미지
+  initialImageUrl?: string; // 생성 시안 등에서 넘어온 이미지 URL(파일 대신 URL로 시뮬)
   projectId?: string; // 현재 프로젝트 — DB 영속화·결과 상세 조회에 필요
   latest?: boolean; // 가장 최근 시뮬 위젯만 새로고침 시 진행중 런을 복원(중복 방지)
   // 완료 시 결과를 채팅 컨트롤러로 넘긴다 — 입력 요약·결과 요약·토론을 별도 메시지로 띄우게.
@@ -95,8 +97,10 @@ export default function SimFormWidget({
   const [gender, setGender] = useState<'' | 'F' | 'M'>('');
   const [image, setImage] = useState<File | null>(initialImage ?? null);
   const [imagePreview, setImagePreview] = useState<string | null>(() =>
-    initialImage ? URL.createObjectURL(initialImage) : null,
+    initialImage ? URL.createObjectURL(initialImage) : (initialImageUrl ?? null),
   );
+  // 파일 첨부 없이 URL만 넘어온 경우(생성 시안) — 시뮬 필수 이미지를 URL로 충족.
+  const hasImage = image !== null || !!initialImageUrl;
   const [sampleSize, setSampleSize] = useState(20);
   const [pct, setPct] = useState(0);
   const [stageMsg, setStageMsg] = useState('준비 중...');
@@ -264,6 +268,7 @@ export default function SimFormWidget({
         ad_title: adTitle || undefined,
         ad_content: adContent,
         ad_image: image ?? undefined,
+        ad_image_url: !image ? initialImageUrl || undefined : undefined, // 파일 없으면 URL로 시뮬
         project_id: projectId || undefined, // 프로젝트 귀속 → DB 저장(없으면 메모리 런)
         product_category: categoryName || undefined,
         service_class: typeof serviceClass === 'number' ? serviceClass : undefined,
@@ -529,7 +534,7 @@ export default function SimFormWidget({
               다음
             </button>
           ) : (
-            <button onClick={run} disabled={!adTitle.trim() || !adContent.trim() || !image} className={btnCls}>
+            <button onClick={run} disabled={!adTitle.trim() || !adContent.trim() || !hasImage} className={btnCls}>
               시뮬레이션 실행
             </button>
           )}

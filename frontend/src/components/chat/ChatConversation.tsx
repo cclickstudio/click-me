@@ -597,12 +597,20 @@ export default function ChatConversation({
     ]);
   };
 
-  // F8 — 생성 후보 카피로 시뮬 진입(제너→시뮬 루프). 후보 카피를 sim_form 초기값으로 띄운다.
-  const handleSimulateCandidate = (adTitle: string, adContent: string) => {
+  // F8 — 생성 후보 카피·이미지로 시뮬 진입(제너→시뮬 루프). 후보를 sim_form 초기값으로 띄운다.
+  // 시뮬은 이미지 필수라 생성 시안의 이미지 URL을 함께 넘겨 폼을 바로 실행 가능하게 한다.
+  const handleSimulateCandidate = (
+    adTitle: string,
+    adContent: string,
+    adImageUrl?: string,
+  ) => {
     addLocalAssistant('이 시안으로 반응을 예측해볼게요. 아래에서 확인·실행하세요.', {
       source: 'simulation',
       label: '시뮬레이션',
-      widget: { type: 'sim_form', data: { ad_title: adTitle, ad_content: adContent } },
+      widget: {
+        type: 'sim_form',
+        data: { ad_title: adTitle, ad_content: adContent, ad_image_url: adImageUrl },
+      },
     });
   };
 
@@ -1727,6 +1735,9 @@ export default function ChatConversation({
                       <SimFormWidget
                         initial={msg.meta.widget.data}
                         initialImage={msg.imageFile}
+                        initialImageUrl={
+                          msg.meta.widget.data?.ad_image_url as string | undefined
+                        }
                         projectId={projectId}
                         latest={i === lastSimFormIdx}
                         onSimComplete={handleSimComplete}
