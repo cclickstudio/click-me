@@ -63,6 +63,13 @@ const STAGES = [
   { key: "explain", label: "생성 이유 작성" },
 ];
 
+const IMPROVE_STAGES = [
+  { key: "product_analysis", label: "상품 분석" },
+  { key: "strategy", label: "개선 방향 분석" },
+  { key: "candidates", label: "광고 생성" },
+  { key: "explain", label: "완료" },
+];
+
 const CAROUSEL_STAGES = [
   { key: "product_analysis", label: "상품 분석" },
   { key: "strategy", label: "광고 전략 생성" },
@@ -1200,7 +1207,8 @@ export default function GeneratorPage() {
     }
   }
 
-  const activeStages = format === "carousel" ? CAROUSEL_STAGES : STAGES;
+  const activeStages =
+    mode === "improve" ? IMPROVE_STAGES : format === "carousel" ? CAROUSEL_STAGES : STAGES;
   const currentIdx = activeStages.findIndex((s) => s.key === progress.stage);
 
   return (
@@ -1692,7 +1700,9 @@ export default function GeneratorPage() {
                   ? "생성 중..."
                   : format === "carousel"
                     ? "카드뉴스 생성하기"
-                    : "광고 후보 3종 생성하기"}
+                    : mode === "improve"
+                      ? "광고 생성하기"
+                      : "광고 후보 3종 생성하기"}
               </button>
             </div>
           </div>
@@ -1715,7 +1725,9 @@ export default function GeneratorPage() {
               <p className="text-xs text-[#8B95A1] dark:text-[#6B7280] mb-5">
                 {format === "carousel"
                   ? "관심끌기·가치전달·행동유도 3장 구성 · 카드를 클릭하면 게시·광고 집행을 할 수 있어요"
-                  : "전략이 서로 다른 광고 3종 · 카드를 클릭하면 게시·광고 집행을 할 수 있어요"}
+                  : mode === "improve"
+                    ? "시뮬레이션 피드백 기반 개선 광고 · 카드를 클릭하면 게시·광고 집행을 할 수 있어요"
+                    : "전략이 서로 다른 광고 3종 · 카드를 클릭하면 게시·광고 집행을 할 수 있어요"}
               </p>
 
               {error && (
