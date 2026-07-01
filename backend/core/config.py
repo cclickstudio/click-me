@@ -130,9 +130,9 @@ class Settings(BaseSettings):
     openai_embedding_model: str = "text-embedding-3-small"  # provider=openai 폴백(1536)
 
     # Chat orchestrator (Phase ③-B에서 사용 — 기반 단계는 설정만 선반영)
-    chat_orchestrator_provider: str = "anthropic"  # anthropic | openai | google_genai
-    chat_orchestrator_model: str = "claude-sonnet-4-6"  # 챗 답변 엔진. 임베딩·검색은 OpenAI
-    chat_classify_model: str = "gpt-4o-mini"  # 분류·슬롯 추출 경량 모델(답변과 분리, 지연↓)
+    chat_orchestrator_provider: str = "openai"  # anthropic | openai | google_genai
+    chat_orchestrator_model: str = "gpt-4.1"  # 챗 답변 엔진. 임베딩·검색은 OpenAI
+    chat_classify_model: str = "gpt-4.1"  # 분류·슬롯 추출 경량 모델(답변과 분리, 지연↓)
     chat_orchestrator_temperature: float = 0.3
 
     # Generator (광고 생성)
