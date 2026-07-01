@@ -5,11 +5,17 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { SimulationResultView } from '@/components/simulator/SimulationResultView';
+import { SegmentComparisonView } from '@/components/simulator/SegmentComparisonView';
+import { IndividualDeepView } from '@/components/simulator/IndividualDeepView';
 import { api } from '@/lib/api';
 import { getToken } from '@/lib/authApi';
 import { useProjects } from '@/components/ProjectContext';
-import { loadSimResult } from '@/lib/simResultStore';
-import type { ReportView, SimRunResult } from '@/lib/types';
+import {
+  loadSimComparison,
+  loadSimResult,
+  type StoredSimComparison,
+} from '@/lib/simResultStore';
+import type { AnalysisMode, ReportView, SimRunResult } from '@/lib/types';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
@@ -21,6 +27,10 @@ export default function SimulationResultPage() {
   const router = useRouter();
   const { refreshDetails } = useProjects();
   const [result, setResult] = useState<SimRunResult | null>(null);
+  // Persona Set 비교 결과 — sessionStorage에 있으면 비교 뷰로 렌더(콜드 복원 경로 없음).
+  const [comparison, setComparison] = useState<StoredSimComparison | null>(null);
+  // individual이면 심층 뷰로 렌더. store에 mode가 있으면 그 값을, 없으면 페르소나 수로 추정.
+  const [mode, setMode] = useState<AnalysisMode | undefined>();
   const [adTitle, setAdTitle] = useState<string | undefined>();
   const [adDescription, setAdDescription] = useState<string | undefined>();
   // DB에 저장된 통합 리포트 — 토론을 다시 돌리지 않아도 최종 리포트 복원.
@@ -32,6 +42,19 @@ export default function SimulationResultPage() {
 
   useEffect(() => {
     let alive = true;
+
+    // 0) Persona Set 비교 결과가 sessionStorage에 있으면 비교 뷰로 바로 렌더.
+    //    compare는 단일 SimRunResult가 아니라 세그먼트 배열 → 콜드 DB 복원 경로가 없다.
+    const storedCompare = loadSimComparison(id);
+    if (storedCompare) {
+      setComparison(storedCompare);
+      setAdTitle(storedCompare.adTitle);
+      setAdDescription(storedCompare.adDescription);
+      setLoading(false);
+      return () => {
+        alive = false;
+      };
+    }
 
     // 저장된 통합 리포트는 진입 경로와 무관하게 병렬로 복원 시도(없으면 null, 실패 무시).
     api.debate
@@ -67,6 +90,7 @@ export default function SimulationResultPage() {
       setResult(stored.result);
       setAdTitle(stored.adTitle);
       setAdDescription(stored.adDescription);
+      setMode(stored.mode);
       setLoading(false);
       return;
     }
@@ -177,8 +201,19 @@ export default function SimulationResultPage() {
         </div>
       )}
 
-      {!loading && !error && result && (
-        <SimulationResultView
+      {/* Persona Set — 세그먼트 비교 뷰 */}
+      {!loading && !error && comparison && (
+        <SegmentComparisonView
+          comparison={comparison.comparison}
+          adTitle={adTitle}
+          adDescription={adDescription}
+          headerAction={headerAction}
+        />
+      )}
+
+      {/* individual — 1명 심층 뷰(store에 mode가 있거나 페르소나 1명이면 추정) */}
+      {!loading && !error && !comparison && result && isIndividual(mode, result) && (
+        <IndividualDeepView
           result={result}
           adTitle={adTitle}
           adDescription={adDescription}
@@ -186,6 +221,27 @@ export default function SimulationResultPage() {
           headerAction={headerAction}
         />
       )}
+
+      {/* synthetic — 기본 결과 뷰 */}
+      {!loading &&
+        !error &&
+        !comparison &&
+        result &&
+        !isIndividual(mode, result) && (
+          <SimulationResultView
+            result={result}
+            adTitle={adTitle}
+            adDescription={adDescription}
+            initialReportView={savedReport}
+            headerAction={headerAction}
+          />
+        )}
     </>
   );
+}
+
+// individual 판정 — store의 mode 우선, 콜드 복원(mode 없음)이면 페르소나 1명으로 추정.
+function isIndividual(mode: AnalysisMode | undefined, result: SimRunResult): boolean {
+  if (mode) return mode === 'individual';
+  return (result.personas?.length ?? 0) === 1;
 }
