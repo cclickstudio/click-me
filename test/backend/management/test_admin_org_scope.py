@@ -7,6 +7,8 @@ from fastapi import APIRouter, Depends, FastAPI
 from fastapi.testclient import TestClient
 
 from api.routers import management
+from core.auth import get_current_user
+from core.db import get_db
 
 
 @pytest.fixture(autouse=True)
@@ -113,3 +115,27 @@ async def test_admin_with_header_uses_selected_org():
     management._selected_org_ctx.set(str(sel))
     user = SimpleNamespace(id=uuid.uuid4(), role="ADMIN")
     assert await management._require_org_id(user, _OrgDB("ACTIVE")) == sel
+
+
+def _client(user, db):
+    app = FastAPI()
+    app.include_router(management.router, prefix="/api/management")
+    app.dependency_overrides[get_current_user] = lambda: user
+    app.dependency_overrides[get_db] = lambda: db
+    return TestClient(app)
+
+
+def test_admin_cannot_impersonate_meta_connect(monkeypatch):
+    """org 소유자 액션(Meta 연결)은 admin 대리 불가 → 409."""
+    # meta_app_id가 없으면 flow가 org 체크 전에 503으로 끊긴다 → org 체크(409)에 도달하도록 설정.
+    monkeypatch.setattr(management.settings, "meta_app_id", "test_app", raising=False)
+    admin = SimpleNamespace(id=uuid.uuid4(), role="ADMIN")
+
+    class _DB:
+        async def scalar(self, *_a, **_k):
+            return None  # admin은 멤버십 없음
+
+    res = _client(admin, _DB()).get(
+        "/api/management/meta/connect", headers={"X-Org-Id": str(uuid.uuid4())}
+    )
+    assert res.status_code == 409

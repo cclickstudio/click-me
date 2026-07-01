@@ -3288,6 +3288,8 @@ async def meta_connect(
     app_id = getattr(settings, "meta_app_id", None)
     if not app_id:
         raise HTTPException(503, "META_APP_ID 미설정 — Meta 연결 불가")
+    # NOTE: org 소유자만 자기 Meta를 연결한다. admin impersonation(X-Org-Id) 대상이 아니며,
+    # admin은 멤버십이 없어 아래 409로 자연 차단된다(설계: (c) 멤버십 직접 해석).
     org_id = await db.scalar(
         select(OrganizationMember.organization_id).where(OrganizationMember.user_id == user.id)
     )
