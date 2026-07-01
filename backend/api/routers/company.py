@@ -79,6 +79,7 @@ class GenerationRow(BaseModel):
     status: str
     product_name: str | None
     mode: str  # create | improve (input JSONB에서 읽음)
+    format: str  # single | carousel(카드뉴스) — 생성/카드 배지 분기
     project_name: str | None
     created_by_name: str | None
     created_at: datetime
@@ -530,6 +531,7 @@ async def list_company_generations(
             status=r.status,
             product_name=(r.input or {}).get("product_name") if r.input else None,
             mode=(r.input or {}).get("mode", "create") if r.input else "create",
+            format=(r.input or {}).get("format", "single") if r.input else "single",
             project_name=r.project_name,
             created_by_name=r.created_by_name,
             created_at=r.created_at,

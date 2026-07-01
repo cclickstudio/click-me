@@ -743,7 +743,15 @@ function adRefImageSrc(asset: string): string | null {
 }
 
 export default function GeneratorPage() {
-  const { selectedProject, projects, selectProject, details, loadDetails } = useProjects();
+  const { projects, details, loadDetails } = useProjects();
+  // 화면 내 프로젝트 선택은 로컬 상태 — 사이드바(전역 선택)와 동기화하지 않는다.
+  // 진입 시 전역 선택(localStorage)을 초기값으로만 읽고, 이후 변경은 이 화면에만 반영된다.
+  const [localProjectId, setLocalProjectId] = useState<string | null>(null);
+  useEffect(() => {
+    setLocalProjectId(localStorage.getItem("selectedProjectId"));
+  }, []);
+  const selectedProject = projects.find((p) => p.id === localProjectId) ?? null;
+  const selectProject = (id: string | null) => setLocalProjectId(id);
   // N2 — 안읽음 뱃지(시뮬 경로와 대칭). 닫힘 여부는 ref로 최신값 읽음.
   const { pushUnread, floatingOpen } = useChatController();
   const floatingOpenRef = useRef(floatingOpen);
@@ -766,6 +774,7 @@ export default function GeneratorPage() {
   const [selectedKitId, setSelectedKitId] = useState("");
   const [kitName, setKitName] = useState("");
   const logoInputRef = useRef<HTMLInputElement>(null);
+  const colorInputRef = useRef<HTMLInputElement>(null);
   const esRef = useRef<EventSource | null>(null);
 
   // 상품 이미지 (생성 모드)
@@ -811,18 +820,8 @@ export default function GeneratorPage() {
       localStorage.setItem("generator_client_id", id);
     }
     setClientId(id);
-    api.generator.brandProfile
-      .get(id)
-      .then((p) => {
-        if (p.brand_color) setBrandColor(p.brand_color);
-        if (p.tone_and_manner) setToneAndManner(p.tone_and_manner);
-        if (p.brand_logo_key) {
-          setLogoS3Key(p.brand_logo_key);
-          if (p.brand_logo_url) setLogoPreviewUrl(p.brand_logo_url);
-        }
-        if (p.brand_color || p.tone_and_manner || p.brand_logo_key) setShowOptional(true);
-      })
-      .catch(() => {});
+    // 첫 진입 시 브랜드 필드(컬러·톤·로고)는 비워둔다.
+    // 저장된 브랜드 키트를 선택할 때만 applyKit으로 값이 적용된다.
   }, []);
 
   // 진행 중이던 생성 복원 — 마운트 시 저장된 generation_id가 있으면 상태 확인 후 재연결
@@ -1385,6 +1384,9 @@ export default function GeneratorPage() {
                           : "PNG · JPG · WebP (최대 4MB)"}
                       </button>
                     )}
+                    <p className="mt-1.5 text-xs text-[#8B95A1] dark:text-[#6B7280]">
+                      최대 4MB · PNG · JPG · WebP
+                    </p>
                   </div>
                   <div>
                     <label className={labelCls}>
@@ -1562,25 +1564,65 @@ export default function GeneratorPage() {
                   </div>
 
                   <div>
-                    <label className={labelCls}>브랜드 컬러</label>
-                    <div className="flex gap-2">
+                    <label className={labelCls}>
+                      브랜드 컬러{" "}
+                      <span className="font-normal text-[#8B95A1] dark:text-[#6B7280]">
+                        · 미적용 시 자동 배색
+                      </span>
+                    </label>
+                    <div className="flex gap-2 items-center">
+                      {/* 네이티브 컬러 입력은 빈 값을 못 담아 숨기고, 커스텀 스와치로 미적용을 표현한다. */}
                       <input
+                        ref={colorInputRef}
                         type="color"
                         value={brandColor || "#3182F6"}
                         onChange={(e) => setBrandColor(e.target.value)}
-                        className="w-10 h-10 rounded-lg border border-[#E5E8EB] dark:border-[#2D3748] cursor-pointer bg-transparent"
+                        className="sr-only"
+                        tabIndex={-1}
+                        aria-hidden="true"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => colorInputRef.current?.click()}
+                        title={brandColor || "미적용 — 클릭해 색상 지정"}
+                        aria-label={
+                          brandColor ? `브랜드 컬러 ${brandColor}` : "브랜드 컬러 미적용"
+                        }
+                        className="w-10 h-10 shrink-0 rounded-lg border border-[#E5E8EB] dark:border-[#2D3748] cursor-pointer bg-white dark:bg-[#1C2333]"
+                        style={
+                          brandColor
+                            ? { backgroundColor: brandColor }
+                            : {
+                                backgroundImage:
+                                  "linear-gradient(to top right, transparent calc(50% - 1px), #F74D4D calc(50% - 1px), #F74D4D calc(50% + 1px), transparent calc(50% + 1px))",
+                              }
+                        }
                       />
                       <input
                         className={inputCls}
                         value={brandColor}
                         onChange={(e) => setBrandColor(e.target.value)}
-                        placeholder="#3182F6"
+                        placeholder="미적용 (예: #3182F6)"
                       />
+                      {brandColor && (
+                        <button
+                          type="button"
+                          onClick={() => setBrandColor("")}
+                          className="shrink-0 text-xs text-[#8B95A1] hover:text-[#F74D4D] transition-colors"
+                        >
+                          지우기
+                        </button>
+                      )}
                     </div>
                   </div>
 
                   <div>
-                    <label className={labelCls}>브랜드 로고</label>
+                    <label className={labelCls}>
+                      브랜드 로고{" "}
+                      <span className="font-normal text-[#8B95A1] dark:text-[#6B7280]">
+                        · 한 변이 1024px 이하여야 합니다
+                      </span>
+                    </label>
                     <input
                       ref={logoInputRef}
                       type="file"
