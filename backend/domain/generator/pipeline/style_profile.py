@@ -82,7 +82,7 @@ STRATEGY_STYLE: dict[AdStrategy, StyleProfile] = {
         0.20,
         _OFF_WHITE,
         _BROWN,
-        headline_weight="light",
+        headline_weight="semibold",
         body_weight="light",
         cta_weight="regular",
     ),

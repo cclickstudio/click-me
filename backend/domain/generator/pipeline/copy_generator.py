@@ -17,8 +17,20 @@ _STRATEGY_COPY_KEYWORDS: dict[AdStrategy, str] = {
     AdStrategy.BENEFIT: "할인, 쿠폰, 무료배송, 증정품, 첫 구매 혜택",
     AdStrategy.PROBLEM_SOLVING: "고민, 불편함, 개선, 변화, 해결",
     AdStrategy.SOCIAL_PROOF: "후기, 리뷰, 평점, 베스트셀러, 구매자 수",
-    AdStrategy.EMOTIONAL: "감성, 행복, 추억, 여유, 특별한 순간",
+    AdStrategy.EMOTIONAL: "한 모금의 행복, 자연이 주는 선물, 오늘의 여유, 기억에 남는 한 순간, 진심이 담긴",
     AdStrategy.FOMO: "오늘 마감, 한정 수량, 마지막 기회, 플래시 세일, 기간 한정",
+}
+
+# 전략별 헤드라인 작성 방향 — LLM이 어떤 톤·구조로 헤드라인을 써야 할지 명시
+_STRATEGY_HEADLINE_GUIDE: dict[AdStrategy, str] = {
+    AdStrategy.BENEFIT: "숫자·혜택을 전면에 내세워 임팩트 있게 작성",
+    AdStrategy.PROBLEM_SOLVING: "독자의 고통 포인트를 짚은 뒤 해결을 암시하는 구조",
+    AdStrategy.SOCIAL_PROOF: "많은 사람이 선택했다는 신뢰·수치를 강조",
+    AdStrategy.EMOTIONAL: (
+        "감각적·시적 표현으로 감정을 자극. '~를 담다' '~의 순간' '~ 한 모금' 같은 "
+        "여운 있는 구절 활용. 제품명 단순 나열·설명조 문장('진짜 ~', '리얼 ~') 금지."
+    ),
+    AdStrategy.FOMO: "시간·수량 제한을 전면에 내세워 즉각 행동을 유도",
 }
 
 _IMPROVE_COPY_GUIDE = (
@@ -59,6 +71,7 @@ _USER_TEMPLATE = """\
 ## 광고 전략
 전략: {strategy_description}
 전략 근거: {rationale}
+헤드라인 방향: {headline_guide}
 
 ## 레이아웃 가이드
 {layout_guide}
@@ -135,18 +148,21 @@ _BATCH_USER_TEMPLATE = """\
 전략: {strategy_1}
 전략 근거: {rationale_1}
 서브 키워드: {keywords_1}
+헤드라인 방향: {headline_guide_1}
 레이아웃: {layout_1}
 
 ## 후보 2
 전략: {strategy_2}
 전략 근거: {rationale_2}
 서브 키워드: {keywords_2}
+헤드라인 방향: {headline_guide_2}
 레이아웃: {layout_2}
 
 ## 후보 3
 전략: {strategy_3}
 전략 근거: {rationale_3}
 서브 키워드: {keywords_3}
+헤드라인 방향: {headline_guide_3}
 레이아웃: {layout_3}"""
 
 
@@ -169,6 +185,9 @@ async def generate_copies_batch(
     def _guide(t: TemplateType | None) -> str:
         return _TEMPLATE_COPY_GUIDE[t] if t is not None else _IMPROVE_COPY_GUIDE
 
+    def _headline_guide(s: StrategyOutput) -> str:
+        return _STRATEGY_HEADLINE_GUIDE.get(s.strategy, "")
+
     prompt = _BATCH_USER_TEMPLATE.format(
         product_name=product_analysis.product_name,
         core_values=", ".join(product_analysis.core_values),
@@ -178,14 +197,17 @@ async def generate_copies_batch(
         strategy_1=s1.strategy_description,
         rationale_1=s1.rationale,
         keywords_1=_STRATEGY_COPY_KEYWORDS.get(s1.strategy, ""),
+        headline_guide_1=_headline_guide(s1),
         layout_1=_guide(t1),
         strategy_2=s2.strategy_description,
         rationale_2=s2.rationale,
         keywords_2=_STRATEGY_COPY_KEYWORDS.get(s2.strategy, ""),
+        headline_guide_2=_headline_guide(s2),
         layout_2=_guide(t2),
         strategy_3=s3.strategy_description,
         rationale_3=s3.rationale,
         keywords_3=_STRATEGY_COPY_KEYWORDS.get(s3.strategy, ""),
+        headline_guide_3=_headline_guide(s3),
         layout_3=_guide(t3),
     )
     result = await _batch_llm.ainvoke([("system", _SYSTEM), ("user", prompt)])
@@ -214,6 +236,7 @@ async def generate_copy(
         target_audience=product_analysis.target_audience,
         strategy_description=strategy_output.strategy_description,
         rationale=strategy_output.rationale,
+        headline_guide=_STRATEGY_HEADLINE_GUIDE.get(strategy_output.strategy, ""),
         layout_guide=layout_guide,
         improvement_section=improvement_section,
     )
