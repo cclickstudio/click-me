@@ -159,7 +159,7 @@ export default function ProjectChatSection({ projectId }: { projectId: string })
           <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
         </svg>
         <span className="text-xs font-semibold text-[#4E5968] dark:text-[#9CA3AF] uppercase tracking-wide">
-          매니지먼트{count > 0 ? ` (${count})` : ''}
+          채팅{count > 0 ? ` (${count})` : ''}
         </span>
         {/* N5 미확인 합계 배지 — 접힌 상태에서도 미확인 알림이 보이게 헤더에 노출 */}
         {totalUnread > 0 && (

@@ -9,7 +9,7 @@ import logging
 import os
 import uuid
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
 from fastapi.responses import StreamingResponse
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -24,6 +24,7 @@ from domain.simulation.contracts.schemas import SimulationRunRequest
 from domain.simulation.repositories.simulation_repository import SimulationRepository
 from domain.simulation.service.analysis_view import to_analysis_payload
 from domain.simulation.wiring import _ensure_env, build_simulation_service
+from tools.storage.s3 import download_bytes
 
 logger = logging.getLogger("clickme")
 router = APIRouter()
@@ -241,14 +242,33 @@ async def get_simulation_db_result(
         sim_uuid = uuid.UUID(simulation_id)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=f"잘못된 simulation_id: {e}") from e
-    org_id = await _require_user_org(user, session)
-    # 도메인 ORM import 없이 org 소유만 raw SQL로 검증(경계 유지).
-    sim_org = await session.scalar(
-        text("SELECT organization_id FROM simulations WHERE id = :sid"), {"sid": sim_uuid}
-    )
-    if sim_org is None or sim_org != org_id:
-        raise HTTPException(status_code=404, detail="결과 없음 — 잘못된 simulation_id")
+    # ADMIN은 조직 무관 전체 열람(목록/상세 핸들러와 동일 정책). 그 외는 org 소유만 조회.
+    if user.role.upper() != "ADMIN":
+        org_id = await _require_user_org(user, session)
+        # 도메인 ORM import 없이 org 소유만 raw SQL로 검증(경계 유지).
+        sim_org = await session.scalar(
+            text("SELECT organization_id FROM simulations WHERE id = :sid"), {"sid": sim_uuid}
+        )
+        if sim_org is None or sim_org != org_id:
+            raise HTTPException(status_code=404, detail="결과 없음 — 잘못된 simulation_id")
     result = await SimulationRepository(session).get_full_result(sim_uuid)
     if result is None:
         raise HTTPException(status_code=404, detail="결과 없음 — 잘못된 simulation_id")
     return result
+
+
+@router.get("/image")
+async def proxy_ad_image(key: str) -> Response:
+    """시뮬레이션 광고 이미지를 백엔드 프록시로 제공 — AWS 자격증명 노출 방지.
+
+    simulation/ 프리픽스만 허용해 버킷 내 임의 객체 열람을 막는다(제너·채팅과 동일 패턴).
+    proxy_url_for(ad_image_store)가 만든 /api/simulation/image?key=... 를 이 라우트가 받는다.
+    """
+    if ".." in key or not key.startswith("simulation/"):
+        raise HTTPException(status_code=403, detail="허용되지 않은 이미지 경로입니다.")
+    try:
+        data = await download_bytes(key)
+    except Exception:
+        raise HTTPException(status_code=404, detail="이미지를 찾을 수 없습니다.") from None
+    content_type = "image/jpeg" if key.endswith((".jpg", ".jpeg")) else "image/png"
+    return Response(content=data, media_type=content_type)

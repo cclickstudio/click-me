@@ -1,7 +1,7 @@
 import asyncio
 import json
 import uuid
-from collections.abc import AsyncGenerator, Awaitable, Callable
+from collections.abc import AsyncGenerator
 from typing import TYPE_CHECKING
 from urllib.parse import quote
 
@@ -22,9 +22,8 @@ from core.config import settings
 from core.db import AsyncSessionLocal, get_db
 from core.models import User
 from core.schemas import ChatRequest
-from domain.chat import history
+from domain.chat import history, result_callback, widgets
 from domain.chat.loop_state import MAX_LOOP, get_loop_state
-from domain.chat.orchestrator import ChatTurn, build_chat_orchestrator
 from domain.management.assistant.history import record_feedback  # RAG 피드백 적재(/feedback)
 from tools.storage.s3 import download_bytes, upload_bytes
 
@@ -46,28 +45,109 @@ router = APIRouter()
 # 팀 구조 엔드포인트 — POST /api/assistant/chat (기존 /api/chat/complete와 동일 로직 공유)
 assistant_router = APIRouter()
 
-# 채팅 답변 엔진은 OpenAI 오케스트레이터로 일원화(Gemini 경로 제거).
-# 풀모드면 classify → route → 도메인 서브에이전트/advise, 키 없으면 키워드 폴백(매니지).
-_orchestrator = None
 _memory = None  # 세션 넘는 장기기억(management memory_store) 싱글톤
 _bg_tasks: set[asyncio.Task] = set()  # remember 백그라운드 — GC 방지 강참조
 _clio_client = None  # 메모리 추출·요약용 OpenAI(gpt-4o-mini) 싱글톤
 
 
-def _get_orchestrator() -> Callable[[ChatTurn], Awaitable[object]]:
-    global _orchestrator
-    if _orchestrator is None:
-        # Deep Agent 도구루프 실행기를 api 계층에서 조립해 주입(domain→api 역의존 회피).
-        # 빌드 실패(키 없음 등)면 None — 오케스트레이터가 deep 분기를 advise로 폴백한다.
-        deep_runner = None
-        try:
-            from api.assistant.wiring import build_chat_deep_runner  # noqa: PLC0415
+# ── 통합 채팅 에이전트(deepagents) — chat_complete의 실 경로 ──────────────────────
+_unified_agent = None
+_unified_agent_built = False
 
-            deep_runner = build_chat_deep_runner(settings)
-        except Exception as exc:  # noqa: BLE001 — deep 미가동이 채팅 기동을 막지 않게
-            print(f"[chat] deep_runner build failed: {exc!r}")
-        _orchestrator = build_chat_orchestrator(settings, deep_runner=deep_runner)
-    return _orchestrator
+_LABEL_BY_SOURCE = {
+    "simulation": "시뮬레이션",
+    "generator": "생성",
+    "management": "매니지먼트 어시스턴트",
+    "deep-agent": "오케스트레이터",
+    "orchestrator": "CLIO",
+}
+
+
+def _get_unified_agent() -> object | None:
+    """통합 채팅 에이전트 싱글톤 — 빌드 1회(키 없으면 None, 캐시)."""
+    global _unified_agent, _unified_agent_built  # noqa: PLW0603
+    if not _unified_agent_built:
+        try:
+            from api.assistant.deep_agent_builder import build_unified_chat_agent  # noqa: PLC0415
+
+            _unified_agent = build_unified_chat_agent(settings)
+        except Exception as exc:  # noqa: BLE001 — 빌드 실패가 채팅 기동을 막지 않게
+            print(f"[chat] unified agent build failed: {exc!r}")
+            _unified_agent = None
+        _unified_agent_built = True
+    return _unified_agent
+
+
+def _engine_label() -> str:
+    provider = getattr(settings, "chat_orchestrator_provider", "openai")
+    model = getattr(settings, "chat_orchestrator_model", "gpt-4o-mini")
+    return f"{'Anthropic' if provider == 'anthropic' else 'OpenAI'} · {model}"
+
+
+def _extract_text(content: object) -> str:
+    """LLM 메시지 content에서 텍스트 추출 — Anthropic은 블록 list, OpenAI는 str."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "".join(
+            b.get("text", "") for b in content if isinstance(b, dict) and b.get("type") == "text"
+        )
+    return ""
+
+
+def _to_lc_messages(messages: list) -> list:
+    """ChatRequest 메시지 → LangChain 메시지(통합 에이전트 입력). 프론트가 풀히스토리 재전송."""
+    from langchain_core.messages import AIMessage, HumanMessage  # noqa: PLC0415
+
+    out: list = []
+    for m in messages:
+        out.append(
+            AIMessage(content=m.content)
+            if m.role == "assistant"
+            else HumanMessage(content=m.content)
+        )
+    return out
+
+
+def _assemble_chat_meta(state: dict, engine_label: str) -> dict:
+    """통합 에이전트 최종 상태 → SSE meta(위젯·소스·인용·카드 신호). _state_to_result 규칙 이식."""
+    sub = state.get("sub_meta") or {}
+    mgmt = sub.get("management") or {}
+    sim = sub.get("simulation") or {}
+    gen = sub.get("generator") or {}
+    source = (
+        state.get("source")
+        or mgmt.get("source")
+        or sim.get("source")
+        or gen.get("source")
+        or "orchestrator"
+    )
+    citations = (
+        (mgmt.get("citations") or []) + (sim.get("citations") or []) + (gen.get("citations") or [])
+    )
+    meta: dict = {
+        "source": source,
+        "label": (
+            mgmt.get("label")
+            or sim.get("label")
+            or gen.get("label")
+            or _LABEL_BY_SOURCE.get(source, "CLIO")
+        ),
+        "engine": engine_label,
+    }
+    if citations:
+        meta["citations"] = citations
+    if mgmt.get("used_tools"):
+        meta["used_tools"] = mgmt["used_tools"]
+    if mgmt.get("suggested_action"):
+        meta["suggested_action"] = mgmt["suggested_action"]
+    if mgmt.get("evidence"):
+        meta["evidence"] = mgmt["evidence"]
+    if mgmt.get("campaigns"):
+        meta["campaigns"] = mgmt["campaigns"]
+    if state.get("widget"):
+        meta["widget"] = state["widget"]
+    return meta
 
 
 def _get_memory() -> "ManagementMemory":
@@ -279,13 +359,6 @@ def _cards_from_meta(meta: dict | None) -> list[dict]:
         return []
 
 
-def _thread_id_for_session(session_id: str, compat_thread_id: str | None = None) -> str:
-    """L2-2: 체크포인터 thread_id는 session_id로 고정하고, 구 thread_id 입력은 호환만 허용."""
-    if compat_thread_id and compat_thread_id != session_id:
-        print(f"[chat] thread_id ignored in favor of session_id: {compat_thread_id!r}")
-    return session_id
-
-
 def _chunks(text: str, size: int = 24) -> list[str]:
     """긴 답변을 SSE 토큰처럼 잘게 — 스트리밍 느낌 유지."""
     return [text[i : i + size] for i in range(0, len(text), size)] or [""]
@@ -331,50 +404,97 @@ async def chat_complete(
     last_message = body.messages[-1].content if body.messages else ""
 
     async def generate() -> AsyncGenerator[str, None]:
-        # 진행 중 표시 — 느릴 수 있는 오케스트레이터 호출 전에 스피너 트레이를 띄운다(T17).
+        # 진행 중 표시 — 느릴 수 있는 에이전트 호출 전에 스피너 트레이를 띄운다(T17).
         yield _sse("progress", progress={"label": "생각 중 🔄", "pct": None})
-        # 세션 넘는 장기기억 회수 — deep/management 맥락에 끼울 문자열(로그인 사용자만, best-effort).
+        # 세션 넘는 장기기억 회수 — 에이전트 맥락에 끼울 문자열(로그인 사용자만, best-effort).
         memory_context = await _recall_memory_context(body, last_message, current_user)
-        # 오케스트레이터(OpenAI) 단일 경로 — classify → route → 도메인 서브에이전트/advise/deep.
-        try:
-            orch = await _get_orchestrator()(
-                ChatTurn(
-                    question=last_message,
-                    history=[(m.role, m.content) for m in body.messages[:-1]],
-                    ad_id=body.context_ad_id,
-                    session_id=body.session_id,
-                    thread_id=_thread_id_for_session(body.session_id, body.thread_id),
-                    project_id=body.project_id,
-                    memory_context=memory_context,
-                )
+
+        # [생성결과] 구조화 콜백 — 프론트가 보낸 결과 신호는 에이전트 거치지 않고 결정론 처리(개선루프).
+        if result_callback.is_result_callback(last_message):
+            answer, meta = result_callback.handle(body.session_id, _engine_label())
+            yield _sse("meta", meta=meta)
+            for piece in _chunks(answer):
+                yield _sse("text", token=piece)
+            if meta.get("approval"):
+                yield _sse("approval", approval=meta["approval"])
+            await _persist(
+                body.session_id, last_message, answer, meta, body.image_url, body.result_ref
             )
-        except Exception as exc:  # noqa: BLE001 — 실패해도 스트림은 안내로 마무리
-            print(f"[chat] orchestrator error: {exc!r}")
-            orch = None
+            yield _sse("done")
+            return
 
-        if orch is not None:
-            answer, meta = orch.answer, orch.meta
-        else:
-            # OpenAI 키 미설정 등으로 답을 못 받은 경우 — Gemini 폴백 없이 안내(엔진 일원화).
+        agent = _get_unified_agent()
+        if agent is None:
+            # 키 미설정 등 — 안내만(엔진 일원화, Gemini 폴백 없음).
             answer = "지금은 답변을 생성할 수 없어요. 잠시 후 다시 시도해주세요."
-            meta = {"source": "orchestrator", "label": "CLIO", "engine": "OpenAI"}
+            meta = {"source": "orchestrator", "label": "CLIO", "engine": _engine_label()}
+            yield _sse("meta", meta=meta)
+            for piece in _chunks(answer):
+                yield _sse("text", token=piece)
+            await _persist(
+                body.session_id, last_message, answer, meta, body.image_url, body.result_ref
+            )
+            yield _sse("done")
+            return
 
-        # 추천 조치 카드 — 행동 제안(suggested_action)이 있으면 meta.cards로 합성(프론트가 렌더).
+        # 통합 에이전트 실시간 스트리밍 — 메인그래프 최종 답변 토큰을 흘리고, 최종 상태에서 위젯·메타 조립.
+        tenant_id, user_id = _memory_ids(body, current_user)
+        # 요청별 일회용 thread — 프론트가 매 턴 풀히스토리를 재전송하므로 누적 dedup 불필요(구 deep_agent와 동일).
+        thread_id = f"chat-{body.session_id or 'anon'}-{uuid.uuid4().hex[:8]}"
+        config = {
+            "configurable": {"thread_id": thread_id},
+            "run_name": "채팅",
+            "tags": ["chat", "unified-agent"],
+        }
+        initial = {
+            "messages": _to_lc_messages(body.messages),
+            "session_id": body.session_id,
+            "user_id": user_id,
+            "org_id": tenant_id,
+            "project_id": body.project_id,
+            "context_ad_id": body.context_ad_id,
+            "memory_context": memory_context,
+        }
+        acc = ""
+        state: dict = {}
+        try:
+            async for item in agent.astream(
+                initial, config, stream_mode=["messages"], subgraphs=True
+            ):
+                if not (isinstance(item, tuple) and len(item) == 3):
+                    continue
+                ns, mode, data = item
+                # 메인그래프(ns=()) 최종 답변 토큰만 — 서브에이전트 내부 토큰은 제외.
+                if mode != "messages" or ns != ():
+                    continue
+                msg_chunk, _meta_info = data
+                if "AIMessage" not in msg_chunk.__class__.__name__:
+                    continue
+                text = _extract_text(getattr(msg_chunk, "content", ""))
+                if text:
+                    acc += text
+                    yield _sse("text", token=text)
+            snap = await agent.aget_state(config)
+            state = snap.values or {}
+        except Exception as exc:  # noqa: BLE001 — 스트리밍 실패해도 안내로 마무리.
+            print(f"[chat] unified agent error: {exc!r}")
+            if not acc:
+                acc = "지금은 답변을 생성할 수 없어요. 잠시 후 다시 시도해주세요."
+                yield _sse("text", token=acc)
+
+        # 위젯·소스·카드 meta는 토큰 뒤 한 번(프론트는 meta가 text 뒤에 와도 독립 적용).
+        meta = _assemble_chat_meta(state, _engine_label())
         cards = _cards_from_meta(meta)
         if cards:
-            meta = {**meta, "cards": cards}
-
+            meta["cards"] = cards
         yield _sse("meta", meta=meta)
-        for piece in _chunks(answer):
-            yield _sse("text", token=piece)
-        # 개선 루프 HITL — 약한 결과면 meta.approval로 수락/거절 카드를 별도 이벤트로 보낸다.
-        if isinstance(meta, dict) and meta.get("approval"):
+        if meta.get("approval"):
             yield _sse("approval", approval=meta["approval"])
-        await _persist(body.session_id, last_message, answer, meta, body.image_url, body.result_ref)
+        await _persist(body.session_id, last_message, acc, meta, body.image_url, body.result_ref)
         # 행동 제안이 나온 턴을 장기기억에 적재(백그라운드) — 다음 세션 recall에 반영.
         _spawn_remember(body, meta, current_user)
-        # 전 라우트 자동 LTM 캡처(M2 사실추출 + M6 세션요약) — 단일 도메인 턴도 기억.
-        _spawn_memory_capture(body, last_message, answer, current_user)
+        # 전 라우트 자동 LTM 캡처(M2 사실추출 + M6 세션요약).
+        _spawn_memory_capture(body, last_message, acc, current_user)
         yield _sse("done")
 
     return StreamingResponse(
@@ -492,26 +612,30 @@ async def chat_approve(
         )
 
     async def generate() -> AsyncGenerator[str, None]:
-        try:
-            orch = await _get_orchestrator()(
-                ChatTurn(
-                    question=question,
-                    history=[],
-                    session_id=body.session_id,
-                    thread_id=_thread_id_for_session(body.session_id, body.thread_id),
-                    project_id=body.project_id,
-                )
+        # 수락 액션을 결정론으로 입력 위젯에 매핑(LLM 불필요) — rerun=시뮬 폼, run_generator=생성 폼.
+        if body.action == "rerun_simulation":
+            frag = widgets.sim_form(
+                {"ad_title": None, "ad_content": "", "product_category": None, "ad_objective": None}
             )
-        except Exception as exc:  # noqa: BLE001 — 실패해도 안내로 마무리
-            print(f"[chat] approve orchestrator error: {exc!r}")
-            orch = None
-
-        if orch is not None:
-            answer, meta = orch.answer, orch.meta
-        else:
-            answer = "지금은 진행할 수 없어요. 잠시 후 다시 시도해주세요."
-            meta = {"source": "orchestrator", "label": "CLIO", "engine": "OpenAI"}
-
+            answer = "새 시안으로 다시 예측할게요. 아래에서 광고 정보를 확인·수정하고 실행하세요."
+            label = "재시뮬"
+        else:  # run_generator (개선 컨텍스트가 없는 경우)
+            frag = widgets.gen_form(
+                {
+                    "product_name": None,
+                    "product_description": None,
+                    "target_audience": None,
+                    "campaign_objective": None,
+                }
+            )
+            answer = "개선 시안을 만들게요. 아래에서 생성 정보를 확인·수정하고 실행하세요."
+            label = "개선 생성"
+        meta = {
+            "source": frag["source"],
+            "label": label,
+            "engine": _engine_label(),
+            "widget": frag["widget"],
+        }
         yield _sse("meta", meta=meta)
         for piece in _chunks(answer):
             yield _sse("text", token=piece)
