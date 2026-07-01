@@ -554,6 +554,8 @@ export const api = {
     users: () => request<{ users: unknown[] }>("/admin/users"),
     createUser: (body: object) => request("/admin/users", { method: "POST", body: JSON.stringify(body) }),
     inquiries: () => request<{ inquiries: unknown[] }>("/admin/inquiries"),
+    // 조직 목록(배열 직접 반환) — admin impersonation org 선택 드롭다운용.
+    organizations: () => request<{ id: string; name: string }[]>("/admin/organizations"),
   },
 
   projects: {

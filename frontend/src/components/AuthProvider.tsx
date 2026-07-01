@@ -31,6 +31,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       .finally(() => setLoading(false));
   }, []);
 
+  // 비-admin이 impersonation 힌트(adminOrgId)를 들고 다니지 않게 정리 — 로그인/계정 전환/me() 실패 반영.
+  // loading 중(user 미해석)에는 지우지 않는다 → 새로고침 시 admin의 선택이 날아가지 않도록.
+  useEffect(() => {
+    if (!loading && (!user || user.role !== 'ADMIN')) setAdminOrgId(null);
+  }, [loading, user]);
+
   const login = useCallback((t: string, u: UserOut) => {
     saveToken(t);
     setToken(t);
