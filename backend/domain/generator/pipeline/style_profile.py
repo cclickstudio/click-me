@@ -7,7 +7,7 @@ from typing import Literal
 
 from domain.generator.contracts.enums import AdStrategy
 
-TextStyle = Literal["box", "floating", "emotional", "review_card"]
+TextStyle = Literal["box", "floating", "emotional"]
 # KB Typography System(Pretendard 웨이트) — 실제 파일 해석·폴백은 text_overlay._resolve_font.
 FontWeight = Literal[
     "thin", "extralight", "light", "regular", "medium", "semibold", "bold", "extrabold", "black"
@@ -69,7 +69,7 @@ STRATEGY_STYLE: dict[AdStrategy, StyleProfile] = {
         cta_weight="medium",
     ),
     AdStrategy.SOCIAL_PROOF: StyleProfile(
-        "review_card",
+        "floating",
         0.25,
         _DARK_GRAY,
         _MID_GRAY,

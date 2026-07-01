@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import io
-import math
 import re
 from dataclasses import dataclass
 from functools import cache
@@ -67,9 +66,6 @@ def _resolve_font(weight: str) -> str:
 _DEFAULT_ACCENT = (37, 99, 235)  # brand_color 없을 때 기본 강조색(파랑)
 _WHITE = (255, 255, 255, 255)
 _LIGHT = (235, 235, 235, 255)
-_GOLD = (245, 180, 40, 255)  # 별점 골드
-_INK = (34, 34, 34, 255)  # 리뷰 카드 본문 다크
-_GRAY = (110, 110, 110, 255)  # 리뷰 카드 보조 텍스트
 
 # 숫자 토큰(할인율·수량·기간 등) — 단어에 숫자가 포함되면 강조 대상으로 본다.
 _NUM_RE = re.compile(r"\d")
@@ -317,78 +313,6 @@ def _draw_highlighted(
         y += line_h
 
 
-def _draw_star(draw: ImageDraw.ImageDraw, x: float, y: float, s: float, color=_GOLD) -> None:
-    """좌상단 (x,y), 폭 s의 5각 별 하나를 채워 그린다."""
-    cx, cy = x + s / 2, y + s / 2
-    r_out, r_in = s / 2, s / 2 * 0.42
-    pts = []
-    for i in range(10):
-        r = r_out if i % 2 == 0 else r_in
-        ang = -math.pi / 2 + i * math.pi / 5
-        pts.append((cx + r * math.cos(ang), cy + r * math.sin(ang)))
-    draw.polygon(pts, fill=color)
-
-
-def _draw_stars(
-    draw: ImageDraw.ImageDraw, x: float, y: float, size: float, count: int = 5, color=_GOLD
-) -> None:
-    """별 count개를 가로로 나란히 그린다(별 한 개 폭 = size)."""
-    gap = size * 0.28
-    for i in range(count):
-        _draw_star(draw, x + i * (size + gap), y, size, color)
-
-
-def _draw_review_card(
-    base: Image.Image,
-    headline: str,
-    body: str,
-    cta: str,
-    accent: tuple[int, int, int],
-    w: int,
-    h: int,
-    head_font: str = _FONT_BOLD,
-    body_font: str = _FONT_REGULAR,
-    cta_font: str = _FONT_BOLD,
-) -> Image.Image:
-    """UGC 리뷰 카드 — 반투명 흰 카드에 별점·인용·리뷰어·CTA를 배치(사회적 증거)."""
-    x0, y0 = int(0.06 * w), int(0.26 * h)
-    x1, y1 = int(0.52 * w), int(0.80 * h)
-    cw, ch = x1 - x0, y1 - y0
-    pad = int(cw * 0.07)
-    radius = int(min(cw, ch) * 0.05)
-
-    # 카드 배경은 오버레이로 합성해 반투명 알파를 보장.
-    overlay = Image.new("RGBA", base.size, (0, 0, 0, 0))
-    ImageDraw.Draw(overlay).rounded_rectangle(
-        [x0, y0, x1, y1], radius=radius, fill=(255, 255, 255, 235)
-    )
-    base = Image.alpha_composite(base, overlay)
-    draw = ImageDraw.Draw(base)
-
-    ix0, ix1 = x0 + pad, x1 - pad
-    ih = ch - 2 * pad
-    y = float(y0 + pad)
-
-    def zone(frac: float) -> tuple[int, int]:
-        nonlocal y
-        top = int(y)
-        y += ih * frac
-        return top, int(y)
-
-    t, b = zone(0.12)  # 별점
-    _draw_stars(draw, ix0, t, (b - t) * 0.9)
-    y += ih * 0.04
-    t, b = zone(0.34)  # 인용(헤드라인)
-    _draw_block(draw, headline, (ix0, t, ix1, b), head_font, int((b - t) * 0.42), _INK, "left")
-    y += ih * 0.04
-    t, b = zone(0.24)  # 본문
-    _draw_block(draw, body, (ix0, t, ix1, b), body_font, int((b - t) * 0.5), _GRAY, "left")
-    y += ih * 0.04
-    t, b = zone(0.16)  # CTA
-    _draw_cta(draw, cta, (ix0, t, ix1, b), accent, "left", TemplateType.A, cta_font)
-    return base
-
-
 def render_ad_text(
     image_bytes: bytes,
     headline: str,
@@ -427,15 +351,6 @@ def render_ad_text(
         cta_font = _resolve_font(profile.cta_weight)
     else:
         head_font, body_font, cta_font = _FONT_BOLD, _FONT_REGULAR, _FONT_BOLD
-
-    # review_card는 자체 카드 레이아웃을 그리고 바로 반환(템플릿 존 미사용).
-    if style == "review_card":
-        base = _draw_review_card(
-            base, headline, body, cta, accent, w, h, head_font, body_font, cta_font
-        )
-        out = io.BytesIO()
-        base.save(out, format="PNG")
-        return out.getvalue()
 
     # 감성형은 여백을 위해 폰트를 축소. 그 외는 원래 크기.
     size_factor = 0.82 if style == "emotional" else 1.0

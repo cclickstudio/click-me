@@ -183,10 +183,11 @@ async def generate_candidates(state: GenerationState, config: RunnableConfig) ->
     done = 0
     gemini = settings.generator_gen_mode == "gemini"
 
-    # 누끼(배경제거)는 openai 모드 + 상품있음일 때만 — 마스크 인페인팅용, 후보 3종 공통 1회.
-    # gemini 모드는 원본 상품 이미지를 그대로 멀티모달 입력으로 쓰므로 누끼 단계가 없다.
+    # 누끼(배경제거)는 상품 있으면 항상 수행 — 후보 3종 공통 1회.
+    # gemini 모드는 실제 합성엔 원본 이미지를 멀티모달 입력으로 쓰지만(누끼 미사용),
+    # 개선 모드 재사용을 위해 gemini 모드에서도 누끼는 만들어 S3에 저장해둔다.
     product_cutout_bytes: bytes | None = None
-    if product_image_bytes is not None and not gemini:
+    if product_image_bytes is not None:
         try:
             product_cutout_bytes = await remove_product_background(product_image_bytes)
             # 개선 모드에서 재사용할 수 있도록 누끼본을 S3에 보존
