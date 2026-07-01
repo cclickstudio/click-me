@@ -257,7 +257,13 @@ async def create_generation(
         project = await db.get(Project, proj_uuid)
         if project is None or project.organization_id != org_id:
             raise HTTPException(status_code=404, detail="프로젝트를 찾을 수 없습니다.")
-    generation_id = await generator_service.start_generation(body, created_by=current_user.id)
+    generation_id = await generator_service.start_generation(
+        body,
+        created_by=current_user.id,
+        created_by_login=current_user.login_id,
+        created_by_name=current_user.name,
+        created_by_role=current_user.role,
+    )
     return GenerationTaskResponse(
         generation_id=generation_id,
         stream_url=f"/api/generator/generations/{generation_id}/stream",

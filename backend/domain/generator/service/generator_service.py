@@ -74,6 +74,9 @@ async def _load_existing_ad(ref: str) -> bytes | None:
 async def start_generation(
     request: GenerationCreateRequest,
     created_by: uuid.UUID | None = None,
+    created_by_login: str | None = None,
+    created_by_name: str | None = None,
+    created_by_role: str | None = None,
 ) -> str:
     """생성 파이프라인 시작 — DB 행 생성 후 백그라운드 실행, generation_id 반환."""
     generation_id = str(uuid.uuid4())
@@ -115,7 +118,16 @@ async def start_generation(
         "product_image_bytes": product_image_bytes,
         "existing_ad_bytes": existing_ad_bytes,
     }
-    asyncio.create_task(_run_pipeline(generation_id, request, created_by=created_by))
+    asyncio.create_task(
+        _run_pipeline(
+            generation_id,
+            request,
+            created_by=created_by,
+            created_by_login=created_by_login,
+            created_by_name=created_by_name,
+            created_by_role=created_by_role,
+        )
+    )
     return generation_id
 
 
@@ -123,6 +135,9 @@ async def _run_pipeline(
     generation_id: str,
     request: GenerationCreateRequest,
     created_by: uuid.UUID | None = None,
+    created_by_login: str | None = None,
+    created_by_name: str | None = None,
+    created_by_role: str | None = None,
 ) -> None:
     store = _tasks[generation_id]
 
@@ -138,6 +153,9 @@ async def _run_pipeline(
             feature="generate",
             mode=request.mode.value,
             user_id=str(created_by) if created_by else "anonymous",
+            login_id=created_by_login,
+            user_name=created_by_name,
+            role=created_by_role,
             ad_id=request.existing_ad_s3_key if request.existing_ad_s3_key else None,
             project_id=request.project_id,
             extra_metadata={"generation_id": generation_id},
