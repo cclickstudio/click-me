@@ -2450,7 +2450,14 @@ async def _validated_org(db, sel: str, *, require_active: bool) -> UUID:
     return org_uuid
 
 
-_require_org_id = require_user_org  # core.auth 공용(없으면 409) — 라우터 복붙 제거
+async def _require_org_id(user, db) -> UUID:
+    """operational org 해석. ADMIN은 X-Org-Id로 impersonate, 비-ADMIN은 자기 org(미소속 409)."""
+    if (getattr(user, "role", "") or "").upper() == "ADMIN":
+        sel = _selected_org_ctx.get()
+        if not sel:
+            raise HTTPException(400, "관리자는 조직을 선택하세요 (X-Org-Id 헤더).")
+        return await _validated_org(db, sel, require_active=True)
+    return await require_user_org(user, db)
 
 
 async def _require_owned_campaign(

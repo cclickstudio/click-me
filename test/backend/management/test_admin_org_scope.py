@@ -1,5 +1,6 @@
 # admin org 스코프 — 헤더 캡처·해석기·검증·전역뷰 테스트
 import uuid
+from types import SimpleNamespace
 
 import pytest
 from fastapi import APIRouter, Depends, FastAPI
@@ -75,3 +76,40 @@ async def test_validated_org_inactive_allowed_for_read():
     org = uuid.uuid4()
     got = await management._validated_org(_OrgDB("SUSPENDED"), str(org), require_active=False)
     assert got == org
+
+
+class _MembershipDB:
+    """require_user_org 경로 — 멤버십 org 반환."""
+
+    def __init__(self, org):
+        self._org = org
+
+    async def scalar(self, *_a, **_k):
+        return self._org
+
+
+@pytest.mark.asyncio
+async def test_non_admin_ignores_header_uses_own_org():
+    """IDOR 회귀 — 비-ADMIN이 X-Org-Id 보내도 무시하고 자기 org."""
+    own = uuid.uuid4()
+    management._selected_org_ctx.set(str(uuid.uuid4()))  # 남의 org 힌트
+    user = SimpleNamespace(id=uuid.uuid4(), role="USER")
+    assert await management._require_org_id(user, _MembershipDB(own)) == own
+
+
+@pytest.mark.asyncio
+async def test_admin_without_header_400():
+    from fastapi import HTTPException
+
+    user = SimpleNamespace(id=uuid.uuid4(), role="ADMIN")
+    with pytest.raises(HTTPException) as e:
+        await management._require_org_id(user, _OrgDB("ACTIVE"))
+    assert e.value.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_admin_with_header_uses_selected_org():
+    sel = uuid.uuid4()
+    management._selected_org_ctx.set(str(sel))
+    user = SimpleNamespace(id=uuid.uuid4(), role="ADMIN")
+    assert await management._require_org_id(user, _OrgDB("ACTIVE")) == sel
