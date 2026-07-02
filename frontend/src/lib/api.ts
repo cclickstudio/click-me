@@ -267,12 +267,15 @@ function _campaignQuery(
   targetRoas?: number | null,
   datePreset?: DatePreset,
   includeArchived?: boolean,
+  page?: { limit?: number; offset?: number },
 ): string {
   const p = new URLSearchParams();
   if (conversionValueKrw) p.set("conversion_value_krw", String(conversionValueKrw));
   if (targetRoas) p.set("target_roas", String(targetRoas));
   if (datePreset && datePreset !== "maximum") p.set("date_preset", datePreset);
   if (includeArchived) p.set("include_archived", "true");
+  if (page?.limit != null) p.set("limit", String(page.limit));
+  if (page?.offset != null) p.set("offset", String(page.offset));
   const q = p.toString();
   return q ? `?${q}` : "";
 }
@@ -717,9 +720,10 @@ export const api = {
       targetRoas?: number | null,
       datePreset?: DatePreset,
       includeArchived?: boolean,
+      page?: { limit?: number; offset?: number },
     ) =>
       request<CampaignsResponse>(
-        `/management/campaigns${_campaignQuery(conversionValueKrw, targetRoas, datePreset, includeArchived)}`,
+        `/management/campaigns${_campaignQuery(conversionValueKrw, targetRoas, datePreset, includeArchived, page)}`,
       ),
     campaign: (
       id: string,
