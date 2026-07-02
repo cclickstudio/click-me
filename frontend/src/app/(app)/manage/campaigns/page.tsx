@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { api } from '@/lib/api';
+import { api, getAdminOrgId } from '@/lib/api';
+import { useAuth } from '@/components/AuthProvider';
 import { CampaignTable } from '@/components/manage/campaigns/CampaignTable';
 import { CampaignCards } from '@/components/manage/campaigns/CampaignCards';
 import { OriginLegend } from '@/components/manage/ValueOrigin';
@@ -44,8 +45,17 @@ export default function Page() {
   // 수동 추정 CVR·ROAS — 전환 데이터가 없는(미설정) 캠페인에만 직접 입력(하이브리드).
   // 실측이 있으면 그 값을 읽기전용으로 쓰고, 여기 값은 무시된다. 조직 단위 DB 영속.
   const [manualKpi, setManualKpi] = useState<ManualKpiMap>({});
+  // admin이 '전체(all orgs)'로 볼 때 — kpi-override는 impersonate 전용이라 빈 응답. '조직 선택' 안내로 대체.
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'ADMIN';
+  const [noOrgSelected, setNoOrgSelected] = useState(false);
+  useEffect(() => {
+    setNoOrgSelected(getAdminOrgId() == null);
+  }, []);
+  const kpiHidden = isAdmin && noOrgSelected;
 
   useEffect(() => {
+    if (kpiHidden) return; // 전체 스코프에선 조회하지 않는다(빈 값으로 덮지 않도록).
     let alive = true;
     api.management
       .kpiOverrides()
@@ -56,7 +66,7 @@ export default function Page() {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [kpiHidden]);
 
   // 미설정 셀 직접 입력 → 낙관적 갱신 + DB 저장(PUT). 빈 값이면 필드 제거(둘 다 비면 행 삭제).
   const editKpi = useCallback((id: string, field: 'cvr' | 'roas', raw: string) => {
@@ -361,6 +371,16 @@ export default function Page() {
                 </p>
               </div>
             )}
+          </div>
+        )}
+
+        {kpiHidden && (
+          <div className="mb-4 rounded-xl border border-[#E5E8EB] bg-[#F9FAFB] px-4 py-3 dark:border-[#2D3748] dark:bg-[#1A1F28]">
+            <p className="text-sm text-[#4E5968] dark:text-[#9CA3AF]">
+              <span className="font-semibold">🏢 조직을 선택하세요</span> · 수동 KPI(추정 CVR·ROAS)는
+              특정 조직으로 전환했을 때만 조회·편집할 수 있어요. 상단 ‘조직 전환’에서 조직을 고르면
+              KPI가 표시됩니다.
+            </p>
           </div>
         )}
 

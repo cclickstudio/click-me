@@ -69,10 +69,8 @@ class Settings(BaseSettings):
     # AWS
     aws_access_key_id: str
     aws_secret_access_key: str
-    aws_region: str = "ap-northeast-2"
+    aws_region: str = "us-west-2"
     s3_bucket_name: str = "clickme-assets"
-    sqs_simulation_queue_url: str | None = None
-    sqs_max_workers: int = 10
 
     # Simulation
     default_persona_count: int = Field(default=20, ge=1, le=1000)
@@ -148,7 +146,7 @@ class Settings(BaseSettings):
     generator_vision_model: str = "gpt-4o"
     # 이미지 생성(배경)
     generator_image_provider: str = "openai"  # openai | google_genai
-    generator_image_model: str = "gpt-image-2"
+    generator_image_model: str = "gpt-image-1"
     generator_image_quality: str = "medium"  # openai 전용(low|medium|high), google_genai는 무시
     generator_image_timeout: float = 120.0  # 무거운 이미지 모델 대비 호출 타임아웃(초)
     # 이미지 편집(누끼 배경제거 — remove_product_background)

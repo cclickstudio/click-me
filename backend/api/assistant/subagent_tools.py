@@ -173,6 +173,69 @@ def build_chat_tools(settings, memory=None) -> list:
         )
 
     @tool
+    async def improve_ad_iteratively(
+        product_name: str = "",
+        product_description: str = "",
+        target_audience: str = "",
+        campaign_objective: str = "conversion",
+        quality_target: float = 0.8,
+        max_iterations: int = 3,
+        *,
+        state: Annotated[dict, InjectedState],
+        tool_call_id: Annotated[str, InjectedToolCallId],
+    ) -> Command:
+        """폼 없이 '알아서 좋은 시안까지 뽑아/반복 개선해줘'처럼 자동 개선 루프를 원할 때 호출한다.
+        QA 품질이 목표에 도달할 때까지 생성→평가→개선을 자동 반복한다(백그라운드+진행 카드).
+        단발 '시안 만들어줘'는 run_generation 폼을 쓴다. 발화의 값만 채우고 없으면 비운다."""
+        import uuid as _uuid  # noqa: PLC0415
+
+        from domain.generator.service import generation_loop  # noqa: PLC0415
+
+        if not (product_name and product_description and target_audience):
+            return Command(
+                update={
+                    "messages": [
+                        ToolMessage(
+                            "자동 개선 루프를 돌리려면 상품명·설명·타깃이 필요해요. "
+                            "알려주시면 바로 시작할게요.",
+                            tool_call_id=tool_call_id,
+                        )
+                    ]
+                }
+            )
+        created_by = None
+        uid = state.get("user_id")
+        if uid:
+            try:
+                created_by = _uuid.UUID(str(uid))
+            except (ValueError, TypeError):
+                created_by = None
+        loop_id = await generation_loop.start_loop(
+            {
+                "product_name": product_name,
+                "product_description": product_description,
+                "target_audience": target_audience,
+                "campaign_objective": campaign_objective or "conversion",
+            },
+            quality_target=quality_target,
+            max_iterations=max(1, min(max_iterations, 5)),
+            project_id=state.get("project_id"),
+            created_by=created_by,
+        )
+        stream_url = f"/api/generator/generations/loop/{loop_id}/stream"
+        return Command(
+            update={
+                **widgets.gen_loop(loop_id, stream_url),
+                "messages": [
+                    ToolMessage(
+                        "자동 개선 루프를 시작했어요. 진행 상황은 카드에서 확인하세요.",
+                        tool_call_id=tool_call_id,
+                    )
+                ],
+            }
+        )
+
+    @tool
     async def list_my_simulations(
         select: bool = False,
         *,
@@ -505,6 +568,7 @@ def build_chat_tools(settings, memory=None) -> list:
         ask_generator,
         run_simulation,
         run_generation,
+        improve_ad_iteratively,
         list_my_simulations,
         list_my_generations,
         compare_simulations,

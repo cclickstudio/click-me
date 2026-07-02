@@ -168,7 +168,7 @@ Generate OCEAN 4-layer personas.
 
 ### POST /api/simulate/reactions
 
-Start async simulation task. Publishes to SQS and returns immediately.
+Start async simulation task. Runs in-process (asyncio) and returns immediately.
 
 **Request Body**
 ```json

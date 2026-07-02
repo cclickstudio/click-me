@@ -182,6 +182,7 @@ type WidgetSpec = {
   data?: {
     ad_content?: string;
     ad_title?: string;
+    ad_image_url?: string; // sim_form 위젯 — 생성 시안 등에서 넘어온 광고 이미지 URL
     product_category?: string;
     ad_objective?: string;
     product_name?: string;
@@ -1736,7 +1737,7 @@ export default function ChatConversation({
                         initial={msg.meta.widget.data}
                         initialImage={msg.imageFile}
                         initialImageUrl={
-                          msg.meta.widget.data?.ad_image_url as string | undefined
+                          (msg.meta.widget.data as { ad_image_url?: string })?.ad_image_url
                         }
                         projectId={projectId}
                         latest={i === lastSimFormIdx}

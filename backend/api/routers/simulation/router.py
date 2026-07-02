@@ -9,6 +9,7 @@ import logging
 import os
 import uuid
 
+import httpx
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
 from fastapi.responses import StreamingResponse
 from pydantic import ValidationError
@@ -39,6 +40,31 @@ _service = build_simulation_service(settings=settings, use_llm_qa=_USE_LLM_QA)
 logger.info("Simulation service: real(Gemini) 모드 (LLM QA=%s)", _USE_LLM_QA)
 
 _IMAGE_MAX_BYTES = 10 * 1024 * 1024  # 10MB
+
+
+@router.get("/check-image")
+async def check_image(url: str, current_user: User | None = Depends(optional_user)) -> dict:
+    """URL 이미지를 VLM이 읽을 수 있는지 사전 확인 — 백엔드가 직접 GET(VLM 해석과 동일 경로).
+
+    브라우저 미리보기(클라이언트 fetch)와 달리 '서버 접근성 + 이미지 여부'를 검증한다.
+    시뮬 VLM은 서버가 URL을 다운로드해 해석하므로, 여기 결과가 실제 읽기 가능 여부와 일치한다.
+    """
+    if not url.startswith(("http://", "https://")):
+        return {"ok": False, "reason": "http(s) 이미지 URL이 아니에요."}
+    try:
+        # VLM(_load_image)과 동일하게 리다이렉트를 따르지 않고 단건 GET(그 응답을 해석 입력으로 씀).
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.get(url)
+            resp.raise_for_status()
+    except Exception:  # noqa: BLE001 — 접근 불가·차단·타임아웃·4xx/5xx는 모두 '읽기 불가'
+        return {"ok": False, "reason": "이미지를 가져오지 못했어요(접근 불가·차단·타임아웃)."}
+    mime = (resp.headers.get("content-type") or "").split(";")[0].strip().lower()
+    if not mime.startswith("image/"):
+        return {
+            "ok": False,
+            "reason": f"이미지 파일이 아니에요(타입 {mime or '알 수 없음'}).",
+        }
+    return {"ok": True, "mime": mime}
 
 
 async def _save_upload(ad_image: UploadFile | None) -> tuple[str | None, str | None]:

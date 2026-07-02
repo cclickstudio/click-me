@@ -8,7 +8,9 @@
 
 import asyncio
 import calendar
-from collections.abc import Awaitable, Callable
+import logging
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextvars import ContextVar
 from datetime import UTC, datetime, timedelta
 from random import Random
 from typing import Any, Literal
@@ -16,7 +18,7 @@ from urllib.parse import parse_qs, urlparse
 from uuid import UUID, uuid4
 
 import httpx
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Header, HTTPException, Request, UploadFile
 from fastapi.responses import RedirectResponse, StreamingResponse
 from langsmith import traceable
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl
@@ -28,7 +30,6 @@ from core.auth import (
     get_current_user,
     optional_user,
     require_user_org,
-    user_org_id,
 )
 from core.config import settings
 from core.db import get_db
@@ -36,6 +37,7 @@ from core.models import (
     CampaignKpiOverride,
     CreatedCampaign,
     MetaConnection,
+    Organization,
     OrganizationMember,
     User,
 )
@@ -104,6 +106,7 @@ from domain.management.detection.performance_dx import diagnose_performance
 from domain.management.escalation import EscalationController, EscalationRun
 from domain.management.escalation_demo import DemoScenarioDetector
 from domain.management.execution.assistant_tools import execution_history
+from domain.management.execution.audit_log import AuditEvent
 from domain.management.execution.executor import DEFAULT_ALLOWED_MODES, Executor
 from domain.management.execution.regeneration_jobs import (
     CandidateNotInJob,
@@ -132,7 +135,21 @@ from domain.management.wiring import (
 )
 from tools.storage.s3 import download_bytes
 
-router = APIRouter()
+_selected_org_ctx: ContextVar[str | None] = ContextVar("selected_org", default=None)
+
+
+async def _capture_selected_org(
+    x_org_id: str | None = Header(None, alias="X-Org-Id"),
+) -> AsyncIterator[None]:
+    """요청당 1회 X-Org-Id를 ContextVar에 캡처, 종료 시 reset (누수 방지)."""
+    token = _selected_org_ctx.set(x_org_id)
+    try:
+        yield
+    finally:
+        _selected_org_ctx.reset(token)
+
+
+router = APIRouter(dependencies=[Depends(_capture_selected_org)])
 
 # 멀티테넌트 Meta 연결 요청 스코프 — App Review 승인 권한과 일치해야 한다.
 _META_CONNECT_SCOPES = [
@@ -152,6 +169,8 @@ _DEMO_FAULTS = {"bid_loss", "review_rejected", "none"}
 _AUDIT_LOG = build_audit_sink(settings)
 _BUDGET = TenantBudgetRegistry(default_limit_krw=10_000_000)
 _executor: Executor | None = None
+
+logger = logging.getLogger("clickme")
 
 
 # ── 멀티테넌시: 요청 단위 org 스코프 리더/라이터 의존성 ──────────────────────
@@ -463,7 +482,7 @@ async def execute(
     db: AsyncSession = Depends(get_db),
 ):
     """🅱 executor — 승인 후 4단계 재검증 + 멱등 실행. 모든 지출 단일 경로."""
-    org_id = await _require_org_id(user, db)
+    org_id = await _require_org_id_write(user, db, action="execute")
     # 시연 제안(TENANT_ID 센티넬, 고장주입)은 org 체크 면제 + 항상 DRY_RUN — 데모 캠페인은
     # 실 계정에 없어 실집행이 불가·불필요하다. 실 제안만 org 일치 강제 + 연결 writer로 집행.
     is_demo = body.proposal.tenant_id == TENANT_ID
@@ -495,13 +514,25 @@ async def execute(
 
 
 @router.get("/created-campaigns")
-async def created_campaigns(db: AsyncSession = Depends(get_db)):
-    """앱에서 생성한 캠페인 누적 기록 (최신순) — 네온 DB 영속."""
-    rows = (
-        (await db.execute(select(CreatedCampaign).order_by(CreatedCampaign.created_at.desc())))
-        .scalars()
-        .all()
+async def created_campaigns(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    limit: int = 50,
+    offset: int = 0,
+):
+    """앱 생성 캠페인 누적(최신순). 비-ADMIN=자기 org / ADMIN 무헤더=전 org / ADMIN 헤더=그 org."""
+    limit, offset = _clamp_limit_offset(limit, offset)
+    scope = await _scope_org_or_all(user, db)  # UUID | None(전체)
+    _record_admin_read_access(user, "created-campaigns", scope, limit=limit, offset=offset)
+    stmt = select(CreatedCampaign)
+    if scope is not None:
+        stmt = stmt.where(CreatedCampaign.tenant_id == str(scope))
+    stmt = (
+        stmt.order_by(CreatedCampaign.created_at.desc(), CreatedCampaign.id.desc())
+        .limit(limit)
+        .offset(offset)
     )
+    rows = (await db.execute(stmt)).scalars().all()
     return {
         "items": [
             {
@@ -796,7 +827,7 @@ async def link_simulation(
     ClickMe 밖에서 만든 캠페인도 시뮬 예측과 성과 비교가 가능해진다.
     이미 연결된 캠페인은 simulation_id를 덮어쓴다(재시뮬 시).
     """
-    org_id = await _require_org_id(user, db)
+    org_id = await _require_org_id_write(user, db, action="link_simulation")
     try:
         sim_uuid = UUID(body.simulation_id)
     except ValueError as exc:
@@ -1575,21 +1606,19 @@ class KpiOverrideBody(BaseModel):
     roas: float | None = None  # 투자수익률 배수 (수동 추정)
 
 
-_resolve_org_id = user_org_id  # core.auth 공용(없으면 None) — 라우터 복붙 제거
-
-
 @router.get("/kpi-overrides")
 async def list_kpi_overrides(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """로그인 조직의 캠페인별 수동 KPI(추정 CVR·ROAS) — {campaign_id: {cvr, roas}}."""
-    org_id = await _resolve_org_id(user, db)
-    if org_id is None:
+    """캠페인별 수동 KPI. 비-ADMIN=자기 org / ADMIN=X-Org-Id로 선택한 org(미선택 시 빈 결과).
+    all-org 미지원(campaign_id가 org 간 충돌)."""
+    scope = await _scope_org_or_all(user, db)  # UUID | None
+    if scope is None:  # admin 무헤더 — impersonate 미선택
         return {"overrides": {}}
     rows = (
         await db.scalars(
-            select(CampaignKpiOverride).where(CampaignKpiOverride.organization_id == org_id)
+            select(CampaignKpiOverride).where(CampaignKpiOverride.organization_id == scope)
         )
     ).all()
     return {
@@ -1611,9 +1640,7 @@ async def put_kpi_override(
     db: AsyncSession = Depends(get_db),
 ):
     """캠페인 수동 KPI 저장(업서트). cvr·roas 둘 다 비면 행 삭제(실측으로 복귀)."""
-    org_id = await _resolve_org_id(user, db)
-    if org_id is None:
-        raise HTTPException(409, "소속 조직이 없습니다 — 조직 연결 후 시도하세요.")
+    org_id = await _require_org_id_write(user, db, action="kpi_override")
     row = await db.scalar(
         select(CampaignKpiOverride).where(
             CampaignKpiOverride.organization_id == org_id,
@@ -1645,7 +1672,7 @@ async def delete_campaign(
 
     적재 기록(created_campaigns)은 지우지 않고 deleted_at만 찍는다(감사 이력 — 만듦→지움 보존).
     """
-    org_id = await _require_org_id(user, db)
+    org_id = await _require_org_id_write(user, db, action="delete_campaign")
     await _require_owned_campaign(db, org_id, campaign_id)
     writer = await _require_writer(db, org_id)
     result = await writer.delete_campaign(campaign_id, idem_key=f"del_{campaign_id}")
@@ -1787,7 +1814,9 @@ async def upload_ad_image(
     db: AsyncSession = Depends(get_db),
 ):
     """광고 소재 이미지를 Meta(/adimages)에 업로드 → image_hash 반환. 무과금(자산 등록)."""
-    writer = await _require_writer(db, await _require_org_id(user, db))
+    writer = await _require_writer(
+        db, await _require_org_id_write(user, db, action="upload_ad_image")
+    )
     data = await file.read()
     image_hash = await writer.upload_image(
         _asset_config(), data, file.filename or "ad.jpg", idem_key=f"img_{uuid4().hex[:8]}"
@@ -1928,7 +1957,7 @@ async def from_candidate(
     db: AsyncSession = Depends(get_db),
 ):
     """generator 후보 → CREATE_CAMPAIGN(traffic) 제안. 승인·집행은 /approve·/execute 재사용."""
-    org_id = await _require_org_id(user, db)
+    org_id = await _require_org_id_write(user, db, action="from_candidate")
     client = build_generator_client(settings)
     try:
         cand = await client.get_candidate(body.generation_id, body.candidate_id, org_id=str(org_id))
@@ -2048,7 +2077,7 @@ async def replace_creative_proposal(
 
     소유권: 자기 캠페인만 교체(파괴적 차단) + 후보-org는 Task 0 X-Org-Id 스코프로 닫힘(타 org 404).
     """
-    org_id = await _require_org_id(user, db)
+    org_id = await _require_org_id_write(user, db, action="replace_creative_proposal")
     await _require_owned_campaign(db, org_id, campaign_id)  # 캠페인 소유권(필수)
 
     # B-1은 mock 계약 고정 — sending mode(validate/live)면 실 /adimages 호출이 되므로 차단(리뷰 ③).
@@ -2231,7 +2260,7 @@ async def from_simulation(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail="잘못된 simulation_id") from exc
 
-    org_id = await _require_org_id(user, db)
+    org_id = await _require_org_id_write(user, db, action="from_simulation")
 
     sim_row = (
         await db.execute(
@@ -2420,7 +2449,74 @@ def _is_demo_campaign(campaign_id: str) -> bool:
     return any(cid == campaign_id for cid, *_ in _CAMPAIGNS_DEMO)
 
 
-_require_org_id = require_user_org  # core.auth 공용(없으면 409) — 라우터 복붙 제거
+async def _validated_org(db, sel: str, *, require_active: bool) -> UUID:
+    """X-Org-Id 검증. operational(require_active=True)은 ACTIVE만, read는 존재만."""
+    try:
+        org_uuid = UUID(sel)
+    except ValueError as exc:
+        raise HTTPException(400, "X-Org-Id 형식 오류") from exc
+    status = await db.scalar(select(Organization.status).where(Organization.id == org_uuid))
+    if status is None:
+        raise HTTPException(404, "선택한 조직을 찾을 수 없습니다.")
+    if require_active and str(status).upper() != "ACTIVE":
+        raise HTTPException(409, "비활성 조직은 선택할 수 없습니다.")
+    return org_uuid
+
+
+async def _require_org_id(user, db) -> UUID:
+    """operational org 해석. ADMIN은 X-Org-Id로 impersonate, 비-ADMIN은 자기 org(미소속 409)."""
+    if (getattr(user, "role", "") or "").upper() == "ADMIN":
+        sel = _selected_org_ctx.get()
+        if not sel:
+            raise HTTPException(400, "관리자는 조직을 선택하세요 (X-Org-Id 헤더).")
+        return await _validated_org(db, sel, require_active=True)
+    return await require_user_org(user, db)
+
+
+async def _emit_impersonation_audit(user, org_id, *, action: str) -> None:
+    """admin이 org를 선택(impersonate)해 수행하려는 write/실행을 감사에 남긴다.
+    org 해석 직후 호출이라 '시도'(outcome=attempted)를 기록 — 토큰/컨텍스트 접근 사실이
+    감사 대상."""
+    if (getattr(user, "role", "") or "").upper() != "ADMIN":
+        return
+    await _AUDIT_LOG.append(
+        AuditEvent(
+            category="impersonation",
+            tenant_id=str(org_id),
+            payload={"actor": str(user.id), "action": action, "outcome": "attempted"},
+        )
+    )
+
+
+async def _require_org_id_write(user, db, *, action: str) -> UUID:
+    """operational WRITE용 org 해석 — org 확정 후 impersonation 감사를 원자적으로 남긴다."""
+    org_id = await _require_org_id(user, db)
+    await _emit_impersonation_audit(user, org_id, action=action)
+    return org_id
+
+
+async def _scope_org_or_all(user, db) -> UUID | None:
+    """리스트/집계 3-값 스코프. 비-ADMIN→자기 org / ADMIN+헤더→그 org(read, inactive 허용) /
+    ADMIN+무헤더→None(전체)."""
+    if (getattr(user, "role", "") or "").upper() == "ADMIN":
+        sel = _selected_org_ctx.get()
+        return await _validated_org(db, sel, require_active=False) if sel else None
+    return await require_user_org(user, db)
+
+
+def _clamp_limit_offset(limit: int, offset: int) -> tuple[int, int]:
+    """pagination 상·하한. limit 1..200, offset ≥ 0."""
+    return max(1, min(limit, 200)), max(0, offset)
+
+
+def _ACCESS_LOG_SINK(**kw: object) -> None:  # noqa: N802  (테스트 monkeypatch 주입점)
+    logger.info("admin_all_org_read", extra=kw)
+
+
+def _record_admin_read_access(user, endpoint: str, scope, limit: int, offset: int) -> None:
+    """admin 전 org(scope=None) 조회만 경량 access log 1건."""
+    if (getattr(user, "role", "") or "").upper() == "ADMIN" and scope is None:
+        _ACCESS_LOG_SINK(actor=str(user.id), endpoint=endpoint, limit=limit, offset=offset)
 
 
 async def _require_owned_campaign(
@@ -2527,7 +2623,7 @@ async def activate_campaign(
     db: AsyncSession = Depends(get_db),
 ):
     """게재 시작 — Meta 선불 잔액 게이트 → spend_cap → 캠페인·세트·광고 ACTIVE. 실과금 시작점."""
-    org_id = await _require_org_id(user, db)
+    org_id = await _require_org_id_write(user, db, action="activate_campaign")
     row = await _require_owned_campaign(db, org_id, campaign_id)
     commit = body.commit_krw or (row.daily_budget_krw if row else 0)
     if commit <= 0:
@@ -2706,6 +2802,7 @@ async def sync_campaign(
             try:
                 await billing.record_spend(org_id, amount, ref_id=campaign_id)
                 charged = amount
+                await _emit_impersonation_audit(user, org_uuid, action="sync_credit_adjust")
             except BillingError:
                 charged = 0
     detail = await reader.get_delivery_status_detail(campaign_id)
@@ -2733,7 +2830,7 @@ async def pause_campaign(
     db: AsyncSession = Depends(get_db),
 ):
     """캠페인 즉시 일시중지(PAUSED) — 게재·과금 중단. 크레딧 게이트 불요(돈이 나가는 쪽 아님)."""
-    org_id = await _require_org_id(user, db)
+    org_id = await _require_org_id_write(user, db, action="pause_campaign")
     await _require_owned_campaign(db, org_id, campaign_id)
     now = datetime.now(UTC)
     ad_account = await _require_ad_account(db, org_id)
@@ -2922,7 +3019,7 @@ async def budget_commit(
     db: AsyncSession = Depends(get_db),
 ):
     """Validate, approve, and execute a budget change from live state."""
-    org_id = await _require_org_id(user, db)
+    org_id = await _require_org_id_write(user, db, action="budget_commit")
     await _require_owned_campaign(db, org_id, campaign_id)
     reader = await _require_reader(db, org_id)
     before, declared = await _validate_budget_change(
@@ -3138,7 +3235,7 @@ async def set_budget_limit(
     db: AsyncSession = Depends(get_db),
 ):
     """예산 한도 설정 — 변경 후 경고 레벨(decision)이 즉시 반영(인메모리)."""
-    org_id = await _require_org_id(user, db)
+    org_id = await _require_org_id_write(user, db, action="set_budget_limit")
     if getattr(settings, "use_mock", True):
         _BUDGET.set_limit(TENANT_ID, body.limit_krw)
         return await _budget_status(build_reader(settings))
@@ -3191,7 +3288,7 @@ async def re_evaluate(
     db: AsyncSession = Depends(get_db),
 ):
     """사다리 1회 재평가 — 개시/다음단계 제안 / 보류(PENDING) / 회복 / 소진을 반환."""
-    org_id = await _require_org_id(user, db)
+    org_id = await _require_org_id_write(user, db, action="re_evaluate")
     ad_account = await _require_ad_account(db, org_id)
     outcome = await _get_escalation().re_evaluate(
         str(org_id), ad_account, body.campaign_id, now=_now_or(body.now)
@@ -3212,7 +3309,7 @@ async def mark_rung_executed(
     db: AsyncSession = Depends(get_db),
 ):
     """현재 단계가 집행됐음을 사다리에 알린다 (다음 재평가에서 회복 판정 가능)."""
-    org_id = await _require_org_id(user, db)
+    org_id = await _require_org_id_write(user, db, action="mark_rung_executed")
     escalation = _get_escalation()
     await _require_owned_run(escalation, body.run_id, org_id)
     await escalation.on_executed(body.run_id, now=_now_or(body.now), approval_id=body.approval_id)
@@ -3226,7 +3323,7 @@ async def mark_rung_rejected(
     db: AsyncSession = Depends(get_db),
 ):
     """현재 단계가 거절됐음을 알린다 (다음 재평가에서 즉시 다음 단계로 에스컬레이션)."""
-    org_id = await _require_org_id(user, db)
+    org_id = await _require_org_id_write(user, db, action="mark_rung_rejected")
     escalation = _get_escalation()
     await _require_owned_run(escalation, body.run_id, org_id)
     await escalation.on_rejected(body.run_id)
@@ -3251,6 +3348,8 @@ async def meta_connect(
     app_id = getattr(settings, "meta_app_id", None)
     if not app_id:
         raise HTTPException(503, "META_APP_ID 미설정 — Meta 연결 불가")
+    # NOTE: org 소유자만 자기 Meta를 연결한다. admin impersonation(X-Org-Id) 대상이 아니며,
+    # admin은 멤버십이 없어 아래 409로 자연 차단된다(설계: (c) 멤버십 직접 해석).
     org_id = await db.scalar(
         select(OrganizationMember.organization_id).where(OrganizationMember.user_id == user.id)
     )

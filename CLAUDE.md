@@ -6,11 +6,11 @@
 ## Key Decisions
 
 - **Backend** FastAPI (Python only, No Spring) / **PM** uv(backend)·pnpm(frontend) 교차 금지 / **Arch** 모놀리식 + 부분 DDD/SOLID, 단일 EC2.
-- **MQ** AWS SQS (No Redis — 트래킹 큐 Redis는 탐색 대상, Open Issues 참고).
+- **비동기 잡** 인프로세스 async(`asyncio.create_task`). 별도 MQ 미사용 — SQS·Redis 모두 안 씀.
 - **Sim engine** Deepsona(OCEAN) + SSR(arXiv 2510.08338). **Scoring** SSR(임베딩 기반, no LLM, not DLR). **Output** 스칼라 아닌 분포.
 - **구매의도 검증** KOBACO 베이스라인 대비. 그 외 신호는 탐색적(exploratory) 표기.
 - **인증(타깃)** JWT + 관리자 직접 계정 생성(자가가입·소셜 없음), Admin/User 역할. **(현재)** UI만, 실 JWT 미적용·점진 도입.
-- **A/B** UI 선반영, YouTube RAG 실기능은 최종 단계. **Chat** OpenAI gpt-4o-mini·CLIO·SSE — 오케스트레이터 본체는 **후순위(미정)**, 단 매니지먼트는 **에이전틱 RAG 서브에이전트로 구현**(읽기+행동 제안, import-ready).
+- **A/B** UI 선반영, YouTube RAG 실기능은 최종 단계. **Chat** OpenAI gpt-4o-mini·CLIO·SSE — 오케스트레이터 본체(통합 딥에이전트, `deepagents` 기반, `api/assistant/deep_agent_builder.py`) **구현 완료**(`POST /api/chat/complete`). management·generator·simulation 3개 도메인 모두 **@tool 위임으로 연결**(deepagents 고유 서브에이전트 기능은 미사용, 커스텀 tool 라우팅).
 - **Ad gen** 개선 시안 5개 자동생성+순위 (Gemini Flash 3.0 / GPT Image 2 / Gemini Omni). **PDF** 전체 생성 포함. **문의** in-app 폼 → DB.
 
 ## 핵심 기능 (기획서 v1.3)
@@ -41,7 +41,7 @@
 ## Tech Stack
 
 - **Frontend** Next.js(TS) + Tailwind (pnpm) / **Backend+AI** FastAPI + LangGraph (uv).
-- **DB** NeonDB(PostgreSQL + pgvector, vector(1536)) / **MQ** AWS SQS / **Storage** AWS S3.
+- **DB** NeonDB(PostgreSQL + pgvector, vector(1536)) / **비동기 잡** 인프로세스 async(asyncio) / **Storage** AWS S3.
 - **Deploy** 단일 EC2 + Nginx / **CI/CD** GitHub Actions(Docker) / **Tracing** LangSmith / **Chat LLM** OpenAI gpt-4o-mini(`openai` chat.completions, SSE).
 
 ## 백엔드 아키텍처 (DDD)
@@ -83,7 +83,7 @@ APP_ENV=development
 OPENAI_API_KEY= / ANTHROPIC_API_KEY= / GEMINI_API_KEY=   # 채팅·CLIO=OpenAI(gpt-4o-mini). GEMINI는 예비.
 DATABASE_URL=postgresql+asyncpg://user:pw@host/db?sslmode=require
 AWS_ACCESS_KEY_ID= / AWS_SECRET_ACCESS_KEY= / AWS_REGION=ap-northeast-2
-S3_BUCKET_NAME= / SQS_SIMULATION_QUEUE_URL=
+S3_BUCKET_NAME=
 LANGCHAIN_TRACING_V2=true / LANGCHAIN_ENDPOINT=https://api.smith.langchain.com
 LANGCHAIN_API_KEY= / LANGCHAIN_PROJECT=clickme
 # frontend/.env.local
@@ -132,9 +132,9 @@ NEXT_PUBLIC_API_URL=http://localhost:8000
 
 | 항목                                | 비고                                                            |
 | ----------------------------------- | --------------------------------------------------------------- |
-| 트래킹 큐 Redis 도입 여부           | 결정은 No Redis(SQS). 기획서 리스크표가 Redis 큐 언급 → 보류·탐색. |
+| 비동기 잡 큐 도입 여부              | 현재 인프로세스 async(asyncio). SQS·Redis 모두 미사용 — 운영 확장 시 재검토. |
 | 인증 실구현 (JWT 자체 vs Cognito)   | 타깃 JWT + 관리자 계정 생성. 토큰 발급/검증 도입 시점·방식 미정.  |
-| 채팅(4-4) 착수 시점                 | 오케스트레이터 본체 미정(후순위). 매니지먼트는 에이전틱 RAG 서브에이전트 구현 완료(`/management/assistant`, import-ready). |
+| 채팅(4-4) 오케스트레이터 배선 정리   | 오케스트레이터 본체(통합 딥에이전트)는 구현 완료, management·generator·simulation 전부 @tool로 연결됨(2026-06-30, `4c3e7c8`). `domain/chat/__init__.py` 설명이 실제 구현 위치(`api/assistant/`)와 어긋나 문서 정리 필요. |
 | CD 활성화                           | Docker Hub + EC2 Secrets 등록 필요.                             |
 
 ## Reference
