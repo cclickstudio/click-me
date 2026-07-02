@@ -4,7 +4,8 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '@/components/AuthProvider';
-import { getToken } from '@/lib/authApi';
+import { authedFetch } from '@/lib/api';
+import { formatKSTDate } from '@/lib/datetime';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
@@ -29,8 +30,7 @@ const inputCls =
 
 const fmt = (iso: string | null) => {
   if (!iso) return '—';
-  const d = new Date(iso);
-  return `${d.getFullYear()}.${d.getMonth() + 1}.${d.getDate()}`;
+  return formatKSTDate(iso);
 };
 const formatPhone = (v: string) => {
   const d = v.replace(/\D/g, '').slice(0, 11);
@@ -38,8 +38,6 @@ const formatPhone = (v: string) => {
   if (d.length < 8) return `${d.slice(0, 3)}-${d.slice(3)}`;
   return `${d.slice(0, 3)}-${d.slice(3, 7)}-${d.slice(7)}`;
 };
-
-const authHeaders = () => ({ Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' });
 
 // ── 팀원 추가 모달 ──────────────────────────────────────────
 function CreateMemberModal({ teams, onClose, onCreated }: { teams: Team[]; onClose: () => void; onCreated: () => void }) {
@@ -57,8 +55,8 @@ function CreateMemberModal({ teams, onClose, onCreated }: { teams: Team[]; onClo
       return;
     }
     setSaving(true);
-    const res = await fetch(`${API_BASE}/api/company/members`, {
-      method: 'POST', headers: authHeaders(),
+    const res = await authedFetch(`${API_BASE}/api/company/members`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: name.trim(), login_id: loginId.trim(), password, team_id: teamId || null }),
     });
     setSaving(false);
@@ -100,8 +98,8 @@ function EditMemberModal({ member, onClose, onSaved }: { member: Member; onClose
     setSaving(true);
     const body: { name: string; password?: string } = { name: name.trim() };
     if (password) body.password = password;
-    const res = await fetch(`${API_BASE}/api/company/members/${member.member_id}`, {
-      method: 'PATCH', headers: authHeaders(), body: JSON.stringify(body),
+    const res = await authedFetch(`${API_BASE}/api/company/members/${member.member_id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
     });
     setSaving(false);
     if (!res.ok) {
@@ -202,8 +200,8 @@ export default function TeamsPage() {
   const load = useCallback(async () => {
     setLoading(true);
     const [m, t] = await Promise.all([
-      fetch(`${API_BASE}/api/company/members`, { headers: authHeaders() }).then((r) => (r.ok ? r.json() : [])).catch(() => []),
-      fetch(`${API_BASE}/api/company/teams`, { headers: authHeaders() }).then((r) => (r.ok ? r.json() : [])).catch(() => []),
+      authedFetch(`${API_BASE}/api/company/members`).then((r) => (r.ok ? r.json() : [])).catch(() => []),
+      authedFetch(`${API_BASE}/api/company/teams`).then((r) => (r.ok ? r.json() : [])).catch(() => []),
     ]);
     if (Array.isArray(m)) setMembers(m);
     if (Array.isArray(t)) setTeams(t);
@@ -217,27 +215,27 @@ export default function TeamsPage() {
   const assign = async (memberId: string, teamId: string | null) => {
     const snapshot = members;
     setMembers((prev) => prev.map((m) => (m.member_id === memberId ? { ...m, team_id: teamId } : m)));
-    const res = await fetch(`${API_BASE}/api/company/members/${memberId}/team`, {
-      method: 'PATCH', headers: authHeaders(), body: JSON.stringify({ team_id: teamId }),
+    const res = await authedFetch(`${API_BASE}/api/company/members/${memberId}/team`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ team_id: teamId }),
     });
     if (!res.ok) { setMembers(snapshot); alert('팀 이동에 실패했습니다.'); }
   };
 
   const createTeam = async () => {
     if (!newTeam.trim()) return;
-    const res = await fetch(`${API_BASE}/api/company/teams`, { method: 'POST', headers: authHeaders(), body: JSON.stringify({ name: newTeam.trim() }) });
+    const res = await authedFetch(`${API_BASE}/api/company/teams`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: newTeam.trim() }) });
     if (res.ok) { setNewTeam(''); setAddingTeam(false); load(); } else alert('팀 생성에 실패했습니다.');
   };
 
   const deleteTeam = async (id: string, name: string) => {
     if (!confirm(`'${name}' 팀을 삭제할까요?\n소속 팀원은 '미배정'으로 이동합니다.`)) return;
-    const res = await fetch(`${API_BASE}/api/company/teams/${id}`, { method: 'DELETE', headers: authHeaders() });
+    const res = await authedFetch(`${API_BASE}/api/company/teams/${id}`, { method: 'DELETE' });
     if (res.ok) load(); else alert('삭제에 실패했습니다.');
   };
 
   const deleteMember = async (m: Member) => {
     if (!confirm(`'${m.user_name}' 팀원을 삭제할까요?\n계정과 멤버십이 제거됩니다.`)) return;
-    const res = await fetch(`${API_BASE}/api/company/members/${m.member_id}`, { method: 'DELETE', headers: authHeaders() });
+    const res = await authedFetch(`${API_BASE}/api/company/members/${m.member_id}`, { method: 'DELETE' });
     if (!res.ok) {
       const err = await res.json().catch(() => ({ detail: '삭제 실패' }));
       alert(err.detail ?? '삭제에 실패했습니다.');

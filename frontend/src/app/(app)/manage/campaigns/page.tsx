@@ -84,12 +84,24 @@ export default function Page() {
     });
   }, []);
 
-  // silent=true면 폴링 갱신 — 로딩 스피너 없이 값만 교체.
+  // 무한스크롤 — 최근순 20개씩. 폴링/새로고침은 현재까지 로드한 만큼(loadedCount) 다시 채워 스크롤 유지.
+  const PAGE_SIZE = 20;
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [total, setTotal] = useState<number | null>(null);
+  const loadedCountRef = useRef(0);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+
+  // silent=true면 폴링 갱신 — 로딩 스피너 없이 값만 교체. 첫 페이지부터 현재 로드분까지 재조회.
   const load = useCallback(async (silent = false) => {
     if (!silent) setBusy(true);
     setError(null);
     try {
-      const r = await api.management.campaigns(convValue, targetRoas, undefined, includeArchived);
+      const limit = Math.max(PAGE_SIZE, loadedCountRef.current);
+      const r = await api.management.campaigns(convValue, targetRoas, undefined, includeArchived, {
+        limit,
+        offset: 0,
+      });
       // Meta 요청 한도(일시) — 빈 목록으로 덮지 말고 기존 데이터 유지 + 배너만(폴링이 곧 복구).
       if (r.rate_limited) {
         setRateLimited(r.rate_limited);
@@ -97,10 +109,15 @@ export default function Page() {
       }
       setRateLimited(null);
       setCampaigns(r.campaigns);
+      loadedCountRef.current = r.campaigns.length;
+      setHasMore(r.has_more ?? false);
+      setTotal(r.total ?? r.campaigns.length);
       setSource(r.source ?? 'mock');
       setAccountBlock(r.account_block_reason ?? null);
       setAuthError(r.auth_error ?? null);
-      setPermissionError(r.permission_error ?? r.not_connected ?? r.account_unavailable ?? null);
+      setPermissionError(
+        r.permission_error ?? r.not_connected ?? r.account_unavailable ?? r.select_org ?? null,
+      );
       setAccount(r.account ?? null);
       setLastUpdated(new Date().toLocaleTimeString('ko-KR'));
     } catch (e) {
@@ -110,9 +127,53 @@ export default function Page() {
     }
   }, [convValue, targetRoas, includeArchived]);
 
+  // 스크롤 하단 도달 시 다음 20개를 이어 붙인다(중복 id 제거).
+  const loadMore = useCallback(async () => {
+    if (loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const r = await api.management.campaigns(convValue, targetRoas, undefined, includeArchived, {
+        limit: PAGE_SIZE,
+        offset: loadedCountRef.current,
+      });
+      if (r.rate_limited) {
+        setRateLimited(r.rate_limited);
+        return;
+      }
+      setCampaigns((prev) => {
+        const seen = new Set(prev.map((c) => c.campaign_id));
+        const merged = [...prev, ...r.campaigns.filter((c) => !seen.has(c.campaign_id))];
+        loadedCountRef.current = merged.length;
+        return merged;
+      });
+      setHasMore(r.has_more ?? false);
+      if (r.total != null) setTotal(r.total);
+    } catch {
+      // 다음 페이지 로드 실패는 조용히 무시 — 재스크롤/폴링으로 재시도.
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [convValue, targetRoas, includeArchived, loadingMore]);
+
+  // 필터(전환가치·ROAS·보관포함) 변경 시 첫 페이지부터 다시 로드.
   useEffect(() => {
+    loadedCountRef.current = 0;
     load();
   }, [load]);
+
+  // 무한스크롤 관측 — 센티넬이 보이고 더 있으면 다음 페이지 로드.
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el) return;
+    const io = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting && hasMore && !loadingMore && !busy) loadMore();
+      },
+      { rootMargin: '200px' },
+    );
+    io.observe(el);
+    return () => io.disconnect();
+  }, [hasMore, loadingMore, busy, loadMore]);
 
   // 채팅 캠페인 칩 딥링크 — ?open=<campaign_id> 로 진입 시 해당 캠페인 상세 자동 열기.
   useEffect(() => {
@@ -513,6 +574,16 @@ export default function Page() {
                 onChanged={handleChanged}
                 source={source}
               />
+            )}
+            {/* 무한스크롤 센티넬 — 화면에 들어오면 다음 20개 로드 */}
+            <div ref={sentinelRef} className="h-1" />
+            {loadingMore && (
+              <p className="text-center text-[12px] text-[#8B95A1] py-3">더 불러오는 중…</p>
+            )}
+            {!hasMore && total != null && campaigns.length > 0 && (
+              <p className="text-center text-[12px] text-[#B0B8C1] py-3">
+                전체 {total}개 캠페인을 모두 불러왔어요
+              </p>
             )}
           </div>
         )}

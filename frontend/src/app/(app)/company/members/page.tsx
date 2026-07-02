@@ -1,14 +1,15 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { getToken } from '@/lib/authApi';
+import { authedFetch } from '@/lib/api';
+import { formatKSTDate } from '@/lib/datetime';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
 type Member = { member_id: string; user_id: string; user_name: string; login_id: string; status: string; team_id: string | null; joined_at: string | null; created_at: string };
 type Team = { id: string; name: string; member_count: number; created_at: string };
 
-const fmt = (iso: string) => { const d = new Date(iso); return `${d.getFullYear()}.${d.getMonth()+1}.${d.getDate()}`; };
+const fmt = (iso: string) => formatKSTDate(iso);
 const statusStyle: Record<string, string> = {
   ACTIVE: 'text-emerald-500 bg-emerald-50 dark:bg-emerald-900/20',
 };
@@ -33,9 +34,9 @@ function CreateMemberModal({ teams, onClose, onCreated }: { teams: Team[]; onClo
       return;
     }
     setSaving(true);
-    const res = await fetch(`${API_BASE}/api/company/members`, {
+    const res = await authedFetch(`${API_BASE}/api/company/members`, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: name.trim(), login_id: loginId.trim(), password, team_id: teamId || null }),
     });
     setSaving(false);
@@ -106,9 +107,9 @@ function EditMemberModal({ member, onClose, onSaved }: { member: Member; onClose
     setSaving(true);
     const body: { name: string; password?: string } = { name: name.trim() };
     if (password) body.password = password;
-    const res = await fetch(`${API_BASE}/api/company/members/${member.member_id}`, {
+    const res = await authedFetch(`${API_BASE}/api/company/members/${member.member_id}`, {
       method: 'PATCH',
-      headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
     setSaving(false);
@@ -160,13 +161,11 @@ export default function CompanyMembersPage() {
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<Member | null>(null);
 
-  const authHeaders = () => ({ Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' });
-
   const fetchAll = async () => {
     setLoading(true);
     const [m, t] = await Promise.all([
-      fetch(`${API_BASE}/api/company/members`, { headers: authHeaders() }).then((r) => r.json()).catch(() => []),
-      fetch(`${API_BASE}/api/company/teams`, { headers: authHeaders() }).then((r) => r.json()).catch(() => []),
+      authedFetch(`${API_BASE}/api/company/members`).then((r) => r.json()).catch(() => []),
+      authedFetch(`${API_BASE}/api/company/teams`).then((r) => r.json()).catch(() => []),
     ]);
     if (Array.isArray(m)) setMembers(m);
     if (Array.isArray(t)) setTeams(t);
@@ -177,7 +176,7 @@ export default function CompanyMembersPage() {
 
   const handleDelete = async (memberId: string, name: string) => {
     if (!confirm(`'${name}' 멤버를 삭제할까요?\n계정과 멤버십이 제거되며, 만든 작업물은 회사에 남아 본인에게 이전됩니다.`)) return;
-    const res = await fetch(`${API_BASE}/api/company/members/${memberId}`, { method: 'DELETE', headers: authHeaders() });
+    const res = await authedFetch(`${API_BASE}/api/company/members/${memberId}`, { method: 'DELETE' });
     if (!res.ok) {
       const err = await res.json().catch(() => ({ detail: '삭제 실패' }));
       alert(err.detail ?? '삭제에 실패했습니다.');

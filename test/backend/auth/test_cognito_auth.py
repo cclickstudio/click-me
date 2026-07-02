@@ -12,6 +12,7 @@ from core import auth as auth_mod
 from core import cognito_admin
 from core.auth import (
     _resolve_user,
+    _role_from_claims,
     create_access_token,
     decode_token,
 )
@@ -44,11 +45,13 @@ def rsa_keypair():
 
 
 def _make_token(priv_pem: str, **overrides) -> str:
+    # Cognito access token 형태 — aud 없음, client_id·username·cognito:groups 보유.
     claims = {
         "sub": "cognito-sub-123",
-        "cognito:username": "alice",
-        "token_use": "id",
-        "aud": CLIENT_ID,
+        "username": "alice",
+        "cognito:groups": ["ADMIN"],
+        "token_use": "access",
+        "client_id": CLIENT_ID,
         "iss": ISSUER,
         "exp": int(time.time()) + 3600,
         **overrides,
@@ -76,21 +79,23 @@ def test_local_mode_roundtrip(monkeypatch):
     assert payload["role"] == "ADMIN"
 
 
-def test_cognito_valid_id_token(cognito_mode):
+def test_cognito_valid_access_token(cognito_mode):
     payload = decode_token(_make_token(cognito_mode))
-    assert payload["cognito:username"] == "alice"
-    assert payload["token_use"] == "id"
+    assert payload["username"] == "alice"
+    assert payload["token_use"] == "access"
+    assert _role_from_claims(payload) == "ADMIN"
 
 
-def test_cognito_rejects_access_token(cognito_mode):
-    # access 토큰(token_use != id)은 거부.
+def test_cognito_rejects_id_token(cognito_mode):
+    # id 토큰(token_use != access)은 거부.
     with pytest.raises(JWTError):
-        decode_token(_make_token(cognito_mode, token_use="access"))
+        decode_token(_make_token(cognito_mode, token_use="id"))
 
 
-def test_cognito_rejects_wrong_audience(cognito_mode):
+def test_cognito_rejects_wrong_client_id(cognito_mode):
+    # access token은 aud가 없으므로 client_id 클레임 불일치로 거부.
     with pytest.raises(JWTError):
-        decode_token(_make_token(cognito_mode, aud="someone-else"))
+        decode_token(_make_token(cognito_mode, client_id="someone-else"))
 
 
 def test_cognito_rejects_wrong_issuer(cognito_mode):
@@ -110,10 +115,11 @@ class _FakeDB:
 
 @pytest.mark.asyncio
 async def test_resolve_user_cognito_uses_username(monkeypatch):
+    # access token은 username, id token은 cognito:username — 둘 다 login_id로 매칭.
     monkeypatch.setattr(settings, "auth_provider", "cognito")
     user = SimpleNamespace(login_id="alice", status="ACTIVE")
-    resolved = await _resolve_user({"cognito:username": "alice"}, _FakeDB(user))
-    assert resolved is user
+    assert await _resolve_user({"username": "alice"}, _FakeDB(user)) is user
+    assert await _resolve_user({"cognito:username": "alice"}, _FakeDB(user)) is user
 
 
 @pytest.mark.asyncio

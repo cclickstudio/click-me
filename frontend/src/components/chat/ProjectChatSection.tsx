@@ -42,7 +42,7 @@ export default function ProjectChatSection({ projectId }: { projectId: string })
   const router = useRouter();
   const pathname = usePathname();
   const onChatPage = pathname?.startsWith('/chat') ?? false;
-  const { selectProject } = useProjects();
+  const { selectProject, chatRefreshKey } = useProjects();
   const { activeSessionId, openChat, sessionsVersion, refreshSessions } = useChatController();
   const [open, setOpen] = useState(false);
   const [sessions, setSessions] = useState<ChatSessionRow[] | undefined>(undefined);
@@ -62,9 +62,10 @@ export default function ProjectChatSection({ projectId }: { projectId: string })
   }, [projectId]);
 
   // 마운트·갱신 시 항상 로드 — 접힌 상태에서도 헤더 미확인 배지를 보여주려면 데이터가 필요하다.
+  // chatRefreshKey: 패널 새로고침 버튼(refreshAll)이 올리는 신호 → 채팅 세션도 함께 갱신.
   useEffect(() => {
     load();
-  }, [sessionsVersion, load]);
+  }, [sessionsVersion, chatRefreshKey, load]);
 
   // 검색어 디바운스.
   useEffect(() => {

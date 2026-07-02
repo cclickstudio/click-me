@@ -23,7 +23,7 @@ class Panel(SimBase):
     __tablename__ = "panels"
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid(), primary_key=True, default=uuid.uuid4)
-    version: Mapped[str] = mapped_column(String(20), nullable=False)
+    version: Mapped[str] = mapped_column(String(20), nullable=False, unique=True)
     size: Mapped[int] = mapped_column(Integer, nullable=False)
     seed: Mapped[str] = mapped_column(String(50), nullable=False)
     model_version: Mapped[str] = mapped_column(String(50), nullable=False)
@@ -131,7 +131,7 @@ class SimulationAggregate(SimBase):
     __tablename__ = "simulation_aggregates"
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid(), primary_key=True, default=uuid.uuid4)
-    simulation_id: Mapped[uuid.UUID] = mapped_column(Uuid(), nullable=False)
+    simulation_id: Mapped[uuid.UUID] = mapped_column(Uuid(), nullable=False, unique=True)
     click_intent_rate: Mapped[float] = mapped_column(Numeric(5, 4), nullable=False)
     ci_low: Mapped[float] = mapped_column(Numeric(5, 4), nullable=False)
     ci_high: Mapped[float] = mapped_column(Numeric(5, 4), nullable=False)

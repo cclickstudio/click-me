@@ -18,6 +18,10 @@ Allocation = Literal["proportional", "stratified"]
 AllocationChoice = Literal["auto", "proportional", "stratified"]
 # auto 임계 — 이상이면 stratified(얇은 층 floor 보강), 미만이면 proportional.
 _AUTO_STRATIFIED_MIN = 300
+# 분석 모드(§4-1 A-1 3-모드) — synthetic: 합성 표본(기본, 현행 동작) / individual: 단일 페르소나
+# 심층(표본 1 강제) / persona_set: 세그먼트별 개별 실행 대조(POST /compare). target_mode(자동
+# 타깃 추정 여부)와는 직교하는 개념이다.
+AnalysisMode = Literal["synthetic", "individual", "persona_set"]
 
 
 class SimulationRunRequest(BaseModel):
@@ -38,6 +42,8 @@ class SimulationRunRequest(BaseModel):
     target_mode: TargetMode = TargetMode.AUTO
     sample_size: int = Field(default=20, ge=1, le=1000)
     allocation: AllocationChoice = "auto"  # auto면 sample_size로 자동 결정(아래 validator)
+    # 3-모드 분석 — 기본 synthetic(현행 100% 유지). individual이면 sample_size=1 강제(validator).
+    analysis_mode: AnalysisMode = "synthetic"
     # 선언 의도(광고 세부사항) — 의도 교차검증(§3.5-3) 비교 기준. 없으면 차원 스킵.
     ad_title: str | None = None  # 광고 제목 → message 차원(선언 핵심 메시지)
     product_category: str | None = None  # 제품 카테고리 → category 차원
@@ -48,6 +54,9 @@ class SimulationRunRequest(BaseModel):
 
     @model_validator(mode="after")
     def _resolve_allocation(self) -> SimulationRunRequest:
+        # individual 모드는 단일 페르소나 심층 분석 → 표본 1 강제(배분 자동해석 전에 적용).
+        if self.analysis_mode == "individual":
+            self.sample_size = 1
         # auto면 표본 크기로 배분 결정 — 사용자 선택이 아니라 자동(§3.7). 300+ 대규모는 stratified로
         # 얇은 세그먼트(예 40대+ OCEAN)를 floor 보강해 세그먼트 신뢰도↑. 명시값은 그대로 존중.
         if self.allocation == "auto":
@@ -58,7 +67,11 @@ class SimulationRunRequest(BaseModel):
 
 
 class SegmentSpec(BaseModel):
-    """Persona Set(3-모드 UX §A-1) 비교 대상 세그먼트 1개 — target_filter로 패널 부분집합 지정."""
+    """persona_set 대조용 세그먼트 1개 — 라벨 + 타깃 필터 + 표본 크기(POST /compare 입력).
+
+    target_filter는 {age_min, age_max, gender} — 기존 load_panel의 filter_personas가 소비한다.
+    각 세그먼트는 별도 시뮬 런으로 개별 실행되어 SimRunResult로 대조된다.
+    """
 
     label: str
     target_filter: dict[str, Any] | None = None

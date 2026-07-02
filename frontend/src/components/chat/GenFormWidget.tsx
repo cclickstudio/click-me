@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
+import { useProjects } from '@/components/ProjectContext';
 import { getJobs, setGenJob } from '@/lib/runningJobs';
 import type { GenerationDetail, Project } from '@/lib/types';
 
@@ -56,6 +57,7 @@ export default function GenFormWidget({
   );
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectId, setProjectId] = useState('');
+  const { refreshDetails } = useProjects(); // 완료 시 좌측 패널의 제너 목록 갱신용
   const [pct, setPct] = useState(0);
   const [stageMsg, setStageMsg] = useState('준비 중...');
   const [detail, setDetail] = useState<GenerationDetail | null>(null);
@@ -124,6 +126,7 @@ export default function GenFormWidget({
         if (d.event === 'completed') {
           es.close();
           void finish(gid, !fromRestore);
+          if (projectId) refreshDetails(projectId); // 완료 생성물을 패널에 즉시 반영
         } else if (d.event === 'error') {
           es.close();
           setGenJob(null);

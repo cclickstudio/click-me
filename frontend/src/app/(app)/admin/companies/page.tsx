@@ -3,7 +3,8 @@
 // 조직 관리 — 기업 승인·조직 목록 + 계정(ADMIN/COMPANY/USER) 직접 생성·삭제.
 
 import { useEffect, useState } from 'react';
-import { getToken } from '@/lib/authApi';
+import { authedFetch } from '@/lib/api';
+import { formatKSTDate } from '@/lib/datetime';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
@@ -26,8 +27,7 @@ type Account = {
 };
 
 function formatDate(iso: string) {
-  const d = new Date(iso);
-  return `${d.getFullYear()}.${d.getMonth() + 1}.${d.getDate()}`;
+  return formatKSTDate(iso);
 }
 
 const orgStatusStyle: Record<string, string> = {
@@ -80,9 +80,9 @@ function CreateAccountModal({
       return;
     }
     setSaving(true);
-    const res = await fetch(`${API_BASE}/api/admin/users`, {
+    const res = await authedFetch(`${API_BASE}/api/admin/users`, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         name: name.trim(),
         login_id: loginId.trim(),
@@ -193,9 +193,9 @@ function EditAccountModal({
     setSaving(true);
     const body: { name: string; password?: string } = { name: name.trim() };
     if (password) body.password = password;
-    const res = await fetch(`${API_BASE}/api/admin/users/${account.id}`, {
+    const res = await authedFetch(`${API_BASE}/api/admin/users/${account.id}`, {
       method: 'PATCH',
-      headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
     setSaving(false);
@@ -247,13 +247,11 @@ export default function AdminCompaniesPage() {
   const [showModal, setShowModal] = useState(false);
   const [editing, setEditing] = useState<Account | null>(null);
 
-  const authHeaders = () => ({ Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' });
-
   const fetchList = async () => {
     setLoading(true);
     const [orgsRes, usersRes] = await Promise.all([
-      fetch(`${API_BASE}/api/admin/organizations`, { headers: authHeaders() }),
-      fetch(`${API_BASE}/api/admin/users`, { headers: authHeaders() }),
+      authedFetch(`${API_BASE}/api/admin/organizations`),
+      authedFetch(`${API_BASE}/api/admin/users`),
     ]);
     if (orgsRes.ok) setOrgs(await orgsRes.json());
     if (usersRes.ok) setAccounts(await usersRes.json());
@@ -264,7 +262,7 @@ export default function AdminCompaniesPage() {
 
   const handleDeleteOrg = async (orgId: string, name: string) => {
     if (!confirm(`'${name}' 회사를 삭제할까요?\n소속 프로젝트·시뮬·생성·멤버·계정이 전부 삭제되며 되돌릴 수 없습니다.`)) return;
-    const res = await fetch(`${API_BASE}/api/admin/companies/${orgId}`, { method: 'DELETE', headers: authHeaders() });
+    const res = await authedFetch(`${API_BASE}/api/admin/companies/${orgId}`, { method: 'DELETE' });
     if (!res.ok) { alert('삭제에 실패했습니다.'); return; }
     await fetchList();
   };
@@ -274,7 +272,7 @@ export default function AdminCompaniesPage() {
 
   const handleDeleteAccount = async (id: string, name: string) => {
     if (!confirm(`'${name}' 계정을 삭제할까요?\n계정과 멤버십이 제거됩니다. 만든 작업물은 관리자에게 이전됩니다.`)) return;
-    const res = await fetch(`${API_BASE}/api/admin/users/${id}`, { method: 'DELETE', headers: authHeaders() });
+    const res = await authedFetch(`${API_BASE}/api/admin/users/${id}`, { method: 'DELETE' });
     if (!res.ok) {
       const err = await res.json().catch(() => ({ detail: '삭제 실패' }));
       alert(err.detail ?? '삭제에 실패했습니다.');

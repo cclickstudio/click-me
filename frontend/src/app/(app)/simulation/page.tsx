@@ -8,30 +8,55 @@ import { useChatController } from '@/components/chat/ChatController';
 import ErrorCard from '@/components/chat/ErrorCard';
 import { openReconnectingStream } from '@/lib/sse';
 import { api } from '@/lib/api';
-import { saveSimResult } from '@/lib/simResultStore';
+import { saveSimComparison, saveSimResult } from '@/lib/simResultStore';
 import { getJobs, setSimJob } from '@/lib/runningJobs';
 import { SIM_CATEGORIES } from '@/lib/simCategories';
 import type {
-  SegmentCompareResult,
-  SimAggregate,
+  AnalysisMode,
+  SegmentInput,
   SimRunResult,
   SSEProgressEvent,
 } from '@/lib/types';
 
-type Step = 'setup' | 'running' | 'comparing' | 'compareResult';
+type Step = 'setup' | 'running';
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
 type InputMode = 'image' | 'generated' | 'campaign';
 type GenderFilter = '' | 'M' | 'F';
-// 3-모드 분석 UX(§A-1) — 같은 엔진, 결과를 보는 렌즈만 다름.
-type AnalysisMode = 'synthetic' | 'individual' | 'personaSet';
-// Persona Set 세그먼트 입력 초안 — 실행 시 target_filter(JSON)로 변환.
+
+/* ─── 3-모드 분석(A-1) 탭 정의 ─── */
+const MODE_TABS: { value: AnalysisMode; label: string; desc: string }[] = [
+  {
+    value: 'synthetic',
+    label: '전체 합성',
+    desc: '조건에 맞는 가상 소비자 표본 전체의 반응을 예측합니다.',
+  },
+  {
+    value: 'individual',
+    label: '1명 심층',
+    desc: '가상 소비자 1명을 깊이 있게 분석합니다 (프로필 서사·반응 근거).',
+  },
+  {
+    value: 'persona_set',
+    label: '세그먼트 비교',
+    desc: '여러 세그먼트를 나란히 비교해 어떤 타깃에 잘 통하는지 봅니다.',
+  },
+];
+
+// persona_set 세그먼트 편집 행 — 라벨·연령대 1개·성별·표본수.
 type SegmentDraft = {
   label: string;
+  ageBand: string; // AGE_BANDS의 label 또는 '' (전 연령)
   gender: GenderFilter;
-  ageBands: string[];
-  size: number;
+  sampleSize: number;
 };
+
+const emptySegment = (label: string): SegmentDraft => ({
+  label,
+  ageBand: '',
+  gender: '',
+  sampleSize: 20,
+});
 
 /* ─── 광고 목표(일반인도 쉽게 고르는 단일 선택) ─── */
 const AD_GOALS: { value: string; label: string; desc: string }[] = [
@@ -89,7 +114,7 @@ const AGE_BANDS: { label: string; min: number; max: number }[] = [
 ];
 
 export default function SimulationRunPage() {
-  const { projects } = useProjects();
+  const { projects, refreshDetails } = useProjects();
   // 화면 내 프로젝트 선택은 로컬 상태 — 사이드바(전역 선택)와 동기화하지 않는다.
   // 진입 시 전역 선택(localStorage)을 초기값으로만 읽고, 이후 변경은 이 화면에만 반영된다.
   const [localProjectId, setLocalProjectId] = useState<string | null>(null);
@@ -108,6 +133,13 @@ export default function SimulationRunPage() {
     floatingOpenRef.current = floatingOpen;
   }, [floatingOpen]);
   const [step, setStep] = useState<Step>('setup');
+
+  // 3-모드 분석(A-1) — synthetic(기본)·individual(1명)·persona_set(세그먼트 비교)
+  const [analysisMode, setAnalysisMode] = useState<AnalysisMode>('synthetic');
+  const [segments, setSegments] = useState<SegmentDraft[]>([
+    emptySegment('세그먼트 A'),
+    emptySegment('세그먼트 B'),
+  ]);
 
   // 광고 입력
   const [adId] = useState(`AD-${Date.now()}`);
@@ -136,6 +168,13 @@ export default function SimulationRunPage() {
     reason?: string;
   }>({ status: 'idle' });
   const activeCheckUrl = inputMode === 'campaign' ? campaignImageUrl.trim() : '';
+  // 선택된 입력 소스의 이미지 URL(생성 후보/집행 캠페인). 'image' 모드는 파일 사용이라 빈 문자열.
+  const selectedImageUrl =
+    inputMode === 'generated'
+      ? selectedGenImageUrl
+      : inputMode === 'campaign'
+        ? campaignImageUrl
+        : '';
 
   // '생성한 광고' 모드 진입 시 — 선택 프로젝트의 성공한 생성 후보(제품명-후보N)를 로드한다.
   useEffect(() => {
@@ -256,7 +295,7 @@ export default function SimulationRunPage() {
     setCampaignImgError(false);
     if (!id) return;
     try {
-      const t = await api.management.targeting(id);
+      const t = await api.management.campaignTargeting(id);
       if (t.ad_image_url) setCampaignImageUrl(t.ad_image_url);
       if (t.ad_headline && !adTitle.trim()) setAdTitle(t.ad_headline);
       if (t.ad_body && !adContent.trim()) setAdContent(t.ad_body);
@@ -275,49 +314,29 @@ export default function SimulationRunPage() {
   const [ageBands, setAgeBands] = useState<string[]>([]);
   const [gender, setGender] = useState<GenderFilter>('');
 
-  // 3-모드 분석(§A-1) — synthetic(시장 전체)·individual(1명 심층)·personaSet(세그먼트 비교).
-  const [analysisMode, setAnalysisMode] = useState<AnalysisMode>('synthetic');
-  const [segments, setSegments] = useState<SegmentDraft[]>([
-    { label: '세그먼트 A', gender: '', ageBands: ['20대'], size: 10 },
-    { label: '세그먼트 B', gender: '', ageBands: ['40대'], size: 10 },
-  ]);
-  const [compareResult, setCompareResult] =
-    useState<SegmentCompareResult | null>(null);
-
   const [error, setError] = useState<string | null>(null);
 
   // SSE 진행률 — 실행 중 단계·퍼센트 표시.
   const [pct, setPct] = useState(0);
   const [stageMsg, setStageMsg] = useState('');
+  // persona_set 진행 — 어느 세그먼트를 처리 중인지(segment_index/total).
+  const [segProgress, setSegProgress] = useState<{
+    label: string;
+    index: number;
+    total: number;
+  }>({ label: '', index: 0, total: 0 });
   const esRef = useRef<(() => void) | null>(null); // SSE 재연결 구독 close 함수(X2)
 
   // 언마운트 시 스트림 정리.
   useEffect(() => () => esRef.current?.(), []);
 
-  // 세그먼트 초안 → target_filter 변환(연령대 다중 선택은 하한~상한 범위, 기존 타깃 설정과 동일 규칙).
-  function segmentFilter(seg: SegmentDraft): Record<string, unknown> {
-    const tf: Record<string, unknown> = {};
-    const bands = AGE_BANDS.filter(b => seg.ageBands.includes(b.label));
-    if (bands.length > 0) {
-      tf.age_min = Math.min(...bands.map(b => b.min));
-      tf.age_max = Math.max(...bands.map(b => b.max));
-    }
-    if (seg.gender) tf.gender = seg.gender;
-    return tf;
-  }
-
-  // 광고 입력(공통) — run(단일)·runCompare(세그먼트 비교)가 같은 광고 필드를 공유.
-  function baseAdInput() {
+  // 광고 공통 필드(3-모드 공용) — start·compare 요청에 함께 실린다.
+  function adCommonFields() {
     return {
       ad_id: adId.trim() || `AD-${Date.now()}`,
       ad_content: adContent || undefined,
       ad_image: inputMode === 'image' ? file : undefined,
-      ad_image_url:
-        inputMode === 'generated'
-          ? selectedGenImageUrl || undefined
-          : inputMode === 'campaign'
-            ? campaignImageUrl || undefined
-            : undefined,
+      ad_image_url: selectedImageUrl || undefined,
       project_id: selectedProject?.id ?? undefined,
       ad_title: adTitle || undefined,
       ad_objective:
@@ -329,32 +348,25 @@ export default function SimulationRunPage() {
     };
   }
 
-  // Persona Set(§A-1) — 같은 광고를 세그먼트별로 나눠 비교(동기, 진행률 스트림 없음).
-  async function runCompare() {
-    setError(null);
-    setStep('comparing');
-    try {
-      const result = await api.simulation.compareSegments(
-        { ...baseAdInput(), allocation },
-        segments.map(seg => ({
-          label: seg.label.trim() || '세그먼트',
-          target_filter: segmentFilter(seg),
-          sample_size: seg.size,
-        }))
-      );
-      setCompareResult(result);
-      setStep('compareResult');
-    } catch (e) {
-      setError(e instanceof Error ? e.message : '세그먼트 비교 실행 실패');
-      setStep('setup');
-    }
+  // SegmentDraft → 계약상의 SegmentInput(연령대 1개 + 성별 → target_filter).
+  function buildSegments(): SegmentInput[] {
+    return segments.map(s => {
+      const band = AGE_BANDS.find(b => b.label === s.ageBand);
+      const target_filter: SegmentInput['target_filter'] = {};
+      if (band) {
+        target_filter.age_min = band.min;
+        target_filter.age_max = band.max;
+      }
+      if (s.gender) target_filter.gender = s.gender;
+      return {
+        label: s.label.trim() || '세그먼트',
+        target_filter,
+        sample_size: s.sampleSize,
+      };
+    });
   }
 
   async function run() {
-    if (analysisMode === 'personaSet') {
-      await runCompare();
-      return;
-    }
     // 동시실행 제한 — 시뮬은 한 번에 하나(채팅 위젯과 store 공유).
     if (getJobs().sim) {
       setError(
@@ -365,27 +377,41 @@ export default function SimulationRunPage() {
     setError(null);
     setPct(0);
     setStageMsg('');
+    setSegProgress({ label: '', index: 0, total: 0 });
     setStep('running');
-    // 사용자가 연령대·성별을 고르면 그 조건으로, 아무것도 안 고르면 자동(AUTO).
-    const targetFilter: Record<string, unknown> = {};
-    const bands = AGE_BANDS.filter(b => ageBands.includes(b.label));
-    if (bands.length > 0) {
-      targetFilter.age_min = Math.min(...bands.map(b => b.min));
-      targetFilter.age_max = Math.max(...bands.map(b => b.max));
-    }
-    if (gender) targetFilter.gender = gender;
-    const targetMode = bands.length > 0 || gender !== '' ? 'MANUAL' : 'AUTO';
 
     try {
-      // 비동기 시작 → run_id 받고 SSE로 진행률 구독(결과는 completed 후 GET).
-      // Individual 모드(§A-1)는 1명 심층 — 표본을 1로 고정하고 나머지 흐름은 동일.
-      const { run_id } = await api.simulation.start({
-        ...baseAdInput(),
-        target_filter: targetFilter,
-        target_mode: targetMode,
-        sample_size: analysisMode === 'individual' ? 1 : sampleSize,
-        allocation,
-      });
+      // 모드별로 run_id 확보 — persona_set은 compare, 그 외는 start.
+      let run_id: string;
+      if (analysisMode === 'persona_set') {
+        const res = await api.simulation.compare({
+          ...adCommonFields(),
+          segments: buildSegments(),
+        });
+        run_id = res.run_id;
+      } else {
+        // 사용자가 연령대·성별을 고르면 그 조건으로, 아무것도 안 고르면 자동(AUTO).
+        const targetFilter: Record<string, unknown> = {};
+        const bands = AGE_BANDS.filter(b => ageBands.includes(b.label));
+        if (bands.length > 0) {
+          targetFilter.age_min = Math.min(...bands.map(b => b.min));
+          targetFilter.age_max = Math.max(...bands.map(b => b.max));
+        }
+        if (gender) targetFilter.gender = gender;
+        const targetMode =
+          bands.length > 0 || gender !== '' ? 'MANUAL' : 'AUTO';
+        // 비동기 시작 → run_id 받고 SSE로 진행률 구독(결과는 completed 후 GET).
+        const res = await api.simulation.start({
+          ...adCommonFields(),
+          target_filter: targetFilter,
+          target_mode: targetMode,
+          // individual은 표본 1명 고정.
+          sample_size: analysisMode === 'individual' ? 1 : sampleSize,
+          allocation,
+          analysis_mode: analysisMode,
+        });
+        run_id = res.run_id;
+      }
 
       setSimJob(run_id); // 동시실행 슬롯 점유(시뮬 1개 제한)
 
@@ -426,11 +452,43 @@ export default function SimulationRunPage() {
             // reaction 단계는 message("반응 N/total")가 더 구체적이라 우선.
             if (data.stage)
               setStageMsg(data.message ?? STAGE_LABEL[data.stage] ?? '');
+            // persona_set — 세그먼트 진행(segment_index/total) 표시.
+            if (
+              data.segment_label ||
+              typeof data.segment_index === 'number' ||
+              typeof data.segment_total === 'number'
+            ) {
+              setSegProgress(prev => ({
+                label: data.segment_label ?? prev.label,
+                index: data.segment_index ?? prev.index,
+                total: data.segment_total ?? prev.total,
+              }));
+            }
 
             if (data.event !== 'completed') return;
             setPct(100);
             esRef.current = null;
             setSimJob(null); // 동시실행 슬롯 해제
+
+            if (analysisMode === 'persona_set') {
+              // 세그먼트 비교 — compareResult 후 sessionStorage 브리지로 넘긴다.
+              api.simulation
+                .compareResult(run_id)
+                .then(cmp => {
+                  saveSimComparison(run_id, {
+                    comparison: cmp,
+                    adTitle: adTitle || undefined,
+                    adDescription: adContent || undefined,
+                  });
+                  router.push(`/simulation/${run_id}`);
+                })
+                .catch(e => {
+                  setError(e instanceof Error ? e.message : '결과 조회 실패');
+                  setStep('setup');
+                });
+              return;
+            }
+
             api.simulation
               .result(run_id)
               .then((r: SimRunResult) => {
@@ -440,17 +498,20 @@ export default function SimulationRunPage() {
                   result: r,
                   adTitle: adTitle || undefined,
                   adDescription: adContent || undefined,
+                  mode: analysisMode,
                 });
-                // N1 — 전용 페이지 직접 실행이 끝나면, 프로젝트 채팅 세션에
-                // 결과 + "개선해서 다시 돌리기" 제안을 자동 주입(프로액티브 개선 루프).
+                // N1 — 전용 페이지 직접 실행이 끝나면, 결과 + "개선해서 다시 돌리기" 제안을
+                // 자동 주입. 기존 대화에 끼워넣지 않고 '새 채팅 세션'을 만들어 거기에 제안한다.
                 const pid = selectedProject?.id;
+                if (pid) refreshDetails(pid); // 완료된 시뮬을 좌측 패널에 즉시 반영
                 if (pid && r.simulation_id) {
                   const injectKey = `n1_injected_${run_id}`; // 동일 run 1회만(중복 주입 방지)
                   if (!localStorage.getItem(injectKey)) {
                     localStorage.setItem(injectKey, '1');
                     const simId = r.simulation_id;
-                    api.chat.resolveActiveSession(pid).then(sid => {
-                      if (!sid) return;
+                    const sessionTitle = `${adTitle || '광고'} 시뮬 결과·개선`;
+                    api.chat.createSession(pid, sessionTitle).then(created => {
+                      const sid = created.id;
                       void api.chat
                         .appendWidgets(sid, [
                           {
@@ -485,7 +546,7 @@ export default function SimulationRunPage() {
                           if (!floatingOpenRef.current) pushUnread();
                         })
                         .catch(() => {});
-                    });
+                    }).catch(() => {});
                   }
                 }
                 router.push(`/simulation/${routeId}`);
@@ -507,16 +568,24 @@ export default function SimulationRunPage() {
   /* ─── STEP: setup ─── */
   if (step === 'setup') {
     const previewUrl = file ? URL.createObjectURL(file) : null;
-    // 광고 이미지는 선택 — 나머지(프로젝트·제품명·설명·카테고리·목표)는 필수.
+    // 광고 이미지 필수 — 개선 모드가 시뮬 이미지를 개선 대상으로 불러오므로 항상 있어야 한다.
+    const imageReady =
+      inputMode === 'image' ? file !== null : selectedImageUrl.trim() !== '';
     const goalReady =
       goalItem === '기타' ? customGoal.trim() !== '' : goalItem !== '';
+    // persona_set은 세그먼트가 2개 이상, 각 라벨·표본수가 유효해야 비교가 의미 있다.
+    const segmentsReady =
+      segments.length >= 2 &&
+      segments.every(s => s.label.trim() !== '' && s.sampleSize >= 1);
     const canRun =
       selectedProject !== null &&
       adTitle.trim() !== '' &&
       adContent.trim() !== '' &&
+      imageReady &&
       categoryId !== '' &&
       serviceClass !== '' &&
-      goalReady;
+      goalReady &&
+      (analysisMode !== 'persona_set' || segmentsReady);
     return (
       <div className='px-8 py-8 max-w-5xl mx-auto'>
         <div className='mb-6'>
@@ -529,6 +598,25 @@ export default function SimulationRunPage() {
         </div>
 
         {error && <ErrorCard message={error} onRetry={run} className='mb-5' />}
+
+        {/* ── 3-모드 분석 선택 (A-1) ── */}
+        <div className={`${cardCls} mb-5`}>
+          <label className={labelCls}>분석 모드</label>
+          <div className='flex flex-wrap gap-2'>
+            {MODE_TABS.map(m => (
+              <button
+                key={m.value}
+                type='button'
+                onClick={() => setAnalysisMode(m.value)}
+                className={`${chipBase} ${analysisMode === m.value ? chipActive : chipIdle}`}>
+                {m.label}
+              </button>
+            ))}
+          </div>
+          <p className='text-[11px] text-[#8B95A1] dark:text-[#6B7280] mt-2'>
+            {MODE_TABS.find(m => m.value === analysisMode)?.desc}
+          </p>
+        </div>
 
         {/* ── 프로젝트 선택 (광고 입력 위, 풀너비) ── */}
         <div className={`${cardCls} mb-5`}>
@@ -590,7 +678,9 @@ export default function SimulationRunPage() {
 
             {/* 이미지 입력 방식 — 남는 세로 공간을 채워 좌우 높이 정렬 */}
             <div className='flex flex-1 flex-col'>
-              <label className={labelCls}>광고 이미지 (선택)</label>
+              <label className={labelCls}>
+                광고 이미지 <span className='text-[#F74D4D]'>*</span>
+              </label>
               <div className='flex gap-2 mb-3'>
                 {(
                   [
@@ -839,128 +929,49 @@ export default function SimulationRunPage() {
               </div>
             </div>
 
-            {/* 시뮬레이션 설정 */}
-            <div className={`${cardCls} flex flex-col gap-5`}>
-              <p className='text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]'>
-                시뮬레이션 설정
-              </p>
-
-              {/* 분석 모드(§A-1) — 결과를 보는 렌즈. 표본 추출 방식과는 별개 축. */}
-              <div>
-                <p className={sectionTitle}>분석 모드</p>
-                <div className='flex gap-2'>
-                  {(
-                    [
-                      ['synthetic', '시장 전체'],
-                      ['individual', '1명 심층'],
-                      ['personaSet', '세그먼트 비교'],
-                    ] as [AnalysisMode, string][]
-                  ).map(([v, lbl]) => (
-                    <button
-                      key={v}
-                      type='button'
-                      onClick={() => setAnalysisMode(v)}
-                      className={`${chipBase} ${analysisMode === v ? chipActive : chipIdle}`}>
-                      {lbl}
-                    </button>
-                  ))}
-                </div>
-                <p className='text-[11px] text-[#8B95A1] dark:text-[#6B7280] mt-1.5'>
-                  {analysisMode === 'synthetic'
-                    ? '표본 전체의 반응 분포를 봅니다 (기본).'
-                    : analysisMode === 'individual'
-                      ? '가상 소비자 1명의 반응을 깊게 봅니다 (정성 케이스 스터디).'
-                      : '타깃 세그먼트별 반응을 나란히 비교합니다 (같은 광고 해석 공유).'}
-                </p>
-              </div>
-
-              {/* 표본 수 — individual은 1명 고정, personaSet은 세그먼트별 설정 */}
-              {analysisMode === 'synthetic' && (
-                <div className='bg-[#F9FAFB] dark:bg-[#252D3D] border border-[#E5E8EB] dark:border-[#2D3748] rounded-xl px-4 py-4'>
-                  <label className={labelCls}>
-                    가상 소비자 수:{' '}
-                    <span className='text-[#3182F6] font-bold'>
-                      {sampleSize}명
-                    </span>
-                  </label>
-                  <input
-                    type='range'
-                    min={1}
-                    max={200}
-                    value={sampleSize}
-                    onChange={e => setSampleSize(Number(e.target.value))}
-                    className='w-full accent-[#3182F6] mt-1'
-                  />
-                  <div className='flex justify-between text-[10px] text-[#B0B8C1] dark:text-[#4B5563] mt-1'>
-                    <span>1명</span>
-                    <span>200명</span>
-                  </div>
-                </div>
-              )}
-              {analysisMode === 'individual' && (
-                <div className='bg-[#F9FAFB] dark:bg-[#252D3D] border border-[#E5E8EB] dark:border-[#2D3748] rounded-xl px-4 py-3'>
-                  <p className='text-xs text-[#4E5968] dark:text-[#9CA3AF]'>
-                    가상 소비자 <span className='text-[#3182F6] font-bold'>1명</span>을
-                    뽑아 심층 분석합니다. 아래 타깃 설정으로 어떤 사람을 뽑을지
-                    좁힐 수 있어요.
-                  </p>
-                </div>
-              )}
-
-              {/* 표본 추출 방식 */}
-              <div>
-                <p className={sectionTitle}>표본 추출 방식</p>
-                <div className='flex gap-2'>
-                  {(
-                    [
-                      ['proportional', '인구 비례 (기본)'],
-                      ['stratified', '소수 그룹 보강'],
-                    ] as ['proportional' | 'stratified', string][]
-                  ).map(([v, lbl]) => (
-                    <button
-                      key={v}
-                      type='button'
-                      onClick={() => setAllocation(v)}
-                      className={`${chipBase} ${allocation === v ? chipActive : chipIdle}`}>
-                      {lbl}
-                    </button>
-                  ))}
-                </div>
-                <p className='text-[11px] text-[#8B95A1] dark:text-[#6B7280] mt-1.5'>
-                  {allocation === 'proportional'
-                    ? '실제 인구 비율대로 뽑습니다 (기본 권장).'
-                    : '소수 그룹도 충분히 포함되게 보강합니다 (정밀하지만 신뢰구간이 넓어짐).'}
-                </p>
-              </div>
-            </div>
-
-            {/* ── 세그먼트 설정 (Persona Set 모드) ── */}
-            {analysisMode === 'personaSet' && (
+            {/* persona_set은 세그먼트 편집, 그 외는 시뮬 설정 + 타깃 설정 */}
+            {analysisMode === 'persona_set' ? (
+              /* ── 세그먼트 비교 편집 ── */
               <div className={`${cardCls} flex flex-col gap-4`}>
-                <p className='text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]'>
-                  비교 세그먼트
+                <div className='flex items-center justify-between'>
+                  <p className='text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]'>
+                    비교할 세그먼트
+                  </p>
+                  <button
+                    type='button'
+                    onClick={() =>
+                      setSegments(prev => [
+                        ...prev,
+                        emptySegment(
+                          `세그먼트 ${String.fromCharCode(65 + prev.length)}`
+                        ),
+                      ])
+                    }
+                    className={`${chipBase} ${chipIdle}`}>
+                    + 세그먼트 추가
+                  </button>
+                </div>
+                <p className='text-[11px] text-[#8B95A1] dark:text-[#6B7280] -mt-2'>
+                  각 세그먼트의 타깃·표본을 정하면, 완료 후 KPI를 나란히 비교합니다.
                 </p>
-                <p className='text-[11px] text-[#8B95A1] dark:text-[#6B7280] -mt-3'>
-                  같은 광고를 세그먼트별 가상 소비자에게 보여주고 나란히
-                  비교합니다.
-                </p>
-                {segments.map((seg, i) => (
+
+                {segments.map((s, i) => (
                   <div
                     key={i}
-                    className='bg-[#F9FAFB] dark:bg-[#252D3D] border border-[#E5E8EB] dark:border-[#2D3748] rounded-xl px-4 py-3 flex flex-col gap-2.5'>
+                    className='rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] p-4 flex flex-col gap-3'>
                     <div className='flex items-center gap-2'>
                       <input
                         type='text'
-                        value={seg.label}
+                        value={s.label}
                         onChange={e =>
                           setSegments(prev =>
-                            prev.map((s, j) =>
-                              j === i ? { ...s, label: e.target.value } : s
+                            prev.map((x, j) =>
+                              j === i ? { ...x, label: e.target.value } : x
                             )
                           )
                         }
-                        placeholder={`세그먼트 ${i + 1}`}
-                        className={`${inputCls} !py-1.5 flex-1`}
+                        placeholder='세그먼트 이름'
+                        className={`${inputCls} flex-1`}
                       />
                       {segments.length > 2 && (
                         <button
@@ -968,182 +979,223 @@ export default function SimulationRunPage() {
                           onClick={() =>
                             setSegments(prev => prev.filter((_, j) => j !== i))
                           }
-                          className='text-xs text-[#8B95A1] hover:text-[#F04452] px-1'>
+                          className='shrink-0 px-2.5 py-2 rounded-lg text-xs font-medium text-red-500 border border-red-200 dark:border-red-900/40 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors'>
                           삭제
                         </button>
                       )}
                     </div>
-                    <div className='flex flex-wrap gap-1.5'>
+
+                    <div className='grid grid-cols-2 gap-3'>
+                      <div>
+                        <label className={labelCls}>연령대</label>
+                        <select
+                          value={s.ageBand}
+                          onChange={e =>
+                            setSegments(prev =>
+                              prev.map((x, j) =>
+                                j === i
+                                  ? { ...x, ageBand: e.target.value }
+                                  : x
+                              )
+                            )
+                          }
+                          className={inputCls}>
+                          <option value=''>전 연령</option>
+                          {AGE_BANDS.map(b => (
+                            <option key={b.label} value={b.label}>
+                              {b.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className={labelCls}>성별</label>
+                        <select
+                          value={s.gender}
+                          onChange={e =>
+                            setSegments(prev =>
+                              prev.map((x, j) =>
+                                j === i
+                                  ? {
+                                      ...x,
+                                      gender: e.target.value as GenderFilter,
+                                    }
+                                  : x
+                              )
+                            )
+                          }
+                          className={inputCls}>
+                          <option value=''>전체</option>
+                          <option value='F'>여성</option>
+                          <option value='M'>남성</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className={labelCls}>
+                        표본 수:{' '}
+                        <span className='text-[#3182F6] font-bold'>
+                          {s.sampleSize}명
+                        </span>
+                      </label>
+                      <input
+                        type='range'
+                        min={1}
+                        max={200}
+                        value={s.sampleSize}
+                        onChange={e =>
+                          setSegments(prev =>
+                            prev.map((x, j) =>
+                              j === i
+                                ? { ...x, sampleSize: Number(e.target.value) }
+                                : x
+                            )
+                          )
+                        }
+                        className='w-full accent-[#3182F6] mt-1'
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <>
+                {/* 시뮬레이션 설정 — synthetic은 표본 슬라이더, individual은 1명 고정 */}
+                <div className={`${cardCls} flex flex-col gap-5`}>
+                  <p className='text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]'>
+                    시뮬레이션 설정
+                  </p>
+
+                  {analysisMode === 'individual' ? (
+                    // individual — 표본 1명 고정(슬라이더 숨김).
+                    <div className='bg-[#EEF4FF] dark:bg-[#1E3A5F] border border-[#3182F6]/20 rounded-xl px-4 py-4'>
+                      <p className='text-sm font-semibold text-[#3182F6]'>
+                        가상 소비자 1명 심층 분석
+                      </p>
+                      <p className='text-[11px] text-[#4E5968] dark:text-[#9CA3AF] mt-1'>
+                        1명 모드는 표본이 1명으로 고정됩니다. 아래 타깃 조건에
+                        맞는 페르소나 1명을 깊이 있게 분석합니다.
+                      </p>
+                    </div>
+                  ) : (
+                    <>
+                      {/* 표본 수 */}
+                      <div className='bg-[#F9FAFB] dark:bg-[#252D3D] border border-[#E5E8EB] dark:border-[#2D3748] rounded-xl px-4 py-4'>
+                        <label className={labelCls}>
+                          가상 소비자 수:{' '}
+                          <span className='text-[#3182F6] font-bold'>
+                            {sampleSize}명
+                          </span>
+                        </label>
+                        <input
+                          type='range'
+                          min={1}
+                          max={200}
+                          value={sampleSize}
+                          onChange={e => setSampleSize(Number(e.target.value))}
+                          className='w-full accent-[#3182F6] mt-1'
+                        />
+                        <div className='flex justify-between text-[10px] text-[#B0B8C1] dark:text-[#4B5563] mt-1'>
+                          <span>1명</span>
+                          <span>200명</span>
+                        </div>
+                      </div>
+
+                      {/* 표본 추출 방식 */}
+                      <div>
+                        <p className={sectionTitle}>표본 추출 방식</p>
+                        <div className='flex gap-2'>
+                          {(
+                            [
+                              ['proportional', '인구 비례 (기본)'],
+                              ['stratified', '소수 그룹 보강'],
+                            ] as ['proportional' | 'stratified', string][]
+                          ).map(([v, lbl]) => (
+                            <button
+                              key={v}
+                              type='button'
+                              onClick={() => setAllocation(v)}
+                              className={`${chipBase} ${allocation === v ? chipActive : chipIdle}`}>
+                              {lbl}
+                            </button>
+                          ))}
+                        </div>
+                        <p className='text-[11px] text-[#8B95A1] dark:text-[#6B7280] mt-1.5'>
+                          {allocation === 'proportional'
+                            ? '실제 인구 비율대로 뽑습니다 (기본 권장).'
+                            : '소수 그룹도 충분히 포함되게 보강합니다 (정밀하지만 신뢰구간이 넓어짐).'}
+                        </p>
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                {/* ── 타깃 설정 (미지정 시 자동 추정) ── */}
+                <div className={`${cardCls} flex flex-col gap-5`}>
+                  <p className='text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]'>
+                    타깃 설정
+                  </p>
+                  <p className='text-[11px] text-[#8B95A1] dark:text-[#6B7280] -mt-2'>
+                    지정하지 않으면 자동으로 타깃을 추정합니다.
+                  </p>
+
+                  <div>
+                    <p className={sectionTitle}>
+                      연령대{' '}
+                      <span className='text-[10px] font-normal text-[#B0B8C1] dark:text-[#4B5563]'>
+                        복수 선택 가능
+                      </span>
+                    </p>
+                    <div className='flex flex-wrap gap-2'>
                       {AGE_BANDS.map(b => {
-                        const on = seg.ageBands.includes(b.label);
+                        const on = ageBands.includes(b.label);
                         return (
                           <button
                             key={b.label}
                             type='button'
                             onClick={() =>
-                              setSegments(prev =>
-                                prev.map((s, j) =>
-                                  j === i
-                                    ? {
-                                        ...s,
-                                        ageBands: on
-                                          ? s.ageBands.filter(
-                                              x => x !== b.label
-                                            )
-                                          : [...s.ageBands, b.label],
-                                      }
-                                    : s
-                                )
+                              setAgeBands(prev =>
+                                on
+                                  ? prev.filter(x => x !== b.label)
+                                  : [...prev, b.label]
                               )
                             }
-                            className={`${chipBase} !px-2 !py-1 ${on ? chipActive : chipIdle}`}>
+                            className={`${chipBase} ${on ? chipActive : chipIdle}`}>
                             {b.label}
                           </button>
                         );
                       })}
                     </div>
-                    <div className='flex items-center gap-3'>
-                      <div className='flex gap-1.5'>
-                        {(
-                          [
-                            ['', '전체'],
-                            ['F', '여성'],
-                            ['M', '남성'],
-                          ] as [GenderFilter, string][]
-                        ).map(([v, lbl]) => (
-                          <button
-                            key={lbl}
-                            type='button'
-                            onClick={() =>
-                              setSegments(prev =>
-                                prev.map((s, j) =>
-                                  j === i ? { ...s, gender: v } : s
-                                )
-                              )
-                            }
-                            className={`${chipBase} !px-2 !py-1 ${seg.gender === v ? chipActive : chipIdle}`}>
-                            {lbl}
-                          </button>
-                        ))}
-                      </div>
-                      <label className='flex items-center gap-1.5 text-xs text-[#4E5968] dark:text-[#9CA3AF] ml-auto'>
-                        표본
-                        <input
-                          type='number'
-                          min={1}
-                          max={100}
-                          value={seg.size}
-                          onChange={e =>
-                            setSegments(prev =>
-                              prev.map((s, j) =>
-                                j === i
-                                  ? {
-                                      ...s,
-                                      size: Math.max(
-                                        1,
-                                        Math.min(
-                                          100,
-                                          Number(e.target.value) || 1
-                                        )
-                                      ),
-                                    }
-                                  : s
-                              )
-                            )
-                          }
-                          className={`${inputCls} !w-16 !py-1 !px-2 text-center`}
-                        />
-                        명
-                      </label>
+                  </div>
+
+                  <div>
+                    <p className={sectionTitle}>
+                      성별{' '}
+                      <span className='text-[10px] font-normal text-[#B0B8C1] dark:text-[#4B5563]'>
+                        선택
+                      </span>
+                    </p>
+                    <div className='flex gap-2'>
+                      {(
+                        [
+                          ['', '전체'],
+                          ['F', '여성'],
+                          ['M', '남성'],
+                        ] as [GenderFilter, string][]
+                      ).map(([v, lbl]) => (
+                        <button
+                          key={lbl}
+                          type='button'
+                          onClick={() => setGender(v)}
+                          className={`${chipBase} ${gender === v ? chipActive : chipIdle}`}>
+                          {lbl}
+                        </button>
+                      ))}
                     </div>
                   </div>
-                ))}
-                {segments.length < 4 && (
-                  <button
-                    type='button'
-                    onClick={() =>
-                      setSegments(prev => [
-                        ...prev,
-                        {
-                          label: `세그먼트 ${String.fromCharCode(65 + prev.length)}`,
-                          gender: '',
-                          ageBands: [],
-                          size: 10,
-                        },
-                      ])
-                    }
-                    className='text-xs text-[#3182F6] font-medium text-left'>
-                    + 세그먼트 추가 (최대 4개)
-                  </button>
-                )}
-              </div>
-            )}
-
-            {/* ── 타깃 설정 (미지정 시 자동 추정) ── */}
-            {analysisMode !== 'personaSet' && (
-            <div className={`${cardCls} flex flex-col gap-5`}>
-              <p className='text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]'>
-                타깃 설정
-              </p>
-              <p className='text-[11px] text-[#8B95A1] dark:text-[#6B7280] -mt-2'>
-                지정하지 않으면 자동으로 타깃을 추정합니다.
-              </p>
-
-              <div>
-                <p className={sectionTitle}>
-                  연령대{' '}
-                  <span className='text-[10px] font-normal text-[#B0B8C1] dark:text-[#4B5563]'>
-                    복수 선택 가능
-                  </span>
-                </p>
-                <div className='flex flex-wrap gap-2'>
-                  {AGE_BANDS.map(b => {
-                    const on = ageBands.includes(b.label);
-                    return (
-                      <button
-                        key={b.label}
-                        type='button'
-                        onClick={() =>
-                          setAgeBands(prev =>
-                            on
-                              ? prev.filter(x => x !== b.label)
-                              : [...prev, b.label]
-                          )
-                        }
-                        className={`${chipBase} ${on ? chipActive : chipIdle}`}>
-                        {b.label}
-                      </button>
-                    );
-                  })}
                 </div>
-              </div>
-
-              <div>
-                <p className={sectionTitle}>
-                  성별{' '}
-                  <span className='text-[10px] font-normal text-[#B0B8C1] dark:text-[#4B5563]'>
-                    선택
-                  </span>
-                </p>
-                <div className='flex gap-2'>
-                  {(
-                    [
-                      ['', '전체'],
-                      ['F', '여성'],
-                      ['M', '남성'],
-                    ] as [GenderFilter, string][]
-                  ).map(([v, lbl]) => (
-                    <button
-                      key={lbl}
-                      type='button'
-                      onClick={() => setGender(v)}
-                      className={`${chipBase} ${gender === v ? chipActive : chipIdle}`}>
-                      {lbl}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
+              </>
             )}
           </div>
         </div>
@@ -1157,9 +1209,7 @@ export default function SimulationRunPage() {
             <svg className='w-4 h-4' fill='currentColor' viewBox='0 0 24 24'>
               <path d='M8 5v14l11-7z' />
             </svg>
-            {analysisMode === 'personaSet'
-              ? '세그먼트 비교 실행'
-              : '시뮬레이터 실행'}
+            시뮬레이터 실행
           </button>
           {selectedProject === null ? (
             <p className='text-[11px] text-[#F74D4D] text-center mt-2'>
@@ -1182,8 +1232,20 @@ export default function SimulationRunPage() {
         <div className={`${cardCls} flex flex-col gap-6 py-16`}>
           <div className='flex flex-col items-center gap-4'>
             <div className='w-10 h-10 border-4 border-[#E5E8EB] dark:border-[#2D3748] border-t-[#3182F6] dark:border-t-[#5B9DF9] rounded-full animate-spin' />
+            {/* persona_set — 세그먼트 진행(segment_index/total) 표시 */}
+            {analysisMode === 'persona_set' && segProgress.total > 0 && (
+              <span className='px-2.5 py-1 rounded-full text-[11px] font-semibold bg-[#EEF4FF] dark:bg-[#1E3A5F] text-[#3182F6]'>
+                세그먼트 {segProgress.index}/{segProgress.total}
+                {segProgress.label ? ` · ${segProgress.label}` : ''}
+              </span>
+            )}
             <p className='text-sm font-medium text-[#4E5968] dark:text-[#9CA3AF]'>
-              {stageMsg || `${sampleSize}명 페르소나가 광고에 반응하는 중...`}
+              {stageMsg ||
+                (analysisMode === 'persona_set'
+                  ? '세그먼트별로 광고 반응을 생성하는 중...'
+                  : analysisMode === 'individual'
+                    ? '가상 소비자 1명이 광고에 반응하는 중...'
+                    : `${sampleSize}명 페르소나가 광고에 반응하는 중...`)}
             </p>
           </div>
           <div className='w-full max-w-md mx-auto space-y-2'>
@@ -1200,141 +1262,11 @@ export default function SimulationRunPage() {
               />
             </div>
             <p className='text-xs text-[#B0B8C1] dark:text-[#4B5563] text-center pt-1'>
-              광고 해석 → 패널 로드 → 반응 생성 → 집계
+              {analysisMode === 'persona_set'
+                ? '세그먼트마다 광고 해석 → 반응 생성 → 집계를 반복합니다.'
+                : '광고 해석 → 패널 로드 → 반응 생성 → 집계'}
             </p>
           </div>
-        </div>
-      </div>
-    );
-  }
-
-  /* ─── STEP: comparing (Persona Set — 동기 실행, 진행률 스트림 없음) ─── */
-  if (step === 'comparing') {
-    const total = segments.reduce((sum, s) => sum + s.size, 0);
-    return (
-      <div className='px-8 py-8 max-w-5xl mx-auto'>
-        <div className={`${cardCls} flex flex-col items-center gap-4 py-16`}>
-          <div className='w-10 h-10 border-4 border-[#E5E8EB] dark:border-[#2D3748] border-t-[#3182F6] dark:border-t-[#5B9DF9] rounded-full animate-spin' />
-          <p className='text-sm font-medium text-[#4E5968] dark:text-[#9CA3AF]'>
-            세그먼트 {segments.length}개 · 총 {total}명 반응 생성 중...
-          </p>
-          <p className='text-xs text-[#B0B8C1] dark:text-[#4B5563]'>
-            광고 해석 1회 공유 → 세그먼트별 반응 → 집계 비교
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  /* ─── STEP: compareResult (Persona Set — 세그먼트 KPI 나란히 비교) ─── */
-  if (step === 'compareResult' && compareResult) {
-    const kpiRows: {
-      label: string;
-      fmt: (a: SimAggregate) => string;
-    }[] = [
-      {
-        label: '클릭 의향률',
-        fmt: a =>
-          `${(a.click_intent_rate * 100).toFixed(1)}% (${(a.ci_low * 100).toFixed(0)}~${(a.ci_high * 100).toFixed(0)}%)`,
-      },
-      { label: '구매의도 (1~5)', fmt: a => a.purchase_intent.toFixed(2) },
-      { label: '신뢰도 (1~5)', fmt: a => a.trust_avg.toFixed(2) },
-      {
-        label: '거부율',
-        fmt: a => `${(a.rejection_rate * 100).toFixed(1)}%`,
-      },
-    ];
-    const ad = compareResult.ad;
-    return (
-      <div className='px-8 py-8 max-w-5xl mx-auto'>
-        <div className='mb-6 flex items-start justify-between'>
-          <div>
-            <h1 className='text-2xl font-bold text-[#191F28] dark:text-[#F2F4F6]'>
-              세그먼트 비교 결과
-            </h1>
-            <p className='text-sm text-[#8B95A1] dark:text-[#6B7280] mt-1'>
-              같은 광고 해석을 공유한 세그먼트별 반응 비교입니다
-            </p>
-          </div>
-          <button
-            onClick={() => {
-              setCompareResult(null);
-              setStep('setup');
-            }}
-            className={`${chipBase} ${chipIdle}`}>
-            ← 다시 설정
-          </button>
-        </div>
-
-        {/* 광고 해석 요약(전 세그먼트 공유) */}
-        <div className={`${cardCls} mb-5`}>
-          <p className={sectionTitle}>광고 해석 (전 세그먼트 공유)</p>
-          <div className='grid grid-cols-2 gap-x-6 gap-y-2 text-sm'>
-            <p className='text-[#4E5968] dark:text-[#9CA3AF]'>
-              업종:{' '}
-              <span className='text-[#191F28] dark:text-[#F2F4F6]'>
-                {ad.detected_industry ?? '-'}
-              </span>
-            </p>
-            <p className='text-[#4E5968] dark:text-[#9CA3AF]'>
-              감지 타깃:{' '}
-              <span className='text-[#191F28] dark:text-[#F2F4F6]'>
-                {ad.detected_target ?? '-'}
-              </span>
-            </p>
-            <p className='col-span-2 text-[#4E5968] dark:text-[#9CA3AF]'>
-              핵심 메시지:{' '}
-              <span className='text-[#191F28] dark:text-[#F2F4F6]'>
-                {ad.detected_message ?? '-'}
-              </span>
-            </p>
-          </div>
-        </div>
-
-        {/* KPI 비교 테이블 */}
-        <div className={`${cardCls} overflow-x-auto`}>
-          <table className='w-full text-sm'>
-            <thead>
-              <tr className='border-b border-[#E5E8EB] dark:border-[#2D3748]'>
-                <th className='text-left py-2.5 pr-4 font-semibold text-[#8B95A1] dark:text-[#6B7280] text-xs'>
-                  지표
-                </th>
-                {compareResult.segments.map(seg => (
-                  <th
-                    key={seg.label}
-                    className='text-left py-2.5 px-4 font-semibold text-[#191F28] dark:text-[#F2F4F6]'>
-                    {seg.label}
-                    <span className='block text-[10px] font-normal text-[#B0B8C1] dark:text-[#4B5563]'>
-                      {seg.sample_size}명
-                      {seg.aggregate.variance_warning ? ' · 분산 주의' : ''}
-                    </span>
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {kpiRows.map(row => (
-                <tr
-                  key={row.label}
-                  className='border-b border-[#F2F4F6] dark:border-[#252D3D] last:border-0'>
-                  <td className='py-2.5 pr-4 text-[#4E5968] dark:text-[#9CA3AF] text-xs whitespace-nowrap'>
-                    {row.label}
-                  </td>
-                  {compareResult.segments.map(seg => (
-                    <td
-                      key={seg.label}
-                      className='py-2.5 px-4 font-medium text-[#191F28] dark:text-[#F2F4F6]'>
-                      {row.fmt(seg.aggregate)}
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <p className='text-[11px] text-[#B0B8C1] dark:text-[#4B5563] mt-3'>
-            클릭 의향률은 시뮬레이션 내 상대 지표입니다 (실측 CTR 스케일 아님).
-            괄호는 95% 신뢰구간.
-          </p>
         </div>
       </div>
     );

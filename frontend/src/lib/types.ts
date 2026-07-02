@@ -182,6 +182,9 @@ export interface SimCategory {
   kinds: SimCategoryKind[];
 }
 
+/* ─── 3-모드 분석(A-1) — synthetic(전체 합성) / individual(1명 심층) / persona_set(세그먼트 비교) ─── */
+export type AnalysisMode = "synthetic" | "individual" | "persona_set";
+
 export interface SimRunInput {
   ad_id: string;
   ad_content?: string;
@@ -197,31 +200,53 @@ export interface SimRunInput {
   product_category?: string;
   ad_objective?: string;
   service_class?: number;
+  analysis_mode?: AnalysisMode; // synthetic(기본)·individual(표본 1 고정)
   from_campaign_id?: string;  // 관리 탭 진입 시 — 완료 후 서버가 자동으로 성과 비교 링크 생성
 }
 
-/* ─── Persona Set 세그먼트 비교(/api/simulation/compare-segments, 3-모드 UX §A-1) ─── */
+/* ─── Persona Set 비교(A-1) — 세그먼트별 시뮬을 나란히 비교 ─── */
 
-export interface SegmentSpecInput {
-  label: string;
-  target_filter?: Record<string, unknown>;
-  sample_size?: number;
+// 세그먼트 타깃 — 연령대·성별(빈 값이면 전체).
+export interface SegmentTargetFilter {
+  age_min?: number;
+  age_max?: number;
+  gender?: "" | "M" | "F";
 }
 
-export interface SegmentCompareSegment {
+// compare 요청의 세그먼트 1개(라벨·타깃·표본수).
+export interface SegmentInput {
   label: string;
-  target_filter: Record<string, unknown> | null;
-  panel_version: string;
+  target_filter: SegmentTargetFilter;
   sample_size: number;
-  personas: SimPersona[];
-  reactions: SimPersonaReaction[];
-  aggregate: SimAggregate;
 }
 
-export interface SegmentCompareResult {
-  ad: SimAdAnalysis;
-  rubric_scores: SimRubricScore[];
-  segments: SegmentCompareSegment[];
+// compare 요청 — 세그먼트 배열 + 광고 공통 필드.
+export interface SimCompareInput {
+  ad_id: string;
+  ad_content?: string;
+  ad_image?: File | null;
+  ad_image_url?: string;
+  organization_id?: string;
+  project_id?: string;
+  ad_title?: string;
+  product_category?: string;
+  ad_objective?: string;
+  service_class?: number;
+  segments: SegmentInput[];
+}
+
+// compare 결과의 세그먼트 1개 — 요청 메타 + 그 세그먼트의 SimRunResult.
+export interface SegmentResult {
+  label: string;
+  target_filter: SegmentTargetFilter;
+  sample_size: number;
+  result: SimRunResult;
+}
+
+export interface SimComparisonResult {
+  mode: "persona_set";
+  run_id: string;
+  segments: SegmentResult[];
 }
 
 /* ─── Debate (페르소나 토론 /api/debate/*) ─── */
@@ -625,6 +650,10 @@ export interface SSEProgressEvent {
   pct?: number;
   message?: string;
   result_url?: string;
+  // persona_set(compare) 진행 — 어느 세그먼트를 처리 중인지.
+  segment_label?: string;
+  segment_index?: number; // 1-based
+  segment_total?: number;
 }
 
 export interface AdAnalysis {

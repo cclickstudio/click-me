@@ -44,7 +44,7 @@ export default function GenResultWidget({
   onSimulate,
 }: {
   generationId: string;
-  // F8 — 후보 카피+이미지로 시뮬 진입(제너→시뮬 루프). 없으면 버튼 미표시.
+  // F8 — 후보 카피·이미지로 시뮬 진입(제너→시뮬 루프). 없으면 버튼 미표시.
   onSimulate?: (adTitle: string, adContent: string, adImageUrl?: string) => void;
 }) {
   const [detail, setDetail] = useState<GenDetail | null>(null);

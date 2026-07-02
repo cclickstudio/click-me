@@ -1,12 +1,13 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useProjects, type SimRow } from './ProjectContext';
 import TrashSection from './TrashSection';
 import ProjectChatSection from './chat/ProjectChatSection';
-import { getToken } from '@/lib/authApi';
+import { authedFetch } from '@/lib/api';
+import { formatKST } from '@/lib/datetime';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
@@ -17,10 +18,7 @@ const statusColor: Record<string, string> = {
   FAILED: 'bg-red-400', failed: 'bg-red-400',
 };
 
-const fmt = (iso: string) => {
-  const d = new Date(iso);
-  return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-};
+const fmt = (iso: string) => formatKST(iso);
 
 function ChevronIcon({ open }: { open: boolean }) {
   return (
@@ -326,17 +324,21 @@ function CompanyItem({
 // ADMIN 전용 — 전체 회사를 보고, 회사 안에서 다시 팀별로 프로젝트를 나눠 본다.
 export default function AdminPanel({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
   const pathname = usePathname();
-  const { projects, loading, refresh } = useProjects();
+  const { projects, loading, refreshAll } = useProjects();
   const [search, setSearch] = useState('');
   const [orgs, setOrgs] = useState<{ id: string; name: string }[]>([]);
 
-  // 전체 조직 목록 — 프로젝트가 0개인 회사도 패널에 표시하기 위함
-  useEffect(() => {
-    fetch(`${API_BASE}/api/admin/organizations`, { headers: { Authorization: `Bearer ${getToken()}` } })
+  // 전체 조직 목록 — 프로젝트가 0개인 회사도 패널에 표시하기 위함. 새로고침 버튼이 재호출.
+  const loadOrgs = useCallback(() => {
+    authedFetch(`${API_BASE}/api/admin/organizations`)
       .then(r => (r.ok ? r.json() : []))
       .then(d => { if (Array.isArray(d)) setOrgs(d); })
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    loadOrgs();
+  }, [loadOrgs]);
 
   const simMatch = pathname.match(/^\/simulation\/([^/]+)/);
   const genMatch = pathname.match(/^\/generations\/([^/]+)/);
@@ -406,7 +408,7 @@ export default function AdminPanel({ collapsed, onToggle }: { collapsed: boolean
         </button>
         <p className="text-sm font-semibold text-[#4E5968] dark:text-[#9CA3AF]">기업 현황</p>
         <button
-          onClick={refresh}
+          onClick={() => { refreshAll(); loadOrgs(); }}
           title="새로고침"
           className="w-7 h-7 flex items-center justify-center rounded-lg text-[#8B95A1] hover:bg-[#F2F4F6] dark:hover:bg-[#252D3D] hover:text-[#3182F6] transition-colors"
         >
