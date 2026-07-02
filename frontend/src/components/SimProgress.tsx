@@ -2,6 +2,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { authedFetch } from '@/lib/api';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
@@ -54,7 +55,10 @@ export function JobProgress({
 
   useEffect(() => {
     if (!id) return;
-    const es = new EventSource(`${API_BASE}/api/chat/${kind}/${id}/stream`);
+    // withCredentials: SSE는 Authorization 헤더를 못 붙이므로 쿠키로 인증(백엔드 쿠키 폴백).
+    const es = new EventSource(`${API_BASE}/api/chat/${kind}/${id}/stream`, {
+      withCredentials: true,
+    });
     esRef.current = es;
     es.onmessage = (ev: MessageEvent) => {
       let data: ProgressEvent;
@@ -81,7 +85,7 @@ export function JobProgress({
         setStatus('done');
         es.close();
         esRef.current = null;
-        fetch(`${API_BASE}/api/chat/${kind}/${id}/result`)
+        authedFetch(`${API_BASE}/api/chat/${kind}/${id}/result`)
           .then((r) => r.json())
           .then((r) => setResult(r as Record<string, unknown>))
           .catch(() => {})

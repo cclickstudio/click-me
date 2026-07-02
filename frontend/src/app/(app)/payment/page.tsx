@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { loadTossPayments, type TossPaymentsWidgets } from '@tosspayments/tosspayments-sdk';
 import { api } from '@/lib/api';
 import { trackMetaPixelEventOnce } from '@/lib/metaPixel';
+import { formatKSTFull } from '@/lib/datetime';
 
 const PRESETS = [10_000, 50_000, 100_000];
 const MIN_CHARGE = 1_521; // 광고 집행 최소 금액(Meta floor) — 기본은 최소로(테스트 시 실차감 최소화)
@@ -228,7 +229,7 @@ export default function Page() {
                         {entry.delta_krw.toLocaleString()}원
                       </p>
                       <p className="text-xs text-[#8B95A1] dark:text-[#6B7280] mt-1">
-                        {new Date(entry.created_at).toLocaleString('ko-KR')}
+                        {formatKSTFull(entry.created_at)}
                       </p>
                     </div>
                     {refunded ? (

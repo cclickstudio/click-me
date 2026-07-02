@@ -16,6 +16,7 @@ import type {
   PlatformMetrics,
 } from './types';
 import { budgetLabel, fmtCvr, fmtRoas, metricsBlocked, pacingMeaningful } from './types';
+import { formatKSTDate, formatKSTFull } from '@/lib/datetime';
 import { StateBadge } from './StateBadge';
 import { OriginLegend, OriginTag } from '../ValueOrigin';
 
@@ -120,8 +121,8 @@ export function CampaignDetail({
     if (detail.state !== 'ended') return null;
     const parts: string[] = [];
     if (endedAt) {
-      const d = new Date(endedAt);
-      if (!Number.isNaN(d.getTime())) parts.push(`게재 기간 종료(${d.getMonth() + 1}/${d.getDate()})`);
+      const label = formatKSTDate(endedAt);
+      if (label) parts.push(`게재 기간 종료(${label})`);
     }
     if ((account?.available_balance_krw ?? null) === 0 && (account?.amount_spent_krw ?? 0) > 0) {
       parts.push('선불 잔액 소진(₩0)');
@@ -573,7 +574,7 @@ export function CampaignDetail({
                       className="border-b border-[#F2F4F6] last:border-0 dark:border-[#252D3D]"
                     >
                       <td className="px-3 py-2 text-left text-[#4E5968] dark:text-[#9CA3AF]">
-                        {l.created_time ? new Date(l.created_time).toLocaleString('ko-KR') : '-'}
+                        {l.created_time ? formatKSTFull(l.created_time) : '-'}
                       </td>
                       {leadCols.map((col) => (
                         <td key={col} className="px-3 py-2 text-left">

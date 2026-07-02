@@ -68,7 +68,13 @@ async def _grade_kb(llm, query: str, hits: list[dict]) -> _KbGrade:
         structured = llm.with_structured_output(_KbGrade)
         return await structured.ainvoke(
             [("system", system), ("human", f"질문: {query}\n근거: {digest}")],
-            config={"run_name": "management:grade_kb", "tags": ["management", "crag"]},
+            # langsmith:nostream — 통합 채팅(deep agent)이 이 서브그래프를 tool로 부를 때
+            # 이 내부 grade 호출의 {"sufficient,rewrite} JSON이 stream_mode="messages"로
+            # 새어 답변 앞에 붙던 문제 차단(사용자엔 최종 답변만 스트리밍).
+            config={
+                "run_name": "management:grade_kb",
+                "tags": ["management", "crag", "langsmith:nostream"],
+            },
         )
     except Exception:  # noqa: BLE001 — 평가 실패는 통과(보수적: 확실한 부족일 때만 교정)
         return _KbGrade(sufficient=True)
