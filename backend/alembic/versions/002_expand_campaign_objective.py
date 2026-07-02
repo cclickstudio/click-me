@@ -12,7 +12,15 @@ down_revision = "001"
 branch_labels = None
 depends_on = None
 
-NEW_VALUES = ("awareness", "conversion", "lead_gen", "app_install", "retention", "product_launch", "promotion")
+NEW_VALUES = (
+    "awareness",
+    "conversion",
+    "lead_gen",
+    "app_install",
+    "retention",
+    "product_launch",
+    "promotion",
+)
 
 
 def upgrade() -> None:
