@@ -1,4 +1,4 @@
-# 수동 알림 스캔 엔드포인트 테스트 — 동시 409·쿨다운 429·배달 요약 응답
+# 수동 알림 스캔 엔드포인트 테스트 — 동시 409·쿨다운 429·실패 재시도·배달 요약 응답
 from __future__ import annotations
 
 import asyncio
@@ -48,6 +48,30 @@ async def test_concurrent_second_request_gets_409(app):
         )
     codes = sorted([r1.status_code, r2.status_code])
     assert codes == [200, 409]  # 정확히 1건 통과, 1건 잠금 거부
+
+
+@pytest.mark.asyncio
+async def test_failed_scan_does_not_consume_cooldown(app, monkeypatch):
+    # 스캔 실패(예외)는 쿨다운을 소진하지 않는다 — 일시 장애 후 즉시 재시도 가능해야 한다
+    from core.config import settings
+
+    monkeypatch.setattr(settings, "management_scan_manual_cooldown_seconds", 60, raising=False)
+
+    async def boom(_settings, sink, *, scanner=None):
+        raise RuntimeError("scan down")
+
+    monkeypatch.setattr("domain.management.scheduler.run_scan", boom)
+    transport = ASGITransport(app=app, raise_app_exceptions=False)
+    async with AsyncClient(transport=transport, base_url="http://t") as client:
+        r1 = await client.post("/api/management/anomaly/notify-scan")
+        assert r1.status_code == 500  # 실패 자체는 500
+
+        async def ok(_settings, sink, *, scanner=None):
+            return 0
+
+        monkeypatch.setattr("domain.management.scheduler.run_scan", ok)
+        r2 = await client.post("/api/management/anomaly/notify-scan")
+        assert r2.status_code == 200  # 429가 아님 — 실패는 쿨다운 미소진
 
 
 @pytest.mark.asyncio

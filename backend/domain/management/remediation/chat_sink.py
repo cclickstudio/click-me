@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+from collections import deque
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -118,7 +119,9 @@ class ChatNotificationSink:
         self._resolve = resolver or resolve_project
         self._consult = consult or _advisor.consult
         self._clock = clock or (lambda: datetime.now(UTC))
-        self._outcomes: list[DeliveryOutcome] = []
+        # 스케줄러는 sink를 프로세스 수명 내내 재사용 — 무한 누적 방지 상한. 수동 스캔은
+        # 요청마다 새 인스턴스라 캠페인 수 << 100, summary() 정확성에 영향 없음.
+        self._outcomes: deque[DeliveryOutcome] = deque(maxlen=100)
 
     # NotificationSink 포트 준수 — 스케줄러는 이 시그니처만 안다.
     async def notify(
