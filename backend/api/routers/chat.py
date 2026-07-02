@@ -409,6 +409,17 @@ async def chat_complete(
         yield _sse("progress", progress={"label": "생각 중 🔄", "pct": None})
         # 세션 넘는 장기기억 회수 — 에이전트 맥락에 끼울 문자열(로그인 사용자만, best-effort).
         memory_context = await _recall_memory_context(body, last_message, current_user)
+        # 진행 중 이상 조치 상담 컨텍스트(management) — meta는 왕복 안 되므로 서버가 회수·주입.
+        try:
+            from domain.management.remediation.context import (  # noqa: PLC0415
+                recall_consult_context,
+            )
+
+            consult_ctx = await recall_consult_context(body.session_id, settings)
+        except Exception:  # noqa: BLE001 — 회수 실패가 채팅을 막지 않게
+            consult_ctx = None
+        if consult_ctx:
+            memory_context = f"{memory_context}\n\n{consult_ctx}" if memory_context else consult_ctx
 
         # [생성결과] 구조화 콜백 — 프론트가 보낸 결과 신호는 에이전트 거치지 않고 결정론 처리(개선루프).
         if result_callback.is_result_callback(last_message):
