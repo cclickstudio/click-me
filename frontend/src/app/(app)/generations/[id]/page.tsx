@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { getToken } from '@/lib/authApi';
+import type { QualityReport } from '@/lib/types';
 import { useProjects } from '@/components/ProjectContext';
 import { useAuth } from '@/components/AuthProvider';
 import ModeBadge from '@/components/ModeBadge';
@@ -16,6 +17,7 @@ type Candidate = {
   image_url: string | null;
   copy: Record<string, string> | null;
   strategy: Record<string, unknown> | null;
+  qa_result: QualityReport | null;
   qa_passed: boolean | null;
   explanation: unknown;
 };
@@ -165,12 +167,23 @@ function CandidateCard({
           {candidate.qa_passed !== null && (
             <span
               className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-                candidate.qa_passed
-                  ? 'bg-emerald-50 text-emerald-600'
-                  : 'bg-red-50 text-red-500'
+                !candidate.qa_passed
+                  ? 'bg-red-50 text-red-500'
+                  : (candidate.qa_result?.policy_warnings?.length ?? 0) > 0
+                    ? 'bg-amber-50 text-amber-600'
+                    : 'bg-emerald-50 text-emerald-600'
               }`}
+              title={
+                (candidate.qa_result?.policy_warnings?.length ?? 0) > 0
+                  ? candidate.qa_result!.policy_warnings!.join('\n')
+                  : undefined
+              }
             >
-              {candidate.qa_passed ? 'QA 통과' : 'QA 미달'}
+              {!candidate.qa_passed
+                ? 'QA 미달'
+                : (candidate.qa_result?.policy_warnings?.length ?? 0) > 0
+                  ? '정책 주의'
+                  : 'QA 통과'}
             </span>
           )}
         </div>
@@ -408,7 +421,10 @@ export default function GenerationDetailPage() {
               <div>
                 {project && <p className="text-xs text-[#8B95A1] mb-1">{project.name}</p>}
                 <h1 className="text-2xl font-bold text-[#191F28] dark:text-[#F2F4F6] flex items-center gap-2">
-                  <ModeBadge mode={data.input?.mode as string | undefined} />
+                  <ModeBadge
+                    mode={data.input?.mode as string | undefined}
+                    format={data.input?.format as string | undefined}
+                  />
                   {productName ?? '제너레이터 상세'}
                   {isDeleted && (
                     <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-red-50 dark:bg-red-900/20 text-red-600">삭제됨</span>

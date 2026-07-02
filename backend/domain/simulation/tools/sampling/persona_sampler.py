@@ -194,6 +194,7 @@ class PersonaSampler:
         socioeconomic: dict | None = None,
         meta_reach: dict | None = None,
         social_values_deep: dict | None = None,
+        social_economic: dict | None = None,
         min_age: int = _MIN_AGE,
         reachability_sampling: bool = False,
         platform: str | None = None,
@@ -206,6 +207,8 @@ class PersonaSampler:
         self._socioeconomic = socioeconomic or loader.load_socioeconomic()
         # 단계3 한국 특화 심리(체면·동조·눈치) — 값 미확보면 generation_specific 비어 샘플 시 {}.
         self._social_values_deep = social_values_deep or loader.load_social_values_deep()
+        # 사회경제·심리 prior(세대별, MDIS 사회조사) — 값 비면 샘플 시 {}(graceful).
+        self._social_economic = social_economic or loader.load_social_economic()
         # Meta 침투율 곡선(Tier 2) — 연령별 인스타/페북 사용률. reach 가중의 출처.
         self._meta_reach = meta_reach or loader.load_meta_reach()
         self._min_age = min_age
@@ -318,6 +321,7 @@ class PersonaSampler:
             consumption_values=self._sample_consumption(rng, age, ocean),
             socioeconomic=self._sample_socioeconomic(rng, age, sex),
             social_values_deep=self._sample_social_values_deep(age, ocean),
+            social_economic=self._sample_social_economic(age),
             weight=weight,
             profile_narrative="",  # 4-a(LLM)에서 채움 — P3
         )
@@ -328,6 +332,14 @@ class PersonaSampler:
         데이터 확보 시 세대 base를 OCEAN으로 조건부 보정. 현재 값 비움이라 빈 dict 반환.
         """
         gen_map = self._social_values_deep.get("generation_specific") or {}
+        if not gen_map:
+            return {}
+        base = gen_map.get(_generation_of_age(age), {})
+        return {k: round(max(0.0, min(1.0, float(v))), 3) for k, v in base.items()}
+
+    def _sample_social_economic(self, age: int) -> dict[str, float]:
+        """세대별 사회경제·심리 prior — 값 비면 {}(graceful)."""
+        gen_map = self._social_economic.get("generation_specific") or {}
         if not gen_map:
             return {}
         base = gen_map.get(_generation_of_age(age), {})

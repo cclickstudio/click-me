@@ -56,6 +56,11 @@ def load_social_values_deep() -> dict[str, Any]:
     return _read_json("social_values_deep.json")
 
 
+def load_social_economic() -> dict[str, Any]:
+    """사회경제·심리 prior(세대별 0~1, MDIS 사회조사) — 샘플러 조건화용. 값 비면 샘플 시 {}."""
+    return _read_json("social_economic.json")
+
+
 def load_population_age_sex() -> dict[str, Any]:
     """단계1 인구 분포. 공식 CSV(raw/population_age_sex.csv)가 있으면 우선 사용.
 
@@ -169,6 +174,9 @@ def data_status() -> dict[str, str]:
         "social_values_deep": "real(체면·동조·눈치)"
         if load_social_values_deep().get("generation_specific")
         else "pending(MDIS 사회조사 raw 수동 다운로드 + 학술 척도 정의)",
+        "social_economic": "real(MDIS 사회조사 — 생활만족·신뢰·소득충족·계층·사회참여)"
+        if load_social_economic().get("generation_specific")
+        else "pending(MDIS 사회조사 raw)",
         "brand_awareness": "real(Tier3 인지율)"
         if load_brand_awareness().get("brands")
         else "pending(갤럽 브랜드 트래킹·오픈서베이 계약 또는 클라이언트 제공)",

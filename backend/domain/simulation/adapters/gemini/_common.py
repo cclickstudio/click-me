@@ -1,6 +1,6 @@
 # Gemini 어댑터 공통 — 클라이언트 생성·async 호출·이미지 로드·JSON 파싱(google-genai).
 #
-# 어댑터들이 공유하는 LLM 호출 인프라. core.config 미의존(키 주입), 모델 버전 핀.
+# 어댑터 공유 LLM 호출 인프라. Gemini 키는 주입, OpenAI 폴백 키는 settings 참조. 모델 핀.
 from __future__ import annotations
 
 import json
@@ -17,6 +17,8 @@ from tenacity import (
     stop_after_attempt,
     wait_random_exponential,
 )
+
+from core.config import settings
 
 _DEFAULT_MODEL = "gemini-2.5-flash"  # 재현성 위해 버전 핀
 
@@ -102,7 +104,7 @@ async def _openai_json_fallback(contents: Any, temperature: float | None) -> dic
 
     from openai import AsyncOpenAI
 
-    key = os.environ.get("OPENAI_API_KEY")
+    key = settings.openai_api_key
     if not key:
         raise RuntimeError("OPENAI_API_KEY 미설정 — Gemini JSON 폴백 불가")
     parts = contents if isinstance(contents, list) else [contents]
@@ -132,7 +134,7 @@ async def _openai_json_fallback(contents: Any, temperature: float | None) -> dic
     return _parse_json(resp.choices[0].message.content or "")
 
 
-@traceable(run_type="llm", name="gemini.generate_content", process_inputs=_trace_inputs)
+@traceable(run_type="llm", name="simulation.llm_json", process_inputs=_trace_inputs)
 async def _agen_json(
     client: Any, model: str, contents: Any, *, temperature: float | None = None
 ) -> dict:
@@ -149,7 +151,7 @@ async def _agen_json(
     if temperature is not None:
         config["temperature"] = temperature
     # OpenAI 폴백이 가능하면 Gemini 재시도를 짧게(2회) 하고 빨리 폴백 — 없으면 끝까지 재시도.
-    has_fallback = bool(os.environ.get("OPENAI_API_KEY"))
+    has_fallback = bool(settings.openai_api_key)
     attempts = 2 if has_fallback else _RETRY_ATTEMPTS
     resp = None
     try:

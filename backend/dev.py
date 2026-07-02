@@ -2,6 +2,11 @@ import subprocess
 import sys
 
 
+def ensure_deps():
+    # 의존성 동기화 — 새 워크트리·환경에서도 .venv를 자동 구성한다.
+    subprocess.run(["uv", "sync"], check=True)
+
+
 def ensure_playwright():
     try:
         from playwright.sync_api import sync_playwright
@@ -21,10 +26,13 @@ def ensure_playwright():
 
 
 def main():
-    # 1. playwright 브라우저 보장
+    # 1. 의존성 동기화
+    ensure_deps()
+
+    # 2. playwright 브라우저 보장
     ensure_playwright()
 
-    # 2. dev 서버 실행
+    # 3. dev 서버 실행
     subprocess.run(
         [
             sys.executable,

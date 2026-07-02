@@ -155,6 +155,9 @@ export interface OceanSegments {
 
 export interface SimRunResult {
   run_id: string;
+  // 선언 입력(광고/실행 메타) 블록 — 새로고침 복원 시 입력 요약을 결과에서 복구하는 출처.
+  ad?: Record<string, unknown> | null;
+  simulation?: Record<string, unknown> | null;
   ad_analysis: SimAdAnalysis | null;
   personas: SimPersona[];
   reactions: SimPersonaReaction[];
@@ -691,6 +694,7 @@ export interface QualityReport {
   text_length: QualityCheckItem;
   brand_consistency: QualityCheckItem;
   overall_passed: boolean;
+  policy_warnings?: string[];
 }
 
 export interface GeneratorCandidate {
@@ -736,6 +740,7 @@ export interface GenerationDetail {
   created_at: string;
   candidates: GeneratorCandidate[];
   publish_logs: GenerationPublishLog[];
+  product_cutout_s3_key?: string | null;
 }
 
 export interface BrandKit {

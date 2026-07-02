@@ -35,6 +35,7 @@ class RecentGeneration(BaseModel):
     status: str
     product_name: str | None
     mode: str  # create | improve (input JSONB에서 읽음)
+    format: str  # single | carousel(카드뉴스) — 생성/카드 배지 분기
     created_at: datetime
 
 
@@ -122,6 +123,7 @@ async def get_recent_generations(
             status=r.status,
             product_name=(r.input or {}).get("product_name"),
             mode=(r.input or {}).get("mode", "create"),
+            format=(r.input or {}).get("format", "single"),
             created_at=r.created_at,
         )
         for r in rows

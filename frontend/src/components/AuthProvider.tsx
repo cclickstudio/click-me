@@ -2,6 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { authApi, clearToken, getToken, saveToken, type UserOut } from '@/lib/authApi';
+import { setAdminOrgId } from '@/lib/api';
 
 type AuthCtx = {
   user: UserOut | null;
@@ -30,6 +31,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       .finally(() => setLoading(false));
   }, []);
 
+  // 비-admin이 impersonation 힌트(adminOrgId)를 들고 다니지 않게 정리 — 로그인/계정 전환/me() 실패 반영.
+  // loading 중(user 미해석)에는 지우지 않는다 → 새로고침 시 admin의 선택이 날아가지 않도록.
+  useEffect(() => {
+    if (!loading && (!user || user.role !== 'ADMIN')) setAdminOrgId(null);
+  }, [loading, user]);
+
   const login = useCallback((t: string, u: UserOut) => {
     saveToken(t);
     setToken(t);
@@ -38,8 +45,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = useCallback(() => {
     clearToken();
+    setAdminOrgId(null); // admin impersonation 선택도 함께 소멸 — 비-admin 재로그인 시 누출 방지.
     setToken(null);
     setUser(null);
+    // cognito 모드면 Cognito 로컬 세션도 정리(fire-and-forget, local 모드는 no-op).
+    import('@/lib/cognito').then((m) => m.cognitoSignOut()).catch(() => {});
   }, []);
 
   return <Ctx.Provider value={{ user, token, loading, login, logout }}>{children}</Ctx.Provider>;

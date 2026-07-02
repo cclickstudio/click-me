@@ -9,12 +9,13 @@ import logging
 import os
 import uuid
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+import httpx
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Response, UploadFile
 from fastapi.responses import StreamingResponse
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.auth import get_current_user, require_user_org
+from core.auth import get_current_user, optional_user, require_user_org
 from core.config import settings
 from core.db import get_db
 from core.models import User
@@ -24,6 +25,7 @@ from domain.simulation.contracts.schemas import SimulationRunRequest
 from domain.simulation.repositories.simulation_repository import SimulationRepository
 from domain.simulation.service.analysis_view import to_analysis_payload
 from domain.simulation.wiring import _ensure_env, build_simulation_service
+from tools.storage.s3 import download_bytes
 
 logger = logging.getLogger("clickme")
 router = APIRouter()
@@ -37,6 +39,31 @@ _service = build_simulation_service(settings=settings, use_llm_qa=_USE_LLM_QA)
 logger.info("Simulation service: real(Gemini) 모드 (LLM QA=%s)", _USE_LLM_QA)
 
 _IMAGE_MAX_BYTES = 10 * 1024 * 1024  # 10MB
+
+
+@router.get("/check-image")
+async def check_image(url: str, current_user: User | None = Depends(optional_user)) -> dict:
+    """URL 이미지를 VLM이 읽을 수 있는지 사전 확인 — 백엔드가 직접 GET(VLM 해석과 동일 경로).
+
+    브라우저 미리보기(클라이언트 fetch)와 달리 '서버 접근성 + 이미지 여부'를 검증한다.
+    시뮬 VLM은 서버가 URL을 다운로드해 해석하므로, 여기 결과가 실제 읽기 가능 여부와 일치한다.
+    """
+    if not url.startswith(("http://", "https://")):
+        return {"ok": False, "reason": "http(s) 이미지 URL이 아니에요."}
+    try:
+        # VLM(_load_image)과 동일하게 리다이렉트를 따르지 않고 단건 GET(그 응답을 해석 입력으로 씀).
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.get(url)
+            resp.raise_for_status()
+    except Exception:  # noqa: BLE001 — 접근 불가·차단·타임아웃·4xx/5xx는 모두 '읽기 불가'
+        return {"ok": False, "reason": "이미지를 가져오지 못했어요(접근 불가·차단·타임아웃)."}
+    mime = (resp.headers.get("content-type") or "").split(";")[0].strip().lower()
+    if not mime.startswith("image/"):
+        return {
+            "ok": False,
+            "reason": f"이미지 파일이 아니에요(타입 {mime or '알 수 없음'}).",
+        }
+    return {"ok": True, "mime": mime}
 
 
 async def _save_upload(ad_image: UploadFile | None) -> tuple[str | None, str | None]:
@@ -67,6 +94,7 @@ def _build_request(
     ad_objective: str | None,
     service_class: int | None,
     from_campaign_id: str | None = None,
+    user: User | None = None,
 ) -> SimulationRunRequest:
     """multipart 폼 값들을 도메인 요청 DTO로 조립. target_filter는 JSON 문자열."""
     tf = None
@@ -82,6 +110,11 @@ def _build_request(
         or ad_image_url,  # VLM 입력: 업로드(presigned/로컬) 우선, 없으면 URL
         ad_image_key=ad_image_key,  # S3 영구 식별자(업로드 시만) — DB 영속·재조회 presign 대상
         organization_id=organization_id,
+        # 사용자 식별(LangSmith 사용자별 필터) — 인증 시에만 채움(비인증은 익명).
+        user_id=str(user.id) if user else None,
+        login_id=user.login_id if user else None,
+        user_name=user.name if user else None,
+        role=user.role if user else None,
         project_id=project_id,
         target_filter=tf,
         target_mode=target_mode,
@@ -113,6 +146,7 @@ async def start_simulation(
     ad_objective: str | None = Form(None),
     service_class: int | None = Form(None),
     from_campaign_id: str | None = Form(None),  # 관리 탭 진입 시 — 완료 후 서버가 자동 링크
+    current_user: User | None = Depends(optional_user),  # 인증 시 트레이스에 사용자 식별
 ) -> dict:
     """비동기 시작 — run_id 반환. 진행률은 /stream, 결과는 /result."""
     ad_image_path, ad_image_key = await _save_upload(ad_image)
@@ -133,6 +167,7 @@ async def start_simulation(
         ad_objective=ad_objective,
         service_class=service_class,
         from_campaign_id=from_campaign_id,
+        user=current_user,
     )
     run_id = await _service.start(req)
     return {
@@ -160,6 +195,7 @@ async def run_simulation(
     ad_objective: str | None = Form(None),
     service_class: int | None = Form(None),
     shape: str = "full",
+    current_user: User | None = Depends(optional_user),  # 인증 시 트레이스에 사용자 식별
 ) -> dict:
     """동기 실행 — 광고+세부사항 입력 → 끝까지 돌려 반응·루브릭·집계를 한 번에 반환.
 
@@ -182,6 +218,7 @@ async def run_simulation(
         product_category=product_category,
         ad_objective=ad_objective,
         service_class=service_class,
+        user=current_user,
     )
     try:
         result = await _service.run(req)
@@ -241,14 +278,33 @@ async def get_simulation_db_result(
         sim_uuid = uuid.UUID(simulation_id)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=f"잘못된 simulation_id: {e}") from e
-    org_id = await _require_user_org(user, session)
-    # 도메인 ORM import 없이 org 소유만 raw SQL로 검증(경계 유지).
-    sim_org = await session.scalar(
-        text("SELECT organization_id FROM simulations WHERE id = :sid"), {"sid": sim_uuid}
-    )
-    if sim_org is None or sim_org != org_id:
-        raise HTTPException(status_code=404, detail="결과 없음 — 잘못된 simulation_id")
+    # ADMIN은 조직 무관 전체 열람(목록/상세 핸들러와 동일 정책). 그 외는 org 소유만 조회.
+    if user.role.upper() != "ADMIN":
+        org_id = await _require_user_org(user, session)
+        # 도메인 ORM import 없이 org 소유만 raw SQL로 검증(경계 유지).
+        sim_org = await session.scalar(
+            text("SELECT organization_id FROM simulations WHERE id = :sid"), {"sid": sim_uuid}
+        )
+        if sim_org is None or sim_org != org_id:
+            raise HTTPException(status_code=404, detail="결과 없음 — 잘못된 simulation_id")
     result = await SimulationRepository(session).get_full_result(sim_uuid)
     if result is None:
         raise HTTPException(status_code=404, detail="결과 없음 — 잘못된 simulation_id")
     return result
+
+
+@router.get("/image")
+async def proxy_ad_image(key: str) -> Response:
+    """시뮬레이션 광고 이미지를 백엔드 프록시로 제공 — AWS 자격증명 노출 방지.
+
+    simulation/ 프리픽스만 허용해 버킷 내 임의 객체 열람을 막는다(제너·채팅과 동일 패턴).
+    proxy_url_for(ad_image_store)가 만든 /api/simulation/image?key=... 를 이 라우트가 받는다.
+    """
+    if ".." in key or not key.startswith("simulation/"):
+        raise HTTPException(status_code=403, detail="허용되지 않은 이미지 경로입니다.")
+    try:
+        data = await download_bytes(key)
+    except Exception:
+        raise HTTPException(status_code=404, detail="이미지를 찾을 수 없습니다.") from None
+    content_type = "image/jpeg" if key.endswith((".jpg", ".jpeg")) else "image/png"
+    return Response(content=data, media_type=content_type)

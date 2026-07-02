@@ -4,9 +4,9 @@ import { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/components/AuthProvider';
+import { getToken } from '@/lib/authApi';
 import { safeRandomUUID } from '@/lib/utils';
 import ModeBadge from '@/components/ModeBadge';
-import { getToken } from '@/lib/authApi';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
@@ -33,6 +33,7 @@ type RecentGeneration = {
   status: string;
   product_name: string | null;
   mode: string;
+  format: string;
   created_at: string;
 };
 
@@ -176,7 +177,10 @@ export default function DashboardPage() {
     try {
       const res = await fetch(`${API_BASE}/api/chat/complete`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(getToken() ? { Authorization: `Bearer ${getToken()}` } : {}),
+        },
         body: JSON.stringify({ session_id: sessionId.current, messages: newMessages }),
       });
 
@@ -347,7 +351,7 @@ export default function DashboardPage() {
                         <td className="px-5 py-3 text-[#4E5968] dark:text-[#9CA3AF] whitespace-nowrap">
                           <div className="flex items-center gap-1.5 max-w-[160px]">
                             <span className="shrink-0">
-                              <ModeBadge mode={g.mode} />
+                              <ModeBadge mode={g.mode} format={g.format} />
                             </span>
                             <span className="truncate min-w-0">{g.product_name ?? '—'}</span>
                           </div>

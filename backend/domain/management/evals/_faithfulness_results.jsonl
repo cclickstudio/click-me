@@ -1,29 +1,72 @@
-{"meta": {"n": 27, "judge_runs": 3}}
+{"meta": {"n": 35, "judge_runs": 3}}
 {"i": 1, "q": "광고 심사 PENDING_REVIEW는 무슨 뜻이야", "score": 5.0, "std": 0.0, "faithful": true, "votes": "3/3"}
+{"i": 1, "q": "광고 심사 PENDING_REVIEW는 무슨 뜻이야", "error": "'cp949' codec can't encode character '\\u2713' in position 2: illegal multibyte sequence"}
 {"i": 2, "q": "심사 중인데 노출이 0이야 정상이야", "score": 5.0, "std": 0.0, "faithful": true, "votes": "3/3"}
-{"i": 3, "q": "광고가 거절됐는데 어떻게 대응해야 해", "score": 2.0, "std": 0.82, "faithful": false, "votes": "0/3"}
+{"i": 2, "q": "심사 중인데 노출이 0이야 정상이야", "error": "'cp949' codec can't encode character '\\u2713' in position 2: illegal multibyte sequence"}
+{"i": 3, "q": "광고가 거절됐는데 어떻게 대응해야 해", "score": 5.0, "std": 0.0, "faithful": true, "votes": "3/3"}
+{"i": 3, "q": "광고가 거절됐는데 어떻게 대응해야 해", "error": "'cp949' codec can't encode character '\\u2713' in position 2: illegal multibyte sequence"}
 {"i": 4, "q": "WITH_ISSUES가 뜨면 뭘 확인해야 해", "score": 5.0, "std": 0.0, "faithful": true, "votes": "3/3"}
+{"i": 4, "q": "WITH_ISSUES가 뜨면 뭘 확인해야 해", "error": "'cp949' codec can't encode character '\\u2713' in position 2: illegal multibyte sequence"}
 {"i": 5, "q": "정책 거절은 예산을 올리면 풀려", "score": 5.0, "std": 0.0, "faithful": true, "votes": "3/3"}
-{"i": 6, "q": "게재 불가랑 정책 거절은 다른 거야", "score": 4.0, "std": 1.41, "faithful": true, "votes": "2/3"}
+{"i": 5, "q": "정책 거절은 예산을 올리면 풀려", "error": "'cp949' codec can't encode character '\\u2713' in position 2: illegal multibyte sequence"}
+{"i": 6, "q": "게재 불가랑 정책 거절은 다른 거야", "score": 5.0, "std": 0.0, "faithful": true, "votes": "3/3"}
+{"i": 6, "q": "게재 불가랑 정책 거절은 다른 거야", "error": "'cp949' codec can't encode character '\\u2713' in position 2: illegal multibyte sequence"}
 {"i": 7, "q": "CTR이 낮을 때 뭘 점검해야 해", "score": 5.0, "std": 0.0, "faithful": true, "votes": "3/3"}
+{"i": 7, "q": "CTR이 낮을 때 뭘 점검해야 해", "error": "'cp949' codec can't encode character '\\u2713' in position 2: illegal multibyte sequence"}
 {"i": 8, "q": "낮은 CTR이 계속되면 어떻게 해", "score": 5.0, "std": 0.0, "faithful": true, "votes": "3/3"}
+{"i": 8, "q": "낮은 CTR이 계속되면 어떻게 해", "error": "'cp949' codec can't encode character '\\u2713' in position 2: illegal multibyte sequence"}
 {"i": 9, "q": "빈도가 너무 높아서 피로한 것 같아", "score": 5.0, "std": 0.0, "faithful": true, "votes": "3/3"}
-{"i": 10, "q": "CPM이 자꾸 오르는데 왜 그래", "score": 3.67, "std": 0.94, "faithful": false, "votes": "1/3"}
+{"i": 9, "q": "빈도가 너무 높아서 피로한 것 같아", "error": "'cp949' codec can't encode character '\\u2713' in position 2: illegal multibyte sequence"}
+{"i": 10, "q": "CPM이 자꾸 오르는데 왜 그래", "score": 5.0, "std": 0.0, "faithful": true, "votes": "3/3"}
+{"i": 10, "q": "CPM이 자꾸 오르는데 왜 그래", "error": "'cp949' codec can't encode character '\\u2713' in position 2: illegal multibyte sequence"}
 {"i": 11, "q": "ROAS가 목표보다 낮으면 어떻게 해", "score": 5.0, "std": 0.0, "faithful": true, "votes": "3/3"}
+{"i": 11, "q": "ROAS가 목표보다 낮으면 어떻게 해", "error": "'cp949' codec can't encode character '\\u2713' in position 2: illegal multibyte sequence"}
 {"i": 12, "q": "전환이 안 나오면 뭐부터 점검해", "score": 5.0, "std": 0.0, "faithful": true, "votes": "3/3"}
-{"i": 13, "q": "예산이 너무 빨리 소진돼", "score": 2.0, "std": 0.82, "faithful": false, "votes": "0/3"}
+{"i": 12, "q": "전환이 안 나오면 뭐부터 점검해", "error": "'cp949' codec can't encode character '\\u2713' in position 2: illegal multibyte sequence"}
+{"i": 13, "q": "예산이 너무 빨리 소진돼", "score": 5.0, "std": 0.0, "faithful": true, "votes": "3/3"}
+{"i": 13, "q": "예산이 너무 빨리 소진돼", "error": "'cp949' codec can't encode character '\\u2713' in position 2: illegal multibyte sequence"}
 {"i": 14, "q": "학습 단계가 뭐야", "score": 5.0, "std": 0.0, "faithful": true, "votes": "3/3"}
-{"i": 15, "q": "광고를 자주 수정해도 괜찮아", "score": 5.0, "std": 0.0, "faithful": true, "votes": "3/3"}
+{"i": 14, "q": "학습 단계가 뭐야", "error": "'cp949' codec can't encode character '\\u2713' in position 2: illegal multibyte sequence"}
+{"i": 15, "q": "광고를 자주 수정해도 괜찮아", "score": 1.33, "std": 0.47, "faithful": false, "votes": "0/3"}
+{"i": 15, "q": "광고를 자주 수정해도 괜찮아", "error": "'cp949' codec can't encode character '\\u2717' in position 2: illegal multibyte sequence"}
 {"i": 16, "q": "예측 CTR을 실제 CTR로 환산해도 돼", "score": 5.0, "std": 0.0, "faithful": true, "votes": "3/3"}
+{"i": 16, "q": "예측 CTR을 실제 CTR로 환산해도 돼", "error": "'cp949' codec can't encode character '\\u2713' in position 2: illegal multibyte sequence"}
 {"i": 17, "q": "예측을 실제 성과라고 단정해도 돼", "score": 5.0, "std": 0.0, "faithful": true, "votes": "3/3"}
-{"i": 18, "q": "구매의도는 어떻게 측정해", "score": 4.0, "std": 0.82, "faithful": false, "votes": "1/3"}
+{"i": 17, "q": "예측을 실제 성과라고 단정해도 돼", "error": "'cp949' codec can't encode character '\\u2713' in position 2: illegal multibyte sequence"}
+{"i": 18, "q": "구매의도는 어떻게 측정해", "score": 5.0, "std": 0.0, "faithful": true, "votes": "3/3"}
+{"i": 18, "q": "구매의도는 어떻게 측정해", "error": "'cp949' codec can't encode character '\\u2713' in position 2: illegal multibyte sequence"}
 {"i": 19, "q": "평균 점수만 보고 판단해도 돼", "score": 5.0, "std": 0.0, "faithful": true, "votes": "3/3"}
+{"i": 19, "q": "평균 점수만 보고 판단해도 돼", "error": "'cp949' codec can't encode character '\\u2713' in position 2: illegal multibyte sequence"}
 {"i": 20, "q": "시뮬레이터 4대 KPI가 뭐야", "score": 5.0, "std": 0.0, "faithful": true, "votes": "3/3"}
+{"i": 20, "q": "시뮬레이터 4대 KPI가 뭐야", "error": "'cp949' codec can't encode character '\\u2713' in position 2: illegal multibyte sequence"}
 {"i": 21, "q": "클릭 의향률이 뭐야", "score": 5.0, "std": 0.0, "faithful": true, "votes": "3/3"}
-{"i": 22, "q": "거부율은 어떻게 해석해", "score": 5.0, "std": 0.0, "faithful": true, "votes": "3/3"}
+{"i": 21, "q": "클릭 의향률이 뭐야", "error": "'cp949' codec can't encode character '\\u2713' in position 2: illegal multibyte sequence"}
+{"i": 22, "q": "거부율은 어떻게 해석해", "score": 3.33, "std": 1.25, "faithful": false, "votes": "1/3"}
+{"i": 22, "q": "거부율은 어떻게 해석해", "error": "'cp949' codec can't encode character '\\u2717' in position 2: illegal multibyte sequence"}
 {"i": 23, "q": "조치를 바로 실행해도 돼", "score": 5.0, "std": 0.0, "faithful": true, "votes": "3/3"}
-{"i": 24, "q": "예산 증액은 바로 가능해 승인이 필요해", "score": 4.33, "std": 0.94, "faithful": true, "votes": "3/3"}
+{"i": 23, "q": "조치를 바로 실행해도 돼", "error": "'cp949' codec can't encode character '\\u2713' in position 2: illegal multibyte sequence"}
+{"i": 24, "q": "예산 증액은 바로 가능해 승인이 필요해", "score": 2.33, "std": 0.47, "faithful": true, "votes": "2/3"}
+{"i": 24, "q": "예산 증액은 바로 가능해 승인이 필요해", "error": "'cp949' codec can't encode character '\\u2713' in position 2: illegal multibyte sequence"}
 {"i": 25, "q": "위험한 변경은 어떻게 처리돼", "score": 5.0, "std": 0.0, "faithful": true, "votes": "3/3"}
-{"i": 26, "q": "증상별 권고 조치 알려줘", "score": 2.67, "std": 0.47, "faithful": false, "votes": "0/3"}
-{"i": 27, "q": "성과 좋은 캠페인은 어떤 조치를 해", "score": 3.0, "std": 1.41, "faithful": false, "votes": "1/3"}
-{"summary": {"n": 27, "judge_runs": 3, "mean_score": 4.47, "faithful_rate": 0.778, "avg_judge_std": 0.28}}
+{"i": 25, "q": "위험한 변경은 어떻게 처리돼", "error": "'cp949' codec can't encode character '\\u2713' in position 2: illegal multibyte sequence"}
+{"i": 26, "q": "증상별 권고 조치 알려줘", "score": 2.67, "std": 0.94, "faithful": false, "votes": "0/3"}
+{"i": 26, "q": "증상별 권고 조치 알려줘", "error": "'cp949' codec can't encode character '\\u2717' in position 2: illegal multibyte sequence"}
+{"i": 27, "q": "성과 좋은 캠페인은 어떤 조치를 해", "score": 2.67, "std": 0.47, "faithful": false, "votes": "0/3"}
+{"i": 27, "q": "성과 좋은 캠페인은 어떤 조치를 해", "error": "'cp949' codec can't encode character '\\u2717' in position 2: illegal multibyte sequence"}
+{"i": 28, "q": "CPM이 12000원이면 비싼 거야", "score": 5.0, "std": 0.0, "faithful": true, "votes": "3/3"}
+{"i": 28, "q": "CPM이 12000원이면 비싼 거야", "error": "'cp949' codec can't encode character '\\u2713' in position 2: illegal multibyte sequence"}
+{"i": 29, "q": "트래픽 광고 CTR은 보통 얼마야", "score": 1.67, "std": 0.47, "faithful": false, "votes": "0/3"}
+{"i": 29, "q": "트래픽 광고 CTR은 보통 얼마야", "error": "'cp949' codec can't encode character '\\u2717' in position 2: illegal multibyte sequence"}
+{"i": 30, "q": "릴스랑 피드 중에 뭐가 더 싸", "score": 1.0, "std": 0.0, "faithful": false, "votes": "0/3"}
+{"i": 30, "q": "릴스랑 피드 중에 뭐가 더 싸", "error": "'cp949' codec can't encode character '\\u2717' in position 2: illegal multibyte sequence"}
+{"i": 31, "q": "빈도가 몇이면 피로한 거야", "score": 5.0, "std": 0.0, "faithful": true, "votes": "3/3"}
+{"i": 31, "q": "빈도가 몇이면 피로한 거야", "error": "'cp949' codec can't encode character '\\u2713' in position 2: illegal multibyte sequence"}
+{"i": 32, "q": "틱톡 광고 단가는 어때", "score": 1.0, "std": 0.0, "faithful": false, "votes": "0/3"}
+{"i": 32, "q": "틱톡 광고 단가는 어때", "error": "'cp949' codec can't encode character '\\u2717' in position 2: illegal multibyte sequence"}
+{"i": 33, "q": "구글 광고 CTR은 얼마나 돼", "score": 5.0, "std": 0.0, "faithful": true, "votes": "3/3"}
+{"i": 33, "q": "구글 광고 CTR은 얼마나 돼", "error": "'cp949' codec can't encode character '\\u2713' in position 2: illegal multibyte sequence"}
+{"i": 34, "q": "인스타 주 사용자 연령대가 어떻게 돼", "score": 5.0, "std": 0.0, "faithful": true, "votes": "3/3"}
+{"i": 34, "q": "인스타 주 사용자 연령대가 어떻게 돼", "error": "'cp949' codec can't encode character '\\u2713' in position 2: illegal multibyte sequence"}
+{"i": 35, "q": "구매의향은 어떤 데이터로 봐", "score": 5.0, "std": 0.0, "faithful": true, "votes": "3/3"}
+{"i": 35, "q": "구매의향은 어떤 데이터로 봐", "error": "'cp949' codec can't encode character '\\u2713' in position 2: illegal multibyte sequence"}
+{"summary": {"n": 35, "judge_runs": 3, "mean_score": 4.31, "faithful_rate": 0.8, "avg_judge_std": 0.12}}

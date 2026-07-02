@@ -187,6 +187,15 @@ def _social_values_lines(persona) -> str:
     return f"\n[내 성향(한국 특화)]\n- {parts} (높을수록 강함 — 반응·말투에 반영)"
 
 
+def _social_economic_lines(persona) -> str:
+    """사회경제·심리 prior를 반응 힌트 줄로. 비면 ""(현 동작 보존)."""
+    se = getattr(persona, "social_economic", None) or {}
+    if not se:
+        return ""
+    parts = ", ".join(f"{k} {round(float(v) * 100)}%" for k, v in se.items())
+    return f"\n[내 사회경제 성향]\n- {parts} (세대 평균 기준 — 소비·반응 맥락에 반영)"
+
+
 _OCEAN_KO = {
     "openness": "개방성",
     "conscientiousness": "성실성",
@@ -252,6 +261,7 @@ def build_reaction_prompt(persona, ad: AdInterpretation, exposure: str | None) -
         f"- 서사: {persona.profile_narrative or '(없음)'}\n"
         f"- 지금 노출 맥락: {exposure or '일반'}"
         f"{_social_values_lines(persona)}"
+        f"{_social_economic_lines(persona)}"
         f"{_generation_lines(persona.age, ad)}\n\n"
         f"[광고]\n- 업종: {ad.detected_industry} / 목적: {ad.detected_objective}\n"
         f"- 메시지: {ad.detected_message}"
@@ -331,7 +341,11 @@ class GeminiReactionEngine:
     async def react(self, persona, ad: AdInterpretation) -> PersonaReaction:
         async def _json(prompt: str) -> dict:
             return await _agen_json(
-                self._client, self._model, prompt, temperature=self._temperature
+                self._client,
+                self._model,
+                prompt,
+                temperature=self._temperature,
+                langsmith_extra={"name": "simulation.reaction"},
             )
 
         return await generate_reaction(_json, persona, ad)

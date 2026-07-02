@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import os
 
+from langsmith import traceable
 from tenacity import (
     Retrying,
     retry_if_exception,
@@ -47,6 +48,7 @@ class GeminiNarrator:
         self._model = model
         self._client = genai.Client(api_key=key)
 
+    @traceable(run_type="llm", name="simulation.narrator")
     def narrate(self, persona: Persona) -> str:
         # 503(과부하)·429·5xx 일시 오류 지수 백오프 재시도 — JSON 경로(_agen_json)와 동일 방어.
         resp = None

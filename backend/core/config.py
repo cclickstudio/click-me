@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from pydantic import AliasChoices, Field, field_validator
+from pydantic import AliasChoices, Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from domain.billing.toss_client import require_test_key
@@ -22,6 +22,8 @@ class Settings(BaseSettings):
     app_port: int = 8000
     log_level: str = "INFO"
     internal_api_base_url: str = "http://localhost:8000"
+    # CORS 추가 허용 origin(콤마 구분). 운영 배포 주소 등. 예: http://1.2.3.4:3000
+    cors_allow_origins: str = ""
 
     # 어댑터 모드 — True면 Mock(데모·기본), False면 실연동 어댑터. wiring.py 분기 기준.
     use_mock: bool = True
@@ -41,6 +43,8 @@ class Settings(BaseSettings):
 
     # Google Gemini
     gemini_api_key: str | None = None
+    # 이미지 생성 전용 키 — 있으면 이미지 호출에 우선 사용, 없으면 gemini_api_key로 폴백
+    gemini_image_api_key: str | None = None
 
     # Tavily 웹검색(매니지먼트 어시스턴트 web_search 도구) — 없으면 웹검색 graceful 비활성
     tavily_api_key: str | None = None
@@ -67,10 +71,8 @@ class Settings(BaseSettings):
     # AWS
     aws_access_key_id: str
     aws_secret_access_key: str
-    aws_region: str = "ap-northeast-2"
+    aws_region: str = "us-west-2"
     s3_bucket_name: str = "clickme-assets"
-    sqs_simulation_queue_url: str
-    sqs_max_workers: int = 10
 
     # Simulation
     default_persona_count: int = Field(default=20, ge=1, le=1000)
@@ -95,7 +97,7 @@ class Settings(BaseSettings):
     # Marketing (Phase 6 광고 집행용)
     meta_ad_account_id: str | None = None
     # Config
-    meta_graph_api_version: str = "v23.0"
+    meta_graph_api_version: str = "v21.0"
     # 멀티테넌트 — 고객별 Meta 토큰 암호화 키(AES-256, base64 32B). 미설정이면 연결 저장 불가.
     meta_token_encryption_key: str | None = None
     # OAuth 콜백 완료 후 돌아갈 프론트 주소(개발=3000, 운영=https://clickme.co.kr).
@@ -117,6 +119,22 @@ class Settings(BaseSettings):
     # 어시스턴트 ReAct 그래프 LLM 모델 — MANAGEMENT_ASSISTANT_MODEL 환경변수로 오버라이드 가능.
     management_assistant_model: str = "gpt-4o-mini"
 
+    # Embedding (KB·LTM 공유 — 동일 모델·차원 필수. spec §6.1/§9)
+    # provider=bge_m3(기본): TEI/Ollama 로컬 서빙 1024차원.
+    # provider=openai: 1536(별도 마이그레이션 필요).
+    # USE_MOCK 또는 키 부재 시 wiring이 MockEmbeddingProvider(embedding_dim 차원) 반환.
+    embedding_provider: str = "bge_m3"  # bge_m3 | openai | mock
+    embedding_model: str = "bge-m3"
+    embedding_dim: int = 1024
+    embedding_base_url: str = "http://localhost:8080"  # TEI /embed 엔드포인트
+    openai_embedding_model: str = "text-embedding-3-small"  # provider=openai 폴백(1536)
+
+    # Chat orchestrator (Phase ③-B에서 사용 — 기반 단계는 설정만 선반영)
+    chat_orchestrator_provider: str = "openai"  # anthropic | openai | google_genai
+    chat_orchestrator_model: str = "gpt-4.1"  # 챗 답변 엔진. 임베딩·검색은 OpenAI
+    chat_classify_model: str = "gpt-4.1"  # 분류·슬롯 추출 경량 모델(답변과 분리, 지연↓)
+    chat_orchestrator_temperature: float = 0.3
+
     # Generator (광고 생성)
     # 생성 방식: openai=OpenAI 이미지(상품있음 누끼·인페인팅 / 없음 0부터)
     #            gemini=Gemini 멀티모달(이미지+카피 동시 생성)
@@ -130,7 +148,7 @@ class Settings(BaseSettings):
     generator_vision_model: str = "gpt-4o"
     # 이미지 생성(배경)
     generator_image_provider: str = "openai"  # openai | google_genai
-    generator_image_model: str = "gpt-image-2"
+    generator_image_model: str = "gpt-image-1"
     generator_image_quality: str = "medium"  # openai 전용(low|medium|high), google_genai는 무시
     generator_image_timeout: float = 120.0  # 무거운 이미지 모델 대비 호출 타임아웃(초)
     # 이미지 편집(누끼 배경제거 — remove_product_background)
@@ -153,15 +171,46 @@ class Settings(BaseSettings):
     toss_client_key: str = "test_gck_docs_Ovk5rk1EwkEbP0W43n07xlzm"
     toss_secret_key: str = "test_gsk_docs_OaPz8L5KdmQXkzRz3y47BMw6"
 
-    # JWT (Cognito 전환 전 임시)
+    # JWT (auth_provider=local 일 때 — 자체 HS256 발급/검증)
     jwt_secret: str = "clickme-dev-secret-change-in-prod"
     jwt_algorithm: str = "HS256"
     jwt_expire_minutes: int = 60 * 24 * 7  # 7일
+
+    # ── Auth provider (점진 도입) ──────────────────────────────
+    # "local"(기본): 자체 HS256 JWT. "cognito": AWS Cognito User Pool 토큰(JWKS·RS256) 검증.
+    # 기본이 local이라 Cognito 미설정 시 기존 인증이 그대로 동작한다.
+    auth_provider: str = "local"  # local | cognito
+    # Cognito (auth_provider=cognito 일 때만 사용). User Pool은 콘솔에서 생성하고 값은 .env로 주입.
+    # 매핑 규약: Cognito username = 우리 User.login_id (스키마 변경 없이 sub↔User 해결).
+    cognito_region: str | None = None  # 미설정 시 aws_region 사용
+    cognito_user_pool_id: str | None = None  # 예: ap-northeast-2_xxxxxxxxx
+    cognito_app_client_id: str | None = None  # ID 토큰 audience(aud) 검증값
 
     @field_validator("toss_client_key", "toss_secret_key")
     @classmethod
     def _toss_keys_must_be_test(cls, value: str) -> str:
         return require_test_key(value)
+
+    @model_validator(mode="after")
+    def _check_cognito_config(self) -> "Settings":
+        # cognito 모드를 켰는데 필수 값이 비면 기동 시점에 명확히 실패(런타임 401 디버깅 방지).
+        if self.auth_provider == "cognito" and not (
+            self.cognito_user_pool_id and self.cognito_app_client_id
+        ):
+            raise ValueError(
+                "AUTH_PROVIDER=cognito 면 COGNITO_USER_POOL_ID·COGNITO_APP_CLIENT_ID 가 필요합니다."
+            )
+        return self
+
+    # ── Cognito 파생값 (region + pool_id 로 구성) ──
+    @property
+    def cognito_issuer(self) -> str:
+        region = self.cognito_region or self.aws_region
+        return f"https://cognito-idp.{region}.amazonaws.com/{self.cognito_user_pool_id}"
+
+    @property
+    def cognito_jwks_uri(self) -> str:
+        return f"{self.cognito_issuer}/.well-known/jwks.json"
 
     # ── 작업별 이미지 설정 해석 (오버라이드 없으면 기존 설정으로 폴백) ──
     @property
