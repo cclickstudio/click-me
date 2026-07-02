@@ -77,7 +77,5 @@ def test_all_option_pools_emit_contract_compliant_options():
     for anomaly_type in OPTION_POOLS:
         options = build_options(anomaly_type)
         # ConsultResult validator가 status 규칙·index 연속·tool_hint 등록 여부를 강제
-        ConsultResult(
-            status="anomaly", campaign_id="c", anomaly_type=anomaly_type, options=options
-        )
+        ConsultResult(status="anomaly", campaign_id="c", anomaly_type=anomaly_type, options=options)
         assert options[-1].action.value == "OBSERVE"  # 관망은 항상 마지막
