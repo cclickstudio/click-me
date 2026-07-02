@@ -1463,7 +1463,16 @@ async def list_campaigns(
     if not getattr(settings, "use_mock", True):
         if user is None:
             return {"campaigns": [], "source": "live", "auth_error": "로그인이 필요합니다."}
-        org_id = await _require_org_id(user, db)
+        # 읽기 스코프 — admin 무선택(None)은 400 대신 빈 목록+안내(전체 열람 허용).
+        # 쓰기는 여전히 _require_org_id_write로 400. live는 org별 Meta 연결 기반이라
+        # 전체 집계 불가 → 조직 선택 안내.
+        org_id = await _scope_org_or_all(user, db)
+        if org_id is None:
+            return {
+                "campaigns": [],
+                "source": "live",
+                "select_org": "관리자는 조직을 선택하면 해당 조직의 캠페인이 표시됩니다.",
+            }
         reader = await _resolve_reader(db, org_id)
         if reader is None:
             return {"campaigns": [], "source": "live", "not_connected": _NOT_CONNECTED_MSG}
