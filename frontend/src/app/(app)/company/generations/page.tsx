@@ -6,7 +6,7 @@ import ModeBadge from '@/components/ModeBadge';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
-type Row = { id: string; status: string; product_name: string | null; mode: string; project_name: string | null; created_by_name: string | null; created_at: string };
+type Row = { id: string; status: string; product_name: string | null; mode: string; format: string; project_name: string | null; created_by_name: string | null; created_at: string };
 
 const fmt = (iso: string) => {
   const d = new Date(iso);
@@ -76,7 +76,7 @@ export default function CompanyGenerationsPage() {
                   <tr key={r.id} className="border-b border-[#F9FAFB] dark:border-[#1C2333] last:border-0 hover:bg-[#F9FAFB] dark:hover:bg-[#252D3D] transition-colors">
                     <td className="px-6 py-3 text-[#4E5968] dark:text-[#9CA3AF]">
                       <span className="inline-flex items-center gap-2">
-                        <ModeBadge mode={r.mode} />
+                        <ModeBadge mode={r.mode} format={r.format} />
                         <span>{r.product_name ?? '—'}</span>
                       </span>
                     </td>

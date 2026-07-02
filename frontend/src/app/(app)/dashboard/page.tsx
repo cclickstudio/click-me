@@ -33,6 +33,7 @@ type RecentGeneration = {
   status: string;
   product_name: string | null;
   mode: string;
+  format: string;
   created_at: string;
 };
 
@@ -350,7 +351,7 @@ export default function DashboardPage() {
                         <td className="px-5 py-3 text-[#4E5968] dark:text-[#9CA3AF] whitespace-nowrap">
                           <div className="flex items-center gap-1.5 max-w-[160px]">
                             <span className="shrink-0">
-                              <ModeBadge mode={g.mode} />
+                              <ModeBadge mode={g.mode} format={g.format} />
                             </span>
                             <span className="truncate min-w-0">{g.product_name ?? '—'}</span>
                           </div>

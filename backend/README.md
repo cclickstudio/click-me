@@ -63,7 +63,6 @@ cp .env.example .env
 | `LANGSMITH_API_KEY`        | LangSmith 트레이싱 키         |
 | `AWS_ACCESS_KEY_ID`        | AWS IAM 액세스 키             |
 | `AWS_SECRET_ACCESS_KEY`    | AWS IAM 시크릿 키             |
-| `SQS_SIMULATION_QUEUE_URL` | SQS 큐 URL                    |
 
 ### 3. DB 마이그레이션
 
@@ -139,7 +138,7 @@ backend/
 │   ├── ad_analysis/vision.py    # GPT-4o Vision 분석
 │   ├── persona/factory.py       # OCEAN 페르소나 생성
 │   ├── simulation/              # exposure / deliberation / ssr_scorer
-│   ├── storage/                 # S3, SQS
+│   ├── storage/                 # S3
 │   └── search/rag.py            # pgvector RAG 검색
 │
 ├── core/

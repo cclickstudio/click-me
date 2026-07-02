@@ -12,7 +12,7 @@ AI 기반 광고 성과 예측 플랫폼. 가상 소비자(페르소나)에게 �
 | Backend | FastAPI (Python) + LangGraph |
 | DB | NeonDB (PostgreSQL + pgvector) |
 | AI | GPT-4o Vision / GPT-4o-mini / Gemini 2.0 Flash |
-| 큐 / 스토리지 | AWS SQS + S3 |
+| 비동기 잡 / 스토리지 | 인프로세스 async (asyncio) / AWS S3 |
 | 배포 | EC2 + Nginx + Docker |
 
 ---

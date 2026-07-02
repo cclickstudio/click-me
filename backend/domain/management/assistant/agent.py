@@ -172,7 +172,7 @@ def build_management_agent(settings):
         thread_id = req.thread_id or uuid4().hex
         config = {
             "configurable": {"thread_id": thread_id},
-            "run_name": "management_assistant",
+            "run_name": "management.assistant",
             # LangSmith: 어시스턴트(대화형 RAG)로 식별 — 컴포넌트 단위 필터용.
             "tags": ["management", "assistant"],
             "metadata": {"campaign_id": req.campaign_id, "ad_id": req.ad_id},

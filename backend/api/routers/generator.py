@@ -25,7 +25,7 @@ from domain.generator.contracts.enums import GenerationMode
 from domain.generator.contracts.schemas import GenerationCreateRequest
 from domain.generator.pipeline.relayout import PLATFORM_SIZES
 from domain.generator.service import brand_kit as brand_kit_service
-from domain.generator.service import generator_service
+from domain.generator.service import generation_loop, generator_service
 from domain.generator.service.brand_profile import get_profile, save_profile
 from tools.storage.s3 import brand_logo_key, download_bytes, upload_bytes
 
@@ -257,7 +257,13 @@ async def create_generation(
         project = await db.get(Project, proj_uuid)
         if project is None or project.organization_id != org_id:
             raise HTTPException(status_code=404, detail="프로젝트를 찾을 수 없습니다.")
-    generation_id = await generator_service.start_generation(body, created_by=current_user.id)
+    generation_id = await generator_service.start_generation(
+        body,
+        created_by=current_user.id,
+        created_by_login=current_user.login_id,
+        created_by_name=current_user.name,
+        created_by_role=current_user.role,
+    )
     return GenerationTaskResponse(
         generation_id=generation_id,
         stream_url=f"/api/generator/generations/{generation_id}/stream",
@@ -273,6 +279,72 @@ async def list_generations(
     """생성 이력 — ADMIN은 전체, 그 외는 로그인 org 프로젝트 생성물만(멀티테넌시 격리)."""
     org_id = None if user.role.upper() == "ADMIN" else await _require_user_org(user, db)
     return {"generations": await generator_service.list_generations(limit=limit, org_id=org_id)}
+
+
+class GenerationLoopRequest(BaseModel):
+    """자동 개선 루프 시작 입력 — 생성 시드 + 품질 목표·반복 상한."""
+
+    product_name: str
+    product_description: str
+    target_audience: str
+    campaign_objective: str = "conversion"
+    project_id: str | None = None
+    quality_target: float = 0.8
+    max_iterations: int = 3
+
+
+@router.post("/generations/loop")
+async def start_generation_loop(
+    body: GenerationLoopRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """QA 품질이 목표에 도달할 때까지 생성→평가→개선을 자동 반복하는 루프를 시작한다."""
+    if not body.project_id:
+        raise HTTPException(
+            status_code=400, detail="생성 결과를 저장할 프로젝트를 먼저 선택해주세요."
+        )
+    org_id = await _require_user_org(current_user, db)
+    try:
+        proj_uuid = uuid.UUID(str(body.project_id))
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=400, detail="잘못된 project_id") from None
+    project = await db.get(Project, proj_uuid)
+    if project is None or project.organization_id != org_id:
+        raise HTTPException(status_code=404, detail="프로젝트를 찾을 수 없습니다.")
+    seed = {
+        "product_name": body.product_name,
+        "product_description": body.product_description,
+        "target_audience": body.target_audience,
+        "campaign_objective": body.campaign_objective,
+    }
+    loop_id = await generation_loop.start_loop(
+        seed,
+        quality_target=body.quality_target,
+        max_iterations=max(1, min(body.max_iterations, 5)),
+        project_id=body.project_id,
+        created_by=current_user.id,
+    )
+    return {"loop_id": loop_id, "stream_url": f"/api/generator/generations/loop/{loop_id}/stream"}
+
+
+@router.get("/generations/loop/{loop_id}/stream")
+async def stream_generation_loop(loop_id: str):
+    """루프 진행 SSE — 반복별 점수·개선방향·완료를 스트림한다(generation stream과 동일 패턴)."""
+    return StreamingResponse(
+        generation_loop.stream_loop_events(loop_id),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@router.get("/generations/loop/{loop_id}")
+async def get_generation_loop(loop_id: str, current_user: User = Depends(get_current_user)):
+    """루프 상태·최종 결과 조회."""
+    result = generation_loop.get_loop_result(loop_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="루프를 찾을 수 없습니다.")
+    return result
 
 
 @router.get("/generations/{generation_id}/stream")

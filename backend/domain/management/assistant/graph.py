@@ -68,7 +68,7 @@ async def _grade_kb(llm, query: str, hits: list[dict]) -> _KbGrade:
         structured = llm.with_structured_output(_KbGrade)
         return await structured.ainvoke(
             [("system", system), ("human", f"질문: {query}\n근거: {digest}")],
-            config={"run_name": "assistant.grade_kb", "tags": ["management", "crag"]},
+            config={"run_name": "management:grade_kb", "tags": ["management", "crag"]},
         )
     except Exception:  # noqa: BLE001 — 평가 실패는 통과(보수적: 확실한 부족일 때만 교정)
         return _KbGrade(sufficient=True)

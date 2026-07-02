@@ -282,6 +282,7 @@ async def list_project_generations(
             "status": r.status,
             "product_name": (r.input or {}).get("product_name") if r.input else None,
             "mode": (r.input or {}).get("mode", "create") if r.input else "create",
+            "format": (r.input or {}).get("format", "single") if r.input else "single",
             "created_by_name": r.created_by_name,
             "created_at": r.created_at.isoformat(),
         }

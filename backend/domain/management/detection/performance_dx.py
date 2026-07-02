@@ -38,7 +38,9 @@ _BELOW_AVERAGE: frozenset[RelevanceRank] = frozenset(
 )
 
 
-@traceable(name="diagnose_performance", run_type="chain", tags=["management", "detection"])
+@traceable(
+    name="management:diagnose_performance", run_type="chain", tags=["management", "detection"]
+)
 def diagnose_performance(
     tenant_id: str,
     campaign_id: str,
