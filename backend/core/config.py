@@ -115,6 +115,12 @@ class Settings(BaseSettings):
     management_scan_interval_minutes: int = 60
     # 수동 알림 스캔(/anomaly/notify-scan) 재요청 최소 간격 — org별 429 방지선.
     management_scan_manual_cooldown_seconds: int = 60
+    # 이상 감지 선제 알림(채팅 sink) — 기본 off. extra="ignore"라 필드 선언 없이는 env로 못 켠다.
+    management_chat_notify_enabled: bool = False
+    # 같은 캠페인·이상에 대한 재통지(후속 알림) 최소 간격.
+    management_consult_cooldown_hours: int = 24
+    # consult 컨텍스트 주입 유효시간 — 지나면 채팅에 재주입하지 않는다.
+    management_consult_context_ttl_hours: int = 24
     # 진단 agent LLM ReAct 재현성 고정값 (합의문서 P6 — 빈칸 기입). 키 없으면 결정론 폴백.
     management_diagnosis_model: str = "gpt-4o-mini"
     management_diagnosis_temperature: float = 0.0
