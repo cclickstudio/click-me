@@ -2,8 +2,15 @@ import asyncio
 import logging
 import os
 import sys
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from pathlib import Path
+
+# Windows 콘솔(cp949 등) 코드페이지에서 한글·em-dash 같은 비ASCII print가
+# UnicodeEncodeError로 백그라운드 태스크를 죽이지 않도록 표준 출력을 UTF-8로 고정한다.
+# (서버 로그 인코딩은 OS 콘솔 코드페이지와 무관해야 함. pytest 캡처 등 reconfigure 불가 환경은 무시)
+for _stream in (sys.stdout, sys.stderr):
+    with suppress(AttributeError, ValueError):
+        _stream.reconfigure(encoding="utf-8", errors="replace")
 
 from dotenv import load_dotenv
 
@@ -91,17 +98,39 @@ async def lifespan(app: FastAPI):
     )
 
     await init_pg_checkpointer(settings.database_url)
+    # 능동 매니지먼트 스케줄러 — 기본 off(management_scheduler_enabled일 때만 기동).
+    from domain.management.scheduler import start_scheduler  # noqa: PLC0415
+
+    start_scheduler(settings)
+
+    # KB 인제스터 — 비차단 백그라운드 태스크(서버 시작 안 막음). 키 없으면 graceful 스킵.
+    async def _run_kb_ingest() -> None:
+        # fire-and-forget 태스크라 런타임 예외를 여기서 잡아 로깅한다.
+        # (안 잡으면 "Task exception was never retrieved"로 조용히 사라져 KB가 미적재됨)
+        try:
+            from domain.management.assistant.kb_ingest import ingest  # noqa: PLC0415
+
+            await ingest()
+        except Exception:
+            logger.exception("[startup] KB ingest 실패")
+
+    asyncio.create_task(_run_kb_ingest())
     yield
     # shutdown — 챗 오케스트레이터 체크포인터(psycopg) 풀 정리(누수 방지, 미생성이면 no-op)
     await chat.close_orchestrator()
     await close_pg_checkpointer()
 
 
+_is_prod = settings.app_env == "production"
 app = FastAPI(
     title="ClickMe API",
     version="2.0.0",
     description="AI Ad Simulation Platform",
     lifespan=lifespan,
+    # 운영에선 Swagger/OpenAPI 비활성화(외부 노출 방지). nginx에서도 한 겹 차단.
+    docs_url=None if _is_prod else "/docs",
+    redoc_url=None if _is_prod else "/redoc",
+    openapi_url=None if _is_prod else "/openapi.json",
 )
 
 
@@ -127,6 +156,8 @@ app.add_middleware(
         "http://127.0.0.1:3000",
         "http://localhost:3001",
         "http://127.0.0.1:3001",
+        # 운영 배포 주소 등은 env(CORS_ALLOW_ORIGINS, 콤마 구분)로 추가
+        *[o.strip() for o in settings.cors_allow_origins.split(",") if o.strip()],
     ],
     allow_origin_regex=r"https://.*\.vercel\.app",
     allow_credentials=True,

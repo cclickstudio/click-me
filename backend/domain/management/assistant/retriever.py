@@ -20,6 +20,27 @@ if TYPE_CHECKING:
 
 _RRF_K = 60  # Reciprocal Rank Fusion 상수 (랭킹 합산 — 점수 스케일 정규화 불필요)
 
+# source_type 스코프 — 매니지먼트 어시스턴트 검색 풀(정책·플레이북·KPI·벤치마크·근거).
+# 시뮬레이션 도메인 지식(persona_methodology·simulation_trust·platform_guide)은 제외해
+# 운영 질문에 엉뚱한 방법론 문서가 섞이는 걸 막는다. kb_ingest._SOURCE_META와 일치시킨다.
+MANAGEMENT_SOURCE_TYPES = frozenset(
+    {
+        "meta_official",
+        "playbook",
+        "internal_policy",
+        "meta_reference",
+        "kobaco_baseline",
+        "evidence",
+    }
+)
+
+# ADVISE(일반 광고지식) 게이트 검색 풀 — 일반지식 + 큐레이션 레퍼런스(Meta 공식·벤치마크).
+# 운영 특화(playbook·internal_policy)는 제외: 사용자 캠페인 맥락이 아닌 일반 질문이므로.
+GENERAL_SOURCE_TYPE = "general_knowledge"
+ADVISE_SOURCE_TYPES = frozenset(
+    {GENERAL_SOURCE_TYPE, "meta_official", "kobaco_baseline", "meta_reference"}
+)
+
 # 키워드 검색(GIN). websearch_to_tsquery는 빈/특수문자 쿼리에도 안전.
 _KW_SQL = text(
     "SELECT id, source, title, chunk,"
@@ -60,6 +81,8 @@ class KbRetriever:
         source_types는 management_kb_documents.source_type 값
         (예: platform_guide·persona_methodology·simulation_trust·meta_reference·kobaco_baseline).
         """
+        # expanding bindparam은 인덱싱 가능한 시퀀스만 받음(frozenset 불가) → list 변환.
+        types = list(source_types) if source_types else None
         emb = await self.embed(query)
         pool = max(k * 3, 8)  # 융합 전 각 채널에서 넉넉히 가져온다
         dist = ManagementKbChunk.embedding.cosine_distance(emb).label("dist")
@@ -70,15 +93,15 @@ class KbRetriever:
             ManagementKbChunk.chunk,
             dist,
         )
-        if source_types:
+        if types:
             vec_stmt = vec_stmt.join(
                 ManagementKbDocument,
                 ManagementKbChunk.document_id == ManagementKbDocument.id,
-            ).where(ManagementKbDocument.source_type.in_(source_types))
+            ).where(ManagementKbDocument.source_type.in_(types))
         vec_stmt = vec_stmt.order_by(dist).limit(pool)
 
-        if source_types:
-            kw_sql, kw_params = _KW_SQL_TYPED, {"q": query, "lim": pool, "types": source_types}
+        if types:
+            kw_sql, kw_params = _KW_SQL_TYPED, {"q": query, "lim": pool, "types": types}
         else:
             kw_sql, kw_params = _KW_SQL, {"q": query, "lim": pool}
 
@@ -98,12 +121,19 @@ class KbRetriever:
             entry = fused.setdefault(key, {"r": r, "s": 0.0})
             entry["s"] += 1.0 / (_RRF_K + rank + 1)
         top = sorted(fused.values(), key=lambda x: x["s"], reverse=True)[:k]
-        return [
-            {
-                "source": x["r"].source,
-                "title": x["r"].title,
-                "chunk": x["r"].chunk,
-                "score": round(x["s"], 4),  # RRF 융합 점수(상대 랭킹용)
-            }
-            for x in top
-        ]
+        out: list[dict] = []
+        for x in top:
+            r = x["r"]
+            # 코사인 점수(1-거리) — 벡터 채널 청크만 보유. 키워드-only 청크는 None(거리 없음).
+            # ADVISE 게이트가 절대 유사도 임계(_ADVISE_THRESHOLD)로 게이팅할 때 쓴다.
+            dist = getattr(r, "dist", None)
+            out.append(
+                {
+                    "source": r.source,
+                    "title": r.title,
+                    "chunk": r.chunk,
+                    "score": round(x["s"], 4),  # RRF 융합 점수(상대 랭킹용)
+                    "cosine_score": (1.0 - dist) if dist is not None else None,
+                }
+            )
+        return out

@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [master, main, develop]
+    branches: [main, ci-cd]
   pull_request:
-    branches: [master, main]
+    branches: [main, ci-cd]
   workflow_dispatch: {} # E2E(Playwright) 잡 수동 실행용
 
 jobs:
@@ -35,10 +35,23 @@ jobs:
         run: uv sync --frozen
 
       - name: Lint (ruff)
-        run: uv run ruff check .
+        run: uv run ruff check . ../test/backend
 
       - name: Format check (ruff)
-        run: uv run ruff format --check .
+        run: uv run ruff format --check . ../test/backend
+
+      # 폰트(Pretendard)는 gitignore라 리포에 없음 → 텍스트 렌더 테스트용으로 받아둠
+      - name: Download fonts (Pretendard)
+        run: |
+          mkdir -p assets/fonts
+          base="https://github.com/orioncactus/pretendard/raw/main/packages/pretendard/dist/public/static"
+          for w in Regular Bold; do
+            curl -fL --retry 3 -o "assets/fonts/Pretendard-$w.otf" "$base/Pretendard-$w.otf"
+          done
+
+      # PDF 리포트는 Playwright(Chromium)로 HTML→PDF 렌더 → 브라우저 바이너리 필요
+      - name: Install Playwright Chromium
+        run: uv run playwright install --with-deps chromium
 
       - name: Run tests
         env:
@@ -49,8 +62,8 @@ jobs:
           LANGSMITH_API_KEY: 'dummy'
           AWS_ACCESS_KEY_ID: 'dummy'
           AWS_SECRET_ACCESS_KEY: 'dummy'
-          SQS_SIMULATION_QUEUE_URL: 'https://sqs.ap-northeast-2.amazonaws.com/dummy/dummy'
-        run: uv run pytest tests/ -v --tb=short
+        # testpaths(../test/backend)를 pyproject가 가리킴 → 인자 없이 실행
+        run: uv run pytest -v --tb=short
 
   # ─────────────────────────────────────────
   # Frontend: lint + build
@@ -93,6 +106,15 @@ jobs:
       - name: Lint
         run: pnpm lint
 
+      # 폰트(NotoSansKR)는 gitignore라 리포에 없음 → next/font/local 빌드용으로 받아둠
+      - name: Download fonts (NotoSansKR)
+        run: |
+          mkdir -p src/app/fonts
+          base="https://github.com/notofonts/noto-cjk/raw/main/Sans/SubsetOTF/KR"
+          for w in Thin Regular Medium Bold Black; do
+            curl -fL --retry 3 -o "src/app/fonts/NotoSansKR-$w.otf" "$base/NotoSansKR-$w.otf"
+          done
+
       - name: Build
         env:
           NEXT_PUBLIC_API_URL: http://localhost:8000
@@ -125,10 +147,22 @@ jobs:
       AWS_ACCESS_KEY_ID: 'dummy'
       AWS_SECRET_ACCESS_KEY: 'dummy'
       AWS_REGION: 'ap-northeast-2'
-      SQS_SIMULATION_QUEUE_URL: 'https://sqs.ap-northeast-2.amazonaws.com/dummy/dummy'
 
     steps:
       - uses: actions/checkout@v4
+
+      # 폰트(NotoSansKR·Pretendard)는 gitignore라 리포에 없음 → 빌드·렌더용으로 받아둠
+      - name: Download fonts
+        run: |
+          mkdir -p frontend/src/app/fonts backend/assets/fonts
+          noto="https://github.com/notofonts/noto-cjk/raw/main/Sans/SubsetOTF/KR"
+          for w in Thin Regular Medium Bold Black; do
+            curl -fL --retry 3 -o "frontend/src/app/fonts/NotoSansKR-$w.otf" "$noto/NotoSansKR-$w.otf"
+          done
+          pre="https://github.com/orioncactus/pretendard/raw/main/packages/pretendard/dist/public/static"
+          for w in Regular Bold; do
+            curl -fL --retry 3 -o "backend/assets/fonts/Pretendard-$w.otf" "$pre/Pretendard-$w.otf"
+          done
 
       - name: Set up Python 3.12
         uses: actions/setup-python@v5
@@ -165,7 +199,8 @@ jobs:
       # P1 — admin/chats 정렬 통합 테스트는 실 DB가 있는 이 잡에서 실제로 돈다.
       - name: Backend integration test (P1)
         working-directory: backend
-        run: uv run pytest tests/admin -v
+        # 부분 실행은 config(pyproject)를 자동 탐색 못 함 → -c로 명시(pythonpath 적용)
+        run: uv run pytest -c pyproject.toml ../test/backend/admin -v
 
       - name: Start backend (uvicorn)
         working-directory: backend

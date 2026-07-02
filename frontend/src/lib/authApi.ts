@@ -1,7 +1,7 @@
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
 export type UserRole = 'ADMIN' | 'COMPANY' | 'USER';
-export type UserStatus = 'ACTIVE' | 'PENDING' | 'REJECTED';
+export type UserStatus = 'ACTIVE';
 
 export type UserOut = {
   id: string;
@@ -33,6 +33,21 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 }
 
 export const authApi = {
+  // 통합 로그인 진입점 — 화면은 이 함수만 호출. provider에 따라 cognito↔자체 JWT로 분기.
+  // cognito: amazon-cognito-identity-js로 인증(ID 토큰) → me()로 우리 User 조회.
+  // local(기본): 기존 POST /api/auth/login.
+  signIn: async (login_id: string, password: string): Promise<AuthResponse> => {
+    const provider = process.env.NEXT_PUBLIC_AUTH_PROVIDER ?? 'local';
+    if (provider === 'cognito') {
+      // 동적 import — local 모드 번들에 Cognito SDK를 포함하지 않는다.
+      const { cognitoLogin } = await import('./cognito');
+      const token = await cognitoLogin(login_id, password);
+      const user = await authApi.me(token);
+      return { access_token: token, token_type: 'bearer', user };
+    }
+    return authApi.login({ login_id, password });
+  },
+
   login: (body: { login_id: string; password: string }) =>
     request<AuthResponse>('/api/auth/login', { method: 'POST', body: JSON.stringify(body) }),
 

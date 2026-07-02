@@ -33,7 +33,6 @@ class User(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     login_id: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
-    password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     role: Mapped[str] = mapped_column(String(20), nullable=False)  # ADMIN | COMPANY | USER
     status: Mapped[str] = mapped_column(
@@ -78,7 +77,7 @@ class OrganizationMember(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False)
     role: Mapped[str] = mapped_column(String(20), nullable=False)
     invited_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"), nullable=True)
-    status: Mapped[str] = mapped_column(String(20), nullable=False, default="PENDING")
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="ACTIVE")  # ACTIVE
     joined_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
@@ -97,9 +96,7 @@ class Organization(Base):
     plan: Mapped[str] = mapped_column(
         String(50), default="free"
     )  # free | professional | enterprise
-    status: Mapped[str] = mapped_column(
-        String(20), nullable=False, default="PENDING"
-    )  # ACTIVE | PENDING
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="ACTIVE")  # ACTIVE
     default_landing_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
@@ -186,8 +183,8 @@ class ManagementKbChunk(Base):
     source: Mapped[str] = mapped_column(String(128))  # 출처 파일명(인용용)
     title: Mapped[str] = mapped_column(String(256))  # 섹션 제목(인용용)
     chunk: Mapped[str] = mapped_column(Text)
-    # BGE-M3 1024 = settings.embedding_dim(KB·LTM 동일). 변경 시 Alembic 마이그레이션 + kb_ingest 재실행 필요.
-    embedding: Mapped[list[float]] = mapped_column(Vector(1024))
+    # OpenAI text-embedding-3-small 1536 = settings.embedding_dim(KB·LTM 동일). 변경 시 Alembic 마이그레이션 + kb_ingest 재실행 필요.
+    embedding: Mapped[list[float]] = mapped_column(Vector(1536))
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     # 마이그 019 — 문서 연결 + 메타(테넌트·버전·키워드검색). search_vector는 DB 생성열이라 미매핑.
     document_id: Mapped[uuid.UUID | None] = mapped_column(

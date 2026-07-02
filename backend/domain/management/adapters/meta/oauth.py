@@ -28,7 +28,7 @@ def build_login_url(
     redirect_uri: str,
     scopes: list[str],
     state: str,
-    api_version: str = "v23.0",
+    api_version: str = "v21.0",
 ) -> str:
     """Facebook 로그인 대화상자 URL — /meta/connect가 여기로 redirect한다.
 
@@ -52,7 +52,7 @@ async def exchange_code_for_token(
     redirect_uri: str,
     code: str,
     transport: httpx.AsyncBaseTransport | None = None,
-    api_version: str = "v23.0",
+    api_version: str = "v21.0",
 ) -> OAuthToken:
     """콜백으로 받은 code를 단기 액세스 토큰으로 교환."""
     return await _oauth_get(
@@ -73,7 +73,7 @@ async def exchange_for_long_lived(
     app_secret: str,
     short_lived_token: str,
     transport: httpx.AsyncBaseTransport | None = None,
-    api_version: str = "v23.0",
+    api_version: str = "v21.0",
 ) -> OAuthToken:
     """단기 토큰을 장기 토큰(~60일)으로 교환 — 저장 대상."""
     return await _oauth_get(

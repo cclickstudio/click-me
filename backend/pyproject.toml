@@ -56,6 +56,7 @@ dependencies = [
     "psycopg[binary,pool]>=3.3.4",
     "trafilatura>=2.1.0",
     "apscheduler>=3.11.2",
+    "deepagents>=0.6.12",
 ]
 
 [dependency-groups]
@@ -96,9 +97,7 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 # load_dotenv() 후 import는 의도적 순서
 "api/main.py" = ["E402"]
-"tests/conftest.py" = ["E402"]
-# 테스트 파일은 타입 어노테이션 불필요
-"tests/**" = ["ANN"]
+# 테스트 ruff 규칙(ANN/E402 완화)은 backend 밖으로 이동 → test/backend/ruff.toml에서 관리
 # alembic 마이그레이션은 SQL 문자열 포함으로 E501 허용
 "alembic/**" = ["E501"]
 # 한국어 시스템 프롬프트 / 긴 emit 문자열 허용
@@ -125,4 +124,8 @@ indent-style = "space"
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-testpaths = ["tests"]
+# 테스트는 backend 밖(루트 test/backend)으로 이동됨. import 루트 2개를 sys.path에 둔다 —
+# "."(backend: api/core/domain/tools)와 "../test/backend"(테스트끼리 공유하는 management.helpers 등).
+# testpaths로 이동 위치를 가리킨다. 실행은 그대로 `cd backend && uv run pytest`.
+testpaths = ["../test/backend"]
+pythonpath = [".", "../test/backend"]

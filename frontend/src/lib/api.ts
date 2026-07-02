@@ -1,7 +1,7 @@
 import { getToken } from "./authApi";
 import type { BoardResponse } from "@/components/manage/compare/types";
 import type { CampaignDetail, CampaignsResponse, CreativesResponse, DemographicsResponse, ManualKpiMap, PlatformsResponse } from "@/components/manage/campaigns/types";
-import type { Proposal } from "@/components/manage/types";
+import type { ActionResult, Proposal } from "@/components/manage/types";
 import type { BudgetStatus } from "@/components/manage/budget/types";
 import type {
   BrandKit,
@@ -19,6 +19,16 @@ import type {
 } from "./types";
 
 export const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+
+export class ApiError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number,
+  ) {
+    super(message);
+    this.name = "ApiError";
+  }
+}
 
 // 게재 불가 원인 — code별 한국어 message. INSUFFICIENT_CREDIT는 부족액·잔액 동반.
 export interface DeliveryCause {
@@ -149,21 +159,41 @@ export interface CalibrationResponse {
   rate_limited?: string;
 }
 
+// admin이 impersonate로 선택한 org id — management 요청에만 X-Org-Id로 실림. sessionStorage=탭 종료 시 소멸.
+export function getAdminOrgId(): string | null {
+  if (typeof window === "undefined") return null;
+  return window.sessionStorage.getItem("adminOrgId");
+}
+export function setAdminOrgId(orgId: string | null): void {
+  if (typeof window === "undefined") return;
+  if (orgId) window.sessionStorage.setItem("adminOrgId", orgId);
+  else window.sessionStorage.removeItem("adminOrgId");
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const token = getToken();
   const authHeader: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+  const orgId = getAdminOrgId();
+  // 계약: path는 /api 이후 상대경로. management 요청 & adminOrgId 있을 때만 부착(비-management 라우터로 누출 금지).
+  const orgHeader: Record<string, string> =
+    orgId && path.startsWith("/management") ? { "X-Org-Id": orgId } : {};
   const { headers: initHeaders, ...restInit } = init ?? {};
   const res = await fetch(`${API_BASE}/api${path}`, {
     headers: {
       "Content-Type": "application/json",
       ...authHeader,
+      ...orgHeader,
       ...(initHeaders as Record<string, string> | undefined),
     },
     ...restInit,
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: "Unknown error" }));
-    throw new Error(err.detail ?? `HTTP ${res.status}`);
+    // detail이 dict(예: {issues:[...]})면 그대로 두면 "[object Object]"가 되니 읽히게 직렬화.
+    const d = (err as { detail?: unknown }).detail;
+    const msg =
+      typeof d === "string" ? d : d != null ? JSON.stringify(d) : `HTTP ${res.status}`;
+    throw new ApiError(msg, res.status);
   }
   return res.json();
 }
@@ -291,6 +321,9 @@ export const api = {
     // DB에 저장된 시뮬 결과를 simulation_id로 조회(콜드·패널 진입). 404=결과 없음.
     dbResult: (simulationId: string): Promise<SimRunResult> =>
       request<SimRunResult>(`/simulation/${simulationId}/db-result`),
+    // VLM이 이 URL 이미지를 읽을 수 있는지 사전 확인(백엔드가 직접 GET — 미리보기와 별개).
+    checkImage: (url: string): Promise<{ ok: boolean; mime?: string; reason?: string }> =>
+      request(`/simulation/check-image?url=${encodeURIComponent(url)}`),
   },
 
   // 페르소나 토론(/api/debate/*) — 시뮬 반응(reactions)을 받아 토론을 돌리고 결과를 낸다.
@@ -524,6 +557,8 @@ export const api = {
     users: () => request<{ users: unknown[] }>("/admin/users"),
     createUser: (body: object) => request("/admin/users", { method: "POST", body: JSON.stringify(body) }),
     inquiries: () => request<{ inquiries: unknown[] }>("/admin/inquiries"),
+    // 조직 목록(배열 직접 반환) — admin impersonation org 선택 드롭다운용.
+    organizations: () => request<{ id: string; name: string }[]>("/admin/organizations"),
   },
 
   projects: {
@@ -583,6 +618,35 @@ export const api = {
       request("/management/execute", {
         method: "POST",
         body: JSON.stringify({ approved_action, proposal }),
+      }),
+    budgetProposal: (
+      campaignId: string,
+      body: {
+        action: 'increase_budget' | 'decrease_budget';
+        new_daily_budget_krw: number;
+        shown_budget_before_krw?: number;
+      },
+    ) =>
+      request<{ proposal: Proposal; budget_before_krw: number; drift: boolean }>(
+        `/management/campaigns/${campaignId}/budget-proposal`,
+        { method: "POST", body: JSON.stringify(body) },
+      ),
+    budgetCommit: (
+      campaignId: string,
+      body: {
+        action: 'increase_budget' | 'decrease_budget';
+        new_daily_budget_krw: number;
+        shown_budget_before_krw?: number;
+      },
+    ) =>
+      request<{
+        result: ActionResult;
+        error_message?: string;
+        budget_before_krw: number;
+        budget_after_krw: number;
+      }>(`/management/campaigns/${campaignId}/budget-commit`, {
+        method: "POST",
+        body: JSON.stringify(body),
       }),
     audit: (approvalId: string) => request(`/management/audit?approval_id=${approvalId}`),
     // 멀티테넌트 — 로그인 org로 Meta OAuth 로그인 URL을 받는다(인증 XHR). 프론트가 그 URL로 이동.

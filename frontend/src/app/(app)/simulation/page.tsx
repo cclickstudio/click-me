@@ -14,7 +14,9 @@ import { SIM_CATEGORIES } from '@/lib/simCategories';
 import type { SimRunResult, SSEProgressEvent } from '@/lib/types';
 
 type Step = 'setup' | 'running';
-type InputMode = 'image' | 'url';
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
+
+type InputMode = 'image' | 'generated' | 'campaign';
 type GenderFilter = '' | 'M' | 'F';
 
 /* ─── 광고 목표(일반인도 쉽게 고르는 단일 선택) ─── */
@@ -73,7 +75,16 @@ const AGE_BANDS: { label: string; min: number; max: number }[] = [
 ];
 
 export default function SimulationRunPage() {
-  const { selectedProject, projects, selectProject } = useProjects();
+  const { projects } = useProjects();
+  // 화면 내 프로젝트 선택은 로컬 상태 — 사이드바(전역 선택)와 동기화하지 않는다.
+  // 진입 시 전역 선택(localStorage)을 초기값으로만 읽고, 이후 변경은 이 화면에만 반영된다.
+  const [localProjectId, setLocalProjectId] = useState<string | null>(null);
+  useEffect(() => {
+    setLocalProjectId(localStorage.getItem('selectedProjectId'));
+  }, []);
+  const selectedProject = projects.find(p => p.id === localProjectId) ?? null;
+  const selectProject = (id: string | null) => setLocalProjectId(id);
+
   const router = useRouter();
   // N2 — 안읽음 뱃지: 직접 실행 완료로 채팅에 제안을 주입할 때 플로팅이 닫혀 있으면
   // pushUnread로 빨간 뱃지를 올린다. 닫힘 여부는 최신값을 ref로 읽는다(완료 콜백 클로저 staleness 회피).
@@ -89,7 +100,84 @@ export default function SimulationRunPage() {
   const [adContent, setAdContent] = useState('');
   const [inputMode, setInputMode] = useState<InputMode>('image');
   const [file, setFile] = useState<File | null>(null);
-  const [imageUrl, setImageUrl] = useState('');
+  // '생성한 광고' 입력 — 선택 프로젝트의 성공한 생성 후보(제품명-후보N) 목록
+  const [genOptions, setGenOptions] = useState<
+    { value: string; label: string; imageUrl: string }[]
+  >([]);
+  const [selectedGenValue, setSelectedGenValue] = useState('');
+  const [genLoading, setGenLoading] = useState(false);
+  const selectedGenImageUrl =
+    genOptions.find(o => o.value === selectedGenValue)?.imageUrl ?? '';
+  // '집행중 광고' 입력 — 집행 캠페인 소재(Meta) 이미지·카피 prefill
+  const [campaigns, setCampaigns] = useState<{ campaign_id: string; name: string; state: string }[]>(
+    [],
+  );
+  const [campaignsLoading, setCampaignsLoading] = useState(false);
+  const [selectedCampaignId, setSelectedCampaignId] = useState('');
+  const [campaignImageUrl, setCampaignImageUrl] = useState('');
+  const [campaignImgError, setCampaignImgError] = useState(false);
+  // VLM 읽기 사전확인 — url/campaign 모드의 이미지 URL을 백엔드가 읽을 수 있는지.
+  const [vlmCheck, setVlmCheck] = useState<{
+    status: 'idle' | 'checking' | 'ok' | 'fail';
+    reason?: string;
+  }>({ status: 'idle' });
+  const activeCheckUrl = inputMode === 'campaign' ? campaignImageUrl.trim() : '';
+
+  // '생성한 광고' 모드 진입 시 — 선택 프로젝트의 성공한 생성 후보(제품명-후보N)를 로드한다.
+  useEffect(() => {
+    if (inputMode !== 'generated' || !selectedProject) return;
+    let cancelled = false;
+    setSelectedGenValue('');
+    setGenLoading(true);
+    (async () => {
+      try {
+        const gens = (await api.projects.generations(selectedProject.id, 20)) as Array<{
+          id: string;
+          status: string;
+          product_name: string | null;
+        }>;
+        const completed = gens.filter(g => g.status === 'completed').slice(0, 10);
+        const details = await Promise.all(
+          completed.map(g =>
+            api.generator
+              .detail(g.id)
+              .then(d => ({ g, d }))
+              .catch(() => null),
+          ),
+        );
+        if (cancelled) return;
+        const opts: { value: string; label: string; imageUrl: string }[] = [];
+        for (const entry of details) {
+          if (!entry) continue;
+          const { g, d } = entry as {
+            g: { id: string; product_name: string | null };
+            d: { candidates?: Array<{ candidate_id: string; idx: number; image_url: string | null }> };
+          };
+          const name = g.product_name || '광고';
+          (d.candidates ?? [])
+            .filter(c => c.image_url)
+            .forEach((c, i) => {
+              opts.push({
+                value: `${g.id}:${c.candidate_id}`,
+                label: `${name}-후보${(c.idx ?? i) + 1}`,
+                imageUrl: c.image_url!.startsWith('http')
+                  ? c.image_url!
+                  : `${API_BASE}${c.image_url}`,
+              });
+            });
+        }
+        setGenOptions(opts);
+      } catch {
+        if (!cancelled) setGenOptions([]);
+      } finally {
+        if (!cancelled) setGenLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [inputMode, selectedProject?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const [adTitle, setAdTitle] = useState('');
   const [categoryId, setCategoryId] = useState<number | ''>('');
   const [serviceClass, setServiceClass] = useState<number | ''>('');
@@ -97,6 +185,73 @@ export default function SimulationRunPage() {
   // 광고 목표 — 일반인도 쉽게 고르는 단일 선택(+ 기타 직접 입력).
   const [goalItem, setGoalItem] = useState('');
   const [customGoal, setCustomGoal] = useState('');
+
+  // VLM 읽기 사전확인 — url/campaign 모드 이미지 URL을 백엔드가 GET할 수 있는지(디바운스).
+  useEffect(() => {
+    if (!activeCheckUrl) {
+      setVlmCheck({ status: 'idle' });
+      return;
+    }
+    let cancelled = false;
+    setVlmCheck({ status: 'checking' });
+    const t = setTimeout(async () => {
+      try {
+        const r = await api.simulation.checkImage(activeCheckUrl);
+        if (!cancelled) setVlmCheck(r.ok ? { status: 'ok' } : { status: 'fail', reason: r.reason });
+      } catch {
+        if (!cancelled) setVlmCheck({ status: 'fail', reason: '확인에 실패했어요.' });
+      }
+    }, 600);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [activeCheckUrl]);
+
+  // '집행중 광고' 모드 진입 시 — 집행 캠페인 목록을 로드한다.
+  useEffect(() => {
+    if (inputMode !== 'campaign') return;
+    let cancelled = false;
+    setCampaignsLoading(true);
+    (async () => {
+      try {
+        const resp = await api.management.campaigns();
+        if (cancelled) return;
+        setCampaigns(
+          (resp?.campaigns ?? []).map(c => ({
+            campaign_id: c.campaign_id,
+            name: c.name,
+            state: c.state,
+          })),
+        );
+      } catch {
+        if (!cancelled) setCampaigns([]);
+      } finally {
+        if (!cancelled) setCampaignsLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [inputMode]);
+
+  // 캠페인 선택 → 그 소재의 이미지·카피를 시뮬 입력으로 prefill(카피는 비어 있을 때만).
+  const onSelectCampaign = async (id: string) => {
+    setSelectedCampaignId(id);
+    setCampaignImageUrl('');
+    setCampaignImgError(false);
+    if (!id) return;
+    try {
+      const t = await api.management.targeting(id);
+      if (t.ad_image_url) setCampaignImageUrl(t.ad_image_url);
+      if (t.ad_headline && !adTitle.trim()) setAdTitle(t.ad_headline);
+      if (t.ad_body && !adContent.trim()) setAdContent(t.ad_body);
+      if (t.category_id && categoryId === '') setCategoryId(t.category_id);
+      if (t.service_class && serviceClass === '') setServiceClass(t.service_class);
+    } catch {
+      /* 조회 실패 — 이미지 없이 진행 */
+    }
+  };
 
   // 시뮬레이션 설정
   const [sampleSize, setSampleSize] = useState(20);
@@ -144,7 +299,12 @@ export default function SimulationRunPage() {
         ad_id: adId.trim() || `AD-${Date.now()}`,
         ad_content: adContent || undefined,
         ad_image: inputMode === 'image' ? file : undefined,
-        ad_image_url: inputMode === 'url' ? imageUrl || undefined : undefined,
+        ad_image_url:
+          inputMode === 'generated'
+            ? selectedGenImageUrl || undefined
+            : inputMode === 'campaign'
+              ? campaignImageUrl || undefined
+              : undefined,
         project_id: selectedProject?.id ?? undefined,
         target_filter: targetFilter,
         target_mode: targetMode,
@@ -367,7 +527,8 @@ export default function SimulationRunPage() {
                 {(
                   [
                     ['image', '파일 업로드'],
-                    ['url', '이미지 URL'],
+                    ['generated', '생성한 광고'],
+                    ['campaign', '집행중 광고'],
                   ] as [InputMode, string][]
                 ).map(([m, lbl]) => (
                   <button
@@ -402,15 +563,116 @@ export default function SimulationRunPage() {
                   />
                 </label>
               )}
-              {inputMode === 'url' && (
-                <input
-                  type='text'
-                  value={imageUrl}
-                  onChange={e => setImageUrl(e.target.value)}
-                  placeholder='https://example.com/ad.png'
-                  className={inputCls}
-                />
+              {inputMode === 'generated' && (
+                <div className='flex flex-1 min-h-0 flex-col gap-3'>
+                  {!selectedProject ? (
+                    <p className='text-sm text-[#8B95A1] dark:text-[#6B7280]'>
+                      먼저 위에서 프로젝트를 선택하세요.
+                    </p>
+                  ) : genLoading ? (
+                    <p className='text-sm text-[#8B95A1] dark:text-[#6B7280]'>
+                      생성한 광고를 불러오는 중...
+                    </p>
+                  ) : genOptions.length === 0 ? (
+                    <p className='text-sm text-[#8B95A1] dark:text-[#6B7280]'>
+                      이 프로젝트에 성공한 생성 내역이 없어요.
+                    </p>
+                  ) : (
+                    <>
+                      <select
+                        value={selectedGenValue}
+                        onChange={e => setSelectedGenValue(e.target.value)}
+                        className={inputCls}>
+                        <option value=''>생성한 광고 후보 선택</option>
+                        {genOptions.map(o => (
+                          <option key={o.value} value={o.value}>
+                            {o.label}
+                          </option>
+                        ))}
+                      </select>
+                      {selectedGenImageUrl && (
+                        <div className='relative flex flex-1 min-h-0 items-center justify-center overflow-hidden rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-[#F8F9FA] dark:bg-[#1C2333]'>
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={selectedGenImageUrl}
+                            alt='선택한 생성 광고'
+                            className='absolute inset-0 h-full w-full object-contain'
+                          />
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
               )}
+              {inputMode === 'campaign' && (
+                <div className='flex flex-1 min-h-0 flex-col gap-3'>
+                  {campaignsLoading ? (
+                    <p className='text-sm text-[#8B95A1] dark:text-[#6B7280]'>
+                      집행 캠페인을 불러오는 중...
+                    </p>
+                  ) : campaigns.length === 0 ? (
+                    <p className='text-sm text-[#8B95A1] dark:text-[#6B7280]'>
+                      집행 중인 캠페인이 없어요. (Meta 연결·집행 광고가 있어야 표시돼요.)
+                    </p>
+                  ) : (
+                    <>
+                      <select
+                        value={selectedCampaignId}
+                        onChange={e => onSelectCampaign(e.target.value)}
+                        className={inputCls}>
+                        <option value=''>집행 광고(캠페인) 선택</option>
+                        {campaigns.map(c => (
+                          <option key={c.campaign_id} value={c.campaign_id}>
+                            {c.name}
+                            {c.state ? ` · ${c.state}` : ''}
+                          </option>
+                        ))}
+                      </select>
+                      {selectedCampaignId && !campaignImageUrl && (
+                        <p className='text-xs text-[#8B95A1] dark:text-[#6B7280]'>
+                          이 캠페인 소재에 이미지가 없어요.
+                        </p>
+                      )}
+                      {campaignImageUrl && (
+                        <div className='relative flex flex-1 min-h-0 items-center justify-center overflow-hidden rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-[#F8F9FA] dark:bg-[#1C2333]'>
+                          {campaignImgError ? (
+                            <p className='px-4 text-center text-xs text-[#8B95A1] dark:text-[#6B7280]'>
+                              브라우저 미리보기는 Meta 제한으로 안 보일 수 있어요. 아래 VLM 확인을 참고하세요.
+                            </p>
+                          ) : (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              key={campaignImageUrl}
+                              src={campaignImageUrl}
+                              alt='집행 광고 소재'
+                              className='absolute inset-0 h-full w-full object-contain'
+                              onError={() => setCampaignImgError(true)}
+                            />
+                          )}
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
+              {inputMode === 'campaign' &&
+                vlmCheck.status !== 'idle' &&
+                activeCheckUrl && (
+                  <p
+                    className={`mt-1 text-[11px] ${
+                      vlmCheck.status === 'ok'
+                        ? 'text-emerald-600 dark:text-emerald-400'
+                        : vlmCheck.status === 'fail'
+                          ? 'text-[#F04452]'
+                          : 'text-[#8B95A1] dark:text-[#6B7280]'
+                    }`}>
+                    {vlmCheck.status === 'checking'
+                      ? '🔎 VLM이 읽을 수 있는지 확인 중...'
+                      : vlmCheck.status === 'ok'
+                        ? '✅ VLM이 읽을 수 있어요'
+                        : `❌ ${vlmCheck.reason ?? '불러올 수 없어요'}`}
+                  </p>
+                )}
             </div>
           </div>
 

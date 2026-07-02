@@ -68,7 +68,31 @@ class AdPlatformWriter(Protocol):
     ) -> ActionResult: ...
 
     async def replace_creative(
-        self, campaign_id: str, creative_id: str, idem_key: str
+        self, ad_id: str, creative_id: str, idem_key: str
+    ) -> ActionResult: ...
+
+    async def create_ad_creative(
+        self,
+        ad_account_id: str,
+        *,
+        image_hash: str | None,
+        headline: str,
+        body: str,
+        link_url: str,
+        idem_key: str,
+    ) -> str: ...
+
+    async def replace_creative_tree(
+        self,
+        campaign_id: str,
+        *,
+        ad_ids: list[str],
+        ad_account_id: str,
+        image_hash: str | None,
+        headline: str,
+        body: str,
+        link_url: str,
+        idem_key: str,
     ) -> ActionResult: ...
 
     async def create_campaign(self, config: CampaignConfig, idem_key: str) -> ActionResult: ...
