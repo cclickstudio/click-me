@@ -21,6 +21,7 @@ from core.models import (
     ChatLongTermMemory,
     ChatMessage,
     ChatSession,
+    ExecutionHistory,
 )
 from domain.chat.kb_ingest import EMBEDDING_MODEL
 
@@ -499,6 +500,91 @@ async def get_long_term_memory(
             ]
     except Exception as exc:  # noqa: BLE001 — 조회 실패면 메모리 없이 진행
         print(f"[chat] long-term memory get error: {exc!r}")
+        return []
+
+
+# ── 실행 히스토리(롱텀메모리) — 기능 수행 이력 적재 + BM25급 키워드 회수 ──
+
+
+async def record_execution(
+    project_id: str | None,
+    feature_type: str,
+    action: str,
+    summary: str,
+    payload: dict | None = None,
+    user_id: str | None = None,
+) -> None:
+    """기능 수행 1건을 실행 히스토리에 적재(best-effort·비차단).
+
+    summary는 tsvector 색인 대상(키워드 서치용 평문). feature_type=simulation|generation|management.
+    프로젝트 스코프 없으면 생략. 실패해도 조용히 무시(채팅 흐름을 막지 않는다).
+    """
+    pid = _as_uuid(project_id)
+    if pid is None:
+        return
+    try:
+        async with AsyncSessionLocal() as db:
+            db.add(
+                ExecutionHistory(
+                    project_id=pid,
+                    user_id=_as_uuid(user_id),
+                    feature_type=feature_type,
+                    action=action,
+                    summary=(summary or "")[:2000],
+                    payload=payload or {},
+                )
+            )
+            await db.commit()
+    except Exception as exc:  # noqa: BLE001 — 히스토리 적재 실패가 채팅을 막지 않게
+        print(f"[chat] execution history record error: {exc!r}")
+
+
+async def search_execution_history(
+    project_id: str | None, query: str, k: int = 5, feature_type: str | None = None
+) -> list[dict]:
+    """실행 히스토리를 BM25급 키워드 서치로 회수 — tsvector @@ plainto_tsquery + ts_rank_cd 순.
+
+    query 비었거나 매칭 0건이면 executed_at 최신순 폴백. 한국어는 'simple' config(공백 토큰).
+    """
+    pid = _as_uuid(project_id)
+    if pid is None:
+        return []
+
+    def _row(r: ExecutionHistory, score: float | None = None) -> dict:
+        d = {
+            "feature_type": r.feature_type,
+            "action": r.action,
+            "summary": r.summary,
+            "payload": r.payload,
+            "executed_at": r.executed_at.isoformat() if r.executed_at else None,
+        }
+        if score is not None:
+            d["score"] = round(score, 4)
+        return d
+
+    try:
+        async with AsyncSessionLocal() as db:
+            q = (query or "").strip()
+            if q:
+                tsq = func.plainto_tsquery("simple", q)
+                rank = func.ts_rank_cd(ExecutionHistory.search_tsv, tsq).label("rank")
+                stmt = select(ExecutionHistory, rank).where(
+                    ExecutionHistory.project_id == pid,
+                    ExecutionHistory.search_tsv.op("@@")(tsq),
+                )
+                if feature_type:
+                    stmt = stmt.where(ExecutionHistory.feature_type == feature_type)
+                rows = (await db.execute(stmt.order_by(rank.desc()).limit(k))).all()
+                if rows:
+                    return [_row(r[0], float(r[1])) for r in rows]
+            # 폴백 — 최신순(빈 query·매칭 0건)
+            stmt = select(ExecutionHistory).where(ExecutionHistory.project_id == pid)
+            if feature_type:
+                stmt = stmt.where(ExecutionHistory.feature_type == feature_type)
+            rows2 = await db.execute(stmt.order_by(ExecutionHistory.executed_at.desc()).limit(k))
+            return [_row(r) for r in rows2.scalars()]
+    except Exception as exc:  # noqa: BLE001 — 검색 실패면 빈 목록
+        print(f"[chat] execution history search error: {exc!r}")
         return []
 
 

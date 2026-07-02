@@ -562,6 +562,25 @@ def build_chat_tools(settings, memory=None) -> list:
         facts = [r.get("fact") for r in rows if r.get("fact")]
         return "\n".join(f"- {f}" for f in facts) or "(저장된 기억 없음)"
 
+    @tool
+    async def recall_history(
+        query: str,
+        *,
+        state: Annotated[dict, InjectedState],
+    ) -> str:
+        """이 프로젝트에서 과거 수행한 시뮬/생성/매니지먼트 실행 이력을 키워드로 조회한다.
+        '지난번 20대 시뮬 뭐였지'처럼 과거에 무엇을 언제 돌렸는지가 필요할 때 호출한다."""
+        rows = await history.search_execution_history(state.get("project_id"), query, k=5)
+        if not rows:
+            return "(수행 이력 없음)"
+        labels = {"simulation": "시뮬", "generation": "생성", "management": "매니지먼트"}
+        lines = []
+        for r in rows:
+            when = (r.get("executed_at") or "")[:16].replace("T", " ")
+            feat = labels.get(r.get("feature_type"), r.get("feature_type") or "")
+            lines.append(f"- [{when}] {feat}: {(r.get('summary') or '').strip()[:120]}")
+        return "\n".join(lines)
+
     return [
         ask_management,
         ask_simulation,
@@ -583,4 +602,5 @@ def build_chat_tools(settings, memory=None) -> list:
         extract_brand,
         remember,
         recall,
+        recall_history,
     ]
