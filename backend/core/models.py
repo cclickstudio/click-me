@@ -8,9 +8,11 @@ from sqlalchemy import (
     JSON,
     BigInteger,
     Boolean,
+    Computed,
     DateTime,
     Float,
     ForeignKey,
+    Index,
     Integer,
     SmallInteger,
     String,
@@ -18,7 +20,7 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
-from sqlalchemy.dialects.postgresql import ENUM, JSONB, UUID
+from sqlalchemy.dialects.postgresql import ENUM, JSONB, TSVECTOR, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from core.db import Base
@@ -405,6 +407,42 @@ class ChatLongTermMemory(Base):
     # 시맨틱 검색용 임베딩(text-embedding-3-small). nullable — 임베딩 전/실패 행은 최신순 폴백.
     embedding: Mapped[list[float] | None] = mapped_column(Vector(1536), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ExecutionHistory(Base):
+    """실행 히스토리 — 시뮬/생성/매니지먼트 기능 수행 이력(시간·종류·데이터)을 프로젝트 단위 누적.
+
+    롱텀메모리 회수용. summary를 tsvector로 색인해 BM25급 키워드 서치(ts_rank_cd)로 조회한다.
+    feature_type: simulation | generation | management. 마이그 0002.
+    """
+
+    __tablename__ = "execution_history"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    project_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    # 기능 수행 시간(도연 지시). 조회는 이 시각 기준.
+    executed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    feature_type: Mapped[str] = mapped_column(String(20))  # simulation | generation | management
+    action: Mapped[str] = mapped_column(String(64))  # run_simulation · create_campaign 등 세부
+    summary: Mapped[str] = mapped_column(Text, default="")  # BM25 검색 대상 평문(제목·카피·타깃 등)
+    payload: Mapped[dict] = mapped_column(JSONB, default=dict)  # 기타 관련 데이터(입력·결과 요약)
+    # BM25급 키워드 서치용 tsvector(생성 컬럼). 한국어 stemmer 부재 → 'simple'(공백 토큰).
+    search_tsv: Mapped[str | None] = mapped_column(
+        TSVECTOR,
+        Computed("to_tsvector('simple', coalesce(summary, ''))", persisted=True),
+        nullable=True,
+    )
+
+    __table_args__ = (
+        Index("ix_execution_history_search_tsv", "search_tsv", postgresql_using="gin"),
+    )
 
 
 class ChatBrandProfile(Base):
