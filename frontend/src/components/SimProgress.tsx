@@ -2,7 +2,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { getToken } from '@/lib/authApi';
+import { authedFetch } from '@/lib/api';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
@@ -85,9 +85,7 @@ export function JobProgress({
         setStatus('done');
         es.close();
         esRef.current = null;
-        fetch(`${API_BASE}/api/chat/${kind}/${id}/result`, {
-          headers: getToken() ? { Authorization: `Bearer ${getToken()}` } : {},
-        })
+        authedFetch(`${API_BASE}/api/chat/${kind}/${id}/result`)
           .then((r) => r.json())
           .then((r) => setResult(r as Record<string, unknown>))
           .catch(() => {})

@@ -4,7 +4,7 @@
 
 import { useEffect, useState, useCallback, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
-import { getToken } from '@/lib/authApi';
+import { authedFetch } from '@/lib/api';
 import { formatKSTDate } from '@/lib/datetime';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
@@ -34,12 +34,10 @@ function TrashInner() {
   const [data, setData] = useState<TrashData>({ projects: [], simulations: [], generations: [] });
   const [loading, setLoading] = useState(true);
 
-  const authHeaders = () => ({ Authorization: `Bearer ${getToken()}` });
-
   const load = useCallback(() => {
     setLoading(true);
     const q = project ? `?project_id=${project}` : org ? `?org_id=${org}` : '';
-    fetch(`${API_BASE}/api/projects/trash${q}`, { headers: authHeaders() })
+    authedFetch(`${API_BASE}/api/projects/trash${q}`)
       .then(r => (r.ok ? r.json() : { projects: [], simulations: [], generations: [] }))
       .then(setData)
       .catch(() => {})
@@ -53,7 +51,7 @@ function TrashInner() {
       kind === 'project' ? `/api/projects/${id}/restore`
       : kind === 'sim' ? `/api/projects/simulations/${id}/restore`
       : `/api/projects/generations/${id}/restore`;
-    const res = await fetch(`${API_BASE}${path}`, { method: 'POST', headers: authHeaders() });
+    const res = await authedFetch(`${API_BASE}${path}`, { method: 'POST' });
     if (!res.ok) { alert('복원에 실패했습니다.'); return; }
     load();
   };

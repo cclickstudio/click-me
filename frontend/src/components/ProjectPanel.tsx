@@ -8,7 +8,7 @@ import { useAuth } from './AuthProvider';
 import TrashSection from './TrashSection';
 import ModeBadge from './ModeBadge';
 import ProjectChatSection from './chat/ProjectChatSection';
-import { getToken } from '@/lib/authApi';
+import { authedFetch } from '@/lib/api';
 import { formatKST } from '@/lib/datetime';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
@@ -123,9 +123,9 @@ function CreateProjectModal({ onClose, onCreated }: { onClose: () => void; onCre
   const handleCreate = async () => {
     if (!name.trim() || creating) return;
     setCreating(true);
-    await fetch(`${API_BASE}/api/projects`, {
+    await authedFetch(`${API_BASE}/api/projects`, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: name.trim(), description: description.trim() || null }),
     });
     setCreating(false);

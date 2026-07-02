@@ -7,8 +7,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { SimulationResultView } from '@/components/simulator/SimulationResultView';
 import { SegmentComparisonView } from '@/components/simulator/SegmentComparisonView';
 import { IndividualDeepView } from '@/components/simulator/IndividualDeepView';
-import { api } from '@/lib/api';
-import { getToken } from '@/lib/authApi';
+import { api, authedFetch } from '@/lib/api';
 import { useProjects } from '@/components/ProjectContext';
 import {
   loadSimComparison,
@@ -67,9 +66,7 @@ export default function SimulationResultPage() {
       });
 
     // 삭제/복원용 메타 — DB에 저장된 시뮬이면 deleted_at·project_id 확보(없으면 버튼 숨김).
-    fetch(`${API_BASE}/api/projects/simulations/${id}`, {
-      headers: { Authorization: `Bearer ${getToken()}` },
-    })
+    authedFetch(`${API_BASE}/api/projects/simulations/${id}`)
       .then(r => (r.ok ? r.json() : null))
       .then(d => {
         if (alive && d) setMeta({ project_id: d.project_id, deleted_at: d.deleted_at });
@@ -120,9 +117,8 @@ export default function SimulationResultPage() {
     if (!meta) return;
     if (!confirm('이 시뮬레이션을 삭제할까요?\n결과·페르소나 반응·보고서가 함께 삭제됩니다.')) return;
     setActing(true);
-    const res = await fetch(`${API_BASE}/api/projects/simulations/${id}`, {
+    const res = await authedFetch(`${API_BASE}/api/projects/simulations/${id}`, {
       method: 'DELETE',
-      headers: { Authorization: `Bearer ${getToken()}` },
     });
     if (!res.ok) {
       setActing(false);
@@ -136,9 +132,8 @@ export default function SimulationResultPage() {
   const handleRestore = async () => {
     if (!meta) return;
     setActing(true);
-    const res = await fetch(`${API_BASE}/api/projects/simulations/${id}/restore`, {
+    const res = await authedFetch(`${API_BASE}/api/projects/simulations/${id}/restore`, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${getToken()}` },
     });
     setActing(false);
     if (!res.ok) {

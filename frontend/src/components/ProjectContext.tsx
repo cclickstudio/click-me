@@ -3,7 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { getToken } from '@/lib/authApi';
 import { useAuth } from '@/components/AuthProvider';
-import { api } from '@/lib/api';
+import { api, authedFetch } from '@/lib/api';
 import type { DebateSessionMeta } from '@/lib/types';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
@@ -60,8 +60,7 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
     if (!token) return;
     setLoading(true);
     try {
-      const res = await fetch(`${API_BASE}/api/projects`, {
-        headers: { Authorization: `Bearer ${token}` },
+      const res = await authedFetch(`${API_BASE}/api/projects`, {
         cache: 'no-store',
       });
       const data = await res.json();
@@ -97,11 +96,10 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
   const fetchDetailsForProject = async (projectId: string) => {
     const token = getToken();
     if (!token) return;
-    const headers = { Authorization: `Bearer ${token}` };
     const [s, g, t] = await Promise.all([
-      fetch(`${API_BASE}/api/projects/${projectId}/simulations`, { headers }).then(r => r.json()).catch(() => []),
-      fetch(`${API_BASE}/api/projects/${projectId}/generations`, { headers }).then(r => r.json()).catch(() => []),
-      fetch(`${API_BASE}/api/projects/trash?project_id=${projectId}`, { headers }).then(r => r.json()).catch(() => null),
+      authedFetch(`${API_BASE}/api/projects/${projectId}/simulations`).then(r => r.json()).catch(() => []),
+      authedFetch(`${API_BASE}/api/projects/${projectId}/generations`).then(r => r.json()).catch(() => []),
+      authedFetch(`${API_BASE}/api/projects/trash?project_id=${projectId}`).then(r => r.json()).catch(() => null),
     ]);
     const trashed: TrashRow[] = t
       ? [

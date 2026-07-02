@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { getToken } from '@/lib/authApi';
+import { authedFetch } from '@/lib/api';
 import { useProjects } from '@/components/ProjectContext';
 import { useAuth } from '@/components/AuthProvider';
 import ModeBadge from '@/components/ModeBadge';
@@ -332,9 +332,7 @@ export default function GenerationDetailPage() {
 
   // generator 상세 — USE_MOCK=false면 org 스코프 인증 필요(머지 후) → 토큰 헤더 전달.
   useEffect(() => {
-    fetch(`${API_BASE}/api/generator/generations/${id}`, {
-      headers: { Authorization: `Bearer ${getToken()}` },
-    })
+    authedFetch(`${API_BASE}/api/generator/generations/${id}`)
       .then(r => { if (!r.ok) throw new Error('not found'); return r.json(); })
       .then(setData)
       .catch(() => setError('제너레이터 내역을 불러올 수 없습니다.'))
@@ -366,8 +364,8 @@ export default function GenerationDetailPage() {
   const handleDelete = async () => {
     if (!confirm('이 제너레이터 내역을 삭제할까요?\n생성 후보·게시 이력이 함께 삭제됩니다.')) return;
     setDeleting(true);
-    const res = await fetch(`${API_BASE}/api/projects/generations/${id}`, {
-      method: 'DELETE', headers: { Authorization: `Bearer ${getToken()}` },
+    const res = await authedFetch(`${API_BASE}/api/projects/generations/${id}`, {
+      method: 'DELETE',
     });
     if (!res.ok) { setDeleting(false); alert('삭제에 실패했습니다.'); return; }
     if (projectId) await refreshDetails(projectId); // 패널 카운트 실시간 반영
@@ -376,8 +374,8 @@ export default function GenerationDetailPage() {
 
   const handleRestore = async () => {
     setRestoring(true);
-    const res = await fetch(`${API_BASE}/api/projects/generations/${id}/restore`, {
-      method: 'POST', headers: { Authorization: `Bearer ${getToken()}` },
+    const res = await authedFetch(`${API_BASE}/api/projects/generations/${id}/restore`, {
+      method: 'POST',
     });
     setRestoring(false);
     if (!res.ok) { alert('복원에 실패했습니다.'); return; }

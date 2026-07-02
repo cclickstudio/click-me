@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { getToken } from '@/lib/authApi';
+import { authedFetch } from '@/lib/api';
 import { formatKST } from '@/lib/datetime';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
@@ -17,7 +17,7 @@ export default function AdminChatsPage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch(`${API_BASE}/api/admin/chats`, { headers: { Authorization: `Bearer ${getToken()}` } })
+    authedFetch(`${API_BASE}/api/admin/chats`)
       .then((r) => r.json()).then(setList).finally(() => setLoading(false));
   }, []);
 

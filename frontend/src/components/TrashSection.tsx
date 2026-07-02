@@ -4,7 +4,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { getToken } from '@/lib/authApi';
+import { authedFetch } from '@/lib/api';
 import { formatKSTDate } from '@/lib/datetime';
 import type { TrashRow } from './ProjectContext';
 
@@ -41,9 +41,9 @@ export default function TrashSection({
 
   const post = async (action: 'restore' | 'purge', body: object) => {
     setBusy(true);
-    const res = await fetch(`${API_BASE}/api/projects/${projectId}/trash/${action}`, {
+    const res = await authedFetch(`${API_BASE}/api/projects/${projectId}/trash/${action}`, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
     setBusy(false);

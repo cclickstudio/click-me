@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { getToken } from '@/lib/authApi';
+import { authedFetch } from '@/lib/api';
 import { useAuth } from '@/components/AuthProvider';
 import { useProjects } from '@/components/ProjectContext';
 import { formatKST, formatKSTDate } from '@/lib/datetime';
@@ -64,12 +64,11 @@ export default function ProjectDetailPage() {
   useEffect(() => {
     const load = async () => {
       setLoading(true);
-      const headers = { Authorization: `Bearer ${getToken()}` };
       try {
         const [proj, s, g] = await Promise.all([
-          fetch(`${API_BASE}/api/projects/${id}`, { headers }).then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); }),
-          fetch(`${API_BASE}/api/projects/${id}/simulations`, { headers }).then(r => r.json()).catch(() => []),
-          fetch(`${API_BASE}/api/projects/${id}/generations`, { headers }).then(r => r.json()).catch(() => []),
+          authedFetch(`${API_BASE}/api/projects/${id}`).then(r => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); }),
+          authedFetch(`${API_BASE}/api/projects/${id}/simulations`).then(r => r.json()).catch(() => []),
+          authedFetch(`${API_BASE}/api/projects/${id}/generations`).then(r => r.json()).catch(() => []),
         ]);
         setProject(proj);
         if (Array.isArray(s)) setSims(s);
@@ -86,7 +85,7 @@ export default function ProjectDetailPage() {
   const handleDelete = async () => {
     if (!confirm('프로젝트를 삭제하시겠습니까? 관련된 시뮬레이션과 제너레이터 내역도 함께 삭제됩니다.')) return;
     setDeleting(true);
-    await fetch(`${API_BASE}/api/projects/${id}`, { method: 'DELETE', headers: { Authorization: `Bearer ${getToken()}` } });
+    await authedFetch(`${API_BASE}/api/projects/${id}`, { method: 'DELETE' });
     await refreshProjects();
     router.push('/dashboard');
   };

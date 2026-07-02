@@ -5,7 +5,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/AuthProvider';
-import { getToken } from '@/lib/authApi';
+import { authedFetch } from '@/lib/api';
 import { formatKSTFull } from '@/lib/datetime';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
@@ -41,7 +41,7 @@ export default function SimulationsPage() {
     // ADMIN은 전체 시뮬, 그 외(USER/COMPANY)는 소속 조직 시뮬 — 데이터 소스만 다르다.
     const path = user.role === 'ADMIN' ? '/api/admin/simulations' : '/api/company/simulations';
     setLoading(true);
-    fetch(`${API_BASE}${path}`, { headers: { Authorization: `Bearer ${getToken()}` } })
+    authedFetch(`${API_BASE}${path}`)
       .then(r => r.json())
       .then(d => setList(Array.isArray(d) ? d : []))
       .catch(() => setList([]))

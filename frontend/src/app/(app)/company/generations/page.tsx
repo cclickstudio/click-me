@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { getToken } from '@/lib/authApi';
+import { authedFetch } from '@/lib/api';
 import ModeBadge from '@/components/ModeBadge';
 import { formatKST } from '@/lib/datetime';
 
@@ -27,9 +27,7 @@ export default function CompanyGenerationsPage() {
 
   const load = () => {
     setLoading(true);
-    fetch(`${API_BASE}/api/company/generations`, {
-      headers: { Authorization: `Bearer ${getToken()}` },
-    })
+    authedFetch(`${API_BASE}/api/company/generations`)
       .then((r) => r.json())
       .then((data) => { if (Array.isArray(data)) setList(data); })
       .finally(() => setLoading(false));
@@ -39,8 +37,8 @@ export default function CompanyGenerationsPage() {
 
   const handleDelete = async (id: string) => {
     if (!confirm('이 제너레이터 내역을 삭제할까요?\n생성 후보·게시 이력이 함께 삭제됩니다.')) return;
-    const res = await fetch(`${API_BASE}/api/projects/generations/${id}`, {
-      method: 'DELETE', headers: { Authorization: `Bearer ${getToken()}` },
+    const res = await authedFetch(`${API_BASE}/api/projects/generations/${id}`, {
+      method: 'DELETE',
     });
     if (!res.ok) { alert('삭제에 실패했습니다.'); return; }
     load();

@@ -6,8 +6,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { api } from '@/lib/api';
-import { getToken } from '@/lib/authApi';
+import { api, authedFetch } from '@/lib/api';
 import { formatRelativeKST, formatKSTFull } from '@/lib/datetime';
 import SimFormWidget from './SimFormWidget';
 import SimInputWidget from './SimInputWidget';
@@ -857,11 +856,10 @@ export default function ChatConversation({
       const controller = new AbortController();
       abortRef.current = controller;
       try {
-        const res = await fetch(`${API_BASE}/api/chat/approve`, {
+        const res = await authedFetch(`${API_BASE}/api/chat/approve`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            ...(getToken() ? { Authorization: `Bearer ${getToken()}` } : {}),
           },
           signal: controller.signal,
           body: JSON.stringify({
@@ -1259,11 +1257,10 @@ export default function ChatConversation({
       const controller = new AbortController();
       abortRef.current = controller;
       try {
-        const res = await fetch(`${API_BASE}/api/chat/complete`, {
+        const res = await authedFetch(`${API_BASE}/api/chat/complete`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
-            ...(getToken() ? { Authorization: `Bearer ${getToken()}` } : {}),
           },
           signal: controller.signal,
           body: JSON.stringify({

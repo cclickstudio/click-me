@@ -175,7 +175,8 @@ export function setAdminOrgId(orgId: string | null): void {
 // 공용 fetch — access 토큰(쿠키)을 Authorization 헤더에 싣고 쿠키도 함께 보낸다(credentials).
 // 401이면 refresh 토큰으로 access 재발급 후 1회 재시도. 모든 API 호출(request·직접 fetch)이 이걸 쓴다.
 // credentials: "include" 는 EventSource가 못 쓰는 SSE 외 경로에도 쿠키를 실어 백엔드 쿠키 폴백과 정합.
-async function authedFetch(url: string, init: RequestInit = {}): Promise<Response> {
+// 화면의 직접 fetch도 이 함수로 통일 — 개별 `Bearer ${getToken()}`·`authHeaders()` 대신 이걸 쓴다.
+export async function authedFetch(url: string, init: RequestInit = {}): Promise<Response> {
   const build = (token: string | null): RequestInit => ({
     ...init,
     credentials: "include",

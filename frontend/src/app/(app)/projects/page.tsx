@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { getToken } from '@/lib/authApi';
+import { authedFetch } from '@/lib/api';
 import { formatKST, formatKSTDate } from '@/lib/datetime';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
@@ -38,16 +38,14 @@ function ProjectCard({ project, onDelete }: { project: Project; onDelete: (id: s
   const [loading, setLoading] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
-  const headers = { Authorization: `Bearer ${getToken()}` };
-
   const toggle = async () => {
     const next = !open;
     setOpen(next);
     if (next && !loaded) {
       setLoading(true);
       const [s, g] = await Promise.all([
-        fetch(`${API_BASE}/api/projects/${project.id}/simulations`, { headers }).then(r => r.json()).catch(() => []),
-        fetch(`${API_BASE}/api/projects/${project.id}/generations`, { headers }).then(r => r.json()).catch(() => []),
+        authedFetch(`${API_BASE}/api/projects/${project.id}/simulations`).then(r => r.json()).catch(() => []),
+        authedFetch(`${API_BASE}/api/projects/${project.id}/generations`).then(r => r.json()).catch(() => []),
       ]);
       if (Array.isArray(s)) setSims(s);
       if (Array.isArray(g)) setGens(g);
@@ -59,7 +57,7 @@ function ProjectCard({ project, onDelete }: { project: Project; onDelete: (id: s
   const handleDelete = async () => {
     if (!confirm('프로젝트를 삭제하시겠습니까?')) return;
     setDeleting(true);
-    await fetch(`${API_BASE}/api/projects/${project.id}`, { method: 'DELETE', headers });
+    await authedFetch(`${API_BASE}/api/projects/${project.id}`, { method: 'DELETE' });
     onDelete(project.id);
   };
 
@@ -200,11 +198,9 @@ export default function ProjectsPage() {
   const [description, setDescription] = useState('');
   const [creating, setCreating] = useState(false);
 
-  const authHeaders = () => ({ Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' });
-
   const fetchProjects = async () => {
     setLoading(true);
-    const res = await fetch(`${API_BASE}/api/projects`, { headers: authHeaders() });
+    const res = await authedFetch(`${API_BASE}/api/projects`);
     const data = await res.json();
     if (Array.isArray(data)) setProjects(data);
     setLoading(false);
@@ -215,8 +211,8 @@ export default function ProjectsPage() {
   const handleCreate = async () => {
     if (!name.trim()) return;
     setCreating(true);
-    await fetch(`${API_BASE}/api/projects`, {
-      method: 'POST', headers: authHeaders(),
+    await authedFetch(`${API_BASE}/api/projects`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: name.trim(), description: description.trim() || null }),
     });
     setName(''); setDescription(''); setShowModal(false); setCreating(false);

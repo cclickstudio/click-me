@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useProjects } from './ProjectContext';
 import { ProjectItem } from './ProjectPanel';
-import { getToken } from '@/lib/authApi';
+import { authedFetch } from '@/lib/api';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
@@ -126,7 +126,7 @@ export default function CompanyPanel({ collapsed, onToggle }: { collapsed: boole
 
   // 전체 팀 목록 — TEAM 토글에서 프로젝트 0개 팀까지 표시하기 위함(팀 관리와 동일 목록)
   useEffect(() => {
-    fetch(`${API_BASE}/api/company/teams`, { headers: { Authorization: `Bearer ${getToken()}` } })
+    authedFetch(`${API_BASE}/api/company/teams`)
       .then(r => (r.ok ? r.json() : []))
       .then(d => { if (Array.isArray(d)) setTeams(d); })
       .catch(() => {});

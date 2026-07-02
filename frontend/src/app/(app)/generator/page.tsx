@@ -4,8 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useProjects } from "@/components/ProjectContext";
 import { useChatController } from "@/components/chat/ChatController";
 import ErrorCard from "@/components/chat/ErrorCard";
-import { api } from "@/lib/api";
-import { getToken } from "@/lib/authApi";
+import { api, authedFetch } from "@/lib/api";
 import { getJobs, setGenJob } from "@/lib/runningJobs";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -888,8 +887,7 @@ export default function GeneratorPage() {
     if (!simId) return;
     setImproveLoading(true);
     try {
-      const headers = { Authorization: `Bearer ${getToken()}` };
-      const r = await fetch(`${API_BASE}/api/projects/simulations/${simId}`, { headers });
+      const r = await authedFetch(`${API_BASE}/api/projects/simulations/${simId}`);
       if (!r.ok) throw new Error(`시뮬레이션 조회 실패 (HTTP ${r.status})`);
       const detail = await r.json();
       const agg = (detail.aggregate ?? {}) as Record<string, number | null>;
@@ -900,7 +898,7 @@ export default function GeneratorPage() {
       // 개선방향(토론 리포트) — 토론 없거나 실패해도 무시(개선방향만 비움)
       let direction = "";
       try {
-        const rep = await fetch(`${API_BASE}/api/debate/by-simulation/${simId}/report`, { headers });
+        const rep = await authedFetch(`${API_BASE}/api/debate/by-simulation/${simId}/report`);
         if (rep.ok) {
           const rv = (await rep.json()) as {
             report?: { ranked_actions?: RankedAction[]; plain_summary?: string };
@@ -1858,9 +1856,7 @@ export default function GeneratorPage() {
                       type="button"
                       className="flex items-center gap-1.5 text-xs text-[#4E5968] dark:text-[#9CA3AF] border border-[#E5E8EB] dark:border-[#2D3748] rounded-lg px-3 py-1.5 hover:border-[#3182F6] hover:text-[#3182F6] transition-colors"
                       onClick={async () => {
-                        const res = await fetch(`${API_BASE}/api/generator/generations/${detail.generation_id}/download-zip`, {
-                          headers: getToken() ? { Authorization: `Bearer ${getToken()}` } : {},
-                        });
+                        const res = await authedFetch(`${API_BASE}/api/generator/generations/${detail.generation_id}/download-zip`);
                         const blob = await res.blob();
                         const url = URL.createObjectURL(blob);
                         const a = document.createElement("a");

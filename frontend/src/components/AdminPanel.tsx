@@ -6,7 +6,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useProjects, type SimRow } from './ProjectContext';
 import TrashSection from './TrashSection';
 import ProjectChatSection from './chat/ProjectChatSection';
-import { getToken } from '@/lib/authApi';
+import { authedFetch } from '@/lib/api';
 import { formatKST } from '@/lib/datetime';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
@@ -330,7 +330,7 @@ export default function AdminPanel({ collapsed, onToggle }: { collapsed: boolean
 
   // 전체 조직 목록 — 프로젝트가 0개인 회사도 패널에 표시하기 위함
   useEffect(() => {
-    fetch(`${API_BASE}/api/admin/organizations`, { headers: { Authorization: `Bearer ${getToken()}` } })
+    authedFetch(`${API_BASE}/api/admin/organizations`)
       .then(r => (r.ok ? r.json() : []))
       .then(d => { if (Array.isArray(d)) setOrgs(d); })
       .catch(() => {});

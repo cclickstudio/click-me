@@ -4,7 +4,7 @@ import { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/components/AuthProvider';
-import { getToken } from '@/lib/authApi';
+import { authedFetch } from '@/lib/api';
 import { safeRandomUUID } from '@/lib/utils';
 import { formatKST } from '@/lib/datetime';
 import ModeBadge from '@/components/ModeBadge';
@@ -148,12 +148,10 @@ export default function DashboardPage() {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    // 모든 대시보드 호출에 access token을 싣는다(stats는 공개라 무시되지만 일관성 위해 포함).
-    const authHeaders = { Authorization: `Bearer ${getToken()}` };
     Promise.all([
-      fetch(`${API_BASE}/api/dashboard/stats`, { headers: authHeaders }).then((r) => r.json()).catch(() => null),
-      fetch(`${API_BASE}/api/dashboard/recent-simulations?limit=5`, { headers: authHeaders }).then((r) => r.json()).catch(() => []),
-      fetch(`${API_BASE}/api/dashboard/recent-generations?limit=5`, { headers: authHeaders }).then((r) => r.json()).catch(() => []),
+      authedFetch(`${API_BASE}/api/dashboard/stats`).then((r) => r.json()).catch(() => null),
+      authedFetch(`${API_BASE}/api/dashboard/recent-simulations?limit=5`).then((r) => r.json()).catch(() => []),
+      authedFetch(`${API_BASE}/api/dashboard/recent-generations?limit=5`).then((r) => r.json()).catch(() => []),
     ]).then(([s, sims, gens]) => {
       if (s) setStats(s);
       if (Array.isArray(sims)) setRecentSims(sims);
@@ -175,11 +173,10 @@ export default function DashboardPage() {
     setIsStreaming(true);
 
     try {
-      const res = await fetch(`${API_BASE}/api/chat/complete`, {
+      const res = await authedFetch(`${API_BASE}/api/chat/complete`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(getToken() ? { Authorization: `Bearer ${getToken()}` } : {}),
         },
         body: JSON.stringify({ session_id: sessionId.current, messages: newMessages }),
       });
