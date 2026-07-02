@@ -54,7 +54,10 @@ export function JobProgress({
 
   useEffect(() => {
     if (!id) return;
-    const es = new EventSource(`${API_BASE}/api/chat/${kind}/${id}/stream`);
+    // withCredentials: SSE는 Authorization 헤더를 못 붙이므로 쿠키로 인증(백엔드 쿠키 폴백).
+    const es = new EventSource(`${API_BASE}/api/chat/${kind}/${id}/stream`, {
+      withCredentials: true,
+    });
     esRef.current = es;
     es.onmessage = (ev: MessageEvent) => {
       let data: ProgressEvent;
