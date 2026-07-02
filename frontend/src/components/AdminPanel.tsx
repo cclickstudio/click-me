@@ -6,7 +6,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useProjects, type SimRow } from './ProjectContext';
 import TrashSection from './TrashSection';
 import ProjectChatSection from './chat/ProjectChatSection';
-import { authedFetch } from '@/lib/api';
+import { authedFetch, getAdminOrgId, setAdminOrgId } from '@/lib/api';
 import { formatKST } from '@/lib/datetime';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
@@ -327,6 +327,9 @@ export default function AdminPanel({ collapsed, onToggle }: { collapsed: boolean
   const { projects, loading, refresh } = useProjects();
   const [search, setSearch] = useState('');
   const [orgs, setOrgs] = useState<{ id: string; name: string }[]>([]);
+  // 작업 대상 조직(X-Org-Id impersonation) — 생성/집행은 이 org로, 조회는 이 org로 필터.
+  // 초기값은 client에서만 읽어 hydration 불일치 방지.
+  const [activeOrg, setActiveOrg] = useState('');
 
   // 전체 조직 목록 — 프로젝트가 0개인 회사도 패널에 표시하기 위함
   useEffect(() => {
@@ -334,6 +337,10 @@ export default function AdminPanel({ collapsed, onToggle }: { collapsed: boolean
       .then(r => (r.ok ? r.json() : []))
       .then(d => { if (Array.isArray(d)) setOrgs(d); })
       .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    setActiveOrg(getAdminOrgId() ?? '');
   }, []);
 
   const simMatch = pathname.match(/^\/simulation\/([^/]+)/);
@@ -413,6 +420,31 @@ export default function AdminPanel({ collapsed, onToggle }: { collapsed: boolean
             <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
           </svg>
         </button>
+      </div>
+
+      {/* 작업 대상 조직 — admin이 생성/집행할 org 선택(X-Org-Id). 전체=조회 전용(생성 불가). */}
+      <div className="px-3 py-2 border-b border-[#E5E8EB] dark:border-[#2D3748] shrink-0">
+        <label className="flex items-center gap-2">
+          <span className="text-[11px] font-semibold text-[#4E5968] dark:text-[#9CA3AF] shrink-0">
+            작업 조직
+          </span>
+          <select
+            value={activeOrg}
+            onChange={e => {
+              const v = e.target.value;
+              setActiveOrg(v);
+              setAdminOrgId(v || null);
+              // 선택 org로 전 화면 데이터를 다시 불러온다(조회 스코프·생성 대상 갱신).
+              window.location.reload();
+            }}
+            className="flex-1 min-w-0 rounded-lg border border-[#E5E8EB] dark:border-[#2D3748] bg-transparent px-2 py-1 text-xs text-[#191F28] dark:text-[#F2F4F6] focus:border-[#3182F6] outline-none"
+          >
+            <option value="">전체 (조회 전용)</option>
+            {orgs.map(o => (
+              <option key={o.id} value={o.id}>{o.name}</option>
+            ))}
+          </select>
+        </label>
       </div>
 
       {/* 검색 */}
