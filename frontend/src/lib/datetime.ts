@@ -44,6 +44,14 @@ export function formatKSTFull(iso?: string | null): string {
   return `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute}`;
 }
 
+// 날짜만: "YYYY-MM-DD" (KST) — 표·목록의 날짜 칸.
+export function formatKSTDate(iso?: string | null): string {
+  const d = toDate(iso);
+  if (!d) return '';
+  const p = partsKST(d);
+  return `${p.year}-${p.month}-${p.day}`;
+}
+
 // 상대시간: "방금 전 / N분 전 / N시간 전 / N일 전", 그 이상은 KST 절대시각.
 export function formatRelativeKST(iso?: string | null, now: Date = new Date()): string {
   const d = toDate(iso);

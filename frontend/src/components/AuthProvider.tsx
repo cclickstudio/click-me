@@ -1,7 +1,14 @@
 'use client';
 
 import { createContext, useCallback, useContext, useEffect, useState } from 'react';
-import { authApi, clearToken, getToken, saveToken, type UserOut } from '@/lib/authApi';
+import {
+  authApi,
+  clearToken,
+  getToken,
+  refreshAccessToken,
+  saveToken,
+  type UserOut,
+} from '@/lib/authApi';
 import { setAdminOrgId } from '@/lib/api';
 
 type AuthCtx = {
@@ -27,7 +34,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (!t) { setLoading(false); return; }
     authApi.me(t)
       .then((u) => { setUser(u); setToken(t); })
-      .catch(() => clearToken())
+      .catch(async () => {
+        // access 만료 가능성 — refresh 토큰으로 1회 재발급 후 재조회(새로고침 시 로그인 유지).
+        const nt = await refreshAccessToken();
+        if (nt) {
+          try {
+            const u = await authApi.me(nt);
+            setUser(u);
+            setToken(nt);
+            return;
+          } catch {
+            /* 재발급했지만 조회 실패 → 아래에서 정리 */
+          }
+        }
+        clearToken();
+      })
       .finally(() => setLoading(false));
   }, []);
 

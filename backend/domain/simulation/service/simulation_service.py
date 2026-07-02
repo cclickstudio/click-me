@@ -13,7 +13,7 @@ from collections.abc import AsyncIterator
 
 from core.tracing import make_trace_config
 from domain.simulation.adapters.ad_image_store import proxy_url_for
-from domain.simulation.contracts.schemas import SimulationRunRequest
+from domain.simulation.contracts.schemas import SegmentSpec, SimulationRunRequest
 from domain.simulation.tools.aggregation.ocean_segments import ocean_segment_breakdown
 from domain.simulation.tools.objective_fit import assess_objective_fit
 
@@ -77,6 +77,15 @@ class SimulationService:
         asyncio.create_task(self._run(run_id, request))
         return run_id
 
+    async def start_comparison(
+        self, request: SimulationRunRequest, segments: list[SegmentSpec]
+    ) -> str:
+        """persona_set 비동기 시작 — 세그먼트 배열을 순차 개별 실행. run_id 반환(진행률 SSE)."""
+        run_id = str(uuid.uuid4())
+        self._store.create_run(run_id)
+        asyncio.create_task(self._run_comparison(run_id, request, segments))
+        return run_id
+
     async def run(self, request: SimulationRunRequest) -> dict:
         """동기 실행 — 끝까지 돌린 뒤 결과(반응·루브릭·집계)를 한 번에 반환."""
         run_id = str(uuid.uuid4())
@@ -92,149 +101,11 @@ class SimulationService:
         return result
 
     async def _run(self, run_id: str, request: SimulationRunRequest) -> None:
+        """synthetic·individual 단일 런 — 코어 파이프라인을 돌려 결과를 저장(응답 구조 무변경)."""
         store = self._store
         try:
             store.set_status(run_id, "RUNNING")
-            store.emit(run_id, {"event": "progress", "stage": "ad_analysis", "pct": 5})
-
-            state = {"request": request, "reactions": [], "personas": [], "rubric_scores": []}
-            # LangSmith — 전체 시뮬레이션 = 요청 1건 = 최상위 Trace(simulation.simulate).
-            # 페르소나 N명 반응은 이 Trace 아래 하위 Node로 자동 부채꼴 집계된다.
-            trace_config = make_trace_config(
-                domain="simulation",
-                feature="simulate",
-                user_id=request.user_id or "anonymous",
-                login_id=request.login_id,
-                user_name=request.user_name,
-                role=request.role,
-                ad_id=request.ad_id,
-                project_id=request.project_id,
-                extra_metadata={
-                    "run_id": run_id,
-                    "sample_size": request.sample_size,
-                    "organization_id": request.organization_id,
-                },
-                extra_tags=["batch"] if request.sample_size > 10 else None,
-            )
-            # run_name은 make_trace_config 표준(simulation.simulate)을 그대로 사용.
-            # 반응 fan-out 병렬 수 제한(503 증폭 방지). preamble 노드는 단일이라 영향 없음.
-            trace_config["max_concurrency"] = _MAX_REACTION_CONCURRENCY
-            ad_dump: dict | None = None
-            rubric_dump: list[dict] = []
-            reactions: list[dict] = []
-            aggregate_dump: dict | None = None
-            # 영속화용 typed 객체(주입된 persistence 가 있을 때만 DB 저장에 사용)
-            ad_obj = None
-            personas: list = []
-            rubric_objs: list = []
-            reaction_objs: list = []
-            aggregate_obj = None
-            panel_version = "panel-v1"
-            total = request.sample_size
-            done = 0
-
-            async for update in self._graph.astream(
-                state, config=trace_config, stream_mode="updates"
-            ):
-                for node, out in update.items():
-                    if not out:
-                        continue
-                    if node == "interpret_ad":
-                        # 감지 + 의도 정합 채점을 함께 산출(§3.5-3) — ad·rubric_scores 동시 수집.
-                        ad_obj = out["ad"]
-                        ad_dump = ad_obj.model_dump()
-                        rubric_objs = out.get("rubric_scores", [])
-                        rubric_dump = [s.model_dump() for s in rubric_objs]
-                        store.emit(run_id, {"event": "progress", "stage": "panel", "pct": 15})
-                    elif node == "load_panel":
-                        personas = out["personas"]
-                        panel_version = out.get("panel_version") or panel_version
-                        total = len(personas) or total
-                        store.emit(run_id, {"event": "progress", "stage": "reaction", "pct": 30})
-                    elif node == "react":
-                        for r in out.get("reactions", []):
-                            reaction_objs.append(r)
-                            reactions.append(r.model_dump())  # §3.5 계약 (분석팀 입력)
-                            done += 1
-                            pct = 30 + int(done / total * 50) if total else 80
-                            store.emit(
-                                run_id,
-                                {
-                                    "event": "progress",
-                                    "stage": "reaction",
-                                    "pct": pct,
-                                    "message": f"반응 {done}/{total}",
-                                },
-                            )
-                    elif node == "aggregate":
-                        store.emit(run_id, {"event": "milestone", "stage": "aggregate", "pct": 95})
-                        aggregate_obj = out["aggregate"]
-                        aggregate_dump = aggregate_obj.model_dump()  # 집계 계약
-
-            if not reactions:
-                raise RuntimeError("모든 페르소나 반응 생성에 실패했습니다.")
-
-            result = {
-                "run_id": run_id,
-                "ad": _ad_block(request),  # 광고(선언 입력) 테이블
-                "ad_analysis": ad_dump,  # 광고해석 테이블
-                "simulation": _simulation_block(  # 시뮬레이션(실행 메타) 테이블
-                    run_id, request, ad_obj, reaction_objs, aggregate_obj, panel_version
-                ),
-                "personas": [p.model_dump() for p in personas],  # 반응별 페르소나 속성 조회용
-                "reactions": reactions,
-                "rubric_scores": rubric_dump,
-                "aggregate": aggregate_dump,
-                # OCEAN 성향별 반응 분해(결과 해석) — 연령×성별 외 '성격 축'. 빈 입력이면 빈 구조.
-                "ocean_segments": ocean_segment_breakdown(personas, reaction_objs),
-                # 상세 페이지 표시용 — S3 키는 프록시 URL로(자격증명 노출 방지), 외부 URL은 그대로.
-                "ad_asset_url": proxy_url_for(request.ad_image_key or request.ad_image_url),
-            }
-            # 캠페인 목표 달성 가능성(결정론 룰) — 목표 선언 + 집계가 있을 때만(exploratory).
-            if request.ad_objective and aggregate_obj is not None:
-                fit = assess_objective_fit(request.ad_objective, aggregate_obj, reaction_objs)
-                result["objective_fit"] = fit.model_dump() if fit is not None else None
-            # DB 영속화 — 프로젝트 선택 시에만(ads→projects FK). 실패해도 런 결과(인메모리)는 유지.
-            if (
-                self._persistence is not None
-                and ad_obj is not None
-                and aggregate_obj is not None
-                and request.project_id
-            ):
-                try:
-                    sim_id = await self._persistence.save_completed_run(
-                        request=request,
-                        ad=ad_obj,
-                        personas=personas,
-                        reactions=reaction_objs,
-                        rubric=rubric_objs,
-                        aggregate=aggregate_obj,
-                        panel_version=panel_version,
-                        simulation_id=uuid.UUID(run_id),  # DB PK=run_id 통일 → 챗 즉시 조회
-                    )
-                    result["simulation_id"] = str(sim_id)
-                    # 성과 비교 자동 연결 — fromCampaign 경로 진입 시 서버에서 직접 링크.
-                    if request.from_campaign_id and request.organization_id:
-                        try:
-                            await self._persistence.link_to_campaign(
-                                sim_id,
-                                request.from_campaign_id,
-                                request.organization_id,
-                            )
-                            logger.info(
-                                "campaign 자동 링크 완료 sim=%s campaign=%s",
-                                sim_id,
-                                request.from_campaign_id,
-                            )
-                        except Exception:
-                            logger.exception(
-                                "campaign 링크 실패(런은 유지) sim=%s campaign=%s",
-                                sim_id,
-                                request.from_campaign_id,
-                            )
-                except Exception:
-                    logger.exception("영속화 실패(런은 유지) run_id=%s", run_id)
-
+            result = await self._produce_result(request, run_id=run_id)
             store.set_result(run_id, result)
             store.set_status(run_id, "COMPLETED")
             store.emit(
@@ -244,6 +115,221 @@ class SimulationService:
             store.set_status(run_id, "FAILED")
             store.emit(run_id, {"event": "error", "message": str(exc)})
             logger.exception("시뮬레이션 실패 run_id=%s", run_id)
+
+    async def _run_comparison(
+        self, run_id: str, request: SimulationRunRequest, segments: list[SegmentSpec]
+    ) -> None:
+        """persona_set 런 — 세그먼트마다 코어 파이프라인을 개별 실행해 SimComparisonResult로 조립.
+
+        진행률은 세그먼트 메타(segment_label·segment_index·segment_total)를 얹어 하나의 compare
+        run_id로 스트리밍한다. 동시성 증폭을 피하려 세그먼트는 순차 실행(각 세그먼트 내부 반응은
+        기존 _MAX_REACTION_CONCURRENCY로 팬아웃). 세그먼트별 DB 영속화는 각자 고유 persist_id로
+        저장돼 PK(run_id 통일) 충돌을 피한다.
+        """
+        store = self._store
+        try:
+            store.set_status(run_id, "RUNNING")
+            total = len(segments)
+            seg_payloads: list[dict] = []
+            for idx, seg in enumerate(segments):
+                # 세그먼트별 요청 — 공통 광고 필드는 유지, 타깃/표본만 세그먼트 값으로 교체.
+                # analysis_mode는 synthetic으로 내려 각 세그먼트를 일반 런과 동일하게 돌린다.
+                seg_request = request.model_copy(
+                    update={
+                        "target_filter": seg.target_filter,
+                        "sample_size": seg.sample_size,
+                        "analysis_mode": "synthetic",
+                    }
+                )
+                seg_meta = {
+                    "segment_label": seg.label,
+                    "segment_index": idx,
+                    "segment_total": total,
+                }
+                # 세그먼트마다 고유 persist_id — DB PK는 run_id와 통일돼 있어(공유 시 충돌) 분리 필수.
+                seg_persist_id = str(uuid.uuid4())
+                seg_result = await self._produce_result(
+                    seg_request,
+                    run_id=seg_persist_id,
+                    emit_run_id=run_id,
+                    segment_meta=seg_meta,
+                )
+                seg_payloads.append(
+                    {
+                        "label": seg.label,
+                        "target_filter": seg.target_filter,
+                        "sample_size": seg.sample_size,
+                        "result": seg_result,
+                    }
+                )
+            comparison = {"mode": "persona_set", "run_id": run_id, "segments": seg_payloads}
+            store.set_result(run_id, comparison)
+            store.set_status(run_id, "COMPLETED")
+            store.emit(
+                run_id, {"event": "completed", "result_url": f"/api/simulation/{run_id}/result"}
+            )
+        except Exception as exc:
+            store.set_status(run_id, "FAILED")
+            store.emit(run_id, {"event": "error", "message": str(exc)})
+            logger.exception("persona_set 시뮬레이션 실패 run_id=%s", run_id)
+
+    async def _produce_result(
+        self,
+        request: SimulationRunRequest,
+        *,
+        run_id: str,
+        emit_run_id: str | None = None,
+        segment_meta: dict | None = None,
+    ) -> dict:
+        """코어 파이프라인 — outer 그래프를 돌려 결과 dict를 조립·반환(상태/완료 이벤트는 호출자).
+
+        run_id: 결과 식별·DB 영속 PK. emit_run_id: SSE 진행률을 보낼 run(기본 run_id).
+        segment_meta: persona_set에서 진행률 이벤트에 얹을 세그먼트 정보(synthetic은 None → 무변경).
+        """
+        store = self._store
+        eid = emit_run_id or run_id
+
+        def _emit(event: dict) -> None:
+            store.emit(eid, {**event, **segment_meta} if segment_meta else event)
+
+        _emit({"event": "progress", "stage": "ad_analysis", "pct": 5})
+
+        state = {"request": request, "reactions": [], "personas": [], "rubric_scores": []}
+        # LangSmith — 전체 시뮬레이션 = 요청 1건 = 최상위 Trace(simulation.simulate).
+        # 페르소나 N명 반응은 이 Trace 아래 하위 Node로 자동 부채꼴 집계된다.
+        trace_config = make_trace_config(
+            domain="simulation",
+            feature="simulate",
+            user_id=request.user_id or "anonymous",
+            login_id=request.login_id,
+            user_name=request.user_name,
+            role=request.role,
+            ad_id=request.ad_id,
+            project_id=request.project_id,
+            extra_metadata={
+                "run_id": run_id,
+                "sample_size": request.sample_size,
+                "organization_id": request.organization_id,
+            },
+            extra_tags=["batch"] if request.sample_size > 10 else None,
+        )
+        # run_name은 make_trace_config 표준(simulation.simulate)을 그대로 사용.
+        # 반응 fan-out 병렬 수 제한(503 증폭 방지). preamble 노드는 단일이라 영향 없음.
+        trace_config["max_concurrency"] = _MAX_REACTION_CONCURRENCY
+        ad_dump: dict | None = None
+        rubric_dump: list[dict] = []
+        reactions: list[dict] = []
+        aggregate_dump: dict | None = None
+        # 영속화용 typed 객체(주입된 persistence 가 있을 때만 DB 저장에 사용)
+        ad_obj = None
+        personas: list = []
+        rubric_objs: list = []
+        reaction_objs: list = []
+        aggregate_obj = None
+        panel_version = "panel-v1"
+        total = request.sample_size
+        done = 0
+
+        async for update in self._graph.astream(state, config=trace_config, stream_mode="updates"):
+            for node, out in update.items():
+                if not out:
+                    continue
+                if node == "interpret_ad":
+                    # 감지 + 의도 정합 채점을 함께 산출(§3.5-3) — ad·rubric_scores 동시 수집.
+                    ad_obj = out["ad"]
+                    ad_dump = ad_obj.model_dump()
+                    rubric_objs = out.get("rubric_scores", [])
+                    rubric_dump = [s.model_dump() for s in rubric_objs]
+                    _emit({"event": "progress", "stage": "panel", "pct": 15})
+                elif node == "load_panel":
+                    personas = out["personas"]
+                    panel_version = out.get("panel_version") or panel_version
+                    total = len(personas) or total
+                    _emit({"event": "progress", "stage": "reaction", "pct": 30})
+                elif node == "react":
+                    for r in out.get("reactions", []):
+                        reaction_objs.append(r)
+                        reactions.append(r.model_dump())  # §3.5 계약 (분석팀 입력)
+                        done += 1
+                        pct = 30 + int(done / total * 50) if total else 80
+                        _emit(
+                            {
+                                "event": "progress",
+                                "stage": "reaction",
+                                "pct": pct,
+                                "message": f"반응 {done}/{total}",
+                            }
+                        )
+                elif node == "aggregate":
+                    _emit({"event": "milestone", "stage": "aggregate", "pct": 95})
+                    aggregate_obj = out["aggregate"]
+                    aggregate_dump = aggregate_obj.model_dump()  # 집계 계약
+
+        if not reactions:
+            raise RuntimeError("모든 페르소나 반응 생성에 실패했습니다.")
+
+        result = {
+            "run_id": run_id,
+            "ad": _ad_block(request),  # 광고(선언 입력) 테이블
+            "ad_analysis": ad_dump,  # 광고해석 테이블
+            "simulation": _simulation_block(  # 시뮬레이션(실행 메타) 테이블
+                run_id, request, ad_obj, reaction_objs, aggregate_obj, panel_version
+            ),
+            "personas": [p.model_dump() for p in personas],  # 반응별 페르소나 속성 조회용
+            "reactions": reactions,
+            "rubric_scores": rubric_dump,
+            "aggregate": aggregate_dump,
+            # OCEAN 성향별 반응 분해(결과 해석) — 연령×성별 외 '성격 축'. 빈 입력이면 빈 구조.
+            "ocean_segments": ocean_segment_breakdown(personas, reaction_objs),
+            # 상세 페이지 표시용 — S3 키는 프록시 URL로(자격증명 노출 방지), 외부 URL은 그대로.
+            "ad_asset_url": proxy_url_for(request.ad_image_key or request.ad_image_url),
+        }
+        # 캠페인 목표 달성 가능성(결정론 룰) — 목표 선언 + 집계가 있을 때만(exploratory).
+        if request.ad_objective and aggregate_obj is not None:
+            fit = assess_objective_fit(request.ad_objective, aggregate_obj, reaction_objs)
+            result["objective_fit"] = fit.model_dump() if fit is not None else None
+        # DB 영속화 — 프로젝트 선택 시에만(ads→projects FK). 실패해도 런 결과(인메모리)는 유지.
+        if (
+            self._persistence is not None
+            and ad_obj is not None
+            and aggregate_obj is not None
+            and request.project_id
+        ):
+            try:
+                sim_id = await self._persistence.save_completed_run(
+                    request=request,
+                    ad=ad_obj,
+                    personas=personas,
+                    reactions=reaction_objs,
+                    rubric=rubric_objs,
+                    aggregate=aggregate_obj,
+                    panel_version=panel_version,
+                    simulation_id=uuid.UUID(run_id),  # DB PK=run_id 통일 → 챗 즉시 조회
+                )
+                result["simulation_id"] = str(sim_id)
+                # 성과 비교 자동 연결 — fromCampaign 경로 진입 시 서버에서 직접 링크.
+                if request.from_campaign_id and request.organization_id:
+                    try:
+                        await self._persistence.link_to_campaign(
+                            sim_id,
+                            request.from_campaign_id,
+                            request.organization_id,
+                        )
+                        logger.info(
+                            "campaign 자동 링크 완료 sim=%s campaign=%s",
+                            sim_id,
+                            request.from_campaign_id,
+                        )
+                    except Exception:
+                        logger.exception(
+                            "campaign 링크 실패(런은 유지) sim=%s campaign=%s",
+                            sim_id,
+                            request.from_campaign_id,
+                        )
+            except Exception:
+                logger.exception("영속화 실패(런은 유지) run_id=%s", run_id)
+
+        return result
 
     async def stream_events(self, run_id: str) -> AsyncIterator[str]:
         if self._store.get_status(run_id) is None:

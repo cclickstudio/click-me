@@ -1,6 +1,7 @@
-// AWS Cognito 로그인 래퍼 — amazon-cognito-identity-js로 ID 토큰만 발급받는다(Hosted UI·소셜·MFA 미사용).
+// AWS Cognito 로그인 래퍼 — amazon-cognito-identity-js로 access/refresh 토큰을 발급·갱신(Hosted UI·소셜·MFA 미사용).
 import {
   AuthenticationDetails,
+  CognitoRefreshToken,
   CognitoUser,
   CognitoUserPool,
 } from 'amazon-cognito-identity-js';
@@ -21,17 +22,44 @@ function getPool(): CognitoUserPool {
   return pool;
 }
 
-// 로그인 → ID 토큰(JWT) 반환. username = 우리 login_id 규약(백엔드가 login_id로 DB User를 조회).
-export function cognitoLogin(loginId: string, password: string): Promise<string> {
+// 로그인·갱신이 반환하는 토큰 3종. access는 API 인증(Bearer), refresh는 재발급, id는 예비.
+export type CognitoTokens = { accessToken: string; idToken: string; refreshToken: string };
+
+// 로그인 → access/id/refresh 토큰 반환. username = 우리 login_id 규약(백엔드가 username claim으로 DB User 조회).
+export function cognitoLogin(loginId: string, password: string): Promise<CognitoTokens> {
   const cognitoUser = new CognitoUser({ Username: loginId, Pool: getPool() });
   const authDetails = new AuthenticationDetails({ Username: loginId, Password: password });
-  return new Promise<string>((resolve, reject) => {
+  return new Promise<CognitoTokens>((resolve, reject) => {
     cognitoUser.authenticateUser(authDetails, {
-      onSuccess: (session) => resolve(session.getIdToken().getJwtToken()),
+      onSuccess: (session) =>
+        resolve({
+          accessToken: session.getAccessToken().getJwtToken(),
+          idToken: session.getIdToken().getJwtToken(),
+          refreshToken: session.getRefreshToken().getToken(),
+        }),
       onFailure: (err) => reject(err instanceof Error ? err : new Error(String(err))),
       // 임시 비밀번호(관리자 발급) 상태 — 자가 재설정 흐름은 없으므로 안내만.
       newPasswordRequired: () =>
         reject(new Error('비밀번호 재설정이 필요합니다. 관리자에게 문의하세요.')),
+    });
+  });
+}
+
+// refresh 토큰으로 access 토큰 재발급. username은 만료된 access 토큰의 claim에서 얻어 넘긴다.
+export function cognitoRefresh(loginId: string, refreshToken: string): Promise<CognitoTokens> {
+  const cognitoUser = new CognitoUser({ Username: loginId, Pool: getPool() });
+  const token = new CognitoRefreshToken({ RefreshToken: refreshToken });
+  return new Promise<CognitoTokens>((resolve, reject) => {
+    cognitoUser.refreshSession(token, (err, session) => {
+      if (err || !session) {
+        reject(err instanceof Error ? err : new Error(String(err ?? '세션 갱신 실패')));
+        return;
+      }
+      resolve({
+        accessToken: session.getAccessToken().getJwtToken(),
+        idToken: session.getIdToken().getJwtToken(),
+        refreshToken: session.getRefreshToken().getToken(),
+      });
     });
   });
 }

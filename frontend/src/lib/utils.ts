@@ -1,9 +1,8 @@
+import { formatKSTDate } from "./datetime";
+
+// 백엔드는 시각을 UTC로 저장·직렬화하므로 KST로 변환해 표시(타임존 표기 없으면 UTC 간주).
 export function formatDate(iso: string) {
-  return new Date(iso).toLocaleDateString("ko-KR", {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-  });
+  return formatKSTDate(iso);
 }
 
 export function formatPercent(value: number) {

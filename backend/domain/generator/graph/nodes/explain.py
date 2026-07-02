@@ -65,7 +65,7 @@ async def generate_explanations(
     response = await _batch_llm.ainvoke([("system", _SYSTEM), ("user", prompt)])
 
     # LLM이 후보 수와 다른 개수의 rationale을 반환할 수 있어 개수에 맞춰 정렬한다.
-    rationales = list(response.rationales)
+    rationales = list(response.rationales or [])
     return [
         CandidateExplanation(
             applied_target=meta["applied_target"],

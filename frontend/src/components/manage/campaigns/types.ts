@@ -184,5 +184,8 @@ export type CampaignsResponse = {
   not_connected?: string | null; // 로그인 org에 Meta 연결 없음 — '연결 필요' 안내 배너용
   account?: AccountWallet | null; // 계정 지갑(잔액·한도·지출)
   account_unavailable?: string | null; // 계정 자금 권한 없음 — 지갑 자리에 '권한 없음' 표시
+  select_org?: string | null; // admin 무선택 — 조직 선택 안내(전체 집계 불가)
+  total?: number; // 전체 캠페인 수(무한스크롤 진행률)
+  has_more?: boolean; // 다음 페이지 존재 여부(무한스크롤 계속 로드 조건)
 };
 export type CampaignView = 'table' | 'cards';

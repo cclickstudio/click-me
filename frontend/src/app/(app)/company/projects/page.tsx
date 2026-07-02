@@ -5,7 +5,8 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/AuthProvider';
-import { getToken } from '@/lib/authApi';
+import { authedFetch } from '@/lib/api';
+import { formatKSTDate } from '@/lib/datetime';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
@@ -23,12 +24,9 @@ type Team = { id: string; name: string; member_count: number; created_at: string
 
 const UNASSIGNED = '__unassigned__';
 
-const authHeaders = () => ({ Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' });
-
 const fmt = (iso?: string) => {
   if (!iso) return '—';
-  const d = new Date(iso);
-  return `${d.getFullYear()}.${d.getMonth() + 1}.${d.getDate()}`;
+  return formatKSTDate(iso);
 };
 
 export default function CompanyProjectsPage() {
@@ -42,8 +40,8 @@ export default function CompanyProjectsPage() {
   const load = useCallback(async () => {
     setLoading(true);
     const [p, t] = await Promise.all([
-      fetch(`${API_BASE}/api/projects`, { headers: authHeaders() }).then((r) => (r.ok ? r.json() : [])).catch(() => []),
-      fetch(`${API_BASE}/api/company/teams`, { headers: authHeaders() }).then((r) => (r.ok ? r.json() : [])).catch(() => []),
+      authedFetch(`${API_BASE}/api/projects`).then((r) => (r.ok ? r.json() : [])).catch(() => []),
+      authedFetch(`${API_BASE}/api/company/teams`).then((r) => (r.ok ? r.json() : [])).catch(() => []),
     ]);
     if (Array.isArray(p)) setProjects(p);
     if (Array.isArray(t)) setTeams(t);
@@ -59,8 +57,8 @@ export default function CompanyProjectsPage() {
     setProjects((prev) =>
       prev.map((p) => (p.id === projectId ? { ...p, team_id: teamId, team_name: teamName } : p))
     );
-    const res = await fetch(`${API_BASE}/api/company/projects/${projectId}/team`, {
-      method: 'PATCH', headers: authHeaders(), body: JSON.stringify({ team_id: teamId }),
+    const res = await authedFetch(`${API_BASE}/api/company/projects/${projectId}/team`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ team_id: teamId }),
     });
     if (!res.ok) { setProjects(snapshot); alert('팀 배정에 실패했습니다.'); }
   };

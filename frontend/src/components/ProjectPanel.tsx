@@ -8,7 +8,7 @@ import { useAuth } from './AuthProvider';
 import TrashSection from './TrashSection';
 import ModeBadge from './ModeBadge';
 import ProjectChatSection from './chat/ProjectChatSection';
-import { getToken } from '@/lib/authApi';
+import { authedFetch } from '@/lib/api';
 import { formatKST } from '@/lib/datetime';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
@@ -123,9 +123,9 @@ function CreateProjectModal({ onClose, onCreated }: { onClose: () => void; onCre
   const handleCreate = async () => {
     if (!name.trim() || creating) return;
     setCreating(true);
-    await fetch(`${API_BASE}/api/projects`, {
+    await authedFetch(`${API_BASE}/api/projects`, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: name.trim(), description: description.trim() || null }),
     });
     setCreating(false);
@@ -417,7 +417,7 @@ export function ProjectItem({
 // ── 메인 패널 ───────────────────────────────────────────────────
 export default function ProjectPanel({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
   const pathname = usePathname();
-  const { projects, loading, details, loadDetails, selectProject, refresh } = useProjects();
+  const { projects, loading, details, loadDetails, selectProject, refresh, refreshAll } = useProjects();
   const { user } = useAuth();
   const [openProjectId, setOpenProjectId] = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
@@ -494,7 +494,7 @@ export default function ProjectPanel({ collapsed, onToggle }: { collapsed: boole
           <div className="flex items-center gap-1">
             {/* 새로고침 */}
             <button
-              onClick={refresh}
+              onClick={refreshAll}
               title="새로고침"
               className="w-7 h-7 flex items-center justify-center rounded-lg text-[#8B95A1] hover:bg-[#F2F4F6] dark:hover:bg-[#252D3D] hover:text-[#3182F6] transition-colors"
             >
