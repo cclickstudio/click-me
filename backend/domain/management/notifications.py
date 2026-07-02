@@ -30,5 +30,9 @@ class LogNotificationSink:
 
 
 def build_notification_sink(settings) -> NotificationSink:
-    """use_mock/기본은 로그 sink. SES/웹훅 어댑터는 설정 분기로 후속 추가."""
+    """기본은 로그 sink. management_chat_notify_enabled면 채팅 sink(로그 폴백 내장)."""
+    if getattr(settings, "management_chat_notify_enabled", False):
+        from domain.management.remediation.chat_sink import ChatNotificationSink  # noqa: PLC0415
+
+        return ChatNotificationSink(settings, fallback=LogNotificationSink())
     return LogNotificationSink()
