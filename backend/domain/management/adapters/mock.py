@@ -194,7 +194,13 @@ class MockAdPlatform:
                 "suggested_persona_count": 20,
             },
         )
-        return {"campaign_id": campaign_id, "campaign_name": campaign_id, **t}
+        # reach(원 도달수)는 데모 결정론값 — 표본 상한과 별개로 화면 표시용(실 reader와 shape 일치).
+        return {
+            "campaign_id": campaign_id,
+            "campaign_name": campaign_id,
+            "reach": t.get("suggested_persona_count", 20),
+            **t,
+        }
 
     async def get_account_funding(self) -> AccountFunding:
         """Port 충족 — 데모는 잔액 충분(게재 차단 없음)."""

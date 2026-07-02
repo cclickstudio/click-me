@@ -38,8 +38,9 @@ async def _fetch_granted_assets(
 
     비즈니스 로그인은 페이지·IG를 비즈니스로 부여해 /me/accounts엔 안 잡히므로,
     debug_token의 granular_scopes(스코프별 target_ids)가 선택 자산의 정답이다.
-    ads는 특정 계정으로 안 묶이면(전체 부여) /me/adaccounts 첫 계정으로 폴백한다.
-    토큰만 있어도 동작하지만, 연결 시점에 자산 ID를 박아두면 매 호출마다 재조회를 안 한다.
+    ads가 특정 계정으로 안 묶이면(전체 부여) 추측하지 않고 None을 둔다 — 예전의
+    '/me/adaccounts 첫 계정' 폴백은 의도치 않은 계정(옛 테스트 계정)에 바인딩되는
+    사고를 냈다. 계정 미지정 시 처리는 호출자(fallback_ad_account_id)가 결정한다.
     """
     client = MetaClient(
         access_token=token,
@@ -65,13 +66,6 @@ async def _fetch_granted_assets(
             out["ad_account_id"] = ad if ad.startswith("act_") else f"act_{ad}"
     except MetaApiError:
         pass
-    if out["ad_account_id"] is None:  # ads가 자산 스코프로 안 잡히면 첫 광고계정 폴백
-        try:
-            data = (await client.get("me/adaccounts", {"fields": "id"})).get("data", [])
-            if data:
-                out["ad_account_id"] = data[0].get("id")
-        except MetaApiError:
-            pass
     return out
 
 
@@ -85,12 +79,14 @@ async def complete_meta_connection(
     code: str,
     organization_id: uuid.UUID,
     ad_account_id: str | None = None,
+    fallback_ad_account_id: str | None = None,
     api_version: str = "v21.0",
     transport: httpx.AsyncBaseTransport | None = None,
 ) -> MetaConnection:
     """콜백 code를 장기 토큰으로 교환하고 연결 자산을 조회해 org 연결로 암호화 저장한다(커밋 포함).
 
-    transport는 테스트용 MockTransport 주입 지점(실서비스는 None=실호출).
+    계정 우선순위: 명시(ad_account_id) → 토큰 스코프에 묶인 계정 → fallback_ad_account_id
+    (호출자가 주는 운영 기본 계정 — 임의 추측 금지). transport는 테스트용 MockTransport 주입 지점.
     """
     short = await exchange_code_for_token(
         app_id=app_id,
@@ -123,7 +119,7 @@ async def complete_meta_connection(
     row = await repo.upsert(
         organization_id,
         access_token=long_lived.access_token,
-        ad_account_id=ad_account_id or assets["ad_account_id"],
+        ad_account_id=ad_account_id or assets["ad_account_id"] or fallback_ad_account_id,
         page_id=assets["page_id"],
         ig_user_id=assets["ig_user_id"],
         scopes=assets["scopes"],

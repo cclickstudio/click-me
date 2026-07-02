@@ -41,6 +41,7 @@ CPM_NORMAL_RANGE_KRW = (7_800, 13_800)  # 한국 실측 하한(lebesgue)~상한(
 BASE_CTR = 0.017  # AdAmigo 2026 트래픽 목표 CTR 1.71%
 DAILY_BUDGET_KRW = 100_000
 AUDIENCE_SIZE = 1_750_000  # delivery_estimate estimate_mau 기반 데모 모수
+FATIGUE_FREQUENCY = 3.0  # 빈도 3+ = 도달 피로(소재 교체 신호) — meta-data-sources.md §4.6
 
 # ── 일중 곡선 (이중 봉우리: 점심 12~13시 / 저녁 20~23시) — 합 1로 정규화 ──
 _PACING_RAW = [

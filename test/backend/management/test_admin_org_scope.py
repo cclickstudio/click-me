@@ -125,20 +125,36 @@ def _client(user, db):
     return TestClient(app)
 
 
-def test_admin_cannot_impersonate_meta_connect(monkeypatch):
-    """org 소유자 액션(Meta 연결)은 admin 대리 불가 → 409."""
-    # meta_app_id가 없으면 flow가 org 체크 전에 503으로 끊긴다 → org 체크(409)에 도달하도록 설정.
+def test_admin_impersonates_meta_connect_with_org_header(monkeypatch):
+    """Meta 연결도 다른 write와 동일 규칙 — admin은 X-Org-Id로 선택한 org를 대신 연결(감사 기록)."""
+    # meta_app_id가 없으면 flow가 org 해석 전에 503으로 끊긴다 → org 해석에 도달하도록 설정.
     monkeypatch.setattr(management.settings, "meta_app_id", "test_app", raising=False)
+    captured = []
+
+    class _Sink:
+        async def append(self, event):
+            captured.append(event)
+
+    monkeypatch.setattr(management, "_AUDIT_LOG", _Sink())
     admin = SimpleNamespace(id=uuid.uuid4(), role="ADMIN")
+    org = uuid.uuid4()
 
     class _DB:
         async def scalar(self, *_a, **_k):
-            return None  # admin은 멤버십 없음
+            return "ACTIVE"  # Organization.status 조회(선택 org 검증)
 
-    res = _client(admin, _DB()).get(
-        "/api/management/meta/connect", headers={"X-Org-Id": str(uuid.uuid4())}
-    )
-    assert res.status_code == 409
+    res = _client(admin, _DB()).get("/api/management/meta/connect", headers={"X-Org-Id": str(org)})
+    assert res.status_code == 200
+    assert res.json()["state"].startswith(f"{org}:")  # 선택 org가 state로 운반
+    assert captured and captured[0].payload["action"] == "meta_connect"  # impersonation 감사
+
+
+def test_admin_meta_connect_without_header_400(monkeypatch):
+    """admin이 조직 미선택이면 다른 write와 동일하게 400(조직 선택 안내)."""
+    monkeypatch.setattr(management.settings, "meta_app_id", "test_app", raising=False)
+    admin = SimpleNamespace(id=uuid.uuid4(), role="ADMIN")
+    res = _client(admin, _OrgDB("ACTIVE")).get("/api/management/meta/connect")
+    assert res.status_code == 400
 
 
 @pytest.mark.asyncio
