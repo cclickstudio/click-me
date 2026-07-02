@@ -2,13 +2,14 @@
 
 import { useEffect, useState } from 'react';
 import { getToken } from '@/lib/authApi';
+import { formatKSTDate } from '@/lib/datetime';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
 type Member = { member_id: string; user_id: string; user_name: string; login_id: string; status: string; team_id: string | null; joined_at: string | null; created_at: string };
 type Team = { id: string; name: string; member_count: number; created_at: string };
 
-const fmt = (iso: string) => { const d = new Date(iso); return `${d.getFullYear()}.${d.getMonth()+1}.${d.getDate()}`; };
+const fmt = (iso: string) => formatKSTDate(iso);
 const statusStyle: Record<string, string> = {
   ACTIVE: 'text-emerald-500 bg-emerald-50 dark:bg-emerald-900/20',
 };

@@ -5,14 +5,12 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { getToken } from '@/lib/authApi';
+import { formatKSTDate } from '@/lib/datetime';
 import type { TrashRow } from './ProjectContext';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
-const fmt = (iso: string) => {
-  const d = new Date(iso);
-  return `${d.getMonth() + 1}/${d.getDate()}`;
-};
+const fmt = (iso: string) => formatKSTDate(iso);
 
 const keyOf = (t: TrashRow) => `${t.kind}-${t.id}`;
 

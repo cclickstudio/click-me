@@ -6,6 +6,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/AuthProvider';
 import { getToken } from '@/lib/authApi';
+import { formatKSTDate } from '@/lib/datetime';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
@@ -27,8 +28,7 @@ const authHeaders = () => ({ Authorization: `Bearer ${getToken()}`, 'Content-Typ
 
 const fmt = (iso?: string) => {
   if (!iso) return '—';
-  const d = new Date(iso);
-  return `${d.getFullYear()}.${d.getMonth() + 1}.${d.getDate()}`;
+  return formatKSTDate(iso);
 };
 
 export default function CompanyProjectsPage() {

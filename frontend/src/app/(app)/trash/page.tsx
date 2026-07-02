@@ -5,6 +5,7 @@
 import { useEffect, useState, useCallback, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { getToken } from '@/lib/authApi';
+import { formatKSTDate } from '@/lib/datetime';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
@@ -14,10 +15,7 @@ type TSim = Base & { ad_title: string | null };
 type TGen = Base & { product_name: string | null };
 type TrashData = { projects: TProject[]; simulations: TSim[]; generations: TGen[] };
 
-const fmt = (iso: string) => {
-  const d = new Date(iso);
-  return `${d.getFullYear()}.${d.getMonth() + 1}.${d.getDate()}`;
-};
+const fmt = (iso: string) => formatKSTDate(iso);
 
 function DaysLeft({ n }: { n: number | null }) {
   if (n === null) return null;

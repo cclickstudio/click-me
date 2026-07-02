@@ -6,6 +6,7 @@ import { getToken } from '@/lib/authApi';
 import { useProjects } from '@/components/ProjectContext';
 import { useAuth } from '@/components/AuthProvider';
 import ModeBadge from '@/components/ModeBadge';
+import { formatKSTFull } from '@/lib/datetime';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
@@ -64,11 +65,7 @@ const statusStyle: Record<string, { bg: string; text: string; label: string }> =
   failed:    { bg: 'bg-red-50 dark:bg-red-900/20',         text: 'text-red-600',     label: '실패' },
 };
 
-const fmt = (iso: string) =>
-  new Date(iso).toLocaleString('ko-KR', {
-    year: 'numeric', month: '2-digit', day: '2-digit',
-    hour: '2-digit', minute: '2-digit',
-  });
+const fmt = (iso: string) => formatKSTFull(iso);
 
 function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (

@@ -2,14 +2,14 @@
 
 import { useEffect, useState } from 'react';
 import { getToken } from '@/lib/authApi';
+import { formatKST } from '@/lib/datetime';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
 type ChatRow = { id: string; project_id: string | null; message_count: number; created_at: string };
 
 function formatDate(iso: string) {
-  const d = new Date(iso);
-  return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  return formatKST(iso);
 }
 
 export default function AdminChatsPage() {

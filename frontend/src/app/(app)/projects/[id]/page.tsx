@@ -5,6 +5,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { getToken } from '@/lib/authApi';
 import { useAuth } from '@/components/AuthProvider';
 import { useProjects } from '@/components/ProjectContext';
+import { formatKST, formatKSTDate } from '@/lib/datetime';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
@@ -34,14 +35,8 @@ const genStatusStyle: Record<string, string> = {
 };
 const genStatusLabel: Record<string, string> = { completed: '완료', pending: '대기', running: '진행 중', failed: '실패' };
 
-const fmt = (iso: string) => {
-  const d = new Date(iso);
-  return `${d.getFullYear()}.${d.getMonth() + 1}.${d.getDate()}`;
-};
-const fmtFull = (iso: string) => {
-  const d = new Date(iso);
-  return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-};
+const fmt = (iso: string) => formatKSTDate(iso);
+const fmtFull = (iso: string) => formatKST(iso);
 
 function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (

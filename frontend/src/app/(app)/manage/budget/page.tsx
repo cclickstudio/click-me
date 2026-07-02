@@ -5,6 +5,7 @@ import { api } from '@/lib/api';
 import { BudgetGauge } from '@/components/manage/budget/BudgetGauge';
 import { OriginLegend, OriginTag } from '@/components/manage/ValueOrigin';
 import type { BudgetDecision, BudgetStatus } from '@/components/manage/budget/types';
+import { formatKSTFull } from '@/lib/datetime';
 
 const WARNING: Record<Exclude<BudgetDecision, 'allow'>, { label: string; msg: string; cls: string }> = {
   warn: {
@@ -323,7 +324,7 @@ export default function Page() {
                               className="border-b border-[#F2F4F6] last:border-0 dark:border-[#252D3D]"
                             >
                               <td className="px-3 py-2 text-left text-[#4E5968] dark:text-[#9CA3AF]">
-                                {new Date(e.created_at).toLocaleString('ko-KR')}
+                                {formatKSTFull(e.created_at)}
                               </td>
                               <td className={`px-3 py-2 text-left font-medium ${r.cls}`}>{r.label}</td>
                               <td className="px-3 py-2 text-right tabular-nums">

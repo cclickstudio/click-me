@@ -3,15 +3,13 @@
 import { useEffect, useState } from 'react';
 import { getToken } from '@/lib/authApi';
 import ModeBadge from '@/components/ModeBadge';
+import { formatKST } from '@/lib/datetime';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
 type Row = { id: string; status: string; product_name: string | null; mode: string; format: string; project_name: string | null; created_by_name: string | null; created_at: string };
 
-const fmt = (iso: string) => {
-  const d = new Date(iso);
-  return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-};
+const fmt = (iso: string) => formatKST(iso);
 
 const statusStyle: Record<string, string> = {
   completed: 'text-emerald-500 bg-emerald-50 dark:bg-emerald-900/20',

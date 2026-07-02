@@ -4,6 +4,7 @@
 
 import { useEffect, useState } from 'react';
 import { getToken } from '@/lib/authApi';
+import { formatKSTDate } from '@/lib/datetime';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
@@ -26,8 +27,7 @@ type Account = {
 };
 
 function formatDate(iso: string) {
-  const d = new Date(iso);
-  return `${d.getFullYear()}.${d.getMonth() + 1}.${d.getDate()}`;
+  return formatKSTDate(iso);
 }
 
 const orgStatusStyle: Record<string, string> = {

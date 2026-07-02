@@ -5,6 +5,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '@/components/AuthProvider';
 import { getToken } from '@/lib/authApi';
+import { formatKSTDate } from '@/lib/datetime';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
@@ -29,8 +30,7 @@ const inputCls =
 
 const fmt = (iso: string | null) => {
   if (!iso) return '—';
-  const d = new Date(iso);
-  return `${d.getFullYear()}.${d.getMonth() + 1}.${d.getDate()}`;
+  return formatKSTDate(iso);
 };
 const formatPhone = (v: string) => {
   const d = v.replace(/\D/g, '').slice(0, 11);

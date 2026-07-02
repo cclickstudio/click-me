@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useAuth } from '@/components/AuthProvider';
 import { getToken } from '@/lib/authApi';
 import { safeRandomUUID } from '@/lib/utils';
+import { formatKST } from '@/lib/datetime';
 import ModeBadge from '@/components/ModeBadge';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
@@ -95,8 +96,7 @@ const statusLabel: Record<string, { text: string; color: string }> = {
 // ────────────────── Utils ──────────────────
 
 function formatDate(iso: string) {
-  const d = new Date(iso);
-  return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  return formatKST(iso);
 }
 
 function shortId(id: string) {

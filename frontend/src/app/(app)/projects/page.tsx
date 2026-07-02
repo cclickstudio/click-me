@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { getToken } from '@/lib/authApi';
+import { formatKST, formatKSTDate } from '@/lib/datetime';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
@@ -10,8 +11,8 @@ type Project = { id: string; name: string; description: string | null; status: s
 type SimRow = { id: string; status: string; sample_size: number; created_by_name: string | null; created_at: string };
 type GenRow = { id: string; status: string; product_name: string | null; created_by_name: string | null; created_at: string };
 
-const fmt = (iso: string) => { const d = new Date(iso); return `${d.getFullYear()}.${d.getMonth()+1}.${d.getDate()}`; };
-const fmtFull = (iso: string) => { const d = new Date(iso); return `${d.getMonth()+1}/${d.getDate()} ${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`; };
+const fmt = (iso: string) => formatKSTDate(iso);
+const fmtFull = (iso: string) => formatKST(iso);
 
 const simStatusStyle: Record<string, string> = {
   COMPLETED: 'text-emerald-500 bg-emerald-50 dark:bg-emerald-900/20',

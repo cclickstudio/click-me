@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/AuthProvider';
 import { getToken } from '@/lib/authApi';
+import { formatKSTFull } from '@/lib/datetime';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
@@ -19,10 +20,7 @@ type Row = {
   created_at: string;
 };
 
-const fmt = (iso: string) => {
-  const d = new Date(iso);
-  return `${d.getFullYear()}.${String(d.getMonth() + 1).padStart(2, '0')}.${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-};
+const fmt = (iso: string) => formatKSTFull(iso);
 
 const STATUS_LABEL: Record<string, { label: string; color: string }> = {
   QUEUED: { label: '대기', color: 'bg-[#F2F4F6] text-[#8B95A1]' },
