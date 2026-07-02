@@ -177,12 +177,16 @@ export function setAdminOrgId(orgId: string | null): void {
 // credentials: "include" 는 EventSource가 못 쓰는 SSE 외 경로에도 쿠키를 실어 백엔드 쿠키 폴백과 정합.
 // 화면의 직접 fetch도 이 함수로 통일 — 개별 `Bearer ${getToken()}`·`authHeaders()` 대신 이걸 쓴다.
 export async function authedFetch(url: string, init: RequestInit = {}): Promise<Response> {
+  // admin이 선택한 대상 org(impersonation). management·projects·generator가 X-Org-Id로 소비한다.
+  // adminOrgId는 admin만 설정되므로(로그아웃 시 소거) 모든 요청에 실어도 비-admin엔 무영향.
+  const orgId = getAdminOrgId();
   const build = (token: string | null): RequestInit => ({
     ...init,
     credentials: "include",
     headers: {
       ...(init.headers as Record<string, string> | undefined),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(orgId ? { "X-Org-Id": orgId } : {}),
     },
   });
   let res = await fetch(url, build(getToken()));
@@ -194,16 +198,12 @@ export async function authedFetch(url: string, init: RequestInit = {}): Promise<
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const orgId = getAdminOrgId();
-  // 계약: path는 /api 이후 상대경로. management 요청 & adminOrgId 있을 때만 부착(비-management 라우터로 누출 금지).
-  const orgHeader: Record<string, string> =
-    orgId && path.startsWith("/management") ? { "X-Org-Id": orgId } : {};
+  // X-Org-Id(admin 선택 org)·인증·refresh는 authedFetch가 일괄 처리한다.
   const { headers: initHeaders, ...restInit } = init ?? {};
   const res = await authedFetch(`${API_BASE}/api${path}`, {
     ...restInit,
     headers: {
       "Content-Type": "application/json",
-      ...orgHeader,
       ...(initHeaders as Record<string, string> | undefined),
     },
   });
