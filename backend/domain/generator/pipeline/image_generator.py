@@ -69,7 +69,7 @@ _TEMPLATE_STYLE: dict[TemplateType, str] = {
 }
 
 # ── 텍스트 포함 생성 모드: 템플릿별 레이아웃 + 텍스트 배치 지시 ───────────────
-# gpt-image-2가 텍스트를 이미지에 직접 렌더링할 때 각 템플릿의 레이아웃을 안내한다.
+# AI 이미지 모델이 텍스트를 이미지에 직접 렌더링할 때 각 템플릿의 레이아웃을 안내한다.
 _TEXT_LAYOUT: dict[TemplateType, str] = {
     TemplateType.A: (
         "DESIGN LAYOUT — Bottom dark overlay:\n"
@@ -251,7 +251,7 @@ Requirements:
 
 
 # ── [텍스트 포함 생성 모드] 프롬프트 ────────────────────────────────────────
-# gpt-image-2가 헤드라인·본문·CTA를 이미지에 직접 렌더링할 때 사용.
+# AI 이미지 모델이 헤드라인·본문·CTA를 직접 렌더링할 때 사용.
 _PROMPT_TEMPLATE_WITH_TEXT = """\
 Create a professional Korean {platform} advertisement image with integrated Korean text.
 
@@ -610,7 +610,7 @@ async def generate_image(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 상품 누끼 (배경 제거) — gpt-image-2 edit + transparent background
+# 상품 누끼 (배경 제거) — gpt-image-1 edit + transparent background
 # 사용자가 올린 상품 이미지에서 배경을 제거하고 알파 채널 PNG bytes를 반환한다.
 # AI 추출이라 픽셀이 완벽히 동일하진 않으나, 전체 재생성 대비 원본에 훨씬 가깝다.
 # ─────────────────────────────────────────────────────────────────────────────

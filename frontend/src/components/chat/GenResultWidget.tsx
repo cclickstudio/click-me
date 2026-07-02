@@ -44,8 +44,8 @@ export default function GenResultWidget({
   onSimulate,
 }: {
   generationId: string;
-  // F8 — 후보 카피로 시뮬 진입(제너→시뮬 루프). 없으면 버튼 미표시.
-  onSimulate?: (adTitle: string, adContent: string) => void;
+  // F8 — 후보 카피·이미지로 시뮬 진입(제너→시뮬 루프). 없으면 버튼 미표시.
+  onSimulate?: (adTitle: string, adContent: string, adImageUrl?: string) => void;
 }) {
   const [detail, setDetail] = useState<GenDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -169,7 +169,8 @@ export default function GenResultWidget({
                         headline,
                         [headline, c.copy?.body, c.copy?.cta]
                           .filter(Boolean)
-                          .join('\n')
+                          .join('\n'),
+                        imgSrc(c) ?? undefined
                       )
                     }
                     className='mt-1 w-full py-1.5 rounded-md border border-[#3182F6]/30 text-[#3182F6] text-[11px] font-semibold hover:bg-[#EBF3FF] dark:hover:bg-[#1E3A5F] transition-colors'>

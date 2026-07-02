@@ -7,11 +7,17 @@ from pydantic import BaseModel
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.auth import get_current_user
+from core.auth import (
+    capture_selected_org,
+    get_current_user,
+    require_write_org,
+    resolve_read_scope,
+)
 from core.db import get_db
 from core.models import OrganizationMember, User
 
-router = APIRouter()
+# capture_selected_org: admin이 X-Org-Id로 대상 org를 지정(생성 시)·필터(조회 시)할 수 있게 캡처.
+router = APIRouter(dependencies=[Depends(capture_selected_org)])
 
 
 async def _get_user_org_id(user: User, db: AsyncSession) -> str:
@@ -137,33 +143,24 @@ async def list_projects(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    role = current_user.role.upper()
-    base_where = "p.status != 'DELETED' AND p.deleted_at IS NULL"
-    if role == "ADMIN":
-        result = await db.execute(
-            text(f"{_PROJECT_SELECT} WHERE {base_where} ORDER BY p.created_at DESC"),
-        )
-    elif role == "COMPANY":
-        org_id = await _get_user_org_id(current_user, db)
-        result = await db.execute(
-            text(
-                f"{_PROJECT_SELECT} WHERE p.organization_id = :org_id AND {base_where} "
-                "ORDER BY p.created_at DESC"
-            ),
-            {"org_id": org_id},
-        )
-    else:
-        # USER — 자기 팀 프로젝트 + 팀 미배정이면 본인이 만든 프로젝트만
-        org_id = await _get_user_org_id(current_user, db)
-        team_id = str(current_user.team_id) if current_user.team_id else None
-        result = await db.execute(
-            text(
-                f"{_PROJECT_SELECT} WHERE p.organization_id = :org_id AND {base_where} "
-                "AND (p.team_id = :team_id OR (p.team_id IS NULL AND p.created_by = :uid)) "
-                "ORDER BY p.created_at DESC"
-            ),
-            {"org_id": org_id, "team_id": team_id, "uid": str(current_user.id)},
-        )
+    # 공용 읽기 스코프: ADMIN=선택 org(X-Org-Id, 없으면 전체) · COMPANY/USER=자기 org.
+    # USER는 org 위에 팀 세분화(자기 팀 + 팀 미배정 본인 생성분)를 추가로 적용.
+    scope = await resolve_read_scope(current_user, db)
+    if scope.empty:  # 비-admin 무소속 → 빈 목록
+        return []
+    where = ["p.status != 'DELETED' AND p.deleted_at IS NULL"]
+    params: dict = {}
+    if not scope.all_orgs:
+        where.append("p.organization_id = :org_id")
+        params["org_id"] = str(scope.org_id)
+    if current_user.role.upper() == "USER":
+        where.append("(p.team_id = :team_id OR (p.team_id IS NULL AND p.created_by = :uid))")
+        params["team_id"] = str(current_user.team_id) if current_user.team_id else None
+        params["uid"] = str(current_user.id)
+    result = await db.execute(
+        text(f"{_PROJECT_SELECT} WHERE {' AND '.join(where)} ORDER BY p.created_at DESC"),
+        params,
+    )
     return [
         ProjectRow(
             id=str(r.id),
@@ -186,7 +183,8 @@ async def create_project(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    org_id = await _get_user_org_id(current_user, db)
+    # 쓰기 스코프: ADMIN=선택 org(X-Org-Id 필수) · COMPANY/USER=자기 org(없으면 409).
+    org_id = str(await require_write_org(current_user, db))
     team_id = str(current_user.team_id) if current_user.team_id else None
     result = await db.execute(
         text("""
@@ -282,6 +280,7 @@ async def list_project_generations(
             "status": r.status,
             "product_name": (r.input or {}).get("product_name") if r.input else None,
             "mode": (r.input or {}).get("mode", "create") if r.input else "create",
+            "format": (r.input or {}).get("format", "single") if r.input else "single",
             "created_by_name": r.created_by_name,
             "created_at": r.created_at.isoformat(),
         }

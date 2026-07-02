@@ -4,8 +4,9 @@ import { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/components/AuthProvider';
-import { getToken } from '@/lib/authApi';
+import { authedFetch } from '@/lib/api';
 import { safeRandomUUID } from '@/lib/utils';
+import { formatKST } from '@/lib/datetime';
 import ModeBadge from '@/components/ModeBadge';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
@@ -33,6 +34,7 @@ type RecentGeneration = {
   status: string;
   product_name: string | null;
   mode: string;
+  format: string;
   created_at: string;
 };
 
@@ -94,8 +96,7 @@ const statusLabel: Record<string, { text: string; color: string }> = {
 // ────────────────── Utils ──────────────────
 
 function formatDate(iso: string) {
-  const d = new Date(iso);
-  return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  return formatKST(iso);
 }
 
 function shortId(id: string) {
@@ -147,12 +148,10 @@ export default function DashboardPage() {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    // 최근 내역은 organization 스코프(비-admin) → 토큰 필요. stats는 전역이라 토큰 불필요.
-    const authHeaders = { Authorization: `Bearer ${getToken()}` };
     Promise.all([
-      fetch(`${API_BASE}/api/dashboard/stats`).then((r) => r.json()).catch(() => null),
-      fetch(`${API_BASE}/api/dashboard/recent-simulations?limit=5`, { headers: authHeaders }).then((r) => r.json()).catch(() => []),
-      fetch(`${API_BASE}/api/dashboard/recent-generations?limit=5`, { headers: authHeaders }).then((r) => r.json()).catch(() => []),
+      authedFetch(`${API_BASE}/api/dashboard/stats`).then((r) => r.json()).catch(() => null),
+      authedFetch(`${API_BASE}/api/dashboard/recent-simulations?limit=5`).then((r) => r.json()).catch(() => []),
+      authedFetch(`${API_BASE}/api/dashboard/recent-generations?limit=5`).then((r) => r.json()).catch(() => []),
     ]).then(([s, sims, gens]) => {
       if (s) setStats(s);
       if (Array.isArray(sims)) setRecentSims(sims);
@@ -174,11 +173,10 @@ export default function DashboardPage() {
     setIsStreaming(true);
 
     try {
-      const res = await fetch(`${API_BASE}/api/chat/complete`, {
+      const res = await authedFetch(`${API_BASE}/api/chat/complete`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(getToken() ? { Authorization: `Bearer ${getToken()}` } : {}),
         },
         body: JSON.stringify({ session_id: sessionId.current, messages: newMessages }),
       });
@@ -350,7 +348,7 @@ export default function DashboardPage() {
                         <td className="px-5 py-3 text-[#4E5968] dark:text-[#9CA3AF] whitespace-nowrap">
                           <div className="flex items-center gap-1.5 max-w-[160px]">
                             <span className="shrink-0">
-                              <ModeBadge mode={g.mode} />
+                              <ModeBadge mode={g.mode} format={g.format} />
                             </span>
                             <span className="truncate min-w-0">{g.product_name ?? '—'}</span>
                           </div>

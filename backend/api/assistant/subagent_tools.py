@@ -68,8 +68,9 @@ def build_chat_tools(settings, memory=None) -> list:
         state: Annotated[dict, InjectedState],
         tool_call_id: Annotated[str, InjectedToolCallId],
     ) -> Command:
-        """집행 '후' 실측 성과·운영 질문에 답한다. 캠페인 예산·소진·CTR/ROAS/CVR 실적·페이싱·
-        이상·정책·벤치마크 등. query에는 사용자의 질문을 명확히 정리해 넣어라."""
+        """집행 '후' 실측 성과·운영 질문, 그리고 캠페인 운영·성과 개선·예산 배분·타깃/오디언스
+        전략에 관한 일반 조언에 답한다. 캠페인 예산·소진·CTR/ROAS/CVR 실적·페이싱·이상·정책·
+        벤치마크 등. query에는 사용자의 질문을 명확히 정리해 넣어라."""
         res = await mgmt(_subreq(state, query))
         return Command(
             update={
@@ -86,7 +87,8 @@ def build_chat_tools(settings, memory=None) -> list:
         tool_call_id: Annotated[str, InjectedToolCallId],
     ) -> Command:
         """집행 '전' 시뮬레이션 결과·KPI(클릭 의향률·구매의도·신뢰도·거부율)의 의미·해석·
-        기존 결과 조회에 답한다. (새 시뮬 실행이 아니라 해석·조회. 실행은 run_simulation.)"""
+        기존 결과 조회, 그리고 소비자 반응 예측에 관한 질문·조언에 답한다.
+        (새 시뮬 실행이 아니라 해석·조회·조언. 실행은 run_simulation.)"""
         res = await sim(_subreq(state, query))
         return Command(
             update={
@@ -102,8 +104,9 @@ def build_chat_tools(settings, memory=None) -> list:
         state: Annotated[dict, InjectedState],
         tool_call_id: Annotated[str, InjectedToolCallId],
     ) -> Command:
-        """광고 시안·카피의 전략·작성 원칙·조언에 답한다(생성 실행이 아님).
-        실제 생성은 run_generation. query에 무엇에 대한 조언인지 정리해 넣어라."""
+        """광고 시안·카피·크리에이티브의 전략·작성 원칙·아이디어·개선 방향 조언에 답한다
+        (생성 실행이 아님). 실제 생성은 run_generation.
+        query에 무엇에 대한 조언인지 정리해 넣어라."""
         res = await gen(_subreq(state, query))
         return Command(
             update={
@@ -165,6 +168,69 @@ def build_chat_tools(settings, memory=None) -> list:
                 **widgets.gen_form(gen_data),
                 "messages": [
                     ToolMessage("광고 생성 입력 폼을 준비했습니다.", tool_call_id=tool_call_id)
+                ],
+            }
+        )
+
+    @tool
+    async def improve_ad_iteratively(
+        product_name: str = "",
+        product_description: str = "",
+        target_audience: str = "",
+        campaign_objective: str = "conversion",
+        quality_target: float = 0.8,
+        max_iterations: int = 3,
+        *,
+        state: Annotated[dict, InjectedState],
+        tool_call_id: Annotated[str, InjectedToolCallId],
+    ) -> Command:
+        """폼 없이 '알아서 좋은 시안까지 뽑아/반복 개선해줘'처럼 자동 개선 루프를 원할 때 호출한다.
+        QA 품질이 목표에 도달할 때까지 생성→평가→개선을 자동 반복한다(백그라운드+진행 카드).
+        단발 '시안 만들어줘'는 run_generation 폼을 쓴다. 발화의 값만 채우고 없으면 비운다."""
+        import uuid as _uuid  # noqa: PLC0415
+
+        from domain.generator.service import generation_loop  # noqa: PLC0415
+
+        if not (product_name and product_description and target_audience):
+            return Command(
+                update={
+                    "messages": [
+                        ToolMessage(
+                            "자동 개선 루프를 돌리려면 상품명·설명·타깃이 필요해요. "
+                            "알려주시면 바로 시작할게요.",
+                            tool_call_id=tool_call_id,
+                        )
+                    ]
+                }
+            )
+        created_by = None
+        uid = state.get("user_id")
+        if uid:
+            try:
+                created_by = _uuid.UUID(str(uid))
+            except (ValueError, TypeError):
+                created_by = None
+        loop_id = await generation_loop.start_loop(
+            {
+                "product_name": product_name,
+                "product_description": product_description,
+                "target_audience": target_audience,
+                "campaign_objective": campaign_objective or "conversion",
+            },
+            quality_target=quality_target,
+            max_iterations=max(1, min(max_iterations, 5)),
+            project_id=state.get("project_id"),
+            created_by=created_by,
+        )
+        stream_url = f"/api/generator/generations/loop/{loop_id}/stream"
+        return Command(
+            update={
+                **widgets.gen_loop(loop_id, stream_url),
+                "messages": [
+                    ToolMessage(
+                        "자동 개선 루프를 시작했어요. 진행 상황은 카드에서 확인하세요.",
+                        tool_call_id=tool_call_id,
+                    )
                 ],
             }
         )
@@ -531,12 +597,32 @@ def build_chat_tools(settings, memory=None) -> list:
                     text_out += f"\n\n[옵션-도구 매핑 · campaign_id={cid}] {mapping}"
         return Command(update={"messages": [ToolMessage(text_out, tool_call_id=tool_call_id)]})
 
+    @tool
+    async def recall_history(
+        query: str,
+        *,
+        state: Annotated[dict, InjectedState],
+    ) -> str:
+        """이 프로젝트에서 과거 수행한 시뮬/생성/매니지먼트 실행 이력을 키워드로 조회한다.
+        '지난번 20대 시뮬 뭐였지'처럼 과거에 무엇을 언제 돌렸는지가 필요할 때 호출한다."""
+        rows = await history.search_execution_history(state.get("project_id"), query, k=5)
+        if not rows:
+            return "(수행 이력 없음)"
+        labels = {"simulation": "시뮬", "generation": "생성", "management": "매니지먼트"}
+        lines = []
+        for r in rows:
+            when = (r.get("executed_at") or "")[:16].replace("T", " ")
+            feat = labels.get(r.get("feature_type"), r.get("feature_type") or "")
+            lines.append(f"- [{when}] {feat}: {(r.get('summary') or '').strip()[:120]}")
+        return "\n".join(lines)
+
     return [
         ask_management,
         ask_simulation,
         ask_generator,
         run_simulation,
         run_generation,
+        improve_ad_iteratively,
         list_my_simulations,
         list_my_generations,
         compare_simulations,
@@ -552,4 +638,5 @@ def build_chat_tools(settings, memory=None) -> list:
         extract_brand,
         remember,
         recall,
+        recall_history,
     ]

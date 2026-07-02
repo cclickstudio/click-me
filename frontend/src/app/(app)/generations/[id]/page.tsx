@@ -2,10 +2,11 @@
 
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { getToken } from '@/lib/authApi';
+import { authedFetch } from '@/lib/api';
 import { useProjects } from '@/components/ProjectContext';
 import { useAuth } from '@/components/AuthProvider';
 import ModeBadge from '@/components/ModeBadge';
+import { formatKSTFull } from '@/lib/datetime';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
@@ -64,11 +65,7 @@ const statusStyle: Record<string, { bg: string; text: string; label: string }> =
   failed:    { bg: 'bg-red-50 dark:bg-red-900/20',         text: 'text-red-600',     label: '실패' },
 };
 
-const fmt = (iso: string) =>
-  new Date(iso).toLocaleString('ko-KR', {
-    year: 'numeric', month: '2-digit', day: '2-digit',
-    hour: '2-digit', minute: '2-digit',
-  });
+const fmt = (iso: string) => formatKSTFull(iso);
 
 function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -324,7 +321,7 @@ export default function GenerationDetailPage() {
   const router = useRouter();
   const { user } = useAuth();
   const isAdmin = user?.role === 'ADMIN';
-  const { projects, details, loadDetails, refreshDetails } = useProjects();
+  const { projects, details, refreshDetails } = useProjects();
 
   const [data, setData] = useState<GenDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -335,9 +332,7 @@ export default function GenerationDetailPage() {
 
   // generator 상세 — USE_MOCK=false면 org 스코프 인증 필요(머지 후) → 토큰 헤더 전달.
   useEffect(() => {
-    fetch(`${API_BASE}/api/generator/generations/${id}`, {
-      headers: { Authorization: `Bearer ${getToken()}` },
-    })
+    authedFetch(`${API_BASE}/api/generator/generations/${id}`)
       .then(r => { if (!r.ok) throw new Error('not found'); return r.json(); })
       .then(setData)
       .catch(() => setError('제너레이터 내역을 불러올 수 없습니다.'))
@@ -348,8 +343,8 @@ export default function GenerationDetailPage() {
   const projectId = data?.input?.project_id as string | undefined;
   const project = projectId ? projects.find(p => p.id === projectId) : null;
 
-  // 프로젝트 details 로드 — 삭제 여부(휴지통)·실행자 보완용
-  useEffect(() => { if (projectId) loadDetails(projectId); }, [projectId]); // eslint-disable-line react-hooks/exhaustive-deps
+  // 프로젝트 details 갱신 — 완료된(또는 조회하는) 생성물이 좌측 패널 목록에 반영되도록 재조회.
+  useEffect(() => { if (projectId) refreshDetails(projectId); }, [projectId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 패널 details에서 해당 gen 항목 찾아 created_by_name 보완
   const genRow = projectId && details[projectId]
@@ -369,8 +364,8 @@ export default function GenerationDetailPage() {
   const handleDelete = async () => {
     if (!confirm('이 제너레이터 내역을 삭제할까요?\n생성 후보·게시 이력이 함께 삭제됩니다.')) return;
     setDeleting(true);
-    const res = await fetch(`${API_BASE}/api/projects/generations/${id}`, {
-      method: 'DELETE', headers: { Authorization: `Bearer ${getToken()}` },
+    const res = await authedFetch(`${API_BASE}/api/projects/generations/${id}`, {
+      method: 'DELETE',
     });
     if (!res.ok) { setDeleting(false); alert('삭제에 실패했습니다.'); return; }
     if (projectId) await refreshDetails(projectId); // 패널 카운트 실시간 반영
@@ -379,8 +374,8 @@ export default function GenerationDetailPage() {
 
   const handleRestore = async () => {
     setRestoring(true);
-    const res = await fetch(`${API_BASE}/api/projects/generations/${id}/restore`, {
-      method: 'POST', headers: { Authorization: `Bearer ${getToken()}` },
+    const res = await authedFetch(`${API_BASE}/api/projects/generations/${id}/restore`, {
+      method: 'POST',
     });
     setRestoring(false);
     if (!res.ok) { alert('복원에 실패했습니다.'); return; }
@@ -408,7 +403,10 @@ export default function GenerationDetailPage() {
               <div>
                 {project && <p className="text-xs text-[#8B95A1] mb-1">{project.name}</p>}
                 <h1 className="text-2xl font-bold text-[#191F28] dark:text-[#F2F4F6] flex items-center gap-2">
-                  <ModeBadge mode={data.input?.mode as string | undefined} />
+                  <ModeBadge
+                    mode={data.input?.mode as string | undefined}
+                    format={data.input?.format as string | undefined}
+                  />
                   {productName ?? '제너레이터 상세'}
                   {isDeleted && (
                     <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-red-50 dark:bg-red-900/20 text-red-600">삭제됨</span>

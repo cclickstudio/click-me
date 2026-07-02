@@ -43,7 +43,7 @@ _VARIANT_IDS = ["A", "B", "C"]
 
 
 def _map_ad_size(width: int, height: int) -> AdSize:
-    """목표 치수를 gpt-image-2 생성 사이즈(AdSize)로 매핑."""
+    """목표 치수를 이미지 모델 생성 사이즈(AdSize)로 매핑."""
     if width == height:
         return AdSize.SQUARE
     return AdSize.LANDSCAPE if width > height else AdSize.PORTRAIT

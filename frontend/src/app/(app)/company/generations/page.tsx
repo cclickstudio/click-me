@@ -1,17 +1,15 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { getToken } from '@/lib/authApi';
+import { authedFetch } from '@/lib/api';
 import ModeBadge from '@/components/ModeBadge';
+import { formatKST } from '@/lib/datetime';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
-type Row = { id: string; status: string; product_name: string | null; mode: string; project_name: string | null; created_by_name: string | null; created_at: string };
+type Row = { id: string; status: string; product_name: string | null; mode: string; format: string; project_name: string | null; created_by_name: string | null; created_at: string };
 
-const fmt = (iso: string) => {
-  const d = new Date(iso);
-  return `${d.getMonth() + 1}/${d.getDate()} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
-};
+const fmt = (iso: string) => formatKST(iso);
 
 const statusStyle: Record<string, string> = {
   completed: 'text-emerald-500 bg-emerald-50 dark:bg-emerald-900/20',
@@ -29,9 +27,7 @@ export default function CompanyGenerationsPage() {
 
   const load = () => {
     setLoading(true);
-    fetch(`${API_BASE}/api/company/generations`, {
-      headers: { Authorization: `Bearer ${getToken()}` },
-    })
+    authedFetch(`${API_BASE}/api/company/generations`)
       .then((r) => r.json())
       .then((data) => { if (Array.isArray(data)) setList(data); })
       .finally(() => setLoading(false));
@@ -41,8 +37,8 @@ export default function CompanyGenerationsPage() {
 
   const handleDelete = async (id: string) => {
     if (!confirm('이 제너레이터 내역을 삭제할까요?\n생성 후보·게시 이력이 함께 삭제됩니다.')) return;
-    const res = await fetch(`${API_BASE}/api/projects/generations/${id}`, {
-      method: 'DELETE', headers: { Authorization: `Bearer ${getToken()}` },
+    const res = await authedFetch(`${API_BASE}/api/projects/generations/${id}`, {
+      method: 'DELETE',
     });
     if (!res.ok) { alert('삭제에 실패했습니다.'); return; }
     load();
@@ -76,7 +72,7 @@ export default function CompanyGenerationsPage() {
                   <tr key={r.id} className="border-b border-[#F9FAFB] dark:border-[#1C2333] last:border-0 hover:bg-[#F9FAFB] dark:hover:bg-[#252D3D] transition-colors">
                     <td className="px-6 py-3 text-[#4E5968] dark:text-[#9CA3AF]">
                       <span className="inline-flex items-center gap-2">
-                        <ModeBadge mode={r.mode} />
+                        <ModeBadge mode={r.mode} format={r.format} />
                         <span>{r.product_name ?? '—'}</span>
                       </span>
                     </td>

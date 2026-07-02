@@ -71,6 +71,7 @@ class SimulationRow(BaseModel):
     status: str
     sample_size: int
     created_by_name: str | None
+    org_name: str | None = None  # 소속 조직명(내역 org 컬럼 — 공용 화면 통일용)
     created_at: datetime
 
 
@@ -79,6 +80,7 @@ class GenerationRow(BaseModel):
     status: str
     product_name: str | None
     mode: str  # create | improve (input JSONB에서 읽음)
+    format: str  # single | carousel(카드뉴스) — 생성/카드 배지 분기
     project_name: str | None
     created_by_name: str | None
     created_at: datetime
@@ -465,27 +467,57 @@ async def my_team_members(
     return {"team_id": str(current_user.team_id), "member_names": list(rows.scalars().all())}
 
 
+# 시뮬 내역 정렬 화이트리스트·상태 버킷 — 공용 화면(정렬·검색·상태 필터)과 계약 동일.
+# 조직명순은 단일 조직이라 의미 없지만 화면 통일을 위해 created_at로 폴백한다.
+_SIM_SORT_COLS = {"created_at": "s.created_at", "title": "a.title"}
+_SIM_STATUS = {
+    "completed": ("COMPLETED",),
+    "in_progress": ("QUEUED", "RUNNING"),
+    "failed": ("FAILED",),
+}
+
+
 @router.get("/simulations", response_model=list[SimulationRow])
 async def list_company_simulations(
-    limit: int = 50,
+    limit: int = 20,
+    offset: int = 0,
+    sort: str = "created_at",
+    order: str = "desc",
+    status: str | None = None,
+    search_field: str = "title",
+    search: str | None = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """소속 조직의 시뮬레이션 내역."""
+    """소속 조직의 시뮬레이션 내역(페이지네이션·정렬·검색·상태 필터)."""
     org = await _get_company_org(current_user, db)
-
+    params: dict = {"org_id": org.id, "limit": max(1, min(limit, 200)), "offset": max(0, offset)}
+    where = ["s.organization_id = :org_id", "s.deleted_at IS NULL"]
+    bucket = _SIM_STATUS.get(status) if status else None
+    if bucket:
+        where.append("s.status = ANY(:statuses)")
+        params["statuses"] = list(bucket)
+    if search:
+        col = "o.name" if search_field == "org_name" else "a.title"
+        where.append(f"{col} ILIKE :q")
+        params["q"] = f"%{search}%"
+    col = _SIM_SORT_COLS.get(sort, "s.created_at")
+    direction = "ASC" if str(order).lower() == "asc" else "DESC"
+    order_by = f"{col} {direction} NULLS LAST"
     result = await db.execute(
-        text("""
+        text(f"""
             SELECT s.id, s.ad_id, s.status, s.sample_size, s.created_at,
-                   a.title AS ad_title, u.name AS created_by_name
+                   a.title AS ad_title, u.name AS created_by_name,
+                   o.name AS org_name
             FROM simulations s
             LEFT JOIN ads a ON a.id = s.ad_id
             LEFT JOIN users u ON u.id = s.created_by
-            WHERE s.organization_id = :org_id AND s.deleted_at IS NULL
-            ORDER BY s.created_at DESC
-            LIMIT :limit
+            LEFT JOIN organizations o ON o.id = s.organization_id
+            WHERE {" AND ".join(where)}
+            ORDER BY {order_by}
+            LIMIT :limit OFFSET :offset
         """),
-        {"org_id": org.id, "limit": limit},
+        params,
     )
     return [
         SimulationRow(
@@ -495,9 +527,10 @@ async def list_company_simulations(
             status=r.status,
             sample_size=r.sample_size,
             created_by_name=r.created_by_name,
+            org_name=r.org_name,
             created_at=r.created_at,
         )
-        for r in result
+        for r in result.mappings()
     ]
 
 
@@ -530,6 +563,7 @@ async def list_company_generations(
             status=r.status,
             product_name=(r.input or {}).get("product_name") if r.input else None,
             mode=(r.input or {}).get("mode", "create") if r.input else "create",
+            format=(r.input or {}).get("format", "single") if r.input else "single",
             project_name=r.project_name,
             created_by_name=r.created_by_name,
             created_at=r.created_at,

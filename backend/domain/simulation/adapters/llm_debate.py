@@ -498,8 +498,9 @@ class LLMJudge:
             '"expected_effect":"기대효과","supporting_personas":["이름"]}]}'
         )
         try:
-            # final은 진단+합의+이견+개선안(supporting 포함)이라 길다 — 잘리지 않을 만큼만(1200).
-            data = self._c.complete_json(self._engine, _JUDGE_SYS, user, max_tokens=1200)
+            # final은 진단+합의+이견+개선안(supporting 포함)이라 길다 — 한국어 JSON은 토큰을
+            # 많이 먹어 1200에선 문자열 중간이 잘려 JSONDecodeError가 났다. 여유 있게 2000.
+            data = self._c.complete_json(self._engine, _JUDGE_SYS, user, max_tokens=2000)
             ranked = [
                 RankedAction(
                     rank=int(a.get("rank", i + 1)),

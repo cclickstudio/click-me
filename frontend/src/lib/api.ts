@@ -1,4 +1,4 @@
-import { getToken } from "./authApi";
+import { getToken, refreshAccessToken } from "./authApi";
 import type { BoardResponse } from "@/components/manage/compare/types";
 import type { CampaignDetail, CampaignsResponse, CreativesResponse, DemographicsResponse, ManualKpiMap, PlatformsResponse } from "@/components/manage/campaigns/types";
 import type { ActionResult, Proposal } from "@/components/manage/types";
@@ -14,6 +14,8 @@ import type {
   DebateTopicsResult,
   QAEvent,
   ReportView,
+  SimCompareInput,
+  SimComparisonResult,
   SimRunInput,
   SimRunResult,
 } from "./types";
@@ -170,22 +172,40 @@ export function setAdminOrgId(orgId: string | null): void {
   else window.sessionStorage.removeItem("adminOrgId");
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const token = getToken();
-  const authHeader: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
+// 공용 fetch — access 토큰(쿠키)을 Authorization 헤더에 싣고 쿠키도 함께 보낸다(credentials).
+// 401이면 refresh 토큰으로 access 재발급 후 1회 재시도. 모든 API 호출(request·직접 fetch)이 이걸 쓴다.
+// credentials: "include" 는 EventSource가 못 쓰는 SSE 외 경로에도 쿠키를 실어 백엔드 쿠키 폴백과 정합.
+// 화면의 직접 fetch도 이 함수로 통일 — 개별 `Bearer ${getToken()}`·`authHeaders()` 대신 이걸 쓴다.
+export async function authedFetch(url: string, init: RequestInit = {}): Promise<Response> {
+  // admin이 선택한 대상 org(impersonation). management·projects·generator가 X-Org-Id로 소비한다.
+  // adminOrgId는 admin만 설정되므로(로그아웃 시 소거) 모든 요청에 실어도 비-admin엔 무영향.
   const orgId = getAdminOrgId();
-  // 계약: path는 /api 이후 상대경로. management 요청 & adminOrgId 있을 때만 부착(비-management 라우터로 누출 금지).
-  const orgHeader: Record<string, string> =
-    orgId && path.startsWith("/management") ? { "X-Org-Id": orgId } : {};
+  const build = (token: string | null): RequestInit => ({
+    ...init,
+    credentials: "include",
+    headers: {
+      ...(init.headers as Record<string, string> | undefined),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(orgId ? { "X-Org-Id": orgId } : {}),
+    },
+  });
+  let res = await fetch(url, build(getToken()));
+  if (res.status === 401) {
+    const nt = await refreshAccessToken();
+    if (nt) res = await fetch(url, build(nt));
+  }
+  return res;
+}
+
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  // X-Org-Id(admin 선택 org)·인증·refresh는 authedFetch가 일괄 처리한다.
   const { headers: initHeaders, ...restInit } = init ?? {};
-  const res = await fetch(`${API_BASE}/api${path}`, {
+  const res = await authedFetch(`${API_BASE}/api${path}`, {
+    ...restInit,
     headers: {
       "Content-Type": "application/json",
-      ...authHeader,
-      ...orgHeader,
       ...(initHeaders as Record<string, string> | undefined),
     },
-    ...restInit,
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ detail: "Unknown error" }));
@@ -216,7 +236,25 @@ function buildSimForm(input: SimRunInput): FormData {
   if (input.product_category) form.append("product_category", input.product_category);
   if (input.ad_objective) form.append("ad_objective", input.ad_objective);
   if (input.service_class != null) form.append("service_class", String(input.service_class));
+  if (input.analysis_mode) form.append("analysis_mode", input.analysis_mode);
   if (input.from_campaign_id) form.append("from_campaign_id", input.from_campaign_id);
+  return form;
+}
+
+// Persona Set 비교 multipart 폼 — 광고 공통 필드 + segments JSON.
+function buildCompareForm(input: SimCompareInput): FormData {
+  const form = new FormData();
+  form.append("ad_id", input.ad_id);
+  if (input.ad_content) form.append("ad_content", input.ad_content);
+  if (input.ad_image) form.append("ad_image", input.ad_image);
+  if (input.ad_image_url) form.append("ad_image_url", input.ad_image_url);
+  if (input.organization_id) form.append("organization_id", input.organization_id);
+  if (input.project_id) form.append("project_id", input.project_id);
+  if (input.ad_title) form.append("ad_title", input.ad_title);
+  if (input.product_category) form.append("product_category", input.product_category);
+  if (input.ad_objective) form.append("ad_objective", input.ad_objective);
+  if (input.service_class != null) form.append("service_class", String(input.service_class));
+  form.append("segments", JSON.stringify(input.segments));
   return form;
 }
 
@@ -229,12 +267,15 @@ function _campaignQuery(
   targetRoas?: number | null,
   datePreset?: DatePreset,
   includeArchived?: boolean,
+  page?: { limit?: number; offset?: number },
 ): string {
   const p = new URLSearchParams();
   if (conversionValueKrw) p.set("conversion_value_krw", String(conversionValueKrw));
   if (targetRoas) p.set("target_roas", String(targetRoas));
   if (datePreset && datePreset !== "maximum") p.set("date_preset", datePreset);
   if (includeArchived) p.set("include_archived", "true");
+  if (page?.limit != null) p.set("limit", String(page.limit));
+  if (page?.offset != null) p.set("offset", String(page.offset));
   const q = p.toString();
   return q ? `?${q}` : "";
 }
@@ -263,7 +304,7 @@ export const api = {
       const form = new FormData();
       form.append("file", file);
       form.append("project_id", projectId);
-      return fetch(`${API_BASE}/api/ads/upload`, { method: "POST", body: form }).then((r) => r.json());
+      return authedFetch(`${API_BASE}/api/ads/upload`, { method: "POST", body: form }).then((r) => r.json());
     },
     analyzeImage: (body: { ad_id: string; image_url: string }) =>
       request("/ads/analyze/image", { method: "POST", body: JSON.stringify(body) }),
@@ -279,11 +320,9 @@ export const api = {
   simulation: {
     // 동기 실행 — 끝까지 돌린 결과를 한 번에 반환(진행률 없음).
     run: (input: SimRunInput): Promise<SimRunResult> => {
-      const token = getToken();
       // Content-Type은 지정하지 않는다 — 브라우저가 multipart boundary를 자동 설정.
-      return fetch(`${API_BASE}/api/simulation/run`, {
+      return authedFetch(`${API_BASE}/api/simulation/run`, {
         method: "POST",
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
         body: buildSimForm(input),
       }).then(async (r) => {
         if (!r.ok) {
@@ -297,10 +336,8 @@ export const api = {
     start: (
       input: SimRunInput,
     ): Promise<{ run_id: string; stream_url: string; result_url: string; mode: string }> => {
-      const token = getToken();
-      return fetch(`${API_BASE}/api/simulation`, {
+      return authedFetch(`${API_BASE}/api/simulation`, {
         method: "POST",
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
         body: buildSimForm(input),
       }).then(async (r) => {
         if (!r.ok) {
@@ -310,7 +347,26 @@ export const api = {
         return r.json();
       });
     },
-    stream: (runId: string) => new EventSource(`${API_BASE}/api/simulation/${runId}/stream`),
+    // Persona Set 비교 시작 — 세그먼트 배열로 compare, run_id 반환.
+    // 진행률은 stream(run_id) 재사용(이벤트에 segment_* 추가), 결과는 compareResult(run_id).
+    compare: (input: SimCompareInput): Promise<{ run_id: string }> => {
+      return authedFetch(`${API_BASE}/api/simulation/compare`, {
+        method: "POST",
+        body: buildCompareForm(input),
+      }).then(async (r) => {
+        if (!r.ok) {
+          const err = await r.json().catch(() => ({ detail: `HTTP ${r.status}` }));
+          throw new Error(err.detail ?? `HTTP ${r.status}`);
+        }
+        return r.json();
+      });
+    },
+    // compare 결과 — mode:"persona_set" + 세그먼트별 SimRunResult.
+    compareResult: (runId: string): Promise<SimComparisonResult> =>
+      request<SimComparisonResult>(`/simulation/${runId}/result`),
+    // withCredentials: SSE는 Authorization 헤더를 못 붙이므로 쿠키로 인증(백엔드 쿠키 폴백).
+    stream: (runId: string) =>
+      new EventSource(`${API_BASE}/api/simulation/${runId}/stream`, { withCredentials: true }),
     // 진행 상태(running/completed/failed/unknown) — 새로고침 후 백그라운드 런 복원용.
     status: (
       runId: string,
@@ -321,6 +377,9 @@ export const api = {
     // DB에 저장된 시뮬 결과를 simulation_id로 조회(콜드·패널 진입). 404=결과 없음.
     dbResult: (simulationId: string): Promise<SimRunResult> =>
       request<SimRunResult>(`/simulation/${simulationId}/db-result`),
+    // VLM이 이 URL 이미지를 읽을 수 있는지 사전 확인(백엔드가 직접 GET — 미리보기와 별개).
+    checkImage: (url: string): Promise<{ ok: boolean; mime?: string; reason?: string }> =>
+      request(`/simulation/check-image?url=${encodeURIComponent(url)}`),
   },
 
   // 페르소나 토론(/api/debate/*) — 시뮬 반응(reactions)을 받아 토론을 돌리고 결과를 낸다.
@@ -360,7 +419,8 @@ export const api = {
         body: JSON.stringify(body),
       });
     },
-    stream: (runId: string) => new EventSource(`${API_BASE}/api/debate/${runId}/stream`),
+    stream: (runId: string) =>
+      new EventSource(`${API_BASE}/api/debate/${runId}/stream`, { withCredentials: true }),
     result: (runId: string): Promise<DebateResult> => request<DebateResult>(`/debate/${runId}/result`),
     // 시뮬의 저장된 토론 목록(메타) — 세션 탭·프로젝트 패널 복원용. DB 미연동이면 빈 목록.
     bySimulation: (simulationId: string): Promise<DebateSessionsResult> =>
@@ -371,10 +431,8 @@ export const api = {
     // 시뮬에 저장된 통합 리포트(ReportView) 복원 — 콜드·새로고침·패널 진입용.
     // request 헬퍼는 404에 throw하므로 여기선 fetch 직접 호출 → 404·실패 시 null 반환(결과 화면은 떠야 함).
     savedReport: async (simulationId: string): Promise<ReportView | null> => {
-      const token = getToken();
-      const res = await fetch(
+      const res = await authedFetch(
         `${API_BASE}/api/debate/by-simulation/${simulationId}/report`,
-        { headers: token ? { Authorization: `Bearer ${token}` } : {} },
       );
       if (!res.ok) return null;
       return res.json() as Promise<ReportView>;
@@ -385,13 +443,9 @@ export const api = {
       body: { question: string; reactions: unknown[]; ad_analysis?: unknown },
       onEvent: (ev: QAEvent) => void,
     ): Promise<void> => {
-      const token = getToken();
-      const res = await fetch(`${API_BASE}/api/debate/${runId}/question`, {
+      const res = await authedFetch(`${API_BASE}/api/debate/${runId}/question`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
       if (!res.ok || !res.body) {
@@ -502,12 +556,10 @@ export const api = {
     },
     // 첨부 이미지 S3 업로드 → 프록시 URL(상대경로) 반환. 내역 영속화에 사용.
     uploadImage: async (file: File): Promise<{ key: string; url: string }> => {
-      const token = getToken();
       const form = new FormData();
       form.append("file", file);
-      const res = await fetch(`${API_BASE}/api/chat/image`, {
+      const res = await authedFetch(`${API_BASE}/api/chat/image`, {
         method: "POST",
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
         body: form,
       });
       if (!res.ok) {
@@ -668,9 +720,10 @@ export const api = {
       targetRoas?: number | null,
       datePreset?: DatePreset,
       includeArchived?: boolean,
+      page?: { limit?: number; offset?: number },
     ) =>
       request<CampaignsResponse>(
-        `/management/campaigns${_campaignQuery(conversionValueKrw, targetRoas, datePreset, includeArchived)}`,
+        `/management/campaigns${_campaignQuery(conversionValueKrw, targetRoas, datePreset, includeArchived, page)}`,
       ),
     campaign: (
       id: string,
@@ -787,7 +840,7 @@ export const api = {
     uploadAdImage: (file: File) => {
       const form = new FormData();
       form.append('file', file);
-      return fetch(`${API_BASE}/api/management/ad-image`, { method: 'POST', body: form }).then(
+      return authedFetch(`${API_BASE}/api/management/ad-image`, { method: 'POST', body: form }).then(
         (r) => r.json() as Promise<{ image_hash: string }>,
       );
     },
@@ -827,7 +880,9 @@ export const api = {
     start: (body: object) =>
       request("/generator/generations", { method: "POST", body: JSON.stringify(body) }),
     stream: (generationId: string) =>
-      new EventSource(`${API_BASE}/api/generator/generations/${generationId}/stream`),
+      new EventSource(`${API_BASE}/api/generator/generations/${generationId}/stream`, {
+        withCredentials: true,
+      }),
     detail: (generationId: string) => request(`/generator/generations/${generationId}`),
     select: (generationId: string, candidateId: string) =>
       request(`/generator/generations/${generationId}/select`, {
@@ -863,7 +918,7 @@ export const api = {
       uploadLogo: async (clientId: string, file: File): Promise<{ key: string; url: string }> => {
         const form = new FormData();
         form.append("file", file);
-        const res = await fetch(`${API_BASE}/api/generator/logo`, {
+        const res = await authedFetch(`${API_BASE}/api/generator/logo`, {
           method: "POST",
           headers: { "X-Client-Id": clientId },
           body: form,
@@ -894,7 +949,7 @@ export const api = {
     uploadProductImage: async (file: File): Promise<{ temp_key: string }> => {
       const form = new FormData();
       form.append("file", file);
-      const res = await fetch(`${API_BASE}/api/generator/product-image`, {
+      const res = await authedFetch(`${API_BASE}/api/generator/product-image`, {
         method: "POST",
         body: form,
       });
