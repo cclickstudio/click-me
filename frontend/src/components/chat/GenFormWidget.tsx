@@ -10,10 +10,18 @@ import type { GenerationDetail, Project } from '@/lib/types';
 
 type Phase = 'form' | 'running' | 'done' | 'error';
 type Initial = {
+  mode?: 'create' | 'improve'; // improve면 시뮬 결과 기반 개선 폼(단일 카드)
   product_name?: string;
   product_description?: string;
   target_audience?: string;
   campaign_objective?: string;
+  // 개선(improve) 프리필 — 백엔드 improve_context가 시뮬에서 조립.
+  // product_cutout_s3_key는 채팅 경로에서 추적 불가라 없음(백엔드 null 폴백).
+  simulation_summary?: string;
+  plain_summary?: string | null;
+  improvement_direction?: string;
+  existing_ad_s3_key?: string | null;
+  fix_requests?: string | null;
 };
 
 // 진행 중 생성 id 보관 키(G4) — 동시 1개 정책이라 단일 키로 충분(새로고침 복원용).
@@ -50,6 +58,8 @@ export default function GenFormWidget({
   const [desc, setDesc] = useState(initial?.product_description ?? '');
   const [target, setTarget] = useState(initial?.target_audience ?? '');
   const [objective, setObjective] = useState(initial?.campaign_objective ?? 'conversion');
+  const [fixRequests, setFixRequests] = useState(initial?.fix_requests ?? '');
+  const isImprove = initial?.mode === 'improve';
   const [image] = useState<File | null>(initialImage ?? null);
   const [imagePreview] = useState<string | null>(() =>
     initialImage ? URL.createObjectURL(initialImage) : null,
@@ -143,7 +153,11 @@ export default function GenFormWidget({
   };
 
   const run = async () => {
-    if (!name.trim() || !desc.trim() || !target.trim() || !projectId) return;
+    if (isImprove) {
+      if (!initial?.simulation_summary || !projectId) return;
+    } else if (!name.trim() || !desc.trim() || !target.trim() || !projectId) {
+      return;
+    }
     if (getJobs().gen) {
       setErr('이미 다른 생성이 진행 중이에요. 끝난 뒤 다시 시도하세요.');
       setPhase('error');
@@ -163,14 +177,27 @@ export default function GenFormWidget({
           /* 업로드 실패 — 이미지 없이 생성 */
         }
       }
-      const { generation_id } = (await api.generator.start({
-        product_name: name,
-        product_description: desc,
-        target_audience: target,
-        campaign_objective: objective,
-        project_id: projectId,
-        product_image_temp_key: productImageTempKey ?? null,
-      })) as { generation_id: string };
+      const body = isImprove
+        ? {
+            mode: 'improve',
+            project_id: projectId,
+            product_name: name,
+            simulation_summary: initial?.simulation_summary ?? '',
+            plain_summary: initial?.plain_summary ?? null,
+            improvement_direction: initial?.improvement_direction || null,
+            existing_ad_s3_key: initial?.existing_ad_s3_key ?? null,
+            fix_requests: fixRequests.trim() || null,
+            campaign_objective: objective,
+          }
+        : {
+            product_name: name,
+            product_description: desc,
+            target_audience: target,
+            campaign_objective: objective,
+            project_id: projectId,
+            product_image_temp_key: productImageTempKey ?? null,
+          };
+      const { generation_id } = (await api.generator.start(body)) as { generation_id: string };
       setGenId(generation_id);
       setGenJob(generation_id); // 동시실행 슬롯 점유(생성 1개 제한)
       localStorage.setItem(ACTIVE_GEN_KEY, generation_id); // 새로고침 복원용(G4)
@@ -228,6 +255,72 @@ export default function GenFormWidget({
       document.removeEventListener('visibilitychange', onVisible);
     };
   }, [restoreFromKey]);
+
+  // 개선(improve) 폼 — 단계 없는 단일 카드. 시뮬 요약은 읽기 전용, 수정 요청만 입력받는다.
+  if (phase === 'form' && isImprove) {
+    return (
+      <div className={cardCls}>
+        <p className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6] mb-3">
+          🔄 시뮬 결과 기반 개선 생성{initial?.product_name ? ` — ${initial.product_name}` : ''}
+        </p>
+        <div className="space-y-2">
+          <div>
+            <label className={labelCls}>시뮬레이션 결과</label>
+            <p className="text-sm text-[#191F28] dark:text-[#F2F4F6] rounded-lg bg-[#F9FAFB] dark:bg-[#252D3D] px-3 py-2">
+              {initial?.simulation_summary}
+            </p>
+          </div>
+          {initial?.improvement_direction && (
+            <div>
+              <label className={labelCls}>개선 방향 (토론 권고)</label>
+              <p className="text-[12px] text-[#4E5968] dark:text-[#9CA3AF] whitespace-pre-line rounded-lg bg-[#F9FAFB] dark:bg-[#252D3D] px-3 py-2 max-h-24 overflow-y-auto">
+                {initial.improvement_direction}
+              </p>
+            </div>
+          )}
+          {initial?.plain_summary && (
+            <details className="text-[12px] text-[#4E5968] dark:text-[#9CA3AF]">
+              <summary className="cursor-pointer text-[11px] font-semibold text-[#8B95A1]">AI 분석 보기</summary>
+              <p className="mt-1 whitespace-pre-line rounded-lg bg-[#F9FAFB] dark:bg-[#252D3D] px-3 py-2 max-h-24 overflow-y-auto">
+                {initial.plain_summary}
+              </p>
+            </details>
+          )}
+          <div>
+            <label className={labelCls}>수정 요청사항 (선택)</label>
+            <textarea
+              className={`${inputCls} resize-none`}
+              rows={2}
+              value={fixRequests}
+              onChange={e => setFixRequests(e.target.value)}
+              placeholder="예: 가격 강조 문구를 빼주세요"
+            />
+          </div>
+          <div>
+            <label className={labelCls}>저장할 프로젝트 *</label>
+            <select className={inputCls} value={projectId} onChange={e => setProjectId(e.target.value)}>
+              {projects.length === 0 && <option value="">프로젝트 없음</option>}
+              {projects.map(p => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+            {projects.length === 0 && (
+              <p className="mt-1 text-[11px] text-[#F04452]">
+                저장할 프로젝트가 없어요. 프로젝트를 먼저 만든 뒤 생성할 수 있어요.
+              </p>
+            )}
+          </div>
+        </div>
+        <div className="flex gap-2 mt-3">
+          <button onClick={run} disabled={!initial?.simulation_summary || !projectId} className={btnCls}>
+            개선 시안 생성
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (phase === 'form') {
     const totalSteps = 4;
