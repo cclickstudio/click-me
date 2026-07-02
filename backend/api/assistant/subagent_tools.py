@@ -30,6 +30,9 @@ from domain.simulation.assistant.tools import list_simulations
 
 _VALID_CAMPAIGN_ACTIONS = ("pause", "activate", "increase_budget", "decrease_budget")
 
+# 일반 지식 KB 게이트 — top cosine이 이 미만이면 근거 불충분(구 ADVISE 게이트와 동일 취지).
+_GENERAL_KB_THRESHOLD = 0.35
+
 
 def _subreq(state: dict, query: str) -> SubagentRequest:
     """현재 상태 + LLM이 정리한 query로 SubagentRequest 구성(history는 user/assistant 텍스트만)."""
@@ -55,11 +58,22 @@ def _subreq(state: dict, query: str) -> SubagentRequest:
     )
 
 
-def build_chat_tools(settings, memory=None) -> list:
-    """통합 채팅 에이전트에 등록할 tool 리스트를 빌드한다(settings·핸들러·메모리 클로저)."""
+def build_chat_tools(settings, memory=None, clio_retriever=None) -> list:
+    """통합 채팅 에이전트에 등록할 tool 리스트를 빌드한다(settings·핸들러·메모리 클로저).
+
+    clio_retriever는 테스트 주입용 — None이면 풀모드(키 존재·use_mock=False)에서만 내부 생성.
+    """
     mgmt = _build_management_handler(settings)
     gen = _build_generator_handler(settings)
     sim = _build_simulation_handler(settings)
+
+    clio = clio_retriever
+    if clio is None:
+        api_key = getattr(settings, "openai_api_key", None)
+        if api_key and not getattr(settings, "use_mock", True):
+            from domain.chat.retriever import ClioKbRetriever  # noqa: PLC0415
+
+            clio = ClioKbRetriever(api_key=api_key)
 
     # ───────────────────────── 위임 tool (도메인 서브에이전트) ─────────────────────────
     @tool
@@ -113,6 +127,67 @@ def build_chat_tools(settings, memory=None) -> list:
             update={
                 "sub_meta": {"generator": res.meta},
                 "messages": [ToolMessage(res.message, tool_call_id=tool_call_id)],
+            }
+        )
+
+    @tool
+    async def ask_general_knowledge(
+        query: str,
+        *,
+        state: Annotated[dict, InjectedState],
+        tool_call_id: Annotated[str, InjectedToolCallId],
+    ) -> Command:
+        """특정 캠페인·시안·시뮬과 무관한 광고·마케팅 '일반 지식·용어 정의·업계 개념' 질문에
+        근거 문서를 검색한다(예: 'CPM이 뭐야', '어트리뷰션 모델 종류'). 검색 결과를 근거로
+        네가 종합해 답하라. 행위 조언(어떻게 쓸까/만들까)은 ask_generator를 쓴다."""
+        _ = state  # per-turn 컨텍스트 불필요 — 시그니처는 다른 ask_*와 통일
+        if clio is None:
+            return Command(
+                update={
+                    "messages": [
+                        ToolMessage(
+                            "일반 지식베이스를 사용할 수 없는 환경이야. "
+                            "아는 범위에서 신중히 답하되 불확실하면 모른다고 답하라.",
+                            tool_call_id=tool_call_id,
+                        )
+                    ]
+                }
+            )
+        try:
+            hits = await clio.search(query, k=4)
+        except Exception:  # noqa: BLE001 — KB 미적재·일시 오류는 빈 결과로 진행
+            hits = []
+        top_cosine = max((h.get("cosine_score") or 0.0 for h in hits), default=0.0)
+        if not hits or top_cosine < _GENERAL_KB_THRESHOLD:
+            return Command(
+                update={
+                    "messages": [
+                        ToolMessage(
+                            "지식베이스에 충분한 근거가 없어. 아는 범위에서 신중히 답하되 "
+                            "불확실하면 모른다고 답하라.",
+                            tool_call_id=tool_call_id,
+                        )
+                    ]
+                }
+            )
+        ctx = "\n\n".join(f"[{i + 1}] {h['title']}\n{h['chunk']}" for i, h in enumerate(hits))
+        citations = [{"kind": "kb", "source": h["source"], "title": h["title"]} for h in hits]
+        return Command(
+            update={
+                "sub_meta": {
+                    "clio": {
+                        "source": "clio",
+                        "label": "광고 지식 베이스",
+                        "citations": citations,
+                    }
+                },
+                "messages": [
+                    ToolMessage(
+                        "아래 지식베이스 근거로 답하라. 근거에 없는 내용은 지어내지 말 것.\n\n"
+                        + ctx,
+                        tool_call_id=tool_call_id,
+                    )
+                ],
             }
         )
 
@@ -644,6 +719,7 @@ def build_chat_tools(settings, memory=None) -> list:
         ask_management,
         ask_simulation,
         ask_generator,
+        ask_general_knowledge,
         run_simulation,
         run_generation,
         run_improvement,

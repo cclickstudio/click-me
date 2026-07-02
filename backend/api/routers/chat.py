@@ -117,15 +117,20 @@ def _assemble_chat_meta(state: dict, engine_label: str) -> dict:
     mgmt = sub.get("management") or {}
     sim = sub.get("simulation") or {}
     gen = sub.get("generator") or {}
+    clio = sub.get("clio") or {}
     source = (
         state.get("source")
         or mgmt.get("source")
         or sim.get("source")
         or gen.get("source")
+        or clio.get("source")
         or "orchestrator"
     )
     citations = (
-        (mgmt.get("citations") or []) + (sim.get("citations") or []) + (gen.get("citations") or [])
+        (mgmt.get("citations") or [])
+        + (sim.get("citations") or [])
+        + (gen.get("citations") or [])
+        + (clio.get("citations") or [])
     )
     meta: dict = {
         "source": source,
@@ -133,6 +138,7 @@ def _assemble_chat_meta(state: dict, engine_label: str) -> dict:
             mgmt.get("label")
             or sim.get("label")
             or gen.get("label")
+            or clio.get("label")
             or _LABEL_BY_SOURCE.get(source, "CLIO")
         ),
         "engine": engine_label,
