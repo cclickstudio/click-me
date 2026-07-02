@@ -23,6 +23,10 @@ type ProjectContextValue = {
   loadAll: () => Promise<void>;
   refreshDetails: (projectId: string) => Promise<void>;
   refresh: () => Promise<void>;
+  // 프로젝트 목록 + 로드된 프로젝트들의 시뮬/제너/휴지통 + 채팅까지 싹 다시 불러온다(새로고침 버튼).
+  refreshAll: () => Promise<void>;
+  // 채팅 세션 목록 갱신 신호 — refreshAll 시 증가, ProjectChatSection이 구독해 재조회.
+  chatRefreshKey: number;
   selectedProjectId: string | null;
   selectedProject: Project | null;
   selectProject: (id: string | null) => void;
@@ -39,6 +43,8 @@ const ProjectContext = createContext<ProjectContextValue>({
   loadAll: async () => {},
   refreshDetails: async () => {},
   refresh: async () => {},
+  refreshAll: async () => {},
+  chatRefreshKey: 0,
   selectedProjectId: null,
   selectedProject: null,
   selectProject: () => {},
@@ -52,6 +58,7 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
   const [details, setDetails] = useState<Record<string, ProjectDetails>>({});
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [debates, setDebates] = useState<Record<string, DebateSessionMeta[]>>({});
+  const [chatRefreshKey, setChatRefreshKey] = useState(0);
   const { token } = useAuth();
   const fetchedTokenRef = useRef<string | null>(null);
 
@@ -131,6 +138,15 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
     await fetchDetailsForProject(projectId);
   };
 
+  // 새로고침 버튼 — 프로젝트 목록 + 로드된 프로젝트들의 시뮬/제너/휴지통을 재조회하고,
+  // 채팅 세션도 갱신 신호를 올린다. (아직 안 펼친 프로젝트는 펼칠 때 로드되므로 제외)
+  const refreshAll = async () => {
+    await fetchProjects();
+    const loadedIds = Object.keys(details).filter(id => details[id]?.loaded);
+    await Promise.all(loadedIds.map(id => fetchDetailsForProject(id)));
+    setChatRefreshKey(k => k + 1);
+  };
+
   // 아직 로드 안 된 프로젝트 details를 일괄 로드 — MY 필터링에 사용
   const loadAll = async () => {
     const unloaded = projects.filter(p => !details[p.id]?.loaded);
@@ -152,6 +168,7 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
   return (
     <ProjectContext.Provider value={{
       projects, loading, details, loadDetails, loadAll, refreshDetails, refresh: fetchProjects,
+      refreshAll, chatRefreshKey,
       selectedProjectId, selectedProject, selectProject,
       debates, loadDebates,
     }}>

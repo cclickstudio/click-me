@@ -324,7 +324,7 @@ function CompanyItem({
 // ADMIN 전용 — 전체 회사를 보고, 회사 안에서 다시 팀별로 프로젝트를 나눠 본다.
 export default function AdminPanel({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
   const pathname = usePathname();
-  const { projects, loading, refresh } = useProjects();
+  const { projects, loading, refreshAll } = useProjects();
   const [search, setSearch] = useState('');
   const [orgs, setOrgs] = useState<{ id: string; name: string }[]>([]);
   // 작업 대상 조직(X-Org-Id impersonation) — 생성/집행은 이 org로, 조회는 이 org로 필터.
@@ -415,7 +415,7 @@ export default function AdminPanel({ collapsed, onToggle }: { collapsed: boolean
         </button>
         <p className="text-sm font-semibold text-[#4E5968] dark:text-[#9CA3AF]">기업 현황</p>
         <button
-          onClick={() => { refresh(); loadOrgs(); }}
+          onClick={() => { refreshAll(); loadOrgs(); }}
           title="새로고침"
           className="w-7 h-7 flex items-center justify-center rounded-lg text-[#8B95A1] hover:bg-[#F2F4F6] dark:hover:bg-[#252D3D] hover:text-[#3182F6] transition-colors"
         >

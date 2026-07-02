@@ -742,7 +742,7 @@ function adRefImageSrc(asset: string): string | null {
 }
 
 export default function GeneratorPage() {
-  const { projects, details, loadDetails } = useProjects();
+  const { projects, details, loadDetails, refreshDetails } = useProjects();
   // 화면 내 프로젝트 선택은 로컬 상태 — 사이드바(전역 선택)와 동기화하지 않는다.
   // 진입 시 전역 선택(localStorage)을 초기값으로만 읽고, 이후 변경은 이 화면에만 반영된다.
   const [localProjectId, setLocalProjectId] = useState<string | null>(null);
@@ -952,6 +952,8 @@ export default function GeneratorPage() {
           const d = (await api.generator.detail(generationId)) as GenerationDetail;
           setDetail(d);
           setPhase("done");
+          // 완료된 생성물을 좌측 패널 목록에 즉시 반영(새로고침 불필요).
+          if (selectedProject?.id) refreshDetails(selectedProject.id);
           // N1 — 전용 페이지 직접 생성이 끝나면, 개선/시뮬 제안을 채팅에 자동 주입.
           // 기존 대화에 끼워넣지 않고 '새 채팅 세션'을 만들어 거기에 제안한다(맥락 분리).
           // 만든 세션 id는 저장해 아래 '시뮬레이션 돌리기' 버튼(#2)이 같은 세션을 연다.

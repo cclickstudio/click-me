@@ -114,7 +114,7 @@ const AGE_BANDS: { label: string; min: number; max: number }[] = [
 ];
 
 export default function SimulationRunPage() {
-  const { projects } = useProjects();
+  const { projects, refreshDetails } = useProjects();
   // 화면 내 프로젝트 선택은 로컬 상태 — 사이드바(전역 선택)와 동기화하지 않는다.
   // 진입 시 전역 선택(localStorage)을 초기값으로만 읽고, 이후 변경은 이 화면에만 반영된다.
   const [localProjectId, setLocalProjectId] = useState<string | null>(null);
@@ -503,6 +503,7 @@ export default function SimulationRunPage() {
                 // N1 — 전용 페이지 직접 실행이 끝나면, 결과 + "개선해서 다시 돌리기" 제안을
                 // 자동 주입. 기존 대화에 끼워넣지 않고 '새 채팅 세션'을 만들어 거기에 제안한다.
                 const pid = selectedProject?.id;
+                if (pid) refreshDetails(pid); // 완료된 시뮬을 좌측 패널에 즉시 반영
                 if (pid && r.simulation_id) {
                   const injectKey = `n1_injected_${run_id}`; // 동일 run 1회만(중복 주입 방지)
                   if (!localStorage.getItem(injectKey)) {

@@ -69,7 +69,11 @@ export default function SimulationResultPage() {
     authedFetch(`${API_BASE}/api/projects/simulations/${id}`)
       .then(r => (r.ok ? r.json() : null))
       .then(d => {
-        if (alive && d) setMeta({ project_id: d.project_id, deleted_at: d.deleted_at });
+        if (alive && d) {
+          setMeta({ project_id: d.project_id, deleted_at: d.deleted_at });
+          // 방금 완료한(또는 조회하는) 시뮬이 좌측 패널 목록에 반영되도록 갱신.
+          if (d.project_id) refreshDetails(d.project_id);
+        }
       })
       .catch(() => {
         /* 메타 없으면 삭제/복원 버튼만 숨김 — 결과 표시엔 영향 없음. */

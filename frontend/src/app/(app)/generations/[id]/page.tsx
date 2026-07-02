@@ -321,7 +321,7 @@ export default function GenerationDetailPage() {
   const router = useRouter();
   const { user } = useAuth();
   const isAdmin = user?.role === 'ADMIN';
-  const { projects, details, loadDetails, refreshDetails } = useProjects();
+  const { projects, details, refreshDetails } = useProjects();
 
   const [data, setData] = useState<GenDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -343,8 +343,8 @@ export default function GenerationDetailPage() {
   const projectId = data?.input?.project_id as string | undefined;
   const project = projectId ? projects.find(p => p.id === projectId) : null;
 
-  // 프로젝트 details 로드 — 삭제 여부(휴지통)·실행자 보완용
-  useEffect(() => { if (projectId) loadDetails(projectId); }, [projectId]); // eslint-disable-line react-hooks/exhaustive-deps
+  // 프로젝트 details 갱신 — 완료된(또는 조회하는) 생성물이 좌측 패널 목록에 반영되도록 재조회.
+  useEffect(() => { if (projectId) refreshDetails(projectId); }, [projectId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 패널 details에서 해당 gen 항목 찾아 created_by_name 보완
   const genRow = projectId && details[projectId]
