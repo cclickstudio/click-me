@@ -481,6 +481,11 @@ async def chat_complete(
                 msg_chunk, _meta_info = data
                 if "AIMessage" not in msg_chunk.__class__.__name__:
                     continue
+                # 서브에이전트 tool이 부르는 내부 LLM(예: 매니지먼트 KB grade의
+                # {"sufficient,rewrite})은 langsmith:nostream 태그로 표시 — ns=()로 새어도
+                # 여기서 걸러 답변에 안 섞이게 한다(최종 답변만 스트리밍).
+                if "langsmith:nostream" in ((_meta_info or {}).get("tags") or []):
+                    continue
                 text = _extract_text(getattr(msg_chunk, "content", ""))
                 if text:
                     acc += text

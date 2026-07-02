@@ -64,21 +64,22 @@ async def generate_explanations(
     prompt = f"제품명: {product_name}\n타겟: {target}\n\n" + "\n\n".join(candidate_blocks)
     response = await _batch_llm.ainvoke([("system", _SYSTEM), ("user", prompt)])
 
-    # LLM이 후보 수와 다른 개수의 rationale을 반환할 수 있어 개수에 맞춰 정렬한다.
-    rationales = list(response.rationales)
-    return [
+    # LLM이 후보 수보다 적은 근거를 돌려줄 수 있어(개수 미보장) strict zip은 파이프라인을
+    # 통째로 깨뜨린다. 부족분은 전략 설명으로 폴백해 후보 수만큼 항상 채운다.
+    rationales = response.rationales or []
+    _fallback = "이 전략과 템플릿 조합이 해당 타겟에 적합하다고 판단했습니다."
+    explanations = [
         CandidateExplanation(
             applied_target=meta["applied_target"],
             applied_strategy=meta["applied_strategy"],
             applied_template=meta["applied_template"],
-            rationale=(
-                rationales[i]
-                if i < len(rationales)
-                else meta["applied_strategy"] or "해당 타겟에 적합한 전략을 적용했습니다."
-            ),
+            rationale=rationales[i]
+            if i < len(rationales)
+            else (meta["applied_strategy"] or _fallback),
         ).model_dump()
         for i, meta in enumerate(metas)
     ]
+    return explanations
 
 
 async def explain_candidates(state: GenerationState, config: RunnableConfig) -> dict:

@@ -69,8 +69,9 @@ def build_chat_tools(settings, memory=None) -> list:
         state: Annotated[dict, InjectedState],
         tool_call_id: Annotated[str, InjectedToolCallId],
     ) -> Command:
-        """집행 '후' 실측 성과·운영 질문에 답한다. 캠페인 예산·소진·CTR/ROAS/CVR 실적·페이싱·
-        이상·정책·벤치마크 등. query에는 사용자의 질문을 명확히 정리해 넣어라."""
+        """집행 '후' 실측 성과·운영 질문, 그리고 캠페인 운영·성과 개선·예산 배분·타깃/오디언스
+        전략에 관한 일반 조언에 답한다. 캠페인 예산·소진·CTR/ROAS/CVR 실적·페이싱·이상·정책·
+        벤치마크 등. query에는 사용자의 질문을 명확히 정리해 넣어라."""
         res = await mgmt(_subreq(state, query))
         return Command(
             update={
@@ -87,7 +88,8 @@ def build_chat_tools(settings, memory=None) -> list:
         tool_call_id: Annotated[str, InjectedToolCallId],
     ) -> Command:
         """집행 '전' 시뮬레이션 결과·KPI(클릭 의향률·구매의도·신뢰도·거부율)의 의미·해석·
-        기존 결과 조회에 답한다. (새 시뮬 실행이 아니라 해석·조회. 실행은 run_simulation.)"""
+        기존 결과 조회, 그리고 소비자 반응 예측에 관한 질문·조언에 답한다.
+        (새 시뮬 실행이 아니라 해석·조회·조언. 실행은 run_simulation.)"""
         res = await sim(_subreq(state, query))
         return Command(
             update={
@@ -103,8 +105,9 @@ def build_chat_tools(settings, memory=None) -> list:
         state: Annotated[dict, InjectedState],
         tool_call_id: Annotated[str, InjectedToolCallId],
     ) -> Command:
-        """광고 시안·카피의 전략·작성 원칙·조언에 답한다(생성 실행이 아님).
-        실제 생성은 run_generation. query에 무엇에 대한 조언인지 정리해 넣어라."""
+        """광고 시안·카피·크리에이티브의 전략·작성 원칙·아이디어·개선 방향 조언에 답한다
+        (생성 실행이 아님). 실제 생성은 run_generation.
+        query에 무엇에 대한 조언인지 정리해 넣어라."""
         res = await gen(_subreq(state, query))
         return Command(
             update={
@@ -618,6 +621,25 @@ def build_chat_tools(settings, memory=None) -> list:
         facts = [r.get("fact") for r in rows if r.get("fact")]
         return "\n".join(f"- {f}" for f in facts) or "(저장된 기억 없음)"
 
+    @tool
+    async def recall_history(
+        query: str,
+        *,
+        state: Annotated[dict, InjectedState],
+    ) -> str:
+        """이 프로젝트에서 과거 수행한 시뮬/생성/매니지먼트 실행 이력을 키워드로 조회한다.
+        '지난번 20대 시뮬 뭐였지'처럼 과거에 무엇을 언제 돌렸는지가 필요할 때 호출한다."""
+        rows = await history.search_execution_history(state.get("project_id"), query, k=5)
+        if not rows:
+            return "(수행 이력 없음)"
+        labels = {"simulation": "시뮬", "generation": "생성", "management": "매니지먼트"}
+        lines = []
+        for r in rows:
+            when = (r.get("executed_at") or "")[:16].replace("T", " ")
+            feat = labels.get(r.get("feature_type"), r.get("feature_type") or "")
+            lines.append(f"- [{when}] {feat}: {(r.get('summary') or '').strip()[:120]}")
+        return "\n".join(lines)
+
     return [
         ask_management,
         ask_simulation,
@@ -640,4 +662,5 @@ def build_chat_tools(settings, memory=None) -> list:
         extract_brand,
         remember,
         recall,
+        recall_history,
     ]

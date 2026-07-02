@@ -56,7 +56,7 @@ export default function SimFormWidget({
     ad_objective?: string;
   };
   initialImage?: File; // 채팅에서 첨부한 광고 이미지
-  initialImageUrl?: string; // 생성 후보 등 URL 기반 광고 이미지(파일 대신)
+  initialImageUrl?: string; // 생성 시안 등에서 넘어온 이미지 URL(파일 대신 URL로 시뮬)
   projectId?: string; // 현재 프로젝트 — DB 영속화·결과 상세 조회에 필요
   latest?: boolean; // 가장 최근 시뮬 위젯만 새로고침 시 진행중 런을 복원(중복 방지)
   // 완료 시 결과를 채팅 컨트롤러로 넘긴다 — 입력 요약·결과 요약·토론을 별도 메시지로 띄우게.
@@ -97,9 +97,9 @@ export default function SimFormWidget({
   const [gender, setGender] = useState<'' | 'F' | 'M'>('');
   const [image, setImage] = useState<File | null>(initialImage ?? null);
   const [imagePreview, setImagePreview] = useState<string | null>(() =>
-    initialImage ? URL.createObjectURL(initialImage) : null,
+    initialImage ? URL.createObjectURL(initialImage) : (initialImageUrl ?? null),
   );
-  // 생성 후보 등 URL 기반 이미지 — 파일 업로드가 있으면 파일이 우선한다.
+  // 생성 시안 등 URL 기반 이미지 — 파일 업로드가 있으면 파일이 우선한다.
   const imageUrl = initialImageUrl ?? '';
   const hasImage = !!image || !!imageUrl;
   const previewSrc = imagePreview ?? (imageUrl || null);
@@ -270,7 +270,7 @@ export default function SimFormWidget({
         ad_title: adTitle || undefined,
         ad_content: adContent,
         ad_image: image ?? undefined,
-        // 파일이 없고 URL 이미지(생성 후보 등)만 있으면 URL을 VLM 입력으로 전달.
+        // 파일이 없고 URL 이미지(생성 시안 등)만 있으면 URL을 VLM 입력으로 전달.
         ad_image_url: !image && imageUrl ? imageUrl : undefined,
         project_id: projectId || undefined, // 프로젝트 귀속 → DB 저장(없으면 메모리 런)
         product_category: categoryName || undefined,

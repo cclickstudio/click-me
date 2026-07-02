@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { api, type BeforeAfterItem, type CalibrationResponse, type PredictionSnapshot, type ActualOutcome } from '@/lib/api';
+import { formatKSTDate } from '@/lib/datetime';
 
 const VERDICT: Record<BeforeAfterItem['verdict'], { label: string; cls: string }> = {
   aligned: { label: '예측대로', cls: 'bg-[#EBF3FF] text-[#3182F6] dark:bg-[#1E3A5F] dark:text-[#7BB4F5]' },
@@ -136,7 +137,7 @@ function VerdictReason({ item, p, a }: { item: BeforeAfterItem; p: PredictionSna
 
 // 집행 전 시뮬 전체 상세 패널
 function SimDetail({ p }: { p: PredictionSnapshot }) {
-  const date = new Date(p.as_of).toLocaleDateString('ko-KR', { year: 'numeric', month: '2-digit', day: '2-digit' });
+  const date = formatKSTDate(p.as_of);
   return (
     <div className="rounded-xl bg-[#F9FAFB] dark:bg-[#252D3D] p-3">
       <p className="text-xs font-semibold text-[#4E5968] dark:text-[#9CA3AF] mb-2.5">

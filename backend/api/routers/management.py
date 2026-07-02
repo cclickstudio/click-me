@@ -1215,6 +1215,18 @@ async def _reconcile_deleted_campaigns(
         await db.commit()
 
 
+def _campaign_recency_key(info) -> tuple[int, int, str]:
+    """최근순 정렬키 — Meta 캠페인 id는 생성 순으로 증가하므로 숫자 id를 최신 근사로 쓴다.
+
+    숫자 id면 (1, int(id), "") 로 앞세우고, 데모 등 비숫자 id는 (0, 0, id)로 뒤로 밀어
+    이름으로 보조 정렬한다. reverse=True로 정렬하면 최신(큰 id) 우선.
+    """
+    cid = info.campaign_id
+    if cid.isdigit():
+        return (1, int(cid), "")
+    return (0, 0, cid)
+
+
 async def _list_campaigns_real(
     reader,
     conversion_value_krw: int | None = None,
@@ -1223,6 +1235,8 @@ async def _list_campaigns_real(
     db: AsyncSession | None = None,
     include_archived: bool = False,
     org_id: UUID | None = None,
+    limit: int = 20,
+    offset: int = 0,
 ) -> dict:
     """실연동 — Meta 캠페인 목록 + 캠페인별 실측 요약. date_preset=조회 기간(전체/30일/이번달).
 
@@ -1247,9 +1261,16 @@ async def _list_campaigns_real(
             else {c.campaign_id for c in await reader.list_campaigns(include_archived=True)}
         )
         await _reconcile_deleted_campaigns(db, org_id, recon_ids)
+    # 최근순 정렬 후 페이지 슬라이스 — 지표는 페이지 캠페인만 조회(무한스크롤 부하 절감).
+    # 계정 배너(any_active)는 전체(모든 페이지) 기준이라 슬라이스 전에 계산한다.
+    any_active = any(c.state == CampaignState.ACTIVE for c in infos)
+    infos.sort(key=_campaign_recency_key, reverse=True)
+    total = len(infos)
+    page = infos[offset : offset + limit] if limit else infos[offset:]
+    has_more = offset + len(page) < total
     # 캠페인별 조회기간 지표 — 계정 단위 level=campaign 1콜(+페이징)로 N+1 제거.
     # 권한 거부는 배치 전체가 막힘(계정 insights 권한은 균일) → 전 캠페인 (None, True).
-    ids = [c.campaign_id for c in infos]
+    ids = [c.campaign_id for c in page]
     metrics_map, metrics_blocked = await _safe_meta(
         reader.get_metrics_by_campaign(ids, since, date_preset=date_preset)
     )
@@ -1257,13 +1278,13 @@ async def _list_campaigns_real(
     metric_pairs = [(metrics_map.get(cid), metrics_blocked) for cid in ids]
     # 운영 신호는 조회기간과 분리한 고정 윈도로 — 소진율=오늘 지출÷일예산, 노출 피로=최근 7일 빈도.
     # 지표를 읽은 active만 today·last_7d 추가 조회(권한 거부·비활성은 건너뜀).
-    today_spend = [0] * len(infos)
-    freq_7d = [0.0] * len(infos)
+    today_spend = [0] * len(page)
+    freq_7d = [0.0] * len(page)
     elig = [
-        i for i, c in enumerate(infos) if c.state == CampaignState.ACTIVE and not metric_pairs[i][1]
+        i for i, c in enumerate(page) if c.state == CampaignState.ACTIVE and not metric_pairs[i][1]
     ]
     if elig:
-        elig_ids = [infos[i].campaign_id for i in elig]
+        elig_ids = [page[i].campaign_id for i in elig]
         (today_map, _t_blocked), (week_map, _w_blocked) = await asyncio.gather(
             _safe_meta(reader.get_metrics_by_campaign(elig_ids, since, date_preset="today")),
             _safe_meta(reader.get_metrics_by_campaign(elig_ids, since, date_preset="last_7d")),
@@ -1271,7 +1292,7 @@ async def _list_campaigns_real(
         today_map = today_map or {}
         week_map = week_map or {}
         for i in elig:
-            cid = infos[i].campaign_id
+            cid = page[i].campaign_id
             tm = today_map.get(cid)
             wm = week_map.get(cid)
             if tm is not None:
@@ -1279,14 +1300,12 @@ async def _list_campaigns_real(
             if wm is not None:
                 freq_7d[i] = wm.frequency
     out = []
-    any_blocked = False
-    for idx, info in enumerate(infos):
+    for idx, info in enumerate(page):
         m, m_blocked = metric_pairs[idx]
         # 게재 차단: 계정 자금 막힘 + 캠페인이 켜져 있는데(ACTIVE) 안 도는 경우.
         blocked = (
             funding is not None and funding.delivery_blocked and info.state == CampaignState.ACTIVE
         )
-        any_blocked = any_blocked or blocked
         if m_blocked or m is None:
             summary, metrics_status = _blocked_summary(), "permission"
         else:
@@ -1329,8 +1348,13 @@ async def _list_campaigns_real(
     return {
         "campaigns": out,
         "source": "live",
-        # 계정 배너는 실제로 막힌(진행중) 캠페인이 있을 때만 — 전부 종료면 노이즈라 숨김
-        "account_block_reason": funding.block_reason if (funding and any_blocked) else None,
+        "total": total,
+        "has_more": has_more,
+        # 계정 배너는 실제로 막힌(진행중) 캠페인이 있을 때만 — 전부 종료면 노이즈라 숨김.
+        # 전체(모든 페이지) 기준: 자금 막힘 + ACTIVE 캠페인 존재.
+        "account_block_reason": (
+            funding.block_reason if (funding and funding.delivery_blocked and any_active) else None
+        ),
         "account": account,
         "account_unavailable": account_unavailable,
     }
@@ -1450,6 +1474,8 @@ async def list_campaigns(
     target_roas: float | None = None,
     date_preset: str = "maximum",
     include_archived: bool = False,
+    limit: int = 20,
+    offset: int = 0,
     user: User | None = Depends(_optional_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -1460,10 +1486,20 @@ async def list_campaigns(
     include_archived=True면 보관/삭제 캠페인도 '삭제됨'으로 포함(과거 데이터 조회용).
     목록 조회 시 외부(Meta) 삭제분을 DB에 소프트삭제로 동기화한다(양방향 삭제).
     """
+    limit, offset = _clamp_limit_offset(limit, offset)
     if not getattr(settings, "use_mock", True):
         if user is None:
             return {"campaigns": [], "source": "live", "auth_error": "로그인이 필요합니다."}
-        org_id = await _require_org_id(user, db)
+        # 읽기 스코프 — admin 무선택(None)은 400 대신 빈 목록+안내(전체 열람 허용).
+        # 쓰기는 여전히 _require_org_id_write로 400. live는 org별 Meta 연결 기반이라
+        # 전체 집계 불가 → 조직 선택 안내.
+        org_id = await _scope_org_or_all(user, db)
+        if org_id is None:
+            return {
+                "campaigns": [],
+                "source": "live",
+                "select_org": "관리자는 조직을 선택하면 해당 조직의 캠페인이 표시됩니다.",
+            }
         reader = await _resolve_reader(db, org_id)
         if reader is None:
             return {"campaigns": [], "source": "live", "not_connected": _NOT_CONNECTED_MSG}
@@ -1476,6 +1512,8 @@ async def list_campaigns(
                 db,
                 include_archived,
                 org_id=org_id,
+                limit=limit,
+                offset=offset,
             )
         except MetaApiError as exc:
             # 토큰 만료 등 인증 오류는 화면을 깨지 말고 '재연결 필요'로 안내(빈 목록 + auth_error).
@@ -1505,8 +1543,11 @@ async def list_campaigns(
                     ),
                 }
             raise
+    # mock 데모도 동일 페이지네이션 계약(total·has_more)으로 — 프론트 무한스크롤 코드 공유.
+    total = len(_CAMPAIGNS_DEMO)
+    page = list(enumerate(_CAMPAIGNS_DEMO))[offset : offset + limit]
     out = []
-    for i, (cid, name, state, budget, fault) in enumerate(_CAMPAIGNS_DEMO):
+    for i, (cid, name, state, budget, fault) in page:
         snaps = await _campaign_snapshots(cid, budget, fault, seed=40 + i)
         out.append(
             {
@@ -1520,7 +1561,12 @@ async def list_campaigns(
                 **_campaign_summary(snaps, budget),
             }
         )
-    return {"campaigns": out, "source": "mock"}
+    return {
+        "campaigns": out,
+        "source": "mock",
+        "total": total,
+        "has_more": offset + len(out) < total,
+    }
 
 
 def _real_outcome(m: MetricsSnapshot, campaign_id: str, creative_id: str | None) -> RealOutcome:

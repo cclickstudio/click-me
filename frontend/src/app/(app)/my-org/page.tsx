@@ -4,7 +4,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '@/components/AuthProvider';
-import { getToken } from '@/lib/authApi';
+import { authedFetch } from '@/lib/api';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
@@ -21,11 +21,10 @@ export default function MyOrgPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const headers = { Authorization: `Bearer ${getToken()}` };
     const [o, t, m] = await Promise.all([
-      fetch(`${API_BASE}/api/company/org`, { headers }).then((r) => (r.ok ? r.json() : null)).catch(() => null),
-      fetch(`${API_BASE}/api/company/teams`, { headers }).then((r) => (r.ok ? r.json() : [])).catch(() => []),
-      fetch(`${API_BASE}/api/company/members`, { headers }).then((r) => (r.ok ? r.json() : [])).catch(() => []),
+      authedFetch(`${API_BASE}/api/company/org`).then((r) => (r.ok ? r.json() : null)).catch(() => null),
+      authedFetch(`${API_BASE}/api/company/teams`).then((r) => (r.ok ? r.json() : [])).catch(() => []),
+      authedFetch(`${API_BASE}/api/company/members`).then((r) => (r.ok ? r.json() : [])).catch(() => []),
     ]);
     if (o) setOrg(o);
     if (Array.isArray(t)) setTeams(t);
