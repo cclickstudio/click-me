@@ -93,6 +93,17 @@ def test_consult_result_normal_allows_empty_options():
     assert r.options == []
 
 
+def test_status_rules_are_enforced():
+    # normal은 options 금지
+    with pytest.raises(ValidationError):
+        ConsultResult(status="normal", campaign_id="c1", options=[_opt(1)])
+    # anomaly는 options 최소 1개 + anomaly_type 필수
+    with pytest.raises(ValidationError):
+        ConsultResult(status="anomaly", campaign_id="c1", anomaly_type="no_delivery", options=[])
+    with pytest.raises(ValidationError):
+        ConsultResult(status="anomaly", campaign_id="c1", options=[_opt(1)])  # anomaly_type 누락
+
+
 def test_to_meta_shape_is_fixed():
     r = ConsultResult(
         status="anomaly",
@@ -202,6 +213,19 @@ class ConsultResult(BaseModel):
             raise ValueError("옵션 index는 1부터 연속이어야 한다")
         return self
 
+    @model_validator(mode="after")
+    def _check_status_rules(self) -> ConsultResult:
+        """status별 불변식 — normal은 옵션 금지, anomaly는 옵션·anomaly_type 필수."""
+        if self.status == "normal":
+            if self.options:
+                raise ValueError("normal 상태는 options를 가질 수 없다")
+        else:
+            if not self.options:
+                raise ValueError("anomaly 상태는 options가 최소 1개 필요하다")
+            if not self.anomaly_type:
+                raise ValueError("anomaly 상태는 anomaly_type이 필요하다")
+        return self
+
     def to_meta(self, org_id: str | None = None) -> dict:
         """chat_messages.meta에 심을 고정 스키마 — 주입·스팸 방지 판정이 읽는다."""
         return {
@@ -229,7 +253,7 @@ class ConsultResult(BaseModel):
 - [ ] **Step 5: 통과 확인**
 
 Run: `cd backend && uv run pytest tests/management/test_remediation_contracts.py -v`
-Expected: PASS (5 tests)
+Expected: PASS (6 tests)
 
 - [ ] **Step 6: 커밋**
 
@@ -314,8 +338,10 @@ def test_all_option_pools_emit_contract_compliant_options():
     """모든 anomaly_type 풀이 고정 계약 준수 — enum 어휘·index 1부터 연속·tool_hint."""
     for anomaly_type in OPTION_POOLS:
         options = build_options(anomaly_type)
-        # ConsultResult validator가 index 연속·tool_hint 등록 여부를 강제
-        ConsultResult(status="anomaly", campaign_id="c", options=options)
+        # ConsultResult validator가 status 규칙·index 연속·tool_hint 등록 여부를 강제
+        ConsultResult(
+            status="anomaly", campaign_id="c", anomaly_type=anomaly_type, options=options
+        )
         assert options[-1].action.value == "OBSERVE"  # 관망은 항상 마지막
 ```
 
@@ -507,21 +533,24 @@ campaign_id ↔ proposal 연계 저장 위치가 미확인이라 **후속 PR**(�
 
 `backend/tests/management/test_remediation_resolver.py`:
 ```python
-# resolver 테스트 — AdCampaignLog 역추적(raw SQL, SQLite로 검증)·실패 시 None
+# resolver 테스트 — AdCampaignLog 역추적(raw SQL, SQLite 검증)·org 불일치 fail-closed·실패 None
 from __future__ import annotations
 
 import pytest
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from domain.management.remediation.resolver import resolve_project_id
+from domain.management.remediation.resolver import resolve_project
 
 
 @pytest.fixture
 async def session_factory():
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
     async with engine.begin() as conn:
-        # resolver의 raw SQL이 쓰는 두 테이블만 최소 DDL로 생성
+        # resolver의 raw SQL이 쓰는 세 테이블만 최소 DDL로 생성
+        await conn.execute(
+            text("CREATE TABLE projects (id TEXT PRIMARY KEY, organization_id TEXT)")
+        )
         await conn.execute(
             text(
                 "CREATE TABLE ad_generations ("
@@ -535,6 +564,7 @@ async def session_factory():
                 "created_at TEXT DEFAULT '2026-07-02T00:00:00')"
             )
         )
+        await conn.execute(text("INSERT INTO projects VALUES ('proj-77', 'org-9')"))
         await conn.execute(
             text("INSERT INTO ad_generations VALUES ('gen-1', 'proj-77')")
         )
@@ -550,14 +580,31 @@ async def session_factory():
 
 
 @pytest.mark.asyncio
-async def test_resolves_project_via_ad_campaign_log(session_factory):
-    pid = await resolve_project_id("camp_meta_123", session_factory=session_factory)
-    assert pid == "proj-77"
+async def test_resolves_project_and_org_via_ad_campaign_log(session_factory):
+    resolved = await resolve_project("camp_meta_123", session_factory=session_factory)
+    assert resolved == ("proj-77", "org-9")
+
+
+@pytest.mark.asyncio
+async def test_fail_closed_on_org_mismatch(session_factory):
+    # 기대 org와 다르면 매핑 폐기(None) — 오배정=기밀 노출이므로 fail-closed
+    resolved = await resolve_project(
+        "camp_meta_123", expected_org_id="org-other", session_factory=session_factory
+    )
+    assert resolved is None
+
+
+@pytest.mark.asyncio
+async def test_passes_when_expected_org_matches(session_factory):
+    resolved = await resolve_project(
+        "camp_meta_123", expected_org_id="org-9", session_factory=session_factory
+    )
+    assert resolved == ("proj-77", "org-9")
 
 
 @pytest.mark.asyncio
 async def test_returns_none_when_no_link(session_factory):
-    assert await resolve_project_id("unknown_camp", session_factory=session_factory) is None
+    assert await resolve_project("unknown_camp", session_factory=session_factory) is None
 
 
 @pytest.mark.asyncio
@@ -565,7 +612,7 @@ async def test_returns_none_on_db_failure():
     def broken_factory():
         raise RuntimeError("db down")
 
-    assert await resolve_project_id("camp_meta_123", session_factory=broken_factory) is None
+    assert await resolve_project("camp_meta_123", session_factory=broken_factory) is None
 ```
 
 - [ ] **Step 2: 실패 확인**
@@ -577,8 +624,10 @@ Expected: FAIL — `ModuleNotFoundError: domain.management.remediation.resolver`
 
 `backend/domain/management/remediation/resolver.py`:
 ```python
-# 캠페인→프로젝트 역추적 — 오배정=기밀 노출이므로 결정론 체인, 실패는 None(skip) (🅱)
-"""스펙 §7. 체인 1: AdCampaignLog(campaign_id) → generation → project.
+# 캠페인→프로젝트 역추적 — 오배정=기밀 노출이므로 결정론 체인 + org fail-closed (🅱)
+"""스펙 §7. 체인 1: AdCampaignLog(campaign_id) → generation → project(+org).
+- expected_org_id가 주어지면 불일치 시 None(fail-closed). 스케줄러 tenant="global"이면 미검증.
+- 반환 (project_id, organization_id) — 해석된 org는 consult meta의 org_id 정본이 된다.
 체인 2(생성 제안 링크)는 campaign_id↔proposal 연계 저장 확인 후 후속 — _CHAIN에 추가.
 타 도메인 테이블 raw SQL 읽기는 SimPredictionReader 선례와 동일 성격(읽기 전용).
 """
@@ -591,9 +640,10 @@ from sqlalchemy import text
 
 _VIA_CAMPAIGN_LOG = text(
     """
-    SELECT g.project_id
+    SELECT g.project_id, p.organization_id
     FROM ad_campaign_logs l
     JOIN ad_generations g ON g.id = l.generation_id
+    JOIN projects p ON p.id = g.project_id
     WHERE l.campaign_id = :cid AND g.project_id IS NOT NULL
     ORDER BY l.created_at DESC
     LIMIT 1
@@ -601,37 +651,45 @@ _VIA_CAMPAIGN_LOG = text(
 )
 
 
-async def _via_campaign_log(campaign_id: str, session_factory: Any) -> str | None:
+async def _via_campaign_log(
+    campaign_id: str, session_factory: Any
+) -> tuple[str, str] | None:
     async with session_factory() as db:
-        row = await db.execute(_VIA_CAMPAIGN_LOG, {"cid": campaign_id})
-        pid = row.scalar()
-        return str(pid) if pid else None
+        row = (await db.execute(_VIA_CAMPAIGN_LOG, {"cid": campaign_id})).first()
+        if row is None:
+            return None
+        return str(row[0]), str(row[1])
 
 
 #: 순서 리스트 — 체인 2(생성 제안 링크)는 연계 확인 후 여기 추가한다.
 _CHAIN = (_via_campaign_log,)
 
 
-async def resolve_project_id(campaign_id: str, *, session_factory: Any = None) -> str | None:
-    """체인 순서대로 시도, 전부 실패면 None. 어떤 예외도 밖으로 안 나간다."""
+async def resolve_project(
+    campaign_id: str, *, expected_org_id: str | None = None, session_factory: Any = None
+) -> tuple[str, str] | None:
+    """체인 순서대로 시도 → (project_id, org_id). org 불일치·전부 실패면 None(예외 안 나감)."""
     if session_factory is None:
         from core.db import AsyncSessionLocal  # noqa: PLC0415 — 테스트 주입 지원
 
         session_factory = AsyncSessionLocal
     for step in _CHAIN:
         try:
-            pid = await step(campaign_id, session_factory)
+            resolved = await step(campaign_id, session_factory)
         except Exception:  # noqa: BLE001 — 역추적 실패는 다음 체인/skip
             continue
-        if pid:
-            return pid
+        if resolved is None:
+            continue
+        if expected_org_id is not None and resolved[1] != expected_org_id:
+            return None  # fail-closed — 다른 org의 프로젝트로는 절대 배달하지 않는다
+        return resolved
     return None
 ```
 
 - [ ] **Step 4: 통과 확인**
 
 Run: `cd backend && uv run pytest tests/management/test_remediation_resolver.py -v`
-Expected: PASS (3 tests). `aiosqlite` 미설치로 에러 나면 dev 의존성 확인:
+Expected: PASS (5 tests). `aiosqlite` 미설치로 에러 나면 dev 의존성 확인:
 `uv run python -c "import aiosqlite"` — 없으면 기존 테스트가 SQLite를 어떻게 쓰는지
 `grep -r "aiosqlite" backend/tests` 확인 후 동일 방식 사용(없으면 `uv add --dev aiosqlite`).
 
@@ -639,7 +697,7 @@ Expected: PASS (3 tests). `aiosqlite` 미설치로 에러 나면 dev 의존성 �
 
 ```bash
 git add backend/domain/management/remediation/resolver.py backend/tests/management/test_remediation_resolver.py
-git commit -m "add: 캠페인-프로젝트 역추적 resolver(AdCampaignLog 체인, 실패 시 None)"
+git commit -m "add: 캠페인-프로젝트 역추적 resolver(AdCampaignLog 체인, org fail-closed)"
 ```
 
 ---
@@ -657,9 +715,10 @@ git commit -m "add: 캠페인-프로젝트 역추적 resolver(AdCampaignLog 체�
 
 `backend/tests/management/test_remediation_chat_sink.py`:
 ```python
-# chat sink 테스트 — 판정표 4분기·매핑 skip·composite 폴백·요약·1건 실패 격리
+# chat sink 테스트 — 판정표 4분기·매핑 skip·race 방어·composite 폴백·요약·실패 격리
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -683,7 +742,11 @@ def _consult(status="anomaly", campaign_id="camp_1", anomaly="no_delivery"):
 
 
 class Store:
-    """세션·메시지 영속 포트 fake — last_read_at/기존 consult 시각을 시나리오별로 주입."""
+    """세션·메시지 영속 포트 fake — last_read_at/기존 consult 시각을 시나리오별로 주입.
+
+    latest_consult_at에 yield 지점(sleep 0)을 둬 race 테스트가 실제 인터리빙을 만들고,
+    append가 latest_at을 갱신해 잠금 직렬화 후 두 번째 deliver가 dedup에 걸리게 한다.
+    """
 
     def __init__(self, last_read_at=None, latest_at=None):
         self.last_read_at = last_read_at
@@ -694,10 +757,12 @@ class Store:
         return "sess-1", self.last_read_at
 
     async def latest_consult_at(self, session_id, campaign_id, anomaly_type):
+        await asyncio.sleep(0)  # 이벤트 루프 양보 — 잠금 없으면 이중 insert 재현
         return self.latest_at
 
     async def append_consult(self, session_id, content, meta):
         self.appended.append((session_id, content, meta))
+        self.latest_at = datetime.now(UTC)
 
 
 class FakeFallback:
@@ -714,8 +779,8 @@ class _Settings:
 
 
 def _sink(store, *, resolver=None, consult_result="anomaly", fallback=None):
-    async def _resolver(campaign_id):
-        return None if resolver == "none" else "proj-1"
+    async def _resolver(campaign_id, *, expected_org_id=None):
+        return None if resolver == "none" else ("proj-1", "org-9")
 
     async def _consult_fn(settings, campaign_id, **kw):
         if consult_result == "fail":
@@ -744,6 +809,20 @@ async def test_delivers_on_new_anomaly():
     _, content, meta = store.appended[0]
     assert meta["kind"] == "remediation_consult"
     assert meta["schema_version"] == 1
+    assert meta["org_id"] == "org-9"  # tenant("global")가 아니라 해석된 org가 정본
+
+
+@pytest.mark.asyncio
+async def test_concurrent_delivers_for_same_campaign_insert_once():
+    # 스케줄 틱 + 수동 스캔 동시 배달 race — 모듈 잠금으로 정확히 1건만 insert
+    store = Store()
+    sink = _sink(store)
+    o1, o2 = await asyncio.gather(
+        sink.deliver("t1", "제목", "본문", meta={"campaign_id": "camp_1"}),
+        sink.deliver("t1", "제목", "본문", meta={"campaign_id": "camp_1"}),
+    )
+    assert sorted([o1.status, o2.status]) == ["delivered", "skipped"]
+    assert len(store.appended) == 1
 
 
 @pytest.mark.asyncio
@@ -823,18 +902,24 @@ fallback(LogNotificationSink)으로 고정 스키마 이벤트만 남긴다. 1�
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from domain.management.remediation import advisor as _advisor
-from domain.management.remediation.resolver import resolve_project_id
+from domain.management.remediation.resolver import resolve_project
 
 logger = logging.getLogger("clickme")
 
 _SESSION_TITLE = "⚠ 캠페인 이상 알림"
 _FOLLOWUP_PREFIX = "지난번 알려드린 건이 아직 계속되고 있어요.\n\n"
+
+#: (campaign_id:anomaly) 배달 잠금 — 스케줄 틱·수동 스캔이 겹쳐도 이중 insert 방지.
+#: 모듈 레벨인 이유: sink 인스턴스가 경로마다 따로 생성돼 인스턴스 잠금은 무효.
+#: 단일 프로세스 전제(단일 EC2) — 멀티워커는 DB 유니크 제약 필요(범위 밖).
+_delivery_locks: dict[str, asyncio.Lock] = {}
 
 
 @dataclass(frozen=True)
@@ -923,7 +1008,7 @@ class ChatNotificationSink:
         self._settings = settings
         self._fallback = fallback
         self._store = store or DbConsultStore()
-        self._resolve = resolver or resolve_project_id
+        self._resolve = resolver or resolve_project
         self._consult = consult or _advisor.consult
         self._clock = clock or (lambda: datetime.now(UTC))
         self._outcomes: list[DeliveryOutcome] = []
@@ -941,7 +1026,10 @@ class ChatNotificationSink:
         try:
             outcome = await self._deliver(tenant_id, title, body, campaign_id)
         except Exception as exc:  # noqa: BLE001 — 1건 실패가 스캔 루프를 안 죽임
-            await self._log_event("notify_failed", tenant_id, title, body, campaign_id, str(exc))
+            await self._log_event(
+                "notify_failed", tenant_id, title, body, campaign_id, "error",
+                error=f"{type(exc).__name__}: {exc}",
+            )
             outcome = DeliveryOutcome(campaign_id=campaign_id, status="failed", reason="error")
         self._outcomes.append(outcome)
         return outcome
@@ -953,14 +1041,17 @@ class ChatNotificationSink:
             await self._log_event("notify_skipped", tenant_id, title, body, "", "no_campaign_id")
             return DeliveryOutcome(campaign_id="", status="skipped", reason="no_campaign_id")
 
-        project_id = await self._resolve(campaign_id)
-        if project_id is None:
+        # 스케줄러 tenant("global")는 org 미상 — 실제 org tenant일 때만 fail-closed 대조.
+        expected_org = None if tenant_id in ("", "global") else tenant_id
+        resolved = await self._resolve(campaign_id, expected_org_id=expected_org)
+        if resolved is None:
             await self._log_event(
                 "notify_skipped", tenant_id, title, body, campaign_id, "no_project_mapping"
             )
             return DeliveryOutcome(
                 campaign_id=campaign_id, status="skipped", reason="no_project_mapping"
             )
+        project_id, resolved_org = resolved
 
         consult = await self._consult(self._settings, campaign_id)
         if consult is None:
@@ -975,52 +1066,76 @@ class ChatNotificationSink:
                 campaign_id=campaign_id, status="skipped", reason="verified_normal"
             )
 
-        session_id, last_read_at = await self._store.find_or_create_session(
-            project_id, _SESSION_TITLE
+        # race 방어 — dedup 판정과 insert를 (campaign, anomaly) 단위로 직렬화.
+        lock = _delivery_locks.setdefault(
+            f"{campaign_id}:{consult.anomaly_type}", asyncio.Lock()
         )
-        now = self._clock()
-        latest = await self._store.latest_consult_at(
-            session_id, campaign_id, consult.anomaly_type
-        )
-        followup = False
-        if latest is not None:
-            latest_aware = latest if latest.tzinfo else latest.replace(tzinfo=UTC)
-            read = last_read_at if last_read_at is None or last_read_at.tzinfo else (
-                last_read_at.replace(tzinfo=UTC)
+        async with lock:
+            session_id, last_read_at = await self._store.find_or_create_session(
+                project_id, _SESSION_TITLE
             )
-            if read is None or read < latest_aware:
-                return DeliveryOutcome(
-                    campaign_id=campaign_id, status="skipped", reason="bell_pending",
-                    session_id=session_id,
-                )
-            cooldown = timedelta(
-                hours=getattr(self._settings, "management_consult_cooldown_hours", 24)
+            now = self._clock()
+            latest = await self._store.latest_consult_at(
+                session_id, campaign_id, consult.anomaly_type
             )
-            if now - latest_aware < cooldown:
-                return DeliveryOutcome(
-                    campaign_id=campaign_id, status="skipped", reason="cooldown",
-                    session_id=session_id,
+            followup = False
+            if latest is not None:
+                latest_aware = latest if latest.tzinfo else latest.replace(tzinfo=UTC)
+                read = last_read_at if last_read_at is None or last_read_at.tzinfo else (
+                    last_read_at.replace(tzinfo=UTC)
                 )
-            followup = True
+                if read is None or read < latest_aware:
+                    return DeliveryOutcome(
+                        campaign_id=campaign_id, status="skipped", reason="bell_pending",
+                        session_id=session_id,
+                    )
+                cooldown = timedelta(
+                    hours=getattr(self._settings, "management_consult_cooldown_hours", 24)
+                )
+                if now - latest_aware < cooldown:
+                    return DeliveryOutcome(
+                        campaign_id=campaign_id, status="skipped", reason="cooldown",
+                        session_id=session_id,
+                    )
+                followup = True
 
-        content = (_FOLLOWUP_PREFIX if followup else "") + consult.message
-        await self._store.append_consult(session_id, content, consult.to_meta(org_id=tenant_id))
+            content = (_FOLLOWUP_PREFIX if followup else "") + consult.message
+            # meta의 org 정본 = 역추적으로 해석된 org(스케줄러 tenant "global" 오염 방지).
+            await self._store.append_consult(
+                session_id, content, consult.to_meta(org_id=resolved_org)
+            )
         return DeliveryOutcome(
             campaign_id=campaign_id, status="delivered", session_id=session_id
         )
 
     async def _log_event(
-        self, event: str, tenant_id: str, title: str, body: str, campaign_id: str, reason: str
+        self,
+        event: str,
+        tenant_id: str,
+        title: str,
+        body: str,
+        campaign_id: str,
+        reason: str,
+        *,
+        session_id: str | None = None,
+        error: str | None = None,
     ) -> None:
-        """고정 스키마 관측 이벤트 — composite 폴백(로그 sink) + 구조화 로그 한 줄."""
+        """고정 스키마 관측 이벤트 — 운영 디버깅용 필드 포함(기밀·예산·크리에이티브 제외)."""
         logger.info(
-            '{"event": "management.%s", "campaign_id": "%s", "reason": "%s"}',
+            '{"event": "management.%s", "campaign_id": "%s", "tenant": "%s", '
+            '"reason": "%s", "session_id": "%s", "error": "%s"}',
             event,
             campaign_id,
+            tenant_id,
             reason,
+            session_id or "",
+            (error or "")[:120],
         )
         try:
-            await self._fallback.notify(tenant_id, title, body, meta={"campaign_id": campaign_id})
+            await self._fallback.notify(
+                tenant_id, title, body,
+                meta={"campaign_id": campaign_id, "reason": reason},
+            )
         except Exception:  # noqa: BLE001 — 폴백 실패까지는 삼킨다
             pass
 
@@ -1044,13 +1159,13 @@ class ChatNotificationSink:
 - [ ] **Step 4: 통과 확인**
 
 Run: `cd backend && uv run pytest tests/management/test_remediation_chat_sink.py -v`
-Expected: PASS (7 tests)
+Expected: PASS (8 tests)
 
 - [ ] **Step 5: 커밋**
 
 ```bash
 git add backend/domain/management/remediation/chat_sink.py backend/tests/management/test_remediation_chat_sink.py
-git commit -m "add: 채팅 알림 sink — 판정표 스팸 방지·composite 폴백·배달 요약"
+git commit -m "add: 채팅 알림 sink — 판정표 스팸 방지·race 잠금·composite 폴백·배달 요약"
 ```
 
 ---
@@ -1192,6 +1307,15 @@ def test_latest_consult_wins_when_multiple():
     assert "camp_new" in ctx and "camp_old" not in ctx
 
 
+def test_no_injection_after_widget_shown():
+    # consult 이후 위젯 메시지 존재 = 옵션 진행됨 → 낡은 상담 재주입 중단
+    msgs = [
+        ({"widget": {"type": "gen_form"}}, NOW),
+        (_meta(), NOW - timedelta(hours=1)),
+    ]
+    assert pick_consult_context(msgs, now=NOW, ttl_hours=24, recent_k=10) is None
+
+
 def test_none_when_no_consult():
     assert pick_consult_context([(None, NOW)], now=NOW, ttl_hours=24, recent_k=10) is None
 ```
@@ -1238,8 +1362,14 @@ def pick_consult_context(
     ttl_hours: int,
     recent_k: int = 10,
 ) -> str | None:
-    """(meta, created_at) 최신순 목록에서 주입할 컨텍스트를 고른다 — 3조건 미충족이면 None."""
+    """(meta, created_at) 최신순 목록에서 주입할 컨텍스트를 고른다 — 조건 미충족이면 None.
+
+    4조건: TTL 내 · 최근 K 내 · 최신 1건만 · consult보다 새 위젯 메시지 없음(진행됨 프록시).
+    실행 완료는 세션에 안 남지만(스펙 §4) 위젯 '표시'는 meta.widget으로 남는다 — 그걸 쓴다.
+    """
     for meta, _created in messages[:recent_k]:
+        if meta and "widget" in meta:
+            return None  # consult보다 새로운 위젯 = 옵션 진행됨 → 재주입 중단
         if not meta or meta.get("kind") != "remediation_consult":
             continue
         # 최신 1건만 — 첫 매치에서 판정하고 끝낸다(더 과거 consult는 무시).
@@ -1285,7 +1415,7 @@ async def recall_consult_context(session_id: str, settings: Any) -> str | None:
 - [ ] **Step 4: 판정 테스트 통과 확인**
 
 Run: `cd backend && uv run pytest tests/management/test_remediation_context.py -v`
-Expected: PASS (5 tests)
+Expected: PASS (6 tests)
 
 - [ ] **Step 5: chat.py 주입 (공통부 최소 터치 — 사전 공지 대상)**
 
@@ -1362,10 +1492,21 @@ LLM이 결과를 읽고 필요 시 기존 위젯 도구를 이어서 호출한�
                 text_out = "실측 조회에 실패해 지금은 확인할 수 없어요. 잠시 후 다시 시도해 주세요."
             else:
                 text_out = res.message
+                if res.options:
+                    # 기계가독 매핑 — LLM이 번호→도구를 오매핑하지 않게 명시(meta 미영속의 보완).
+                    mapping = ", ".join(
+                        f"{o.index}={o.action.value}({o.tool_hint or '관망'})"
+                        for o in res.options
+                    )
+                    text_out += f"\n\n[옵션-도구 매핑 · campaign_id={cid}] {mapping}"
         return Command(
             update={"messages": [ToolMessage(text_out, tool_call_id=tool_call_id)]}
         )
 ```
+
+> 한계(의도된 결정): 도구 경로 consult는 meta를 영속하지 않는다 — 옵션이 직전 대화
+> 텍스트에 있어 LLM이 자연히 읽고, meta를 심으면 sink의 전용 세션 dedup 체계와 어긋난다.
+> 부작용: 도구 경로 상담은 벨 쿨다운에 안 잡혀 벨+채팅이 각각 올 수 있음(서로 다른 표면 — 허용).
 
 그리고 return 리스트의 `manage_campaign,` 다음 줄에 `consult_anomaly,` 추가.
 
@@ -1594,7 +1735,12 @@ Expected: 전체 PASS (기존 테스트 회귀 없음)
 - [ ] **Step 3: 최종 커밋**
 
 ```bash
-git add -A
+# ruff가 무관 파일을 재포맷했을 수 있음 — 반드시 git status로 확인 후 이번 작업 파일만 add.
+git status
+git add docs/superpowers/specs/2026-07-02-anomaly-remediation-advisor-design.md \
+  backend/domain/management/remediation/ backend/tests/management/ \
+  backend/domain/management/notifications.py backend/api/routers/chat.py \
+  backend/api/routers/management.py backend/api/assistant/subagent_tools.py
 git commit -m "edit: remediation 스펙 관측 문구 정합 + ruff 정리"
 ```
 
