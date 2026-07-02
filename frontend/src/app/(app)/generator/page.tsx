@@ -92,7 +92,7 @@ const TEMPLATE_LABELS: Record<string, string> = {
   C: "템플릿 C — 브랜드 강조",
 };
 
-const QUALITY_LABELS: Record<keyof Omit<QualityReport, "overall_passed">, string> = {
+const QUALITY_LABELS: Record<keyof Omit<QualityReport, "overall_passed" | "policy_warnings">, string> = {
   typo_check: "오타 검사",
   duplicate_check: "문구 중복",
   cta_exists: "CTA 존재",
@@ -1138,6 +1138,7 @@ export default function GeneratorPage() {
   }
 
   async function startGeneration() {
+    if (phase === "generating") return; // 재생성 연타 방지
     setError("");
     // 동시실행 제한 — 제너는 한 번에 하나(채팅 위젯과 store 공유).
     if (getJobs().gen) {
@@ -1840,7 +1841,19 @@ export default function GeneratorPage() {
               {/* 결과 (후보 세로 정렬) */}
               {phase === "done" && detail && (
                 <div className="flex flex-col gap-3">
-                  <div className="flex justify-end">
+                  <div className="flex justify-end gap-2">
+                    {mode === "improve" && canSubmit && (
+                      <button
+                        type="button"
+                        onClick={startGeneration}
+                        className="flex items-center gap-1.5 text-xs text-[#4E5968] dark:text-[#9CA3AF] border border-[#E5E8EB] dark:border-[#2D3748] rounded-lg px-3 py-1.5 hover:border-[#3182F6] hover:text-[#3182F6] transition-colors"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
+                          <path fillRule="evenodd" d="M13.836 2.477a.75.75 0 0 1 .75.75v3.182a.75.75 0 0 1-.75.75h-3.182a.75.75 0 0 1 0-1.5h1.37l-.84-.841a4.5 4.5 0 0 0-7.08.932.75.75 0 0 1-1.3-.75 6 6 0 0 1 9.44-1.242l.84.84V3.227a.75.75 0 0 1 .75-.75Zm-.911 7.5A.75.75 0 0 1 13.199 11a6 6 0 0 1-9.44 1.241l-.84-.84v1.371a.75.75 0 0 1-1.5 0V9.591a.75.75 0 0 1 .75-.75H5.35a.75.75 0 0 1 0 1.5H3.98l.841.841a4.5 4.5 0 0 0 7.08-.932.75.75 0 0 1 1.025-.273Z" clipRule="evenodd" />
+                        </svg>
+                        재생성
+                      </button>
+                    )}
                     <button
                       type="button"
                       className="flex items-center gap-1.5 text-xs text-[#4E5968] dark:text-[#9CA3AF] border border-[#E5E8EB] dark:border-[#2D3748] rounded-lg px-3 py-1.5 hover:border-[#3182F6] hover:text-[#3182F6] transition-colors"
