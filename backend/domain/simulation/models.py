@@ -46,6 +46,7 @@ class Persona(SimBase):
     consumption_values: Mapped[dict] = mapped_column(_JSONB, nullable=False)
     socioeconomic: Mapped[dict] = mapped_column(_JSONB, nullable=False, default=dict)
     profile_narrative: Mapped[str] = mapped_column(Text, nullable=False)
+    weight: Mapped[float] = mapped_column(Numeric(10, 4), nullable=False, default=1.0)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
