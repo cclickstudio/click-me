@@ -16,6 +16,7 @@ from langchain_core.tools import InjectedToolCallId, tool
 from langgraph.prebuilt import InjectedState
 from langgraph.types import Command
 
+from api.assistant import improve_context
 from api.assistant.contracts import SubagentRequest
 from api.assistant.wiring import (
     _build_generator_handler,
@@ -226,6 +227,64 @@ def build_chat_tools(settings, memory=None) -> list:
                 "messages": [
                     ToolMessage(
                         "자동 개선 루프를 시작했어요. 진행 상황은 카드에서 확인하세요.",
+                        tool_call_id=tool_call_id,
+                    )
+                ],
+            }
+        )
+
+    @tool
+    async def run_improvement(
+        simulation_id: str = "",
+        fix_requests: str = "",
+        *,
+        state: Annotated[dict, InjectedState],
+        tool_call_id: Annotated[str, InjectedToolCallId],
+    ) -> Command:
+        """기존 '시뮬 결과를 반영해 개선 시안을 만들어'달라고 하면 호출(단발 1회, 개선 폼).
+        발화에 시뮬 id가 있으면 넣고, '아까/방금/최근'이면 비워라(최근 완료 시뮬 자동 선택).
+        고칠 점 언급은 fix_requests로. 자동 반복 개선은 improve_ad_iteratively,
+        시뮬 없이 새로 만들기는 run_generation. 폼 호출 후 한 줄로만 안내하라."""
+        sid = simulation_id or ""
+        if not sid:
+            project_id = state.get("project_id") or ""
+            if not project_id:
+                return Command(
+                    update={
+                        "messages": [
+                            ToolMessage(
+                                "개선할 시뮬레이션을 찾을 프로젝트가 없어요. "
+                                "프로젝트를 선택하거나 시뮬레이션을 지정해주세요.",
+                                tool_call_id=tool_call_id,
+                            )
+                        ]
+                    }
+                )
+            sid = await improve_context.latest_completed_simulation_id(project_id) or ""
+        gen_data = None
+        if sid:
+            gen_data = await improve_context.improve_gen_data_for_simulation(
+                sid, fix_requests or None, org_id=state.get("org_id")
+            )
+        if gen_data is None:
+            return Command(
+                update={
+                    "messages": [
+                        ToolMessage(
+                            "아직 완료된 시뮬레이션이 없어요. 먼저 시뮬레이션을 돌리면 "
+                            "그 결과를 반영한 개선 시안을 만들 수 있어요.",
+                            tool_call_id=tool_call_id,
+                        )
+                    ]
+                }
+            )
+        helpers.spawn_persist(state.get("project_id"), "gen_input", gen_data)
+        return Command(
+            update={
+                **widgets.gen_form(gen_data),
+                "messages": [
+                    ToolMessage(
+                        "시뮬 결과를 반영한 개선 생성 폼을 준비했습니다.",
                         tool_call_id=tool_call_id,
                     )
                 ],
@@ -565,6 +624,7 @@ def build_chat_tools(settings, memory=None) -> list:
         ask_generator,
         run_simulation,
         run_generation,
+        run_improvement,
         improve_ad_iteratively,
         list_my_simulations,
         list_my_generations,
