@@ -41,6 +41,7 @@ private/
 
 # ── Claude Code 로컬 설정·개인 도구 ───────────────
 .claude/
+.mcp.json
 
 # ── Environment files ────────────────────────────
 .env
