@@ -9,6 +9,7 @@
 import asyncio
 import calendar
 import logging
+import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextvars import ContextVar
 from datetime import UTC, datetime, timedelta
@@ -354,6 +355,92 @@ async def anomaly_scan(
                 }
             )
     return {"source": "live", "scanned": len(infos), "anomalies": anomalies}
+
+
+# 수동 알림 스캔 — org별 인프로세스 잠금·쿨다운(단일 EC2 전제, 스펙 §6)
+_notify_scan_locks: dict[str, asyncio.Lock] = {}
+_notify_scan_last: dict[str, float] = {}
+
+
+@router.post("/anomaly/notify-scan")
+async def anomaly_notify_scan(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """이상 스캔 + 채팅 선제 알림 트리거(데모·수동) — 배달 요약 반환.
+
+    org 스코프 end-to-end: reader(live면 로그인 org 연결, fail-closed)·findings tenant·
+    resolver org 대조까지 전부 호출자 org로 묶인다. 예약(스케줄러) 경로만 settings 전역
+    (단일 테넌트 데모 전제 — 문서화). 통지 스팸은 sink 판정표가 이중 방어.
+    """
+    org_id = await _require_org_id(user, db)
+    key = str(org_id)
+
+    cooldown = getattr(settings, "management_scan_manual_cooldown_seconds", 60)
+    now_mono = time.monotonic()
+    last = _notify_scan_last.get(key)
+    if last is not None and now_mono - last < cooldown:
+        raise HTTPException(429, f"{int(cooldown - (now_mono - last)) + 1}초 후 다시 시도하세요.")
+
+    lock = _notify_scan_locks.setdefault(key, asyncio.Lock())
+    if lock.locked():
+        raise HTTPException(409, "이미 스캔이 진행 중입니다.")
+
+    # org 스코프 reader — live는 로그인 org 연결(미연결 409), mock은 전역 mock.
+    if getattr(settings, "use_mock", True):
+        reader = build_reader(settings)
+    else:
+        reader = await _require_reader(db, org_id)
+
+    async def _org_scanner(_settings) -> list[dict]:
+        """스케줄러 기본 스캐너와 같은 신호(노출 0) — 단 reader·tenant가 org 스코프."""
+        try:
+            camps = await reader.list_campaigns()
+        except Exception:  # noqa: BLE001 — 조회 실패는 빈 결과(다음 시도)
+            return []
+        findings: list[dict] = []
+        now = datetime.now(UTC)
+        for c in camps:
+            try:
+                m = await reader.get_metrics(c.campaign_id, now)
+            except Exception:  # noqa: BLE001 — 캠페인 1건 실패가 스캔을 안 막음
+                continue
+            if m.impressions == 0:
+                findings.append(
+                    {
+                        "tenant_id": key,  # 실제 org — sink의 fail-closed 대조 활성화
+                        "title": f"게재 점검 — {c.name or c.campaign_id}",
+                        "body": "활성 캠페인인데 노출이 0입니다.",
+                        "meta": {"campaign_id": c.campaign_id},
+                    }
+                )
+        return findings
+
+    async with lock:
+        _notify_scan_last[key] = time.monotonic()
+        from functools import partial  # noqa: PLC0415
+
+        from domain.management.notifications import LogNotificationSink  # noqa: PLC0415
+        from domain.management.remediation.advisor import consult as _consult  # noqa: PLC0415
+        from domain.management.remediation.chat_sink import ChatNotificationSink  # noqa: PLC0415
+        from domain.management.scheduler import run_scan  # noqa: PLC0415
+
+        sink = ChatNotificationSink(
+            settings,
+            fallback=LogNotificationSink(),
+            consult=partial(_consult, reader=reader),  # 재검증도 같은 org reader로
+        )
+        count = await run_scan(settings, sink, scanner=_org_scanner)
+        summary = sink.summary()
+
+    # 고정 스키마 집계 로그 — 예약 실행은 건별 이벤트 로그로 관측(스케줄러 무변경 원칙).
+    logger.info(
+        '{"event": "management.scan_summary", "org": "%s", "findings": %d, "delivered": %d}',
+        key,
+        count,
+        summary["delivered"],
+    )
+    return {"scanned_findings": count, **summary}
 
 
 class ApprovalRequest(BaseModel):
