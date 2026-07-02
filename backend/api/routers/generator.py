@@ -14,13 +14,19 @@ from fastapi import APIRouter, Depends, File, Header, HTTPException, UploadFile
 from fastapi.responses import Response, StreamingResponse
 from PIL import Image
 from pydantic import BaseModel
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from core.auth import get_current_user, optional_user, require_user_org
+from core.auth import (
+    capture_selected_org,
+    get_current_user,
+    optional_user,
+    require_user_org,
+    require_write_org,
+    resolve_read_scope,
+)
 from core.config import settings
 from core.db import get_db
-from core.models import OrganizationMember, Project, User
+from core.models import Project, User
 from domain.generator.contracts.enums import GenerationMode
 from domain.generator.contracts.schemas import GenerationCreateRequest
 from domain.generator.pipeline.relayout import PLATFORM_SIZES
@@ -40,7 +46,8 @@ _require_user_org = require_user_org
 _optional_user = optional_user
 
 
-router = APIRouter()
+# capture_selected_org: admin이 X-Org-Id로 대상 org를 지정(생성)·필터(조회)할 수 있게 캡처.
+router = APIRouter(dependencies=[Depends(capture_selected_org)])
 
 _ALLOWED_IMAGE_TYPES: dict[str, str] = {
     "image/png": "png",
@@ -249,7 +256,7 @@ async def create_generation(
         )
     # 프로젝트가 로그인 org 소유인지 검증 — 타 org 프로젝트에 귀속 생성 차단(멀티테넌시 정합).
     if body.project_id:
-        org_id = await _require_user_org(current_user, db)
+        org_id = await require_write_org(current_user, db)
         try:
             proj_uuid = uuid.UUID(str(body.project_id))
         except (ValueError, TypeError):
@@ -276,8 +283,11 @@ async def list_generations(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """생성 이력 — ADMIN은 전체, 그 외는 로그인 org 프로젝트 생성물만(멀티테넌시 격리)."""
-    org_id = None if user.role.upper() == "ADMIN" else await _require_user_org(user, db)
+    """생성 이력 — ADMIN=선택 org(X-Org-Id, 없으면 전체) · 그 외 자기 org 생성물만."""
+    scope = await resolve_read_scope(user, db)
+    if scope.empty:
+        return {"generations": []}
+    org_id = None if scope.all_orgs else scope.org_id
     return {"generations": await generator_service.list_generations(limit=limit, org_id=org_id)}
 
 
@@ -304,7 +314,7 @@ async def start_generation_loop(
         raise HTTPException(
             status_code=400, detail="생성 결과를 저장할 프로젝트를 먼저 선택해주세요."
         )
-    org_id = await _require_user_org(current_user, db)
+    org_id = await require_write_org(current_user, db)
     try:
         proj_uuid = uuid.UUID(str(body.project_id))
     except (ValueError, TypeError):
@@ -444,22 +454,16 @@ class BrandKitBody(BaseModel):
     tone_and_manner: str | None = None
 
 
-async def _org_id_for(user: User, db: AsyncSession) -> str:
-    member = await db.scalar(
-        select(OrganizationMember).where(OrganizationMember.user_id == user.id)
-    )
-    if not member:
-        raise HTTPException(status_code=404, detail="소속 조직을 찾을 수 없습니다.")
-    return str(member.organization_id)
-
-
 @router.get("/brand-kits")
 async def list_brand_kits(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    org_id = await _org_id_for(current_user, db)
-    return {"kits": await brand_kit_service.list_kits(org_id)}
+    # ADMIN=선택 org(X-Org-Id)의 키트, 미선택이면 빈 목록 · COMPANY/USER=자기 org.
+    scope = await resolve_read_scope(current_user, db)
+    if scope.org_id is None:  # admin 미선택(all_orgs) 또는 비-admin 무소속
+        return {"kits": []}
+    return {"kits": await brand_kit_service.list_kits(str(scope.org_id))}
 
 
 @router.post("/brand-kits")
@@ -470,7 +474,7 @@ async def create_brand_kit(
 ):
     if not body.name.strip():
         raise HTTPException(status_code=400, detail="키트 이름을 입력하세요.")
-    org_id = await _org_id_for(current_user, db)
+    org_id = str(await require_write_org(current_user, db))
     return await brand_kit_service.create_kit(
         org_id,
         current_user.id,
@@ -490,7 +494,7 @@ async def update_brand_kit(
 ):
     if not body.name.strip():
         raise HTTPException(status_code=400, detail="키트 이름을 입력하세요.")
-    org_id = await _org_id_for(current_user, db)
+    org_id = str(await require_write_org(current_user, db))
     kit = await brand_kit_service.update_kit(
         org_id,
         kit_id,
@@ -510,7 +514,7 @@ async def delete_brand_kit(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    org_id = await _org_id_for(current_user, db)
+    org_id = str(await require_write_org(current_user, db))
     if not await brand_kit_service.delete_kit(org_id, kit_id):
         raise HTTPException(status_code=404, detail="브랜드 키트를 찾을 수 없습니다.")
     return {"ok": True}
