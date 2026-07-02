@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
 import { api, type AnomalyScanItem } from '@/lib/api';
 import { AZone } from '@/components/manage/AZone';
 import { BZone } from '@/components/manage/BZone';
@@ -10,21 +11,24 @@ import { KpiStrip } from '@/components/manage/KpiStrip';
 import type { ActionResult, AuditEvent, RunResult, ViewMode } from '@/components/manage/types';
 
 // 주입할 문제 상황 — value는 백엔드 enum, label/symptom은 사용자용.
+// 주입 강도는 mock.py fetch_hourly_metrics의 고장 파라미터와 동일하게 서술(문서 §4.5).
 const FAULT_OPTIONS = [
   {
     value: 'bid_loss',
     label: '입찰 경쟁 패배 — 노출 급감',
-    symptom: '14시부터 노출이 급감하는데 예산은 남아요. 경매가 급등·낙찰률 하락 신호예요.',
+    symptom:
+      '14시부터 경매가(CPM)가 기준의 1.5배 이상으로 급등하고 낙찰률이 25%로 떨어져요. 예산은 남는데 노출이 급감하는 전형적 입찰 패배 신호예요.',
   },
   {
     value: 'review_rejected',
     label: '심사 거부 — 게재 중단',
-    symptom: '광고가 심사에서 거부돼 노출이 전면 중단돼요.',
+    symptom: '14시부터 광고가 심사 거부(DISAPPROVED)돼 노출이 0으로 전면 중단돼요.',
   },
   {
     value: 'none',
     label: '정상 — 문제 없음',
-    symptom: '이상 없이 정상 게재돼요. 감지기가 "정상"으로 판정하는지 확인하는 경우예요.',
+    symptom:
+      '이상 없이 정상 게재돼요(CPM 기준값 ±8%·지출 = 일예산). 감지기가 "정상"으로 판정하는지 확인하는 경우예요.',
   },
 ];
 
@@ -43,7 +47,7 @@ export default function Page() {
   );
   const [scanBusy, setScanBusy] = useState(false);
 
-  const scanReal = async () => {
+  const scanReal = useCallback(async () => {
     setScanBusy(true);
     try {
       const r = await api.management.anomalyScan(3.0);
@@ -53,7 +57,18 @@ export default function Page() {
     } finally {
       setScanBusy(false);
     }
-  };
+  }, []);
+
+  // 자동 스캔 — 진입 시 1회 + 10분 주기(수동 버튼과 동일 경로). Meta rate limit을 아끼려
+  // 짧게 돌리지 않고, 탭이 숨겨져 있으면 건너뛴다.
+  useEffect(() => {
+    void scanReal();
+    const id = setInterval(() => {
+      if (typeof document !== 'undefined' && document.hidden) return;
+      void scanReal();
+    }, 600_000);
+    return () => clearInterval(id);
+  }, [scanReal]);
 
   const start = async () => {
     setBusy(true);
@@ -188,7 +203,8 @@ export default function Page() {
                 실 캠페인 성과 이상 스캔
               </p>
               <p className="text-[12px] text-[#8B95A1] mt-0.5">
-                실제 Meta 캠페인을 돌며 성과 진단(ROAS 미달·전환 저조)을 실측합니다. 위 시연과 별개.
+                실제 Meta 캠페인을 돌며 성과 진단(ROAS 미달·전환 저조)·빈도 피로(3+)를 실측합니다.
+                진입 시와 10분마다 자동 스캔되고, 버튼으로 즉시 재실행할 수 있어요. 위 시연과 별개.
               </p>
             </div>
             <button
@@ -221,6 +237,14 @@ export default function Page() {
                         {a.diagnosis.hypothesis}
                       </p>
                     )}
+                    {a.suggested_action === 'REPLACE_CREATIVE' && (
+                      <Link
+                        href="/generator"
+                        className="mt-1 inline-block text-[12px] font-semibold text-[#3182F6] hover:underline"
+                      >
+                        개선 시안 만들러 가기(제너레이터) →
+                      </Link>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -237,6 +261,65 @@ export default function Page() {
 
         {run ? (
           <>
+            {/* 탐지 기준 — 기대 노출 곡선의 가정치와 이상 판정 규칙(값은 백엔드 policy·exposure_model 단일원천) */}
+            {run.assumptions && (
+              <div className="mb-4 rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-[#F9FAFB] dark:bg-[#1A202C] px-5 py-3.5">
+                <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+                  <span className="text-[13px] font-semibold text-[#4E5968] dark:text-[#9CA3AF]">
+                    탐지 기준
+                  </span>
+                  {(
+                    [
+                      [
+                        '가정 일예산',
+                        `₩${run.assumptions.daily_budget_krw.toLocaleString()} (소기업 벤치마크 · 월 300만 페이스)`,
+                      ],
+                      [
+                        '기준 CPM',
+                        `₩${run.assumptions.cpm_anchor_krw.toLocaleString()} (국내 실측 중앙값)`,
+                      ],
+                      [
+                        '정상 CPM 범위',
+                        `₩${run.assumptions.cpm_normal_range_krw[0].toLocaleString()}~${run.assumptions.cpm_normal_range_krw[1].toLocaleString()}`,
+                      ],
+                      ['기준 CTR', `${(run.assumptions.base_ctr * 100).toFixed(1)}%`],
+                      [
+                        '이상 판정',
+                        `기대 노출의 ${Math.round(run.assumptions.deficit_threshold * 100)}% 미만이 ${run.assumptions.min_consecutive_hours}시간 이상 연속`,
+                      ],
+                    ] as [string, string][]
+                  ).map(([label, value]) => (
+                    <div key={label}>
+                      <p className="text-[11px] text-[#8B95A1]">{label}</p>
+                      <p className="mt-0.5 text-[13px] font-semibold text-[#191F28] dark:text-[#F2F4F6]">
+                        {value}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+                <p className="mt-2 border-t border-[#F2F4F6] dark:border-[#2D3748] pt-2 text-[11px] text-[#8B95A1]">
+                  출처{' '}
+                  {run.assumptions.sources.map((s, i) => (
+                    <span key={s.label}>
+                      {i > 0 && ' · '}
+                      {s.url.startsWith('http') ? (
+                        <a
+                          href={s.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="underline decoration-dotted underline-offset-2 hover:text-[#3182F6]"
+                        >
+                          {s.label}
+                        </a>
+                      ) : (
+                        <span title={s.url}>{s.label}</span>
+                      )}
+                    </span>
+                  ))}{' '}
+                  · 기대 곡선은 일중 이중 봉우리(점심 12~13시·저녁 20~23시) 패턴
+                </p>
+              </div>
+            )}
             {(() => {
               const ran = FAULT_OPTIONS.find((o) => o.value === run.fault);
               const detected = run.anomaly_hours.length > 0;
