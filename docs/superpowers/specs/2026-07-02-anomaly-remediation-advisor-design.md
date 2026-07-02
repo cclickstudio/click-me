@@ -147,10 +147,11 @@ admin 전용 제한·분산 잠금은 v1 제외(현 인증 페이즈·단일 EC2
   `{"event": "management.notify_skipped|notify_failed", "campaign_id": …, "reason": "no_project_mapping|append_failed|…"}`.
 - **영속 이벤트 테이블은 v1 제외(YAGNI)** — audit_events 재사용은 반대: 감사 로그는 지출/실행
   전용이며 완료 게이트(#7)와 간섭 위험. 영속이 필요해지면 seam에 sink 추가로 해결.
-- **수동/예약 관측 동등성**: `ChatNotificationSink`는 결과를 돌려주는 `deliver() -> DeliveryResult`
-  를 갖고 `notify()`(Protocol, 시그니처 불변)는 이를 감싼다. 수동 스캔 응답에
-  `{scanned, delivered, skipped: [{campaign_id, reason}], failed: […]}` 요약을 포함하고,
-  스케줄 틱도 종료 시 같은 집계를 `management.scan_summary` 로그 1줄로 남긴다.
+- **수동/예약 관측**: `ChatNotificationSink`는 결과를 돌려주는 `deliver() -> DeliveryOutcome`
+  을 갖고 `notify()`(Protocol, 시그니처 불변)는 이를 감싼다. 수동 스캔은 응답
+  `{scanned_findings, delivered, skipped: [{campaign_id, reason}], failed: […]}` +
+  `management.scan_summary` 집계 로그, 예약 실행은 건별 고정 스키마 이벤트 로그
+  (`management.notify_*`)로 관측한다(스케줄러 무변경 원칙 — 틱 종료 훅 없음).
 
 ## 7-2. 열린 결정 (구현 중 확정)
 
