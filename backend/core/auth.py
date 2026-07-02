@@ -11,7 +11,10 @@ auth_provider 설정으로 두 모드를 병행 지원(점진 도입):
 """
 
 import uuid
+from collections.abc import AsyncIterator
+from contextvars import ContextVar
 from datetime import UTC, datetime, timedelta
+from typing import NamedTuple
 
 import httpx
 from fastapi import Depends, HTTPException, Request, status
@@ -203,3 +206,78 @@ def require_admin(user: User = Depends(get_current_user)) -> User:
             status_code=status.HTTP_403_FORBIDDEN, detail="관리자 권한이 필요합니다."
         )
     return user
+
+
+# ──────────────────────────────────────────────
+# org 스코프 (전 도메인 공용) — admin impersonation 통일
+# ──────────────────────────────────────────────
+# 규칙: 읽기 = ADMIN 선택 org(X-Org-Id, 없으면 전체) · COMPANY/USER 자기 org.
+#       쓰기 = ADMIN 선택 org(X-Org-Id 필수) · COMPANY/USER 자기 org(없으면 409).
+# management의 검증된 패턴을 승격. 각 도메인 라우터에 capture_selected_org 의존성을 등록해 쓴다.
+
+# admin이 impersonate로 선택한 org(X-Org-Id). 요청당 capture_selected_org가 채우고 리셋한다.
+_selected_org: ContextVar[str | None] = ContextVar("selected_org", default=None)
+
+
+async def capture_selected_org(request: Request) -> AsyncIterator[None]:
+    """요청당 1회 X-Org-Id 헤더를 ContextVar에 캡처하고 종료 시 리셋(누수 방지).
+
+    라우터 의존성으로 등록: APIRouter(dependencies=[Depends(capture_selected_org)]).
+    admin이 어느 조직 대상으로 읽기/쓰기 할지 지정하는 값. 비-admin은 무시된다.
+    """
+    token = _selected_org.set(request.headers.get("X-Org-Id"))
+    try:
+        yield
+    finally:
+        _selected_org.reset(token)
+
+
+def _selected_org_uuid() -> uuid.UUID | None:
+    """캡처된 X-Org-Id를 UUID로. 형식 오류면 400."""
+    sel = _selected_org.get()
+    if not sel:
+        return None
+    try:
+        return uuid.UUID(sel)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="X-Org-Id 형식 오류입니다.") from exc
+
+
+class OrgScope(NamedTuple):
+    """읽기 스코프 결과. all_orgs=True면 필터 없음(admin 전체), org_id면 그 org로 필터."""
+
+    all_orgs: bool
+    org_id: uuid.UUID | None
+
+    @property
+    def empty(self) -> bool:
+        """비-admin인데 소속 org가 없음 → 빈 결과를 반환해야 하는 상태."""
+        return not self.all_orgs and self.org_id is None
+
+
+async def resolve_read_scope(user: User, db: AsyncSession) -> OrgScope:
+    """읽기/목록 org 스코프. ADMIN=선택 org(없으면 전체) · 그 외=자기 org(없으면 empty).
+
+    호출측: `s = await resolve_read_scope(user, db); if s.empty: return []` 후
+    `WHERE (:org IS NULL OR organization_id = :org)` 에 org=str(s.org_id) 또는 None(=admin 전체).
+    """
+    if user.role.upper() == "ADMIN":
+        sel = _selected_org_uuid()
+        return OrgScope(all_orgs=sel is None, org_id=sel)
+    return OrgScope(all_orgs=False, org_id=await user_org_id(user, db))
+
+
+async def require_write_org(user: User, db: AsyncSession) -> uuid.UUID:
+    """생성/수정 org 스코프.
+
+    ADMIN=선택 org(X-Org-Id 필수·미선택 400) · COMPANY/USER=자기 org(없으면 409).
+    """
+    if user.role.upper() == "ADMIN":
+        org = _selected_org_uuid()
+        if org is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="관리자는 조직을 선택하세요 (X-Org-Id 헤더).",
+            )
+        return org
+    return await require_user_org(user, db)
