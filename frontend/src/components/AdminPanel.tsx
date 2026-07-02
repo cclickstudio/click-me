@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useProjects, type SimRow } from './ProjectContext';
@@ -331,13 +331,17 @@ export default function AdminPanel({ collapsed, onToggle }: { collapsed: boolean
   // 초기값은 client에서만 읽어 hydration 불일치 방지.
   const [activeOrg, setActiveOrg] = useState('');
 
-  // 전체 조직 목록 — 프로젝트가 0개인 회사도 패널에 표시하기 위함
-  useEffect(() => {
+  // 전체 조직 목록 — 프로젝트가 0개인 회사도 패널에 표시하기 위함. 새로고침 버튼이 재호출.
+  const loadOrgs = useCallback(() => {
     authedFetch(`${API_BASE}/api/admin/organizations`)
       .then(r => (r.ok ? r.json() : []))
       .then(d => { if (Array.isArray(d)) setOrgs(d); })
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    loadOrgs();
+  }, [loadOrgs]);
 
   useEffect(() => {
     setActiveOrg(getAdminOrgId() ?? '');
@@ -411,7 +415,7 @@ export default function AdminPanel({ collapsed, onToggle }: { collapsed: boolean
         </button>
         <p className="text-sm font-semibold text-[#4E5968] dark:text-[#9CA3AF]">기업 현황</p>
         <button
-          onClick={refresh}
+          onClick={() => { refresh(); loadOrgs(); }}
           title="새로고침"
           className="w-7 h-7 flex items-center justify-center rounded-lg text-[#8B95A1] hover:bg-[#F2F4F6] dark:hover:bg-[#252D3D] hover:text-[#3182F6] transition-colors"
         >
