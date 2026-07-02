@@ -4,7 +4,7 @@ import re
 import uuid
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -43,6 +43,7 @@ class SimulationRow(BaseModel):
     status: str
     sample_size: int
     created_by_name: str | None
+    org_name: str | None = None  # 소속 조직명(내역 org 컬럼·필터용)
     created_at: datetime
 
 
@@ -51,13 +52,16 @@ class GenerationRow(BaseModel):
     status: str
     product_name: str | None
     created_by_name: str | None
+    org_name: str | None = None  # 소속 조직명(내역 org 컬럼·필터용)
     created_at: datetime
 
 
 class ChatRow(BaseModel):
     id: str
     project_id: str | None
+    title: str | None = None  # 세션 제목(검색·표시용)
     message_count: int
+    org_name: str | None = None  # 소속 조직명(내역 org 컬럼·필터용)
     created_at: datetime
 
 
@@ -351,27 +355,97 @@ async def delete_user(
     return {"ok": True}
 
 
+# ── 내역 목록 공용(페이지네이션·정렬·검색·org 필터) ────────────────
+# admin 내역 3종(시뮬·제너·채팅)이 공유하는 목록 파라미터 처리. 정렬 컬럼은 화이트리스트로
+# 고정해 ORDER BY 인젝션을 막는다. status 필터는 화면 버킷(completed/in_progress/failed)을
+# 각 테이블의 실제 상태값으로 번역해 조건에 건다.
+
+_HISTORY_LIMIT_MAX = 200
+
+
+def _clamp_page(limit: int, offset: int) -> tuple[int, int]:
+    return max(1, min(limit, _HISTORY_LIMIT_MAX)), max(0, offset)
+
+
+def _order_clause(sort: str, order: str, cols: dict[str, str], default_col: str) -> str:
+    """화이트리스트 정렬 절 — sort는 cols 키, order는 asc/desc만 허용(그 외 desc)."""
+    col = cols.get(sort, default_col)
+    direction = "ASC" if str(order).lower() == "asc" else "DESC"
+    return f"{col} {direction} NULLS LAST"
+
+
+def _org_filter_uuid(x_org_id: str | None) -> uuid.UUID | None:
+    """admin이 선택한 X-Org-Id → UUID. 없거나 형식 오류면 None(전체)."""
+    if not x_org_id:
+        return None
+    try:
+        return uuid.UUID(x_org_id)
+    except ValueError:
+        return None
+
+
+def _status_values(bucket: str | None, mapping: dict[str, tuple[str, ...]]) -> list[str] | None:
+    """상태 버킷(completed/in_progress/failed)을 테이블 실제 상태값 리스트로 번역. 없으면 None."""
+    if not bucket:
+        return None
+    vals = mapping.get(bucket)
+    return list(vals) if vals else None
+
+
 # ── 전체 시뮬레이션 내역 ──────────────────────
+
+_SIM_SORT_COLS = {"created_at": "s.created_at", "title": "a.title", "org_name": "o.name"}
+_SIM_STATUS = {
+    "completed": ("COMPLETED",),
+    "in_progress": ("QUEUED", "RUNNING"),
+    "failed": ("FAILED",),
+}
 
 
 @router.get("/simulations", response_model=list[SimulationRow])
 async def list_simulations(
-    limit: int = 50,
+    limit: int = 20,
+    offset: int = 0,
+    sort: str = "created_at",
+    order: str = "desc",
+    status: str | None = None,
+    search_field: str = "title",
+    search: str | None = None,
+    x_org_id: str | None = Header(None, alias="X-Org-Id"),
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_admin),
 ):
+    limit, offset = _clamp_page(limit, offset)
+    params: dict = {"limit": limit, "offset": offset}
+    where = ["s.deleted_at IS NULL"]
+    org = _org_filter_uuid(x_org_id)
+    if org is not None:
+        where.append("s.organization_id = :org_id")
+        params["org_id"] = org
+    statuses = _status_values(status, _SIM_STATUS)
+    if statuses:
+        where.append("s.status = ANY(:statuses)")
+        params["statuses"] = statuses
+    if search:
+        col = "o.name" if search_field == "org_name" else "a.title"
+        where.append(f"{col} ILIKE :q")
+        params["q"] = f"%{search}%"
+    order_by = _order_clause(sort, order, _SIM_SORT_COLS, "s.created_at")
     rows = await db.execute(
-        text("""
+        text(f"""
             SELECT s.id, s.status, s.sample_size, s.created_at,
                    a.title AS ad_title,
-                   u.name  AS created_by_name
+                   u.name  AS created_by_name,
+                   o.name  AS org_name
             FROM simulations s
             LEFT JOIN ads   a ON a.id = s.ad_id
             LEFT JOIN users u ON u.id = s.created_by
-            ORDER BY s.created_at DESC
-            LIMIT :limit
+            LEFT JOIN organizations o ON o.id = s.organization_id
+            WHERE {" AND ".join(where)}
+            ORDER BY {order_by}
+            LIMIT :limit OFFSET :offset
         """),
-        {"limit": limit},
+        params,
     )
     return [
         SimulationRow(
@@ -380,6 +454,7 @@ async def list_simulations(
             status=r.status,
             sample_size=r.sample_size,
             created_by_name=r.created_by_name,
+            org_name=r.org_name,
             created_at=r.created_at,
         )
         for r in rows.mappings()
@@ -388,22 +463,61 @@ async def list_simulations(
 
 # ── 전체 제너레이터 내역 ──────────────────────
 
+_GEN_SORT_COLS = {
+    "created_at": "g.created_at",
+    "title": "g.input->>'product_name'",
+    "org_name": "o.name",
+}
+_GEN_STATUS = {
+    "completed": ("completed",),
+    "in_progress": ("pending", "running"),
+    "failed": ("failed",),
+}
+
 
 @router.get("/generations", response_model=list[GenerationRow])
 async def list_generations(
-    limit: int = 50,
+    limit: int = 20,
+    offset: int = 0,
+    sort: str = "created_at",
+    order: str = "desc",
+    status: str | None = None,
+    search_field: str = "title",
+    search: str | None = None,
+    x_org_id: str | None = Header(None, alias="X-Org-Id"),
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_admin),
 ):
+    limit, offset = _clamp_page(limit, offset)
+    params: dict = {"limit": limit, "offset": offset}
+    where = ["g.deleted_at IS NULL"]
+    org = _org_filter_uuid(x_org_id)
+    if org is not None:
+        where.append("p.organization_id = :org_id")
+        params["org_id"] = org
+    statuses = _status_values(status, _GEN_STATUS)
+    if statuses:
+        where.append("g.status = ANY(:statuses)")
+        params["statuses"] = statuses
+    if search:
+        col = "o.name" if search_field == "org_name" else "g.input->>'product_name'"
+        where.append(f"{col} ILIKE :q")
+        params["q"] = f"%{search}%"
+    order_by = _order_clause(sort, order, _GEN_SORT_COLS, "g.created_at")
     rows = await db.execute(
-        text("""
-            SELECT g.id, g.status, g.input, g.created_at, u.name AS created_by_name
+        text(f"""
+            SELECT g.id, g.status, g.input, g.created_at,
+                   u.name AS created_by_name,
+                   o.name AS org_name
             FROM ad_generations g
+            LEFT JOIN projects p ON p.id = g.project_id
+            LEFT JOIN organizations o ON o.id = p.organization_id
             LEFT JOIN users u ON u.id = g.created_by
-            ORDER BY g.created_at DESC
-            LIMIT :limit
+            WHERE {" AND ".join(where)}
+            ORDER BY {order_by}
+            LIMIT :limit OFFSET :offset
         """),
-        {"limit": limit},
+        params,
     )
     return [
         GenerationRow(
@@ -411,41 +525,67 @@ async def list_generations(
             status=r.status,
             product_name=(r.input or {}).get("product_name") if r.input else None,
             created_by_name=r.created_by_name,
+            org_name=r.org_name,
             created_at=r.created_at,
         )
-        for r in rows
+        for r in rows.mappings()
     ]
 
 
 # ── 전체 채팅 내역 ────────────────────────────
 
+_CHAT_SORT_COLS = {"created_at": "cs.updated_at", "title": "cs.title", "org_name": "o.name"}
+
 
 @router.get("/chats", response_model=list[ChatRow])
 async def list_chats(
-    limit: int = 50,
+    limit: int = 20,
+    offset: int = 0,
+    sort: str = "created_at",
+    order: str = "desc",
+    search_field: str = "title",
+    search: str | None = None,
+    x_org_id: str | None = Header(None, alias="X-Org-Id"),
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_admin),
 ):
-    from sqlalchemy import func
-
-    from core.models import ChatMessage, ChatSession
-
-    # 정규화 후 메시지 수는 chat_messages 카운트로 — 세션별 LEFT JOIN 집계.
+    # 채팅은 상태 개념이 없어 status 필터를 받지 않는다. 최근 활동(updated_at) 기본 정렬.
+    limit, offset = _clamp_page(limit, offset)
+    params: dict = {"limit": limit, "offset": offset}
+    where = ["1=1"]
+    org = _org_filter_uuid(x_org_id)
+    if org is not None:
+        where.append("p.organization_id = :org_id")
+        params["org_id"] = org
+    if search:
+        col = "o.name" if search_field == "org_name" else "cs.title"
+        where.append(f"{col} ILIKE :q")
+        params["q"] = f"%{search}%"
+    order_by = _order_clause(sort, order, _CHAT_SORT_COLS, "cs.updated_at")
     rows = await db.execute(
-        select(ChatSession, func.count(ChatMessage.id))
-        .outerjoin(ChatMessage, ChatMessage.session_id == ChatSession.id)
-        .group_by(ChatSession.id)
-        # 최근 활동(메시지 추가 시 갱신되는 updated_at) 순 — 생성일순이면 오래전 만든
-        # 세션을 오늘 써도 목록 위로 안 올라와 "최근 채팅이 안 보인다"는 문제가 생긴다.
-        .order_by(ChatSession.updated_at.desc())
-        .limit(limit)
+        text(f"""
+            SELECT cs.id, cs.project_id, cs.title, cs.created_at,
+                   o.name AS org_name,
+                   COUNT(cm.id) AS message_count
+            FROM chat_sessions cs
+            LEFT JOIN chat_messages cm ON cm.session_id = cs.id
+            LEFT JOIN projects p ON p.id = cs.project_id
+            LEFT JOIN organizations o ON o.id = p.organization_id
+            WHERE {" AND ".join(where)}
+            GROUP BY cs.id, o.name
+            ORDER BY {order_by}
+            LIMIT :limit OFFSET :offset
+        """),
+        params,
     )
     return [
         ChatRow(
-            id=str(s.id),
-            project_id=str(s.project_id) if s.project_id else None,
-            message_count=count,
-            created_at=s.created_at,
+            id=str(r.id),
+            project_id=str(r.project_id) if r.project_id else None,
+            title=r.title,
+            message_count=r.message_count,
+            org_name=r.org_name,
+            created_at=r.created_at,
         )
-        for s, count in rows.all()
+        for r in rows.mappings()
     ]
