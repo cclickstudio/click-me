@@ -10,6 +10,7 @@ from domain.simulation.adapters.memory_store import InMemorySimulationStore
 from domain.simulation.graph.reaction_graph import build_reaction_graph
 from domain.simulation.graph.run_graph import build_run_graph
 from domain.simulation.service.debate_service import DebateService
+from domain.simulation.service.segment_comparison_service import SegmentComparisonService
 from domain.simulation.service.simulation_service import SimulationService
 from domain.simulation.tools.aggregation.aggregator import BasicAggregator
 from domain.simulation.tools.panel.builder import CachedPanelProvider
@@ -170,6 +171,29 @@ def build_simulation_service(
         graph=graph,
         store=InMemorySimulationStore(),
         persistence=build_persistence(settings, session_factory),
+    )
+
+
+def build_segment_comparison_service(
+    settings=None, *, session_factory=None, use_llm_qa=None
+) -> SegmentComparisonService:
+    """Persona Set(3-모드 UX §A-1) Composition Root. build_simulation_service와 동일한 실 어댑터를
+    재조립 — 광고해석·루브릭은 세그먼트당이 아니라 요청당 1회(SegmentComparisonService.run).
+    """
+    _ensure_env(
+        "GEMINI_API_KEY", "SIMULATION_GEMINI_MODEL", "OPENAI_API_KEY", "SIMULATION_LLM_PROVIDER"
+    )
+    from domain.simulation.adapters.gemini import (
+        GeminiAdInterpreter,
+        GeminiRubricEvaluator,
+    )
+
+    return SegmentComparisonService(
+        interpreter=GeminiAdInterpreter(),
+        rubric=GeminiRubricEvaluator(),
+        panel=build_panel_provider(settings, session_factory),  # DB 고정 패널 우선(§3.6)
+        reaction_graph=build_reaction_subgraph(settings, use_llm_qa=use_llm_qa),
+        aggregator=BasicAggregator(),
     )
 
 

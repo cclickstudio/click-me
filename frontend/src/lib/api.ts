@@ -14,6 +14,8 @@ import type {
   DebateTopicsResult,
   QAEvent,
   ReportView,
+  SegmentCompareResult,
+  SegmentSpecInput,
   SimRunInput,
   SimRunResult,
 } from "./types";
@@ -324,6 +326,26 @@ export const api = {
     // VLM이 이 URL 이미지를 읽을 수 있는지 사전 확인(백엔드가 직접 GET — 미리보기와 별개).
     checkImage: (url: string): Promise<{ ok: boolean; mime?: string; reason?: string }> =>
       request(`/simulation/check-image?url=${encodeURIComponent(url)}`),
+    // Persona Set 세그먼트 비교(3-모드 UX §A-1) — 같은 광고를 세그먼트별로 나눠 동기 비교.
+    compareSegments: (
+      input: SimRunInput,
+      segments: SegmentSpecInput[],
+    ): Promise<SegmentCompareResult> => {
+      const token = getToken();
+      const form = buildSimForm(input);
+      form.append("segments", JSON.stringify(segments));
+      return fetch(`${API_BASE}/api/simulation/compare-segments`, {
+        method: "POST",
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: form,
+      }).then(async (r) => {
+        if (!r.ok) {
+          const err = await r.json().catch(() => ({ detail: `HTTP ${r.status}` }));
+          throw new Error(typeof err.detail === "string" ? err.detail : `HTTP ${r.status}`);
+        }
+        return r.json();
+      });
+    },
   },
 
   // 페르소나 토론(/api/debate/*) — 시뮬 반응(reactions)을 받아 토론을 돌리고 결과를 낸다.

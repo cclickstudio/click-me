@@ -57,6 +57,14 @@ class SimulationRunRequest(BaseModel):
         return self
 
 
+class SegmentSpec(BaseModel):
+    """Persona Set(3-모드 UX §A-1) 비교 대상 세그먼트 1개 — target_filter로 패널 부분집합 지정."""
+
+    label: str
+    target_filter: dict[str, Any] | None = None
+    sample_size: int = Field(default=20, ge=1, le=1000)
+
+
 class AdFeatures(BaseModel):
     """광고 특성 정량 추출 — 반응 프롬프트 입력 힌트(KPI 환산 금지). 전 필드 옵셔널(하위호환).
 

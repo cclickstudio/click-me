@@ -21,10 +21,14 @@ from core.db import get_db
 from core.models import User
 from domain.simulation.adapters.ad_image_store import persist_ad_image
 from domain.simulation.adapters.category_repo import list_categories
-from domain.simulation.contracts.schemas import SimulationRunRequest
+from domain.simulation.contracts.schemas import SegmentSpec, SimulationRunRequest
 from domain.simulation.repositories.simulation_repository import SimulationRepository
 from domain.simulation.service.analysis_view import to_analysis_payload
-from domain.simulation.wiring import _ensure_env, build_simulation_service
+from domain.simulation.wiring import (
+    _ensure_env,
+    build_segment_comparison_service,
+    build_simulation_service,
+)
 from tools.storage.s3 import download_bytes
 
 logger = logging.getLogger("clickme")
@@ -36,6 +40,7 @@ if not os.environ.get("GEMINI_API_KEY"):
 _USE_LLM_QA = os.getenv("SIM_LLM_QA", "0") == "1"
 # settings 주입 → settings.database_url 있으면 DB 영속화 활성(완료 런을 9테이블에 저장).
 _service = build_simulation_service(settings=settings, use_llm_qa=_USE_LLM_QA)
+_segment_service = build_segment_comparison_service(settings=settings, use_llm_qa=_USE_LLM_QA)
 logger.info("Simulation service: real(Gemini) 모드 (LLM QA=%s)", _USE_LLM_QA)
 
 _IMAGE_MAX_BYTES = 10 * 1024 * 1024  # 10MB
@@ -225,6 +230,71 @@ async def run_simulation(
     except RuntimeError as e:
         raise HTTPException(status_code=500, detail=str(e)) from e
     return to_analysis_payload(result) if shape == "analysis" else result
+
+
+@router.post("/compare-segments")
+async def compare_segments(
+    ad_id: str = Form(...),
+    ad_content: str | None = Form(None),
+    ad_image: UploadFile | None = File(None),
+    ad_image_url: str | None = Form(None),
+    organization_id: str | None = Form(None),
+    project_id: str | None = Form(None),
+    segments: str = Form(...),  # JSON 배열 [{label, target_filter, sample_size}, ...]
+    allocation: str = Form("auto"),
+    ad_title: str | None = Form(None),
+    product_category: str | None = Form(None),
+    ad_objective: str | None = Form(None),
+    service_class: int | None = Form(None),
+    current_user: User | None = Depends(optional_user),
+) -> dict:
+    """Persona Set(3-모드 UX §A-1) — 같은 광고를 여러 타깃 세그먼트로 나눠 나란히 비교.
+
+    광고 해석·루브릭은 1회만(세그먼트 수와 무관), 세그먼트별로 패널 부분집합·반응·집계만 반복.
+    """
+    try:
+        segment_specs = [SegmentSpec(**seg) for seg in json.loads(segments)]
+    except (json.JSONDecodeError, TypeError, ValueError) as e:
+        raise HTTPException(status_code=422, detail=f"segments JSON 오류: {e}") from e
+    if not segment_specs:
+        raise HTTPException(status_code=422, detail="segments는 최소 1개 이상이어야 합니다.")
+
+    ad_image_path, ad_image_key = await _save_upload(ad_image)
+    req = _build_request(
+        ad_id=ad_id,
+        ad_content=ad_content,
+        ad_image_path=ad_image_path,
+        ad_image_key=ad_image_key,
+        ad_image_url=ad_image_url,
+        organization_id=organization_id,
+        project_id=project_id,
+        target_filter=None,  # 세그먼트별 target_filter가 우선 — 베이스 요청은 무필터
+        target_mode="AUTO",
+        sample_size=segment_specs[0].sample_size,  # 광고 해석엔 안 쓰임(호환용 기본값)
+        allocation=allocation,
+        ad_title=ad_title,
+        product_category=product_category,
+        ad_objective=ad_objective,
+        service_class=service_class,
+        user=current_user,
+    )
+    result = await _segment_service.run(req, segment_specs)
+    return {
+        "ad": result["ad"].model_dump(),
+        "rubric_scores": [s.model_dump() for s in result["rubric_scores"]],
+        "segments": [
+            {
+                "label": seg["label"],
+                "target_filter": seg["target_filter"],
+                "panel_version": seg["panel_version"],
+                "sample_size": seg["sample_size"],
+                "personas": [p.model_dump() for p in seg["personas"]],
+                "reactions": [r.model_dump() for r in seg["reactions"]],
+                "aggregate": seg["aggregate"].model_dump(),
+            }
+            for seg in result["segments"]
+        ],
+    }
 
 
 @router.get("/categories")

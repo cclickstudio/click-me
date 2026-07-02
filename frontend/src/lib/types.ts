@@ -200,6 +200,30 @@ export interface SimRunInput {
   from_campaign_id?: string;  // 관리 탭 진입 시 — 완료 후 서버가 자동으로 성과 비교 링크 생성
 }
 
+/* ─── Persona Set 세그먼트 비교(/api/simulation/compare-segments, 3-모드 UX §A-1) ─── */
+
+export interface SegmentSpecInput {
+  label: string;
+  target_filter?: Record<string, unknown>;
+  sample_size?: number;
+}
+
+export interface SegmentCompareSegment {
+  label: string;
+  target_filter: Record<string, unknown> | null;
+  panel_version: string;
+  sample_size: number;
+  personas: SimPersona[];
+  reactions: SimPersonaReaction[];
+  aggregate: SimAggregate;
+}
+
+export interface SegmentCompareResult {
+  ad: SimAdAnalysis;
+  rubric_scores: SimRubricScore[];
+  segments: SegmentCompareSegment[];
+}
+
 /* ─── Debate (페르소나 토론 /api/debate/*) ─── */
 
 export type DebateStance = "positive" | "neutral" | "negative";
