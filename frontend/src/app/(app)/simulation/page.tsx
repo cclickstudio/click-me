@@ -242,7 +242,7 @@ export default function SimulationRunPage() {
     setCampaignImgError(false);
     if (!id) return;
     try {
-      const t = await api.management.targeting(id);
+      const t = await api.management.campaignTargeting(id);
       if (t.ad_image_url) setCampaignImageUrl(t.ad_image_url);
       if (t.ad_headline && !adTitle.trim()) setAdTitle(t.ad_headline);
       if (t.ad_body && !adContent.trim()) setAdContent(t.ad_body);

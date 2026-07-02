@@ -147,6 +147,7 @@ type WidgetSpec = {
   data?: {
     ad_content?: string;
     ad_title?: string;
+    ad_image_url?: string; // sim_form 위젯 — 시안 이미지로 시뮬 진입(제너→시뮬 루프)
     product_category?: string;
     ad_objective?: string;
     product_name?: string;

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { getToken } from '@/lib/authApi';
+import type { QualityReport } from '@/lib/types';
 import { useProjects } from '@/components/ProjectContext';
 import { useAuth } from '@/components/AuthProvider';
 import ModeBadge from '@/components/ModeBadge';
@@ -16,6 +17,7 @@ type Candidate = {
   image_url: string | null;
   copy: Record<string, string> | null;
   strategy: Record<string, unknown> | null;
+  qa_result: QualityReport | null;
   qa_passed: boolean | null;
   explanation: unknown;
 };
