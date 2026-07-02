@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from domain.simulation.contracts.schemas import PanelSpec, Persona
 from domain.simulation.repositories.panel_repository import PanelRepository
-from domain.simulation.tools.panel.builder import filter_personas
+from domain.simulation.tools.panel.builder import filter_personas, subset_for_spec
 
 
 class DbPanelProvider:
@@ -25,4 +25,5 @@ class DbPanelProvider:
         if found is None:
             return await self._fallback.get_or_build(spec)
         _, personas = found
-        return spec.version, filter_personas(personas, spec.target_filter)
+        selected = filter_personas(personas, spec.target_filter)
+        return spec.version, subset_for_spec(selected, spec.size, spec.seed)

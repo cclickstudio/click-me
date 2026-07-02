@@ -70,3 +70,28 @@ async def test_db_panel_provider_hit_returns_filtered_subset() -> None:
     assert version == "panel-v1"
     assert subset  # 부분집합 존재
     assert all(p.gender == "F" for p in subset)
+
+
+async def test_db_panel_provider_caps_to_requested_size_deterministically() -> None:
+    # 필터 통과분이 요청 표본보다 많으면 size만큼 결정적 서브샘플 — 초과 LLM 콜(비용) 방지.
+    sm = await _sessionmaker()
+    base_personas = PersonaSampler().sample(PanelSpec(size=60, seed=9))
+    async with sm() as session:
+        await PanelRepository(session).create(
+            version="panel-v1",
+            seed=9,
+            size=60,
+            model_version="mock-narrator-0",
+            grounding_meta={},
+            personas=base_personas,
+        )
+        await session.commit()
+
+    provider = DbPanelProvider(sm, fallback=_StubFallback())
+    spec = PanelSpec(version="panel-v1", size=5, seed=3)
+
+    _, first = await provider.get_or_build(spec)
+    _, second = await provider.get_or_build(spec)
+
+    assert len(first) == 5  # 60명 중 요청한 5명만
+    assert [p.persona_id for p in first] == [p.persona_id for p in second]  # 같은 spec → 재현
