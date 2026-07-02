@@ -955,10 +955,9 @@ export default function GeneratorPage() {
           const d = (await api.generator.detail(generationId)) as GenerationDetail;
           setDetail(d);
           setPhase("done");
-          // N1 — 전용 페이지 직접 생성이 끝나면, 프로젝트 채팅 세션에 결과 안내 +
-          // "다시 생성/개선" 제안을 자동 주입(프로액티브 개선 루프, 시뮬 경로와 대칭).
-          // NOTE: 제너레이터는 현재 OpenAI org-verification(403)로 완료 도달이 막혀 있어
-          // 이 경로는 코드만 준비된 상태(검증 보류). 별도 gen_result 위젯이 생기면 결과 위젯도 추가.
+          // N1 — 전용 페이지 직접 생성이 끝나면, 개선/시뮬 제안을 채팅에 자동 주입.
+          // 기존 대화에 끼워넣지 않고 '새 채팅 세션'을 만들어 거기에 제안한다(맥락 분리).
+          // 만든 세션 id는 저장해 아래 '시뮬레이션 돌리기' 버튼(#2)이 같은 세션을 연다.
           const pid = selectedProject?.id;
           if (pid) {
             const injectKey = `n1_gen_injected_${generationId}`; // 동일 생성 1회만
@@ -973,8 +972,11 @@ export default function GeneratorPage() {
                   ? `${API_BASE}${simImgRaw}`
                   : simImgRaw
                 : undefined;
-              api.chat.resolveActiveSession(pid).then((sid) => {
-                if (!sid) return;
+              const sessionTitle = `${productName || "광고 시안"} 시뮬·개선`;
+              api.chat.createSession(pid, sessionTitle).then((created) => {
+                const sid = created.id;
+                // #2 버튼이 이 제안 세션을 열 수 있게 생성별로 저장.
+                localStorage.setItem(`gen_sim_session_${generationId}`, sid);
                 void api.chat
                   .appendWidgets(sid, [
                     {
@@ -1017,7 +1019,7 @@ export default function GeneratorPage() {
                     if (!floatingOpenRef.current) pushUnread();
                   })
                   .catch(() => {});
-              });
+              }).catch(() => {});
             }
           }
         } catch (err) {
@@ -1800,10 +1802,11 @@ export default function GeneratorPage() {
                     <button
                       type="button"
                       className="flex items-center gap-1.5 text-xs text-[#3182F6] border border-[#3182F6]/40 rounded-lg px-3 py-1.5 hover:bg-[#EBF3FF] dark:hover:bg-[#1E3A5F] transition-colors"
-                      onClick={async () => {
-                        const pid = selectedProject?.id;
-                        if (!pid) return;
-                        const sid = await api.chat.resolveActiveSession(pid);
+                      onClick={() => {
+                        // #3에서 만든 '제안 새 채팅'을 연다(기존 대화 아님).
+                        const sid = localStorage.getItem(
+                          `gen_sim_session_${detail.generation_id}`,
+                        );
                         openChat(sid ?? null);
                       }}
                     >

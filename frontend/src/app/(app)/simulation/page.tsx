@@ -339,16 +339,17 @@ export default function SimulationRunPage() {
                   adDescription: adContent || undefined,
                   mode: runMode,
                 });
-                // N1 — 전용 페이지 직접 실행이 끝나면, 프로젝트 채팅 세션에
-                // 결과 + "개선해서 다시 돌리기" 제안을 자동 주입(프로액티브 개선 루프).
+                // N1 — 전용 페이지 직접 실행이 끝나면, 결과 + "개선해서 다시 돌리기" 제안을
+                // 자동 주입. 기존 대화에 끼워넣지 않고 '새 채팅 세션'을 만들어 거기에 제안한다.
                 const pid = selectedProject?.id;
                 if (pid && r.simulation_id) {
                   const injectKey = `n1_injected_${runId}`; // 동일 run 1회만(중복 주입 방지)
                   if (!localStorage.getItem(injectKey)) {
                     localStorage.setItem(injectKey, '1');
                     const simId = r.simulation_id;
-                    api.chat.resolveActiveSession(pid).then(sid => {
-                      if (!sid) return;
+                    const sessionTitle = `${adTitle || '광고'} 시뮬 결과·개선`;
+                    api.chat.createSession(pid, sessionTitle).then(created => {
+                      const sid = created.id;
                       void api.chat
                         .appendWidgets(sid, [
                           {
@@ -383,7 +384,7 @@ export default function SimulationRunPage() {
                           if (!floatingOpenRef.current) pushUnread();
                         })
                         .catch(() => {});
-                    });
+                    }).catch(() => {});
                   }
                 }
                 router.push(`/simulation/${routeId}`);
