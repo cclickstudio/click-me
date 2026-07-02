@@ -18,6 +18,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    desc,
     func,
 )
 from sqlalchemy.dialects.postgresql import ENUM, JSONB, TSVECTOR, UUID
@@ -44,7 +45,7 @@ class User(Base):
         Boolean, nullable=False, default=False
     )  # 관리자/기업이 발급한 계정 → 최초 로그인 시 비번 변경 유도
     team_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("teams.id"), nullable=True
+        ForeignKey("teams.id", ondelete="SET NULL"), nullable=True
     )  # 소속 팀(USER만, 미배정이면 NULL)
     phone_num: Mapped[str | None] = mapped_column(String(30), nullable=True)
     user_email: Mapped[str | None] = mapped_column(
@@ -114,7 +115,7 @@ class Project(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     organization_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("organizations.id"))
     team_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("teams.id"), nullable=True
+        ForeignKey("teams.id", ondelete="SET NULL"), nullable=True
     )  # 소속 팀(팀 단위 공유, 미배정이면 NULL)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str | None] = mapped_column(Text)
@@ -173,7 +174,7 @@ class ManagementKbDocument(Base):
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     verified_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
     doc_metadata: Mapped[dict] = mapped_column("metadata", JSONB, default=dict)
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class ManagementKbChunk(Base):
@@ -187,7 +188,7 @@ class ManagementKbChunk(Base):
     chunk: Mapped[str] = mapped_column(Text)
     # OpenAI text-embedding-3-small 1536 = settings.embedding_dim(KB·LTM 동일). 변경 시 Alembic 마이그레이션 + kb_ingest 재실행 필요.
     embedding: Mapped[list[float]] = mapped_column(Vector(1536))
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     # 마이그 019 — 문서 연결 + 메타(테넌트·버전·키워드검색). search_vector는 DB 생성열이라 미매핑.
     document_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("management_kb_documents.id", ondelete="CASCADE"), nullable=True
@@ -333,7 +334,7 @@ class ClioKbChunk(Base):
     title: Mapped[str] = mapped_column(String(256))  # 섹션 제목(인용용)
     chunk: Mapped[str] = mapped_column(Text)
     embedding: Mapped[list[float]] = mapped_column(Vector(1536))
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class ManagementUserMemory(Base):
@@ -383,7 +384,7 @@ class ChatMessage(Base):
     # 컬럼명은 metadata지만 SQLAlchemy 예약어라 속성은 meta로 매핑.
     meta: Mapped[dict | None] = mapped_column("metadata", JSONB, nullable=True)
     tokens_used: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class ChatLongTermMemory(Base):
@@ -397,7 +398,7 @@ class ChatLongTermMemory(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     project_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("projects.id", ondelete="CASCADE"), nullable=True, index=True
+        ForeignKey("projects.id", ondelete="CASCADE"), nullable=True
     )
     user_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("users.id", ondelete="SET NULL"), nullable=True
@@ -407,6 +408,9 @@ class ChatLongTermMemory(Base):
     # 시맨틱 검색용 임베딩(text-embedding-3-small). nullable — 임베딩 전/실패 행은 최신순 폴백.
     embedding: Mapped[list[float] | None] = mapped_column(Vector(1536), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    # 최신순 조회(project_id 필터 + created_at DESC) 최적화 — 실 DB와 동일 구성.
+    __table_args__ = (Index("ix_chat_ltm_project", "project_id", desc("created_at")),)
 
 
 class ExecutionHistory(Base):
@@ -569,7 +573,7 @@ class AdCampaignLog(Base):
     request_payload: Mapped[dict | None] = mapped_column(JSONB)
     response_payload: Mapped[dict | None] = mapped_column(JSONB)
     error_message: Mapped[str | None] = mapped_column(Text)
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
 class AdPublishLog(Base):
@@ -604,9 +608,9 @@ class BrandProfileRow(Base):
     brand_color: Mapped[str | None] = mapped_column(String(20))
     brand_logo_key: Mapped[str | None] = mapped_column(String(512))
     tone_and_manner: Mapped[str | None] = mapped_column(Text)
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.now(), onupdate=func.now()
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
 
@@ -622,9 +626,9 @@ class BrandKit(Base):
     brand_logo_key: Mapped[str | None] = mapped_column(String(512))
     tone_and_manner: Mapped[str | None] = mapped_column(Text)
     created_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, server_default=func.now(), onupdate=func.now()
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
 
 
