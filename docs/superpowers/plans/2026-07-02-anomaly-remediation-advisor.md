@@ -53,3 +53,8 @@
 - 캠페인→프로젝트 체인 2(생성 제안 링크) — campaign_id↔proposal 연계 저장 위치 확인 후.
 - 구경로(`/regenerate*`·규칙표·selection) 사용처 재확인 후 삭제 PR.
 - 체크박스 명시 확인 UI(v2) · org 공용 관리 세션(프론트 org-wide 폴링 전환 시).
+- **dedup DB 유니크/advisory lock** (Codex adversarial 지적) — 현 잠금은 인프로세스 한정(단일
+  EC2 전제). 멀티워커/멀티인스턴스 전환 시 (session, campaign, anomaly) DB 멱등 가드 필요 —
+  기존 C2 갭(regeneration job 싱글턴)과 같은 시점의 숙제.
+- impressions==0 신호 3중 중복(scheduler/_org_scanner/advisor) 공용 헬퍼 추출.
+- dedup 판정 전 LLM polish 호출 지연(스킵될 틱의 비용 절감).
