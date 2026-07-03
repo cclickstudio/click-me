@@ -156,3 +156,19 @@ async def test_bulk_read_ignores_non_uuid_ids(ctx):
     assert r.status_code == 200 and r.json()["updated"] == 0
     assert store.read_calls == []  # 전부 무효 → store 호출 자체가 없음
     assert published == []  # 변화 없음 → publish 없음
+
+
+@pytest.mark.asyncio
+async def test_naive_before_is_coerced_to_utc(ctx):
+    app, store, _ = ctx
+    captured = {}
+
+    async def capturing_list(org_id, **kw):
+        captured.update(kw)
+        return [], 0
+
+    store.list_for_org = capturing_list
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
+        r = await c.get("/api/management/notifications?before=2026-07-03T00:00:00")
+    assert r.status_code == 200
+    assert captured["before"].tzinfo is not None  # naive → UTC 코어스

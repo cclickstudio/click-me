@@ -540,6 +540,38 @@ async def anomaly_notify_scan(
 # (Task 9의 GET /notifications/stream은 반드시 이 블록의 /{id} 라우트들보다 먼저 선언)
 
 
+@router.get("/notifications/stream")
+async def notifications_stream(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """알림 변경 SSE — org 브로커 구독, 이벤트는 "changed" 신호뿐(수신 측 refetch).
+
+    선언 순서 주의: /{id} 계열보다 먼저(가로채기 방지). EventSource 대신 채팅과 같은
+    fetch 스트리밍(Authorization 헤더)으로 소비한다.
+    """
+    if not getattr(settings, "management_notify_sse_enabled", True):
+        raise HTTPException(404, "SSE 비활성 — 폴링을 사용하세요.")
+    org_id = str(await _require_org_id(user, db))
+
+    async def gen() -> AsyncIterator[str]:
+        from domain.management.remediation import broker  # noqa: PLC0415
+
+        q = broker.subscribe(org_id)
+        try:
+            yield 'data: {"event": "connected"}\n\n'
+            while True:
+                try:
+                    await asyncio.wait_for(q.get(), timeout=30)
+                    yield 'data: {"event": "changed"}\n\n'
+                except TimeoutError:
+                    yield ": keep-alive\n\n"  # 30초 heartbeat — 프록시 타임아웃 방지
+        finally:
+            broker.unsubscribe(org_id, q)
+
+    return StreamingResponse(gen(), media_type="text/event-stream")
+
+
 def _notification_store() -> Any:
     """알림 store 팩토리 — 테스트에서 monkeypatch로 교체하는 seam."""
     from domain.management.remediation.notification_store import (  # noqa: PLC0415
@@ -559,9 +591,10 @@ def _parse_before(before: str | None) -> datetime | None:
     if not before:
         return None
     try:
-        return datetime.fromisoformat(before)
+        dt = datetime.fromisoformat(before)
     except ValueError as exc:
         raise HTTPException(422, "before는 ISO8601 형식이어야 합니다.") from exc
+    return dt if dt.tzinfo else dt.replace(tzinfo=UTC)
 
 
 def _parse_uuid_or_none(value: str) -> str | None:
