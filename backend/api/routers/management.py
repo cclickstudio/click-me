@@ -73,7 +73,6 @@ from domain.management.comparison.service.comparison_service import ComparisonSe
 from domain.management.contracts.enums import (
     ActionTier,
     CampaignState,
-    DiagnosisStatus,
     ExecutionMode,
 )
 from domain.management.contracts.fault_injection import FaultConfig, FaultMode
@@ -99,6 +98,7 @@ from domain.management.contracts.schemas import (
 )
 from domain.management.conversion_value import estimate_roas
 from domain.management.demo import CAMPAIGN_ID, TENANT_ID, build_sample_proposal
+from domain.management.detection.agentic_scan import diagnose_campaign
 from domain.management.detection.deterministic_dx import diagnose
 from domain.management.detection.exposure_model import (
     DEFICIT_THRESHOLD,
@@ -106,7 +106,6 @@ from domain.management.detection.exposure_model import (
     expected_hourly_impressions,
     find_anomaly_window,
 )
-from domain.management.detection.performance_dx import diagnose_performance
 from domain.management.escalation import EscalationController, EscalationRun
 from domain.management.escalation_demo import DemoScenarioDetector
 from domain.management.execution.audit_log import AuditEvent
@@ -130,7 +129,6 @@ from domain.management.naming import suggest_campaign_names
 from domain.management.target_check import is_target_missed
 from domain.management.wiring import (
     build_audit_sink,
-    build_diagnosis_agent,
     build_escalation_store,
     build_generator_client,
     build_idempotency_store,
@@ -1357,37 +1355,14 @@ async def _list_campaigns_real(
     }
 
 
-@traceable(name="management.performance_diagnosis", run_type="chain", tags=["management"])
 async def _campaign_diagnosis(
     reader, campaign_id: str, summary: dict, as_of: datetime
 ) -> dict | None:
-    """성과 미달 진단 — 결정론 판정 후 INCONCLUSIVE면 LLM agent 재판정(키 있을 때).
+    """성과 미달 진단 — 도메인 공유 함수(diagnose_campaign)로 위임. 워커와 같은 진단을 쓴다.
 
-    additive·best-effort: 신호 조회나 LLM이 실패해도 None 반환 → 상세 화면은 그대로.
+    진단 로직 정본은 domain/management/detection/agentic_scan.py. 여기선 settings만 주입.
     """
-    try:
-        relevance = await reader.get_relevance_diagnostics(campaign_id)
-        dx = diagnose_performance(
-            TENANT_ID,
-            campaign_id,
-            roas=summary.get("roas"),
-            target_roas=summary.get("target_roas"),
-            as_of=as_of,
-            relevance=relevance,
-        )
-        if dx is None:
-            return None
-        if dx.status == DiagnosisStatus.INCONCLUSIVE:
-            dx = await build_diagnosis_agent(settings)(dx, reader)
-    except Exception:  # noqa: BLE001 — 진단은 부가 정보: 실패해도 실데이터 상세는 무영향
-        return None
-    return {
-        "anomaly_type": dx.anomaly_type.value,
-        "hypothesis": dx.hypothesis,
-        "confidence": dx.confidence,
-        "source": dx.source.value,
-        "status": dx.status.value,
-    }
+    return await diagnose_campaign(reader, settings, campaign_id, summary, as_of)
 
 
 async def _get_campaign_real(
