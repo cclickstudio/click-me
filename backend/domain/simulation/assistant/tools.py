@@ -151,7 +151,10 @@ async def fetch_project_summary(project_id: str, period: str = "month") -> dict:
 
 
 def fetch_kobaco_benchmark(category: str | None) -> dict:
-    """카테고리별 KOBACO 평균 KPI를 반환(T08). 미상 카테고리는 '기타'로 폴백."""
+    """카테고리별 KOBACO(2019 MCR 실측) 구매의향·TV광고 영향력을 반환(T08).
+
+    미상 카테고리는 '기타'로 폴백.
+    """
     global _kobaco_cache
     if _kobaco_cache is None:
         try:
