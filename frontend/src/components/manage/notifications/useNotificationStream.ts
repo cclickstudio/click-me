@@ -4,7 +4,7 @@
 import { useEffect, useRef } from 'react';
 import { authedFetch } from '@/lib/api';
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
 export function useNotificationStream(enabled: boolean, onChange: () => void) {
   const onChangeRef = useRef(onChange);
@@ -22,6 +22,7 @@ export function useNotificationStream(enabled: boolean, onChange: () => void) {
         const res = await authedFetch(`${API_BASE}/api/management/notifications/stream`, {
           signal: ctrl.signal,
         });
+        if (res.status === 401) return; // 인증 만료 — 재로그인 전까지 재연결 무의미(무한 401 방지)
         if (!res.ok || !res.body) throw new Error(String(res.status));
         const reader = res.body.getReader();
         const dec = new TextDecoder();
