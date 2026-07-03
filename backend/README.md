@@ -63,6 +63,9 @@ cp .env.example .env
 | `LANGSMITH_API_KEY`        | LangSmith 트레이싱 키         |
 | `AWS_ACCESS_KEY_ID`        | AWS IAM 액세스 키             |
 | `AWS_SECRET_ACCESS_KEY`    | AWS IAM 시크릿 키             |
+| `AUTH_PROVIDER`            | `local`(기본, 자체 HS256) \| `cognito`(운영) |
+| `COGNITO_USER_POOL_ID`     | `AUTH_PROVIDER=cognito`일 때 필수 |
+| `COGNITO_APP_CLIENT_ID`    | Cognito App Client ID(토큰 검증) |
 
 ### 3. DB 마이그레이션
 
@@ -119,33 +122,36 @@ uv run pytest                # 테스트 실행
 
 ## 프로젝트 구조
 
+> DDD + 헥사고날(포트·어댑터) 구조. 핵심 기능을 `domain/` 아래 바운디드 컨텍스트로 분리하고, 도메인 간 공유는 `core`/`tools`/각 도메인 `contracts`로만 한다. 자세한 규칙은 루트 [`CLAUDE.md`](../CLAUDE.md) 참고.
+
 ```
 backend/
-├── api/                         # FastAPI 라우터 레이어
-│   ├── main.py                  # 앱 진입점, CORS, 라우터 등록
-│   └── routers/
-│       ├── chat.py              # 채팅 + SSE 스트리밍
-│       ├── simulate.py          # 시뮬레이션 요청 / 결과 조회
-│       ├── ads.py               # 광고 업로드 / 분석 / 리포트
-│       └── admin.py             # 관리자 전용
+├── api/                         # 전송 계층(FastAPI)
+│   ├── main.py                  # 앱 진입점, lifespan, CORS, 라우터 등록(/api/* prefix)
+│   ├── routers/                 # 도메인별 라우터 — admin·ads·auth·billing·chat·company·
+│   │                            #   dashboard·debate·generator·inquiries·management·
+│   │                            #   personas·projects·simulate·simulation/
+│   └── assistant/               # 채팅(4-4) 오케스트레이터(통합 딥에이전트, deep_agent_builder)
 │
-├── agents/                      # LangGraph 에이전트
-│   ├── agent-ad-simulator/      # 시뮬레이션 파이프라인
-│   ├── agent-ad-creator/        # 광고 생성 [7.8]
-│   └── agent-ad-management/     # 플랫폼 게시/내리기
+├── domain/                      # 바운디드 컨텍스트(도메인)
+│   ├── simulation/              # 4-1 광고 시뮬레이터
+│   ├── management/              # 4-2 광고 매니지먼트
+│   ├── generator/               # 4-3 광고 생성
+│   ├── chat/                    # 4-4 채팅 어시스턴트
+│   └── billing/                 # 결제·크레딧
+│     └─ (도메인 내부) contracts/ · adapters/ · service/ · graph|agents/ · wiring.py
 │
-├── tools/                       # @tool 재사용 함수
-│   ├── ad_analysis/vision.py    # GPT-4o Vision 분석
-│   ├── persona/factory.py       # OCEAN 페르소나 생성
-│   ├── simulation/              # exposure / deliberation / ssr_scorer
-│   ├── storage/                 # S3
-│   └── search/rag.py            # pgvector RAG 검색
+├── tools/                       # 공용 @tool — ad_analysis · persona · simulation · storage · search
 │
-├── core/
+├── core/                        # 공통 인프라
 │   ├── config.py                # pydantic-settings 환경변수
-│   ├── db.py                    # AsyncSession, get_db
+│   ├── db.py                    # AsyncSession, get_db (Neon)
+│   ├── auth.py                  # 인증(local HS256 / Cognito RS256·JWKS)
+│   ├── cognito_admin.py         # Cognito 계정 create/disable/enable/delete
 │   └── models.py                # SQLAlchemy ORM 모델
 │
+├── alembic/                     # 마이그레이션(0001_baseline → 0002 → 0003 → 0004)
+├── dev.py                       # 개발 서버 진입(.venv watch 제외)
 ├── pyproject.toml
 ├── .python-version              # Python 3.12 고정
 └── .env.example
