@@ -1881,9 +1881,10 @@ export default function ChatConversation({
                           key={msg.id ?? `${msg.meta.campaign_id}-${i}`}
                           options={msg.meta.options}
                           campaignId={String(msg.meta.campaign_id ?? '')}
-                          onSelect={(text, optionSelect) =>
-                            handleSend(text, undefined, { optionSelect })
-                          }
+                          onSelect={(text, optionSelect) => {
+                            handleSend(text, undefined, { optionSelect });
+                            scrollToBottom(); // 위로 스크롤된 상태여도 새 대화로 즉시 이동
+                          }}
                           onEtc={() =>
                             focusInput('궁금한 점이나 다른 방법을 물어보세요')
                           }

@@ -32,11 +32,13 @@ export default function RemediationOptionsWidget({
   onSelect: (text: string, meta: OptionSelectMeta) => void;
   onEtc: () => void;
 }) {
-  // 실행 표시는 위젯 로컬 상태만(1차 범위 — 세션 재로드 시 소실 수용, 스펙 §4)
-  const [executed, setExecuted] = useState<number[]>([]);
+  // 선택은 1회 — 고르면 나머지 옵션 비활성(중복 전송·혼란 방지, 사용자 피드백 2026-07-04).
+  // 로컬 상태라 세션 재로드 시 리셋되는 건 1차 범위 수용(스펙 §4). 후속 질문은 [기타]로.
+  const [selected, setSelected] = useState<number | null>(null);
 
   const click = (o: RemediationOption) => {
-    setExecuted(prev => (prev.includes(o.index) ? prev : [...prev, o.index]));
+    if (selected !== null) return; // 이미 선택함 — 재전송 방지
+    setSelected(o.index);
     onSelect(`${o.index}번(${o.label}) 진행해줘`, {
       kind: 'remediation_option_select',
       option_index: o.index,
@@ -53,14 +55,17 @@ export default function RemediationOptionsWidget({
         <button
           key={o.index}
           type="button"
+          disabled={selected !== null}
           onClick={() => click(o)}
           className={`rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors ${
-            executed.includes(o.index)
+            selected === o.index
               ? 'border-[#3182F6] bg-[#3182F6]/10 text-[#3182F6]'
-              : 'border-[#E5E8EB] dark:border-[#2D3748] text-[#4E5968] dark:text-[#9CA3AF] hover:border-[#3182F6]'
+              : selected !== null
+                ? 'border-[#E5E8EB] dark:border-[#2D3748] text-[#8B95A1] opacity-40'
+                : 'border-[#E5E8EB] dark:border-[#2D3748] text-[#4E5968] dark:text-[#9CA3AF] hover:border-[#3182F6]'
           }`}
         >
-          {executed.includes(o.index) && '✓ '}
+          {selected === o.index && '✓ '}
           {CIRCLED[o.index - 1] ?? o.index} {o.label}
         </button>
       ))}
