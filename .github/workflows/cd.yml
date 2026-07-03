@@ -4,17 +4,18 @@ name: CD
 # 역할별 잡 분리: backend 빌드 / frontend 빌드(병렬) → 둘 다 끝나면 deploy.
 # GitHub Actions에서 이미지 빌드→ECR push → EC2가 ECR pull → docker compose 재기동.
 #
-# 필요한 GitHub Secrets:
+# 필요한 GitHub Secrets (진짜 비밀만):
 #   - AWS_ACCESS_KEY_ID      : ECR push 권한이 있는 IAM 사용자 액세스 키
 #   - AWS_SECRET_ACCESS_KEY  : 위 키의 시크릿
-#   - AWS_REGION             : ECR/EC2 리전 (예: us-west-2)
-#   - EC2_HOST               : EC2 퍼블릭 IP 또는 도메인
-#   - EC2_USER               : EC2 접속 유저 (ubuntu / ec2-user)
+#   - EC2_HOST               : EC2 퍼블릭 IP(EIP) 또는 도메인 (엄밀히 비밀 아니나 IP 노출 최소화로 유지)
 #   - EC2_SSH_KEY            : EC2 PEM 키 전체 내용
-#   (NEXT_PUBLIC_API_URL은 더 이상 secret으로 쓰지 않음 — 빈 값으로 빌드해 /api 상대경로 호출 → same-origin)
-#   - NEXT_PUBLIC_COGNITO_USER_POOL_ID : Cognito User Pool ID (프론트 빌드 인자, 공개돼도 무방)
-#   - NEXT_PUBLIC_COGNITO_CLIENT_ID    : Cognito App Client ID (프론트 빌드 인자, 공개돼도 무방)
-# (NEXT_PUBLIC_AUTH_PROVIDER=cognito, NEXT_PUBLIC_COGNITO_REGION=us-west-2 는 비밀 아님 → 평문)
+#   - E2E_DATABASE_URL       : (ci.yml e2e 잡 전용) 시드된 Postgres 연결 문자열
+# 비밀이 아니라 평문으로 둔 값(secret 아님 — 아래 잡에 리터럴):
+#   - AWS_REGION=us-west-2 · EC2_USER=ubuntu
+#   - NEXT_PUBLIC_API_URL= (빈 값 → /api 상대경로, same-origin)
+#   - NEXT_PUBLIC_AUTH_PROVIDER=cognito · NEXT_PUBLIC_COGNITO_REGION=us-west-2
+#   - NEXT_PUBLIC_COGNITO_USER_POOL_ID · NEXT_PUBLIC_COGNITO_CLIENT_ID
+#     (NEXT_PUBLIC_ 접두사라 프론트 번들에 노출되는 공개값 → 평문. Cognito는 인증 자체를 막지 않음)
 #
 # 사전 준비:
 #   - EC2에 docker · docker compose · awscli 설치 + ECR read 권한(IAM Role 권장)
@@ -55,7 +56,7 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
+          aws-region: us-west-2
 
       - name: Log in to Amazon ECR
         id: login-ecr
@@ -103,7 +104,7 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
+          aws-region: us-west-2
 
       - name: Log in to Amazon ECR
         id: login-ecr
@@ -132,8 +133,8 @@ jobs:
             NEXT_PUBLIC_API_URL=
             NEXT_PUBLIC_AUTH_PROVIDER=cognito
             NEXT_PUBLIC_COGNITO_REGION=us-west-2
-            NEXT_PUBLIC_COGNITO_USER_POOL_ID=${{ secrets.NEXT_PUBLIC_COGNITO_USER_POOL_ID }}
-            NEXT_PUBLIC_COGNITO_CLIENT_ID=${{ secrets.NEXT_PUBLIC_COGNITO_CLIENT_ID }}
+            NEXT_PUBLIC_COGNITO_USER_POOL_ID=us-west-2_iHteTHXO0
+            NEXT_PUBLIC_COGNITO_CLIENT_ID=75kk3fjlte1qk6ak1of1tb9m3e
           cache-from: type=gha,scope=frontend
           cache-to: type=gha,mode=max,scope=frontend
 
@@ -157,7 +158,7 @@ jobs:
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
+          aws-region: us-west-2
 
       - name: Log in to Amazon ECR
         id: login-ecr
@@ -169,19 +170,19 @@ jobs:
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
+          username: ubuntu
           key: ${{ secrets.EC2_SSH_KEY }}
-          source: 'docker-compose.prod.yml,deploy/nginx.conf'
-          target: /home/${{ secrets.EC2_USER }}/clickme
+          source: 'docker-compose.prod.yml,deploy/nginx.conf,deploy/init-letsencrypt.sh'
+          target: /home/ubuntu/clickme
 
       - name: Deploy to EC2
         uses: appleboy/ssh-action@v1
         env:
           REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          AWS_REGION: ${{ secrets.AWS_REGION }}
+          AWS_REGION: us-west-2
         with:
           host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
+          username: ubuntu
           key: ${{ secrets.EC2_SSH_KEY }}
           envs: REGISTRY,AWS_REGION
           script: |
@@ -192,5 +193,12 @@ jobs:
             cd ~/clickme
             docker pull "$REGISTRY/clickme-backend:latest"
             docker pull "$REGISTRY/clickme-frontend:latest"
+            # 최초 1회: TLS 인증서가 없으면 발급(dummy 부트스트랩 → certbot webroot → nginx reload).
+            # 인증서가 없으면 nginx가 443 블록의 없는 파일을 참조해 크래시하므로, up 전에 발급한다.
+            # init 스크립트가 내부에서 compose up까지 수행하며, 멱등이라 이미 있으면 즉시 종료.
+            if [ ! -f /etc/letsencrypt/live/clickme.co.kr/fullchain.pem ]; then
+              echo "[CD] TLS 인증서 없음 → 최초 발급 실행"
+              bash deploy/init-letsencrypt.sh
+            fi
             docker compose -f docker-compose.prod.yml up -d --remove-orphans
             docker image prune -f

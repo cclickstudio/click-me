@@ -1,4 +1,5 @@
-# 생성 자동 개선 루프 제어 검증 — start_generation/get_detail/_derive_fix 모킹으로 결정론 흐름만 테스트.
+# 생성 자동 개선 루프 제어 검증 — start_generation/get_detail/_derive_fix 모킹으로
+# 결정론 흐름만 테스트.
 from __future__ import annotations
 
 import pytest

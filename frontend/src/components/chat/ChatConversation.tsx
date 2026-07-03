@@ -181,7 +181,13 @@ type WidgetSpec = {
   data?: {
     ad_content?: string;
     ad_title?: string;
-    ad_image_url?: string; // sim_form 위젯 — 시안 이미지로 시뮬 진입(제너→시뮬 루프, 생성 시안 등에서 넘어온 URL)
+    ad_image_url?: string; // sim_form 위젯 — 시안 이미지로 시뮬 진입(제너→시뮬 루프)
+    mode?: 'create' | 'improve'; // gen_form 위젯 — 'improve'면 시뮬 결과 기반 개선 폼
+    simulation_summary?: string;
+    plain_summary?: string | null;
+    improvement_direction?: string;
+    existing_ad_s3_key?: string | null;
+    fix_requests?: string | null;
     product_category?: string;
     ad_objective?: string;
     product_name?: string;
@@ -397,6 +403,7 @@ export default function ChatConversation({
     ad_title: string;
     ad_content: string;
     ad_objective: string;
+    simulation_id: string | null;
   } | null>(null);
 
   const attachImage = (file: File | null) => {
@@ -978,6 +985,7 @@ export default function ChatConversation({
         ad_title: (adBlock.title as string) || input.adTitle || '',
         ad_content: (adBlock.copy_text as string) || input.adContent || '',
         ad_objective: (adBlock.ad_objective as string) || input.objective || '',
+        simulation_id: simId ?? null, // 수락 시 IMPROVE 프리필 조회용(백엔드가 재조회)
       };
       // 1) 결과(입력 요약 + 결과 KPI)는 준비되는 즉시 띄운다 — 토론 시작을 기다리지 않는다.
       const resultItems: {
