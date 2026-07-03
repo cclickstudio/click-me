@@ -48,11 +48,14 @@ class ImageAnalysis(BaseModel):
 
 
 class StrategyPlan(BaseModel):
-    """template_selector 통과 후 확정된 전략 (copy 생성 전)."""
+    """template_selector 통과 후 확정된 전략 (copy 생성 전).
+
+    개선 모드에서는 template=None — 자유 레이아웃(safe zone·템플릿 선택 없음).
+    """
 
     strategy: AdStrategy
     strategy_description: str
-    template: TemplateType
+    template: TemplateType | None = None
     rationale: str
 
 
@@ -74,3 +77,4 @@ class QualityReport(BaseModel):
     text_length: QualityCheckItem
     brand_consistency: QualityCheckItem
     overall_passed: bool
+    policy_warnings: list[str] = []

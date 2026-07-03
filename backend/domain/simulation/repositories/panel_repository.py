@@ -85,6 +85,7 @@ class PanelRepository:
                     consumption_values=p.consumption_values,
                     socioeconomic=p.socioeconomic,
                     profile_narrative=p.profile_narrative,
+                    weight=p.weight,
                 )
             )
         await self._s.flush()
@@ -92,3 +93,33 @@ class PanelRepository:
 
     async def get(self, panel_id: uuid.UUID) -> models.Panel | None:
         return await self._s.get(models.Panel, panel_id)
+
+    async def get_by_version(self, version: str) -> tuple[uuid.UUID, list[Persona]] | None:
+        """고정 패널을 version으로 조회 — 읽기 경로(§3.6). 없으면 None(호출측이 폴백 판단).
+
+        DB에 없는 계약 필드(원본 persona_id 문자열·social_values_deep·social_economic)는
+        DB에 저장하지 않는 결정(context-notes §2) — persona_id는 DB id로 합성, 나머지는
+        전 항목 빈 dict라 잃을 값이 없다(Data_Collection.md 기준).
+        """
+        panel = await self._s.scalar(select(models.Panel).where(models.Panel.version == version))
+        if panel is None:
+            return None
+        rows = await self._s.scalars(
+            select(models.Persona).where(models.Persona.panel_id == panel.id)
+        )
+        personas = [
+            Persona(
+                persona_id=f"P_{row.id.hex[:8]}",
+                age=row.age,
+                gender=row.gender,
+                region=row.region,
+                ocean=row.ocean,
+                media_behavior=row.media_behavior,
+                consumption_values=row.consumption_values,
+                socioeconomic=row.socioeconomic,
+                weight=float(row.weight),
+                profile_narrative=row.profile_narrative,
+            )
+            for row in rows
+        ]
+        return panel.id, personas

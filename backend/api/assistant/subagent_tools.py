@@ -16,6 +16,7 @@ from langchain_core.tools import InjectedToolCallId, tool
 from langgraph.prebuilt import InjectedState
 from langgraph.types import Command
 
+from api.assistant import improve_context
 from api.assistant.contracts import SubagentRequest
 from api.assistant.wiring import (
     _build_generator_handler,
@@ -28,6 +29,9 @@ from domain.generator.assistant.tools import list_generations
 from domain.simulation.assistant.tools import list_simulations
 
 _VALID_CAMPAIGN_ACTIONS = ("pause", "activate", "increase_budget", "decrease_budget")
+
+# 일반 지식 KB 게이트 — top cosine이 이 미만이면 근거 불충분(구 ADVISE 게이트와 동일 취지).
+_GENERAL_KB_THRESHOLD = 0.35
 
 
 def _subreq(state: dict, query: str) -> SubagentRequest:
@@ -54,11 +58,22 @@ def _subreq(state: dict, query: str) -> SubagentRequest:
     )
 
 
-def build_chat_tools(settings, memory=None) -> list:
-    """통합 채팅 에이전트에 등록할 tool 리스트를 빌드한다(settings·핸들러·메모리 클로저)."""
+def build_chat_tools(settings, memory=None, clio_retriever=None) -> list:
+    """통합 채팅 에이전트에 등록할 tool 리스트를 빌드한다(settings·핸들러·메모리 클로저).
+
+    clio_retriever는 테스트 주입용 — None이면 풀모드(키 존재·use_mock=False)에서만 내부 생성.
+    """
     mgmt = _build_management_handler(settings)
     gen = _build_generator_handler(settings)
     sim = _build_simulation_handler(settings)
+
+    clio = clio_retriever
+    if clio is None:
+        api_key = getattr(settings, "openai_api_key", None)
+        if api_key and not getattr(settings, "use_mock", True):
+            from domain.chat.retriever import ClioKbRetriever  # noqa: PLC0415
+
+            clio = ClioKbRetriever(api_key=api_key)
 
     # ───────────────────────── 위임 tool (도메인 서브에이전트) ─────────────────────────
     @tool
@@ -68,8 +83,9 @@ def build_chat_tools(settings, memory=None) -> list:
         state: Annotated[dict, InjectedState],
         tool_call_id: Annotated[str, InjectedToolCallId],
     ) -> Command:
-        """집행 '후' 실측 성과·운영 질문에 답한다. 캠페인 예산·소진·CTR/ROAS/CVR 실적·페이싱·
-        이상·정책·벤치마크 등. query에는 사용자의 질문을 명확히 정리해 넣어라."""
+        """집행 '후' 실측 성과·운영 질문, 그리고 캠페인 운영·성과 개선·예산 배분·타깃/오디언스
+        전략에 관한 일반 조언에 답한다. 캠페인 예산·소진·CTR/ROAS/CVR 실적·페이싱·이상·정책·
+        벤치마크 등. query에는 사용자의 질문을 명확히 정리해 넣어라."""
         res = await mgmt(_subreq(state, query))
         return Command(
             update={
@@ -86,7 +102,8 @@ def build_chat_tools(settings, memory=None) -> list:
         tool_call_id: Annotated[str, InjectedToolCallId],
     ) -> Command:
         """집행 '전' 시뮬레이션 결과·KPI(클릭 의향률·구매의도·신뢰도·거부율)의 의미·해석·
-        기존 결과 조회에 답한다. (새 시뮬 실행이 아니라 해석·조회. 실행은 run_simulation.)"""
+        기존 결과 조회, 그리고 소비자 반응 예측에 관한 질문·조언에 답한다.
+        (새 시뮬 실행이 아니라 해석·조회·조언. 실행은 run_simulation.)"""
         res = await sim(_subreq(state, query))
         return Command(
             update={
@@ -102,13 +119,75 @@ def build_chat_tools(settings, memory=None) -> list:
         state: Annotated[dict, InjectedState],
         tool_call_id: Annotated[str, InjectedToolCallId],
     ) -> Command:
-        """광고 시안·카피의 전략·작성 원칙·조언에 답한다(생성 실행이 아님).
-        실제 생성은 run_generation. query에 무엇에 대한 조언인지 정리해 넣어라."""
+        """광고 시안·카피·크리에이티브의 전략·작성 원칙·아이디어·개선 방향 조언에 답한다
+        (생성 실행이 아님). 실제 생성은 run_generation.
+        query에 무엇에 대한 조언인지 정리해 넣어라."""
         res = await gen(_subreq(state, query))
         return Command(
             update={
                 "sub_meta": {"generator": res.meta},
                 "messages": [ToolMessage(res.message, tool_call_id=tool_call_id)],
+            }
+        )
+
+    @tool
+    async def ask_general_knowledge(
+        query: str,
+        *,
+        state: Annotated[dict, InjectedState],
+        tool_call_id: Annotated[str, InjectedToolCallId],
+    ) -> Command:
+        """특정 캠페인·시안·시뮬과 무관한 광고·마케팅 '일반 지식·용어 정의·업계 개념' 질문에
+        근거 문서를 검색한다(예: 'CPM이 뭐야', '어트리뷰션 모델 종류'). 검색 결과를 근거로
+        네가 종합해 답하라. 행위 조언(어떻게 쓸까/만들까)은 ask_generator를 쓴다."""
+        _ = state  # per-turn 컨텍스트 불필요 — 시그니처는 다른 ask_*와 통일
+        if clio is None:
+            return Command(
+                update={
+                    "messages": [
+                        ToolMessage(
+                            "일반 지식베이스를 사용할 수 없는 환경이야. "
+                            "아는 범위에서 신중히 답하되 불확실하면 모른다고 답하라.",
+                            tool_call_id=tool_call_id,
+                        )
+                    ]
+                }
+            )
+        try:
+            hits = await clio.search(query, k=4)
+        except Exception:  # noqa: BLE001 — KB 미적재·일시 오류는 빈 결과로 진행
+            hits = []
+        top_cosine = max((h.get("cosine_score") or 0.0 for h in hits), default=0.0)
+        if not hits or top_cosine < _GENERAL_KB_THRESHOLD:
+            return Command(
+                update={
+                    "messages": [
+                        ToolMessage(
+                            "지식베이스에 충분한 근거가 없어. 아는 범위에서 신중히 답하되 "
+                            "불확실하면 모른다고 답하라.",
+                            tool_call_id=tool_call_id,
+                        )
+                    ]
+                }
+            )
+        ctx = "\n\n".join(f"[{i + 1}] {h['title']}\n{h['chunk']}" for i, h in enumerate(hits))
+        citations = [{"kind": "kb", "source": h["source"], "title": h["title"]} for h in hits]
+        return Command(
+            update={
+                "sub_meta": {
+                    "clio": {
+                        "source": "clio",
+                        "label": "광고 지식 베이스",
+                        "citations": citations,
+                    }
+                },
+                "messages": [
+                    ToolMessage(
+                        "아래 지식베이스 근거로 답하라. 근거에 없는 내용은 지어내지 말 것.\n\n"
+                        + ctx,
+                        tool_call_id=tool_call_id,
+                    )
+                ],
             }
         )
 
@@ -226,6 +305,64 @@ def build_chat_tools(settings, memory=None) -> list:
                 "messages": [
                     ToolMessage(
                         "자동 개선 루프를 시작했어요. 진행 상황은 카드에서 확인하세요.",
+                        tool_call_id=tool_call_id,
+                    )
+                ],
+            }
+        )
+
+    @tool
+    async def run_improvement(
+        simulation_id: str = "",
+        fix_requests: str = "",
+        *,
+        state: Annotated[dict, InjectedState],
+        tool_call_id: Annotated[str, InjectedToolCallId],
+    ) -> Command:
+        """기존 '시뮬 결과를 반영해 개선 시안을 만들어'달라고 하면 호출(단발 1회, 개선 폼).
+        발화에 시뮬 id가 있으면 넣고, '아까/방금/최근'이면 비워라(최근 완료 시뮬 자동 선택).
+        고칠 점 언급은 fix_requests로. 자동 반복 개선은 improve_ad_iteratively,
+        시뮬 없이 새로 만들기는 run_generation. 폼 호출 후 한 줄로만 안내하라."""
+        sid = simulation_id or ""
+        if not sid:
+            project_id = state.get("project_id") or ""
+            if not project_id:
+                return Command(
+                    update={
+                        "messages": [
+                            ToolMessage(
+                                "개선할 시뮬레이션을 찾을 프로젝트가 없어요. "
+                                "프로젝트를 선택하거나 시뮬레이션을 지정해주세요.",
+                                tool_call_id=tool_call_id,
+                            )
+                        ]
+                    }
+                )
+            sid = await improve_context.latest_completed_simulation_id(project_id) or ""
+        gen_data = None
+        if sid:
+            gen_data = await improve_context.improve_gen_data_for_simulation(
+                sid, fix_requests or None, org_id=state.get("org_id")
+            )
+        if gen_data is None:
+            return Command(
+                update={
+                    "messages": [
+                        ToolMessage(
+                            "아직 완료된 시뮬레이션이 없어요. 먼저 시뮬레이션을 돌리면 "
+                            "그 결과를 반영한 개선 시안을 만들 수 있어요.",
+                            tool_call_id=tool_call_id,
+                        )
+                    ]
+                }
+            )
+        helpers.spawn_persist(state.get("project_id"), "gen_input", gen_data)
+        return Command(
+            update={
+                **widgets.gen_form(gen_data),
+                "messages": [
+                    ToolMessage(
+                        "시뮬 결과를 반영한 개선 생성 폼을 준비했습니다.",
                         tool_call_id=tool_call_id,
                     )
                 ],
@@ -559,12 +696,33 @@ def build_chat_tools(settings, memory=None) -> list:
         facts = [r.get("fact") for r in rows if r.get("fact")]
         return "\n".join(f"- {f}" for f in facts) or "(저장된 기억 없음)"
 
+    @tool
+    async def recall_history(
+        query: str,
+        *,
+        state: Annotated[dict, InjectedState],
+    ) -> str:
+        """이 프로젝트에서 과거 수행한 시뮬/생성/매니지먼트 실행 이력을 키워드로 조회한다.
+        '지난번 20대 시뮬 뭐였지'처럼 과거에 무엇을 언제 돌렸는지가 필요할 때 호출한다."""
+        rows = await history.search_execution_history(state.get("project_id"), query, k=5)
+        if not rows:
+            return "(수행 이력 없음)"
+        labels = {"simulation": "시뮬", "generation": "생성", "management": "매니지먼트"}
+        lines = []
+        for r in rows:
+            when = (r.get("executed_at") or "")[:16].replace("T", " ")
+            feat = labels.get(r.get("feature_type"), r.get("feature_type") or "")
+            lines.append(f"- [{when}] {feat}: {(r.get('summary') or '').strip()[:120]}")
+        return "\n".join(lines)
+
     return [
         ask_management,
         ask_simulation,
         ask_generator,
+        ask_general_knowledge,
         run_simulation,
         run_generation,
+        run_improvement,
         improve_ad_iteratively,
         list_my_simulations,
         list_my_generations,
@@ -580,4 +738,5 @@ def build_chat_tools(settings, memory=None) -> list:
         extract_brand,
         remember,
         recall,
+        recall_history,
     ]

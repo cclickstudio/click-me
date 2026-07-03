@@ -16,7 +16,7 @@ from collections.abc import AsyncIterator, Callable
 
 from domain.generator.contracts.enums import GenerationMode
 from domain.generator.contracts.schemas import GenerationCreateRequest
-from domain.generator.pipeline.improvement_guide import split_improvements
+from domain.generator.pipeline.improvement_guide import classify_improvements
 from domain.generator.service import generator_service
 from domain.generator.service.generator_service import _QA_STRENGTH_LABELS
 
@@ -50,7 +50,7 @@ def _create_req(seed: dict, project_id: str | None) -> GenerationCreateRequest:
 def _improve_req(
     seed: dict, best: dict, fix: str, weakness: str, project_id: str | None
 ) -> GenerationCreateRequest:
-    # IMPROVE 필수 필드: existing_ad_s3_key + simulation_summary. 시뮬 미사용이므로 QA 약점 요약을
+    # IMPROVE 필수 필드: simulation_summary(existing_ad_s3_key는 참고용 힌트). 시뮬 미사용이므로 QA 약점 요약을
     # simulation_summary에 담는다(스키마 재사용, 후속에서 evaluation_summary로 일반화 가능).
     return GenerationCreateRequest(
         mode=GenerationMode.IMPROVE,
@@ -104,7 +104,7 @@ async def _await_completion(
 async def _derive_fix(candidate: dict, seed: dict) -> str:
     """유일한 LLM 판단 — QA 약점+카피를 읽고 구체 개선방향 도출 → 이미지 반영 가능 항목만 필터.
 
-    split_improvements(기존 개선점 분류기)로 image_actions만 추려 fix_requests 문자열로 만든다.
+    classify_improvements(개선점 분류기)로 이미지 반영 지시문만 추려 fix_requests 문자열로 만든다.
     """
     from domain.generator.llm.factory import build_text_llm  # noqa: PLC0415
 
@@ -118,9 +118,14 @@ async def _derive_fix(candidate: dict, seed: dict) -> str:
     llm = build_text_llm(temperature=0.3, max_tokens=400)
     resp = await llm.ainvoke([("system", _DERIVE_FIX_SYSTEM), ("user", user)])
     raw = resp.content if isinstance(resp.content, str) else str(resp.content)
-    split = await split_improvements(fix_requests=raw, improvement_direction=None)
-    if split.image_actions:
-        return "\n".join(f"- {a}" for a in split.image_actions)
+    directives = await classify_improvements(
+        simulation_summary=None,
+        plain_summary=None,
+        improvement_direction=None,
+        fix_requests=raw,
+    )
+    if directives:
+        return "\n".join(f"- {a}" for a in directives)
     return raw.strip()
 
 

@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useProjects } from './ProjectContext';
 import { ProjectItem } from './ProjectPanel';
-import { getToken } from '@/lib/authApi';
+import { authedFetch } from '@/lib/api';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
@@ -91,7 +91,7 @@ function TeamSection({
 // ── 메인 패널 ───────────────────────────────────────────────────
 export default function CompanyPanel({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
   const pathname = usePathname();
-  const { projects, loading, details, loadDetails, selectProject, refresh } = useProjects();
+  const { projects, loading, details, loadDetails, selectProject, refreshAll } = useProjects();
   const [teams, setTeams] = useState<Team[]>([]);
   const [openProjectId, setOpenProjectId] = useState<string | null>(null);
 
@@ -126,7 +126,7 @@ export default function CompanyPanel({ collapsed, onToggle }: { collapsed: boole
 
   // 전체 팀 목록 — TEAM 토글에서 프로젝트 0개 팀까지 표시하기 위함(팀 관리와 동일 목록)
   useEffect(() => {
-    fetch(`${API_BASE}/api/company/teams`, { headers: { Authorization: `Bearer ${getToken()}` } })
+    authedFetch(`${API_BASE}/api/company/teams`)
       .then(r => (r.ok ? r.json() : []))
       .then(d => { if (Array.isArray(d)) setTeams(d); })
       .catch(() => {});
@@ -182,7 +182,7 @@ export default function CompanyPanel({ collapsed, onToggle }: { collapsed: boole
         <div className="flex items-center gap-1">
           {/* 새로고침 */}
           <button
-            onClick={refresh}
+            onClick={refreshAll}
             title="새로고침"
             className="w-7 h-7 flex items-center justify-center rounded-lg text-[#8B95A1] hover:bg-[#F2F4F6] dark:hover:bg-[#252D3D] hover:text-[#3182F6] transition-colors"
           >

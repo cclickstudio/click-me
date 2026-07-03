@@ -23,7 +23,7 @@ class Panel(SimBase):
     __tablename__ = "panels"
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid(), primary_key=True, default=uuid.uuid4)
-    version: Mapped[str] = mapped_column(String(20), nullable=False)
+    version: Mapped[str] = mapped_column(String(20), nullable=False, unique=True)
     size: Mapped[int] = mapped_column(Integer, nullable=False)
     seed: Mapped[str] = mapped_column(String(50), nullable=False)
     model_version: Mapped[str] = mapped_column(String(50), nullable=False)
@@ -46,6 +46,7 @@ class Persona(SimBase):
     consumption_values: Mapped[dict] = mapped_column(_JSONB, nullable=False)
     socioeconomic: Mapped[dict] = mapped_column(_JSONB, nullable=False, default=dict)
     profile_narrative: Mapped[str] = mapped_column(Text, nullable=False)
+    weight: Mapped[float] = mapped_column(Numeric(10, 4), nullable=False, default=1.0)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
 
 
@@ -130,7 +131,7 @@ class SimulationAggregate(SimBase):
     __tablename__ = "simulation_aggregates"
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid(), primary_key=True, default=uuid.uuid4)
-    simulation_id: Mapped[uuid.UUID] = mapped_column(Uuid(), nullable=False)
+    simulation_id: Mapped[uuid.UUID] = mapped_column(Uuid(), nullable=False, unique=True)
     click_intent_rate: Mapped[float] = mapped_column(Numeric(5, 4), nullable=False)
     ci_low: Mapped[float] = mapped_column(Numeric(5, 4), nullable=False)
     ci_high: Mapped[float] = mapped_column(Numeric(5, 4), nullable=False)

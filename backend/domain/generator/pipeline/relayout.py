@@ -5,7 +5,7 @@ import io
 
 from PIL import Image, ImageFilter, ImageOps
 
-from domain.generator.contracts.enums import TemplateType
+from domain.generator.contracts.enums import AdStrategy, TemplateType
 from domain.generator.pipeline.image_generator import composite_logo
 from domain.generator.pipeline.text_overlay import render_ad_text
 
@@ -44,6 +44,7 @@ def render_platform(
     platform: str,
     brand_color: str | None = None,
     logo_bytes: bytes | None = None,
+    strategy: AdStrategy | None = None,
 ) -> bytes:
     """텍스트 없는 base를 지정 플랫폼 사이즈로 리레이아웃해 최종 PNG bytes를 반환한다."""
     if platform not in PLATFORM_SIZES:
@@ -61,6 +62,7 @@ def render_platform(
         cta=cta,
         template=template,
         brand_color=brand_color,
+        strategy=strategy,
     )
     if logo_bytes is not None:
         out = composite_logo(out, logo_bytes, template)

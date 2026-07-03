@@ -3,6 +3,25 @@ from __future__ import annotations
 
 from domain.generator.contracts.pipeline_schemas import AdCopy, QualityCheckItem, QualityReport
 
+# 상품명 포함 여부와 무관하게 과장·오해를 유발하는 표현 목록 (한/영 병행)
+_PROHIBITED_TERMS: list[str] = [
+    "100%",
+    "보장",
+    "기적",
+    "완치",
+    "즉시 효과",
+    "넘버원",
+    "최고",
+    "완벽",
+    "1위",
+    "guaranteed",
+    "miracle",
+    "cure",
+    "instant",
+    "perfect",
+    "no.1",
+]
+
 
 def _check_text_length(ad_copy: AdCopy) -> QualityCheckItem:
     h_ok = len(ad_copy.headline) <= 20
@@ -53,7 +72,17 @@ def _skipped_item() -> QualityCheckItem:
     return QualityCheckItem(passed=True, score=1.0, feedback="규칙 기반 검증 제외")
 
 
-def check_quality(ad_copy: AdCopy, target: str) -> QualityReport:
+def _check_policy_warnings(ad_copy: AdCopy, product_name: str) -> list[str]:
+    text = f"{ad_copy.headline} {ad_copy.body} {ad_copy.cta}"
+    text_without_product = text.replace(product_name, "")
+    warnings = []
+    for term in _PROHIBITED_TERMS:
+        if term.lower() in text_without_product.lower():
+            warnings.append(f"'{term}' 표현은 Meta 광고 정책에 위반될 수 있습니다")
+    return warnings
+
+
+def check_quality(ad_copy: AdCopy, target: str, product_name: str = "") -> QualityReport:
     text_length = _check_text_length(ad_copy)
     cta_exists = _check_cta_exists(ad_copy)
     duplicate_check = _check_duplicate(ad_copy)
@@ -69,4 +98,5 @@ def check_quality(ad_copy: AdCopy, target: str) -> QualityReport:
         text_length=text_length,
         brand_consistency=_skipped_item(),
         overall_passed=overall_passed,
+        policy_warnings=_check_policy_warnings(ad_copy, product_name),
     )

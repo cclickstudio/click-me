@@ -74,6 +74,28 @@ class RunState(TypedDict, total=False):
     aggregate: SimulationAggregate | None
 
 
+async def interpret_and_score(
+    interpreter, rubric, request: SimulationRunRequest
+) -> tuple[AdInterpretation, list[RubricScore]]:
+    """광고 해석 + 의도 정합 채점(§3.5-3) — outer 그래프의 interpret_ad 노드와 세그먼트 비교
+    서비스(Persona Set, 3-모드 UX)가 공유한다. 광고당 1회만 호출(세그먼트 수만큼 반복 금지).
+
+    ① VLM 감지(선언 의도 미주입, 앵커링 방지) → ② 교차검증(정합 점수) → 불일치 파생
+    ③ Tier3 브랜드 인지율 — 광고 텍스트에 수록 브랜드 있으면 1회 부착(없으면 폴백).
+    """
+    ad = await interpreter.interpret(request)
+    scores = await rubric.evaluate(ad, request)
+    mismatch, detail = _derive_intent(scores)
+    update: dict = {"intent_mismatch": mismatch, "mismatch_detail": detail}
+    brand_hint = " ".join(
+        x for x in (request.ad_title, request.ad_content, ad.detected_message) if x
+    )
+    awareness = lookup_brand_awareness(brand_hint)
+    if awareness:
+        update["structured_analysis"] = {**ad.structured_analysis, **awareness}
+    return ad.model_copy(update=update), scores
+
+
 def build_run_graph(*, interpreter, panel, rubric, aggregator, reaction_graph):
     """outer 그래프를 컴파일한다.
 
@@ -86,18 +108,7 @@ def build_run_graph(*, interpreter, panel, rubric, aggregator, reaction_graph):
     """
 
     async def interpret_ad(state: RunState) -> dict:
-        # ① VLM 감지(선언 의도 미주입, 앵커링 방지) → ② 교차검증(정합 점수) → 불일치 파생.
-        req = state["request"]
-        ad = await interpreter.interpret(req)
-        scores = await rubric.evaluate(ad, req)
-        mismatch, detail = _derive_intent(scores)
-        update: dict = {"intent_mismatch": mismatch, "mismatch_detail": detail}
-        # ③ Tier3 브랜드 인지율 — 광고 텍스트에 수록 브랜드 있으면 1회 부착(없으면 폴백).
-        brand_hint = " ".join(x for x in (req.ad_title, req.ad_content, ad.detected_message) if x)
-        awareness = lookup_brand_awareness(brand_hint)
-        if awareness:
-            update["structured_analysis"] = {**ad.structured_analysis, **awareness}
-        ad = ad.model_copy(update=update)
+        ad, scores = await interpret_and_score(interpreter, rubric, state["request"])
         return {"ad": ad, "rubric_scores": scores}
 
     async def load_panel(state: RunState) -> dict:

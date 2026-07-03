@@ -4,15 +4,13 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { getToken } from '@/lib/authApi';
+import { authedFetch } from '@/lib/api';
+import { formatKSTDate } from '@/lib/datetime';
 import type { TrashRow } from './ProjectContext';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
-const fmt = (iso: string) => {
-  const d = new Date(iso);
-  return `${d.getMonth() + 1}/${d.getDate()}`;
-};
+const fmt = (iso: string) => formatKSTDate(iso);
 
 const keyOf = (t: TrashRow) => `${t.kind}-${t.id}`;
 
@@ -43,9 +41,9 @@ export default function TrashSection({
 
   const post = async (action: 'restore' | 'purge', body: object) => {
     setBusy(true);
-    const res = await fetch(`${API_BASE}/api/projects/${projectId}/trash/${action}`, {
+    const res = await authedFetch(`${API_BASE}/api/projects/${projectId}/trash/${action}`, {
       method: 'POST',
-      headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
     });
     setBusy(false);
