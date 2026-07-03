@@ -64,6 +64,8 @@ EIP_NAME = f"{PROJECT}-eip"
 PEM_PATH = Path(__file__).resolve().parent / f"{KEY_NAME}.pem"
 # scp로 EC2에 올릴 로컬 backend/.env (리포 루트 = infra의 상위)
 ENV_SRC = Path(__file__).resolve().parent.parent / "backend" / ".env"
+# provision 결과(EC2_HOST 등)를 담아 로컬 도구(start_portainer.py)가 참조할 infra/.env
+INFRA_ENV = Path(__file__).resolve().parent / ".env"
 
 # Windows에서 subprocess로 aws CLI를 호출하면 출력이 파이프로 캡처돼도 페이저(more)가
 # 뜨면서 입력 대기로 멈추는 경우가 있어, 자식 프로세스에서만 페이저를 끈다.
@@ -437,6 +439,25 @@ def upload_env_file(host: str) -> None:
         print(f"[!] scp 실패:\n{res.stderr.strip()}")
 
 
+def write_infra_env(host: str, instance_id: str) -> None:
+    """로컬 도구(start_portainer.py 등)가 참조할 infra/.env 를 쓴다. gitignore 대상.
+
+    EC2_SSH_KEY 는 개인키 '내용'이 아니라 PEM '경로'로 저장한다
+    (키는 clickme-key.pem에 이미 있고, PEM은 줄바꿈이 많아 .env 한 줄 값에 부적합).
+    """
+    INFRA_ENV.write_text(
+        "# provision_ec2.py 자동 생성 — 로컬 도구(start_portainer.py) 참조용. 커밋 금지(.gitignore).\n"
+        f"EC2_HOST={host}\n"
+        "EC2_USER=ubuntu\n"
+        f"EC2_INSTANCE_ID={instance_id}\n"
+        f"EC2_REGION={REGION}\n"
+        f"EC2_SSH_KEY_PATH={PEM_PATH}\n"
+        "# ※ GitHub Secrets의 EC2_SSH_KEY 값은 위 PEM 파일의 *전체 내용*을 붙여넣으세요.\n",
+        encoding="utf-8",
+    )
+    print(f"[+] infra/.env 기록 → {INFRA_ENV}")
+
+
 def report(instance_id: str, host: str) -> None:
     print("\n" + "=" * 60)
     print("EC2 준비 완료. GitHub Secrets에 아래 값을 등록하세요.")
@@ -451,7 +472,7 @@ def report(instance_id: str, host: str) -> None:
     print("   확인: ssh 접속 후 'cat ~/clickme/.bootstrap-ok' / 'docker --version'")
     print(" - backend/.env 는 이 스크립트가 자동 업로드합니다(아래 로그 확인).")
     print(" - ECR 리포(clickme-backend/frontend)는 cd.yml이 자동 생성합니다.")
-    print(" - Portainer는 SSH 터널로만: ssh -i %s -N -L 9000:localhost:9000 ubuntu@%s" % (PEM_PATH, host))
+    print(" - Portainer: 'python infra/start_portainer.py' → 자동 기동 + 터널 + localhost:9000 열림")
     print(
         " - 안 쓸 땐: aws ec2 stop-instances --region %s --instance-ids %s" % (REGION, instance_id)
     )
@@ -514,6 +535,10 @@ def destroy(release_eip: bool = False) -> None:
     aws_ok("ec2", "delete-key-pair", "--key-name", KEY_NAME)
     PEM_PATH.unlink(missing_ok=True)
     print("[-] 키페어/PEM 삭제")
+    # 로컬 infra/.env (provision이 만든 참조 파일)
+    if INFRA_ENV.exists():
+        INFRA_ENV.unlink()
+        print("[-] infra/.env 삭제")
     # IAM
     aws_ok(
         "iam",
@@ -552,6 +577,7 @@ def main() -> None:
     print("[*] running 대기...")
     aws("ec2", "wait", "instance-running", "--instance-ids", iid, capture=False)
     host = ensure_and_associate_eip(iid)
+    write_infra_env(host, iid)
     report(iid, host)
     upload_env_file(host)
 
