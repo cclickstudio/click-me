@@ -683,9 +683,7 @@ async def consult_from_notification(
         raise HTTPException(404, "알림을 찾을 수 없습니다.")
     if out["status"] == "unavailable":
         raise HTTPException(503, "지금은 상담을 준비할 수 없어요. 잠시 후 다시 시도해 주세요.")
-    if out["status"] in ("consult", "normal"):
-        _publish_org(org_id)  # 상태 변화(세션 연결·auto_normal) 배지 동기화
-    return out
+    return out  # publish는 서비스가 read·상태 변화 시 1회 발행(발행 책임 일원화)
 
 
 class ApprovalRequest(BaseModel):

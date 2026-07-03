@@ -59,9 +59,9 @@ async def consult_notification(
     if n is None or n["organization_id"] != org_id:
         return None  # fail-closed — 존재 여부도 노출하지 않는다
 
-    read_changed = False
+    changed = False  # read·상태 변화(auto_normal·세션 연결) 공용 — finally에서 1회 발행
     if n["read_at"] is None:
-        read_changed = bool(await store.mark_read(org_id, [notification_id], now()))
+        changed = bool(await store.mark_read(org_id, [notification_id], now()))
 
     try:
         if n["resolved_at"] is not None:
@@ -73,11 +73,15 @@ async def consult_notification(
             # 사용자가 세션을 지웠다 — CAS를 비우고 처음부터 재실행(스펙 §4 엣지)
             await store.release_consult_session(notification_id, n["consult_session_id"])
 
-        result = await consult(settings, n["campaign_id"])
+        try:
+            result = await consult(settings, n["campaign_id"])
+        except Exception:  # noqa: BLE001 — 주입 callable 계약 미보장 방어(암묵→명시, 500→503)
+            return {"status": "unavailable"}
         if result is None:
             return {"status": "unavailable"}
         if result.status == "normal":
             await store.resolve(org_id, notification_id, "auto_normal", now())
+            changed = True  # 상태 변화(auto_normal) — read 여부와 무관하게 배지 동기화
             return {"status": "normal", "message": result.message}
 
         session_id, _last_read = await chat_store.find_or_create_session(
@@ -90,6 +94,7 @@ async def consult_notification(
             except Exception:  # noqa: BLE001 — 심기 실패는 보상 롤백 후 재시도 가능 응답
                 await store.release_consult_session(notification_id, session_id)
                 return {"status": "unavailable"}
+            changed = True  # 상태 변화(세션 연결) — read 여부와 무관하게 배지 동기화
         else:
             # CAS 패자 — find_or_create 자체의 race로 승자와 다른 세션을 쥘 수 있다.
             # 승자가 확정한 세션을 재조회해 그쪽으로 안내(없으면 방금 세션 폴백).
@@ -97,5 +102,5 @@ async def consult_notification(
             session_id = (latest or {}).get("consult_session_id") or session_id
         return {"status": "consult", "session_id": session_id}
     finally:
-        if read_changed:
-            publish(org_id)  # 어느 경로로 끝나든 read 변화는 배지 동기화(스펙 §4 ①)
+        if changed:
+            publish(org_id)  # read·상태 변화는 어느 경로로 끝나든 1회 배지 동기화(스펙 §4 ①)

@@ -174,9 +174,39 @@ async def test_normalized_resolves_auto_normal():
 
 
 @pytest.mark.asyncio
+async def test_already_read_normal_still_publishes():
+    """read 변화가 없어도 상태 변화(auto_normal)면 배지 신호가 나간다 — 발행 책임 일원화."""
+    n = Store().notif | {"read_at": datetime.now(UTC)}
+    store, published = Store(notif=n), []
+    out = await _run(store, ChatStore(), consult_result="normal", published=published)
+    assert out["status"] == "normal"
+    assert published == ["org-1"]
+
+
+@pytest.mark.asyncio
 async def test_consult_failure_returns_retryable():
     out = await _run(Store(), ChatStore(), consult_result="fail")
     assert out == {"status": "unavailable"}  # 라우터가 503으로 변환
+
+
+@pytest.mark.asyncio
+async def test_consult_raise_returns_retryable():
+    """주입 consult가 raise해도 500이 아니라 unavailable(→503) — 계약 미보장 방어."""
+
+    async def raising_consult(settings, campaign_id, **kw):
+        raise RuntimeError("reader down")
+
+    out = await consult_notification(
+        _Settings(),
+        "n1",
+        "org-1",
+        store=Store(),
+        chat_store=ChatStore(),
+        consult=raising_consult,
+        publish=lambda _o: None,
+        now=lambda: datetime.now(UTC),
+    )
+    assert out == {"status": "unavailable"}
 
 
 @pytest.mark.asyncio
