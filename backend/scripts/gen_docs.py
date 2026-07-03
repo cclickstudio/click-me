@@ -41,15 +41,52 @@ _GEN_NOTE = (
 # ────────────────────────────────────────────────────────────
 # API 엔드포인트 추출 (FastAPI app)
 # ────────────────────────────────────────────────────────────
+# core.config 필수 필드 대부분은 아래 introspect로 자동 더미화하지만,
+# 형식/부작용이 있는 소수만 유효한 형태의 값을 지정한다(그 외는 "dummy").
+_SETTINGS_DUMMY_OVERRIDES = {
+    "DATABASE_URL": "postgresql+asyncpg://u:p@localhost/none",  # URL 파싱·엔진 생성 대비
+}
+
+
+def _fill_required_settings() -> None:
+    """core.config(Settings) 로드가 필수값 누락으로 실패하면, 누락 필드를 더미로 채워
+    성공할 때까지 재시도한다. config에 기본값 없는 필드가 추가돼도 이 스크립트는 무손질.
+
+    pydantic 이 던지는 ValidationError 의 'missing' 항목에서 필드명을 읽어 그 필드의
+    env 이름(대문자)에 더미를 넣는다. missing 이 아닌 다른 검증 오류면 그대로 전파한다.
+    """
+    from pydantic import ValidationError
+
+    while True:
+        try:
+            import core.config  # noqa: F401  (성공하면 settings 인스턴스가 생성됨)
+
+            return
+        except ValidationError as exc:
+            filled = False
+            for err in exc.errors():
+                if err.get("type") != "missing":
+                    continue
+                env_name = str(err["loc"][0]).upper()
+                if not os.environ.get(env_name):
+                    os.environ[env_name] = _SETTINGS_DUMMY_OVERRIDES.get(env_name, "dummy")
+                    filled = True
+            # 부분 로드 캐시를 지워 다음 시도에서 다시 평가되게 한다.
+            sys.modules.pop("core.config", None)
+            if not filled:
+                raise
+
+
 def collect_api_endpoints() -> list[tuple[str, str, str, tuple[str, ...]]]:
     """(method, path, name, tags) 목록을 반환. 앱 import 실패 시 예외 전파."""
-    # 라우트 메타만 읽으므로 필수 설정에 더미값을 주입(실제 값 불필요).
-    os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://u:p@localhost/none")
-    os.environ.setdefault("OPENAI_API_KEY", "dummy")
-    os.environ.setdefault("ANTHROPIC_API_KEY", "dummy")
+    if str(BACKEND_ROOT) not in sys.path:
+        sys.path.insert(0, str(BACKEND_ROOT))
+    # 라우트 메타만 읽으므로 실제 값은 불필요.
+    # ① config 필수 필드는 introspect 로 자동 더미화(필드 추가돼도 무손질).
+    _fill_required_settings()
+    # ② config 밖에서 import 시점에 강제되는 값은 introspect 로 못 잡으니 명시한다.
+    #    GEMINI_API_KEY — simulation/router.py 최상단이 mock 없이 실 Gemini 키를 강제.
     os.environ.setdefault("GEMINI_API_KEY", "dummy")
-    os.environ.setdefault("AWS_ACCESS_KEY_ID", "dummy")
-    os.environ.setdefault("AWS_SECRET_ACCESS_KEY", "dummy")
     os.environ.setdefault("USE_MOCK", "true")
     if str(BACKEND_ROOT) not in sys.path:
         sys.path.insert(0, str(BACKEND_ROOT))
