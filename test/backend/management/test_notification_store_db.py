@@ -33,13 +33,23 @@ def test_partial_unique_blocks_duplicate_open_row():
     async def run():
         now = datetime.now(UTC)
         nid = await store.insert(
-            organization_id=org, project_id=proj, campaign_id="c1",
-            kind=KIND, dedup_key=key, payload={"x": 1}, now=now,
+            organization_id=org,
+            project_id=proj,
+            campaign_id="c1",
+            kind=KIND,
+            dedup_key=key,
+            payload={"x": 1},
+            now=now,
         )
         with pytest.raises(DedupRaceError):
             await store.insert(
-                organization_id=org, project_id=proj, campaign_id="c1",
-                kind=KIND, dedup_key=key, payload={"x": 2}, now=now,
+                organization_id=org,
+                project_id=proj,
+                campaign_id="c1",
+                kind=KIND,
+                dedup_key=key,
+                payload={"x": 2},
+                now=now,
             )
         # 후속 UPDATE — read_at 초기화·카운트 증가
         await store.mark_read(org, [nid], now)
@@ -50,8 +60,13 @@ def test_partial_unique_blocks_duplicate_open_row():
         orgs = await store.auto_resolve(org, KIND, [key], now)
         assert orgs == [org]
         await store.insert(
-            organization_id=org, project_id=proj, campaign_id="c1",
-            kind=KIND, dedup_key=key, payload={"x": 4}, now=now,
+            organization_id=org,
+            project_id=proj,
+            campaign_id="c1",
+            kind=KIND,
+            dedup_key=key,
+            payload={"x": 4},
+            now=now,
         )
 
     asyncio.run(run())
