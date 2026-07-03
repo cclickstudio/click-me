@@ -4,6 +4,8 @@ management_notify_sse_enabled=false로 끄면 프론트가 폴링 폴백으로 �
 
 이벤트는 내용 없는 "changed" 신호뿐 — 수신 측은 목록 refetch만 한다. 큐가 가득하면
 새 신호를 드랍해도 무손실: 미소비 신호가 이미 있고, 구독자는 깨어나면 refetch 1회로 병합.
+
+이 모듈 함수들은 순수 동기여야 한다(await 금지) — 단일 이벤트루프 불변조건.
 """
 
 from __future__ import annotations
@@ -32,6 +34,6 @@ def unsubscribe(org_id: str, q: asyncio.Queue) -> None:
 
 
 def publish(org_id: str) -> None:
-    for q in _subscribers.get(org_id, ()):
+    for q in list(_subscribers.get(org_id, ())):
         with suppress(asyncio.QueueFull):
             q.put_nowait("changed")  # 드랍 — 문서 최상단 근거 참조
