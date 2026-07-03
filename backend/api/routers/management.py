@@ -569,7 +569,11 @@ async def notifications_stream(
         finally:
             broker.unsubscribe(org_id, q)
 
-    return StreamingResponse(gen(), media_type="text/event-stream")
+    return StreamingResponse(
+        gen(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 def _notification_store() -> Any:
