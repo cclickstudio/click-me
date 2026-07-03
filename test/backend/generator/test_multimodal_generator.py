@@ -1,9 +1,19 @@
 # Gemini 멀티모달 생성기 단위 테스트 — 이미지+카피 파싱 / 상품 입력 분기 (실 API 호출 없음)
+import io
+
 import pytest
+from PIL import Image
 
 import domain.generator.pipeline.multimodal_generator as mg
 from domain.generator.contracts.enums import AdSize, AdStrategy, TemplateType
 from domain.generator.contracts.pipeline_schemas import ProductAnalysis
+
+
+def _png() -> bytes:
+    # _detect_mime이 Image.open으로 포맷을 판별하므로 진짜 PNG 바이트가 필요하다
+    buf = io.BytesIO()
+    Image.new("RGBA", (4, 4), (255, 0, 0, 255)).save(buf, format="PNG")
+    return buf.getvalue()
 
 
 def _product() -> ProductAnalysis:
@@ -131,7 +141,7 @@ async def test_without_product_sends_prompt_only(patch_genai):
 async def test_with_product_appends_image_input(patch_genai):
     fake = patch_genai([_Part(image=b"img"), _Part(text="{}")])
     await mg.generate_image_and_copy(
-        _product(), AdStrategy.BENEFIT, TemplateType.A, product_image_bytes=b"PRODUCT"
+        _product(), AdStrategy.BENEFIT, TemplateType.A, product_image_bytes=_png()
     )
     contents = fake.client.models.calls[-1]["contents"]
     assert len(contents) == 2  # 프롬프트 + 상품 이미지 part
@@ -140,7 +150,7 @@ async def test_with_product_appends_image_input(patch_genai):
 async def test_with_existing_ad_appends_image_and_improve_prompt(patch_genai):
     fake = patch_genai([_Part(image=b"img"), _Part(text="{}")])
     await mg.generate_image_and_copy(
-        _product(), AdStrategy.BENEFIT, TemplateType.A, existing_ad_bytes=b"EXISTING_AD"
+        _product(), AdStrategy.BENEFIT, TemplateType.A, existing_ad_bytes=_png()
     )
     contents = fake.client.models.calls[-1]["contents"]
     assert len(contents) == 2  # 프롬프트 + 기존 광고 이미지 part
