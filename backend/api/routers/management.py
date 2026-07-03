@@ -653,6 +653,41 @@ async def resolve_notification(
     return {"resolved": True, "resolution": body.resolution}
 
 
+@router.post("/notifications/{notification_id}/consult")
+async def consult_from_notification(
+    notification_id: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """[상담하기] — 재검증 후 전용 세션에 상담 심기, session_id 반환(스펙 §4 전이표)."""
+    from domain.management.remediation import advisor  # noqa: PLC0415
+    from domain.management.remediation.consult_service import (  # noqa: PLC0415
+        DbChatStore,
+        consult_notification,
+    )
+
+    org_id = str(await _require_org_id(user, db))
+    nid = _parse_uuid_or_none(notification_id)
+    if nid is None:
+        raise HTTPException(404, "알림을 찾을 수 없습니다.")  # 존재 여부 비노출(404 통일)
+    out = await consult_notification(
+        settings,
+        nid,
+        org_id,
+        store=_notification_store(),
+        chat_store=DbChatStore(),
+        consult=advisor.consult,
+        publish=_publish_org,
+    )
+    if out is None:
+        raise HTTPException(404, "알림을 찾을 수 없습니다.")
+    if out["status"] == "unavailable":
+        raise HTTPException(503, "지금은 상담을 준비할 수 없어요. 잠시 후 다시 시도해 주세요.")
+    if out["status"] in ("consult", "normal"):
+        _publish_org(org_id)  # 상태 변화(세션 연결·auto_normal) 배지 동기화
+    return out
+
+
 class ApprovalRequest(BaseModel):
     proposal: ActionProposal
     approved: bool
