@@ -496,6 +496,8 @@ async def anomaly_notify_scan(
         from domain.management.remediation.advisor import consult as _consult  # noqa: PLC0415
         from domain.management.scheduler import run_scan  # noqa: PLC0415
 
+        # 채널 추가 시 build_notification_sink(notifications.py)와 함께 갱신 —
+        # 매핑 이중화는 org reader consult 주입 때문(의도적, log→chat 시연 유지).
         channel = getattr(settings, "management_notify_channel", "log")
         if channel == "panel":
             from domain.management.remediation.panel_sink import (  # noqa: PLC0415

@@ -30,7 +30,11 @@ class LogNotificationSink:
 
 
 def build_notification_sink(settings) -> NotificationSink:
-    """채널 설정으로 sink 선택 — mock↔실연동 전환과 같은 Composition Root 원칙."""
+    """채널 설정으로 sink 선택 — mock↔실연동 전환과 같은 Composition Root 원칙.
+
+    주의: 수동 스캔(/anomaly/notify-scan)은 org reader 주입 때문에 자체 채널 분기를
+    갖는다 — 채널 추가 시 그쪽도 함께 갱신(management.py notify-scan).
+    """
     channel = getattr(settings, "management_notify_channel", "log")
     if channel == "chat":
         from domain.management.remediation.chat_sink import ChatNotificationSink  # noqa: PLC0415
