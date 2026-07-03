@@ -672,27 +672,6 @@ class IdempotencyKeyRow(Base):
     created_at: Mapped[datetime] = mapped_column(_TS, server_default=func.now())
 
 
-class RegenerationJobRow(Base):
-    """🅱 채팅이 트리거한 재생성 비동기 job 상태(설계 2026-06-22). v1 in-process 전제."""
-
-    __tablename__ = "management_regeneration_jobs"
-
-    id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    tenant_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
-    campaign_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
-    status: Mapped[str] = mapped_column(String(32), index=True, nullable=False)
-    selection_token: Mapped[str | None] = mapped_column(String(64), unique=True)
-    candidates: Mapped[list | None] = mapped_column(JSONB)  # list[dict] — AWAITING_SELECTION 후보
-    selected_candidate_id: Mapped[str | None] = mapped_column(String(64))
-    proposal: Mapped[dict | None] = mapped_column(JSONB)
-    outcome_reason: Mapped[str | None] = mapped_column(String(48))
-    error: Mapped[str | None] = mapped_column(String(512))
-    created_at: Mapped[datetime] = mapped_column(_TS, index=True, server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(_TS, server_default=func.now())
-    started_at: Mapped[datetime | None] = mapped_column(_TS)
-    finished_at: Mapped[datetime | None] = mapped_column(_TS)
-
-
 # ──────────────────────────────────────────────
 # Persona Debate (시뮬레이터 4-1 페르소나 토론, simulations 1:N) — db-schema v3.1
 # ──────────────────────────────────────────────
