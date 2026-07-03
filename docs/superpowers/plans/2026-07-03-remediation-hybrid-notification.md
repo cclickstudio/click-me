@@ -68,3 +68,5 @@
 - 패널 프로젝트 필터의 서버 필터 전환 — 1차는 클라이언트 필터(의도된 선택: dedup 설계상 미해결 알림은 캠페인×이상유형당 1건이라 50건 초과가 비정상). API `project_id` 파라미터는 이미 있음.
 - SSE 멀티워커 대응(외부 브로커) — 단일 EC2 확정 결정이라 보류.
 - `budget_exhausted`·`quality_degraded` 스캔 신호 추가(현재 스캔은 no_delivery만 — 옵션 풀은 이미 존재).
+- `insert`의 IntegrityError→DedupRaceError 변환이 FK/NOT NULL 위반까지 "레이스"로 위장 — 제약명 구분 등 관측성 개선(Task 5 품질 리뷰 기록).
+- 두 sink(chat/panel)의 `_log_event`·`summary` 중복 — 세 번째 sink가 생기면 공통 베이스 추출(Task 4 품질 리뷰 기록).
