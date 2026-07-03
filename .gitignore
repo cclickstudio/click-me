@@ -49,6 +49,9 @@ private/
 .claude/
 .mcp.json
 
+# weekend-loop — 주말 루프 검증 스크립트·백로그(개인 도구), 팀 공유 안 함
+/weekend-loop/
+
 # ── Understand Anything 코드 시각화 산출물(공유 안 함) ──
 .understand-anything/
 
