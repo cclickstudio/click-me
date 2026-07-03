@@ -40,24 +40,23 @@ const manageChildren = [
   { label: '연동', href: '/manage/connect' },
 ];
 
-const adminNav = [
-  {
-    label: '조직 관리', href: '/admin/companies',
-    icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M9 12l2 2 4-4" /><rect x="2" y="7" width="20" height="14" rx="2" /><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2" /></svg>,
-  },
-  {
-    label: '채팅 내역', href: '/admin/chats',
-    icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>,
-  },
-  {
-    label: '시뮬레이션 내역', href: '/simulations',
-    icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>,
-  },
-  {
-    label: '제너레이터 내역', href: '/admin/generations',
-    icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg>,
-  },
+// ADMIN 전용 — "관리"(조직·회원) / "내역"(시뮬·제너·채팅) 두 아코디언 섹션.
+const adminManageChildren = [
+  { label: '조직 관리', href: '/admin/companies' },
+  { label: '회원 관리', href: '/admin/manage-user' },
 ];
+const adminHistoryChildren = [
+  { label: '시뮬레이션 내역', href: '/simulations' },
+  { label: '제너레이터 내역', href: '/admin/generations' },
+  { label: '채팅 내역', href: '/admin/chats' },
+];
+
+const adminManageIcon = (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M9 12l2 2 4-4" /><rect x="2" y="7" width="20" height="14" rx="2" /><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2" /></svg>
+);
+const adminHistoryIcon = (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 8v4l3 3" /><circle cx="12" cy="12" r="9" /></svg>
+);
 
 // COMPANY는 채팅·시뮬레이션 실행·제너레이터 실행 메뉴 숨김
 const COMPANY_HIDDEN_NAV = ['/chat', '/simulation', '/generator'];
@@ -105,12 +104,66 @@ function SectionLabel({ label }: { label: string }) {
   return <p className="px-3 pt-3 pb-1 text-[10px] font-semibold text-[#B0B8C1] dark:text-[#4B5563] uppercase tracking-wider">{label}</p>;
 }
 
+// 하위 메뉴를 토글하는 아코디언 섹션(부모는 자체 페이지 없음) — 광고 매니지먼트와 동일 패턴.
+function NavAccordion({
+  label,
+  icon,
+  items,
+  open,
+  onToggle,
+  pathname,
+}: {
+  label: string;
+  icon: React.ReactNode;
+  items: { label: string; href: string }[];
+  open: boolean;
+  onToggle: () => void;
+  pathname: string;
+}) {
+  const sectionActive = items.some((c) => c.href === pathname);
+  return (
+    <div>
+      <button type="button" onClick={onToggle}
+        aria-label={`${label} 하위 메뉴 토글`} aria-expanded={open}
+        className={`flex items-center w-full rounded-xl text-sm font-medium transition-colors ${
+          sectionActive ? 'text-[#3182F6]'
+                        : 'text-[#4E5968] dark:text-[#9CA3AF] hover:bg-[#F2F4F6] dark:hover:bg-[#252D3D] hover:text-[#191F28] dark:hover:text-[#F2F4F6]'
+        }`}
+      >
+        <span className="flex items-center gap-3 flex-1 pl-3 py-2.5">
+          <span className={sectionActive ? 'text-[#3182F6]' : ''}>{icon}</span>
+          <span>{label}</span>
+        </span>
+        <span className="px-3 py-2.5 text-[#8B95A1]">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+            className={`transition-transform ${open ? 'rotate-180' : ''}`}>
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
+        </span>
+      </button>
+      {open && (
+        <div className="mt-0.5 space-y-0.5">
+          {items.map((c) => (
+            <SubNavItem key={c.href} href={c.href} label={c.label} active={pathname === c.href} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Sidebar({ mobileOpen = false }: { mobileOpen?: boolean }) {
   const pathname = usePathname();
   const { theme, toggle } = useTheme();
   const { user, logout } = useAuth();
   const router = useRouter();
   const [manageOpen, setManageOpen] = useState(pathname.startsWith('/manage'));
+  const [adminManageOpen, setAdminManageOpen] = useState(
+    adminManageChildren.some((c) => c.href === pathname),
+  );
+  const [adminHistoryOpen, setAdminHistoryOpen] = useState(
+    adminHistoryChildren.some((c) => c.href === pathname),
+  );
 
   const handleLogout = () => { logout(); router.push('/'); };
 
@@ -176,17 +229,22 @@ export default function Sidebar({ mobileOpen = false }: { mobileOpen?: boolean }
             return <NavItem key={item.href} {...item} active={active} />;
           })}
 
-        {/* ADMIN 전용 섹션 */}
+        {/* ADMIN 전용 섹션 — 관리(조직·회원) / 내역(시뮬·제너·채팅) 두 아코디언 */}
         {isAdmin && (
           <>
             <SectionLabel label="관리자" />
-            {adminNav.map((item) => (
-              <NavItem
-                key={item.href}
-                {...item}
-                active={pathname === item.href}
-              />
-            ))}
+            <NavAccordion
+              label="관리" icon={adminManageIcon}
+              items={adminManageChildren}
+              open={adminManageOpen} onToggle={() => setAdminManageOpen((o) => !o)}
+              pathname={pathname}
+            />
+            <NavAccordion
+              label="내역" icon={adminHistoryIcon}
+              items={adminHistoryChildren}
+              open={adminHistoryOpen} onToggle={() => setAdminHistoryOpen((o) => !o)}
+              pathname={pathname}
+            />
           </>
         )}
 
