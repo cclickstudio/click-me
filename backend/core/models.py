@@ -20,6 +20,7 @@ from sqlalchemy import (
     UniqueConstraint,
     desc,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import ENUM, JSONB, TSVECTOR, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -471,6 +472,48 @@ class AdTemplate(Base):
     template_type: Mapped[str] = mapped_column(String(10))  # "sim" | "gen"
     content: Mapped[dict] = mapped_column(JSONB)  # 설정값(폼 초기값)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class AutomationRun(Base):
+    """자동화(APScheduler 워커) 실행 결과 1건 — 3도메인 공용 운영/관측 저장소.
+
+    사람 승인이 필요 없는 자동화(감지·진단·집계·동기화)의 결과를 프로젝트 단위로 남겨
+    프론트가 조회한다(탭 안 열려도 서버가 해둔 걸 화면이 읽음). 롱텀 메모리
+    (chat_execution_history=성공 수행만)와 목적이 다른 별개 저장소 — 여기엔 미발견·에러
+    포함 모든 틱 결과가 남는다. domain으로 management/generation/simulation을 공용 관리.
+    dedup_key로 미해결(resolved_at IS NULL) 알림을 1행으로 강제(중복 통지 방지).
+    """
+
+    __tablename__ = "automation_runs"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    domain: Mapped[str] = mapped_column(String(20))  # management | generation | simulation
+    job_name: Mapped[str] = mapped_column(String(64))  # anomaly_scan · budget_pace · weekly_report …
+    project_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), nullable=True
+    )
+    org_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    status: Mapped[str] = mapped_column(String(16), default="finding")  # ok|finding|error|skipped
+    severity: Mapped[str | None] = mapped_column(String(16), nullable=True)  # info|warning|critical
+    title: Mapped[str] = mapped_column(String(200), default="")
+    body: Mapped[str] = mapped_column(Text, default="")
+    suggested_action: Mapped[str | None] = mapped_column(String(64), nullable=True)  # 승인 플로 딥링크
+    payload: Mapped[dict] = mapped_column(JSONB, default=dict)  # rule·meta·confidence 등
+    dedup_key: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    actor: Mapped[str] = mapped_column(String(16), default="auto")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        Index("ix_automation_runs_domain_project", "domain", "project_id", desc("created_at")),
+        # 미해결(resolved_at IS NULL) 알림은 dedup_key당 1행 — 매 틱 중복 통지 방지(부분 유니크).
+        Index(
+            "uq_automation_runs_dedup_open",
+            "dedup_key",
+            unique=True,
+            postgresql_where=text("resolved_at IS NULL AND dedup_key IS NOT NULL"),
+        ),
+    )
 
 
 class Inquiry(Base):

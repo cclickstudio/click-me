@@ -216,23 +216,40 @@ async def _agent_scanner(settings) -> list[dict]:
 
 
 async def record_finding(finding: dict) -> None:
-    """자동 점검 발견 1건을 롱텀 메모리(실행 히스토리)에 actor=auto로 기록(best-effort).
+    """자동 점검 발견 1건을 기록(best-effort) — 두 저장소.
 
-    캠페인→프로젝트 역추적이 안 되면 생략 — 알림은 별도로 이미 나갔다.
+    ① automation_runs(운영/프론트 조회): 프로젝트 귀속 안 돼도 남긴다(dedup으로 재통지 방지).
+    ② chat_execution_history(롱텀 메모리): 캠페인→프로젝트 역추적이 될 때만(성공 수행만).
     """
+    from core.automation import record_automation_run  # noqa: PLC0415
     from core.execution_log import record_execution  # noqa: PLC0415
     from domain.management.history_link import resolve_project_id  # noqa: PLC0415
 
     meta = finding.get("meta") or {}
     cid = meta.get("campaign_id")
+    rule = meta.get("rule", "auto_scan_alert")
     project_id = await resolve_project_id([cid] if cid else [])
+
+    # ① 운영 저장소 — 프론트 반영용(프로젝트 없어도 남김).
+    await record_automation_run(
+        domain="management",
+        job_name=rule,
+        title=finding.get("title", ""),
+        body=finding.get("body", ""),
+        project_id=project_id,
+        payload={"actor": "auto", **meta},
+        suggested_action=meta.get("suggested_action"),
+        dedup_key=f"{cid}:{rule}" if cid else None,
+    )
+
+    # ② 롱텀 메모리 — 프로젝트 귀속(성공 수행)만.
     if project_id is None:
         return
     summary = f"자동 점검 {finding.get('title', '')} {finding.get('body', '')}".strip()[:500]
     await record_execution(
         project_id,
         "management",
-        meta.get("rule", "auto_scan_alert"),
+        rule,
         summary,
         payload={"actor": "auto", **meta},
     )
