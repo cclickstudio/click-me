@@ -31,7 +31,7 @@ REMOTE_PORT = 9000
 # 첫 실행 시 자동 생성할 Portainer 관리자 계정 (터널 전용이라 평문 보관 — 실운영 전 교체 권장).
 # 비밀번호는 Portainer 정책상 12자 이상이어야 한다.
 ADMIN_USER = "admin"
-ADMIN_PASSWORD = "adminportainer1234"
+ADMIN_PASSWORD = "clickstudio1234"
 
 # EC2에서 Portainer가 없으면 127.0.0.1:9000에 바인딩해 띄운다(멱등).
 # ubuntu는 docker 그룹 소속(user-data) + SSH는 새 로그인 세션이라 sudo 없이 docker 사용 가능.
