@@ -146,11 +146,12 @@ def latest_ubuntu_ami() -> str:
 
 
 # ─────────────────────────── 생성 ───────────────────────────
-def create_key_pair() -> None:
+def create_key_pair() -> bool:
+    """키페어를 확보한다. 이번에 새로 생성했으면 True, 이미 있어 건너뛰면 False."""
     ok, _ = aws_ok("ec2", "describe-key-pairs", "--key-names", KEY_NAME)
     if ok:
         print(f"[=] 키페어 {KEY_NAME} 이미 존재 — 건너뜀 (PEM이 없으면 infra/fetch_key.py로 SSM에서 복구)")
-        return
+        return False
     pem = aws(
         "ec2",
         "create-key-pair",
@@ -165,6 +166,7 @@ def create_key_pair() -> None:
     _lock_pem_permissions()
     print(f"[+] 키페어 생성 → {PEM_PATH}")
     _store_pem_to_ssm(pem)
+    return True
 
 
 def _store_pem_to_ssm(pem: str) -> None:
@@ -490,7 +492,7 @@ def write_infra_env(host: str, instance_id: str) -> None:
     print(f"[+] infra/.env 기록 → {INFRA_ENV}")
 
 
-def report(instance_id: str, host: str) -> None:
+def report(instance_id: str, host: str, key_created: bool) -> None:
     print("\n" + "=" * 60)
     print(f"\nSSH 접속: ssh -i {PEM_PATH} ubuntu@{host}")
     print("\n확인:")
@@ -503,6 +505,13 @@ def report(instance_id: str, host: str) -> None:
     print("\nCI/CD 및 배포:")
     print(" - 해당 작업은 인스턴스 생성만 돕습니다. 배포는 GitHub Actions를 통해 CI/CD가 이루어진 후 진행됩니다.")
     print(" - main 또는 ci-cd 브랜치에 코드를 push하면 CI/CD·배포가 자동으로 이루어집니다.")
+    print("\n" + "=" * 60)
+    print("\nPEM Key:")
+    if key_created:
+        print(f" - 개인키(PEM)가 생성됐습니다. → {PEM_PATH}")
+    else:
+        print(" - 개인키(PEM)가 이미 있습니다. 'python infra/fetch_key.py'를 실행하면")
+        print("   → clickme-key.pem & infra/.env 가 자동 재구성됩니다.")
     print("\n" + "=" * 60)
     print("\nPortainer:")
     print(" - 'python infra/start_portainer.py' → 자동 기동 + 터널 + localhost:9000 열림")
@@ -613,7 +622,7 @@ def main() -> None:
     print(f"[*] ClickMe EC2 프로비저닝 (region={REGION}, type={INSTANCE_TYPE})")
     ami = latest_ubuntu_ami()
     print(f"[*] Ubuntu 24.04 AMI = {ami}")
-    create_key_pair()
+    key_created = create_key_pair()
     sg_id = create_security_group()
     with_profile = create_iam_role()
     iid = run_instance(ami, sg_id, with_profile)
@@ -621,7 +630,7 @@ def main() -> None:
     aws("ec2", "wait", "instance-running", "--instance-ids", iid, capture=False)
     host = ensure_and_associate_eip(iid)
     write_infra_env(host, iid)
-    report(iid, host)
+    report(iid, host, key_created)
     upload_env_file(host)
 
 
