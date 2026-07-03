@@ -29,8 +29,14 @@ class PlainSink:  # reconcile 없는 기존 sink (LogNotificationSink 상당)
 @pytest.mark.asyncio
 async def test_tuple_scanner_delivers_and_reconciles():
     async def scanner(_s):
-        findings = [{"tenant_id": "org-1", "title": "t", "body": "b",
-                     "meta": {"campaign_id": "c1", "anomaly_type": "no_delivery"}}]
+        findings = [
+            {
+                "tenant_id": "org-1",
+                "title": "t",
+                "body": "b",
+                "meta": {"campaign_id": "c1", "anomaly_type": "no_delivery"},
+            }
+        ]
         normals = [{"tenant_id": "org-1", "campaign_id": "c2", "anomaly_type": "no_delivery"}]
         return findings, normals
 
@@ -38,8 +44,9 @@ async def test_tuple_scanner_delivers_and_reconciles():
     n = await run_scan(object(), sink, scanner=scanner)
     assert n == 1
     assert sink.notified[0]["anomaly_type"] == "no_delivery"
-    assert sink.reconciled == [[{"tenant_id": "org-1", "campaign_id": "c2",
-                                 "anomaly_type": "no_delivery"}]]
+    assert sink.reconciled == [
+        [{"tenant_id": "org-1", "campaign_id": "c2", "anomaly_type": "no_delivery"}]
+    ]
 
 
 @pytest.mark.asyncio
