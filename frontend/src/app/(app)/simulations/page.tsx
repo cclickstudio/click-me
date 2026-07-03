@@ -11,6 +11,7 @@ import { AdminOrgPicker } from '@/components/manage/AdminOrgPicker';
 import { useInfiniteList, useDebouncedValue } from '@/components/admin/useInfiniteList';
 import {
   HistoryControls,
+  OrgStatusDot,
   historyQueryString,
   DEFAULT_HISTORY_QUERY,
   type HistoryQuery,
@@ -26,6 +27,7 @@ type Row = {
   sample_size: number;
   created_by_name: string | null;
   org_name: string | null;
+  org_status: string | null;
   created_at: string;
 };
 
@@ -79,7 +81,12 @@ export default function SimulationsPage() {
       </div>
 
       <div className="mb-4">
-        <HistoryControls value={query} onChange={setQuery} titleLabel="광고명" />
+        <HistoryControls
+          value={query}
+          onChange={setQuery}
+          hasOrgFilter={isAdmin}
+          titleLabel="광고명"
+        />
       </div>
 
       <div className="bg-white dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748] rounded-2xl overflow-hidden">
@@ -93,7 +100,12 @@ export default function SimulationsPage() {
               <tr className="border-b border-[#F2F4F6] dark:border-[#252D3D] bg-[#F9FAFB] dark:bg-[#252D3D]">
                 <th className="text-left px-6 py-3 text-xs font-semibold text-[#8B95A1]">광고명</th>
                 {isAdmin && (
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-[#8B95A1]">조직</th>
+                  <>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-[#8B95A1]">조직</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-[#8B95A1]">
+                      조직 상태
+                    </th>
+                  </>
                 )}
                 <th className="text-left px-4 py-3 text-xs font-semibold text-[#8B95A1]">상태</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-[#8B95A1]">샘플 수</th>
@@ -117,9 +129,14 @@ export default function SimulationsPage() {
                       {r.ad_title ?? '—'}
                     </td>
                     {isAdmin && (
-                      <td className="px-4 py-3 text-[#4E5968] dark:text-[#9CA3AF]">
-                        {r.org_name ?? '—'}
-                      </td>
+                      <>
+                        <td className="px-4 py-3 text-[#4E5968] dark:text-[#9CA3AF]">
+                          {r.org_name ?? '—'}
+                        </td>
+                        <td className="px-4 py-3">
+                          <OrgStatusDot status={r.org_status} />
+                        </td>
+                      </>
                     )}
                     <td className="px-4 py-3">
                       <span
