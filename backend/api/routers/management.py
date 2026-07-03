@@ -555,6 +555,23 @@ def _publish_org(org_id: str) -> None:
     broker.publish(org_id)
 
 
+def _parse_before(before: str | None) -> datetime | None:
+    if not before:
+        return None
+    try:
+        return datetime.fromisoformat(before)
+    except ValueError as exc:
+        raise HTTPException(422, "before는 ISO8601 형식이어야 합니다.") from exc
+
+
+def _parse_uuid_or_none(value: str) -> str | None:
+    """비-UUID 입력은 None — 호출자가 404/무시로 fail-closed 처리."""
+    try:
+        return str(UUID(value))
+    except ValueError:
+        return None
+
+
 class NotificationReadRequest(BaseModel):
     ids: list[str] = Field(min_length=1, max_length=200)
 
@@ -579,7 +596,11 @@ async def list_notifications(
     커서는 (before, before_id) 복합 — 마지막 행의 last_notified_at·id를 그대로 넘긴다.
     """
     org_id = str(await _require_org_id(user, db))
-    before_dt = datetime.fromisoformat(before) if before else None
+    before_dt = _parse_before(before)
+    if before_id is not None:
+        before_id = _parse_uuid_or_none(before_id)
+        if before_id is None:
+            raise HTTPException(422, "before_id는 UUID여야 합니다.")
     items, unread = await _notification_store().list_for_org(
         org_id,
         project_id=project_id,
@@ -598,9 +619,16 @@ async def read_notifications(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """bulk 열람 마킹 — 패널이 화면에 보인 카드를 일괄 read 처리(단건도 같은 경로)."""
+    """bulk 열람 마킹 — 패널이 화면에 보인 카드를 일괄 read 처리(단건도 같은 경로).
+
+    타 org·비-UUID id는 무효 처리(bulk fail-closed — 단건 404와 의도적으로 다름,
+    store WHERE org 필터 참조).
+    """
     org_id = str(await _require_org_id(user, db))
-    updated = await _notification_store().mark_read(org_id, body.ids, datetime.now(UTC))
+    valid_ids = [v for i in body.ids if (v := _parse_uuid_or_none(i))]
+    if not valid_ids:
+        return {"updated": 0}
+    updated = await _notification_store().mark_read(org_id, valid_ids, datetime.now(UTC))
     if updated:
         _publish_org(org_id)  # 다른 탭 배지 동기화
     return {"updated": updated}
@@ -615,9 +643,10 @@ async def resolve_notification(
 ):
     """무시/조치됨 마킹 — ignored는 같은 (캠페인,이상) 재통지 완전 억제(스펙 §0)."""
     org_id = str(await _require_org_id(user, db))
-    ok = await _notification_store().resolve(
-        org_id, notification_id, body.resolution, datetime.now(UTC)
-    )
+    nid = _parse_uuid_or_none(notification_id)
+    if nid is None:
+        raise HTTPException(404, "알림을 찾을 수 없습니다.")  # 존재 여부 비노출(404 통일)
+    ok = await _notification_store().resolve(org_id, nid, body.resolution, datetime.now(UTC))
     if not ok:
         raise HTTPException(404, "알림을 찾을 수 없습니다.")  # 타 org 포함 fail-closed
     _publish_org(org_id)

@@ -1,15 +1,20 @@
-# 알림 API 테스트 — 목록/unread_count·bulk read·resolve·org 스코프·publish
+# 알림 API 테스트 — 목록/unread_count·bulk read·resolve·org 스코프·publish·입력 파싱 방어
 from __future__ import annotations
+
+from uuid import uuid4
 
 import pytest
 from httpx import ASGITransport, AsyncClient
+
+# 실물 store 계약과 일치하는 UUID 형식 id — 라우터 UUID 파싱을 통과해야 fake까지 도달한다
+NID = str(uuid4())
 
 
 class FakeStore:
     def __init__(self):
         self.items = [
             {
-                "id": "n1",
+                "id": NID,
                 "project_id": "p1",
                 "project_name": "프로젝트A",
                 "campaign_id": "c1",
@@ -69,16 +74,16 @@ async def test_list_returns_items_and_org_wide_unread(ctx):
     assert r.status_code == 200
     body = r.json()
     assert body["unread_count"] == 1
-    assert body["notifications"][0]["id"] == "n1"
+    assert body["notifications"][0]["id"] == NID
 
 
 @pytest.mark.asyncio
 async def test_bulk_read_marks_and_publishes(ctx):
     app, store, published = ctx
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
-        r = await c.post("/api/management/notifications/read", json={"ids": ["n1"]})
+        r = await c.post("/api/management/notifications/read", json={"ids": [NID]})
     assert r.status_code == 200 and r.json()["updated"] == 1
-    assert store.read_calls == [("org-1", ["n1"])]
+    assert store.read_calls == [("org-1", [NID])]
     assert published == ["org-1"]
 
 
@@ -86,9 +91,11 @@ async def test_bulk_read_marks_and_publishes(ctx):
 async def test_resolve_marks_and_publishes(ctx):
     app, store, published = ctx
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
-        r = await c.post("/api/management/notifications/n1/resolve", json={"resolution": "ignored"})
+        r = await c.post(
+            f"/api/management/notifications/{NID}/resolve", json={"resolution": "ignored"}
+        )
     assert r.status_code == 200
-    assert store.resolve_calls == [("org-1", "n1", "ignored")]
+    assert store.resolve_calls == [("org-1", NID, "ignored")]
     assert published == ["org-1"]
 
 
@@ -110,6 +117,42 @@ async def test_resolve_unknown_returns_404(ctx):
     store.resolve = not_found
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
         r = await c.post(
-            "/api/management/notifications/nx/resolve", json={"resolution": "actioned"}
+            f"/api/management/notifications/{uuid4()}/resolve", json={"resolution": "actioned"}
         )
     assert r.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_invalid_before_returns_422(ctx):
+    app, _, _ = ctx
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
+        r = await c.get("/api/management/notifications?before=not-a-date")
+    assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_invalid_before_id_returns_422(ctx):
+    app, _, _ = ctx
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
+        r = await c.get(
+            "/api/management/notifications?before=2026-07-03T00:00:00%2B00:00&before_id=nx"
+        )
+    assert r.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_non_uuid_resolve_returns_404(ctx):
+    app, _, _ = ctx
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
+        r = await c.post("/api/management/notifications/nx/resolve", json={"resolution": "ignored"})
+    assert r.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_bulk_read_ignores_non_uuid_ids(ctx):
+    app, store, published = ctx
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://t") as c:
+        r = await c.post("/api/management/notifications/read", json={"ids": ["not-a-uuid"]})
+    assert r.status_code == 200 and r.json()["updated"] == 0
+    assert store.read_calls == []  # 전부 무효 → store 호출 자체가 없음
+    assert published == []  # 변화 없음 → publish 없음
