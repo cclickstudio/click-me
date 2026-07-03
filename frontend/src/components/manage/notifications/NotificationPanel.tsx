@@ -28,6 +28,7 @@ export default function NotificationPanel({
   const [projectFilter, setProjectFilter] = useState<string>('');
   const [busyId, setBusyId] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [scanning, setScanning] = useState(false);
 
   const visible = useMemo(
     () => (projectFilter ? items.filter(n => n.project_id === projectFilter) : items),
@@ -39,6 +40,26 @@ export default function NotificationPanel({
     const unreadIds = visible.filter(n => !n.read_at).map(n => n.id);
     if (unreadIds.length) onReadVisible(unreadIds);
   }, [visible, onReadVisible]);
+
+  // 지금 점검 — 수동 스캔 트리거. 백엔드 보호장치(잠금 409·쿨다운 429)의 detail을 그대로 안내.
+  const onScan = async () => {
+    setScanning(true);
+    setNotice(null);
+    try {
+      const r = await api.management.notifications.notifyScan();
+      if (r.delivered > 0) {
+        setNotice(`점검 완료 — 새 알림 ${r.delivered}건`);
+      } else {
+        const reasons = r.skipped.map(s => s.reason).join(', ');
+        setNotice(`점검 완료 — 새 알림 없음${reasons ? ` (${reasons})` : ''}`);
+      }
+      onRefetch();
+    } catch (e) {
+      setNotice(e instanceof Error ? e.message : '점검에 실패했어요. 잠시 후 다시 시도해 주세요.');
+    } finally {
+      setScanning(false);
+    }
+  };
 
   const onConsult = async (n: ManagementNotification) => {
     setBusyId(n.id);
@@ -78,16 +99,26 @@ export default function NotificationPanel({
     <div className="absolute right-0 top-11 z-50 w-96 max-w-[92vw] rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-white dark:bg-[#1C2333] shadow-lg">
       <div className="flex items-center justify-between px-4 py-3 border-b border-[#E5E8EB] dark:border-[#2D3748]">
         <span className="text-sm font-semibold text-[#191F28] dark:text-white">운영 알림</span>
-        <select
-          value={projectFilter}
-          onChange={e => setProjectFilter(e.target.value)}
-          className="text-xs rounded-md border border-[#E5E8EB] dark:border-[#2D3748] bg-transparent px-2 py-1 text-[#4E5968] dark:text-[#9CA3AF]"
-        >
-          <option value="">전체 프로젝트</option>
-          {projects.map(p => (
-            <option key={p.id} value={p.id}>{p.name}</option>
-          ))}
-        </select>
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            disabled={scanning}
+            onClick={onScan}
+            className="text-xs rounded-md border border-[#E5E8EB] dark:border-[#2D3748] px-2 py-1 text-[#4E5968] dark:text-[#9CA3AF] hover:border-[#3182F6] disabled:opacity-50"
+          >
+            {scanning ? '점검 중…' : '지금 점검'}
+          </button>
+          <select
+            value={projectFilter}
+            onChange={e => setProjectFilter(e.target.value)}
+            className="text-xs rounded-md border border-[#E5E8EB] dark:border-[#2D3748] bg-transparent px-2 py-1 text-[#4E5968] dark:text-[#9CA3AF]"
+          >
+            <option value="">전체 프로젝트</option>
+            {projects.map(p => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+        </div>
       </div>
       {notice && (
         <div className="px-4 py-2 text-xs text-[#3182F6] bg-[#3182F6]/5">{notice}</div>

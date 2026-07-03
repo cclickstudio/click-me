@@ -978,6 +978,14 @@ export const api = {
           | { status: "normal"; message: string }
           | { status: "already_resolved"; resolution: string }
         >(`/management/notifications/${id}/consult`, { method: "POST" }),
+      // 수동 이상 점검 — 스캔 즉시 실행. 잠금 409·쿨다운 429는 ApiError.message(detail)로 노출.
+      notifyScan: () =>
+        request<{
+          scanned_findings: number;
+          delivered: number;
+          skipped: { campaign_id: string; reason: string }[];
+          failed: { campaign_id: string; reason: string }[];
+        }>(`/management/anomaly/notify-scan`, { method: "POST" }),
     },
   },
 
