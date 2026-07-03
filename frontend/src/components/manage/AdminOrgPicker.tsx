@@ -3,6 +3,7 @@
 
 import { useEffect, useState } from "react";
 import { api, getAdminOrgId, setAdminOrgId } from "@/lib/api";
+import { Select } from "@/components/ui/Select";
 
 type Org = { id: string; name: string };
 
@@ -30,24 +31,21 @@ export function AdminOrgPicker() {
   return (
     <label className="flex items-center gap-2 text-sm text-[#4E5968] dark:text-[#9CA3AF]">
       <span className="font-medium">조직</span>
-      <select
+      <Select
+        aria-label="조직 선택"
+        className="min-w-[180px]"
         value={sel}
-        onChange={(e) => {
-          const v = e.target.value;
+        onChange={(v) => {
           setSel(v);
           setAdminOrgId(v || null);
           // 선택 변경 시 전체 매니지먼트 데이터를 새 스코프로 다시 불러온다.
           window.location.reload();
         }}
-        className="rounded-lg border border-[#E5E8EB] dark:border-[#2D3748] bg-transparent px-2 py-1 text-sm text-[#191F28] dark:text-[#F2F4F6] focus:border-[#3182F6] outline-none"
-      >
-        <option value="">전체 (all orgs)</option>
-        {orgs.map((o) => (
-          <option key={o.id} value={o.id}>
-            {o.name}
-          </option>
-        ))}
-      </select>
+        options={[
+          { value: "", label: "전체 (all orgs)" },
+          ...orgs.map((o) => ({ value: o.id, label: o.name })),
+        ]}
+      />
     </label>
   );
 }
