@@ -231,15 +231,19 @@ def build_executor(settings, *, budget=None, audit=None):
     챗은 wiring 계층에서 단일 인스턴스로만 호출할 것 — 반복 호출 시 budget을 주입하라.
     """
     from domain.management.contracts.enums import ExecutionMode  # noqa: PLC0415
-    from domain.management.contracts.policy import APPROVAL_POLICY_VERSION  # noqa: PLC0415
+    from domain.management.contracts.policy import (
+        APPROVAL_POLICY_VERSION,  # noqa: PLC0415
+        DEFAULT_MONTHLY_TARGET_KRW,  # noqa: PLC0415
+    )
     from domain.management.execution.executor import (  # noqa: PLC0415
         DEFAULT_ALLOWED_MODES,
         Executor,
     )
     from domain.management.execution.tier import TenantBudgetRegistry  # noqa: PLC0415
+    from domain.management.history_link import build_history_recorder  # noqa: PLC0415
 
-    # 기본 월 목표 300만원 — 중소기업 벤치마크(일 10만 페이스). 근거는 management.py _BUDGET 주석.
-    budget = budget or TenantBudgetRegistry(default_limit_krw=3_000_000)
+    # 기본 월 목표 — policy 단일 소스(중소기업 벤치마크, 일 10만 페이스).
+    budget = budget or TenantBudgetRegistry(default_limit_krw=DEFAULT_MONTHLY_TARGET_KRW)
     audit = audit or build_audit_sink(settings)
 
     allowed = DEFAULT_ALLOWED_MODES
@@ -254,4 +258,5 @@ def build_executor(settings, *, budget=None, audit=None):
         state_version_provider=state_version_v1,
         current_policy_version=APPROVAL_POLICY_VERSION,
         allowed_modes=allowed,
+        history_recorder=build_history_recorder(),  # 실행 확정 → 롱텀 메모리 기록
     )

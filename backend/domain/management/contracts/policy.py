@@ -30,6 +30,11 @@ TIER_POLICY: dict[str, ActionTier] = {
 
 AUTO_APPROVE_MAX_TIER = ActionTier.TIER_1
 
+# ── 워커 A계열 룰 임계 — 지갑 소진·월 목표 가드레일 (홈 브리핑과 동일 기준) ──
+WALLET_ALERT_PCT = 95  # 충전 한도 사용률 — 충전 필요
+WALLET_WARN_PCT = 80  # 충전 한도 사용률 — 주의
+DEFAULT_MONTHLY_TARGET_KRW = 3_000_000  # 월 목표 기본 — 중소기업 벤치마크(일 10만 페이스)
+
 # ── P3. TTL (데모 모드) — 승인 TTL은 제안 TTL보다 짧다 (불변) ──
 PROPOSAL_TTL_MINUTES = 10
 APPROVAL_TTL_MINUTES = 5

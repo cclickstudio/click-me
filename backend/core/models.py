@@ -337,21 +337,6 @@ class ClioKbChunk(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
-class ManagementUserMemory(Base):
-    """세션 넘는 장기기억 — (tenant, user) 스코프 노트. 마이그 025."""
-
-    __tablename__ = "management_user_memory"
-
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    tenant_id: Mapped[str | None] = mapped_column(String(64), nullable=True)  # NULL/global
-    user_id: Mapped[str | None] = mapped_column(String(64), nullable=True)  # NULL/anon
-    mem_key: Mapped[str] = mapped_column(String(128))  # 멱등/식별 키
-    content: Mapped[dict] = mapped_column(JSONB, default=dict)  # 기억 내용(노트 등)
-    # 시맨틱 회수용 임베딩(M6, 마이그 029). nullable — 없으면 recency 폴백.
-    embedding: Mapped[list[float] | None] = mapped_column(Vector(1536), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-
-
 class ChatSession(Base):
     """채팅 세션 — 프로젝트에 귀속된 대화 하나. 메시지는 ChatMessage로 정규화 저장."""
 

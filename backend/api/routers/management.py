@@ -18,9 +18,8 @@ from typing import Any, Literal
 from urllib.parse import parse_qs, urlencode, urlparse, urlsplit, urlunsplit
 from uuid import UUID, uuid4
 
-import httpx
 from fastapi import APIRouter, Depends, File, Header, HTTPException, Request, UploadFile
-from fastapi.responses import RedirectResponse, StreamingResponse
+from fastapi.responses import RedirectResponse
 from langsmith import traceable
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 from sqlalchemy import func, select, text, update
@@ -42,6 +41,7 @@ from core.models import (
     User,
 )
 from domain.billing.service.billing_service import BillingError
+from domain.management import insights
 from domain.management.adapters.generator.client import (
     GeneratorUnavailableError,
     InvalidGenerationError,
@@ -49,10 +49,7 @@ from domain.management.adapters.generator.client import (
 from domain.management.adapters.meta.client import MetaApiError
 from domain.management.adapters.meta.connection_flow import complete_meta_connection
 from domain.management.adapters.meta.connection_repository import MetaConnectionRepository
-from domain.management.adapters.meta.creative_image import (
-    ImageSpecError,
-    to_meta_jpeg,
-)
+from domain.management.adapters.meta.creative_image import ImageSpecError, to_meta_jpeg
 from domain.management.adapters.meta.credentials import MetaCredentials
 from domain.management.adapters.meta.oauth import build_login_url
 from domain.management.adapters.meta.token_crypto import TokenCipher
@@ -87,6 +84,7 @@ from domain.management.contracts.policy import (
     CPM_ANCHOR_KRW,
     CPM_NORMAL_RANGE_KRW,
     DAILY_BUDGET_KRW,
+    DEFAULT_MONTHLY_TARGET_KRW,
     FATIGUE_FREQUENCY,
     PROPOSAL_TTL_MINUTES,
 )
@@ -111,7 +109,6 @@ from domain.management.detection.exposure_model import (
 from domain.management.detection.performance_dx import diagnose_performance
 from domain.management.escalation import EscalationController, EscalationRun
 from domain.management.escalation_demo import DemoScenarioDetector
-from domain.management.execution.assistant_tools import execution_history
 from domain.management.execution.audit_log import AuditEvent
 from domain.management.execution.executor import DEFAULT_ALLOWED_MODES, Executor
 from domain.management.execution.regeneration_jobs import (
@@ -127,6 +124,8 @@ from domain.management.execution.tier import (
     BudgetAuthority,
     TenantBudgetRegistry,
 )
+from domain.management.history_link import build_history_recorder
+from domain.management.leads import fetch_campaign_leads
 from domain.management.naming import suggest_campaign_names
 from domain.management.target_check import is_target_missed
 from domain.management.wiring import (
@@ -182,7 +181,7 @@ _DEMO_FAULTS = {"bid_loss", "review_rejected", "none"}
 # 예산(중소기업 월 마케팅 500만 중 광고비·성장기업 광고비 100만+), 아이보스(매출의 5~15%).
 # policy.DAILY_BUDGET_KRW(100_000)와 정합 — 일 10만 × 30일 = 300만.
 _AUDIT_LOG = build_audit_sink(settings)
-_BUDGET = TenantBudgetRegistry(default_limit_krw=3_000_000)
+_BUDGET = TenantBudgetRegistry(default_limit_krw=DEFAULT_MONTHLY_TARGET_KRW)
 _executor: Executor | None = None
 
 logger = logging.getLogger("clickme")
@@ -264,6 +263,7 @@ def _get_executor(writer=None) -> Executor:
             state_version_provider=_state_version,
             current_policy_version=APPROVAL_POLICY_VERSION,
             allowed_modes=allowed,
+            history_recorder=build_history_recorder(),  # 실행 확정 → 롱텀 메모리 기록
         )
     if _executor is None:
         _executor = Executor(
@@ -274,6 +274,7 @@ def _get_executor(writer=None) -> Executor:
             state_version_provider=_state_version,
             current_policy_version=APPROVAL_POLICY_VERSION,
             allowed_modes=allowed,
+            history_recorder=build_history_recorder(),  # 실행 확정 → 롱텀 메모리 기록
         )
     return _executor
 
@@ -722,27 +723,7 @@ async def select_regen_job(
     return {"job_id": rec.id, "status": rec.status.value, "proposal": rec.proposal}
 
 
-@router.get("/execution/history")
-async def execution_history_endpoint(
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    """테넌트의 최근 실행 감사 이력(읽기) — org 스코프 강제."""
-    org_id = await _require_org_id(user, db)
-    return await execution_history(_AUDIT_LOG, tenant_id=str(org_id))
-
-
 # ── 오가닉 vs 광고 비교 (🅰 comparison 도메인 노출) ──────────────────────
-# 데모 보드 — (게시물 제목, 오가닉 post id, 광고 campaign id, 일예산). 예산 차이로
-# 광고 도달이 벌어져 통과/주의/미달이 고루 나오게 구성.
-_BOARD_DEMO: tuple[tuple[str, str, str, int], ...] = (
-    ("여름 신상 원피스 🌴", "ig_demo_1", "camp_demo_1", 200_000),
-    ("브랜드 데일리 룩", "ig_demo_2", "camp_demo_2", 120_000),
-    ("신상 액세서리 모음", "ig_demo_3", "camp_demo_3", 40_000),
-    ("쿠폰 안내 공지", "ig_demo_4", "camp_demo_4", 15_000),
-)
-
-
 def _today_utc() -> datetime:
     return datetime.now(UTC).replace(hour=0, minute=0, second=0, microsecond=0)
 
@@ -769,21 +750,11 @@ async def compare_one(post_id: str = "ig_demo_1", campaign_id: str = "camp_demo_
 
 @router.get("/compare/board")
 async def compare_board():
-    """여러 게시물의 오가닉→광고 증분 일괄 검증 + 권고 (B 뷰). 매칭 쌍 데모라 항상 mock."""
-    organic_reader = MockOrganicReader()  # 데모 게시물 — 실모드에도 mock(실 Meta엔 해당 ID 없음)
-    since = _today_utc()
-    rows = []
-    for title, post_id, campaign_id, budget in _BOARD_DEMO:
-        svc = ComparisonService(organic_reader, MockAdPlatform(daily_budget_krw=budget))
-        report = await svc.compare_and_recommend(post_id, campaign_id, since)
-        rows.append(
-            {
-                "title": title,
-                "lift": report.lift.model_dump(mode="json"),
-                "recommendation": report.recommendation.model_dump(mode="json"),
-            }
-        )
-    return {"rows": rows}
+    """여러 게시물의 오가닉→광고 증분 일괄 검증 + 권고 (B 뷰). 매칭 쌍 데모라 항상 mock.
+
+    로직은 domain.management.insights.organic_ad_board(챗 어시스턴트 tool과 공용 단일 출처).
+    """
+    return await insights.organic_ad_board()
 
 
 async def _campaign_links(
@@ -930,42 +901,6 @@ async def link_simulation(
         )
     await db.commit()
     return {"campaign_id": campaign_id, "simulation_id": str(sim_uuid), "linked": True}
-
-
-@router.get("/campaigns/{campaign_id}/creative-image")
-async def proxy_creative_image(
-    campaign_id: str,
-    reader=Depends(_request_reader),
-):
-    """Meta 크리에이티브 이미지 프록시 — 브라우저에서 직접 접근 불가한 fbcdn URL을 서버가 중계.
-
-    Meta CDN(fbcdn.net)은 CORS 제한과 세션 만료로 브라우저 직접 로드가 막힌다.
-    백엔드가 이미지를 받아 Content-Type 그대로 스트림으로 반환한다.
-    """
-    creatives = await reader.get_creatives(campaign_id)
-    image_url: str | None = None
-    for c in creatives:
-        url = c.image_url or c.thumbnail_url  # leads 광고는 image_url=None, thumbnail_url만 있음
-        if url:
-            image_url = url
-            break
-    if not image_url:
-        raise HTTPException(
-            status_code=404, detail="이미지 없음 — 크리에이티브에 이미지가 설정되지 않았습니다."
-        )
-    try:
-        async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
-            resp = await client.get(image_url)
-        if resp.status_code != 200:
-            raise HTTPException(status_code=502, detail="Meta 이미지 조회 실패")
-        content_type = resp.headers.get("content-type", "image/jpeg")
-        return StreamingResponse(
-            iter([resp.content]),
-            media_type=content_type,
-            headers={"Cache-Control": "public, max-age=3600"},
-        )
-    except httpx.RequestError as exc:
-        raise HTTPException(status_code=502, detail="Meta 이미지 네트워크 오류") from exc
 
 
 @router.get("/calibration/anchors")
@@ -1906,8 +1841,24 @@ class CreateCampaignRequest(BaseModel):
 
 
 @router.get("/campaign-policy")
-async def campaign_policy(reader=Depends(_request_reader)):
-    """캠페인 생성 정책 — 최소 일예산(Meta 실시간)·특별광고카테고리·연령. 폼이 동적 검증에 사용."""
+async def campaign_policy(
+    user: User | None = Depends(_optional_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """캠페인 생성 정책 — 최소 일예산(Meta 실시간)·특별광고카테고리·연령. 폼이 동적 검증에 사용.
+
+    org 미해석(admin이 조직 미선택, 챗 임베드 폼 등)이어도 400 대신 기본 연결로 폴백한다 —
+    아니면 폼이 하드코딩 폴백(₩1,521)을 보여줘 달러 연동 최신 floor가 반영되지 않는다.
+    정책은 읽기 전용(최소예산·카테고리·연령)이라 테넌트 민감 데이터가 없다.
+    """
+    reader = None
+    if not getattr(settings, "use_mock", True) and user is not None:
+        try:
+            reader = await _require_reader(db, await _require_org_id(user, db))
+        except HTTPException:
+            reader = None  # org 미선택·미연결 — 기본 연결 폴백
+    if reader is None:
+        reader = build_reader(settings)
     return await get_campaign_policy(reader)
 
 
@@ -3240,48 +3191,9 @@ async def budget_commit(
 async def campaign_leads(campaign_id: str):
     """이 캠페인 광고로 제출된 잠재고객(리드) 명단 — Meta leadgen에서 조회.
 
-    리드 데이터는 Meta에 저장된다(우리 도메인 아님). 페이지 토큰 + leads_retrieval 권한이
-    필요하며, 권한·토큰 문제는 note로 안내한다(빈 목록 반환, 화면이 안 깨지게).
+    로직은 domain.management.leads.fetch_campaign_leads(챗 어시스턴트 tool과 공용 단일 출처).
     """
-    if getattr(settings, "use_mock", True):
-        return {"leads": [], "count": 0, "note": "데모(mock) 모드 — 리드는 live에서 조회됩니다."}
-    from domain.management.adapters.meta.client import (  # noqa: PLC0415 — live 전용 지연 로드
-        MetaClient,
-        build_meta_client,
-    )
-
-    client = build_meta_client(settings)
-    page_id = str(getattr(settings, "meta_page_id", "") or "")
-    try:
-        # 사용자 토큰 → 페이지 토큰 (leadgen 리드 조회는 페이지 토큰 필요)
-        accts = await client.get("me/accounts", {"fields": "id,access_token", "limit": 100})
-        page_token = next(
-            (p.get("access_token") for p in accts.get("data", []) if str(p.get("id")) == page_id),
-            None,
-        )
-        if not page_token:
-            return {"leads": [], "count": 0, "note": "페이지 토큰을 얻지 못함(페이지 권한 확인)."}
-        page_client = MetaClient(
-            page_token, api_version=getattr(settings, "meta_graph_api_version", None) or "v21.0"
-        )
-        # 캠페인 하위 광고 → 광고별 리드 수집
-        ads = await client.get(f"{campaign_id}/ads", {"fields": "id", "limit": 200})
-        leads: list[dict] = []
-        for ad in ads.get("data", []):
-            res = await page_client.get(
-                f"{ad['id']}/leads", {"fields": "created_time,field_data", "limit": 200}
-            )
-            for lead in res.get("data", []):
-                fields = {
-                    f.get("name"): (f.get("values") or [""])[0]
-                    for f in (lead.get("field_data") or [])
-                }
-                leads.append({"created_time": lead.get("created_time"), "fields": fields})
-        leads.sort(key=lambda x: x.get("created_time") or "", reverse=True)
-        return {"leads": leads, "count": len(leads)}
-    except MetaApiError as exc:
-        # 권한 부족(leads_retrieval 미승인)·토큰 문제 등 — 화면용 안내로 변환.
-        return {"leads": [], "count": 0, "note": f"리드 조회 불가: {exc.user_msg or exc.message}"}
+    return await fetch_campaign_leads(settings, campaign_id)
 
 
 # ── 예산 관리·페이싱 (테넌트 한도 대비 캠페인 합산 소진 + 90/95/100% 판정) ────
@@ -3429,165 +3341,20 @@ async def set_budget_limit(
 async def weekly_report(reader=Depends(_request_reader)):
     """주간 성과 리포트 — 최근 7일 실측 총합·캠페인별 표·하이라이트·다음 액션(결정론 요약).
 
-    전부 기존 reader 실측으로 조립하고 LLM을 쓰지 않아 문구가 항상 재현된다.
+    로직은 domain.management.insights.weekly_report(챗 어시스턴트 tool과 공용 단일 출처).
     화면(모니터링)에서 모달로 보여주고, 추후 PDF·챗 전달의 데이터 소스로 재사용한다.
     """
-    now = datetime.now(UTC)
-    try:
-        infos = await reader.list_campaigns()
-    except Exception as exc:  # noqa: BLE001
-        return {"report": None, "note": getattr(exc, "user_msg", None) or str(exc)}
-    rows: list[dict] = []
-    for c in infos:
-        try:
-            m = await reader.get_metrics(c.campaign_id, now, date_preset="last_7d")
-        except TypeError:  # mock 등 date_preset 미지원 — 전체 기간 폴백
-            try:
-                m = await reader.get_metrics(c.campaign_id, now)
-            except Exception:  # noqa: BLE001
-                continue
-        except Exception:  # noqa: BLE001 — 1건 실패가 리포트를 막지 않게
-            continue
-        rows.append(
-            {
-                "campaign_id": c.campaign_id,
-                "name": c.name,
-                "state": c.state.value,
-                "spend_krw": getattr(m, "spend_krw", 0) or 0,
-                "impressions": getattr(m, "impressions", 0) or 0,
-                "clicks": getattr(m, "clicks", 0) or 0,
-                "conversions": getattr(m, "conversions", None),
-                "ctr": getattr(m, "ctr", 0.0) or 0.0,
-                "cpc_krw": getattr(m, "cpc_krw", 0) or 0,
-                "frequency": getattr(m, "frequency", 0.0) or 0.0,
-            }
-        )
-    spent = sum(r["spend_krw"] for r in rows)
-    imps = sum(r["impressions"] for r in rows)
-    clicks = sum(r["clicks"] for r in rows)
-    convs = sum(r["conversions"] or 0 for r in rows)
-    active_rows = [r for r in rows if r["spend_krw"] > 0]
-    highlights: list[str] = []
-    if active_rows:
-        top = max(active_rows, key=lambda r: r["ctr"])
-        highlights.append(f"CTR 1위는 '{top['name']}' ({top['ctr'] * 100:.1f}%)")
-        pricey = max(active_rows, key=lambda r: r["cpc_krw"])
-        if len(active_rows) >= 2 and pricey["campaign_id"] != top["campaign_id"]:
-            highlights.append(
-                f"클릭 단가가 가장 비싼 캠페인은 '{pricey['name']}' (₩{pricey['cpc_krw']:,})"
-            )
-    fatigued = [r for r in rows if r["frequency"] >= FATIGUE_FREQUENCY]
-    next_actions: list[str] = []
-    for r in fatigued:
-        next_actions.append(
-            f"'{r['name']}' 빈도 {r['frequency']:.1f} — 소재 교체 검토(이상 감지 참조)"
-        )
-    if spent == 0:
-        next_actions.append("최근 7일 집행이 없어요 — 새 캠페인 집행 또는 게재 재개를 검토하세요.")
-    if len(active_rows) >= 2:
-        next_actions.append("캠페인 간 효율 차이는 예산 관리의 리밸런싱 제안에서 확인하세요.")
-    return {
-        "report": {
-            "period": {
-                "since": (now - timedelta(days=7)).date().isoformat(),
-                "until": now.date().isoformat(),
-            },
-            "totals": {
-                "spend_krw": spent,
-                "impressions": imps,
-                "clicks": clicks,
-                "conversions": convs,
-                "ctr": round(clicks / imps, 4) if imps else 0.0,
-                "cpc_krw": round(spent / clicks) if clicks else 0,
-            },
-            "campaigns": sorted(rows, key=lambda r: r["spend_krw"], reverse=True),
-            "highlights": highlights,
-            "next_actions": next_actions,
-        },
-        "note": None,
-    }
+    return await insights.weekly_report(reader)
 
 
 @router.get("/budget/rebalance-proposal")
 async def budget_rebalance_proposal(reader=Depends(_request_reader)):
     """캠페인 간 일예산 리밸런싱 제안 — 저효율(높은 CPC)→고효율(낮은 CPC)로 20% 이동 제안.
 
-    실행이 아니라 '제안'만 만든다. 적용은 기존 budget-commit(검증·승인·감사 경로)을
-    캠페인별로 그대로 태운다 — 자동 집행 없음(HITL 유지). 최근 7일 실측 기준이며,
-    진행 중(ACTIVE)·일예산형·클릭 실측이 있는 캠페인이 2개 이상이고 CPC 격차가
-    1.2배 이상일 때만 제안한다(작은 차이로 예산을 흔들지 않게).
+    로직은 domain.management.insights.rebalance_proposal(챗 어시스턴트 tool과 공용 단일 출처).
+    실행이 아니라 '제안'만 만든다 — 적용은 기존 budget-commit(검증·승인·감사 경로).
     """
-    now = datetime.now(UTC)
-    try:
-        infos = await reader.list_campaigns()
-    except Exception as exc:  # noqa: BLE001 — 제안은 부가 기능, 조회 실패는 안내로
-        return {"proposal": None, "note": getattr(exc, "user_msg", None) or str(exc)}
-    elig = [
-        c
-        for c in infos
-        if c.state == CampaignState.ACTIVE and c.budget_type == "daily" and c.daily_budget_krw > 0
-    ]
-    if len(elig) < 2:
-        return {"proposal": None, "note": "진행 중(일예산형) 캠페인이 2개 이상이면 제안해요."}
-    rows = []
-    for c in elig:
-        try:
-            m = await reader.get_metrics(c.campaign_id, now, date_preset="last_7d")
-        except TypeError:  # mock 등 date_preset 미지원 리더 — 전체 기간으로 폴백
-            try:
-                m = await reader.get_metrics(c.campaign_id, now)
-            except Exception:  # noqa: BLE001
-                continue
-        except Exception:  # noqa: BLE001 — 캠페인 1건 실패가 전체 제안을 막지 않게
-            continue
-        clicks = getattr(m, "clicks", 0) or 0
-        spend = getattr(m, "spend_krw", 0) or 0
-        if clicks <= 0 or spend <= 0:
-            continue
-        cpc = getattr(m, "cpc_krw", 0) or round(spend / clicks)
-        rows.append((c, cpc))
-    if len(rows) < 2:
-        return {"proposal": None, "note": "최근 실측 클릭이 있는 캠페인이 2개 이상이면 제안해요."}
-    rows.sort(key=lambda r: r[1])
-    (best, best_cpc), (worst, worst_cpc) = rows[0], rows[-1]
-    if worst_cpc <= best_cpc * 1.2:
-        return {"proposal": None, "note": "캠페인 간 CPC 격차가 1.2배를 넘으면 이동을 제안해요."}
-    floor = _MIN_DAILY_BUDGET_KRW
-    try:
-        policy = await get_campaign_policy(reader)
-        floor = int(policy.get("min_daily_budget_krw") or floor)
-    except Exception:  # noqa: BLE001 — 정책 조회 실패 시 보수 폴백
-        pass
-    move = int(worst.daily_budget_krw * 0.2) // 100 * 100  # 20%, 백원 단위 절사
-    move = min(move, worst.daily_budget_krw - floor)  # 저효율도 최소예산 아래로 안 내려가게
-    if move < 1_000:
-        return {"proposal": None, "note": "이동 가능한 금액이 너무 작아 제안하지 않아요."}
-    return {
-        "proposal": {
-            "from": {
-                "campaign_id": worst.campaign_id,
-                "name": worst.name,
-                "cpc_krw": worst_cpc,
-                "daily_budget_krw": worst.daily_budget_krw,
-                "after_krw": worst.daily_budget_krw - move,
-            },
-            "to": {
-                "campaign_id": best.campaign_id,
-                "name": best.name,
-                "cpc_krw": best_cpc,
-                "daily_budget_krw": best.daily_budget_krw,
-                "after_krw": best.daily_budget_krw + move,
-            },
-            "move_krw": move,
-            "basis": "last_7d",
-            "reason": (
-                f"최근 7일 CPC가 {worst_cpc:,}원으로 {best.name}({best_cpc:,}원)의 "
-                f"{worst_cpc / best_cpc:.1f}배예요. 일예산의 20%를 효율 좋은 쪽으로 옮기면 "
-                "같은 돈으로 더 많은 클릭을 살 수 있어요."
-            ),
-        },
-        "note": None,
-    }
+    return await insights.rebalance_proposal(reader)
 
 
 # ── 시간축 자동 에스컬레이션 (re_evaluate — 엔드포인트·tick·추후 SQS 동일 함수) ────

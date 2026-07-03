@@ -152,7 +152,7 @@ def build_management_agent(settings):
     # 풀모드 — Tool-calling ReAct 그래프(LLM 자율 도구 선택 + pgvector KB + HITL)
     from uuid import uuid4  # noqa: PLC0415
 
-    from langchain_core.messages import HumanMessage  # noqa: PLC0415
+    from langchain_core.messages import AIMessage, HumanMessage  # noqa: PLC0415
     from langchain_openai import ChatOpenAI  # noqa: PLC0415 — 키 있을 때만 로드
 
     from domain.management.assistant.contracts import SuggestedAction  # noqa: PLC0415
@@ -179,9 +179,25 @@ def build_management_agent(settings):
         }
         # 장기기억이 있으면 LLM 맥락에 주입(질문 앞에 붙임). 폴백 라우팅엔 영향 없음.
         human = f"{req.memory_context}\n\n{req.question}" if req.memory_context else req.question
+        msgs: list = [HumanMessage(content=human)]
+        # 정본 대화(history) 시드 — 스레드는 도구 결과·HITL을 든 '파생 캐시'(정본은 통합 채팅이
+        # 매 턴 재전송). 스레드가 비었을 때만 시드해 이중 누적 없이, 재시작·인메모리 체크포인터
+        # 유실 시 정본에서 맥락을 복구한다. 스레드에 상태가 있으면 기존 멀티턴 그대로(장점 유지).
+        if req.history:
+            try:
+                snap = await graph.aget_state(config)
+                thread_empty = not (snap and (snap.values or {}).get("messages"))
+            except Exception:  # noqa: BLE001 — 상태 조회 실패면 시드로 진행(보수적 복구)
+                thread_empty = True
+            if thread_empty:
+                seed = [
+                    (AIMessage if role == "assistant" else HumanMessage)(content=content)
+                    for role, content in req.history[-6:]
+                ]
+                msgs = [*seed, HumanMessage(content=human)]
         final = await graph.ainvoke(
             {
-                "messages": [HumanMessage(content=human)],
+                "messages": msgs,
                 "campaign_id": req.campaign_id,
             },
             config=config,

@@ -9,7 +9,7 @@ from types import SimpleNamespace
 import pytest
 
 from domain.management.notifications import LogNotificationSink, build_notification_sink
-from domain.management.scheduler import run_scan, start_scheduler
+from domain.management.scheduler import account_rule_findings, run_scan, start_scheduler
 
 
 class _FakeSink:
@@ -36,6 +36,29 @@ async def test_run_scan_notifies_each_finding():
 
 
 @pytest.mark.asyncio
+async def test_run_scan_records_findings_with_injected_recorder():
+    """recorder 주입 시 발견분마다 호출되고, recorder 예외는 스캔을 막지 않는다."""
+
+    async def scanner(_s):
+        return [
+            {"tenant_id": "t1", "title": "게재 점검", "meta": {"campaign_id": "c1"}},
+            {"tenant_id": "t1", "title": "소재 피로", "meta": {"campaign_id": "c2"}},
+        ]
+
+    recorded = []
+
+    async def recorder(finding):
+        if finding["meta"]["campaign_id"] == "c2":
+            raise RuntimeError("기록 실패")  # 실패해도 스캔 계속
+        recorded.append(finding["meta"]["campaign_id"])
+
+    sink = _FakeSink()
+    n = await run_scan(None, sink, scanner=scanner, recorder=recorder)
+    assert n == 2  # 통지는 둘 다 나감
+    assert recorded == ["c1"]
+
+
+@pytest.mark.asyncio
 async def test_run_scan_default_scanner_runs_and_is_consistent():
     """기본 스캐너(활성 캠페인 게재 점검)가 mock reader로 돌고, 통지 수 == 발견 수."""
     sink = _FakeSink()
@@ -46,6 +69,46 @@ async def test_run_scan_default_scanner_runs_and_is_consistent():
 
 def test_scheduler_off_by_default_does_not_start():
     assert start_scheduler(SimpleNamespace(management_scheduler_enabled=False)) is False
+
+
+def test_account_rules_wallet_thresholds():
+    """지갑 사용률 95% 이상 = 소진 경보, 80~94% = 주의, 미만 = 무통지 (홈 브리핑과 동일 기준)."""
+    alert = account_rule_findings(
+        spend_cap_krw=100_000, amount_spent_krw=96_000, projection_krw=0, target_krw=0
+    )
+    assert [f["meta"]["rule"] for f in alert] == ["wallet_depleted"]
+    warn = account_rule_findings(
+        spend_cap_krw=100_000, amount_spent_krw=85_000, projection_krw=0, target_krw=0
+    )
+    assert [f["meta"]["rule"] for f in warn] == ["wallet_warning"]
+    quiet = account_rule_findings(
+        spend_cap_krw=100_000, amount_spent_krw=50_000, projection_krw=0, target_krw=0
+    )
+    assert quiet == []
+
+
+def test_account_rules_budget_pace():
+    """런레이트가 월 목표를 넘으면 가드레일 경고 — 비율만 말하고 원값은 노출하지 않는다."""
+    over = account_rule_findings(
+        spend_cap_krw=0, amount_spent_krw=0, projection_krw=3_500_000, target_krw=3_000_000
+    )
+    assert [f["meta"]["rule"] for f in over] == ["budget_pace_over"]
+    assert over[0]["meta"]["pace_pct"] == 117
+    assert "3_500_000" not in over[0]["body"] and "3500000" not in over[0]["body"]
+    under = account_rule_findings(
+        spend_cap_krw=0, amount_spent_krw=0, projection_krw=2_000_000, target_krw=3_000_000
+    )
+    assert under == []
+
+
+def test_account_rules_zero_cap_and_target_are_silent():
+    """충전 한도·목표 미설정(0)이면 어떤 룰도 발동하지 않는다(0 나눗셈 방지 포함)."""
+    assert (
+        account_rule_findings(
+            spend_cap_krw=0, amount_spent_krw=90_000, projection_krw=0, target_krw=0
+        )
+        == []
+    )
 
 
 @pytest.mark.asyncio
