@@ -26,9 +26,7 @@ class _FakeGraph:
         ad = AdInterpretation(ad_id=req.ad_id)
         yield {"interpret_ad": {"ad": ad, "rubric_scores": []}}
         personas = [
-            Persona(
-                persona_id=f"P-{i}", age=30, gender="F", region="서울", ocean={"openness": 0.5}
-            )
+            Persona(persona_id=f"P-{i}", age=30, gender="F", region="서울", ocean={"openness": 0.5})
             for i in range(req.sample_size)
         ]
         yield {"load_panel": {"personas": personas, "panel_version": "panel-test"}}
