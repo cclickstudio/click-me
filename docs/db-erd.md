@@ -1,6 +1,8 @@
 # ClickMe DB ERD (실 DB 기준)
 
-> 개인 NeonDB(공용 DB 복제본, alembic `024`)를 직접 introspection해 자동 생성. 레포의 `docs/db-schema.md`보다 최신이며 실제 운영 스키마와 일치한다.
+> 개인 NeonDB(공용 DB 복제본)를 직접 introspection해 자동 생성. 레포의 `docs/db-schema.md`보다 최신이며 실제 운영 스키마와 일치한다.
+>
+> 레포 마이그레이션 현행 head는 `0004_generator_kb_search_vector`(`0001_baseline` squash 체인, 구 3자리 리비전 제거됨). 이 스냅샷은 운영 DB에서 뜬 것으로, 라이브러리 관리 테이블(LangGraph 체크포인터 등)까지 포함해 마이그레이션이 만드는 테이블보다 많다.
 
 - **총 테이블** 70개 · **FK 관계** 56개 · **Enum 타입** 10종
 
@@ -100,7 +102,7 @@ erDiagram
 
 
 ### `users` · 11행
-사용자 계정. role(ADMIN/COMPANY/USER), status(ACTIVE 등), must_change_password.
+사용자 계정. role(ADMIN/COMPANY/USER), status(`ACTIVE`|`PENDING`|`INACTIVE`), must_change_password. admin 소프트삭제 시 `INACTIVE`(+ Cognito disable)로 두고 데이터는 보존, auth 미들웨어가 `status != ACTIVE`면 401 차단.
 
 | 컬럼 | 타입 | NULL | 키 | 기본값 |
 |---|---|---|---|---|
@@ -143,7 +145,7 @@ JWT 리프레시 토큰.
 | updated_at | timestamptz | NOT NULL |  | now() |
 
 ### `organizations` · 5행
-조직 = 결제/플랜 단위. plan(free|professional|enterprise).
+조직 = 결제/플랜 단위. plan(free|professional|enterprise), status(`ACTIVE`|`INACTIVE`). admin 소프트삭제 시 조직·소속 유저를 함께 `INACTIVE`로 두고, 복원 시 `ACTIVE`, 영구삭제(purge) 시에만 실제 행 삭제.
 
 | 컬럼 | 타입 | NULL | 키 | 기본값 |
 |---|---|---|---|---|

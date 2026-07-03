@@ -9,6 +9,10 @@
 > v4.0 변경 — 실 DB를 pg_dump로 전량 재추출. 테이블 30 → **45개**, ENUM 타입 10종 명시.
 > 신규: `teams`·`project_members`·`refresh_tokens`·`user_settings`·`audit_logs`·`chat_messages`·`generated_ads`·`persona_templates`·`brand_profiles`·`calibration_data`·`ad_campaign_logs`·`kinds`·`categories`·`category_kinds`·`alembic_version`.
 > 변경: `users` `email`→`login_id`, `team_id`·`phone_num`·`user_email`·`must_change_password` 추가 / 여러 테이블에 `deleted_at` 소프트삭제 컬럼 추가.
+>
+> **admin 소프트삭제** — 조직/유저 삭제는 hard delete가 아니라 `status='INACTIVE'`(+ Cognito disable)로 처리해 데이터는 보존한다. 복원 시 `status='ACTIVE'`, 영구삭제(purge) 시에만 행을 실제로 지운다. auth 미들웨어가 `status != 'ACTIVE'`면 401 차단.
+>
+> **Alembic 체인(현행)** — `0001_baseline`(구 001~029 squash) → `0002_persona_weight` → `0003_categories_kinds` → `0004_generator_kb_search_vector`. 구 3자리 리비전(001/002…)은 제거됨. 새 DB는 `0001_baseline`이 전체 스키마를 한 번에 생성.
 
 ---
 
@@ -123,7 +127,7 @@ CREATE TABLE users (
     password_hash        VARCHAR(255) NOT NULL,
     name                 VARCHAR(100) NOT NULL,
     role                 VARCHAR(20)  NOT NULL,                    -- ADMIN | COMPANY | USER
-    status               VARCHAR(20)  NOT NULL DEFAULT 'ACTIVE',   -- ACTIVE | PENDING
+    status               VARCHAR(20)  NOT NULL DEFAULT 'ACTIVE',   -- ACTIVE | PENDING | INACTIVE(admin 소프트삭제)
     must_change_password BOOLEAN      NOT NULL DEFAULT false,      -- 발급 계정 최초 로그인 시 변경 유도
     team_id              UUID REFERENCES teams(id) ON DELETE SET NULL,  -- 소속 팀(USER, 미배정 NULL)
     phone_num            VARCHAR(30),
@@ -191,7 +195,7 @@ CREATE TABLE organizations (
     id         UUID PRIMARY KEY,
     name       VARCHAR(255) NOT NULL,
     slug       VARCHAR(100) NOT NULL UNIQUE,
-    status     VARCHAR(20)  NOT NULL DEFAULT 'ACTIVE',  -- ACTIVE | PENDING
+    status     VARCHAR(20)  NOT NULL DEFAULT 'ACTIVE',  -- ACTIVE | INACTIVE(admin 소프트삭제)
     plan       VARCHAR(50)  DEFAULT 'free',             -- free | professional | enterprise
     created_at TIMESTAMP NOT NULL DEFAULT now(),
     updated_at TIMESTAMP NOT NULL DEFAULT now()
