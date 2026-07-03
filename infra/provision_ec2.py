@@ -12,14 +12,13 @@ ClickMe 단일 EC2 배포 환경을 만든다.
   - Elastic IP(clickme-eip)    → 인스턴스에 연결하는 고정 공인 IP. 철거해도 반환하지 않아 재생성 시 같은 IP 유지
   - IAM Role/Instance Profile  → EC2가 ECR을 pull하도록 ReadOnly (EC2에 AWS 키 저장 불필요)
   - EC2 인스턴스(Ubuntu 24.04) → EBS 30GB gp3, user-data로 docker·compose·awscli·swap 자동 설치
-  - 부팅 후 backend/.env 를 scp로 EC2에 자동 업로드 (~/clickme/backend/.env)
 
 전제: aws CLI 설치 + 자격증명 설정 완료 (현재 us-west-2 / 계정 445459853661 확인됨).
 
 키페어 생성 시 PEM은 SSM Parameter Store(SecureString)에 백업된다 → 팀원은 infra/fetch_key.py 로 공유받는다.
 
 사용법:
-  python infra/provision_ec2.py                          # 생성(+EIP 연결 +.env 업로드 +PEM을 SSM 백업)
+  python infra/provision_ec2.py                          # 생성(+EIP 연결 +PEM을 SSM 백업)
   python infra/provision_ec2.py --destroy                # 철거(인스턴스·SG·키·IAM·ECR·SSM PEM). EIP는 보존 → 같은 IP 재사용
   python infra/provision_ec2.py --destroy --release-eip  # 위 + EIP까지 완전 반환(다음 생성 시 IP 바뀜)
 
@@ -44,16 +43,8 @@ from pathlib import Path
 
 # ─────────────────────────── 설정 (필요 시 수정) ───────────────────────────
 REGION = "us-west-2"
-INSTANCE_TYPE = "t3.micro"  # 프리티어(1GB, swap로 보완). 여유: "t3.small"(2GB) / "t3.medium"(4GB)
-# ── 타입 승격(데이터 보존): PDF/AI 동시 피크에서 느리거나 OOM이면 t3.small로 올린다 ──
-#   stop → 타입 변경 → start (EBS는 그대로 유지됨)
-#     IID=<instance-id>
-#     aws ec2 stop-instances           --region us-west-2 --instance-ids $IID
-#     aws ec2 wait instance-stopped    --region us-west-2 --instance-ids $IID
-#     aws ec2 modify-instance-attribute --region us-west-2 --instance-id $IID --instance-type t3.small
-#     aws ec2 start-instances          --region us-west-2 --instance-ids $IID
-#   (start 후 공인 IP가 바뀌므로 EC2_HOST / NEXT_PUBLIC_API_URL secret 갱신 필요.
-#    고정하려면 Elastic IP 할당·연결. 단 EIP는 미사용 시 과금 주의.)
+# 최초 생성 타입. 변경은 infra/resize_instance.py 로(EBS·EIP 유지 → EC2_HOST 불변).
+INSTANCE_TYPE = "t3.micro"  # 프리티어(1GB, swap로 보완). 여유: t3.small(2GB) / t3.medium(4GB)
 DISK_GB = 30  # gp3, 프리티어 30GB 범위
 PROJECT = "clickme"
 
@@ -67,8 +58,6 @@ ECR_BACKEND = f"{PROJECT}-backend"  # cd.yml의 ECR_BACKEND와 동일 (destroy �
 ECR_FRONTEND = f"{PROJECT}-frontend"
 SSM_KEY_PARAM = f"/{PROJECT}/ec2/private-key"  # 팀 공유용 PEM(SecureString). fetch_key.py가 내려받음
 PEM_PATH = Path(__file__).resolve().parent / f"{KEY_NAME}.pem"
-# scp로 EC2에 올릴 로컬 backend/.env (리포 루트 = infra의 상위)
-ENV_SRC = Path(__file__).resolve().parent.parent / "backend" / ".env"
 # provision 결과(EC2_HOST 등)를 담아 로컬 도구(start_portainer.py)가 참조할 infra/.env
 INFRA_ENV = Path(__file__).resolve().parent / ".env"
 
@@ -317,8 +306,7 @@ def create_iam_role() -> bool:
     return True
 
 
-def run_instance(ami: str, sg_id: str, with_profile: bool) -> tuple[str, bool]:
-    """인스턴스를 확보한다. (instance_id, reused) — 기존 재사용이면 reused=True."""
+def run_instance(ami: str, sg_id: str, with_profile: bool) -> str:
     # 기존 동일 Name 태그 + 종료되지 않은 인스턴스 있으면 재사용
     ok, out = aws_ok(
         "ec2",
@@ -333,7 +321,7 @@ def run_instance(ami: str, sg_id: str, with_profile: bool) -> tuple[str, bool]:
     )
     if ok and out and out != "None":
         print(f"[=] 인스턴스 {INSTANCE_NAME} 이미 존재 ({out})")
-        return out, True
+        return out
 
     ud_file = Path(__file__).resolve().parent / "_userdata.sh"
     # LF 고정(bash 스크립트) + fileb://로 전달 → Windows CRLF/디코딩 이슈 회피
@@ -371,7 +359,7 @@ def run_instance(ami: str, sg_id: str, with_profile: bool) -> tuple[str, bool]:
         if ok:
             ud_file.unlink(missing_ok=True)
             print(f"[+] 인스턴스 시작 {out} ({INSTANCE_TYPE}, {DISK_GB}GB)")
-            return out, False
+            return out
         if "Invalid IAM Instance Profile" in out and attempt < 5:
             print(f"    IAM Profile 전파 대기... ({attempt + 1}/5)")
             time.sleep(10)
@@ -432,68 +420,6 @@ def ensure_and_associate_eip(instance_id: str) -> str:
     return ip
 
 
-def upload_env_file(host: str, attempts: int = 30) -> None:
-    """부팅 후 SSH가 열리면 로컬 backend/.env 를 EC2로 scp 업로드한다.
-
-    EIP는 철거/재생성 간 재사용되므로 매번 호스트키가 바뀐다 → known_hosts를 무시(os.devnull)해
-    'REMOTE HOST IDENTIFICATION HAS CHANGED' 하드 실패와 대화형 프롬프트를 모두 회피한다.
-
-    attempts: SSH 재시도 횟수. 신규 부팅은 sshd 기동까지 시간이 걸려 크게(30),
-    이미 running인 재실행은 짧게(예: 6) 준다 — 실패해도 오래 안 매달리도록.
-    """
-    if not ENV_SRC.exists():
-        print(f"[!] backend/.env 없음 — scp 건너뜀 ({ENV_SRC}). 준비되면 수동 업로드하세요.")
-        return
-    # PEM이 로컬에 없으면 SSH 자체가 불가하다(재실행 PC엔 PEM이 없을 수 있다 — create_key_pair는
-    # 키가 이미 있으면 PEM을 재생성하지 않음). 조용히 매달리지 말고 fetch_key.py로 자동 수신 시도.
-    if not PEM_PATH.exists():
-        print(f"[*] PEM 없음({PEM_PATH}) — fetch_key.py로 SSM에서 자동으로 받아옵니다...")
-        fetch_script = Path(__file__).resolve().parent / "fetch_key.py"
-        subprocess.run([sys.executable, str(fetch_script)])
-        if not PEM_PATH.exists():
-            print("[!] PEM 자동 수신 실패(SSM 미백업/권한 부족 가능) — 아래를 수동 실행 후 다시 시도하세요:")
-            print(f"    scp -i {PEM_PATH} {ENV_SRC} ubuntu@{host}:/home/ubuntu/clickme/backend/.env")
-            return
-        print("[+] PEM 수신 완료 — SSH 업로드를 계속합니다.")
-    remote = f"ubuntu@{host}"
-    ssh_opts = [
-        "-i",
-        str(PEM_PATH),
-        "-o",
-        "StrictHostKeyChecking=no",
-        "-o",
-        f"UserKnownHostsFile={os.devnull}",
-        "-o",
-        "ConnectTimeout=10",
-    ]
-    print(f"[*] SSH 준비 대기 후 backend/.env 업로드... (최대 {attempts}회 재시도)")
-    last_err = "no output"
-    for attempt in range(attempts):
-        res = subprocess.run(
-            ["ssh", *ssh_opts, remote, "mkdir -p ~/clickme/backend"],
-            capture_output=True,
-            text=True,
-        )
-        if res.returncode == 0:
-            break
-        err_text = (res.stderr or res.stdout or "").strip()
-        last_err = err_text.splitlines()[-1] if err_text else "no output"
-        print(f"[*] SSH 대기 {attempt + 1}/{attempts}... ({last_err})")
-        if attempt < attempts - 1:
-            time.sleep(10)
-    else:
-        print(f"[!] SSH 접속 실패({attempts}회) — 마지막 오류: {last_err}")
-        print("    부팅/보안그룹/PEM 권한(fetch_key.py로 재잠금)을 확인 후 아래를 수동 실행하세요:")
-        print(f"    scp -i {PEM_PATH} {ENV_SRC} {remote}:/home/ubuntu/clickme/backend/.env")
-        return
-    dst = f"{remote}:/home/ubuntu/clickme/backend/.env"
-    res = subprocess.run(["scp", *ssh_opts, str(ENV_SRC), dst], capture_output=True, text=True)
-    if res.returncode == 0:
-        print(f"[+] backend/.env 업로드 완료 → {dst}")
-    else:
-        print(f"[!] scp 실패:\n{res.stderr.strip()}")
-
-
 def write_infra_env(host: str, instance_id: str) -> None:
     """로컬 도구(start_portainer.py 등)가 참조할 infra/.env 를 쓴다. gitignore 대상.
 
@@ -506,8 +432,7 @@ def write_infra_env(host: str, instance_id: str) -> None:
         "EC2_USER=ubuntu\n"
         f"EC2_INSTANCE_ID={instance_id}\n"
         f"EC2_REGION={REGION}\n"
-        f"EC2_SSH_KEY_PATH={PEM_PATH}\n"
-        "# ※ GitHub Secrets의 EC2_SSH_KEY 값은 위 PEM 파일의 *전체 내용*을 붙여넣으세요.\n",
+        f"EC2_SSH_KEY_PATH={PEM_PATH}\n",
         encoding="utf-8",
     )
     print(f"[+] infra/.env 기록 → {INFRA_ENV}")
@@ -519,7 +444,7 @@ def report(instance_id: str, host: str, key_created: bool) -> None:
     print("\n확인:")
     print(" - user-data 설치(docker/awscli)는 부팅 후 1~3분 더 걸립니다.")
     print("   확인: ssh 접속 후 'cat ~/clickme/.bootstrap-ok' / 'docker --version'")
-    print(" - backend/.env 는 이 스크립트가 자동 업로드합니다(아래 로그 확인).")
+    print(f" - backend/.env 는 각자 수동 업로드: scp -i {PEM_PATH} backend/.env ubuntu@{host}:~/clickme/backend/.env")
     print(" - ECR 리포(clickme-backend/frontend)는 cd.yml이 자동 생성합니다.")
     print(f" - 안 쓸 땐: aws ec2 stop-instances --region {REGION} --instance-ids {instance_id}")
     print("\n" + "=" * 60)
@@ -647,14 +572,12 @@ def main() -> None:
     key_created = create_key_pair()
     sg_id = create_security_group()
     with_profile = create_iam_role()
-    iid, reused = run_instance(ami, sg_id, with_profile)
+    iid = run_instance(ami, sg_id, with_profile)
     print("[*] running 대기...")
     aws("ec2", "wait", "instance-running", "--instance-ids", iid, capture=False)
     host = ensure_and_associate_eip(iid)
     write_infra_env(host, iid)
     report(iid, host, key_created)
-    # 이미 running이면 sshd도 떠 있어 금방 붙는다 → 실패 시 오래 안 매달리게 재시도 축소.
-    upload_env_file(host, attempts=6 if reused else 30)
 
 
 if __name__ == "__main__":
