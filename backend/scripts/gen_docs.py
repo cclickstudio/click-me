@@ -47,6 +47,7 @@ def collect_api_endpoints() -> list[tuple[str, str, str, tuple[str, ...]]]:
     os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://u:p@localhost/none")
     os.environ.setdefault("OPENAI_API_KEY", "dummy")
     os.environ.setdefault("ANTHROPIC_API_KEY", "dummy")
+    os.environ.setdefault("GEMINI_API_KEY", "dummy")
     os.environ.setdefault("AWS_ACCESS_KEY_ID", "dummy")
     os.environ.setdefault("AWS_SECRET_ACCESS_KEY", "dummy")
     os.environ.setdefault("USE_MOCK", "true")
