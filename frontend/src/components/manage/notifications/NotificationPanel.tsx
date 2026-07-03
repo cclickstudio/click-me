@@ -1,7 +1,7 @@
 // 알림 패널 — 카드 목록·프로젝트 필터·[상담하기][무시] (이상 감지 C안)
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { api, type ManagementNotification } from '@/lib/api';
 import { useProjects } from '../../ProjectContext';
 import { useChatController } from '../../chat/ChatController';
@@ -16,10 +16,12 @@ export default function NotificationPanel({
   items,
   onRefetch,
   onClose,
+  onReadVisible,
 }: {
   items: ManagementNotification[];
   onRefetch: () => void;
   onClose: () => void;
+  onReadVisible: (ids: string[]) => void;
 }) {
   const { projects, selectedProject, selectProject } = useProjects();
   const { setActiveSessionId, setFloatingOpen } = useChatController();
@@ -31,6 +33,12 @@ export default function NotificationPanel({
     () => (projectFilter ? items.filter(n => n.project_id === projectFilter) : items),
     [items, projectFilter],
   );
+
+  // 패널 열람 = 필터로 보이는 카드만 bulk read(스펙 §2) — 읽음 반영 후엔 미읽음이 없어 재호출 안 됨.
+  useEffect(() => {
+    const unreadIds = visible.filter(n => !n.read_at).map(n => n.id);
+    if (unreadIds.length) onReadVisible(unreadIds);
+  }, [visible, onReadVisible]);
 
   const onConsult = async (n: ManagementNotification) => {
     setBusyId(n.id);
@@ -59,6 +67,8 @@ export default function NotificationPanel({
     try {
       await api.management.notifications.resolve(n.id, 'ignored');
       onRefetch();
+    } catch {
+      setNotice('무시 처리에 실패했어요. 잠시 후 다시 시도해 주세요.');
     } finally {
       setBusyId(null);
     }

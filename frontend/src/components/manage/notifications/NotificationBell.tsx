@@ -33,16 +33,19 @@ export default function NotificationBell() {
   }, [refetch, pathname]);
   useNotificationStream(!!user, refetch);
 
-  // 패널 열람 = 보이는 카드 bulk read(스펙 §2)
+  // 패널 토글 — 읽음 처리는 패널이 "보이는 카드"를 알려줄 때(onReadVisible)만 수행
   const openPanel = () => {
-    setOpen(v => !v);
-    if (!open) {
-      const unreadIds = items.filter(n => !n.read_at).map(n => n.id);
-      if (unreadIds.length) {
-        api.management.notifications.read(unreadIds).then(refetch).catch(() => {});
-      }
-    }
+    const next = !open;
+    setOpen(next);
   };
+
+  // 패널에 실제로 보이는(필터 적용된) 미읽음 카드만 bulk read(스펙 §2)
+  const readVisible = useCallback(
+    (ids: string[]) => {
+      api.management.notifications.read(ids).then(refetch).catch(() => {});
+    },
+    [refetch],
+  );
 
   // 바깥 클릭 시 닫기
   useEffect(() => {
@@ -57,7 +60,8 @@ export default function NotificationBell() {
   if (!user) return null;
 
   return (
-    <div ref={rootRef} className="fixed top-3 right-4 z-40">
+    // ADMIN은 manage 상단바(AdminOrgPicker, 약 51px)와 겹치지 않게 top-14로 내림
+    <div ref={rootRef} className={`fixed ${user.role === 'ADMIN' ? 'top-14' : 'top-3'} right-4 z-40`}>
       <button
         type="button"
         onClick={openPanel}
@@ -75,7 +79,12 @@ export default function NotificationBell() {
         )}
       </button>
       {open && (
-        <NotificationPanel items={items} onRefetch={refetch} onClose={() => setOpen(false)} />
+        <NotificationPanel
+          items={items}
+          onRefetch={refetch}
+          onClose={() => setOpen(false)}
+          onReadVisible={readVisible}
+        />
       )}
     </div>
   );
