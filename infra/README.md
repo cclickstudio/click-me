@@ -48,6 +48,7 @@ python infra/provision_ec2.py --destroy  # 철거: 인스턴스·SG·키·IAM·E
 
 메모리가 부족하면(PDF/AI 동시 피크) 위 등급으로 올리고, 한가하면 내려 비용을 아낀다.
 stop→타입 변경→start를 자동으로 하며 **EBS(데이터)와 EIP가 유지**되어 데이터도 공인 IP도 그대로다.
+실제로 메모리 문제로 업그레이드/다운그레이드 해야 할 상황이 아니면 **함부로 건들지 않는다.**
 
 ```bash
 python infra/resize_instance.py --small
