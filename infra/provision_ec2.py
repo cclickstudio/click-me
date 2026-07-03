@@ -492,25 +492,20 @@ def write_infra_env(host: str, instance_id: str) -> None:
 
 def report(instance_id: str, host: str) -> None:
     print("\n" + "=" * 60)
-    print("EC2 준비 완료. GitHub Secrets에 아래 값을 등록하세요.")
-    print("=" * 60)
-    print(f"EC2_HOST  = {host}   (고정 Elastic IP — 철거/재생성해도 유지)")
-    print("EC2_USER  = ubuntu")
-    print(f"EC2_SSH_KEY = {PEM_PATH} 파일의 *전체 내용* 붙여넣기")
-    print("\n※ NEXT_PUBLIC_API_URL 은 더 이상 secret 아님(빈 값 빌드 → /api 상대경로, nginx same-origin).")
     print(f"\nSSH 접속: ssh -i {PEM_PATH} ubuntu@{host}")
-    print("\n주의:")
+    print("\n확인:")
     print(" - user-data 설치(docker/awscli)는 부팅 후 1~3분 더 걸립니다.")
     print("   확인: ssh 접속 후 'cat ~/clickme/.bootstrap-ok' / 'docker --version'")
     print(" - backend/.env 는 이 스크립트가 자동 업로드합니다(아래 로그 확인).")
     print(" - ECR 리포(clickme-backend/frontend)는 cd.yml이 자동 생성합니다.")
-    print(f" - TLS: 도메인(clickme.co.kr·www) A레코드를 위 EIP({host})로 설정하세요.")
-    print("   DNS 전파 후 첫 배포에서 cd.yml이 Let's Encrypt 인증서를 자동 발급합니다")
-    print("   (deploy/init-letsencrypt.sh). 발급은 A레코드가 이 EIP를 가리켜야 성공합니다.")
-    print(" - Portainer: 'python infra/start_portainer.py' → 자동 기동 + 터널 + localhost:9000 열림")
-    print(
-        " - 안 쓸 땐: aws ec2 stop-instances --region %s --instance-ids %s" % (REGION, instance_id)
-    )
+    print(f" - 안 쓸 땐: aws ec2 stop-instances --region {REGION} --instance-ids {instance_id}")
+    print("\n" + "=" * 60)
+    print("\nCI/CD 및 배포:")
+    print(" - 해당 작업은 인스턴스 생성만 돕습니다. 배포는 GitHub Actions를 통해 CI/CD가 이루어진 후 진행됩니다.")
+    print(" - main 또는 ci-cd 브랜치에 코드를 push하면 CI/CD·배포가 자동으로 이루어집니다.")
+    print("\n" + "=" * 60)
+    print("\nPortainer:")
+    print(" - 'python infra/start_portainer.py' → 자동 기동 + 터널 + localhost:9000 열림")
 
 
 # ─────────────────────────── 철거 ───────────────────────────
