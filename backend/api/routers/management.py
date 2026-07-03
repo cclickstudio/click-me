@@ -8,6 +8,7 @@
 
 import asyncio
 import calendar
+import json
 import logging
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
@@ -15,7 +16,7 @@ from contextvars import ContextVar
 from datetime import UTC, datetime, timedelta
 from random import Random
 from typing import Any, Literal
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, urlencode, urlparse, urlsplit, urlunsplit
 from uuid import UUID, uuid4
 
 import httpx
@@ -39,7 +40,6 @@ from core.models import (
     CreatedCampaign,
     MetaConnection,
     Organization,
-    OrganizationMember,
     User,
 )
 from domain.billing.service.billing_service import BillingError
@@ -84,7 +84,11 @@ from domain.management.contracts.fault_injection import FaultConfig, FaultMode
 from domain.management.contracts.platform import AdPlatformReader, AdPlatformWriter
 from domain.management.contracts.policy import (
     APPROVAL_POLICY_VERSION,
+    BASE_CTR,
+    CPM_ANCHOR_KRW,
+    CPM_NORMAL_RANGE_KRW,
     DAILY_BUDGET_KRW,
+    FATIGUE_FREQUENCY,
     PROPOSAL_TTL_MINUTES,
 )
 from domain.management.contracts.schemas import (
@@ -100,6 +104,8 @@ from domain.management.conversion_value import estimate_roas
 from domain.management.demo import CAMPAIGN_ID, TENANT_ID, build_sample_proposal
 from domain.management.detection.deterministic_dx import diagnose
 from domain.management.detection.exposure_model import (
+    DEFICIT_THRESHOLD,
+    MIN_CONSECUTIVE_HOURS,
     expected_hourly_impressions,
     find_anomaly_window,
 )
@@ -122,6 +128,7 @@ from domain.management.execution.tier import (
     BudgetAuthority,
     TenantBudgetRegistry,
 )
+from domain.management.naming import suggest_campaign_names
 from domain.management.target_check import is_target_missed
 from domain.management.wiring import (
     build_audit_sink,
@@ -152,7 +159,9 @@ async def _capture_selected_org(
 
 router = APIRouter(dependencies=[Depends(_capture_selected_org)])
 
-# 멀티테넌트 Meta 연결 요청 스코프 — App Review 승인 권한과 일치해야 한다.
+# 멀티테넌트 Meta 연결 요청 스코프 — 앱에 추가된 권한과 일치해야 한다.
+# leads_retrieval은 앱 미추가 권한이라 로그인 자체가 "Invalid Scopes"로 거부됨(2026-07 실측)
+# → 목록에서 제외. 리드 명단 fetch가 필요해지면 앱 대시보드에 권한 추가 후 재삽입.
 _META_CONNECT_SCOPES = [
     "ads_read",
     "ads_management",
@@ -160,15 +169,21 @@ _META_CONNECT_SCOPES = [
     "instagram_manage_insights",
     "pages_show_list",
     "pages_read_engagement",
-    "leads_retrieval",  # 리드(잠재고객) 명단 조회 — 즉석 양식 제출 데이터 fetch
 ]
 
 _DEMO_FAULTS = {"bid_loss", "review_rejected", "none"}
 
 # use_mock=True(기본)면 인메모리, False면 DB(idempotency_keys·audit_events) — wiring 분기.
 # 예산은 이번 범위 밖이라 인메모리 유지 (후속 B-1.2).
+# 기본 월 목표 300만원 — 일반 중소기업 퍼포먼스 광고 벤치마크(일 10만원 페이스).
+# 가정 규모: 광고비=매출의 5~15%(아이보스·SNS헬프)를 역산하면 월 매출 2천만~6천만
+# (연 2.4억~7.2억) — 이커머스·리테일 소기업~초기 중소기업(대략 5~20인),
+# ROAS 검증을 마치고 확장 단계에 들어선 광고주를 대표값으로 잡았다.
+# 근거: SNS헬프 2026 가이드(확장기 월 80~150만·성수기 200~400만), Ballast 규모별
+# 예산(중소기업 월 마케팅 500만 중 광고비·성장기업 광고비 100만+), 아이보스(매출의 5~15%).
+# policy.DAILY_BUDGET_KRW(100_000)와 정합 — 일 10만 × 30일 = 300만.
 _AUDIT_LOG = build_audit_sink(settings)
-_BUDGET = TenantBudgetRegistry(default_limit_krw=10_000_000)
+_BUDGET = TenantBudgetRegistry(default_limit_krw=3_000_000)
 _executor: Executor | None = None
 
 logger = logging.getLogger("clickme")
@@ -285,6 +300,27 @@ async def run_detection(fault: str = "bid_loss"):
         "expected": [round(e, 1) for e in expected],
         "snapshots": [s.model_dump(mode="json") for s in snapshots],
         "anomaly_hours": window,
+        # 탐지 기준(가정치) — 프론트 '탐지 기준' 스트립용. 단일원천: contracts/policy.py·
+        # exposure_model.py. 출처 상세: docs/management/meta-data-sources.md §4.4·4.6.
+        "assumptions": {
+            "daily_budget_krw": DAILY_BUDGET_KRW,
+            "cpm_anchor_krw": CPM_ANCHOR_KRW,
+            "cpm_normal_range_krw": list(CPM_NORMAL_RANGE_KRW),
+            "base_ctr": BASE_CTR,
+            "deficit_threshold": DEFICIT_THRESHOLD,
+            "min_consecutive_hours": MIN_CONSECUTIVE_HOURS,
+            "sources": [
+                {
+                    "label": "lebesgue.io 한국 CPM 실측(2026)",
+                    "url": "https://lebesgue.io/facebook-ads/facebook-cpm-by-country",
+                },
+                {
+                    "label": "AdAmigo.ai 한국 CPM·CTR 벤치마크(2026)",
+                    "url": "https://www.adamigo.ai/blog/meta-ads-cpm-cpc-benchmarks-by-country-2026",
+                },
+                {"label": "내부 근거 문서 §4.4", "url": "docs/management/meta-data-sources.md"},
+            ],
+        },
         "diagnosis": None,
         "proposal": None,
         "relabeled": False,
@@ -354,6 +390,30 @@ async def anomaly_scan(
                     "diagnosis": dx,
                 }
             )
+        # 빈도 피로 — 진행 중 캠페인의 최근 7일 빈도가 임계(3.0+, 문서 §4.6)를 넘으면
+        # 소재 교체를 제안한다(성과 진단과 별개 신호 — 실측 배선, 데모 주입 아님).
+        if c.state == CampaignState.ACTIVE:
+            try:
+                wk = await reader.get_metrics(c.campaign_id, now, date_preset="last_7d")
+                freq = wk.frequency or 0.0
+            except Exception:  # noqa: BLE001 — 피로 신호 실패는 조용히 건너뜀
+                freq = 0.0
+            if freq >= FATIGUE_FREQUENCY:
+                anomalies.append(
+                    {
+                        "campaign_id": c.campaign_id,
+                        "name": c.name,
+                        "state": c.state.value,
+                        "diagnosis": {
+                            "anomaly_type": "AUDIENCE_FATIGUE",
+                            "hypothesis": (
+                                f"최근 7일 빈도 {freq:.1f} — 같은 사람에게 반복 노출되는 피로 "
+                                f"신호예요(기준 {FATIGUE_FREQUENCY:.0f}+). 소재 교체를 권장합니다."
+                            ),
+                        },
+                        "suggested_action": "REPLACE_CREATIVE",
+                    }
+                )
     return {"source": "live", "scanned": len(infos), "anomalies": anomalies}
 
 
@@ -1133,12 +1193,14 @@ async def kb_eval_faithfulness(n: int = 30) -> dict:
 # ── 캠페인 목록·성과 대시보드 (🅰 reader 영역 데모 노출) ──────────────────
 # 백엔드에 "캠페인 목록" 능력이 없어(이름·상태 미보유) 데모 캠페인 상수 + MockAdPlatform로
 # 요약/시계열을 합성한다. 실연동 시 reader.list_campaigns로 교체.
+# 일예산 합 100_000 = policy.DAILY_BUDGET_KRW(SMB 데모 표준) — 월 환산 300만으로
+# _BUDGET 기본 월 목표와 페이싱 정합(일반 중소기업 규모, 근거는 _BUDGET 주석 참조).
 _CAMPAIGNS_DEMO: tuple[tuple[str, str, CampaignState, int, FaultMode | None], ...] = (
-    ("camp_1", "여름 신상 원피스", CampaignState.ACTIVE, 200_000, None),
-    ("camp_2", "브랜드 데일리 룩", CampaignState.ACTIVE, 120_000, FaultMode.BID_LOSS),
-    ("camp_3", "신상 액세서리 모음", CampaignState.ACTIVE, 80_000, FaultMode.AUDIENCE_TOO_NARROW),
-    ("camp_4", "쿠폰 안내 공지", CampaignState.UNDER_REVIEW, 40_000, FaultMode.REVIEW_DELAY),
-    ("camp_5", "봄 시즌오프 마감", CampaignState.ENDED, 60_000, None),
+    ("camp_1", "여름 신상 원피스", CampaignState.ACTIVE, 40_000, None),
+    ("camp_2", "브랜드 데일리 룩", CampaignState.ACTIVE, 25_000, FaultMode.BID_LOSS),
+    ("camp_3", "신상 액세서리 모음", CampaignState.ACTIVE, 15_000, FaultMode.AUDIENCE_TOO_NARROW),
+    ("camp_4", "쿠폰 안내 공지", CampaignState.UNDER_REVIEW, 10_000, FaultMode.REVIEW_DELAY),
+    ("camp_5", "봄 시즌오프 마감", CampaignState.ENDED, 10_000, None),
 )
 
 
@@ -2085,6 +2147,21 @@ def _resolve_link_url(req_url: HttpUrl | None) -> str | None:
     return str(req_url) if req_url is not None else None
 
 
+def _with_utm(link_url: str, campaign_key: str) -> str:
+    """집행 URL에 ClickMe UTM 자동 부착 — GA 등 외부 분석에서 캠페인 유입을 바로 식별하게.
+
+    광고주가 이미 utm_을 붙여놨으면 그 설정을 존중해 그대로 둔다(덮어쓰기 금지).
+    """
+    parts = urlsplit(link_url)
+    if "utm_" in (parts.query or ""):
+        return link_url
+    added = urlencode(
+        {"utm_source": "clickme", "utm_medium": "paid_social", "utm_campaign": campaign_key}
+    )
+    query = f"{parts.query}&{added}" if parts.query else added
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, query, parts.fragment))
+
+
 @router.post("/campaign-proposals/from-candidate")
 async def from_candidate(
     body: FromCandidateRequest,
@@ -2139,8 +2216,9 @@ async def from_candidate(
     if end_at <= start_at:
         raise HTTPException(status_code=422, detail="종료일은 시작일 이후여야 합니다.")
     run_days = max(1, (end_at - start_at).days)  # spend_cap 산정용(일예산 × 일수)
+    campaign_key = f"camp_cand_{uuid4().hex[:8]}"
     config = CampaignConfig(
-        campaign_id=f"camp_cand_{uuid4().hex[:8]}",
+        campaign_id=campaign_key,
         tenant_id=tenant_id,
         ad_account_id=ad_account,
         name=body.name,
@@ -2151,7 +2229,7 @@ async def from_candidate(
         image_hash=image_hash,
         headline=cand.copy.headline,
         body=cand.copy.body,
-        link_url=link_url,
+        link_url=_with_utm(link_url, campaign_key),
         special_ad_categories=categories,
         countries=(body.country,),
         age_min=body.age_min,
@@ -2476,8 +2554,9 @@ async def from_simulation(
     if end_at <= start_at:
         raise HTTPException(status_code=422, detail="종료일은 시작일 이후여야 합니다.")
     run_days = max(1, (end_at - start_at).days)  # spend_cap 산정용(일예산 × 일수)
+    campaign_key = f"camp_sim_{uuid4().hex[:8]}"
     config = CampaignConfig(
-        campaign_id=f"camp_sim_{uuid4().hex[:8]}",
+        campaign_id=campaign_key,
         tenant_id=tenant_id,
         ad_account_id=ad_account,
         name=body.name,
@@ -2488,7 +2567,7 @@ async def from_simulation(
         image_hash=image_hash,
         headline=title,
         body=copy_text,
-        link_url=link_url,
+        link_url=_with_utm(link_url, campaign_key),
         special_ad_categories=categories,
         countries=(body.country,),
         age_min=body.age_min,
@@ -2531,6 +2610,61 @@ async def from_simulation(
         )
     )
     return {"proposal": proposal.model_dump(mode="json")}
+
+
+@router.get("/campaign-proposals/name-suggestions")
+async def campaign_name_suggestions(
+    simulation_id: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """시뮬 기반 캠페인의 이름 후보 3개 — 소재(ads)·시뮬 집계 재료, LLM 실패 시 규칙 폴백.
+
+    from-simulation 폼이 열릴 때 호출된다. 제안은 부가 기능이라 어떤 실패도 폼을 막지 않게
+    naming 모듈이 결정론 폴백을 보장한다. 시뮬 조회는 from_simulation과 동일한 raw SQL 결합.
+    """
+    try:
+        sim_uuid = UUID(simulation_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="잘못된 simulation_id") from exc
+    org_id = await _require_org_id(user, db)
+    sim_row = (
+        await db.execute(
+            text("SELECT organization_id, ad_id FROM simulations WHERE id = :sid"),
+            {"sid": sim_uuid},
+        )
+    ).first()
+    if sim_row is None or sim_row[0] != org_id:
+        raise HTTPException(status_code=404, detail="시뮬레이션을 찾을 수 없습니다.")
+    ad_row = (
+        await db.execute(
+            text(
+                "SELECT title, copy_text, product_category, industry_category, target_filter "
+                "FROM ads WHERE id = :aid"
+            ),
+            {"aid": sim_row[1]},
+        )
+    ).first()
+    agg = (
+        await db.execute(
+            text("SELECT click_intent_rate FROM simulation_aggregates WHERE simulation_id = :sid"),
+            {"sid": sim_uuid},
+        )
+    ).first()
+    cols = ("title", "copy_text", "product_category", "industry_category", "target_filter")
+    ad = dict(zip(cols, ad_row, strict=True)) if ad_row else dict.fromkeys(cols)
+    if isinstance(ad.get("target_filter"), str):  # JSONB가 문자열로 오는 드라이버 대비
+        try:
+            ad["target_filter"] = json.loads(ad["target_filter"])
+        except ValueError:
+            ad["target_filter"] = None
+    names = await suggest_campaign_names(
+        ad=ad,
+        objective="traffic",
+        click_intent_rate=float(agg[0]) if agg and agg[0] is not None else None,
+        openai_api_key=getattr(settings, "openai_api_key", None),
+    )
+    return {"names": names}
 
 
 # ── 게재 시작(활성화) + 크레딧 연동 + 소진 동기화 ──────────────────────────
@@ -3247,12 +3381,14 @@ async def _budget_status(reader, budget_key: str = TENANT_ID) -> dict:
     # budget_key는 인메모리 월 목표의 org별 키 — live는 org_id, mock은 TENANT_ID(전역 공유 방지).
     if not getattr(settings, "use_mock", True):
         return await _budget_status_live(reader, budget_key)
-    # 데모(mock): 합성 캠페인 지출 + 인메모리 한도.
+    # 데모(mock): 합성 캠페인 지출 + 인메모리 한도. 월 목표 대비 페이싱이라는 화면 의미에
+    # 맞게 하루 합성 지출 × 이달 경과일로 월중 누적을 환산 — live(this_month 실소진)와 동일 의미.
+    elapsed_days = datetime.now(UTC).day
     spent = 0
     campaigns = []
     for i, (cid, name, _state, budget, fault) in enumerate(_CAMPAIGNS_DEMO):
         snaps = await _campaign_snapshots(cid, budget, fault, seed=40 + i)
-        spend = _campaign_summary(snaps, budget)["spend_krw"]
+        spend = _campaign_summary(snaps, budget)["spend_krw"] * elapsed_days
         spent += spend
         campaigns.append({"name": name, "spend_krw": spend})
     limit = _BUDGET.for_tenant(TENANT_ID).limit_krw
@@ -3378,6 +3514,171 @@ async def set_budget_limit(
     return await _budget_status(await _require_reader(db, org_id), str(org_id))
 
 
+@router.get("/report/weekly")
+async def weekly_report(reader=Depends(_request_reader)):
+    """주간 성과 리포트 — 최근 7일 실측 총합·캠페인별 표·하이라이트·다음 액션(결정론 요약).
+
+    전부 기존 reader 실측으로 조립하고 LLM을 쓰지 않아 문구가 항상 재현된다.
+    화면(모니터링)에서 모달로 보여주고, 추후 PDF·챗 전달의 데이터 소스로 재사용한다.
+    """
+    now = datetime.now(UTC)
+    try:
+        infos = await reader.list_campaigns()
+    except Exception as exc:  # noqa: BLE001
+        return {"report": None, "note": getattr(exc, "user_msg", None) or str(exc)}
+    rows: list[dict] = []
+    for c in infos:
+        try:
+            m = await reader.get_metrics(c.campaign_id, now, date_preset="last_7d")
+        except TypeError:  # mock 등 date_preset 미지원 — 전체 기간 폴백
+            try:
+                m = await reader.get_metrics(c.campaign_id, now)
+            except Exception:  # noqa: BLE001
+                continue
+        except Exception:  # noqa: BLE001 — 1건 실패가 리포트를 막지 않게
+            continue
+        rows.append(
+            {
+                "campaign_id": c.campaign_id,
+                "name": c.name,
+                "state": c.state.value,
+                "spend_krw": getattr(m, "spend_krw", 0) or 0,
+                "impressions": getattr(m, "impressions", 0) or 0,
+                "clicks": getattr(m, "clicks", 0) or 0,
+                "conversions": getattr(m, "conversions", None),
+                "ctr": getattr(m, "ctr", 0.0) or 0.0,
+                "cpc_krw": getattr(m, "cpc_krw", 0) or 0,
+                "frequency": getattr(m, "frequency", 0.0) or 0.0,
+            }
+        )
+    spent = sum(r["spend_krw"] for r in rows)
+    imps = sum(r["impressions"] for r in rows)
+    clicks = sum(r["clicks"] for r in rows)
+    convs = sum(r["conversions"] or 0 for r in rows)
+    active_rows = [r for r in rows if r["spend_krw"] > 0]
+    highlights: list[str] = []
+    if active_rows:
+        top = max(active_rows, key=lambda r: r["ctr"])
+        highlights.append(f"CTR 1위는 '{top['name']}' ({top['ctr'] * 100:.1f}%)")
+        pricey = max(active_rows, key=lambda r: r["cpc_krw"])
+        if len(active_rows) >= 2 and pricey["campaign_id"] != top["campaign_id"]:
+            highlights.append(
+                f"클릭 단가가 가장 비싼 캠페인은 '{pricey['name']}' (₩{pricey['cpc_krw']:,})"
+            )
+    fatigued = [r for r in rows if r["frequency"] >= FATIGUE_FREQUENCY]
+    next_actions: list[str] = []
+    for r in fatigued:
+        next_actions.append(
+            f"'{r['name']}' 빈도 {r['frequency']:.1f} — 소재 교체 검토(이상 감지 참조)"
+        )
+    if spent == 0:
+        next_actions.append("최근 7일 집행이 없어요 — 새 캠페인 집행 또는 게재 재개를 검토하세요.")
+    if len(active_rows) >= 2:
+        next_actions.append("캠페인 간 효율 차이는 예산 관리의 리밸런싱 제안에서 확인하세요.")
+    return {
+        "report": {
+            "period": {
+                "since": (now - timedelta(days=7)).date().isoformat(),
+                "until": now.date().isoformat(),
+            },
+            "totals": {
+                "spend_krw": spent,
+                "impressions": imps,
+                "clicks": clicks,
+                "conversions": convs,
+                "ctr": round(clicks / imps, 4) if imps else 0.0,
+                "cpc_krw": round(spent / clicks) if clicks else 0,
+            },
+            "campaigns": sorted(rows, key=lambda r: r["spend_krw"], reverse=True),
+            "highlights": highlights,
+            "next_actions": next_actions,
+        },
+        "note": None,
+    }
+
+
+@router.get("/budget/rebalance-proposal")
+async def budget_rebalance_proposal(reader=Depends(_request_reader)):
+    """캠페인 간 일예산 리밸런싱 제안 — 저효율(높은 CPC)→고효율(낮은 CPC)로 20% 이동 제안.
+
+    실행이 아니라 '제안'만 만든다. 적용은 기존 budget-commit(검증·승인·감사 경로)을
+    캠페인별로 그대로 태운다 — 자동 집행 없음(HITL 유지). 최근 7일 실측 기준이며,
+    진행 중(ACTIVE)·일예산형·클릭 실측이 있는 캠페인이 2개 이상이고 CPC 격차가
+    1.2배 이상일 때만 제안한다(작은 차이로 예산을 흔들지 않게).
+    """
+    now = datetime.now(UTC)
+    try:
+        infos = await reader.list_campaigns()
+    except Exception as exc:  # noqa: BLE001 — 제안은 부가 기능, 조회 실패는 안내로
+        return {"proposal": None, "note": getattr(exc, "user_msg", None) or str(exc)}
+    elig = [
+        c
+        for c in infos
+        if c.state == CampaignState.ACTIVE and c.budget_type == "daily" and c.daily_budget_krw > 0
+    ]
+    if len(elig) < 2:
+        return {"proposal": None, "note": "진행 중(일예산형) 캠페인이 2개 이상이면 제안해요."}
+    rows = []
+    for c in elig:
+        try:
+            m = await reader.get_metrics(c.campaign_id, now, date_preset="last_7d")
+        except TypeError:  # mock 등 date_preset 미지원 리더 — 전체 기간으로 폴백
+            try:
+                m = await reader.get_metrics(c.campaign_id, now)
+            except Exception:  # noqa: BLE001
+                continue
+        except Exception:  # noqa: BLE001 — 캠페인 1건 실패가 전체 제안을 막지 않게
+            continue
+        clicks = getattr(m, "clicks", 0) or 0
+        spend = getattr(m, "spend_krw", 0) or 0
+        if clicks <= 0 or spend <= 0:
+            continue
+        cpc = getattr(m, "cpc_krw", 0) or round(spend / clicks)
+        rows.append((c, cpc))
+    if len(rows) < 2:
+        return {"proposal": None, "note": "최근 실측 클릭이 있는 캠페인이 2개 이상이면 제안해요."}
+    rows.sort(key=lambda r: r[1])
+    (best, best_cpc), (worst, worst_cpc) = rows[0], rows[-1]
+    if worst_cpc <= best_cpc * 1.2:
+        return {"proposal": None, "note": "캠페인 간 CPC 격차가 1.2배를 넘으면 이동을 제안해요."}
+    floor = _MIN_DAILY_BUDGET_KRW
+    try:
+        policy = await get_campaign_policy(reader)
+        floor = int(policy.get("min_daily_budget_krw") or floor)
+    except Exception:  # noqa: BLE001 — 정책 조회 실패 시 보수 폴백
+        pass
+    move = int(worst.daily_budget_krw * 0.2) // 100 * 100  # 20%, 백원 단위 절사
+    move = min(move, worst.daily_budget_krw - floor)  # 저효율도 최소예산 아래로 안 내려가게
+    if move < 1_000:
+        return {"proposal": None, "note": "이동 가능한 금액이 너무 작아 제안하지 않아요."}
+    return {
+        "proposal": {
+            "from": {
+                "campaign_id": worst.campaign_id,
+                "name": worst.name,
+                "cpc_krw": worst_cpc,
+                "daily_budget_krw": worst.daily_budget_krw,
+                "after_krw": worst.daily_budget_krw - move,
+            },
+            "to": {
+                "campaign_id": best.campaign_id,
+                "name": best.name,
+                "cpc_krw": best_cpc,
+                "daily_budget_krw": best.daily_budget_krw,
+                "after_krw": best.daily_budget_krw + move,
+            },
+            "move_krw": move,
+            "basis": "last_7d",
+            "reason": (
+                f"최근 7일 CPC가 {worst_cpc:,}원으로 {best.name}({best_cpc:,}원)의 "
+                f"{worst_cpc / best_cpc:.1f}배예요. 일예산의 20%를 효율 좋은 쪽으로 옮기면 "
+                "같은 돈으로 더 많은 클릭을 살 수 있어요."
+            ),
+        },
+        "note": None,
+    }
+
+
 # ── 시간축 자동 에스컬레이션 (re_evaluate — 엔드포인트·tick·추후 SQS 동일 함수) ────
 # 가벼운 조치부터 우선순위대로 시도하고, 회복(원래 anomaly 소멸) 안 되면 다음 단계 제안.
 # Tier 3은 항상 건별 승인 — "자동"은 다음 단계 *제안* 자동 생성만 뜻한다(HITL 강제).
@@ -3483,13 +3784,9 @@ async def meta_connect(
     app_id = getattr(settings, "meta_app_id", None)
     if not app_id:
         raise HTTPException(503, "META_APP_ID 미설정 — Meta 연결 불가")
-    # NOTE: org 소유자만 자기 Meta를 연결한다. admin impersonation(X-Org-Id) 대상이 아니며,
-    # admin은 멤버십이 없어 아래 409로 자연 차단된다(설계: (c) 멤버십 직접 해석).
-    org_id = await db.scalar(
-        select(OrganizationMember.organization_id).where(OrganizationMember.user_id == user.id)
-    )
-    if org_id is None:
-        raise HTTPException(409, "소속 조직이 없습니다 — 조직 연결 후 시도하세요.")
+    # org 해석은 다른 write와 동일 규칙 — 멤버는 자기 org, ADMIN은 X-Org-Id로 선택한 org를
+    # 대신 연결(impersonation 감사 기록). 멤버십 직접 해석 시 admin이 409로 막혀 연동 불가했다.
+    org_id = await _require_org_id_write(user, db, action="meta_connect")
     state = f"{org_id}:{uuid4().hex}"  # org 운반 + CSRF nonce
     url = build_login_url(
         app_id=app_id,
@@ -3534,6 +3831,9 @@ async def meta_callback(
         redirect_uri=str(request.url_for("meta_callback")),
         code=code,
         organization_id=uuid4_or_str(org),
+        # 토큰 스코프에 계정이 안 묶였을 때 임의 추측 대신 운영 기본 계정으로 — 엉뚱한
+        # 광고계정(옛 테스트 계정)에 바인딩돼 캠페인 목록이 바뀌는 사고 방지.
+        fallback_ad_account_id=getattr(settings, "meta_ad_account_id", None),
         api_version=settings.meta_graph_api_version,
     )
     return RedirectResponse(f"{front}/manage/connect?meta=connected", status_code=303)

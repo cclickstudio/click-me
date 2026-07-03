@@ -1,4 +1,4 @@
-// 예산 게이지 — 한도 대비 소진 막대 + 90/95/100% 눈금 + decision별 색
+// 예산 게이지 — 한도 대비 소진 막대 + 90/95/100% 가드레일 '밴드' + 오늘 계획 페이스 마커.
 import type { BudgetDecision } from './types';
 
 const FILL: Record<BudgetDecision, string> = {
@@ -13,13 +13,16 @@ export function BudgetGauge({
   limit,
   ratio,
   decision,
+  planPct,
 }: {
   spent: number;
   limit: number;
   ratio: number;
   decision: BudgetDecision;
+  planPct?: number | null; // 오늘까지의 계획 페이스(월 경과율 %) — 있으면 점선 마커 표시
 }) {
   const pct = Math.min(ratio * 100, 100);
+  const plan = planPct != null ? Math.min(Math.max(planPct, 0), 100) : null;
   return (
     <div>
       <div className="flex items-end justify-between mb-2">
@@ -32,8 +35,14 @@ export function BudgetGauge({
         </span>
       </div>
       <div className="relative h-6 rounded-full bg-[#F2F4F6] dark:bg-[#2D3748] overflow-hidden">
-        <div className={`h-full ${FILL[decision]} transition-all`} style={{ width: `${pct}%` }} />
-        {/* 90 / 95% 눈금 */}
+        {/* 가드레일 밴드 — 90~95 경고(호박) · 95~100 차단(적색) 배경으로 위험 구간을 미리 보여줌 */}
+        <div className="absolute inset-y-0 bg-amber-100 dark:bg-amber-900/30" style={{ left: '90%', width: '5%' }} />
+        <div className="absolute inset-y-0 bg-red-100 dark:bg-red-900/30" style={{ left: '95%', width: '5%' }} />
+        <div
+          className={`relative h-full rounded-full ${FILL[decision]} transition-all`}
+          style={{ width: `${pct}%` }}
+        />
+        {/* 90 / 95% 경계선 */}
         {[90, 95].map((m) => (
           <div
             key={m}
@@ -41,11 +50,29 @@ export function BudgetGauge({
             style={{ left: `${m}%` }}
           />
         ))}
+        {/* 오늘 계획 페이스 — 월 경과율 위치. 막대가 이 앞이면 여유, 넘었으면 과속. */}
+        {plan != null && (
+          <div
+            className="absolute top-0 h-full border-l-2 border-dashed border-[#191F28]/60 dark:border-white/60"
+            style={{ left: `${plan}%` }}
+            title={`오늘까지 계획 페이스 ${Math.round(plan)}%`}
+          />
+        )}
       </div>
-      <div className="flex justify-between text-[10px] text-[#B0B8C1] mt-1">
-        <span>0</span>
-        <span style={{ marginRight: '8%' }}>90% 경고</span>
-        <span>95% 차단 · 100%</span>
+      <div className="relative h-4 mt-1 text-[10px] text-[#B0B8C1]">
+        <span className="absolute left-0">0</span>
+        {plan != null && plan > 8 && plan < 82 && (
+          <span
+            className="absolute -translate-x-1/2 text-[#4E5968] dark:text-[#9CA3AF]"
+            style={{ left: `${plan}%` }}
+          >
+            오늘 계획 {Math.round(plan)}%
+          </span>
+        )}
+        <span className="absolute -translate-x-1/2" style={{ left: '90%' }}>
+          90 경고
+        </span>
+        <span className="absolute right-0">95 차단 · 100</span>
       </div>
     </div>
   );

@@ -6,7 +6,8 @@ import { api, type DatePreset } from '@/lib/api';
 import { MonitorKpis } from '@/components/manage/monitoring/MonitorKpis';
 import { HealthList } from '@/components/manage/monitoring/HealthList';
 import { runwayDays } from '@/components/manage/monitoring/pacing';
-import { OriginLegend, OriginTag } from '@/components/manage/ValueOrigin';
+import { OriginLegend } from '@/components/manage/ValueOrigin';
+import { WeeklyReportModal } from '@/components/manage/monitoring/WeeklyReportModal';
 import type {
   AccountWallet,
   CampaignSource,
@@ -24,10 +25,13 @@ export default function Page() {
   const [rateLimited, setRateLimited] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [spendSeries, setSpendSeries] = useState<Record<string, number[]>>({});
+  // 전 캠페인 일자별 합산 지출 — KPI '총 지출' 스파크라인·델타용(실측 합산, 날짜 기준 병합).
+  const [accountSeries, setAccountSeries] = useState<number[]>([]);
   const [now, setNow] = useState<Date>(() => new Date());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [datePreset, setDatePreset] = useState<DatePreset>('maximum'); // 조회 기간 토글
+  const [reportOpen, setReportOpen] = useState(false); // 주간 리포트 모달
 
   // 캠페인별 일별 지출 시계열 — /campaigns/{id}.series에서 추출(스파크라인·델타용).
   // 호출이 N건이라 폴링(silent)에선 생략하고 최초·수동 새로고침에서만 갱신.
@@ -36,13 +40,22 @@ export default function Page() {
       list.map(async (c) => {
         try {
           const d = await api.management.campaign(c.campaign_id);
-          return [c.campaign_id, d.series.map((p) => p.spend_krw)] as const;
+          return [c.campaign_id, d.series] as const;
         } catch {
-          return [c.campaign_id, [] as number[]] as const;
+          return [c.campaign_id, [] as { label: string; spend_krw: number }[]] as const;
         }
       }),
     );
-    setSpendSeries(Object.fromEntries(entries));
+    setSpendSeries(
+      Object.fromEntries(entries.map(([id, s]) => [id, s.map((p) => p.spend_krw)])),
+    );
+    // 날짜 기준 병합 합산 — 캠페인별 기간이 달라 인덱스가 아닌 날짜 라벨로 맞춘다.
+    const byDate = new Map<string, number>();
+    for (const [, s] of entries)
+      for (const p of s) byDate.set(p.label, (byDate.get(p.label) ?? 0) + p.spend_krw);
+    setAccountSeries(
+      [...byDate.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([, v]) => v),
+    );
   }, []);
 
   // silent=true면 폴링 갱신(스피너 없이 값만 교체). withSeries=true면 시계열도 다시 가져온다.
@@ -147,6 +160,14 @@ export default function Page() {
                 {lastUpdated ? `갱신 ${lastUpdated}` : '실시간'} ↻
               </button>
             )}
+            {source === 'live' && (
+              <button
+                onClick={() => setReportOpen(true)}
+                className="text-sm text-[#4E5968] dark:text-[#9CA3AF] font-medium px-3 py-1.5 rounded-lg border border-[#E5E8EB] dark:border-[#2D3748] hover:bg-[#F2F4F6] dark:hover:bg-[#2D3748]"
+              >
+                주간 리포트
+              </button>
+            )}
             <Link
               href="/manage/anomaly"
               className="text-sm text-[#3182F6] font-medium px-3 py-1.5 rounded-lg border border-[#E5E8EB] dark:border-[#2D3748] hover:bg-[#EBF3FF] dark:hover:bg-[#1E3A5F]"
@@ -155,6 +176,8 @@ export default function Page() {
             </Link>
           </div>
         </div>
+
+        {reportOpen && <WeeklyReportModal onClose={() => setReportOpen(false)} />}
 
         {authError && (
           <div className="mb-4 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 dark:border-amber-900/50 dark:bg-amber-900/20">
@@ -201,7 +224,12 @@ export default function Page() {
         {!busy && !error && campaigns.length > 0 && (
           <>
             <OriginLegend className="mb-4" />
-            <MonitorKpis campaigns={campaigns} />
+            {/* 지갑 상세는 예산 관리 탭이 정식 집 — 여기선 파생 건강신호(잔액 런웨이)만 KPI로. */}
+            <MonitorKpis
+              campaigns={campaigns}
+              accountSeries={accountSeries}
+              runway={account ? runwayDays(account, campaigns, spendSeries) : null}
+            />
 
             {/* 계정 지갑 권한 없음 — 잔액·한도 조회 권한이 없을 때 자리 표시(빈 0과 구분). */}
             {source === 'live' && !account && accountUnavailable && (
@@ -210,52 +238,6 @@ export default function Page() {
                   계정 지갑
                 </span>
                 <span className="ml-3 text-[14px] text-[#8B95A1]">{accountUnavailable}</span>
-              </div>
-            )}
-
-            {/* 계정 지갑 — 실데이터일 때만. 일예산과 다른 '실제 충전·지출·잔액'. */}
-            {source === 'live' && account && (
-              <div className="mb-6 rounded-xl border border-[#E5E8EB] bg-white px-4 py-3.5 dark:border-[#2D3748] dark:bg-[#1A1F28]">
-                <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
-                  <span className="text-[14px] font-semibold text-[#4E5968] dark:text-[#9CA3AF]">
-                    계정 지갑
-                  </span>
-                  <span className="text-[15px] text-[#191F28] dark:text-[#F2F4F6]">
-                    선불 잔액{' '}
-                    <b className="tabular-nums">
-                      ₩{(account.available_balance_krw ?? 0).toLocaleString()}
-                    </b>
-                  </span>
-                  <span className="text-[15px] text-[#191F28] dark:text-[#F2F4F6]">
-                    누적 지출{' '}
-                    <b className="tabular-nums">₩{(account.amount_spent_krw ?? 0).toLocaleString()}</b>
-                  </span>
-                  {account.spend_cap_krw != null && account.spend_cap_krw > 0 && (
-                    <span className="text-[15px] text-[#191F28] dark:text-[#F2F4F6]">
-                      충전 한도
-                      <OriginTag origin="setting" />{' '}
-                      <b className="tabular-nums">₩{account.spend_cap_krw.toLocaleString()}</b>
-                      <span className="ml-1 text-[#8B95A1]">
-                        ({Math.round(((account.amount_spent_krw ?? 0) / account.spend_cap_krw) * 100)}%
-                        소진)
-                      </span>
-                    </span>
-                  )}
-                  {(() => {
-                    const days = runwayDays(account, campaigns, spendSeries);
-                    if (days == null) return null;
-                    return (
-                      <span
-                        className={`text-[15px] ${days < 3 ? 'text-[#E5484D]' : 'text-[#191F28] dark:text-[#F2F4F6]'}`}
-                        title="최근 일평균 소진이 이어진다는 가정의 추정값"
-                      >
-                        잔액 런웨이
-                        <OriginTag origin="computed" /> <b className="tabular-nums">약 {days.toFixed(1)}일</b>
-                        <span className="ml-1 text-[#8B95A1]">(추정)</span>
-                      </span>
-                    );
-                  })()}
-                </div>
               </div>
             )}
 

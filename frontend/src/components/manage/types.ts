@@ -37,6 +37,16 @@ export type RunResult = {
   expected: number[];
   snapshots: Snapshot[];
   anomaly_hours: number[];
+  // 탐지 기준(가정치) — 백엔드 policy.py·exposure_model.py 단일원천(CPM 앵커는 국내 실측)
+  assumptions?: {
+    daily_budget_krw: number;
+    cpm_anchor_krw: number;
+    cpm_normal_range_krw: [number, number];
+    base_ctr: number;
+    deficit_threshold: number; // 기대 대비 이 비율 미만이면 결핍
+    min_consecutive_hours: number; // 결핍 연속 최소 시간
+    sources: { label: string; url: string }[];
+  };
   diagnosis: Diagnosis | null;
   proposal: Proposal | null;
   relabeled: boolean;

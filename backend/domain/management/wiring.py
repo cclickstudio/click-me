@@ -238,7 +238,8 @@ def build_executor(settings, *, budget=None, audit=None):
     )
     from domain.management.execution.tier import TenantBudgetRegistry  # noqa: PLC0415
 
-    budget = budget or TenantBudgetRegistry(default_limit_krw=10_000_000)
+    # 기본 월 목표 300만원 — 중소기업 벤치마크(일 10만 페이스). 근거는 management.py _BUDGET 주석.
+    budget = budget or TenantBudgetRegistry(default_limit_krw=3_000_000)
     audit = audit or build_audit_sink(settings)
 
     allowed = DEFAULT_ALLOWED_MODES

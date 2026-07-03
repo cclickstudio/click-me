@@ -70,6 +70,48 @@ export interface AnomalyScanItem {
   name: string;
   state: string;
   diagnosis: { anomaly_type: string; hypothesis?: string } & Record<string, unknown>;
+  suggested_action?: string; // REPLACE_CREATIVE 등 — CTA 렌더용
+}
+// 예산 리밸런싱 제안 — 저효율→고효율 일예산 이동(적용은 budget-commit 2건)
+export interface RebalanceSide {
+  campaign_id: string;
+  name: string;
+  cpc_krw: number;
+  daily_budget_krw: number;
+  after_krw: number;
+}
+export interface RebalanceProposal {
+  from: RebalanceSide;
+  to: RebalanceSide;
+  move_krw: number;
+  basis: string;
+  reason: string;
+}
+// 주간 리포트 — 최근 7일 실측 요약(결정론)
+export interface WeeklyReport {
+  period: { since: string; until: string };
+  totals: {
+    spend_krw: number;
+    impressions: number;
+    clicks: number;
+    conversions: number;
+    ctr: number;
+    cpc_krw: number;
+  };
+  campaigns: {
+    campaign_id: string;
+    name: string;
+    state: string;
+    spend_krw: number;
+    impressions: number;
+    clicks: number;
+    conversions: number | null;
+    ctr: number;
+    cpc_krw: number;
+    frequency: number;
+  }[];
+  highlights: string[];
+  next_actions: string[];
 }
 export interface AnomalyScanResponse {
   source: string;
@@ -734,6 +776,14 @@ export const api = {
       request<CampaignDetail>(
         `/management/campaigns/${id}${_campaignQuery(conversionValueKrw, targetRoas, datePreset)}`,
       ),
+    // 예산 리밸런싱 제안 — 최근 7일 CPC 격차 기반(제안만, 적용은 budgetCommit 2건)
+    rebalanceProposal: () =>
+      request<{ proposal: RebalanceProposal | null; note: string | null }>(
+        `/management/budget/rebalance-proposal`,
+      ),
+    // 주간 리포트 — 최근 7일 실측 요약(총합·캠페인별·하이라이트·다음 액션)
+    weeklyReport: () =>
+      request<{ report: WeeklyReport | null; note: string | null }>(`/management/report/weekly`),
     // 실 캠페인 성과 이상 스캔 — live에서 캠페인별 성과 진단(ROAS 미달 등)을 모아 반환.
     anomalyScan: (targetRoas?: number | null) =>
       request<AnomalyScanResponse>(
@@ -829,7 +879,13 @@ export const api = {
         category_id: number;
         service_class: number;
         suggested_persona_count: number;
+        reach: number; // Meta 실측 도달수(원값) — 표본 상한 200과 별개
       }>(`/management/campaigns/${campaignId}/targeting`),
+    // 캠페인 이름 자동 제안 — 소재·시뮬 집계 기반 후보 3개(LLM 실패 시 규칙 폴백)
+    nameSuggestions: (simulationId: string) =>
+      request<{ names: string[] }>(
+        `/management/campaign-proposals/name-suggestions?simulation_id=${encodeURIComponent(simulationId)}`,
+      ),
     // 기존 Meta 캠페인에 시뮬 역방향 연결
     linkSimulation: (campaignId: string, simulationId: string) =>
       request<{ campaign_id: string; simulation_id: string; linked: boolean }>(

@@ -889,6 +889,7 @@ class MetaAdsReader:
             "category_id": category_id,
             "service_class": service_class,
             "suggested_persona_count": suggested_persona_count,
+            "reach": reach,  # Meta 실측 도달수(원값) — 표본 상한 200과 별개로 화면 표시용
         }
 
     async def get_account_spend(self, date_preset: str = "this_month") -> int:
