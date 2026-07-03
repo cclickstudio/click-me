@@ -7,21 +7,27 @@ ClickMe 단일 EC2 배포 환경을 만든다.
 
 생성물:
   - 키페어(clickme-key)        → PEM을 ./clickme-key.pem 로 저장 (EC2_SSH_KEY 값)
-  - 보안그룹(clickme-sg)        → 22(SSH, CD 배포), 80/443(웹), 8000/3000(직접 접근/테스트)
+  - 보안그룹(clickme-sg)        → 22(SSH/CD·scp), 80/443(웹)만 오픈. 8000/3000/9000은 안 엶
+                                 (backend/frontend는 nginx 뒤 내부 전용, Portainer는 SSH 터널로만 접근)
+  - Elastic IP(clickme-eip)    → 인스턴스에 연결하는 고정 공인 IP. 철거해도 반환하지 않아 재생성 시 같은 IP 유지
   - IAM Role/Instance Profile  → EC2가 ECR을 pull하도록 ReadOnly (EC2에 AWS 키 저장 불필요)
   - EC2 인스턴스(Ubuntu 24.04) → EBS 30GB gp3, user-data로 docker·compose·awscli·swap 자동 설치
+  - 부팅 후 backend/.env 를 scp로 EC2에 자동 업로드 (~/clickme/backend/.env)
 
 전제: aws CLI 설치 + 자격증명 설정 완료 (현재 us-west-2 / 계정 445459853661 확인됨).
 
 사용법:
-  python infra/provision_ec2.py            # 생성
-  python infra/provision_ec2.py --destroy  # 철거(과금 중단)
+  python infra/provision_ec2.py                          # 생성(+EIP 연결 +.env 업로드)
+  python infra/provision_ec2.py --destroy                # 철거(과금 중단). EIP는 보존 → 같은 IP 재사용
+  python infra/provision_ec2.py --destroy --release-eip  # EIP까지 완전 반환(다음 생성 시 IP 바뀜)
 
 비용 메모(us-west-2, 대략):
   - t3.micro : 프리티어 대상(12개월 750h 무료). 1GB라 swap 2GB로 보완. (아래 INSTANCE_TYPE 기본값)
   - t3.small : ~$15/월. 2GB로 여유. 피크 부족 시 승격.
   - EBS 30GB gp3 : 프리티어(30GB) 범위 → 첫 해 사실상 무료.
   - 공인 IPv4 : ~$3.6/월 (2024년부터 부과, 사용 중이면 회피 어려움).
+  - Elastic IP : 인스턴스에 연결돼 있으면 공인 IPv4 요금에 포함(추가 부담 없음).
+                 단 --destroy 후 '유휴 상태로 보존'하면 그 기간에도 ~$3.6/월 과금(같은 IP 유지 대가).
   - 안 쓸 땐 인스턴스 'stop' 하면 컴퓨팅 과금 0(EBS만). --destroy 로 전체 삭제 가능.
 """
 
@@ -54,7 +60,10 @@ SG_NAME = f"{PROJECT}-sg"
 ROLE_NAME = f"{PROJECT}-ec2-ecr-role"
 PROFILE_NAME = f"{PROJECT}-ec2-profile"
 INSTANCE_NAME = f"{PROJECT}-prod"
+EIP_NAME = f"{PROJECT}-eip"
 PEM_PATH = Path(__file__).resolve().parent / f"{KEY_NAME}.pem"
+# scp로 EC2에 올릴 로컬 backend/.env (리포 루트 = infra의 상위)
+ENV_SRC = Path(__file__).resolve().parent.parent / "backend" / ".env"
 
 # Windows에서 subprocess로 aws CLI를 호출하면 출력이 파이프로 캡처돼도 페이저(more)가
 # 뜨면서 입력 대기로 멈추는 경우가 있어, 자식 프로세스에서만 페이저를 끈다.
@@ -207,7 +216,9 @@ def create_security_group() -> str:
         "--output",
         "text",
     )
-    # nginx 단일 진입점: 22(SSH/CD)·80(웹)·443(추후 HTTPS)만. 8000/3000은 내부 전용이라 안 엶.
+    # nginx 단일 진입점: 22(SSH/CD·scp)·80(웹)·443(HTTPS)만 연다.
+    #   - 8000(backend)/3000(frontend)은 nginx 뒤 내부 전용이라 안 엶.
+    #   - 9000(Portainer)은 EC2 127.0.0.1에만 바인딩 → SSH 터널(-L 9000)로만 접근하므로 안 엶.
     # 22는 CD 배포(Actions 러너 IP 동적)라 0.0.0.0/0 (key 인증만 허용).
     for port in (22, 80, 443):
         aws(
@@ -223,7 +234,7 @@ def create_security_group() -> str:
             "0.0.0.0/0",
             capture=False,
         )
-    print(f"[+] 보안그룹 생성 {sg_id} (22/80/443/8000/3000 open)")
+    print(f"[+] 보안그룹 생성 {sg_id} (22/80/443 open · 8000/3000/9000 미개방)")
     return sg_id
 
 
@@ -333,43 +344,121 @@ def run_instance(ami: str, sg_id: str, with_profile: bool) -> str:
     raise RuntimeError("인스턴스 시작 실패")
 
 
-def wait_and_report(instance_id: str) -> None:
-    print("[*] running 대기...")
-    aws("ec2", "wait", "instance-running", "--instance-ids", instance_id, capture=False)
-    info = json.loads(
-        aws(
-            "ec2",
-            "describe-instances",
-            "--instance-ids",
-            instance_id,
-            "--query",
-            "Reservations[0].Instances[0].{ip:PublicIpAddress,dns:PublicDnsName}",
-            "--output",
-            "json",
-        )
+def ensure_and_associate_eip(instance_id: str) -> str:
+    """Elastic IP를 확보해 인스턴스에 연결하고 그 공인 IP를 반환한다.
+
+    태그(Name=clickme-eip)로 기존 EIP를 먼저 찾는다 — --destroy가 EIP를 보존하므로
+    철거→재생성해도 같은 IP가 유지된다. 없으면 새로 할당한다.
+    """
+    ok, out = aws_ok(
+        "ec2",
+        "describe-addresses",
+        "--filters",
+        f"Name=tag:Name,Values={EIP_NAME}",
+        "--query",
+        "Addresses[0].{alloc:AllocationId,ip:PublicIp}",
+        "--output",
+        "json",
     )
-    ip, dns = info.get("ip"), info.get("dns")
+    alloc = ip = None
+    if ok and out and out != "null":
+        data = json.loads(out)
+        alloc, ip = data.get("alloc"), data.get("ip")
+    if not alloc:
+        alloc = aws(
+            "ec2",
+            "allocate-address",
+            "--domain",
+            "vpc",
+            "--tag-specifications",
+            f"ResourceType=elastic-ip,Tags=[{{Key=Name,Value={EIP_NAME}}},{{Key=Project,Value={PROJECT}}}]",
+            "--query",
+            "AllocationId",
+            "--output",
+            "text",
+        )
+        ip = aws(
+            "ec2",
+            "describe-addresses",
+            "--allocation-ids",
+            alloc,
+            "--query",
+            "Addresses[0].PublicIp",
+            "--output",
+            "text",
+        )
+        print(f"[+] Elastic IP 할당 {ip} ({alloc})")
+    else:
+        print(f"[=] 기존 Elastic IP 재사용 {ip} ({alloc})")
+    aws("ec2", "associate-address", "--instance-id", instance_id, "--allocation-id", alloc, capture=False)
+    print(f"[+] EIP {ip} → 인스턴스 {instance_id} 연결")
+    return ip
+
+
+def upload_env_file(host: str) -> None:
+    """부팅 후 SSH가 열리면 로컬 backend/.env 를 EC2로 scp 업로드한다.
+
+    EIP는 철거/재생성 간 재사용되므로 매번 호스트키가 바뀐다 → known_hosts를 무시(os.devnull)해
+    'REMOTE HOST IDENTIFICATION HAS CHANGED' 하드 실패와 대화형 프롬프트를 모두 회피한다.
+    """
+    if not ENV_SRC.exists():
+        print(f"[!] backend/.env 없음 — scp 건너뜀 ({ENV_SRC}). 준비되면 수동 업로드하세요.")
+        return
+    remote = f"ubuntu@{host}"
+    ssh_opts = [
+        "-i",
+        str(PEM_PATH),
+        "-o",
+        "StrictHostKeyChecking=no",
+        "-o",
+        f"UserKnownHostsFile={os.devnull}",
+        "-o",
+        "ConnectTimeout=10",
+    ]
+    print("[*] SSH 준비 대기 후 backend/.env 업로드... (부팅+sshd 기동까지 최대 ~5분)")
+    for attempt in range(30):
+        res = subprocess.run(
+            ["ssh", *ssh_opts, remote, "mkdir -p ~/clickme/backend"],
+            capture_output=True,
+            text=True,
+        )
+        if res.returncode == 0:
+            break
+        time.sleep(10)
+    else:
+        print("[!] SSH 접속 실패 — 부팅/보안그룹 확인 후 아래를 수동 실행하세요:")
+        print(f"    scp -i {PEM_PATH} {ENV_SRC} {remote}:/home/ubuntu/clickme/backend/.env")
+        return
+    dst = f"{remote}:/home/ubuntu/clickme/backend/.env"
+    res = subprocess.run(["scp", *ssh_opts, str(ENV_SRC), dst], capture_output=True, text=True)
+    if res.returncode == 0:
+        print(f"[+] backend/.env 업로드 완료 → {dst}")
+    else:
+        print(f"[!] scp 실패:\n{res.stderr.strip()}")
+
+
+def report(instance_id: str, host: str) -> None:
     print("\n" + "=" * 60)
     print("EC2 준비 완료. GitHub Secrets에 아래 값을 등록하세요.")
     print("=" * 60)
-    print(f"EC2_HOST  = {ip}   (또는 도메인 연결 시 그 도메인)")
+    print(f"EC2_HOST  = {host}   (고정 Elastic IP — 철거/재생성해도 유지)")
     print("EC2_USER  = ubuntu")
     print(f"EC2_SSH_KEY = {PEM_PATH} 파일의 *전체 내용* 붙여넣기")
-    print(f"\nNEXT_PUBLIC_API_URL = http://{ip}:8000   (도메인+HTTPS 연결 시 https://api.도메인)")
-    print(f"\nSSH 접속: ssh -i {PEM_PATH} ubuntu@{ip}")
-    print(f"DNS: {dns}")
+    print("\n※ NEXT_PUBLIC_API_URL 은 더 이상 secret 아님(빈 값 빌드 → /api 상대경로, nginx same-origin).")
+    print(f"\nSSH 접속: ssh -i {PEM_PATH} ubuntu@{host}")
     print("\n주의:")
     print(" - user-data 설치(docker/awscli)는 부팅 후 1~3분 더 걸립니다.")
     print("   확인: ssh 접속 후 'cat ~/clickme/.bootstrap-ok' / 'docker --version'")
+    print(" - backend/.env 는 이 스크립트가 자동 업로드합니다(아래 로그 확인).")
     print(" - ECR 리포(clickme-backend/frontend)는 cd.yml이 자동 생성합니다.")
-    print(" - EC2 ~/clickme/docker-compose.prod.yml 은 아직 없습니다(다음 단계).")
+    print(" - Portainer는 SSH 터널로만: ssh -i %s -N -L 9000:localhost:9000 ubuntu@%s" % (PEM_PATH, host))
     print(
         " - 안 쓸 땐: aws ec2 stop-instances --region %s --instance-ids %s" % (REGION, instance_id)
     )
 
 
 # ─────────────────────────── 철거 ───────────────────────────
-def destroy() -> None:
+def destroy(release_eip: bool = False) -> None:
     print(f"[*] {PROJECT} 리소스 철거 (region={REGION})")
     ok, ids = aws_ok(
         "ec2",
@@ -387,6 +476,26 @@ def destroy() -> None:
         aws("ec2", "terminate-instances", "--instance-ids", *inst, capture=False)
         print(f"[-] 인스턴스 종료 {inst} (terminated 대기...)")
         aws("ec2", "wait", "instance-terminated", "--instance-ids", *inst, capture=False)
+    # Elastic IP: 기본은 보존(같은 IP 재사용). --release-eip 일 때만 완전 반환.
+    # (인스턴스 종료 시 연결은 자동 해제되고, EIP는 계정에 남는다.)
+    ok, alloc = aws_ok(
+        "ec2",
+        "describe-addresses",
+        "--filters",
+        f"Name=tag:Name,Values={EIP_NAME}",
+        "--query",
+        "Addresses[0].AllocationId",
+        "--output",
+        "text",
+    )
+    alloc = alloc if ok and alloc and alloc != "None" else None
+    if alloc:
+        if release_eip:
+            done, err = aws_ok("ec2", "release-address", "--allocation-id", alloc)
+            print(f"[-] Elastic IP 반환 {alloc}" if done else f"[!] EIP 반환 실패: {err}")
+        else:
+            print(f"[=] Elastic IP 보존 {alloc} — 재생성 시 같은 IP 유지(완전 삭제는 --release-eip)")
+            print("    주의: 인스턴스 없이 유휴 상태인 EIP는 시간당 과금(~$3.6/월).")
     # SG (인스턴스 종료 후)
     ok, sg = aws_ok(
         "ec2",
@@ -431,7 +540,7 @@ def destroy() -> None:
 # ─────────────────────────── main ───────────────────────────
 def main() -> None:
     if "--destroy" in sys.argv:
-        destroy()
+        destroy(release_eip="--release-eip" in sys.argv)
         return
     print(f"[*] ClickMe EC2 프로비저닝 (region={REGION}, type={INSTANCE_TYPE})")
     ami = latest_ubuntu_ami()
@@ -440,7 +549,11 @@ def main() -> None:
     sg_id = create_security_group()
     with_profile = create_iam_role()
     iid = run_instance(ami, sg_id, with_profile)
-    wait_and_report(iid)
+    print("[*] running 대기...")
+    aws("ec2", "wait", "instance-running", "--instance-ids", iid, capture=False)
+    host = ensure_and_associate_eip(iid)
+    report(iid, host)
+    upload_env_file(host)
 
 
 if __name__ == "__main__":
