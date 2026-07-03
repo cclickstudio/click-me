@@ -20,7 +20,7 @@ from urllib.parse import parse_qs, urlencode, urlparse, urlsplit, urlunsplit
 from uuid import UUID, uuid4
 
 import httpx
-from fastapi import APIRouter, Depends, File, Header, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Header, HTTPException, Query, Request, UploadFile
 from fastapi.responses import RedirectResponse, StreamingResponse
 from langsmith import traceable
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl
@@ -534,6 +534,94 @@ async def anomaly_notify_scan(
         summary["delivered"],
     )
     return {"scanned_findings": count, **summary}
+
+
+# ── 운영 알림(이상 감지 C안) — 스펙 docs/superpowers/specs/2026-07-03-…-design.md §2 ──
+# (Task 9의 GET /notifications/stream은 반드시 이 블록의 /{id} 라우트들보다 먼저 선언)
+
+
+def _notification_store() -> Any:
+    """알림 store 팩토리 — 테스트에서 monkeypatch로 교체하는 seam."""
+    from domain.management.remediation.notification_store import (  # noqa: PLC0415
+        DbNotificationStore,
+    )
+
+    return DbNotificationStore()
+
+
+def _publish_org(org_id: str) -> None:
+    from domain.management.remediation import broker  # noqa: PLC0415
+
+    broker.publish(org_id)
+
+
+class NotificationReadRequest(BaseModel):
+    ids: list[str] = Field(min_length=1, max_length=200)
+
+
+class NotificationResolveRequest(BaseModel):
+    resolution: Literal["ignored", "actioned"]
+
+
+@router.get("/notifications")
+async def list_notifications(
+    project_id: str | None = None,
+    unread_only: bool = False,
+    include_resolved: bool = False,
+    limit: int = Query(50, ge=1, le=200),
+    before: str | None = None,
+    before_id: str | None = None,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """org 전체 알림 목록 + 배지용 unread_count(필터 무관 org 전체 미해결·미열람 수).
+
+    커서는 (before, before_id) 복합 — 마지막 행의 last_notified_at·id를 그대로 넘긴다.
+    """
+    org_id = str(await _require_org_id(user, db))
+    before_dt = datetime.fromisoformat(before) if before else None
+    items, unread = await _notification_store().list_for_org(
+        org_id,
+        project_id=project_id,
+        unread_only=unread_only,
+        include_resolved=include_resolved,
+        limit=limit,
+        before=before_dt,
+        before_id=before_id,
+    )
+    return {"notifications": items, "unread_count": unread}
+
+
+@router.post("/notifications/read")
+async def read_notifications(
+    body: NotificationReadRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """bulk 열람 마킹 — 패널이 화면에 보인 카드를 일괄 read 처리(단건도 같은 경로)."""
+    org_id = str(await _require_org_id(user, db))
+    updated = await _notification_store().mark_read(org_id, body.ids, datetime.now(UTC))
+    if updated:
+        _publish_org(org_id)  # 다른 탭 배지 동기화
+    return {"updated": updated}
+
+
+@router.post("/notifications/{notification_id}/resolve")
+async def resolve_notification(
+    notification_id: str,
+    body: NotificationResolveRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """무시/조치됨 마킹 — ignored는 같은 (캠페인,이상) 재통지 완전 억제(스펙 §0)."""
+    org_id = str(await _require_org_id(user, db))
+    ok = await _notification_store().resolve(
+        org_id, notification_id, body.resolution, datetime.now(UTC)
+    )
+    if not ok:
+        raise HTTPException(404, "알림을 찾을 수 없습니다.")  # 타 org 포함 fail-closed
+    _publish_org(org_id)
+    return {"resolved": True, "resolution": body.resolution}
 
 
 class ApprovalRequest(BaseModel):
