@@ -7,6 +7,7 @@ import { AdminOrgPicker } from '@/components/manage/AdminOrgPicker';
 import { useInfiniteList, useDebouncedValue } from '@/components/admin/useInfiniteList';
 import {
   HistoryControls,
+  OrgStatusDot,
   historyQueryString,
   DEFAULT_HISTORY_QUERY,
   type HistoryQuery,
@@ -20,6 +21,7 @@ type ChatRow = {
   title: string | null;
   message_count: number;
   org_name: string | null;
+  org_status: string | null;
   created_at: string;
 };
 
@@ -73,6 +75,7 @@ export default function AdminChatsPage() {
               <tr className="border-b border-[#F2F4F6] dark:border-[#252D3D] bg-[#F9FAFB] dark:bg-[#252D3D]">
                 <th className="text-left px-6 py-3 text-xs font-semibold text-[#8B95A1]">제목</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-[#8B95A1]">조직</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-[#8B95A1]">조직 상태</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-[#8B95A1]">메시지 수</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-[#8B95A1]">생성일</th>
               </tr>
@@ -88,6 +91,9 @@ export default function AdminChatsPage() {
                   </td>
                   <td className="px-4 py-3 text-[#4E5968] dark:text-[#9CA3AF]">
                     {r.org_name ?? '—'}
+                  </td>
+                  <td className="px-4 py-3">
+                    <OrgStatusDot status={r.org_status} />
                   </td>
                   <td className="px-4 py-3 text-[#4E5968] dark:text-[#9CA3AF]">{r.message_count}개</td>
                   <td className="px-4 py-3 text-[#8B95A1]">{formatDate(r.created_at)}</td>

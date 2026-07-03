@@ -7,6 +7,7 @@ import { AdminOrgPicker } from '@/components/manage/AdminOrgPicker';
 import { useInfiniteList, useDebouncedValue } from '@/components/admin/useInfiniteList';
 import {
   HistoryControls,
+  OrgStatusDot,
   historyQueryString,
   DEFAULT_HISTORY_QUERY,
   type HistoryQuery,
@@ -20,6 +21,7 @@ type Row = {
   product_name: string | null;
   created_by_name: string | null;
   org_name: string | null;
+  org_status: string | null;
   created_at: string;
 };
 const fmt = (iso: string) => formatKST(iso);
@@ -79,6 +81,7 @@ export default function AdminGenerationsPage() {
                 <th className="text-left px-6 py-3 text-xs font-semibold text-[#8B95A1]">ID</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-[#8B95A1]">상품명</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-[#8B95A1]">조직</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-[#8B95A1]">조직 상태</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-[#8B95A1]">실행자</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-[#8B95A1]">상태</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-[#8B95A1]">생성일</th>
@@ -98,6 +101,9 @@ export default function AdminGenerationsPage() {
                   </td>
                   <td className="px-4 py-3 text-[#4E5968] dark:text-[#9CA3AF]">
                     {r.org_name ?? '—'}
+                  </td>
+                  <td className="px-4 py-3">
+                    <OrgStatusDot status={r.org_status} />
                   </td>
                   <td className="px-4 py-3 text-[#4E5968] dark:text-[#9CA3AF]">
                     {r.created_by_name ?? '—'}
