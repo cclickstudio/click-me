@@ -28,6 +28,7 @@ import PlanChecklist, { type PlanStep } from './PlanChecklist';
 import ErrorCard from './ErrorCard';
 import RemediationOptionsWidget, {
   type OptionSelectMeta,
+  type RemediationOption,
 } from './RemediationOptionsWidget';
 // 챗→매니지먼트 카드(재이식) — widget.type=create_campaign|campaign_action으로 렌더.
 import ChatCreateCampaignCard from './ChatCreateCampaignCard';
@@ -222,12 +223,7 @@ type SourceMeta = {
   plan?: PlanStep[]; // Deep Agent 실행 계획(plan→act→observe) — 체크리스트로 표시
   error?: boolean; // 에러 메시지 — 공통 ErrorCard로 렌더 + 재시도(X1)
   kind?: string; // remediation_consult 등 — meta 종류 판별용(이상 감지 C안)
-  options?: {
-    index: number;
-    action: string;
-    tool_hint: string | null;
-    label: string;
-  }[]; // remediation_consult 옵션 목록
+  options?: RemediationOption[]; // remediation_consult 옵션 목록
   campaign_id?: string; // remediation_consult 대상 캠페인
 };
 // 채팅으로 실제 돌린 시뮬/생성 결과 참조 — 내역에 남겨 재로드 시 "결과 보기" 링크로 렌더.
@@ -1879,6 +1875,10 @@ export default function ChatConversation({
                       Array.isArray(msg.meta?.options) &&
                       msg.meta.options.length > 0 && (
                         <RemediationOptionsWidget
+                          // 리스트 key가 인덱스라 세션 전환 시 같은 자리에 온 다른
+                          // consult 위젯이 리마운트되지 않아 ✓ 상태가 남을 수 있다 —
+                          // 메시지 고유 키(영속 id, 없으면 캠페인+인덱스)로 오염 방지.
+                          key={msg.id ?? `${msg.meta.campaign_id}-${i}`}
                           options={msg.meta.options}
                           campaignId={String(msg.meta.campaign_id ?? '')}
                           onSelect={(text, optionSelect) =>
