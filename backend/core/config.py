@@ -113,6 +113,10 @@ class Settings(BaseSettings):
     # 능동 스케줄러(주기 이상 스캔→알림) — 기본 off(테스트/CI/dev 안전). 운영에서만 켠다.
     management_scheduler_enabled: bool = False
     management_scan_interval_minutes: int = 60
+    # 워커 스캔 판단 방식 — rule(결정론 규칙) | agent(에이전트 판단). 기본 rule=옵트인(지장 없음).
+    management_scanner_mode: str = "rule"
+    # 성과 진단 기본 목표 ROAS — 설정 시 워커가 성과 미달 판단(없으면 성과 진단 생략).
+    management_default_target_roas: float | None = None
     # 진단 agent LLM ReAct 재현성 고정값 (합의문서 P6 — 빈칸 기입). 키 없으면 결정론 폴백.
     management_diagnosis_model: str = "gpt-4o-mini"
     management_diagnosis_temperature: float = 0.0

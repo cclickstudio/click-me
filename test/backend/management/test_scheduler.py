@@ -11,6 +11,7 @@ import pytest
 from domain.management.notifications import LogNotificationSink, build_notification_sink
 from domain.management.scheduler import (
     _agent_scanner,
+    _scanner_for,
     account_rule_findings,
     run_scan,
     start_scheduler,
@@ -192,6 +193,31 @@ async def test_agent_scanner_falls_back_and_never_raises(monkeypatch):
     monkeypatch.setattr("domain.management.wiring.build_reader", lambda _s: _BoomReader())
     findings = await _agent_scanner(SimpleNamespace())
     assert isinstance(findings, list)  # 폴백(규칙)도 같은 고장 → [] 로 안전 강등
+
+
+# ── 스캐너 모드 선택 (_scanner_for) ────────────────────────────────
+
+
+def test_scanner_for_agent_mode_selects_agent():
+    assert _scanner_for(SimpleNamespace(management_scanner_mode="agent")) is _agent_scanner
+
+
+def test_scanner_for_defaults_to_rule():
+    # 기본(미설정) 및 'rule' 모두 None → run_scan이 _default_scanner(규칙)를 쓴다.
+    assert _scanner_for(SimpleNamespace()) is None
+    assert _scanner_for(SimpleNamespace(management_scanner_mode="rule")) is None
+
+
+def test_scanner_for_unknown_mode_is_rule():
+    # 오타·미지원 값은 안전하게 규칙(None)으로 강등(에이전트 오작동 방지).
+    assert _scanner_for(SimpleNamespace(management_scanner_mode="bogus")) is None
+
+
+def test_settings_scanner_mode_defaults_to_rule():
+    """실제 Settings 로드 시 기본값이 rule인지(옵트인 보장)."""
+    from core.config import settings
+
+    assert settings.management_scanner_mode == "rule"
 
 
 @pytest.mark.asyncio

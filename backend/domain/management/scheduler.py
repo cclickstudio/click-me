@@ -271,6 +271,15 @@ async def run_scan(
 _scheduler = None
 
 
+def _scanner_for(settings) -> _Scanner | None:
+    """설정 모드에 따른 스캐너 선택 — 'agent'면 에이전트 판단, 그 외(기본 'rule')는 규칙.
+
+    None을 반환하면 run_scan이 _default_scanner(순수 규칙)를 쓴다.
+    """
+    mode = getattr(settings, "management_scanner_mode", "rule")
+    return _agent_scanner if mode == "agent" else None
+
+
 def start_scheduler(settings) -> bool:
     """settings.management_scheduler_enabled일 때만 기동. 기본 off → 테스트/CI/dev 안전.
 
@@ -285,15 +294,17 @@ def start_scheduler(settings) -> bool:
 
     sink = build_notification_sink(settings)
     interval = getattr(settings, "management_scan_interval_minutes", 60)
+    scanner = _scanner_for(settings)  # 모드에 따라 에이전트 판단 스캐너 또는 규칙(None)
 
     async def _job() -> None:
         try:
-            await run_scan(settings, sink, recorder=record_finding)
+            await run_scan(settings, sink, scanner=scanner, recorder=record_finding)
         except Exception as exc:  # noqa: BLE001 — 잡 실패가 스케줄러를 죽이지 않게
             logger.warning("management 스캔 실패(무시): %s", exc)
 
     _scheduler = AsyncIOScheduler()
     _scheduler.add_job(_job, "interval", minutes=interval, id="mgmt-scan")
     _scheduler.start()
-    logger.info("management 스케줄러 기동 — %d분 간격", interval)
+    mode = getattr(settings, "management_scanner_mode", "rule")
+    logger.info("management 스케줄러 기동 — %d분 간격 · 스캐너=%s", interval, mode)
     return True
