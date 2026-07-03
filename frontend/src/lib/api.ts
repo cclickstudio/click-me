@@ -968,10 +968,10 @@ export const api = {
           body: JSON.stringify({ ids }),
         }),
       resolve: (id: string, resolution: "ignored" | "actioned") =>
-        request<{ resolved: boolean }>(`/management/notifications/${id}/resolve`, {
-          method: "POST",
-          body: JSON.stringify({ resolution }),
-        }),
+        request<{ resolved: boolean; resolution: "ignored" | "actioned" }>(
+          `/management/notifications/${id}/resolve`,
+          { method: "POST", body: JSON.stringify({ resolution }) },
+        ),
       consult: (id: string) =>
         request<
           | { status: "consult"; session_id: string }
