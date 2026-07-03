@@ -1,6 +1,7 @@
 # 이상 감지 선제 알림 — 배달 채널 조율 (A: 채팅 세션 / B: 알림 패널 / C: 하이브리드)
 
-> 작성 2026-07-02, 담당 🅱. 상태: **팀 조율 대기** (기능 스위치 `MANAGEMENT_CHAT_NOTIFY_ENABLED=false`로 봉인).
+> 작성 2026-07-02, 담당 🅱. 상태: **C안 구현 완료(2026-07-03)** — 알림 패널(요약)+[상담하기] 진입
+> 채팅 흐름, `MANAGEMENT_NOTIFY_CHANNEL=panel`로 전환 가능. 상세 이행 내역은 §6 체크박스 참고.
 > **이행 노트(2026-07-03)**: 이 문서의 `MANAGEMENT_CHAT_NOTIFY_ENABLED`(bool)는 채널 설정
 > `MANAGEMENT_NOTIFY_CHANNEL`(log|chat|panel)로 대체됐다. `true` → `chat`, `false` → `log`.
 > 상세: `docs/superpowers/plans/2026-07-03-remediation-hybrid-notification/task-02-config-sink-wiring.md`.
@@ -212,22 +213,30 @@ C를 후속 PR로. 어느 쪽이든 파이프라인·계약은 그대로다.
 
 ## 6. 팀 결정 필요 항목
 
-- [ ] 채널 방향: A 유지 / B / C (🅱 추천 C)
-- [ ] (B·C 시) `management_notifications` 테이블 신설 — core/models.py 사전 공지 + Alembic 담당
-- [ ] (B·C 시) 알림 아이콘 위치·패널 UX — 프론트 담당 협의 (기존 N5 벨과 병치? 통합?)
-- [ ] (C 시) [상담하기] 진입 세션 정책 — 전용 세션 재사용(현행) vs 알림당 새 세션
-- [ ] (C 시) 옵션 선택 UX — 번호 타이핑 vs **옵션 버튼** (🅱 추천 버튼). 버튼은 하드코딩이
-  아니라 meta의 옵션 목록(`OPTION_POOLS`, anomaly_type별 3~4개·관망 항상 마지막)을 그대로
-  렌더 + `[기타]` 추가. 예: no_delivery → `[① 시뮬 점검] [② 새 시안] [③ 일시중지] [④ 두고 보기] [기타]`.
+- [x] 채널 방향: A 유지 / B / C → **C 확정**(🅱 추천안 채택, 2026-07-03). 스위치는
+  `MANAGEMENT_NOTIFY_CHANNEL=panel`. 상세 구현·검증은
+  `docs/superpowers/plans/2026-07-03-remediation-hybrid-notification/` Task 0~13.
+- [x] (B·C 시) `management_notifications` 테이블 신설 — 완료(마이그레이션 0005,
+  `core/models.py` 사전 공지대로 진행). Task 1.
+- [x] (B·C 시) 알림 아이콘 위치·패널 UX — 완료. `NotificationBell.tsx`(헤더, 기존 N5 채팅 벨과
+  병치) + `NotificationPanel.tsx`(드롭다운 카드 목록), `AppLayout.tsx`에 배선. Task 12.
+- [x] (C 시) [상담하기] 진입 세션 정책 — **전용 세션 재사용**(현행 A안 방식 그대로) 확정.
+  `POST /api/management/notifications/{id}/consult`가 프로젝트의 "⚠ 캠페인 이상 알림" 세션을
+  찾거나 만들어 심는다. Task 8.
+- [x] (C 시) 옵션 선택 UX — **옵션 버튼** 확정·구현. meta의 옵션 목록(`OPTION_POOLS`,
+  anomaly_type별 3~4개·관망 항상 마지막)을 그대로 렌더 + `[기타]` 추가. 예: no_delivery →
+  `[① 시뮬 점검] [② 새 시안] [③ 일시중지] [④ 두고 보기] [기타]`.
   - 버튼 클릭 = 정규화된 사용자 메시지 전송(meta에 option_id 동봉) → 기존 `chat.py` 주입
-    경로 재사용, LLM 해석 없이 tool_hint 정확 매핑. 도구 직접 실행(채팅 우회)은 B안
-    "버튼별 실행 UI"의 재발명이라 비추천.
+    경로 재사용, LLM 해석 없이 tool_hint 정확 매핑(`ChatRequest.option_select` 필드, Task 10).
   - [기타] 클릭 = 전송 없이 채팅 입력창 포커스만 이동(placeholder 안내 문구 교체) —
     자유 입력이 항상 열려 있음을 명시해 B안식 "버튼 UI로 축소"를 방지.
-  - 버튼은 1회용 비활성화하지 않고 consult 메시지에 유지(후속 대화 뒤 "그럼 1번" 가능),
-    이미 실행한 옵션만 표시(체크 등) 처리.
-- [ ] (C 시) [무시] 후 재통지 정책 — 완전 억제 vs 이상 지속 시 후속 1회 허용
-- [ ] 발표(7-14) 데모는 어느 상태로? (A 스위치 온 데모 / C 완성 대기)
+  - 버튼은 1회용 비활성화하지 않고 consult 메시지에 유지(후속 대화 뒤 "그럼 1번" 가능).
+  구현: `chat/OptionButtons.tsx` 위젯(Task 13).
+- [x] (C 시) [무시] 후 재통지 정책 — **완전 억제** 확정(이상 지속 시 후속 1회 허용안은 채택 안 함).
+  `resolution='ignored'`로 마킹된 (캠페인, 이상유형)은 재스캔해도 재통지하지 않는다.
+  스캐너 힌트+reconcile 로직에 반영(Task 6).
+- [x] 발표(7-14) 데모는 어느 상태로? → **C 완성 상태**로 데모(과도기 A 스위치 온 데모는
+  채택 안 함). `.env`에 `MANAGEMENT_NOTIFY_CHANNEL=panel` 설정.
 
 ## 7. 참고
 

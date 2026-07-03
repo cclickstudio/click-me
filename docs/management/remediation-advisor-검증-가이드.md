@@ -25,7 +25,7 @@
 
 | # | 항목 | 확인 방법 | 주의 |
 |---|---|---|---|
-| 1 | **채널 켜기** | `.env`에 `MANAGEMENT_NOTIFY_CHANNEL=chat`(이행 노트: 구 `MANAGEMENT_CHAT_NOTIFY_ENABLED=true` → `MANAGEMENT_NOTIFY_CHANNEL=chat`) | ⚠ **활성 .env 위치**: config는 프로젝트 루트 `.env`를 **우선** 읽고, 없으면 `backend/.env`(`core/config.py:9-11`). 루트에 .env가 생기면 backend 것은 무시됨 |
+| 1 | **채널 켜기** | `.env`에 `MANAGEMENT_NOTIFY_CHANNEL=chat`(이행 노트: 구 `MANAGEMENT_CHAT_NOTIFY_ENABLED=true` → `MANAGEMENT_NOTIFY_CHANNEL=chat`(또는 `panel`)) | ⚠ **활성 .env 위치**: config는 프로젝트 루트 `.env`를 **우선** 읽고, 없으면 `backend/.env`(`core/config.py:9-11`). 루트에 .env가 생기면 backend 것은 무시됨. **C안 채택 후 기본은 `panel`** — `chat` 경로는 아래 §2~9, `panel` 경로는 §10 참고 |
 | 2 | 스케줄러(선택) | 예약 실행 경로까지 보려면 `MANAGEMENT_SCHEDULER_ENABLED=true` + `MANAGEMENT_SCAN_INTERVAL_MINUTES=1` | **수동 검증엔 불필요** — notify-scan이 같은 경로를 즉시 태움 |
 | 3 | 노출 0 캠페인 | 아래 §2 | live·mock 양쪽 다 기본 데이터엔 노출 0 캠페인이 **없음** → 신호 주입 필요 |
 | 4 | 캠페인→프로젝트 시딩 | 아래 §3 | 없으면 `skipped(no_project_mapping)` — **버그 아님**(fail-closed) |
@@ -293,3 +293,23 @@ if __name__ == "__main__":
 - 결과: [1]~[5] 전부 기대대로 — delivered 1건, LLM polish 적용된 인트로 + 결정론 옵션 4개,
   재스캔 bell_pending. 시딩·알림 세션은 프론트 확인 후 §7로 정리 예정.
 - 프론트 확인(벨→"1번 해줘"→위젯)은 사용자 화면에서 수행.
+
+## 10. panel 채널 데모 절차 (`MANAGEMENT_NOTIFY_CHANNEL=panel`, C안 기본값)
+
+C안(하이브리드) 채택(2026-07-03, `docs/management/remediation-알림-채널-조율.md` §6) 이후
+기본 채널은 `panel`이다. §1~9는 `channel=chat`(A안) 시절 검증 기록으로 남겨두고, panel 채널은
+아래 절차로 갈음한다. 감지·재검증·resolver·시딩(§2·§3)은 채널과 무관하게 동일하게 재사용된다.
+
+1. `.env`에 `MANAGEMENT_NOTIFY_CHANNEL=panel` (`chat` 대신).
+2. 스캔 트리거는 동일: `POST /api/management/anomaly/notify-scan`(수동) 또는 스케줄러.
+3. 배달 경로 차이: `PanelNotificationSink`가 채팅 세션 대신 `management_notifications`에
+   INSERT — 대화 공간(채팅 목록)에는 아무것도 생기지 않는다.
+4. 프론트: 헤더의 알림 벨(`NotificationBell.tsx`, 기존 채팅 벨과 별도)에 배지 → 클릭 시
+   `NotificationPanel.tsx` 드롭다운에 카드 목록(캠페인명·이상 유형·프로젝트 라벨).
+5. 카드 **[상담하기]** → `POST /api/management/notifications/{id}/consult` → 프로젝트 전용
+   세션("⚠ 캠페인 이상 알림")에 옵션표 심기(A안 코드 재사용, §6 결정) → 채팅 열림 → 옵션
+   버튼(`OptionButtons.tsx`) 렌더 → 클릭 시 정규화 메시지 전송 → tool_hint 매핑.
+6. 카드 **[무시]** → `POST /api/management/notifications/{id}/resolve`(resolution=ignored) →
+   재스캔해도 같은 (캠페인, 이상 유형) 재통지 없음(완전 억제, §6 결정).
+7. 실시간 배지: `GET /api/management/notifications/stream`(SSE, org 스코프) — 새 알림·읽음·
+   해소 시 갱신.
