@@ -73,3 +73,5 @@
 - 채널→sink 매핑 이중화(build_notification_sink ↔ notify-scan 분기) — 새 채널 추가 시 통합 검토, 상호 참조 주석으로 임시 방어(Task 6 품질 리뷰 기록).
 - 스캐너 분류 로직 중복(_default_scanner/_org_scanner) — `classify_campaign` 공용 헬퍼 추출 후보(기존 3중 중복의 연장, Task 6 품질 리뷰 기록).
 - 패널 read 처리의 뷰포트 정밀화(IntersectionObserver) — 1차는 필터 적용된 목록 기준(Task 12 품질 리뷰 기록). 모바일 드로어 열림 중 벨 활성 상태 일관성도 함께.
+- 벨의 SSE 상시 연결 — log/chat 채널일 때도 전 사용자 구독 유지(무해하나 커넥션 점유). 채널 설정을 프론트에 노출해 조건 마운트 검토(최종 리뷰 기록).
+- COMPANY 역할 [상담하기] UX — /chat 라우트는 차단되지만 FloatingChat 오버레이는 열림. 역할별 버튼 노출 정책 검토(최종 리뷰 기록).
