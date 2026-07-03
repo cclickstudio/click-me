@@ -128,6 +128,93 @@ def account_rule_findings(
     return findings
 
 
+async def _agent_scanner(settings) -> list[dict]:
+    """에이전트 판단 스캐너 — 캠페인별 성과 진단(규칙→INCONCLUSIVE시 LLM 재판정) + 결정론 센서.
+
+    _default_scanner(순수 규칙)의 상위호환: 게재0·소재피로는 정책 정본 임계로 결정론 유지하되,
+    성과 미달은 diagnose_campaign(에이전트)이 맥락으로 판단한다. 성과 목표(target_roas)가 없으면
+    성과 진단은 자동 생략(휴리스틱 금지 — 목표를 지어내지 않는다) → 게재0·피로만.
+    조회/조립 실패는 규칙 스캐너로 폴백(지장 없음). 임계·통지·기록 파이프라인은 그대로.
+    """
+    from datetime import UTC, datetime  # noqa: PLC0415
+
+    from domain.management.contracts.enums import CampaignState  # noqa: PLC0415
+    from domain.management.contracts.policy import FATIGUE_FREQUENCY  # noqa: PLC0415
+    from domain.management.detection.agentic_scan import diagnose_campaign  # noqa: PLC0415
+    from domain.management.wiring import build_reader  # noqa: PLC0415
+
+    try:
+        reader = build_reader(settings)
+        infos = await reader.list_campaigns()
+    except Exception as exc:  # noqa: BLE001 — 조회/조립 실패 → 규칙 스캐너로 폴백(지장 없음)
+        logger.warning("management 에이전트 스캔 준비 실패 → 규칙 폴백: %s", exc)
+        try:
+            return await _default_scanner(settings)
+        except Exception as exc2:  # noqa: BLE001 — 폴백까지 실패해도 스캐너는 raise하지 않음
+            logger.warning("management 규칙 폴백도 실패(빈 결과): %s", exc2)
+            return []
+
+    now = datetime.now(UTC)
+    # 성과 미달 판정 목표 — 설정에 기본 목표가 있을 때만(없으면 None → 성과 진단 생략).
+    target_roas = getattr(settings, "management_default_target_roas", None)
+    findings: list[dict] = []
+    for c in infos:
+        name = c.name or c.campaign_id
+        is_active = c.state == CampaignState.ACTIVE
+        try:
+            m = await reader.get_metrics(c.campaign_id, now)
+        except Exception:  # noqa: BLE001 — 캠페인 1건 실패가 전체 스캔을 막지 않게
+            continue
+        # 결정론 센서 — 게재 0(활성인데 노출 없음): 값싼 프리필터.
+        if is_active and (m.impressions or 0) == 0:
+            findings.append(
+                {
+                    "tenant_id": "global",
+                    "title": f"게재 점검 — {name}",
+                    "body": "활성 캠페인인데 노출이 0입니다. 심사·예산·타깃을 점검하세요.",
+                    "meta": {"campaign_id": c.campaign_id, "rule": "zero_impressions"},
+                }
+            )
+        # 에이전트 판단 — 성과 미달(목표 없으면 diagnose_campaign이 None 반환 → 생략).
+        dx = await diagnose_campaign(
+            reader, settings, c.campaign_id, {"roas": m.roas, "target_roas": target_roas}, m.as_of
+        )
+        if dx:
+            findings.append(
+                {
+                    "tenant_id": "global",
+                    "title": f"성과 진단 — {name}",
+                    "body": dx.get("hypothesis") or "성과 이상 신호가 감지됐어요.",
+                    "meta": {
+                        "campaign_id": c.campaign_id,
+                        "rule": dx.get("anomaly_type") or "performance_anomaly",
+                        "confidence": dx.get("confidence"),
+                        "source": dx.get("source"),
+                        "status": dx.get("status"),
+                    },
+                }
+            )
+        # 결정론 센서 — 소재 피로(최근 7일 빈도, 정책 임계). live_campaigns엔 빈도가 없어
+        # 여기서 실측(reader)으로 잡는다.
+        if is_active:
+            try:
+                wk = await reader.get_metrics(c.campaign_id, now, date_preset="last_7d")
+                freq = wk.frequency or 0.0
+            except Exception:  # noqa: BLE001 — 피로 신호 실패는 조용히 건너뜀
+                freq = 0.0
+            if freq >= FATIGUE_FREQUENCY:
+                findings.append(
+                    {
+                        "tenant_id": "global",
+                        "title": f"소재 피로 — {name}",
+                        "body": f"빈도 {freq:.1f}회 — 도달 피로 구간, 소재 교체 검토.",
+                        "meta": {"campaign_id": c.campaign_id, "rule": "creative_fatigue"},
+                    }
+                )
+    findings.extend(await _account_rules_scan(settings))
+    return findings
+
+
 async def record_finding(finding: dict) -> None:
     """자동 점검 발견 1건을 롱텀 메모리(실행 히스토리)에 actor=auto로 기록(best-effort).
 

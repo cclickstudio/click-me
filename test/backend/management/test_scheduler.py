@@ -9,7 +9,12 @@ from types import SimpleNamespace
 import pytest
 
 from domain.management.notifications import LogNotificationSink, build_notification_sink
-from domain.management.scheduler import account_rule_findings, run_scan, start_scheduler
+from domain.management.scheduler import (
+    _agent_scanner,
+    account_rule_findings,
+    run_scan,
+    start_scheduler,
+)
 
 
 class _FakeSink:
@@ -109,6 +114,84 @@ def test_account_rules_zero_cap_and_target_are_silent():
         )
         == []
     )
+
+
+# ── 에이전트 판단 스캐너 (_agent_scanner) ──────────────────────────
+
+
+def _fake_metrics(*, impressions=100, frequency=0.0, roas=None):
+    from datetime import UTC, datetime
+
+    return SimpleNamespace(
+        impressions=impressions,
+        frequency=frequency,
+        roas=roas,
+        as_of=datetime(2026, 7, 4, tzinfo=UTC),
+    )
+
+
+class _FakeReader:
+    """list_campaigns/get_metrics/get_relevance_diagnostics만 구현한 스텁.
+
+    계정 룰 메서드(get_account_funding 등)는 없어 _account_rules_scan은 조용히 []를 낸다.
+    """
+
+    def __init__(self, *, impressions=100, frequency=0.0):
+        from domain.management.contracts.enums import CampaignState
+
+        self._camp = SimpleNamespace(
+            campaign_id="c1", name="테스트캠페인", state=CampaignState.ACTIVE
+        )
+        self._impr = impressions
+        self._freq = frequency
+
+    async def list_campaigns(self):
+        return [self._camp]
+
+    async def get_metrics(self, cid, when, date_preset=None):
+        if date_preset == "last_7d":
+            return _fake_metrics(frequency=self._freq)
+        return _fake_metrics(impressions=self._impr)
+
+    async def get_relevance_diagnostics(self, cid):
+        return None
+
+
+@pytest.mark.asyncio
+async def test_agent_scanner_flags_zero_impressions(monkeypatch):
+    """활성 캠페인 노출 0 → zero_impressions 결정론 센서가 발동(목표 없으니 성과 진단은 생략)."""
+    monkeypatch.setattr(
+        "domain.management.wiring.build_reader", lambda _s: _FakeReader(impressions=0)
+    )
+    findings = await _agent_scanner(SimpleNamespace())
+    rules = [f["meta"]["rule"] for f in findings]
+    assert "zero_impressions" in rules
+
+
+@pytest.mark.asyncio
+async def test_agent_scanner_flags_fatigue(monkeypatch):
+    """최근 7일 빈도가 임계 이상 → creative_fatigue 결정론 센서 발동."""
+    monkeypatch.setattr(
+        "domain.management.wiring.build_reader",
+        lambda _s: _FakeReader(impressions=500, frequency=4.0),
+    )
+    findings = await _agent_scanner(SimpleNamespace())
+    rules = [f["meta"]["rule"] for f in findings]
+    assert "creative_fatigue" in rules
+    assert "zero_impressions" not in rules  # 노출 있음
+
+
+@pytest.mark.asyncio
+async def test_agent_scanner_falls_back_and_never_raises(monkeypatch):
+    """reader가 완전히 고장나도 에이전트 스캐너는 raise하지 않고 빈 목록으로 강등."""
+
+    class _BoomReader:
+        async def list_campaigns(self):
+            raise RuntimeError("meta down")
+
+    monkeypatch.setattr("domain.management.wiring.build_reader", lambda _s: _BoomReader())
+    findings = await _agent_scanner(SimpleNamespace())
+    assert isinstance(findings, list)  # 폴백(규칙)도 같은 고장 → [] 로 안전 강등
 
 
 @pytest.mark.asyncio
