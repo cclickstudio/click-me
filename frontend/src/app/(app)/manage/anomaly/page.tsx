@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
-import { api, type AnomalyScanItem } from '@/lib/api';
+import { api, type AnomalyScanItem, type AutomationRunItem } from '@/lib/api';
 import { AZone } from '@/components/manage/AZone';
 import { BZone } from '@/components/manage/BZone';
 import { ApprovalBridge } from '@/components/manage/ApprovalBridge';
@@ -46,6 +46,8 @@ export default function Page() {
     null,
   );
   const [scanBusy, setScanBusy] = useState(false);
+  // 서버 워커(APScheduler)가 자동으로 남긴 결과 — 탭 안 열려도 서버가 해둔 걸 읽어 표시.
+  const [workerRuns, setWorkerRuns] = useState<AutomationRunItem[]>([]);
 
   const scanReal = useCallback(async () => {
     setScanBusy(true);
@@ -69,6 +71,14 @@ export default function Page() {
     }, 600_000);
     return () => clearInterval(id);
   }, [scanReal]);
+
+  // 서버 워커가 남긴 자동 점검 결과 로드(진입 시 1회) — 워커는 서버에서 상시 돌고, 화면은 읽기만.
+  useEffect(() => {
+    api.automation
+      .runs({ domain: 'management', limit: 10 })
+      .then((r) => setWorkerRuns(r.runs))
+      .catch(() => setWorkerRuns([]));
+  }, []);
 
   const start = async () => {
     setBusy(true);
@@ -254,6 +264,41 @@ export default function Page() {
                 </p>
               )}
             </div>
+          )}
+        </div>
+
+        {/* 서버 워커 자동 점검 결과 — APScheduler가 서버에서 자동으로 남긴 것(탭 안 열려도) */}
+        <div className="mb-4 rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] px-4 py-3">
+          <p className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]">
+            서버 자동 점검 결과
+          </p>
+          <p className="text-[12px] text-[#8B95A1] mt-0.5">
+            백엔드 워커(APScheduler)가 서버에서 주기적으로 스스로 점검해 남긴 결과예요. 이 화면을 열어두지
+            않아도 서버가 자동으로 쌓아둡니다.
+          </p>
+          {workerRuns.length === 0 ? (
+            <p className="mt-2 text-[12px] text-[#8B95A1]">
+              아직 서버 자동 점검 결과가 없어요(워커 비활성이거나 이상 미발견).
+            </p>
+          ) : (
+            <ul className="mt-2 space-y-1.5">
+              {workerRuns.map((r) => (
+                <li
+                  key={r.id}
+                  className="rounded-lg bg-[#F9FAFB] dark:bg-[#1A202C] px-3 py-2"
+                >
+                  <p className="text-[12px] font-semibold text-[#191F28] dark:text-[#F2F4F6]">
+                    {r.title || r.job_name}
+                    {r.created_at && (
+                      <span className="ml-2 font-normal text-[#B0B8C1]">
+                        {r.created_at.slice(0, 16).replace('T', ' ')}
+                      </span>
+                    )}
+                  </p>
+                  {r.body && <p className="text-[12px] text-[#8B95A1]">{r.body}</p>}
+                </li>
+              ))}
+            </ul>
           )}
         </div>
 

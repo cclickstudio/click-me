@@ -340,6 +340,20 @@ export type ChatHistoryMessage = {
   created_at?: string | null;
 };
 
+export interface AutomationRunItem {
+  id: string;
+  domain: string;
+  job_name: string;
+  status: string;
+  severity: string | null;
+  title: string;
+  body: string;
+  suggested_action: string | null;
+  payload: Record<string, unknown>;
+  created_at: string | null;
+  resolved_at: string | null;
+}
+
 export const api = {
   ads: {
     upload: (file: File, projectId: string) => {
@@ -1014,6 +1028,26 @@ export const api = {
         throw new Error((err as { detail?: string }).detail ?? `HTTP ${res.status}`);
       }
       return res.json() as Promise<{ temp_key: string }>;
+    },
+  },
+
+  automation: {
+    // 워커(APScheduler)가 서버에서 자동으로 남긴 결과 조회 — 탭 안 열려도 서버 결과를 읽는다.
+    runs: (params?: {
+      projectId?: string;
+      domain?: string;
+      unresolved?: boolean;
+      limit?: number;
+    }) => {
+      const q = new URLSearchParams();
+      if (params?.projectId) q.set("project_id", params.projectId);
+      if (params?.domain) q.set("domain", params.domain);
+      if (params?.unresolved) q.set("unresolved", "true");
+      if (params?.limit) q.set("limit", String(params.limit));
+      const qs = q.toString();
+      return request<{ runs: AutomationRunItem[]; count: number }>(
+        `/automation/runs${qs ? `?${qs}` : ""}`,
+      );
     },
   },
 };
