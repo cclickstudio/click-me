@@ -317,7 +317,8 @@ def create_iam_role() -> bool:
     return True
 
 
-def run_instance(ami: str, sg_id: str, with_profile: bool) -> str:
+def run_instance(ami: str, sg_id: str, with_profile: bool) -> tuple[str, bool]:
+    """인스턴스를 확보한다. (instance_id, reused) — 기존 재사용이면 reused=True."""
     # 기존 동일 Name 태그 + 종료되지 않은 인스턴스 있으면 재사용
     ok, out = aws_ok(
         "ec2",
@@ -332,7 +333,7 @@ def run_instance(ami: str, sg_id: str, with_profile: bool) -> str:
     )
     if ok and out and out != "None":
         print(f"[=] 인스턴스 {INSTANCE_NAME} 이미 존재 ({out})")
-        return out
+        return out, True
 
     ud_file = Path(__file__).resolve().parent / "_userdata.sh"
     # LF 고정(bash 스크립트) + fileb://로 전달 → Windows CRLF/디코딩 이슈 회피
@@ -370,7 +371,7 @@ def run_instance(ami: str, sg_id: str, with_profile: bool) -> str:
         if ok:
             ud_file.unlink(missing_ok=True)
             print(f"[+] 인스턴스 시작 {out} ({INSTANCE_TYPE}, {DISK_GB}GB)")
-            return out
+            return out, False
         if "Invalid IAM Instance Profile" in out and attempt < 5:
             print(f"    IAM Profile 전파 대기... ({attempt + 1}/5)")
             time.sleep(10)
@@ -431,15 +432,29 @@ def ensure_and_associate_eip(instance_id: str) -> str:
     return ip
 
 
-def upload_env_file(host: str) -> None:
+def upload_env_file(host: str, attempts: int = 30) -> None:
     """부팅 후 SSH가 열리면 로컬 backend/.env 를 EC2로 scp 업로드한다.
 
     EIP는 철거/재생성 간 재사용되므로 매번 호스트키가 바뀐다 → known_hosts를 무시(os.devnull)해
     'REMOTE HOST IDENTIFICATION HAS CHANGED' 하드 실패와 대화형 프롬프트를 모두 회피한다.
+
+    attempts: SSH 재시도 횟수. 신규 부팅은 sshd 기동까지 시간이 걸려 크게(30),
+    이미 running인 재실행은 짧게(예: 6) 준다 — 실패해도 오래 안 매달리도록.
     """
     if not ENV_SRC.exists():
         print(f"[!] backend/.env 없음 — scp 건너뜀 ({ENV_SRC}). 준비되면 수동 업로드하세요.")
         return
+    # PEM이 로컬에 없으면 SSH 자체가 불가하다(재실행 PC엔 PEM이 없을 수 있다 — create_key_pair는
+    # 키가 이미 있으면 PEM을 재생성하지 않음). 조용히 매달리지 말고 fetch_key.py로 자동 수신 시도.
+    if not PEM_PATH.exists():
+        print(f"[*] PEM 없음({PEM_PATH}) — fetch_key.py로 SSM에서 자동으로 받아옵니다...")
+        fetch_script = Path(__file__).resolve().parent / "fetch_key.py"
+        subprocess.run([sys.executable, str(fetch_script)])
+        if not PEM_PATH.exists():
+            print("[!] PEM 자동 수신 실패(SSM 미백업/권한 부족 가능) — 아래를 수동 실행 후 다시 시도하세요:")
+            print(f"    scp -i {PEM_PATH} {ENV_SRC} ubuntu@{host}:/home/ubuntu/clickme/backend/.env")
+            return
+        print("[+] PEM 수신 완료 — SSH 업로드를 계속합니다.")
     remote = f"ubuntu@{host}"
     ssh_opts = [
         "-i",
@@ -451,8 +466,9 @@ def upload_env_file(host: str) -> None:
         "-o",
         "ConnectTimeout=10",
     ]
-    print("[*] SSH 준비 대기 후 backend/.env 업로드... (부팅+sshd 기동까지 최대 ~5분)")
-    for attempt in range(30):
+    print(f"[*] SSH 준비 대기 후 backend/.env 업로드... (최대 {attempts}회 재시도)")
+    last_err = "no output"
+    for attempt in range(attempts):
         res = subprocess.run(
             ["ssh", *ssh_opts, remote, "mkdir -p ~/clickme/backend"],
             capture_output=True,
@@ -460,9 +476,14 @@ def upload_env_file(host: str) -> None:
         )
         if res.returncode == 0:
             break
-        time.sleep(10)
+        err_text = (res.stderr or res.stdout or "").strip()
+        last_err = err_text.splitlines()[-1] if err_text else "no output"
+        print(f"[*] SSH 대기 {attempt + 1}/{attempts}... ({last_err})")
+        if attempt < attempts - 1:
+            time.sleep(10)
     else:
-        print("[!] SSH 접속 실패 — 부팅/보안그룹 확인 후 아래를 수동 실행하세요:")
+        print(f"[!] SSH 접속 실패({attempts}회) — 마지막 오류: {last_err}")
+        print("    부팅/보안그룹/PEM 권한(fetch_key.py로 재잠금)을 확인 후 아래를 수동 실행하세요:")
         print(f"    scp -i {PEM_PATH} {ENV_SRC} {remote}:/home/ubuntu/clickme/backend/.env")
         return
     dst = f"{remote}:/home/ubuntu/clickme/backend/.env"
@@ -510,7 +531,8 @@ def report(instance_id: str, host: str, key_created: bool) -> None:
     if key_created:
         print(f" - 개인키(PEM)가 생성됐습니다. → {PEM_PATH}")
     else:
-        print(" - 개인키(PEM)가 이미 있습니다. 'python infra/fetch_key.py'를 실행하면")
+        print(" - 인스턴스가 생성되어 개인키(PEM)가 이미 SSM에 업로드 되어 있습니다.")
+        print("   → 'python infra/fetch_key.py'를 실행하면")
         print("   → clickme-key.pem & infra/.env 가 자동 재구성됩니다.")
     print("\n" + "=" * 60)
     print("\nPortainer:")
@@ -625,13 +647,14 @@ def main() -> None:
     key_created = create_key_pair()
     sg_id = create_security_group()
     with_profile = create_iam_role()
-    iid = run_instance(ami, sg_id, with_profile)
+    iid, reused = run_instance(ami, sg_id, with_profile)
     print("[*] running 대기...")
     aws("ec2", "wait", "instance-running", "--instance-ids", iid, capture=False)
     host = ensure_and_associate_eip(iid)
     write_infra_env(host, iid)
     report(iid, host, key_created)
-    upload_env_file(host)
+    # 이미 running이면 sshd도 떠 있어 금방 붙는다 → 실패 시 오래 안 매달리게 재시도 축소.
+    upload_env_file(host, attempts=6 if reused else 30)
 
 
 if __name__ == "__main__":
