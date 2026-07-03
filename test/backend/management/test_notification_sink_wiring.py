@@ -25,3 +25,14 @@ def test_panel_channel_builds_panel_sink():
     from domain.management.remediation.panel_sink import PanelNotificationSink
 
     assert isinstance(build_notification_sink(_S("panel")), PanelNotificationSink)
+
+
+def test_unknown_channel_falls_back_to_log_with_warning(caplog):
+    import logging
+
+    from domain.management.notifications import LogNotificationSink, build_notification_sink
+
+    with caplog.at_level(logging.WARNING, logger="clickme"):
+        sink = build_notification_sink(_S("chatt"))
+    assert isinstance(sink, LogNotificationSink)
+    assert any("management_notify_channel" in r.message for r in caplog.records)

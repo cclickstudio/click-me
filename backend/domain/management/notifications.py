@@ -40,4 +40,6 @@ def build_notification_sink(settings) -> NotificationSink:
         from domain.management.remediation.panel_sink import PanelNotificationSink  # noqa: PLC0415
 
         return PanelNotificationSink(settings, fallback=LogNotificationSink())
+    if channel != "log":
+        logger.warning("알 수 없는 management_notify_channel=%r — log 채널로 폴백", channel)
     return LogNotificationSink()
