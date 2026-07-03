@@ -70,3 +70,5 @@
 - `budget_exhausted`·`quality_degraded` 스캔 신호 추가(현재 스캔은 no_delivery만 — 옵션 풀은 이미 존재).
 - `insert`의 IntegrityError→DedupRaceError 변환이 FK/NOT NULL 위반까지 "레이스"로 위장 — 제약명 구분 등 관측성 개선(Task 5 품질 리뷰 기록).
 - 두 sink(chat/panel)의 `_log_event`·`summary` 중복 — 세 번째 sink가 생기면 공통 베이스 추출(Task 4 품질 리뷰 기록).
+- 채널→sink 매핑 이중화(build_notification_sink ↔ notify-scan 분기) — 새 채널 추가 시 통합 검토, 상호 참조 주석으로 임시 방어(Task 6 품질 리뷰 기록).
+- 스캐너 분류 로직 중복(_default_scanner/_org_scanner) — `classify_campaign` 공용 헬퍼 추출 후보(기존 3중 중복의 연장, Task 6 품질 리뷰 기록).
