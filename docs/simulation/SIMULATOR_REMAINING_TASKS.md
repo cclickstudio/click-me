@@ -31,8 +31,8 @@
 | # | 작업 | 출처 | 상태 |
 | --- | --- | --- | --- |
 | 1 | **3-모드 분석 UX** — Individual(`sample_size=1` 심층)·Persona Set(`target_filter` 세그먼트 비교)·Synthetic(현재 기본). `api/routers/simulation/` + 서비스 옵션 | IMPROVEMENT P1-3 | 미착수 |
-| 2 | **calibration / KOBACO 베이스라인 대비** — 구매의도를 KOBACO·공개조사와 방향·상대크기 비교(절대값 환산은 금지 유지) | IMPROVEMENT P2-5 | 미착수(데이터 게이트) |
-| 3 | **검증 데모 확대** — KOBACO/공개 한국 조사 1건 직접 대조(현재는 연령×반응 미스매치 방향성 1건뿐, `validation.py`) | IMPROVEMENT P2-7, GENERATION §5 | 부분(데이터 게이트) |
+| 2 | **calibration / KOBACO 베이스라인 대비** — 구매의도를 KOBACO·공개조사와 방향·상대크기 비교(절대값 환산은 금지 유지) | IMPROVEMENT P2-5 | `backend/data/kobaco_benchmarks.json`을 2019 KOBACO MCR(소비자행태조사) 실측치로 반영 완료(2026-07-03). 다만 금융·가전·주거·여행만 "구매/교체 의향 비율" 문항이 있고 나머지 업종은 TV광고 영향력으로만 대체 참고. 이 벤치마크를 시뮬 결과에 실제로 붙여 보여주는 UI/집계 로직은 아직 미착수 |
+| 3 | **검증 데모 확대** — KOBACO/공개 한국 조사 1건 직접 대조(현재는 연령×반응 미스매치 방향성 1건뿐, `validation.py`) | IMPROVEMENT P2-7, GENERATION §5 | 부분 — #2와 동일 실데이터(2019 MCR) 확보됨, `validation.py`에 카테고리별 KOBACO 대조 로직 추가는 미착수 |
 | 4 | **재현 모드 옵션** — seed 지정 시 모든 Gemini 콜에 base seed 주입(persona별 파생, 다양성 유지). | IMPROVEMENT P2-6 | 미착수(1회 구현 후 되돌림 2026-06-22) |
 | 5 | **LLM QA 기본 활성화 검토 + 프롬프트 고도화** — `GeminiQaGate`는 opt-in(`SIM_LLM_QA`)으로 존재, 기본은 `RuleQaGate` | IMPROVEMENT P3-10 | 부분 |
 

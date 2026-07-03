@@ -209,7 +209,8 @@
 |---|---|---|---|---|
 | Tier3 인지율 | 브랜드×연령 보조인지도 | 한국갤럽 브랜드 트래킹 / 오픈서베이(유료 계약) 또는 클라이언트 제공 | `distributions/brand_awareness.json` `brands` | ❌ |
 | Meta 플랫폼 침투율 | IG/FB 연령×성별 도달 | DMC미디어·오픈서베이·와이즈앱(유료) / Meta 광고관리자(클라이언트). 통계청 ICT 이용실태는 부분 공개 | `distributions/meta_reach.json` `platform_specifics` | ❌(통계청 ICT 부분 시도) |
-| social_values_deep | 체면·동조·눈치 분포(세대별) | MDIS 사회조사 raw(회원 다운로드) + 한국문화심리 척도 정의(전문가) | `distributions/social_values_deep.json` `generation_specific` | ❌ |
+| social_values_deep | 체면·동조·눈치 분포(세대별) | MDIS 사회조사 raw(회원 다운로드) + 한국문화심리 척도 정의(전문가) — **2025 사회조사(survId=34) 337개 문항 확인 결과 대응 문항 없음(2026-07-03)**, MDIS만으론 못 채움 | `distributions/social_values_deep.json` `generation_specific` | ❌ |
+| social_economic | 생활만족·대인신뢰·소득충족·계층상향·사회참여(세대별) | MDIS 사회조사 2025 raw(회원 다운로드, survId=34) — **확보·반영 완료(2026-07-03)** | `distributions/social_economic.json` `generation_specific` | ✅ 완료(raw는 사용자 수집) |
 | IPF raking(정밀) | 인구 결합 marginal / 행동 결합 | KOSIS(공개·OpenAPI) / KISDI raw(회원 다운로드) | `rake_to_census` 타깃 / 결합분포 | ✅ KOSIS / ❌ KISDI |
 | 40+ MDIS 상관 | 성격×소비·미디어 상관행렬 | MDIS 사회조사 raw(회원 다운로드) | (미구현 — 데이터 확보 후 `tools/`) | ❌ |
 
