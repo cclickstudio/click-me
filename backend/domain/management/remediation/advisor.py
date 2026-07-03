@@ -42,7 +42,7 @@ OPTION_POOLS: dict[str, list[tuple[OptionKind, RemediationAction, str, str | Non
             "일시중지(승인 필요)",
             "manage_campaign",
         ),
-        (OptionKind.OBSERVE, RemediationAction.OBSERVE, "관망(추가 관측)", None),
+        (OptionKind.OBSERVE, RemediationAction.OBSERVE, "두고 보기(추가 조치 없음)", None),
     ],
     "quality_degraded": [
         (
@@ -63,7 +63,7 @@ OPTION_POOLS: dict[str, list[tuple[OptionKind, RemediationAction, str, str | Non
             "일시중지(승인 필요)",
             "manage_campaign",
         ),
-        (OptionKind.OBSERVE, RemediationAction.OBSERVE, "관망(추가 관측)", None),
+        (OptionKind.OBSERVE, RemediationAction.OBSERVE, "두고 보기(추가 조치 없음)", None),
     ],
     "budget_exhausted": [
         (
@@ -78,7 +78,7 @@ OPTION_POOLS: dict[str, list[tuple[OptionKind, RemediationAction, str, str | Non
             "일시중지(승인 필요)",
             "manage_campaign",
         ),
-        (OptionKind.OBSERVE, RemediationAction.OBSERVE, "관망(추가 관측)", None),
+        (OptionKind.OBSERVE, RemediationAction.OBSERVE, "두고 보기(추가 조치 없음)", None),
     ],
 }
 
