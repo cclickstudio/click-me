@@ -9,7 +9,7 @@
 - **비동기 잡** 인프로세스 async(`asyncio.create_task`). 별도 MQ 미사용 — SQS·Redis 모두 안 씀.
 - **Sim engine** Deepsona(OCEAN) + SSR(arXiv 2510.08338). **Scoring** SSR(임베딩 기반, no LLM, not DLR). **Output** 스칼라 아닌 분포.
 - **구매의도 검증** KOBACO 베이스라인 대비. 그 외 신호는 탐색적(exploratory) 표기.
-- **인증(타깃)** JWT + 관리자 직접 계정 생성(자가가입·소셜 없음), Admin/User 역할. **(현재)** UI만, 실 JWT 미적용·점진 도입.
+- **인증** 관리자 직접 계정 생성(자가가입·소셜 없음), 역할 ADMIN/COMPANY/USER. **운영은 AWS Cognito**(User Pool, RS256/JWKS 검증, `AUTH_PROVIDER=cognito`)로 발급·검증 적용됨. 코드 기본값은 자체 HS256(`AUTH_PROVIDER=local`). 계정/조직 삭제는 **소프트 삭제**(status `INACTIVE` + Cognito disable) → 복원 → 영구삭제(purge) 3단계. auth 미들웨어가 `status != ACTIVE`면 401 차단.
 - **A/B** UI 선반영, YouTube RAG 실기능은 최종 단계. **Chat** OpenAI gpt-4o-mini·CLIO·SSE — 오케스트레이터 본체(통합 딥에이전트, `deepagents` 기반, `api/assistant/deep_agent_builder.py`) **구현 완료**(`POST /api/chat/complete`). management·generator·simulation 3개 도메인 모두 **@tool 위임으로 연결**(deepagents 고유 서브에이전트 기능은 미사용, 커스텀 tool 라우팅).
 - **Ad gen** 개선 시안 5개 자동생성+순위 (Gemini Flash 3.0 / GPT Image 2 / Gemini Omni). **PDF** 전체 생성 포함. **문의** in-app 폼 → DB.
 
@@ -34,9 +34,12 @@
 
 ## 인증 및 보안
 
-- 소셜 로그인·자가가입 없음, **관리자가 직접 계정 생성**. JWT 기반, Admin/User 역할.
-- 기밀 데이터(예산·크리에이티브) 평문 로그 금지. 외부 플랫폼 API 키는 암호화 저장(AES-256 또는 AWS Secrets Manager).
-- 현재 페이즈: admin API는 `/api/admin/*` 경로 프리픽스로만 제한.
+- 소셜 로그인·자가가입 없음, **관리자가 직접 계정 생성**. 역할 ADMIN/COMPANY/USER.
+- **운영 인증 = AWS Cognito.** `AUTH_PROVIDER=cognito`면 프론트가 Cognito(User Pool)로 로그인하고 백엔드가 ID 토큰(RS256, JWKS)을 검증(`core/auth.py`). `AUTH_PROVIDER=local`(코드 기본값)이면 자체 HS256 JWT 발급/검증. Cognito username = `login_id`, role → 동명 그룹(ADMIN/COMPANY/USER).
+- **첫 로그인 비번 변경** — 발급 계정은 `must_change_password=true`. 로그인 후 첫 페이지에서 변경 모달을 계정당 1회만 노출(프론트 `localStorage: pwModalDismissed:{userId}`).
+- **계정 상태(status)** ACTIVE·PENDING·INACTIVE. auth 미들웨어(`get_current_user`)가 `status != ACTIVE`면 401 차단. admin의 소프트 삭제가 `INACTIVE` + Cognito disable로 로그인만 막고 데이터는 보존.
+- 기밀 데이터(예산·크리에이티브) 평문 로그 금지. 외부 플랫폼 API 키(Meta 등)는 암호화 저장(AES-256).
+- admin API는 `/api/admin/*` 경로 프리픽스 + ADMIN 역할로 제한.
 
 ## Tech Stack
 
@@ -60,7 +63,7 @@ backend/
 
 **의존성** `api/routers → domain/<ctx>/service → contracts(포트) ← adapters(구현)`. DB·설정은 `core`, LLM·SDK 래퍼는 `tools`에서만. mock/실연동 교체는 `wiring.py`에서만.
 
-> 이전 현황: generator·management는 `domain/` 이전 완료. simulation은 `tools/simulation/`·평면 라우터 → `domain/simulation/`·`api/routers/simulation/`로 이전 진행 중.
+> 현황: generator·management·simulation 모두 `domain/` 이전 완료(simulation은 `domain/simulation/`·`api/routers/simulation/`). 이후 `domain/chat`·`domain/billing`도 추가됨(챗 오케스트레이터 본체는 `api/assistant/`).
 
 ## 협업 규칙 (충돌 방지)
 
@@ -86,14 +89,24 @@ AWS_ACCESS_KEY_ID= / AWS_SECRET_ACCESS_KEY= / AWS_REGION=ap-northeast-2
 S3_BUCKET_NAME=
 LANGCHAIN_TRACING_V2=true / LANGCHAIN_ENDPOINT=https://api.smith.langchain.com
 LANGCHAIN_API_KEY= / LANGCHAIN_PROJECT=clickme
+# 인증 — 로컬 기본은 local(자체 HS256), 운영은 cognito
+AUTH_PROVIDER=local                    # local | cognito
+COGNITO_REGION= / COGNITO_USER_POOL_ID= / COGNITO_APP_CLIENT_ID=   # AUTH_PROVIDER=cognito 일 때 필수
 # frontend/.env.local
 NEXT_PUBLIC_API_URL=http://localhost:8000
+NEXT_PUBLIC_AUTH_PROVIDER=cognito      # 운영 빌드 기준(로컬은 local 가능)
+NEXT_PUBLIC_COGNITO_REGION= / NEXT_PUBLIC_COGNITO_USER_POOL_ID= / NEXT_PUBLIC_COGNITO_CLIENT_ID=
 ```
+
+> **GitHub Secrets(6개로 최소화)** — `AWS_ACCESS_KEY_ID`·`AWS_SECRET_ACCESS_KEY`(CI 전용 IAM User `clickme-ci`, ECR push) · `EC2_HOST`(Elastic IP) · `EC2_SSH_KEY`(PEM 전체) · `OPENAI_API_KEY` · `E2E_DATABASE_URL`. 그 외 `AWS_REGION=us-west-2`·`EC2_USER=ubuntu`·`NEXT_PUBLIC_COGNITO_*`(User Pool `us-west-2_iHteTHXO0` 등)는 비밀이 아니라 워크플로에 평문으로 둔다.
 
 ## CI/CD 현황
 
-- **CI** (`ci.yml`) ✅ — `backend`(ruff + pytest), `frontend`(ESLint + build) 활성 / `docker-build` ⏸(Secrets 후 활성).
-- **CD** (`cd.yml`) ⏳ — 틀만 작성. 활성화 조건: Docker Hub·EC2·기타 Secrets 등록 + `on.push` 및 각 step 주석 해제. EC2/Docker Hub 준비 후 진행.
+- 구 `ci.yml`+`cd.yml`은 **단일 `.github/workflows/ci-cd.yml`로 병합**됨(구 파일 삭제).
+- **needs 체인** `backend`(ruff + pytest)·`frontend`(ESLint + build) → `build-backend`·`build-frontend`(ECR push) → `deploy`(EC2). 빌드·배포는 CI 성공을 depends on하므로 테스트 실패 시 배포 차단.
+- **트리거** PR(`main`·`ci-cd`)은 **테스트만**, `push`(`main`·`ci-cd`)만 build/deploy 실행(`if: github.event_name == 'push'`). e2e(Playwright)는 `workflow_dispatch` 수동.
+- **배포** ECR 이미지(`clickme-backend`·`clickme-frontend`, `:latest`+`:${sha}`) → EC2에서 `docker-compose.prod.yml`로 기동. Nginx + Let's Encrypt(certbot 자동 발급·갱신). ECR push는 CI IAM User, pull은 EC2 IAM Role로 권한 분리.
+- 인프라 상세는 [`infra/README.md`](infra/README.md) 참고(provision/resize/fetch_key 스크립트, Elastic IP 고정, PEM SSM 백업).
 
 ## 개발 워크플로우 (Claude 행동 규칙)
 
@@ -102,7 +115,7 @@ NEXT_PUBLIC_API_URL=http://localhost:8000
 **① 백엔드 .py 수정 직후 (IMPORTANT)** — 커밋 메시지 출력 **전에** Ruff 실행을 제안한다: *"백엔드 코드가 변경됐어요. 커밋 전에 Ruff로 맞춰두면 CI에서 안 막혀요. Ruff 실행할까요?"*
 - 수락(응/해줘/yes/ㅇㅇ) → `cd backend && uv run ruff format . && uv run ruff check . --fix` 실행.
 - 거절(나중에/ㄴㄴ) → 바로 커밋 메시지로. **프론트(TS)만 수정 시 생략.**
-- 왜: CI(`ci.yml`)가 `ruff check`로 검증. 로컬 선통과 안 하면 push 후 CI 실패. (pytest는 느리고 비용↑이라 별개.)
+- 왜: CI(`ci-cd.yml`)가 `ruff check`로 검증. 로컬 선통과 안 하면 push 후 CI 실패. (pytest는 느리고 비용↑이라 별개.)
 
 **② 구현 완료 시** — `타입: 설명` + 변경 불릿 형태의 커밋 메시지와 `git add . && git commit -m "…"`를 출력. 사소한 작업도 출력, 여러 기능은 기능별로 분리 제안.
 
@@ -133,12 +146,12 @@ NEXT_PUBLIC_API_URL=http://localhost:8000
 | 항목                                | 비고                                                            |
 | ----------------------------------- | --------------------------------------------------------------- |
 | 비동기 잡 큐 도입 여부              | 현재 인프로세스 async(asyncio). SQS·Redis 모두 미사용 — 운영 확장 시 재검토. |
-| 인증 실구현 (JWT 자체 vs Cognito)   | 타깃 JWT + 관리자 계정 생성. 토큰 발급/검증 도입 시점·방식 미정.  |
+| 인증 실구현 (JWT 자체 vs Cognito)   | **해소** — 운영은 AWS Cognito(User Pool, RS256/JWKS 검증) 적용, 코드 기본값은 자체 HS256(`AUTH_PROVIDER`로 전환). 남은 과제는 리프레시 토큰·세션 만료 정책 정리. |
 | 채팅(4-4) 오케스트레이터 배선 정리   | 오케스트레이터 본체(통합 딥에이전트)는 구현 완료, management·generator·simulation 전부 @tool로 연결됨(2026-06-30, `4c3e7c8`). `domain/chat/__init__.py` 설명이 실제 구현 위치(`api/assistant/`)와 어긋나 문서 정리 필요. |
-| CD 활성화                           | Docker Hub + EC2 Secrets 등록 필요.                             |
+| CD 활성화                           | **해소** — `ci-cd.yml` 병합 파이프라인이 ECR push → EC2 배포까지 자동화(Secrets 6개 등록 완료). 남은 과제는 무중단 롤아웃·롤백 전략. |
 
 ## Reference
 
-- API 엔드포인트 → `docs/api-spec.md` / DB 스키마·Alembic → `docs/db-schema.md`.
+- API 엔드포인트 → `docs/api-spec.md` / DB 스키마·Alembic → `docs/db-schema.md` / 실 DB ERD(introspection) → `docs/db-erd.md`.
 - **PM 규칙** pnpm은 `backend/` 금지, uv는 `frontend/` 금지.
 - **Dev** 백엔드 `cd backend && uv run uvicorn api.main:app --reload --port 8000` / 프론트 `cd frontend && pnpm dev` / 전체 `docker compose up --build` / 테스트 `cd backend && uv run pytest tests/ -v`.
