@@ -171,7 +171,7 @@ jobs:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
-          source: 'docker-compose.prod.yml,deploy/nginx.conf'
+          source: 'docker-compose.prod.yml,deploy/nginx.conf,deploy/init-letsencrypt.sh'
           target: /home/${{ secrets.EC2_USER }}/clickme
 
       - name: Deploy to EC2
@@ -192,5 +192,12 @@ jobs:
             cd ~/clickme
             docker pull "$REGISTRY/clickme-backend:latest"
             docker pull "$REGISTRY/clickme-frontend:latest"
+            # 최초 1회: TLS 인증서가 없으면 발급(dummy 부트스트랩 → certbot webroot → nginx reload).
+            # 인증서가 없으면 nginx가 443 블록의 없는 파일을 참조해 크래시하므로, up 전에 발급한다.
+            # init 스크립트가 내부에서 compose up까지 수행하며, 멱등이라 이미 있으면 즉시 종료.
+            if [ ! -f /etc/letsencrypt/live/clickme.co.kr/fullchain.pem ]; then
+              echo "[CD] TLS 인증서 없음 → 최초 발급 실행"
+              bash deploy/init-letsencrypt.sh
+            fi
             docker compose -f docker-compose.prod.yml up -d --remove-orphans
             docker image prune -f

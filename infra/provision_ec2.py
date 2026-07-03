@@ -16,10 +16,12 @@ ClickMe 단일 EC2 배포 환경을 만든다.
 
 전제: aws CLI 설치 + 자격증명 설정 완료 (현재 us-west-2 / 계정 445459853661 확인됨).
 
+키페어 생성 시 PEM은 SSM Parameter Store(SecureString)에 백업된다 → 팀원은 infra/fetch_key.py 로 공유받는다.
+
 사용법:
-  python infra/provision_ec2.py                          # 생성(+EIP 연결 +.env 업로드)
-  python infra/provision_ec2.py --destroy                # 철거(과금 중단). EIP는 보존 → 같은 IP 재사용
-  python infra/provision_ec2.py --destroy --release-eip  # EIP까지 완전 반환(다음 생성 시 IP 바뀜)
+  python infra/provision_ec2.py                          # 생성(+EIP 연결 +.env 업로드 +PEM을 SSM 백업)
+  python infra/provision_ec2.py --destroy                # 철거(인스턴스·SG·키·IAM·ECR·SSM PEM). EIP는 보존 → 같은 IP 재사용
+  python infra/provision_ec2.py --destroy --release-eip  # 위 + EIP까지 완전 반환(다음 생성 시 IP 바뀜)
 
 비용 메모(us-west-2, 대략):
   - t3.micro : 프리티어 대상(12개월 750h 무료). 1GB라 swap 2GB로 보완. (아래 INSTANCE_TYPE 기본값)
@@ -61,6 +63,9 @@ ROLE_NAME = f"{PROJECT}-ec2-ecr-role"
 PROFILE_NAME = f"{PROJECT}-ec2-profile"
 INSTANCE_NAME = f"{PROJECT}-prod"
 EIP_NAME = f"{PROJECT}-eip"
+ECR_BACKEND = f"{PROJECT}-backend"  # cd.yml의 ECR_BACKEND와 동일 (destroy 시 삭제 대상)
+ECR_FRONTEND = f"{PROJECT}-frontend"
+SSM_KEY_PARAM = f"/{PROJECT}/ec2/private-key"  # 팀 공유용 PEM(SecureString). fetch_key.py가 내려받음
 PEM_PATH = Path(__file__).resolve().parent / f"{KEY_NAME}.pem"
 # scp로 EC2에 올릴 로컬 backend/.env (리포 루트 = infra의 상위)
 ENV_SRC = Path(__file__).resolve().parent.parent / "backend" / ".env"
@@ -144,7 +149,7 @@ def latest_ubuntu_ami() -> str:
 def create_key_pair() -> None:
     ok, _ = aws_ok("ec2", "describe-key-pairs", "--key-names", KEY_NAME)
     if ok:
-        print(f"[=] 키페어 {KEY_NAME} 이미 존재 — 건너뜀 (PEM이 없으면 삭제 후 재생성 필요)")
+        print(f"[=] 키페어 {KEY_NAME} 이미 존재 — 건너뜀 (PEM이 없으면 infra/fetch_key.py로 SSM에서 복구)")
         return
     pem = aws(
         "ec2",
@@ -159,6 +164,33 @@ def create_key_pair() -> None:
     PEM_PATH.write_text(pem, encoding="utf-8")
     _lock_pem_permissions()
     print(f"[+] 키페어 생성 → {PEM_PATH}")
+    _store_pem_to_ssm(pem)
+
+
+def _store_pem_to_ssm(pem: str) -> None:
+    """생성한 PEM을 SSM Parameter Store(SecureString)에 올려 팀원이 공유받게 한다.
+
+    AWS는 private key를 생성 시 1회만 반환하므로, 여기서 곧바로 백업해둔다.
+    팀원은 infra/fetch_key.py 로 내려받는다(파일을 직접 주고받을 필요 없음).
+    권한: 이 스크립트 실행 IAM에 ssm:PutParameter + 기본 KMS(alias/aws/ssm) 암호화 필요.
+    """
+    ok, err = aws_ok(
+        "ssm",
+        "put-parameter",
+        "--name",
+        SSM_KEY_PARAM,
+        "--type",
+        "SecureString",
+        "--value",
+        pem,
+        "--overwrite",
+        "--description",
+        "ClickMe EC2 private key (clickme-key.pem) - team shared",
+    )
+    if ok:
+        print(f"[+] PEM을 SSM에 백업 → {SSM_KEY_PARAM} (팀원: python infra/fetch_key.py)")
+    else:
+        print(f"[!] SSM 백업 실패(ssm:PutParameter 권한 확인) — 팀 공유는 수동 필요:\n    {err}")
 
 
 def _lock_pem_permissions() -> None:
@@ -472,6 +504,9 @@ def report(instance_id: str, host: str) -> None:
     print("   확인: ssh 접속 후 'cat ~/clickme/.bootstrap-ok' / 'docker --version'")
     print(" - backend/.env 는 이 스크립트가 자동 업로드합니다(아래 로그 확인).")
     print(" - ECR 리포(clickme-backend/frontend)는 cd.yml이 자동 생성합니다.")
+    print(f" - TLS: 도메인(clickme.co.kr·www) A레코드를 위 EIP({host})로 설정하세요.")
+    print("   DNS 전파 후 첫 배포에서 cd.yml이 Let's Encrypt 인증서를 자동 발급합니다")
+    print("   (deploy/init-letsencrypt.sh). 발급은 A레코드가 이 EIP를 가리켜야 성공합니다.")
     print(" - Portainer: 'python infra/start_portainer.py' → 자동 기동 + 터널 + localhost:9000 열림")
     print(
         " - 안 쓸 땐: aws ec2 stop-instances --region %s --instance-ids %s" % (REGION, instance_id)
@@ -535,6 +570,12 @@ def destroy(release_eip: bool = False) -> None:
     aws_ok("ec2", "delete-key-pair", "--key-name", KEY_NAME)
     PEM_PATH.unlink(missing_ok=True)
     print("[-] 키페어/PEM 삭제")
+    # SSM에 백업한 공유 PEM 삭제
+    done, err = aws_ok("ssm", "delete-parameter", "--name", SSM_KEY_PARAM)
+    if done:
+        print(f"[-] SSM 공유 PEM 삭제 {SSM_KEY_PARAM}")
+    elif "ParameterNotFound" not in err:
+        print(f"[!] SSM 삭제 보류: {err}")
     # 로컬 infra/.env (provision이 만든 참조 파일)
     if INFRA_ENV.exists():
         INFRA_ENV.unlink()
@@ -559,7 +600,14 @@ def destroy(release_eip: bool = False) -> None:
     )
     aws_ok("iam", "delete-role", "--role-name", ROLE_NAME)
     print("[-] IAM Role/Profile 삭제")
-    print("[*] 철거 완료. (ECR 리포는 cd.yml이 만든 것이므로 별도 삭제 필요 시 수동)")
+    # ECR 리포(이미지 포함) 삭제 — 다음 배포에서 cd.yml이 자동 재생성한다.
+    for repo in (ECR_BACKEND, ECR_FRONTEND):
+        done, err = aws_ok("ecr", "delete-repository", "--repository-name", repo, "--force")
+        if done:
+            print(f"[-] ECR 리포 삭제 {repo} (이미지 포함)")
+        elif "RepositoryNotFoundException" not in err:
+            print(f"[!] ECR 삭제 보류 {repo}: {err}")
+    print("[*] 철거 완료. (다음 배포 시 ECR 리포는 cd.yml이 자동 재생성)")
 
 
 # ─────────────────────────── main ───────────────────────────
