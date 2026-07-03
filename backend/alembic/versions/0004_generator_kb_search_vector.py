@@ -7,8 +7,8 @@ STORED 생성열이라 기존 청크는 ALTER 시점에 자동 백필(재적재 
 
 from alembic import op
 
-revision = "0002_generator_kb_search_vector"
-down_revision = "0001_baseline"
+revision = "0004_generator_kb_search_vector"
+down_revision = "0003_categories_kinds"
 branch_labels = None
 depends_on = None
 
