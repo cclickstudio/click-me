@@ -112,6 +112,9 @@ class PanelNotificationSink:
         if not anomaly:
             consult = await self._consult(self._settings, campaign_id)
             if consult is None:
+                await self._log_event(
+                    "panel_notify_skipped", tenant_id, title, body, campaign_id, "consult_failed"
+                )
                 return DeliveryOutcome(
                     campaign_id=campaign_id, status="skipped", reason="consult_failed"
                 )
@@ -148,6 +151,14 @@ class PanelNotificationSink:
             if consult is None:
                 consult = await self._consult(self._settings, campaign_id)
                 if consult is None:
+                    await self._log_event(
+                        "panel_notify_skipped",
+                        tenant_id,
+                        title,
+                        body,
+                        campaign_id,
+                        "consult_failed",
+                    )
                     return DeliveryOutcome(
                         campaign_id=campaign_id, status="skipped", reason="consult_failed"
                     )

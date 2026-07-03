@@ -181,6 +181,41 @@ async def test_followup_path_normal_closes_open_row():
 
 
 @pytest.mark.asyncio
+async def test_consult_failed_skips_and_falls_back():
+    fb = FakeFallback()
+    sink = _sink(Store(), consult_result="fail")
+    sink._fallback = fb
+    out = await sink.deliver("t", "제목", "본문", meta=META)
+    assert out.status == "skipped" and out.reason == "consult_failed"
+    assert fb.calls  # 고정 스키마 폴백 로그 경로
+
+
+@pytest.mark.asyncio
+async def test_no_hint_with_ignored_still_consults_first():
+    """힌트 없으면 dedup_key를 몰라 consult가 판정보다 먼저 — 의도된 폴백 트레이드오프."""
+    calls = []
+
+    async def counting_consult(settings, campaign_id, **kw):
+        calls.append(1)
+        return _consult()
+
+    async def _resolver(campaign_id, *, expected_org_id=None):
+        return ("proj-1", "org-9")
+
+    sink = PanelNotificationSink(
+        _Settings(),
+        fallback=FakeFallback(),
+        store=Store(ignored=True),
+        resolver=_resolver,
+        consult=counting_consult,
+        clock=lambda: NOW,
+    )
+    out = await sink.deliver("t", "제목", "본문", meta={"campaign_id": "camp_1"})
+    assert out.status == "skipped" and out.reason == "ignored"
+    assert calls == [1]  # 힌트 없음 → consult 1회 선행(문서화된 예외)
+
+
+@pytest.mark.asyncio
 async def test_no_hint_falls_back_to_consult_first():
     store = Store()
     out = await _sink(store).deliver("t", "제목", "본문", meta={"campaign_id": "camp_1"})
