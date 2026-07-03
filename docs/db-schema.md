@@ -12,7 +12,7 @@
 
 ---
 
-## 테이블 목록 (45개)
+## 테이블 목록 (46개)
 
 ### 인증 · 사용자
 | 테이블 | 역할 |
@@ -72,6 +72,11 @@
 | `ad_campaign_logs` | Meta Marketing API 집행 이력 |
 | `generated_ads` | 생성 이미지 광고(독립 저장) |
 | `brand_profiles` | 클라이언트 브랜드 프로필 |
+
+### 매니지먼트 (4-2)
+| 테이블 | 역할 |
+|---|---|
+| `management_notifications` | 이상 감지 운영 알림(하이브리드 C안) — 채팅과 분리 저장, org·kind·dedup_key 미해결 1행 |
 
 ### 참조 · 기타
 | 테이블 | 역할 |
@@ -780,6 +785,30 @@ CREATE TABLE inquiries (
     message    TEXT,
     created_at TIMESTAMP DEFAULT now()
 );
+
+-- ============================================================
+-- management_notifications  (운영 알림, 이상 감지 C안 — 0005)
+-- ============================================================
+CREATE TABLE management_notifications (
+    id                  UUID PRIMARY KEY,
+    organization_id     UUID         NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    project_id          UUID         NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    campaign_id         VARCHAR(100),                   -- remediation만 필수
+    kind                VARCHAR(60)  NOT NULL,           -- "management.remediation_consult" 등
+    dedup_key           VARCHAR(200) NOT NULL,           -- f"{campaign_id}:{anomaly}"
+    payload             JSONB        NOT NULL DEFAULT '{}'::jsonb,
+    read_at             TIMESTAMPTZ,
+    resolved_at         TIMESTAMPTZ,
+    resolution          VARCHAR(20),                     -- ignored | actioned | auto_normal
+    consult_session_id  UUID,
+    last_notified_at    TIMESTAMPTZ  NOT NULL,
+    followup_count      INTEGER      NOT NULL DEFAULT 0,
+    created_at          TIMESTAMPTZ  NOT NULL DEFAULT now()
+);
+-- 미해결 알림은 (org, kind, dedup_key)당 1행 (부분 유니크 — 멀티워커 dedup 백스톱)
+CREATE UNIQUE INDEX uq_mgmt_notif_open_dedup ON management_notifications (organization_id, kind, dedup_key)
+    WHERE resolved_at IS NULL;
+CREATE INDEX ix_mgmt_notif_org_recent ON management_notifications (organization_id, last_notified_at DESC);
 
 -- ============================================================
 -- alembic_version  (마이그레이션 버전 추적)
