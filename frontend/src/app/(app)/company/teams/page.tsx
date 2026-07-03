@@ -6,6 +6,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useAuth } from '@/components/AuthProvider';
 import { authedFetch } from '@/lib/api';
 import { formatKSTDate } from '@/lib/datetime';
+import { Select } from '@/components/ui/Select';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
@@ -74,10 +75,15 @@ function CreateMemberModal({ teams, onClose, onCreated }: { teams: Team[]; onClo
       <Field label="아이디"><input value={loginId} onChange={(e) => setLoginId(e.target.value)} placeholder="로그인 아이디" className={inputCls} /></Field>
       <Field label="비밀번호"><input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="8자 이상" className={inputCls} /></Field>
       <Field label="팀 (선택)">
-        <select value={teamId} onChange={(e) => setTeamId(e.target.value)} className={inputCls}>
-          <option value="">미배정</option>
-          {teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-        </select>
+        <Select
+          aria-label="팀 선택"
+          value={teamId}
+          onChange={setTeamId}
+          options={[
+            { value: "", label: "미배정" },
+            ...teams.map((t) => ({ value: t.id, label: t.name })),
+          ]}
+        />
       </Field>
       {error && <p className="text-xs text-red-500 bg-red-50 dark:bg-red-900/20 px-3 py-2 rounded-lg">{error}</p>}
     </ModalShell>
