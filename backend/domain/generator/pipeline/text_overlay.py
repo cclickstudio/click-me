@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 from domain.generator.contracts.enums import AdStrategy, TemplateType
 from domain.generator.pipeline.style_profile import get_style
@@ -235,19 +235,23 @@ def _draw_block(
 
 
 def _draw_cta(
-    draw: ImageDraw.ImageDraw,
+    base: Image.Image,
     text: str,
     rect: tuple[int, int, int, int],
     accent: tuple[int, int, int],
     align: str,
     template: TemplateType,
     font_path: str = _FONT_BOLD,
-) -> None:
+    floating: bool = False,
+) -> Image.Image:
+    draw = ImageDraw.Draw(base)
     if not text:
-        return
+        return base
     x0, y0, x1, y1 = rect
     box_w, box_h = x1 - x0, y1 - y0
-    pad_x = int(box_h * 0.5)
+    # 여백을 높이에만 비례시키면 템플릿 C처럼 폭이 좁은 박스에서 여백이 폭 대부분을 먹어
+    # 버튼이 박스에 비해 부자연스럽게 좁아진다 — 폭 기준 상한을 같이 둬서 방지한다.
+    pad_x = int(min(box_h * 0.5, box_w * 0.18))
     pad_y = int(box_h * 0.22)
     font, lines, _ = _fit(
         draw, text, font_path, box_w - 2 * pad_x, box_h - 2 * pad_y, int(box_h * 0.55)
@@ -265,8 +269,24 @@ def _draw_cta(
         fill, txt = _WHITE, (*accent, 255)
     else:
         fill, txt = (*accent, 255), _WHITE
+    # floating/emotional은 패널 없이 사진 위에 바로 얹혀서, 사진의 밝은 영역과 버튼이 섞여
+    # 보일 수 있다 — 텍스트에 붙이는 것과 같은 그림자를 버튼에도 붙여 경계를 항상 드러낸다.
+    # 별도 레이어에 그린 뒤 블러 처리해 합성 — 딱딱한 사각형이 아닌 부드러운 그림자가 되게 한다.
+    if floating:
+        shadow_layer = Image.new("RGBA", base.size, (0, 0, 0, 0))
+        shadow_off = max(2, btn_h // 20)
+        ImageDraw.Draw(shadow_layer).rounded_rectangle(
+            [bx + shadow_off, by + shadow_off, bx + btn_w + shadow_off, by + btn_h + shadow_off],
+            radius=btn_h // 2,
+            fill=(0, 0, 0, 110),
+        )
+        blur_radius = max(2, btn_h // 10)
+        shadow_layer = shadow_layer.filter(ImageFilter.GaussianBlur(blur_radius))
+        base = Image.alpha_composite(base, shadow_layer)
+        draw = ImageDraw.Draw(base)
     draw.rounded_rectangle([bx, by, bx + btn_w, by + btn_h], radius=btn_h // 2, fill=fill)
     draw.text((bx + pad_x, by + (btn_h - text_h) // 2), line, font=font, fill=txt)
+    return base
 
 
 def _draw_highlighted(
@@ -404,14 +424,15 @@ def render_ad_text(
         stroke_fill=body_stroke,
         shadow=floating,
     )
-    _draw_cta(
-        draw,
+    base = _draw_cta(
+        base,
         cta,
         _px(spec.cta.box, w, h),
         accent,
         spec.cta.align,
         template if template is not None else TemplateType.A,
         cta_font,
+        floating=floating,
     )
 
     out = io.BytesIO()
