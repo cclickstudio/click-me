@@ -59,6 +59,36 @@ async def test_panel_repository_roundtrip() -> None:
         assert n == 5
 
 
+async def test_panel_repository_get_by_version_roundtrip() -> None:
+    session = await _make_session()
+    async with session:
+        personas = PersonaSampler().sample(PanelSpec(size=5, seed=1))
+        personas[0] = personas[0].model_copy(update={"weight": 2.5})  # 기본값(1.0)과 구분되는 값
+        repo = PanelRepository(session)
+        await repo.create(
+            version="panel-v1",
+            seed=1,
+            size=5,
+            model_version="mock-narrator-0",
+            grounding_meta={"population": "real"},
+            personas=personas,
+        )
+        await session.commit()
+
+        found = await repo.get_by_version("panel-v1")
+        assert found is not None
+        _, loaded = found
+        assert len(loaded) == 5
+        assert all(p.persona_id for p in loaded)  # 합성 persona_id 존재
+        assert any(abs(p.weight - 2.5) < 1e-6 for p in loaded)  # weight 컬럼 왕복 보존
+
+
+async def test_panel_repository_get_by_version_missing_returns_none() -> None:
+    session = await _make_session()
+    async with session:
+        assert await PanelRepository(session).get_by_version("panel-v1") is None
+
+
 async def test_simulation_repository_saves_full_run() -> None:
     session = await _make_session()
     async with session:

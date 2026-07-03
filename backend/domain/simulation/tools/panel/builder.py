@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import random
 import time
 from pathlib import Path
 from typing import Any
@@ -33,6 +34,17 @@ def filter_personas(personas: list[Persona], target_filter: dict | None) -> list
         for p in personas
         if (gender is None or p.gender == gender) and age_min <= p.age <= age_max
     ]
+
+
+def subset_for_spec(personas: list[Persona], size: int, seed: int) -> list[Persona]:
+    """필터 통과분이 요청 표본(size)보다 많으면 결정적 서브샘플 — 초과 LLM 콜(비용) 방지.
+
+    같은 (패널, size, seed)면 항상 같은 부분집합 → §3.6 고정 패널 재현성·A/B 비교 유지.
+    size 이하면 전원 그대로(기존 동작 보존).
+    """
+    if len(personas) <= size:
+        return personas
+    return random.Random(seed).sample(personas, size)
 
 
 class PanelBuilder:
@@ -92,4 +104,4 @@ class CachedPanelProvider:
 
     async def get_or_build(self, spec: PanelSpec) -> tuple[str, list[Persona]]:
         selected = filter_personas(self._personas, spec.target_filter)
-        return self._panel["version"], selected
+        return self._panel["version"], subset_for_spec(selected, spec.size, spec.seed)
