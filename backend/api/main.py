@@ -41,6 +41,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 logger = logging.getLogger("clickme")
+logger.setLevel(logging.INFO)
+if not logger.handlers:
+    # 서드파티 라이브러리 INFO 로그까지 켜지 않도록 "clickme" 로거에만 핸들러를 붙인다
+    # (logging.basicConfig는 root에 적용돼 botocore·sqlalchemy 등도 시끄러워짐).
+    _handler = logging.StreamHandler()
+    _handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+    logger.addHandler(_handler)
 
 # 시뮬레이션은 도메인 구조 라우터(api/routers/simulation)를 사용 — 구 simulate 라우터 대체.
 from api.routers import (

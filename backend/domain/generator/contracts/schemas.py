@@ -29,10 +29,12 @@ class GenerationCreateRequest(BaseModel):
     campaign_objective: str = "conversion"
 
     # 개선모드 입력
-    existing_ad_s3_key: str | None = None
+    existing_ad_s3_key: str | None = None  # 참고용 — bytes 로드 없이 텍스트 힌트로만 사용
     simulation_summary: str | None = None  # 시뮬 결과 요약(KPI 등)
     improvement_direction: str | None = None  # 토론 개선 권고("그래서 무엇을 고치면 되나")
     fix_requests: str | None = None  # 사용자 수정 요청(개선방향 1순위)
+    plain_summary: str | None = None  # 시뮬 AI 분석 텍스트 (개선 모드 UI "AI 분석" 섹션용)
+    product_cutout_s3_key: str | None = None  # 생성 모드에서 저장된 누끼 이미지 S3 키
 
     # 공통 — 브랜드 / 출력
     brand_color: str | None = None  # hex (#RRGGBB)
@@ -47,8 +49,6 @@ class GenerationCreateRequest(BaseModel):
     @model_validator(mode="after")
     def _check_required_by_mode(self) -> GenerationCreateRequest:
         if self.mode == GenerationMode.IMPROVE:
-            if not (self.existing_ad_s3_key or "").strip():
-                raise ValueError("개선모드에는 existing_ad_s3_key가 필요합니다.")
             if not (self.simulation_summary or "").strip():
                 raise ValueError("개선모드에는 simulation_summary가 필요합니다.")
         else:
