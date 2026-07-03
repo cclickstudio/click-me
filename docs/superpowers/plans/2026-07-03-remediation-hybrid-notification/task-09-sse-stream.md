@@ -11,6 +11,12 @@
 - Modify: `backend/api/routers/management.py` (**Task 7 블록 최상단** — `/{id}` 라우트들보다 먼저)
 - Test: `test/backend/management/test_notification_stream.py` (신규)
 
+> ⚠ **구현 시 발견(2026-07-03)**: 아래 Step 1의 httpx `ASGITransport` + `client.stream()` 패턴은
+> **무한 SSE 라우트에서 영구 대기**한다 — ASGITransport는 ASGI 앱 코루틴이 완전히 끝나야 응답을
+> 만들기 때문(httpx 0.28.1 소스 확인). 실제 구현은 ① 404 게이트는 httpx 왕복, ② 스트림 본문은
+> 라우트 코루틴 직접 호출 + `body_iterator` 순회로 대체됐다(`test_notification_stream.py` 상단
+> 주석 참조). 향후 무한 SSE 테스트는 이 패턴을 따를 것.
+
 - [ ] **Step 1: 실패 테스트 작성**
 
 `test/backend/management/test_notification_stream.py`:
