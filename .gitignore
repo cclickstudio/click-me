@@ -93,5 +93,8 @@ fonts/
 # .mcp.json — 개인 로컬 MCP 서버 경로 포함, 팀 공유 안 함
 /.mcp.json
 
+# scripts — 개인 로컬 워크트리 헬퍼(new_worktree/delete_worktree 등), 팀 공유 안 함
+/scripts/
+
 
 .understand-anything
