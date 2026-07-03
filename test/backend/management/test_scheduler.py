@@ -132,12 +132,21 @@ def _fake_metrics(*, impressions=100, frequency=0.0, roas=None):
 
 
 class _FakeReader:
-    """list_campaigns/get_metrics/get_relevance_diagnostics만 구현한 스텁.
+    """스캐너용 캠페인/지표/relevance/계정자금 스텁.
 
-    계정 룰 메서드(get_account_funding 등)는 없어 _account_rules_scan은 조용히 []를 낸다.
+    funding 미지정이면 get_account_funding이 raise → _account_rules_scan은 조용히 []를 낸다.
     """
 
-    def __init__(self, *, impressions=100, frequency=0.0):
+    def __init__(
+        self,
+        *,
+        impressions=100,
+        frequency=0.0,
+        roas=None,
+        relevance_rank=None,
+        spend_cap_krw=None,
+        amount_spent_krw=None,
+    ):
         from domain.management.contracts.enums import CampaignState
 
         self._camp = SimpleNamespace(
@@ -145,6 +154,10 @@ class _FakeReader:
         )
         self._impr = impressions
         self._freq = frequency
+        self._roas = roas
+        self._rank = relevance_rank
+        self._cap = spend_cap_krw
+        self._spent = amount_spent_krw
 
     async def list_campaigns(self):
         return [self._camp]
@@ -152,10 +165,28 @@ class _FakeReader:
     async def get_metrics(self, cid, when, date_preset=None):
         if date_preset == "last_7d":
             return _fake_metrics(frequency=self._freq)
-        return _fake_metrics(impressions=self._impr)
+        return _fake_metrics(impressions=self._impr, roas=self._roas)
 
     async def get_relevance_diagnostics(self, cid):
-        return None
+        if self._rank is None:
+            return None
+        from datetime import UTC, datetime
+
+        from domain.management.contracts.schemas import RelevanceDiagnostics
+
+        return RelevanceDiagnostics(
+            campaign_id="c1",
+            conversion_rate_ranking=self._rank,
+            as_of=datetime(2026, 7, 4, tzinfo=UTC),
+        )
+
+    async def get_account_funding(self):
+        if self._cap is None:
+            raise RuntimeError("no funding")  # → _account_rules_scan은 [] 로 강등
+        return SimpleNamespace(spend_cap_krw=self._cap, amount_spent_krw=self._spent or 0)
+
+    async def get_account_spend(self, date_preset="this_month"):
+        return 0
 
 
 @pytest.mark.asyncio
@@ -193,6 +224,50 @@ async def test_agent_scanner_falls_back_and_never_raises(monkeypatch):
     monkeypatch.setattr("domain.management.wiring.build_reader", lambda _s: _BoomReader())
     findings = await _agent_scanner(SimpleNamespace())
     assert isinstance(findings, list)  # 폴백(규칙)도 같은 고장 → [] 로 안전 강등
+
+
+# ── 4룰 커버리지 + 파이프라인 무변경 (T4) ──────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_agent_scanner_covers_all_rule_types(monkeypatch):
+    """게재0·소재피로·지갑소진·성과미달을 한 스캔에서 모두 산출(규칙 4종 누락 없음)."""
+    from domain.management.contracts.enums import RelevanceRank
+
+    monkeypatch.setattr(
+        "domain.management.wiring.build_reader",
+        lambda _s: _FakeReader(
+            impressions=0,
+            frequency=4.0,
+            roas=1.0,
+            relevance_rank=RelevanceRank.BELOW_AVERAGE_20,
+            spend_cap_krw=100_000,
+            amount_spent_krw=96_000,
+        ),
+    )
+    findings = await _agent_scanner(SimpleNamespace(management_default_target_roas=3.0))
+    rules = {f["meta"]["rule"] for f in findings}
+    assert {"zero_impressions", "creative_fatigue", "wallet_depleted"} <= rules
+    assert "performance_below_target" in rules  # 에이전트 판단(목표 설정 시)
+
+
+@pytest.mark.asyncio
+async def test_run_scan_with_agent_scanner_notifies_and_records(monkeypatch):
+    """모드 agent로 고른 스캐너의 findings가 통지·기록 파이프라인을 그대로 탄다(무변경)."""
+    monkeypatch.setattr(
+        "domain.management.wiring.build_reader",
+        lambda _s: _FakeReader(impressions=0, frequency=4.0),
+    )
+    recorded: list[str] = []
+
+    async def recorder(f):
+        recorded.append(f["meta"]["rule"])
+
+    sink = _FakeSink()
+    settings = SimpleNamespace(management_scanner_mode="agent")
+    n = await run_scan(settings, sink, scanner=_scanner_for(settings), recorder=recorder)
+    assert n == len(sink.calls) == len(recorded)  # 통지 수 == 기록 수 == 발견 수
+    assert "zero_impressions" in recorded and "creative_fatigue" in recorded
 
 
 # ── 스캐너 모드 선택 (_scanner_for) ────────────────────────────────
