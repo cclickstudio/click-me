@@ -128,6 +128,11 @@ NEXT_PUBLIC_COGNITO_REGION= / NEXT_PUBLIC_COGNITO_USER_POOL_ID= / NEXT_PUBLIC_CO
 - 거절(나중에/ㄴㄴ) → Ruff·pytest·E2E 등 기존 검증만.
 - 왜: 화면으로 확인되는 변경은 유저가 결과를 직접 보는 게 가장 확실. 브라우저로 확인 불가한 변경(타입·툴링·순수 로직)이면 제안을 생략한다.
 
+**⑥ 엔드포인트/페이지 추가 시 문서 자동 동기화 (IMPORTANT)** — 라우터(`backend/api/`)나 페이지(`frontend/src/app/`)를 추가·삭제·경로 변경하면 **`docs/api-endpoints.md`·`docs/frontend-routes.md`·CLAUDE.md의 AUTOGEN 구간**을 다시 생성해야 한다.
+- 생성기 `cd backend && uv run python scripts/gen_docs.py` (검사만: `--check`, CI drift용). 이 세 파일은 **자동 생성물이라 손으로 고치지 말 것** — 소스를 고치고 재실행.
+- 커밋 시 pre-commit 훅이 자동 실행·스테이징한다(설치 1회: `git config core.hooksPath .githooks`). 미설치·실패 시에도 CI(`ci-cd.yml` backend 잡의 *Docs drift check*)가 어긋나면 빌드를 막는다.
+- API의 요청/응답 스키마 등 상세 설명은 여전히 수기 문서 `docs/api-spec.md`에 둔다(자동 목록과 역할 분리).
+
 ## AI 작업 규칙 (행동 가이드라인)
 
 1. **코딩 전 생각** — 가정 명시·불확실하면 질문. 해석이 여럿이면 제시(침묵 선택 금지). 더 단순한 길 있으면 제안.
@@ -152,6 +157,14 @@ NEXT_PUBLIC_COGNITO_REGION= / NEXT_PUBLIC_COGNITO_USER_POOL_ID= / NEXT_PUBLIC_CO
 
 ## Reference
 
-- API 엔드포인트 → `docs/api-spec.md` / DB 스키마·Alembic → `docs/db-schema.md` / 실 DB ERD(introspection) → `docs/db-erd.md`.
+**자동 생성 인덱스**(라우터·페이지 추가 시 `backend/scripts/gen_docs.py`가 갱신 — 직접 수정 금지):
+
+<!-- AUTOGEN:docs-index START -->
+- **API 엔드포인트 177개** — 전체 목록 [docs/api-endpoints.md](docs/api-endpoints.md) (자동 생성)
+- **프론트 라우트 41개** — 전체 목록 [docs/frontend-routes.md](docs/frontend-routes.md) (자동 생성)
+<!-- AUTOGEN:docs-index END -->
+
+- API 명세(수기) → `docs/api-spec.md` / 자동 엔드포인트 목록 → `docs/api-endpoints.md` / 프론트 라우트 → `docs/frontend-routes.md`.
+- DB 스키마·Alembic → `docs/db-schema.md` / 실 DB ERD(introspection) → `docs/db-erd.md`.
 - **PM 규칙** pnpm은 `backend/` 금지, uv는 `frontend/` 금지.
 - **Dev** 백엔드 `cd backend && uv run uvicorn api.main:app --reload --port 8000` / 프론트 `cd frontend && pnpm dev` / 전체 `docker compose up --build` / 테스트 `cd backend && uv run pytest tests/ -v`.

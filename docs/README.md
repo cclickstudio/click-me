@@ -4,7 +4,9 @@
 
 | 문서 | 범위 |
 |---|---|
-| [api-spec.md](api-spec.md) | 전체 API 엔드포인트 레퍼런스(admin 소프트삭제·복원·purge 포함) |
+| [api-spec.md](api-spec.md) | API 요청/응답 스키마 상세(수기) |
+| [api-endpoints.md](api-endpoints.md) | **자동 생성** — 전체 엔드포인트 목록(`backend/scripts/gen_docs.py`) |
+| [frontend-routes.md](frontend-routes.md) | **자동 생성** — 프론트 라우트 전체 목록 |
 | [db-schema.md](db-schema.md) | DB 스키마 (`core/models.py`·Alembic 기준) |
 | [db-erd.md](db-erd.md) | 실 DB introspection 기반 ERD(도메인별 Mermaid + 컬럼표) |
 | [langsmith-guide.md](langsmith-guide.md) | LangSmith 트레이싱 가이드 |

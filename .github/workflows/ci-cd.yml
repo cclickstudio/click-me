@@ -98,6 +98,11 @@ jobs:
         # testpaths(../test/backend)를 pyproject가 가리킴 → 인자 없이 실행
         run: uv run pytest -v --tb=short
 
+      # API 엔드포인트·프론트 라우트 문서(docs·CLAUDE.md)가 코드와 동기화됐는지 검사.
+      # 새 라우터/페이지를 추가하고 문서를 갱신 안 하면 여기서 실패 → 로컬에서 gen_docs.py 실행 후 커밋.
+      - name: Docs drift check (API·routes)
+        run: uv run python scripts/gen_docs.py --check
+
   # ─────────────────────────────────────────
   # Frontend: lint + build
   # ─────────────────────────────────────────

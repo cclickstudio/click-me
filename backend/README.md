@@ -114,6 +114,29 @@ uv run pytest                # 테스트 실행
 
 ---
 
+## 문서 자동 생성 (API 엔드포인트 · 프론트 라우트)
+
+라우터(`api/`)나 프론트 페이지(`frontend/src/app/`)를 추가하면 아래 문서가 코드에서 자동 생성된다 — **직접 편집 금지**.
+
+- `docs/api-endpoints.md` — FastAPI 앱(`api.main:app`)의 전체 엔드포인트
+- `docs/frontend-routes.md` — Next.js App Router 전체 라우트
+- `CLAUDE.md`의 AUTOGEN 구간 — 위 두 문서 개수·링크
+
+```bash
+uv run python scripts/gen_docs.py          # 재생성
+uv run python scripts/gen_docs.py --check  # 동기화 검사(CI에서 사용, 어긋나면 실패)
+```
+
+커밋 시 자동 갱신하려면 훅을 1회 설치한다(저장소 루트에서):
+
+```bash
+git config core.hooksPath .githooks
+```
+
+미설치·실패해도 CI(`ci-cd.yml`의 *Docs drift check*)가 어긋남을 잡는다.
+
+---
+
 ## 환경 변수
 
 전체 목록은 [`.env.example`](.env.example) 참고.
