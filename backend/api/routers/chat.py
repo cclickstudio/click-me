@@ -420,14 +420,18 @@ async def chat_complete(
         # 세션 넘는 장기기억 회수 — 에이전트 맥락에 끼울 문자열(로그인 사용자만, best-effort).
         memory_context = await _recall_memory_context(body, last_message, current_user)
         # 진행 중 이상 조치 상담 컨텍스트(management) — 옵션 버튼 meta가 오면 그걸 우선.
+        consult_ctx = None
         if body.option_select:
-            from domain.management.remediation.context import (  # noqa: PLC0415
-                build_option_instruction,
-            )
+            try:
+                from domain.management.remediation.context import (  # noqa: PLC0415
+                    build_option_instruction,
+                )
 
-            consult_ctx = build_option_instruction(body.option_select)
-        else:
-            # meta는 왕복 안 되므로 서버가 세션에서 회수·주입.
+                consult_ctx = build_option_instruction(body.option_select)
+            except Exception:  # noqa: BLE001 — 매핑 실패가 채팅을 막지 않게
+                consult_ctx = None
+        if consult_ctx is None:
+            # meta는 왕복 안 되므로 서버가 세션에서 회수·주입(필수값 누락 meta도 여기로 폴백).
             try:
                 from domain.management.remediation.context import (  # noqa: PLC0415
                     recall_consult_context,

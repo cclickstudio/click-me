@@ -94,3 +94,24 @@ def test_build_option_instruction_observe_without_tool():
     }
     text = build_option_instruction(sel)
     assert "호출하지" in text  # 도구 호출 금지 지시
+
+
+def test_build_option_instruction_rejects_unknown_tool_hint():
+    from domain.management.remediation.context import build_option_instruction
+
+    sel = {
+        "option_index": 1,
+        "action": "VERIFY_SIM",
+        "tool_hint": "rm_rf_everything",
+        "campaign_id": "c1",
+        "label": "시뮬",
+    }
+    text = build_option_instruction(sel)
+    assert text is not None and "rm_rf_everything" not in text
+    assert "호출하지" in text  # 관망 강등
+
+
+def test_build_option_instruction_missing_required_returns_none():
+    from domain.management.remediation.context import build_option_instruction
+
+    assert build_option_instruction({"label": "시뮬"}) is None

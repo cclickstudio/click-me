@@ -81,16 +81,23 @@ async def recall_consult_context(session_id: str, settings: Any) -> str | None:
     )
 
 
-def build_option_instruction(sel: dict) -> str:
+def build_option_instruction(sel: dict) -> str | None:
     """옵션 버튼 클릭 meta → 지시문 — LLM 텍스트 해석 없이 정확 매핑(스펙 §4).
 
     meta가 실려 오면 recall(세션 회수)보다 이걸 우선한다. 일반 타이핑("1번 해줘")은
-    기존 recall_consult_context 경로 그대로(두 입력 공존).
+    기존 recall_consult_context 경로 그대로(두 입력 공존). 필수값(option_index·
+    campaign_id) 누락이면 None — 호출부가 recall 폴백을 타게 한다.
     """
+    from domain.management.remediation.contracts import ALLOWED_TOOL_HINTS  # noqa: PLC0415
+
     idx = sel.get("option_index")
     label = sel.get("label", "")
     cid = sel.get("campaign_id", "")
+    if idx is None or not cid:
+        return None  # 깨진 "None번()" 지시문 방지 — recall 경로로 자연 폴백
     hint = sel.get("tool_hint")
+    if hint is not None and hint not in ALLOWED_TOOL_HINTS:
+        hint = None  # 미등록 도구 힌트는 무시 — 관망 지시로 강등(신뢰 경계 방어)
     head = f"[사용자가 이상 조치 옵션 {idx}번({label})을 버튼으로 선택했다 · campaign_id={cid}]\n"
     if hint:
         return head + (
