@@ -30,9 +30,14 @@ class LogNotificationSink:
 
 
 def build_notification_sink(settings) -> NotificationSink:
-    """기본은 로그 sink. management_chat_notify_enabled면 채팅 sink(로그 폴백 내장)."""
-    if getattr(settings, "management_chat_notify_enabled", False):
+    """채널 설정으로 sink 선택 — mock↔실연동 전환과 같은 Composition Root 원칙."""
+    channel = getattr(settings, "management_notify_channel", "log")
+    if channel == "chat":
         from domain.management.remediation.chat_sink import ChatNotificationSink  # noqa: PLC0415
 
         return ChatNotificationSink(settings, fallback=LogNotificationSink())
+    if channel == "panel":
+        from domain.management.remediation.panel_sink import PanelNotificationSink  # noqa: PLC0415
+
+        return PanelNotificationSink(settings, fallback=LogNotificationSink())
     return LogNotificationSink()

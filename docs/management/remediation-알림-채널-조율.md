@@ -1,6 +1,9 @@
 # 이상 감지 선제 알림 — 배달 채널 조율 (A: 채팅 세션 / B: 알림 패널 / C: 하이브리드)
 
 > 작성 2026-07-02, 담당 🅱. 상태: **팀 조율 대기** (기능 스위치 `MANAGEMENT_CHAT_NOTIFY_ENABLED=false`로 봉인).
+> **이행 노트(2026-07-03)**: 이 문서의 `MANAGEMENT_CHAT_NOTIFY_ENABLED`(bool)는 채널 설정
+> `MANAGEMENT_NOTIFY_CHANNEL`(log|chat|panel)로 대체됐다. `true` → `chat`, `false` → `log`.
+> 상세: `docs/superpowers/plans/2026-07-03-remediation-hybrid-notification/task-02-config-sink-wiring.md`.
 > 배경: 이상 감지 → 에이전트 선제 제안 파이프라인은 구현·E2E 검증 완료
 > (`docs/management/remediation-advisor-검증-가이드.md` §9). 다만 실화면 확인 결과
 > **"알림이 채팅 세션에 메시지로 심기는" 현행 UX가 원하는 방향이 아니라는 피드백**이 있어,

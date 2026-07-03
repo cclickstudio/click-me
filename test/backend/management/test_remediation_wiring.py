@@ -1,4 +1,4 @@
-# sink seam 분기 테스트 — 설정 off면 기존 로그 sink, on이면 chat sink
+# sink seam 분기 테스트 — channel=log면 기존 로그 sink, channel=chat이면 chat sink
 from __future__ import annotations
 
 from domain.management.notifications import LogNotificationSink, build_notification_sink
@@ -6,11 +6,11 @@ from domain.management.remediation.chat_sink import ChatNotificationSink
 
 
 class _Off:
-    management_chat_notify_enabled = False
+    management_notify_channel = "log"
 
 
 class _On:
-    management_chat_notify_enabled = True
+    management_notify_channel = "chat"
 
 
 def test_default_stays_log_sink():
