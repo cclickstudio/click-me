@@ -82,7 +82,9 @@ python infra/start_portainer.py
 
 - `infra/.env`(provision이 자동 생성)에서 `EC2_HOST`·`EC2_SSH_KEY_PATH`를 읽는다.
 - 실행하면 `localhost:9000` 터널이 열리고 브라우저로 **http://localhost:9000** 이 자동 오픈된다.
-  터널 창은 켜 둔 채로 쓰고 **Ctrl+C** 로 종료한다. 첫 접속 시 Portainer admin 비밀번호를 설정한다.
+  터널 창은 켜 둔 채로 쓰고 **Ctrl+C** 로 종료한다.
+- **첫 실행이면 관리자 계정이 자동 생성**된다 → `admin` / `adminportainer1234`
+  (`start_portainer.py`의 `ADMIN_USER`·`ADMIN_PASSWORD` 상수로 교체 가능. 터널 전용이라 평문 보관, 실운영 전 변경 권장).
 - `Bad permissions / UNPROTECTED PRIVATE KEY` 오류가 나면 키 ACL이 풀린 것 →
   `provision_ec2.py`를 다시 실행하거나, 아래 한 줄로 현재 사용자 단독 권한으로 재설정한다.
   ```powershell
