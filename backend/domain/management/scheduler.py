@@ -15,39 +15,46 @@ from domain.management.notifications import NotificationSink, build_notification
 
 logger = logging.getLogger("clickme")
 
-_Scanner = Callable[[object], Awaitable[list[dict]]]
+_Scanner = Callable[[object], Awaitable[list[dict] | tuple[list[dict], list[dict]]]]
 
 
-async def _default_scanner(settings) -> list[dict]:
-    """기본 스캐너 — 활성 캠페인 게재 점검. 노출 0(미게재)을 명확한 이상으로 통지.
+async def _default_scanner(settings) -> tuple[list[dict], list[dict]]:
+    """기본 스캐너 — 활성 캠페인 게재 점검. (findings, normals) 튜플 반환.
 
-    실측은 live_campaigns(reader)에서 — use_mock이면 mock, 실연동이면 Meta. ROAS 목표 대비 등
-    심화 진단은 campaign-queryable 진단 정비 후 확장(seam).
+    normals는 '성공 조회 + 정상'으로 확인된 캠페인만(fail-closed — 조회 실패 ≠ 정상).
+    reconcile이 이걸로 정상화된 미해결 알림을 auto_normal 자동 해소한다(스펙 §3).
     """
     from domain.management.assistant import tools as live_tools  # noqa: PLC0415
 
     data = await live_tools.live_campaigns(settings)
     if data.get("error"):
-        return []  # 조회 실패(rate limit 등)는 통지 안 함 — 다음 틱에 재시도
+        return [], []  # 조회 실패는 통지도 reconcile도 안 함 — 다음 틱에 재시도
     findings: list[dict] = []
+    normals: list[dict] = []
     for c in data.get("campaigns", []):
+        cid = c.get("campaign_id")
         if c.get("impressions", 0) == 0:
-            name = c.get("name") or c.get("campaign_id", "?")
+            name = c.get("name") or cid or "?"
             findings.append(
                 {
                     "tenant_id": "global",
                     "title": f"게재 점검 — {name}",
                     "body": "활성 캠페인인데 노출이 0입니다. 심사·예산·타깃을 점검하세요.",
-                    "meta": {"campaign_id": c.get("campaign_id")},
+                    "meta": {"campaign_id": cid, "anomaly_type": "no_delivery"},
                 }
             )
-    return findings
+        else:
+            normals.append(
+                {"tenant_id": "global", "campaign_id": cid, "anomaly_type": "no_delivery"}
+            )
+    return findings, normals
 
 
 async def run_scan(settings, sink: NotificationSink, *, scanner: _Scanner | None = None) -> int:
-    """이상 스캔 1회 → 발견분을 sink로 통지. 통지 건수 반환(테스트는 scanner 주입)."""
+    """이상 스캔 1회 → 통지 + (가능하면) 정상화 reconcile. 통지 건수 반환."""
     scan = scanner or _default_scanner
-    findings = await scan(settings)
+    out = await scan(settings)
+    findings, normals = out if isinstance(out, tuple) else (out, [])
     for f in findings:
         await sink.notify(
             f.get("tenant_id", "global"),
@@ -55,6 +62,8 @@ async def run_scan(settings, sink: NotificationSink, *, scanner: _Scanner | None
             f.get("body", ""),
             meta=f.get("meta"),
         )
+    if normals and hasattr(sink, "reconcile"):
+        await sink.reconcile(normals)
     if findings:
         logger.info("management 스캔 — %d건 통지", len(findings))
     return len(findings)

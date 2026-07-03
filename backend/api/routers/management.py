@@ -454,13 +454,14 @@ async def anomaly_notify_scan(
         else:
             reader = await _require_reader(db, org_id)
 
-        async def _org_scanner(_settings) -> list[dict]:
+        async def _org_scanner(_settings) -> tuple[list[dict], list[dict]]:
             """스케줄러 기본 스캐너와 같은 신호(노출 0) — 단 reader·tenant가 org 스코프."""
             try:
                 camps = await reader.list_campaigns()
             except Exception:  # noqa: BLE001 — 조회 실패는 빈 결과(다음 시도)
-                return []
+                return [], []
             findings: list[dict] = []
+            normals: list[dict] = []
             now = datetime.now(UTC)
             for c in camps:
                 try:
@@ -473,23 +474,51 @@ async def anomaly_notify_scan(
                             "tenant_id": key,  # 실제 org — sink의 fail-closed 대조 활성화
                             "title": f"게재 점검 — {c.name or c.campaign_id}",
                             "body": "활성 캠페인인데 노출이 0입니다.",
-                            "meta": {"campaign_id": c.campaign_id},
+                            "meta": {
+                                "campaign_id": c.campaign_id,
+                                "anomaly_type": "no_delivery",
+                            },
                         }
                     )
-            return findings
+                else:
+                    normals.append(
+                        {
+                            "tenant_id": key,
+                            "campaign_id": c.campaign_id,
+                            "anomaly_type": "no_delivery",
+                        }
+                    )
+            return findings, normals
 
         from functools import partial  # noqa: PLC0415
 
         from domain.management.notifications import LogNotificationSink  # noqa: PLC0415
         from domain.management.remediation.advisor import consult as _consult  # noqa: PLC0415
-        from domain.management.remediation.chat_sink import ChatNotificationSink  # noqa: PLC0415
         from domain.management.scheduler import run_scan  # noqa: PLC0415
 
-        sink = ChatNotificationSink(
-            settings,
-            fallback=LogNotificationSink(),
-            consult=partial(_consult, reader=reader),  # 재검증도 같은 org reader로
-        )
+        channel = getattr(settings, "management_notify_channel", "log")
+        if channel == "panel":
+            from domain.management.remediation.panel_sink import (  # noqa: PLC0415
+                PanelNotificationSink,
+            )
+
+            sink = PanelNotificationSink(
+                settings,
+                fallback=LogNotificationSink(),
+                consult=partial(_consult, reader=reader),  # 재검증도 같은 org reader로
+            )
+        else:
+            # chat·log 공통 — 수동 스캔은 데모 트리거라 log 채널에서도 chat sink로 시연
+            # 동작을 유지한다(기존 동작 보존). 예약 스케줄러만 channel을 엄격히 따른다.
+            from domain.management.remediation.chat_sink import (  # noqa: PLC0415
+                ChatNotificationSink,
+            )
+
+            sink = ChatNotificationSink(
+                settings,
+                fallback=LogNotificationSink(),
+                consult=partial(_consult, reader=reader),
+            )
         count = await run_scan(settings, sink, scanner=_org_scanner)
         summary = sink.summary()
         # 쿨다운은 성공한 스캔만 소진 — 실패(예외) 시 즉시 재시도 가능해야 한다.

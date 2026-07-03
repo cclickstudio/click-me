@@ -136,7 +136,8 @@ async def test_scanner_is_org_scoped(app, monkeypatch):
 
     async def capturing_run_scan(_settings, sink, *, scanner=None):
         assert scanner is not None  # 엔드포인트가 org 스캐너를 주입해야 한다
-        captured["findings"] = await scanner(_settings)
+        findings, _normals = await scanner(_settings)  # (findings, normals) 튜플(Task 6)
+        captured["findings"] = findings
         return len(captured["findings"])
 
     monkeypatch.setattr(mgmt, "build_reader", lambda s: FakeReader())
