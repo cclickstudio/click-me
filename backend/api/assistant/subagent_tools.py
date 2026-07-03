@@ -85,7 +85,9 @@ def build_chat_tools(settings, memory=None, clio_retriever=None) -> list:
     ) -> Command:
         """집행 '후' 실측 성과·운영 질문, 그리고 캠페인 운영·성과 개선·예산 배분·타깃/오디언스
         전략에 관한 일반 조언에 답한다. 캠페인 예산·소진·CTR/ROAS/CVR 실적·페이싱·이상·정책·
-        벤치마크 등. query에는 사용자의 질문을 명확히 정리해 넣어라."""
+        벤치마크, 주간 리포트·예산 리밸런싱·이상/피로 스캔·플랫폼/연령성별 분해·캠페인 시안·
+        타게팅·리드 명단·오가닉 대비 증분 비교까지. query에는 사용자의 질문을 명확히 정리해
+        넣어라."""
         res = await mgmt(_subreq(state, query))
         return Command(
             update={
@@ -606,14 +608,15 @@ def build_chat_tools(settings, memory=None, clio_retriever=None) -> list:
         """최근 시뮬/생성 입력을 '템플릿으로 저장'한다('이 설정 저장해줘').
         name이 없으면 자동 명명."""
         project_id = state.get("project_id")
-        recent = await history.get_long_term_memory(project_id, limit=5)
+        # 최근 실행 히스토리(롱텀 메모리)에서 마지막 시뮬/생성 입력을 찾는다(빈 query = 최신순).
+        recent = await history.search_execution_history(project_id, "", k=5)
         latest = next(
-            (m for m in recent if m.get("memory_type") in ("sim_input", "gen_input")), None
+            (r for r in recent if r.get("feature_type") in ("simulation", "generation")), None
         )
         if latest is None:
             return "저장할 설정이 없어요. 먼저 시뮬레이션이나 생성을 한 번 진행해주세요."
-        ttype = "sim" if latest["memory_type"] == "sim_input" else "gen"
-        content = latest.get("content") or {}
+        ttype = "sim" if latest["feature_type"] == "simulation" else "gen"
+        content = latest.get("payload") or {}
         final_name = (
             name
             or content.get("ad_title")

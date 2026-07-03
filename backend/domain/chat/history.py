@@ -385,8 +385,6 @@ def _memory_text(memory_type: str, content: dict) -> str:
         )
     if memory_type == "session_summary":
         return f"이전 대화 요약 {c.get('summary', '')}"
-    if memory_type == "user_profile_inferred":
-        return f"사용자 프로파일 {c.get('profile') or c}"
     return str(c)
 
 
@@ -665,8 +663,8 @@ def _top_keywords(values: list[str], limit: int = 6) -> list[str]:
     return [word for word, _ in Counter(items).most_common(limit)]
 
 
-def _profile_from_execution_memory(rows: list[dict]) -> dict:
-    contents = [r.get("content") or {} for r in rows]
+def _profile_from_execution_rows(rows: list[dict]) -> dict:
+    contents = [r.get("payload") or {} for r in rows]
     categories: list[str] = []
     targets: list[str] = []
     objectives: list[str] = []
@@ -694,28 +692,33 @@ def _profile_from_execution_memory(rows: list[dict]) -> dict:
 
 
 async def infer_profile_from_execution_history(project_id: str | None) -> dict | None:
-    """최근 시뮬·생성 실행 입력을 집계해 프로젝트 브랜드 프로파일을 추론한다."""
-    sim_rows = await get_long_term_memory(project_id, limit=_INFER_LIMIT, memory_type="sim_input")
-    gen_rows = await get_long_term_memory(project_id, limit=_INFER_LIMIT, memory_type="gen_input")
+    """최근 시뮬·생성 실행 히스토리(payload)를 집계해 프로젝트 브랜드 프로파일을 추론한다.
+
+    선호는 히스토리에서 파생되는 뷰 — 별도 메모리 테이블에 증적을 남기지 않는다(일원화).
+    """
+    sim_rows = await search_execution_history(
+        project_id, "", k=_INFER_LIMIT, feature_type="simulation"
+    )
+    gen_rows = await search_execution_history(
+        project_id, "", k=_INFER_LIMIT, feature_type="generation"
+    )
     rows = sorted(
         sim_rows + gen_rows,
-        key=lambda item: item.get("created_at") or "",
+        key=lambda item: item.get("executed_at") or "",
         reverse=True,
     )[:_INFER_LIMIT]
     if len(rows) < _INFER_MIN_INPUTS:
         return None
-    profile = _profile_from_execution_memory(rows)
+    profile = _profile_from_execution_rows(rows)
     updates = {k: v for k, v in profile.items() if v}
     if not updates:
         return None
     await upsert_brand_profile(project_id, updates)
-    evidence = {
-        "source_types": [r.get("memory_type") for r in rows],
+    return {
+        "source_types": [r.get("feature_type") for r in rows],
         "sample_count": len(rows),
         "profile": updates,
     }
-    await save_long_term_memory(project_id, "user_profile_inferred", evidence)
-    return evidence
 
 
 async def pin_message(message_id: str, pinned: bool) -> bool:
