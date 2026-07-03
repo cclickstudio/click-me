@@ -17,7 +17,8 @@ from domain.simulation.service.simulation_service import SimulationService
 class _FakeGraph:
     """outer 그래프 스텁 — LLM 없이 interpret→panel→react→aggregate 노드 업데이트를 순서대로 방출.
 
-    load_panel은 sample_size 만큼 페르소나를 만들어 세그먼트별 표본 크기가 결과에 반영되는지 확인 가능.
+    load_panel은 sample_size 만큼 페르소나를 만들어
+    세그먼트별 표본 크기가 결과에 반영되는지 확인 가능.
     """
 
     async def astream(self, state, *, config=None, stream_mode=None):
@@ -25,9 +26,7 @@ class _FakeGraph:
         ad = AdInterpretation(ad_id=req.ad_id)
         yield {"interpret_ad": {"ad": ad, "rubric_scores": []}}
         personas = [
-            Persona(
-                persona_id=f"P-{i}", age=30, gender="F", region="서울", ocean={"openness": 0.5}
-            )
+            Persona(persona_id=f"P-{i}", age=30, gender="F", region="서울", ocean={"openness": 0.5})
             for i in range(req.sample_size)
         ]
         yield {"load_panel": {"personas": personas, "panel_version": "panel-test"}}
