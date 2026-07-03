@@ -18,10 +18,10 @@ from core.db import AsyncSessionLocal
 from core.models import (
     AdTemplate,
     ChatBrandProfile,
-    ChatLongTermMemory,
+    ChatExecutionHistory,
     ChatMessage,
     ChatSession,
-    ExecutionHistory,
+    ChatSessionSummary,
 )
 from domain.chat.kb_ingest import EMBEDDING_MODEL
 
@@ -426,7 +426,7 @@ async def save_long_term_memory(
     try:
         async with AsyncSessionLocal() as db:
             db.add(
-                ChatLongTermMemory(
+                ChatSessionSummary(
                     project_id=pid,
                     user_id=_as_uuid(user_id),
                     memory_type=memory_type,
@@ -454,13 +454,13 @@ async def search_long_term_memory(
         return await get_long_term_memory(project_id, limit=k, memory_type=memory_type)
     try:
         async with AsyncSessionLocal() as db:
-            dist = ChatLongTermMemory.embedding.cosine_distance(emb).label("dist")
-            stmt = select(ChatLongTermMemory, dist).where(
-                ChatLongTermMemory.project_id == pid,
-                ChatLongTermMemory.embedding.isnot(None),
+            dist = ChatSessionSummary.embedding.cosine_distance(emb).label("dist")
+            stmt = select(ChatSessionSummary, dist).where(
+                ChatSessionSummary.project_id == pid,
+                ChatSessionSummary.embedding.isnot(None),
             )
             if memory_type:
-                stmt = stmt.where(ChatLongTermMemory.memory_type == memory_type)
+                stmt = stmt.where(ChatSessionSummary.memory_type == memory_type)
             rows = (await db.execute(stmt.order_by(dist).limit(k))).all()
             return [
                 {
@@ -485,10 +485,10 @@ async def get_long_term_memory(
         return []
     try:
         async with AsyncSessionLocal() as db:
-            stmt = select(ChatLongTermMemory).where(ChatLongTermMemory.project_id == pid)
+            stmt = select(ChatSessionSummary).where(ChatSessionSummary.project_id == pid)
             if memory_type:
-                stmt = stmt.where(ChatLongTermMemory.memory_type == memory_type)
-            stmt = stmt.order_by(ChatLongTermMemory.created_at.desc()).limit(limit)
+                stmt = stmt.where(ChatSessionSummary.memory_type == memory_type)
+            stmt = stmt.order_by(ChatSessionSummary.created_at.desc()).limit(limit)
             rows = await db.execute(stmt)
             return [
                 {
@@ -525,7 +525,7 @@ async def record_execution(
     try:
         async with AsyncSessionLocal() as db:
             db.add(
-                ExecutionHistory(
+                ChatExecutionHistory(
                     project_id=pid,
                     user_id=_as_uuid(user_id),
                     feature_type=feature_type,
@@ -550,7 +550,7 @@ async def search_execution_history(
     if pid is None:
         return []
 
-    def _row(r: ExecutionHistory, score: float | None = None) -> dict:
+    def _row(r: ChatExecutionHistory, score: float | None = None) -> dict:
         d = {
             "feature_type": r.feature_type,
             "action": r.action,
@@ -567,21 +567,23 @@ async def search_execution_history(
             q = (query or "").strip()
             if q:
                 tsq = func.plainto_tsquery("simple", q)
-                rank = func.ts_rank_cd(ExecutionHistory.search_tsv, tsq).label("rank")
-                stmt = select(ExecutionHistory, rank).where(
-                    ExecutionHistory.project_id == pid,
-                    ExecutionHistory.search_tsv.op("@@")(tsq),
+                rank = func.ts_rank_cd(ChatExecutionHistory.search_tsv, tsq).label("rank")
+                stmt = select(ChatExecutionHistory, rank).where(
+                    ChatExecutionHistory.project_id == pid,
+                    ChatExecutionHistory.search_tsv.op("@@")(tsq),
                 )
                 if feature_type:
-                    stmt = stmt.where(ExecutionHistory.feature_type == feature_type)
+                    stmt = stmt.where(ChatExecutionHistory.feature_type == feature_type)
                 rows = (await db.execute(stmt.order_by(rank.desc()).limit(k))).all()
                 if rows:
                     return [_row(r[0], float(r[1])) for r in rows]
             # 폴백 — 최신순(빈 query·매칭 0건)
-            stmt = select(ExecutionHistory).where(ExecutionHistory.project_id == pid)
+            stmt = select(ChatExecutionHistory).where(ChatExecutionHistory.project_id == pid)
             if feature_type:
-                stmt = stmt.where(ExecutionHistory.feature_type == feature_type)
-            rows2 = await db.execute(stmt.order_by(ExecutionHistory.executed_at.desc()).limit(k))
+                stmt = stmt.where(ChatExecutionHistory.feature_type == feature_type)
+            rows2 = await db.execute(
+                stmt.order_by(ChatExecutionHistory.executed_at.desc()).limit(k)
+            )
             return [_row(r) for r in rows2.scalars()]
     except Exception as exc:  # noqa: BLE001 — 검색 실패면 빈 목록
         print(f"[chat] execution history search error: {exc!r}")

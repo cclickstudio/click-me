@@ -387,14 +387,15 @@ class ChatMessage(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
-class ChatLongTermMemory(Base):
-    """채팅 롱텀 메모리 — 시뮬/생성 실행 입력·사용자 선호를 프로젝트 단위로 누적.
+class ChatSessionSummary(Base):
+    """채팅 세션 요약(구 chat_long_term_memory, 마이그 0006 개명) — 숏텀 압축 컨텍스트.
 
     다음 대화에 컨텍스트로 주입(최근 N개 조회). memory_type:
     sim_input | gen_input | user_pref | session_summary.
+    sim_input·gen_input 적재는 팀 조율 후 중단 예정 — 롱텀은 chat_execution_history로 일원화.
     """
 
-    __tablename__ = "chat_long_term_memory"
+    __tablename__ = "chat_session_summaries"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     project_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -410,17 +411,18 @@ class ChatLongTermMemory(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     # 최신순 조회(project_id 필터 + created_at DESC) 최적화 — 실 DB와 동일 구성.
-    __table_args__ = (Index("ix_chat_ltm_project", "project_id", desc("created_at")),)
+    __table_args__ = (Index("ix_chat_session_summaries_project", "project_id", desc("created_at")),)
 
 
-class ExecutionHistory(Base):
-    """실행 히스토리 — 시뮬/생성/매니지먼트 기능 수행 이력(시간·종류·데이터)을 프로젝트 단위 누적.
+class ChatExecutionHistory(Base):
+    """실행 히스토리(구 execution_history, 마이그 0006 개명) — 채팅 에이전트의 롱텀 메모리.
 
-    롱텀메모리 회수용. summary를 tsvector로 색인해 BM25급 키워드 서치(ts_rank_cd)로 조회한다.
-    feature_type: simulation | generation | management. 마이그 0002.
+    시뮬/생성/매니지먼트 기능 수행 이력(시간·종류·데이터)을 프로젝트 단위 누적.
+    summary를 tsvector로 색인해 BM25급 키워드 서치(ts_rank_cd)로 조회한다.
+    feature_type: simulation | generation | management.
     """
 
-    __tablename__ = "execution_history"
+    __tablename__ = "chat_execution_history"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     project_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -445,7 +447,7 @@ class ExecutionHistory(Base):
     )
 
     __table_args__ = (
-        Index("ix_execution_history_search_tsv", "search_tsv", postgresql_using="gin"),
+        Index("ix_chat_execution_history_search_tsv", "search_tsv", postgresql_using="gin"),
     )
 
 
