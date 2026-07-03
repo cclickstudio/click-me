@@ -11,11 +11,19 @@ from __future__ import annotations
 import logging
 from collections.abc import Awaitable, Callable
 
+from core.automation import register_automation
 from domain.management.notifications import NotificationSink, build_notification_sink
 
 logger = logging.getLogger("clickme")
 
 _Scanner = Callable[[object], Awaitable[list[dict]]]
+
+# 공용 레지스트리에 매니지먼트 자동화 등록 — gen/sim도 같은 방식으로 붙는다(확장 seam).
+register_automation(
+    "management",
+    "anomaly_scan",
+    description="캠페인 게재0·소재피로·성과미달 + 계정 지갑·예산 가드레일 점검(에이전트 판단)",
+)
 
 
 async def _default_scanner(settings) -> list[dict]:

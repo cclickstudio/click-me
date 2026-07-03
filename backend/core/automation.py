@@ -125,3 +125,29 @@ async def recent_automation_runs(
     except Exception as exc:  # noqa: BLE001 — 조회 실패면 빈 목록
         print(f"[automation] query error: {exc!r}")
         return []
+
+
+# ── 도메인 자동화 레지스트리 — gen/sim 확장 seam ────────────────────
+# 각 도메인이 자기 자동화 작업을 공용 레지스트리에 등록한다. 지금은 management만 등록하고,
+# 제너레이터·시뮬레이터는 후속에 register_automation("generation"|"simulation", …)만 추가하면
+# 붙는다(테이블 automation_runs·조회 API는 이미 domain 파라미터로 크로스도메인). 실행 배선은
+# 각 도메인 스케줄러가 담당하고, 레지스트리는 "무슨 자동화가 있나"의 단일 목록(관측·문서화)이다.
+_REGISTRY: dict[str, dict] = {}
+
+
+def register_automation(
+    domain: str, name: str, *, interval_minutes: int = 60, description: str = ""
+) -> None:
+    """도메인 자동화 작업 1개를 공용 레지스트리에 등록(멱등 — 같은 domain:name은 덮어씀)."""
+    _REGISTRY[f"{domain}:{name}"] = {
+        "domain": domain,
+        "name": name,
+        "interval_minutes": interval_minutes,
+        "description": description,
+    }
+
+
+def registered_automations(domain: str | None = None) -> list[dict]:
+    """등록된 자동화 목록(domain 필터 선택). gen/sim 확장 현황 파악·목록 노출용."""
+    items = sorted(_REGISTRY.values(), key=lambda a: (a["domain"], a["name"]))
+    return [a for a in items if a["domain"] == domain] if domain else items
