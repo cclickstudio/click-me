@@ -10,6 +10,7 @@ from __future__ import annotations
 from langgraph.graph import END, StateGraph
 from langgraph.graph.state import CompiledStateGraph
 
+from domain.generator.contracts.enums import GenerationMode
 from domain.generator.graph.nodes.candidate_gen import generate_candidates
 from domain.generator.graph.nodes.explain import explain_candidates
 from domain.generator.graph.nodes.product_analysis import analyze_product
@@ -28,7 +29,16 @@ def build_generation_graph() -> CompiledStateGraph:
 
     graph.set_entry_point("analyze_product")
     graph.add_edge("analyze_product", "generate_strategies")
-    graph.add_edge("generate_strategies", "select_templates")
+    # 개선 모드는 select_templates를 건너뜀 (더미 plans를 strategy 노드에서 직접 주입)
+    graph.add_conditional_edges(
+        "generate_strategies",
+        lambda s: (
+            "generate_candidates"
+            if s["request"].get("mode") == GenerationMode.IMPROVE
+            else "select_templates"
+        ),
+        {"generate_candidates": "generate_candidates", "select_templates": "select_templates"},
+    )
     graph.add_edge("select_templates", "generate_candidates")
     graph.add_edge("generate_candidates", "explain")
     graph.add_edge("explain", END)
