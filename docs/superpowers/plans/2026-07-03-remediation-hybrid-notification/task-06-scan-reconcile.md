@@ -185,6 +185,46 @@ async def run_scan(settings, sink: NotificationSink, *, scanner: _Scanner | None
 
 주의: 기존 `_org_scanner`의 findings meta에 `anomaly_type`이 없었다 — 이 수정으로 chat sink 경로도 동작 불변(chat_sink는 meta의 campaign_id만 읽음).
 
+- [ ] **Step 4-1: 수동 스캔 sink를 채널 인지로 교체** (Task 2 품질 리뷰 발견 — 엔드포인트가 `ChatNotificationSink`를 직접 생성해 채널 설정을 무시함)
+
+같은 엔드포인트의 sink 생성부(488행 부근, `sink = ChatNotificationSink(...)`)를 채널 분기로 교체 — org reader 주입(consult partial)은 유지:
+
+```python
+        from functools import partial  # noqa: PLC0415
+
+        from domain.management.notifications import LogNotificationSink  # noqa: PLC0415
+        from domain.management.remediation.advisor import consult as _consult  # noqa: PLC0415
+        from domain.management.scheduler import run_scan  # noqa: PLC0415
+
+        channel = getattr(settings, "management_notify_channel", "log")
+        if channel == "panel":
+            from domain.management.remediation.panel_sink import (  # noqa: PLC0415
+                PanelNotificationSink,
+            )
+
+            sink = PanelNotificationSink(
+                settings,
+                fallback=LogNotificationSink(),
+                consult=partial(_consult, reader=reader),  # 재검증도 같은 org reader로
+            )
+        else:
+            # chat·log 공통 — 수동 스캔은 데모 트리거라 log 채널에서도 chat sink로 시연
+            # 동작을 유지한다(기존 동작 보존). 예약 스케줄러만 channel을 엄격히 따른다.
+            from domain.management.remediation.chat_sink import (  # noqa: PLC0415
+                ChatNotificationSink,
+            )
+
+            sink = ChatNotificationSink(
+                settings,
+                fallback=LogNotificationSink(),
+                consult=partial(_consult, reader=reader),
+            )
+        count = await run_scan(settings, sink, scanner=_org_scanner)
+        summary = sink.summary()
+```
+
+테스트 추가(`test_scan_reconcile.py` 또는 `test_notify_scan_endpoint.py`에 1케이스): `management_notify_channel="panel"`로 monkeypatch 후 notify-scan 호출 시 PanelNotificationSink가 생성되는지 — sink 생성부를 seam으로 빼기 어렵다면 `monkeypatch.setattr`로 PanelNotificationSink를 스파이로 교체해 검증.
+
 - [ ] **Step 5: 통과 확인 + 기존 스캔 테스트 회귀 + Ruff + 커밋**
 
 ```bash
