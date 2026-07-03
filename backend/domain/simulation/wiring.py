@@ -43,17 +43,26 @@ def _ensure_env(*keys: str) -> None:
                 os.environ[k] = v
 
 
-def build_panel_provider(settings=None):
-    """패널 공급자 — 빌드된 고정 패널(§3.6)이 있으면 로드, 없으면 실 인구 grounding 샘플러.
+def build_panel_provider(settings=None, session_factory=None):
+    """패널 공급자 — DB(panels/personas, §3.6)에 있으면 그걸 최우선, 없으면 로컬 JSON 캐시,
+    그마저 없으면 실 인구 grounding 샘플러로 라이브 폴백.
 
     샘플러는 행안부 인구·OCEAN·소비가치 분포에서 통계 샘플링(LLM✗). 서사는 빈 채(반응 mock 무관).
     Meta 전용 — 표본을 인구×소셜도달 비율로 추출(§Tier1). 고정 패널도 같은 옵션으로 빌드해야 정합.
     """
     if _DEFAULT_PANEL.exists():
-        return CachedPanelProvider(_DEFAULT_PANEL)
-    # Meta 플랫폼(instagram/facebook) 지정 시 그 도달 분포로 추출 — 실데이터 없으면 통합 reach 폴백.
-    platform = getattr(settings, "meta_platform", None) if settings is not None else None
-    return PersonaSampler(reachability_sampling=True, platform=platform)
+        fallback = CachedPanelProvider(_DEFAULT_PANEL)
+    else:
+        # Meta 플랫폼(instagram/facebook) 지정 시 그 도달 분포로 추출 — 없으면 통합 reach 폴백.
+        platform = getattr(settings, "meta_platform", None) if settings is not None else None
+        fallback = PersonaSampler(reachability_sampling=True, platform=platform)
+
+    resolved_session_factory = _resolve_session_factory(settings, session_factory)
+    if resolved_session_factory is None:
+        return fallback
+    from domain.simulation.tools.panel.db_provider import DbPanelProvider
+
+    return DbPanelProvider(resolved_session_factory, fallback=fallback)
 
 
 def _resolve_use_mock(settings, use_mock) -> bool:
@@ -152,7 +161,7 @@ def build_simulation_service(
 
     graph = build_run_graph(
         interpreter=interpreter,
-        panel=build_panel_provider(settings),  # 실 인구 grounding 샘플러(또는 고정 패널)
+        panel=build_panel_provider(settings, session_factory),  # DB 고정 패널 우선(§3.6)
         rubric=rubric,
         aggregator=BasicAggregator(),
         reaction_graph=build_reaction_subgraph(settings, use_llm_qa=use_llm_qa),
