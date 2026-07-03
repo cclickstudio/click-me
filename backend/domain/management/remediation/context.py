@@ -79,3 +79,24 @@ async def recall_consult_context(session_id: str, settings: Any) -> str | None:
         now=datetime.now(UTC),
         ttl_hours=getattr(settings, "management_consult_context_ttl_hours", 24),
     )
+
+
+def build_option_instruction(sel: dict) -> str:
+    """옵션 버튼 클릭 meta → 지시문 — LLM 텍스트 해석 없이 정확 매핑(스펙 §4).
+
+    meta가 실려 오면 recall(세션 회수)보다 이걸 우선한다. 일반 타이핑("1번 해줘")은
+    기존 recall_consult_context 경로 그대로(두 입력 공존).
+    """
+    idx = sel.get("option_index")
+    label = sel.get("label", "")
+    cid = sel.get("campaign_id", "")
+    hint = sel.get("tool_hint")
+    head = f"[사용자가 이상 조치 옵션 {idx}번({label})을 버튼으로 선택했다 · campaign_id={cid}]\n"
+    if hint:
+        return head + (
+            f"즉시 도구 {hint}를 campaign_id와 함께 호출해 진행하라. "
+            "지출 조치(manage_campaign)는 확인 카드로만 제안하고 직접 실행하지 않는다."
+        )
+    return head + (
+        "관망 선택 — 도구를 호출하지 말고, 지금은 지켜보겠다는 선택을 확인하는 답변만 하라."
+    )

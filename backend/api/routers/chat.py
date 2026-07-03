@@ -384,6 +384,7 @@ async def _persist(
     meta: dict | None,
     image_url: str | None = None,
     result_ref: dict | None = None,
+    option_select: dict | None = None,
 ) -> None:
     """한 턴을 DB에 적재(best-effort) — 세션 없거나 실패해도 채팅은 진행."""
     user_meta: dict = {}
@@ -391,6 +392,8 @@ async def _persist(
         user_meta["image_url"] = image_url
     if result_ref:
         user_meta["result"] = result_ref
+    if option_select:
+        user_meta["option_select"] = option_select
     try:
         async with AsyncSessionLocal() as db:
             await history.append_turn(
@@ -416,15 +419,23 @@ async def chat_complete(
         yield _sse("progress", progress={"label": "생각 중 🔄", "pct": None})
         # 세션 넘는 장기기억 회수 — 에이전트 맥락에 끼울 문자열(로그인 사용자만, best-effort).
         memory_context = await _recall_memory_context(body, last_message, current_user)
-        # 진행 중 이상 조치 상담 컨텍스트(management) — meta는 왕복 안 되므로 서버가 회수·주입.
-        try:
+        # 진행 중 이상 조치 상담 컨텍스트(management) — 옵션 버튼 meta가 오면 그걸 우선.
+        if body.option_select:
             from domain.management.remediation.context import (  # noqa: PLC0415
-                recall_consult_context,
+                build_option_instruction,
             )
 
-            consult_ctx = await recall_consult_context(body.session_id, settings)
-        except Exception:  # noqa: BLE001 — 회수 실패가 채팅을 막지 않게
-            consult_ctx = None
+            consult_ctx = build_option_instruction(body.option_select)
+        else:
+            # meta는 왕복 안 되므로 서버가 세션에서 회수·주입.
+            try:
+                from domain.management.remediation.context import (  # noqa: PLC0415
+                    recall_consult_context,
+                )
+
+                consult_ctx = await recall_consult_context(body.session_id, settings)
+            except Exception:  # noqa: BLE001 — 회수 실패가 채팅을 막지 않게
+                consult_ctx = None
         if consult_ctx:
             memory_context = f"{memory_context}\n\n{consult_ctx}" if memory_context else consult_ctx
 
@@ -437,7 +448,13 @@ async def chat_complete(
             if meta.get("approval"):
                 yield _sse("approval", approval=meta["approval"])
             await _persist(
-                body.session_id, last_message, answer, meta, body.image_url, body.result_ref
+                body.session_id,
+                last_message,
+                answer,
+                meta,
+                body.image_url,
+                body.result_ref,
+                body.option_select,
             )
             yield _sse("done")
             return
@@ -451,7 +468,13 @@ async def chat_complete(
             for piece in _chunks(answer):
                 yield _sse("text", token=piece)
             await _persist(
-                body.session_id, last_message, answer, meta, body.image_url, body.result_ref
+                body.session_id,
+                last_message,
+                answer,
+                meta,
+                body.image_url,
+                body.result_ref,
+                body.option_select,
             )
             yield _sse("done")
             return
@@ -523,7 +546,15 @@ async def chat_complete(
         yield _sse("meta", meta=meta)
         if meta.get("approval"):
             yield _sse("approval", approval=meta["approval"])
-        await _persist(body.session_id, last_message, acc, meta, body.image_url, body.result_ref)
+        await _persist(
+            body.session_id,
+            last_message,
+            acc,
+            meta,
+            body.image_url,
+            body.result_ref,
+            body.option_select,
+        )
         # 행동 제안이 나온 턴을 장기기억에 적재(백그라운드) — 다음 세션 recall에 반영.
         _spawn_remember(body, meta, current_user)
         # 전 라우트 자동 LTM 캡처(M2 사실추출 + M6 세션요약).

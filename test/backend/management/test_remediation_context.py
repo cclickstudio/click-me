@@ -65,3 +65,32 @@ def test_no_injection_after_widget_shown():
 
 def test_none_when_no_consult():
     assert pick_consult_context([(None, NOW)], now=NOW, ttl_hours=24, recent_k=10) is None
+
+
+def test_build_option_instruction_prefers_meta_mapping():
+    from domain.management.remediation.context import build_option_instruction
+
+    sel = {
+        "option_index": 1,
+        "action": "VERIFY_SIM",
+        "tool_hint": "run_simulation",
+        "campaign_id": "c1",
+        "label": "시뮬레이션으로 소재 점검",
+    }
+    text = build_option_instruction(sel)
+    assert "run_simulation" in text and "c1" in text
+    assert "1" in text  # 선택 번호 명시
+
+
+def test_build_option_instruction_observe_without_tool():
+    from domain.management.remediation.context import build_option_instruction
+
+    sel = {
+        "option_index": 4,
+        "action": "OBSERVE",
+        "tool_hint": None,
+        "campaign_id": "c1",
+        "label": "두고 보기(추가 조치 없음)",
+    }
+    text = build_option_instruction(sel)
+    assert "호출하지" in text  # 도구 호출 금지 지시
