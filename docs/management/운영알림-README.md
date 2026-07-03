@@ -35,7 +35,10 @@ cd frontend && pnpm dev
 
 기본 데이터에는 "노출 0 캠페인"이 없어서 알림이 안 생깁니다. 재현하려면 —
 
-1. `backend/.env`에서 `USE_MOCK=true` (mock에 데모용 노출 0 캠페인 **camp_3** 있음)
+1. `backend/.env`에 `MANAGEMENT_READER_MOCK=true` (매니지먼트 reader만 mock — 데모용
+   노출 0 캠페인 **camp_3**이 보임). ⚠ `USE_MOCK=true`로 하면 **채팅 에이전트가 통째로
+   꺼지므로**(deep_agent_builder — mock이면 None) 상담하기 이후 흐름이 안 됩니다.
+   전역 `USE_MOCK=false` 유지 + 이 키만 켜세요.
 2. camp_3 ↔ 내 프로젝트 연결 시딩 (resolver가 fail-closed라 필수):
 
 ```sql

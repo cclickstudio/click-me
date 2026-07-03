@@ -12,7 +12,9 @@ if TYPE_CHECKING:
 
 
 def build_reader(settings) -> AdPlatformReader:
-    if getattr(settings, "use_mock", True):
+    # management_reader_mock: 매니지먼트 reader만 mock 강제(알림 데모용) — 전역 use_mock과
+    # 분리해 채팅(mock이면 에이전트 비활성, deep_agent_builder 참조)을 live로 유지한다.
+    if getattr(settings, "use_mock", True) or getattr(settings, "management_reader_mock", False):
         # 지연 import — MockAdPlatform(🅰 소유)은 A-1 구현 전까지 빈 stub
         from domain.management.adapters.mock import MockAdPlatform  # noqa: PLC0415
 

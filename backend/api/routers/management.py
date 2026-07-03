@@ -449,7 +449,10 @@ async def anomaly_notify_scan(
 
     async with lock:
         # org 스코프 reader — live는 로그인 org 연결(미연결 409), mock은 전역 mock.
-        if getattr(settings, "use_mock", True):
+        # management_reader_mock이면 전역 live여도 mock reader(알림 데모 — wiring 주석 참조).
+        if getattr(settings, "use_mock", True) or getattr(
+            settings, "management_reader_mock", False
+        ):
             reader = build_reader(settings)
         else:
             reader = await _require_reader(db, org_id)
