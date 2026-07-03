@@ -15,7 +15,6 @@ from collections.abc import AsyncIterator
 from contextlib import suppress
 from urllib.parse import quote
 
-import httpx
 from PIL import Image
 from sqlalchemy import select
 
@@ -29,7 +28,7 @@ from core.models import (
 )
 from core.tracing import make_trace_config
 from domain.generator.adapters.instagram import build_publisher
-from domain.generator.contracts.enums import GenerationMode, TemplateType
+from domain.generator.contracts.enums import AdStrategy, TemplateType
 from domain.generator.contracts.schemas import GenerationCreateRequest
 from domain.generator.graph.pipeline import generation_graph
 from domain.generator.pipeline.relayout import render_platform
@@ -37,38 +36,23 @@ from tools.storage.s3 import (
     candidate_base_key,
     download_bytes,
     presign_get,
+    product_cutout_key,
     publish_key,
+    temp_product_image_key,
     upload_bytes,
 )
 
 logger = logging.getLogger("clickme")
 
 _tasks: dict[str, dict] = {}
-# 상품 이미지 임시 저장소 — 테스트용, 추후 S3 방식으로 전환
-_product_image_store: dict[str, bytes] = {}
+_background_tasks: set[asyncio.Task] = set()
 
 
 async def store_temp_image(data: bytes) -> str:
-    """상품 이미지를 메모리에 임시 저장하고 temp_key를 반환한다."""
-    key = str(uuid.uuid4())
-    _product_image_store[key] = data
+    """상품 이미지를 S3에 임시 저장하고 S3 키를 반환한다."""
+    key = temp_product_image_key(str(uuid.uuid4()))
+    await upload_bytes(data, key, content_type="image/png")
     return key
-
-
-async def _load_existing_ad(ref: str) -> bytes | None:
-    """개선 모드 기존 광고 이미지를 로드 — http(s)는 httpx, 그 외는 S3 key(download_bytes)."""
-    try:
-        if ref.startswith(("http://", "https://")):
-            async with httpx.AsyncClient(timeout=30) as client:
-                resp = await client.get(ref)
-                resp.raise_for_status()
-                return resp.content
-        return await download_bytes(ref)
-    except Exception:
-        logger.warning(
-            "기존 광고 이미지 로드 실패 — 개선을 0부터 재생성으로 진행: ref=%s", ref[:80]
-        )
-        return None
 
 
 async def start_generation(
@@ -105,20 +89,20 @@ async def start_generation(
     # 상품 이미지 bytes를 task store에 주입 (pipeline이 state로 전달받음)
     product_image_bytes: bytes | None = None
     if request.product_image_temp_key:
-        product_image_bytes = _product_image_store.get(request.product_image_temp_key)
-
-    # 개선 모드 — 기존 광고 이미지를 로드(s3 key 또는 http URL)해 task store에 주입
-    existing_ad_bytes: bytes | None = None
-    if request.mode == GenerationMode.IMPROVE and request.existing_ad_s3_key:
-        existing_ad_bytes = await _load_existing_ad(request.existing_ad_s3_key)
+        try:
+            product_image_bytes = await download_bytes(request.product_image_temp_key)
+        except Exception:
+            logger.warning(
+                "상품 이미지 S3 다운로드 실패, 상품 없이 진행: key=%s",
+                request.product_image_temp_key,
+            )
 
     _tasks[generation_id] = {
         "status": "pending",
         "events": [],
         "product_image_bytes": product_image_bytes,
-        "existing_ad_bytes": existing_ad_bytes,
     }
-    asyncio.create_task(
+    task = asyncio.create_task(
         _run_pipeline(
             generation_id,
             request,
@@ -128,6 +112,8 @@ async def start_generation(
             created_by_role=created_by_role,
         )
     )
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
     return generation_id
 
 
@@ -168,9 +154,6 @@ async def _run_pipeline(
         product_image_bytes: bytes | None = store.pop("product_image_bytes", None)
         if product_image_bytes is not None:
             initial_state["product_image_bytes"] = product_image_bytes
-        existing_ad_bytes: bytes | None = store.pop("existing_ad_bytes", None)
-        if existing_ad_bytes is not None:
-            initial_state["existing_ad_bytes"] = existing_ad_bytes
 
         final_state = await generation_graph.ainvoke(initial_state, config=config)
 
@@ -256,6 +239,14 @@ async def stream_events(generation_id: str) -> AsyncIterator[str]:
             break
 
         await asyncio.sleep(0.5)
+
+    async def _deferred_cleanup(gid: str) -> None:
+        await asyncio.sleep(30)
+        _tasks.pop(gid, None)
+
+    cleanup = asyncio.create_task(_deferred_cleanup(generation_id))
+    _background_tasks.add(cleanup)
+    cleanup.add_done_callback(_background_tasks.discard)
 
 
 # 기대성과 순위(G7) — QA 점수로 후보를 정렬·근거 한 줄 부여. DB 스키마 변경 없이 조회 시 산출.
@@ -385,6 +376,12 @@ async def get_detail(generation_id: str, org_id: uuid.UUID | None = None) -> dic
     # 기대성과 순위 부여(G7) — QA 점수 기준 정렬 + rank·근거 한 줄. 완료 상태에서만 의미 있음.
     candidate_dicts = _rank_candidates(candidate_dicts)
 
+    _gen_input = generation.input or {}
+    # 생성 모드에서 상품 이미지가 있었던 경우에만 누끼 키를 반환 (개선 모드 재사용을 위해)
+    _cutout_s3_key: str | None = None
+    if _gen_input.get("mode", "create") == "create" and _gen_input.get("product_image_temp_key"):
+        _cutout_s3_key = product_cutout_key(str(generation.id))
+
     return {
         # D1 계약 버전 — management from-candidate 핸드오프가 검증(불일치 시 409).
         "schema_version": "1",
@@ -396,6 +393,7 @@ async def get_detail(generation_id: str, org_id: uuid.UUID | None = None) -> dic
         "selected_candidate_id": (
             str(generation.selected_candidate_id) if generation.selected_candidate_id else None
         ),
+        "product_cutout_s3_key": _cutout_s3_key,
         "error_message": generation.error_message,
         "created_at": generation.created_at.isoformat(),
         "candidates": candidate_dicts,
@@ -459,6 +457,13 @@ async def render_candidate(candidate_id: str, platform: str) -> bytes | None:
         gen_id = str(candidate.generation_id)
         copy = candidate.copy or {}
         template_id = candidate.template_id
+        strat_raw = (candidate.strategy or {}).get("strategy_type")
+
+    # strategy 복원 — 없거나 잘못된 값이면 None (box 폴백)
+    try:
+        strategy = AdStrategy(strat_raw) if strat_raw else None
+    except ValueError:
+        strategy = None
 
     try:
         base_bytes = await download_bytes(candidate_base_key(gen_id, idx))
@@ -480,6 +485,7 @@ async def render_candidate(candidate_id: str, platform: str) -> bytes | None:
         platform=platform,
         brand_color=gen_input.get("brand_color"),
         logo_bytes=logo_bytes,
+        strategy=strategy,
     )
 
 

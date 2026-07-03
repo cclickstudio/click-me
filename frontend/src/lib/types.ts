@@ -747,6 +747,7 @@ export interface QualityReport {
   text_length: QualityCheckItem;
   brand_consistency: QualityCheckItem;
   overall_passed: boolean;
+  policy_warnings?: string[];
 }
 
 export interface GeneratorCandidate {
@@ -792,6 +793,7 @@ export interface GenerationDetail {
   created_at: string;
   candidates: GeneratorCandidate[];
   publish_logs: GenerationPublishLog[];
+  product_cutout_s3_key?: string | null;
 }
 
 export interface BrandKit {

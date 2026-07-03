@@ -38,6 +38,8 @@ class ClioKbRetriever:
                 "title": r.ClioKbChunk.title,
                 "chunk": r.ClioKbChunk.chunk,
                 "score": round(1.0 - float(r.dist), 3),
+                # 절대 유사도 게이트용 — 벡터 전용이라 score와 동일(하이브리드 스키마 통일).
+                "cosine_score": round(1.0 - float(r.dist), 3),
             }
             for r in rows
         ]

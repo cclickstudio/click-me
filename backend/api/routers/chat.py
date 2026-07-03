@@ -10,6 +10,7 @@ from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.assistant.improve_context import improve_gen_data_for_simulation
 from core.access import (
     assert_generation_access,
     assert_message_access,
@@ -116,15 +117,20 @@ def _assemble_chat_meta(state: dict, engine_label: str) -> dict:
     mgmt = sub.get("management") or {}
     sim = sub.get("simulation") or {}
     gen = sub.get("generator") or {}
+    clio = sub.get("clio") or {}
     source = (
         state.get("source")
         or mgmt.get("source")
         or sim.get("source")
         or gen.get("source")
+        or clio.get("source")
         or "orchestrator"
     )
     citations = (
-        (mgmt.get("citations") or []) + (sim.get("citations") or []) + (gen.get("citations") or [])
+        (mgmt.get("citations") or [])
+        + (sim.get("citations") or [])
+        + (gen.get("citations") or [])
+        + (clio.get("citations") or [])
     )
     meta: dict = {
         "source": source,
@@ -132,6 +138,7 @@ def _assemble_chat_meta(state: dict, engine_label: str) -> dict:
             mgmt.get("label")
             or sim.get("label")
             or gen.get("label")
+            or clio.get("label")
             or _LABEL_BY_SOURCE.get(source, "CLIO")
         ),
         "engine": engine_label,
@@ -615,9 +622,23 @@ async def chat_approve(
         loop.phase = "sim_done"
 
     # 개선 컨텍스트가 오면 LLM 추출(상품 환각)을 건너뛰고 직전 시뮬 광고를 그대로 폼에 옮긴다.
+    # simulation_id가 있으면 시뮬 요약을 프리필한 IMPROVE 폼, 없으면 기존 CREATE 폼 폴백(하위호환).
     if body.action == "run_generator" and body.context:
-        gen_data = _gen_form_from_sim_context(body.context)
-        ctx_answer = "토론에서 나온 개선 방향을 반영할게요. 아래에서 광고 정보를 확인·수정하고 다시 생성하세요."
+        gen_data: dict | None = None
+        sim_id = (body.context or {}).get("simulation_id")
+        if sim_id:
+            try:
+                await assert_simulation_access(db, str(sim_id), current_user)
+                gen_data = await improve_gen_data_for_simulation(str(sim_id))
+            except HTTPException:
+                gen_data = None  # 접근 불가/삭제 — CREATE 폴백
+        if gen_data is None:
+            gen_data = _gen_form_from_sim_context(body.context)
+            ctx_answer = "토론에서 나온 개선 방향을 반영할게요. 아래에서 광고 정보를 확인·수정하고 다시 생성하세요."
+        else:
+            ctx_answer = (
+                "시뮬 결과를 반영해 개선 시안을 만들게요. 아래에서 수정 요청을 적고 실행하세요."
+            )
         ctx_meta = {
             "source": "generator",
             "label": "개선 생성",

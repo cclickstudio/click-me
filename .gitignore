@@ -47,6 +47,7 @@ private/
 
 # ── Claude Code 로컬 설정·개인 도구 ───────────────
 .claude/
+.mcp.json
 
 # ── Understand Anything 코드 시각화 산출물(공유 안 함) ──
 .understand-anything/
@@ -94,5 +95,3 @@ fonts/
 
 
 .understand-anything
-
-.mcp.json

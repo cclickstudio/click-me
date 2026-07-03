@@ -62,6 +62,13 @@ const STAGES = [
   { key: "explain", label: "생성 이유 작성" },
 ];
 
+const IMPROVE_STAGES = [
+  { key: "product_analysis", label: "상품 분석" },
+  { key: "strategy", label: "개선 방향 분석" },
+  { key: "candidates", label: "광고 생성" },
+  { key: "explain", label: "완료" },
+];
+
 const CAROUSEL_STAGES = [
   { key: "product_analysis", label: "상품 분석" },
   { key: "strategy", label: "광고 전략 생성" },
@@ -84,7 +91,7 @@ const TEMPLATE_LABELS: Record<string, string> = {
   C: "템플릿 C — 브랜드 강조",
 };
 
-const QUALITY_LABELS: Record<keyof Omit<QualityReport, "overall_passed">, string> = {
+const QUALITY_LABELS: Record<keyof Omit<QualityReport, "overall_passed" | "policy_warnings">, string> = {
   typo_check: "오타 검사",
   duplicate_check: "문구 중복",
   cta_exists: "CTA 존재",
@@ -801,9 +808,13 @@ export default function GeneratorPage() {
     product_name: string;
     summary: string;
     improvement_direction: string;
+    plain_summary: string | null;
+    product_cutout_s3_key: string | null;
   } | null>(null);
   const [improveLoading, setImproveLoading] = useState(false);
   const [improveError, setImproveError] = useState("");
+  // CREATE 모드 생성 완료 시 누끼 S3 키 보관 (개선 모드에서 재사용)
+  const lastProductCutoutKeyRef = useRef<string | null>(null);
   const [fixRequests, setFixRequests] = useState("");
 
   // 진행 / 결과
@@ -895,23 +906,25 @@ export default function GeneratorPage() {
       const summary =
         buildSimSummary(agg, detail.sample_size) || `${productName || "광고"} 시뮬레이션 결과`;
 
-      // 개선방향(토론 리포트) — 토론 없거나 실패해도 무시(개선방향만 비움)
+      // 개선방향·AI 분석(토론 리포트) — 토론 없거나 실패해도 무시(개선방향만 비움)
       let direction = "";
+      let plainSummary: string | null = null;
       try {
         const rep = await authedFetch(`${API_BASE}/api/debate/by-simulation/${simId}/report`);
         if (rep.ok) {
           const rv = (await rep.json()) as {
             report?: { ranked_actions?: RankedAction[]; plain_summary?: string };
           };
+          plainSummary = rv.report?.plain_summary ?? null;
           const actions = rv.report?.ranked_actions ?? [];
-          direction = actions.length
-            ? actions
-                .map(
-                  (a, i) =>
-                    `${i + 1}. ${a.action}${a.expected_effect ? ` — ${a.expected_effect}` : ""}`,
-                )
-                .join("\n")
-            : (rv.report?.plain_summary ?? "");
+          if (actions.length) {
+            direction = actions
+              .map(
+                (a, i) =>
+                  `${i + 1}. ${a.action}${a.expected_effect ? ` — ${a.expected_effect}` : ""}`,
+              )
+              .join("\n");
+          }
         }
       } catch {
         /* 토론 리포트 없음/실패 — 개선방향 비움 */
@@ -921,6 +934,8 @@ export default function GeneratorPage() {
         product_name: productName,
         summary,
         improvement_direction: direction,
+        plain_summary: plainSummary,
+        product_cutout_s3_key: lastProductCutoutKeyRef.current,
       });
     } catch {
       setImproveError("시뮬레이션 정보를 불러오지 못했습니다.");
@@ -932,7 +947,7 @@ export default function GeneratorPage() {
   const canSubmit =
     mode === "create"
       ? productName.trim() && productDescription.trim() && targetAudience.trim()
-      : !!improveData?.ad_asset_url;
+      : !!improveData?.summary;
 
   // SSE 구독 — 시작/복원 공용. 완료·실패 시 localStorage 정리.
   function subscribe(generationId: string) {
@@ -950,6 +965,10 @@ export default function GeneratorPage() {
         setGenJob(null); // 동시실행 슬롯 해제
         try {
           const d = (await api.generator.detail(generationId)) as GenerationDetail;
+          // CREATE 완료 시 누끼 S3 키 보관 — 개선 모드에서 재사용
+          if (d.product_cutout_s3_key) {
+            lastProductCutoutKeyRef.current = d.product_cutout_s3_key;
+          }
           setDetail(d);
           setPhase("done");
           // 완료된 생성물을 좌측 패널 목록에 즉시 반영(새로고침 불필요).
@@ -1164,6 +1183,7 @@ export default function GeneratorPage() {
   }
 
   async function startGeneration() {
+    if (phase === "generating") return; // 재생성 연타 방지
     setError("");
     // 동시실행 제한 — 제너는 한 번에 하나(채팅 위젯과 store 공유).
     if (getJobs().gen) {
@@ -1203,10 +1223,11 @@ export default function GeneratorPage() {
             ...common,
             mode: "improve",
             product_name: improveData?.product_name || "",
-            existing_ad_s3_key: improveData?.ad_asset_url || "",
             simulation_summary: improveData?.summary || "",
+            plain_summary: improveData?.plain_summary || null,
             improvement_direction: improveData?.improvement_direction || null,
             fix_requests: fixRequests || null,
+            product_cutout_s3_key: improveData?.product_cutout_s3_key || null,
           };
 
     try {
@@ -1231,7 +1252,8 @@ export default function GeneratorPage() {
     }
   }
 
-  const activeStages = format === "carousel" ? CAROUSEL_STAGES : STAGES;
+  const activeStages =
+    mode === "improve" ? IMPROVE_STAGES : format === "carousel" ? CAROUSEL_STAGES : STAGES;
   const currentIdx = activeStages.findIndex((s) => s.key === progress.stage);
 
   return (
@@ -1537,6 +1559,25 @@ export default function GeneratorPage() {
                           </p>
                         )}
                       </div>
+                      {improveData.plain_summary && (
+                        <div>
+                          <label className={labelCls}>AI 광고 분석</label>
+                          <div className="rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-[#F8F9FA] dark:bg-[#161B27] p-3 text-xs text-[#4B5563] dark:text-[#9CA3AF] whitespace-pre-wrap leading-relaxed">
+                            {improveData.plain_summary}
+                          </div>
+                        </div>
+                      )}
+                      {improveData.product_cutout_s3_key && (
+                        <div>
+                          <label className={labelCls}>제품 컷아웃 (개선 소재)</label>
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={adRefImageSrc(improveData.product_cutout_s3_key)!}
+                            alt="제품 누끼"
+                            className="w-full max-h-48 object-contain rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-[#F0F0F0] dark:bg-[#1A1F2E]"
+                          />
+                        </div>
+                      )}
                     </>
                   )}
                   <div>
@@ -1747,7 +1788,9 @@ export default function GeneratorPage() {
                   ? "생성 중..."
                   : format === "carousel"
                     ? "카드뉴스 생성하기"
-                    : "광고 후보 3종 생성하기"}
+                    : mode === "improve"
+                      ? "광고 생성하기"
+                      : "광고 후보 3종 생성하기"}
               </button>
             </div>
           </div>
@@ -1770,7 +1813,9 @@ export default function GeneratorPage() {
               <p className="text-xs text-[#8B95A1] dark:text-[#6B7280] mb-5">
                 {format === "carousel"
                   ? "관심끌기·가치전달·행동유도 3장 구성 · 카드를 클릭하면 게시·광고 집행을 할 수 있어요"
-                  : "전략이 서로 다른 광고 3종 · 카드를 클릭하면 게시·광고 집행을 할 수 있어요"}
+                  : mode === "improve"
+                    ? "시뮬레이션 피드백 기반 개선 광고 · 카드를 클릭하면 게시·광고 집행을 할 수 있어요"
+                    : "전략이 서로 다른 광고 3종 · 카드를 클릭하면 게시·광고 집행을 할 수 있어요"}
               </p>
 
               {error && (
@@ -1829,9 +1874,11 @@ export default function GeneratorPage() {
                     })}
                   </ul>
                   <p className="mt-6 text-xs text-[#8B95A1] dark:text-[#6B7280]">
-                    {format === "carousel"
-                      ? "카드뉴스 3장을 생성하는 데 1~2분 정도 걸릴 수 있어요."
-                      : "이미지 3장을 생성하는 데 2~3분 정도 걸릴 수 있어요."}
+                    {mode === "improve"
+                      ? "이미지 1장을 생성하는 데 1분 정도 걸릴 수 있어요."
+                      : format === "carousel"
+                        ? "카드뉴스 3장을 생성하는 데 1~2분 정도 걸릴 수 있어요."
+                        : "이미지 3장을 생성하는 데 2~3분 정도 걸릴 수 있어요."}
                   </p>
                 </div>
               )}
@@ -1840,6 +1887,18 @@ export default function GeneratorPage() {
               {phase === "done" && detail && (
                 <div className="flex flex-col gap-3">
                   <div className="flex justify-end gap-2">
+                    {mode === "improve" && canSubmit && (
+                      <button
+                        type="button"
+                        onClick={startGeneration}
+                        className="flex items-center gap-1.5 text-xs text-[#4E5968] dark:text-[#9CA3AF] border border-[#E5E8EB] dark:border-[#2D3748] rounded-lg px-3 py-1.5 hover:border-[#3182F6] hover:text-[#3182F6] transition-colors"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
+                          <path fillRule="evenodd" d="M13.836 2.477a.75.75 0 0 1 .75.75v3.182a.75.75 0 0 1-.75.75h-3.182a.75.75 0 0 1 0-1.5h1.37l-.84-.841a4.5 4.5 0 0 0-7.08.932.75.75 0 0 1-1.3-.75 6 6 0 0 1 9.44-1.242l.84.84V3.227a.75.75 0 0 1 .75-.75Zm-.911 7.5A.75.75 0 0 1 13.199 11a6 6 0 0 1-9.44 1.241l-.84-.84v1.371a.75.75 0 0 1-1.5 0V9.591a.75.75 0 0 1 .75-.75H5.35a.75.75 0 0 1 0 1.5H3.98l.841.841a4.5 4.5 0 0 0 7.08-.932.75.75 0 0 1 1.025-.273Z" clipRule="evenodd" />
+                        </svg>
+                        재생성
+                      </button>
+                    )}
                     {/* #2 — 생성 시안으로 시뮬레이션 돌리기(채팅의 시뮬 제안으로 이동, 첫 시안 프리필) */}
                     <button
                       type="button"

@@ -43,6 +43,8 @@ class Settings(BaseSettings):
 
     # Google Gemini
     gemini_api_key: str | None = None
+    # 이미지 생성 전용 키 — 있으면 이미지 호출에 우선 사용, 없으면 gemini_api_key로 폴백
+    gemini_image_api_key: str | None = None
 
     # Tavily 웹검색(매니지먼트 어시스턴트 web_search 도구) — 없으면 웹검색 graceful 비활성
     tavily_api_key: str | None = None
