@@ -34,9 +34,12 @@ def build_text_llm(temperature: float, max_tokens: int | None = None) -> BaseCha
             kwargs["max_tokens"] = max_tokens
         return ChatOpenAI(**kwargs)
 
-    return init_chat_model(
-        model, model_provider=provider, temperature=temperature, max_tokens=max_tokens
-    )
+    kwargs = {"model_provider": provider, "temperature": temperature, "max_tokens": max_tokens}
+    # Gemini 2.5 계열은 thinking이 기본 ON → 추론 토큰이 max_tokens를 잠식해 구조화 출력이 잘린다.
+    # thinking_budget=0으로 비활성화해 max_tokens가 온전히 출력에 쓰이게 한다.
+    if provider == "google_genai":
+        kwargs["thinking_budget"] = 0
+    return init_chat_model(model, **kwargs)
 
 
 def build_vision_llm(temperature: float) -> BaseChatModel:

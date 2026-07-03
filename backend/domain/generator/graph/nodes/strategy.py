@@ -1,28 +1,19 @@
 """노드 2 — 광고 전략 생성: pipeline.strategy_planner로 서로 다른 전략 3종 수립.
 
-개선모드면 시뮬레이션 요약·수정요청을 improvement_context로 전달한다.
+개선 모드면 plan_strategies를 스킵하고 3-tier 분류기를 실행,
+더미 StrategyPlan(template=None)을 1개 주입해 candidate_gen이 단일 후보를 자연스럽게 처리하게 한다.
 """
 
 from __future__ import annotations
 
 from langchain_core.runnables import RunnableConfig
 
-from domain.generator.contracts.enums import GenerationMode
-from domain.generator.contracts.pipeline_schemas import ProductAnalysis
+from domain.generator.contracts.enums import AdStrategy, GenerationMode
+from domain.generator.contracts.pipeline_schemas import ProductAnalysis, StrategyPlan
 from domain.generator.graph.nodes import emit_progress
 from domain.generator.graph.state import GenerationState
-from domain.generator.pipeline.improvement_guide import split_improvements
+from domain.generator.pipeline.improvement_guide import classify_improvements
 from domain.generator.pipeline.strategy_planner import plan_strategies
-
-
-def _build_improvement_context(image_actions: list[str], summary: str | None) -> str | None:
-    """이미지에 적용할 개선(우선순위순) + 시뮬 결과 요약(참고)으로 생성 컨텍스트를 구성."""
-    parts: list[str] = []
-    if image_actions:
-        parts.append("[적용할 개선 — 우선순위순]\n" + "\n".join(f"- {a}" for a in image_actions))
-    if summary:
-        parts.append(f"[시뮬레이션 결과 참고]\n{summary}")
-    return "\n\n".join(parts) if parts else None
 
 
 async def generate_strategies(state: GenerationState, config: RunnableConfig) -> dict:
@@ -30,37 +21,48 @@ async def generate_strategies(state: GenerationState, config: RunnableConfig) ->
     req = state["request"]
     product_analysis = ProductAnalysis(**state["product_analysis"])
 
-    is_improve = req.get("mode") == GenerationMode.IMPROVE
+    if req.get("mode") == GenerationMode.IMPROVE:
+        return await _handle_improve_mode(req, product_analysis)
+
+    outputs = await plan_strategies(product_analysis)
+    return {"strategies": [o.model_dump() for o in outputs]}
+
+
+async def _handle_improve_mode(req: dict, product_analysis: ProductAnalysis) -> dict:
+    """개선 모드 — 3-tier 분류기 + 더미 StrategyPlan(template=None) 주입."""
+    directives = await classify_improvements(
+        simulation_summary=req.get("simulation_summary"),
+        plain_summary=req.get("plain_summary"),
+        improvement_direction=req.get("improvement_direction"),
+        fix_requests=req.get("fix_requests"),
+    )
+
     improvement_context: str | None = None
-    guidance_lines: list[str] = []
+    if directives:
+        improvement_context = "[개선 지시문]\n" + "\n".join(f"- {d}" for d in directives)
+        summary = req.get("simulation_summary")
+        if summary:
+            improvement_context += f"\n\n[시뮬레이션 결과 참고]\n{summary}"
 
-    if is_improve:
-        # 개선점을 이미지 적용 가능(생성에 반영) / 별도 조치 필요(가이드)로 분리
-        try:
-            split = await split_improvements(
-                req.get("fix_requests"), req.get("improvement_direction")
-            )
-            image_actions, guidance_lines = split.image_actions, split.guidance
-        except Exception:
-            # 분류 실패 시 원문을 그대로 생성에 반영(생성이 막히지 않도록)
-            image_actions = [
-                v for v in (req.get("fix_requests"), req.get("improvement_direction")) if v
-            ]
-        improvement_context = _build_improvement_context(
-            image_actions, req.get("simulation_summary")
-        )
+    dummy_plan = StrategyPlan(
+        strategy=AdStrategy.BENEFIT,
+        template=None,
+        strategy_description="시뮬레이션 기반 약점 보완",
+        rationale="시뮬레이션 피드백과 수정 요청을 반영해 약점을 보완한 새 광고 이미지를 생성합니다.",
+    )
 
-    outputs = await plan_strategies(product_analysis, improvement_context=improvement_context)
-    result: dict = {"strategies": [o.model_dump() for o in outputs]}
-
-    # 개선 컨텍스트를 state에 실어 카피·이미지 생성(candidate_gen)까지 전달
+    result: dict = {
+        "strategies": [
+            {
+                "strategy": dummy_plan.strategy.value,
+                "strategy_description": dummy_plan.strategy_description,
+                "rationale": dummy_plan.rationale,
+            }
+        ],
+        # select_templates를 건너뛰므로 plans를 직접 주입
+        "plans": [dummy_plan.model_dump()],
+    }
     if improvement_context:
         result["improvement_context"] = improvement_context
-
-    # 이미지로 적용 어려운 개선점 가이드는 product_analysis JSONB에 함께 저장
-    if guidance_lines:
-        pa = dict(state["product_analysis"])
-        pa["improvement_guidance"] = "\n".join(f"- {g}" for g in guidance_lines)
-        result["product_analysis"] = pa
 
     return result
