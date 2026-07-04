@@ -19,6 +19,7 @@ from PIL import Image
 from sqlalchemy import select
 
 from core.db import AsyncSessionLocal
+from core.execution_log import record_execution
 from core.models import (
     AdGeneration,
     AdGenerationCandidate,
@@ -28,7 +29,7 @@ from core.models import (
 )
 from core.tracing import make_trace_config
 from domain.generator.adapters.instagram import build_publisher
-from domain.generator.contracts.enums import AdStrategy, TemplateType
+from domain.generator.contracts.enums import AdStrategy, GenerationMode, TemplateType
 from domain.generator.contracts.schemas import GenerationCreateRequest
 from domain.generator.graph.pipeline import generation_graph
 from domain.generator.pipeline.relayout import render_platform
@@ -159,6 +160,26 @@ async def _run_pipeline(
 
         await _persist_results(generation_id, final_state)
         store["status"] = "completed"
+        # 실행 확정 지점 롱텀(실행 히스토리) 적재 — UI·채팅·반복루프 모든 경로가 여기로 수렴.
+        # 채팅 요청행(spawn_persist)과는 stage로 구분(요청/완료 2행 패턴). best-effort·비차단.
+        improve = request.mode == GenerationMode.IMPROVE
+        await record_execution(
+            request.project_id,
+            "generation",
+            "run_improvement" if improve else "run_generation",
+            f"광고 {'개선 ' if improve else ''}생성 완료 — {request.product_name} "
+            f"시안 {len(final_state.get('candidates') or [])}개 "
+            f"타깃 {request.target_audience} 목표 {request.campaign_objective}",
+            payload={
+                "stage": "completed",
+                "generation_id": generation_id,
+                "mode": request.mode.value,
+                "product_name": request.product_name,
+                "target_audience": request.target_audience,
+                "campaign_objective": request.campaign_objective,
+            },
+            user_id=str(created_by) if created_by else None,
+        )
         emit(
             {
                 "event": "completed",
