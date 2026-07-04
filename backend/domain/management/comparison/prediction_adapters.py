@@ -40,17 +40,19 @@ class MockPredictionReader:
 class SimPredictionReader:
     """실 시뮬 예측 읽기 — simulation_id로 simulation_aggregates를 raw SQL 조회(도메인 경계).
 
-    org 불일치/미완료(aggregate 없음)/미존재/형식오류는 None(연결 대기). simulation 도메인
-    ORM import 금지 — 테이블·컬럼명 문자열로만 접근. as_of는 시뮬 완료시각(UTC aware).
+    org 불일치/미완료(aggregate 없음)/미존재/삭제됨(soft delete)/형식오류는 None(연결 대기).
+    simulation 도메인 ORM import 금지 — 테이블·컬럼명 문자열로만 접근.
+    as_of는 시뮬 완료시각(UTC aware).
     """
 
+    # deleted_at IS NULL — 소프트삭제된 시뮬은 예측에서 제외(삭제가 성과 비교에 반영되게).
     _SQL = text(
         """
         SELECT s.ad_id, s.organization_id, s.completed_at,
                a.click_intent_rate, a.purchase_intent_avg, a.trust_avg, a.rejection_rate
         FROM simulations s
         JOIN simulation_aggregates a ON a.simulation_id = s.id
-        WHERE s.id = :sid
+        WHERE s.id = :sid AND s.deleted_at IS NULL
         """
     )
 

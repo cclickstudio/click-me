@@ -11,43 +11,323 @@ from __future__ import annotations
 import logging
 from collections.abc import Awaitable, Callable
 
+from core.automation import register_automation
 from domain.management.notifications import NotificationSink, build_notification_sink
 
 logger = logging.getLogger("clickme")
 
-_Scanner = Callable[[object], Awaitable[list[dict]]]
+_Scanner = Callable[[object], Awaitable[list[dict] | tuple[list[dict], list[dict]]]]
+
+# 공용 레지스트리에 매니지먼트 자동화 등록 — gen/sim도 같은 방식으로 붙는다(확장 seam).
+register_automation(
+    "management",
+    "anomaly_scan",
+    description="캠페인 게재0·소재피로·성과미달 + 계정 지갑·예산 가드레일 점검(에이전트 판단)",
+)
+register_automation(
+    "management",
+    "weekly_report",
+    interval_minutes=10080,
+    description="최근 7일 성과 요약 다이제스트 생성(읽기 전용 집계) → automation_runs 적재",
+)
+register_automation(
+    "management",
+    "rebalance_proposal",
+    interval_minutes=1440,
+    description="예산 리밸런싱 제안 생성(읽기 — CPC 기반 저효율→고효율, 실행은 사람 승인)",
+)
 
 
-async def _default_scanner(settings) -> list[dict]:
-    """기본 스캐너 — 활성 캠페인 게재 점검. 노출 0(미게재)을 명확한 이상으로 통지.
+async def _default_scanner(settings) -> tuple[list[dict], list[dict]]:
+    """기본 스캐너 — 활성 캠페인 게재 점검(게재0) + 계정 재무 룰. (findings, normals) 튜플 반환.
 
-    실측은 live_campaigns(reader)에서 — use_mock이면 mock, 실연동이면 Meta. ROAS 목표 대비 등
-    심화 진단은 campaign-queryable 진단 정비 후 확장(seam).
+    normals는 '성공 조회 + 정상'으로 확인된 캠페인만(fail-closed — 조회 실패 ≠ 정상).
+    reconcile이 이걸로 정상화된 미해결 알림을 auto_normal 자동 해소한다(스펙 §3).
     """
     from domain.management.assistant import tools as live_tools  # noqa: PLC0415
 
     data = await live_tools.live_campaigns(settings)
     if data.get("error"):
-        return []  # 조회 실패(rate limit 등)는 통지 안 함 — 다음 틱에 재시도
+        return [], []  # 조회 실패는 통지도 reconcile도 안 함 — 다음 틱에 재시도
     findings: list[dict] = []
+    normals: list[dict] = []
     for c in data.get("campaigns", []):
+        cid = c.get("campaign_id")
         if c.get("impressions", 0) == 0:
-            name = c.get("name") or c.get("campaign_id", "?")
+            name = c.get("name") or cid or "?"
             findings.append(
                 {
                     "tenant_id": "global",
                     "title": f"게재 점검 — {name}",
                     "body": "활성 캠페인인데 노출이 0입니다. 심사·예산·타깃을 점검하세요.",
-                    "meta": {"campaign_id": c.get("campaign_id")},
+                    "meta": {"campaign_id": cid, "anomaly_type": "no_delivery"},
                 }
             )
+        else:
+            normals.append(
+                {"tenant_id": "global", "campaign_id": cid, "anomaly_type": "no_delivery"}
+            )
+    findings.extend(await _account_rules_scan(settings))  # 계정 재무 룰(지갑·예산) — 내 추가분 유지
+    return findings, normals
+
+
+async def _account_rules_scan(settings, *, reader=None, tenant_id: str = "global") -> list[dict]:
+    """계정 단위 룰(지갑 소진율·월 목표 가드레일) — 조회 실패는 빈 결과(다음 틱 재시도).
+
+    reader 미지정=build_reader(전역), 지정=org 스코프 reader(notify-scan 재사용). tenant_id는
+    findings에 실려 sink·reconcile의 org 대조에 쓰인다.
+    """
+    import calendar  # noqa: PLC0415
+    from datetime import UTC, datetime  # noqa: PLC0415
+
+    from domain.management.contracts.policy import DEFAULT_MONTHLY_TARGET_KRW  # noqa: PLC0415
+    from domain.management.wiring import build_reader  # noqa: PLC0415
+
+    try:
+        reader = reader or build_reader(settings)
+        funding = await reader.get_account_funding()
+        month_spent = await reader.get_account_spend("this_month")
+    except Exception:  # noqa: BLE001 — rate limit 등 조회 실패는 통지 안 함
+        return []
+    now = datetime.now(UTC)
+    days_in_month = calendar.monthrange(now.year, now.month)[1]
+    projection = (
+        round(month_spent / now.day * days_in_month) if now.day and month_spent else month_spent
+    )
+    return account_rule_findings(
+        spend_cap_krw=funding.spend_cap_krw or 0,
+        amount_spent_krw=funding.amount_spent_krw or 0,
+        projection_krw=projection or 0,
+        target_krw=DEFAULT_MONTHLY_TARGET_KRW,
+        tenant_id=tenant_id,
+    )
+
+
+def account_rule_findings(
+    *,
+    spend_cap_krw: int,
+    amount_spent_krw: int,
+    projection_krw: int,
+    target_krw: int,
+    tenant_id: str = "global",
+) -> list[dict]:
+    """계정 단위 룰 판정(순수 함수) — 지갑 사용률 95/80% + 런레이트의 월 목표 초과.
+
+    금액 원값은 summary에 노출하지 않고 비율만 말한다(기밀 데이터 평문 최소화).
+    """
+    from domain.management.contracts.policy import (  # noqa: PLC0415
+        WALLET_ALERT_PCT,
+        WALLET_WARN_PCT,
+    )
+
+    findings: list[dict] = []
+    if spend_cap_krw > 0:
+        pct = round(amount_spent_krw / spend_cap_krw * 100)
+        if pct >= WALLET_ALERT_PCT:
+            findings.append(
+                {
+                    "tenant_id": tenant_id,
+                    "title": "지갑 거의 소진",
+                    "body": f"충전 한도의 {pct}%를 사용했습니다. 충전이 필요해요.",
+                    "meta": {"rule": "wallet_depleted", "pct": pct},
+                }
+            )
+        elif pct >= WALLET_WARN_PCT:
+            findings.append(
+                {
+                    "tenant_id": tenant_id,
+                    "title": "지갑 소진 주의",
+                    "body": f"충전 한도의 {pct}%를 사용했습니다.",
+                    "meta": {"rule": "wallet_warning", "pct": pct},
+                }
+            )
+    if target_krw > 0 and projection_krw > target_krw:
+        pace = round(projection_krw / target_krw * 100)
+        findings.append(
+            {
+                "tenant_id": tenant_id,
+                "title": "월 예산 가드레일",
+                "body": f"현재 페이스면 월 목표의 {pace}%까지 소진될 것으로 예상됩니다.",
+                "meta": {"rule": "budget_pace_over", "pace_pct": pace},
+            }
+        )
     return findings
 
 
-async def run_scan(settings, sink: NotificationSink, *, scanner: _Scanner | None = None) -> int:
-    """이상 스캔 1회 → 발견분을 sink로 통지. 통지 건수 반환(테스트는 scanner 주입)."""
+async def _agent_scanner(
+    settings, *, reader=None, tenant_id: str = "global"
+) -> tuple[list[dict], list[dict]]:
+    """에이전트 판단 스캐너 — 캠페인별 성과 진단(규칙→INCONCLUSIVE시 LLM 재판정) + 결정론 센서.
+
+    _default_scanner(순수 규칙)의 상위호환: 게재0·소재피로는 정책 정본 임계로 결정론 유지하되,
+    성과 미달은 diagnose_campaign(에이전트)이 맥락으로 판단한다. 성과 목표(target_roas)가 없으면
+    성과 진단은 자동 생략(휴리스틱 금지 — 목표를 지어내지 않는다) → 게재0·피로만.
+    조회/조립 실패는 규칙 스캐너로 폴백(지장 없음). 임계·통지·기록 파이프라인은 그대로.
+
+    reader 미지정=build_reader(전역, 워커 경로), 지정=org 스코프 reader(notify-scan 재사용 —
+    감지 로직 단일화). tenant_id는 findings/normals에 실려 sink·reconcile의 org 대조에 쓰인다.
+    org 스코프(reader 주입)에서는 잘못된 전역 폴백을 막기 위해 조회 실패 시 빈 결과를 낸다.
+
+    (findings, normals) 튜플 반환 — 정상 게재로 확인된 캠페인을 normals로 내보내 reconcile이
+    미해결 no_delivery 알림을 auto_normal 해소한다(_default_scanner와 동일 계약, 에이전트 parity).
+    finding meta엔 panel_sink용 anomaly_type과 automation_runs용 rule을 함께 싣는다.
+    """
+    from datetime import UTC, datetime  # noqa: PLC0415
+
+    from domain.management.contracts.enums import CampaignState  # noqa: PLC0415
+    from domain.management.contracts.policy import FATIGUE_FREQUENCY  # noqa: PLC0415
+    from domain.management.detection.agentic_scan import diagnose_campaign  # noqa: PLC0415
+    from domain.management.wiring import build_reader  # noqa: PLC0415
+
+    injected = reader is not None  # org 스코프 호출(notify-scan) 여부 — 전역 폴백 억제용
+    try:
+        reader = reader or build_reader(settings)
+        infos = await reader.list_campaigns()
+    except Exception as exc:  # noqa: BLE001 — 조회/조립 실패 → 규칙 스캐너로 폴백(지장 없음)
+        logger.warning("management 에이전트 스캔 준비 실패 → 규칙 폴백: %s", exc)
+        if injected:  # org 스코프는 전역 _default_scanner로 폴백하면 안 됨(계정 불일치)
+            return [], []
+        try:
+            return await _default_scanner(settings)  # 규칙 폴백도 (findings, normals) 튜플
+        except Exception as exc2:  # noqa: BLE001 — 폴백까지 실패해도 스캐너는 raise하지 않음
+            logger.warning("management 규칙 폴백도 실패(빈 결과): %s", exc2)
+            return [], []
+
+    now = datetime.now(UTC)
+    # 성과 미달 판정 목표 — 설정에 기본 목표가 있을 때만(없으면 None → 성과 진단 생략).
+    target_roas = getattr(settings, "management_default_target_roas", None)
+    findings: list[dict] = []
+    normals: list[dict] = []  # 정상 게재로 확인된 캠페인(reconcile용, fail-closed)
+    for c in infos:
+        name = c.name or c.campaign_id
+        is_active = c.state == CampaignState.ACTIVE
+        try:
+            m = await reader.get_metrics(c.campaign_id, now)
+        except Exception:  # noqa: BLE001 — 캠페인 1건 실패가 전체 스캔을 막지 않게
+            continue
+        # 결정론 센서 — 게재 0(활성인데 노출 없음): 값싼 프리필터. 정상 게재면 normals로.
+        if is_active and (m.impressions or 0) == 0:
+            findings.append(
+                {
+                    "tenant_id": tenant_id,
+                    "title": f"게재 점검 — {name}",
+                    "body": "활성 캠페인인데 노출이 0입니다. 심사·예산·타깃을 점검하세요.",
+                    "meta": {
+                        "campaign_id": c.campaign_id,
+                        "anomaly_type": "no_delivery",
+                        "rule": "zero_impressions",
+                    },
+                }
+            )
+        elif is_active:
+            # 정상 게재 확인 → 미해결 no_delivery 알림 auto_normal 해소(reconcile).
+            normals.append(
+                {
+                    "tenant_id": tenant_id,
+                    "campaign_id": c.campaign_id,
+                    "anomaly_type": "no_delivery",
+                }
+            )
+        # 에이전트 판단 — 성과 미달(목표 없으면 diagnose_campaign이 None 반환 → 생략).
+        dx = await diagnose_campaign(
+            reader, settings, c.campaign_id, {"roas": m.roas, "target_roas": target_roas}, m.as_of
+        )
+        if dx:
+            atype = dx.get("anomaly_type") or "performance_anomaly"
+            findings.append(
+                {
+                    "tenant_id": tenant_id,
+                    "title": f"성과 진단 — {name}",
+                    "body": dx.get("hypothesis") or "성과 이상 신호가 감지됐어요.",
+                    "meta": {
+                        "campaign_id": c.campaign_id,
+                        "anomaly_type": atype,
+                        "rule": atype,
+                        "confidence": dx.get("confidence"),
+                        "source": dx.get("source"),
+                        "status": dx.get("status"),
+                    },
+                }
+            )
+        # 결정론 센서 — 소재 피로(최근 7일 빈도, 정책 임계). live_campaigns엔 빈도가 없어
+        # 여기서 실측(reader)으로 잡는다.
+        if is_active:
+            try:
+                wk = await reader.get_metrics(c.campaign_id, now, date_preset="last_7d")
+                freq = wk.frequency or 0.0
+            except Exception:  # noqa: BLE001 — 피로 신호 실패는 조용히 건너뜀
+                freq = 0.0
+            if freq >= FATIGUE_FREQUENCY:
+                findings.append(
+                    {
+                        "tenant_id": tenant_id,
+                        "title": f"소재 피로 — {name}",
+                        "body": f"빈도 {freq:.1f}회 — 도달 피로 구간, 소재 교체 검토.",
+                        "meta": {
+                            "campaign_id": c.campaign_id,
+                            "anomaly_type": "audience_fatigue",
+                            "rule": "creative_fatigue",
+                        },
+                    }
+                )
+    findings.extend(await _account_rules_scan(settings, reader=reader, tenant_id=tenant_id))
+    return findings, normals
+
+
+async def record_finding(finding: dict) -> None:
+    """자동 점검 발견 1건을 기록(best-effort) — 두 저장소.
+
+    ① automation_runs(운영/프론트 조회): 프로젝트 귀속 안 돼도 남긴다(dedup으로 재통지 방지).
+    ② chat_execution_history(롱텀 메모리): 캠페인→프로젝트 역추적이 될 때만(성공 수행만).
+    """
+    from core.automation import record_automation_run  # noqa: PLC0415
+    from core.execution_log import record_execution  # noqa: PLC0415
+    from domain.management.history_link import resolve_project_id  # noqa: PLC0415
+
+    meta = finding.get("meta") or {}
+    cid = meta.get("campaign_id")
+    rule = meta.get("rule", "auto_scan_alert")
+    project_id = await resolve_project_id([cid] if cid else [])
+
+    # ① 운영 저장소 — 프론트 반영용(프로젝트 없어도 남김).
+    await record_automation_run(
+        domain="management",
+        job_name=rule,
+        title=finding.get("title", ""),
+        body=finding.get("body", ""),
+        project_id=project_id,
+        payload={"actor": "auto", **meta},
+        suggested_action=meta.get("suggested_action"),
+        dedup_key=f"{cid}:{rule}" if cid else None,
+    )
+
+    # ② 롱텀 메모리 — 프로젝트 귀속(성공 수행)만.
+    if project_id is None:
+        return
+    summary = f"자동 점검 {finding.get('title', '')} {finding.get('body', '')}".strip()[:500]
+    await record_execution(
+        project_id,
+        "management",
+        rule,
+        summary,
+        payload={"actor": "auto", **meta},
+    )
+
+
+async def run_scan(
+    settings,
+    sink: NotificationSink,
+    *,
+    scanner: _Scanner | None = None,
+    recorder: Callable[[dict], Awaitable[None]] | None = None,
+) -> int:
+    """이상 스캔 1회 → 통지 + recorder 기록 + (가능하면) 정상화 reconcile. 통지 건수 반환.
+
+    recorder 기본 None — 테스트·수동 호출은 DB 없이 hermetic. 스케줄러 잡만 record_finding 주입.
+    """
     scan = scanner or _default_scanner
-    findings = await scan(settings)
+    out = await scan(settings)
+    findings, normals = out if isinstance(out, tuple) else (out, [])
     for f in findings:
         await sink.notify(
             f.get("tenant_id", "global"),
@@ -55,12 +335,102 @@ async def run_scan(settings, sink: NotificationSink, *, scanner: _Scanner | None
             f.get("body", ""),
             meta=f.get("meta"),
         )
+        if recorder is not None:
+            try:
+                await recorder(f)
+            except Exception as exc:  # noqa: BLE001 — 기록 실패가 스캔을 막지 않게
+                logger.warning("management 스캔 기록 실패(무시): %s", exc)
+    # 정상화된 캠페인으로 미해결 알림 자동 해소(보은 reconcile) — sink가 지원할 때만.
+    if normals and hasattr(sink, "reconcile"):
+        await sink.reconcile(normals)
     if findings:
         logger.info("management 스캔 — %d건 통지", len(findings))
     return len(findings)
 
 
+async def run_weekly_report(settings) -> bool:
+    """주간 성과 리포트 1회 생성 → automation_runs 적재(best-effort·비차단). 성공 시 True.
+
+    읽기 전용 집계(insights.weekly_report)라 사이드이펙트 없음 — 알림이 아니라 다이제스트로
+    남긴다(프론트가 '최근 주간 리포트'로 조회). 실패·빈 리포트는 조용히 건너뜀.
+    """
+    from core.automation import record_automation_run  # noqa: PLC0415
+    from domain.management import insights  # noqa: PLC0415
+    from domain.management.wiring import build_reader  # noqa: PLC0415
+
+    try:
+        data = await insights.weekly_report(build_reader(settings))
+    except Exception as exc:  # noqa: BLE001 — 리포트 생성 실패가 스케줄러를 죽이지 않게
+        logger.warning("management 주간 리포트 실패(무시): %s", exc)
+        return False
+    report = data.get("report")
+    if not report:
+        return False
+    totals = report.get("totals") or {}
+    period = report.get("period") or {}
+    body = (
+        f"최근 7일 지출 {totals.get('spend_krw', 0):,}원 · "
+        f"노출 {totals.get('impressions', 0):,} · 클릭 {totals.get('clicks', 0):,}"
+    )
+    await record_automation_run(
+        domain="management",
+        job_name="weekly_report",
+        title="주간 성과 리포트",
+        body=body,
+        status="ok",
+        payload={"actor": "auto", "report": report},
+        # 같은 주(until) 리포트는 1건만 — 재기동/중복 실행 시 재적재 방지.
+        dedup_key=f"weekly:{period.get('until', '')}",
+    )
+    return True
+
+
+async def run_rebalance_report(settings) -> bool:
+    """예산 리밸런싱 제안 1회 생성 → automation_runs 적재(제안 있을 때만·비차단). 성공 시 True.
+
+    읽기 전용 제안(insights.rebalance_proposal)이라 사이드이펙트 없음 — 실행(예산 이동)은
+    사람 승인(budget-commit)을 그대로 거친다. 제안 없음/실패는 조용히 건너뜀.
+    """
+    from core.automation import record_automation_run  # noqa: PLC0415
+    from domain.management import insights  # noqa: PLC0415
+    from domain.management.wiring import build_reader  # noqa: PLC0415
+
+    try:
+        data = await insights.rebalance_proposal(build_reader(settings))
+    except Exception as exc:  # noqa: BLE001 — 제안 생성 실패가 스케줄러를 죽이지 않게
+        logger.warning("management 리밸런싱 제안 실패(무시): %s", exc)
+        return False
+    prop = data.get("proposal")
+    if not prop:
+        return False
+    frm = prop.get("from") or {}
+    to = prop.get("to") or {}
+    body = (
+        f"{frm.get('name', '?')} → {to.get('name', '?')} 일예산 "
+        f"{prop.get('move_krw', 0):,}원 이동 제안 (실행은 승인 필요)"
+    )
+    await record_automation_run(
+        domain="management",
+        job_name="rebalance_proposal",
+        title="예산 리밸런싱 제안",
+        body=body,
+        status="proposal",
+        payload={"actor": "auto", "proposal": prop},
+        dedup_key=f"rebalance:{frm.get('campaign_id', '')}:{to.get('campaign_id', '')}",
+    )
+    return True
+
+
 _scheduler = None
+
+
+def _scanner_for(settings) -> _Scanner | None:
+    """설정 모드에 따른 스캐너 선택 — 'agent'면 에이전트 판단, 그 외(기본 'rule')는 규칙.
+
+    None을 반환하면 run_scan이 _default_scanner(순수 규칙)를 쓴다.
+    """
+    mode = getattr(settings, "management_scanner_mode", "rule")
+    return _agent_scanner if mode == "agent" else None
 
 
 def start_scheduler(settings) -> bool:
@@ -77,15 +447,39 @@ def start_scheduler(settings) -> bool:
 
     sink = build_notification_sink(settings)
     interval = getattr(settings, "management_scan_interval_minutes", 60)
+    scanner = _scanner_for(settings)  # 모드에 따라 에이전트 판단 스캐너 또는 규칙(None)
 
     async def _job() -> None:
         try:
-            await run_scan(settings, sink)
+            await run_scan(settings, sink, scanner=scanner, recorder=record_finding)
         except Exception as exc:  # noqa: BLE001 — 잡 실패가 스케줄러를 죽이지 않게
             logger.warning("management 스캔 실패(무시): %s", exc)
 
+    async def _report_job() -> None:
+        try:
+            await run_weekly_report(settings)
+        except Exception as exc:  # noqa: BLE001 — 리포트 잡 실패가 스케줄러를 죽이지 않게
+            logger.warning("management 주간 리포트 잡 실패(무시): %s", exc)
+
+    async def _rebalance_job() -> None:
+        try:
+            await run_rebalance_report(settings)
+        except Exception as exc:  # noqa: BLE001 — 리밸런싱 잡 실패가 스케줄러를 죽이지 않게
+            logger.warning("management 리밸런싱 잡 실패(무시): %s", exc)
+
+    report_interval = getattr(settings, "management_weekly_report_interval_minutes", 10080)
+    rebalance_interval = getattr(settings, "management_rebalance_interval_minutes", 1440)
     _scheduler = AsyncIOScheduler()
     _scheduler.add_job(_job, "interval", minutes=interval, id="mgmt-scan")
+    _scheduler.add_job(_report_job, "interval", minutes=report_interval, id="mgmt-weekly-report")
+    _scheduler.add_job(_rebalance_job, "interval", minutes=rebalance_interval, id="mgmt-rebalance")
     _scheduler.start()
-    logger.info("management 스케줄러 기동 — %d분 간격", interval)
+    mode = getattr(settings, "management_scanner_mode", "rule")
+    logger.info(
+        "management 스케줄러 기동 — 스캔 %d분·스캐너=%s / 주간리포트 %d분 / 리밸런싱 %d분",
+        interval,
+        mode,
+        report_interval,
+        rebalance_interval,
+    )
     return True

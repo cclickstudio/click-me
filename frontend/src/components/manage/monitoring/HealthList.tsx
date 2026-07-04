@@ -6,6 +6,7 @@ import { StateBadge } from '@/components/manage/campaigns/StateBadge';
 import { campaignHealth, frequencyFatigue, LEVEL_STYLE, SEVERITY } from './health';
 import { pacingProjection, PACING_LABEL } from './pacing';
 import { Sparkline } from './Sparkline';
+import { trendDelta } from '@/components/manage/trend';
 
 function PacingBar({ pct, alert }: { pct: number; alert: boolean }) {
   const w = Math.min(pct, 100);
@@ -14,17 +15,6 @@ function PacingBar({ pct, alert }: { pct: number; alert: boolean }) {
       <div className={`h-full ${alert ? 'bg-amber-500' : 'bg-[#3182F6]'}`} style={{ width: `${w}%` }} />
     </div>
   );
-}
-
-// 마지막 값 vs 직전 구간(최대 6일) 평균 → 등락률. 데이터 부족이면 null.
-function trendDelta(values: number[]): number | null {
-  const v = values.filter((x) => Number.isFinite(x));
-  if (v.length < 2) return null;
-  const last = v[v.length - 1];
-  const prev = v.slice(0, -1).slice(-6);
-  const avg = prev.reduce((a, b) => a + b, 0) / prev.length;
-  if (avg <= 0) return null;
-  return (last - avg) / avg;
 }
 
 function DeltaTag({ delta }: { delta: number | null }) {
@@ -77,18 +67,19 @@ export function HealthList({
             className="flex items-center gap-4 px-4 py-3.5 hover:bg-[#F9FAFB] dark:hover:bg-[#1A202C] transition-colors"
           >
             <span className={`shrink-0 w-2 h-2 rounded-full ${s.dot}`} />
-            <div className="w-40 shrink-0">
+            {/* 이름 칸 — 좁은 컨테이너(홈 반폭 타일)에선 줄여 우측 지표 줄바꿈 깨짐을 막는다 */}
+            <div className="w-24 lg:w-40 shrink-0">
               <p className="text-sm font-medium text-[#191F28] dark:text-[#F2F4F6] truncate">{c.name}</p>
               <div className="mt-1">
                 <StateBadge state={c.state} />
               </div>
             </div>
             <div className="flex-1 min-w-0">
-              <div className="flex items-center justify-between text-[11px] text-[#8B95A1] mb-1">
-                <span>
+              <div className="flex flex-wrap items-center justify-between gap-x-3 text-[11px] text-[#8B95A1] mb-1">
+                <span className="whitespace-nowrap">
                   소진율 {showPacing ? `${c.pacing_pct.toFixed(0)}%` : blocked ? '권한 없음' : '—'}
                 </span>
-                <span className="tabular-nums">
+                <span className="tabular-nums whitespace-nowrap">
                   {blocked
                     ? '권한 없음'
                     : `노출 ${c.impressions.toLocaleString()} · ₩${c.spend_krw.toLocaleString()}`}

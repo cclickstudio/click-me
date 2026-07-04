@@ -53,6 +53,22 @@ class MockAdPlatform:
         AdPlatformReader Port 충족(비교 서비스가 await로 호출). fault 없는 정상 게재 기준.
         date_preset은 실 reader 시그니처 일치용(데모는 무시).
         """
+        if campaign_id == "camp_3":
+            # 데모 전용 노출 0 캠페인 — 이상 감지(no_delivery) 신호 (검증 가이드 §2 방법 B)
+            return MetricsSnapshot(
+                campaign_id=campaign_id,
+                as_of=since,
+                impressions=0,
+                clicks=0,
+                inline_link_clicks=0,
+                spend_krw=0,
+                cum_impressions=0,
+                cum_reach=0,
+                frequency=0.0,
+                ctr=0.0,
+                cpm_krw=0,
+                cpc_krw=0,
+            )
         snapshots = await self.fetch_hourly_metrics(
             campaign_id, since, daily_budget_krw=self._budget
         )
@@ -87,6 +103,12 @@ class MockAdPlatform:
                 name="브랜드 데일리 룩",
                 state=CampaignState.ACTIVE,
                 daily_budget_krw=120_000,
+            ),
+            CampaignInfo(
+                campaign_id="camp_3",
+                name="신규 런칭 티저",  # 데모 전용 노출 0 — 이상 감지 신호(검증 가이드 §2 방법 B)
+                state=CampaignState.ACTIVE,
+                daily_budget_krw=80_000,
             ),
         ]
 
@@ -194,7 +216,13 @@ class MockAdPlatform:
                 "suggested_persona_count": 20,
             },
         )
-        return {"campaign_id": campaign_id, "campaign_name": campaign_id, **t}
+        # reach(원 도달수)는 데모 결정론값 — 표본 상한과 별개로 화면 표시용(실 reader와 shape 일치).
+        return {
+            "campaign_id": campaign_id,
+            "campaign_name": campaign_id,
+            "reach": t.get("suggested_persona_count", 20),
+            **t,
+        }
 
     async def get_account_funding(self) -> AccountFunding:
         """Port 충족 — 데모는 잔액 충분(게재 차단 없음)."""

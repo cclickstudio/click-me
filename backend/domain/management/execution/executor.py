@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import hashlib
 from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
@@ -111,6 +112,9 @@ class InMemoryIdempotencyStore:
 #: ad_account_id → 현재 state_version 조회 (낙관적 락 비교의 우변)
 StateVersionProvider = Callable[[str], Awaitable[str]]
 
+#: 실행 성공을 롱텀 메모리(실행 히스토리)에 남기는 콜백 — 구현은 history_link(wiring 주입)
+HistoryRecorder = Callable[["ApprovedAction", "ActionProposal", "ActionResult"], Awaitable[None]]
+
 
 class Executor:
     """지출 단일 경로 — agent·서비스의 Writer 직접 호출은 금지 (불변 규칙 §4-1)."""
@@ -130,8 +134,10 @@ class Executor:
         backoff_base_seconds: float = 0.05,
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
+        history_recorder: HistoryRecorder | None = None,  # None=기록 생략(테스트·미배선)
     ) -> None:
         self._writer = writer
+        self._history_recorder = history_recorder
         self._idempotency = idempotency
         self._audit = audit
         self._budget_for = budget_for
@@ -242,6 +248,14 @@ class Executor:
                 "attempts": run.attempts,
             },
         )
+        # 실행 확정을 롱텀 메모리(실행 히스토리)에 기록 — 신규 성공분만(재생·거부 제외).
+        # 기록 실패가 실행 결과를 바꾸지 않게 삼킨다(best-effort).
+        if self._history_recorder is not None and result.status in (
+            ResultStatus.SUCCESS,
+            ResultStatus.SUBMITTED_PENDING_REVIEW,
+        ):
+            with contextlib.suppress(Exception):
+                await self._history_recorder(action, proposal, result)
         return result
 
     # ── 4)단계 검증 ──────────────────────────────────────────────

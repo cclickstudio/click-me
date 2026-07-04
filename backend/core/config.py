@@ -113,6 +113,27 @@ class Settings(BaseSettings):
     # 능동 스케줄러(주기 이상 스캔→알림) — 기본 off(테스트/CI/dev 안전). 운영에서만 켠다.
     management_scheduler_enabled: bool = False
     management_scan_interval_minutes: int = 60
+    # 주간 리포트 워커 잡 주기(분) — 기본 주1회(7*24*60). 스케줄러 켜질 때만 함께 돈다.
+    management_weekly_report_interval_minutes: int = 10080
+    # 예산 리밸런싱 제안 워커 잡 주기(분) — 기본 일1회. 제안(읽기)만 생성, 실행은 사람 승인.
+    management_rebalance_interval_minutes: int = 1440
+    # 워커 스캔 판단 방식 — rule(결정론 규칙) | agent(에이전트 판단). 기본 agent=무승인 자율 판단.
+    management_scanner_mode: str = "agent"
+    # 성과 진단 기본 목표 ROAS — 설정 시 워커가 성과 미달 판단(없으면 성과 진단 생략).
+    management_default_target_roas: float | None = None
+    # 수동 알림 스캔(/anomaly/notify-scan) 재요청 최소 간격 — org별 429 방지선.
+    management_scan_manual_cooldown_seconds: int = 60
+    # 이상 감지 선제 알림 배달 채널. extra="ignore"라 필드 선언 없이는 env로 못 켠다.
+    # 이행: 구 `MANAGEMENT_CHAT_NOTIFY_ENABLED=true` → `MANAGEMENT_NOTIFY_CHANNEL=chat`.
+    management_notify_channel: str = "log"  # log | chat | panel — 이상 알림 배달 채널
+    # 매니지먼트 reader만 mock 강제(알림 데모) — 전역 use_mock과 분리해 채팅(live 전용)을 살린다.
+    management_reader_mock: bool = False
+    # 알림 SSE(단일 프로세스 전제) — 멀티워커면 끈다.
+    management_notify_sse_enabled: bool = True
+    # 같은 캠페인·이상에 대한 재통지(후속 알림) 최소 간격.
+    management_consult_cooldown_hours: int = 24
+    # consult 컨텍스트 주입 유효시간 — 지나면 채팅에 재주입하지 않는다.
+    management_consult_context_ttl_hours: int = 24
     # 진단 agent LLM ReAct 재현성 고정값 (합의문서 P6 — 빈칸 기입). 키 없으면 결정론 폴백.
     management_diagnosis_model: str = "gpt-4o-mini"
     management_diagnosis_temperature: float = 0.0
@@ -120,14 +141,11 @@ class Settings(BaseSettings):
     management_assistant_model: str = "gpt-4o-mini"
 
     # Embedding (KB·LTM 공유 — 동일 모델·차원 필수. spec §6.1/§9)
-    # provider=bge_m3(기본): TEI/Ollama 로컬 서빙 1024차원.
-    # provider=openai: 1536(별도 마이그레이션 필요).
-    # USE_MOCK 또는 키 부재 시 wiring이 MockEmbeddingProvider(embedding_dim 차원) 반환.
-    embedding_provider: str = "bge_m3"  # bge_m3 | openai | mock
-    embedding_model: str = "bge-m3"
-    embedding_dim: int = 1024
-    embedding_base_url: str = "http://localhost:8080"  # TEI /embed 엔드포인트
-    openai_embedding_model: str = "text-embedding-3-small"  # provider=openai 폴백(1536)
+    # provider=openai(기본): text-embedding-3-small 1536 — Vector(1536) 컬럼과 일치.
+    # USE_MOCK 또는 provider=mock 시 MockEmbeddingProvider(embedding_dim 차원) 반환.
+    embedding_provider: str = "openai"  # openai | mock
+    embedding_model: str = "text-embedding-3-small"
+    embedding_dim: int = 1536
 
     # Chat orchestrator (Phase ③-B에서 사용 — 기반 단계는 설정만 선반영)
     chat_orchestrator_provider: str = "openai"  # anthropic | openai | google_genai

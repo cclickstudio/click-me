@@ -7,6 +7,7 @@ import { useAuth } from '@/components/AuthProvider';
 import { CampaignTable } from '@/components/manage/campaigns/CampaignTable';
 import { CampaignCards } from '@/components/manage/campaigns/CampaignCards';
 import { OriginLegend } from '@/components/manage/ValueOrigin';
+import { CampaignRadar } from '@/components/manage/CampaignRadar';
 import type {
   AccountWallet,
   CampaignDetail as Detail,
@@ -42,6 +43,7 @@ export default function Page() {
   // (직접 입력 아님 — CVR=전환÷클릭 실측, ROAS=(전환×가치)÷지출 추정). 스펙: CVR·ROAS 재정의.
   const [convValue, setConvValue] = useState<number | null>(null);
   const [targetRoas, setTargetRoas] = useState<number | null>(null);
+  const [showKpiHelp, setShowKpiHelp] = useState(false); // CVR·ROAS 계산 방식 접이식 설명
   // 수동 추정 CVR·ROAS — 전환 데이터가 없는(미설정) 캠페인에만 직접 입력(하이브리드).
   // 실측이 있으면 그 값을 읽기전용으로 쓰고, 여기 값은 무시된다. 조직 단위 DB 영속.
   const [manualKpi, setManualKpi] = useState<ManualKpiMap>({});
@@ -335,7 +337,7 @@ export default function Page() {
             {source === 'live' && (
               <button
                 onClick={() => setIncludeArchived((v) => !v)}
-                title="삭제·보관된 캠페인을 과거 데이터와 함께 표시"
+                title="보관·삭제된 캠페인을 과거 데이터와 함께 표시 (Meta에서 완전 삭제된 캠페인은 Meta가 제공하지 않아 안 보일 수 있어요)"
                 className={`text-[12px] px-2.5 py-1.5 rounded-lg border ${
                   includeArchived
                     ? 'border-[#3182F6] text-[#3182F6] bg-[#EBF3FF] dark:bg-[#1E3A5F]'
@@ -452,50 +454,7 @@ export default function Page() {
           </p>
         )}
 
-        {/* 계정 지갑 — 일예산(하루 상한)과 다른 '실제 충전·지출·잔액' (부가세 별도). 전환가치·목표ROAS 입력 동거. */}
-        {source === 'live' && account && (
-          <div className="mb-4 rounded-xl border border-[#E5E8EB] bg-white px-4 py-3.5 dark:border-[#2D3748] dark:bg-[#1A1F28]">
-            <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
-              <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
-                <span className="text-[14px] font-semibold text-[#4E5968] dark:text-[#9CA3AF]">
-                  계정 지갑
-                </span>
-                <span className="text-[15px] text-[#191F28] dark:text-[#F2F4F6]">
-                  선불 잔액{' '}
-                  <b className="tabular-nums">
-                    ₩{(account.available_balance_krw ?? 0).toLocaleString()}
-                  </b>
-                </span>
-                <span className="text-[15px] text-[#191F28] dark:text-[#F2F4F6]">
-                  누적 지출{' '}
-                  <b className="tabular-nums">
-                    ₩{(account.amount_spent_krw ?? 0).toLocaleString()}
-                  </b>
-                </span>
-                {account.spend_cap_krw != null && account.spend_cap_krw > 0 && (
-                  <span className="text-[15px] text-[#191F28] dark:text-[#F2F4F6]">
-                    충전 한도{' '}
-                    <b className="tabular-nums">₩{account.spend_cap_krw.toLocaleString()}</b>
-                    <span className="ml-1 text-[#8B95A1]">
-                      (
-                      {Math.round(((account.amount_spent_krw ?? 0) / account.spend_cap_krw) * 100)}%
-                      소진)
-                    </span>
-                  </span>
-                )}
-              </div>
-            </div>
-            <p className="mt-2 text-[13px] text-[#8B95A1]">
-              일예산은 “하루 상한”일 뿐, 실제 돈은 위 잔액입니다. 충전액은 광고비 + 부가세 10%
-              (예: 광고로 ₩10,000 쓰려면 ₩11,000 충전).
-            </p>
-            <p className="mt-1 text-[13px] text-[#8B95A1]">
-              <b>CVR(전환율)</b> = 전환수 ÷ 클릭수(실측) · <b>ROAS(투자수익률)</b> = 전환가치 × 전환수
-              ÷ 지출(추정). 실측 데이터가 있으면 <b>계산 결과(읽기전용)</b>로 뜨고, 전환 추적 전
-              ‘미설정’ 캠페인은 표에서 <b>직접 추정값</b>을 넣을 수 있어요.
-            </p>
-          </div>
-        )}
+        {/* 지갑(잔액·한도)은 예산 관리 탭이 정식 집 — 여기선 게재 중단 배너가 이상만 알린다. */}
 
         {!busy && !error && campaigns.length > 0 && (
           <div className="space-y-4">
@@ -539,6 +498,21 @@ export default function Page() {
               <span className="text-[12px] text-[#8B95A1]">
                 전환 가치 입력 시 ROAS(추정)가 채워지고, 목표 미달이면 표에 ‘목표↓’로 표시돼요.
               </span>
+              <button
+                type="button"
+                onClick={() => setShowKpiHelp((o) => !o)}
+                className="ml-auto shrink-0 text-[12px] text-[#8B95A1] hover:text-[#3182F6] transition-colors"
+              >
+                ⓘ CVR·ROAS 계산 방식 {showKpiHelp ? '▲' : '▾'}
+              </button>
+              {showKpiHelp && (
+                <p className="w-full text-[12px] leading-relaxed text-[#8B95A1] border-t border-[#F2F4F6] dark:border-[#2D3748] pt-2">
+                  <b>CVR(전환율)</b> = 전환수 ÷ 링크 클릭수(실측 · CTR의 전체 클릭과 분모가 달라요) ·{' '}
+                  <b>ROAS(투자수익률)</b> = 전환가치 × 전환수 ÷ 지출(추정). 실측 데이터가 있으면{' '}
+                  <b>계산 결과(읽기전용)</b>로 뜨고, 전환 추적 전 ‘미설정’ 캠페인은 표에서{' '}
+                  <b>직접 추정값</b>을 넣을 수 있어요.
+                </p>
+              )}
             </div>
             {view === 'table' ? (
               <CampaignTable
@@ -575,6 +549,8 @@ export default function Page() {
                 source={source}
               />
             )}
+            {/* 캠페인 성격 비교 레이더 — 지출 상위 캠페인 5축 상대 비교(2개 미만이면 자체 숨김) */}
+            <CampaignRadar campaigns={campaigns} />
             {/* 무한스크롤 센티넬 — 화면에 들어오면 다음 20개 로드 */}
             <div ref={sentinelRef} className="h-1" />
             {loadingMore && (

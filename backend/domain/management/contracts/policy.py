@@ -30,6 +30,11 @@ TIER_POLICY: dict[str, ActionTier] = {
 
 AUTO_APPROVE_MAX_TIER = ActionTier.TIER_1
 
+# ── 워커 A계열 룰 임계 — 지갑 소진·월 목표 가드레일 (홈 브리핑과 동일 기준) ──
+WALLET_ALERT_PCT = 95  # 충전 한도 사용률 — 충전 필요
+WALLET_WARN_PCT = 80  # 충전 한도 사용률 — 주의
+DEFAULT_MONTHLY_TARGET_KRW = 3_000_000  # 월 목표 기본 — 중소기업 벤치마크(일 10만 페이스)
+
 # ── P3. TTL (데모 모드) — 승인 TTL은 제안 TTL보다 짧다 (불변) ──
 PROPOSAL_TTL_MINUTES = 10
 APPROVAL_TTL_MINUTES = 5
@@ -41,6 +46,7 @@ CPM_NORMAL_RANGE_KRW = (7_800, 13_800)  # 한국 실측 하한(lebesgue)~상한(
 BASE_CTR = 0.017  # AdAmigo 2026 트래픽 목표 CTR 1.71%
 DAILY_BUDGET_KRW = 100_000
 AUDIENCE_SIZE = 1_750_000  # delivery_estimate estimate_mau 기반 데모 모수
+FATIGUE_FREQUENCY = 3.0  # 빈도 3+ = 도달 피로(소재 교체 신호) — meta-data-sources.md §4.6
 
 # ── 일중 곡선 (이중 봉우리: 점심 12~13시 / 저녁 20~23시) — 합 1로 정규화 ──
 _PACING_RAW = [

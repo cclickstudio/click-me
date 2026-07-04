@@ -1,22 +1,50 @@
 'use client';
+// 성과 비교 — 시뮬 예측(집행 전)과 실제 성과(집행 후)를 캠페인별로 나란히 비교하는 화면
 
 import { useEffect, useState, useCallback } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { api, type BeforeAfterItem, type CalibrationResponse, type PredictionSnapshot, type ActualOutcome } from '@/lib/api';
 import { formatKSTDate } from '@/lib/datetime';
+import { goalFromObjective } from '@/lib/metaObjective';
 
-const VERDICT: Record<BeforeAfterItem['verdict'], { label: string; cls: string }> = {
-  aligned: { label: '예측대로', cls: 'bg-[#EBF3FF] text-[#3182F6] dark:bg-[#1E3A5F] dark:text-[#7BB4F5]' },
+const VERDICT: Record<
+  BeforeAfterItem['verdict'],
+  { label: string; cls: string; accent: string }
+> = {
+  aligned: {
+    label: '예측대로',
+    cls: 'bg-[#EBF3FF] text-[#3182F6] dark:bg-[#1E3A5F] dark:text-[#7BB4F5]',
+    accent: 'border-l-[#3182F6]',
+  },
   overperformed: {
     label: '예측보다 좋음',
     cls: 'bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-300',
+    accent: 'border-l-[#22C55E]',
   },
   underperformed: {
     label: '예측보다 약함',
     cls: 'bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300',
+    accent: 'border-l-[#F59E0B]',
   },
-  unknown: { label: '판단 보류', cls: 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-300' },
+  unknown: {
+    label: '비교 대기',
+    cls: 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-300',
+    accent: 'border-l-[#D1D6DB] dark:border-l-[#4B5563]',
+  },
 };
+
+// 바 색 — 다른 탭과 동일 문법: 값 막대는 파랑 패밀리(퍼널의 #3182F6/#5B9DF9 페어링 재사용),
+// 판정(강함/약함)은 배지·캡션 텍스트가 담당. 좌우 정체는 위치+라벨로 명시(색 단독 아님).
+const ACT_FILL = '#3182F6'; // 실측(Meta) — 앱 전반의 실측 파랑
+const PRED_FILL = '#5B9DF9'; // 시뮬 예측 — 같은 패밀리 연파랑
+
+const VERDICT_ORDER: BeforeAfterItem['verdict'][] = [
+  'overperformed',
+  'underperformed',
+  'aligned',
+  'unknown',
+];
 
 function Metric({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
@@ -28,30 +56,117 @@ function Metric({ label, value, hint }: { label: string; value: string; hint?: s
   );
 }
 
-// 클릭 축 기준선 통과 배지 — 강함/약함(예측·실측 각자 기준, 환산 없음). null이면 판정 불가(—).
-function StrongBadge({
-  strong,
-  strongLabel,
-  weakLabel,
+// 기준 통과 여부 → 캡션 텍스트/색 (예측·실측 각자 기준, 환산 없음)
+const capText = (
+  s: boolean | null | undefined,
+  strong: string,
+  weak: string,
+  na: string,
+): string => (s === true ? strong : s === false ? weak : na);
+const capCls = (s: boolean | null | undefined): string =>
+  s === true
+    ? 'text-green-600 dark:text-green-400'
+    : s === false
+      ? 'text-amber-600 dark:text-amber-400'
+      : 'text-[#B0B8C1]';
+
+// 미러 바 — 중앙에서 좌(예측)/우(실측)로 자라는 막대 + 기준선 마커. 좌우는 각자 축(환산 금지).
+function MirrorBar({
+  num,
+  threshold,
+  max,
+  side,
 }: {
-  strong: boolean | null | undefined;
-  strongLabel: string;
-  weakLabel: string;
+  num: number | null;
+  threshold: number;
+  max?: number;
+  side: 'left' | 'right';
 }) {
-  if (strong == null)
-    return <span className="text-[10px] text-[#B0B8C1]">판정 불가</span>;
-  return strong ? (
-    <span className="text-[10px] font-semibold text-green-600 dark:text-green-400">
-      ● {strongLabel}
-    </span>
-  ) : (
-    <span className="text-[10px] font-semibold text-amber-600 dark:text-amber-400">
-      ● {weakLabel}
-    </span>
+  if (num == null) {
+    // 데이터 없음(시뮬 미연결·집계 전) — 죽은 회색 바 대신 점선 트랙으로 '비어 있음'을 표현
+    return (
+      <div className="h-4 flex-1 rounded-full border-2 border-dashed border-[#D1D6DB] dark:border-[#4B5563]" />
+    );
+  }
+  const scale = max ?? Math.max(threshold * 2, num * 1.15, 0.0001);
+  const widthPct = Math.max(Math.min((num / scale) * 100, 100), 1.5);
+  const tickPct = Math.min((threshold / scale) * 100, 100);
+  const fill = side === 'left' ? PRED_FILL : ACT_FILL;
+  return (
+    <div className="relative h-4 flex-1 rounded-full bg-[#F2F4F6] dark:bg-[#2D3748]">
+      <div
+        className={`absolute inset-y-0 ${side === 'left' ? 'right-0 rounded-l-full' : 'left-0 rounded-r-full'}`}
+        style={{ width: `${widthPct}%`, background: fill }}
+      />
+      <div
+        className="absolute top-1/2 h-[170%] w-[2px] -translate-y-1/2 rounded bg-[#4E5968] dark:bg-[#9CA3AF]"
+        style={side === 'left' ? { right: `${tickPct}%` } : { left: `${tickPct}%` }}
+        title="기준선"
+      />
+    </div>
   );
 }
 
-// 판정 이유 — 클릭/구매 축 기준선 통과 여부를 구조적으로 설명
+type MirrorSide = {
+  label: string;
+  value: string;
+  num: number | null;
+  threshold: number;
+  max?: number;
+  strong: boolean | null | undefined;
+  caption: string;
+};
+
+// 미러(나비형) 축 행 — 큰 숫자 + 대칭 바. 대칭은 시선 유도용이며 좌우 스케일 비교가 아니다.
+function MirrorRow({
+  axis,
+  pred,
+  act,
+  onRun,
+  running,
+}: {
+  axis: string;
+  pred: MirrorSide;
+  act: MirrorSide;
+  onRun?: () => void; // 예측 없음(시뮬 미연결)일 때 인라인 실행 버튼
+  running?: boolean;
+}) {
+  return (
+    <div className="flex items-center gap-3 py-2.5">
+      <div className="w-32 shrink-0 text-right">
+        <p className="text-[10px] text-[#8B95A1]">{pred.label}</p>
+        <p className="text-2xl font-extrabold leading-tight tabular-nums text-[#191F28] dark:text-[#F2F4F6]">
+          {pred.value}
+        </p>
+        {pred.num == null && onRun ? (
+          <button
+            onClick={onRun}
+            disabled={running}
+            className="mt-0.5 text-[10px] font-bold text-[#3182F6] hover:underline disabled:opacity-60"
+          >
+            {running ? '불러오는 중…' : '시뮬 돌리기 →'}
+          </button>
+        ) : (
+          <p className={`text-[10px] font-bold ${capCls(pred.strong)}`}>{pred.caption}</p>
+        )}
+      </div>
+      <MirrorBar side="left" num={pred.num} threshold={pred.threshold} max={pred.max} />
+      <span className="w-12 shrink-0 text-center text-[11px] font-bold text-[#4E5968] dark:text-[#9CA3AF]">
+        {axis}
+      </span>
+      <MirrorBar side="right" num={act.num} threshold={act.threshold} max={act.max} />
+      <div className="w-32 shrink-0">
+        <p className="text-[10px] text-[#8B95A1]">{act.label}</p>
+        <p className="text-2xl font-extrabold leading-tight tabular-nums text-[#191F28] dark:text-[#F2F4F6]">
+          {act.value}
+        </p>
+        <p className={`text-[10px] font-bold ${capCls(act.strong)}`}>{act.caption}</p>
+      </div>
+    </div>
+  );
+}
+
+// 판정 근거 — 클릭/구매 축 기준선 통과 여부를 구조적으로 설명
 function VerdictReason({ item, p, a }: { item: BeforeAfterItem; p: PredictionSnapshot | null; a: ActualOutcome }) {
   const cirVal = p ? `${(p.click_intent_rate * 100).toFixed(0)}%` : '—';
   const ctrVal = `${(a.ctr * 100).toFixed(2)}%`;
@@ -64,22 +179,22 @@ function VerdictReason({ item, p, a }: { item: BeforeAfterItem; p: PredictionSna
   const purchActIcon = item.purchase_act_strong === true ? '✅' : item.purchase_act_strong === false ? '❌' : '—';
 
   const verdictDesc: Record<BeforeAfterItem['verdict'], string> = {
-    overperformed: '예측보다 실측이 좋음 — 집행 후 성과가 시뮬 예측을 상회했습니다.',
-    underperformed: '예측보다 실측이 약함 — 시뮬 예측에 비해 실제 집행 성과가 낮습니다.',
-    aligned: '예측·실측 방향 일치 — 시뮬 예측대로 집행 결과가 나왔습니다.',
-    unknown: '판단 보류 — 데이터 부족 또는 클릭·구매 축이 반대 방향이어서 단순 판정이 어렵습니다.',
+    overperformed: '예측보다 실측이 좋아요 — 집행 후 성과가 시뮬 예측을 넘었어요.',
+    underperformed: '예측보다 실측이 약해요 — 시뮬 예측에 비해 실제 성과가 낮아요.',
+    aligned: '예측과 실측의 방향이 같아요 — 시뮬 예측대로 결과가 나왔어요.',
+    unknown: '아직 비교하기 어려워요 — 데이터가 부족하거나 클릭·구매 방향이 서로 달라요.',
   };
 
   return (
-    <div className="mt-3 rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-[#F9FAFB] dark:bg-[#1C2333] p-4 space-y-3">
-      <p className="text-xs font-semibold text-[#4E5968] dark:text-[#9CA3AF]">판정 기준 · 이유</p>
+    <div className="rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-[#F9FAFB] dark:bg-[#1C2333] p-4 space-y-3">
+      <p className="text-xs font-semibold text-[#4E5968] dark:text-[#9CA3AF]">왜 이렇게 판단했나요</p>
 
       {/* 클릭 축 */}
       <div className="space-y-1">
         <p className="text-[11px] font-semibold text-[#191F28] dark:text-[#F2F4F6]">클릭 축</p>
         <div className="flex gap-4 text-[11px] text-[#4E5968] dark:text-[#9CA3AF]">
           <span>
-            {clickPredIcon} 예측 CIR <strong>{cirVal}</strong>
+            {clickPredIcon} 클릭 의향률(예측) <strong>{cirVal}</strong>
             {item.pred_strong != null && (
               <span className="ml-1 text-[#B0B8C1]">
                 (기준 20% {item.pred_strong ? '통과 → 강함' : '미달 → 약함'})
@@ -88,7 +203,7 @@ function VerdictReason({ item, p, a }: { item: BeforeAfterItem; p: PredictionSna
           </span>
           <span className="text-[#B0B8C1]">⟷</span>
           <span>
-            {clickActIcon} 실측 CTR <strong>{ctrVal}</strong>
+            {clickActIcon} CTR(실측) <strong>{ctrVal}</strong>
             {item.act_strong != null && (
               <span className="ml-1 text-[#B0B8C1]">
                 (기준 1% {item.act_strong ? '통과 → 양호' : '미달 → 약함'})
@@ -103,7 +218,7 @@ function VerdictReason({ item, p, a }: { item: BeforeAfterItem; p: PredictionSna
         <p className="text-[11px] font-semibold text-[#191F28] dark:text-[#F2F4F6]">구매 축</p>
         <div className="flex gap-4 text-[11px] text-[#4E5968] dark:text-[#9CA3AF]">
           <span>
-            {purchPredIcon} 예측 PI <strong>{piVal}</strong>
+            {purchPredIcon} 구매의도(예측) <strong>{piVal}</strong>
             {item.purchase_pred_strong != null && (
               <span className="ml-1 text-[#B0B8C1]">
                 (기준 3.5/5 {item.purchase_pred_strong ? '통과 → 강함' : '미달 → 약함'})
@@ -112,7 +227,7 @@ function VerdictReason({ item, p, a }: { item: BeforeAfterItem; p: PredictionSna
           </span>
           <span className="text-[#B0B8C1]">⟷</span>
           <span>
-            {purchActIcon} 실측 CVR <strong>{cvrVal}</strong>
+            {purchActIcon} CVR(실측) <strong>{cvrVal}</strong>
             {item.purchase_act_strong != null && (
               <span className="ml-1 text-[#B0B8C1]">
                 (기준 2% {item.purchase_act_strong ? '통과 → 양호' : '미달 → 약함'})
@@ -146,18 +261,18 @@ function SimDetail({ p }: { p: PredictionSnapshot }) {
       </p>
       <div className="grid grid-cols-4 gap-3">
         <Metric
-          label="클릭 의향률(CIR)"
+          label="클릭 의향률"
           value={`${(p.click_intent_rate * 100).toFixed(0)}%`}
           hint="기준 ≥20% 강함"
         />
         <Metric
-          label="구매의도(PI)"
+          label="구매의도"
           value={`${p.purchase_intent.toFixed(1)}/5`}
           hint="기준 ≥3.5 강함"
         />
-        <Metric label="신뢰도(Trust)" value={`${p.trust_avg.toFixed(1)}/5`} />
+        <Metric label="신뢰도" value={`${p.trust_avg.toFixed(1)}/5`} />
         <Metric
-          label="거부율(Rejection)"
+          label="거부율"
           value={`${(p.rejection_rate * 100).toFixed(0)}%`}
           hint="낮을수록 좋음"
         />
@@ -172,7 +287,7 @@ function ActDetail({ a }: { a: ActualOutcome }) {
     <div className="rounded-xl bg-white dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748] p-3">
       <p className="text-xs font-semibold text-[#4E5968] dark:text-[#9CA3AF] mb-2.5">
         집행 후 · 실측 전체{' '}
-        <span className="text-[10px] font-normal text-[#3182F6]">(실 Meta)</span>
+        <span className="text-[10px] font-normal text-[#3182F6]">(Meta)</span>
       </p>
       <div className="grid grid-cols-4 gap-3">
         <Metric label="노출수" value={a.impressions.toLocaleString()} />
@@ -183,18 +298,61 @@ function ActDetail({ a }: { a: ActualOutcome }) {
         <Metric label="CPM" value={`₩${a.cpm_krw.toLocaleString()}`} />
         <Metric
           label="CVR(전환율)"
-          value={a.cvr != null ? `${(a.cvr * 100).toFixed(1)}%` : '추적 전'}
-          hint={a.cvr != null ? '기준 ≥2% 양호' : '전환 추적 필요'}
+          value={a.cvr != null ? `${(a.cvr * 100).toFixed(1)}%` : '집계 전'}
+          hint={a.cvr != null ? '기준 ≥2% 양호 · 전환=구매·리드·가입 등' : '전환(구매·리드·가입 등)이 잡히면 표시돼요'}
         />
         <Metric
           label="ROAS"
-          value={a.roas != null ? `${a.roas.toFixed(1)}x` : '추적 전'}
-          hint={a.roas == null ? '전환가치 필요' : undefined}
+          value={a.roas != null ? `${a.roas.toFixed(1)}x` : '집계 전'}
+          hint={a.roas == null ? '구매 금액(전환가치)이 잡히면 계산돼요' : undefined}
         />
       </div>
       {a.conversions != null && (
         <p className="mt-2 text-[11px] text-[#8B95A1]">전환수: {a.conversions.toLocaleString()}건</p>
       )}
+    </div>
+  );
+}
+
+// 판정별 다음 행동 — 대시보드는 표시가 아니라 결정을 돕는 화면이어야 한다.
+function ActionRow({
+  item,
+  onRunSim,
+  simLoading,
+}: {
+  item: BeforeAfterItem;
+  onRunSim: (campaignId: string) => void;
+  simLoading: string | null;
+}) {
+  const running = simLoading === item.campaign_id;
+  const rerunBtn = (
+    <button
+      onClick={() => onRunSim(item.campaign_id)}
+      disabled={running}
+      className="px-3 py-1.5 rounded-lg border border-[#E5E8EB] dark:border-[#2D3748] text-xs font-semibold text-[#4E5968] dark:text-[#9CA3AF] hover:border-[#3182F6] hover:text-[#3182F6] disabled:opacity-60 transition-colors"
+    >
+      {running ? '불러오는 중…' : item.prediction ? '시뮬 다시 돌리기' : '이 캠페인으로 시뮬 돌리기'}
+    </button>
+  );
+  return (
+    <div className="flex items-center gap-2 pt-1">
+      {item.verdict === 'overperformed' && (
+        <Link
+          href="/manage/budget"
+          className="px-3 py-1.5 rounded-lg bg-[#3182F6] hover:bg-[#1B64DA] text-white text-xs font-semibold transition-colors"
+        >
+          예산 늘리기 검토 →
+        </Link>
+      )}
+      {item.verdict === 'underperformed' && (
+        <Link
+          href="/generator"
+          className="px-3 py-1.5 rounded-lg bg-[#3182F6] hover:bg-[#1B64DA] text-white text-xs font-semibold transition-colors"
+        >
+          개선 시안 만들기 →
+        </Link>
+      )}
+      {rerunBtn}
     </div>
   );
 }
@@ -208,140 +366,110 @@ function BeforeAfterCard({
   onRunSim: (campaignId: string) => void;
   simLoading: string | null;
 }) {
-  const [showDetail, setShowDetail] = useState(false);
+  const [open, setOpen] = useState(false);
   const v = VERDICT[item.verdict];
   const p = item.prediction;
   const a = item.actual;
+  const running = simLoading === item.campaign_id;
   return (
-    <div className="rounded-2xl border border-[#E5E8EB] dark:border-[#2D3748] p-5">
-      <div className="flex items-center justify-between mb-4">
-        <p className="font-bold text-[#191F28] dark:text-[#F2F4F6] truncate">{item.name}</p>
-        <span className={`text-[11px] font-semibold px-2 py-1 rounded-lg ${v.cls}`}>{v.label}</span>
-      </div>
-
-      {/* 핵심 방향성 — 클릭 의향률(예측) ⟷ CTR(실측). 각자 기준선 통과로만 비교(스케일 환산 금지). */}
-      <div className="rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-[#F9FAFB] dark:bg-[#252D3D] p-4 mb-3">
-        <p className="text-[11px] text-[#8B95A1] mb-2.5">
-          클릭 방향성 — 예측·실측을 각자 기준선으로 비교(환산 없이 방향만)
-        </p>
-        <div className="flex items-center gap-3">
-          <div className="flex-1">
-            <p className="text-[11px] text-[#8B95A1]">클릭 의향률(CIR) · 예측</p>
-            <p className="text-lg font-extrabold text-[#191F28] dark:text-[#F2F4F6] tabular-nums">
-              {p ? `${(p.click_intent_rate * 100).toFixed(0)}%` : '—'}
-            </p>
-            <StrongBadge strong={item.pred_strong} strongLabel="강함 ≥20%" weakLabel="약함 <20%" />
-          </div>
-          <span className="text-xl text-[#8B95A1] shrink-0">⟷</span>
-          <div className="flex-1 text-right">
-            <p className="text-[11px] text-[#8B95A1]">
-              CTR(클릭률) · 실측 <span className="text-[#3182F6]">(실 Meta)</span>
-            </p>
-            <p className="text-lg font-extrabold text-[#191F28] dark:text-[#F2F4F6] tabular-nums">
-              {`${(a.ctr * 100).toFixed(2)}%`}
-            </p>
-            <StrongBadge strong={item.act_strong} strongLabel="양호 ≥1%" weakLabel="약함 <1%" />
-          </div>
-        </div>
-      </div>
-
-      {/* 구매 방향성 — 구매의도(예측, /5) ⟷ CVR(실측, %). 척도가 달라 직접 환산 아님 — 각자 기준선 통과로만 비교. */}
-      <div className="rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-[#F9FAFB] dark:bg-[#252D3D] p-4 mb-3">
-        <p className="text-[11px] text-[#8B95A1] mb-2.5">
-          구매의도와 CVR은 서로 환산하지 않고, 각자 기준선 통과 여부만 봅니다.
-        </p>
-        <div className="flex items-center gap-3">
-          <div className="flex-1">
-            <p className="text-[11px] text-[#8B95A1]">구매의도(PI) · 예측</p>
-            <p className="text-lg font-extrabold text-[#191F28] dark:text-[#F2F4F6] tabular-nums">
-              {p ? `${p.purchase_intent.toFixed(1)}/5` : '—'}
-            </p>
-            <StrongBadge strong={item.purchase_pred_strong} strongLabel="강함 ≥3.5" weakLabel="약함 <3.5" />
-          </div>
-          <span className="text-xl text-[#8B95A1] shrink-0">⟷</span>
-          <div className="flex-1 text-right">
-            <p className="text-[11px] text-[#8B95A1]">
-              CVR(전환율) · 실측 <span className="text-[#3182F6]">(실 Meta)</span>
-            </p>
-            <p className="text-lg font-extrabold text-[#191F28] dark:text-[#F2F4F6] tabular-nums">
-              {a.cvr != null ? `${(a.cvr * 100).toFixed(1)}%` : '추적 전'}
-            </p>
-            <StrongBadge strong={item.purchase_act_strong} strongLabel="양호 ≥2%" weakLabel="약함 <2%" />
-          </div>
-        </div>
-      </div>
-
-      {/* 보조 — 예측 KPI(판정 외) ↔ 실측 KPI 요약 */}
-      <div className="grid grid-cols-2 gap-4">
-        <div className="rounded-xl bg-[#F9FAFB] dark:bg-[#252D3D] p-3">
-          <p className="text-xs font-semibold text-[#4E5968] dark:text-[#9CA3AF] mb-2">
-            집행 전 · 시뮬 예측{' '}
-            <span className="text-[10px] font-normal text-[#B0B8C1]">
-              ({p ? (p.source === 'sim' ? '실 시뮬' : '예측(목)') : '미연결'})
-            </span>
-          </p>
-          {p ? (
-            <div className="grid grid-cols-3 gap-2">
-              <Metric label="구매의도(PI)" value={`${p.purchase_intent.toFixed(1)}/5`} />
-              <Metric label="신뢰도(Trust)" value={`${p.trust_avg.toFixed(1)}/5`} />
-              <Metric label="거부율(Rejection)" value={`${(p.rejection_rate * 100).toFixed(0)}%`} />
-            </div>
-          ) : (
-            <div className="py-3 text-center">
-              <p className="text-xs text-[#B0B8C1] mb-2">
-                시뮬 연결 대기 — 이 광고로 시뮬을 돌리면 예측이 채워집니다
-              </p>
-              <button
-                onClick={() => onRunSim(item.campaign_id)}
-                disabled={simLoading === item.campaign_id}
-                className="px-3 py-1.5 rounded-lg bg-[#3182F6] hover:bg-[#1B64DA] disabled:opacity-60 text-white text-xs font-semibold transition-colors"
-              >
-                {simLoading === item.campaign_id ? '불러오는 중…' : '이 캠페인으로 시뮬 돌리기'}
-              </button>
-            </div>
-          )}
-        </div>
-        <div className="rounded-xl bg-white dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748] p-3">
-          <p className="text-xs font-semibold text-[#4E5968] dark:text-[#9CA3AF] mb-2">
-            집행 후 · 실측 <span className="text-[10px] font-normal text-[#3182F6]">(실 Meta)</span>
-          </p>
-          <div className="grid grid-cols-3 gap-2">
-            <Metric label="지출(Spend)" value={`₩${a.spend_krw.toLocaleString()}`} />
-            <Metric
-              label="CVR(전환율)"
-              value={a.cvr != null ? `${(a.cvr * 100).toFixed(1)}%` : '추적 전'}
-              hint={a.cvr == null ? '전환 추적 필요' : undefined}
-            />
-            <Metric
-              label="ROAS"
-              value={a.roas != null ? `${a.roas.toFixed(1)}x` : '추적 전'}
-              hint={a.roas == null ? '전환가치 필요' : undefined}
-            />
-          </div>
-        </div>
-      </div>
-
-      {/* 상세 토글 버튼 */}
+    <div
+      className={`rounded-2xl border border-l-4 border-[#E5E8EB] dark:border-[#2D3748] ${v.accent} bg-white dark:bg-[#1C2333]`}
+    >
+      {/* 헤더(토글) — 이름·판정 배지·지출 */}
       <button
-        onClick={() => setShowDetail((v) => !v)}
-        className="mt-3 w-full flex items-center justify-center gap-1 py-1.5 rounded-lg border border-[#E5E8EB] dark:border-[#2D3748] text-[11px] text-[#8B95A1] hover:bg-[#F9FAFB] dark:hover:bg-[#252D3D] transition-colors"
+        onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center gap-3 px-5 pt-4 pb-1 text-left"
       >
-        {showDetail ? '▲ 접기' : '▼ 판정 이유 · 상세 보기'}
+        <p className="text-base font-bold text-[#191F28] dark:text-[#F2F4F6] truncate flex-1">
+          {item.name}
+        </p>
+        <span className={`text-xs font-bold px-2.5 py-1 rounded-lg shrink-0 ${v.cls}`}>
+          {v.label}
+        </span>
+        <span className="text-xs text-[#8B95A1] tabular-nums shrink-0">
+          ₩{a.spend_krw.toLocaleString()}
+        </span>
+        <span
+          className={`text-[#B0B8C1] text-xs shrink-0 transition-transform ${open ? 'rotate-180' : ''}`}
+        >
+          ▼
+        </span>
       </button>
 
-      {/* 접이식 상세 패널 */}
-      {showDetail && (
-        <div className="mt-3 space-y-3">
+      {/* 미러 축 2행 — 좌=시뮬 예측 / 우=실측(Meta). 좌우는 각자 축·기준선(환산 없음). */}
+      <div className="px-5 pb-4">
+        <div className="flex items-center justify-between px-0.5 text-[10px] font-semibold text-[#B0B8C1]">
+          <span>◀ 시뮬 예측</span>
+          <span>
+            실측 <span className="text-[#3182F6]">(Meta)</span> ▶
+          </span>
+        </div>
+        <MirrorRow
+          axis="클릭"
+          pred={{
+            label: '클릭 의향률',
+            value: p ? `${(p.click_intent_rate * 100).toFixed(0)}%` : '—',
+            num: p ? p.click_intent_rate : null,
+            threshold: 0.2,
+            max: 0.4,
+            strong: item.pred_strong,
+            caption: capText(item.pred_strong, '강함 ≥20%', '약함 <20%', '시뮬 미연결'),
+          }}
+          act={{
+            label: 'CTR(클릭률)',
+            value: `${(a.ctr * 100).toFixed(2)}%`,
+            num: a.ctr,
+            threshold: 0.01,
+            strong: item.act_strong,
+            caption: capText(item.act_strong, '양호 ≥1%', '약함 <1%', '판정 대기'),
+          }}
+          onRun={() => onRunSim(item.campaign_id)}
+          running={running}
+        />
+        <div className="border-t border-[#F2F4F6] dark:border-[#2D3748]" />
+        <MirrorRow
+          axis="구매"
+          pred={{
+            label: '구매의도',
+            value: p ? `${p.purchase_intent.toFixed(1)}/5` : '—',
+            num: p ? p.purchase_intent : null,
+            threshold: 3.5,
+            max: 5,
+            strong: item.purchase_pred_strong,
+            caption: capText(item.purchase_pred_strong, '강함 ≥3.5', '약함 <3.5', '시뮬 미연결'),
+          }}
+          act={{
+            label: 'CVR(전환율)',
+            value: a.cvr != null ? `${(a.cvr * 100).toFixed(1)}%` : '집계 전',
+            num: a.cvr ?? null,
+            threshold: 0.02,
+            strong: item.purchase_act_strong,
+            caption: capText(
+              item.purchase_act_strong,
+              '양호 ≥2%',
+              '약함 <2%',
+              a.cvr == null ? '전환 잡히면 표시' : '판정 대기',
+            ),
+          }}
+          onRun={() => onRunSim(item.campaign_id)}
+          running={running}
+        />
+      </div>
+
+      {/* 펼침 — 판정 근거 + 전/후 전체 상세 + 다음 행동 */}
+      {open && (
+        <div className="px-5 pb-5 pt-4 space-y-3 border-t border-[#F2F4F6] dark:border-[#2D3748]">
           <VerdictReason item={item} p={p} a={a} />
           {p && <SimDetail p={p} />}
           <ActDetail a={a} />
+          <ActionRow item={item} onRunSim={onRunSim} simLoading={simLoading} />
         </div>
       )}
     </div>
   );
 }
 
-// 순위 일치율 → 색상(0.7+ 양호 / 0.5+ 보통 / 그 외 약함). null이면 회색.
+// 예측 적중률 → 색상(0.7+ 양호 / 0.5+ 보통 / 그 외 약함). null이면 회색.
 function concordanceCls(v: number | null | undefined): string {
   if (v == null) return 'text-[#8B95A1]';
   if (v >= 0.7) return 'text-green-600 dark:text-green-400';
@@ -350,93 +478,93 @@ function concordanceCls(v: number | null | undefined): string {
 }
 const pct = (v: number | null | undefined) => (v == null ? '데이터 부족' : `${Math.round(v * 100)}%`);
 
+// 예측 정확도 검증(캘리브레이션) — 기본은 접힌 한 줄, 펼치면 상세.
 function CalibrationCard({ calib }: { calib: CalibrationResponse }) {
+  const [open, setOpen] = useState(false);
   const s = calib.summary;
   const progress = Math.min((s.n / s.unlock_threshold) * 100, 100);
   return (
-    <div className="rounded-2xl border border-[#E5E8EB] dark:border-[#2D3748] p-5 mb-4 bg-[#F9FAFB] dark:bg-[#252D3D]">
-      <div className="flex items-center justify-between mb-1">
-        <p className="font-bold text-[#191F28] dark:text-[#F2F4F6]">캘리브레이션 앵커</p>
-        <span
-          className={`text-[11px] font-semibold px-2 py-1 rounded-lg ${
-            s.unlocked
-              ? 'bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-300'
-              : 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-300'
-          }`}
-        >
-          {s.unlocked ? '✓ calibration 검토 가능' : `해금 ${s.n}/${s.unlock_threshold}`}
-        </span>
-      </div>
-      <p className="text-xs text-[#8B95A1] mb-4">
-        집행된 광고의 예측↔실측을 자동 수집해 시뮬 방향성을 검증합니다 (절대 환산 전 단계 · 순위
-        일치율).
-      </p>
-      {s.n === 0 ? (
-        <p className="text-xs text-[#B0B8C1] py-2">
-          연결된(시뮬↔집행) 캠페인이 쌓이면 앵커가 자동 수집됩니다. 제너레이터→시뮬→집행으로 광고를
-          돌려보세요.
+    <div className="rounded-2xl border border-[#E5E8EB] dark:border-[#2D3748] mb-4 bg-[#F9FAFB] dark:bg-[#252D3D]">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="w-full flex items-center justify-between px-5 py-3 text-left"
+      >
+        <p className="text-xs font-semibold text-[#4E5968] dark:text-[#9CA3AF]">
+          예측 정확도 검증
+          <span className="ml-2 font-normal text-[#8B95A1]">
+            {s.unlocked
+              ? '정밀 검증 준비 완료'
+              : `비교 데이터 ${s.n}/${s.unlock_threshold}건 수집 중`}
+          </span>
         </p>
-      ) : (
-        <>
-          <div className="grid grid-cols-3 gap-4 mb-4">
-            <div>
-              <p className="text-[11px] text-[#8B95A1]">수집된 앵커</p>
-              <p className="text-2xl font-extrabold text-[#191F28] dark:text-[#F2F4F6] tabular-nums">
-                {s.n}
-              </p>
-            </div>
-            <div>
-              <p className="text-[11px] text-[#8B95A1]">클릭 방향성 정합</p>
-              <p className={`text-2xl font-extrabold tabular-nums ${concordanceCls(s.concordance_click)}`}>
-                {pct(s.concordance_click)}
-              </p>
-              <p className="text-[10px] text-[#B0B8C1]">예측 클릭의향률 ↔ 실측 CTR</p>
-            </div>
-            <div>
-              <p className="text-[11px] text-[#8B95A1]">구매 방향성 정합</p>
-              <p
-                className={`text-2xl font-extrabold tabular-nums ${concordanceCls(s.concordance_purchase)}`}
-              >
-                {pct(s.concordance_purchase)}
-              </p>
-              <p className="text-[10px] text-[#B0B8C1]">예측 구매의도 ↔ 실측 CVR</p>
-            </div>
-          </div>
-          <div className="h-1.5 w-full rounded-full bg-[#E5E8EB] dark:bg-[#2D3748] overflow-hidden">
-            <div
-              className={`h-full ${s.unlocked ? 'bg-green-500' : 'bg-[#3182F6]'}`}
-              style={{ width: `${progress}%` }}
-            />
-          </div>
-          {!s.unlocked && (
-            <p className="mt-2 text-[10px] text-[#B0B8C1]">
-              ⚠ 표본 적음(N&lt;{s.unlock_threshold}) — 방향성 정합은 탐색적입니다. 앵커가 누적될수록
-              신뢰도가 올라가고, {s.unlock_threshold}건부터 calibration(절대 환산) 검토가 열립니다.
+        <span className={`text-[#B0B8C1] text-xs transition-transform ${open ? 'rotate-180' : ''}`}>▼</span>
+      </button>
+      {open && (
+        <div className="px-5 pb-4">
+          <p className="text-xs text-[#8B95A1] mb-4">
+            광고를 집행할 때마다 예측과 실제 결과를 자동으로 모아, 시뮬 예측이 얼마나 맞는지
+            확인해요.
+          </p>
+          {s.n === 0 ? (
+            <p className="text-xs text-[#B0B8C1] py-2">
+              시뮬과 연결된 캠페인이 쌓이면 자동으로 수집돼요. 제너레이터→시뮬→집행으로 광고를
+              돌려보세요.
             </p>
+          ) : (
+            <>
+              <div className="grid grid-cols-3 gap-4 mb-4">
+                <div>
+                  <p className="text-[11px] text-[#8B95A1]">모인 비교 데이터</p>
+                  <p className="text-2xl font-extrabold text-[#191F28] dark:text-[#F2F4F6] tabular-nums">
+                    {s.n}건
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[11px] text-[#8B95A1]">클릭 예측 적중률</p>
+                  <p className={`text-2xl font-extrabold tabular-nums ${concordanceCls(s.concordance_click)}`}>
+                    {pct(s.concordance_click)}
+                  </p>
+                  <p className="text-[10px] text-[#B0B8C1]">클릭 의향률(예측) ↔ CTR(실측)</p>
+                </div>
+                <div>
+                  <p className="text-[11px] text-[#8B95A1]">구매 예측 적중률</p>
+                  <p
+                    className={`text-2xl font-extrabold tabular-nums ${concordanceCls(s.concordance_purchase)}`}
+                  >
+                    {pct(s.concordance_purchase)}
+                  </p>
+                  <p className="text-[10px] text-[#B0B8C1]">구매의도(예측) ↔ CVR(실측)</p>
+                </div>
+              </div>
+              <div className="h-1.5 w-full rounded-full bg-[#E5E8EB] dark:bg-[#2D3748] overflow-hidden">
+                <div
+                  className={`h-full ${s.unlocked ? 'bg-green-500' : 'bg-[#3182F6]'}`}
+                  style={{ width: `${progress}%` }}
+                />
+              </div>
+              {!s.unlocked && (
+                <p className="mt-2 text-[10px] text-[#B0B8C1]">
+                  아직 데이터가 적어({s.n}/{s.unlock_threshold}건) 참고용이에요.{' '}
+                  {s.unlock_threshold}건이 모이면 정밀 검증이 시작돼요.
+                </p>
+              )}
+            </>
           )}
-        </>
+        </div>
       )}
     </div>
   );
 }
 
-// Meta objective → 시뮬레이터 광고 목표 매핑
-const _OBJECTIVE_MAP: Record<string, string> = {
-  OUTCOME_AWARENESS: '관심 유도',
-  OUTCOME_TRAFFIC: '클릭 유도',
-  OUTCOME_ENGAGEMENT: '관심 유도',
-  OUTCOME_LEADS: '가입·문의 유도',
-  OUTCOME_APP_PROMOTION: '클릭 유도',
-  OUTCOME_SALES: '구매 전환',
-};
-
 export default function Page() {
   const router = useRouter();
   const [items, setItems] = useState<BeforeAfterItem[] | null>(null);
   const [calib, setCalib] = useState<CalibrationResponse | null>(null);
-  const [baError, setBaError] = useState<string | null>(null);
   const [rateLimited, setRateLimited] = useState<string | null>(null);
   const [simLoading, setSimLoading] = useState<string | null>(null); // 로딩 중인 campaign_id
+  const [fetchedAt, setFetchedAt] = useState<Date | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [filter, setFilter] = useState<'all' | BeforeAfterItem['verdict']>('all');
 
   const handleRunSim = useCallback(async (campaignId: string) => {
     setSimLoading(campaignId);
@@ -444,7 +572,7 @@ export default function Page() {
       const t = await api.management.campaignTargeting(campaignId);
       const params = new URLSearchParams({ from_campaign: campaignId });
       if (t.campaign_name) params.set('from_name', t.campaign_name);
-      if (t.objective) params.set('objective', _OBJECTIVE_MAP[t.objective] ?? '');
+      if (t.objective) params.set('objective', goalFromObjective(t.objective) ?? '');
       if (t.age_min != null) params.set('age_min', String(t.age_min));
       if (t.age_max != null) params.set('age_max', String(t.age_max));
       if (t.gender) params.set('gender', t.gender);
@@ -464,47 +592,97 @@ export default function Page() {
     }
   }, [router]);
 
-  useEffect(() => {
-    let alive = true;
-    api.management
-      .beforeAfter()
-      .then((r) => {
-        if (!alive) return;
-        setItems(r.items);
-        setRateLimited(r.rate_limited ?? null);
-      })
-      .catch((e) => {
-        if (alive) {
-          setItems([]);
-          setBaError(e instanceof Error ? e.message : '불러오기 실패');
-        }
-      });
+  const fetchData = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      const r = await api.management.beforeAfter();
+      setItems(r.items);
+      setRateLimited(r.rate_limited ?? null);
+      setFetchedAt(new Date());
+    } catch {
+      setItems([]);
+    } finally {
+      setRefreshing(false);
+    }
     api.management
       .calibrationAnchors()
-      .then((r) => alive && setCalib(r))
+      .then(r => setCalib(r))
       .catch(() => {});
-    return () => {
-      alive = false;
-    };
   }, []);
+
+  useEffect(() => {
+    void fetchData();
+  }, [fetchData]);
+
+  const counts: Record<BeforeAfterItem['verdict'], number> = {
+    overperformed: 0,
+    underperformed: 0,
+    aligned: 0,
+    unknown: 0,
+  };
+  for (const it of items ?? []) counts[it.verdict] += 1;
+  const visible = (items ?? []).filter(it => filter === 'all' || it.verdict === filter);
 
   return (
       <div className="max-w-screen-xl mx-auto px-6 py-8">
-        <div className="mb-6">
-          <h1 className="text-2xl font-bold text-[#191F28] dark:text-[#F2F4F6]">성과 비교</h1>
-          <p className="text-sm text-[#8B95A1] mt-1">
-            집행 전(시뮬 예측) ↔ 집행 후(실측) · 예측은 상대 지표, 실측은 실 Meta 절대값(환산 없이 방향성 비교)
-          </p>
+        <div className="mb-4 flex items-end justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-bold text-[#191F28] dark:text-[#F2F4F6]">성과 비교</h1>
+            <p className="text-sm text-[#8B95A1] mt-1">
+              시뮬 예측(집행 전)과 실제 성과(집행 후)를 나란히 봅니다 · 단위가 달라 방향만 비교해요
+            </p>
+          </div>
+          <div className="flex items-center gap-2 shrink-0 text-xs text-[#8B95A1]">
+            {fetchedAt && (
+              <span>
+                갱신{' '}
+                {fetchedAt.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit' })}
+              </span>
+            )}
+            <button
+              onClick={() => void fetchData()}
+              disabled={refreshing}
+              className="px-2.5 py-1.5 rounded-lg border border-[#E5E8EB] dark:border-[#2D3748] hover:border-[#3182F6] hover:text-[#3182F6] disabled:opacity-50 transition-colors"
+            >
+              {refreshing ? '불러오는 중…' : '↻ 새로고침'}
+            </button>
+          </div>
         </div>
 
-        {/* 베이스라인 앵커 — 예측↔실측 자동 수집 + 방향성 정합 */}
-        {calib && <CalibrationCard calib={calib} />}
+        {/* 요약 + 필터 칩 — 판정별 개수가 곧 필터 */}
+        {items !== null && items.length > 0 && (
+          <div className="mb-4 flex flex-wrap items-center gap-1.5">
+            <button
+              onClick={() => setFilter('all')}
+              className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition-colors ${
+                filter === 'all'
+                  ? 'border-[#3182F6] bg-[#EBF3FF] dark:bg-[#1E3A5F] text-[#3182F6]'
+                  : 'border-[#E5E8EB] dark:border-[#2D3748] text-[#8B95A1] hover:border-[#3182F6]'
+              }`}
+            >
+              전체 {items.length}
+            </button>
+            {VERDICT_ORDER.filter(k => counts[k] > 0).map(k => (
+              <button
+                key={k}
+                onClick={() => setFilter(f => (f === k ? 'all' : k))}
+                className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition-colors ${
+                  filter === k
+                    ? 'border-[#3182F6] bg-[#EBF3FF] dark:bg-[#1E3A5F] text-[#3182F6]'
+                    : 'border-[#E5E8EB] dark:border-[#2D3748] text-[#8B95A1] hover:border-[#3182F6]'
+                }`}
+              >
+                {VERDICT[k].label} {counts[k]}
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* 전/후 비교 — 주 화면 */}
         {items === null && <p className="text-sm text-[#8B95A1] py-10 text-center">불러오는 중…</p>}
-        {items !== null && items.length > 0 && (
-          <div className="space-y-4">
-            {items.map((it) => (
+        {items !== null && visible.length > 0 && (
+          <div className="space-y-3">
+            {visible.map((it) => (
               <BeforeAfterCard
                 key={it.campaign_id}
                 item={it}
@@ -520,26 +698,32 @@ export default function Page() {
               <>
                 <p className="text-sm text-amber-700 dark:text-amber-300">{rateLimited}</p>
                 <p className="text-xs text-[#B0B8C1] mt-1">
-                  Meta 요청 한도에 일시적으로 걸렸습니다. 잠시 후 새로고침하면 실측이 표시됩니다.
+                  Meta 요청 한도에 일시적으로 걸렸어요. 잠시 후 새로고침하면 실측이 표시돼요.
                 </p>
               </>
             ) : (
               <>
                 <p className="text-sm text-[#4E5968] dark:text-[#9CA3AF]">
-                  아직 비교할 캠페인이 없습니다.
+                  아직 비교할 캠페인이 없어요.
                 </p>
                 <p className="text-xs text-[#B0B8C1] mt-1">
-                  캠페인을 게재하면 집행 후(실측)가 채워지고, 그 광고로 시뮬을 돌리면 집행 전(예측)이
-                  나란히 표시됩니다.
+                  캠페인을 게재하면 집행 후(실측)가 채워지고, 그 광고로 시뮬을 돌리면 집행
+                  전(예측)이 나란히 표시돼요.
                 </p>
               </>
             )}
           </div>
         )}
 
-        <p className="mt-6 text-[11px] text-[#B0B8C1]">
-          예측=시뮬 상대 지표(클릭의향률·구매의도·적합도) · 실측=실 Meta 절대값(CTR·CVR·ROAS) ·
-          스케일이 달라 환산 없이 방향성만 비교 · CVR/ROAS는 전환 추적 설정 시 표시
+        {/* 예측 정확도 검증 — 보조 정보라 목록 아래 접힌 상태로 */}
+        <div className="mt-4">
+          {calib && <CalibrationCard calib={calib} />}
+        </div>
+
+        <p className="mt-2 text-[11px] text-[#B0B8C1]">
+          시뮬 예측(클릭 의향률·구매의도)과 실제 지표(CTR·CVR·ROAS)는 단위가 달라 서로 환산하지
+          않고, 각자 기준선을 넘었는지로 방향만 비교해요 · CVR은 전환(구매·리드·가입 등)이 잡히면
+          자동 계산 · ROAS는 구매 금액(전환가치)이 있을 때 표시돼요
         </p>
       </div>
   );

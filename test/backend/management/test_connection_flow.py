@@ -28,22 +28,20 @@ _DEBUG_TOKEN = {
         "granular_scopes": [
             {"scope": "pages_show_list", "target_ids": ["page_1"]},
             {"scope": "instagram_basic", "target_ids": ["ig_1"]},
-            {"scope": "ads_management", "target_ids": None},  # 전체 부여 → /me/adaccounts 폴백
+            {"scope": "ads_management", "target_ids": None},  # 전체 부여 → 추측 금지, 호출자 폴백
         ],
     }
 }
 
 
 def _flow_transport() -> httpx.MockTransport:
-    """OAuth 토큰 교환 + debug_token + /me/adaccounts 폴백을 URL로 분기."""
+    """OAuth 토큰 교환 + debug_token을 URL로 분기."""
 
     def handler(request: httpx.Request) -> httpx.Response:
         url = str(request.url)
         params = dict(request.url.params)
         if "/debug_token" in url:
             return httpx.Response(200, json=_DEBUG_TOKEN)
-        if "/me/adaccounts" in url:
-            return httpx.Response(200, json={"data": [{"id": "act_999"}]})
         if params.get("grant_type") == "fb_exchange_token":
             return httpx.Response(
                 200, json={"access_token": "LONG", "token_type": "bearer", "expires_in": 5184000}
@@ -67,6 +65,7 @@ async def test_complete_stores_token_and_granular_assets():
             redirect_uri="https://clickme.co.kr/cb",
             code="the-code",
             organization_id=org,
+            fallback_ad_account_id="act_env_default",
             transport=_flow_transport(),
         )
         repo = MetaConnectionRepository(session, cipher)
@@ -74,10 +73,11 @@ async def test_complete_stores_token_and_granular_assets():
         row = await repo._get(org)
         assert "LONG" not in row.access_token_enc
         assert row.token_expires_at is not None
-        # granular_scopes로 정확한 페이지·IG, ads는 폴백(act_999)
+        # granular_scopes로 정확한 페이지·IG. ads는 계정이 안 묶여(전체 부여) 추측하지 않고
+        # 호출자가 준 운영 기본 계정(fallback)으로 — 임의 첫 계정 바인딩 사고 방지.
         assert row.page_id == "page_1"
         assert row.ig_user_id == "ig_1"
-        assert row.ad_account_id == "act_999"
+        assert row.ad_account_id == "act_env_default"
         assert row.scopes == ["ads_read", "ads_management", "pages_show_list", "instagram_basic"]
 
 
