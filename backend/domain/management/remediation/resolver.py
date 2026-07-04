@@ -42,6 +42,43 @@ async def _via_campaign_log(campaign_id: str, session_factory: Any) -> tuple[str
 _CHAIN = (_via_campaign_log,)
 
 
+_ACCOUNT_PROJECT = text(
+    """
+    SELECT p.id
+    FROM projects p
+    WHERE p.organization_id = :org
+      AND p.deleted_at IS NULL
+    ORDER BY p.created_at ASC
+    LIMIT 1
+    """
+)
+
+
+async def resolve_account_scope(
+    org_id: str, *, session_factory: Any = None
+) -> tuple[str, str] | None:
+    """계정 단위 이상(캠페인 없음)을 org 벨에 올리기 위한 프로젝트 앵커 → (project_id, org_id).
+
+    캠페인이 없어 resolve_project(체인)로는 못 잡는 지갑·예산 알림용. org의 대표(가장 오래된)
+    프로젝트로 귀속한다. org 미지정("global"·빈값)·프로젝트 없음·조회 실패는 None(배달 skip —
+    피드(automation_runs)는 별도로 유지되므로 정보 손실 없음). 단일 org 스코프에서만 성립.
+    """
+    if not org_id or org_id == "global":
+        return None
+    if session_factory is None:
+        from core.db import AsyncSessionLocal  # noqa: PLC0415
+
+        session_factory = AsyncSessionLocal
+    try:
+        async with session_factory() as db:
+            row = (await db.execute(_ACCOUNT_PROJECT, {"org": org_id})).first()
+    except Exception:  # noqa: BLE001 — 조회 실패는 배달 skip(피드 유지)
+        return None
+    if row is None:
+        return None
+    return str(row[0]), org_id
+
+
 async def resolve_project(
     campaign_id: str, *, expected_org_id: str | None = None, session_factory: Any = None
 ) -> tuple[str, str] | None:

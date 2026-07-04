@@ -19,7 +19,7 @@ from typing import Any
 from domain.management.remediation import advisor as _advisor
 from domain.management.remediation import broker
 from domain.management.remediation.chat_sink import DeliveryOutcome
-from domain.management.remediation.resolver import resolve_project
+from domain.management.remediation.resolver import resolve_account_scope, resolve_project
 
 logger = logging.getLogger("clickme")
 
@@ -41,6 +41,7 @@ class PanelNotificationSink:
         fallback: Any,
         store: Any = None,
         resolver: Any = None,
+        account_resolver: Any = None,
         consult: Any = None,
         clock: Any = None,
         publish: Any = None,
@@ -55,6 +56,7 @@ class PanelNotificationSink:
         self._fallback = fallback
         self._store = store
         self._resolve = resolver or resolve_project
+        self._resolve_account = account_resolver or resolve_account_scope  # 계정 단위(캠페인 없음)
         self._consult = consult or _advisor.consult
         self._clock = clock or (lambda: datetime.now(UTC))
         self._publish = publish or broker.publish
@@ -70,8 +72,13 @@ class PanelNotificationSink:
     ) -> DeliveryOutcome:
         campaign_id = (meta or {}).get("campaign_id") or ""
         anomaly_hint = (meta or {}).get("anomaly_type") or ""
+        # 계정 단위 이상(지갑·예산 — 캠페인 없음)은 rule로 식별해 정보성 배달(consult 없음).
+        account_rule = (meta or {}).get("rule") if not campaign_id else None
         try:
-            outcome = await self._deliver(tenant_id, title, body, campaign_id, anomaly_hint)
+            if account_rule:
+                outcome = await self._deliver_account(tenant_id, title, body, account_rule)
+            else:
+                outcome = await self._deliver(tenant_id, title, body, campaign_id, anomaly_hint)
         except Exception as exc:  # noqa: BLE001 — 1건 실패가 스캔 루프를 안 죽임
             await self._log_event(
                 "panel_notify_failed",
@@ -194,6 +201,67 @@ class PanelNotificationSink:
                     )
         self._publish(org_id)
         return DeliveryOutcome(campaign_id=campaign_id, status="delivered")
+
+    async def _deliver_account(
+        self, tenant_id: str, title: str, body: str, rule: str
+    ) -> DeliveryOutcome:
+        """계정 단위 이상(지갑·예산)을 org 벨에 정보성으로 배달 — 캠페인·consult 없음.
+
+        org가 명확한 스코프(notify-scan, tenant=org)에서만 성립. tenant="global"(스케줄러 전역)은
+        어느 org 벨인지 모호해 skip(피드 automation_runs로 이미 표면화). dedup/쿨다운/ignored는
+        캠페인 경로와 동일 판정표 재사용(dedup_key=account:{rule}).
+        """
+        if tenant_id in ("", "global"):
+            await self._log_event(
+                "panel_notify_skipped", tenant_id, title, body, "", "account_no_org"
+            )
+            return DeliveryOutcome(campaign_id="", status="skipped", reason="account_no_org")
+        resolved = await self._resolve_account(tenant_id)
+        if resolved is None:
+            await self._log_event(
+                "panel_notify_skipped", tenant_id, title, body, "", "no_project_mapping"
+            )
+            return DeliveryOutcome(campaign_id="", status="skipped", reason="no_project_mapping")
+        project_id, org_id = resolved
+
+        dedup_key = f"account:{rule}"
+        lock = _delivery_locks.setdefault(dedup_key, asyncio.Lock())
+        async with lock:
+            if await self._store.has_ignored(org_id, KIND, dedup_key):
+                return DeliveryOutcome(campaign_id="", status="skipped", reason="ignored")
+            state = await self._store.open_state(org_id, KIND, dedup_key)
+            now = self._clock()
+            followup = False
+            if state is not None:
+                if state["read_at"] is None:
+                    return DeliveryOutcome(campaign_id="", status="skipped", reason="bell_pending")
+                last = state["last_notified_at"]
+                last = last if last.tzinfo else last.replace(tzinfo=UTC)
+                cooldown = timedelta(
+                    hours=getattr(self._settings, "management_consult_cooldown_hours", 24)
+                )
+                if now - last < cooldown:
+                    return DeliveryOutcome(campaign_id="", status="skipped", reason="cooldown")
+                followup = True
+
+            payload = {"kind": "account", "rule": rule, "title": title, "message": body}
+            if followup:
+                await self._store.followup(state["id"], payload, now)
+            else:
+                try:
+                    await self._store.insert(
+                        organization_id=org_id,
+                        project_id=project_id,
+                        campaign_id=None,
+                        kind=KIND,
+                        dedup_key=dedup_key,
+                        payload=payload,
+                        now=now,
+                    )
+                except DedupRaceError:
+                    return DeliveryOutcome(campaign_id="", status="skipped", reason="dedup_race")
+        self._publish(org_id)
+        return DeliveryOutcome(campaign_id="", status="delivered")
 
     async def reconcile(self, normals: list[dict]) -> int:
         """정상 확인된 (tenant, campaign, anomaly)의 미해결 알림을 auto_normal로 자동 해소.

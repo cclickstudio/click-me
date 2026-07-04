@@ -365,6 +365,9 @@ export type ManagementNotification = {
     message?: string;
     anomaly_type?: string;
     options?: { index: number; action: string; tool_hint: string | null; label: string }[];
+    kind?: string; // "account"면 계정 단위 정보성 알림(캠페인·상담 없음)
+    title?: string; // 계정 알림 제목(예: "지갑 거의 소진")
+    rule?: string;
   };
   read_at: string | null;
   resolved_at: string | null;

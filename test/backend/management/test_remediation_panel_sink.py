@@ -254,3 +254,56 @@ async def test_summary_counts():
     s = sink.summary()
     assert s["delivered"] == 1
     assert s["skipped"][0]["reason"] == "no_campaign_id"
+
+
+# ── 계정 단위 알림(지갑·예산) 벨 배달 — 캠페인 없음, consult 없음 (B) ──
+
+
+def _account_sink(store, *, account_none=False, published=None):
+    async def _account_resolver(org_id):
+        return None if account_none else ("proj-1", org_id)
+
+    return PanelNotificationSink(
+        _Settings(),
+        fallback=FakeFallback(),
+        store=store,
+        account_resolver=_account_resolver,
+        clock=lambda: NOW,
+        publish=(published.append if published is not None else None),
+    )
+
+
+ACCOUNT_META = {"rule": "wallet_depleted"}  # 캠페인 없음 → 계정 스코프
+
+
+@pytest.mark.asyncio
+async def test_account_finding_delivers_to_bell():
+    store, published = Store(), []
+    out = await _account_sink(store, published=published).deliver(
+        "org-9", "지갑 거의 소진", "충전 한도의 100%를 사용했습니다.", meta=ACCOUNT_META
+    )
+    assert out.status == "delivered"
+    row = store.inserted[0]
+    assert row["dedup_key"] == "account:wallet_depleted"
+    assert row["campaign_id"] is None  # 계정 단위 — 캠페인 없음(스키마 nullable)
+    assert row["payload"]["kind"] == "account"
+    assert row["payload"]["title"] == "지갑 거의 소진"
+    assert published == ["org-9"]
+
+
+@pytest.mark.asyncio
+async def test_account_finding_global_tenant_skips():
+    store = Store()
+    out = await _account_sink(store).deliver("global", "지갑", "본문", meta=ACCOUNT_META)
+    assert out.status == "skipped" and out.reason == "account_no_org"
+    assert not store.inserted  # 전역 워커는 어느 org 벨인지 모호 → 피드만
+
+
+@pytest.mark.asyncio
+async def test_account_finding_no_project_skips():
+    store = Store()
+    out = await _account_sink(store, account_none=True).deliver(
+        "org-9", "지갑", "본문", meta=ACCOUNT_META
+    )
+    assert out.status == "skipped" and out.reason == "no_project_mapping"
+    assert not store.inserted

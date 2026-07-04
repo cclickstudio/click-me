@@ -83,10 +83,13 @@ export default function NotificationPanel({
     }
   };
 
-  const onIgnore = async (n: ManagementNotification) => {
+  const onIgnore = async (
+    n: ManagementNotification,
+    resolution: 'ignored' | 'actioned' = 'ignored',
+  ) => {
     setBusyId(n.id);
     try {
-      await api.management.notifications.resolve(n.id, 'ignored');
+      await api.management.notifications.resolve(n.id, resolution);
       onRefetch();
     } catch {
       setNotice('무시 처리에 실패했어요. 잠시 후 다시 시도해 주세요.');
@@ -127,16 +130,30 @@ export default function NotificationPanel({
         {visible.length === 0 ? (
           <p className="px-4 py-8 text-center text-xs text-[#8B95A1]">새 알림이 없어요.</p>
         ) : (
-          visible.map(n => (
+          visible.map(n => {
+            // 계정 단위 정보성 알림(지갑·예산) — 캠페인·상담 없음. 제목·본문만 보여주고 [확인]만.
+            const isAccount = n.payload.kind === 'account';
+            return (
             <div key={n.id} className="px-4 py-3 border-b border-[#F2F4F6] dark:border-[#2D3748]/60">
               <div className="flex items-start justify-between gap-2">
                 <div>
                   <p className="text-sm font-medium text-[#191F28] dark:text-white">
-                    ⚠ {n.payload.campaign_name || n.campaign_id} —{' '}
-                    {ANOMALY_LABEL[n.payload.anomaly_type ?? ''] || '이상 감지'}
+                    {isAccount ? (
+                      <>⚠ {n.payload.title || '계정 점검'}</>
+                    ) : (
+                      <>
+                        ⚠ {n.payload.campaign_name || n.campaign_id} —{' '}
+                        {ANOMALY_LABEL[n.payload.anomaly_type ?? ''] || '이상 감지'}
+                      </>
+                    )}
                   </p>
+                  {isAccount && n.payload.message && (
+                    <p className="mt-0.5 text-xs text-[#4E5968] dark:text-[#9CA3AF]">
+                      {n.payload.message}
+                    </p>
+                  )}
                   <p className="mt-0.5 text-xs text-[#8B95A1]">
-                    {n.project_name}
+                    {isAccount ? '계정 전체' : n.project_name}
                     {n.followup_count > 0 && ` · ${n.followup_count + 1}회째 알림`}
                     {' · '}
                     {new Date(n.last_notified_at).toLocaleString('ko-KR')}
@@ -145,25 +162,28 @@ export default function NotificationPanel({
                 {!n.read_at && <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-[#EF4444]" />}
               </div>
               <div className="mt-2 flex gap-2">
+                {!isAccount && (
+                  <button
+                    type="button"
+                    disabled={busyId === n.id}
+                    onClick={() => onConsult(n)}
+                    className="rounded-lg bg-[#3182F6] px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+                  >
+                    상담하기
+                  </button>
+                )}
                 <button
                   type="button"
                   disabled={busyId === n.id}
-                  onClick={() => onConsult(n)}
-                  className="rounded-lg bg-[#3182F6] px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
-                >
-                  상담하기
-                </button>
-                <button
-                  type="button"
-                  disabled={busyId === n.id}
-                  onClick={() => onIgnore(n)}
+                  onClick={() => onIgnore(n, isAccount ? 'actioned' : 'ignored')}
                   className="rounded-lg border border-[#E5E8EB] dark:border-[#2D3748] px-3 py-1.5 text-xs text-[#4E5968] dark:text-[#9CA3AF] disabled:opacity-50"
                 >
-                  무시
+                  {isAccount ? '확인' : '무시'}
                 </button>
               </div>
             </div>
-          ))
+            );
+          })
         )}
       </div>
     </div>
