@@ -64,8 +64,22 @@ async def test_run_generation_emits_gen_form(tools):
 
 
 @pytest.mark.asyncio
-async def test_run_generation_complete_args_starts_immediately(tools, monkeypatch):
-    # 상품명·설명·타깃 + 프로젝트 완비 → 폼 없이 즉시 실행(진행 카드)
+async def test_run_generation_complete_args_asks_about_image_first(tools):
+    # 완비돼도 이미지 의사 미확인이면 시작하지 않고 되묻는다(형태 없는 상품 배려)
+    cmd = await tools["run_generation"].coroutine(
+        state=_state(project_id="p1"),
+        tool_call_id="t1",
+        product_name="수분크림",
+        product_description="산뜻한 수분 크림",
+        target_audience="20대 여성",
+    )
+    assert "widget" not in cmd.update  # 생성 미시작 — 질문만
+    assert "상품 이미지" in cmd.update["messages"][0].content
+
+
+@pytest.mark.asyncio
+async def test_run_generation_skip_image_starts_immediately(tools, monkeypatch):
+    # 상품명·설명·타깃 + 프로젝트 완비 + 이미지 없이 확정 → 폼 없이 즉시 실행(진행 카드)
     import api.assistant.subagent_tools as st
 
     captured = {}
@@ -81,6 +95,7 @@ async def test_run_generation_complete_args_starts_immediately(tools, monkeypatc
         product_name="수분크림",
         product_description="산뜻한 수분 크림",
         target_audience="20대 여성",
+        skip_product_image=True,
     )
     assert cmd.update["widget"]["type"] == "gen_progress"
     assert cmd.update["widget"]["data"]["generation_id"] == "g9"
@@ -88,6 +103,20 @@ async def test_run_generation_complete_args_starts_immediately(tools, monkeypatc
     assert cmd.update["source"] == "generator"
     assert captured["project_id"] == "p1"
     assert captured["campaign_objective"] == "conversion"
+
+
+@pytest.mark.asyncio
+async def test_run_generation_with_attached_image_uses_form(tools):
+    # 이번 턴 이미지 첨부 → 즉시 실행 대신 폼(첨부가 상품 이미지로 프리필됨)
+    cmd = await tools["run_generation"].coroutine(
+        state=_state(project_id="p1", has_image=True),
+        tool_call_id="t1",
+        product_name="수분크림",
+        product_description="산뜻한 수분 크림",
+        target_audience="20대 여성",
+        skip_product_image=True,  # 첨부가 있으면 skip 지시보다 첨부 우선
+    )
+    assert cmd.update["widget"]["type"] == "gen_form"
 
 
 @pytest.mark.asyncio

@@ -233,14 +233,18 @@ def build_chat_tools(settings, memory=None, clio_retriever=None) -> list:
         product_description: str = "",
         target_audience: str = "",
         campaign_objective: str = "",
+        skip_product_image: bool = False,
         *,
         state: Annotated[dict, InjectedState],
         tool_call_id: Annotated[str, InjectedToolCallId],
     ) -> Command:
         """사용자가 광고 '시안/카피를 만들어/생성해/뽑아'달라고 하면 호출.
         발화에 있는 값만 채우고 없으면 비운다(지어내기 금지).
-        상품명·설명·타깃이 모두 있으면 폼 없이 바로 생성이 시작되고(진행 카드),
-        하나라도 비면 입력 폼이 뜬다. 호출 후 한 줄로만 안내하라."""
+        상품명·설명·타깃이 모두 있으면 폼 없이 바로 생성이 시작된다(진행 카드).
+        단, 상품 이미지 의사를 모르면 시작 전에 묻는다 — 사용자가 '이미지 없이/그냥 진행'
+        이라 했거나 무형 상품(서비스·앱 등)이면 skip_product_image=True로 호출하라.
+        이미지를 첨부한 턴이면 첨부가 상품 이미지로 쓰이는 폼이 뜬다.
+        호출 후 한 줄로만 안내하라."""
         gen_data = {
             "product_name": product_name or None,
             "product_description": product_description or None,
@@ -249,8 +253,37 @@ def build_chat_tools(settings, memory=None, clio_retriever=None) -> list:
         }
         helpers.spawn_persist(state.get("project_id"), "gen_input", gen_data)
         project_id = state.get("project_id")
-        # 필수 3요소 + 프로젝트 완비 → 폼 스킵 즉시 실행(진행 카드로 관찰)
-        if product_name and product_description and target_audience and project_id:
+        complete = bool(product_name and product_description and target_audience and project_id)
+        # 완비 + 이번 턴 이미지 첨부 → 폼 경로(첨부가 상품 이미지로 프리필됨, 실행만 누르면 됨)
+        if complete and state.get("has_image"):
+            return Command(
+                update={
+                    **widgets.gen_form(gen_data),
+                    "messages": [
+                        ToolMessage(
+                            "첨부하신 이미지를 상품 이미지로 쓰는 생성 폼을 준비했어요. "
+                            "내용 확인 후 실행만 누르면 됩니다.",
+                            tool_call_id=tool_call_id,
+                        )
+                    ],
+                }
+            )
+        # 완비지만 이미지 의사 미확인 → 시작하지 않고 되묻는다(형태 없는 상품은 없이 진행 가능)
+        if complete and not skip_product_image:
+            return Command(
+                update={
+                    "messages": [
+                        ToolMessage(
+                            "생성 준비가 끝났어요. 시작 전에 사용자에게 상품 이미지를 넣을지 "
+                            "물어보라 — 넣으려면 이미지를 첨부해 답하고, 서비스처럼 형태가 "
+                            "없거나 원치 않으면 '이미지 없이 진행'이라 답하면 된다고 안내하라.",
+                            tool_call_id=tool_call_id,
+                        )
+                    ]
+                }
+            )
+        # 완비 + 이미지 없이 진행 확정 → 폼 스킵 즉시 실행(진행 카드로 관찰)
+        if complete:
             started = await start_generation_now(
                 product_name=product_name,
                 product_description=product_description,
