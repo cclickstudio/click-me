@@ -158,8 +158,12 @@ def _memory_ids(body: ChatRequest, current_user: User) -> tuple[str | None, str 
     return (str(tenant_id) if tenant_id else None), user_id
 
 
-async def _recall_memory_context(body: ChatRequest, query: str) -> str | None:
+async def _recall_memory_context(
+    body: ChatRequest, query: str, current_user: User | None = None
+) -> str | None:
     """프로젝트의 실행 히스토리·이전 세션 요약·브랜드 프로파일을 맥락 문자열로 포맷(없으면 None).
+
+    current_user는 호출 규약 호환용(보은 remediation 경로) — 일원화 회수는 프로젝트 스코프라 미사용.
 
     구 management_user_memory(LLM 추출 기억) 대체 — 실제 실행 기록 기반이라 오추출이 없다.
     세션 요약은 '세션을 넘는' 대화 기억용 — 현 세션 요약은 프론트가 풀히스토리를 재전송하므로
@@ -261,6 +265,7 @@ async def _persist(
     meta: dict | None,
     image_url: str | None = None,
     result_ref: dict | None = None,
+    option_select: dict | None = None,
 ) -> None:
     """한 턴을 DB에 적재(best-effort) — 세션 없거나 실패해도 채팅은 진행."""
     user_meta: dict = {}
@@ -268,6 +273,8 @@ async def _persist(
         user_meta["image_url"] = image_url
     if result_ref:
         user_meta["result"] = result_ref
+    if option_select:
+        user_meta["option_select"] = option_select
     try:
         async with AsyncSessionLocal() as db:
             await history.append_turn(
@@ -291,8 +298,31 @@ async def chat_complete(
     async def generate() -> AsyncGenerator[str, None]:
         # 진행 중 표시 — 느릴 수 있는 에이전트 호출 전에 스피너 트레이를 띄운다(T17).
         yield _sse("progress", progress={"label": "생각 중 🔄", "pct": None})
-        # 롱텀 메모리(실행 히스토리) 회수 — 에이전트 맥락에 끼울 문자열(best-effort).
-        memory_context = await _recall_memory_context(body, last_message)
+        # 세션 넘는 장기기억 회수 — 에이전트 맥락에 끼울 문자열(로그인 사용자만, best-effort).
+        memory_context = await _recall_memory_context(body, last_message, current_user)
+        # 진행 중 이상 조치 상담 컨텍스트(management) — 옵션 버튼 meta가 오면 그걸 우선.
+        consult_ctx = None
+        if body.option_select:
+            try:
+                from domain.management.remediation.context import (  # noqa: PLC0415
+                    build_option_instruction,
+                )
+
+                consult_ctx = build_option_instruction(body.option_select)
+            except Exception:  # noqa: BLE001 — 매핑 실패가 채팅을 막지 않게
+                consult_ctx = None
+        if consult_ctx is None:
+            # meta는 왕복 안 되므로 서버가 세션에서 회수·주입(필수값 누락 meta도 여기로 폴백).
+            try:
+                from domain.management.remediation.context import (  # noqa: PLC0415
+                    recall_consult_context,
+                )
+
+                consult_ctx = await recall_consult_context(body.session_id, settings)
+            except Exception:  # noqa: BLE001 — 회수 실패가 채팅을 막지 않게
+                consult_ctx = None
+        if consult_ctx:
+            memory_context = f"{memory_context}\n\n{consult_ctx}" if memory_context else consult_ctx
 
         # [생성결과] 구조화 콜백 — 프론트가 보낸 결과 신호는 에이전트 거치지 않고 결정론 처리(개선루프).
         if result_callback.is_result_callback(last_message):
@@ -303,7 +333,13 @@ async def chat_complete(
             if meta.get("approval"):
                 yield _sse("approval", approval=meta["approval"])
             await _persist(
-                body.session_id, last_message, answer, meta, body.image_url, body.result_ref
+                body.session_id,
+                last_message,
+                answer,
+                meta,
+                body.image_url,
+                body.result_ref,
+                body.option_select,
             )
             yield _sse("done")
             return
@@ -317,7 +353,13 @@ async def chat_complete(
             for piece in _chunks(answer):
                 yield _sse("text", token=piece)
             await _persist(
-                body.session_id, last_message, answer, meta, body.image_url, body.result_ref
+                body.session_id,
+                last_message,
+                answer,
+                meta,
+                body.image_url,
+                body.result_ref,
+                body.option_select,
             )
             yield _sse("done")
             return
@@ -393,7 +435,17 @@ async def chat_complete(
         yield _sse("meta", meta=meta)
         if meta.get("approval"):
             yield _sse("approval", approval=meta["approval"])
-        await _persist(body.session_id, last_message, acc, meta, body.image_url, body.result_ref)
+        # option_select는 remediation 옵션 흐름 지속용(보은). LLM 캡처 파이프라인
+        # (_spawn_remember·_spawn_memory_capture)은 메모리 일원화로 폐기 — 호출하지 않는다.
+        await _persist(
+            body.session_id,
+            last_message,
+            acc,
+            meta,
+            body.image_url,
+            body.result_ref,
+            body.option_select,
+        )
         yield _sse("done")
 
     return StreamingResponse(

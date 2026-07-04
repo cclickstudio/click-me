@@ -701,27 +701,6 @@ class IdempotencyKeyRow(Base):
     created_at: Mapped[datetime] = mapped_column(_TS, server_default=func.now())
 
 
-class RegenerationJobRow(Base):
-    """🅱 채팅이 트리거한 재생성 비동기 job 상태(설계 2026-06-22). v1 in-process 전제."""
-
-    __tablename__ = "management_regeneration_jobs"
-
-    id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    tenant_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
-    campaign_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
-    status: Mapped[str] = mapped_column(String(32), index=True, nullable=False)
-    selection_token: Mapped[str | None] = mapped_column(String(64), unique=True)
-    candidates: Mapped[list | None] = mapped_column(JSONB)  # list[dict] — AWAITING_SELECTION 후보
-    selected_candidate_id: Mapped[str | None] = mapped_column(String(64))
-    proposal: Mapped[dict | None] = mapped_column(JSONB)
-    outcome_reason: Mapped[str | None] = mapped_column(String(48))
-    error: Mapped[str | None] = mapped_column(String(512))
-    created_at: Mapped[datetime] = mapped_column(_TS, index=True, server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(_TS, server_default=func.now())
-    started_at: Mapped[datetime | None] = mapped_column(_TS)
-    finished_at: Mapped[datetime | None] = mapped_column(_TS)
-
-
 # ──────────────────────────────────────────────
 # Persona Debate (시뮬레이터 4-1 페르소나 토론, simulations 1:N) — db-schema v3.1
 # ──────────────────────────────────────────────
@@ -915,4 +894,56 @@ class CreditLedgerRow(Base):
     balance_after_krw: Mapped[int] = mapped_column(Integer, nullable=False)
     reason: Mapped[str] = mapped_column(String(16), nullable=False)  # charge|spend|refund
     ref_id: Mapped[str] = mapped_column(String(128), nullable=False)
+
+
+# ──────────────────────────────────────────────
+# Management — 운영 알림 (이상 감지 C안, 스펙 2026-07-03)
+# ──────────────────────────────────────────────
+
+
+class ManagementNotification(Base):
+    """운영 알림 — 이상 감지 consult 결과를 채팅과 분리 저장. kind는 도메인 프리픽스."""
+
+    __tablename__ = "management_notifications"
+    __table_args__ = (
+        # 미해결 알림은 (org, kind, dedup_key)당 1행 — 멀티워커 dedup의 DB 백스톱.
+        Index(
+            "uq_mgmt_notif_open_dedup",
+            "organization_id",
+            "kind",
+            "dedup_key",
+            unique=True,
+            postgresql_where=text("resolved_at IS NULL"),
+            sqlite_where=text("resolved_at IS NULL"),
+        ),
+        Index("ix_mgmt_notif_org_recent", "organization_id", desc("last_notified_at")),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
+    )
+    campaign_id: Mapped[str | None] = mapped_column(
+        String(100), nullable=True
+    )  # remediation만 필수
+    kind: Mapped[str] = mapped_column(
+        String(60), nullable=False
+    )  # "management.remediation_consult"
+    dedup_key: Mapped[str] = mapped_column(
+        String(200), nullable=False
+    )  # f"{campaign_id}:{anomaly}"
+    payload: Mapped[dict] = mapped_column(
+        JSONB().with_variant(JSON(), "sqlite"), nullable=False, default=dict
+    )
+    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    resolution: Mapped[str | None] = mapped_column(
+        String(20), nullable=True
+    )  # ignored|actioned|auto_normal
+    consult_session_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    last_notified_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    followup_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

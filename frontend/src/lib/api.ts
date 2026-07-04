@@ -353,6 +353,26 @@ export interface AutomationRunItem {
   created_at: string | null;
   resolved_at: string | null;
 }
+// 운영 알림(이상 감지 C안) — 스펙 2026-07-03 §2
+export type ManagementNotification = {
+  id: string;
+  project_id: string;
+  project_name: string;
+  campaign_id: string | null;
+  kind: string;
+  payload: {
+    campaign_name?: string;
+    message?: string;
+    anomaly_type?: string;
+    options?: { index: number; action: string; tool_hint: string | null; label: string }[];
+  };
+  read_at: string | null;
+  resolved_at: string | null;
+  resolution: string | null;
+  followup_count: number;
+  last_notified_at: string;
+  created_at: string | null;
+};
 
 export const api = {
   ads: {
@@ -944,6 +964,42 @@ export const api = {
     // 이 캠페인으로 제출된 잠재고객(리드) 명단 — Meta leadgen 조회(권한 필요 시 note)
     leads: (campaignId: string) =>
       request<LeadsResponse>(`/management/campaigns/${campaignId}/leads`),
+    // 운영 알림(이상 감지 C안) — 스펙 2026-07-03 §2
+    notifications: {
+      list: (params?: { project_id?: string; unread_only?: boolean }) => {
+        const q = new URLSearchParams();
+        if (params?.project_id) q.set("project_id", params.project_id);
+        if (params?.unread_only) q.set("unread_only", "true");
+        const qs = q.toString();
+        return request<{ notifications: ManagementNotification[]; unread_count: number }>(
+          `/management/notifications${qs ? `?${qs}` : ""}`,
+        );
+      },
+      read: (ids: string[]) =>
+        request<{ updated: number }>(`/management/notifications/read`, {
+          method: "POST",
+          body: JSON.stringify({ ids }),
+        }),
+      resolve: (id: string, resolution: "ignored" | "actioned") =>
+        request<{ resolved: boolean; resolution: "ignored" | "actioned" }>(
+          `/management/notifications/${id}/resolve`,
+          { method: "POST", body: JSON.stringify({ resolution }) },
+        ),
+      consult: (id: string) =>
+        request<
+          | { status: "consult"; session_id: string }
+          | { status: "normal"; message: string }
+          | { status: "already_resolved"; resolution: string }
+        >(`/management/notifications/${id}/consult`, { method: "POST" }),
+      // 수동 이상 점검 — 스캔 즉시 실행. 잠금 409·쿨다운 429는 ApiError.message(detail)로 노출.
+      notifyScan: () =>
+        request<{
+          scanned_findings: number;
+          delivered: number;
+          skipped: { campaign_id: string; reason: string }[];
+          failed: { campaign_id: string; reason: string }[];
+        }>(`/management/anomaly/notify-scan`, { method: "POST" }),
+    },
   },
 
   generator: {

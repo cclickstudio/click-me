@@ -16,7 +16,7 @@ from domain.management.notifications import NotificationSink, build_notification
 
 logger = logging.getLogger("clickme")
 
-_Scanner = Callable[[object], Awaitable[list[dict]]]
+_Scanner = Callable[[object], Awaitable[list[dict] | tuple[list[dict], list[dict]]]]
 
 # 공용 레지스트리에 매니지먼트 자동화 등록 — gen/sim도 같은 방식으로 붙는다(확장 seam).
 register_automation(
@@ -26,41 +26,37 @@ register_automation(
 )
 
 
-async def _default_scanner(settings) -> list[dict]:
-    """기본 스캐너 — 활성 캠페인 룰 점검(A계열: 게재 0 + 소재 피로). 발견분을 통지·기록.
+async def _default_scanner(settings) -> tuple[list[dict], list[dict]]:
+    """기본 스캐너 — 활성 캠페인 게재 점검(게재0) + 계정 재무 룰. (findings, normals) 튜플 반환.
 
-    실측은 live_campaigns(reader)에서 — use_mock이면 mock, 실연동이면 Meta. ROAS 목표 대비 등
-    심화 진단은 campaign-queryable 진단 정비 후 확장(seam).
+    normals는 '성공 조회 + 정상'으로 확인된 캠페인만(fail-closed — 조회 실패 ≠ 정상).
+    reconcile이 이걸로 정상화된 미해결 알림을 auto_normal 자동 해소한다(스펙 §3).
     """
     from domain.management.assistant import tools as live_tools  # noqa: PLC0415
-    from domain.management.contracts.policy import FATIGUE_FREQUENCY  # noqa: PLC0415
 
     data = await live_tools.live_campaigns(settings)
     if data.get("error"):
-        return []  # 조회 실패(rate limit 등)는 통지 안 함 — 다음 틱에 재시도
+        return [], []  # 조회 실패는 통지도 reconcile도 안 함 — 다음 틱에 재시도
     findings: list[dict] = []
+    normals: list[dict] = []
     for c in data.get("campaigns", []):
-        name = c.get("name") or c.get("campaign_id", "?")
+        cid = c.get("campaign_id")
         if c.get("impressions", 0) == 0:
+            name = c.get("name") or cid or "?"
             findings.append(
                 {
                     "tenant_id": "global",
                     "title": f"게재 점검 — {name}",
                     "body": "활성 캠페인인데 노출이 0입니다. 심사·예산·타깃을 점검하세요.",
-                    "meta": {"campaign_id": c.get("campaign_id"), "rule": "zero_impressions"},
+                    "meta": {"campaign_id": cid, "anomaly_type": "no_delivery"},
                 }
             )
-        if (c.get("frequency") or 0) >= FATIGUE_FREQUENCY:
-            findings.append(
-                {
-                    "tenant_id": "global",
-                    "title": f"소재 피로 — {name}",
-                    "body": f"빈도 {c.get('frequency')}회 — 도달 피로 구간, 소재 교체 검토.",
-                    "meta": {"campaign_id": c.get("campaign_id"), "rule": "creative_fatigue"},
-                }
+        else:
+            normals.append(
+                {"tenant_id": "global", "campaign_id": cid, "anomaly_type": "no_delivery"}
             )
-    findings.extend(await _account_rules_scan(settings))
-    return findings
+    findings.extend(await _account_rules_scan(settings))  # 계정 재무 룰(지갑·예산) — 내 추가분 유지
+    return findings, normals
 
 
 async def _account_rules_scan(settings) -> list[dict]:
@@ -157,7 +153,9 @@ async def _agent_scanner(settings) -> list[dict]:
     except Exception as exc:  # noqa: BLE001 — 조회/조립 실패 → 규칙 스캐너로 폴백(지장 없음)
         logger.warning("management 에이전트 스캔 준비 실패 → 규칙 폴백: %s", exc)
         try:
-            return await _default_scanner(settings)
+            # _default_scanner는 (findings, normals) 튜플 — 에이전트 폴백은 findings만 취한다.
+            fallback_findings, _ = await _default_scanner(settings)
+            return fallback_findings
         except Exception as exc2:  # noqa: BLE001 — 폴백까지 실패해도 스캐너는 raise하지 않음
             logger.warning("management 규칙 폴백도 실패(빈 결과): %s", exc2)
             return []
@@ -270,12 +268,13 @@ async def run_scan(
     scanner: _Scanner | None = None,
     recorder: Callable[[dict], Awaitable[None]] | None = None,
 ) -> int:
-    """이상 스캔 1회 → 발견분을 sink로 통지 + recorder로 롱텀 메모리 기록. 통지 건수 반환.
+    """이상 스캔 1회 → 통지 + recorder 기록 + (가능하면) 정상화 reconcile. 통지 건수 반환.
 
     recorder 기본 None — 테스트·수동 호출은 DB 없이 hermetic. 스케줄러 잡만 record_finding 주입.
     """
     scan = scanner or _default_scanner
-    findings = await scan(settings)
+    out = await scan(settings)
+    findings, normals = out if isinstance(out, tuple) else (out, [])
     for f in findings:
         await sink.notify(
             f.get("tenant_id", "global"),
@@ -288,6 +287,9 @@ async def run_scan(
                 await recorder(f)
             except Exception as exc:  # noqa: BLE001 — 기록 실패가 스캔을 막지 않게
                 logger.warning("management 스캔 기록 실패(무시): %s", exc)
+    # 정상화된 캠페인으로 미해결 알림 자동 해소(보은 reconcile) — sink가 지원할 때만.
+    if normals and hasattr(sink, "reconcile"):
+        await sink.reconcile(normals)
     if findings:
         logger.info("management 스캔 — %d건 통지", len(findings))
     return len(findings)

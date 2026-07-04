@@ -117,6 +117,19 @@ class Settings(BaseSettings):
     management_scanner_mode: str = "rule"
     # 성과 진단 기본 목표 ROAS — 설정 시 워커가 성과 미달 판단(없으면 성과 진단 생략).
     management_default_target_roas: float | None = None
+    # 수동 알림 스캔(/anomaly/notify-scan) 재요청 최소 간격 — org별 429 방지선.
+    management_scan_manual_cooldown_seconds: int = 60
+    # 이상 감지 선제 알림 배달 채널. extra="ignore"라 필드 선언 없이는 env로 못 켠다.
+    # 이행: 구 `MANAGEMENT_CHAT_NOTIFY_ENABLED=true` → `MANAGEMENT_NOTIFY_CHANNEL=chat`.
+    management_notify_channel: str = "log"  # log | chat | panel — 이상 알림 배달 채널
+    # 매니지먼트 reader만 mock 강제(알림 데모) — 전역 use_mock과 분리해 채팅(live 전용)을 살린다.
+    management_reader_mock: bool = False
+    # 알림 SSE(단일 프로세스 전제) — 멀티워커면 끈다.
+    management_notify_sse_enabled: bool = True
+    # 같은 캠페인·이상에 대한 재통지(후속 알림) 최소 간격.
+    management_consult_cooldown_hours: int = 24
+    # consult 컨텍스트 주입 유효시간 — 지나면 채팅에 재주입하지 않는다.
+    management_consult_context_ttl_hours: int = 24
     # 진단 agent LLM ReAct 재현성 고정값 (합의문서 P6 — 빈칸 기입). 키 없으면 결정론 폴백.
     management_diagnosis_model: str = "gpt-4o-mini"
     management_diagnosis_temperature: float = 0.0

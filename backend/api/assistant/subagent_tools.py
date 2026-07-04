@@ -694,6 +694,41 @@ def build_chat_tools(settings, clio_retriever=None) -> list:
             return "브랜드 설정을 기억하지 못했어요. 잠시 후 다시 알려주세요."
         return "브랜드 설정을 기억했어요."
 
+    # ───────────────────────── 매니지먼트 이상 상담 (위임: domain/management/remediation) ──
+    @tool
+    async def consult_anomaly(
+        campaign_id: str = "",
+        campaign_name: str = "",
+        *,
+        state: Annotated[dict, InjectedState],
+        tool_call_id: Annotated[str, InjectedToolCallId],
+    ) -> Command:
+        """캠페인이 '왜 안 좋은지/이상 있는지/문제 없는지' 물으면 호출. 서버 실측으로
+        재검증해 이상이면 조치 옵션을, 정상이면 정상 확인을 답한다. 이름만 알면 campaign_name."""
+        from domain.management.remediation.advisor import (  # noqa: PLC0415
+            consult,
+            find_campaign_id,
+        )
+
+        cid = campaign_id or (
+            await find_campaign_id(settings, campaign_name) if campaign_name else None
+        )
+        if not cid:
+            text_out = "캠페인을 특정하지 못했어요. 캠페인 이름이나 ID를 알려 주세요."
+        else:
+            res = await consult(settings, cid)
+            if res is None:
+                text_out = "실측 조회에 실패해 지금은 확인할 수 없어요. 잠시 후 다시 시도해 주세요."
+            else:
+                text_out = res.message
+                if res.options:
+                    # 기계가독 매핑 — LLM이 번호→도구를 오매핑하지 않게 명시(meta 미영속의 보완).
+                    mapping = ", ".join(
+                        f"{o.index}={o.action.value}({o.tool_hint or '관망'})" for o in res.options
+                    )
+                    text_out += f"\n\n[옵션-도구 매핑 · campaign_id={cid}] {mapping}"
+        return Command(update={"messages": [ToolMessage(text_out, tool_call_id=tool_call_id)]})
+
     # ───────────────────── 롱텀 메모리 tool (실행 히스토리) ─────────────────────
     @tool
     async def recall_history(
@@ -743,6 +778,7 @@ def build_chat_tools(settings, clio_retriever=None) -> list:
         batch_simulation,
         create_campaign,
         manage_campaign,
+        consult_anomaly,
         load_template,
         show_templates,
         save_template,

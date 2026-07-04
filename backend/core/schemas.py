@@ -166,6 +166,8 @@ class ChatRequest(BaseModel):
     improve_context: dict | None = (
         None  # 개선 모드 컨텍스트 {s3_key, simulation_summary, product_name?}
     )
+    # 이상 조치 옵션 버튼 클릭(관리 도메인) — {option_index, action, tool_hint, campaign_id, label}
+    option_select: dict | None = None
 
 
 class InquiryCreate(BaseModel):
