@@ -297,6 +297,45 @@ async def test_agent_mode_reconcile_resolves_normal_campaign(monkeypatch):
     assert any(nm["anomaly_type"] == "no_delivery" for nm in sink.reconciled)  # reconcile 발동
 
 
+# ── 주간 리포트 워커 잡 (run_weekly_report) ────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_run_weekly_report_records_digest(monkeypatch):
+    """주간 리포트 잡이 읽기 전용 집계를 automation_runs에 다이제스트로 적재한다."""
+    from domain.management import scheduler as sched
+
+    monkeypatch.setattr(
+        "domain.management.wiring.build_reader", lambda _s: _FakeReader(impressions=1000)
+    )
+    captured: dict = {}
+
+    async def fake_record(**kwargs):
+        captured.update(kwargs)
+
+    monkeypatch.setattr("core.automation.record_automation_run", fake_record)
+    ok = await sched.run_weekly_report(SimpleNamespace())
+    assert ok is True
+    assert captured["job_name"] == "weekly_report"
+    assert captured["domain"] == "management"
+    assert captured["status"] == "ok"
+    assert captured["payload"]["actor"] == "auto" and "report" in captured["payload"]
+
+
+@pytest.mark.asyncio
+async def test_run_weekly_report_survives_reader_failure(monkeypatch):
+    """리포트 생성 실패해도 raise하지 않고 False(잡이 스케줄러를 죽이지 않음)."""
+
+    class _BoomReader:
+        async def list_campaigns(self):
+            raise RuntimeError("meta down")
+
+    monkeypatch.setattr("domain.management.wiring.build_reader", lambda _s: _BoomReader())
+    from domain.management import scheduler as sched
+
+    assert await sched.run_weekly_report(SimpleNamespace()) is False
+
+
 # ── 스캐너 모드 선택 (_scanner_for) ────────────────────────────────
 
 

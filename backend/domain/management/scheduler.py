@@ -24,6 +24,12 @@ register_automation(
     "anomaly_scan",
     description="캠페인 게재0·소재피로·성과미달 + 계정 지갑·예산 가드레일 점검(에이전트 판단)",
 )
+register_automation(
+    "management",
+    "weekly_report",
+    interval_minutes=10080,
+    description="최근 7일 성과 요약 다이제스트 생성(읽기 전용 집계) → automation_runs 적재",
+)
 
 
 async def _default_scanner(settings) -> tuple[list[dict], list[dict]]:
@@ -313,6 +319,43 @@ async def run_scan(
     return len(findings)
 
 
+async def run_weekly_report(settings) -> bool:
+    """주간 성과 리포트 1회 생성 → automation_runs 적재(best-effort·비차단). 성공 시 True.
+
+    읽기 전용 집계(insights.weekly_report)라 사이드이펙트 없음 — 알림이 아니라 다이제스트로
+    남긴다(프론트가 '최근 주간 리포트'로 조회). 실패·빈 리포트는 조용히 건너뜀.
+    """
+    from core.automation import record_automation_run  # noqa: PLC0415
+    from domain.management import insights  # noqa: PLC0415
+    from domain.management.wiring import build_reader  # noqa: PLC0415
+
+    try:
+        data = await insights.weekly_report(build_reader(settings))
+    except Exception as exc:  # noqa: BLE001 — 리포트 생성 실패가 스케줄러를 죽이지 않게
+        logger.warning("management 주간 리포트 실패(무시): %s", exc)
+        return False
+    report = data.get("report")
+    if not report:
+        return False
+    totals = report.get("totals") or {}
+    period = report.get("period") or {}
+    body = (
+        f"최근 7일 지출 {totals.get('spend_krw', 0):,}원 · "
+        f"노출 {totals.get('impressions', 0):,} · 클릭 {totals.get('clicks', 0):,}"
+    )
+    await record_automation_run(
+        domain="management",
+        job_name="weekly_report",
+        title="주간 성과 리포트",
+        body=body,
+        status="ok",
+        payload={"actor": "auto", "report": report},
+        # 같은 주(until) 리포트는 1건만 — 재기동/중복 실행 시 재적재 방지.
+        dedup_key=f"weekly:{period.get('until', '')}",
+    )
+    return True
+
+
 _scheduler = None
 
 
@@ -347,9 +390,22 @@ def start_scheduler(settings) -> bool:
         except Exception as exc:  # noqa: BLE001 — 잡 실패가 스케줄러를 죽이지 않게
             logger.warning("management 스캔 실패(무시): %s", exc)
 
+    async def _report_job() -> None:
+        try:
+            await run_weekly_report(settings)
+        except Exception as exc:  # noqa: BLE001 — 리포트 잡 실패가 스케줄러를 죽이지 않게
+            logger.warning("management 주간 리포트 잡 실패(무시): %s", exc)
+
+    report_interval = getattr(settings, "management_weekly_report_interval_minutes", 10080)
     _scheduler = AsyncIOScheduler()
     _scheduler.add_job(_job, "interval", minutes=interval, id="mgmt-scan")
+    _scheduler.add_job(_report_job, "interval", minutes=report_interval, id="mgmt-weekly-report")
     _scheduler.start()
     mode = getattr(settings, "management_scanner_mode", "rule")
-    logger.info("management 스케줄러 기동 — %d분 간격 · 스캐너=%s", interval, mode)
+    logger.info(
+        "management 스케줄러 기동 — 스캔 %d분·스캐너=%s / 주간리포트 %d분",
+        interval,
+        mode,
+        report_interval,
+    )
     return True
