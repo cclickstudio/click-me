@@ -9,6 +9,7 @@ Create Date: 2026-07-03
 - execution_history → chat_execution_history (기능 수행 이력 = 채팅 에이전트의 롱텀 메모리)
 - management_user_memory drop — remember/recall(LLM 큐레이션 장기기억) 경로 제거로 읽는 곳 없음.
   롱텀은 chat_execution_history 하나로 일원화, 선호는 chat_brand_profiles.
+- automation_runs 생성(3도메인 공용 자동화 워커 결과 저장소) — 006에 통합(멱등 IF NOT EXISTS).
 
 빈 DB는 0001_baseline의 create_all이 개명 후 ORM대로 새 이름으로 바로 생성하므로,
 기존 DB(옛 이름 존재)에서만 rename/drop이 실행되게 전부 멱등 가드.
@@ -46,8 +47,44 @@ def upgrade() -> None:
         op.execute(f"ALTER INDEX IF EXISTS {old} RENAME TO {new}")
     op.execute("DROP TABLE IF EXISTS management_user_memory")  # 인덱스는 테이블과 함께 삭제
 
+    # automation_runs — 자동화(APScheduler 워커) 실행 결과 공용 저장소(3도메인 공용). 006에 통합.
+    # 신규 DB는 0001_baseline의 create_all이 ORM(core.models.AutomationRun)대로 생성하므로
+    # 여기선 멱등(IF NOT EXISTS)으로 중복 안전. 컬럼·인덱스는 ORM 정의와 동일하게 맞춘다.
+    op.execute(
+        """
+        CREATE TABLE IF NOT EXISTS automation_runs (
+            id uuid PRIMARY KEY DEFAULT uuid_generate_v4(),
+            domain varchar(20) NOT NULL,
+            job_name varchar(64) NOT NULL,
+            project_id uuid REFERENCES projects(id) ON DELETE CASCADE,
+            org_id uuid,
+            status varchar(16) NOT NULL DEFAULT 'finding',
+            severity varchar(16),
+            title varchar(200) NOT NULL DEFAULT '',
+            body text NOT NULL DEFAULT '',
+            suggested_action varchar(64),
+            payload jsonb NOT NULL DEFAULT '{}'::jsonb,
+            dedup_key varchar(200),
+            actor varchar(16) NOT NULL DEFAULT 'auto',
+            created_at timestamptz NOT NULL DEFAULT now(),
+            resolved_at timestamptz
+        )
+        """
+    )
+    op.execute(
+        "CREATE INDEX IF NOT EXISTS ix_automation_runs_domain_project "
+        "ON automation_runs (domain, project_id, created_at DESC)"
+    )
+    # 미해결(resolved_at IS NULL) 알림은 dedup_key당 1행 — 부분 유니크(재통지 방지).
+    op.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS uq_automation_runs_dedup_open "
+        "ON automation_runs (dedup_key) WHERE resolved_at IS NULL AND dedup_key IS NOT NULL"
+    )
+
 
 def downgrade() -> None:
+    op.execute("DROP TABLE IF EXISTS automation_runs")  # 006 통합분 — 인덱스도 함께 삭제
+
     insp = sa.inspect(op.get_bind())
     for old, new in _TABLE_RENAMES:
         if insp.has_table(new) and not insp.has_table(old):
