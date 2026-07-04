@@ -120,17 +120,25 @@ async def test_different_orgs_do_not_block_each_other(app, monkeypatch):
 
 @pytest.mark.asyncio
 async def test_scanner_is_org_scoped(app, monkeypatch):
-    # org 스코프의 핵심 검증 — 스캐너가 org reader를 쓰고 findings tenant가 호출자 org인지
+    # org 스코프의 핵심 검증 — 스캐너가 org reader를 쓰고 findings tenant가 호출자 org인지.
+    # A(감지 단일화) 후 엔드포인트는 워커 _agent_scanner를 재사용하므로 reader 계약이
+    # campaign.state·get_metrics(date_preset)·metrics.as_of를 따른다.
+    from datetime import UTC, datetime
     from types import SimpleNamespace
 
     from api.routers import management as mgmt
+    from domain.management.contracts.enums import CampaignState
 
     class FakeReader:
         async def list_campaigns(self):
-            return [SimpleNamespace(campaign_id="camp_0", name="테스트")]
+            return [
+                SimpleNamespace(campaign_id="camp_0", name="테스트", state=CampaignState.ACTIVE)
+            ]
 
-        async def get_metrics(self, campaign_id, now):
-            return SimpleNamespace(impressions=0)
+        async def get_metrics(self, campaign_id, now, date_preset=None):
+            return SimpleNamespace(
+                impressions=0, frequency=0.0, roas=None, as_of=datetime.now(UTC)
+            )
 
     captured: dict = {}
 

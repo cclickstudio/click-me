@@ -447,47 +447,13 @@ async def anomaly_notify_scan(
         else:
             reader = await _require_reader(db, org_id)
 
-        async def _org_scanner(_settings) -> tuple[list[dict], list[dict]]:
-            """스케줄러 기본 스캐너와 같은 신호(노출 0) — 단 reader·tenant가 org 스코프."""
-            try:
-                camps = await reader.list_campaigns()
-            except Exception:  # noqa: BLE001 — 조회 실패는 빈 결과(다음 시도)
-                return [], []
-            findings: list[dict] = []
-            normals: list[dict] = []
-            now = datetime.now(UTC)
-            for c in camps:
-                try:
-                    m = await reader.get_metrics(c.campaign_id, now)
-                except Exception:  # noqa: BLE001 — 캠페인 1건 실패가 스캔을 안 막음
-                    continue
-                if m.impressions == 0:
-                    findings.append(
-                        {
-                            "tenant_id": key,  # 실제 org — sink의 fail-closed 대조 활성화
-                            "title": f"게재 점검 — {c.name or c.campaign_id}",
-                            "body": "활성 캠페인인데 노출이 0입니다.",
-                            "meta": {
-                                "campaign_id": c.campaign_id,
-                                "anomaly_type": "no_delivery",
-                            },
-                        }
-                    )
-                else:
-                    normals.append(
-                        {
-                            "tenant_id": key,
-                            "campaign_id": c.campaign_id,
-                            "anomaly_type": "no_delivery",
-                        }
-                    )
-            return findings, normals
-
+        # 감지 로직 단일화(A) — 워커와 같은 _agent_scanner를 org 스코프 reader/tenant로 재사용.
+        # 게재0만이 아니라 성과 진단·소재 피로·계정 재무 룰까지 동일 커버리지(APScheduler 정본).
         from functools import partial  # noqa: PLC0415
 
         from domain.management.notifications import LogNotificationSink  # noqa: PLC0415
         from domain.management.remediation.advisor import consult as _consult  # noqa: PLC0415
-        from domain.management.scheduler import run_scan  # noqa: PLC0415
+        from domain.management.scheduler import _agent_scanner, run_scan  # noqa: PLC0415
 
         # 채널 추가 시 build_notification_sink(notifications.py)와 함께 갱신 —
         # 매핑 이중화는 org reader consult 주입 때문(의도적, log→chat 시연 유지).
@@ -514,7 +480,8 @@ async def anomaly_notify_scan(
                 fallback=LogNotificationSink(),
                 consult=partial(_consult, reader=reader),
             )
-        count = await run_scan(settings, sink, scanner=_org_scanner)
+        scanner = partial(_agent_scanner, reader=reader, tenant_id=key)
+        count = await run_scan(settings, sink, scanner=scanner)
         summary = sink.summary()
         # 쿨다운은 성공한 스캔만 소진 — 실패(예외) 시 즉시 재시도 가능해야 한다.
         _notify_scan_last[key] = time.monotonic()

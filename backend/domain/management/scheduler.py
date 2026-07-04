@@ -65,8 +65,12 @@ async def _default_scanner(settings) -> tuple[list[dict], list[dict]]:
     return findings, normals
 
 
-async def _account_rules_scan(settings) -> list[dict]:
-    """계정 단위 룰(지갑 소진율·월 목표 가드레일) — 조회 실패는 빈 결과(다음 틱 재시도)."""
+async def _account_rules_scan(settings, *, reader=None, tenant_id: str = "global") -> list[dict]:
+    """계정 단위 룰(지갑 소진율·월 목표 가드레일) — 조회 실패는 빈 결과(다음 틱 재시도).
+
+    reader 미지정=build_reader(전역), 지정=org 스코프 reader(notify-scan 재사용). tenant_id는
+    findings에 실려 sink·reconcile의 org 대조에 쓰인다.
+    """
     import calendar  # noqa: PLC0415
     from datetime import UTC, datetime  # noqa: PLC0415
 
@@ -74,7 +78,7 @@ async def _account_rules_scan(settings) -> list[dict]:
     from domain.management.wiring import build_reader  # noqa: PLC0415
 
     try:
-        reader = build_reader(settings)
+        reader = reader or build_reader(settings)
         funding = await reader.get_account_funding()
         month_spent = await reader.get_account_spend("this_month")
     except Exception:  # noqa: BLE001 — rate limit 등 조회 실패는 통지 안 함
@@ -89,11 +93,17 @@ async def _account_rules_scan(settings) -> list[dict]:
         amount_spent_krw=funding.amount_spent_krw or 0,
         projection_krw=projection or 0,
         target_krw=DEFAULT_MONTHLY_TARGET_KRW,
+        tenant_id=tenant_id,
     )
 
 
 def account_rule_findings(
-    *, spend_cap_krw: int, amount_spent_krw: int, projection_krw: int, target_krw: int
+    *,
+    spend_cap_krw: int,
+    amount_spent_krw: int,
+    projection_krw: int,
+    target_krw: int,
+    tenant_id: str = "global",
 ) -> list[dict]:
     """계정 단위 룰 판정(순수 함수) — 지갑 사용률 95/80% + 런레이트의 월 목표 초과.
 
@@ -110,7 +120,7 @@ def account_rule_findings(
         if pct >= WALLET_ALERT_PCT:
             findings.append(
                 {
-                    "tenant_id": "global",
+                    "tenant_id": tenant_id,
                     "title": "지갑 거의 소진",
                     "body": f"충전 한도의 {pct}%를 사용했습니다. 충전이 필요해요.",
                     "meta": {"rule": "wallet_depleted", "pct": pct},
@@ -119,7 +129,7 @@ def account_rule_findings(
         elif pct >= WALLET_WARN_PCT:
             findings.append(
                 {
-                    "tenant_id": "global",
+                    "tenant_id": tenant_id,
                     "title": "지갑 소진 주의",
                     "body": f"충전 한도의 {pct}%를 사용했습니다.",
                     "meta": {"rule": "wallet_warning", "pct": pct},
@@ -129,7 +139,7 @@ def account_rule_findings(
         pace = round(projection_krw / target_krw * 100)
         findings.append(
             {
-                "tenant_id": "global",
+                "tenant_id": tenant_id,
                 "title": "월 예산 가드레일",
                 "body": f"현재 페이스면 월 목표의 {pace}%까지 소진될 것으로 예상됩니다.",
                 "meta": {"rule": "budget_pace_over", "pace_pct": pace},
@@ -138,13 +148,19 @@ def account_rule_findings(
     return findings
 
 
-async def _agent_scanner(settings) -> tuple[list[dict], list[dict]]:
+async def _agent_scanner(
+    settings, *, reader=None, tenant_id: str = "global"
+) -> tuple[list[dict], list[dict]]:
     """에이전트 판단 스캐너 — 캠페인별 성과 진단(규칙→INCONCLUSIVE시 LLM 재판정) + 결정론 센서.
 
     _default_scanner(순수 규칙)의 상위호환: 게재0·소재피로는 정책 정본 임계로 결정론 유지하되,
     성과 미달은 diagnose_campaign(에이전트)이 맥락으로 판단한다. 성과 목표(target_roas)가 없으면
     성과 진단은 자동 생략(휴리스틱 금지 — 목표를 지어내지 않는다) → 게재0·피로만.
     조회/조립 실패는 규칙 스캐너로 폴백(지장 없음). 임계·통지·기록 파이프라인은 그대로.
+
+    reader 미지정=build_reader(전역, 워커 경로), 지정=org 스코프 reader(notify-scan 재사용 —
+    감지 로직 단일화). tenant_id는 findings/normals에 실려 sink·reconcile의 org 대조에 쓰인다.
+    org 스코프(reader 주입)에서는 잘못된 전역 폴백을 막기 위해 조회 실패 시 빈 결과를 낸다.
 
     (findings, normals) 튜플 반환 — 정상 게재로 확인된 캠페인을 normals로 내보내 reconcile이
     미해결 no_delivery 알림을 auto_normal 해소한다(_default_scanner와 동일 계약, 에이전트 parity).
@@ -157,11 +173,14 @@ async def _agent_scanner(settings) -> tuple[list[dict], list[dict]]:
     from domain.management.detection.agentic_scan import diagnose_campaign  # noqa: PLC0415
     from domain.management.wiring import build_reader  # noqa: PLC0415
 
+    injected = reader is not None  # org 스코프 호출(notify-scan) 여부 — 전역 폴백 억제용
     try:
-        reader = build_reader(settings)
+        reader = reader or build_reader(settings)
         infos = await reader.list_campaigns()
     except Exception as exc:  # noqa: BLE001 — 조회/조립 실패 → 규칙 스캐너로 폴백(지장 없음)
         logger.warning("management 에이전트 스캔 준비 실패 → 규칙 폴백: %s", exc)
+        if injected:  # org 스코프는 전역 _default_scanner로 폴백하면 안 됨(계정 불일치)
+            return [], []
         try:
             return await _default_scanner(settings)  # 규칙 폴백도 (findings, normals) 튜플
         except Exception as exc2:  # noqa: BLE001 — 폴백까지 실패해도 스캐너는 raise하지 않음
@@ -184,7 +203,7 @@ async def _agent_scanner(settings) -> tuple[list[dict], list[dict]]:
         if is_active and (m.impressions or 0) == 0:
             findings.append(
                 {
-                    "tenant_id": "global",
+                    "tenant_id": tenant_id,
                     "title": f"게재 점검 — {name}",
                     "body": "활성 캠페인인데 노출이 0입니다. 심사·예산·타깃을 점검하세요.",
                     "meta": {
@@ -197,7 +216,11 @@ async def _agent_scanner(settings) -> tuple[list[dict], list[dict]]:
         elif is_active:
             # 정상 게재 확인 → 미해결 no_delivery 알림 auto_normal 해소(reconcile).
             normals.append(
-                {"tenant_id": "global", "campaign_id": c.campaign_id, "anomaly_type": "no_delivery"}
+                {
+                    "tenant_id": tenant_id,
+                    "campaign_id": c.campaign_id,
+                    "anomaly_type": "no_delivery",
+                }
             )
         # 에이전트 판단 — 성과 미달(목표 없으면 diagnose_campaign이 None 반환 → 생략).
         dx = await diagnose_campaign(
@@ -207,7 +230,7 @@ async def _agent_scanner(settings) -> tuple[list[dict], list[dict]]:
             atype = dx.get("anomaly_type") or "performance_anomaly"
             findings.append(
                 {
-                    "tenant_id": "global",
+                    "tenant_id": tenant_id,
                     "title": f"성과 진단 — {name}",
                     "body": dx.get("hypothesis") or "성과 이상 신호가 감지됐어요.",
                     "meta": {
@@ -231,7 +254,7 @@ async def _agent_scanner(settings) -> tuple[list[dict], list[dict]]:
             if freq >= FATIGUE_FREQUENCY:
                 findings.append(
                     {
-                        "tenant_id": "global",
+                        "tenant_id": tenant_id,
                         "title": f"소재 피로 — {name}",
                         "body": f"빈도 {freq:.1f}회 — 도달 피로 구간, 소재 교체 검토.",
                         "meta": {
@@ -241,7 +264,7 @@ async def _agent_scanner(settings) -> tuple[list[dict], list[dict]]:
                         },
                     }
                 )
-    findings.extend(await _account_rules_scan(settings))
+    findings.extend(await _account_rules_scan(settings, reader=reader, tenant_id=tenant_id))
     return findings, normals
 
 

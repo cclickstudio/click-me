@@ -297,6 +297,28 @@ async def test_agent_mode_reconcile_resolves_normal_campaign(monkeypatch):
     assert any(nm["anomaly_type"] == "no_delivery" for nm in sink.reconciled)  # reconcile 발동
 
 
+# ── 감지 단일화(A) — org 스코프 reader/tenant 재사용 ───────────────
+
+
+async def test_agent_scanner_org_scoped_reader_and_tenant():
+    """A — reader/tenant 주입 시 org 스코프. findings가 주입 tenant를 단다."""
+    findings, _normals = await _agent_scanner(
+        SimpleNamespace(), reader=_FakeReader(impressions=0), tenant_id="org-xyz"
+    )
+    assert findings and all(f["tenant_id"] == "org-xyz" for f in findings)
+
+
+async def test_agent_scanner_injected_reader_failure_no_global_fallback():
+    """org 스코프(reader 주입) 조회 실패는 빈 결과 — 전역 _default_scanner로 폴백하지 않는다."""
+
+    class _Boom:
+        async def list_campaigns(self):
+            raise RuntimeError("meta down")
+
+    findings, normals = await _agent_scanner(SimpleNamespace(), reader=_Boom(), tenant_id="org-1")
+    assert findings == [] and normals == []
+
+
 # ── 주간 리포트 워커 잡 (run_weekly_report) ────────────────────────
 
 
