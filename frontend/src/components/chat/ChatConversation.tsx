@@ -14,6 +14,7 @@ import SimResultWidget from './SimResultWidget';
 import DebateStreamWidget from './DebateStreamWidget';
 import DebateSummaryWidget from './DebateSummaryWidget';
 import GenFormWidget from './GenFormWidget';
+import GenProgressWidget from './GenProgressWidget';
 import GenResultWidget from './GenResultWidget';
 import SimGenListWidget from './SimGenListWidget';
 import ActionCards, { type ActionCard } from './ActionCards';
@@ -1783,6 +1784,14 @@ export default function ChatConversation({
                         onComplete={handleGenComplete}
                       />
                     )}
+                    {msg.meta?.widget?.type === 'gen_progress' &&
+                      msg.meta.widget.data?.generation_id && (
+                        <GenProgressWidget
+                          generationId={msg.meta.widget.data.generation_id}
+                          projectId={projectId}
+                          onComplete={handleGenComplete}
+                        />
+                      )}
                     {msg.meta?.widget?.type === 'gen_result' &&
                       msg.meta.widget.data?.generation_id && (
                         <GenResultWidget

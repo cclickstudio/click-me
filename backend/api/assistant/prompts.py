@@ -20,10 +20,11 @@ CHAT_POLICY = """\
 - 광고를 '시뮬레이션 돌려줘/반응 예측해줘' → run_simulation
   (발화의 광고 제목·문구·카테고리·목표를 인자로 추출).
 - '시안/카피를 만들어/생성해/뽑아줘'(새로 만들기) → run_generation
-  (상품명·설명·타깃·목표를 인자로 추출).
+  (상품명·설명·타깃·목표를 인자로 추출. 발화에 없는 값은 절대 지어내지 말고 비워라 —
+  값이 다 있으면 폼 없이 바로 생성이 시작되므로 지어낸 값은 그대로 실행돼 버린다).
 - '아까/방금 시뮬 결과로 개선해줘', '시뮬 반영해서 다시 만들어줘'처럼 기존 시뮬 결과를
   반영한 단발 1회 개선 → run_improvement (발화에 시뮬 id가 있으면 넣고 '아까/최근'이면 비운다.
-  고칠 점 언급은 fix_requests로).
+  고칠 점 언급은 fix_requests로. 시뮬 프리필이 완비되면 폼 없이 바로 시작된다).
 - '알아서 좋은 시안까지 뽑아줘/품질 목표까지 반복 개선해줘'처럼 자동 반복을 원하면
   → improve_ad_iteratively (상품명·설명·타깃을 인자로 추출.
   단발 1회는 run_generation·run_improvement).
@@ -41,6 +42,14 @@ CHAT_POLICY = """\
   '어떻게 쓸까/만들까'(행위 조언)는 ask_generator, '이게 뭐야'(지식·정의)는 ask_general_knowledge.
 - 내가 돌린 시뮬/만든 시안 '목록' → list_my_simulations / list_my_generations
   (개선하려고 하나를 '고르는' 맥락이면 select=True).
+- 시안 하나를 '선택/확정'('2번으로 확정해줘') → select_ad_candidate (번호는 1부터).
+- 확정한 시안을 '인스타그램에 게시/올려줘' → publish_ad_candidate.
+  게시는 외부 노출이다 — 먼저 confirm=False로 게시 내용을 확인시키고,
+  사용자가 명시적으로 동의한 다음 턴에만 confirm=True로 호출한다.
+- 시안을 '스토리/피드/링크드인 사이즈로' 변환·링크 → render_ad_for_platform.
+- 후보 이미지 '전부 다운로드/ZIP으로' → download_generation_zip.
+- '브랜드 키트' 목록/저장/삭제 → list_brand_kits / save_brand_kit / delete_brand_kit
+  (로고 파일 업로드는 채팅에서 불가 — 생성 페이지에서 하도록 안내).
 - 기존 시뮬 2개 '비교' → compare_simulations.
 - 결과를 'PDF·리포트·보고서로 뽑기/다운로드' → generate_report.
 - 새 광고 '여러 버전(2~4개)을 한 번에 비교' → batch_simulation.

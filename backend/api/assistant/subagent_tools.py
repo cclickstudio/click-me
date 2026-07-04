@@ -25,7 +25,14 @@ from api.assistant.wiring import (
 )
 from core.schemas import ChatMessage
 from domain.chat import helpers, history, widgets
-from domain.generator.assistant.tools import list_generations
+from domain.generator.assistant.tools import (
+    fetch_generation_result,
+    list_generations,
+    start_improve_generation,
+)
+from domain.generator.assistant.tools import (
+    run_generation as start_generation_now,
+)
 from domain.simulation.assistant.tools import list_simulations
 
 _VALID_CAMPAIGN_ACTIONS = ("pause", "activate", "increase_budget", "decrease_budget")
@@ -230,8 +237,10 @@ def build_chat_tools(settings, memory=None, clio_retriever=None) -> list:
         state: Annotated[dict, InjectedState],
         tool_call_id: Annotated[str, InjectedToolCallId],
     ) -> Command:
-        """사용자가 광고 '시안/카피를 만들어/생성해/뽑아'달라고 하면 호출. 생성 입력 폼을 띄운다.
-        발화에 있는 값만 채우고 없으면 비운다. 폼 호출 후 한 줄로만 안내하라."""
+        """사용자가 광고 '시안/카피를 만들어/생성해/뽑아'달라고 하면 호출.
+        발화에 있는 값만 채우고 없으면 비운다(지어내기 금지).
+        상품명·설명·타깃이 모두 있으면 폼 없이 바로 생성이 시작되고(진행 카드),
+        하나라도 비면 입력 폼이 뜬다. 호출 후 한 줄로만 안내하라."""
         gen_data = {
             "product_name": product_name or None,
             "product_description": product_description or None,
@@ -239,6 +248,28 @@ def build_chat_tools(settings, memory=None, clio_retriever=None) -> list:
             "campaign_objective": campaign_objective or None,
         }
         helpers.spawn_persist(state.get("project_id"), "gen_input", gen_data)
+        project_id = state.get("project_id")
+        # 필수 3요소 + 프로젝트 완비 → 폼 스킵 즉시 실행(진행 카드로 관찰)
+        if product_name and product_description and target_audience and project_id:
+            started = await start_generation_now(
+                product_name=product_name,
+                product_description=product_description,
+                target_audience=target_audience,
+                campaign_objective=campaign_objective or "conversion",
+                project_id=project_id,
+                created_by=str(state.get("user_id")) if state.get("user_id") else None,
+            )
+            return Command(
+                update={
+                    **widgets.gen_progress(started["generation_id"], started["stream_url"]),
+                    "messages": [
+                        ToolMessage(
+                            "광고 생성을 바로 시작했어요. 진행 상황은 카드에서 확인하세요.",
+                            tool_call_id=tool_call_id,
+                        )
+                    ],
+                }
+            )
         return Command(
             update={
                 **widgets.gen_form(gen_data),
@@ -319,10 +350,11 @@ def build_chat_tools(settings, memory=None, clio_retriever=None) -> list:
         state: Annotated[dict, InjectedState],
         tool_call_id: Annotated[str, InjectedToolCallId],
     ) -> Command:
-        """기존 '시뮬 결과를 반영해 개선 시안을 만들어'달라고 하면 호출(단발 1회, 개선 폼).
+        """기존 '시뮬 결과를 반영해 개선 시안을 만들어'달라고 하면 호출(단발 1회).
         발화에 시뮬 id가 있으면 넣고, '아까/방금/최근'이면 비워라(최근 완료 시뮬 자동 선택).
-        고칠 점 언급은 fix_requests로. 자동 반복 개선은 improve_ad_iteratively,
-        시뮬 없이 새로 만들기는 run_generation. 폼 호출 후 한 줄로만 안내하라."""
+        고칠 점 언급은 fix_requests로. 시뮬 프리필이 완비되면 폼 없이 바로 시작되고(진행 카드),
+        아니면 개선 폼이 뜬다. 자동 반복 개선은 improve_ad_iteratively,
+        시뮬 없이 새로 만들기는 run_generation. 호출 후 한 줄로만 안내하라."""
         sid = simulation_id or ""
         if not sid:
             project_id = state.get("project_id") or ""
@@ -357,6 +389,26 @@ def build_chat_tools(settings, memory=None, clio_retriever=None) -> list:
                 }
             )
         helpers.spawn_persist(state.get("project_id"), "gen_input", gen_data)
+        project_id = state.get("project_id")
+        # 시뮬 프리필 완비(요약·상품명) + 프로젝트 → 폼 스킵 즉시 실행(진행 카드)
+        if gen_data.get("simulation_summary") and gen_data.get("product_name") and project_id:
+            started = await start_improve_generation(
+                gen_data,
+                project_id=project_id,
+                created_by=str(state.get("user_id")) if state.get("user_id") else None,
+            )
+            return Command(
+                update={
+                    **widgets.gen_progress(started["generation_id"], started["stream_url"]),
+                    "messages": [
+                        ToolMessage(
+                            "시뮬 결과를 반영한 개선 생성을 바로 시작했어요. "
+                            "진행 상황은 카드에서 확인하세요.",
+                            tool_call_id=tool_call_id,
+                        )
+                    ],
+                }
+            )
         return Command(
             update={
                 **widgets.gen_form(gen_data),
@@ -413,6 +465,223 @@ def build_chat_tools(settings, memory=None, clio_retriever=None) -> list:
                 "messages": [ToolMessage(notice, tool_call_id=tool_call_id)],
             }
         )
+
+    async def _resolve_generation(state: dict, generation_id: str) -> tuple[str, dict] | str:
+        """generation_id(비면 최근 완료 생성)를 상세와 함께 해석. 실패 시 안내문 str 반환."""
+        gid = (generation_id or "").strip()
+        if not gid:
+            items = await list_generations(state.get("project_id") or "", limit=10)
+            done = [i for i in items if i.get("status") == "completed"]
+            if not done:
+                return "완료된 광고 생성이 없어요. 먼저 시안을 만들어주세요."
+            gid = done[0]["id"]
+        detail = await fetch_generation_result(gid)
+        if detail.get("error"):
+            return "해당 생성 결과를 찾을 수 없어요."
+        return gid, detail
+
+    @tool
+    async def select_ad_candidate(
+        candidate_number: int = 0,
+        candidate_id: str = "",
+        generation_id: str = "",
+        *,
+        state: Annotated[dict, InjectedState],
+    ) -> str:
+        """생성된 시안 중 하나를 최종 후보로 '선택/확정'한다('2번 시안으로 확정해줘').
+        번호 언급이면 candidate_number(1부터), id 언급이면 candidate_id.
+        '아까/방금 만든'이면 generation_id를 비워라(최근 완료 생성 자동 선택)."""
+        from domain.generator.service import generator_service  # noqa: PLC0415
+
+        resolved = await _resolve_generation(state, generation_id)
+        if isinstance(resolved, str):
+            return resolved
+        gid, detail = resolved
+        cands = detail.get("candidates") or []
+        cid = (candidate_id or "").strip()
+        if not cid:
+            if not 1 <= candidate_number <= len(cands):
+                return f"몇 번 시안으로 확정할지 알려주세요 (1~{len(cands)}번)."
+            cid = cands[candidate_number - 1]["candidate_id"]
+        if not await generator_service.select_candidate(gid, cid):
+            return "해당 후보를 찾지 못했어요. 시안 목록을 다시 확인해주세요."
+        picked = next((c for c in cands if c.get("candidate_id") == cid), {})
+        return (
+            f"후보를 확정했어요 — 전략 {picked.get('strategy') or '?'}"
+            f", 헤드라인 '{picked.get('headline') or ''}'. 게시를 원하시면 말씀해주세요."
+        )
+
+    @tool
+    async def publish_ad_candidate(
+        caption: str = "",
+        generation_id: str = "",
+        confirm: bool = False,
+        *,
+        state: Annotated[dict, InjectedState],
+    ) -> str:
+        """확정(선택)된 시안을 Instagram에 게시한다. 게시는 외부 노출이므로 사용자가
+        명시적으로 동의('응 게시해')한 경우에만 confirm=True로 호출한다.
+        동의 전엔 confirm=False로 호출해 게시 예정 내용을 확인시킨다."""
+        from domain.generator.service import generator_service  # noqa: PLC0415
+
+        resolved = await _resolve_generation(state, generation_id)
+        if isinstance(resolved, str):
+            return resolved
+        gid, detail = resolved
+        sel = detail.get("selected_candidate_id")
+        if not sel:
+            return "아직 확정된 시안이 없어요. 먼저 시안을 선택(확정)해주세요."
+        picked = next(
+            (c for c in (detail.get("candidates") or []) if c.get("candidate_id") == sel), {}
+        )
+        if not confirm:
+            return (
+                f"게시 준비 완료 — 확정 시안 '{picked.get('headline') or ''}'"
+                f", 캡션 {caption or '(없음)'}. 인스타그램에 실제 게시됩니다. 게시할까요?"
+            )
+        res = await generator_service.publish_candidate(gid, sel, caption or "")
+        if res is None:
+            return "게시할 후보를 찾지 못했어요."
+        if res.get("error") == "selected_candidate_only":
+            return "선택(확정)된 후보만 게시할 수 있어요. 먼저 시안을 확정해주세요."
+        status = res.get("status")
+        if status == "published":
+            return f"인스타그램에 게시했어요 (media_id {res.get('media_id')})."
+        if status == "mocked":
+            return "게시를 모의(mock) 처리했어요 — Meta 자격증명이 없어 실제 게시는 안 됐습니다."
+        return f"게시에 실패했어요 — {res.get('error') or '원인 미상'}."
+
+    @tool
+    async def render_ad_for_platform(
+        platform: str = "ig_feed",
+        candidate_number: int = 0,
+        candidate_id: str = "",
+        generation_id: str = "",
+        *,
+        state: Annotated[dict, InjectedState],
+    ) -> str:
+        """시안을 플랫폼 규격으로 리레이아웃한 이미지 링크를 준다
+        ('스토리 사이즈로', '페북 피드용으로'). platform은 ig_feed|ig_story|fb_feed|linkedin.
+        후보 지정이 없으면 확정 후보(없으면 1순위)를 쓴다."""
+        from domain.generator.pipeline.relayout import PLATFORM_SIZES  # noqa: PLC0415
+
+        if platform not in PLATFORM_SIZES:
+            return f"지원하는 플랫폼은 {', '.join(PLATFORM_SIZES)} 입니다."
+        cid = (candidate_id or "").strip()
+        if not cid:
+            resolved = await _resolve_generation(state, generation_id)
+            if isinstance(resolved, str):
+                return resolved
+            _, detail = resolved
+            cands = detail.get("candidates") or []
+            if 1 <= candidate_number <= len(cands):
+                cid = cands[candidate_number - 1]["candidate_id"]
+            else:
+                cid = detail.get("selected_candidate_id") or (
+                    cands[0]["candidate_id"] if cands else ""
+                )
+        if not cid:
+            return "리레이아웃할 후보를 찾지 못했어요."
+        w, h = PLATFORM_SIZES[platform]
+        url = f"/api/generator/candidates/{cid}/render?platform={platform}"
+        return f"{platform}({w}x{h}) 리레이아웃 이미지 링크예요 — {url} (신규 생성물부터 지원)"
+
+    @tool
+    async def download_generation_zip(
+        generation_id: str = "",
+        *,
+        state: Annotated[dict, InjectedState],
+    ) -> str:
+        """생성된 후보 이미지 전체를 ZIP으로 받는 다운로드 링크를 준다
+        ('시안 전부 다운로드/압축해줘')."""
+        resolved = await _resolve_generation(state, generation_id)
+        if isinstance(resolved, str):
+            return resolved
+        gid, detail = resolved
+        n = detail.get("candidate_count", 0)
+        return f"후보 {n}개 ZIP 다운로드 링크예요 — /api/generator/generations/{gid}/download-zip"
+
+    @tool
+    async def list_brand_kits(*, state: Annotated[dict, InjectedState]) -> str:
+        """조직에 저장된 브랜드 키트(색·로고·톤 프리셋) 목록을 보여준다."""
+        from domain.generator.service import brand_kit as brand_kit_service  # noqa: PLC0415
+
+        org = state.get("org_id")
+        if not org:
+            return "조직 정보가 없어 브랜드 키트를 조회할 수 없어요."
+        kits = await brand_kit_service.list_kits(str(org))
+        if not kits:
+            return "저장된 브랜드 키트가 없어요."
+        lines = [
+            f"- {k['name']} — 색 {k.get('brand_color') or '없음'}"
+            f", 톤 {k.get('tone_and_manner') or '없음'}"
+            f", 로고 {'있음' if k.get('brand_logo_key') else '없음'}"
+            for k in kits
+        ]
+        return "\n".join(lines)
+
+    @tool
+    async def save_brand_kit(
+        name: str,
+        brand_color: str = "",
+        tone_and_manner: str = "",
+        *,
+        state: Annotated[dict, InjectedState],
+    ) -> str:
+        """브랜드 키트를 저장한다('브랜드 키트로 저장해줘'). 같은 이름이 있으면
+        말한 항목만 갱신한다(언급 없는 항목·로고는 유지). 로고 업로드는 생성 페이지에서."""
+        import uuid as _uuid  # noqa: PLC0415
+
+        from domain.generator.service import brand_kit as brand_kit_service  # noqa: PLC0415
+
+        org = state.get("org_id")
+        if not org:
+            return "조직 정보가 없어 브랜드 키트를 저장할 수 없어요."
+        if not name.strip():
+            return "키트 이름을 알려주세요."
+        kits = await brand_kit_service.list_kits(str(org))
+        existing = next((k for k in kits if k["name"] == name.strip()), None)
+        if existing:
+            await brand_kit_service.update_kit(
+                str(org),
+                existing["id"],
+                name=name.strip(),
+                brand_color=brand_color or existing.get("brand_color"),
+                brand_logo_key=existing.get("brand_logo_key"),
+                tone_and_manner=tone_and_manner or existing.get("tone_and_manner"),
+            )
+            return f"브랜드 키트 '{name.strip()}'을(를) 갱신했어요."
+        created_by = None
+        uid = state.get("user_id")
+        if uid:
+            try:
+                created_by = _uuid.UUID(str(uid))
+            except (ValueError, TypeError):
+                created_by = None
+        await brand_kit_service.create_kit(
+            str(org),
+            created_by,
+            name=name.strip(),
+            brand_color=brand_color or None,
+            tone_and_manner=tone_and_manner or None,
+        )
+        return f"브랜드 키트 '{name.strip()}'을(를) 저장했어요."
+
+    @tool
+    async def delete_brand_kit(name: str, *, state: Annotated[dict, InjectedState]) -> str:
+        """이름으로 브랜드 키트를 삭제한다('X 키트 지워줘')."""
+        from domain.generator.service import brand_kit as brand_kit_service  # noqa: PLC0415
+
+        org = state.get("org_id")
+        if not org:
+            return "조직 정보가 없어 브랜드 키트를 삭제할 수 없어요."
+        kits = await brand_kit_service.list_kits(str(org))
+        target = next((k for k in kits if k["name"] == name.strip()), None)
+        if target is None:
+            return f"'{name.strip()}' 이름의 브랜드 키트를 찾지 못했어요."
+        if not await brand_kit_service.delete_kit(str(org), target["id"]):
+            return "브랜드 키트 삭제에 실패했어요."
+        return f"브랜드 키트 '{name.strip()}'을(를) 삭제했어요."
 
     @tool
     async def compare_simulations(
@@ -726,6 +995,13 @@ def build_chat_tools(settings, memory=None, clio_retriever=None) -> list:
         improve_ad_iteratively,
         list_my_simulations,
         list_my_generations,
+        select_ad_candidate,
+        publish_ad_candidate,
+        render_ad_for_platform,
+        download_generation_zip,
+        list_brand_kits,
+        save_brand_kit,
+        delete_brand_kit,
         compare_simulations,
         generate_report,
         batch_simulation,

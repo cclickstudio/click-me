@@ -48,6 +48,17 @@ def gen_loop(loop_id: str, stream_url: str) -> dict:
     }
 
 
+def gen_progress(generation_id: str, stream_url: str) -> dict:
+    """단발 생성 진행 카드 — 채팅 즉시 실행 시 진행률·완료를 stream_url(SSE)로 관찰."""
+    return {
+        "widget": {
+            "type": "gen_progress",
+            "data": {"generation_id": generation_id, "stream_url": stream_url},
+        },
+        "source": GENERATOR,
+    }
+
+
 def report_ready(project_id: str | None, period: str) -> dict:
     """리포트 다운로드 버튼 — 실제 파일은 /api/chat/report. period=month|all."""
     return {

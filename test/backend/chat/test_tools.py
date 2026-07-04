@@ -64,6 +64,46 @@ async def test_run_generation_emits_gen_form(tools):
 
 
 @pytest.mark.asyncio
+async def test_run_generation_complete_args_starts_immediately(tools, monkeypatch):
+    # 상품명·설명·타깃 + 프로젝트 완비 → 폼 없이 즉시 실행(진행 카드)
+    import api.assistant.subagent_tools as st
+
+    captured = {}
+
+    async def _start(**kw):
+        captured.update(kw)
+        return {"generation_id": "g9", "stream_url": "/api/generator/generations/g9/stream"}
+
+    monkeypatch.setattr(st, "start_generation_now", _start)
+    cmd = await tools["run_generation"].coroutine(
+        state=_state(project_id="p1"),
+        tool_call_id="t1",
+        product_name="수분크림",
+        product_description="산뜻한 수분 크림",
+        target_audience="20대 여성",
+    )
+    assert cmd.update["widget"]["type"] == "gen_progress"
+    assert cmd.update["widget"]["data"]["generation_id"] == "g9"
+    assert "/stream" in cmd.update["widget"]["data"]["stream_url"]
+    assert cmd.update["source"] == "generator"
+    assert captured["project_id"] == "p1"
+    assert captured["campaign_objective"] == "conversion"
+
+
+@pytest.mark.asyncio
+async def test_run_generation_complete_args_without_project_falls_back_to_form(tools):
+    # 프로젝트 미선택이면 값이 완비돼도 폼(프로젝트 선택 포함) 폴백
+    cmd = await _run(
+        tools,
+        "run_generation",
+        product_name="수분크림",
+        product_description="산뜻한 수분 크림",
+        target_audience="20대 여성",
+    )
+    assert cmd.update["widget"]["type"] == "gen_form"
+
+
+@pytest.mark.asyncio
 async def test_create_campaign_maps_objective_and_budget(tools):
     cmd = await _run(tools, "create_campaign", name="", objective="leads", total_budget_krw=50000)
     assert cmd.update["widget"] == {
