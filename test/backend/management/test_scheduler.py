@@ -195,7 +195,7 @@ async def test_agent_scanner_flags_zero_impressions(monkeypatch):
     monkeypatch.setattr(
         "domain.management.wiring.build_reader", lambda _s: _FakeReader(impressions=0)
     )
-    findings = await _agent_scanner(SimpleNamespace())
+    findings, _normals = await _agent_scanner(SimpleNamespace())
     rules = [f["meta"]["rule"] for f in findings]
     assert "zero_impressions" in rules
 
@@ -207,10 +207,12 @@ async def test_agent_scanner_flags_fatigue(monkeypatch):
         "domain.management.wiring.build_reader",
         lambda _s: _FakeReader(impressions=500, frequency=4.0),
     )
-    findings = await _agent_scanner(SimpleNamespace())
+    findings, normals = await _agent_scanner(SimpleNamespace())
     rules = [f["meta"]["rule"] for f in findings]
     assert "creative_fatigue" in rules
     assert "zero_impressions" not in rules  # 노출 있음
+    # 노출>0 활성 캠페인 → 정상 게재로 no_delivery normals에 오른다(reconcile parity, B).
+    assert any(nm["anomaly_type"] == "no_delivery" for nm in normals)
 
 
 @pytest.mark.asyncio
@@ -222,8 +224,9 @@ async def test_agent_scanner_falls_back_and_never_raises(monkeypatch):
             raise RuntimeError("meta down")
 
     monkeypatch.setattr("domain.management.wiring.build_reader", lambda _s: _BoomReader())
-    findings = await _agent_scanner(SimpleNamespace())
-    assert isinstance(findings, list)  # 폴백(규칙)도 같은 고장 → [] 로 안전 강등
+    # 준비 실패 → 규칙 폴백. 핵심은 "raise하지 않고 (findings, normals) 튜플을 돌려준다".
+    findings, normals = await _agent_scanner(SimpleNamespace())
+    assert isinstance(findings, list) and isinstance(normals, list)
 
 
 # ── 4룰 커버리지 + 파이프라인 무변경 (T4) ──────────────────────────
@@ -245,7 +248,7 @@ async def test_agent_scanner_covers_all_rule_types(monkeypatch):
             amount_spent_krw=96_000,
         ),
     )
-    findings = await _agent_scanner(SimpleNamespace(management_default_target_roas=3.0))
+    findings, _normals = await _agent_scanner(SimpleNamespace(management_default_target_roas=3.0))
     rules = {f["meta"]["rule"] for f in findings}
     assert {"zero_impressions", "creative_fatigue", "wallet_depleted"} <= rules
     assert "performance_below_target" in rules  # 에이전트 판단(목표 설정 시)
@@ -268,6 +271,30 @@ async def test_run_scan_with_agent_scanner_notifies_and_records(monkeypatch):
     n = await run_scan(settings, sink, scanner=_scanner_for(settings), recorder=recorder)
     assert n == len(sink.calls) == len(recorded)  # 통지 수 == 기록 수 == 발견 수
     assert "zero_impressions" in recorded and "creative_fatigue" in recorded
+
+
+@pytest.mark.asyncio
+async def test_agent_mode_reconcile_resolves_normal_campaign(monkeypatch):
+    """B — 에이전트 모드에서도 정상 게재 캠페인 normals가 sink.reconcile로 전달(auto_normal)."""
+
+    class _ReconcileSink(_FakeSink):
+        def __init__(self):
+            super().__init__()
+            self.reconciled: list[dict] = []
+
+        async def reconcile(self, normals):
+            self.reconciled.extend(normals)
+            return len(normals)
+
+    # 활성·노출>0 → 이상 없음(findings 0) + no_delivery normals 1.
+    monkeypatch.setattr(
+        "domain.management.wiring.build_reader",
+        lambda _s: _FakeReader(impressions=500, frequency=0.0),
+    )
+    sink = _ReconcileSink()
+    settings = SimpleNamespace(management_scanner_mode="agent")
+    await run_scan(settings, sink, scanner=_scanner_for(settings))
+    assert any(nm["anomaly_type"] == "no_delivery" for nm in sink.reconciled)  # reconcile 발동
 
 
 # ── 스캐너 모드 선택 (_scanner_for) ────────────────────────────────

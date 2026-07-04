@@ -132,13 +132,17 @@ def account_rule_findings(
     return findings
 
 
-async def _agent_scanner(settings) -> list[dict]:
+async def _agent_scanner(settings) -> tuple[list[dict], list[dict]]:
     """에이전트 판단 스캐너 — 캠페인별 성과 진단(규칙→INCONCLUSIVE시 LLM 재판정) + 결정론 센서.
 
     _default_scanner(순수 규칙)의 상위호환: 게재0·소재피로는 정책 정본 임계로 결정론 유지하되,
     성과 미달은 diagnose_campaign(에이전트)이 맥락으로 판단한다. 성과 목표(target_roas)가 없으면
     성과 진단은 자동 생략(휴리스틱 금지 — 목표를 지어내지 않는다) → 게재0·피로만.
     조회/조립 실패는 규칙 스캐너로 폴백(지장 없음). 임계·통지·기록 파이프라인은 그대로.
+
+    (findings, normals) 튜플 반환 — 정상 게재로 확인된 캠페인을 normals로 내보내 reconcile이
+    미해결 no_delivery 알림을 auto_normal 해소한다(_default_scanner와 동일 계약, 에이전트 parity).
+    finding meta엔 panel_sink용 anomaly_type과 automation_runs용 rule을 함께 싣는다.
     """
     from datetime import UTC, datetime  # noqa: PLC0415
 
@@ -153,17 +157,16 @@ async def _agent_scanner(settings) -> list[dict]:
     except Exception as exc:  # noqa: BLE001 — 조회/조립 실패 → 규칙 스캐너로 폴백(지장 없음)
         logger.warning("management 에이전트 스캔 준비 실패 → 규칙 폴백: %s", exc)
         try:
-            # _default_scanner는 (findings, normals) 튜플 — 에이전트 폴백은 findings만 취한다.
-            fallback_findings, _ = await _default_scanner(settings)
-            return fallback_findings
+            return await _default_scanner(settings)  # 규칙 폴백도 (findings, normals) 튜플
         except Exception as exc2:  # noqa: BLE001 — 폴백까지 실패해도 스캐너는 raise하지 않음
             logger.warning("management 규칙 폴백도 실패(빈 결과): %s", exc2)
-            return []
+            return [], []
 
     now = datetime.now(UTC)
     # 성과 미달 판정 목표 — 설정에 기본 목표가 있을 때만(없으면 None → 성과 진단 생략).
     target_roas = getattr(settings, "management_default_target_roas", None)
     findings: list[dict] = []
+    normals: list[dict] = []  # 정상 게재로 확인된 캠페인(reconcile용, fail-closed)
     for c in infos:
         name = c.name or c.campaign_id
         is_active = c.state == CampaignState.ACTIVE
@@ -171,21 +174,31 @@ async def _agent_scanner(settings) -> list[dict]:
             m = await reader.get_metrics(c.campaign_id, now)
         except Exception:  # noqa: BLE001 — 캠페인 1건 실패가 전체 스캔을 막지 않게
             continue
-        # 결정론 센서 — 게재 0(활성인데 노출 없음): 값싼 프리필터.
+        # 결정론 센서 — 게재 0(활성인데 노출 없음): 값싼 프리필터. 정상 게재면 normals로.
         if is_active and (m.impressions or 0) == 0:
             findings.append(
                 {
                     "tenant_id": "global",
                     "title": f"게재 점검 — {name}",
                     "body": "활성 캠페인인데 노출이 0입니다. 심사·예산·타깃을 점검하세요.",
-                    "meta": {"campaign_id": c.campaign_id, "rule": "zero_impressions"},
+                    "meta": {
+                        "campaign_id": c.campaign_id,
+                        "anomaly_type": "no_delivery",
+                        "rule": "zero_impressions",
+                    },
                 }
+            )
+        elif is_active:
+            # 정상 게재 확인 → 미해결 no_delivery 알림 auto_normal 해소(reconcile).
+            normals.append(
+                {"tenant_id": "global", "campaign_id": c.campaign_id, "anomaly_type": "no_delivery"}
             )
         # 에이전트 판단 — 성과 미달(목표 없으면 diagnose_campaign이 None 반환 → 생략).
         dx = await diagnose_campaign(
             reader, settings, c.campaign_id, {"roas": m.roas, "target_roas": target_roas}, m.as_of
         )
         if dx:
+            atype = dx.get("anomaly_type") or "performance_anomaly"
             findings.append(
                 {
                     "tenant_id": "global",
@@ -193,7 +206,8 @@ async def _agent_scanner(settings) -> list[dict]:
                     "body": dx.get("hypothesis") or "성과 이상 신호가 감지됐어요.",
                     "meta": {
                         "campaign_id": c.campaign_id,
-                        "rule": dx.get("anomaly_type") or "performance_anomaly",
+                        "anomaly_type": atype,
+                        "rule": atype,
                         "confidence": dx.get("confidence"),
                         "source": dx.get("source"),
                         "status": dx.get("status"),
@@ -214,11 +228,15 @@ async def _agent_scanner(settings) -> list[dict]:
                         "tenant_id": "global",
                         "title": f"소재 피로 — {name}",
                         "body": f"빈도 {freq:.1f}회 — 도달 피로 구간, 소재 교체 검토.",
-                        "meta": {"campaign_id": c.campaign_id, "rule": "creative_fatigue"},
+                        "meta": {
+                            "campaign_id": c.campaign_id,
+                            "anomaly_type": "audience_fatigue",
+                            "rule": "creative_fatigue",
+                        },
                     }
                 )
     findings.extend(await _account_rules_scan(settings))
-    return findings
+    return findings, normals
 
 
 async def record_finding(finding: dict) -> None:
