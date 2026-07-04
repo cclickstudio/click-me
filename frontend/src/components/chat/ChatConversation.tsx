@@ -933,30 +933,44 @@ export default function ChatConversation({
           return; // 세션 생성 실패 — 화면 표시는 유지, 영속만 생략
         }
       }
-      try {
-        const { messages: saved } = await api.chat.appendWidgets(
-          sid,
-          items.map(it => ({ content: it.content, meta: it.meta }))
-        );
-        // 저장된 id를 반영 — 방금 추가한 같은 수의 말풍선을 교체.
-        if (saved?.length === local.length) {
-          setMessages(prev => {
-            const next = [...prev];
-            for (let k = 0; k < saved.length; k++) {
-              const idx = next.length - saved.length + k;
-              const m = saved[k];
-              next[idx] = {
-                id: m.id,
-                role: 'assistant',
-                content: m.content,
-                meta: (m.meta as SourceMeta | null) ?? undefined,
-              };
-            }
-            return next;
-          });
+      // 영속화 — 일시 오류(백엔드 재시작·네트워크)에 대비해 재시도. 실패하면 새로고침 시
+      // 위젯이 사라지므로(시안 결과 등) 조용히 삼키지 않고 경고를 남긴다.
+      const RETRY_DELAYS_MS = [0, 800, 2500];
+      for (let attempt = 0; attempt < RETRY_DELAYS_MS.length; attempt++) {
+        if (RETRY_DELAYS_MS[attempt] > 0) {
+          await new Promise(r => setTimeout(r, RETRY_DELAYS_MS[attempt]));
         }
-      } catch {
-        // 영속화 실패 — 화면 표시는 유지(새로고침 시 사라질 수 있음)
+        try {
+          const { messages: saved } = await api.chat.appendWidgets(
+            sid,
+            items.map(it => ({ content: it.content, meta: it.meta }))
+          );
+          // 저장된 id를 반영 — 방금 추가한 같은 수의 말풍선을 교체.
+          if (saved?.length === local.length) {
+            setMessages(prev => {
+              const next = [...prev];
+              for (let k = 0; k < saved.length; k++) {
+                const idx = next.length - saved.length + k;
+                const m = saved[k];
+                next[idx] = {
+                  id: m.id,
+                  role: 'assistant',
+                  content: m.content,
+                  meta: (m.meta as SourceMeta | null) ?? undefined,
+                };
+              }
+              return next;
+            });
+          }
+          return;
+        } catch (e) {
+          if (attempt === RETRY_DELAYS_MS.length - 1) {
+            console.warn(
+              '[chat] 위젯 메시지 영속화 실패 — 새로고침 시 이 위젯이 사라질 수 있어요.',
+              e
+            );
+          }
+        }
       }
     },
     [projectId, onSessionCreated]
