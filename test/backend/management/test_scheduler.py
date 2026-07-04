@@ -358,6 +358,59 @@ async def test_run_weekly_report_survives_reader_failure(monkeypatch):
     assert await sched.run_weekly_report(SimpleNamespace()) is False
 
 
+# ── 리밸런싱 제안 워커 잡 (run_rebalance_report) ──────────────────
+
+
+@pytest.mark.asyncio
+async def test_run_rebalance_report_records_proposal(monkeypatch):
+    """리밸런싱 제안이 있으면 automation_runs에 적재(actor=auto·dedup=rebalance:from:to)."""
+    from domain.management import scheduler as sched
+
+    monkeypatch.setattr("domain.management.wiring.build_reader", lambda _s: object())
+
+    async def fake_rebal(_reader):
+        return {
+            "proposal": {
+                "from": {"campaign_id": "c_w", "name": "저효율"},
+                "to": {"campaign_id": "c_b", "name": "고효율"},
+                "move_krw": 3000,
+            }
+        }
+
+    monkeypatch.setattr("domain.management.insights.rebalance_proposal", fake_rebal)
+    captured: dict = {}
+
+    async def fake_record(**kw):
+        captured.update(kw)
+
+    monkeypatch.setattr("core.automation.record_automation_run", fake_record)
+    assert await sched.run_rebalance_report(SimpleNamespace()) is True
+    assert captured["job_name"] == "rebalance_proposal"
+    assert captured["dedup_key"] == "rebalance:c_w:c_b"
+    assert captured["payload"]["actor"] == "auto"
+
+
+@pytest.mark.asyncio
+async def test_run_rebalance_report_no_proposal_skips(monkeypatch):
+    """제안 없음이면 적재하지 않고 False(비차단)."""
+    from domain.management import scheduler as sched
+
+    monkeypatch.setattr("domain.management.wiring.build_reader", lambda _s: object())
+
+    async def fake_none(_reader):
+        return {"proposal": None, "note": "제안 없음"}
+
+    monkeypatch.setattr("domain.management.insights.rebalance_proposal", fake_none)
+    called = {"n": 0}
+
+    async def fake_record(**kw):
+        called["n"] += 1
+
+    monkeypatch.setattr("core.automation.record_automation_run", fake_record)
+    assert await sched.run_rebalance_report(SimpleNamespace()) is False
+    assert called["n"] == 0
+
+
 # ── 스캐너 모드 선택 (_scanner_for) ────────────────────────────────
 
 
@@ -376,11 +429,11 @@ def test_scanner_for_unknown_mode_is_rule():
     assert _scanner_for(SimpleNamespace(management_scanner_mode="bogus")) is None
 
 
-def test_settings_scanner_mode_defaults_to_rule():
-    """실제 Settings 로드 시 기본값이 rule인지(옵트인 보장)."""
+def test_settings_scanner_mode_defaults_to_agent():
+    """실제 Settings 기본값 = agent(무승인 자율 판단 기본화, §8). 워커 켜면 성과는 에이전트 판정."""
     from core.config import settings
 
-    assert settings.management_scanner_mode == "rule"
+    assert settings.management_scanner_mode == "agent"
 
 
 @pytest.mark.asyncio

@@ -61,15 +61,10 @@ export default function Page() {
     }
   }, []);
 
-  // 자동 스캔 — 진입 시 1회 + 10분 주기(수동 버튼과 동일 경로). Meta rate limit을 아끼려
-  // 짧게 돌리지 않고, 탭이 숨겨져 있으면 건너뛴다.
+  // 진입 시 1회 스냅샷만 — 상시 이상 감지는 백엔드 워커(APScheduler)가 서버에서 수행하고(§8 전환:
+  // 클라 자동 스캔 루프 제거), 화면은 아래 "서버 자동 점검 결과"로 워커 결과를 읽는다. 재스캔은 수동 버튼.
   useEffect(() => {
     void scanReal();
-    const id = setInterval(() => {
-      if (typeof document !== 'undefined' && document.hidden) return;
-      void scanReal();
-    }, 600_000);
-    return () => clearInterval(id);
   }, [scanReal]);
 
   // 서버 워커가 남긴 자동 점검 결과 로드(진입 시 1회) — 워커는 서버에서 상시 돌고, 화면은 읽기만.

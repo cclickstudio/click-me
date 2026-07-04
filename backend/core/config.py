@@ -115,8 +115,10 @@ class Settings(BaseSettings):
     management_scan_interval_minutes: int = 60
     # 주간 리포트 워커 잡 주기(분) — 기본 주1회(7*24*60). 스케줄러 켜질 때만 함께 돈다.
     management_weekly_report_interval_minutes: int = 10080
-    # 워커 스캔 판단 방식 — rule(결정론 규칙) | agent(에이전트 판단). 기본 rule=옵트인(지장 없음).
-    management_scanner_mode: str = "rule"
+    # 예산 리밸런싱 제안 워커 잡 주기(분) — 기본 일1회. 제안(읽기)만 생성, 실행은 사람 승인.
+    management_rebalance_interval_minutes: int = 1440
+    # 워커 스캔 판단 방식 — rule(결정론 규칙) | agent(에이전트 판단). 기본 agent=무승인 자율 판단.
+    management_scanner_mode: str = "agent"
     # 성과 진단 기본 목표 ROAS — 설정 시 워커가 성과 미달 판단(없으면 성과 진단 생략).
     management_default_target_roas: float | None = None
     # 수동 알림 스캔(/anomaly/notify-scan) 재요청 최소 간격 — org별 429 방지선.

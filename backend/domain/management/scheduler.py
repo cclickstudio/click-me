@@ -30,6 +30,12 @@ register_automation(
     interval_minutes=10080,
     description="최근 7일 성과 요약 다이제스트 생성(읽기 전용 집계) → automation_runs 적재",
 )
+register_automation(
+    "management",
+    "rebalance_proposal",
+    interval_minutes=1440,
+    description="예산 리밸런싱 제안 생성(읽기 — CPC 기반 저효율→고효율, 실행은 사람 승인)",
+)
 
 
 async def _default_scanner(settings) -> tuple[list[dict], list[dict]]:
@@ -379,6 +385,42 @@ async def run_weekly_report(settings) -> bool:
     return True
 
 
+async def run_rebalance_report(settings) -> bool:
+    """예산 리밸런싱 제안 1회 생성 → automation_runs 적재(제안 있을 때만·비차단). 성공 시 True.
+
+    읽기 전용 제안(insights.rebalance_proposal)이라 사이드이펙트 없음 — 실행(예산 이동)은
+    사람 승인(budget-commit)을 그대로 거친다. 제안 없음/실패는 조용히 건너뜀.
+    """
+    from core.automation import record_automation_run  # noqa: PLC0415
+    from domain.management import insights  # noqa: PLC0415
+    from domain.management.wiring import build_reader  # noqa: PLC0415
+
+    try:
+        data = await insights.rebalance_proposal(build_reader(settings))
+    except Exception as exc:  # noqa: BLE001 — 제안 생성 실패가 스케줄러를 죽이지 않게
+        logger.warning("management 리밸런싱 제안 실패(무시): %s", exc)
+        return False
+    prop = data.get("proposal")
+    if not prop:
+        return False
+    frm = prop.get("from") or {}
+    to = prop.get("to") or {}
+    body = (
+        f"{frm.get('name', '?')} → {to.get('name', '?')} 일예산 "
+        f"{prop.get('move_krw', 0):,}원 이동 제안 (실행은 승인 필요)"
+    )
+    await record_automation_run(
+        domain="management",
+        job_name="rebalance_proposal",
+        title="예산 리밸런싱 제안",
+        body=body,
+        status="proposal",
+        payload={"actor": "auto", "proposal": prop},
+        dedup_key=f"rebalance:{frm.get('campaign_id', '')}:{to.get('campaign_id', '')}",
+    )
+    return True
+
+
 _scheduler = None
 
 
@@ -419,16 +461,25 @@ def start_scheduler(settings) -> bool:
         except Exception as exc:  # noqa: BLE001 — 리포트 잡 실패가 스케줄러를 죽이지 않게
             logger.warning("management 주간 리포트 잡 실패(무시): %s", exc)
 
+    async def _rebalance_job() -> None:
+        try:
+            await run_rebalance_report(settings)
+        except Exception as exc:  # noqa: BLE001 — 리밸런싱 잡 실패가 스케줄러를 죽이지 않게
+            logger.warning("management 리밸런싱 잡 실패(무시): %s", exc)
+
     report_interval = getattr(settings, "management_weekly_report_interval_minutes", 10080)
+    rebalance_interval = getattr(settings, "management_rebalance_interval_minutes", 1440)
     _scheduler = AsyncIOScheduler()
     _scheduler.add_job(_job, "interval", minutes=interval, id="mgmt-scan")
     _scheduler.add_job(_report_job, "interval", minutes=report_interval, id="mgmt-weekly-report")
+    _scheduler.add_job(_rebalance_job, "interval", minutes=rebalance_interval, id="mgmt-rebalance")
     _scheduler.start()
     mode = getattr(settings, "management_scanner_mode", "rule")
     logger.info(
-        "management 스케줄러 기동 — 스캔 %d분·스캐너=%s / 주간리포트 %d분",
+        "management 스케줄러 기동 — 스캔 %d분·스캐너=%s / 주간리포트 %d분 / 리밸런싱 %d분",
         interval,
         mode,
         report_interval,
+        rebalance_interval,
     )
     return True
