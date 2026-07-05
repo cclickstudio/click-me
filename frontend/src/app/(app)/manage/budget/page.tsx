@@ -89,24 +89,40 @@ export default function Page() {
       .catch(() => {});
   }, []);
 
-  // 리밸런싱 적용 — 기존 budget-commit(검증·승인·감사)을 두 캠페인에 순서대로.
-  // 감액을 먼저 해 총예산이 순간적으로도 늘지 않게 한다.
+  // 리밸런싱 적용 — 기존 budget-commit(검증·승인·감사) 재사용.
+  // 이전(transfer)은 두 캠페인에 순서대로(감액 먼저 해 총예산이 순간적으로도 늘지 않게).
+  // 단일 조정(adjust)은 그 캠페인 1건만 증액/감액.
   const applyRebalance = async () => {
     if (!rebalance) return;
     setRebalanceBusy(true);
     setRebalanceMsg(null);
     try {
-      await api.management.budgetCommit(rebalance.from.campaign_id, {
-        action: 'decrease_budget',
-        new_daily_budget_krw: rebalance.from.after_krw,
-        shown_budget_before_krw: rebalance.from.daily_budget_krw,
-      });
-      await api.management.budgetCommit(rebalance.to.campaign_id, {
-        action: 'increase_budget',
-        new_daily_budget_krw: rebalance.to.after_krw,
-        shown_budget_before_krw: rebalance.to.daily_budget_krw,
-      });
-      setRebalanceMsg('적용 완료 — 두 캠페인의 일예산을 변경했어요.');
+      if ('campaign' in rebalance) {
+        // 캠페인 1개 — 단일 증액/감액(commit 1건).
+        await api.management.budgetCommit(rebalance.campaign.campaign_id, {
+          action: rebalance.direction === 'increase' ? 'increase_budget' : 'decrease_budget',
+          new_daily_budget_krw: rebalance.campaign.after_krw,
+          shown_budget_before_krw: rebalance.campaign.daily_budget_krw,
+        });
+        setRebalanceMsg(
+          rebalance.direction === 'increase'
+            ? '적용 완료 — 일예산을 증액했어요.'
+            : '적용 완료 — 일예산을 감액했어요.',
+        );
+      } else {
+        // 캠페인 2개+ — 저효율 감액 먼저, 고효율 증액.
+        await api.management.budgetCommit(rebalance.from.campaign_id, {
+          action: 'decrease_budget',
+          new_daily_budget_krw: rebalance.from.after_krw,
+          shown_budget_before_krw: rebalance.from.daily_budget_krw,
+        });
+        await api.management.budgetCommit(rebalance.to.campaign_id, {
+          action: 'increase_budget',
+          new_daily_budget_krw: rebalance.to.after_krw,
+          shown_budget_before_krw: rebalance.to.daily_budget_krw,
+        });
+        setRebalanceMsg('적용 완료 — 두 캠페인의 일예산을 변경했어요.');
+      }
       setRebalance(null);
       void fetchData();
     } catch (e) {
@@ -425,38 +441,77 @@ export default function Page() {
                 </span>
               </p>
               <p className="text-xs text-[#8B95A1] mb-3">
-                최근 7일 CPC를 비교해 저효율 캠페인의 일예산 20%를 고효율 쪽으로 옮기는 제안.
-                적용해도 바로 집행되지 않고 기존 예산 변경 검증·승인 경로를 그대로 거칩니다.
+                최근 7일 실측 기반 제안 — 캠페인이 2개 이상이면 저효율 일예산 20%를 고효율 쪽으로
+                옮기고, 1개면 그 캠페인 소진율에 따라 일예산을 증액·감액합니다. 적용해도 바로
+                집행되지 않고 기존 예산 변경 검증·승인 경로를 그대로 거칩니다.
               </p>
               {rebalance ? (
-                <div className="rounded-xl bg-[#F9FAFB] dark:bg-[#232A36] px-4 py-3">
-                  <p className="text-sm text-[#191F28] dark:text-[#F2F4F6]">
-                    <b>{rebalance.from.name}</b>{' '}
-                    <span className="tabular-nums text-[#8B95A1]">
-                      (CPC ₩{rebalance.from.cpc_krw.toLocaleString()} · ₩
-                      {rebalance.from.daily_budget_krw.toLocaleString()}→₩
-                      {rebalance.from.after_krw.toLocaleString()})
-                    </span>{' '}
-                    → <b>{rebalance.to.name}</b>{' '}
-                    <span className="tabular-nums text-[#8B95A1]">
-                      (CPC ₩{rebalance.to.cpc_krw.toLocaleString()} · ₩
-                      {rebalance.to.daily_budget_krw.toLocaleString()}→₩
-                      {rebalance.to.after_krw.toLocaleString()})
-                    </span>
-                  </p>
-                  <p className="mt-1 text-xs text-[#8B95A1]">{rebalance.reason}</p>
-                  <div className="mt-2 flex justify-end">
-                    <button
-                      onClick={applyRebalance}
-                      disabled={rebalanceBusy}
-                      className="rounded-lg bg-[#3182F6] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#1B6EEB] disabled:opacity-40"
-                    >
-                      {rebalanceBusy
-                        ? '적용 중…'
-                        : `₩${rebalance.move_krw.toLocaleString()} 이동 적용`}
-                    </button>
+                'campaign' in rebalance ? (
+                  // 캠페인 1개 — 단일 증액/감액 제안.
+                  <div className="rounded-xl bg-[#F9FAFB] dark:bg-[#232A36] px-4 py-3">
+                    <p className="text-sm text-[#191F28] dark:text-[#F2F4F6]">
+                      <b>{rebalance.campaign.name}</b>{' '}
+                      <span className="tabular-nums text-[#8B95A1]">
+                        (CPC ₩{rebalance.campaign.cpc_krw.toLocaleString()} · ₩
+                        {rebalance.campaign.daily_budget_krw.toLocaleString()}→₩
+                        {rebalance.campaign.after_krw.toLocaleString()})
+                      </span>{' '}
+                      <span
+                        className={`ml-1 rounded px-1.5 py-0.5 text-[11px] font-semibold ${
+                          rebalance.direction === 'increase'
+                            ? 'bg-[#EBF3FF] text-[#3182F6] dark:bg-[#1E3A5F] dark:text-[#7BB4F5]'
+                            : 'bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300'
+                        }`}
+                      >
+                        {rebalance.direction === 'increase' ? '증액' : '감액'}
+                      </span>
+                    </p>
+                    <p className="mt-1 text-xs text-[#8B95A1]">{rebalance.reason}</p>
+                    <div className="mt-2 flex justify-end">
+                      <button
+                        onClick={applyRebalance}
+                        disabled={rebalanceBusy}
+                        className="rounded-lg bg-[#3182F6] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#1B6EEB] disabled:opacity-40"
+                      >
+                        {rebalanceBusy
+                          ? '적용 중…'
+                          : `₩${rebalance.move_krw.toLocaleString()} ${
+                              rebalance.direction === 'increase' ? '증액' : '감액'
+                            } 적용`}
+                      </button>
+                    </div>
                   </div>
-                </div>
+                ) : (
+                  // 캠페인 2개+ — 저효율→고효율 이전 제안.
+                  <div className="rounded-xl bg-[#F9FAFB] dark:bg-[#232A36] px-4 py-3">
+                    <p className="text-sm text-[#191F28] dark:text-[#F2F4F6]">
+                      <b>{rebalance.from.name}</b>{' '}
+                      <span className="tabular-nums text-[#8B95A1]">
+                        (CPC ₩{rebalance.from.cpc_krw.toLocaleString()} · ₩
+                        {rebalance.from.daily_budget_krw.toLocaleString()}→₩
+                        {rebalance.from.after_krw.toLocaleString()})
+                      </span>{' '}
+                      → <b>{rebalance.to.name}</b>{' '}
+                      <span className="tabular-nums text-[#8B95A1]">
+                        (CPC ₩{rebalance.to.cpc_krw.toLocaleString()} · ₩
+                        {rebalance.to.daily_budget_krw.toLocaleString()}→₩
+                        {rebalance.to.after_krw.toLocaleString()})
+                      </span>
+                    </p>
+                    <p className="mt-1 text-xs text-[#8B95A1]">{rebalance.reason}</p>
+                    <div className="mt-2 flex justify-end">
+                      <button
+                        onClick={applyRebalance}
+                        disabled={rebalanceBusy}
+                        className="rounded-lg bg-[#3182F6] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#1B6EEB] disabled:opacity-40"
+                      >
+                        {rebalanceBusy
+                          ? '적용 중…'
+                          : `₩${rebalance.move_krw.toLocaleString()} 이동 적용`}
+                      </button>
+                    </div>
+                  </div>
+                )
               ) : (
                 <p className="text-xs text-[#B0B8C1]">{rebalanceNote ?? '제안을 불러오는 중…'}</p>
               )}

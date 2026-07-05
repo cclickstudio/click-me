@@ -391,6 +391,36 @@ async def test_run_rebalance_report_records_proposal(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_run_rebalance_report_records_adjust_proposal(monkeypatch):
+    """1개 캠페인 단일 조정(kind=adjust)도 적재 — dedup=rebalance:cid:direction, 문구에 '증액'."""
+    from domain.management import scheduler as sched
+
+    monkeypatch.setattr("domain.management.wiring.build_reader", lambda _s: object())
+
+    async def fake_rebal(_reader):
+        return {
+            "proposal": {
+                "kind": "adjust",
+                "direction": "increase",
+                "campaign": {"campaign_id": "c1", "name": "여름 캠페인"},
+                "move_krw": 2000,
+            }
+        }
+
+    monkeypatch.setattr("domain.management.insights.rebalance_proposal", fake_rebal)
+    captured: dict = {}
+
+    async def fake_record(**kw):
+        captured.update(kw)
+
+    monkeypatch.setattr("core.automation.record_automation_run", fake_record)
+    assert await sched.run_rebalance_report(SimpleNamespace()) is True
+    assert captured["dedup_key"] == "rebalance:c1:increase"
+    assert "증액" in captured["body"]
+    assert captured["payload"]["actor"] == "auto"
+
+
+@pytest.mark.asyncio
 async def test_run_rebalance_report_no_proposal_skips(monkeypatch):
     """제안 없음이면 적재하지 않고 False(비차단)."""
     from domain.management import scheduler as sched

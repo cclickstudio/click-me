@@ -11,7 +11,14 @@ from typing import Any
 
 from domain.management.campaign_policy import _FALLBACK_FLOOR_KRW, get_campaign_policy
 from domain.management.contracts.enums import CampaignState
-from domain.management.contracts.policy import FATIGUE_FREQUENCY
+from domain.management.contracts.policy import (
+    FATIGUE_FREQUENCY,
+    REBALANCE_CPC_GAP,
+    REBALANCE_HIGH_UTIL,
+    REBALANCE_LOW_UTIL,
+    REBALANCE_MIN_MOVE_KRW,
+    REBALANCE_STEP_PCT,
+)
 
 # 데모 보드 — (게시물 제목, 오가닉 post id, 광고 campaign id, 일예산). 예산 차이로
 # 광고 도달이 벌어져 통과/주의/미달이 고루 나오게 구성.
@@ -101,13 +108,68 @@ async def weekly_report(reader: Any) -> dict:
     }
 
 
-async def rebalance_proposal(reader: Any) -> dict:
-    """캠페인 간 일예산 리밸런싱 제안 — 저효율(높은 CPC)→고효율(낮은 CPC)로 20% 이동 제안.
+def _single_adjust_proposal(c: Any, cpc: int, spend_7d: int, floor: int) -> dict:
+    """캠페인 1개일 때 — 그 캠페인 자체의 일예산을 소진율(7일 예산 활용도) 기준 증액/감액 제안.
 
-    실행이 아니라 '제안'만 만든다. 적용은 기존 budget-commit(검증·승인·감사 경로)을
-    캠페인별로 그대로 태운다 — 자동 집행 없음(HITL 유지). 최근 7일 실측 기준이며,
-    진행 중(ACTIVE)·일예산형·클릭 실측이 있는 캠페인이 2개 이상이고 CPC 격차가
-    1.2배 이상일 때만 제안한다(작은 차이로 예산을 흔들지 않게).
+    옮길 상대가 없으므로 '이전'이 아니라 '단일 조정'. 소진율 높으면(예산 한도에 자주 걸림)
+    증액, 낮으면(예산이 게재보다 큼) 감액. 적정 범위면 제안하지 않는다(임계=policy.py).
+    """
+    budget = c.daily_budget_krw
+    if budget <= 0:
+        return {"proposal": None, "note": "일예산이 설정된 캠페인만 조정을 제안해요."}
+    util = spend_7d / (budget * 7)  # 최근 7일 일예산 대비 실지출 = 소진율(기간 평균)
+    step = int(budget * REBALANCE_STEP_PCT) // 100 * 100  # 20%, 백원 단위 절사
+    if util >= REBALANCE_HIGH_UTIL:
+        move = step
+        if move < REBALANCE_MIN_MOVE_KRW:
+            return {"proposal": None, "note": "조정 가능한 금액이 너무 작아 제안하지 않아요."}
+        direction, after = "increase", budget + move
+        reason = (
+            f"최근 7일 일예산의 {util * 100:.0f}%를 소진했어요(CPC {cpc:,}원). 예산 한도에 자주 "
+            "걸려 수요를 놓치고 있을 수 있어, 일예산 20% 증액을 제안해요."
+        )
+    elif util <= REBALANCE_LOW_UTIL:
+        move = min(step, budget - floor)  # 최소예산 아래로 내려가지 않게
+        if move < REBALANCE_MIN_MOVE_KRW:
+            return {"proposal": None, "note": "이미 최소 일예산에 가까워 감액을 제안하지 않아요."}
+        direction, after = "decrease", budget - move
+        reason = (
+            f"최근 7일 일예산의 {util * 100:.0f}%만 소진했어요(CPC {cpc:,}원). "
+            "예산이 실제 게재보다 커서, 일예산 20% 감액으로 적정화를 제안해요."
+        )
+    else:
+        return {
+            "proposal": None,
+            "note": f"일예산 소진율({util * 100:.0f}%)이 적정 범위라 조정 제안이 없어요.",
+        }
+    return {
+        "proposal": {
+            "kind": "adjust",
+            "direction": direction,
+            "campaign": {
+                "campaign_id": c.campaign_id,
+                "name": c.name,
+                "cpc_krw": cpc,
+                "daily_budget_krw": budget,
+                "after_krw": after,
+            },
+            "move_krw": move,
+            "basis": "last_7d",
+            "reason": reason,
+        },
+        "note": None,
+    }
+
+
+async def rebalance_proposal(reader: Any) -> dict:
+    """일예산 리밸런싱 제안(하이브리드) — 최근 7일 실측 기준, 실행 아닌 '제안'만.
+
+    - 캠페인 **2개 이상**: 저효율(높은 CPC)→고효율(낮은 CPC)로 20% **이전**(kind=transfer).
+      CPC 격차가 1.2배 초과일 때만(작은 차이로 예산을 흔들지 않게).
+    - 캠페인 **1개**: 옮길 상대가 없어 그 캠페인 자체 일예산을 소진율 기준 **증액/감액**
+      (kind=adjust). 적정 범위면 제안 없음.
+
+    적용은 기존 budget-commit(검증·승인·감사 경로) — 자동 집행 없음(HITL 유지).
     """
     now = datetime.now(UTC)
     try:
@@ -119,9 +181,9 @@ async def rebalance_proposal(reader: Any) -> dict:
         for c in infos
         if c.state == CampaignState.ACTIVE and c.budget_type == "daily" and c.daily_budget_krw > 0
     ]
-    if len(elig) < 2:
-        return {"proposal": None, "note": "진행 중(일예산형) 캠페인이 2개 이상이면 제안해요."}
-    rows = []
+    if not elig:
+        return {"proposal": None, "note": "진행 중(일예산형) 캠페인이 있으면 제안해요."}
+    rows = []  # (campaign, cpc, spend_7d)
     for c in elig:
         try:
             m = await reader.get_metrics(c.campaign_id, now, date_preset="last_7d")
@@ -137,25 +199,31 @@ async def rebalance_proposal(reader: Any) -> dict:
         if clicks <= 0 or spend <= 0:
             continue
         cpc = getattr(m, "cpc_krw", 0) or round(spend / clicks)
-        rows.append((c, cpc))
-    if len(rows) < 2:
-        return {"proposal": None, "note": "최근 실측 클릭이 있는 캠페인이 2개 이상이면 제안해요."}
-    rows.sort(key=lambda r: r[1])
-    (best, best_cpc), (worst, worst_cpc) = rows[0], rows[-1]
-    if worst_cpc <= best_cpc * 1.2:
-        return {"proposal": None, "note": "캠페인 간 CPC 격차가 1.2배를 넘으면 이동을 제안해요."}
+        rows.append((c, cpc, spend))
+    if not rows:
+        return {"proposal": None, "note": "최근 실측 클릭이 있는 캠페인이 있으면 제안해요."}
     floor = _FALLBACK_FLOOR_KRW
     try:
         policy = await get_campaign_policy(reader)
         floor = int(policy.get("min_daily_budget_krw") or floor)
     except Exception:  # noqa: BLE001 — 정책 조회 실패 시 보수 폴백
         pass
-    move = int(worst.daily_budget_krw * 0.2) // 100 * 100  # 20%, 백원 단위 절사
+    # 캠페인 1개 — 단일 조정(증액/감액).
+    if len(rows) == 1:
+        c, cpc, spend = rows[0]
+        return _single_adjust_proposal(c, cpc, spend, floor)
+    # 캠페인 2개+ — 저효율→고효율 이전.
+    rows.sort(key=lambda r: r[1])
+    (best, best_cpc, _), (worst, worst_cpc, _) = rows[0], rows[-1]
+    if worst_cpc <= best_cpc * REBALANCE_CPC_GAP:
+        return {"proposal": None, "note": "캠페인 간 CPC 격차가 1.2배를 넘으면 이동을 제안해요."}
+    move = int(worst.daily_budget_krw * REBALANCE_STEP_PCT) // 100 * 100  # 20%, 백원 단위 절사
     move = min(move, worst.daily_budget_krw - floor)  # 저효율도 최소예산 아래로 안 내려가게
-    if move < 1_000:
+    if move < REBALANCE_MIN_MOVE_KRW:
         return {"proposal": None, "note": "이동 가능한 금액이 너무 작아 제안하지 않아요."}
     return {
         "proposal": {
+            "kind": "transfer",
             "from": {
                 "campaign_id": worst.campaign_id,
                 "name": worst.name,

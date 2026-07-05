@@ -1,22 +1,48 @@
-// 주간 리포트 모달 — 최근 7일 실측 요약(총합·캠페인별 표·하이라이트·다음 액션)
+// 성과 리포트 모달 — 선택 기간 실측 요약(총합·캠페인별 표·하이라이트·다음 액션)
 'use client';
 
 import { useEffect, useState } from 'react';
-import { api, type WeeklyReport } from '@/lib/api';
+import { api, type ReportPeriod, type WeeklyReport } from '@/lib/api';
 
-export function WeeklyReportModal({ onClose }: { onClose: () => void }) {
+const PERIODS: [ReportPeriod, string][] = [
+  ['last_7d', '최근 7일'],
+  ['last_30d', '최근 30일'],
+  ['this_month', '이번 달'],
+  ['maximum', '전체'],
+];
+
+export function WeeklyReportModal({
+  onClose,
+  initialPeriod = 'last_7d',
+}: {
+  onClose: () => void;
+  initialPeriod?: ReportPeriod;
+}) {
+  const [period, setPeriod] = useState<ReportPeriod>(initialPeriod);
   const [report, setReport] = useState<WeeklyReport | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let alive = true;
+    setLoading(true);
     api.management
-      .weeklyReport()
+      .weeklyReport(period)
       .then((r) => {
+        if (!alive) return;
         setReport(r.report);
         setNote(r.note);
       })
-      .catch((e) => setNote(e instanceof Error ? e.message : '리포트를 불러오지 못했어요.'));
-  }, []);
+      .catch((e) => {
+        if (alive) setNote(e instanceof Error ? e.message : '리포트를 불러오지 못했어요.');
+      })
+      .finally(() => {
+        if (alive) setLoading(false);
+      });
+    return () => {
+      alive = false;
+    };
+  }, [period]);
 
   return (
     <div
@@ -28,7 +54,7 @@ export function WeeklyReportModal({ onClose }: { onClose: () => void }) {
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between">
-          <h3 className="text-lg font-bold text-[#191F28] dark:text-[#F2F4F6]">주간 리포트</h3>
+          <h3 className="text-lg font-bold text-[#191F28] dark:text-[#F2F4F6]">성과 리포트</h3>
           <button
             onClick={onClose}
             className="text-sm text-[#8B95A1] hover:text-[#191F28] dark:hover:text-[#F2F4F6]"
@@ -37,14 +63,34 @@ export function WeeklyReportModal({ onClose }: { onClose: () => void }) {
           </button>
         </div>
 
+        {/* 기간 토글 — 최근 7일이 비어 있어도 30일·전체로 실측 값을 조회할 수 있게 한다 */}
+        <div className="mt-3 flex w-fit rounded-lg border border-[#E5E8EB] dark:border-[#2D3748] overflow-hidden text-[12px]">
+          {PERIODS.map(([key, label]) => (
+            <button
+              key={key}
+              onClick={() => setPeriod(key)}
+              className={`px-2.5 py-1.5 ${
+                period === key
+                  ? 'bg-[#3182F6] text-white'
+                  : 'text-[#8B95A1] hover:bg-[#F2F4F6] dark:hover:bg-[#2D3748]'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
         {!report && (
-          <p className="mt-4 text-sm text-[#8B95A1]">{note ?? '불러오는 중…'}</p>
+          <p className="mt-4 text-sm text-[#8B95A1]">{loading ? '불러오는 중…' : (note ?? '내용이 없어요.')}</p>
         )}
 
         {report && (
           <>
-            <p className="mt-1 text-xs text-[#8B95A1]">
-              {report.period.since} ~ {report.period.until} · 실측(Meta) 기준
+            <p className="mt-3 text-xs text-[#8B95A1]">
+              {report.period.since
+                ? `${report.period.since} ~ ${report.period.until}`
+                : (report.period.label ?? '전체 기간')}{' '}
+              · 실측(Meta) 기준{loading && ' · 갱신 중…'}
             </p>
 
             <div className="mt-4 grid grid-cols-2 gap-2.5 sm:grid-cols-4">

@@ -35,6 +35,13 @@ WALLET_ALERT_PCT = 95  # 충전 한도 사용률 — 충전 필요
 WALLET_WARN_PCT = 80  # 충전 한도 사용률 — 주의
 DEFAULT_MONTHLY_TARGET_KRW = 3_000_000  # 월 목표 기본 — 중소기업 벤치마크(일 10만 페이스)
 
+# ── 예산 리밸런싱 제안 임계 (insights.rebalance_proposal 단일 소스) ──
+REBALANCE_STEP_PCT = 0.2  # 이동/조정 폭 — 저효율 일예산의 20%
+REBALANCE_CPC_GAP = 1.2  # 2개+ 이전 게이트 — 저효율 CPC가 고효율의 1.2배 초과일 때만
+REBALANCE_HIGH_UTIL = 0.9  # 1개 조정 — 7일 일예산 소진율 90%+면 예산 한도에 걸림 → 증액
+REBALANCE_LOW_UTIL = 0.5  # 1개 조정 — 소진율 50% 이하면 예산이 게재보다 커 과다 → 감액
+REBALANCE_MIN_MOVE_KRW = 1_000  # 이동/조정 최소 금액 — 이보다 작으면 제안 안 함
+
 # ── P3. TTL (데모 모드) — 승인 TTL은 제안 TTL보다 짧다 (불변) ──
 PROPOSAL_TTL_MINUTES = 10
 APPROVAL_TTL_MINUTES = 5
