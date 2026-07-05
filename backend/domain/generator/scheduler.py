@@ -20,7 +20,7 @@ from sqlalchemy import func, select
 
 from core.automation import record_automation_run, register_automation
 from core.db import AsyncSessionLocal
-from core.models import AdGeneration
+from core.models import AdGeneration, AdGenerationCandidate
 
 logger = logging.getLogger("clickme")
 
@@ -60,21 +60,38 @@ async def run_quality_digest(settings, window_hours: int = 24) -> bool:
                 .select_from(AdGeneration)
                 .where(AdGeneration.status == "failed", AdGeneration.created_at >= since)
             )
+            # 후보(시안) 레벨 QA 통과율 — qa_passed는 QA Harness 판정 결과(Boolean).
+            qa_total = await db.scalar(
+                select(func.count())
+                .select_from(AdGenerationCandidate)
+                .where(AdGenerationCandidate.created_at >= since)
+            )
+            qa_passed = await db.scalar(
+                select(func.count())
+                .select_from(AdGenerationCandidate)
+                .where(
+                    AdGenerationCandidate.created_at >= since,
+                    AdGenerationCandidate.qa_passed.is_(True),
+                )
+            )
         if not completed:
             return False  # 완료 생성 없음 → 다이제스트 생략
         total = completed + (failed or 0)
         rate = round(completed / total * 100) if total else 0
+        qa_note = f" · QA 통과 {qa_passed or 0}/{qa_total}" if qa_total else ""
         await record_automation_run(
             domain="generation",
             job_name="quality_digest",
             title=f"생성 품질 다이제스트 — 최근 {window_hours}시간",
-            body=f"완료 {completed}건 · 실패 {failed or 0}건 (성공률 {rate}%)",
+            body=f"완료 {completed}건 · 실패 {failed or 0}건 (성공률 {rate}%){qa_note}",
             status="digest",
             payload={
                 "window_hours": window_hours,
                 "completed": completed,
                 "failed": failed or 0,
                 "success_rate": rate,
+                "qa_passed": qa_passed or 0,
+                "qa_total": qa_total or 0,
             },
         )
         return True

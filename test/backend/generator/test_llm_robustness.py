@@ -93,6 +93,38 @@ async def test_quality_digest_no_completed_returns_false(monkeypatch):
     assert recorded == []
 
 
+async def test_quality_digest_includes_qa_pass_rate(monkeypatch):
+    # scalar 호출 순서 = completed → failed → qa_total → qa_passed (run_quality_digest 구현 순서)
+    values = iter([3, 1, 9, 7])
+
+    class _FakeDB:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return False
+
+        async def scalar(self, *a, **k):
+            return next(values)
+
+    monkeypatch.setattr(scheduler, "AsyncSessionLocal", lambda: _FakeDB())
+
+    recorded = []
+
+    async def _rec(**kwargs):
+        recorded.append(kwargs)
+
+    monkeypatch.setattr(scheduler, "record_automation_run", _rec)
+
+    assert await scheduler.run_quality_digest(settings) is True
+    assert len(recorded) == 1
+    row = recorded[0]
+    assert "성공률 75%" in row["body"]  # 완료 3 / (3+1)
+    assert "QA 통과 7/9" in row["body"]
+    assert row["payload"]["qa_passed"] == 7
+    assert row["payload"]["qa_total"] == 9
+
+
 class _FakeStuckDB:
     """execute().scalars().all()이 미리 심은 stuck 행을 돌려주는 가짜 세션."""
 
