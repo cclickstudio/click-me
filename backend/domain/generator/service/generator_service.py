@@ -510,7 +510,9 @@ async def render_candidate(candidate_id: str, platform: str) -> bytes | None:
     )
 
 
-async def select_candidate(generation_id: str, candidate_id: str) -> bool:
+async def select_candidate(
+    generation_id: str, candidate_id: str, created_by: str | None = None
+) -> bool:
     """사용자가 선택한 후보 저장 — 후보가 해당 생성에 속하는지 검증."""
     try:
         gid = uuid.UUID(generation_id)
@@ -526,8 +528,26 @@ async def select_candidate(generation_id: str, candidate_id: str) -> bool:
         if generation is None:
             return False
         generation.selected_candidate_id = cid
+        project_id = generation.project_id
+        product_name = (generation.input or {}).get("product_name") or ""
+        headline = (candidate.copy or {}).get("headline") or ""
+        candidate_idx = candidate.idx
         await session.commit()
-        return True
+    # 실행 확정 지점 롱텀 적재 — 후보 확정도 회수 대상("어떤 시안 골랐었지"). best-effort·비차단.
+    await record_execution(
+        str(project_id) if project_id else None,
+        "generation",
+        "select_candidate",
+        f"광고 후보 확정 — {product_name} 후보 {candidate_idx + 1}번 {headline}",
+        payload={
+            "stage": "completed",
+            "generation_id": generation_id,
+            "candidate_id": candidate_id,
+            "idx": candidate_idx,
+        },
+        user_id=created_by,
+    )
+    return True
 
 
 async def list_generations(limit: int = 20, org_id: uuid.UUID | None = None) -> list[dict]:
@@ -563,7 +583,9 @@ def png_to_jpeg(png_bytes: bytes, quality: int = 90) -> bytes:
     return buffer.getvalue()
 
 
-async def publish_candidate(generation_id: str, candidate_id: str, caption: str) -> dict | None:
+async def publish_candidate(
+    generation_id: str, candidate_id: str, caption: str, created_by: str | None = None
+) -> dict | None:
     """사용자 승인 후 Instagram 게시 — 선택된 후보만 허용, 이력 전체 기록 (계획서 19장)."""
     try:
         gid = uuid.UUID(generation_id)
@@ -580,6 +602,8 @@ async def publish_candidate(generation_id: str, candidate_id: str, caption: str)
             return {"error": "selected_candidate_only"}
         png_key = candidate.s3_key
         candidate_idx = candidate.idx
+        project_id = generation.project_id
+        product_name = (generation.input or {}).get("product_name") or ""
 
     # IG는 JPEG만 지원 — 게시용 변환본을 별도 키로 업로드 후 presigned URL 전달
     png_bytes = await download_bytes(png_key)
@@ -613,6 +637,25 @@ async def publish_candidate(generation_id: str, candidate_id: str, caption: str)
             )
         )
         await session.commit()
+
+    # 실행 확정 지점 롱텀 적재 — 성공(published)·모의(mocked)만. 실패 정본은 AdPublishLog. best-effort.
+    if status != "failed":
+        label = "게시 완료(모의)" if status == "mocked" else "게시 완료"
+        await record_execution(
+            str(project_id) if project_id else None,
+            "generation",
+            "publish_ad",
+            f"인스타그램 {label} — {product_name} 후보 {candidate_idx + 1}번 캡션 {caption[:80]}",
+            payload={
+                "stage": "completed",
+                "generation_id": generation_id,
+                "candidate_id": candidate_id,
+                "platform": "instagram",
+                "status": status,
+                "media_id": outcome.media_id,
+            },
+            user_id=created_by,
+        )
 
     return {
         "generation_id": generation_id,
