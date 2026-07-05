@@ -69,10 +69,9 @@ export function BudgetGauge({
             오늘 계획 {Math.round(plan)}%
           </span>
         )}
-        <span className="absolute -translate-x-1/2" style={{ left: '90%' }}>
-          90 경고
-        </span>
-        <span className="absolute right-0">95 차단 · 100</span>
+        {/* 가드레일 라벨 — 90/95%가 좁은 타일에서 겹치지 않게 우측 끝 한 줄로 합친다.
+            (막대의 호박·적색 밴드가 위치를 이미 보여줘 눈금 '100'은 생략) */}
+        <span className="absolute right-0">경고 90% · 차단 95%</span>
       </div>
     </div>
   );

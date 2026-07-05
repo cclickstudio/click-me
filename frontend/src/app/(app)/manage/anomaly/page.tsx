@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import Link from 'next/link';
+import dynamic from 'next/dynamic';
 import { api, type AnomalyScanItem, type AutomationRunItem } from '@/lib/api';
 import { AZone } from '@/components/manage/AZone';
 import { BZone } from '@/components/manage/BZone';
@@ -9,6 +10,14 @@ import { ApprovalBridge } from '@/components/manage/ApprovalBridge';
 import { AuditTimeline } from '@/components/manage/AuditTimeline';
 import { KpiStrip } from '@/components/manage/KpiStrip';
 import type { ActionResult, AuditEvent, RunResult, ViewMode } from '@/components/manage/types';
+
+// 내부 동작(arch) 파이프라인 그래프 — reactflow는 DOM 측정이 필요해 ssr:false로 클라 전용 로드.
+const PipelineGraph = dynamic(() => import('@/components/manage/PipelineGraph'), {
+  ssr: false,
+  loading: () => (
+    <div className="mb-4 h-[264px] animate-pulse rounded-2xl bg-[#F2F4F6] dark:bg-[#2D3748]" />
+  ),
+});
 
 // 주입할 문제 상황 — value는 백엔드 enum, label/symptom은 사용자용.
 // 주입 강도는 mock.py fetch_hourly_metrics의 고장 파라미터와 동일하게 서술(문서 §4.5).
@@ -262,7 +271,8 @@ export default function Page() {
           )}
         </div>
 
-        {/* 서버 워커 자동 점검 결과 — APScheduler가 서버에서 자동으로 남긴 것(탭 안 열려도) */}
+        {/* 서버 워커 자동 점검 결과 — 내부 운영 정보라 '내부 동작'(arch)에서만 노출 */}
+        {mode === 'arch' && (
         <div className="mb-4 rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] px-4 py-3">
           <p className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]">
             서버 자동 점검 결과
@@ -296,13 +306,18 @@ export default function Page() {
             </ul>
           )}
         </div>
+        )}
 
         <KpiStrip run={run} />
 
         {run ? (
           <>
-            {/* 탐지 기준 — 기대 노출 곡선의 가정치와 이상 판정 규칙(값은 백엔드 policy·exposure_model 단일원천) */}
-            {run.assumptions && (
+            {/* 내부 동작(arch) — 백엔드 워커 파이프라인 그래프. 사용자 보기에선 숨김 */}
+            {mode === 'arch' && (
+              <PipelineGraph run={run} decided={decided} result={result} />
+            )}
+            {/* 탐지 기준 — 가정치·이상 판정 규칙(파라미터). 내부 동작(arch)에서만 노출 */}
+            {mode === 'arch' && run.assumptions && (
               <div className="mb-4 rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-[#F9FAFB] dark:bg-[#1A202C] px-5 py-3.5">
                 <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
                   <span className="text-[13px] font-semibold text-[#4E5968] dark:text-[#9CA3AF]">

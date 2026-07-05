@@ -1,9 +1,11 @@
 // 🅱 개선·실행 존 — 재생성 후보 + 제안 카드 + 실행 결과
+import { memo } from "react";
 import type { ActionResult, Proposal, ViewMode } from "./types";
 import { actionLabel } from "./types";
 import { RoleTag } from "./RoleTag";
 
-export function BZone({
+// memo — proposal·result·mode가 그대로면 무관한 부모 리렌더(스캔·busy)에서 스킵.
+export const BZone = memo(function BZone({
   proposal,
   result,
   mode,
@@ -20,6 +22,8 @@ export function BZone({
         ✨ 개선 · 실행 <RoleTag mode={mode} role="B" />
       </h2>
 
+      {candidates.length > 0 && (
+        <>
       <p className="text-xs text-[#8B95A1] mb-2">🎨 재생성 후보 (시뮬 점수는 실성과 상관 미검증·참고용)</p>
       <div className="grid grid-cols-3 gap-2 mb-3">
         {candidates.map((c) => (
@@ -37,6 +41,8 @@ export function BZone({
           </div>
         ))}
       </div>
+        </>
+      )}
 
       {proposal && (
         <div className="rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] p-3 mb-3">
@@ -46,9 +52,12 @@ export function BZone({
               Tier {proposal.action_tier}
             </span>
           </div>
-          <p className="text-xs text-[#8B95A1] mt-1">
-            예산 ₩{proposal.budget_before_krw.toLocaleString()} ▶ ₩{proposal.budget_after_krw.toLocaleString()}
-          </p>
+          {/* 예산 액션(증·감액)만 예산 변화를 보인다 — 소재·입찰·타겟은 예산 그대로라 줄을 숨김 */}
+          {proposal.budget_after_krw !== proposal.budget_before_krw && (
+            <p className="text-xs text-[#8B95A1] mt-1">
+              예산 ₩{proposal.budget_before_krw.toLocaleString()} ▶ ₩{proposal.budget_after_krw.toLocaleString()}
+            </p>
+          )}
           <RoleTag mode={mode} role="B" contract="◀ ActionProposal" />
         </div>
       )}
@@ -68,4 +77,4 @@ export function BZone({
       )}
     </section>
   );
-}
+});
