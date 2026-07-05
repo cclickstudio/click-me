@@ -59,6 +59,11 @@ def test_quality_digest_registered():
     assert "quality_digest" in names
 
 
+def test_stuck_scan_registered():
+    names = {a["name"] for a in registered_automations("generation")}
+    assert "stuck_scan" in names
+
+
 def test_scheduler_skips_when_disabled(monkeypatch):
     monkeypatch.setattr(settings, "generator_scheduler_enabled", False, raising=False)
     assert scheduler.start_scheduler(settings) is False
@@ -85,4 +90,74 @@ async def test_quality_digest_no_completed_returns_false(monkeypatch):
 
     monkeypatch.setattr(scheduler, "record_automation_run", _rec)
     assert await scheduler.run_quality_digest(settings) is False
+    assert recorded == []
+
+
+class _FakeStuckDB:
+    """execute().scalars().all()이 미리 심은 stuck 행을 돌려주는 가짜 세션."""
+
+    def __init__(self, rows):
+        self._rows = rows
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *a):
+        return False
+
+    async def execute(self, *a, **k):
+        rows = self._rows
+
+        class _Result:
+            def scalars(self):
+                return self
+
+            def all(self):
+                return rows
+
+        return _Result()
+
+
+async def test_stuck_scan_records_finding(monkeypatch):
+    import uuid
+    from types import SimpleNamespace
+
+    gid = uuid.uuid4()
+    pid = uuid.uuid4()
+    stuck = SimpleNamespace(
+        id=gid, project_id=pid, status="running", input={"product_name": "수분크림"}
+    )
+    monkeypatch.setattr(scheduler, "AsyncSessionLocal", lambda: _FakeStuckDB([stuck]))
+
+    recorded = []
+
+    async def _rec(**kwargs):
+        recorded.append(kwargs)
+
+    monkeypatch.setattr(scheduler, "record_automation_run", _rec)
+
+    assert await scheduler.run_stuck_scan(settings) == 1
+    assert len(recorded) == 1
+    row = recorded[0]
+    assert row["domain"] == "generation"
+    assert row["job_name"] == "stuck_scan"
+    assert row["status"] == "finding"
+    assert row["severity"] == "warning"
+    assert row["dedup_key"] == f"gen-stuck:{gid}"  # 재통지 방지 계약
+    assert row["project_id"] == str(pid)
+    assert "수분크림" in row["body"]
+    assert row["payload"]["generation_id"] == str(gid)
+
+
+async def test_stuck_scan_empty_no_record(monkeypatch):
+    monkeypatch.setattr(scheduler, "AsyncSessionLocal", lambda: _FakeStuckDB([]))
+
+    recorded = []
+
+    async def _rec(**kwargs):
+        recorded.append(kwargs)
+
+    monkeypatch.setattr(scheduler, "record_automation_run", _rec)
+
+    assert await scheduler.run_stuck_scan(settings) == 0
     assert recorded == []
