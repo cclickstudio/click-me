@@ -9,10 +9,16 @@
 from __future__ import annotations
 
 import asyncio
+import io
 import logging
+import re
 import uuid
+from urllib.parse import urlparse
 
+import numpy as np
 from langchain_core.runnables import RunnableConfig
+from PIL import Image
+from scipy import ndimage
 
 from core.config import settings
 from domain.generator.contracts.enums import AdSize, GenerationMode, TemplateType
@@ -48,6 +54,50 @@ from tools.storage.s3 import (
 logger = logging.getLogger("clickme")
 
 _VARIANT_IDS = ["A", "B", "C"]
+# candidate_key()가 만드는 "generated-ads/{generation_id}/candidate-{idx}.png" 패턴에서
+# generation_id만 뽑아 product_cutout_key()로 누끼 키를 역으로 재구성할 때 쓴다.
+_CANDIDATE_KEY_RE = re.compile(r"^generated-ads/([0-9a-fA-F-]{36})/candidate-\d+\.png$")
+
+
+def _s3_key_from_url_or_key(value: str | None) -> str | None:
+    """existing_ad_s3_key가 presigned URL이면 실제 S3 키만 추출, 이미 키 형태면 그대로 반환.
+
+    프론트가 화면 표시용으로 받은 presigned URL(https://버킷.../키?AWSAccessKeyId=...&Signature=...)을
+    그대로 넘길 때가 있어, download_bytes()가 URL 전체를 키로 착각해 NoSuchKey로 실패하던 걸 막는다.
+    """
+    if not value:
+        return value
+    if value.startswith(("http://", "https://")):
+        return urlparse(value).path.lstrip("/")
+    return value
+
+
+# 즉석 누끼 추출(방법 C) 신뢰도 기준 — 값은 논의 후 확정한 것 그대로.
+_CUTOUT_MIN_RATIO = 0.03  # 이보다 작으면 상품을 거의 못 찾은 것
+_CUTOUT_MAX_RATIO = 0.85  # 이보다 크면 배경을 거의 못 지운 것
+_CUTOUT_MIN_LARGEST_FRACTION = 0.70  # 가장 큰 덩어리가 이 비율 미만이면 여러 조각으로 흩어진 것
+
+
+def _cutout_is_plausible(cutout_bytes: bytes) -> bool:
+    """즉석 배경 제거 결과가 그럴듯한 단일 상품 실루엣인지 검증.
+
+    누끼 자체가 있었는지(tier 1/2) 여부와 무관하게, 개선 모드에서 기존 광고 이미지에
+    remove_product_background를 즉석으로 돌린 결과(방법 C)에만 적용한다.
+    """
+    img = Image.open(io.BytesIO(cutout_bytes)).convert("RGBA")
+    alpha = np.array(img.split()[3])
+    opaque = alpha > 200
+    opaque_count = int(opaque.sum())
+    if opaque_count == 0:
+        return False
+    ratio = opaque_count / opaque.size
+    if not (_CUTOUT_MIN_RATIO <= ratio <= _CUTOUT_MAX_RATIO):
+        return False
+    labeled, num_features = ndimage.label(opaque)
+    if num_features == 0:
+        return False
+    largest = max((labeled == i).sum() for i in range(1, num_features + 1))
+    return (largest / opaque_count) >= _CUTOUT_MIN_LARGEST_FRACTION
 
 
 def _map_ad_size(width: int, height: int) -> AdSize:
@@ -397,16 +447,75 @@ async def _generate_improve_candidate(state: GenerationState, config: RunnableCo
             logo_image_bytes = None
 
     # 누끼 이미지 로드 (생성 모드에서 저장된 S3 키)
+    existing_ad_s3_key = _s3_key_from_url_or_key(req.get("existing_ad_s3_key"))
     product_cutout_s3_key: str | None = req.get("product_cutout_s3_key")
+    cutout_source = "direct" if product_cutout_s3_key else None
+    if not product_cutout_s3_key:
+        # 호출부가 누끼 키를 직접 안 넘겨도, existing_ad_s3_key가 이 generator가 만든
+        # candidate 키 패턴이면 같은 generation_id의 누끼 키를 역으로 재구성한다.
+        m = _CANDIDATE_KEY_RE.match((existing_ad_s3_key or "").strip())
+        if m:
+            product_cutout_s3_key = product_cutout_key(m.group(1))
+            cutout_source = "derived"
+
     product_cutout_bytes: bytes | None = None
     if product_cutout_s3_key:
         try:
             product_cutout_bytes = await download_bytes(product_cutout_s3_key)
+            logger.info(
+                "개선 모드 누끼 로드 성공(tier=%s): key=%s", cutout_source, product_cutout_s3_key
+            )
         except Exception:
             logger.exception(
-                "개선 모드 누끼 로드 실패 — 상품 없이 배경 자유 생성으로 진행: key=%s",
+                "개선 모드 누끼 로드 실패(tier=%s) — 상품 없이 배경 자유 생성으로 진행: key=%s",
+                cutout_source,
                 product_cutout_s3_key,
             )
+    else:
+        logger.info(
+            "개선 모드 누끼 키 없음 — existing_ad_s3_key=%s 가 candidate 키 패턴과 불일치",
+            existing_ad_s3_key,
+        )
+
+    # 누끼가 없으면 기존 광고 이미지를 내려받아 (1) 즉석으로 배경 제거를 시도하고,
+    # 결과가 그럴듯하면 그걸 누끼처럼 쓴다. 실패/신뢰 불가면 (2) 원본 이미지 통째로
+    # Edit API에 넘긴다(원본 픽셀 고정은 안 되지만 완전 재생성보다는 원본에 가깝다).
+    original_image_bytes: bytes | None = None
+    if product_cutout_bytes is None:
+        if existing_ad_s3_key:
+            try:
+                ad_image_bytes = await download_bytes(existing_ad_s3_key)
+            except Exception:
+                ad_image_bytes = None
+                logger.exception(
+                    "개선 모드 원본 광고 이미지 로드 실패 — 완전 재생성으로 진행: key=%s",
+                    existing_ad_s3_key,
+                )
+            if ad_image_bytes is not None:
+                try:
+                    extracted = await remove_product_background(ad_image_bytes)
+                except Exception:
+                    extracted = None
+                    logger.exception(
+                        "개선 모드 즉석 누끼 추출 실패 — 원본 이미지 통째로 사용: key=%s",
+                        existing_ad_s3_key,
+                    )
+                if extracted is not None and _cutout_is_plausible(extracted):
+                    product_cutout_bytes = extracted
+                    logger.info(
+                        "개선 모드 즉석 누끼 추출 성공(tier=extracted): key=%s", existing_ad_s3_key
+                    )
+                else:
+                    if extracted is not None:
+                        logger.info(
+                            "개선 모드 즉석 누끼 추출 결과 신뢰 불가(비율/연결성 기준 미달) "
+                            "— 원본 이미지 통째로 사용: key=%s",
+                            existing_ad_s3_key,
+                        )
+                    original_image_bytes = ad_image_bytes
+                    logger.info("개선 모드 원본 광고 이미지 로드 성공: key=%s", existing_ad_s3_key)
+        else:
+            logger.info("개선 모드 existing_ad_s3_key 없음 — 완전 재생성으로 진행")
 
     emit_progress(config, "candidates", 55, "개선 카피 생성 중...")
     ad_copy = await generate_copy(
@@ -428,6 +537,7 @@ async def _generate_improve_candidate(state: GenerationState, config: RunnableCo
         size=gen_size,
         brand_color=brand_color,
         tone=tone,
+        original_image_bytes=original_image_bytes,
         product_cutout_bytes=product_cutout_bytes,
         improvement_context=improvement_context,
         headline="",

@@ -46,7 +46,14 @@ _STRATEGY_PHOTO_STYLE: dict[AdStrategy, str] = {
     AdStrategy.FOMO: (
         "Bold promotional photography for a flash-sale feel. Dramatic high-contrast lighting, "
         "vibrant punchy colors, dynamic eye-grabbing composition that creates urgency. "
-        "High-conversion Meta promotion aesthetic."
+        "High-conversion Meta promotion aesthetic. "
+        "The packaged product is the HERO SUBJECT of the advertisement. "
+        "The product must be the largest and most visually dominant object. "
+        "Place the product in the center foreground. "
+        "No person, hand, text, or decorative object may cover any part of the product. "
+        "People are supporting elements only and must appear behind or beside the product. "
+        "All subjects should direct attention toward the product. "
+        "The advertisement should immediately communicate the product before any human subject."
     ),
 }
 
@@ -585,16 +592,28 @@ async def generate_image(
                 cta=cta,
             )
         else:
+            # template=None(개선 모드 자유 레이아웃)이면 템플릿별 딕셔너리 대신
+            # 원본 구도를 그대로 유지하라는 범용 문구를 사용한다.
+            style_desc = (
+                _TEMPLATE_STYLE[template]
+                if template is not None
+                else "Preserve the existing visual style of the original image."
+            )
+            safe_zone_desc = (
+                _TEMPLATE_SAFE_ZONES_EDIT[template]
+                if template is not None
+                else "LAYOUT NOTE: Preserve the original text/layout zones as much as possible."
+            )
             prompt = _EDIT_PROMPT_TEMPLATE.format(
                 product_name=product_analysis.product_name,
                 core_values=core_values_str,
                 target_audience=target_audience,
                 strategy_desc=_STRATEGY_DESCRIPTIONS[strategy],
-                style=_TEMPLATE_STYLE[template],
+                style=style_desc,
                 color_line=color_line,
                 tone_line=tone_line,
                 improvement_context=improvement_context or "전반적인 광고 품질을 개선하세요.",
-                safe_zone=_TEMPLATE_SAFE_ZONES_EDIT[template],
+                safe_zone=safe_zone_desc,
             )
 
         return await image_providers.edit(

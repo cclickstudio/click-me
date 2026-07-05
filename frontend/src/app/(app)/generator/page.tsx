@@ -1228,6 +1228,7 @@ export default function GeneratorPage() {
             improvement_direction: improveData?.improvement_direction || null,
             fix_requests: fixRequests || null,
             product_cutout_s3_key: improveData?.product_cutout_s3_key || null,
+            existing_ad_s3_key: improveData?.ad_asset_url || null,
           };
 
     try {
