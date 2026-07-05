@@ -10,7 +10,7 @@ from domain.generator.contracts.pipeline_schemas import (
     ProductAnalysis,
     StrategyOutput,
 )
-from domain.generator.llm.factory import build_text_llm
+from domain.generator.llm.factory import build_text_llm, with_llm_retry
 
 # 전략별 카피 서브 키워드 — 문구(헤드라인·본문)의 소재 방향. 시각 스타일이 아니라 카피 주제.
 _STRATEGY_COPY_KEYWORDS: dict[AdStrategy, str] = {
@@ -104,14 +104,18 @@ _IMPROVEMENT_SECTION = """\
 
 기존 광고의 문제점을 해결하는 방향으로 카피를 작성하세요."""
 
-_llm = build_text_llm(temperature=0.5, max_tokens=150).with_structured_output(AdCopy)
+_llm = with_llm_retry(
+    build_text_llm(temperature=0.5, max_tokens=150).with_structured_output(AdCopy)
+)
 
 
 class _AdCopyBatch(BaseModel):
     copies: list[AdCopy]
 
 
-_batch_llm = build_text_llm(temperature=0.5, max_tokens=450).with_structured_output(_AdCopyBatch)
+_batch_llm = with_llm_retry(
+    build_text_llm(temperature=0.5, max_tokens=450).with_structured_output(_AdCopyBatch)
+)
 
 _BATCH_USER_TEMPLATE = """\
 ## 제품 정보

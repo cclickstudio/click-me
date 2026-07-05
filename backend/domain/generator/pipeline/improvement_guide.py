@@ -4,7 +4,7 @@ from __future__ import annotations
 from langsmith import traceable
 from pydantic import BaseModel, Field
 
-from domain.generator.llm.factory import build_text_llm
+from domain.generator.llm.factory import build_text_llm, with_llm_retry
 
 _SYSTEM = """당신은 광고 개선 방향 분류기입니다.
 주어진 시뮬레이션 결과와 사용자 수정 요청을 종합해,
@@ -34,7 +34,9 @@ class _ClassifierOutput(BaseModel):
     directives: list[str] = Field(default_factory=list)
 
 
-_llm = build_text_llm(temperature=0.3, max_tokens=500).with_structured_output(_ClassifierOutput)
+_llm = with_llm_retry(
+    build_text_llm(temperature=0.3, max_tokens=500).with_structured_output(_ClassifierOutput)
+)
 
 
 @traceable(name="generator:classify_improvements", metadata={"pipeline": "generator"})
