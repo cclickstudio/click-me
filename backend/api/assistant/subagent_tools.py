@@ -523,6 +523,68 @@ def build_chat_tools(settings, clio_retriever=None) -> list:
         return gid, detail
 
     @tool
+    async def compare_ad_candidates(
+        generation_id: str = "",
+        *,
+        state: Annotated[dict, InjectedState],
+        tool_call_id: Annotated[str, InjectedToolCallId],
+    ) -> Command:
+        """생성한 시안 중 상위 2개를 'A/B로 비교/붙여봐/어느 게 나아' 할 때 호출.
+        같은 AI 소비자 패널로 비교하도록 배치 시뮬 폼에 두 시안을 프리필한다.
+        generation_id 없으면 최근 완료 생성을 쓴다. 수동 2개 비교는 batch_simulation."""
+        from domain.generator.service import generator_service  # noqa: PLC0415
+
+        resolved = await _resolve_generation(state, generation_id)
+        if isinstance(resolved, str):
+            return Command(update={"messages": [ToolMessage(resolved, tool_call_id=tool_call_id)]})
+        gid, _ = resolved
+        detail = await generator_service.get_detail(gid)
+        if not detail or detail.get("status") != "completed":
+            return Command(
+                update={
+                    "messages": [
+                        ToolMessage("완료된 생성 결과를 찾지 못했어요.", tool_call_id=tool_call_id)
+                    ]
+                }
+            )
+        cands = detail.get("candidates") or []
+        if len(cands) < 2:
+            return Command(
+                update={
+                    "messages": [
+                        ToolMessage(
+                            "A/B로 비교하려면 시안이 2개 이상 있어야 해요.",
+                            tool_call_id=tool_call_id,
+                        )
+                    ]
+                }
+            )
+        gen_input = detail.get("input") or {}
+        category = gen_input.get("product_category") or gen_input.get("product_name") or ""
+
+        def _ad(c: dict) -> dict:
+            copy = c.get("copy") or {}
+            title = (copy.get("headline") or "").strip()
+            body = (copy.get("body") or "").strip()
+            content = "\n".join(p for p in (title, body) if p) or title or body
+            return {"ad_title": title, "ad_content": content, "product_category": category}
+
+        # 상위 2개는 get_detail이 QA점수로 이미 랭크(rank)해 반환 — 앞 2개가 최상위.
+        ads = [_ad(cands[0]), _ad(cands[1])]
+        return Command(
+            update={
+                **widgets.batch_sim_form({"ads": ads}),
+                "messages": [
+                    ToolMessage(
+                        "상위 두 시안을 같은 AI 소비자 패널로 A/B 비교하도록 준비했어요. "
+                        "내용을 확인하고 실행하세요.",
+                        tool_call_id=tool_call_id,
+                    )
+                ],
+            }
+        )
+
+    @tool
     async def select_ad_candidate(
         candidate_number: int = 0,
         candidate_id: str = "",
@@ -1085,6 +1147,7 @@ def build_chat_tools(settings, clio_retriever=None) -> list:
         compare_simulations,
         generate_report,
         batch_simulation,
+        compare_ad_candidates,
         create_campaign,
         manage_campaign,
         consult_anomaly,

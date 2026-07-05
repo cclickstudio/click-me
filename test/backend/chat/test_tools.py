@@ -64,6 +64,70 @@ async def test_run_generation_emits_gen_form(tools):
 
 
 @pytest.mark.asyncio
+async def test_compare_ad_candidates_prefills_batch_form(tools, monkeypatch):
+    # 상위 2개 시안을 배치 시뮬 폼(ads 프리필)으로 A/B 준비 — DB 없이 조회 함수만 모킹.
+    from api.assistant import subagent_tools
+    from domain.generator.service import generator_service
+
+    async def _list(project_id, limit=10):  # noqa: ANN001
+        return [{"id": "g1", "status": "completed"}]
+
+    async def _fetch(gid):  # noqa: ANN001
+        return {"generation_id": gid, "status": "completed"}
+
+    async def _detail(gid, org_id=None):  # noqa: ANN001
+        return {
+            "status": "completed",
+            "input": {"product_category": "스킨케어"},
+            "candidates": [
+                {"copy": {"headline": "촉촉 수분", "body": "24시간 보습"}},
+                {"copy": {"headline": "산뜻 마무리", "body": "끈적임 없이"}},
+            ],
+        }
+
+    monkeypatch.setattr(subagent_tools, "list_generations", _list)
+    monkeypatch.setattr(subagent_tools, "fetch_generation_result", _fetch)
+    monkeypatch.setattr(generator_service, "get_detail", _detail)
+
+    cmd = await tools["compare_ad_candidates"].coroutine(
+        state=_state(project_id="p1"), tool_call_id="t1"
+    )
+    assert cmd.update["widget"]["type"] == "batch_sim_form"
+    ads = cmd.update["widget"]["data"]["ads"]
+    assert len(ads) == 2
+    assert ads[0]["ad_title"] == "촉촉 수분"
+    assert "24시간 보습" in ads[0]["ad_content"]
+    assert ads[0]["product_category"] == "스킨케어"
+    assert cmd.update["source"] == "simulation"
+
+
+@pytest.mark.asyncio
+async def test_compare_ad_candidates_needs_two(tools, monkeypatch):
+    from api.assistant import subagent_tools
+    from domain.generator.service import generator_service
+
+    async def _list(project_id, limit=10):  # noqa: ANN001
+        return [{"id": "g1", "status": "completed"}]
+
+    async def _fetch(gid):  # noqa: ANN001
+        return {"generation_id": gid, "status": "completed"}
+
+    async def _detail(gid, org_id=None):  # noqa: ANN001
+        return {"status": "completed", "input": {}, "candidates": [{"copy": {"headline": "하나"}}]}
+
+    monkeypatch.setattr(subagent_tools, "list_generations", _list)
+    monkeypatch.setattr(subagent_tools, "fetch_generation_result", _fetch)
+    monkeypatch.setattr(generator_service, "get_detail", _detail)
+
+    cmd = await tools["compare_ad_candidates"].coroutine(
+        state=_state(project_id="p1"), tool_call_id="t1"
+    )
+    # 후보 1개면 폼을 안 띄우고 안내 메시지만.
+    assert "widget" not in cmd.update
+    assert "2개 이상" in cmd.update["messages"][0].content
+
+
+@pytest.mark.asyncio
 async def test_run_generation_complete_args_asks_about_image_first(tools):
     # 완비돼도 이미지 의사 미확인이면 시작하지 않고 되묻는다(형태 없는 상품 배려)
     cmd = await tools["run_generation"].coroutine(

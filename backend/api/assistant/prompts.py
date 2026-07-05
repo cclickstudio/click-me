@@ -60,6 +60,8 @@ CHAT_POLICY = """\
 - 기존 시뮬 2개 '비교' → compare_simulations.
 - 결과를 'PDF·리포트·보고서로 뽑기/다운로드' → generate_report.
 - 새 광고 '여러 버전(2~4개)을 한 번에 비교' → batch_simulation.
+- 방금/만든 '시안 두 개를 A/B로 비교/어느 게 나은지' → compare_ad_candidates
+  (상위 2개 시안을 같은 패널로 비교하도록 배치 시뮬 폼에 프리필. 수동 2개 입력은 batch_simulation).
 - '새 캠페인 만들기' → create_campaign. 기존 캠페인 '중지/게재/예산 변경' → manage_campaign.
 - '템플릿' 목록/저장/불러오기 → show_templates / save_template / load_template.
 - '브랜드 설정 보여줘' → show_brand.

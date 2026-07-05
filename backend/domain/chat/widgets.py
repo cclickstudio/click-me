@@ -67,9 +67,16 @@ def report_ready(project_id: str | None, period: str) -> dict:
     }
 
 
-def batch_sim_form() -> dict:
-    """배치 시뮬 입력 폼(광고 2~4개 비교) — data 없음."""
-    return {"widget": {"type": "batch_sim_form"}, "source": SIMULATION}
+def batch_sim_form(prefill: dict | None = None) -> dict:
+    """배치 시뮬 입력 폼(광고 2~4개 비교).
+
+    prefill={ads:[{ad_title, ad_content, product_category}, ...]} 선택 — 제너레이터 후보를
+    A/B로 프리필할 때 사용. 없으면 빈 폼(수동 입력, 기존 동작 불변).
+    """
+    widget: dict = {"type": "batch_sim_form"}
+    if prefill:
+        widget["data"] = prefill
+    return {"widget": widget, "source": SIMULATION}
 
 
 def create_campaign(prefill: dict) -> dict:

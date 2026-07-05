@@ -1852,7 +1852,20 @@ export default function ChatConversation({
                       />
                     )}
                     {msg.meta?.widget?.type === 'batch_sim_form' && (
-                      <BatchSimWidget projectId={projectId} />
+                      <BatchSimWidget
+                        projectId={projectId}
+                        initialAds={
+                          (
+                            msg.meta?.widget?.data as {
+                              ads?: {
+                                ad_title: string;
+                                ad_content: string;
+                                product_category: string;
+                              }[];
+                            }
+                          )?.ads
+                        }
+                      />
                     )}
                     {msg.meta?.widget?.type === 'report_ready' && (
                       <ReportWidget
