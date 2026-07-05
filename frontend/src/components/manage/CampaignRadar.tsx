@@ -2,6 +2,7 @@
 // 실측 기반 정규화만 사용(합성 금지) — 절대값이 아닌 캠페인 간 상대 성격 비교용.
 'use client';
 
+import { memo } from 'react';
 import {
   Legend,
   PolarAngleAxis,
@@ -24,7 +25,12 @@ const AXES: { label: string; raw: (c: CampaignSummary) => number; invert?: boole
   { label: 'CPC 효율', raw: (c) => c.cpc_krw, invert: true },
 ];
 
-export function CampaignRadar({ campaigns }: { campaigns: CampaignSummary[] }) {
+// campaigns 참조가 그대로면 리렌더 스킵 — 상위에서 전환가치·ROAS 타이핑 중 Recharts 재조정을 막는다.
+export const CampaignRadar = memo(function CampaignRadar({
+  campaigns,
+}: {
+  campaigns: CampaignSummary[];
+}) {
   // 권한 있는 캠페인 중 지출 상위 3개 — 2개 미만이면 비교 의미가 없어 렌더하지 않는다.
   const rows = campaigns
     .filter((c) => !metricsBlocked(c))
@@ -80,4 +86,4 @@ export function CampaignRadar({ campaigns }: { campaigns: CampaignSummary[] }) {
       </div>
     </div>
   );
-}
+});

@@ -1,4 +1,5 @@
 // 캠페인 건강신호 리스트 — 심각도순 + 지출 추세 스파크라인·7일 델타·페이싱 추정·노출 피로.
+import { memo, useMemo } from 'react';
 import Link from 'next/link';
 import type { CampaignSummary } from '@/components/manage/campaigns/types';
 import { metricsBlocked, pacingMeaningful } from '@/components/manage/campaigns/types';
@@ -30,25 +31,32 @@ function DeltaTag({ delta }: { delta: number | null }) {
   );
 }
 
-export function HealthList({
+// memo — 부모(모니터링 페이지)가 리포트 모달 토글 등 무관한 상태로 리렌더돼도, 프롭이 그대로면 스킵.
+export const HealthList = memo(function HealthList({
   campaigns,
   spendSeries,
   now,
+  compact = false,
 }: {
   campaigns: CampaignSummary[];
   spendSeries: Record<string, number[]>; // campaign_id → 일별 지출
   now: Date;
+  // 홈 반폭 타일처럼 좁은 컨테이너용 — 뷰포트 기준 고정폭 대신 축소폭을 써 지표칸 찌부러짐/겹침 방지.
+  compact?: boolean;
 }) {
-  // 심각도 높은 순 → 동순위면 소진율 높은 순.
-  const rows = [...campaigns].sort((a, b) => {
-    const d = SEVERITY[campaignHealth(b).level] - SEVERITY[campaignHealth(a).level];
-    return d !== 0 ? d : b.pacing_pct - a.pacing_pct;
-  });
+  // 심각도 높은 순 → 동순위면 소진율 높은 순. 건강신호는 캠페인당 1회만 계산(정렬 비교자 중복 호출 제거).
+  const rows = useMemo(() => {
+    const withHealth = campaigns.map((c) => ({ c, h: campaignHealth(c) }));
+    withHealth.sort((x, y) => {
+      const d = SEVERITY[y.h.level] - SEVERITY[x.h.level];
+      return d !== 0 ? d : y.c.pacing_pct - x.c.pacing_pct;
+    });
+    return withHealth;
+  }, [campaigns]);
 
   return (
     <div className="rounded-2xl border border-[#E5E8EB] dark:border-[#2D3748] divide-y divide-[#E5E8EB] dark:divide-[#2D3748] overflow-hidden">
-      {rows.map((c) => {
-        const h = campaignHealth(c);
+      {rows.map(({ c, h }) => {
         const s = LEVEL_STYLE[h.level];
         const fatigue = frequencyFatigue(c);
         const blocked = metricsBlocked(c);
@@ -68,7 +76,7 @@ export function HealthList({
           >
             <span className={`shrink-0 w-2 h-2 rounded-full ${s.dot}`} />
             {/* 이름 칸 — 좁은 컨테이너(홈 반폭 타일)에선 줄여 우측 지표 줄바꿈 깨짐을 막는다 */}
-            <div className="w-24 lg:w-40 shrink-0">
+            <div className={`shrink-0 ${compact ? 'w-24' : 'w-24 lg:w-40'}`}>
               <p className="text-sm font-medium text-[#191F28] dark:text-[#F2F4F6] truncate">{c.name}</p>
               <div className="mt-1">
                 <StateBadge state={c.state} />
@@ -116,19 +124,25 @@ export function HealthList({
                 )}
               </div>
             </div>
-            <div className="w-28 shrink-0 flex flex-col items-end gap-0.5">
-              <Sparkline values={trend} />
+            {/* 스파크라인 — compact는 폭·overflow를 좁혀 옆 칸으로 선이 새는 것을 막는다 */}
+            <div
+              className={`shrink-0 flex flex-col items-end gap-0.5 overflow-hidden ${
+                compact ? 'w-16' : 'w-28'
+              }`}
+            >
+              <Sparkline values={trend} width={compact ? 60 : 96} />
               <DeltaTag delta={delta} />
             </div>
-            <div className="w-52 shrink-0 text-right">
+            {/* 상태 — compact는 힌트 문장을 접어 폭을 내용에 맞춰 지표칸에 자리를 돌려준다 */}
+            <div className={`shrink-0 text-right ${compact ? '' : 'w-52'}`}>
               <span className={`inline-block px-2 py-0.5 rounded-full text-[11px] font-semibold ${s.chip}`}>
                 {h.label}
               </span>
-              <p className="mt-1 text-[11px] text-[#8B95A1] truncate">{h.hint}</p>
+              {!compact && <p className="mt-1 text-[11px] text-[#8B95A1] truncate">{h.hint}</p>}
             </div>
           </Link>
         );
       })}
     </div>
   );
-}
+});
