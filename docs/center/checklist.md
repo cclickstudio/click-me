@@ -25,11 +25,11 @@
 - [x] ADMIN 기업 드롭다운(프로젝트 왼쪽) — isAdmin일 때 상단에 기업 Select, 선택 시 setAdminOrgId(X-Org-Id)
 
 ## Phase 4 — 알림 센터
-- [ ] 병합 목록 렌더
-- [ ] 아코디언: 접힘 제목만 · 단일 오픈 · 열 때 읽음
-- [ ] 상세: 시뮬 제안→시안 3개 / 제너 제안→요약+개선안(result-summary 재사용)
-- [ ] 알림별 액션 버튼 → 프리필 이동
-- [ ] 기존 지금 점검·상담·무시 이관
+- [x] 병합 목록 렌더 — AlarmCenter, api.center.notifications + 세그먼트 read_at 필터
+- [x] 아코디언: 접힘 제목만 · 단일 오픈 · 열 때 읽음 (management read / center readSuggestion)
+- [x] 상세: 시뮬 제안→시안 3개(payload.candidates) / 제너 제안→시뮬 요약(resultSummary('sim', source_sim_id) 재사용)
+- [x] 알림별 액션 버튼 → 프리필 이동 (시뮬 돌리기→/simulation, 생성해 보기→/generator, 상담하기→consult+채팅; selectProject로 컨텍스트 프리필)
+- [x] 기존 지금 점검·상담·무시 이관 (notifyScan·consult·resolve/dismissSuggestion, useNotificationStream SSE 구독)
 
 ## Phase 5 — 채팅 센터
 - [ ] 세션 목록(height 100%) 이식

@@ -8,6 +8,7 @@ import { useAuth } from '../AuthProvider';
 import { useProjects } from '../ProjectContext';
 import { api, getAdminOrgId } from '@/lib/api';
 import CenterFilterBar, { type CenterSegment } from './CenterFilterBar';
+import AlarmCenter from './AlarmCenter';
 
 type CenterTab = 'chat' | 'alarm';
 
@@ -163,7 +164,7 @@ export default function Center() {
         {tab === 'chat' ? (
           <CenterPlaceholder label="채팅 센터" />
         ) : (
-          <CenterPlaceholder label="알림 센터" />
+          <AlarmCenter projectId={projectId} segment={alarmSeg} role={user?.role} />
         )}
       </div>
     </aside>
