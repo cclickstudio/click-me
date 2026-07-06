@@ -187,7 +187,8 @@ class RubricScore(BaseModel):
 class SimulationAggregate(BaseModel):
     """집계 엔진 산출 — 분석팀·리포트 입력 계약.
 
-    ci_low/high·variance_warning 의 정식 산출(부트스트랩 등)은 추후 구현.
+    ci_low/high 는 가중 부트스트랩(BasicAggregator._weighted_bootstrap_ci)으로,
+    variance_warning 은 구매의도 가중표준편차 임계(_VARIANCE_MIN_STD)로 산출됨.
     """
 
     click_intent_rate: float
