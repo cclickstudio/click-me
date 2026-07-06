@@ -195,6 +195,7 @@ type WidgetSpec = {
     plain_summary?: string | null;
     improvement_direction?: string;
     existing_ad_s3_key?: string | null;
+    product_cutout_s3_key?: string | null;
     fix_requests?: string | null;
     product_category?: string;
     ad_objective?: string;
