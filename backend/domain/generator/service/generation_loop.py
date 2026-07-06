@@ -118,14 +118,14 @@ async def _derive_fix(candidate: dict, seed: dict) -> str:
     llm = build_text_llm(temperature=0.3, max_tokens=400)
     resp = await llm.ainvoke([("system", _DERIVE_FIX_SYSTEM), ("user", user)])
     raw = resp.content if isinstance(resp.content, str) else str(resp.content)
-    directives = await classify_improvements(
+    classification = await classify_improvements(
         simulation_summary=None,
         plain_summary=None,
         improvement_direction=None,
         fix_requests=raw,
     )
-    if directives:
-        return "\n".join(f"- {a}" for a in directives)
+    if classification.directives:
+        return "\n".join(f"- {a}" for a in classification.directives)
     return raw.strip()
 
 

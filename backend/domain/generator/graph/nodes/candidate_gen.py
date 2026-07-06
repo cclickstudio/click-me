@@ -42,6 +42,7 @@ from domain.generator.pipeline.image_generator import (
 )
 from domain.generator.pipeline.multimodal_generator import generate_image_and_copy
 from domain.generator.pipeline.quality_checker import check_quality
+from domain.generator.pipeline.template_selector import describe_template
 from domain.generator.pipeline.text_overlay import render_ad_text
 from tools.storage.s3 import (
     candidate_base_key,
@@ -414,34 +415,17 @@ async def generate_candidates(state: GenerationState, config: RunnableConfig) ->
     return out
 
 
-async def _generate_improve_candidate(state: GenerationState, config: RunnableConfig) -> dict:
-    """개선 모드 전용 — 항상 OpenAI 경로, 누끼 로드, 단일 후보 1장 생성."""
-    emit_progress(config, "candidates", 40, "개선 이미지 생성 중...")
-    req = state["request"]
-    generation_id = state["generation_id"]
-    product_analysis = ProductAnalysis(**state["product_analysis"])
-    plans = [StrategyPlan(**p) for p in state["plans"]]
-    plan = plans[0]  # strategy 노드에서 주입한 더미 플랜 1개
+async def _resolve_source_images(req: dict) -> tuple[bytes | None, bytes | None]:
+    """개선 모드 누끼/원본 이미지 판정 — 3-tier 폴백.
 
-    width, height = req["width"], req["height"]
-    gen_size = _map_ad_size(width, height)
-    brand_color = req.get("brand_color")
-    tone = req.get("tone_and_manner")
-    improvement_context: str | None = state.get("improvement_context")
+    tier 1(direct): 생성 모드에서 저장된 누끼 키가 요청에 직접 있으면 그대로 사용
+    tier 2(reconstructed): 없으면 existing_ad_s3_key를 candidate_key 패턴으로 역산해 누끼 키 재구성
+    tier 3(extracted/edit): 그것도 실패하면 기존 광고 이미지를 다운로드해 즉석 배경 제거 시도 →
+      검증 통과 시 누끼로 채택(인페인팅), 실패 시 원본 이미지 그대로 Edit API에 전달
 
-    logo_s3_key = req.get("brand_logo_s3_key")
-    logo_image_bytes: bytes | None = None
-    if logo_s3_key:
-        try:
-            logo_image_bytes = await download_bytes(logo_s3_key)
-        except Exception:
-            logo_image_bytes = None
-
-    # 누끼 이미지 로드 — 3-tier 폴백
-    # tier 1(direct): 생성 모드에서 저장된 누끼 키가 요청에 직접 있으면 그대로 사용
-    # tier 2(reconstructed): 없으면 existing_ad_s3_key를 candidate_key 패턴으로 역산해 누끼 키 재구성
-    # tier 3(extracted/edit): 그것도 실패하면 기존 광고 이미지를 다운로드해 즉석 배경 제거 시도 →
-    #   검증 통과 시 누끼로 채택(인페인팅), 실패 시 원본 이미지 그대로 Edit API에 전달
+    각 단계가 개별 try/except로 감싸여 있어 이 함수 자체는 예외를 던지지 않고
+    항상 (product_cutout_bytes, original_image_bytes) 튜플을 반환한다(둘 다 None이면 자유 생성).
+    """
     product_cutout_s3_key: str | None = req.get("product_cutout_s3_key")
     product_cutout_bytes: bytes | None = None
     original_image_bytes: bytes | None = None
@@ -502,23 +486,74 @@ async def _generate_improve_candidate(state: GenerationState, config: RunnableCo
                         existing_ad_s3_key,
                     )
 
-    emit_progress(config, "candidates", 55, "개선 카피 생성 중...")
-    ad_copy = await generate_copy(
-        product_analysis=product_analysis,
-        strategy_output=StrategyOutput(
-            strategy=plan.strategy,
-            strategy_description=plan.strategy_description,
-            rationale=plan.rationale,
+    return product_cutout_bytes, original_image_bytes
+
+
+async def _generate_improve_candidate(state: GenerationState, config: RunnableConfig) -> dict:
+    """개선 모드 전용 — 항상 OpenAI 경로, 누끼 로드, 단일 후보 1장 생성."""
+    emit_progress(config, "candidates", 40, "개선 이미지 생성 중...")
+    req = state["request"]
+    generation_id = state["generation_id"]
+    product_analysis = ProductAnalysis(**state["product_analysis"])
+    plans = [StrategyPlan(**p) for p in state["plans"]]
+    plan = plans[0]  # strategy 노드에서 주입한 더미 플랜 1개
+
+    width, height = req["width"], req["height"]
+    gen_size = _map_ad_size(width, height)
+    brand_color = req.get("brand_color")
+    tone = req.get("tone_and_manner")
+    improvement_context: str | None = state.get("improvement_context")
+
+    logo_s3_key = req.get("brand_logo_s3_key")
+    logo_image_bytes: bytes | None = None
+    if logo_s3_key:
+        try:
+            logo_image_bytes = await download_bytes(logo_s3_key)
+        except Exception:
+            logo_image_bytes = None
+
+    # 누끼/원본 판정(tier1~3, 즉석 배경제거 API 호출 포함될 수 있음)과 카피 생성(LLM)은
+    # 서로 의존관계가 없어 asyncio.gather로 동시에 실행한다 — 순차 실행 대비 지연 절감.
+    # return_exceptions=True로 받아 두 작업이 항상 끝까지 실행되게 하고, 방치되는
+    # 백그라운드 태스크 없이 이 자리에서 직접 예외를 확인·재발생시킨다.
+    emit_progress(config, "candidates", 55, "개선 이미지 소스 판정·카피 생성 중...")
+    source_result, copy_result = await asyncio.gather(
+        _resolve_source_images(req),
+        generate_copy(
+            product_analysis=product_analysis,
+            strategy_output=StrategyOutput(
+                strategy=plan.strategy,
+                strategy_description=plan.strategy_description,
+                rationale=plan.rationale,
+            ),
+            template=plan.template,
+            improvement_context=improvement_context,
         ),
-        template=None,
-        improvement_context=improvement_context,
+        return_exceptions=True,
     )
+    if isinstance(copy_result, BaseException):
+        raise copy_result
+    ad_copy = copy_result
+    if isinstance(source_result, BaseException):
+        # _resolve_source_images는 내부적으로 전 단계를 try/except하므로 정상적으론 여기 안 옴 —
+        # 방어적으로만 처리하고 자유 생성으로 폴백. (try/except 밖이라 exception()이 아닌
+        # exc_info=로 직접 전달)
+        logger.error(
+            "개선 모드 이미지 소스 판정 중 예상 밖 오류 — 배경 자유 생성으로 진행",
+            exc_info=source_result,
+        )
+        product_cutout_bytes: bytes | None = None
+        original_image_bytes: bytes | None = None
+    else:
+        product_cutout_bytes, original_image_bytes = source_result
 
     emit_progress(config, "candidates", 68, "개선 이미지 생성 중...")
+    # strategy·template — 개선 모드도 CREATE와 동일하게 5전략 중 1개(strategy.py에서 선택)의
+    # 실제 템플릿(A/B/C)을 그대로 사용한다. 후보는 여전히 1장만 생성.
     image_bytes = await generate_image(
         product_analysis=product_analysis,
         strategy=plan.strategy,
-        template=None,
+        template=plan.template,
         size=gen_size,
         brand_color=brand_color,
         tone=tone,
@@ -542,7 +577,7 @@ async def _generate_improve_candidate(state: GenerationState, config: RunnableCo
         headline=ad_copy.headline,
         body=ad_copy.body,
         cta=ad_copy.cta,
-        template=None,
+        template=plan.template,
         brand_color=brand_color,
         strategy=plan.strategy,
     )
@@ -554,7 +589,7 @@ async def _generate_improve_candidate(state: GenerationState, config: RunnableCo
     )
 
     if logo_image_bytes is not None:
-        image_bytes = composite_logo(image_bytes, logo_image_bytes, None)
+        image_bytes = composite_logo(image_bytes, logo_image_bytes, plan.template)
 
     s3_key = candidate_key(generation_id, 0)
     await upload_bytes(image_bytes, s3_key, content_type="image/png")
@@ -570,7 +605,7 @@ async def _generate_improve_candidate(state: GenerationState, config: RunnableCo
             "strategy_description": plan.strategy_description,
             "rationale": plan.rationale,
         },
-        "template_id": TemplateType.A.value,  # 텍스트 오버레이가 A 폴백이므로 A로 저장
+        "template_id": plan.template.value,
         "copy": ad_copy.model_dump(),
         "image_prompt": None,
         "s3_key": s3_key,
@@ -587,7 +622,7 @@ async def _generate_improve_candidate(state: GenerationState, config: RunnableCo
         CandidateExplanation(
             applied_target=f"{target}{particle} 주요 타겟으로 설정",
             applied_strategy=plan.strategy_description,
-            applied_template="자유 레이아웃 (개선 모드)",
+            applied_template=describe_template(plan.template),
             rationale="시뮬레이션 피드백과 수정 요청을 반영해 약점을 보완한 새 광고 이미지를 생성했습니다.",
         ).model_dump()
     ]

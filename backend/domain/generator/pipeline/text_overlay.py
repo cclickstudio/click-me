@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFilter, ImageFont
+from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageStat
 
 from domain.generator.contracts.enums import AdStrategy, TemplateType
 from domain.generator.pipeline.style_profile import get_style
@@ -66,16 +66,37 @@ def _resolve_font(weight: str) -> str:
 _DEFAULT_ACCENT = (37, 99, 235)  # brand_color 없을 때 기본 강조색(파랑)
 _WHITE = (255, 255, 255, 255)
 _LIGHT = (235, 235, 235, 255)
+_DARK_TEXT = (51, 51, 51, 255)  # 밝은 배경 위에 쓸 어두운 텍스트색(순검정 대신 부드러운 톤)
+_BRIGHTNESS_THRESHOLD = 140.0
 
 # 숫자 토큰(할인율·수량·기간 등) — 단어에 숫자가 포함되면 강조 대상으로 본다.
 _NUM_RE = re.compile(r"\d")
 
 
-def _contrast_stroke(color: tuple[int, int, int, int]) -> tuple[int, int, int, int]:
-    """텍스트 색의 밝기에 따라 대비되는 외곽선 색을 고른다(패널 없는 floating/emotional 가독성)."""
-    r, g, b = color[:3]
+def _sample_brightness(base: Image.Image, rect: tuple[int, int, int, int]) -> float:
+    """rect 영역(텍스트가 그려질 자리)의 평균 밝기(0~255)를 구한다.
+
+    패널 없는 floating/emotional 스타일은 사진이 그대로 비치므로, 전략별 고정 텍스트색
+    대신 실제로 그 자리에 뭐가 있는지 보고 텍스트색을 정하는 게 더 안전하다.
+    """
+    x0, y0, x1, y1 = rect
+    if x1 <= x0 or y1 <= y0:
+        return 128.0
+    region = base.convert("RGB").crop((x0, y0, x1, y1))
+    return ImageStat.Stat(region.convert("L")).mean[0]
+
+
+def _adaptive_text_color(brightness: float) -> tuple[int, int, int, int]:
+    """배경이 어두우면 흰색, 밝으면 어두운 톤 텍스트색을 고른다."""
+    return _WHITE if brightness < _BRIGHTNESS_THRESHOLD else _DARK_TEXT
+
+
+def _shadow_color_for(text_color: tuple[int, int, int, int]) -> tuple[int, int, int, int]:
+    """선택된 텍스트색과 반대 밝기의 반투명 그림자색 — 국지적으로 밝기가 섞인 배경에서도
+    텍스트색 하나만으로 커버 안 되는 부분을 부드러운 그림자로 보강한다."""
+    r, g, b = text_color[:3]
     luminance = 0.299 * r + 0.587 * g + 0.114 * b
-    return (255, 255, 255, 230) if luminance < 140 else (0, 0, 0, 200)
+    return (0, 0, 0, 110) if luminance >= _BRIGHTNESS_THRESHOLD else (255, 255, 255, 140)
 
 
 def _accent_or_tint(
@@ -221,34 +242,47 @@ def _fit(
 
 
 def _draw_block(
-    draw: ImageDraw.ImageDraw,
+    base: Image.Image,
     text: str,
     rect: tuple[int, int, int, int],
     font_path: str,
     max_size: int,
     color: tuple[int, int, int, int],
     align: str,
-    stroke_fill: tuple[int, int, int, int] | None = None,
-    shadow: bool = False,
-) -> None:
+    soft_shadow_color: tuple[int, int, int, int] | None = None,
+) -> Image.Image:
+    """텍스트를 rect 안에 그린다. soft_shadow_color가 있으면 딱딱한 외곽선 대신
+    부드럽게 블러 처리된 그림자를 텍스트 뒤에 먼저 합성한 뒤 텍스트를 그린다
+    (패널 없는 floating/emotional 스타일의 사진 위 가독성 보강용)."""
     if not text:
-        return
+        return base
+    draw = ImageDraw.Draw(base)
     x0, y0, x1, y1 = rect
     box_w, box_h = x1 - x0, y1 - y0
     font, lines, line_h = _fit(draw, text, font_path, box_w, box_h, max_size)
-    # 패널 없는 floating/emotional은 외곽선+그림자로 사진 위 가독성을 확보.
-    stroke_w = max(2, font.size // 14) if stroke_fill else 0
-    shadow_off = max(1, font.size // 22)
     y = y0 + (box_h - line_h * len(lines)) // 2
+
+    if soft_shadow_color is not None:
+        shadow_off = max(1, font.size // 18)
+        shadow_layer = Image.new("RGBA", base.size, (0, 0, 0, 0))
+        sdraw = ImageDraw.Draw(shadow_layer)
+        sy = y
+        for line in lines:
+            line_w = sdraw.textlength(line, font=font)
+            sx = x0 + (box_w - int(line_w)) // 2 if align == "center" else x0
+            sdraw.text((sx + shadow_off, sy + shadow_off), line, font=font, fill=soft_shadow_color)
+            sy += line_h
+        blur_radius = max(2, font.size // 12)
+        shadow_layer = shadow_layer.filter(ImageFilter.GaussianBlur(blur_radius))
+        base = Image.alpha_composite(base, shadow_layer)
+        draw = ImageDraw.Draw(base)
+
     for line in lines:
         line_w = draw.textlength(line, font=font)
         x = x0 + (box_w - int(line_w)) // 2 if align == "center" else x0
-        if shadow:
-            draw.text((x + shadow_off, y + shadow_off), line, font=font, fill=(0, 0, 0, 90))
-        draw.text(
-            (x, y), line, font=font, fill=color, stroke_width=stroke_w, stroke_fill=stroke_fill
-        )
+        draw.text((x, y), line, font=font, fill=color)
         y += line_h
+    return base
 
 
 def _draw_cta(
@@ -364,8 +398,9 @@ def render_ad_text(
     템플릿(A/B/C)이 텍스트 *위치*를, strategy의 StyleProfile이 *스타일*을 결정한다.
     template=None(개선 모드 자유 레이아웃)이면 Template A 레이아웃으로 폴백.
     - box: 반투명 패널 + 굵은 폰트(현행).
-    - floating: 패널 없음 + 외곽선·그림자로 사진 위 가독성 확보.
-    - emotional: 패널 없음 + 얇은 폰트 + 여백(폰트 축소) + 외곽선·그림자.
+    - floating/emotional: 패널 없음 — 텍스트색은 그 자리 배경 밝기를 직접 재서 적응적으로
+      정하고(_adaptive_text_color), 부드러운 블러 그림자로 국지적 대비를 보강한다
+      (딱딱한 외곽선은 "스티커처럼 보인다"는 피드백으로 제거함). emotional은 폰트도 축소.
     """
     base = Image.open(io.BytesIO(image_bytes)).convert("RGBA")
     w, h = base.size
@@ -376,10 +411,6 @@ def render_ad_text(
     # accent_override(예: FOMO 코랄 레드)가 브랜드컬러보다 우선.
     accent_hex = (profile.accent_override if profile else None) or brand_color
     accent = _parse_color(accent_hex) or _DEFAULT_ACCENT
-    if profile is not None:
-        headline_color, body_color = profile.headline_color, profile.body_color
-    else:
-        headline_color, body_color = _WHITE, _LIGHT
 
     # 전략별 폰트 웨이트(KB Typography) → 실제 폰트 파일. 프로필 없으면 Bold/Regular 기본.
     if profile is not None:
@@ -392,8 +423,22 @@ def render_ad_text(
     # 감성형은 여백을 위해 폰트를 축소. 그 외는 원래 크기.
     size_factor = 0.82 if style == "emotional" else 1.0
     floating = style in ("floating", "emotional")
-    head_stroke = _contrast_stroke(headline_color) if floating else None
-    body_stroke = _contrast_stroke(body_color) if floating else None
+
+    if floating:
+        # 패널이 없어 사진이 그대로 비치므로, 전략별 고정색(profile.headline/body_color) 대신
+        # 실제 그 자리의 밝기를 재서 흰색/어두운 톤 중 더 잘 보이는 쪽을 고른다.
+        headline_color = _adaptive_text_color(
+            _sample_brightness(base, _px(spec.headline.box, w, h))
+        )
+        body_color = _adaptive_text_color(_sample_brightness(base, _px(spec.body.box, w, h)))
+        head_shadow: tuple[int, int, int, int] | None = _shadow_color_for(headline_color)
+        body_shadow: tuple[int, int, int, int] | None = _shadow_color_for(body_color)
+    elif profile is not None:
+        headline_color, body_color = profile.headline_color, profile.body_color
+        head_shadow = body_shadow = None
+    else:
+        headline_color, body_color = _WHITE, _LIGHT
+        head_shadow = body_shadow = None
 
     # box 스타일만 반투명 패널을 합성. floating/emotional은 패널 없음.
     if style == "box":
@@ -419,27 +464,25 @@ def render_ad_text(
             spec.headline.align,
         )
     else:
-        _draw_block(
-            draw,
+        base = _draw_block(
+            base,
             headline,
             _px(spec.headline.box, w, h),
             head_font,
             int(h * spec.headline.max_ratio * size_factor),
             headline_color,
             spec.headline.align,
-            stroke_fill=head_stroke,
-            shadow=floating,
+            soft_shadow_color=head_shadow,
         )
-    _draw_block(
-        draw,
+    base = _draw_block(
+        base,
         body,
         _px(spec.body.box, w, h),
         body_font,
         int(h * spec.body.max_ratio * size_factor),
         body_color,
         spec.body.align,
-        stroke_fill=body_stroke,
-        shadow=floating,
+        soft_shadow_color=body_shadow,
     )
     base = _draw_cta(
         base,
