@@ -86,7 +86,7 @@ STRATEGY_STYLE: dict[AdStrategy, StyleProfile] = {
         _BROWN,
         headline_weight="semibold",
         body_weight="light",
-        cta_weight="regular",
+        cta_weight="medium",
     ),
     AdStrategy.FOMO: StyleProfile(
         "box",

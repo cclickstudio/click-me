@@ -988,6 +988,86 @@ export default function GeneratorPage() {
       ? productName.trim() && productDescription.trim() && targetAudience.trim()
       : !!improveData?.summary;
 
+  // 생성 완료 처리 — SSE "completed" 이벤트와, onerror 폴백에서 재조회한 결과가 이미
+  // completed로 나온 경우(스트림만 끊긴 것) 양쪽에서 공용으로 쓴다.
+  async function applyCompletedResult(generationId: string, d: GenerationDetail) {
+    // CREATE 완료 시 누끼 S3 키 보관 — 개선 모드에서 재사용
+    if (d.product_cutout_s3_key) {
+      lastProductCutoutKeyRef.current = d.product_cutout_s3_key;
+    }
+    setDetail(d);
+    setPhase("done");
+    // 완료된 생성물을 좌측 패널 목록에 즉시 반영(새로고침 불필요).
+    if (selectedProject?.id) refreshDetails(selectedProject.id);
+    // N1 — 전용 페이지 직접 생성이 끝나면, 개선/시뮬 제안을 채팅에 자동 주입.
+    // 기존 대화에 끼워넣지 않고 '새 채팅 세션'을 만들어 거기에 제안한다(맥락 분리).
+    // 만든 세션 id는 저장해 아래 '시뮬레이션 돌리기' 버튼(#2)이 같은 세션을 연다.
+    const pid = selectedProject?.id;
+    if (pid) {
+      const injectKey = `n1_gen_injected_${generationId}`; // 동일 생성 1회만
+      if (!localStorage.getItem(injectKey)) {
+        localStorage.setItem(injectKey, "1");
+        const count = (d.candidates ?? []).length;
+        // 첫 후보를 시뮬 제안 프리필로 — 시안 카피 + 이미지 URL(시뮬 이미지 필수 충족).
+        const c0 = (d.candidates ?? [])[0];
+        const simImgRaw = c0?.image_url ?? null;
+        const simImg = simImgRaw
+          ? simImgRaw.startsWith("/")
+            ? `${API_BASE}${simImgRaw}`
+            : simImgRaw
+          : undefined;
+        const sessionTitle = `${productName || "광고 시안"} 시뮬·개선`;
+        api.chat.createSession(pid, sessionTitle).then((created) => {
+          const sid = created.id;
+          // #2 버튼이 이 제안 세션을 열 수 있게 생성별로 저장.
+          localStorage.setItem(`gen_sim_session_${generationId}`, sid);
+          void api.chat
+            .appendWidgets(sid, [
+              {
+                content: `광고 시안 ${count}개가 생성됐어요. 채팅에서 이어서 개선해볼까요?`,
+                meta: {
+                  source: "generator",
+                  label: "광고 생성",
+                  approval: {
+                    action: "run_generator",
+                    label: "개선 시안 다시 생성",
+                    reasons: ["전용 페이지에서 직접 만든 시안을 채팅에서 이어 개선할 수 있어요."],
+                  },
+                },
+              },
+              // #3 — 생성 완료 시 시뮬레이션 제안(첫 시안 프리필). 이미지 URL로 시뮬 즉시 실행 가능.
+              ...(c0
+                ? [
+                    {
+                      content:
+                        "생성한 시안으로 소비자 반응을 미리 예측해볼까요? 아래에서 확인·실행하세요.",
+                      meta: {
+                        source: "simulation",
+                        label: "시뮬레이션",
+                        widget: {
+                          type: "sim_form",
+                          data: {
+                            ad_title: c0.copy.headline,
+                            ad_content: [c0.copy.headline, c0.copy.body, c0.copy.cta]
+                              .filter(Boolean)
+                              .join("\n"),
+                            ad_image_url: simImg,
+                          },
+                        },
+                      },
+                    },
+                  ]
+                : []),
+            ])
+            .then(() => {
+              if (!floatingOpenRef.current) pushUnread();
+            })
+            .catch(() => {});
+        }).catch(() => {});
+      }
+    }
+  }
+
   // SSE 구독 — 시작/복원 공용. 완료·실패 시 localStorage 정리.
   function subscribe(generationId: string) {
     esRef.current?.close();
@@ -1004,81 +1084,7 @@ export default function GeneratorPage() {
         setGenJob(null); // 동시실행 슬롯 해제
         try {
           const d = (await api.generator.detail(generationId)) as GenerationDetail;
-          // CREATE 완료 시 누끼 S3 키 보관 — 개선 모드에서 재사용
-          if (d.product_cutout_s3_key) {
-            lastProductCutoutKeyRef.current = d.product_cutout_s3_key;
-          }
-          setDetail(d);
-          setPhase("done");
-          // 완료된 생성물을 좌측 패널 목록에 즉시 반영(새로고침 불필요).
-          if (selectedProject?.id) refreshDetails(selectedProject.id);
-          // N1 — 전용 페이지 직접 생성이 끝나면, 개선/시뮬 제안을 채팅에 자동 주입.
-          // 기존 대화에 끼워넣지 않고 '새 채팅 세션'을 만들어 거기에 제안한다(맥락 분리).
-          // 만든 세션 id는 저장해 아래 '시뮬레이션 돌리기' 버튼(#2)이 같은 세션을 연다.
-          const pid = selectedProject?.id;
-          if (pid) {
-            const injectKey = `n1_gen_injected_${generationId}`; // 동일 생성 1회만
-            if (!localStorage.getItem(injectKey)) {
-              localStorage.setItem(injectKey, "1");
-              const count = (d.candidates ?? []).length;
-              // 첫 후보를 시뮬 제안 프리필로 — 시안 카피 + 이미지 URL(시뮬 이미지 필수 충족).
-              const c0 = (d.candidates ?? [])[0];
-              const simImgRaw = c0?.image_url ?? null;
-              const simImg = simImgRaw
-                ? simImgRaw.startsWith("/")
-                  ? `${API_BASE}${simImgRaw}`
-                  : simImgRaw
-                : undefined;
-              const sessionTitle = `${productName || "광고 시안"} 시뮬·개선`;
-              api.chat.createSession(pid, sessionTitle).then((created) => {
-                const sid = created.id;
-                // #2 버튼이 이 제안 세션을 열 수 있게 생성별로 저장.
-                localStorage.setItem(`gen_sim_session_${generationId}`, sid);
-                void api.chat
-                  .appendWidgets(sid, [
-                    {
-                      content: `광고 시안 ${count}개가 생성됐어요. 채팅에서 이어서 개선해볼까요?`,
-                      meta: {
-                        source: "generator",
-                        label: "광고 생성",
-                        approval: {
-                          action: "run_generator",
-                          label: "개선 시안 다시 생성",
-                          reasons: ["전용 페이지에서 직접 만든 시안을 채팅에서 이어 개선할 수 있어요."],
-                        },
-                      },
-                    },
-                    // #3 — 생성 완료 시 시뮬레이션 제안(첫 시안 프리필). 이미지 URL로 시뮬 즉시 실행 가능.
-                    ...(c0
-                      ? [
-                          {
-                            content:
-                              "생성한 시안으로 소비자 반응을 미리 예측해볼까요? 아래에서 확인·실행하세요.",
-                            meta: {
-                              source: "simulation",
-                              label: "시뮬레이션",
-                              widget: {
-                                type: "sim_form",
-                                data: {
-                                  ad_title: c0.copy.headline,
-                                  ad_content: [c0.copy.headline, c0.copy.body, c0.copy.cta]
-                                    .filter(Boolean)
-                                    .join("\n"),
-                                  ad_image_url: simImg,
-                                },
-                              },
-                            },
-                          },
-                        ]
-                      : []),
-                  ])
-                  .then(() => {
-                    if (!floatingOpenRef.current) pushUnread();
-                  })
-                  .catch(() => {});
-              }).catch(() => {});
-            }
-          }
+          await applyCompletedResult(generationId, d);
         } catch (err) {
           setError(err instanceof Error ? err.message : "생성 결과를 불러오지 못했습니다.");
           setPhase("idle");
@@ -1095,10 +1101,15 @@ export default function GeneratorPage() {
       es.close();
       localStorage.removeItem(ACTIVE_GEN_KEY);
       setGenJob(null); // 동시실행 슬롯 해제
-      // 스트림이 끊긴 이유가 서버측 생성 실패(error 이벤트가 종료 전 유실)일 수 있다.
-      // 상태를 조회해 실제 실패 원인이 있으면 그걸 우선 노출 — "네트워크 끊김"으로 오인 방지.
+      // 스트림이 끊긴 이유가 서버측 생성 실패(error 이벤트가 종료 전 유실)이거나,
+      // 생성 자체는 끝났는데 "completed" 이벤트만 유실된 것일 수 있다.
+      // 상태를 조회해 실제 상태를 우선 노출 — "네트워크 끊김"으로 오인 방지.
       try {
         const d = (await api.generator.detail(generationId)) as GenerationDetail;
+        if (d.status === "completed") {
+          await applyCompletedResult(generationId, d);
+          return;
+        }
         if (d.status === "failed") {
           setError(d.error_message || "광고 생성에 실패했습니다.");
           setPhase("idle");

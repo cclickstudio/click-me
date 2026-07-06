@@ -242,6 +242,10 @@ _EDIT_PROMPT_TEMPLATE = """\
 IMPORTANT: This is an EXISTING advertisement image. \
 Your PRIMARY goal is to PRESERVE the original composition, product placement, \
 and visual identity. Apply only the targeted improvements described below.
+If the image already has any text, headline, CTA button, badge, or other typography \
+baked into it, REMOVE it completely and naturally reconstruct that area (e.g. extend the \
+background or photography) — a new text overlay will be added separately afterward, \
+so the output must contain ZERO text.
 
 Product: {product_name}
 Core values: {core_values}
@@ -261,7 +265,8 @@ Improvement direction (apply these changes to the existing image):
 Requirements:
 - PRESERVE the original product, composition, and layout as much as possible
 - Make only the changes specified in the improvement direction above
-- STRICTLY NO text, letters, words, numbers, or typography
+- REMOVE any existing text, letters, words, numbers, or typography found in the source image
+- STRICTLY NO text, letters, words, numbers, or typography in the output
 - Keep the product clearly recognizable
 - Adjust lighting, color, or mood only as needed by the improvement direction"""
 
