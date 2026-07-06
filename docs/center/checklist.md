@@ -7,7 +7,7 @@
 - [x] 제안 알림 자동생성 — 시뮬 완료 직후 "제너레이터 제안" 인라인 훅 (core/center_suggestions.py 공용 헬퍼 + simulation_service `_record_gen_suggestion`)
 - [x] 제안 알림 자동생성 — 제너 완료 직후 "시뮬레이션 제안" 인라인 훅 (generator_service `_record_sim_suggestion`, 시안 3개 미리보기 payload)
 - [x] 집행 제안 훅 자리(판정 기준은 open-decisions §1 확정 전까지 TODO 스텁) (simulation_service `_record_gen_suggestion` 하단 TODO)
-- [ ] 알림 병합 조회 API (management 이상감지 + 신규 제안)
+- [x] 알림 병합 조회 API (management 이상감지 + 신규 제안) — `GET /api/center/notifications`(org 스코프·COMPANY 제안숨김·정렬병합) + `POST /api/center/suggestions/{id}/read|dismiss` (api/routers/center.py)
 - [ ] 통합 세션 목록 API (프로젝트 전체, org 스코프)
 - [ ] 시안 3개 미리보기 데이터 조회 경로 확인/보강
 

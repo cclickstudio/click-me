@@ -90,7 +90,7 @@ async def create_center_suggestion(
         print(f"[center] suggestion create error: {exc!r}")
 
 
-def _serialize(s: CenterSuggestion) -> dict:
+def _serialize(s: CenterSuggestion, project_name: str | None = None) -> dict:
     """제안 1건을 알림 센터 병합 목록용 dict로 직렬화(management 알림과 병합 가능한 공통 형태)."""
     return {
         "id": str(s.id),
@@ -99,6 +99,7 @@ def _serialize(s: CenterSuggestion) -> dict:
         "reason": s.reason,
         "organization_id": str(s.organization_id),
         "project_id": str(s.project_id),
+        "project_name": project_name,
         "source_sim_id": str(s.source_sim_id) if s.source_sim_id else None,
         "source_gen_id": str(s.source_gen_id) if s.source_gen_id else None,
         "payload": s.payload,
@@ -120,7 +121,11 @@ async def list_center_suggestions(
         return []
     try:
         async with AsyncSessionLocal() as db:
-            stmt = select(CenterSuggestion).where(CenterSuggestion.organization_id == org)
+            stmt = (
+                select(CenterSuggestion, Project.name)
+                .join(Project, Project.id == CenterSuggestion.project_id)
+                .where(CenterSuggestion.organization_id == org)
+            )
             pid = _as_uuid(project_id)
             if pid is not None:
                 stmt = stmt.where(CenterSuggestion.project_id == pid)
@@ -128,7 +133,7 @@ async def list_center_suggestions(
                 stmt = stmt.where(CenterSuggestion.dismissed_at.is_(None))
             stmt = stmt.order_by(CenterSuggestion.created_at.desc()).limit(limit)
             rows = await db.execute(stmt)
-            return [_serialize(s) for s in rows.scalars()]
+            return [_serialize(s, pname) for s, pname in rows.all()]
     except Exception as exc:  # noqa: BLE001 — 조회 실패면 빈 목록
         print(f"[center] suggestion query error: {exc!r}")
         return []
