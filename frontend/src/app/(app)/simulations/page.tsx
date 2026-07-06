@@ -49,9 +49,10 @@ export default function SimulationsPage() {
   const { user } = useAuth();
   const { revealProjectInPanel } = useProjects();
   const isAdmin = user?.role === 'ADMIN';
+  const isCompany = user?.role === 'COMPANY';
 
   const [query, setQuery] = useState<HistoryQuery>(DEFAULT_HISTORY_QUERY);
-  const [orgKey, setOrgKey] = useState(0); // AdminOrgPicker 선택 변경 시 리스트만 재로드하는 키
+  const [orgKey, setOrgKey] = useState(0); // AdminOrgPicker 선택·삭제 시 리스트만 재로드하는 키
   const debouncedSearch = useDebouncedValue(query.search, 300);
   const qs = historyQueryString({ ...query, search: debouncedSearch });
 
@@ -73,6 +74,18 @@ export default function SimulationsPage() {
     fetcher,
     `${path}|${qs}|${user ? '1' : '0'}#${orgKey}`,
   );
+
+  // COMPANY 내역 삭제(휴지통) — 소속 조직 시뮬만. 삭제 후 리스트만 재로드.
+  const remove = async (r: Row) => {
+    if (!confirm(`'${r.ad_title ?? '이 시뮬레이션'}'을(를) 휴지통으로 보낼까요?`)) return;
+    const res = await authedFetch(`${API_BASE}/api/projects/simulations/${r.id}`, { method: 'DELETE' });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: '삭제 실패' }));
+      alert(err.detail ?? '삭제에 실패했습니다.');
+      return;
+    }
+    setOrgKey((n) => n + 1);
+  };
 
   return (
     <div className="px-8 py-8 max-w-5xl mx-auto">
@@ -120,7 +133,8 @@ export default function SimulationsPage() {
                 <th className="text-center px-4 py-3 text-xs font-semibold text-[#8B95A1]">실행자</th>
                 <th className="text-center px-4 py-3 text-xs font-semibold text-[#8B95A1]">상태</th>
                 <th className="text-center px-4 py-3 text-xs font-semibold text-[#8B95A1]">샘플 수</th>
-                <th className="text-right px-6 py-3 text-xs font-semibold text-[#8B95A1]">실행일</th>
+                <th className={`${isCompany ? 'text-center' : 'text-right'} px-4 py-3 text-xs font-semibold text-[#8B95A1]`}>실행일</th>
+                {isCompany && <th className="text-right px-6 py-3 text-xs font-semibold text-[#8B95A1]" />}
               </tr>
             </thead>
             <tbody>
@@ -164,7 +178,17 @@ export default function SimulationsPage() {
                     <td className="text-center px-4 py-3 text-[#4E5968] dark:text-[#9CA3AF]">
                       {r.sample_size}명
                     </td>
-                    <td className="text-right px-6 py-3 text-[#8B95A1]">{fmt(r.created_at)}</td>
+                    <td className={`${isCompany ? 'text-center' : 'text-right'} px-4 py-3 text-[#8B95A1]`}>{fmt(r.created_at)}</td>
+                    {isCompany && (
+                      <td className="text-right px-6 py-3">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); remove(r); }}
+                          className="px-2.5 py-1 text-xs text-[#8B95A1] rounded-lg hover:bg-red-50 hover:text-red-500 transition-colors"
+                        >
+                          삭제
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 );
               })}

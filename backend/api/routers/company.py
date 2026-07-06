@@ -84,8 +84,21 @@ class GenerationRow(BaseModel):
     product_name: str | None
     mode: str  # create | improve (input JSONB에서 읽음)
     format: str  # single | carousel(카드뉴스) — 생성/카드 배지 분기
+    project_id: str | None = None  # 소속 프로젝트 id(내역 클릭→패널 열기용)
     project_name: str | None
     created_by_name: str | None
+    created_by_role: str | None = None  # 실행자 역할 — 내역서 '관리자' 표기용
+    created_at: datetime
+
+
+class ChatRow(BaseModel):
+    id: str
+    project_id: str | None
+    title: str | None = None
+    message_count: int
+    created_by_name: str | None = None
+    created_by_role: str | None = None
+    project_name: str | None = None
     created_at: datetime
 
 
@@ -473,6 +486,13 @@ async def my_team_members(
 # 시뮬 내역 정렬 화이트리스트·상태 버킷 — 공용 화면(정렬·검색·상태 필터)과 계약 동일.
 # 조직명순은 단일 조직이라 의미 없지만 화면 통일을 위해 created_at로 폴백한다.
 _SIM_SORT_COLS = {"created_at": "s.created_at", "title": "a.title"}
+_GEN_SORT_COLS = {"created_at": "g.created_at", "title": "g.input->>'product_name'"}
+_GEN_STATUS = {
+    "completed": ("completed",),
+    "in_progress": ("pending", "running"),
+    "failed": ("failed",),
+}
+_CHAT_SORT_COLS = {"created_at": "cs.updated_at", "title": "cs.title"}
 _SIM_STATUS = {
     "completed": ("COMPLETED",),
     "in_progress": ("QUEUED", "RUNNING"),
@@ -545,26 +565,47 @@ async def list_company_simulations(
 
 @router.get("/generations", response_model=list[GenerationRow])
 async def list_company_generations(
-    limit: int = 50,
+    limit: int = 20,
+    offset: int = 0,
+    sort: str = "created_at",
+    order: str = "desc",
+    status: str | None = None,
+    search_field: str = "title",
+    search: str | None = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """소속 조직의 제너레이터 내역."""
+    """소속 조직의 제너레이터 내역(페이지네이션·정렬·검색·상태 필터)."""
     org = await _get_company_org(current_user, db)
+    params: dict = {"org_id": org.id, "limit": max(1, min(limit, 200)), "offset": max(0, offset)}
+    where = ["p.organization_id = :org_id", "g.deleted_at IS NULL"]
+    bucket = _GEN_STATUS.get(status) if status else None
+    if bucket:
+        where.append("g.status = ANY(:statuses)")
+        params["statuses"] = list(bucket)
+    if search:
+        col = "p.name" if search_field == "org_name" else "g.input->>'product_name'"
+        where.append(f"{col} ILIKE :q")
+        params["q"] = f"%{search}%"
+    col = _GEN_SORT_COLS.get(sort, "g.created_at")
+    direction = "ASC" if str(order).lower() == "asc" else "DESC"
+    order_by = f"{col} {direction} NULLS LAST"
 
     result = await db.execute(
-        text("""
+        text(f"""
             SELECT g.id, g.status, g.input, g.created_at,
+                   p.id   AS project_id,
                    p.name AS project_name,
-                   u.name AS created_by_name
+                   u.name AS created_by_name,
+                   u.role AS created_by_role
             FROM ad_generations g
             JOIN projects p ON p.id = g.project_id
             LEFT JOIN users u ON u.id = g.created_by
-            WHERE p.organization_id = :org_id AND g.deleted_at IS NULL
-            ORDER BY g.created_at DESC
-            LIMIT :limit
+            WHERE {" AND ".join(where)}
+            ORDER BY {order_by}
+            LIMIT :limit OFFSET :offset
         """),
-        {"org_id": org.id, "limit": limit},
+        params,
     )
     return [
         GenerationRow(
@@ -573,9 +614,91 @@ async def list_company_generations(
             product_name=(r.input or {}).get("product_name") if r.input else None,
             mode=(r.input or {}).get("mode", "create") if r.input else "create",
             format=(r.input or {}).get("format", "single") if r.input else "single",
+            project_id=str(r.project_id) if r.project_id else None,
             project_name=r.project_name,
             created_by_name=r.created_by_name,
+            created_by_role=r.created_by_role,
             created_at=r.created_at,
         )
         for r in result
     ]
+
+
+@router.get("/chats", response_model=list[ChatRow])
+async def list_company_chats(
+    limit: int = 20,
+    offset: int = 0,
+    sort: str = "created_at",
+    order: str = "desc",
+    search_field: str = "title",
+    search: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """소속 조직의 채팅 내역(페이지네이션·정렬·검색). 채팅은 상태 개념이 없다."""
+    org = await _get_company_org(current_user, db)
+    params: dict = {"org_id": org.id, "limit": max(1, min(limit, 200)), "offset": max(0, offset)}
+    where = ["p.organization_id = :org_id"]
+    if search:
+        col = "p.name" if search_field == "org_name" else "cs.title"
+        where.append(f"{col} ILIKE :q")
+        params["q"] = f"%{search}%"
+    col = _CHAT_SORT_COLS.get(sort, "cs.updated_at")
+    direction = "ASC" if str(order).lower() == "asc" else "DESC"
+    order_by = f"{col} {direction} NULLS LAST"
+
+    result = await db.execute(
+        text(f"""
+            SELECT cs.id, cs.project_id, cs.title, cs.created_at,
+                   u.name AS created_by_name,
+                   u.role AS created_by_role,
+                   p.name AS project_name,
+                   COUNT(cm.id) AS message_count
+            FROM chat_sessions cs
+            JOIN projects p ON p.id = cs.project_id
+            LEFT JOIN chat_messages cm ON cm.session_id = cs.id
+            LEFT JOIN users u ON u.id = cs.created_by
+            WHERE {" AND ".join(where)}
+            GROUP BY cs.id, u.name, u.role, p.name
+            ORDER BY {order_by}
+            LIMIT :limit OFFSET :offset
+        """),
+        params,
+    )
+    return [
+        ChatRow(
+            id=str(r.id),
+            project_id=str(r.project_id) if r.project_id else None,
+            title=r.title,
+            message_count=r.message_count,
+            created_by_name=r.created_by_name,
+            created_by_role=r.created_by_role,
+            project_name=r.project_name,
+            created_at=r.created_at,
+        )
+        for r in result.mappings()
+    ]
+
+
+@router.delete("/chats/{session_id}")
+async def delete_company_chat(
+    session_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """채팅 세션 삭제 — 자기 조직 세션만. 메시지는 FK CASCADE로 함께 삭제(휴지통 없음)."""
+    org = await _get_company_org(current_user, db)
+    owner_org = await db.scalar(
+        text(
+            "SELECT p.organization_id FROM chat_sessions cs "
+            "JOIN projects p ON p.id = cs.project_id WHERE cs.id = :sid"
+        ),
+        {"sid": session_id},
+    )
+    if owner_org is None or owner_org != org.id:
+        raise HTTPException(status_code=404, detail="채팅 세션을 찾을 수 없습니다.")
+    # chat_messages FK가 느슨 참조(CASCADE 미보장)라 메시지를 먼저 지운다(고아 방지).
+    await db.execute(text("DELETE FROM chat_messages WHERE session_id = :sid"), {"sid": session_id})
+    await db.execute(text("DELETE FROM chat_sessions WHERE id = :sid"), {"sid": session_id})
+    await db.commit()
+    return {"ok": True}

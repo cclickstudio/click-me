@@ -52,6 +52,18 @@ const adminHistoryChildren = [
   { label: '채팅 내역', href: '/admin/chats' },
 ];
 
+// COMPANY 전용 — ADMIN과 동일 구조(관리/내역 아코디언), 데이터는 자기 조직으로 스코프.
+const companyManageChildren = [
+  { label: '팀 관리', href: '/company/teams' },
+  { label: '프로젝트 관리', href: '/company/projects' },
+  { label: '직원 관리', href: '/company/members' },
+];
+const companyHistoryChildren = [
+  { label: '시뮬레이션 내역', href: '/simulations' },
+  { label: '제너레이터 내역', href: '/company/generations' },
+  { label: '채팅 내역', href: '/company/chats' },
+];
+
 const adminManageIcon = (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M9 12l2 2 4-4" /><rect x="2" y="7" width="20" height="14" rx="2" /><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2" /></svg>
 );
@@ -61,17 +73,6 @@ const adminHistoryIcon = (
 
 // COMPANY는 채팅·시뮬레이션 실행·제너레이터 실행 메뉴 숨김
 const COMPANY_HIDDEN_NAV = ['/chat', '/simulation', '/generator'];
-
-const companyNav = [
-  {
-    label: '팀 관리', href: '/company/teams',
-    icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="6" height="18" rx="1" /><rect x="10.5" y="3" width="6" height="12" rx="1" /><rect x="18" y="3" width="3" height="8" rx="1" /></svg>,
-  },
-  {
-    label: '프로젝트 관리', href: '/company/projects',
-    icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" /></svg>,
-  },
-];
 
 function NavItem({ href, label, icon, active }: { href: string; label: string; icon: React.ReactNode; active: boolean }) {
   return (
@@ -165,6 +166,12 @@ export default function Sidebar({ mobileOpen = false }: { mobileOpen?: boolean }
   const [adminHistoryOpen, setAdminHistoryOpen] = useState(
     adminHistoryChildren.some((c) => c.href === pathname),
   );
+  const [companyManageOpen, setCompanyManageOpen] = useState(
+    companyManageChildren.some((c) => c.href === pathname),
+  );
+  const [companyHistoryOpen, setCompanyHistoryOpen] = useState(
+    companyHistoryChildren.some((c) => c.href === pathname),
+  );
 
   const handleLogout = () => { logout(); router.push('/'); };
 
@@ -249,17 +256,22 @@ export default function Sidebar({ mobileOpen = false }: { mobileOpen?: boolean }
           </>
         )}
 
-        {/* COMPANY 전용 섹션 */}
+        {/* COMPANY 전용 섹션 — ADMIN과 동일하게 관리/내역 두 아코디언(자기 조직 스코프) */}
         {isCompany && (
           <>
             <SectionLabel label="기업 관리" />
-            {companyNav.map((item) => (
-              <NavItem
-                key={item.href}
-                {...item}
-                active={pathname === item.href}
-              />
-            ))}
+            <NavAccordion
+              label="관리" icon={adminManageIcon}
+              items={companyManageChildren}
+              open={companyManageOpen} onToggle={() => setCompanyManageOpen((o) => !o)}
+              pathname={pathname}
+            />
+            <NavAccordion
+              label="내역" icon={adminHistoryIcon}
+              items={companyHistoryChildren}
+              open={companyHistoryOpen} onToggle={() => setCompanyHistoryOpen((o) => !o)}
+              pathname={pathname}
+            />
           </>
         )}
 
