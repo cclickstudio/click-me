@@ -249,6 +249,7 @@ Target audience: {target_audience}
 
 Strategy to reinforce: {strategy_desc}
 Visual style guidance: {style}
+Photography style: {photo_style}
 {color_line}
 {tone_line}
 
@@ -591,6 +592,7 @@ async def generate_image(
                 target_audience=target_audience,
                 strategy_desc=_strategy_desc(strategy),
                 style=_TEMPLATE_STYLE[effective_edit_template],
+                photo_style=_strategy_photo_style(strategy),
                 color_line=color_line,
                 tone_line=tone_line,
                 improvement_context=improvement_context or "전반적인 광고 품질을 개선하세요.",
