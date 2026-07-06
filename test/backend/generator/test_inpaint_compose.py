@@ -19,9 +19,7 @@ def _product(size: int = 80, color=(255, 0, 0, 255)) -> bytes:
 
 
 def test_base_and_mask_match_ad_size():
-    base_png, mask_png = _build_inpaint_base_and_mask(
-        _product(), TemplateType.A, AdSize.SQUARE, 0.5
-    )
+    base_png, mask_png = _build_inpaint_base_and_mask(_product(), TemplateType.A, AdSize.SQUARE)
     base = Image.open(io.BytesIO(base_png))
     mask = Image.open(io.BytesIO(mask_png))
     assert base.size == (1024, 1024)
@@ -30,7 +28,7 @@ def test_base_and_mask_match_ad_size():
 
 def test_mask_opaque_only_on_product_region():
     # 마스크는 상품 실루엣에서만 불투명(보존), 나머지는 투명(생성 대상)이어야 함
-    _, mask_png = _build_inpaint_base_and_mask(_product(), TemplateType.A, AdSize.SQUARE, 0.5)
+    _, mask_png = _build_inpaint_base_and_mask(_product(), TemplateType.A, AdSize.SQUARE)
     mask = Image.open(io.BytesIO(mask_png)).convert("RGBA")
     alpha = mask.split()[3]
     # 상품은 상단 영역에 배치 → 상단 중앙은 불투명, 하단(텍스트 영역)은 투명
@@ -40,7 +38,7 @@ def test_mask_opaque_only_on_product_region():
 
 
 def test_template_c_locks_product_on_right():
-    _, mask_png = _build_inpaint_base_and_mask(_product(), TemplateType.C, AdSize.SQUARE, 0.5)
+    _, mask_png = _build_inpaint_base_and_mask(_product(), TemplateType.C, AdSize.SQUARE)
     alpha = Image.open(io.BytesIO(mask_png)).convert("RGBA").split()[3]
     w, h = alpha.size
     # 좌측 패널(텍스트 영역)은 투명, 우측(상품)은 불투명

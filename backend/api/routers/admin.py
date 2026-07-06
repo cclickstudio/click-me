@@ -74,58 +74,38 @@ async def delete_company(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_admin),
 ):
-    """회사(조직) 하드 삭제 — 하위 프로젝트·시뮬·생성·멤버·유저 계정까지 전부 제거."""
-    # 하드 삭제 헬퍼 재사용 (시뮬·광고·생성 cascade)
-    from api.routers.projects import _purge_ads, _purge_generations, _purge_simulations
+    """회사(조직) 소프트 삭제 — 조직·소속 유저를 INACTIVE로 비활성화하고 Cognito 계정만 제거.
 
+    프로젝트·시뮬·생성·채팅 데이터는 그대로 보존해, 관리자(개발진)가 삭제된 조직의 활동을
+    사후 조회할 수 있게 한다. 유저는 status=INACTIVE로 인증이 차단되고(core/auth), Cognito에서는
+    실제 삭제돼 로그인이 불가능해진다. (하드 삭제는 FK 참조로 실패하고 이력 추적도 불가능해 전환.)
+    """
     org = await db.scalar(select(Organization).where(Organization.id == org_id))
     if not org:
         raise HTTPException(status_code=404, detail="조직을 찾을 수 없습니다.")
 
-    p = {"org": org_id}
-    proj_sub = "SELECT id FROM projects WHERE organization_id = :org"
-
-    # 1. 조직의 모든 시뮬레이션(직접 소속 또는 프로젝트 광고 경유)과 자식
-    await _purge_simulations(
-        db,
-        "SELECT id FROM simulations WHERE organization_id = :org "
-        f"OR ad_id IN (SELECT id FROM ads WHERE project_id IN ({proj_sub}))",
-        p,
-    )
-    # 2. 프로젝트 하위 광고·생성·채팅
-    await _purge_ads(db, f"SELECT id FROM ads WHERE project_id IN ({proj_sub})", p)
-    await _purge_generations(
-        db, f"SELECT id FROM ad_generations WHERE project_id IN ({proj_sub})", p
-    )
-    await db.execute(text(f"DELETE FROM chat_sessions WHERE project_id IN ({proj_sub})"), p)
-    await db.execute(text("DELETE FROM projects WHERE organization_id = :org"), p)
-    # 3. 멤버·유저 계정
-    member_users = (
+    # 소속 유저를 INACTIVE로 전환 + Cognito 삭제용 login_id 수집
+    member_ids = (
         (
             await db.execute(
-                text("SELECT user_id FROM organization_members WHERE organization_id = :org"), p
+                text("SELECT user_id FROM organization_members WHERE organization_id = :org"),
+                {"org": org_id},
             )
         )
         .scalars()
         .all()
     )
-    # Cognito 삭제용 login_id 확보(users 삭제 전에 미리 읽어둔다).
-    cognito_login_ids: list[str] = []
-    if member_users:
-        cognito_login_ids = list(
-            (await db.scalars(select(User.login_id).where(User.id.in_(member_users)))).all()
-        )
-    await db.execute(text("DELETE FROM organization_members WHERE organization_id = :org"), p)
-    for uid in member_users:
-        await db.execute(
-            text("UPDATE users SET created_by = NULL WHERE created_by = :uid"), {"uid": uid}
-        )
-        await db.execute(text("DELETE FROM users WHERE id = :uid"), {"uid": uid})
-    # 4. 조직
-    await db.execute(text("DELETE FROM organizations WHERE id = :org"), p)
+    login_ids: list[str] = []
+    if member_ids:
+        users = (await db.scalars(select(User).where(User.id.in_(member_ids)))).all()
+        for u in users:
+            u.status = "INACTIVE"
+            login_ids.append(u.login_id)
+    org.status = "INACTIVE"
     await db.commit()
-    # cognito 모드면 소속 유저들도 Cognito에서 제거(best-effort — 실패해도 DB 삭제는 유지).
-    for lid in cognito_login_ids:
+
+    # cognito 모드면 소속 유저를 Cognito에서 제거(로그인 차단). best-effort — 실패해도 DB는 유지.
+    for lid in login_ids:
         await cognito_admin.delete_user(lid)
     return {"ok": True}
 
@@ -320,9 +300,11 @@ async def delete_user(
     db: AsyncSession = Depends(get_db),
     current_admin: User = Depends(require_admin),
 ):
-    """계정 삭제. COMPANY는 조직째 삭제(delete-company)를 쓰도록 막고, 그 외 계정만 처리.
+    """계정 소프트 삭제 — 유저를 INACTIVE로 비활성화하고 Cognito 계정만 제거.
 
-    삭제 대상이 만든 콘텐츠의 created_by는 실행 ADMIN에게 이전한다(FK NOT NULL).
+    유저가 만든 콘텐츠(프로젝트·시뮬·생성·채팅)는 보존해 관리자가 사후 조회할 수 있게 한다.
+    status=INACTIVE로 인증이 차단되고(core/auth), Cognito에서는 실제 삭제돼 로그인이 불가능해진다.
+    COMPANY는 조직째 삭제(delete-company)를 쓰도록 막는다.
     """
     if user_id == str(current_admin.id):
         raise HTTPException(status_code=400, detail="본인 계정은 삭제할 수 없습니다.")
@@ -336,21 +318,9 @@ async def delete_user(
             detail="COMPANY 계정은 '조직 삭제'로 회사째 삭제해주세요.",
         )
 
-    p = {"uid": user_id, "actor": str(current_admin.id)}
-    for table in ("projects", "simulations", "ads", "ad_generations"):
-        await db.execute(text(f"UPDATE {table} SET created_by = :actor WHERE created_by = :uid"), p)
-    await db.execute(
-        text("UPDATE organization_members SET invited_by = NULL WHERE invited_by = :uid"),
-        {"uid": user_id},
-    )
-    await db.execute(
-        text("UPDATE users SET created_by = NULL WHERE created_by = :uid"), {"uid": user_id}
-    )
-    await db.execute(
-        text("DELETE FROM organization_members WHERE user_id = :uid"), {"uid": user_id}
-    )
-    await db.execute(text("DELETE FROM users WHERE id = :uid"), {"uid": user_id})
-    # cognito 모드면 Cognito 사용자도 제거(best-effort — 실패해도 DB 삭제는 유지).
+    user.status = "INACTIVE"
+    await db.commit()
+    # cognito 모드면 Cognito 사용자도 제거(로그인 차단). best-effort — 실패해도 DB는 유지.
     await cognito_admin.delete_user(user.login_id)
     return {"ok": True}
 
