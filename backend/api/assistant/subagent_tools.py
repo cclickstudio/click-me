@@ -214,17 +214,26 @@ def build_chat_tools(settings, clio_retriever=None) -> list:
         ad_title: str = "",
         product_category: str = "",
         ad_objective: str = "",
+        analysis_mode: str = "synthetic",
         *,
         state: Annotated[dict, InjectedState],
         tool_call_id: Annotated[str, InjectedToolCallId],
     ) -> Command:
         """사용자가 광고를 '시뮬레이션 돌려달라/반응 예측해달라'고 하면 호출. 시뮬 입력 폼을 띄운다.
-        발화에 있는 값만 채우고 없으면 비운다(지어내지 말 것). 폼 호출 후 한 줄로만 안내하라."""
+        발화에 있는 값만 채우고 없으면 비운다(지어내지 말 것). 폼 호출 후 한 줄로만 안내하라.
+
+        analysis_mode(3-모드 분석) — 기본 synthetic(표본 전체 합성). 사용자가 '한 명만 자세히'·
+        '개인 반응'·'심층 분석'처럼 개별 페르소나를 원하면 individual. '세그먼트별로 비교'·
+        '타깃별로 나눠서'처럼 여러 집단 비교를 원하면 persona_set(폼은 세그먼트 편집이 필요해
+        채팅에선 미지원 — 이땐 폼을 띄우지 말고 /simulation 페이지 이용을 안내하라)."""
         sim_data = {
             "ad_title": ad_title or None,
             "ad_content": ad_content or "",
             "product_category": product_category or None,
             "ad_objective": ad_objective or None,
+            "analysis_mode": analysis_mode
+            if analysis_mode in ("synthetic", "individual")
+            else "synthetic",
         }
         helpers.spawn_persist(state.get("project_id"), "sim_input", sim_data)
         return Command(

@@ -89,6 +89,45 @@ async def test_panel_repository_get_by_version_missing_returns_none() -> None:
         assert await PanelRepository(session).get_by_version("panel-v1") is None
 
 
+async def test_panel_repository_list_personas_filters_and_paginates() -> None:
+    """Individual 모드 페르소나 지정 선택용 미리보기 목록 — 필터·페이지네이션·총원."""
+    session = await _make_session()
+    async with session:
+        personas = PersonaSampler().sample(PanelSpec(size=30, seed=9))
+        repo = PanelRepository(session)
+        await repo.create(
+            version="panel-v1",
+            seed=9,
+            size=30,
+            model_version="mock",
+            grounding_meta={},
+            personas=personas,
+        )
+        await session.commit()
+
+        all_items, all_total = await repo.list_personas("panel-v1", limit=100)
+        assert all_total == 30
+        assert len(all_items) == 30
+        assert all("persona_id" in it and "narrative_snippet" in it for it in all_items)
+
+        females, f_total = await repo.list_personas("panel-v1", gender="F", limit=100)
+        assert f_total == len(females)
+        assert all(it["gender"] == "F" for it in females)
+
+        page1, total = await repo.list_personas("panel-v1", limit=5, offset=0)
+        page2, _ = await repo.list_personas("panel-v1", limit=5, offset=5)
+        assert total == 30
+        assert len(page1) == 5 and len(page2) == 5
+        assert {it["persona_id"] for it in page1}.isdisjoint({it["persona_id"] for it in page2})
+
+
+async def test_panel_repository_list_personas_missing_version_returns_empty() -> None:
+    session = await _make_session()
+    async with session:
+        items, total = await PanelRepository(session).list_personas("no-such-version")
+        assert items == [] and total == 0
+
+
 async def test_simulation_repository_saves_full_run() -> None:
     session = await _make_session()
     async with session:

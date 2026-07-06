@@ -112,18 +112,69 @@ export function SimulationResultView({
   const passed = reactions.filter(r => r.qa_passed);
 
   // 구매의도 1~5 분포(F7) — 평균만 단언하지 말고 분포 전체를 보여준다. QA 통과 반응 우선.
+  // SSR 분포(purchase_intent_dist)가 있으면 페르소나별 확률분포의 가중 평균(비율)을 우선 사용.
   const purchaseDist = (() => {
+    const source = passed.length ? passed : reactions;
+    const probs = [0, 0, 0, 0, 0];
+    let wsum = 0;
+    for (const r of source) {
+      const rp = r.purchase_intent_dist?.raw_probs;
+      if (rp && rp.length === 5) {
+        const w = r.weight ?? 1;
+        rp.forEach((p, i) => (probs[i] += p * w));
+        wsum += w;
+      }
+    }
+    if (wsum > 0) {
+      return {
+        ratios: probs.map(p => p / wsum),
+        counts: null as number[] | null,
+        total: source.length,
+        ssr: true,
+      };
+    }
     const counts = [0, 0, 0, 0, 0];
     let total = 0;
-    for (const r of passed.length ? passed : reactions) {
+    for (const r of source) {
       const pi = Math.round(r.purchase_intent);
       if (pi >= 1 && pi <= 5) {
         counts[pi - 1] += 1;
         total += 1;
       }
     }
-    return { counts, total };
+    return {
+      ratios: counts.map(c => (total ? c / total : 0)),
+      counts: counts as number[] | null,
+      total,
+      ssr: false,
+    };
   })();
+  // 거부율 사유 분해(F8) — 비율만 보지 말고 사유별로 분해해서 처방까지 이어지게(§4대 KPI 원칙).
+  const rejectionDist = (() => {
+    const source = passed.length ? passed : reactions;
+    const counts = new Map<string, number>();
+    let total = 0;
+    for (const r of source) {
+      if (!r.rejected) continue;
+      const tag = r.rejection_reason_tag ?? 'other';
+      counts.set(tag, (counts.get(tag) ?? 0) + 1);
+      total += 1;
+    }
+    return {
+      total,
+      entries: [...counts.entries()].sort((a, b) => b[1] - a[1]),
+    };
+  })();
+  // KOBACO(2019 MCR) 참고치(A-2) — 조회만, 우리 KPI와 척도가 달라 절대 비교·환산 없이 원문 병기.
+  const kobaco = agg?.payload?.kobaco_reference as
+    | {
+        declared_category: string;
+        kobaco_category: string;
+        purchase_intent_pct: number | null;
+        tv_ad_influence_pct: number | null;
+        note: string;
+      }
+    | undefined;
   const failed = reactions.filter(r => !r.qa_passed);
   const ad = result.ad_analysis;
   const fit = result.objective_fit ?? null;
@@ -283,12 +334,51 @@ export function SimulationResultView({
         </>
       )}
 
+      {/* KOBACO(2019 MCR) 참고치(A-2) — 절대 비교 아님, 카테고리 근사 매핑 방향·상대크기 참고용 */}
+      {kobaco && (
+        <div className={cardCls}>
+          <h2 className='text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6] mb-1'>
+            KOBACO 참고치
+          </h2>
+          <p className='text-[11px] text-[#8B95A1] dark:text-[#6B7280] mb-3'>
+            {kobaco.declared_category} → {kobaco.kobaco_category} 카테고리 근사 매핑.
+            우리 KPI와 척도가 달라 절대 비교가 아니라 방향·상대크기 참고용입니다.
+          </p>
+          <div className='grid grid-cols-2 gap-3'>
+            {kobaco.purchase_intent_pct != null && (
+              <div className='rounded-lg bg-[#F9FAFB] dark:bg-[#252D3D] px-3 py-2'>
+                <p className='text-[10px] text-[#8B95A1]'>구매/교체 의향 비율</p>
+                <p className='font-bold text-[#191F28] dark:text-[#F2F4F6]'>
+                  {formatPercent(kobaco.purchase_intent_pct)}
+                </p>
+              </div>
+            )}
+            {kobaco.tv_ad_influence_pct != null && (
+              <div className='rounded-lg bg-[#F9FAFB] dark:bg-[#252D3D] px-3 py-2'>
+                <p className='text-[10px] text-[#8B95A1]'>TV광고 영향력</p>
+                <p className='font-bold text-[#191F28] dark:text-[#F2F4F6]'>
+                  {formatPercent(kobaco.tv_ad_influence_pct)}
+                </p>
+              </div>
+            )}
+          </div>
+          <p className='text-[10px] text-[#B0B8C1] dark:text-[#4B5563] mt-2'>
+            출처: 2019 KOBACO MCR(소비자행태조사)
+          </p>
+        </div>
+      )}
+
       {/* 구매의도 분포(F7) — 평균 옆에 1~5점 분포 전체를 막대로. 평균 단언 방지 */}
       {agg && purchaseDist.total > 0 && (
         <div className={cardCls}>
           <div className='flex items-center justify-between mb-1'>
             <h2 className='text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]'>
               구매의도 분포 (1~5점)
+              {purchaseDist.ssr && (
+                <span className='ml-1.5 px-1.5 py-0.5 rounded bg-[#EBF4FF] dark:bg-[#1E3A5F] text-[10px] font-medium text-[#3182F6] dark:text-[#5B9DF9]'>
+                  SSR 분포
+                </span>
+              )}
             </h2>
             <span className='text-[11px] text-[#8B95A1] dark:text-[#6B7280]'>
               평균 {agg.purchase_intent.toFixed(2)}점 · 표본{' '}
@@ -296,14 +386,14 @@ export function SimulationResultView({
             </span>
           </div>
           <p className='text-[11px] text-[#8B95A1] dark:text-[#6B7280] mb-3'>
-            평균값 하나로 단정하지 말고, 점수가 어떻게 퍼져 있는지 함께 보세요.
+            {purchaseDist.ssr
+              ? '임베딩 유사도(SSR)로 산출한 확률분포의 가중 평균입니다. 평균값 하나로 단정하지 말고 퍼짐을 함께 보세요.'
+              : '평균값 하나로 단정하지 말고, 점수가 어떻게 퍼져 있는지 함께 보세요.'}
           </p>
           <div className='space-y-1.5'>
             {[5, 4, 3, 2, 1].map(score => {
-              const c = purchaseDist.counts[score - 1];
-              const ratio = purchaseDist.total
-                ? (c / purchaseDist.total) * 100
-                : 0;
+              const ratio = purchaseDist.ratios[score - 1] * 100;
+              const c = purchaseDist.counts?.[score - 1];
               return (
                 <div key={score} className='flex items-center gap-2 text-xs'>
                   <span className='w-7 shrink-0 text-right text-[#4E5968] dark:text-[#9CA3AF]'>
@@ -312,6 +402,46 @@ export function SimulationResultView({
                   <div className='flex-1 h-3.5 rounded bg-[#F2F4F6] dark:bg-[#252D3D] overflow-hidden'>
                     <div
                       className='h-full rounded bg-[#3182F6] dark:bg-[#5B9DF9] transition-all'
+                      style={{ width: `${ratio}%` }}
+                    />
+                  </div>
+                  <span className='w-16 shrink-0 text-right tabular-nums text-[#8B95A1] dark:text-[#6B7280]'>
+                    {c != null
+                      ? `${c}명 (${ratio.toFixed(0)}%)`
+                      : `${ratio.toFixed(1)}%`}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* 거부율 사유 분해(F8) — 비율만 보지 말고 왜 거부했는지 사유별로. 처방까지 이어지게 */}
+      {agg && rejectionDist.total > 0 && (
+        <div className={cardCls}>
+          <div className='flex items-center justify-between mb-1'>
+            <h2 className='text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]'>
+              거부 사유 분해
+            </h2>
+            <span className='text-[11px] text-[#8B95A1] dark:text-[#6B7280]'>
+              거부율 {formatPercent(agg.rejection_rate)} · 거부 {rejectionDist.total}명
+            </span>
+          </div>
+          <p className='text-[11px] text-[#8B95A1] dark:text-[#6B7280] mb-3'>
+            거부 비율만 보지 말고, 어떤 사유가 몰려 있는지로 개선 방향을 잡으세요.
+          </p>
+          <div className='space-y-1.5'>
+            {rejectionDist.entries.map(([tag, c]) => {
+              const ratio = rejectionDist.total ? (c / rejectionDist.total) * 100 : 0;
+              return (
+                <div key={tag} className='flex items-center gap-2 text-xs'>
+                  <span className='w-20 shrink-0 text-right text-[#4E5968] dark:text-[#9CA3AF]'>
+                    {REJECTION_LABEL[tag] ?? tag}
+                  </span>
+                  <div className='flex-1 h-3.5 rounded bg-[#F2F4F6] dark:bg-[#252D3D] overflow-hidden'>
+                    <div
+                      className='h-full rounded bg-[#F74D4D] dark:bg-[#F87171] transition-all'
                       style={{ width: `${ratio}%` }}
                     />
                   </div>

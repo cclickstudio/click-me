@@ -143,6 +143,21 @@ export default function SimulationRunPage() {
     emptySegment('세그먼트 B'),
   ]);
 
+  // Individual 모드 — 페르소나 지정 선택(미지정이면 기존대로 타깃 조건에서 자동 추출).
+  const [personaPickerOpen, setPersonaPickerOpen] = useState(false);
+  const [pickedPersona, setPickedPersona] = useState<{
+    persona_id: string;
+    age: number;
+    gender: string;
+    region: string;
+    narrative_snippet: string;
+  } | null>(null);
+  const [personaOptions, setPersonaOptions] = useState<
+    { persona_id: string; age: number; gender: string; region: string; narrative_snippet: string }[]
+  >([]);
+  const [personaOptionsTotal, setPersonaOptionsTotal] = useState(0);
+  const [personaOptionsLoading, setPersonaOptionsLoading] = useState(false);
+
   // 광고 입력
   const [adId] = useState(`AD-${Date.now()}`);
   const [adContent, setAdContent] = useState('');
@@ -411,6 +426,31 @@ export default function SimulationRunPage() {
     });
   }
 
+  // Individual 모드 — 현재 타깃 조건(연령대·성별)으로 패널에서 페르소나 후보를 불러온다.
+  async function loadPersonaOptions(offset = 0) {
+    setPersonaOptionsLoading(true);
+    try {
+      const bands = AGE_BANDS.filter(b => ageBands.includes(b.label));
+      const params: { gender?: string; age_min?: number; age_max?: number; limit: number; offset: number } = {
+        limit: 20,
+        offset,
+      };
+      if (bands.length > 0) {
+        params.age_min = Math.min(...bands.map(b => b.min));
+        params.age_max = Math.max(...bands.map(b => b.max));
+      }
+      if (gender) params.gender = gender;
+      const res = await api.simulation.panelPersonas(params);
+      setPersonaOptions(prev => (offset === 0 ? res.items : [...prev, ...res.items]));
+      setPersonaOptionsTotal(res.total);
+    } catch {
+      setPersonaOptions([]);
+      setPersonaOptionsTotal(0);
+    } finally {
+      setPersonaOptionsLoading(false);
+    }
+  }
+
   async function run() {
     // 동시실행 제한 — 시뮬은 한 번에 하나(채팅 위젯과 store 공유).
     if (getJobs().sim) {
@@ -436,15 +476,21 @@ export default function SimulationRunPage() {
         run_id = res.run_id;
       } else {
         // 사용자가 연령대·성별을 고르면 그 조건으로, 아무것도 안 고르면 자동(AUTO).
+        // individual + 페르소나 지정 시엔 age/gender 대신 persona_id로 그 1명을 정확히 지정.
         const targetFilter: Record<string, unknown> = {};
+        if (analysisMode === 'individual' && pickedPersona) {
+          targetFilter.persona_id = pickedPersona.persona_id;
+        }
         const bands = AGE_BANDS.filter(b => ageBands.includes(b.label));
-        if (bands.length > 0) {
+        if (!targetFilter.persona_id && bands.length > 0) {
           targetFilter.age_min = Math.min(...bands.map(b => b.min));
           targetFilter.age_max = Math.max(...bands.map(b => b.max));
         }
-        if (gender) targetFilter.gender = gender;
+        if (!targetFilter.persona_id && gender) targetFilter.gender = gender;
         const targetMode =
-          bands.length > 0 || gender !== '' ? 'MANUAL' : 'AUTO';
+          targetFilter.persona_id || bands.length > 0 || gender !== ''
+            ? 'MANUAL'
+            : 'AUTO';
         // 비동기 시작 → run_id 받고 SSE로 진행률 구독(결과는 completed 후 GET).
         const res = await api.simulation.start({
           ...adCommonFields(),
@@ -652,7 +698,14 @@ export default function SimulationRunPage() {
               <button
                 key={m.value}
                 type='button'
-                onClick={() => setAnalysisMode(m.value)}
+                onClick={() => {
+                  setAnalysisMode(m.value);
+                  // 다른 모드로 바꾸면 individual 전용 페르소나 지정은 무의미 — 정리.
+                  if (m.value !== 'individual') {
+                    setPickedPersona(null);
+                    setPersonaPickerOpen(false);
+                  }
+                }}
                 className={`${chipBase} ${analysisMode === m.value ? chipActive : chipIdle}`}>
                 {m.label}
               </button>
@@ -1272,6 +1325,84 @@ export default function SimulationRunPage() {
                       ))}
                     </div>
                   </div>
+
+                  {/* Individual 모드 — 자동 추출 대신 패널에서 특정 페르소나를 직접 지정 */}
+                  {analysisMode === 'individual' && (
+                    <div>
+                      <p className={sectionTitle}>
+                        페르소나 지정{' '}
+                        <span className='text-[10px] font-normal text-[#B0B8C1] dark:text-[#4B5563]'>
+                          선택 — 안 고르면 위 조건에서 자동 추출
+                        </span>
+                      </p>
+                      {pickedPersona ? (
+                        <div className='flex items-center justify-between rounded-lg border border-[#3182F6]/30 bg-[#EEF4FF] dark:bg-[#1E3A5F] px-3 py-2'>
+                          <div>
+                            <p className='text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]'>
+                              {pickedPersona.age}세 {pickedPersona.gender === 'F' ? '여성' : '남성'} · {pickedPersona.region}
+                            </p>
+                            <p className='text-[11px] text-[#4E5968] dark:text-[#9CA3AF] line-clamp-1'>
+                              {pickedPersona.narrative_snippet}
+                            </p>
+                          </div>
+                          <button
+                            type='button'
+                            onClick={() => setPickedPersona(null)}
+                            className='shrink-0 ml-2 text-xs text-[#F74D4D] font-medium'>
+                            선택 해제
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          type='button'
+                          onClick={() => {
+                            setPersonaPickerOpen(v => !v);
+                            if (!personaPickerOpen) void loadPersonaOptions(0);
+                          }}
+                          className={`${chipBase} ${personaPickerOpen ? chipActive : chipIdle}`}>
+                          {personaPickerOpen ? '목록 닫기' : '패널에서 고르기'}
+                        </button>
+                      )}
+
+                      {personaPickerOpen && !pickedPersona && (
+                        <div className='mt-2 max-h-64 overflow-y-auto rounded-lg border border-[#E5E8EB] dark:border-[#2D3748] divide-y divide-[#E5E8EB] dark:divide-[#2D3748]'>
+                          {personaOptions.length === 0 && !personaOptionsLoading && (
+                            <p className='text-[11px] text-[#8B95A1] px-3 py-3'>
+                              조건에 맞는 페르소나가 없어요. 연령대·성별 조건을 넓혀보세요.
+                            </p>
+                          )}
+                          {personaOptions.map(p => (
+                            <button
+                              key={p.persona_id}
+                              type='button'
+                              onClick={() => {
+                                setPickedPersona(p);
+                                setPersonaPickerOpen(false);
+                              }}
+                              className='w-full text-left px-3 py-2 hover:bg-[#F9FAFB] dark:hover:bg-[#252D3D] transition-colors'>
+                              <p className='text-xs font-semibold text-[#191F28] dark:text-[#F2F4F6]'>
+                                {p.age}세 {p.gender === 'F' ? '여성' : '남성'} · {p.region}
+                              </p>
+                              <p className='text-[11px] text-[#8B95A1] line-clamp-1'>
+                                {p.narrative_snippet}
+                              </p>
+                            </button>
+                          ))}
+                          {personaOptionsLoading && (
+                            <p className='text-[11px] text-[#8B95A1] px-3 py-3'>불러오는 중...</p>
+                          )}
+                          {!personaOptionsLoading && personaOptions.length < personaOptionsTotal && (
+                            <button
+                              type='button'
+                              onClick={() => void loadPersonaOptions(personaOptions.length)}
+                              className='w-full text-center text-xs text-[#3182F6] font-medium px-3 py-2'>
+                              더 보기 ({personaOptions.length}/{personaOptionsTotal})
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </>
             )}

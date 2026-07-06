@@ -24,6 +24,7 @@ from domain.simulation.contracts.schemas import (
     SimulationRunRequest,
 )
 from domain.simulation.graph.reaction_graph import run_reaction
+from domain.simulation.tools.aggregation.kobaco_reference import lookup_kobaco_reference
 from domain.simulation.tools.brand_awareness import lookup_brand_awareness
 
 logger = logging.getLogger("clickme")
@@ -135,7 +136,12 @@ def build_run_graph(*, interpreter, panel, rubric, aggregator, reaction_graph):
         return {"reactions": [reaction]}
 
     async def aggregate(state: RunState) -> dict:
-        return {"aggregate": aggregator.aggregate(state.get("reactions", []))}
+        agg = aggregator.aggregate(state.get("reactions", []))
+        # KOBACO(2019 MCR) 참고치 — 조회만, 집계 엔진 산출값과 병합·환산하지 않는다.
+        kobaco = lookup_kobaco_reference(state["request"].product_category)
+        if kobaco:
+            agg = agg.model_copy(update={"payload": {**agg.payload, "kobaco_reference": kobaco}})
+        return {"aggregate": agg}
 
     graph = StateGraph(RunState)
     graph.add_node("interpret_ad", interpret_ad)
