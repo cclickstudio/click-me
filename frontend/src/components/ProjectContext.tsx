@@ -30,6 +30,11 @@ type ProjectContextValue = {
   selectedProjectId: string | null;
   selectedProject: Project | null;
   selectProject: (id: string | null) => void;
+  // 내역 클릭 등 외부에서 "이 프로젝트를 왼쪽 패널에서 펼쳐라"를 요청하는 신호.
+  // 패널의 각 접이 노드가 revealNonce 변화를 구독해, 대상 프로젝트를 포함하면 자동으로 펼친다.
+  revealProjectId: string | null;
+  revealNonce: number;
+  revealProjectInPanel: (projectId: string) => void;
   // 시뮬레이션별 토론 목록(DB 영속화) — 패널에서 lazy 로드. 키 = simulation_id.
   debates: Record<string, DebateSessionMeta[]>;
   loadDebates: (simulationId: string) => Promise<void>;
@@ -48,6 +53,9 @@ const ProjectContext = createContext<ProjectContextValue>({
   selectedProjectId: null,
   selectedProject: null,
   selectProject: () => {},
+  revealProjectId: null,
+  revealNonce: 0,
+  revealProjectInPanel: () => {},
   debates: {},
   loadDebates: async () => {},
 });
@@ -57,6 +65,8 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(false);
   const [details, setDetails] = useState<Record<string, ProjectDetails>>({});
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  const [revealProjectId, setRevealProjectId] = useState<string | null>(null);
+  const [revealNonce, setRevealNonce] = useState(0);
   const [debates, setDebates] = useState<Record<string, DebateSessionMeta[]>>({});
   const [chatRefreshKey, setChatRefreshKey] = useState(0);
   const { token } = useAuth();
@@ -98,6 +108,15 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
     setSelectedProjectId(id);
     if (id) localStorage.setItem('selectedProjectId', id);
     else localStorage.removeItem('selectedProjectId');
+  }, []);
+
+  // 왼쪽 패널에서 해당 프로젝트를 펼치도록 요청 — 선택 상태도 함께 갱신한다.
+  // revealNonce를 올려, 같은 프로젝트를 다시 눌러도(수동으로 접었더라도) 재펼침되게 한다.
+  const revealProjectInPanel = useCallback((id: string) => {
+    setSelectedProjectId(id);
+    localStorage.setItem('selectedProjectId', id);
+    setRevealProjectId(id);
+    setRevealNonce(n => n + 1);
   }, []);
 
   const fetchDetailsForProject = async (projectId: string) => {
@@ -170,6 +189,7 @@ export function ProjectProvider({ children }: { children: React.ReactNode }) {
       projects, loading, details, loadDetails, loadAll, refreshDetails, refresh: fetchProjects,
       refreshAll, chatRefreshKey,
       selectedProjectId, selectedProject, selectProject,
+      revealProjectId, revealNonce, revealProjectInPanel,
       debates, loadDebates,
     }}>
       {children}

@@ -2,6 +2,8 @@
 
 import { useCallback, useState } from 'react';
 import { authedFetch } from '@/lib/api';
+import { useProjects } from '@/components/ProjectContext';
+import { useChatController } from '@/components/chat/ChatController';
 import { formatKST } from '@/lib/datetime';
 import { AdminOrgPicker } from '@/components/manage/AdminOrgPicker';
 import { useInfiniteList, useDebouncedValue } from '@/components/admin/useInfiniteList';
@@ -9,6 +11,7 @@ import {
   HistoryControls,
   OrgStatusDot,
   OrgStatusFilter,
+  executorLabel,
   historyQueryString,
   DEFAULT_HISTORY_QUERY,
   type HistoryQuery,
@@ -21,6 +24,9 @@ type ChatRow = {
   project_id: string | null;
   title: string | null;
   message_count: number;
+  created_by_name: string | null;
+  created_by_role: string | null;
+  project_name: string | null;
   org_name: string | null;
   org_status: string | null;
   created_at: string;
@@ -31,8 +37,16 @@ function formatDate(iso: string) {
 }
 
 export default function AdminChatsPage() {
+  const { revealProjectInPanel } = useProjects();
+  const { openChat } = useChatController();
   const [query, setQuery] = useState<HistoryQuery>(DEFAULT_HISTORY_QUERY);
   const [orgKey, setOrgKey] = useState(0); // AdminOrgPicker 선택 변경 시 리스트만 재로드하는 키
+
+  // 행 클릭 — 해당 채팅을 플로팅 챗에 띄우고(item4), 프로젝트를 왼쪽 패널에서 펼친다(item5).
+  const openRow = (r: ChatRow) => {
+    if (r.project_id) revealProjectInPanel(r.project_id);
+    openChat(r.id);
+  };
   const debouncedSearch = useDebouncedValue(query.search, 300);
   const qs = historyQueryString({ ...query, search: debouncedSearch });
 
@@ -43,7 +57,7 @@ export default function AdminChatsPage() {
       )
         .then((r) => r.json())
         .then((d) => (Array.isArray(d) ? (d as ChatRow[]) : [])),
-    [qs, orgKey],
+    [qs],
   );
 
   const { items, loading, loadingMore, hasMore, sentinelRef } = useInfiniteList<ChatRow>(
@@ -82,29 +96,38 @@ export default function AdminChatsPage() {
             <thead>
               <tr className="border-b border-[#F2F4F6] dark:border-[#252D3D] bg-[#F9FAFB] dark:bg-[#252D3D]">
                 <th className="text-left px-6 py-3 text-xs font-semibold text-[#8B95A1]">제목</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-[#8B95A1]">조직</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-[#8B95A1]">조직 상태</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-[#8B95A1]">메시지 수</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-[#8B95A1]">생성일</th>
+                <th className="text-center px-4 py-3 text-xs font-semibold text-[#8B95A1]">조직</th>
+                <th className="text-center px-4 py-3 text-xs font-semibold text-[#8B95A1]">조직 상태</th>
+                <th className="text-center px-4 py-3 text-xs font-semibold text-[#8B95A1]">프로젝트</th>
+                <th className="text-center px-4 py-3 text-xs font-semibold text-[#8B95A1]">실행자</th>
+                <th className="text-center px-4 py-3 text-xs font-semibold text-[#8B95A1]">메시지 수</th>
+                <th className="text-right px-6 py-3 text-xs font-semibold text-[#8B95A1]">생성일</th>
               </tr>
             </thead>
             <tbody>
               {items.map((r) => (
                 <tr
                   key={r.id}
-                  className="border-b border-[#F9FAFB] dark:border-[#1C2333] last:border-0 hover:bg-[#F9FAFB] dark:hover:bg-[#252D3D] transition-colors"
+                  onClick={() => openRow(r)}
+                  className="border-b border-[#F9FAFB] dark:border-[#1C2333] last:border-0 hover:bg-[#F9FAFB] dark:hover:bg-[#252D3D] cursor-pointer transition-colors"
                 >
-                  <td className="px-6 py-3 text-[#191F28] dark:text-[#F2F4F6] font-medium">
+                  <td className="text-left px-6 py-3 text-[#191F28] dark:text-[#F2F4F6] font-medium">
                     {r.title || '새 채팅'}
                   </td>
-                  <td className="px-4 py-3 text-[#4E5968] dark:text-[#9CA3AF]">
+                  <td className="text-center px-4 py-3 text-[#4E5968] dark:text-[#9CA3AF]">
                     {r.org_name ?? '—'}
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="text-center px-4 py-3">
                     <OrgStatusDot status={r.org_status} />
                   </td>
-                  <td className="px-4 py-3 text-[#4E5968] dark:text-[#9CA3AF]">{r.message_count}개</td>
-                  <td className="px-4 py-3 text-[#8B95A1]">{formatDate(r.created_at)}</td>
+                  <td className="text-center px-4 py-3 text-[#4E5968] dark:text-[#9CA3AF]">
+                    {r.project_name ?? '—'}
+                  </td>
+                  <td className="text-center px-4 py-3 text-[#4E5968] dark:text-[#9CA3AF]">
+                    {executorLabel(r)}
+                  </td>
+                  <td className="text-center px-4 py-3 text-[#4E5968] dark:text-[#9CA3AF]">{r.message_count}개</td>
+                  <td className="text-right px-6 py-3 text-[#8B95A1]">{formatDate(r.created_at)}</td>
                 </tr>
               ))}
             </tbody>

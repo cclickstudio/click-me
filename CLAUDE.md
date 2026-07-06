@@ -160,8 +160,8 @@ NEXT_PUBLIC_COGNITO_REGION= / NEXT_PUBLIC_COGNITO_USER_POOL_ID= / NEXT_PUBLIC_CO
 **자동 생성 인덱스**(라우터·페이지 추가 시 `backend/scripts/gen_docs.py`가 갱신 — 직접 수정 금지):
 
 <!-- AUTOGEN:docs-index START -->
-- **API 엔드포인트 184개** — 전체 목록 [docs/api-endpoints.md](docs/api-endpoints.md) (자동 생성)
-- **프론트 라우트 41개** — 전체 목록 [docs/frontend-routes.md](docs/frontend-routes.md) (자동 생성)
+- **API 엔드포인트 186개** — 전체 목록 [docs/api-endpoints.md](docs/api-endpoints.md) (자동 생성)
+- **프론트 라우트 42개** — 전체 목록 [docs/frontend-routes.md](docs/frontend-routes.md) (자동 생성)
 <!-- AUTOGEN:docs-index END -->
 
 - API 명세(수기) → `docs/api-spec.md` / 자동 엔드포인트 목록 → `docs/api-endpoints.md` / 프론트 라우트 → `docs/frontend-routes.md`.
