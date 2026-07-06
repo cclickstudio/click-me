@@ -1,5 +1,5 @@
 // 캠페인 목록 — 테이블 뷰 (행 클릭 = 선택, 그 아래로 상세 펼침) + 헤더 클릭 정렬 + 간단/전체 지표 토글
-import { Fragment, useMemo, useState } from 'react';
+import { Fragment, memo, useMemo, useState } from 'react';
 import type {
   AccountWallet,
   CampaignDetail as Detail,
@@ -30,7 +30,9 @@ type SortKey =
 
 type ColumnMode = 'core' | 'all'; // core=핵심 7컬럼(스캔용) / all=전체 12컬럼
 
-export function CampaignTable({
+// memo — 프롭(campaigns·selected·manualKpi·안정 핸들러)이 그대로면 스킵.
+// 상위에서 전환가치·ROAS 타이핑 중 20행 표가 매 키 입력마다 재조정되던 것을 막는다.
+export const CampaignTable = memo(function CampaignTable({
   campaigns,
   selected,
   onSelect,
@@ -383,7 +385,7 @@ export function CampaignTable({
       </table>
     </div>
   );
-}
+});
 
 function PacingCell({ pct }: { pct: number }) {
   const color = 'bg-[#3182F6]'; // 누적지출/일예산 — 누적이라 초과 정상, 경보색 제거

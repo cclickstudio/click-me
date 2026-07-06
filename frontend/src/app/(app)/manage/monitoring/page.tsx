@@ -33,19 +33,10 @@ export default function Page() {
   const [datePreset, setDatePreset] = useState<DatePreset>('maximum'); // 조회 기간 토글
   const [reportOpen, setReportOpen] = useState(false); // 주간 리포트 모달
 
-  // 캠페인별 일별 지출 시계열 — /campaigns/{id}.series에서 추출(스파크라인·델타용).
-  // 호출이 N건이라 폴링(silent)에선 생략하고 최초·수동 새로고침에서만 갱신.
-  const loadSeries = useCallback(async (list: CampaignSummary[]) => {
-    const entries = await Promise.all(
-      list.map(async (c) => {
-        try {
-          const d = await api.management.campaign(c.campaign_id);
-          return [c.campaign_id, d.series] as const;
-        } catch {
-          return [c.campaign_id, [] as { label: string; spend_krw: number }[]] as const;
-        }
-      }),
-    );
+  // 캠페인별 일별 지출 시계열 — 목록 응답의 series에서 추출(스파크라인·델타용).
+  // 배치 1콜이라 폴링에도 부담이 없지만, 기존 동작 유지차 withSeries일 때만 갱신한다.
+  const applySeries = useCallback((list: CampaignSummary[]) => {
+    const entries = list.map((c) => [c.campaign_id, c.series ?? []] as const);
     setSpendSeries(
       Object.fromEntries(entries.map(([id, s]) => [id, s.map((p) => p.spend_krw)])),
     );
@@ -64,7 +55,15 @@ export default function Page() {
       if (!silent) setBusy(true);
       setError(null);
       try {
-        const r = await api.management.campaigns(undefined, undefined, datePreset);
+        // withSeries일 때만 include_series로 일별 지출을 함께 받는다(폴링은 series 생략).
+        const r = await api.management.campaigns(
+          undefined,
+          undefined,
+          datePreset,
+          undefined,
+          undefined,
+          withSeries,
+        );
         // Meta 요청 한도(일시) — 빈 목록으로 덮지 말고 기존 유지 + 배너만.
         if (r.rate_limited) {
           setRateLimited(r.rate_limited);
@@ -80,14 +79,14 @@ export default function Page() {
         setPermissionError(r.permission_error ?? r.not_connected ?? null);
         setNow(new Date());
         setLastUpdated(new Date().toLocaleTimeString('ko-KR'));
-        if (withSeries) await loadSeries(r.campaigns);
+        if (withSeries) applySeries(r.campaigns);
       } catch (e) {
         setError(e instanceof Error ? e.message : '불러오기 실패');
       } finally {
         if (!silent) setBusy(false);
       }
     },
-    [loadSeries, datePreset],
+    [applySeries, datePreset],
   );
 
   useEffect(() => {
@@ -165,7 +164,7 @@ export default function Page() {
                 onClick={() => setReportOpen(true)}
                 className="text-sm text-[#4E5968] dark:text-[#9CA3AF] font-medium px-3 py-1.5 rounded-lg border border-[#E5E8EB] dark:border-[#2D3748] hover:bg-[#F2F4F6] dark:hover:bg-[#2D3748]"
               >
-                주간 리포트
+                성과 리포트
               </button>
             )}
             <Link
@@ -177,7 +176,9 @@ export default function Page() {
           </div>
         </div>
 
-        {reportOpen && <WeeklyReportModal onClose={() => setReportOpen(false)} />}
+        {reportOpen && (
+          <WeeklyReportModal onClose={() => setReportOpen(false)} initialPeriod={datePreset} />
+        )}
 
         {authError && (
           <div className="mb-4 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 dark:border-amber-900/50 dark:bg-amber-900/20">

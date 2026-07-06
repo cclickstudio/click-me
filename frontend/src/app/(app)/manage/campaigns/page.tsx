@@ -157,11 +157,29 @@ export default function Page() {
     }
   }, [convValue, targetRoas, includeArchived, loadingMore]);
 
-  // 필터(전환가치·ROAS·보관포함) 변경 시 첫 페이지부터 다시 로드.
+  // 초기 로드 + 보관포함 토글 — 즉시 재조회(스피너 표시 OK).
   useEffect(() => {
     loadedCountRef.current = 0;
     load();
-  }, [load]);
+    // load는 전환가치·목표ROAS에도 의존하지만 그 둘은 아래 디바운스 effect가 담당한다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [includeArchived]);
+
+  // 전환가치·목표ROAS 입력 — 디바운스 후 '조용히' 재계산(스피너 없이 값만 교체).
+  // 매 키 입력마다 busy를 켜 목록을 언마운트하던 깜박임 + 중복 네트워크 호출을 없앤다.
+  const kpiInputsMounted = useRef(false);
+  useEffect(() => {
+    if (!kpiInputsMounted.current) {
+      kpiInputsMounted.current = true; // 초기값은 위 effect가 이미 로드 — 중복 방지
+      return;
+    }
+    const t = setTimeout(() => {
+      loadedCountRef.current = 0;
+      load(true); // silent — busy 스피너 없이 재조회해 깜박임 제거
+    }, 300);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [convValue, targetRoas]);
 
   // 무한스크롤 관측 — 센티넬이 보이고 더 있으면 다음 페이지 로드.
   useEffect(() => {
@@ -268,6 +286,11 @@ export default function Page() {
     detailCache.current.clear();
     load(true);
   }, [load]);
+
+  // 행/카드 선택 토글 — 안정 참조로 고정해 memo된 표/카드가 타이핑 중 리렌더되지 않게 한다.
+  const handleSelect = useCallback((id: string) => {
+    setSelected((p) => (p === id ? null : id));
+  }, []);
 
   useEffect(() => {
     if (!selected) {
@@ -518,7 +541,7 @@ export default function Page() {
               <CampaignTable
                 campaigns={campaigns}
                 selected={selected}
-                onSelect={(id) => setSelected((p) => (p === id ? null : id))}
+                onSelect={handleSelect}
                 onPrefetch={prefetch}
                 onDelete={handleDelete}
                 detail={detail}
@@ -535,7 +558,7 @@ export default function Page() {
               <CampaignCards
                 campaigns={campaigns}
                 selected={selected}
-                onSelect={(id) => setSelected((p) => (p === id ? null : id))}
+                onSelect={handleSelect}
                 onPrefetch={prefetch}
                 onDelete={handleDelete}
                 detail={detail}

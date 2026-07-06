@@ -1,5 +1,5 @@
 // 캠페인 목록 — 카드 그리드 뷰 (카드 클릭 = 선택, 그 아래로 상세 펼침)
-import { Fragment } from 'react';
+import { Fragment, memo } from 'react';
 import type {
   AccountWallet,
   CampaignDetail as Detail,
@@ -25,7 +25,8 @@ function Metric({ label, value }: { label: string; value: string }) {
   );
 }
 
-export function CampaignCards({
+// memo — 프롭이 그대로면 스킵(상위 전환가치·ROAS 타이핑 중 카드 그리드 재조정 방지).
+export const CampaignCards = memo(function CampaignCards({
   campaigns,
   selected,
   onSelect,
@@ -195,4 +196,4 @@ export function CampaignCards({
       })}
     </div>
   );
-}
+});

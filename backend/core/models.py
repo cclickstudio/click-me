@@ -488,7 +488,9 @@ class AutomationRun(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     domain: Mapped[str] = mapped_column(String(20))  # management | generation | simulation
-    job_name: Mapped[str] = mapped_column(String(64))  # anomaly_scan · budget_pace · weekly_report …
+    job_name: Mapped[str] = mapped_column(
+        String(64)
+    )  # anomaly_scan · budget_pace · weekly_report …
     project_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("projects.id", ondelete="CASCADE"), nullable=True
     )
@@ -497,7 +499,9 @@ class AutomationRun(Base):
     severity: Mapped[str | None] = mapped_column(String(16), nullable=True)  # info|warning|critical
     title: Mapped[str] = mapped_column(String(200), default="")
     body: Mapped[str] = mapped_column(Text, default="")
-    suggested_action: Mapped[str | None] = mapped_column(String(64), nullable=True)  # 승인 플로 딥링크
+    suggested_action: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )  # 승인 플로 딥링크
     payload: Mapped[dict] = mapped_column(JSONB, default=dict)  # rule·meta·confidence 등
     dedup_key: Mapped[str | None] = mapped_column(String(200), nullable=True)
     actor: Mapped[str] = mapped_column(String(16), default="auto")

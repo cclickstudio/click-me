@@ -37,6 +37,25 @@ from domain.management.contracts.schemas import (
 _FAULT_ONSET_HOUR = 14  # 고장 발현 시각 (일중 곡선상 오후 — 정상/이상 대비가 뚜렷)
 _REVIEW_DELAY_UNTIL = 10  # 심사 지연: 이 시각 전까지 노출 0
 
+# 데모 캠페인 시나리오 — list_campaigns·get_metrics 공유 단일 소스. 지표는 하드코딩하지 않고
+# 예산·고장에서 파생한다(fetch_hourly_metrics가 policy.py 앵커로 증상 생성). 예산 리밸런싱이
+# 판단하는 CPC 격차는 근거 있는 고장에서 자연히 나온다: 정상=고효율(CPC↓), 입찰 패배=저효율
+# (CPM↑→CPC↑). 출처: meta-data-sources.md §3.2(분위)·§4.5(고장 매핑).
+# (name, daily_budget_krw, fault) — 예산은 일예산 앵커(₩100,000) 스케일.
+_DEMO_SCENARIOS: dict[str, tuple[str, int, FaultMode | None]] = {
+    "camp_1": ("여름 신상 원피스", 100_000, None),  # 정상·고효율 → 리밸런싱 수혜(to)
+    "camp_2": (
+        "브랜드 데일리 룩",
+        80_000,
+        FaultMode.BID_LOSS,
+    ),  # 입찰 패배·저효율 → 리밸런싱 출연(from)
+    "camp_3": (
+        "신규 런칭 티저",
+        60_000,
+        FaultMode.REVIEW_REJECTED,
+    ),  # 게재 중단(노출 0) → 제외·이상 신호
+}
+
 
 class MockAdPlatform:
     """게재 시뮬레이터. 데모는 이 어댑터만으로 성립한다 (게이트 #9)."""
@@ -50,11 +69,15 @@ class MockAdPlatform:
     ) -> MetricsSnapshot:
         """단일 누적 스냅샷 — 하루 생성 후 마지막 시간행(누적 reach·impressions)을 반환.
 
-        AdPlatformReader Port 충족(비교 서비스가 await로 호출). fault 없는 정상 게재 기준.
+        AdPlatformReader Port 충족(비교 서비스가 await로 호출). 데모 캠페인은 자기 시나리오의
+        고장·예산을 그대로 태워(_DEMO_SCENARIOS) 근거 있는 지표를 낸다 — 예산 리밸런싱이
+        읽는 CPC 격차가 여기서 생긴다. 시나리오 밖 id(비교 데모 등)는 기존대로 정상·주입 예산.
         date_preset은 실 reader 시그니처 일치용(데모는 무시).
         """
-        if campaign_id == "camp_3":
-            # 데모 전용 노출 0 캠페인 — 이상 감지(no_delivery) 신호 (검증 가이드 §2 방법 B)
+        _name, budget, fault = _DEMO_SCENARIOS.get(campaign_id, (None, self._budget, None))
+        if fault is FaultMode.REVIEW_REJECTED:
+            # 심사 거절(DISAPPROVED) — 전 구간 노출 0(이상 감지 no_delivery 신호). 클릭 0이라
+            # 리밸런싱 대상에서 자연 제외된다 (검증 가이드 §2 방법 B).
             return MetricsSnapshot(
                 campaign_id=campaign_id,
                 as_of=since,
@@ -69,9 +92,8 @@ class MockAdPlatform:
                 cpm_krw=0,
                 cpc_krw=0,
             )
-        snapshots = await self.fetch_hourly_metrics(
-            campaign_id, since, daily_budget_krw=self._budget
-        )
+        fault_cfg = FaultConfig(mode=fault) if fault is not None else None
+        snapshots = await self.fetch_hourly_metrics(campaign_id, since, fault_cfg, budget)
         return snapshots[-1]
 
     async def get_account_spend(self, date_preset: str = "this_month") -> int:
@@ -87,29 +109,18 @@ class MockAdPlatform:
         return CampaignState.ACTIVE
 
     async def list_campaigns(self, include_archived: bool = False) -> list[CampaignInfo]:  # noqa: ARG002
-        """Port 충족 — 데모 캠페인 목록(고정). 라우터 데모 경로의 풍부한 고장 시나리오는
-        _CAMPAIGNS_DEMO(라우터 소유)에 있고, 여기는 Port 일반 소비자용 최소 목록.
-        (mock은 보관 개념이 없어 include_archived 무시.)
+        """Port 충족 — 데모 캠페인 목록. 시나리오 단일 소스(_DEMO_SCENARIOS)에서 빌드해
+        예산·이름·상태가 get_metrics의 고장 데이터와 정합한다. 라우터 데모 경로의 풍부한
+        목록(_CAMPAIGNS_DEMO)과는 별개(Port 일반 소비자용). (mock은 보관 개념 없어 무시.)
         """
         return [
             CampaignInfo(
-                campaign_id="camp_1",
-                name="여름 신상 원피스",
+                campaign_id=cid,
+                name=name,
                 state=CampaignState.ACTIVE,
-                daily_budget_krw=200_000,
-            ),
-            CampaignInfo(
-                campaign_id="camp_2",
-                name="브랜드 데일리 룩",
-                state=CampaignState.ACTIVE,
-                daily_budget_krw=120_000,
-            ),
-            CampaignInfo(
-                campaign_id="camp_3",
-                name="신규 런칭 티저",  # 데모 전용 노출 0 — 이상 감지 신호(검증 가이드 §2 방법 B)
-                state=CampaignState.ACTIVE,
-                daily_budget_krw=80_000,
-            ),
+                daily_budget_krw=budget,
+            )
+            for cid, (name, budget, _fault) in _DEMO_SCENARIOS.items()
         ]
 
     async def get_platform_breakdown(

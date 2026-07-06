@@ -75,7 +75,8 @@ export default function Page() {
     setBusy(true);
     // 세 소스 병렬 — 성과비교(Meta 라이브)는 느릴 수 있어 실패해도 나머지 타일은 뜬다.
     const [camps, bud, ba] = await Promise.allSettled([
-      api.management.campaigns(),
+      // include_series=true — 캠페인별 일별 지출을 목록에 함께 받아 상세 N콜(N+1) 제거.
+      api.management.campaigns(undefined, undefined, undefined, undefined, undefined, true),
       api.management.budget(),
       api.management.beforeAfter(),
     ]);
@@ -83,16 +84,9 @@ export default function Page() {
       setCampaigns(camps.value.campaigns);
       setAccount(camps.value.account ?? null);
       setSource(camps.value.source ?? 'mock');
-      // 캠페인별 일별 지출 — 건강 신호 스파크라인 + 전사 추세(날짜 병합 합산).
-      const entries = await Promise.all(
-        camps.value.campaigns.map(async (c) => {
-          try {
-            const d = await api.management.campaign(c.campaign_id);
-            return [c.campaign_id, d.series] as const;
-          } catch {
-            return [c.campaign_id, [] as { label: string; spend_krw: number }[]] as const;
-          }
-        }),
+      // 캠페인별 일별 지출 — 목록 응답의 series에서 추출(스파크라인 + 전사 추세 날짜 병합 합산).
+      const entries = camps.value.campaigns.map(
+        (c) => [c.campaign_id, c.series ?? []] as const,
       );
       setSpendSeries(Object.fromEntries(entries.map(([id, s]) => [id, s.map((p) => p.spend_krw)])));
       const byDate = new Map<string, number>();
@@ -341,7 +335,7 @@ export default function Page() {
             <p className="mb-2 text-[12px] font-semibold text-[#4E5968] dark:text-[#9CA3AF]">
               캠페인 건강 신호 <span className="font-normal text-[#B0B8C1]">· 행 클릭 시 캠페인 관리로</span>
             </p>
-            <HealthList campaigns={campaigns} spendSeries={spendSeries} now={now} />
+            <HealthList campaigns={campaigns} spendSeries={spendSeries} now={now} compact />
           </div>
         </div>
       )}

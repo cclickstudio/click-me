@@ -1474,6 +1474,7 @@ async def _list_campaigns_real(
     org_id: UUID | None = None,
     limit: int = 20,
     offset: int = 0,
+    include_series: bool = False,
 ) -> dict:
     """실연동 — Meta 캠페인 목록 + 캠페인별 실측 요약. date_preset=조회 기간(전체/30일/이번달).
 
@@ -1570,6 +1571,13 @@ async def _list_campaigns_real(
                 **summary,
             }
         )
+    # 스파크라인용 일별 지출 — 상세 N콜 대신 계정 단위 1콜 배치(홈·모니터링 opt-in).
+    # series는 조회기간 토글과 무관한 전체 기간(maximum) 추세라 date_preset을 따르지 않는다.
+    if include_series:
+        series_map, _series_blocked = await _safe_meta(reader.get_daily_spend_by_campaign(ids))
+        series_map = series_map or {}
+        for item in out:
+            item["series"] = series_map.get(item["campaign_id"], [])
     if funding_blocked or funding is None:
         # 계정 자금 권한 없음 — 지갑은 '권한 없음'으로, 게재중단 배너는 판단 불가라 숨김.
         account = None
@@ -1690,6 +1698,7 @@ async def list_campaigns(
     include_archived: bool = False,
     limit: int = 20,
     offset: int = 0,
+    include_series: bool = False,
     user: User | None = Depends(_optional_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -1728,6 +1737,7 @@ async def list_campaigns(
                 org_id=org_id,
                 limit=limit,
                 offset=offset,
+                include_series=include_series,
             )
         except MetaApiError as exc:
             # 토큰 만료 등 인증 오류는 화면을 깨지 말고 '재연결 필요'로 안내(빈 목록 + auth_error).
@@ -1760,21 +1770,25 @@ async def list_campaigns(
     # mock 데모도 동일 페이지네이션 계약(total·has_more)으로 — 프론트 무한스크롤 코드 공유.
     total = len(_CAMPAIGNS_DEMO)
     page = list(enumerate(_CAMPAIGNS_DEMO))[offset : offset + limit]
+    # 데모 일별지출은 합성이라 네트워크 부하 없음 — opt-in 시 상세와 같은 소스로 series 채움.
+    mock = MockAdPlatform() if include_series else None
     out = []
     for i, (cid, name, state, budget, fault) in page:
         snaps = await _campaign_snapshots(cid, budget, fault, seed=40 + i)
-        out.append(
-            {
-                "campaign_id": cid,
-                "name": name,
-                "state": state.value,
-                "daily_budget_krw": budget,
-                "lifetime_budget_krw": 0,
-                "budget_type": "daily",  # 데모는 모두 일예산
-                "metrics_status": "ok",
-                **_campaign_summary(snaps, budget),
-            }
-        )
+        item = {
+            "campaign_id": cid,
+            "name": name,
+            "state": state.value,
+            "daily_budget_krw": budget,
+            "lifetime_budget_krw": 0,
+            "budget_type": "daily",  # 데모는 모두 일예산
+            "metrics_status": "ok",
+            **_campaign_summary(snaps, budget),
+        }
+        if mock is not None:
+            daily = await mock.fetch_daily_metrics(cid)
+            item["series"] = [{"label": p["label"], "spend_krw": p["spend_krw"]} for p in daily]
+        out.append(item)
     return {
         "campaigns": out,
         "source": "mock",
@@ -3577,14 +3591,36 @@ async def set_budget_limit(
     return await _budget_status(await _require_reader(db, org_id), str(org_id))
 
 
-@router.get("/report/weekly")
-async def weekly_report(reader=Depends(_request_reader)):
-    """주간 성과 리포트 — 최근 7일 실측 총합·캠페인별 표·하이라이트·다음 액션(결정론 요약).
+# 성과 리포트 조회 기간 — 프론트 토글과 1:1(Meta date_preset). last_7d는 리포트 기본(주간).
+_REPORT_PERIOD_LABELS = {
+    "last_7d": "최근 7일",
+    "last_30d": "최근 30일",
+    "this_month": "이번 달",
+    "maximum": "전체 기간",
+}
 
-    전부 기존 reader 실측으로 조립하고 LLM을 쓰지 않아 문구가 항상 재현된다.
-    화면(모니터링)에서 모달로 보여주고, 추후 PDF·챗 전달의 데이터 소스로 재사용한다.
+
+def _report_period_since(preset: str, now: datetime) -> str | None:
+    """리포트 기간의 시작일(ISO) — maximum은 고정 시작이 없어 None(프론트는 '전체 기간' 표시)."""
+    if preset == "last_7d":
+        return (now - timedelta(days=7)).date().isoformat()
+    if preset == "last_30d":
+        return (now - timedelta(days=30)).date().isoformat()
+    if preset == "this_month":
+        return now.date().replace(day=1).isoformat()
+    return None  # maximum
+
+
+@router.get("/report/weekly")
+async def weekly_report(period: str = "last_7d", reader=Depends(_request_reader)):
+    """성과 리포트 — 선택 기간 실측 총합·캠페인별 표·하이라이트·다음 액션(결정론 요약).
+
+    period=last_7d(기본)|last_30d|this_month|maximum. 전부 기존 reader 실측으로 조립하고
+    LLM을 쓰지 않아 문구가 항상 재현된다. 모달로 보여주고, PDF·챗 전달 데이터 소스로 재사용한다.
     """
     now = datetime.now(UTC)
+    preset = period if period in _REPORT_PERIOD_LABELS else "last_7d"
+    period_label = _REPORT_PERIOD_LABELS[preset]
     try:
         infos = await reader.list_campaigns()
     except Exception as exc:  # noqa: BLE001
@@ -3592,7 +3628,7 @@ async def weekly_report(reader=Depends(_request_reader)):
     rows: list[dict] = []
     for c in infos:
         try:
-            m = await reader.get_metrics(c.campaign_id, now, date_preset="last_7d")
+            m = await reader.get_metrics(c.campaign_id, now, date_preset=preset)
         except TypeError:  # mock 등 date_preset 미지원 — 전체 기간 폴백
             try:
                 m = await reader.get_metrics(c.campaign_id, now)
@@ -3635,14 +3671,17 @@ async def weekly_report(reader=Depends(_request_reader)):
             f"'{r['name']}' 빈도 {r['frequency']:.1f} — 소재 교체 검토(이상 감지 참조)"
         )
     if spent == 0:
-        next_actions.append("최근 7일 집행이 없어요 — 새 캠페인 집행 또는 게재 재개를 검토하세요.")
+        next_actions.append(
+            f"{period_label} 집행이 없어요 — 새 캠페인 집행 또는 게재 재개를 검토하세요."
+        )
     if len(active_rows) >= 2:
         next_actions.append("캠페인 간 효율 차이는 예산 관리의 리밸런싱 제안에서 확인하세요.")
     return {
         "report": {
             "period": {
-                "since": (now - timedelta(days=7)).date().isoformat(),
+                "since": _report_period_since(preset, now),
                 "until": now.date().isoformat(),
+                "label": period_label,
             },
             "totals": {
                 "spend_krw": spent,
@@ -3662,84 +3701,15 @@ async def weekly_report(reader=Depends(_request_reader)):
 
 @router.get("/budget/rebalance-proposal")
 async def budget_rebalance_proposal(reader=Depends(_request_reader)):
-    """캠페인 간 일예산 리밸런싱 제안 — 저효율(높은 CPC)→고효율(낮은 CPC)로 20% 이동 제안.
+    """일예산 리밸런싱 제안(하이브리드) — insights.rebalance_proposal 단일 로직 위임.
 
-    실행이 아니라 '제안'만 만든다. 적용은 기존 budget-commit(검증·승인·감사 경로)을
-    캠페인별로 그대로 태운다 — 자동 집행 없음(HITL 유지). 최근 7일 실측 기준이며,
-    진행 중(ACTIVE)·일예산형·클릭 실측이 있는 캠페인이 2개 이상이고 CPC 격차가
-    1.2배 이상일 때만 제안한다(작은 차이로 예산을 흔들지 않게).
+    캠페인 2개+는 저효율→고효율 이전(kind=transfer), 1개는 그 캠페인 자체의 일예산을
+    소진율 기준 증액/감액(kind=adjust). 실행이 아닌 '제안'만 — 적용은 budget-commit(HITL).
+    화면(/budget)·스케줄러 잡·챗 tool이 모두 같은 로직을 공유한다.
     """
-    now = datetime.now(UTC)
-    try:
-        infos = await reader.list_campaigns()
-    except Exception as exc:  # noqa: BLE001 — 제안은 부가 기능, 조회 실패는 안내로
-        return {"proposal": None, "note": getattr(exc, "user_msg", None) or str(exc)}
-    elig = [
-        c
-        for c in infos
-        if c.state == CampaignState.ACTIVE and c.budget_type == "daily" and c.daily_budget_krw > 0
-    ]
-    if len(elig) < 2:
-        return {"proposal": None, "note": "진행 중(일예산형) 캠페인이 2개 이상이면 제안해요."}
-    rows = []
-    for c in elig:
-        try:
-            m = await reader.get_metrics(c.campaign_id, now, date_preset="last_7d")
-        except TypeError:  # mock 등 date_preset 미지원 리더 — 전체 기간으로 폴백
-            try:
-                m = await reader.get_metrics(c.campaign_id, now)
-            except Exception:  # noqa: BLE001
-                continue
-        except Exception:  # noqa: BLE001 — 캠페인 1건 실패가 전체 제안을 막지 않게
-            continue
-        clicks = getattr(m, "clicks", 0) or 0
-        spend = getattr(m, "spend_krw", 0) or 0
-        if clicks <= 0 or spend <= 0:
-            continue
-        cpc = getattr(m, "cpc_krw", 0) or round(spend / clicks)
-        rows.append((c, cpc))
-    if len(rows) < 2:
-        return {"proposal": None, "note": "최근 실측 클릭이 있는 캠페인이 2개 이상이면 제안해요."}
-    rows.sort(key=lambda r: r[1])
-    (best, best_cpc), (worst, worst_cpc) = rows[0], rows[-1]
-    if worst_cpc <= best_cpc * 1.2:
-        return {"proposal": None, "note": "캠페인 간 CPC 격차가 1.2배를 넘으면 이동을 제안해요."}
-    floor = _MIN_DAILY_BUDGET_KRW
-    try:
-        policy = await get_campaign_policy(reader)
-        floor = int(policy.get("min_daily_budget_krw") or floor)
-    except Exception:  # noqa: BLE001 — 정책 조회 실패 시 보수 폴백
-        pass
-    move = int(worst.daily_budget_krw * 0.2) // 100 * 100  # 20%, 백원 단위 절사
-    move = min(move, worst.daily_budget_krw - floor)  # 저효율도 최소예산 아래로 안 내려가게
-    if move < 1_000:
-        return {"proposal": None, "note": "이동 가능한 금액이 너무 작아 제안하지 않아요."}
-    return {
-        "proposal": {
-            "from": {
-                "campaign_id": worst.campaign_id,
-                "name": worst.name,
-                "cpc_krw": worst_cpc,
-                "daily_budget_krw": worst.daily_budget_krw,
-                "after_krw": worst.daily_budget_krw - move,
-            },
-            "to": {
-                "campaign_id": best.campaign_id,
-                "name": best.name,
-                "cpc_krw": best_cpc,
-                "daily_budget_krw": best.daily_budget_krw,
-                "after_krw": best.daily_budget_krw + move,
-            },
-            "move_krw": move,
-            "basis": "last_7d",
-            "reason": (
-                f"최근 7일 CPC가 {worst_cpc:,}원으로 {best.name}({best_cpc:,}원)의 "
-                f"{worst_cpc / best_cpc:.1f}배예요. 일예산의 20%를 효율 좋은 쪽으로 옮기면 "
-                "같은 돈으로 더 많은 클릭을 살 수 있어요."
-            ),
-        },
-        "note": None,
-    }
+    from domain.management.insights import rebalance_proposal  # noqa: PLC0415
+
+    return await rebalance_proposal(reader)
 
 
 # ── 시간축 자동 에스컬레이션 (re_evaluate — 엔드포인트·tick·추후 SQS 동일 함수) ────

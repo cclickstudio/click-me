@@ -1,10 +1,13 @@
 // 전사 집계 KPI — 활성 캠페인·총 노출·총 지출(스파크라인)·가중 소진율·주의 신호. /campaigns 목록 합산.
+import { memo } from 'react';
 import type { CampaignSummary } from '@/components/manage/campaigns/types';
 import { StatCard } from '@/components/manage/StatCard';
 import { trendDelta } from '@/components/manage/trend';
 import { campaignHealth, frequencyFatigue, needsAttention } from './health';
 
-export function MonitorKpis({
+// memo — 프롭(campaigns·accountSeries·runway)이 그대로면 스킵. 리포트 모달 토글 등 무관한 부모
+// 리렌더에서 전 캠페인 합산·필터를 다시 돌리지 않게 한다.
+export const MonitorKpis = memo(function MonitorKpis({
   campaigns,
   accountSeries = [],
   runway,
@@ -70,4 +73,4 @@ export function MonitorKpis({
       )}
     </div>
   );
-}
+});

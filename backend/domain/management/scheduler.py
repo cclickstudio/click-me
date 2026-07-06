@@ -403,12 +403,20 @@ async def run_rebalance_report(settings) -> bool:
     prop = data.get("proposal")
     if not prop:
         return False
-    frm = prop.get("from") or {}
-    to = prop.get("to") or {}
-    body = (
-        f"{frm.get('name', '?')} → {to.get('name', '?')} 일예산 "
-        f"{prop.get('move_krw', 0):,}원 이동 제안 (실행은 승인 필요)"
-    )
+    move = prop.get("move_krw", 0)
+    if prop.get("kind") == "adjust":  # 캠페인 1개 — 단일 증액/감액
+        camp = prop.get("campaign") or {}
+        verb = "증액" if prop.get("direction") == "increase" else "감액"
+        body = f"{camp.get('name', '?')} 일예산 {move:,}원 {verb} 제안 (실행은 승인 필요)"
+        dedup_key = f"rebalance:{camp.get('campaign_id', '')}:{prop.get('direction', '')}"
+    else:  # 캠페인 2개+ — 저효율→고효율 이전(kind 미지정 하위호환 포함)
+        frm = prop.get("from") or {}
+        to = prop.get("to") or {}
+        body = (
+            f"{frm.get('name', '?')} → {to.get('name', '?')} 일예산 "
+            f"{move:,}원 이동 제안 (실행은 승인 필요)"
+        )
+        dedup_key = f"rebalance:{frm.get('campaign_id', '')}:{to.get('campaign_id', '')}"
     await record_automation_run(
         domain="management",
         job_name="rebalance_proposal",
@@ -416,7 +424,7 @@ async def run_rebalance_report(settings) -> bool:
         body=body,
         status="proposal",
         payload={"actor": "auto", "proposal": prop},
-        dedup_key=f"rebalance:{frm.get('campaign_id', '')}:{to.get('campaign_id', '')}",
+        dedup_key=dedup_key,
     )
     return True
 

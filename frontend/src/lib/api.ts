@@ -72,7 +72,7 @@ export interface AnomalyScanItem {
   diagnosis: { anomaly_type: string; hypothesis?: string } & Record<string, unknown>;
   suggested_action?: string; // REPLACE_CREATIVE 등 — CTA 렌더용
 }
-// 예산 리밸런싱 제안 — 저효율→고효율 일예산 이동(적용은 budget-commit 2건)
+// 예산 리밸런싱 제안 — 하이브리드. 2개+는 이전(transfer), 1개는 단일 증액/감액(adjust).
 export interface RebalanceSide {
   campaign_id: string;
   name: string;
@@ -80,16 +80,28 @@ export interface RebalanceSide {
   daily_budget_krw: number;
   after_krw: number;
 }
-export interface RebalanceProposal {
+// 캠페인 2개+ — 저효율→고효율 일예산 이동(적용은 budget-commit 2건). kind 없으면 하위호환으로 이전.
+export interface RebalanceTransfer {
+  kind?: 'transfer';
   from: RebalanceSide;
   to: RebalanceSide;
   move_krw: number;
   basis: string;
   reason: string;
 }
-// 주간 리포트 — 최근 7일 실측 요약(결정론)
+// 캠페인 1개 — 그 캠페인 일예산을 소진율 기준 증액/감액(적용은 budget-commit 1건).
+export interface RebalanceAdjust {
+  kind: 'adjust';
+  direction: 'increase' | 'decrease';
+  campaign: RebalanceSide;
+  move_krw: number;
+  basis: string;
+  reason: string;
+}
+export type RebalanceProposal = RebalanceTransfer | RebalanceAdjust;
+// 성과 리포트 — 선택 기간 실측 요약(결정론). since는 maximum이면 null(전체 기간).
 export interface WeeklyReport {
-  period: { since: string; until: string };
+  period: { since: string | null; until: string; label?: string };
   totals: {
     spend_krw: number;
     impressions: number;
@@ -303,6 +315,8 @@ function buildCompareForm(input: SimCompareInput): FormData {
 // 캠페인 조회 쿼리스트링 — 전환가치·목표 ROAS는 입력됐을 때만 붙인다.
 // 조회 기간 토글 — 전체 누적(maximum) / 최근 30일 / 이번 달. Ads Manager와 맞추기용.
 export type DatePreset = "maximum" | "last_30d" | "this_month";
+// 성과 리포트 기간 — 캠페인 토글 + 주간(last_7d)까지. 리포트 전용이라 별도 타입.
+export type ReportPeriod = DatePreset | "last_7d";
 
 function _campaignQuery(
   conversionValueKrw?: number | null,
@@ -310,6 +324,7 @@ function _campaignQuery(
   datePreset?: DatePreset,
   includeArchived?: boolean,
   page?: { limit?: number; offset?: number },
+  includeSeries?: boolean,
 ): string {
   const p = new URLSearchParams();
   if (conversionValueKrw) p.set("conversion_value_krw", String(conversionValueKrw));
@@ -318,6 +333,7 @@ function _campaignQuery(
   if (includeArchived) p.set("include_archived", "true");
   if (page?.limit != null) p.set("limit", String(page.limit));
   if (page?.offset != null) p.set("offset", String(page.offset));
+  if (includeSeries) p.set("include_series", "true");
   const q = p.toString();
   return q ? `?${q}` : "";
 }
@@ -800,9 +816,10 @@ export const api = {
       datePreset?: DatePreset,
       includeArchived?: boolean,
       page?: { limit?: number; offset?: number },
+      includeSeries?: boolean, // 홈·모니터링 스파크라인용 일별 지출을 목록에 포함(상세 N콜 제거)
     ) =>
       request<CampaignsResponse>(
-        `/management/campaigns${_campaignQuery(conversionValueKrw, targetRoas, datePreset, includeArchived, page)}`,
+        `/management/campaigns${_campaignQuery(conversionValueKrw, targetRoas, datePreset, includeArchived, page, includeSeries)}`,
       ),
     campaign: (
       id: string,
@@ -818,9 +835,11 @@ export const api = {
       request<{ proposal: RebalanceProposal | null; note: string | null }>(
         `/management/budget/rebalance-proposal`,
       ),
-    // 주간 리포트 — 최근 7일 실측 요약(총합·캠페인별·하이라이트·다음 액션)
-    weeklyReport: () =>
-      request<{ report: WeeklyReport | null; note: string | null }>(`/management/report/weekly`),
+    // 성과 리포트 — 선택 기간 실측 요약(총합·캠페인별·하이라이트·다음 액션). 기본 last_7d.
+    weeklyReport: (period?: ReportPeriod) =>
+      request<{ report: WeeklyReport | null; note: string | null }>(
+        `/management/report/weekly${period ? `?period=${period}` : ""}`,
+      ),
     // 실 캠페인 성과 이상 스캔 — live에서 캠페인별 성과 진단(ROAS 미달 등)을 모아 반환.
     anomalyScan: (targetRoas?: number | null) =>
       request<AnomalyScanResponse>(
