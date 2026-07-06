@@ -98,8 +98,23 @@ function pointLead(results: SimKpi[]): string | null {
   return `참고(점추정): ${lead}가 4개 지표 중 ${Math.max(aw, bw)}개에서 앞서요 — 유의성은 클릭 의향률 기준이에요.`;
 }
 
-export default function BatchSimWidget({ projectId }: { projectId?: string }) {
-  const [ads, setAds] = useState<AdInput[]>([{ ...EMPTY }, { ...EMPTY }]);
+export default function BatchSimWidget({
+  projectId,
+  initialAds,
+}: {
+  projectId?: string;
+  initialAds?: AdInput[];
+}) {
+  // 제너레이터 후보 A/B 프리필(compare_ad_candidates) — 2개 이상이면 채워서 시작, 없으면 빈 폼.
+  const seeded =
+    initialAds && initialAds.length >= 2
+      ? initialAds.map((a) => ({
+          ad_title: a.ad_title ?? '',
+          ad_content: a.ad_content ?? '',
+          product_category: a.product_category ?? '',
+        }))
+      : [{ ...EMPTY }, { ...EMPTY }];
+  const [ads, setAds] = useState<AdInput[]>(seeded);
   const [running, setRunning] = useState(false);
   const [results, setResults] = useState<SimKpi[] | null>(null);
   const [error, setError] = useState<string | null>(null);

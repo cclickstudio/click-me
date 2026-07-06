@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import base64
 import io
+import logging
 from typing import Any
 
 from google import genai
@@ -25,6 +26,26 @@ from openai import AsyncOpenAI
 from core.config import settings
 from core.tracing import record_image_cost
 from domain.generator.contracts.enums import AdSize
+
+logger = logging.getLogger("clickme")
+
+
+def _require_openai_for(op: str, provider: str) -> None:
+    """편집·마스크·누끼는 openai 전용 op다. 다른 provider가 설정되면 openai 키가 있을 때
+    경고 후 openai로 폴백(파이프라인이 죽지 않게), 키도 없으면 명확히 실패한다.
+
+    현실적 오설정 예: generator_image_provider=google_genai → inpaint_provider도 그걸 상속해
+    edit_with_mask가 죽는 컴포즈(누끼) 경로. openai 키만 있으면 그대로 진행시킨다.
+    """
+    if provider == "openai":
+        return
+    if settings.openai_api_key:
+        logger.warning("%s: provider=%r 미지원 op → openai로 폴백(설정 확인 권장)", op, provider)
+        return
+    raise NotImplementedError(
+        f"{op} 미지원 provider: {provider!r} — openai만 지원하며 OPENAI_API_KEY도 없어 폴백 불가"
+    )
+
 
 # wrap_openai로 감싸 이미지 호출의 토큰·비용 usage가 LangSmith에 기록되게 한다.
 # 키는 settings(.env)에서 명시 — os.environ엔 OPENAI_API_KEY가 없어 무인자 생성은 실패한다.
@@ -67,9 +88,8 @@ async def generate(prompt: str, size: AdSize, *, provider: str, model: str, qual
 async def edit(
     image_bytes: bytes, prompt: str, size: AdSize, *, provider: str, model: str
 ) -> bytes:
-    """기존 이미지를 마스크 없이 편집. 현재 openai만 구현."""
-    if provider != "openai":
-        raise NotImplementedError(f"이미지 편집 미지원 provider: {provider!r} — 현재 openai만")
+    """기존 이미지를 마스크 없이 편집. openai 전용 op — 타 provider는 openai로 폴백."""
+    _require_openai_for("이미지 편집", provider)
     image_file = io.BytesIO(image_bytes)
     image_file.name = "original.png"
     response = await _openai_client.images.edit(
@@ -82,11 +102,8 @@ async def edit(
 async def edit_with_mask(
     base_png: bytes, mask_png: bytes, prompt: str, size: AdSize, *, provider: str, model: str
 ) -> bytes:
-    """마스크 인페인팅 — 마스크 투명영역만 재생성, 나머지(상품) 잠금. 현재 openai만(명시 마스크)."""
-    if provider != "openai":
-        raise NotImplementedError(
-            f"인페인팅 미지원 provider: {provider!r} — 명시적 마스크는 openai만 지원"
-        )
+    """마스크 인페인팅 — 마스크 투명영역만 재생성, 나머지(상품) 잠금. openai 전용 op(명시 마스크)."""
+    _require_openai_for("인페인팅", provider)
     base_file = io.BytesIO(base_png)
     base_file.name = "base.png"
     mask_file = io.BytesIO(mask_png)
@@ -101,11 +118,8 @@ async def edit_with_mask(
 async def remove_background(
     image_bytes: bytes, *, provider: str, model: str, quality: str
 ) -> bytes:
-    """배경 제거 → 투명 알파 PNG. 현재 openai만(transparent 지원)."""
-    if provider != "openai":
-        raise NotImplementedError(
-            f"누끼 미지원 provider: {provider!r} — 투명 알파 출력은 openai만 지원"
-        )
+    """배경 제거 → 투명 알파 PNG. openai 전용 op(transparent 지원) — 타 provider는 openai로 폴백."""
+    _require_openai_for("누끼", provider)
     image_file = io.BytesIO(image_bytes)
     image_file.name = "product.png"
     kwargs: dict = {

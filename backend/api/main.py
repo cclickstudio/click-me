@@ -111,6 +111,13 @@ async def lifespan(app: FastAPI):
 
     start_scheduler(settings)
 
+    # 제너레이터 자동화 스케줄러 — 기본 off(generator_scheduler_enabled일 때만 기동).
+    from domain.generator.scheduler import (
+        start_scheduler as start_generator_scheduler,  # noqa: PLC0415
+    )
+
+    start_generator_scheduler(settings)
+
     # KB 인제스터 — 비차단 백그라운드 태스크(서버 시작 안 막음). 키 없으면 graceful 스킵.
     async def _run_kb_ingest() -> None:
         # fire-and-forget 태스크라 런타임 예외를 여기서 잡아 로깅한다.

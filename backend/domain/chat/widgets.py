@@ -48,6 +48,17 @@ def gen_loop(loop_id: str, stream_url: str) -> dict:
     }
 
 
+def gen_progress(generation_id: str, stream_url: str) -> dict:
+    """단발 생성 진행 카드 — 채팅 즉시 실행 시 진행률·완료를 stream_url(SSE)로 관찰."""
+    return {
+        "widget": {
+            "type": "gen_progress",
+            "data": {"generation_id": generation_id, "stream_url": stream_url},
+        },
+        "source": GENERATOR,
+    }
+
+
 def report_ready(project_id: str | None, period: str) -> dict:
     """리포트 다운로드 버튼 — 실제 파일은 /api/chat/report. period=month|all."""
     return {
@@ -56,9 +67,16 @@ def report_ready(project_id: str | None, period: str) -> dict:
     }
 
 
-def batch_sim_form() -> dict:
-    """배치 시뮬 입력 폼(광고 2~4개 비교) — data 없음."""
-    return {"widget": {"type": "batch_sim_form"}, "source": SIMULATION}
+def batch_sim_form(prefill: dict | None = None) -> dict:
+    """배치 시뮬 입력 폼(광고 2~4개 비교).
+
+    prefill={ads:[{ad_title, ad_content, product_category}, ...]} 선택 — 제너레이터 후보를
+    A/B로 프리필할 때 사용. 없으면 빈 폼(수동 입력, 기존 동작 불변).
+    """
+    widget: dict = {"type": "batch_sim_form"}
+    if prefill:
+        widget["data"] = prefill
+    return {"widget": widget, "source": SIMULATION}
 
 
 def create_campaign(prefill: dict) -> dict:

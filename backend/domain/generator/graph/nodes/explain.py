@@ -8,7 +8,7 @@ from domain.generator.contracts.enums import TemplateType
 from domain.generator.contracts.schemas import CandidateExplanation
 from domain.generator.graph.nodes import emit_progress
 from domain.generator.graph.state import GenerationState
-from domain.generator.llm.factory import build_text_llm
+from domain.generator.llm.factory import build_text_llm, with_llm_retry
 from domain.generator.pipeline.template_selector import describe_template
 
 
@@ -16,7 +16,9 @@ class _RationaleList(BaseModel):
     rationales: list[str]
 
 
-_batch_llm = build_text_llm(temperature=0.3, max_tokens=600).with_structured_output(_RationaleList)
+_batch_llm = with_llm_retry(
+    build_text_llm(temperature=0.3, max_tokens=600).with_structured_output(_RationaleList)
+)
 
 _SYSTEM = (
     "당신은 광고 기획자입니다. "

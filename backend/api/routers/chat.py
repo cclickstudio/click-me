@@ -390,6 +390,8 @@ async def chat_complete(
             "project_id": body.project_id,
             "context_ad_id": body.context_ad_id,
             "memory_context": memory_context,
+            # 이번 턴 첨부 여부 — 상품 이미지가 있으면 run_generation이 폼 경로로 보낸다.
+            "has_image": bool(body.image_url),
         }
         acc = ""
         state: dict = {}

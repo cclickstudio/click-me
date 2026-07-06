@@ -183,6 +183,13 @@ class Settings(BaseSettings):
     generator_inpaint_provider: str | None = None  # 인페인팅 — 폴백: image_provider
     generator_inpaint_model: str | None = None  # 인페인팅 — 폴백: image_model
     generator_font_dir: str | None = None  # 없으면 backend/assets/fonts 사용
+    # 제너레이터 자동화 워커 — 기본 off(management와 동일 원칙, dev/CI 안전).
+    generator_scheduler_enabled: bool = False
+    generator_quality_digest_interval_minutes: int = 1440  # 품질 다이제스트 주기(기본 일1회)
+    generator_stuck_scan_interval_minutes: int = 30  # 멈춘 생성 감지 주기
+    generator_stuck_threshold_minutes: int = (
+        30  # pending/running이 이 시간 넘게 갱신 없으면 멈춤 판정
+    )
 
     # Toss Payments — 테스트 키 전용 (기본값 = 토스 공식 문서 공개 샌드박스 키)
     # 라이브 키 주입 시 기동 거부 — 실돈 결제는 7/8 Won't

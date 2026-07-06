@@ -10,8 +10,45 @@ from __future__ import annotations
 
 from langchain.chat_models import init_chat_model
 from langchain_core.language_models import BaseChatModel
+from langchain_core.runnables import Runnable
 
 from core.config import settings
+
+# 일시적(재시도 가치 있는) 예외 모음 — 429(RateLimit)·타임아웃·연결오류·5xx.
+# provider SDK가 설치돼 있을 때만 담는다(미설치 provider는 조용히 건너뜀).
+_TRANSIENT_EXC: tuple[type[Exception], ...] = ()
+try:
+    from openai import (
+        APIConnectionError,
+        APITimeoutError,
+        InternalServerError,
+        RateLimitError,
+    )
+
+    _TRANSIENT_EXC += (RateLimitError, APITimeoutError, APIConnectionError, InternalServerError)
+except Exception:  # noqa: BLE001 — openai 미설치·인터페이스 변경 시 재시도만 생략
+    pass
+try:
+    from google.genai.errors import ServerError as _GenAIServerError
+
+    _TRANSIENT_EXC += (_GenAIServerError,)
+except Exception:  # noqa: BLE001 — google-genai 미설치 시 생략
+    pass
+
+
+def with_llm_retry(runnable: Runnable, *, attempts: int = 3) -> Runnable:
+    """LLM 호출에 지수백오프+지터 재시도를 씌운다(일시적 오류만 재시도, 잘못된 요청은 즉시 전파).
+
+    구조화 출력 등 '최종' Runnable에 적용해야 한다 — 순서는 모델 → with_structured_output → 재시도.
+    (with_retry 결과에는 with_structured_output이 없으므로 반대로 감으면 안 된다.)
+    """
+    if not _TRANSIENT_EXC:
+        return runnable
+    return runnable.with_retry(
+        retry_if_exception_type=_TRANSIENT_EXC,
+        stop_after_attempt=attempts,
+        wait_exponential_jitter=True,
+    )
 
 
 def build_text_llm(temperature: float, max_tokens: int | None = None) -> BaseChatModel:
