@@ -65,6 +65,12 @@ async def test_fallback_raises_when_all_fail() -> None:
         await eng.react(_persona(), AdInterpretation(ad_id="A"))
 
 
+def test_empty_engine_chain_rejected() -> None:
+    # 엔진 0개 체인은 생성 단계에서 거부(폴백 대상 없음).
+    with pytest.raises(ValueError, match="최소 1개"):
+        FallbackReactionEngine([])
+
+
 async def test_generate_reaction_is_provider_agnostic() -> None:
     """generate_reaction이 프롬프트를 구성하고 json_call 결과를 §3.5 반응으로 파싱한다."""
 

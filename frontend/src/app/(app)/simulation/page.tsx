@@ -13,6 +13,7 @@ import { api, getAdminOrgId } from '@/lib/api';
 import { saveSimComparison, saveSimResult } from '@/lib/simResultStore';
 import { getJobs, setSimJob } from '@/lib/runningJobs';
 import { SIM_CATEGORIES } from '@/lib/simCategories';
+import { Select } from '@/components/ui/Select';
 import type {
   AnalysisMode,
   SegmentInput,
@@ -740,17 +741,13 @@ export default function SimulationRunPage() {
               </button>
             </div>
           ) : (
-            <select
+            <Select
+              aria-label='프로젝트 선택'
+              placeholder='프로젝트를 선택하세요'
               value={selectedProject?.id ?? ''}
-              onChange={e => selectProject(e.target.value || null)}
-              className={inputCls}>
-              <option value=''>프로젝트를 선택하세요</option>
-              {projects.map(p => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
+              onChange={v => selectProject(v || null)}
+              options={projects.map(p => ({ value: p.id, label: p.name }))}
+            />
           )}
         </div>
 
@@ -869,17 +866,16 @@ export default function SimulationRunPage() {
                     </p>
                   ) : (
                     <>
-                      <select
+                      <Select
+                        aria-label='생성한 광고 후보 선택'
+                        placeholder='생성한 광고 후보 선택'
                         value={selectedGenValue}
-                        onChange={e => setSelectedGenValue(e.target.value)}
-                        className={inputCls}>
-                        <option value=''>생성한 광고 후보 선택</option>
-                        {genOptions.map(o => (
-                          <option key={o.value} value={o.value}>
-                            {o.label}
-                          </option>
-                        ))}
-                      </select>
+                        onChange={setSelectedGenValue}
+                        options={genOptions.map(o => ({
+                          value: o.value,
+                          label: o.label,
+                        }))}
+                      />
                       {selectedGenImageUrl && (
                         <div className='relative flex flex-1 min-h-0 items-center justify-center overflow-hidden rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-[#F8F9FA] dark:bg-[#1C2333]'>
                           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -906,18 +902,16 @@ export default function SimulationRunPage() {
                     </p>
                   ) : (
                     <>
-                      <select
+                      <Select
+                        aria-label='집행 광고(캠페인) 선택'
+                        placeholder='집행 광고(캠페인) 선택'
                         value={selectedCampaignId}
-                        onChange={e => onSelectCampaign(e.target.value)}
-                        className={inputCls}>
-                        <option value=''>집행 광고(캠페인) 선택</option>
-                        {campaigns.map(c => (
-                          <option key={c.campaign_id} value={c.campaign_id}>
-                            {c.name}
-                            {c.state ? ` · ${c.state}` : ''}
-                          </option>
-                        ))}
-                      </select>
+                        onChange={onSelectCampaign}
+                        options={campaigns.map(c => ({
+                          value: c.campaign_id,
+                          label: `${c.name}${c.state ? ` · ${c.state}` : ''}`,
+                        }))}
+                      />
                       {selectedCampaignId && !campaignImageUrl && (
                         <p className='text-xs text-[#8B95A1] dark:text-[#6B7280]'>
                           이 캠페인 소재에 이미지가 없어요.
@@ -980,40 +974,32 @@ export default function SimulationRunPage() {
                   제품 카테고리 <span className='text-[#F74D4D]'>*</span>
                 </label>
                 <div className='grid grid-cols-2 gap-3'>
-                  <select
-                    value={categoryId}
-                    onChange={e => {
-                      setCategoryId(
-                        e.target.value ? Number(e.target.value) : ''
-                      );
+                  <Select
+                    aria-label='제품 대분류'
+                    placeholder='대분류 선택'
+                    value={categoryId === '' ? '' : String(categoryId)}
+                    onChange={v => {
+                      setCategoryId(v ? Number(v) : '');
                       setServiceClass('');
                     }}
-                    className={inputCls}>
-                    <option value=''>대분류 선택</option>
-                    {categories.map(c => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
-                      </option>
-                    ))}
-                  </select>
-                  <select
-                    value={serviceClass}
-                    onChange={e =>
-                      setServiceClass(
-                        e.target.value ? Number(e.target.value) : ''
-                      )
-                    }
+                    options={categories.map(c => ({
+                      value: String(c.id),
+                      label: c.name,
+                    }))}
+                  />
+                  <Select
+                    aria-label='제품 세부 분류'
+                    placeholder='세부 분류 (NICE)'
+                    value={serviceClass === '' ? '' : String(serviceClass)}
+                    onChange={v => setServiceClass(v ? Number(v) : '')}
                     disabled={!categoryId}
-                    className={`${inputCls} disabled:opacity-50`}>
-                    <option value=''>세부 분류 (NICE)</option>
-                    {(
+                    options={(
                       categories.find(c => c.id === categoryId)?.kinds ?? []
-                    ).map(k => (
-                      <option key={k.id} value={k.id}>
-                        {k.id}류 · {k.description}
-                      </option>
-                    ))}
-                  </select>
+                    ).map(k => ({
+                      value: String(k.id),
+                      label: `${k.id}류 · ${k.description}`,
+                    }))}
+                  />
                 </div>
               </div>
 
@@ -1120,47 +1106,45 @@ export default function SimulationRunPage() {
                     <div className='grid grid-cols-2 gap-3'>
                       <div>
                         <label className={labelCls}>연령대</label>
-                        <select
+                        <Select
+                          aria-label='연령대'
                           value={s.ageBand}
-                          onChange={e =>
+                          onChange={v =>
                             setSegments(prev =>
                               prev.map((x, j) =>
-                                j === i
-                                  ? { ...x, ageBand: e.target.value }
-                                  : x
+                                j === i ? { ...x, ageBand: v } : x
                               )
                             )
                           }
-                          className={inputCls}>
-                          <option value=''>전 연령</option>
-                          {AGE_BANDS.map(b => (
-                            <option key={b.label} value={b.label}>
-                              {b.label}
-                            </option>
-                          ))}
-                        </select>
+                          options={[
+                            { value: '', label: '전 연령' },
+                            ...AGE_BANDS.map(b => ({
+                              value: b.label,
+                              label: b.label,
+                            })),
+                          ]}
+                        />
                       </div>
                       <div>
                         <label className={labelCls}>성별</label>
-                        <select
+                        <Select
+                          aria-label='성별'
                           value={s.gender}
-                          onChange={e =>
+                          onChange={v =>
                             setSegments(prev =>
                               prev.map((x, j) =>
                                 j === i
-                                  ? {
-                                      ...x,
-                                      gender: e.target.value as GenderFilter,
-                                    }
+                                  ? { ...x, gender: v as GenderFilter }
                                   : x
                               )
                             )
                           }
-                          className={inputCls}>
-                          <option value=''>전체</option>
-                          <option value='F'>여성</option>
-                          <option value='M'>남성</option>
-                        </select>
+                          options={[
+                            { value: '', label: '전체' },
+                            { value: 'F', label: '여성' },
+                            { value: 'M', label: '남성' },
+                          ]}
+                        />
                       </div>
                     </div>
 

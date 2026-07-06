@@ -1,6 +1,7 @@
 // 신규 캠페인 생성 폼 — 목표·예산·기간·소재 입력 → 제안 생성
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
+import { Select } from '@/components/ui/Select';
 
 export type CampaignFormValues = {
   name: string;
@@ -257,14 +258,16 @@ export function CampaignForm({
         )}
       </div>
       <Field label="목표" hint="리드는 잠재고객 폼(즉석 양식)으로 전환·ROAS 측정이 가능">
-        <select
-          className={inputCls}
+        <Select
+          aria-label="목표"
+          className="mt-1.5"
           value={objective}
-          onChange={(e) => setObjective(e.target.value as 'traffic' | 'leads')}
-        >
-          <option value="traffic">트래픽 (클릭)</option>
-          <option value="leads">리드 (잠재고객 폼)</option>
-        </select>
+          onChange={(v) => setObjective(v as 'traffic' | 'leads')}
+          options={[
+            { value: 'traffic', label: '트래픽 (클릭)' },
+            { value: 'leads', label: '리드 (잠재고객 폼)' },
+          ]}
+        />
       </Field>
 
       {/* ── 광고세트 타겟 (Meta) ── */}
@@ -273,24 +276,26 @@ export function CampaignForm({
       </p>
       <div className="grid grid-cols-2 gap-4">
         <Field label="위치">
-          <select className={inputCls} value={country} onChange={(e) => setCountry(e.target.value)}>
-            {COUNTRIES.map((c) => (
-              <option key={c.code} value={c.code}>
-                {c.label}
-              </option>
-            ))}
-          </select>
+          <Select
+            aria-label="위치"
+            className="mt-1.5"
+            value={country}
+            onChange={setCountry}
+            options={COUNTRIES.map((c) => ({ value: c.code, label: c.label }))}
+          />
         </Field>
         <Field label="성별">
-          <select
-            className={inputCls}
+          <Select
+            aria-label="성별"
+            className="mt-1.5"
             value={gender}
-            onChange={(e) => setGender(e.target.value as 'all' | 'male' | 'female')}
-          >
-            <option value="all">전체</option>
-            <option value="male">남성</option>
-            <option value="female">여성</option>
-          </select>
+            onChange={(v) => setGender(v as 'all' | 'male' | 'female')}
+            options={[
+              { value: 'all', label: '전체' },
+              { value: 'male', label: '남성' },
+              { value: 'female', label: '여성' },
+            ]}
+          />
         </Field>
       </div>
       <div className="grid grid-cols-2 gap-4">
@@ -316,17 +321,13 @@ export function CampaignForm({
         </Field>
       </div>
       <Field label="특별 광고 카테고리" hint="주택·고용·금융·정치 광고는 Meta 정책상 신고 필수">
-        <select
-          className={inputCls}
+        <Select
+          aria-label="특별 광고 카테고리"
+          className="mt-1.5"
           value={specialCat}
-          onChange={(e) => setSpecialCat(e.target.value)}
-        >
-          {categories.map((c) => (
-            <option key={c.value} value={c.value}>
-              {c.label}
-            </option>
-          ))}
-        </select>
+          onChange={setSpecialCat}
+          options={categories.map((c) => ({ value: c.value, label: c.label }))}
+        />
       </Field>
 
       {/* ── 광고 소재 이미지 (업로드 → Meta 해시 → 샘플 시안) ── */}

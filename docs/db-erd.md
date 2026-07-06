@@ -1,8 +1,21 @@
 # ClickMe DB ERD (실 DB 기준)
 
-> 개인 NeonDB(공용 DB 복제본, alembic `024`)를 직접 introspection해 자동 생성. 레포의 `docs/db-schema.md`보다 최신이며 실제 운영 스키마와 일치한다.
+> 개인 NeonDB(공용 DB 복제본)를 직접 introspection해 자동 생성. 레포의 `docs/db-schema.md`보다 최신이며 실제 운영 스키마와 일치한다.
+>
+> 레포 마이그레이션 현행 head는 `0004_generator_kb_search_vector`(`0001_baseline` squash 체인, 구 3자리 리비전 제거됨). 이 스냅샷은 운영 DB에서 뜬 것으로, 라이브러리 관리 테이블(LangGraph 체크포인터 등)까지 포함해 마이그레이션이 만드는 테이블보다 많다.
 
 - **총 테이블** 70개 · **FK 관계** 56개 · **Enum 타입** 10종
+
+> **[덧붙임 2026-07-06] 이 ERD는 6/24 스냅샷 — 이후 변경분은 아래 4건 (재생성 전까지 수동 반영)**
+>
+> | 변경 | 내용 | 마이그레이션 |
+> |---|---|---|
+> | 신설 | `management_notifications` — 이상 감지 운영 알림 (→organizations·projects FK, 미해결 부분 유니크) | 0005 |
+> | 신설 | `automation_runs` — APScheduler 워커 결과 공용 저장소 (3도메인, project_id 느슨 참조) | 0006 |
+> | 개명 | `chat_long_term_memory` → `chat_session_summaries` · `execution_history` → `chat_execution_history` | 0006 |
+> | 삭제 | `management_user_memory` (LLM 추출 기억 경로 제거 — 롱텀은 `chat_execution_history`로 일원화) | 0006 |
+>
+> 매니지먼트 실행 계열 테이블 이름의 신구 세대 문제(`idempotency_keys` vs `management_idempotency_keys` 등)는 `db-schema.md`의 [덧붙임 2026-07-06] 참조.
 
 
 ## 읽는 법
@@ -100,7 +113,7 @@ erDiagram
 
 
 ### `users` · 11행
-사용자 계정. role(ADMIN/COMPANY/USER), status(ACTIVE 등), must_change_password.
+사용자 계정. role(ADMIN/COMPANY/USER), status(`ACTIVE`|`PENDING`|`INACTIVE`), must_change_password. admin 소프트삭제 시 `INACTIVE`(+ Cognito disable)로 두고 데이터는 보존, auth 미들웨어가 `status != ACTIVE`면 401 차단.
 
 | 컬럼 | 타입 | NULL | 키 | 기본값 |
 |---|---|---|---|---|
@@ -143,7 +156,7 @@ JWT 리프레시 토큰.
 | updated_at | timestamptz | NOT NULL |  | now() |
 
 ### `organizations` · 5행
-조직 = 결제/플랜 단위. plan(free|professional|enterprise).
+조직 = 결제/플랜 단위. plan(free|professional|enterprise), status(`ACTIVE`|`INACTIVE`). admin 소프트삭제 시 조직·소속 유저를 함께 `INACTIVE`로 두고, 복원 시 `ACTIVE`, 영구삭제(purge) 시에만 실제 행 삭제.
 
 | 컬럼 | 타입 | NULL | 키 | 기본값 |
 |---|---|---|---|---|

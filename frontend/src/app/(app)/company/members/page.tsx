@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { authedFetch } from '@/lib/api';
 import { formatKSTDate } from '@/lib/datetime';
+import { Select } from '@/components/ui/Select';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
@@ -67,12 +68,15 @@ function CreateMemberModal({ teams, onClose, onCreated }: { teams: Team[]; onClo
           </div>
           <div>
             <label className="text-xs font-medium text-[#4E5968] dark:text-[#9CA3AF] block mb-1">팀 (선택)</label>
-            <select value={teamId} onChange={(e) => setTeamId(e.target.value)} className={inputCls}>
-              <option value="">미배정</option>
-              {teams.map((t) => (
-                <option key={t.id} value={t.id}>{t.name}</option>
-              ))}
-            </select>
+            <Select
+              aria-label="팀 선택"
+              value={teamId}
+              onChange={setTeamId}
+              options={[
+                { value: '', label: '미배정' },
+                ...teams.map((t) => ({ value: t.id, label: t.name })),
+              ]}
+            />
           </div>
           {error && (
             <p className="text-xs text-red-500 bg-red-50 dark:bg-red-900/20 px-3 py-2 rounded-lg">{error}</p>

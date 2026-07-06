@@ -45,6 +45,13 @@ function TeamSection({
   onToggleOpen: (id: string) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const { revealProjectId, revealNonce } = useProjects();
+
+  // reveal 대상 프로젝트를 이 팀이 포함하면 자동으로 펼친다.
+  useEffect(() => {
+    if (revealProjectId && projects.some(p => p.id === revealProjectId)) setOpen(true);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [revealNonce]);
 
   return (
     <div>
@@ -91,9 +98,15 @@ function TeamSection({
 // ── 메인 패널 ───────────────────────────────────────────────────
 export default function CompanyPanel({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
   const pathname = usePathname();
-  const { projects, loading, details, loadDetails, selectProject, refreshAll } = useProjects();
+  const { projects, loading, details, loadDetails, selectProject, refreshAll, revealProjectId, revealNonce } = useProjects();
   const [teams, setTeams] = useState<Team[]>([]);
   const [openProjectId, setOpenProjectId] = useState<string | null>(null);
+
+  // 내역 클릭 등 reveal 요청 시 대상 프로젝트를 펼친다(팀 그룹은 TeamSection이 스스로 펼침).
+  useEffect(() => {
+    if (revealProjectId) setOpenProjectId(revealProjectId);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [revealNonce]);
 
   const simMatch = pathname.match(/^\/simulation\/([^/]+)/);
   const genMatch = pathname.match(/^\/generations\/([^/]+)/);

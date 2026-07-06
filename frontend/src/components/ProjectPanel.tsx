@@ -215,11 +215,12 @@ export function ProjectItem({
   onToggleOpen: (id: string) => void;
   showChat?: boolean; // 채팅 섹션 노출 여부(ProjectPanel=true, CompanyPanel=false)
 }) {
-  const { details, loadDetails, refreshDetails, selectedProjectId, selectProject } = useProjects();
+  const { details, loadDetails, refreshDetails, selectedProjectId, selectProject, revealProjectId, revealNonce } = useProjects();
   const router = useRouter();
   const [simOpen, setSimOpen] = useState(false);
   const [genOpen, setGenOpen] = useState(false);
   const [trashOpen, setTrashOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
 
   const d = details[project.id];
   const isLoading = isOpen && !d?.loaded;
@@ -240,6 +241,18 @@ export function ProjectItem({
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoOpen]);
+
+  // 외부(패널)에서 isOpen이 켜지면 상세를 로드한다(내역 클릭으로 펼쳐진 경우 포함).
+  useEffect(() => {
+    if (isOpen && !d?.loaded) loadDetails(project.id);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen]);
+
+  // 내역 클릭 등으로 이 프로젝트가 reveal 대상이 되면 화면에 보이도록 스크롤.
+  useEffect(() => {
+    if (revealProjectId === project.id) rootRef.current?.scrollIntoView({ block: 'nearest' });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [revealNonce]);
 
   const toggle = async () => {
     onToggleOpen(project.id);
@@ -262,7 +275,7 @@ export function ProjectItem({
   };
 
   return (
-    <div>
+    <div ref={rootRef}>
       <div
         className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg transition-colors text-left ${
           isSelected ? 'bg-[#EBF3FF] dark:bg-[#1E3A5F]' : 'hover:bg-[#F2F4F6] dark:hover:bg-[#252D3D]'
@@ -427,10 +440,16 @@ export function ProjectItem({
 // ── 메인 패널 ───────────────────────────────────────────────────
 export default function ProjectPanel({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
   const pathname = usePathname();
-  const { projects, loading, details, loadDetails, selectProject, refresh, refreshAll } = useProjects();
+  const { projects, loading, details, loadDetails, selectProject, refresh, refreshAll, revealProjectId, revealNonce } = useProjects();
   const { user } = useAuth();
   const [openProjectId, setOpenProjectId] = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
+
+  // 내역 클릭 등으로 reveal 요청이 오면 그 프로젝트를 펼친다(플랫 목록이라 바로 열림).
+  useEffect(() => {
+    if (revealProjectId) setOpenProjectId(revealProjectId);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [revealNonce]);
 
   const simMatch = pathname.match(/^\/simulation\/([^/]+)/);
   const genMatch = pathname.match(/^\/generations\/([^/]+)/);

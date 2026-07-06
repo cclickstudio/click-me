@@ -58,12 +58,16 @@ def _as_uuid(value: str | uuid.UUID | None) -> uuid.UUID | None:
 
 
 async def create_session(
-    db: AsyncSession, project_id: str | None, title: str | None = None
+    db: AsyncSession,
+    project_id: str | None,
+    title: str | None = None,
+    created_by: str | uuid.UUID | None = None,
 ) -> ChatSession:
-    """새 채팅 세션 생성 — 프로젝트에 귀속(미선택이면 NULL)."""
+    """새 채팅 세션 생성 — 프로젝트에 귀속(미선택이면 NULL). created_by=세션 개시자(실행자)."""
     session = ChatSession(
         project_id=_as_uuid(project_id),
         title=(title or _DEFAULT_TITLE)[:200],
+        created_by=_as_uuid(created_by),
     )
     db.add(session)
     await db.commit()

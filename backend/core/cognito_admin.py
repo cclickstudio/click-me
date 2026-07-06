@@ -83,6 +83,51 @@ async def set_password(login_id: str, password: str) -> None:
         ) from err
 
 
+def _disable_sync(login_id: str) -> None:
+    try:
+        _client().admin_disable_user(UserPoolId=settings.cognito_user_pool_id, Username=login_id)
+    except ClientError as err:
+        if err.response["Error"]["Code"] != "UserNotFoundException":
+            raise
+
+
+async def disable_user(login_id: str) -> bool:
+    """계정 비활성(로그인 차단) — 삭제 대신 disable로 남겨 복원 가능하게 한다. best-effort."""
+    if not is_enabled():
+        return False
+    try:
+        await asyncio.to_thread(_disable_sync, login_id)
+        return True
+    except (ClientError, BotoCoreError):
+        return False
+
+
+def _enable_sync(login_id: str, role: str | None) -> None:
+    client = _client()
+    pool = settings.cognito_user_pool_id
+    try:
+        client.admin_enable_user(UserPoolId=pool, Username=login_id)
+    except ClientError as err:
+        if err.response["Error"]["Code"] != "UserNotFoundException":
+            raise
+        # 과거 삭제 흐름으로 Cognito 계정이 사라졌으면 재생성(비번 미설정 → FORCE_CHANGE_PASSWORD).
+        client.admin_create_user(UserPoolId=pool, Username=login_id, MessageAction="SUPPRESS")
+        group = role if role in _GROUPS else "USER"
+        with contextlib.suppress(ClientError):
+            client.admin_add_user_to_group(UserPoolId=pool, Username=login_id, GroupName=group)
+
+
+async def enable_user(login_id: str, role: str | None = None) -> bool:
+    """계정 활성(복원) — enable, Cognito에 없으면 role 그룹으로 재생성. best-effort."""
+    if not is_enabled():
+        return False
+    try:
+        await asyncio.to_thread(_enable_sync, login_id, role)
+        return True
+    except (ClientError, BotoCoreError):
+        return False
+
+
 def _delete_sync(login_id: str) -> None:
     try:
         _client().admin_delete_user(UserPoolId=settings.cognito_user_pool_id, Username=login_id)

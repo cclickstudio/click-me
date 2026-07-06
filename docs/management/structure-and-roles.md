@@ -13,6 +13,15 @@
 > - **CVR·ROAS 재정의 구현**: 전환=리드/가입/설치 일반화, ROAS=전환×전환가치÷지출(추정), 목표 미달 판정. 프론트는 실측 읽기전용 + 미설정 시 추정 입력(하이브리드).
 > - **안전·영속**: 소프트 삭제(`deleted_at` 감사) + Meta 동시 삭제, NeonDB `created_campaigns` 누적, 목록 페이징, 요청한도 graceful.
 
+> **⚠ 현행화 노트 (2026-07-06)** — 이 문서는 6/21 합의 스냅샷이며 이후 구현으로 일부 어긋난다. 현재 구현 전체 설명은 `2026-07-06-매니지먼트-구현-설명.md`가 정본. 6/21 이후 주요 변경분:
+> - **`remediation/` 패키지 신설**(§1 "새 폴더 0개" 원칙과 불일치) — 운영 알림 C안: panel_sink·chat_sink·consult_service·advisor·notification_store·resolver. 상세는 `운영알림-README.md`.
+> - **APScheduler 워커 3잡**(이상스캔·주간리포트·리밸런싱, 기본 off) + `core/automation` 레지스트리 + 3도메인 공용 `automation_runs` 저장소. 상세는 `2026-07-04-apscheduler-워커.md`.
+> - **감지 단일화** — 라우터·워커·수동 점검이 `detection/agentic_scan.diagnose_campaign` 하나를 공유(규칙 → INCONCLUSIVE 시 LLM 재판정).
+> - **캠페인 생성 3갈래**(직접 `create-proposal` · 4-3 `from-candidate` · 4-1 `from-simulation`) 전부 제안→승인→실행 경유.
+> - **Meta OAuth org 연동**(`management_meta_connections`, 토큰 암호화) + org 스코프 인가 강화.
+> - **재생성 비동기 job 경로 삭제**(소비자 없음, RegenerationJobRow 제거), **롱텀 메모리 core 이동**(`chat_execution_history`·`recall_history`).
+> - **채팅 연동** — 상담 카드 옵션 버튼(`option_select` → `build_option_instruction`)으로 알림→챗 흐름 연결 완료.
+
 ---
 
 ## 0. 현실 점검
