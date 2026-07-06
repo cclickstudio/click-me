@@ -68,10 +68,18 @@ _CUTOUT_MIN_LARGEST_FRACTION = 0.70
 
 
 def _s3_key_from_url_or_key(value: str) -> str:
-    """existing_ad_s3_key로 presigned URL 전체가 들어와도 순수 S3 키로 정규화한다."""
-    if value.startswith("http://") or value.startswith("https://"):
-        return urlparse(value).path.lstrip("/")
-    return value
+    """existing_ad_s3_key로 presigned URL 전체가 들어와도 순수 S3 키로 정규화한다.
+
+    virtual-hosted style(bucket.s3.amazonaws.com/key)은 경로가 곧 키라 그대로 두면 되지만,
+    path-style(s3.amazonaws.com/bucket/key)은 경로 맨 앞에 버킷명이 끼어 있어 벗겨내야 한다.
+    """
+    if not (value.startswith("http://") or value.startswith("https://")):
+        return value
+    path_key = urlparse(value).path.lstrip("/")
+    bucket = (settings.s3_bucket_name or "").lower()
+    if bucket and path_key.lower().startswith(bucket + "/"):
+        return path_key[len(bucket) + 1 :]
+    return path_key
 
 
 def _cutout_is_plausible(cutout_bytes: bytes) -> bool:
@@ -472,9 +480,12 @@ async def _resolve_source_images(req: dict) -> tuple[bytes | None, bytes | None]
             else:
                 try:
                     candidate_cutout = await remove_product_background(existing_ad_bytes)
+                    plausible = candidate_cutout is not None and _cutout_is_plausible(
+                        candidate_cutout
+                    )
                 except Exception:
-                    candidate_cutout = None
-                if candidate_cutout is not None and _cutout_is_plausible(candidate_cutout):
+                    candidate_cutout, plausible = None, False
+                if plausible:
                     product_cutout_bytes = candidate_cutout
                     logger.info(
                         "개선 모드 즉석 누끼 추출 성공(tier=extracted): key=%s", existing_ad_s3_key
