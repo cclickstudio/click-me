@@ -11,6 +11,13 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
 type Phase = 'running' | 'done' | 'error';
 
+type SimKpis = {
+  click_intent_rate?: number | null;
+  purchase_intent?: number | null;
+  trust_avg?: number | null;
+  rejection_rate?: number | null;
+};
+
 type LoopEvent = {
   event?: string;
   iteration?: number;
@@ -23,6 +30,18 @@ type LoopEvent = {
   final_generation_id?: string;
   threshold_met?: boolean;
   iterations?: number;
+  kpis?: SimKpis; // simulated 이벤트 — 최초 1회 시뮬 KPI
+  focus?: string; // sim_direction 이벤트 — 최우선 개선 지표 진단
+};
+
+// 최초 시뮬 KPI 한 줄 요약 — 진단 표시용(반복 비교 아님, 실측 환산 아님)
+const simSummary = (k: SimKpis) => {
+  const parts: string[] = [];
+  if (k.click_intent_rate != null) parts.push(`클릭의향 ${Math.round(k.click_intent_rate * 100)}%`);
+  if (k.purchase_intent != null) parts.push(`구매의도 ${k.purchase_intent.toFixed(1)}/5`);
+  if (k.trust_avg != null) parts.push(`신뢰도 ${k.trust_avg.toFixed(1)}/5`);
+  if (k.rejection_rate != null) parts.push(`거부율 ${Math.round(k.rejection_rate * 100)}%`);
+  return parts.join(' · ');
 };
 
 type IterRow = { iteration: number; quality_score: number | null };
@@ -49,6 +68,7 @@ export default function GenLoopWidget({
   const [statusMsg, setStatusMsg] = useState('자동 개선 루프 진행 중...');
   const [finalGid, setFinalGid] = useState<string | null>(null);
   const [thresholdMet, setThresholdMet] = useState<boolean | null>(null);
+  const [simDiag, setSimDiag] = useState<{ summary: string; focus?: string } | null>(null);
   const [err, setErr] = useState('');
   const esRef = useRef<EventSource | null>(null);
 
@@ -84,6 +104,12 @@ export default function GenLoopWidget({
         case 'generated':
           if (typeof d.iteration === 'number') upsertRow(d.iteration, d.quality_score ?? null);
           setStatusMsg('품질 평가 중...');
+          break;
+        case 'simulated':
+          if (d.kpis) setSimDiag(prev => ({ summary: simSummary(d.kpis!), focus: prev?.focus }));
+          break;
+        case 'sim_direction':
+          setSimDiag(prev => ({ summary: prev?.summary ?? '', focus: d.focus }));
           break;
         case 'improving':
           setStatusMsg(`개선 방향 반영 중${d.fix ? ` — ${d.fix.split('\n')[0]}` : ''}`);
@@ -167,6 +193,20 @@ export default function GenLoopWidget({
     );
   }
 
+  const simBlock = simDiag && (simDiag.summary || simDiag.focus) && (
+    <div className="mt-2 rounded-lg bg-[#EEF4FF] dark:bg-[#1E3A5F] px-3 py-2 text-xs">
+      <span className="font-semibold text-[#3182F6]">🧪 소비자 반응 진단</span>
+      {simDiag.summary && (
+        <p className="text-[#4E5968] dark:text-[#9CA3AF] mt-0.5">{simDiag.summary}</p>
+      )}
+      {simDiag.focus && (
+        <p className="text-[#191F28] dark:text-[#F2F4F6] mt-0.5">
+          최우선 개선 — <span className="font-semibold">{simDiag.focus}</span>
+        </p>
+      )}
+    </div>
+  );
+
   const historyList = rows.length > 0 && (
     <ul className="space-y-1 mt-2">
       {rows.map(r => (
@@ -197,6 +237,7 @@ export default function GenLoopWidget({
             <p className="text-xs text-[#4E5968] dark:text-[#9CA3AF] mt-0.5 truncate">{statusMsg}</p>
           </div>
         </div>
+        {simBlock}
         {historyList}
       </div>
     );
@@ -219,6 +260,7 @@ export default function GenLoopWidget({
           </span>
         )}
       </p>
+      {simBlock}
       {historyList}
       {finalGid && (
         <button
