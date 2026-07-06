@@ -3169,6 +3169,21 @@ async def sync_campaign(
     }
 
 
+async def _resolve_campaign_notifications(org_id, campaign_id: str) -> None:
+    """조치 실행 성공 → 이 캠페인의 미해결 알림을 actioned로 정리(best-effort) + 배지 동기화.
+
+    알림 정리 실패가 조치 응답을 막지 않는다 — 다음 스캔의 reconcile이 백스톱.
+    """
+    try:
+        resolved = await _notification_store().resolve_by_campaign(
+            str(org_id), campaign_id, "actioned", datetime.now(UTC)
+        )
+        if resolved:
+            _publish_org(str(org_id))
+    except Exception:  # noqa: BLE001 — 정리 실패는 조용히 넘어간다(응답 무영향)
+        pass
+
+
 @router.post("/campaigns/{campaign_id}/pause")
 async def pause_campaign(
     campaign_id: str,
@@ -3213,6 +3228,8 @@ async def pause_campaign(
             await db.commit()
         except Exception:  # noqa: BLE001 — 상태 기록 실패가 응답을 막지 않게
             await db.rollback()
+        # 조치 완료 — 이 캠페인의 미해결 운영 알림을 actioned로 정리(다음 상담이 새로 시작되게).
+        await _resolve_campaign_notifications(org_id, campaign_id)
     resp: dict[str, object] = {
         "paused": status == "success",
         "result": result.model_dump(mode="json"),
@@ -3395,7 +3412,10 @@ async def budget_commit(
         "budget_after_krw": new,
     }
     status = result.status.value if hasattr(result.status, "value") else str(result.status)
-    if status != "success":
+    if status == "success":
+        # 조치 완료 — 이 캠페인의 미해결 운영 알림을 actioned로 정리(상담 옵션 예산 조치 대응).
+        await _resolve_campaign_notifications(org_id, campaign_id)
+    else:
         msg = _find_in_snapshot(result.platform_response_snapshot, "user_msg")
         if msg:
             response["error_message"] = str(msg)
