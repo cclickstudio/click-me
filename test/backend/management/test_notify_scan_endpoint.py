@@ -136,9 +136,7 @@ async def test_scanner_is_org_scoped(app, monkeypatch):
             ]
 
         async def get_metrics(self, campaign_id, now, date_preset=None):
-            return SimpleNamespace(
-                impressions=0, frequency=0.0, roas=None, as_of=datetime.now(UTC)
-            )
+            return SimpleNamespace(impressions=0, frequency=0.0, roas=None, as_of=datetime.now(UTC))
 
     captured: dict = {}
 
