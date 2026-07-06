@@ -83,21 +83,43 @@ def _s3_key_from_url_or_key(value: str) -> str:
 
 
 def _cutout_is_plausible(cutout_bytes: bytes) -> bool:
-    """즉석 배경 제거 결과가 실제 상품 형태로 보이는지 검증(불투명 비율 + 연결성분 크기)."""
+    """즉석 배경 제거 결과가 실제 상품 형태로 보이는지 검증(불투명 비율 + 연결성분 크기).
+
+    판정 수치를 로그로 남겨 tier3 실패 원인을 추적한다(예: 사람이 상품을 가려 여러
+    연결성분으로 쪼개지면서 largest_fraction이 기준 미달로 떨어지는 패턴 확인용).
+    """
     img = Image.open(io.BytesIO(cutout_bytes)).convert("RGBA")
     alpha = np.array(img.split()[3])
     opaque = alpha > 200
     opaque_count = int(opaque.sum())
     if opaque_count == 0:
+        logger.info("즉석 누끼 판정: 불투명 픽셀 0개 — 불합격")
         return False
     ratio = opaque_count / opaque.size
     if not (_CUTOUT_MIN_RATIO <= ratio <= _CUTOUT_MAX_RATIO):
+        logger.info(
+            "즉석 누끼 판정: 불투명 비율=%.3f(허용 %.2f~%.2f 밖) — 불합격",
+            ratio,
+            _CUTOUT_MIN_RATIO,
+            _CUTOUT_MAX_RATIO,
+        )
         return False
     labeled, num_features = ndimage.label(opaque)
     if num_features == 0:
+        logger.info("즉석 누끼 판정: 연결성분 0개 — 불합격")
         return False
     largest = max((labeled == i).sum() for i in range(1, num_features + 1))
-    return bool((largest / opaque_count) >= _CUTOUT_MIN_LARGEST_FRACTION)
+    largest_fraction = largest / opaque_count
+    passed = largest_fraction >= _CUTOUT_MIN_LARGEST_FRACTION
+    logger.info(
+        "즉석 누끼 판정: 불투명 비율=%.3f, 연결성분 수=%d, 최대성분 비율=%.3f(기준 %.2f 이상) — %s",
+        ratio,
+        num_features,
+        largest_fraction,
+        _CUTOUT_MIN_LARGEST_FRACTION,
+        "합격" if passed else "불합격",
+    )
+    return bool(passed)
 
 
 def _map_ad_size(width: int, height: int) -> AdSize:
@@ -441,11 +463,14 @@ async def _resolve_source_images(req: dict) -> tuple[bytes | None, bytes | None]
     if product_cutout_s3_key:
         try:
             product_cutout_bytes = await download_bytes(product_cutout_s3_key)
+            logger.info("개선 모드 누끼 로드 성공(tier=direct): key=%s", product_cutout_s3_key)
         except Exception:
             logger.exception(
                 "개선 모드 누끼 로드 실패(tier=direct) — 다음 폴백 시도: key=%s",
                 product_cutout_s3_key,
             )
+    else:
+        logger.info("개선 모드 누끼 판정: product_cutout_s3_key 없음 — tier=direct 스킵")
 
     existing_ad_s3_key_raw: str | None = req.get("existing_ad_s3_key")
     if product_cutout_bytes is None and existing_ad_s3_key_raw:
@@ -496,6 +521,14 @@ async def _resolve_source_images(req: dict) -> tuple[bytes | None, bytes | None]
                         "개선 모드 즉석 누끼 신뢰 불가 — 원본 이미지 Edit로 폴백: key=%s",
                         existing_ad_s3_key,
                     )
+
+    if product_cutout_bytes is not None:
+        resolved = "cutout(마스크 인페인팅)"
+    elif original_image_bytes is not None:
+        resolved = "original-edit-fallback(마스크 없는 Edit)"
+    else:
+        resolved = "free-generation(소스 없음 — 배경 자유 생성)"
+    logger.info("개선 모드 이미지 소스 판정 최종 결과: %s", resolved)
 
     return product_cutout_bytes, original_image_bytes
 

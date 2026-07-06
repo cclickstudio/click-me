@@ -251,6 +251,12 @@ underlying background is clean. New text will be added separately afterward in a
 do not redraw, restate, retain, or hallucinate any of the old wording, characters, or button \
 graphics.
 
+CRITICAL — THE PRODUCT'S OWN PRINTED TEXT MUST STAY PIXEL-IDENTICAL: if the product package \
+itself has text, a logo, or a label printed on it, that is part of the product, NOT the ad-copy \
+text above — preserve it exactly as pixels. Never redraw, re-spell, resize, or hallucinate any \
+character, shape, or color on the product packaging, even while removing the old ad-copy text \
+or changing the background around it.
+
 Product: {product_name}
 Core values: {core_values}
 Target audience: {target_audience}
@@ -269,7 +275,9 @@ Requirements:
 - PRESERVE the original product, composition, and layout as much as possible
 - Make only the changes specified in the improvement direction above
 - REMOVE any pre-existing headline/body/CTA text or button graphic baked into the image
-- STRICTLY NO text, letters, words, numbers, or typography of any kind in the output
+- If the product package itself has printed text/logo/label, keep it pixel-identical — \
+never redraw or re-spell it
+- STRICTLY NO new text, letters, words, numbers, or typography of any kind in the output
 - Keep the product clearly recognizable
 - Adjust lighting, color, or mood only as needed by the improvement direction"""
 
