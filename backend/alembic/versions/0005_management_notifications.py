@@ -1,8 +1,8 @@
 # 운영 알림 테이블(management_notifications) 신설 — 이상 감지 C안(하이브리드) 배달 채널
 """add management_notifications table + partial unique dedup index
 
-Revision ID: 0006_management_notifications
-Revises: 0005_rename_memory_tables
+Revision ID: 0005_management_notifications
+Revises: 0006_rename_memory_tables
 Create Date: 2026-07-03
 
 스펙: docs/superpowers/specs/2026-07-03-remediation-hybrid-notification-design.md §1.
@@ -12,8 +12,8 @@ Create Date: 2026-07-03
 
 from alembic import op
 
-revision = "0006_management_notifications"
-down_revision = "0005_rename_memory_tables"
+revision = "0005_management_notifications"
+down_revision = "0006_rename_memory_tables"
 branch_labels = None
 depends_on = None
 

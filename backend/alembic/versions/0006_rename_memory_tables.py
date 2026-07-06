@@ -1,7 +1,7 @@
 # 메모리 테이블 정리 — 롱텀 메모리 일원화(개명 + LLM 추출 기억 테이블 drop)
 """rename memory tables + drop management_user_memory
 
-Revision ID: 0005_rename_memory_tables
+Revision ID: 0006_rename_memory_tables
 Revises: 0004_generator_kb_search_vector
 Create Date: 2026-07-03
 
@@ -9,20 +9,20 @@ Create Date: 2026-07-03
 - execution_history → chat_execution_history (기능 수행 이력 = 채팅 에이전트의 롱텀 메모리)
 - management_user_memory drop — remember/recall(LLM 큐레이션 장기기억) 경로 제거로 읽는 곳 없음.
   롱텀은 chat_execution_history 하나로 일원화, 선호는 chat_brand_profiles.
-- automation_runs 생성(3도메인 공용 자동화 워커 결과 저장소) — 통합(멱등 IF NOT EXISTS).
+- automation_runs 생성(3도메인 공용 자동화 워커 결과 저장소) — 006에 통합(멱등 IF NOT EXISTS).
 
 빈 DB는 0001_baseline의 create_all이 개명 후 ORM대로 새 이름으로 바로 생성하므로,
 기존 DB(옛 이름 존재)에서만 rename/drop이 실행되게 전부 멱등 가드.
 
-이력: 이 리비전은 원래 0006으로 먼저 DB 적용됐고(2026-07-03) management_notifications가
-0005였다. 이후 번호를 실제 적용 순서에 맞춰 정렬(체인: 0004 → 0005(이 파일) → 0006).
+주의: 0006이 먼저 DB에 적용됨(2026-07-03) — 팀원의 0005_management_notifications는
+down_revision을 "0006_rename_memory_tables"로 잡아야 한다(체인: 0004 → 0006 → 0005).
 """
 
 import sqlalchemy as sa
 
 from alembic import op
 
-revision = "0005_rename_memory_tables"
+revision = "0006_rename_memory_tables"
 down_revision = "0004_generator_kb_search_vector"
 branch_labels = None
 depends_on = None
