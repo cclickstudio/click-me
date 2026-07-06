@@ -44,7 +44,7 @@
 - [ ] USER: 기업 드롭다운 없음, 전 기능 사용
 
 ## Phase 7 — 검증·문서
-- [ ] ruff(백엔드) 통과
-- [ ] gen_docs 재생성(라우터/페이지 변경분)
-- [ ] Claude Preview로 역할별 동작 검증(증거 캡처)
-- [ ] 기능 단위 커밋
+- [x] ruff(백엔드) 통과 (Phase 1 커밋들)
+- [x] gen_docs 재생성(라우터/페이지 변경분) (center 엔드포인트 4개 반영)
+- [~] Claude Preview로 역할별 동작 검증(증거 캡처) — **ADMIN 라이브 검증 완료**(2026-07-06): shell 접힘/펼침·필터바·알림 센터 렌더, /api/center/notifications·sessions 200, org 스코프(X-Org-Id) 동작(미선택 org_selected=false, 선택 시 true·세션16). 콘솔 에러 0. preview_screenshot은 이 페이지에서 타임아웃 → preview_eval DOM 확인으로 대체. **COMPANY/USER는 Cognito에 계정 없어(admin만 잔존) 계정 발급 후 검증 필요.**
+- [x] 기능 단위 커밋 (phase별 커밋 진행 중)
