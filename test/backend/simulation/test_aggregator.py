@@ -33,6 +33,18 @@ def test_empty_sample_warns_and_zeros() -> None:
     assert agg.payload["qa_passed_count"] == 0
 
 
+def test_all_qa_failed_returns_zeroed_no_sample_path() -> None:
+    # 표본은 있으나 전원 QA 실패 → 빈 표본과 동일한 무표본 경로.
+    reactions = [_reaction(f"P-{i}", action=True, purchase=5, qa=False) for i in range(5)]
+    agg = BasicAggregator().aggregate(reactions)
+    assert agg.payload["qa_passed_count"] == 0
+    assert agg.payload["note"] == "QA 통과 표본 없음"
+    assert agg.click_intent_rate == 0.0
+    assert agg.ci_low == 0.0 and agg.ci_high == 0.0
+    assert agg.effective_n == 0.0
+    assert agg.variance_warning is True
+
+
 def test_qa_failed_excluded_from_aggregation() -> None:
     reactions = [
         _reaction("P-1", action=True, purchase=5, qa=True),
