@@ -7,6 +7,7 @@ from core.config import settings
 from domain.generator.contracts.enums import AdSize, AdStrategy, TemplateType
 from domain.generator.contracts.pipeline_schemas import ProductAnalysis
 from domain.generator.pipeline import image_providers
+from domain.generator.pipeline.style_profile import get_style
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 전략별 메타데이터 매핑 (광고 전략 → 프롬프트 설명문)
@@ -240,8 +241,15 @@ Requirements:
 # 제품명·핵심 가치·타겟을 포함해 모델이 무엇을 보존해야 하는지 파악하도록 한다.
 _EDIT_PROMPT_TEMPLATE = """\
 IMPORTANT: This is an EXISTING advertisement image. \
-Your PRIMARY goal is to PRESERVE the original composition, product placement, \
-and visual identity. Apply only the targeted improvements described below.
+Your PRIMARY goal is to PRESERVE the original product, its packaging, and the photographic \
+scene/composition. Apply only the targeted improvements described below.
+
+CRITICAL — EXISTING TEXT IS NOT PART OF WHAT YOU PRESERVE: this image may already show an old \
+headline, body copy, or CTA button rendered directly onto the photo. That text is NOT part of \
+the product or scene — completely remove and erase it (and any button shape behind it) so the \
+underlying background is clean. New text will be added separately afterward in a later step; \
+do not redraw, restate, retain, or hallucinate any of the old wording, characters, or button \
+graphics.
 
 Product: {product_name}
 Core values: {core_values}
@@ -260,7 +268,8 @@ Improvement direction (apply these changes to the existing image):
 Requirements:
 - PRESERVE the original product, composition, and layout as much as possible
 - Make only the changes specified in the improvement direction above
-- STRICTLY NO text, letters, words, numbers, or typography
+- REMOVE any pre-existing headline/body/CTA text or button graphic baked into the image
+- STRICTLY NO text, letters, words, numbers, or typography of any kind in the output
 - Keep the product clearly recognizable
 - Adjust lighting, color, or mood only as needed by the improvement direction"""
 
@@ -548,8 +557,12 @@ async def generate_image(
                 safe_zone=_TEMPLATE_SAFE_ZONES_COMPOSE[effective_compose_template],
             )
 
+        # 전략별 product_fill(StyleProfile) 적용 — floating/emotional처럼 패널 없는 전략은
+        # 상품을 작게 둬 텍스트 존과의 여백을 확보한다. strategy=None(방어적 폴백)이면 기본값.
+        profile = get_style(strategy) if strategy is not None else None
+        compose_product_fill = profile.product_fill if profile is not None else _PRODUCT_FILL
         base_png, mask_png = _build_inpaint_base_and_mask(
-            product_cutout_bytes, effective_compose_template, size
+            product_cutout_bytes, effective_compose_template, size, compose_product_fill
         )
         return await image_providers.edit_with_mask(
             base_png,
@@ -694,7 +707,8 @@ _COMPOSE_PRODUCT_BOXES: dict[TemplateType, tuple[float, float, float, float]] = 
 # 개선 모드 — template=None일 때 사용하는 중앙 상단 배치 박스(AI가 배경 구도 자유 결정)
 _IMPROVE_PRODUCT_BOX: tuple[float, float, float, float] = (0.10, 0.06, 0.90, 0.72)
 
-# 박스 대비 상품이 차지할 최대 비율(여백 확보).
+# 박스 대비 상품이 차지할 최대 비율(여백 확보) — strategy=None(방어적 폴백)일 때만 쓰는 기본값.
+# 실제 컴포즈 경로는 StyleProfile.product_fill(전략별 값)을 우선 사용한다.
 _PRODUCT_FILL = 0.92
 
 
@@ -722,12 +736,15 @@ def _place_product(
 
 
 def _build_inpaint_base_and_mask(
-    product_cutout_bytes: bytes, template: TemplateType | None, size: AdSize
+    product_cutout_bytes: bytes,
+    template: TemplateType | None,
+    size: AdSize,
+    product_fill: float = _PRODUCT_FILL,
 ) -> tuple[bytes, bytes]:
     """누끼 상품을 배치한 베이스 PNG와, 상품 실루엣만 보존하는 마스크 PNG를 만든다."""
     w, h = (int(v) for v in size.value.split("x"))
     product = Image.open(io.BytesIO(product_cutout_bytes)).convert("RGBA")
-    product, x, y = _place_product(product, w, h, template, _PRODUCT_FILL)
+    product, x, y = _place_product(product, w, h, template, product_fill)
 
     # 베이스: 중립 회색 위에 상품 배치 (배경 영역은 어차피 재생성됨)
     base = Image.new("RGBA", (w, h), (245, 245, 245, 255))
