@@ -762,6 +762,7 @@ CREATE INDEX idx_category_kinds_kind ON category_kinds(kind_id);
 CREATE TABLE chat_sessions (
     id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     project_id UUID REFERENCES projects(id),
+    created_by UUID REFERENCES users(id),   -- 세션 개시자(실행자) — 0007 마이그레이션, 내역 표시용
     messages   JSONB     DEFAULT '[]',
     created_at TIMESTAMP DEFAULT now()
 );

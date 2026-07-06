@@ -71,6 +71,9 @@ class SimulationRow(BaseModel):
     status: str
     sample_size: int
     created_by_name: str | None
+    created_by_role: str | None = None  # 실행자 역할(ADMIN|COMPANY|USER) — 내역서 '관리자' 표기용
+    project_id: str | None = None  # 소속 프로젝트 id(내역 클릭→패널 열기용)
+    project_name: str | None = None  # 소속 프로젝트명(내역 컬럼)
     org_name: str | None = None  # 소속 조직명(내역 org 컬럼 — 공용 화면 통일용)
     created_at: datetime
 
@@ -508,9 +511,12 @@ async def list_company_simulations(
         text(f"""
             SELECT s.id, s.ad_id, s.status, s.sample_size, s.created_at,
                    a.title AS ad_title, u.name AS created_by_name,
+                   u.role AS created_by_role,
+                   p.id AS project_id, p.name AS project_name,
                    o.name AS org_name
             FROM simulations s
             LEFT JOIN ads a ON a.id = s.ad_id
+            LEFT JOIN projects p ON p.id = a.project_id
             LEFT JOIN users u ON u.id = s.created_by
             LEFT JOIN organizations o ON o.id = s.organization_id
             WHERE {" AND ".join(where)}
@@ -527,6 +533,9 @@ async def list_company_simulations(
             status=r.status,
             sample_size=r.sample_size,
             created_by_name=r.created_by_name,
+            created_by_role=r.created_by_role,
+            project_id=str(r.project_id) if r.project_id else None,
+            project_name=r.project_name,
             org_name=r.org_name,
             created_at=r.created_at,
         )

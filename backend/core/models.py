@@ -346,6 +346,8 @@ class ChatSession(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     project_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("projects.id"), nullable=True)
     title: Mapped[str] = mapped_column(String(200), default="새 채팅")  # 세션 목록 표시용
+    # 세션 개시자(실행자) — 내역 화면 표시용. 시스템/상담 자동생성 세션은 NULL.
+    created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), onupdate=func.now()
