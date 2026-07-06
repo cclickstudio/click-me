@@ -2,7 +2,7 @@
 
 > 이 파일은 `backend/scripts/gen_docs.py`가 코드에서 **자동 생성**합니다. 직접 편집하지 말고 소스를 고친 뒤 스크립트를 다시 실행하세요(커밋 시 pre-commit 훅이 자동 갱신).
 
-총 **190개** 엔드포인트 · **18개** 그룹.
+총 **191개** 엔드포인트 · **18개** 그룹.
 
 ## admin
 
@@ -66,6 +66,7 @@
 | Method | Path | Name |
 |---|---|---|
 | GET | `/api/center/notifications` | center_notifications |
+| GET | `/api/center/sessions` | center_sessions |
 | POST | `/api/center/suggestions/{suggestion_id}/dismiss` | dismiss_center_suggestion |
 | POST | `/api/center/suggestions/{suggestion_id}/read` | read_suggestion |
 

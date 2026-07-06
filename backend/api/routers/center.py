@@ -111,6 +111,26 @@ async def center_notifications(
     }
 
 
+@router.get("/sessions")
+async def center_sessions(
+    project_id: str | None = None,
+    x_org_id: str | None = Header(None, alias="X-Org-Id"),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> dict:
+    """센터 채팅 통합 세션 목록 — org 전체 프로젝트(스펙 §6). project_id를 주면 그 프로젝트로 좁힘.
+
+    ADMIN이 기업 미선택이면 빈 목록 + org_selected=false. 채팅 도메인 조회를 api 계층에서 컴포지션.
+    """
+    org = await _resolve_org(user, db, x_org_id)
+    if org is None:
+        return {"sessions": [], "org_selected": False}
+    from domain.chat import history  # noqa: PLC0415
+
+    sessions = await history.list_sessions_for_org(db, org, project_id=project_id)
+    return {"sessions": sessions, "org_selected": True}
+
+
 @router.post("/suggestions/{suggestion_id}/read")
 async def read_suggestion(
     suggestion_id: str,
