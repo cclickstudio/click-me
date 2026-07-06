@@ -20,9 +20,9 @@
 - [x] api 클라이언트 center 블록(notifications·sessions·read·dismiss) + 타입(CenterNotificationItem·CenterSessionRow)
 
 ## Phase 3 — 필터 바
-- [ ] 세그먼트 [안읽음·읽음·전체] (채팅/알림 각각)
-- [ ] 프로젝트 드롭다운(기본 전체 프로젝트), space-between
-- [ ] ADMIN 기업 드롭다운(프로젝트 왼쪽)
+- [x] 세그먼트 [안읽음·읽음·전체] (채팅/알림 각각) — CenterFilterBar, Center가 chatSeg·alarmSeg 분리 보유
+- [x] 프로젝트 드롭다운(기본 전체 프로젝트), space-between — Select, 기본값 '' = 전체 프로젝트
+- [x] ADMIN 기업 드롭다운(프로젝트 왼쪽) — isAdmin일 때 상단에 기업 Select, 선택 시 setAdminOrgId(X-Org-Id)
 
 ## Phase 4 — 알림 센터
 - [ ] 병합 목록 렌더

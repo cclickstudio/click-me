@@ -5,7 +5,9 @@
 
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { useAuth } from '../AuthProvider';
-import { api } from '@/lib/api';
+import { useProjects } from '../ProjectContext';
+import { api, getAdminOrgId } from '@/lib/api';
+import CenterFilterBar, { type CenterSegment } from './CenterFilterBar';
 
 type CenterTab = 'chat' | 'alarm';
 
@@ -37,16 +39,24 @@ const BellIcon = (
 
 export default function Center() {
   const { user } = useAuth();
+  const { projects } = useProjects();
+  const isAdmin = user?.role === 'ADMIN';
   const [expanded, setExpanded] = useState(false);
   const [tab, setTab] = useState<CenterTab>('alarm');
   const [alarmUnread, setAlarmUnread] = useState(0);
   const [chatUnread, setChatUnread] = useState(0);
+  // 필터 상태 — 세그먼트는 채팅/알림 각각(스펙 §4), 프로젝트·기업은 공유. 기본 전체.
+  const [chatSeg, setChatSeg] = useState<CenterSegment>('all');
+  const [alarmSeg, setAlarmSeg] = useState<CenterSegment>('all');
+  const [projectId, setProjectId] = useState('');
+  const [orgId, setOrgId] = useState('');
 
-  // 상태 복원 — 펼침 여부 + 마지막으로 연 센터(스펙 §3).
+  // 상태 복원 — 펼침 여부 + 마지막으로 연 센터(스펙 §3). ADMIN 선택 기업(X-Org-Id)도 복원.
   useEffect(() => {
     if (localStorage.getItem(LS_EXPANDED) === 'true') setExpanded(true);
     const t = localStorage.getItem(LS_TAB);
     if (t === 'chat' || t === 'alarm') setTab(t);
+    setOrgId(getAdminOrgId() ?? '');
   }, []);
 
   const persistExpanded = (v: boolean) => {
@@ -84,6 +94,11 @@ export default function Center() {
     const id = setInterval(refreshCounts, 30000);
     return () => clearInterval(id);
   }, [user, refreshCounts]);
+
+  // ADMIN이 기업을 바꾸면 즉시 배지 재조회(X-Org-Id 변경 반영).
+  useEffect(() => {
+    if (user) refreshCounts();
+  }, [orgId, user, refreshCounts]);
 
   if (!user) return null;
 
@@ -135,6 +150,16 @@ export default function Center() {
         </button>
       </div>
       <div className="flex flex-1 flex-col overflow-hidden">
+        <CenterFilterBar
+          segment={tab === 'chat' ? chatSeg : alarmSeg}
+          onSegment={tab === 'chat' ? setChatSeg : setAlarmSeg}
+          projectId={projectId}
+          onProjectId={setProjectId}
+          projects={projects}
+          isAdmin={!!isAdmin}
+          orgId={orgId}
+          onOrgId={setOrgId}
+        />
         {tab === 'chat' ? (
           <CenterPlaceholder label="채팅 센터" />
         ) : (
