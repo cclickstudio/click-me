@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useProjects } from "@/components/ProjectContext";
 import { useChatController } from "@/components/chat/ChatController";
 import ErrorCard from "@/components/chat/ErrorCard";
-import { api, authedFetch } from "@/lib/api";
+import { api, authedFetch, type AutomationRunItem } from "@/lib/api";
 import { getJobs, setGenJob } from "@/lib/runningJobs";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
@@ -748,6 +748,36 @@ function adRefImageSrc(asset: string): string | null {
   return `${API_BASE}/api/generator/image?key=${encodeURIComponent(asset)}`;
 }
 
+// 서버 워커(APScheduler)가 자동으로 남긴 생성 도메인 점검 결과 — 결과 없으면 렌더하지 않음
+// (워커 꺼진 dev/발표 환경에서 빈 카드 노이즈 방지). manage/anomaly의 workerRuns 카드와 동일 패턴.
+function WorkerRunsCard({ runs }: { runs: AutomationRunItem[] }) {
+  if (runs.length === 0) return null;
+  return (
+    <div className={`${cardCls} p-6`}>
+      <p className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]">서버 자동 점검 결과</p>
+      <p className="text-[12px] text-[#8B95A1] mt-0.5">
+        백엔드 워커가 주기적으로 스스로 점검해 남긴 생성 품질·상태 결과예요. 이 화면을 열어두지
+        않아도 서버가 자동으로 쌓아둡니다.
+      </p>
+      <ul className="mt-2 space-y-1.5">
+        {runs.map((r) => (
+          <li key={r.id} className="rounded-lg bg-[#F9FAFB] dark:bg-[#1A202C] px-3 py-2">
+            <p className="text-[12px] font-semibold text-[#191F28] dark:text-[#F2F4F6]">
+              {r.title || r.job_name}
+              {r.created_at && (
+                <span className="ml-2 font-normal text-[#B0B8C1]">
+                  {r.created_at.slice(0, 16).replace("T", " ")}
+                </span>
+              )}
+            </p>
+            {r.body && <p className="text-[12px] text-[#8B95A1]">{r.body}</p>}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 export default function GeneratorPage() {
   const { projects, details, loadDetails, refreshDetails } = useProjects();
   // 화면 내 프로젝트 선택은 로컬 상태 — 사이드바(전역 선택)와 동기화하지 않는다.
@@ -822,6 +852,15 @@ export default function GeneratorPage() {
   const [detail, setDetail] = useState<GenerationDetail | null>(null);
   const [modalCandidate, setModalCandidate] = useState<GeneratorCandidate | null>(null);
   const [selectError, setSelectError] = useState<string | null>(null);
+
+  // 서버 워커(APScheduler)가 남긴 생성 도메인 자동 점검 결과 — 진입 시 1회 읽기만.
+  const [workerRuns, setWorkerRuns] = useState<AutomationRunItem[]>([]);
+  useEffect(() => {
+    api.automation
+      .runs({ domain: "generation", limit: 5 })
+      .then((r) => setWorkerRuns(r.runs))
+      .catch(() => setWorkerRuns([]));
+  }, []);
 
   useEffect(() => {
     let id = localStorage.getItem("generator_client_id");
@@ -1794,6 +1833,9 @@ export default function GeneratorPage() {
                       : "광고 후보 3종 생성하기"}
               </button>
             </div>
+
+            {/* 서버 워커 자동 점검 결과 — 결과 있을 때만 표시 */}
+            <WorkerRunsCard runs={workerRuns} />
           </div>
 
           {/* ── 우측: 진행 / 결과 ── */}

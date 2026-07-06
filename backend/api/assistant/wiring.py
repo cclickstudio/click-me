@@ -112,6 +112,8 @@ def _build_management_handler(settings) -> Handler:
                 ad_id=req.context_ad_id,
                 thread_id=thread_id,
                 memory_context=req.memory_context,  # M1 — 장기기억(있으면 react가 LLM 맥락 주입)
+                # 정본 대화(숏텀 한곳) — 스레드가 비었을 때만 시드돼 재시작 유실을 복구한다.
+                history=[(m.role, m.content) for m in req.messages[:-1]],
             )
         )
         answer = result.answer

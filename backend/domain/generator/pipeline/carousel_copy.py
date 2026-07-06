@@ -5,7 +5,7 @@ from langsmith import traceable
 from pydantic import BaseModel, Field
 
 from domain.generator.contracts.pipeline_schemas import ProductAnalysis
-from domain.generator.llm.factory import build_text_llm
+from domain.generator.llm.factory import build_text_llm, with_llm_retry
 
 # 고정 역할(순서) — 관심끌기 → 가치전달 → 행동유도
 CAROUSEL_ROLES = ("관심끌기", "가치전달", "행동유도")
@@ -47,7 +47,9 @@ def _build_prompt(p: ProductAnalysis) -> str:
     )
 
 
-_llm = build_text_llm(temperature=0.6, max_tokens=700).with_structured_output(CarouselScript)
+_llm = with_llm_retry(
+    build_text_llm(temperature=0.6, max_tokens=700).with_structured_output(CarouselScript)
+)
 
 
 @traceable(

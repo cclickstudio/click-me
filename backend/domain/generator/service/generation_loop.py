@@ -106,7 +106,7 @@ async def _derive_fix(candidate: dict, seed: dict) -> str:
 
     classify_improvements(개선점 분류기)로 이미지 반영 지시문만 추려 fix_requests 문자열로 만든다.
     """
-    from domain.generator.llm.factory import build_text_llm  # noqa: PLC0415
+    from domain.generator.llm.factory import build_text_llm, with_llm_retry  # noqa: PLC0415
 
     weakness = _qa_weakness_summary(candidate)
     copy = candidate.get("copy") or {}
@@ -115,17 +115,17 @@ async def _derive_fix(candidate: dict, seed: dict) -> str:
         f"현재 카피 — 헤드라인 '{copy.get('headline', '')}' / 본문 '{copy.get('body', '')}' / "
         f"CTA '{copy.get('cta', '')}'\n{weakness or '두드러진 약점 없음 — 소구·가독성을 더 강화'}"
     )
-    llm = build_text_llm(temperature=0.3, max_tokens=400)
+    llm = with_llm_retry(build_text_llm(temperature=0.3, max_tokens=400))
     resp = await llm.ainvoke([("system", _DERIVE_FIX_SYSTEM), ("user", user)])
     raw = resp.content if isinstance(resp.content, str) else str(resp.content)
-    directives = await classify_improvements(
+    classification = await classify_improvements(
         simulation_summary=None,
         plain_summary=None,
         improvement_direction=None,
         fix_requests=raw,
     )
-    if directives:
-        return "\n".join(f"- {a}" for a in directives)
+    if classification.directives:
+        return "\n".join(f"- {a}" for a in classification.directives)
     return raw.strip()
 
 

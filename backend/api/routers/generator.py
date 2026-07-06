@@ -531,7 +531,9 @@ async def select_candidate(
     org_id = None if user.role.upper() == "ADMIN" else await _require_user_org(user, db)
     if await generator_service.get_detail(generation_id, org_id) is None:
         raise HTTPException(status_code=404, detail="Generation not found")
-    ok = await generator_service.select_candidate(generation_id, body.candidate_id)
+    ok = await generator_service.select_candidate(
+        generation_id, body.candidate_id, created_by=str(user.id)
+    )
     if not ok:
         raise HTTPException(status_code=404, detail="Candidate not found in this generation")
     return {"generation_id": generation_id, "selected_candidate_id": body.candidate_id}
@@ -550,7 +552,7 @@ async def publish_candidate(
     if await generator_service.get_detail(generation_id, org_id) is None:
         raise HTTPException(status_code=404, detail="Generation not found")
     result = await generator_service.publish_candidate(
-        generation_id, body.candidate_id, body.caption
+        generation_id, body.candidate_id, body.caption, created_by=str(user.id)
     )
     if result is None:
         raise HTTPException(status_code=404, detail="Candidate not found in this generation")

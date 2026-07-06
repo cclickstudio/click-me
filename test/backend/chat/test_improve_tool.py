@@ -57,17 +57,44 @@ async def test_run_improvement_emits_improve_gen_form(tools, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_run_improvement_auto_selects_latest(tools, monkeypatch):
+async def test_run_improvement_auto_selects_latest_and_starts(tools, monkeypatch):
+    # 프리필 완비 + 프로젝트 → 폼 없이 즉시 실행(진행 카드)
+    import api.assistant.subagent_tools as st
+
+    captured = {}
+
     async def _latest(project_id):
         return "sim-latest" if project_id == "p1" else None
 
     async def _fake(sid, fix_requests=None, org_id=None):
         return dict(_GEN_DATA) if sid == "sim-latest" else None
 
+    async def _start(gen_data, project_id=None, created_by=None):
+        captured["gen_data"] = gen_data
+        captured["project_id"] = project_id
+        return {"generation_id": "g7", "stream_url": "/api/generator/generations/g7/stream"}
+
     monkeypatch.setattr(improve_context, "latest_completed_simulation_id", _latest)
     monkeypatch.setattr(improve_context, "improve_gen_data_for_simulation", _fake)
+    monkeypatch.setattr(st, "start_improve_generation", _start)
     cmd = await tools["run_improvement"].coroutine(state=_state(project_id="p1"), tool_call_id="t1")
-    assert cmd.update["widget"]["data"]["mode"] == "improve"
+    assert cmd.update["widget"]["type"] == "gen_progress"
+    assert cmd.update["widget"]["data"]["generation_id"] == "g7"
+    assert captured["project_id"] == "p1"
+    assert captured["gen_data"]["mode"] == "improve"
+
+
+@pytest.mark.asyncio
+async def test_run_improvement_incomplete_prefill_falls_back_to_form(tools, monkeypatch):
+    # simulation_summary가 비면 즉시 실행 대신 개선 폼 폴백
+    async def _fake(sid, fix_requests=None, org_id=None):
+        return {**_GEN_DATA, "simulation_summary": ""}
+
+    monkeypatch.setattr(improve_context, "improve_gen_data_for_simulation", _fake)
+    cmd = await tools["run_improvement"].coroutine(
+        simulation_id="sim-1", state=_state(project_id="p1"), tool_call_id="t1"
+    )
+    assert cmd.update["widget"]["type"] == "gen_form"
 
 
 @pytest.mark.asyncio

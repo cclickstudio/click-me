@@ -83,7 +83,10 @@ def test_from_candidate_builds_traffic_proposal(monkeypatch):
     assert cfg["objective"] == "traffic"
     assert cfg["headline"] == "제목"
     assert cfg["body"] == "본문"
-    assert cfg["link_url"].rstrip("/") == "https://shop.example.com"
+    # 목적지 URL은 유지 + ClickMe UTM 자동 부착(GA 등 외부 분석 식별용)
+    assert cfg["link_url"].startswith("https://shop.example.com")
+    assert "utm_source=clickme" in cfg["link_url"]
+    assert f"utm_campaign={cfg['campaign_id']}" in cfg["link_url"]
     snap = proposal["evidence_metrics"]["candidate_snapshot"]
     assert snap["candidate_id"] == "c1"
     assert "image_hash" in snap

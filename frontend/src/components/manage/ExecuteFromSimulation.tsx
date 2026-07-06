@@ -2,7 +2,7 @@
 // 시뮬 결과 → Meta 캠페인 집행 — from-simulation 제안 생성 후 승인·실행(simulation_id 연결).
 // 집행하면 created_campaigns.simulation_id가 채워져 매니지먼트 성과비교(before-after)에서 예측이 붙는다.
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 
@@ -32,6 +32,21 @@ export function ExecuteFromSimulation({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+  // AI 이름 추천 — 폼 열릴 때 1회 조회(부가 기능, 실패해도 무시)
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+  useEffect(() => {
+    if (!open) return;
+    let alive = true;
+    api.management
+      .nameSuggestions(simulationId)
+      .then((r) => {
+        if (alive) setSuggestions(r.names ?? []);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [open, simulationId]);
 
   async function handleExecute() {
     if (!linkUrl.trim()) {
@@ -134,6 +149,21 @@ export function ExecuteFromSimulation({
                     className={inputCls}
                   />
                 </Field>
+                {suggestions.length > 0 && (
+                  <div className="-mt-1 flex flex-wrap items-center gap-1.5">
+                    <span className="text-[11px] text-[#8B95A1]">AI 추천</span>
+                    {suggestions.map((s) => (
+                      <button
+                        key={s}
+                        type="button"
+                        onClick={() => setName(s)}
+                        className="rounded-full border border-[#E5E8EB] dark:border-[#2D3748] px-2.5 py-1 text-[11px] text-[#4E5968] dark:text-[#9CA3AF] hover:border-[#3182F6] hover:text-[#3182F6] transition-colors"
+                      >
+                        {s}
+                      </button>
+                    ))}
+                  </div>
+                )}
                 <Field label="목적지 URL (link_url)">
                   <input
                     value={linkUrl}

@@ -5,7 +5,7 @@ from langsmith import traceable
 from pydantic import BaseModel
 
 from domain.generator.contracts.pipeline_schemas import ProductAnalysis
-from domain.generator.llm.factory import build_text_llm
+from domain.generator.llm.factory import build_text_llm, with_llm_retry
 
 _SYSTEM = """\
 당신은 15년 경력의 광고 마케팅 전략가입니다.
@@ -37,7 +37,7 @@ class _ProductAnalysisLLM(BaseModel):
     objective: str
 
 
-_llm = build_text_llm(temperature=0.3).with_structured_output(_ProductAnalysisLLM)
+_llm = with_llm_retry(build_text_llm(temperature=0.3).with_structured_output(_ProductAnalysisLLM))
 
 
 @traceable(

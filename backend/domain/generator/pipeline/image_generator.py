@@ -164,15 +164,18 @@ _TEMPLATE_SAFE_ZONES: dict[TemplateType, str] = {
 _TEMPLATE_SAFE_ZONES_COMPOSE: dict[TemplateType, str] = {
     TemplateType.A: (
         "LAYOUT: The locked product sits in the upper area. "
-        "Build the background around it and keep the bottom 38% suitable for a text overlay."
+        "Build the background around it and keep the bottom 38% suitable for a text overlay — "
+        "keep that zone visually simple and free of badges, stamps, watermarks, or any text-like graphic."
     ),
     TemplateType.B: (
         "LAYOUT: The locked product sits in the middle area. "
-        "Keep the top 17% and bottom 24% suitable for text banners."
+        "Keep the top 17% and bottom 24% suitable for text banners — "
+        "keep those zones visually simple and free of badges, stamps, watermarks, or any text-like graphic."
     ),
     TemplateType.C: (
         "LAYOUT: The locked product sits on the RIGHT side. "
-        "Keep the left 46% suitable for a text panel."
+        "Keep the left 46% suitable for a text panel — "
+        "keep that zone visually simple and free of badges, stamps, watermarks, or any text-like graphic."
     ),
 }
 
@@ -299,35 +302,6 @@ Output requirements:
 - Commercial advertising quality, modern and clean aesthetic for Meta/Instagram
 - Product clearly visible and well-lit
 - CRITICAL: ALL three text elements (HEADLINE, BODY, CTA BUTTON) must be COMPLETELY visible within the image — zero clipping or cutoff allowed under any circumstance"""
-
-# ── [개선 모드 컴포즈] 프롬프트 — template 없는 자유 레이아웃 ──────────────────
-# template=None일 때 compose 경로(누끼 있음)에서 사용.
-# safe zone·레이아웃 지시 없이 AI가 구도를 자유롭게 결정.
-_IMPROVE_COMPOSE_TEMPLATE = """\
-This image already contains a REAL product photo that is LOCKED and must not change.
-DO NOT alter, move, redraw, recolor, or stylize the product in any way.
-Your task: generate a professional Meta/Instagram advertisement BACKGROUND around the locked product,
-optimized for the improvement directives below.
-
-Product: {product_name}
-{core_values_line}Target audience: {target_audience}
-{color_line}
-{tone_line}
-
-Background direction:
-{product_visual_context}
-
-Improvement directives (apply to the visual composition):
-{improvement_context}
-
-Requirements:
-- Keep the locked product EXACTLY as-is — zero modification to its pixels
-- Build a cohesive background that matches the product's lighting and perspective
-- Add a natural soft contact shadow under the product so it sits naturally in the scene
-- STRICTLY NO text, letters, words, numbers, or typography anywhere in the background
-- No logos, watermarks, URLs, or QR codes
-- You have FULL FREEDOM over composition and layout — optimize purely for the improvement directives
-- Clean, modern aesthetic suitable for Meta/Instagram feed"""
 
 # ── [컴포즈 모드] 프롬프트 (마스크 인페인팅) ─────────────────────────────────
 # 실제 상품 PNG를 캔버스에 미리 배치하고 마스크로 잠근 뒤 Edit API에 넘긴다.
@@ -479,12 +453,28 @@ def _build_product_visual_context(
 # 전략·템플릿·사이즈 등 입력값을 받아 프롬프트를 조립하고,
 # image_providers 디스패처를 통해 이미지 bytes를 반환한다.
 # ─────────────────────────────────────────────────────────────────────────────
+# 개선 모드(strategy=None)에서 쓰는 전략-독립 일반 문구 — CREATE 5전략 톤에 얽매이지 않고
+# 시뮬레이션 피드백(improvement_context)만으로 방향을 결정하게 한다.
+_IMPROVE_STRATEGY_DESC = "improving overall ad appeal and conversion based on feedback"
+_IMPROVE_PHOTO_STYLE = (
+    "Clean, professional commercial photography with balanced lighting and natural composition."
+)
+
+
+def _strategy_desc(strategy: AdStrategy | None) -> str:
+    return _STRATEGY_DESCRIPTIONS[strategy] if strategy is not None else _IMPROVE_STRATEGY_DESC
+
+
+def _strategy_photo_style(strategy: AdStrategy | None) -> str:
+    return _STRATEGY_PHOTO_STYLE[strategy] if strategy is not None else _IMPROVE_PHOTO_STYLE
+
+
 @traceable(
     name="generator:generate_image", metadata={"pipeline": "generator", "prompt_version": "v1.0"}
 )
 async def generate_image(
     product_analysis: ProductAnalysis,
-    strategy: AdStrategy,
+    strategy: AdStrategy | None,
     template: TemplateType | None,
     size: AdSize = AdSize.SQUARE,
     brand_color: str | None = None,
@@ -513,34 +503,32 @@ async def generate_image(
 
     # ── [컴포즈 모드] 상품 픽셀 보존 + 주변 배경 생성 ────────────────────────────
     # 마스크 인페인팅으로 상품 영역 잠금 후 배경 생성 (provider는 settings.inpaint_provider).
+    # 개선 모드도 CREATE와 동일한 실제 템플릿(A/B/C)·세이프존을 쓰고, improvement_context만
+    # product_visual_context에 병합해 반영한다(자유 레이아웃 아님 — PIL 텍스트 오버레이 위치와
+    # 어긋나지 않도록 구도를 템플릿에 고정).
     if product_cutout_bytes is not None:
+        # template=None(예상 밖 호출 등 방어적 폴백)이면 A로 — 실사용 경로에서는 항상 실값.
+        effective_compose_template = template if template is not None else TemplateType.A
         target_audience = product_analysis.target_audience or "general audience"
         product_visual_context = _build_product_visual_context(product_analysis, brand_color)
-
-        if template is None:
-            # 개선 모드 — 자유 레이아웃, safe zone 없이 분류기 지시문 기반
-            prompt = _IMPROVE_COMPOSE_TEMPLATE.format(
-                product_name=product_analysis.product_name,
-                core_values_line=core_values_line,
-                target_audience=target_audience,
-                color_line=color_line,
-                tone_line=tone_line,
-                product_visual_context=product_visual_context,
-                improvement_context=improvement_context or "광고 전반의 품질을 개선하세요.",
+        if improvement_context:
+            product_visual_context += (
+                f"\n\nImprovement direction (apply to visual):\n{improvement_context}"
             )
-        elif has_text:
+
+        if has_text:
             prompt = _COMPOSE_PROMPT_TEMPLATE_WITH_TEXT.format(
                 platform="Meta/Instagram",
-                style=_TEMPLATE_STYLE[template],
-                photo_style=_STRATEGY_PHOTO_STYLE[strategy],
-                strategy_desc=_STRATEGY_DESCRIPTIONS[strategy],
+                style=_TEMPLATE_STYLE[effective_compose_template],
+                photo_style=_strategy_photo_style(strategy),
+                strategy_desc=_strategy_desc(strategy),
                 product_name=product_analysis.product_name,
                 core_values_line=core_values_line,
                 target_audience=target_audience,
                 color_line=color_line,
                 tone_line=tone_line,
                 product_visual_context=product_visual_context,
-                text_layout=_TEXT_LAYOUT[template],
+                text_layout=_TEXT_LAYOUT[effective_compose_template],
                 headline=headline,
                 body=body,
                 cta=cta,
@@ -548,19 +536,21 @@ async def generate_image(
         else:
             prompt = _COMPOSE_PROMPT_TEMPLATE.format(
                 platform="Meta/Instagram",
-                style=_TEMPLATE_STYLE[template],
-                photo_style=_STRATEGY_PHOTO_STYLE[strategy],
-                strategy_desc=_STRATEGY_DESCRIPTIONS[strategy],
+                style=_TEMPLATE_STYLE[effective_compose_template],
+                photo_style=_strategy_photo_style(strategy),
+                strategy_desc=_strategy_desc(strategy),
                 product_name=product_analysis.product_name,
                 core_values_line=core_values_line,
                 target_audience=target_audience,
                 color_line=color_line,
                 tone_line=tone_line,
                 product_visual_context=product_visual_context,
-                safe_zone=_TEMPLATE_SAFE_ZONES_COMPOSE[template],
+                safe_zone=_TEMPLATE_SAFE_ZONES_COMPOSE[effective_compose_template],
             )
 
-        base_png, mask_png = _build_inpaint_base_and_mask(product_cutout_bytes, template, size)
+        base_png, mask_png = _build_inpaint_base_and_mask(
+            product_cutout_bytes, effective_compose_template, size
+        )
         return await image_providers.edit_with_mask(
             base_png,
             mask_png,
@@ -572,6 +562,9 @@ async def generate_image(
 
     # ── [개선 모드] Edit API ───────────────────────────────────────────────────
     if original_image_bytes is not None:
+        # template=None(개선 모드, 누끼 없이 원본 Edit)이면 A 레이아웃 문구로 폴백 —
+        # _TEMPLATE_STYLE/_TEMPLATE_SAFE_ZONES_EDIT/_TEXT_LAYOUT은 None 키가 없어 KeyError 방지.
+        effective_edit_template = template if template is not None else TemplateType.A
         core_values_str = (
             ", ".join(product_analysis.core_values) if product_analysis.core_values else "N/A"
         )
@@ -582,38 +575,26 @@ async def generate_image(
                 product_name=product_analysis.product_name,
                 core_values=core_values_str,
                 target_audience=target_audience,
-                strategy_desc=_STRATEGY_DESCRIPTIONS[strategy],
+                strategy_desc=_strategy_desc(strategy),
                 color_line=color_line,
                 tone_line=tone_line,
                 improvement_context=improvement_context or "전반적인 광고 품질을 개선하세요.",
-                text_layout=_TEXT_LAYOUT[template],
+                text_layout=_TEXT_LAYOUT[effective_edit_template],
                 headline=headline,
                 body=body,
                 cta=cta,
             )
         else:
-            # template=None(개선 모드 자유 레이아웃)이면 템플릿별 딕셔너리 대신
-            # 원본 구도를 그대로 유지하라는 범용 문구를 사용한다.
-            style_desc = (
-                _TEMPLATE_STYLE[template]
-                if template is not None
-                else "Preserve the existing visual style of the original image."
-            )
-            safe_zone_desc = (
-                _TEMPLATE_SAFE_ZONES_EDIT[template]
-                if template is not None
-                else "LAYOUT NOTE: Preserve the original text/layout zones as much as possible."
-            )
             prompt = _EDIT_PROMPT_TEMPLATE.format(
                 product_name=product_analysis.product_name,
                 core_values=core_values_str,
                 target_audience=target_audience,
-                strategy_desc=_STRATEGY_DESCRIPTIONS[strategy],
-                style=style_desc,
+                strategy_desc=_strategy_desc(strategy),
+                style=_TEMPLATE_STYLE[effective_edit_template],
                 color_line=color_line,
                 tone_line=tone_line,
                 improvement_context=improvement_context or "전반적인 광고 품질을 개선하세요.",
-                safe_zone=safe_zone_desc,
+                safe_zone=_TEMPLATE_SAFE_ZONES_EDIT[effective_edit_template],
             )
 
         return await image_providers.edit(
@@ -634,8 +615,8 @@ async def generate_image(
         prompt = _PROMPT_TEMPLATE_WITH_TEXT.format(
             platform="Meta/Instagram",
             style=_TEMPLATE_STYLE[effective_template],
-            photo_style=_STRATEGY_PHOTO_STYLE[strategy],
-            strategy_desc=_STRATEGY_DESCRIPTIONS[strategy],
+            photo_style=_strategy_photo_style(strategy),
+            strategy_desc=_strategy_desc(strategy),
             product_name=product_analysis.product_name,
             core_values_line=core_values_line,
             target_audience=target_audience,
@@ -656,8 +637,8 @@ async def generate_image(
         prompt = _PROMPT_TEMPLATE.format(
             platform="Meta/Instagram",
             style=_TEMPLATE_STYLE[effective_template],
-            photo_style=_STRATEGY_PHOTO_STYLE[strategy],
-            strategy_desc=_STRATEGY_DESCRIPTIONS[strategy],
+            photo_style=_strategy_photo_style(strategy),
+            strategy_desc=_strategy_desc(strategy),
             product_name=product_analysis.product_name,
             core_values_line=core_values_line,
             target_audience=target_audience,

@@ -1,19 +1,21 @@
 """노드 2 — 광고 전략 생성: pipeline.strategy_planner로 서로 다른 전략 3종 수립.
 
-개선 모드면 plan_strategies를 스킵하고 3-tier 분류기를 실행,
-더미 StrategyPlan(template=None)을 1개 주입해 candidate_gen이 단일 후보를 자연스럽게 처리하게 한다.
+개선 모드면 plan_strategies를 스킵하고 분류기를 실행해 5전략 중 1개를 동적으로 선택,
+그 전략에 매핑된 실제 템플릿(A/B/C)으로 StrategyPlan을 1개 주입한다(candidate_gen은 그
+1개로 단일 후보만 생성 — CREATE처럼 3종 동시 생성이 아니다).
 """
 
 from __future__ import annotations
 
 from langchain_core.runnables import RunnableConfig
 
-from domain.generator.contracts.enums import AdStrategy, GenerationMode
+from domain.generator.contracts.enums import GenerationMode
 from domain.generator.contracts.pipeline_schemas import ProductAnalysis, StrategyPlan
 from domain.generator.graph.nodes import emit_progress
 from domain.generator.graph.state import GenerationState
 from domain.generator.pipeline.improvement_guide import classify_improvements
-from domain.generator.pipeline.strategy_planner import plan_strategies
+from domain.generator.pipeline.strategy_planner import _STRATEGY_LABELS, plan_strategies
+from domain.generator.pipeline.template_selector import select_template
 
 
 async def generate_strategies(state: GenerationState, config: RunnableConfig) -> dict:
@@ -29,25 +31,29 @@ async def generate_strategies(state: GenerationState, config: RunnableConfig) ->
 
 
 async def _handle_improve_mode(req: dict, product_analysis: ProductAnalysis) -> dict:
-    """개선 모드 — 3-tier 분류기 + 더미 StrategyPlan(template=None) 주입."""
-    directives = await classify_improvements(
+    """개선 모드 — 분류기로 지시문 + 전략(5종 중 1개) 선택, 그 전략의 실제 템플릿으로 StrategyPlan 1개 주입."""
+    classification = await classify_improvements(
         simulation_summary=req.get("simulation_summary"),
         plain_summary=req.get("plain_summary"),
         improvement_direction=req.get("improvement_direction"),
         fix_requests=req.get("fix_requests"),
     )
+    strategy = classification.strategy
+    template = select_template(strategy)
 
     improvement_context: str | None = None
-    if directives:
-        improvement_context = "[개선 지시문]\n" + "\n".join(f"- {d}" for d in directives)
+    if classification.directives:
+        improvement_context = "[개선 지시문]\n" + "\n".join(
+            f"- {d}" for d in classification.directives
+        )
         summary = req.get("simulation_summary")
         if summary:
             improvement_context += f"\n\n[시뮬레이션 결과 참고]\n{summary}"
 
     dummy_plan = StrategyPlan(
-        strategy=AdStrategy.BENEFIT,
-        template=None,
-        strategy_description="시뮬레이션 기반 약점 보완",
+        strategy=strategy,
+        template=template,
+        strategy_description=_STRATEGY_LABELS[strategy],
         rationale="시뮬레이션 피드백과 수정 요청을 반영해 약점을 보완한 새 광고 이미지를 생성합니다.",
     )
 

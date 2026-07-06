@@ -164,6 +164,153 @@ async def live_before_after(settings) -> dict:
         return {"error": "rate_limited" if e.is_rate_limited else "meta_error", "detail": str(e)}
 
 
+async def live_weekly_report(settings) -> dict:
+    """주간 성과 리포트 — 최근 7일 총합·캠페인별 표·하이라이트(화면 /report/weekly와 동일)."""
+    from domain.management.insights import weekly_report  # noqa: PLC0415
+
+    return await weekly_report(build_reader(settings))
+
+
+async def live_rebalance_proposal(settings) -> dict:
+    """캠페인 간 일예산 리밸런싱 제안 — 화면 /budget/rebalance-proposal과 동일 로직."""
+    from domain.management.insights import rebalance_proposal  # noqa: PLC0415
+
+    return await rebalance_proposal(build_reader(settings))
+
+
+async def live_organic_compare(settings) -> dict:
+    """오가닉 게시물 ↔ 광고 증분 비교 보드(데모 매칭 쌍) — 화면 /compare/board와 동일."""
+    _ = settings  # 매칭 쌍 데모라 항상 mock — 시그니처는 다른 live_*와 통일
+    from domain.management.insights import organic_ad_board  # noqa: PLC0415
+
+    return await organic_ad_board()
+
+
+async def live_anomaly_scan(settings, target_roas: float | None = None) -> dict:
+    """실 캠페인 성과 이상·노출 피로 스캔 — 이상 있는 캠페인만 반환(live 전용).
+
+    성과 미달 판정은 고객 목표(target_roas)가 있어야 가능하고, 노출 피로(빈도)는 목표 없이도
+    잡는다. 화면 /anomaly/scan과 같은 판정 블록(diagnose_performance·FATIGUE_FREQUENCY)을 쓴다.
+    """
+    if getattr(settings, "use_mock", True):
+        return {"scanned": 0, "anomalies": [], "note": "실 캠페인 스캔은 live에서."}
+    from domain.management.contracts.enums import (  # noqa: PLC0415
+        CampaignState,
+        DiagnosisStatus,
+    )
+    from domain.management.contracts.policy import FATIGUE_FREQUENCY  # noqa: PLC0415
+    from domain.management.demo import TENANT_ID  # noqa: PLC0415
+    from domain.management.detection.performance_dx import diagnose_performance  # noqa: PLC0415
+    from domain.management.wiring import build_diagnosis_agent  # noqa: PLC0415
+
+    reader = build_reader(settings)
+    now = datetime.now(UTC)
+    try:
+        infos = await reader.list_campaigns()
+    except MetaApiError as e:
+        return {"error": "rate_limited" if e.is_rate_limited else "meta_error", "detail": str(e)}
+    anomalies: list[dict] = []
+    for c in infos:
+        dx_payload = None
+        try:
+            m = await reader.get_metrics(c.campaign_id, now)
+            relevance = await reader.get_relevance_diagnostics(c.campaign_id)
+            dx = diagnose_performance(
+                TENANT_ID,
+                c.campaign_id,
+                roas=m.roas,
+                target_roas=target_roas,
+                as_of=m.as_of,
+                relevance=relevance,
+            )
+            if dx is not None and dx.status == DiagnosisStatus.INCONCLUSIVE:
+                dx = await build_diagnosis_agent(settings)(dx, reader)
+            if dx is not None:
+                dx_payload = {
+                    "anomaly_type": dx.anomaly_type.value,
+                    "hypothesis": dx.hypothesis,
+                    "confidence": dx.confidence,
+                }
+        except Exception:  # noqa: BLE001 — 캠페인 1건 실패가 전체 스캔을 막지 않게
+            dx_payload = None
+        if dx_payload:
+            anomalies.append(
+                {
+                    "campaign_id": c.campaign_id,
+                    "name": c.name,
+                    "state": str(getattr(c.state, "value", c.state)),
+                    "diagnosis": dx_payload,
+                }
+            )
+        # 빈도 피로 — 진행 중 캠페인의 최근 7일 빈도가 임계(3.0+)를 넘으면 소재 교체 제안.
+        if c.state == CampaignState.ACTIVE:
+            try:
+                wk = await reader.get_metrics(c.campaign_id, now, date_preset="last_7d")
+                freq = wk.frequency or 0.0
+            except Exception:  # noqa: BLE001 — 피로 신호 실패는 조용히 건너뜀
+                freq = 0.0
+            if freq >= FATIGUE_FREQUENCY:
+                anomalies.append(
+                    {
+                        "campaign_id": c.campaign_id,
+                        "name": c.name,
+                        "state": str(getattr(c.state, "value", c.state)),
+                        "diagnosis": {
+                            "anomaly_type": "AUDIENCE_FATIGUE",
+                            "hypothesis": (
+                                f"최근 7일 빈도 {freq:.1f} — 같은 사람에게 반복 노출되는 피로 "
+                                f"신호예요(기준 {FATIGUE_FREQUENCY:.0f}+). 소재 교체를 권장합니다."
+                            ),
+                        },
+                        "suggested_action": "REPLACE_CREATIVE",
+                    }
+                )
+    note = None if target_roas else "목표 ROAS 미지정 — 성과 미달 판정은 생략, 피로 신호만 스캔."
+    return {"scanned": len(infos), "anomalies": anomalies, "note": note}
+
+
+async def live_campaign_breakdown(settings, campaign_id: str) -> dict:
+    """단일 캠페인 분해 실측 — 게재 플랫폼별(FB/IG) + 연령×성별 노출·클릭·지출·도달."""
+    reader = build_reader(settings)
+    now = datetime.now(UTC)
+    try:
+        platforms = await reader.get_platform_breakdown(campaign_id, now)
+        demographics = await reader.get_demographic_breakdown(campaign_id, now)
+        return {
+            "campaign_id": campaign_id,
+            "platforms": [r.model_dump(mode="json") for r in platforms],
+            "demographics": [r.model_dump(mode="json") for r in demographics],
+        }
+    except MetaApiError as e:
+        return {"error": "rate_limited" if e.is_rate_limited else "meta_error", "detail": str(e)}
+
+
+async def live_campaign_creatives(settings, campaign_id: str) -> dict:
+    """캠페인 대표 크리에이티브 — 광고 시안 이름·썸네일."""
+    reader = build_reader(settings)
+    try:
+        rows = await reader.get_creatives(campaign_id)
+        return {"creatives": [r.model_dump(mode="json") for r in rows]}
+    except MetaApiError as e:
+        return {"error": "rate_limited" if e.is_rate_limited else "meta_error", "detail": str(e)}
+
+
+async def live_campaign_targeting(settings, campaign_id: str) -> dict:
+    """캠페인 타겟팅 설정 — objective·연령·성별(시뮬 사전 입력에도 쓰는 값)."""
+    reader = build_reader(settings)
+    try:
+        return await reader.get_campaign_targeting(campaign_id)
+    except MetaApiError as e:
+        return {"error": "rate_limited" if e.is_rate_limited else "meta_error", "detail": str(e)}
+
+
+async def live_campaign_leads(settings, campaign_id: str) -> dict:
+    """이 캠페인 광고로 제출된 잠재고객(리드) 명단 — Meta leadgen 조회(live 전용)."""
+    from domain.management.leads import fetch_campaign_leads  # noqa: PLC0415
+
+    return await fetch_campaign_leads(settings, campaign_id)
+
+
 #: 라우팅 intent → 실시간 툴 (그래프의 retrieve_live가 선택 호출)
 INTENT_TOOLS = {
     "campaigns": ("live_campaigns", live_campaigns),
