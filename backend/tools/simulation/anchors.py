@@ -1,4 +1,4 @@
-ANCHOR_VERSION = "v1.0"
+ANCHOR_VERSION = "v1.1"  # v1.1: purchase_intent·trust(1~5) 앵커 추가 — SSR 재배선
 EMBEDDING_MODEL = "text-embedding-3-small"
 
 ANCHOR_STATEMENTS: dict[str, list[str]] = {
@@ -37,6 +37,22 @@ ANCHOR_STATEMENTS: dict[str, list[str]] = {
         "광고 내용을 명확히 이해하고 핵심을 파악했다",
         "광고의 모든 메시지와 의도를 완벽히 이해했다",
     ],
+    # 구매의도(§KPI② 1~5) — SSR 재배선용. conversion_intent(0~1 구스키마)와 별개 차원.
+    "purchase_intent": [
+        "이 제품을 구매할 생각이 전혀 없다",
+        "구매할 마음이 별로 들지 않는다",
+        "구매를 고민해볼 수도 있을 것 같다",
+        "구매하고 싶은 마음이 꽤 든다",
+        "지금 당장이라도 구매하고 싶다",
+    ],
+    # 신뢰도(§KPI③ 1~5) — reaction.py _trust_anchor_line 기준(1=허위, 3=반신반의, 5=믿을 만함).
+    "trust": [
+        "광고가 과장·허위 같아 전혀 믿을 수 없다",
+        "광고 내용이 미덥지 않고 의심스럽다",
+        "광고 내용을 반신반의한다",
+        "광고 내용이 대체로 믿을 만하다",
+        "광고 내용이 사실 같고 충분히 믿을 만하다",
+    ],
     "recall": [
         "이 광고를 나중에 전혀 기억하지 못할 것이다",
         "광고를 봤다는 것만 어렴풋이 기억할 것이다",
@@ -53,4 +69,6 @@ SCORE_RANGES: dict[str, tuple[float, float]] = {
     "conversion_intent": (0.0, 1.0),
     "comprehension": (0.0, 1.0),
     "recall": (0.0, 1.0),
+    "purchase_intent": (1.0, 5.0),
+    "trust": (1.0, 5.0),
 }

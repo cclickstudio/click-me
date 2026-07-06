@@ -76,34 +76,55 @@ def _reaction_fallback_enabled() -> bool:
     return os.environ.get("SIMULATION_REACTION_FALLBACK", "1").lower() not in ("0", "false", "no")
 
 
+def _ssr_scoring_enabled() -> bool:
+    """SSR 점수화 사용 여부 — 기본 OFF(현행 LLM 정수 유지). SIMULATION_SCORING=ssr이면 켠다."""
+    return os.environ.get("SIMULATION_SCORING", "llm").lower() == "ssr"
+
+
+def _wrap_ssr(reactor: object) -> object:
+    """SSR 배선(opt-in) — reactor를 SSRScoringReactor로 감싸 구매의도·신뢰도를 분포로 재산정."""
+    if not _ssr_scoring_enabled():
+        return reactor
+    _ensure_env("OPENAI_API_KEY")  # 임베딩(text-embedding-3-small)용
+    from domain.simulation.adapters.ssr_reaction import SSRScoringReactor
+    from tools.simulation.ssr_scorer import SSRScorer
+
+    return SSRScoringReactor(reactor, SSRScorer())
+
+
 def _build_reactor() -> object:
     """반응 엔진 — 기본 Gemini. OPENAI_API_KEY 있고 폴백 ON이면 GPT를 뒤에 붙여 503 내성 확보.
 
     Gemini가 자체 백오프 재시도를 다 쓰고도 503/실패면 FallbackReactionEngine이 GPT로 폴백한다.
     키가 없으면 폴백 없이 Gemini 단독(기존 동작 보존).
     SIMULATION_LLM_PROVIDER=openai면 반응 추출을 OpenAI 단독으로(Gemini 미사용).
+    SIMULATION_SCORING=ssr이면 체인 최외곽을 SSR 점수화로 감싼다(서술→임베딩 분포).
     """
     from domain.simulation.adapters.gemini._common import _use_openai
 
+    ssr = _ssr_scoring_enabled()  # SSR 배선이면 엔진에 자유 서술(reaction_text) 요구
     if _use_openai():
         _ensure_env("OPENAI_API_KEY")
         from domain.simulation.adapters.openai_reaction import OpenAIReactionEngine
 
         model = os.environ.get("SIMULATION_REACTION_FALLBACK_MODEL", "gpt-4.1-mini")
-        return OpenAIReactionEngine(model=model)
+        return _wrap_ssr(OpenAIReactionEngine(model=model, with_reaction_text=ssr))
     from domain.simulation.adapters.gemini import GeminiReactionEngine
 
-    primary = GeminiReactionEngine()
+    primary = GeminiReactionEngine(with_reaction_text=ssr)
     if not _reaction_fallback_enabled():
-        return primary
+        return _wrap_ssr(primary)
     _ensure_env("OPENAI_API_KEY")
     if not os.environ.get("OPENAI_API_KEY"):
-        return primary
+        return _wrap_ssr(primary)
     from domain.simulation.adapters.openai_reaction import OpenAIReactionEngine
     from domain.simulation.adapters.reaction_fallback import FallbackReactionEngine
 
     model = os.environ.get("SIMULATION_REACTION_FALLBACK_MODEL", "gpt-4.1-mini")
-    return FallbackReactionEngine([primary, OpenAIReactionEngine(model=model)])
+    chain = FallbackReactionEngine(
+        [primary, OpenAIReactionEngine(model=model, with_reaction_text=ssr)]
+    )
+    return _wrap_ssr(chain)
 
 
 def build_reaction_subgraph(settings=None, *, use_llm_qa=None):
