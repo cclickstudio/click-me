@@ -42,6 +42,15 @@ export interface SimAisas {
   share: boolean;
 }
 
+/** SSR(임베딩 유사도) 점수 분포 — SIMULATION_SCORING=ssr일 때만 채워진다(1~5점 5칸). */
+export interface SimScoreDistribution {
+  mean: number;
+  std: number;
+  p10: number;
+  p90: number;
+  raw_probs: number[];
+}
+
 export interface SimPersonaReaction {
   persona_id: string;
   exposure_context: string | null;
@@ -51,6 +60,8 @@ export interface SimPersonaReaction {
   drop_reason_tag: string | null;
   purchase_intent: number;
   trust: number;
+  purchase_intent_dist?: SimScoreDistribution | null;
+  trust_dist?: SimScoreDistribution | null;
   rejected: boolean;
   rejection_reason_tag: string | null;
   emotion_tag: string;
