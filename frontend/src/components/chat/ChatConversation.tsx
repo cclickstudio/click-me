@@ -14,6 +14,7 @@ import SimResultWidget from './SimResultWidget';
 import DebateStreamWidget from './DebateStreamWidget';
 import DebateSummaryWidget from './DebateSummaryWidget';
 import GenFormWidget from './GenFormWidget';
+import GenLoopWidget from './GenLoopWidget';
 import GenProgressWidget from './GenProgressWidget';
 import GenResultWidget from './GenResultWidget';
 import SimGenListWidget from './SimGenListWidget';
@@ -208,6 +209,8 @@ type WidgetSpec = {
     run_id?: string; // debate_stream·debate_summary 위젯 — 토론 스트림/결과 조회용
     sample_size?: number; // sim_input 위젯 — 실제 돌린 가상 소비자 수
     generation_id?: string; // gen_result 위젯 — 생성 결과(후보·이미지) 조회용
+    loop_id?: string; // gen_loop 위젯 — 자동 개선 루프 진행 카드
+    stream_url?: string; // gen_loop 위젯 — 루프 SSE 경로
     prefill?: CampaignPrefill; // create_campaign 위젯 — 캠페인 생성 폼 초기값
     action?: CampaignActionPayload | BudgetActionPayload; // campaign_action 위젯 — 조치 페이로드
   };
@@ -1825,6 +1828,15 @@ export default function ChatConversation({
                         <GenProgressWidget
                           generationId={msg.meta.widget.data.generation_id}
                           projectId={projectId}
+                          onComplete={handleGenComplete}
+                        />
+                      )}
+                    {msg.meta?.widget?.type === 'gen_loop' &&
+                      msg.meta.widget.data?.loop_id &&
+                      msg.meta.widget.data?.stream_url && (
+                        <GenLoopWidget
+                          loopId={msg.meta.widget.data.loop_id}
+                          streamUrl={msg.meta.widget.data.stream_url}
                           onComplete={handleGenComplete}
                         />
                       )}
