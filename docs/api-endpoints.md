@@ -2,7 +2,7 @@
 
 > 이 파일은 `backend/scripts/gen_docs.py`가 코드에서 **자동 생성**합니다. 직접 편집하지 말고 소스를 고친 뒤 스크립트를 다시 실행하세요(커밋 시 pre-commit 훅이 자동 갱신).
 
-총 **177개** 엔드포인트 · **16개** 그룹.
+총 **184개** 엔드포인트 · **17개** 그룹.
 
 ## admin
 
@@ -44,6 +44,12 @@
 | POST | `/api/auth/change-password` | change_password |
 | GET | `/api/auth/me` | me |
 | PATCH | `/api/auth/me` | update_me |
+
+## automation
+
+| Method | Path | Name |
+|---|---|---|
+| GET | `/api/automation/runs` | list_automation_runs |
 
 ## billing
 
@@ -167,16 +173,19 @@
 |---|---|---|
 | POST | `/api/management/ad-image` | upload_ad_image |
 | POST | `/api/management/ad-preview` | ad_preview |
+| POST | `/api/management/anomaly/notify-scan` | anomaly_notify_scan |
 | GET | `/api/management/anomaly/scan` | anomaly_scan |
 | POST | `/api/management/approve` | approve_proposal |
 | POST | `/api/management/assistant` | management_assistant |
 | GET | `/api/management/audit` | get_audit |
 | GET | `/api/management/budget` | get_budget |
 | POST | `/api/management/budget/limit` | set_budget_limit |
+| GET | `/api/management/budget/rebalance-proposal` | budget_rebalance_proposal |
 | GET | `/api/management/calibration/anchors` | calibration_anchors |
 | GET | `/api/management/campaign-policy` | campaign_policy |
 | POST | `/api/management/campaign-proposals/from-candidate` | from_candidate |
 | POST | `/api/management/campaign-proposals/from-simulation` | from_simulation |
+| GET | `/api/management/campaign-proposals/name-suggestions` | campaign_name_suggestions |
 | GET | `/api/management/campaigns` | list_campaigns |
 | POST | `/api/management/campaigns/create-proposal` | create_campaign_proposal |
 | DELETE | `/api/management/campaigns/{campaign_id}` | delete_campaign |
@@ -210,13 +219,16 @@
 | GET | `/api/management/kpi-overrides` | list_kpi_overrides |
 | GET | `/api/management/meta/callback` | meta_callback |
 | GET | `/api/management/meta/connect` | meta_connect |
+| GET | `/api/management/notifications` | list_notifications |
+| POST | `/api/management/notifications/read` | read_notifications |
+| GET | `/api/management/notifications/stream` | notifications_stream |
+| POST | `/api/management/notifications/{notification_id}/consult` | consult_from_notification |
+| POST | `/api/management/notifications/{notification_id}/resolve` | resolve_notification |
 | POST | `/api/management/re-evaluate` | re_evaluate |
 | POST | `/api/management/re-evaluate/executed` | mark_rung_executed |
 | POST | `/api/management/re-evaluate/rejected` | mark_rung_rejected |
 | POST | `/api/management/regenerate` | regenerate |
-| POST | `/api/management/regenerate/jobs` | start_regen_job |
-| GET | `/api/management/regenerate/jobs/{job_id}` | get_regen_job |
-| POST | `/api/management/regenerate/jobs/{job_id}/select` | select_regen_job |
+| GET | `/api/management/report/weekly` | weekly_report |
 | GET | `/api/management/run` | run_detection |
 
 ## personas
