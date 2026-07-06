@@ -52,32 +52,59 @@ def pick_consult_context(
     return None
 
 
+async def _recent_meta_rows(session_id: str) -> list[tuple[dict | None, datetime]]:
+    """세션 최근 10개 (meta, created_at) 최신순 — 조회 실패는 예외 전파(호출자 정책)."""
+    from uuid import UUID  # noqa: PLC0415
+
+    from sqlalchemy import select  # noqa: PLC0415
+
+    from core.db import AsyncSessionLocal  # noqa: PLC0415
+    from core.models import ChatMessage  # noqa: PLC0415
+
+    async with AsyncSessionLocal() as db:
+        rows = await db.execute(
+            select(ChatMessage.meta, ChatMessage.created_at)
+            .where(ChatMessage.session_id == UUID(session_id))
+            .order_by(ChatMessage.created_at.desc())
+            .limit(10)
+        )
+        return [(m, c) for m, c in rows.all()]
+
+
 async def recall_consult_context(session_id: str, settings: Any) -> str | None:
     """세션 최근 메시지에서 consult 컨텍스트 회수 — 실패는 None(채팅 안 막음)."""
     from datetime import UTC  # noqa: PLC0415
 
     try:
-        from uuid import UUID  # noqa: PLC0415
-
-        from sqlalchemy import select  # noqa: PLC0415
-
-        from core.db import AsyncSessionLocal  # noqa: PLC0415
-        from core.models import ChatMessage  # noqa: PLC0415
-
-        async with AsyncSessionLocal() as db:
-            rows = await db.execute(
-                select(ChatMessage.meta, ChatMessage.created_at)
-                .where(ChatMessage.session_id == UUID(session_id))
-                .order_by(ChatMessage.created_at.desc())
-                .limit(10)
-            )
-            messages = [(m, c) for m, c in rows.all()]
+        messages = await _recent_meta_rows(session_id)
     except Exception:  # noqa: BLE001 — 회수 실패가 답변을 막지 않게
         return None
     return pick_consult_context(
         messages,
         now=datetime.now(UTC),
         ttl_hours=getattr(settings, "management_consult_context_ttl_hours", 24),
+    )
+
+
+async def consult_context_alive(session_id: str, settings: Any) -> bool:
+    """상담 컨텍스트가 아직 진행 가능한가 — [상담하기] 재클릭 재심기 판정용.
+
+    판정 조건은 pick_consult_context와 동일(TTL·최근 K·위젯 진행됨). 조회 실패는 True —
+    재심기 오발동보다 기존 동작(이동 전용)을 유지하는 쪽이 안전하다(fail-open).
+    """
+    from datetime import UTC  # noqa: PLC0415
+
+    try:
+        messages = await _recent_meta_rows(session_id)
+    except Exception:  # noqa: BLE001 — 판단 불가 = 살아있다고 간주(이동 전용 유지)
+        return True
+    return (
+        pick_consult_context(
+            messages,
+            now=datetime.now(UTC),
+            ttl_hours=getattr(settings, "management_consult_context_ttl_hours", 24),
+        )
+        is not None
     )
 
 
