@@ -3,8 +3,8 @@
 // 행 클릭 시 결과 대시보드(/simulation/[id])로 이동. 삭제·복원은 상세 페이지에서 처리.
 
 import { useCallback, useState } from 'react';
-import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/AuthProvider';
+import { useProjects } from '@/components/ProjectContext';
 import { authedFetch } from '@/lib/api';
 import { formatKSTFull } from '@/lib/datetime';
 import { AdminOrgPicker } from '@/components/manage/AdminOrgPicker';
@@ -13,6 +13,7 @@ import {
   HistoryControls,
   OrgStatusDot,
   OrgStatusFilter,
+  executorLabel,
   historyQueryString,
   DEFAULT_HISTORY_QUERY,
   type HistoryQuery,
@@ -27,6 +28,9 @@ type Row = {
   status: string;
   sample_size: number;
   created_by_name: string | null;
+  created_by_role: string | null;
+  project_id: string | null;
+  project_name: string | null;
   org_name: string | null;
   org_status: string | null;
   created_at: string;
@@ -42,8 +46,8 @@ const STATUS_LABEL: Record<string, { label: string; color: string }> = {
 };
 
 export default function SimulationsPage() {
-  const router = useRouter();
   const { user } = useAuth();
+  const { revealProjectInPanel } = useProjects();
   const isAdmin = user?.role === 'ADMIN';
 
   const [query, setQuery] = useState<HistoryQuery>(DEFAULT_HISTORY_QUERY);
@@ -62,7 +66,7 @@ export default function SimulationsPage() {
         .then((d) => (Array.isArray(d) ? (d as Row[]) : []))
         .catch(() => [] as Row[]);
     },
-    [user, path, qs, orgKey],
+    [user, path, qs],
   );
 
   const { items, loading, loadingMore, hasMore, sentinelRef } = useInfiniteList<Row>(
@@ -106,16 +110,17 @@ export default function SimulationsPage() {
                 <th className="text-left px-6 py-3 text-xs font-semibold text-[#8B95A1]">광고명</th>
                 {isAdmin && (
                   <>
-                    <th className="text-left px-4 py-3 text-xs font-semibold text-[#8B95A1]">조직</th>
-                    <th className="text-left px-4 py-3 text-xs font-semibold text-[#8B95A1]">
+                    <th className="text-center px-4 py-3 text-xs font-semibold text-[#8B95A1]">조직</th>
+                    <th className="text-center px-4 py-3 text-xs font-semibold text-[#8B95A1]">
                       조직 상태
                     </th>
                   </>
                 )}
-                <th className="text-left px-4 py-3 text-xs font-semibold text-[#8B95A1]">상태</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-[#8B95A1]">샘플 수</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-[#8B95A1]">실행자</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-[#8B95A1]">실행일</th>
+                <th className="text-center px-4 py-3 text-xs font-semibold text-[#8B95A1]">프로젝트</th>
+                <th className="text-center px-4 py-3 text-xs font-semibold text-[#8B95A1]">실행자</th>
+                <th className="text-center px-4 py-3 text-xs font-semibold text-[#8B95A1]">상태</th>
+                <th className="text-center px-4 py-3 text-xs font-semibold text-[#8B95A1]">샘플 수</th>
+                <th className="text-right px-6 py-3 text-xs font-semibold text-[#8B95A1]">실행일</th>
               </tr>
             </thead>
             <tbody>
@@ -127,36 +132,39 @@ export default function SimulationsPage() {
                 return (
                   <tr
                     key={r.id}
-                    onClick={() => router.push(`/simulation/${r.id}`)}
-                    className="border-b border-[#F9FAFB] dark:border-[#1C2333] last:border-0 hover:bg-[#F9FAFB] dark:hover:bg-[#252D3D] cursor-pointer transition-colors"
+                    onClick={() => r.project_id && revealProjectInPanel(r.project_id)}
+                    className={`border-b border-[#F9FAFB] dark:border-[#1C2333] last:border-0 hover:bg-[#F9FAFB] dark:hover:bg-[#252D3D] transition-colors ${r.project_id ? 'cursor-pointer' : ''}`}
                   >
-                    <td className="px-6 py-3 text-[#191F28] dark:text-[#F2F4F6] font-medium">
+                    <td className="text-left px-6 py-3 text-[#191F28] dark:text-[#F2F4F6] font-medium">
                       {r.ad_title ?? '—'}
                     </td>
                     {isAdmin && (
                       <>
-                        <td className="px-4 py-3 text-[#4E5968] dark:text-[#9CA3AF]">
+                        <td className="text-center px-4 py-3 text-[#4E5968] dark:text-[#9CA3AF]">
                           {r.org_name ?? '—'}
                         </td>
-                        <td className="px-4 py-3">
+                        <td className="text-center px-4 py-3">
                           <OrgStatusDot status={r.org_status} />
                         </td>
                       </>
                     )}
-                    <td className="px-4 py-3">
+                    <td className="text-center px-4 py-3 text-[#4E5968] dark:text-[#9CA3AF]">
+                      {r.project_name ?? '—'}
+                    </td>
+                    <td className="text-center px-4 py-3 text-[#4E5968] dark:text-[#9CA3AF]">
+                      {executorLabel(r)}
+                    </td>
+                    <td className="text-center px-4 py-3">
                       <span
                         className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${s.color}`}
                       >
                         {s.label}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-[#4E5968] dark:text-[#9CA3AF]">
+                    <td className="text-center px-4 py-3 text-[#4E5968] dark:text-[#9CA3AF]">
                       {r.sample_size}명
                     </td>
-                    <td className="px-4 py-3 text-[#4E5968] dark:text-[#9CA3AF]">
-                      {r.created_by_name ?? '—'}
-                    </td>
-                    <td className="px-4 py-3 text-[#8B95A1]">{fmt(r.created_at)}</td>
+                    <td className="text-right px-6 py-3 text-[#8B95A1]">{fmt(r.created_at)}</td>
                   </tr>
                 );
               })}

@@ -152,6 +152,15 @@ export function HistoryControls({
   );
 }
 
+// 내역 실행자 표기 — ADMIN이 실행했으면 '관리자', 그 외엔 이름(없으면 —).
+export function executorLabel(row: {
+  created_by_role?: string | null;
+  created_by_name?: string | null;
+}): string {
+  if (row.created_by_role === 'ADMIN') return '관리자';
+  return row.created_by_name ?? '—';
+}
+
 // 조직 상태(활성/비활성) 필터 — 헤더의 AdminOrgPicker 옆에 배치(정렬 영역과 분리).
 export function OrgStatusFilter({
   value,

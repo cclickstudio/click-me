@@ -2,6 +2,7 @@
 
 import { useCallback } from 'react';
 import { authedFetch } from '@/lib/api';
+import { useProjects } from '@/components/ProjectContext';
 import { formatKST } from '@/lib/datetime';
 import { AdminOrgPicker } from '@/components/manage/AdminOrgPicker';
 import { useInfiniteList, useDebouncedValue } from '@/components/admin/useInfiniteList';
@@ -9,6 +10,7 @@ import {
   HistoryControls,
   OrgStatusDot,
   OrgStatusFilter,
+  executorLabel,
   historyQueryString,
   DEFAULT_HISTORY_QUERY,
   type HistoryQuery,
@@ -21,6 +23,9 @@ type Row = {
   status: string;
   product_name: string | null;
   created_by_name: string | null;
+  created_by_role: string | null;
+  project_id: string | null;
+  project_name: string | null;
   org_name: string | null;
   org_status: string | null;
   created_at: string;
@@ -40,6 +45,7 @@ const statusLabel: Record<string, string> = {
 };
 
 export default function AdminGenerationsPage() {
+  const { revealProjectInPanel } = useProjects();
   const [query, setQuery] = useState<HistoryQuery>(DEFAULT_HISTORY_QUERY);
   const [orgKey, setOrgKey] = useState(0); // AdminOrgPicker 선택 변경 시 리스트만 재로드하는 키
   const debouncedSearch = useDebouncedValue(query.search, 300);
@@ -52,7 +58,7 @@ export default function AdminGenerationsPage() {
       )
         .then((r) => r.json())
         .then((d) => (Array.isArray(d) ? (d as Row[]) : [])),
-    [qs, orgKey],
+    [qs],
   );
 
   const { items, loading, loadingMore, hasMore, sentinelRef } = useInfiniteList<Row>(
@@ -89,44 +95,45 @@ export default function AdminGenerationsPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-[#F2F4F6] dark:border-[#252D3D] bg-[#F9FAFB] dark:bg-[#252D3D]">
-                <th className="text-left px-6 py-3 text-xs font-semibold text-[#8B95A1]">ID</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-[#8B95A1]">상품명</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-[#8B95A1]">조직</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-[#8B95A1]">조직 상태</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-[#8B95A1]">실행자</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-[#8B95A1]">상태</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-[#8B95A1]">생성일</th>
+                <th className="text-left px-6 py-3 text-xs font-semibold text-[#8B95A1]">상품명</th>
+                <th className="text-center px-4 py-3 text-xs font-semibold text-[#8B95A1]">조직</th>
+                <th className="text-center px-4 py-3 text-xs font-semibold text-[#8B95A1]">조직 상태</th>
+                <th className="text-center px-4 py-3 text-xs font-semibold text-[#8B95A1]">프로젝트</th>
+                <th className="text-center px-4 py-3 text-xs font-semibold text-[#8B95A1]">실행자</th>
+                <th className="text-center px-4 py-3 text-xs font-semibold text-[#8B95A1]">상태</th>
+                <th className="text-right px-6 py-3 text-xs font-semibold text-[#8B95A1]">생성일</th>
               </tr>
             </thead>
             <tbody>
               {items.map((r) => (
                 <tr
                   key={r.id}
-                  className="border-b border-[#F9FAFB] dark:border-[#1C2333] last:border-0 hover:bg-[#F9FAFB] dark:hover:bg-[#252D3D] transition-colors"
+                  onClick={() => r.project_id && revealProjectInPanel(r.project_id)}
+                  className={`border-b border-[#F9FAFB] dark:border-[#1C2333] last:border-0 hover:bg-[#F9FAFB] dark:hover:bg-[#252D3D] transition-colors ${r.project_id ? 'cursor-pointer' : ''}`}
                 >
-                  <td className="px-6 py-3 font-mono text-xs text-[#4E5968] dark:text-[#9CA3AF]">
-                    {r.id.slice(0, 8)}…
-                  </td>
-                  <td className="px-4 py-3 text-[#4E5968] dark:text-[#9CA3AF]">
+                  <td className="text-left px-6 py-3 text-[#191F28] dark:text-[#F2F4F6] font-medium">
                     {r.product_name ?? '—'}
                   </td>
-                  <td className="px-4 py-3 text-[#4E5968] dark:text-[#9CA3AF]">
+                  <td className="text-center px-4 py-3 text-[#4E5968] dark:text-[#9CA3AF]">
                     {r.org_name ?? '—'}
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="text-center px-4 py-3">
                     <OrgStatusDot status={r.org_status} />
                   </td>
-                  <td className="px-4 py-3 text-[#4E5968] dark:text-[#9CA3AF]">
-                    {r.created_by_name ?? '—'}
+                  <td className="text-center px-4 py-3 text-[#4E5968] dark:text-[#9CA3AF]">
+                    {r.project_name ?? '—'}
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="text-center px-4 py-3 text-[#4E5968] dark:text-[#9CA3AF]">
+                    {executorLabel(r)}
+                  </td>
+                  <td className="text-center px-4 py-3">
                     <span
                       className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-medium ${statusStyle[r.status] ?? ''}`}
                     >
                       {statusLabel[r.status] ?? r.status}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-[#8B95A1]">{fmt(r.created_at)}</td>
+                  <td className="text-right px-6 py-3 text-[#8B95A1]">{fmt(r.created_at)}</td>
                 </tr>
               ))}
             </tbody>
