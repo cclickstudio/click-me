@@ -4,6 +4,17 @@
 
 - **총 테이블** 70개 · **FK 관계** 56개 · **Enum 타입** 10종
 
+> **[덧붙임 2026-07-06] 이 ERD는 6/24 스냅샷 — 이후 변경분은 아래 4건 (재생성 전까지 수동 반영)**
+>
+> | 변경 | 내용 | 마이그레이션 |
+> |---|---|---|
+> | 신설 | `management_notifications` — 이상 감지 운영 알림 (→organizations·projects FK, 미해결 부분 유니크) | 0005 |
+> | 신설 | `automation_runs` — APScheduler 워커 결과 공용 저장소 (3도메인, project_id 느슨 참조) | 0006 |
+> | 개명 | `chat_long_term_memory` → `chat_session_summaries` · `execution_history` → `chat_execution_history` | 0006 |
+> | 삭제 | `management_user_memory` (LLM 추출 기억 경로 제거 — 롱텀은 `chat_execution_history`로 일원화) | 0006 |
+>
+> 매니지먼트 실행 계열 테이블 이름의 신구 세대 문제(`idempotency_keys` vs `management_idempotency_keys` 등)는 `db-schema.md`의 [덧붙임 2026-07-06] 참조.
+
 
 ## 읽는 법
 
