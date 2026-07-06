@@ -12,11 +12,12 @@
 - [x] 시안 3개 미리보기 데이터 조회 경로 확인/보강 — sim_suggest payload.candidates에 idx·copy·image_url 임베드, 폴백은 `GET /api/generator/generations/{source_gen_id}`
 
 ## Phase 2 — 센터 shell
-- [ ] 우측 접이식 aside (fixed, height 100%, 패널 폭, flex column)
-- [ ] 접힘: 채팅·알림 버튼 세로 스택 + 미읽음 배지
-- [ ] 펼침: 상단 두 버튼 탭 전환
-- [ ] localStorage 상태 기억(펼침/접힘·마지막 센터)
-- [ ] AppLayout에서 FloatingChat·NotificationBell·우하단 알림버튼 제거·센터로 교체
+- [x] 우측 접이식 aside (fixed, height 100%, 패널 폭 w-72, flex column) — components/center/Center.tsx
+- [x] 접힘: 채팅·알림 버튼 세로 스택 + 미읽음 배지 (우측 가장자리 띠, 카운트 30s 폴링)
+- [x] 펼침: 상단 두 버튼 탭 전환 (TabButton, 접기 버튼)
+- [x] localStorage 상태 기억(펼침/접힘·마지막 센터) — center:expanded·center:tab
+- [~] AppLayout에서 FloatingChat·NotificationBell·우하단 알림버튼 제거·센터로 교체 — `<Center/>` 마운트 완료. **제거는 대체 콘텐츠(Phase 4 알림·Phase 5 채팅) 동작 후로 유보**(회귀 방지). 지금은 공존.
+- [x] api 클라이언트 center 블록(notifications·sessions·read·dismiss) + 타입(CenterNotificationItem·CenterSessionRow)
 
 ## Phase 3 — 필터 바
 - [ ] 세그먼트 [안읽음·읽음·전체] (채팅/알림 각각)

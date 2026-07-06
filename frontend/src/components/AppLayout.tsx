@@ -9,6 +9,7 @@ import CompanyPanel from './CompanyPanel';
 import AdminPanel from './AdminPanel';
 import ChangePasswordModal from './ChangePasswordModal';
 import NotificationBell from './manage/notifications/NotificationBell';
+import Center from './center/Center';
 
 // COMPANY 계정이 막아야 하는 경로 — 채팅·시뮬/제너 실행 + 내 정보 관리(USER 전용)
 // 정확 일치만 차단한다 — /simulation/[id](결과)·/generations/[id] 상세, /projects 등은 허용.
@@ -128,6 +129,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       )}
       <Sidebar mobileOpen={mobileNavOpen} />
       <NotificationBell />
+      {/* 우측 통합 센터(채팅·알림) — 접이식 aside. 기존 벨·플로팅은 Phase 4/5 이관 후 제거 예정. */}
+      <Center />
       {/* 좌측 컨텍스트 패널 — 모바일에선 숨김(메인 콘텐츠가 선택 UI 제공) */}
       <div className="max-md:hidden">
         <Panel collapsed={panelCollapsed} onToggle={togglePanel} />
