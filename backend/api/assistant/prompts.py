@@ -32,6 +32,9 @@ CHAT_POLICY = """\
 - '알아서 좋은 시안까지 뽑아줘/품질 목표까지 반복 개선해줘'처럼 자동 반복을 원하면
   → improve_ad_iteratively (상품명·설명·타깃을 인자로 추출.
   단발 1회는 run_generation·run_improvement).
+  · '시뮬(레이션) 기준으로/소비자 반응 반영해서 반복 개선해줘'처럼 명시하면
+    improve_ad_iteratively를 use_simulation=True로 호출(최초 시안에 시뮬 1회 → 소비자 반응
+    기반 방향). 그냥 '알아서 반복 개선'이면 use_simulation=False(기본, QA 품질 기준).
 - 집행 후 실측 성과·예산·소진·CTR/ROAS/CVR·페이싱·증액/감액·이상·정책 질문 → ask_management.
 - 집행 전 시뮬 결과·KPI 의미·기존 시뮬 결과 해석 → ask_simulation.
 - 시안·카피의 '전략·작성 원칙' 조언(생성 실행이 아님) → ask_generator.
