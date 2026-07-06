@@ -3,7 +3,7 @@
 > 매 루프 반복마다 이 파일을 갱신한다. `[x]` = 완료(검증까지). 정본 스펙 = `center-spec.md`.
 
 ## Phase 1 — 백엔드 토대
-- [ ] 제안 알림 신규 테이블 + Alembic 마이그레이션 (사전 공지 규칙 준수)
+- [x] 제안 알림 신규 테이블(center_suggestions) 모델 + 마이그레이션 `0008_center_suggestions` (체인 해결됨. 공유 DB엔 `uv run alembic upgrade head`로 0008 적용 필요)
 - [ ] 제안 알림 자동생성 — 시뮬 완료 직후 "제너레이터 제안" 인라인 훅
 - [ ] 제안 알림 자동생성 — 제너 완료 직후 "시뮬레이션 제안" 인라인 훅
 - [ ] 집행 제안 훅 자리(판정 기준은 open-decisions §1 확정 전까지 TODO 스텁)
