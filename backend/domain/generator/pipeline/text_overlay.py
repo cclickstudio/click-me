@@ -78,6 +78,23 @@ def _contrast_stroke(color: tuple[int, int, int, int]) -> tuple[int, int, int, i
     return (255, 255, 255, 230) if luminance < 140 else (0, 0, 0, 200)
 
 
+def _accent_or_tint(
+    accent: tuple[int, int, int], threshold: float = 140.0
+) -> tuple[int, int, int, int]:
+    """강조색이 threshold보다 어두우면 흰색과 섞어(tint) 색조는 유지한 채 최소 밝기를 확보한다.
+
+    box 스타일 패널이 항상 짙은 반투명 검정(예: 템플릿 A의 (0,0,0,190))이라,
+    실제 배경 픽셀 샘플링 없이 강조색 자체의 밝기만 봐도 대비 확보가 충분하다.
+    """
+    r, g, b = accent
+    luminance = 0.299 * r + 0.587 * g + 0.114 * b
+    if luminance >= threshold:
+        return (*accent, 255)
+    t = (threshold - luminance) / (255 - luminance)
+    tinted = tuple(int(c + (255 - c) * t) for c in (r, g, b))
+    return (*tinted, 255)
+
+
 @dataclass(frozen=True)
 class _Block:
     """텍스트 블록 — box는 (x0,y0,x1,y1) 화면 비율, align은 center|left."""
@@ -321,7 +338,7 @@ def _draw_highlighted(
     if cur:
         lines.append(cur)
 
-    accent_rgba = (*accent, 255)
+    accent_rgba = _accent_or_tint(accent)
     y = y0 + (box_h - line_h * len(lines)) // 2
     for line in lines:
         line_w = sum(draw.textlength(w, font=font) for w in line) + space_w * (len(line) - 1)

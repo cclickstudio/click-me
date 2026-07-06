@@ -46,7 +46,14 @@ _STRATEGY_PHOTO_STYLE: dict[AdStrategy, str] = {
     AdStrategy.FOMO: (
         "Bold promotional photography for a flash-sale feel. Dramatic high-contrast lighting, "
         "vibrant punchy colors, dynamic eye-grabbing composition that creates urgency. "
-        "High-conversion Meta promotion aesthetic."
+        "High-conversion Meta promotion aesthetic. "
+        "The packaged product is the HERO SUBJECT of the advertisement. "
+        "The product must be the largest and most visually dominant object. "
+        "Place the product in the center foreground. "
+        "No person, hand, text, or decorative object may cover any part of the product. "
+        "People are supporting elements only and must appear behind or beside the product. "
+        "All subjects should direct attention toward the product. "
+        "The advertisement should immediately communicate the product before any human subject."
     ),
 }
 
@@ -565,6 +572,9 @@ async def generate_image(
 
     # ── [개선 모드] Edit API ───────────────────────────────────────────────────
     if original_image_bytes is not None:
+        # template=None(개선 모드, 누끼 없이 원본 Edit)이면 A 레이아웃 문구로 폴백 —
+        # _TEMPLATE_STYLE/_TEMPLATE_SAFE_ZONES_EDIT/_TEXT_LAYOUT은 None 키가 없어 KeyError 방지.
+        effective_edit_template = template if template is not None else TemplateType.A
         core_values_str = (
             ", ".join(product_analysis.core_values) if product_analysis.core_values else "N/A"
         )
@@ -579,7 +589,7 @@ async def generate_image(
                 color_line=color_line,
                 tone_line=tone_line,
                 improvement_context=improvement_context or "전반적인 광고 품질을 개선하세요.",
-                text_layout=_TEXT_LAYOUT[template],
+                text_layout=_TEXT_LAYOUT[effective_edit_template],
                 headline=headline,
                 body=body,
                 cta=cta,
@@ -590,11 +600,11 @@ async def generate_image(
                 core_values=core_values_str,
                 target_audience=target_audience,
                 strategy_desc=_STRATEGY_DESCRIPTIONS[strategy],
-                style=_TEMPLATE_STYLE[template],
+                style=_TEMPLATE_STYLE[effective_edit_template],
                 color_line=color_line,
                 tone_line=tone_line,
                 improvement_context=improvement_context or "전반적인 광고 품질을 개선하세요.",
-                safe_zone=_TEMPLATE_SAFE_ZONES_EDIT[template],
+                safe_zone=_TEMPLATE_SAFE_ZONES_EDIT[effective_edit_template],
             )
 
         return await image_providers.edit(
