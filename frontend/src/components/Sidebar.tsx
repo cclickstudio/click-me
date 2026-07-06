@@ -32,6 +32,7 @@ const mainNav = [
 
 // 광고 매니지먼트 하위 메뉴 — 부모는 토글(자체 페이지 없음), 실제 화면은 여기로.
 const manageChildren = [
+  { label: '홈', href: '/manage' },
   { label: '캠페인', href: '/manage/campaigns' },
   { label: '모니터링', href: '/manage/monitoring' },
   { label: '이상 감지', href: '/manage/anomaly' },

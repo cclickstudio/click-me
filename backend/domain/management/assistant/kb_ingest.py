@@ -117,7 +117,7 @@ async def ingest() -> int:
             )
             db.add(doc)
             await db.flush()  # doc.id 확보
-            # 임베딩은 주입된 EmbeddingProvider(기본 BGE-M3 1024) — 검색(retriever)과 동일 차원.
+            # 임베딩은 주입된 EmbeddingProvider(text-embedding-3-small 1536) — 검색과 동일 차원.
             vectors = await embedder.embed([c for _, c in sections])
             for idx, ((title, chunk), vec) in enumerate(zip(sections, vectors, strict=True)):
                 db.add(

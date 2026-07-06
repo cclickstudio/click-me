@@ -1,6 +1,7 @@
 // 🅰 측정·진단 존 — 기대 vs 실측 노출 곡선(이상구간) + 진단 카드
 'use client';
 
+import { memo } from 'react';
 import dynamic from 'next/dynamic';
 import type { RunResult, ViewMode } from "./types";
 import { RoleTag } from "./RoleTag";
@@ -12,7 +13,8 @@ const MonitoringChart = dynamic(() => import('./MonitoringChart'), {
   ),
 });
 
-export function AZone({ run, mode }: { run: RunResult; mode: ViewMode }) {
+// memo — 스캔·busy 등 무관한 부모 리렌더 때 run·mode가 그대로면 차트째 스킵.
+export const AZone = memo(function AZone({ run, mode }: { run: RunResult; mode: ViewMode }) {
   const dx = run.diagnosis;
   return (
     <section className="flex-1 border rounded-2xl p-5 border-[#3182F6]/40 bg-[#3182F6]/[0.03]">
@@ -37,4 +39,4 @@ export function AZone({ run, mode }: { run: RunResult; mode: ViewMode }) {
       )}
     </section>
   );
-}
+});

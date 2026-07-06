@@ -7,7 +7,7 @@ from langchain_core.messages import HumanMessage
 from langsmith import traceable
 
 from domain.generator.contracts.pipeline_schemas import ImageAnalysis
-from domain.generator.llm.factory import build_vision_llm
+from domain.generator.llm.factory import build_vision_llm, with_llm_retry
 
 _PROMPT = """\
 Analyze this advertisement background image and return structured fields:
@@ -19,7 +19,7 @@ Analyze this advertisement background image and return structured fields:
 - suggested_text_color: a hex color with strong contrast against the overall image tone"""
 
 
-_llm = build_vision_llm(temperature=0.1).with_structured_output(ImageAnalysis)
+_llm = with_llm_retry(build_vision_llm(temperature=0.1).with_structured_output(ImageAnalysis))
 
 
 @traceable(

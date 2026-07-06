@@ -1,8 +1,6 @@
-import asyncio
 import json
 import uuid
 from collections.abc import AsyncGenerator
-from typing import TYPE_CHECKING
 from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
@@ -29,11 +27,6 @@ from domain.chat.loop_state import MAX_LOOP, get_loop_state
 from domain.management.assistant.history import record_feedback  # RAG 피드백 적재(/feedback)
 from tools.storage.s3 import download_bytes, upload_bytes
 
-if TYPE_CHECKING:
-    from openai import AsyncOpenAI
-
-    from domain.management.assistant.memory_store import ManagementMemory
-
 # 채팅 첨부 이미지 — 허용 타입과 S3 프리픽스(프록시 게이트).
 _ALLOWED_IMAGE_TYPES: dict[str, str] = {
     "image/png": "png",
@@ -47,11 +40,6 @@ router = APIRouter()
 # 팀 구조 엔드포인트 — POST /api/assistant/chat (기존 /api/chat/complete와 동일 로직 공유)
 assistant_router = APIRouter()
 
-_memory = None  # 세션 넘는 장기기억(management memory_store) 싱글톤
-_bg_tasks: set[asyncio.Task] = set()  # remember 백그라운드 — GC 방지 강참조
-_clio_client = None  # 메모리 추출·요약용 OpenAI(gpt-4o-mini) 싱글톤
-
-
 # ── 통합 채팅 에이전트(deepagents) — chat_complete의 실 경로 ──────────────────────
 _unified_agent = None
 _unified_agent_built = False
@@ -63,6 +51,11 @@ _LABEL_BY_SOURCE = {
     "deep-agent": "오케스트레이터",
     "orchestrator": "CLIO",
 }
+
+# 서브에이전트(ask_management/simulation/generator) 런 식별 태그 — 각 도메인 agent.py가
+# graph.ainvoke config에 싣는 도메인 태그(자식 LLM 런에 상속). 메인 채팅 런은 "chat"·
+# "unified-agent"만 달아 겹치지 않는다.
+_SUBAGENT_TAGS = frozenset({"management", "simulation", "generator"})
 
 
 def _get_unified_agent() -> object | None:
@@ -158,16 +151,6 @@ def _assemble_chat_meta(state: dict, engine_label: str) -> dict:
     return meta
 
 
-def _get_memory() -> "ManagementMemory":
-    """장기기억(ManagementMemory) 싱글톤 — recall/remember 공용."""
-    global _memory
-    if _memory is None:
-        from domain.management.assistant.memory_store import build_memory_store  # noqa: PLC0415
-
-        _memory = build_memory_store(settings)
-    return _memory
-
-
 def _memory_ids(body: ChatRequest, current_user: User) -> tuple[str | None, str | None]:
     """장기기억 네임스페이스 키 (tenant_id, user_id) — 본문 우선, 인증 유저 폴백."""
     user_id = body.user_id or (str(current_user.id) if getattr(current_user, "id", None) else None)
@@ -175,161 +158,59 @@ def _memory_ids(body: ChatRequest, current_user: User) -> tuple[str | None, str 
     return (str(tenant_id) if tenant_id else None), user_id
 
 
-async def _recall_memory_context(body: ChatRequest, query: str, current_user: User) -> str | None:
-    """로그인 사용자의 세션 넘는 장기기억을 시맨틱 회수해 맥락 문자열로 포맷(없으면 None)."""
-    tenant_id, user_id = _memory_ids(body, current_user)
-    if not user_id:
+async def _recall_memory_context(
+    body: ChatRequest, query: str, current_user: User | None = None
+) -> str | None:
+    """프로젝트의 실행 히스토리·이전 세션 요약·브랜드 프로파일을 맥락 문자열로 포맷(없으면 None).
+
+    current_user는 호출 규약 호환용(보은 remediation 경로) — 일원화 회수는 프로젝트 스코프라 미사용.
+
+    구 management_user_memory(LLM 추출 기억) 대체 — 실제 실행 기록 기반이라 오추출이 없다.
+    세션 요약은 '세션을 넘는' 대화 기억용 — 현 세션 요약은 프론트가 풀히스토리를 재전송하므로
+    중복이라 제외한다.
+    """
+    project_id = getattr(body, "project_id", None)
+    if not project_id:
         return None
+    lines: list[str] = []
     try:
-        rows = await _get_memory().recall(tenant_id, user_id, query=query, limit=5)
+        rows = await history.search_execution_history(project_id, query, k=5)
+        labels = {"simulation": "시뮬", "generation": "생성", "management": "매니지먼트"}
+        for r in rows:
+            when = (r.get("executed_at") or "")[:10]
+            feat = labels.get(r.get("feature_type"), r.get("feature_type") or "")
+            summary = (r.get("summary") or "").strip()[:80]
+            if summary:
+                lines.append(f"- [{when}] {feat}: {summary}")
+        summaries = await history.search_long_term_memory(
+            project_id, query, k=2, memory_type="session_summary"
+        )
+        for s in summaries:
+            c = s.get("content") or {}
+            text = str(c.get("summary") or "").strip()
+            if not text or c.get("session_id") == body.session_id:
+                continue
+            lines.append(f"- 이전 대화 요약: {text[:200]}")
+        brand = await history.get_brand_profile(project_id)
+        if brand:
+            parts = [
+                str(v)
+                for v in (
+                    brand.get("brand_name"),
+                    brand.get("tone"),
+                    brand.get("target_audience"),
+                    brand.get("product_category"),
+                )
+                if v
+            ]
+            if parts:
+                lines.append("- 브랜드 프로파일: " + " · ".join(parts))
     except Exception as exc:  # noqa: BLE001 — 회수 실패가 답변을 막지 않게
         print(f"[chat] recall error: {exc!r}")
         return None
-    lines = [
-        f"- {fact}" for r in rows if (fact := r.get("fact") or r.get("note") or r.get("summary"))
-    ]
     if not lines:
         return None
-    return "이 사용자의 장기기억(참고용):\n" + "\n".join(lines)
-
-
-def _spawn_remember(body: ChatRequest, meta: dict | None, current_user: User) -> None:
-    """행동 제안이 나온 턴을 장기기억에 적재(백그라운드, best-effort) — 과거 결정 요약 누적."""
-    sa = meta.get("suggested_action") if isinstance(meta, dict) else None
-    tenant_id, user_id = _memory_ids(body, current_user)
-    if not user_id or not sa:
-        return
-
-    async def _run() -> None:
-        try:
-            key = f"action:{body.session_id}:{sa.get('action_type', 'unknown')}"
-            fact = f"{sa.get('action_type', '')} 제안 — {str(sa.get('rationale', ''))[:120]}"
-            await _get_memory().remember(
-                tenant_id, user_id, key, {"fact": fact, "suggested_action": sa}
-            )
-        except Exception as exc:  # noqa: BLE001 — 적재 실패가 응답을 막지 않게
-            print(f"[chat] remember error: {exc!r}")
-
-    task = asyncio.create_task(_run())
-    _bg_tasks.add(task)
-    task.add_done_callback(_bg_tasks.discard)
-
-
-def _get_clio_client() -> "AsyncOpenAI | None":
-    """메모리 추출·요약용 OpenAI(gpt-4o-mini) 싱글톤. 키 없으면 None."""
-    global _clio_client  # noqa: PLW0603
-    if _clio_client is None:
-        key = getattr(settings, "openai_api_key", None)
-        if not key:
-            return None
-        from openai import AsyncOpenAI  # noqa: PLC0415
-
-        _clio_client = AsyncOpenAI(api_key=key)
-    return _clio_client
-
-
-_EXTRACT_PROMPT = (
-    "이 대화 턴에서 사용자에 대해 '세션을 넘어 기억할 가치가 있는 사실'이 있으면 추출하라.\n"
-    "- semantic: 지속 선호·속성(목표·플랫폼·예산대·톤). dedup_key로 같은 속성은 갱신.\n"
-    "- episodic: 한 일·결정(예: camp_1 일시중지 승인).\n"
-    "- 단발 현황 질문('이번 달 예산?')·잡담·인사는 should_store=false.\n"
-    "확신 없으면 should_store=false(과적재보다 누락이 안전).\n"
-    'JSON만 출력: {{"should_store": bool, "kind": "semantic|episodic|none", '
-    '"fact": "정규화된 한 문장 또는 null", "dedup_key": "pref:objective 같은 키 또는 null"}}\n\n'
-    "[질문]\n{q}\n\n[답변]\n{a}"
-)
-
-
-async def _extract_memory(question: str, answer: str) -> dict | None:
-    """턴에서 장기 저장할 사실을 LLM(gpt-4o-mini)으로 추출(M2). 저장 가치 없으면 None."""
-    import json as _json  # noqa: PLC0415
-
-    client = _get_clio_client()
-    if client is None:
-        return None
-    try:
-        resp = await client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {
-                    "role": "user",
-                    "content": _EXTRACT_PROMPT.format(q=question[:300], a=answer[:300]),
-                }
-            ],
-            temperature=0.0,
-            max_tokens=120,
-            response_format={"type": "json_object"},
-        )
-        data = _json.loads(resp.choices[0].message.content or "{}")
-    except Exception:  # noqa: BLE001 — 추출 실패는 저장 안 함(보수)
-        return None
-    if not data.get("should_store") or not data.get("fact"):
-        return None
-    return {
-        "kind": data.get("kind", "semantic"),
-        "fact": data["fact"],
-        "dedup_key": data.get("dedup_key"),
-    }
-
-
-async def _summarize_session(messages: list) -> str | None:
-    """대화를 사용자 관심사·진행 중심으로 2문장 요약(M6 episodic). 실패는 None."""
-    client = _get_clio_client()
-    if client is None:
-        return None
-    convo = "\n".join(f"{m.role}: {m.content[:200]}" for m in messages[-10:])
-    try:
-        resp = await client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {
-                    "role": "user",
-                    "content": (
-                        "다음 대화를 사용자 관심사·진행 상황 중심으로 2문장 이내 한국어로 "
-                        "요약하라. 단발 사실 나열 말고 맥락 위주.\n\n" + convo
-                    ),
-                }
-            ],
-            temperature=0.0,
-            max_tokens=150,
-        )
-        return (resp.choices[0].message.content or "").strip() or None
-    except Exception:  # noqa: BLE001
-        return None
-
-
-def _spawn_memory_capture(
-    body: ChatRequest, question: str, answer: str, current_user: User
-) -> None:
-    """전 라우트 자동 LTM 캡처(백그라운드) — M2 사실 추출 + M6 세션 요약. 로그인 유저만."""
-    tenant_id, user_id = _memory_ids(body, current_user)
-    if not user_id:
-        return
-
-    async def _run() -> None:
-        try:
-            extracted = await _extract_memory(question, answer)
-            if extracted:
-                key = extracted.get("dedup_key") or uuid.uuid4().hex
-                await _get_memory().remember(
-                    tenant_id, user_id, key, {"kind": extracted["kind"], "fact": extracted["fact"]}
-                )
-            # M6 — 멀티턴(≥8 메시지)이 쌓이면 4메시지마다 세션 요약 upsert(비용 통제).
-            if len(body.messages) >= 8 and len(body.messages) % 4 == 0:
-                summ = await _summarize_session(body.messages)
-                if summ:
-                    await _get_memory().remember(
-                        tenant_id,
-                        user_id,
-                        f"summary:{body.session_id}",
-                        {"kind": "episodic", "fact": summ},
-                    )
-        except Exception as exc:  # noqa: BLE001 — 캡처 실패가 응답을 막지 않게
-            print(f"[chat] memory capture error: {exc!r}")
-
-    task = asyncio.create_task(_run())
-    _bg_tasks.add(task)
-    task.add_done_callback(_bg_tasks.discard)
+    return "이 프로젝트의 과거 수행 이력(참고용):\n" + "\n".join(lines)
 
 
 def _cards_from_meta(meta: dict | None) -> list[dict]:
@@ -384,6 +265,7 @@ async def _persist(
     meta: dict | None,
     image_url: str | None = None,
     result_ref: dict | None = None,
+    option_select: dict | None = None,
 ) -> None:
     """한 턴을 DB에 적재(best-effort) — 세션 없거나 실패해도 채팅은 진행."""
     user_meta: dict = {}
@@ -391,6 +273,8 @@ async def _persist(
         user_meta["image_url"] = image_url
     if result_ref:
         user_meta["result"] = result_ref
+    if option_select:
+        user_meta["option_select"] = option_select
     try:
         async with AsyncSessionLocal() as db:
             await history.append_turn(
@@ -416,6 +300,29 @@ async def chat_complete(
         yield _sse("progress", progress={"label": "생각 중 🔄", "pct": None})
         # 세션 넘는 장기기억 회수 — 에이전트 맥락에 끼울 문자열(로그인 사용자만, best-effort).
         memory_context = await _recall_memory_context(body, last_message, current_user)
+        # 진행 중 이상 조치 상담 컨텍스트(management) — 옵션 버튼 meta가 오면 그걸 우선.
+        consult_ctx = None
+        if body.option_select:
+            try:
+                from domain.management.remediation.context import (  # noqa: PLC0415
+                    build_option_instruction,
+                )
+
+                consult_ctx = build_option_instruction(body.option_select)
+            except Exception:  # noqa: BLE001 — 매핑 실패가 채팅을 막지 않게
+                consult_ctx = None
+        if consult_ctx is None:
+            # meta는 왕복 안 되므로 서버가 세션에서 회수·주입(필수값 누락 meta도 여기로 폴백).
+            try:
+                from domain.management.remediation.context import (  # noqa: PLC0415
+                    recall_consult_context,
+                )
+
+                consult_ctx = await recall_consult_context(body.session_id, settings)
+            except Exception:  # noqa: BLE001 — 회수 실패가 채팅을 막지 않게
+                consult_ctx = None
+        if consult_ctx:
+            memory_context = f"{memory_context}\n\n{consult_ctx}" if memory_context else consult_ctx
 
         # [생성결과] 구조화 콜백 — 프론트가 보낸 결과 신호는 에이전트 거치지 않고 결정론 처리(개선루프).
         if result_callback.is_result_callback(last_message):
@@ -426,7 +333,13 @@ async def chat_complete(
             if meta.get("approval"):
                 yield _sse("approval", approval=meta["approval"])
             await _persist(
-                body.session_id, last_message, answer, meta, body.image_url, body.result_ref
+                body.session_id,
+                last_message,
+                answer,
+                meta,
+                body.image_url,
+                body.result_ref,
+                body.option_select,
             )
             yield _sse("done")
             return
@@ -440,7 +353,13 @@ async def chat_complete(
             for piece in _chunks(answer):
                 yield _sse("text", token=piece)
             await _persist(
-                body.session_id, last_message, answer, meta, body.image_url, body.result_ref
+                body.session_id,
+                last_message,
+                answer,
+                meta,
+                body.image_url,
+                body.result_ref,
+                body.option_select,
             )
             yield _sse("done")
             return
@@ -471,6 +390,8 @@ async def chat_complete(
             "project_id": body.project_id,
             "context_ad_id": body.context_ad_id,
             "memory_context": memory_context,
+            # 이번 턴 첨부 여부 — 상품 이미지가 있으면 run_generation이 폼 경로로 보낸다.
+            "has_image": bool(body.image_url),
         }
         acc = ""
         state: dict = {}
@@ -487,10 +408,14 @@ async def chat_complete(
                 msg_chunk, _meta_info = data
                 if "AIMessage" not in msg_chunk.__class__.__name__:
                     continue
-                # 서브에이전트 tool이 부르는 내부 LLM(예: 매니지먼트 KB grade의
-                # {"sufficient,rewrite})은 langsmith:nostream 태그로 표시 — ns=()로 새어도
-                # 여기서 걸러 답변에 안 섞이게 한다(최종 답변만 스트리밍).
-                if "langsmith:nostream" in ((_meta_info or {}).get("tags") or []):
+                # 서브에이전트 tool이 부르는 내부 LLM은 ns=()로 새어 들어온다 —
+                # ① langsmith:nostream 태그(예: 매니지먼트 KB grade의 {"sufficient,rewrite})
+                # ② 도메인 태그(management/simulation/generator — 서브에이전트 최종답 토큰이
+                #   먼저 흐른 뒤 딥에이전트 최종 답변이 또 흘러 같은 내용이 두 번 출력되던
+                #   중복 버그)
+                # 를 여기서 걸러 메인그래프 최종 답변만 스트리밍한다.
+                tags = set((_meta_info or {}).get("tags") or [])
+                if "langsmith:nostream" in tags or (_SUBAGENT_TAGS & tags):
                     continue
                 text = _extract_text(getattr(msg_chunk, "content", ""))
                 if text:
@@ -512,11 +437,17 @@ async def chat_complete(
         yield _sse("meta", meta=meta)
         if meta.get("approval"):
             yield _sse("approval", approval=meta["approval"])
-        await _persist(body.session_id, last_message, acc, meta, body.image_url, body.result_ref)
-        # 행동 제안이 나온 턴을 장기기억에 적재(백그라운드) — 다음 세션 recall에 반영.
-        _spawn_remember(body, meta, current_user)
-        # 전 라우트 자동 LTM 캡처(M2 사실추출 + M6 세션요약).
-        _spawn_memory_capture(body, last_message, acc, current_user)
+        # option_select는 remediation 옵션 흐름 지속용(보은). LLM 캡처 파이프라인
+        # (_spawn_remember·_spawn_memory_capture)은 메모리 일원화로 폐기 — 호출하지 않는다.
+        await _persist(
+            body.session_id,
+            last_message,
+            acc,
+            meta,
+            body.image_url,
+            body.result_ref,
+            body.option_select,
+        )
         yield _sse("done")
 
     return StreamingResponse(

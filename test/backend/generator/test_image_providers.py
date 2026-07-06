@@ -3,6 +3,7 @@ import base64
 
 import pytest
 
+from core.config import settings
 from domain.generator.contracts.enums import AdSize
 from domain.generator.pipeline import image_providers as ip
 
@@ -44,18 +45,35 @@ def fake_openai(monkeypatch):
     return client
 
 
-# ── gemini/미지원 provider는 거부 (config 훅 + OpenAI만 구현 설계) ──────────────
-async def test_edit_rejects_non_openai():
+# ── 편집·마스크·누끼는 openai 전용 op — 타 provider면 openai 키 있을 때 폴백, 없으면 거부 ──
+async def test_edit_falls_back_to_openai_when_key_present(fake_openai):
+    out = await ip.edit(b"x", "p", AdSize.SQUARE, provider="google_genai", model="m")
+    assert out == b"img"  # openai 폴백으로 파이프라인 유지
+    assert fake_openai.images.calls[0][0] == "edit"
+
+
+async def test_edit_raises_without_openai_key(monkeypatch):
+    monkeypatch.setattr(settings, "openai_api_key", None, raising=False)
     with pytest.raises(NotImplementedError):
         await ip.edit(b"x", "p", AdSize.SQUARE, provider="google_genai", model="m")
 
 
-async def test_edit_with_mask_rejects_non_openai():
-    with pytest.raises(NotImplementedError):
-        await ip.edit_with_mask(b"b", b"m", "p", AdSize.SQUARE, provider="google_genai", model="m")
+async def test_edit_with_mask_falls_back_to_openai_when_key_present(fake_openai):
+    out = await ip.edit_with_mask(
+        b"b", b"m", "p", AdSize.SQUARE, provider="google_genai", model="m"
+    )
+    assert out == b"img"
+    assert fake_openai.images.calls[0][0] == "edit"
 
 
-async def test_remove_background_rejects_non_openai():
+async def test_remove_background_falls_back_to_openai_when_key_present(fake_openai):
+    out = await ip.remove_background(b"x", provider="google_genai", model="m", quality="low")
+    assert out == b"img"
+    assert fake_openai.images.calls[0][0] == "edit"
+
+
+async def test_remove_background_raises_without_openai_key(monkeypatch):
+    monkeypatch.setattr(settings, "openai_api_key", None, raising=False)
     with pytest.raises(NotImplementedError):
         await ip.remove_background(b"x", provider="google_genai", model="m", quality="low")
 

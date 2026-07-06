@@ -122,11 +122,13 @@ function CandidateCard({
   isSelected,
   platform,
   aspect,
+  onZoom,
 }: {
   candidate: Candidate;
   isSelected: boolean;
   platform: string;
   aspect: string;
+  onZoom: (src: string, caption?: string) => void;
 }) {
   const copy = candidate.copy;
   const imgSrc = candidateImageSrc(candidate, platform);
@@ -139,7 +141,12 @@ function CandidateCard({
       }`}
     >
       {imgSrc ? (
-        <div className={`relative w-full ${aspect} bg-[#F9FAFB] dark:bg-[#161B27]`}>
+        <button
+          type="button"
+          onClick={() => onZoom(imgSrc, copy?.headline)}
+          title="클릭하면 크게 봐요"
+          className={`relative block w-full ${aspect} bg-[#F9FAFB] dark:bg-[#161B27] cursor-zoom-in`}
+        >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={imgSrc}
@@ -151,7 +158,7 @@ function CandidateCard({
               선택됨
             </span>
           )}
-        </div>
+        </button>
       ) : (
         <div className={`w-full ${aspect} bg-[#F2F4F6] dark:bg-[#161B27] flex items-center justify-center`}>
           <span className="text-sm text-[#B0B8C1]">이미지 없음</span>
@@ -263,10 +270,12 @@ function CarouselViewer({
   candidates,
   platform,
   aspect,
+  onZoom,
 }: {
   candidates: Candidate[];
   platform: string;
   aspect: string;
+  onZoom: (src: string, caption?: string) => void;
 }) {
   const slides = [...candidates].sort((a, b) => a.idx - b.idx);
   const [i, setI] = useState(0);
@@ -280,8 +289,15 @@ function CarouselViewer({
         className={`relative w-full ${aspect} rounded-2xl overflow-hidden border border-[#E5E8EB] dark:border-[#2D3748] bg-[#F9FAFB] dark:bg-[#161B27]`}
       >
         {imgSrc && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={imgSrc} alt={`슬라이드 ${cur + 1}`} className="w-full h-full object-contain" />
+          <button
+            type="button"
+            onClick={() => onZoom(imgSrc, c.copy?.headline)}
+            title="클릭하면 크게 봐요"
+            className="block w-full h-full cursor-zoom-in"
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={imgSrc} alt={`슬라이드 ${cur + 1}`} className="w-full h-full object-contain" />
+          </button>
         )}
         {cur > 0 && (
           <button
@@ -342,6 +358,17 @@ export default function GenerationDetailPage() {
   const [deleting, setDeleting] = useState(false);
   const [restoring, setRestoring] = useState(false);
   const [platform, setPlatform] = useState<string>('ig_feed');
+  // 시안 클릭 확대(라이트박스) — src + 헤드라인 캡션. ESC/배경 클릭으로 닫는다.
+  const [lightbox, setLightbox] = useState<{ src: string; caption?: string } | null>(null);
+
+  useEffect(() => {
+    if (!lightbox) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setLightbox(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [lightbox]);
 
   // generator 상세 — USE_MOCK=false면 org 스코프 인증 필요(머지 후) → 토큰 헤더 전달.
   useEffect(() => {
@@ -500,7 +527,12 @@ export default function GenerationDetailPage() {
                   </div>
                 </div>
                 {isCarousel ? (
-                  <CarouselViewer candidates={data.candidates} platform={platform} aspect={aspect} />
+                  <CarouselViewer
+                    candidates={data.candidates}
+                    platform={platform}
+                    aspect={aspect}
+                    onZoom={(src, caption) => setLightbox({ src, caption })}
+                  />
                 ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                     {data.candidates.map(c => (
@@ -510,6 +542,7 @@ export default function GenerationDetailPage() {
                         isSelected={c.candidate_id === data.selected_candidate_id}
                         platform={platform}
                         aspect={aspect}
+                        onZoom={(src, caption) => setLightbox({ src, caption })}
                       />
                     ))}
                   </div>
@@ -559,6 +592,38 @@ export default function GenerationDetailPage() {
               )}
             </div>
           </>
+        )}
+
+        {/* 시안 확대 라이트박스 — 배경 클릭·ESC·✕로 닫기 */}
+        {lightbox && (
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="시안 확대 보기"
+            className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-6 cursor-zoom-out"
+            onClick={() => setLightbox(null)}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={lightbox.src}
+              alt={lightbox.caption ?? '시안 확대 보기'}
+              className="max-w-full max-h-[85vh] object-contain rounded-xl shadow-2xl cursor-default"
+              onClick={e => e.stopPropagation()}
+            />
+            {lightbox.caption && (
+              <p className="absolute bottom-6 left-1/2 -translate-x-1/2 max-w-[80%] truncate text-white/90 text-sm bg-black/50 px-3 py-1.5 rounded-full">
+                {lightbox.caption}
+              </p>
+            )}
+            <button
+              type="button"
+              onClick={() => setLightbox(null)}
+              aria-label="닫기"
+              className="absolute top-4 right-4 w-9 h-9 rounded-full bg-black/50 text-white text-base hover:bg-black/70"
+            >
+              ✕
+            </button>
+          </div>
         )}
       </div>
   );

@@ -4,10 +4,12 @@
 import { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useProjects } from '@/components/ProjectContext';
+import { CreateProjectModal } from '@/components/ProjectPanel';
+import { goalFromObjective } from '@/lib/metaObjective';
 import { useChatController } from '@/components/chat/ChatController';
 import ErrorCard from '@/components/chat/ErrorCard';
 import { openReconnectingStream } from '@/lib/sse';
-import { api } from '@/lib/api';
+import { api, getAdminOrgId } from '@/lib/api';
 import { saveSimComparison, saveSimResult } from '@/lib/simResultStore';
 import { getJobs, setSimJob } from '@/lib/runningJobs';
 import { SIM_CATEGORIES } from '@/lib/simCategories';
@@ -115,7 +117,7 @@ const AGE_BANDS: { label: string; min: number; max: number }[] = [
 ];
 
 export default function SimulationRunPage() {
-  const { projects, refreshDetails } = useProjects();
+  const { projects, refreshDetails, refresh, loading: projectsLoading } = useProjects();
   // 화면 내 프로젝트 선택은 로컬 상태 — 사이드바(전역 선택)와 동기화하지 않는다.
   // 진입 시 전역 선택(localStorage)을 초기값으로만 읽고, 이후 변경은 이 화면에만 반영된다.
   const [localProjectId, setLocalProjectId] = useState<string | null>(null);
@@ -163,6 +165,10 @@ export default function SimulationRunPage() {
   const [selectedCampaignId, setSelectedCampaignId] = useState('');
   const [campaignImageUrl, setCampaignImageUrl] = useState('');
   const [campaignImgError, setCampaignImgError] = useState(false);
+  // 선택 캠페인의 Meta 실측 도달수(원값) — 표본 상한과 별개로 슬라이더 라벨에 표시.
+  const [campaignReach, setCampaignReach] = useState<number | null>(null);
+  // from_campaign 진입 시 프로젝트가 없을 때 뜨는 생성 모달.
+  const [showCreateProject, setShowCreateProject] = useState(false);
   // VLM 읽기 사전확인 — url/campaign 모드의 이미지 URL을 백엔드가 읽을 수 있는지.
   const [vlmCheck, setVlmCheck] = useState<{
     status: 'idle' | 'checking' | 'ok' | 'fail';
@@ -302,10 +308,44 @@ export default function SimulationRunPage() {
       if (t.ad_body && !adContent.trim()) setAdContent(t.ad_body);
       if (t.category_id && categoryId === '') setCategoryId(t.category_id);
       if (t.service_class && serviceClass === '') setServiceClass(t.service_class);
+      // 광고 목표·연령·성별도 Meta 값으로 prefill(비어 있을 때만 — 사용자 수정 보존).
+      const goal = goalFromObjective(t.objective);
+      if (goal && !goalItem) setGoalItem(goal);
+      if (t.gender && !gender) setGender(t.gender);
+      if ((t.age_min != null || t.age_max != null) && ageBands.length === 0) {
+        const lo = t.age_min ?? 18;
+        const hi = t.age_max ?? 65;
+        const bands = AGE_BANDS.filter(b => b.min <= hi && b.max >= lo).map(b => b.label);
+        if (bands.length) setAgeBands(bands);
+      }
+      // 가상 소비자 수 = Meta 실측 도달수 기반 추천값(reader가 10~200으로 클램프). reach는 원값 표시용.
+      setCampaignReach(typeof t.reach === 'number' ? t.reach : null);
+      if (t.suggested_persona_count) setSampleSize(t.suggested_persona_count);
     } catch {
       /* 조회 실패 — 이미지 없이 진행 */
     }
   };
+
+  // compare '이 캠페인으로 시뮬 돌리기' 진입 — URL의 from_campaign을 집행중 광고로 자동 선택·prefill.
+  useEffect(() => {
+    const cid = new URLSearchParams(window.location.search).get('from_campaign');
+    if (!cid) return;
+    setInputMode('campaign');
+    setSelectedCampaignId(cid);
+    void onSelectCampaign(cid);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // from_campaign 진입 시 프로젝트 자동 처리: 1개면 자동선택 · 0개면 생성 모달 · 여러개면 사용자 선택 유도.
+  useEffect(() => {
+    const cid = new URLSearchParams(window.location.search).get('from_campaign');
+    if (!cid || projectsLoading || selectedProject) return;
+    if (projects.length === 1) {
+      selectProject(projects[0].id);
+    } else if (projects.length === 0) {
+      setShowCreateProject(true);
+    }
+  }, [projectsLoading, projects, selectedProject]);
 
   // 시뮬레이션 설정
   const [sampleSize, setSampleSize] = useState(20);
@@ -346,6 +386,11 @@ export default function SimulationRunPage() {
         categories.find(c => c.id === categoryId)?.name || undefined,
       service_class:
         typeof serviceClass === 'number' ? serviceClass : undefined,
+      // 집행중 광고 기반 시뮬 — 완료 후 서버가 캠페인↔시뮬 자동 링크(성과 비교 '집행 전 예측' 채움).
+      // 링크는 from_campaign_id + organization_id가 함께 있을 때만 걸린다(simulation_service).
+      from_campaign_id:
+        inputMode === 'campaign' && selectedCampaignId ? selectedCampaignId : undefined,
+      organization_id: getAdminOrgId() ?? undefined,
     };
   }
 
@@ -625,10 +670,17 @@ export default function SimulationRunPage() {
             프로젝트 <span className='text-[#F74D4D]'>*</span>
           </label>
           {projects.length === 0 ? (
-            <p className='text-sm text-[#8B95A1] dark:text-[#6B7280]'>
-              선택할 프로젝트가 없습니다. 왼쪽 패널에서 프로젝트를 먼저 만들어
-              주세요.
-            </p>
+            <div className='flex items-center gap-3'>
+              <p className='text-sm text-[#8B95A1] dark:text-[#6B7280]'>
+                선택할 프로젝트가 없습니다.
+              </p>
+              <button
+                type='button'
+                onClick={() => setShowCreateProject(true)}
+                className='px-3 py-1.5 rounded-lg bg-[#3182F6] hover:bg-[#1B64DA] text-white text-xs font-semibold transition-colors'>
+                + 프로젝트 만들기
+              </button>
+            </div>
           ) : (
             <Select
               aria-label='프로젝트 선택'
@@ -639,6 +691,27 @@ export default function SimulationRunPage() {
             />
           )}
         </div>
+
+        {/* from_campaign 진입 등에서 프로젝트가 없을 때 — 캠페인명으로 프리필된 생성 모달. */}
+        {showCreateProject && (
+          <CreateProjectModal
+            defaultName={
+              new URLSearchParams(window.location.search).get('from_name') ?? ''
+            }
+            onClose={() => {
+              setShowCreateProject(false);
+              // from_campaign 진입이었으면 성과비교로 복귀(그 외엔 그냥 닫힘).
+              if (new URLSearchParams(window.location.search).get('from_campaign')) {
+                router.back();
+              }
+            }}
+            onCreated={async created => {
+              setShowCreateProject(false);
+              await refresh();
+              if (created?.id) selectProject(created.id);
+            }}
+          />
+        )}
 
         <div className='grid grid-cols-[1fr_1fr] gap-5 items-stretch'>
           {/* ── 왼쪽: 광고 입력 ── */}
@@ -1072,6 +1145,11 @@ export default function SimulationRunPage() {
                             {sampleSize}명
                           </span>
                         </label>
+                        {campaignReach != null && campaignReach > 0 && (
+                          <p className='text-[11px] text-[#8B95A1] dark:text-[#6B7280] mb-1'>
+                            실제 Meta 도달 {campaignReach.toLocaleString()}명 → 표본 최대 200명
+                          </p>
+                        )}
                         <input
                           type='range'
                           min={1}

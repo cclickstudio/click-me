@@ -13,6 +13,10 @@ class AskRequest(BaseModel):
     thread_id: str | None = None  # 멀티턴 키 — 같은 세션이면 같은 값(없으면 새로 생성)
     # 세션 넘는 장기기억 회수 결과(있으면 react가 LLM 맥락에 주입). 폴백은 무시(라우팅 불변).
     memory_context: str | None = None
+    # 정본 대화 히스토리((role, content) 텍스트) — 통합 채팅이 넘긴다. 스레드(체크포인터)는
+    # 도구 결과·HITL 상태를 든 '파생 캐시'라, 비어 있을 때만 이걸로 시드해 이중 누적 없이
+    # 재시작·인메모리 유실에서 맥락을 복구한다. 단독 호출은 생략 가능(기존과 동일).
+    history: list[tuple[str, str]] | None = None
 
 
 class Citation(BaseModel):

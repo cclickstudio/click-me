@@ -1,7 +1,9 @@
 'use client';
 
-import { useState } from 'react';
-import { api, type AnomalyScanItem } from '@/lib/api';
+import { useCallback, useEffect, useState } from 'react';
+import Link from 'next/link';
+import dynamic from 'next/dynamic';
+import { api, type AnomalyScanItem, type AutomationRunItem } from '@/lib/api';
 import { AZone } from '@/components/manage/AZone';
 import { BZone } from '@/components/manage/BZone';
 import { ApprovalBridge } from '@/components/manage/ApprovalBridge';
@@ -10,22 +12,33 @@ import { KpiStrip } from '@/components/manage/KpiStrip';
 import type { ActionResult, AuditEvent, RunResult, ViewMode } from '@/components/manage/types';
 import { Select } from '@/components/ui/Select';
 
+// 내부 동작(arch) 파이프라인 그래프 — reactflow는 DOM 측정이 필요해 ssr:false로 클라 전용 로드.
+const PipelineGraph = dynamic(() => import('@/components/manage/PipelineGraph'), {
+  ssr: false,
+  loading: () => (
+    <div className="mb-4 h-[264px] animate-pulse rounded-2xl bg-[#F2F4F6] dark:bg-[#2D3748]" />
+  ),
+});
+
 // 주입할 문제 상황 — value는 백엔드 enum, label/symptom은 사용자용.
+// 주입 강도는 mock.py fetch_hourly_metrics의 고장 파라미터와 동일하게 서술(문서 §4.5).
 const FAULT_OPTIONS = [
   {
     value: 'bid_loss',
     label: '입찰 경쟁 패배 — 노출 급감',
-    symptom: '14시부터 노출이 급감하는데 예산은 남아요. 경매가 급등·낙찰률 하락 신호예요.',
+    symptom:
+      '14시부터 경매가(CPM)가 기준의 1.5배 이상으로 급등하고 낙찰률이 25%로 떨어져요. 예산은 남는데 노출이 급감하는 전형적 입찰 패배 신호예요.',
   },
   {
     value: 'review_rejected',
     label: '심사 거부 — 게재 중단',
-    symptom: '광고가 심사에서 거부돼 노출이 전면 중단돼요.',
+    symptom: '14시부터 광고가 심사 거부(DISAPPROVED)돼 노출이 0으로 전면 중단돼요.',
   },
   {
     value: 'none',
     label: '정상 — 문제 없음',
-    symptom: '이상 없이 정상 게재돼요. 감지기가 "정상"으로 판정하는지 확인하는 경우예요.',
+    symptom:
+      '이상 없이 정상 게재돼요(CPM 기준값 ±8%·지출 = 일예산). 감지기가 "정상"으로 판정하는지 확인하는 경우예요.',
   },
 ];
 
@@ -43,8 +56,10 @@ export default function Page() {
     null,
   );
   const [scanBusy, setScanBusy] = useState(false);
+  // 서버 워커(APScheduler)가 자동으로 남긴 결과 — 탭 안 열려도 서버가 해둔 걸 읽어 표시.
+  const [workerRuns, setWorkerRuns] = useState<AutomationRunItem[]>([]);
 
-  const scanReal = async () => {
+  const scanReal = useCallback(async () => {
     setScanBusy(true);
     try {
       const r = await api.management.anomalyScan(3.0);
@@ -54,7 +69,21 @@ export default function Page() {
     } finally {
       setScanBusy(false);
     }
-  };
+  }, []);
+
+  // 진입 시 1회 스냅샷만 — 상시 이상 감지는 백엔드 워커(APScheduler)가 서버에서 수행하고(§8 전환:
+  // 클라 자동 스캔 루프 제거), 화면은 아래 "서버 자동 점검 결과"로 워커 결과를 읽는다. 재스캔은 수동 버튼.
+  useEffect(() => {
+    void scanReal();
+  }, [scanReal]);
+
+  // 서버 워커가 남긴 자동 점검 결과 로드(진입 시 1회) — 워커는 서버에서 상시 돌고, 화면은 읽기만.
+  useEffect(() => {
+    api.automation
+      .runs({ domain: 'management', limit: 10 })
+      .then((r) => setWorkerRuns(r.runs))
+      .catch(() => setWorkerRuns([]));
+  }, []);
 
   const start = async () => {
     setBusy(true);
@@ -188,7 +217,8 @@ export default function Page() {
                 실 캠페인 성과 이상 스캔
               </p>
               <p className="text-[12px] text-[#8B95A1] mt-0.5">
-                실제 Meta 캠페인을 돌며 성과 진단(ROAS 미달·전환 저조)을 실측합니다. 위 시연과 별개.
+                실제 Meta 캠페인을 돌며 성과 진단(ROAS 미달·전환 저조)·빈도 피로(3+)를 실측합니다.
+                진입 시와 10분마다 자동 스캔되고, 버튼으로 즉시 재실행할 수 있어요. 위 시연과 별개.
               </p>
             </div>
             <button
@@ -221,6 +251,14 @@ export default function Page() {
                         {a.diagnosis.hypothesis}
                       </p>
                     )}
+                    {a.suggested_action === 'REPLACE_CREATIVE' && (
+                      <Link
+                        href="/generator"
+                        className="mt-1 inline-block text-[12px] font-semibold text-[#3182F6] hover:underline"
+                      >
+                        개선 시안 만들러 가기(제너레이터) →
+                      </Link>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -233,10 +271,110 @@ export default function Page() {
           )}
         </div>
 
+        {/* 서버 워커 자동 점검 결과 — 내부 운영 정보라 '내부 동작'(arch)에서만 노출 */}
+        {mode === 'arch' && (
+        <div className="mb-4 rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] px-4 py-3">
+          <p className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]">
+            서버 자동 점검 결과
+          </p>
+          <p className="text-[12px] text-[#8B95A1] mt-0.5">
+            백엔드 워커(APScheduler)가 서버에서 주기적으로 스스로 점검해 남긴 결과예요. 이 화면을 열어두지
+            않아도 서버가 자동으로 쌓아둡니다.
+          </p>
+          {workerRuns.length === 0 ? (
+            <p className="mt-2 text-[12px] text-[#8B95A1]">
+              아직 서버 자동 점검 결과가 없어요(워커 비활성이거나 이상 미발견).
+            </p>
+          ) : (
+            <ul className="mt-2 space-y-1.5">
+              {workerRuns.map((r) => (
+                <li
+                  key={r.id}
+                  className="rounded-lg bg-[#F9FAFB] dark:bg-[#1A202C] px-3 py-2"
+                >
+                  <p className="text-[12px] font-semibold text-[#191F28] dark:text-[#F2F4F6]">
+                    {r.title || r.job_name}
+                    {r.created_at && (
+                      <span className="ml-2 font-normal text-[#B0B8C1]">
+                        {r.created_at.slice(0, 16).replace('T', ' ')}
+                      </span>
+                    )}
+                  </p>
+                  {r.body && <p className="text-[12px] text-[#8B95A1]">{r.body}</p>}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+        )}
+
         <KpiStrip run={run} />
 
         {run ? (
           <>
+            {/* 내부 동작(arch) — 백엔드 워커 파이프라인 그래프. 사용자 보기에선 숨김 */}
+            {mode === 'arch' && (
+              <PipelineGraph run={run} decided={decided} result={result} />
+            )}
+            {/* 탐지 기준 — 가정치·이상 판정 규칙(파라미터). 내부 동작(arch)에서만 노출 */}
+            {mode === 'arch' && run.assumptions && (
+              <div className="mb-4 rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-[#F9FAFB] dark:bg-[#1A202C] px-5 py-3.5">
+                <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+                  <span className="text-[13px] font-semibold text-[#4E5968] dark:text-[#9CA3AF]">
+                    탐지 기준
+                  </span>
+                  {(
+                    [
+                      [
+                        '가정 일예산',
+                        `₩${run.assumptions.daily_budget_krw.toLocaleString()} (소기업 벤치마크 · 월 300만 페이스)`,
+                      ],
+                      [
+                        '기준 CPM',
+                        `₩${run.assumptions.cpm_anchor_krw.toLocaleString()} (국내 실측 중앙값)`,
+                      ],
+                      [
+                        '정상 CPM 범위',
+                        `₩${run.assumptions.cpm_normal_range_krw[0].toLocaleString()}~${run.assumptions.cpm_normal_range_krw[1].toLocaleString()}`,
+                      ],
+                      ['기준 CTR', `${(run.assumptions.base_ctr * 100).toFixed(1)}%`],
+                      [
+                        '이상 판정',
+                        `기대 노출의 ${Math.round(run.assumptions.deficit_threshold * 100)}% 미만이 ${run.assumptions.min_consecutive_hours}시간 이상 연속`,
+                      ],
+                    ] as [string, string][]
+                  ).map(([label, value]) => (
+                    <div key={label}>
+                      <p className="text-[11px] text-[#8B95A1]">{label}</p>
+                      <p className="mt-0.5 text-[13px] font-semibold text-[#191F28] dark:text-[#F2F4F6]">
+                        {value}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+                <p className="mt-2 border-t border-[#F2F4F6] dark:border-[#2D3748] pt-2 text-[11px] text-[#8B95A1]">
+                  출처{' '}
+                  {run.assumptions.sources.map((s, i) => (
+                    <span key={s.label}>
+                      {i > 0 && ' · '}
+                      {s.url.startsWith('http') ? (
+                        <a
+                          href={s.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="underline decoration-dotted underline-offset-2 hover:text-[#3182F6]"
+                        >
+                          {s.label}
+                        </a>
+                      ) : (
+                        <span title={s.url}>{s.label}</span>
+                      )}
+                    </span>
+                  ))}{' '}
+                  · 기대 곡선은 일중 이중 봉우리(점심 12~13시·저녁 20~23시) 패턴
+                </p>
+              </div>
+            )}
             {(() => {
               const ran = FAULT_OPTIONS.find((o) => o.value === run.fault);
               const detected = run.anomaly_hours.length > 0;

@@ -1,5 +1,5 @@
-// 캠페인 목록 — 테이블 뷰 (행 클릭 = 선택, 그 아래로 상세 펼침)
-import { Fragment } from 'react';
+// 캠페인 목록 — 테이블 뷰 (행 클릭 = 선택, 그 아래로 상세 펼침) + 헤더 클릭 정렬 + 간단/전체 지표 토글
+import { Fragment, memo, useMemo, useState } from 'react';
 import type {
   AccountWallet,
   CampaignDetail as Detail,
@@ -17,7 +17,22 @@ import { KpiInput } from './KpiInput';
 import { Blocked } from './MetricGuard';
 import { OriginTag } from '../ValueOrigin';
 
-export function CampaignTable({
+// 정렬 가능한 실측 숫자 컬럼 — CVR·ROAS는 수동 추정이 섞여 정렬 대상에서 제외.
+type SortKey =
+  | 'daily_budget_krw'
+  | 'impressions'
+  | 'clicks'
+  | 'spend_krw'
+  | 'ctr'
+  | 'cpc_krw'
+  | 'cpm_krw'
+  | 'pacing_pct';
+
+type ColumnMode = 'core' | 'all'; // core=핵심 7컬럼(스캔용) / all=전체 12컬럼
+
+// memo — 프롭(campaigns·selected·manualKpi·안정 핸들러)이 그대로면 스킵.
+// 상위에서 전환가치·ROAS 타이핑 중 20행 표가 매 키 입력마다 재조정되던 것을 막는다.
+export const CampaignTable = memo(function CampaignTable({
   campaigns,
   selected,
   onSelect,
@@ -48,28 +63,138 @@ export function CampaignTable({
   onChanged?: () => void;
   source?: CampaignSource;
 }) {
+  const [mode, setMode] = useState<ColumnMode>('core');
+  const [sortKey, setSortKey] = useState<SortKey | null>(null);
+  const [sortDesc, setSortDesc] = useState(true);
+
+  // 같은 헤더 재클릭 = 방향 토글, 세 번째 클릭 = 정렬 해제(서버 최근순 복귀).
+  const toggleSort = (key: SortKey) => {
+    if (sortKey !== key) {
+      setSortKey(key);
+      setSortDesc(true);
+    } else if (sortDesc) {
+      setSortDesc(false);
+    } else {
+      setSortKey(null);
+    }
+  };
+
+  const rows = useMemo(() => {
+    if (!sortKey) return campaigns;
+    return [...campaigns].sort((a, b) => {
+      // 권한 없음 행은 값이 없으므로 항상 아래로.
+      const av = metricsBlocked(a) ? -Infinity : (a[sortKey] ?? -Infinity);
+      const bv = metricsBlocked(b) ? -Infinity : (b[sortKey] ?? -Infinity);
+      return sortDesc ? bv - av : av - bv;
+    });
+  }, [campaigns, sortKey, sortDesc]);
+
+  const all = mode === 'all';
+  // 상세 펼침 colSpan — 표시 중인 컬럼 수와 일치시킨다.
+  const colCount = all ? 13 : 8;
+
+  const arrow = (key: SortKey) =>
+    sortKey === key ? (
+      <span className="ml-0.5 text-[#3182F6]">{sortDesc ? '▼' : '▲'}</span>
+    ) : null;
+
+  const thSort = (key: SortKey, label: string, sub?: string, title?: string, cls = '') => (
+    <th
+      className={`text-right font-semibold px-3 py-2.5 cursor-pointer select-none hover:text-[#3182F6] ${cls}`}
+      title={title ?? '클릭하면 정렬'}
+      onClick={() => toggleSort(key)}
+    >
+      {label}
+      {arrow(key)}
+      {sub && (
+        <span className="block font-normal text-[11px] text-[#8B95A1] leading-tight">{sub}</span>
+      )}
+    </th>
+  );
+
   return (
     <div className="rounded-2xl border border-[#E5E8EB] dark:border-[#2D3748] overflow-hidden">
+      {/* 툴바 — 컬럼 밀도 토글(핵심만 훑기 vs 전체 지표) */}
+      <div className="flex items-center justify-end gap-2 px-3 py-2 bg-[#F9FAFB] dark:bg-[#1A202C] border-b border-[#F2F4F6] dark:border-[#2D3748]">
+        <span className="text-[11px] text-[#8B95A1]">
+          {sortKey ? '정렬 적용 중 — 헤더 재클릭으로 해제' : '헤더 클릭으로 정렬'}
+        </span>
+        <div className="flex rounded-lg border border-[#E5E8EB] dark:border-[#2D3748] overflow-hidden text-[11px]">
+          {(
+            [
+              ['core', '핵심 지표'],
+              ['all', '전체 지표'],
+            ] as [ColumnMode, string][]
+          ).map(([key, label]) => (
+            <button
+              key={key}
+              onClick={() => setMode(key)}
+              className={`px-2.5 py-1 ${
+                mode === key
+                  ? 'bg-[#3182F6] text-white'
+                  : 'text-[#8B95A1] hover:bg-[#F2F4F6] dark:hover:bg-[#2D3748]'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
       <table className="w-full text-sm [&_td]:whitespace-nowrap [&_th]:whitespace-nowrap">
         <thead>
           <tr className="bg-[#F9FAFB] dark:bg-[#1A202C] text-[#4E5968] dark:text-[#9CA3AF] text-xs">
             <th className="text-left font-semibold px-4 py-2.5 w-full">캠페인</th>
             <th className="text-left font-semibold px-3 py-2.5">상태</th>
-            <th className="text-right font-semibold px-3 py-2.5" title="하루 최대 한도 (총액 아님)">일예산<OriginTag origin="setting" /></th>
-            <th className="text-right font-semibold px-3 py-2.5">노출</th>
-            <th className="text-right font-semibold px-3 py-2.5 hidden sm:table-cell">클릭</th>
-            <th className="text-right font-semibold px-3 py-2.5">지출</th>
-            <th className="text-right font-semibold px-3 py-2.5 hidden md:table-cell">CTR<span className="block font-normal text-[11px] text-[#8B95A1] leading-tight">클릭률</span></th>
-            <th className="text-right font-semibold px-3 py-2.5 hidden md:table-cell">CPC<span className="block font-normal text-[11px] text-[#8B95A1] leading-tight">클릭당비용</span></th>
-            <th className="text-right font-semibold px-3 py-2.5 hidden lg:table-cell">CPM<span className="block font-normal text-[11px] text-[#8B95A1] leading-tight">노출당비용</span></th>
-            <th className="text-right font-semibold px-3 py-2.5 hidden lg:table-cell" title="전환율 = 전환수 ÷ 클릭수 (광고가 클릭을 전환으로 얼마나 잘 바꿨나). 전환 추적 전이면 셀에 직접 입력(추정)">CVR<span className="block font-normal text-[11px] text-[#8B95A1] leading-tight">전환율</span></th>
-            <th className="text-right font-semibold px-3 py-2.5 hidden lg:table-cell" title="투자수익률 = (전환가치 × 전환수) ÷ 지출. 전환가치를 모르면 셀에 직접 입력(추정)">ROAS<span className="block font-normal text-[11px] text-[#8B95A1] leading-tight">투자수익률</span></th>
-            <th className="text-right font-semibold px-4 py-2.5" title="당일 일예산(하루 상한) 대비 지출(=지출÷일예산). 종료 캠페인은 의미 없어 '종료'로 표시">소진율<OriginTag origin="computed" /></th>
+            {all && (
+              <th
+                className="text-right font-semibold px-3 py-2.5 cursor-pointer select-none hover:text-[#3182F6]"
+                title="하루 최대 한도 (총액 아님) · 클릭하면 정렬"
+                onClick={() => toggleSort('daily_budget_krw')}
+              >
+                일예산{arrow('daily_budget_krw')}
+                <OriginTag origin="setting" />
+              </th>
+            )}
+            {all && thSort('impressions', '노출')}
+            {all && thSort('clicks', '클릭', undefined, undefined, 'hidden sm:table-cell')}
+            {thSort('spend_krw', '지출')}
+            {thSort('ctr', 'CTR', '클릭률', undefined, all ? 'hidden md:table-cell' : '')}
+            {all && thSort('cpc_krw', 'CPC', '클릭당비용', undefined, 'hidden md:table-cell')}
+            {all &&
+              thSort(
+                'cpm_krw',
+                'CPM',
+                '노출당비용',
+                '노출 1,000회당 평균 비용 = 지출 ÷ 노출 × 1,000 (합산되는 금액 아님) · 클릭하면 정렬',
+                'hidden lg:table-cell',
+              )}
+            <th
+              className={`text-right font-semibold px-3 py-2.5 ${all ? 'hidden lg:table-cell' : ''}`}
+              title="전환율 = 전환수 ÷ 링크 클릭수 (광고가 클릭을 전환으로 얼마나 잘 바꿨나). CTR의 전체 클릭과 분모가 달라요. 전환 추적 전이면 셀에 직접 입력(추정)"
+            >
+              CVR
+              <span className="block font-normal text-[11px] text-[#8B95A1] leading-tight">전환율</span>
+            </th>
+            <th
+              className={`text-right font-semibold px-3 py-2.5 ${all ? 'hidden lg:table-cell' : ''}`}
+              title="투자수익률 = (전환가치 × 전환수) ÷ 지출. 전환가치를 모르면 셀에 직접 입력(추정)"
+            >
+              ROAS
+              <span className="block font-normal text-[11px] text-[#8B95A1] leading-tight">투자수익률</span>
+            </th>
+            <th
+              className="text-right font-semibold px-4 py-2.5 cursor-pointer select-none hover:text-[#3182F6]"
+              title="당일 일예산(하루 상한) 대비 지출(=지출÷일예산). 종료 캠페인은 의미 없어 '종료'로 표시 · 클릭하면 정렬"
+              onClick={() => toggleSort('pacing_pct')}
+            >
+              소진율{arrow('pacing_pct')}
+              <OriginTag origin="computed" />
+            </th>
             <th className="px-2 py-2.5 w-8" aria-label="상세 토글"></th>
           </tr>
         </thead>
         <tbody>
-          {campaigns.map((c) => (
+          {rows.map((c) => (
             <Fragment key={c.campaign_id}>
             <tr
               onMouseEnter={() => onPrefetch?.(c.campaign_id)}
@@ -106,28 +231,42 @@ export function CampaignTable({
                   )}
                 </span>
               </td>
-              <td className="px-3 py-3 text-right tabular-nums text-[#191F28] dark:text-[#F2F4F6]">
-                {budgetLabel(c)}
-              </td>
-              <td className="px-3 py-3 text-right tabular-nums text-[#191F28] dark:text-[#F2F4F6]">
-                {metricsBlocked(c) ? <Blocked label="—" /> : c.impressions.toLocaleString()}
-              </td>
-              <td className="px-3 py-3 text-right tabular-nums text-[#191F28] dark:text-[#F2F4F6] hidden sm:table-cell">
-                {metricsBlocked(c) ? <Blocked label="—" /> : c.clicks.toLocaleString()}
-              </td>
+              {all && (
+                <td className="px-3 py-3 text-right tabular-nums text-[#191F28] dark:text-[#F2F4F6]">
+                  {budgetLabel(c)}
+                </td>
+              )}
+              {all && (
+                <td className="px-3 py-3 text-right tabular-nums text-[#191F28] dark:text-[#F2F4F6]">
+                  {metricsBlocked(c) ? <Blocked label="—" /> : c.impressions.toLocaleString()}
+                </td>
+              )}
+              {all && (
+                <td className="px-3 py-3 text-right tabular-nums text-[#191F28] dark:text-[#F2F4F6] hidden sm:table-cell">
+                  {metricsBlocked(c) ? <Blocked label="—" /> : c.clicks.toLocaleString()}
+                </td>
+              )}
               <td className="px-3 py-3 text-right tabular-nums text-[#191F28] dark:text-[#F2F4F6]">
                 {metricsBlocked(c) ? <Blocked label="—" /> : `₩${c.spend_krw.toLocaleString()}`}
               </td>
-              <td className="px-3 py-3 text-right tabular-nums text-[#191F28] dark:text-[#F2F4F6] hidden md:table-cell">
+              <td
+                className={`px-3 py-3 text-right tabular-nums text-[#191F28] dark:text-[#F2F4F6] ${all ? 'hidden md:table-cell' : ''}`}
+              >
                 {metricsBlocked(c) ? <Blocked label="—" /> : `${(c.ctr * 100).toFixed(1)}%`}
               </td>
-              <td className="px-3 py-3 text-right tabular-nums text-[#191F28] dark:text-[#F2F4F6] hidden md:table-cell">
-                {metricsBlocked(c) ? <Blocked label="—" /> : `₩${c.cpc_krw.toLocaleString()}`}
-              </td>
-              <td className="px-3 py-3 text-right tabular-nums text-[#191F28] dark:text-[#F2F4F6] hidden lg:table-cell">
-                {metricsBlocked(c) ? <Blocked label="—" /> : `₩${c.cpm_krw.toLocaleString()}`}
-              </td>
-              <td className="px-3 py-3 text-right tabular-nums text-[#191F28] dark:text-[#F2F4F6] hidden lg:table-cell">
+              {all && (
+                <td className="px-3 py-3 text-right tabular-nums text-[#191F28] dark:text-[#F2F4F6] hidden md:table-cell">
+                  {metricsBlocked(c) ? <Blocked label="—" /> : `₩${c.cpc_krw.toLocaleString()}`}
+                </td>
+              )}
+              {all && (
+                <td className="px-3 py-3 text-right tabular-nums text-[#191F28] dark:text-[#F2F4F6] hidden lg:table-cell">
+                  {metricsBlocked(c) ? <Blocked label="—" /> : `₩${c.cpm_krw.toLocaleString()}`}
+                </td>
+              )}
+              <td
+                className={`px-3 py-3 text-right tabular-nums text-[#191F28] dark:text-[#F2F4F6] ${all ? 'hidden lg:table-cell' : ''}`}
+              >
                 {/* 권한 없음 > 실측 있으면 읽기전용 > 미설정이면 직접 입력(추정) */}
                 {metricsBlocked(c) ? (
                   <Blocked label="—" />
@@ -141,7 +280,7 @@ export function CampaignTable({
                   fmtCvr(c.cvr, c.conversions)
                 )}
               </td>
-              <td className="px-3 py-3 text-right tabular-nums hidden lg:table-cell">
+              <td className={`px-3 py-3 text-right tabular-nums ${all ? 'hidden lg:table-cell' : ''}`}>
                 {metricsBlocked(c) ? (
                   <Blocked label="—" />
                 ) : c.conversions == null ? (
@@ -221,7 +360,7 @@ export function CampaignTable({
             </tr>
             {selected === c.campaign_id && detail && (
               <tr>
-                <td colSpan={13} className="p-0 border-t border-[#F2F4F6] dark:border-[#2D3748]">
+                <td colSpan={colCount} className="p-0 border-t border-[#F2F4F6] dark:border-[#2D3748]">
                   <div className="px-4 py-4 bg-[#F9FAFB] dark:bg-[#161B26]">
                     <CampaignDetail
                       detail={detail}
@@ -246,7 +385,7 @@ export function CampaignTable({
       </table>
     </div>
   );
-}
+});
 
 function PacingCell({ pct }: { pct: number }) {
   const color = 'bg-[#3182F6]'; // 누적지출/일예산 — 누적이라 초과 정상, 경보색 제거
