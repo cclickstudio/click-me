@@ -5,6 +5,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
+from core.schemas import ScoreDistribution
 from domain.simulation.contracts.enums import (
     DropReasonTag,
     EmotionTag,
@@ -165,6 +166,11 @@ class PersonaReaction(BaseModel):
     drop_reason_tag: DropReasonTag | None = None
     purchase_intent: int = Field(ge=1, le=5)
     trust: int = Field(ge=1, le=5)
+    # SSR 재배선(SIMULATION_SCORING=ssr, opt-in) — 서술 텍스트와 임베딩 기반 점수 분포.
+    # 미사용(기본 llm) 시 전부 None — 기존 소비자(집계·토론·리포트) 무영향.
+    reaction_text: dict[str, Any] | None = None  # LLM 자유 서술(SSR 입력) — 4-b 프롬프트 확장분
+    purchase_intent_dist: ScoreDistribution | None = None  # SSR 분포(§KPI② 분포 표기 근거)
+    trust_dist: ScoreDistribution | None = None  # SSR 분포(§KPI③)
     rejected: bool = False
     rejection_reason_tag: RejectionReasonTag | None = None
     emotion_tag: EmotionTag = EmotionTag.INDIFFERENCE

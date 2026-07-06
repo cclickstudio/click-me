@@ -318,6 +318,30 @@ async def get_categories(session: AsyncSession = Depends(get_db)) -> list[dict]:
     return await list_categories(session)
 
 
+@router.get("/panel/personas")
+async def list_panel_personas(
+    version: str = "panel-v1",
+    gender: str | None = None,
+    age_min: int | None = None,
+    age_max: int | None = None,
+    limit: int = 30,
+    offset: int = 0,
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Individual 모드 — 고정 패널에서 특정 페르소나를 지정 선택하기 위한 미리보기 목록."""
+    from domain.simulation.repositories.panel_repository import PanelRepository
+
+    items, total = await PanelRepository(session).list_personas(
+        version,
+        gender=gender,
+        age_min=age_min,
+        age_max=age_max,
+        limit=min(max(limit, 1), 100),
+        offset=max(offset, 0),
+    )
+    return {"items": items, "total": total}
+
+
 @router.get("/{run_id}/stream")
 async def stream_simulation(run_id: str) -> StreamingResponse:
     """SSE — 노드별 진행률(progress)·완료(completed)·에러 이벤트 스트림."""

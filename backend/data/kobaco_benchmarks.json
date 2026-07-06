@@ -1,13 +1,14 @@
 {
-  "_note": "KOBACO 카테고리별 평균 KPI 임시 하드코딩(추후 실제 출처 교체). purchase_intent 1~5, click_intent_rate·rejection_rate 0~1.",
-  "뷰티": { "purchase_intent": 3.2, "click_intent_rate": 0.22, "rejection_rate": 0.18 },
-  "패션": { "purchase_intent": 3.1, "click_intent_rate": 0.2, "rejection_rate": 0.2 },
-  "식품": { "purchase_intent": 3.4, "click_intent_rate": 0.25, "rejection_rate": 0.15 },
-  "음료": { "purchase_intent": 3.5, "click_intent_rate": 0.26, "rejection_rate": 0.14 },
-  "전자제품": { "purchase_intent": 3.0, "click_intent_rate": 0.18, "rejection_rate": 0.22 },
-  "생활용품": { "purchase_intent": 3.3, "click_intent_rate": 0.21, "rejection_rate": 0.17 },
-  "금융": { "purchase_intent": 2.8, "click_intent_rate": 0.15, "rejection_rate": 0.28 },
-  "여행": { "purchase_intent": 3.3, "click_intent_rate": 0.24, "rejection_rate": 0.16 },
-  "교육": { "purchase_intent": 2.9, "click_intent_rate": 0.17, "rejection_rate": 0.24 },
-  "기타": { "purchase_intent": 3.1, "click_intent_rate": 0.2, "rejection_rate": 0.2 }
+  "_note": "KOBACO 2019 MCR(소비자행태조사) 실측치로 전환(2026-07-03). purchase_intent_pct = 해당 업종 이용자 중 '향후 구매/교체 의향이 있다'고 응답한 비율(0~1) — 내구재·재약정형 업종(금융·가전·주거·여행)만 MCR이 이 문항을 물어서 존재. 미보유 카테고리는 tv_ad_influence_pct(지상파채널 TV광고가 선택에 영향을 미쳤다고 응답한 비율, 0~1, 전 업종 공통)로 대신 참고한다. 우리 시뮬레이터의 1~5점 구매의도·click_intent_rate와 척도가 달라 절대값이 아니라 카테고리 간 상대 순위·방향 비교용으로만 쓴다.",
+  "_source": "2019 KOBACO MCR(소비자행태조사) 보고서 Chapter IV(업종별 분석). purchase_intent_pct는 각 업종 페이지 '타겟 소비자 구성비' 표의 '교체/구입 의향' Base ÷ 해당 업종 이용자 Base. tv_ad_influence_pct는 '브랜드 접점 영향력' 차트의 지상파채널 TV광고 값.",
+  "뷰티": { "purchase_intent_pct": null, "tv_ad_influence_pct": 0.54, "_items": ["남성화장품 50%(n=1497)", "여성화장품 58%(n=1922)"], "_note": "MCR에 화장품 구매의향 문항 없음(구매빈도만 조사) — tv_ad_influence_pct만 참고" },
+  "패션": { "purchase_intent_pct": null, "tv_ad_influence_pct": 0.53, "_items": ["골프웨어 53%(n=398)"], "_note": "MCR에 의류 구매의향 문항 없음 — tv_ad_influence_pct만 참고" },
+  "식품": { "purchase_intent_pct": null, "tv_ad_influence_pct": 0.67, "_items": ["우유 67%(n=2575)"], "_note": "MCR에 식품 구매의향 문항 없음(구매빈도만 조사) — tv_ad_influence_pct만 참고" },
+  "음료": { "purchase_intent_pct": null, "tv_ad_influence_pct": 0.72, "_items": ["탄산음료 72%(n=2921)"], "_note": "MCR에 음료 구매의향 문항 없음(음용빈도만 조사) — tv_ad_influence_pct만 참고" },
+  "전자제품": { "purchase_intent_pct": 0.083, "tv_ad_influence_pct": 0.765, "_items": ["TV 구입의향 4.4%(161/3629)", "휴대폰 교체의향 12.1%(484/3994)"] },
+  "생활용품": { "purchase_intent_pct": 0.045, "tv_ad_influence_pct": 0.65, "_items": ["침대 구입의향 4.5%(138/3076)"] },
+  "금융": { "purchase_intent_pct": 0.332, "tv_ad_influence_pct": 0.62, "_items": ["은행 교체의향 31.2%(1131/3620)", "신용카드 교체의향 35.1%(1215/3463)"] },
+  "여행": { "purchase_intent_pct": 0.393, "tv_ad_influence_pct": 0.63, "_items": ["해외여행 의향 39.3%(1439/3660, 19세 이상 전체 기준)", "여행사 TV광고영향력 63%(n=1079)"] },
+  "교육": { "purchase_intent_pct": null, "tv_ad_influence_pct": null, "_note": "2019 MCR 조사 대상 8대 업종(금융·가전·주거·식품·의류·건강·미용·여행)에 교육이 없어 실측치 전혀 없음" },
+  "기타": { "purchase_intent_pct": null, "tv_ad_influence_pct": 0.645, "_items": ["종합영양제 65%(n=1279)", "위장약 64%(n=695)"], "_note": "건강 업종 평균으로 대체 — 구매의향 문항 없음" }
 }

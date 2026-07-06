@@ -2,7 +2,7 @@
 
 > 이 파일은 `backend/scripts/gen_docs.py`가 코드에서 **자동 생성**합니다. 직접 편집하지 말고 소스를 고친 뒤 스크립트를 다시 실행하세요(커밋 시 pre-commit 훅이 자동 갱신).
 
-총 **186개** 엔드포인트 · **17개** 그룹.
+총 **187개** 엔드포인트 · **17개** 그룹.
 
 ## admin
 
@@ -269,6 +269,7 @@
 | GET | `/api/simulation/check-image` | check_image |
 | POST | `/api/simulation/compare` | compare_simulation |
 | GET | `/api/simulation/image` | proxy_ad_image |
+| GET | `/api/simulation/panel/personas` | list_panel_personas |
 | POST | `/api/simulation/run` | run_simulation |
 | GET | `/api/simulation/{run_id}/result` | get_simulation_result |
 | GET | `/api/simulation/{run_id}/result/analysis` | get_simulation_result_analysis |

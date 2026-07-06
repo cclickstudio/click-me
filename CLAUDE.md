@@ -6,12 +6,12 @@
 ## Key Decisions
 
 - **Backend** FastAPI (Python only, No Spring) / **PM** uv(backend)·pnpm(frontend) 교차 금지 / **Arch** 모놀리식 + 부분 DDD/SOLID, 단일 EC2.
-- **비동기 잡** 인프로세스 async(`asyncio.create_task`). 별도 MQ 미사용 — SQS·Redis 모두 안 씀.
+- **비동기 잡** 인프로세스 async(`asyncio.create_task`) + APScheduler 인프로세스 워커(매니지먼트 이상스캔·주간리포트·리밸런싱 3잡, 기본 off — settings opt-in). 별도 MQ 미사용.
 - **Sim engine** Deepsona(OCEAN) + SSR(arXiv 2510.08338). **Scoring** SSR(임베딩 기반, no LLM, not DLR). **Output** 스칼라 아닌 분포.
 - **구매의도 검증** KOBACO 베이스라인 대비. 그 외 신호는 탐색적(exploratory) 표기.
 - **인증** 관리자 직접 계정 생성(자가가입·소셜 없음), 역할 ADMIN/COMPANY/USER. **운영은 AWS Cognito**(User Pool, RS256/JWKS 검증, `AUTH_PROVIDER=cognito`)로 발급·검증 적용됨. 코드 기본값은 자체 HS256(`AUTH_PROVIDER=local`). 계정/조직 삭제는 **소프트 삭제**(status `INACTIVE` + Cognito disable) → 복원 → 영구삭제(purge) 3단계. auth 미들웨어가 `status != ACTIVE`면 401 차단.
 - **A/B** UI 선반영, YouTube RAG 실기능은 최종 단계. **Chat** OpenAI gpt-4o-mini·CLIO·SSE — 오케스트레이터 본체(통합 딥에이전트, `deepagents` 기반, `api/assistant/deep_agent_builder.py`) **구현 완료**(`POST /api/chat/complete`). management·generator·simulation 3개 도메인 모두 **@tool 위임으로 연결**(deepagents 고유 서브에이전트 기능은 미사용, 커스텀 tool 라우팅).
-- **Ad gen** 개선 시안 3개 자동생성+순위 (Gemini Flash 3.0 / GPT Image 2 / Gemini Omni). **PDF** 전체 생성 포함. **문의** in-app 폼 → DB.
+- **Ad gen** 개선 시안 5개 자동생성+순위 (Gemini Flash 3.0 / GPT Image 2 / Gemini Omni). **PDF** 전체 생성 포함. **문의** in-app 폼 → DB.
 
 ## 핵심 기능 (기획서 v1.3)
 
@@ -19,7 +19,7 @@
 | --- | ----------------- | --------------------------------------------- | -------- |
 | 4-1 | 광고 시뮬레이터   | 집행 전 반응 예측 → 개선 방향·보고서          | 핵심(2인) |
 | 4-2 | 광고 매니지먼트   | 목표·예산·플랫폼·성과를 단일 창구 관리        | 핵심(2인) |
-| 4-3 | 광고 생성         | 예측 반영 → 개선 시안 3개 생성·기대성과 순위  | 핵심(2인) |
+| 4-3 | 광고 생성         | 예측 반영 → 개선 시안 5개 생성·기대성과 순위  | 핵심(2인) |
 | 4-4 | 채팅 AI 어시스턴트 | 자유질문 + 시뮬·분석·생성 결과 전달          | 후순위    |
 
 > 핵심 3기능 병렬 진행, 채팅(4-4)·팀 관리는 그 완료 후 착수.
@@ -152,7 +152,7 @@ NEXT_PUBLIC_COGNITO_REGION= / NEXT_PUBLIC_COGNITO_USER_POOL_ID= / NEXT_PUBLIC_CO
 | ----------------------------------- | --------------------------------------------------------------- |
 | 비동기 잡 큐 도입 여부              | 현재 인프로세스 async(asyncio). SQS·Redis 모두 미사용 — 운영 확장 시 재검토. |
 | 인증 실구현 (JWT 자체 vs Cognito)   | **해소** — 운영은 AWS Cognito(User Pool, RS256/JWKS 검증) 적용, 코드 기본값은 자체 HS256(`AUTH_PROVIDER`로 전환). 남은 과제는 리프레시 토큰·세션 만료 정책 정리. |
-| 채팅(4-4) 오케스트레이터 배선 정리   | 오케스트레이터 본체(통합 딥에이전트)는 구현 완료, management·generator·simulation 전부 @tool로 연결됨(2026-06-30, `4c3e7c8`). `domain/chat/__init__.py` 설명이 실제 구현 위치(`api/assistant/`)와 어긋나 문서 정리 필요. |
+| 채팅(4-4) 오케스트레이터 배선 정리   | 오케스트레이터 본체(통합 딥에이전트)는 구현 완료, management·generator·simulation 전부 @tool로 연결됨(2026-06-30, `4c3e7c8`). 알림→상담 옵션 버튼(`option_select`)도 연결 완료. `domain/chat/__init__.py` 설명이 실제 구현 위치(`api/assistant/`)와 어긋나 문서 정리 필요. |
 | CD 활성화                           | **해소** — `ci-cd.yml` 병합 파이프라인이 ECR push → EC2 배포까지 자동화(Secrets 6개 등록 완료). 남은 과제는 무중단 롤아웃·롤백 전략. |
 
 ## Reference
@@ -160,7 +160,7 @@ NEXT_PUBLIC_COGNITO_REGION= / NEXT_PUBLIC_COGNITO_USER_POOL_ID= / NEXT_PUBLIC_CO
 **자동 생성 인덱스**(라우터·페이지 추가 시 `backend/scripts/gen_docs.py`가 갱신 — 직접 수정 금지):
 
 <!-- AUTOGEN:docs-index START -->
-- **API 엔드포인트 186개** — 전체 목록 [docs/api-endpoints.md](docs/api-endpoints.md) (자동 생성)
+- **API 엔드포인트 187개** — 전체 목록 [docs/api-endpoints.md](docs/api-endpoints.md) (자동 생성)
 - **프론트 라우트 42개** — 전체 목록 [docs/frontend-routes.md](docs/frontend-routes.md) (자동 생성)
 <!-- AUTOGEN:docs-index END -->
 

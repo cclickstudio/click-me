@@ -5,8 +5,12 @@
 # 비전문가도 읽도록 모든 수치에 쉬운 해설을 붙인다. _build_html은 순수 함수(테스트·디버그용).
 from __future__ import annotations
 
+import json
 import logging
+import subprocess
+import sys
 from html import escape
+from pathlib import Path
 
 logger = logging.getLogger("clickme")
 
@@ -840,6 +844,32 @@ def _strip_trailing_blank_pages(pdf: bytes) -> bytes:
 def render_report_pdf(result: dict) -> bytes:
     """result → Tailwind HTML → Playwright(Chromium) PDF 바이트. 동기(라우터에서 to_thread).
 
+    Windows 로컬은 api/main.py의 SelectorEventLoop 정책 탓에 Playwright가 Chromium
+    서브프로세스를 못 띄운다(NotImplementedError) — 기본(Proactor) 정책으로 시작하는
+    별도 파이썬 프로세스에서 렌더링한다. Linux(배포 타깃)는 인프로세스 그대로.
+    """
+    if sys.platform != "win32":
+        return _render_report_pdf_inproc(result)
+
+    backend_root = Path(__file__).resolve().parents[4]
+    proc = subprocess.run(
+        [sys.executable, "-m", "domain.simulation.tools.debate.pdf_report"],
+        input=json.dumps(result).encode("utf-8"),
+        capture_output=True,
+        cwd=backend_root,
+        timeout=120,
+    )
+    if proc.returncode != 0:
+        raise RuntimeError(
+            f"PDF 렌더 서브프로세스 실패(code={proc.returncode}): "
+            f"{proc.stderr.decode('utf-8', errors='replace')[-2000:]}"
+        )
+    return proc.stdout
+
+
+def _render_report_pdf_inproc(result: dict) -> bytes:
+    """실제 렌더 본체 — 호출 프로세스의 이벤트 루프 정책이 subprocess를 지원해야 한다.
+
     report_view(화면·PDF 공용 단일 소스)를 우선 소비한다 — 없으면 구버전 result로 폴백.
     """
     from playwright.sync_api import sync_playwright
@@ -869,3 +899,9 @@ def render_report_pdf(result: dict) -> bytes:
         finally:
             browser.close()
     return _strip_trailing_blank_pages(pdf)
+
+
+if __name__ == "__main__":
+    # 서브프로세스 진입점 — stdin으로 result JSON을 받아 stdout으로 PDF 바이트를 쓴다.
+    _result = json.loads(sys.stdin.buffer.read().decode("utf-8"))
+    sys.stdout.buffer.write(_render_report_pdf_inproc(_result))

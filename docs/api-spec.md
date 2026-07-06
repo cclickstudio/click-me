@@ -654,7 +654,145 @@ List generation history (newest first).
 
 ---
 
-## 9. A/B Comparison [Target: 7.8]
+## 9. Ad Management (4-2)
+
+> Prefix `/api/management` (자동화 결과 조회만 `/api/automation`). JWT 사용자 + org 스코프 인가.
+> **원칙**: 지출성 조작은 전부 「제안(ActionProposal) → 승인(ApprovedAction) → 실행(Executor)」 3단계를 거친다.
+> 실행 모드 mock / dry_run / validate_only / live — `use_mock=True`면 live 봉인.
+> 엔드포인트가 많아 핵심 4개만 상세 스펙, 나머지는 표 요약. 정본은 `backend/api/routers/management.py`.
+
+### 9.1 캠페인 조회·운영
+
+| Method | Path | 설명 |
+|---|---|---|
+| GET | `/campaigns` | 목록 + 페이징 (mock/실연동 자동 분기, 소프트삭제 reconcile) |
+| GET | `/campaigns/{id}` | 상세 (+진단 요약) |
+| GET | `/campaigns/{id}/outcome` · `/platforms` · `/demographics` · `/creatives` · `/targeting` · `/leads` | 실측·분해 조회 |
+| GET | `/campaigns/{id}/delivery-status` · `/sync` | 게재 상태·Meta 동기화 |
+| GET | `/campaigns/{id}/creative-image` | 소재 이미지 프록시 |
+| POST | `/campaigns/{id}/activate` · `/pause` | 게재 시작/일시중지 (제안→승인→실행 내부 경유) |
+| DELETE | `/campaigns/{id}` | 소프트 삭제 + Meta 동시 삭제 |
+| GET | `/campaign-policy` | 최소예산 등 정책 단일원천 (프론트 자동 반영) |
+| POST | `/ad-image` · `/ad-preview` | 이미지 업로드(image_hash)·미리보기 |
+
+### 9.2 캠페인 생성·실행 파이프라인
+
+| Method | Path | 설명 |
+|---|---|---|
+| POST | `/campaigns/create-proposal` | 직접 입력 → CREATE_CAMPAIGN 제안 |
+| POST | `/campaign-proposals/from-candidate` | 4-3 시안 → 제안 |
+| POST | `/campaign-proposals/from-simulation` | 4-1 시뮬 결과 → 제안 (상세 ↓) |
+| POST | `/campaigns/{id}/replace-creative-proposal` | 소재 교체 제안 |
+| GET | `/campaign-proposals/name-suggestions` | 캠페인명 제안 |
+| POST | `/approve` | 승인 플레인 — 3단계 검증(만료/해시/정책버전) 후 ApprovedAction 발행. 409=검증 실패 `{issues:[…]}` |
+| POST | `/execute` | 실행 (상세 ↓) |
+| POST | `/regenerate` | 재생성 agent — 진단 → 4-3 위임 생성 → guard → `AWAITING_SELECTION`(후보+selection_token) 또는 `PROPOSED`(제안) |
+| GET | `/created-campaigns` | 우리가 생성한 캠페인 레지스트리 |
+| GET | `/audit?approval_id=` · `/execution/history` | 감사 로그·실행 이력 |
+
+#### POST /api/management/campaign-proposals/from-simulation
+
+시뮬 결과에서 캠페인 생성 제안. 집행가능 판정(클릭의향률·거부율 게이트)을 통과해야 한다.
+
+**Request**
+```json
+{
+  "simulation_id": "uuid",
+  "name": "string",
+  "daily_budget_krw": 10000,
+  "start_date": "YYYY-MM-DD",
+  "end_date": "YYYY-MM-DD | null (기본 시작+7일)",
+  "link_url": "https://… | null",
+  "special_ad_category": "NONE | HOUSING | EMPLOYMENT | CREDIT | ISSUES_ELECTIONS_POLITICS",
+  "country": "KR", "age_min": 18, "age_max": 65, "gender": "all | male | female"
+}
+```
+
+**Responses** — 200 `{proposal: ActionProposal}` / 404 시뮬 없음·타 org / 409 집계 미완료 또는 집행 권장 아님 / 422 이미지·link_url·최소예산·날짜 검증 실패 / 502 Meta 이미지 업로드 실패
+
+#### POST /api/management/execute
+
+승인된 액션의 실행 — 모든 지출의 단일 경로. 승인 후 4단계 재검증(유효성·state_version·예산 총액·멱등키) 후 Writer 호출.
+
+**Request**
+```json
+{"approved_action": "ApprovedAction", "proposal": "ActionProposal"}
+```
+
+**Responses** — 200 `{"result": "ActionResult", "error_message?": "Meta 사용자용 안내(실패 시)"}` / 403 타 org 제안·승인. 데모 제안(시연 tenant)은 항상 DRY_RUN. 같은 승인 건 재호출은 멱등키로 1회만 집행.
+
+### 9.3 운영 알림 (이상 감지)
+
+| Method | Path | 설명 |
+|---|---|---|
+| GET | `/notifications` | org 전체 목록 + `unread_count`. 쿼리: `project_id` `unread_only` `include_resolved` `limit(≤200)` 커서 `before`+`before_id` |
+| GET | `/notifications/stream` | 변경 SSE (상세 ↓) |
+| POST | `/notifications/read` | bulk 열람 마킹 `{ids:[…]}` → `{updated}` |
+| POST | `/notifications/{id}/resolve` | 해소 `{resolution: "ignored"|"actioned"}` |
+| POST | `/notifications/{id}/consult` | [상담하기] (상세 ↓) |
+| GET | `/anomaly/scan` | 진단 데모(fault 주입) |
+| POST | `/anomaly/notify-scan` | 수동 "지금 점검" — 워커 스캐너를 org 스코프로 재사용 |
+
+#### GET /api/management/notifications/stream
+
+org 구독 SSE. 이벤트는 `changed` 신호뿐 — 수신 측이 목록을 refetch한다. EventSource가 아니라 **fetch 스트리밍**(Authorization 헤더)으로 소비.
+
+```
+data: {"event": "connected"}      ← 연결 직후 1회
+data: {"event": "changed"}        ← 알림 변경 시
+: keep-alive                      ← 30초 heartbeat (프록시 타임아웃 방지)
+```
+
+404 = `management_notify_sse_enabled=false` (폴링 폴백).
+
+#### POST /api/management/notifications/{id}/consult
+
+알림 → 채팅 상담 전이. 재검증 후 프로젝트 전용 세션에 상담 카드를 심고 이동한다(재클릭은 이동 전용).
+
+**Response 200** — status별 분기
+```json
+{"status": "consult", "session_id": "uuid"}          // 세션으로 이동
+{"status": "normal", "message": "…"}                  // 재검증 결과 정상 → auto_normal 해소
+{"status": "already_resolved", "resolution": "…"}     // 이미 해소된 알림
+```
+
+404 = 없음·타 org(존재 비노출) / 503 = `unavailable`(상담 준비 실패, 재시도 안내)
+
+### 9.4 예산
+
+| Method | Path | 설명 |
+|---|---|---|
+| GET | `/budget` · POST `/budget/limit` | 테넌트 예산 현황·한도 설정 |
+| POST | `/campaigns/{id}/budget-proposal` → `/budget-commit` | 예산 변경 제안(검증) → 승인 실행 분리 |
+| GET | `/budget/rebalance-proposal` | 저효율→고효율 리밸런싱 제안(읽기 전용, 실행은 budget-commit) |
+| GET | `/kpi-overrides` · PUT `/campaigns/{id}/kpi-override` | 캠페인별 KPI 목표 덮어쓰기 |
+
+### 9.5 성과 비교·캘리브레이션
+
+`GET /compare` · `/compare/board` · `/compare/before-after`(시뮬 예측 vs 실측) · `GET /calibration/anchors` · `POST /campaigns/{id}/link-simulation`
+
+### 9.6 어시스턴트(CLIO)·KB
+
+`POST /assistant`(에이전틱 RAG 질의) · `POST /kb/refresh` · `POST /kb/eval/generate` · `GET /kb/eval/run` · `GET /kb/eval/faithfulness`
+
+### 9.7 에스컬레이션 사다리
+
+`POST /re-evaluate`(재평가 → 다음 사다리 제안) · `POST /re-evaluate/executed` · `POST /re-evaluate/rejected`
+
+### 9.8 Meta 연동 (org OAuth)
+
+`GET /meta/connect`(인증 URL) → `GET /meta/callback`(state CSRF 검증, 토큰 암호화 저장)
+
+### 9.9 리포트·자동화
+
+| Method | Path | 설명 |
+|---|---|---|
+| GET | `/report/weekly?period=` | 기간별 성과 리포트(읽기 전용 집계) |
+| GET | `/api/automation/runs` | 워커 실행 결과 조회(3도메인 공용). 쿼리: `domain` `project_id` `unresolved` `limit(≤100)` |
+
+---
+
+## 10. A/B Comparison [Target: 7.8]
 
 ### POST /api/compare/ab
 
@@ -667,7 +805,7 @@ Compare two ad simulation results.
 
 ---
 
-## 10. Common Error Responses
+## 11. Common Error Responses
 
 | HTTP | Code | Description |
 |---|---|---|

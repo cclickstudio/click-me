@@ -97,7 +97,8 @@ react(persona, ad)                                   # reaction.py
 | `socioeconomic.json`(KISDI) | `load_socioeconomic` | `socioeconomic`(소득·학력) | `[나] 학력·월소득` + 가격 적합도 | `_sample_socioeconomic`·`_ad_feature_lines` |
 | `media_behavior.json`(KISDI) | `load_media_behavior` | `media_behavior`(주매체·노출후보) | `[나] 주 이용 미디어`·`노출 맥락` | `_sample_media`·`_pick_exposure` |
 | `consumption_values.json`(대학내일) | `load_consumption_values` | `consumption_values` | `[나] 중시 소비가치` | `_sample_consumption` ★작업2 |
-| `social_values_deep.json`(MDIS) | `load_social_values_deep` | `social_values_deep` | `[나] [내 성향(한국특화)]` | `_sample_social_values_deep` ★작업4 ⛔ |
+| `social_values_deep.json`(MDIS) | `load_social_values_deep` | `social_values_deep` | `[나] [내 성향(한국특화)]` | `_sample_social_values_deep` ★작업4 ⛔(MDIS 2025 사회조사에도 체면·동조·눈치 대응 문항 없음, 확인 완료 2026-07-03) |
+| `social_economic.json`(MDIS 사회조사 2025) | `load_social_economic` | `social_economic`(생활만족·대인신뢰·소득충족·계층상향·사회참여) | `[나] [내 사회경제 성향]` | `_sample_social_economic` ✅ 완료 |
 | `meta_reach.json`(Meta 광고관리자) | `load_meta_reach` | (표본추출·`meta_reach` 속성) | — (프롬프트 아님, §2-5) | `_reach_marginal` ★작업5 |
 | `brand_awareness.json`(갤럽) | `load_brand_awareness` | `ad.structured_analysis.awareness_by_age` | `[광고] [브랜드 인지도]` | `lookup_brand_awareness`→`_awareness_lines` ★작업1 ⛔ |
 | (VLM 광고 이미지·카피) | `GeminiAdInterpreter` | `ad.detected_*`·`ad_features`·`visual_elements` | `[광고] 업종/메시지/타깃·비주얼 | `_ad_feature_lines`·`_visual_lines` |

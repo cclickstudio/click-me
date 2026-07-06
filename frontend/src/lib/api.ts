@@ -475,6 +475,31 @@ export const api = {
     // VLM이 이 URL 이미지를 읽을 수 있는지 사전 확인(백엔드가 직접 GET — 미리보기와 별개).
     checkImage: (url: string): Promise<{ ok: boolean; mime?: string; reason?: string }> =>
       request(`/simulation/check-image?url=${encodeURIComponent(url)}`),
+    // Individual 모드 — 고정 패널에서 특정 페르소나 지정 선택용 미리보기 목록.
+    panelPersonas: (params: {
+      gender?: string;
+      age_min?: number;
+      age_max?: number;
+      limit?: number;
+      offset?: number;
+    }): Promise<{
+      items: {
+        persona_id: string;
+        age: number;
+        gender: string;
+        region: string;
+        narrative_snippet: string;
+      }[];
+      total: number;
+    }> => {
+      const qs = new URLSearchParams();
+      if (params.gender) qs.set('gender', params.gender);
+      if (params.age_min != null) qs.set('age_min', String(params.age_min));
+      if (params.age_max != null) qs.set('age_max', String(params.age_max));
+      qs.set('limit', String(params.limit ?? 30));
+      qs.set('offset', String(params.offset ?? 0));
+      return request(`/simulation/panel/personas?${qs.toString()}`);
+    },
   },
 
   // 페르소나 토론(/api/debate/*) — 시뮬 반응(reactions)을 받아 토론을 돌리고 결과를 낸다.
