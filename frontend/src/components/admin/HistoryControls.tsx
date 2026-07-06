@@ -37,13 +37,11 @@ export function HistoryControls({
   value,
   onChange,
   hasStatus = true,
-  hasOrgFilter = true,
   titleLabel = '제목',
 }: {
   value: HistoryQuery;
   onChange: (next: HistoryQuery) => void;
   hasStatus?: boolean; // 채팅은 상태 개념이 없어 false
-  hasOrgFilter?: boolean; // 비-ADMIN 화면은 조직 상태 필터 미노출
   titleLabel?: string; // 가나다순/검색 라벨(광고명·상품명·제목 등)
 }) {
   const category = categoryOf(value);
@@ -112,24 +110,6 @@ export function HistoryControls({
           aria-label="정렬 방향"
           className="w-28"
         />
-        {hasOrgFilter && (
-          <>
-            <span className="ml-1 text-xs font-semibold text-[#8B95A1]">조직</span>
-            <Select
-              value={value.orgStatus ?? ''}
-              onChange={(v) =>
-                onChange({ ...value, orgStatus: (v || undefined) as HistoryQuery['orgStatus'] })
-              }
-              options={[
-                { value: '', label: '전체 조직' },
-                { value: 'ACTIVE', label: '활성 조직' },
-                { value: 'INACTIVE', label: '비활성 조직' },
-              ]}
-              aria-label="조직 상태 필터"
-              className="w-32"
-            />
-          </>
-        )}
       </div>
 
       {/* 오른쪽 — 검색(필드 + 입력) */}
@@ -164,11 +144,37 @@ export function HistoryControls({
             value={value.search}
             onChange={(e) => onChange({ ...value, search: e.target.value })}
             placeholder={`${value.searchField === 'org_name' ? '조직명' : titleLabel} 검색`}
-            className="w-52 rounded-lg border border-[#E5E8EB] dark:border-[#2D3748] bg-transparent pl-7 pr-3 py-1.5 text-sm text-[#191F28] dark:text-[#F2F4F6] placeholder-[#B0B8C1] focus:border-[#3182F6] outline-none"
+            className="w-52 rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-transparent pl-7 pr-3 py-2.5 text-sm text-[#191F28] dark:text-[#F2F4F6] placeholder-[#B0B8C1] focus:border-[#3182F6] outline-none"
           />
         </div>
       </div>
     </div>
+  );
+}
+
+// 조직 상태(활성/비활성) 필터 — 헤더의 AdminOrgPicker 옆에 배치(정렬 영역과 분리).
+export function OrgStatusFilter({
+  value,
+  onChange,
+}: {
+  value?: 'ACTIVE' | 'INACTIVE';
+  onChange: (v: 'ACTIVE' | 'INACTIVE' | undefined) => void;
+}) {
+  return (
+    <label className="flex items-center gap-2 text-sm text-[#4E5968] dark:text-[#9CA3AF]">
+      <span className="font-medium">상태</span>
+      <Select
+        value={value ?? ''}
+        onChange={(v) => onChange((v || undefined) as 'ACTIVE' | 'INACTIVE' | undefined)}
+        options={[
+          { value: '', label: '전체 조직' },
+          { value: 'ACTIVE', label: '활성 조직' },
+          { value: 'INACTIVE', label: '비활성 조직' },
+        ]}
+        aria-label="조직 상태 필터"
+        className="min-w-[130px]"
+      />
+    </label>
   );
 }
 

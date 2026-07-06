@@ -7,7 +7,13 @@ import { Select } from "@/components/ui/Select";
 
 type Org = { id: string; name: string };
 
-export function AdminOrgPicker() {
+// onSelect가 있으면 전체 새로고침 대신 콜백만 호출(리스트만 다시 로드).
+// 없으면 기존처럼 window.location.reload()로 매니지먼트 전체를 재스코프.
+export function AdminOrgPicker({
+  onSelect,
+}: {
+  onSelect?: (orgId: string | null) => void;
+} = {}) {
   const [orgs, setOrgs] = useState<Org[]>([]);
   const [sel, setSel] = useState<string>(getAdminOrgId() ?? "");
 
@@ -38,8 +44,9 @@ export function AdminOrgPicker() {
         onChange={(v) => {
           setSel(v);
           setAdminOrgId(v || null);
-          // 선택 변경 시 전체 매니지먼트 데이터를 새 스코프로 다시 불러온다.
-          window.location.reload();
+          // 선택 변경 시 새 스코프로 데이터를 다시 불러온다.
+          if (onSelect) onSelect(v || null);
+          else window.location.reload();
         }}
         options={[
           { value: "", label: "전체 (all orgs)" },

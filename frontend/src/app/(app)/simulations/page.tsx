@@ -12,6 +12,7 @@ import { useInfiniteList, useDebouncedValue } from '@/components/admin/useInfini
 import {
   HistoryControls,
   OrgStatusDot,
+  OrgStatusFilter,
   historyQueryString,
   DEFAULT_HISTORY_QUERY,
   type HistoryQuery,
@@ -46,6 +47,7 @@ export default function SimulationsPage() {
   const isAdmin = user?.role === 'ADMIN';
 
   const [query, setQuery] = useState<HistoryQuery>(DEFAULT_HISTORY_QUERY);
+  const [orgKey, setOrgKey] = useState(0); // AdminOrgPicker 선택 변경 시 리스트만 재로드하는 키
   const debouncedSearch = useDebouncedValue(query.search, 300);
   const qs = historyQueryString({ ...query, search: debouncedSearch });
 
@@ -60,12 +62,12 @@ export default function SimulationsPage() {
         .then((d) => (Array.isArray(d) ? (d as Row[]) : []))
         .catch(() => [] as Row[]);
     },
-    [user, path, qs],
+    [user, path, qs, orgKey],
   );
 
   const { items, loading, loadingMore, hasMore, sentinelRef } = useInfiniteList<Row>(
     fetcher,
-    `${path}|${qs}|${user ? '1' : '0'}`,
+    `${path}|${qs}|${user ? '1' : '0'}#${orgKey}`,
   );
 
   return (
@@ -77,16 +79,19 @@ export default function SimulationsPage() {
             {isAdmin ? '전체 사용자 시뮬레이션 실행 목록' : '소속 조직의 시뮬레이션 실행 목록'}
           </p>
         </div>
-        {isAdmin && <AdminOrgPicker />}
+        {isAdmin && (
+          <div className="flex items-center gap-3">
+            <OrgStatusFilter
+              value={query.orgStatus}
+              onChange={(v) => setQuery({ ...query, orgStatus: v })}
+            />
+            <AdminOrgPicker onSelect={() => setOrgKey((n) => n + 1)} />
+          </div>
+        )}
       </div>
 
       <div className="mb-4">
-        <HistoryControls
-          value={query}
-          onChange={setQuery}
-          hasOrgFilter={isAdmin}
-          titleLabel="광고명"
-        />
+        <HistoryControls value={query} onChange={setQuery} titleLabel="광고명" />
       </div>
 
       <div className="bg-white dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748] rounded-2xl overflow-hidden">

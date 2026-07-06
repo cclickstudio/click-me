@@ -16,7 +16,7 @@ export const ORG_SORT_OPTIONS = [
 
 // 회원은 백엔드 기본값(역할순 ADMIN→USER)을 첫 옵션으로 노출 + 나머지는 조직과 동일.
 export const USER_SORT_OPTIONS = [
-  { value: 'role:desc', label: '역할순 (ADMIN → USER)' },
+  { value: 'role:desc', label: '<기본>' },
   ...ORG_SORT_OPTIONS,
 ];
 

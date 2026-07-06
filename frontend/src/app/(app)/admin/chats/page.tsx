@@ -8,6 +8,7 @@ import { useInfiniteList, useDebouncedValue } from '@/components/admin/useInfini
 import {
   HistoryControls,
   OrgStatusDot,
+  OrgStatusFilter,
   historyQueryString,
   DEFAULT_HISTORY_QUERY,
   type HistoryQuery,
@@ -31,6 +32,7 @@ function formatDate(iso: string) {
 
 export default function AdminChatsPage() {
   const [query, setQuery] = useState<HistoryQuery>(DEFAULT_HISTORY_QUERY);
+  const [orgKey, setOrgKey] = useState(0); // AdminOrgPicker 선택 변경 시 리스트만 재로드하는 키
   const debouncedSearch = useDebouncedValue(query.search, 300);
   const qs = historyQueryString({ ...query, search: debouncedSearch });
 
@@ -41,12 +43,12 @@ export default function AdminChatsPage() {
       )
         .then((r) => r.json())
         .then((d) => (Array.isArray(d) ? (d as ChatRow[]) : [])),
-    [qs],
+    [qs, orgKey],
   );
 
   const { items, loading, loadingMore, hasMore, sentinelRef } = useInfiniteList<ChatRow>(
     fetcher,
-    qs,
+    `${qs}#${orgKey}`,
   );
 
   return (
@@ -56,7 +58,13 @@ export default function AdminChatsPage() {
           <h1 className="text-2xl font-bold text-[#191F28] dark:text-[#F2F4F6]">채팅 내역</h1>
           <p className="text-sm text-[#8B95A1] dark:text-[#6B7280] mt-1">전체 사용자 채팅 세션 목록</p>
         </div>
-        <AdminOrgPicker />
+        <div className="flex items-center gap-3">
+          <OrgStatusFilter
+            value={query.orgStatus}
+            onChange={(v) => setQuery({ ...query, orgStatus: v })}
+          />
+          <AdminOrgPicker onSelect={() => setOrgKey((n) => n + 1)} />
+        </div>
       </div>
 
       <div className="mb-4">
