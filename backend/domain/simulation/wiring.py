@@ -93,7 +93,8 @@ def _wrap_ssr(reactor: object) -> object:
 
 
 def _build_reactor() -> object:
-    """반응 엔진 — 기본 Gemini. OPENAI_API_KEY 있고 폴백 ON이면 GPT를 뒤에 붙여 503 내성 확보.
+    """반응 엔진 — 기본 Gemini(Sonnet 5→GPT-4o→Haiku 거쳐 복귀, 페르소나 반응 다양성 확보 목적).
+    OPENAI_API_KEY 있고 폴백 ON이면 GPT를 뒤에 붙여 503 내성 확보.
 
     Gemini가 자체 백오프 재시도를 다 쓰고도 503/실패면 FallbackReactionEngine이 GPT로 폴백한다.
     키가 없으면 폴백 없이 Gemini 단독(기존 동작 보존).
