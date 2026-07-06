@@ -95,3 +95,10 @@ fonts/
 
 
 .understand-anything
+
+# 신뢰도 리포트 페이지 — 개인 작업분, 브랜치에 안 올림
+/frontend/src/app/(app)/manage/reliability/
+
+# 신뢰도 평가 산출물(골든셋·측정 결과) — 로컬에만 둠
+/backend/domain/management/evals/golden/
+/backend/domain/management/evals/_hallucination_results.jsonl
