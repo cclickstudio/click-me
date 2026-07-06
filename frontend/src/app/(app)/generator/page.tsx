@@ -812,6 +812,7 @@ export default function GeneratorPage() {
   const logoInputRef = useRef<HTMLInputElement>(null);
   const colorInputRef = useRef<HTMLInputElement>(null);
   const esRef = useRef<EventSource | null>(null);
+  const reconnectAttemptsRef = useRef(0);
 
   // 상품 이미지 (생성 모드)
   const [productImageTempKey, setProductImageTempKey] = useState("");
@@ -995,6 +996,7 @@ export default function GeneratorPage() {
     const es = api.generator.stream(generationId);
     esRef.current = es;
     es.onmessage = async (e) => {
+      reconnectAttemptsRef.current = 0; // 이벤트를 정상 수신 — 연결 살아있음, 재연결 카운트 리셋
       const data = JSON.parse(e.data) as SSEProgressEvent;
       if (data.event === "progress") {
         setProgress({ stage: data.stage ?? "", pct: data.pct ?? 0, message: data.message ?? "" });
@@ -1091,22 +1093,33 @@ export default function GeneratorPage() {
         setPhase("idle");
       }
     };
+    const MAX_RECONNECT_ATTEMPTS = 5;
     es.onerror = async () => {
       es.close();
-      localStorage.removeItem(ACTIVE_GEN_KEY);
-      setGenJob(null); // 동시실행 슬롯 해제
-      // 스트림이 끊긴 이유가 서버측 생성 실패(error 이벤트가 종료 전 유실)일 수 있다.
-      // 상태를 조회해 실제 실패 원인이 있으면 그걸 우선 노출 — "네트워크 끊김"으로 오인 방지.
+      // 스트림이 끊긴 이유가 서버측 생성 실패(error 이벤트가 종료 전 유실)일 수도,
+      // 일시적 연결 문제일 수도 있다 — 상태를 조회해 구분한다.
+      // 백엔드 생성 작업은 SSE 연결과 무관하게 계속 진행되므로, 아직 안 끝났다면
+      // "실패"로 단정하지 않고 재연결해서 이어 받는다(진짜 실패로 오인 방지).
       try {
         const d = (await api.generator.detail(generationId)) as GenerationDetail;
         if (d.status === "failed") {
+          localStorage.removeItem(ACTIVE_GEN_KEY);
+          setGenJob(null); // 동시실행 슬롯 해제
           setError(d.error_message || "광고 생성에 실패했습니다.");
           setPhase("idle");
           return;
         }
+        if (reconnectAttemptsRef.current < MAX_RECONNECT_ATTEMPTS) {
+          reconnectAttemptsRef.current += 1;
+          // stream_events는 처음부터 이벤트를 재생하므로 재연결해도 유실·중복 없이 이어진다.
+          setTimeout(() => subscribe(generationId), 1500);
+          return;
+        }
       } catch {
-        // 조회 실패 시 아래 일반 안내로 폴백
+        // 상태 조회 자체 실패 — 아래 일반 안내로 폴백
       }
+      localStorage.removeItem(ACTIVE_GEN_KEY);
+      setGenJob(null); // 동시실행 슬롯 해제
       setError("진행 상태 연결이 끊어졌습니다. 다시 시도해주세요.");
       setPhase("idle");
     };
