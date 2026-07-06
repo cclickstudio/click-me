@@ -6,7 +6,7 @@
 ## Key Decisions
 
 - **Backend** FastAPI (Python only, No Spring) / **PM** uv(backend)·pnpm(frontend) 교차 금지 / **Arch** 모놀리식 + 부분 DDD/SOLID, 단일 EC2.
-- **비동기 잡** 인프로세스 async(`asyncio.create_task`). 별도 MQ 미사용 — SQS·Redis 모두 안 씀.
+- **비동기 잡** 인프로세스 async(`asyncio.create_task`) + APScheduler 인프로세스 워커(매니지먼트 이상스캔·주간리포트·리밸런싱 3잡, 기본 off — settings opt-in). 별도 MQ 미사용.
 - **Sim engine** Deepsona(OCEAN) + SSR(arXiv 2510.08338). **Scoring** SSR(임베딩 기반, no LLM, not DLR). **Output** 스칼라 아닌 분포.
 - **구매의도 검증** KOBACO 베이스라인 대비. 그 외 신호는 탐색적(exploratory) 표기.
 - **인증(타깃)** JWT + 관리자 직접 계정 생성(자가가입·소셜 없음), Admin/User 역할. **(현재)** UI만, 실 JWT 미적용·점진 도입.
@@ -132,9 +132,8 @@ NEXT_PUBLIC_API_URL=http://localhost:8000
 
 | 항목                                | 비고                                                            |
 | ----------------------------------- | --------------------------------------------------------------- |
-| 비동기 잡 큐 도입 여부              | 현재 인프로세스 async(asyncio). SQS·Redis 모두 미사용 — 운영 확장 시 재검토. |
 | 인증 실구현 (JWT 자체 vs Cognito)   | 타깃 JWT + 관리자 계정 생성. 토큰 발급/검증 도입 시점·방식 미정.  |
-| 채팅(4-4) 오케스트레이터 배선 정리   | 오케스트레이터 본체(통합 딥에이전트)는 구현 완료, management·generator·simulation 전부 @tool로 연결됨(2026-06-30, `4c3e7c8`). `domain/chat/__init__.py` 설명이 실제 구현 위치(`api/assistant/`)와 어긋나 문서 정리 필요. |
+| 채팅(4-4) 오케스트레이터 배선 정리   | 오케스트레이터 본체(통합 딥에이전트)는 구현 완료, management·generator·simulation 전부 @tool로 연결됨(2026-06-30, `4c3e7c8`). 알림→상담 옵션 버튼(`option_select`)도 연결 완료. `domain/chat/__init__.py` 설명이 실제 구현 위치(`api/assistant/`)와 어긋나 문서 정리 필요. |
 | CD 활성화                           | Docker Hub + EC2 Secrets 등록 필요.                             |
 
 ## Reference
