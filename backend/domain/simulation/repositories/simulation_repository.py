@@ -50,6 +50,7 @@ class SimulationRepository:
         aggregate: SimulationAggregate,
         persona_uuid_by_ref: dict[str, uuid.UUID],
         simulation_id: uuid.UUID | None = None,
+        created_by: uuid.UUID | None = None,
     ) -> uuid.UUID:
         ana_id = uuid.uuid4()
         self._s.add(
@@ -83,6 +84,7 @@ class SimulationRepository:
                 qa_passed_count=sum(1 for r in reactions if r.qa_passed),
                 status="COMPLETED",
                 model_version=ad.model_version,
+                created_by=created_by,
                 completed_at=datetime.now(),
             )
         )

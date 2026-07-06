@@ -16,8 +16,11 @@ export default function NotificationBell() {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
 
+  // ADMIN은 조직 스코프(X-Org-Id)가 없어 목록·스트림 호출이 400 → 아예 호출하지 않는다.
+  const isAdmin = user?.role === 'ADMIN';
+
   const refetch = useCallback(() => {
-    if (!user) return;
+    if (!user || isAdmin) return;
     api.management.notifications
       .list()
       .then(r => {
@@ -25,13 +28,13 @@ export default function NotificationBell() {
         setUnread(r.unread_count);
       })
       .catch(() => {});
-  }, [user]);
+  }, [user, isAdmin]);
 
   // 폴백: 라우트 전환 시 refetch(N5 벨과 같은 패턴) + SSE 수신 시 refetch
   useEffect(() => {
     refetch();
   }, [refetch, pathname]);
-  useNotificationStream(!!user, refetch);
+  useNotificationStream(!!user && !isAdmin, refetch);
 
   // 패널 토글 — 읽음 처리는 패널이 "보이는 카드"를 알려줄 때(onReadVisible)만 수행
   const openPanel = () => {
