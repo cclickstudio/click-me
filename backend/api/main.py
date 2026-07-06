@@ -54,6 +54,7 @@ from api.routers import (
     admin,
     ads,
     auth,
+    automation,
     billing,
     chat,
     company,
@@ -109,6 +110,13 @@ async def lifespan(app: FastAPI):
     from domain.management.scheduler import start_scheduler  # noqa: PLC0415
 
     start_scheduler(settings)
+
+    # 제너레이터 자동화 스케줄러 — 기본 off(generator_scheduler_enabled일 때만 기동).
+    from domain.generator.scheduler import (
+        start_scheduler as start_generator_scheduler,  # noqa: PLC0415
+    )
+
+    start_generator_scheduler(settings)
 
     # KB 인제스터 — 비차단 백그라운드 태스크(서버 시작 안 막음). 키 없으면 graceful 스킵.
     async def _run_kb_ingest() -> None:
@@ -188,6 +196,7 @@ app.include_router(management.router, prefix="/api/management", tags=["managemen
 app.include_router(generator.router, prefix="/api/generator", tags=["generator"])
 app.include_router(debate.router, prefix="/api/debate", tags=["debate"])
 app.include_router(chat.assistant_router, prefix="/api/assistant", tags=["assistant"])
+app.include_router(automation.router, prefix="/api/automation", tags=["automation"])
 
 
 @app.get("/health")

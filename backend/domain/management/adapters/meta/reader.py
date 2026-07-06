@@ -379,6 +379,44 @@ class MetaAdsReader:
             roas=roas,
         )
 
+    async def get_daily_spend_by_campaign(
+        self, campaign_ids: list[str], date_preset: str = "maximum"
+    ) -> dict[str, list[dict]]:
+        """계정 단위 캠페인별 일자별 지출 — level=campaign + time_increment=1 1콜(+페이징).
+
+        홈·모니터링 스파크라인은 spend만 쓰므로, 캠페인마다 fetch_daily_metrics를 N번
+        부르던 걸 /act_{id}/insights 1콜로 대체한다(홈 N+1 제거). 반환 shape은
+        fetch_daily_metrics의 series와 동일한 {label(MM-DD), spend_krw}로 맞춘다.
+        페이징이 캠페인별 날짜 순서를 흐트러뜨릴 수 있어, 캠페인별로 날짜 오름차순 정렬한다.
+        """
+        account = normalize_ad_account(self._client.ad_account_id)
+        params: dict[str, Any] = {
+            "fields": "spend,campaign_id",
+            "level": "campaign",
+            "date_preset": date_preset,
+            "time_increment": "1",
+            "limit": 500,
+        }
+        raw: dict[str, list[tuple[str, int]]] = {cid: [] for cid in campaign_ids}
+        while True:
+            payload = await self._client.get(f"{account}/insights", params)
+            for row in payload.get("data", []):
+                cid = str(row.get("campaign_id", ""))
+                if not cid:
+                    continue
+                raw.setdefault(cid, []).append(
+                    (str(row.get("date_start", "")), _to_int(row.get("spend")))
+                )
+            paging = payload.get("paging", {})
+            after = (paging.get("cursors") or {}).get("after")
+            if not after or not paging.get("next"):
+                break
+            params = {**params, "after": after}
+        return {
+            cid: [{"label": d[5:], "spend_krw": s} for d, s in sorted(rows)]
+            for cid, rows in raw.items()
+        }
+
     async def get_estimate(self, config: CampaignConfig) -> DeliveryEstimate:
         account = normalize_ad_account(config.ad_account_id or self._client.ad_account_id)
         payload = await self._client.get(
@@ -889,6 +927,7 @@ class MetaAdsReader:
             "category_id": category_id,
             "service_class": service_class,
             "suggested_persona_count": suggested_persona_count,
+            "reach": reach,  # Meta 실측 도달수(원값) — 표본 상한 200과 별개로 화면 표시용
         }
 
     async def get_account_spend(self, date_preset: str = "this_month") -> int:

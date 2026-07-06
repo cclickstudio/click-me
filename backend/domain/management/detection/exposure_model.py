@@ -6,6 +6,10 @@
 
 from domain.management.contracts.policy import CPM_ANCHOR_KRW, HOURLY_PACING
 
+# 이상 판정 임계 — 화면 '탐지 기준' 표기와 판정 로직이 같은 값을 쓰도록 상수로 공유.
+DEFICIT_THRESHOLD = 0.5  # 관측 노출 < 기대 × 이 비율 → 그 시간대는 '결핍'
+MIN_CONSECUTIVE_HOURS = 2  # 결핍이 이 시간 이상 연속일 때만 이상(단발 노이즈 오탐 방지)
+
 
 def expected_hourly_impressions(
     daily_budget_krw: int,
@@ -19,8 +23,8 @@ def expected_hourly_impressions(
 def find_anomaly_window(
     expected: list[float],
     observed: list[int],
-    deficit_threshold: float = 0.5,
-    min_consecutive: int = 2,
+    deficit_threshold: float = DEFICIT_THRESHOLD,
+    min_consecutive: int = MIN_CONSECUTIVE_HOURS,
 ) -> list[int]:
     """기대 대비 관측이 임계 미만인 시간대 반환.
 

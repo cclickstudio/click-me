@@ -12,7 +12,7 @@ import re
 
 from google import genai
 from google.genai import types as genai_types
-from google.genai.errors import ServerError
+from google.genai.errors import ClientError, ServerError
 from langsmith import traceable
 from PIL import Image
 
@@ -211,6 +211,11 @@ async def generate_image_and_copy(
             except ServerError:
                 # 503 등 5xx 과부하 — 일시적. 마지막 시도면 원예외 전파.
                 if attempt >= len(_RETRY_BACKOFF):
+                    raise
+                result = None
+            except ClientError as exc:
+                # 429(RateLimit)만 일시적 — 나머지 4xx(400 등)는 재시도 무의미하므로 즉시 전파.
+                if getattr(exc, "code", None) != 429 or attempt >= len(_RETRY_BACKOFF):
                     raise
                 result = None
             if result is not None:

@@ -14,6 +14,7 @@ import SimResultWidget from './SimResultWidget';
 import DebateStreamWidget from './DebateStreamWidget';
 import DebateSummaryWidget from './DebateSummaryWidget';
 import GenFormWidget from './GenFormWidget';
+import GenProgressWidget from './GenProgressWidget';
 import GenResultWidget from './GenResultWidget';
 import SimGenListWidget from './SimGenListWidget';
 import ActionCards, { type ActionCard } from './ActionCards';
@@ -26,6 +27,10 @@ import KeywordWidget from './KeywordWidget';
 import CitationChips from './CitationChips';
 import PlanChecklist, { type PlanStep } from './PlanChecklist';
 import ErrorCard from './ErrorCard';
+import RemediationOptionsWidget, {
+  type OptionSelectMeta,
+  type RemediationOption,
+} from './RemediationOptionsWidget';
 // 챗→매니지먼트 카드(재이식) — widget.type=create_campaign|campaign_action으로 렌더.
 import ChatCreateCampaignCard from './ChatCreateCampaignCard';
 import ChatCampaignActionCard, { type CampaignActionPayload } from './ChatCampaignActionCard';
@@ -34,6 +39,8 @@ import type { CampaignPrefill } from '@/components/manage/campaigns/CampaignForm
 import type { SimRunResult } from '@/lib/types';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
+const DEFAULT_INPUT_PLACEHOLDER =
+  '메시지를 입력하세요... (/로 명령어, Shift+Enter로 줄바꿈)';
 
 // 상대 프록시 URL(/api/...)은 API_BASE를 붙여 렌더. blob:·http:는 그대로 통과.
 const fullUrl = (u?: string) =>
@@ -216,6 +223,9 @@ type SourceMeta = {
   cards?: ActionCard[]; // Deep Agent·매니지먼트 추천 조치 카드(RESULT/REVIEW/ACTIONBAR)
   plan?: PlanStep[]; // Deep Agent 실행 계획(plan→act→observe) — 체크리스트로 표시
   error?: boolean; // 에러 메시지 — 공통 ErrorCard로 렌더 + 재시도(X1)
+  kind?: string; // remediation_consult 등 — meta 종류 판별용(이상 감지 C안)
+  options?: RemediationOption[]; // remediation_consult 옵션 목록
+  campaign_id?: string; // remediation_consult 대상 캠페인
 };
 // 채팅으로 실제 돌린 시뮬/생성 결과 참조 — 내역에 남겨 재로드 시 "결과 보기" 링크로 렌더.
 type ResultRef = { kind: 'sim' | 'gen'; id: string };
@@ -380,6 +390,14 @@ export default function ChatConversation({
   const [isSpeaking, setIsSpeaking] = useState(false); // TTS 재생 중 여부
   const [autoRead, setAutoRead] = useState(false); // 시각장애 접근성 — 응답 완료 시 자동 읽기
   const textareaRef = useRef<HTMLTextAreaElement>(null); // 멀티라인 자동 높이(P8)
+  // [기타] 클릭 시 입력창에 안내 placeholder를 잠깐 띄우고 포커스만 준다(전송 없음, 이상 감지 C안).
+  const [inputPlaceholder, setInputPlaceholder] = useState(
+    DEFAULT_INPUT_PLACEHOLDER
+  );
+  const focusInput = (placeholder: string) => {
+    setInputPlaceholder(placeholder);
+    textareaRef.current?.focus();
+  };
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null); // 메시지 스크롤 컨테이너(P11)
   const [atBottom, setAtBottom] = useState(true); // 사용자가 하단 근처인지(자동 스크롤 판단)
@@ -932,30 +950,44 @@ export default function ChatConversation({
           return; // 세션 생성 실패 — 화면 표시는 유지, 영속만 생략
         }
       }
-      try {
-        const { messages: saved } = await api.chat.appendWidgets(
-          sid,
-          items.map(it => ({ content: it.content, meta: it.meta }))
-        );
-        // 저장된 id를 반영 — 방금 추가한 같은 수의 말풍선을 교체.
-        if (saved?.length === local.length) {
-          setMessages(prev => {
-            const next = [...prev];
-            for (let k = 0; k < saved.length; k++) {
-              const idx = next.length - saved.length + k;
-              const m = saved[k];
-              next[idx] = {
-                id: m.id,
-                role: 'assistant',
-                content: m.content,
-                meta: (m.meta as SourceMeta | null) ?? undefined,
-              };
-            }
-            return next;
-          });
+      // 영속화 — 일시 오류(백엔드 재시작·네트워크)에 대비해 재시도. 실패하면 새로고침 시
+      // 위젯이 사라지므로(시안 결과 등) 조용히 삼키지 않고 경고를 남긴다.
+      const RETRY_DELAYS_MS = [0, 800, 2500];
+      for (let attempt = 0; attempt < RETRY_DELAYS_MS.length; attempt++) {
+        if (RETRY_DELAYS_MS[attempt] > 0) {
+          await new Promise(r => setTimeout(r, RETRY_DELAYS_MS[attempt]));
         }
-      } catch {
-        // 영속화 실패 — 화면 표시는 유지(새로고침 시 사라질 수 있음)
+        try {
+          const { messages: saved } = await api.chat.appendWidgets(
+            sid,
+            items.map(it => ({ content: it.content, meta: it.meta }))
+          );
+          // 저장된 id를 반영 — 방금 추가한 같은 수의 말풍선을 교체.
+          if (saved?.length === local.length) {
+            setMessages(prev => {
+              const next = [...prev];
+              for (let k = 0; k < saved.length; k++) {
+                const idx = next.length - saved.length + k;
+                const m = saved[k];
+                next[idx] = {
+                  id: m.id,
+                  role: 'assistant',
+                  content: m.content,
+                  meta: (m.meta as SourceMeta | null) ?? undefined,
+                };
+              }
+              return next;
+            });
+          }
+          return;
+        } catch (e) {
+          if (attempt === RETRY_DELAYS_MS.length - 1) {
+            console.warn(
+              '[chat] 위젯 메시지 영속화 실패 — 새로고침 시 이 위젯이 사라질 수 있어요.',
+              e
+            );
+          }
+        }
       }
     },
     [projectId, onSessionCreated]
@@ -1201,7 +1233,11 @@ export default function ChatConversation({
   }, [projectId, appendWidgetMessages]);
 
   const handleSend = useCallback(
-    async (text?: string, resultRef?: ResultRef) => {
+    async (
+      text?: string,
+      resultRef?: ResultRef,
+      opts?: { optionSelect?: OptionSelectMeta }
+    ) => {
       const content = text ?? input.trim();
       if (!content || isStreaming || !projectId) return;
       lastSendRef.current = { text: content, resultRef }; // 에러 재시도용(X1)
@@ -1280,6 +1316,7 @@ export default function ChatConversation({
             })),
             image_url: imageUrl,
             result_ref: resultRef,
+            ...(opts?.optionSelect ? { option_select: opts.optionSelect } : {}),
           }),
         });
 
@@ -1783,6 +1820,14 @@ export default function ChatConversation({
                         onComplete={handleGenComplete}
                       />
                     )}
+                    {msg.meta?.widget?.type === 'gen_progress' &&
+                      msg.meta.widget.data?.generation_id && (
+                        <GenProgressWidget
+                          generationId={msg.meta.widget.data.generation_id}
+                          projectId={projectId}
+                          onComplete={handleGenComplete}
+                        />
+                      )}
                     {msg.meta?.widget?.type === 'gen_result' &&
                       msg.meta.widget.data?.generation_id && (
                         <GenResultWidget
@@ -1807,7 +1852,20 @@ export default function ChatConversation({
                       />
                     )}
                     {msg.meta?.widget?.type === 'batch_sim_form' && (
-                      <BatchSimWidget projectId={projectId} />
+                      <BatchSimWidget
+                        projectId={projectId}
+                        initialAds={
+                          (
+                            msg.meta?.widget?.data as {
+                              ads?: {
+                                ad_title: string;
+                                ad_content: string;
+                                product_category: string;
+                              }[];
+                            }
+                          )?.ads
+                        }
+                      />
                     )}
                     {msg.meta?.widget?.type === 'report_ready' && (
                       <ReportWidget
@@ -1848,6 +1906,26 @@ export default function ChatConversation({
                           />
                         );
                       })()}
+                    {msg.role === 'assistant' &&
+                      msg.meta?.kind === 'remediation_consult' &&
+                      Array.isArray(msg.meta?.options) &&
+                      msg.meta.options.length > 0 && (
+                        <RemediationOptionsWidget
+                          // 리스트 key가 인덱스라 세션 전환 시 같은 자리에 온 다른
+                          // consult 위젯이 리마운트되지 않아 ✓ 상태가 남을 수 있다 —
+                          // 메시지 고유 키(영속 id, 없으면 캠페인+인덱스)로 오염 방지.
+                          key={msg.id ?? `${msg.meta.campaign_id}-${i}`}
+                          options={msg.meta.options}
+                          campaignId={String(msg.meta.campaign_id ?? '')}
+                          onSelect={(text, optionSelect) => {
+                            handleSend(text, undefined, { optionSelect });
+                            scrollToBottom(); // 위로 스크롤된 상태여도 새 대화로 즉시 이동
+                          }}
+                          onEtc={() =>
+                            focusInput('궁금한 점이나 다른 방법을 물어보세요')
+                          }
+                        />
+                      )}
                     {msg.role === 'assistant' && msg.meta?.plan?.length ? (
                       <PlanChecklist plan={msg.meta.plan} />
                     ) : null}
@@ -2039,7 +2117,8 @@ export default function ChatConversation({
                 handleSend();
               }
             }}
-            placeholder='메시지를 입력하세요... (/로 명령어, Shift+Enter로 줄바꿈)'
+            onBlur={() => setInputPlaceholder(DEFAULT_INPUT_PLACEHOLDER)}
+            placeholder={inputPlaceholder}
             rows={1}
             disabled={isStreaming}
             className='flex-1 px-4 py-3 rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] text-sm text-[#191F28] dark:text-[#F2F4F6] placeholder-[#B0B8C1] dark:placeholder-[#4B5563] focus:outline-none focus:border-[#3182F6] focus:ring-2 focus:ring-[#3182F6]/10 transition-colors resize-none overflow-y-auto bg-white dark:bg-[#252D3D] leading-relaxed disabled:opacity-60'

@@ -70,6 +70,60 @@ export interface AnomalyScanItem {
   name: string;
   state: string;
   diagnosis: { anomaly_type: string; hypothesis?: string } & Record<string, unknown>;
+  suggested_action?: string; // REPLACE_CREATIVE 등 — CTA 렌더용
+}
+// 예산 리밸런싱 제안 — 하이브리드. 2개+는 이전(transfer), 1개는 단일 증액/감액(adjust).
+export interface RebalanceSide {
+  campaign_id: string;
+  name: string;
+  cpc_krw: number;
+  daily_budget_krw: number;
+  after_krw: number;
+}
+// 캠페인 2개+ — 저효율→고효율 일예산 이동(적용은 budget-commit 2건). kind 없으면 하위호환으로 이전.
+export interface RebalanceTransfer {
+  kind?: 'transfer';
+  from: RebalanceSide;
+  to: RebalanceSide;
+  move_krw: number;
+  basis: string;
+  reason: string;
+}
+// 캠페인 1개 — 그 캠페인 일예산을 소진율 기준 증액/감액(적용은 budget-commit 1건).
+export interface RebalanceAdjust {
+  kind: 'adjust';
+  direction: 'increase' | 'decrease';
+  campaign: RebalanceSide;
+  move_krw: number;
+  basis: string;
+  reason: string;
+}
+export type RebalanceProposal = RebalanceTransfer | RebalanceAdjust;
+// 성과 리포트 — 선택 기간 실측 요약(결정론). since는 maximum이면 null(전체 기간).
+export interface WeeklyReport {
+  period: { since: string | null; until: string; label?: string };
+  totals: {
+    spend_krw: number;
+    impressions: number;
+    clicks: number;
+    conversions: number;
+    ctr: number;
+    cpc_krw: number;
+  };
+  campaigns: {
+    campaign_id: string;
+    name: string;
+    state: string;
+    spend_krw: number;
+    impressions: number;
+    clicks: number;
+    conversions: number | null;
+    ctr: number;
+    cpc_krw: number;
+    frequency: number;
+  }[];
+  highlights: string[];
+  next_actions: string[];
 }
 export interface AnomalyScanResponse {
   source: string;
@@ -261,6 +315,8 @@ function buildCompareForm(input: SimCompareInput): FormData {
 // 캠페인 조회 쿼리스트링 — 전환가치·목표 ROAS는 입력됐을 때만 붙인다.
 // 조회 기간 토글 — 전체 누적(maximum) / 최근 30일 / 이번 달. Ads Manager와 맞추기용.
 export type DatePreset = "maximum" | "last_30d" | "this_month";
+// 성과 리포트 기간 — 캠페인 토글 + 주간(last_7d)까지. 리포트 전용이라 별도 타입.
+export type ReportPeriod = DatePreset | "last_7d";
 
 function _campaignQuery(
   conversionValueKrw?: number | null,
@@ -268,6 +324,7 @@ function _campaignQuery(
   datePreset?: DatePreset,
   includeArchived?: boolean,
   page?: { limit?: number; offset?: number },
+  includeSeries?: boolean,
 ): string {
   const p = new URLSearchParams();
   if (conversionValueKrw) p.set("conversion_value_krw", String(conversionValueKrw));
@@ -276,6 +333,7 @@ function _campaignQuery(
   if (includeArchived) p.set("include_archived", "true");
   if (page?.limit != null) p.set("limit", String(page.limit));
   if (page?.offset != null) p.set("offset", String(page.offset));
+  if (includeSeries) p.set("include_series", "true");
   const q = p.toString();
   return q ? `?${q}` : "";
 }
@@ -296,6 +354,43 @@ export type ChatHistoryMessage = {
   content: string;
   meta?: unknown;
   created_at?: string | null;
+};
+
+export interface AutomationRunItem {
+  id: string;
+  domain: string;
+  job_name: string;
+  status: string;
+  severity: string | null;
+  title: string;
+  body: string;
+  suggested_action: string | null;
+  payload: Record<string, unknown>;
+  created_at: string | null;
+  resolved_at: string | null;
+}
+// 운영 알림(이상 감지 C안) — 스펙 2026-07-03 §2
+export type ManagementNotification = {
+  id: string;
+  project_id: string;
+  project_name: string;
+  campaign_id: string | null;
+  kind: string;
+  payload: {
+    campaign_name?: string;
+    message?: string;
+    anomaly_type?: string;
+    options?: { index: number; action: string; tool_hint: string | null; label: string }[];
+    kind?: string; // "account"면 계정 단위 정보성 알림(캠페인·상담 없음)
+    title?: string; // 계정 알림 제목(예: "지갑 거의 소진")
+    rule?: string;
+  };
+  read_at: string | null;
+  resolved_at: string | null;
+  resolution: string | null;
+  followup_count: number;
+  last_notified_at: string;
+  created_at: string | null;
 };
 
 export const api = {
@@ -746,9 +841,10 @@ export const api = {
       datePreset?: DatePreset,
       includeArchived?: boolean,
       page?: { limit?: number; offset?: number },
+      includeSeries?: boolean, // 홈·모니터링 스파크라인용 일별 지출을 목록에 포함(상세 N콜 제거)
     ) =>
       request<CampaignsResponse>(
-        `/management/campaigns${_campaignQuery(conversionValueKrw, targetRoas, datePreset, includeArchived, page)}`,
+        `/management/campaigns${_campaignQuery(conversionValueKrw, targetRoas, datePreset, includeArchived, page, includeSeries)}`,
       ),
     campaign: (
       id: string,
@@ -758,6 +854,16 @@ export const api = {
     ) =>
       request<CampaignDetail>(
         `/management/campaigns/${id}${_campaignQuery(conversionValueKrw, targetRoas, datePreset)}`,
+      ),
+    // 예산 리밸런싱 제안 — 최근 7일 CPC 격차 기반(제안만, 적용은 budgetCommit 2건)
+    rebalanceProposal: () =>
+      request<{ proposal: RebalanceProposal | null; note: string | null }>(
+        `/management/budget/rebalance-proposal`,
+      ),
+    // 성과 리포트 — 선택 기간 실측 요약(총합·캠페인별·하이라이트·다음 액션). 기본 last_7d.
+    weeklyReport: (period?: ReportPeriod) =>
+      request<{ report: WeeklyReport | null; note: string | null }>(
+        `/management/report/weekly${period ? `?period=${period}` : ""}`,
       ),
     // 실 캠페인 성과 이상 스캔 — live에서 캠페인별 성과 진단(ROAS 미달 등)을 모아 반환.
     anomalyScan: (targetRoas?: number | null) =>
@@ -854,7 +960,13 @@ export const api = {
         category_id: number;
         service_class: number;
         suggested_persona_count: number;
+        reach: number; // Meta 실측 도달수(원값) — 표본 상한 200과 별개
       }>(`/management/campaigns/${campaignId}/targeting`),
+    // 캠페인 이름 자동 제안 — 소재·시뮬 집계 기반 후보 3개(LLM 실패 시 규칙 폴백)
+    nameSuggestions: (simulationId: string) =>
+      request<{ names: string[] }>(
+        `/management/campaign-proposals/name-suggestions?simulation_id=${encodeURIComponent(simulationId)}`,
+      ),
     // 기존 Meta 캠페인에 시뮬 역방향 연결
     linkSimulation: (campaignId: string, simulationId: string) =>
       request<{ campaign_id: string; simulation_id: string; linked: boolean }>(
@@ -899,6 +1011,42 @@ export const api = {
     // 이 캠페인으로 제출된 잠재고객(리드) 명단 — Meta leadgen 조회(권한 필요 시 note)
     leads: (campaignId: string) =>
       request<LeadsResponse>(`/management/campaigns/${campaignId}/leads`),
+    // 운영 알림(이상 감지 C안) — 스펙 2026-07-03 §2
+    notifications: {
+      list: (params?: { project_id?: string; unread_only?: boolean }) => {
+        const q = new URLSearchParams();
+        if (params?.project_id) q.set("project_id", params.project_id);
+        if (params?.unread_only) q.set("unread_only", "true");
+        const qs = q.toString();
+        return request<{ notifications: ManagementNotification[]; unread_count: number }>(
+          `/management/notifications${qs ? `?${qs}` : ""}`,
+        );
+      },
+      read: (ids: string[]) =>
+        request<{ updated: number }>(`/management/notifications/read`, {
+          method: "POST",
+          body: JSON.stringify({ ids }),
+        }),
+      resolve: (id: string, resolution: "ignored" | "actioned") =>
+        request<{ resolved: boolean; resolution: "ignored" | "actioned" }>(
+          `/management/notifications/${id}/resolve`,
+          { method: "POST", body: JSON.stringify({ resolution }) },
+        ),
+      consult: (id: string) =>
+        request<
+          | { status: "consult"; session_id: string }
+          | { status: "normal"; message: string }
+          | { status: "already_resolved"; resolution: string }
+        >(`/management/notifications/${id}/consult`, { method: "POST" }),
+      // 수동 이상 점검 — 스캔 즉시 실행. 잠금 409·쿨다운 429는 ApiError.message(detail)로 노출.
+      notifyScan: () =>
+        request<{
+          scanned_findings: number;
+          delivered: number;
+          skipped: { campaign_id: string; reason: string }[];
+          failed: { campaign_id: string; reason: string }[];
+        }>(`/management/anomaly/notify-scan`, { method: "POST" }),
+    },
   },
 
   generator: {
@@ -983,6 +1131,26 @@ export const api = {
         throw new Error((err as { detail?: string }).detail ?? `HTTP ${res.status}`);
       }
       return res.json() as Promise<{ temp_key: string }>;
+    },
+  },
+
+  automation: {
+    // 워커(APScheduler)가 서버에서 자동으로 남긴 결과 조회 — 탭 안 열려도 서버 결과를 읽는다.
+    runs: (params?: {
+      projectId?: string;
+      domain?: string;
+      unresolved?: boolean;
+      limit?: number;
+    }) => {
+      const q = new URLSearchParams();
+      if (params?.projectId) q.set("project_id", params.projectId);
+      if (params?.domain) q.set("domain", params.domain);
+      if (params?.unresolved) q.set("unresolved", "true");
+      if (params?.limit) q.set("limit", String(params.limit));
+      const qs = q.toString();
+      return request<{ runs: AutomationRunItem[]; count: number }>(
+        `/automation/runs${qs ? `?${qs}` : ""}`,
+      );
     },
   },
 };

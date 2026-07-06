@@ -33,6 +33,8 @@ class UnifiedChatState(AgentState):
     project_id: str | None
     context_ad_id: str | None
     memory_context: str | None
+    # 이번 턴 사용자 메시지에 이미지 첨부 여부 — run_generation이 상품 이미지 경로(폼) 분기에 쓴다.
+    has_image: bool | None
     # ── 출력(tool/콜백이 기록) ──
     widget: dict | None
     source: str | None

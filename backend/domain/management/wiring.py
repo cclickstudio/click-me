@@ -12,7 +12,9 @@ if TYPE_CHECKING:
 
 
 def build_reader(settings) -> AdPlatformReader:
-    if getattr(settings, "use_mock", True):
+    # management_reader_mock: 매니지먼트 reader만 mock 강제(알림 데모용) — 전역 use_mock과
+    # 분리해 채팅(mock이면 에이전트 비활성, deep_agent_builder 참조)을 live로 유지한다.
+    if getattr(settings, "use_mock", True) or getattr(settings, "management_reader_mock", False):
         # 지연 import — MockAdPlatform(🅰 소유)은 A-1 구현 전까지 빈 stub
         from domain.management.adapters.mock import MockAdPlatform  # noqa: PLC0415
 
@@ -155,46 +157,6 @@ def build_generator_client(settings):
     return GeneratorReadClient(base_url=base, internal_token=token)
 
 
-def build_regeneration_job_store(settings):
-    """재생성 job store — use_mock이면 인메모리, 아니면 DB(regeneration_jobs)."""
-    if getattr(settings, "use_mock", True):
-        from domain.management.execution.regeneration_jobs import (  # noqa: PLC0415
-            InMemoryRegenerationJobStore,
-        )
-
-        return InMemoryRegenerationJobStore()
-    from domain.management.execution.db_stores import (  # noqa: PLC0415
-        DbRegenerationJobStore,
-    )
-
-    return DbRegenerationJobStore()
-
-
-#: 재생성 job 서비스 싱글톤 — RemediationAgent._pending이 인메모리라 프로세스 1개로 고정.
-_regeneration_job_service = None
-
-
-def build_regeneration_job_service(settings):
-    """프로세스 싱글톤. rank·select가 같은 agent 인스턴스를 공유해야 한다(설계 §2.3).
-
-    최초 호출의 settings로만 초기화 — 이후 호출의 settings는 무시(전 프로세스 단일).
-    """
-    global _regeneration_job_service  # noqa: PLW0603
-    if _regeneration_job_service is None:
-        from domain.management.agents.regeneration_tools import (  # noqa: PLC0415
-            build_regeneration_agent,
-        )
-        from domain.management.execution.service.regeneration_job_service import (  # noqa: PLC0415
-            RegenerationJobService,
-        )
-
-        _regeneration_job_service = RegenerationJobService(
-            store=build_regeneration_job_store(settings),
-            agent=build_regeneration_agent(),  # 키 없으면 결정론 폴백
-        )
-    return _regeneration_job_service
-
-
 # ── 챗 오케스트레이터 공유 팩토리 (라우터와 병렬, 통합은 추후) ───────────────────────────
 
 
@@ -231,14 +193,19 @@ def build_executor(settings, *, budget=None, audit=None):
     챗은 wiring 계층에서 단일 인스턴스로만 호출할 것 — 반복 호출 시 budget을 주입하라.
     """
     from domain.management.contracts.enums import ExecutionMode  # noqa: PLC0415
-    from domain.management.contracts.policy import APPROVAL_POLICY_VERSION  # noqa: PLC0415
+    from domain.management.contracts.policy import (
+        APPROVAL_POLICY_VERSION,  # noqa: PLC0415
+        DEFAULT_MONTHLY_TARGET_KRW,  # noqa: PLC0415
+    )
     from domain.management.execution.executor import (  # noqa: PLC0415
         DEFAULT_ALLOWED_MODES,
         Executor,
     )
     from domain.management.execution.tier import TenantBudgetRegistry  # noqa: PLC0415
+    from domain.management.history_link import build_history_recorder  # noqa: PLC0415
 
-    budget = budget or TenantBudgetRegistry(default_limit_krw=10_000_000)
+    # 기본 월 목표 — policy 단일 소스(중소기업 벤치마크, 일 10만 페이스).
+    budget = budget or TenantBudgetRegistry(default_limit_krw=DEFAULT_MONTHLY_TARGET_KRW)
     audit = audit or build_audit_sink(settings)
 
     allowed = DEFAULT_ALLOWED_MODES
@@ -253,4 +220,5 @@ def build_executor(settings, *, budget=None, audit=None):
         state_version_provider=state_version_v1,
         current_policy_version=APPROVAL_POLICY_VERSION,
         allowed_modes=allowed,
+        history_recorder=build_history_recorder(),  # 실행 확정 → 롱텀 메모리 기록
     )
