@@ -49,17 +49,20 @@ export default function DeliveryChart({
           labelStyle={{ color: '#191F28' }}
           contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #E5E8EB' }}
         />
-        <ReferenceLine
-          y={dailyBudget}
-          stroke="#8B95A1"
-          strokeDasharray="4 3"
-          label={{
-            value: `일예산 ${won(dailyBudget)}`,
-            position: 'insideTopRight',
-            fontSize: 10,
-            fill: '#8B95A1',
-          }}
-        />
+        {/* 일예산 미상(0, 예: 보관 캠페인은 광고세트 예산 조회 불가)이면 '일예산 ₩0' 오해 방지를 위해 기준선 숨김 — KPI 카드의 '—'와 표기 통일 */}
+        {dailyBudget > 0 && (
+          <ReferenceLine
+            y={dailyBudget}
+            stroke="#8B95A1"
+            strokeDasharray="4 3"
+            label={{
+              value: `일예산 ${won(dailyBudget)}`,
+              position: 'insideTopRight',
+              fontSize: 10,
+              fill: '#8B95A1',
+            }}
+          />
+        )}
         <Bar dataKey="spend_krw" name="지출" fill="#3182F6" radius={[4, 4, 0, 0]} />
       </BarChart>
     </ResponsiveContainer>

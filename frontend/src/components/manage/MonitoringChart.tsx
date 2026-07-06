@@ -1,6 +1,7 @@
 // 모니터링 시연 차트 — 기대모델 vs 실측 노출 + 이상구간 (Recharts)
 'use client';
 
+import { memo, useMemo } from 'react';
 import {
   Line,
   LineChart,
@@ -12,12 +13,17 @@ import {
 } from 'recharts';
 import type { RunResult } from './types';
 
-export default function MonitoringChart({ run }: { run: RunResult }) {
-  const data = run.expected.map((e, i) => ({
-    hour: `${String(i).padStart(2, '0')}시`,
-    기대: Math.round(e),
-    실측: run.snapshots[i]?.impressions ?? null,
-  }));
+// memo — run이 그대로면(mode·busy 토글 등) Recharts 재조정을 건너뛴다.
+function MonitoringChart({ run }: { run: RunResult }) {
+  const data = useMemo(
+    () =>
+      run.expected.map((e, i) => ({
+        hour: `${String(i).padStart(2, '0')}시`,
+        기대: Math.round(e),
+        실측: run.snapshots[i]?.impressions ?? null,
+      })),
+    [run],
+  );
   return (
     <ResponsiveContainer width="100%" height={150}>
       <LineChart data={data} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
@@ -52,3 +58,5 @@ export default function MonitoringChart({ run }: { run: RunResult }) {
     </ResponsiveContainer>
   );
 }
+
+export default memo(MonitoringChart);

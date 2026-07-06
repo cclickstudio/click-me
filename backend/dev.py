@@ -50,6 +50,9 @@ def main():
             "domain",
             "--port",
             "8000",
+            # 알림 SSE(장수명 연결)가 열려 있으면 Ctrl+C가 무한 대기 — 3초 후 강제 정리.
+            "--timeout-graceful-shutdown",
+            "3",
         ],
         check=True,
     )

@@ -8,7 +8,6 @@ per-turn 컨텍스트(session_id·project_id…)는 InjectedState로 읽는다(c
 
 from __future__ import annotations
 
-import hashlib
 from typing import Annotated
 
 from langchain_core.messages import ToolMessage
@@ -29,6 +28,14 @@ from domain.generator.assistant.tools import list_generations
 from domain.simulation.assistant.tools import list_simulations
 
 _VALID_CAMPAIGN_ACTIONS = ("pause", "activate", "increase_budget", "decrease_budget")
+
+# 실행 히스토리 summary용 한글 라벨 — BM25(공백 토큰) 서치가 한국어 질의에 잡히게.
+_CAMPAIGN_ACTION_LABELS = {
+    "pause": "일시중지",
+    "activate": "게재 시작",
+    "increase_budget": "예산 증액",
+    "decrease_budget": "예산 감액",
+}
 
 # 일반 지식 KB 게이트 — top cosine이 이 미만이면 근거 불충분(구 ADVISE 게이트와 동일 취지).
 _GENERAL_KB_THRESHOLD = 0.35
@@ -58,8 +65,8 @@ def _subreq(state: dict, query: str) -> SubagentRequest:
     )
 
 
-def build_chat_tools(settings, memory=None, clio_retriever=None) -> list:
-    """통합 채팅 에이전트에 등록할 tool 리스트를 빌드한다(settings·핸들러·메모리 클로저).
+def build_chat_tools(settings, clio_retriever=None) -> list:
+    """통합 채팅 에이전트에 등록할 tool 리스트를 빌드한다(settings·핸들러 클로저).
 
     clio_retriever는 테스트 주입용 — None이면 풀모드(키 존재·use_mock=False)에서만 내부 생성.
     """
@@ -85,7 +92,9 @@ def build_chat_tools(settings, memory=None, clio_retriever=None) -> list:
     ) -> Command:
         """집행 '후' 실측 성과·운영 질문, 그리고 캠페인 운영·성과 개선·예산 배분·타깃/오디언스
         전략에 관한 일반 조언에 답한다. 캠페인 예산·소진·CTR/ROAS/CVR 실적·페이싱·이상·정책·
-        벤치마크 등. query에는 사용자의 질문을 명확히 정리해 넣어라."""
+        벤치마크, 주간 리포트·예산 리밸런싱·이상/피로 스캔·플랫폼/연령성별 분해·캠페인 시안·
+        타게팅·리드 명단·오가닉 대비 증분 비교까지. query에는 사용자의 질문을 명확히 정리해
+        넣어라."""
         res = await mgmt(_subreq(state, query))
         return Command(
             update={
@@ -491,6 +500,15 @@ def build_chat_tools(settings, memory=None, clio_retriever=None) -> list:
             prefill["objective"] = objective
         if total_budget_krw:
             prefill["total_budget_krw"] = total_budget_krw
+        # 실행 히스토리 적재 — 폼 시점 = '요청' 기록(실행 확정은 executor가 별도 기록).
+        # 승인 없이 닫혀도 남으므로 action·summary에 요청임을 명시해 거짓 양성을 막는다.
+        helpers.spawn_record_execution(
+            state.get("project_id"),
+            "management",
+            "create_campaign_request",
+            f"캠페인 생성 요청(폼) {name} 목표 {objective} 예산 {total_budget_krw}원",
+            {**prefill, "stage": "request"},
+        )
         return Command(
             update={
                 **widgets.create_campaign(prefill),
@@ -537,6 +555,17 @@ def build_chat_tools(settings, memory=None, clio_retriever=None) -> list:
             payload["new_daily_budget_krw"] = new_daily_budget_krw
         if pct:
             payload["pct"] = pct
+        # 실행 히스토리 적재 — 폼 시점 = '요청' 기록(실행 확정은 executor가 별도 기록).
+        helpers.spawn_record_execution(
+            state.get("project_id"),
+            "management",
+            f"{action}_request",
+            f"캠페인 조치 요청(폼) {_CAMPAIGN_ACTION_LABELS.get(action, action)} "
+            f"{campaign_name or campaign_id} "
+            f"{f'일예산 {new_daily_budget_krw}원' if new_daily_budget_krw else ''}"
+            f"{f'{pct}%' if pct else ''}".strip(),
+            {**payload, "stage": "request"},
+        )
         return Command(
             update={
                 **widgets.campaign_action(payload),
@@ -606,14 +635,15 @@ def build_chat_tools(settings, memory=None, clio_retriever=None) -> list:
         """최근 시뮬/생성 입력을 '템플릿으로 저장'한다('이 설정 저장해줘').
         name이 없으면 자동 명명."""
         project_id = state.get("project_id")
-        recent = await history.get_long_term_memory(project_id, limit=5)
+        # 최근 실행 히스토리(롱텀 메모리)에서 마지막 시뮬/생성 입력을 찾는다(빈 query = 최신순).
+        recent = await history.search_execution_history(project_id, "", k=5)
         latest = next(
-            (m for m in recent if m.get("memory_type") in ("sim_input", "gen_input")), None
+            (r for r in recent if r.get("feature_type") in ("simulation", "generation")), None
         )
         if latest is None:
             return "저장할 설정이 없어요. 먼저 시뮬레이션이나 생성을 한 번 진행해주세요."
-        ttype = "sim" if latest["memory_type"] == "sim_input" else "gen"
-        content = latest.get("content") or {}
+        ttype = "sim" if latest["feature_type"] == "simulation" else "gen"
+        content = latest.get("payload") or {}
         final_name = (
             name
             or content.get("ad_title")
@@ -664,47 +694,64 @@ def build_chat_tools(settings, memory=None, clio_retriever=None) -> list:
             return "브랜드 설정을 기억하지 못했어요. 잠시 후 다시 알려주세요."
         return "브랜드 설정을 기억했어요."
 
-    # ───────────────────────── 메모리 tool (장기기억) ─────────────────────────
+    # ───────────────────────── 매니지먼트 이상 상담 (위임: domain/management/remediation) ──
     @tool
-    async def remember(
-        fact: str,
-        kind: str = "semantic",
+    async def consult_anomaly(
+        campaign_id: str = "",
+        campaign_name: str = "",
         *,
         state: Annotated[dict, InjectedState],
-    ) -> str:
-        """다음 대화에서도 기억할 사용자 선호·결정·반복 관심을 장기기억에 저장한다.
-        일회성 정보·인사·잡담은 저장하지 않는다. kind=semantic|episodic|profile."""
-        user_id = state.get("user_id")
-        fact = (fact or "").strip()
-        if not (memory and user_id and fact):
-            return "저장 생략(내용 없음/비로그인)."
-        key = f"{kind}:{hashlib.sha1(fact.encode()).hexdigest()[:16]}"
-        await memory.remember(state.get("org_id"), user_id, key, {"kind": kind, "fact": fact})
-        return "기억했습니다."
+        tool_call_id: Annotated[str, InjectedToolCallId],
+    ) -> Command:
+        """캠페인이 '왜 안 좋은지/이상 있는지/문제 없는지' 물으면 호출. 서버 실측으로
+        재검증해 이상이면 조치 옵션을, 정상이면 정상 확인을 답한다. 이름만 알면 campaign_name."""
+        from domain.management.remediation.advisor import (  # noqa: PLC0415
+            consult,
+            find_campaign_id,
+        )
 
-    @tool
-    async def recall(
-        query: str,
-        *,
-        state: Annotated[dict, InjectedState],
-    ) -> str:
-        """과거 세션에서 저장한 사용자 장기기억을 의미 기반으로 조회한다."""
-        user_id = state.get("user_id")
-        if not (memory and user_id):
-            return "(저장된 기억 없음)"
-        rows = await memory.recall(state.get("org_id"), user_id, query=query, limit=5)
-        facts = [r.get("fact") for r in rows if r.get("fact")]
-        return "\n".join(f"- {f}" for f in facts) or "(저장된 기억 없음)"
+        cid = campaign_id or (
+            await find_campaign_id(settings, campaign_name) if campaign_name else None
+        )
+        if not cid:
+            text_out = "캠페인을 특정하지 못했어요. 캠페인 이름이나 ID를 알려 주세요."
+        else:
+            res = await consult(settings, cid)
+            if res is None:
+                text_out = "실측 조회에 실패해 지금은 확인할 수 없어요. 잠시 후 다시 시도해 주세요."
+            else:
+                text_out = res.message
+                if res.options:
+                    # 기계가독 매핑 — LLM이 번호→도구를 오매핑하지 않게 명시(meta 미영속의 보완).
+                    mapping = ", ".join(
+                        f"{o.index}={o.action.value}({o.tool_hint or '관망'})" for o in res.options
+                    )
+                    text_out += f"\n\n[옵션-도구 매핑 · campaign_id={cid}] {mapping}"
+        return Command(update={"messages": [ToolMessage(text_out, tool_call_id=tool_call_id)]})
 
+    # ───────────────────── 롱텀 메모리 tool (실행 히스토리) ─────────────────────
     @tool
     async def recall_history(
-        query: str,
+        query: str = "",
+        feature_type: str = "",
+        date_from: str = "",
+        date_to: str = "",
         *,
         state: Annotated[dict, InjectedState],
     ) -> str:
-        """이 프로젝트에서 과거 수행한 시뮬/생성/매니지먼트 실행 이력을 키워드로 조회한다.
-        '지난번 20대 시뮬 뭐였지'처럼 과거에 무엇을 언제 돌렸는지가 필요할 때 호출한다."""
-        rows = await history.search_execution_history(state.get("project_id"), query, k=5)
+        """이 프로젝트에서 과거 수행한 시뮬/생성/매니지먼트 실행 이력(롱텀 메모리)을 조회한다.
+        '지난번 20대 시뮬 뭐였지'처럼 과거에 무엇을 언제 돌렸는지가 필요할 때 호출한다.
+        query는 키워드(비우면 최신순). feature_type=simulation|generation|management(선택).
+        '6월 20일에 뭐 돌렸지'처럼 시점 질문이면 date_from/date_to를 YYYY-MM-DD로 채운다
+        (하루면 둘 다 같은 날짜)."""
+        rows = await history.search_execution_history(
+            state.get("project_id"),
+            query,
+            k=5,
+            feature_type=feature_type or None,
+            date_from=date_from or None,
+            date_to=date_to or None,
+        )
         if not rows:
             return "(수행 이력 없음)"
         labels = {"simulation": "시뮬", "generation": "생성", "management": "매니지먼트"}
@@ -731,12 +778,11 @@ def build_chat_tools(settings, memory=None, clio_retriever=None) -> list:
         batch_simulation,
         create_campaign,
         manage_campaign,
+        consult_anomaly,
         load_template,
         show_templates,
         save_template,
         show_brand,
         extract_brand,
-        remember,
-        recall,
         recall_history,
     ]

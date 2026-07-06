@@ -90,7 +90,8 @@ _EXTRA_INDEXES = [
     (False, "ix_chat_messages_session", "management_chat_messages", "(session_id, created_at)"),
     (False, "ix_agent_runs_thread", "management_agent_runs", "(thread_id)"),
     (False, "ix_kb_feedback_tenant", "management_kb_feedback", "(tenant_id, created_at)"),
-    (False, "ix_user_memory_scope", "management_user_memory", "(tenant_id, user_id, created_at)"),
+    # ix_user_memory_scope(management_user_memory)는 0006 drop과 함께 제거 —
+    # ORM에서 테이블이 빠져 create_all이 안 만들므로 여기 있으면 신규 DB에서 실패한다.
 ]
 
 

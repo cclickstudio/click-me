@@ -3,7 +3,7 @@
 
 벡터만 쓰면 ROAS·PENDING_REVIEW·BID_LOSS 같은 정확 토큰을 놓칠 수 있어, 키워드 검색을 더해
 재현율을 높인다. 숫자가 아니라 '판단·가이드'(정책·플레이북·KPI 규칙) 근거용 — 출처(source·title)로
-답변에 인용한다. 임베딩은 EmbeddingProvider(기본 BGE-M3 1024) — KB·LTM 동일 차원(spec §6.1/§9).
+답변에 인용한다. 임베딩은 EmbeddingProvider(1536) — KB·LTM 동일 모델·차원(spec §6.1/§9).
 """
 
 from __future__ import annotations

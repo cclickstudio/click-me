@@ -27,6 +27,14 @@ class _FakeDB:
         return None
 
 
+@pytest.fixture(autouse=True)
+def _restore_budget_limit():
+    """인메모리 _BUDGET 한도 원복 — set_limit 잔류가 다른 테스트(executor 판정)로 새지 않게."""
+    before = management._BUDGET.for_tenant(management.TENANT_ID).limit_krw
+    yield
+    management._BUDGET.set_limit(management.TENANT_ID, before)
+
+
 @pytest.fixture()
 def client():
     app = FastAPI()

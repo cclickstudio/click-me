@@ -82,21 +82,44 @@ _FEATURE_BY_MEM = {
 
 
 def spawn_persist(project_id: str | None, mem_type: str, data: dict) -> None:
-    """sim_input/gen_input을 롱텀메모리·실행 히스토리 저장 + 프로필 추론(백그라운드, 실패 무시)."""
+    """sim_input/gen_input을 실행 히스토리(롱텀 메모리)에 적재 + 프로필 추론(백그라운드)."""
     if not project_id:
         return
 
     async def _run() -> None:
         try:
-            await history.save_long_term_memory(project_id, mem_type, data)
             feat = _FEATURE_BY_MEM.get(mem_type)
-            if feat:  # 기능 수행 이력을 BM25 키워드 서치용으로 별도 적재
+            if feat:  # 기능 수행 이력 — BM25 키워드 서치용 롱텀 메모리(단일 적재)
                 await history.record_execution(
                     project_id, feat[0], feat[1], history._memory_text(mem_type, data), payload=data
                 )
             await history.infer_profile_from_execution_history(project_id)
         except Exception as exc:  # noqa: BLE001 — 영속 실패가 위젯/응답을 막지 않게
             print(f"[chat] persist error: {exc!r}")
+
+    task = asyncio.create_task(_run())
+    _bg_tasks.add(task)
+    task.add_done_callback(_bg_tasks.discard)
+
+
+def spawn_record_execution(
+    project_id: str | None, feature_type: str, action: str, summary: str, payload: dict
+) -> None:
+    """기능 수행 1건을 실행 히스토리(롱텀 메모리)에 백그라운드 적재.
+
+    spawn_persist와 달리 프로필 추론 없이 적재만 한다 — 매니지먼트 등 브랜드 프로필과
+    무관한 기능용. summary는 BM25 키워드 서치 대상 평문(recall_history가 조회).
+    """
+    if not project_id:
+        return
+
+    async def _run() -> None:
+        try:
+            await history.record_execution(
+                project_id, feature_type, action, summary, payload=payload
+            )
+        except Exception as exc:  # noqa: BLE001 — 영속 실패가 위젯/응답을 막지 않게
+            print(f"[chat] record execution error: {exc!r}")
 
     task = asyncio.create_task(_run())
     _bg_tasks.add(task)
