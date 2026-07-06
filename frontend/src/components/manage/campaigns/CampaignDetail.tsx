@@ -18,6 +18,7 @@ import type {
 import { budgetLabel, fmtCvr, fmtRoas, metricsBlocked, pacingMeaningful } from './types';
 import { formatKSTDate, formatKSTFull } from '@/lib/datetime';
 import { StateBadge } from './StateBadge';
+import { ConversionFunnel } from './ConversionFunnel';
 import { OriginLegend, OriginTag } from '../ValueOrigin';
 
 // 차트는 펼칠 때만 로드(번들 분리, SSR 끄기 — Recharts는 DOM 측정형)
@@ -71,13 +72,15 @@ function Tile({
   label,
   value,
   origin,
+  hint,
 }: {
   label: string;
   value: string;
   origin?: 'setting' | 'computed';
+  hint?: string; // 마우스오버 설명 — 합산 안 되는 지표(도달)·분모가 다른 지표(CVR) 오해 방지용
 }) {
   return (
-    <div className="rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] px-3 py-2.5">
+    <div title={hint} className="rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] px-3 py-2.5">
       <p className="text-[12px] text-[#8B95A1]">
         {label}
         {origin && <OriginTag origin={origin} />}
@@ -360,14 +363,23 @@ export function CampaignDetail({
       <div className="grid grid-cols-2 md:grid-cols-4 gap-2.5 mt-2">
         <Tile label="노출" value={dBlocked ? '—' : s.impressions.toLocaleString()} />
         <Tile label="클릭" value={dBlocked ? '—' : s.clicks.toLocaleString()} />
-        <Tile label="도달" value={dBlocked ? '—' : s.reach.toLocaleString()} />
+        <Tile
+          label="도달"
+          value={dBlocked ? '—' : s.reach.toLocaleString()}
+          hint="기간 내 고유 인원(중복 제거) — 같은 사람이 여러 날 봐도 1명이라, 일자별 도달의 합계보다 작을 수 있어요"
+        />
         <Tile label="지출" value={dBlocked ? '—' : `₩${s.spend_krw.toLocaleString()}`} />
         <Tile label="CTR(클릭률)" value={dBlocked ? '—' : `${(s.ctr * 100).toFixed(1)}%`} />
         <Tile label="CPC(클릭당비용)" value={dBlocked ? '—' : `₩${s.cpc_krw.toLocaleString()}`} />
-        <Tile label="CPM(노출당비용)" value={dBlocked ? '—' : `₩${s.cpm_krw.toLocaleString()}`} />
+        <Tile
+          label="CPM(노출당비용)"
+          value={dBlocked ? '—' : `₩${s.cpm_krw.toLocaleString()}`}
+          hint="노출 1,000회당 평균 비용 = 지출 ÷ 노출 × 1,000 — 단가라서 일자별 값을 합산해도 전체가 되지 않아요"
+        />
         <Tile label="빈도" value={dBlocked ? '—' : s.frequency.toFixed(2)} />
         <Tile
           label="CVR(전환율)"
+          hint="전환수 ÷ 링크 클릭수 — CTR의 전체 클릭(반응·프로필 클릭 포함)과 분모가 달라요"
           value={
             dBlocked
               ? '—'
@@ -391,6 +403,11 @@ export function CampaignDetail({
           label={detail.budget_type === 'lifetime' ? '총예산' : '일예산(하루 상한)'}
           value={budgetLabel(detail)}
           origin="setting"
+          hint={
+            detail.budget_type === 'none'
+              ? '예산 정보를 조회할 수 없어요 — 보관·삭제된 캠페인은 Meta가 광고세트 예산을 제공하지 않아요'
+              : undefined
+          }
         />
         <div className="flex items-center gap-2.5 rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] px-3 py-2.5">
           <PacingRing pct={showPacing ? s.pacing_pct : 0} />
@@ -412,6 +429,19 @@ export function CampaignDetail({
         </div>
       </div>
 
+      {/* 전환 퍼널 — 노출→클릭→전환 실측 단계(권한 없으면 생략) */}
+      {!dBlocked && s.impressions > 0 && (
+        <div className="mt-4">
+          <ConversionFunnel
+            impressions={s.impressions}
+            clicks={s.clicks}
+            conversions={s.conversions}
+            ctr={s.ctr}
+            cvr={s.cvr}
+          />
+        </div>
+      )}
+
       {detail.series.length > 0 && (
         <div className="mt-4">
           <p className="mb-2 text-[12px] font-semibold text-[#4E5968] dark:text-[#9CA3AF]">
@@ -424,7 +454,12 @@ export function CampaignDetail({
                   <th className="px-3 py-2 text-left font-semibold">날짜</th>
                   <th className="px-3 py-2 text-right font-semibold">노출</th>
                   <th className="px-3 py-2 text-right font-semibold">클릭</th>
-                  <th className="px-3 py-2 text-right font-semibold">도달</th>
+                  <th
+                    className="px-3 py-2 text-right font-semibold"
+                    title="그날의 고유 인원 — 같은 사람이 여러 날 보면 날마다 잡혀서, 합계가 전체 기간 도달보다 클 수 있어요"
+                  >
+                    도달
+                  </th>
                   <th className="px-3 py-2 text-right font-semibold">지출</th>
                   <th className="px-3 py-2 text-right font-semibold">
                     CTR
@@ -434,11 +469,17 @@ export function CampaignDetail({
                     CPC
                     <span className="block text-[10px] font-normal text-[#B0B8C1]">클릭당비용</span>
                   </th>
-                  <th className="px-3 py-2 text-right font-semibold">
+                  <th
+                    className="px-3 py-2 text-right font-semibold"
+                    title="그날 노출 1,000회당 평균 비용 = 그날 지출 ÷ 그날 노출 × 1,000 — 단가라서 합산·평균이 전체 CPM과 달라요(전체는 기간 합산 기준)"
+                  >
                     CPM
                     <span className="block text-[10px] font-normal text-[#B0B8C1]">노출당비용</span>
                   </th>
-                  <th className="px-3 py-2 text-right font-semibold">
+                  <th
+                    className="px-3 py-2 text-right font-semibold"
+                    title="그날 전환수 ÷ 그날 링크 클릭수 — 일자별 값을 평균해도 전체 CVR과는 달라요(전체는 기간 합산 기준)"
+                  >
                     CVR
                     <span className="block text-[10px] font-normal text-[#B0B8C1]">전환율</span>
                   </th>
@@ -526,8 +567,11 @@ export function CampaignDetail({
           {/* 오른쪽: 대표 광고 시안(헤더는 탭과 같은 라인, 높이는 차트와 동일) */}
           {creatives.length > 0 && (
             <div className="flex w-full flex-col lg:flex-1">
-              <p className="mb-3 flex h-[30px] items-center text-[12px] font-semibold text-[#4E5968] dark:text-[#9CA3AF]">
+              <p className="mb-3 flex h-[30px] items-center gap-1.5 text-[12px] font-semibold text-[#4E5968] dark:text-[#9CA3AF]">
                 대표 광고 시안
+                <span className="font-normal text-[#B0B8C1]">
+                  같은 소재의 지면별(Facebook·Instagram) 미리보기
+                </span>
               </p>
               <div className="min-h-0 flex-1">
                 <AdPreviewCards items={creatives} />

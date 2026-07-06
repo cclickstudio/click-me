@@ -97,7 +97,7 @@ export default function GenResultWidget({
           🎨 광고 시안 {cands.length}개
         </span>
         <Link
-          href={`/generations/${detail.id}`}
+          href={`/generations/${generationId}`}
           className='text-xs font-medium text-[#3182F6] hover:underline'>
           상세 보기 →
         </Link>

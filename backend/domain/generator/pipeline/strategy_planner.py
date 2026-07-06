@@ -6,7 +6,7 @@ from pydantic import BaseModel
 
 from domain.generator.contracts.enums import AdStrategy
 from domain.generator.contracts.pipeline_schemas import ProductAnalysis, StrategyOutput
-from domain.generator.llm.factory import build_text_llm
+from domain.generator.llm.factory import build_text_llm, with_llm_retry
 
 _STRATEGY_LABELS = {
     AdStrategy.BENEFIT: "혜택 강조",
@@ -63,7 +63,7 @@ class _StrategyList(BaseModel):
     strategies: list[_StrategyItem]
 
 
-_llm = build_text_llm(temperature=0.7).with_structured_output(_StrategyList)
+_llm = with_llm_retry(build_text_llm(temperature=0.7).with_structured_output(_StrategyList))
 
 
 @traceable(

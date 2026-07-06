@@ -5,7 +5,7 @@ from langsmith import traceable
 from pydantic import BaseModel, Field
 
 from domain.generator.contracts.enums import AdStrategy
-from domain.generator.llm.factory import build_text_llm
+from domain.generator.llm.factory import build_text_llm, with_llm_retry
 
 _SYSTEM = """당신은 광고 개선 방향 분류기입니다.
 주어진 시뮬레이션 결과와 사용자 수정 요청을 종합해,
@@ -46,8 +46,8 @@ class ImprovementClassification(BaseModel):
     strategy: AdStrategy = AdStrategy.BENEFIT
 
 
-_llm = build_text_llm(temperature=0.3, max_tokens=500).with_structured_output(
-    ImprovementClassification
+_llm = with_llm_retry(
+    build_text_llm(temperature=0.3, max_tokens=500).with_structured_output(ImprovementClassification)
 )
 
 

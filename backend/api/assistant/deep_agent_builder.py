@@ -26,12 +26,10 @@ def build_unified_chat_agent(settings):
         return None
 
     from domain.chat.llm import build_chat_llm  # noqa: PLC0415
-    from domain.management.assistant.memory_store import build_memory_store  # noqa: PLC0415
     from domain.management.wiring import build_checkpointer  # noqa: PLC0415
 
     model = build_chat_llm(settings, temperature=0.2)  # 기본 Claude Sonnet(provider 설정 따름)
-    memory = build_memory_store(settings)
-    tools = build_chat_tools(settings, memory=memory)
+    tools = build_chat_tools(settings)
 
     try:
         from deepagents import create_deep_agent  # noqa: PLC0415

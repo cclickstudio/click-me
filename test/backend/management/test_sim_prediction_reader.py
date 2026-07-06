@@ -77,3 +77,9 @@ async def test_sim_reader_no_row_none():
 
 async def test_sim_reader_bad_uuid_none():
     assert await SimPredictionReader(_factory(None)).get_prediction("not-a-uuid", _ORG) is None
+
+
+def test_sim_reader_sql_excludes_soft_deleted():
+    """소프트삭제 시뮬은 예측 제외 — SQL에 deleted_at 필터 필수(성과 비교 삭제 반영·회귀 방지)."""
+    sql = str(SimPredictionReader._SQL).lower()
+    assert "deleted_at is null" in sql

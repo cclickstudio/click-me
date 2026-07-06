@@ -20,6 +20,7 @@ from sqlalchemy import (
     UniqueConstraint,
     desc,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import ENUM, JSONB, TSVECTOR, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -337,21 +338,6 @@ class ClioKbChunk(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
-class ManagementUserMemory(Base):
-    """세션 넘는 장기기억 — (tenant, user) 스코프 노트. 마이그 025."""
-
-    __tablename__ = "management_user_memory"
-
-    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    tenant_id: Mapped[str | None] = mapped_column(String(64), nullable=True)  # NULL/global
-    user_id: Mapped[str | None] = mapped_column(String(64), nullable=True)  # NULL/anon
-    mem_key: Mapped[str] = mapped_column(String(128))  # 멱등/식별 키
-    content: Mapped[dict] = mapped_column(JSONB, default=dict)  # 기억 내용(노트 등)
-    # 시맨틱 회수용 임베딩(M6, 마이그 029). nullable — 없으면 recency 폴백.
-    embedding: Mapped[list[float] | None] = mapped_column(Vector(1536), nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
-
-
 class ChatSession(Base):
     """채팅 세션 — 프로젝트에 귀속된 대화 하나. 메시지는 ChatMessage로 정규화 저장."""
 
@@ -387,14 +373,15 @@ class ChatMessage(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
 
-class ChatLongTermMemory(Base):
-    """채팅 롱텀 메모리 — 시뮬/생성 실행 입력·사용자 선호를 프로젝트 단위로 누적.
+class ChatSessionSummary(Base):
+    """채팅 세션 요약(구 chat_long_term_memory, 마이그 0006 개명) — 숏텀 압축 컨텍스트.
 
     다음 대화에 컨텍스트로 주입(최근 N개 조회). memory_type:
     sim_input | gen_input | user_pref | session_summary.
+    sim_input·gen_input 적재는 팀 조율 후 중단 예정 — 롱텀은 chat_execution_history로 일원화.
     """
 
-    __tablename__ = "chat_long_term_memory"
+    __tablename__ = "chat_session_summaries"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     project_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -410,17 +397,18 @@ class ChatLongTermMemory(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     # 최신순 조회(project_id 필터 + created_at DESC) 최적화 — 실 DB와 동일 구성.
-    __table_args__ = (Index("ix_chat_ltm_project", "project_id", desc("created_at")),)
+    __table_args__ = (Index("ix_chat_session_summaries_project", "project_id", desc("created_at")),)
 
 
-class ExecutionHistory(Base):
-    """실행 히스토리 — 시뮬/생성/매니지먼트 기능 수행 이력(시간·종류·데이터)을 프로젝트 단위 누적.
+class ChatExecutionHistory(Base):
+    """실행 히스토리(구 execution_history, 마이그 0006 개명) — 채팅 에이전트의 롱텀 메모리.
 
-    롱텀메모리 회수용. summary를 tsvector로 색인해 BM25급 키워드 서치(ts_rank_cd)로 조회한다.
-    feature_type: simulation | generation | management. 마이그 0002.
+    시뮬/생성/매니지먼트 기능 수행 이력(시간·종류·데이터)을 프로젝트 단위 누적.
+    summary를 tsvector로 색인해 BM25급 키워드 서치(ts_rank_cd)로 조회한다.
+    feature_type: simulation | generation | management.
     """
 
-    __tablename__ = "execution_history"
+    __tablename__ = "chat_execution_history"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     project_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -445,7 +433,7 @@ class ExecutionHistory(Base):
     )
 
     __table_args__ = (
-        Index("ix_execution_history_search_tsv", "search_tsv", postgresql_using="gin"),
+        Index("ix_chat_execution_history_search_tsv", "search_tsv", postgresql_using="gin"),
     )
 
 
@@ -484,6 +472,52 @@ class AdTemplate(Base):
     template_type: Mapped[str] = mapped_column(String(10))  # "sim" | "gen"
     content: Mapped[dict] = mapped_column(JSONB)  # 설정값(폼 초기값)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class AutomationRun(Base):
+    """자동화(APScheduler 워커) 실행 결과 1건 — 3도메인 공용 운영/관측 저장소.
+
+    사람 승인이 필요 없는 자동화(감지·진단·집계·동기화)의 결과를 프로젝트 단위로 남겨
+    프론트가 조회한다(탭 안 열려도 서버가 해둔 걸 화면이 읽음). 롱텀 메모리
+    (chat_execution_history=성공 수행만)와 목적이 다른 별개 저장소 — 여기엔 미발견·에러
+    포함 모든 틱 결과가 남는다. domain으로 management/generation/simulation을 공용 관리.
+    dedup_key로 미해결(resolved_at IS NULL) 알림을 1행으로 강제(중복 통지 방지).
+    """
+
+    __tablename__ = "automation_runs"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    domain: Mapped[str] = mapped_column(String(20))  # management | generation | simulation
+    job_name: Mapped[str] = mapped_column(
+        String(64)
+    )  # anomaly_scan · budget_pace · weekly_report …
+    project_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), nullable=True
+    )
+    org_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    status: Mapped[str] = mapped_column(String(16), default="finding")  # ok|finding|error|skipped
+    severity: Mapped[str | None] = mapped_column(String(16), nullable=True)  # info|warning|critical
+    title: Mapped[str] = mapped_column(String(200), default="")
+    body: Mapped[str] = mapped_column(Text, default="")
+    suggested_action: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )  # 승인 플로 딥링크
+    payload: Mapped[dict] = mapped_column(JSONB, default=dict)  # rule·meta·confidence 등
+    dedup_key: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    actor: Mapped[str] = mapped_column(String(16), default="auto")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        Index("ix_automation_runs_domain_project", "domain", "project_id", desc("created_at")),
+        # 미해결(resolved_at IS NULL) 알림은 dedup_key당 1행 — 매 틱 중복 통지 방지(부분 유니크).
+        Index(
+            "uq_automation_runs_dedup_open",
+            "dedup_key",
+            unique=True,
+            postgresql_where=text("resolved_at IS NULL AND dedup_key IS NOT NULL"),
+        ),
+    )
 
 
 class Inquiry(Base):
@@ -669,27 +703,6 @@ class IdempotencyKeyRow(Base):
     claimed: Mapped[bool] = mapped_column(Boolean, default=True)
     result: Mapped[dict | None] = mapped_column(JSONB)  # ActionResult JSON — replay용 (게이트 #1)
     created_at: Mapped[datetime] = mapped_column(_TS, server_default=func.now())
-
-
-class RegenerationJobRow(Base):
-    """🅱 채팅이 트리거한 재생성 비동기 job 상태(설계 2026-06-22). v1 in-process 전제."""
-
-    __tablename__ = "management_regeneration_jobs"
-
-    id: Mapped[str] = mapped_column(String(64), primary_key=True)
-    tenant_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
-    campaign_id: Mapped[str] = mapped_column(String(64), index=True, nullable=False)
-    status: Mapped[str] = mapped_column(String(32), index=True, nullable=False)
-    selection_token: Mapped[str | None] = mapped_column(String(64), unique=True)
-    candidates: Mapped[list | None] = mapped_column(JSONB)  # list[dict] — AWAITING_SELECTION 후보
-    selected_candidate_id: Mapped[str | None] = mapped_column(String(64))
-    proposal: Mapped[dict | None] = mapped_column(JSONB)
-    outcome_reason: Mapped[str | None] = mapped_column(String(48))
-    error: Mapped[str | None] = mapped_column(String(512))
-    created_at: Mapped[datetime] = mapped_column(_TS, index=True, server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(_TS, server_default=func.now())
-    started_at: Mapped[datetime | None] = mapped_column(_TS)
-    finished_at: Mapped[datetime | None] = mapped_column(_TS)
 
 
 # ──────────────────────────────────────────────
@@ -885,4 +898,56 @@ class CreditLedgerRow(Base):
     balance_after_krw: Mapped[int] = mapped_column(Integer, nullable=False)
     reason: Mapped[str] = mapped_column(String(16), nullable=False)  # charge|spend|refund
     ref_id: Mapped[str] = mapped_column(String(128), nullable=False)
+
+
+# ──────────────────────────────────────────────
+# Management — 운영 알림 (이상 감지 C안, 스펙 2026-07-03)
+# ──────────────────────────────────────────────
+
+
+class ManagementNotification(Base):
+    """운영 알림 — 이상 감지 consult 결과를 채팅과 분리 저장. kind는 도메인 프리픽스."""
+
+    __tablename__ = "management_notifications"
+    __table_args__ = (
+        # 미해결 알림은 (org, kind, dedup_key)당 1행 — 멀티워커 dedup의 DB 백스톱.
+        Index(
+            "uq_mgmt_notif_open_dedup",
+            "organization_id",
+            "kind",
+            "dedup_key",
+            unique=True,
+            postgresql_where=text("resolved_at IS NULL"),
+            sqlite_where=text("resolved_at IS NULL"),
+        ),
+        Index("ix_mgmt_notif_org_recent", "organization_id", desc("last_notified_at")),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
+    )
+    campaign_id: Mapped[str | None] = mapped_column(
+        String(100), nullable=True
+    )  # remediation만 필수
+    kind: Mapped[str] = mapped_column(
+        String(60), nullable=False
+    )  # "management.remediation_consult"
+    dedup_key: Mapped[str] = mapped_column(
+        String(200), nullable=False
+    )  # f"{campaign_id}:{anomaly}"
+    payload: Mapped[dict] = mapped_column(
+        JSONB().with_variant(JSON(), "sqlite"), nullable=False, default=dict
+    )
+    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    resolution: Mapped[str | None] = mapped_column(
+        String(20), nullable=True
+    )  # ignored|actioned|auto_normal
+    consult_session_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    last_notified_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    followup_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

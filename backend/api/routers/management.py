@@ -8,17 +8,19 @@
 
 import asyncio
 import calendar
+import json
 import logging
+import time
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextvars import ContextVar
 from datetime import UTC, datetime, timedelta
 from random import Random
 from typing import Any, Literal
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, urlencode, urlparse, urlsplit, urlunsplit
 from uuid import UUID, uuid4
 
 import httpx
-from fastapi import APIRouter, Depends, File, Header, HTTPException, Request, UploadFile
+from fastapi import APIRouter, Depends, File, Header, HTTPException, Query, Request, UploadFile
 from fastapi.responses import RedirectResponse, StreamingResponse
 from langsmith import traceable
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl
@@ -38,7 +40,6 @@ from core.models import (
     CreatedCampaign,
     MetaConnection,
     Organization,
-    OrganizationMember,
     User,
 )
 from domain.billing.service.billing_service import BillingError
@@ -76,14 +77,17 @@ from domain.management.comparison.service.comparison_service import ComparisonSe
 from domain.management.contracts.enums import (
     ActionTier,
     CampaignState,
-    DiagnosisStatus,
     ExecutionMode,
 )
 from domain.management.contracts.fault_injection import FaultConfig, FaultMode
 from domain.management.contracts.platform import AdPlatformReader, AdPlatformWriter
 from domain.management.contracts.policy import (
     APPROVAL_POLICY_VERSION,
+    BASE_CTR,
+    CPM_ANCHOR_KRW,
+    CPM_NORMAL_RANGE_KRW,
     DAILY_BUDGET_KRW,
+    FATIGUE_FREQUENCY,
     PROPOSAL_TTL_MINUTES,
 )
 from domain.management.contracts.schemas import (
@@ -97,40 +101,34 @@ from domain.management.contracts.schemas import (
 )
 from domain.management.conversion_value import estimate_roas
 from domain.management.demo import CAMPAIGN_ID, TENANT_ID, build_sample_proposal
+from domain.management.detection.agentic_scan import diagnose_campaign
 from domain.management.detection.deterministic_dx import diagnose
 from domain.management.detection.exposure_model import (
+    DEFICIT_THRESHOLD,
+    MIN_CONSECUTIVE_HOURS,
     expected_hourly_impressions,
     find_anomaly_window,
 )
-from domain.management.detection.performance_dx import diagnose_performance
 from domain.management.escalation import EscalationController, EscalationRun
 from domain.management.escalation_demo import DemoScenarioDetector
 from domain.management.execution.assistant_tools import execution_history
 from domain.management.execution.audit_log import AuditEvent
 from domain.management.execution.executor import DEFAULT_ALLOWED_MODES, Executor
-from domain.management.execution.regeneration_jobs import (
-    CandidateNotInJob,
-    JobNotAwaitingSelection,
-    JobNotFound,
-    JobTenantMismatch,
-    SelectionContextExpired,
-)
 from domain.management.execution.tier import (
     ESCALATE_THRESHOLD,
     WARN_THRESHOLD,
     BudgetAuthority,
     TenantBudgetRegistry,
 )
+from domain.management.naming import suggest_campaign_names
 from domain.management.target_check import is_target_missed
 from domain.management.wiring import (
     build_audit_sink,
-    build_diagnosis_agent,
     build_escalation_store,
     build_generator_client,
     build_idempotency_store,
     build_prediction_reader,
     build_reader,
-    build_regeneration_job_service,
     build_writer,
 )
 from tools.storage.s3 import download_bytes
@@ -151,7 +149,9 @@ async def _capture_selected_org(
 
 router = APIRouter(dependencies=[Depends(_capture_selected_org)])
 
-# 멀티테넌트 Meta 연결 요청 스코프 — App Review 승인 권한과 일치해야 한다.
+# 멀티테넌트 Meta 연결 요청 스코프 — 앱에 추가된 권한과 일치해야 한다.
+# leads_retrieval은 앱 미추가 권한이라 로그인 자체가 "Invalid Scopes"로 거부됨(2026-07 실측)
+# → 목록에서 제외. 리드 명단 fetch가 필요해지면 앱 대시보드에 권한 추가 후 재삽입.
 _META_CONNECT_SCOPES = [
     "ads_read",
     "ads_management",
@@ -159,15 +159,21 @@ _META_CONNECT_SCOPES = [
     "instagram_manage_insights",
     "pages_show_list",
     "pages_read_engagement",
-    "leads_retrieval",  # 리드(잠재고객) 명단 조회 — 즉석 양식 제출 데이터 fetch
 ]
 
 _DEMO_FAULTS = {"bid_loss", "review_rejected", "none"}
 
 # use_mock=True(기본)면 인메모리, False면 DB(idempotency_keys·audit_events) — wiring 분기.
 # 예산은 이번 범위 밖이라 인메모리 유지 (후속 B-1.2).
+# 기본 월 목표 300만원 — 일반 중소기업 퍼포먼스 광고 벤치마크(일 10만원 페이스).
+# 가정 규모: 광고비=매출의 5~15%(아이보스·SNS헬프)를 역산하면 월 매출 2천만~6천만
+# (연 2.4억~7.2억) — 이커머스·리테일 소기업~초기 중소기업(대략 5~20인),
+# ROAS 검증을 마치고 확장 단계에 들어선 광고주를 대표값으로 잡았다.
+# 근거: SNS헬프 2026 가이드(확장기 월 80~150만·성수기 200~400만), Ballast 규모별
+# 예산(중소기업 월 마케팅 500만 중 광고비·성장기업 광고비 100만+), 아이보스(매출의 5~15%).
+# policy.DAILY_BUDGET_KRW(100_000)와 정합 — 일 10만 × 30일 = 300만.
 _AUDIT_LOG = build_audit_sink(settings)
-_BUDGET = TenantBudgetRegistry(default_limit_krw=10_000_000)
+_BUDGET = TenantBudgetRegistry(default_limit_krw=3_000_000)
 _executor: Executor | None = None
 
 logger = logging.getLogger("clickme")
@@ -284,6 +290,27 @@ async def run_detection(fault: str = "bid_loss"):
         "expected": [round(e, 1) for e in expected],
         "snapshots": [s.model_dump(mode="json") for s in snapshots],
         "anomaly_hours": window,
+        # 탐지 기준(가정치) — 프론트 '탐지 기준' 스트립용. 단일원천: contracts/policy.py·
+        # exposure_model.py. 출처 상세: docs/management/meta-data-sources.md §4.4·4.6.
+        "assumptions": {
+            "daily_budget_krw": DAILY_BUDGET_KRW,
+            "cpm_anchor_krw": CPM_ANCHOR_KRW,
+            "cpm_normal_range_krw": list(CPM_NORMAL_RANGE_KRW),
+            "base_ctr": BASE_CTR,
+            "deficit_threshold": DEFICIT_THRESHOLD,
+            "min_consecutive_hours": MIN_CONSECUTIVE_HOURS,
+            "sources": [
+                {
+                    "label": "lebesgue.io 한국 CPM 실측(2026)",
+                    "url": "https://lebesgue.io/facebook-ads/facebook-cpm-by-country",
+                },
+                {
+                    "label": "AdAmigo.ai 한국 CPM·CTR 벤치마크(2026)",
+                    "url": "https://www.adamigo.ai/blog/meta-ads-cpm-cpc-benchmarks-by-country-2026",
+                },
+                {"label": "내부 근거 문서 §4.4", "url": "docs/management/meta-data-sources.md"},
+            ],
+        },
         "diagnosis": None,
         "proposal": None,
         "relabeled": False,
@@ -353,7 +380,307 @@ async def anomaly_scan(
                     "diagnosis": dx,
                 }
             )
+        # 빈도 피로 — 진행 중 캠페인의 최근 7일 빈도가 임계(3.0+, 문서 §4.6)를 넘으면
+        # 소재 교체를 제안한다(성과 진단과 별개 신호 — 실측 배선, 데모 주입 아님).
+        if c.state == CampaignState.ACTIVE:
+            try:
+                wk = await reader.get_metrics(c.campaign_id, now, date_preset="last_7d")
+                freq = wk.frequency or 0.0
+            except Exception:  # noqa: BLE001 — 피로 신호 실패는 조용히 건너뜀
+                freq = 0.0
+            if freq >= FATIGUE_FREQUENCY:
+                anomalies.append(
+                    {
+                        "campaign_id": c.campaign_id,
+                        "name": c.name,
+                        "state": c.state.value,
+                        "diagnosis": {
+                            "anomaly_type": "AUDIENCE_FATIGUE",
+                            "hypothesis": (
+                                f"최근 7일 빈도 {freq:.1f} — 같은 사람에게 반복 노출되는 피로 "
+                                f"신호예요(기준 {FATIGUE_FREQUENCY:.0f}+). 소재 교체를 권장합니다."
+                            ),
+                        },
+                        "suggested_action": "REPLACE_CREATIVE",
+                    }
+                )
     return {"source": "live", "scanned": len(infos), "anomalies": anomalies}
+
+
+# 수동 알림 스캔 — org별 인프로세스 잠금·쿨다운(단일 EC2 전제, 스펙 §6)
+_notify_scan_locks: dict[str, asyncio.Lock] = {}
+_notify_scan_last: dict[str, float] = {}
+
+
+@router.post("/anomaly/notify-scan")
+async def anomaly_notify_scan(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """이상 스캔 + 채팅 선제 알림 트리거(데모·수동) — 배달 요약 반환.
+
+    org 스코프 end-to-end: reader(live면 로그인 org 연결, fail-closed)·findings tenant·
+    resolver org 대조까지 전부 호출자 org로 묶인다. 예약(스케줄러) 경로만 settings 전역
+    (단일 테넌트 데모 전제 — 문서화). 통지 스팸은 sink 판정표가 이중 방어.
+    """
+    org_id = await _require_org_id(user, db)
+    key = str(org_id)
+
+    cooldown = getattr(settings, "management_scan_manual_cooldown_seconds", 60)
+    now_mono = time.monotonic()
+    last = _notify_scan_last.get(key)
+    if last is not None and now_mono - last < cooldown:
+        raise HTTPException(429, f"{int(cooldown - (now_mono - last)) + 1}초 후 다시 시도하세요.")
+
+    lock = _notify_scan_locks.setdefault(key, asyncio.Lock())
+    # 409 체크와 획득 사이에 await가 없어야 잠금 가드가 성립 — reader 확보는 잠금 안에서.
+    if lock.locked():
+        raise HTTPException(409, "이미 스캔이 진행 중입니다.")
+
+    async with lock:
+        # org 스코프 reader — live는 로그인 org 연결(미연결 409), mock은 전역 mock.
+        # management_reader_mock이면 전역 live여도 mock reader(알림 데모 — wiring 주석 참조).
+        if getattr(settings, "use_mock", True) or getattr(
+            settings, "management_reader_mock", False
+        ):
+            reader = build_reader(settings)
+        else:
+            reader = await _require_reader(db, org_id)
+
+        # 감지 로직 단일화(A) — 워커와 같은 _agent_scanner를 org 스코프 reader/tenant로 재사용.
+        # 게재0만이 아니라 성과 진단·소재 피로·계정 재무 룰까지 동일 커버리지(APScheduler 정본).
+        from functools import partial  # noqa: PLC0415
+
+        from domain.management.notifications import LogNotificationSink  # noqa: PLC0415
+        from domain.management.remediation.advisor import consult as _consult  # noqa: PLC0415
+        from domain.management.scheduler import _agent_scanner, run_scan  # noqa: PLC0415
+
+        # 채널 추가 시 build_notification_sink(notifications.py)와 함께 갱신 —
+        # 매핑 이중화는 org reader consult 주입 때문(의도적, log→chat 시연 유지).
+        channel = getattr(settings, "management_notify_channel", "log")
+        if channel == "panel":
+            from domain.management.remediation.panel_sink import (  # noqa: PLC0415
+                PanelNotificationSink,
+            )
+
+            sink = PanelNotificationSink(
+                settings,
+                fallback=LogNotificationSink(),
+                consult=partial(_consult, reader=reader),  # 재검증도 같은 org reader로
+            )
+        else:
+            # chat·log 공통 — 수동 스캔은 데모 트리거라 log 채널에서도 chat sink로 시연
+            # 동작을 유지한다(기존 동작 보존). 예약 스케줄러만 channel을 엄격히 따른다.
+            from domain.management.remediation.chat_sink import (  # noqa: PLC0415
+                ChatNotificationSink,
+            )
+
+            sink = ChatNotificationSink(
+                settings,
+                fallback=LogNotificationSink(),
+                consult=partial(_consult, reader=reader),
+            )
+        scanner = partial(_agent_scanner, reader=reader, tenant_id=key)
+        count = await run_scan(settings, sink, scanner=scanner)
+        summary = sink.summary()
+        # 쿨다운은 성공한 스캔만 소진 — 실패(예외) 시 즉시 재시도 가능해야 한다.
+        _notify_scan_last[key] = time.monotonic()
+
+    # 고정 스키마 집계 로그 — 예약 실행은 건별 이벤트 로그로 관측(스케줄러 무변경 원칙).
+    logger.info(
+        '{"event": "management.scan_summary", "org": "%s", "findings": %d, "delivered": %d}',
+        key,
+        count,
+        summary["delivered"],
+    )
+    return {"scanned_findings": count, **summary}
+
+
+# ── 운영 알림(이상 감지 C안) — 스펙 docs/superpowers/specs/2026-07-03-…-design.md §2 ──
+# (Task 9의 GET /notifications/stream은 반드시 이 블록의 /{id} 라우트들보다 먼저 선언)
+
+
+@router.get("/notifications/stream")
+async def notifications_stream(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """알림 변경 SSE — org 브로커 구독, 이벤트는 "changed" 신호뿐(수신 측 refetch).
+
+    선언 순서 주의: /{id} 계열보다 먼저(가로채기 방지). EventSource 대신 채팅과 같은
+    fetch 스트리밍(Authorization 헤더)으로 소비한다.
+    """
+    if not getattr(settings, "management_notify_sse_enabled", True):
+        raise HTTPException(404, "SSE 비활성 — 폴링을 사용하세요.")
+    org_id = str(await _require_org_id(user, db))
+
+    async def gen() -> AsyncIterator[str]:
+        from domain.management.remediation import broker  # noqa: PLC0415
+
+        q = broker.subscribe(org_id)
+        try:
+            yield 'data: {"event": "connected"}\n\n'
+            while True:
+                try:
+                    await asyncio.wait_for(q.get(), timeout=30)
+                    yield 'data: {"event": "changed"}\n\n'
+                except TimeoutError:
+                    yield ": keep-alive\n\n"  # 30초 heartbeat — 프록시 타임아웃 방지
+        finally:
+            broker.unsubscribe(org_id, q)
+
+    return StreamingResponse(
+        gen(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+def _notification_store() -> Any:
+    """알림 store 팩토리 — 테스트에서 monkeypatch로 교체하는 seam."""
+    from domain.management.remediation.notification_store import (  # noqa: PLC0415
+        DbNotificationStore,
+    )
+
+    return DbNotificationStore()
+
+
+def _publish_org(org_id: str) -> None:
+    from domain.management.remediation import broker  # noqa: PLC0415
+
+    broker.publish(org_id)
+
+
+def _parse_before(before: str | None) -> datetime | None:
+    if not before:
+        return None
+    try:
+        dt = datetime.fromisoformat(before)
+    except ValueError as exc:
+        raise HTTPException(422, "before는 ISO8601 형식이어야 합니다.") from exc
+    return dt if dt.tzinfo else dt.replace(tzinfo=UTC)
+
+
+def _parse_uuid_or_none(value: str) -> str | None:
+    """비-UUID 입력은 None — 호출자가 404/무시로 fail-closed 처리."""
+    try:
+        return str(UUID(value))
+    except ValueError:
+        return None
+
+
+class NotificationReadRequest(BaseModel):
+    ids: list[str] = Field(min_length=1, max_length=200)
+
+
+class NotificationResolveRequest(BaseModel):
+    resolution: Literal["ignored", "actioned"]
+
+
+@router.get("/notifications")
+async def list_notifications(
+    project_id: str | None = None,
+    unread_only: bool = False,
+    include_resolved: bool = False,
+    limit: int = Query(50, ge=1, le=200),
+    before: str | None = None,
+    before_id: str | None = None,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """org 전체 알림 목록 + 배지용 unread_count(필터 무관 org 전체 미해결·미열람 수).
+
+    커서는 (before, before_id) 복합 — 마지막 행의 last_notified_at·id를 그대로 넘긴다.
+    """
+    org_id = str(await _require_org_id(user, db))
+    before_dt = _parse_before(before)
+    if before_id is not None:
+        before_id = _parse_uuid_or_none(before_id)
+        if before_id is None:
+            raise HTTPException(422, "before_id는 UUID여야 합니다.")
+    items, unread = await _notification_store().list_for_org(
+        org_id,
+        project_id=project_id,
+        unread_only=unread_only,
+        include_resolved=include_resolved,
+        limit=limit,
+        before=before_dt,
+        before_id=before_id,
+    )
+    return {"notifications": items, "unread_count": unread}
+
+
+@router.post("/notifications/read")
+async def read_notifications(
+    body: NotificationReadRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """bulk 열람 마킹 — 패널이 화면에 보인 카드를 일괄 read 처리(단건도 같은 경로).
+
+    타 org·비-UUID id는 무효 처리(bulk fail-closed — 단건 404와 의도적으로 다름,
+    store WHERE org 필터 참조).
+    """
+    org_id = str(await _require_org_id(user, db))
+    valid_ids = [v for i in body.ids if (v := _parse_uuid_or_none(i))]
+    if not valid_ids:
+        return {"updated": 0}
+    updated = await _notification_store().mark_read(org_id, valid_ids, datetime.now(UTC))
+    if updated:
+        _publish_org(org_id)  # 다른 탭 배지 동기화
+    return {"updated": updated}
+
+
+@router.post("/notifications/{notification_id}/resolve")
+async def resolve_notification(
+    notification_id: str,
+    body: NotificationResolveRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """무시/조치됨 마킹 — ignored는 같은 (캠페인,이상) 재통지 완전 억제(스펙 §0)."""
+    org_id = str(await _require_org_id(user, db))
+    nid = _parse_uuid_or_none(notification_id)
+    if nid is None:
+        raise HTTPException(404, "알림을 찾을 수 없습니다.")  # 존재 여부 비노출(404 통일)
+    ok = await _notification_store().resolve(org_id, nid, body.resolution, datetime.now(UTC))
+    if not ok:
+        raise HTTPException(404, "알림을 찾을 수 없습니다.")  # 타 org 포함 fail-closed
+    _publish_org(org_id)
+    return {"resolved": True, "resolution": body.resolution}
+
+
+@router.post("/notifications/{notification_id}/consult")
+async def consult_from_notification(
+    notification_id: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """[상담하기] — 재검증 후 전용 세션에 상담 심기, session_id 반환(스펙 §4 전이표)."""
+    from domain.management.remediation import advisor  # noqa: PLC0415
+    from domain.management.remediation.consult_service import (  # noqa: PLC0415
+        DbChatStore,
+        consult_notification,
+    )
+
+    org_id = str(await _require_org_id(user, db))
+    nid = _parse_uuid_or_none(notification_id)
+    if nid is None:
+        raise HTTPException(404, "알림을 찾을 수 없습니다.")  # 존재 여부 비노출(404 통일)
+    out = await consult_notification(
+        settings,
+        nid,
+        org_id,
+        store=_notification_store(),
+        chat_store=DbChatStore(),
+        consult=advisor.consult,
+        publish=_publish_org,
+    )
+    if out is None:
+        raise HTTPException(404, "알림을 찾을 수 없습니다.")
+    if out["status"] == "unavailable":
+        raise HTTPException(503, "지금은 상담을 준비할 수 없어요. 잠시 후 다시 시도해 주세요.")
+    return out  # publish는 서비스가 read·상태 변화 시 1회 발행(발행 책임 일원화)
 
 
 class ApprovalRequest(BaseModel):
@@ -568,98 +895,6 @@ async def get_audit(approval_id: str):
             for e in events
         ]
     }
-
-
-def _job_http_error(exc: Exception) -> HTTPException:
-    """재생성 job 도메인 예외 → HTTPException. 라우터 분기 단일화."""
-    if isinstance(exc, (JobNotFound, JobTenantMismatch)):
-        return HTTPException(404, "job을 찾을 수 없습니다.")
-    if isinstance(exc, CandidateNotInJob):
-        return HTTPException(422, "선택한 후보가 이 job에 없습니다.")
-    if isinstance(exc, SelectionContextExpired):
-        return HTTPException(409, {"reason": "SELECTION_CONTEXT_EXPIRED"})
-    if isinstance(exc, JobNotAwaitingSelection):
-        return HTTPException(409, "선택 가능한 상태가 아닙니다.")
-    return HTTPException(500, "알 수 없는 오류")
-
-
-class StartRegenJobRequest(BaseModel):
-    diagnosis: DiagnosisResult
-
-
-class SelectRegenJobRequest(BaseModel):
-    selected_id: str
-
-
-@router.post("/regenerate/jobs")
-async def start_regen_job(
-    body: StartRegenJobRequest,
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    """재생성 비동기 job 시작 → {job_id, status}. 무거운 생성은 백그라운드."""
-    org_id = await _require_org_id(user, db)
-    # 시연 진단(TENANT_ID 센티넬)은 누구나 자기 계정으로 재생성 허용 — 단 타 실 org 진단은 차단.
-    if body.diagnosis.tenant_id not in (str(org_id), TENANT_ID):
-        raise HTTPException(403, "다른 조직의 진단으로는 재생성할 수 없습니다.")
-    ad_account = await _require_ad_account(db, org_id)  # /regenerate와 동일 — live면 fail-closed
-    context = RemediationContext(
-        ad_account_id=ad_account,
-        target_object_ids=(body.diagnosis.campaign_id,),
-        budget_before_krw=DAILY_BUDGET_KRW,
-        budget_after_krw=int(DAILY_BUDGET_KRW * 1.5),
-        run_days=7,
-        expected_state_version="state_v1",
-        approval_policy_version=APPROVAL_POLICY_VERSION,
-        action_type="REPLACE_CREATIVE",
-    )
-    service = build_regeneration_job_service(settings)
-    job_id = await service.start(body.diagnosis, context)
-    return {"job_id": job_id, "status": "queued"}
-
-
-@router.get("/regenerate/jobs/{job_id}")
-async def get_regen_job(
-    job_id: str,
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    """재생성 job 진행 상태 조회(폴링) — org 스코프 강제."""
-    org_id = await _require_org_id(user, db)
-    service = build_regeneration_job_service(settings)
-    try:
-        rec = await service.get(job_id, tenant_id=str(org_id))
-    except (JobNotFound, JobTenantMismatch) as exc:
-        raise _job_http_error(exc) from exc
-    return {
-        "job_id": rec.id,
-        "status": rec.status.value,
-        "candidates": rec.candidates,
-        "proposal": rec.proposal,
-        "outcome_reason": rec.outcome_reason,
-    }
-
-
-@router.post("/regenerate/jobs/{job_id}/select")
-async def select_regen_job(
-    job_id: str,
-    body: SelectRegenJobRequest,
-    user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db),
-):
-    org_id = await _require_org_id(user, db)
-    service = build_regeneration_job_service(settings)
-    try:
-        rec = await service.select(job_id, body.selected_id, tenant_id=str(org_id))
-    except (
-        JobNotFound,
-        JobTenantMismatch,
-        JobNotAwaitingSelection,
-        CandidateNotInJob,
-        SelectionContextExpired,
-    ) as exc:
-        raise _job_http_error(exc) from exc
-    return {"job_id": rec.id, "status": rec.status.value, "proposal": rec.proposal}
 
 
 @router.get("/execution/history")
@@ -1044,12 +1279,14 @@ async def kb_eval_faithfulness(n: int = 30) -> dict:
 # ── 캠페인 목록·성과 대시보드 (🅰 reader 영역 데모 노출) ──────────────────
 # 백엔드에 "캠페인 목록" 능력이 없어(이름·상태 미보유) 데모 캠페인 상수 + MockAdPlatform로
 # 요약/시계열을 합성한다. 실연동 시 reader.list_campaigns로 교체.
+# 일예산 합 100_000 = policy.DAILY_BUDGET_KRW(SMB 데모 표준) — 월 환산 300만으로
+# _BUDGET 기본 월 목표와 페이싱 정합(일반 중소기업 규모, 근거는 _BUDGET 주석 참조).
 _CAMPAIGNS_DEMO: tuple[tuple[str, str, CampaignState, int, FaultMode | None], ...] = (
-    ("camp_1", "여름 신상 원피스", CampaignState.ACTIVE, 200_000, None),
-    ("camp_2", "브랜드 데일리 룩", CampaignState.ACTIVE, 120_000, FaultMode.BID_LOSS),
-    ("camp_3", "신상 액세서리 모음", CampaignState.ACTIVE, 80_000, FaultMode.AUDIENCE_TOO_NARROW),
-    ("camp_4", "쿠폰 안내 공지", CampaignState.UNDER_REVIEW, 40_000, FaultMode.REVIEW_DELAY),
-    ("camp_5", "봄 시즌오프 마감", CampaignState.ENDED, 60_000, None),
+    ("camp_1", "여름 신상 원피스", CampaignState.ACTIVE, 40_000, None),
+    ("camp_2", "브랜드 데일리 룩", CampaignState.ACTIVE, 25_000, FaultMode.BID_LOSS),
+    ("camp_3", "신상 액세서리 모음", CampaignState.ACTIVE, 15_000, FaultMode.AUDIENCE_TOO_NARROW),
+    ("camp_4", "쿠폰 안내 공지", CampaignState.UNDER_REVIEW, 10_000, FaultMode.REVIEW_DELAY),
+    ("camp_5", "봄 시즌오프 마감", CampaignState.ENDED, 10_000, None),
 )
 
 
@@ -1237,6 +1474,7 @@ async def _list_campaigns_real(
     org_id: UUID | None = None,
     limit: int = 20,
     offset: int = 0,
+    include_series: bool = False,
 ) -> dict:
     """실연동 — Meta 캠페인 목록 + 캠페인별 실측 요약. date_preset=조회 기간(전체/30일/이번달).
 
@@ -1333,6 +1571,13 @@ async def _list_campaigns_real(
                 **summary,
             }
         )
+    # 스파크라인용 일별 지출 — 상세 N콜 대신 계정 단위 1콜 배치(홈·모니터링 opt-in).
+    # series는 조회기간 토글과 무관한 전체 기간(maximum) 추세라 date_preset을 따르지 않는다.
+    if include_series:
+        series_map, _series_blocked = await _safe_meta(reader.get_daily_spend_by_campaign(ids))
+        series_map = series_map or {}
+        for item in out:
+            item["series"] = series_map.get(item["campaign_id"], [])
     if funding_blocked or funding is None:
         # 계정 자금 권한 없음 — 지갑은 '권한 없음'으로, 게재중단 배너는 판단 불가라 숨김.
         account = None
@@ -1360,37 +1605,14 @@ async def _list_campaigns_real(
     }
 
 
-@traceable(name="management.performance_diagnosis", run_type="chain", tags=["management"])
 async def _campaign_diagnosis(
     reader, campaign_id: str, summary: dict, as_of: datetime
 ) -> dict | None:
-    """성과 미달 진단 — 결정론 판정 후 INCONCLUSIVE면 LLM agent 재판정(키 있을 때).
+    """성과 미달 진단 — 도메인 공유 함수(diagnose_campaign)로 위임. 워커와 같은 진단을 쓴다.
 
-    additive·best-effort: 신호 조회나 LLM이 실패해도 None 반환 → 상세 화면은 그대로.
+    진단 로직 정본은 domain/management/detection/agentic_scan.py. 여기선 settings만 주입.
     """
-    try:
-        relevance = await reader.get_relevance_diagnostics(campaign_id)
-        dx = diagnose_performance(
-            TENANT_ID,
-            campaign_id,
-            roas=summary.get("roas"),
-            target_roas=summary.get("target_roas"),
-            as_of=as_of,
-            relevance=relevance,
-        )
-        if dx is None:
-            return None
-        if dx.status == DiagnosisStatus.INCONCLUSIVE:
-            dx = await build_diagnosis_agent(settings)(dx, reader)
-    except Exception:  # noqa: BLE001 — 진단은 부가 정보: 실패해도 실데이터 상세는 무영향
-        return None
-    return {
-        "anomaly_type": dx.anomaly_type.value,
-        "hypothesis": dx.hypothesis,
-        "confidence": dx.confidence,
-        "source": dx.source.value,
-        "status": dx.status.value,
-    }
+    return await diagnose_campaign(reader, settings, campaign_id, summary, as_of)
 
 
 async def _get_campaign_real(
@@ -1476,6 +1698,7 @@ async def list_campaigns(
     include_archived: bool = False,
     limit: int = 20,
     offset: int = 0,
+    include_series: bool = False,
     user: User | None = Depends(_optional_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -1514,6 +1737,7 @@ async def list_campaigns(
                 org_id=org_id,
                 limit=limit,
                 offset=offset,
+                include_series=include_series,
             )
         except MetaApiError as exc:
             # 토큰 만료 등 인증 오류는 화면을 깨지 말고 '재연결 필요'로 안내(빈 목록 + auth_error).
@@ -1546,21 +1770,25 @@ async def list_campaigns(
     # mock 데모도 동일 페이지네이션 계약(total·has_more)으로 — 프론트 무한스크롤 코드 공유.
     total = len(_CAMPAIGNS_DEMO)
     page = list(enumerate(_CAMPAIGNS_DEMO))[offset : offset + limit]
+    # 데모 일별지출은 합성이라 네트워크 부하 없음 — opt-in 시 상세와 같은 소스로 series 채움.
+    mock = MockAdPlatform() if include_series else None
     out = []
     for i, (cid, name, state, budget, fault) in page:
         snaps = await _campaign_snapshots(cid, budget, fault, seed=40 + i)
-        out.append(
-            {
-                "campaign_id": cid,
-                "name": name,
-                "state": state.value,
-                "daily_budget_krw": budget,
-                "lifetime_budget_krw": 0,
-                "budget_type": "daily",  # 데모는 모두 일예산
-                "metrics_status": "ok",
-                **_campaign_summary(snaps, budget),
-            }
-        )
+        item = {
+            "campaign_id": cid,
+            "name": name,
+            "state": state.value,
+            "daily_budget_krw": budget,
+            "lifetime_budget_krw": 0,
+            "budget_type": "daily",  # 데모는 모두 일예산
+            "metrics_status": "ok",
+            **_campaign_summary(snaps, budget),
+        }
+        if mock is not None:
+            daily = await mock.fetch_daily_metrics(cid)
+            item["series"] = [{"label": p["label"], "spend_krw": p["spend_krw"]} for p in daily]
+        out.append(item)
     return {
         "campaigns": out,
         "source": "mock",
@@ -1996,6 +2224,21 @@ def _resolve_link_url(req_url: HttpUrl | None) -> str | None:
     return str(req_url) if req_url is not None else None
 
 
+def _with_utm(link_url: str, campaign_key: str) -> str:
+    """집행 URL에 ClickMe UTM 자동 부착 — GA 등 외부 분석에서 캠페인 유입을 바로 식별하게.
+
+    광고주가 이미 utm_을 붙여놨으면 그 설정을 존중해 그대로 둔다(덮어쓰기 금지).
+    """
+    parts = urlsplit(link_url)
+    if "utm_" in (parts.query or ""):
+        return link_url
+    added = urlencode(
+        {"utm_source": "clickme", "utm_medium": "paid_social", "utm_campaign": campaign_key}
+    )
+    query = f"{parts.query}&{added}" if parts.query else added
+    return urlunsplit((parts.scheme, parts.netloc, parts.path, query, parts.fragment))
+
+
 @router.post("/campaign-proposals/from-candidate")
 async def from_candidate(
     body: FromCandidateRequest,
@@ -2050,8 +2293,9 @@ async def from_candidate(
     if end_at <= start_at:
         raise HTTPException(status_code=422, detail="종료일은 시작일 이후여야 합니다.")
     run_days = max(1, (end_at - start_at).days)  # spend_cap 산정용(일예산 × 일수)
+    campaign_key = f"camp_cand_{uuid4().hex[:8]}"
     config = CampaignConfig(
-        campaign_id=f"camp_cand_{uuid4().hex[:8]}",
+        campaign_id=campaign_key,
         tenant_id=tenant_id,
         ad_account_id=ad_account,
         name=body.name,
@@ -2062,7 +2306,7 @@ async def from_candidate(
         image_hash=image_hash,
         headline=cand.copy.headline,
         body=cand.copy.body,
-        link_url=link_url,
+        link_url=_with_utm(link_url, campaign_key),
         special_ad_categories=categories,
         countries=(body.country,),
         age_min=body.age_min,
@@ -2387,8 +2631,9 @@ async def from_simulation(
     if end_at <= start_at:
         raise HTTPException(status_code=422, detail="종료일은 시작일 이후여야 합니다.")
     run_days = max(1, (end_at - start_at).days)  # spend_cap 산정용(일예산 × 일수)
+    campaign_key = f"camp_sim_{uuid4().hex[:8]}"
     config = CampaignConfig(
-        campaign_id=f"camp_sim_{uuid4().hex[:8]}",
+        campaign_id=campaign_key,
         tenant_id=tenant_id,
         ad_account_id=ad_account,
         name=body.name,
@@ -2399,7 +2644,7 @@ async def from_simulation(
         image_hash=image_hash,
         headline=title,
         body=copy_text,
-        link_url=link_url,
+        link_url=_with_utm(link_url, campaign_key),
         special_ad_categories=categories,
         countries=(body.country,),
         age_min=body.age_min,
@@ -2442,6 +2687,61 @@ async def from_simulation(
         )
     )
     return {"proposal": proposal.model_dump(mode="json")}
+
+
+@router.get("/campaign-proposals/name-suggestions")
+async def campaign_name_suggestions(
+    simulation_id: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """시뮬 기반 캠페인의 이름 후보 3개 — 소재(ads)·시뮬 집계 재료, LLM 실패 시 규칙 폴백.
+
+    from-simulation 폼이 열릴 때 호출된다. 제안은 부가 기능이라 어떤 실패도 폼을 막지 않게
+    naming 모듈이 결정론 폴백을 보장한다. 시뮬 조회는 from_simulation과 동일한 raw SQL 결합.
+    """
+    try:
+        sim_uuid = UUID(simulation_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail="잘못된 simulation_id") from exc
+    org_id = await _require_org_id(user, db)
+    sim_row = (
+        await db.execute(
+            text("SELECT organization_id, ad_id FROM simulations WHERE id = :sid"),
+            {"sid": sim_uuid},
+        )
+    ).first()
+    if sim_row is None or sim_row[0] != org_id:
+        raise HTTPException(status_code=404, detail="시뮬레이션을 찾을 수 없습니다.")
+    ad_row = (
+        await db.execute(
+            text(
+                "SELECT title, copy_text, product_category, industry_category, target_filter "
+                "FROM ads WHERE id = :aid"
+            ),
+            {"aid": sim_row[1]},
+        )
+    ).first()
+    agg = (
+        await db.execute(
+            text("SELECT click_intent_rate FROM simulation_aggregates WHERE simulation_id = :sid"),
+            {"sid": sim_uuid},
+        )
+    ).first()
+    cols = ("title", "copy_text", "product_category", "industry_category", "target_filter")
+    ad = dict(zip(cols, ad_row, strict=True)) if ad_row else dict.fromkeys(cols)
+    if isinstance(ad.get("target_filter"), str):  # JSONB가 문자열로 오는 드라이버 대비
+        try:
+            ad["target_filter"] = json.loads(ad["target_filter"])
+        except ValueError:
+            ad["target_filter"] = None
+    names = await suggest_campaign_names(
+        ad=ad,
+        objective="traffic",
+        click_intent_rate=float(agg[0]) if agg and agg[0] is not None else None,
+        openai_api_key=getattr(settings, "openai_api_key", None),
+    )
+    return {"names": names}
 
 
 # ── 게재 시작(활성화) + 크레딧 연동 + 소진 동기화 ──────────────────────────
@@ -3158,12 +3458,14 @@ async def _budget_status(reader, budget_key: str = TENANT_ID) -> dict:
     # budget_key는 인메모리 월 목표의 org별 키 — live는 org_id, mock은 TENANT_ID(전역 공유 방지).
     if not getattr(settings, "use_mock", True):
         return await _budget_status_live(reader, budget_key)
-    # 데모(mock): 합성 캠페인 지출 + 인메모리 한도.
+    # 데모(mock): 합성 캠페인 지출 + 인메모리 한도. 월 목표 대비 페이싱이라는 화면 의미에
+    # 맞게 하루 합성 지출 × 이달 경과일로 월중 누적을 환산 — live(this_month 실소진)와 동일 의미.
+    elapsed_days = datetime.now(UTC).day
     spent = 0
     campaigns = []
     for i, (cid, name, _state, budget, fault) in enumerate(_CAMPAIGNS_DEMO):
         snaps = await _campaign_snapshots(cid, budget, fault, seed=40 + i)
-        spend = _campaign_summary(snaps, budget)["spend_krw"]
+        spend = _campaign_summary(snaps, budget)["spend_krw"] * elapsed_days
         spent += spend
         campaigns.append({"name": name, "spend_krw": spend})
     limit = _BUDGET.for_tenant(TENANT_ID).limit_krw
@@ -3289,6 +3591,127 @@ async def set_budget_limit(
     return await _budget_status(await _require_reader(db, org_id), str(org_id))
 
 
+# 성과 리포트 조회 기간 — 프론트 토글과 1:1(Meta date_preset). last_7d는 리포트 기본(주간).
+_REPORT_PERIOD_LABELS = {
+    "last_7d": "최근 7일",
+    "last_30d": "최근 30일",
+    "this_month": "이번 달",
+    "maximum": "전체 기간",
+}
+
+
+def _report_period_since(preset: str, now: datetime) -> str | None:
+    """리포트 기간의 시작일(ISO) — maximum은 고정 시작이 없어 None(프론트는 '전체 기간' 표시)."""
+    if preset == "last_7d":
+        return (now - timedelta(days=7)).date().isoformat()
+    if preset == "last_30d":
+        return (now - timedelta(days=30)).date().isoformat()
+    if preset == "this_month":
+        return now.date().replace(day=1).isoformat()
+    return None  # maximum
+
+
+@router.get("/report/weekly")
+async def weekly_report(period: str = "last_7d", reader=Depends(_request_reader)):
+    """성과 리포트 — 선택 기간 실측 총합·캠페인별 표·하이라이트·다음 액션(결정론 요약).
+
+    period=last_7d(기본)|last_30d|this_month|maximum. 전부 기존 reader 실측으로 조립하고
+    LLM을 쓰지 않아 문구가 항상 재현된다. 모달로 보여주고, PDF·챗 전달 데이터 소스로 재사용한다.
+    """
+    now = datetime.now(UTC)
+    preset = period if period in _REPORT_PERIOD_LABELS else "last_7d"
+    period_label = _REPORT_PERIOD_LABELS[preset]
+    try:
+        infos = await reader.list_campaigns()
+    except Exception as exc:  # noqa: BLE001
+        return {"report": None, "note": getattr(exc, "user_msg", None) or str(exc)}
+    rows: list[dict] = []
+    for c in infos:
+        try:
+            m = await reader.get_metrics(c.campaign_id, now, date_preset=preset)
+        except TypeError:  # mock 등 date_preset 미지원 — 전체 기간 폴백
+            try:
+                m = await reader.get_metrics(c.campaign_id, now)
+            except Exception:  # noqa: BLE001
+                continue
+        except Exception:  # noqa: BLE001 — 1건 실패가 리포트를 막지 않게
+            continue
+        rows.append(
+            {
+                "campaign_id": c.campaign_id,
+                "name": c.name,
+                "state": c.state.value,
+                "spend_krw": getattr(m, "spend_krw", 0) or 0,
+                "impressions": getattr(m, "impressions", 0) or 0,
+                "clicks": getattr(m, "clicks", 0) or 0,
+                "conversions": getattr(m, "conversions", None),
+                "ctr": getattr(m, "ctr", 0.0) or 0.0,
+                "cpc_krw": getattr(m, "cpc_krw", 0) or 0,
+                "frequency": getattr(m, "frequency", 0.0) or 0.0,
+            }
+        )
+    spent = sum(r["spend_krw"] for r in rows)
+    imps = sum(r["impressions"] for r in rows)
+    clicks = sum(r["clicks"] for r in rows)
+    convs = sum(r["conversions"] or 0 for r in rows)
+    active_rows = [r for r in rows if r["spend_krw"] > 0]
+    highlights: list[str] = []
+    if active_rows:
+        top = max(active_rows, key=lambda r: r["ctr"])
+        highlights.append(f"CTR 1위는 '{top['name']}' ({top['ctr'] * 100:.1f}%)")
+        pricey = max(active_rows, key=lambda r: r["cpc_krw"])
+        if len(active_rows) >= 2 and pricey["campaign_id"] != top["campaign_id"]:
+            highlights.append(
+                f"클릭 단가가 가장 비싼 캠페인은 '{pricey['name']}' (₩{pricey['cpc_krw']:,})"
+            )
+    fatigued = [r for r in rows if r["frequency"] >= FATIGUE_FREQUENCY]
+    next_actions: list[str] = []
+    for r in fatigued:
+        next_actions.append(
+            f"'{r['name']}' 빈도 {r['frequency']:.1f} — 소재 교체 검토(이상 감지 참조)"
+        )
+    if spent == 0:
+        next_actions.append(
+            f"{period_label} 집행이 없어요 — 새 캠페인 집행 또는 게재 재개를 검토하세요."
+        )
+    if len(active_rows) >= 2:
+        next_actions.append("캠페인 간 효율 차이는 예산 관리의 리밸런싱 제안에서 확인하세요.")
+    return {
+        "report": {
+            "period": {
+                "since": _report_period_since(preset, now),
+                "until": now.date().isoformat(),
+                "label": period_label,
+            },
+            "totals": {
+                "spend_krw": spent,
+                "impressions": imps,
+                "clicks": clicks,
+                "conversions": convs,
+                "ctr": round(clicks / imps, 4) if imps else 0.0,
+                "cpc_krw": round(spent / clicks) if clicks else 0,
+            },
+            "campaigns": sorted(rows, key=lambda r: r["spend_krw"], reverse=True),
+            "highlights": highlights,
+            "next_actions": next_actions,
+        },
+        "note": None,
+    }
+
+
+@router.get("/budget/rebalance-proposal")
+async def budget_rebalance_proposal(reader=Depends(_request_reader)):
+    """일예산 리밸런싱 제안(하이브리드) — insights.rebalance_proposal 단일 로직 위임.
+
+    캠페인 2개+는 저효율→고효율 이전(kind=transfer), 1개는 그 캠페인 자체의 일예산을
+    소진율 기준 증액/감액(kind=adjust). 실행이 아닌 '제안'만 — 적용은 budget-commit(HITL).
+    화면(/budget)·스케줄러 잡·챗 tool이 모두 같은 로직을 공유한다.
+    """
+    from domain.management.insights import rebalance_proposal  # noqa: PLC0415
+
+    return await rebalance_proposal(reader)
+
+
 # ── 시간축 자동 에스컬레이션 (re_evaluate — 엔드포인트·tick·추후 SQS 동일 함수) ────
 # 가벼운 조치부터 우선순위대로 시도하고, 회복(원래 anomaly 소멸) 안 되면 다음 단계 제안.
 # Tier 3은 항상 건별 승인 — "자동"은 다음 단계 *제안* 자동 생성만 뜻한다(HITL 강제).
@@ -3394,13 +3817,9 @@ async def meta_connect(
     app_id = getattr(settings, "meta_app_id", None)
     if not app_id:
         raise HTTPException(503, "META_APP_ID 미설정 — Meta 연결 불가")
-    # NOTE: org 소유자만 자기 Meta를 연결한다. admin impersonation(X-Org-Id) 대상이 아니며,
-    # admin은 멤버십이 없어 아래 409로 자연 차단된다(설계: (c) 멤버십 직접 해석).
-    org_id = await db.scalar(
-        select(OrganizationMember.organization_id).where(OrganizationMember.user_id == user.id)
-    )
-    if org_id is None:
-        raise HTTPException(409, "소속 조직이 없습니다 — 조직 연결 후 시도하세요.")
+    # org 해석은 다른 write와 동일 규칙 — 멤버는 자기 org, ADMIN은 X-Org-Id로 선택한 org를
+    # 대신 연결(impersonation 감사 기록). 멤버십 직접 해석 시 admin이 409로 막혀 연동 불가했다.
+    org_id = await _require_org_id_write(user, db, action="meta_connect")
     state = f"{org_id}:{uuid4().hex}"  # org 운반 + CSRF nonce
     url = build_login_url(
         app_id=app_id,
@@ -3445,6 +3864,9 @@ async def meta_callback(
         redirect_uri=str(request.url_for("meta_callback")),
         code=code,
         organization_id=uuid4_or_str(org),
+        # 토큰 스코프에 계정이 안 묶였을 때 임의 추측 대신 운영 기본 계정으로 — 엉뚱한
+        # 광고계정(옛 테스트 계정)에 바인딩돼 캠페인 목록이 바뀌는 사고 방지.
+        fallback_ad_account_id=getattr(settings, "meta_ad_account_id", None),
         api_version=settings.meta_graph_api_version,
     )
     return RedirectResponse(f"{front}/manage/connect?meta=connected", status_code=303)

@@ -27,6 +27,17 @@ def test_recall_history_registered(tools):
     assert "recall_history" in tools
 
 
+def test_history_date_bound_parsing():
+    from domain.chat.history import _KST, _history_date_bound
+
+    assert _history_date_bound(None, end=False) is None
+    assert _history_date_bound("not-a-date", end=False) is None
+    start = _history_date_bound("2026-06-20", end=False)
+    until = _history_date_bound("2026-06-20", end=True)
+    assert start.tzinfo == _KST and start.day == 20
+    assert (until - start).days == 1  # end=True → 다음날 0시(미만 비교)
+
+
 async def test_recall_history_empty_without_project(tools):
     out = await tools["recall_history"].coroutine(state=_state(), query="시뮬")
     assert out == "(수행 이력 없음)"
@@ -50,7 +61,7 @@ async def test_recall_history_formats_rows(tools, monkeypatch):
         },
     ]
 
-    async def _fake(project_id, query, k=5, feature_type=None):
+    async def _fake(project_id, query, k=5, feature_type=None, date_from=None, date_to=None):
         return rows
 
     monkeypatch.setattr(history, "search_execution_history", _fake)
@@ -61,3 +72,26 @@ async def test_recall_history_formats_rows(tools, monkeypatch):
     assert "여름세일" in lines[0]
     assert lines[1].startswith("- [2026-06-30 09:00] 생성:")
     assert "바나나우유" in lines[1]
+
+
+async def test_recall_history_passes_filters(tools, monkeypatch):
+    seen = {}
+
+    async def _fake(project_id, query, k=5, feature_type=None, date_from=None, date_to=None):
+        seen.update(feature_type=feature_type, date_from=date_from, date_to=date_to)
+        return []
+
+    monkeypatch.setattr(history, "search_execution_history", _fake)
+    out = await tools["recall_history"].coroutine(
+        state=_state(project_id="p1"),
+        query="",
+        feature_type="simulation",
+        date_from="2026-06-20",
+        date_to="2026-06-20",
+    )
+    assert out == "(수행 이력 없음)"
+    assert seen == {
+        "feature_type": "simulation",
+        "date_from": "2026-06-20",
+        "date_to": "2026-06-20",
+    }

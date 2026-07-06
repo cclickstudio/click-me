@@ -42,9 +42,13 @@ from domain.management.detection.exposure_model import (
     expected_hourly_impressions,
     find_anomaly_window,
 )
+from domain.management.escalation import ACTIVE_LADDERS
 
 TENANT_ID = "org_demo"
 CAMPAIGN_ID = "camp_demo_2841"
+
+# 예산을 실제로 증감하는 액션 — 이 외(소재·입찰·타겟)는 처방해도 예산은 그대로 둔다.
+_BUDGET_ACTIONS = {"INCREASE_BUDGET", "DECREASE_BUDGET"}
 
 
 def _header(step: str, title: str) -> None:
@@ -70,23 +74,40 @@ def _print_chart(expected: list[float], snapshots: list[MetricsSnapshot]) -> Non
 def build_sample_proposal(dx: DiagnosisResult) -> ActionProposal:
     """🅱가 보낼 ActionProposal 예시 — 데모용. 실제 생산자는 🅱 단독 (v2.0 ⑤).
 
-    의도적으로 Tier 1로 잘못 라벨링해 승인 플레인의 재라벨 판정을 시연한다.
+    처방은 진단에 맞춰 고른다 — 실제 에스컬레이션 사다리(escalation.ACTIVE_LADDERS)의 첫 칸
+    (가장 파괴도 낮은 조치)을 정본으로 재사용한다. 입찰 패배→입찰 전략 변경, 심사 거부→소재
+    교체 등. 예산 액션이 아니면 예산은 그대로(before==after) — '예산 증액'을 진단과 무관하게
+    붙이지 않는다. 액션 tier는 의도적으로 Tier 1로 낮춰, 정책 판정(대개 Tier 3)과의 재라벨을
+    승인 플레인에서 시연한다(HITL).
     """
+    ladder = ACTIVE_LADDERS.get(dx.anomaly_type, ["REPLACE_CREATIVE"])
+    action_type = ladder[0]
+    evidence = dict(dx.evidence_metrics)
+    # 예산 델타가 있는 액션만 예산을 움직인다. 현 사다리는 소재·입찰·타겟 위주라 대개 변화 없음.
+    budget_after = (
+        int(DAILY_BUDGET_KRW * 1.5) if action_type in _BUDGET_ACTIONS else DAILY_BUDGET_KRW
+    )
+    # 소재 교체는 집행에 후보가 필요(executor 레거시 경로) — 데모 후보 1건을 실어 승인→집행이
+    # 끊기지 않게 한다(제안 해시가 이 필드까지 덮어 변조 검증도 통과).
+    if action_type == "REPLACE_CREATIVE":
+        cand_id = f"cand_demo_{uuid4().hex[:6]}"
+        evidence["candidates"] = [{"candidate_id": cand_id, "sim_score": 0.82, "preview_url": None}]
+        evidence["selected_candidate_id"] = cand_id
     proposal = ActionProposal(
         proposal_id=f"prop_{uuid4().hex[:8]}",
         tenant_id=dx.tenant_id,
         ad_account_id="act_demo_001",
         target_object_ids=[dx.campaign_id],
-        action_type="INCREASE_BUDGET",
-        action_tier=ActionTier.TIER_1,  # 잘못된 라벨 — 정책 판정은 Tier 3
-        evidence_metrics=dx.evidence_metrics,
+        action_type=action_type,
+        action_tier=ActionTier.TIER_1,  # 잘못된 라벨 — 정책 판정은 대개 Tier 3 (재라벨 시연)
+        evidence_metrics=evidence,
         metrics_as_of=dx.metrics_as_of,
         hypothesis=dx.hypothesis,
         confidence=dx.confidence,
         expected_state_version="state_v1",
         budget_before_krw=DAILY_BUDGET_KRW,
-        budget_after_krw=int(DAILY_BUDGET_KRW * 1.5),
-        max_total_spend_krw=int(DAILY_BUDGET_KRW * 1.5) * 7,
+        budget_after_krw=budget_after,
+        max_total_spend_krw=budget_after * 7,
         expires_at=datetime.now(UTC) + timedelta(minutes=PROPOSAL_TTL_MINUTES),
         approval_policy_version=APPROVAL_POLICY_VERSION,
         status=ProposalStatus.PENDING,
@@ -144,8 +165,12 @@ def main() -> None:
         print(f"  ⚠ 정책 판정: Tier {proposal.action_tier} — 라벨≠판정, 재라벨 후 진행 (감사 기록)")
 
     if requires_human(proposal.action_tier):
-        budget_msg = f"₩{proposal.budget_before_krw:,} → ₩{proposal.budget_after_krw:,}"
-        print(f"\n  ★ Tier {proposal.action_tier} — 사용자 승인 필요 (예산 증액: {budget_msg})")
+        budget_msg = (
+            f" (예산 ₩{proposal.budget_before_krw:,} → ₩{proposal.budget_after_krw:,})"
+            if proposal.budget_after_krw != proposal.budget_before_krw
+            else ""
+        )
+        print(f"\n  ★ Tier {proposal.action_tier} 승인 필요: {proposal.action_type}{budget_msg}")
         answer = "y" if args.yes else input("  승인하시겠습니까? [y/N] ").strip().lower()
         if answer != "y":
             print("\n  거절됨 — REJECTED 기록 후 종료. (무승인 액션은 Writer에 도달 불가)")

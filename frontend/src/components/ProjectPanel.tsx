@@ -112,24 +112,34 @@ function SimEntry({ sim, isActive }: { sim: SimRow; isActive: boolean }) {
 }
 
 // ── 프로젝트 생성 모달 ──────────────────────────────────────────
-function CreateProjectModal({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
-  const [name, setName] = useState('');
+// defaultName으로 이름칸 프리필(캠페인명 등), onCreated는 생성된 프로젝트를 넘겨 호출측 자동선택 지원.
+export function CreateProjectModal({
+  onClose,
+  onCreated,
+  defaultName = '',
+}: {
+  onClose: () => void;
+  onCreated: (created?: { id: string; name: string } | null) => void;
+  defaultName?: string;
+}) {
+  const [name, setName] = useState(defaultName);
   const [description, setDescription] = useState('');
   const [creating, setCreating] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => { inputRef.current?.focus(); }, []);
+  useEffect(() => { inputRef.current?.focus(); inputRef.current?.select(); }, []);
 
   const handleCreate = async () => {
     if (!name.trim() || creating) return;
     setCreating(true);
-    await authedFetch(`${API_BASE}/api/projects`, {
+    const res = await authedFetch(`${API_BASE}/api/projects`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: name.trim(), description: description.trim() || null }),
     });
+    const created = res.ok ? ((await res.json()) as { id: string; name: string }) : null;
     setCreating(false);
-    onCreated();
+    onCreated(created);
   };
 
   return (

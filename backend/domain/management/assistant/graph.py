@@ -32,6 +32,10 @@ _SYSTEM = (
     "도구를 적극 사용해 근거를 모은 뒤 답하라.\n"
     "- 현황·수치(예산·지출·CTR·ROAS·상태)는 반드시 live 도구(live_campaigns/live_budget/"
     "live_campaign_detail/live_before_after)로 조회해 그 값만 인용한다. 추정·환각 금지.\n"
+    "- 주간 정리는 live_weekly_report, 예산 재배분은 live_rebalance_proposal, 이상·피로 점검은 "
+    "live_anomaly_scan, 플랫폼·연령성별 분해는 live_campaign_breakdown, 시안은 "
+    "live_campaign_creatives, 타깃 설정은 live_campaign_targeting, 리드 명단은 "
+    "live_campaign_leads, 오가닉 대비 광고 증분은 live_organic_compare를 쓴다.\n"
     "- 사용자가 캠페인을 이름으로 말하면 live_campaign_find_by_name로 campaign_id를 먼저 찾고, "
     "다건이면 어느 것인지 되묻은 뒤 진행한다.\n"
     "- 원인·방법·정책은 search_kb로 근거를 찾아 설명한다.\n"
@@ -152,6 +156,51 @@ def build_graph(settings, retriever, llm, checkpointer=None):
         return await live_tools.live_before_after(settings)
 
     @tool
+    async def live_weekly_report() -> dict:
+        """최근 7일 주간 성과 리포트 — 총합·캠페인별 표·하이라이트·다음 액션.
+        '주간 리포트/이번 주 성과 정리' 질문에 쓴다."""
+        return await live_tools.live_weekly_report(settings)
+
+    @tool
+    async def live_rebalance_proposal() -> dict:
+        """캠페인 간 일예산 리밸런싱 제안 — 저효율(높은 CPC)→고효율로 20% 이동 제안(실행 아님).
+        '예산 재배분/리밸런싱 어떻게' 질문에 쓴다. 적용은 승인 경로."""
+        return await live_tools.live_rebalance_proposal(settings)
+
+    @tool
+    async def live_anomaly_scan(target_roas: float | None = None) -> dict:
+        """실 캠페인 성과 이상·노출 피로 스캔 — 이상 있는 캠페인만 반환.
+        '이상 없어?/문제 있는 캠페인 찾아줘' 질문에 쓴다. 사용자가 목표 ROAS를 말했으면
+        target_roas로 넘겨라(없으면 피로 신호만 스캔)."""
+        return await live_tools.live_anomaly_scan(settings, target_roas)
+
+    @tool
+    async def live_campaign_breakdown(campaign_id: str) -> dict:
+        """단일 캠페인 분해 실측 — 게재 플랫폼별(FB/IG)과 연령×성별 노출·클릭·지출·도달.
+        '어디에/누구한테 잘 나가?' 같은 분해 질문에 쓴다."""
+        return await live_tools.live_campaign_breakdown(settings, campaign_id)
+
+    @tool
+    async def live_campaign_creatives(campaign_id: str) -> dict:
+        """캠페인 대표 크리에이티브(광고 시안 이름·썸네일) 조회."""
+        return await live_tools.live_campaign_creatives(settings, campaign_id)
+
+    @tool
+    async def live_campaign_targeting(campaign_id: str) -> dict:
+        """캠페인 타겟팅 설정(objective·연령·성별) 조회 — '이 캠페인 타깃이 뭐야'에 쓴다."""
+        return await live_tools.live_campaign_targeting(settings, campaign_id)
+
+    @tool
+    async def live_campaign_leads(campaign_id: str) -> dict:
+        """이 캠페인 광고로 제출된 잠재고객(리드) 명단 조회 — 리드 캠페인 전용."""
+        return await live_tools.live_campaign_leads(settings, campaign_id)
+
+    @tool
+    async def live_organic_compare() -> dict:
+        """오가닉 게시물 ↔ 광고 증분(리프트) 비교 보드 — '오가닉 대비 광고 효과' 질문에 쓴다."""
+        return await live_tools.live_organic_compare(settings)
+
+    @tool
     async def search_kb(query: str) -> list[dict]:
         """정책·최적화 플레이북·KPI 규칙 등 지식베이스 근거 문서 검색(자기교정).
         근거가 부족하면 쿼리를 재작성해 재검색하고, 그래도 부족하면 신호를 남긴다.
@@ -220,6 +269,14 @@ def build_graph(settings, retriever, llm, checkpointer=None):
         live_campaign_detail,
         live_campaign_find_by_name,
         live_before_after,
+        live_weekly_report,
+        live_rebalance_proposal,
+        live_anomaly_scan,
+        live_campaign_breakdown,
+        live_campaign_creatives,
+        live_campaign_targeting,
+        live_campaign_leads,
+        live_organic_compare,
         search_kb,
         web_search,
     ]

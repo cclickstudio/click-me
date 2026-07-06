@@ -49,6 +49,9 @@ export const fmtRoas = (
 export type MetricsStatus = 'ok' | 'permission'; // permission=권한 거부로 지표 못 불러옴
 export type BudgetType = 'daily' | 'lifetime' | 'none'; // 일예산 / 총예산 / 미상
 
+// 일별 지출(스파크라인용 최소 필드) — include_series=true일 때만 목록에 실려온다.
+export type SpendPoint = { label: string; spend_krw: number };
+
 export type CampaignSummary = CampaignKpi & {
   campaign_id: string;
   name: string;
@@ -60,6 +63,7 @@ export type CampaignSummary = CampaignKpi & {
   ended_at?: string | null; // 게재 종료일(ISO) — 종료 사유 표시용
   delivery_blocked?: boolean; // 계정 자금 막힘 + ACTIVE인데 게재 중단
   block_reason?: string | null; // "선불 잔액 부족" 등
+  series?: SpendPoint[]; // include_series 요청 시 — 홈·모니터링 스파크라인·델타용(전체 기간 일별 지출)
 };
 
 // 권한 거부 등으로 지표를 못 불러온 행인지 — true면 셀에 '권한 없음'/'—' 표시.
