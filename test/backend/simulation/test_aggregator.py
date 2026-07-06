@@ -101,6 +101,21 @@ def test_nonuniform_weights_shift_estimate_and_reduce_effective_n() -> None:
     assert agg.payload["weight_sum"] == 10.0
 
 
+def test_effective_n_kish_exact_value() -> None:
+    # Kish: (Σw)²/Σ(w²). weight=[3,1,1,1] → 36/12 = 3.0 (n=4 보다 작음).
+    reactions = [
+        _reaction("P-1", action=True, purchase=5, weight=3.0),
+        _reaction("P-2", action=False, purchase=1, weight=1.0),
+        _reaction("P-3", action=False, purchase=1, weight=1.0),
+        _reaction("P-4", action=False, purchase=1, weight=1.0),
+    ]
+    agg = BasicAggregator().aggregate(reactions)
+    assert agg.effective_n == 3.0  # 36/12
+    # 균일 가중이면 effective_n == n 임을 같은 공식으로 교차확인.
+    uniform = [_reaction(f"U-{i}", action=True, purchase=3, weight=2.0) for i in range(5)]
+    assert BasicAggregator().aggregate(uniform).effective_n == 5.0  # (10)²/(5·4)=100/20
+
+
 def test_single_sample_no_exception() -> None:
     # 단일 표본(n=1) → 부트스트랩·Kish 모두 예외 없이 점값 반환.
     agg = BasicAggregator().aggregate([_reaction("P-1", action=True, purchase=4, weight=1.0)])
