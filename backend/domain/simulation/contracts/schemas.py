@@ -109,7 +109,10 @@ class AdInterpretation(BaseModel):
 
 
 class PanelSpec(BaseModel):
-    """패널 빌드/조회 명세 — 고정 패널 운영(§3.6). 캐시는 추후 구현."""
+    """패널 빌드/조회 명세 — 고정 패널 운영(§3.6).
+
+    캐시 로드는 CachedPanelProvider(tools/panel/builder.py)로 구현됨 — 런마다 재생성하지 않음.
+    """
 
     version: str = "panel-v1"
     size: int = Field(default=20, ge=1, le=1000)
