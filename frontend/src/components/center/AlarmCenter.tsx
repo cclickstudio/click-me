@@ -58,10 +58,12 @@ export default function AlarmCenter({
   projectId,
   segment,
   role,
+  orgKey,
 }: {
   projectId: string;
   segment: CenterSegment;
   role: string | undefined;
+  orgKey?: string; // 변경 시 재조회 트리거(ADMIN 기업 전환 — projectId 불변이어도 스코프가 바뀜)
 }) {
   const router = useRouter();
   const { selectedProject, selectProject } = useProjects();
@@ -86,7 +88,7 @@ export default function AlarmCenter({
 
   useEffect(() => {
     load();
-  }, [load]);
+  }, [load, orgKey]);
 
   // 운영 알림 SSE — 변경 신호 시 목록 재조회(management 스트림, center 제안은 폴링/열람으로 갱신).
   useNotificationStream(!!role, load);

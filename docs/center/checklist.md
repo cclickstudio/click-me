@@ -32,11 +32,12 @@
 - [x] 기존 지금 점검·상담·무시 이관 (notifyScan·consult·resolve/dismissSuggestion, useNotificationStream SSE 구독)
 
 ## Phase 5 — 채팅 센터
-- [ ] 세션 목록(height 100%) 이식
-- [ ] 세션 클릭 → 50/50 + 하단 라이브 채팅(기존 대화 UI 재사용)
-- [ ] 전체 프로젝트 통합 세션 표시
-- [ ] 전체 프로젝트 상태에서 입력 시 프로젝트 강제 선택
-- [ ] 패널 채팅(ProjectChatSection)·FloatingChat 완전 제거(기능 누락 0)
+- [x] 세션 목록(height 100%) 이식 — ChatCenter, api.center.sessions(검색·새채팅·삭제·미확인 배지·전환 이관)
+- [x] 세션 클릭 → 50/50 + 하단 라이브 채팅(기존 ChatConversation 재사용) — ADMIN Preview 검증(입력창·SimResultWidget·이력 렌더)
+- [x] 전체 프로젝트 통합 세션 표시 — projectId '' → org 전체(project_name 표시), 검증(16세션)
+- [x] 전체 프로젝트 상태에서 입력 시 프로젝트 강제 선택 — 새 채팅 시 needProject 안내
+- [~] 패널 채팅(ProjectChatSection)·FloatingChat 완전 제거(기능 누락 0) — 이관 검증 완료, 제거는 다음 단위
+- [x] (fix) ADMIN 기업 전환 시 목록 미갱신 버그 — orgKey prop으로 AlarmCenter·ChatCenter 재조회 트리거
 
 ## Phase 6 — 권한 분기
 - [ ] ADMIN: 기업 미선택 시 두 센터 disable + 안내

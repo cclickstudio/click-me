@@ -9,6 +9,7 @@ import { useProjects } from '../ProjectContext';
 import { api, getAdminOrgId } from '@/lib/api';
 import CenterFilterBar, { type CenterSegment } from './CenterFilterBar';
 import AlarmCenter from './AlarmCenter';
+import ChatCenter from './ChatCenter';
 
 type CenterTab = 'chat' | 'alarm';
 
@@ -162,9 +163,19 @@ export default function Center() {
           onOrgId={setOrgId}
         />
         {tab === 'chat' ? (
-          <CenterPlaceholder label="채팅 센터" />
+          <ChatCenter
+            projectId={projectId}
+            segment={chatSeg}
+            readOnly={user?.role === 'COMPANY'}
+            orgKey={orgId}
+          />
         ) : (
-          <AlarmCenter projectId={projectId} segment={alarmSeg} role={user?.role} />
+          <AlarmCenter
+            projectId={projectId}
+            segment={alarmSeg}
+            role={user?.role}
+            orgKey={orgId}
+          />
         )}
       </div>
     </aside>
@@ -200,14 +211,5 @@ function TabButton({
       </span>
       {children}
     </button>
-  );
-}
-
-// 콘텐츠 자리 — 후속 Phase(필터바·목록·채팅)에서 교체.
-function CenterPlaceholder({ label }: { label: string }) {
-  return (
-    <div className="flex flex-1 items-center justify-center p-6 text-center text-sm text-[#8B95A1] dark:text-[#6B7280]">
-      {label} 준비 중
-    </div>
   );
 }
