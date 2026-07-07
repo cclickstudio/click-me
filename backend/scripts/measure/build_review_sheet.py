@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import csv
 import html
 import json
 import mimetypes
@@ -51,6 +52,8 @@ _HTML = r"""<!doctype html>
   button.primary { background: #2f6bff; border-color: #2f6bff; color: #fff; font-weight: 600; }
   button:hover { filter: brightness(1.12); }
   main { padding: 20px; display: flex; flex-direction: column; gap: 18px; max-width: 1100px; margin: 0 auto; }
+  .banner { background: #1e2b1e; border: 1px solid #2ecc71; color: #cfe9cf; border-radius: 10px;
+            padding: 10px 14px; font-size: 12.5px; line-height: 1.6; }
   .card { display: grid; grid-template-columns: 360px 1fr; gap: 20px; background: #161a22;
           border: 1px solid #262c38; border-left: 4px solid #3a4150; border-radius: 12px; padding: 16px; }
   .card.clean { border-left-color: #2ecc71; }
@@ -106,12 +109,21 @@ const EL_KO = {headline:"헤드라인", body:"본문", cta:"CTA"};
 const BAD = new Set(["typo","broken","cut","missing"]);
 const KEY = "clickme_review::" + META.dir;
 
+// 감사 모드 — VLM CSV로 프리필된 인스턴스·판정. localStorage에 사람 편집이 없으면 이걸로 초기화.
+const PREFILL = {};
+DATA.forEach(d => { if (d.prefill) PREFILL[d.file] = d.prefill; });
+
 let state = {};
 try { state = JSON.parse(localStorage.getItem(KEY) || "{}"); } catch (e) { state = {}; }
 
+function blank() {
+  return { headline:{status:"",seen:""}, body:{status:"",seen:""}, cta:{status:"",seen:""}, others: [] };
+}
 function st(file) {
-  if (!state[file]) state[file] = { headline:{status:"",seen:""}, body:{status:"",seen:""},
-                                    cta:{status:"",seen:""}, others: [] };
+  if (!state[file]) {
+    const p = PREFILL[file];
+    state[file] = p ? JSON.parse(JSON.stringify(p)) : blank();
+  }
   return state[file];
 }
 function save() { localStorage.setItem(KEY, JSON.stringify(state)); }
@@ -126,6 +138,11 @@ function el(tag, cls, txt) {
 function render() {
   const main = document.getElementById("main");
   main.innerHTML = "";
+  if (META.audit) {
+    main.appendChild(el("div", "banner",
+      "감사 모드 — VLM 판정을 미리 채웠습니다. 틀린 항목만 고치세요. " +
+      "기타 텍스트는 시각적으로 구분되는 블록 1개 = 1행(라벨·배경·헛것 각각), 한 블록 내 여러 단어·줄은 쪼개지 않고, 정상 렌더도 '정확'으로 남깁니다."));
+  }
   DATA.forEach(item => {
     const s = st(item.file);
     const card = el("div", "card");
@@ -138,7 +155,8 @@ function render() {
       `${item.file}  ·  ${item.method || "?"}` +
       (item.template_id ? `  ·  ${item.template_id}` : "") +
       (item.strategy_type ? `  ·  ${item.strategy_type}` : "") +
-      (item.name ? `  ·  ${item.name}` : "")));
+      (item.name ? `  ·  ${item.name}` : "") +
+      (item.prefill ? "  ·  VLM 프리필" : "")));
     card.appendChild(iw);
 
     const fields = el("div", "fields");
@@ -171,7 +189,7 @@ function render() {
     const others = el("div", "others");
     others.appendChild(el("h4", null, "이미지 내 기타 텍스트"));
     others.appendChild(el("div", "hint",
-      "카피 3칸 외에 이미지에 보이는 모든 텍스트를 한 줄씩 추가하세요(상품 라벨·로고·배경·깨진 문자 등). 정상 렌더도 '정확'으로."));
+      "시각적으로 구분되는 텍스트 블록 1개 = 1행(상품 라벨·배경·헛것 각각). 한 블록 내 여러 단어·줄은 쪼개지 않습니다. 정상 렌더도 '정확'으로 남깁니다."));
     const rows = el("div", "orows");
     others.appendChild(rows);
     const add = el("button", "addbtn", "+ 기타 텍스트 추가");
@@ -295,11 +313,50 @@ def _data_uri(path: Path) -> str:
     return f"data:{mime};base64,{b64}"
 
 
+def _read_vlm_prefill(path: Path) -> dict[str, dict]:
+    """VLM 판정 CSV(text_accuracy.csv)를 파일별 프리필 구조로 변환 — 감사 모드.
+
+    카피(headline/body/cta)는 슬롯에, other 행은 기타 인스턴스로. VLM이 나눈 경계·판정을
+    그대로 시트에 채워 사람이 같은 인스턴스 위에서 확인·수정하게 한다.
+    """
+    prefill: dict[str, dict] = {}
+    with path.open(encoding="utf-8-sig", newline="") as f:
+        for row in csv.DictReader(f):
+            file = row.get("file")
+            if not file:
+                continue
+            rec = prefill.setdefault(
+                file,
+                {
+                    "headline": {"status": "", "seen": ""},
+                    "body": {"status": "", "seen": ""},
+                    "cta": {"status": "", "seen": ""},
+                    "others": [],
+                },
+            )
+            element = row.get("element")
+            entry = {"status": row.get("status") or "", "seen": row.get("seen") or ""}
+            if element in ("headline", "body", "cta"):
+                rec[element] = entry
+            elif element == "other":
+                rec["others"].append(entry)
+            # 'any'(독립 판정 모드) 등은 카피 슬롯에 못 매핑하므로 무시
+    return prefill
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="사람 정성 검수용 HTML 시트 생성")
     parser.add_argument("--dir", required=True, help="이미지+manifest.json 디렉터리")
     parser.add_argument("--limit", type=int, default=0, help="앞에서 N장만 포함 (0=전체)")
     parser.add_argument("--out", default=None, help="출력 HTML 경로 (기본 <dir>/review.html)")
+    parser.add_argument(
+        "--vlm-csv",
+        default=None,
+        help="VLM 판정 CSV로 프리필(감사 모드). 미지정 시 <dir>/text_accuracy.csv 자동 감지",
+    )
+    parser.add_argument(
+        "--no-prefill", action="store_true", help="VLM CSV가 있어도 프리필하지 않음(백지 검수)"
+    )
     args = parser.parse_args()
 
     img_dir = Path(args.dir)
@@ -307,6 +364,12 @@ def main() -> None:
     entries = [e for e in manifest["items"] if e.get("status") == "ok" or "status" not in e]
     if args.limit:
         entries = entries[: args.limit]
+
+    # 감사 모드 프리필 — VLM CSV 자동 감지(또는 --vlm-csv). --no-prefill이면 생략.
+    prefill_by_file: dict[str, dict] = {}
+    vlm_path = Path(args.vlm_csv) if args.vlm_csv else (img_dir / "text_accuracy.csv")
+    if not args.no_prefill and vlm_path.exists():
+        prefill_by_file = _read_vlm_prefill(vlm_path)
 
     items: list[dict] = []
     missing = 0
@@ -326,16 +389,21 @@ def main() -> None:
                 "body": e.get("body"),
                 "cta": e.get("cta"),
                 "img": _data_uri(img_path),
+                "prefill": prefill_by_file.get(e["file"]),
             }
         )
 
-    meta = {"dir": str(img_dir), "method": manifest.get("method"), "count": len(items)}
+    audit = bool(prefill_by_file)
+    meta = {"dir": str(img_dir), "method": manifest.get("method"), "count": len(items), "audit": audit}
     # </script> 조기종료·XSS 방지용으로 '<'를 유니코드 이스케이프
     data_json = json.dumps(items, ensure_ascii=False).replace("<", "\\u003c")
     meta_json = json.dumps(meta, ensure_ascii=False).replace("<", "\\u003c")
     title = f"검수 — {img_dir.name} ({len(items)}장)"
 
-    header_text = f"{img_dir}  ·  {len(items)}장  ·  method={manifest.get('method') or '?'}"
+    mode = "감사(VLM 프리필)" if audit else "백지"
+    header_text = (
+        f"{img_dir}  ·  {len(items)}장  ·  method={manifest.get('method') or '?'}  ·  {mode} 모드"
+    )
     page = (
         _HTML.replace("__DATA__", data_json)
         .replace("__META__", meta_json)
@@ -347,7 +415,11 @@ def main() -> None:
     out_path.write_text(page, encoding="utf-8")
 
     size_mb = out_path.stat().st_size / 1_048_576
-    print(f"검수 시트 생성 — {out_path}  (이미지 {len(items)}장, {size_mb:.1f}MB)")
+    print(f"검수 시트 생성 — {out_path}  (이미지 {len(items)}장, {size_mb:.1f}MB, {mode} 모드)")
+    if audit:
+        print(f"  VLM 프리필 적용 — {vlm_path.name}에서 {len(prefill_by_file)}장 판정 로드")
+    else:
+        print("  프리필 없음 — text_accuracy.csv가 없거나 --no-prefill. 먼저 measure_text_accuracy 실행 권장")
     if missing:
         print(f"  경고 — 디스크에 없는 이미지 {missing}장 제외됨")
     print("브라우저로 열어 검수 → 'CSV 저장' → review_by_human.csv")

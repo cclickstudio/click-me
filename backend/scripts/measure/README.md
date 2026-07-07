@@ -62,20 +62,25 @@ uv run python scripts\measure\measure_text_accuracy.py --dir scripts\measure\out
   (상품 라벨·로고·배경 문구·헛것 글자 등)를 각각 인스턴스로 판정한다. "전체 결함율"은 그
   모든 텍스트 기준이라, PIL 카피는 완벽해도 상품 표면 헛것 텍스트가 있으면 반영된다.
 
-### 사람 직접 정성 검수 (VLM 교차검증)
+### 사람 직접 정성 검수 (VLM 교차검증, 감사 모드)
 
-VLM(gpt-4o) 자동 판정 대신·과 함께, 사람이 눈으로 매기려면 검수 시트를 만든다. (`fetch`로 수집된 `out/` 디렉터리가 선행돼야 한다 — 즉 앱 생성 → fetch → 검수 시트 순.)
+VLM(gpt-4o) 자동 판정 대신·과 함께, 사람이 눈으로 매기려면 검수 시트를 만든다. **VLM 판정을 먼저 돌려두면**, 검수 시트가 그 결과를 프리필해 사람이 **같은 인스턴스 경계 위에서 확인·수정**한다(감사 모드) → 행 단위로 VLM↔사람이 직접 비교된다.
 
 ```cmd
+:: 앱 생성 → fetch → VLM 판정(text_accuracy.csv 생성) → 검수 시트 순
 uv run python scripts\measure\fetch_generation_images.py --latest 10
+uv run python scripts\measure\measure_text_accuracy.py --dir scripts\measure\out\pipeline
 uv run python scripts\measure\build_review_sheet.py --dir scripts\measure\out\pipeline
 ```
 
 - `<dir>\review.html`이 생성된다 — 이미지를 통째로 인라인한 자체완결 파일이라 **그냥 브라우저로 연다**(서버·인터넷 불필요).
+- **감사 모드** — 같은 디렉터리에 `text_accuracy.csv`가 있으면 자동 감지해 VLM의 카피 판정 + **기타 텍스트 분할·판정을 프리필**한다. 사람은 틀린 항목만 고치면 된다(백지로 매기려면 `--no-prefill`, 다른 CSV는 `--vlm-csv <경로>`).
 - 이미지마다 카피 요소별(정확/오탈자/깨짐/잘림/누락) + "이미지 내 기타 텍스트"를 기록한다.
 - 상단에 무결점 비율·전체 결함율이 실시간 집계되고, **"CSV 저장"** 으로 `review_by_human.csv`를 내려받는다.
-- 이 CSV는 `measure_text_accuracy.py`의 `text_accuracy.csv`와 **동일 스키마**라 VLM 판정과 나란히 비교·발표할 수 있다.
-- 검수 기록은 브라우저 localStorage에 자동 저장되어 새로고침·재열람 시 유지된다.
+- 이 CSV는 `text_accuracy.csv`와 **동일 스키마**라 VLM 판정과 나란히 비교·발표할 수 있다(감사 모드면 인스턴스 경계가 같아 행 단위 일치도 계산까지 가능).
+- 검수 기록은 브라우저 localStorage에 자동 저장되어 새로고침·재열람 시 유지된다("전체 초기화"로 지우면 VLM 프리필 상태로 되돌아간다).
+
+**기타 텍스트 셈 규칙(사람·VLM 공통)** — 시각적으로 구분되는 **텍스트 블록 1개 = 1인스턴스**(상품 라벨·배경·헛것 각각). 한 블록 안의 여러 단어·줄은 쪼개지 않고, 정상 렌더된 텍스트도 `exact`로 기록한다. 이 규칙 덕에 분모(전체 텍스트 수)가 사람·VLM 간 일관되어 결함율이 비교 가능하다. 다만 전체 결함율은 이 쪼개기에 민감하니 **발표 대표 수치는 무결점 이미지 비율**(쪼개기에 불변)을 쓴다.
 
 ### 팀원 생성분과 분리 (DB 공유 환경)
 

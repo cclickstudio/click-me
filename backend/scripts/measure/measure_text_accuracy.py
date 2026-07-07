@@ -57,7 +57,9 @@ def _judge_prompt(entry: dict) -> str:
             f'- body: "{entry["body"]}"\n'
             f'- cta: "{entry["cta"]}"\n'
             "2) 그 외 이미지에 보이는 모든 텍스트(상품 라벨·로고·배경 문구·의미 없는 문자 등)를 "
-            "각각 하나의 항목으로 열거해 판정한다. 정상 렌더된 텍스트도 status exact로 포함한다.\n"
+            "열거해 판정한다. **시각적으로 구분되는 텍스트 블록 1개를 한 항목으로** 센다 "
+            "(라벨·배경·헛것 각각 별도 항목, 한 블록 안의 여러 단어·줄은 쪼개지 않음). "
+            "정상 렌더된 텍스트도 status exact로 포함한다.\n"
             "다음 JSON 형식으로만 답하라.\n"
             '{"elements": {"headline": {"status": "exact|typo|broken|cut|missing",'
             ' "seen": "실제로 보이는 텍스트"}, "body": {...}, "cta": {...}},'
