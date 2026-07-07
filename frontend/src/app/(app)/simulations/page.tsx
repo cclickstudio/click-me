@@ -3,8 +3,8 @@
 // 행 클릭 시 결과 대시보드(/simulation/[id])로 이동. 삭제·복원은 상세 페이지에서 처리.
 
 import { useCallback, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/AuthProvider';
-import { useProjects } from '@/components/ProjectContext';
 import { authedFetch } from '@/lib/api';
 import { formatKSTFull } from '@/lib/datetime';
 import { AdminOrgPicker } from '@/components/manage/AdminOrgPicker';
@@ -47,7 +47,7 @@ const STATUS_LABEL: Record<string, { label: string; color: string }> = {
 
 export default function SimulationsPage() {
   const { user } = useAuth();
-  const { revealProjectInPanel } = useProjects();
+  const router = useRouter();
   const isAdmin = user?.role === 'ADMIN';
   const isCompany = user?.role === 'COMPANY';
 
@@ -146,8 +146,8 @@ export default function SimulationsPage() {
                 return (
                   <tr
                     key={r.id}
-                    onClick={() => r.project_id && revealProjectInPanel(r.project_id)}
-                    className={`border-b border-[#F9FAFB] dark:border-[#1C2333] last:border-0 hover:bg-[#F9FAFB] dark:hover:bg-[#252D3D] transition-colors ${r.project_id ? 'cursor-pointer' : ''}`}
+                    onClick={() => router.push(`/simulation/${r.id}`)}
+                    className="border-b border-[#F9FAFB] dark:border-[#1C2333] last:border-0 hover:bg-[#F9FAFB] dark:hover:bg-[#252D3D] transition-colors cursor-pointer"
                   >
                     <td className="text-left px-6 py-3 text-[#191F28] dark:text-[#F2F4F6] font-medium">
                       {r.ad_title ?? '—'}
