@@ -23,13 +23,13 @@ def _ad() -> AdInterpretation:
 
 
 def _reaction(**overrides) -> PersonaReaction:
-    base = dict(
-        persona_id="p1",
-        aisas=Aisas(attention=True, interest=True),
-        purchase_intent=3,
-        trust=3,
-        utterance="음, 그냥 그렇네.",
-    )
+    base = {
+        "persona_id": "p1",
+        "aisas": Aisas(attention=True, interest=True),
+        "purchase_intent": 3,
+        "trust": 3,
+        "utterance": "음, 그냥 그렇네.",
+    }
     base.update(overrides)
     return PersonaReaction(**base)
 
