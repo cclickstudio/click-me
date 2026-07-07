@@ -3,7 +3,6 @@
 
 - `docs/api-endpoints.md`      ← `api.main:app`의 라우트 테이블에서 추출
 - `docs/frontend-routes.md`    ← `frontend/src/app/**/{page,route}.tsx` 파일트리에서 추출
-- `CLAUDE.md`의 AUTOGEN 마커 구간 ← 위 두 문서의 요약(개수 + 링크)
 
 사용:
     uv run python scripts/gen_docs.py           # 문서 재생성(변경분만 기록)
@@ -25,11 +24,7 @@ REPO_ROOT = BACKEND_ROOT.parent
 DOCS = REPO_ROOT / "docs"
 API_DOC = DOCS / "api-endpoints.md"
 ROUTES_DOC = DOCS / "frontend-routes.md"
-CLAUDE_MD = REPO_ROOT / "CLAUDE.md"
 FRONT_APP = REPO_ROOT / "frontend" / "src" / "app"
-
-AUTOGEN_START = "<!-- AUTOGEN:docs-index START -->"
-AUTOGEN_END = "<!-- AUTOGEN:docs-index END -->"
 
 _GEN_NOTE = (
     "> 이 파일은 `backend/scripts/gen_docs.py`가 코드에서 **자동 생성**합니다. "
@@ -199,32 +194,6 @@ def render_routes_doc(rows: list[tuple[str, str, str]]) -> str:
 
 
 # ────────────────────────────────────────────────────────────
-# CLAUDE.md AUTOGEN 구간
-# ────────────────────────────────────────────────────────────
-def render_claude_block(n_api: int, n_pages: int) -> str:
-    api_link = "[docs/api-endpoints.md](docs/api-endpoints.md)"
-    route_link = "[docs/frontend-routes.md](docs/frontend-routes.md)"
-    return "\n".join(
-        [
-            AUTOGEN_START,
-            f"- **API 엔드포인트 {n_api}개** — 전체 목록 {api_link} (자동 생성)",
-            f"- **프론트 라우트 {n_pages}개** — 전체 목록 {route_link} (자동 생성)",
-            AUTOGEN_END,
-        ]
-    )
-
-
-def replace_claude_block(text: str, block: str) -> str:
-    start = text.find(AUTOGEN_START)
-    end = text.find(AUTOGEN_END)
-    if start == -1 or end == -1:
-        raise SystemExit(
-            f"CLAUDE.md에 AUTOGEN 마커가 없습니다: {AUTOGEN_START}…{AUTOGEN_END}. 먼저 추가하세요."
-        )
-    return text[:start] + block + text[end + len(AUTOGEN_END) :]
-
-
-# ────────────────────────────────────────────────────────────
 # 파일 쓰기/검사
 # ────────────────────────────────────────────────────────────
 def _norm(text: str) -> str:
@@ -246,14 +215,9 @@ def main() -> int:
 
     api_rows = collect_api_endpoints()
     front_rows = collect_front_routes()
-    n_pages = sum(1 for r in front_rows if r[2] == "page")
 
     sync_file(API_DOC, render_api_doc(api_rows), check, changed)
     sync_file(ROUTES_DOC, render_routes_doc(front_rows), check, changed)
-
-    claude_text = CLAUDE_MD.read_text(encoding="utf-8")
-    new_claude = replace_claude_block(claude_text, render_claude_block(len(api_rows), n_pages))
-    sync_file(CLAUDE_MD, new_claude, check, changed)
 
     if check:
         if changed:

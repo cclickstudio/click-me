@@ -21,11 +21,11 @@
 ## 3. 제안 알림 테이블과 `management_notifications` 통합 여부 — 내일(2026-07-07) 리뷰 후 결정
 
 - 배경 — 센터의 취지는 "알림을 하나로 통합"이라, `ManagementNotification`(management_notifications)까지 결국 센터로 합치는 게 자연스럽다. 현재는 안전하게 **두 테이블 + 병합 조회**(center-spec §8)로 얹어둔 상태.
-- 오늘 한 것 — `center_suggestions`(**0008**) **additive 신설만**. management_notifications(0005)는 손대지 않음.
-- ⚠️ 마이그레이션 체인 주의(2026-07-06 발견) — DB는 `feat/simulation-doyeon`이 올린 `0007_chat_sessions_created_by`(head)에 있고, `feat/alarm-center`는 이걸 아직 못 받은 상태다. 그래서 center 마이그레이션은 `0008`(down_revision=`0007_chat_sessions_created_by`)로 잡았고, **alarm-center에 0007_chat_sessions_created_by를 rebase/merge로 먼저 들여와야 체인이 로컬에서 해석**된다. 로컬 `main`은 아예 다른 `001_/002_` 스킴이라 무관. DB는 stamp 금지.
+- 오늘 한 것 — `center_suggestions`(**0009**) **additive 신설만**. management_notifications(**0006**)는 손대지 않음.
+- ✅ 마이그레이션 체인 정리 완료(2026-07-07) — 분기·번호 역전이던 체인을 단일 선형(0001~0009)으로 재정렬했다. center 마이그레이션은 이제 `0009_center_suggestions`(down_revision=`0008_chat_sessions_created_by`), head는 `0009` 단일. 다른 브랜치(`feat/alarm-center` 등)는 이 재번호를 rebase/merge로 받아와야 한다. 리비전 ID가 바뀌었으니 옛 번호로 적용된 DB는 `alembic stamp 0006_management_notifications --purge && alembic upgrade head`로 재정합(0009까지). 로컬 `main`은 다른 `001_/002_` 스킴이라 무관.
 - 내일 계획 — 도연님이 결과를 보고 괜찮으면 **management_notifications를 center 테이블로 통합**(사실상 "6을 7로 흡수").
 - ⚠️ 주의 — 0006은 **이미 적용됐고 데이터·코드(NotificationBell·NotificationPanel·api.management.notifications·remediation)가 물린 살아있는 테이블**이다. 그래서 **"0006 파일 삭제"는 불가**. 통합 시 두 방식 중 택1:
-  - **(A) 전진 데이터 마이그레이션** — 새 `0009`에서 기존 행을 center로 이관 → 옛 테이블 drop → management 알림 코드 경로를 center로 재배선. 데이터 보존, 운영 안전.
+  - **(A) 전진 데이터 마이그레이션** — 새 `0010`에서 기존 행을 center로 이관 → 옛 테이블 drop → management 알림 코드 경로를 center로 재배선. 데이터 보존, 운영 안전.
   - **(B) DB 재구축** — dev DB가 버려도 되면 스키마를 다시 세우며 통합(데이터 이관 생략). 간단하지만 데이터 소멸.
 - 추가 고려 — management 도메인 소유 코드(협업 규칙: 도메인 경계)라 통합 시 management 팀과 조율 필요.
 - 상태 — 미정, 내일 리뷰 후 A/B 택1 (2026-07-06 기록).

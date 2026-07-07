@@ -5,8 +5,8 @@
 
 from alembic import op
 
-revision = "0006_ads_generation_id"
-down_revision = "0005_management_notifications"
+revision = "0007_ads_generation_id"
+down_revision = "0006_management_notifications"
 branch_labels = None
 depends_on = None
 
