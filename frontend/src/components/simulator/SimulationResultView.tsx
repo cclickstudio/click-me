@@ -8,7 +8,7 @@ import { SimulationReportView } from '@/components/simulator/SimulationReportVie
 import { ExecuteFromSimulation } from '@/components/manage/ExecuteFromSimulation';
 import { KpiCard } from '@/components/ui/KpiCard';
 import { formatPercent } from '@/lib/utils';
-import type { ObjectiveFit, ReportView, SimRunResult } from '@/lib/types';
+import type { ReportView, SimRunResult } from '@/lib/types';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 // 광고 이미지 URL — 백엔드 프록시 상대경로(/api/...)면 API_BASE를 붙인다. http(s)는 그대로.
@@ -219,84 +219,31 @@ export function SimulationResultView({
         )}
       </div>
 
-      {/* 캠페인 목표 달성 가능성 (결정론 룰 — 상대 지표, exploratory) */}
-      {fit &&
-        ((f: ObjectiveFit) => {
-          const tone =
-            f.grade === '높음'
-              ? {
-                  text: 'text-[#15803D] dark:text-[#4ADE80]',
-                  bar: 'bg-[#22C55E]',
-                  bg: 'bg-[#F0FDF4] dark:bg-[#0B2E13]',
-                  border: 'border-[#BBF7D0] dark:border-[#14532D]',
-                }
-              : f.grade === '보통'
-                ? {
-                    text: 'text-[#B45309] dark:text-[#F4A100]',
-                    bar: 'bg-[#F4A100]',
-                    bg: 'bg-[#FFF8E6] dark:bg-[#2D2000]',
-                    border: 'border-[#FDE68A] dark:border-[#78350F]',
-                  }
-                : {
-                    text: 'text-[#DC2626] dark:text-[#FCA5A5]',
-                    bar: 'bg-[#F04452]',
-                    bg: 'bg-[#FEF2F2] dark:bg-[#3B0D0D]',
-                    border: 'border-[#FECACA] dark:border-[#7F1D1D]',
-                  };
-          return (
-            <div className={`rounded-2xl border p-6 ${tone.bg} ${tone.border}`}>
-              <div className='flex items-start justify-between gap-4 flex-wrap'>
-                <div>
-                  <p className='text-xs font-semibold text-[#8B95A1] dark:text-[#6B7280]'>
-                    캠페인 목표 달성 가능성
-                  </p>
-                  <p className='text-sm text-[#4E5968] dark:text-[#9CA3AF] mt-0.5'>
-                    목표: {f.objective}
-                  </p>
-                </div>
-                <div className='flex items-baseline gap-2'>
-                  <span className={`text-3xl font-bold ${tone.text}`}>
-                    {f.grade}
-                  </span>
-                  <span className='text-sm text-[#8B95A1] dark:text-[#6B7280]'>
-                    지수 {f.score}/100
-                  </span>
-                </div>
-              </div>
-              <div className='mt-3 h-2 rounded-full bg-white/60 dark:bg-black/30 overflow-hidden'>
-                <div
-                  className={`h-full rounded-full ${tone.bar}`}
-                  style={{ width: `${f.score}%` }}
-                />
-              </div>
-              <p className='text-sm text-[#4E5968] dark:text-[#9CA3AF] mt-3'>
-                {f.rationale}
-              </p>
-              <div className='flex flex-wrap gap-2 mt-3'>
-                {f.contributions.map(c => (
-                  <span
-                    key={c.label}
-                    className='text-[11px] px-2 py-1 rounded-full bg-white/70 dark:bg-black/20 text-[#4E5968] dark:text-[#9CA3AF]'>
-                    {c.label} {Math.round(c.value * 100)}%
-                    <span className='opacity-60'>
-                      {' '}
-                      ·가중 {Math.round(c.weight * 100)}%
-                    </span>
-                  </span>
-                ))}
-              </div>
-              <p className='text-[11px] text-[#B0B8C1] dark:text-[#4B5563] mt-2'>
-                {f.low_confidence && '⚠ 표본이 적어 신뢰가 낮습니다. '}
-                실측이 아닌 시뮬 신호 기반 상대 지표입니다(exploratory).
-              </p>
-            </div>
-          );
-        })(fit)}
-
-      {/* 4대 KPI */}
+      {/* 히어로 — 목표달성 카드 + 4대 KPI 한 줄 (블루 모노크롬, 전면 배경 없음) */}
       {agg && (
         <>
-          <div className='grid grid-cols-2 md:grid-cols-4 gap-4'>
+          <div className='grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4'>
+            {fit && (
+              <div className='lg:col-span-2 col-span-2 bg-white dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748] rounded-2xl p-5'>
+                <p className='text-xs text-[#8B95A1] dark:text-[#6B7280]'>
+                  목표 달성 가능성 · {fit.objective}
+                </p>
+                <div className='flex items-baseline gap-2 mt-1'>
+                  <span className='text-2xl font-bold text-[#191F28] dark:text-[#F2F4F6]'>
+                    {fit.grade}
+                  </span>
+                  <span className='text-xs text-[#8B95A1] dark:text-[#6B7280]'>
+                    지수 {fit.score}/100
+                  </span>
+                </div>
+                <div className='mt-2.5 h-1.5 rounded-full bg-[#F2F4F6] dark:bg-[#252D3D] overflow-hidden'>
+                  <div
+                    className='h-full rounded-full bg-[#3182F6] dark:bg-[#5B9DF9]'
+                    style={{ width: `${fit.score}%` }}
+                  />
+                </div>
+              </div>
+            )}
             <KpiCard
               label='클릭 의향률 (AISAS Action)'
               value={formatPercent(agg.click_intent_rate)}
@@ -308,13 +255,11 @@ export function SimulationResultView({
               sub={agg.variance_warning ? '⚠ 응답 집중 경고' : undefined}
               trend={agg.variance_warning ? 'down' : 'neutral'}
             />
-            <KpiCard
-              label='신뢰도 (1~5 평균)'
-              value={agg.trust_avg.toFixed(2)}
-            />
+            <KpiCard label='신뢰도 (1~5 평균)' value={agg.trust_avg.toFixed(2)} />
             <KpiCard
               label='거부율'
               value={formatPercent(agg.rejection_rate)}
+              sub={agg.rejection_rate > 0.3 ? '▲ 30% 초과 주의' : undefined}
               trend={agg.rejection_rate > 0.3 ? 'down' : 'neutral'}
             />
           </div>
@@ -326,7 +271,7 @@ export function SimulationResultView({
               집계 엔진 {agg.engine_version}
             </span>
             {ad?.intent_mismatch && (
-              <span className='px-3 py-1 rounded-full bg-[#FFF8E6] dark:bg-[#2D2000] text-[#F4A100]'>
+              <span className='px-3 py-1 rounded-full bg-[#F2F4F6] dark:bg-[#252D3D] text-[#D97706]'>
                 ⚠ 의도-반응 불일치 감지
               </span>
             )}
