@@ -106,3 +106,7 @@ fonts/
 
 
 .understand-anything
+
+# 신뢰도 평가 생성 산출물(측정 결과 jsonl) — 로컬 전용. 소스·골든셋·리포트 프론트는 브랜치에 추적.
+/backend/domain/management/evals/_*.jsonl
+/backend/domain/management/evals/golden/_*.jsonl
