@@ -276,6 +276,28 @@ export default function DashboardPage() {
       : '—';
   const isEmpty = loaded && (summary?.sims_total ?? 0) === 0 && (summary?.gens_total ?? 0) === 0;
 
+  // "지금 주목할 것" — 최근 활동 중 주의가 필요한 항목(실패한 생성·진행 중 시뮬).
+  const failedGens = recentGens.filter((g) => g.status.toLowerCase() === 'failed');
+  const runningSims = recentSims.filter((s) => ['running', 'queued', 'pending'].includes(s.status.toLowerCase()));
+  const attention = [
+    ...failedGens.map((g) => ({
+      key: `gf-${g.id}`,
+      tone: 'danger' as const,
+      label: '생성 실패',
+      title: g.product_name || '광고 생성',
+      desc: '재시도가 필요합니다',
+      href: `/generations/${g.id}`,
+    })),
+    ...runningSims.map((s) => ({
+      key: `sr-${s.id}`,
+      tone: 'info' as const,
+      label: '진행 중',
+      title: s.ad_title || '시뮬레이션',
+      desc: '결과 생성 중입니다',
+      href: `/simulation/${s.id}`,
+    })),
+  ].slice(0, 4);
+
   return (
     <div className="p-6 sm:p-8 max-w-6xl mx-auto space-y-8">
       {/* ── 헤더 ── */}
@@ -357,6 +379,35 @@ export default function DashboardPage() {
         />
       ) : (
         <>
+          {/* ── 지금 주목할 것 (주의 필요 항목) ── */}
+          {attention.length > 0 && (
+            <div>
+              <p className="mb-2 text-sm font-semibold text-ink">지금 주목할 것</p>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {attention.map((a) => (
+                  <Link
+                    key={a.key}
+                    href={a.href}
+                    className={`flex items-center gap-3 rounded-xl border p-3.5 transition-colors ${
+                      a.tone === 'danger'
+                        ? 'border-danger-border bg-danger-subtle hover:bg-danger-subtle/70'
+                        : 'border-info-border bg-info-subtle hover:bg-info-subtle/70'
+                    }`}
+                  >
+                    <span className={`shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-semibold ${a.tone === 'danger' ? 'bg-danger text-danger-foreground' : 'bg-info text-info-foreground'}`}>
+                      {a.label}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block text-xs font-medium text-ink truncate">{a.title}</span>
+                      <span className="block text-[11px] text-ink-secondary">{a.desc}</span>
+                    </span>
+                    <ArrowRight size={14} className={a.tone === 'danger' ? 'text-danger' : 'text-info'} />
+                  </Link>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* ── 주간 추이 + 크레딧/활동 ── */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
             {/* 주간 추이 차트 */}
