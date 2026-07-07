@@ -11,7 +11,7 @@
 | GENERATION | `docs/simulation/Persona/PERSONA_GENERATION_STRATEGY.md` |
 | COHORT_KNOWLEDGE | `docs/simulation/Persona/PERSONA_COHORT_KNOWLEDGE_STRATEGY.md` |
 | COHORT_TIER3 | `docs/simulation/Persona/PERSONA_COHORT_TIER3_REALDATA_STRATEGY.md` |
-| BATCH_API | `docs/simulation/Persona/BATCH_API_STRATEGY.md` |
+| BATCH_API | `docs/simulation/Persona/PERSONA_LLM_COST_STRATEGY.md` §5~10 (구 BATCH_API_STRATEGY.md 병합) |
 | VLM | `docs/simulation/Persona/VLM_PER_PERSONA_VISION.md` |
 | ANALYSIS | `docs/simulation/Persona/ANALYSIS_AGENT_STRATEGY.md` |
 | Data_Collection | `docs/simulation/Persona/Data_Collection.md` |
@@ -52,7 +52,7 @@
 
 | # | 작업 | 출처 | 상태(2026-06-22) |
 | --- | --- | --- | --- |
-| 9 | **배치 API** — Phase A(코어: 공유 로직 추출·`GeminiBatchReactionEngine`) → B(인프로세스 폴러) → C(SQS 전환). 50% 비용 절감, 현재 전체 미구현(SQS는 설정만) | BATCH_API | 미착수 |
+| 9 | **배치 API** — Phase A(코어: 공유 로직 추출·`GeminiBatchReactionEngine`) → B(인프로세스 asyncio 폴러). 50% 비용 절감, 현재 미구현. 오케스트레이션은 인프로세스 확정(SQS 미사용) | BATCH_API | 미착수 |
 | 10 | **Tier 3 실데이터 인지율 주입** — `brand_awareness.json`(빈 값) + `tools/brand_awareness/lookup.py`, `interpret_ad`에서 룩업해 `structured_analysis.awareness_by_age` 부착(스키마 무변경) + 반응 프롬프트 `_awareness_lines` | COHORT_TIER3 | ✅ 프레임워크·폴백 / 데이터 게이트(갤럽·오픈서베이 계약) |
 | 11 | **성격↔행동 IPF 결합분포**(옵션 3) + 외부 marginal raking | GENERATION §6 | ✅ 외부 raking(`tools/sampling/raking.py`, opt-in `rake_to_census`) + OCEAN→행동 경량 조건화 / 진짜 성격×행동 joint 보류(개인단위 연결 데이터 부재) |
 | 12 | **40대+ OCEAN을 BFI-K로 전 연령 확장** / MDIS 풀 상관 매트릭스 (BFI-K 고령자 규준 raw 확보됨 — 정성 prior 활용) | GENERATION §6 | ✅ 40+ OSF 실데이터 주입 완료(유형비율·factor 평균, B-6) / MDIS 풀 상관행렬은 게이트(MDIS raw) |

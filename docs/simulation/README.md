@@ -19,9 +19,7 @@
 
 | 문서 | 결론 한 줄 |
 | --- | --- |
-| [PERSONA_LLM_COST_STRATEGY.md](Persona/PERSONA_LLM_COST_STRATEGY.md) | 비용은 모델 다운그레이드가 아니라 배치 API+표본가중으로. 소형 모델은 Phase 2 |
-| [BATCH_API_STRATEGY.md](Persona/BATCH_API_STRATEGY.md) | 배치 API ≠ 프롬프트 묶기 ≠ SQS. 대규모 실행에만 적용(Phase 2) |
-| [LOCAL_MODEL_SELFHOST_STRATEGY.md](Persona/LOCAL_MODEL_SELFHOST_STRATEGY.md) | 80GB GPU 확보 시에도 "30B off-the-shelf + vLLM부터", 파인튜닝은 escalation |
+| [PERSONA_LLM_COST_STRATEGY.md](Persona/PERSONA_LLM_COST_STRATEGY.md) | 비용·모델·배치 통합 전략 — 비용은 배치 API+표본가중으로, 배치는 대규모 실행에만(인프로세스 asyncio, SQS 미사용), 소형/로컬 모델은 Phase 2 |
 | [VLM_PER_PERSONA_VISION.md](Persona/VLM_PER_PERSONA_VISION.md) | 페르소나별 이미지 재투입 금지 — 공유 해석 1회 + 텍스트 salience 조건화 |
 | [PERSONA_COHORT_KNOWLEDGE_STRATEGY.md](Persona/PERSONA_COHORT_KNOWLEDGE_STRATEGY.md) | 세대별 문화 지식은 형성기 게이팅(Tier 1) + 브랜드 시대성 1회 추출(Tier 2) |
 | [PERSONA_COHORT_TIER3_REALDATA_STRATEGY.md](Persona/PERSONA_COHORT_TIER3_REALDATA_STRATEGY.md) | Tier 3 = 브랜드 인지율 실측표 주입. 게이트는 코드가 아니라 데이터(Phase 2) |
