@@ -7,7 +7,6 @@ import { useProjects, type SimRow } from './ProjectContext';
 import { useAuth } from './AuthProvider';
 import TrashSection from './TrashSection';
 import ModeBadge from './ModeBadge';
-import ProjectChatSection from './chat/ProjectChatSection';
 import { authedFetch } from '@/lib/api';
 import { formatKST } from '@/lib/datetime';
 
@@ -202,7 +201,6 @@ export function ProjectItem({
   canRun,
   isOpen,
   onToggleOpen,
-  showChat = false,
 }: {
   project: { id: string; name: string; status: string; organization_name: string | null };
   isAdmin: boolean;
@@ -213,7 +211,6 @@ export function ProjectItem({
   filterNames: string[] | null; // null=전체, 배열=해당 이름만(MY/TEAM)
   isOpen: boolean;
   onToggleOpen: (id: string) => void;
-  showChat?: boolean; // 채팅 섹션 노출 여부(ProjectPanel=true, CompanyPanel=false)
 }) {
   const { details, loadDetails, refreshDetails, selectedProjectId, selectProject, revealProjectId, revealNonce } = useProjects();
   const router = useRouter();
@@ -409,9 +406,6 @@ export function ProjectItem({
                 </div>
               )}
 
-              {/* 채팅 — 프로젝트의 채팅 세션 목록(클릭 시 플로팅/대화 전환) */}
-              {showChat && <ProjectChatSection projectId={project.id} />}
-
               {/* 휴지통 — 펼치면 삭제된 시뮬/제너, 클릭 시 상세 */}
               <button
                 onClick={() => setTrashOpen(v => !v)}
@@ -574,7 +568,6 @@ export default function ProjectPanel({ collapsed, onToggle }: { collapsed: boole
                   canRun={user?.role !== 'COMPANY'}
                   isOpen={openProjectId === p.id}
                   onToggleOpen={(id) => setOpenProjectId(prev => prev === id ? null : id)}
-                  showChat
                 />
               ))}
             </div>

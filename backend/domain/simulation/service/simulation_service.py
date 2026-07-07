@@ -11,6 +11,7 @@ import os
 import uuid
 from collections.abc import AsyncIterator
 
+from core.center_suggestions import create_center_suggestion
 from core.execution_log import record_execution
 from core.tracing import make_trace_config
 from domain.simulation.adapters.ad_image_store import proxy_url_for
@@ -93,6 +94,39 @@ async def _record_run_history(request: SimulationRunRequest, result: dict) -> No
     )
 
 
+async def _record_gen_suggestion(request: SimulationRunRequest, result: dict) -> None:
+    """시뮬 완료 직후 "제너레이터 제안"(gen_suggest) 센터 알림을 인라인 생성 — 스펙 §5.2.
+
+    상세(개선안)는 프론트가 source_sim_id로 GET /api/chat/result-summary?kind=sim 재조회.
+    영속화된 런(simulation_id 존재)에서만 — 프로젝트 미선택 런은 귀속할 곳이 없어 생략.
+    best-effort·비차단(create_center_suggestion 내부에서 예외 흡수).
+    """
+    sim_id = result.get("simulation_id")
+    if not sim_id or not request.project_id:
+        return
+    agg = result.get("aggregate") or {}
+    await create_center_suggestion(
+        suggestion_type="gen_suggest",
+        organization_id=request.organization_id,
+        project_id=request.project_id,
+        reason="simulation_improvement",
+        source_sim_id=sim_id,
+        payload={
+            "title": "제너레이터 제안",
+            "message": "시뮬 결과에 맞춘 개선 시안을 생성해 보시겠어요?",
+            "ad_title": request.ad_title,
+            "kpi": {
+                "click_intent_rate": agg.get("click_intent_rate"),
+                "purchase_intent": agg.get("purchase_intent"),
+                "trust_avg": agg.get("trust_avg"),
+                "rejection_rate": agg.get("rejection_rate"),
+            },
+        },
+        dedup_key=f"gen_suggest:{sim_id}",
+    )
+    # TODO(open-decisions §1): 시뮬 결과 "좋음" 판정 기준 확정 후 launch_suggest(집행 제안) 훅 추가.
+
+
 async def _record_comparison_history(
     request: SimulationRunRequest, run_id: str, segments: list[SegmentSpec]
 ) -> None:
@@ -166,6 +200,8 @@ class SimulationService:
             )
             # 실행 확정 지점 롱텀(실행 히스토리) 적재 — UI·채팅 모든 경로가 여기로 수렴.
             await _record_run_history(request, result)
+            # 센터 제안 알림 — 시뮬 완료 → "제너레이터 제안" 인라인 생성(best-effort).
+            await _record_gen_suggestion(request, result)
         except Exception as exc:
             store.set_status(run_id, "FAILED")
             store.emit(run_id, {"event": "error", "message": str(exc)})

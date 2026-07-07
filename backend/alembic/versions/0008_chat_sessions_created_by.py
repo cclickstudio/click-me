@@ -1,8 +1,8 @@
 # 채팅 세션 실행자(created_by) 컬럼 신설 — 내역 화면에 세션 개시자 표시용
 """add chat_sessions.created_by
 
-Revision ID: 0007_chat_sessions_created_by
-Revises: 0005_management_notifications
+Revision ID: 0008_chat_sessions_created_by
+Revises: 0007_ads_generation_id
 Create Date: 2026-07-06
 
 chat_sessions에 created_by(uuid FK users.id, NULL 허용)를 추가한다. 세션을 개시한
@@ -13,8 +13,8 @@ chat_sessions에 created_by(uuid FK users.id, NULL 허용)를 추가한다. 세�
 
 from alembic import op
 
-revision = "0007_chat_sessions_created_by"
-down_revision = "0005_management_notifications"
+revision = "0008_chat_sessions_created_by"
+down_revision = "0007_ads_generation_id"
 branch_labels = None
 depends_on = None
 

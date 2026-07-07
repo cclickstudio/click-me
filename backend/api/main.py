@@ -56,6 +56,7 @@ from api.routers import (
     auth,
     automation,
     billing,
+    center,
     chat,
     company,
     dashboard,
@@ -197,6 +198,7 @@ app.include_router(generator.router, prefix="/api/generator", tags=["generator"]
 app.include_router(debate.router, prefix="/api/debate", tags=["debate"])
 app.include_router(chat.assistant_router, prefix="/api/assistant", tags=["assistant"])
 app.include_router(automation.router, prefix="/api/automation", tags=["automation"])
+app.include_router(center.router, prefix="/api/center", tags=["center"])
 
 
 @app.get("/health")
