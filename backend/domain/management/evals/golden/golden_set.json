@@ -1,0 +1,420 @@
+[
+  {
+    "id": 1,
+    "question": "광고 심사 PENDING_REVIEW는 무슨 뜻이야",
+    "gold_source": "meta_ad_policy.md",
+    "valid_sources": [
+      "management_glossary.md",
+      "meta_ad_policy.md"
+    ],
+    "section": "심사 상태",
+    "gold_answer": "PENDING_REVIEW(심사 대기)는 광고가 게재되기 전 자동 심사 중인 상태를 의미하며, 보통 수 분에서 24시간 정도 소요됩니다. 이 기간 동안 광고는 노출되지 않는 것이 정상입니다.",
+    "expected_behavior": "answer"
+  },
+  {
+    "id": 2,
+    "question": "심사 중인데 노출이 0이야 정상이야",
+    "gold_source": "meta_ad_policy.md",
+    "valid_sources": [
+      "meta_ad_policy.md"
+    ],
+    "section": "심사 상태",
+    "gold_answer": "네, 심사 중일 때 노출이 0인 것은 정상입니다. 이 상태는 PENDING_REVIEW(심사 대기)로, 보통 수 분에서 24시간 동안 지속됩니다.",
+    "expected_behavior": "answer"
+  },
+  {
+    "id": 3,
+    "question": "광고가 거절됐는데 어떻게 대응해야 해",
+    "gold_source": "meta_ad_policy.md",
+    "valid_sources": [
+      "external/meta_reference.md",
+      "meta_ad_policy.md",
+      "meta_reference.md",
+      "remediation_actions.md"
+    ],
+    "section": "거절 사유",
+    "gold_answer": "광고가 거절된 경우, 먼저 issues_info에서 구체적인 거절 사유를 확인한 후 해당 요소(문구, 이미지, URL)를 수정해야 합니다. 수정이 완료되면 자동 재심사를 요청하고, 반복적으로 거절될 경우 소재 자체를 교체해야 합니다.",
+    "expected_behavior": "answer"
+  },
+  {
+    "id": 4,
+    "question": "WITH_ISSUES가 뜨면 뭘 확인해야 해",
+    "gold_source": "meta_ad_policy.md",
+    "valid_sources": [
+      "meta_ad_policy.md",
+      "remediation_actions.md"
+    ],
+    "section": "복구 절차",
+    "gold_answer": "WITH_ISSUES 상태가 뜨면 issues_info에서 구체적인 거절 사유를 확인해야 합니다. 이후 해당 요소(문구, 이미지, URL)를 수정한 후 자동 재심사를 요청해야 합니다.",
+    "expected_behavior": "answer"
+  },
+  {
+    "id": 5,
+    "question": "정책 거절은 예산을 올리면 풀려",
+    "gold_source": "meta_ad_policy.md",
+    "valid_sources": [
+      "campaign_structure.md",
+      "meta_ad_policy.md"
+    ],
+    "section": "복구 절차",
+    "gold_answer": "정책 거절은 예산이나 입찰을 올려도 해결되지 않는다. 원인은 소재, 타깃, 도착지와 관련이 있으므로 해당 요소를 수정해야 한다.",
+    "expected_behavior": "answer"
+  },
+  {
+    "id": 6,
+    "question": "게재 불가랑 정책 거절은 다른 거야",
+    "gold_source": "meta_ad_policy.md",
+    "valid_sources": [
+      "management_glossary.md",
+      "meta_ad_policy.md",
+      "special_ad_categories.md"
+    ],
+    "section": "게재 불가",
+    "gold_answer": "네, 게재 불가는 여러 원인으로 발생할 수 있으며, 그 중 하나가 정책 거절입니다. 게재 불가는 심사 대기, 광고 비활성, 게재 기간 종료 등 다양한 이유로 발생할 수 있습니다. 따라서 게재 불가와 정책 거절은 서로 다른 개념입니다.",
+    "expected_behavior": "answer"
+  },
+  {
+    "id": 7,
+    "question": "CTR이 낮을 때 뭘 점검해야 해",
+    "gold_source": "optimization_playbook.md",
+    "valid_sources": [
+      "optimization_playbook.md"
+    ],
+    "section": "낮은 CTR",
+    "gold_answer": "CTR이 낮을 때는 후크(첫 문장/썸네일) 교체, 타깃을 관심사·유사타깃으로 좁히기, 소재 3~5안을 A/B 테스트, 메시지와 도착지의 일치를 점검해야 합니다. 예산만 올리는 것은 비효율을 확대할 수 있으므로 소재와 타깃부터 개선해야 합니다.",
+    "expected_behavior": "answer"
+  },
+  {
+    "id": 8,
+    "question": "낮은 CTR이 계속되면 어떻게 해",
+    "gold_source": "optimization_playbook.md",
+    "valid_sources": [
+      "optimization_playbook.md",
+      "remediation_actions.md"
+    ],
+    "section": "낮은 CTR",
+    "gold_answer": "낮은 CTR이 계속되면 후크(첫 문장/썸네일)를 교체하고, 타깃을 관심사나 유사타깃으로 좁혀야 합니다. 또한, 소재를 3~5안 A/B 테스트하고 메시지와 도착지의 일치를 점검해야 합니다. 예산만 올리는 것은 비효율을 확대할 수 있으니 주의해야 합니다.",
+    "expected_behavior": "answer"
+  },
+  {
+    "id": 9,
+    "question": "빈도가 너무 높아서 피로한 것 같아",
+    "gold_source": "optimization_playbook.md",
+    "valid_sources": [
+      "benchmark_meta_industry.md",
+      "management_glossary.md",
+      "marketing_basics.md",
+      "optimization_playbook.md"
+    ],
+    "section": "높은 빈도",
+    "gold_answer": "빈도가 너무 높으면 같은 사람에게 반복 노출되어 피로가 발생할 수 있습니다. 이 경우 타깃 모수를 확대하거나 소재를 교체하여 피로를 리셋하는 것이 좋습니다. 또한 빈도 캡 설정이나 노출 위치 확장을 고려해볼 수 있습니다.",
+    "expected_behavior": "answer"
+  },
+  {
+    "id": 10,
+    "question": "CPM이 자꾸 오르는데 왜 그래",
+    "gold_source": "optimization_playbook.md",
+    "valid_sources": [
+      "benchmark_meta_industry.md",
+      "optimization_playbook.md"
+    ],
+    "section": "높은 빈도",
+    "gold_answer": "CPM이 오르는 이유는 높은 빈도(frequency)로 인해 같은 사람에게 반복 노출되어 피로가 쌓일 때 발생할 수 있습니다. 이 경우, 타깃 모수를 확대하거나 소재를 교체하여 피로를 리셋하는 것이 필요합니다.",
+    "expected_behavior": "answer"
+  },
+  {
+    "id": 11,
+    "question": "ROAS가 목표보다 낮으면 어떻게 해",
+    "gold_source": "optimization_playbook.md",
+    "valid_sources": [
+      "benchmark_meta_industry.md",
+      "optimization_playbook.md"
+    ],
+    "section": "ROAS",
+    "gold_answer": "ROAS가 목표보다 낮으면 전환 경쟁력(품질, 참여, 전환율 순위)이 평균 이하일 경우 소재를 교체하는 것이 우선입니다. 그 후 타깃, 입찰, 도착지를 순서대로 점검해야 합니다.",
+    "expected_behavior": "answer"
+  },
+  {
+    "id": 12,
+    "question": "전환이 안 나오면 뭐부터 점검해",
+    "gold_source": "optimization_playbook.md",
+    "valid_sources": [
+      "conversion_tracking.md",
+      "optimization_playbook.md"
+    ],
+    "section": "ROAS",
+    "gold_answer": "전환이 안 나오면 먼저 전환 경쟁력, 즉 품질, 참여, 전환율 순위를 점검해야 합니다. 만약 이들이 평균 이하라면 소재를 교체하는 것이 우선입니다. 그 다음으로 타깃, 입찰, 도착지를 점검해야 합니다.",
+    "expected_behavior": "answer"
+  },
+  {
+    "id": 13,
+    "question": "예산이 너무 빨리 소진돼",
+    "gold_source": "optimization_playbook.md",
+    "valid_sources": [
+      "management_glossary.md",
+      "optimization_playbook.md"
+    ],
+    "section": "예산 페이싱",
+    "gold_answer": "예산이 너무 빨리 소진되는 경우, 런레이트가 목표를 크게 초과하면 일예산을 하향 조정하거나 일부 캠페인을 일시중지해야 합니다. 반대로, 소진이 목표에 미달할 경우 성과가 좋은 캠페인에 예산을 증액하는 것이 필요합니다.",
+    "expected_behavior": "answer"
+  },
+  {
+    "id": 14,
+    "question": "학습 단계가 뭐야",
+    "gold_source": "optimization_playbook.md",
+    "valid_sources": [
+      "management_glossary.md",
+      "marketing_basics.md",
+      "optimization_playbook.md"
+    ],
+    "section": "학습 단계",
+    "gold_answer": "학습 단계는 신규 또는 대폭 수정된 광고 세트가 최적화를 학습 중인 상태로, 전환이 약 50건 누적될 때까지 성과 변동이 크다는 의미입니다. 이 단계에서는 잦은 수정이 금지되며, 예산, 타깃, 소재를 자주 변경하지 않고 안정화될 때까지 관찰해야 합니다.",
+    "expected_behavior": "answer"
+  },
+  {
+    "id": 15,
+    "question": "광고를 자주 수정해도 괜찮아",
+    "gold_source": "optimization_playbook.md",
+    "valid_sources": [
+      "marketing_basics.md",
+      "optimization_playbook.md",
+      "remediation_actions.md"
+    ],
+    "section": "학습 단계",
+    "gold_answer": "아니요, 광고가 학습 단계에 있을 때는 잦은 수정을 피해야 합니다. 자주 수정하면 학습이 리셋되어 성과 변동이 커질 수 있습니다. 안정화될 때까지 관찰하는 것이 중요합니다.",
+    "expected_behavior": "answer"
+  },
+  {
+    "id": 16,
+    "question": "예측 CTR을 실제 CTR로 환산해도 돼",
+    "gold_source": "kpi_measurement_rules.md",
+    "valid_sources": [
+      "kpi_measurement_rules.md"
+    ],
+    "section": "스케일",
+    "gold_answer": "아니요, 예측 CTR을 실제 CTR로 환산하는 것은 금지되어 있습니다. 전/후 비교는 수치 환산이 아니라 방향성으로만 진행해야 합니다.",
+    "expected_behavior": "answer"
+  },
+  {
+    "id": 17,
+    "question": "예측을 실제 성과라고 단정해도 돼",
+    "gold_source": "kpi_measurement_rules.md",
+    "valid_sources": [
+      "kpi_measurement_rules.md",
+      "remediation_actions.md"
+    ],
+    "section": "정직성",
+    "gold_answer": "아니요, 예측을 실제 성과라고 단정할 수 없습니다. 예측은 상대 지표로, 실측은 절대 지표이므로 두 스케일이 다릅니다. 예측 결과는 방향성으로만 해석해야 하며, 수치 환산은 금지됩니다.",
+    "expected_behavior": "answer"
+  },
+  {
+    "id": 18,
+    "question": "구매의도는 어떻게 측정해",
+    "gold_source": "kpi_measurement_rules.md",
+    "valid_sources": [
+      "kpi_measurement_rules.md",
+      "marketing_terms.md",
+      "segment_korea.md"
+    ],
+    "section": "구매의도",
+    "gold_answer": "구매의도는 KOBACO 베이스라인 대비로 해석하며, 1~5점의 평균과 분포를 함께 고려하여 측정합니다. 평균을 단정짓지 않고 신뢰구간과 분포 전체를 함께 살펴보는 것이 중요합니다.",
+    "expected_behavior": "answer"
+  },
+  {
+    "id": 19,
+    "question": "평균 점수만 보고 판단해도 돼",
+    "gold_source": "kpi_measurement_rules.md",
+    "valid_sources": [
+      "kpi_measurement_rules.md"
+    ],
+    "section": "구매의도",
+    "gold_answer": "평균 점수만으로 판단하는 것은 적절하지 않습니다. 전체 분포와 신뢰구간을 함께 고려해야 하며, 평균을 단정짓지 말아야 합니다.",
+    "expected_behavior": "answer"
+  },
+  {
+    "id": 20,
+    "question": "시뮬레이터 4대 KPI가 뭐야",
+    "gold_source": "kpi_measurement_rules.md",
+    "valid_sources": [
+      "kpi_measurement_rules.md"
+    ],
+    "section": "4대 KPI",
+    "gold_answer": "시뮬레이터 4대 KPI는 클릭 의향률, 구매의도, 신뢰도, 거부율입니다. 클릭 의향률은 AISAS의 Action 통과 비율로 신뢰구간으로 표기되며, 구매의도와 신뢰도는 1~5점 평균으로, 거부율은 거부 비율과 사유 분해로 나타냅니다.",
+    "expected_behavior": "answer"
+  },
+  {
+    "id": 21,
+    "question": "클릭 의향률이 뭐야",
+    "gold_source": "kpi_measurement_rules.md",
+    "valid_sources": [
+      "benchmark_meta_industry.md",
+      "kpi_measurement_rules.md"
+    ],
+    "section": "4대 KPI",
+    "gold_answer": "클릭 의향률은 AISAS의 Action 통과 비율을 나타내며, 신뢰구간으로 표기됩니다. 이는 소비자가 광고를 클릭할 의향을 나타내는 상대 지표입니다.",
+    "expected_behavior": "answer"
+  },
+  {
+    "id": 22,
+    "question": "거부율은 어떻게 해석해",
+    "gold_source": "kpi_measurement_rules.md",
+    "valid_sources": [
+      "kpi_measurement_rules.md"
+    ],
+    "section": "4대 KPI",
+    "gold_answer": "거부율은 거부 비율과 그 사유를 분해하여 해석한다. 이를 통해 소비자들이 왜 특정 행동을 하지 않았는지를 이해할 수 있다.",
+    "expected_behavior": "answer"
+  },
+  {
+    "id": 23,
+    "question": "조치를 바로 실행해도 돼",
+    "gold_source": "remediation_actions.md",
+    "valid_sources": [
+      "remediation_actions.md"
+    ],
+    "section": "승인",
+    "gold_answer": "조치는 어시스턴트가 추천하는 것이며, 실제 실행은 승인 경로를 거쳐야 합니다. Tier 3에 해당하는 조치는 항상 사람의 승인이 필요하므로, 바로 실행할 수 없습니다.",
+    "expected_behavior": "answer"
+  },
+  {
+    "id": 24,
+    "question": "예산 증액은 바로 가능해 승인이 필요해",
+    "gold_source": "remediation_actions.md",
+    "valid_sources": [
+      "campaign_structure.md",
+      "remediation_actions.md"
+    ],
+    "section": "Tier",
+    "gold_answer": "예산 증액(INCREASE_BUDGET)은 Tier 3에 해당하므로 항상 사람 승인이 필요합니다. 따라서 바로 실행할 수 없습니다.",
+    "expected_behavior": "answer"
+  },
+  {
+    "id": 25,
+    "question": "위험한 변경은 어떻게 처리돼",
+    "gold_source": "remediation_actions.md",
+    "valid_sources": [
+      "campaign_structure.md",
+      "remediation_actions.md"
+    ],
+    "section": "안전",
+    "gold_answer": "위험한 변경은 Tier 3에 해당하며, 항상 사람의 승인을 받아야 실행됩니다. 예를 들어, 예산 증액이나 소재 교체와 같은 조치는 반드시 사람의 승인을 거쳐야 합니다.",
+    "expected_behavior": "answer"
+  },
+  {
+    "id": 26,
+    "question": "증상별 권고 조치 알려줘",
+    "gold_source": "remediation_actions.md",
+    "valid_sources": [
+      "marketing_basics.md",
+      "meta_ad_policy.md",
+      "remediation_actions.md"
+    ],
+    "section": "증상",
+    "gold_answer": "증상별 권고 조치는 다음과 같습니다. 정책 거절 시 소재·문구·도착지를 수정 후 재심사하고, 반복되면 소재 교체(REPLACE_CREATIVE)를 권장합니다. 낮은 CTR이 지속되면 소재 교체와 타깃 조정을 우선적으로 고려하고, 목표 ROAS 미달 시에는 소재 교체를 먼저 진행해야 합니다.",
+    "expected_behavior": "answer"
+  },
+  {
+    "id": 27,
+    "question": "성과 좋은 캠페인은 어떤 조치를 해",
+    "gold_source": "remediation_actions.md",
+    "valid_sources": [
+      "remediation_actions.md"
+    ],
+    "section": "증상",
+    "gold_answer": "성과 좋은 캠페인은 예산 여유가 있을 경우 INCREASE_BUDGET 검토를 진행해야 합니다. 이 조치는 Tier 3에 해당하므로 사람 승인이 필요합니다.",
+    "expected_behavior": "answer"
+  },
+  {
+    "id": 28,
+    "question": "CPM이 12000원이면 비싼 거야",
+    "gold_source": "benchmark_meta_industry.md",
+    "valid_sources": [
+      "benchmark_meta_industry.md"
+    ],
+    "section": "CPM 정상 기준",
+    "gold_answer": "CPM이 12,000원은 정상 범위인 ₩7,800~₩13,800에 해당하므로 비싼 것은 아닙니다. 그러나 관측 CPM이 ₩13,800을 크게 넘으면 경매 비용이 과다하다고 판단할 수 있습니다.",
+    "expected_behavior": "answer"
+  },
+  {
+    "id": 29,
+    "question": "트래픽 광고 CTR은 보통 얼마야",
+    "gold_source": "benchmark_meta_industry.md",
+    "valid_sources": [
+      "benchmark_meta_industry.md"
+    ],
+    "section": "트래픽 CTR",
+    "gold_answer": "트래픽 광고의 기준 CTR은 1.71%이며, 정상 범위는 대략 0.8%에서 2.5% 사이입니다. CTR이 0.8% 아래로 지속되면 소재의 관련성이 약하다고 판단할 수 있습니다.",
+    "expected_behavior": "answer"
+  },
+  {
+    "id": 30,
+    "question": "릴스랑 피드 중에 뭐가 더 싸",
+    "gold_source": "benchmark_meta_industry.md",
+    "valid_sources": [
+      "benchmark_meta_industry.md"
+    ],
+    "section": "지면별",
+    "gold_answer": "릴스가 피드보다 더 저렴합니다. 릴스의 CPM은 $4~8로 가장 저렴한 반면, 피드는 CPM이 $10~16으로 더 비쌉니다.",
+    "expected_behavior": "answer"
+  },
+  {
+    "id": 31,
+    "question": "빈도가 몇이면 피로한 거야",
+    "gold_source": "benchmark_meta_industry.md",
+    "valid_sources": [
+      "benchmark_meta_industry.md",
+      "management_glossary.md",
+      "marketing_basics.md",
+      "optimization_playbook.md"
+    ],
+    "section": "빈도 피로",
+    "gold_answer": "빈도가 3.0 이상이면 도달 피로가 발생한다고 봅니다. 이 경우 CTR 하락과 CPM 상승 경향이 나타날 수 있습니다.",
+    "expected_behavior": "answer"
+  },
+  {
+    "id": 32,
+    "question": "틱톡 광고 단가는 어때",
+    "gold_source": "benchmark_multiplatform.md",
+    "valid_sources": [
+      "benchmark_multiplatform.md"
+    ],
+    "section": "TikTok",
+    "gold_answer": "틱톡 광고의 CPM은 일반적으로 Meta보다 낮게 형성되는 경향이 있습니다. 그러나 단가는 크리에이티브와 타겟에 따라 달라질 수 있으므로 구체적인 수치를 단정짓기는 어렵습니다.",
+    "expected_behavior": "answer"
+  },
+  {
+    "id": 33,
+    "question": "구글 광고 CTR은 얼마나 돼",
+    "gold_source": "benchmark_multiplatform.md",
+    "valid_sources": [
+      "benchmark_multiplatform.md"
+    ],
+    "section": "Google",
+    "gold_answer": "구글 광고의 평균 CTR은 검색 광고의 경우 대체로 3~6%이며, 디스플레이 광고는 0.5% 내외로 알려져 있습니다. 다만, 업종과 키워드 경쟁도에 따라 편차가 크므로 단정할 수는 없습니다.",
+    "expected_behavior": "answer"
+  },
+  {
+    "id": 34,
+    "question": "인스타 주 사용자 연령대가 어떻게 돼",
+    "gold_source": "segment_korea.md",
+    "valid_sources": [
+      "segment_korea.md"
+    ],
+    "section": "구성",
+    "gold_answer": "한국 인스타그램의 주 사용자 연령대는 20·30대 여성으로, 25~34세가 전체의 약 33.9%를 차지합니다. 18–24세 여성은 16.9%, 남성은 12.8%입니다. 55세 이상의 사용자는 미미한 비율을 보입니다. (출처: NapoleonCat·나스미디어 NPR 2025, as_of 2024-11~2025)",
+    "expected_behavior": "answer"
+  },
+  {
+    "id": 35,
+    "question": "구매의향은 어떤 데이터로 봐",
+    "gold_source": "segment_korea.md",
+    "valid_sources": [
+      "kpi_measurement_rules.md",
+      "marketing_terms.md",
+      "segment_korea.md"
+    ],
+    "section": "KOBACO",
+    "gold_answer": "구매의향은 KOBACO 소비자행태조사(MCR) 베이스라인 대비로 해석되며, 전국 13~64세 5,000명을 대상으로 한 싱글소스 조사에 기반합니다. 이 조사는 연령·성별 교차분석이 가능하고, 원시데이터는 무료로 공개됩니다.",
+    "expected_behavior": "answer"
+  }
+]
