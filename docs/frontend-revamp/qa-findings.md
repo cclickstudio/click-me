@@ -9,8 +9,9 @@
 
 - 총 발견: 2 / 수정: 1 / 보류(인프라) 1
 - 마지막 스윕: 2026-07-08 03:2x — admin 로그인, manage(monitoring·anomaly·budget·compare·reliability)·admin(manage-user·companies·generations)·themes 통주행 + 대시보드 3역할 + 모바일 375px. **신규 UI 결함 0**(broken 0·overflow 0·콘솔 에러 0).
-- 연속 클린 스윕: 1 / 2 (UI 기준. 남은 open은 백엔드 인프라 B1로 UI 무관)
+- 연속 클린 스윕: **2 / 2 → 수렴 완료**(UI 기준. 남은 open은 백엔드 인프라 B1로 UI 무관)
 - 수정 완료: 모바일 고정 햄버거↔콘텐츠 겹침(AppLayout max-md:pt-14) → fixed.
+- 스윕2(라이트 모드): COMPANY 대시보드 라이트 실측 — 뉴트럴·블루 브랜드·danger 주의 카드·차트 정상, 오버플로 0, 콘솔 에러 0. 토큰 양모드 동작 확인. 신규 발견 0.
 
 ## 발견 목록
 
@@ -20,4 +21,5 @@
 
 ## 진행 로그
 
-- 2026-07-08 03:2x 스윕1 — admin 통주행(manage 5 + admin 3 + themes) + 3역할 대시보드 + 모바일 375px. 렌더 broken 0·가로 오버플로 0·콘솔 에러 0. 발견: 모바일 햄버거 겹침 1(즉시 fixed), 백엔드 center/db-result 500 1(인프라 B1·UI 무관·보류). UI 기준 클린 수렴.
+- 2026-07-08 03:2x 스윕1(다크) — admin 통주행(manage 5 + admin 3 + themes) + 3역할 대시보드 + 모바일 375px. 렌더 broken 0·가로 오버플로 0·콘솔 에러 0. 발견: 모바일 햄버거 겹침 1(즉시 fixed), 백엔드 center/db-result 500 1(인프라 B1·UI 무관·보류).
+- 2026-07-08 03:35 스윕2(라이트) — COMPANY 대시보드 라이트 실측(뉴트럴·브랜드·danger 카드·차트·크레딧), 오버플로 0·콘솔 에러 0·신규 발견 0. **2연속 클린 → loop-until-dry 수렴 종료.**
