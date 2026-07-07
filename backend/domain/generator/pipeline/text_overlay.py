@@ -4,6 +4,7 @@ from __future__ import annotations
 import io
 import os
 import re
+import tempfile
 import urllib.request
 from dataclasses import dataclass
 from functools import cache
@@ -14,7 +15,7 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont
 from domain.generator.contracts.enums import AdStrategy, TemplateType
 from domain.generator.pipeline.style_profile import get_style
 
-_DEFAULT_FONT_DIR = Path(__file__).resolve().parents[3] / "assets" / "fonts"
+_DEFAULT_FONT_DIR = Path(tempfile.gettempdir()) / "clickme-fonts"
 _PRETENDARD_CDN_BASE = (
     "https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/packages/"
     "pretendard/dist/web/static/woff2"
