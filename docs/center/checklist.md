@@ -40,9 +40,9 @@
 - [x] (fix) ADMIN 기업 전환 시 목록 미갱신 버그 — orgKey prop으로 AlarmCenter·ChatCenter 재조회 트리거
 
 ## Phase 6 — 권한 분기
-- [ ] ADMIN: 기업 미선택 시 두 센터 disable + 안내
-- [ ] COMPANY: 읽기전용 채팅(입력 불가·읽음표시 X), management 알림만, /chat 차단 완화
-- [ ] USER: 기업 드롭다운 없음, 전 기능 사용
+- [x] ADMIN: 기업 미선택 시 두 센터 disable + 안내 — Center에서 isAdmin && !orgId면 "기업을 선택해주세요" 안내(필터바 유지). Preview 검증 완료
+- [x] COMPANY: 읽기전용 채팅(입력 불가·읽음표시 X), management 알림만 — ChatCenter readOnly(ReadOnlyConversation, markRead 없음), 백엔드 /api/center/notifications가 COMPANY엔 제안 숨김. 센터는 /chat 라우트 밖이라 차단과 무관하게 읽기전용 제공. (COMPANY 계정 없어 라이브 Preview 미실시 — 코드 검증)
+- [x] USER: 기업 드롭다운 없음, 전 기능 사용 — CenterFilterBar가 isAdmin일 때만 기업 드롭다운(USER 제외), 전 기능 사용. (USER 계정 없어 라이브 Preview 미실시 — 코드 검증)
 
 ## Phase 7 — 검증·문서
 - [x] ruff(백엔드) 통과 (Phase 1 커밋들)

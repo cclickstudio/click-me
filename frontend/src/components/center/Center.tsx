@@ -166,7 +166,17 @@ export default function Center() {
           orgId={orgId}
           onOrgId={setOrgId}
         />
-        {tab === 'chat' ? (
+        {isAdmin && !orgId ? (
+          // ADMIN 기업 미선택 — 두 센터 disable + 안내(스펙 §7). 상단 기업 드롭다운으로 선택 유도.
+          <div className="flex flex-1 flex-col items-center justify-center gap-1 p-6 text-center">
+            <p className="text-sm font-medium text-[#191F28] dark:text-[#F2F4F6]">
+              기업을 선택해주세요
+            </p>
+            <p className="text-xs text-[#8B95A1] dark:text-[#6B7280]">
+              상단 기업 드롭다운에서 기업을 고르면 채팅·알림이 열립니다.
+            </p>
+          </div>
+        ) : tab === 'chat' ? (
           <ChatCenter
             projectId={projectId}
             segment={chatSeg}
