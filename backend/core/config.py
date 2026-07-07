@@ -114,6 +114,7 @@ class Settings(BaseSettings):
     # 판정 정본은 domain/management/contracts/policy.py — 여기 값은 코드 수정 없는 조정 채널.
     management_exec_gate_min_cir: float = 0.01
     management_exec_gate_max_rej: float = 0.2
+    # 기본값은 contracts/policy.py EXEC_GATE_DEFAULT_*와 동일 유지.
     # 능동 스케줄러(주기 이상 스캔→알림) — 기본 off(테스트/CI/dev 안전). 운영에서만 켠다.
     management_scheduler_enabled: bool = False
     management_scan_interval_minutes: int = 60

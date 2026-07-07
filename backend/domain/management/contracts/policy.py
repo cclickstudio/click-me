@@ -92,6 +92,8 @@ HOURLY_PACING: list[float] = [w / sum(_PACING_RAW) for w in _PACING_RAW]
 
 EXEC_GATE_DEFAULT_MIN_CIR: Final[float] = 0.01
 EXEC_GATE_DEFAULT_MAX_REJ: Final[float] = 0.2
+# ⚠️ core/config.py management_exec_gate_min_cir/max_rej 기본값과 동일 유지.
+# 경계 규칙상 리터럴 공유 불가 — 값 변경 시 양쪽 동시 수정.
 
 
 def exec_gate_thresholds(settings) -> tuple[float, float]:
