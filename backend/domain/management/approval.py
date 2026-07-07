@@ -8,6 +8,7 @@ executor의 승인 후 4단계 검증과 의도적으로 중복된다 (defense i
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
+from domain.management.contracts.approval_ledger import ApprovalStore, record_from_action
 from domain.management.contracts.enums import ActionTier, ExecutionMode
 from domain.management.contracts.policy import (
     APPROVAL_POLICY_VERSION,
@@ -75,3 +76,33 @@ def approve(
         expected_state_version=proposal.expected_state_version,
         execution_mode=execution_mode,
     )
+
+
+class ApprovalIssueError(ValueError):
+    """발행 전 검증 실패 — issues에 사유 목록 보존(라우터가 409 detail로 변환)."""
+
+    def __init__(self, issues: list[str]) -> None:
+        super().__init__("; ".join(issues))
+        self.issues = issues
+
+
+async def issue_approval(
+    proposal: ActionProposal,
+    approver_id: str,
+    *,
+    execution_mode: ExecutionMode = ExecutionMode.MOCK,
+    store: ApprovalStore,
+) -> ApprovedAction:
+    """검증 + 승인 발행 + 원장 기록 — 집행 가능한 승인의 유일한 발행 진입점 (게이트 #5).
+
+    3단계 검증(만료·해시·정책버전)을 여기서 강제한다 — /approve뿐 아니라
+    activate·pause·budget-commit 등 내부 발행 경로도 같은 관문을 거친다.
+    원장에 없는 승인은 executor가 위조로 거부하므로, 모든 발행 경로는
+    approve() 직접 호출 대신 이 함수를 거쳐야 한다.
+    """
+    issues = validate_proposal(proposal)
+    if issues:
+        raise ApprovalIssueError(issues)
+    action = approve(proposal, approver_id, execution_mode=execution_mode)
+    await store.put(record_from_action(action))
+    return action
