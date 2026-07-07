@@ -126,10 +126,10 @@ NEXT_PUBLIC_COGNITO_REGION= / NEXT_PUBLIC_COGNITO_USER_POOL_ID= / NEXT_PUBLIC_CO
 - 거절(나중에/ㄴㄴ) → Ruff·pytest·E2E 등 기존 검증만.
 - 왜: 화면으로 확인되는 변경은 유저가 결과를 직접 보는 게 가장 확실. 브라우저로 확인 불가한 변경(타입·툴링·순수 로직)이면 제안을 생략한다.
 
-**⑥ 엔드포인트/페이지 추가 시 문서 자동 동기화 (IMPORTANT)** — 라우터(`backend/api/`)나 페이지(`frontend/src/app/`)를 추가·삭제·경로 변경하면 **`docs/api-endpoints.md`·`docs/frontend-routes.md`·CLAUDE.md의 AUTOGEN 구간**을 다시 생성해야 한다.
+**⑥ 엔드포인트/페이지 추가 시 문서 자동 동기화 (IMPORTANT)** — 라우터(`backend/api/`)나 페이지(`frontend/src/app/`)를 추가·삭제·경로 변경하면 **`docs/api-endpoints.md`·`docs/frontend-routes.md`**를 다시 생성해야 한다.
 
-- 생성기 `cd backend && uv run python scripts/gen_docs.py` (검사만: `--check`, CI drift용). 이 세 파일은 **자동 생성물이라 손으로 고치지 말 것** — 소스를 고치고 재실행.
-- 커밋 시 pre-commit 훅이 자동 실행·스테이징한다(설치 1회: `git config core.hooksPath .githooks`). 미설치·실패 시에도 CI(`ci-cd.yml` backend 잡의 _Docs drift check_)가 어긋나면 빌드를 막는다.
+- 생성기 `cd backend && uv run python scripts/gen_docs.py` (검사만: `--check`, CI drift용). 이 두 파일은 **자동 생성물이라 손으로 고치지 말 것** — 소스를 고치고 재실행.
+- pre-commit 훅(`.githooks/pre-commit`)은 **저장소에 포함하지 않고 파일로만 공유**한다 — 쓸 사람만 받아서 `git config core.hooksPath .githooks`로 설치하면 커밋 시 자동 실행·스테이징한다. 미설치·실패 시에도 CI(`ci-cd.yml` backend 잡의 _Docs drift check_)가 어긋나면 빌드를 막으므로, 훅 없이 소스만 고치고 재실행해도 된다.
 - API의 요청/응답 스키마 등 상세 설명은 여전히 수기 문서 `docs/api-spec.md`에 둔다(자동 목록과 역할 분리).
 
 ## AI 작업 규칙 (행동 가이드라인)
@@ -156,12 +156,10 @@ NEXT_PUBLIC_COGNITO_REGION= / NEXT_PUBLIC_COGNITO_USER_POOL_ID= / NEXT_PUBLIC_CO
 
 ## Reference
 
-**자동 생성 인덱스**(라우터·페이지 추가 시 `backend/scripts/gen_docs.py`가 갱신 — 직접 수정 금지):
+**문서 인덱스**(라우터·페이지 추가 시 `backend/scripts/gen_docs.py`가 아래 두 목록을 갱신 — 직접 수정 금지):
 
-<!-- AUTOGEN:docs-index START -->
-- **API 엔드포인트 187개** — 전체 목록 [docs/api-endpoints.md](docs/api-endpoints.md) (자동 생성)
-- **프론트 라우트 42개** — 전체 목록 [docs/frontend-routes.md](docs/frontend-routes.md) (자동 생성)
-<!-- AUTOGEN:docs-index END -->
+- **API 엔드포인트** — 전체 목록 [docs/api-endpoints.md](docs/api-endpoints.md) (자동 생성)
+- **프론트 라우트** — 전체 목록 [docs/frontend-routes.md](docs/frontend-routes.md) (자동 생성)
 
 - API 명세(수기) → `docs/api-spec.md` / 자동 엔드포인트 목록 → `docs/api-endpoints.md` / 프론트 라우트 → `docs/frontend-routes.md`.
 - DB 스키마·Alembic → `docs/db-schema.md` / 실 DB ERD(introspection) → `docs/db-erd.md`.
