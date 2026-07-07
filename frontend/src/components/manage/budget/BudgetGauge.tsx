@@ -2,7 +2,7 @@
 import type { BudgetDecision } from './types';
 
 const FILL: Record<BudgetDecision, string> = {
-  allow: 'bg-[#3182F6]',
+  allow: 'bg-primary',
   warn: 'bg-amber-500',
   escalate: 'bg-red-500',
   block: 'bg-red-700',
@@ -26,11 +26,11 @@ export function BudgetGauge({
   return (
     <div>
       <div className="flex items-end justify-between mb-2">
-        <span className="text-sm text-[#8B95A1]">
-          소진 <b className="text-[#191F28] dark:text-[#F2F4F6]">₩{spent.toLocaleString()}</b> / 한도 ₩
+        <span className="text-sm text-ink-tertiary">
+          소진 <b className="text-ink">₩{spent.toLocaleString()}</b> / 한도 ₩
           {limit.toLocaleString()}
         </span>
-        <span className="text-2xl font-extrabold text-[#191F28] dark:text-[#F2F4F6] tabular-nums">
+        <span className="text-2xl font-extrabold text-ink tabular-nums">
           {(ratio * 100).toFixed(0)}%
         </span>
       </div>
@@ -59,11 +59,11 @@ export function BudgetGauge({
           />
         )}
       </div>
-      <div className="relative h-4 mt-1 text-[10px] text-[#B0B8C1]">
+      <div className="relative h-4 mt-1 text-[10px] text-ink-muted">
         <span className="absolute left-0">0</span>
         {plan != null && plan > 8 && plan < 82 && (
           <span
-            className="absolute -translate-x-1/2 text-[#4E5968] dark:text-[#9CA3AF]"
+            className="absolute -translate-x-1/2 text-ink-secondary"
             style={{ left: `${plan}%` }}
           >
             오늘 계획 {Math.round(plan)}%

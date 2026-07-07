@@ -108,7 +108,7 @@ export default function Page() {
         <div className="flex items-center justify-between mb-6">
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-bold text-[#191F28] dark:text-[#F2F4F6]">모니터링</h1>
+              <h1 className="text-2xl font-bold text-ink">모니터링</h1>
               {source === 'live' ? (
                 <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
                   실데이터
@@ -119,7 +119,7 @@ export default function Page() {
                 </span>
               )}
             </div>
-            <p className="text-sm text-[#8B95A1] mt-1">
+            <p className="text-sm text-ink-tertiary mt-1">
               {source === 'live'
                 ? '실 Meta 연동 · 전 캠페인 게재 건강 상태를 한눈에'
                 : '전 캠페인 게재 건강 상태를 한눈에 (Mock 기반 데모)'}
@@ -127,7 +127,7 @@ export default function Page() {
           </div>
           <div className="flex items-center gap-2">
             {source === 'live' && (
-              <div className="flex rounded-lg border border-[#E5E8EB] dark:border-[#2D3748] overflow-hidden text-[12px]">
+              <div className="flex rounded-lg border border-line overflow-hidden text-[12px]">
                 {(
                   [
                     ['maximum', '전체'],
@@ -140,8 +140,8 @@ export default function Page() {
                     onClick={() => setDatePreset(key)}
                     className={`px-2.5 py-1.5 ${
                       datePreset === key
-                        ? 'bg-[#3182F6] text-white'
-                        : 'text-[#8B95A1] hover:bg-[#F2F4F6] dark:hover:bg-[#2D3748]'
+                        ? 'bg-primary text-primary-foreground'
+                        : 'text-ink-tertiary hover:bg-[#F2F4F6] dark:hover:bg-[#2D3748]'
                     }`}
                   >
                     {label}
@@ -153,7 +153,7 @@ export default function Page() {
               <button
                 onClick={() => load(true)}
                 title="새로고침"
-                className="flex items-center gap-1.5 text-[12px] text-[#8B95A1] hover:text-[#191F28] dark:hover:text-[#F2F4F6] px-2 py-1.5"
+                className="flex items-center gap-1.5 text-[12px] text-ink-tertiary hover:text-ink dark:hover:text-[#F2F4F6] px-2 py-1.5"
               >
                 <span className="inline-block w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
                 {lastUpdated ? `갱신 ${lastUpdated}` : '실시간'} ↻
@@ -162,14 +162,14 @@ export default function Page() {
             {source === 'live' && (
               <button
                 onClick={() => setReportOpen(true)}
-                className="text-sm text-[#4E5968] dark:text-[#9CA3AF] font-medium px-3 py-1.5 rounded-lg border border-[#E5E8EB] dark:border-[#2D3748] hover:bg-[#F2F4F6] dark:hover:bg-[#2D3748]"
+                className="text-sm text-ink-secondary font-medium px-3 py-1.5 rounded-lg border border-line hover:bg-[#F2F4F6] dark:hover:bg-[#2D3748]"
               >
                 성과 리포트
               </button>
             )}
             <Link
               href="/manage/anomaly"
-              className="text-sm text-[#3182F6] font-medium px-3 py-1.5 rounded-lg border border-[#E5E8EB] dark:border-[#2D3748] hover:bg-[#EBF3FF] dark:hover:bg-[#1E3A5F]"
+              className="text-sm text-primary font-medium px-3 py-1.5 rounded-lg border border-line hover:bg-primary-subtle"
             >
               이상 감지 시연 →
             </Link>
@@ -199,8 +199,8 @@ export default function Page() {
         )}
 
         {permissionError && (
-          <div className="mb-4 rounded-xl border border-[#E5E8EB] bg-[#F9FAFB] px-4 py-3 dark:border-[#2D3748] dark:bg-[#1A1F28]">
-            <p className="text-sm text-[#4E5968] dark:text-[#9CA3AF]">
+          <div className="mb-4 rounded-xl border border-line bg-[#F9FAFB] px-4 py-3 dark:bg-[#1A1F28]">
+            <p className="text-sm text-ink-secondary">
               <span className="font-semibold">🔒 권한 없음</span> · {permissionError}
             </p>
           </div>
@@ -215,7 +215,7 @@ export default function Page() {
           </div>
         )}
 
-        {busy && <p className="text-sm text-[#8B95A1] py-20 text-center">불러오는 중…</p>}
+        {busy && <p className="text-sm text-ink-tertiary py-20 text-center">불러오는 중…</p>}
         {error && (
           <p className="text-sm text-red-500 py-20 text-center" role="alert">
             {error}
@@ -234,19 +234,19 @@ export default function Page() {
 
             {/* 계정 지갑 권한 없음 — 잔액·한도 조회 권한이 없을 때 자리 표시(빈 0과 구분). */}
             {source === 'live' && !account && accountUnavailable && (
-              <div className="mb-6 rounded-xl border border-[#E5E8EB] bg-[#F9FAFB] px-4 py-3.5 dark:border-[#2D3748] dark:bg-[#1A1F28]">
-                <span className="text-[14px] font-semibold text-[#4E5968] dark:text-[#9CA3AF]">
+              <div className="mb-6 rounded-xl border border-line bg-[#F9FAFB] px-4 py-3.5 dark:bg-[#1A1F28]">
+                <span className="text-[14px] font-semibold text-ink-secondary">
                   계정 지갑
                 </span>
-                <span className="ml-3 text-[14px] text-[#8B95A1]">{accountUnavailable}</span>
+                <span className="ml-3 text-[14px] text-ink-tertiary">{accountUnavailable}</span>
               </div>
             )}
 
             <div className="flex items-center justify-between mb-2">
-              <h2 className="text-sm font-bold text-[#191F28] dark:text-[#F2F4F6]">
+              <h2 className="text-sm font-bold text-ink">
                 캠페인 건강 신호
               </h2>
-              <span className="text-[11px] text-[#8B95A1]">
+              <span className="text-[11px] text-ink-tertiary">
                 심각도순 · 지출 추세(7일)·페이싱·피로 추정 · 행 클릭 시 캠페인 관리로
               </span>
             </div>
@@ -255,12 +255,12 @@ export default function Page() {
         )}
 
         {!busy && !error && campaigns.length === 0 && (
-          <div className="rounded-2xl border border-[#E5E8EB] dark:border-[#2D3748] py-20 text-center text-sm text-[#8B95A1]">
+          <div className="rounded-2xl border border-line py-20 text-center text-sm text-ink-tertiary">
             모니터링할 캠페인이 없어요. 캠페인을 먼저 만들어 보세요.
           </div>
         )}
 
-        <p className="mt-6 text-[12px] text-[#B0B8C1]">
+        <p className="mt-6 text-[12px] text-ink-muted">
           {source === 'live'
             ? `실데이터 · Meta 라이브 · 기간=${
                 datePreset === 'last_30d' ? '최근 30일' : datePreset === 'this_month' ? '이번 달' : '전체 누적'

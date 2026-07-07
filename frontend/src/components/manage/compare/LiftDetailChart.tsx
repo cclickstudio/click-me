@@ -14,8 +14,8 @@ const LiftBarsChart = dynamic(() => import('./LiftBarsChart'), {
 
 export function LiftDetailChart({ row }: { row: BoardRow }) {
   return (
-    <div className="rounded-2xl border border-[#E5E8EB] dark:border-[#2D3748] px-5 py-4">
-      <p className="font-bold text-[#191F28] dark:text-[#F2F4F6] mb-3">
+    <div className="rounded-2xl border border-line px-5 py-4">
+      <p className="font-bold text-ink mb-3">
         선택: {row.title} — 도달·노출 비교
       </p>
       <LiftBarsChart row={row} />

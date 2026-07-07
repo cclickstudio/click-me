@@ -37,14 +37,14 @@ export function SpendDonut({ rows }: { rows: { name: string; spend_krw: number }
       <div className="w-full shrink-0 space-y-1">
         {data.map((r, i) => (
           <div key={r.name} className="flex items-center justify-between gap-2 text-[11px]">
-            <span className="flex min-w-0 items-center gap-1.5 font-medium text-[#191F28] dark:text-[#F2F4F6]">
+            <span className="flex min-w-0 items-center gap-1.5 font-medium text-ink">
               <span
                 className="h-2 w-2 shrink-0 rounded-full"
                 style={{ background: PALETTE[i % PALETTE.length] }}
               />
               <span className="truncate">{r.name}</span>
             </span>
-            <span className="shrink-0 tabular-nums text-[#8B95A1]">
+            <span className="shrink-0 tabular-nums text-ink-tertiary">
               {Math.round((r.spend_krw / total) * 100)}%
             </span>
           </div>

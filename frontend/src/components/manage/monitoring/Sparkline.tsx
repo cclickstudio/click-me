@@ -12,7 +12,7 @@ export function Sparkline({
 }) {
   const pts = values.filter((v) => Number.isFinite(v));
   if (pts.length < 2) {
-    return <div style={{ width, height }} className="text-[10px] text-[#B0B8C1]">추세 없음</div>;
+    return <div style={{ width, height }} className="text-[10px] text-ink-muted">추세 없음</div>;
   }
   const min = Math.min(...pts);
   const max = Math.max(...pts);

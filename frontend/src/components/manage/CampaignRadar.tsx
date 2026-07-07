@@ -58,9 +58,9 @@ export const CampaignRadar = memo(function CampaignRadar({
   });
 
   return (
-    <div className="rounded-2xl border border-[#E5E8EB] dark:border-[#2D3748] p-5">
-      <p className="font-bold text-[#191F28] dark:text-[#F2F4F6]">캠페인 성격 비교</p>
-      <p className="text-[11px] text-[#8B95A1] mb-1">
+    <div className="rounded-2xl border border-line p-5">
+      <p className="font-bold text-ink">캠페인 성격 비교</p>
+      <p className="text-[11px] text-ink-tertiary mb-1">
         지출 상위 {rows.length}개 · 각 축은 캠페인 중 최고를 100으로 한 상대 비교(실측 기반) · CPC
         효율은 낮은 CPC가 100 · CVR 미설정은 0
       </p>

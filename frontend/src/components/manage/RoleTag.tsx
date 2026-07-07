@@ -9,7 +9,7 @@ export function RoleTag({ mode, role, contract }: { mode: ViewMode; role: "A" | 
   return (
     <span className="inline-flex items-center gap-1 text-[10px] font-semibold" style={{ color: COLORS[role] }}>
       {label}
-      {contract ? <span className="text-[#8B95A1]">· {contract}</span> : null}
+      {contract ? <span className="text-ink-tertiary">· {contract}</span> : null}
     </span>
   );
 }

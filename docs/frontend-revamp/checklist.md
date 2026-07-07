@@ -159,18 +159,20 @@
 - [~] **기능 스모크**: 생성기 입력 폼 실렌더 검증. 실제 생성 실행(LLM 비용·시간)+결과 KPI 라이브는 이 밤샘 범위 밖 — 입력 폼·결과 패널 렌더로 대체 검증.
 
 ### 3.3 매니지먼트
-- [ ] `/manage` 개요.
-- [ ] `/manage/campaigns` 리스트(표·카드·상태배지).
-- [ ] `/manage/campaigns/new` 생성 폼.
-- [ ] 캠페인 상세(`CampaignDetail`·차트·퍼널·도넛).
-- [ ] `/manage/monitoring` 모니터링(헬스·스파크라인·차트).
-- [ ] `/manage/anomaly` 이상 감지.
-- [ ] `/manage/budget` 예산(게이지·도넛).
-- [ ] `/manage/compare` 비교(리프트 보드/차트).
-- [ ] `/manage/connect` 연동.
-- [ ] `/manage/reliability` 신뢰도.
-- [ ] 승인/집행 관련 카드(`ApprovalBridge`·`AuditTimeline`) 정돈(모드 배지 유지).
-- [ ] **기능 스모크**: 캠페인 목록·상세가 실데이터로 로드되는지 + 승인/집행 모드배지 동작 확인(집행 write는 dry_run 유지).
+> 전 manage 화면(10 페이지)+21 컴포넌트에 뉴트럴+primary codemod 일괄 적용(파일당 최대 93 repl), 아티팩트 33건 프로그램 정리 후 0, 의미색·차트색·플랫폼색(Meta/IG 브랜드색) 보존. build 통과. admin/asdf 로그인 /manage/campaigns 실렌더·콘솔 에러 0 검증.
+- [x] `/manage` 개요 (토큰화).
+- [x] `/manage/campaigns` 리스트(표·카드·상태배지) — 실렌더 검증(테이블/카드 토글·Meta 미연결 warning 배너 의미색).
+- [x] `/manage/campaigns/new` 생성 폼 (토큰화).
+- [x] 캠페인 상세(`CampaignDetail`·차트·퍼널·도넛) (토큰화, 차트색 보존).
+- [x] `/manage/monitoring` 모니터링(헬스·스파크라인·차트) (토큰화).
+- [x] `/manage/anomaly` 이상 감지 (토큰화).
+- [x] `/manage/budget` 예산(게이지·도넛) (토큰화).
+- [x] `/manage/compare` 비교(리프트 보드/차트) (토큰화).
+- [x] `/manage/connect` 연동 (토큰화).
+- [x] `/manage/reliability` 신뢰도 (토큰화).
+- [x] 승인/집행 관련 카드(`ApprovalBridge`·`AuditTimeline`) 정돈 — 토큰화, 모드 배지(RoleTag/StateBadge) 유지.
+- [~] **기능 스모크**: 캠페인 목록 실 백엔드 응답 렌더(asdf org=Meta 미연결 상태 정상 표시). 실 Meta 데이터·승인 집행은 이 환경에 Meta 연동 없어 상태 표시로 대체(집행 write dry_run 유지, 동작 무변경).
+- 참고: 2.1의 "지금 주목할 것" 알림(이상감지/승인대기)은 이 도메인 데이터 의존 — 컴포넌트 토큰화는 완료, 대시보드 배선은 후속.
 
 ### 3.4 프로젝트·조직·프로필
 - [ ] `/projects`·`/projects/[id]`.
@@ -271,6 +273,8 @@ git push origin --delete feat/front-fix
 - 2026-07-08 P0.4 ThemeProvider 확장+/themes 갤러리 완료 — data-theme localStorage 영속·에디터테마 다크강제, layout 인라인스크립트 FOUC 방지. 갤러리에서 14테마 스위처+프리미티브 실시간 반영 검증(콘솔 에러 0). ※ preview_screenshot은 이 환경에서 외부 폰트 CDN network-idle 대기로 타임아웃 → snapshot/inspect/eval로 검증 대체.
 - 2026-07-08 P0.5 공용 프리미티브 완료 — StatCard(델타색·스파크라인)·Section·EmptyState 신설, chart-theme 훅(테마색 Recharts), 타이포 유틸(.text-h1~caption). shadcn 20종 활용. Select은 파일명 충돌로 커스텀 유지.
 - 2026-07-08 P0.6 팔레트 갱신 완료 — 기본 `--point` 라이트 #8B5CF6 / 다크 #A78BFA로 갱신(globals.css :root·.dark), chart-theme fallback도 동기화. blue(기본) 테마는 point override 안 해 :root값 적용, mono/violet만 의도적 override 유지. preview eval 검증: light rgb(139,92,246)·dark rgb(167,139,250), 콘솔 에러 0.
+- 2026-07-08 P3.3 매니지먼트 토큰화 — 10 페이지 + 21 컴포넌트 뉴트럴+primary codemod 일괄(파일당 최대 93 repl), 아티팩트 33건 프로그램 정리 후 0(hex+dark:token→테마토큰, orphan 0). 의미색·차트·플랫폼 브랜드색 보존. asdf 로그인 /manage/campaigns 실렌더(사이드바 하위메뉴·테이블/카드·warning 배너)·콘솔 에러 0. build 통과.
+- 2026-07-08 P3.2 생성기 토큰화 — generator/page(158)·generations/[id](58) 뉴트럴+primary codemod, 아티팩트 정리 후 0, 의미색 보존. asdf 로그인 /generator 입력폼(생성/개선 모드·형식·결과패널) 실렌더·콘솔 에러 0. build 통과. (dev+build 동시 .next 충돌 1회 겪고 preview 재시작으로 복구.)
 - 2026-07-08 P3.1 시뮬레이션 토큰화 — 입력폼·목록·상세·6개 simulator 컴포넌트 뉴트럴+primary 팔레트 codemod(파일당 22~86 repl, 아티팩트 0, 의미색·차트색 보존). asdf 로그인: /simulations 실데이터 표·/simulation 입력폼 렌더·콘솔 에러 0 검증. 결과뷰 라이브는 백엔드 db-result 500(asyncpg/Neon 인프라, qa-findings B1·UI 무관)로 블록. build 통과.
 - 2026-07-08 P2.3 ADMIN 대시보드 완료 — 하드코딩 placeholder를 실데이터로 교체(전체 사용자/조직/시뮬/생성 KPI, 주간추이 차트, 최근 가입+역할배지, 최근 생성, 관리 바로가기). 크레딧 UI 전무. admin 실 로그인 검증(11명/4개/66/143), 콘솔 에러 0.
 - 2026-07-08 P2.1/2.2 USER·COMPANY 대시보드 완료 — 역할별 인사·CTA, StatCard KPI 델타(summary 신규 엔드포인트), Recharts 8주 주간추이, 활동피드(recent 병합), 역할별 크레딧(USER 읽기전용/COMPANY 충전/ADMIN 미표시), 3기능·최근내역·CLIO 토큰화, Skeleton/EmptyState. **3역할 모두 실 Cognito 폼 로그인 검증**(admin 글로벌 7.4%·company org 7.0%·user 팀 16.1% 스코프 차이로 role 스코프 실동작 확인). CreditBalance 역할 인지형 전환. DB에 test/asdf 유저 append(test-data.md). "지금 주목할 것" 알림은 3.3 이월.

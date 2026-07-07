@@ -25,7 +25,7 @@ import type {
 import type { BudgetStatus } from '@/components/manage/budget/types';
 
 const VERDICT_CHIP: Record<BeforeAfterItem['verdict'], { label: string; cls: string }> = {
-  aligned: { label: '예측대로', cls: 'bg-[#EBF3FF] text-[#3182F6] dark:bg-[#1E3A5F] dark:text-[#7BB4F5]' },
+  aligned: { label: '예측대로', cls: 'bg-[#EBF3FF] text-primary dark:bg-[#1E3A5F] dark:text-[#7BB4F5]' },
   overperformed: { label: '예측보다 좋음', cls: 'bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-300' },
   underperformed: { label: '예측보다 약함', cls: 'bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300' },
   unknown: { label: '비교 대기', cls: 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-300' },
@@ -48,11 +48,11 @@ function Tile({
   return (
     <Link
       href={href}
-      className={`block rounded-2xl border border-[#E5E8EB] dark:border-[#2D3748] bg-white dark:bg-[#1C2333] p-5 transition-colors hover:border-[#3182F6] ${className}`}
+      className={`block rounded-2xl border border-line bg-card p-5 transition-colors hover:border-primary ${className}`}
     >
       <div className="mb-2 flex items-center justify-between">
-        <p className="text-[12px] font-semibold text-[#4E5968] dark:text-[#9CA3AF]">{title}</p>
-        <span className="text-[11px] text-[#B0B8C1]">{hint ?? '→'}</span>
+        <p className="text-[12px] font-semibold text-ink-secondary">{title}</p>
+        <span className="text-[11px] text-ink-muted">{hint ?? '→'}</span>
       </div>
       {children}
     </Link>
@@ -152,7 +152,7 @@ export default function Page() {
       <div className="mb-4 flex items-end justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-bold text-[#191F28] dark:text-[#F2F4F6]">매니지먼트 홈</h1>
+            <h1 className="text-2xl font-bold text-ink">매니지먼트 홈</h1>
             {source === 'live' ? (
               <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
                 실데이터
@@ -163,16 +163,16 @@ export default function Page() {
               </span>
             )}
           </div>
-          <p className="text-sm text-[#8B95A1] mt-1">
+          <p className="text-sm text-ink-tertiary mt-1">
             전 캠페인 핵심 신호를 한 화면에 · 타일을 누르면 해당 탭으로 이동해요
           </p>
         </div>
-        <div className="flex items-center gap-2 shrink-0 text-xs text-[#8B95A1]">
+        <div className="flex items-center gap-2 shrink-0 text-xs text-ink-tertiary">
           {lastUpdated && <span>갱신 {lastUpdated}</span>}
           <button
             onClick={() => void load()}
             disabled={busy}
-            className="px-2.5 py-1.5 rounded-lg border border-[#E5E8EB] dark:border-[#2D3748] hover:border-[#3182F6] hover:text-[#3182F6] disabled:opacity-50 transition-colors"
+            className="px-2.5 py-1.5 rounded-lg border border-line hover:border-primary hover:text-primary disabled:opacity-50 transition-colors"
           >
             {busy ? '불러오는 중…' : '↻ 새로고침'}
           </button>
@@ -181,16 +181,16 @@ export default function Page() {
 
       {/* 오늘 브리핑 — 규칙 기반 한 줄 요약 */}
       {!busy && briefing.length > 0 && (
-        <div className="mb-4 rounded-xl border border-[#3182F6]/30 bg-[#EBF3FF] dark:bg-[#1E3A5F]/40 px-4 py-3">
-          <p className="text-sm text-[#191F28] dark:text-[#F2F4F6]">
-            <span className="font-bold text-[#3182F6]">오늘 브리핑</span>
+        <div className="mb-4 rounded-xl border border-primary/30 bg-primary-subtle/40 px-4 py-3">
+          <p className="text-sm text-ink">
+            <span className="font-bold text-primary">오늘 브리핑</span>
             <span className="ml-2">{briefing.join(' · ')}</span>
           </p>
         </div>
       )}
 
       {busy && campaigns.length === 0 ? (
-        <p className="text-sm text-[#8B95A1] py-20 text-center">불러오는 중…</p>
+        <p className="text-sm text-ink-tertiary py-20 text-center">불러오는 중…</p>
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           {/* HERO — 이번 달 예산 소진 (가장 큰 타일) */}
@@ -209,12 +209,12 @@ export default function Page() {
                   decision={budget.decision}
                   planPct={planPct}
                 />
-                <p className="mt-2 text-[11px] text-[#8B95A1]">
+                <p className="mt-2 text-[11px] text-ink-tertiary">
                   이 페이스면 월말 ₩{projection.toLocaleString()} · 목표의 {projPct}%
                 </p>
               </>
             ) : (
-              <p className="py-6 text-sm text-[#8B95A1]">
+              <p className="py-6 text-sm text-ink-tertiary">
                 월 목표가 없어요 — 예산 관리에서 설정하면 가드레일이 켜져요.
               </p>
             )}
@@ -224,12 +224,12 @@ export default function Page() {
           <Tile href="/manage/monitoring" title="주의 신호" hint="모니터링 →">
             <p
               className={`text-4xl font-extrabold tabular-nums ${
-                attention.length > 0 ? 'text-[#E5484D]' : 'text-[#191F28] dark:text-[#F2F4F6]'
+                attention.length > 0 ? 'text-[#E5484D]' : 'text-ink'
               }`}
             >
               {attention.length}
             </p>
-            <p className="mt-1 text-[11px] text-[#8B95A1]">
+            <p className="mt-1 text-[11px] text-ink-tertiary">
               {attention.length > 0
                 ? campaignHealth(attention[0]).label
                 : '모든 캠페인이 정상이에요'}
@@ -242,16 +242,16 @@ export default function Page() {
               {walletPct != null && (
                 <div className="relative shrink-0">
                   <ArcGauge pct={walletPct} strokeClass={walletStroke} />
-                  <span className="absolute inset-x-0 bottom-0 text-center text-[12px] font-bold tabular-nums text-[#191F28] dark:text-[#F2F4F6]">
+                  <span className="absolute inset-x-0 bottom-0 text-center text-[12px] font-bold tabular-nums text-ink">
                     {walletPct}%
                   </span>
                 </div>
               )}
               <div>
-                <p className="text-xl font-extrabold tabular-nums text-[#191F28] dark:text-[#F2F4F6]">
+                <p className="text-xl font-extrabold tabular-nums text-ink">
                   ₩{(account?.available_balance_krw ?? 0).toLocaleString()}
                 </p>
-                <p className="text-[11px] text-[#8B95A1]">
+                <p className="text-[11px] text-ink-tertiary">
                   선불 잔액{walletPct != null && walletPct >= 95 && ' · 거의 소진'}
                 </p>
               </div>
@@ -283,14 +283,14 @@ export default function Page() {
           {/* 성과 비교 최신 판정 */}
           <Tile href="/manage/compare" title="성과 비교" hint="전체 보기 →">
             {baItems == null ? (
-              <p className="py-4 text-sm text-[#8B95A1]">불러오는 중…</p>
+              <p className="py-4 text-sm text-ink-tertiary">불러오는 중…</p>
             ) : baTop.length === 0 ? (
-              <p className="py-4 text-sm text-[#8B95A1]">비교할 캠페인이 아직 없어요.</p>
+              <p className="py-4 text-sm text-ink-tertiary">비교할 캠페인이 아직 없어요.</p>
             ) : (
               <div className="space-y-2">
                 {baTop.map((it) => (
                   <div key={it.campaign_id} className="flex items-center justify-between gap-2">
-                    <span className="truncate text-sm text-[#191F28] dark:text-[#F2F4F6]">
+                    <span className="truncate text-sm text-ink">
                       {it.name}
                     </span>
                     <span
@@ -308,10 +308,10 @@ export default function Page() {
           <Tile href="/manage/budget" title="일별 지출 추세 (전체 기간)" hint="예산 관리 →" className="md:col-span-2">
             <div className="flex items-end justify-between gap-4">
               <div>
-                <p className="text-2xl font-extrabold tabular-nums text-[#191F28] dark:text-[#F2F4F6]">
+                <p className="text-2xl font-extrabold tabular-nums text-ink">
                   ₩{campaigns.reduce((a, c) => a + c.spend_krw, 0).toLocaleString()}
                 </p>
-                <p className="text-[11px] text-[#8B95A1]">
+                <p className="text-[11px] text-ink-tertiary">
                   누적 지출
                   {(() => {
                     const d = trendDelta(accountSeries);
@@ -332,15 +332,15 @@ export default function Page() {
 
           {/* 캠페인 건강 신호 — 자체 카드·행별 딥링크 보유라 그대로 배치 */}
           <div className="md:col-span-2">
-            <p className="mb-2 text-[12px] font-semibold text-[#4E5968] dark:text-[#9CA3AF]">
-              캠페인 건강 신호 <span className="font-normal text-[#B0B8C1]">· 행 클릭 시 캠페인 관리로</span>
+            <p className="mb-2 text-[12px] font-semibold text-ink-secondary">
+              캠페인 건강 신호 <span className="font-normal text-ink-muted">· 행 클릭 시 캠페인 관리로</span>
             </p>
             <HealthList campaigns={campaigns} spendSeries={spendSeries} now={now} compact />
           </div>
         </div>
       )}
 
-      <p className="mt-6 text-[11px] text-[#B0B8C1]">
+      <p className="mt-6 text-[11px] text-ink-muted">
         모든 타일은 실측(Meta)·기존 규칙 신호 기반이에요 · 상세 수치와 조작은 각 탭에서 · 금액 KRW
       </p>
     </div>

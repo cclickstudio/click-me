@@ -9,9 +9,9 @@ import type { AccountWallet } from '@/components/manage/campaigns/types';
 function Stat({ label, value, valueClass }: { label: string; value: string; valueClass?: string }) {
   return (
     <div>
-      <p className="text-[12px] text-[#8B95A1]">{label}</p>
+      <p className="text-[12px] text-ink-tertiary">{label}</p>
       <p
-        className={`mt-0.5 text-[16px] font-bold tabular-nums ${valueClass ?? 'text-[#191F28] dark:text-[#F2F4F6]'}`}
+        className={`mt-0.5 text-[16px] font-bold tabular-nums ${valueClass ?? 'text-ink'}`}
       >
         {value}
       </p>
@@ -77,18 +77,18 @@ export function WalletStrip({
         ? 'text-red-600 dark:text-red-400'
         : pct >= 80
           ? 'text-amber-600 dark:text-amber-400'
-          : 'text-[#191F28] dark:text-[#F2F4F6]';
+          : 'text-ink';
   return (
-    <div className="mb-4 rounded-xl border border-[#E5E8EB] bg-white px-4 py-3.5 dark:border-[#2D3748] dark:bg-[#1A1F28]">
+    <div className="mb-4 rounded-xl border border-line bg-white px-4 py-3.5 dark:bg-[#1A1F28]">
       <div className="flex items-center justify-between">
-        <span className="text-[13px] font-semibold text-[#4E5968] dark:text-[#9CA3AF]">
+        <span className="text-[13px] font-semibold text-ink-secondary">
           계정 지갑
         </span>
         {explain && (
           <button
             type="button"
             onClick={() => setOpen((o) => !o)}
-            className="shrink-0 text-[12px] text-[#8B95A1] transition-colors hover:text-[#3182F6]"
+            className="shrink-0 text-[12px] text-ink-tertiary transition-colors hover:text-primary"
           >
             ⓘ 지갑·지표 설명 {open ? '▲' : '▾'}
           </button>
@@ -116,7 +116,7 @@ export function WalletStrip({
                 </span>
               </div>
               <div>
-                <p className="text-[12px] text-[#8B95A1]">한도 소진율</p>
+                <p className="text-[12px] text-ink-tertiary">한도 소진율</p>
                 {pct != null && pct >= 95 && (
                   <p className={`text-[11px] font-semibold ${pctText}`}>거의 소진</p>
                 )}
@@ -132,7 +132,7 @@ export function WalletStrip({
         )}
       </div>
       {open && explain && (
-        <div className="mt-3 space-y-1 rounded-lg bg-[#F9FAFB] px-3.5 py-2.5 text-[13px] leading-relaxed text-[#6B7684] dark:bg-[#232A36] dark:text-[#9CA3AF]">
+        <div className="mt-3 space-y-1 rounded-lg bg-[#F9FAFB] px-3.5 py-2.5 text-[13px] leading-relaxed text-[#6B7684] dark:bg-[#232A36]">
           {explain}
         </div>
       )}

@@ -5,10 +5,10 @@ import { VerdictBadge } from './VerdictBadge';
 
 function Tile({ label, value, sub }: { label: string; value: string; sub: string }) {
   return (
-    <div className="rounded-2xl border border-[#E5E8EB] dark:border-[#2D3748] px-4 py-3">
-      <p className="text-xs text-[#8B95A1]">{label}</p>
-      <p className="text-2xl font-extrabold text-[#191F28] dark:text-[#F2F4F6] mt-1">{value}</p>
-      <p className="text-[11px] text-[#B0B8C1] mt-0.5">{sub}</p>
+    <div className="rounded-2xl border border-line px-4 py-3">
+      <p className="text-xs text-ink-tertiary">{label}</p>
+      <p className="text-2xl font-extrabold text-ink mt-1">{value}</p>
+      <p className="text-[11px] text-ink-muted mt-0.5">{sub}</p>
     </div>
   );
 }
@@ -44,10 +44,10 @@ export function LiftBoard({
         />
       </div>
 
-      <div className="rounded-2xl border border-[#E5E8EB] dark:border-[#2D3748] overflow-hidden">
+      <div className="rounded-2xl border border-line overflow-hidden">
         <table className="w-full text-sm">
           <thead>
-            <tr className="bg-[#F9FAFB] dark:bg-[#1A202C] text-[#8B95A1] text-xs">
+            <tr className="bg-[#F9FAFB] dark:bg-[#1A202C] text-ink-tertiary text-xs">
               <th className="text-left font-semibold px-4 py-2.5">게시물</th>
               <th className="text-right font-semibold px-3 py-2.5">오가닉 도달</th>
               <th className="text-right font-semibold px-3 py-2.5">광고 도달</th>
@@ -72,27 +72,27 @@ export function LiftBoard({
                 <tr
                   key={r.lift.post_id}
                   onClick={() => onSelect(i)}
-                  className={`cursor-pointer border-t border-[#F2F4F6] dark:border-[#2D3748] ${
+                  className={`cursor-pointer border-t border-line ${
                     selected === i ? 'bg-[#EAF3FF] dark:bg-[#1E293B]' : 'hover:bg-[#F9FAFB] dark:hover:bg-[#1A202C]'
                   }`}
                 >
-                  <td className="px-4 py-3 font-medium text-[#191F28] dark:text-[#F2F4F6]">{r.title}</td>
-                  <td className="px-3 py-3 text-right tabular-nums text-[#4E5968] dark:text-[#C9CED6]">
+                  <td className="px-4 py-3 font-medium text-ink">{r.title}</td>
+                  <td className="px-3 py-3 text-right tabular-nums text-ink-secondary dark:text-[#C9CED6]">
                     {r.lift.organic.reach.toLocaleString()}
                   </td>
-                  <td className="px-3 py-3 text-right tabular-nums font-semibold text-[#191F28] dark:text-[#F2F4F6]">
+                  <td className="px-3 py-3 text-right tabular-nums font-semibold text-ink">
                     {r.lift.paid.reach.toLocaleString()}
                   </td>
                   <td className={`px-3 py-3 text-right tabular-nums font-bold ${ratioColor}`}>
                     ×{r.lift.reach_lift_ratio}
                   </td>
-                  <td className="px-3 py-3 text-right tabular-nums text-[#4E5968] dark:text-[#C9CED6] hidden md:table-cell">
+                  <td className="px-3 py-3 text-right tabular-nums text-ink-secondary dark:text-[#C9CED6] hidden md:table-cell">
                     {er.toFixed(1)}%
                   </td>
-                  <td className="px-3 py-3 text-right tabular-nums text-[#4E5968] dark:text-[#C9CED6]">
+                  <td className="px-3 py-3 text-right tabular-nums text-ink-secondary dark:text-[#C9CED6]">
                     {ctr.toFixed(1)}%
                   </td>
-                  <td className="px-3 py-3 text-right tabular-nums text-[#4E5968] dark:text-[#C9CED6] hidden md:table-cell">
+                  <td className="px-3 py-3 text-right tabular-nums text-ink-secondary dark:text-[#C9CED6] hidden md:table-cell">
                     ₩{r.lift.paid.spend_krw.toLocaleString()}
                   </td>
                   <td className="px-4 py-3 text-right">

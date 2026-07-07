@@ -13,7 +13,7 @@ function PacingBar({ pct, alert }: { pct: number; alert: boolean }) {
   const w = Math.min(pct, 100);
   return (
     <div className="h-1.5 w-full rounded-full bg-[#F2F4F6] dark:bg-[#2D3748] overflow-hidden">
-      <div className={`h-full ${alert ? 'bg-amber-500' : 'bg-[#3182F6]'}`} style={{ width: `${w}%` }} />
+      <div className={`h-full ${alert ? 'bg-amber-500' : 'bg-primary'}`} style={{ width: `${w}%` }} />
     </div>
   );
 }
@@ -21,7 +21,7 @@ function PacingBar({ pct, alert }: { pct: number; alert: boolean }) {
 function DeltaTag({ delta }: { delta: number | null }) {
   if (delta == null) return null;
   const pct = Math.round(delta * 100);
-  if (pct === 0) return <span className="text-[10px] text-[#8B95A1]">7일 →0%</span>;
+  if (pct === 0) return <span className="text-[10px] text-ink-tertiary">7일 →0%</span>;
   const up = pct > 0;
   return (
     <span className={`text-[10px] ${up ? 'text-green-600 dark:text-green-400' : 'text-red-500 dark:text-red-400'}`}>
@@ -55,7 +55,7 @@ export const HealthList = memo(function HealthList({
   }, [campaigns]);
 
   return (
-    <div className="rounded-2xl border border-[#E5E8EB] dark:border-[#2D3748] divide-y divide-[#E5E8EB] dark:divide-[#2D3748] overflow-hidden">
+    <div className="rounded-2xl border border-line divide-y divide-[#E5E8EB] dark:divide-[#2D3748] overflow-hidden">
       {rows.map(({ c, h }) => {
         const s = LEVEL_STYLE[h.level];
         const fatigue = frequencyFatigue(c);
@@ -77,13 +77,13 @@ export const HealthList = memo(function HealthList({
             <span className={`shrink-0 w-2 h-2 rounded-full ${s.dot}`} />
             {/* 이름 칸 — 좁은 컨테이너(홈 반폭 타일)에선 줄여 우측 지표 줄바꿈 깨짐을 막는다 */}
             <div className={`shrink-0 ${compact ? 'w-24' : 'w-24 lg:w-40'}`}>
-              <p className="text-sm font-medium text-[#191F28] dark:text-[#F2F4F6] truncate">{c.name}</p>
+              <p className="text-sm font-medium text-ink truncate">{c.name}</p>
               <div className="mt-1">
                 <StateBadge state={c.state} />
               </div>
             </div>
             <div className="flex-1 min-w-0">
-              <div className="flex flex-wrap items-center justify-between gap-x-3 text-[11px] text-[#8B95A1] mb-1">
+              <div className="flex flex-wrap items-center justify-between gap-x-3 text-[11px] text-ink-tertiary mb-1">
                 <span className="whitespace-nowrap">
                   소진율 {showPacing ? `${c.pacing_pct.toFixed(0)}%` : blocked ? '권한 없음' : '—'}
                 </span>
@@ -101,8 +101,8 @@ export const HealthList = memo(function HealthList({
                       pacing.status === 'overpacing' || pacing.status === 'exhausted'
                         ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
                         : pacing.status === 'underpacing'
-                          ? 'bg-[#EBF3FF] text-[#3182F6] dark:bg-[#1E3A5F] dark:text-[#73A9FF]'
-                          : 'bg-[#F2F4F6] text-[#8B95A1] dark:bg-[#2D3748] dark:text-[#9CA3AF]'
+                          ? 'bg-[#EBF3FF] text-primary dark:bg-[#1E3A5F] dark:text-[#73A9FF]'
+                          : 'bg-[#F2F4F6] text-ink-tertiary dark:bg-[#2D3748]'
                     }`}
                     title={`이 속도면 종일 ${pacing.projectedEodPct}% 소진 추정`}
                   >
@@ -115,7 +115,7 @@ export const HealthList = memo(function HealthList({
                     className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
                       fatigue.level === 'warn'
                         ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
-                        : 'bg-[#F2F4F6] text-[#8B95A1] dark:bg-[#2D3748] dark:text-[#9CA3AF]'
+                        : 'bg-[#F2F4F6] text-ink-tertiary dark:bg-[#2D3748]'
                     }`}
                     title={fatigue.hint}
                   >
@@ -138,7 +138,7 @@ export const HealthList = memo(function HealthList({
               <span className={`inline-block px-2 py-0.5 rounded-full text-[11px] font-semibold ${s.chip}`}>
                 {h.label}
               </span>
-              {!compact && <p className="mt-1 text-[11px] text-[#8B95A1] truncate">{h.hint}</p>}
+              {!compact && <p className="mt-1 text-[11px] text-ink-tertiary truncate">{h.hint}</p>}
             </div>
           </Link>
         );
