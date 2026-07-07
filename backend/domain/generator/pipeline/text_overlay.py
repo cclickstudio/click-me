@@ -143,22 +143,21 @@ _TEMPLATE_SPECS: dict[TemplateType, _Spec] = {
         body=_Block((0.06, 0.705, 0.94, 0.82), "center", 0.040),
         cta=_Block((0.28, 0.835, 0.72, 0.95), "center", 0.044),
     ),
-    # B — 상단 띠(헤드라인) + 하단 띠(본문·CTA)
+    # B(FOMO 전용) — 하단 단일 밴드(32%)에 헤드라인 좌측 + CTA 우측, 이미지 68% 확보.
+    # 위아래로 문구가 있어 이미지가 눌려 보인다는 피드백으로 상단 밴드를 없애고 재설계함.
     TemplateType.B: _Spec(
-        panels=[
-            ((0.0, 0.0, 1.0, 0.20), (0, 0, 0, 215)),
-            ((0.0, 0.60, 1.0, 1.0), (0, 0, 0, 215)),
-        ],
-        headline=_Block((0.06, 0.02, 0.94, 0.18), "center", 0.066),
-        body=_Block((0.06, 0.625, 0.94, 0.79), "center", 0.040),
-        cta=_Block((0.28, 0.815, 0.72, 0.96), "center", 0.044),
+        panels=[((0.0, 0.68, 1.0, 1.0), (0, 0, 0, 205))],
+        headline=_Block((0.05, 0.71, 0.60, 0.87), "left", 0.09),
+        body=_Block((0.05, 0.875, 0.60, 0.95), "left", 0.032),
+        cta=_Block((0.65, 0.73, 0.95, 0.93), "center", 0.05),
     ),
-    # C — 좌측 브랜드컬러 패널에 좌측정렬
+    # C — 좌측 브랜드컬러 패널에 좌측정렬. 좌우 여백을 0.05로 동일하게(패널 우측 끝 0.46 기준)
+    # 맞춰 텍스트가 길어져 박스 폭을 다 채워도 좌우 여백이 어긋나 보이지 않게 한다.
     TemplateType.C: _Spec(
         panels=[((0.0, 0.0, 0.46, 1.0), None)],
-        headline=_Block((0.04, 0.10, 0.42, 0.35), "left", 0.064),
-        body=_Block((0.04, 0.37, 0.42, 0.60), "left", 0.038),
-        cta=_Block((0.04, 0.70, 0.42, 0.85), "left", 0.044),
+        headline=_Block((0.05, 0.10, 0.41, 0.35), "left", 0.064),
+        body=_Block((0.05, 0.37, 0.41, 0.60), "left", 0.038),
+        cta=_Block((0.05, 0.70, 0.41, 0.85), "left", 0.044),
     ),
 }
 
@@ -235,10 +234,20 @@ def _fit(
         if line_h * len(lines) <= box_h and widest <= box_w:
             return font, lines, line_h
         size -= 2
+    # 최소 크기로도 안 맞음 — 박스 높이에 들어가는 줄 수만큼만 잘라 말줄임표를 붙인다
+    # (자르지 않으면 텍스트가 박스 밖으로 그려짐 — 좁은 템플릿 C에서 카피가 길 때 실제 발생).
     font = ImageFont.truetype(font_path, min_size)
     lines = _wrap(draw, text, font, box_w)
     ascent, descent = font.getmetrics()
-    return font, lines, int((ascent + descent) * 1.25)
+    line_h = int((ascent + descent) * 1.25)
+    max_lines = max(1, box_h // line_h)
+    if len(lines) > max_lines:
+        lines = lines[:max_lines]
+        last = lines[-1]
+        while last and draw.textlength(last + "…", font=font) > box_w:
+            last = last[:-1]
+        lines[-1] = last + "…"
+    return font, lines, line_h
 
 
 def _draw_block(

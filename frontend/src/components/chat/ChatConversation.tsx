@@ -209,7 +209,7 @@ type WidgetSpec = {
     simulation_id?: string; // sim_result·debate_stream 위젯 — 결과/토론 연결용
     run_id?: string; // debate_stream·debate_summary 위젯 — 토론 스트림/결과 조회용
     sample_size?: number; // sim_input 위젯 — 실제 돌린 가상 소비자 수
-    generation_id?: string; // gen_result 위젯 — 생성 결과(후보·이미지) 조회용
+    generation_id?: string; // gen_result 위젯 — 생성 결과(후보·이미지) 조회용. sim_form 위젯에선 생성 출처(채팅 개선모드 누끼 역추적용)로 재사용
     loop_id?: string; // gen_loop 위젯 — 자동 개선 루프 진행 카드
     stream_url?: string; // gen_loop 위젯 — 루프 SSE 경로
     prefill?: CampaignPrefill; // create_campaign 위젯 — 캠페인 생성 폼 초기값

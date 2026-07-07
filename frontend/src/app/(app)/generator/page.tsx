@@ -1066,6 +1066,9 @@ export default function GeneratorPage() {
                                     .filter(Boolean)
                                     .join("\n"),
                                   ad_image_url: simImg,
+                                  // 생성 출처 — ads.generation_id로 영속되어 채팅 개선모드가
+                                  // 상품 누끼를 역추적해 재사용할 수 있게 한다.
+                                  generation_id: generationId,
                                 },
                               },
                             },

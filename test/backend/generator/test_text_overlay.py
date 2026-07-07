@@ -42,6 +42,20 @@ def test_long_text_shrinks_to_fit_box():
     assert line_h * len(lines) <= box_h
 
 
+def test_very_long_text_truncates_with_ellipsis():
+    # 좁은 박스(템플릿 C 본문 폭 근사)에 최소 폰트로도 다 못 담을 만큼 긴 텍스트 —
+    # 잘리지 않고 박스 밖으로 넘치면 안 되고, 들어가는 줄만 남기고 말줄임표(…)를 붙여야 함
+    img = Image.new("RGBA", (512, 512))
+    from PIL import ImageDraw
+
+    draw = ImageDraw.Draw(img)
+    very_long_text = "광고 제작부터 관리까지 AI 하나로 해결하세요 업종별 맞춤 최적화로 더 빠르게 진행하세요 " * 5
+    box_w, box_h = 195, 118  # 템플릿 C 본문 박스 근사치(512px 기준)
+    font, lines, line_h = _fit(draw, very_long_text, _font_regular(), box_w, box_h, max_size=40)
+    assert line_h * len(lines) <= box_h
+    assert lines[-1].endswith("…")
+
+
 def _font_regular() -> str:
     from domain.generator.pipeline.text_overlay import _FONT_REGULAR
 

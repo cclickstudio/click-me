@@ -72,7 +72,7 @@ STRATEGY_STYLE: dict[AdStrategy, StyleProfile] = {
     ),
     AdStrategy.SOCIAL_PROOF: StyleProfile(
         "floating",
-        0.25,
+        0.75,
         _DARK_GRAY,
         _MID_GRAY,
         headline_weight="semibold",
@@ -90,7 +90,7 @@ STRATEGY_STYLE: dict[AdStrategy, StyleProfile] = {
     ),
     AdStrategy.FOMO: StyleProfile(
         "box",
-        0.45,
+        0.8,
         _WHITE,
         _WHITE,
         accent_override="#E63946",

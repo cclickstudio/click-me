@@ -37,7 +37,10 @@ _STRATEGY_PHOTO_STYLE: dict[AdStrategy, str] = {
     AdStrategy.SOCIAL_PROOF: (
         "Authentic UGC-style photography that looks like a real Instagram post, not an ad. "
         "Casual hand-held feel, real-world context, genuine everyday use. "
-        "Approachable and trustworthy, as if shared by a satisfied customer."
+        "Approachable and trustworthy, as if shared by a satisfied customer. "
+        "Medium shot — the subject fills the right portion of the frame consistently, "
+        "positioned so the left side of the frame stays open and uncluttered for a text "
+        "overlay. Avoid wide, distant framing that leaves the subject too small."
     ),
     AdStrategy.EMOTIONAL: (
         "Emotional lifestyle photography with generous negative space and breathing room. "
@@ -50,7 +53,7 @@ _STRATEGY_PHOTO_STYLE: dict[AdStrategy, str] = {
         "High-conversion Meta promotion aesthetic. "
         "The packaged product is the HERO SUBJECT of the advertisement. "
         "The product must be the largest and most visually dominant object. "
-        "Place the product in the center foreground. "
+        "Place the product prominently in the upper foreground, filling most of the frame. "
         "No person, hand, text, or decorative object may cover any part of the product. "
         "People are supporting elements only and must appear behind or beside the product. "
         "All subjects should direct attention toward the product. "
@@ -70,9 +73,9 @@ _TEMPLATE_STYLE: dict[TemplateType, str] = {
         "Neutral or softly colored backdrop that makes the product stand out."
     ),
     TemplateType.B: (
-        "Dynamic product shot with energy and visual impact. "
-        "Product clearly visible and centered, with a vibrant or bold background. "
-        "Eye-catching composition suitable for promotional advertising."
+        "Dynamic product shot with energy and visual impact, filling most of the frame. "
+        "Product clearly visible and dominant, with a vibrant or bold background. "
+        "Eye-catching, high-energy composition suitable for promotional advertising."
     ),
     TemplateType.C: (
         "Rich lifestyle or brand imagery with atmospheric depth. "
@@ -142,20 +145,25 @@ _TEXT_LAYOUT: dict[TemplateType, str] = {
 # 생성 모드에서 사용 — 처음부터 올바른 구도로 이미지를 만들어야 하므로 강제 배치 지시.
 _TEMPLATE_SAFE_ZONES: dict[TemplateType, str] = {
     TemplateType.A: (
-        "COMPOSITION RULE: Keep the bottom 38% of the frame visually minimal and uncluttered "
+        "COMPOSITION RULE: Keep the bottom 45% of the frame visually minimal and uncluttered "
         "— this zone will be covered by a semi-transparent text overlay. "
-        "Place the product in the upper 55% of the frame."
+        "The scene must fill the entire upper 55% of the frame edge-to-edge with no empty "
+        "or blank gap — extend the background all the way down to where the text overlay begins, "
+        "but do not let any product detail cross past the 55% line into the bottom zone."
     ),
     TemplateType.B: (
-        "COMPOSITION RULE: Keep the top 17% and bottom 24% of the frame clear and uncluttered "
-        "— these zones will be covered by solid color text banners. "
-        "Place the product prominently in the middle 59% of the frame."
+        "COMPOSITION RULE: Keep the bottom 32% of the frame clear and uncluttered "
+        "— this zone will be covered by a solid color banner with headline and CTA. "
+        "Place the product prominently filling the upper 68% of the frame, "
+        "with dynamic, energetic framing (diagonal lines, motion-suggestive angles)."
     ),
     TemplateType.C: (
         "COMPOSITION RULE: The left 46% of the frame is a solid color text panel — keep it empty. "
         "The area from 46% to 53% has a gradient overlay fading to transparent. "
         "Place the product clearly in the RIGHT 47% of the frame "
         "(center the product at approximately 75-80% from the left edge). "
+        "The scene must fill the RIGHT 47% edge-to-edge from the very top to the very bottom "
+        "of the frame with no empty or blank margin above or below it. "
         "No important visual elements in the left 53% of the frame."
     ),
 }
@@ -165,17 +173,18 @@ _TEMPLATE_SAFE_ZONES: dict[TemplateType, str] = {
 _TEMPLATE_SAFE_ZONES_COMPOSE: dict[TemplateType, str] = {
     TemplateType.A: (
         "LAYOUT: The locked product sits in the upper area. "
-        "Build the background around it and keep the bottom 38% suitable for a text overlay — "
+        "Build the background around it and keep the bottom 45% suitable for a text overlay — "
         "keep that zone visually simple and free of badges, stamps, watermarks, or any text-like graphic."
     ),
     TemplateType.B: (
-        "LAYOUT: The locked product sits in the middle area. "
-        "Keep the top 17% and bottom 24% suitable for text banners — "
-        "keep those zones visually simple and free of badges, stamps, watermarks, or any text-like graphic."
+        "LAYOUT: The locked product sits in the upper area, filling it dynamically. "
+        "Build the background around it and keep the bottom 32% suitable for a text banner — "
+        "keep that zone visually simple and free of badges, stamps, watermarks, or any text-like graphic."
     ),
     TemplateType.C: (
         "LAYOUT: The locked product sits on the RIGHT side. "
-        "Keep the left 46% suitable for a text panel — "
+        "Build the background around it filling the right side edge-to-edge from top to bottom "
+        "with no empty or blank margin. Keep the left 46% suitable for a text panel — "
         "keep that zone visually simple and free of badges, stamps, watermarks, or any text-like graphic."
     ),
 }
@@ -186,13 +195,13 @@ _TEMPLATE_SAFE_ZONES_COMPOSE: dict[TemplateType, str] = {
 # 생성 모드(_TEMPLATE_SAFE_ZONES)처럼 구도를 강제하면 원본 레이아웃이 크게 훼손된다.
 _TEMPLATE_SAFE_ZONES_EDIT: dict[TemplateType, str] = {
     TemplateType.A: (
-        "LAYOUT NOTE: Text overlays will cover the bottom 38% of the frame. "
+        "LAYOUT NOTE: Text overlays will cover the bottom 45% of the frame. "
         "If possible, avoid placing critical product details in that area, "
         "but do NOT restructure the original composition."
     ),
     TemplateType.B: (
-        "LAYOUT NOTE: Text banners will cover the top 17% and bottom 24% of the frame. "
-        "If possible, keep those areas relatively uncluttered, "
+        "LAYOUT NOTE: A text banner will cover the bottom 32% of the frame. "
+        "If possible, avoid placing critical product details in that area, "
         "but do NOT restructure the original composition."
     ),
     TemplateType.C: (
@@ -709,7 +718,7 @@ async def remove_product_background(product_image_bytes: bytes) -> bytes:
 # 상품은 이 박스 안에 비율 유지로 들어가며 박스 중앙에 정렬된다.
 _COMPOSE_PRODUCT_BOXES: dict[TemplateType, tuple[float, float, float, float]] = {
     TemplateType.A: (0.14, 0.06, 0.86, 0.52),  # 상단 영역(텍스트는 하단)
-    TemplateType.B: (0.16, 0.20, 0.84, 0.74),  # 중앙 영역(텍스트는 상·하 밴드)
+    TemplateType.B: (0.10, 0.04, 0.90, 0.66),  # 상단 영역(텍스트는 하단 단일 밴드)
     TemplateType.C: (0.52, 0.16, 0.96, 0.84),  # 우측 영역(텍스트는 좌측 패널)
 }
 # 개선 모드 — template=None일 때 사용하는 중앙 상단 배치 박스(AI가 배경 구도 자유 결정)
@@ -791,13 +800,11 @@ def _composite_logo_pil(
         logo = logo.resize((logo_w, logo_h), Image.LANCZOS)
         x, y = margin, margin
     elif template == TemplateType.B:
-        # 상단 밴드(top 22%) 내 좌측 수직 중앙
-        band_h = int(ad.height * 0.22)
+        # 상단 밴드가 없어짐(하단 단일 배너로 재설계) — 이미지 상단 좌측에 작게 배치
         logo_w = max(1, int(ad.width * 0.10))
         logo_h = max(1, int(logo.height * logo_w / logo.width))
         logo = logo.resize((logo_w, logo_h), Image.LANCZOS)
-        x = margin
-        y = max(margin, (band_h - logo_h) // 2)
+        x, y = margin, margin
     else:  # C
         # 좌측 패널(left 46%) 상단 좌측 — 하단 CTA와 겹치지 않도록 상단 배치
         max_logo_h = int(ad.height * 0.08)
