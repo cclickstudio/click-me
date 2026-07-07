@@ -37,7 +37,7 @@ function candImg(c: Candidate): string | null {
   return null;
 }
 
-const CARD = 'mt-1 rounded-2xl border border-[#E5E8EB] dark:border-[#2D3748] p-4 max-w-md';
+const CARD = 'mt-1 rounded-2xl border border-line p-4 max-w-md';
 
 export default function ChatReplaceCreativeCard({
   campaignId,
@@ -176,22 +176,22 @@ export default function ChatReplaceCreativeCard({
     return (
       <div className={CARD}>
         <p
-          className={`font-bold ${ok || pending ? 'text-[#191F28] dark:text-[#F2F4F6]' : 'text-red-500'}`}
+          className={`font-bold ${ok || pending ? 'text-ink' : 'text-red-500'}`}
         >
           {pending ? '검토 대기 중' : ok ? '✓ 소재를 교체했어요' : '소재 교체 실패'}
         </p>
-        {pending && <p className="mt-1 text-sm text-[#8B95A1]">Meta 검토가 진행 중이에요.</p>}
+        {pending && <p className="mt-1 text-sm text-ink-tertiary">Meta 검토가 진행 중이에요.</p>}
         {!ok && !pending && (
-          <p className="mt-1 text-sm text-[#8B95A1]">
+          <p className="mt-1 text-sm text-ink-tertiary">
             {error ?? `사유 ${result.failure_reason ?? '알 수 없음'}`}
           </p>
         )}
         {(ok || pending) && result.approval_id && (
-          <p className="mt-1 text-[11px] text-[#B0B8C1]">승인 ID {result.approval_id}</p>
+          <p className="mt-1 text-[11px] text-ink-muted">승인 ID {result.approval_id}</p>
         )}
         <Link
           href="/manage/campaigns"
-          className="mt-3 inline-block px-3 py-1.5 bg-[#3182F6] text-white text-xs font-medium rounded-lg hover:bg-[#1B6EEB]"
+          className="mt-3 inline-block px-3 py-1.5 bg-primary text-primary-foreground text-xs font-medium rounded-lg hover:bg-primary-hover"
         >
           대시보드로
         </Link>
@@ -202,13 +202,13 @@ export default function ChatReplaceCreativeCard({
   if (proposal && preview) {
     return (
       <div className={CARD}>
-        <p className="font-bold text-[#191F28] dark:text-[#F2F4F6] mb-2">소재 교체 확인</p>
+        <p className="font-bold text-ink mb-2">소재 교체 확인</p>
         {preview.candidate.headline && (
-          <p className="text-sm text-[#191F28] dark:text-[#F2F4F6]">
+          <p className="text-sm text-ink">
             새 소재 <b>{preview.candidate.headline}</b>
           </p>
         )}
-        <p className="mt-2 text-xs font-semibold text-[#8B95A1]">
+        <p className="mt-2 text-xs font-semibold text-ink-tertiary">
           바뀌는 광고 {preview.affected_ads.length}개
         </p>
         <ul className="mt-1 space-y-1">
@@ -224,14 +224,14 @@ export default function ChatReplaceCreativeCard({
               ) : (
                 <span className="h-8 w-8 shrink-0 rounded bg-[#F2F4F6] dark:bg-[#2D3748]" />
               )}
-              <span className="truncate text-xs text-[#4E5968] dark:text-[#9CA3AF]">
+              <span className="truncate text-xs text-ink-secondary">
                 {a.ad_name}
               </span>
             </li>
           ))}
         </ul>
         {preview.affected_ads.find((a) => a.link_url)?.link_url && (
-          <p className="mt-2 text-[11px] text-[#8B95A1]">
+          <p className="mt-2 text-[11px] text-ink-tertiary">
             도착 URL 유지 {preview.affected_ads.find((a) => a.link_url)?.link_url}
           </p>
         )}
@@ -239,7 +239,7 @@ export default function ChatReplaceCreativeCard({
           <button
             onClick={approveAndReplace}
             disabled={busy}
-            className="px-4 py-2 bg-[#3182F6] text-white text-sm font-medium rounded-lg hover:bg-[#1B6EEB] disabled:opacity-40"
+            className="px-4 py-2 bg-primary text-primary-foreground text-sm font-medium rounded-lg hover:bg-primary-hover disabled:opacity-40"
           >
             {busy ? '교체 중…' : '승인하고 교체'}
           </button>
@@ -249,7 +249,7 @@ export default function ChatReplaceCreativeCard({
               setPreview(null);
             }}
             disabled={busy}
-            className="px-4 py-2 border border-[#E5E8EB] dark:border-[#2D3748] text-sm rounded-lg disabled:opacity-40"
+            className="px-4 py-2 border border-line text-sm rounded-lg disabled:opacity-40"
           >
             취소
           </button>
@@ -261,7 +261,7 @@ export default function ChatReplaceCreativeCard({
 
   return (
     <div className={CARD}>
-      <p className="font-bold text-[#191F28] dark:text-[#F2F4F6] mb-2">소재 교체</p>
+      <p className="font-bold text-ink mb-2">소재 교체</p>
 
       {warning && (
         <p className="mb-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">
@@ -270,11 +270,11 @@ export default function ChatReplaceCreativeCard({
       )}
 
       <label className="mb-2 block">
-        <span className="text-xs text-[#8B95A1]">대상 캠페인</span>
+        <span className="text-xs text-ink-tertiary">대상 캠페인</span>
         <select
           value={resolvedId}
           onChange={(e) => setResolvedId(e.target.value)}
-          className="mt-1 w-full rounded-lg border border-[#E5E8EB] dark:border-[#2D3748] bg-transparent px-3 py-2 text-sm"
+          className="mt-1 w-full rounded-lg border border-line bg-transparent px-3 py-2 text-sm"
         >
           <option value="">선택하세요</option>
           {picker.map((c) => (
@@ -286,12 +286,12 @@ export default function ChatReplaceCreativeCard({
       </label>
 
       <label className="mb-2 block">
-        <span className="text-xs text-[#8B95A1]">광고 시안 세트</span>
+        <span className="text-xs text-ink-tertiary">광고 시안 세트</span>
         <select
           value={genId}
           onChange={(e) => onSelectGen(e.target.value)}
           disabled={!resolvedId}
-          className="mt-1 w-full rounded-lg border border-[#E5E8EB] dark:border-[#2D3748] bg-transparent px-3 py-2 text-sm disabled:opacity-40"
+          className="mt-1 w-full rounded-lg border border-line bg-transparent px-3 py-2 text-sm disabled:opacity-40"
         >
           <option value="">선택하세요</option>
           {gens.map((g) => (
@@ -302,7 +302,7 @@ export default function ChatReplaceCreativeCard({
           ))}
         </select>
         {gens.length === 0 && (
-          <span className="mt-1 block text-xs text-[#8B95A1]">완료된 광고 시안이 없어요.</span>
+          <span className="mt-1 block text-xs text-ink-tertiary">완료된 광고 시안이 없어요.</span>
         )}
       </label>
 
@@ -315,27 +315,27 @@ export default function ChatReplaceCreativeCard({
               return (
                 <div
                   key={c.candidate_id}
-                  className="shrink-0 w-40 rounded-lg border border-[#E5E8EB] dark:border-[#2D3748] overflow-hidden"
+                  className="shrink-0 w-40 rounded-lg border border-line overflow-hidden"
                 >
                   {src ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img src={src} alt={`후보 ${c.idx + 1}`} className="w-40 h-40 object-cover" />
                   ) : (
-                    <div className="w-40 h-40 flex items-center justify-center bg-[#F2F4F6] dark:bg-[#161B27] text-xs text-[#B0B8C1]">
+                    <div className="w-40 h-40 flex items-center justify-center bg-[#F2F4F6] dark:bg-[#161B27] text-xs text-ink-muted">
                       이미지 없음
                     </div>
                   )}
                   <div className="p-2 space-y-1">
-                    <p className="text-[10px] font-semibold text-[#8B95A1]">후보 {c.idx + 1}</p>
+                    <p className="text-[10px] font-semibold text-ink-tertiary">후보 {c.idx + 1}</p>
                     {c.copy?.headline && (
-                      <p className="text-xs font-semibold text-[#191F28] dark:text-[#F2F4F6] leading-snug line-clamp-2">
+                      <p className="text-xs font-semibold text-ink leading-snug line-clamp-2">
                         {c.copy.headline}
                       </p>
                     )}
                     <button
                       onClick={() => onPickCandidate(c.candidate_id)}
                       disabled={busy || !resolvedId}
-                      className="mt-1 w-full py-1.5 rounded-md border border-[#3182F6]/30 text-[#3182F6] text-[11px] font-semibold hover:bg-[#EBF3FF] dark:hover:bg-[#1E3A5F] disabled:opacity-40"
+                      className="mt-1 w-full py-1.5 rounded-md border border-primary/30 text-primary text-[11px] font-semibold hover:bg-primary-subtle disabled:opacity-40"
                     >
                       🔄 이 시안으로 교체
                     </button>

@@ -28,28 +28,28 @@ function ChatProjectGate() {
 
   return (
     <div className="h-screen flex flex-col items-center justify-center px-4 bg-white dark:bg-[#0F1117] transition-colors">
-      <div className="mb-3 w-12 h-12 flex items-center justify-center rounded-2xl bg-[#EBF3FF] dark:bg-[#1E3A5F]">
+      <div className="mb-3 w-12 h-12 flex items-center justify-center rounded-2xl bg-primary-subtle">
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#3182F6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
         </svg>
       </div>
-      <h2 className="text-xl font-bold text-[#191F28] dark:text-[#F2F4F6] mb-2">먼저 프로젝트를 선택하세요</h2>
-      <p className="text-sm text-[#8B95A1] dark:text-[#6B7280] mb-8 text-center leading-relaxed">
+      <h2 className="text-xl font-bold text-ink mb-2">먼저 프로젝트를 선택하세요</h2>
+      <p className="text-sm text-ink-tertiary mb-8 text-center leading-relaxed">
         채팅은 프로젝트에 저장됩니다.<br />프로젝트를 고르면 그 프로젝트의 채팅으로 이동합니다.
       </p>
       {projects.length === 0 ? (
-        <p className="text-sm text-[#B0B8C1]">사용 가능한 프로젝트가 없습니다. 먼저 프로젝트를 생성하세요.</p>
+        <p className="text-sm text-ink-muted">사용 가능한 프로젝트가 없습니다. 먼저 프로젝트를 생성하세요.</p>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full max-w-lg">
           {projects.map((p) => (
             <button
               key={p.id}
               onClick={() => router.push(`/chat/${p.id}`)}
-              className="p-4 text-left bg-[#F9FAFB] dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748] rounded-xl hover:border-[#3182F6] hover:bg-[#EBF3FF] dark:hover:bg-[#1E3A5F] transition-all"
+              className="p-4 text-left bg-surface-1 border border-line rounded-xl hover:border-primary hover:bg-primary-subtle transition-all"
             >
-              <p className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]">{p.name}</p>
+              <p className="text-sm font-semibold text-ink">{p.name}</p>
               {p.organization_name && (
-                <p className="text-xs text-[#8B95A1] dark:text-[#6B7280] mt-0.5">{p.organization_name}</p>
+                <p className="text-xs text-ink-tertiary mt-0.5">{p.organization_name}</p>
               )}
             </button>
           ))}

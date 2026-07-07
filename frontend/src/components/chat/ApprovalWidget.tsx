@@ -21,14 +21,14 @@ export default function ApprovalWidget({
   const [decided, setDecided] = useState<null | 'accepted' | 'declined'>(null);
 
   return (
-    <div className="mt-1 w-full rounded-xl border border-[#3182F6]/30 bg-[#F5F9FF] dark:bg-[#16243C] px-4 py-3">
+    <div className="mt-1 w-full rounded-xl border border-primary/30 bg-[#F5F9FF] dark:bg-[#16243C] px-4 py-3">
       <div className="flex items-center gap-1.5 mb-2">
-        <span className="text-xs font-bold text-[#3182F6]">개선 제안</span>
+        <span className="text-xs font-bold text-primary">개선 제안</span>
       </div>
       {approval.reasons && approval.reasons.length > 0 && (
         <ul className="mb-3 space-y-0.5">
           {approval.reasons.map((r, i) => (
-            <li key={i} className="text-xs text-[#4E5968] dark:text-[#9CA3AF]">
+            <li key={i} className="text-xs text-ink-secondary">
               · {r}
             </li>
           ))}
@@ -42,20 +42,20 @@ export default function ApprovalWidget({
               setDecided('accepted');
               onAccept(approval.action);
             }}
-            className="px-3 py-1.5 rounded-lg bg-[#3182F6] text-white text-xs font-semibold hover:bg-[#1B6EEB] disabled:opacity-40 transition-colors"
+            className="px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary-hover disabled:opacity-40 transition-colors"
           >
             {approval.label} →
           </button>
           <button
             disabled={disabled}
             onClick={() => setDecided('declined')}
-            className="px-3 py-1.5 rounded-lg border border-[#E5E8EB] dark:border-[#2D3748] text-[#4E5968] dark:text-[#9CA3AF] text-xs font-semibold hover:bg-[#F2F4F6] dark:hover:bg-[#252D3D] disabled:opacity-40 transition-colors"
+            className="px-3 py-1.5 rounded-lg border border-line text-ink-secondary text-xs font-semibold hover:bg-accent disabled:opacity-40 transition-colors"
           >
             나중에
           </button>
         </div>
       ) : (
-        <p className="text-xs text-[#8B95A1] dark:text-[#6B7280]">
+        <p className="text-xs text-ink-tertiary">
           {decided === 'accepted' ? '진행할게요.' : '알겠어요. 필요할 때 다시 말씀해주세요.'}
         </p>
       )}

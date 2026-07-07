@@ -8,7 +8,7 @@ import { api } from '@/lib/api';
 import { formatKST } from '@/lib/datetime';
 
 const cardCls =
-  'mt-1 w-full rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-[#F9FAFB] dark:bg-[#1C2333] p-4';
+  'mt-1 w-full rounded-xl border border-line bg-surface-1 p-4';
 
 type Row = { id: string; title: string; status?: string; created_at?: string; sample_size?: number };
 
@@ -69,8 +69,8 @@ export default function AnalysisSummaryWidget({ projectId }: { projectId?: strin
   if (loading) {
     return (
       <div className={cardCls}>
-        <div className="flex items-center gap-2 text-sm text-[#8B95A1]">
-          <span className="w-4 h-4 border-2 border-[#E5E8EB] dark:border-[#2D3748] border-t-[#3182F6] dark:border-t-[#5B9DF9] rounded-full animate-spin" />
+        <div className="flex items-center gap-2 text-sm text-ink-tertiary">
+          <span className="w-4 h-4 border-2 border-line border-t-[#3182F6] dark:border-t-[#5B9DF9] rounded-full animate-spin" />
           성과를 분석하고 있어요...
         </div>
       </div>
@@ -91,52 +91,52 @@ export default function AnalysisSummaryWidget({ projectId }: { projectId?: strin
   const recentSims = sims.slice(0, 3);
   const recentGens = gens.slice(0, 3);
 
-  const statCls = 'rounded-lg bg-white dark:bg-[#252D3D] px-3 py-2.5';
-  const numCls = 'text-lg font-bold text-[#191F28] dark:text-[#F2F4F6]';
-  const capCls = 'text-[11px] text-[#8B95A1] dark:text-[#6B7280]';
+  const statCls = 'rounded-lg bg-surface-2 px-3 py-2.5';
+  const numCls = 'text-lg font-bold text-ink';
+  const capCls = 'text-[11px] text-ink-tertiary';
 
   return (
     <div className={cardCls}>
-      <p className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6] mb-3">
+      <p className="text-sm font-semibold text-ink mb-3">
         📊 활동 요약
       </p>
       {sims.length === 0 && gens.length === 0 ? (
-        <p className="text-[12px] text-[#8B95A1]">아직 이 프로젝트의 시뮬레이션·생성 기록이 없어요.</p>
+        <p className="text-[12px] text-ink-tertiary">아직 이 프로젝트의 시뮬레이션·생성 기록이 없어요.</p>
       ) : (
         <>
           <div className="grid grid-cols-2 gap-2 mb-3">
             <div className={statCls}>
               <p className={numCls}>
                 {sims.length}
-                <span className="text-[11px] font-normal text-[#8B95A1]"> 건</span>
+                <span className="text-[11px] font-normal text-ink-tertiary"> 건</span>
               </p>
               <p className={capCls}>시뮬레이션 (완료 {simDone})</p>
             </div>
             <div className={statCls}>
               <p className={numCls}>
                 {gens.length}
-                <span className="text-[11px] font-normal text-[#8B95A1]"> 건</span>
+                <span className="text-[11px] font-normal text-ink-tertiary"> 건</span>
               </p>
               <p className={capCls}>광고 생성 (완료 {genDone}{genFailed ? ` · 실패 ${genFailed}` : ''})</p>
             </div>
             <div className={statCls}>
               <p className={numCls}>
                 {personas.toLocaleString()}
-                <span className="text-[11px] font-normal text-[#8B95A1]"> 명</span>
+                <span className="text-[11px] font-normal text-ink-tertiary"> 명</span>
               </p>
               <p className={capCls}>누적 가상 소비자</p>
             </div>
             <div className={statCls}>
               <p className={numCls}>
                 {sims.length + gens.length}
-                <span className="text-[11px] font-normal text-[#8B95A1]"> 건</span>
+                <span className="text-[11px] font-normal text-ink-tertiary"> 건</span>
               </p>
               <p className={capCls}>전체 실행</p>
             </div>
           </div>
           {recentSims.length > 0 && (
             <div className="mb-2">
-              <p className="text-[11px] font-semibold text-[#8B95A1] mb-1">최근 시뮬레이션</p>
+              <p className="text-[11px] font-semibold text-ink-tertiary mb-1">최근 시뮬레이션</p>
               <ul className="space-y-1">
                 {recentSims.map(s => (
                   <li key={s.id}>
@@ -144,8 +144,8 @@ export default function AnalysisSummaryWidget({ projectId }: { projectId?: strin
                       onClick={() => router.push(`/simulation/${s.id}`)}
                       className="w-full flex items-center justify-between gap-2 text-[12px] text-left rounded-lg px-2 py-1.5 hover:bg-white dark:hover:bg-[#252D3D] transition-colors"
                     >
-                      <span className="truncate text-[#191F28] dark:text-[#F2F4F6]">{s.title}</span>
-                      <span className="shrink-0 text-[11px] text-[#8B95A1]">{fmtDate(s.created_at)}</span>
+                      <span className="truncate text-ink">{s.title}</span>
+                      <span className="shrink-0 text-[11px] text-ink-tertiary">{fmtDate(s.created_at)}</span>
                     </button>
                   </li>
                 ))}
@@ -154,7 +154,7 @@ export default function AnalysisSummaryWidget({ projectId }: { projectId?: strin
           )}
           {recentGens.length > 0 && (
             <div>
-              <p className="text-[11px] font-semibold text-[#8B95A1] mb-1">최근 광고 생성</p>
+              <p className="text-[11px] font-semibold text-ink-tertiary mb-1">최근 광고 생성</p>
               <ul className="space-y-1">
                 {recentGens.map(g => (
                   <li key={g.id}>
@@ -162,8 +162,8 @@ export default function AnalysisSummaryWidget({ projectId }: { projectId?: strin
                       onClick={() => router.push(`/generations/${g.id}`)}
                       className="w-full flex items-center justify-between gap-2 text-[12px] text-left rounded-lg px-2 py-1.5 hover:bg-white dark:hover:bg-[#252D3D] transition-colors"
                     >
-                      <span className="truncate text-[#191F28] dark:text-[#F2F4F6]">{g.title}</span>
-                      <span className="shrink-0 text-[11px] text-[#8B95A1]">{fmtDate(g.created_at)}</span>
+                      <span className="truncate text-ink">{g.title}</span>
+                      <span className="shrink-0 text-[11px] text-ink-tertiary">{fmtDate(g.created_at)}</span>
                     </button>
                   </li>
                 ))}

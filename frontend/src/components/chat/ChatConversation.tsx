@@ -58,10 +58,10 @@ const MD_CLS =
   '[&_h1]:text-base [&_h1]:font-bold [&_h1]:mt-2 [&_h1]:mb-1 ' +
   '[&_h2]:text-sm [&_h2]:font-bold [&_h2]:mt-2 [&_h2]:mb-1 ' +
   '[&_h3]:text-sm [&_h3]:font-semibold [&_h3]:mt-2 [&_h3]:mb-1 ' +
-  '[&_a]:text-[#3182F6] [&_a]:underline ' +
+  '[&_a]:text-primary [&_a]:underline ' +
   '[&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded [&_code]:bg-black/10 dark:[&_code]:bg-white/10 [&_code]:text-[0.85em] ' +
   '[&_pre]:my-1.5 [&_pre]:p-2.5 [&_pre]:rounded-lg [&_pre]:bg-black/80 [&_pre]:text-white [&_pre]:overflow-x-auto [&_pre_code]:bg-transparent [&_pre_code]:p-0 ' +
-  '[&_blockquote]:border-l-2 [&_blockquote]:border-[#B0B8C1] [&_blockquote]:pl-3 [&_blockquote]:text-[#4E5968] dark:[&_blockquote]:text-[#8B95A1] ' +
+  '[&_blockquote]:border-l-2 [&_blockquote]:border-[#B0B8C1] [&_blockquote]:pl-3 [&_blockquote]:text-ink-secondary dark:[&_blockquote]:text-ink-tertiary ' +
   '[&_table]:my-1.5 [&_table]:border-collapse [&_th]:border [&_td]:border [&_th]:border-[#D1D6DB] [&_td]:border-[#D1D6DB] [&_th]:px-2 [&_th]:py-1 [&_td]:px-2 [&_td]:py-1';
 
 function ChatMarkdown({ content }: { content: string }) {
@@ -328,7 +328,7 @@ function SpeakerIcon() {
 function TypingIndicator() {
   return (
     <div className='flex gap-3 justify-start'>
-      <div className='w-7 h-7 shrink-0 flex items-center justify-center rounded-lg bg-[#EBF3FF] dark:bg-[#1E3A5F] text-[#3182F6] mt-1'>
+      <div className='w-7 h-7 shrink-0 flex items-center justify-center rounded-lg bg-primary-subtle text-primary mt-1'>
         <svg
           width='14'
           height='14'
@@ -341,7 +341,7 @@ function TypingIndicator() {
           <path d='M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z' />
         </svg>
       </div>
-      <div className='px-4 py-3 rounded-2xl rounded-bl-md bg-[#F2F4F6] dark:bg-[#252D3D] flex items-center gap-1.5'>
+      <div className='px-4 py-3 rounded-2xl rounded-bl-md bg-surface-1 flex items-center gap-1.5'>
         <span className='w-2 h-2 rounded-full bg-[#8B95A1] dark:bg-[#6B7280] animate-bounce [animation-delay:-0.3s]' />
         <span className='w-2 h-2 rounded-full bg-[#8B95A1] dark:bg-[#6B7280] animate-bounce [animation-delay:-0.15s]' />
         <span className='w-2 h-2 rounded-full bg-[#8B95A1] dark:bg-[#6B7280] animate-bounce' />
@@ -1518,7 +1518,7 @@ export default function ChatConversation({
           onClick={scrollToBottom}
           aria-label='맨 아래로'
           title='맨 아래로'
-          className='absolute bottom-[88px] right-4 z-20 w-9 h-9 flex items-center justify-center rounded-full bg-white dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748] text-[#4E5968] dark:text-[#9CA3AF] shadow-md hover:text-[#3182F6] hover:border-[#3182F6] transition-colors'>
+          className='absolute bottom-[88px] right-4 z-20 w-9 h-9 flex items-center justify-center rounded-full bg-card border border-line text-ink-secondary shadow-md hover:text-primary hover:border-primary transition-colors'>
           <svg
             width='18'
             height='18'
@@ -1535,14 +1535,14 @@ export default function ChatConversation({
       )}
       {/* 완료 토스트(P9) — 입력창 위 중앙에 잠깐 나타났다 사라짐 */}
       {toast && (
-        <div className='chat-pop pointer-events-none absolute bottom-24 left-1/2 -translate-x-1/2 z-30 px-4 py-2 rounded-full bg-[#191F28] dark:bg-[#F2F4F6] text-white dark:text-[#191F28] text-sm font-medium shadow-lg'>
+        <div className='chat-pop pointer-events-none absolute bottom-24 left-1/2 -translate-x-1/2 z-30 px-4 py-2 rounded-full bg-[#191F28] dark:bg-[#F2F4F6] text-white text-sm font-medium shadow-lg'>
           {toast}
         </div>
       )}
       {messages.length === 0 ? (
         /* ── Welcome state ── */
         <div className='flex-1 flex flex-col items-center justify-center px-4 pb-10 overflow-y-auto'>
-          <div className='mb-2 w-10 h-10 flex items-center justify-center rounded-2xl bg-[#EBF3FF] dark:bg-[#1E3A5F]'>
+          <div className='mb-2 w-10 h-10 flex items-center justify-center rounded-2xl bg-primary-subtle'>
             <svg
               width='20'
               height='20'
@@ -1555,10 +1555,10 @@ export default function ChatConversation({
               <path d='M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z' />
             </svg>
           </div>
-          <h2 className='text-lg font-bold text-[#191F28] dark:text-[#F2F4F6] mb-2 mt-3'>
+          <h2 className='text-lg font-bold text-ink mb-2 mt-3'>
             무엇을 도와드릴까요?
           </h2>
-          <p className='text-sm text-[#8B95A1] dark:text-[#6B7280] mb-8 text-center leading-relaxed'>
+          <p className='text-sm text-ink-tertiary mb-8 text-center leading-relaxed'>
             아래에서 바로 시작하거나,
             <br />
             광고에 대해 무엇이든 물어보세요
@@ -1569,17 +1569,17 @@ export default function ChatConversation({
               onClick={() =>
                 runSlashCommand(nextSuggest === 'improve' ? '/제너레이터' : '/시뮬레이션')
               }
-              className='w-full max-w-md mb-3 flex items-center gap-3 p-3 rounded-xl border border-[#3182F6]/30 bg-[#EBF3FF] dark:bg-[#1E3A5F]/40 text-left hover:border-[#3182F6] transition-all'>
+              className='w-full max-w-md mb-3 flex items-center gap-3 p-3 rounded-xl border border-primary/30 bg-primary-subtle/40 text-left hover:border-primary transition-all'>
               <span className='text-lg shrink-0'>
                 {nextSuggest === 'improve' ? '✨' : '🧪'}
               </span>
               <span className='min-w-0'>
-                <span className='block text-sm font-semibold text-[#3182F6]'>
+                <span className='block text-sm font-semibold text-primary'>
                   {nextSuggest === 'improve'
                     ? '방금 시뮬레이션을 돌리셨네요 — 개선하시겠어요?'
                     : '광고 시안을 만드셨네요 — 시뮬레이션 해보시겠어요?'}
                 </span>
-                <span className='block text-[12px] text-[#4E5968] dark:text-[#9CA3AF] truncate'>
+                <span className='block text-[12px] text-ink-secondary truncate'>
                   {nextSuggest === 'improve'
                     ? '결과를 반영해 개선 시안을 만들어 드릴게요.'
                     : '새 시안의 소비자 반응을 예측해 드릴게요.'}
@@ -1592,7 +1592,7 @@ export default function ChatConversation({
               <button
                 key={a.cmd}
                 onClick={() => runSlashCommand(a.cmd)}
-                className='p-3 text-center text-sm font-medium text-[#4E5968] dark:text-[#9CA3AF] bg-[#F9FAFB] dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748] rounded-xl hover:border-[#3182F6] hover:text-[#3182F6] hover:bg-[#EBF3FF] dark:hover:bg-[#1E3A5F] transition-all'>
+                className='p-3 text-center text-sm font-medium text-ink-secondary bg-surface-1 border border-line rounded-xl hover:border-primary hover:text-primary hover:bg-primary-subtle transition-all'>
                 {a.label}
               </button>
             ))}
@@ -1640,7 +1640,7 @@ export default function ChatConversation({
                   key={i}
                   className={`chat-pop flex gap-3 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                   {msg.role === 'assistant' && (
-                    <div className='w-7 h-7 shrink-0 flex items-center justify-center rounded-lg bg-[#EBF3FF] dark:bg-[#1E3A5F] text-[#3182F6] mt-1'>
+                    <div className='w-7 h-7 shrink-0 flex items-center justify-center rounded-lg bg-primary-subtle text-primary mt-1'>
                       <svg
                         width='14'
                         height='14'
@@ -1660,7 +1660,7 @@ export default function ChatConversation({
                       <span
                         className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${
                           msg.meta.source === 'management'
-                            ? 'bg-[#EBF3FF] text-[#3182F6] dark:bg-[#1E3A5F] dark:text-[#7BB4F5]'
+                            ? 'bg-[#EBF3FF] text-primary dark:bg-[#1E3A5F] dark:text-[#7BB4F5]'
                             : 'bg-[#F2E9FF] text-[#7C3AED] dark:bg-[#2E1F47] dark:text-[#C4A8F5]'
                         }`}>
                         {msg.meta.source === 'management' ? '⚙' : '🧠'}{' '}
@@ -1672,7 +1672,7 @@ export default function ChatConversation({
                       <img
                         src={fullUrl(msg.imageUrl)}
                         alt='첨부 이미지'
-                        className='max-w-[200px] max-h-[200px] rounded-2xl rounded-br-md object-cover border border-[#E5E8EB] dark:border-[#2D3748]'
+                        className='max-w-[200px] max-h-[200px] rounded-2xl rounded-br-md object-cover border border-line'
                       />
                     )}
                     {msg.meta?.error ? (
@@ -1692,8 +1692,8 @@ export default function ChatConversation({
                       <div
                         className={`px-4 py-3 rounded-2xl ${
                           msg.role === 'user'
-                            ? 'text-sm leading-relaxed whitespace-pre-wrap bg-[#3182F6] text-white rounded-br-md'
-                            : 'bg-[#F2F4F6] dark:bg-[#252D3D] text-[#191F28] dark:text-[#F2F4F6] rounded-bl-md'
+                            ? 'text-sm leading-relaxed whitespace-pre-wrap bg-primary text-primary-foreground rounded-br-md'
+                            : 'bg-surface-1 text-ink rounded-bl-md'
                         }`}>
                         {msg.role === 'assistant' ? (
                           <ChatMarkdown content={msg.content} />
@@ -1707,7 +1707,7 @@ export default function ChatConversation({
                     )}
                     {msg.created_at && (
                       <span
-                        className='px-1 text-[10px] text-[#B0B8C1] dark:text-[#4B5563]'
+                        className='px-1 text-[10px] text-ink-muted'
                         title={formatKSTFull(msg.created_at)}>
                         {formatRelativeKST(msg.created_at)}
                       </span>
@@ -1718,11 +1718,11 @@ export default function ChatConversation({
                       !msg.meta?.error &&
                       !!msg.content &&
                       !isStreamingMsg && (
-                        <div className='self-start mt-0.5 flex items-center gap-2 text-[#B0B8C1] dark:text-[#6B7280]'>
+                        <div className='self-start mt-0.5 flex items-center gap-2 text-ink-muted'>
                           <button
                             onClick={() => copyMessage(i, msg.content)}
                             title='복사'
-                            className='inline-flex items-center gap-1 text-[11px] font-semibold hover:text-[#3182F6] transition-colors'>
+                            className='inline-flex items-center gap-1 text-[11px] font-semibold hover:text-primary transition-colors'>
                             {copiedIdx === i ? '✓ 복사됨' : '복사'}
                           </button>
                           {i === messages.length - 1 && lastSendRef.current && (
@@ -1735,7 +1735,7 @@ export default function ChatConversation({
                               }
                               disabled={isStreaming}
                               title='재생성'
-                              className='inline-flex items-center gap-1 text-[11px] font-semibold hover:text-[#3182F6] transition-colors disabled:opacity-40'>
+                              className='inline-flex items-center gap-1 text-[11px] font-semibold hover:text-primary transition-colors disabled:opacity-40'>
                               ↻ 재생성
                             </button>
                           )}
@@ -1758,7 +1758,7 @@ export default function ChatConversation({
                                 isSpeaking ? stopSpeak() : speakText(msg.content)
                               }
                               title={isSpeaking ? '읽기 중지' : '읽어주기'}
-                              className='inline-flex items-center gap-1 text-[11px] font-semibold hover:text-[#3182F6] transition-colors'>
+                              className='inline-flex items-center gap-1 text-[11px] font-semibold hover:text-primary transition-colors'>
                               <SpeakerIcon />
                               {isSpeaking ? '중지' : '읽기'}
                             </button>
@@ -1774,7 +1774,7 @@ export default function ChatConversation({
                               : `/generations/${msg.result!.id}`
                           )
                         }
-                        className='self-start mt-0.5 inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-[#3182F6]/30 text-[#3182F6] text-xs font-semibold hover:bg-[#EBF3FF] dark:hover:bg-[#1E3A5F] transition-colors'>
+                        className='self-start mt-0.5 inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border border-primary/30 text-primary text-xs font-semibold hover:bg-primary-subtle transition-colors'>
                         {msg.result.kind === 'sim'
                           ? '시뮬레이션 결과 보기'
                           : '생성 결과 보기'}{' '}
@@ -1988,7 +1988,7 @@ export default function ChatConversation({
       )}
 
       {/* ── Input bar ── */}
-      <div className='border-t border-[#E5E8EB] dark:border-[#2D3748] bg-white dark:bg-[#1C2333] px-4 py-3 transition-colors shrink-0'>
+      <div className='border-t border-line bg-card px-4 py-3 transition-colors shrink-0'>
         {voiceError && (
           <div className='max-w-2xl mx-auto mb-2 flex items-start gap-2 rounded-lg bg-[#FEF3F2] dark:bg-[#3A1A1F] px-3 py-2 text-xs text-[#B42318] dark:text-[#FDA29B]'>
             <span className='flex-1'>{voiceError}</span>
@@ -2006,11 +2006,11 @@ export default function ChatConversation({
             <img
               src={attachedPreview}
               alt='첨부 미리보기'
-              className='w-14 h-14 rounded-lg object-cover border border-[#E5E8EB] dark:border-[#2D3748]'
+              className='w-14 h-14 rounded-lg object-cover border border-line'
             />
             <button
               onClick={() => attachImage(null)}
-              className='text-xs text-[#8B95A1] hover:text-[#F04452]'>
+              className='text-xs text-ink-tertiary hover:text-[#F04452]'>
               이미지 제거 ✕
             </button>
           </div>
@@ -2048,14 +2048,14 @@ export default function ChatConversation({
               key={chip.label}
               onClick={chip.run}
               disabled={isStreaming}
-              className='shrink-0 px-3 py-1.5 rounded-full border border-[#E5E8EB] dark:border-[#2D3748] text-xs text-[#4E5968] dark:text-[#9CA3AF] hover:border-[#3182F6] hover:text-[#3182F6] hover:bg-[#EBF3FF] dark:hover:bg-[#1E3A5F] disabled:opacity-40 transition-all whitespace-nowrap'>
+              className='shrink-0 px-3 py-1.5 rounded-full border border-line text-xs text-ink-secondary hover:border-primary hover:text-primary hover:bg-primary-subtle disabled:opacity-40 transition-all whitespace-nowrap'>
               {chip.label}
             </button>
           ))}
         </div>
         <div className='max-w-2xl mx-auto flex items-end gap-2 relative'>
           {slashMatches.length > 0 && (
-            <div className='absolute bottom-full left-0 right-0 mb-2 bg-white dark:bg-[#252D3D] border border-[#E5E8EB] dark:border-[#2D3748] rounded-xl shadow-lg overflow-hidden z-10'>
+            <div className='absolute bottom-full left-0 right-0 mb-2 bg-surface-2 border border-line rounded-xl shadow-lg overflow-hidden z-10'>
               {slashMatches.map((c, i) => {
                 const active =
                   i === Math.min(slashIndex, slashMatches.length - 1);
@@ -2069,13 +2069,13 @@ export default function ChatConversation({
                     onMouseEnter={() => setSlashIndex(i)}
                     className={`w-full flex flex-col items-start px-4 py-2.5 text-left transition-colors ${
                       active
-                        ? 'bg-[#EBF3FF] dark:bg-[#1E3A5F]'
-                        : 'hover:bg-[#F9FAFB] dark:hover:bg-[#1C2333]'
+                        ? 'bg-primary-subtle'
+                        : 'hover:bg-accent'
                     }`}>
-                    <span className='text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]'>
+                    <span className='text-sm font-semibold text-ink'>
                       {c.label}
                     </span>
-                    <span className='text-xs text-[#8B95A1] dark:text-[#6B7280]'>
+                    <span className='text-xs text-ink-tertiary'>
                       {c.desc}
                     </span>
                   </button>
@@ -2087,7 +2087,7 @@ export default function ChatConversation({
             onClick={() => fileInputRef.current?.click()}
             disabled={isStreaming}
             title='이미지 첨부'
-            className='p-3 rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] text-[#8B95A1] hover:text-[#3182F6] hover:border-[#3182F6] disabled:opacity-30 transition-all shrink-0'>
+            className='p-3 rounded-xl border border-line text-ink-tertiary hover:text-primary hover:border-primary disabled:opacity-30 transition-all shrink-0'>
             <svg
               width='18'
               height='18'
@@ -2144,7 +2144,7 @@ export default function ChatConversation({
             placeholder={inputPlaceholder}
             rows={1}
             disabled={isStreaming}
-            className='flex-1 px-4 py-3 rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] text-sm text-[#191F28] dark:text-[#F2F4F6] placeholder-[#B0B8C1] dark:placeholder-[#4B5563] focus:outline-none focus:border-[#3182F6] focus:ring-2 focus:ring-[#3182F6]/10 transition-colors resize-none overflow-y-auto bg-white dark:bg-[#252D3D] leading-relaxed disabled:opacity-60'
+            className='flex-1 px-4 py-3 rounded-xl border border-line text-sm text-ink placeholder:text-ink-muted dark:placeholder-[#4B5563] focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-colors resize-none overflow-y-auto bg-surface-2 leading-relaxed disabled:opacity-60'
             style={{ maxHeight: '120px' }}
           />
           {/* 음성 입력(STT) — Web Speech API, 무료. 미지원 브라우저는 숨김 */}
@@ -2156,7 +2156,7 @@ export default function ChatConversation({
               className={`p-3 rounded-xl border transition-all shrink-0 ${
                 listening
                   ? 'border-[#F04452] bg-[#FEE] text-[#F04452] animate-pulse dark:bg-[#3A1A1F]'
-                  : 'border-[#E5E8EB] dark:border-[#2D3748] text-[#8B95A1] hover:text-[#3182F6] hover:border-[#3182F6]'
+                  : 'border-line text-ink-tertiary hover:text-primary hover:border-primary'
               }`}>
               <MicIcon />
             </button>
@@ -2173,8 +2173,8 @@ export default function ChatConversation({
               title={autoRead ? '자동 읽기 끄기' : '자동 읽기 켜기'}
               className={`p-3 rounded-xl border transition-all shrink-0 ${
                 autoRead
-                  ? 'border-[#3182F6] bg-[#EBF3FF] text-[#3182F6] dark:bg-[#1E3A5F]'
-                  : 'border-[#E5E8EB] dark:border-[#2D3748] text-[#8B95A1] hover:text-[#3182F6] hover:border-[#3182F6]'
+                  ? 'border-primary bg-[#EBF3FF] text-primary dark:bg-[#1E3A5F]'
+                  : 'border-line text-ink-tertiary hover:text-primary hover:border-primary'
               }`}>
               <SpeakerIcon />
             </button>
@@ -2198,7 +2198,7 @@ export default function ChatConversation({
             <button
               onClick={() => handleSend()}
               disabled={!input.trim()}
-              className='p-3 bg-[#3182F6] text-white rounded-xl hover:bg-[#1B6EEB] disabled:opacity-30 disabled:cursor-not-allowed transition-all shrink-0'>
+              className='p-3 bg-primary text-primary-foreground rounded-xl hover:bg-primary-hover disabled:opacity-30 disabled:cursor-not-allowed transition-all shrink-0'>
               <SendIcon />
             </button>
           )}

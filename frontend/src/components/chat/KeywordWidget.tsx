@@ -6,11 +6,11 @@ import { useState } from 'react';
 import { api } from '@/lib/api';
 
 const cardCls =
-  'mt-1 w-full rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-white dark:bg-[#1C2333] p-4';
+  'mt-1 w-full rounded-xl border border-line bg-card p-4';
 const labelCls =
-  'text-[11px] font-semibold text-[#8B95A1] dark:text-[#6B7280] mb-1 block';
+  'text-[11px] font-semibold text-ink-tertiary mb-1 block';
 const inputCls =
-  'w-full px-3 py-2 rounded-lg border border-[#E5E8EB] dark:border-[#2D3748] text-sm bg-white dark:bg-[#252D3D] text-[#191F28] dark:text-[#F2F4F6] focus:outline-none focus:border-[#3182F6]';
+  'w-full px-3 py-2 rounded-lg border border-line text-sm bg-surface-2 text-ink focus:outline-none focus:border-primary';
 
 // 클립보드 복사(P10 패턴) — Clipboard API + execCommand 폴백.
 async function copyText(text: string): Promise<boolean> {
@@ -102,8 +102,8 @@ export default function KeywordWidget({
         copied === text
           ? 'border-[#15803D] bg-[#EAFBF1] text-[#15803D] dark:bg-[#0F2A1C] dark:border-[#1B4D33] dark:text-[#4ADE80]'
           : kind === 'tag'
-            ? 'border-[#E5E8EB] bg-[#EBF3FF] text-[#3182F6] hover:border-[#3182F6] dark:bg-[#1E3A5F] dark:border-[#2D3748] dark:text-[#9CC4FF]'
-            : 'border-[#E5E8EB] bg-white text-[#4E5968] hover:border-[#3182F6] hover:text-[#3182F6] dark:bg-[#252D3D] dark:border-[#2D3748] dark:text-[#B0B8C1]'
+            ? 'border-line bg-[#EBF3FF] text-primary hover:border-primary dark:bg-[#1E3A5F] dark:text-[#9CC4FF]'
+            : 'border-line bg-white text-ink-secondary hover:border-primary hover:text-primary dark:bg-[#252D3D]'
       }`}>
       {copied === text ? '복사됨 ✓' : text}
     </button>
@@ -111,7 +111,7 @@ export default function KeywordWidget({
 
   return (
     <div className={cardCls}>
-      <p className='text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6] mb-3'>
+      <p className='text-sm font-semibold text-ink mb-3'>
         #️⃣ 해시태그·키워드 추천
       </p>
 
@@ -157,7 +157,7 @@ export default function KeywordWidget({
         <button
           onClick={generate}
           disabled={!canSubmit}
-          className='w-full py-2 rounded-lg bg-[#3182F6] text-white text-sm font-semibold hover:bg-[#1B6EEB] disabled:opacity-40 transition-colors'>
+          className='w-full py-2 rounded-lg bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary-hover disabled:opacity-40 transition-colors'>
           {loading ? '추천 중…' : result ? '다시 추천받기' : '키워드 추천받기'}
         </button>
       </div>
@@ -186,7 +186,7 @@ export default function KeywordWidget({
           )}
           <button
             onClick={copyAll}
-            className='w-full py-1.5 rounded-lg border border-[#E5E8EB] dark:border-[#2D3748] text-[12px] font-semibold text-[#4E5968] dark:text-[#B0B8C1] hover:border-[#3182F6] hover:text-[#3182F6] transition-colors'>
+            className='w-full py-1.5 rounded-lg border border-line text-[12px] font-semibold text-ink-secondary hover:border-primary hover:text-primary transition-colors'>
             {allCopied ? '전체 복사됨 ✓' : '전체 복사'}
           </button>
         </div>

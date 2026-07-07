@@ -182,11 +182,13 @@
 - [x] `/trash` (토큰화).
 
 ### 3.5 채팅 (약 30개 위젯)
-- [ ] `ChatConversation`·`ChatRouteView`·컨트롤러 셸 토큰화.
-- [ ] 입력창·메시지 버블·스트리밍 커서 정돈.
-- [ ] 시뮬/생성/분석/비교/토론 위젯들 카드 스타일 통일(토큰).
-- [ ] 승인·액션 카드류 정돈.
-- [ ] 알림/채팅 센터(`Center`·`AlarmCenter`·`ChatCenter`) 정돈.
+> chat+center 34개 tsx(8786줄·1162 hex) 뉴트럴+primary codemod 일괄, 아티팩트 프로그램 정리 후 0. 의미색·역할색·위젯 타입색 보존. build 통과. asdf 로그인 /chat·/chat/[project] 실렌더·콘솔 에러 0.
+- [x] `ChatConversation`·`ChatRouteView`·컨트롤러 셸 토큰화 (실렌더 검증 — 채팅 시작 게이트).
+- [x] 입력창·메시지 버블·스트리밍 커서 정돈 (토큰화; 버블 role색·typing-caret 유틸 유지).
+- [x] 시뮬/생성/분석/비교/토론 위젯들 카드 스타일 통일(토큰) — 전 위젯 codemod, 차트/의미색 보존.
+- [x] 승인·액션 카드류 정돈 (토큰화).
+- [x] 알림/채팅 센터(`Center`·`AlarmCenter`·`ChatCenter`) 정돈 (토큰화). ⚠️ center 데이터(`/api/center/*`)는 백엔드 asyncpg 인프라 500(qa-findings B1)로 라이브 블록 — UI 토큰화는 build/렌더로 검증.
+- 참고: 위젯 대다수는 AI 대화 생성 후 표시 → 셸·게이트 렌더로 검증, 위젯 자체는 codemod+build.
 
 ### 3.6 관리자 (9)
 - [x] `/admin/dashboard`(2.3 완료)·companies·manage-user·generations·chats·chat-log·inquiry·check — 전 admin 페이지 뉴트럴+primary codemod 토큰화(아티팩트 0, build 통과). dashboard는 2.3에서 실데이터 재구성.
@@ -275,6 +277,7 @@ git push origin --delete feat/front-fix
 - 2026-07-08 P0.4 ThemeProvider 확장+/themes 갤러리 완료 — data-theme localStorage 영속·에디터테마 다크강제, layout 인라인스크립트 FOUC 방지. 갤러리에서 14테마 스위처+프리미티브 실시간 반영 검증(콘솔 에러 0). ※ preview_screenshot은 이 환경에서 외부 폰트 CDN network-idle 대기로 타임아웃 → snapshot/inspect/eval로 검증 대체.
 - 2026-07-08 P0.5 공용 프리미티브 완료 — StatCard(델타색·스파크라인)·Section·EmptyState 신설, chart-theme 훅(테마색 Recharts), 타이포 유틸(.text-h1~caption). shadcn 20종 활용. Select은 파일명 충돌로 커스텀 유지.
 - 2026-07-08 P0.6 팔레트 갱신 완료 — 기본 `--point` 라이트 #8B5CF6 / 다크 #A78BFA로 갱신(globals.css :root·.dark), chart-theme fallback도 동기화. blue(기본) 테마는 point override 안 해 :root값 적용, mono/violet만 의도적 override 유지. preview eval 검증: light rgb(139,92,246)·dark rgb(167,139,250), 콘솔 에러 0.
+- 2026-07-08 P3.5 채팅 토큰화 — chat+center 34 tsx(8786줄·1162 hex) 뉴트럴+primary codemod 일괄, 아티팩트 프로그램 정리 후 0. 역할색·위젯색·의미색 보존. asdf 로그인 /chat(프로젝트 게이트)·/chat/[project](채팅 시작) 실렌더·콘솔 에러 0. build 통과. center 데이터는 asyncpg 인프라 500(B1) 블록.
 - 2026-07-08 P3.4/3.6/3.7/3.8 롱테일 화면 토큰화 — projects·my-org·profile·trash·admin(8)·company(5)·payment(3)·sign-in·privacy·terms·data-deletion 뉴트럴+primary codemod 일괄(23 파일, 아티팩트 2건 정리 후 0). /profile asdf 실렌더·콘솔 에러 0, /payment·/privacy·/terms 200. build 통과.
 - 2026-07-08 P3.3 매니지먼트 토큰화 — 10 페이지 + 21 컴포넌트 뉴트럴+primary codemod 일괄(파일당 최대 93 repl), 아티팩트 33건 프로그램 정리 후 0(hex+dark:token→테마토큰, orphan 0). 의미색·차트·플랫폼 브랜드색 보존. asdf 로그인 /manage/campaigns 실렌더(사이드바 하위메뉴·테이블/카드·warning 배너)·콘솔 에러 0. build 통과.
 - 2026-07-08 P3.2 생성기 토큰화 — generator/page(158)·generations/[id](58) 뉴트럴+primary codemod, 아티팩트 정리 후 0, 의미색 보존. asdf 로그인 /generator 입력폼(생성/개선 모드·형식·결과패널) 실렌더·콘솔 에러 0. build 통과. (dev+build 동시 .next 충돌 1회 겪고 preview 재시작으로 복구.)

@@ -134,12 +134,12 @@ export default function Center() {
   // 접힘 — 오른쪽 가장자리 세로 2버튼 띠(살짝 보이는 형태, 스펙 §3).
   if (!expanded) {
     return (
-      <div className="max-md:hidden fixed right-0 top-[100px] z-50 flex flex-col gap-1 rounded-l-xl border border-r-0 border-[#E5E8EB] bg-white p-1.5 shadow-lg dark:border-[#2D3748] dark:bg-[#1C2333]">
+      <div className="max-md:hidden fixed right-0 top-[100px] z-50 flex flex-col gap-1 rounded-l-xl border border-r-0 border-line bg-white p-1.5 shadow-lg dark:bg-[#1C2333]">
         <button
           type="button"
           onClick={() => openTab('chat')}
           aria-label="채팅 센터 열기"
-          className="relative flex h-10 w-10 items-center justify-center rounded-lg text-[#4E5968] hover:bg-[#F2F4F6] dark:text-[#9CA3AF] dark:hover:bg-[#252D3D]"
+          className="relative flex h-10 w-10 items-center justify-center rounded-lg text-ink-secondary hover:bg-[#F2F4F6] dark:hover:bg-[#252D3D]"
         >
           {ChatIcon}
           <Badge count={chatUnread} />
@@ -148,7 +148,7 @@ export default function Center() {
           type="button"
           onClick={() => openTab('alarm')}
           aria-label="알림 센터 열기"
-          className="relative flex h-10 w-10 items-center justify-center rounded-lg text-[#4E5968] hover:bg-[#F2F4F6] dark:text-[#9CA3AF] dark:hover:bg-[#252D3D]"
+          className="relative flex h-10 w-10 items-center justify-center rounded-lg text-ink-secondary hover:bg-[#F2F4F6] dark:hover:bg-[#252D3D]"
         >
           {BellIcon}
           <Badge count={alarmUnread} />
@@ -159,8 +159,8 @@ export default function Center() {
 
   // 펼침 — 우측 전체 높이 aside(본문 위에 덮음). 상단 두 버튼을 탭으로 전환(스펙 §3).
   return (
-    <aside className="max-md:hidden fixed right-0 top-0 z-50 flex h-full w-[400px] flex-col border-l border-[#E5E8EB] bg-white shadow-xl dark:border-[#2D3748] dark:bg-[#1C2333]">
-      <div className="flex items-center border-b border-[#E5E8EB] dark:border-[#2D3748]">
+    <aside className="max-md:hidden fixed right-0 top-0 z-50 flex h-full w-[400px] flex-col border-l border-line bg-white shadow-xl dark:bg-[#1C2333]">
+      <div className="flex items-center border-b border-line">
         <TabButton active={tab === 'chat'} count={chatUnread} onClick={() => persistTab('chat')} icon={ChatIcon}>
           채팅
         </TabButton>
@@ -171,7 +171,7 @@ export default function Center() {
           type="button"
           onClick={() => persistExpanded(false)}
           aria-label="센터 접기"
-          className="ml-auto mr-1 flex h-8 w-8 items-center justify-center rounded-lg text-[#8B95A1] hover:bg-[#F2F4F6] dark:text-[#6B7280] dark:hover:bg-[#252D3D]"
+          className="ml-auto mr-1 flex h-8 w-8 items-center justify-center rounded-lg text-ink-tertiary hover:bg-[#F2F4F6] dark:hover:bg-[#252D3D]"
         >
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
             <path d="M9 18l6-6-6-6" />
@@ -192,10 +192,10 @@ export default function Center() {
         {isAdmin && !orgId ? (
           // ADMIN 기업 미선택 — 두 센터 disable + 안내(스펙 §7). 상단 기업 드롭다운으로 선택 유도.
           <div className="flex flex-1 flex-col items-center justify-center gap-1 p-6 text-center">
-            <p className="text-sm font-medium text-[#191F28] dark:text-[#F2F4F6]">
+            <p className="text-sm font-medium text-ink">
               기업을 선택해주세요
             </p>
-            <p className="text-xs text-[#8B95A1] dark:text-[#6B7280]">
+            <p className="text-xs text-ink-tertiary">
               상단 기업 드롭다운에서 기업을 고르면 채팅·알림이 열립니다.
             </p>
           </div>
@@ -251,8 +251,8 @@ function TabButton({
       onClick={onClick}
       className={`relative flex flex-1 items-center justify-center gap-1.5 py-3 text-sm font-medium transition-colors ${
         active
-          ? 'border-b-2 border-[#3182F6] text-[#3182F6]'
-          : 'text-[#8B95A1] hover:text-[#4E5968] dark:text-[#6B7280] dark:hover:text-[#9CA3AF]'
+          ? 'border-b-2 border-primary text-primary'
+          : 'text-ink-tertiary hover:text-ink-secondary dark:hover:text-ink-secondary'
       }`}
     >
       <span className="relative">

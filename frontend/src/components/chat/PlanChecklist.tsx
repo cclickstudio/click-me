@@ -49,7 +49,7 @@ export default function PlanChecklist({ plan }: { plan?: PlanStep[] }) {
   if (!plan || plan.length === 0) return null;
   const done = plan.filter(p => p.status === 'completed').length;
   return (
-    <div className="mt-1 rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-[#F9FAFB] dark:bg-[#1C2333] px-3 py-2.5">
+    <div className="mt-1 rounded-xl border border-line bg-surface-1 px-3 py-2.5">
       <div className="flex items-center gap-1.5 mb-1.5">
         <svg
           width="13"
@@ -63,7 +63,7 @@ export default function PlanChecklist({ plan }: { plan?: PlanStep[] }) {
           <path d="M9 11l3 3L22 4" />
           <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
         </svg>
-        <span className="text-[11px] font-semibold text-[#4E5968] dark:text-[#9CA3AF]">
+        <span className="text-[11px] font-semibold text-ink-secondary">
           실행 계획 {done}/{plan.length}
         </span>
       </div>
@@ -74,10 +74,10 @@ export default function PlanChecklist({ plan }: { plan?: PlanStep[] }) {
             <span
               className={`text-xs leading-snug ${
                 p.status === 'completed'
-                  ? 'text-[#8B95A1] dark:text-[#6B7280] line-through'
+                  ? 'text-ink-tertiary line-through'
                   : p.status === 'in_progress'
-                    ? 'text-[#191F28] dark:text-[#F2F4F6] font-medium'
-                    : 'text-[#4E5968] dark:text-[#9CA3AF]'
+                    ? 'text-ink font-medium'
+                    : 'text-ink-secondary'
               }`}>
               {p.step}
             </span>

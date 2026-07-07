@@ -31,7 +31,7 @@ const STANCE: Record<DebateStance, { label: string; dot: string }> = {
 function avatarColor(role: string): string {
   if (role.includes('비판')) return 'bg-[#F04452]';
   if (role.includes('완주')) return 'bg-[#00C471]';
-  if (role.includes('피벗')) return 'bg-[#3182F6]';
+  if (role.includes('피벗')) return 'bg-primary';
   if (role.includes('마케팅')) return 'bg-[#00B8B8]';
   if (role.includes('전문가')) return 'bg-[#7C5CFC]';
   return 'bg-[#8B95A1]';
@@ -49,7 +49,7 @@ const STAGE_LABEL: Record<string, string> = {
 };
 
 const cardCls =
-  'mt-2 w-full rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-white dark:bg-[#1C2333] p-4';
+  'mt-2 w-full rounded-xl border border-line bg-card p-4';
 
 export default function DebateStreamWidget({
   runId,
@@ -178,14 +178,14 @@ export default function DebateStreamWidget({
   return (
     <div className={cardCls}>
       <div className='flex items-center gap-2 mb-2'>
-        <span className='text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]'>
+        <span className='text-sm font-semibold text-ink'>
           🗣️ AI 소비자 토론
         </span>
         {phase === 'running' && (
           <>
-            <div className='w-3.5 h-3.5 border-2 border-[#E5E8EB] dark:border-[#2D3748] border-t-[#3182F6] dark:border-t-[#5B9DF9] rounded-full animate-spin' />
-            <span className='text-[11px] text-[#8B95A1]'>{stageMsg}</span>
-            <span className='ml-auto text-[11px] text-[#8B95A1]'>{pct}%</span>
+            <div className='w-3.5 h-3.5 border-2 border-line border-t-[#3182F6] dark:border-t-[#5B9DF9] rounded-full animate-spin' />
+            <span className='text-[11px] text-ink-tertiary'>{stageMsg}</span>
+            <span className='ml-auto text-[11px] text-ink-tertiary'>{pct}%</span>
           </>
         )}
         {phase === 'done' && (
@@ -194,8 +194,8 @@ export default function DebateStreamWidget({
       </div>
 
       {topic && (
-        <p className='text-[12px] text-[#4E5968] dark:text-[#9CA3AF] mb-2 leading-snug'>
-          <span className='font-semibold text-[#3182F6]'>주제 </span>
+        <p className='text-[12px] text-ink-secondary mb-2 leading-snug'>
+          <span className='font-semibold text-primary'>주제 </span>
           {topic}
         </p>
       )}
@@ -207,7 +207,7 @@ export default function DebateStreamWidget({
           ref={logRef}
           className='max-h-[340px] overflow-y-auto space-y-3 pr-1'>
           {utterances.length === 0 && phase === 'running' && (
-            <p className='text-[12px] text-[#B0B8C1] py-2'>
+            <p className='text-[12px] text-ink-muted py-2'>
               참가자들이 의견을 준비하고 있어요...
             </p>
           )}
@@ -221,31 +221,31 @@ export default function DebateStreamWidget({
                 </div>
                 <div className='min-w-0 flex-1'>
                   <div className='flex flex-wrap items-center gap-1.5 mb-0.5'>
-                    <span className='text-[11px] font-medium text-[#191F28] dark:text-[#F2F4F6]'>
+                    <span className='text-[11px] font-medium text-ink'>
                       {u.persona_name}
                     </span>
                     {u.role && (
-                      <span className='text-[10px] text-[#8B95A1] dark:text-[#6B7280]'>
+                      <span className='text-[10px] text-ink-tertiary'>
                         {u.role}
                       </span>
                     )}
-                    <span className='flex items-center gap-1 text-[10px] text-[#8B95A1]'>
+                    <span className='flex items-center gap-1 text-[10px] text-ink-tertiary'>
                       <span className={`w-1.5 h-1.5 rounded-full ${st.dot}`} />
                       {st.label}
                     </span>
                     {u.round > 0 && (
-                      <span className='text-[10px] text-[#B0B8C1]'>
+                      <span className='text-[10px] text-ink-muted'>
                         R{u.round} {u.phase}
                       </span>
                     )}
                   </div>
-                  <div className='inline-block px-3 py-2 rounded-2xl rounded-tl-sm bg-[#F9FAFB] dark:bg-[#252D3D] border border-[#E5E8EB] dark:border-[#2D3748]'>
-                    <p className='text-[13px] text-[#191F28] dark:text-[#F2F4F6] leading-relaxed whitespace-pre-wrap'>
+                  <div className='inline-block px-3 py-2 rounded-2xl rounded-tl-sm bg-surface-1 border border-line'>
+                    <p className='text-[13px] text-ink leading-relaxed whitespace-pre-wrap'>
                       {u.text}
                     </p>
                   </div>
                   {u.lever && (
-                    <p className='text-[11px] text-[#B0B8C1] dark:text-[#4B5563] mt-0.5 pl-1'>
+                    <p className='text-[11px] text-ink-muted mt-0.5 pl-1'>
                       개선 레버: {u.lever}
                     </p>
                   )}
@@ -256,7 +256,7 @@ export default function DebateStreamWidget({
           {summaries.map((s, i) => (
             <p
               key={`sum-${i}`}
-              className='text-[11px] text-center text-[#8B95A1] dark:text-[#6B7280] border-t border-dashed border-[#E5E8EB] dark:border-[#2D3748] pt-2'>
+              className='text-[11px] text-center text-ink-tertiary border-t border-dashed border-line pt-2'>
               R{s.round} 정리 · {s.text}
             </p>
           ))}
@@ -272,7 +272,7 @@ export default function DebateStreamWidget({
                 setSummaryShown(true);
                 onSummary?.(runId);
               }}
-              className='w-full py-2 rounded-lg border border-[#3182F6]/30 text-[#3182F6] text-sm font-semibold hover:bg-[#EBF3FF] dark:hover:bg-[#1E3A5F] transition-colors'>
+              className='w-full py-2 rounded-lg border border-primary/30 text-primary text-sm font-semibold hover:bg-primary-subtle transition-colors'>
               📝 토론 요약 보기
             </button>
           )}
@@ -283,7 +283,7 @@ export default function DebateStreamWidget({
                 없이 이 시안으로 진행해도 좋아요.
               </div>
             ) : loop && !loop.canImprove ? (
-              <div className='rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-[#F9FAFB] dark:bg-[#252D3D] px-3 py-2.5 text-[12px] text-[#4E5968] dark:text-[#9CA3AF]'>
+              <div className='rounded-xl border border-line bg-surface-1 px-3 py-2.5 text-[12px] text-ink-secondary'>
                 ✅ 개선 루프 {loop.count}/{loop.max}턴을 다 돌았어요. 충분히 다듬었으니,
                 새 방향은 새 채팅에서 시작해 주세요.
               </div>

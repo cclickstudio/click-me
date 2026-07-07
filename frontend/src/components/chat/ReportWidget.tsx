@@ -20,7 +20,7 @@ export default function ReportWidget({
       href={href}
       target="_blank"
       rel="noopener noreferrer"
-      className="mt-1 inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-[#3182F6]/30 bg-[#F5F9FF] dark:bg-[#16243C] text-[#3182F6] text-sm font-semibold hover:bg-[#EBF3FF] dark:hover:bg-[#1E3A5F] transition-colors"
+      className="mt-1 inline-flex items-center gap-2 px-4 py-2.5 rounded-xl border border-primary/30 bg-[#F5F9FF] dark:bg-[#16243C] text-primary text-sm font-semibold hover:bg-primary-subtle transition-colors"
     >
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
         <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
