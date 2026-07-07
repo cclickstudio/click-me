@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import html
 import json
 import mimetypes
 from pathlib import Path
@@ -86,7 +87,7 @@ _HTML = r"""<!doctype html>
 <header>
   <div>
     <h1>광고 이미지 텍스트 정성 검수</h1>
-    <div class="dir">__META__</div>
+    <div class="dir">__HEADER__</div>
   </div>
   <div class="summary" id="summary">불러오는 중...</div>
   <div class="controls">
@@ -334,14 +335,16 @@ def main() -> None:
     meta_json = json.dumps(meta, ensure_ascii=False).replace("<", "\\u003c")
     title = f"검수 — {img_dir.name} ({len(items)}장)"
 
-    html = (
+    header_text = f"{img_dir}  ·  {len(items)}장  ·  method={manifest.get('method') or '?'}"
+    page = (
         _HTML.replace("__DATA__", data_json)
         .replace("__META__", meta_json)
+        .replace("__HEADER__", html.escape(header_text))
         .replace("__TITLE__", title)
     )
 
     out_path = Path(args.out) if args.out else img_dir / "review.html"
-    out_path.write_text(html, encoding="utf-8")
+    out_path.write_text(page, encoding="utf-8")
 
     size_mb = out_path.stat().st_size / 1_048_576
     print(f"검수 시트 생성 — {out_path}  (이미지 {len(items)}장, {size_mb:.1f}MB)")
