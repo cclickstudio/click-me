@@ -1,7 +1,7 @@
 'use client';
 // 도메인 시뮬레이터(/api/simulation/run) 동기 실행 화면 — 광고 입력 → 반응·루브릭·집계 표시
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useLayoutEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useProjects } from '@/components/ProjectContext';
 import { CreateProjectModal } from '@/components/ProjectPanel';
@@ -22,6 +22,15 @@ import type {
 
 type Step = 'setup' | 'running';
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
+// 진행 중 run_id(localStorage) — 다른 탭 이동 후 복귀 시 SSE 재구독용(백엔드는 asyncio.create_task로
+// 이미 이 페이지 SSE 연결과 무관하게 계속 돈다. 여기선 화면 복원만 담당).
+const ACTIVE_SIM_KEY = 'sim_page_active_run';
+const STAGE_LABEL: Record<string, string> = {
+  ad_analysis: '광고 해석 중...',
+  panel: '페르소나 패널 로드 중...',
+  reaction: '페르소나 반응 생성 중...',
+  aggregate: '결과 집계 중...',
+};
 
 type InputMode = 'image' | 'generated' | 'campaign';
 type GenderFilter = '' | 'M' | 'F';
@@ -382,8 +391,44 @@ export default function SimulationRunPage() {
   }>({ label: '', index: 0, total: 0 });
   const esRef = useRef<(() => void) | null>(null); // SSE 재연결 구독 close 함수(X2)
 
-  // 언마운트 시 스트림 정리.
+  // 언마운트 시 스트림 정리(백엔드 런 자체는 asyncio.create_task라 계속 돈다 — 화면 구독만 해제).
   useEffect(() => () => esRef.current?.(), []);
+
+  // 진행 중 run_id가 있으면(다른 탭 갔다 돌아온 경우 포함) setup 폼이 먼저 그려지는 깜빡임 없이
+  // running 화면부터 낙관적으로 띄운 뒤, 상태 조회 결과로 확정/롤백한다.
+  // useLayoutEffect — 브라우저 페인트 전에 반영(useEffect는 페인트 후라 setup 폼이 잠깐 보임).
+  useLayoutEffect(() => {
+    const raw = localStorage.getItem(ACTIVE_SIM_KEY);
+    if (!raw) return;
+    let stored: { run_id: string; mode: AnalysisMode } | null = null;
+    try {
+      stored = JSON.parse(raw);
+    } catch {
+      localStorage.removeItem(ACTIVE_SIM_KEY);
+      return;
+    }
+    if (!stored?.run_id) return;
+    setStep('running'); // 낙관적 — 아래 상태 조회로 확정하거나 되돌린다.
+    api.simulation
+      .status(stored.run_id)
+      .then(st => {
+        if (st.status !== 'RUNNING') {
+          localStorage.removeItem(ACTIVE_SIM_KEY);
+          setStep('setup');
+          return;
+        }
+        setAnalysisMode(stored!.mode);
+        setSimJob(stored!.run_id);
+        setPct(st.pct ?? 0);
+        setStageMsg(st.stage ? STAGE_LABEL[st.stage] ?? '' : '');
+        subscribeRun(stored!.run_id, stored!.mode);
+      })
+      .catch(() => {
+        // 상태 확인 실패 — 낙관적으로 띄운 화면은 되돌리되 키는 유지(다음 마운트에 재시도).
+        setStep('setup');
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // 광고 공통 필드(3-모드 공용) — start·compare 요청에 함께 실린다.
   function adCommonFields() {
@@ -451,6 +496,150 @@ export default function SimulationRunPage() {
     }
   }
 
+  // SSE 구독 — 최초 실행·타 탭 복귀 후 복원 공용(mode를 인자로 받아 완료 라우팅을 결정 —
+  // 복원 시엔 analysisMode state가 아직 갱신 전일 수 있어 클로저 값 대신 인자를 쓴다).
+  function subscribeRun(run_id: string, mode: AnalysisMode) {
+    // SSE 자동 재연결(X2) — 일시 끊김은 지수 backoff로 재구독, 정상 수신 시 리셋.
+    // 종료(completed/error)면 재연결 안 함. 최대 재시도 초과 시에만 에러 처리.
+    esRef.current = openReconnectingStream(
+      () => api.simulation.stream(run_id),
+      {
+        label: 'sim',
+        isTerminal: d =>
+          (d as SSEProgressEvent).event === 'completed' ||
+          (d as SSEProgressEvent).event === 'error',
+        onGiveUp: msg => {
+          setError(msg);
+          esRef.current = null;
+          setSimJob(null); // 동시실행 슬롯 해제
+          localStorage.removeItem(ACTIVE_SIM_KEY);
+          setStep('setup');
+        },
+        onEvent: raw => {
+          const data = raw as SSEProgressEvent;
+
+          if (data.event === 'error') {
+            setError(data.message ?? '시뮬레이션 진행 중 오류');
+            esRef.current = null;
+            setSimJob(null); // 동시실행 슬롯 해제
+            localStorage.removeItem(ACTIVE_SIM_KEY);
+            setStep('setup');
+            return;
+          }
+
+          if (typeof data.pct === 'number') setPct(data.pct);
+          // reaction 단계는 message("반응 N/total")가 더 구체적이라 우선.
+          if (data.stage)
+            setStageMsg(data.message ?? STAGE_LABEL[data.stage] ?? '');
+          // persona_set — 세그먼트 진행(segment_index/total) 표시.
+          if (
+            data.segment_label ||
+            typeof data.segment_index === 'number' ||
+            typeof data.segment_total === 'number'
+          ) {
+            setSegProgress(prev => ({
+              label: data.segment_label ?? prev.label,
+              index: data.segment_index ?? prev.index,
+              total: data.segment_total ?? prev.total,
+            }));
+          }
+
+          if (data.event !== 'completed') return;
+          setPct(100);
+          esRef.current = null;
+          setSimJob(null); // 동시실행 슬롯 해제
+          localStorage.removeItem(ACTIVE_SIM_KEY);
+
+          if (mode === 'persona_set') {
+            // 세그먼트 비교 — compareResult 후 sessionStorage 브리지로 넘긴다.
+            api.simulation
+              .compareResult(run_id)
+              .then(cmp => {
+                saveSimComparison(run_id, {
+                  comparison: cmp,
+                  adTitle: adTitle || undefined,
+                  adDescription: adContent || undefined,
+                });
+                router.push(`/simulation/${run_id}`);
+              })
+              .catch(e => {
+                setError(e instanceof Error ? e.message : '결과 조회 실패');
+                setStep('setup');
+              });
+            return;
+          }
+
+          api.simulation
+            .result(run_id)
+            .then((r: SimRunResult) => {
+              // DB 저장됐으면 simulation_id, 아니면 run_id로 키·라우팅(폴백).
+              const routeId = r.simulation_id ?? r.run_id;
+              saveSimResult(routeId, {
+                result: r,
+                adTitle: adTitle || undefined,
+                adDescription: adContent || undefined,
+                mode,
+              });
+              // N1 — 전용 페이지 직접 실행이 끝나면, 결과 + "개선해서 다시 돌리기" 제안을
+              // 자동 주입. 기존 대화에 끼워넣지 않고 '새 채팅 세션'을 만들어 거기에 제안한다.
+              const pid = selectedProject?.id;
+              if (pid) refreshDetails(pid); // 완료된 시뮬을 좌측 패널에 즉시 반영
+              if (pid && r.simulation_id) {
+                const injectKey = `n1_injected_${run_id}`; // 동일 run 1회만(중복 주입 방지)
+                if (!localStorage.getItem(injectKey)) {
+                  localStorage.setItem(injectKey, '1');
+                  const simId = r.simulation_id;
+                  const sessionTitle = `${adTitle || '광고'} 시뮬 결과·개선`;
+                  api.chat.createSession(pid, sessionTitle).then(created => {
+                    const sid = created.id;
+                    void api.chat
+                      .appendWidgets(sid, [
+                        {
+                          content: '시뮬레이션 결과예요.',
+                          meta: {
+                            source: 'simulation',
+                            label: '시뮬레이션',
+                            widget: {
+                              type: 'sim_result',
+                              data: { simulation_id: simId },
+                            },
+                          },
+                        },
+                        {
+                          content:
+                            '결과를 바탕으로 광고를 개선해서 다시 돌려볼까요?',
+                          meta: {
+                            source: 'simulation',
+                            label: '개선 제안',
+                            approval: {
+                              action: 'rerun_simulation',
+                              label: '개선해서 다시 돌리기',
+                              reasons: [
+                                '전용 페이지에서 직접 돌린 결과를 채팅에서 이어 개선할 수 있어요.',
+                              ],
+                            },
+                          },
+                        },
+                      ])
+                      .then(() => {
+                        // N2 — 패널이 닫혀 있으면 안읽음 뱃지를 올린다(2건 주입 → +1, 알림은 1회).
+                        if (!floatingOpenRef.current) pushUnread();
+                      })
+                      .catch(() => {});
+                  }).catch(() => {});
+                }
+              }
+              router.push(`/simulation/${routeId}`);
+            })
+            .catch(e => {
+              setError(e instanceof Error ? e.message : '결과 조회 실패');
+              setStep('setup');
+            });
+        },
+      }
+    );
+  }
+
   async function run() {
     // 동시실행 제한 — 시뮬은 한 번에 하나(채팅 위젯과 store 공유).
     if (getJobs().sim) {
@@ -505,150 +694,9 @@ export default function SimulationRunPage() {
       }
 
       setSimJob(run_id); // 동시실행 슬롯 점유(시뮬 1개 제한)
-
-      const STAGE_LABEL: Record<string, string> = {
-        ad_analysis: '광고 해석 중...',
-        panel: '페르소나 패널 로드 중...',
-        reaction: '페르소나 반응 생성 중...',
-        aggregate: '결과 집계 중...',
-      };
-
-      // SSE 자동 재연결(X2) — 일시 끊김은 지수 backoff로 재구독, 정상 수신 시 리셋.
-      // 종료(completed/error)면 재연결 안 함. 최대 재시도 초과 시에만 에러 처리.
-      esRef.current = openReconnectingStream(
-        () => api.simulation.stream(run_id),
-        {
-          label: 'sim',
-          isTerminal: d =>
-            (d as SSEProgressEvent).event === 'completed' ||
-            (d as SSEProgressEvent).event === 'error',
-          onGiveUp: msg => {
-            setError(msg);
-            esRef.current = null;
-            setSimJob(null); // 동시실행 슬롯 해제
-            setStep('setup');
-          },
-          onEvent: raw => {
-            const data = raw as SSEProgressEvent;
-
-            if (data.event === 'error') {
-              setError(data.message ?? '시뮬레이션 진행 중 오류');
-              esRef.current = null;
-              setSimJob(null); // 동시실행 슬롯 해제
-              setStep('setup');
-              return;
-            }
-
-            if (typeof data.pct === 'number') setPct(data.pct);
-            // reaction 단계는 message("반응 N/total")가 더 구체적이라 우선.
-            if (data.stage)
-              setStageMsg(data.message ?? STAGE_LABEL[data.stage] ?? '');
-            // persona_set — 세그먼트 진행(segment_index/total) 표시.
-            if (
-              data.segment_label ||
-              typeof data.segment_index === 'number' ||
-              typeof data.segment_total === 'number'
-            ) {
-              setSegProgress(prev => ({
-                label: data.segment_label ?? prev.label,
-                index: data.segment_index ?? prev.index,
-                total: data.segment_total ?? prev.total,
-              }));
-            }
-
-            if (data.event !== 'completed') return;
-            setPct(100);
-            esRef.current = null;
-            setSimJob(null); // 동시실행 슬롯 해제
-
-            if (analysisMode === 'persona_set') {
-              // 세그먼트 비교 — compareResult 후 sessionStorage 브리지로 넘긴다.
-              api.simulation
-                .compareResult(run_id)
-                .then(cmp => {
-                  saveSimComparison(run_id, {
-                    comparison: cmp,
-                    adTitle: adTitle || undefined,
-                    adDescription: adContent || undefined,
-                  });
-                  router.push(`/simulation/${run_id}`);
-                })
-                .catch(e => {
-                  setError(e instanceof Error ? e.message : '결과 조회 실패');
-                  setStep('setup');
-                });
-              return;
-            }
-
-            api.simulation
-              .result(run_id)
-              .then((r: SimRunResult) => {
-                // DB 저장됐으면 simulation_id, 아니면 run_id로 키·라우팅(폴백).
-                const routeId = r.simulation_id ?? r.run_id;
-                saveSimResult(routeId, {
-                  result: r,
-                  adTitle: adTitle || undefined,
-                  adDescription: adContent || undefined,
-                  mode: analysisMode,
-                });
-                // N1 — 전용 페이지 직접 실행이 끝나면, 결과 + "개선해서 다시 돌리기" 제안을
-                // 자동 주입. 기존 대화에 끼워넣지 않고 '새 채팅 세션'을 만들어 거기에 제안한다.
-                const pid = selectedProject?.id;
-                if (pid) refreshDetails(pid); // 완료된 시뮬을 좌측 패널에 즉시 반영
-                if (pid && r.simulation_id) {
-                  const injectKey = `n1_injected_${run_id}`; // 동일 run 1회만(중복 주입 방지)
-                  if (!localStorage.getItem(injectKey)) {
-                    localStorage.setItem(injectKey, '1');
-                    const simId = r.simulation_id;
-                    const sessionTitle = `${adTitle || '광고'} 시뮬 결과·개선`;
-                    api.chat.createSession(pid, sessionTitle).then(created => {
-                      const sid = created.id;
-                      void api.chat
-                        .appendWidgets(sid, [
-                          {
-                            content: '시뮬레이션 결과예요.',
-                            meta: {
-                              source: 'simulation',
-                              label: '시뮬레이션',
-                              widget: {
-                                type: 'sim_result',
-                                data: { simulation_id: simId },
-                              },
-                            },
-                          },
-                          {
-                            content:
-                              '결과를 바탕으로 광고를 개선해서 다시 돌려볼까요?',
-                            meta: {
-                              source: 'simulation',
-                              label: '개선 제안',
-                              approval: {
-                                action: 'rerun_simulation',
-                                label: '개선해서 다시 돌리기',
-                                reasons: [
-                                  '전용 페이지에서 직접 돌린 결과를 채팅에서 이어 개선할 수 있어요.',
-                                ],
-                              },
-                            },
-                          },
-                        ])
-                        .then(() => {
-                          // N2 — 패널이 닫혀 있으면 안읽음 뱃지를 올린다(2건 주입 → +1, 알림은 1회).
-                          if (!floatingOpenRef.current) pushUnread();
-                        })
-                        .catch(() => {});
-                    }).catch(() => {});
-                  }
-                }
-                router.push(`/simulation/${routeId}`);
-              })
-              .catch(e => {
-                setError(e instanceof Error ? e.message : '결과 조회 실패');
-                setStep('setup');
-              });
-          },
-        }
-      );
+      // 타 탭 이동 후 복귀 복원용 — 완료/에러 시 subscribeRun이 정리한다.
+      localStorage.setItem(ACTIVE_SIM_KEY, JSON.stringify({ run_id, mode: analysisMode }));
+      subscribeRun(run_id, analysisMode);
     } catch (e) {
       setSimJob(null); // 동시실행 슬롯 해제
       setError(e instanceof Error ? e.message : '시뮬레이션 실행 실패');
