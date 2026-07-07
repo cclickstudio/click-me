@@ -133,9 +133,10 @@
 - 검증: test(COMPANY) 실 Cognito 로그인 → org 스코프 KPI(클릭률 7.0%, 글로벌 7.4%와 달라 스코프 확인)·크레딧 충전 카드 렌더 스크린샷.
 
 ### 2.3 ADMIN 대시보드 `/admin/dashboard`
-- [ ] 시스템·조직·사용 지표 요약, 최근 채팅/생성 로그 요약.
-- [ ] **크레딧 UI 전면 미표시** — Admin=슈퍼유저(무제한, 모든 기능 자유 테스트). 크레딧 잔액·소진·충전 요소 렌더 금지.
-- [ ] 로딩/빈/에러 상태.
+- [x] 시스템·조직·사용 지표 요약, 최근 채팅/생성 로그 요약. (KPI 전체 사용자/조직/시뮬/생성 + 주간추이 차트 + 최근 가입(역할배지) + 최근 광고 생성 + 관리 바로가기. 하드코딩 placeholder "-"/"준비 중"을 실데이터로 교체.)
+- [x] **크레딧 UI 전면 미표시** — 크레딧 잔액·소진·충전 요소 렌더 금지. (대시보드 크레딧 카드 없음, 사이드바 CreditBalance도 ADMIN 숨김. 실검증: main에 '크레딧' 문자열 0.)
+- [x] 로딩/빈/에러 상태. (Skeleton KPI/차트/리스트, 빈 상태 문구, fetch 실패 graceful.)
+- 검증: admin 실 Cognito 로그인 → /admin/dashboard 사용자 11·조직 4·시뮬 66·생성 143·최근가입 렌더 스크린샷, 콘솔 에러 0.
 
 ---
 
@@ -270,6 +271,7 @@ git push origin --delete feat/front-fix
 - 2026-07-08 P0.4 ThemeProvider 확장+/themes 갤러리 완료 — data-theme localStorage 영속·에디터테마 다크강제, layout 인라인스크립트 FOUC 방지. 갤러리에서 14테마 스위처+프리미티브 실시간 반영 검증(콘솔 에러 0). ※ preview_screenshot은 이 환경에서 외부 폰트 CDN network-idle 대기로 타임아웃 → snapshot/inspect/eval로 검증 대체.
 - 2026-07-08 P0.5 공용 프리미티브 완료 — StatCard(델타색·스파크라인)·Section·EmptyState 신설, chart-theme 훅(테마색 Recharts), 타이포 유틸(.text-h1~caption). shadcn 20종 활용. Select은 파일명 충돌로 커스텀 유지.
 - 2026-07-08 P0.6 팔레트 갱신 완료 — 기본 `--point` 라이트 #8B5CF6 / 다크 #A78BFA로 갱신(globals.css :root·.dark), chart-theme fallback도 동기화. blue(기본) 테마는 point override 안 해 :root값 적용, mono/violet만 의도적 override 유지. preview eval 검증: light rgb(139,92,246)·dark rgb(167,139,250), 콘솔 에러 0.
+- 2026-07-08 P2.3 ADMIN 대시보드 완료 — 하드코딩 placeholder를 실데이터로 교체(전체 사용자/조직/시뮬/생성 KPI, 주간추이 차트, 최근 가입+역할배지, 최근 생성, 관리 바로가기). 크레딧 UI 전무. admin 실 로그인 검증(11명/4개/66/143), 콘솔 에러 0.
 - 2026-07-08 P2.1/2.2 USER·COMPANY 대시보드 완료 — 역할별 인사·CTA, StatCard KPI 델타(summary 신규 엔드포인트), Recharts 8주 주간추이, 활동피드(recent 병합), 역할별 크레딧(USER 읽기전용/COMPANY 충전/ADMIN 미표시), 3기능·최근내역·CLIO 토큰화, Skeleton/EmptyState. **3역할 모두 실 Cognito 폼 로그인 검증**(admin 글로벌 7.4%·company org 7.0%·user 팀 16.1% 스코프 차이로 role 스코프 실동작 확인). CreditBalance 역할 인지형 전환. DB에 test/asdf 유저 append(test-data.md). "지금 주목할 것" 알림은 3.3 이월.
 - 2026-07-08 P1.2 랜딩 완료 — page.tsx 전면 재설계(framer-motion 히어로 순차 페이드+스크롤 리빌+배경 blob 패럴랙스), lucide 아이콘, 사실기반 소셜프루프(81만/5요인/분포·CI), 토큰화·반응형(sm:). 라이트/다크 스크린샷 증거, 콘솔 에러 0. layout.tsx에 data-scroll-behavior="smooth" 추가(Next 경고 해소).
 - 2026-07-08 P1.1 앱 셸 완료 — AppLayout·Sidebar·3패널(Project/Company/Admin) 전면 토큰화, 인라인 SVG→lucide, 사이드바 active 좌측 바 인디케이터, framer-motion 페이지 전환. **ADMIN 실제 Cognito 폼 로그인 end-to-end 검증**(/dashboard 진입, 실데이터 66시뮬·143생성 렌더, 라이트/다크 셸 확인, 콘솔 에러 0, 네비게이션 전환 동작). ⚠️ 로컬 인증 환경 셋업 필요 — context-notes '검증 환경' 참조.
