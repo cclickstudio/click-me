@@ -868,6 +868,28 @@ export const api = {
         method: "POST",
         body: JSON.stringify(body),
       }),
+    replaceCreativeProposal: (
+      campaignId: string,
+      body: { generation_id: string; candidate_id: string; link_url?: string },
+    ) =>
+      request<{
+        proposal: Proposal;
+        preview: {
+          candidate: { headline?: string | null; body?: string | null; s3_key?: string | null };
+          affected_ads: {
+            ad_id: string;
+            ad_name: string;
+            thumbnail_url?: string | null;
+            image_url?: string | null;
+            headline?: string | null;
+            primary_text?: string | null;
+            link_url?: string | null;
+          }[];
+        };
+      }>(`/management/campaigns/${campaignId}/replace-creative-proposal`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
     audit: (approvalId: string) => request(`/management/audit?approval_id=${approvalId}`),
     // 멀티테넌트 — 로그인 org로 Meta OAuth 로그인 URL을 받는다(인증 XHR). 프론트가 그 URL로 이동.
     connectMeta: () => request<{ login_url: string; state: string }>("/management/meta/connect"),

@@ -66,6 +66,7 @@ CHAT_POLICY = """\
 - 방금/만든 '시안 두 개를 A/B로 비교/어느 게 나은지' → compare_ad_candidates
   (상위 2개 시안을 같은 패널로 비교하도록 배치 시뮬 폼에 프리필. 수동 2개 입력은 batch_simulation).
 - '새 캠페인 만들기' → create_campaign. 기존 캠페인 '중지/게재/예산 변경' → manage_campaign.
+- 기존 캠페인 '소재(이미지·카피) 교체/바꾸기' → replace_creative.
 - '템플릿' 목록/저장/불러오기 → show_templates / save_template / load_template.
 - '브랜드 설정 보여줘' → show_brand.
   사용자가 타깃·톤·카테고리·키워드 등 브랜드를 알려주면 → extract_brand.

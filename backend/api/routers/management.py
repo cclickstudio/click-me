@@ -2353,7 +2353,8 @@ async def from_candidate(
 class ReplaceCreativeRequest(BaseModel):
     generation_id: str
     candidate_id: str
-    link_url: HttpUrl
+    # 도착 URL은 선택 — 없으면 기존 광고의 랜딩을 보존한다(소재만 교체, 도착지 유지).
+    link_url: HttpUrl | None = None
 
 
 @router.post("/campaigns/{campaign_id}/replace-creative-proposal")
@@ -2424,6 +2425,19 @@ async def replace_creative_proposal(
     if not affected_ad_ids:
         raise HTTPException(status_code=409, detail="교체할 광고가 없습니다(캠페인에 ad 없음).")
 
+    # 도착지(랜딩)는 소재 교체 대상이 아니다 — 요청에 명시 없으면 기존 광고 링크를 보존한다.
+    # (캠페인 내 광고는 보통 같은 도착지 → 첫 링크 채택. 못 찾으면 명시 요구.)
+    effective_link = (
+        str(body.link_url)
+        if body.link_url
+        else next((c.link_url for c in affected if c.link_url), None)
+    )
+    if not effective_link:
+        raise HTTPException(
+            status_code=422,
+            detail="기존 광고의 도착 URL을 찾을 수 없어요. 도착 URL을 지정해 주세요.",
+        )
+
     now = datetime.now(UTC)
     proposal = finalize_proposal(
         ActionProposal(
@@ -2438,7 +2452,7 @@ async def replace_creative_proposal(
                 "image_hash": image_hash,
                 "headline": cand.copy.headline,
                 "body": cand.copy.body,
-                "link_url": str(body.link_url),
+                "link_url": effective_link,
                 "generation_id": body.generation_id,
                 "candidate_id": cand.candidate_id,
                 # 결속(리뷰 ①④) — proposal_hash가 덮음 → 프리뷰=집행 대상 일치·감사 가능.

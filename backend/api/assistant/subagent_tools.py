@@ -984,6 +984,36 @@ def build_chat_tools(settings, clio_retriever=None) -> list:
         )
 
     @tool
+    async def replace_creative(
+        campaign_id: str = "",
+        campaign_name: str = "",
+        *,
+        state: Annotated[dict, InjectedState],
+        tool_call_id: Annotated[str, InjectedToolCallId],
+    ) -> Command:
+        """기존 캠페인의 '광고 소재(이미지·카피)를 교체'해달라는 요청에 호출.
+        내가 만든 광고 시안 후보를 고르는 picker 카드를 띄운다.
+        캠페인을 알면 campaign_id 또는 campaign_name(이름만 알아도 됨)."""
+        helpers.spawn_record_execution(
+            state.get("project_id"),
+            "management",
+            "replace_creative_request",
+            f"소재 교체 요청(폼) 캠페인 {campaign_name or campaign_id or '(미지정)'}",
+            {"campaign_id": campaign_id, "campaign_name": campaign_name, "stage": "request"},
+        )
+        return Command(
+            update={
+                **widgets.replace_creative_form(campaign_id, campaign_name),
+                "messages": [
+                    ToolMessage(
+                        "소재 교체 후보를 고를 수 있는 카드를 준비했어요.",
+                        tool_call_id=tool_call_id,
+                    )
+                ],
+            }
+        )
+
+    @tool
     async def load_template(
         name: str,
         *,
@@ -1192,6 +1222,7 @@ def build_chat_tools(settings, clio_retriever=None) -> list:
         compare_ad_candidates,
         create_campaign,
         manage_campaign,
+        replace_creative,
         consult_anomaly,
         load_template,
         show_templates,
