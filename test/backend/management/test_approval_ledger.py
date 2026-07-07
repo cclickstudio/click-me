@@ -92,7 +92,7 @@ async def test_issue_approval_rejects_invalid_proposal():
 
     from domain.management.approval import ApprovalIssueError, issue_approval
 
-    proposal = make_proposal()  # helpers.NOW(과거) 기준 — 실시간 검증에서 만료
+    proposal = make_proposal()  # 정책버전 불일치(+과거 만료) — 검증 실패 확정
     store = InMemoryApprovalStore()
     with pytest.raises(ApprovalIssueError) as exc:
         await issue_approval(proposal, "user-77", execution_mode=ExecutionMode.MOCK, store=store)
