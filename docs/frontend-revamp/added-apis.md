@@ -9,7 +9,7 @@
 
 | 날짜 | 메서드/경로 | 파일 | 목적 | 비고 |
 | --- | --- | --- | --- | --- |
-| _(아직 없음)_ | | | | |
+| 2026-07-08 | GET `/api/dashboard/summary` | `backend/api/routers/dashboard.py` | 대시보드 KPI 델타(이번주 vs 지난주)·최근 8주 시뮬/생성 추이·평균 클릭의향률·구매의향을 role 스코프로 반환 | **append-only**. 기존 `/stats`·`/recent-*` 무수정. 기존 `_project_scope` 재사용. 활동 피드는 프론트가 recent 목록 병합(추가 쿼리 없음). admin 실호출 200 검증. |
 
 ## 추가 스키마/모델/Alembic
 

@@ -1,6 +1,6 @@
 """대시보드 집계 API — role별 스코프(ADMIN 전체 / COMPANY 조직 / USER 팀·본인)."""
 
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel
@@ -213,3 +213,166 @@ async def get_recent_generations(
         )
         for r in rows
     ]
+
+
+# ── 대시보드 요약(신규, append-only) — KPI 델타 + 주간 추이 ──────────────
+# 프론트 개편(P2)용. 기존 /stats·/recent-* 는 그대로 두고 여기서만 추가 집계를 제공한다.
+# 활동 피드는 프론트가 recent-simulations/recent-generations를 병합해 구성(추가 쿼리 불필요).
+
+
+class WeeklyPoint(BaseModel):
+    label: str  # 주 시작일 'M/D'
+    simulations: int
+    generations: int
+
+
+class DashboardSummary(BaseModel):
+    sims_total: int
+    sims_this_week: int
+    sims_prev_week: int
+    gens_total: int
+    gens_this_week: int
+    gens_prev_week: int
+    avg_purchase_intent: float | None  # 1~5
+    avg_click_intent_rate: float | None  # 0~1
+    weekly_trend: list[WeeklyPoint]  # 최근 8주(오래된→최신)
+
+
+@router.get("/summary", response_model=DashboardSummary)
+async def get_summary(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """역할 스코프(ADMIN 전체 / COMPANY 조직 / USER 팀·본인) 요약.
+
+    KPI 델타(이번 주 vs 지난 주)와 최근 8주 시뮬/생성 추이를 반환한다.
+    """
+    is_admin = user.role.upper() == "ADMIN"
+    sim_join = ""
+    gen_join = ""
+    sim_scope = ""
+    gen_scope = ""
+    params: dict = {}
+    if not is_admin:
+        scope = await _project_scope(user, db)
+        if scope is None:
+            return DashboardSummary(
+                sims_total=0,
+                sims_this_week=0,
+                sims_prev_week=0,
+                gens_total=0,
+                gens_this_week=0,
+                gens_prev_week=0,
+                avg_purchase_intent=None,
+                avg_click_intent_rate=None,
+                weekly_trend=[],
+            )
+        clause, params = scope
+        sim_join = "JOIN ads a ON a.id = s.ad_id JOIN projects p ON p.id = a.project_id"
+        gen_join = "JOIN projects p ON p.id = g.project_id"
+        sim_scope = f" AND {clause}"
+        gen_scope = f" AND {clause}"
+
+    # 시뮬 KPI(총계·이번주·지난주·평균 지표)
+    sim_row = (
+        await db.execute(
+            text(
+                f"""
+                SELECT
+                  count(*) AS total,
+                  count(*) FILTER (WHERE s.created_at >= date_trunc('week', now())) AS this_week,
+                  count(*) FILTER (
+                    WHERE s.created_at >= date_trunc('week', now()) - interval '7 days'
+                      AND s.created_at < date_trunc('week', now())
+                  ) AS prev_week,
+                  AVG(sa.purchase_intent_avg) AS avg_pi,
+                  AVG(sa.click_intent_rate) AS avg_ci
+                FROM simulations s
+                LEFT JOIN simulation_aggregates sa ON sa.simulation_id = s.id
+                {sim_join}
+                WHERE s.deleted_at IS NULL{sim_scope}
+                """
+            ),
+            params,
+        )
+    ).one()
+
+    # 생성 KPI(총계·이번주·지난주)
+    gen_row = (
+        await db.execute(
+            text(
+                f"""
+                SELECT
+                  count(*) AS total,
+                  count(*) FILTER (WHERE g.created_at >= date_trunc('week', now())) AS this_week,
+                  count(*) FILTER (
+                    WHERE g.created_at >= date_trunc('week', now()) - interval '7 days'
+                      AND g.created_at < date_trunc('week', now())
+                  ) AS prev_week
+                FROM ad_generations g
+                {gen_join}
+                WHERE g.deleted_at IS NULL{gen_scope}
+                """
+            ),
+            params,
+        )
+    ).one()
+
+    # 최근 8주 주간 버킷 — DB의 주 시작(월요일) 기준으로 정렬해 프론트 추이 차트에 사용.
+    week_start = await db.scalar(text("SELECT date_trunc('week', now())"))
+    buckets = [(week_start - timedelta(weeks=7 - i)).date() for i in range(8)]
+    since = buckets[0]
+
+    sim_weeks = {
+        r.wk.date(): r.c
+        for r in await db.execute(
+            text(
+                f"""
+                SELECT date_trunc('week', s.created_at) AS wk, count(*) AS c
+                FROM simulations s
+                {sim_join}
+                WHERE s.deleted_at IS NULL AND s.created_at >= :since{sim_scope}
+                GROUP BY wk
+                """
+            ),
+            {**params, "since": since},
+        )
+    }
+    gen_weeks = {
+        r.wk.date(): r.c
+        for r in await db.execute(
+            text(
+                f"""
+                SELECT date_trunc('week', g.created_at) AS wk, count(*) AS c
+                FROM ad_generations g
+                {gen_join}
+                WHERE g.deleted_at IS NULL AND g.created_at >= :since{gen_scope}
+                GROUP BY wk
+                """
+            ),
+            {**params, "since": since},
+        )
+    }
+
+    weekly_trend = [
+        WeeklyPoint(
+            label=f"{d.month}/{d.day}",
+            simulations=int(sim_weeks.get(d, 0)),
+            generations=int(gen_weeks.get(d, 0)),
+        )
+        for d in buckets
+    ]
+
+    return DashboardSummary(
+        sims_total=int(sim_row.total or 0),
+        sims_this_week=int(sim_row.this_week or 0),
+        sims_prev_week=int(sim_row.prev_week or 0),
+        gens_total=int(gen_row.total or 0),
+        gens_this_week=int(gen_row.this_week or 0),
+        gens_prev_week=int(gen_row.prev_week or 0),
+        avg_purchase_intent=round(float(sim_row.avg_pi), 2) if sim_row.avg_pi is not None else None,
+        avg_click_intent_rate=round(float(sim_row.avg_ci), 4)
+        if sim_row.avg_ci is not None
+        else None,
+        weekly_trend=weekly_trend,
+    )
