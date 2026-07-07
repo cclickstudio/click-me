@@ -69,7 +69,11 @@ def record_mismatches(record: ApprovalRecord, action: ApprovedAction) -> list[st
 
 
 class ApprovalStore(Protocol):
-    """승인 원장 저장소 포트 — 발행부와 executor가 같은 인스턴스를 공유해야 한다."""
+    """승인 원장 저장소 포트 — 발행부와 executor가 같은 인스턴스를 공유해야 한다.
+
+    put은 중복 approval_id에서 저장소 예외를 그대로 던진다(fail-loud) —
+    approval_id는 발행 시 uuid4 기반 생성이라 충돌은 재사용/버그 신호다.
+    """
 
     async def put(self, record: ApprovalRecord) -> None: ...
 
