@@ -1,7 +1,7 @@
 # 광고 시뮬레이터 — 현재 로직 보완점 (분석방식 비교 기반)
 
 > 현재 구현(실데이터 grounding + 페르소나별 LLM 반응 + 가중 분포 집계)을 `AD_Simulator_Analysis_Methods.md`(공식 기반 3-접근법)와 비교해 도출한 **보완 과제**를 정리한다.
-> 선행 문서: `PERSONA_GENERATION_STRATEGY (1).md`(§3.7 표본·가중) · `AD_Simulator_Analysis_Methods.md` · `checklist.md`.
+> 선행 문서: `PERSONA_GENERATION_STRATEGY.md`(§3.7 표본·가중) · `AD_Simulator_Analysis_Methods.md`.
 
 ---
 

@@ -10,6 +10,12 @@
 > - **브랜드 인지율(작업1)·한국 특화 심리(작업4):** 반응 프롬프트에 `[브랜드 인지도]`·`[내 성향(한국 특화)]` 줄을 배선한 프레임워크 — **현재 값 비어 줄 생략**(데이터 주입 시 활성화). 상세: `REACTION_WORKFLOW_AND_DATA_GUIDE.md`.
 > - **인구:** `raw/population_age_sex.csv`(행안부) 적재 시 **real**, 없으면 placeholder 폴백.
 
+> **현행화 (2026-07-06) — 이후 반영된 변경**
+> - **고정 패널 DB 읽기(§3.6):** 패널 공급이 **DB(`panels`/`personas`) 최우선** → 로컬 JSON 캐시 → 라이브 샘플러 순 폴백(`DbPanelProvider`, `wiring.build_panel_provider`). `personas.weight` 컬럼 추가로 stratified/raking 가중치도 왕복 보존.
+> - **반응 엔진(4-b) 내성:** Gemini(모델 `SIMULATION_REACTION_GEMINI_MODEL`로 교체 가능) 실패 시 **GPT 폴백 체인**(`SIMULATION_REACTION_FALLBACK`, 기본 ON) + fan-out 동시성 상한(`SIMULATION_MAX_CONCURRENCY`).
+> - **SSR 점수화(opt-in):** `SIMULATION_SCORING=ssr`이면 반응의 자유 서술을 임베딩해 구매의도·신뢰도를 **확률분포**로 재산정(`SSRScoringReactor`, arXiv 2510.08338). 기본은 기존 LLM 정수 방식.
+> - **분석 3-모드 UX:** Individual(페르소나 지정 선택)·Persona Set(세그먼트 비교)·Synthetic이 라우터·UI에 반영.
+
 ---
 
 ## 0. 큰 그림 — 6단계 조립 라인

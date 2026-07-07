@@ -144,5 +144,5 @@ flowchart LR
 - **루브릭 = 의도 정합 점수.** 광고 솜씨 절대평가가 아니라 선언 ↔ 감지 정합도(`category/objective/message_alignment`). `intent_mismatch`는 score 임계로 파생.
 - **비싼 N개 반응만 병렬 fan-out** — LLM 콜은 여기서만 N배 발생. 값싼 preamble은 직렬.
 - **노드는 어댑터를 모름** — 전부 덕타이핑 주입, mock↔실 Gemini 교체는 `wiring.py` 한 곳에서만.
-- **Inner 그래프의 사이클**(retry 루프)이 LangGraph를 쓰는 진짜 이유 — 나머지는 선형이라 과설계 회피(`context-notes.md §3`).
+- **Inner 그래프의 사이클**(retry 루프)이 LangGraph를 쓰는 진짜 이유 — 나머지는 선형이라 과설계 회피.
 - **공유 해석 1회 → 페르소나별 조건화.** `interpret_ad`가 비싼 vision을 1회만 내고 `visual_elements`·`brand_era`를 `structured_analysis`에 담으면, `react` 워커는 그 공유 '사실'에 페르소나 나이·프로필을 곱해 다르게 반응한다(Tier 1 세대 게이팅 + §4-b salience). vision을 N배로 늘리지 않고 "같은 자극, 다른 주의·친숙도"를 만든다(VLM_PER_PERSONA_VISION·PERSONA_COHORT_KNOWLEDGE_STRATEGY).

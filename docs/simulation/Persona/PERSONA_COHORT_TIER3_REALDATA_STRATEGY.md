@@ -80,7 +80,7 @@ Tier 2는 브랜드 시대성을 **공유 사실**로 1회 추출해 "사실은 
 | **자체 설문(서베이몽키/오픈서베이 패널)** | 필요 브랜드만 즉석 측정 | 커버리지 통제 가능 | 비용·표본·반복성 |
 | **메타/구글 트렌드·검색량 프록시** | 무료, 시계열 | 보조 신호로 저렴 | 인지율이 아니라 관심도 — **인지도 대용 금지, 보조만** |
 
-> 핵심 제약은 **브랜드 단위 포괄 수집의 비용·라이선스**다([PERSONA_GENERATION_STRATEGY](./Persona/PERSONA_GENERATION_STRATEGY%20(1).md)
+> 핵심 제약은 **브랜드 단위 포괄 수집의 비용·라이선스**다([PERSONA_GENERATION_STRATEGY](./Persona/PERSONA_GENERATION_STRATEGY.md)
 > §7.5 라이선스 메모와 정합 — 민간 자료의 상업적 활용 범위는 서비스화 단계에서 확인 필요). 그래서 Tier 3은 "전 브랜드 일괄"이
 > 아니라 **클라이언트 캠페인의 그 브랜드만 핀포인트로** 확보하는 게 현실적이다.
 
@@ -163,6 +163,6 @@ react ×N (페르소나별)
 ## 참고
 
 - [PERSONA_COHORT_KNOWLEDGE_STRATEGY.md](./PERSONA_COHORT_KNOWLEDGE_STRATEGY.md) — Tier 1·2(게이팅·시대성 공유)와 §4.2 3단 전략.
-- [PERSONA_GENERATION_STRATEGY (1).md](./Persona/PERSONA_GENERATION_STRATEGY%20(1).md) §7.5 — 데이터 출처·라이선스 매트릭스.
+- [PERSONA_GENERATION_STRATEGY.md](./Persona/PERSONA_GENERATION_STRATEGY.md) §7.5 — 데이터 출처·라이선스 매트릭스.
 - [VLM_PER_PERSONA_VISION.md](./VLM_PER_PERSONA_VISION.md) — "공유 해석 1회 + 페르소나별 조건화" 패턴.
 - 한국갤럽 브랜드 트래킹 / 대학내일20대연구소 — 세대별 브랜드 인지·선호 실측 후보(유료·일부 공개).
