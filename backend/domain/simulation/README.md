@@ -29,7 +29,7 @@ domain/simulation/
 ├── contracts/      팀 간 계약 — DTO 스키마 · enum(거부/감정/이탈 태그). 외부 의존 없음
 ├── data/           grounding 데이터 — 한국 통계 분포 JSON + 로더 (data/simulation/)
 ├── tools/          순수 빌딩블록 — 페르소나 속성 샘플링 · 고정 패널 · 집계 엔진 · Meta 도달성(reachability) (LLM 거의 없음)
-├── adapters/       외부 연동 — mock 어댑터 + 실 LLM(Gemini) 어댑터
+├── adapters/       외부 연동 — 실 LLM 어댑터(Gemini 기본 + OpenAI 폴백·SSR 점수화) + mock(토론용)
 ├── graph/          오케스트레이션 흐름 정의 — LangGraph(전체 파이프라인 + 반응 유닛)
 ├── service/        실행 구동 — 그래프를 돌리고 진행률(SSE)·결과 관리
 ├── repositories/   영속화 — 9테이블 CRUD(SQL은 여기에만)
@@ -97,7 +97,7 @@ service ──구동──▶ graph ──(노드가 호출)──▶ tools · a
 | 지역 | 행안부 주민등록 시도(17) 분포 | ✅ real |
 | 인물 서사 | Gemini | ✅ real |
 
-> 광고 해석·루브릭·반응의 **실 LLM 어댑터는 아직 mock**(P4 예정). 즉 현재 KPI는 구조·계약 검증용이며, 실 모델 연결 후 의미 있는 값이 된다.
+> **광고 해석·루브릭·반응은 실 LLM 연결 완료(P4 ✅, mock 폴백 없음).** `wiring.py`가 `GeminiAdInterpreter`·`GeminiRubricEvaluator`·`GeminiReactionEngine`을 연결하고, 반응은 GPT 폴백 체인(`SIMULATION_REACTION_FALLBACK`, 기본 ON)으로 503 내성을 확보한다. 반응·VLM 모델은 각각 `SIMULATION_REACTION_GEMINI_MODEL`·`SIMULATION_VLM_GEMINI_MODEL`로 교체 가능. `SIMULATION_SCORING=ssr`(opt-in)이면 구매의도·신뢰도를 SSR 임베딩 분포로 재산정한다.
 
 > **Meta 전용 도달성 추출.** 제품이 Meta 광고만 취급 → 단계1 표본을 `인구 × 메타 침투율`로 추출(`persona_sampler.reachability_sampling`, `wiring`에서 ON). 표본이 메타 도달층(젊은 층)에 집중되며 self-weighting 유지. 모집단은 "메타(인스타/페북) 도달 가능 한국 소비자".
 >

@@ -1,7 +1,7 @@
 # 시뮬레이터 데이터 확보 — 현황 & 사용자 수집 가이드
 
 > 페르소나 생성(단계1~3)에 쓰는 분포 데이터의 출처·상태와, **사용자가 직접 받아야 하는 raw**의 수집 절차.
-> 상세 출처는 `docs/simulation/Data_Collection.md` 참조. 이 문서는 코드 레이어(`data/`)의 실제 적재 가이드.
+> 상세 출처는 `docs/simulation/Persona/데이터 확보처 가이드.md` 참조. 이 문서는 코드 레이어(`data/`)의 실제 적재 가이드.
 
 ## 현황 (`loader.data_status()`)
 
