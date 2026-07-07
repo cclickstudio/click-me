@@ -47,6 +47,6 @@
 ## Phase 7 — 검증·문서
 - [x] ruff(백엔드) 통과 (Phase 1 커밋들)
 - [x] gen_docs 재생성(라우터/페이지 변경분) (center 엔드포인트 4개 반영)
-- [~] Claude Preview로 역할별 동작 검증(증거 캡처) — **ADMIN 라이브 검증 완료**: shell 접힘/펼침·필터바·알림/채팅 센터 렌더, 세션 클릭→하단 라이브 채팅(위젯·이력), /api/center 200, org 스코프(X-Org-Id 미선택 org_selected=false·선택 시 true·세션16), FloatingChat·벨 제거 확인, 기업 미선택 안내. 콘솔 에러 0. next build 성공. preview_screenshot은 타임아웃 → preview_eval DOM 확인 대체. **COMPANY/USER는 Cognito에 계정 없어(admin만 잔존) 계정 발급 후 라이브 검증 필요(코드/tsc/eslint/build로 검증됨).**
+- [x] Claude Preview로 역할별 동작 검증(증거 캡처) — **ADMIN·COMPANY·USER 3역할 라이브 검증 완료**(2026-07-07). ADMIN: shell·필터바·알림/채팅 렌더, 세션 클릭→하단 라이브 채팅(위젯·이력), /api/center 200, X-Org-Id org 스코프(미선택 org_selected=false·선택 시 세션16), FloatingChat·벨 제거, 기업 미선택 안내. USER(testuser, 시뮬레이션 org): 기업 드롭다운 없음·16세션·새 채팅(쓰기) 가능. COMPANY(testco): 기업 드롭다운 없음·새 채팅 버튼 없음(읽기전용)·알림 management 전용. 콘솔 에러 0, next build 성공. (테스트 계정 testco·testuser는 admin API로 발급 — 검증용, 정리 대상.)
 - [x] 기능 단위 커밋 (Phase 1~6 논리 단위별 12커밋)
 - [x] next build(프로덕션) 성공 — 제거·layout 변경 포함 전 라우트 컴파일
