@@ -349,6 +349,28 @@ export type ChatSessionRow = {
   created_at: string | null;
   updated_at: string | null;
 };
+// 센터 통합 세션(org 전체) — ChatSessionRow + project_name.
+export type CenterSessionRow = ChatSessionRow & { project_name?: string | null };
+// 센터 알림 병합 항목 — source로 management 이상감지/center 제안을 구분.
+export type CenterNotificationItem = {
+  source: 'management' | 'center_suggestion';
+  id: string;
+  project_id: string | null;
+  project_name?: string | null;
+  read_at?: string | null;
+  created_at?: string | null;
+  payload?: Record<string, unknown>;
+  // center 제안 전용
+  suggestion_type?: 'sim_suggest' | 'gen_suggest' | 'launch_suggest';
+  reason?: string | null;
+  source_sim_id?: string | null;
+  source_gen_id?: string | null;
+  // management 이상감지 전용
+  kind?: string | null;
+  campaign_id?: string | null;
+  resolution?: string | null;
+  followup_count?: number | null;
+};
 export type ChatHistoryMessage = {
   id?: string;
   role: 'user' | 'assistant';
@@ -716,6 +738,29 @@ export const api = {
       answer?: string;
       failure_type?: string;
     }) => request("/chat/feedback", { method: "POST", body: JSON.stringify(body) }),
+  },
+
+  // 센터(우측 통합 알림) — management 이상감지 + center 제안 병합 조회, org 통합 세션.
+  center: {
+    // 알림 센터 병합 목록 — project_id 생략 시 org 전체. COMPANY는 제안 숨김(백엔드 처리).
+    notifications: (projectId?: string) =>
+      request<{
+        items: CenterNotificationItem[];
+        unread_count: number;
+        org_selected: boolean;
+      }>(
+        `/center/notifications${projectId ? `?project_id=${encodeURIComponent(projectId)}` : ""}`,
+      ),
+    // 채팅 센터 통합 세션 — project_id 생략 시 org 전체 프로젝트.
+    sessions: (projectId?: string) =>
+      request<{ sessions: CenterSessionRow[]; org_selected: boolean }>(
+        `/center/sessions${projectId ? `?project_id=${encodeURIComponent(projectId)}` : ""}`,
+      ),
+    // 제안 알림 읽음(아코디언 열 때) / 무시.
+    readSuggestion: (id: string) =>
+      request<{ ok: boolean }>(`/center/suggestions/${id}/read`, { method: "POST" }),
+    dismissSuggestion: (id: string) =>
+      request<{ ok: boolean }>(`/center/suggestions/${id}/dismiss`, { method: "POST" }),
   },
 
   inquiries: {
