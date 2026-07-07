@@ -6,12 +6,13 @@
 ## Key Decisions
 
 - **Backend** FastAPI (Python only, No Spring) / **PM** uv(backend)·pnpm(frontend) 교차 금지 / **Arch** 모놀리식 + 부분 DDD/SOLID, 단일 EC2.
-- **비동기 잡** 인프로세스 async(`asyncio.create_task`) + APScheduler 인프로세스 워커(매니지먼트 이상스캔·주간리포트·리밸런싱 3잡, 기본 off — settings opt-in). 별도 MQ 미사용.
-- **Sim engine** Deepsona(OCEAN) + SSR(arXiv 2510.08338). **Scoring** SSR(임베딩 기반, no LLM, not DLR). **Output** 스칼라 아닌 분포.
-- **구매의도 검증** KOBACO 베이스라인 대비. 그 외 신호는 탐색적(exploratory) 표기.
-- **인증** 관리자 직접 계정 생성(자가가입·소셜 없음), 역할 ADMIN/COMPANY/USER. **운영은 AWS Cognito**(User Pool, RS256/JWKS 검증, `AUTH_PROVIDER=cognito`)로 발급·검증 적용됨. 코드 기본값은 자체 HS256(`AUTH_PROVIDER=local`). 계정/조직 삭제는 **소프트 삭제**(status `INACTIVE` + Cognito disable) → 복원 → 영구삭제(purge) 3단계. auth 미들웨어가 `status != ACTIVE`면 401 차단.
+- **비동기 잡** 인프로세스 async(`asyncio.create_task`) + **APScheduler 워커**(management: 이상 스캔·리밸런스 제안·주간 리포트 / generator: 품질 다이제스트; 기본 off, `*_SCHEDULER_ENABLED` 플래그로 on). 관측·집계·기록은 워커 자율, **집행 write는 사람 승인(HITL)**. 별도 MQ 미사용 — SQS·Redis 모두 안 씀.
+- **Sim engine** OCEAN 5요인 조건부 페르소나 샘플링(서울대-카카오 OCEAN N=81만·KISDI 미디어 실데이터; 행안부 인구는 확보 예정). **Scoring** 현재 LLM 루브릭(정합)+페르소나 반응 LLM+부트스트랩 신뢰구간 집계 — **SSR(임베딩 기반, arXiv 2510.08338) 전환은 데이터 확보 후**(구 `tools/simulation/ssr_scorer` 보존). **Output** 스칼라 아닌 분포.
+- **구매의도 검증** KOBACO 베이스라인 대비(현재 챗봇 룩업으로 참고 제시, 실측 대비 자동 calibration은 **연결 캠페인 실측 5건 이상 확보 시 해금 예정**). 그 외 신호는 탐색적(exploratory) 표기.
+- **인증** AWS Cognito 기반 JWT(JWKS RS256 검증) **운영 중** + 관리자 직접 계정 생성(`cognito_admin`, 자가가입·소셜 없음), Admin/User 역할. 자체 local JWT 모드는 예비(로그인 발급 라우터 미완).
 - **A/B** UI 선반영, YouTube RAG 실기능은 최종 단계. **Chat** OpenAI gpt-4o-mini·CLIO·SSE — 오케스트레이터 본체(통합 딥에이전트, `deepagents` 기반, `api/assistant/deep_agent_builder.py`) **구현 완료**(`POST /api/chat/complete`). management·generator·simulation 3개 도메인 모두 **@tool 위임으로 연결**(deepagents 고유 서브에이전트 기능은 미사용, 커스텀 tool 라우팅).
-- **Ad gen** 개선 시안 3개 자동생성+순위 (Gemini Flash 3.0 / GPT Image 2 / Gemini Omni). **PDF** 전체 생성 포함. **문의** in-app 폼 → DB.
+- **멀티 LLM 역할 배정** 채팅 gpt-4o-mini · 시뮬 반응 Gemini 2.5 Flash · 페르소나 토론 토론자 gpt-4o-mini/Judge Claude Haiku · 생성 gpt-4.1.
+- **Ad gen** 시안 3종 자동생성+QA 기반 순위(개선 모드는 1종). 모델은 config 교체(`GENERATOR_*_MODEL`) — 현재 기본값 텍스트 gpt-4.1·비전 gpt-4o·이미지 gpt-image-1(OpenAI 모드)/gemini-2.5-flash-image(Gemini 모드). **PDF** 전체 생성 포함. **문의** in-app 폼 → DB.
 
 ## 핵심 기능 (기획서 v1.3)
 
@@ -29,23 +30,21 @@
 ## 로드맵 / 비즈니스
 
 - **로드맵** 베이스라인 2026-06-12 ✅ → 최종 구현 2026-07-08(핵심 3기능 + 채팅·팀관리) → 발표 2026-07-14.
-- **플랜(UI만, 실과금 추후)** Free(개인·제한 시뮬·트래킹 1개) / Professional(팀·확장·무제한 트래킹·API 연동) / Enterprise(기업·대규모·다채널).
+- **플랜** Free(개인·제한 시뮬·트래킹 1개) / Professional(팀·확장·무제한 트래킹·API 연동) / Enterprise(기업·대규모·다채널). **결제** Toss Payments 연동 PoC(샌드박스 테스트키 전용, 실 과금 미개시).
 - **조직** = 결제 단위(플랜 공유), **프로젝트** = 캠페인 단위(시안+매니지먼트), **팀 관리** = 프로젝트 협업(뷰어/에디터/오너).
 
 ## 인증 및 보안
 
-- 소셜 로그인·자가가입 없음, **관리자가 직접 계정 생성**. 역할 ADMIN/COMPANY/USER.
-- **운영 인증 = AWS Cognito.** `AUTH_PROVIDER=cognito`면 프론트가 Cognito(User Pool)로 로그인하고 백엔드가 ID 토큰(RS256, JWKS)을 검증(`core/auth.py`). `AUTH_PROVIDER=local`(코드 기본값)이면 자체 HS256 JWT 발급/검증. Cognito username = `login_id`, role → 동명 그룹(ADMIN/COMPANY/USER).
-- **첫 로그인 비번 변경** — 발급 계정은 `must_change_password=true`. 로그인 후 첫 페이지에서 변경 모달을 계정당 1회만 노출(프론트 `localStorage: pwModalDismissed:{userId}`).
-- **계정 상태(status)** ACTIVE·PENDING·INACTIVE. auth 미들웨어(`get_current_user`)가 `status != ACTIVE`면 401 차단. admin의 소프트 삭제가 `INACTIVE` + Cognito disable로 로그인만 막고 데이터는 보존.
-- 기밀 데이터(예산·크리에이티브) 평문 로그 금지. 외부 플랫폼 API 키(Meta 등)는 암호화 저장(AES-256).
-- admin API는 `/api/admin/*` 경로 프리픽스 + ADMIN 역할로 제한.
+- 소셜 로그인·자가가입 없음, **관리자가 직접 계정 생성**. **AWS Cognito JWT**(JWKS RS256) 기반, Admin/User 역할.
+- **Meta 매니지먼트** 성과 읽기 실연동 + 감지→진단→승인→집행→감사 통제 집행 파이프라인. writer는 DRY_RUN/VALIDATE/LIVE 3모드로 **기본 봉인**(집행 write는 사람 승인).
+- 기밀 데이터(예산·크리에이티브) 평문 로그 금지. 외부 플랫폼 API 키는 암호화 저장(AES-256 또는 AWS Secrets Manager).
+- 현재 페이즈: admin API는 `/api/admin/*` 경로 프리픽스로만 제한.
 
 ## Tech Stack
 
 - **Frontend** Next.js(TS) + Tailwind (pnpm) / **Backend+AI** FastAPI + LangGraph (uv).
-- **DB** NeonDB(PostgreSQL + pgvector, vector(1536)) / **비동기 잡** 인프로세스 async(asyncio) / **Storage** AWS S3.
-- **Deploy** 단일 EC2 + Nginx / **CI/CD** GitHub Actions(Docker) / **Tracing** LangSmith / **Chat LLM** OpenAI gpt-4o-mini(`openai` chat.completions, SSE).
+- **DB** NeonDB(PostgreSQL + pgvector, vector(1536)) / **RAG** 하이브리드 검색(pgvector 코사인 + PostgreSQL FTS 키워드, RRF 융합) for management·generator KB / 장기기억 회수 tsvector 키워드 / CLIO 일반지식 벡터 전용 / **비동기 잡** asyncio + APScheduler / **Storage** AWS S3.
+- **Deploy** 단일 EC2 + Nginx / **CI/CD** GitHub Actions — CI(ruff·pytest·lint·build) + **CD 활성**(main push → ECR 빌드/푸시 → EC2 배포 → Let's Encrypt TLS 자동갱신) / **Tracing** LangSmith / **Chat LLM** OpenAI gpt-4o-mini(SSE).
 
 ## 백엔드 아키텍처 (DDD)
 
@@ -63,7 +62,7 @@ backend/
 
 **의존성** `api/routers → domain/<ctx>/service → contracts(포트) ← adapters(구현)`. DB·설정은 `core`, LLM·SDK 래퍼는 `tools`에서만. mock/실연동 교체는 `wiring.py`에서만.
 
-> 현황: generator·management·simulation 모두 `domain/` 이전 완료(simulation은 `domain/simulation/`·`api/routers/simulation/`). 이후 `domain/chat`·`domain/billing`도 추가됨(챗 오케스트레이터 본체는 `api/assistant/`).
+> 이전 현황: generator·management·**simulation 모두 `domain/` 이전 완료**(등록 라우터는 `api/routers/simulation/`). 구 평면 라우터 `api/routers/simulate.py`는 **삭제 대상**(미등록 데드코드), `tools/simulation/`(ssr_scorer 등)은 **SSR 전환 대비 보존**.
 
 ## 협업 규칙 (충돌 방지)
 
@@ -83,7 +82,7 @@ backend/
 ```bash
 # backend/.env
 APP_ENV=development
-OPENAI_API_KEY= / ANTHROPIC_API_KEY= / GEMINI_API_KEY=   # 채팅·CLIO=OpenAI(gpt-4o-mini). GEMINI는 예비.
+OPENAI_API_KEY= / ANTHROPIC_API_KEY= / GEMINI_API_KEY=   # OpenAI(채팅·CLIO·생성 기본·토론자) · Gemini(시뮬 반응·이미지) · Anthropic(토론 Judge Haiku).
 DATABASE_URL=postgresql+asyncpg://user:pw@host/db?sslmode=require
 AWS_ACCESS_KEY_ID= / AWS_SECRET_ACCESS_KEY= / AWS_REGION=ap-northeast-2
 S3_BUCKET_NAME=
@@ -102,11 +101,8 @@ NEXT_PUBLIC_COGNITO_REGION= / NEXT_PUBLIC_COGNITO_USER_POOL_ID= / NEXT_PUBLIC_CO
 
 ## CI/CD 현황
 
-- 구 `ci.yml`+`cd.yml`은 **단일 `.github/workflows/ci-cd.yml`로 병합**됨(구 파일 삭제).
-- **needs 체인** `backend`(ruff + pytest)·`frontend`(ESLint + build) → `build-backend`·`build-frontend`(ECR push) → `deploy`(EC2). 빌드·배포는 CI 성공을 depends on하므로 테스트 실패 시 배포 차단.
-- **트리거** PR(`main`·`ci-cd`)은 **테스트만**, `push`(`main`·`ci-cd`)만 build/deploy 실행(`if: github.event_name == 'push'`). e2e(Playwright)는 `workflow_dispatch` 수동.
-- **배포** ECR 이미지(`clickme-backend`·`clickme-frontend`, `:latest`+`:${sha}`) → EC2에서 `docker-compose.prod.yml`로 기동. Nginx + Let's Encrypt(certbot 자동 발급·갱신). ECR push는 CI IAM User, pull은 EC2 IAM Role로 권한 분리.
-- 인프라 상세는 [`infra/README.md`](infra/README.md) 참고(provision/resize/fetch_key 스크립트, Elastic IP 고정, PEM SSM 백업).
+- **CI** (`ci.yml`) ✅ — `backend`(ruff + pytest), `frontend`(ESLint + build) 활성 / `docker-build` ⏸(Secrets 후 활성).
+- **CD** (`cd.yml`) ✅ — **활성**. `main` push → ECR 빌드/푸시(backend+frontend) → EC2 SSH 배포 → Let's Encrypt TLS 최초발급/자동갱신 → `docker compose up`. 도메인 clickme.co.kr TLS 구성 완료.
 
 ## 개발 워크플로우 (Claude 행동 규칙)
 
@@ -151,19 +147,18 @@ NEXT_PUBLIC_COGNITO_REGION= / NEXT_PUBLIC_COGNITO_USER_POOL_ID= / NEXT_PUBLIC_CO
 
 ## Open Issues
 
-| 항목                               | 비고                                                                                                                                                                                                                                                                       |
-| ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 비동기 잡 큐 도입 여부             | 현재 인프로세스 async(asyncio). SQS·Redis 모두 미사용 — 운영 확장 시 재검토.                                                                                                                                                                                               |
-| 인증 실구현 (JWT 자체 vs Cognito)  | **해소** — 운영은 AWS Cognito(User Pool, RS256/JWKS 검증) 적용, 코드 기본값은 자체 HS256(`AUTH_PROVIDER`로 전환). 남은 과제는 리프레시 토큰·세션 만료 정책 정리.                                                                                                           |
-| 채팅(4-4) 오케스트레이터 배선 정리 | 오케스트레이터 본체(통합 딥에이전트)는 구현 완료, management·generator·simulation 전부 @tool로 연결됨(2026-06-30, `4c3e7c8`). 알림→상담 옵션 버튼(`option_select`)도 연결 완료. `domain/chat/__init__.py` 설명이 실제 구현 위치(`api/assistant/`)와 어긋나 문서 정리 필요. |
-| CD 활성화                          | **해소** — `ci-cd.yml` 병합 파이프라인이 ECR push → EC2 배포까지 자동화(Secrets 6개 등록 완료). 남은 과제는 무중단 롤아웃·롤백 전략.                                                                                                                                       |
+| 항목                                | 비고                                                            |
+| ----------------------------------- | --------------------------------------------------------------- |
+| 비동기 잡 큐 도입 여부              | 현재 인프로세스 async(asyncio) + APScheduler 워커. SQS·Redis 미사용 — 운영 확장 시 재검토. |
+| local JWT 모드 완성 여부            | 운영은 Cognito로 확정·배선 완료. 자체 local JWT는 로그인 발급 라우터 미완(예비) — 완성 시점 미정. |
+| 구 오케스트레이터 데드코드 제거      | 통합 딥에이전트로 전환 완료. 구세대 `orchestrator.py`·`intent.py`·`registry.py`는 테스트만 참조하는 데드코드 → **발표 후 삭제**(`wiring.py`의 `_build_*_handler`는 통합 에이전트가 재사용하므로 보존). `domain/chat/__init__.py` docstring도 실제 역할(지원 인프라)로 정리 필요. |
+| 매니지먼트 집행 모드 안전(발표 전)   | 커밋된 `backend/.env`가 `MANAGEMENT_EXECUTION_MODE=live`+`USE_MOCK=false`+실 토큰 → 실 Meta 집행·과금 가능. 파일 내 주석("dry_run 유지")과 모순. **데모/발표 전 `dry_run` 복귀 필요.** |
 
 ## Reference
 
 **자동 생성 인덱스**(라우터·페이지 추가 시 `backend/scripts/gen_docs.py`가 갱신 — 직접 수정 금지):
 
 <!-- AUTOGEN:docs-index START -->
-
 - **API 엔드포인트 187개** — 전체 목록 [docs/api-endpoints.md](docs/api-endpoints.md) (자동 생성)
 - **프론트 라우트 42개** — 전체 목록 [docs/frontend-routes.md](docs/frontend-routes.md) (자동 생성)
 <!-- AUTOGEN:docs-index END -->

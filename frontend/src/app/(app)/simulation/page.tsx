@@ -405,6 +405,12 @@ export default function SimulationRunPage() {
       // 링크는 from_campaign_id + organization_id가 함께 있을 때만 걸린다(simulation_service).
       from_campaign_id:
         inputMode === 'campaign' && selectedCampaignId ? selectedCampaignId : undefined,
+      // '생성한 광고로 시뮬' — 옵션 value는 `${generationId}:${candidateId}`. 앞의 generation id를
+      // 넘겨 ads.generation_id로 영속(채팅 개선모드가 상품 누끼를 역추적해 재사용).
+      generation_id:
+        inputMode === 'generated' && selectedGenValue
+          ? selectedGenValue.split(':')[0]
+          : undefined,
       organization_id: getAdminOrgId() ?? undefined,
     };
   }

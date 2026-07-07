@@ -77,8 +77,8 @@ class SimulationPersistence:
                 await session.execute(
                     text(
                         "INSERT INTO ads (id, project_id, title, media_type, "
-                        "asset_url, copy_text, product_category, ad_objective) "
-                        "VALUES (:id, :pid, :title, :mtype, :asset, :copy, :pcat, :obj)"
+                        "asset_url, copy_text, product_category, ad_objective, generation_id) "
+                        "VALUES (:id, :pid, :title, :mtype, :asset, :copy, :pcat, :obj, :gen)"
                     ),
                     {
                         "id": ad_uuid,
@@ -90,6 +90,8 @@ class SimulationPersistence:
                         "copy": request.ad_content,
                         "pcat": request.product_category,
                         "obj": request.ad_objective,
+                        # 생성 출처 — 채팅 개선모드의 누끼 역추적용(없으면 NULL).
+                        "gen": request.generation_id,
                     },
                 )
                 await session.flush()  # ads → ad_analyses 참조

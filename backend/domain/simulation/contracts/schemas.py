@@ -52,6 +52,9 @@ class SimulationRunRequest(BaseModel):
     service_class: int | None = None  # 상품·서비스 분류(NICE 1~45) — 메타데이터(교차검증 차원 아님)
     # 성과 비교 자동 연결 — Meta 캠페인 ID(관리 탭에서 진입 시). 시뮬 저장 직후 서버가 직접 링크.
     from_campaign_id: str | None = None
+    # 생성 출처 — '생성한 광고로 시뮬' 진입 시 그 generation id(ads.generation_id로 영속).
+    # 채팅 개선모드가 이 값으로 상품 누끼 키를 역추적한다. 그 외 입력 모드는 None.
+    generation_id: str | None = None
 
     @model_validator(mode="after")
     def _resolve_allocation(self) -> SimulationRunRequest:

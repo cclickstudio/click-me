@@ -142,6 +142,9 @@ class Ad(Base):
     industry_category: Mapped[str | None] = mapped_column(String(100))
     product_category: Mapped[str | None] = mapped_column(String(100))
     ad_objective: Mapped[str | None] = mapped_column(String(50))
+    # 생성 출처 — '생성한 광고로 시뮬' 진입 시 그 generation을 느슨히 참조(cross-base라 FK 없음).
+    # 채팅 개선모드가 이 값으로 상품 누끼(product_cutout) 키를 역추적해 재사용한다.
+    generation_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     target_filter: Mapped[dict | None] = mapped_column(JSONB)
     status: Mapped[str] = mapped_column(String(20), server_default="DRAFT")
     created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
