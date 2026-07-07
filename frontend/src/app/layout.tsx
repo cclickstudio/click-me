@@ -6,14 +6,14 @@ import { AuthProvider } from '@/components/AuthProvider';
 import { ProjectProvider } from '@/components/ProjectContext';
 import { ChatControllerProvider } from '@/components/chat/ChatController';
 
-// 로컬 NotoSansKR(self-host) — Tailwind sans(var(--font-sans))에 연결해 전역 한글 폰트로 사용.
-const notoSansKR = localFont({
+// 로컬 Pretendard(self-host) — Tailwind sans(var(--font-sans))에 연결해 전역 한글 폰트로 사용.
+const pretendard = localFont({
   src: [
-    { path: './fonts/NotoSansKR-Thin.otf', weight: '100', style: 'normal' },
-    { path: './fonts/NotoSansKR-Regular.otf', weight: '400', style: 'normal' },
-    { path: './fonts/NotoSansKR-Medium.otf', weight: '500', style: 'normal' },
-    { path: './fonts/NotoSansKR-Bold.otf', weight: '700', style: 'normal' },
-    { path: './fonts/NotoSansKR-Black.otf', weight: '900', style: 'normal' },
+    { path: './fonts/Pretendard-Thin.otf', weight: '100', style: 'normal' },
+    { path: './fonts/Pretendard-Regular.otf', weight: '400', style: 'normal' },
+    { path: './fonts/Pretendard-Medium.otf', weight: '500', style: 'normal' },
+    { path: './fonts/Pretendard-Bold.otf', weight: '700', style: 'normal' },
+    { path: './fonts/Pretendard-Black.otf', weight: '900', style: 'normal' },
   ],
   variable: '--font-sans',
   display: 'swap',
@@ -29,7 +29,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="ko" suppressHydrationWarning className={notoSansKR.variable}>
+    <html lang="ko" suppressHydrationWarning className={pretendard.variable}>
       <head>
         {/* 다크 모드 깜빡임 방지: 하이드레이션 전에 클래스 적용 */}
         <script
