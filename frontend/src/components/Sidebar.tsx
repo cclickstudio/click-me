@@ -291,8 +291,8 @@ export default function Sidebar({ mobileOpen = false }: { mobileOpen?: boolean }
 
       {/* 하단 */}
       <div className="px-4 py-4 border-t border-line shrink-0 space-y-1">
-        {/* ClickMe 크레딧 잔액 — 광고 집행 한도. 충전(/payment)로 이동. */}
-        {user && (
+        {/* ClickMe 크레딧 잔액 — 광고 집행 한도. 충전(/payment)로 이동. ADMIN(슈퍼유저)은 미표시. */}
+        {user && !isAdmin && (
           <div className="mb-2">
             <CreditBalance />
           </div>
