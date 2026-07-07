@@ -211,6 +211,7 @@ Expected: FAIL — `ModuleNotFoundError: No module named 'domain.management.cont
 - [ ] **Step 3: 계약 구현 — `contracts/approval_ledger.py`**
 
 ```python
+# 승인 원장 계약 — 서버 발행 승인의 진위 대조(집행 게이트 #5) 레코드·포트
 """승인 원장 계약 — 서버 발행 승인의 진위 대조(집행 게이트 #5) 레코드·포트.
 
 발행부(approval.issue_approval)와 검증부(executor)가 이 계약만 공유한다.
@@ -294,6 +295,7 @@ class ApprovalStore(Protocol):
 - [ ] **Step 4: 인메모리 저장소 — `execution/approval_stores.py`**
 
 ```python
+# 승인 원장 인메모리 저장소 — use_mock·테스트용 (DB 구현은 db_stores.DbApprovalStore)
 """승인 원장 인메모리 저장소 — use_mock·테스트용 (DB 구현은 db_stores.DbApprovalStore)."""
 
 from __future__ import annotations
@@ -563,11 +565,22 @@ git commit -m "add: 승인 발행+원장 기록 issue_approval — 발행 단일
 `test/backend/management/test_approval_ledger_gate.py` 신규 생성:
 
 ```python
-# executor 승인 원장 게이트(#5) — 위조 차단·필드 대조·소진 마킹
+# executor 승인 원장 게이트(#5) — 위조 차단·필드 대조·소진 마킹·명시적 생략
 from domain.management.contracts.approval_ledger import record_from_action
 from domain.management.contracts.enums import ExecutionMode, FailureReason, ResultStatus
 from domain.management.execution.approval_stores import InMemoryApprovalStore
-from management.helpers import FakeWriter, build_executor, make_action, make_proposal
+from domain.management.execution.audit_log import InMemoryAuditLog
+from domain.management.execution.executor import Executor, InMemoryIdempotencyStore
+from domain.management.execution.tier import BudgetAuthority
+from management.helpers import (
+    NOW,
+    POLICY_VERSION,
+    STATE_VERSION,
+    FakeWriter,
+    build_executor,
+    make_action,
+    make_proposal,
+)
 
 
 async def test_forged_action_without_ledger_record_rejected():
@@ -604,9 +617,27 @@ async def test_genuine_action_executes_and_marks_consumed():
     assert record is not None and record.consumed_at is not None
 
 
-async def test_gate_skipped_when_store_not_wired():
-    # approvals=None(기존 단위테스트·데모 스크립트 호환) — 게이트 생략, 기존 동작 유지.
-    executor, *_ = build_executor(FakeWriter())
+async def test_gate_skipped_only_by_explicit_none():
+    # 게이트 생략은 기본값이 아니라 명시적 결정 — helper를 거치지 않고 Executor를 직접
+    # 생성해 approvals=None이 호출부에 드러나는 형태(필수 키워드 인자)를 검증한다.
+    async def _state(_ad_account_id: str) -> str:
+        return STATE_VERSION
+
+    async def _no_sleep(_s: float) -> None:
+        return None
+
+    budget = BudgetAuthority(limit_krw=1_000_000)
+    executor = Executor(
+        FakeWriter(),
+        idempotency=InMemoryIdempotencyStore(),
+        audit=InMemoryAuditLog(),
+        budget_for=lambda _tenant_id: budget,
+        state_version_provider=_state,
+        current_policy_version=POLICY_VERSION,
+        clock=lambda: NOW,
+        sleep=_no_sleep,
+        approvals=None,  # 의도적 생략 — 데모 CLI 등 라우터 미경유 경로 전용
+    )
     proposal = make_proposal()
     action = make_action(proposal)
     result = await executor.execute(action, proposal)
@@ -739,22 +770,13 @@ from domain.management.contracts.approval_ledger import ApprovalStore, record_mi
 Run: `cd backend && uv run pytest ../test/backend/management/test_approval_ledger_gate.py ../test/backend/management/test_executor_gates.py ../test/backend/management/test_history_recorder.py -v`
 Expected: 전부 PASS (기존 테스트는 helpers.build_executor의 `approvals=None` 기본값 경유 — 테스트 헬퍼에서만 기본값 허용)
 
-- [ ] **Step 6: management 전체 테스트 확인**
+- [ ] **Step 6: ⚠️ 이 태스크에서는 커밋하지 않는다 — Task 5와 한 커밋**
 
-Run: `cd backend && uv run pytest ../test/backend/management -q`
-Expected: 전부 PASS
-
-- [ ] **Step 7: Ruff + 커밋**
-
-```bash
-cd backend && uv run ruff format . && uv run ruff check . --fix
-git add backend/domain/management/execution/executor.py backend/scripts/management_demo.py test/backend/management/helpers.py test/backend/management/test_history_recorder.py test/backend/management/test_approval_ledger_gate.py
-git commit -m "add: executor 승인 원장 게이트(#5) — 위조 차단·소진 마킹·approvals 필수 인자화"
-```
+`approvals` 필수 인자화로 라우터 `_get_executor()`·wiring `build_executor()`가 TypeError 상태가 되므로, 이 시점의 management **전체** 스위트는 라우터 테스트에서 깨지는 게 정상이다(표적 테스트만 통과 확인). 반대로 라우터에 게이트만 먼저 배선하면 `/approve`가 아직 원장을 쓰지 않아 풀사이클 테스트가 원장 부재 거부로 깨진다. 따라서 **executor 게이트 + 라우터/wiring 배선 + /approve 재작성 + 발행 4곳 교체는 Task 5에서 단일 커밋**으로 묶는다 — 모든 커밋이 green이어야 한다는 원칙 유지.
 
 ---
 
-### Task 5: 라우터 — /approve 인증·approver 서버 주입·발행 4곳 일원화 + 프론트 api.ts
+### Task 5: 라우터 — /approve 인증·approver 서버 주입·발행 4곳 일원화 + 프론트 api.ts (Task 4와 단일 커밋)
 
 **Files:**
 - Modify: `backend/api/routers/management.py` (686~706행 /approve, 241~267행 _get_executor, 3093·3232·3415행 approve 호출 3곳, 임포트)
@@ -970,12 +992,12 @@ Expected: 전부 PASS. 이 회귀가 스펙 §8-7(activate·pause·budget-commit
 Run: `cd frontend && pnpm lint`
 Expected: 에러 0
 
-- [ ] **Step 7: Ruff + 커밋**
+- [ ] **Step 7: Ruff + 커밋 (Task 4 산출물 포함 단일 커밋)**
 
 ```bash
 cd backend && uv run ruff format . && uv run ruff check . --fix
-git add backend/api/routers/management.py backend/domain/management/wiring.py frontend/src/lib/api.ts test/backend/management/test_approve_endpoint.py
-git commit -m "fix: /approve 인증·org 검증·approver 서버 주입 + 승인 발행 4곳 원장 일원화"
+git add backend/domain/management/execution/executor.py backend/scripts/management_demo.py backend/api/routers/management.py backend/domain/management/wiring.py frontend/src/lib/api.ts test/backend/management/helpers.py test/backend/management/test_history_recorder.py test/backend/management/test_approval_ledger_gate.py test/backend/management/test_approve_endpoint.py
+git commit -m "fix: 승인 원장 게이트(#5) 배선 — /approve 인증·approver 서버 주입·발행 4곳 일원화·executor approvals 필수화"
 ```
 
 ---
