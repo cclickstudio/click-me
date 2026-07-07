@@ -161,13 +161,34 @@ def _bar(label: str, ratio: float, disp: str, color: str = _BLUE) -> str:
     )
 
 
-def _kpi_card(value: str, label: str, exp: str, color: str) -> str:
+def _kpi_tone(ratio: float, good: float, ok: float) -> str:
+    """KPI 값(0~1 정규화)을 좋음(초)·보통(노)·나쁨(빨) 신호색으로 — 상단 카드 색 일관화용."""
+    return _GREEN if ratio >= good else _AMBER if ratio >= ok else _RED
+
+
+def _kpi_card(
+    value: str, label: str, exp: str, color: str, *, unit: str = "", gauge: float | None = None
+) -> str:
+    # unit(예 '/5')은 값 옆에 작게, gauge(0~1)는 값 아래 얇은 진행바 — 카드 색과 같은 상태색.
+    unit_html = (
+        f'<span class="text-[13px] font-bold text-slate-400 ml-0.5">{escape(unit)}</span>'
+        if unit
+        else ""
+    )
+    gauge_html = (
+        '<div class="h-1.5 bg-slate-100 rounded-full overflow-hidden mt-2">'
+        f'<div class="h-full rounded-full" '
+        f'style="width:{max(0.0, min(1.0, gauge)) * 100:.0f}%;background:{color}"></div></div>'
+        if gauge is not None
+        else ""
+    )
     return (
         '<div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 border-t-4" '
         f'style="border-top-color:{color}">'
         f'<div class="text-[11px] font-bold text-slate-500">{escape(label)}</div>'
         f'<div class="text-[28px] font-extrabold leading-tight mt-1" style="color:{color}">'
-        f"{escape(value)}</div>"
+        f"{escape(value)}{unit_html}</div>"
+        f"{gauge_html}"
         f'<div class="text-[9.5px] text-slate-400 mt-1 leading-snug">{escape(exp)}</div></div>'
     )
 
@@ -442,25 +463,80 @@ def _build_html(result: dict) -> str:
         "</div>"
     )
 
-    # ── 상단 KPI 카드 strip (5개) ──
+    # ── 상단 KPI 카드 strip (5개) — 색은 브랜드 구분이 아니라 좋음(초)·보통(노)·나쁨(빨) 신호로 통일 ──
+    # 거부율은 낮을수록 좋으므로 (1-rej)로 신호를 뒤집어 판정한다(게이지 길이는 실제 rej).
     blocks.append(
         '<div class="grid grid-cols-5 gap-3">'
-        + _kpi_card(_pct(cir), "클릭 의향", f"100명 중 {_n(cir)}명이 눌러보고 싶어 했어요", _BLUE)
-        + _kpi_card(f"{pi:.1f}", "구매의도 (5점)", "사고 싶은 마음의 정도", _INDIGO)
-        + _kpi_card(f"{tr:.1f}", "신뢰도 (5점)", "광고를 얼마나 믿는지", _TEAL)
+        + _kpi_card(
+            _pct(cir),
+            "클릭 의향",
+            f"100명 중 {_n(cir)}명이 눌러보고 싶어 했어요",
+            _kpi_tone(cir, 0.3, 0.15),
+            gauge=cir,
+        )
+        + _kpi_card(
+            f"{pi:.1f}",
+            "구매의도",
+            "5점 만점 · 사고 싶은 마음",
+            _kpi_tone(pi / 5, 0.7, 0.5),
+            unit="/5",
+            gauge=pi / 5,
+        )
+        + _kpi_card(
+            f"{tr:.1f}",
+            "신뢰도",
+            "5점 만점 · 광고를 얼마나 믿는지",
+            _kpi_tone(tr / 5, 0.7, 0.5),
+            unit="/5",
+            gauge=tr / 5,
+        )
         + _kpi_card(
             _pct(rej),
             "거부율",
-            f"{_n(rej)}명이 '싫다·스킵'. 낮을수록 좋아요",
-            _RED if rej >= 0.3 else _SLATE,
+            f"{_n(rej)}명이 '싫다·스킵' · 낮을수록 좋아요",
+            _kpi_tone(1 - rej, 0.85, 0.7),
+            gauge=rej,
         )
-        + _kpi_card(_pct(brr), "브랜드 식별", f"{_n(brr)}명이 어느 브랜드인지 알아봤어요", _GREEN)
+        + _kpi_card(
+            _pct(brr),
+            "브랜드 식별",
+            f"{_n(brr)}명이 어느 브랜드인지 알아봤어요",
+            _kpi_tone(brr, 0.5, 0.3),
+            gauge=brr,
+        )
         + "</div>"
     )
 
     # ── 종합 판정(풀폭) — verdict(전문가 진단) + 한눈에 보는 결론(비전문가, 하단 가로) ──
     # 화면(SimulationReportView)과 동일 구조. 강약점 요약은 §진단 섹션(rubric)에 그대로 있다.
     deg = overall / 100 * 360
+    # 종합 점수 근거 — 어떤 지표를 평균한 값인지 미니 막대로 노출(점수만 던지지 않는다).
+    contrib = [
+        ("클릭", cir, _kpi_tone(cir, 0.3, 0.15)),
+        ("구매", pi / 5, _kpi_tone(pi / 5, 0.7, 0.5)),
+        ("신뢰", tr / 5, _kpi_tone(tr / 5, 0.7, 0.5)),
+        ("거부↓", 1 - rej, _kpi_tone(1 - rej, 0.85, 0.7)),
+        ("브랜드", brr, _kpi_tone(brr, 0.5, 0.3)),
+    ]
+    if rubric:
+        rsc = sum((s.get("score", 0) or 0) for s in rubric) / (len(rubric) * 100)
+        contrib.append(("진단", rsc, _signal(rsc * 100)))
+    contrib_bars = "".join(
+        '<div class="flex flex-col items-center gap-0.5">'
+        f'<span class="text-[9px] font-bold" style="color:{c}">{max(0.0, min(1.0, v)) * 100:.0f}</span>'
+        '<div class="w-full h-9 bg-slate-100 rounded flex items-end overflow-hidden">'
+        f'<div class="w-full rounded-sm" '
+        f'style="height:{max(0.06, min(1.0, v)) * 100:.0f}%;background:{c}"></div></div>'
+        f'<span class="text-[8.5px] text-slate-400">{escape(lab)}</span></div>'
+        for lab, v, c in contrib
+    )
+    contrib_block = (
+        '<div class="mt-4 pt-3 border-t border-slate-100">'
+        '<div class="text-[10px] text-slate-500 mb-1.5">종합 점수는 아래 지표를 평균한 값이에요 '
+        "— 막대가 높을수록 좋음(거부율은 뒤집어 반영).</div>"
+        f'<div class="grid gap-2" style="grid-template-columns:repeat({len(contrib)},1fr)">'
+        f"{contrib_bars}</div></div>"
+    )
     plain = report.get("plain_summary") or ""
     plain_block = (
         (
@@ -488,7 +564,7 @@ def _build_html(result: dict) -> str:
         f"{escape(str(head))}</div>"
         f'<div class="text-[11px] text-slate-500 mt-1.5 leading-relaxed">{escape(vdesc)}</div>'
         "</div></div>"
-        f"{plain_block}</div>"
+        f"{contrib_block}{plain_block}</div>"
     )
 
     # ── 목표 달성 가능성(결정권자 1순위) — verdict 바로 아래 ──
@@ -577,10 +653,23 @@ def _build_html(result: dict) -> str:
     rb = report.get("rejection") or {}
     by_rej = rb.get("by_rejection_reason_tag") or {}
     rc = rb.get("rejected_count") or sum(by_rej.values()) or 1
-    rej_body = (
-        "".join(_bar(_REJECTION_KO.get(k, k), v / rc, f"{v}명", _RED) for k, v in by_rej.items())
-        or '<div class="text-[11px] text-slate-400">거부 없음</div>'
-    )
+    rej_rate = rb.get("rejection_rate") or 0
+    if by_rej:
+        rej_body = "".join(
+            _bar(_REJECTION_KO.get(k, k), v / rc, f"{v}명", _RED) for k, v in by_rej.items()
+        )
+    elif rej_rate < 0.1:
+        # 거부율 자체가 낮을 때만 긍정 단언 — 사유 미집계와 '거부 적음'을 혼동하지 않는다.
+        rej_body = (
+            '<div class="text-[11px] text-emerald-600 bg-emerald-50 rounded-lg px-3 py-2.5">'
+            "👍 이렇다 할 거부 반응이 없었어요 — 대놓고 싫어한 사람은 거의 없다는 뜻이에요.</div>"
+        )
+    else:
+        # 거부는 있으나 사유가 특정 태그로 분류되지 않은 경우 — 중립 안내(과소평가 금지).
+        rej_body = (
+            '<div class="text-[11px] text-slate-500 bg-slate-50 rounded-lg px-3 py-2.5">'
+            f"거부 반응은 {_pct(rej_rate)} 있었지만, 사유가 특정 유형으로 분류되진 않았어요.</div>"
+        )
     br = report.get("brand_recognition") or {}
     brand_body = _bar(
         "기억함",
