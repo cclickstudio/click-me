@@ -1,6 +1,7 @@
 'use client';
-// 시뮬 결과 화면 재사용 컴포넌트 — /simulation 실행 흐름과 /simulation/[id]/result 라우트가 공용.
-// SimRunResult 한 건을 받아 4대 KPI·광고해석·루브릭·페르소나반응·DebatePanel·최종 ReportView를 그린다.
+// 시뮬 결과 화면 재사용 컴포넌트 — /simulation 실행 흐름과 /simulation/[id] 라우트가 공용.
+// 히어로(목표달성+4대 KPI) 아래 3탭 구조: 개요(분포·OCEAN·광고해석) / 페르소나 반응(카드 그리드) / 토론·리포트.
+// 토론 탭은 SSE 세션 보존을 위해 조건부 렌더 대신 hidden 처리.
 
 import { useEffect, useState } from 'react';
 import { DebatePanel } from '@/components/simulator/DebatePanel';
@@ -617,7 +618,8 @@ export function SimulationResultView({
         </div>
       )}
 
-      <div>
+      {/* 토론·리포트 탭 — SSE 토론 세션 보존을 위해 언마운트 대신 hidden 처리 */}
+      <div className={tab === 'debate' ? 'space-y-6' : 'hidden'}>
         <DebatePanel
           reactions={reactions}
           adAnalysis={ad ?? null}
@@ -629,22 +631,22 @@ export function SimulationResultView({
           adDescription={adDescription || undefined}
           onReportView={setReportView}
         />
-      </div>
 
-      {/* 최종 결과 — 통합 리포트(화면 = PDF 단일 소스). 토론 완료 후 채워짐. */}
-      <div className={cardCls}>
-        {reportView ? (
-          <SimulationReportView rv={reportView} />
-        ) : (
-          <>
-            <h2 className='text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6] mb-2'>
-              최종 결과
-            </h2>
-            <p className='text-xs text-[#8B95A1] dark:text-[#6B7280]'>
-              토론이 끝나면 종합 리포트가 여기에 표시됩니다 (PDF 다운로드 포함).
-            </p>
-          </>
-        )}
+        {/* 최종 결과 — 통합 리포트(화면 = PDF 단일 소스). 토론 완료 후 채워짐. */}
+        <div className={cardCls}>
+          {reportView ? (
+            <SimulationReportView rv={reportView} />
+          ) : (
+            <>
+              <h2 className='text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6] mb-2'>
+                최종 결과
+              </h2>
+              <p className='text-xs text-[#8B95A1] dark:text-[#6B7280]'>
+                토론이 끝나면 종합 리포트가 여기에 표시됩니다 (PDF 다운로드 포함).
+              </p>
+            </>
+          )}
+        </div>
       </div>
 
       <p className='text-xs text-[#B0B8C1] dark:text-[#4B5563] border-t border-[#E5E8EB] dark:border-[#2D3748] pt-4'>
