@@ -7,7 +7,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api, type CenterNotificationItem } from '@/lib/api';
 import { useProjects } from '../ProjectContext';
-import { useChatController } from '../chat/ChatController';
 import { useNotificationStream } from '../manage/notifications/useNotificationStream';
 import type { CenterSegment } from './CenterFilterBar';
 
@@ -59,15 +58,16 @@ export default function AlarmCenter({
   segment,
   role,
   orgKey,
+  onOpenChat,
 }: {
   projectId: string;
   segment: CenterSegment;
   role: string | undefined;
   orgKey?: string; // 변경 시 재조회 트리거(ADMIN 기업 전환 — projectId 불변이어도 스코프가 바뀜)
+  onOpenChat?: (sessionId: string, projectId: string) => void; // 상담하기 → 센터 채팅 탭 열기
 }) {
   const router = useRouter();
-  const { selectedProject, selectProject } = useProjects();
-  const { setActiveSessionId, setFloatingOpen } = useChatController();
+  const { selectProject } = useProjects();
   const [items, setItems] = useState<CenterNotificationItem[]>([]);
   const [openId, setOpenId] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -155,15 +155,14 @@ export default function AlarmCenter({
     }
   };
 
-  // 상담하기 — management 알림 → 세션 심기 후 채팅 열기(현재는 FloatingChat, Phase 5에서 센터 채팅으로 전환 예정).
+  // 상담하기 — management 알림 → 세션 심기 후 센터 채팅 탭에서 열기.
   const onConsult = async (n: CenterNotificationItem) => {
     setBusyId(n.id);
     try {
       const r = await api.management.notifications.consult(n.id);
       if (r.status === 'consult') {
-        if (n.project_id && selectedProject?.id !== n.project_id) selectProject(n.project_id);
-        setActiveSessionId(r.session_id);
-        setFloatingOpen(true);
+        if (n.project_id) selectProject(n.project_id);
+        onOpenChat?.(r.session_id, n.project_id || '');
       } else if (r.status === 'normal') {
         setNotice(r.message || '다시 확인하니 지금은 정상이에요.');
       } else {

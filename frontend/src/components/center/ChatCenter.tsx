@@ -31,11 +31,15 @@ export default function ChatCenter({
   segment,
   readOnly = false,
   orgKey,
+  openTarget,
+  onOpenConsumed,
 }: {
   projectId: string;
   segment: CenterSegment;
   readOnly?: boolean;
   orgKey?: string; // 변경 시 재조회 트리거(ADMIN 기업 전환 — projectId 불변이어도 스코프가 바뀜)
+  openTarget?: { sessionId: string; projectId: string } | null; // 알림 상담하기 → 세션 열기 신호
+  onOpenConsumed?: () => void;
 }) {
   const { selectProject, chatRefreshKey } = useProjects();
   const {
@@ -69,6 +73,17 @@ export default function ChatCenter({
   useEffect(() => {
     load();
   }, [sessionsVersion, chatRefreshKey, orgKey, load]);
+
+  // 알림 상담하기 신호 — 지정 세션을 하단 라이브 채팅으로 연다.
+  useEffect(() => {
+    if (!openTarget) return;
+    if (openTarget.projectId) selectProject(openTarget.projectId);
+    setActiveSessionId(openTarget.sessionId);
+    setConvoProjectId(openTarget.projectId);
+    setNeedProject(false);
+    refreshSessions();
+    onOpenConsumed?.();
+  }, [openTarget, selectProject, setActiveSessionId, refreshSessions, onOpenConsumed]);
 
   // 검색어 디바운스.
   useEffect(() => {

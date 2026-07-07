@@ -52,6 +52,10 @@ export default function Center() {
   const [alarmSeg, setAlarmSeg] = useState<CenterSegment>('all');
   const [projectId, setProjectId] = useState('');
   const [orgId, setOrgId] = useState('');
+  // 상담하기 등으로 특정 세션을 채팅 센터에서 열도록 하는 신호(알림→채팅 전환).
+  const [openTarget, setOpenTarget] = useState<{ sessionId: string; projectId: string } | null>(
+    null,
+  );
 
   // 상태 복원 — 펼침 여부 + 마지막으로 연 센터(스펙 §3). ADMIN 선택 기업(X-Org-Id)도 복원.
   useEffect(() => {
@@ -168,6 +172,8 @@ export default function Center() {
             segment={chatSeg}
             readOnly={user?.role === 'COMPANY'}
             orgKey={orgId}
+            openTarget={openTarget}
+            onOpenConsumed={() => setOpenTarget(null)}
           />
         ) : (
           <AlarmCenter
@@ -175,6 +181,10 @@ export default function Center() {
             segment={alarmSeg}
             role={user?.role}
             orgKey={orgId}
+            onOpenChat={(sessionId, pid) => {
+              setOpenTarget({ sessionId, projectId: pid });
+              persistTab('chat');
+            }}
           />
         )}
       </div>

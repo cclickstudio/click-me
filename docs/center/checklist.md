@@ -36,7 +36,7 @@
 - [x] 세션 클릭 → 50/50 + 하단 라이브 채팅(기존 ChatConversation 재사용) — ADMIN Preview 검증(입력창·SimResultWidget·이력 렌더)
 - [x] 전체 프로젝트 통합 세션 표시 — projectId '' → org 전체(project_name 표시), 검증(16세션)
 - [x] 전체 프로젝트 상태에서 입력 시 프로젝트 강제 선택 — 새 채팅 시 needProject 안내
-- [~] 패널 채팅(ProjectChatSection)·FloatingChat 완전 제거(기능 누락 0) — 이관 검증 완료, 제거는 다음 단위
+- [x] 패널 채팅(ProjectChatSection)·FloatingChat 완전 제거(기능 누락 0) — FloatingChat·ProjectChatSection 파일 삭제, AppLayout NotificationBell 렌더 제거, layout.tsx FloatingChat 제거, AdminPanel·ProjectPanel ProjectChatSection 제거(showChat prop 정리). 상담하기는 AlarmCenter→onOpenChat으로 센터 채팅 탭 전환. Preview 검증(플로팅·벨 부재·센터 정상·콘솔 에러 0)
 - [x] (fix) ADMIN 기업 전환 시 목록 미갱신 버그 — orgKey prop으로 AlarmCenter·ChatCenter 재조회 트리거
 
 ## Phase 6 — 권한 분기
