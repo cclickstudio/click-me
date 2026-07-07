@@ -102,6 +102,14 @@ def _resolve_font(weight: str) -> str:
     return str(path)
 
 
+def __getattr__(name: str) -> str:
+    if name == "_FONT_REGULAR":
+        return _resolve_font("regular")
+    if name == "_FONT_BOLD":
+        return _resolve_font("bold")
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
 _DEFAULT_ACCENT = (37, 99, 235)  # brand_color 없을 때 기본 강조색(파랑)
 _WHITE = (255, 255, 255, 255)
 _LIGHT = (235, 235, 235, 255)
