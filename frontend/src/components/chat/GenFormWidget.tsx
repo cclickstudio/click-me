@@ -22,6 +22,7 @@ type Initial = {
   plain_summary?: string | null;
   improvement_direction?: string;
   existing_ad_s3_key?: string | null;
+  product_cutout_s3_key?: string | null; // 생성한 광고로 시뮬한 경우 누끼 재사용(그 외 null)
   fix_requests?: string | null;
 };
 
@@ -189,6 +190,7 @@ export default function GenFormWidget({
             plain_summary: initial?.plain_summary ?? null,
             improvement_direction: initial?.improvement_direction || null,
             existing_ad_s3_key: initial?.existing_ad_s3_key ?? null,
+            product_cutout_s3_key: initial?.product_cutout_s3_key ?? null,
             fix_requests: fixRequests.trim() || null,
             campaign_objective: objective,
           }

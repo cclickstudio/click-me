@@ -74,8 +74,16 @@ def test_build_improve_gen_data_shape():
     assert data["improvement_direction"] == "1. CTA 강화"
     assert data["existing_ad_s3_key"] == "ads/abc.png"
     assert data["fix_requests"] == "가격 빼줘"
-    # 채팅 경로에선 누끼 추적 불가 — 키 자체를 싣지 않는다.
-    assert "product_cutout_s3_key" not in data
+    # 소스에 누끼 키가 없으면(생성한 광고로 시뮬한 게 아니면) None.
+    assert data["product_cutout_s3_key"] is None
+
+
+def test_build_improve_gen_data_carries_cutout_when_present():
+    # 생성한 광고로 시뮬 → fetch_improve_source가 누끼 키를 실어주면 프리필에 그대로 전달.
+    data = build_improve_gen_data(
+        _src(product_cutout_s3_key="temp-product-images/gen-1-cutout.png")
+    )
+    assert data["product_cutout_s3_key"] == "temp-product-images/gen-1-cutout.png"
 
 
 def test_build_improve_gen_data_filters_non_key_asset_url():

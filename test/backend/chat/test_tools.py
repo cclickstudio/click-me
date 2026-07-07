@@ -49,6 +49,7 @@ async def test_run_simulation_emits_sim_form(tools):
             "ad_content": "여름 세일",
             "product_category": None,
             "ad_objective": None,
+            "analysis_mode": "synthetic",
         },
     }
     assert cmd.update["source"] == "simulation"

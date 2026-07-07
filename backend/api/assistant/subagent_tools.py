@@ -33,8 +33,33 @@ from domain.generator.assistant.tools import (
     run_generation as start_generation_now,
 )
 from domain.simulation.assistant.tools import list_simulations
+from domain.simulation.assistant.tools import run_simulation as sim_run_simulation
 
 _VALID_CAMPAIGN_ACTIONS = ("pause", "activate", "increase_budget", "decrease_budget")
+
+# 자동 개선 루프의 최초 1회 시뮬(eval_mode=simulation) 표본 — 저비용 진단용.
+_LOOP_SIM_SAMPLE = 12
+
+
+async def _loop_simulate(candidate: dict, seed: dict) -> dict | None:
+    """루프 최초 시안의 카피로 시뮬 1회(텍스트) → 4대 KPI. generator 도메인이 simulation을 직접
+    import하지 않도록, 조립은 여기(api/assistant)서 하고 generation_loop엔 콜백으로 주입한다."""
+    copy = candidate.get("copy") or {}
+    ad_content = "\n".join(
+        p for p in (copy.get("headline"), copy.get("body"), copy.get("cta")) if p
+    ) or (seed.get("product_description") or "")
+    if not ad_content:
+        return None
+    try:
+        return await sim_run_simulation(
+            ad_content=ad_content,
+            ad_title=copy.get("headline") or seed.get("product_name"),
+            ad_objective=seed.get("campaign_objective"),
+            sample_size=_LOOP_SIM_SAMPLE,
+        )
+    except Exception:  # noqa: BLE001 — 시뮬 실패는 루프가 QA-only로 폴백
+        return None
+
 
 # 실행 히스토리 summary용 한글 라벨 — BM25(공백 토큰) 서치가 한국어 질의에 잡히게.
 _CAMPAIGN_ACTION_LABELS = {
@@ -338,12 +363,15 @@ def build_chat_tools(settings, clio_retriever=None) -> list:
         campaign_objective: str = "conversion",
         quality_target: float = 0.8,
         max_iterations: int = 3,
+        use_simulation: bool = False,
         *,
         state: Annotated[dict, InjectedState],
         tool_call_id: Annotated[str, InjectedToolCallId],
     ) -> Command:
         """폼 없이 '알아서 좋은 시안까지 뽑아/반복 개선해줘'처럼 자동 개선 루프를 원할 때 호출한다.
         QA 품질이 목표에 도달할 때까지 생성→평가→개선을 자동 반복한다(백그라운드+진행 카드).
+        '시뮬(레이션) 기준으로/소비자 반응 반영해서 반복 개선'처럼 명시하면 use_simulation=True로
+        호출하라 — 최초 시안에 시뮬 1회를 돌려 소비자 반응 기반 개선 방향을 잡는다(그 외엔 False).
         단발 '시안 만들어줘'는 run_generation 폼을 쓴다. 발화의 값만 채우고 없으면 비운다."""
         import uuid as _uuid  # noqa: PLC0415
 
@@ -368,6 +396,10 @@ def build_chat_tools(settings, clio_retriever=None) -> list:
                 created_by = _uuid.UUID(str(uid))
             except (ValueError, TypeError):
                 created_by = None
+        # 시뮬 모드는 반복당 비용을 최초 1회로 묶되 반복 수도 보수적으로(기본 2).
+        iters = (
+            max(1, min(max_iterations, 5)) if not use_simulation else max(1, min(max_iterations, 2))
+        )
         loop_id = await generation_loop.start_loop(
             {
                 "product_name": product_name,
@@ -376,20 +408,21 @@ def build_chat_tools(settings, clio_retriever=None) -> list:
                 "campaign_objective": campaign_objective or "conversion",
             },
             quality_target=quality_target,
-            max_iterations=max(1, min(max_iterations, 5)),
+            max_iterations=iters,
             project_id=state.get("project_id"),
             created_by=created_by,
+            simulate_fn=_loop_simulate if use_simulation else None,
         )
         stream_url = f"/api/generator/generations/loop/{loop_id}/stream"
+        notice = (
+            "시뮬 결과를 반영해 자동 개선 루프를 시작했어요. 진행 상황은 카드에서 확인하세요."
+            if use_simulation
+            else "자동 개선 루프를 시작했어요. 진행 상황은 카드에서 확인하세요."
+        )
         return Command(
             update={
                 **widgets.gen_loop(loop_id, stream_url),
-                "messages": [
-                    ToolMessage(
-                        "자동 개선 루프를 시작했어요. 진행 상황은 카드에서 확인하세요.",
-                        tool_call_id=tool_call_id,
-                    )
-                ],
+                "messages": [ToolMessage(notice, tool_call_id=tool_call_id)],
             }
         )
 
