@@ -16,7 +16,7 @@
 - [x] 접힘: 채팅·알림 버튼 세로 스택 + 미읽음 배지 (우측 가장자리 띠, 카운트 30s 폴링)
 - [x] 펼침: 상단 두 버튼 탭 전환 (TabButton, 접기 버튼)
 - [x] localStorage 상태 기억(펼침/접힘·마지막 센터) — center:expanded·center:tab
-- [~] AppLayout에서 FloatingChat·NotificationBell·우하단 알림버튼 제거·센터로 교체 — `<Center/>` 마운트 완료. **제거는 대체 콘텐츠(Phase 4 알림·Phase 5 채팅) 동작 후로 유보**(회귀 방지). 지금은 공존.
+- [x] AppLayout에서 FloatingChat·NotificationBell·우하단 알림버튼 제거·센터로 교체 — `<Center/>` 마운트 + Phase 5에서 FloatingChat·NotificationBell·ProjectChatSection 완전 제거 완료(Preview 확인).
 - [x] api 클라이언트 center 블록(notifications·sessions·read·dismiss) + 타입(CenterNotificationItem·CenterSessionRow)
 
 ## Phase 3 — 필터 바
