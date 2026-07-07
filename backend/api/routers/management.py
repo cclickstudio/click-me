@@ -90,6 +90,8 @@ from domain.management.contracts.policy import (
     DAILY_BUDGET_KRW,
     FATIGUE_FREQUENCY,
     PROPOSAL_TTL_MINUTES,
+    exec_gate_thresholds,
+    is_executable_verdict,
 )
 from domain.management.contracts.schemas import (
     ActionProposal,
@@ -2540,13 +2542,18 @@ def _resolve_sim_asset_key(asset_url: str | None) -> str | None:
 
 
 def _is_executable_verdict(click_intent_rate: float, rejection_rate: float) -> bool:
-    """'집행 권장' 게이트 — 집행 가능 여부 판정(백엔드 정본).
+    """'집행 권장' 게이트 — 판정 정본은 contracts.policy, 임계값은 settings(잠정)."""
+    min_cir, max_rej = exec_gate_thresholds(settings)
+    return is_executable_verdict(
+        click_intent_rate, rejection_rate, min_cir=min_cir, max_rej=max_rej
+    )
 
-    ⚠️ 임시(TEST): 게이트 해제 — 모든 시뮬 결과 통과(클릭≥0·거부≤100%).
-    운영 복원: ``return click_intent_rate >= 0.2 and rejection_rate < 0.2``.
-    프론트 EXEC_CIR/EXEC_REJ(ExecuteFromSimulation.tsx)도 함께 0/1 → 0.2/0.2로 되돌릴 것.
-    """
-    return click_intent_rate >= 0.0 and rejection_rate <= 1.0
+
+@router.get("/exec-gate")
+async def exec_gate(user: User = Depends(get_current_user)):
+    """집행 권장 게이트 임계값 — 프론트 판정 동기화용(판정 정본은 서버)."""
+    min_cir, max_rej = exec_gate_thresholds(settings)
+    return {"min_click_intent_rate": min_cir, "max_rejection_rate": max_rej}
 
 
 class FromSimulationRequest(BaseModel):

@@ -110,6 +110,10 @@ class Settings(BaseSettings):
     # use_mock=True면 reader=Mock·writer=DRY_RUN (Meta 접촉 0, wiring.py 분기).
     # 실집행은 use_mock=False + management_execution_mode=live + 토큰일 때만.
     management_execution_mode: str = "dry_run"  # dry_run | validate_only | live
+    # 집행 권장 게이트 잠정값(시뮬팀 확인 대상) — 클릭 의향률 하한(포함)·거부율 상한(미만).
+    # 판정 정본은 domain/management/contracts/policy.py — 여기 값은 코드 수정 없는 조정 채널.
+    management_exec_gate_min_cir: float = 0.01
+    management_exec_gate_max_rej: float = 0.2
     # 능동 스케줄러(주기 이상 스캔→알림) — 기본 off(테스트/CI/dev 안전). 운영에서만 켠다.
     management_scheduler_enabled: bool = False
     management_scan_interval_minutes: int = 60
