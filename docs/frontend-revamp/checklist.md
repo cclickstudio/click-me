@@ -195,7 +195,7 @@
 
 ### 3.7 기업 계정 (5)
 - [x] `/company/teams`·projects·members·generations·chats — 전 company 페이지 뉴트럴+primary codemod 토큰화(아티팩트 0, build 통과).
-- [ ] **`/company/credits` (신설) — 크레딧 관리(COMPANY 전용)**: 잔액(**원화 ₩**)·충전(TossPayments 샌드박스, 동작 불변)·**사용량 추이 바차트(기능별 분해: 시뮬레이션/생성/기타)**. ⚠️ 순수 리스킨이 아니라 **신규 기능(백엔드 추가 수반)**. **이번 범위 = UI + 읽기 엔드포인트(잔액·기능별 사용량 조회) + 충전 UI(샌드박스 진입)** — 실제 차감 미터링은 발표 후(범위 밖). 신규 엔드포인트는 **append-only**로만 배선하고 `added-apis.md`에 기록. USER는 개인 충전 없음(공유 풀 읽기 전용), ADMIN은 미표시(2.3).
+- [x] **`/company/credits` (신설) — 크레딧 관리(COMPANY 전용)**: 잔액(**원화 ₩**)·충전(TossPayments 샌드박스 진입 /payment, 동작 불변)·**기능별 사용 추이 바차트(시뮬레이션/생성 8주)**·크레딧 내역(충전·사용). **백엔드 신규 엔드포인트 불필요** — 기존 `billing.balance`·`billing.history`+`dashboard/summary`(org 스코프) 재사용(added-apis 추가 없음). 미터링 차감은 발표 후 범위 밖이라 '사용 건수' 기반으로 정직하게 표기. 사이드바 company 관리에 '크레딧 관리' 링크 추가. test(COMPANY) 실 로그인 렌더 검증(잔액·충전·추이 62/59·내역 EmptyState)·콘솔 에러 0. USER 읽기전용(2.1)·ADMIN 미표시(2.3) 정책 준수(비-COMPANY는 /dashboard 리다이렉트).
 
 ### 3.8 결제 · 인증 · 법적
 > 뉴트럴+primary codemod 토큰화(아티팩트 0, build 통과). /payment·/privacy·/terms 200 확인, 콘솔 에러 0.
@@ -277,6 +277,7 @@ git push origin --delete feat/front-fix
 - 2026-07-08 P0.4 ThemeProvider 확장+/themes 갤러리 완료 — data-theme localStorage 영속·에디터테마 다크강제, layout 인라인스크립트 FOUC 방지. 갤러리에서 14테마 스위처+프리미티브 실시간 반영 검증(콘솔 에러 0). ※ preview_screenshot은 이 환경에서 외부 폰트 CDN network-idle 대기로 타임아웃 → snapshot/inspect/eval로 검증 대체.
 - 2026-07-08 P0.5 공용 프리미티브 완료 — StatCard(델타색·스파크라인)·Section·EmptyState 신설, chart-theme 훅(테마색 Recharts), 타이포 유틸(.text-h1~caption). shadcn 20종 활용. Select은 파일명 충돌로 커스텀 유지.
 - 2026-07-08 P0.6 팔레트 갱신 완료 — 기본 `--point` 라이트 #8B5CF6 / 다크 #A78BFA로 갱신(globals.css :root·.dark), chart-theme fallback도 동기화. blue(기본) 테마는 point override 안 해 :root값 적용, mono/violet만 의도적 override 유지. preview eval 검증: light rgb(139,92,246)·dark rgb(167,139,250), 콘솔 에러 0.
+- 2026-07-08 P3.7 /company/credits 신설 완료 — 크레딧 관리(COMPANY): 잔액(₩)·충전(Toss 샌드박스)·기능별 사용 추이(8주)·크레딧 내역. 백엔드 무변경(billing.balance/history+dashboard/summary 재사용). 사이드바 크레딧 관리 nav 추가. test 실 로그인 렌더·콘솔 에러 0. gen_docs로 라우트 반영.
 - 2026-07-08 P5/P6 QA·스윕 — 하드코딩 색 sweep(hex 1001→781, 뉴트럴 토큰화·의미색 보존), ESLint 미사용변수 0, gen_docs 갱신(summary 엔드포인트·routes 42→44). E2E preview 스윕(manage 5+admin 3+themes+3역할 대시보드+모바일): broken 0·오버플로 0·콘솔 에러 0. 모바일 햄버거 겹침 발견·수정. UI 기준 클린 수렴. 잔여 open은 인프라 B1(UI 무관).
 - 2026-07-08 P4 반응형 검증 — 대시보드 375px 실측 가로 오버플로 0·KPI 2열·CTA 풀폭, 표는 컨테이너 스크롤로 페이지 오버플로 0. AppLayout main max-md:pt-14로 고정 햄버거↔콘텐츠 겹침 해소(모바일 실측). 스크린샷 증거.
 - 2026-07-08 P3.5 채팅 토큰화 — chat+center 34 tsx(8786줄·1162 hex) 뉴트럴+primary codemod 일괄, 아티팩트 프로그램 정리 후 0. 역할색·위젯색·의미색 보존. asdf 로그인 /chat(프로젝트 게이트)·/chat/[project](채팅 시작) 실렌더·콘솔 에러 0. build 통과. center 데이터는 asyncpg 인프라 500(B1) 블록.

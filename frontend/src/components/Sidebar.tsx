@@ -61,6 +61,7 @@ const companyManageChildren = [
   { label: '팀 관리', href: '/company/teams' },
   { label: '프로젝트 관리', href: '/company/projects' },
   { label: '직원 관리', href: '/company/members' },
+  { label: '크레딧 관리', href: '/company/credits' },
 ];
 const companyHistoryChildren = [
   { label: '시뮬레이션 내역', href: '/simulations' },
