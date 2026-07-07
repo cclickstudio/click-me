@@ -187,7 +187,7 @@ export const ROLE_AVATAR: Record<string, string> = {
   '도메인 전문가(시장·유통)': 'bg-[#5B8DEF]',
   '마케팅 전문가(퍼포먼스)': 'bg-[#00B8B8]',
   '마케팅 전문가(브랜드)': 'bg-[#22A06B]',
-  피벗: 'bg-[#3182F6]',
+  피벗: 'bg-primary',
   완주자: 'bg-[#00C471]',
   비판자: 'bg-[#F04452]',
   미온: 'bg-[#8B95A1]',
@@ -200,13 +200,13 @@ const STOP_LABEL: Record<string, string> = {
 };
 
 const cardCls =
-  'bg-white dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748] rounded-2xl p-6 transition-colors';
+  'bg-card border border-line rounded-2xl p-6 transition-colors';
 const chipIdle =
-  'border-[#E5E8EB] dark:border-[#2D3748] text-[#8B95A1] dark:text-[#6B7280] hover:border-[#3182F6]';
+  'border-line text-ink-tertiary hover:border-primary';
 const chipActive =
-  'border-[#3182F6] bg-[#EEF4FF] dark:bg-[#1E3A5F] text-[#3182F6]';
+  'border-primary bg-primary-subtle text-primary';
 export const engineBadge =
-  'px-1.5 py-0.5 rounded text-[10px] font-mono bg-[#F2F4F6] dark:bg-[#252D3D] text-[#8B95A1] dark:text-[#6B7280]';
+  'px-1.5 py-0.5 rounded text-[10px] font-mono bg-surface-1 text-ink-tertiary';
 
 export function avatarColor(role: string): string {
   return ROLE_AVATAR[role] ?? 'bg-[#8B95A1]';
@@ -524,18 +524,18 @@ export function DebatePanel({
       {/* 토론 카드 — 헤더 + 세션 탭 + 채팅 + Q&A 입력 */}
       <div className={cardCls}>
         <div className='flex items-center justify-between mb-1'>
-          <h2 className='text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]'>
+          <h2 className='text-sm font-semibold text-ink'>
             페르소나 토론
           </h2>
           {sessions.length > 0 && view !== 'topic_select' && (
             <button
               onClick={enterTopicSelect}
-              className='text-xs font-medium text-[#3182F6] hover:text-[#1B6EEB]'>
+              className='text-xs font-medium text-primary hover:text-[#1B6EEB]'>
               + 추가 토론
             </button>
           )}
         </div>
-        <p className='text-xs text-[#8B95A1] dark:text-[#6B7280] mb-4'>
+        <p className='text-xs text-ink-tertiary mb-4'>
           반응 {reactions.length}건(QA 통과 {passedCount})을 전문가 4명 + 일반인{' '}
           {layCount}명이 토론해 개선 방향을 도출합니다.
         </p>
@@ -555,7 +555,7 @@ export function DebatePanel({
                   s.id === activeId && view === 'active' ? chipActive : chipIdle
                 }`}>
                 {s.status === 'running' && (
-                  <span className='inline-block w-1.5 h-1.5 rounded-full bg-[#3182F6] animate-pulse mr-1 align-middle' />
+                  <span className='inline-block w-1.5 h-1.5 rounded-full bg-primary animate-pulse mr-1 align-middle' />
                 )}
                 {s.status === 'error' && (
                   <span className='text-[#F04452] mr-0.5'>!</span>
@@ -581,17 +581,17 @@ export function DebatePanel({
             {active.status === 'running' && (
               <div className='space-y-2'>
                 <div className='flex justify-between text-xs'>
-                  <span className='text-[#8B95A1] dark:text-[#6B7280] flex items-center gap-1.5'>
-                    <span className='w-1.5 h-1.5 rounded-full bg-[#3182F6] animate-pulse' />
+                  <span className='text-ink-tertiary flex items-center gap-1.5'>
+                    <span className='w-1.5 h-1.5 rounded-full bg-primary animate-pulse' />
                     {active.stageMsg || '토론 준비 중…'}
                   </span>
-                  <span className='font-medium text-[#191F28] dark:text-[#F2F4F6]'>
+                  <span className='font-medium text-ink'>
                     {active.pct}%
                   </span>
                 </div>
-                <div className='w-full bg-[#F2F4F6] dark:bg-[#252D3D] rounded-full h-2 overflow-hidden'>
+                <div className='w-full bg-surface-1 rounded-full h-2 overflow-hidden'>
                   <div
-                    className='h-full bg-[#3182F6] rounded-full transition-all duration-300'
+                    className='h-full bg-primary rounded-full transition-all duration-300'
                     style={{ width: `${active.pct}%` }}
                   />
                 </div>
@@ -632,7 +632,7 @@ export function DebatePanel({
                 disabled={
                   active.status !== 'done' || active.qaBusy || !!active.restored
                 }
-                className='flex-1 px-4 py-2.5 rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-white dark:bg-[#252D3D] text-sm text-[#191F28] dark:text-[#F2F4F6] focus:outline-none focus:ring-2 focus:ring-[#3182F6] placeholder:text-[#B0B8C1] dark:placeholder:text-[#4B5563] transition-colors resize-none disabled:opacity-50'
+                className='flex-1 px-4 py-2.5 rounded-xl border border-line bg-surface-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-primary placeholder:text-ink-muted dark:placeholder:text-ink-muted transition-colors resize-none disabled:opacity-50'
               />
               <button
                 onClick={askQuestion}
@@ -642,14 +642,14 @@ export function DebatePanel({
                   !!active.restored ||
                   !qaInput.trim()
                 }
-                className='shrink-0 px-5 py-2.5 bg-[#3182F6] hover:bg-[#1B6EEB] disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl text-sm font-semibold transition-colors'>
+                className='shrink-0 px-5 py-2.5 bg-primary hover:bg-primary-hover disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl text-sm font-semibold transition-colors'>
                 전송
               </button>
             </div>
           </div>
         ) : (
-          <div className='flex items-center gap-2 text-xs text-[#8B95A1] dark:text-[#6B7280] py-10 justify-center'>
-            <span className='w-1.5 h-1.5 rounded-full bg-[#3182F6] animate-pulse' />
+          <div className='flex items-center gap-2 text-xs text-ink-tertiary py-10 justify-center'>
+            <span className='w-1.5 h-1.5 rounded-full bg-primary animate-pulse' />
             토론을 시작하는 중…
           </div>
         )}
@@ -659,14 +659,14 @@ export function DebatePanel({
       {view === 'active' && (
         <div className={cardCls}>
           <div className='flex items-center justify-between gap-3 mb-4 flex-wrap'>
-            <h2 className='text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]'>
+            <h2 className='text-sm font-semibold text-ink'>
               토론 결과
             </h2>
             {doneSessions.length > 1 && (
               <select
                 value={resultSession?.id ?? ''}
                 onChange={e => setResultViewId(e.target.value || null)}
-                className='max-w-[240px] truncate px-2.5 py-1 rounded-lg text-xs font-medium border border-[#E5E8EB] dark:border-[#2D3748] bg-white dark:bg-[#252D3D] text-[#4E5968] dark:text-[#9CA3AF] focus:outline-none focus:ring-2 focus:ring-[#3182F6] transition-colors'>
+                className='max-w-[240px] truncate px-2.5 py-1 rounded-lg text-xs font-medium border border-line bg-surface-2 text-ink-secondary focus:outline-none focus:ring-2 focus:ring-primary transition-colors'>
                 {doneSessions.map((s, i) => (
                   <option key={s.id} value={s.id}>
                     {`토론 ${i + 1} · ${s.title}`}
@@ -679,7 +679,7 @@ export function DebatePanel({
             {resultSession?.result ? (
               <DebateOutcome result={resultSession.result} />
             ) : (
-              <p className='text-sm text-[#8B95A1] dark:text-[#6B7280]'>
+              <p className='text-sm text-ink-tertiary'>
                 토론이 끝나면 결과가 여기에 표시됩니다.
               </p>
             )}
@@ -709,19 +709,19 @@ function TopicSelect({
   return (
     <div className='space-y-4'>
       <div className='flex items-center justify-between'>
-        <p className='text-xs font-semibold text-[#4E5968] dark:text-[#9CA3AF]'>
+        <p className='text-xs font-semibold text-ink-secondary'>
           추가로 다룰 논제를 하나 고르세요
         </p>
         <button
           onClick={onCancel}
-          className='text-xs text-[#8B95A1] dark:text-[#6B7280] hover:text-[#3182F6]'>
+          className='text-xs text-ink-tertiary hover:text-primary'>
           취소
         </button>
       </div>
 
       {loading && (
-        <div className='flex items-center gap-2 text-xs text-[#8B95A1] dark:text-[#6B7280] py-6 justify-center'>
-          <span className='w-1.5 h-1.5 rounded-full bg-[#3182F6] animate-pulse' />
+        <div className='flex items-center gap-2 text-xs text-ink-tertiary py-6 justify-center'>
+          <span className='w-1.5 h-1.5 rounded-full bg-primary animate-pulse' />
           논제 후보를 분석하는 중…
         </div>
       )}
@@ -744,27 +744,27 @@ function TopicSelect({
               key={t.topic_id}
               type='button'
               onClick={() => onPick(t)}
-              className='w-full text-left p-4 rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] hover:border-[#3182F6] hover:bg-[#EEF4FF] dark:hover:bg-[#1E3A5F]/40 transition-colors group'>
+              className='w-full text-left p-4 rounded-xl border border-line hover:border-primary hover:bg-[#EEF4FF] dark:hover:bg-[#1E3A5F]/40 transition-colors group'>
               <div className='flex items-start gap-3'>
-                <span className='shrink-0 w-6 h-6 rounded-full bg-[#F2F4F6] dark:bg-[#252D3D] group-hover:bg-[#3182F6] group-hover:text-white text-[#8B95A1] dark:text-[#6B7280] text-xs font-bold flex items-center justify-center transition-colors'>
+                <span className='shrink-0 w-6 h-6 rounded-full bg-surface-1 group-hover:bg-primary group-hover:text-white text-ink-tertiary text-xs font-bold flex items-center justify-center transition-colors'>
                   {t.ranking}
                 </span>
                 <div className='min-w-0 flex-1'>
-                  <p className='text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6] leading-snug'>
+                  <p className='text-sm font-semibold text-ink leading-snug'>
                     {t.headline}
                   </p>
                   {t.question && (
-                    <p className='text-xs text-[#4E5968] dark:text-[#9CA3AF] mt-1 leading-relaxed'>
+                    <p className='text-xs text-ink-secondary mt-1 leading-relaxed'>
                       {t.question}
                     </p>
                   )}
                   <div className='flex flex-wrap items-center gap-1.5 mt-2'>
                     {t.primary_signal && (
-                      <span className='px-2 py-0.5 rounded-full bg-[#F2F4F6] dark:bg-[#252D3D] text-[10px] text-[#8B95A1] dark:text-[#6B7280]'>
+                      <span className='px-2 py-0.5 rounded-full bg-surface-1 text-[10px] text-ink-tertiary'>
                         {t.primary_signal}
                       </span>
                     )}
-                    <span className='px-2 py-0.5 rounded-full bg-[#EEF4FF] dark:bg-[#1E3A5F] text-[10px] text-[#3182F6]'>
+                    <span className='px-2 py-0.5 rounded-full bg-primary-subtle text-[10px] text-primary'>
                       신뢰도 {(t.confidence * 100).toFixed(0)}%
                     </span>
                   </div>
@@ -776,7 +776,7 @@ function TopicSelect({
       )}
 
       {!loading && !error && topics.length === 0 && (
-        <p className='text-xs text-[#B0B8C1] dark:text-[#4B5563] py-6 text-center'>
+        <p className='text-xs text-ink-muted py-6 text-center'>
           제안할 논제가 없습니다.
         </p>
       )}
@@ -802,9 +802,9 @@ function ChatView({
   return (
     <div
       ref={boxRef}
-      className='h-[460px] overflow-y-auto rounded-xl bg-[#F9FAFB] dark:bg-[#161C29] border border-[#E5E8EB] dark:border-[#2D3748] p-4 space-y-3'>
+      className='h-[460px] overflow-y-auto rounded-xl bg-[#F9FAFB] dark:bg-[#161C29] border border-line p-4 space-y-3'>
       {messages.length === 0 ? (
-        <p className='text-xs text-[#B0B8C1] dark:text-[#4B5563] py-6 text-center'>
+        <p className='text-xs text-ink-muted py-6 text-center'>
           곧 진행자가 토론 주제를 제시합니다…
         </p>
       ) : (
@@ -819,7 +819,7 @@ function ChatView({
               {showRound && m.kind === 'utterance' && (
                 <div className='flex items-center gap-2 my-2'>
                   <div className='flex-1 h-px bg-[#E5E8EB] dark:bg-[#2D3748]' />
-                  <span className='text-[10px] font-medium text-[#B0B8C1] dark:text-[#4B5563]'>
+                  <span className='text-[10px] font-medium text-ink-muted'>
                     라운드 {m.round} · {m.phase}
                   </span>
                   <div className='flex-1 h-px bg-[#E5E8EB] dark:bg-[#2D3748]' />
@@ -831,7 +831,7 @@ function ChatView({
         })
       )}
       {typing && messages.length > 0 && (
-        <div className='flex items-center gap-1 pl-1 text-[#B0B8C1] dark:text-[#4B5563]'>
+        <div className='flex items-center gap-1 pl-1 text-ink-muted'>
           <span className='w-1.5 h-1.5 rounded-full bg-current animate-bounce [animation-delay:-0.2s]' />
           <span className='w-1.5 h-1.5 rounded-full bg-current animate-bounce [animation-delay:-0.1s]' />
           <span className='w-1.5 h-1.5 rounded-full bg-current animate-bounce' />
@@ -847,7 +847,7 @@ function ChatBubble({ msg }: { msg: ChatMsg }) {
   if (msg.kind === 'qa_question') {
     return (
       <div className='chat-pop flex justify-end'>
-        <div className='max-w-[80%] inline-block px-3 py-2 rounded-2xl rounded-tr-sm bg-[#3182F6] text-white'>
+        <div className='max-w-[80%] inline-block px-3 py-2 rounded-2xl rounded-tr-sm bg-primary text-primary-foreground'>
           <p className='text-sm leading-relaxed'>{msg.text}</p>
         </div>
       </div>
@@ -867,10 +867,10 @@ function ChatBubble({ msg }: { msg: ChatMsg }) {
     return (
       <div className='chat-pop flex justify-center'>
         <div className='max-w-[88%] text-center px-3 py-2 rounded-xl bg-[#EEF4FF] dark:bg-[#1E2A44] border border-[#D5E3FB] dark:border-[#26395C]'>
-          <p className='text-[10px] font-semibold text-[#3182F6] mb-0.5'>
+          <p className='text-[10px] font-semibold text-primary mb-0.5'>
             {label}
           </p>
-          <p className='text-xs text-[#4E5968] dark:text-[#C4CCD6] leading-relaxed'>
+          <p className='text-xs text-ink-secondary dark:text-[#C4CCD6] leading-relaxed'>
             {msg.text}
           </p>
         </div>
@@ -889,26 +889,26 @@ function ChatBubble({ msg }: { msg: ChatMsg }) {
       </div>
       <div className='min-w-0 flex-1'>
         <div className='flex flex-wrap items-center gap-1.5 mb-0.5'>
-          <span className='text-[11px] font-medium text-[#191F28] dark:text-[#F2F4F6]'>
+          <span className='text-[11px] font-medium text-ink'>
             {msg.persona_name}
           </span>
           {msg.role && (
-            <span className='text-[10px] text-[#8B95A1] dark:text-[#6B7280]'>
+            <span className='text-[10px] text-ink-tertiary'>
               {msg.role}
             </span>
           )}
-          <span className='flex items-center gap-1 text-[10px] text-[#8B95A1] dark:text-[#6B7280]'>
+          <span className='flex items-center gap-1 text-[10px] text-ink-tertiary'>
             <span className={`w-1.5 h-1.5 rounded-full ${st.dot}`} />
             {st.label}
           </span>
         </div>
-        <div className='inline-block px-3 py-2 rounded-2xl rounded-tl-sm bg-white dark:bg-[#252D3D] border border-[#E5E8EB] dark:border-[#2D3748]'>
-          <p className='text-sm text-[#191F28] dark:text-[#F2F4F6] leading-relaxed'>
+        <div className='inline-block px-3 py-2 rounded-2xl rounded-tl-sm bg-surface-2 border border-line'>
+          <p className='text-sm text-ink leading-relaxed'>
             {msg.text}
           </p>
         </div>
         {msg.lever && (
-          <p className='text-[11px] text-[#B0B8C1] dark:text-[#4B5563] mt-0.5 pl-1'>
+          <p className='text-[11px] text-ink-muted mt-0.5 pl-1'>
             개선 레버: {msg.lever}
           </p>
         )}
@@ -927,11 +927,11 @@ function DebateOutcome({ result }: { result: DebateResult }) {
     <div className='space-y-5'>
       {/* 메타 배지 */}
       <div className='flex flex-wrap gap-2 text-xs'>
-        <span className='px-2.5 py-1 rounded-full bg-[#EEF4FF] dark:bg-[#1E3A5F] text-[#3182F6]'>
+        <span className='px-2.5 py-1 rounded-full bg-primary-subtle text-primary'>
           {rep.rounds_run}라운드
         </span>
         {rep.stop_reason && (
-          <span className='px-2.5 py-1 rounded-full bg-[#F2F4F6] dark:bg-[#252D3D] text-[#4E5968] dark:text-[#9CA3AF]'>
+          <span className='px-2.5 py-1 rounded-full bg-surface-1 text-ink-secondary'>
             {STOP_LABEL[rep.stop_reason] ?? rep.stop_reason}
           </span>
         )}
@@ -940,10 +940,10 @@ function DebateOutcome({ result }: { result: DebateResult }) {
       {/* 비전문가용 쉬운 결론 (강조) */}
       {rep.plain_summary && (
         <div className='rounded-xl bg-[#EEF4FF] dark:bg-[#162844] border border-[#D5E3FB] dark:border-[#1E3A5F] p-4'>
-          <p className='text-xs font-semibold text-[#3182F6] mb-1.5'>
+          <p className='text-xs font-semibold text-primary mb-1.5'>
             한눈에 보는 결론
           </p>
-          <p className='text-[15px] leading-relaxed text-[#191F28] dark:text-[#F2F4F6]'>
+          <p className='text-[15px] leading-relaxed text-ink'>
             {rep.plain_summary}
           </p>
         </div>
@@ -951,10 +951,10 @@ function DebateOutcome({ result }: { result: DebateResult }) {
 
       {/* 전문가용 진단 헤드라인 */}
       <div>
-        <p className='text-xs font-semibold text-[#8B95A1] dark:text-[#6B7280] mb-1'>
+        <p className='text-xs font-semibold text-ink-tertiary mb-1'>
           진단 (전문가용)
         </p>
-        <p className='text-sm text-[#191F28] dark:text-[#F2F4F6] leading-relaxed'>
+        <p className='text-sm text-ink leading-relaxed'>
           {rep.headline}
         </p>
       </div>
@@ -970,7 +970,7 @@ function DebateOutcome({ result }: { result: DebateResult }) {
               {rep.consensus.map((c, i) => (
                 <li
                   key={i}
-                  className='text-sm text-[#4E5968] dark:text-[#9CA3AF] flex gap-1.5'>
+                  className='text-sm text-ink-secondary flex gap-1.5'>
                   <span className='text-[#00A661]'>•</span>
                   <span>{c}</span>
                 </li>
@@ -985,7 +985,7 @@ function DebateOutcome({ result }: { result: DebateResult }) {
               {rep.dissent.map((d, i) => (
                 <li
                   key={i}
-                  className='text-sm text-[#4E5968] dark:text-[#9CA3AF] flex gap-1.5'>
+                  className='text-sm text-ink-secondary flex gap-1.5'>
                   <span className='text-[#F4A100]'>•</span>
                   <span>{d}</span>
                 </li>
@@ -998,28 +998,28 @@ function DebateOutcome({ result }: { result: DebateResult }) {
       {/* 개선안 순위 */}
       {rep.ranked_actions.length > 0 && (
         <div>
-          <p className='text-xs font-semibold text-[#8B95A1] dark:text-[#6B7280] mb-2'>
+          <p className='text-xs font-semibold text-ink-tertiary mb-2'>
             개선안 (우선순위)
           </p>
           <div className='space-y-2'>
             {rep.ranked_actions.map(a => (
               <div
                 key={a.rank}
-                className='flex gap-3 p-3 rounded-xl bg-[#F9FAFB] dark:bg-[#252D3D] border border-[#E5E8EB] dark:border-[#2D3748]'>
-                <span className='shrink-0 w-6 h-6 rounded-full bg-[#3182F6] text-white text-xs font-bold flex items-center justify-center'>
+                className='flex gap-3 p-3 rounded-xl bg-surface-1 border border-line'>
+                <span className='shrink-0 w-6 h-6 rounded-full bg-primary text-primary-foreground text-xs font-bold flex items-center justify-center'>
                   {a.rank}
                 </span>
                 <div className='min-w-0'>
-                  <p className='text-sm font-medium text-[#191F28] dark:text-[#F2F4F6]'>
+                  <p className='text-sm font-medium text-ink'>
                     {a.action}
                   </p>
                   {a.expected_effect && (
-                    <p className='text-xs text-[#8B95A1] dark:text-[#6B7280] mt-0.5'>
+                    <p className='text-xs text-ink-tertiary mt-0.5'>
                       기대효과: {a.expected_effect}
                     </p>
                   )}
                   {a.supporting_personas.length > 0 && (
-                    <p className='text-[11px] text-[#B0B8C1] dark:text-[#4B5563] mt-0.5'>
+                    <p className='text-[11px] text-ink-muted mt-0.5'>
                       뒷받침: {a.supporting_personas.join(', ')}
                     </p>
                   )}
@@ -1033,14 +1033,14 @@ function DebateOutcome({ result }: { result: DebateResult }) {
       {/* 라운드 정리 (있으면) */}
       {Object.keys(roundSummaries).length > 0 && (
         <div>
-          <p className='text-xs font-semibold text-[#8B95A1] dark:text-[#6B7280] mb-1.5'>
+          <p className='text-xs font-semibold text-ink-tertiary mb-1.5'>
             라운드 정리
           </p>
           <ul className='space-y-1'>
             {Object.entries(roundSummaries).map(([round, summary]) => (
               <li
                 key={round}
-                className='text-xs text-[#4E5968] dark:text-[#9CA3AF]'>
+                className='text-xs text-ink-secondary'>
                 <span className='font-medium'>R{round}</span> · {summary}
               </li>
             ))}

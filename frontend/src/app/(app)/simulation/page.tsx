@@ -101,19 +101,19 @@ const AD_GOALS: { value: string; label: string; desc: string }[] = [
 
 /* ─── 공통 스타일(기존 simulation 페이지 컨벤션) ─── */
 const labelCls =
-  'block text-xs font-semibold text-[#4E5968] dark:text-[#9CA3AF] mb-1.5';
+  'block text-xs font-semibold text-ink-secondary mb-1.5';
 const sectionTitle =
-  'text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6] mb-2';
+  'text-sm font-semibold text-ink mb-2';
 const chipBase =
   'px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors';
 const chipActive =
-  'border-[#3182F6] bg-[#EEF4FF] dark:bg-[#1E3A5F] text-[#3182F6]';
+  'border-primary bg-primary-subtle text-primary';
 const chipIdle =
-  'border-[#E5E8EB] dark:border-[#2D3748] text-[#8B95A1] dark:text-[#6B7280] hover:border-[#3182F6]';
+  'border-line text-ink-tertiary hover:border-primary';
 const inputCls =
-  'w-full px-3 py-2.5 rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-white dark:bg-[#252D3D] text-sm text-[#191F28] dark:text-[#F2F4F6] focus:outline-none focus:ring-2 focus:ring-[#3182F6] placeholder:text-[#B0B8C1] dark:placeholder:text-[#4B5563] transition-colors';
+  'w-full px-3 py-2.5 rounded-xl border border-line bg-surface-2 text-sm text-ink focus:outline-none focus:ring-2 focus:ring-primary placeholder:text-ink-muted dark:placeholder:text-ink-muted transition-colors';
 const cardCls =
-  'bg-white dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748] rounded-2xl p-6 transition-colors';
+  'bg-card border border-line rounded-2xl p-6 transition-colors';
 
 /* ─── 연령대 → age_min/age_max 변환 (다중 선택 시 하한~상한 범위) ─── */
 const AGE_BANDS: { label: string; min: number; max: number }[] = [
@@ -735,10 +735,10 @@ export default function SimulationRunPage() {
     return (
       <div className='px-8 py-8 max-w-5xl mx-auto'>
         <div className='mb-6'>
-          <h1 className='text-2xl font-bold text-[#191F28] dark:text-[#F2F4F6]'>
+          <h1 className='text-2xl font-bold text-ink'>
             시뮬레이터 실행
           </h1>
-          <p className='text-sm text-[#8B95A1] dark:text-[#6B7280] mt-1'>
+          <p className='text-sm text-ink-tertiary mt-1'>
             AI 가상 소비자에게 광고 반응을 미리 테스트합니다
           </p>
         </div>
@@ -766,7 +766,7 @@ export default function SimulationRunPage() {
               </button>
             ))}
           </div>
-          <p className='text-[11px] text-[#8B95A1] dark:text-[#6B7280] mt-2'>
+          <p className='text-[11px] text-ink-tertiary mt-2'>
             {MODE_TABS.find(m => m.value === analysisMode)?.desc}
           </p>
         </div>
@@ -778,13 +778,13 @@ export default function SimulationRunPage() {
           </label>
           {projects.length === 0 ? (
             <div className='flex items-center gap-3'>
-              <p className='text-sm text-[#8B95A1] dark:text-[#6B7280]'>
+              <p className='text-sm text-ink-tertiary'>
                 선택할 프로젝트가 없습니다.
               </p>
               <button
                 type='button'
                 onClick={() => setShowCreateProject(true)}
-                className='px-3 py-1.5 rounded-lg bg-[#3182F6] hover:bg-[#1B64DA] text-white text-xs font-semibold transition-colors'>
+                className='px-3 py-1.5 rounded-lg bg-primary hover:bg-primary-hover text-white text-xs font-semibold transition-colors'>
                 + 프로젝트 만들기
               </button>
             </div>
@@ -823,7 +823,7 @@ export default function SimulationRunPage() {
         <div className='grid grid-cols-[1fr_1fr] gap-5 items-stretch'>
           {/* ── 왼쪽: 광고 입력 ── */}
           <div className={`${cardCls} flex flex-col gap-5`}>
-            <p className='text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]'>
+            <p className='text-sm font-semibold text-ink'>
               광고 입력
             </p>
 
@@ -877,7 +877,7 @@ export default function SimulationRunPage() {
               </div>
 
               {inputMode === 'image' && (
-                <label className='relative flex flex-1 min-h-0 flex-col items-center justify-center border-2 border-dashed border-[#E5E8EB] dark:border-[#2D3748] rounded-xl cursor-pointer hover:border-[#3182F6] transition-colors overflow-hidden'>
+                <label className='relative flex flex-1 min-h-0 flex-col items-center justify-center border-2 border-dashed border-line rounded-xl cursor-pointer hover:border-primary transition-colors overflow-hidden'>
                   {previewUrl ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
@@ -886,7 +886,7 @@ export default function SimulationRunPage() {
                       className='absolute inset-0 h-full w-full object-contain'
                     />
                   ) : (
-                    <span className='text-sm text-[#8B95A1] dark:text-[#6B7280]'>
+                    <span className='text-sm text-ink-tertiary'>
                       클릭하여 이미지 선택 (최대 10MB)
                     </span>
                   )}
@@ -901,15 +901,15 @@ export default function SimulationRunPage() {
               {inputMode === 'generated' && (
                 <div className='flex flex-1 min-h-0 flex-col gap-3'>
                   {!selectedProject ? (
-                    <p className='text-sm text-[#8B95A1] dark:text-[#6B7280]'>
+                    <p className='text-sm text-ink-tertiary'>
                       먼저 위에서 프로젝트를 선택하세요.
                     </p>
                   ) : genLoading ? (
-                    <p className='text-sm text-[#8B95A1] dark:text-[#6B7280]'>
+                    <p className='text-sm text-ink-tertiary'>
                       생성한 광고를 불러오는 중...
                     </p>
                   ) : genOptions.length === 0 ? (
-                    <p className='text-sm text-[#8B95A1] dark:text-[#6B7280]'>
+                    <p className='text-sm text-ink-tertiary'>
                       이 프로젝트에 성공한 생성 내역이 없어요.
                     </p>
                   ) : (
@@ -925,7 +925,7 @@ export default function SimulationRunPage() {
                         }))}
                       />
                       {selectedGenImageUrl && (
-                        <div className='relative flex flex-1 min-h-0 items-center justify-center overflow-hidden rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-[#F8F9FA] dark:bg-[#1C2333]'>
+                        <div className='relative flex flex-1 min-h-0 items-center justify-center overflow-hidden rounded-xl border border-line bg-[#F8F9FA] dark:bg-[#1C2333]'>
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img
                             src={selectedGenImageUrl}
@@ -941,11 +941,11 @@ export default function SimulationRunPage() {
               {inputMode === 'campaign' && (
                 <div className='flex flex-1 min-h-0 flex-col gap-3'>
                   {campaignsLoading ? (
-                    <p className='text-sm text-[#8B95A1] dark:text-[#6B7280]'>
+                    <p className='text-sm text-ink-tertiary'>
                       집행 캠페인을 불러오는 중...
                     </p>
                   ) : campaigns.length === 0 ? (
-                    <p className='text-sm text-[#8B95A1] dark:text-[#6B7280]'>
+                    <p className='text-sm text-ink-tertiary'>
                       집행 중인 캠페인이 없어요. (Meta 연결·집행 광고가 있어야 표시돼요.)
                     </p>
                   ) : (
@@ -961,14 +961,14 @@ export default function SimulationRunPage() {
                         }))}
                       />
                       {selectedCampaignId && !campaignImageUrl && (
-                        <p className='text-xs text-[#8B95A1] dark:text-[#6B7280]'>
+                        <p className='text-xs text-ink-tertiary'>
                           이 캠페인 소재에 이미지가 없어요.
                         </p>
                       )}
                       {campaignImageUrl && (
-                        <div className='relative flex flex-1 min-h-0 items-center justify-center overflow-hidden rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-[#F8F9FA] dark:bg-[#1C2333]'>
+                        <div className='relative flex flex-1 min-h-0 items-center justify-center overflow-hidden rounded-xl border border-line bg-[#F8F9FA] dark:bg-[#1C2333]'>
                           {campaignImgError ? (
-                            <p className='px-4 text-center text-xs text-[#8B95A1] dark:text-[#6B7280]'>
+                            <p className='px-4 text-center text-xs text-ink-tertiary'>
                               브라우저 미리보기는 Meta 제한으로 안 보일 수 있어요. 아래 VLM 확인을 참고하세요.
                             </p>
                           ) : (
@@ -996,7 +996,7 @@ export default function SimulationRunPage() {
                         ? 'text-emerald-600 dark:text-emerald-400'
                         : vlmCheck.status === 'fail'
                           ? 'text-[#F04452]'
-                          : 'text-[#8B95A1] dark:text-[#6B7280]'
+                          : 'text-ink-tertiary'
                     }`}>
                     {vlmCheck.status === 'checking'
                       ? '🔎 VLM이 읽을 수 있는지 확인 중...'
@@ -1012,7 +1012,7 @@ export default function SimulationRunPage() {
           <div className='flex flex-col gap-5'>
             {/* 광고 설정 — 제품 카테고리 & 광고 목표 */}
             <div className={`${cardCls} flex flex-col gap-5`}>
-              <p className='text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]'>
+              <p className='text-sm font-semibold text-ink'>
                 광고 설정
               </p>
 
@@ -1086,7 +1086,7 @@ export default function SimulationRunPage() {
                     className={`${inputCls} mt-2`}
                   />
                 )}
-                <p className='text-[11px] text-[#8B95A1] dark:text-[#6B7280] mt-1.5'>
+                <p className='text-[11px] text-ink-tertiary mt-1.5'>
                   {goalItem === '기타'
                     ? '원하는 광고 목표를 직접 적어주세요.'
                     : (AD_GOALS.find(g => g.value === goalItem)?.desc ??
@@ -1100,7 +1100,7 @@ export default function SimulationRunPage() {
               /* ── 세그먼트 비교 편집 ── */
               <div className={`${cardCls} flex flex-col gap-4`}>
                 <div className='flex items-center justify-between'>
-                  <p className='text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]'>
+                  <p className='text-sm font-semibold text-ink'>
                     비교할 세그먼트
                   </p>
                   <button
@@ -1117,14 +1117,14 @@ export default function SimulationRunPage() {
                     + 세그먼트 추가
                   </button>
                 </div>
-                <p className='text-[11px] text-[#8B95A1] dark:text-[#6B7280] -mt-2'>
+                <p className='text-[11px] text-ink-tertiary -mt-2'>
                   각 세그먼트의 타깃·표본을 정하면, 완료 후 KPI를 나란히 비교합니다.
                 </p>
 
                 {segments.map((s, i) => (
                   <div
                     key={i}
-                    className='rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] p-4 flex flex-col gap-3'>
+                    className='rounded-xl border border-line p-4 flex flex-col gap-3'>
                     <div className='flex items-center gap-2'>
                       <input
                         type='text'
@@ -1199,7 +1199,7 @@ export default function SimulationRunPage() {
                     <div>
                       <label className={labelCls}>
                         표본 수:{' '}
-                        <span className='text-[#3182F6] font-bold'>
+                        <span className='text-primary font-bold'>
                           {s.sampleSize}명
                         </span>
                       </label>
@@ -1227,17 +1227,17 @@ export default function SimulationRunPage() {
               <>
                 {/* 시뮬레이션 설정 — synthetic은 표본 슬라이더, individual은 1명 고정 */}
                 <div className={`${cardCls} flex flex-col gap-5`}>
-                  <p className='text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]'>
+                  <p className='text-sm font-semibold text-ink'>
                     시뮬레이션 설정
                   </p>
 
                   {analysisMode === 'individual' ? (
                     // individual — 표본 1명 고정(슬라이더 숨김).
-                    <div className='bg-[#EEF4FF] dark:bg-[#1E3A5F] border border-[#3182F6]/20 rounded-xl px-4 py-4'>
-                      <p className='text-sm font-semibold text-[#3182F6]'>
+                    <div className='bg-primary-subtle border border-primary/20 rounded-xl px-4 py-4'>
+                      <p className='text-sm font-semibold text-primary'>
                         가상 소비자 1명 심층 분석
                       </p>
-                      <p className='text-[11px] text-[#4E5968] dark:text-[#9CA3AF] mt-1'>
+                      <p className='text-[11px] text-ink-secondary mt-1'>
                         1명 모드는 표본이 1명으로 고정됩니다. 아래 타깃 조건에
                         맞는 페르소나 1명을 깊이 있게 분석합니다.
                       </p>
@@ -1245,15 +1245,15 @@ export default function SimulationRunPage() {
                   ) : (
                     <>
                       {/* 표본 수 */}
-                      <div className='bg-[#F9FAFB] dark:bg-[#252D3D] border border-[#E5E8EB] dark:border-[#2D3748] rounded-xl px-4 py-4'>
+                      <div className='bg-surface-1 border border-line rounded-xl px-4 py-4'>
                         <label className={labelCls}>
                           가상 소비자 수:{' '}
-                          <span className='text-[#3182F6] font-bold'>
+                          <span className='text-primary font-bold'>
                             {sampleSize}명
                           </span>
                         </label>
                         {campaignReach != null && campaignReach > 0 && (
-                          <p className='text-[11px] text-[#8B95A1] dark:text-[#6B7280] mb-1'>
+                          <p className='text-[11px] text-ink-tertiary mb-1'>
                             실제 Meta 도달 {campaignReach.toLocaleString()}명 → 표본 최대 200명
                           </p>
                         )}
@@ -1265,7 +1265,7 @@ export default function SimulationRunPage() {
                           onChange={e => setSampleSize(Number(e.target.value))}
                           className='w-full accent-[#3182F6] mt-1'
                         />
-                        <div className='flex justify-between text-[10px] text-[#B0B8C1] dark:text-[#4B5563] mt-1'>
+                        <div className='flex justify-between text-[10px] text-ink-muted mt-1'>
                           <span>1명</span>
                           <span>200명</span>
                         </div>
@@ -1290,7 +1290,7 @@ export default function SimulationRunPage() {
                             </button>
                           ))}
                         </div>
-                        <p className='text-[11px] text-[#8B95A1] dark:text-[#6B7280] mt-1.5'>
+                        <p className='text-[11px] text-ink-tertiary mt-1.5'>
                           {allocation === 'proportional'
                             ? '실제 인구 비율대로 뽑습니다 (기본 권장).'
                             : '소수 그룹도 충분히 포함되게 보강합니다 (정밀하지만 신뢰구간이 넓어짐).'}
@@ -1302,17 +1302,17 @@ export default function SimulationRunPage() {
 
                 {/* ── 타깃 설정 (미지정 시 자동 추정) ── */}
                 <div className={`${cardCls} flex flex-col gap-5`}>
-                  <p className='text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]'>
+                  <p className='text-sm font-semibold text-ink'>
                     타깃 설정
                   </p>
-                  <p className='text-[11px] text-[#8B95A1] dark:text-[#6B7280] -mt-2'>
+                  <p className='text-[11px] text-ink-tertiary -mt-2'>
                     지정하지 않으면 자동으로 타깃을 추정합니다.
                   </p>
 
                   <div>
                     <p className={sectionTitle}>
                       연령대{' '}
-                      <span className='text-[10px] font-normal text-[#B0B8C1] dark:text-[#4B5563]'>
+                      <span className='text-[10px] font-normal text-ink-muted'>
                         복수 선택 가능
                       </span>
                     </p>
@@ -1341,7 +1341,7 @@ export default function SimulationRunPage() {
                   <div>
                     <p className={sectionTitle}>
                       성별{' '}
-                      <span className='text-[10px] font-normal text-[#B0B8C1] dark:text-[#4B5563]'>
+                      <span className='text-[10px] font-normal text-ink-muted'>
                         선택
                       </span>
                     </p>
@@ -1369,17 +1369,17 @@ export default function SimulationRunPage() {
                     <div>
                       <p className={sectionTitle}>
                         페르소나 지정{' '}
-                        <span className='text-[10px] font-normal text-[#B0B8C1] dark:text-[#4B5563]'>
+                        <span className='text-[10px] font-normal text-ink-muted'>
                           선택 — 안 고르면 위 조건에서 자동 추출
                         </span>
                       </p>
                       {pickedPersona ? (
-                        <div className='flex items-center justify-between rounded-lg border border-[#3182F6]/30 bg-[#EEF4FF] dark:bg-[#1E3A5F] px-3 py-2'>
+                        <div className='flex items-center justify-between rounded-lg border border-primary/30 bg-primary-subtle px-3 py-2'>
                           <div>
-                            <p className='text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]'>
+                            <p className='text-sm font-semibold text-ink'>
                               {pickedPersona.age}세 {pickedPersona.gender === 'F' ? '여성' : '남성'} · {pickedPersona.region}
                             </p>
-                            <p className='text-[11px] text-[#4E5968] dark:text-[#9CA3AF] line-clamp-1'>
+                            <p className='text-[11px] text-ink-secondary line-clamp-1'>
                               {pickedPersona.narrative_snippet}
                             </p>
                           </div>
@@ -1403,9 +1403,9 @@ export default function SimulationRunPage() {
                       )}
 
                       {personaPickerOpen && !pickedPersona && (
-                        <div className='mt-2 max-h-64 overflow-y-auto rounded-lg border border-[#E5E8EB] dark:border-[#2D3748] divide-y divide-[#E5E8EB] dark:divide-[#2D3748]'>
+                        <div className='mt-2 max-h-64 overflow-y-auto rounded-lg border border-line divide-y divide-[#E5E8EB] dark:divide-[#2D3748]'>
                           {personaOptions.length === 0 && !personaOptionsLoading && (
-                            <p className='text-[11px] text-[#8B95A1] px-3 py-3'>
+                            <p className='text-[11px] text-ink-tertiary px-3 py-3'>
                               조건에 맞는 페르소나가 없어요. 연령대·성별 조건을 넓혀보세요.
                             </p>
                           )}
@@ -1417,23 +1417,23 @@ export default function SimulationRunPage() {
                                 setPickedPersona(p);
                                 setPersonaPickerOpen(false);
                               }}
-                              className='w-full text-left px-3 py-2 hover:bg-[#F9FAFB] dark:hover:bg-[#252D3D] transition-colors'>
-                              <p className='text-xs font-semibold text-[#191F28] dark:text-[#F2F4F6]'>
+                              className='w-full text-left px-3 py-2 hover:bg-accent transition-colors'>
+                              <p className='text-xs font-semibold text-ink'>
                                 {p.age}세 {p.gender === 'F' ? '여성' : '남성'} · {p.region}
                               </p>
-                              <p className='text-[11px] text-[#8B95A1] line-clamp-1'>
+                              <p className='text-[11px] text-ink-tertiary line-clamp-1'>
                                 {p.narrative_snippet}
                               </p>
                             </button>
                           ))}
                           {personaOptionsLoading && (
-                            <p className='text-[11px] text-[#8B95A1] px-3 py-3'>불러오는 중...</p>
+                            <p className='text-[11px] text-ink-tertiary px-3 py-3'>불러오는 중...</p>
                           )}
                           {!personaOptionsLoading && personaOptions.length < personaOptionsTotal && (
                             <button
                               type='button'
                               onClick={() => void loadPersonaOptions(personaOptions.length)}
-                              className='w-full text-center text-xs text-[#3182F6] font-medium px-3 py-2'>
+                              className='w-full text-center text-xs text-primary font-medium px-3 py-2'>
                               더 보기 ({personaOptions.length}/{personaOptionsTotal})
                             </button>
                           )}
@@ -1452,7 +1452,7 @@ export default function SimulationRunPage() {
           <button
             onClick={run}
             disabled={!canRun}
-            className='w-full flex items-center justify-center gap-2 py-3.5 bg-[#3182F6] hover:bg-[#1B6EEB] disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl text-sm font-semibold transition-colors'>
+            className='w-full flex items-center justify-center gap-2 py-3.5 bg-primary hover:bg-primary-hover disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-xl text-sm font-semibold transition-colors'>
             <svg className='w-4 h-4' fill='currentColor' viewBox='0 0 24 24'>
               <path d='M8 5v14l11-7z' />
             </svg>
@@ -1463,7 +1463,7 @@ export default function SimulationRunPage() {
               위에서 프로젝트를 먼저 선택해 주세요.
             </p>
           ) : (
-            <p className='text-[11px] text-[#B0B8C1] dark:text-[#4B5563] text-center mt-2'>
+            <p className='text-[11px] text-ink-muted text-center mt-2'>
               가상 소비자 수에 따라 수 초~수십 초 걸립니다.
             </p>
           )}
@@ -1478,15 +1478,15 @@ export default function SimulationRunPage() {
       <div className='px-8 py-8 max-w-5xl mx-auto'>
         <div className={`${cardCls} flex flex-col gap-6 py-16`}>
           <div className='flex flex-col items-center gap-4'>
-            <div className='w-10 h-10 border-4 border-[#E5E8EB] dark:border-[#2D3748] border-t-[#3182F6] dark:border-t-[#5B9DF9] rounded-full animate-spin' />
+            <div className='w-10 h-10 border-4 border-line border-t-[#3182F6] dark:border-t-[#5B9DF9] rounded-full animate-spin' />
             {/* persona_set — 세그먼트 진행(segment_index/total) 표시 */}
             {analysisMode === 'persona_set' && segProgress.total > 0 && (
-              <span className='px-2.5 py-1 rounded-full text-[11px] font-semibold bg-[#EEF4FF] dark:bg-[#1E3A5F] text-[#3182F6]'>
+              <span className='px-2.5 py-1 rounded-full text-[11px] font-semibold bg-primary-subtle text-primary'>
                 세그먼트 {segProgress.index}/{segProgress.total}
                 {segProgress.label ? ` · ${segProgress.label}` : ''}
               </span>
             )}
-            <p className='text-sm font-medium text-[#4E5968] dark:text-[#9CA3AF]'>
+            <p className='text-sm font-medium text-ink-secondary'>
               {stageMsg ||
                 (analysisMode === 'persona_set'
                   ? '세그먼트별로 광고 반응을 생성하는 중...'
@@ -1497,18 +1497,18 @@ export default function SimulationRunPage() {
           </div>
           <div className='w-full max-w-md mx-auto space-y-2'>
             <div className='flex justify-between text-xs'>
-              <span className='text-[#8B95A1] dark:text-[#6B7280]'>진행률</span>
-              <span className='font-medium text-[#191F28] dark:text-[#F2F4F6]'>
+              <span className='text-ink-tertiary'>진행률</span>
+              <span className='font-medium text-ink'>
                 {pct}%
               </span>
             </div>
-            <div className='w-full bg-[#F2F4F6] dark:bg-[#252D3D] rounded-full h-2 overflow-hidden'>
+            <div className='w-full bg-surface-1 rounded-full h-2 overflow-hidden'>
               <div
-                className='h-full bg-[#3182F6] rounded-full transition-all duration-300'
+                className='h-full bg-primary rounded-full transition-all duration-300'
                 style={{ width: `${pct}%` }}
               />
             </div>
-            <p className='text-xs text-[#B0B8C1] dark:text-[#4B5563] text-center pt-1'>
+            <p className='text-xs text-ink-muted text-center pt-1'>
               {analysisMode === 'persona_set'
                 ? '세그먼트마다 광고 해석 → 반응 생성 → 집계를 반복합니다.'
                 : '광고 해석 → 패널 로드 → 반응 생성 → 집계'}

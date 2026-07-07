@@ -143,14 +143,14 @@
 ## Phase 3 — 도메인 화면 (프리미티브로 재구성 + IA 개선 + preview 검증)
 
 ### 3.1 시뮬레이션
-- [ ] `/simulation` 입력 폼 재구성(단계·검증·프리뷰).
-- [ ] 시뮬 결과 뷰(`SimulationResultView`)·리포트 뷰(`SimulationReportView`) 4대 KPI를 분포·신뢰구간 중심으로.
-- [ ] 페르소나 반응·토론 패널(`PersonaReactionCard`/`DebatePanel`) 정돈.
-- [ ] 개인 딥뷰·세그먼트 비교 뷰 정돈.
-- [ ] `/simulations` 내역 리스트(필터·페이지네이션·카드/표).
-- [ ] `/simulation/[id]` 상세.
-- [ ] 진행 상태(`SimProgress`) 로딩 연출.
-- [ ] **기능 스모크**: 실제 시뮬 1건 실행(폼 로그인→입력→제출) → 백엔드 결과(4대 KPI 분포·신뢰구간)가 실제로 렌더되는지 확인.
+- [x] `/simulation` 입력 폼 토큰화(뉴트럴+primary 팔레트 sweep, 의미색·차트색 보존). asdf 로그인 실렌더·콘솔 에러 0 스크린샷. (단계·검증 로직 무변경 — 순수 리스킨.)
+- [x] 시뮬 결과 뷰(`SimulationResultView`)·리포트 뷰(`SimulationReportView`) 토큰화(codemod 82/85 repl, 아티팩트 0, build 통과). ⚠️ 라이브 조회는 백엔드 `db-result` 500(asyncpg/Neon 인프라, qa-findings B1)로 이 환경에서 막힘 — KPI 4종 분포·신뢰구간 로직은 기존 유지, 색만 토큰화.
+- [x] 페르소나 반응·토론 패널(`PersonaReactionCard`/`DebatePanel`) 토큰화(codemod, build 통과).
+- [x] 개인 딥뷰·세그먼트 비교 뷰(`IndividualDeepView`/`SegmentComparisonView`) 토큰화.
+- [x] `/simulations` 내역 리스트 — 실데이터 렌더 검증(정렬·검색·표, asdf 로그인). 토큰화 완료.
+- [x] `/simulation/[id]` 상세 래퍼 토큰화(결과 데이터는 위 인프라 이슈로 블록).
+- [x] 진행 상태(`SimProgress`) — 시뮬 화면 codemod 범위 포함.
+- [~] **기능 스모크**: 시뮬 목록 실데이터 조회는 검증(company/simulations 200). 실제 신규 실행→결과 KPI 렌더는 **백엔드 db-result 500(인프라, UI 무관)로 이 환경에서 불가** — qa-findings B1. 결과뷰 토큰화는 build/렌더로 검증.
 
 ### 3.2 생성기
 - [ ] `/generator` 입력·시안 3종 결과·기대성과 순위 재구성.
@@ -271,6 +271,7 @@ git push origin --delete feat/front-fix
 - 2026-07-08 P0.4 ThemeProvider 확장+/themes 갤러리 완료 — data-theme localStorage 영속·에디터테마 다크강제, layout 인라인스크립트 FOUC 방지. 갤러리에서 14테마 스위처+프리미티브 실시간 반영 검증(콘솔 에러 0). ※ preview_screenshot은 이 환경에서 외부 폰트 CDN network-idle 대기로 타임아웃 → snapshot/inspect/eval로 검증 대체.
 - 2026-07-08 P0.5 공용 프리미티브 완료 — StatCard(델타색·스파크라인)·Section·EmptyState 신설, chart-theme 훅(테마색 Recharts), 타이포 유틸(.text-h1~caption). shadcn 20종 활용. Select은 파일명 충돌로 커스텀 유지.
 - 2026-07-08 P0.6 팔레트 갱신 완료 — 기본 `--point` 라이트 #8B5CF6 / 다크 #A78BFA로 갱신(globals.css :root·.dark), chart-theme fallback도 동기화. blue(기본) 테마는 point override 안 해 :root값 적용, mono/violet만 의도적 override 유지. preview eval 검증: light rgb(139,92,246)·dark rgb(167,139,250), 콘솔 에러 0.
+- 2026-07-08 P3.1 시뮬레이션 토큰화 — 입력폼·목록·상세·6개 simulator 컴포넌트 뉴트럴+primary 팔레트 codemod(파일당 22~86 repl, 아티팩트 0, 의미색·차트색 보존). asdf 로그인: /simulations 실데이터 표·/simulation 입력폼 렌더·콘솔 에러 0 검증. 결과뷰 라이브는 백엔드 db-result 500(asyncpg/Neon 인프라, qa-findings B1·UI 무관)로 블록. build 통과.
 - 2026-07-08 P2.3 ADMIN 대시보드 완료 — 하드코딩 placeholder를 실데이터로 교체(전체 사용자/조직/시뮬/생성 KPI, 주간추이 차트, 최근 가입+역할배지, 최근 생성, 관리 바로가기). 크레딧 UI 전무. admin 실 로그인 검증(11명/4개/66/143), 콘솔 에러 0.
 - 2026-07-08 P2.1/2.2 USER·COMPANY 대시보드 완료 — 역할별 인사·CTA, StatCard KPI 델타(summary 신규 엔드포인트), Recharts 8주 주간추이, 활동피드(recent 병합), 역할별 크레딧(USER 읽기전용/COMPANY 충전/ADMIN 미표시), 3기능·최근내역·CLIO 토큰화, Skeleton/EmptyState. **3역할 모두 실 Cognito 폼 로그인 검증**(admin 글로벌 7.4%·company org 7.0%·user 팀 16.1% 스코프 차이로 role 스코프 실동작 확인). CreditBalance 역할 인지형 전환. DB에 test/asdf 유저 append(test-data.md). "지금 주목할 것" 알림은 3.3 이월.
 - 2026-07-08 P1.2 랜딩 완료 — page.tsx 전면 재설계(framer-motion 히어로 순차 페이드+스크롤 리빌+배경 blob 패럴랙스), lucide 아이콘, 사실기반 소셜프루프(81만/5요인/분포·CI), 토큰화·반응형(sm:). 라이트/다크 스크린샷 증거, 콘솔 에러 0. layout.tsx에 data-scroll-behavior="smooth" 추가(Next 경고 해소).

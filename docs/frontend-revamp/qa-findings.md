@@ -15,7 +15,7 @@
 
 | #   | 화면(경로)   | 역할 | 심각도 | 증상                                                    | 재현            | 증거              | 상태 |
 | --- | ------------ | ---- | ------ | ------------------------------------------------------- | --------------- | ----------------- | ---- |
-| 예  | /center 알림 | USER | minor  | 토글 "읽음/안읽음/전체"가 width로 "음/안읽음/전체"로 잘림 | 알림센터 열기   | shots/ex.png      | open |
+| B1  | /simulation/[id] · /center | 전역 | infra(비-UI) | `GET /api/simulation/{id}/db-result`·`/api/center/notifications`·`/api/center/sessions`가 500(asyncpg prepared statement + Neon 풀러 비호환). 프론트엔 "Failed to fetch". **프론트 개편 변경과 무관·기존 인프라 이슈**(백엔드 append-only 범위라 미수정). 결과뷰/센터 라이브 검증이 이 환경에선 막힘 — 토큰화는 build+렌더로 검증. | asdf 로그인→시뮬 상세 진입 | backend.log asyncpg _prepare 트레이스 | open(백엔드 인프라, UI 무관) |
 
 ## 진행 로그
 

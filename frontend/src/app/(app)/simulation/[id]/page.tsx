@@ -160,7 +160,7 @@ export default function SimulationResultPage() {
         <button
           onClick={handleRestore}
           disabled={acting}
-          className='px-3 py-1.5 rounded-full text-sm font-medium text-[#3182F6] border border-[#3182F6]/30 hover:bg-[#EBF3FF] dark:hover:bg-[#1E3A5F] transition-colors disabled:opacity-40'
+          className='px-3 py-1.5 rounded-full text-sm font-medium text-primary border border-primary/30 hover:bg-primary-subtle transition-colors disabled:opacity-40'
         >
           {acting ? '복원 중...' : '복원'}
         </button>
@@ -187,8 +187,8 @@ export default function SimulationResultPage() {
     <>
       {loading && (
         <div className='px-8 py-16 max-w-5xl mx-auto text-center'>
-          <div className='inline-block w-8 h-8 border-4 border-[#E5E8EB] dark:border-[#2D3748] border-t-[#3182F6] dark:border-t-[#5B9DF9] rounded-full animate-spin' />
-          <p className='mt-4 text-sm text-[#8B95A1] dark:text-[#6B7280]'>
+          <div className='inline-block w-8 h-8 border-4 border-line border-t-[#3182F6] dark:border-t-[#5B9DF9] rounded-full animate-spin' />
+          <p className='mt-4 text-sm text-ink-tertiary'>
             결과를 불러오는 중...
           </p>
         </div>

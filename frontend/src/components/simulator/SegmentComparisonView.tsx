@@ -10,7 +10,7 @@ import { saveSimResult } from '@/lib/simResultStore';
 import type { SegmentResult, SimComparisonResult } from '@/lib/types';
 
 const cardCls =
-  'bg-white dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748] rounded-2xl p-6 transition-colors';
+  'bg-card border border-line rounded-2xl p-6 transition-colors';
 
 const GENDER_LABEL: Record<string, string> = { M: '남성', F: '여성', '': '전체' };
 
@@ -115,10 +115,10 @@ export function SegmentComparisonView({
     <div className='px-8 py-8 max-w-7xl mx-auto space-y-6'>
       <div className='flex items-center justify-between'>
         <div>
-          <h1 className='text-2xl font-bold text-[#191F28] dark:text-[#F2F4F6]'>
+          <h1 className='text-2xl font-bold text-ink'>
             세그먼트 비교 결과
           </h1>
-          <p className='text-sm text-[#8B95A1] dark:text-[#6B7280] mt-1'>
+          <p className='text-sm text-ink-tertiary mt-1'>
             run_id {comparison.run_id.slice(0, 8)} · 세그먼트 {segments.length}개
             {adTitle ? ` · ${adTitle}` : ''}
           </p>
@@ -143,20 +143,20 @@ export function SegmentComparisonView({
 
       {/* 4대 KPI 대조표 — 행: 지표, 열: 세그먼트. 우세 세그먼트 강조. */}
       <div className={cardCls}>
-        <h2 className='text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6] mb-4'>
+        <h2 className='text-sm font-semibold text-ink mb-4'>
           4대 KPI 비교
         </h2>
         <div className='overflow-x-auto'>
           <table className='w-full text-sm border-collapse'>
             <thead>
               <tr>
-                <th className='text-left font-medium text-[#8B95A1] dark:text-[#6B7280] py-2 pr-4 whitespace-nowrap'>
+                <th className='text-left font-medium text-ink-tertiary py-2 pr-4 whitespace-nowrap'>
                   지표
                 </th>
                 {segments.map(s => (
                   <th
                     key={s.label}
-                    className='text-right font-semibold text-[#191F28] dark:text-[#F2F4F6] py-2 px-3 whitespace-nowrap'>
+                    className='text-right font-semibold text-ink py-2 px-3 whitespace-nowrap'>
                     {s.label}
                   </th>
                 ))}
@@ -168,8 +168,8 @@ export function SegmentComparisonView({
                 return (
                   <tr
                     key={m.key}
-                    className='border-t border-[#E5E8EB] dark:border-[#2D3748]'>
-                    <td className='text-[#4E5968] dark:text-[#9CA3AF] py-3 pr-4 whitespace-nowrap'>
+                    className='border-t border-line'>
+                    <td className='text-ink-secondary py-3 pr-4 whitespace-nowrap'>
                       {m.label}
                     </td>
                     {segments.map((s, i) => {
@@ -181,7 +181,7 @@ export function SegmentComparisonView({
                           className={`text-right tabular-nums py-3 px-3 ${
                             isWinner
                               ? 'font-bold text-[#1B64DA] dark:text-[#7AB0FF]'
-                              : 'text-[#191F28] dark:text-[#F2F4F6]'
+                              : 'text-ink'
                           }`}>
                           {v == null ? '—' : m.fmt(v)}
                           {isWinner && (
@@ -198,7 +198,7 @@ export function SegmentComparisonView({
             </tbody>
           </table>
         </div>
-        <p className='text-[11px] text-[#B0B8C1] dark:text-[#4B5563] mt-3'>
+        <p className='text-[11px] text-ink-muted mt-3'>
           ▲는 해당 지표에서 가장 우세한 세그먼트입니다(거부율은 낮을수록 우세).
           절대 스케일이 아닌 세그먼트 간 상대 비교로 참고하세요.
         </p>
@@ -206,7 +206,7 @@ export function SegmentComparisonView({
 
       {/* 세그먼트별 상세 진입 — DB 저장분만 개별 결과 페이지로 연결 */}
       <div className={cardCls}>
-        <h2 className='text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6] mb-3'>
+        <h2 className='text-sm font-semibold text-ink mb-3'>
           세그먼트별 상세
         </h2>
         <div className='space-y-2'>
@@ -215,12 +215,12 @@ export function SegmentComparisonView({
             return (
               <div
                 key={s.label}
-                className='flex items-center justify-between gap-3 px-4 py-3 rounded-xl bg-[#F9FAFB] dark:bg-[#252D3D] border border-[#E5E8EB] dark:border-[#2D3748]'>
+                className='flex items-center justify-between gap-3 px-4 py-3 rounded-xl bg-surface-1 border border-line'>
                 <div className='min-w-0'>
-                  <p className='text-sm font-medium text-[#191F28] dark:text-[#F2F4F6] truncate'>
+                  <p className='text-sm font-medium text-ink truncate'>
                     {s.label}
                   </p>
-                  <p className='text-[11px] text-[#8B95A1] dark:text-[#6B7280]'>
+                  <p className='text-[11px] text-ink-tertiary'>
                     {targetLabel(s.target_filter)} · 반응{' '}
                     {s.result.reactions?.length ?? 0}건
                   </p>
@@ -228,11 +228,11 @@ export function SegmentComparisonView({
                 {simId ? (
                   <Link
                     href={`/simulation/${simId}`}
-                    className='shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium text-[#3182F6] border border-[#3182F6]/30 hover:bg-[#EBF3FF] dark:hover:bg-[#1E3A5F] transition-colors'>
+                    className='shrink-0 px-3 py-1.5 rounded-lg text-xs font-medium text-primary border border-primary/30 hover:bg-primary-subtle transition-colors'>
                     상세 보기
                   </Link>
                 ) : (
-                  <span className='shrink-0 text-[11px] text-[#B0B8C1] dark:text-[#4B5563]'>
+                  <span className='shrink-0 text-[11px] text-ink-muted'>
                     저장 안 됨
                   </span>
                 )}
@@ -242,7 +242,7 @@ export function SegmentComparisonView({
         </div>
       </div>
 
-      <p className='text-xs text-[#B0B8C1] dark:text-[#4B5563] border-t border-[#E5E8EB] dark:border-[#2D3748] pt-4'>
+      <p className='text-xs text-ink-muted border-t border-line pt-4'>
         본 결과는 AI 시뮬레이션 기반 예측이며 의사결정 보조 근거입니다. 클릭
         의향률은 실측 CTR이 아닙니다(calibration 전).
       </p>

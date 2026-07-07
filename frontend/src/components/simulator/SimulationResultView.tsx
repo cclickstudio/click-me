@@ -18,7 +18,7 @@ const assetSrc = (u?: string | null) =>
   u && u.startsWith('/') ? `${API_BASE}${u}` : (u ?? undefined);
 
 const cardCls =
-  'bg-white dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748] rounded-2xl p-6 transition-colors';
+  'bg-card border border-line rounded-2xl p-6 transition-colors';
 
 interface Props {
   result: SimRunResult;
@@ -166,10 +166,10 @@ export function SimulationResultView({
     <div className='px-8 py-8 max-w-7xl mx-auto space-y-6'>
       <div className='flex items-center justify-between'>
         <div>
-          <h1 className='text-2xl font-bold text-[#191F28] dark:text-[#F2F4F6]'>
+          <h1 className='text-2xl font-bold text-ink'>
             시뮬레이터 결과
           </h1>
-          <p className='text-sm text-[#8B95A1] dark:text-[#6B7280] mt-1'>
+          <p className='text-sm text-ink-tertiary mt-1'>
             run_id {result.run_id.slice(0, 8)} · 반응 {reactions.length}건 (QA
             통과 {passed.length}){result.simulation_id && ' · DB 저장됨'}
           </p>
@@ -189,7 +189,7 @@ export function SimulationResultView({
             {onReset && (
               <button
                 onClick={onReset}
-                className='px-4 py-2 border border-[#E5E8EB] dark:border-[#2D3748] rounded-lg text-sm text-[#8B95A1] dark:text-[#6B7280] hover:bg-[#F9FAFB] dark:hover:bg-[#252D3D] transition-colors'>
+                className='px-4 py-2 border border-line rounded-lg text-sm text-ink-tertiary hover:bg-accent transition-colors'>
                 새 시뮬레이션
               </button>
             )}
@@ -202,21 +202,21 @@ export function SimulationResultView({
         <>
           <div className='grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4'>
             {fit && (
-              <div className='lg:col-span-2 col-span-2 bg-white dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748] rounded-2xl p-5'>
-                <p className='text-xs text-[#8B95A1] dark:text-[#6B7280]'>
+              <div className='lg:col-span-2 col-span-2 bg-card border border-line rounded-2xl p-5'>
+                <p className='text-xs text-ink-tertiary'>
                   목표 달성 가능성 · {fit.objective}
                 </p>
                 <div className='flex items-baseline gap-2 mt-1'>
-                  <span className='text-2xl font-bold text-[#191F28] dark:text-[#F2F4F6]'>
+                  <span className='text-2xl font-bold text-ink'>
                     {fit.grade}
                   </span>
-                  <span className='text-xs text-[#8B95A1] dark:text-[#6B7280]'>
+                  <span className='text-xs text-ink-tertiary'>
                     지수 {fit.score}/100
                   </span>
                 </div>
-                <div className='mt-2.5 h-1.5 rounded-full bg-[#F2F4F6] dark:bg-[#252D3D] overflow-hidden'>
+                <div className='mt-2.5 h-1.5 rounded-full bg-surface-1 overflow-hidden'>
                   <div
-                    className='h-full rounded-full bg-[#3182F6] dark:bg-[#5B9DF9]'
+                    className='h-full rounded-full bg-primary dark:bg-[#5B9DF9]'
                     style={{ width: `${fit.score}%` }}
                   />
                 </div>
@@ -242,14 +242,14 @@ export function SimulationResultView({
             />
           </div>
           <div className='flex flex-wrap gap-2 text-xs'>
-            <span className='px-3 py-1 rounded-full bg-[#F2F4F6] dark:bg-[#252D3D] text-[#4E5968] dark:text-[#9CA3AF]'>
+            <span className='px-3 py-1 rounded-full bg-surface-1 text-ink-secondary'>
               유효표본수(effective_n) {agg.effective_n}
             </span>
-            <span className='px-3 py-1 rounded-full bg-[#F2F4F6] dark:bg-[#252D3D] text-[#4E5968] dark:text-[#9CA3AF]'>
+            <span className='px-3 py-1 rounded-full bg-surface-1 text-ink-secondary'>
               집계 엔진 {agg.engine_version}
             </span>
             {ad?.intent_mismatch && (
-              <span className='px-3 py-1 rounded-full bg-[#F2F4F6] dark:bg-[#252D3D] text-[#D97706]'>
+              <span className='px-3 py-1 rounded-full bg-surface-1 text-[#D97706]'>
                 ⚠ 의도-반응 불일치 감지
               </span>
             )}
@@ -258,7 +258,7 @@ export function SimulationResultView({
       )}
 
       {/* 탭 바 */}
-      <div className='flex gap-6 border-b border-[#E5E8EB] dark:border-[#2D3748]'>
+      <div className='flex gap-6 border-b border-line'>
         {(
           [
             ['overview', '개요'],
@@ -271,8 +271,8 @@ export function SimulationResultView({
             onClick={() => setTab(key)}
             className={`pb-2.5 text-sm font-medium -mb-px border-b-2 transition-colors ${
               tab === key
-                ? 'border-[#3182F6] text-[#3182F6]'
-                : 'border-transparent text-[#8B95A1] dark:text-[#6B7280] hover:text-[#4E5968]'
+                ? 'border-primary text-primary'
+                : 'border-transparent text-ink-tertiary hover:text-ink-secondary'
             }`}>
             {label}
           </button>
@@ -286,20 +286,20 @@ export function SimulationResultView({
             {agg && purchaseDist.total > 0 && (
               <div className={cardCls}>
                 <div className='flex items-center justify-between mb-1'>
-                  <h2 className='text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]'>
+                  <h2 className='text-sm font-semibold text-ink'>
                     구매의도 분포 (1~5점)
                     {purchaseDist.ssr && (
-                      <span className='ml-1.5 px-1.5 py-0.5 rounded bg-[#EBF4FF] dark:bg-[#1E3A5F] text-[10px] font-medium text-[#3182F6] dark:text-[#5B9DF9]'>
+                      <span className='ml-1.5 px-1.5 py-0.5 rounded bg-[#EBF4FF] dark:bg-[#1E3A5F] text-[10px] font-medium text-primary dark:text-[#5B9DF9]'>
                         SSR 분포
                       </span>
                     )}
                   </h2>
-                  <span className='text-[11px] text-[#8B95A1] dark:text-[#6B7280]'>
+                  <span className='text-[11px] text-ink-tertiary'>
                     평균 {agg.purchase_intent.toFixed(2)}점 · 표본{' '}
                     {purchaseDist.total}명
                   </span>
                 </div>
-                <p className='text-[11px] text-[#8B95A1] dark:text-[#6B7280] mb-3'>
+                <p className='text-[11px] text-ink-tertiary mb-3'>
                   {purchaseDist.ssr
                     ? '임베딩 유사도(SSR)로 산출한 확률분포의 가중 평균입니다. 평균값 하나로 단정하지 말고 퍼짐을 함께 보세요.'
                     : '평균값 하나로 단정하지 말고, 점수가 어떻게 퍼져 있는지 함께 보세요.'}
@@ -310,16 +310,16 @@ export function SimulationResultView({
                     const c = purchaseDist.counts?.[score - 1];
                     return (
                       <div key={score} className='flex items-center gap-2 text-xs'>
-                        <span className='w-7 shrink-0 text-right text-[#4E5968] dark:text-[#9CA3AF]'>
+                        <span className='w-7 shrink-0 text-right text-ink-secondary'>
                           {score}점
                         </span>
-                        <div className='flex-1 h-3.5 rounded bg-[#F2F4F6] dark:bg-[#252D3D] overflow-hidden'>
+                        <div className='flex-1 h-3.5 rounded bg-surface-1 overflow-hidden'>
                           <div
-                            className='h-full rounded bg-[#3182F6] dark:bg-[#5B9DF9] transition-all'
+                            className='h-full rounded bg-primary dark:bg-[#5B9DF9] transition-all'
                             style={{ width: `${ratio}%` }}
                           />
                         </div>
-                        <span className='w-16 shrink-0 text-right tabular-nums text-[#8B95A1] dark:text-[#6B7280]'>
+                        <span className='w-16 shrink-0 text-right tabular-nums text-ink-tertiary'>
                           {c != null
                             ? `${c}명 (${ratio.toFixed(0)}%)`
                             : `${ratio.toFixed(1)}%`}
@@ -335,14 +335,14 @@ export function SimulationResultView({
             {agg && rejectionDist.total > 0 && (
               <div className={cardCls}>
                 <div className='flex items-center justify-between mb-1'>
-                  <h2 className='text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]'>
+                  <h2 className='text-sm font-semibold text-ink'>
                     거부 사유 분해
                   </h2>
-                  <span className='text-[11px] text-[#8B95A1] dark:text-[#6B7280]'>
+                  <span className='text-[11px] text-ink-tertiary'>
                     거부율 {formatPercent(agg.rejection_rate)} · 거부 {rejectionDist.total}명
                   </span>
                 </div>
-                <p className='text-[11px] text-[#8B95A1] dark:text-[#6B7280] mb-3'>
+                <p className='text-[11px] text-ink-tertiary mb-3'>
                   거부 비율만 보지 말고, 어떤 사유가 몰려 있는지로 개선 방향을 잡으세요.
                 </p>
                 <div className='space-y-1.5'>
@@ -350,16 +350,16 @@ export function SimulationResultView({
                     const ratio = rejectionDist.total ? (c / rejectionDist.total) * 100 : 0;
                     return (
                       <div key={tag} className='flex items-center gap-2 text-xs'>
-                        <span className='w-20 shrink-0 text-right text-[#4E5968] dark:text-[#9CA3AF]'>
+                        <span className='w-20 shrink-0 text-right text-ink-secondary'>
                           {REJECTION_LABEL[tag] ?? tag}
                         </span>
-                        <div className='flex-1 h-3.5 rounded bg-[#F2F4F6] dark:bg-[#252D3D] overflow-hidden'>
+                        <div className='flex-1 h-3.5 rounded bg-surface-1 overflow-hidden'>
                           <div
                             className='h-full rounded bg-[#1B64DA] dark:bg-[#5B9DF9] transition-all'
                             style={{ width: `${ratio}%` }}
                           />
                         </div>
-                        <span className='w-16 shrink-0 text-right tabular-nums text-[#8B95A1] dark:text-[#6B7280]'>
+                        <span className='w-16 shrink-0 text-right tabular-nums text-ink-tertiary'>
                           {c}명 ({ratio.toFixed(0)}%)
                         </span>
                       </div>
@@ -375,10 +375,10 @@ export function SimulationResultView({
             {ocean && ocean.by_dimension.some(d => d.click_gap !== null) && (
               <div className={cardCls}>
                 <div className='flex items-center justify-between mb-3'>
-                  <h2 className='text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]'>
+                  <h2 className='text-sm font-semibold text-ink'>
                     성향별 반응 (OCEAN)
                   </h2>
-                  <span className='text-[11px] text-[#8B95A1] dark:text-[#6B7280]'>
+                  <span className='text-[11px] text-ink-tertiary'>
                     성격 z-score 높음(≥+0.4)·낮음(≤−0.4) 비교
                   </span>
                 </div>
@@ -390,7 +390,7 @@ export function SimulationResultView({
                   </div>
                 )}
                 <div className='space-y-2'>
-                  <div className='grid grid-cols-[1fr_4rem_4rem_4rem] gap-3 text-[11px] text-[#8B95A1] dark:text-[#6B7280] px-1'>
+                  <div className='grid grid-cols-[1fr_4rem_4rem_4rem] gap-3 text-[11px] text-ink-tertiary px-1'>
                     <span>성향</span>
                     <span className='text-right'>높음 클릭</span>
                     <span className='text-right'>낮음 클릭</span>
@@ -402,23 +402,23 @@ export function SimulationResultView({
                       <div
                         key={d.dimension}
                         className='grid grid-cols-[1fr_4rem_4rem_4rem] gap-3 items-center text-sm px-1'>
-                        <span className='text-[#191F28] dark:text-[#F2F4F6]'>
+                        <span className='text-ink'>
                           {d.dimension_ko}
                           {d.low_confidence && (
                             <span className='ml-1 text-[11px] text-[#F4A100]'>⚠</span>
                           )}
                         </span>
-                        <span className='text-right tabular-nums text-[#4E5968] dark:text-[#9CA3AF]'>
+                        <span className='text-right tabular-nums text-ink-secondary'>
                           {formatPercent(d.high!.click_intent_rate)}
                         </span>
-                        <span className='text-right tabular-nums text-[#4E5968] dark:text-[#9CA3AF]'>
+                        <span className='text-right tabular-nums text-ink-secondary'>
                           {formatPercent(d.low!.click_intent_rate)}
                         </span>
                         <span
                           className={`text-right tabular-nums font-semibold ${
                             (d.click_gap ?? 0) >= 0
                               ? 'text-[#1B64DA]'
-                              : 'text-[#191F28] dark:text-[#F2F4F6]'
+                              : 'text-ink'
                           }`}>
                           {(d.click_gap ?? 0) >= 0 ? '+' : ''}
                           {formatPercent(d.click_gap ?? 0)}
@@ -426,7 +426,7 @@ export function SimulationResultView({
                       </div>
                     ))}
                 </div>
-                <p className='text-[11px] text-[#B0B8C1] dark:text-[#4B5563] mt-3'>
+                <p className='text-[11px] text-ink-muted mt-3'>
                   ⚠는 표본이 적어 신뢰가 낮은 성향입니다. 절대값이 아닌 성향 간 상대
                   비교로 참고하세요.
                 </p>
@@ -436,7 +436,7 @@ export function SimulationResultView({
             {/* 광고 해석 */}
             {ad && (
               <div className={cardCls}>
-                <h2 className='text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6] mb-3'>
+                <h2 className='text-sm font-semibold text-ink mb-3'>
                   광고 해석 (VLM/LLM 감지)
                 </h2>
                 {result.ad_asset_url && (
@@ -445,7 +445,7 @@ export function SimulationResultView({
                   <img
                     src={assetSrc(result.ad_asset_url)}
                     alt='광고 크리에이티브'
-                    className='mb-4 h-auto max-h-56 w-full object-contain rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-[#F9FAFB] dark:bg-[#11151F]'
+                    className='mb-4 h-auto max-h-56 w-full object-contain rounded-xl border border-line bg-[#F9FAFB] dark:bg-[#11151F]'
                   />
                 )}
                 <div className='grid grid-cols-2 md:grid-cols-4 gap-3 text-sm'>
@@ -456,10 +456,10 @@ export function SimulationResultView({
                     ['감지 메시지', ad.detected_message],
                   ].map(([k, v]) => (
                     <div key={k}>
-                      <p className='text-xs text-[#8B95A1] dark:text-[#6B7280]'>
+                      <p className='text-xs text-ink-tertiary'>
                         {k}
                       </p>
-                      <p className='text-[#191F28] dark:text-[#F2F4F6] mt-0.5'>
+                      <p className='text-ink mt-0.5'>
                         {v || '—'}
                       </p>
                     </div>
@@ -473,7 +473,7 @@ export function SimulationResultView({
           <div>
             <button
               onClick={() => setShowDetails(v => !v)}
-              className='text-xs text-[#8B95A1] dark:text-[#6B7280] hover:text-[#3182F6]'>
+              className='text-xs text-ink-tertiary hover:text-primary'>
               {showDetails ? '▴ 상세 접기' : '▸ 더보기 (루브릭 · KOBACO 참고치 · 목표달성 근거)'}
             </button>
             {showDetails && (
@@ -481,22 +481,22 @@ export function SimulationResultView({
                 {/* 루브릭 */}
                 {result.rubric_scores.length > 0 && (
                   <div className={cardCls}>
-                    <h2 className='text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6] mb-3'>
+                    <h2 className='text-sm font-semibold text-ink mb-3'>
                       루브릭 평가 (차원별 점수)
                     </h2>
                     <div className='space-y-2.5'>
                       {result.rubric_scores.map(s => (
                         <div key={s.dimension} className='flex items-center gap-3'>
-                          <span className='w-40 text-xs text-[#4E5968] dark:text-[#9CA3AF] truncate'>
+                          <span className='w-40 text-xs text-ink-secondary truncate'>
                             {s.dimension}
                           </span>
-                          <div className='flex-1 h-2 rounded-full bg-[#F2F4F6] dark:bg-[#252D3D] overflow-hidden'>
+                          <div className='flex-1 h-2 rounded-full bg-surface-1 overflow-hidden'>
                             <div
-                              className='h-full bg-[#3182F6] rounded-full'
+                              className='h-full bg-primary rounded-full'
                               style={{ width: `${s.score}%` }}
                             />
                           </div>
-                          <span className='w-10 text-right text-xs font-semibold text-[#191F28] dark:text-[#F2F4F6]'>
+                          <span className='w-10 text-right text-xs font-semibold text-ink'>
                             {s.score}
                           </span>
                         </div>
@@ -508,32 +508,32 @@ export function SimulationResultView({
                 {/* KOBACO(2019 MCR) 참고치(A-2) — 절대 비교 아님, 카테고리 근사 매핑 방향·상대크기 참고용 */}
                 {kobaco && (
                   <div className={cardCls}>
-                    <h2 className='text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6] mb-1'>
+                    <h2 className='text-sm font-semibold text-ink mb-1'>
                       KOBACO 참고치
                     </h2>
-                    <p className='text-[11px] text-[#8B95A1] dark:text-[#6B7280] mb-3'>
+                    <p className='text-[11px] text-ink-tertiary mb-3'>
                       {kobaco.declared_category} → {kobaco.kobaco_category} 카테고리 근사 매핑.
                       우리 KPI와 척도가 달라 절대 비교가 아니라 방향·상대크기 참고용입니다.
                     </p>
                     <div className='grid grid-cols-2 gap-3'>
                       {kobaco.purchase_intent_pct != null && (
-                        <div className='rounded-lg bg-[#F9FAFB] dark:bg-[#252D3D] px-3 py-2'>
-                          <p className='text-[10px] text-[#8B95A1]'>구매/교체 의향 비율</p>
-                          <p className='font-bold text-[#191F28] dark:text-[#F2F4F6]'>
+                        <div className='rounded-lg bg-surface-1 px-3 py-2'>
+                          <p className='text-[10px] text-ink-tertiary'>구매/교체 의향 비율</p>
+                          <p className='font-bold text-ink'>
                             {formatPercent(kobaco.purchase_intent_pct)}
                           </p>
                         </div>
                       )}
                       {kobaco.tv_ad_influence_pct != null && (
-                        <div className='rounded-lg bg-[#F9FAFB] dark:bg-[#252D3D] px-3 py-2'>
-                          <p className='text-[10px] text-[#8B95A1]'>TV광고 영향력</p>
-                          <p className='font-bold text-[#191F28] dark:text-[#F2F4F6]'>
+                        <div className='rounded-lg bg-surface-1 px-3 py-2'>
+                          <p className='text-[10px] text-ink-tertiary'>TV광고 영향력</p>
+                          <p className='font-bold text-ink'>
                             {formatPercent(kobaco.tv_ad_influence_pct)}
                           </p>
                         </div>
                       )}
                     </div>
-                    <p className='text-[10px] text-[#B0B8C1] dark:text-[#4B5563] mt-2'>
+                    <p className='text-[10px] text-ink-muted mt-2'>
                       출처: 2019 KOBACO MCR(소비자행태조사)
                     </p>
                   </div>
@@ -541,21 +541,21 @@ export function SimulationResultView({
 
                 {fit && (
                   <div className={cardCls}>
-                    <h2 className='text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6] mb-2'>
+                    <h2 className='text-sm font-semibold text-ink mb-2'>
                       목표달성 판단 근거
                     </h2>
-                    <p className='text-sm text-[#4E5968] dark:text-[#9CA3AF]'>{fit.rationale}</p>
+                    <p className='text-sm text-ink-secondary'>{fit.rationale}</p>
                     <div className='flex flex-wrap gap-2 mt-3'>
                       {fit.contributions.map(c => (
                         <span
                           key={c.label}
-                          className='text-[11px] px-2 py-1 rounded-full bg-[#F2F4F6] dark:bg-[#252D3D] text-[#4E5968] dark:text-[#9CA3AF]'>
+                          className='text-[11px] px-2 py-1 rounded-full bg-surface-1 text-ink-secondary'>
                           {c.label} {Math.round(c.value * 100)}%
                           <span className='opacity-60'> ·가중 {Math.round(c.weight * 100)}%</span>
                         </span>
                       ))}
                     </div>
-                    <p className='text-[11px] text-[#B0B8C1] dark:text-[#4B5563] mt-2'>
+                    <p className='text-[11px] text-ink-muted mt-2'>
                       {fit.low_confidence && '⚠ 표본이 적어 신뢰가 낮습니다. '}
                       실측이 아닌 시뮬 신호 기반 상대 지표입니다(exploratory).
                     </p>
@@ -584,8 +584,8 @@ export function SimulationResultView({
                   onClick={() => setPersonaFilter(key)}
                   className={`px-3 py-1 rounded-full text-xs transition-colors ${
                     personaFilter === key
-                      ? 'bg-[#3182F6] text-white'
-                      : 'bg-[#F2F4F6] dark:bg-[#252D3D] text-[#4E5968] dark:text-[#9CA3AF] hover:bg-[#E5E8EB]'
+                      ? 'bg-primary text-primary-foreground'
+                      : 'bg-surface-1 text-ink-secondary hover:bg-[#E5E8EB]'
                   }`}>
                   {label}
                 </button>
@@ -594,14 +594,14 @@ export function SimulationResultView({
             <select
               value={personaSort}
               onChange={e => setPersonaSort(e.target.value as PersonaSort)}
-              className='text-xs border border-[#E5E8EB] dark:border-[#2D3748] rounded-lg px-2 py-1 bg-white dark:bg-[#1C2333] text-[#4E5968] dark:text-[#9CA3AF]'>
+              className='text-xs border border-line rounded-lg px-2 py-1 bg-card text-ink-secondary'>
               <option value='default'>기본 순서</option>
               <option value='purchase'>구매의도 높은 순</option>
               <option value='trust'>신뢰도 높은 순</option>
             </select>
           </div>
           {shownReactions.length === 0 ? (
-            <p className='py-16 text-center text-sm text-[#8B95A1]'>해당 조건의 반응이 없습니다</p>
+            <p className='py-16 text-center text-sm text-ink-tertiary'>해당 조건의 반응이 없습니다</p>
           ) : (
             <div className='grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 items-start'>
               {shownReactions.map(r => (
@@ -638,10 +638,10 @@ export function SimulationResultView({
             <SimulationReportView rv={reportView} />
           ) : (
             <>
-              <h2 className='text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6] mb-2'>
+              <h2 className='text-sm font-semibold text-ink mb-2'>
                 최종 결과
               </h2>
-              <p className='text-xs text-[#8B95A1] dark:text-[#6B7280]'>
+              <p className='text-xs text-ink-tertiary'>
                 토론이 끝나면 종합 리포트가 여기에 표시됩니다 (PDF 다운로드 포함).
               </p>
             </>
@@ -649,7 +649,7 @@ export function SimulationResultView({
         </div>
       </div>
 
-      <p className='text-xs text-[#B0B8C1] dark:text-[#4B5563] border-t border-[#E5E8EB] dark:border-[#2D3748] pt-4'>
+      <p className='text-xs text-ink-muted border-t border-line pt-4'>
         본 결과는 AI 시뮬레이션 기반 예측이며 의사결정 보조 근거입니다. 클릭
         의향률은 실측 CTR이 아닙니다(calibration 전).
       </p>
