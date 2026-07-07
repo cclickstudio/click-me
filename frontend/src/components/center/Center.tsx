@@ -136,7 +136,7 @@ export default function Center() {
 
   // 펼침 — 우측 전체 높이 aside(본문 위에 덮음). 상단 두 버튼을 탭으로 전환(스펙 §3).
   return (
-    <aside className="max-md:hidden fixed right-0 top-0 z-50 flex h-full w-72 flex-col border-l border-[#E5E8EB] bg-white shadow-xl dark:border-[#2D3748] dark:bg-[#1C2333]">
+    <aside className="max-md:hidden fixed right-0 top-0 z-50 flex h-full w-[400px] flex-col border-l border-[#E5E8EB] bg-white shadow-xl dark:border-[#2D3748] dark:bg-[#1C2333]">
       <div className="flex items-center border-b border-[#E5E8EB] dark:border-[#2D3748]">
         <TabButton active={tab === 'chat'} count={chatUnread} onClick={() => persistTab('chat')} icon={ChatIcon}>
           채팅
