@@ -2353,7 +2353,8 @@ async def from_candidate(
 class ReplaceCreativeRequest(BaseModel):
     generation_id: str
     candidate_id: str
-    link_url: HttpUrl
+    # 도착 URL은 선택 — 없으면 기존 광고의 랜딩을 보존한다(소재만 교체, 도착지 유지).
+    link_url: HttpUrl | None = None
 
 
 @router.post("/campaigns/{campaign_id}/replace-creative-proposal")
@@ -2424,6 +2425,19 @@ async def replace_creative_proposal(
     if not affected_ad_ids:
         raise HTTPException(status_code=409, detail="교체할 광고가 없습니다(캠페인에 ad 없음).")
 
+    # 도착지(랜딩)는 소재 교체 대상이 아니다 — 요청에 명시 없으면 기존 광고 링크를 보존한다.
+    # (캠페인 내 광고는 보통 같은 도착지 → 첫 링크 채택. 못 찾으면 명시 요구.)
+    effective_link = (
+        str(body.link_url)
+        if body.link_url
+        else next((c.link_url for c in affected if c.link_url), None)
+    )
+    if not effective_link:
+        raise HTTPException(
+            status_code=422,
+            detail="기존 광고의 도착 URL을 찾을 수 없어요. 도착 URL을 지정해 주세요.",
+        )
+
     now = datetime.now(UTC)
     proposal = finalize_proposal(
         ActionProposal(
@@ -2438,7 +2452,7 @@ async def replace_creative_proposal(
                 "image_hash": image_hash,
                 "headline": cand.copy.headline,
                 "body": cand.copy.body,
-                "link_url": str(body.link_url),
+                "link_url": effective_link,
                 "generation_id": body.generation_id,
                 "candidate_id": cand.candidate_id,
                 # 결속(리뷰 ①④) — proposal_hash가 덮음 → 프리뷰=집행 대상 일치·감사 가능.
@@ -3169,6 +3183,21 @@ async def sync_campaign(
     }
 
 
+async def _resolve_campaign_notifications(org_id, campaign_id: str) -> None:
+    """조치 실행 성공 → 이 캠페인의 미해결 알림을 actioned로 정리(best-effort) + 배지 동기화.
+
+    알림 정리 실패가 조치 응답을 막지 않는다 — 다음 스캔의 reconcile이 백스톱.
+    """
+    try:
+        resolved = await _notification_store().resolve_by_campaign(
+            str(org_id), campaign_id, "actioned", datetime.now(UTC)
+        )
+        if resolved:
+            _publish_org(str(org_id))
+    except Exception:  # noqa: BLE001 — 정리 실패는 조용히 넘어간다(응답 무영향)
+        pass
+
+
 @router.post("/campaigns/{campaign_id}/pause")
 async def pause_campaign(
     campaign_id: str,
@@ -3213,6 +3242,8 @@ async def pause_campaign(
             await db.commit()
         except Exception:  # noqa: BLE001 — 상태 기록 실패가 응답을 막지 않게
             await db.rollback()
+        # 조치 완료 — 이 캠페인의 미해결 운영 알림을 actioned로 정리(다음 상담이 새로 시작되게).
+        await _resolve_campaign_notifications(org_id, campaign_id)
     resp: dict[str, object] = {
         "paused": status == "success",
         "result": result.model_dump(mode="json"),
@@ -3395,7 +3426,10 @@ async def budget_commit(
         "budget_after_krw": new,
     }
     status = result.status.value if hasattr(result.status, "value") else str(result.status)
-    if status != "success":
+    if status == "success":
+        # 조치 완료 — 이 캠페인의 미해결 운영 알림을 actioned로 정리(상담 옵션 예산 조치 대응).
+        await _resolve_campaign_notifications(org_id, campaign_id)
+    else:
         msg = _find_in_snapshot(result.platform_response_snapshot, "user_msg")
         if msg:
             response["error_message"] = str(msg)

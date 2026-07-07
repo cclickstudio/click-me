@@ -96,7 +96,7 @@ _STATUS_FIELDS = "effective_status,issues_info"
 # 원본이 있어, 고해상도 확보를 위해 가능한 소스를 모두 펼쳐 받는다.
 _CREATIVE_FIELDS = (
     "name,creative{image_url,thumbnail_url,title,body,"
-    "object_story_spec{link_data{picture},photo_data{url}},"
+    "object_story_spec{link_data{picture,link},photo_data{url}},"
     "asset_feed_spec{images{url}}}"
 )
 _CREATIVE_LIMIT = 6  # 대표 시안만 — 너무 많으면 갤러리 과밀
@@ -517,6 +517,7 @@ class MetaAdsReader:
         out: list[CreativePreview] = []
         for row in payload.get("data", []):
             creative = row.get("creative") or {}
+            link_data = (creative.get("object_story_spec") or {}).get("link_data") or {}
             out.append(
                 CreativePreview(
                     ad_id=str(row.get("id", "")),
@@ -525,6 +526,7 @@ class MetaAdsReader:
                     thumbnail_url=creative.get("thumbnail_url"),
                     headline=creative.get("title"),
                     primary_text=creative.get("body"),
+                    link_url=link_data.get("link"),
                 )
             )
         return out

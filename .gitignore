@@ -99,6 +99,11 @@ fonts/
 # scripts — 개인 로컬 워크트리 헬퍼(new_worktree/delete_worktree 등), 팀 공유 안 함
 /scripts/
 
+# .githooks — 문서 자동생성 pre-commit 훅. 저장소에 포함하지 않고 파일로만 공유,
+# 쓸 사람만 받아서 `git config core.hooksPath .githooks`로 설치. (CI가 drift 최종 검증)
+.githooks/
+.githooks.zip
+
 
 .understand-anything
 

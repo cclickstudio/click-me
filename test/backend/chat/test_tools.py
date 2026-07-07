@@ -49,7 +49,7 @@ async def test_run_simulation_emits_sim_form(tools):
             "ad_content": "여름 세일",
             "product_category": None,
             "ad_objective": None,
-            "analysis_mode": "synthetic",
+            "analysis_mode": "synthetic",  # 3-모드 분석 기본값(1ad26926) 반영
         },
     }
     assert cmd.update["source"] == "simulation"
@@ -245,3 +245,20 @@ async def test_generate_report_period(tools):
         "type": "report_ready",
         "data": {"project_id": None, "period": "month"},
     }
+
+
+@pytest.mark.asyncio
+async def test_replace_creative_emits_widget(tools):
+    cmd = await _run(tools, "replace_creative", campaign_id="camp_1", campaign_name="여름")
+    assert cmd.update["widget"] == {
+        "type": "replace_creative",
+        "data": {"campaign_id": "camp_1", "campaign_name": "여름"},
+    }
+    assert cmd.update["source"] == "deep-agent"
+
+
+@pytest.mark.asyncio
+async def test_replace_creative_emits_widget_without_id(tools):
+    cmd = await _run(tools, "replace_creative")
+    assert cmd.update["widget"]["type"] == "replace_creative"
+    assert cmd.update["widget"]["data"] == {"campaign_id": "", "campaign_name": ""}

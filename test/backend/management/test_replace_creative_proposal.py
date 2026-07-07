@@ -180,3 +180,32 @@ def test_replace_creative_proposal_501_in_sending_mode(monkeypatch):
     client, _ = _setup(monkeypatch, sending=True)
     resp = client.post(_URL_TMPL.format(cid=_OWNED), json=_body())
     assert resp.status_code == 501
+
+
+def test_replace_creative_proposal_preserves_existing_link_when_omitted(monkeypatch):
+    # link_url 미전송 → 기존 광고의 도착지를 보존한다(소재만 교체, 도착지 유지).
+    client, _ = _setup(
+        monkeypatch,
+        creatives=[
+            CreativePreview(ad_id="ad-1", ad_name="A", link_url="https://shop.example.co.kr/keep"),
+            CreativePreview(ad_id="ad-2", ad_name="B", link_url="https://shop.example.co.kr/keep"),
+        ],
+    )
+    resp = client.post(
+        _URL_TMPL.format(cid=_OWNED), json={"generation_id": "g1", "candidate_id": "c1"}
+    )
+    assert resp.status_code == 200, resp.text
+    em = resp.json()["proposal"]["evidence_metrics"]
+    assert em["link_url"] == "https://shop.example.co.kr/keep"
+
+
+def test_replace_creative_proposal_422_when_no_link_and_omitted(monkeypatch):
+    # 기존 링크도 없고 요청에도 없으면 도착지 결정 불가 → 422.
+    client, _ = _setup(
+        monkeypatch,
+        creatives=[CreativePreview(ad_id="ad-1", ad_name="A")],
+    )
+    resp = client.post(
+        _URL_TMPL.format(cid=_OWNED), json={"generation_id": "g1", "candidate_id": "c1"}
+    )
+    assert resp.status_code == 422

@@ -112,7 +112,11 @@ def _build_reactor() -> object:
         return _wrap_ssr(OpenAIReactionEngine(model=model, with_reaction_text=ssr))
     from domain.simulation.adapters.gemini import GeminiReactionEngine
 
-    primary = GeminiReactionEngine(with_reaction_text=ssr)
+    # 반응 생성 모델 — SIMULATION_REACTION_GEMINI_MODEL로 .env 교체(미설정 시 gemini-3.5-flash).
+    # 광고해석·루브릭·QA는 _DEFAULT_MODEL=2.5 Flash 그대로(공유 상수 미변경, 반응만 별도 설정).
+    _ensure_env("SIMULATION_REACTION_GEMINI_MODEL")
+    reaction_model = os.environ.get("SIMULATION_REACTION_GEMINI_MODEL", "gemini-3.5-flash")
+    primary = GeminiReactionEngine(model=reaction_model, with_reaction_text=ssr)
     if not _reaction_fallback_enabled():
         return _wrap_ssr(primary)
     _ensure_env("OPENAI_API_KEY")
@@ -171,14 +175,22 @@ def build_simulation_service(
     use_llm_qa=True면 반응 QA를 LLM(GeminiQaGate)로(콜 2배, opt-in). 기본은 규칙 QA.
     """
     _ensure_env(
-        "GEMINI_API_KEY", "SIMULATION_GEMINI_MODEL", "OPENAI_API_KEY", "SIMULATION_LLM_PROVIDER"
+        "GEMINI_API_KEY",
+        "SIMULATION_GEMINI_MODEL",
+        "SIMULATION_VLM_GEMINI_MODEL",
+        "OPENAI_API_KEY",
+        "SIMULATION_LLM_PROVIDER",
     )
     from domain.simulation.adapters.gemini import (
         GeminiAdInterpreter,
         GeminiRubricEvaluator,
     )
+    from domain.simulation.adapters.gemini._common import _DEFAULT_MODEL
 
-    interpreter = GeminiAdInterpreter()
+    # 광고해석(VLM) 모델 — SIMULATION_VLM_GEMINI_MODEL로 .env 교체(미설정 시 _DEFAULT_MODEL).
+    # 반응은 별도 상수(SIMULATION_REACTION_GEMINI_MODEL) — 서로 영향 없음.
+    vlm_model = os.environ.get("SIMULATION_VLM_GEMINI_MODEL", _DEFAULT_MODEL)
+    interpreter = GeminiAdInterpreter(model=vlm_model)
     rubric = GeminiRubricEvaluator()
 
     graph = build_run_graph(
