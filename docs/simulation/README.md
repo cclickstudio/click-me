@@ -1,0 +1,47 @@
+# 시뮬레이션(4-1) 문서 인덱스
+
+> `docs/simulation/` 전체 지도 — `Persona/`(페르소나 생성·반응·집계, yeotaeho 담당)와 `debate/`(페르소나 토론, 분석·토론 담당)로 나뉜다.
+> 코드 아키텍처 개요는 [backend/domain/simulation/README.md](../../backend/domain/simulation/README.md) 참조.
+> 세션별 작업 기록(CHANGES-\*.md·checklist·context-notes)은 git 이력으로 충분해 2026-07-06 정리 때 삭제했다 — 과거 변경 경위는 `git log -- docs/simulation` 참조.
+
+## Persona/ — 살아있는 문서 (코드와 함께 갱신)
+
+| 문서 | 내용 |
+| --- | --- |
+| [SIMULATOR_REMAINING_TASKS.md](Persona/SIMULATOR_REMAINING_TASKS.md) | **잔여 작업 현황판** — 완료/미착수/데이터 게이트 대조표. 최종 갱신 2026-07-06 |
+| [PERSONA_PIPELINE_EXPLAINED.md](Persona/PERSONA_PIPELINE_EXPLAINED.md) | 페르소나가 만들어지는 6단계(데이터→샘플링→LLM)를 코드 기준으로 상세 설명 |
+| [REACTION_WORKFLOW_AND_DATA_GUIDE.md](Persona/REACTION_WORKFLOW_AND_DATA_GUIDE.md) | 반응 프롬프트 조립 워크플로우 + 확보해야 할 실데이터 주소·방법 |
+| [sim-result-schema.md](Persona/sim-result-schema.md) | 시뮬 결과 JSON 스키마(분석팀 전달용 계약) |
+| [페르소나 생성 데이터 품질.md](Persona/페르소나%20생성%20데이터%20품질.md) | 출처별 데이터 품질 등급 + 생성 방법 + 한계 진단 |
+| [시뮬레이션 구현 및 근거 자료.md](Persona/시뮬레이션%20구현%20및%20근거%20자료.md) | 팀장 보고용 종합 보고서(비개발 독자용) |
+
+## Persona/ — 설계·전략 메모 (작성 시점 결정 기록 — 결론은 유효)
+
+| 문서 | 결론 한 줄 |
+| --- | --- |
+| [PERSONA_LLM_COST_STRATEGY.md](Persona/PERSONA_LLM_COST_STRATEGY.md) | 비용은 모델 다운그레이드가 아니라 배치 API+표본가중으로. 소형 모델은 Phase 2 |
+| [BATCH_API_STRATEGY.md](Persona/BATCH_API_STRATEGY.md) | 배치 API ≠ 프롬프트 묶기 ≠ SQS. 대규모 실행에만 적용(Phase 2) |
+| [LOCAL_MODEL_SELFHOST_STRATEGY.md](Persona/LOCAL_MODEL_SELFHOST_STRATEGY.md) | 80GB GPU 확보 시에도 "30B off-the-shelf + vLLM부터", 파인튜닝은 escalation |
+| [VLM_PER_PERSONA_VISION.md](Persona/VLM_PER_PERSONA_VISION.md) | 페르소나별 이미지 재투입 금지 — 공유 해석 1회 + 텍스트 salience 조건화 |
+| [PERSONA_COHORT_KNOWLEDGE_STRATEGY.md](Persona/PERSONA_COHORT_KNOWLEDGE_STRATEGY.md) | 세대별 문화 지식은 형성기 게이팅(Tier 1) + 브랜드 시대성 1회 추출(Tier 2) |
+| [PERSONA_COHORT_TIER3_REALDATA_STRATEGY.md](Persona/PERSONA_COHORT_TIER3_REALDATA_STRATEGY.md) | Tier 3 = 브랜드 인지율 실측표 주입. 게이트는 코드가 아니라 데이터(Phase 2) |
+| [SAMPLING_VARIANCE_EXPLAINED.md](Persona/SAMPLING_VARIANCE_EXPLAINED.md) | 표본 노이즈 통계 직관 설명(쿼터 전환 후에도 세부 속성엔 유효) |
+| [SAMPLING_WEIGHTING_EXPLAINED.md](Persona/SAMPLING_WEIGHTING_EXPLAINED.md) | 기본 경로는 self-weighting(weight=1.0), 가중치는 타깃 지정·과대표집에서만 작동 |
+
+## Persona/ — 파이프라인 설계 원전
+
+| 문서 | 내용 |
+| --- | --- |
+| [PERSONA_GENERATION_STRATEGY.md](Persona/PERSONA_GENERATION_STRATEGY.md) | **설계 원전 v2.3** — 다양성=데이터 강제 철학, §3.5 반응 계약, §3.6 고정 패널, §3.7 표본·가중, §7 금지 사항 |
+| [SIMULATOR_SCOPE.md](Persona/SIMULATOR_SCOPE.md) | 시뮬레이터팀 소유 9테이블·팀 경계(숫자=시뮬레이터, 문장=분석팀) |
+| [SIMULATOR_GRAPH_TOPOLOGY.md](Persona/SIMULATOR_GRAPH_TOPOLOGY.md) | LangGraph 하이브리드 토폴로지(Outer DAG 4노드 + Inner 반응 사이클) |
+| [erd.md](Persona/erd.md) | 시뮬레이터 소유 테이블 ERD(DDL 주석 포함) |
+| [Data_Collection.md](Persona/Data_Collection.md) | 실데이터 확보처·라이선스 가이드(행안부·KISDI·카카오 OCEAN·MDIS 등) |
+| [AD_Simulator_Analysis_Methods.md](Persona/AD_Simulator_Analysis_Methods.md) | 공식 기반 3-접근법 설명(비교 기준 문서 — 우리 구현과 다름) |
+| [AD_Simulator_Improvement_Notes.md](Persona/AD_Simulator_Improvement_Notes.md) | 3-접근법 대비 보완 과제 도출(P1~P3 우선순위의 원천) |
+| [SIMULATOR_REPORT_TEMPLATE.md](Persona/SIMULATOR_REPORT_TEMPLATE.md) | 최종 분석 보고서 출력 양식 v1.2 |
+| [ANALYSIS_AGENT_STRATEGY.md](Persona/ANALYSIS_AGENT_STRATEGY.md) | 분석 레이어(토론+개선 권고 RAG) 전략 — 구현 소유는 분석팀 |
+
+## debate/ — 페르소나 토론 파이프라인 (분석·토론 담당 소유)
+
+토론 설계·시연 가이드·인수인계 노트. 코드(`tools/debate/`)가 [persona-debate-pipeline.md](debate/persona-debate-pipeline.md)를 규칙 원전으로 참조하므로 시뮬레이터(페르소나) 쪽에서 수정·삭제하지 않는다.

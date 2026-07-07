@@ -5,7 +5,7 @@
 > 결론: **반응 단계에 페르소나별 검색을 달지 말고, ① 프롬프트로 '형성기' 세대 게이팅을 걸고
 > ② 브랜드 시대성을 해석 단계에서 1회 추출해 공유 주입한다. 실데이터 주입은 Phase 2.** (작성일: 2026-06-19)
 
-> 선행 문서: [PERSONA_GENERATION_STRATEGY.md](./Persona/PERSONA_GENERATION_STRATEGY.md) (다양성=데이터 철학) ·
+> 선행 문서: [PERSONA_GENERATION_STRATEGY.md](./PERSONA_GENERATION_STRATEGY.md) (다양성=데이터 철학) ·
 > [PERSONA_LLM_COST_STRATEGY.md](./PERSONA_LLM_COST_STRATEGY.md) (모델 선택) ·
 > [VLM_PER_PERSONA_VISION.md](./VLM_PER_PERSONA_VISION.md) (공유 해석 1회 + 페르소나별 조건화).
 
@@ -28,7 +28,7 @@
 
 ### 1.1 데이터가 박는 것 vs 안 박는 것
 
-[`contracts/schemas.py`](../../backend/domain/simulation/contracts/schemas.py)의 `Persona`가 들고 있는 것:
+[`contracts/schemas.py`](../../../backend/domain/simulation/contracts/schemas.py)의 `Persona`가 들고 있는 것:
 
 ```
 age, gender, region, ocean, media_behavior, consumption_values, socioeconomic
@@ -40,7 +40,7 @@ age, gender, region, ocean, media_behavior, consumption_values, socioeconomic
 
 ### 1.2 반응 프롬프트는 나이를 주지만 게이팅을 안 시킨다
 
-[`adapters/gemini/reaction.py`](../../backend/domain/simulation/adapters/gemini/reaction.py)의 `_prompt()`는
+[`adapters/gemini/reaction.py`](../../../backend/domain/simulation/adapters/gemini/reaction.py)의 `_prompt()`는
 나이·OCEAN·소득·미디어·소비가치를 넘겨주지만, **"네 세대에 맞게 브랜드 친숙도를 조절하라"는 지시가 없다.**
 그 결과 브랜드 지식의 세대 차등은 전적으로 LLM의 자율 추론에 맡겨지고, LLM은 이걸 약하고 불안정하게 한다.
 
@@ -69,7 +69,7 @@ LLM은 **계속 학습하지 않는다.** 학습이 끝나면 가중치가 고�
 
 ### 2.3 검색은 opt-in이고, 우리 반응은 안 켜놨다 (코드 근거)
 
-[`adapters/gemini/_common.py`](../../backend/domain/simulation/adapters/gemini/_common.py)의 실제 호출 설정:
+[`adapters/gemini/_common.py`](../../../backend/domain/simulation/adapters/gemini/_common.py)의 실제 호출 설정:
 
 ```python
 config = {"response_mime_type": "application/json"}  # (+ temperature)
@@ -205,7 +205,7 @@ birth_year ≈ 현재연도 − age
 
 ## 참고 자료
 
-- [PERSONA_GENERATION_STRATEGY.md](./Persona/PERSONA_GENERATION_STRATEGY.md) — 다양성=데이터 샘플링 철학.
+- [PERSONA_GENERATION_STRATEGY.md](./PERSONA_GENERATION_STRATEGY.md) — 다양성=데이터 샘플링 철학.
 - [PERSONA_LLM_COST_STRATEGY.md](./PERSONA_LLM_COST_STRATEGY.md) — 반응 모델 선택·Persona Collapse.
 - [VLM_PER_PERSONA_VISION.md](./VLM_PER_PERSONA_VISION.md) — 공유 해석 1회 + 페르소나별 조건화.
 - Deepsona: An Agent-Based Framework for Multi-Trait Synthetic Audiences (모델 agnostic, Gemini-2.5-flash 검증).

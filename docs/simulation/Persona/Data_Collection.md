@@ -203,7 +203,7 @@
 
 코드 프레임워크는 구현 완료(빈 값·graceful fallback). 아래 데이터를 확보해 지정 파일에 주입하면 즉시 활성화된다. **Claude 자동 수집 불가** 항목은 사용자가 직접 신청·계약해야 한다.
 
-> **수집 주소(deep-link)·단계별 절차·넣는 JSON 형식**은 `docs/simulation/REACTION_WORKFLOW_AND_DATA_GUIDE.md` §3(직접/로그인/계약 분류)·§4(스키마) 참조. 거기에 반응 프롬프트의 어느 줄이 어느 데이터로 채워지는지(end-to-end)도 정리돼 있다.
+> **수집 주소(deep-link)·단계별 절차·넣는 JSON 형식**은 `docs/simulation/Persona/REACTION_WORKFLOW_AND_DATA_GUIDE.md` §3(직접/로그인/계약 분류)·§4(스키마) 참조. 거기에 반응 프롬프트의 어느 줄이 어느 데이터로 채워지는지(end-to-end)도 정리돼 있다.
 
 | 작업 | 필요 데이터 | 출처·접근 | 주입 위치 | Claude |
 |---|---|---|---|---|

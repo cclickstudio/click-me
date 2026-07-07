@@ -9,10 +9,10 @@
 | --- | --- |
 | IMPROVEMENT | `docs/simulation/Persona/AD_Simulator_Improvement_Notes.md` |
 | GENERATION | `docs/simulation/Persona/PERSONA_GENERATION_STRATEGY.md` |
-| COHORT_KNOWLEDGE | `docs/simulation/PERSONA_COHORT_KNOWLEDGE_STRATEGY.md` |
-| COHORT_TIER3 | `docs/simulation/PERSONA_COHORT_TIER3_REALDATA_STRATEGY.md` |
-| BATCH_API | `docs/simulation/BATCH_API_STRATEGY.md` |
-| VLM | `docs/simulation/VLM_PER_PERSONA_VISION.md` |
+| COHORT_KNOWLEDGE | `docs/simulation/Persona/PERSONA_COHORT_KNOWLEDGE_STRATEGY.md` |
+| COHORT_TIER3 | `docs/simulation/Persona/PERSONA_COHORT_TIER3_REALDATA_STRATEGY.md` |
+| BATCH_API | `docs/simulation/Persona/BATCH_API_STRATEGY.md` |
+| VLM | `docs/simulation/Persona/VLM_PER_PERSONA_VISION.md` |
 | ANALYSIS | `docs/simulation/Persona/ANALYSIS_AGENT_STRATEGY.md` |
 | Data_Collection | `docs/simulation/Persona/Data_Collection.md` |
 
@@ -61,7 +61,7 @@
 | 15 | **광고해석 VLM 입력 확장** — 단일 이미지 → 영상 썸네일/다중 프레임/A·B 소재 비교 | IMPROVEMENT P3-11 | 미착수 |
 | 16 | **페르소나 Debate 검문소**(검문소 2 — 응답 분산 확대) / DeepPersona 5:3:2 stratified oversampling | GENERATION §4·§6 | 미착수 |
 
-> **2026-06-22 프레임워크 패스(10·11·13·14)** — 5종 모두 실데이터가 게이트라 "코드 프레임워크 + graceful fallback"을 먼저 구현했다. 데이터 0 상태에선 현재 동작을 그대로 보존(회귀 0)하고, 사용자가 데이터를 주입하면 즉시 활성화된다. 데이터 수집 리스트·라이선스는 `Persona/Data_Collection.md` 참조. 12(40+ OCEAN)는 B-6에서 OSF 실데이터로 이미 해결, MDIS 상관행렬만 남았다.
+> **2026-06-22 프레임워크 패스(10·11·13·14)** — 5종 모두 실데이터가 게이트라 "코드 프레임워크 + graceful fallback"을 먼저 구현했다. 데이터 0 상태에선 현재 동작을 그대로 보존(회귀 0)하고, 사용자가 데이터를 주입하면 즉시 활성화된다. 데이터 수집 리스트·라이선스는 `Data_Collection.md` 참조. 12(40+ OCEAN)는 B-6에서 OSF 실데이터로 이미 해결, MDIS 상관행렬만 남았다.
 
 ## D. 구조/운영
 
