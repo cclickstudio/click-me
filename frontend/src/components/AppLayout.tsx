@@ -27,6 +27,14 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     if (stored === 'true') setPanelCollapsed(true);
   }, []);
 
+  // 비번 변경 모달은 계정당 첫 로그인 첫 페이지에서만 뜬다. "나중에"를 누르면
+  // localStorage에 기록해, 이후 페이지 이동(레이아웃 리마운트)·재접속에도 다시 뜨지 않게 한다.
+  useEffect(() => {
+    if (user?.id && localStorage.getItem(`pwModalDismissed:${user.id}`) === 'true') {
+      setPwDismissed(true);
+    }
+  }, [user?.id]);
+
   // 라우트 이동 시 모바일 드로어 닫기.
   useEffect(() => {
     setMobileNavOpen(false);
@@ -51,6 +59,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       localStorage.setItem('panelCollapsed', String(next));
       return next;
     });
+  };
+
+  // "나중에" — 이 계정은 다시 모달을 띄우지 않도록 localStorage에 기록.
+  const dismissPwModal = () => {
+    if (user?.id) localStorage.setItem(`pwModalDismissed:${user.id}`, 'true');
+    setPwDismissed(true);
   };
 
   if (loading) {
@@ -122,7 +136,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         {children}
       </main>
       {user?.must_change_password && !pwDismissed && (
-        <ChangePasswordModal onClose={() => setPwDismissed(true)} />
+        <ChangePasswordModal onClose={dismissPwModal} />
       )}
     </div>
   );

@@ -56,10 +56,16 @@ pnpm install
 cp .env.example .env.local
 ```
 
-`.env.local` 파일을 열고 백엔드 URL을 채웁니다:
+`.env.local` 파일을 열고 백엔드 URL과 인증 설정을 채웁니다:
 
 ```dotenv
 NEXT_PUBLIC_API_URL=http://localhost:8000
+# 인증 — 로컬 기본은 local, 운영 빌드는 cognito
+NEXT_PUBLIC_AUTH_PROVIDER=local
+# AUTH_PROVIDER=cognito 일 때만 필요
+NEXT_PUBLIC_COGNITO_REGION=
+NEXT_PUBLIC_COGNITO_USER_POOL_ID=
+NEXT_PUBLIC_COGNITO_CLIENT_ID=
 ```
 
 ---
@@ -98,17 +104,20 @@ frontend/
 │   ├── app/                  # Next.js App Router
 │   │   ├── layout.tsx        # 루트 레이아웃
 │   │   ├── globals.css       # 전역 스타일 (Tailwind 진입점)
-│   │   ├── page.tsx          # 홈 (/)
-│   │   ├── sign-in/page.tsx  # 로그인
-│   │   ├── sign-up/page.tsx  # 회원가입
-│   │   ├── chat/page.tsx     # AI 채팅
-│   │   ├── simulation/page.tsx
-│   │   ├── generator/page.tsx
-│   │   ├── manage/page.tsx
-│   │   └── admin/page.tsx
+│   │   ├── page.tsx          # 랜딩 (/)
+│   │   ├── sign-in/          # 로그인(운영은 Cognito)
+│   │   ├── privacy/·terms/·data-deletion/   # 정책 페이지
+│   │   └── (app)/            # 로그인 후 앱 영역(공통 레이아웃)
+│   │       ├── dashboard/·projects/·chat/·simulation/·generator/·manage/
+│   │       ├── company/·my-org/·profile/·payment/·trash/
+│   │       └── admin/        # 관리자 전용 — companies·manage-user·
+│   │                         #   simulations·generations·chats·inquiry
 │   └── components/           # 재사용 UI 컴포넌트
-│       ├── Navigation.tsx
-│       └── AppLayout.tsx
+│       ├── AppLayout.tsx     # 앱 셸(비번 변경 모달 등)
+│       ├── Sidebar.tsx       # 사이드바(관리/내역 아코디언)
+│       ├── AuthProvider.tsx·ChangePasswordModal.tsx·ThemeProvider.tsx
+│       ├── admin/            # 관리자 컨트롤(정렬·필터·무한스크롤·상태 배지)
+│       └── ui/               # 공용 UI — Select.tsx·KpiCard.tsx
 │
 ├── .env.example              # 환경 변수 템플릿
 ├── .prettierrc               # Prettier 규칙

@@ -105,6 +105,7 @@ def _build_request(
     ad_objective: str | None,
     service_class: int | None,
     from_campaign_id: str | None = None,
+    generation_id: str | None = None,
     analysis_mode: str = "synthetic",
     user: User | None = None,
 ) -> SimulationRunRequest:
@@ -138,6 +139,7 @@ def _build_request(
         ad_objective=ad_objective,
         service_class=service_class,
         from_campaign_id=from_campaign_id,
+        generation_id=generation_id,
         analysis_mode=analysis_mode,
     )
 
@@ -159,6 +161,7 @@ async def start_simulation(
     ad_objective: str | None = Form(None),
     service_class: int | None = Form(None),
     from_campaign_id: str | None = Form(None),  # 관리 탭 진입 시 — 완료 후 서버가 자동 링크
+    generation_id: str | None = Form(None),  # '생성한 광고로 시뮬' 진입 시 생성 출처(누끼 역추적)
     analysis_mode: str = Form(
         "synthetic"
     ),  # synthetic(기본)/individual(표본1 강제). persona_set은 /compare
@@ -184,6 +187,7 @@ async def start_simulation(
         ad_objective=ad_objective,
         service_class=service_class,
         from_campaign_id=from_campaign_id,
+        generation_id=generation_id,
         analysis_mode=analysis_mode,
         user=current_user,
     )
@@ -212,6 +216,8 @@ async def run_simulation(
     product_category: str | None = Form(None),
     ad_objective: str | None = Form(None),
     service_class: int | None = Form(None),
+    from_campaign_id: str | None = Form(None),
+    generation_id: str | None = Form(None),  # '생성한 광고로 시뮬' 진입 시 생성 출처(누끼 역추적)
     analysis_mode: str = Form(
         "synthetic"
     ),  # synthetic(기본)/individual(표본1 강제). persona_set은 /compare
@@ -240,6 +246,8 @@ async def run_simulation(
         product_category=product_category,
         ad_objective=ad_objective,
         service_class=service_class,
+        from_campaign_id=from_campaign_id,
+        generation_id=generation_id,
         analysis_mode=analysis_mode,
         user=current_user,
     )

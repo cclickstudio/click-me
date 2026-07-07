@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useProjects, type SimRow } from './ProjectContext';
@@ -45,11 +45,12 @@ function ProjectItem({
   activeGenId: string | null;
 }) {
   const router = useRouter();
-  const { details, loadDetails, refreshDetails } = useProjects();
+  const { details, loadDetails, refreshDetails, revealProjectId, revealNonce } = useProjects();
   const [open, setOpen] = useState(false);
   const [simOpen, setSimOpen] = useState(false);
   const [genOpen, setGenOpen] = useState(false);
   const [trashOpen, setTrashOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
 
   const d = details[project.id];
   const isLoading = open && !d?.loaded;
@@ -62,8 +63,17 @@ function ProjectItem({
     if (!open) await loadDetails(project.id);
   };
 
+  // 내역 클릭 등으로 이 프로젝트가 reveal 대상이면 펼치고 상세 로드 + 스크롤.
+  useEffect(() => {
+    if (revealProjectId !== project.id) return;
+    setOpen(true);
+    loadDetails(project.id);
+    rootRef.current?.scrollIntoView({ block: 'nearest' });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [revealNonce]);
+
   return (
-    <div>
+    <div ref={rootRef}>
       <div className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg hover:bg-[#F2F4F6] dark:hover:bg-[#252D3D] transition-colors group">
         <button onClick={toggle} className="flex items-center gap-1.5 flex-1 min-w-0 text-left">
           <ChevronIcon open={open} />
@@ -227,6 +237,13 @@ function TeamGroup({
   activeGenId: string | null;
 }) {
   const [open, setOpen] = useState(false);
+  const { revealProjectId, revealNonce } = useProjects();
+
+  // reveal 대상을 이 팀이 포함하면 자동으로 펼친다.
+  useEffect(() => {
+    if (revealProjectId && projects.some(p => p.id === revealProjectId)) setOpen(true);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [revealNonce]);
 
   return (
     <div>
@@ -273,6 +290,13 @@ function CompanyItem({
   activeGenId: string | null;
 }) {
   const [open, setOpen] = useState(false);
+  const { revealProjectId, revealNonce } = useProjects();
+
+  // reveal 대상을 이 회사가 포함하면 자동으로 펼친다(하위 TeamGroup·ProjectItem이 이어서 펼침).
+  useEffect(() => {
+    if (revealProjectId && projects.some(p => p.id === revealProjectId)) setOpen(true);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [revealNonce]);
 
   // 팀별 그룹핑 — 팀 미지정은 마지막
   const byTeam = projects.reduce<Record<string, PanelProject[]>>((acc, p) => {

@@ -213,6 +213,7 @@ export interface SimRunInput {
   service_class?: number;
   analysis_mode?: AnalysisMode; // synthetic(기본)·individual(표본 1 고정)
   from_campaign_id?: string;  // 관리 탭 진입 시 — 완료 후 서버가 자동으로 성과 비교 링크 생성
+  generation_id?: string;  // '생성한 광고로 시뮬' 진입 시 생성 출처 — 채팅 개선모드 누끼 역추적용
 }
 
 /* ─── Persona Set 비교(A-1) — 세그먼트별 시뮬을 나란히 비교 ─── */

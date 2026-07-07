@@ -1,0 +1,24 @@
+#!/bin/sh
+# 라우터/페이지 변경을 커밋할 때 API·라우트 문서(docs·CLAUDE.md)를 자동 동기화하는 pre-commit 훅.
+# 설치(1회): git config core.hooksPath .githooks
+# 관련 파일이 스테이지되지 않았으면 즉시 종료(빠름). 생성 실패해도 커밋은 막지 않는다(CI가 drift로 최종 검증).
+
+staged=$(git diff --cached --name-only)
+if ! printf '%s\n' "$staged" | grep -Eq '^backend/api/|^frontend/src/app/'; then
+  exit 0
+fi
+
+if ! command -v uv >/dev/null 2>&1; then
+  echo "[gen-docs] uv 미설치 — 문서 동기화 건너뜀(커밋 계속). CI가 drift를 검증합니다."
+  exit 0
+fi
+
+echo "[gen-docs] API·프론트 라우트 문서 동기화 중..."
+if ! ( cd backend && uv run python scripts/gen_docs.py >/dev/null 2>/tmp/gen_docs.err ); then
+  echo "[gen-docs] 생성 실패 — 커밋은 계속됩니다(문서는 CI에서 검증). 로그: /tmp/gen_docs.err"
+  exit 0
+fi
+
+git add docs/api-endpoints.md docs/frontend-routes.md CLAUDE.md 2>/dev/null || true
+echo "[gen-docs] 완료 — 변경된 문서를 이 커밋에 포함했습니다."
+exit 0

@@ -134,6 +134,38 @@ def latest_ubuntu_ami() -> str:
     return out
 
 
+def refresh_known_host(host: str) -> None:
+    """로컬 ~/.ssh/known_hosts 에서 이 host의 옛 SSH 호스트 키를 지우고 새 키를 등록한다.
+
+    인스턴스를 재생성하면 같은 EIP에 '새' 호스트 키가 붙어, 로컬 ssh/scp가
+    'REMOTE HOST IDENTIFICATION HAS CHANGED' 로 거부한다(호스트 키는 루트 EBS에
+    저장 → stop/start·resize는 유지, --destroy 후 재생성 때만 바뀜).
+    provision/fetch 가 끝나며 이걸 자동 갱신해, 사용자가 손으로 ssh-keygen -R 할
+    필요를 없앤다. (CD의 appleboy 액션은 known_hosts를 안 써서 무관 — 순수 로컬 편의.)
+    ssh-keygen/ssh-keyscan 이 없거나 실패해도 배포엔 영향 없으므로 best-effort.
+    """
+    known = Path.home() / ".ssh" / "known_hosts"
+    try:
+        known.parent.mkdir(mode=0o700, exist_ok=True)
+        # 1) 옛 키 제거 (엔트리가 없어도 무해)
+        subprocess.run(["ssh-keygen", "-R", host], capture_output=True, text=True)
+        # 2) 새 키 등록 — 재생성 직후엔 sshd가 아직 안 떴을 수 있어 짧게 재시도
+        for _ in range(12):
+            res = subprocess.run(
+                ["ssh-keyscan", "-T", "5", "-H", host], capture_output=True, text=True
+            )
+            keys = res.stdout.strip()
+            if keys:
+                with known.open("a", encoding="utf-8") as f:
+                    f.write(keys + "\n")
+                print(f"[+] known_hosts 갱신 — {host} 새 호스트 키 등록 (수동 ssh-keygen 불필요)")
+                return
+            time.sleep(5)
+        print(f"[!] known_hosts 자동 갱신 실패(sshd 대기 초과) — 첫 ssh 접속 때 수동 수락 필요할 수 있음: {host}")
+    except FileNotFoundError:
+        print("[!] ssh-keygen/ssh-keyscan 미설치 — known_hosts 자동 갱신 건너뜀(호스트 키 변경 시 수동 ssh-keygen -R 필요)")
+
+
 # ─────────────────────────── 생성 ───────────────────────────
 def create_key_pair() -> bool:
     """키페어를 확보한다. 이번에 새로 생성했으면 True, 이미 있어 건너뛰면 False."""
@@ -577,6 +609,7 @@ def main() -> None:
     aws("ec2", "wait", "instance-running", "--instance-ids", iid, capture=False)
     host = ensure_and_associate_eip(iid)
     write_infra_env(host, iid)
+    refresh_known_host(host)
     report(iid, host, key_created)
 
 
