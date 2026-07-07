@@ -4,6 +4,7 @@
 
 import { useEffect, useState } from 'react';
 import { DebatePanel } from '@/components/simulator/DebatePanel';
+import { PersonaReactionCard, REJECTION_LABEL } from '@/components/simulator/PersonaReactionCard';
 import { SimulationReportView } from '@/components/simulator/SimulationReportView';
 import { ExecuteFromSimulation } from '@/components/manage/ExecuteFromSimulation';
 import { KpiCard } from '@/components/ui/KpiCard';
@@ -15,56 +16,8 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 const assetSrc = (u?: string | null) =>
   u && u.startsWith('/') ? `${API_BASE}${u}` : (u ?? undefined);
 
-/* ─── enum 한글 라벨(백엔드 contracts/enums.py 동기화) ─── */
-const EMOTION_LABEL: Record<string, string> = {
-  curiosity: '호기심',
-  delight: '즐거움',
-  empathy: '공감',
-  trust: '신뢰',
-  indifference: '무관심',
-  annoyance: '거부감',
-  distrust: '불신',
-  other: '기타',
-};
-const REJECTION_LABEL: Record<string, string> = {
-  irrelevant: '무관함',
-  offensive: '불쾌함',
-  overpriced: '비쌈',
-  overpromise: '과장',
-  distrust: '불신',
-  ad_fatigue: '광고 피로',
-  other: '기타',
-};
-const DROP_LABEL: Record<string, string> = {
-  no_reason_to_explore: '탐색 동기 없음',
-  price_concern: '가격 부담',
-  low_relevance: '낮은 관련성',
-  unclear_message: '메시지 불명확',
-  distrust: '불신',
-  other: '기타',
-};
-const GENDER_LABEL: Record<string, string> = { M: '남성', F: '여성' };
-const OCEAN_LABEL: Record<string, string> = {
-  openness: '개방성',
-  conscientiousness: '성실성',
-  extraversion: '외향성',
-  agreeableness: '친화성',
-  neuroticism: '신경성',
-};
-
 const cardCls =
   'bg-white dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748] rounded-2xl p-6 transition-colors';
-
-function aisasFunnel(a: SimRunResult['reactions'][number]['aisas']): string {
-  const stages: [keyof typeof a, string][] = [
-    ['attention', 'A'],
-    ['interest', 'I'],
-    ['search', 'S'],
-    ['action', 'A'],
-    ['share', 'S'],
-  ];
-  return stages.map(([k, label]) => (a[k] ? label : '·')).join('');
-}
 
 interface Props {
   result: SimRunResult;
@@ -86,10 +39,13 @@ export function SimulationResultView({
   onReset,
   headerAction,
 }: Props) {
-  const [showFailed, setShowFailed] = useState(false);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   type ResultTab = 'overview' | 'personas' | 'debate';
   const [tab, setTab] = useState<ResultTab>('overview');
+  type PersonaFilter = 'all' | 'clicked' | 'rejected' | 'qa_failed';
+  type PersonaSort = 'default' | 'purchase' | 'trust';
+  const [personaFilter, setPersonaFilter] = useState<PersonaFilter>('all');
+  const [personaSort, setPersonaSort] = useState<PersonaSort>('default');
   const [showDetails, setShowDetails] = useState(false); // 개요 탭 '더보기' 접이식
   // 통합 리포트('최종 결과' 영역 단일 소스) — 저장본을 먼저 보여주고, 새 토론 완료 시 DebatePanel이 덮어쓴다.
   const [reportView, setReportView] = useState<ReportView | null>(
@@ -178,14 +134,32 @@ export function SimulationResultView({
         note: string;
       }
     | undefined;
-  const failed = reactions.filter(r => !r.qa_passed);
   const ad = result.ad_analysis;
   const fit = result.objective_fit ?? null;
   const ocean = result.ocean_segments ?? null;
-  const shown = showFailed ? reactions : passed;
   const personaMap = new Map(
     (result.personas ?? []).map(p => [p.persona_id, p])
   );
+
+  const clicked = reactions.filter(r => r.aisas.action);
+  const rejectedList = reactions.filter(r => r.rejected);
+  const failed = reactions.filter(r => !r.qa_passed);
+  const filtered =
+    personaFilter === 'clicked'
+      ? clicked
+      : personaFilter === 'rejected'
+        ? rejectedList
+        : personaFilter === 'qa_failed'
+          ? failed
+          : reactions;
+  const shownReactions =
+    personaSort === 'default'
+      ? filtered
+      : [...filtered].sort((a, b) =>
+          personaSort === 'purchase'
+            ? b.purchase_intent - a.purchase_intent
+            : b.trust - a.trust,
+        );
 
   return (
     <div className='px-8 py-8 max-w-7xl mx-auto space-y-6'>
@@ -592,190 +566,69 @@ export function SimulationResultView({
         </div>
       )}
 
-      {/* 분석 데이터(왼쪽) + 토론(오른쪽) 가로 배치 — stretch로 좌열이 우열 높이까지 확장 */}
-      <div className='grid grid-cols-1 lg:grid-cols-2 gap-6 items-stretch'>
-        {/* 왼쪽: 분석 데이터 — 래퍼는 row 높이를 우열(토론)에 맡기고, 내부는 그 높이를 채움 */}
-        <div className='relative min-h-0'>
-          <div className='flex flex-col gap-6 lg:absolute lg:inset-0'>
-            {/* 페르소나 반응 — flex-1로 좌열 남은 높이를 채우고, 내부 영역 스크롤 */}
-            <div className={`${cardCls} flex-1 flex flex-col min-h-0`}>
-              <div className='flex items-center justify-between mb-3'>
-                <h2 className='text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]'>
-                  페르소나 반응 ({shown.length})
-                </h2>
-                {failed.length > 0 && (
-                  <button
-                    onClick={() => setShowFailed(v => !v)}
-                    className='text-xs text-[#8B95A1] dark:text-[#6B7280] hover:text-[#3182F6]'>
-                    {showFailed
-                      ? 'QA 통과분만 보기'
-                      : `QA 탈락 ${failed.length}건 포함`}
-                  </button>
-                )}
-              </div>
-              <div className='space-y-3 flex-1 min-h-0 overflow-y-auto'>
-                {shown.map(r => {
-                  const p = personaMap.get(r.persona_id);
-                  const isOpen = expanded.has(r.persona_id);
-                  return (
-                    <div
-                      key={r.persona_id}
-                      className={`border-l-2 pl-3 py-1 ${
-                        r.qa_passed
-                          ? 'border-[#3182F6]'
-                          : 'border-[#F04452] opacity-60'
-                      }`}>
-                      {/* 페르소나 기본 정보 */}
-                      <div className='flex flex-wrap items-center gap-2 text-[11px] mb-1'>
-                        <button
-                          type='button'
-                          onClick={() => p && toggleExpand(r.persona_id)}
-                          className='font-medium text-[#191F28] dark:text-[#F2F4F6] hover:text-[#3182F6]'>
-                          {p ? (
-                            <>
-                              {p.age}세 {GENDER_LABEL[p.gender] ?? p.gender} ·{' '}
-                              {p.region}
-                              <span className='ml-1 text-[#B0B8C1] dark:text-[#4B5563]'>
-                                {isOpen ? '▲' : '▼'}
-                              </span>
-                            </>
-                          ) : (
-                            r.persona_id
-                          )}
-                        </button>
-                        <span className='text-[10px] text-[#B0B8C1] dark:text-[#4B5563]'>
-                          {r.persona_id}
-                        </span>
-                      </div>
-
-                      {/* 반응 요약 */}
-                      <div className='flex flex-wrap items-center gap-2 text-[11px] mb-1'>
-                        <span className='font-mono text-[#3182F6]'>
-                          {aisasFunnel(r.aisas)}
-                        </span>
-                        <span className='text-[#4E5968] dark:text-[#9CA3AF]'>
-                          구매 {r.purchase_intent}·신뢰 {r.trust}
-                        </span>
-                        <span className='px-1.5 py-0.5 rounded bg-[#F2F4F6] dark:bg-[#252D3D] text-[#4E5968] dark:text-[#9CA3AF]'>
-                          {EMOTION_LABEL[r.emotion_tag] ?? r.emotion_tag}
-                        </span>
-                        {r.rejected && (
-                          <span className='px-1.5 py-0.5 rounded bg-[#FEF2F2] dark:bg-[#3B0D0D] text-[#DC2626]'>
-                            거부
-                            {r.rejection_reason_tag
-                              ? `·${REJECTION_LABEL[r.rejection_reason_tag] ?? r.rejection_reason_tag}`
-                              : ''}
-                          </span>
-                        )}
-                        {r.drop_stage && (
-                          <span className='text-[#B0B8C1] dark:text-[#4B5563]'>
-                            이탈 {r.drop_stage}
-                            {r.drop_reason_tag
-                              ? `·${DROP_LABEL[r.drop_reason_tag] ?? r.drop_reason_tag}`
-                              : ''}
-                          </span>
-                        )}
-                        {r.exposure_context && (
-                          <span className='text-[#B0B8C1] dark:text-[#4B5563]'>
-                            노출 {r.exposure_context}
-                          </span>
-                        )}
-                        {!r.qa_passed && (
-                          <span className='text-[#F04452]'>
-                            QA 탈락
-                            {r.qa_fail_reason ? `·${r.qa_fail_reason}` : ''}
-                          </span>
-                        )}
-                      </div>
-
-                      {r.utterance && (
-                        <p className='text-sm text-[#4E5968] dark:text-[#9CA3AF]'>
-                          {r.utterance}
-                        </p>
-                      )}
-
-                      {/* 페르소나 상세 (펼침) */}
-                      {isOpen && p && (
-                        <div className='mt-2 p-3 rounded-lg bg-[#F9FAFB] dark:bg-[#252D3D] text-[11px] space-y-2'>
-                          <div>
-                            <span className='text-[#8B95A1] dark:text-[#6B7280]'>
-                              OCEAN
-                            </span>
-                            <div className='flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5 text-[#4E5968] dark:text-[#9CA3AF]'>
-                              {Object.entries(p.ocean).map(([dim, v]) => (
-                                <span key={dim}>
-                                  {OCEAN_LABEL[dim] ?? dim} {v.toFixed(2)}
-                                </span>
-                              ))}
-                            </div>
-                          </div>
-                          {Object.keys(p.consumption_values).length > 0 && (
-                            <div>
-                              <span className='text-[#8B95A1] dark:text-[#6B7280]'>
-                                소비가치
-                              </span>
-                              <p className='mt-0.5 text-[#4E5968] dark:text-[#9CA3AF] break-all'>
-                                {JSON.stringify(p.consumption_values)}
-                              </p>
-                            </div>
-                          )}
-                          {Object.keys(p.media_behavior).length > 0 && (
-                            <div>
-                              <span className='text-[#8B95A1] dark:text-[#6B7280]'>
-                                미디어 행동
-                              </span>
-                              <p className='mt-0.5 text-[#4E5968] dark:text-[#9CA3AF] break-all'>
-                                {JSON.stringify(p.media_behavior)}
-                              </p>
-                            </div>
-                          )}
-                          {Object.keys(p.socioeconomic).length > 0 && (
-                            <div>
-                              <span className='text-[#8B95A1] dark:text-[#6B7280]'>
-                                사회경제
-                              </span>
-                              <p className='mt-0.5 text-[#4E5968] dark:text-[#9CA3AF] break-all'>
-                                {JSON.stringify(p.socioeconomic)}
-                              </p>
-                            </div>
-                          )}
-                          {p.profile_narrative && (
-                            <div>
-                              <span className='text-[#8B95A1] dark:text-[#6B7280]'>
-                                프로필 서사
-                              </span>
-                              <p className='mt-0.5 text-[#4E5968] dark:text-[#9CA3AF]'>
-                                {p.profile_narrative}
-                              </p>
-                            </div>
-                          )}
-                          <span className='inline-block text-[10px] text-[#B0B8C1] dark:text-[#4B5563]'>
-                            가중치 {p.weight}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
+      {tab === 'personas' && (
+        <div className='space-y-4'>
+          <div className='flex flex-wrap items-center justify-between gap-3'>
+            <div className='flex flex-wrap gap-2'>
+              {(
+                [
+                  ['all', `전체 ${reactions.length}`],
+                  ['clicked', `클릭 의향 ${clicked.length}`],
+                  ['rejected', `거부 ${rejectedList.length}`],
+                  ['qa_failed', `QA 탈락 ${failed.length}`],
+                ] as [PersonaFilter, string][]
+              ).map(([key, label]) => (
+                <button
+                  key={key}
+                  onClick={() => setPersonaFilter(key)}
+                  className={`px-3 py-1 rounded-full text-xs transition-colors ${
+                    personaFilter === key
+                      ? 'bg-[#3182F6] text-white'
+                      : 'bg-[#F2F4F6] dark:bg-[#252D3D] text-[#4E5968] dark:text-[#9CA3AF] hover:bg-[#E5E8EB]'
+                  }`}>
+                  {label}
+                </button>
+              ))}
             </div>
+            <select
+              value={personaSort}
+              onChange={e => setPersonaSort(e.target.value as PersonaSort)}
+              className='text-xs border border-[#E5E8EB] dark:border-[#2D3748] rounded-lg px-2 py-1 bg-white dark:bg-[#1C2333] text-[#4E5968] dark:text-[#9CA3AF]'>
+              <option value='default'>기본 순서</option>
+              <option value='purchase'>구매의도 높은 순</option>
+              <option value='trust'>신뢰도 높은 순</option>
+            </select>
           </div>
+          {shownReactions.length === 0 ? (
+            <p className='py-16 text-center text-sm text-[#8B95A1]'>해당 조건의 반응이 없습니다</p>
+          ) : (
+            <div className='grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4'>
+              {shownReactions.map(r => (
+                <PersonaReactionCard
+                  key={r.persona_id}
+                  reaction={r}
+                  persona={personaMap.get(r.persona_id)}
+                  isOpen={expanded.has(r.persona_id)}
+                  onToggle={() => toggleExpand(r.persona_id)}
+                />
+              ))}
+            </div>
+          )}
         </div>
+      )}
 
-        {/* 오른쪽: 토론 (채팅 + 결과 박스) */}
-        <div>
-          <DebatePanel
-            reactions={reactions}
-            adAnalysis={ad ?? null}
-            personas={result.personas ?? []}
-            simulationId={result.simulation_id}
-            objectiveFit={fit}
-            rubricScores={result.rubric_scores}
-            adTitle={adTitle || undefined}
-            adDescription={adDescription || undefined}
-            onReportView={setReportView}
-          />
-        </div>
+      <div>
+        <DebatePanel
+          reactions={reactions}
+          adAnalysis={ad ?? null}
+          personas={result.personas ?? []}
+          simulationId={result.simulation_id}
+          objectiveFit={fit}
+          rubricScores={result.rubric_scores}
+          adTitle={adTitle || undefined}
+          adDescription={adDescription || undefined}
+          onReportView={setReportView}
+        />
       </div>
 
       {/* 최종 결과 — 통합 리포트(화면 = PDF 단일 소스). 토론 완료 후 채워짐. */}
