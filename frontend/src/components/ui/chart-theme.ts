@@ -60,7 +60,7 @@ export function useChartColors(): ChartColors {
 function buildFallback(): ChartColors {
   const base: Record<VarKey, string> = {
     primary: 'rgb(49 130 246)',
-    point: 'rgb(124 58 237)',
+    point: 'rgb(139 92 246)',
     success: 'rgb(22 163 74)',
     warning: 'rgb(217 119 6)',
     danger: 'rgb(239 68 68)',

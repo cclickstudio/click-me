@@ -52,9 +52,9 @@
   --accent: 242 244 246; /* #F2F4F6 */
   --accent-foreground: 51 61 75; /* #333D4B */
 
-  /* point (브랜드 포인트 바이올렛 — 화면당 1개) */
-  --point: 124 58 237; /* #7C3AED */
-  --point-hover: 109 40 217; /* #6D28D9 */
+  /* point (AI 포인트 바이올렛 #8B5CF6 — 시뮬·생성 계열 전용, 화면당 1개) */
+  --point: 139 92 246; /* #8B5CF6 */
+  --point-hover: 124 58 237; /* #7C3AED */
   --point-subtle: 241 235 254; /* #F1EBFE */
   --point-foreground: 255 255 255;
 
@@ -151,9 +151,9 @@
   --accent: 33 38 47; /* #21262F */
   --accent-foreground: 229 232 235; /* #E5E8EB */
 
-  /* point (브랜드 포인트 바이올렛) */
-  --point: 139 92 246; /* #8B5CF6 */
-  --point-hover: 167 139 250; /* #A78BFA */
+  /* point (AI 포인트 바이올렛 — 다크는 한 단계 밝게 #A78BFA) */
+  --point: 167 139 250; /* #A78BFA */
+  --point-hover: 196 181 253; /* #C4B5FD */
   --point-subtle: 36 28 58; /* #241C3A */
   --point-foreground: 255 255 255;
 

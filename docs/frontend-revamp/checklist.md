@@ -80,9 +80,9 @@
 - 참고: `Tooltip`/`Dialog`/`Sheet`/`Toast(sonner)`는 shadcn 설치 완료(0.0)로 사용 가능, SegmentedControl은 미도입(Tabs로 충분).
 
 ### 0.6 팔레트 갱신 (색 방향 확정 반영)
-- [ ] `--point` 토큰 `#7C3AED` → **`#8B5CF6`**(다크 `#A78BFA`)로 갱신. 보라는 **AI/시뮬·생성 계열 포인트 전용**.
-- [ ] 색 역할 확정 적용: 파랑=브랜드/성과 · 보라=AI/생성 · 빨강/노랑/초록=상태 의미색 · 그 외 무채색. 활동 피드 등 비-의미 요소에 보라 금지.
-- [ ] 노랑은 **warning 의미색으로만** 사용(브랜드/포인트색 비채택 유지).
+- [x] `--point` 토큰 `#7C3AED` → **`#8B5CF6`**(다크 `#A78BFA`)로 갱신. 보라는 **AI/시뮬·생성 계열 포인트 전용**. (globals.css `:root`/`.dark` + chart-theme fallback 갱신, preview eval로 라이트 rgb(139,92,246)·다크 rgb(167,139,250) 확인.)
+- [x] 색 역할 확정 적용: 파랑=브랜드/성과 · 보라=AI/생성 · 빨강/노랑/초록=상태 의미색 · 그 외 무채색. 활동 피드 등 비-의미 요소에 보라 금지. (토큰 기본값에 반영, 화면 작업 시 준수 — 잔여 하드코딩 보라는 Phase 3/5 sweep에서 정리.)
+- [x] 노랑은 **warning 의미색으로만** 사용(브랜드/포인트색 비채택 유지). (테마 프리셋·의미색 토큰에 노랑 미채택 확인.)
 
 ---
 
@@ -267,3 +267,4 @@ git push origin --delete feat/front-fix
 - 2026-07-08 P0.2 테마 14종 완료 — themes.css(html[data-theme] specificity로 :root override). 컬러11은 primary/point만, 에디터다크3(monokai/monokai-black/dracula)은 전체 팔레트. eval 검증: blue→emerald(16 185 129)→rose→monokai(bg #272822·다크강제) 실시간 전환 확인.
 - 2026-07-08 P0.4 ThemeProvider 확장+/themes 갤러리 완료 — data-theme localStorage 영속·에디터테마 다크강제, layout 인라인스크립트 FOUC 방지. 갤러리에서 14테마 스위처+프리미티브 실시간 반영 검증(콘솔 에러 0). ※ preview_screenshot은 이 환경에서 외부 폰트 CDN network-idle 대기로 타임아웃 → snapshot/inspect/eval로 검증 대체.
 - 2026-07-08 P0.5 공용 프리미티브 완료 — StatCard(델타색·스파크라인)·Section·EmptyState 신설, chart-theme 훅(테마색 Recharts), 타이포 유틸(.text-h1~caption). shadcn 20종 활용. Select은 파일명 충돌로 커스텀 유지.
+- 2026-07-08 P0.6 팔레트 갱신 완료 — 기본 `--point` 라이트 #8B5CF6 / 다크 #A78BFA로 갱신(globals.css :root·.dark), chart-theme fallback도 동기화. blue(기본) 테마는 point override 안 해 :root값 적용, mono/violet만 의도적 override 유지. preview eval 검증: light rgb(139,92,246)·dark rgb(167,139,250), 콘솔 에러 0.
