@@ -865,7 +865,7 @@ export const api = {
       }),
     replaceCreativeProposal: (
       campaignId: string,
-      body: { generation_id: string; candidate_id: string; link_url: string },
+      body: { generation_id: string; candidate_id: string; link_url?: string },
     ) =>
       request<{
         proposal: Proposal;
@@ -878,6 +878,7 @@ export const api = {
             image_url?: string | null;
             headline?: string | null;
             primary_text?: string | null;
+            link_url?: string | null;
           }[];
         };
       }>(`/management/campaigns/${campaignId}/replace-creative-proposal`, {

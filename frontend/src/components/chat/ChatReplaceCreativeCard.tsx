@@ -8,9 +8,6 @@ import type { CampaignSummary } from '@/components/manage/campaigns/types';
 import type { Proposal, ActionResult } from '@/components/manage/types';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
-// 도착 URL(랜딩) 기본값 — 사용자가 확인·수정한다(소재 교체가 도착지까지 바꾸지 않게 명시 입력).
-// TODO(후속): 기존 광고 랜딩 URL을 읽어와 기본값으로 보존.
-const DEFAULT_LINK = 'https://clickme.co.kr';
 
 type PickItem = Pick<CampaignSummary, 'campaign_id' | 'name' | 'state'>;
 type GenItem = { id: string; status: string; created_at?: string };
@@ -27,6 +24,7 @@ type AffectedAd = {
   ad_name: string;
   thumbnail_url?: string | null;
   image_url?: string | null;
+  link_url?: string | null;
 };
 type Preview = {
   candidate: { headline?: string | null; body?: string | null; s3_key?: string | null };
@@ -54,7 +52,6 @@ export default function ChatReplaceCreativeCard({
   const [gens, setGens] = useState<GenItem[]>([]);
   const [genId, setGenId] = useState('');
   const [candidates, setCandidates] = useState<Candidate[]>([]);
-  const [linkUrl, setLinkUrl] = useState(DEFAULT_LINK);
   const [proposal, setProposal] = useState<Proposal | null>(null);
   const [preview, setPreview] = useState<Preview | null>(null);
   const [result, setResult] = useState<ActionResult | null>(null);
@@ -125,10 +122,10 @@ export default function ChatReplaceCreativeCard({
     setBusy(true);
     setError(null);
     try {
+      // link_url 미전송 — 백엔드가 기존 광고의 도착지를 보존한다(소재만 교체).
       const r = await api.management.replaceCreativeProposal(resolvedId, {
         generation_id: genId,
         candidate_id: candidateId,
-        link_url: linkUrl,
       });
       setProposal(r.proposal);
       setPreview(r.preview);
@@ -233,7 +230,11 @@ export default function ChatReplaceCreativeCard({
             </li>
           ))}
         </ul>
-        <p className="mt-2 text-[11px] text-[#8B95A1]">도착 URL {linkUrl}</p>
+        {preview.affected_ads.find((a) => a.link_url)?.link_url && (
+          <p className="mt-2 text-[11px] text-[#8B95A1]">
+            도착 URL 유지 {preview.affected_ads.find((a) => a.link_url)?.link_url}
+          </p>
+        )}
         <div className="mt-2 flex gap-2">
           <button
             onClick={approveAndReplace}
@@ -303,16 +304,6 @@ export default function ChatReplaceCreativeCard({
         {gens.length === 0 && (
           <span className="mt-1 block text-xs text-[#8B95A1]">완료된 광고 시안이 없어요.</span>
         )}
-      </label>
-
-      <label className="mb-2 block">
-        <span className="text-xs text-[#8B95A1]">도착 URL(랜딩)</span>
-        <input
-          type="url"
-          value={linkUrl}
-          onChange={(e) => setLinkUrl(e.target.value)}
-          className="mt-1 w-full rounded-lg border border-[#E5E8EB] dark:border-[#2D3748] bg-transparent px-3 py-2 text-sm"
-        />
       </label>
 
       {candidates.length > 0 && (
