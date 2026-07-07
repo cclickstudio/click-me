@@ -44,7 +44,7 @@ const BellIcon = (
 
 export default function Center() {
   const { user } = useAuth();
-  const { projects } = useProjects();
+  const { projects, refresh: refreshProjects } = useProjects();
   const isAdmin = user?.role === 'ADMIN';
   const [expanded, setExpanded] = useState(false);
   const [tab, setTab] = useState<CenterTab>('alarm');
@@ -78,11 +78,14 @@ export default function Center() {
     }
   }, [isAdmin]);
 
-  // 기업 선택 변경 — 센터 상태 + localStorage 동기화(재접속 복원용).
+  // 기업 선택 변경 — 센터 상태 + localStorage 동기화(재접속 복원용) + 프로젝트 목록 재조회.
+  // (프로젝트 드롭다운을 선택 기업 소속으로 한정 — CenterFilterBar가 setAdminOrgId를 먼저 반영하므로
+  //  refreshProjects는 새 org 스코프로 /api/projects를 다시 부른다.)
   const handleOrgId = (v: string) => {
     setOrgId(v);
     if (v) localStorage.setItem(LS_ORG, v);
     else localStorage.removeItem(LS_ORG);
+    void refreshProjects();
   };
 
   const persistExpanded = (v: boolean) => {
