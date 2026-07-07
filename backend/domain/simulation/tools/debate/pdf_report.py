@@ -1,29 +1,70 @@
 # 조각 11 리포트 → PDF. Tailwind 대시보드 HTML을 Playwright(headless Chromium)로 렌더(서버 사이드).
 #
 # 프론트 html2pdf.js(클라이언트 캡처) 아님 — 서버 Chromium이 HTML을 PDF로 인쇄한다.
-# 디자인: Tailwind Play CDN · grid 레이아웃 · 섹션별 카드 분리 · 상단 KPI 카드 strip · 강한 색 대비.
+# 디자인: 리포트 조판(표지 페이지 + Executive Summary + 번호형 섹션 + 규칙선), 절제된 인쇄 팔레트,
+# 하단 푸터 페이지 번호. 서체 Pretendard(제목=굵은 산세리프).
+# 배포 하드닝: 폰트(base64)·Tailwind(vendored JS)를 인라인해 CDN 없이 렌더(오프라인 self-contained).
 # 비전문가도 읽도록 모든 수치에 쉬운 해설을 붙인다. _build_html은 순수 함수(테스트·디버그용).
 from __future__ import annotations
 
+import base64
 import json
 import logging
 import subprocess
 import sys
+from functools import lru_cache
 from html import escape
 from pathlib import Path
 
 logger = logging.getLogger("clickme")
 
-# ── 팔레트(강한 대비) ──
+# ── 오프라인 자산(배포 하드닝) — CDN 없이 렌더되도록 폰트·Tailwind를 인라인한다 ──
+# 폰트: backend/assets/fonts의 Pretendard OTF(공용 자산). Tailwind: vendoring한 Play CDN JS.
+_FONT_DIR = Path(__file__).resolve().parents[4] / "assets" / "fonts"
+_ASSET_DIR = Path(__file__).resolve().parent / "assets"
+
+
+@lru_cache(maxsize=1)
+def _font_face_css() -> str:
+    """Pretendard OTF를 base64 data URI @font-face로 인라인(제목 700·본문 400). 없으면 시스템 폴백."""
+    faces = []
+    for fname, weight in (("Pretendard-Regular.otf", 400), ("Pretendard-Bold.otf", 700)):
+        try:
+            b64 = base64.b64encode((_FONT_DIR / fname).read_bytes()).decode("ascii")
+        except OSError:
+            logger.warning("PDF 폰트 임베드 실패 — %s 없음, 시스템 폰트로 폴백", fname)
+            continue
+        faces.append(
+            "@font-face{font-family:'Pretendard';font-style:normal;"
+            f"font-weight:{weight};font-display:swap;"
+            f"src:url(data:font/otf;base64,{b64}) format('opentype');}}"
+        )
+    return "".join(faces)
+
+
+@lru_cache(maxsize=1)
+def _tailwind_inline() -> str:
+    """vendoring한 Tailwind Play CDN JS를 반환(인라인 <script>용). 없으면 빈 문자열(CDN 폴백)."""
+    try:
+        return (_ASSET_DIR / "tailwind_play.js").read_text(encoding="utf-8")
+    except OSError:
+        logger.warning("Tailwind vendored JS 없음 — CDN 폴백")
+        return ""
+
+
+# ── 팔레트(생기 있는 톤: 데이터 색은 밝고 선명하게, 배경·텍스트 뉴트럴은 절제 유지) ──
 _BLUE, _INDIGO, _TEAL, _GREEN, _AMBER, _RED, _SLATE = (
-    "#2563EB",
-    "#4F46E5",
-    "#0D9488",
-    "#10B981",
-    "#F59E0B",
-    "#EF4444",
-    "#64748B",
+    "#3B82F6",  # accent(주색) — 선명한 블루
+    "#6366F1",  # 인디고/바이올렛(섹션 강조)
+    "#14B8A6",  # 밝은 틸(감정·부가)
+    "#16A34A",  # 선명한 그린(좋음)
+    "#F59E0B",  # 밝은 앰버(보통)
+    "#EF4444",  # 선명한 레드(나쁨)
+    "#64748B",  # 슬레이트(중립)
 )
+# 리포트 공통 뉴트럴 — 본문 잉크/보조/약한 텍스트/헤어라인.
+_INK, _SUB, _MUTED, _LINE = "#1F2937", "#475569", "#94A3B8", "#E5E7EB"
+_ACCENT = _BLUE
 
 _AISAS_KO = {
     "attention": "주목",
@@ -83,7 +124,8 @@ _DONUT_PALETTE = (
     "#64748B",
 )
 
-_CARD = "bg-white rounded-2xl border border-slate-200 shadow-sm break-inside-avoid"
+# 패널(요약·강조 박스) — 그림자 없는 얇은 프레임. 일반 섹션은 카드가 아니라 규칙선으로 구분.
+_CARD = "bg-white rounded-xl border border-slate-200 break-inside-avoid"
 
 
 def _pct(x) -> str:
@@ -161,41 +203,58 @@ def _bar(label: str, ratio: float, disp: str, color: str = _BLUE) -> str:
     )
 
 
-def _kpi_card(value: str, label: str, exp: str, color: str) -> str:
+def _kpi_tone(ratio: float, good: float, ok: float) -> str:
+    """KPI 값(0~1 정규화)을 좋음(초)·보통(노)·나쁨(빨) 신호색으로 — 상단 카드 색 일관화용."""
+    return _GREEN if ratio >= good else _AMBER if ratio >= ok else _RED
+
+
+def _kpi_card(
+    value: str, label: str, exp: str, color: str, *, unit: str = "", gauge: float | None = None
+) -> str:
+    # unit(예 '/5')은 값 옆에 작게, gauge(0~1)는 값 아래 얇은 진행바 — 카드 색과 같은 상태색.
+    unit_html = (
+        f'<span class="text-[13px] font-bold text-slate-400 ml-0.5">{escape(unit)}</span>'
+        if unit
+        else ""
+    )
+    gauge_html = (
+        '<div class="h-1.5 bg-slate-100 rounded-full overflow-hidden mt-2">'
+        f'<div class="h-full rounded-full" '
+        f'style="width:{max(0.0, min(1.0, gauge)) * 100:.0f}%;background:{color}"></div></div>'
+        if gauge is not None
+        else ""
+    )
     return (
-        '<div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 border-t-4" '
-        f'style="border-top-color:{color}">'
+        '<div class="bg-white rounded-lg border border-slate-200 p-4" '
+        f'style="border-top:3px solid {color}">'
         f'<div class="text-[11px] font-bold text-slate-500">{escape(label)}</div>'
         f'<div class="text-[28px] font-extrabold leading-tight mt-1" style="color:{color}">'
-        f"{escape(value)}</div>"
+        f"{escape(value)}{unit_html}</div>"
+        f"{gauge_html}"
         f'<div class="text-[9.5px] text-slate-400 mt-1 leading-snug">{escape(exp)}</div></div>'
     )
 
 
 def _section(num: str, title: str, color: str, body: str, *, tip: str = "") -> str:
-    tip_html = (
-        (
-            f'<p class="text-[11px] leading-relaxed text-slate-500 bg-slate-50 '
-            f'rounded-lg px-3 py-2 mb-3">{tip}</p>'
-        )
-        if tip
+    # 리포트 스타일 — 카드가 아니라 '번호 + 세리프 제목 + 하단 규칙선'으로 섹션을 구분한다.
+    # 번호는 섹션 고유색(파랑·인디고·앰버 등)으로 살짝만 색을 준다. tip은 리드 문장(회색 박스 제거).
+    n2 = num.zfill(2) if (num and num.isdigit()) else num
+    num_html = (
+        f'<span class="hd text-[13px] font-bold mr-2.5" style="color:{color}">{n2}</span>'
+        if num
         else ""
     )
-    num_html = (
-        (
-            f'<span class="w-7 h-7 rounded-lg text-white text-[12px] font-bold '
-            f'grid place-items-center" style="background:{color}">{num}</span>'
-        )
-        if num
-        else (
-            f'<span class="w-1.5 h-5 rounded-full inline-block" style="background:{color}"></span>'
-        )
+    lead = (
+        f'<p class="text-[11px] leading-relaxed mt-1.5 mb-3" style="color:{_SUB}">{tip}</p>'
+        if tip
+        else '<div class="mb-2.5"></div>'
     )
     return (
-        f'<section class="{_CARD} p-5">'
-        f'<div class="flex items-center gap-2.5 mb-1">{num_html}'
-        f'<h2 class="text-[15px] font-bold text-slate-800">{escape(title)}</h2></div>'
-        f"{tip_html}{body}</section>"
+        '<section class="break-inside-avoid">'
+        f'<div class="flex items-baseline pb-1.5" style="border-bottom:1.5px solid {_INK}">'
+        f'{num_html}<h2 class="hd text-[15.5px] font-bold" style="color:{_INK}">'
+        f"{escape(title)}</h2></div>"
+        f"{lead}{body}</section>"
     )
 
 
@@ -227,7 +286,7 @@ def _objective_fit_block(of: dict) -> str:
         f"{escape(str(of.get('rationale') or ''))}</p>{bars}"
     )
     if of.get("low_confidence"):
-        body += '<p class="text-[10px] text-amber-600 mt-1">⚠ 표본이 적어 신뢰가 낮습니다.</p>'
+        body += '<p class="text-[10px] text-amber-600 mt-1">※ 표본이 적어 신뢰가 낮습니다.</p>'
     return _section(
         "",
         "캠페인 목표 달성 가능성",
@@ -417,55 +476,139 @@ def _build_html(result: dict) -> str:
         _secn += 1
         return str(_secn)
 
-    # ── 헤더 밴드 ──
-    metabits = []
-    if ad.get("detected_industry"):
-        metabits.append(f"업종 {ad['detected_industry']}")
-    if topic.get("objective") or ad.get("detected_objective"):
-        metabits.append(f"목적 {topic.get('objective') or ad.get('detected_objective')}")
-    if ad.get("detected_message"):
-        metabits.append(f"메시지 {ad['detected_message']}")
+    # ── 표지(단독 페이지) ──
+    gen_at = str(result.get("generated_at") or "")
+    gen_date = gen_at[:10] if len(gen_at) >= 10 else gen_at
+    subject = (
+        ad.get("detected_message")
+        or topic.get("headline")
+        or report.get("topic")
+        or "광고 크리에이티브"
+    )
+    meta_rows = [
+        ("업종", ad.get("detected_industry") or "-"),
+        ("캠페인 목적", topic.get("objective") or ad.get("detected_objective") or "-"),
+        ("가상 소비자", f"{total_n}명"),
+        ("시뮬레이션 엔진", str(aggregate.get("engine_version") or "-")),
+        ("생성일", gen_date or "-"),
+    ]
+    meta_html = "".join(
+        "<div>"
+        f'<div class="text-[9px] font-bold" style="letter-spacing:.08em;color:{_MUTED}">'
+        f"{escape(str(k))}</div>"
+        f'<div class="text-[12px] mt-0.5" style="color:{_INK}">{escape(str(v))}</div></div>'
+        for k, v in meta_rows
+    )
     blocks.append(
-        '<div class="rounded-2xl p-6 text-white flex justify-between items-end shadow-md" '
-        'style="background:linear-gradient(120deg,#0f1f3d,#1e3a8a 55%,#2563eb)">'
-        '<div><div class="text-[25px] font-extrabold tracking-tight">광고 시뮬레이션 보고서</div>'
-        f'<div class="text-[12px] text-blue-200 mt-1.5">집행 전, AI 가상 소비자 {total_n}명에게 '
-        "미리 보여준 반응이에요</div>"
-        + (
-            f'<div class="text-[10px] text-blue-300 mt-2">{escape("  ·  ".join(metabits))}</div>'
-            if metabits
-            else ""
-        )
-        + "</div>"
-        f'<div class="text-right text-[10px] text-blue-200 leading-relaxed shrink-0 ml-4">'
-        f"엔진 {escape(str(aggregate.get('engine_version') or '-'))}<br>가상 소비자 {total_n}명</div>"
-        "</div>"
+        '<div class="page-break flex flex-col" style="min-height:252mm;">'
+        f'<div style="width:64px;border-top:3px solid {_ACCENT};" class="mb-6"></div>'
+        f'<div class="text-[11px] font-bold" style="letter-spacing:.28em;color:{_ACCENT}">'
+        "AD SIMULATION REPORT</div>"
+        '<div class="mt-24">'
+        f'<h1 class="hd font-extrabold leading-[1.12]" style="font-size:44px;color:{_INK}">'
+        "광고 시뮬레이션<br>보고서</h1>"
+        f'<p class="hd mt-6 text-[18px] leading-snug" style="color:{_SUB}">'
+        f"“{escape(str(subject))}”</p>"
+        f'<p class="text-[12px] mt-4 leading-relaxed" style="color:{_MUTED}">'
+        f"집행 전, AI 가상 소비자 {total_n}명에게 미리 보여준 반응을 정리한 예측 보고서입니다.</p></div>"
+        '<div class="mt-auto">'
+        f'<div style="border-top:1px solid {_LINE};" '
+        'class="pt-4 grid grid-cols-2 gap-y-3 gap-x-10">'
+        f"{meta_html}</div>"
+        '<div class="mt-6 flex justify-between items-baseline">'
+        f'<span class="hd text-[15px] font-bold" style="color:{_INK}">ClickMe</span>'
+        f'<span class="text-[9.5px]" style="color:{_MUTED}">'
+        "광고 전주기 지원 플랫폼 · 예측 참고 자료(실측 아님)</span></div></div></div>"
     )
 
-    # ── 상단 KPI 카드 strip (5개) ──
+    # ── 요약(Executive Summary) 헤딩 — 2페이지 시작 ──
+    blocks.append(
+        "<div>"
+        f'<div class="text-[10px] font-bold" style="letter-spacing:.2em;color:{_ACCENT}">'
+        "EXECUTIVE SUMMARY</div>"
+        f'<h2 class="hd text-[19px] font-bold mt-1" style="color:{_INK}">한눈에 보는 결론</h2></div>'
+    )
+
+    # ── 상단 KPI 카드 strip (5개) — 색은 브랜드 구분이 아니라 좋음(초)·보통(노)·나쁨(빨) 신호로 통일 ──
+    # 거부율은 낮을수록 좋으므로 (1-rej)로 신호를 뒤집어 판정한다(게이지 길이는 실제 rej).
     blocks.append(
         '<div class="grid grid-cols-5 gap-3">'
-        + _kpi_card(_pct(cir), "클릭 의향", f"100명 중 {_n(cir)}명이 눌러보고 싶어 했어요", _BLUE)
-        + _kpi_card(f"{pi:.1f}", "구매의도 (5점)", "사고 싶은 마음의 정도", _INDIGO)
-        + _kpi_card(f"{tr:.1f}", "신뢰도 (5점)", "광고를 얼마나 믿는지", _TEAL)
+        + _kpi_card(
+            _pct(cir),
+            "클릭 의향",
+            f"100명 중 {_n(cir)}명이 눌러보고 싶어 했어요",
+            _kpi_tone(cir, 0.3, 0.15),
+            gauge=cir,
+        )
+        + _kpi_card(
+            f"{pi:.1f}",
+            "구매의도",
+            "5점 만점 · 사고 싶은 마음",
+            _kpi_tone(pi / 5, 0.7, 0.5),
+            unit="/5",
+            gauge=pi / 5,
+        )
+        + _kpi_card(
+            f"{tr:.1f}",
+            "신뢰도",
+            "5점 만점 · 광고를 얼마나 믿는지",
+            _kpi_tone(tr / 5, 0.7, 0.5),
+            unit="/5",
+            gauge=tr / 5,
+        )
         + _kpi_card(
             _pct(rej),
             "거부율",
-            f"{_n(rej)}명이 '싫다·스킵'. 낮을수록 좋아요",
-            _RED if rej >= 0.3 else _SLATE,
+            f"{_n(rej)}명이 '싫다·스킵' · 낮을수록 좋아요",
+            _kpi_tone(1 - rej, 0.85, 0.7),
+            gauge=rej,
         )
-        + _kpi_card(_pct(brr), "브랜드 식별", f"{_n(brr)}명이 어느 브랜드인지 알아봤어요", _GREEN)
+        + _kpi_card(
+            _pct(brr),
+            "브랜드 식별",
+            f"{_n(brr)}명이 어느 브랜드인지 알아봤어요",
+            _kpi_tone(brr, 0.5, 0.3),
+            gauge=brr,
+        )
         + "</div>"
     )
 
     # ── 종합 판정(풀폭) — verdict(전문가 진단) + 한눈에 보는 결론(비전문가, 하단 가로) ──
     # 화면(SimulationReportView)과 동일 구조. 강약점 요약은 §진단 섹션(rubric)에 그대로 있다.
     deg = overall / 100 * 360
+    # 종합 점수 근거 — 어떤 지표를 평균한 값인지 미니 막대로 노출(점수만 던지지 않는다).
+    contrib = [
+        ("클릭", cir, _kpi_tone(cir, 0.3, 0.15)),
+        ("구매", pi / 5, _kpi_tone(pi / 5, 0.7, 0.5)),
+        ("신뢰", tr / 5, _kpi_tone(tr / 5, 0.7, 0.5)),
+        ("거부↓", 1 - rej, _kpi_tone(1 - rej, 0.85, 0.7)),
+        ("브랜드", brr, _kpi_tone(brr, 0.5, 0.3)),
+    ]
+    if rubric:
+        rsc = sum((s.get("score", 0) or 0) for s in rubric) / (len(rubric) * 100)
+        contrib.append(("진단", rsc, _signal(rsc * 100)))
+    contrib_bars = "".join(
+        '<div class="flex flex-col items-center gap-0.5">'
+        f'<span class="text-[9px] font-bold" style="color:{c}">{max(0.0, min(1.0, v)) * 100:.0f}</span>'
+        '<div class="w-full h-9 bg-slate-100 rounded flex items-end overflow-hidden">'
+        f'<div class="w-full rounded-sm" '
+        f'style="height:{max(0.06, min(1.0, v)) * 100:.0f}%;background:{c}"></div></div>'
+        f'<span class="text-[8.5px] text-slate-400">{escape(lab)}</span></div>'
+        for lab, v, c in contrib
+    )
+    contrib_block = (
+        '<div class="mt-4 pt-3 border-t border-slate-100">'
+        '<div class="text-[10px] text-slate-500 mb-1.5">종합 점수는 아래 지표를 평균한 값이에요 '
+        "— 막대가 높을수록 좋음(거부율은 뒤집어 반영).</div>"
+        f'<div class="grid gap-2" style="grid-template-columns:repeat({len(contrib)},1fr)">'
+        f"{contrib_bars}</div></div>"
+    )
     plain = report.get("plain_summary") or ""
     plain_block = (
         (
             '<div class="mt-4 pt-3 border-t border-slate-100">'
-            '<div class="text-[11px] font-extrabold text-blue-600 mb-1">🔎 한눈에 보는 결론</div>'
+            f'<div class="text-[10px] font-bold mb-1" style="letter-spacing:.05em;color:{_ACCENT}">'
+            "쉽게 풀어보면</div>"
             f'<p class="text-[11px] text-slate-600 leading-relaxed">{escape(str(plain))}</p></div>'
         )
         if plain and plain != head
@@ -488,7 +631,7 @@ def _build_html(result: dict) -> str:
         f"{escape(str(head))}</div>"
         f'<div class="text-[11px] text-slate-500 mt-1.5 leading-relaxed">{escape(vdesc)}</div>'
         "</div></div>"
-        f"{plain_block}</div>"
+        f"{contrib_block}{plain_block}</div>"
     )
 
     # ── 목표 달성 가능성(결정권자 1순위) — verdict 바로 아래 ──
@@ -497,10 +640,11 @@ def _build_html(result: dict) -> str:
         blocks.append(_objective_fit_block(of))
 
     blocks.append(
-        '<div class="text-[10.5px] text-slate-500 bg-blue-50 rounded-xl px-4 py-2.5">'
-        '💡 <b class="text-slate-700">읽는 법</b> — 위에서부터 <b>결론</b>(내보내도 될까) → '
-        "<b>근거</b>(소비자 반응) → <b>진단·개선</b>(무엇을 고치나) 순서예요. "
-        "바쁘면 위 카드만 봐도 됩니다.</div>"
+        f'<div class="text-[10px] leading-relaxed pl-3" style="color:{_MUTED};'
+        f'border-left:2px solid {_LINE};">'
+        '<b style="color:#475569">읽는 법</b> — 위에서부터 결론(내보내도 될까) → '
+        "근거(소비자 반응) → 진단·개선(무엇을 고치나) 순서입니다. "
+        "바쁘면 이 요약만 봐도 됩니다.</div>"
     )
 
     # ── 신뢰도 안내(과신 방지) ──
@@ -521,9 +665,10 @@ def _build_html(result: dict) -> str:
     bn = analysis.get("bottleneck")
     if bn:
         funnel_body += (
-            '<div class="mt-2.5 text-[10.5px] text-amber-700 bg-amber-50 rounded-lg px-3 py-2">'
-            f"⬇ 여기서 가장 많이 빠졌어요 — <b>{_AISAS_KO.get(bn['from_stage'], bn['from_stage'])} → "
-            f"{_AISAS_KO.get(bn['to_stage'], bn['to_stage'])}</b> 구간 {bn['dropped']}명 이탈"
+            '<div class="mt-3 text-[10.5px] pl-3 py-1" '
+            f'style="color:{_AMBER};border-left:2px solid {_AMBER};">'
+            f"가장 많이 빠진 구간 — <b>{_AISAS_KO.get(bn['from_stage'], bn['from_stage'])} → "
+            f"{_AISAS_KO.get(bn['to_stage'], bn['to_stage'])}</b> {bn['dropped']}명 이탈"
             f"({_pct(bn.get('drop_rate'))}). 이 지점을 고치면 효과가 가장 큽니다.</div>"
         )
     blocks.append(
@@ -577,10 +722,25 @@ def _build_html(result: dict) -> str:
     rb = report.get("rejection") or {}
     by_rej = rb.get("by_rejection_reason_tag") or {}
     rc = rb.get("rejected_count") or sum(by_rej.values()) or 1
-    rej_body = (
-        "".join(_bar(_REJECTION_KO.get(k, k), v / rc, f"{v}명", _RED) for k, v in by_rej.items())
-        or '<div class="text-[11px] text-slate-400">거부 없음</div>'
-    )
+    rej_rate = rb.get("rejection_rate") or 0
+    if by_rej:
+        rej_body = "".join(
+            _bar(_REJECTION_KO.get(k, k), v / rc, f"{v}명", _RED) for k, v in by_rej.items()
+        )
+    elif rej_rate < 0.1:
+        # 거부율 자체가 낮을 때만 긍정 단언 — 사유 미집계와 '거부 적음'을 혼동하지 않는다.
+        rej_body = (
+            '<div class="text-[11px] pl-3 py-1" '
+            f'style="color:{_GREEN};border-left:2px solid {_GREEN};">'
+            "이렇다 할 거부 반응이 없었어요 — 대놓고 싫어한 사람은 거의 없다는 뜻이에요.</div>"
+        )
+    else:
+        # 거부는 있으나 사유가 특정 태그로 분류되지 않은 경우 — 중립 안내(과소평가 금지).
+        rej_body = (
+            '<div class="text-[11px] pl-3 py-1" '
+            f'style="color:{_SUB};border-left:2px solid {_LINE};">'
+            f"거부 반응은 {_pct(rej_rate)} 있었지만, 사유가 특정 유형으로 분류되진 않았어요.</div>"
+        )
     br = report.get("brand_recognition") or {}
     brand_body = _bar(
         "기억함",
@@ -799,34 +959,53 @@ def _build_html(result: dict) -> str:
         "아니라 방향과 범위로 읽어 주세요.</div>"
     )
 
-    body = '<div class="max-w-[820px] mx-auto space-y-4">' + "".join(blocks) + "</div>"
+    body = '<div class="space-y-6">' + "".join(blocks) + "</div>"
+    # CDN 없이 렌더되도록 Tailwind(vendored JS)·폰트(base64)를 인라인. 자산 누락 시에만 CDN 폴백.
+    tw = _tailwind_inline()
+    tw_tag = (
+        f"<script>{tw}</script>" if tw else "<script src='https://cdn.tailwindcss.com'></script>"
+    )
     return (
         "<!DOCTYPE html><html lang='ko'><head><meta charset='utf-8'>"
-        "<script src='https://cdn.tailwindcss.com'></script>"
-        "<script>tailwind.config={theme:{extend:{fontFamily:{sans:"
-        "['Malgun Gothic','Noto Sans KR','Apple SD Gothic Neo','sans-serif']}}}}</script>"
-        "<style>*{-webkit-print-color-adjust:exact;print-color-adjust:exact;}"
-        "html,body{background:#f1f5f9;}"
-        "body{font-family:'Malgun Gothic','Noto Sans KR','Apple SD Gothic Neo',sans-serif;}</style>"
-        "</head><body class='bg-slate-100 text-slate-900 px-8 py-3'>" + body + "</body></html>"
+        + tw_tag
+        + "<script>tailwind.config={theme:{extend:{fontFamily:{sans:"
+        "['Pretendard','Malgun Gothic','Apple SD Gothic Neo','sans-serif']}}}}</script>"
+        "<style>"
+        + _font_face_css()
+        + "*{-webkit-print-color-adjust:exact;print-color-adjust:exact;}"
+        "html,body{background:#ffffff;}"
+        "body{font-family:'Pretendard','Malgun Gothic','Apple SD Gothic Neo',sans-serif;"
+        "color:#1F2937;-webkit-font-smoothing:antialiased;}"
+        # 제목(디스플레이) — 세리프 대신 굵은 산세리프 + 타이트 자간으로 모던하게, 가독성 유지.
+        ".hd{font-family:'Pretendard','Malgun Gothic',sans-serif;letter-spacing:-0.025em;}"
+        ".page-break{break-after:page;}"
+        "</style>"
+        # 좌우 여백은 body 패딩으로(렌더 margin은 상/하만) — 헤더/푸터 밴드와 폭을 맞춘다.
+        "</head><body class='bg-white' style='padding:0 52px;'>" + body + "</body></html>"
     )
 
 
 def _strip_trailing_blank_pages(pdf: bytes) -> bytes:
     """분량이 페이지 경계를 미세 초과할 때 Chromium이 덧붙인 꼬리 빈 페이지를 제거한다.
 
-    빈 페이지엔 body 배경(vector)만 있고 텍스트가 없다 — 마지막부터 텍스트 0인 페이지를 잘라낸다.
+    빈 페이지엔 콘텐츠 없이 푸터(ClickMe · p.X / Y)만 남는다 — 마지막부터 '푸터뿐인' 페이지를 잘라낸다.
     실패해도 원본을 그대로 반환(다운로드 자체는 막지 않는다).
     """
     import io
+    import re
 
     from pypdf import PdfReader, PdfWriter
+
+    def _is_blank(page) -> bool:
+        # 공백 제거 후 비었거나 푸터 서명(ClickMep.3/3)만 남으면 빈 페이지로 본다.
+        norm = re.sub(r"\s+", "", page.extract_text() or "")
+        return norm == "" or bool(re.fullmatch(r"ClickMep\.\d+/\d+", norm))
 
     try:
         reader = PdfReader(io.BytesIO(pdf))
         total = len(reader.pages)
         keep = total
-        while keep > 1 and not (reader.pages[keep - 1].extract_text() or "").strip():
+        while keep > 1 and _is_blank(reader.pages[keep - 1]):
             keep -= 1
         if keep == total:
             return pdf
@@ -875,26 +1054,31 @@ def _render_report_pdf_inproc(result: dict) -> bytes:
     from playwright.sync_api import sync_playwright
 
     html = _build_html(result.get("report_view") or result)
-    # 모든 페이지 상/하단에 '배경색 여백'을 만든다 — @page margin 영역(원래 흰색)을
-    # header/footer 템플릿의 배경 띠로 덮는다. body 배경(#f1f5f9)과 같은 색이라 첫 페이지부터
-    # 마지막까지 균일한 여백이 된다(margin 0이면 2페이지부터 콘텐츠가 가장자리에 붙던 문제 해결).
-    band = (
-        '<div style="background:#f1f5f9;width:100%;height:100%;margin:0;'
-        '-webkit-print-color-adjust:exact;print-color-adjust:exact;"></div>'
+    # 상단은 깨끗한 흰 여백(빈 헤더), 하단 푸터는 얇은 규칙선 + 페이지 번호.
+    # 푸터 템플릿은 페이지와 분리된 미니 문서라 CDN 한글 폰트가 안 붙을 수 있어 ASCII만 쓴다.
+    header = '<div style="width:100%;"></div>'
+    footer = (
+        '<div style="width:100%;font-size:8px;color:#94A3B8;font-family:sans-serif;'
+        "padding:3px 52px 0;border-top:0.5px solid #E5E7EB;"
+        "-webkit-print-color-adjust:exact;print-color-adjust:exact;"
+        'display:flex;justify-content:space-between;align-items:center;">'
+        "<span>ClickMe</span>"
+        '<span>p.<span class="pageNumber"></span> / <span class="totalPages"></span></span>'
+        "</div>"
     )
     with sync_playwright() as pw:
         browser = pw.chromium.launch(args=["--no-sandbox"])
         try:
             page = browser.new_page()
             page.set_content(html, wait_until="networkidle")
-            page.wait_for_timeout(600)  # Tailwind Play CDN(JIT)이 DOM 스캔·스타일 주입할 시간
+            page.wait_for_timeout(700)  # Tailwind JIT + 웹폰트(Noto) 로드·적용 시간
             pdf = page.pdf(
                 format="A4",
                 print_background=True,
                 display_header_footer=True,
-                header_template=band,
-                footer_template=band,
-                margin={"top": "12mm", "bottom": "12mm", "left": "0mm", "right": "0mm"},
+                header_template=header,
+                footer_template=footer,
+                margin={"top": "11mm", "bottom": "14mm", "left": "0mm", "right": "0mm"},
             )
         finally:
             browser.close()
