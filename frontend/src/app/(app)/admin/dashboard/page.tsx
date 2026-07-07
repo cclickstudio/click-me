@@ -94,8 +94,6 @@ export default function AdminDashboardPage() {
     });
   }, []);
 
-  const clickRate =
-    summary?.avg_click_intent_rate != null ? `${(summary.avg_click_intent_rate * 100).toFixed(1)}` : '—';
   const recentSignups = [...users]
     .sort((a, b) => (a.created_at < b.created_at ? 1 : -1))
     .slice(0, 6);

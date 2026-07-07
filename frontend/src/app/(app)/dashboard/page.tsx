@@ -43,12 +43,6 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
 // ────────────────── Types ──────────────────
 
-type DashboardStats = {
-  total_simulations: number;
-  total_generations: number;
-  avg_purchase_intent: number | null;
-};
-
 type DashboardSummary = {
   sims_total: number;
   sims_this_week: number;
@@ -148,7 +142,6 @@ export default function DashboardPage() {
   const isAdmin = role === 'ADMIN';
   const isCompany = role === 'COMPANY';
 
-  const [stats, setStats] = useState<DashboardStats | null>(null);
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [recentSims, setRecentSims] = useState<RecentSimulation[]>([]);
   const [recentGens, setRecentGens] = useState<RecentGeneration[]>([]);
@@ -164,12 +157,10 @@ export default function DashboardPage() {
 
   useEffect(() => {
     Promise.all([
-      authedFetch(`${API_BASE}/api/dashboard/stats`).then((r) => r.json()).catch(() => null),
       authedFetch(`${API_BASE}/api/dashboard/summary`).then((r) => r.json()).catch(() => null),
       authedFetch(`${API_BASE}/api/dashboard/recent-simulations?limit=5`).then((r) => r.json()).catch(() => []),
       authedFetch(`${API_BASE}/api/dashboard/recent-generations?limit=5`).then((r) => r.json()).catch(() => []),
-    ]).then(([s, sum, sims, gens]) => {
-      if (s) setStats(s);
+    ]).then(([sum, sims, gens]) => {
       if (sum) setSummary(sum);
       if (Array.isArray(sims)) setRecentSims(sims);
       if (Array.isArray(gens)) setRecentGens(gens);
