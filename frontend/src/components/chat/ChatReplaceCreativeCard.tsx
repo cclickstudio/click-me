@@ -222,7 +222,7 @@ export default function ChatReplaceCreativeCard({
                   className="h-8 w-8 shrink-0 rounded object-cover"
                 />
               ) : (
-                <span className="h-8 w-8 shrink-0 rounded bg-[#F2F4F6] dark:bg-[#2D3748]" />
+                <span className="h-8 w-8 shrink-0 rounded bg-surface-1" />
               )}
               <span className="truncate text-xs text-ink-secondary">
                 {a.ad_name}
@@ -321,7 +321,7 @@ export default function ChatReplaceCreativeCard({
                     // eslint-disable-next-line @next/next/no-img-element
                     <img src={src} alt={`후보 ${c.idx + 1}`} className="w-40 h-40 object-cover" />
                   ) : (
-                    <div className="w-40 h-40 flex items-center justify-center bg-[#F2F4F6] dark:bg-[#161B27] text-xs text-ink-muted">
+                    <div className="w-40 h-40 flex items-center justify-center bg-surface-1 text-xs text-ink-muted">
                       이미지 없음
                     </div>
                   )}

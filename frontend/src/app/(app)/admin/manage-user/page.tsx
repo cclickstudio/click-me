@@ -359,7 +359,7 @@ export default function AdminManageUserPage() {
                   const isCompany = a.role === 'COMPANY';
                   const isInactive = a.status === 'INACTIVE';
                   return (
-                    <tr key={a.id} className="border-b border-[#F9FAFB] dark:border-[#1C2333] last:border-0 hover:bg-accent transition-colors">
+                    <tr key={a.id} className="border-b border-line last:border-0 hover:bg-accent transition-colors">
                       <td className="px-6 py-4 font-medium text-ink">{a.name}</td>
                       <td className="px-4 py-4 text-ink-secondary">{a.login_id}</td>
                       <td className="px-4 py-4">

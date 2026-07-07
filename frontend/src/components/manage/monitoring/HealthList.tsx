@@ -12,7 +12,7 @@ import { trendDelta } from '@/components/manage/trend';
 function PacingBar({ pct, alert }: { pct: number; alert: boolean }) {
   const w = Math.min(pct, 100);
   return (
-    <div className="h-1.5 w-full rounded-full bg-[#F2F4F6] dark:bg-[#2D3748] overflow-hidden">
+    <div className="h-1.5 w-full rounded-full bg-surface-1 overflow-hidden">
       <div className={`h-full ${alert ? 'bg-amber-500' : 'bg-primary'}`} style={{ width: `${w}%` }} />
     </div>
   );
@@ -55,7 +55,7 @@ export const HealthList = memo(function HealthList({
   }, [campaigns]);
 
   return (
-    <div className="rounded-2xl border border-line divide-y divide-[#E5E8EB] dark:divide-[#2D3748] overflow-hidden">
+    <div className="rounded-2xl border border-line divide-y divide-line overflow-hidden">
       {rows.map(({ c, h }) => {
         const s = LEVEL_STYLE[h.level];
         const fatigue = frequencyFatigue(c);

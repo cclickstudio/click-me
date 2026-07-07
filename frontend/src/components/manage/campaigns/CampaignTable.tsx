@@ -115,7 +115,7 @@ export const CampaignTable = memo(function CampaignTable({
   return (
     <div className="rounded-2xl border border-line overflow-hidden">
       {/* 툴바 — 컬럼 밀도 토글(핵심만 훑기 vs 전체 지표) */}
-      <div className="flex items-center justify-end gap-2 px-3 py-2 bg-[#F9FAFB] dark:bg-[#1A202C] border-b border-line">
+      <div className="flex items-center justify-end gap-2 px-3 py-2 bg-surface-1 border-b border-line">
         <span className="text-[11px] text-ink-tertiary">
           {sortKey ? '정렬 적용 중 — 헤더 재클릭으로 해제' : '헤더 클릭으로 정렬'}
         </span>
@@ -142,7 +142,7 @@ export const CampaignTable = memo(function CampaignTable({
       </div>
       <table className="w-full text-sm [&_td]:whitespace-nowrap [&_th]:whitespace-nowrap">
         <thead>
-          <tr className="bg-[#F9FAFB] dark:bg-[#1A202C] text-ink-secondary text-xs">
+          <tr className="bg-surface-1 text-ink-secondary text-xs">
             <th className="text-left font-semibold px-4 py-2.5 w-full">캠페인</th>
             <th className="text-left font-semibold px-3 py-2.5">상태</th>
             {all && (
@@ -361,7 +361,7 @@ export const CampaignTable = memo(function CampaignTable({
             {selected === c.campaign_id && detail && (
               <tr>
                 <td colSpan={colCount} className="p-0 border-t border-line">
-                  <div className="px-4 py-4 bg-[#F9FAFB] dark:bg-[#161B26]">
+                  <div className="px-4 py-4 bg-surface-1">
                     <CampaignDetail
                       detail={detail}
                       source={source}
@@ -391,7 +391,7 @@ function PacingCell({ pct }: { pct: number }) {
   const color = 'bg-primary'; // 누적지출/일예산 — 누적이라 초과 정상, 경보색 제거
   return (
     <div className="flex items-center justify-end gap-2">
-      <div className="w-16 h-1.5 rounded-full bg-[#F2F4F6] dark:bg-[#2D3748] overflow-hidden">
+      <div className="w-16 h-1.5 rounded-full bg-surface-1 overflow-hidden">
         <div className={`h-full ${color}`} style={{ width: `${Math.min(100, pct)}%` }} />
       </div>
       <span className="tabular-nums text-xs text-ink w-10 text-right">

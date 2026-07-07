@@ -47,7 +47,7 @@ export function CreateProposalPreview({
         신규 집행은 항상 건별 사용자 승인 — 승인해야 생성 단계로 넘어갑니다.
       </p>
 
-      <div className="rounded-xl bg-[#F9FAFB] dark:bg-[#1A202C] px-4 py-2">
+      <div className="rounded-xl bg-surface-1 px-4 py-2">
         <Row label="목표" value={objectiveLabel} />
         <Row label="일 예산" value={`₩${proposal.budget_after_krw.toLocaleString()}`} />
         <Row label="집행 기간" value={`${fmtDate(cfg?.start_at)} ~ ${fmtDate(cfg?.end_at)}`} />

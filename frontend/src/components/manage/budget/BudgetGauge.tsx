@@ -34,7 +34,7 @@ export function BudgetGauge({
           {(ratio * 100).toFixed(0)}%
         </span>
       </div>
-      <div className="relative h-6 rounded-full bg-[#F2F4F6] dark:bg-[#2D3748] overflow-hidden">
+      <div className="relative h-6 rounded-full bg-surface-1 overflow-hidden">
         {/* 가드레일 밴드 — 90~95 경고(호박) · 95~100 차단(적색) 배경으로 위험 구간을 미리 보여줌 */}
         <div className="absolute inset-y-0 bg-amber-100 dark:bg-amber-900/30" style={{ left: '90%', width: '5%' }} />
         <div className="absolute inset-y-0 bg-red-100 dark:bg-red-900/30" style={{ left: '95%', width: '5%' }} />

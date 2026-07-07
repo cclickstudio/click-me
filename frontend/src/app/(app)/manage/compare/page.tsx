@@ -93,7 +93,7 @@ function MirrorBar({
   const tickPct = Math.min((threshold / scale) * 100, 100);
   const fill = side === 'left' ? PRED_FILL : ACT_FILL;
   return (
-    <div className="relative h-4 flex-1 rounded-full bg-[#F2F4F6] dark:bg-[#2D3748]">
+    <div className="relative h-4 flex-1 rounded-full bg-surface-1">
       <div
         className={`absolute inset-y-0 ${side === 'left' ? 'right-0 rounded-l-full' : 'left-0 rounded-r-full'}`}
         style={{ width: `${widthPct}%`, background: fill }}
@@ -536,7 +536,7 @@ function CalibrationCard({ calib }: { calib: CalibrationResponse }) {
                   <p className="text-[10px] text-ink-muted">구매의도(예측) ↔ CVR(실측)</p>
                 </div>
               </div>
-              <div className="h-1.5 w-full rounded-full bg-[#E5E8EB] dark:bg-[#2D3748] overflow-hidden">
+              <div className="h-1.5 w-full rounded-full bg-surface-1 overflow-hidden">
                 <div
                   className={`h-full ${s.unlocked ? 'bg-green-500' : 'bg-primary'}`}
                   style={{ width: `${progress}%` }}

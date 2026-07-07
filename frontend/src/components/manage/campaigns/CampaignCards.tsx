@@ -166,7 +166,7 @@ export const CampaignCards = memo(function CampaignCards({
                   </span>
                 )}
               </div>
-              <div className="w-full h-1.5 rounded-full bg-[#F2F4F6] dark:bg-[#2D3748] overflow-hidden">
+              <div className="w-full h-1.5 rounded-full bg-surface-1 overflow-hidden">
                 <div
                   className={`h-full ${showPacing ? pColor : 'bg-[#D1D6DB]'}`}
                   style={{ width: `${showPacing ? Math.min(100, c.pacing_pct) : 0}%` }}

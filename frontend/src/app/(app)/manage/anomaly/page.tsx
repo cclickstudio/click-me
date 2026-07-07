@@ -16,7 +16,7 @@ import { Select } from '@/components/ui/Select';
 const PipelineGraph = dynamic(() => import('@/components/manage/PipelineGraph'), {
   ssr: false,
   loading: () => (
-    <div className="mb-4 h-[264px] animate-pulse rounded-2xl bg-[#F2F4F6] dark:bg-[#2D3748]" />
+    <div className="mb-4 h-[264px] animate-pulse rounded-2xl bg-surface-1" />
   ),
 });
 
@@ -194,7 +194,7 @@ export default function Page() {
         </div>
 
         {/* 시연 안내 + 선택한 문제 상황의 증상 미리보기 */}
-        <div className="mb-4 rounded-xl border border-line bg-[#F9FAFB] dark:bg-[#1A202C] px-4 py-3">
+        <div className="mb-4 rounded-xl border border-line bg-surface-1 px-4 py-3">
           <p className="text-[12px] text-ink-secondary">
             <span className="font-semibold text-primary">시연 방법</span> · 문제 상황을 고르고{' '}
             <b>이상 대응 실행</b>을 누르면, 시스템이 <b>감지 → 진단 → 처방</b>하는 과정을 보여줍니다.
@@ -290,7 +290,7 @@ export default function Page() {
               {workerRuns.map((r) => (
                 <li
                   key={r.id}
-                  className="rounded-lg bg-[#F9FAFB] dark:bg-[#1A202C] px-3 py-2"
+                  className="rounded-lg bg-surface-1 px-3 py-2"
                 >
                   <p className="text-[12px] font-semibold text-ink">
                     {r.title || r.job_name}
@@ -318,7 +318,7 @@ export default function Page() {
             )}
             {/* 탐지 기준 — 가정치·이상 판정 규칙(파라미터). 내부 동작(arch)에서만 노출 */}
             {mode === 'arch' && run.assumptions && (
-              <div className="mb-4 rounded-xl border border-line bg-[#F9FAFB] dark:bg-[#1A202C] px-5 py-3.5">
+              <div className="mb-4 rounded-xl border border-line bg-surface-1 px-5 py-3.5">
                 <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
                   <span className="text-[13px] font-semibold text-ink-secondary">
                     탐지 기준

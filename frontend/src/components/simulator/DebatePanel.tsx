@@ -802,7 +802,7 @@ function ChatView({
   return (
     <div
       ref={boxRef}
-      className='h-[460px] overflow-y-auto rounded-xl bg-[#F9FAFB] dark:bg-[#161C29] border border-line p-4 space-y-3'>
+      className='h-[460px] overflow-y-auto rounded-xl bg-surface-1 border border-line p-4 space-y-3'>
       {messages.length === 0 ? (
         <p className='text-xs text-ink-muted py-6 text-center'>
           곧 진행자가 토론 주제를 제시합니다…
@@ -818,11 +818,11 @@ function ChatView({
             <div key={i}>
               {showRound && m.kind === 'utterance' && (
                 <div className='flex items-center gap-2 my-2'>
-                  <div className='flex-1 h-px bg-[#E5E8EB] dark:bg-[#2D3748]' />
+                  <div className='flex-1 h-px bg-surface-1' />
                   <span className='text-[10px] font-medium text-ink-muted'>
                     라운드 {m.round} · {m.phase}
                   </span>
-                  <div className='flex-1 h-px bg-[#E5E8EB] dark:bg-[#2D3748]' />
+                  <div className='flex-1 h-px bg-surface-1' />
                 </div>
               )}
               <ChatBubble msg={m} />

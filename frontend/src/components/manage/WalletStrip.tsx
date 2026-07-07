@@ -20,7 +20,7 @@ function Stat({ label, value, valueClass }: { label: string; value: string; valu
 }
 
 function Divider() {
-  return <div className="hidden h-8 w-px shrink-0 bg-[#F2F4F6] dark:bg-[#2D3748] sm:block" />;
+  return <div className="hidden h-8 w-px shrink-0 bg-surface-1 sm:block" />;
 }
 
 // 반원 게이지 — 한도 소진율. 반지름 26 반원(호 길이 πr), stroke-dasharray로 채움. 홈 타일에서도 재사용.

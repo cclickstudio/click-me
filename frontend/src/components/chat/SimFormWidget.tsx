@@ -400,7 +400,7 @@ export default function SimFormWidget({
                       ? 'bg-primary'
                       : done
                         ? 'bg-primary/50 hover:bg-primary cursor-pointer'
-                        : 'bg-[#E5E8EB] dark:bg-[#2D3748] cursor-default'
+                        : 'bg-surface-1 cursor-default'
                   }`}
                 />
               );

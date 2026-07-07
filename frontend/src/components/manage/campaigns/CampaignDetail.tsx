@@ -25,23 +25,23 @@ import { OriginLegend, OriginTag } from '../ValueOrigin';
 const DeliveryChart = dynamic(() => import('./DeliveryChart'), {
   ssr: false,
   loading: () => (
-    <div className="h-[190px] animate-pulse rounded-xl bg-[#F2F4F6] dark:bg-[#2D3748]" />
+    <div className="h-[190px] animate-pulse rounded-xl bg-surface-1" />
   ),
 });
 
 const PlatformDonut = dynamic(() => import('./PlatformDonut'), {
   ssr: false,
-  loading: () => <div className="h-32 animate-pulse rounded-xl bg-[#F2F4F6] dark:bg-[#2D3748]" />,
+  loading: () => <div className="h-32 animate-pulse rounded-xl bg-surface-1" />,
 });
 
 const DemographicBars = dynamic(() => import('./DemographicBars'), {
   ssr: false,
-  loading: () => <div className="h-32 animate-pulse rounded-xl bg-[#F2F4F6] dark:bg-[#2D3748]" />,
+  loading: () => <div className="h-32 animate-pulse rounded-xl bg-surface-1" />,
 });
 
 const AdPreviewCards = dynamic(() => import('./AdPreviewCards'), {
   ssr: false,
-  loading: () => <div className="h-32 animate-pulse rounded-xl bg-[#F2F4F6] dark:bg-[#2D3748]" />,
+  loading: () => <div className="h-32 animate-pulse rounded-xl bg-surface-1" />,
 });
 
 // 일예산 대비 지출 게이지 링(SVG) — 누적지출÷일예산(중립색, 누적이라 초과 가능)

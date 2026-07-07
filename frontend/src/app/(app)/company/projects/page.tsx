@@ -106,7 +106,7 @@ export default function CompanyProjectsPage() {
                   <div className="flex items-center justify-between px-4 py-3 border-b border-line">
                     <div className="flex items-center gap-2 min-w-0">
                       <span className="text-sm font-semibold text-ink truncate">{col.name}</span>
-                      <span className="text-[10px] text-ink-tertiary bg-[#E5E8EB] dark:bg-[#2D3748] rounded-full px-1.5 py-0.5">{cards.length}</span>
+                      <span className="text-[10px] text-ink-tertiary bg-surface-1 rounded-full px-1.5 py-0.5">{cards.length}</span>
                     </div>
                   </div>
                   <div className="p-2 space-y-2 min-h-[160px]">

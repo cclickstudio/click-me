@@ -181,7 +181,7 @@ export default function ReliabilityPage() {
             href={b.url}
             target="_blank"
             rel="noreferrer"
-            className="block rounded-2xl border border-line bg-[#F9FAFB] dark:bg-[#141922] px-4 py-3 hover:border-primary transition-colors"
+            className="block rounded-2xl border border-line bg-surface-1 px-4 py-3 hover:border-primary transition-colors"
           >
             <p className="text-[12px] font-semibold text-primary">{b.area}</p>
             <p className="mt-1 text-[12px] leading-relaxed text-ink-secondary">{b.basis}</p>
@@ -273,7 +273,7 @@ export default function ReliabilityPage() {
       </Card>
 
       {/* 목표 방침 + 방법 */}
-      <div className="mt-3 rounded-2xl border border-line bg-[#F9FAFB] dark:bg-[#141922] px-5 py-4">
+      <div className="mt-3 rounded-2xl border border-line bg-surface-1 px-5 py-4">
         <p className="text-[13px] font-semibold text-ink">목표는 평가셋 성격에 따라 다르게</p>
         <ul className="mt-2 space-y-1.5 text-[12px] leading-relaxed text-ink-secondary">
           <li>
@@ -288,7 +288,7 @@ export default function ReliabilityPage() {
         {METHOD.map((m) => (
           <div
             key={m.title}
-            className="rounded-2xl border border-line bg-[#F9FAFB] dark:bg-[#141922] px-5 py-4"
+            className="rounded-2xl border border-line bg-surface-1 px-5 py-4"
           >
             <p className="text-[13px] font-semibold text-ink">{m.title}</p>
             <p className="mt-1 text-[12px] leading-relaxed text-ink-secondary">{m.body}</p>

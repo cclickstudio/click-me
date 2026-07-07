@@ -127,7 +127,7 @@ export default function AdminCompaniesPage() {
             </thead>
             <tbody>
               {activeOrgs.map((o) => (
-                <tr key={o.id} className="border-b border-[#F9FAFB] dark:border-[#1C2333] last:border-0 hover:bg-accent transition-colors">
+                <tr key={o.id} className="border-b border-line last:border-0 hover:bg-accent transition-colors">
                   <td className="px-6 py-4 font-medium text-ink">{o.name}</td>
                   <td className="px-4 py-4">
                     <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-medium ${orgStatusStyle[o.status] ?? ''}`}>
@@ -169,7 +169,7 @@ export default function AdminCompaniesPage() {
             </thead>
             <tbody>
               {inactiveOrgs.map((o) => (
-                <tr key={o.id} className="border-b border-[#F9FAFB] dark:border-[#1C2333] last:border-0 hover:bg-accent transition-colors">
+                <tr key={o.id} className="border-b border-line last:border-0 hover:bg-accent transition-colors">
                   <td className="px-6 py-4 font-medium text-ink">{o.name}</td>
                   <td className="px-4 py-4">
                     <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-medium ${orgStatusStyle[o.status] ?? ''}`}>

@@ -120,7 +120,7 @@ export default function CitationChips({
         )}
       </div>
       {active && (
-        <div className='rounded-lg border border-line bg-[#F9FAFB] dark:bg-[#1A1F2B] p-2.5'>
+        <div className='rounded-lg border border-line bg-surface-1 p-2.5'>
           <p className='text-[10px] font-semibold text-ink-tertiary mb-1'>
             {fileLabel(active.source)}
             {active.title ? ` › ${active.title}` : ''}

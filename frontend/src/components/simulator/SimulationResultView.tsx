@@ -445,7 +445,7 @@ export function SimulationResultView({
                   <img
                     src={assetSrc(result.ad_asset_url)}
                     alt='광고 크리에이티브'
-                    className='mb-4 h-auto max-h-56 w-full object-contain rounded-xl border border-line bg-[#F9FAFB] dark:bg-[#11151F]'
+                    className='mb-4 h-auto max-h-56 w-full object-contain rounded-xl border border-line bg-surface-1'
                   />
                 )}
                 <div className='grid grid-cols-2 md:grid-cols-4 gap-3 text-sm'>

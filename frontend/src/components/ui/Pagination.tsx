@@ -21,7 +21,7 @@ export function Pagination({
   const base =
     'min-w-8 h-8 px-2 rounded-lg text-sm font-medium transition-colors disabled:opacity-40 disabled:cursor-not-allowed';
   const idle =
-    'text-[#4E5968] dark:text-[#9CA3AF] hover:bg-[#F2F4F6] dark:hover:bg-[#252D3D]';
+    'text-ink-secondary hover:bg-[#F2F4F6] dark:hover:bg-[#252D3D]';
 
   return (
     <div className="flex items-center justify-center gap-1 pt-4">

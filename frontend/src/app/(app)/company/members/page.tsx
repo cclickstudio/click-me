@@ -226,7 +226,7 @@ export default function CompanyMembersPage() {
               </thead>
               <tbody>
                 {members.map((m) => (
-                  <tr key={m.member_id} className="border-b border-[#F9FAFB] dark:border-[#1C2333] last:border-0 group">
+                  <tr key={m.member_id} className="border-b border-line last:border-0 group">
                     <td className="px-6 py-3 font-medium text-ink">{m.user_name}</td>
                     <td className="px-4 py-3 text-ink-secondary">{m.login_id}</td>
                     <td className="px-4 py-3 text-ink-secondary">

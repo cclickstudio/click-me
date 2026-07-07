@@ -104,7 +104,7 @@ export default function CompanyChatsPage() {
                 <tr
                   key={r.id}
                   onClick={() => openRow(r)}
-                  className="border-b border-[#F9FAFB] dark:border-[#1C2333] last:border-0 hover:bg-accent cursor-pointer transition-colors"
+                  className="border-b border-line last:border-0 hover:bg-accent cursor-pointer transition-colors"
                 >
                   <td className="text-left px-6 py-3 text-ink font-medium">
                     {r.title || '새 채팅'}

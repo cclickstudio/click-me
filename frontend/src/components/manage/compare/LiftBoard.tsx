@@ -47,7 +47,7 @@ export function LiftBoard({
       <div className="rounded-2xl border border-line overflow-hidden">
         <table className="w-full text-sm">
           <thead>
-            <tr className="bg-[#F9FAFB] dark:bg-[#1A202C] text-ink-tertiary text-xs">
+            <tr className="bg-surface-1 text-ink-tertiary text-xs">
               <th className="text-left font-semibold px-4 py-2.5">게시물</th>
               <th className="text-right font-semibold px-3 py-2.5">오가닉 도달</th>
               <th className="text-right font-semibold px-3 py-2.5">광고 도달</th>

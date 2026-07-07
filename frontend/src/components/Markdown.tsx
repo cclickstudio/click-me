@@ -43,18 +43,18 @@ export function Markdown({ children }: { children: string }) {
             </div>
           ),
           thead: ({ children }) => (
-            <thead className="border-b border-[#E5E8EB] dark:border-[#333D4B]">{children}</thead>
+            <thead className="border-b border-line">{children}</thead>
           ),
           th: ({ children }) => <th className="text-left font-semibold px-2 py-1">{children}</th>,
           td: ({ children }) => (
-            <td className="px-2 py-1 border-b border-[#F2F4F6] dark:border-[#252D3D]">{children}</td>
+            <td className="px-2 py-1 border-b border-line">{children}</td>
           ),
           blockquote: ({ children }) => (
             <blockquote className="border-l-2 border-[#D1D6DB] dark:border-[#333D4B] pl-3 my-2 text-[#6B7684] dark:text-[#9CA3AF]">
               {children}
             </blockquote>
           ),
-          hr: () => <hr className="my-3 border-[#E5E8EB] dark:border-[#333D4B]" />,
+          hr: () => <hr className="my-3 border-line" />,
         } satisfies Components}
       >
         {children}

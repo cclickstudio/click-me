@@ -98,7 +98,7 @@ export default function MyOrgPage() {
                   </thead>
                   <tbody>
                     {pageMembers.map((m) => (
-                      <tr key={m.member_id} className="border-b border-[#F9FAFB] dark:border-[#1C2333] last:border-0">
+                      <tr key={m.member_id} className="border-b border-line last:border-0">
                         <td className="text-left px-6 py-3 font-medium text-ink">
                           {m.user_name}{m.user_name === user?.name ? ' (나)' : ''}
                         </td>
@@ -135,7 +135,7 @@ export default function MyOrgPage() {
                     <div className="flex items-center justify-between px-4 py-3 border-b border-line">
                       <div className="flex items-center gap-2 min-w-0">
                         <span className="text-sm font-semibold text-ink truncate">{col.name}</span>
-                        <span className="text-[10px] text-ink-tertiary bg-[#E5E8EB] dark:bg-[#2D3748] rounded-full px-1.5 py-0.5">{list.length}</span>
+                        <span className="text-[10px] text-ink-tertiary bg-surface-1 rounded-full px-1.5 py-0.5">{list.length}</span>
                       </div>
                       {isMyTeam && (
                         <span className="shrink-0 text-[10px] font-medium text-primary bg-card rounded-full px-2 py-0.5">우리 팀</span>

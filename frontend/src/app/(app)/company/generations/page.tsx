@@ -108,7 +108,7 @@ export default function CompanyGenerationsPage() {
                 <tr
                   key={r.id}
                   onClick={() => r.project_id && revealProjectInPanel(r.project_id)}
-                  className={`border-b border-[#F9FAFB] dark:border-[#1C2333] last:border-0 hover:bg-accent transition-colors ${r.project_id ? 'cursor-pointer' : ''}`}
+                  className={`border-b border-line last:border-0 hover:bg-accent transition-colors ${r.project_id ? 'cursor-pointer' : ''}`}
                 >
                   <td className="text-left px-6 py-3 text-ink font-medium">
                     {r.product_name ?? '—'}

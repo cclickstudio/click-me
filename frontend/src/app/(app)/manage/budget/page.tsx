@@ -227,7 +227,7 @@ export default function Page() {
             )}
 
             {/* 기본 목표 벤치마크 — 어떤 규모의 회사를 가정한 값인지(근거: management.py _BUDGET 주석) */}
-            <div className="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-2xl border border-line bg-[#F9FAFB] dark:bg-[#1A202C] px-5 py-3.5">
+            <div className="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-2xl border border-line bg-surface-1 px-5 py-3.5">
               <span className="text-[13px] font-semibold text-ink-secondary">
                 기본 목표 기준
               </span>
@@ -359,7 +359,7 @@ export default function Page() {
                   {daily.map((d) => (
                     <div key={d.date} className="flex items-center gap-3">
                       <span className="w-14 text-[11px] text-ink-tertiary tabular-nums">{d.date.slice(5)}</span>
-                      <div className="flex-1 h-2 rounded-full bg-[#F2F4F6] dark:bg-[#2D3748] overflow-hidden">
+                      <div className="flex-1 h-2 rounded-full bg-surface-1 overflow-hidden">
                         <div
                           className={`h-full ${dailyPlan > 0 && d.spend_krw > dailyPlan ? 'bg-red-400' : 'bg-primary'}`}
                           style={{ width: `${(d.spend_krw / maxDaily) * 100}%` }}
@@ -414,7 +414,7 @@ export default function Page() {
                     {spendRows.map((c) => (
                       <div key={c.name} className="flex items-center gap-3">
                         <span className="w-32 truncate text-sm text-ink-secondary dark:text-[#C9CED6]">{c.name}</span>
-                        <div className="flex-1 h-2 rounded-full bg-[#F2F4F6] dark:bg-[#2D3748] overflow-hidden">
+                        <div className="flex-1 h-2 rounded-full bg-surface-1 overflow-hidden">
                           <div className="h-full bg-primary" style={{ width: `${(c.spend_krw / maxSpend) * 100}%` }} />
                         </div>
                         {c.roas != null && (
@@ -448,7 +448,7 @@ export default function Page() {
               {rebalance ? (
                 'campaign' in rebalance ? (
                   // 캠페인 1개 — 단일 증액/감액 제안.
-                  <div className="rounded-xl bg-[#F9FAFB] dark:bg-[#232A36] px-4 py-3">
+                  <div className="rounded-xl bg-surface-1 px-4 py-3">
                     <p className="text-sm text-ink">
                       <b>{rebalance.campaign.name}</b>{' '}
                       <span className="tabular-nums text-ink-tertiary">
@@ -483,7 +483,7 @@ export default function Page() {
                   </div>
                 ) : (
                   // 캠페인 2개+ — 저효율→고효율 이전 제안.
-                  <div className="rounded-xl bg-[#F9FAFB] dark:bg-[#232A36] px-4 py-3">
+                  <div className="rounded-xl bg-surface-1 px-4 py-3">
                     <p className="text-sm text-ink">
                       <b>{rebalance.from.name}</b>{' '}
                       <span className="tabular-nums text-ink-tertiary">

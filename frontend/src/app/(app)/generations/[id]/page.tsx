@@ -160,7 +160,7 @@ function CandidateCard({
           )}
         </button>
       ) : (
-        <div className={`w-full ${aspect} bg-[#F2F4F6] dark:bg-[#161B27] flex items-center justify-center`}>
+        <div className={`w-full ${aspect} bg-surface-1 flex items-center justify-center`}>
           <span className="text-sm text-ink-muted">이미지 없음</span>
         </div>
       )}
@@ -336,7 +336,7 @@ function CarouselViewer({
             key={s.candidate_id}
             onClick={() => setI(idx)}
             className={`w-2 h-2 rounded-full transition-colors ${
-              idx === cur ? 'bg-primary' : 'bg-[#E5E8EB] dark:bg-[#2D3748]'
+              idx === cur ? 'bg-primary' : 'bg-surface-1'
             }`}
           />
         ))}

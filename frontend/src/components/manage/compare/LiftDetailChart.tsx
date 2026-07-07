@@ -8,7 +8,7 @@ import type { BoardRow } from './types';
 const LiftBarsChart = dynamic(() => import('./LiftBarsChart'), {
   ssr: false,
   loading: () => (
-    <div className="h-[220px] animate-pulse rounded-xl bg-[#F2F4F6] dark:bg-[#2D3748]" />
+    <div className="h-[220px] animate-pulse rounded-xl bg-surface-1" />
   ),
 });
 

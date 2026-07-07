@@ -72,7 +72,7 @@ function ReviewCard({ data }: { data: CardData }) {
   const needsApproval = data.decision === 'needs_approval';
   const reasons = Array.isArray(data.reasons) ? (data.reasons as unknown[]) : [];
   return (
-    <div className='rounded-xl border border-line bg-[#F9FAFB] dark:bg-[#161B26] px-4 py-3'>
+    <div className='rounded-xl border border-line bg-surface-1 px-4 py-3'>
       <div className='flex items-center gap-1.5 mb-1.5'>
         <span className='text-xs font-bold text-ink dark:text-[#E5E8EB]'>
           정책 검토

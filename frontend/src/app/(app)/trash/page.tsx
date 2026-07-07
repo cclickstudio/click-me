@@ -70,7 +70,7 @@ function TrashInner() {
   );
 
   const Row = ({ label, sub, daysLeft, onRestore }: { label: string; sub: string; daysLeft: number | null; onRestore: () => void }) => (
-    <div className="flex items-center gap-3 px-6 py-3 border-b border-[#F9FAFB] dark:border-[#1C2333] last:border-0">
+    <div className="flex items-center gap-3 px-6 py-3 border-b border-line last:border-0">
       <div className="flex-1 min-w-0">
         <p className="text-sm text-ink truncate">{label}</p>
         <p className="text-[11px] text-ink-muted">{sub}</p>

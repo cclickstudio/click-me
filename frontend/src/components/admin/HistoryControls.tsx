@@ -144,7 +144,7 @@ export function HistoryControls({
             value={value.search}
             onChange={(e) => onChange({ ...value, search: e.target.value })}
             placeholder={`${value.searchField === 'org_name' ? '조직명' : titleLabel} 검색`}
-            className="w-52 rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-transparent pl-7 pr-3 py-2.5 text-sm text-[#191F28] dark:text-[#F2F4F6] placeholder-[#B0B8C1] focus:border-[#3182F6] outline-none"
+            className="w-52 rounded-xl border border-line bg-transparent pl-7 pr-3 py-2.5 text-sm text-ink placeholder-[#B0B8C1] focus:border-[#3182F6] outline-none"
           />
         </div>
       </div>
@@ -170,7 +170,7 @@ export function OrgStatusFilter({
   onChange: (v: 'ACTIVE' | 'INACTIVE' | undefined) => void;
 }) {
   return (
-    <label className="flex items-center gap-2 text-sm text-[#4E5968] dark:text-[#9CA3AF]">
+    <label className="flex items-center gap-2 text-sm text-ink-secondary">
       <span className="font-medium">상태</span>
       <Select
         value={value ?? ''}

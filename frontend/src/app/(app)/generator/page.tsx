@@ -760,7 +760,7 @@ function WorkerRunsCard({ runs }: { runs: AutomationRunItem[] }) {
       </p>
       <ul className="mt-2 space-y-1.5">
         {runs.map((r) => (
-          <li key={r.id} className="rounded-lg bg-[#F9FAFB] dark:bg-[#1A202C] px-3 py-2">
+          <li key={r.id} className="rounded-lg bg-surface-1 px-3 py-2">
             <p className="text-[12px] font-semibold text-ink">
               {r.title || r.job_name}
               {r.created_at && (

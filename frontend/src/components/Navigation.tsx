@@ -40,7 +40,7 @@ export default function Navigation() {
   const { theme, toggle } = useTheme();
 
   return (
-    <header className="fixed top-0 left-0 right-0 z-50 h-14 bg-white dark:bg-[#1C2333] border-b border-[#E5E8EB] dark:border-[#2D3748] transition-colors">
+    <header className="fixed top-0 left-0 right-0 z-50 h-14 bg-white dark:bg-[#1C2333] border-b border-line transition-colors">
       <div className="max-w-screen-xl mx-auto h-full px-6 flex items-center justify-between">
         <Link
           href="/"
@@ -57,7 +57,7 @@ export default function Navigation() {
               className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
                 pathname === item.href
                   ? 'text-[#3182F6] bg-[#EBF3FF] dark:bg-[#1E3A5F]'
-                  : 'text-[#4E5968] dark:text-[#9CA3AF] hover:text-[#191F28] dark:hover:text-[#F2F4F6] hover:bg-[#F2F4F6] dark:hover:bg-[#252D3D]'
+                  : 'text-ink-secondary hover:text-[#191F28] dark:hover:text-[#F2F4F6] hover:bg-[#F2F4F6] dark:hover:bg-[#252D3D]'
               }`}
             >
               {item.label}
@@ -69,7 +69,7 @@ export default function Navigation() {
           {/* 다크 모드 토글 */}
           <button
             onClick={toggle}
-            className="p-2 rounded-lg text-[#8B95A1] dark:text-[#6B7280] hover:bg-[#F2F4F6] dark:hover:bg-[#252D3D] transition-colors"
+            className="p-2 rounded-lg text-ink-tertiary hover:bg-[#F2F4F6] dark:hover:bg-[#252D3D] transition-colors"
             aria-label="다크 모드 전환"
           >
             {theme === 'dark' ? <SunIcon /> : <MoonIcon />}

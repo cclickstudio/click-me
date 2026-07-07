@@ -163,7 +163,7 @@ export default function ProjectDetailPage() {
                       <tr
                         key={s.id}
                         onClick={() => router.push(`/simulation/${s.id}`)}
-                        className="border-b border-[#F9FAFB] dark:border-[#1C2333] last:border-0 hover:bg-accent cursor-pointer transition-colors"
+                        className="border-b border-line last:border-0 hover:bg-accent cursor-pointer transition-colors"
                       >
                         <td className="px-6 py-3">
                           <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-medium ${simStatusStyle[s.status] ?? ''}`}>
@@ -208,7 +208,7 @@ export default function ProjectDetailPage() {
                       <tr
                         key={g.id}
                         onClick={() => router.push(`/generations/${g.id}`)}
-                        className="border-b border-[#F9FAFB] dark:border-[#1C2333] last:border-0 hover:bg-accent cursor-pointer transition-colors"
+                        className="border-b border-line last:border-0 hover:bg-accent cursor-pointer transition-colors"
                       >
                         <td className="px-6 py-3 text-ink-secondary">{g.product_name ?? '—'}</td>
                         <td className="px-3 py-3">

@@ -30,7 +30,7 @@ export default function SignInPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#F9FAFB] dark:bg-[#0F1117] flex flex-col items-center justify-center p-4 transition-colors">
+    <div className="min-h-screen bg-surface-1 flex flex-col items-center justify-center p-4 transition-colors">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
           <Link href="/" className="text-primary font-bold text-2xl tracking-tight">ClickMe</Link>

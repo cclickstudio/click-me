@@ -147,7 +147,7 @@ export default function SimulationsPage() {
                   <tr
                     key={r.id}
                     onClick={() => router.push(`/simulation/${r.id}`)}
-                    className="border-b border-[#F9FAFB] dark:border-[#1C2333] last:border-0 hover:bg-accent transition-colors cursor-pointer"
+                    className="border-b border-line last:border-0 hover:bg-accent transition-colors cursor-pointer"
                   >
                     <td className="text-left px-6 py-3 text-ink font-medium">
                       {r.ad_title ?? '—'}

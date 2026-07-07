@@ -1403,7 +1403,7 @@ export default function SimulationRunPage() {
                       )}
 
                       {personaPickerOpen && !pickedPersona && (
-                        <div className='mt-2 max-h-64 overflow-y-auto rounded-lg border border-line divide-y divide-[#E5E8EB] dark:divide-[#2D3748]'>
+                        <div className='mt-2 max-h-64 overflow-y-auto rounded-lg border border-line divide-y divide-line'>
                           {personaOptions.length === 0 && !personaOptionsLoading && (
                             <p className='text-[11px] text-ink-tertiary px-3 py-3'>
                               조건에 맞는 페르소나가 없어요. 연령대·성별 조건을 넓혀보세요.

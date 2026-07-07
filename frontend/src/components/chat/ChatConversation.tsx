@@ -342,9 +342,9 @@ function TypingIndicator() {
         </svg>
       </div>
       <div className='px-4 py-3 rounded-2xl rounded-bl-md bg-surface-1 flex items-center gap-1.5'>
-        <span className='w-2 h-2 rounded-full bg-[#8B95A1] dark:bg-[#6B7280] animate-bounce [animation-delay:-0.3s]' />
-        <span className='w-2 h-2 rounded-full bg-[#8B95A1] dark:bg-[#6B7280] animate-bounce [animation-delay:-0.15s]' />
-        <span className='w-2 h-2 rounded-full bg-[#8B95A1] dark:bg-[#6B7280] animate-bounce' />
+        <span className='w-2 h-2 rounded-full bg-ink-tertiary animate-bounce [animation-delay:-0.3s]' />
+        <span className='w-2 h-2 rounded-full bg-ink-tertiary animate-bounce [animation-delay:-0.15s]' />
+        <span className='w-2 h-2 rounded-full bg-ink-tertiary animate-bounce' />
       </div>
     </div>
   );

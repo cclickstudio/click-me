@@ -98,13 +98,13 @@ export default function TrashSection({
                 href={t.kind === 'sim' ? `/simulation/${t.id}` : `/generations/${t.id}`}
                 className="flex-1 min-w-0 group"
               >
-                <p className="text-xs truncate text-[#4E5968] dark:text-[#9CA3AF] group-hover:text-[#3182F6]">{t.label}</p>
-                <p className="text-[10px] text-[#B0B8C1] dark:text-[#4B5563]">{t.kind === 'sim' ? '시뮬레이션' : '제너레이터'} · {fmt(t.deleted_at)} 삭제</p>
+                <p className="text-xs truncate text-ink-secondary group-hover:text-[#3182F6]">{t.label}</p>
+                <p className="text-[10px] text-ink-muted">{t.kind === 'sim' ? '시뮬레이션' : '제너레이터'} · {fmt(t.deleted_at)} 삭제</p>
               </Link>
             </div>
           ))}
           {sel.size > 0 && (
-            <div className="flex items-center gap-1.5 px-2 py-1 border-t border-[#F2F4F6] dark:border-[#252D3D] mt-1">
+            <div className="flex items-center gap-1.5 px-2 py-1 border-t border-line mt-1">
               <button disabled={busy} onClick={restoreSel}
                 className="text-[10px] font-medium text-[#3182F6] hover:underline disabled:opacity-40">선택 복원 ({sel.size})</button>
               <span className="text-[10px] text-[#D1D6DB]">|</span>

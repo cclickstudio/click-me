@@ -31,14 +31,14 @@ export interface SelectProps {
 // 트리거·팝업·옵션 공통 스타일 — 앱 다크 팔레트(#1a1f2e 계열)에 맞춤.
 const triggerCls =
   "w-full flex items-center justify-between gap-2 rounded-xl border px-3 py-2.5 text-left text-sm transition-colors " +
-  "border-[#E5E8EB] dark:border-[#2D3748] bg-white dark:bg-[#1a1f2e] " +
-  "text-[#191F28] dark:text-[#F2F4F6] " +
+  "border-line bg-white dark:bg-[#1a1f2e] " +
+  "text-ink " +
   "focus:outline-none focus:ring-2 focus:ring-[#3182F6] " +
   "disabled:cursor-not-allowed disabled:opacity-50";
 
 const popupCls =
   "absolute left-0 right-0 z-50 mt-1 max-h-60 overflow-auto rounded-xl border py-1 shadow-lg " +
-  "border-[#E5E8EB] dark:border-[#2D3748] bg-white dark:bg-[#1a1f2e]";
+  "border-line bg-white dark:bg-[#1a1f2e]";
 
 export function Select({
   value,
@@ -178,7 +178,7 @@ export function Select({
           className={`truncate ${
             selected
               ? ""
-              : "text-[#B0B8C1] dark:text-[#4B5563]"
+              : "text-ink-muted"
           }`}
         >
           {selected ? selected.label : placeholder}
@@ -226,12 +226,12 @@ export function Select({
                     : "cursor-pointer"
                 } ${
                   isActive && !opt.disabled
-                    ? "bg-[#F2F4F6] dark:bg-[#252D3D]"
+                    ? "bg-surface-1"
                     : ""
                 } ${
                   isSelected
                     ? "font-medium text-[#3182F6]"
-                    : "text-[#191F28] dark:text-[#F2F4F6]"
+                    : "text-ink"
                 }`}
               >
                 <span className="truncate">{opt.label}</span>

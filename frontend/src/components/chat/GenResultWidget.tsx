@@ -119,7 +119,7 @@ export default function GenResultWidget({
                   className='w-44 h-44 object-cover bg-surface-1'
                 />
               ) : (
-                <div className='w-44 h-44 flex items-center justify-center bg-[#F2F4F6] dark:bg-[#161B27] text-xs text-ink-muted'>
+                <div className='w-44 h-44 flex items-center justify-center bg-surface-1 text-xs text-ink-muted'>
                   이미지 없음
                 </div>
               )}

@@ -45,7 +45,7 @@ function FacebookCard({ c }: { c: CreativePreview }) {
           {c.primary_text}
         </p>
       )}
-      <div className="w-full bg-[#F2F4F6] dark:bg-[#2D3748]">
+      <div className="w-full bg-surface-1">
         <AdImage c={c} />
       </div>
       <div className="flex items-center justify-between gap-2 bg-[#F7F8FA] px-3 py-2 dark:bg-[#22272F]">
@@ -80,7 +80,7 @@ function InstagramCard({ c }: { c: CreativePreview }) {
         </div>
         <span className="text-ink-tertiary">···</span>
       </div>
-      <div className="w-full bg-[#F2F4F6] dark:bg-[#2D3748]">
+      <div className="w-full bg-surface-1">
         <AdImage c={c} />
       </div>
       <div className="flex items-center justify-between px-3 pt-2 text-[15px]">
