@@ -3,11 +3,10 @@
 # 프론트 html2pdf.js(클라이언트 캡처) 아님 — 서버 Chromium이 HTML을 PDF로 인쇄한다.
 # 디자인: 리포트 조판(표지 페이지 + Executive Summary + 번호형 섹션 + 규칙선), 절제된 인쇄 팔레트,
 # 하단 푸터 페이지 번호. 서체 Pretendard(제목=굵은 산세리프).
-# 배포 하드닝: 폰트(base64)·Tailwind(vendored JS)를 인라인해 CDN 없이 렌더(오프라인 self-contained).
+# 배포 하드닝: Tailwind는 vendored JS를 우선 사용하고, Pretendard는 CDN @font-face로 렌더한다.
 # 비전문가도 읽도록 모든 수치에 쉬운 해설을 붙인다. _build_html은 순수 함수(테스트·디버그용).
 from __future__ import annotations
 
-import base64
 import json
 import logging
 import subprocess
@@ -18,29 +17,17 @@ from pathlib import Path
 
 logger = logging.getLogger("clickme")
 
-# ── 오프라인 자산(배포 하드닝) — CDN 없이 렌더되도록 폰트·Tailwind를 인라인한다 ──
-# 폰트: backend/assets/fonts의 Pretendard OTF(공용 자산). Tailwind: vendoring한 Play CDN JS.
-_FONT_DIR = Path(__file__).resolve().parents[4] / "assets" / "fonts"
+# ── 렌더 자산: Tailwind는 vendored Play CDN JS, Pretendard는 CDN font-face 사용 ──
 _ASSET_DIR = Path(__file__).resolve().parent / "assets"
+_PRETENDARD_VARIABLE_CSS = (
+    "https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/"
+    "pretendardvariable-dynamic-subset.min.css"
+)
 
 
 @lru_cache(maxsize=1)
 def _font_face_css() -> str:
-    """Pretendard OTF를 base64 data URI @font-face로 인라인(제목 700·본문 400). 없으면 시스템 폴백."""
-    faces = []
-    for fname, weight in (("Pretendard-Regular.otf", 400), ("Pretendard-Bold.otf", 700)):
-        try:
-            b64 = base64.b64encode((_FONT_DIR / fname).read_bytes()).decode("ascii")
-        except OSError:
-            logger.warning("PDF 폰트 임베드 실패 — %s 없음, 시스템 폰트로 폴백", fname)
-            continue
-        faces.append(
-            "@font-face{font-family:'Pretendard';font-style:normal;"
-            f"font-weight:{weight};font-display:swap;"
-            f"src:url(data:font/otf;base64,{b64}) format('opentype');}}"
-        )
-    return "".join(faces)
-
+    return f"@import url('{_PRETENDARD_VARIABLE_CSS}');"
 
 @lru_cache(maxsize=1)
 def _tailwind_inline() -> str:
@@ -960,7 +947,7 @@ def _build_html(result: dict) -> str:
     )
 
     body = '<div class="space-y-6">' + "".join(blocks) + "</div>"
-    # CDN 없이 렌더되도록 Tailwind(vendored JS)·폰트(base64)를 인라인. 자산 누락 시에만 CDN 폴백.
+    # Tailwind는 vendored JS를 우선 쓰고, 폰트는 CDN @font-face로 로드한다.
     tw = _tailwind_inline()
     tw_tag = (
         f"<script>{tw}</script>" if tw else "<script src='https://cdn.tailwindcss.com'></script>"
@@ -969,15 +956,15 @@ def _build_html(result: dict) -> str:
         "<!DOCTYPE html><html lang='ko'><head><meta charset='utf-8'>"
         + tw_tag
         + "<script>tailwind.config={theme:{extend:{fontFamily:{sans:"
-        "['Pretendard','Malgun Gothic','Apple SD Gothic Neo','sans-serif']}}}}</script>"
+        "['Pretendard Variable','Pretendard','Malgun Gothic','Apple SD Gothic Neo','sans-serif']}}}}</script>"
         "<style>"
         + _font_face_css()
         + "*{-webkit-print-color-adjust:exact;print-color-adjust:exact;}"
         "html,body{background:#ffffff;}"
-        "body{font-family:'Pretendard','Malgun Gothic','Apple SD Gothic Neo',sans-serif;"
+        "body{font-family:'Pretendard Variable','Pretendard','Malgun Gothic','Apple SD Gothic Neo',sans-serif;"
         "color:#1F2937;-webkit-font-smoothing:antialiased;}"
         # 제목(디스플레이) — 세리프 대신 굵은 산세리프 + 타이트 자간으로 모던하게, 가독성 유지.
-        ".hd{font-family:'Pretendard','Malgun Gothic',sans-serif;letter-spacing:-0.025em;}"
+        ".hd{font-family:'Pretendard Variable','Pretendard','Malgun Gothic',sans-serif;letter-spacing:-0.025em;}"
         ".page-break{break-after:page;}"
         "</style>"
         # 좌우 여백은 body 패딩으로(렌더 margin은 상/하만) — 헤더/푸터 밴드와 폭을 맞춘다.

@@ -2,7 +2,9 @@
 from __future__ import annotations
 
 import io
+import os
 import re
+import urllib.request
 from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
@@ -12,13 +14,15 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont
 from domain.generator.contracts.enums import AdStrategy, TemplateType
 from domain.generator.pipeline.style_profile import get_style
 
-_FONT_DIR = Path(__file__).resolve().parents[3] / "assets" / "fonts"
-_FONT_BOLD = str(_FONT_DIR / "Pretendard-Bold.otf")
-_FONT_REGULAR = str(_FONT_DIR / "Pretendard-Regular.otf")
+_DEFAULT_FONT_DIR = Path(__file__).resolve().parents[3] / "assets" / "fonts"
+_PRETENDARD_CDN_BASE = (
+    "https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/packages/"
+    "pretendard/dist/web/static/woff2"
+)
 
 # KB Typography System의 전략별 웨이트 → 실제 Pretendard 파일.
-# 웨이트별 굵기값(100~900)으로 보유 파일 중 가장 가까운 것을 고른다 → 누락 웨이트는
-# 자동 폴백되고, 해당 .otf를 fonts/에 넣으면 그 웨이트가 즉시 적용된다(현재는 Bold·Regular만 보유).
+# 웨이트별 굵기값(100~900)으로 보유 파일 중 가장 가까운 것을 고른다. 누락 웨이트는
+# CDN에서 woff2를 내려받아 캐시하고, 실패 시 보유 파일 중 가장 가까운 웨이트로 폴백한다.
 _WEIGHT_VALUE: dict[str, int] = {
     "thin": 100,
     "extralight": 200,
@@ -31,34 +35,68 @@ _WEIGHT_VALUE: dict[str, int] = {
     "black": 900,
 }
 _WEIGHT_FILENAME: dict[str, str] = {
-    "thin": "Pretendard-Thin.otf",
-    "extralight": "Pretendard-ExtraLight.otf",
-    "light": "Pretendard-Light.otf",
-    "regular": "Pretendard-Regular.otf",
-    "medium": "Pretendard-Medium.otf",
-    "semibold": "Pretendard-SemiBold.otf",
-    "bold": "Pretendard-Bold.otf",
-    "extrabold": "Pretendard-ExtraBold.otf",
-    "black": "Pretendard-Black.otf",
+    "thin": "Pretendard-Thin.woff2",
+    "extralight": "Pretendard-ExtraLight.woff2",
+    "light": "Pretendard-Light.woff2",
+    "regular": "Pretendard-Regular.woff2",
+    "medium": "Pretendard-Medium.woff2",
+    "semibold": "Pretendard-SemiBold.woff2",
+    "bold": "Pretendard-Bold.woff2",
+    "extrabold": "Pretendard-ExtraBold.woff2",
+    "black": "Pretendard-Black.woff2",
 }
+
+
+def _font_dir() -> Path:
+    if configured := os.environ.get("GENERATOR_FONT_DIR"):
+        return Path(configured)
+
+    try:
+        from core.config import settings  # noqa: PLC0415
+
+        if settings.generator_font_dir:
+            return Path(settings.generator_font_dir)
+    except Exception:
+        pass
+    return _DEFAULT_FONT_DIR
+
+
+def _download_font(fname: str) -> Path | None:
+    font_dir = _font_dir()
+    path = font_dir / fname
+    if path.exists():
+        return path
+
+    try:
+        font_dir.mkdir(parents=True, exist_ok=True)
+        with urllib.request.urlopen(f"{_PRETENDARD_CDN_BASE}/{fname}", timeout=10) as resp:
+            path.write_bytes(resp.read())
+    except OSError:
+        return None
+    return path if path.exists() else None
 
 
 @cache
 def _resolve_font(weight: str) -> str:
     """전략이 지정한 폰트 웨이트를 실제 파일 경로로 해석한다.
 
-    해당 웨이트 .otf가 없으면 보유한 웨이트 중 굵기값이 가장 가까운 파일로 폴백한다
-    (동률이면 더 굵은 쪽). 보유 파일이 전혀 없으면 Regular. 누락 웨이트 .otf를
-    assets/fonts/에 추가하면 캐시만 비우면 자동 반영된다.
+    해당 웨이트 woff2가 없으면 CDN에서 내려받아 캐시한다. 다운로드할 수 없는 경우
+    보유한 웨이트 중 굵기값이 가장 가까운 파일로 폴백한다(동률이면 더 굵은 쪽).
     """
     target = _WEIGHT_VALUE.get(weight, 700)
+    font_dir = _font_dir()
     available = [
-        (_WEIGHT_VALUE[name], _FONT_DIR / fname)
+        (_WEIGHT_VALUE[name], font_dir / fname)
         for name, fname in _WEIGHT_FILENAME.items()
-        if (_FONT_DIR / fname).exists()
+        if (font_dir / fname).exists()
     ]
     if not available:
-        return _FONT_REGULAR
+        fname = _WEIGHT_FILENAME.get(weight, "Pretendard-Regular.woff2")
+        downloaded = _download_font(fname) or _download_font("Pretendard-Regular.woff2")
+        if downloaded:
+            return str(downloaded)
+    if not available:
+        return str(font_dir / "Pretendard-Regular.woff2")
     _, path = min(available, key=lambda vp: (abs(vp[0] - target), -vp[0]))
     return str(path)
 
@@ -241,12 +279,13 @@ def _draw_cta(
     accent: tuple[int, int, int],
     align: str,
     template: TemplateType,
-    font_path: str = _FONT_BOLD,
+    font_path: str | None = None,
     floating: bool = False,
 ) -> Image.Image:
     draw = ImageDraw.Draw(base)
     if not text:
         return base
+    font_path = font_path or _resolve_font("bold")
     x0, y0, x1, y1 = rect
     box_w, box_h = x1 - x0, y1 - y0
     # 여백을 높이에만 비례시키면 템플릿 C처럼 폭이 좁은 박스에서 여백이 폭 대부분을 먹어
@@ -370,7 +409,11 @@ def render_ad_text(
         body_font = _resolve_font(profile.body_weight)
         cta_font = _resolve_font(profile.cta_weight)
     else:
-        head_font, body_font, cta_font = _FONT_BOLD, _FONT_REGULAR, _FONT_BOLD
+        head_font, body_font, cta_font = (
+            _resolve_font("bold"),
+            _resolve_font("regular"),
+            _resolve_font("bold"),
+        )
 
     # 감성형은 여백을 위해 폰트를 축소. 그 외는 원래 크기.
     size_factor = 0.82 if style == "emotional" else 1.0
