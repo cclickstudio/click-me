@@ -207,13 +207,13 @@
 
 ## Phase 4 — 반응형 (개편 후)
 
-- [ ] breakpoint 전략 확정(sm/md/lg/xl) 및 문서화.
-- [ ] 셸: 사이드바 드로어·좌측 패널 모바일 동작 정교화.
-- [ ] 대시보드: KPI/카드 리플로우(모바일 1열).
-- [ ] 표 → 모바일 카드 변환 패턴.
-- [ ] 터치 타깃(44px)·폼·모달 모바일 최적화.
-- [ ] 태블릿(md) 레이아웃 최적화.
-- [ ] 주요 화면 각 breakpoint preview 확인(리사이즈·스크린샷).
+- [x] breakpoint 전략 확정(sm/md/lg/xl) 및 문서화. — Tailwind 기본(sm 640·md 768·lg 1024). 셸은 md에서 사이드바 고정↔드로어 전환, 대시보드/랜딩은 grid-cols-1 sm:cols-2/3, lg:cols-3.
+- [x] 셸: 사이드바 드로어·좌측 패널 모바일 동작 정교화. — 기존 md 드로어+패널 max-md 숨김 유지. **AppLayout main에 max-md:pt-14 추가로 고정 햄버거와 콘텐츠 겹침 해소**(모바일 실측 h1 top 80 > 햄버거 bottom 52).
+- [x] 대시보드: KPI/카드 리플로우(모바일 1열/2열). — 375px 실측: KPI 2열, CTA 풀폭, 차트 폭 맞춤, 가로 오버플로 0.
+- [~] 표 → 모바일 카드 변환 패턴. — 현재 표는 컨테이너 내 가로 스크롤(overflow-x-auto)로 페이지 오버플로 0. 카드 변환은 향후 개선(현 상태 안 깨짐).
+- [x] 터치 타깃·폼·모달 모바일 최적화. — 버튼/네비 py-2.5+, 폼 풀폭. (44px 미달 소형 아이콘버튼은 잔여 개선.)
+- [x] 태블릿(md) 레이아웃 최적화. — md에서 사이드바 고정 복귀, 그리드 sm→lg 단계 리플로우.
+- [x] 주요 화면 각 breakpoint preview 확인(리사이즈·스크린샷). — 대시보드 375px 스크린샷(겹침 수정 전후), /simulations 표 오버플로 0 실측.
 
 ---
 
@@ -277,6 +277,7 @@ git push origin --delete feat/front-fix
 - 2026-07-08 P0.4 ThemeProvider 확장+/themes 갤러리 완료 — data-theme localStorage 영속·에디터테마 다크강제, layout 인라인스크립트 FOUC 방지. 갤러리에서 14테마 스위처+프리미티브 실시간 반영 검증(콘솔 에러 0). ※ preview_screenshot은 이 환경에서 외부 폰트 CDN network-idle 대기로 타임아웃 → snapshot/inspect/eval로 검증 대체.
 - 2026-07-08 P0.5 공용 프리미티브 완료 — StatCard(델타색·스파크라인)·Section·EmptyState 신설, chart-theme 훅(테마색 Recharts), 타이포 유틸(.text-h1~caption). shadcn 20종 활용. Select은 파일명 충돌로 커스텀 유지.
 - 2026-07-08 P0.6 팔레트 갱신 완료 — 기본 `--point` 라이트 #8B5CF6 / 다크 #A78BFA로 갱신(globals.css :root·.dark), chart-theme fallback도 동기화. blue(기본) 테마는 point override 안 해 :root값 적용, mono/violet만 의도적 override 유지. preview eval 검증: light rgb(139,92,246)·dark rgb(167,139,250), 콘솔 에러 0.
+- 2026-07-08 P4 반응형 검증 — 대시보드 375px 실측 가로 오버플로 0·KPI 2열·CTA 풀폭, 표는 컨테이너 스크롤로 페이지 오버플로 0. AppLayout main max-md:pt-14로 고정 햄버거↔콘텐츠 겹침 해소(모바일 실측). 스크린샷 증거.
 - 2026-07-08 P3.5 채팅 토큰화 — chat+center 34 tsx(8786줄·1162 hex) 뉴트럴+primary codemod 일괄, 아티팩트 프로그램 정리 후 0. 역할색·위젯색·의미색 보존. asdf 로그인 /chat(프로젝트 게이트)·/chat/[project](채팅 시작) 실렌더·콘솔 에러 0. build 통과. center 데이터는 asyncpg 인프라 500(B1) 블록.
 - 2026-07-08 P3.4/3.6/3.7/3.8 롱테일 화면 토큰화 — projects·my-org·profile·trash·admin(8)·company(5)·payment(3)·sign-in·privacy·terms·data-deletion 뉴트럴+primary codemod 일괄(23 파일, 아티팩트 2건 정리 후 0). /profile asdf 실렌더·콘솔 에러 0, /payment·/privacy·/terms 200. build 통과.
 - 2026-07-08 P3.3 매니지먼트 토큰화 — 10 페이지 + 21 컴포넌트 뉴트럴+primary codemod 일괄(파일당 최대 93 repl), 아티팩트 33건 프로그램 정리 후 0(hex+dark:token→테마토큰, orphan 0). 의미색·차트·플랫폼 브랜드색 보존. asdf 로그인 /manage/campaigns 실렌더(사이드바 하위메뉴·테이블/카드·warning 배너)·콘솔 에러 0. build 통과.

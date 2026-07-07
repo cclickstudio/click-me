@@ -131,7 +131,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <div className="max-md:hidden">
         <Panel collapsed={panelCollapsed} onToggle={togglePanel} />
       </div>
-      <main className={`${mainLeft} min-h-screen transition-all duration-200`}>
+      <main className={`${mainLeft} min-h-screen transition-all duration-200 max-md:pt-14`}>
         <motion.div
           key={pathname}
           initial={{ opacity: 0, y: 8 }}
