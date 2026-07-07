@@ -1,5 +1,17 @@
 # Generator 통합 — UI 일원화 + 렌더링을 yunseop 방식으로 교체
 
+> ✅ **완료된 계획 (2026-06-15, 역사 문서)** — 통합은 이 계획대로 완료됐고, 이후 다음이
+> 추가로 달라졌다(2026-07 기준).
+> - **개선 모드 전면 재설계**(`2c8b7eb`) — 이 문서의 "개선도 후보 3종 동일 흐름"은 폐기.
+>   현재는 **단일 시안 1장**, 기존광고 이미지 미사용(텍스트 힌트만), 상품 누끼 인페인팅,
+>   template=None 자유 레이아웃, 항상 OpenAI 경로. improve-mode-image.* 참고
+> - 생성 모드 2원화 — `GENERATOR_GEN_MODE=openai|gemini` (openai-gemini-mode.* 참고)
+> - 카드뉴스(carousel) 포맷, 플랫폼별 리레이아웃 렌더(`/candidates/{id}/render?platform=`),
+>   브랜드 키트 CRUD, ZIP 다운로드, QA 품질점수 기반 후보 순위(G7) 추가
+> - 채팅 연동 — gen_form/gen_progress/gen_result 위젯, 자동 개선 루프(generation_loop)
+>
+> 이하 본문은 통합 당시 계획 원문.
+
 ## Context
 
 `feat/generator-yohan` + `feat/generator-yunseop` 머지로 두 광고 제너레이터가 한 코드베이스에 공존 중이다.

@@ -789,7 +789,7 @@ async def create_session(
     """새 채팅 세션 생성 — 프로젝트에 귀속."""
     if body.project_id:
         await assert_project_access(db, body.project_id, current_user)
-    s = await history.create_session(db, body.project_id, body.title)
+    s = await history.create_session(db, body.project_id, body.title, created_by=current_user.id)
     return {
         "id": str(s.id),
         "title": s.title,

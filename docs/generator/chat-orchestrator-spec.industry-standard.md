@@ -1,5 +1,11 @@
 # 채팅 어시스턴트 · 오케스트레이터 스펙 — 업계 표준안 (참고용 B)
 
+> 📌 **귀결 (역사 문서)** — 최종 구현은 본 문서 §0의 패턴 ②(single tool-calling
+> agent)에 해당한다. 통합 딥에이전트(deepagents `create_deep_agent` + CHAT_POLICY,
+> 도메인 위임은 @tool, deepagents 고유 서브에이전트 기능 미사용). Supervisor(패턴 ①)의
+> 상위/하위 분리 대신 단일 에이전트 + 도구 계층으로 단순화. 현행은
+> chat-deep-agent-orchestrator.context-notes.md 참고.
+>
 > 이 문서는 [chat-orchestrator-spec.md](./chat-orchestrator-spec.md)의 **결정 항목을 "가장 보편적인 방법(업계 표준)"으로 채운 사본**이다(참고용).
 > 우리 프로젝트에 실제 채택하는 사본은 [chat-orchestrator-spec.our-fit.md](./chat-orchestrator-spec.our-fit.md).
 > 질문(§3 체크리스트)은 원본 그대로 두고, 각 `결정:` 칸만 "표준이라면 이렇게"로 채웠다.

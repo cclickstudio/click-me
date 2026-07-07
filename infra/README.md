@@ -15,7 +15,7 @@ ClickMe 운영 배포(단일 EC2 + nginx + HTTPS)를 위한 인프라 스크립�
 | `.env` | provision이 만든 참조값(EC2_HOST 등). gitignore | — |
 
 > **팀원은 인스턴스 생성/삭제(`provision_ec2.py`·`resize_instance.py`)는 건드리지 말고 `fetch_key.py`·`start_portainer.py`만** 쓰면 된다.
-> 리버스 프록시는 [`../deploy/nginx.conf`](../deploy/nginx.conf), 컨테이너 구성은 [`../docker-compose.prod.yml`](../docker-compose.prod.yml), 배포는 [`../.github/workflows/cd.yml`](../.github/workflows/cd.yml).
+> 리버스 프록시는 [`../deploy/nginx.conf`](../deploy/nginx.conf), 컨테이너 구성은 [`../docker-compose.prod.yml`](../docker-compose.prod.yml), 배포는 [`../.github/workflows/ci-cd.yml`](../.github/workflows/ci-cd.yml)(구 `ci.yml`+`cd.yml` 병합).
 
 ## 사전 준비
 
@@ -115,7 +115,7 @@ nginx의 443 블록이 `/etc/letsencrypt/live/clickme.co.kr/` 인증서를 참�
   1. 임시 self-signed(dummy) 인증서를 심어 nginx를 일단 정상 기동(443 크래시 방지)
   2. certbot이 80포트 **webroot HTTP-01**(`/.well-known/acme-challenge`) 챌린지로 진짜 인증서 발급
   3. dummy를 진짜로 교체 후 nginx reload
-  - **cd.yml이 자동 호출**한다 — deploy 스크립트가 `fullchain.pem` 부재를 감지하면 실행(있으면 건너뜀, 멱등).
+  - **`ci-cd.yml`의 deploy 잡이 자동 호출**한다 — deploy 스크립트가 `fullchain.pem` 부재를 감지하면 실행(있으면 건너뜀, 멱등).
 - **자동 갱신** [`../docker-compose.prod.yml`](../docker-compose.prod.yml)의 **certbot 서비스**가 12h 주기로 `certbot renew`
   (만료 30일 이내만 실제 갱신). nginx는 6h마다 `nginx -s reload`로 새 인증서를 **무중단** 픽업한다.
 
@@ -137,16 +137,16 @@ Let's Encrypt 알림 이메일은 `LETSENCRYPT_EMAIL` 환경변수로 바꾼다(
 ## 배포 흐름
 
 ```
-개발자 push → cd.yml: backend/frontend 이미지 빌드 → ECR push
+개발자 push(main·ci-cd) → ci-cd.yml: (CI 통과 후) backend/frontend 이미지 빌드 → ECR push
            → compose·nginx.conf·init-letsencrypt.sh EC2로 복사 → EC2가 ECR pull
            → (인증서 없으면) init-letsencrypt.sh 최초 발급 → docker compose up
 EC2 런타임: nginx(:80 리다이렉트/ACME, :443 서비스) ─ /api → backend(내부) · /docs 차단 · 그 외 → frontend(내부)
            certbot 서비스: 12h마다 renew · nginx: 6h마다 reload로 무중단 갱신
 ```
 
-- compose·nginx.conf·init-letsencrypt.sh는 매 배포마다 cd.yml이 자동 복사한다.
+- compose·nginx.conf·init-letsencrypt.sh는 매 배포마다 `ci-cd.yml`의 deploy 잡이 자동 복사한다.
 - **GitHub Secrets**(AWS 키·`EC2_HOST`·`EC2_SSH_KEY` 등)는 **최초 1회만** 등록한다 — 필요한 목록·용도는
-  [`cd.yml` 상단 주석](../.github/workflows/cd.yml)에 정리돼 있다. EIP 고정이라 이후 값 갱신은 없다.
+  [`ci-cd.yml`](../.github/workflows/ci-cd.yml)에 정리돼 있다. EIP 고정이라 이후 값 갱신은 없다.
 
 ## 비용 메모 (us-west-2, 대략)
 

@@ -292,6 +292,7 @@ function buildSimForm(input: SimRunInput): FormData {
   if (input.service_class != null) form.append("service_class", String(input.service_class));
   if (input.analysis_mode) form.append("analysis_mode", input.analysis_mode);
   if (input.from_campaign_id) form.append("from_campaign_id", input.from_campaign_id);
+  if (input.generation_id) form.append("generation_id", input.generation_id);
   return form;
 }
 

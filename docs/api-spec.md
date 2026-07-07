@@ -1,8 +1,8 @@
 # ClickMe API Specification
 
-| Version | v2.0 |
+| Version | v2.1 |
 |---|---|
-| Date | 2026-06-09 |
+| Date | 2026-07-03 |
 | Base URL | `http://localhost:8000/api` (dev) |
 | Content-Type | `application/json` |
 
@@ -10,13 +10,14 @@
 
 ## 1. Authentication
 
-### Phase 1 (6.12)
-No auth. Role selection is local client state only.
-Admin APIs are restricted by path prefix `/api/admin/*`.
+인증 방식은 `AUTH_PROVIDER` 설정으로 결정된다.
 
-### Phase 2 (7.8, TBD)
-- `Authorization: Bearer <access_token>` header to be added
-- JWT self-implementation or AWS Cognito under review
+- **운영: AWS Cognito** (`AUTH_PROVIDER=cognito`). 프론트가 Cognito User Pool로 로그인하고, 백엔드는 ID/Access 토큰을 **RS256 + JWKS**로 검증(`core/auth.py`). 토큰은 `Authorization: Bearer <token>` 헤더 또는 `access_token` 쿠키로 전달. 역할은 `cognito:groups`(ADMIN/COMPANY/USER)에서 판별. Cognito username = `login_id`.
+- **로컬 기본: 자체 JWT** (`AUTH_PROVIDER=local`). HS256으로 직접 발급·검증.
+- **계정 상태 차단** — 사용자 `status != ACTIVE`(예: 관리자 소프트 삭제로 `INACTIVE`)면 인증 미들웨어가 **401**을 반환.
+- **역할** ADMIN / COMPANY / USER. 관리자 API는 경로 프리픽스 `/api/admin/*` + ADMIN 역할로 제한.
+
+> 계정은 자가가입·소셜 로그인이 없으며 **관리자가 직접 생성**한다. 발급 계정은 최초 로그인 시 비밀번호 변경을 유도(`must_change_password`).
 
 ---
 
@@ -389,69 +390,66 @@ Submit an inquiry.
 
 ## 7. Admin API
 
-> Phase 1: restricted by path prefix `/admin/*`.
+> 경로 프리픽스 `/admin/*` + ADMIN 역할로 제한. 계정 매핑: Cognito username = `login_id`,
+> role → 동명 그룹(ADMIN/COMPANY/USER). `AUTH_PROVIDER=local`이면 Cognito 동기화는 no-op.
 
-### GET /api/admin/users
+**삭제 정책** — 기본 삭제(`DELETE`)는 **소프트 삭제**다. DB는 `status=INACTIVE`로 두고 Cognito 계정은
+`disable`(삭제 아님)해 로그인만 차단한다. 데이터(프로젝트·시뮬·제너·채팅)는 사후 조회용으로 보존된다.
+`restore`로 되살리고, `purge`로만 영구(하드) 삭제한다.
 
-List users.
+### 조직(회사)
 
-**Response 200**
-```json
-{
-  "users": [
-    {
-      "user_id": "uuid",
-      "email": "string",
-      "name": "string",
-      "role": "admin | user",
-      "created_at": "ISO8601",
-      "last_login_at": "ISO8601 | null"
-    }
-  ]
-}
-```
+| Method | Path | 설명 |
+| --- | --- | --- |
+| GET | `/api/admin/organizations` | 조직 목록(프로젝트 0개 회사 포함) |
+| DELETE | `/api/admin/companies/{org_id}` | 소프트 삭제 — 조직·소속 유저 `INACTIVE` + Cognito disable |
+| POST | `/api/admin/companies/{org_id}/restore` | 복원 — 조직·소속 유저 `ACTIVE` + Cognito enable(없으면 재생성) |
+| DELETE | `/api/admin/companies/{org_id}/purge` | 영구 삭제 — Cognito + DB(조직·멤버·유저) + 하위 프로젝트/시뮬/제너/채팅 하드 삭제 |
 
----
+**GET /api/admin/organizations** — 쿼리: `limit`(기본 20, 최대 200) · `offset`(기본 0) ·
+`sort`(`name|created_at|status`, 기본 `created_at`) · `order`(`asc|desc`, 기본 `desc`).
 
-### POST /api/admin/users
+**Response 200** — `[{ "id", "name", "status": "ACTIVE|INACTIVE", "created_at" }]`
 
-Create a user account.
+`restore`·`purge`·`delete` 응답은 모두 `{"ok": true}`. 조직 없음 → 404.
 
-**Request Body**
-```json
-{
-  "email": "string",
-  "name": "string",
-  "role": "admin | user",
-  "initial_password": "string"
-}
-```
+### 유저
 
-**Response 201**
-```json
-{"user_id": "uuid"}
-```
+| Method | Path | 설명 |
+| --- | --- | --- |
+| GET | `/api/admin/users` | 유저 목록 |
+| POST | `/api/admin/users` | 계정 생성(ADMIN/COMPANY/USER) |
+| PATCH | `/api/admin/users/{user_id}` | 이름·비밀번호 수정 |
+| DELETE | `/api/admin/users/{user_id}` | 소프트 삭제 — `INACTIVE` + Cognito disable |
+| POST | `/api/admin/users/{user_id}/restore` | 복원 — `ACTIVE` + Cognito enable(없으면 재생성) |
+| DELETE | `/api/admin/users/{user_id}/purge` | 영구 삭제 — Cognito + DB(유저·멤버십) + 본인 생성 프로젝트/시뮬/제너/채팅 하드 삭제 |
 
----
+**GET /api/admin/users** — 쿼리: `limit`(기본 20, 최대 200) · `offset`(기본 0) ·
+`sort`(`role|name|created_at|status`, 기본 `role`) · `order`(`asc|desc`) · `role`(`ADMIN|COMPANY|USER` 필터).
+`sort` 미지정(기본 `role`) 시 **ADMIN→COMPANY→USER** 우선순위 정렬.
 
-### GET /api/admin/inquiries
+**Response 200** — `[{ "id", "login_id", "name", "role", "status", "created_at", "organization_name" }]`
 
-List customer inquiries.
+**POST /api/admin/users** — Body: `{ "name", "login_id", "password"(≥8), "role", "company_name"?(role=COMPANY),
+"organization_id"?(role=USER) }`. 201 → UserRow. 아이디 중복 409, 비번 짧음/역할 오류 400.
 
-**Response 200**
-```json
-{
-  "inquiries": [
-    {
-      "inquiry_id": "string",
-      "title": "string",
-      "content": "string",
-      "contact_email": "string | null",
-      "created_at": "ISO8601"
-    }
-  ]
-}
-```
+**주의** — `delete`/`purge`는 본인 계정 불가(400). `COMPANY` 계정의 개별 `delete`/`purge`는 막고
+'조직 삭제/영구삭제'로 회사째 처리하도록 유도(400).
+
+### 내역 조회 (시뮬·제너·채팅)
+
+| Method | Path |
+| --- | --- |
+| GET | `/api/admin/simulations` |
+| GET | `/api/admin/generations` |
+| GET | `/api/admin/chats` |
+
+공통 쿼리: `limit`(기본 20, 최대 200) · `offset` · `sort`(`created_at|title|org_name`) · `order` ·
+`search_field`(`title|org_name`) · `search` · `X-Org-Id` 헤더(특정 조직 필터) ·
+**`org_status`**(`ACTIVE|INACTIVE` — 소속 조직 상태 필터). 시뮬·제너는 추가로
+`status`(`completed|in_progress|failed`) 버킷 필터.
+
+응답 각 행에 **`org_status`**(소속 조직 상태) 포함 — 삭제된(INACTIVE) 조직의 내역을 화면에서 구분·필터.
 
 ---
 
