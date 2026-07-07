@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from domain.management.contracts.approval_ledger import ApprovalStore
     from domain.management.contracts.platform import AdPlatformReader, AdPlatformWriter
     from domain.management.contracts.schemas import DiagnosisResult
     from domain.management.execution.audit_log import AuditSink
@@ -119,6 +120,29 @@ def build_audit_sink(settings) -> AuditSink:
     from domain.management.execution.db_stores import DbAuditSink  # noqa: PLC0415
 
     return DbAuditSink()
+
+
+_approval_store: ApprovalStore | None = None
+
+
+def build_approval_store(settings) -> ApprovalStore:
+    """승인 원장 — 발행부(라우터)와 executor가 같은 인스턴스를 봐야 하므로 싱글턴.
+
+    use_mock이면 인메모리, 아니면 DB(management_approval_records).
+    """
+    global _approval_store  # noqa: PLW0603
+    if _approval_store is None:
+        if getattr(settings, "use_mock", True):
+            from domain.management.execution.approval_stores import (  # noqa: PLC0415
+                InMemoryApprovalStore,
+            )
+
+            _approval_store = InMemoryApprovalStore()
+        else:
+            from domain.management.execution.db_stores import DbApprovalStore  # noqa: PLC0415
+
+            _approval_store = DbApprovalStore()
+    return _approval_store
 
 
 def build_checkpointer(settings):
