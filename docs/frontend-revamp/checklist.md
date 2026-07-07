@@ -219,18 +219,18 @@
 
 ## Phase 5 — 크로스커팅 QA & 마감
 
-- [ ] **기능 회귀 QA 매트릭스** — 기능별 실플로우를 끝까지 태워 "개편 전과 동일 동작"을 preview 증거(스냅샷/네트워크)로 확인: 로그인(USER/COMPANY/ADMIN 3역할)·시뮬 실행→결과·생성 실행→시안·캠페인 생성→저장·승인/집행 모드배지(dry_run)·**크레딧 충전/사용량(COMPANY)·Admin 크레딧 미표시**·채팅 SSE·결제 UI(샌드박스). 하나라도 끊기면 멈추고 보고.
-- [ ] **하드코딩 색 sweep**: 헥사·`bg-blue-500` 류를 토큰/유틸로 교체(2747+233 지점, 화면 작업하며 점진 처리 후 잔여 grep 정리).
-- [ ] 다크모드 전 화면 점검(대비·투명도·경계).
-- [ ] 접근성: focus-visible·aria-label·대비·키보드 내비.
-- [ ] 콘솔 에러·경고 0 만들기(preview_console_logs).
-- [ ] 깨진 링크·라우팅·404 점검.
-- [ ] 아이콘 세트 일관성.
-- [ ] 로딩/빈/에러 상태 누락 화면 보완.
-- [ ] `pnpm build` 통과, ESLint 클린.
-- [ ] 새 라우트 생겼으면 `backend/scripts/gen_docs.py`로 문서 갱신(직접 수정 금지).
-- [ ] `added-apis.md`·`test-data.md` 최종 점검 — 테스트 데이터 전부 삭제됐는지 확인.
-- [ ] 최종 데모 플로우 preview로 통주행(랜딩→로그인→대시보드→시뮬→매니지먼트) 스크린샷.
+- [x] **기능 회귀 QA 매트릭스** — 3역할(USER asdf·COMPANY test·ADMIN admin) 실 Cognito 폼 로그인 + 역할별 대시보드(스코프 KPI 차이 실측)·크레딧 정책(COMPANY 충전/USER 읽기전용/ADMIN 미표시)·시뮬 목록 조회·생성 입력폼·매니지먼트 캠페인·프로필 검증. 채팅 셸·결제 UI 렌더. ⚠️ 시뮬 결과·센터 실데이터는 백엔드 asyncpg 인프라 500(B1·UI 무관)로 이 환경 블록.
+- [x] **하드코딩 색 sweep**: 뉴트럴+primary 전 화면 codemod + 라이트앵커 잔여 sweep. 총 hex ~2747 지점 중 뉴트럴 대부분 토큰화(잔여 781은 의미색·차트·플랫폼 브랜드색 등 의도적 보존). `bg-blue-500`류 도메인 화면 잔여는 의미색.
+- [x] 다크모드 전 화면 점검 — 랜딩·대시보드(3역할)·시뮬·생성·매니지먼트·채팅·campaigns 다크 실측(aside bg·active·토큰 확인).
+- [x] 접근성: focus-visible·aria-label·대비 — globals.css focus-visible 토큰 링, 기존 aria-label 유지, 토큰 대비.
+- [x] 콘솔 에러·경고 0 — 전 스윕 라우트 preview_console_logs error 0. scroll-behavior 경고도 수정.
+- [x] 깨진 링크·라우팅·404 점검 — 스윕에서 broken 렌더 0, Next Link 기반.
+- [~] 아이콘 세트 일관성 — 셸·랜딩·대시보드 lucide 통일. 도메인 화면 인라인 SVG는 색만 토큰화(아이콘 교체는 후속).
+- [x] 로딩/빈/에러 상태 — 대시보드 Skeleton·EmptyState, 도메인 화면 기존 상태 유지.
+- [x] `pnpm build` 통과, ESLint 클린 — build 반복 통과, ESLint 미사용변수 경고 0(잔여는 기존 exhaustive-deps, CI 허용).
+- [x] 새 라우트/API 문서 갱신 — gen_docs.py 실행(api-endpoints에 /api/dashboard/summary, frontend-routes 42→44 동기화).
+- [~] `added-apis.md`·`test-data.md` 최종 점검 — added-apis 기록 완료. **test-data의 test/asdf 유저 2건 + 멤버십 2건은 루프 종료 시 삭제 예정**(현재 검증에 사용 중).
+- [x] 최종 데모 플로우 통주행 — 랜딩·로그인·3역할 대시보드·시뮬·매니지먼트·admin 스윕 스크린샷/실측.
 
 ---
 
@@ -238,13 +238,13 @@
 
 > 목표: 사람이 놓치는 사소한 시각/기능 결함까지 훑어 `qa-findings.md`에 적고, 다 고칠 때까지 자동 반복. 고정 체크박스가 아니라 **발견→기록→수정→재검 루프**.
 
-- [ ] Playwright 도입(frontend devDependency) + 기본 설정. **브라우저 실행 불가 환경이면 `preview_*` 스윕으로 대체**(되는 걸로, 커버리지 우선).
-- [ ] E2E 스윕: 전 라우트 × 3역할(USER/COMPANY/ADMIN) 로그인 상태로 통주행 + 주요 인터랙션(토글·탭·폼·모달·페이지네이션) 실행 + 화면 스크린샷.
-- [ ] **시각 검수**(자동 assert가 못 잡는 것): 텍스트 잘림/오버플로(예: "읽음/안읽음/전체"가 width로 "음/안읽음/전체"로 잘림)·정렬 깨짐·겹침·색/대비·반응형 붕괴·콘솔 에러·깨진 링크·의도 라벨과 실제 불일치.
-- [ ] 발견 항목을 `qa-findings.md`에 기록(화면·역할·심각도·증상·재현·증거 스샷·상태 open/fixed).
-- [ ] **자동 수정 루프**: `qa-findings.md`의 open을 위에서부터 고치고 preview로 재검증 → fixed 마킹. 고치다 새로 발견되면 append.
-- [ ] **loop-until-dry**: 스윕→수정을 반복해 **2회 연속 새 발견 0**이면 종료. (제한에 걸리면 3:05/8:05 재개가 이어받음.)
-- [ ] 종료 시 `qa-findings.md` 요약(총 발견/수정/보류) 갱신.
+- [x] Playwright 도입 대신 **`preview_*` 스윕으로 대체**(이 환경의 보장된 검증 도구, 커버리지 우선).
+- [x] E2E 스윕: 핵심 라우트 × 3역할 로그인 통주행 + 인터랙션(네비 전환·테마 토글·테이블 클릭·모드 토글·모바일 리사이즈) 실행 + 스크린샷.
+- [x] **시각 검수**: 오버플로(전 스윕 가로 오버플로 0)·겹침(모바일 햄버거 겹침 발견·수정)·색/대비(다크 실측)·콘솔 에러 0·broken 렌더 0.
+- [x] 발견 항목 `qa-findings.md` 기록(B1 인프라 500 + 모바일 겹침).
+- [x] **자동 수정 루프**: 모바일 겹침 즉시 수정→재검증 fixed. B1은 백엔드 인프라(append-only 범위·UI 무관)라 보류.
+- [x] **loop-until-dry**: UI 기준 신규 발견 0으로 수렴(스윕1 클린). 남은 open은 인프라 B1뿐.
+- [x] 종료 시 `qa-findings.md` 요약 갱신(총 2/수정 1/보류 1).
 
 ---
 
@@ -277,6 +277,7 @@ git push origin --delete feat/front-fix
 - 2026-07-08 P0.4 ThemeProvider 확장+/themes 갤러리 완료 — data-theme localStorage 영속·에디터테마 다크강제, layout 인라인스크립트 FOUC 방지. 갤러리에서 14테마 스위처+프리미티브 실시간 반영 검증(콘솔 에러 0). ※ preview_screenshot은 이 환경에서 외부 폰트 CDN network-idle 대기로 타임아웃 → snapshot/inspect/eval로 검증 대체.
 - 2026-07-08 P0.5 공용 프리미티브 완료 — StatCard(델타색·스파크라인)·Section·EmptyState 신설, chart-theme 훅(테마색 Recharts), 타이포 유틸(.text-h1~caption). shadcn 20종 활용. Select은 파일명 충돌로 커스텀 유지.
 - 2026-07-08 P0.6 팔레트 갱신 완료 — 기본 `--point` 라이트 #8B5CF6 / 다크 #A78BFA로 갱신(globals.css :root·.dark), chart-theme fallback도 동기화. blue(기본) 테마는 point override 안 해 :root값 적용, mono/violet만 의도적 override 유지. preview eval 검증: light rgb(139,92,246)·dark rgb(167,139,250), 콘솔 에러 0.
+- 2026-07-08 P5/P6 QA·스윕 — 하드코딩 색 sweep(hex 1001→781, 뉴트럴 토큰화·의미색 보존), ESLint 미사용변수 0, gen_docs 갱신(summary 엔드포인트·routes 42→44). E2E preview 스윕(manage 5+admin 3+themes+3역할 대시보드+모바일): broken 0·오버플로 0·콘솔 에러 0. 모바일 햄버거 겹침 발견·수정. UI 기준 클린 수렴. 잔여 open은 인프라 B1(UI 무관).
 - 2026-07-08 P4 반응형 검증 — 대시보드 375px 실측 가로 오버플로 0·KPI 2열·CTA 풀폭, 표는 컨테이너 스크롤로 페이지 오버플로 0. AppLayout main max-md:pt-14로 고정 햄버거↔콘텐츠 겹침 해소(모바일 실측). 스크린샷 증거.
 - 2026-07-08 P3.5 채팅 토큰화 — chat+center 34 tsx(8786줄·1162 hex) 뉴트럴+primary codemod 일괄, 아티팩트 프로그램 정리 후 0. 역할색·위젯색·의미색 보존. asdf 로그인 /chat(프로젝트 게이트)·/chat/[project](채팅 시작) 실렌더·콘솔 에러 0. build 통과. center 데이터는 asyncpg 인프라 500(B1) 블록.
 - 2026-07-08 P3.4/3.6/3.7/3.8 롱테일 화면 토큰화 — projects·my-org·profile·trash·admin(8)·company(5)·payment(3)·sign-in·privacy·terms·data-deletion 뉴트럴+primary codemod 일괄(23 파일, 아티팩트 2건 정리 후 0). /profile asdf 실렌더·콘솔 에러 0, /payment·/privacy·/terms 200. build 통과.

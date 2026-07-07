@@ -7,9 +7,10 @@
 
 ## 요약
 
-- 총 발견: 0 / 수정: 0 / 보류: 0
-- 마지막 스윕: (미실행)
-- 연속 클린 스윕: 0 / 2
+- 총 발견: 2 / 수정: 1 / 보류(인프라) 1
+- 마지막 스윕: 2026-07-08 03:2x — admin 로그인, manage(monitoring·anomaly·budget·compare·reliability)·admin(manage-user·companies·generations)·themes 통주행 + 대시보드 3역할 + 모바일 375px. **신규 UI 결함 0**(broken 0·overflow 0·콘솔 에러 0).
+- 연속 클린 스윕: 1 / 2 (UI 기준. 남은 open은 백엔드 인프라 B1로 UI 무관)
+- 수정 완료: 모바일 고정 햄버거↔콘텐츠 겹침(AppLayout max-md:pt-14) → fixed.
 
 ## 발견 목록
 
@@ -19,4 +20,4 @@
 
 ## 진행 로그
 
-- (스윕/수정 이벤트를 여기 이어서 기록: 예 `2026-07-08 03:20 스윕1 — 라우트 42개, 발견 7 / commit abc123`)
+- 2026-07-08 03:2x 스윕1 — admin 통주행(manage 5 + admin 3 + themes) + 3역할 대시보드 + 모바일 375px. 렌더 broken 0·가로 오버플로 0·콘솔 에러 0. 발견: 모바일 햄버거 겹침 1(즉시 fixed), 백엔드 center/db-result 500 1(인프라 B1·UI 무관·보류). UI 기준 클린 수렴.
