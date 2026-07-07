@@ -116,7 +116,11 @@ from domain.management.escalation import EscalationController, EscalationRun
 from domain.management.escalation_demo import DemoScenarioDetector
 from domain.management.execution.assistant_tools import execution_history
 from domain.management.execution.audit_log import AuditEvent
-from domain.management.execution.executor import DEFAULT_ALLOWED_MODES, Executor
+from domain.management.execution.executor import (
+    DEFAULT_ALLOWED_MODES,
+    Executor,
+    InMemoryIdempotencyStore,
+)
 from domain.management.execution.tier import (
     ESCALATE_THRESHOLD,
     WARN_THRESHOLD,
@@ -274,6 +278,35 @@ def _get_executor(writer=None) -> Executor:
             approvals=_APPROVAL_STORE,
         )
     return _executor
+
+
+_demo_executor_instance: Executor | None = None
+
+
+def _demo_executor() -> Executor:
+    """시연(org_demo 센티넬) 전용 executor — writer를 DRY_RUN으로 강제한다 (적대 리뷰 반영).
+
+    전역 _get_executor()는 use_mock=False + management_execution_mode=live면 실 write가 가능한
+    writer를 쓴다. 시연 제안은 실 계정에 대응하지 않으므로, use_mock/execution_mode와 무관하게
+    실 Meta write가 구조적으로 불가능하도록 여기서 DRY_RUN writer를 못박는다(주석 §834 강제).
+    멱등도 인메모리로 격리해 시연이 DB·네트워크를 건드리지 않게 한다.
+    """
+    global _demo_executor_instance  # noqa: PLW0603
+    if _demo_executor_instance is None:
+        from domain.management.adapters.meta.writer import MetaAdsWriter  # noqa: PLC0415
+
+        _demo_executor_instance = Executor(
+            MetaAdsWriter(settings, mode=ExecutionMode.DRY_RUN),
+            idempotency=InMemoryIdempotencyStore(),
+            audit=_AUDIT_LOG,
+            budget_for=_BUDGET.for_tenant,
+            state_version_provider=_state_version,
+            current_policy_version=APPROVAL_POLICY_VERSION,
+            # LIVE는 시연 경로에 불필요 — 승인이 MOCK로 고정되고 writer도 DRY_RUN이라 이중 봉인.
+            allowed_modes=DEFAULT_ALLOWED_MODES,
+            approvals=_APPROVAL_STORE,
+        )
+    return _demo_executor_instance
 
 
 @router.get("/run")
@@ -706,6 +739,7 @@ async def approve_proposal(
     """승인 플레인 — 인증·org 검증 후 approver_id 서버 주입·원장 기록."""
     org_id = await _require_org_id_write(user, db, action="approve")
     # 시연 센티넬(TENANT_ID)은 org 불일치 면제 — 데모 제안을 어떤 org도 승인 가능.
+    is_demo = body.proposal.tenant_id == TENANT_ID
     if body.proposal.tenant_id not in (str(org_id), TENANT_ID):
         raise HTTPException(403, "다른 조직의 제안을 승인할 수 없습니다.")
 
@@ -715,11 +749,14 @@ async def approve_proposal(
             "detail": "거절됨 — 무승인 액션은 어떤 경로로도 Writer에 도달 불가 (불변 규칙 #2)",
         }
 
+    # 시연 승인은 execution_mode를 MOCK로 고정 — 원장(게이트 #5 대조 대상)이 LIVE를 실을 수 없게
+    # 봉인한다. 실 제안만 settings 기반 실행 모드(live 포함)를 따른다 (적대 리뷰 반영).
+    execution_mode = ExecutionMode.MOCK if is_demo else _resolved_execution_mode()
     try:
         action = await issue_approval(
             body.proposal,
             str(user.id),
-            execution_mode=_resolved_execution_mode(),
+            execution_mode=execution_mode,
             store=_APPROVAL_STORE,
         )
     except ApprovalIssueError as exc:
@@ -839,12 +876,14 @@ async def execute(
             raise HTTPException(403, "다른 조직의 제안은 실행할 수 없습니다.")
         if body.approved_action.tenant_id != str(org_id):
             raise HTTPException(403, "다른 조직의 승인은 실행할 수 없습니다.")
-    # 시연·mock은 전역 DRY_RUN executor, 실 제안(live)은 로그인 org 연결 writer로 집행.
-    executor = (
-        _get_executor()
-        if is_demo or getattr(settings, "use_mock", True)
-        else _get_executor(await _require_writer(db, org_id))
-    )
+    # 시연은 전용 DRY_RUN executor(실 write 봉인), mock은 전역 DRY_RUN executor, 실 제안(live)은
+    # 로그인 org 연결 writer로 집행 — use_mock=False+live에서도 시연은 절대 실 write에 도달 못 한다.
+    if is_demo:
+        executor = _demo_executor()
+    elif getattr(settings, "use_mock", True):
+        executor = _get_executor()
+    else:
+        executor = _get_executor(await _require_writer(db, org_id))
     result = await executor.execute(body.approved_action, body.proposal)
     if body.proposal.action_type == "CREATE_CAMPAIGN":
         try:
