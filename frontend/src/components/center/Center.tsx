@@ -6,7 +6,7 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { useAuth } from '../AuthProvider';
 import { useProjects } from '../ProjectContext';
-import { api, getAdminOrgId } from '@/lib/api';
+import { api, getAdminOrgId, setAdminOrgId } from '@/lib/api';
 import CenterFilterBar, { type CenterSegment } from './CenterFilterBar';
 import AlarmCenter from './AlarmCenter';
 import ChatCenter from './ChatCenter';
@@ -15,6 +15,9 @@ type CenterTab = 'chat' | 'alarm';
 
 const LS_EXPANDED = 'center:expanded';
 const LS_TAB = 'center:tab';
+// ADMIN이 마지막 선택한 기업 — 전역 adminOrgId는 sessionStorage(보안: 탭 종료 시 소멸)라,
+// 센터 배지 복원용으로 별도 localStorage에 기억했다가 마운트 시 sessionStorage를 재확립한다.
+const LS_ORG = 'center:orgId';
 
 // 미읽음 배지 — 0이면 숨김, 9 초과는 9+.
 function Badge({ count }: { count: number }) {
@@ -57,13 +60,30 @@ export default function Center() {
     null,
   );
 
-  // 상태 복원 — 펼침 여부 + 마지막으로 연 센터(스펙 §3). ADMIN 선택 기업(X-Org-Id)도 복원.
+  // 상태 복원 — 펼침 여부 + 마지막으로 연 센터(스펙 §3).
   useEffect(() => {
     if (localStorage.getItem(LS_EXPANDED) === 'true') setExpanded(true);
     const t = localStorage.getItem(LS_TAB);
     if (t === 'chat' || t === 'alarm') setTab(t);
-    setOrgId(getAdminOrgId() ?? '');
   }, []);
+
+  // ADMIN 마지막 선택 기업 복원 — 세션(sessionStorage) 없으면 localStorage에서 되살려
+  // sessionStorage(X-Org-Id)를 재확립. 접힘 상태에서도 마운트 즉시 배지가 뜨게 한다.
+  useEffect(() => {
+    if (!isAdmin) return;
+    const saved = getAdminOrgId() || localStorage.getItem(LS_ORG) || '';
+    if (saved) {
+      setAdminOrgId(saved);
+      setOrgId(saved);
+    }
+  }, [isAdmin]);
+
+  // 기업 선택 변경 — 센터 상태 + localStorage 동기화(재접속 복원용).
+  const handleOrgId = (v: string) => {
+    setOrgId(v);
+    if (v) localStorage.setItem(LS_ORG, v);
+    else localStorage.removeItem(LS_ORG);
+  };
 
   const persistExpanded = (v: boolean) => {
     setExpanded(v);
@@ -164,7 +184,7 @@ export default function Center() {
           projects={projects}
           isAdmin={!!isAdmin}
           orgId={orgId}
-          onOrgId={setOrgId}
+          onOrgId={handleOrgId}
         />
         {isAdmin && !orgId ? (
           // ADMIN 기업 미선택 — 두 센터 disable + 안내(스펙 §7). 상단 기업 드롭다운으로 선택 유도.
