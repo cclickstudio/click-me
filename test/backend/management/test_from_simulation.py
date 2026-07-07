@@ -36,10 +36,10 @@ def test_resolve_sim_asset_key():
 def test_is_executable_verdict():
     # 게이트 정본화(2026-07-08): 클릭 의향률 ≥1%(포함) · 거부율 <20%(미만).
     f = management._is_executable_verdict
-    assert f(0.01, 0.0) is True   # 1% 정확히 — 통과(>=)
-    assert f(0.2, 0.1) is True    # 통과
+    assert f(0.01, 0.0) is True  # 1% 정확히 — 통과(>=)
+    assert f(0.2, 0.1) is True  # 통과
     assert f(0.0099, 0.1) is False  # 클릭 의향률 미달 — 거부
-    assert f(0.05, 0.2) is False   # 거부율 20% 정확히 — 실패(<)
+    assert f(0.05, 0.2) is False  # 거부율 20% 정확히 — 실패(<)
 
 
 class _Row:
