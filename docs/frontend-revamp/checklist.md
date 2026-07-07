@@ -89,13 +89,13 @@
 ## Phase 1 — 앱 셸 & 랜딩
 
 ### 1.1 셸
-- [ ] `framer-motion` 설치(`cd frontend && pnpm add framer-motion`).
-- [ ] `AppLayout` 토큰·프리미티브로 리스킨, 여백·정렬 정리.
-- [ ] `Sidebar` — 아이콘 일관성, active 인디케이터, hover, 접힘 애니메이션, 그룹 구분.
-- [ ] `ProjectPanel`/`CompanyPanel`/`AdminPanel` 토큰화·정돈.
-- [ ] 상단바/헤더(있다면) — 검색·알림·프로필·테마토글 정리.
-- [ ] 페이지 전환 트랜지션(framer-motion) 도입.
-- [ ] 스크롤바·포커스·hover 등 마이크로 인터랙션 통일.
+- [x] `framer-motion` 설치(`cd frontend && pnpm add framer-motion`). (이미 설치됨 ^12.42.2 확인.)
+- [x] `AppLayout` 토큰·프리미티브로 리스킨, 여백·정렬 정리. (하드코딩 hex→토큰, 햄버거 lucide Menu, 로딩/미로그인 스피너 primary.)
+- [x] `Sidebar` — 아이콘 일관성, active 인디케이터, hover, 접힘 애니메이션, 그룹 구분. (인라인 SVG 전부 lucide로 교체, active=bg-primary-subtle+text-primary+좌측 바(before:), hover=accent, 토큰화.)
+- [x] `ProjectPanel`/`CompanyPanel`/`AdminPanel` 토큰화·정돈. (codemod로 하드코딩 팔레트 211곳 치환, 상태점=semantic 토큰, 잔여 hex 0. 검색 input=bg-surface-2.)
+- [x] 상단바/헤더 — 이 앱은 상단바 없음(네비=좌측 사이드바, 우측=Center 채팅/알림). Center는 Phase 3.5에서 정돈. 해당 없음 처리.
+- [x] 페이지 전환 트랜지션(framer-motion) 도입. (AppLayout main children을 pathname-keyed motion.div로 페이드+8px 상승, preview 네비게이션 검증.)
+- [x] 스크롤바·포커스·hover 등 마이크로 인터랙션 통일. (globals.css 스크롤바·focus-visible·reduced-motion 이미 토큰 기반, transition-colors 통일 확인.)
 
 ### 1.2 랜딩 `/`
 - [ ] Apple식 다이나믹 진입: 히어로 스크롤 리빌·순차 페이드·패럴랙스.
@@ -268,3 +268,4 @@ git push origin --delete feat/front-fix
 - 2026-07-08 P0.4 ThemeProvider 확장+/themes 갤러리 완료 — data-theme localStorage 영속·에디터테마 다크강제, layout 인라인스크립트 FOUC 방지. 갤러리에서 14테마 스위처+프리미티브 실시간 반영 검증(콘솔 에러 0). ※ preview_screenshot은 이 환경에서 외부 폰트 CDN network-idle 대기로 타임아웃 → snapshot/inspect/eval로 검증 대체.
 - 2026-07-08 P0.5 공용 프리미티브 완료 — StatCard(델타색·스파크라인)·Section·EmptyState 신설, chart-theme 훅(테마색 Recharts), 타이포 유틸(.text-h1~caption). shadcn 20종 활용. Select은 파일명 충돌로 커스텀 유지.
 - 2026-07-08 P0.6 팔레트 갱신 완료 — 기본 `--point` 라이트 #8B5CF6 / 다크 #A78BFA로 갱신(globals.css :root·.dark), chart-theme fallback도 동기화. blue(기본) 테마는 point override 안 해 :root값 적용, mono/violet만 의도적 override 유지. preview eval 검증: light rgb(139,92,246)·dark rgb(167,139,250), 콘솔 에러 0.
+- 2026-07-08 P1.1 앱 셸 완료 — AppLayout·Sidebar·3패널(Project/Company/Admin) 전면 토큰화, 인라인 SVG→lucide, 사이드바 active 좌측 바 인디케이터, framer-motion 페이지 전환. **ADMIN 실제 Cognito 폼 로그인 end-to-end 검증**(/dashboard 진입, 실데이터 66시뮬·143생성 렌더, 라이트/다크 셸 확인, 콘솔 에러 0, 네비게이션 전환 동작). ⚠️ 로컬 인증 환경 셋업 필요 — context-notes '검증 환경' 참조.

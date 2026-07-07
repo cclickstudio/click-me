@@ -52,6 +52,18 @@ shadcn CSS 변수를 **RGB 채널 트리플릿**으로 정의(`--primary: 49 130
 - **기존 `--color-*`**(color-primary/bg/surface/text-*/border/hover)는 새 토큰 alias로 유지 — 신규 코드는 위 토큰 사용, 기존 참조는 안 깨짐.
 - ⚠️ **Windows 대소문자**: 파일명 `select.tsx`↔`Select.tsx` 충돌. 커스텀 `ui/Select.tsx` 유지, shadcn select 미설치.
 
+## 검증 환경 (로컬 로그인 — 중요, 재개 세션 필독)
+
+이 자동화 환경엔 `frontend/.env.local`이 없어 기본 **local 인증**으로 폴백되는데, 백엔드에 로컬 로그인 라우터가 없어(`/api/auth/login` 404, CLAUDE.md "로컬 JWT 미완") 폼 로그인이 안 된다. 실제 인증은 **AWS Cognito**다. 그래서 루프가 다음을 셋업했다(둘 다 **커밋 금지** — `.env.local`은 gitignore, 백엔드는 env 주입만).
+
+1. **프론트** — `frontend/.env.local` 생성(gitignore됨). 값: `NEXT_PUBLIC_AUTH_PROVIDER=cognito`, `NEXT_PUBLIC_COGNITO_REGION=us-west-2`, `NEXT_PUBLIC_COGNITO_USER_POOL_ID=us-west-2_iHteTHXO0`, `NEXT_PUBLIC_COGNITO_CLIENT_ID=75kk3fjlte1qk6ak1of1tb9m3e`, `NEXT_PUBLIC_API_URL=http://localhost:8000`. (CI ci-cd.yml의 공개 빌드 인자와 동일 — 비밀 아님.) 이미 있으면 재사용.
+2. **백엔드** — `.env` 파일은 **건드리지 말고**(local 모드·MANAGEMENT live 유지) 기동 시 env 주입으로만 cognito 전환:
+   `cd /c/doyeon/click-me/backend && AUTH_PROVIDER=cognito COGNITO_REGION=us-west-2 COGNITO_USER_POOL_ID=us-west-2_iHteTHXO0 COGNITO_APP_CLIENT_ID=75kk3fjlte1qk6ak1of1tb9m3e uv run uvicorn api.main:app --port 8000`
+   (백그라운드 기동. 포트 점유 시 PowerShell `Get-NetTCPConnection -LocalPort 8000`로 PID 찾아 Stop-Process.)
+3. 로그인은 `/sign-in` 폼(아이디 placeholder="아이디를 입력하세요", `input[type=password]`, `button[type=submit]`). Cognito SRP 인증이 브라우저에서 직접 돈다.
+
+**⚠️ 테스트 계정 DB 매핑 갭** — Cognito엔 admin/test/asdf 다 있으나, 백엔드가 보는 Neon DB엔 **`admin`만** User row가 있다(ACTIVE·ADMIN). `asdf`(USER)·`test`(COMPANY)는 DB에 없어(대신 `asdf1234` 등 다른 login_id 존재) Cognito username↔login_id 불일치로 me()가 401 "유저를 찾을 수 없습니다"가 난다. → **ADMIN(admin/admin1234)은 완전 검증 가능**. USER/COMPANY 역할 분기 화면 검증이 필요하면, 그 Cognito username과 일치하는 DB User row를 append(test-data.md 기록 후 종료 시 삭제)하거나, 렌더-only로 검증하고 갭을 qa-findings에 남긴다.
+
 ## 검증 방식
 
 화면 변경은 **`preview_*` 도구로 직접** 확인(수동 체크리스트 떠넘기기 금지). preview_start → 리로드 → console_logs/network로 에러 → snapshot으로 내용 → inspect(CSS)/click·fill(상호작용) → 스크린샷으로 증거. 문제(버그·콘솔에러·깨진링크) 발견 시 소스 고치고 재확인. 9시간 밤샘이니 **사소한 트러블도 그 자리에서 해결.**

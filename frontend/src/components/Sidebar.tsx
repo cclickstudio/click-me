@@ -1,33 +1,37 @@
 'use client';
 
+// 좌측 고정 사이드바 — 역할별 네비게이션·테마 토글·계정 카드. 토큰+lucide 기반 리스킨.
+
 import Link from 'next/link';
 import { useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
+import {
+  LayoutDashboard,
+  MessageSquare,
+  Users,
+  Sparkles,
+  BarChart3,
+  ChevronDown,
+  ShieldCheck,
+  History,
+  Building2,
+  UserCog,
+  Sun,
+  Moon,
+  LogOut,
+} from 'lucide-react';
 import { useTheme } from './ThemeProvider';
 import { useAuth } from './AuthProvider';
 import CreditBalance from './CreditBalance';
 
+const iconProps = { size: 18, strokeWidth: 1.8 } as const;
+
 const mainNav = [
-  {
-    label: '대시보드', href: '/dashboard',
-    icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7" /><rect x="14" y="3" width="7" height="7" /><rect x="14" y="14" width="7" height="7" /><rect x="3" y="14" width="7" height="7" /></svg>,
-  },
-  {
-    label: '채팅', href: '/chat',
-    icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" /></svg>,
-  },
-  {
-    label: '광고 시뮬레이션', href: '/simulation',
-    icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="9" cy="7" r="4" /><path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" /></svg>,
-  },
-  {
-    label: '광고 제너레이터', href: '/generator',
-    icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg>,
-  },
-  {
-    label: '광고 매니지먼트', href: '/manage',
-    icon: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10" /><line x1="12" y1="20" x2="12" y2="4" /><line x1="6" y1="20" x2="6" y2="14" /></svg>,
-  },
+  { label: '대시보드', href: '/dashboard', icon: <LayoutDashboard {...iconProps} /> },
+  { label: '채팅', href: '/chat', icon: <MessageSquare {...iconProps} /> },
+  { label: '광고 시뮬레이션', href: '/simulation', icon: <Users {...iconProps} /> },
+  { label: '광고 제너레이터', href: '/generator', icon: <Sparkles {...iconProps} /> },
+  { label: '광고 매니지먼트', href: '/manage', icon: <BarChart3 {...iconProps} /> },
 ];
 
 // 광고 매니지먼트 하위 메뉴 — 부모는 토글(자체 페이지 없음), 실제 화면은 여기로.
@@ -64,12 +68,8 @@ const companyHistoryChildren = [
   { label: '채팅 내역', href: '/company/chats' },
 ];
 
-const adminManageIcon = (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M9 12l2 2 4-4" /><rect x="2" y="7" width="20" height="14" rx="2" /><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2" /></svg>
-);
-const adminHistoryIcon = (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 8v4l3 3" /><circle cx="12" cy="12" r="9" /></svg>
-);
+const adminManageIcon = <ShieldCheck {...iconProps} />;
+const adminHistoryIcon = <History {...iconProps} />;
 
 // COMPANY는 채팅·시뮬레이션 실행·제너레이터 실행 메뉴 숨김
 const COMPANY_HIDDEN_NAV = ['/chat', '/simulation', '/generator'];
@@ -77,12 +77,13 @@ const COMPANY_HIDDEN_NAV = ['/chat', '/simulation', '/generator'];
 function NavItem({ href, label, icon, active }: { href: string; label: string; icon: React.ReactNode; active: boolean }) {
   return (
     <Link href={href}
-      className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${
-        active ? 'bg-[#EBF3FF] dark:bg-[#1E3A5F] text-[#3182F6]'
-               : 'text-[#4E5968] dark:text-[#9CA3AF] hover:bg-[#F2F4F6] dark:hover:bg-[#252D3D] hover:text-[#191F28] dark:hover:text-[#F2F4F6]'
+      className={`group relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
+        active
+          ? 'bg-primary-subtle text-primary before:absolute before:left-0 before:top-1/2 before:h-5 before:w-1 before:-translate-y-1/2 before:rounded-r-full before:bg-primary'
+          : 'text-ink-secondary hover:bg-accent hover:text-ink'
       }`}
     >
-      <span className={active ? 'text-[#3182F6]' : ''}>{icon}</span>
+      <span className={active ? 'text-primary' : 'text-ink-tertiary group-hover:text-ink-secondary transition-colors'}>{icon}</span>
       <span className="flex-1">{label}</span>
     </Link>
   );
@@ -91,19 +92,20 @@ function NavItem({ href, label, icon, active }: { href: string; label: string; i
 function SubNavItem({ href, label, active }: { href: string; label: string; active: boolean }) {
   return (
     <Link href={href}
-      className={`flex items-center gap-2.5 pl-11 pr-3 py-2 rounded-xl text-sm transition-colors ${
-        active ? 'bg-[#EBF3FF] dark:bg-[#1E3A5F] text-[#3182F6] font-medium'
-               : 'text-[#8B95A1] dark:text-[#9CA3AF] hover:bg-[#F2F4F6] dark:hover:bg-[#252D3D] hover:text-[#191F28] dark:hover:text-[#F2F4F6]'
+      className={`flex items-center gap-2.5 pl-11 pr-3 py-2 rounded-lg text-sm transition-colors ${
+        active
+          ? 'bg-primary-subtle text-primary font-medium'
+          : 'text-ink-tertiary hover:bg-accent hover:text-ink'
       }`}
     >
-      <span className="w-1.5 h-1.5 rounded-full bg-current opacity-60" />
+      <span className={`w-1.5 h-1.5 rounded-full transition-colors ${active ? 'bg-primary' : 'bg-current opacity-50'}`} />
       <span className="flex-1">{label}</span>
     </Link>
   );
 }
 
 function SectionLabel({ label }: { label: string }) {
-  return <p className="px-3 pt-3 pb-1 text-[10px] font-semibold text-[#B0B8C1] dark:text-[#4B5563] uppercase tracking-wider">{label}</p>;
+  return <p className="px-3 pt-4 pb-1 text-[10px] font-semibold text-ink-muted uppercase tracking-wider">{label}</p>;
 }
 
 // 하위 메뉴를 토글하는 아코디언 섹션(부모는 자체 페이지 없음) — 광고 매니지먼트와 동일 패턴.
@@ -127,20 +129,16 @@ function NavAccordion({
     <div>
       <button type="button" onClick={onToggle}
         aria-label={`${label} 하위 메뉴 토글`} aria-expanded={open}
-        className={`flex items-center w-full rounded-xl text-sm font-medium transition-colors ${
-          sectionActive ? 'text-[#3182F6]'
-                        : 'text-[#4E5968] dark:text-[#9CA3AF] hover:bg-[#F2F4F6] dark:hover:bg-[#252D3D] hover:text-[#191F28] dark:hover:text-[#F2F4F6]'
+        className={`group flex items-center w-full rounded-lg text-sm font-medium transition-colors ${
+          sectionActive ? 'text-primary' : 'text-ink-secondary hover:bg-accent hover:text-ink'
         }`}
       >
         <span className="flex items-center gap-3 flex-1 pl-3 py-2.5">
-          <span className={sectionActive ? 'text-[#3182F6]' : ''}>{icon}</span>
+          <span className={sectionActive ? 'text-primary' : 'text-ink-tertiary group-hover:text-ink-secondary transition-colors'}>{icon}</span>
           <span>{label}</span>
         </span>
-        <span className="px-3 py-2.5 text-[#8B95A1]">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-            className={`transition-transform ${open ? 'rotate-180' : ''}`}>
-            <polyline points="6 9 12 15 18 9" />
-          </svg>
+        <span className="px-3 py-2.5 text-ink-tertiary">
+          <ChevronDown size={14} strokeWidth={2} className={`transition-transform ${open ? 'rotate-180' : ''}`} />
         </span>
       </button>
       {open && (
@@ -181,13 +179,13 @@ export default function Sidebar({ mobileOpen = false }: { mobileOpen?: boolean }
 
   return (
     <aside
-      className={`fixed top-0 left-0 h-full w-56 bg-white dark:bg-[#1C2333] border-r border-[#E5E8EB] dark:border-[#2D3748] flex flex-col z-40 transition-transform duration-200 md:translate-x-0 ${
+      className={`fixed top-0 left-0 h-full w-56 bg-card border-r border-line flex flex-col z-40 transition-transform duration-200 md:translate-x-0 ${
         mobileOpen ? 'max-md:translate-x-0' : 'max-md:-translate-x-full'
       }`}
     >
       {/* 로고 */}
-      <div className="h-14 flex items-center px-5 border-b border-[#E5E8EB] dark:border-[#2D3748] shrink-0">
-        <Link href="/dashboard" className="text-[#3182F6] font-bold text-lg tracking-tight">ClickMe</Link>
+      <div className="h-14 flex items-center px-5 border-b border-line shrink-0">
+        <Link href="/dashboard" className="text-primary font-bold text-lg tracking-tight">ClickMe</Link>
       </div>
 
       {/* 네비게이션 */}
@@ -203,20 +201,16 @@ export default function Sidebar({ mobileOpen = false }: { mobileOpen?: boolean }
                 <div key="/manage">
                   <button type="button" onClick={() => setManageOpen((o) => !o)}
                     aria-label="광고 매니지먼트 하위 메뉴 토글" aria-expanded={manageOpen}
-                    className={`flex items-center w-full rounded-xl text-sm font-medium transition-colors ${
-                      sectionActive ? 'text-[#3182F6]'
-                                    : 'text-[#4E5968] dark:text-[#9CA3AF] hover:bg-[#F2F4F6] dark:hover:bg-[#252D3D] hover:text-[#191F28] dark:hover:text-[#F2F4F6]'
+                    className={`group flex items-center w-full rounded-lg text-sm font-medium transition-colors ${
+                      sectionActive ? 'text-primary' : 'text-ink-secondary hover:bg-accent hover:text-ink'
                     }`}
                   >
                     <span className="flex items-center gap-3 flex-1 pl-3 py-2.5">
-                      <span className={sectionActive ? 'text-[#3182F6]' : ''}>{item.icon}</span>
+                      <span className={sectionActive ? 'text-primary' : 'text-ink-tertiary group-hover:text-ink-secondary transition-colors'}>{item.icon}</span>
                       <span>{item.label}</span>
                     </span>
-                    <span className="px-3 py-2.5 text-[#8B95A1]">
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-                        className={`transition-transform ${manageOpen ? 'rotate-180' : ''}`}>
-                        <polyline points="6 9 12 15 18 9" />
-                      </svg>
+                    <span className="px-3 py-2.5 text-ink-tertiary">
+                      <ChevronDown size={14} strokeWidth={2} className={`transition-transform ${manageOpen ? 'rotate-180' : ''}`} />
                     </span>
                   </button>
                   {manageOpen && (
@@ -283,20 +277,20 @@ export default function Sidebar({ mobileOpen = false }: { mobileOpen?: boolean }
               href="/my-org"
               label="내 조직"
               active={pathname === '/my-org'}
-              icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M3 21h18" /><path d="M5 21V7l8-4v18" /><path d="M19 21V11l-6-4" /><path d="M9 9v.01M9 12v.01M9 15v.01M9 18v.01" /></svg>}
+              icon={<Building2 {...iconProps} />}
             />
             <NavItem
               href="/profile"
               label="내 정보 관리"
               active={pathname === '/profile'}
-              icon={<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" /><circle cx="12" cy="7" r="4" /></svg>}
+              icon={<UserCog {...iconProps} />}
             />
           </>
         )}
       </nav>
 
       {/* 하단 */}
-      <div className="px-4 py-4 border-t border-[#E5E8EB] dark:border-[#2D3748] shrink-0 space-y-1">
+      <div className="px-4 py-4 border-t border-line shrink-0 space-y-1">
         {/* ClickMe 크레딧 잔액 — 광고 집행 한도. 충전(/payment)로 이동. */}
         {user && (
           <div className="mb-2">
@@ -304,35 +298,30 @@ export default function Sidebar({ mobileOpen = false }: { mobileOpen?: boolean }
           </div>
         )}
         {user ? (
-          <div className="px-3 py-2.5 rounded-xl bg-[#F9FAFB] dark:bg-[#252D3D] mb-1">
-            <p className="text-xs font-semibold text-[#191F28] dark:text-[#F2F4F6] truncate">{user.name}</p>
-            <p className="text-[10px] text-[#8B95A1] dark:text-[#6B7280] truncate">{user.login_id}</p>
-            <span className="inline-block mt-1 text-[9px] font-medium px-1.5 py-0.5 rounded bg-[#EBF3FF] dark:bg-[#1E3A5F] text-[#3182F6]">
+          <div className="px-3 py-2.5 rounded-lg bg-surface-1 mb-1">
+            <p className="text-xs font-semibold text-ink truncate">{user.name}</p>
+            <p className="text-[10px] text-ink-tertiary truncate">{user.login_id}</p>
+            <span className="inline-block mt-1 text-[9px] font-medium px-1.5 py-0.5 rounded bg-primary-subtle text-primary">
               {user.role}
             </span>
           </div>
         ) : (
           <Link href="/sign-in"
-            className="flex items-center gap-2 px-3 py-2.5 w-full rounded-xl text-sm font-medium text-[#3182F6] hover:bg-[#EBF3FF] dark:hover:bg-[#1E3A5F] transition-colors">
+            className="flex items-center gap-2 px-3 py-2.5 w-full rounded-lg text-sm font-medium text-primary hover:bg-primary-subtle transition-colors">
             로그인
           </Link>
         )}
 
         <button onClick={toggle}
-          className="flex items-center gap-3 px-3 py-2.5 w-full rounded-xl text-sm font-medium text-[#4E5968] dark:text-[#9CA3AF] hover:bg-[#F2F4F6] dark:hover:bg-[#252D3D] transition-colors">
-          {theme === 'dark'
-            ? <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5" /><line x1="12" y1="1" x2="12" y2="3" /><line x1="12" y1="21" x2="12" y2="23" /><line x1="4.22" y1="4.22" x2="5.64" y2="5.64" /><line x1="18.36" y1="18.36" x2="19.78" y2="19.78" /><line x1="1" y1="12" x2="3" y2="12" /><line x1="21" y1="12" x2="23" y2="12" /><line x1="4.22" y1="19.78" x2="5.64" y2="18.36" /><line x1="18.36" y1="5.64" x2="19.78" y2="4.22" /></svg>
-            : <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" /></svg>
-          }
+          className="flex items-center gap-3 px-3 py-2.5 w-full rounded-lg text-sm font-medium text-ink-secondary hover:bg-accent hover:text-ink transition-colors">
+          {theme === 'dark' ? <Sun size={16} strokeWidth={2} /> : <Moon size={16} strokeWidth={2} />}
           {theme === 'dark' ? '라이트 모드' : '다크 모드'}
         </button>
 
         {user && (
           <button onClick={handleLogout}
-            className="flex items-center gap-3 px-3 py-2.5 w-full rounded-xl text-sm font-medium text-[#8B95A1] dark:text-[#6B7280] hover:bg-[#F2F4F6] dark:hover:bg-[#252D3D] hover:text-red-400 transition-colors">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" />
-            </svg>
+            className="flex items-center gap-3 px-3 py-2.5 w-full rounded-lg text-sm font-medium text-ink-tertiary hover:bg-danger-subtle hover:text-danger transition-colors">
+            <LogOut size={16} strokeWidth={2} />
             로그아웃
           </button>
         )}
