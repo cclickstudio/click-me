@@ -1,4 +1,5 @@
 @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css');
+@import './themes.css';
 
 @tailwind base;
 @tailwind components;
@@ -194,6 +195,25 @@
   --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.3), 0 1px 3px 0 rgb(0 0 0 / 0.4);
   --shadow-md: 0 2px 4px -1px rgb(0 0 0 / 0.4), 0 4px 12px -2px rgb(0 0 0 / 0.5);
   --shadow-lg: 0 8px 16px -4px rgb(0 0 0 / 0.5), 0 16px 32px -8px rgb(0 0 0 / 0.6);
+}
+
+/* 타이포그래피 스케일 유틸 (제목~캡션 통일) */
+@layer components {
+  .text-h1 {
+    @apply text-3xl font-bold tracking-tight text-ink sm:text-4xl;
+  }
+  .text-h2 {
+    @apply text-2xl font-bold tracking-tight text-ink;
+  }
+  .text-h3 {
+    @apply text-lg font-semibold tracking-tight text-ink;
+  }
+  .text-body {
+    @apply text-sm text-ink-secondary;
+  }
+  .text-caption {
+    @apply text-xs text-ink-tertiary;
+  }
 }
 
 * {

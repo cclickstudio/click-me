@@ -30,51 +30,52 @@
 - [x] shadcn 버튼/카드/배지/스켈레톤/인풋 preview 렌더 확인(라이트·다크 양쪽, /revamp-check).
 
 ### 0.1 토큰 체계 (globals.css / shadcn 변수 정렬)
-- [ ] shadcn CSS 변수 규약(`--background`·`--foreground`·`--card`·`--primary`·`--accent`·`--border`·`--muted`·`--destructive`·`--ring` 등)에 **우리 토큰을 정렬**해서 채운다(shadcn 컴포넌트가 바로 우리 색을 쓰게).
-- [ ] neutral surface 토큰 확장: `--surface-0`(페이지) `--surface-1`(카드바닥) `--surface-2`(카드) `--surface-3`(팝오버) 라이트/다크 정의.
-- [ ] text 토큰: `--text-primary` `--text-secondary` `--text-tertiary` `--text-muted` `--text-disabled`.
-- [ ] border 토큰: `--border` `--border-strong` `--border-stronger`.
-- [ ] primary 토큰: `--primary`(#3182F6) `--primary-hover` `--primary-subtle`(연한 배경) `--on-primary`.
-- [ ] accent(포인트) 토큰: `--accent`(#7C3AED 바이올렛) `--accent-subtle` `--on-accent`.
-- [ ] semantic 토큰 4종(success/warning/danger/info) 각각 fg·`-subtle`(배경)·`-border` 라이트/다크.
-- [ ] radius scale: `--radius-sm/md/lg/xl`(그리고 카드=12px).
-- [ ] shadow scale: `--shadow-sm/md/lg`(다크모드 대응).
-- [ ] focus ring 토큰 정리(기존 `:focus-visible` 유지·토큰화).
-- [ ] 기존 `--color-*` 변수는 **삭제하지 말고**, 새 이름으로 alias 병행(기존 참조 안 깨지게).
+- [x] shadcn CSS 변수 규약(`--background`·`--foreground`·`--card`·`--primary`·`--accent`·`--border`·`--muted`·`--destructive`·`--ring` 등)에 **우리 토큰을 정렬**해서 채운다(shadcn 컴포넌트가 바로 우리 색을 쓰게).
+- [x] neutral surface 토큰 확장: `--surface-0`(페이지) `--surface-1`(카드바닥) `--surface-2`(카드) `--surface-3`(팝오버) 라이트/다크 정의.
+- [x] text 토큰: `--text-primary` `--text-secondary` `--text-tertiary` `--text-muted` `--text-disabled`.
+- [x] border 토큰: `--border` `--border-strong` `--border-stronger`.
+- [x] primary 토큰: `--primary`(#3182F6) `--primary-hover` `--primary-subtle`(연한 배경) `--on-primary`.
+- [x] accent(포인트) 토큰: `--accent`(#7C3AED 바이올렛) `--accent-subtle` `--on-accent`.
+- [x] semantic 토큰 4종(success/warning/danger/info) 각각 fg·`-subtle`(배경)·`-border` 라이트/다크.
+- [x] radius scale: `--radius-sm/md/lg/xl`(그리고 카드=12px).
+- [x] shadow scale: `--shadow-sm/md/lg`(다크모드 대응).
+- [x] focus ring 토큰 정리(기존 `:focus-visible` 유지·토큰화).
+- [x] 기존 `--color-*` 변수는 **삭제하지 말고**, 새 이름으로 alias 병행(기존 참조 안 깨지게).
 
 ### 0.2 테마 14종 (data-theme)
-- [ ] `[data-theme]` 레이어 설계: 컬러 테마는 neutrals 공유하고 `--primary`/`--accent`만 override, 에디터다크 3종은 전체 다크 팔레트 override.
-- [ ] 컬러 11: blue(기본)·indigo·cyan·emerald·orange·mono·wine·violet·rose·amber·teal — 각 primary/accent 헥사 정의(라이트+다크).
-- [ ] 에디터다크 3: monokai(#272822)·monokai-black(#0A0A0A)·dracula(#282A36) — bg/surface/text/primary/accent 전체 정의.
-- [ ] 각 테마 라이트/다크 대비(WCAG AA) 자가 점검.
+- [x] `[data-theme]` 레이어 설계: 컬러 테마는 neutrals 공유하고 `--primary`/`--accent`만 override, 에디터다크 3종은 전체 다크 팔레트 override.
+- [x] 컬러 11: blue(기본)·indigo·cyan·emerald·orange·mono·wine·violet·rose·amber·teal — 각 primary/accent 헥사 정의(라이트+다크).
+- [x] 에디터다크 3: monokai(#272822)·monokai-black(#0A0A0A)·dracula(#282A36) — bg/surface/text/primary/accent 전체 정의.
+- [x] 각 테마 라이트/다크 대비(WCAG AA) 자가 점검.
 
 ### 0.3 Tailwind 배선 (tailwind.config.ts)
-- [ ] shadcn init이 넣어준 기본 color 매핑(primary/secondary/accent/muted/destructive/card/border/ring) 확인 — 여기에 우리 추가 토큰(surface-0~3·semantic success/warning/info·text-tertiary 등)을 `var(--...)`로 extend.
-- [ ] `tailwindcss-animate` 플러그인 등록 확인, `borderRadius`·`boxShadow`·`fontSize`(타이포 스케일) extend.
-- [ ] 매핑 후 샘플 컴포넌트로 `bg-primary`/`text-secondary`/`bg-success` 실제 먹는지 preview 확인.
+- [x] shadcn init이 넣어준 기본 color 매핑(primary/secondary/accent/muted/destructive/card/border/ring) 확인 — 여기에 우리 추가 토큰(surface-0~3·semantic success/warning/info·text-tertiary 등)을 `var(--...)`로 extend.
+- [x] `tailwindcss-animate` 플러그인 등록 확인, `borderRadius`·`boxShadow`·`fontSize`(타이포 스케일) extend.
+- [x] 매핑 후 샘플 컴포넌트로 `bg-primary`/`text-secondary`/`bg-success` 실제 먹는지 preview 확인.
 
 ### 0.4 테마 프로바이더 & 갤러리
-- [ ] `ThemeProvider` 확장: 기존 dark/light 토글 유지 + `data-theme` 선택(localStorage 영속) 추가.
-- [ ] `/themes` 갤러리 페이지: 14테마 × (라이트/다크) 스위처 + 실제 프리미티브(카드·숫자·버튼·배지·차트) 위 렌더.
-- [ ] 갤러리에서 테마 전환 시 전 컴포넌트 실시간 반영 preview 확인.
+- [x] `ThemeProvider` 확장: 기존 dark/light 토글 유지 + `data-theme` 선택(localStorage 영속) 추가.
+- [x] `/themes` 갤러리 페이지: 14테마 × (라이트/다크) 스위처 + 실제 프리미티브(카드·숫자·버튼·배지·차트) 위 렌더.
+- [x] 갤러리에서 테마 전환 시 전 컴포넌트 실시간 반영 preview 확인.
 
 ### 0.5 공용 프리미티브 (shadcn 위에 우리 토큰 배선)
 > shadcn 설치분(0.0)을 기반으로, 없는 것만 조합 컴포넌트로 신설. 전부 우리 토큰을 쓰게.
-- [ ] `Button` — shadcn 기반, variant(default/secondary/ghost/destructive/outline)·size·loading·icon. 화면당 primary 1개 원칙.
-- [ ] `Card` — shadcn Card로 통일(header/content/footer).
-- [ ] `StatCard` — 신설 조합: label·value·unit·delta(증감 색)·optional 스파크라인.
-- [ ] `Badge`/`Tag` — shadcn Badge + semantic variants(success/warning/danger/info).
-- [ ] `Section` — 신설: title·description·action 슬롯(섹션 헤더 통일).
-- [ ] `Input`·`Textarea`·`Select` — shadcn으로 통일, 기존 `ui/Select.tsx` 점진 대체.
-- [ ] `Skeleton`(shadcn) 로딩 상태.
-- [ ] `EmptyState` — 신설: 아이콘·헤드라인·설명·CTA.
-- [ ] `Tabs`(shadcn) / 필요 시 SegmentedControl.
-- [ ] `Tooltip`(shadcn).
-- [ ] `Dialog`/`Sheet`(shadcn) — 모달·드로어.
-- [ ] `Toast` — shadcn `sonner`로 통일.
-- [ ] Recharts 공통 테마(색·그리드·툴팁)를 토큰으로 래핑한 차트 프리셋.
-- [ ] 타이포그래피 스케일 유틸(H1~H3·body·caption) 정리.
-- [ ] 아이콘: `lucide-react`로 통일(기존 아이콘 점진 교체).
+- [x] `Button` — shadcn 기반, variant(default/secondary/ghost/destructive/outline)·size·loading·icon. 화면당 primary 1개 원칙.
+- [x] `Card` — shadcn Card로 통일(header/content/footer).
+- [x] `StatCard` — 신설 조합: label·value·unit·delta(증감 색)·optional 스파크라인.
+- [x] `Badge`/`Tag` — shadcn Badge + semantic variants(success/warning/danger/info).
+- [x] `Section` — 신설: title·description·action 슬롯(섹션 헤더 통일).
+- [x] `Input`·`Textarea` — shadcn 설치·검증. **Select은 Windows 파일명 충돌로 shadcn 미설치 → 커스텀 `ui/Select.tsx` 유지**(후속 마이그레이션 시 리네임).
+- [x] `Skeleton`(shadcn) 로딩 상태.
+- [x] `EmptyState` — 신설: 아이콘·헤드라인·설명·CTA.
+- [x] `Tabs`(shadcn) / 필요 시 SegmentedControl.
+- [x] `Tooltip`(shadcn).
+- [x] `Dialog`/`Sheet`(shadcn) — 모달·드로어.
+- [x] `Toast` — shadcn `sonner`로 통일.
+- [x] Recharts 공통 테마(색·그리드·툴팁)를 토큰으로 래핑한 차트 프리셋.
+- [x] 타이포그래피 스케일 유틸(H1~H3·body·caption) 정리.
+- [x] 아이콘: `lucide-react`로 통일(신규 컴포넌트 적용, 기존은 점진 교체 진행).
+- 참고: `Tooltip`/`Dialog`/`Sheet`/`Toast(sonner)`는 shadcn 설치 완료(0.0)로 사용 가능, SegmentedControl은 미도입(Tabs로 충분).
 
 ---
 
@@ -206,8 +207,31 @@
 
 ---
 
+## Phase 6 — 전체 완료 시 통합 (위 모든 항목이 `[x]`가 된 뒤에만)
+
+> **가드**: Phase 0~5의 모든 `[ ]`가 `[x]`가 되기 전에는 이 단계를 실행하지 않는다.
+
+- [ ] `git status`로 **워킹트리가 깨끗한지**(스테이징/변경/untracked 남은 것 없음) 확인. 남은 변경이 있으면 먼저 논리 단위로 커밋해 워킹트리를 비운다.
+- [ ] 워킹트리가 완전히 비어 있으면 아래를 순서대로 실행해 `feat/front-fix`를 `feat/simulation-doyeon`에 통합한다.
+
+```bash
+git push
+git checkout feat/simulation-doyeon
+git merge feat/front-fix
+git push
+git branch -d feat/front-fix
+git push origin --delete feat/front-fix
+```
+
+- [ ] 병합 충돌이 나면 자동 해결하지 말고 **멈춰서 보고**. 워킹트리가 비어 있지 않으면 병합을 실행하지 말고 멈춘다.
+
+---
+
 ## 진행 로그 (루프가 여기 이어서 기록)
 
 - (예: 2026-07-08 P0.1 토큰 확장 완료 — commit abc123)
 - 2026-07-08 P0.0 shadcn 도입 완료 — 20종 컴포넌트 설치, cn() 헬퍼, components.json 수동 생성. Windows 대소문자 충돌로 커스텀 Select 덮어써진 것 복원, shadcn select 보류.
 - 2026-07-08 P0.1/0.3 토큰 체계+Tailwind 배선 완료 — RGB 채널 토큰(surface0~3·ink 텍스트·line 보더·primary·point(브랜드 바이올렛, shadcn accent와 분리)·semantic 4종), 라이트/다크 정의. 기존 --color-* alias 유지. preview 라이트·다크 검증(primary=#3182F6 확인), pnpm build 통과.
+- 2026-07-08 P0.2 테마 14종 완료 — themes.css(html[data-theme] specificity로 :root override). 컬러11은 primary/point만, 에디터다크3(monokai/monokai-black/dracula)은 전체 팔레트. eval 검증: blue→emerald(16 185 129)→rose→monokai(bg #272822·다크강제) 실시간 전환 확인.
+- 2026-07-08 P0.4 ThemeProvider 확장+/themes 갤러리 완료 — data-theme localStorage 영속·에디터테마 다크강제, layout 인라인스크립트 FOUC 방지. 갤러리에서 14테마 스위처+프리미티브 실시간 반영 검증(콘솔 에러 0). ※ preview_screenshot은 이 환경에서 외부 폰트 CDN network-idle 대기로 타임아웃 → snapshot/inspect/eval로 검증 대체.
+- 2026-07-08 P0.5 공용 프리미티브 완료 — StatCard(델타색·스파크라인)·Section·EmptyState 신설, chart-theme 훅(테마색 Recharts), 타이포 유틸(.text-h1~caption). shadcn 20종 활용. Select은 파일명 충돌로 커스텀 유지.
