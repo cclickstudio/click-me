@@ -360,6 +360,19 @@ async def stream_simulation(run_id: str) -> StreamingResponse:
     )
 
 
+@router.get("/{run_id}/status")
+async def get_simulation_status(run_id: str) -> dict:
+    """진행 상태(RUNNING/COMPLETED/FAILED) — 다른 탭 이동 후 복귀·새로고침 시 SSE 재구독용.
+
+    실행 자체는 asyncio.create_task라 이 라우트·SSE 연결과 무관하게 계속 돈다.
+    run_id를 모르면(서버 재시작·완료 소실) 404 — 프론트는 복원 포기하고 폼으로 되돌린다.
+    """
+    status = _service.get_run_status(run_id)
+    if status is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    return status
+
+
 @router.get("/{run_id}/result")
 async def get_simulation_result(run_id: str) -> dict:
     """완료된 실행 결과(반응·루브릭·집계). 미완료/없음이면 404.

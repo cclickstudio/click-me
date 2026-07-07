@@ -87,7 +87,7 @@ def _generation_lines(age: int, ad: AdInterpretation) -> str:
 
     말투·형성기 문맥은 전 페르소나에 유익하므로 항상 출력. '내 세대 vs 젊은 세대 친숙도/낯섦'
     프레임만 _has_age_or_brand_cue(ad) 일 때 주입 — 다양성은 데이터(나이)에서, 과증폭은 게이팅으로.
-    (PERSONA_COHORT_KNOWLEDGE_STRATEGY Tier 1)
+    (docs/simulation/Persona/페르소나 세대 지식 전략.md Tier 1)
     """
     birth_year = datetime.now().year - int(age)
     form_start, form_end = birth_year + 15, birth_year + 25
@@ -113,7 +113,7 @@ def _brand_era_lines(ad: AdInterpretation) -> str:
 
     전원 동일한 '사실'(전성기·세대 친숙도)만 주입 — 친숙/낯섦 판단은 페르소나 나이(형성기)가 한다.
     식별 실패(identified=false)·필드 없으면 빈 문자열 → 기존 동작 그대로.
-    (PERSONA_COHORT_KNOWLEDGE_STRATEGY Tier 2)
+    (docs/simulation/Persona/페르소나 세대 지식 전략.md Tier 2)
     """
     be = ad.structured_analysis.get("brand_era") if ad.structured_analysis else None
     if not isinstance(be, dict) or not be.get("identified"):
