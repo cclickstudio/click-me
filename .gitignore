@@ -102,9 +102,6 @@ fonts/
 
 .understand-anything
 
-# 신뢰도 리포트 페이지 — 개인 작업분, 브랜치에 안 올림
-/frontend/src/app/(app)/manage/reliability/
-
-# 신뢰도 평가 산출물(골든셋·측정 결과) — 로컬에만 둠
-/backend/domain/management/evals/golden/
-/backend/domain/management/evals/_hallucination_results.jsonl
+# 신뢰도 평가 생성 산출물(측정 결과 jsonl) — 로컬 전용. 소스·골든셋·리포트 프론트는 브랜치에 추적.
+/backend/domain/management/evals/_*.jsonl
+/backend/domain/management/evals/golden/_*.jsonl
