@@ -112,23 +112,25 @@
 > 원칙: 5초 규칙 · 숫자보다 변화(델타) · "지금 할 일" 우선 · 멘탈모델 그룹 · 점진적 공개 · 허영지표 컷 · 역할별 분기 · 활동 피드.
 
 ### 2.1 USER 대시보드 `/dashboard`
-- [ ] 상단: 인사 + 기간 + primary CTA(새 시뮬레이션).
-- [ ] 핵심 KPI 스트립(진행중 캠페인·이번주 시뮬·평균 클릭의향률·승인대기) + 델타.
-- [ ] "지금 주목할 것": 이상 감지·리밸런스 제안·승인 대기 alert 카드(semantic).
-- [ ] 최근 시뮬레이션 요약(클릭의향률 미니바 + 신뢰구간) → 클릭 시 상세.
-- [ ] **최근 생성(제너레이터) 사용 내역** 리스트(시안·기대성과·상태) → 클릭 시 상세.
-- [ ] **남은 공유 크레딧(읽기 전용)** 표시 — 조직 풀 잔액. 충전 버튼 없음(충전은 COMPANY).
-- [ ] 주간 지표 추이 차트(Recharts).
-- [ ] 최근 활동 피드(시뮬/생성/캠페인).
-- [ ] 로딩(Skeleton)·빈 상태(EmptyState)·에러 상태.
-- [ ] 데이터 소스 배선: 기존 API 우선, 없으면 신규 엔드포인트 추가 후 `added-apis.md` 기록.
+- [x] 상단: 인사 + 기간 + primary CTA(새 시뮬레이션). (역할별 인사+서브텍스트+CTA. 기간 셀렉터는 미도입 — 데이터가 주간추이/누적이라 불필요, 추후 필요 시 추가.)
+- [x] 핵심 KPI 스트립(이번주 시뮬·이번주 생성·평균 클릭의향률·평균 구매의향) + 델타. (StatCard, summary 엔드포인트 델타. "진행중 캠페인/승인대기"는 management 데이터라 3.3 연동.)
+- [ ] "지금 주목할 것": 이상 감지·리밸런스 제안·승인 대기 alert 카드(semantic). → **Phase 3.3(management)으로 이월** — 이상감지/승인 데이터가 management 도메인. 대시보드에 카드 슬롯만 준비, 3.3에서 실데이터 배선.
+- [x] 최근 시뮬레이션 요약 → 클릭 시 상세. (테이블, row 클릭 → /simulation/[id].)
+- [x] **최근 생성(제너레이터) 사용 내역** 리스트 → 클릭 시 상세. (ModeBadge·상태배지, row 클릭 → /generations/[id].)
+- [x] **남은 공유 크레딧(읽기 전용)** 표시 — 충전 버튼 없음. (USER 읽기전용 카드+안내, 사이드바 CreditBalance도 USER 충전 숨김. 실검증: asdf 로그인 충전 버튼 0개.)
+- [x] 주간 지표 추이 차트(Recharts). (8주 시뮬/생성 BarChart, chart-theme 토큰.)
+- [x] 최근 활동 피드(시뮬/생성). (recent 병합 시간순, 타입 아이콘.)
+- [x] 로딩(Skeleton)·빈 상태(EmptyState)·에러 상태. (Skeleton KPI/차트, EmptyState 데이터 0, fetch 실패 graceful.)
+- [x] 데이터 소스 배선: 기존 API 우선, 없으면 신규 엔드포인트 추가 후 `added-apis.md` 기록. (summary 신규 추가·기록, 나머지 기존 재사용.)
+- 검증: asdf(USER) 실 Cognito 로그인 → 팀 스코프 KPI(클릭률 16.1%)·읽기전용 크레딧·차트·활동 렌더 스크린샷.
 
 ### 2.2 COMPANY 대시보드
-- [ ] 팀·프로젝트·직원 관점 요약 KPI + 활동.
-- [ ] 시뮬레이션·생성·매니지먼트 **3기능 요약을 한 화면**에(매니지먼트만 아님).
-- [ ] **최근 시뮬레이션 내역·최근 생성 내역** 리스트(기능별 최근 N건, 클릭 시 상세).
-- [ ] **크레딧 요약 패널**(보유·이번 달 사용 게이지·오늘 소진·충전 진입) — COMPANY 대시보드 상단. 상세는 3.7 `/company/credits`.
-- [ ] 로딩/빈/에러 상태.
+- [x] 팀·프로젝트·직원 관점 요약 KPI + 활동. (org 스코프 KPI+델타+활동피드, CompanyPanel 팀 트리.)
+- [x] 시뮬레이션·생성·매니지먼트 **3기능 요약을 한 화면**에. (3기능 요약 카드 유지.)
+- [x] **최근 시뮬레이션 내역·최근 생성 내역** 리스트. (2열 테이블, 클릭 시 상세.)
+- [x] **크레딧 요약 패널**(보유·충전 진입). (COMPANY 크레딧 카드+충전 버튼. 사용 게이지/오늘 소진은 미터링(발표 후 범위밖) 확보 후 3.7에서 확장.)
+- [x] 로딩/빈/에러 상태. (2.1과 동일 프리미티브.)
+- 검증: test(COMPANY) 실 Cognito 로그인 → org 스코프 KPI(클릭률 7.0%, 글로벌 7.4%와 달라 스코프 확인)·크레딧 충전 카드 렌더 스크린샷.
 
 ### 2.3 ADMIN 대시보드 `/admin/dashboard`
 - [ ] 시스템·조직·사용 지표 요약, 최근 채팅/생성 로그 요약.
@@ -268,5 +270,6 @@ git push origin --delete feat/front-fix
 - 2026-07-08 P0.4 ThemeProvider 확장+/themes 갤러리 완료 — data-theme localStorage 영속·에디터테마 다크강제, layout 인라인스크립트 FOUC 방지. 갤러리에서 14테마 스위처+프리미티브 실시간 반영 검증(콘솔 에러 0). ※ preview_screenshot은 이 환경에서 외부 폰트 CDN network-idle 대기로 타임아웃 → snapshot/inspect/eval로 검증 대체.
 - 2026-07-08 P0.5 공용 프리미티브 완료 — StatCard(델타색·스파크라인)·Section·EmptyState 신설, chart-theme 훅(테마색 Recharts), 타이포 유틸(.text-h1~caption). shadcn 20종 활용. Select은 파일명 충돌로 커스텀 유지.
 - 2026-07-08 P0.6 팔레트 갱신 완료 — 기본 `--point` 라이트 #8B5CF6 / 다크 #A78BFA로 갱신(globals.css :root·.dark), chart-theme fallback도 동기화. blue(기본) 테마는 point override 안 해 :root값 적용, mono/violet만 의도적 override 유지. preview eval 검증: light rgb(139,92,246)·dark rgb(167,139,250), 콘솔 에러 0.
+- 2026-07-08 P2.1/2.2 USER·COMPANY 대시보드 완료 — 역할별 인사·CTA, StatCard KPI 델타(summary 신규 엔드포인트), Recharts 8주 주간추이, 활동피드(recent 병합), 역할별 크레딧(USER 읽기전용/COMPANY 충전/ADMIN 미표시), 3기능·최근내역·CLIO 토큰화, Skeleton/EmptyState. **3역할 모두 실 Cognito 폼 로그인 검증**(admin 글로벌 7.4%·company org 7.0%·user 팀 16.1% 스코프 차이로 role 스코프 실동작 확인). CreditBalance 역할 인지형 전환. DB에 test/asdf 유저 append(test-data.md). "지금 주목할 것" 알림은 3.3 이월.
 - 2026-07-08 P1.2 랜딩 완료 — page.tsx 전면 재설계(framer-motion 히어로 순차 페이드+스크롤 리빌+배경 blob 패럴랙스), lucide 아이콘, 사실기반 소셜프루프(81만/5요인/분포·CI), 토큰화·반응형(sm:). 라이트/다크 스크린샷 증거, 콘솔 에러 0. layout.tsx에 data-scroll-behavior="smooth" 추가(Next 경고 해소).
 - 2026-07-08 P1.1 앱 셸 완료 — AppLayout·Sidebar·3패널(Project/Company/Admin) 전면 토큰화, 인라인 SVG→lucide, 사이드바 active 좌측 바 인디케이터, framer-motion 페이지 전환. **ADMIN 실제 Cognito 폼 로그인 end-to-end 검증**(/dashboard 진입, 실데이터 66시뮬·143생성 렌더, 라이트/다크 셸 확인, 콘솔 에러 0, 네비게이션 전환 동작). ⚠️ 로컬 인증 환경 셋업 필요 — context-notes '검증 환경' 참조.
