@@ -146,6 +146,7 @@ async def main() -> None:
         budget_for=budgets.for_tenant,
         state_version_provider=state_provider,
         current_policy_version="approval-policy-v1",
+        approvals=None,  # 데모 CLI — 원장 게이트 의도적 생략(라우터 미경유·실지출 없음)
     )
     repo = InMemoryProposalRepository()
     repo.save(proposal)

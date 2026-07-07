@@ -245,4 +245,5 @@ def build_executor(settings, *, budget=None, audit=None):
         current_policy_version=APPROVAL_POLICY_VERSION,
         allowed_modes=allowed,
         history_recorder=build_history_recorder(),  # 실행 확정 → 롱텀 메모리 기록
+        approvals=build_approval_store(settings),
     )

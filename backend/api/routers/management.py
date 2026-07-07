@@ -62,7 +62,8 @@ from domain.management.agents.outcome import OutcomeKind
 from domain.management.agents.regeneration import RemediationContext
 from domain.management.agents.regeneration_tools import build_regeneration_agent
 from domain.management.approval import (
-    approve,
+    ApprovalIssueError,
+    issue_approval,
     judge_tier,
     relabel_if_mismatch,
     requires_human,
@@ -123,6 +124,7 @@ from domain.management.execution.tier import (
 from domain.management.naming import suggest_campaign_names
 from domain.management.target_check import is_target_missed
 from domain.management.wiring import (
+    build_approval_store,
     build_audit_sink,
     build_escalation_store,
     build_generator_client,
@@ -175,6 +177,7 @@ _DEMO_FAULTS = {"bid_loss", "review_rejected", "none"}
 _AUDIT_LOG = build_audit_sink(settings)
 _BUDGET = TenantBudgetRegistry(default_limit_krw=3_000_000)
 _executor: Executor | None = None
+_APPROVAL_STORE = build_approval_store(settings)  # 승인 원장 — 발행(/approve)과 executor가 공유
 
 logger = logging.getLogger("clickme")
 
@@ -255,6 +258,7 @@ def _get_executor(writer=None) -> Executor:
             state_version_provider=_state_version,
             current_policy_version=APPROVAL_POLICY_VERSION,
             allowed_modes=allowed,
+            approvals=_APPROVAL_STORE,
         )
     if _executor is None:
         _executor = Executor(
@@ -265,6 +269,7 @@ def _get_executor(writer=None) -> Executor:
             state_version_provider=_state_version,
             current_policy_version=APPROVAL_POLICY_VERSION,
             allowed_modes=allowed,
+            approvals=_APPROVAL_STORE,
         )
     return _executor
 
@@ -684,17 +689,23 @@ async def consult_from_notification(
 
 
 class ApprovalRequest(BaseModel):
+    model_config = ConfigDict(extra="ignore")  # approver_id 등 클라이언트 지정 필드 무시
+
     proposal: ActionProposal
     approved: bool
-    approver_id: str = "user_demo"
 
 
 @router.post("/approve")
-async def approve_proposal(body: ApprovalRequest):
-    """승인 플레인 — 3단계 검증(만료/해시/정책 버전) 후 ApprovedAction 발행."""
-    issues = validate_proposal(body.proposal)
-    if issues:
-        raise HTTPException(status_code=409, detail={"issues": issues})
+async def approve_proposal(
+    body: ApprovalRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """승인 플레인 — 인증·org 검증 후 approver_id 서버 주입·원장 기록."""
+    org_id = await _require_org_id_write(user, db, action="approve")
+    # 시연 센티넬(TENANT_ID)은 org 불일치 면제 — 데모 제안을 어떤 org도 승인 가능.
+    if body.proposal.tenant_id not in (str(org_id), TENANT_ID):
+        raise HTTPException(403, "다른 조직의 제안을 승인할 수 없습니다.")
 
     if not body.approved:
         return {
@@ -702,7 +713,15 @@ async def approve_proposal(body: ApprovalRequest):
             "detail": "거절됨 — 무승인 액션은 어떤 경로로도 Writer에 도달 불가 (불변 규칙 #2)",
         }
 
-    action = approve(body.proposal, body.approver_id, execution_mode=_resolved_execution_mode())
+    try:
+        action = await issue_approval(
+            body.proposal,
+            str(user.id),
+            execution_mode=_resolved_execution_mode(),
+            store=_APPROVAL_STORE,
+        )
+    except ApprovalIssueError as exc:
+        raise HTTPException(status_code=409, detail={"issues": exc.issues}) from exc
     return {"status": "approved", "approved_action": action.model_dump(mode="json")}
 
 
@@ -3090,7 +3109,9 @@ async def activate_campaign(
             approval_policy_version=APPROVAL_POLICY_VERSION,
         )
     )
-    action = approve(proposal, str(user.id), execution_mode=_resolved_execution_mode())
+    action = await issue_approval(
+        proposal, str(user.id), execution_mode=_resolved_execution_mode(), store=_APPROVAL_STORE
+    )
     result = await _get_executor().execute(action, proposal)
     status = result.status.value if hasattr(result.status, "value") else str(result.status)
     serving = status == "success"
@@ -3229,7 +3250,9 @@ async def pause_campaign(
             approval_policy_version=APPROVAL_POLICY_VERSION,
         )
     )
-    action = approve(proposal, str(user.id), execution_mode=_resolved_execution_mode())
+    action = await issue_approval(
+        proposal, str(user.id), execution_mode=_resolved_execution_mode(), store=_APPROVAL_STORE
+    )
     result = await _get_executor().execute(action, proposal)
     status = result.status.value if hasattr(result.status, "value") else str(result.status)
     if status == "success":
@@ -3412,7 +3435,9 @@ async def budget_commit(
         budget_before_krw=before,
         new_daily_budget_krw=new,
     )
-    action = approve(proposal, str(user.id), execution_mode=_resolved_execution_mode())
+    action = await issue_approval(
+        proposal, str(user.id), execution_mode=_resolved_execution_mode(), store=_APPROVAL_STORE
+    )
     is_demo = proposal.tenant_id == TENANT_ID
     executor = (
         _get_executor()

@@ -827,7 +827,7 @@ export const api = {
     approve: (proposal: unknown, approved: boolean) =>
       request("/management/approve", {
         method: "POST",
-        body: JSON.stringify({ proposal, approved, approver_id: "user_demo" }),
+        body: JSON.stringify({ proposal, approved }),  // approver_id는 서버가 주입
       }),
     execute: (approved_action: unknown, proposal: unknown) =>
       request("/management/execute", {
