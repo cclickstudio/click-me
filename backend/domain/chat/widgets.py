@@ -93,3 +93,17 @@ def campaign_action(action: dict) -> dict:
         "widget": {"type": "campaign_action", "data": {"action": action}},
         "source": DEEP_AGENT,
     }
+
+
+def replace_creative_form(campaign_id: str = "", campaign_name: str = "") -> dict:
+    """소재 교체 후보 picker 카드 — data={campaign_id, campaign_name}. source 고정.
+
+    campaign_id/campaign_name 둘 다 비어도 카드가 캠페인 picker를 띄운다(빈 값 허용).
+    """
+    return {
+        "widget": {
+            "type": "replace_creative",
+            "data": {"campaign_id": campaign_id, "campaign_name": campaign_name},
+        },
+        "source": DEEP_AGENT,
+    }

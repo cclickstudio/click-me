@@ -36,6 +36,7 @@ import RemediationOptionsWidget, {
 import ChatCreateCampaignCard from './ChatCreateCampaignCard';
 import ChatCampaignActionCard, { type CampaignActionPayload } from './ChatCampaignActionCard';
 import ChatBudgetProposalCard, { type BudgetActionPayload } from './ChatBudgetProposalCard';
+import ChatReplaceCreativeCard from './ChatReplaceCreativeCard';
 import type { CampaignPrefill } from '@/components/manage/campaigns/CampaignForm';
 import type { SimRunResult } from '@/lib/types';
 
@@ -214,6 +215,8 @@ type WidgetSpec = {
     stream_url?: string; // gen_loop 위젯 — 루프 SSE 경로
     prefill?: CampaignPrefill; // create_campaign 위젯 — 캠페인 생성 폼 초기값
     action?: CampaignActionPayload | BudgetActionPayload; // campaign_action 위젯 — 조치 페이로드
+    campaign_id?: string; // replace_creative 위젯 — 소재 교체 대상 캠페인(빈 값이면 카드가 picker)
+    campaign_name?: string; // replace_creative 위젯 — 캠페인명(이름→id 해석용)
   };
 };
 type SourceMeta = {
@@ -1919,6 +1922,12 @@ export default function ChatConversation({
                           />
                         );
                       })()}
+                    {msg.meta?.widget?.type === 'replace_creative' && (
+                      <ChatReplaceCreativeCard
+                        campaignId={msg.meta.widget.data?.campaign_id ?? ''}
+                        campaignName={msg.meta.widget.data?.campaign_name}
+                      />
+                    )}
                     {msg.role === 'assistant' &&
                       msg.meta?.kind === 'remediation_consult' &&
                       Array.isArray(msg.meta?.options) &&

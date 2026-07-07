@@ -174,6 +174,8 @@ class CreativePreview(Contract):
     thumbnail_url: str | None = None  # 소형 썸네일 (image_url 없을 때 폴백)
     headline: str | None = None  # 광고 제목(creative.title)
     primary_text: str | None = None  # 기본 문구(creative.body)
+    # 광고 도착지(랜딩) — 소재 교체가 도착지를 바꾸지 않도록 기존 링크를 보존하는 데 쓴다.
+    link_url: str | None = None  # creative.object_story_spec.link_data.link
 
 
 class AccountFunding(Contract):
