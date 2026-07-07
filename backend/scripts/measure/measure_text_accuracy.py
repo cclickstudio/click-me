@@ -51,14 +51,17 @@ _JUDGE_SYSTEM = (
 def _judge_prompt(entry: dict) -> str:
     if entry.get("headline"):
         return (
-            "이 광고 이미지에서 아래 기대 텍스트 각각을 찾아 판정하라.\n"
+            "이 광고 이미지에 보이는 텍스트를 빠짐없이 검사하라.\n"
+            "1) 아래 기대 카피 각각을 찾아 판정한다.\n"
             f'- headline: "{entry["headline"]}"\n'
             f'- body: "{entry["body"]}"\n'
             f'- cta: "{entry["cta"]}"\n'
+            "2) 그 외 이미지에 보이는 모든 텍스트(상품 라벨·로고·배경 문구·의미 없는 문자 등)를 "
+            "각각 하나의 항목으로 열거해 판정한다. 정상 렌더된 텍스트도 status exact로 포함한다.\n"
             "다음 JSON 형식으로만 답하라.\n"
             '{"elements": {"headline": {"status": "exact|typo|broken|cut|missing",'
             ' "seen": "실제로 보이는 텍스트"}, "body": {...}, "cta": {...}},'
-            ' "other_defects": ["기대 텍스트 외 깨진/이상한 텍스트가 있으면 서술"]}'
+            ' "other_texts": [{"seen": "보이는 텍스트", "status": "exact|typo|broken|cut"}]}'
         )
     return (
         "이 광고 이미지 안의 모든 텍스트를 검사하라. 한글 오탈자·깨진 글자·잘린 텍스트·"
@@ -104,9 +107,17 @@ async def _judge_one(client: AsyncOpenAI, model: str, img_dir: Path, entry: dict
                     "seen": v.get("seen") or "",
                 }
             )
-        for defect in verdict.get("other_defects") or []:
+        # 이미지 내 기대 카피 외 모든 텍스트 — 정상·결함 모두 인스턴스로 수집(오타율 분모에 포함).
+        for other in verdict.get("other_texts") or []:
+            status = other.get("status") if other.get("status") in _STATUSES else "broken"
             rows.append(
-                {**common, "element": "other", "status": "broken", "expected": "", "seen": defect}
+                {
+                    **common,
+                    "element": "other",
+                    "status": status,
+                    "expected": "",
+                    "seen": other.get("seen") or "",
+                }
             )
     else:
         defects = verdict.get("defects") or []
@@ -130,7 +141,19 @@ def _summarize(rows: list[dict]) -> None:
         print(f"\n[{method}] 이미지 {len(files)}장")
         clean_pct = (len(files) - len(defect_files)) / len(files) * 100
         print(f"  무결점 이미지 비율  {clean_pct:.1f}%  (결함 {len(defect_files)}장)")
-        for element in ("headline", "body", "cta", "any"):
+        # 전체 결함율 — 카피 3칸 + 기타(상품 라벨·배경 등) 이미지 내 모든 텍스트 인스턴스 기준.
+        defect_inst = sum(1 for r in rs if r["status"] != "exact")
+        print(
+            f"  전체 결함율        {defect_inst / len(rs) * 100:.1f}%  "
+            f"({defect_inst}/{len(rs)} 텍스트, 이미지 내 모든 글자 기준)"
+        )
+        for element, label in (
+            ("headline", "headline"),
+            ("body", "body"),
+            ("cta", "cta"),
+            ("other", "기타"),
+            ("any", "any"),
+        ):
             ers = [r for r in rs if r["element"] == element]
             if not ers:
                 continue
@@ -138,7 +161,7 @@ def _summarize(rows: list[dict]) -> None:
             dist = Counter(_STATUS_KO[r["status"]] for r in ers if r["status"] != "exact")
             dist_s = ", ".join(f"{k} {v}" for k, v in dist.most_common()) or "-"
             pct = exact / len(ers) * 100
-            print(f"  {element:8s} 정확 {exact}/{len(ers)} ({pct:.0f}%)  결함: {dist_s}")
+            print(f"  {label:8s} 정확 {exact}/{len(ers)} ({pct:.0f}%)  결함: {dist_s}")
 
 
 async def main() -> None:

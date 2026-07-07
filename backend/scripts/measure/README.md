@@ -7,7 +7,8 @@
 |---|---|---|
 | `baseline_text_in_image.py` | 구방식(AI가 텍스트까지 그림) 대조군 생성 | 오타율 before |
 | `fetch_generation_images.py` | 현행 파이프라인 결과 수집 (최종+base 이미지, 카피, QA) | 오타율 after · 대비비 입력 |
-| `measure_text_accuracy.py` | VLM 판정 — 오탈자·깨짐·잘림 비율 | PIL 텍스트 합성 전환 효과 |
+| `measure_text_accuracy.py` | VLM 판정 — 카피 + 이미지 내 모든 텍스트 오탈자·깨짐·잘림 비율 | PIL 텍스트 합성 전환 효과 |
+| `build_review_sheet.py` | 사람 직접 정성 검수용 HTML 시트 생성 (VLM과 동일 CSV 스키마) | VLM 판정 사람 교차검증 |
 | `measure_contrast.py` | 텍스트 오버레이 WCAG 대비비 | 가독성 개선(적응 색상) 효과 |
 | `export_langsmith_costs.py` | 파이프라인 1회당 토큰·비용·지연 | 토큰 53% 절감 실측 보강 |
 | `export_qa_scores.py` | QA 통과율·품질점수 (모드/템플릿/전략별) | 자동 개선 루프 품질 곡선 |
@@ -22,9 +23,27 @@ uv run python scripts\measure\measure_text_accuracy.py --dir scripts\measure\out
 uv run python scripts\measure\measure_text_accuracy.py --dir scripts\measure\out\pipeline
 ```
 
-- before(ai_text)와 after(pipeline)의 "무결점 이미지 비율"을 나란히 비교.
+- before(ai_text)와 after(pipeline)의 "무결점 이미지 비율"·"전체 결함율"을 나란히 비교.
 - 공정한 비교를 위해 앱에서 같은 상품(텀블러·이어폰·비타민)으로 생성해두면 좋다.
 - gemini 대조군은 `--provider google_genai` 추가.
+- **오타율 산정 범위** — 카피 3칸(headline/body/cta)뿐 아니라 이미지에 보이는 **모든 텍스트**
+  (상품 라벨·로고·배경 문구·헛것 글자 등)를 각각 인스턴스로 판정한다. "전체 결함율"은 그
+  모든 텍스트 기준이라, PIL 카피는 완벽해도 상품 표면 헛것 텍스트가 있으면 반영된다.
+
+### 사람 직접 정성 검수 (VLM 교차검증)
+
+VLM(gpt-4o) 자동 판정 대신·과 함께, 사람이 눈으로 매기려면 검수 시트를 만든다.
+
+```cmd
+uv run python scripts\measure\fetch_generation_images.py --latest 10
+uv run python scripts\measure\build_review_sheet.py --dir scripts\measure\out\pipeline
+```
+
+- `<dir>\review.html`이 생성된다 — 이미지를 통째로 인라인한 자체완결 파일이라 **그냥 브라우저로 연다**(서버·인터넷 불필요).
+- 이미지마다 카피 요소별(정확/오탈자/깨짐/잘림/누락) + "이미지 내 기타 텍스트"를 기록한다.
+- 상단에 무결점 비율·전체 결함율이 실시간 집계되고, **"CSV 저장"** 으로 `review_by_human.csv`를 내려받는다.
+- 이 CSV는 `measure_text_accuracy.py`의 `text_accuracy.csv`와 **동일 스키마**라 VLM 판정과 나란히 비교·발표할 수 있다.
+- 검수 기록은 브라우저 localStorage에 자동 저장되어 새로고침·재열람 시 유지된다.
 
 ### 팀원 생성분과 분리 (DB 공유 환경)
 
