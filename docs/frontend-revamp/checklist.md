@@ -98,12 +98,12 @@
 - [x] 스크롤바·포커스·hover 등 마이크로 인터랙션 통일. (globals.css 스크롤바·focus-visible·reduced-motion 이미 토큰 기반, transition-colors 통일 확인.)
 
 ### 1.2 랜딩 `/`
-- [ ] Apple식 다이나믹 진입: 히어로 스크롤 리빌·순차 페이드·패럴랙스.
-- [ ] 3대 기능(시뮬/생성/매니지먼트) 소개 섹션 재구성.
-- [ ] 3단계 프로세스·소셜프루프·CTA 섹션.
-- [ ] 로그인 CTA·헤더 정리, 다크모드 대응.
-- [ ] 랜딩 반응형 기본 골격(최소 안 깨지게).
-- [ ] preview로 스크롤 연출·다크/라이트 확인, 스크린샷.
+- [x] Apple식 다이나믹 진입: 히어로 스크롤 리빌·순차 페이드·패럴랙스. (framer-motion stagger 히어로 진입 + whileInView 섹션 리빌 + useScroll 배경 blob 패럴랙스.)
+- [x] 3대 기능(시뮬/생성/매니지먼트) 소개 섹션 재구성. (lucide 아이콘·호버 상승·화살표 slide, 카드 토큰화.)
+- [x] 3단계 프로세스·소셜프루프·CTA 섹션. (소셜프루프는 과장수치 대신 사실 근거 81만/5요인/분포·CI, CTA 배너 gradient.)
+- [x] 로그인 CTA·헤더 정리, 다크모드 대응. (sticky 헤더 토큰화, 테마 토글 lucide, 전 요소 토큰으로 라이트/다크.)
+- [x] 랜딩 반응형 기본 골격(최소 안 깨지게). (grid-cols-1 sm:cols-3, 히어로 텍스트 4xl→sm:5xl→md:6xl, CTA 세로/가로.)
+- [x] preview로 스크롤 연출·다크/라이트 확인, 스크린샷. (라이트·다크 스크린샷 확보, 전 섹션 렌더·콘솔 에러 0 확인. 겸사 scroll-behavior 경고도 data-scroll-behavior 속성으로 수정.)
 
 ---
 
@@ -268,4 +268,5 @@ git push origin --delete feat/front-fix
 - 2026-07-08 P0.4 ThemeProvider 확장+/themes 갤러리 완료 — data-theme localStorage 영속·에디터테마 다크강제, layout 인라인스크립트 FOUC 방지. 갤러리에서 14테마 스위처+프리미티브 실시간 반영 검증(콘솔 에러 0). ※ preview_screenshot은 이 환경에서 외부 폰트 CDN network-idle 대기로 타임아웃 → snapshot/inspect/eval로 검증 대체.
 - 2026-07-08 P0.5 공용 프리미티브 완료 — StatCard(델타색·스파크라인)·Section·EmptyState 신설, chart-theme 훅(테마색 Recharts), 타이포 유틸(.text-h1~caption). shadcn 20종 활용. Select은 파일명 충돌로 커스텀 유지.
 - 2026-07-08 P0.6 팔레트 갱신 완료 — 기본 `--point` 라이트 #8B5CF6 / 다크 #A78BFA로 갱신(globals.css :root·.dark), chart-theme fallback도 동기화. blue(기본) 테마는 point override 안 해 :root값 적용, mono/violet만 의도적 override 유지. preview eval 검증: light rgb(139,92,246)·dark rgb(167,139,250), 콘솔 에러 0.
+- 2026-07-08 P1.2 랜딩 완료 — page.tsx 전면 재설계(framer-motion 히어로 순차 페이드+스크롤 리빌+배경 blob 패럴랙스), lucide 아이콘, 사실기반 소셜프루프(81만/5요인/분포·CI), 토큰화·반응형(sm:). 라이트/다크 스크린샷 증거, 콘솔 에러 0. layout.tsx에 data-scroll-behavior="smooth" 추가(Next 경고 해소).
 - 2026-07-08 P1.1 앱 셸 완료 — AppLayout·Sidebar·3패널(Project/Company/Admin) 전면 토큰화, 인라인 SVG→lucide, 사이드바 active 좌측 바 인디케이터, framer-motion 페이지 전환. **ADMIN 실제 Cognito 폼 로그인 end-to-end 검증**(/dashboard 진입, 실데이터 66시뮬·143생성 렌더, 라이트/다크 셸 확인, 콘솔 에러 0, 네비게이션 전환 동작). ⚠️ 로컬 인증 환경 셋업 필요 — context-notes '검증 환경' 참조.
