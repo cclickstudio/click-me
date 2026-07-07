@@ -212,9 +212,8 @@ Expected: FAIL — `ModuleNotFoundError: No module named 'domain.management.cont
 
 ```python
 # 승인 원장 계약 — 서버 발행 승인의 진위 대조(집행 게이트 #5) 레코드·포트
-"""승인 원장 계약 — 서버 발행 승인의 진위 대조(집행 게이트 #5) 레코드·포트.
+"""발행부(approval.issue_approval)와 검증부(executor)가 이 계약만 공유한다.
 
-발행부(approval.issue_approval)와 검증부(executor)가 이 계약만 공유한다.
 저장소 구현은 execution/approval_stores.py(인메모리)·execution/db_stores.py(DB),
 교체는 wiring.build_approval_store에서만.
 """
@@ -295,8 +294,8 @@ class ApprovalStore(Protocol):
 - [ ] **Step 4: 인메모리 저장소 — `execution/approval_stores.py`**
 
 ```python
-# 승인 원장 인메모리 저장소 — use_mock·테스트용 (DB 구현은 db_stores.DbApprovalStore)
-"""승인 원장 인메모리 저장소 — use_mock·테스트용 (DB 구현은 db_stores.DbApprovalStore)."""
+# 승인 원장 인메모리 저장소 — use_mock·테스트용
+"""DB 구현(db_stores.DbApprovalStore)과 같은 ApprovalStore 포트를 만족한다."""
 
 from __future__ import annotations
 
