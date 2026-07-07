@@ -62,34 +62,34 @@ function ProjectCard({ project, onDelete }: { project: Project; onDelete: (id: s
   };
 
   return (
-    <div className="bg-white dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748] rounded-2xl overflow-hidden">
+    <div className="bg-card border border-line rounded-2xl overflow-hidden">
       {/* 헤더 */}
       <div
-        className="flex items-center gap-3 px-5 py-4 cursor-pointer hover:bg-[#F9FAFB] dark:hover:bg-[#252D3D] transition-colors select-none"
+        className="flex items-center gap-3 px-5 py-4 cursor-pointer hover:bg-accent transition-colors select-none"
         onClick={toggle}
       >
         <svg
           width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
           strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
-          className={`text-[#8B95A1] transition-transform duration-150 shrink-0 ${open ? 'rotate-90' : ''}`}
+          className={`text-ink-tertiary transition-transform duration-150 shrink-0 ${open ? 'rotate-90' : ''}`}
         >
           <polyline points="9 18 15 12 9 6" />
         </svg>
-        <div className="w-8 h-8 rounded-xl bg-[#EBF3FF] dark:bg-[#1E3A5F] flex items-center justify-center shrink-0">
+        <div className="w-8 h-8 rounded-xl bg-primary-subtle flex items-center justify-center shrink-0">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#3182F6" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
             <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
           </svg>
         </div>
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6] truncate">{project.name}</p>
-          {project.description && <p className="text-xs text-[#8B95A1] truncate">{project.description}</p>}
+          <p className="text-sm font-semibold text-ink truncate">{project.name}</p>
+          {project.description && <p className="text-xs text-ink-tertiary truncate">{project.description}</p>}
         </div>
         <div className="flex items-center gap-3 shrink-0" onClick={e => e.stopPropagation()}>
-          <span className="text-xs text-[#B0B8C1] dark:text-[#4B5563]">{fmt(project.created_at)}</span>
+          <span className="text-xs text-ink-muted">{fmt(project.created_at)}</span>
           <button
             onClick={handleDelete}
             disabled={deleting}
-            className="p-1.5 rounded-lg text-[#8B95A1] hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-900/20 transition-colors disabled:opacity-40"
+            className="p-1.5 rounded-lg text-ink-tertiary hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-900/20 transition-colors disabled:opacity-40"
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14H6L5 6" /><path d="M10 11v6" /><path d="M14 11v6" /><path d="M9 6V4h6v2" />
@@ -100,26 +100,26 @@ function ProjectCard({ project, onDelete }: { project: Project; onDelete: (id: s
 
       {/* 펼쳐진 내역 */}
       {open && (
-        <div className="border-t border-[#F2F4F6] dark:border-[#252D3D]">
+        <div className="border-t border-line">
           {loading ? (
-            <div className="py-8 text-center text-xs text-[#8B95A1]">불러오는 중...</div>
+            <div className="py-8 text-center text-xs text-ink-tertiary">불러오는 중...</div>
           ) : (
-            <div className="divide-y divide-[#F2F4F6] dark:divide-[#252D3D]">
+            <div className="divide-y divide-line">
               {/* 시뮬레이션 */}
               <div className="px-5 py-3">
-                <p className="text-[10px] font-semibold text-[#8B95A1] dark:text-[#6B7280] uppercase tracking-wider mb-2">
+                <p className="text-[10px] font-semibold text-ink-tertiary uppercase tracking-wider mb-2">
                   시뮬레이션 ({sims.length})
                 </p>
                 {sims.length === 0 ? (
-                  <p className="text-xs text-[#B0B8C1] dark:text-[#4B5563]">내역이 없습니다</p>
+                  <p className="text-xs text-ink-muted">내역이 없습니다</p>
                 ) : (
                   <table className="w-full text-xs">
                     <thead>
                       <tr className="text-left">
-                        <th className="pb-2 font-medium text-[#8B95A1] pr-4">상태</th>
-                        <th className="pb-2 font-medium text-[#8B95A1] pr-4">샘플 수</th>
-                        <th className="pb-2 font-medium text-[#8B95A1] pr-4">실행자</th>
-                        <th className="pb-2 font-medium text-[#8B95A1]">일시</th>
+                        <th className="pb-2 font-medium text-ink-tertiary pr-4">상태</th>
+                        <th className="pb-2 font-medium text-ink-tertiary pr-4">샘플 수</th>
+                        <th className="pb-2 font-medium text-ink-tertiary pr-4">실행자</th>
+                        <th className="pb-2 font-medium text-ink-tertiary">일시</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-[#F9FAFB] dark:divide-[#1C2333]">
@@ -127,16 +127,16 @@ function ProjectCard({ project, onDelete }: { project: Project; onDelete: (id: s
                         <tr
                           key={s.id}
                           onClick={() => router.push(`/simulation/${s.id}`)}
-                          className="cursor-pointer hover:bg-[#F2F4F6] dark:hover:bg-[#252D3D] transition-colors"
+                          className="cursor-pointer hover:bg-accent transition-colors"
                         >
                           <td className="py-1.5 pr-4">
                             <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-medium ${simStatusStyle[s.status] ?? ''}`}>
                               {simStatusLabel[s.status] ?? s.status}
                             </span>
                           </td>
-                          <td className="py-1.5 pr-4 text-[#4E5968] dark:text-[#9CA3AF]">{s.sample_size}명</td>
-                          <td className="py-1.5 pr-4 text-[#4E5968] dark:text-[#9CA3AF]">{s.created_by_name ?? '—'}</td>
-                          <td className="py-1.5 text-[#8B95A1]">{fmtFull(s.created_at)}</td>
+                          <td className="py-1.5 pr-4 text-ink-secondary">{s.sample_size}명</td>
+                          <td className="py-1.5 pr-4 text-ink-secondary">{s.created_by_name ?? '—'}</td>
+                          <td className="py-1.5 text-ink-tertiary">{fmtFull(s.created_at)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -146,19 +146,19 @@ function ProjectCard({ project, onDelete }: { project: Project; onDelete: (id: s
 
               {/* 제너레이터 */}
               <div className="px-5 py-3">
-                <p className="text-[10px] font-semibold text-[#8B95A1] dark:text-[#6B7280] uppercase tracking-wider mb-2">
+                <p className="text-[10px] font-semibold text-ink-tertiary uppercase tracking-wider mb-2">
                   제너레이터 ({gens.length})
                 </p>
                 {gens.length === 0 ? (
-                  <p className="text-xs text-[#B0B8C1] dark:text-[#4B5563]">내역이 없습니다</p>
+                  <p className="text-xs text-ink-muted">내역이 없습니다</p>
                 ) : (
                   <table className="w-full text-xs">
                     <thead>
                       <tr className="text-left">
-                        <th className="pb-2 font-medium text-[#8B95A1] pr-4">상품명</th>
-                        <th className="pb-2 font-medium text-[#8B95A1] pr-4">상태</th>
-                        <th className="pb-2 font-medium text-[#8B95A1] pr-4">실행자</th>
-                        <th className="pb-2 font-medium text-[#8B95A1]">일시</th>
+                        <th className="pb-2 font-medium text-ink-tertiary pr-4">상품명</th>
+                        <th className="pb-2 font-medium text-ink-tertiary pr-4">상태</th>
+                        <th className="pb-2 font-medium text-ink-tertiary pr-4">실행자</th>
+                        <th className="pb-2 font-medium text-ink-tertiary">일시</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-[#F9FAFB] dark:divide-[#1C2333]">
@@ -166,16 +166,16 @@ function ProjectCard({ project, onDelete }: { project: Project; onDelete: (id: s
                         <tr
                           key={g.id}
                           onClick={() => router.push(`/generations/${g.id}`)}
-                          className="cursor-pointer hover:bg-[#F2F4F6] dark:hover:bg-[#252D3D] transition-colors"
+                          className="cursor-pointer hover:bg-accent transition-colors"
                         >
-                          <td className="py-1.5 pr-4 text-[#4E5968] dark:text-[#9CA3AF]">{g.product_name ?? '—'}</td>
+                          <td className="py-1.5 pr-4 text-ink-secondary">{g.product_name ?? '—'}</td>
                           <td className="py-1.5 pr-4">
                             <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-medium ${genStatusStyle[g.status] ?? ''}`}>
                               {genStatusLabel[g.status] ?? g.status}
                             </span>
                           </td>
-                          <td className="py-1.5 pr-4 text-[#4E5968] dark:text-[#9CA3AF]">{g.created_by_name ?? '—'}</td>
-                          <td className="py-1.5 text-[#8B95A1]">{fmtFull(g.created_at)}</td>
+                          <td className="py-1.5 pr-4 text-ink-secondary">{g.created_by_name ?? '—'}</td>
+                          <td className="py-1.5 text-ink-tertiary">{fmtFull(g.created_at)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -224,12 +224,12 @@ export default function ProjectsPage() {
       <div className="px-8 py-8 max-w-5xl mx-auto">
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h1 className="text-2xl font-bold text-[#191F28] dark:text-[#F2F4F6]">프로젝트 관리</h1>
-            <p className="text-sm text-[#8B95A1] dark:text-[#6B7280] mt-1">프로젝트를 클릭하면 시뮬레이션·제너레이터 내역을 확인할 수 있습니다</p>
+            <h1 className="text-2xl font-bold text-ink">프로젝트 관리</h1>
+            <p className="text-sm text-ink-tertiary mt-1">프로젝트를 클릭하면 시뮬레이션·제너레이터 내역을 확인할 수 있습니다</p>
           </div>
           <button
             onClick={() => setShowModal(true)}
-            className="flex items-center gap-2 px-4 py-2.5 bg-[#3182F6] text-white text-sm font-medium rounded-xl hover:bg-[#1B6EEB] transition-colors"
+            className="flex items-center gap-2 px-4 py-2.5 bg-primary text-primary-foreground text-sm font-medium rounded-xl hover:bg-primary-hover transition-colors"
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
@@ -239,19 +239,19 @@ export default function ProjectsPage() {
         </div>
 
         {loading ? (
-          <div className="py-20 text-center text-sm text-[#8B95A1]">불러오는 중...</div>
+          <div className="py-20 text-center text-sm text-ink-tertiary">불러오는 중...</div>
         ) : projects.length === 0 ? (
           <div className="py-20 text-center">
-            <div className="w-14 h-14 bg-[#F2F4F6] dark:bg-[#252D3D] rounded-2xl flex items-center justify-center mx-auto mb-4">
+            <div className="w-14 h-14 bg-surface-1 rounded-2xl flex items-center justify-center mx-auto mb-4">
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#8B95A1" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
               </svg>
             </div>
-            <p className="text-sm font-medium text-[#191F28] dark:text-[#F2F4F6]">프로젝트가 없습니다</p>
-            <p className="text-xs text-[#8B95A1] mt-1">새 프로젝트를 만들어 시작하세요</p>
+            <p className="text-sm font-medium text-ink">프로젝트가 없습니다</p>
+            <p className="text-xs text-ink-tertiary mt-1">새 프로젝트를 만들어 시작하세요</p>
             <button
               onClick={() => setShowModal(true)}
-              className="mt-4 px-4 py-2 bg-[#3182F6] text-white text-sm font-medium rounded-xl hover:bg-[#1B6EEB] transition-colors"
+              className="mt-4 px-4 py-2 bg-primary text-primary-foreground text-sm font-medium rounded-xl hover:bg-primary-hover transition-colors"
             >
               첫 프로젝트 만들기
             </button>
@@ -271,34 +271,34 @@ export default function ProjectsPage() {
 
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-          <div className="bg-white dark:bg-[#1C2333] rounded-2xl shadow-xl w-full max-w-md mx-4 p-6">
-            <h2 className="text-lg font-bold text-[#191F28] dark:text-[#F2F4F6] mb-4">새 프로젝트</h2>
+          <div className="bg-card rounded-2xl shadow-xl w-full max-w-md mx-4 p-6">
+            <h2 className="text-lg font-bold text-ink mb-4">새 프로젝트</h2>
             <div className="space-y-3">
               <div>
-                <label className="text-xs font-medium text-[#4E5968] dark:text-[#9CA3AF] block mb-1">프로젝트 이름 *</label>
+                <label className="text-xs font-medium text-ink-secondary block mb-1">프로젝트 이름 *</label>
                 <input
                   value={name} onChange={(e) => setName(e.target.value)}
                   placeholder="예: 2024 여름 캠페인"
-                  className="w-full px-3 py-2.5 text-sm border border-[#E5E8EB] dark:border-[#2D3748] rounded-xl bg-white dark:bg-[#252D3D] text-[#191F28] dark:text-[#F2F4F6] placeholder-[#B0B8C1] focus:outline-none focus:border-[#3182F6] transition-colors"
+                  className="w-full px-3 py-2.5 text-sm border border-line rounded-xl bg-surface-2 text-ink placeholder:text-ink-muted focus:outline-none focus:border-primary transition-colors"
                 />
               </div>
               <div>
-                <label className="text-xs font-medium text-[#4E5968] dark:text-[#9CA3AF] block mb-1">설명 (선택)</label>
+                <label className="text-xs font-medium text-ink-secondary block mb-1">설명 (선택)</label>
                 <textarea
                   value={description} onChange={(e) => setDescription(e.target.value)}
                   placeholder="프로젝트에 대한 간단한 설명" rows={3}
-                  className="w-full px-3 py-2.5 text-sm border border-[#E5E8EB] dark:border-[#2D3748] rounded-xl bg-white dark:bg-[#252D3D] text-[#191F28] dark:text-[#F2F4F6] placeholder-[#B0B8C1] focus:outline-none focus:border-[#3182F6] transition-colors resize-none"
+                  className="w-full px-3 py-2.5 text-sm border border-line rounded-xl bg-surface-2 text-ink placeholder:text-ink-muted focus:outline-none focus:border-primary transition-colors resize-none"
                 />
               </div>
             </div>
             <div className="flex gap-2 mt-5">
               <button
                 onClick={() => { setShowModal(false); setName(''); setDescription(''); }}
-                className="flex-1 py-2.5 text-sm font-medium border border-[#E5E8EB] dark:border-[#2D3748] rounded-xl text-[#4E5968] dark:text-[#9CA3AF] hover:bg-[#F2F4F6] dark:hover:bg-[#252D3D] transition-colors"
+                className="flex-1 py-2.5 text-sm font-medium border border-line rounded-xl text-ink-secondary hover:bg-accent transition-colors"
               >취소</button>
               <button
                 onClick={handleCreate} disabled={!name.trim() || creating}
-                className="flex-1 py-2.5 text-sm font-medium bg-[#3182F6] text-white rounded-xl hover:bg-[#1B6EEB] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                className="flex-1 py-2.5 text-sm font-medium bg-primary text-primary-foreground rounded-xl hover:bg-primary-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               >{creating ? '생성 중...' : '만들기'}</button>
             </div>
           </div>

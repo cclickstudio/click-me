@@ -4,15 +4,15 @@ import Link from 'next/link';
 
 export const metadata: Metadata = { title: '데이터 삭제 안내 | ClickMe' };
 
-const h2 = 'text-lg font-bold text-[#191F28] mt-8 mb-2';
-const p = 'text-sm leading-relaxed text-[#4E5968] mb-2';
-const li = 'text-sm leading-relaxed text-[#4E5968] ml-5 list-decimal';
+const h2 = 'text-lg font-bold text-ink mt-8 mb-2';
+const p = 'text-sm leading-relaxed text-ink-secondary mb-2';
+const li = 'text-sm leading-relaxed text-ink-secondary ml-5 list-decimal';
 
 export default function DataDeletionPage() {
   return (
     <main className="mx-auto max-w-3xl px-6 py-12">
-      <h1 className="text-2xl font-bold text-[#191F28]">데이터 삭제 안내</h1>
-      <p className="mt-1 text-xs text-[#8B95A1]">Data Deletion Instructions</p>
+      <h1 className="text-2xl font-bold text-ink">데이터 삭제 안내</h1>
+      <p className="mt-1 text-xs text-ink-tertiary">Data Deletion Instructions</p>
 
       <p className={`${p} mt-6`}>
         ClickMe는 Meta(Facebook·Instagram) 연동을 통해 광고 계정 식별자, 액세스 토큰(암호화
@@ -43,17 +43,17 @@ export default function DataDeletionPage() {
 
       <h2 className={h2}>삭제되는 데이터</h2>
       <ul className="mb-2 list-disc">
-        <li className="text-sm leading-relaxed text-[#4E5968] ml-5 list-disc">Meta 액세스 토큰 및 연동 식별 정보</li>
-        <li className="text-sm leading-relaxed text-[#4E5968] ml-5 list-disc">해당 계정으로 수집된 광고 성과 조회 캐시</li>
-        <li className="text-sm leading-relaxed text-[#4E5968] ml-5 list-disc">요청 시 계정 정보 일체(법령상 보존 의무 항목 제외)</li>
+        <li className="text-sm leading-relaxed text-ink-secondary ml-5 list-disc">Meta 액세스 토큰 및 연동 식별 정보</li>
+        <li className="text-sm leading-relaxed text-ink-secondary ml-5 list-disc">해당 계정으로 수집된 광고 성과 조회 캐시</li>
+        <li className="text-sm leading-relaxed text-ink-secondary ml-5 list-disc">요청 시 계정 정보 일체(법령상 보존 의무 항목 제외)</li>
       </ul>
 
       <p className="mt-10 text-sm">
-        <Link href="/privacy" className="text-[#3182F6] underline">
+        <Link href="/privacy" className="text-primary underline">
           개인정보처리방침
         </Link>
         {' · '}
-        <Link href="/terms" className="text-[#3182F6] underline">
+        <Link href="/terms" className="text-primary underline">
           이용약관
         </Link>
       </p>

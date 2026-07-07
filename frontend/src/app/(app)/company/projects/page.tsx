@@ -65,7 +65,7 @@ export default function CompanyProjectsPage() {
 
   if (user && user.role !== 'COMPANY') {
     return (
-        <div className="px-8 py-20 text-center text-sm text-[#8B95A1] dark:text-[#6B7280]">기업(COMPANY) 계정만 접근할 수 있습니다.</div>
+        <div className="px-8 py-20 text-center text-sm text-ink-tertiary">기업(COMPANY) 계정만 접근할 수 있습니다.</div>
     );
   }
 
@@ -79,17 +79,17 @@ export default function CompanyProjectsPage() {
       <div className="px-8 py-8 max-w-6xl mx-auto space-y-8">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-[#191F28] dark:text-[#F2F4F6]">프로젝트 관리</h1>
-            <p className="text-sm text-[#8B95A1] dark:text-[#6B7280] mt-1">카드를 드래그해 프로젝트를 팀에 배정하세요. 같은 팀끼리만 프로젝트를 공유합니다.</p>
+            <h1 className="text-2xl font-bold text-ink">프로젝트 관리</h1>
+            <p className="text-sm text-ink-tertiary mt-1">카드를 드래그해 프로젝트를 팀에 배정하세요. 같은 팀끼리만 프로젝트를 공유합니다.</p>
           </div>
           <button onClick={() => router.push('/company/teams')}
-            className="shrink-0 px-4 py-2.5 text-sm font-medium text-[#3182F6] border border-[#3182F6]/30 rounded-xl hover:bg-[#EBF3FF] dark:hover:bg-[#1E3A5F] transition-colors">팀 관리로 이동</button>
+            className="shrink-0 px-4 py-2.5 text-sm font-medium text-primary border border-primary/30 rounded-xl hover:bg-primary-subtle transition-colors">팀 관리로 이동</button>
         </div>
 
         {loading ? (
-          <div className="py-12 text-center text-sm text-[#8B95A1]">불러오는 중...</div>
+          <div className="py-12 text-center text-sm text-ink-tertiary">불러오는 중...</div>
         ) : projects.length === 0 ? (
-          <div className="py-12 text-center text-sm text-[#8B95A1]">프로젝트가 없습니다</div>
+          <div className="py-12 text-center text-sm text-ink-tertiary">프로젝트가 없습니다</div>
         ) : (
           <div className="flex gap-4 overflow-x-auto pb-4">
             {columns.map((col) => {
@@ -101,29 +101,29 @@ export default function CompanyProjectsPage() {
                   onDragLeave={() => setDragOver((v) => (v === col.key ? null : v))}
                   onDrop={(e) => { e.preventDefault(); const pid = e.dataTransfer.getData('text/plain'); setDragOver(null); if (pid) assign(pid, col.teamId); }}
                   className={`shrink-0 w-72 rounded-2xl border transition-colors ${
-                    isOver ? 'border-[#3182F6] bg-[#EBF3FF] dark:bg-[#1E3A5F]' : 'border-[#E5E8EB] dark:border-[#2D3748] bg-[#F9FAFB] dark:bg-[#161B27]'
+                    isOver ? 'border-primary bg-primary-subtle' : 'border-line bg-surface-1'
                   }`}>
-                  <div className="flex items-center justify-between px-4 py-3 border-b border-[#E5E8EB] dark:border-[#2D3748]">
+                  <div className="flex items-center justify-between px-4 py-3 border-b border-line">
                     <div className="flex items-center gap-2 min-w-0">
-                      <span className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6] truncate">{col.name}</span>
-                      <span className="text-[10px] text-[#8B95A1] bg-[#E5E8EB] dark:bg-[#2D3748] rounded-full px-1.5 py-0.5">{cards.length}</span>
+                      <span className="text-sm font-semibold text-ink truncate">{col.name}</span>
+                      <span className="text-[10px] text-ink-tertiary bg-[#E5E8EB] dark:bg-[#2D3748] rounded-full px-1.5 py-0.5">{cards.length}</span>
                     </div>
                   </div>
                   <div className="p-2 space-y-2 min-h-[160px]">
                     {cards.length === 0 ? (
-                      <p className="text-xs text-[#B0B8C1] dark:text-[#4B5563] text-center py-8">여기로 드래그</p>
+                      <p className="text-xs text-ink-muted text-center py-8">여기로 드래그</p>
                     ) : cards.map((p) => (
                       <div key={p.id} draggable
                         onDragStart={(e) => e.dataTransfer.setData('text/plain', p.id)}
                         onClick={() => router.push(`/projects/${p.id}`)}
-                        className="px-3 py-2.5 rounded-xl bg-white dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748] cursor-grab active:cursor-grabbing hover:border-[#3182F6] transition-colors">
+                        className="px-3 py-2.5 rounded-xl bg-card border border-line cursor-grab active:cursor-grabbing hover:border-primary transition-colors">
                         <div className="flex items-center gap-1.5 min-w-0">
-                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="text-[#8B95A1] shrink-0">
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="text-ink-tertiary shrink-0">
                             <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
                           </svg>
-                          <p className="text-sm font-medium text-[#191F28] dark:text-[#F2F4F6] truncate">{p.name}</p>
+                          <p className="text-sm font-medium text-ink truncate">{p.name}</p>
                         </div>
-                        <p className="text-[11px] text-[#8B95A1] dark:text-[#6B7280] truncate mt-0.5">
+                        <p className="text-[11px] text-ink-tertiary truncate mt-0.5">
                           {p.created_by_name ?? '—'} · {fmt(p.created_at)}
                         </p>
                       </div>

@@ -17,7 +17,7 @@ const statusStyle: Record<string, string> = {
 const statusLabel: Record<string, string> = { ACTIVE: '활성' };
 
 const inputCls =
-  'w-full px-3 py-2.5 text-sm border border-[#E5E8EB] dark:border-[#2D3748] rounded-xl bg-white dark:bg-[#252D3D] text-[#191F28] dark:text-[#F2F4F6] placeholder-[#B0B8C1] focus:outline-none focus:border-[#3182F6] transition-colors';
+  'w-full px-3 py-2.5 text-sm border border-line rounded-xl bg-surface-2 text-ink placeholder:text-ink-muted focus:outline-none focus:border-primary transition-colors';
 
 // ── 팀원 추가 모달 ──────────────────────────────────────────
 function CreateMemberModal({ teams, onClose, onCreated }: { teams: Team[]; onClose: () => void; onCreated: () => void }) {
@@ -51,23 +51,23 @@ function CreateMemberModal({ teams, onClose, onCreated }: { teams: Team[]; onClo
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-      <div className="bg-white dark:bg-[#1C2333] rounded-2xl shadow-xl w-full max-w-md mx-4 p-6">
-        <h2 className="text-lg font-bold text-[#191F28] dark:text-[#F2F4F6] mb-4">팀원 추가</h2>
+      <div className="bg-card rounded-2xl shadow-xl w-full max-w-md mx-4 p-6">
+        <h2 className="text-lg font-bold text-ink mb-4">팀원 추가</h2>
         <div className="space-y-3">
           <div>
-            <label className="text-xs font-medium text-[#4E5968] dark:text-[#9CA3AF] block mb-1">이름</label>
+            <label className="text-xs font-medium text-ink-secondary block mb-1">이름</label>
             <input value={name} onChange={(e) => setName(e.target.value)} placeholder="홍길동" className={inputCls} />
           </div>
           <div>
-            <label className="text-xs font-medium text-[#4E5968] dark:text-[#9CA3AF] block mb-1">아이디</label>
+            <label className="text-xs font-medium text-ink-secondary block mb-1">아이디</label>
             <input value={loginId} onChange={(e) => setLoginId(e.target.value)} placeholder="로그인 아이디" className={inputCls} />
           </div>
           <div>
-            <label className="text-xs font-medium text-[#4E5968] dark:text-[#9CA3AF] block mb-1">비밀번호</label>
+            <label className="text-xs font-medium text-ink-secondary block mb-1">비밀번호</label>
             <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="8자 이상" className={inputCls} />
           </div>
           <div>
-            <label className="text-xs font-medium text-[#4E5968] dark:text-[#9CA3AF] block mb-1">팀 (선택)</label>
+            <label className="text-xs font-medium text-ink-secondary block mb-1">팀 (선택)</label>
             <Select
               aria-label="팀 선택"
               value={teamId}
@@ -84,11 +84,11 @@ function CreateMemberModal({ teams, onClose, onCreated }: { teams: Team[]; onClo
         </div>
         <div className="flex gap-2 mt-5">
           <button onClick={onClose}
-            className="flex-1 py-2.5 text-sm font-medium border border-[#E5E8EB] dark:border-[#2D3748] rounded-xl text-[#4E5968] dark:text-[#9CA3AF] hover:bg-[#F2F4F6] dark:hover:bg-[#252D3D] transition-colors">
+            className="flex-1 py-2.5 text-sm font-medium border border-line rounded-xl text-ink-secondary hover:bg-accent transition-colors">
             취소
           </button>
           <button onClick={submit} disabled={saving}
-            className="flex-1 py-2.5 text-sm font-medium bg-[#3182F6] text-white rounded-xl hover:bg-[#1B6EEB] transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+            className="flex-1 py-2.5 text-sm font-medium bg-primary text-primary-foreground rounded-xl hover:bg-primary-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
             {saving ? '생성 중...' : '팀원 추가'}
           </button>
         </div>
@@ -127,16 +127,16 @@ function EditMemberModal({ member, onClose, onSaved }: { member: Member; onClose
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-      <div className="bg-white dark:bg-[#1C2333] rounded-2xl shadow-xl w-full max-w-md mx-4 p-6">
-        <h2 className="text-lg font-bold text-[#191F28] dark:text-[#F2F4F6] mb-1">팀원 수정</h2>
-        <p className="text-xs text-[#8B95A1] dark:text-[#6B7280] mb-4">{member.login_id}</p>
+      <div className="bg-card rounded-2xl shadow-xl w-full max-w-md mx-4 p-6">
+        <h2 className="text-lg font-bold text-ink mb-1">팀원 수정</h2>
+        <p className="text-xs text-ink-tertiary mb-4">{member.login_id}</p>
         <div className="space-y-3">
           <div>
-            <label className="text-xs font-medium text-[#4E5968] dark:text-[#9CA3AF] block mb-1">이름</label>
+            <label className="text-xs font-medium text-ink-secondary block mb-1">이름</label>
             <input value={name} onChange={(e) => setName(e.target.value)} className={inputCls} />
           </div>
           <div>
-            <label className="text-xs font-medium text-[#4E5968] dark:text-[#9CA3AF] block mb-1">새 비밀번호</label>
+            <label className="text-xs font-medium text-ink-secondary block mb-1">새 비밀번호</label>
             <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="변경 시에만 입력 (8자 이상)" className={inputCls} />
           </div>
           {error && (
@@ -145,11 +145,11 @@ function EditMemberModal({ member, onClose, onSaved }: { member: Member; onClose
         </div>
         <div className="flex gap-2 mt-5">
           <button onClick={onClose}
-            className="flex-1 py-2.5 text-sm font-medium border border-[#E5E8EB] dark:border-[#2D3748] rounded-xl text-[#4E5968] dark:text-[#9CA3AF] hover:bg-[#F2F4F6] dark:hover:bg-[#252D3D] transition-colors">
+            className="flex-1 py-2.5 text-sm font-medium border border-line rounded-xl text-ink-secondary hover:bg-accent transition-colors">
             취소
           </button>
           <button onClick={submit} disabled={saving}
-            className="flex-1 py-2.5 text-sm font-medium bg-[#3182F6] text-white rounded-xl hover:bg-[#1B6EEB] transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+            className="flex-1 py-2.5 text-sm font-medium bg-primary text-primary-foreground rounded-xl hover:bg-primary-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
             {saving ? '저장 중...' : '저장'}
           </button>
         </div>
@@ -194,56 +194,56 @@ export default function CompanyMembersPage() {
       <div className="px-8 py-8 max-w-5xl mx-auto space-y-8">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-[#191F28] dark:text-[#F2F4F6]">멤버 관리</h1>
-            <p className="text-sm text-[#8B95A1] dark:text-[#6B7280] mt-1">팀원 계정을 직접 만들고, 소속 멤버를 관리하세요</p>
+            <h1 className="text-2xl font-bold text-ink">멤버 관리</h1>
+            <p className="text-sm text-ink-tertiary mt-1">팀원 계정을 직접 만들고, 소속 멤버를 관리하세요</p>
           </div>
           <button onClick={() => setShowModal(true)}
-            className="shrink-0 px-4 py-2.5 text-sm font-medium bg-[#3182F6] text-white rounded-xl hover:bg-[#1B6EEB] transition-colors">
+            className="shrink-0 px-4 py-2.5 text-sm font-medium bg-primary text-primary-foreground rounded-xl hover:bg-primary-hover transition-colors">
             + 팀원 추가
           </button>
         </div>
 
         {/* 전체 멤버 */}
-        <div className="bg-white dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748] rounded-2xl overflow-hidden">
-          <div className="px-6 py-4 border-b border-[#E5E8EB] dark:border-[#2D3748]">
-            <p className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]">전체 멤버</p>
+        <div className="bg-card border border-line rounded-2xl overflow-hidden">
+          <div className="px-6 py-4 border-b border-line">
+            <p className="text-sm font-semibold text-ink">전체 멤버</p>
           </div>
           {loading ? (
-            <div className="py-12 text-center text-sm text-[#8B95A1]">불러오는 중...</div>
+            <div className="py-12 text-center text-sm text-ink-tertiary">불러오는 중...</div>
           ) : members.length === 0 ? (
-            <div className="py-12 text-center text-sm text-[#8B95A1]">멤버가 없습니다</div>
+            <div className="py-12 text-center text-sm text-ink-tertiary">멤버가 없습니다</div>
           ) : (
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-[#F2F4F6] dark:border-[#252D3D] bg-[#F9FAFB] dark:bg-[#252D3D]">
-                  <th className="text-left px-6 py-3 text-xs font-semibold text-[#8B95A1]">이름</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-[#8B95A1]">아이디</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-[#8B95A1]">팀</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-[#8B95A1]">상태</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-[#8B95A1]">합류일</th>
+                <tr className="border-b border-line bg-surface-1">
+                  <th className="text-left px-6 py-3 text-xs font-semibold text-ink-tertiary">이름</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-ink-tertiary">아이디</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-ink-tertiary">팀</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-ink-tertiary">상태</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-ink-tertiary">합류일</th>
                   <th className="px-4 py-3" />
                 </tr>
               </thead>
               <tbody>
                 {members.map((m) => (
                   <tr key={m.member_id} className="border-b border-[#F9FAFB] dark:border-[#1C2333] last:border-0 group">
-                    <td className="px-6 py-3 font-medium text-[#191F28] dark:text-[#F2F4F6]">{m.user_name}</td>
-                    <td className="px-4 py-3 text-[#4E5968] dark:text-[#9CA3AF]">{m.login_id}</td>
-                    <td className="px-4 py-3 text-[#4E5968] dark:text-[#9CA3AF]">
-                      {m.team_id ? (teams.find((t) => t.id === m.team_id)?.name ?? '—') : <span className="text-[#B0B8C1]">미배정</span>}
+                    <td className="px-6 py-3 font-medium text-ink">{m.user_name}</td>
+                    <td className="px-4 py-3 text-ink-secondary">{m.login_id}</td>
+                    <td className="px-4 py-3 text-ink-secondary">
+                      {m.team_id ? (teams.find((t) => t.id === m.team_id)?.name ?? '—') : <span className="text-ink-muted">미배정</span>}
                     </td>
                     <td className="px-4 py-3">
                       <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-medium ${statusStyle[m.status] ?? ''}`}>
                         {statusLabel[m.status] ?? m.status}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-[#8B95A1]">{m.joined_at ? fmt(m.joined_at) : '—'}</td>
+                    <td className="px-4 py-3 text-ink-tertiary">{m.joined_at ? fmt(m.joined_at) : '—'}</td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2 justify-end">
                         <button onClick={() => setEditing(m)}
-                          className="px-2.5 py-1 text-xs text-[#4E5968] dark:text-[#9CA3AF] border border-[#E5E8EB] dark:border-[#2D3748] rounded-lg hover:bg-[#F2F4F6] dark:hover:bg-[#252D3D] transition-colors">수정</button>
+                          className="px-2.5 py-1 text-xs text-ink-secondary border border-line rounded-lg hover:bg-accent transition-colors">수정</button>
                         <button onClick={() => handleDelete(m.member_id, m.user_name)}
-                          className="px-2.5 py-1 text-xs text-[#8B95A1] rounded-lg hover:bg-red-50 hover:text-red-500 transition-colors">삭제</button>
+                          className="px-2.5 py-1 text-xs text-ink-tertiary rounded-lg hover:bg-red-50 hover:text-red-500 transition-colors">삭제</button>
                       </div>
                     </td>
                   </tr>

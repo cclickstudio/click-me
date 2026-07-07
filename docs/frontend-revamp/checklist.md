@@ -175,10 +175,11 @@
 - 참고: 2.1의 "지금 주목할 것" 알림(이상감지/승인대기)은 이 도메인 데이터 의존 — 컴포넌트 토큰화는 완료, 대시보드 배선은 후속.
 
 ### 3.4 프로젝트·조직·프로필
-- [ ] `/projects`·`/projects/[id]`.
-- [ ] `/my-org`.
-- [ ] `/profile`.
-- [ ] `/trash`.
+> 뉴트럴+primary codemod 일괄(아티팩트 0, build 통과). /profile asdf 로그인 실렌더·콘솔 에러 0.
+- [x] `/projects`·`/projects/[id]` (토큰화).
+- [x] `/my-org` (토큰화).
+- [x] `/profile` (토큰화, 실렌더 검증 — 기본 정보·비밀번호 변경 폼).
+- [x] `/trash` (토큰화).
 
 ### 3.5 채팅 (약 30개 위젯)
 - [ ] `ChatConversation`·`ChatRouteView`·컨트롤러 셸 토큰화.
@@ -188,16 +189,17 @@
 - [ ] 알림/채팅 센터(`Center`·`AlarmCenter`·`ChatCenter`) 정돈.
 
 ### 3.6 관리자 (9)
-- [ ] `/admin/dashboard`(2.3와 연계)·organizations·manage-user·companies·generations·chats·chat-log·inquiry·check.
+- [x] `/admin/dashboard`(2.3 완료)·companies·manage-user·generations·chats·chat-log·inquiry·check — 전 admin 페이지 뉴트럴+primary codemod 토큰화(아티팩트 0, build 통과). dashboard는 2.3에서 실데이터 재구성.
 
 ### 3.7 기업 계정 (5)
-- [ ] `/company/teams`·projects·members·generations·chats.
+- [x] `/company/teams`·projects·members·generations·chats — 전 company 페이지 뉴트럴+primary codemod 토큰화(아티팩트 0, build 통과).
 - [ ] **`/company/credits` (신설) — 크레딧 관리(COMPANY 전용)**: 잔액(**원화 ₩**)·충전(TossPayments 샌드박스, 동작 불변)·**사용량 추이 바차트(기능별 분해: 시뮬레이션/생성/기타)**. ⚠️ 순수 리스킨이 아니라 **신규 기능(백엔드 추가 수반)**. **이번 범위 = UI + 읽기 엔드포인트(잔액·기능별 사용량 조회) + 충전 UI(샌드박스 진입)** — 실제 차감 미터링은 발표 후(범위 밖). 신규 엔드포인트는 **append-only**로만 배선하고 `added-apis.md`에 기록. USER는 개인 충전 없음(공유 풀 읽기 전용), ADMIN은 미표시(2.3).
 
 ### 3.8 결제 · 인증 · 법적
-- [ ] `/payment`·success·fail (TossPayments UI 정돈, 동작 불변).
-- [ ] `/sign-in` 로그인.
-- [ ] `/privacy`·`/terms`·`/data-deletion` 타이포·가독성 정돈.
+> 뉴트럴+primary codemod 토큰화(아티팩트 0, build 통과). /payment·/privacy·/terms 200 확인, 콘솔 에러 0.
+- [x] `/payment`·success·fail (토큰화, TossPayments 동작 불변).
+- [x] `/sign-in` 로그인 (토큰화 — 3역할 실 로그인 이미 다수 검증).
+- [x] `/privacy`·`/terms`·`/data-deletion` 타이포·가독성 정돈 (토큰화).
 
 ---
 
@@ -273,6 +275,7 @@ git push origin --delete feat/front-fix
 - 2026-07-08 P0.4 ThemeProvider 확장+/themes 갤러리 완료 — data-theme localStorage 영속·에디터테마 다크강제, layout 인라인스크립트 FOUC 방지. 갤러리에서 14테마 스위처+프리미티브 실시간 반영 검증(콘솔 에러 0). ※ preview_screenshot은 이 환경에서 외부 폰트 CDN network-idle 대기로 타임아웃 → snapshot/inspect/eval로 검증 대체.
 - 2026-07-08 P0.5 공용 프리미티브 완료 — StatCard(델타색·스파크라인)·Section·EmptyState 신설, chart-theme 훅(테마색 Recharts), 타이포 유틸(.text-h1~caption). shadcn 20종 활용. Select은 파일명 충돌로 커스텀 유지.
 - 2026-07-08 P0.6 팔레트 갱신 완료 — 기본 `--point` 라이트 #8B5CF6 / 다크 #A78BFA로 갱신(globals.css :root·.dark), chart-theme fallback도 동기화. blue(기본) 테마는 point override 안 해 :root값 적용, mono/violet만 의도적 override 유지. preview eval 검증: light rgb(139,92,246)·dark rgb(167,139,250), 콘솔 에러 0.
+- 2026-07-08 P3.4/3.6/3.7/3.8 롱테일 화면 토큰화 — projects·my-org·profile·trash·admin(8)·company(5)·payment(3)·sign-in·privacy·terms·data-deletion 뉴트럴+primary codemod 일괄(23 파일, 아티팩트 2건 정리 후 0). /profile asdf 실렌더·콘솔 에러 0, /payment·/privacy·/terms 200. build 통과.
 - 2026-07-08 P3.3 매니지먼트 토큰화 — 10 페이지 + 21 컴포넌트 뉴트럴+primary codemod 일괄(파일당 최대 93 repl), 아티팩트 33건 프로그램 정리 후 0(hex+dark:token→테마토큰, orphan 0). 의미색·차트·플랫폼 브랜드색 보존. asdf 로그인 /manage/campaigns 실렌더(사이드바 하위메뉴·테이블/카드·warning 배너)·콘솔 에러 0. build 통과.
 - 2026-07-08 P3.2 생성기 토큰화 — generator/page(158)·generations/[id](58) 뉴트럴+primary codemod, 아티팩트 정리 후 0, 의미색 보존. asdf 로그인 /generator 입력폼(생성/개선 모드·형식·결과패널) 실렌더·콘솔 에러 0. build 통과. (dev+build 동시 .next 충돌 1회 겪고 preview 재시작으로 복구.)
 - 2026-07-08 P3.1 시뮬레이션 토큰화 — 입력폼·목록·상세·6개 simulator 컴포넌트 뉴트럴+primary 팔레트 codemod(파일당 22~86 repl, 아티팩트 0, 의미색·차트색 보존). asdf 로그인: /simulations 실데이터 표·/simulation 입력폼 렌더·콘솔 에러 0 검증. 결과뷰 라이브는 백엔드 db-result 500(asyncpg/Neon 인프라, qa-findings B1·UI 무관)로 블록. build 통과.
