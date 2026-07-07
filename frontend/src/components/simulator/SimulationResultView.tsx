@@ -603,7 +603,7 @@ export function SimulationResultView({
           {shownReactions.length === 0 ? (
             <p className='py-16 text-center text-sm text-[#8B95A1]'>해당 조건의 반응이 없습니다</p>
           ) : (
-            <div className='grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4'>
+            <div className='grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 items-start'>
               {shownReactions.map(r => (
                 <PersonaReactionCard
                   key={r.persona_id}

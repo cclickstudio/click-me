@@ -54,13 +54,62 @@ export function aisasFunnel(a: Reaction['aisas']): string {
   return stages.map(([k, label]) => (a[k] ? label : '·')).join('');
 }
 
-// object → "key: value" 줄 나열(JSON.stringify 노출 개선)
-function kvList(obj: Record<string, unknown>) {
-  return Object.entries(obj).map(([k, v]) => (
-    <span key={k} className='mr-3'>
-      {k}: {typeof v === 'object' ? JSON.stringify(v) : String(v)}
-    </span>
-  ));
+/* ─── 상세 펼침 가독화 — 원본 dict의 내부 키·JSON을 사람이 읽는 라벨·값으로 변환 ─── */
+const MEDIA_LABEL: Record<string, string> = {
+  primary_medium: '주 이용 매체',
+  daily_media_minutes: '하루 미디어 이용',
+  meta_reach: '광고 도달 성향',
+  social_feed_reach: 'SNS 피드 도달',
+};
+const SOCIO_LABEL: Record<string, string> = {
+  education: '학력',
+  income_bracket: '소득',
+  occupation: '직업',
+  household_size: '가구원 수',
+};
+// _source·코드값·중첩 객체는 숨기고, 알려진 키는 라벨·단위로 표기
+const HIDDEN_KEYS = new Set(['income_code', 'exposure_candidates']);
+
+function formatMediaValue(key: string, v: unknown): string {
+  if (key === 'daily_media_minutes' && typeof v === 'number') return `${v}분`;
+  if ((key === 'meta_reach' || key === 'social_feed_reach') && typeof v === 'number')
+    return `${Math.round(v * 100)}%`;
+  return String(v);
+}
+
+// dict → [라벨, 표시값] 목록. _ 프리픽스·숨김 키·객체/배열 값은 제외.
+function readableEntries(
+  obj: Record<string, unknown>,
+  labels: Record<string, string>,
+  format?: (key: string, v: unknown) => string,
+): [string, string][] {
+  return Object.entries(obj)
+    .filter(
+      ([k, v]) =>
+        !k.startsWith('_') && !HIDDEN_KEYS.has(k) && v != null && typeof v !== 'object',
+    )
+    .map(([k, v]) => [labels[k] ?? k, format ? format(k, v) : String(v)]);
+}
+
+// 노출 후보(exposure_candidates) → "저녁 · 집 · 스마트폰/휴대폰" 칩 문자열 목록(중복 제거)
+function exposureChips(obj: Record<string, unknown>): string[] {
+  const raw = obj.exposure_candidates;
+  if (!Array.isArray(raw)) return [];
+  const chips = raw
+    .filter((c): c is Record<string, unknown> => typeof c === 'object' && c != null)
+    .map(c => [c.timeband, c.place, c.medium].filter(Boolean).join(' · '));
+  return [...new Set(chips)].filter(Boolean);
+}
+
+// 소비가치 — true인 항목만 중시 가치로 표시, 문자열/숫자 값은 "키 값" 그대로
+function consumptionChips(obj: Record<string, unknown>): string[] {
+  return Object.entries(obj)
+    .filter(([k]) => !k.startsWith('_'))
+    .flatMap(([k, v]) => {
+      if (v === true) return [k];
+      if (typeof v === 'string' || typeof v === 'number') return [`${k} ${v}`];
+      return [];
+    });
 }
 
 interface Props {
@@ -147,28 +196,56 @@ export function PersonaReactionCard({ reaction: r, persona: p, isOpen, onToggle 
               ))}
             </div>
           </div>
-          {Object.keys(p.consumption_values).length > 0 && (
+          {consumptionChips(p.consumption_values).length > 0 && (
             <div>
-              <span className='text-[#8B95A1] dark:text-[#6B7280]'>소비가치</span>
-              <p className='mt-0.5 text-[#4E5968] dark:text-[#9CA3AF] break-all'>
-                {kvList(p.consumption_values)}
-              </p>
+              <span className='text-[#8B95A1] dark:text-[#6B7280]'>중시하는 소비가치</span>
+              <div className='flex flex-wrap gap-1 mt-1'>
+                {consumptionChips(p.consumption_values).map(c => (
+                  <span
+                    key={c}
+                    className='px-1.5 py-0.5 rounded bg-white dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748] text-[#4E5968] dark:text-[#9CA3AF]'>
+                    {c}
+                  </span>
+                ))}
+              </div>
             </div>
           )}
-          {Object.keys(p.media_behavior).length > 0 && (
+          {readableEntries(p.media_behavior, MEDIA_LABEL, formatMediaValue).length > 0 && (
             <div>
               <span className='text-[#8B95A1] dark:text-[#6B7280]'>미디어 행동</span>
-              <p className='mt-0.5 text-[#4E5968] dark:text-[#9CA3AF] break-all'>
-                {kvList(p.media_behavior)}
-              </p>
+              <div className='mt-0.5 space-y-0.5 text-[#4E5968] dark:text-[#9CA3AF]'>
+                {readableEntries(p.media_behavior, MEDIA_LABEL, formatMediaValue).map(
+                  ([label, value]) => (
+                    <p key={label}>
+                      <span className='text-[#8B95A1] dark:text-[#6B7280]'>{label}</span>{' '}
+                      {value}
+                    </p>
+                  ),
+                )}
+                {exposureChips(p.media_behavior).length > 0 && (
+                  <div className='flex flex-wrap gap-1 pt-0.5'>
+                    {exposureChips(p.media_behavior).map(c => (
+                      <span
+                        key={c}
+                        className='px-1.5 py-0.5 rounded bg-white dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748]'>
+                        {c}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           )}
-          {Object.keys(p.socioeconomic).length > 0 && (
+          {readableEntries(p.socioeconomic, SOCIO_LABEL).length > 0 && (
             <div>
               <span className='text-[#8B95A1] dark:text-[#6B7280]'>사회경제</span>
-              <p className='mt-0.5 text-[#4E5968] dark:text-[#9CA3AF] break-all'>
-                {kvList(p.socioeconomic)}
-              </p>
+              <div className='mt-0.5 space-y-0.5 text-[#4E5968] dark:text-[#9CA3AF]'>
+                {readableEntries(p.socioeconomic, SOCIO_LABEL).map(([label, value]) => (
+                  <p key={label}>
+                    <span className='text-[#8B95A1] dark:text-[#6B7280]'>{label}</span> {value}
+                  </p>
+                ))}
+              </div>
             </div>
           )}
           {p.profile_narrative && (
