@@ -128,7 +128,8 @@ _approval_store: ApprovalStore | None = None
 def build_approval_store(settings) -> ApprovalStore:
     """승인 원장 — 발행부(라우터)와 executor가 같은 인스턴스를 봐야 하므로 싱글턴.
 
-    use_mock이면 인메모리, 아니면 DB(management_approval_records).
+    use_mock이면 인메모리(단일 프로세스 전제 — 멀티워커면 /approve와 /execute가
+    서로 다른 dict를 봐 위조로 오거부된다. 멀티워커는 use_mock=False=DB로), 아니면 DB.
     """
     global _approval_store  # noqa: PLW0603
     if _approval_store is None:

@@ -277,7 +277,10 @@ class Executor:
     async def _verify_approval_record(
         self, action: ApprovedAction
     ) -> tuple[FailureReason, str] | None:
-        """게이트 #5 — 제출된 ApprovedAction을 서버 승인 원장과 대조한다."""
+        """게이트 #5 — 제출된 ApprovedAction을 서버 승인 원장과 대조한다.
+
+        consumed_at으로는 거부하지 않는다(관측·감사용) — 재제출 차단은 멱등 게이트 담당.
+        """
         if self._approvals is None:
             return None
         record = await self._approvals.get(action.approval_id)
