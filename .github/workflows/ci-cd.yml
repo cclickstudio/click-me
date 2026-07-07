@@ -144,13 +144,13 @@ jobs:
       - name: Lint
         run: pnpm lint
 
-      # 폰트(NotoSansKR)는 gitignore라 리포에 없음 → next/font/local 빌드용으로 받아둠
-      - name: Download fonts (NotoSansKR)
+      # 폰트(Pretendard)는 gitignore라 리포에 없음 → next/font/local 빌드용으로 받아둠
+      - name: Download fonts (Pretendard)
         run: |
           mkdir -p src/app/fonts
-          base="https://github.com/notofonts/noto-cjk/raw/main/Sans/SubsetOTF/KR"
+          base="https://github.com/orioncactus/pretendard/raw/main/packages/pretendard/dist/public/static"
           for w in Thin Regular Medium Bold Black; do
-            curl -fL --retry 3 -o "src/app/fonts/NotoSansKR-$w.otf" "$base/NotoSansKR-$w.otf"
+            curl -fL --retry 3 -o "src/app/fonts/Pretendard-$w.otf" "$base/Pretendard-$w.otf"
           done
 
       - name: Build
@@ -189,15 +189,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # 폰트(NotoSansKR·Pretendard)는 gitignore라 리포에 없음 → 빌드·렌더용으로 받아둠
+      # 폰트(Pretendard)는 gitignore라 리포에 없음 → 빌드·렌더용으로 받아둠
       - name: Download fonts
         run: |
           mkdir -p frontend/src/app/fonts backend/assets/fonts
-          noto="https://github.com/notofonts/noto-cjk/raw/main/Sans/SubsetOTF/KR"
-          for w in Thin Regular Medium Bold Black; do
-            curl -fL --retry 3 -o "frontend/src/app/fonts/NotoSansKR-$w.otf" "$noto/NotoSansKR-$w.otf"
-          done
           pre="https://github.com/orioncactus/pretendard/raw/main/packages/pretendard/dist/public/static"
+          for w in Thin Regular Medium Bold Black; do
+            curl -fL --retry 3 -o "frontend/src/app/fonts/Pretendard-$w.otf" "$pre/Pretendard-$w.otf"
+          done
           for w in Regular Bold; do
             curl -fL --retry 3 -o "backend/assets/fonts/Pretendard-$w.otf" "$pre/Pretendard-$w.otf"
           done
@@ -337,13 +336,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # NotoSansKR(gitignore)는 next/font/local 빌드용 → 빌드 컨텍스트에 받아둠
-      - name: Download fonts (NotoSansKR)
+      # Pretendard(gitignore)는 next/font/local 빌드용 → 빌드 컨텍스트에 받아둠
+      - name: Download fonts (Pretendard)
         run: |
           mkdir -p frontend/src/app/fonts
-          base="https://github.com/notofonts/noto-cjk/raw/main/Sans/SubsetOTF/KR"
+          base="https://github.com/orioncactus/pretendard/raw/main/packages/pretendard/dist/public/static"
           for w in Thin Regular Medium Bold Black; do
-            curl -fL --retry 3 -o "frontend/src/app/fonts/NotoSansKR-$w.otf" "$base/NotoSansKR-$w.otf"
+            curl -fL --retry 3 -o "frontend/src/app/fonts/Pretendard-$w.otf" "$base/Pretendard-$w.otf"
           done
 
       - name: Configure AWS credentials

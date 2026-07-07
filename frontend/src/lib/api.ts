@@ -646,14 +646,19 @@ export const api = {
       request<{ session_id: string; messages: ChatHistoryMessage[] }>(
         `/chat/sessions/${sessionId}/messages`,
       ),
-    // 개선 루프(시뮬↔제너) 상태 — 3턴 도달 시 '개선 시안 만들기' 제안을 숨기는 데 쓴다.
-    loopState: (sessionId: string) =>
+    // 개선 루프(시뮬↔제너) 상태 — 제안 숨김/조기종료 배지에 쓴다.
+    // simulationId를 주면 그 시뮬 KPI 등급으로 조기종료를 판정한다(3턴 전이라도 강하면 종료).
+    loopState: (sessionId: string, simulationId?: string) =>
       request<{
         loop_count: number;
         max_loop: number;
         can_improve: boolean;
         phase: string;
-      }>(`/chat/loop-state?session_id=${encodeURIComponent(sessionId)}`),
+        early_stop_reason?: string | null;
+      }>(
+        `/chat/loop-state?session_id=${encodeURIComponent(sessionId)}` +
+          (simulationId ? `&simulation_id=${encodeURIComponent(simulationId)}` : '')
+      ),
     // 미확인 알림(N5) — 라우트 변경마다 폴링해 벨 배지·패널에 표시.
     notifications: (projectId: string) =>
       request<{

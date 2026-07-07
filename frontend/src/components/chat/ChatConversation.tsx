@@ -1807,6 +1807,7 @@ export default function ChatConversation({
                         <DebateStreamWidget
                           runId={msg.meta.widget.data.run_id}
                           sessionId={sidRef.current ?? sessionId ?? undefined}
+                          simulationId={msg.meta.widget.data.simulation_id}
                           onSummary={handleDebateSummary}
                           onAccept={handleApprove}
                           proposalDisabled={isStreaming}

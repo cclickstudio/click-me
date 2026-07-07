@@ -54,12 +54,14 @@ const cardCls =
 export default function DebateStreamWidget({
   runId,
   sessionId,
+  simulationId,
   onSummary,
   onAccept,
   proposalDisabled,
 }: {
   runId: string;
   sessionId?: string; // 개선 루프 3턴 한도 조회용(없으면 제안 그대로 노출)
+  simulationId?: string; // 이 토론의 시뮬 id — 조기종료 KPI 판정 재료
   onSummary?: (runId: string) => void; // "토론 요약" 클릭 → 요약 위젯 메시지 추가
   onAccept?: (action: string) => void; // 개선 제안 수락(토론 종료 후) → 개선 루프 진행
   proposalDisabled?: boolean;
@@ -75,10 +77,12 @@ export default function DebateStreamWidget({
   const [err, setErr] = useState('');
   const [summaryShown, setSummaryShown] = useState(false);
   // 개선 루프 한도 — 토론 완료 시 조회. canImprove=false면 '개선 시안 만들기' 대신 완료 안내.
+  // earlyStopReason이 있으면 KPI 충족 조기종료 → 완료 안내 대신 '조기 종료' 배지.
   const [loop, setLoop] = useState<{
     canImprove: boolean;
     count: number;
     max: number;
+    earlyStopReason?: string | null;
   } | null>(null);
   const esRef = useRef<(() => void) | null>(null); // SSE 재연결 구독 close 함수(X2)
   const doneRef = useRef(false);
@@ -155,20 +159,21 @@ export default function DebateStreamWidget({
     if (phase !== 'done' || !sessionId || !onAccept) return;
     let alive = true;
     api.chat
-      .loopState(sessionId)
+      .loopState(sessionId, simulationId)
       .then(s => {
         if (alive)
           setLoop({
             canImprove: s.can_improve,
             count: s.loop_count,
             max: s.max_loop,
+            earlyStopReason: s.early_stop_reason ?? null,
           });
       })
       .catch(() => {});
     return () => {
       alive = false;
     };
-  }, [phase, sessionId, onAccept]);
+  }, [phase, sessionId, simulationId, onAccept]);
 
   return (
     <div className={cardCls}>
@@ -272,7 +277,12 @@ export default function DebateStreamWidget({
             </button>
           )}
           {onAccept &&
-            (loop && !loop.canImprove ? (
+            (loop?.earlyStopReason ? (
+              <div className='rounded-xl border border-[#00C471]/40 bg-[#E7F9F1] dark:bg-[#0F2E22] px-3 py-2.5 text-[12px] text-[#0B7A4B] dark:text-[#5BD9A0]'>
+                🎯 조기 종료 — {loop.earlyStopReason}. 목표 기준을 충분히 충족해 추가 왕복
+                없이 이 시안으로 진행해도 좋아요.
+              </div>
+            ) : loop && !loop.canImprove ? (
               <div className='rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-[#F9FAFB] dark:bg-[#252D3D] px-3 py-2.5 text-[12px] text-[#4E5968] dark:text-[#9CA3AF]'>
                 ✅ 개선 루프 {loop.count}/{loop.max}턴을 다 돌았어요. 충분히 다듬었으니,
                 새 방향은 새 채팅에서 시작해 주세요.
