@@ -142,6 +142,25 @@ def test_pause_campaign_returns_paused(client):
     assert target["response"]["operation"] == "pause"
 
 
+def test_pause_success_resolves_campaign_notifications(client, monkeypatch):
+    """조치 실행 성공 → 그 캠페인의 미해결 알림을 actioned로 정리 + 배지 동기화(보완 2)."""
+    calls: list[tuple[str, str]] = []
+
+    class _FakeNotifStore:
+        async def resolve_by_campaign(self, org_id, campaign_id, resolution, now):
+            calls.append((campaign_id, resolution))
+            return 1
+
+    published: list[str] = []
+    monkeypatch.setattr(management, "_notification_store", lambda: _FakeNotifStore())
+    monkeypatch.setattr(management, "_publish_org", published.append)
+
+    res = client.post("/api/management/campaigns/cmp_notif_pause/pause")
+    assert res.json()["paused"] is True
+    assert calls == [("cmp_notif_pause", "actioned")]
+    assert published  # 해소 건이 있으면 배지 동기화 신호가 나간다
+
+
 def test_create_proposal_rejects_invalid_budget(client):
     res = client.post(
         "/api/management/campaigns/create-proposal",

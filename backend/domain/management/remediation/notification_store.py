@@ -263,6 +263,28 @@ class DbNotificationStore:
             await db.commit()
             return bool(res.rowcount)
 
+    async def resolve_by_campaign(
+        self, org_id: str, campaign_id: str, resolution: str, now: datetime
+    ) -> int:
+        """캠페인의 미해결 알림 일괄 해소 — 조치 실행 성공 시 actioned 정리용. 해소 건수 반환.
+
+        campaign_id가 NULL인 계정 단위 알림(지갑·예산)은 건드리지 않는다.
+        """
+        from core.models import ManagementNotification as N  # noqa: PLC0415
+
+        async with self._sf() as db:
+            res = await db.execute(
+                update(N)
+                .where(
+                    N.organization_id == uuid.UUID(org_id),
+                    N.campaign_id == campaign_id,
+                    N.resolved_at.is_(None),
+                )
+                .values(resolved_at=now, resolution=resolution)
+            )
+            await db.commit()
+            return int(res.rowcount or 0)
+
     async def claim_consult_session(self, notification_id: str, session_id: str) -> bool:
         """CAS — consult_session_id가 비어 있을 때만 세팅. 승자 True(심기 담당)."""
         from core.models import ManagementNotification as N  # noqa: PLC0415

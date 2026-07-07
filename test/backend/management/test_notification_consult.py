@@ -80,7 +80,15 @@ class _Settings:
     pass
 
 
-def _run(store, chat_store, *, consult_result="anomaly", published=None):
+async def _ctx_alive(_session_id):
+    return True
+
+
+async def _ctx_dead(_session_id):
+    return False
+
+
+def _run(store, chat_store, *, consult_result="anomaly", published=None, context_alive=None):
     async def _consult_fn(settings, campaign_id, **kw):
         return None if consult_result == "fail" else _consult(status=consult_result)
 
@@ -93,6 +101,7 @@ def _run(store, chat_store, *, consult_result="anomaly", published=None):
         consult=_consult_fn,
         publish=(published.append if published is not None else lambda _o: None),
         now=lambda: datetime.now(UTC),
+        context_alive=context_alive,
     )
 
 
@@ -132,7 +141,8 @@ async def test_already_resolved_returns_gentle_status():
 
 
 @pytest.mark.asyncio
-async def test_reclick_navigates_without_reverify():
+async def test_reclick_with_live_context_navigates_without_reverify():
+    """옵션이 아직 진행 가능한 세션이면 재클릭 = 이동 전용(스펙 §4 결정 유지)."""
     calls = []
 
     async def counting_consult(settings, campaign_id, **kw):
@@ -150,9 +160,55 @@ async def test_reclick_navigates_without_reverify():
         consult=counting_consult,
         publish=lambda _o: None,
         now=lambda: datetime.now(UTC),
+        context_alive=_ctx_alive,
     )
     assert out == {"status": "consult", "session_id": "sess-9"}
-    assert calls == []  # 재클릭 = 이동 전용(스펙 §4 결정)
+    assert calls == []  # 컨텍스트 살아있음 = 이동 전용
+    assert chat.appended == []
+
+
+@pytest.mark.asyncio
+async def test_reclick_reseeds_same_session_when_context_dead():
+    """옵션 진행됨/만료된 세션 재진입 — 재검증 후 같은 세션에 상담 카드를 다시 심는다.
+
+    회귀 방지: 진행 잔재(조치 확인 카드)만 남은 세션으로 이동해 '선택지 없이 ③이 바로 뜨는'
+    증상(2026-07-06 보고)을 재심기로 해소한다.
+    """
+    n = Store().notif | {"consult_session_id": "sess-9", "read_at": datetime.now(UTC)}
+    store, chat, published = Store(notif=n), ChatStore(), []
+    out = await _run(store, chat, published=published, context_alive=_ctx_dead)
+    assert out == {"status": "consult", "session_id": "sess-9"}
+    assert chat.appended and chat.appended[0][0] == "sess-9"  # 같은 세션에 재심기
+    assert chat.appended[0][1]["kind"] == "remediation_consult"
+    assert published == ["org-1"]  # 재심기 = 상태 변화 → 배지 동기화
+
+
+@pytest.mark.asyncio
+async def test_reclick_reseed_normal_resolves_auto_normal():
+    """재심기 재검증에서 정상이면 알림을 auto_normal로 해소한다(신규 경로와 동일 판정)."""
+    n = Store().notif | {"consult_session_id": "sess-9", "read_at": datetime.now(UTC)}
+    store, chat = Store(notif=n), ChatStore()
+    out = await _run(store, chat, consult_result="normal", context_alive=_ctx_dead)
+    assert out["status"] == "normal"
+    assert store.resolves == [("n1", "auto_normal")]
+    assert chat.appended == []
+
+
+@pytest.mark.asyncio
+async def test_reclick_reseed_consult_failure_returns_retryable():
+    n = Store().notif | {"consult_session_id": "sess-9", "read_at": datetime.now(UTC)}
+    out = await _run(Store(notif=n), ChatStore(), consult_result="fail", context_alive=_ctx_dead)
+    assert out == {"status": "unavailable"}
+
+
+@pytest.mark.asyncio
+async def test_reclick_reseed_append_failure_keeps_session_link():
+    """재심기 append 실패는 재시도 가능(503)으로 끝내되, 기존 세션 연결은 유지한다."""
+    n = Store().notif | {"consult_session_id": "sess-9", "read_at": datetime.now(UTC)}
+    store, chat = Store(notif=n), ChatStore(fail_append=True)
+    out = await _run(store, chat, context_alive=_ctx_dead)
+    assert out == {"status": "unavailable"}
+    assert store.releases == []  # 세션은 살아있다 — CAS 롤백 대상 아님
 
 
 @pytest.mark.asyncio
