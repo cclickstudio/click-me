@@ -48,17 +48,21 @@ docker compose up --build
 | 문서 | 내용 |
 |---|---|
 | [CLAUDE.md](CLAUDE.md) | 아키텍처 결정, 개발 규칙, 환경변수 전체 목록 |
+| [docs/README.md](docs/README.md) | 문서 인덱스(공용·팀별) |
 | [docs/api-spec.md](docs/api-spec.md) | API 엔드포인트 명세 |
 | [docs/db-schema.md](docs/db-schema.md) | DB 스키마 및 Alembic 마이그레이션 |
+| [docs/db-erd.md](docs/db-erd.md) | 실 DB introspection 기반 ERD(도메인별 Mermaid) |
+| [infra/README.md](infra/README.md) | 인프라 프로비저닝·배포 운영 가이드 |
 | [docs/create_issues_template.py](docs/create_issues_template.py) | GitHub Issues 일괄 생성 스크립트 템플릿 |
 
 ---
 
 ## CI/CD
 
-- **CI** (`.github/workflows/ci.yml`): push 시 Ruff lint + pytest, ESLint + Next.js build 자동 실행
-- **CD** (`.github/workflows/cd.yml`): Docker Hub + EC2 Secrets 등록 후 활성화 필요 (`CLAUDE.md` 참고)
-- **`docker-compose.prod.yml`**: CD 활성화 시점에 EC2 배포용으로 사용되는 파일. 현재는 대기 중.
+- **단일 파이프라인** (`.github/workflows/ci-cd.yml`): 구 `ci.yml`+`cd.yml`을 하나로 병합.
+- **CI**: Ruff lint + pytest(backend), ESLint + Next.js build(frontend). PR·push 모두 실행.
+- **CD**: `main`·`ci-cd` 브랜치 push에서만 CI 성공 시 ECR 이미지 빌드·push → EC2에서 `docker-compose.prod.yml`로 배포. Nginx + Let's Encrypt(certbot 자동 발급·갱신).
+- 배포 인프라(EC2 프로비저닝·Elastic IP·PEM 공유)는 [`infra/README.md`](infra/README.md) 참고.
 
 ---
 

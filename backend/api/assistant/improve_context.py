@@ -1,8 +1,9 @@
 # 시뮬 결과 → 개선모드(IMPROVE) gen_form 프리필 조립 — 채팅 승인·run_improvement 공용
 """도메인 ORM import 없이 raw SQL로 조회한다(api/routers/debate.py의 경계 유지 패턴).
 
-조립(빌더)은 순수 함수로 분리해 DB 없이 테스트한다. product_cutout_s3_key는 채팅 경로에서
-Simulation↔generation 연결이 없어 추적 불가 — 항상 미포함(생성 파이프라인이 null 폴백 지원).
+조립(빌더)은 순수 함수로 분리해 DB 없이 테스트한다. product_cutout_s3_key는 '생성한 광고로
+시뮬'(ads.generation_id 존재)에 한해 그 generation의 누끼 키를 역추적해 재사용한다 — 그 외엔
+None(생성 파이프라인이 null 폴백 지원).
 """
 
 from __future__ import annotations
@@ -10,6 +11,7 @@ from __future__ import annotations
 from sqlalchemy import text
 
 from core.db import AsyncSessionLocal
+from tools.storage.s3 import product_cutout_key
 
 
 def build_sim_summary(aggregate: dict, sample_size: int | None, ad_title: str | None = None) -> str:
@@ -68,6 +70,8 @@ def build_improve_gen_data(src: dict, fix_requests: str | None = None) -> dict:
         "plain_summary": src.get("plain_summary"),
         "improvement_direction": build_improvement_direction(src.get("ranked_actions") or []),
         "existing_ad_s3_key": _s3_key_or_none(src.get("ad_asset_url")),
+        # 생성한 광고로 시뮬한 경우에만 채워짐(누끼 재사용) — 그 외엔 None(파이프라인 폴백).
+        "product_cutout_s3_key": src.get("product_cutout_s3_key"),
         "fix_requests": fix_requests or None,
         "target_audience": "",
         "campaign_objective": "conversion",
@@ -82,6 +86,7 @@ async def fetch_improve_source(simulation_id: str, org_id: str | None = None) ->
                 text("""
                     SELECT s.status, s.sample_size,
                            a.title AS ad_title, a.asset_url AS ad_asset_url,
+                           a.generation_id,
                            p.organization_id,
                            sa.purchase_intent_avg, sa.rejection_rate, sa.trust_avg,
                            sa.click_intent_rate
@@ -112,6 +117,23 @@ async def fetch_improve_source(simulation_id: str, org_id: str | None = None) ->
             )
         ).fetchone()
 
+        # 상품 누끼 역추적 — 생성한 광고로 시뮬한 경우(generation_id 존재) 그 generation이
+        # CREATE + 상품 이미지였으면 누끼가 S3에 있다(get_detail과 동일 게이트). 키를 재구성.
+        cutout_key = None
+        if row.generation_id is not None:
+            g = (
+                await db.execute(
+                    text("""
+                        SELECT input->>'mode' AS mode,
+                               input->>'product_image_temp_key' AS product_image_temp_key
+                        FROM ad_generations WHERE id = :gid
+                    """),
+                    {"gid": str(row.generation_id)},
+                )
+            ).fetchone()
+            if g is not None and (g.mode or "create") == "create" and g.product_image_temp_key:
+                cutout_key = product_cutout_key(str(row.generation_id))
+
     final = (debate.final if debate else None) or {}
 
     def _num(v: object) -> float | None:
@@ -129,6 +151,7 @@ async def fetch_improve_source(simulation_id: str, org_id: str | None = None) ->
         },
         "plain_summary": final.get("plain_summary"),
         "ranked_actions": final.get("ranked_actions") or [],
+        "product_cutout_s3_key": cutout_key,
     }
 
 

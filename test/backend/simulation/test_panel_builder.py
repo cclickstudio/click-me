@@ -82,3 +82,24 @@ def test_filter_personas_helper() -> None:
     personas = [Persona(**d) for d in panel["personas"]]
     males = filter_personas(personas, {"gender": "M"})
     assert all(p.gender == "M" for p in males)
+
+
+def test_filter_personas_by_persona_id_ignores_age_gender() -> None:
+    """Individual 모드 페르소나 지정 선택 — persona_id 있으면 그 1명만, age/gender는 무시."""
+    panel = _builder().build(PanelSpec(size=20, seed=7))
+    from domain.simulation.contracts.schemas import Persona
+
+    personas = [Persona(**d) for d in panel["personas"]]
+    target = personas[3]
+    result = filter_personas(
+        personas, {"persona_id": target.persona_id, "gender": "그럴리없음", "age_min": 999}
+    )
+    assert result == [target]
+
+
+def test_filter_personas_by_unknown_persona_id_returns_empty() -> None:
+    panel = _builder().build(PanelSpec(size=10, seed=8))
+    from domain.simulation.contracts.schemas import Persona
+
+    personas = [Persona(**d) for d in panel["personas"]]
+    assert filter_personas(personas, {"persona_id": "P_없음"}) == []

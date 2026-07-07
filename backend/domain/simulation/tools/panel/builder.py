@@ -24,8 +24,15 @@ def _qa_ok(narrative: str) -> bool:
 
 
 def filter_personas(personas: list[Persona], target_filter: dict | None) -> list[Persona]:
-    """캐시 패널을 target_filter(gender/age_min/age_max)로 필터 — 동일 패널 부분집합."""
+    """캐시 패널을 target_filter로 필터 — 동일 패널 부분집합.
+
+    persona_id가 있으면 그 1명만 반환(Individual 모드 지정 선택, age/gender 무시).
+    없으면 기존대로 gender/age_min/age_max로 필터.
+    """
     tf = target_filter or {}
+    persona_id = tf.get("persona_id")
+    if persona_id:
+        return [p for p in personas if p.persona_id == persona_id]
     gender = tf.get("gender")
     age_min = int(tf.get("age_min", 0))
     age_max = int(tf.get("age_max", 200))

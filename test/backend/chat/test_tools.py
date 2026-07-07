@@ -49,6 +49,7 @@ async def test_run_simulation_emits_sim_form(tools):
             "ad_content": "여름 세일",
             "product_category": None,
             "ad_objective": None,
+            "analysis_mode": "synthetic",  # 3-모드 분석 기본값(1ad26926) 반영
         },
     }
     assert cmd.update["source"] == "simulation"

@@ -1,5 +1,11 @@
 # 채팅 어시스턴트 · 오케스트레이터 스펙 — 우리 프로젝트 적합안 (확정본 A)
 
+> ⚠️ **이후 재전환됨 (역사 문서)** — 이 A안(결정론 분류+디스패치)으로 1차 구현했으나,
+> 이후 **통합 딥에이전트**(deepagents 단일 tool-calling 에이전트 + CHAT_POLICY 추론
+> 라우팅)로 대체됐다(`4c3e7c8`). "결정론 최상위·루프 없음" 원칙은 폐기, 공통 계약
+> (SubagentRequest/Result)·LangSmith 추적·SSE 핸드오프는 계승. 현행은
+> chat-deep-agent-orchestrator.context-notes.md 참고.
+>
 > 이 문서는 [chat-orchestrator-spec.md](./chat-orchestrator-spec.md)의 **결정 항목을 "우리 프로젝트(ClickMe)에 가장 맞는 방식"으로 채운 사본**이다.
 > 같은 사안을 "업계 표준(참고용)"으로 채운 사본은 [chat-orchestrator-spec.industry-standard.md](./chat-orchestrator-spec.industry-standard.md).
 > 질문(§3 체크리스트)은 원본 그대로 두고, 각 `결정:` 칸만 채웠다.

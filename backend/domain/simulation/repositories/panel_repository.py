@@ -4,7 +4,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from domain.simulation import models
@@ -94,12 +94,57 @@ class PanelRepository:
     async def get(self, panel_id: uuid.UUID) -> models.Panel | None:
         return await self._s.get(models.Panel, panel_id)
 
+    async def list_personas(
+        self,
+        version: str,
+        *,
+        gender: str | None = None,
+        age_min: int | None = None,
+        age_max: int | None = None,
+        limit: int = 30,
+        offset: int = 0,
+    ) -> tuple[list[dict], int]:
+        """Individual 모드 페르소나 지정 선택용 — 가벼운 미리보기 목록(SQL 필터·페이지네이션).
+
+        get_by_version처럼 전 항목(OCEAN·미디어행동 등)을 안 실어 1000명 규모에서도 가볍다.
+        반환: (미리보기 목록, 필터 적용 후 총원).
+        """
+        panel = await self._s.scalar(select(models.Panel).where(models.Panel.version == version))
+        if panel is None:
+            return [], 0
+        conds = [models.Persona.panel_id == panel.id]
+        if gender:
+            conds.append(models.Persona.gender == gender)
+        if age_min is not None:
+            conds.append(models.Persona.age >= age_min)
+        if age_max is not None:
+            conds.append(models.Persona.age <= age_max)
+        total = await self._s.scalar(select(func.count()).select_from(models.Persona).where(*conds))
+        rows = await self._s.scalars(
+            select(models.Persona)
+            .where(*conds)
+            .order_by(models.Persona.id)
+            .limit(limit)
+            .offset(offset)
+        )
+        items = [
+            {
+                "persona_id": f"P_{row.id.hex[:8]}",
+                "age": row.age,
+                "gender": row.gender,
+                "region": row.region,
+                "narrative_snippet": (row.profile_narrative or "")[:80],
+            }
+            for row in rows
+        ]
+        return items, int(total or 0)
+
     async def get_by_version(self, version: str) -> tuple[uuid.UUID, list[Persona]] | None:
         """고정 패널을 version으로 조회 — 읽기 경로(§3.6). 없으면 None(호출측이 폴백 판단).
 
         DB에 없는 계약 필드(원본 persona_id 문자열·social_values_deep·social_economic)는
-        DB에 저장하지 않는 결정(context-notes §2) — persona_id는 DB id로 합성, 나머지는
-        전 항목 빈 dict라 잃을 값이 없다(Data_Collection.md 기준).
+        DB에 저장하지 않는 결정 — persona_id는 DB id로 합성, 나머지는
+        전 항목 빈 dict라 잃을 값이 없다(데이터 확보처 가이드.md 기준).
         """
         panel = await self._s.scalar(select(models.Panel).where(models.Panel.version == version))
         if panel is None:

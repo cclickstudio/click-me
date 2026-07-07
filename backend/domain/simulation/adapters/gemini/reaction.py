@@ -87,7 +87,7 @@ def _generation_lines(age: int, ad: AdInterpretation) -> str:
 
     말투·형성기 문맥은 전 페르소나에 유익하므로 항상 출력. '내 세대 vs 젊은 세대 친숙도/낯섦'
     프레임만 _has_age_or_brand_cue(ad) 일 때 주입 — 다양성은 데이터(나이)에서, 과증폭은 게이팅으로.
-    (PERSONA_COHORT_KNOWLEDGE_STRATEGY Tier 1)
+    (docs/simulation/Persona/페르소나 세대 지식 전략.md Tier 1)
     """
     birth_year = datetime.now().year - int(age)
     form_start, form_end = birth_year + 15, birth_year + 25
@@ -113,7 +113,7 @@ def _brand_era_lines(ad: AdInterpretation) -> str:
 
     전원 동일한 '사실'(전성기·세대 친숙도)만 주입 — 친숙/낯섦 판단은 페르소나 나이(형성기)가 한다.
     식별 실패(identified=false)·필드 없으면 빈 문자열 → 기존 동작 그대로.
-    (PERSONA_COHORT_KNOWLEDGE_STRATEGY Tier 2)
+    (docs/simulation/Persona/페르소나 세대 지식 전략.md Tier 2)
     """
     be = ad.structured_analysis.get("brand_era") if ad.structured_analysis else None
     if not isinstance(be, dict) or not be.get("identified"):
@@ -243,8 +243,26 @@ def _trust_anchor_line() -> str:
     )
 
 
-def build_reaction_prompt(persona, ad: AdInterpretation, exposure: str | None) -> str:
-    """4-b 반응 프롬프트(프로바이더 무관) — Gemini·OpenAI 어댑터가 공유한다."""
+def _reaction_text_block() -> str:
+    """SSR 입력용 자유 서술 필드(§SSR 재배선, opt-in) — 점수는 이 텍스트를 임베딩 SSR이 매긴다."""
+    return (
+        '  "reaction_text": {\n'
+        '    "first_impression": "광고를 처음 본 순간의 솔직한 느낌 1~2문장",\n'
+        '    "supporting_thoughts": ["끌리는 이유(없으면 빈 배열)"],\n'
+        '    "opposing_thoughts": ["망설여지는 이유(없으면 빈 배열)"],\n'
+        '    "final_attitude": "다 보고 난 뒤 최종 태도 1~2문장"\n'
+        "  },\n"
+    )
+
+
+def build_reaction_prompt(
+    persona, ad: AdInterpretation, exposure: str | None, *, with_reaction_text: bool = False
+) -> str:
+    """4-b 반응 프롬프트(프로바이더 무관) — Gemini·OpenAI 어댑터가 공유한다.
+
+    with_reaction_text=True(SSR 배선)면 자유 서술(reaction_text) 필드를 추가로 요구한다.
+    정수 purchase_intent·trust는 하위호환(QA·폴백)으로 항상 유지 — SSR이 나중에 덮어쓴다.
+    """
     income = persona.socioeconomic.get("income_bracket", "?")
     edu = persona.socioeconomic.get("education", "?")
     values = [k for k, v in persona.consumption_values.items() if v]
@@ -277,6 +295,7 @@ def build_reaction_prompt(persona, ad: AdInterpretation, exposure: str | None) -
         '  "purchase_intent": 1~5 정수, "trust": 1~5 정수, "rejected": bool,\n'
         f'  "rejection_reason_tag": null 또는 [{_enum_values(RejectionReasonTag)}] 중 하나,\n'
         f'  "emotion_tag": [{_enum_values(EmotionTag)}] 중 하나,\n'
+        f"{_reaction_text_block() if with_reaction_text else ''}"
         '  "perceived_message": "내가 이해한 메시지", "perceived_target": "내가 느낀 타깃",\n'
         '  "brand_recognized": bool,  // 이 광고가 어느 브랜드/제품 광고인지 명확히 알겠는가\n'
         '  "perceived_brand": "내가 인식한 브랜드/제품명(모르겠으면 null)",\n'
@@ -312,18 +331,22 @@ def build_persona_reaction(persona, exposure: str | None, data: dict) -> Persona
         perceived_brand=data.get("perceived_brand"),
         noticed_first=data.get("noticed_first"),
         utterance=data.get("utterance"),
+        reaction_text=data.get("reaction_text"),  # SSR 서술(없으면 None — 현행 무변화)
         qa_passed=True,  # QA 게이트가 별도 판정
     )
 
 
-async def generate_reaction(json_call, persona, ad: AdInterpretation) -> PersonaReaction:
+async def generate_reaction(
+    json_call, persona, ad: AdInterpretation, *, with_reaction_text: bool = False
+) -> PersonaReaction:
     """반응 생성 오케스트레이션(프로바이더 무관) — 노출맥락 선택→프롬프트→json_call→파싱.
 
     json_call: async (prompt:str)->dict. 이 함수만 갈아끼우면 프로바이더(Gemini/OpenAI)가 바뀐다.
     """
     rng = random.Random(persona.persona_id)
     exposure = _pick_exposure(persona, rng)
-    data = await json_call(build_reaction_prompt(persona, ad, exposure))
+    prompt = build_reaction_prompt(persona, ad, exposure, with_reaction_text=with_reaction_text)
+    data = await json_call(prompt)
     return build_persona_reaction(persona, exposure, data)
 
 
@@ -331,12 +354,18 @@ class GeminiReactionEngine:
     """4-b 반응 — §3.5 구조화 JSON 강제(비동기). temperature↑로 페르소나 간 응답 다양성 보존."""
 
     def __init__(
-        self, *, api_key: str | None = None, model: str = _DEFAULT_MODEL, temperature: float = 1.0
+        self,
+        *,
+        api_key: str | None = None,
+        model: str = _DEFAULT_MODEL,
+        temperature: float = 1.0,
+        with_reaction_text: bool = False,
     ) -> None:
         self._client = _new_client(api_key)
         self._model = model
         self.version = model
         self._temperature = temperature
+        self._with_reaction_text = with_reaction_text  # SSR 배선 시 자유 서술 필드 요구
 
     async def react(self, persona, ad: AdInterpretation) -> PersonaReaction:
         async def _json(prompt: str) -> dict:
@@ -348,4 +377,6 @@ class GeminiReactionEngine:
                 langsmith_extra={"name": "simulation.reaction"},
             )
 
-        return await generate_reaction(_json, persona, ad)
+        return await generate_reaction(
+            _json, persona, ad, with_reaction_text=self._with_reaction_text
+        )

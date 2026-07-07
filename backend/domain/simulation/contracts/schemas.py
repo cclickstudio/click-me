@@ -5,6 +5,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
+from core.schemas import ScoreDistribution
 from domain.simulation.contracts.enums import (
     DropReasonTag,
     EmotionTag,
@@ -51,6 +52,9 @@ class SimulationRunRequest(BaseModel):
     service_class: int | None = None  # 상품·서비스 분류(NICE 1~45) — 메타데이터(교차검증 차원 아님)
     # 성과 비교 자동 연결 — Meta 캠페인 ID(관리 탭에서 진입 시). 시뮬 저장 직후 서버가 직접 링크.
     from_campaign_id: str | None = None
+    # 생성 출처 — '생성한 광고로 시뮬' 진입 시 그 generation id(ads.generation_id로 영속).
+    # 채팅 개선모드가 이 값으로 상품 누끼 키를 역추적한다. 그 외 입력 모드는 None.
+    generation_id: str | None = None
 
     @model_validator(mode="after")
     def _resolve_allocation(self) -> SimulationRunRequest:
@@ -109,7 +113,10 @@ class AdInterpretation(BaseModel):
 
 
 class PanelSpec(BaseModel):
-    """패널 빌드/조회 명세 — 고정 패널 운영(§3.6). 캐시는 추후 구현."""
+    """패널 빌드/조회 명세 — 고정 패널 운영(§3.6).
+
+    캐시 로드는 CachedPanelProvider(tools/panel/builder.py)로 구현됨 — 런마다 재생성하지 않음.
+    """
 
     version: str = "panel-v1"
     size: int = Field(default=20, ge=1, le=1000)
@@ -162,6 +169,11 @@ class PersonaReaction(BaseModel):
     drop_reason_tag: DropReasonTag | None = None
     purchase_intent: int = Field(ge=1, le=5)
     trust: int = Field(ge=1, le=5)
+    # SSR 재배선(SIMULATION_SCORING=ssr, opt-in) — 서술 텍스트와 임베딩 기반 점수 분포.
+    # 미사용(기본 llm) 시 전부 None — 기존 소비자(집계·토론·리포트) 무영향.
+    reaction_text: dict[str, Any] | None = None  # LLM 자유 서술(SSR 입력) — 4-b 프롬프트 확장분
+    purchase_intent_dist: ScoreDistribution | None = None  # SSR 분포(§KPI② 분포 표기 근거)
+    trust_dist: ScoreDistribution | None = None  # SSR 분포(§KPI③)
     rejected: bool = False
     rejection_reason_tag: RejectionReasonTag | None = None
     emotion_tag: EmotionTag = EmotionTag.INDIFFERENCE
@@ -187,7 +199,8 @@ class RubricScore(BaseModel):
 class SimulationAggregate(BaseModel):
     """집계 엔진 산출 — 분석팀·리포트 입력 계약.
 
-    ci_low/high·variance_warning 의 정식 산출(부트스트랩 등)은 추후 구현.
+    ci_low/high 는 가중 부트스트랩(BasicAggregator._weighted_bootstrap_ci)으로,
+    variance_warning 은 구매의도 가중표준편차 임계(_VARIANCE_MIN_STD)로 산출됨.
     """
 
     click_intent_rate: float

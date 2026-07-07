@@ -9,6 +9,15 @@
 > v4.0 변경 — 실 DB를 pg_dump로 전량 재추출. 테이블 30 → **45개**, ENUM 타입 10종 명시.
 > 신규: `teams`·`project_members`·`refresh_tokens`·`user_settings`·`audit_logs`·`chat_messages`·`generated_ads`·`persona_templates`·`brand_profiles`·`calibration_data`·`ad_campaign_logs`·`kinds`·`categories`·`category_kinds`·`alembic_version`.
 > 변경: `users` `email`→`login_id`, `team_id`·`phone_num`·`user_email`·`must_change_password` 추가 / 여러 테이블에 `deleted_at` 소프트삭제 컬럼 추가.
+>
+> **admin 소프트삭제** — 조직/유저 삭제는 hard delete가 아니라 `status='INACTIVE'`(+ Cognito disable)로 처리해 데이터는 보존한다. 복원 시 `status='ACTIVE'`, 영구삭제(purge) 시에만 행을 실제로 지운다. auth 미들웨어가 `status != 'ACTIVE'`면 401 차단.
+>
+> **Alembic 체인(현행)** — `0001_baseline`(구 001~029 squash) → `0002_persona_weight` → `0003_categories_kinds` → `0004_generator_kb_search_vector`. 구 3자리 리비전(001/002…)은 제거됨. 새 DB는 `0001_baseline`이 전체 스키마를 한 번에 생성.
+
+> **[덧붙임 2026-07-06] 마이그레이션 0005·0006 반영**
+> - 0006(2026-07-03 적용): `chat_long_term_memory`→`chat_session_summaries` · `execution_history`→`chat_execution_history` 개명, `management_user_memory` drop, `automation_runs` 신설.
+> - 0005: `management_notifications` 신설. **체인 주의: 0004 → 0006 → 0005** (0006이 먼저 적용됨).
+> - 매니지먼트(4-2) 표에 ORM 기준 테이블 목록 덧붙임 — 아래 §매니지먼트 참조.
 
 ---
 
@@ -77,6 +86,15 @@
 | 테이블 | 역할 |
 |---|---|
 | `management_notifications` | 이상 감지 운영 알림(하이브리드 C안) — 채팅과 분리 저장, org·kind·dedup_key 미해결 1행 |
+| `management_created_campaigns` | 우리가 생성한 캠페인 레지스트리(org 귀속, 소프트 삭제, 시뮬 연결 키) — 덧붙임 07-06 |
+| `management_idempotency_keys` | 실행 멱등키 — 동일 승인 건 중복 집행 차단 — 덧붙임 07-06 |
+| `management_audit_events` | 실행 감사 로그(승인→실행 연결) — 덧붙임 07-06 |
+| `management_meta_connections` | org별 Meta OAuth 연결(토큰 암호화 저장) — 덧붙임 07-06 |
+| `management_campaign_kpi_overrides` | 캠페인별 KPI 목표(target_roas 등) 덮어쓰기 — 덧붙임 07-06 |
+| `management_kb_documents` / `_kb_chunks` / `_kb_feedback` / `_kb_eval_cases` | 어시스턴트(CLIO) RAG 지식베이스·평가 — 덧붙임 07-06 |
+| `management_chat_sessions` / `_chat_messages` / `management_agent_runs` | 어시스턴트 전용 대화·에이전트 실행 기록 — 덧붙임 07-06 |
+| `automation_runs` | APScheduler 워커 결과 공용 저장소(3도메인, dedup 부분 유니크) — 0006 신설 |
+| `chat_execution_history` | 실행 확정 이력 = 채팅 에이전트 롱텀 메모리 — 0006에서 `execution_history` 개명 |
 
 ### 참조 · 기타
 | 테이블 | 역할 |
@@ -128,7 +146,7 @@ CREATE TABLE users (
     password_hash        VARCHAR(255) NOT NULL,
     name                 VARCHAR(100) NOT NULL,
     role                 VARCHAR(20)  NOT NULL,                    -- ADMIN | COMPANY | USER
-    status               VARCHAR(20)  NOT NULL DEFAULT 'ACTIVE',   -- ACTIVE | PENDING
+    status               VARCHAR(20)  NOT NULL DEFAULT 'ACTIVE',   -- ACTIVE | PENDING | INACTIVE(admin 소프트삭제)
     must_change_password BOOLEAN      NOT NULL DEFAULT false,      -- 발급 계정 최초 로그인 시 변경 유도
     team_id              UUID REFERENCES teams(id) ON DELETE SET NULL,  -- 소속 팀(USER, 미배정 NULL)
     phone_num            VARCHAR(30),
@@ -196,7 +214,7 @@ CREATE TABLE organizations (
     id         UUID PRIMARY KEY,
     name       VARCHAR(255) NOT NULL,
     slug       VARCHAR(100) NOT NULL UNIQUE,
-    status     VARCHAR(20)  NOT NULL DEFAULT 'ACTIVE',  -- ACTIVE | PENDING
+    status     VARCHAR(20)  NOT NULL DEFAULT 'ACTIVE',  -- ACTIVE | INACTIVE(admin 소프트삭제)
     plan       VARCHAR(50)  DEFAULT 'free',             -- free | professional | enterprise
     created_at TIMESTAMP NOT NULL DEFAULT now(),
     updated_at TIMESTAMP NOT NULL DEFAULT now()
@@ -758,6 +776,7 @@ CREATE INDEX idx_category_kinds_kind ON category_kinds(kind_id);
 CREATE TABLE chat_sessions (
     id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     project_id UUID REFERENCES projects(id),
+    created_by UUID REFERENCES users(id),   -- 세션 개시자(실행자) — 0007 마이그레이션, 내역 표시용
     messages   JSONB     DEFAULT '[]',
     created_at TIMESTAMP DEFAULT now()
 );
@@ -832,6 +851,20 @@ CREATE TABLE alembic_version (
 | `projects` | ORM은 `organization_id`·`name`·`created_at`만 → 실제 `+ description`·`status`·`created_by`·`updated_at`·`deleted_at` |
 | `inquiries` | ORM `email` 컬럼 → 실제 `email` (일치) |
 | `users` | ORM·DB 모두 `login_id` 기준으로 정렬됨 (v3.1 `email` 표기 해소) |
+
+> **[덧붙임 2026-07-06] 매니지먼트 실행 계열 테이블 — 이름이 두 세대다**
+>
+> 위 표의 「ORM에 선언, DB에 없음」 행은 옛 이름 기준이라 지금과 어긋난다. 같은 역할의 테이블이 이름 세대 두 개로 존재한다.
+>
+> | 구명 (옛 세대) | 신명 (현재 ORM) |
+> |---|---|
+> | `idempotency_keys` | `management_idempotency_keys` |
+> | `audit_events` | `management_audit_events` |
+> | `action_proposals` · `approvals` · `execution_runs` | (현 ORM엔 없음 — 제안·승인은 DB 저장 안 함) |
+>
+> 경위 — ① 초기 구 마이그레이션(008·009)이 구명 테이블을 생성했고, 6/24 실DB introspection(`db-erd.md`)에는 그래서 구명이 찍혀 있다(`idempotency_keys`엔 데이터 12행). ② 이후 ORM이 `management_` prefix 신명으로 정리됐고 구 008·009는 삭제되어 0005·0006으로 재편입됐다. ③ 빈 DB는 0001_baseline의 create_all이 신명으로 바로 생성하지만, 기존 DB엔 구명 테이블이 남아 있을 수 있다.
+>
+> 할 일 — `pg_dump --schema-only`를 다시 떠서 ⑴ 구명 테이블이 아직 남았는지(남았으면 12행 데이터 이관/폐기 결정) ⑵ 신명 테이블이 생성돼 있는지 확인하고, 결과로 위 행과 이 덧붙임을 합쳐 확정 정리한다.
 
 ---
 

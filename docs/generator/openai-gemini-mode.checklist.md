@@ -1,8 +1,10 @@
 # 작업 체크리스트 — 생성 모드 openai/gemini 재편 (모델 비교)
 
-> 목표. `GENERATOR_GEN_MODE`를 **openai/gemini** 2모드로 재정의하고, 각 모드의 이미지 모델을
-> `.env`로 교체하며 두 계열(OpenAI vs Gemini)의 생성 결과를 비교한다.
-> 배경·합의는 context-notes.md 참고.
+> ✅ **구현 완료** — config(`generator_gen_mode: openai|gemini`)·env.example·candidate_gen
+> 분기·Gemini 동시생성(재시도 포함) 전부 반영 확인(2026-07). 아래 체크는 완료 기록.
+> 계획과 달라진 점 2가지 — ① gemini 모드에서도 **누끼는 생성·S3 저장**한다(합성엔 미사용,
+> 개선 모드 재사용 목적). ② **개선 모드(IMPROVE)는 gen_mode와 무관하게 항상 OpenAI 경로**
+> (누끼 인페인팅). 배경·합의는 context-notes.md 참고.
 
 ## 목표 동작 매트릭스
 
@@ -19,41 +21,43 @@
 
 ## ① 설정 재편 — core/config.py
 
-- [ ] `generator_gen_mode` 기본값 `"pipeline"` → `"openai"`, 주석 `openai | gemini`
-- [ ] 기존 `generator_multimodal_provider/model/image_model`(OpenAI Responses 전용) 제거
-- [ ] `generator_gemini_image_model` 신설 (예 `gemini-2.5-flash-image`)
-- [ ] openai 모드 모델 키 유지 확인 — `generator_image_model`, `generator_image_edit_model`
+- [x] `generator_gen_mode` 기본값 `"pipeline"` → `"openai"`, 주석 `openai | gemini`
+- [x] 기존 `generator_multimodal_provider/model/image_model`(OpenAI Responses 전용) 제거
+- [x] `generator_gemini_image_model` 신설 (예 `gemini-2.5-flash-image`)
+- [x] openai 모드 모델 키 유지 확인 — `generator_image_model`, `generator_image_edit_model`
 
 ## ② Gemini 생성기 재구현 — pipeline/multimodal_generator.py
 
-- [ ] OpenAI Responses API → Gemini `generate_content` 기반으로 교체
-- [ ] 이미지+텍스트(카피 JSON) 동시 출력 수신·파싱(기존 `_parse_copy_json` 재사용)
-- [ ] 상품 이미지가 있으면 `inline_data`로 멀티모달 입력 추가 (시그니처에 `product_image_bytes` 추가)
-- [ ] aspect_ratio 매핑은 image_providers의 `_GEMINI_NATIVE_ASPECT_RATIO` 재사용
-- [ ] LangSmith usage 기록(`_record_genai_usage` 패턴) 유지
+- [x] OpenAI Responses API → Gemini `generate_content` 기반으로 교체
+- [x] 이미지+텍스트(카피 JSON) 동시 출력 수신·파싱(기존 `_parse_copy_json` 재사용)
+- [x] 상품 이미지가 있으면 `inline_data`로 멀티모달 입력 추가 (시그니처에 `product_image_bytes` 추가)
+- [x] aspect_ratio 매핑은 image_providers의 `_GEMINI_NATIVE_ASPECT_RATIO` 재사용
+- [x] LangSmith usage 기록(`_record_genai_usage` 패턴) 유지
 
 ## ③ 분기 수정 — graph/nodes/candidate_gen.py
 
-- [ ] `multimodal` 변수 → `gemini`, 조건을 `if gemini:`(상품 유무 무관)로 변경
-- [ ] gemini 경로에 상품 이미지 bytes 전달(누끼 없이 원본)
-- [ ] 카피 배치(`generate_copies_batch`) 스킵 조건 갱신 — gemini면 항상 동시생성이라 배치 불필요
-- [ ] 누끼(`remove_product_background`)는 openai 모드 + 상품있음일 때만 실행되도록
-- [ ] 캐러셀 공통 배경(`_generate_carousel`)도 모드 분기(gemini면 Gemini로 배경 생성)
+- [x] `multimodal` 변수 → `gemini`, 조건을 `if gemini:`(상품 유무 무관)로 변경
+- [x] gemini 경로에 상품 이미지 bytes 전달(누끼 없이 원본)
+- [x] 카피 배치(`generate_copies_batch`) 스킵 조건 갱신 — gemini면 항상 동시생성이라 배치 불필요
+- [x] 누끼(`remove_product_background`) — 계획은 "openai+상품있음만"이었으나,
+      **gemini 모드에서도 누끼를 만들어 S3 저장**하는 것으로 구현(합성엔 미사용,
+      개선 모드 product_cutout 재사용 목적. candidate_gen.py 주석 참고)
+- [x] 캐러셀 공통 배경(`_generate_carousel`)도 모드 분기(gemini면 Gemini로 배경 생성)
 
 ## ④ .env.example 갱신
 
-- [ ] `GENERATOR_GEN_MODE=openai`(주석 openai|gemini)
-- [ ] `GENERATOR_GEMINI_IMAGE_MODEL` 예시·교체 후보 주석(gemini-3-pro-image / gemini-3.1-flash-image / gemini-2.5-flash-image)
-- [ ] openai 모델 교체 후보 주석(gpt-image-1 / gpt-image-2)
-- [ ] 폐기된 multimodal 키 제거
+- [x] `GENERATOR_GEN_MODE=openai`(주석 openai|gemini)
+- [x] `GENERATOR_GEMINI_IMAGE_MODEL` 예시·교체 후보 주석(gemini-3-pro-image / gemini-3.1-flash-image / gemini-2.5-flash-image)
+- [x] openai 모델 교체 후보 주석(gpt-image-1 / gpt-image-2)
+- [x] 폐기된 multimodal 키 제거
 
 ## ⑤ 테스트
 
-- [ ] `tests/generator/` 영향 범위 확인 — image_providers · topology · 기존 multimodal 관련
-- [ ] Gemini 생성기 단위 테스트(mock 응답으로 이미지+카피 파싱·상품 입력 분기)
-- [ ] `cd backend && uv run pytest tests/generator -v` 통과
+- [x] `tests/generator/` 영향 범위 확인 — image_providers · topology · 기존 multimodal 관련
+- [x] Gemini 생성기 단위 테스트(mock 응답으로 이미지+카피 파싱·상품 입력 분기)
+- [x] `cd backend && uv run pytest tests/generator -v` 통과
 
 ## 공통
 
-- [ ] 백엔드 .py 수정 → 커밋 전 Ruff (`uv run ruff format . && uv run ruff check . --fix`)
-- [ ] 세만틱 커밋 분리 — 설정/생성기/분기/테스트 단위
+- [x] 백엔드 .py 수정 → 커밋 전 Ruff (`uv run ruff format . && uv run ruff check . --fix`)
+- [x] 세만틱 커밋 분리 — 설정/생성기/분기/테스트 단위

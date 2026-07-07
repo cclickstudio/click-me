@@ -77,8 +77,8 @@ class SimulationPersistence:
                 await session.execute(
                     text(
                         "INSERT INTO ads (id, project_id, title, media_type, "
-                        "asset_url, copy_text, product_category, ad_objective) "
-                        "VALUES (:id, :pid, :title, :mtype, :asset, :copy, :pcat, :obj)"
+                        "asset_url, copy_text, product_category, ad_objective, generation_id) "
+                        "VALUES (:id, :pid, :title, :mtype, :asset, :copy, :pcat, :obj, :gen)"
                     ),
                     {
                         "id": ad_uuid,
@@ -90,6 +90,8 @@ class SimulationPersistence:
                         "copy": request.ad_content,
                         "pcat": request.product_category,
                         "obj": request.ad_objective,
+                        # 생성 출처 — 채팅 개선모드의 누끼 역추적용(없으면 NULL).
+                        "gen": request.generation_id,
                     },
                 )
                 await session.flush()  # ads → ad_analyses 참조
@@ -101,6 +103,14 @@ class SimulationPersistence:
                 grounding_meta=grounding_meta or {"panel_version": panel_version},
                 personas=personas,
             )
+            # 실행자(created_by) — 인증 런은 request.user_id(현재 유저 UUID)로 채운다.
+            # 형식 불량("anonymous" 등)·None이면 NULL(FK 위반 방지 — org fallback _as_uuid 미사용).
+            created_by: uuid.UUID | None = None
+            if request.user_id:
+                try:
+                    created_by = uuid.UUID(str(request.user_id))
+                except (ValueError, AttributeError, TypeError):
+                    created_by = None
             sim_id = await SimulationRepository(session).save_run(
                 ad_id=ad_uuid,
                 organization_id=org_id,
@@ -114,6 +124,7 @@ class SimulationPersistence:
                 aggregate=aggregate,
                 persona_uuid_by_ref=id_map,
                 simulation_id=simulation_id,
+                created_by=created_by,
             )
             await session.commit()
             return sim_id

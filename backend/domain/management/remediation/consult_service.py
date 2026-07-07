@@ -1,8 +1,10 @@
 # [상담하기] 진입 유스케이스 — 재검증 → 세션 심기(CAS·보상 롤백) → 이동 (🅱)
 """스펙 §4 전이표 구현. 라우터는 반환 dict를 HTTP로 변환만 한다.
 
-재클릭은 재검증 없이 이동 전용(결정) — 재검증은 알림 생성↔첫 상담 갭 해소가 목적이고,
-재클릭마다 심으면 세션 스팸. 세션 내 최신 확인은 consult_anomaly 챗 도구가 담당.
+재클릭은 컨텍스트가 살아있으면 이동 전용 — 재클릭마다 심으면 세션 스팸이라는 결정 유지.
+단, 옵션이 진행됐거나(위젯 메시지 존재) TTL이 지나 컨텍스트가 죽었으면 재검증 후 같은
+세션에 상담 카드를 다시 심는다(재심기) — 진행 잔재(조치 확인 카드)만 남은 세션으로
+떨어져 "선택지 없이 조치 카드가 바로 뜨는" 증상 방지(2026-07-06 보완).
 CAS(조건부 UPDATE)로 이중 심기 방지 — row lock은 외부 I/O(advisor) 동안 행 잠금을
 붙드는 안티패턴이라 채택하지 않음.
 """
@@ -42,6 +44,21 @@ class DbChatStore:
             return row.first() is not None
 
 
+async def _context_is_alive(context_alive: Any, session_id: str, settings: Any) -> bool:
+    """재심기 판정 — 주입 callable 우선, 기본은 세션 메시지 기반(context.py).
+
+    판정 실패는 True — 재심기 오발동보다 기존 동작(이동 전용) 유지가 안전하다(fail-open).
+    """
+    from domain.management.remediation.context import consult_context_alive  # noqa: PLC0415
+
+    try:
+        if context_alive is not None:
+            return bool(await context_alive(session_id))
+        return await consult_context_alive(session_id, settings)
+    except Exception:  # noqa: BLE001 — 판단 불가 = 살아있다고 간주
+        return True
+
+
 async def consult_notification(
     settings: Any,
     notification_id: str,
@@ -52,6 +69,7 @@ async def consult_notification(
     consult: Any,
     publish: Any,
     now: Any = None,
+    context_alive: Any = None,  # async (session_id) -> bool. None=기본(세션 메시지 판정)
 ) -> dict | None:
     """전이표(스펙 §4). None=404(타 org·없음) / unavailable=503 / 나머지 200."""
     now = now or (lambda: datetime.now(UTC))
@@ -67,11 +85,17 @@ async def consult_notification(
         if n["resolved_at"] is not None:
             return {"status": "already_resolved", "resolution": n["resolution"]}
 
+        reseed_into = None  # 재심기 대상 세션 — 컨텍스트가 죽은 기존 상담 세션
         if n["consult_session_id"]:
             if await chat_store.session_exists(n["consult_session_id"]):
-                return {"status": "consult", "session_id": n["consult_session_id"]}
-            # 사용자가 세션을 지웠다 — CAS를 비우고 처음부터 재실행(스펙 §4 엣지)
-            await store.release_consult_session(notification_id, n["consult_session_id"])
+                if await _context_is_alive(context_alive, n["consult_session_id"], settings):
+                    return {"status": "consult", "session_id": n["consult_session_id"]}
+                # 옵션 진행됨/만료 — 이동만 하면 진행 잔재(조치 카드)가 최신 화면이 된다.
+                # 재검증 후 같은 세션에 상담 카드를 다시 심는다(재심기).
+                reseed_into = n["consult_session_id"]
+            else:
+                # 사용자가 세션을 지웠다 — CAS를 비우고 처음부터 재실행(스펙 §4 엣지)
+                await store.release_consult_session(notification_id, n["consult_session_id"])
 
         try:
             result = await consult(settings, n["campaign_id"])
@@ -83,6 +107,17 @@ async def consult_notification(
             await store.resolve(org_id, notification_id, "auto_normal", now())
             changed = True  # 상태 변화(auto_normal) — read 여부와 무관하게 배지 동기화
             return {"status": "normal", "message": result.message}
+
+        if reseed_into is not None:
+            # 세션 연결(CAS)은 이미 확정 — append만. 실패해도 연결은 유지(다음 클릭에 재시도).
+            try:
+                await chat_store.append_consult(
+                    reseed_into, result.message, result.to_meta(org_id=org_id)
+                )
+            except Exception:  # noqa: BLE001 — 재심기 실패는 재시도 가능 응답
+                return {"status": "unavailable"}
+            changed = True  # 상태 변화(재심기) — 배지·목록 동기화
+            return {"status": "consult", "session_id": reseed_into}
 
         session_id, _last_read = await chat_store.find_or_create_session(
             n["project_id"], _SESSION_TITLE

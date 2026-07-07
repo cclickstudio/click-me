@@ -1,7 +1,7 @@
 # 시뮬레이터 데이터 확보 — 현황 & 사용자 수집 가이드
 
 > 페르소나 생성(단계1~3)에 쓰는 분포 데이터의 출처·상태와, **사용자가 직접 받아야 하는 raw**의 수집 절차.
-> 상세 출처는 `docs/simulation/Data_Collection.md` 참조. 이 문서는 코드 레이어(`data/`)의 실제 적재 가이드.
+> 상세 출처는 `docs/simulation/Persona/데이터 확보처 가이드.md` 참조. 이 문서는 코드 레이어(`data/`)의 실제 적재 가이드.
 
 ## 현황 (`loader.data_status()`)
 
@@ -12,7 +12,8 @@
 | 인구 연령×성별 | ✅ **real** | `raw/population_age_sex.csv` → `population_age_sex.json` 폴백 | 행안부 원본 CSV 적재(로더 자동 우선). 전국 5,109만 일치 |
 | 미디어 행동 | ✅ **real** | `distributions/media_behavior.json` (빌드: `build_media_behavior.py`) | KISDI 2024 raw(d25v32) 연령×성별 교차 + 시간대 노출맥락. raw는 gitignore, 집계 JSON만 커밋 |
 | 소득·학력 | ✅ **real** | `distributions/socioeconomic.json` (빌드: `build_socioeconomic.py`) | KISDI 2024 raw d25p_income(8구간)·d25school(6단계) 연령×성별. 구매의도 grounding 보강 |
-| 심층 소비심리(체면·동조) | ✗ **pending** | (없음) | MDIS 사회조사 raw 수동 다운로드 |
+| 사회경제·심리(생활만족·신뢰·계층·사회참여) | ✅ **real** | `distributions/social_economic.json` | 통계청 사회조사 2025(MDIS survId=34, DOI 10.23333/PN.20006531.V2.2) raw, n=33,944 가구원가중 집계, 세대별(Z세대·밀레니얼·X세대·베이비부머) |
+| 심층 소비심리(체면·동조·눈치) | ✗ **pending** | (없음) | 위 사회조사(2025)에도 체면·동조·눈치에 정확히 대응하는 문항은 없음(확인 완료, 2026-07-03) — 별도 학술 척도 정의 필요, 그 전까진 전문가 prior로 보수적 설정하거나 계속 비워둠 |
 
 > 웹 자동수집은 정밀 수치마다 인증·JS·차단으로 막혀 **placeholder/pending**이 남았다. 아래가 네가 받아야 할 부분이다.
 
@@ -49,12 +50,12 @@
 - (확장 여지) 연결방법(OTT/케이블 등) 노출 축, 동시이용(B축), 종단(zip d10~24)은 추후.
 - **Meta 도달성(§Tier1)** — 셀별 노출맥락에서 `SNS·동영상 @ 스마트폰/PC` 비중(`tools/reachability.cell_social_reach`)을 뽑아 단계1 표본 추출분포를 보정. 별도 수집 불필요. 단 generic SNS 기준이라 Meta 브랜드 특정 침투율 보정은 외부 데이터(DMC·오픈서베이·와이즈앱)로 추후(Tier 2).
 
-### ④ MDIS 사회조사 raw — 회원가입 필요 (단계3 심층 심리, 후순위)
+### ④ MDIS 사회조사 raw — ✅ 완료 (생활만족·신뢰·계층·사회참여), 체면·동조·눈치는 여전히 데이터 없음
 
-체면·동조 등 깊은 변수. 마감 전엔 소비가치 3~4개로 충분(§7.5) → 여유 시.
+2025 사회조사(복지·사회참여·문화와여가·소득과소비·노동, survId=34) raw + 코드북 확보·가공 완료 → `social_economic.json` 반영(2026-07-03).
 
-1. https://mdis.kostat.go.kr/ 회원가입 → 공공용 사회조사 검색·다운로드(200레코드 제한은 미리보기뿐, 전체 무료).
-2. 가치관 문항을 `distributions/social_values_deep.json`으로 정리(또는 전문가 prior로 보수적 설정).
+- 확보 절차(재현·갱신 시): https://mdis.kostat.go.kr/ 회원가입 → 공공용 사회조사 검색·다운로드(200레코드 제한은 미리보기뿐, 전체 무료) → 코드북(파일설계서 xlsx)으로 코드값 해석.
+- **체면·동조·눈치**(`social_values_deep.json`)는 여전히 비어 있다 — 2025 사회조사 337개 문항 전체를 확인했지만 대응 문항이 없다(KOSTAT 사회조사는 복지·정책 조사지 문화심리 척도 조사가 아님). 대신 쓸 수 있는 가장 가까운 문항(계층의식·신뢰·개인적인간관계만족도·평소외로움)은 이미 `social_economic.json`에 반영됐다. 진짜 체면·동조·눈치가 필요하면 별도 학술 척도(예: 체면민감성 척도) 조사가 필요하거나, 전문가 prior로 보수적 설정.
 
 ### (선택) KOSIS OpenAPI 키 — 인구 자동화
 
