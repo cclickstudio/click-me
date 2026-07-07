@@ -177,7 +177,7 @@ export default function ChatCenter({
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
       {/* 세션 목록 — 대화 열리면 상단 50%, 아니면 전체 높이(스펙 §6). */}
-      <div className={`flex flex-col overflow-hidden ${showConvo ? 'h-1/2' : 'flex-1'}`}>
+      <div className={`flex flex-col overflow-hidden ${showConvo ? 'min-h-0 flex-1' : 'flex-1'}`}>
         <div className="flex items-center gap-2 px-3 py-2">
           {!readOnly && (
             <button
@@ -259,7 +259,7 @@ export default function ChatCenter({
 
       {/* 라이브 채팅 — 세션 선택/새 채팅 시 하단 50%. 기존 ChatConversation 재사용. */}
       {showConvo && convoProjectId && (
-        <div className="flex h-1/2 flex-col overflow-hidden border-t border-[#E5E8EB] dark:border-[#2D3748]">
+        <div className="flex h-[50vh] shrink-0 flex-col overflow-hidden border-t border-[#E5E8EB] dark:border-[#2D3748]">
           <div className="flex h-8 shrink-0 items-center justify-between px-3">
             {progress ? (
               <span className="flex items-center gap-1.5 truncate text-xs font-semibold text-[#3182F6]">

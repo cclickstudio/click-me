@@ -111,7 +111,7 @@ export default function Center() {
   // 접힘 — 오른쪽 가장자리 세로 2버튼 띠(살짝 보이는 형태, 스펙 §3).
   if (!expanded) {
     return (
-      <div className="max-md:hidden fixed right-0 top-1/2 z-50 flex -translate-y-1/2 flex-col gap-1 rounded-l-xl border border-r-0 border-[#E5E8EB] bg-white p-1.5 shadow-lg dark:border-[#2D3748] dark:bg-[#1C2333]">
+      <div className="max-md:hidden fixed right-0 top-[100px] z-50 flex flex-col gap-1 rounded-l-xl border border-r-0 border-[#E5E8EB] bg-white p-1.5 shadow-lg dark:border-[#2D3748] dark:bg-[#1C2333]">
         <button
           type="button"
           onClick={() => openTab('chat')}
@@ -176,26 +176,33 @@ export default function Center() {
               상단 기업 드롭다운에서 기업을 고르면 채팅·알림이 열립니다.
             </p>
           </div>
-        ) : tab === 'chat' ? (
-          <ChatCenter
-            projectId={projectId}
-            segment={chatSeg}
-            readOnly={user?.role === 'COMPANY'}
-            orgKey={orgId}
-            openTarget={openTarget}
-            onOpenConsumed={() => setOpenTarget(null)}
-          />
         ) : (
-          <AlarmCenter
-            projectId={projectId}
-            segment={alarmSeg}
-            role={user?.role}
-            orgKey={orgId}
-            onOpenChat={(sessionId, pid) => {
-              setOpenTarget({ sessionId, projectId: pid });
-              persistTab('chat');
-            }}
-          />
+          // 두 센터를 모두 마운트해 두고 탭은 CSS로만 토글 — 탭 전환 시 재요청 없이
+          // 기업 선택(orgKey 변경) 때 각 1회만 조회한다.
+          <>
+            <div className={tab === 'chat' ? 'flex flex-1 flex-col overflow-hidden' : 'hidden'}>
+              <ChatCenter
+                projectId={projectId}
+                segment={chatSeg}
+                readOnly={user?.role === 'COMPANY'}
+                orgKey={orgId}
+                openTarget={openTarget}
+                onOpenConsumed={() => setOpenTarget(null)}
+              />
+            </div>
+            <div className={tab === 'alarm' ? 'flex flex-1 flex-col overflow-hidden' : 'hidden'}>
+              <AlarmCenter
+                projectId={projectId}
+                segment={alarmSeg}
+                role={user?.role}
+                orgKey={orgId}
+                onOpenChat={(sessionId, pid) => {
+                  setOpenTarget({ sessionId, projectId: pid });
+                  persistTab('chat');
+                }}
+              />
+            </div>
+          </>
         )}
       </div>
     </aside>
