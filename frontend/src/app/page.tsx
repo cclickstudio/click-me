@@ -61,11 +61,12 @@ export default function Page() {
   const { theme, toggle } = useTheme();
   const { user, loading } = useAuth();
   const router = useRouter();
-  // early return(로딩/로그인 스피너) 시 히어로 섹션이 아예 안 그려져 heroRef.current가
-  // 첫 렌더에 null로 고정된다. useRef 대신 state 콜백 ref를 써서 섹션이 실제로 마운트되는
-  // 순간(ref 객체가 새로 생성) useScroll 내부 effect가 유효한 엘리먼트로 재설정되게 한다.
+  // early return(로딩/로그인 스피너) 시 히어로 섹션이 아예 안 그려져 첫 렌더엔 target이
+  // 없다. { current: null } 객체를 넘기면 framer-motion이 "target은 있는데 비어있다"고
+  // 보고 바로 에러를 던지므로, 마운트 전엔 target 자체를 undefined로 비워 이 체크를 건너뛰고
+  // 마운트되는 순간(heroEl 생성)에만 실제 엘리먼트를 넘긴다.
   const [heroEl, setHeroEl] = useState<HTMLElement | null>(null);
-  const heroRef = useMemo(() => ({ current: heroEl }), [heroEl]);
+  const heroRef = useMemo(() => (heroEl ? { current: heroEl } : undefined), [heroEl]);
 
   // 히어로 스크롤 패럴랙스 — 배경 blob이 스크롤에 따라 천천히 이동.
   const { scrollYProgress } = useScroll({
