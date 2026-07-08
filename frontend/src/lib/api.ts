@@ -776,7 +776,20 @@ export const api = {
   admin: {
     users: () => request<{ users: unknown[] }>("/admin/users"),
     createUser: (body: object) => request("/admin/users", { method: "POST", body: JSON.stringify(body) }),
-    inquiries: () => request<{ inquiries: unknown[] }>("/admin/inquiries"),
+    inquiries: () =>
+      request<{
+        inquiries: {
+          id: string;
+          title: string;
+          content: string;
+          contact_email: string | null;
+          is_resolved: boolean;
+          created_at: string;
+          resolved_at: string | null;
+        }[];
+      }>("/admin/inquiries"),
+    resolveInquiry: (id: string, resolved: boolean) =>
+      request(`/admin/inquiries/${id}/resolve?resolved=${resolved}`, { method: "PATCH" }),
     // 조직 목록(배열 직접 반환) — admin impersonation org 선택 드롭다운용.
     organizations: () => request<{ id: string; name: string }[]>("/admin/organizations"),
   },

@@ -2,7 +2,7 @@
 
 import re
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
@@ -13,7 +13,7 @@ from api.routers.projects import _purge_project
 from core import cognito_admin
 from core.auth import require_admin
 from core.db import get_db
-from core.models import Organization, OrganizationMember, User
+from core.models import Inquiry, Organization, OrganizationMember, User
 
 router = APIRouter()
 
@@ -828,3 +828,60 @@ async def list_chats(
         )
         for r in rows.mappings()
     ]
+
+
+# ── 고객 문의 (ADMIN 조회·해결) — append-only ──────────────────────────
+
+
+class InquiryOut(BaseModel):
+    id: str
+    title: str
+    content: str
+    contact_email: str | None
+    is_resolved: bool
+    created_at: datetime
+    resolved_at: datetime | None
+
+
+@router.get("/inquiries")
+async def list_inquiries(
+    _: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """전체 문의 목록(최신순). 프론트가 상태 탭으로 필터."""
+    rows = (await db.execute(select(Inquiry).order_by(Inquiry.created_at.desc()))).scalars().all()
+    return {
+        "inquiries": [
+            InquiryOut(
+                id=str(r.id),
+                title=r.title,
+                content=r.content,
+                contact_email=r.contact_email,
+                is_resolved=r.is_resolved,
+                created_at=r.created_at,
+                resolved_at=r.resolved_at,
+            )
+            for r in rows
+        ]
+    }
+
+
+@router.patch("/inquiries/{inquiry_id}/resolve")
+async def resolve_inquiry(
+    inquiry_id: str,
+    resolved: bool = True,
+    _: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """문의 해결 상태 토글."""
+    try:
+        pk = uuid.UUID(inquiry_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail="문의를 찾을 수 없습니다.") from e
+    row = await db.get(Inquiry, pk)
+    if row is None:
+        raise HTTPException(status_code=404, detail="문의를 찾을 수 없습니다.")
+    row.is_resolved = resolved
+    row.resolved_at = datetime.now(UTC) if resolved else None
+    await db.commit()
+    return {"ok": True, "is_resolved": resolved}
