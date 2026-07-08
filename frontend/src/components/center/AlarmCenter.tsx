@@ -8,6 +8,7 @@ import { useRouter } from 'next/navigation';
 import { api, type CenterNotificationItem } from '@/lib/api';
 import { useProjects } from '../ProjectContext';
 import { useNotificationStream } from '../manage/notifications/useNotificationStream';
+import { ExecuteFromSimulation } from '../manage/ExecuteFromSimulation';
 import type { CenterSegment } from './CenterFilterBar';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
@@ -331,19 +332,34 @@ export default function AlarmCenter({
           </div>
         );
       }
-      // launch_suggest — 판정 기준 미확정(open-decisions §1). 상세·액션 최소만.
+      // launch_suggest — 집행 권장 게이트 통과 시 백엔드 훅이 생성(판정 정본은 서버).
+      // payload에 캐시된 지표로 ExecuteFromSimulation 모달을 카드에서 바로 연다.
+      const cir = Number(n.payload?.click_intent_rate ?? 0);
+      const rej = Number(n.payload?.rejection_rate ?? 0);
       return (
         <div>
           {meta}
-          <p className="mb-2">{pstr(n.payload, 'message') || '결과가 좋아요. 집행을 검토해 보세요.'}</p>
-          <button
-            type="button"
-            onClick={() => onIgnore(n)}
-            disabled={busyId === n.id}
-            className="rounded-lg border border-line px-3 py-1.5 text-xs text-ink-secondary disabled:opacity-50"
-          >
-            확인
-          </button>
+          <p className="mb-2">
+            {pstr(n.payload, 'message') || '결과가 좋아요. 집행을 검토해 보세요.'}
+          </p>
+          <div className="flex items-center gap-2">
+            {n.source_sim_id && (
+              <ExecuteFromSimulation
+                simulationId={n.source_sim_id}
+                defaultName={pstr(n.payload, 'ad_title')}
+                clickIntentRate={cir}
+                rejectionRate={rej}
+              />
+            )}
+            <button
+              type="button"
+              onClick={() => onIgnore(n)}
+              disabled={busyId === n.id}
+              className="rounded-lg border border-line px-3 py-1.5 text-xs text-ink-secondary disabled:opacity-50"
+            >
+              확인
+            </button>
+          </div>
         </div>
       );
     }

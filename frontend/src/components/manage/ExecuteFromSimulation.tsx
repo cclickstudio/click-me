@@ -6,10 +6,8 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 
-// 집행 권장 게이트 — 백엔드 _is_executable_verdict와 동기화.
-// ⚠️ 임시(TEST): 게이트 해제 — 모든 결과 통과. 운영 복원 시 0.2 / 0.2로 되돌릴 것.
-const EXEC_CIR = 0.0; // 클릭 의향률 ≥ 0% (원래 0.2)
-const EXEC_REJ = 1.0; // 거부율 ≤ 100% (원래 0.2)
+// 집행 권장 게이트 — 정본은 백엔드(GET /management/exec-gate). 아래는 조회 실패 시 폴백.
+const DEFAULT_GATE = { min_click_intent_rate: 0.01, max_rejection_rate: 0.2 };
 
 export function ExecuteFromSimulation({
   simulationId,
@@ -22,7 +20,21 @@ export function ExecuteFromSimulation({
   clickIntentRate: number;
   rejectionRate: number;
 }) {
-  const executable = clickIntentRate >= EXEC_CIR && rejectionRate <= EXEC_REJ;
+  const [gate, setGate] = useState(DEFAULT_GATE);
+  useEffect(() => {
+    let alive = true;
+    api.management
+      .execGate()
+      .then((g) => {
+        if (alive) setGate(g);
+      })
+      .catch(() => {}); // 실패 시 DEFAULT_GATE 폴백
+    return () => {
+      alive = false;
+    };
+  }, []);
+  const executable =
+    clickIntentRate >= gate.min_click_intent_rate && rejectionRate < gate.max_rejection_rate;
   const [open, setOpen] = useState(false);
   const [name, setName] = useState(defaultName ?? '');
   const [linkUrl, setLinkUrl] = useState('');
@@ -113,8 +125,10 @@ export function ExecuteFromSimulation({
 
             {!executable && (
               <div className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-[12px] text-amber-800 dark:bg-amber-900/20 dark:text-amber-300">
-                집행 권장 기준 미달 — 클릭 의향률 {(clickIntentRate * 100).toFixed(0)}%(≥20% 필요)·
-                거부율 {(rejectionRate * 100).toFixed(0)}%(&lt;20% 필요). 기준을 충족해야 집행할 수
+                집행 권장 기준 미달 — 클릭 의향률 {(clickIntentRate * 100).toFixed(1)}%(≥
+                {(gate.min_click_intent_rate * 100).toFixed(0)}% 필요)· 거부율{' '}
+                {(rejectionRate * 100).toFixed(1)}%(&lt;
+                {(gate.max_rejection_rate * 100).toFixed(0)}% 필요). 기준을 충족해야 집행할 수
                 있어요.
               </div>
             )}

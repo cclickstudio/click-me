@@ -2,7 +2,6 @@
 import uuid
 from types import SimpleNamespace
 
-import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -35,11 +34,12 @@ def test_resolve_sim_asset_key():
 
 
 def test_is_executable_verdict():
-    # ⚠️ 임시(TEST): 게이트 해제 — 모든 입력 통과. 운영 복원 시 0.2/0.2 단언으로 되돌릴 것.
+    # 게이트 정본화(2026-07-08): 클릭 의향률 ≥1%(포함) · 거부율 <20%(미만).
     f = management._is_executable_verdict
-    assert f(0.0, 1.0) is True
-    assert f(0.2, 0.1) is True
-    assert f(0.05, 0.5) is True
+    assert f(0.01, 0.0) is True  # 1% 정확히 — 통과(>=)
+    assert f(0.2, 0.1) is True  # 통과
+    assert f(0.0099, 0.1) is False  # 클릭 의향률 미달 — 거부
+    assert f(0.05, 0.2) is False  # 거부율 20% 정확히 — 실패(<)
 
 
 class _Row:
@@ -140,9 +140,9 @@ def test_from_simulation_other_org_404(monkeypatch):
     assert resp.status_code == 404
 
 
-@pytest.mark.skip(reason="임시(TEST): 집행 게이트 해제로 409 미발생 — 게이트 0.2/0.2 복원 시 해제")
 def test_from_simulation_bad_verdict_409(monkeypatch):
-    resp = _client(monkeypatch, cir=0.1).post(_URL, json=_body())
+    # 게이트 정본화(2026-07-08): cir=0.005 < 0.01(하한) → 409 집행 권장 아님.
+    resp = _client(monkeypatch, cir=0.005).post(_URL, json=_body())
     assert resp.status_code == 409
 
 
