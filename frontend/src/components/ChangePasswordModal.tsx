@@ -7,7 +7,7 @@ import { useAuth } from './AuthProvider';
 import { authApi } from '@/lib/authApi';
 
 const inputCls =
-  'w-full px-3 py-2.5 text-sm border border-line rounded-xl bg-white dark:bg-[#252D3D] text-ink placeholder-[#B0B8C1] focus:outline-none focus:border-[#2563EB] transition-colors';
+  'w-full px-3 py-2.5 text-sm border border-line rounded-xl bg-white dark:bg-[#252D3D] text-ink placeholder-[#B0B8C1] focus:outline-none focus:border-primary transition-colors';
 
 export default function ChangePasswordModal({ onClose }: { onClose: () => void }) {
   const { token, login, user } = useAuth();
@@ -63,7 +63,7 @@ export default function ChangePasswordModal({ onClose }: { onClose: () => void }
             나중에
           </button>
           <button onClick={submit} disabled={saving}
-            className="flex-1 py-2.5 text-sm font-medium bg-[#2563EB] text-white rounded-xl hover:bg-[#1D4ED8] transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+            className="flex-1 py-2.5 text-sm font-medium bg-primary text-white rounded-xl hover:bg-primary-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
             {saving ? '변경 중...' : '변경하기'}
           </button>
         </div>

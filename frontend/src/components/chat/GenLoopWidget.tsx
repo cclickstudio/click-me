@@ -229,7 +229,7 @@ export default function GenLoopWidget({
     return (
       <div className={cardCls}>
         <div className="flex items-center gap-3">
-          <div className="w-6 h-6 border-[3px] border-line border-t-[#2563EB] dark:border-t-[#5B9DF9] rounded-full animate-spin" />
+          <div className="w-6 h-6 border-[3px] border-line border-t-primary dark:border-t-[#5B9DF9] rounded-full animate-spin" />
           <div className="flex-1">
             <p className="text-sm font-semibold text-ink">
               🔁 자동 개선 루프

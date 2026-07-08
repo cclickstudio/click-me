@@ -1661,7 +1661,7 @@ export default function ChatConversation({
                         className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${
                           msg.meta.source === 'management'
                             ? 'bg-[#EBF3FF] text-primary dark:bg-[#1E3A5F] dark:text-[#7BB4F5]'
-                            : 'bg-[#F2E9FF] text-[#4F46E5] dark:bg-[#2E1F47] dark:text-[#C4A8F5]'
+                            : 'bg-[#F2E9FF] text-point-hover dark:bg-[#2E1F47] dark:text-[#C4A8F5]'
                         }`}>
                         {msg.meta.source === 'management' ? '⚙' : '🧠'}{' '}
                         {msg.meta.label}

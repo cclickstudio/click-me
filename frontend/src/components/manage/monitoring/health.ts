@@ -125,9 +125,9 @@ export const LEVEL_STYLE: Record<HealthLevel, { dot: string; text: string; chip:
     chip: 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400',
   },
   info: {
-    dot: 'bg-[#2563EB]',
-    text: 'text-[#2563EB]',
-    chip: 'bg-[#EBF3FF] text-[#2563EB] dark:bg-[#1E3A5F] dark:text-[#73A9FF]',
+    dot: 'bg-primary',
+    text: 'text-primary',
+    chip: 'bg-[#EBF3FF] text-primary dark:bg-[#1E3A5F] dark:text-[#73A9FF]',
   },
   ok: {
     dot: 'bg-green-500',

@@ -144,7 +144,7 @@ export function HistoryControls({
             value={value.search}
             onChange={(e) => onChange({ ...value, search: e.target.value })}
             placeholder={`${value.searchField === 'org_name' ? '조직명' : titleLabel} 검색`}
-            className="w-52 rounded-xl border border-line bg-transparent pl-7 pr-3 py-2.5 text-sm text-ink placeholder-[#B0B8C1] focus:border-[#2563EB] outline-none"
+            className="w-52 rounded-xl border border-line bg-transparent pl-7 pr-3 py-2.5 text-sm text-ink placeholder-[#B0B8C1] focus:border-primary outline-none"
           />
         </div>
       </div>

@@ -44,7 +44,7 @@ export default function Navigation() {
       <div className="max-w-screen-xl mx-auto h-full px-6 flex items-center justify-between">
         <Link
           href="/"
-          className="text-[#2563EB] font-bold text-lg tracking-tight shrink-0"
+          className="text-primary font-bold text-lg tracking-tight shrink-0"
         >
           ClickMe
         </Link>
@@ -56,7 +56,7 @@ export default function Navigation() {
               href={item.href}
               className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap ${
                 pathname === item.href
-                  ? 'text-[#2563EB] bg-[#EBF3FF] dark:bg-[#1E3A5F]'
+                  ? 'text-primary bg-[#EBF3FF] dark:bg-[#1E3A5F]'
                   : 'text-ink-secondary hover:text-[#191F28] dark:hover:text-[#F2F4F6] hover:bg-[#F2F4F6] dark:hover:bg-[#252D3D]'
               }`}
             >
@@ -77,7 +77,7 @@ export default function Navigation() {
 
           <Link
             href="/sign-in"
-            className="px-4 py-2 text-sm font-medium text-white bg-[#2563EB] rounded-lg hover:bg-[#1D4ED8] transition-colors"
+            className="px-4 py-2 text-sm font-medium text-white bg-primary rounded-lg hover:bg-primary-hover transition-colors"
           >
             로그인
           </Link>

@@ -15,7 +15,7 @@ const VERDICT: Record<
   aligned: {
     label: '예측대로',
     cls: 'bg-[#EBF3FF] text-primary dark:bg-[#1E3A5F] dark:text-[#7BB4F5]',
-    accent: 'border-l-[#2563EB]',
+    accent: 'border-l-primary',
   },
   overperformed: {
     label: '예측보다 좋음',

@@ -1217,7 +1217,7 @@ export default function SimulationRunPage() {
                             )
                           )
                         }
-                        className='w-full accent-[#2563EB] mt-1'
+                        className='w-full accent-primary mt-1'
                       />
                     </div>
                   </div>
@@ -1263,7 +1263,7 @@ export default function SimulationRunPage() {
                           max={200}
                           value={sampleSize}
                           onChange={e => setSampleSize(Number(e.target.value))}
-                          className='w-full accent-[#2563EB] mt-1'
+                          className='w-full accent-primary mt-1'
                         />
                         <div className='flex justify-between text-[10px] text-ink-muted mt-1'>
                           <span>1명</span>
@@ -1478,7 +1478,7 @@ export default function SimulationRunPage() {
       <div className='px-8 py-8 max-w-5xl mx-auto'>
         <div className={`${cardCls} flex flex-col gap-6 py-16`}>
           <div className='flex flex-col items-center gap-4'>
-            <div className='w-10 h-10 border-4 border-line border-t-[#2563EB] dark:border-t-[#5B9DF9] rounded-full animate-spin' />
+            <div className='w-10 h-10 border-4 border-line border-t-primary dark:border-t-[#5B9DF9] rounded-full animate-spin' />
             {/* persona_set — 세그먼트 진행(segment_index/total) 표시 */}
             {analysisMode === 'persona_set' && segProgress.total > 0 && (
               <span className='px-2.5 py-1 rounded-full text-[11px] font-semibold bg-primary-subtle text-primary'>

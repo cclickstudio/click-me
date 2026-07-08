@@ -42,6 +42,7 @@ const manageChildren = [
   { label: '이상 감지', href: '/manage/anomaly' },
   { label: '예산 관리', href: '/manage/budget' },
   { label: '성과 비교', href: '/manage/compare' },
+  { label: '신뢰도', href: '/manage/reliability' },
   { label: '연동', href: '/manage/connect' },
 ];
 
@@ -49,6 +50,7 @@ const manageChildren = [
 const adminManageChildren = [
   { label: '조직 관리', href: '/admin/companies' },
   { label: '회원 관리', href: '/admin/manage-user' },
+  { label: '문의 관리', href: '/admin/inquiry' },
 ];
 const adminHistoryChildren = [
   { label: '시뮬레이션 내역', href: '/simulations' },

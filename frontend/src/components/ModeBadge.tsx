@@ -7,8 +7,8 @@ export default function ModeBadge({ mode, format }: { mode?: string; format?: st
   const cls = improve
     ? 'bg-[#FFF3E0] dark:bg-[#3A2A14] text-[#E8821A]'
     : carousel
-      ? 'bg-[#F3EBFF] dark:bg-[#2A1E3F] text-[#6366F1]'
-      : 'bg-[#EBF3FF] dark:bg-[#1E3A5F] text-[#2563EB]';
+      ? 'bg-[#F3EBFF] dark:bg-[#2A1E3F] text-point'
+      : 'bg-[#EBF3FF] dark:bg-[#1E3A5F] text-primary';
   return (
     <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-medium ${cls}`}>
       {label}

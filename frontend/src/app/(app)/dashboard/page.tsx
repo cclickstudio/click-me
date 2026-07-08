@@ -1,6 +1,7 @@
 'use client';
 
-// 역할별(USER/COMPANY/ADMIN) 실서비스급 대시보드 — KPI 델타·주간추이·활동피드·크레딧·CLIO.
+// 역할별(USER/COMPANY/ADMIN) 대시보드 — 한 페이지에서 역할로 분기.
+// ADMIN: 시스템·조직 운영 지표(성과 KPI·재시도 알림 없음). USER/COMPANY: 성과 KPI·주목할 것·크레딧(COMPANY는 예산 관점 강화).
 
 import { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
@@ -16,6 +17,7 @@ import {
   MessageSquare,
   Wallet,
   Activity,
+  Building2,
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -74,6 +76,18 @@ type RecentGeneration = {
   created_at: string;
 };
 
+type UserRow = {
+  id: string;
+  login_id: string;
+  name: string;
+  role: string;
+  status: string;
+  created_at: string;
+  organization_name: string | null;
+};
+
+type OrgRow = { id: string; name: string; status: string; created_at: string };
+
 type Message = { role: 'user' | 'assistant'; content: string };
 
 // ────────────────── 상수 ──────────────────
@@ -102,6 +116,20 @@ const featureCards = [
   },
 ];
 
+// COMPANY 전용 관리 바로가기 — 조직 관리자 관점(팀·프로젝트·예산).
+const companyQuickLinks = [
+  { label: '프로젝트 관리', href: '/company/projects', Icon: BarChart3 },
+  { label: '팀 관리', href: '/company/teams', Icon: Users },
+  { label: '크레딧 관리', href: '/company/credits', Icon: Wallet },
+];
+
+// ADMIN 전용 관리 바로가기 — 시스템 운영 관점.
+const adminQuickLinks = [
+  { label: '조직 관리', href: '/admin/companies', Icon: Building2 },
+  { label: '회원 관리', href: '/admin/manage-user', Icon: Users },
+  { label: '생성 내역', href: '/admin/generations', Icon: Sparkles },
+];
+
 const quickPrompts = [
   '이 광고의 예상 CTR을 분석해줘',
   '20대 여성 타겟 광고 전략을 추천해줘',
@@ -114,6 +142,12 @@ const statusLabel: Record<string, { text: string; color: string }> = {
   running: { text: '진행 중', color: 'text-info bg-info-subtle' },
   pending: { text: '대기', color: 'text-warning bg-warning-subtle' },
   failed: { text: '실패', color: 'text-danger bg-danger-subtle' },
+};
+
+const roleBadge: Record<string, string> = {
+  ADMIN: 'text-danger bg-danger-subtle',
+  COMPANY: 'text-primary bg-primary-subtle',
+  USER: 'text-ink-secondary bg-surface-1',
 };
 
 // ────────────────── Utils ──────────────────
@@ -145,6 +179,8 @@ export default function DashboardPage() {
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [recentSims, setRecentSims] = useState<RecentSimulation[]>([]);
   const [recentGens, setRecentGens] = useState<RecentGeneration[]>([]);
+  const [users, setUsers] = useState<UserRow[]>([]);
+  const [orgs, setOrgs] = useState<OrgRow[]>([]);
   const [credit, setCredit] = useState<number | null>(null);
   const [loaded, setLoaded] = useState(false);
 
@@ -159,7 +195,7 @@ export default function DashboardPage() {
     Promise.all([
       authedFetch(`${API_BASE}/api/dashboard/summary`).then((r) => r.json()).catch(() => null),
       authedFetch(`${API_BASE}/api/dashboard/recent-simulations?limit=5`).then((r) => r.json()).catch(() => []),
-      authedFetch(`${API_BASE}/api/dashboard/recent-generations?limit=5`).then((r) => r.json()).catch(() => []),
+      authedFetch(`${API_BASE}/api/dashboard/recent-generations?limit=6`).then((r) => r.json()).catch(() => []),
     ]).then(([sum, sims, gens]) => {
       if (sum) setSummary(sum);
       if (Array.isArray(sims)) setRecentSims(sims);
@@ -167,6 +203,18 @@ export default function DashboardPage() {
       setLoaded(true);
     });
   }, []);
+
+  // ADMIN 전용 — 전체 사용자·조직(운영 KPI·최근 가입).
+  useEffect(() => {
+    if (!isAdmin) return;
+    Promise.all([
+      authedFetch(`${API_BASE}/api/admin/users?limit=200`).then((r) => r.json()).catch(() => []),
+      authedFetch(`${API_BASE}/api/admin/organizations?limit=200`).then((r) => r.json()).catch(() => []),
+    ]).then(([us, og]) => {
+      if (Array.isArray(us)) setUsers(us);
+      if (Array.isArray(og)) setOrgs(og);
+    });
+  }, [isAdmin]);
 
   // 크레딧 — ADMIN(슈퍼유저)은 미표시. USER 읽기 전용, COMPANY 충전 진입.
   useEffect(() => {
@@ -238,7 +286,7 @@ export default function DashboardPage() {
 
   // 역할별 인사·주요 CTA
   const greeting = isAdmin
-    ? '전체 조직의 시뮬레이션·생성 현황을 한눈에 확인하세요.'
+    ? '전체 시스템·조직·사용 현황을 한눈에 확인하세요.'
     : isCompany
       ? '팀의 광고 성과와 크레딧 사용을 관리하세요.'
       : '광고를 집행 전에 검증하고 성과를 예측하세요.';
@@ -276,7 +324,7 @@ export default function DashboardPage() {
       : '—';
   const isEmpty = loaded && (summary?.sims_total ?? 0) === 0 && (summary?.gens_total ?? 0) === 0;
 
-  // "지금 주목할 것" — 최근 활동 중 주의가 필요한 항목(실패한 생성·진행 중 시뮬).
+  // "지금 주목할 것" — 실패한 생성·진행 중 시뮬(개인/조직 실무 액션). ADMIN 제외.
   const failedGens = recentGens.filter((g) => g.status.toLowerCase() === 'failed');
   const runningSims = recentSims.filter((s) => ['running', 'queued', 'pending'].includes(s.status.toLowerCase()));
   const attention = [
@@ -298,6 +346,95 @@ export default function DashboardPage() {
     })),
   ].slice(0, 4);
 
+  // ADMIN 최근 가입 — 사용자 최신순.
+  const recentSignups = [...users]
+    .sort((a, b) => (a.created_at < b.created_at ? 1 : -1))
+    .slice(0, 6);
+
+  // 주간 활동 추이 차트 — 역할 공통.
+  const weeklyChart = (
+    <Card className="lg:col-span-2 p-5">
+      <Section
+        size="sm"
+        title="주간 활동 추이"
+        description={isAdmin ? '최근 8주 전체 시뮬레이션·광고 생성 건수' : '최근 8주 시뮬레이션·광고 생성 건수'}
+      />
+      <div className="h-64 mt-4">
+        {!loaded ? (
+          <Skeleton className="h-full w-full rounded-lg" />
+        ) : (
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={summary?.weekly_trend ?? []} barGap={4}>
+              <CartesianGrid strokeDasharray="3 3" stroke={chart.border} vertical={false} />
+              <XAxis dataKey="label" tick={{ fontSize: 11, fill: chart['text-tertiary'] }} tickLine={false} axisLine={{ stroke: chart.border }} />
+              <YAxis tick={{ fontSize: 11, fill: chart['text-tertiary'] }} tickLine={false} axisLine={false} width={28} allowDecimals={false} />
+              <Tooltip
+                cursor={{ fill: chart.border, opacity: 0.2 }}
+                contentStyle={{
+                  background: chart['surface-2'],
+                  border: `1px solid ${chart.border}`,
+                  borderRadius: 12,
+                  fontSize: 12,
+                }}
+              />
+              <Legend wrapperStyle={{ fontSize: 12 }} iconType="circle" />
+              <Bar name="시뮬레이션" dataKey="simulations" fill={chart.primary} radius={[4, 4, 0, 0]} maxBarSize={22} />
+              <Bar name="광고 생성" dataKey="generations" fill={chart.point} radius={[4, 4, 0, 0]} maxBarSize={22} />
+            </BarChart>
+          </ResponsiveContainer>
+        )}
+      </div>
+    </Card>
+  );
+
+  // 최근 광고 생성 테이블 — ADMIN은 ID 열 표시.
+  const recentGensTable = (
+    <Card className="overflow-hidden p-0">
+      <div className="flex items-center justify-between px-5 py-4 border-b border-line">
+        <p className="text-sm font-semibold text-ink">최근 광고 생성</p>
+        <Link href={isAdmin ? '/admin/generations' : isCompany ? '/company/generations' : '/simulations'} className="text-xs text-primary hover:underline font-medium">전체 보기 →</Link>
+      </div>
+      {recentGens.length === 0 ? (
+        <div className="py-12 text-center text-xs text-ink-muted">아직 생성 내역이 없습니다</div>
+      ) : (
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="border-b border-line">
+              {isAdmin && <th className="text-left px-5 py-2.5 text-ink-tertiary font-medium">ID</th>}
+              <th className="text-left px-5 py-2.5 text-ink-tertiary font-medium">상품명</th>
+              <th className="text-left px-3 py-2.5 text-ink-tertiary font-medium">상태</th>
+              <th className="text-left px-3 py-2.5 text-ink-tertiary font-medium">일시</th>
+            </tr>
+          </thead>
+          <tbody>
+            {recentGens.map((g) => {
+              const s = statusLabel[g.status] ?? { text: g.status, color: 'text-ink-tertiary bg-surface-1' };
+              return (
+                <tr
+                  key={g.id}
+                  onClick={() => router.push(`/generations/${g.id}`)}
+                  className="border-b border-line/60 last:border-0 hover:bg-accent cursor-pointer transition-colors"
+                >
+                  {isAdmin && <td className="px-5 py-3 font-mono text-ink-secondary">{shortId(g.id)}</td>}
+                  <td className="px-5 py-3 text-ink-secondary whitespace-nowrap">
+                    <div className="flex items-center gap-1.5 max-w-[180px]">
+                      <span className="shrink-0"><ModeBadge mode={g.mode} format={g.format} /></span>
+                      <span className="truncate min-w-0">{g.product_name ?? '—'}</span>
+                    </div>
+                  </td>
+                  <td className="px-3 py-3">
+                    <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-medium ${s.color}`}>{s.text}</span>
+                  </td>
+                  <td className="px-3 py-3 text-ink-muted">{formatDate(g.created_at)}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      )}
+    </Card>
+  );
+
   return (
     <div className="p-6 sm:p-8 max-w-6xl mx-auto space-y-8">
       {/* ── 헤더 ── */}
@@ -315,14 +452,23 @@ export default function DashboardPage() {
         </Link>
       </div>
 
-      {/* ── KPI 스트립 ── */}
+      {/* ── KPI 스트립 (역할별) ── */}
       {!loaded ? (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           {[0, 1, 2, 3].map((i) => (
             <Skeleton key={i} className="h-[124px] rounded-xl" />
           ))}
         </div>
+      ) : isAdmin ? (
+        /* ADMIN — 운영 규모 지표(성과 KPI 대신 계정·조직·누적) */
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <StatCard label="전체 사용자" value={users.length} unit="명" icon={<Users />} tone="primary" hint="가입 계정" />
+          <StatCard label="전체 조직" value={orgs.length} unit="개" icon={<Building2 />} tone="primary" hint="등록 기업" />
+          <StatCard label="전체 시뮬레이션" value={summary?.sims_total ?? 0} unit="건" icon={<BarChart3 />} tone="primary" hint="누적 실행" />
+          <StatCard label="전체 광고 생성" value={summary?.gens_total ?? 0} unit="건" icon={<Sparkles />} tone="point" hint="누적 생성" />
+        </div>
       ) : (
+        /* USER/COMPANY — 성과 지표(클릭 의향률·구매 의향 포함) */
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <StatCard
             label="이번 주 시뮬레이션"
@@ -348,7 +494,7 @@ export default function DashboardPage() {
             label="평균 클릭 의향률"
             value={clickRate}
             unit="%"
-            hint="전체 시뮬레이션 기준"
+            hint={isCompany ? '조직 시뮬레이션 기준' : '내 시뮬레이션 기준'}
             icon={<MousePointerClick />}
             tone="primary"
           />
@@ -363,7 +509,65 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {isEmpty ? (
+      {isAdmin ? (
+        /* ══════════ ADMIN 대시보드 — 시스템 운영 ══════════ */
+        <>
+          {/* 주간 추이 + 최근 가입 */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+            {weeklyChart}
+            <Card className="p-5">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-sm font-semibold text-ink">최근 가입</span>
+                <Link href="/admin/manage-user" className="text-xs text-primary hover:underline font-medium">전체 보기 →</Link>
+              </div>
+              {!loaded ? (
+                <div className="space-y-2">
+                  {[0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-11 rounded-lg" />)}
+                </div>
+              ) : recentSignups.length === 0 ? (
+                <p className="text-xs text-ink-tertiary py-4 text-center">가입 내역이 없습니다</p>
+              ) : (
+                <ul className="space-y-1">
+                  {recentSignups.map((u) => (
+                    <li key={u.id} className="flex items-center gap-2.5 rounded-lg px-2 py-2 hover:bg-accent transition-colors">
+                      <span className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary-subtle text-primary text-[11px] font-semibold">
+                        {u.name.slice(0, 1)}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block text-xs font-medium text-ink truncate">{u.name}</span>
+                        <span className="block text-[11px] text-ink-tertiary truncate">
+                          {u.organization_name ?? '미소속'} · {formatKST(u.created_at)}
+                        </span>
+                      </span>
+                      <span className={`shrink-0 px-1.5 py-0.5 rounded text-[9px] font-medium ${roleBadge[u.role] ?? 'text-ink-tertiary bg-surface-1'}`}>
+                        {u.role}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </Card>
+          </div>
+
+          {/* 최근 광고 생성(전역) */}
+          {recentGensTable}
+
+          {/* 관리 바로가기 */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {adminQuickLinks.map(({ label, href, Icon }) => (
+              <Link key={href} href={href}>
+                <Card className="p-5 flex items-center gap-3 hover:shadow-md hover:border-primary/30 hover:-translate-y-0.5 transition-all group">
+                  <span className="flex size-10 items-center justify-center rounded-xl bg-primary-subtle text-primary group-hover:bg-primary group-hover:text-primary-foreground transition-colors">
+                    <Icon size={20} strokeWidth={1.8} />
+                  </span>
+                  <span className="flex-1 text-sm font-semibold text-ink">{label}</span>
+                  <ArrowRight size={16} className="text-ink-tertiary group-hover:text-primary transition-colors" />
+                </Card>
+              </Link>
+            ))}
+          </div>
+        </>
+      ) : isEmpty ? (
         <EmptyState
           icon={<Users />}
           title="아직 데이터가 없습니다"
@@ -378,8 +582,9 @@ export default function DashboardPage() {
           }
         />
       ) : (
+        /* ══════════ USER / COMPANY 대시보드 — 성과·크레딧 ══════════ */
         <>
-          {/* ── 지금 주목할 것 (주의 필요 항목) ── */}
+          {/* 지금 주목할 것 (주의 필요 항목) */}
           {attention.length > 0 && (
             <div>
               <p className="mb-2 text-sm font-semibold text-ink">지금 주목할 것</p>
@@ -408,67 +613,40 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* ── 주간 추이 + 크레딧/활동 ── */}
+          {/* 주간 추이 + 크레딧/활동 */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-            {/* 주간 추이 차트 */}
-            <Card className="lg:col-span-2 p-5">
-              <Section
-                size="sm"
-                title="주간 활동 추이"
-                description="최근 8주 시뮬레이션·광고 생성 건수"
-              />
-              <div className="h-64 mt-4">
-                {!loaded ? (
-                  <Skeleton className="h-full w-full rounded-lg" />
-                ) : (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={summary?.weekly_trend ?? []} barGap={4}>
-                      <CartesianGrid strokeDasharray="3 3" stroke={chart.border} vertical={false} />
-                      <XAxis dataKey="label" tick={{ fontSize: 11, fill: chart['text-tertiary'] }} tickLine={false} axisLine={{ stroke: chart.border }} />
-                      <YAxis tick={{ fontSize: 11, fill: chart['text-tertiary'] }} tickLine={false} axisLine={false} width={28} allowDecimals={false} />
-                      <Tooltip
-                        cursor={{ fill: chart.border, opacity: 0.2 }}
-                        contentStyle={{
-                          background: chart['surface-2'],
-                          border: `1px solid ${chart.border}`,
-                          borderRadius: 12,
-                          fontSize: 12,
-                        }}
-                      />
-                      <Legend wrapperStyle={{ fontSize: 12 }} iconType="circle" />
-                      <Bar name="시뮬레이션" dataKey="simulations" fill={chart.primary} radius={[4, 4, 0, 0]} maxBarSize={22} />
-                      <Bar name="광고 생성" dataKey="generations" fill={chart.point} radius={[4, 4, 0, 0]} maxBarSize={22} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                )}
-              </div>
-            </Card>
+            {weeklyChart}
 
-            {/* 우측 컬럼 — 크레딧(역할별) + 활동 피드 */}
             <div className="space-y-5">
-              {/* 크레딧 — ADMIN 미표시 / USER 읽기전용 / COMPANY 충전 */}
-              {!isAdmin && (
-                <Card className="p-5">
-                  <div className="flex items-center gap-2 text-ink-secondary">
-                    <Wallet size={16} />
-                    <span className="text-sm font-medium">남은 공유 크레딧</span>
-                  </div>
-                  <p className="mt-3 text-2xl font-bold text-ink tracking-tight">
-                    {credit === null ? '—' : `${credit.toLocaleString()}원`}
-                  </p>
-                  <p className="mt-1 text-xs text-ink-tertiary">조직 공유 예산 한도</p>
-                  {isCompany ? (
+              {/* 크레딧 — USER 읽기전용 / COMPANY 충전·예산 관점 */}
+              <Card className="p-5">
+                <div className="flex items-center gap-2 text-ink-secondary">
+                  <Wallet size={16} />
+                  <span className="text-sm font-medium">남은 공유 크레딧</span>
+                </div>
+                <p className="mt-3 text-2xl font-bold text-ink tracking-tight">
+                  {credit === null ? '—' : `${credit.toLocaleString()}원`}
+                </p>
+                <p className="mt-1 text-xs text-ink-tertiary">조직 공유 예산 한도</p>
+                {isCompany ? (
+                  <div className="mt-4 flex items-center gap-2">
                     <Link
                       href="/payment"
-                      className="mt-4 inline-flex w-full items-center justify-center gap-1.5 px-3 py-2 bg-primary text-primary-foreground text-sm font-medium rounded-lg hover:bg-primary-hover transition-colors"
+                      className="inline-flex flex-1 items-center justify-center gap-1.5 px-3 py-2 bg-primary text-primary-foreground text-sm font-medium rounded-lg hover:bg-primary-hover transition-colors"
                     >
                       크레딧 충전
                     </Link>
-                  ) : (
-                    <p className="mt-4 text-xs text-ink-muted">충전은 조직 관리자(COMPANY)가 진행합니다.</p>
-                  )}
-                </Card>
-              )}
+                    <Link
+                      href="/company/credits"
+                      className="inline-flex items-center justify-center gap-1 px-3 py-2 border border-line text-ink-secondary text-sm font-medium rounded-lg hover:bg-accent transition-colors"
+                    >
+                      사용 추이
+                    </Link>
+                  </div>
+                ) : (
+                  <p className="mt-4 text-xs text-ink-muted">충전은 조직 관리자(COMPANY)가 진행합니다.</p>
+                )}
+              </Card>
 
               {/* 활동 피드 */}
               <Card className="p-5">
@@ -510,7 +688,24 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* ── 3기능 요약 ── */}
+          {/* COMPANY 전용 — 조직 관리 바로가기(팀·프로젝트·예산) */}
+          {isCompany && (
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              {companyQuickLinks.map(({ label, href, Icon }) => (
+                <Link key={href} href={href}>
+                  <Card className="p-5 flex items-center gap-3 hover:shadow-md hover:border-primary/30 hover:-translate-y-0.5 transition-all group">
+                    <span className="flex size-10 items-center justify-center rounded-xl bg-primary-subtle text-primary group-hover:bg-primary group-hover:text-primary-foreground transition-colors">
+                      <Icon size={20} strokeWidth={1.8} />
+                    </span>
+                    <span className="flex-1 text-sm font-semibold text-ink">{label}</span>
+                    <ArrowRight size={16} className="text-ink-tertiary group-hover:text-primary transition-colors" />
+                  </Card>
+                </Link>
+              ))}
+            </div>
+          )}
+
+          {/* 3기능 요약 */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             {featureCards.map((card) => {
               const Icon = card.Icon;
@@ -532,7 +727,7 @@ export default function DashboardPage() {
             })}
           </div>
 
-          {/* ── 최근 내역 2열 ── */}
+          {/* 최근 내역 2열 */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
             {/* 최근 시뮬레이션 */}
             <Card className="overflow-hidden p-0">
@@ -571,142 +766,101 @@ export default function DashboardPage() {
             </Card>
 
             {/* 최근 제너레이터 */}
-            <Card className="overflow-hidden p-0">
-              <div className="flex items-center justify-between px-5 py-4 border-b border-line">
-                <p className="text-sm font-semibold text-ink">최근 광고 생성</p>
-                <Link href={isAdmin ? '/admin/generations' : isCompany ? '/company/generations' : '/simulations'} className="text-xs text-primary hover:underline font-medium">전체 보기 →</Link>
-              </div>
-              {recentGens.length === 0 ? (
-                <div className="py-12 text-center text-xs text-ink-muted">아직 생성 내역이 없습니다</div>
-              ) : (
-                <table className="w-full text-xs">
-                  <thead>
-                    <tr className="border-b border-line">
-                      {isAdmin && <th className="text-left px-5 py-2.5 text-ink-tertiary font-medium">ID</th>}
-                      <th className="text-left px-5 py-2.5 text-ink-tertiary font-medium">상품명</th>
-                      <th className="text-left px-3 py-2.5 text-ink-tertiary font-medium">상태</th>
-                      <th className="text-left px-3 py-2.5 text-ink-tertiary font-medium">일시</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {recentGens.map((g) => {
-                      const s = statusLabel[g.status] ?? { text: g.status, color: 'text-ink-tertiary bg-surface-1' };
-                      return (
-                        <tr
-                          key={g.id}
-                          onClick={() => router.push(`/generations/${g.id}`)}
-                          className="border-b border-line/60 last:border-0 hover:bg-accent cursor-pointer transition-colors"
-                        >
-                          {isAdmin && <td className="px-5 py-3 font-mono text-ink-secondary">{shortId(g.id)}</td>}
-                          <td className="px-5 py-3 text-ink-secondary whitespace-nowrap">
-                            <div className="flex items-center gap-1.5 max-w-[160px]">
-                              <span className="shrink-0"><ModeBadge mode={g.mode} format={g.format} /></span>
-                              <span className="truncate min-w-0">{g.product_name ?? '—'}</span>
-                            </div>
-                          </td>
-                          <td className="px-3 py-3">
-                            <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-medium ${s.color}`}>{s.text}</span>
-                          </td>
-                          <td className="px-3 py-3 text-ink-muted">{formatDate(g.created_at)}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              )}
-            </Card>
+            {recentGensTable}
           </div>
         </>
       )}
 
-      {/* ── CLIO 챗봇 ── */}
-      <Card className="overflow-hidden p-0">
-        <div className="flex items-center justify-between px-6 py-4 border-b border-line">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 flex items-center justify-center rounded-xl bg-primary-subtle text-primary">
-              <MessageSquare size={15} />
-            </div>
-            <div>
-              <p className="text-sm font-semibold text-ink">CLIO</p>
-              <p className="text-xs text-ink-tertiary">광고 전략 AI 어드바이저</p>
-            </div>
-          </div>
-          <Link href="/chat" className="text-xs text-primary hover:underline font-medium">전체 화면으로 →</Link>
-        </div>
-
-        {/* 메시지 영역 */}
-        <div className="h-64 overflow-y-auto px-6 py-4 space-y-3">
-          {messages.length === 0 ? (
-            <div className="h-full flex flex-col items-center justify-center text-center">
-              <p className="text-xs text-ink-tertiary mb-3">광고 전략에 대해 무엇이든 물어보세요</p>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full max-w-md">
-                {quickPrompts.map((prompt) => (
-                  <button
-                    key={prompt}
-                    onClick={() => handleSend(prompt)}
-                    className="p-2.5 text-left text-xs text-ink-secondary bg-surface-1 border border-line rounded-xl hover:border-primary hover:text-primary hover:bg-primary-subtle transition-all"
-                  >
-                    {prompt}
-                  </button>
-                ))}
+      {/* ── CLIO 챗봇 (ADMIN 제외) ── */}
+      {!isAdmin && (
+        <Card className="overflow-hidden p-0">
+          <div className="flex items-center justify-between px-6 py-4 border-b border-line">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 flex items-center justify-center rounded-xl bg-primary-subtle text-primary">
+                <MessageSquare size={15} />
+              </div>
+              <div>
+                <p className="text-sm font-semibold text-ink">CLIO</p>
+                <p className="text-xs text-ink-tertiary">광고 전략 AI 어드바이저</p>
               </div>
             </div>
-          ) : (
-            <>
-              {messages.map((msg, i) => {
-                if (msg.role === 'assistant' && msg.content === '') return null;
-                return (
-                  <div key={i} className={`flex gap-2 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                    {msg.role === 'assistant' && (
-                      <div className="w-5 h-5 shrink-0 flex items-center justify-center rounded-md bg-primary-subtle text-primary mt-0.5">
-                        <MessageSquare size={10} />
+            <Link href="/chat" className="text-xs text-primary hover:underline font-medium">전체 화면으로 →</Link>
+          </div>
+
+          {/* 메시지 영역 */}
+          <div className="h-64 overflow-y-auto px-6 py-4 space-y-3">
+            {messages.length === 0 ? (
+              <div className="h-full flex flex-col items-center justify-center text-center">
+                <p className="text-xs text-ink-tertiary mb-3">광고 전략에 대해 무엇이든 물어보세요</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full max-w-md">
+                  {quickPrompts.map((prompt) => (
+                    <button
+                      key={prompt}
+                      onClick={() => handleSend(prompt)}
+                      className="p-2.5 text-left text-xs text-ink-secondary bg-surface-1 border border-line rounded-xl hover:border-primary hover:text-primary hover:bg-primary-subtle transition-all"
+                    >
+                      {prompt}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <>
+                {messages.map((msg, i) => {
+                  if (msg.role === 'assistant' && msg.content === '') return null;
+                  return (
+                    <div key={i} className={`flex gap-2 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                      {msg.role === 'assistant' && (
+                        <div className="w-5 h-5 shrink-0 flex items-center justify-center rounded-md bg-primary-subtle text-primary mt-0.5">
+                          <MessageSquare size={10} />
+                        </div>
+                      )}
+                      <div className={`max-w-xs px-3 py-2 rounded-xl text-xs leading-relaxed whitespace-pre-wrap ${
+                        msg.role === 'user'
+                          ? 'bg-primary text-primary-foreground rounded-br-sm'
+                          : 'bg-surface-1 text-ink rounded-bl-sm'
+                      }`}>
+                        {msg.content}
                       </div>
-                    )}
-                    <div className={`max-w-xs px-3 py-2 rounded-xl text-xs leading-relaxed whitespace-pre-wrap ${
-                      msg.role === 'user'
-                        ? 'bg-primary text-primary-foreground rounded-br-sm'
-                        : 'bg-surface-1 text-ink rounded-bl-sm'
-                    }`}>
-                      {msg.content}
+                    </div>
+                  );
+                })}
+                {isStreaming && messages.at(-1)?.content === '' && (
+                  <div className="flex gap-2 justify-start">
+                    <div className="px-3 py-2 rounded-xl bg-surface-1 flex items-center gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-ink-tertiary animate-bounce [animation-delay:-0.3s]" />
+                      <span className="w-1.5 h-1.5 rounded-full bg-ink-tertiary animate-bounce [animation-delay:-0.15s]" />
+                      <span className="w-1.5 h-1.5 rounded-full bg-ink-tertiary animate-bounce" />
                     </div>
                   </div>
-                );
-              })}
-              {isStreaming && messages.at(-1)?.content === '' && (
-                <div className="flex gap-2 justify-start">
-                  <div className="px-3 py-2 rounded-xl bg-surface-1 flex items-center gap-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-ink-tertiary animate-bounce [animation-delay:-0.3s]" />
-                    <span className="w-1.5 h-1.5 rounded-full bg-ink-tertiary animate-bounce [animation-delay:-0.15s]" />
-                    <span className="w-1.5 h-1.5 rounded-full bg-ink-tertiary animate-bounce" />
-                  </div>
-                </div>
-              )}
-              <div ref={bottomRef} />
-            </>
-          )}
-        </div>
+                )}
+                <div ref={bottomRef} />
+              </>
+            )}
+          </div>
 
-        {/* 입력창 */}
-        <div className="px-4 py-3 border-t border-line flex items-end gap-2">
-          <textarea
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
-            placeholder="메시지를 입력하세요..."
-            rows={1}
-            disabled={isStreaming}
-            className="flex-1 px-3 py-2.5 rounded-xl border border-line text-sm text-ink placeholder:text-ink-muted focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-colors resize-none bg-surface-2 disabled:opacity-60"
-            style={{ maxHeight: '80px' }}
-          />
-          <button
-            onClick={() => handleSend()}
-            disabled={!input.trim() || isStreaming}
-            className="p-2.5 bg-primary text-primary-foreground rounded-xl hover:bg-primary-hover disabled:opacity-30 disabled:cursor-not-allowed transition-all shrink-0"
-          >
-            <Send size={15} />
-          </button>
-        </div>
-      </Card>
+          {/* 입력창 */}
+          <div className="px-4 py-3 border-t border-line flex items-end gap-2">
+            <textarea
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
+              placeholder="메시지를 입력하세요..."
+              rows={1}
+              disabled={isStreaming}
+              className="flex-1 px-3 py-2.5 rounded-xl border border-line text-sm text-ink placeholder:text-ink-muted focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-colors resize-none bg-surface-2 disabled:opacity-60"
+              style={{ maxHeight: '80px' }}
+            />
+            <button
+              onClick={() => handleSend()}
+              disabled={!input.trim() || isStreaming}
+              className="p-2.5 bg-primary text-primary-foreground rounded-xl hover:bg-primary-hover disabled:opacity-30 disabled:cursor-not-allowed transition-all shrink-0"
+            >
+              <Send size={15} />
+            </button>
+          </div>
+        </Card>
+      )}
     </div>
   );
 }

@@ -40,7 +40,7 @@ const fmt = (iso: string) => formatKSTFull(iso);
 
 const STATUS_LABEL: Record<string, { label: string; color: string }> = {
   QUEUED: { label: '대기', color: 'bg-[#F2F4F6] text-ink-tertiary' },
-  RUNNING: { label: '실행중', color: 'bg-[#EEF2FF] text-[#4F46E5]' },
+  RUNNING: { label: '실행중', color: 'bg-[#EEF2FF] text-point-hover' },
   COMPLETED: { label: '완료', color: 'bg-[#ECFDF5] text-[#059669]' },
   FAILED: { label: '실패', color: 'bg-[#FEF2F2] text-[#DC2626]' },
 };
