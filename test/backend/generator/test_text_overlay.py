@@ -57,6 +57,6 @@ def test_very_long_text_truncates_with_ellipsis():
 
 
 def _font_regular() -> str:
-    from domain.generator.pipeline.text_overlay import _FONT_REGULAR
+    from domain.generator.pipeline.text_overlay import _resolve_font
 
-    return _FONT_REGULAR
+    return _resolve_font("regular")
