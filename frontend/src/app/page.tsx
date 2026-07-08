@@ -2,7 +2,7 @@
 
 // 랜딩(공개 진입) — Apple식 다이나믹 진입(순차 페이드·스크롤 리빌·패럴랙스) + 토큰 기반 리스킨.
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { motion, useScroll, useTransform, type Variants } from 'framer-motion';
@@ -61,15 +61,16 @@ export default function Page() {
   const { theme, toggle } = useTheme();
   const { user, loading } = useAuth();
   const router = useRouter();
-  const heroRef = useRef<HTMLDivElement>(null);
+  // early return(로딩/로그인 스피너) 시 히어로 섹션이 아예 안 그려져 heroRef.current가
+  // 첫 렌더에 null로 고정된다. useRef 대신 state 콜백 ref를 써서 섹션이 실제로 마운트되는
+  // 순간(ref 객체가 새로 생성) useScroll 내부 effect가 유효한 엘리먼트로 재설정되게 한다.
+  const [heroEl, setHeroEl] = useState<HTMLElement | null>(null);
+  const heroRef = useMemo(() => ({ current: heroEl }), [heroEl]);
 
   // 히어로 스크롤 패럴랙스 — 배경 blob이 스크롤에 따라 천천히 이동.
-  // layoutEffect:false — early return(로딩/로그인 스피너) 시 heroRef가 미부착 상태라
-  // useLayoutEffect 기반 측정이 "target ref not hydrated" 경고를 낸다. useEffect로 지연해 회피.
   const { scrollYProgress } = useScroll({
     target: heroRef,
     offset: ['start start', 'end start'],
-    layoutEffect: false,
   });
   const blobY = useTransform(scrollYProgress, [0, 1], [0, 120]);
   const blobOpacity = useTransform(scrollYProgress, [0, 1], [1, 0.2]);
@@ -118,7 +119,7 @@ export default function Page() {
       </header>
 
       {/* Hero */}
-      <section ref={heroRef} className="relative overflow-hidden">
+      <section ref={setHeroEl} className="relative overflow-hidden">
         {/* 패럴랙스 배경 blob (장식) */}
         <motion.div
           aria-hidden

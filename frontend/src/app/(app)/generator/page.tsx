@@ -111,6 +111,11 @@ const inputCls =
 const labelCls = "block text-xs font-medium text-ink-secondary mb-1.5";
 const cardCls =
   "bg-card border border-line rounded-2xl transition-colors";
+// 단일 선택 칩(/simulation 광고 목표 컨벤션과 동일)
+const chipBase =
+  "px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors";
+const chipActive = "border-primary bg-primary-subtle text-primary";
+const chipIdle = "border-line text-ink-tertiary hover:border-primary";
 
 function strategyLabel(t: string): string {
   return STRATEGY_LABELS[t] ?? t;
@@ -1510,17 +1515,20 @@ export default function GeneratorPage() {
                   </div>
                   <div>
                     <label className={labelCls}>
-                      광고 목적 <span className="text-[#F74D4D]">*</span>
+                      광고 목표 <span className="text-[#F74D4D]">*</span>
                     </label>
-                    <Select
-                      aria-label="광고 목적"
-                      value={objective}
-                      onChange={setObjective}
-                      options={OBJECTIVES.map((o) => ({
-                        value: o.value,
-                        label: o.label,
-                      }))}
-                    />
+                    <div className="flex flex-wrap gap-2">
+                      {OBJECTIVES.map((o) => (
+                        <button
+                          key={o.value}
+                          type="button"
+                          onClick={() => setObjective(o.value)}
+                          className={`${chipBase} ${objective === o.value ? chipActive : chipIdle}`}
+                        >
+                          {o.label}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </>
               ) : (
