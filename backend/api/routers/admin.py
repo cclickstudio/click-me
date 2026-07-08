@@ -885,3 +885,47 @@ async def resolve_inquiry(
     row.resolved_at = datetime.now(UTC) if resolved else None
     await db.commit()
     return {"ok": True, "is_resolved": resolved}
+
+
+# ── 어드민 패널 전체 프로젝트 트리 — 선택 기업(X-Org-Id) 스코프와 무관하게 전 기업 반환 ──
+
+
+class AdminProjectRow(BaseModel):
+    id: str
+    name: str
+    organization_name: str | None
+    team_id: str | None
+    team_name: str | None
+
+
+@router.get("/projects", response_model=list[AdminProjectRow])
+async def list_all_projects(
+    _: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """전 기업 프로젝트(어드민 패널 트리용).
+
+    공용 GET /api/projects 는 어드민 선택 기업(X-Org-Id)으로 스코프되어 다른 기업 프로젝트가
+    빠진다. 어드민 패널은 모든 기업을 한 화면에 보여줘야 하므로 스코프 없이 전체를 반환한다.
+    """
+    rows = await db.execute(
+        text("""
+            SELECT p.id, p.name, p.team_id,
+                   o.name AS organization_name, t.name AS team_name
+            FROM projects p
+            LEFT JOIN organizations o ON o.id = p.organization_id
+            LEFT JOIN teams t ON t.id = p.team_id
+            WHERE p.status != 'DELETED' AND p.deleted_at IS NULL
+            ORDER BY o.name NULLS LAST, p.created_at DESC
+        """)
+    )
+    return [
+        AdminProjectRow(
+            id=str(r.id),
+            name=r.name,
+            organization_name=r.organization_name,
+            team_id=str(r.team_id) if r.team_id else None,
+            team_name=r.team_name,
+        )
+        for r in rows
+    ]

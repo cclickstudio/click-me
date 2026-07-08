@@ -344,9 +344,21 @@ function CompanyItem({
 // ADMIN 전용 — 전체 회사를 보고, 회사 안에서 다시 팀별로 프로젝트를 나눠 본다.
 export default function AdminPanel({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
   const pathname = usePathname();
-  const { projects, loading, refreshAll } = useProjects();
+  const { refreshAll } = useProjects();
   const [search, setSearch] = useState('');
   const [orgs, setOrgs] = useState<{ id: string; name: string }[]>([]);
+  // 어드민 패널은 전 기업을 한 화면에 보여줘야 한다. 공용 /api/projects 는 선택 기업(X-Org-Id)으로
+  // 스코프되어 다른 기업 프로젝트가 빠지므로, 스코프 없는 admin 전용 목록을 별도로 받는다.
+  const [panelProjects, setPanelProjects] = useState<
+    {
+      id: string;
+      name: string;
+      organization_name: string | null;
+      team_id: string | null;
+      team_name: string | null;
+    }[]
+  >([]);
+  const [panelLoading, setPanelLoading] = useState(true);
 
   // 전체 조직 목록 — 프로젝트가 0개인 회사도 패널에 표시하기 위함. 새로고침 버튼이 재호출.
   const loadOrgs = useCallback(() => {
@@ -356,9 +368,20 @@ export default function AdminPanel({ collapsed, onToggle }: { collapsed: boolean
       .catch(() => {});
   }, []);
 
+  // 전 기업 프로젝트(스코프 무관) — admin 패널 트리 소스.
+  const loadPanelProjects = useCallback(() => {
+    setPanelLoading(true);
+    authedFetch(`${API_BASE}/api/admin/projects`)
+      .then(r => (r.ok ? r.json() : []))
+      .then(d => { if (Array.isArray(d)) setPanelProjects(d); })
+      .catch(() => {})
+      .finally(() => setPanelLoading(false));
+  }, []);
+
   useEffect(() => {
     loadOrgs();
-  }, [loadOrgs]);
+    loadPanelProjects();
+  }, [loadOrgs, loadPanelProjects]);
 
   const simMatch = pathname.match(/^\/simulation\/([^/]+)/);
   const genMatch = pathname.match(/^\/generations\/([^/]+)/);
@@ -366,7 +389,7 @@ export default function AdminPanel({ collapsed, onToggle }: { collapsed: boolean
   const activeGenId = genMatch?.[1] ?? null;
 
   // 회사별 그룹핑 (팀 메타 포함)
-  const grouped = projects.reduce<Record<string, PanelProject[]>>((acc, p) => {
+  const grouped = panelProjects.reduce<Record<string, PanelProject[]>>((acc, p) => {
     const key = p.organization_name ?? '(회사 미지정)';
     if (!acc[key]) acc[key] = [];
     acc[key].push({ id: p.id, name: p.name, team_id: p.team_id, team_name: p.team_name });
@@ -428,7 +451,7 @@ export default function AdminPanel({ collapsed, onToggle }: { collapsed: boolean
         </button>
         <p className="text-sm font-semibold text-ink-secondary">기업 현황</p>
         <button
-          onClick={() => { refreshAll(); loadOrgs(); }}
+          onClick={() => { refreshAll(); loadOrgs(); loadPanelProjects(); }}
           title="새로고침"
           className="w-7 h-7 flex items-center justify-center rounded-lg text-ink-tertiary hover:bg-accent hover:text-primary transition-colors"
         >
@@ -457,7 +480,7 @@ export default function AdminPanel({ collapsed, onToggle }: { collapsed: boolean
 
       {/* 목록 */}
       <div className="flex-1 overflow-y-auto py-2 px-2 space-y-0.5">
-        {loading ? (
+        {panelLoading ? (
           <p className="text-xs text-ink-muted px-3 py-2">불러오는 중...</p>
         ) : companyNames.length === 0 ? (
           <p className="text-xs text-ink-muted px-3 py-6 text-center">
@@ -475,10 +498,10 @@ export default function AdminPanel({ collapsed, onToggle }: { collapsed: boolean
       </div>
 
       {/* 푸터 통계 */}
-      {!loading && companyNames.length > 0 && (
+      {!panelLoading && companyNames.length > 0 && (
         <div className="px-3 py-2 border-t border-line shrink-0">
           <p className="text-[10px] text-ink-muted">
-            {companyNames.length}개 기업 · {projects.length}개 프로젝트
+            {companyNames.length}개 기업 · {panelProjects.length}개 프로젝트
           </p>
         </div>
       )}
