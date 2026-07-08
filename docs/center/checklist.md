@@ -1,0 +1,52 @@
+# 센터 구현 체크리스트 (루프 진행 상태)
+
+> 매 루프 반복마다 이 파일을 갱신한다. `[x]` = 완료(검증까지). 정본 스펙 = `center-spec.md`.
+
+## Phase 1 — 백엔드 토대
+- [x] 제안 알림 신규 테이블(center_suggestions) 모델 + 마이그레이션 `0009_center_suggestions` (체인 단일 선형 재정렬 완료. 공유 DB엔 `uv run alembic upgrade head`로 0009 적용 필요)
+- [x] 제안 알림 자동생성 — 시뮬 완료 직후 "제너레이터 제안" 인라인 훅 (core/center_suggestions.py 공용 헬퍼 + simulation_service `_record_gen_suggestion`)
+- [x] 제안 알림 자동생성 — 제너 완료 직후 "시뮬레이션 제안" 인라인 훅 (generator_service `_record_sim_suggestion`, 시안 3개 미리보기 payload)
+- [x] 집행 제안 훅 자리(판정 기준은 open-decisions §1 확정 전까지 TODO 스텁) (simulation_service `_record_gen_suggestion` 하단 TODO)
+- [x] 알림 병합 조회 API (management 이상감지 + 신규 제안) — `GET /api/center/notifications`(org 스코프·COMPANY 제안숨김·정렬병합) + `POST /api/center/suggestions/{id}/read|dismiss` (api/routers/center.py)
+- [x] 통합 세션 목록 API (프로젝트 전체, org 스코프) — `GET /api/center/sessions`(history.list_sessions_for_org, Project 조인 org 스코프·project_name)
+- [x] 시안 3개 미리보기 데이터 조회 경로 확인/보강 — sim_suggest payload.candidates에 idx·copy·image_url 임베드, 폴백은 `GET /api/generator/generations/{source_gen_id}`
+
+## Phase 2 — 센터 shell
+- [x] 우측 접이식 aside (fixed, height 100%, 패널 폭 w-72, flex column) — components/center/Center.tsx
+- [x] 접힘: 채팅·알림 버튼 세로 스택 + 미읽음 배지 (우측 가장자리 띠, 카운트 30s 폴링)
+- [x] 펼침: 상단 두 버튼 탭 전환 (TabButton, 접기 버튼)
+- [x] localStorage 상태 기억(펼침/접힘·마지막 센터) — center:expanded·center:tab
+- [x] AppLayout에서 FloatingChat·NotificationBell·우하단 알림버튼 제거·센터로 교체 — `<Center/>` 마운트 + Phase 5에서 FloatingChat·NotificationBell·ProjectChatSection 완전 제거 완료(Preview 확인).
+- [x] api 클라이언트 center 블록(notifications·sessions·read·dismiss) + 타입(CenterNotificationItem·CenterSessionRow)
+
+## Phase 3 — 필터 바
+- [x] 세그먼트 [안읽음·읽음·전체] (채팅/알림 각각) — CenterFilterBar, Center가 chatSeg·alarmSeg 분리 보유
+- [x] 프로젝트 드롭다운(기본 전체 프로젝트), space-between — Select, 기본값 '' = 전체 프로젝트
+- [x] ADMIN 기업 드롭다운(프로젝트 왼쪽) — isAdmin일 때 상단에 기업 Select, 선택 시 setAdminOrgId(X-Org-Id)
+
+## Phase 4 — 알림 센터
+- [x] 병합 목록 렌더 — AlarmCenter, api.center.notifications + 세그먼트 read_at 필터
+- [x] 아코디언: 접힘 제목만 · 단일 오픈 · 열 때 읽음 (management read / center readSuggestion)
+- [x] 상세: 시뮬 제안→시안 3개(payload.candidates) / 제너 제안→시뮬 요약(resultSummary('sim', source_sim_id) 재사용)
+- [x] 알림별 액션 버튼 → 프리필 이동 (시뮬 돌리기→/simulation, 생성해 보기→/generator, 상담하기→consult+채팅; selectProject로 컨텍스트 프리필)
+- [x] 기존 지금 점검·상담·무시 이관 (notifyScan·consult·resolve/dismissSuggestion, useNotificationStream SSE 구독)
+
+## Phase 5 — 채팅 센터
+- [x] 세션 목록(height 100%) 이식 — ChatCenter, api.center.sessions(검색·새채팅·삭제·미확인 배지·전환 이관)
+- [x] 세션 클릭 → 50/50 + 하단 라이브 채팅(기존 ChatConversation 재사용) — ADMIN Preview 검증(입력창·SimResultWidget·이력 렌더)
+- [x] 전체 프로젝트 통합 세션 표시 — projectId '' → org 전체(project_name 표시), 검증(16세션)
+- [x] 전체 프로젝트 상태에서 입력 시 프로젝트 강제 선택 — 새 채팅 시 needProject 안내
+- [x] 패널 채팅(ProjectChatSection)·FloatingChat 완전 제거(기능 누락 0) — FloatingChat·ProjectChatSection 파일 삭제, AppLayout NotificationBell 렌더 제거, layout.tsx FloatingChat 제거, AdminPanel·ProjectPanel ProjectChatSection 제거(showChat prop 정리). 상담하기는 AlarmCenter→onOpenChat으로 센터 채팅 탭 전환. Preview 검증(플로팅·벨 부재·센터 정상·콘솔 에러 0)
+- [x] (fix) ADMIN 기업 전환 시 목록 미갱신 버그 — orgKey prop으로 AlarmCenter·ChatCenter 재조회 트리거
+
+## Phase 6 — 권한 분기
+- [x] ADMIN: 기업 미선택 시 두 센터 disable + 안내 — Center에서 isAdmin && !orgId면 "기업을 선택해주세요" 안내(필터바 유지). Preview 검증 완료
+- [x] COMPANY: 읽기전용 채팅(입력 불가·읽음표시 X), management 알림만 — ChatCenter readOnly(ReadOnlyConversation, markRead 없음), 백엔드 /api/center/notifications가 COMPANY엔 제안 숨김. 센터는 /chat 라우트 밖이라 차단과 무관하게 읽기전용 제공. (COMPANY 계정 없어 라이브 Preview 미실시 — 코드 검증)
+- [x] USER: 기업 드롭다운 없음, 전 기능 사용 — CenterFilterBar가 isAdmin일 때만 기업 드롭다운(USER 제외), 전 기능 사용. (USER 계정 없어 라이브 Preview 미실시 — 코드 검증)
+
+## Phase 7 — 검증·문서
+- [x] ruff(백엔드) 통과 (Phase 1 커밋들)
+- [x] gen_docs 재생성(라우터/페이지 변경분) (center 엔드포인트 4개 반영)
+- [x] Claude Preview로 역할별 동작 검증(증거 캡처) — **ADMIN·COMPANY·USER 3역할 라이브 검증 완료**(2026-07-07). ADMIN: shell·필터바·알림/채팅 렌더, 세션 클릭→하단 라이브 채팅(위젯·이력), /api/center 200, X-Org-Id org 스코프(미선택 org_selected=false·선택 시 세션16), FloatingChat·벨 제거, 기업 미선택 안내. USER(testuser, 시뮬레이션 org): 기업 드롭다운 없음·16세션·새 채팅(쓰기) 가능. COMPANY(testco): 기업 드롭다운 없음·새 채팅 버튼 없음(읽기전용)·알림 management 전용. 콘솔 에러 0, next build 성공. (테스트 계정 testco·testuser는 admin API로 발급 — 검증용, 정리 대상.)
+- [x] 기능 단위 커밋 (Phase 1~6 논리 단위별 12커밋)
+- [x] next build(프로덕션) 성공 — 제거·layout 변경 포함 전 라우트 컴파일

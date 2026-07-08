@@ -7,6 +7,7 @@ from __future__ import annotations
 import asyncio
 import io
 import json
+import logging
 import random
 import re
 
@@ -20,12 +21,22 @@ from core.config import settings
 from domain.generator.contracts.enums import AdSize, AdStrategy, TemplateType
 from domain.generator.contracts.pipeline_schemas import AdCopy, ProductAnalysis
 
+# 전략별 사진 연출 지시 재사용 — openai 경로 전용이 아니라 전략의 시각 정체성 자체라
+# gemini 경로도 동일하게 따라야 한다(그동안 여기선 strategy.value 슬러그 한 단어만 넘겨
+# "화면을 꽉 채워라" 류 지시가 레이아웃 문구 하나에만 의존해 준수율이 낮았다).
+from domain.generator.pipeline.image_generator import (
+    _STRATEGY_DESCRIPTIONS,
+    _STRATEGY_PHOTO_STYLE,
+)
+
 # 같은 도메인 pipeline 내부 헬퍼 재사용 — 비율 매핑·LangSmith usage 수동 기록.
 from domain.generator.pipeline.image_providers import (
     _GEMINI_NATIVE_ASPECT_RATIO,
     _record_genai_usage,
 )
 from tools.utils import str_or_none
+
+logger = logging.getLogger("clickme")
 
 
 def _detect_mime(data: bytes) -> str:
@@ -34,9 +45,19 @@ def _detect_mime(data: bytes) -> str:
 
 
 _TEMPLATE_LAYOUT: dict[TemplateType, str] = {
-    TemplateType.A: "제품을 화면 상단~중앙에 크게 배치하고, 하단 45%는 텍스트가 올라갈 영역이므로 비워둔다.",
-    TemplateType.B: "상단 20%와 하단 40%는 텍스트 띠 영역이므로 비우고, 중앙에 제품을 배치한다.",
-    TemplateType.C: "좌측 46%는 텍스트 패널 영역이므로 비우고, 우측에 제품·감성 이미지를 배치한다.",
+    TemplateType.A: (
+        "제품 장면을 화면 상단 55% 전체에 위·좌·우 가장자리까지 빈틈없이 꽉 채워 배치한다"
+        "(그 안에 빈 여백이나 배경만 남는 공간 금지). 하단 45%는 텍스트가 올라갈 영역이므로 비워둔다."
+    ),
+    TemplateType.B: (
+        "제품을 화면 상단 68% 전체에 위·좌·우 가장자리까지 빈틈없이 역동적으로 크게 채워 배치한다"
+        "(빈 여백 금지). 하단 32%는 텍스트 배너 영역이므로 비운다."
+    ),
+    TemplateType.C: (
+        "우측 47% 영역 전체를 제품·감성 이미지로 위에서 아래까지, 오른쪽 가장자리까지 빈틈없이 꽉 채운다"
+        "(사진이 영역 안에서 작게 떠 있거나 위아래로 여백이 남지 않게 한다). "
+        "좌측 46%는 텍스트 패널 영역이므로 비운다."
+    ),
 }
 
 _PROMPT_TEMPLATE = """\
@@ -44,17 +65,18 @@ _PROMPT_TEMPLATE = """\
 아래 정보로 광고 **배경 이미지 1장**을 생성하세요.
 중요: 이미지 안에 글자·문자·숫자를 절대 넣지 마세요. 텍스트는 이후 별도로 합성됩니다.
 
-제품: {product_name}
+제품/서비스: "{product_name}" (이 이름 자체를 이미지 안에 글자로 쓰지 말 것)
 핵심 가치: {core_values}
 혜택: {benefits}
 타겟: {target_audience}
 전략: {strategy}
 레이아웃: {layout}
-브랜드 컬러: {brand_color}
+브랜드 컬러 톤: {brand_color} (이 코드 값을 텍스트로 표시하지 말고 배경 색감에만 반영할 것)
 톤앤매너: {tone}
 {improvement_section}
 규칙:
 - 글자·문자·숫자·타이포그래피·워터마크·로고·QR 일절 금지 (순수 배경+제품 이미지).
+- 제품명·브랜드명·색상 코드(HEX)를 이미지 위에 텍스트·라벨·워터마크 형태로 표시하는 것 절대 금지.
 - 레이아웃에 명시된 텍스트 영역은 깨끗이 비워둔다.
 - 이미지와 함께, 사용할 카피를 다음 JSON 한 줄로 출력하세요:
   {{"headline": "...(20자 이내)", "body": "...(50자 이내)", "cta": "...(10자 이내)"}}
@@ -93,12 +115,13 @@ def _build_prompt(
         if improvement_context
         else ""
     )
+    strategy_guide = f"{_STRATEGY_DESCRIPTIONS[strategy]}. {_STRATEGY_PHOTO_STYLE[strategy]}"
     prompt = _PROMPT_TEMPLATE.format(
         product_name=product_analysis.product_name,
         core_values=", ".join(product_analysis.core_values) or "-",
         benefits=", ".join(product_analysis.benefits) or "-",
         target_audience=product_analysis.target_audience or "일반 소비자",
-        strategy=strategy.value,
+        strategy=strategy_guide,
         layout=_TEMPLATE_LAYOUT[template],
         brand_color=brand_color or "지정 없음",
         tone=tone or "깔끔하고 신뢰감 있게",
@@ -135,6 +158,11 @@ async def _generate_once(
     _record_genai_usage(response, settings.generator_gemini_image_model)
 
     if not response.candidates:
+        logger.warning(
+            "멀티모달 응답에 candidates 없음: model=%s prompt_feedback=%s",
+            settings.generator_gemini_image_model,
+            getattr(response, "prompt_feedback", None),
+        )
         return None
     image_bytes: bytes | None = None
     text_parts: list[str] = []
@@ -144,6 +172,12 @@ async def _generate_once(
         elif part.text:
             text_parts.append(part.text)
     if not image_bytes:
+        logger.warning(
+            "멀티모달 응답에 이미지 없음: model=%s finish_reason=%s text=%r",
+            settings.generator_gemini_image_model,
+            getattr(response.candidates[0], "finish_reason", None),
+            "\n".join(text_parts)[:500],
+        )
         return None
 
     raw = _parse_copy_json("\n".join(text_parts))

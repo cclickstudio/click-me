@@ -6,6 +6,7 @@ import { useChatController } from "@/components/chat/ChatController";
 import ErrorCard from "@/components/chat/ErrorCard";
 import { api, authedFetch, type AutomationRunItem } from "@/lib/api";
 import { getJobs, setGenJob } from "@/lib/runningJobs";
+import { Select } from "@/components/ui/Select";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 import type {
@@ -600,19 +601,17 @@ function CandidateModal({
                     <label className="block text-xs font-medium text-[#4E5968] dark:text-[#9CA3AF] mb-1">
                       광고 목적
                     </label>
-                    <select
-                      className={inputCls}
+                    <Select
+                      aria-label="광고 목적"
                       value={adObjective}
-                      onChange={(e) => setAdObjective(e.target.value as "traffic" | "leads")}
+                      onChange={(v) => setAdObjective(v as "traffic" | "leads")}
                       disabled={advertising}
-                    >
-                      {META_OBJECTIVES.map((o) => (
-                        <option key={o.value} value={o.value} disabled={!o.supported}>
-                          {o.label}
-                          {o.supported ? "" : " (준비 중)"}
-                        </option>
-                      ))}
-                    </select>
+                      options={META_OBJECTIVES.map((o) => ({
+                        value: o.value,
+                        label: o.supported ? o.label : `${o.label} (준비 중)`,
+                        disabled: !o.supported,
+                      }))}
+                    />
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-[#4E5968] dark:text-[#9CA3AF] mb-1">
@@ -812,6 +811,7 @@ export default function GeneratorPage() {
   const logoInputRef = useRef<HTMLInputElement>(null);
   const colorInputRef = useRef<HTMLInputElement>(null);
   const esRef = useRef<EventSource | null>(null);
+  const reconnectAttemptsRef = useRef(0);
 
   // 상품 이미지 (생성 모드)
   const [productImageTempKey, setProductImageTempKey] = useState("");
@@ -1075,6 +1075,7 @@ export default function GeneratorPage() {
     const es = api.generator.stream(generationId);
     esRef.current = es;
     es.onmessage = async (e) => {
+      reconnectAttemptsRef.current = 0; // 이벤트를 정상 수신 — 연결 살아있음, 재연결 카운트 리셋
       const data = JSON.parse(e.data) as SSEProgressEvent;
       if (data.event === "progress") {
         setProgress({ stage: data.stage ?? "", pct: data.pct ?? 0, message: data.message ?? "" });
@@ -1097,27 +1098,39 @@ export default function GeneratorPage() {
         setPhase("idle");
       }
     };
+    const MAX_RECONNECT_ATTEMPTS = 5;
     es.onerror = async () => {
       es.close();
-      localStorage.removeItem(ACTIVE_GEN_KEY);
-      setGenJob(null); // 동시실행 슬롯 해제
       // 스트림이 끊긴 이유가 서버측 생성 실패(error 이벤트가 종료 전 유실)이거나,
-      // 생성 자체는 끝났는데 "completed" 이벤트만 유실된 것일 수 있다.
-      // 상태를 조회해 실제 상태를 우선 노출 — "네트워크 끊김"으로 오인 방지.
+      // 생성 자체는 끝났는데 "completed" 이벤트만 유실된 것일 수도, 일시적 연결 문제일 수도 있다.
+      // 상태를 조회해 실제 상태를 우선 노출하고, 아직 안 끝났다면 "실패"로 단정하지 않고
+      // 재연결해서 이어 받는다("네트워크 끊김"·완료 오인 모두 방지).
       try {
         const d = (await api.generator.detail(generationId)) as GenerationDetail;
         if (d.status === "completed") {
+          localStorage.removeItem(ACTIVE_GEN_KEY);
+          setGenJob(null); // 동시실행 슬롯 해제
           await applyCompletedResult(generationId, d);
           return;
         }
         if (d.status === "failed") {
+          localStorage.removeItem(ACTIVE_GEN_KEY);
+          setGenJob(null); // 동시실행 슬롯 해제
           setError(d.error_message || "광고 생성에 실패했습니다.");
           setPhase("idle");
           return;
         }
+        if (reconnectAttemptsRef.current < MAX_RECONNECT_ATTEMPTS) {
+          reconnectAttemptsRef.current += 1;
+          // stream_events는 처음부터 이벤트를 재생하므로 재연결해도 유실·중복 없이 이어진다.
+          setTimeout(() => subscribe(generationId), 1500);
+          return;
+        }
       } catch {
-        // 조회 실패 시 아래 일반 안내로 폴백
+        // 상태 조회 자체 실패 — 아래 일반 안내로 폴백
       }
+      localStorage.removeItem(ACTIVE_GEN_KEY);
+      setGenJob(null); // 동시실행 슬롯 해제
       setError("진행 상태 연결이 끊어졌습니다. 다시 시도해주세요.");
       setPhase("idle");
     };
@@ -1330,18 +1343,13 @@ export default function GeneratorPage() {
                   선택할 프로젝트가 없습니다. 왼쪽 패널에서 프로젝트를 먼저 만들어 주세요.
                 </p>
               ) : (
-                <select
+                <Select
+                  aria-label="프로젝트 선택"
+                  placeholder="프로젝트를 선택하세요"
                   value={selectedProject?.id ?? ""}
-                  onChange={(e) => selectProject(e.target.value || null)}
-                  className={inputCls}
-                >
-                  <option value="">프로젝트를 선택하세요</option>
-                  {projects.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(v) => selectProject(v || null)}
+                  options={projects.map((p) => ({ value: p.id, label: p.name }))}
+                />
               )}
             </div>
 
@@ -1379,18 +1387,16 @@ export default function GeneratorPage() {
                     이 프로젝트에 시뮬레이션이 없습니다.
                   </p>
                 ) : (
-                  <select
+                  <Select
+                    aria-label="시뮬레이션 선택"
+                    placeholder="개선할 시뮬레이션을 선택하세요"
                     value={selectedSimId}
-                    onChange={(e) => loadSimulation(e.target.value)}
-                    className={inputCls}
-                  >
-                    <option value="">개선할 시뮬레이션을 선택하세요</option>
-                    {improveSims.map((s) => (
-                      <option key={s.id} value={s.id}>
-                        {s.ad_title ?? "시뮬레이션"} · {s.sample_size}명
-                      </option>
-                    ))}
-                  </select>
+                    onChange={loadSimulation}
+                    options={improveSims.map((s) => ({
+                      value: s.id,
+                      label: `${s.ad_title ?? "시뮬레이션"} · ${s.sample_size}명`,
+                    }))}
+                  />
                 )}
               </div>
             )}
@@ -1532,17 +1538,15 @@ export default function GeneratorPage() {
                     <label className={labelCls}>
                       광고 목적 <span className="text-[#F74D4D]">*</span>
                     </label>
-                    <select
-                      className={inputCls}
+                    <Select
+                      aria-label="광고 목적"
                       value={objective}
-                      onChange={(e) => setObjective(e.target.value)}
-                    >
-                      {OBJECTIVES.map((o) => (
-                        <option key={o.value} value={o.value}>
-                          {o.label}
-                        </option>
-                      ))}
-                    </select>
+                      onChange={setObjective}
+                      options={OBJECTIVES.map((o) => ({
+                        value: o.value,
+                        label: o.label,
+                      }))}
+                    />
                   </div>
                 </>
               ) : (
@@ -1660,18 +1664,17 @@ export default function GeneratorPage() {
                   <div className="space-y-2 pb-4 border-b border-[#F2F4F6] dark:border-[#252D3D]">
                     <label className={labelCls}>브랜드 키트</label>
                     <div className="flex gap-2">
-                      <select
+                      <Select
+                        aria-label="브랜드 키트 불러오기"
+                        className="flex-1"
+                        placeholder="저장된 키트 불러오기..."
                         value={selectedKitId}
-                        onChange={(e) => applyKit(e.target.value)}
-                        className={inputCls}
-                      >
-                        <option value="">저장된 키트 불러오기...</option>
-                        {kits.map((k) => (
-                          <option key={k.id} value={k.id}>
-                            {k.name}
-                          </option>
-                        ))}
-                      </select>
+                        onChange={applyKit}
+                        options={kits.map((k) => ({
+                          value: k.id,
+                          label: k.name,
+                        }))}
+                      />
                       {selectedKitId && (
                         <button
                           type="button"

@@ -18,6 +18,7 @@ from urllib.parse import quote
 from PIL import Image
 from sqlalchemy import select
 
+from core.center_suggestions import create_center_suggestion
 from core.db import AsyncSessionLocal
 from core.execution_log import record_execution
 from core.models import (
@@ -160,6 +161,8 @@ async def _run_pipeline(
 
         await _persist_results(generation_id, final_state)
         store["status"] = "completed"
+        # 센터 제안 알림 — 제너 완료 → "시뮬레이션 제안"(시안 3개 미리보기) 인라인 생성(best-effort).
+        await _record_sim_suggestion(generation_id, request, final_state)
         # 실행 확정 지점 롱텀(실행 히스토리) 적재 — UI·채팅·반복루프 모든 경로가 여기로 수렴.
         # 채팅 요청행(spawn_persist)과는 stage로 구분(요청/완료 2행 패턴). best-effort·비차단.
         improve = request.mode == GenerationMode.IMPROVE
@@ -193,6 +196,42 @@ async def _run_pipeline(
         emit({"event": "error", "message": str(exc)})
     finally:
         pass
+
+
+async def _record_sim_suggestion(
+    generation_id: str, request: GenerationCreateRequest, final_state: dict
+) -> None:
+    """제너 완료 직후 "시뮬레이션 제안"(sim_suggest) 센터 알림을 인라인 생성 — 스펙 §5.2.
+
+    상세는 생성 시안 3개 미리보기(카피·이미지 URL). org는 project_id에서 자동 해석.
+    프로젝트 미선택 생성은 귀속할 곳이 없어 생략. best-effort·비차단.
+    """
+    if not request.project_id:
+        return
+    previews = [
+        {
+            "idx": c.get("idx"),
+            "copy": c.get("copy"),
+            "image_url": f"/api/generator/image?key={quote(c['s3_key'], safe='')}"
+            if c.get("s3_key")
+            else None,
+        }
+        for c in (final_state.get("candidates") or [])[:3]
+    ]
+    await create_center_suggestion(
+        suggestion_type="sim_suggest",
+        organization_id=None,  # request에 org 없음 → project_id에서 해석
+        project_id=request.project_id,
+        reason="generator_run",
+        source_gen_id=generation_id,
+        payload={
+            "title": "시뮬레이션 제안",
+            "message": "생성된 시안으로 가상 소비자 반응을 예측해 볼까요?",
+            "product_name": request.product_name,
+            "candidates": previews,
+        },
+        dedup_key=f"sim_suggest:{generation_id}",
+    )
 
 
 async def _update_status(generation_id: str, status: str, error_message: str | None = None) -> None:

@@ -1,7 +1,7 @@
 'use client';
 // 도메인 시뮬레이터(/api/simulation/run) 동기 실행 화면 — 광고 입력 → 반응·루브릭·집계 표시
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useLayoutEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useProjects } from '@/components/ProjectContext';
 import { CreateProjectModal } from '@/components/ProjectPanel';
@@ -13,6 +13,7 @@ import { api, getAdminOrgId } from '@/lib/api';
 import { saveSimComparison, saveSimResult } from '@/lib/simResultStore';
 import { getJobs, setSimJob } from '@/lib/runningJobs';
 import { SIM_CATEGORIES } from '@/lib/simCategories';
+import { Select } from '@/components/ui/Select';
 import type {
   AnalysisMode,
   SegmentInput,
@@ -22,6 +23,15 @@ import type {
 
 type Step = 'setup' | 'running';
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
+// 진행 중 run_id(localStorage) — 다른 탭 이동 후 복귀 시 SSE 재구독용(백엔드는 asyncio.create_task로
+// 이미 이 페이지 SSE 연결과 무관하게 계속 돈다. 여기선 화면 복원만 담당).
+const ACTIVE_SIM_KEY = 'sim_page_active_run';
+const STAGE_LABEL: Record<string, string> = {
+  ad_analysis: '광고 해석 중...',
+  panel: '페르소나 패널 로드 중...',
+  reaction: '페르소나 반응 생성 중...',
+  aggregate: '결과 집계 중...',
+};
 
 type InputMode = 'image' | 'generated' | 'campaign';
 type GenderFilter = '' | 'M' | 'F';
@@ -142,6 +152,21 @@ export default function SimulationRunPage() {
     emptySegment('세그먼트 A'),
     emptySegment('세그먼트 B'),
   ]);
+
+  // Individual 모드 — 페르소나 지정 선택(미지정이면 기존대로 타깃 조건에서 자동 추출).
+  const [personaPickerOpen, setPersonaPickerOpen] = useState(false);
+  const [pickedPersona, setPickedPersona] = useState<{
+    persona_id: string;
+    age: number;
+    gender: string;
+    region: string;
+    narrative_snippet: string;
+  } | null>(null);
+  const [personaOptions, setPersonaOptions] = useState<
+    { persona_id: string; age: number; gender: string; region: string; narrative_snippet: string }[]
+  >([]);
+  const [personaOptionsTotal, setPersonaOptionsTotal] = useState(0);
+  const [personaOptionsLoading, setPersonaOptionsLoading] = useState(false);
 
   // 광고 입력
   const [adId] = useState(`AD-${Date.now()}`);
@@ -367,8 +392,44 @@ export default function SimulationRunPage() {
   }>({ label: '', index: 0, total: 0 });
   const esRef = useRef<(() => void) | null>(null); // SSE 재연결 구독 close 함수(X2)
 
-  // 언마운트 시 스트림 정리.
+  // 언마운트 시 스트림 정리(백엔드 런 자체는 asyncio.create_task라 계속 돈다 — 화면 구독만 해제).
   useEffect(() => () => esRef.current?.(), []);
+
+  // 진행 중 run_id가 있으면(다른 탭 갔다 돌아온 경우 포함) setup 폼이 먼저 그려지는 깜빡임 없이
+  // running 화면부터 낙관적으로 띄운 뒤, 상태 조회 결과로 확정/롤백한다.
+  // useLayoutEffect — 브라우저 페인트 전에 반영(useEffect는 페인트 후라 setup 폼이 잠깐 보임).
+  useLayoutEffect(() => {
+    const raw = localStorage.getItem(ACTIVE_SIM_KEY);
+    if (!raw) return;
+    let stored: { run_id: string; mode: AnalysisMode } | null = null;
+    try {
+      stored = JSON.parse(raw);
+    } catch {
+      localStorage.removeItem(ACTIVE_SIM_KEY);
+      return;
+    }
+    if (!stored?.run_id) return;
+    setStep('running'); // 낙관적 — 아래 상태 조회로 확정하거나 되돌린다.
+    api.simulation
+      .status(stored.run_id)
+      .then(st => {
+        if (st.status !== 'RUNNING') {
+          localStorage.removeItem(ACTIVE_SIM_KEY);
+          setStep('setup');
+          return;
+        }
+        setAnalysisMode(stored!.mode);
+        setSimJob(stored!.run_id);
+        setPct(st.pct ?? 0);
+        setStageMsg(st.stage ? STAGE_LABEL[st.stage] ?? '' : '');
+        subscribeRun(stored!.run_id, stored!.mode);
+      })
+      .catch(() => {
+        // 상태 확인 실패 — 낙관적으로 띄운 화면은 되돌리되 키는 유지(다음 마운트에 재시도).
+        setStep('setup');
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // 광고 공통 필드(3-모드 공용) — start·compare 요청에 함께 실린다.
   function adCommonFields() {
@@ -389,6 +450,12 @@ export default function SimulationRunPage() {
       // 링크는 from_campaign_id + organization_id가 함께 있을 때만 걸린다(simulation_service).
       from_campaign_id:
         inputMode === 'campaign' && selectedCampaignId ? selectedCampaignId : undefined,
+      // '생성한 광고로 시뮬' — 옵션 value는 `${generationId}:${candidateId}`. 앞의 generation id를
+      // 넘겨 ads.generation_id로 영속(채팅 개선모드가 상품 누끼를 역추적해 재사용).
+      generation_id:
+        inputMode === 'generated' && selectedGenValue
+          ? selectedGenValue.split(':')[0]
+          : undefined,
       organization_id: getAdminOrgId() ?? undefined,
     };
   }
@@ -409,6 +476,175 @@ export default function SimulationRunPage() {
         sample_size: s.sampleSize,
       };
     });
+  }
+
+  // Individual 모드 — 현재 타깃 조건(연령대·성별)으로 패널에서 페르소나 후보를 불러온다.
+  async function loadPersonaOptions(offset = 0) {
+    setPersonaOptionsLoading(true);
+    try {
+      const bands = AGE_BANDS.filter(b => ageBands.includes(b.label));
+      const params: { gender?: string; age_min?: number; age_max?: number; limit: number; offset: number } = {
+        limit: 20,
+        offset,
+      };
+      if (bands.length > 0) {
+        params.age_min = Math.min(...bands.map(b => b.min));
+        params.age_max = Math.max(...bands.map(b => b.max));
+      }
+      if (gender) params.gender = gender;
+      const res = await api.simulation.panelPersonas(params);
+      setPersonaOptions(prev => (offset === 0 ? res.items : [...prev, ...res.items]));
+      setPersonaOptionsTotal(res.total);
+    } catch {
+      setPersonaOptions([]);
+      setPersonaOptionsTotal(0);
+    } finally {
+      setPersonaOptionsLoading(false);
+    }
+  }
+
+  // SSE 구독 — 최초 실행·타 탭 복귀 후 복원 공용(mode를 인자로 받아 완료 라우팅을 결정 —
+  // 복원 시엔 analysisMode state가 아직 갱신 전일 수 있어 클로저 값 대신 인자를 쓴다).
+  function subscribeRun(run_id: string, mode: AnalysisMode) {
+    // SSE 자동 재연결(X2) — 일시 끊김은 지수 backoff로 재구독, 정상 수신 시 리셋.
+    // 종료(completed/error)면 재연결 안 함. 최대 재시도 초과 시에만 에러 처리.
+    esRef.current = openReconnectingStream(
+      () => api.simulation.stream(run_id),
+      {
+        label: 'sim',
+        isTerminal: d =>
+          (d as SSEProgressEvent).event === 'completed' ||
+          (d as SSEProgressEvent).event === 'error',
+        onGiveUp: msg => {
+          setError(msg);
+          esRef.current = null;
+          setSimJob(null); // 동시실행 슬롯 해제
+          localStorage.removeItem(ACTIVE_SIM_KEY);
+          setStep('setup');
+        },
+        onEvent: raw => {
+          const data = raw as SSEProgressEvent;
+
+          if (data.event === 'error') {
+            setError(data.message ?? '시뮬레이션 진행 중 오류');
+            esRef.current = null;
+            setSimJob(null); // 동시실행 슬롯 해제
+            localStorage.removeItem(ACTIVE_SIM_KEY);
+            setStep('setup');
+            return;
+          }
+
+          if (typeof data.pct === 'number') setPct(data.pct);
+          // reaction 단계는 message("반응 N/total")가 더 구체적이라 우선.
+          if (data.stage)
+            setStageMsg(data.message ?? STAGE_LABEL[data.stage] ?? '');
+          // persona_set — 세그먼트 진행(segment_index/total) 표시.
+          if (
+            data.segment_label ||
+            typeof data.segment_index === 'number' ||
+            typeof data.segment_total === 'number'
+          ) {
+            setSegProgress(prev => ({
+              label: data.segment_label ?? prev.label,
+              index: data.segment_index ?? prev.index,
+              total: data.segment_total ?? prev.total,
+            }));
+          }
+
+          if (data.event !== 'completed') return;
+          setPct(100);
+          esRef.current = null;
+          setSimJob(null); // 동시실행 슬롯 해제
+          localStorage.removeItem(ACTIVE_SIM_KEY);
+
+          if (mode === 'persona_set') {
+            // 세그먼트 비교 — compareResult 후 sessionStorage 브리지로 넘긴다.
+            api.simulation
+              .compareResult(run_id)
+              .then(cmp => {
+                saveSimComparison(run_id, {
+                  comparison: cmp,
+                  adTitle: adTitle || undefined,
+                  adDescription: adContent || undefined,
+                });
+                router.push(`/simulation/${run_id}`);
+              })
+              .catch(e => {
+                setError(e instanceof Error ? e.message : '결과 조회 실패');
+                setStep('setup');
+              });
+            return;
+          }
+
+          api.simulation
+            .result(run_id)
+            .then((r: SimRunResult) => {
+              // DB 저장됐으면 simulation_id, 아니면 run_id로 키·라우팅(폴백).
+              const routeId = r.simulation_id ?? r.run_id;
+              saveSimResult(routeId, {
+                result: r,
+                adTitle: adTitle || undefined,
+                adDescription: adContent || undefined,
+                mode,
+              });
+              // N1 — 전용 페이지 직접 실행이 끝나면, 결과 + "개선해서 다시 돌리기" 제안을
+              // 자동 주입. 기존 대화에 끼워넣지 않고 '새 채팅 세션'을 만들어 거기에 제안한다.
+              const pid = selectedProject?.id;
+              if (pid) refreshDetails(pid); // 완료된 시뮬을 좌측 패널에 즉시 반영
+              if (pid && r.simulation_id) {
+                const injectKey = `n1_injected_${run_id}`; // 동일 run 1회만(중복 주입 방지)
+                if (!localStorage.getItem(injectKey)) {
+                  localStorage.setItem(injectKey, '1');
+                  const simId = r.simulation_id;
+                  const sessionTitle = `${adTitle || '광고'} 시뮬 결과·개선`;
+                  api.chat.createSession(pid, sessionTitle).then(created => {
+                    const sid = created.id;
+                    void api.chat
+                      .appendWidgets(sid, [
+                        {
+                          content: '시뮬레이션 결과예요.',
+                          meta: {
+                            source: 'simulation',
+                            label: '시뮬레이션',
+                            widget: {
+                              type: 'sim_result',
+                              data: { simulation_id: simId },
+                            },
+                          },
+                        },
+                        {
+                          content:
+                            '결과를 바탕으로 광고를 개선해서 다시 돌려볼까요?',
+                          meta: {
+                            source: 'simulation',
+                            label: '개선 제안',
+                            approval: {
+                              action: 'rerun_simulation',
+                              label: '개선해서 다시 돌리기',
+                              reasons: [
+                                '전용 페이지에서 직접 돌린 결과를 채팅에서 이어 개선할 수 있어요.',
+                              ],
+                            },
+                          },
+                        },
+                      ])
+                      .then(() => {
+                        // N2 — 패널이 닫혀 있으면 안읽음 뱃지를 올린다(2건 주입 → +1, 알림은 1회).
+                        if (!floatingOpenRef.current) pushUnread();
+                      })
+                      .catch(() => {});
+                  }).catch(() => {});
+                }
+              }
+              router.push(`/simulation/${routeId}`);
+            })
+            .catch(e => {
+              setError(e instanceof Error ? e.message : '결과 조회 실패');
+              setStep('setup');
+            });
+        },
+      }
+    );
   }
 
   async function run() {
@@ -436,15 +672,21 @@ export default function SimulationRunPage() {
         run_id = res.run_id;
       } else {
         // 사용자가 연령대·성별을 고르면 그 조건으로, 아무것도 안 고르면 자동(AUTO).
+        // individual + 페르소나 지정 시엔 age/gender 대신 persona_id로 그 1명을 정확히 지정.
         const targetFilter: Record<string, unknown> = {};
+        if (analysisMode === 'individual' && pickedPersona) {
+          targetFilter.persona_id = pickedPersona.persona_id;
+        }
         const bands = AGE_BANDS.filter(b => ageBands.includes(b.label));
-        if (bands.length > 0) {
+        if (!targetFilter.persona_id && bands.length > 0) {
           targetFilter.age_min = Math.min(...bands.map(b => b.min));
           targetFilter.age_max = Math.max(...bands.map(b => b.max));
         }
-        if (gender) targetFilter.gender = gender;
+        if (!targetFilter.persona_id && gender) targetFilter.gender = gender;
         const targetMode =
-          bands.length > 0 || gender !== '' ? 'MANUAL' : 'AUTO';
+          targetFilter.persona_id || bands.length > 0 || gender !== ''
+            ? 'MANUAL'
+            : 'AUTO';
         // 비동기 시작 → run_id 받고 SSE로 진행률 구독(결과는 completed 후 GET).
         const res = await api.simulation.start({
           ...adCommonFields(),
@@ -459,150 +701,9 @@ export default function SimulationRunPage() {
       }
 
       setSimJob(run_id); // 동시실행 슬롯 점유(시뮬 1개 제한)
-
-      const STAGE_LABEL: Record<string, string> = {
-        ad_analysis: '광고 해석 중...',
-        panel: '페르소나 패널 로드 중...',
-        reaction: '페르소나 반응 생성 중...',
-        aggregate: '결과 집계 중...',
-      };
-
-      // SSE 자동 재연결(X2) — 일시 끊김은 지수 backoff로 재구독, 정상 수신 시 리셋.
-      // 종료(completed/error)면 재연결 안 함. 최대 재시도 초과 시에만 에러 처리.
-      esRef.current = openReconnectingStream(
-        () => api.simulation.stream(run_id),
-        {
-          label: 'sim',
-          isTerminal: d =>
-            (d as SSEProgressEvent).event === 'completed' ||
-            (d as SSEProgressEvent).event === 'error',
-          onGiveUp: msg => {
-            setError(msg);
-            esRef.current = null;
-            setSimJob(null); // 동시실행 슬롯 해제
-            setStep('setup');
-          },
-          onEvent: raw => {
-            const data = raw as SSEProgressEvent;
-
-            if (data.event === 'error') {
-              setError(data.message ?? '시뮬레이션 진행 중 오류');
-              esRef.current = null;
-              setSimJob(null); // 동시실행 슬롯 해제
-              setStep('setup');
-              return;
-            }
-
-            if (typeof data.pct === 'number') setPct(data.pct);
-            // reaction 단계는 message("반응 N/total")가 더 구체적이라 우선.
-            if (data.stage)
-              setStageMsg(data.message ?? STAGE_LABEL[data.stage] ?? '');
-            // persona_set — 세그먼트 진행(segment_index/total) 표시.
-            if (
-              data.segment_label ||
-              typeof data.segment_index === 'number' ||
-              typeof data.segment_total === 'number'
-            ) {
-              setSegProgress(prev => ({
-                label: data.segment_label ?? prev.label,
-                index: data.segment_index ?? prev.index,
-                total: data.segment_total ?? prev.total,
-              }));
-            }
-
-            if (data.event !== 'completed') return;
-            setPct(100);
-            esRef.current = null;
-            setSimJob(null); // 동시실행 슬롯 해제
-
-            if (analysisMode === 'persona_set') {
-              // 세그먼트 비교 — compareResult 후 sessionStorage 브리지로 넘긴다.
-              api.simulation
-                .compareResult(run_id)
-                .then(cmp => {
-                  saveSimComparison(run_id, {
-                    comparison: cmp,
-                    adTitle: adTitle || undefined,
-                    adDescription: adContent || undefined,
-                  });
-                  router.push(`/simulation/${run_id}`);
-                })
-                .catch(e => {
-                  setError(e instanceof Error ? e.message : '결과 조회 실패');
-                  setStep('setup');
-                });
-              return;
-            }
-
-            api.simulation
-              .result(run_id)
-              .then((r: SimRunResult) => {
-                // DB 저장됐으면 simulation_id, 아니면 run_id로 키·라우팅(폴백).
-                const routeId = r.simulation_id ?? r.run_id;
-                saveSimResult(routeId, {
-                  result: r,
-                  adTitle: adTitle || undefined,
-                  adDescription: adContent || undefined,
-                  mode: analysisMode,
-                });
-                // N1 — 전용 페이지 직접 실행이 끝나면, 결과 + "개선해서 다시 돌리기" 제안을
-                // 자동 주입. 기존 대화에 끼워넣지 않고 '새 채팅 세션'을 만들어 거기에 제안한다.
-                const pid = selectedProject?.id;
-                if (pid) refreshDetails(pid); // 완료된 시뮬을 좌측 패널에 즉시 반영
-                if (pid && r.simulation_id) {
-                  const injectKey = `n1_injected_${run_id}`; // 동일 run 1회만(중복 주입 방지)
-                  if (!localStorage.getItem(injectKey)) {
-                    localStorage.setItem(injectKey, '1');
-                    const simId = r.simulation_id;
-                    const sessionTitle = `${adTitle || '광고'} 시뮬 결과·개선`;
-                    api.chat.createSession(pid, sessionTitle).then(created => {
-                      const sid = created.id;
-                      void api.chat
-                        .appendWidgets(sid, [
-                          {
-                            content: '시뮬레이션 결과예요.',
-                            meta: {
-                              source: 'simulation',
-                              label: '시뮬레이션',
-                              widget: {
-                                type: 'sim_result',
-                                data: { simulation_id: simId },
-                              },
-                            },
-                          },
-                          {
-                            content:
-                              '결과를 바탕으로 광고를 개선해서 다시 돌려볼까요?',
-                            meta: {
-                              source: 'simulation',
-                              label: '개선 제안',
-                              approval: {
-                                action: 'rerun_simulation',
-                                label: '개선해서 다시 돌리기',
-                                reasons: [
-                                  '전용 페이지에서 직접 돌린 결과를 채팅에서 이어 개선할 수 있어요.',
-                                ],
-                              },
-                            },
-                          },
-                        ])
-                        .then(() => {
-                          // N2 — 패널이 닫혀 있으면 안읽음 뱃지를 올린다(2건 주입 → +1, 알림은 1회).
-                          if (!floatingOpenRef.current) pushUnread();
-                        })
-                        .catch(() => {});
-                    }).catch(() => {});
-                  }
-                }
-                router.push(`/simulation/${routeId}`);
-              })
-              .catch(e => {
-                setError(e instanceof Error ? e.message : '결과 조회 실패');
-                setStep('setup');
-              });
-          },
-        }
-      );
+      // 타 탭 이동 후 복귀 복원용 — 완료/에러 시 subscribeRun이 정리한다.
+      localStorage.setItem(ACTIVE_SIM_KEY, JSON.stringify({ run_id, mode: analysisMode }));
+      subscribeRun(run_id, analysisMode);
     } catch (e) {
       setSimJob(null); // 동시실행 슬롯 해제
       setError(e instanceof Error ? e.message : '시뮬레이션 실행 실패');
@@ -652,7 +753,14 @@ export default function SimulationRunPage() {
               <button
                 key={m.value}
                 type='button'
-                onClick={() => setAnalysisMode(m.value)}
+                onClick={() => {
+                  setAnalysisMode(m.value);
+                  // 다른 모드로 바꾸면 individual 전용 페르소나 지정은 무의미 — 정리.
+                  if (m.value !== 'individual') {
+                    setPickedPersona(null);
+                    setPersonaPickerOpen(false);
+                  }
+                }}
                 className={`${chipBase} ${analysisMode === m.value ? chipActive : chipIdle}`}>
                 {m.label}
               </button>
@@ -681,17 +789,13 @@ export default function SimulationRunPage() {
               </button>
             </div>
           ) : (
-            <select
+            <Select
+              aria-label='프로젝트 선택'
+              placeholder='프로젝트를 선택하세요'
               value={selectedProject?.id ?? ''}
-              onChange={e => selectProject(e.target.value || null)}
-              className={inputCls}>
-              <option value=''>프로젝트를 선택하세요</option>
-              {projects.map(p => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
+              onChange={v => selectProject(v || null)}
+              options={projects.map(p => ({ value: p.id, label: p.name }))}
+            />
           )}
         </div>
 
@@ -810,17 +914,16 @@ export default function SimulationRunPage() {
                     </p>
                   ) : (
                     <>
-                      <select
+                      <Select
+                        aria-label='생성한 광고 후보 선택'
+                        placeholder='생성한 광고 후보 선택'
                         value={selectedGenValue}
-                        onChange={e => setSelectedGenValue(e.target.value)}
-                        className={inputCls}>
-                        <option value=''>생성한 광고 후보 선택</option>
-                        {genOptions.map(o => (
-                          <option key={o.value} value={o.value}>
-                            {o.label}
-                          </option>
-                        ))}
-                      </select>
+                        onChange={setSelectedGenValue}
+                        options={genOptions.map(o => ({
+                          value: o.value,
+                          label: o.label,
+                        }))}
+                      />
                       {selectedGenImageUrl && (
                         <div className='relative flex flex-1 min-h-0 items-center justify-center overflow-hidden rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-[#F8F9FA] dark:bg-[#1C2333]'>
                           {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -847,18 +950,16 @@ export default function SimulationRunPage() {
                     </p>
                   ) : (
                     <>
-                      <select
+                      <Select
+                        aria-label='집행 광고(캠페인) 선택'
+                        placeholder='집행 광고(캠페인) 선택'
                         value={selectedCampaignId}
-                        onChange={e => onSelectCampaign(e.target.value)}
-                        className={inputCls}>
-                        <option value=''>집행 광고(캠페인) 선택</option>
-                        {campaigns.map(c => (
-                          <option key={c.campaign_id} value={c.campaign_id}>
-                            {c.name}
-                            {c.state ? ` · ${c.state}` : ''}
-                          </option>
-                        ))}
-                      </select>
+                        onChange={onSelectCampaign}
+                        options={campaigns.map(c => ({
+                          value: c.campaign_id,
+                          label: `${c.name}${c.state ? ` · ${c.state}` : ''}`,
+                        }))}
+                      />
                       {selectedCampaignId && !campaignImageUrl && (
                         <p className='text-xs text-[#8B95A1] dark:text-[#6B7280]'>
                           이 캠페인 소재에 이미지가 없어요.
@@ -921,40 +1022,32 @@ export default function SimulationRunPage() {
                   제품 카테고리 <span className='text-[#F74D4D]'>*</span>
                 </label>
                 <div className='grid grid-cols-2 gap-3'>
-                  <select
-                    value={categoryId}
-                    onChange={e => {
-                      setCategoryId(
-                        e.target.value ? Number(e.target.value) : ''
-                      );
+                  <Select
+                    aria-label='제품 대분류'
+                    placeholder='대분류 선택'
+                    value={categoryId === '' ? '' : String(categoryId)}
+                    onChange={v => {
+                      setCategoryId(v ? Number(v) : '');
                       setServiceClass('');
                     }}
-                    className={inputCls}>
-                    <option value=''>대분류 선택</option>
-                    {categories.map(c => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
-                      </option>
-                    ))}
-                  </select>
-                  <select
-                    value={serviceClass}
-                    onChange={e =>
-                      setServiceClass(
-                        e.target.value ? Number(e.target.value) : ''
-                      )
-                    }
+                    options={categories.map(c => ({
+                      value: String(c.id),
+                      label: c.name,
+                    }))}
+                  />
+                  <Select
+                    aria-label='제품 세부 분류'
+                    placeholder='세부 분류 (NICE)'
+                    value={serviceClass === '' ? '' : String(serviceClass)}
+                    onChange={v => setServiceClass(v ? Number(v) : '')}
                     disabled={!categoryId}
-                    className={`${inputCls} disabled:opacity-50`}>
-                    <option value=''>세부 분류 (NICE)</option>
-                    {(
+                    options={(
                       categories.find(c => c.id === categoryId)?.kinds ?? []
-                    ).map(k => (
-                      <option key={k.id} value={k.id}>
-                        {k.id}류 · {k.description}
-                      </option>
-                    ))}
-                  </select>
+                    ).map(k => ({
+                      value: String(k.id),
+                      label: `${k.id}류 · ${k.description}`,
+                    }))}
+                  />
                 </div>
               </div>
 
@@ -1061,47 +1154,45 @@ export default function SimulationRunPage() {
                     <div className='grid grid-cols-2 gap-3'>
                       <div>
                         <label className={labelCls}>연령대</label>
-                        <select
+                        <Select
+                          aria-label='연령대'
                           value={s.ageBand}
-                          onChange={e =>
+                          onChange={v =>
                             setSegments(prev =>
                               prev.map((x, j) =>
-                                j === i
-                                  ? { ...x, ageBand: e.target.value }
-                                  : x
+                                j === i ? { ...x, ageBand: v } : x
                               )
                             )
                           }
-                          className={inputCls}>
-                          <option value=''>전 연령</option>
-                          {AGE_BANDS.map(b => (
-                            <option key={b.label} value={b.label}>
-                              {b.label}
-                            </option>
-                          ))}
-                        </select>
+                          options={[
+                            { value: '', label: '전 연령' },
+                            ...AGE_BANDS.map(b => ({
+                              value: b.label,
+                              label: b.label,
+                            })),
+                          ]}
+                        />
                       </div>
                       <div>
                         <label className={labelCls}>성별</label>
-                        <select
+                        <Select
+                          aria-label='성별'
                           value={s.gender}
-                          onChange={e =>
+                          onChange={v =>
                             setSegments(prev =>
                               prev.map((x, j) =>
                                 j === i
-                                  ? {
-                                      ...x,
-                                      gender: e.target.value as GenderFilter,
-                                    }
+                                  ? { ...x, gender: v as GenderFilter }
                                   : x
                               )
                             )
                           }
-                          className={inputCls}>
-                          <option value=''>전체</option>
-                          <option value='F'>여성</option>
-                          <option value='M'>남성</option>
-                        </select>
+                          options={[
+                            { value: '', label: '전체' },
+                            { value: 'F', label: '여성' },
+                            { value: 'M', label: '남성' },
+                          ]}
+                        />
                       </div>
                     </div>
 
@@ -1272,6 +1363,84 @@ export default function SimulationRunPage() {
                       ))}
                     </div>
                   </div>
+
+                  {/* Individual 모드 — 자동 추출 대신 패널에서 특정 페르소나를 직접 지정 */}
+                  {analysisMode === 'individual' && (
+                    <div>
+                      <p className={sectionTitle}>
+                        페르소나 지정{' '}
+                        <span className='text-[10px] font-normal text-[#B0B8C1] dark:text-[#4B5563]'>
+                          선택 — 안 고르면 위 조건에서 자동 추출
+                        </span>
+                      </p>
+                      {pickedPersona ? (
+                        <div className='flex items-center justify-between rounded-lg border border-[#3182F6]/30 bg-[#EEF4FF] dark:bg-[#1E3A5F] px-3 py-2'>
+                          <div>
+                            <p className='text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]'>
+                              {pickedPersona.age}세 {pickedPersona.gender === 'F' ? '여성' : '남성'} · {pickedPersona.region}
+                            </p>
+                            <p className='text-[11px] text-[#4E5968] dark:text-[#9CA3AF] line-clamp-1'>
+                              {pickedPersona.narrative_snippet}
+                            </p>
+                          </div>
+                          <button
+                            type='button'
+                            onClick={() => setPickedPersona(null)}
+                            className='shrink-0 ml-2 text-xs text-[#F74D4D] font-medium'>
+                            선택 해제
+                          </button>
+                        </div>
+                      ) : (
+                        <button
+                          type='button'
+                          onClick={() => {
+                            setPersonaPickerOpen(v => !v);
+                            if (!personaPickerOpen) void loadPersonaOptions(0);
+                          }}
+                          className={`${chipBase} ${personaPickerOpen ? chipActive : chipIdle}`}>
+                          {personaPickerOpen ? '목록 닫기' : '패널에서 고르기'}
+                        </button>
+                      )}
+
+                      {personaPickerOpen && !pickedPersona && (
+                        <div className='mt-2 max-h-64 overflow-y-auto rounded-lg border border-[#E5E8EB] dark:border-[#2D3748] divide-y divide-[#E5E8EB] dark:divide-[#2D3748]'>
+                          {personaOptions.length === 0 && !personaOptionsLoading && (
+                            <p className='text-[11px] text-[#8B95A1] px-3 py-3'>
+                              조건에 맞는 페르소나가 없어요. 연령대·성별 조건을 넓혀보세요.
+                            </p>
+                          )}
+                          {personaOptions.map(p => (
+                            <button
+                              key={p.persona_id}
+                              type='button'
+                              onClick={() => {
+                                setPickedPersona(p);
+                                setPersonaPickerOpen(false);
+                              }}
+                              className='w-full text-left px-3 py-2 hover:bg-[#F9FAFB] dark:hover:bg-[#252D3D] transition-colors'>
+                              <p className='text-xs font-semibold text-[#191F28] dark:text-[#F2F4F6]'>
+                                {p.age}세 {p.gender === 'F' ? '여성' : '남성'} · {p.region}
+                              </p>
+                              <p className='text-[11px] text-[#8B95A1] line-clamp-1'>
+                                {p.narrative_snippet}
+                              </p>
+                            </button>
+                          ))}
+                          {personaOptionsLoading && (
+                            <p className='text-[11px] text-[#8B95A1] px-3 py-3'>불러오는 중...</p>
+                          )}
+                          {!personaOptionsLoading && personaOptions.length < personaOptionsTotal && (
+                            <button
+                              type='button'
+                              onClick={() => void loadPersonaOptions(personaOptions.length)}
+                              className='w-full text-center text-xs text-[#3182F6] font-medium px-3 py-2'>
+                              더 보기 ({personaOptions.length}/{personaOptionsTotal})
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </>
             )}

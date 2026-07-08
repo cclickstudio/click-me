@@ -23,8 +23,10 @@ from core.models import User
 from core.schemas import ChatRequest
 from core.tracing import make_trace_config
 from domain.chat import history, result_callback, widgets
-from domain.chat.loop_state import MAX_LOOP, get_loop_state
+from domain.chat.loop_state import MAX_LOOP, assess_early_stop, get_loop_state
 from domain.management.assistant.history import record_feedback  # RAG 피드백 적재(/feedback)
+from domain.simulation.contracts.schemas import ObjectiveFit, SimulationAggregate
+from domain.simulation.repositories.simulation_repository import SimulationRepository
 from tools.storage.s3 import download_bytes, upload_bytes
 
 # 채팅 첨부 이미지 — 허용 타입과 S3 프리픽스(프록시 게이트).
@@ -326,7 +328,12 @@ async def chat_complete(
 
         # [생성결과] 구조화 콜백 — 프론트가 보낸 결과 신호는 에이전트 거치지 않고 결정론 처리(개선루프).
         if result_callback.is_result_callback(last_message):
-            answer, meta = result_callback.handle(body.session_id, _engine_label())
+            # 직전 시뮬 신호를 조회해 재시뮬 제안 전에 KPI 등급 조기종료를 판정(재료 없으면 계속).
+            _loop = get_loop_state(body.session_id)
+            objective_fit, aggregate = await _fetch_sim_signals(db, _loop.last_sim_id, current_user)
+            answer, meta = result_callback.handle(
+                body.session_id, _engine_label(), objective_fit, aggregate
+            )
             yield _sse("meta", meta=meta)
             for piece in _chunks(answer):
                 yield _sse("text", token=piece)
@@ -495,6 +502,30 @@ def _gen_form_from_sim_context(ctx: dict) -> dict:
     }
 
 
+async def _fetch_sim_signals(
+    db: AsyncSession, sim_id: str | None, current_user: User
+) -> tuple[ObjectiveFit | None, SimulationAggregate | None]:
+    """조기종료 판정 재료 조회 — sim_id의 objective_fit·aggregate(계약 스키마)만 뽑아 반환.
+
+    접근 불가/삭제/미완료면 (None, None) — 판정은 그때 자동으로 '계속'으로 처리된다.
+    타 도메인 내부에 의존하지 않도록 결과를 contracts 스키마로만 파싱해 chat 도메인에 넘긴다.
+    """
+    if not sim_id:
+        return None, None
+    try:
+        await assert_simulation_access(db, str(sim_id), current_user)
+        result = await SimulationRepository(db).get_full_result(uuid.UUID(str(sim_id)))
+    except (HTTPException, ValueError):
+        return None, None
+    if not result:
+        return None, None
+    agg = result.get("aggregate")
+    fit = result.get("objective_fit")
+    aggregate = SimulationAggregate.model_validate(agg) if agg else None
+    objective_fit = ObjectiveFit.model_validate(fit) if fit else None
+    return objective_fit, aggregate
+
+
 @router.post("/approve")
 async def chat_approve(
     body: ApproveRequest,
@@ -506,6 +537,50 @@ async def chat_approve(
         await assert_project_access(db, body.project_id, current_user)
     loop = get_loop_state(body.session_id)
     question = _APPROVE_PROMPTS.get(body.action, "개선 시안 만들어줘")
+
+    # 개선 컨텍스트의 sim id를 루프 상태에 기록 — 이후 [생성결과] 콜백의 조기종료 판정 재료로 재사용.
+    ctx_sim_id = (body.context or {}).get("simulation_id") if body.context else None
+    if ctx_sim_id:
+        loop.last_sim_id = str(ctx_sim_id)
+
+    # 조기 종료(KPI 등급 기반) — 직전 시뮬이 충분히 강하면 왕복을 더 돌리지 않고 종료한다.
+    # 프론트가 배지로 버튼을 숨겨도, 구 위젯·재시도로 들어올 수 있어 서버에서 최종 판정한다.
+    # 이미 조기종료된 세션(phase=finished + 사유)은 재판정 없이 저장된 사유로 차단한다.
+    if loop.phase == "finished" and loop.early_stop_reason:
+        early_stop, early_reason = True, loop.early_stop_reason
+    elif loop.phase != "finished":
+        of, agg = await _fetch_sim_signals(db, loop.last_sim_id, current_user)
+        early_stop, early_reason = assess_early_stop(of, agg)
+        if early_stop:
+            loop.phase = "finished"
+            loop.early_stop_reason = early_reason
+    else:
+        early_stop, early_reason = False, ""
+    if early_stop:
+        es_answer = (
+            f"직전 시뮬 결과가 목표 기준을 충분히 충족했어요. 🎯 조기 종료 — {early_reason}. "
+            "추가 개선 없이 이 시안으로 진행해도 좋아요."
+        )
+        es_meta = {
+            "source": "orchestrator",
+            "label": "개선 루프 조기 종료",
+            "engine": "OpenAI",
+            "loop_done": True,
+            "early_stop_reason": early_reason,
+        }
+
+        async def generate_early_stop() -> AsyncGenerator[str, None]:
+            yield _sse("meta", meta=es_meta)
+            for piece in _chunks(es_answer):
+                yield _sse("text", token=piece)
+            await _persist(body.session_id, f"[수락] {question}", es_answer, es_meta)
+            yield _sse("done")
+
+        return StreamingResponse(
+            generate_early_stop(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
 
     # 3턴 한도 — 도달 시 더 왕복하지 않고 안내만(authoritative 차단). 프론트가 버튼을 숨겨도
     # 구(舊) 위젯·재시도로 들어올 수 있어 서버에서 최종 차단한다.
@@ -619,17 +694,33 @@ async def chat_approve(
 @router.get("/loop-state")
 async def chat_loop_state(
     session_id: str,
+    simulation_id: str | None = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> dict:
-    """개선 루프 상태 — 프론트가 3턴 도달 시 '개선 시안 만들기' 제안을 숨기는 데 쓴다."""
+    """개선 루프 상태 — 프론트가 '개선 시안 만들기' 제안을 숨기거나 조기종료 배지를 띄우는 데 쓴다.
+
+    simulation_id가 오면 그 시뮬 KPI 등급으로 조기종료를 판정한다(3턴 전이라도 강하면 종료).
+    """
     await assert_session_access(db, session_id, current_user)
     loop = get_loop_state(session_id)
+
+    # 직전 시뮬 신호로 조기종료 판정 — 강하면 phase=finished·사유 기록(오조기종료 방지는 규칙 내장).
+    if simulation_id and loop.phase != "finished":
+        loop.last_sim_id = simulation_id
+        of, agg = await _fetch_sim_signals(db, simulation_id, current_user)
+        stop, reason = assess_early_stop(of, agg)
+        if stop:
+            loop.phase = "finished"
+            loop.early_stop_reason = reason
+
+    early = loop.early_stop_reason
     return {
         "loop_count": loop.loop_count,
         "max_loop": MAX_LOOP,
-        "can_improve": loop.loop_count < MAX_LOOP,
+        "can_improve": loop.loop_count < MAX_LOOP and loop.phase != "finished",
         "phase": loop.phase,
+        "early_stop_reason": early,
     }
 
 
@@ -789,7 +880,7 @@ async def create_session(
     """새 채팅 세션 생성 — 프로젝트에 귀속."""
     if body.project_id:
         await assert_project_access(db, body.project_id, current_user)
-    s = await history.create_session(db, body.project_id, body.title)
+    s = await history.create_session(db, body.project_id, body.title, created_by=current_user.id)
     return {
         "id": str(s.id),
         "title": s.title,

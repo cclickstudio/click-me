@@ -4,6 +4,8 @@
 같은 앵커·곡선을 공유해야 정상 케이스가 오탐되지 않는다 (게이트 #5).
 """
 
+from typing import Final
+
 from domain.management.contracts.enums import ActionTier
 
 APPROVAL_POLICY_VERSION = "v1"
@@ -83,3 +85,27 @@ _PACING_RAW = [
     0.70,
 ]
 HOURLY_PACING: list[float] = [w / sum(_PACING_RAW) for w in _PACING_RAW]
+
+# ── 집행 권장 게이트 (스펙 2026-07-07 §4) — 시뮬 결과의 집행 가능 판정 단일 정본 ──
+# 잠정 기본값(시뮬팀 확인 대상): 클릭 의향률 ≥1%(포함) · 거부율 <20%(미만).
+# 실측 calibration 해금 전까지 settings(management_exec_gate_*)로만 조정한다.
+
+EXEC_GATE_DEFAULT_MIN_CIR: Final[float] = 0.01
+EXEC_GATE_DEFAULT_MAX_REJ: Final[float] = 0.2
+# ⚠️ core/config.py management_exec_gate_min_cir/max_rej 기본값과 동일 유지.
+# 경계 규칙상 리터럴 공유 불가 — 값 변경 시 양쪽 동시 수정.
+
+
+def exec_gate_thresholds(settings) -> tuple[float, float]:
+    """settings에서 임계값을 읽는다(덕타이핑 — contracts는 core 미의존)."""
+    return (
+        float(getattr(settings, "management_exec_gate_min_cir", EXEC_GATE_DEFAULT_MIN_CIR)),
+        float(getattr(settings, "management_exec_gate_max_rej", EXEC_GATE_DEFAULT_MAX_REJ)),
+    )
+
+
+def is_executable_verdict(
+    click_intent_rate: float, rejection_rate: float, *, min_cir: float, max_rej: float
+) -> bool:
+    """집행 권장 판정 — 클릭 의향률은 하한 포함(>=), 거부율은 상한 미만(<)."""
+    return click_intent_rate >= min_cir and rejection_rate < max_rej

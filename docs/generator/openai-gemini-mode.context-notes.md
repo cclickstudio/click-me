@@ -73,5 +73,11 @@ GENERATOR_GEMINI_IMAGE_MODEL=gemini-2.5-flash-image
 - 단 간헐적으로 이미지를 빠뜨리거나(텍스트만) 503(과부하)을 냄 → `generate_image_and_copy`에
   재시도(`_RETRY_BACKOFF=[2,4,6]`, 503·이미지누락 흡수) 추가로 해결. 폴백(이미지만 Gemini + 카피
   별도 LLM)은 미채택 — 동시생성 유지(사용자 결정).
-- 실제 운영 `.env`의 `GENERATOR_GEN_MODE`를 `gemini`로 바꿔야 파이프라인에서 gemini 모드가 활성화됨
-  (현재 `.env`는 옛 값 `pipeline`으로 남아 있음).
+
+## 현행 스냅샷 (2026-07, 계획과 달라진 점)
+
+- config 기본값 `generator_gen_mode="openai"` 반영 완료 (`pipeline|multimodal` 폐기)
+- **gemini 모드에서도 누끼는 생성·S3 저장**한다 — 합성엔 원본을 멀티모달 입력으로 쓰지만,
+  개선 모드의 `product_cutout_s3_key` 재사용을 위해 저장(candidate_gen.py 주석)
+- **개선 모드(IMPROVE)는 gen_mode와 무관하게 항상 OpenAI 경로**(단일 후보·누끼 인페인팅,
+  `_generate_improve_candidate`) — gemini 모드 비교는 CREATE에만 해당

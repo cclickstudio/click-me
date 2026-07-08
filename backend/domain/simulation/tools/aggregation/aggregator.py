@@ -61,6 +61,24 @@ def _weighted_bootstrap_ci(flags: list[float], weights: list[float]) -> tuple[fl
     return lo, hi
 
 
+def _ssr_population_probs(reactions: list[PersonaReaction], dim: str) -> list[float] | None:
+    """SSR 분포(1~5 raw_probs)의 가중 평균 → population 분포. dist 있는 반응만, 없으면 None.
+
+    SIMULATION_SCORING=ssr 경로에서만 값이 생긴다(§KPI 분포 표기 근거) — 미사용 시 payload 무변화.
+    """
+    pairs = [
+        (dist.raw_probs, float(r.weight))
+        for r in reactions
+        if (dist := getattr(r, dim)) is not None and len(dist.raw_probs) == 5
+    ]
+    if not pairs:
+        return None
+    sw = sum(w for _, w in pairs)
+    if sw <= 0:
+        return None
+    return [round(sum(probs[i] * w for probs, w in pairs) / sw, 4) for i in range(5)]
+
+
 class BasicAggregator:
     """집계 엔진 — QA 통과분만, 페르소나 가중치로 가중 집계(§3.7)."""
 
@@ -89,6 +107,21 @@ class BasicAggregator:
         purchase_std = _wstd(purchases, weights)
         eff_n = _effective_n(weights)
 
+        # SSR population 분포(opt-in) — dist 있는 반응만 가중 합성. 없으면 payload 무변화.
+        ssr_payload: dict = {}
+        pi_probs = _ssr_population_probs(passed, "purchase_intent_dist")
+        trust_probs = _ssr_population_probs(passed, "trust_dist")
+        if pi_probs is not None:
+            ssr_payload["ssr_purchase_intent_probs"] = pi_probs
+        if trust_probs is not None:
+            ssr_payload["ssr_trust_probs"] = trust_probs
+        if ssr_payload:
+            ssr_payload["ssr_dist_n"] = sum(
+                1 for r in passed if r.purchase_intent_dist or r.trust_dist
+            )
+
+        # 4자리 반올림 — DB Numeric(5,4)와 정합. 집행 게이트 알림↔from_simulation 판정 일치 보장.
+        # 자릿수 변경 시 domain/simulation/models.py 컬럼 정의도 함께 조정.
         return SimulationAggregate(
             click_intent_rate=round(_wmean(action_flags, weights), 4),
             ci_low=round(ci_low, 4),
@@ -107,6 +140,7 @@ class BasicAggregator:
                 "ci_iters": _BOOTSTRAP_ITERS,
                 "purchase_std": round(purchase_std, 3),
                 "weight_sum": round(sum(weights), 1),
+                **ssr_payload,
             },
             engine_version=ENGINE_VERSION,
         )

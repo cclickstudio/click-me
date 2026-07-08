@@ -33,6 +33,18 @@ def test_empty_sample_warns_and_zeros() -> None:
     assert agg.payload["qa_passed_count"] == 0
 
 
+def test_all_qa_failed_returns_zeroed_no_sample_path() -> None:
+    # 표본은 있으나 전원 QA 실패 → 빈 표본과 동일한 무표본 경로.
+    reactions = [_reaction(f"P-{i}", action=True, purchase=5, qa=False) for i in range(5)]
+    agg = BasicAggregator().aggregate(reactions)
+    assert agg.payload["qa_passed_count"] == 0
+    assert agg.payload["note"] == "QA 통과 표본 없음"
+    assert agg.click_intent_rate == 0.0
+    assert agg.ci_low == 0.0 and agg.ci_high == 0.0
+    assert agg.effective_n == 0.0
+    assert agg.variance_warning is True
+
+
 def test_qa_failed_excluded_from_aggregation() -> None:
     reactions = [
         _reaction("P-1", action=True, purchase=5, qa=True),
@@ -87,3 +99,36 @@ def test_nonuniform_weights_shift_estimate_and_reduce_effective_n() -> None:
     assert agg.click_intent_rate == 0.7  # 7/(7+1+1+1)
     assert agg.effective_n < 4.0  # Kish: 가중 편차로 유효표본 감소
     assert agg.payload["weight_sum"] == 10.0
+
+
+def test_effective_n_kish_exact_value() -> None:
+    # Kish: (Σw)²/Σ(w²). weight=[3,1,1,1] → 36/12 = 3.0 (n=4 보다 작음).
+    reactions = [
+        _reaction("P-1", action=True, purchase=5, weight=3.0),
+        _reaction("P-2", action=False, purchase=1, weight=1.0),
+        _reaction("P-3", action=False, purchase=1, weight=1.0),
+        _reaction("P-4", action=False, purchase=1, weight=1.0),
+    ]
+    agg = BasicAggregator().aggregate(reactions)
+    assert agg.effective_n == 3.0  # 36/12
+    # 균일 가중이면 effective_n == n 임을 같은 공식으로 교차확인.
+    uniform = [_reaction(f"U-{i}", action=True, purchase=3, weight=2.0) for i in range(5)]
+    assert BasicAggregator().aggregate(uniform).effective_n == 5.0  # (10)²/(5·4)=100/20
+
+
+def test_single_sample_no_exception() -> None:
+    # 단일 표본(n=1) → 부트스트랩·Kish 모두 예외 없이 점값 반환.
+    agg = BasicAggregator().aggregate([_reaction("P-1", action=True, purchase=4, weight=1.0)])
+    assert agg.click_intent_rate == 1.0
+    assert agg.ci_low == 1.0 and agg.ci_high == 1.0  # 단일 표본은 재추출해도 동일
+    assert agg.effective_n == 1.0
+    assert agg.variance_warning is True  # 단일 값 → 표준편차 0
+
+
+def test_extreme_weight_deviation_collapses_effective_n() -> None:
+    # 한 명에 극단 가중(1000) + 나머지 1 → 유효표본이 1 근처로 붕괴(effective_n ≪ n).
+    reactions = [_reaction("P-0", action=True, purchase=5, weight=1000.0)]
+    reactions += [_reaction(f"P-{i}", action=False, purchase=1, weight=1.0) for i in range(1, 20)]
+    agg = BasicAggregator().aggregate(reactions)
+    assert agg.effective_n < 2.0  # n=20 인데 유효표본은 1 근처
+    assert agg.click_intent_rate > 0.9  # 큰 가중 표본(action=True)이 지배

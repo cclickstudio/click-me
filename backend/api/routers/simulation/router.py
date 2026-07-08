@@ -105,6 +105,7 @@ def _build_request(
     ad_objective: str | None,
     service_class: int | None,
     from_campaign_id: str | None = None,
+    generation_id: str | None = None,
     analysis_mode: str = "synthetic",
     user: User | None = None,
 ) -> SimulationRunRequest:
@@ -138,6 +139,7 @@ def _build_request(
         ad_objective=ad_objective,
         service_class=service_class,
         from_campaign_id=from_campaign_id,
+        generation_id=generation_id,
         analysis_mode=analysis_mode,
     )
 
@@ -159,6 +161,7 @@ async def start_simulation(
     ad_objective: str | None = Form(None),
     service_class: int | None = Form(None),
     from_campaign_id: str | None = Form(None),  # 관리 탭 진입 시 — 완료 후 서버가 자동 링크
+    generation_id: str | None = Form(None),  # '생성한 광고로 시뮬' 진입 시 생성 출처(누끼 역추적)
     analysis_mode: str = Form(
         "synthetic"
     ),  # synthetic(기본)/individual(표본1 강제). persona_set은 /compare
@@ -184,6 +187,7 @@ async def start_simulation(
         ad_objective=ad_objective,
         service_class=service_class,
         from_campaign_id=from_campaign_id,
+        generation_id=generation_id,
         analysis_mode=analysis_mode,
         user=current_user,
     )
@@ -212,6 +216,8 @@ async def run_simulation(
     product_category: str | None = Form(None),
     ad_objective: str | None = Form(None),
     service_class: int | None = Form(None),
+    from_campaign_id: str | None = Form(None),
+    generation_id: str | None = Form(None),  # '생성한 광고로 시뮬' 진입 시 생성 출처(누끼 역추적)
     analysis_mode: str = Form(
         "synthetic"
     ),  # synthetic(기본)/individual(표본1 강제). persona_set은 /compare
@@ -240,6 +246,8 @@ async def run_simulation(
         product_category=product_category,
         ad_objective=ad_objective,
         service_class=service_class,
+        from_campaign_id=from_campaign_id,
+        generation_id=generation_id,
         analysis_mode=analysis_mode,
         user=current_user,
     )
@@ -318,6 +326,30 @@ async def get_categories(session: AsyncSession = Depends(get_db)) -> list[dict]:
     return await list_categories(session)
 
 
+@router.get("/panel/personas")
+async def list_panel_personas(
+    version: str = "panel-v1",
+    gender: str | None = None,
+    age_min: int | None = None,
+    age_max: int | None = None,
+    limit: int = 30,
+    offset: int = 0,
+    session: AsyncSession = Depends(get_db),
+) -> dict:
+    """Individual 모드 — 고정 패널에서 특정 페르소나를 지정 선택하기 위한 미리보기 목록."""
+    from domain.simulation.repositories.panel_repository import PanelRepository
+
+    items, total = await PanelRepository(session).list_personas(
+        version,
+        gender=gender,
+        age_min=age_min,
+        age_max=age_max,
+        limit=min(max(limit, 1), 100),
+        offset=max(offset, 0),
+    )
+    return {"items": items, "total": total}
+
+
 @router.get("/{run_id}/stream")
 async def stream_simulation(run_id: str) -> StreamingResponse:
     """SSE — 노드별 진행률(progress)·완료(completed)·에러 이벤트 스트림."""
@@ -326,6 +358,19 @@ async def stream_simulation(run_id: str) -> StreamingResponse:
         media_type="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+@router.get("/{run_id}/status")
+async def get_simulation_status(run_id: str) -> dict:
+    """진행 상태(RUNNING/COMPLETED/FAILED) — 다른 탭 이동 후 복귀·새로고침 시 SSE 재구독용.
+
+    실행 자체는 asyncio.create_task라 이 라우트·SSE 연결과 무관하게 계속 돈다.
+    run_id를 모르면(서버 재시작·완료 소실) 404 — 프론트는 복원 포기하고 폼으로 되돌린다.
+    """
+    status = _service.get_run_status(run_id)
+    if status is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    return status
 
 
 @router.get("/{run_id}/result")

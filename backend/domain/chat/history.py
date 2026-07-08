@@ -58,12 +58,16 @@ def _as_uuid(value: str | uuid.UUID | None) -> uuid.UUID | None:
 
 
 async def create_session(
-    db: AsyncSession, project_id: str | None, title: str | None = None
+    db: AsyncSession,
+    project_id: str | None,
+    title: str | None = None,
+    created_by: str | uuid.UUID | None = None,
 ) -> ChatSession:
-    """새 채팅 세션 생성 — 프로젝트에 귀속(미선택이면 NULL)."""
+    """새 채팅 세션 생성 — 프로젝트에 귀속(미선택이면 NULL). created_by=세션 개시자(실행자)."""
     session = ChatSession(
         project_id=_as_uuid(project_id),
         title=(title or _DEFAULT_TITLE)[:200],
+        created_by=_as_uuid(created_by),
     )
     db.add(session)
     await db.commit()
@@ -112,6 +116,59 @@ async def list_sessions(db: AsyncSession, project_id: str | None) -> list[dict]:
             "updated_at": s.updated_at.isoformat() if s.updated_at else None,
         }
         for s, count, unread in rows.all()
+    ]
+
+
+async def list_sessions_for_org(
+    db: AsyncSession, org_id: str | uuid.UUID, project_id: str | uuid.UUID | None = None
+) -> list[dict]:
+    """org 전체 프로젝트의 세션 통합 목록 — 센터 채팅의 "전체 프로젝트" 표시용(스펙 §6).
+
+    Project 조인으로 org 스코프를 걸고 project_name을 함께 반환. project_id를 주면 그 프로젝트로
+    좁힌다(단일 프로젝트 선택). 정렬·집계(메시지 수·미확인)는 list_sessions와 동일 규칙.
+    """
+    from core.models import Project  # noqa: PLC0415
+
+    org = _as_uuid(org_id)
+    if org is None:
+        return []
+    unread_expr = func.count(
+        case(
+            (
+                and_(
+                    ChatMessage.role == "assistant",
+                    or_(
+                        ChatSession.last_read_at.is_(None),
+                        ChatMessage.created_at > ChatSession.last_read_at,
+                    ),
+                ),
+                ChatMessage.id,
+            )
+        )
+    )
+    stmt = (
+        select(ChatSession, Project.name, func.count(ChatMessage.id), unread_expr)
+        .join(Project, Project.id == ChatSession.project_id)
+        .outerjoin(ChatMessage, ChatMessage.session_id == ChatSession.id)
+        .where(Project.organization_id == org)
+    )
+    pid = _as_uuid(project_id)
+    if pid is not None:
+        stmt = stmt.where(ChatSession.project_id == pid)
+    stmt = stmt.group_by(ChatSession.id, Project.name).order_by(ChatSession.updated_at.desc())
+    rows = await db.execute(stmt)
+    return [
+        {
+            "id": str(s.id),
+            "title": s.title,
+            "project_id": str(s.project_id) if s.project_id else None,
+            "project_name": pname,
+            "message_count": count,
+            "unread_count": int(unread or 0),
+            "created_at": s.created_at.isoformat() if s.created_at else None,
+            "updated_at": s.updated_at.isoformat() if s.updated_at else None,
+        }
+        for s, pname, count, unread in rows.all()
     ]
 
 

@@ -129,6 +129,7 @@ async def start_improve_generation(
         plain_summary=gen_data.get("plain_summary"),
         improvement_direction=gen_data.get("improvement_direction") or None,
         existing_ad_s3_key=gen_data.get("existing_ad_s3_key"),
+        product_cutout_s3_key=gen_data.get("product_cutout_s3_key"),
         fix_requests=gen_data.get("fix_requests"),
         campaign_objective=gen_data.get("campaign_objective") or "conversion",
     )

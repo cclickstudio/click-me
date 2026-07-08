@@ -47,7 +47,9 @@ class ImprovementClassification(BaseModel):
 
 
 _llm = with_llm_retry(
-    build_text_llm(temperature=0.3, max_tokens=500).with_structured_output(ImprovementClassification)
+    build_text_llm(temperature=0.3, max_tokens=500).with_structured_output(
+        ImprovementClassification
+    )
 )
 
 

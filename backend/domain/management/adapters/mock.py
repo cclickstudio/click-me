@@ -175,12 +175,14 @@ class MockAdPlatform:
                 ad_name="메인 비주얼 A",
                 headline="여름 신상 최대 50% 할인",
                 primary_text="지금 만나보는 시즌 오프 특가, 놓치지 마세요.",
+                link_url="https://shop.example.co.kr/summer",
             ),
             CreativePreview(
                 ad_id=f"{campaign_id}_ad2",
                 ad_name="모델 컷 B",
                 headline="데일리룩 완성",
                 primary_text="가볍게 입기 좋은 데일리 아이템.",
+                link_url="https://shop.example.co.kr/summer",
             ),
         ]
 

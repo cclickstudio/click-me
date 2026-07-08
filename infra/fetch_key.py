@@ -27,6 +27,7 @@ from provision_ec2 import (
     SSM_KEY_PARAM,
     _lock_pem_permissions,
     aws_ok,
+    refresh_known_host,
     write_infra_env,
 )
 
@@ -90,6 +91,7 @@ def main() -> None:
     host, iid = current_host_and_iid()
     if host and iid:
         write_infra_env(host, iid)  # 자체적으로 "infra/.env 기록" 로그 출력
+        refresh_known_host(host)  # 재생성으로 바뀐 호스트 키를 로컬 known_hosts에 자동 반영
     else:
         print("[!] 실행 중인 인스턴스를 못 찾음 — infra/.env 는 건너뜀(인스턴스 없거나 권한 부족).")
 

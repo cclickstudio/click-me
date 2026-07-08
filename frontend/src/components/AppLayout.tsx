@@ -8,7 +8,7 @@ import ProjectPanel from './ProjectPanel';
 import CompanyPanel from './CompanyPanel';
 import AdminPanel from './AdminPanel';
 import ChangePasswordModal from './ChangePasswordModal';
-import NotificationBell from './manage/notifications/NotificationBell';
+import Center from './center/Center';
 
 // COMPANY 계정이 막아야 하는 경로 — 채팅·시뮬/제너 실행 + 내 정보 관리(USER 전용)
 // 정확 일치만 차단한다 — /simulation/[id](결과)·/generations/[id] 상세, /projects 등은 허용.
@@ -26,6 +26,14 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     const stored = localStorage.getItem('panelCollapsed');
     if (stored === 'true') setPanelCollapsed(true);
   }, []);
+
+  // 비번 변경 모달은 계정당 첫 로그인 첫 페이지에서만 뜬다. "나중에"를 누르면
+  // localStorage에 기록해, 이후 페이지 이동(레이아웃 리마운트)·재접속에도 다시 뜨지 않게 한다.
+  useEffect(() => {
+    if (user?.id && localStorage.getItem(`pwModalDismissed:${user.id}`) === 'true') {
+      setPwDismissed(true);
+    }
+  }, [user?.id]);
 
   // 라우트 이동 시 모바일 드로어 닫기.
   useEffect(() => {
@@ -51,6 +59,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       localStorage.setItem('panelCollapsed', String(next));
       return next;
     });
+  };
+
+  // "나중에" — 이 계정은 다시 모달을 띄우지 않도록 localStorage에 기록.
+  const dismissPwModal = () => {
+    if (user?.id) localStorage.setItem(`pwModalDismissed:${user.id}`, 'true');
+    setPwDismissed(true);
   };
 
   if (loading) {
@@ -113,7 +127,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         />
       )}
       <Sidebar mobileOpen={mobileNavOpen} />
-      <NotificationBell />
+      {/* 우측 통합 센터(채팅·알림) — 기존 NotificationBell·FloatingChat·ProjectChatSection을 대체. */}
+      <Center />
       {/* 좌측 컨텍스트 패널 — 모바일에선 숨김(메인 콘텐츠가 선택 UI 제공) */}
       <div className="max-md:hidden">
         <Panel collapsed={panelCollapsed} onToggle={togglePanel} />
@@ -122,7 +137,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         {children}
       </main>
       {user?.must_change_password && !pwDismissed && (
-        <ChangePasswordModal onClose={() => setPwDismissed(true)} />
+        <ChangePasswordModal onClose={dismissPwModal} />
       )}
     </div>
   );

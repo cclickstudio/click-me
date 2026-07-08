@@ -62,7 +62,8 @@ from domain.management.agents.outcome import OutcomeKind
 from domain.management.agents.regeneration import RemediationContext
 from domain.management.agents.regeneration_tools import build_regeneration_agent
 from domain.management.approval import (
-    approve,
+    ApprovalIssueError,
+    issue_approval,
     judge_tier,
     relabel_if_mismatch,
     requires_human,
@@ -89,6 +90,8 @@ from domain.management.contracts.policy import (
     DAILY_BUDGET_KRW,
     FATIGUE_FREQUENCY,
     PROPOSAL_TTL_MINUTES,
+    exec_gate_thresholds,
+    is_executable_verdict,
 )
 from domain.management.contracts.schemas import (
     ActionProposal,
@@ -113,7 +116,11 @@ from domain.management.escalation import EscalationController, EscalationRun
 from domain.management.escalation_demo import DemoScenarioDetector
 from domain.management.execution.assistant_tools import execution_history
 from domain.management.execution.audit_log import AuditEvent
-from domain.management.execution.executor import DEFAULT_ALLOWED_MODES, Executor
+from domain.management.execution.executor import (
+    DEFAULT_ALLOWED_MODES,
+    Executor,
+    InMemoryIdempotencyStore,
+)
 from domain.management.execution.tier import (
     ESCALATE_THRESHOLD,
     WARN_THRESHOLD,
@@ -123,6 +130,7 @@ from domain.management.execution.tier import (
 from domain.management.naming import suggest_campaign_names
 from domain.management.target_check import is_target_missed
 from domain.management.wiring import (
+    build_approval_store,
     build_audit_sink,
     build_escalation_store,
     build_generator_client,
@@ -175,6 +183,7 @@ _DEMO_FAULTS = {"bid_loss", "review_rejected", "none"}
 _AUDIT_LOG = build_audit_sink(settings)
 _BUDGET = TenantBudgetRegistry(default_limit_krw=3_000_000)
 _executor: Executor | None = None
+_APPROVAL_STORE = build_approval_store(settings)  # 승인 원장 — 발행(/approve)과 executor가 공유
 
 logger = logging.getLogger("clickme")
 
@@ -255,6 +264,7 @@ def _get_executor(writer=None) -> Executor:
             state_version_provider=_state_version,
             current_policy_version=APPROVAL_POLICY_VERSION,
             allowed_modes=allowed,
+            approvals=_APPROVAL_STORE,
         )
     if _executor is None:
         _executor = Executor(
@@ -265,8 +275,38 @@ def _get_executor(writer=None) -> Executor:
             state_version_provider=_state_version,
             current_policy_version=APPROVAL_POLICY_VERSION,
             allowed_modes=allowed,
+            approvals=_APPROVAL_STORE,
         )
     return _executor
+
+
+_demo_executor_instance: Executor | None = None
+
+
+def _demo_executor() -> Executor:
+    """시연(org_demo 센티넬) 전용 executor — writer를 DRY_RUN으로 강제한다 (적대 리뷰 반영).
+
+    전역 _get_executor()는 use_mock=False + management_execution_mode=live면 실 write가 가능한
+    writer를 쓴다. 시연 제안은 실 계정에 대응하지 않으므로, use_mock/execution_mode와 무관하게
+    실 Meta write가 구조적으로 불가능하도록 여기서 DRY_RUN writer를 못박는다(주석 §834 강제).
+    멱등도 인메모리로 격리해 시연이 DB·네트워크를 건드리지 않게 한다.
+    """
+    global _demo_executor_instance  # noqa: PLW0603
+    if _demo_executor_instance is None:
+        from domain.management.adapters.meta.writer import MetaAdsWriter  # noqa: PLC0415
+
+        _demo_executor_instance = Executor(
+            MetaAdsWriter(settings, mode=ExecutionMode.DRY_RUN),
+            idempotency=InMemoryIdempotencyStore(),
+            audit=_AUDIT_LOG,
+            budget_for=_BUDGET.for_tenant,
+            state_version_provider=_state_version,
+            current_policy_version=APPROVAL_POLICY_VERSION,
+            # LIVE는 시연 경로에 불필요 — 승인이 MOCK로 고정되고 writer도 DRY_RUN이라 이중 봉인.
+            allowed_modes=DEFAULT_ALLOWED_MODES,
+            approvals=_APPROVAL_STORE,
+        )
+    return _demo_executor_instance
 
 
 @router.get("/run")
@@ -684,17 +724,24 @@ async def consult_from_notification(
 
 
 class ApprovalRequest(BaseModel):
+    model_config = ConfigDict(extra="ignore")  # approver_id 등 클라이언트 지정 필드 무시
+
     proposal: ActionProposal
     approved: bool
-    approver_id: str = "user_demo"
 
 
 @router.post("/approve")
-async def approve_proposal(body: ApprovalRequest):
-    """승인 플레인 — 3단계 검증(만료/해시/정책 버전) 후 ApprovedAction 발행."""
-    issues = validate_proposal(body.proposal)
-    if issues:
-        raise HTTPException(status_code=409, detail={"issues": issues})
+async def approve_proposal(
+    body: ApprovalRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """승인 플레인 — 인증·org 검증 후 approver_id 서버 주입·원장 기록."""
+    org_id = await _require_org_id_write(user, db, action="approve")
+    # 시연 센티넬(TENANT_ID)은 org 불일치 면제 — 데모 제안을 어떤 org도 승인 가능.
+    is_demo = body.proposal.tenant_id == TENANT_ID
+    if body.proposal.tenant_id not in (str(org_id), TENANT_ID):
+        raise HTTPException(403, "다른 조직의 제안을 승인할 수 없습니다.")
 
     if not body.approved:
         return {
@@ -702,7 +749,18 @@ async def approve_proposal(body: ApprovalRequest):
             "detail": "거절됨 — 무승인 액션은 어떤 경로로도 Writer에 도달 불가 (불변 규칙 #2)",
         }
 
-    action = approve(body.proposal, body.approver_id, execution_mode=_resolved_execution_mode())
+    # 시연 승인은 execution_mode를 MOCK로 고정 — 원장(게이트 #5 대조 대상)이 LIVE를 실을 수 없게
+    # 봉인한다. 실 제안만 settings 기반 실행 모드(live 포함)를 따른다 (적대 리뷰 반영).
+    execution_mode = ExecutionMode.MOCK if is_demo else _resolved_execution_mode()
+    try:
+        action = await issue_approval(
+            body.proposal,
+            str(user.id),
+            execution_mode=execution_mode,
+            store=_APPROVAL_STORE,
+        )
+    except ApprovalIssueError as exc:
+        raise HTTPException(status_code=409, detail={"issues": exc.issues}) from exc
     return {"status": "approved", "approved_action": action.model_dump(mode="json")}
 
 
@@ -818,12 +876,14 @@ async def execute(
             raise HTTPException(403, "다른 조직의 제안은 실행할 수 없습니다.")
         if body.approved_action.tenant_id != str(org_id):
             raise HTTPException(403, "다른 조직의 승인은 실행할 수 없습니다.")
-    # 시연·mock은 전역 DRY_RUN executor, 실 제안(live)은 로그인 org 연결 writer로 집행.
-    executor = (
-        _get_executor()
-        if is_demo or getattr(settings, "use_mock", True)
-        else _get_executor(await _require_writer(db, org_id))
-    )
+    # 시연은 전용 DRY_RUN executor(실 write 봉인), mock은 전역 DRY_RUN executor, 실 제안(live)은
+    # 로그인 org 연결 writer로 집행 — use_mock=False+live에서도 시연은 절대 실 write에 도달 못 한다.
+    if is_demo:
+        executor = _demo_executor()
+    elif getattr(settings, "use_mock", True):
+        executor = _get_executor()
+    else:
+        executor = _get_executor(await _require_writer(db, org_id))
     result = await executor.execute(body.approved_action, body.proposal)
     if body.proposal.action_type == "CREATE_CAMPAIGN":
         try:
@@ -2353,7 +2413,8 @@ async def from_candidate(
 class ReplaceCreativeRequest(BaseModel):
     generation_id: str
     candidate_id: str
-    link_url: HttpUrl
+    # 도착 URL은 선택 — 없으면 기존 광고의 랜딩을 보존한다(소재만 교체, 도착지 유지).
+    link_url: HttpUrl | None = None
 
 
 @router.post("/campaigns/{campaign_id}/replace-creative-proposal")
@@ -2424,6 +2485,19 @@ async def replace_creative_proposal(
     if not affected_ad_ids:
         raise HTTPException(status_code=409, detail="교체할 광고가 없습니다(캠페인에 ad 없음).")
 
+    # 도착지(랜딩)는 소재 교체 대상이 아니다 — 요청에 명시 없으면 기존 광고 링크를 보존한다.
+    # (캠페인 내 광고는 보통 같은 도착지 → 첫 링크 채택. 못 찾으면 명시 요구.)
+    effective_link = (
+        str(body.link_url)
+        if body.link_url
+        else next((c.link_url for c in affected if c.link_url), None)
+    )
+    if not effective_link:
+        raise HTTPException(
+            status_code=422,
+            detail="기존 광고의 도착 URL을 찾을 수 없어요. 도착 URL을 지정해 주세요.",
+        )
+
     now = datetime.now(UTC)
     proposal = finalize_proposal(
         ActionProposal(
@@ -2438,7 +2512,7 @@ async def replace_creative_proposal(
                 "image_hash": image_hash,
                 "headline": cand.copy.headline,
                 "body": cand.copy.body,
-                "link_url": str(body.link_url),
+                "link_url": effective_link,
                 "generation_id": body.generation_id,
                 "candidate_id": cand.candidate_id,
                 # 결속(리뷰 ①④) — proposal_hash가 덮음 → 프리뷰=집행 대상 일치·감사 가능.
@@ -2507,13 +2581,18 @@ def _resolve_sim_asset_key(asset_url: str | None) -> str | None:
 
 
 def _is_executable_verdict(click_intent_rate: float, rejection_rate: float) -> bool:
-    """'집행 권장' 게이트 — 집행 가능 여부 판정(백엔드 정본).
+    """'집행 권장' 게이트 — 판정 정본은 contracts.policy, 임계값은 settings(잠정)."""
+    min_cir, max_rej = exec_gate_thresholds(settings)
+    return is_executable_verdict(
+        click_intent_rate, rejection_rate, min_cir=min_cir, max_rej=max_rej
+    )
 
-    ⚠️ 임시(TEST): 게이트 해제 — 모든 시뮬 결과 통과(클릭≥0·거부≤100%).
-    운영 복원: ``return click_intent_rate >= 0.2 and rejection_rate < 0.2``.
-    프론트 EXEC_CIR/EXEC_REJ(ExecuteFromSimulation.tsx)도 함께 0/1 → 0.2/0.2로 되돌릴 것.
-    """
-    return click_intent_rate >= 0.0 and rejection_rate <= 1.0
+
+@router.get("/exec-gate")
+async def exec_gate(user: User = Depends(get_current_user)):
+    """집행 권장 게이트 임계값 — 프론트 판정 동기화용(판정 정본은 서버)."""
+    min_cir, max_rej = exec_gate_thresholds(settings)
+    return {"min_click_intent_rate": min_cir, "max_rejection_rate": max_rej}
 
 
 class FromSimulationRequest(BaseModel):
@@ -3076,7 +3155,9 @@ async def activate_campaign(
             approval_policy_version=APPROVAL_POLICY_VERSION,
         )
     )
-    action = approve(proposal, str(user.id), execution_mode=_resolved_execution_mode())
+    action = await issue_approval(
+        proposal, str(user.id), execution_mode=_resolved_execution_mode(), store=_APPROVAL_STORE
+    )
     result = await _get_executor().execute(action, proposal)
     status = result.status.value if hasattr(result.status, "value") else str(result.status)
     serving = status == "success"
@@ -3169,6 +3250,21 @@ async def sync_campaign(
     }
 
 
+async def _resolve_campaign_notifications(org_id, campaign_id: str) -> None:
+    """조치 실행 성공 → 이 캠페인의 미해결 알림을 actioned로 정리(best-effort) + 배지 동기화.
+
+    알림 정리 실패가 조치 응답을 막지 않는다 — 다음 스캔의 reconcile이 백스톱.
+    """
+    try:
+        resolved = await _notification_store().resolve_by_campaign(
+            str(org_id), campaign_id, "actioned", datetime.now(UTC)
+        )
+        if resolved:
+            _publish_org(str(org_id))
+    except Exception:  # noqa: BLE001 — 정리 실패는 조용히 넘어간다(응답 무영향)
+        pass
+
+
 @router.post("/campaigns/{campaign_id}/pause")
 async def pause_campaign(
     campaign_id: str,
@@ -3200,7 +3296,9 @@ async def pause_campaign(
             approval_policy_version=APPROVAL_POLICY_VERSION,
         )
     )
-    action = approve(proposal, str(user.id), execution_mode=_resolved_execution_mode())
+    action = await issue_approval(
+        proposal, str(user.id), execution_mode=_resolved_execution_mode(), store=_APPROVAL_STORE
+    )
     result = await _get_executor().execute(action, proposal)
     status = result.status.value if hasattr(result.status, "value") else str(result.status)
     if status == "success":
@@ -3213,6 +3311,8 @@ async def pause_campaign(
             await db.commit()
         except Exception:  # noqa: BLE001 — 상태 기록 실패가 응답을 막지 않게
             await db.rollback()
+        # 조치 완료 — 이 캠페인의 미해결 운영 알림을 actioned로 정리(다음 상담이 새로 시작되게).
+        await _resolve_campaign_notifications(org_id, campaign_id)
     resp: dict[str, object] = {
         "paused": status == "success",
         "result": result.model_dump(mode="json"),
@@ -3381,7 +3481,9 @@ async def budget_commit(
         budget_before_krw=before,
         new_daily_budget_krw=new,
     )
-    action = approve(proposal, str(user.id), execution_mode=_resolved_execution_mode())
+    action = await issue_approval(
+        proposal, str(user.id), execution_mode=_resolved_execution_mode(), store=_APPROVAL_STORE
+    )
     is_demo = proposal.tenant_id == TENANT_ID
     executor = (
         _get_executor()
@@ -3395,7 +3497,10 @@ async def budget_commit(
         "budget_after_krw": new,
     }
     status = result.status.value if hasattr(result.status, "value") else str(result.status)
-    if status != "success":
+    if status == "success":
+        # 조치 완료 — 이 캠페인의 미해결 운영 알림을 actioned로 정리(상담 옵션 예산 조치 대응).
+        await _resolve_campaign_notifications(org_id, campaign_id)
+    else:
         msg = _find_in_snapshot(result.platform_response_snapshot, "user_msg")
         if msg:
             response["error_message"] = str(msg)

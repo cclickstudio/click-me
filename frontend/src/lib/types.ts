@@ -42,6 +42,15 @@ export interface SimAisas {
   share: boolean;
 }
 
+/** SSR(임베딩 유사도) 점수 분포 — SIMULATION_SCORING=ssr일 때만 채워진다(1~5점 5칸). */
+export interface SimScoreDistribution {
+  mean: number;
+  std: number;
+  p10: number;
+  p90: number;
+  raw_probs: number[];
+}
+
 export interface SimPersonaReaction {
   persona_id: string;
   exposure_context: string | null;
@@ -51,6 +60,8 @@ export interface SimPersonaReaction {
   drop_reason_tag: string | null;
   purchase_intent: number;
   trust: number;
+  purchase_intent_dist?: SimScoreDistribution | null;
+  trust_dist?: SimScoreDistribution | null;
   rejected: boolean;
   rejection_reason_tag: string | null;
   emotion_tag: string;
@@ -202,6 +213,7 @@ export interface SimRunInput {
   service_class?: number;
   analysis_mode?: AnalysisMode; // synthetic(기본)·individual(표본 1 고정)
   from_campaign_id?: string;  // 관리 탭 진입 시 — 완료 후 서버가 자동으로 성과 비교 링크 생성
+  generation_id?: string;  // '생성한 광고로 시뮬' 진입 시 생성 출처 — 채팅 개선모드 누끼 역추적용
 }
 
 /* ─── Persona Set 비교(A-1) — 세그먼트별 시뮬을 나란히 비교 ─── */

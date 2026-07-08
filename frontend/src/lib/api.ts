@@ -292,6 +292,7 @@ function buildSimForm(input: SimRunInput): FormData {
   if (input.service_class != null) form.append("service_class", String(input.service_class));
   if (input.analysis_mode) form.append("analysis_mode", input.analysis_mode);
   if (input.from_campaign_id) form.append("from_campaign_id", input.from_campaign_id);
+  if (input.generation_id) form.append("generation_id", input.generation_id);
   return form;
 }
 
@@ -347,6 +348,28 @@ export type ChatSessionRow = {
   unread_count?: number; // N5 미확인(마지막 열람 이후 assistant 메시지 수)
   created_at: string | null;
   updated_at: string | null;
+};
+// 센터 통합 세션(org 전체) — ChatSessionRow + project_name.
+export type CenterSessionRow = ChatSessionRow & { project_name?: string | null };
+// 센터 알림 병합 항목 — source로 management 이상감지/center 제안을 구분.
+export type CenterNotificationItem = {
+  source: 'management' | 'center_suggestion';
+  id: string;
+  project_id: string | null;
+  project_name?: string | null;
+  read_at?: string | null;
+  created_at?: string | null;
+  payload?: Record<string, unknown>;
+  // center 제안 전용
+  suggestion_type?: 'sim_suggest' | 'gen_suggest' | 'launch_suggest';
+  reason?: string | null;
+  source_sim_id?: string | null;
+  source_gen_id?: string | null;
+  // management 이상감지 전용
+  kind?: string | null;
+  campaign_id?: string | null;
+  resolution?: string | null;
+  followup_count?: number | null;
 };
 export type ChatHistoryMessage = {
   id?: string;
@@ -475,6 +498,31 @@ export const api = {
     // VLM이 이 URL 이미지를 읽을 수 있는지 사전 확인(백엔드가 직접 GET — 미리보기와 별개).
     checkImage: (url: string): Promise<{ ok: boolean; mime?: string; reason?: string }> =>
       request(`/simulation/check-image?url=${encodeURIComponent(url)}`),
+    // Individual 모드 — 고정 패널에서 특정 페르소나 지정 선택용 미리보기 목록.
+    panelPersonas: (params: {
+      gender?: string;
+      age_min?: number;
+      age_max?: number;
+      limit?: number;
+      offset?: number;
+    }): Promise<{
+      items: {
+        persona_id: string;
+        age: number;
+        gender: string;
+        region: string;
+        narrative_snippet: string;
+      }[];
+      total: number;
+    }> => {
+      const qs = new URLSearchParams();
+      if (params.gender) qs.set('gender', params.gender);
+      if (params.age_min != null) qs.set('age_min', String(params.age_min));
+      if (params.age_max != null) qs.set('age_max', String(params.age_max));
+      qs.set('limit', String(params.limit ?? 30));
+      qs.set('offset', String(params.offset ?? 0));
+      return request(`/simulation/panel/personas?${qs.toString()}`);
+    },
   },
 
   // 페르소나 토론(/api/debate/*) — 시뮬 반응(reactions)을 받아 토론을 돌리고 결과를 낸다.
@@ -598,14 +646,19 @@ export const api = {
       request<{ session_id: string; messages: ChatHistoryMessage[] }>(
         `/chat/sessions/${sessionId}/messages`,
       ),
-    // 개선 루프(시뮬↔제너) 상태 — 3턴 도달 시 '개선 시안 만들기' 제안을 숨기는 데 쓴다.
-    loopState: (sessionId: string) =>
+    // 개선 루프(시뮬↔제너) 상태 — 제안 숨김/조기종료 배지에 쓴다.
+    // simulationId를 주면 그 시뮬 KPI 등급으로 조기종료를 판정한다(3턴 전이라도 강하면 종료).
+    loopState: (sessionId: string, simulationId?: string) =>
       request<{
         loop_count: number;
         max_loop: number;
         can_improve: boolean;
         phase: string;
-      }>(`/chat/loop-state?session_id=${encodeURIComponent(sessionId)}`),
+        early_stop_reason?: string | null;
+      }>(
+        `/chat/loop-state?session_id=${encodeURIComponent(sessionId)}` +
+          (simulationId ? `&simulation_id=${encodeURIComponent(simulationId)}` : '')
+      ),
     // 미확인 알림(N5) — 라우트 변경마다 폴링해 벨 배지·패널에 표시.
     notifications: (projectId: string) =>
       request<{
@@ -692,6 +745,29 @@ export const api = {
     }) => request("/chat/feedback", { method: "POST", body: JSON.stringify(body) }),
   },
 
+  // 센터(우측 통합 알림) — management 이상감지 + center 제안 병합 조회, org 통합 세션.
+  center: {
+    // 알림 센터 병합 목록 — project_id 생략 시 org 전체. COMPANY는 제안 숨김(백엔드 처리).
+    notifications: (projectId?: string) =>
+      request<{
+        items: CenterNotificationItem[];
+        unread_count: number;
+        org_selected: boolean;
+      }>(
+        `/center/notifications${projectId ? `?project_id=${encodeURIComponent(projectId)}` : ""}`,
+      ),
+    // 채팅 센터 통합 세션 — project_id 생략 시 org 전체 프로젝트.
+    sessions: (projectId?: string) =>
+      request<{ sessions: CenterSessionRow[]; org_selected: boolean }>(
+        `/center/sessions${projectId ? `?project_id=${encodeURIComponent(projectId)}` : ""}`,
+      ),
+    // 제안 알림 읽음(아코디언 열 때) / 무시.
+    readSuggestion: (id: string) =>
+      request<{ ok: boolean }>(`/center/suggestions/${id}/read`, { method: "POST" }),
+    dismissSuggestion: (id: string) =>
+      request<{ ok: boolean }>(`/center/suggestions/${id}/dismiss`, { method: "POST" }),
+  },
+
   inquiries: {
     create: (body: { title: string; content: string; contact_email?: string }) =>
       request("/inquiries", { method: "POST", body: JSON.stringify(body) }),
@@ -753,10 +829,15 @@ export const api = {
     run: (fault: string) => request(`/management/run?fault=${fault}`),
     regenerate: (diagnosis: unknown) =>
       request("/management/regenerate", { method: "POST", body: JSON.stringify({ diagnosis }) }),
+    // 집행 권장 게이트 임계값 — 판정 정본은 서버, 프론트는 버튼 활성/안내 동기화용
+    execGate: () =>
+      request<{ min_click_intent_rate: number; max_rejection_rate: number }>(
+        "/management/exec-gate",
+      ),
     approve: (proposal: unknown, approved: boolean) =>
       request("/management/approve", {
         method: "POST",
-        body: JSON.stringify({ proposal, approved, approver_id: "user_demo" }),
+        body: JSON.stringify({ proposal, approved }),  // approver_id는 서버가 주입
       }),
     execute: (approved_action: unknown, proposal: unknown) =>
       request("/management/execute", {
@@ -789,6 +870,28 @@ export const api = {
         budget_before_krw: number;
         budget_after_krw: number;
       }>(`/management/campaigns/${campaignId}/budget-commit`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+    replaceCreativeProposal: (
+      campaignId: string,
+      body: { generation_id: string; candidate_id: string; link_url?: string },
+    ) =>
+      request<{
+        proposal: Proposal;
+        preview: {
+          candidate: { headline?: string | null; body?: string | null; s3_key?: string | null };
+          affected_ads: {
+            ad_id: string;
+            ad_name: string;
+            thumbnail_url?: string | null;
+            image_url?: string | null;
+            headline?: string | null;
+            primary_text?: string | null;
+            link_url?: string | null;
+          }[];
+        };
+      }>(`/management/campaigns/${campaignId}/replace-creative-proposal`, {
         method: "POST",
         body: JSON.stringify(body),
       }),

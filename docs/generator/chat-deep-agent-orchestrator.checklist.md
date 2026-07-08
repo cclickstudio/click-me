@@ -1,41 +1,34 @@
 # 채팅 오케스트레이터(deep agent) — 체크리스트
 
-> 경계 = 혼합(읽기·단발=툴 / 해석·다단계=서브에이전트). 배경은 context-notes.md.
+> ✅ **전환 완료** (2026-06-30, `4c3e7c8`에서 레거시 제거로 마무리). 계획 대비 달라진
+> 결정은 context-notes.md의 "계획 대비 변경" 참고.
 
-## 공통 담당 (오케스트레이터, 단독 PR)
+## 공통 (오케스트레이터) — 완료
 
-- [ ] `deepagents` 의존성 추가 (uv, 현재 미설치) + 버전 고정.
-- [ ] `orchestrator.py` 교체 → `create_deep_agent(tools=[…], subagents=[…], model=…, instructions=…)`.
-- [ ] deep agent 시스템 프롬프트 작성 — 역할, 추론 기반 툴/서브에이전트 선택(키워드 금지), 되묻기(ASK) vs 실행(TRIGGER) 판단, 핸드오프·승인 게이트 표면화.
-- [ ] state 최소화 — `messages + todos`. 세션 컨텍스트(user_id/org_id/project_id/context_ad_id/available_projects)는 config 주입.
-- [ ] 무한루프 가드 — 재귀 한도·todo 종료조건.
-- [ ] `intent.py` 키워드 분류 삭제 / `chat.py` `_MGMT_KEYWORDS`·`_is_management` 삭제.
-- [ ] `chat.py` 라우터 재작성 — deep agent `astream_events` → 기존 SSE(`meta/token/done`) 변환, 부수효과(`StartedEvent`/`requires_approval`)를 SSE 이벤트로, `record_turn`/`feedback` 유지.
-- [ ] 프론트 `chat/page.tsx` — `started_event`(생성·시뮬 핸드오프) 처리 추가.
-- [ ] `wiring.py` — 세 도메인 `build_*_tools`/서브에이전트 등록.
+- [x] `deepagents` 의존성 추가
+- [x] 통합 에이전트 빌드 — `api/assistant/deep_agent_builder.py`
+      `create_deep_agent(tools=build_chat_tools(...), subagents=[], ...)`
+      (**deepagents 고유 서브에이전트 기능 미사용** — 커스텀 @tool 라우팅 채택)
+- [x] 시스템 프롬프트 — `api/assistant/prompts.py` CHAT_POLICY (키워드 분기 0,
+      도구 선택은 정책+docstring 추론)
+- [x] 키워드 분류(`intent.py`·`_MGMT_KEYWORDS`) 삭제, 구 orchestrator 제거(`4c3e7c8`)
+- [x] `chat.py` — 통합 에이전트 ainvoke → `_assemble_chat_meta`가 SSE meta
+      (위젯·인용·카드 신호) 방출. record/feedback 유지
+- [x] state — `UnifiedChatState` (messages + per-turn 컨텍스트 채널 + widget/source/sub_meta)
 
-## 시뮬레이션 팀 (chat/ 비어있음 — 0부터)
+## 도메인별 — 완료
 
-- [ ] `domain/simulation/chat/` 신설.
-- [ ] 읽기 툴 — `get_simulation_result`, KPI 4종 요약(클릭의향률·구매의도분포·신뢰도·거부율).
-- [ ] (선택) 트리거 툴 `start_simulation` — 즉시 job_id/stream_url 반환.
-- [ ] "시뮬 분석가" 서브에이전트 — 읽기툴 + KOBACO 비교·분포 해석 프롬프트.
-- [ ] `build_simulation_tools(settings)` 노출.
+- [x] 시뮬레이션 — `domain/simulation/assistant/` (ReAct 그래프 + fetch_simulation_result·
+      list_simulations·KOBACO 벤치마크·search_kb). `ask_simulation`/`run_simulation` 도구
+- [x] 생성 — 슬롯필링 루프 폐기 → 위젯 도구(run_generation=gen_form,
+      run_improvement=즉시실행/폼, improve_ad_iteratively=루프) + `ask_generator` 위임
+- [x] 관리 — `ask_management` 위임(ReAct+HITL). 승인은 in-chat interrupt 대신
+      **suggested_action 카드 + `/api/chat/approve`** 경로로 분리(계획의 폴백안 채택)
 
-## 생성 팀
+## 남은 항목
 
-- [ ] 슬롯필링 루프(`slot_agent.py`) 폐기 → `start_generation` 툴 하나(CREATE/IMPROVE).
-- [ ] 툴은 즉시 `job_id/stream_url` 반환(블로킹 금지), `improve_context` 경로 유지.
-- [ ] `build_generation_tools(settings)` 노출.
-
-## 관리 팀 (거의 완성)
-
-- [ ] `agent.py`를 서브에이전트로 노출(네이티브 그래프) 또는 `suggested_action` 반환 툴로 래핑.
-- [ ] HITL interrupt가 deepagents `task` 안에서 전파되는지 검증 → 실패 시 승인을 approval 화면으로 분리.
-- [ ] `build_management_subagent(settings)` 노출.
-
-## 완료 기준
-
-- [ ] 키워드 분기 0 — 라우팅이 전부 deep agent 추론.
-- [ ] `pytest tests/assistant -v` 통과 + 신규 도메인 툴 테스트.
-- [ ] 채팅에서 생성/시뮬 트리거 → 프론트가 stream_url 구독 동작.
+- [x] `gen_loop` 위젯 프론트 렌더러 — `GenLoopWidget` 구현(반복별 품질점수·완료 시
+      gen_result 연결·새로고침 복원), 2026-07-05
+- [ ] 레거시 잔재 정리 — `orchestrator.py`·`wiring.py`의 `Orchestrator`/`_try_kb_advise`
+      (hallucination_eval 전용)
+- [ ] `domain/chat/__init__.py` 설명이 실제 구현 위치(`api/assistant/`)와 어긋남 — 문서 정리

@@ -6,9 +6,10 @@ from datetime import datetime
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select, text
+from sqlalchemy import case, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from api.routers.projects import _purge_project
 from core import cognito_admin
 from core.auth import require_admin
 from core.db import get_db
@@ -43,7 +44,11 @@ class SimulationRow(BaseModel):
     status: str
     sample_size: int
     created_by_name: str | None
+    created_by_role: str | None = None  # 실행자 역할(ADMIN|COMPANY|USER) — 내역서 '관리자' 표기용
+    project_id: str | None = None  # 소속 프로젝트 id(내역 클릭→패널 열기용)
+    project_name: str | None = None  # 소속 프로젝트명(내역 컬럼)
     org_name: str | None = None  # 소속 조직명(내역 org 컬럼·필터용)
+    org_status: str | None = None  # 소속 조직 상태(ACTIVE|INACTIVE) — 삭제된 조직 표시·필터용
     created_at: datetime
 
 
@@ -52,7 +57,11 @@ class GenerationRow(BaseModel):
     status: str
     product_name: str | None
     created_by_name: str | None
+    created_by_role: str | None = None  # 실행자 역할(ADMIN|COMPANY|USER) — 내역서 '관리자' 표기용
+    project_id: str | None = None  # 소속 프로젝트 id(내역 클릭→패널 열기용)
+    project_name: str | None = None  # 소속 프로젝트명(내역 컬럼)
     org_name: str | None = None  # 소속 조직명(내역 org 컬럼·필터용)
+    org_status: str | None = None  # 소속 조직 상태(ACTIVE|INACTIVE) — 삭제된 조직 표시·필터용
     created_at: datetime
 
 
@@ -61,7 +70,11 @@ class ChatRow(BaseModel):
     project_id: str | None
     title: str | None = None  # 세션 제목(검색·표시용)
     message_count: int
+    created_by_name: str | None = None  # 세션 개시자(실행자) — 0007 마이그레이션 이후 기록
+    created_by_role: str | None = None  # 실행자 역할(ADMIN|COMPANY|USER) — 내역서 '관리자' 표기용
+    project_name: str | None = None  # 소속 프로젝트명(내역 컬럼)
     org_name: str | None = None  # 소속 조직명(내역 org 컬럼·필터용)
+    org_status: str | None = None  # 소속 조직 상태(ACTIVE|INACTIVE) — 삭제된 조직 표시·필터용
     created_at: datetime
 
 
@@ -84,7 +97,21 @@ async def delete_company(
     if not org:
         raise HTTPException(status_code=404, detail="조직을 찾을 수 없습니다.")
 
-    # 소속 유저를 INACTIVE로 전환 + Cognito 삭제용 login_id 수집
+    # 소속 유저를 INACTIVE로 전환 + Cognito disable용 login_id 수집
+    login_ids = await _org_member_login_ids(db, org_id, set_status="INACTIVE")
+    org.status = "INACTIVE"
+    await db.commit()
+
+    # cognito 모드면 소속 유저를 Cognito에서 disable(로그인 차단, 복원 가능). best-effort.
+    for lid in login_ids:
+        await cognito_admin.disable_user(lid)
+    return {"ok": True}
+
+
+async def _org_member_login_ids(
+    db: AsyncSession, org_id: str, set_status: str | None = None
+) -> list[str]:
+    """조직 소속 유저의 login_id를 수집. set_status가 있으면 각 유저 status도 함께 갱신."""
     member_ids = (
         (
             await db.execute(
@@ -99,12 +126,114 @@ async def delete_company(
     if member_ids:
         users = (await db.scalars(select(User).where(User.id.in_(member_ids)))).all()
         for u in users:
-            u.status = "INACTIVE"
+            if set_status is not None:
+                u.status = set_status
             login_ids.append(u.login_id)
-    org.status = "INACTIVE"
+    return login_ids
+
+
+@router.post("/companies/{org_id}/restore")
+async def restore_company(
+    org_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    """소프트 삭제한 회사(조직)를 복원 — 조직·소속 유저를 ACTIVE로 되돌리고 Cognito도 enable.
+
+    Cognito 계정이 (과거 삭제 기반 흐름으로) 사라졌으면 enable_user가 role 그룹으로 재생성한다.
+    """
+    org = await db.scalar(select(Organization).where(Organization.id == org_id))
+    if not org:
+        raise HTTPException(status_code=404, detail="조직을 찾을 수 없습니다.")
+
+    member_ids = (
+        (
+            await db.execute(
+                text("SELECT user_id FROM organization_members WHERE organization_id = :org"),
+                {"org": org_id},
+            )
+        )
+        .scalars()
+        .all()
+    )
+    restore: list[tuple[str, str]] = []
+    if member_ids:
+        users = (await db.scalars(select(User).where(User.id.in_(member_ids)))).all()
+        for u in users:
+            u.status = "ACTIVE"
+            restore.append((u.login_id, u.role))
+    org.status = "ACTIVE"
     await db.commit()
 
-    # cognito 모드면 소속 유저를 Cognito에서 제거(로그인 차단). best-effort — 실패해도 DB는 유지.
+    for lid, role in restore:
+        await cognito_admin.enable_user(lid, role)
+    return {"ok": True}
+
+
+@router.delete("/companies/{org_id}/purge")
+async def purge_company(
+    org_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    """회사(조직) 영구 삭제 — Cognito + DB(조직·멤버·유저) + 하위 프로젝트/시뮬/제너/채팅 하드 삭제.
+
+    복구 불가. 소프트 삭제(INACTIVE)와 달리 사후 조회용 데이터도 전부 제거한다.
+    """
+    org = await db.scalar(select(Organization).where(Organization.id == org_id))
+    if not org:
+        raise HTTPException(status_code=404, detail="조직을 찾을 수 없습니다.")
+
+    member_ids = (
+        (
+            await db.execute(
+                text("SELECT user_id FROM organization_members WHERE organization_id = :org"),
+                {"org": org_id},
+            )
+        )
+        .scalars()
+        .all()
+    )
+    login_ids = (
+        [u.login_id for u in (await db.scalars(select(User).where(User.id.in_(member_ids)))).all()]
+        if member_ids
+        else []
+    )
+
+    # 하위 프로젝트를 자식(광고·시뮬·제너·채팅)까지 하드 삭제(projects.py 헬퍼 재사용).
+    proj_ids = (
+        (
+            await db.execute(
+                text("SELECT id FROM projects WHERE organization_id = :org"), {"org": org_id}
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for pid in proj_ids:
+        await _purge_project(db, str(pid))
+
+    p = {"org": org_id}
+    # org/유저를 참조하는 잔여 레코드 정리(NO ACTION FK가 삭제를 막지 않도록 먼저 제거).
+    await db.execute(text("DELETE FROM brand_kits WHERE organization_id = :org"), p)
+    await db.execute(
+        text("DELETE FROM management_campaign_kpi_overrides WHERE organization_id = :org"), p
+    )
+    await db.execute(
+        text("DELETE FROM management_meta_connections WHERE organization_id = :org"), p
+    )
+    await db.execute(text("DELETE FROM teams WHERE organization_id = :org"), p)
+    await db.execute(text("DELETE FROM organization_members WHERE organization_id = :org"), p)
+    if member_ids:
+        # 멤버끼리의 created_by 자기참조는 단일 DELETE ANY로 함께 정리된다.
+        await db.execute(
+            text("UPDATE users SET created_by = NULL WHERE created_by = ANY(:ids)"),
+            {"ids": member_ids},
+        )
+        await db.execute(text("DELETE FROM users WHERE id = ANY(:ids)"), {"ids": member_ids})
+    await db.execute(text("DELETE FROM organizations WHERE id = :org"), p)
+    await db.commit()
+
     for lid in login_ids:
         await cognito_admin.delete_user(lid)
     return {"ok": True}
@@ -120,13 +249,27 @@ class OrganizationRow(BaseModel):
     created_at: datetime
 
 
+_ORG_SORT_COLS = {
+    "name": Organization.name,
+    "created_at": Organization.created_at,
+    "status": Organization.status,
+}
+
+
 @router.get("/organizations", response_model=list[OrganizationRow])
 async def list_organizations(
+    limit: int = 20,
+    offset: int = 0,
+    sort: str = "created_at",
+    order: str = "desc",
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_admin),
 ):
-    """전체 조직 목록 — 프로젝트가 0개인 회사도 포함."""
-    rows = await db.execute(select(Organization).order_by(Organization.created_at.desc()))
+    """전체 조직 목록 — 프로젝트가 0개인 회사도 포함. limit/offset·sort(name|created_at|status)."""
+    limit, offset = _clamp_page(limit, offset)
+    col = _ORG_SORT_COLS.get(sort, Organization.created_at)
+    order_by = col.asc() if str(order).lower() == "asc" else col.desc()
+    rows = await db.execute(select(Organization).order_by(order_by).limit(limit).offset(offset))
     return [
         OrganizationRow(
             id=str(o.id),
@@ -141,18 +284,43 @@ async def list_organizations(
 # ── 전체 유저 목록 ────────────────────────────
 
 
+_USER_SORT_COLS = {
+    "name": User.name,
+    "created_at": User.created_at,
+    "status": User.status,
+}
+# 기본 정렬(sort 미지정 시) — ADMIN → COMPANY → USER 우선순위.
+_USER_ROLE_PRIORITY = case((User.role == "ADMIN", 0), (User.role == "COMPANY", 1), else_=2)
+
+
 @router.get("/users", response_model=list[UserRow])
 async def list_users(
+    limit: int = 20,
+    offset: int = 0,
+    sort: str = "role",
+    order: str = "desc",
+    role: str | None = None,
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_admin),
 ):
+    """전체 유저 목록. limit/offset·sort(role|name|created_at|status)·role 필터. 기본 ADMIN→USER."""
+    limit, offset = _clamp_page(limit, offset)
     # 소속 조직명은 멤버십(OrganizationMember)으로만 알 수 있어 outerjoin — 미소속(ADMIN 등)은 None.
-    rows = await db.execute(
+    stmt = (
         select(User, Organization.name)
         .outerjoin(OrganizationMember, OrganizationMember.user_id == User.id)
         .outerjoin(Organization, Organization.id == OrganizationMember.organization_id)
-        .order_by(User.created_at.desc())
     )
+    if role:
+        stmt = stmt.where(User.role == role.upper())
+    if sort in _USER_SORT_COLS:
+        col = _USER_SORT_COLS[sort]
+        stmt = stmt.order_by(col.asc() if str(order).lower() == "asc" else col.desc())
+    else:
+        # 기본: 역할 우선순위(ADMIN→USER) 후 최신순.
+        stmt = stmt.order_by(_USER_ROLE_PRIORITY.asc(), User.created_at.desc())
+    stmt = stmt.limit(limit).offset(offset)
+    rows = await db.execute(stmt)
     return [
         UserRow(
             id=str(u.id),
@@ -320,8 +488,71 @@ async def delete_user(
 
     user.status = "INACTIVE"
     await db.commit()
-    # cognito 모드면 Cognito 사용자도 제거(로그인 차단). best-effort — 실패해도 DB는 유지.
-    await cognito_admin.delete_user(user.login_id)
+    # cognito 모드면 Cognito 사용자를 disable(로그인 차단, 복원 가능). best-effort.
+    await cognito_admin.disable_user(user.login_id)
+    return {"ok": True}
+
+
+@router.post("/users/{user_id}/restore")
+async def restore_user(
+    user_id: str,
+    db: AsyncSession = Depends(get_db),
+    _: User = Depends(require_admin),
+):
+    """소프트 삭제한 계정을 복원 — status=ACTIVE + Cognito enable(없으면 role 그룹으로 재생성)."""
+    user = await db.scalar(select(User).where(User.id == user_id))
+    if not user:
+        raise HTTPException(status_code=404, detail="유저를 찾을 수 없습니다.")
+    user.status = "ACTIVE"
+    await db.commit()
+    await cognito_admin.enable_user(user.login_id, user.role)
+    return {"ok": True}
+
+
+@router.delete("/users/{user_id}/purge")
+async def purge_user(
+    user_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_admin: User = Depends(require_admin),
+):
+    """계정 영구 삭제 — Cognito + DB(유저·멤버십) + 본인이 만든 프로젝트/시뮬/제너/채팅 하드 삭제.
+
+    복구 불가. COMPANY는 '조직 영구삭제(purge-company)'로 회사째 지운다.
+    """
+    if user_id == str(current_admin.id):
+        raise HTTPException(status_code=400, detail="본인 계정은 삭제할 수 없습니다.")
+
+    user = await db.scalar(select(User).where(User.id == user_id))
+    if not user:
+        raise HTTPException(status_code=404, detail="유저를 찾을 수 없습니다.")
+    if user.role == "COMPANY":
+        raise HTTPException(
+            status_code=400,
+            detail="COMPANY 계정은 '조직 영구삭제'로 회사째 삭제해주세요.",
+        )
+    login_id = user.login_id
+
+    # 본인이 만든 프로젝트를 자식까지 하드 삭제(projects.py 헬퍼 재사용).
+    proj_ids = (
+        (await db.execute(text("SELECT id FROM projects WHERE created_by = :u"), {"u": user_id}))
+        .scalars()
+        .all()
+    )
+    for pid in proj_ids:
+        await _purge_project(db, str(pid))
+
+    u = {"u": user_id}
+    # 유저를 참조하는 잔여 레코드 정리(NO ACTION FK가 삭제를 막지 않도록).
+    await db.execute(text("UPDATE users SET created_by = NULL WHERE created_by = :u"), u)
+    await db.execute(
+        text("UPDATE organization_members SET invited_by = NULL WHERE invited_by = :u"), u
+    )
+    await db.execute(text("DELETE FROM management_campaign_kpi_overrides WHERE updated_by = :u"), u)
+    await db.execute(text("DELETE FROM organization_members WHERE user_id = :u"), u)
+    await db.execute(text("DELETE FROM users WHERE id = :u"), u)
+    await db.commit()
+
+    await cognito_admin.delete_user(login_id)
     return {"ok": True}
 
 
@@ -379,6 +610,7 @@ async def list_simulations(
     sort: str = "created_at",
     order: str = "desc",
     status: str | None = None,
+    org_status: str | None = None,
     search_field: str = "title",
     search: str | None = None,
     x_org_id: str | None = Header(None, alias="X-Org-Id"),
@@ -396,6 +628,9 @@ async def list_simulations(
     if statuses:
         where.append("s.status = ANY(:statuses)")
         params["statuses"] = statuses
+    if org_status:
+        where.append("o.status = :org_status")
+        params["org_status"] = org_status
     if search:
         col = "o.name" if search_field == "org_name" else "a.title"
         where.append(f"{col} ILIKE :q")
@@ -406,9 +641,14 @@ async def list_simulations(
             SELECT s.id, s.status, s.sample_size, s.created_at,
                    a.title AS ad_title,
                    u.name  AS created_by_name,
-                   o.name  AS org_name
+                   u.role  AS created_by_role,
+                   p.id    AS project_id,
+                   p.name  AS project_name,
+                   o.name  AS org_name,
+                   o.status AS org_status
             FROM simulations s
             LEFT JOIN ads   a ON a.id = s.ad_id
+            LEFT JOIN projects p ON p.id = a.project_id
             LEFT JOIN users u ON u.id = s.created_by
             LEFT JOIN organizations o ON o.id = s.organization_id
             WHERE {" AND ".join(where)}
@@ -424,7 +664,11 @@ async def list_simulations(
             status=r.status,
             sample_size=r.sample_size,
             created_by_name=r.created_by_name,
+            created_by_role=r.created_by_role,
+            project_id=str(r.project_id) if r.project_id else None,
+            project_name=r.project_name,
             org_name=r.org_name,
+            org_status=r.org_status,
             created_at=r.created_at,
         )
         for r in rows.mappings()
@@ -452,6 +696,7 @@ async def list_generations(
     sort: str = "created_at",
     order: str = "desc",
     status: str | None = None,
+    org_status: str | None = None,
     search_field: str = "title",
     search: str | None = None,
     x_org_id: str | None = Header(None, alias="X-Org-Id"),
@@ -469,6 +714,9 @@ async def list_generations(
     if statuses:
         where.append("g.status = ANY(:statuses)")
         params["statuses"] = statuses
+    if org_status:
+        where.append("o.status = :org_status")
+        params["org_status"] = org_status
     if search:
         col = "o.name" if search_field == "org_name" else "g.input->>'product_name'"
         where.append(f"{col} ILIKE :q")
@@ -478,7 +726,11 @@ async def list_generations(
         text(f"""
             SELECT g.id, g.status, g.input, g.created_at,
                    u.name AS created_by_name,
-                   o.name AS org_name
+                   u.role AS created_by_role,
+                   p.id   AS project_id,
+                   p.name AS project_name,
+                   o.name AS org_name,
+                   o.status AS org_status
             FROM ad_generations g
             LEFT JOIN projects p ON p.id = g.project_id
             LEFT JOIN organizations o ON o.id = p.organization_id
@@ -495,7 +747,11 @@ async def list_generations(
             status=r.status,
             product_name=(r.input or {}).get("product_name") if r.input else None,
             created_by_name=r.created_by_name,
+            created_by_role=r.created_by_role,
+            project_id=str(r.project_id) if r.project_id else None,
+            project_name=r.project_name,
             org_name=r.org_name,
+            org_status=r.org_status,
             created_at=r.created_at,
         )
         for r in rows.mappings()
@@ -513,6 +769,7 @@ async def list_chats(
     offset: int = 0,
     sort: str = "created_at",
     order: str = "desc",
+    org_status: str | None = None,
     search_field: str = "title",
     search: str | None = None,
     x_org_id: str | None = Header(None, alias="X-Org-Id"),
@@ -527,6 +784,9 @@ async def list_chats(
     if org is not None:
         where.append("p.organization_id = :org_id")
         params["org_id"] = org
+    if org_status:
+        where.append("o.status = :org_status")
+        params["org_status"] = org_status
     if search:
         col = "o.name" if search_field == "org_name" else "cs.title"
         where.append(f"{col} ILIKE :q")
@@ -535,14 +795,19 @@ async def list_chats(
     rows = await db.execute(
         text(f"""
             SELECT cs.id, cs.project_id, cs.title, cs.created_at,
+                   u.name AS created_by_name,
+                   u.role AS created_by_role,
+                   p.name AS project_name,
                    o.name AS org_name,
+                   o.status AS org_status,
                    COUNT(cm.id) AS message_count
             FROM chat_sessions cs
             LEFT JOIN chat_messages cm ON cm.session_id = cs.id
             LEFT JOIN projects p ON p.id = cs.project_id
             LEFT JOIN organizations o ON o.id = p.organization_id
+            LEFT JOIN users u ON u.id = cs.created_by
             WHERE {" AND ".join(where)}
-            GROUP BY cs.id, o.name
+            GROUP BY cs.id, u.name, u.role, p.name, o.name, o.status
             ORDER BY {order_by}
             LIMIT :limit OFFSET :offset
         """),
@@ -554,7 +819,11 @@ async def list_chats(
             project_id=str(r.project_id) if r.project_id else None,
             title=r.title,
             message_count=r.message_count,
+            created_by_name=r.created_by_name,
+            created_by_role=r.created_by_role,
+            project_name=r.project_name,
             org_name=r.org_name,
+            org_status=r.org_status,
             created_at=r.created_at,
         )
         for r in rows.mappings()

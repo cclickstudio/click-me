@@ -43,8 +43,9 @@ def patched(monkeypatch):
     async def _noop(*a, **k):  # noqa: ANN002, ANN003
         return None
 
-    async def _fix(candidate, seed):  # noqa: ANN001
+    async def _fix(candidate, seed, sim_seed=""):  # noqa: ANN001
         captured["fix_for"].append(candidate.get("candidate_id"))
+        captured.setdefault("sim_seeds", []).append(sim_seed)
         return "- CTA를 더 크게"
 
     monkeypatch.setattr(generator_service, "start_generation", _start)
@@ -121,3 +122,78 @@ async def test_keeps_better_across_iterations(patched):
     # iter1·iter2 개선 모두 그 시점 best(0.6=c0/s0)를 기반으로 improve — iter1이 더 나빠 best 유지.
     assert captured["requests"][1].existing_ad_s3_key == "s0"
     assert captured["requests"][2].existing_ad_s3_key == "s0"
+
+
+# ── eval_mode=simulation (최초 1회 시뮬, 하이브리드 B) ──
+
+
+def test_weakest_kpi_axis_picks_most_severe():
+    # 거부율 0.5(목표 0.30 초과) vs 구매의도 3.4(목표 3.5 근소 미달) → 거부율이 더 심각
+    axis = gl._weakest_kpi_axis(
+        {"click_intent_rate": 0.4, "purchase_intent": 3.4, "trust_avg": 4.0, "rejection_rate": 0.5}
+    )
+    assert axis is not None
+    assert axis[0] == "rejection"
+    assert "거부율" in axis[1]
+
+
+def test_weakest_kpi_axis_none_when_healthy():
+    assert (
+        gl._weakest_kpi_axis(
+            {
+                "click_intent_rate": 0.5,
+                "purchase_intent": 4.5,
+                "trust_avg": 4.5,
+                "rejection_rate": 0.1,
+            }
+        )
+        is None
+    )
+
+
+async def test_derive_sim_seed_returns_diag_without_kb():
+    # 루트 conftest는 USE_MOCK=true → KB 검색 스킵, 진단 라벨만으로 시드 구성
+    seed, diag = await gl._derive_sim_seed({"rejection_rate": 0.5})
+    assert "거부율" in diag
+    assert "소비자 반응 진단" in seed
+    assert "거부율" in seed
+
+
+async def test_simulation_seed_flows_into_every_improve(patched):
+    captured, gen_ids, details = patched
+    gen_ids.extend(["g0", "g1", "g2"])
+    details.extend([_detail(0.5, "c0", "s0"), _detail(0.6, "c1", "s1"), _detail(0.7, "c2", "s2")])
+    calls: list = []
+
+    async def _sim(candidate, seed):
+        calls.append((candidate.get("candidate_id"), seed.get("product_name")))
+        return {"rejection_rate": 0.5, "purchase_intent": 4.0}  # 거부율 축이 최저
+
+    result = await gl.run_generation_loop(
+        _SEED, quality_target=0.9, max_iterations=2, simulate_fn=_sim
+    )
+
+    # 시뮬은 최초 시안(c0)에 1회만
+    assert calls == [("c0", "수분크림")]
+    # 모든 개선 반복에 시뮬 시드가 고정 주입됐다(거부율 방향)
+    seeds = captured["sim_seeds"]
+    assert len(seeds) == 2
+    assert all("거부율" in s for s in seeds)
+    assert result["iterations"] == 2
+
+
+async def test_simulation_failure_falls_back_to_qa(patched):
+    captured, gen_ids, details = patched
+    gen_ids.extend(["g0", "g1"])
+    details.extend([_detail(0.6, "c0", "s0"), _detail(0.95, "c1", "s1")])
+
+    async def _sim(candidate, seed):
+        raise RuntimeError("sim down")
+
+    result = await gl.run_generation_loop(
+        _SEED, quality_target=0.9, max_iterations=2, simulate_fn=_sim
+    )
+
+    # 시뮬 실패 → 시드 비어 QA-only로 진행(루프 중단 없음)
+    assert result["iterations"] == 1
+    assert captured["sim_seeds"] == [""]

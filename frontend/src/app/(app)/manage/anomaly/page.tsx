@@ -10,6 +10,7 @@ import { ApprovalBridge } from '@/components/manage/ApprovalBridge';
 import { AuditTimeline } from '@/components/manage/AuditTimeline';
 import { KpiStrip } from '@/components/manage/KpiStrip';
 import type { ActionResult, AuditEvent, RunResult, ViewMode } from '@/components/manage/types';
+import { Select } from '@/components/ui/Select';
 
 // 내부 동작(arch) 파이프라인 그래프 — reactflow는 DOM 측정이 필요해 ssr:false로 클라 전용 로드.
 const PipelineGraph = dynamic(() => import('@/components/manage/PipelineGraph'), {
@@ -172,17 +173,16 @@ export default function Page() {
               </button>
             </div>
             <span className="text-[11px] text-[#8B95A1]">문제 상황 주입</span>
-            <select
+            <Select
+              aria-label="문제 상황 주입"
+              className="min-w-[220px]"
               value={fault}
-              onChange={(e) => setFault(e.target.value)}
-              className="text-sm px-2 py-1.5 rounded-lg border border-[#E5E8EB] dark:border-[#2D3748] bg-transparent"
-            >
-              {FAULT_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
-              ))}
-            </select>
+              onChange={setFault}
+              options={FAULT_OPTIONS.map((o) => ({
+                value: o.value,
+                label: o.label,
+              }))}
+            />
             <button
               onClick={start}
               disabled={busy}

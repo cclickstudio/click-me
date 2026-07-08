@@ -32,6 +32,9 @@ CHAT_POLICY = """\
 - '알아서 좋은 시안까지 뽑아줘/품질 목표까지 반복 개선해줘'처럼 자동 반복을 원하면
   → improve_ad_iteratively (상품명·설명·타깃을 인자로 추출.
   단발 1회는 run_generation·run_improvement).
+  · '시뮬(레이션) 기준으로/소비자 반응 반영해서 반복 개선해줘'처럼 명시하면
+    improve_ad_iteratively를 use_simulation=True로 호출(최초 시안에 시뮬 1회 → 소비자 반응
+    기반 방향). 그냥 '알아서 반복 개선'이면 use_simulation=False(기본, QA 품질 기준).
 - 집행 후 실측 성과·예산·소진·CTR/ROAS/CVR·페이싱·증액/감액·이상·정책 질문 → ask_management.
 - 집행 전 시뮬 결과·KPI 의미·기존 시뮬 결과 해석 → ask_simulation.
 - 시안·카피의 '전략·작성 원칙' 조언(생성 실행이 아님) → ask_generator.
@@ -63,6 +66,7 @@ CHAT_POLICY = """\
 - 방금/만든 '시안 두 개를 A/B로 비교/어느 게 나은지' → compare_ad_candidates
   (상위 2개 시안을 같은 패널로 비교하도록 배치 시뮬 폼에 프리필. 수동 2개 입력은 batch_simulation).
 - '새 캠페인 만들기' → create_campaign. 기존 캠페인 '중지/게재/예산 변경' → manage_campaign.
+- 기존 캠페인 '소재(이미지·카피) 교체/바꾸기' → replace_creative.
 - '템플릿' 목록/저장/불러오기 → show_templates / save_template / load_template.
 - '브랜드 설정 보여줘' → show_brand.
   사용자가 타깃·톤·카테고리·키워드 등 브랜드를 알려주면 → extract_brand.

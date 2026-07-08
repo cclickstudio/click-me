@@ -30,18 +30,26 @@ from domain.generator.contracts.enums import AdSize
 logger = logging.getLogger("clickme")
 
 
-def _require_openai_for(op: str, provider: str) -> None:
+def _require_openai_for(op: str, provider: str, model: str) -> str:
     """편집·마스크·누끼는 openai 전용 op다. 다른 provider가 설정되면 openai 키가 있을 때
-    경고 후 openai로 폴백(파이프라인이 죽지 않게), 키도 없으면 명확히 실패한다.
+    모델도 openai 호환 모델로 바꿔 경고 후 openai로 폴백(파이프라인이 죽지 않게),
+    키도 없으면 명확히 실패한다. 반환값은 실제로 사용할 모델명이다.
 
     현실적 오설정 예: generator_image_provider=google_genai → inpaint_provider도 그걸 상속해
-    edit_with_mask가 죽는 컴포즈(누끼) 경로. openai 키만 있으면 그대로 진행시킨다.
+    edit_with_mask가 죽는 컴포즈(누끼) 경로. openai 키만 있으면 openai 모델로 바꿔 그대로
+    진행시킨다(model을 안 바꾸면 provider의 모델명이 그대로 openai API로 넘어가 오류 남).
     """
     if provider == "openai":
-        return
+        return model
     if settings.openai_api_key:
-        logger.warning("%s: provider=%r 미지원 op → openai로 폴백(설정 확인 권장)", op, provider)
-        return
+        fallback_model = settings.generator_image_edit_model
+        logger.warning(
+            "%s: provider=%r 미지원 op → openai(%s)로 폴백(설정 확인 권장)",
+            op,
+            provider,
+            fallback_model,
+        )
+        return fallback_model
     raise NotImplementedError(
         f"{op} 미지원 provider: {provider!r} — openai만 지원하며 OPENAI_API_KEY도 없어 폴백 불가"
     )
@@ -89,7 +97,7 @@ async def edit(
     image_bytes: bytes, prompt: str, size: AdSize, *, provider: str, model: str
 ) -> bytes:
     """기존 이미지를 마스크 없이 편집. openai 전용 op — 타 provider는 openai로 폴백."""
-    _require_openai_for("이미지 편집", provider)
+    model = _require_openai_for("이미지 편집", provider, model)
     image_file = io.BytesIO(image_bytes)
     image_file.name = "original.png"
     response = await _openai_client.images.edit(
@@ -103,7 +111,7 @@ async def edit_with_mask(
     base_png: bytes, mask_png: bytes, prompt: str, size: AdSize, *, provider: str, model: str
 ) -> bytes:
     """마스크 인페인팅 — 마스크 투명영역만 재생성, 나머지(상품) 잠금. openai 전용 op(명시 마스크)."""
-    _require_openai_for("인페인팅", provider)
+    model = _require_openai_for("인페인팅", provider, model)
     base_file = io.BytesIO(base_png)
     base_file.name = "base.png"
     mask_file = io.BytesIO(mask_png)
@@ -119,7 +127,7 @@ async def remove_background(
     image_bytes: bytes, *, provider: str, model: str, quality: str
 ) -> bytes:
     """배경 제거 → 투명 알파 PNG. openai 전용 op(transparent 지원) — 타 provider는 openai로 폴백."""
-    _require_openai_for("누끼", provider)
+    model = _require_openai_for("누끼", provider, model)
     image_file = io.BytesIO(image_bytes)
     image_file.name = "product.png"
     kwargs: dict = {

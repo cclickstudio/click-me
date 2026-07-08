@@ -8,9 +8,17 @@ import { api } from '@/lib/api';
 import { safeRandomUUID } from '@/lib/utils';
 import { getJobs, setSimJob } from '@/lib/runningJobs';
 import { SIM_CATEGORIES } from '@/lib/simCategories';
-import type { SimRunResult } from '@/lib/types';
+import type { AnalysisMode, SimRunResult } from '@/lib/types';
 
 type Phase = 'form' | 'running' | 'done' | 'error';
+
+// 3-모드 분석(A-1, /simulation 이식) — persona_set은 세그먼트 편집이 필요해 채팅에선 미지원,
+// 고르면 전체 페이지로 안내한다(아래 렌더 분기 참조).
+const MODE_TABS: { value: AnalysisMode; label: string; desc: string }[] = [
+  { value: 'synthetic', label: '전체 합성', desc: '조건에 맞는 가상 소비자 표본 전체의 반응을 예측합니다.' },
+  { value: 'individual', label: '1명 심층', desc: '가상 소비자 1명을 깊이 있게 분석합니다.' },
+  { value: 'persona_set', label: '세그먼트 비교', desc: '여러 세그먼트를 나란히 비교합니다 — 채팅에선 지원하지 않아 전체 페이지로 이동해요.' },
+];
 
 // 진행 중 시뮬 run_id 보관 키 — 동시 1개 정책이라 단일 키로 충분(새로고침 복원용).
 const ACTIVE_SIM_KEY = 'chat_active_sim_run';
@@ -54,6 +62,8 @@ export default function SimFormWidget({
     ad_title?: string;
     product_category?: string;
     ad_objective?: string;
+    analysis_mode?: AnalysisMode;
+    generation_id?: string; // 생성 출처 — 채팅 개선모드 누끼 역추적용(ads.generation_id로 영속)
   };
   initialImage?: File; // 채팅에서 첨부한 광고 이미지
   initialImageUrl?: string; // 생성 시안 등에서 넘어온 이미지 URL(파일 대신 URL로 시뮬)
@@ -75,6 +85,10 @@ export default function SimFormWidget({
   const [phase, setPhase] = useState<Phase>('form');
   const [step, setStep] = useState(0);
   const [runId, setRunId] = useState<string | null>(null);
+  // 3-모드 분석 — persona_set은 채팅 미지원(아래 렌더에서 전체 페이지로 안내).
+  const [analysisMode, setAnalysisMode] = useState<AnalysisMode>(
+    initial?.analysis_mode ?? 'synthetic',
+  );
   const [adTitle, setAdTitle] = useState(initial?.ad_title ?? '');
   const [adContent, setAdContent] = useState(initial?.ad_content ?? '');
   // 카테고리 — /simulation과 동일한 2단 셀렉트(업종 대분류 → NICE 류).
@@ -276,10 +290,13 @@ export default function SimFormWidget({
         product_category: categoryName || undefined,
         service_class: typeof serviceClass === 'number' ? serviceClass : undefined,
         ad_objective: objectiveValue || undefined,
-        sample_size: sampleSize,
+        // individual은 표본 1명 고정(/simulation 이식).
+        sample_size: analysisMode === 'individual' ? 1 : sampleSize,
         allocation,
         target_filter: targetFilter,
         target_mode: targetMode,
+        analysis_mode: analysisMode,
+        generation_id: initial?.generation_id,
       });
       setRunId(run_id);
       setSimJob(run_id); // 동시실행 슬롯 점유(시뮬 1개 제한)
@@ -318,8 +335,48 @@ export default function SimFormWidget({
       e.preventDefault();
       goNext();
     };
+    // 모드 탭 — persona_set(세그먼트 비교)은 채팅에서 미지원, 고르면 전체 페이지로 안내.
+    const modeTabs = (
+      <div className="mb-3">
+        <label className={labelCls}>분석 모드</label>
+        <div className="flex flex-wrap gap-1.5">
+          {MODE_TABS.map(m => (
+            <button
+              key={m.value}
+              type="button"
+              onClick={() => setAnalysisMode(m.value)}
+              className={`${chipBase} ${analysisMode === m.value ? chipActive : chipIdle}`}
+            >
+              {m.label}
+            </button>
+          ))}
+        </div>
+        <p className="text-[11px] text-[#8B95A1] dark:text-[#6B7280] mt-1.5">
+          {MODE_TABS.find(m => m.value === analysisMode)?.desc}
+        </p>
+      </div>
+    );
+
+    if (analysisMode === 'persona_set') {
+      return (
+        <div className={cardCls}>
+          {modeTabs}
+          <p className="text-sm text-[#191F28] dark:text-[#F2F4F6]">
+            세그먼트 비교는 세그먼트별로 조건을 나눠 편집해야 해서 채팅에서는 지원하지 않아요.
+            전체 페이지에서 진행해주세요.
+          </p>
+          <button
+            onClick={() => router.push('/simulation')}
+            className="mt-3 w-full py-2 rounded-lg bg-[#3182F6] text-white text-sm font-semibold hover:bg-[#1B6EEB] transition-colors"
+          >
+            시뮬레이션 페이지로 이동 →
+          </button>
+        </div>
+      );
+    }
     return (
       <div className={cardCls} onKeyDown={onFormKeyDown}>
+        {modeTabs}
         <div className="mb-3">
           <p className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]">
             🧪 시뮬레이션 정보 입력{' '}
@@ -456,10 +513,16 @@ export default function SimFormWidget({
           )}
           {step === 4 && (
             <div className="space-y-3">
-              <div>
-                <label className={labelCls}>가상 소비자 수: {sampleSize}명</label>
-                <input type="range" min={1} max={200} value={sampleSize} onChange={e => setSampleSize(Number(e.target.value))} className="w-full accent-[#3182F6]" />
-              </div>
+              {analysisMode === 'individual' ? (
+                <p className="text-[11px] text-[#8B95A1] dark:text-[#6B7280]">
+                  1명 심층 분석 — 표본 1명 고정. 아래 조건(연령대·성별)으로 그 1명을 고릅니다.
+                </p>
+              ) : (
+                <div>
+                  <label className={labelCls}>가상 소비자 수: {sampleSize}명</label>
+                  <input type="range" min={1} max={200} value={sampleSize} onChange={e => setSampleSize(Number(e.target.value))} className="w-full accent-[#3182F6]" />
+                </div>
+              )}
               <div>
                 <label className={labelCls}>표본 추출 방식</label>
                 <div className="flex gap-1.5">

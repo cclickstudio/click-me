@@ -44,11 +44,13 @@ class OpenAIReactionEngine:
         api_key: str | None = None,
         model: str = _DEFAULT_OPENAI_MODEL,
         temperature: float = 1.0,
+        with_reaction_text: bool = False,
     ) -> None:
         self._client = _new_openai_client(api_key)
         self._model = model
         self.version = model
         self._temperature = temperature
+        self._with_reaction_text = with_reaction_text  # SSR 배선 시 자유 서술 필드 요구
 
     @traceable(run_type="llm", name="openai.chat_json")
     async def _json_call(self, prompt: str) -> dict:
@@ -69,4 +71,6 @@ class OpenAIReactionEngine:
         return json.loads(resp.choices[0].message.content or "{}")
 
     async def react(self, persona, ad: AdInterpretation) -> PersonaReaction:
-        return await generate_reaction(self._json_call, persona, ad)
+        return await generate_reaction(
+            self._json_call, persona, ad, with_reaction_text=self._with_reaction_text
+        )

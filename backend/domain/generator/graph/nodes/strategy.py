@@ -7,15 +7,22 @@
 
 from __future__ import annotations
 
+import logging
+
 from langchain_core.runnables import RunnableConfig
 
 from domain.generator.contracts.enums import GenerationMode
 from domain.generator.contracts.pipeline_schemas import ProductAnalysis, StrategyPlan
 from domain.generator.graph.nodes import emit_progress
 from domain.generator.graph.state import GenerationState
-from domain.generator.pipeline.improvement_guide import classify_improvements
+from domain.generator.pipeline.improvement_guide import (
+    ImprovementClassification,
+    classify_improvements,
+)
 from domain.generator.pipeline.strategy_planner import _STRATEGY_LABELS, plan_strategies
 from domain.generator.pipeline.template_selector import select_template
+
+logger = logging.getLogger("clickme")
 
 
 async def generate_strategies(state: GenerationState, config: RunnableConfig) -> dict:
@@ -32,12 +39,18 @@ async def generate_strategies(state: GenerationState, config: RunnableConfig) ->
 
 async def _handle_improve_mode(req: dict, product_analysis: ProductAnalysis) -> dict:
     """개선 모드 — 분류기로 지시문 + 전략(5종 중 1개) 선택, 그 전략의 실제 템플릿으로 StrategyPlan 1개 주입."""
-    classification = await classify_improvements(
-        simulation_summary=req.get("simulation_summary"),
-        plain_summary=req.get("plain_summary"),
-        improvement_direction=req.get("improvement_direction"),
-        fix_requests=req.get("fix_requests"),
-    )
+    try:
+        classification = await classify_improvements(
+            simulation_summary=req.get("simulation_summary"),
+            plain_summary=req.get("plain_summary"),
+            improvement_direction=req.get("improvement_direction"),
+            fix_requests=req.get("fix_requests"),
+        )
+    except Exception:
+        # plan_strategies(CREATE 모드)와 동일하게 LLM 실패해도 파이프라인은 안 죽고
+        # 기본 전략(BENEFIT)으로 폴백한다.
+        logger.exception("개선 모드 전략 분류 실패 — 기본 전략(BENEFIT)으로 폴백")
+        classification = ImprovementClassification()
     strategy = classification.strategy
     template = select_template(strategy)
 

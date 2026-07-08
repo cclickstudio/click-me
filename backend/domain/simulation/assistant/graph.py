@@ -79,8 +79,9 @@ def build_graph(settings, retriever, llm):
 
     @tool
     async def fetch_kobaco_benchmark(category: str) -> dict:
-        """카테고리별 KOBACO 업계 평균 KPI를 조회한다(구매의도·클릭의향률·거부율).
-        '뷰티 평균 대비 어때' 류 업계 대조 질문에 쓴다."""
+        """카테고리별 KOBACO(2019 MCR 실측) 구매의향 비율(purchase_intent_pct, 일부 업종만)과
+        TV광고 영향력(tv_ad_influence_pct, 전 업종)을 조회한다. 절대 수치가 아니라 카테고리 간
+        상대 순위 참고용. '뷰티 평균 대비 어때' 류 업계 대조 질문에 쓴다."""
         return sim_tools.fetch_kobaco_benchmark(category)
 
     read_tools = [

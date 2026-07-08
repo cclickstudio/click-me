@@ -11,7 +11,11 @@ import os
 import uuid
 from collections.abc import AsyncIterator
 
+from core.center_suggestions import create_center_suggestion
+from core.config import settings
+from core.execution_log import record_execution
 from core.tracing import make_trace_config
+from domain.management.contracts.policy import exec_gate_thresholds, is_executable_verdict
 from domain.simulation.adapters.ad_image_store import proxy_url_for
 from domain.simulation.contracts.schemas import SegmentSpec, SimulationRunRequest
 from domain.simulation.tools.aggregation.ocean_segments import ocean_segment_breakdown
@@ -60,6 +64,123 @@ def _simulation_block(run_id, request, ad, reactions, aggregate, panel_version) 
         "model_version": ad.model_version,
         "error_detail": None,
     }
+
+
+async def _record_run_history(request: SimulationRunRequest, result: dict) -> None:
+    """완료 런 1건을 실행 히스토리(롱텀 메모리)에 적재 — UI·직접 API 실행분 회수용.
+
+    채팅 요청행(spawn_persist)과는 payload.stage="completed"로 구분(요청/완료 2행 패턴).
+    project_id 없으면 record_execution이 생략, 실패도 조용히 무시(best-effort·비차단).
+    """
+    agg = result.get("aggregate") or {}
+    click_pct = round(float(agg.get("click_intent_rate") or 0) * 100, 1)
+    reject_pct = round(float(agg.get("rejection_rate") or 0) * 100, 1)
+    await record_execution(
+        request.project_id,
+        "simulation",
+        "run_simulation",
+        f"시뮬레이션 완료 — {request.ad_title} 표본 {request.sample_size}명 "
+        f"클릭 의향률 {click_pct}% 거부율 {reject_pct}%",
+        payload={
+            "stage": "completed",
+            "run_id": result.get("run_id"),
+            "simulation_id": result.get("simulation_id"),
+            "ad_title": request.ad_title,
+            "sample_size": request.sample_size,
+            "click_intent_rate": agg.get("click_intent_rate"),
+            "purchase_intent": agg.get("purchase_intent"),
+            "trust_avg": agg.get("trust_avg"),
+            "rejection_rate": agg.get("rejection_rate"),
+        },
+        user_id=request.user_id,
+    )
+
+
+async def _record_gen_suggestion(request: SimulationRunRequest, result: dict) -> None:
+    """시뮬 완료 직후 "제너레이터 제안"(gen_suggest) 센터 알림을 인라인 생성 — 스펙 §5.2.
+
+    상세(개선안)는 프론트가 source_sim_id로 GET /api/chat/result-summary?kind=sim 재조회.
+    영속화된 런(simulation_id 존재)에서만 — 프로젝트 미선택 런은 귀속할 곳이 없어 생략.
+    best-effort·비차단(create_center_suggestion 내부에서 예외 흡수).
+    """
+    sim_id = result.get("simulation_id")
+    if not sim_id or not request.project_id:
+        return
+    agg = result.get("aggregate") or {}
+    await create_center_suggestion(
+        suggestion_type="gen_suggest",
+        organization_id=request.organization_id,
+        project_id=request.project_id,
+        reason="simulation_improvement",
+        source_sim_id=sim_id,
+        payload={
+            "title": "제너레이터 제안",
+            "message": "시뮬 결과에 맞춘 개선 시안을 생성해 보시겠어요?",
+            "ad_title": request.ad_title,
+            "kpi": {
+                "click_intent_rate": agg.get("click_intent_rate"),
+                "purchase_intent": agg.get("purchase_intent"),
+                "trust_avg": agg.get("trust_avg"),
+                "rejection_rate": agg.get("rejection_rate"),
+            },
+        },
+        dedup_key=f"gen_suggest:{sim_id}",
+    )
+
+
+async def _record_launch_suggestion(request: SimulationRunRequest, result: dict) -> None:
+    """집행 권장 게이트 통과 시 "집행 제안"(launch_suggest) 센터 알림을 인라인 생성.
+
+    판정 정본은 management 집행 게이트(contracts.policy 재사용, 스펙 2026-07-07 §5) —
+    알림 받은 건은 from-simulation 집행 게이트를 반드시 통과한다(409 UX 파탄 방지).
+    영속화된 런(simulation_id 존재)에서만. best-effort·비차단(gen_suggest와 동일).
+    """
+    sim_id = result.get("simulation_id")
+    if not sim_id or not request.project_id:
+        return
+    agg = result.get("aggregate") or {}
+    cir = float(agg.get("click_intent_rate") or 0.0)
+    rej = float(agg.get("rejection_rate") or 0.0)
+    min_cir, max_rej = exec_gate_thresholds(settings)
+    if not is_executable_verdict(cir, rej, min_cir=min_cir, max_rej=max_rej):
+        return
+    await create_center_suggestion(
+        suggestion_type="launch_suggest",
+        organization_id=request.organization_id,
+        project_id=request.project_id,
+        reason="sim_result_good",
+        source_sim_id=sim_id,
+        payload={
+            "title": "집행 제안",
+            "message": "시뮬 결과가 집행 권장 기준을 충족했어요. 이 광고로 캠페인 집행을 검토해 보세요.",
+            "ad_title": request.ad_title,
+            "click_intent_rate": cir,
+            "rejection_rate": rej,
+        },
+        dedup_key=f"launch_suggest:{sim_id}",
+    )
+
+
+async def _record_comparison_history(
+    request: SimulationRunRequest, run_id: str, segments: list[SegmentSpec]
+) -> None:
+    """persona_set 비교 런 1건을 실행 히스토리에 적재(1런=1행) — 세그먼트 라벨로 회수."""
+    labels = [seg.label for seg in segments]
+    await record_execution(
+        request.project_id,
+        "simulation",
+        "run_comparison",
+        f"페르소나 비교 시뮬레이션 완료 — {request.ad_title} "
+        f"세그먼트 {len(segments)}개({', '.join(labels)})",
+        payload={
+            "stage": "completed",
+            "run_id": run_id,
+            "mode": "persona_set",
+            "ad_title": request.ad_title,
+            "segment_labels": labels,
+        },
+        user_id=request.user_id,
+    )
 
 
 class SimulationService:
@@ -111,6 +232,12 @@ class SimulationService:
             store.emit(
                 run_id, {"event": "completed", "result_url": f"/api/simulate/{run_id}/result"}
             )
+            # 실행 확정 지점 롱텀(실행 히스토리) 적재 — UI·채팅 모든 경로가 여기로 수렴.
+            await _record_run_history(request, result)
+            # 센터 제안 알림 — 시뮬 완료 → "제너레이터 제안" 인라인 생성(best-effort).
+            await _record_gen_suggestion(request, result)
+            # 집행 제안 — 집행 권장 게이트 통과 시에만 생성(정본: management contracts.policy).
+            await _record_launch_suggestion(request, result)
         except Exception as exc:
             store.set_status(run_id, "FAILED")
             store.emit(run_id, {"event": "error", "message": str(exc)})
@@ -168,6 +295,8 @@ class SimulationService:
             store.emit(
                 run_id, {"event": "completed", "result_url": f"/api/simulation/{run_id}/result"}
             )
+            # 비교 런도 실행 확정 지점에서 롱텀 적재(1런=1행, 세그먼트 개별행 아님).
+            await _record_comparison_history(request, run_id, segments)
         except Exception as exc:
             store.set_status(run_id, "FAILED")
             store.emit(run_id, {"event": "error", "message": str(exc)})

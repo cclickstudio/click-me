@@ -142,6 +142,9 @@ class Ad(Base):
     industry_category: Mapped[str | None] = mapped_column(String(100))
     product_category: Mapped[str | None] = mapped_column(String(100))
     ad_objective: Mapped[str | None] = mapped_column(String(50))
+    # 생성 출처 — '생성한 광고로 시뮬' 진입 시 그 generation을 느슨히 참조(cross-base라 FK 없음).
+    # 채팅 개선모드가 이 값으로 상품 누끼(product_cutout) 키를 역추적해 재사용한다.
+    generation_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     target_filter: Mapped[dict | None] = mapped_column(JSONB)
     status: Mapped[str] = mapped_column(String(20), server_default="DRAFT")
     created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"))
@@ -346,6 +349,8 @@ class ChatSession(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     project_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("projects.id"), nullable=True)
     title: Mapped[str] = mapped_column(String(200), default="새 채팅")  # 세션 목록 표시용
+    # 세션 개시자(실행자) — 내역 화면 표시용. 시스템/상담 자동생성 세션은 NULL.
+    created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), onupdate=func.now()
@@ -705,6 +710,30 @@ class IdempotencyKeyRow(Base):
     created_at: Mapped[datetime] = mapped_column(_TS, server_default=func.now())
 
 
+class ApprovalRecordRow(Base):
+    """승인 원장 (집행 게이트 #5) — 서버가 발행한 승인만 집행되게 하는 진위 대조 원본."""
+
+    __tablename__ = "management_approval_records"
+    __table_args__ = (
+        Index("ix_mgmt_approval_proposal", "proposal_id"),
+        Index("ix_mgmt_approval_tenant", "tenant_id"),
+    )
+
+    approval_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    proposal_id: Mapped[str] = mapped_column(String(64))
+    proposal_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    tenant_id: Mapped[str] = mapped_column(String(64))
+    approver_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    action_tier: Mapped[int] = mapped_column(Integer, nullable=False)  # ActionTier(IntEnum) 값
+    execution_mode: Mapped[str] = mapped_column(String(16), nullable=False)  # ExecutionMode.value
+    approval_policy_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    expected_state_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    approved_at: Mapped[datetime] = mapped_column(_TS, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(_TS, nullable=False)
+    consumed_at: Mapped[datetime | None] = mapped_column(_TS)  # 집행 성공 시 마킹
+    created_at: Mapped[datetime] = mapped_column(_TS, server_default=func.now())
+
+
 # ──────────────────────────────────────────────
 # Persona Debate (시뮬레이터 4-1 페르소나 토론, simulations 1:N) — db-schema v3.1
 # ──────────────────────────────────────────────
@@ -950,4 +979,49 @@ class ManagementNotification(Base):
     consult_session_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     last_notified_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     followup_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class CenterSuggestion(Base):
+    """센터(우측 통합 알림) 제안 알림 — 잡 완료 직후 인라인 생성되는 크로스도메인 제안.
+
+    스펙: docs/center/center-spec.md §5·§8. management 이상감지(ManagementNotification)와
+    별개 저장소로, 알림 센터가 양쪽을 병합 조회한다. suggestion_type로 종류를 구분하고,
+    유발한 원본(시뮬/제너)을 source_*_id로 역참조해 아코디언 상세(시안 3개·결과 요약)를 만든다.
+    """
+
+    __tablename__ = "center_suggestions"
+    __table_args__ = (
+        Index("ix_center_suggest_org_recent", "organization_id", desc("created_at")),
+        Index("ix_center_suggest_project", "project_id"),
+        # 미처리(dismissed_at IS NULL) 제안은 dedup_key당 1행 — 잡 반복 시 중복 제안 방지.
+        Index(
+            "uq_center_suggest_open_dedup",
+            "dedup_key",
+            unique=True,
+            postgresql_where=text("dismissed_at IS NULL AND dedup_key IS NOT NULL"),
+            sqlite_where=text("dismissed_at IS NULL AND dedup_key IS NOT NULL"),
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    # sim_suggest(시뮬레이션 제안) | gen_suggest(제너레이터 제안) | launch_suggest(집행 제안)
+    suggestion_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    # 발생 이유(트리거) — 예: generator_run · simulation_improvement · sim_result_good
+    reason: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    organization_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False
+    )
+    project_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
+    )
+    # 유발 원본 — gen_suggest·launch_suggest는 시뮬, sim_suggest는 제너를 근거로 상세를 만든다.
+    source_sim_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    source_gen_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    payload: Mapped[dict] = mapped_column(
+        JSONB().with_variant(JSON(), "sqlite"), nullable=False, default=dict
+    )  # 시안 3개 미리보기·시뮬 요약 캐시 등
+    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    dismissed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    dedup_key: Mapped[str | None] = mapped_column(String(200), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
