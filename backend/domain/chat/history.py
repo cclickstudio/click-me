@@ -311,9 +311,26 @@ async def append_turn(
     session = await db.get(ChatSession, sid)
     if session is None:
         return
-    db.add(ChatMessage(session_id=sid, role="user", content=user_content, meta=user_meta or None))
+    # 유저→어시스턴트 순서 보장 — func.now()는 트랜잭션 시작 시각이라 한 턴 두 메시지가 같은
+    # created_at을 받아 정렬(ORDER BY created_at)이 불안정(가끔 역전). base/+1ms로 명시.
+    base = _utcnow()
     db.add(
-        ChatMessage(session_id=sid, role="assistant", content=assistant_content, meta=meta or None)
+        ChatMessage(
+            session_id=sid,
+            role="user",
+            content=user_content,
+            meta=user_meta or None,
+            created_at=base,
+        )
+    )
+    db.add(
+        ChatMessage(
+            session_id=sid,
+            role="assistant",
+            content=assistant_content,
+            meta=meta or None,
+            created_at=base + timedelta(milliseconds=1),
+        )
     )
     # 첫 사용자 발화로 제목 자동 설정(기본 제목일 때만) — 우선 원문 일부를 즉시 넣고(fallback),
     # 커밋 후 LLM 요약으로 비차단 업그레이드한다(F13).

@@ -64,7 +64,13 @@ export default function Page() {
   const heroRef = useRef<HTMLDivElement>(null);
 
   // 히어로 스크롤 패럴랙스 — 배경 blob이 스크롤에 따라 천천히 이동.
-  const { scrollYProgress } = useScroll({ target: heroRef, offset: ['start start', 'end start'] });
+  // layoutEffect:false — early return(로딩/로그인 스피너) 시 heroRef가 미부착 상태라
+  // useLayoutEffect 기반 측정이 "target ref not hydrated" 경고를 낸다. useEffect로 지연해 회피.
+  const { scrollYProgress } = useScroll({
+    target: heroRef,
+    offset: ['start start', 'end start'],
+    layoutEffect: false,
+  });
   const blobY = useTransform(scrollYProgress, [0, 1], [0, 120]);
   const blobOpacity = useTransform(scrollYProgress, [0, 1], [1, 0.2]);
 
