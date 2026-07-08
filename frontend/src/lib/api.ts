@@ -829,10 +829,15 @@ export const api = {
     run: (fault: string) => request(`/management/run?fault=${fault}`),
     regenerate: (diagnosis: unknown) =>
       request("/management/regenerate", { method: "POST", body: JSON.stringify({ diagnosis }) }),
+    // 집행 권장 게이트 임계값 — 판정 정본은 서버, 프론트는 버튼 활성/안내 동기화용
+    execGate: () =>
+      request<{ min_click_intent_rate: number; max_rejection_rate: number }>(
+        "/management/exec-gate",
+      ),
     approve: (proposal: unknown, approved: boolean) =>
       request("/management/approve", {
         method: "POST",
-        body: JSON.stringify({ proposal, approved, approver_id: "user_demo" }),
+        body: JSON.stringify({ proposal, approved }),  // approver_id는 서버가 주입
       }),
     execute: (approved_action: unknown, proposal: unknown) =>
       request("/management/execute", {

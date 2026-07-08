@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from domain.management.contracts.approval_ledger import ApprovalStore
     from domain.management.contracts.platform import AdPlatformReader, AdPlatformWriter
     from domain.management.contracts.schemas import DiagnosisResult
     from domain.management.execution.audit_log import AuditSink
@@ -121,6 +122,30 @@ def build_audit_sink(settings) -> AuditSink:
     return DbAuditSink()
 
 
+_approval_store: ApprovalStore | None = None
+
+
+def build_approval_store(settings) -> ApprovalStore:
+    """승인 원장 — 발행부(라우터)와 executor가 같은 인스턴스를 봐야 하므로 싱글턴.
+
+    use_mock이면 인메모리(단일 프로세스 전제 — 멀티워커면 /approve와 /execute가
+    서로 다른 dict를 봐 위조로 오거부된다. 멀티워커는 use_mock=False=DB로), 아니면 DB.
+    """
+    global _approval_store  # noqa: PLW0603
+    if _approval_store is None:
+        if getattr(settings, "use_mock", True):
+            from domain.management.execution.approval_stores import (  # noqa: PLC0415
+                InMemoryApprovalStore,
+            )
+
+            _approval_store = InMemoryApprovalStore()
+        else:
+            from domain.management.execution.db_stores import DbApprovalStore  # noqa: PLC0415
+
+            _approval_store = DbApprovalStore()
+    return _approval_store
+
+
 def build_checkpointer(settings):
     """어시스턴트 ReAct 그래프의 checkpointer — interrupt(HITL)·멀티턴 재개에 필요.
 
@@ -221,4 +246,5 @@ def build_executor(settings, *, budget=None, audit=None):
         current_policy_version=APPROVAL_POLICY_VERSION,
         allowed_modes=allowed,
         history_recorder=build_history_recorder(),  # 실행 확정 → 롱텀 메모리 기록
+        approvals=build_approval_store(settings),
     )

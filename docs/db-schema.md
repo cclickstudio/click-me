@@ -89,6 +89,7 @@
 | `management_created_campaigns` | 우리가 생성한 캠페인 레지스트리(org 귀속, 소프트 삭제, 시뮬 연결 키) — 덧붙임 07-06 |
 | `management_idempotency_keys` | 실행 멱등키 — 동일 승인 건 중복 집행 차단 — 덧붙임 07-06 |
 | `management_audit_events` | 실행 감사 로그(승인→실행 연결) — 덧붙임 07-06 |
+| `management_approval_records` | 승인 원장 — 서버 발행 승인의 진위 대조, 집행 게이트 #5 — 마이그 0010 |
 | `management_meta_connections` | org별 Meta OAuth 연결(토큰 암호화 저장) — 덧붙임 07-06 |
 | `management_campaign_kpi_overrides` | 캠페인별 KPI 목표(target_roas 등) 덮어쓰기 — 덧붙임 07-06 |
 | `management_kb_documents` / `_kb_chunks` / `_kb_feedback` / `_kb_eval_cases` | 어시스턴트(CLIO) RAG 지식베이스·평가 — 덧붙임 07-06 |
@@ -828,6 +829,29 @@ CREATE TABLE management_notifications (
 CREATE UNIQUE INDEX uq_mgmt_notif_open_dedup ON management_notifications (organization_id, kind, dedup_key)
     WHERE resolved_at IS NULL;
 CREATE INDEX ix_mgmt_notif_org_recent ON management_notifications (organization_id, last_notified_at DESC);
+
+-- ============================================================
+-- management_approval_records  (승인 원장, 집행 게이트 #5 — 마이그 0010)
+-- 서버가 발행한 승인만 집행되게 하는 진위 대조 원본.
+-- 집행기는 approval_id로 이 표를 조회해 proposal_hash·expires_at·consumed_at을 검증한다.
+-- ============================================================
+CREATE TABLE management_approval_records (
+    approval_id               VARCHAR(64)  PRIMARY KEY,
+    proposal_id               VARCHAR(64)  NOT NULL,
+    proposal_hash             VARCHAR(64)  NOT NULL,
+    tenant_id                 VARCHAR(64)  NOT NULL,
+    approver_id               VARCHAR(64)  NOT NULL,
+    action_tier               INTEGER      NOT NULL,            -- ActionTier(IntEnum) 값
+    execution_mode            VARCHAR(16)  NOT NULL,            -- ExecutionMode.value
+    approval_policy_version   VARCHAR(64)  NOT NULL,
+    expected_state_version    VARCHAR(64)  NOT NULL,
+    approved_at               TIMESTAMPTZ  NOT NULL,
+    expires_at                TIMESTAMPTZ  NOT NULL,
+    consumed_at               TIMESTAMPTZ,                      -- 집행 성공 시 마킹 (nullable)
+    created_at                TIMESTAMPTZ  NOT NULL DEFAULT now()
+);
+CREATE INDEX ix_mgmt_approval_proposal ON management_approval_records (proposal_id);
+CREATE INDEX ix_mgmt_approval_tenant   ON management_approval_records (tenant_id);
 
 -- ============================================================
 -- alembic_version  (마이그레이션 버전 추적)
