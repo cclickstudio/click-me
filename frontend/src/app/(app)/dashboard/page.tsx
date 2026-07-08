@@ -3,7 +3,7 @@
 // 역할별(USER/COMPANY/ADMIN) 대시보드 — 한 페이지에서 역할로 분기.
 // ADMIN: 시스템·조직 운영 지표(성과 KPI·재시도 알림 없음). USER/COMPANY: 성과 KPI·주목할 것·크레딧(COMPANY는 예산 관점 강화).
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -31,7 +31,6 @@ import {
 } from 'recharts';
 import { useAuth } from '@/components/AuthProvider';
 import { authedFetch, api } from '@/lib/api';
-import { safeRandomUUID } from '@/lib/utils';
 import { formatKST } from '@/lib/datetime';
 import ModeBadge from '@/components/ModeBadge';
 import { Card } from '@/components/ui/card';
@@ -88,7 +87,6 @@ type UserRow = {
 
 type OrgRow = { id: string; name: string; status: string; created_at: string };
 
-type Message = { role: 'user' | 'assistant'; content: string };
 
 // ────────────────── 상수 ──────────────────
 
@@ -184,12 +182,7 @@ export default function DashboardPage() {
   const [credit, setCredit] = useState<number | null>(null);
   const [loaded, setLoaded] = useState(false);
 
-  const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
-  const [isStreaming, setIsStreaming] = useState(false);
-  const sessionId = useRef<string>('');
-  if (!sessionId.current) sessionId.current = safeRandomUUID();
-  const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     Promise.all([
@@ -222,66 +215,16 @@ export default function DashboardPage() {
     api.billing.balance().then((res) => setCredit(res.balance_krw)).catch(() => setCredit(null));
   }, [isAdmin]);
 
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages, isStreaming]);
-
-  const handleSend = async (text?: string) => {
-    const content = text ?? input.trim();
-    if (!content || isStreaming) return;
-
-    const newMessages: Message[] = [...messages, { role: 'user', content }];
-    setMessages(newMessages);
-    setInput('');
-    setIsStreaming(true);
-
+  // CLIO 런처 — 입력/프롬프트를 /chat으로 실어 보냄. 프로젝트 선택 → 세션 → 딥에이전트 대화(시뮬·시안·리포트·전략).
+  const launchChat = (text?: string) => {
+    const content = (text ?? input).trim();
+    if (!content) return;
     try {
-      const res = await authedFetch(`${API_BASE}/api/chat/complete`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ session_id: sessionId.current, messages: newMessages }),
-      });
-
-      if (!res.ok || !res.body) {
-        setMessages((prev) => [...prev, { role: 'assistant', content: '응답을 가져오는 중 오류가 발생했습니다.' }]);
-        setIsStreaming(false);
-        return;
-      }
-
-      setMessages((prev) => [...prev, { role: 'assistant', content: '' }]);
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer = '';
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-        buffer = lines.pop() ?? '';
-        for (const line of lines) {
-          if (!line.startsWith('data: ')) continue;
-          const raw = line.slice(6).trim();
-          if (!raw) continue;
-          try {
-            const data = JSON.parse(raw) as { token?: string; done?: boolean };
-            if (data.done) setIsStreaming(false);
-            else if (data.token) {
-              setMessages((prev) => {
-                const last = prev[prev.length - 1];
-                return [...prev.slice(0, -1), { ...last, content: last.content + data.token }];
-              });
-            }
-          } catch { /* ignore */ }
-        }
-      }
+      sessionStorage.setItem('clio:draft', content);
     } catch {
-      setMessages((prev) => [...prev, { role: 'assistant', content: '서버에 연결할 수 없습니다.' }]);
-    } finally {
-      setIsStreaming(false);
+      /* sessionStorage 불가 환경 — 초안 없이 /chat 진입 */
     }
+    router.push('/chat');
   };
 
   // 역할별 인사·주요 CTA
@@ -771,7 +714,7 @@ export default function DashboardPage() {
         </>
       )}
 
-      {/* ── CLIO 챗봇 (ADMIN 제외) ── */}
+      {/* ── CLIO 어시스턴트 런처 (ADMIN 제외) — /chat 딥에이전트로 진입 ── */}
       {!isAdmin && (
         <Card className="overflow-hidden p-0">
           <div className="flex items-center justify-between px-6 py-4 border-b border-line">
@@ -787,77 +730,39 @@ export default function DashboardPage() {
             <Link href="/chat" className="text-xs text-primary hover:underline font-medium">전체 화면으로 →</Link>
           </div>
 
-          {/* 메시지 영역 */}
-          <div className="h-64 overflow-y-auto px-6 py-4 space-y-3">
-            {messages.length === 0 ? (
-              <div className="h-full flex flex-col items-center justify-center text-center">
-                <p className="text-xs text-ink-tertiary mb-3">광고 전략에 대해 무엇이든 물어보세요</p>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 w-full max-w-md">
-                  {quickPrompts.map((prompt) => (
-                    <button
-                      key={prompt}
-                      onClick={() => handleSend(prompt)}
-                      className="p-2.5 text-left text-xs text-ink-secondary bg-surface-1 border border-line rounded-xl hover:border-primary hover:text-primary hover:bg-primary-subtle transition-all"
-                    >
-                      {prompt}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <>
-                {messages.map((msg, i) => {
-                  if (msg.role === 'assistant' && msg.content === '') return null;
-                  return (
-                    <div key={i} className={`flex gap-2 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                      {msg.role === 'assistant' && (
-                        <div className="w-5 h-5 shrink-0 flex items-center justify-center rounded-md bg-primary-subtle text-primary mt-0.5">
-                          <MessageSquare size={10} />
-                        </div>
-                      )}
-                      <div className={`max-w-xs px-3 py-2 rounded-xl text-xs leading-relaxed whitespace-pre-wrap ${
-                        msg.role === 'user'
-                          ? 'bg-primary text-primary-foreground rounded-br-sm'
-                          : 'bg-surface-1 text-ink rounded-bl-sm'
-                      }`}>
-                        {msg.content}
-                      </div>
-                    </div>
-                  );
-                })}
-                {isStreaming && messages.at(-1)?.content === '' && (
-                  <div className="flex gap-2 justify-start">
-                    <div className="px-3 py-2 rounded-xl bg-surface-1 flex items-center gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-ink-tertiary animate-bounce [animation-delay:-0.3s]" />
-                      <span className="w-1.5 h-1.5 rounded-full bg-ink-tertiary animate-bounce [animation-delay:-0.15s]" />
-                      <span className="w-1.5 h-1.5 rounded-full bg-ink-tertiary animate-bounce" />
-                    </div>
-                  </div>
-                )}
-                <div ref={bottomRef} />
-              </>
-            )}
-          </div>
-
-          {/* 입력창 */}
-          <div className="px-4 py-3 border-t border-line flex items-end gap-2">
-            <textarea
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
-              placeholder="메시지를 입력하세요..."
-              rows={1}
-              disabled={isStreaming}
-              className="flex-1 px-3 py-2.5 rounded-xl border border-line text-sm text-ink placeholder:text-ink-muted focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-colors resize-none bg-surface-2 disabled:opacity-60"
-              style={{ maxHeight: '80px' }}
-            />
-            <button
-              onClick={() => handleSend()}
-              disabled={!input.trim() || isStreaming}
-              className="p-2.5 bg-primary text-primary-foreground rounded-xl hover:bg-primary-hover disabled:opacity-30 disabled:cursor-not-allowed transition-all shrink-0"
-            >
-              <Send size={15} />
-            </button>
+          <div className="px-6 py-5">
+            <p className="text-xs text-ink-tertiary mb-3">
+              무엇이든 물어보세요 — 프로젝트를 고르면 시뮬레이션·시안 생성·리포트·전략까지 이어집니다.
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-4">
+              {quickPrompts.map((prompt) => (
+                <button
+                  key={prompt}
+                  onClick={() => launchChat(prompt)}
+                  className="p-2.5 text-left text-xs text-ink-secondary bg-surface-1 border border-line rounded-xl hover:border-primary hover:text-primary hover:bg-primary-subtle transition-all"
+                >
+                  {prompt}
+                </button>
+              ))}
+            </div>
+            <div className="flex items-end gap-2">
+              <textarea
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); launchChat(); } }}
+                placeholder="메시지를 입력하고 Enter — CLIO 채팅으로 이동합니다"
+                rows={1}
+                className="flex-1 px-3 py-2.5 rounded-xl border border-line text-sm text-ink placeholder:text-ink-muted focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-colors resize-none bg-surface-2"
+                style={{ maxHeight: '80px' }}
+              />
+              <button
+                onClick={() => launchChat()}
+                disabled={!input.trim()}
+                className="p-2.5 bg-primary text-primary-foreground rounded-xl hover:bg-primary-hover disabled:opacity-30 disabled:cursor-not-allowed transition-all shrink-0"
+              >
+                <Send size={15} />
+              </button>
+            </div>
           </div>
         </Card>
       )}

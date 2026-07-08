@@ -368,7 +368,20 @@ export default function ChatConversation({
   onResultComplete?: (ref: ResultRef) => void; // 시뮬/생성 결과가 도착했을 때(프로액티브 푸시, T18)
 }) {
   const [messages, setMessages] = useState<Message[]>([]);
-  const [input, setInput] = useState('');
+  const [input, setInput] = useState(() => {
+    // 대시보드 CLIO 런처에서 넘어온 초안 — 새 채팅 진입 시 입력에 실어 준다(1회 소비).
+    if (typeof window === 'undefined' || sessionId !== null) return '';
+    try {
+      const draft = sessionStorage.getItem('clio:draft');
+      if (draft) {
+        sessionStorage.removeItem('clio:draft');
+        return draft;
+      }
+    } catch {
+      /* sessionStorage 불가 — 초안 없이 진행 */
+    }
+    return '';
+  });
   const [isStreaming, setIsStreaming] = useState(false);
   // N7 — 새 채팅 진입 시 최근 시뮬/제너 기반 다음 단계 제안(시뮬 후 'improve', 제너 후 'simulate').
   const [nextSuggest, setNextSuggest] = useState<'improve' | 'simulate' | null>(null);
