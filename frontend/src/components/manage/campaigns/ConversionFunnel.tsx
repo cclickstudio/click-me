@@ -20,7 +20,7 @@ export function ConversionFunnel({
   cvr: number | null; // 0~1 실측(링크 클릭 기준 — 분모가 달라요)
 }) {
   const stages = [
-    { label: '노출', value: impressions, unit: '회', bar: 'bg-[#3182F6]' },
+    { label: '노출', value: impressions, unit: '회', bar: 'bg-primary' },
     { label: '클릭', value: clicks, unit: '회', bar: 'bg-[#5B9DF9]' },
     {
       label: '전환',
@@ -35,19 +35,19 @@ export function ConversionFunnel({
   ];
 
   return (
-    <div className="rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] p-4">
-      <p className="text-[12px] font-semibold text-[#4E5968] dark:text-[#9CA3AF]">전환 퍼널</p>
-      <p className="text-[10px] text-[#8B95A1] mb-3">
+    <div className="rounded-xl border border-line p-4">
+      <p className="text-[12px] font-semibold text-ink-secondary">전환 퍼널</p>
+      <p className="text-[10px] text-ink-tertiary mb-3">
         노출→클릭→전환 실측 · CVR은 링크 클릭 기준(CTR의 전체 클릭과 분모가 달라요)
       </p>
       <div className="space-y-0.5">
         {stages.map((s, i) => (
           <div key={s.label}>
             {i > 0 && (
-              <p className="py-0.5 text-center text-[10px] text-[#8B95A1]">▼ {rates[i - 1]}</p>
+              <p className="py-0.5 text-center text-[10px] text-ink-tertiary">▼ {rates[i - 1]}</p>
             )}
             <div className="flex items-center gap-2">
-              <span className="w-8 shrink-0 text-[11px] text-[#8B95A1]">{s.label}</span>
+              <span className="w-8 shrink-0 text-[11px] text-ink-tertiary">{s.label}</span>
               <div className="relative h-8 flex-1">
                 <div
                   className={`absolute left-1/2 top-0 h-full -translate-x-1/2 rounded-lg ${s.bar} flex items-center justify-center transition-all`}

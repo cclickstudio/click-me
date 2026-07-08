@@ -27,9 +27,9 @@ export function OriginTag({ origin }: { origin: Origin }) {
 // 출처 범례 — 화면 상단에 한 줄로 세 계층을 학습시킨다.
 export function OriginLegend({ className = '' }: { className?: string }) {
   return (
-    <div className={`flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-[#8B95A1] ${className}`}>
+    <div className={`flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-ink-tertiary ${className}`}>
       <span className="inline-flex items-center gap-1">
-        <span className="w-1.5 h-1.5 rounded-full bg-[#3182F6]" />
+        <span className="w-1.5 h-1.5 rounded-full bg-primary" />
         Meta 실측
       </span>
       <span className="inline-flex items-center gap-1">

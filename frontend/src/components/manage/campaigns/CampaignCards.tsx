@@ -19,8 +19,8 @@ import { KpiInput } from './KpiInput';
 function Metric({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <p className="text-[12px] text-[#8B95A1]">{label}</p>
-      <p className="text-sm font-bold text-[#191F28] dark:text-[#F2F4F6] tabular-nums">{value}</p>
+      <p className="text-[12px] text-ink-tertiary">{label}</p>
+      <p className="text-sm font-bold text-ink tabular-nums">{value}</p>
     </div>
   );
 }
@@ -60,7 +60,7 @@ export const CampaignCards = memo(function CampaignCards({
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
       {campaigns.map((c) => {
-        const pColor = c.pacing_pct >= 95 ? 'bg-red-500' : c.pacing_pct >= 80 ? 'bg-amber-500' : 'bg-[#3182F6]';
+        const pColor = c.pacing_pct >= 95 ? 'bg-red-500' : c.pacing_pct >= 80 ? 'bg-amber-500' : 'bg-primary';
         const manual = manualKpi?.[c.campaign_id];
         const blocked = metricsBlocked(c); // 권한 거부로 지표 못 불러옴 → '—'/'권한 없음'
         const showPacing = pacingMeaningful(c);
@@ -71,12 +71,12 @@ export const CampaignCards = memo(function CampaignCards({
             onMouseEnter={() => onPrefetch?.(c.campaign_id)}
             className={`text-left rounded-2xl border p-4 transition-colors ${
               selected === c.campaign_id
-                ? 'border-[#3182F6] bg-[#EAF3FF] dark:bg-[#1E293B]'
-                : 'border-[#E5E8EB] dark:border-[#2D3748] hover:border-[#3182F6]/50'
+                ? 'border-primary bg-[#EAF3FF] dark:bg-[#1E293B]'
+                : 'border-line hover:border-primary/50'
             }`}
           >
             <div className="flex items-center justify-between mb-3">
-              <span className="font-bold text-[#191F28] dark:text-[#F2F4F6] truncate pr-2">{c.name}</span>
+              <span className="font-bold text-ink truncate pr-2">{c.name}</span>
               <span className="inline-flex items-center gap-1.5 shrink-0">
                 {c.delivery_blocked && (
                   <span className="rounded-md bg-red-100 px-1.5 py-0.5 text-[10px] font-semibold text-red-700 dark:bg-red-900/30 dark:text-red-400">
@@ -94,7 +94,7 @@ export const CampaignCards = memo(function CampaignCards({
                 {blocked && (
                   <span
                     title="권한 없음 — Meta에서 이 캠페인 지표를 불러올 권한이 없어요."
-                    className="rounded-md bg-[#F2F4F6] px-1.5 py-0.5 text-[10px] font-semibold text-[#8B95A1] dark:bg-[#2D3748] dark:text-[#9CA3AF]"
+                    className="rounded-md bg-[#F2F4F6] px-1.5 py-0.5 text-[10px] font-semibold text-ink-tertiary dark:bg-[#2D3748]"
                   >
                     권한 없음
                   </span>
@@ -114,7 +114,7 @@ export const CampaignCards = memo(function CampaignCards({
                 <Metric label="CVR(전환율)" value="—" />
               ) : c.conversions == null ? (
                 <div>
-                  <p className="text-[12px] text-[#8B95A1]">CVR(전환율)</p>
+                  <p className="text-[12px] text-ink-tertiary">CVR(전환율)</p>
                   <KpiInput
                     manual={manual?.cvr}
                     unit="%"
@@ -128,7 +128,7 @@ export const CampaignCards = memo(function CampaignCards({
                 <Metric label="ROAS(투자수익률)" value="—" />
               ) : c.conversions == null ? (
                 <div>
-                  <p className="text-[12px] text-[#8B95A1]">ROAS(투자수익률)</p>
+                  <p className="text-[12px] text-ink-tertiary">ROAS(투자수익률)</p>
                   <KpiInput
                     manual={manual?.roas}
                     unit="x"
@@ -146,7 +146,7 @@ export const CampaignCards = memo(function CampaignCards({
               )}
             </div>
             <div className="mt-3">
-              <div className="flex items-center justify-between text-[12px] text-[#8B95A1] mb-1">
+              <div className="flex items-center justify-between text-[12px] text-ink-tertiary mb-1">
                 <span title="오늘 지출 ÷ 일예산(하루 상한). 총예산·종료·권한없음은 적용 불가(—)">
                   소진율(하루 상한)
                   <OriginTag origin="computed" />
@@ -166,7 +166,7 @@ export const CampaignCards = memo(function CampaignCards({
                   </span>
                 )}
               </div>
-              <div className="w-full h-1.5 rounded-full bg-[#F2F4F6] dark:bg-[#2D3748] overflow-hidden">
+              <div className="w-full h-1.5 rounded-full bg-surface-1 overflow-hidden">
                 <div
                   className={`h-full ${showPacing ? pColor : 'bg-[#D1D6DB]'}`}
                   style={{ width: `${showPacing ? Math.min(100, c.pacing_pct) : 0}%` }}

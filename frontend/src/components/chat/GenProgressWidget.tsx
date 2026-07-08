@@ -12,7 +12,7 @@ import type { GenerationDetail } from '@/lib/types';
 type Phase = 'running' | 'done' | 'error';
 
 const cardCls =
-  'mt-1 w-full rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-white dark:bg-[#1C2333] p-4';
+  'mt-1 w-full rounded-xl border border-line bg-card p-4';
 
 export default function GenProgressWidget({
   generationId,
@@ -115,20 +115,20 @@ export default function GenProgressWidget({
       <button
         type="button"
         onClick={() => router.push(`/generations/${generationId}`)}
-        className={`${cardCls} w-full text-left hover:border-[#3182F6] transition-colors`}
+        className={`${cardCls} w-full text-left hover:border-primary transition-colors`}
         title="클릭하면 생성 페이지에서 자세히 봐요"
       >
         <div className="flex items-center gap-3">
-          <div className="w-6 h-6 border-[3px] border-[#E5E8EB] dark:border-[#2D3748] border-t-[#3182F6] dark:border-t-[#5B9DF9] rounded-full animate-spin" />
+          <div className="w-6 h-6 border-[3px] border-line border-t-primary dark:border-t-[#5B9DF9] rounded-full animate-spin" />
           <div className="flex-1">
-            <p className="text-sm text-[#191F28] dark:text-[#F2F4F6]">{stageMsg}</p>
-            <div className="mt-1.5 h-1.5 rounded-full bg-[#F2F4F6] dark:bg-[#252D3D] overflow-hidden">
-              <div className="h-full bg-[#3182F6] transition-all duration-300" style={{ width: `${pct}%` }} />
+            <p className="text-sm text-ink">{stageMsg}</p>
+            <div className="mt-1.5 h-1.5 rounded-full bg-surface-1 overflow-hidden">
+              <div className="h-full bg-primary transition-all duration-300" style={{ width: `${pct}%` }} />
             </div>
           </div>
-          <span className="text-xs text-[#8B95A1]">{pct}%</span>
+          <span className="text-xs text-ink-tertiary">{pct}%</span>
         </div>
-        <p className="text-[10px] text-[#B0B8C1] mt-1">클릭하면 전체 화면에서 진행을 봐요 →</p>
+        <p className="text-[10px] text-ink-muted mt-1">클릭하면 전체 화면에서 진행을 봐요 →</p>
       </button>
     );
   }
@@ -145,20 +145,20 @@ export default function GenProgressWidget({
   const cands = detail?.candidates ?? [];
   return (
     <div className={cardCls}>
-      <p className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6] mb-2">
+      <p className="text-sm font-semibold text-ink mb-2">
         ✅ 광고 시안 {cands.length}개 생성 완료
       </p>
       <ul className="space-y-1.5">
         {cands.slice(0, 3).map(c => (
-          <li key={c.candidate_id} className="rounded-lg bg-[#F9FAFB] dark:bg-[#252D3D] px-3 py-2 text-sm">
-            <span className="text-[10px] text-[#8B95A1]">{c.strategy?.strategy_type}</span>
-            <p className="text-[#191F28] dark:text-[#F2F4F6] truncate">{c.copy?.headline}</p>
+          <li key={c.candidate_id} className="rounded-lg bg-surface-1 px-3 py-2 text-sm">
+            <span className="text-[10px] text-ink-tertiary">{c.strategy?.strategy_type}</span>
+            <p className="text-ink truncate">{c.copy?.headline}</p>
           </li>
         ))}
       </ul>
       <button
         onClick={() => router.push(`/generations/${generationId}`)}
-        className="mt-3 w-full py-2 rounded-lg border border-[#3182F6]/30 text-[#3182F6] text-sm font-semibold hover:bg-[#EBF3FF] dark:hover:bg-[#1E3A5F] transition-colors"
+        className="mt-3 w-full py-2 rounded-lg border border-primary/30 text-primary text-sm font-semibold hover:bg-primary-subtle transition-colors"
       >
         상세 보기 →
       </button>

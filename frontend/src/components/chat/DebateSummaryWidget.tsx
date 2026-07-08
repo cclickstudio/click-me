@@ -7,7 +7,7 @@ import { api } from '@/lib/api';
 import type { DebateReport } from '@/lib/types';
 
 const cardCls =
-  'mt-1 w-full rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-white dark:bg-[#1C2333] p-4';
+  'mt-1 w-full rounded-xl border border-line bg-card p-4';
 
 export default function DebateSummaryWidget({ runId }: { runId: string }) {
   const [rep, setRep] = useState<DebateReport | null>(null);
@@ -30,23 +30,23 @@ export default function DebateSummaryWidget({ runId }: { runId: string }) {
 
   return (
     <div className={cardCls}>
-      <p className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6] mb-2">📝 토론 요약</p>
+      <p className="text-sm font-semibold text-ink mb-2">📝 토론 요약</p>
       {err ? (
-        <p className="text-[12px] text-[#B0B8C1]">요약을 불러오지 못했어요.</p>
+        <p className="text-[12px] text-ink-muted">요약을 불러오지 못했어요.</p>
       ) : !rep ? (
-        <p className="text-[12px] text-[#B0B8C1]">요약을 정리하는 중...</p>
+        <p className="text-[12px] text-ink-muted">요약을 정리하는 중...</p>
       ) : (
         <div className="space-y-3">
           {rep.topic && (
-            <p className="text-[12px] text-[#4E5968] dark:text-[#9CA3AF]">
-              <span className="font-semibold text-[#3182F6]">주제 </span>
+            <p className="text-[12px] text-ink-secondary">
+              <span className="font-semibold text-primary">주제 </span>
               {rep.topic}
             </p>
           )}
           {rep.plain_summary && (
             <div className="rounded-xl bg-[#EEF4FF] dark:bg-[#162844] border border-[#D5E3FB] dark:border-[#1E3A5F] p-3">
-              <p className="text-[11px] font-semibold text-[#3182F6] mb-1">한눈에 보는 결론</p>
-              <p className="text-[13px] leading-relaxed text-[#191F28] dark:text-[#F2F4F6]">
+              <p className="text-[11px] font-semibold text-primary mb-1">한눈에 보는 결론</p>
+              <p className="text-[13px] leading-relaxed text-ink">
                 {rep.plain_summary}
               </p>
             </div>
@@ -56,7 +56,7 @@ export default function DebateSummaryWidget({ runId }: { runId: string }) {
               <p className="text-[11px] font-semibold text-[#00A36C] mb-1">합의</p>
               <ul className="space-y-0.5">
                 {rep.consensus.map((c, i) => (
-                  <li key={i} className="text-[12px] text-[#191F28] dark:text-[#F2F4F6]">
+                  <li key={i} className="text-[12px] text-ink">
                     · {c}
                   </li>
                 ))}
@@ -68,7 +68,7 @@ export default function DebateSummaryWidget({ runId }: { runId: string }) {
               <p className="text-[11px] font-semibold text-[#F04452] mb-1">이견</p>
               <ul className="space-y-0.5">
                 {rep.dissent.map((c, i) => (
-                  <li key={i} className="text-[12px] text-[#191F28] dark:text-[#F2F4F6]">
+                  <li key={i} className="text-[12px] text-ink">
                     · {c}
                   </li>
                 ))}
@@ -77,15 +77,15 @@ export default function DebateSummaryWidget({ runId }: { runId: string }) {
           )}
           {rep.ranked_actions?.length > 0 && (
             <div>
-              <p className="text-[11px] font-semibold text-[#4E5968] dark:text-[#9CA3AF] mb-1">개선 권고</p>
+              <p className="text-[11px] font-semibold text-ink-secondary mb-1">개선 권고</p>
               <div className="space-y-1">
                 {rep.ranked_actions.map((a) => (
                   <div key={a.rank} className="flex gap-2 text-[12px]">
-                    <span className="shrink-0 font-bold text-[#3182F6]">{a.rank}.</span>
-                    <span className="text-[#191F28] dark:text-[#F2F4F6]">
+                    <span className="shrink-0 font-bold text-primary">{a.rank}.</span>
+                    <span className="text-ink">
                       {a.action}
                       {a.expected_effect && (
-                        <span className="text-[#8B95A1]"> — {a.expected_effect}</span>
+                        <span className="text-ink-tertiary"> — {a.expected_effect}</span>
                       )}
                     </span>
                   </div>

@@ -122,7 +122,7 @@ interface Props {
 export function PersonaReactionCard({ reaction: r, persona: p, isOpen, onToggle }: Props) {
   return (
     <div
-      className={`bg-white dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748] rounded-xl p-4 transition-colors ${
+      className={`bg-card border border-line rounded-xl p-4 transition-colors ${
         r.qa_passed ? '' : 'opacity-60'
       }`}>
       {/* 인적사항 + AISAS */}
@@ -130,11 +130,11 @@ export function PersonaReactionCard({ reaction: r, persona: p, isOpen, onToggle 
         <button
           type='button'
           onClick={() => p && onToggle()}
-          className='text-sm font-medium text-[#191F28] dark:text-[#F2F4F6] hover:text-[#3182F6] text-left'>
+          className='text-sm font-medium text-ink hover:text-primary text-left'>
           {p ? (
             <>
               {p.age}세 {GENDER_LABEL[p.gender] ?? p.gender} · {p.region}
-              <span className='ml-1 text-[10px] text-[#B0B8C1] dark:text-[#4B5563]'>
+              <span className='ml-1 text-[10px] text-ink-muted'>
                 {isOpen ? '▲' : '▼'}
               </span>
             </>
@@ -142,21 +142,21 @@ export function PersonaReactionCard({ reaction: r, persona: p, isOpen, onToggle 
             r.persona_id
           )}
         </button>
-        <span className='font-mono text-xs text-[#3182F6] dark:text-[#5B9DF9]'>
+        <span className='font-mono text-xs text-primary dark:text-[#5B9DF9]'>
           {aisasFunnel(r.aisas)}
         </span>
       </div>
 
       {/* 반응 요약 뱃지 */}
       <div className='flex flex-wrap items-center gap-1.5 text-[11px] mb-1.5'>
-        <span className='text-[#4E5968] dark:text-[#9CA3AF]'>
+        <span className='text-ink-secondary'>
           구매 {r.purchase_intent} · 신뢰 {r.trust}
         </span>
-        <span className='px-1.5 py-0.5 rounded bg-[#F2F4F6] dark:bg-[#252D3D] text-[#4E5968] dark:text-[#9CA3AF]'>
+        <span className='px-1.5 py-0.5 rounded bg-surface-1 text-ink-secondary'>
           {EMOTION_LABEL[r.emotion_tag] ?? r.emotion_tag}
         </span>
         {r.rejected && (
-          <span className='px-1.5 py-0.5 rounded bg-[#F2F4F6] dark:bg-[#252D3D] text-[#191F28] dark:text-[#F2F4F6]'>
+          <span className='px-1.5 py-0.5 rounded bg-surface-1 text-ink'>
             거부
             {r.rejection_reason_tag
               ? `·${REJECTION_LABEL[r.rejection_reason_tag] ?? r.rejection_reason_tag}`
@@ -164,13 +164,13 @@ export function PersonaReactionCard({ reaction: r, persona: p, isOpen, onToggle 
           </span>
         )}
         {r.drop_stage && (
-          <span className='text-[#B0B8C1] dark:text-[#4B5563]'>
+          <span className='text-ink-muted'>
             이탈 {r.drop_stage}
             {r.drop_reason_tag ? `·${DROP_LABEL[r.drop_reason_tag] ?? r.drop_reason_tag}` : ''}
           </span>
         )}
         {r.exposure_context && (
-          <span className='text-[#B0B8C1] dark:text-[#4B5563]'>노출 {r.exposure_context}</span>
+          <span className='text-ink-muted'>노출 {r.exposure_context}</span>
         )}
         {!r.qa_passed && (
           <span className='text-[#D97706]'>
@@ -180,15 +180,15 @@ export function PersonaReactionCard({ reaction: r, persona: p, isOpen, onToggle 
       </div>
 
       {r.utterance && (
-        <p className='text-sm text-[#4E5968] dark:text-[#9CA3AF]'>{r.utterance}</p>
+        <p className='text-sm text-ink-secondary'>{r.utterance}</p>
       )}
 
       {/* 상세 펼침 */}
       {isOpen && p && (
-        <div className='mt-2 p-3 rounded-lg bg-[#F9FAFB] dark:bg-[#252D3D] text-[11px] space-y-2'>
+        <div className='mt-2 p-3 rounded-lg bg-surface-1 text-[11px] space-y-2'>
           <div>
-            <span className='text-[#8B95A1] dark:text-[#6B7280]'>OCEAN</span>
-            <div className='flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5 text-[#4E5968] dark:text-[#9CA3AF]'>
+            <span className='text-ink-tertiary'>OCEAN</span>
+            <div className='flex flex-wrap gap-x-3 gap-y-0.5 mt-0.5 text-ink-secondary'>
               {Object.entries(p.ocean).map(([dim, v]) => (
                 <span key={dim}>
                   {OCEAN_LABEL[dim] ?? dim} {v.toFixed(2)}
@@ -198,12 +198,12 @@ export function PersonaReactionCard({ reaction: r, persona: p, isOpen, onToggle 
           </div>
           {consumptionChips(p.consumption_values).length > 0 && (
             <div>
-              <span className='text-[#8B95A1] dark:text-[#6B7280]'>중시하는 소비가치</span>
+              <span className='text-ink-tertiary'>중시하는 소비가치</span>
               <div className='flex flex-wrap gap-1 mt-1'>
                 {consumptionChips(p.consumption_values).map(c => (
                   <span
                     key={c}
-                    className='px-1.5 py-0.5 rounded bg-white dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748] text-[#4E5968] dark:text-[#9CA3AF]'>
+                    className='px-1.5 py-0.5 rounded bg-card border border-line text-ink-secondary'>
                     {c}
                   </span>
                 ))}
@@ -212,12 +212,12 @@ export function PersonaReactionCard({ reaction: r, persona: p, isOpen, onToggle 
           )}
           {readableEntries(p.media_behavior, MEDIA_LABEL, formatMediaValue).length > 0 && (
             <div>
-              <span className='text-[#8B95A1] dark:text-[#6B7280]'>미디어 행동</span>
-              <div className='mt-0.5 space-y-0.5 text-[#4E5968] dark:text-[#9CA3AF]'>
+              <span className='text-ink-tertiary'>미디어 행동</span>
+              <div className='mt-0.5 space-y-0.5 text-ink-secondary'>
                 {readableEntries(p.media_behavior, MEDIA_LABEL, formatMediaValue).map(
                   ([label, value]) => (
                     <p key={label}>
-                      <span className='text-[#8B95A1] dark:text-[#6B7280]'>{label}</span>{' '}
+                      <span className='text-ink-tertiary'>{label}</span>{' '}
                       {value}
                     </p>
                   ),
@@ -227,7 +227,7 @@ export function PersonaReactionCard({ reaction: r, persona: p, isOpen, onToggle 
                     {exposureChips(p.media_behavior).map(c => (
                       <span
                         key={c}
-                        className='px-1.5 py-0.5 rounded bg-white dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748]'>
+                        className='px-1.5 py-0.5 rounded bg-card border border-line'>
                         {c}
                       </span>
                     ))}
@@ -238,11 +238,11 @@ export function PersonaReactionCard({ reaction: r, persona: p, isOpen, onToggle 
           )}
           {readableEntries(p.socioeconomic, SOCIO_LABEL).length > 0 && (
             <div>
-              <span className='text-[#8B95A1] dark:text-[#6B7280]'>사회경제</span>
-              <div className='mt-0.5 space-y-0.5 text-[#4E5968] dark:text-[#9CA3AF]'>
+              <span className='text-ink-tertiary'>사회경제</span>
+              <div className='mt-0.5 space-y-0.5 text-ink-secondary'>
                 {readableEntries(p.socioeconomic, SOCIO_LABEL).map(([label, value]) => (
                   <p key={label}>
-                    <span className='text-[#8B95A1] dark:text-[#6B7280]'>{label}</span> {value}
+                    <span className='text-ink-tertiary'>{label}</span> {value}
                   </p>
                 ))}
               </div>
@@ -250,11 +250,11 @@ export function PersonaReactionCard({ reaction: r, persona: p, isOpen, onToggle 
           )}
           {p.profile_narrative && (
             <div>
-              <span className='text-[#8B95A1] dark:text-[#6B7280]'>프로필 서사</span>
-              <p className='mt-0.5 text-[#4E5968] dark:text-[#9CA3AF]'>{p.profile_narrative}</p>
+              <span className='text-ink-tertiary'>프로필 서사</span>
+              <p className='mt-0.5 text-ink-secondary'>{p.profile_narrative}</p>
             </div>
           )}
-          <span className='inline-block text-[10px] text-[#B0B8C1] dark:text-[#4B5563]'>
+          <span className='inline-block text-[10px] text-ink-muted'>
             가중치 {p.weight}
           </span>
         </div>

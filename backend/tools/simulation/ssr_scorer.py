@@ -1,3 +1,6 @@
+import hashlib
+import os
+
 import numpy as np
 from openai import AsyncOpenAI
 
@@ -14,7 +17,8 @@ class SSRScorer:
     """
 
     def __init__(self) -> None:
-        self.client = AsyncOpenAI()
+        self.use_mock = os.getenv("USE_MOCK", "").lower() in {"1", "true", "yes", "on"}
+        self.client = None if self.use_mock else AsyncOpenAI()
         self._anchor_embeddings: dict[str, np.ndarray] = {}
 
     async def precompute_anchors(self) -> None:
@@ -25,11 +29,17 @@ class SSRScorer:
                 all_anchors.append(anchor)
                 index_map.append((dim, i))
 
-        response = await self.client.embeddings.create(model=EMBEDDING_MODEL, input=all_anchors)
-
         by_dim: dict[str, list[list[float]]] = {d: [] for d in ANCHOR_STATEMENTS}
-        for (dim, _), emb_obj in zip(index_map, response.data, strict=False):
-            by_dim[dim].append(emb_obj.embedding)
+        if self.use_mock:
+            embeddings = self._mock_embeddings(all_anchors)
+            for (dim, _), embedding in zip(index_map, embeddings, strict=False):
+                by_dim[dim].append(embedding)
+        else:
+            if self.client is None:
+                raise RuntimeError("SSR scorer OpenAI client is not initialized.")
+            response = await self.client.embeddings.create(model=EMBEDDING_MODEL, input=all_anchors)
+            for (dim, _), emb_obj in zip(index_map, response.data, strict=False):
+                by_dim[dim].append(emb_obj.embedding)
 
         for dim, emb_list in by_dim.items():
             self._anchor_embeddings[dim] = np.array(emb_list, dtype=np.float32)
@@ -40,8 +50,13 @@ class SSRScorer:
                 "SSR scorer is not initialized. "
                 "Anchor precomputation failed at startup — check OpenAI API quota."
             )
-        resp = await self.client.embeddings.create(model=EMBEDDING_MODEL, input=[exposure_text])
-        response_emb = np.array(resp.data[0].embedding, dtype=np.float32)
+        if self.use_mock:
+            response_emb = np.array(self._mock_embeddings([exposure_text])[0], dtype=np.float32)
+        else:
+            if self.client is None:
+                raise RuntimeError("SSR scorer OpenAI client is not initialized.")
+            resp = await self.client.embeddings.create(model=EMBEDDING_MODEL, input=[exposure_text])
+            response_emb = np.array(resp.data[0].embedding, dtype=np.float32)
 
         scores: dict[str, ScoreDistribution] = {}
         rng = np.random.default_rng(42)
@@ -69,6 +84,18 @@ class SSRScorer:
             )
 
         return scores
+
+    @staticmethod
+    def _mock_embeddings(texts: list[str], dim: int = 64) -> list[list[float]]:
+        embeddings: list[list[float]] = []
+        for text in texts:
+            digest = hashlib.sha256(text.encode("utf-8")).digest()
+            seed = int.from_bytes(digest[:8], "big", signed=False)
+            rng = np.random.default_rng(seed)
+            vec = rng.normal(size=dim).astype(np.float32)
+            vec /= np.linalg.norm(vec) + 1e-9
+            embeddings.append(vec.tolist())
+        return embeddings
 
     @staticmethod
     def build_input_text(exposure: dict, deliberation: dict) -> str:

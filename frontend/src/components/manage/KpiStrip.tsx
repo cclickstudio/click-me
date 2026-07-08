@@ -18,12 +18,12 @@ export function KpiStrip({ run }: { run: RunResult | null }) {
       {cards.map((c) => (
         <div
           key={c.label}
-          className={`bg-white dark:bg-[#1C2333] border rounded-2xl p-5 ${
-            c.alert ? "border-[#E5484D]" : "border-[#E5E8EB] dark:border-[#2D3748]"
+          className={`bg-card border rounded-2xl p-5 ${
+            c.alert ? "border-[#E5484D]" : "border-line"
           }`}
         >
-          <p className="text-xs text-[#8B95A1] mb-1">{c.label}</p>
-          <p className={`text-2xl font-bold ${c.alert ? "text-[#E5484D]" : "text-[#191F28] dark:text-[#F2F4F6]"}`}>
+          <p className="text-xs text-ink-tertiary mb-1">{c.label}</p>
+          <p className={`text-2xl font-bold ${c.alert ? "text-[#E5484D]" : "text-ink"}`}>
             {c.value}
           </p>
         </div>

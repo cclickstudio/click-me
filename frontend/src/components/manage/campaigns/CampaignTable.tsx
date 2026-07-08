@@ -95,31 +95,31 @@ export const CampaignTable = memo(function CampaignTable({
 
   const arrow = (key: SortKey) =>
     sortKey === key ? (
-      <span className="ml-0.5 text-[#3182F6]">{sortDesc ? '▼' : '▲'}</span>
+      <span className="ml-0.5 text-primary">{sortDesc ? '▼' : '▲'}</span>
     ) : null;
 
   const thSort = (key: SortKey, label: string, sub?: string, title?: string, cls = '') => (
     <th
-      className={`text-right font-semibold px-3 py-2.5 cursor-pointer select-none hover:text-[#3182F6] ${cls}`}
+      className={`text-right font-semibold px-3 py-2.5 cursor-pointer select-none hover:text-primary ${cls}`}
       title={title ?? '클릭하면 정렬'}
       onClick={() => toggleSort(key)}
     >
       {label}
       {arrow(key)}
       {sub && (
-        <span className="block font-normal text-[11px] text-[#8B95A1] leading-tight">{sub}</span>
+        <span className="block font-normal text-[11px] text-ink-tertiary leading-tight">{sub}</span>
       )}
     </th>
   );
 
   return (
-    <div className="rounded-2xl border border-[#E5E8EB] dark:border-[#2D3748] overflow-hidden">
+    <div className="rounded-2xl border border-line overflow-hidden">
       {/* 툴바 — 컬럼 밀도 토글(핵심만 훑기 vs 전체 지표) */}
-      <div className="flex items-center justify-end gap-2 px-3 py-2 bg-[#F9FAFB] dark:bg-[#1A202C] border-b border-[#F2F4F6] dark:border-[#2D3748]">
-        <span className="text-[11px] text-[#8B95A1]">
+      <div className="flex items-center justify-end gap-2 px-3 py-2 bg-surface-1 border-b border-line">
+        <span className="text-[11px] text-ink-tertiary">
           {sortKey ? '정렬 적용 중 — 헤더 재클릭으로 해제' : '헤더 클릭으로 정렬'}
         </span>
-        <div className="flex rounded-lg border border-[#E5E8EB] dark:border-[#2D3748] overflow-hidden text-[11px]">
+        <div className="flex rounded-lg border border-line overflow-hidden text-[11px]">
           {(
             [
               ['core', '핵심 지표'],
@@ -131,8 +131,8 @@ export const CampaignTable = memo(function CampaignTable({
               onClick={() => setMode(key)}
               className={`px-2.5 py-1 ${
                 mode === key
-                  ? 'bg-[#3182F6] text-white'
-                  : 'text-[#8B95A1] hover:bg-[#F2F4F6] dark:hover:bg-[#2D3748]'
+                  ? 'bg-primary text-primary-foreground'
+                  : 'text-ink-tertiary hover:bg-[#F2F4F6] dark:hover:bg-[#2D3748]'
               }`}
             >
               {label}
@@ -142,12 +142,12 @@ export const CampaignTable = memo(function CampaignTable({
       </div>
       <table className="w-full text-sm [&_td]:whitespace-nowrap [&_th]:whitespace-nowrap">
         <thead>
-          <tr className="bg-[#F9FAFB] dark:bg-[#1A202C] text-[#4E5968] dark:text-[#9CA3AF] text-xs">
+          <tr className="bg-surface-1 text-ink-secondary text-xs">
             <th className="text-left font-semibold px-4 py-2.5 w-full">캠페인</th>
             <th className="text-left font-semibold px-3 py-2.5">상태</th>
             {all && (
               <th
-                className="text-right font-semibold px-3 py-2.5 cursor-pointer select-none hover:text-[#3182F6]"
+                className="text-right font-semibold px-3 py-2.5 cursor-pointer select-none hover:text-primary"
                 title="하루 최대 한도 (총액 아님) · 클릭하면 정렬"
                 onClick={() => toggleSort('daily_budget_krw')}
               >
@@ -173,17 +173,17 @@ export const CampaignTable = memo(function CampaignTable({
               title="전환율 = 전환수 ÷ 링크 클릭수 (광고가 클릭을 전환으로 얼마나 잘 바꿨나). CTR의 전체 클릭과 분모가 달라요. 전환 추적 전이면 셀에 직접 입력(추정)"
             >
               CVR
-              <span className="block font-normal text-[11px] text-[#8B95A1] leading-tight">전환율</span>
+              <span className="block font-normal text-[11px] text-ink-tertiary leading-tight">전환율</span>
             </th>
             <th
               className={`text-right font-semibold px-3 py-2.5 ${all ? 'hidden lg:table-cell' : ''}`}
               title="투자수익률 = (전환가치 × 전환수) ÷ 지출. 전환가치를 모르면 셀에 직접 입력(추정)"
             >
               ROAS
-              <span className="block font-normal text-[11px] text-[#8B95A1] leading-tight">투자수익률</span>
+              <span className="block font-normal text-[11px] text-ink-tertiary leading-tight">투자수익률</span>
             </th>
             <th
-              className="text-right font-semibold px-4 py-2.5 cursor-pointer select-none hover:text-[#3182F6]"
+              className="text-right font-semibold px-4 py-2.5 cursor-pointer select-none hover:text-primary"
               title="당일 일예산(하루 상한) 대비 지출(=지출÷일예산). 종료 캠페인은 의미 없어 '종료'로 표시 · 클릭하면 정렬"
               onClick={() => toggleSort('pacing_pct')}
             >
@@ -198,13 +198,13 @@ export const CampaignTable = memo(function CampaignTable({
             <Fragment key={c.campaign_id}>
             <tr
               onMouseEnter={() => onPrefetch?.(c.campaign_id)}
-              className={`border-t border-[#F2F4F6] dark:border-[#2D3748] ${
+              className={`border-t border-line ${
                 selected === c.campaign_id
                   ? 'bg-[#EAF3FF] dark:bg-[#1E293B]'
                   : 'hover:bg-[#F9FAFB] dark:hover:bg-[#1A202C]'
               }`}
             >
-              <td className="px-4 py-3 font-medium text-[#191F28] dark:text-[#F2F4F6]">{c.name}</td>
+              <td className="px-4 py-3 font-medium text-ink">{c.name}</td>
               <td className="px-3 py-3">
                 <span className="inline-flex items-center gap-1.5">
                   <StateBadge state={c.state} />
@@ -224,7 +224,7 @@ export const CampaignTable = memo(function CampaignTable({
                   {metricsBlocked(c) && (
                     <span
                       title="권한 없음 — Meta에서 이 캠페인 지표를 불러올 권한이 없어요."
-                      className="rounded-md bg-[#F2F4F6] px-1.5 py-0.5 text-[10px] font-semibold text-[#8B95A1] dark:bg-[#2D3748] dark:text-[#9CA3AF]"
+                      className="rounded-md bg-[#F2F4F6] px-1.5 py-0.5 text-[10px] font-semibold text-ink-tertiary dark:bg-[#2D3748]"
                     >
                       권한 없음
                     </span>
@@ -232,40 +232,40 @@ export const CampaignTable = memo(function CampaignTable({
                 </span>
               </td>
               {all && (
-                <td className="px-3 py-3 text-right tabular-nums text-[#191F28] dark:text-[#F2F4F6]">
+                <td className="px-3 py-3 text-right tabular-nums text-ink">
                   {budgetLabel(c)}
                 </td>
               )}
               {all && (
-                <td className="px-3 py-3 text-right tabular-nums text-[#191F28] dark:text-[#F2F4F6]">
+                <td className="px-3 py-3 text-right tabular-nums text-ink">
                   {metricsBlocked(c) ? <Blocked label="—" /> : c.impressions.toLocaleString()}
                 </td>
               )}
               {all && (
-                <td className="px-3 py-3 text-right tabular-nums text-[#191F28] dark:text-[#F2F4F6] hidden sm:table-cell">
+                <td className="px-3 py-3 text-right tabular-nums text-ink hidden sm:table-cell">
                   {metricsBlocked(c) ? <Blocked label="—" /> : c.clicks.toLocaleString()}
                 </td>
               )}
-              <td className="px-3 py-3 text-right tabular-nums text-[#191F28] dark:text-[#F2F4F6]">
+              <td className="px-3 py-3 text-right tabular-nums text-ink">
                 {metricsBlocked(c) ? <Blocked label="—" /> : `₩${c.spend_krw.toLocaleString()}`}
               </td>
               <td
-                className={`px-3 py-3 text-right tabular-nums text-[#191F28] dark:text-[#F2F4F6] ${all ? 'hidden md:table-cell' : ''}`}
+                className={`px-3 py-3 text-right tabular-nums text-ink ${all ? 'hidden md:table-cell' : ''}`}
               >
                 {metricsBlocked(c) ? <Blocked label="—" /> : `${(c.ctr * 100).toFixed(1)}%`}
               </td>
               {all && (
-                <td className="px-3 py-3 text-right tabular-nums text-[#191F28] dark:text-[#F2F4F6] hidden md:table-cell">
+                <td className="px-3 py-3 text-right tabular-nums text-ink hidden md:table-cell">
                   {metricsBlocked(c) ? <Blocked label="—" /> : `₩${c.cpc_krw.toLocaleString()}`}
                 </td>
               )}
               {all && (
-                <td className="px-3 py-3 text-right tabular-nums text-[#191F28] dark:text-[#F2F4F6] hidden lg:table-cell">
+                <td className="px-3 py-3 text-right tabular-nums text-ink hidden lg:table-cell">
                   {metricsBlocked(c) ? <Blocked label="—" /> : `₩${c.cpm_krw.toLocaleString()}`}
                 </td>
               )}
               <td
-                className={`px-3 py-3 text-right tabular-nums text-[#191F28] dark:text-[#F2F4F6] ${all ? 'hidden lg:table-cell' : ''}`}
+                className={`px-3 py-3 text-right tabular-nums text-ink ${all ? 'hidden lg:table-cell' : ''}`}
               >
                 {/* 권한 없음 > 실측 있으면 읽기전용 > 미설정이면 직접 입력(추정) */}
                 {metricsBlocked(c) ? (
@@ -291,7 +291,7 @@ export const CampaignTable = memo(function CampaignTable({
                   />
                 ) : (
                   <span className="inline-flex items-center justify-end gap-1">
-                    <span className="text-[#191F28] dark:text-[#F2F4F6]">
+                    <span className="text-ink">
                       {fmtRoas(c.roas, c.conversions, c.roas_estimated)}
                     </span>
                     {c.target_missed && (
@@ -304,7 +304,7 @@ export const CampaignTable = memo(function CampaignTable({
                 {pacingMeaningful(c) ? (
                   <PacingCell pct={c.pacing_pct} />
                 ) : (
-                  <span className="text-xs text-[#8B95A1]">
+                  <span className="text-xs text-ink-tertiary">
                     {c.state === 'ended'
                       ? '종료'
                       : metricsBlocked(c)
@@ -319,7 +319,7 @@ export const CampaignTable = memo(function CampaignTable({
                     onClick={() => onDelete(c.campaign_id, c.name)}
                     aria-label="캠페인 삭제"
                     title="삭제 (Meta에서도 삭제)"
-                    className="text-[#B0B8C1] hover:text-red-500 p-1 align-middle"
+                    className="text-ink-muted hover:text-red-500 p-1 align-middle"
                   >
                     <svg
                       width="15"
@@ -340,7 +340,7 @@ export const CampaignTable = memo(function CampaignTable({
                   onClick={() => onSelect(c.campaign_id)}
                   aria-label="상세 펼치기"
                   aria-expanded={selected === c.campaign_id}
-                  className="text-[#8B95A1] hover:text-[#3182F6] p-1 align-middle"
+                  className="text-ink-tertiary hover:text-primary p-1 align-middle"
                 >
                   <svg
                     width="16"
@@ -360,8 +360,8 @@ export const CampaignTable = memo(function CampaignTable({
             </tr>
             {selected === c.campaign_id && detail && (
               <tr>
-                <td colSpan={colCount} className="p-0 border-t border-[#F2F4F6] dark:border-[#2D3748]">
-                  <div className="px-4 py-4 bg-[#F9FAFB] dark:bg-[#161B26]">
+                <td colSpan={colCount} className="p-0 border-t border-line">
+                  <div className="px-4 py-4 bg-surface-1">
                     <CampaignDetail
                       detail={detail}
                       source={source}
@@ -388,13 +388,13 @@ export const CampaignTable = memo(function CampaignTable({
 });
 
 function PacingCell({ pct }: { pct: number }) {
-  const color = 'bg-[#3182F6]'; // 누적지출/일예산 — 누적이라 초과 정상, 경보색 제거
+  const color = 'bg-primary'; // 누적지출/일예산 — 누적이라 초과 정상, 경보색 제거
   return (
     <div className="flex items-center justify-end gap-2">
-      <div className="w-16 h-1.5 rounded-full bg-[#F2F4F6] dark:bg-[#2D3748] overflow-hidden">
+      <div className="w-16 h-1.5 rounded-full bg-surface-1 overflow-hidden">
         <div className={`h-full ${color}`} style={{ width: `${Math.min(100, pct)}%` }} />
       </div>
-      <span className="tabular-nums text-xs text-[#191F28] dark:text-[#F2F4F6] w-10 text-right">
+      <span className="tabular-nums text-xs text-ink w-10 text-right">
         {pct.toFixed(0)}%
       </span>
     </div>

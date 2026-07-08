@@ -105,24 +105,24 @@ export function JobProgress({
   const barPct = status === 'done' ? 100 : hasPct ? pct : status === 'error' ? 100 : 35;
 
   return (
-    <div className="w-full rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-[#F9FAFB] dark:bg-[#1C2333] px-3 py-2.5">
+    <div className="w-full rounded-xl border border-line bg-surface-1 px-3 py-2.5">
       <div className="flex items-center justify-between mb-1.5">
-        <p className="text-[10px] font-semibold text-[#8B95A1] dark:text-[#6B7280]">
+        <p className="text-[10px] font-semibold text-ink-tertiary">
           {status === 'done' ? lab.done : status === 'error' ? lab.err : lab.run}
         </p>
         {hasPct && status !== 'error' && (
-          <span className="text-[10px] text-[#8B95A1] dark:text-[#6B7280]">{pct}%</span>
+          <span className="text-[10px] text-ink-tertiary">{pct}%</span>
         )}
       </div>
-      <div className="h-1.5 w-full rounded-full bg-[#E5E8EB] dark:bg-[#2D3748] overflow-hidden">
+      <div className="h-1.5 w-full rounded-full bg-surface-1 overflow-hidden">
         <div
           className={`h-full rounded-full transition-all duration-500 ${
-            status === 'error' ? 'bg-red-400' : 'bg-[#3182F6]'
+            status === 'error' ? 'bg-red-400' : 'bg-primary'
           } ${status === 'running' && !hasPct ? 'animate-pulse' : ''}`}
           style={{ width: `${barPct}%` }}
         />
       </div>
-      <p className="text-[11px] text-[#4E5968] dark:text-[#9CA3AF] mt-1.5">{stageMsg}</p>
+      <p className="text-[11px] text-ink-secondary mt-1.5">{stageMsg}</p>
       {status === 'done' && <Summary kind={kind} result={result} />}
     </div>
   );
@@ -131,7 +131,7 @@ export function JobProgress({
 function Summary({ kind, result }: { kind: JobKind; result: Record<string, unknown> | null }) {
   if (!result || (result as { error?: string }).error) {
     return (
-      <p className="text-[10px] text-[#B0B8C1] dark:text-[#6B7280] mt-1.5">
+      <p className="text-[10px] text-ink-muted mt-1.5">
         완료됐어요. 결과가 저장되지 않았을 수 있어요 — 좌측 프로젝트 목록도 확인해 보세요.
       </p>
     );
@@ -152,7 +152,7 @@ function Summary({ kind, result }: { kind: JobKind; result: Record<string, unkno
     const cands = (result.candidates ?? []) as Array<{ qa_passed?: boolean }>;
     const passed = cands.filter((c) => c?.qa_passed).length;
     return (
-      <p className="text-[11px] text-[#4E5968] dark:text-[#9CA3AF] mt-2">
+      <p className="text-[11px] text-ink-secondary mt-2">
         시안 <b>{cands.length}</b>개 생성 · QA 통과 <b>{passed}</b>개 — 좌측 프로젝트의 광고 시안 목록에서 확인하세요.
       </p>
     );
@@ -160,7 +160,7 @@ function Summary({ kind, result }: { kind: JobKind; result: Record<string, unkno
   // debate
   const topic = (result.topic ?? {}) as { headline?: string };
   return (
-    <p className="text-[11px] text-[#4E5968] dark:text-[#9CA3AF] mt-2">
+    <p className="text-[11px] text-ink-secondary mt-2">
       {topic.headline ? `토론 주제: ${topic.headline}` : '토론이 완료됐어요.'} — &quot;토론 결과 보여줘&quot;라고 하시면 상세를 보여드릴게요.
     </p>
   );
@@ -169,8 +169,8 @@ function Summary({ kind, result }: { kind: JobKind; result: Record<string, unkno
 function Kpi({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-lg bg-white dark:bg-[#252D3D] px-2 py-1.5">
-      <p className="text-[10px] text-[#8B95A1] dark:text-[#6B7280]">{label}</p>
-      <p className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]">{value}</p>
+      <p className="text-[10px] text-ink-tertiary">{label}</p>
+      <p className="text-sm font-semibold text-ink">{value}</p>
     </div>
   );
 }

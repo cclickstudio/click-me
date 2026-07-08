@@ -132,10 +132,10 @@ export default function Page() {
   return (
       <div className="max-w-screen-md mx-auto px-6 py-8">
         <div className="mb-8">
-          <h1 className="text-2xl font-bold text-[#191F28] dark:text-[#F2F4F6]">
+          <h1 className="text-2xl font-bold text-ink">
             크레딧 충전 (예산 한도)
           </h1>
-          <p className="text-sm text-[#8B95A1] dark:text-[#6B7280] mt-1">
+          <p className="text-sm text-ink-tertiary mt-1">
             크레딧은 캠페인 <b>집행 상한(예산 한도)</b>입니다. 실제 광고비는 Meta 광고계정 선불
             잔액에서 차감돼요 (Meta 선불 충전은 Ads Manager). · 테스트 키 사용 중
           </p>
@@ -146,19 +146,19 @@ export default function Page() {
         </div>
 
         {presetFromCampaign && step === 'select' && (
-          <div className="mb-4 rounded-xl bg-[#EBF3FF] dark:bg-[#1E3A5F] border border-[#3182F6]/30 p-3">
-            <p className="text-sm text-[#3182F6] font-medium">
+          <div className="mb-4 rounded-xl bg-primary-subtle border border-primary/30 p-3">
+            <p className="text-sm text-primary font-medium">
               게재에 필요한 예산만큼 충전 금액을 채워뒀어요.
             </p>
-            <p className="text-xs text-[#4E5968] dark:text-[#9CA3AF] mt-1">
+            <p className="text-xs text-ink-secondary mt-1">
               충전을 완료하면 만들던 캠페인 게재가 자동으로 이어집니다.
             </p>
           </div>
         )}
 
         {step === 'select' && (
-          <div className="bg-white dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748] rounded-2xl p-6">
-            <p className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6] mb-4">충전 금액</p>
+          <div className="bg-card border border-line rounded-2xl p-6">
+            <p className="text-sm font-semibold text-ink mb-4">충전 금액</p>
             <div className="grid grid-cols-3 gap-3 mb-4">
               {PRESETS.map((preset) => (
                 <button
@@ -166,8 +166,8 @@ export default function Page() {
                   onClick={() => setAmount(preset)}
                   className={`py-3 rounded-xl text-sm font-medium border transition-colors ${
                     amount === preset
-                      ? 'border-[#3182F6] bg-[#3182F6]/10 text-[#3182F6]'
-                      : 'border-[#E5E8EB] dark:border-[#2D3748] text-[#191F28] dark:text-[#F2F4F6]'
+                      ? 'border-primary bg-primary/10 text-primary'
+                      : 'border-line text-ink'
                   }`}
                 >
                   {preset.toLocaleString()}원
@@ -180,12 +180,12 @@ export default function Page() {
               step={1000}
               value={amount}
               onChange={(e) => setAmount(Math.max(0, Number(e.target.value)))}
-              className="w-full px-4 py-3 mb-6 rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-transparent text-[#191F28] dark:text-[#F2F4F6] text-sm"
+              className="w-full px-4 py-3 mb-6 rounded-xl border border-line bg-transparent text-ink text-sm"
             />
             <button
               onClick={startCheckout}
               disabled={loading || amount <= 0}
-              className="w-full py-3 bg-[#3182F6] text-white text-sm font-medium rounded-xl hover:bg-[#1B6EEB] transition-colors disabled:opacity-40"
+              className="w-full py-3 bg-primary text-primary-foreground text-sm font-medium rounded-xl hover:bg-primary-hover transition-colors disabled:opacity-40"
             >
               {loading ? '결제 준비 중…' : `${amount.toLocaleString()}원 결제 진행`}
             </button>
@@ -193,12 +193,12 @@ export default function Page() {
         )}
 
         {step === 'pay' && (
-          <div className="bg-white dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748] rounded-2xl p-6">
+          <div className="bg-card border border-line rounded-2xl p-6">
             <div id="payment-methods" />
             <div id="agreement" />
             <button
               onClick={requestPayment}
-              className="w-full mt-4 py-3 bg-[#3182F6] text-white text-sm font-medium rounded-xl hover:bg-[#1B6EEB] transition-colors"
+              className="w-full mt-4 py-3 bg-primary text-primary-foreground text-sm font-medium rounded-xl hover:bg-primary-hover transition-colors"
             >
               {amount.toLocaleString()}원 결제하기
             </button>
@@ -212,8 +212,8 @@ export default function Page() {
         )}
 
         {charges.length > 0 && (
-          <div className="mt-8 bg-white dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748] rounded-2xl p-6">
-            <h2 className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6] mb-4">
+          <div className="mt-8 bg-card border border-line rounded-2xl p-6">
+            <h2 className="text-sm font-semibold text-ink mb-4">
               충전 내역
             </h2>
             <div className="space-y-3">
@@ -222,18 +222,18 @@ export default function Page() {
                 return (
                   <div
                     key={entry.entry_id}
-                    className="flex items-center justify-between gap-4 rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] p-4"
+                    className="flex items-center justify-between gap-4 rounded-xl border border-line p-4"
                   >
                     <div>
-                      <p className="text-sm font-medium text-[#191F28] dark:text-[#F2F4F6]">
+                      <p className="text-sm font-medium text-ink">
                         {entry.delta_krw.toLocaleString()}원
                       </p>
-                      <p className="text-xs text-[#8B95A1] dark:text-[#6B7280] mt-1">
+                      <p className="text-xs text-ink-tertiary mt-1">
                         {formatKSTFull(entry.created_at)}
                       </p>
                     </div>
                     {refunded ? (
-                      <span className="text-xs font-medium text-[#8B95A1]">취소 완료</span>
+                      <span className="text-xs font-medium text-ink-tertiary">취소 완료</span>
                     ) : (
                       <button
                         type="button"

@@ -5,7 +5,7 @@ import { Sparkline } from '@/components/manage/monitoring/Sparkline';
 function DeltaTag({ delta, label }: { delta: number | null; label: string }) {
   if (delta == null) return null;
   const pct = Math.round(delta * 100);
-  if (pct === 0) return <span className="text-[10px] text-[#8B95A1]">{label} →0%</span>;
+  if (pct === 0) return <span className="text-[10px] text-ink-tertiary">{label} →0%</span>;
   const up = pct > 0;
   return (
     <span
@@ -41,11 +41,11 @@ export function StatCard({
   const hasSpark = series != null && series.filter((v) => Number.isFinite(v)).length >= 2;
   return (
     <div
-      className={`bg-white dark:bg-[#1C2333] border rounded-2xl p-5 ${
-        alert ? 'border-[#E5484D]' : 'border-[#E5E8EB] dark:border-[#2D3748]'
+      className={`bg-card border rounded-2xl p-5 ${
+        alert ? 'border-[#E5484D]' : 'border-line'
       }`}
     >
-      <p className="text-xs text-[#8B95A1] mb-1">
+      <p className="text-xs text-ink-tertiary mb-1">
         {label}
         {origin && <OriginTag origin={origin} />}
       </p>
@@ -53,7 +53,7 @@ export function StatCard({
         <div className="min-w-0">
           <p
             className={`text-2xl font-bold tabular-nums ${
-              alert ? 'text-[#E5484D]' : 'text-[#191F28] dark:text-[#F2F4F6]'
+              alert ? 'text-[#E5484D]' : 'text-ink'
             }`}
           >
             {value}
@@ -61,7 +61,7 @@ export function StatCard({
           {(delta !== undefined || sub) && (
             <p className="mt-0.5 flex items-center gap-1.5">
               {delta !== undefined && <DeltaTag delta={delta} label={deltaLabel} />}
-              {sub && <span className="text-[11px] text-[#B0B8C1]">{sub}</span>}
+              {sub && <span className="text-[11px] text-ink-muted">{sub}</span>}
             </p>
           )}
         </div>

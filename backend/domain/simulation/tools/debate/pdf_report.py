@@ -29,6 +29,7 @@ _PRETENDARD_VARIABLE_CSS = (
 def _font_face_css() -> str:
     return f"@import url('{_PRETENDARD_VARIABLE_CSS}');"
 
+
 @lru_cache(maxsize=1)
 def _tailwind_inline() -> str:
     """vendoring한 Tailwind Play CDN JS를 반환(인라인 <script>용). 없으면 빈 문자열(CDN 폴백)."""

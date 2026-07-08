@@ -14,7 +14,7 @@ import {
   TARGET_POLICY,
 } from './data';
 
-const BLUE = '#3182F6';
+const BLUE = '#2563EB';
 const GRAY = '#C7D2E5';
 const MUTED = '#8B95A1';
 
@@ -28,9 +28,9 @@ function Pill({ text, cls }: { text: string; cls: string }) {
 
 function Card({ title, sub, children }: { title?: string; sub?: string; children: React.ReactNode }) {
   return (
-    <div className="rounded-2xl border border-[#E5E8EB] dark:border-[#2D3748] bg-white dark:bg-[#1C2333] p-5">
-      {title && <h3 className="text-[14px] font-semibold text-[#191F28] dark:text-[#F2F4F6]">{title}</h3>}
-      {sub && <p className="mt-0.5 text-[12px] text-[#8B95A1]">{sub}</p>}
+    <div className="rounded-2xl border border-line bg-card p-5">
+      {title && <h3 className="text-[14px] font-semibold text-ink">{title}</h3>}
+      {sub && <p className="mt-0.5 text-[12px] text-ink-tertiary">{sub}</p>}
       <div className={title ? 'mt-3' : ''}>{children}</div>
     </div>
   );
@@ -41,19 +41,19 @@ function SectionTitle({ n, title, desc }: { n: number; title: string; desc?: str
   return (
     <div className="mb-3 mt-8 first:mt-0">
       <div className="flex items-center gap-2">
-        <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-[#3182F6] text-white text-[12px] font-bold">
+        <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-primary text-primary-foreground text-[12px] font-bold">
           {n}
         </span>
-        <h2 className="text-[16px] font-bold text-[#191F28] dark:text-[#F2F4F6]">{title}</h2>
+        <h2 className="text-[16px] font-bold text-ink">{title}</h2>
       </div>
-      {desc && <p className="mt-1 ml-8 text-[12px] text-[#8B95A1]">{desc}</p>}
+      {desc && <p className="mt-1 ml-8 text-[12px] text-ink-tertiary">{desc}</p>}
     </div>
   );
 }
 
 function groupCls(group: string) {
   return group === '검색 품질'
-    ? 'bg-[#EBF3FF] dark:bg-[#1E3A5F] text-[#3182F6]'
+    ? 'bg-primary-subtle text-primary'
     : 'bg-[#E7F7EF] dark:bg-[#153027] text-[#12A05C]';
 }
 
@@ -69,15 +69,15 @@ function ChartTooltip({ active, payload }: { active?: boolean; payload?: { paylo
     note?: string;
   };
   return (
-    <div className="rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-white dark:bg-[#1C2333] px-3 py-2 shadow-sm max-w-[240px]">
-      <p className="text-[12px] font-semibold text-[#191F28] dark:text-[#F2F4F6]">
-        {d.eng} <span className="font-normal text-[#8B95A1]">({d.plain})</span>
+    <div className="rounded-xl border border-line bg-card px-3 py-2 shadow-sm max-w-[240px]">
+      <p className="text-[12px] font-semibold text-ink">
+        {d.eng} <span className="font-normal text-ink-tertiary">({d.plain})</span>
       </p>
-      <p className="mt-0.5 text-[11px] text-[#8B95A1]">
+      <p className="mt-0.5 text-[11px] text-ink-tertiary">
         {d.initial != null && <span>개선 전 {d.initial.toFixed(2)} → </span>}
-        <span className="font-bold text-[#3182F6]">개선 후 {d.improved.toFixed(2)}</span>
+        <span className="font-bold text-primary">개선 후 {d.improved.toFixed(2)}</span>
       </p>
-      <p className="mt-1 text-[11px] leading-relaxed text-[#4E5968] dark:text-[#9CA3AF]">
+      <p className="mt-1 text-[11px] leading-relaxed text-ink-secondary">
         {d.work}
         {d.note ? ` · ${d.note}` : ''}
       </p>
@@ -90,8 +90,8 @@ export default function ReliabilityPage() {
     <div className="max-w-screen-lg mx-auto px-6 py-6">
       {/* 헤더 */}
       <div className="mb-2">
-        <h1 className="text-[20px] font-bold text-[#191F28] dark:text-[#F2F4F6]">신뢰도 리포트</h1>
-        <p className="mt-1 text-[13px] text-[#8B95A1]">
+        <h1 className="text-[20px] font-bold text-ink">신뢰도 리포트</h1>
+        <p className="mt-1 text-[13px] text-ink-tertiary">
           {EVAL_META.target}의 검색·답변 품질을, 정답을 고정한 평가셋으로 측정한 결과입니다. 각 셋{' '}
           {EVAL_META.n}문항 · {EVAL_META.asOf}.
         </p>
@@ -103,7 +103,7 @@ export default function ReliabilityPage() {
         <div className="overflow-x-auto">
           <table className="w-full text-[13px] border-collapse">
             <thead>
-              <tr className="text-[#8B95A1] text-left">
+              <tr className="text-ink-tertiary text-left">
                 <th className="py-2 pr-3 font-medium">지표 (Metric)</th>
                 <th className="py-2 pr-3 font-medium">구분</th>
                 <th className="py-2 font-medium">무엇을 보나</th>
@@ -111,15 +111,15 @@ export default function ReliabilityPage() {
             </thead>
             <tbody>
               {METRIC_TAXONOMY.map((m) => (
-                <tr key={m.eng} className="border-t border-[#F2F4F6] dark:border-[#252D3D] align-top">
+                <tr key={m.eng} className="border-t border-line align-top">
                   <td className="py-2.5 pr-3 whitespace-nowrap">
-                    <span className="font-semibold text-[#191F28] dark:text-[#F2F4F6]">{m.eng}</span>
-                    <span className="block text-[11px] text-[#8B95A1]">{m.metric}</span>
+                    <span className="font-semibold text-ink">{m.eng}</span>
+                    <span className="block text-[11px] text-ink-tertiary">{m.metric}</span>
                   </td>
                   <td className="py-2.5 pr-3">
                     <Pill text={m.group} cls={groupCls(m.group)} />
                   </td>
-                  <td className="py-2.5 text-[12px] text-[#4E5968] dark:text-[#9CA3AF]">{m.note}</td>
+                  <td className="py-2.5 text-[12px] text-ink-secondary">{m.note}</td>
                 </tr>
               ))}
             </tbody>
@@ -152,12 +152,12 @@ export default function ReliabilityPage() {
                   <Bar dataKey="improved" name="개선 후" fill={BLUE} radius={[4, 4, 0, 0]} maxBarSize={22} />
                 </BarChart>
               </ResponsiveContainer>
-              <div className="mt-3 border-t border-[#F2F4F6] dark:border-[#252D3D] pt-2.5">
-                <p className="text-[11px] font-medium text-[#8B95A1] mb-1.5">예시 질문</p>
+              <div className="mt-3 border-t border-line pt-2.5">
+                <p className="text-[11px] font-medium text-ink-tertiary mb-1.5">예시 질문</p>
                 <ul className="space-y-1">
                   {s.examples.map((q) => (
-                    <li key={q} className="flex gap-1.5 text-[12px] text-[#4E5968] dark:text-[#9CA3AF]">
-                      <span className="text-[#3182F6]">·</span>
+                    <li key={q} className="flex gap-1.5 text-[12px] text-ink-secondary">
+                      <span className="text-primary">·</span>
                       <span>{q}</span>
                     </li>
                   ))}
@@ -167,7 +167,7 @@ export default function ReliabilityPage() {
           );
         })}
       </div>
-      <p className="mt-2 text-[12px] text-[#8B95A1]">
+      <p className="mt-2 text-[12px] text-ink-tertiary">
         회색 = 개선 전, 파랑 = 개선 후. <b>Hit Rate·Faithfulness·Factual Correctness</b>는 100%가 목표,
         <b> MRR·Context Precision</b>은 최대한 높게가 목표. {EVAL_META.note}
       </p>
@@ -181,11 +181,11 @@ export default function ReliabilityPage() {
             href={b.url}
             target="_blank"
             rel="noreferrer"
-            className="block rounded-2xl border border-[#E5E8EB] dark:border-[#2D3748] bg-[#F9FAFB] dark:bg-[#141922] px-4 py-3 hover:border-[#3182F6] transition-colors"
+            className="block rounded-2xl border border-line bg-surface-1 px-4 py-3 hover:border-primary transition-colors"
           >
-            <p className="text-[12px] font-semibold text-[#3182F6]">{b.area}</p>
-            <p className="mt-1 text-[12px] leading-relaxed text-[#4E5968] dark:text-[#9CA3AF]">{b.basis}</p>
-            <p className="mt-1.5 text-[11px] text-[#8B95A1] underline">출처 보기 ↗</p>
+            <p className="text-[12px] font-semibold text-primary">{b.area}</p>
+            <p className="mt-1 text-[12px] leading-relaxed text-ink-secondary">{b.basis}</p>
+            <p className="mt-1.5 text-[11px] text-ink-tertiary underline">출처 보기 ↗</p>
           </a>
         ))}
       </div>
@@ -196,9 +196,9 @@ export default function ReliabilityPage() {
               <span
                 className={`shrink-0 mt-0.5 inline-flex items-center h-5 px-2 rounded-full text-[10px] font-semibold ${
                   a.tag === '방법론'
-                    ? 'bg-[#EBF3FF] dark:bg-[#1E3A5F] text-[#3182F6]'
+                    ? 'bg-primary-subtle text-primary'
                     : a.tag === '검색'
-                      ? 'bg-[#F2F4F6] dark:bg-[#252D3D] text-[#8B95A1]'
+                      ? 'bg-surface-1 text-ink-tertiary'
                       : a.tag === '답변'
                         ? 'bg-[#E7F7EF] dark:bg-[#153027] text-[#12A05C]'
                         : 'bg-[#FFF4E5] dark:bg-[#3A2E1A] text-[#B8791B]'
@@ -207,8 +207,8 @@ export default function ReliabilityPage() {
                 {a.tag}
               </span>
               <div>
-                <p className="text-[13px] font-medium text-[#191F28] dark:text-[#F2F4F6]">{a.title}</p>
-                <p className="mt-0.5 text-[12px] leading-relaxed text-[#4E5968] dark:text-[#9CA3AF]">{a.effect}</p>
+                <p className="text-[13px] font-medium text-ink">{a.title}</p>
+                <p className="mt-0.5 text-[12px] leading-relaxed text-ink-secondary">{a.effect}</p>
               </div>
             </li>
           ))}
@@ -219,16 +219,16 @@ export default function ReliabilityPage() {
       <SectionTitle n={4} title="함정 질문으로 자기 검증" desc="일부러 함정을 판 질문 23개로, 모르면 지어내지 않고 모른다고 답하는지 확인." />
       <Card>
         <div className="flex flex-wrap items-center gap-3 mb-3">
-          <span className="inline-flex items-center gap-1.5 rounded-full bg-[#EBF3FF] dark:bg-[#1E3A5F] px-3 py-1 text-[12px] font-medium text-[#3182F6]">
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-primary-subtle px-3 py-1 text-[12px] font-medium text-primary">
             {IMPROVEMENT.action}
           </span>
           <div className="flex items-center gap-2 text-[15px]">
-            <span className="text-[#8B95A1]">{IMPROVEMENT.beforeLabel}</span>
-            <span className="font-bold text-[#4E5968] dark:text-[#9CA3AF]">{IMPROVEMENT.overall.before.toFixed(3)}</span>
-            <span className="text-[#3182F6]">→</span>
-            <span className="text-[#8B95A1]">{IMPROVEMENT.afterLabel}</span>
-            <span className="font-bold text-[#3182F6]">{IMPROVEMENT.overall.after.toFixed(3)}</span>
-            <span className="text-[12px] font-semibold text-[#3182F6]">
+            <span className="text-ink-tertiary">{IMPROVEMENT.beforeLabel}</span>
+            <span className="font-bold text-ink-secondary">{IMPROVEMENT.overall.before.toFixed(3)}</span>
+            <span className="text-primary">→</span>
+            <span className="text-ink-tertiary">{IMPROVEMENT.afterLabel}</span>
+            <span className="font-bold text-primary">{IMPROVEMENT.overall.after.toFixed(3)}</span>
+            <span className="text-[12px] font-semibold text-primary">
               (+{(IMPROVEMENT.overall.after - IMPROVEMENT.overall.before).toFixed(3)})
             </span>
           </div>
@@ -243,7 +243,7 @@ export default function ReliabilityPage() {
             <Bar dataKey="after" name={IMPROVEMENT.afterLabel} fill={BLUE} radius={[4, 4, 0, 0]} maxBarSize={26} />
           </BarChart>
         </ResponsiveContainer>
-        <p className="mt-2 text-[12px] leading-relaxed text-[#8B95A1]">
+        <p className="mt-2 text-[12px] leading-relaxed text-ink-tertiary">
           방법 — {IMPROVEMENT.selfCheck}. 점수(0~1, 1.0=모른다/정확교정)는 <b>숫자 함정·분야 밖</b>에서 크게 올랐습니다.
         </p>
       </Card>
@@ -264,8 +264,8 @@ export default function ReliabilityPage() {
                 {l.done ? '해결' : '진행'}
               </span>
               <div>
-                <p className="text-[13px] font-medium text-[#191F28] dark:text-[#F2F4F6]">{l.limit}</p>
-                <p className="mt-0.5 text-[12px] leading-relaxed text-[#4E5968] dark:text-[#9CA3AF]">→ {l.fix}</p>
+                <p className="text-[13px] font-medium text-ink">{l.limit}</p>
+                <p className="mt-0.5 text-[12px] leading-relaxed text-ink-secondary">→ {l.fix}</p>
               </div>
             </li>
           ))}
@@ -273,9 +273,9 @@ export default function ReliabilityPage() {
       </Card>
 
       {/* 목표 방침 + 방법 */}
-      <div className="mt-3 rounded-2xl border border-[#E5E8EB] dark:border-[#2D3748] bg-[#F9FAFB] dark:bg-[#141922] px-5 py-4">
-        <p className="text-[13px] font-semibold text-[#191F28] dark:text-[#F2F4F6]">목표는 평가셋 성격에 따라 다르게</p>
-        <ul className="mt-2 space-y-1.5 text-[12px] leading-relaxed text-[#4E5968] dark:text-[#9CA3AF]">
+      <div className="mt-3 rounded-2xl border border-line bg-surface-1 px-5 py-4">
+        <p className="text-[13px] font-semibold text-ink">목표는 평가셋 성격에 따라 다르게</p>
+        <ul className="mt-2 space-y-1.5 text-[12px] leading-relaxed text-ink-secondary">
           <li>
             <b>지금 평가셋</b> — {TARGET_POLICY.curated}
           </li>
@@ -288,10 +288,10 @@ export default function ReliabilityPage() {
         {METHOD.map((m) => (
           <div
             key={m.title}
-            className="rounded-2xl border border-[#E5E8EB] dark:border-[#2D3748] bg-[#F9FAFB] dark:bg-[#141922] px-5 py-4"
+            className="rounded-2xl border border-line bg-surface-1 px-5 py-4"
           >
-            <p className="text-[13px] font-semibold text-[#191F28] dark:text-[#F2F4F6]">{m.title}</p>
-            <p className="mt-1 text-[12px] leading-relaxed text-[#4E5968] dark:text-[#9CA3AF]">{m.body}</p>
+            <p className="text-[13px] font-semibold text-ink">{m.title}</p>
+            <p className="mt-1 text-[12px] leading-relaxed text-ink-secondary">{m.body}</p>
           </div>
         ))}
       </div>

@@ -33,8 +33,8 @@ export default function ManageConnectPage() {
   return (
       <div className="px-8 py-8 max-w-3xl mx-auto space-y-6">
         <div>
-          <h1 className="text-2xl font-bold text-[#191F28] dark:text-[#F2F4F6]">연동</h1>
-          <p className="text-sm text-[#8B95A1] dark:text-[#6B7280] mt-1">
+          <h1 className="text-2xl font-bold text-ink">연동</h1>
+          <p className="text-sm text-ink-tertiary mt-1">
             우리 조직의 광고 플랫폼 계정을 연결합니다.
           </p>
         </div>
@@ -52,21 +52,21 @@ export default function ManageConnectPage() {
           </div>
         )}
 
-        <section className="rounded-2xl border border-[#E5E8EB] dark:border-[#2D3748] bg-white dark:bg-[#161B27] p-6">
+        <section className="rounded-2xl border border-line bg-white dark:bg-[#161B27] p-6">
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0">
-              <h2 className="text-base font-semibold text-[#191F28] dark:text-[#F2F4F6]">Meta 계정 연결</h2>
-              <p className="text-sm text-[#8B95A1] dark:text-[#6B7280] mt-1">
+              <h2 className="text-base font-semibold text-ink">Meta 계정 연결</h2>
+              <p className="text-sm text-ink-tertiary mt-1">
                 Facebook 로그인으로 광고 계정·페이지·Instagram 접근 권한을 부여하면 성과 조회·비교·관리가 가능합니다.
               </p>
-              <p className="text-xs text-[#B0B8C1] dark:text-[#4B5563] mt-2">
+              <p className="text-xs text-ink-muted mt-2">
                 조직 단위 연결입니다 — 조직 오너 계정으로 로그인해 진행하세요.
               </p>
             </div>
             <button
               onClick={connectMeta}
               disabled={busy}
-              className="shrink-0 rounded-xl bg-[#3182F6] px-4 py-2.5 text-sm font-medium text-white hover:bg-[#1B64DA] disabled:opacity-50"
+              className="shrink-0 rounded-xl bg-primary px-4 py-2.5 text-sm font-medium text-white hover:bg-primary-hover disabled:opacity-50"
             >
               {busy ? '연결 중…' : 'Meta 계정 연결'}
             </button>

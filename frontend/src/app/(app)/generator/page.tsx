@@ -107,10 +107,15 @@ const VARIANT_LETTERS = ["A", "B", "C"];
 // ── 스타일 ───────────────────────────────────────────────────────────────────
 
 const inputCls =
-  "w-full px-3 py-2.5 text-sm rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-white dark:bg-[#252D3D] text-[#191F28] dark:text-[#F2F4F6] placeholder-[#B0B8C1] dark:placeholder-[#4B5563] focus:outline-none focus:border-[#3182F6] transition-colors";
-const labelCls = "block text-xs font-medium text-[#4E5968] dark:text-[#9CA3AF] mb-1.5";
+  "w-full px-3 py-2.5 text-sm rounded-xl border border-line bg-surface-2 text-ink placeholder:text-ink-muted dark:placeholder-[#4B5563] focus:outline-none focus:border-primary transition-colors";
+const labelCls = "block text-xs font-medium text-ink-secondary mb-1.5";
 const cardCls =
-  "bg-white dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748] rounded-2xl transition-colors";
+  "bg-card border border-line rounded-2xl transition-colors";
+// 단일 선택 칩(/simulation 광고 목표 컨벤션과 동일)
+const chipBase =
+  "px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors";
+const chipActive = "border-primary bg-primary-subtle text-primary";
+const chipIdle = "border-line text-ink-tertiary hover:border-primary";
 
 function strategyLabel(t: string): string {
   return STRATEGY_LABELS[t] ?? t;
@@ -120,7 +125,7 @@ function strategyLabel(t: string): string {
 
 function QualityBadge({ item, label }: { item: QualityCheckItem; label: string }) {
   return (
-    <div className="flex items-start gap-2 py-1.5 border-b border-[#F2F4F6] dark:border-[#2D3748] last:border-0">
+    <div className="flex items-start gap-2 py-1.5 border-b border-line last:border-0">
       <span
         className={`mt-0.5 flex-shrink-0 w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-bold
           ${item.passed ? "bg-green-100 text-green-600 dark:bg-green-900/30 dark:text-green-400" : "bg-red-100 text-red-500 dark:bg-red-900/30 dark:text-red-400"}`}
@@ -129,13 +134,13 @@ function QualityBadge({ item, label }: { item: QualityCheckItem; label: string }
       </span>
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between">
-          <span className="text-xs font-medium text-[#333D4B] dark:text-[#E5E8EB]">{label}</span>
-          <span className="text-[10px] text-[#8B95A1] dark:text-[#6B7280]">
+          <span className="text-xs font-medium text-ink-secondary dark:text-[#E5E8EB]">{label}</span>
+          <span className="text-[10px] text-ink-tertiary">
             {Math.round(item.score * 100)}점
           </span>
         </div>
         {item.feedback && (
-          <p className="text-[11px] text-[#8B95A1] dark:text-[#6B7280] mt-0.5">{item.feedback}</p>
+          <p className="text-[11px] text-ink-tertiary mt-0.5">{item.feedback}</p>
         )}
       </div>
     </div>
@@ -170,10 +175,10 @@ function CandidateCard({
     : `ad_${letter}.png`;
   return (
     <div
-      className="bg-white dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748] rounded-2xl overflow-hidden cursor-pointer group flex hover:border-[#3182F6] hover:shadow-md transition-all"
+      className="bg-card border border-line rounded-2xl overflow-hidden cursor-pointer group flex hover:border-primary hover:shadow-md transition-all"
       onClick={onClick}
     >
-      <div className="relative bg-[#F2F4F6] dark:bg-[#252D3D] w-52 flex-shrink-0 aspect-square">
+      <div className="relative bg-surface-1 w-52 flex-shrink-0 aspect-square">
         {candidate.image_url ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img
@@ -208,13 +213,13 @@ function CandidateCard({
       <div className="flex-1 p-5 flex flex-col justify-between min-w-0">
         <div className="space-y-2">
           <div className="flex items-center gap-1.5 flex-wrap">
-            <span className="text-[11px] bg-[#3182F6] text-white px-2 py-0.5 rounded-full">
+            <span className="text-[11px] bg-primary text-primary-foreground px-2 py-0.5 rounded-full">
               {isCarousel
                 ? (candidate.strategy.strategy_description ?? `슬라이드 ${candidate.idx + 1}`)
                 : strategyLabel(candidate.strategy.strategy_type)}
             </span>
             {!isCarousel && (
-              <span className="text-[11px] bg-[#F2F4F6] dark:bg-[#252D3D] text-[#8B95A1] dark:text-[#6B7280] px-2 py-0.5 rounded-full">
+              <span className="text-[11px] bg-surface-1 text-ink-tertiary px-2 py-0.5 rounded-full">
                 {TEMPLATE_LABELS[candidate.template_id] ?? `템플릿 ${candidate.template_id}`}
               </span>
             )}
@@ -228,18 +233,18 @@ function CandidateCard({
               QA {candidate.qa_passed ? "통과" : "주의"}
             </span>
           </div>
-          <p className="text-sm font-bold text-[#191F28] dark:text-[#F2F4F6] leading-snug line-clamp-2">
+          <p className="text-sm font-bold text-ink leading-snug line-clamp-2">
             {candidate.copy.headline}
           </p>
-          <p className="text-xs text-[#8B95A1] dark:text-[#6B7280] leading-relaxed line-clamp-2">
+          <p className="text-xs text-ink-tertiary leading-relaxed line-clamp-2">
             {candidate.copy.body}
           </p>
         </div>
-        <div className="flex items-center justify-between mt-3 pt-3 border-t border-[#F2F4F6] dark:border-[#2D3748]">
-          <span className="text-xs font-semibold text-[#4E5968] dark:text-[#9CA3AF] bg-[#F8F9FA] dark:bg-[#252D3D] px-3 py-1 rounded-lg">
+        <div className="flex items-center justify-between mt-3 pt-3 border-t border-line">
+          <span className="text-xs font-semibold text-ink-secondary bg-[#F8F9FA] dark:bg-[#252D3D] px-3 py-1 rounded-lg">
             {candidate.copy.cta}
           </span>
-          <span className="text-xs text-[#3182F6] font-medium">자세히 보기 →</span>
+          <span className="text-xs text-primary font-medium">자세히 보기 →</span>
         </div>
       </div>
     </div>
@@ -347,7 +352,7 @@ function CandidateModal({
       onClick={onClose}
     >
       <div
-        className="relative bg-white dark:bg-[#1C2333] rounded-2xl w-full max-w-5xl max-h-[92vh] flex overflow-hidden shadow-2xl"
+        className="relative bg-card rounded-2xl w-full max-w-5xl max-h-[92vh] flex overflow-hidden shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <button
@@ -372,15 +377,15 @@ function CandidateModal({
         </div>
 
         <div className="flex-1 overflow-y-auto">
-          <div className="sticky top-0 bg-white dark:bg-[#1C2333] border-b border-[#E5E8EB] dark:border-[#2D3748] px-6 py-4 flex items-center gap-2">
-            <span className="text-sm font-bold text-[#191F28] dark:text-[#F2F4F6]">{label}</span>
-            <span className="text-[11px] bg-[#3182F6] text-white px-2 py-0.5 rounded-full">
+          <div className="sticky top-0 bg-card border-b border-line px-6 py-4 flex items-center gap-2">
+            <span className="text-sm font-bold text-ink">{label}</span>
+            <span className="text-[11px] bg-primary text-primary-foreground px-2 py-0.5 rounded-full">
               {isCarousel
                 ? (candidate.strategy.strategy_description ?? `슬라이드 ${candidate.idx + 1}`)
                 : strategyLabel(candidate.strategy.strategy_type)}
             </span>
             {!isCarousel && (
-              <span className="text-[11px] bg-[#F2F4F6] dark:bg-[#252D3D] text-[#4E5968] dark:text-[#9CA3AF] px-2 py-0.5 rounded-full">
+              <span className="text-[11px] bg-surface-1 text-ink-secondary px-2 py-0.5 rounded-full">
                 {TEMPLATE_LABELS[candidate.template_id] ?? `템플릿 ${candidate.template_id}`}
               </span>
             )}
@@ -395,31 +400,31 @@ function CandidateModal({
 
             {/* 광고 카피 */}
             <section className="space-y-4">
-              <h3 className="text-xs font-bold text-[#8B95A1] dark:text-[#6B7280] uppercase tracking-widest">
+              <h3 className="text-xs font-bold text-ink-tertiary uppercase tracking-widest">
                 광고 카피
               </h3>
               <div className="bg-[#F8F9FA] dark:bg-[#252D3D] rounded-xl p-4 space-y-3">
                 <div>
-                  <p className="text-[10px] font-semibold text-[#8B95A1] mb-1 uppercase tracking-wide">
+                  <p className="text-[10px] font-semibold text-ink-tertiary mb-1 uppercase tracking-wide">
                     헤드라인
                   </p>
-                  <p className="text-base font-bold text-[#191F28] dark:text-[#F2F4F6] leading-snug">
+                  <p className="text-base font-bold text-ink leading-snug">
                     {candidate.copy.headline}
                   </p>
                 </div>
                 <div>
-                  <p className="text-[10px] font-semibold text-[#8B95A1] mb-1 uppercase tracking-wide">
+                  <p className="text-[10px] font-semibold text-ink-tertiary mb-1 uppercase tracking-wide">
                     본문
                   </p>
-                  <p className="text-sm text-[#4E5968] dark:text-[#9CA3AF] leading-relaxed">
+                  <p className="text-sm text-ink-secondary leading-relaxed">
                     {candidate.copy.body}
                   </p>
                 </div>
                 <div>
-                  <p className="text-[10px] font-semibold text-[#8B95A1] mb-1 uppercase tracking-wide">
+                  <p className="text-[10px] font-semibold text-ink-tertiary mb-1 uppercase tracking-wide">
                     CTA
                   </p>
-                  <span className="inline-block text-sm font-semibold bg-[#3182F6] text-white px-4 py-1.5 rounded-lg">
+                  <span className="inline-block text-sm font-semibold bg-primary text-primary-foreground px-4 py-1.5 rounded-lg">
                     {candidate.copy.cta}
                   </span>
                 </div>
@@ -429,7 +434,7 @@ function CandidateModal({
             {/* 생성 이유 */}
             {candidate.explanation && (
               <section className="space-y-2">
-                <h3 className="text-xs font-bold text-[#8B95A1] dark:text-[#6B7280] uppercase tracking-widest">
+                <h3 className="text-xs font-bold text-ink-tertiary uppercase tracking-widest">
                   생성 이유
                 </h3>
                 <dl className="space-y-2 text-sm">
@@ -440,10 +445,10 @@ function CandidateModal({
                     ["생성 근거", candidate.explanation.rationale],
                   ].map(([label, value]) => (
                     <div key={label}>
-                      <dt className="text-[11px] font-medium text-[#8B95A1] dark:text-[#6B7280]">
+                      <dt className="text-[11px] font-medium text-ink-tertiary">
                         {label}
                       </dt>
-                      <dd className="text-[#4E5968] dark:text-[#9CA3AF] mt-0.5 leading-relaxed">
+                      <dd className="text-ink-secondary mt-0.5 leading-relaxed">
                         {value}
                       </dd>
                     </div>
@@ -456,7 +461,7 @@ function CandidateModal({
             {qa && (
               <section className="space-y-3">
                 <div className="flex items-center gap-2">
-                  <h3 className="text-xs font-bold text-[#8B95A1] dark:text-[#6B7280] uppercase tracking-widest">
+                  <h3 className="text-xs font-bold text-ink-tertiary uppercase tracking-widest">
                     품질 검증
                   </h3>
                   <span
@@ -479,17 +484,17 @@ function CandidateModal({
 
             {/* 저장 경로 */}
             <section className="space-y-1">
-              <h3 className="text-xs font-bold text-[#8B95A1] dark:text-[#6B7280] uppercase tracking-widest">
+              <h3 className="text-xs font-bold text-ink-tertiary uppercase tracking-widest">
                 저장 경로
               </h3>
-              <p className="text-xs text-[#B0B8C1] dark:text-[#4B5563] font-mono break-all">
+              <p className="text-xs text-ink-muted font-mono break-all">
                 {candidate.s3_key}
               </p>
             </section>
 
             {/* Instagram 게시 */}
-            <section className="space-y-3 pt-2 border-t border-[#E5E8EB] dark:border-[#2D3748]">
-              <h3 className="text-xs font-bold text-[#8B95A1] dark:text-[#6B7280] uppercase tracking-widest">
+            <section className="space-y-3 pt-2 border-t border-line">
+              <h3 className="text-xs font-bold text-ink-tertiary uppercase tracking-widest">
                 Instagram 게시
               </h3>
               {publishResult ? (
@@ -519,7 +524,7 @@ function CandidateModal({
               ) : (
                 <>
                   <div>
-                    <label className="block text-xs font-medium text-[#4E5968] dark:text-[#9CA3AF] mb-1">
+                    <label className="block text-xs font-medium text-ink-secondary mb-1">
                       캡션 ({caption.length} / 2,200)
                     </label>
                     <textarea
@@ -528,7 +533,7 @@ function CandidateModal({
                       maxLength={2200}
                       rows={4}
                       placeholder="인스타그램 캡션을 입력하세요 (해시태그 포함)"
-                      className="w-full px-3 py-2 text-sm rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-[#F8F9FA] dark:bg-[#252D3D] text-[#191F28] dark:text-[#F2F4F6] placeholder:text-[#B0B8C1] dark:placeholder:text-[#4B5563] focus:outline-none focus:border-[#3182F6] focus:ring-1 focus:ring-[#3182F6] transition-colors resize-none"
+                      className="w-full px-3 py-2 text-sm rounded-xl border border-line bg-[#F8F9FA] dark:bg-[#252D3D] text-ink placeholder:text-ink-muted dark:placeholder:text-ink-muted focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary transition-colors resize-none"
                     />
                   </div>
                   {publishError && (
@@ -537,7 +542,7 @@ function CandidateModal({
                   <button
                     onClick={handlePublish}
                     disabled={publishing || !caption.trim()}
-                    className="w-full py-2.5 rounded-xl text-sm font-semibold text-white bg-[#3182F6] hover:bg-[#1B64DA] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="w-full py-2.5 rounded-xl text-sm font-semibold text-white bg-primary hover:bg-primary-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     {publishing ? "게시 중..." : "Instagram에 게시"}
                   </button>
@@ -546,8 +551,8 @@ function CandidateModal({
             </section>
 
             {/* Meta 광고 집행 */}
-            <section className="space-y-3 pt-2 border-t border-[#E5E8EB] dark:border-[#2D3748]">
-              <h3 className="text-xs font-bold text-[#8B95A1] dark:text-[#6B7280] uppercase tracking-widest">
+            <section className="space-y-3 pt-2 border-t border-line">
+              <h3 className="text-xs font-bold text-ink-tertiary uppercase tracking-widest">
                 캠페인 생성
               </h3>
               {advertiseResult ? (
@@ -586,7 +591,7 @@ function CandidateModal({
               ) : (
                 <div className="space-y-3">
                   <div>
-                    <label className="block text-xs font-medium text-[#4E5968] dark:text-[#9CA3AF] mb-1">
+                    <label className="block text-xs font-medium text-ink-secondary mb-1">
                       캠페인 이름
                     </label>
                     <input
@@ -598,7 +603,7 @@ function CandidateModal({
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-[#4E5968] dark:text-[#9CA3AF] mb-1">
+                    <label className="block text-xs font-medium text-ink-secondary mb-1">
                       광고 목적
                     </label>
                     <Select
@@ -614,7 +619,7 @@ function CandidateModal({
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-[#4E5968] dark:text-[#9CA3AF] mb-1">
+                    <label className="block text-xs font-medium text-ink-secondary mb-1">
                       목적지 URL
                     </label>
                     <input
@@ -627,7 +632,7 @@ function CandidateModal({
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-[#4E5968] dark:text-[#9CA3AF] mb-1">
+                    <label className="block text-xs font-medium text-ink-secondary mb-1">
                       일 예산 (원)
                     </label>
                     <input
@@ -641,7 +646,7 @@ function CandidateModal({
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-xs font-medium text-[#4E5968] dark:text-[#9CA3AF] mb-1">
+                      <label className="block text-xs font-medium text-ink-secondary mb-1">
                         최소 연령
                       </label>
                       <input
@@ -655,7 +660,7 @@ function CandidateModal({
                       />
                     </div>
                     <div>
-                      <label className="block text-xs font-medium text-[#4E5968] dark:text-[#9CA3AF] mb-1">
+                      <label className="block text-xs font-medium text-ink-secondary mb-1">
                         최대 연령
                       </label>
                       <input
@@ -670,7 +675,7 @@ function CandidateModal({
                     </div>
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-[#4E5968] dark:text-[#9CA3AF] mb-1">
+                    <label className="block text-xs font-medium text-ink-secondary mb-1">
                       국가 코드 (쉼표로 구분)
                     </label>
                     <input
@@ -685,7 +690,7 @@ function CandidateModal({
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="block text-xs font-medium text-[#4E5968] dark:text-[#9CA3AF] mb-1">
+                      <label className="block text-xs font-medium text-ink-secondary mb-1">
                         광고 시작일
                       </label>
                       <input
@@ -697,7 +702,7 @@ function CandidateModal({
                       />
                     </div>
                     <div>
-                      <label className="block text-xs font-medium text-[#4E5968] dark:text-[#9CA3AF] mb-1">
+                      <label className="block text-xs font-medium text-ink-secondary mb-1">
                         광고 종료일 (선택)
                       </label>
                       <input
@@ -712,14 +717,14 @@ function CandidateModal({
                   {advertiseError && (
                     <p className="text-xs text-red-600 dark:text-red-400">{advertiseError}</p>
                   )}
-                  <p className="text-[11px] text-[#8B95A1] dark:text-[#6B7280]">
+                  <p className="text-[11px] text-ink-tertiary">
                     예산·타겟까지 Meta에 캠페인을 만듭니다. 게재는 안 되며(PAUSED), 광고 소재는 Meta
                     Ads Manager에서 추가하세요.
                   </p>
                   <button
                     onClick={handleAdvertise}
                     disabled={advertising || adBudget < 1000}
-                    className="w-full py-2.5 rounded-xl text-sm font-semibold text-white bg-[#3182F6] hover:bg-[#1B64DA] transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="w-full py-2.5 rounded-xl text-sm font-semibold text-white bg-primary hover:bg-primary-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     {advertising ? "생성 중..." : "캠페인 생성하기"}
                   </button>
@@ -753,23 +758,23 @@ function WorkerRunsCard({ runs }: { runs: AutomationRunItem[] }) {
   if (runs.length === 0) return null;
   return (
     <div className={`${cardCls} p-6`}>
-      <p className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]">서버 자동 점검 결과</p>
-      <p className="text-[12px] text-[#8B95A1] mt-0.5">
+      <p className="text-sm font-semibold text-ink">서버 자동 점검 결과</p>
+      <p className="text-[12px] text-ink-tertiary mt-0.5">
         백엔드 워커가 주기적으로 스스로 점검해 남긴 생성 품질·상태 결과예요. 이 화면을 열어두지
         않아도 서버가 자동으로 쌓아둡니다.
       </p>
       <ul className="mt-2 space-y-1.5">
         {runs.map((r) => (
-          <li key={r.id} className="rounded-lg bg-[#F9FAFB] dark:bg-[#1A202C] px-3 py-2">
-            <p className="text-[12px] font-semibold text-[#191F28] dark:text-[#F2F4F6]">
+          <li key={r.id} className="rounded-lg bg-surface-1 px-3 py-2">
+            <p className="text-[12px] font-semibold text-ink">
               {r.title || r.job_name}
               {r.created_at && (
-                <span className="ml-2 font-normal text-[#B0B8C1]">
+                <span className="ml-2 font-normal text-ink-muted">
                   {r.created_at.slice(0, 16).replace("T", " ")}
                 </span>
               )}
             </p>
-            {r.body && <p className="text-[12px] text-[#8B95A1]">{r.body}</p>}
+            {r.body && <p className="text-[12px] text-ink-tertiary">{r.body}</p>}
           </li>
         ))}
       </ul>
@@ -1298,8 +1303,8 @@ export default function GeneratorPage() {
       <div className="max-w-screen-xl mx-auto px-6 py-8">
         {/* 헤더 */}
         <div className="mb-8">
-          <h1 className="text-2xl font-bold text-[#191F28] dark:text-[#F2F4F6] mb-2">광고 제너레이터</h1>
-          <p className="text-sm text-[#8B95A1] dark:text-[#6B7280]">
+          <h1 className="text-2xl font-bold text-ink mb-2">광고 제너레이터</h1>
+          <p className="text-sm text-ink-tertiary">
             상품 정보를 입력하면 AI가 전략이 다른 광고 후보 3종을 생성합니다 · 생성/개선 모드 지원
           </p>
         </div>
@@ -1313,7 +1318,7 @@ export default function GeneratorPage() {
                 프로젝트 <span className="text-[#F74D4D]">*</span>
               </label>
               {projects.length === 0 ? (
-                <p className="text-sm text-[#8B95A1] dark:text-[#6B7280]">
+                <p className="text-sm text-ink-tertiary">
                   선택할 프로젝트가 없습니다. 왼쪽 패널에서 프로젝트를 먼저 만들어 주세요.
                 </p>
               ) : (
@@ -1337,8 +1342,8 @@ export default function GeneratorPage() {
                   }}
                   className={`flex-1 py-2 text-sm font-medium rounded-xl transition-colors ${
                     mode === m
-                      ? "bg-[#3182F6] text-white shadow-sm"
-                      : "text-[#8B95A1] dark:text-[#6B7280] hover:text-[#333D4B] dark:hover:text-[#E5E8EB]"
+                      ? "bg-primary text-primary-foreground shadow-sm"
+                      : "text-ink-tertiary hover:text-ink-secondary dark:hover:text-[#E5E8EB]"
                   }`}
                 >
                   {m === "create" ? "생성 모드" : "개선 모드"}
@@ -1353,11 +1358,11 @@ export default function GeneratorPage() {
                   시뮬레이션 <span className="text-[#F74D4D]">*</span>
                 </label>
                 {!selectedProject ? (
-                  <p className="text-sm text-[#8B95A1] dark:text-[#6B7280]">
+                  <p className="text-sm text-ink-tertiary">
                     프로젝트를 먼저 선택하세요.
                   </p>
                 ) : improveSims.length === 0 ? (
-                  <p className="text-sm text-[#8B95A1] dark:text-[#6B7280]">
+                  <p className="text-sm text-ink-tertiary">
                     이 프로젝트에 시뮬레이션이 없습니다.
                   </p>
                 ) : (
@@ -1377,10 +1382,10 @@ export default function GeneratorPage() {
 
             <div className={`${cardCls} p-6 space-y-4`}>
               <div>
-                <h2 className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]">
+                <h2 className="text-sm font-semibold text-ink">
                   {mode === "create" ? "생성 설정" : "개선 설정"}
                 </h2>
-                <p className="text-xs text-[#8B95A1] dark:text-[#6B7280] mt-0.5">
+                <p className="text-xs text-ink-tertiary mt-0.5">
                   {mode === "create"
                     ? "* 필수 항목"
                     : "프로젝트·시뮬레이션을 선택하면 정보가 자동으로 채워집니다"}
@@ -1404,8 +1409,8 @@ export default function GeneratorPage() {
                           onClick={() => setFormat(f)}
                           className={`flex-1 py-2 text-sm font-medium rounded-xl border transition-colors ${
                             format === f
-                              ? "border-[#3182F6] text-[#3182F6] bg-[#EBF3FF] dark:bg-[#1E3A5F]"
-                              : "border-[#E5E8EB] dark:border-[#2D3748] text-[#8B95A1] dark:text-[#6B7280] hover:text-[#3182F6]"
+                              ? "border-primary text-primary bg-primary-subtle"
+                              : "border-line text-ink-tertiary hover:text-primary"
                           }`}
                         >
                           {label}
@@ -1427,7 +1432,7 @@ export default function GeneratorPage() {
                   <div>
                     <label className={labelCls}>
                       상품 이미지{" "}
-                      <span className="text-[#8B95A1] font-normal">(선택 — 제공 시 상품 이미지 기반으로 광고 생성)</span>
+                      <span className="text-ink-tertiary font-normal">(선택 — 제공 시 상품 이미지 기반으로 광고 생성)</span>
                     </label>
                     <input
                       ref={productImageInputRef}
@@ -1437,15 +1442,15 @@ export default function GeneratorPage() {
                       onChange={handleProductImageChange}
                     />
                     {productImagePreviewUrl ? (
-                      <div className="flex items-center gap-3 p-3 rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-[#F8F9FA] dark:bg-[#252D3D]">
+                      <div className="flex items-center gap-3 p-3 rounded-xl border border-line bg-[#F8F9FA] dark:bg-[#252D3D]">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
                         <img
                           src={productImagePreviewUrl}
                           alt="상품 이미지 미리보기"
-                          className="w-14 h-14 object-contain rounded-lg border border-[#E5E8EB] dark:border-[#2D3748] bg-white dark:bg-[#1C2333]"
+                          className="w-14 h-14 object-contain rounded-lg border border-line bg-card"
                         />
                         <div className="flex-1 min-w-0">
-                          <p className="text-xs text-[#4E5968] dark:text-[#9CA3AF] mb-1.5">
+                          <p className="text-xs text-ink-secondary mb-1.5">
                             이 이미지를 기반으로 광고 배경이 생성됩니다
                           </p>
                           <div className="flex gap-3">
@@ -1453,7 +1458,7 @@ export default function GeneratorPage() {
                               type="button"
                               disabled={productImageUploading}
                               onClick={() => productImageInputRef.current?.click()}
-                              className="text-xs text-[#3182F6] hover:underline disabled:opacity-50"
+                              className="text-xs text-primary hover:underline disabled:opacity-50"
                             >
                               {productImageUploading ? "업로드 중..." : "교체"}
                             </button>
@@ -1463,7 +1468,7 @@ export default function GeneratorPage() {
                                 setProductImagePreviewUrl("");
                                 setProductImageTempKey("");
                               }}
-                              className="text-xs text-[#8B95A1] hover:text-[#F74D4D] transition-colors"
+                              className="text-xs text-ink-tertiary hover:text-[#F74D4D] transition-colors"
                             >
                               제거
                             </button>
@@ -1482,7 +1487,7 @@ export default function GeneratorPage() {
                           : "PNG · JPG · WebP (최대 4MB)"}
                       </button>
                     )}
-                    <p className="mt-1.5 text-xs text-[#8B95A1] dark:text-[#6B7280]">
+                    <p className="mt-1.5 text-xs text-ink-tertiary">
                       최대 4MB · PNG · JPG · WebP
                     </p>
                   </div>
@@ -1510,23 +1515,26 @@ export default function GeneratorPage() {
                   </div>
                   <div>
                     <label className={labelCls}>
-                      광고 목적 <span className="text-[#F74D4D]">*</span>
+                      광고 목표 <span className="text-[#F74D4D]">*</span>
                     </label>
-                    <Select
-                      aria-label="광고 목적"
-                      value={objective}
-                      onChange={setObjective}
-                      options={OBJECTIVES.map((o) => ({
-                        value: o.value,
-                        label: o.label,
-                      }))}
-                    />
+                    <div className="flex flex-wrap gap-2">
+                      {OBJECTIVES.map((o) => (
+                        <button
+                          key={o.value}
+                          type="button"
+                          onClick={() => setObjective(o.value)}
+                          className={`${chipBase} ${objective === o.value ? chipActive : chipIdle}`}
+                        >
+                          {o.label}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </>
               ) : (
                 <>
                   {improveLoading && (
-                    <p className="text-sm text-[#8B95A1] dark:text-[#6B7280]">
+                    <p className="text-sm text-ink-tertiary">
                       시뮬레이션 정보를 불러오는 중...
                     </p>
                   )}
@@ -1540,19 +1548,19 @@ export default function GeneratorPage() {
                           <img
                             src={adRefImageSrc(improveData.ad_asset_url)!}
                             alt="기존 광고"
-                            className="w-full rounded-xl border border-[#E5E8EB] dark:border-[#2D3748]"
+                            className="w-full rounded-xl border border-line"
                           />
                         ) : (
-                          <div className="w-full rounded-xl border-2 border-dashed border-[#E5E8EB] dark:border-[#2D3748] bg-[#F8F9FA] dark:bg-[#252D3D] flex flex-col items-center justify-center gap-2 text-center p-8 min-h-[180px]">
-                            <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-[#B0B8C1] dark:text-[#4B5563]">
+                          <div className="w-full rounded-xl border-2 border-dashed border-line bg-[#F8F9FA] dark:bg-[#252D3D] flex flex-col items-center justify-center gap-2 text-center p-8 min-h-[180px]">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" className="text-ink-muted">
                               <rect x="3" y="3" width="18" height="18" rx="2" />
                               <circle cx="8.5" cy="8.5" r="1.5" />
                               <path d="M21 15l-5-5L5 21" />
                             </svg>
-                            <p className="text-xs font-medium text-[#8B95A1] dark:text-[#6B7280]">
+                            <p className="text-xs font-medium text-ink-tertiary">
                               등록된 광고 이미지가 없습니다
                             </p>
-                            <p className="text-[11px] text-[#B0B8C1] dark:text-[#4B5563]">
+                            <p className="text-[11px] text-ink-muted">
                               시뮬레이션에서 광고 이미지를 업로드하면 여기에 표시됩니다
                             </p>
                           </div>
@@ -1561,7 +1569,7 @@ export default function GeneratorPage() {
                       <div>
                         <label className={labelCls}>제품명</label>
                         <input
-                          className={`${inputCls} bg-[#F9FAFB] dark:bg-[#161B27]`}
+                          className={`${inputCls} bg-surface-1`}
                           value={improveData.product_name}
                           readOnly
                         />
@@ -1569,7 +1577,7 @@ export default function GeneratorPage() {
                       <div>
                         <label className={labelCls}>시뮬레이션 결과 요약</label>
                         <textarea
-                          className={`${inputCls} min-h-16 bg-[#F9FAFB] dark:bg-[#161B27]`}
+                          className={`${inputCls} min-h-16 bg-surface-1`}
                           value={improveData.summary}
                           readOnly
                         />
@@ -1578,12 +1586,12 @@ export default function GeneratorPage() {
                         <label className={labelCls}>개선 방향 (시뮬레이션)</label>
                         {improveData.improvement_direction ? (
                           <textarea
-                            className={`${inputCls} min-h-24 bg-[#F9FAFB] dark:bg-[#161B27]`}
+                            className={`${inputCls} min-h-24 bg-surface-1`}
                             value={improveData.improvement_direction}
                             readOnly
                           />
                         ) : (
-                          <p className="text-xs text-[#8B95A1] dark:text-[#6B7280]">
+                          <p className="text-xs text-ink-tertiary">
                             이 시뮬레이션엔 개선 권고(토론)가 없어요. 수정 요청사항으로 개선 방향을 입력하세요.
                           </p>
                         )}
@@ -1591,7 +1599,7 @@ export default function GeneratorPage() {
                       {improveData.plain_summary && (
                         <div>
                           <label className={labelCls}>AI 광고 분석</label>
-                          <div className="rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-[#F8F9FA] dark:bg-[#161B27] p-3 text-xs text-[#4B5563] dark:text-[#9CA3AF] whitespace-pre-wrap leading-relaxed">
+                          <div className="rounded-xl border border-line bg-surface-1 p-3 text-xs text-ink-muted whitespace-pre-wrap leading-relaxed">
                             {improveData.plain_summary}
                           </div>
                         </div>
@@ -1603,7 +1611,7 @@ export default function GeneratorPage() {
                           <img
                             src={adRefImageSrc(improveData.product_cutout_s3_key)!}
                             alt="제품 누끼"
-                            className="w-full max-h-48 object-contain rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-[#F0F0F0] dark:bg-[#1A1F2E]"
+                            className="w-full max-h-48 object-contain rounded-xl border border-line bg-[#F0F0F0] dark:bg-[#1A1F2E]"
                           />
                         </div>
                       )}
@@ -1625,7 +1633,7 @@ export default function GeneratorPage() {
               <button
                 type="button"
                 onClick={() => setShowOptional((v) => !v)}
-                className="text-xs font-medium text-[#3182F6] hover:underline"
+                className="text-xs font-medium text-primary hover:underline"
               >
                 {showOptional
                   ? "▲ 선택 항목 접기"
@@ -1635,7 +1643,7 @@ export default function GeneratorPage() {
               {showOptional && (
                 <div className="space-y-4 pt-1">
                   {/* ── 브랜드 키트 (저장/불러오기) ── */}
-                  <div className="space-y-2 pb-4 border-b border-[#F2F4F6] dark:border-[#252D3D]">
+                  <div className="space-y-2 pb-4 border-b border-line">
                     <label className={labelCls}>브랜드 키트</label>
                     <div className="flex gap-2">
                       <Select
@@ -1670,7 +1678,7 @@ export default function GeneratorPage() {
                         type="button"
                         onClick={saveKit}
                         disabled={!kitName.trim()}
-                        className="px-3 py-2 text-sm font-medium text-white bg-[#3182F6] rounded-xl hover:bg-[#1B6EEB] disabled:opacity-40 shrink-0"
+                        className="px-3 py-2 text-sm font-medium text-white bg-primary rounded-xl hover:bg-primary-hover disabled:opacity-40 shrink-0"
                       >
                         저장
                       </button>
@@ -1680,7 +1688,7 @@ export default function GeneratorPage() {
                   <div>
                     <label className={labelCls}>
                       브랜드 컬러{" "}
-                      <span className="font-normal text-[#8B95A1] dark:text-[#6B7280]">
+                      <span className="font-normal text-ink-tertiary">
                         · 미적용 시 자동 배색
                       </span>
                     </label>
@@ -1689,7 +1697,7 @@ export default function GeneratorPage() {
                       <input
                         ref={colorInputRef}
                         type="color"
-                        value={brandColor || "#3182F6"}
+                        value={brandColor || "#2563EB"}
                         onChange={(e) => setBrandColor(e.target.value)}
                         className="sr-only"
                         tabIndex={-1}
@@ -1702,7 +1710,7 @@ export default function GeneratorPage() {
                         aria-label={
                           brandColor ? `브랜드 컬러 ${brandColor}` : "브랜드 컬러 미적용"
                         }
-                        className="w-10 h-10 shrink-0 rounded-lg border border-[#E5E8EB] dark:border-[#2D3748] cursor-pointer bg-white dark:bg-[#1C2333]"
+                        className="w-10 h-10 shrink-0 rounded-lg border border-line cursor-pointer bg-card"
                         style={
                           brandColor
                             ? { backgroundColor: brandColor }
@@ -1716,13 +1724,13 @@ export default function GeneratorPage() {
                         className={inputCls}
                         value={brandColor}
                         onChange={(e) => setBrandColor(e.target.value)}
-                        placeholder="미적용 (예: #3182F6)"
+                        placeholder="미적용 (예: #2563EB)"
                       />
                       {brandColor && (
                         <button
                           type="button"
                           onClick={() => setBrandColor("")}
-                          className="shrink-0 text-xs text-[#8B95A1] hover:text-[#F74D4D] transition-colors"
+                          className="shrink-0 text-xs text-ink-tertiary hover:text-[#F74D4D] transition-colors"
                         >
                           지우기
                         </button>
@@ -1733,7 +1741,7 @@ export default function GeneratorPage() {
                   <div>
                     <label className={labelCls}>
                       브랜드 로고{" "}
-                      <span className="font-normal text-[#8B95A1] dark:text-[#6B7280]">
+                      <span className="font-normal text-ink-tertiary">
                         · 한 변이 1024px 이하여야 합니다
                       </span>
                     </label>
@@ -1750,13 +1758,13 @@ export default function GeneratorPage() {
                         <img
                           src={logoPreviewUrl}
                           alt="로고 미리보기"
-                          className="w-14 h-14 object-contain rounded-lg border border-[#E5E8EB] dark:border-[#2D3748] bg-white dark:bg-[#1C2333]"
+                          className="w-14 h-14 object-contain rounded-lg border border-line bg-card"
                         />
                         <button
                           type="button"
                           disabled={logoUploading}
                           onClick={() => logoInputRef.current?.click()}
-                          className="text-xs text-[#3182F6] hover:underline disabled:opacity-50"
+                          className="text-xs text-primary hover:underline disabled:opacity-50"
                         >
                           {logoUploading ? "업로드 중..." : "다른 파일로 교체"}
                         </button>
@@ -1793,8 +1801,8 @@ export default function GeneratorPage() {
                           onClick={() => setSizeIdx(i)}
                           className={`px-3 py-2 text-xs rounded-xl border transition-colors ${
                             sizeIdx === i
-                              ? "border-[#3182F6] bg-[#3182F6]/10 text-[#3182F6] font-semibold"
-                              : "border-[#E5E8EB] dark:border-[#2D3748] text-[#8B95A1] dark:text-[#6B7280]"
+                              ? "border-primary bg-primary/10 text-primary font-semibold"
+                              : "border-line text-ink-tertiary"
                           }`}
                         >
                           {s.label}
@@ -1810,7 +1818,7 @@ export default function GeneratorPage() {
                 type="button"
                 disabled={!canSubmit || phase === "generating"}
                 onClick={startGeneration}
-                className="w-full py-3 rounded-xl text-sm font-semibold bg-[#3182F6] text-white hover:bg-[#1B64DA] disabled:bg-[#E5E8EB] disabled:text-[#B0B8C1] dark:disabled:bg-[#252D3D] dark:disabled:text-[#4B5563] disabled:cursor-not-allowed transition-colors"
+                className="w-full py-3 rounded-xl text-sm font-semibold bg-primary text-primary-foreground hover:bg-primary-hover disabled:bg-[#E5E8EB] disabled:text-ink-muted dark:disabled:bg-[#252D3D] dark:disabled:text-ink-muted disabled:cursor-not-allowed transition-colors"
               >
                 {phase === "generating"
                   ? "생성 중..."
@@ -1830,18 +1838,18 @@ export default function GeneratorPage() {
           <div className="col-span-3">
             <div className={`${cardCls} p-6 min-h-[520px]`}>
               <div className="flex items-center justify-between mb-1">
-                <h2 className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]">생성 결과</h2>
+                <h2 className="text-sm font-semibold text-ink">생성 결과</h2>
                 {phase === "done" && (
                   <button
                     type="button"
                     onClick={resetResult}
-                    className="text-xs text-[#8B95A1] hover:text-[#3182F6] transition-colors"
+                    className="text-xs text-ink-tertiary hover:text-primary transition-colors"
                   >
                     새로 생성하기
                   </button>
                 )}
               </div>
-              <p className="text-xs text-[#8B95A1] dark:text-[#6B7280] mb-5">
+              <p className="text-xs text-ink-tertiary mb-5">
                 {format === "carousel"
                   ? "관심끌기·가치전달·행동유도 3장 구성 · 카드를 클릭하면 게시·광고 집행을 할 수 있어요"
                   : mode === "improve"
@@ -1862,14 +1870,14 @@ export default function GeneratorPage() {
                 <div className="py-2">
                   <div className="mb-6">
                     <div className="flex justify-between items-baseline mb-2">
-                      <span className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]">
+                      <span className="text-sm font-semibold text-ink">
                         {progress.message}
                       </span>
-                      <span className="text-xs text-[#8B95A1]">{progress.pct}%</span>
+                      <span className="text-xs text-ink-tertiary">{progress.pct}%</span>
                     </div>
-                    <div className="h-2 rounded-full bg-[#F2F4F6] dark:bg-[#252D3D] overflow-hidden">
+                    <div className="h-2 rounded-full bg-surface-1 overflow-hidden">
                       <div
-                        className="h-full bg-[#3182F6] rounded-full transition-all duration-500"
+                        className="h-full bg-primary rounded-full transition-all duration-500"
                         style={{ width: `${progress.pct}%` }}
                       />
                     </div>
@@ -1885,8 +1893,8 @@ export default function GeneratorPage() {
                               done
                                 ? "bg-[#00C471] text-white"
                                 : active
-                                  ? "bg-[#3182F6] text-white animate-pulse"
-                                  : "bg-[#F2F4F6] dark:bg-[#252D3D] text-[#B0B8C1]"
+                                  ? "bg-primary text-primary-foreground animate-pulse"
+                                  : "bg-surface-1 text-ink-muted"
                             }`}
                           >
                             {done ? "✓" : i + 1}
@@ -1894,8 +1902,8 @@ export default function GeneratorPage() {
                           <span
                             className={
                               done || active
-                                ? "text-[#191F28] dark:text-[#F2F4F6]"
-                                : "text-[#B0B8C1] dark:text-[#4B5563]"
+                                ? "text-ink"
+                                : "text-ink-muted"
                             }
                           >
                             {s.label}
@@ -1904,7 +1912,7 @@ export default function GeneratorPage() {
                       );
                     })}
                   </ul>
-                  <p className="mt-6 text-xs text-[#8B95A1] dark:text-[#6B7280]">
+                  <p className="mt-6 text-xs text-ink-tertiary">
                     {mode === "improve"
                       ? "이미지 1장을 생성하는 데 1분 정도 걸릴 수 있어요."
                       : format === "carousel"
@@ -1922,7 +1930,7 @@ export default function GeneratorPage() {
                       <button
                         type="button"
                         onClick={startGeneration}
-                        className="flex items-center gap-1.5 text-xs text-[#4E5968] dark:text-[#9CA3AF] border border-[#E5E8EB] dark:border-[#2D3748] rounded-lg px-3 py-1.5 hover:border-[#3182F6] hover:text-[#3182F6] transition-colors"
+                        className="flex items-center gap-1.5 text-xs text-ink-secondary border border-line rounded-lg px-3 py-1.5 hover:border-primary hover:text-primary transition-colors"
                       >
                         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" fill="currentColor" className="w-3.5 h-3.5">
                           <path fillRule="evenodd" d="M13.836 2.477a.75.75 0 0 1 .75.75v3.182a.75.75 0 0 1-.75.75h-3.182a.75.75 0 0 1 0-1.5h1.37l-.84-.841a4.5 4.5 0 0 0-7.08.932.75.75 0 0 1-1.3-.75 6 6 0 0 1 9.44-1.242l.84.84V3.227a.75.75 0 0 1 .75-.75Zm-.911 7.5A.75.75 0 0 1 13.199 11a6 6 0 0 1-9.44 1.241l-.84-.84v1.371a.75.75 0 0 1-1.5 0V9.591a.75.75 0 0 1 .75-.75H5.35a.75.75 0 0 1 0 1.5H3.98l.841.841a4.5 4.5 0 0 0 7.08-.932.75.75 0 0 1 1.025-.273Z" clipRule="evenodd" />
@@ -1933,7 +1941,7 @@ export default function GeneratorPage() {
                     {/* #2 — 생성 시안으로 시뮬레이션 돌리기(채팅의 시뮬 제안으로 이동, 첫 시안 프리필) */}
                     <button
                       type="button"
-                      className="flex items-center gap-1.5 text-xs text-[#3182F6] border border-[#3182F6]/40 rounded-lg px-3 py-1.5 hover:bg-[#EBF3FF] dark:hover:bg-[#1E3A5F] transition-colors"
+                      className="flex items-center gap-1.5 text-xs text-primary border border-primary/40 rounded-lg px-3 py-1.5 hover:bg-primary-subtle transition-colors"
                       onClick={() => {
                         // #3에서 만든 '제안 새 채팅'을 연다(기존 대화 아님).
                         const sid = localStorage.getItem(
@@ -1946,7 +1954,7 @@ export default function GeneratorPage() {
                     </button>
                     <button
                       type="button"
-                      className="flex items-center gap-1.5 text-xs text-[#4E5968] dark:text-[#9CA3AF] border border-[#E5E8EB] dark:border-[#2D3748] rounded-lg px-3 py-1.5 hover:border-[#3182F6] hover:text-[#3182F6] transition-colors"
+                      className="flex items-center gap-1.5 text-xs text-ink-secondary border border-line rounded-lg px-3 py-1.5 hover:border-primary hover:text-primary transition-colors"
                       onClick={async () => {
                         const res = await authedFetch(`${API_BASE}/api/generator/generations/${detail.generation_id}/download-zip`);
                         const blob = await res.blob();
@@ -1977,8 +1985,8 @@ export default function GeneratorPage() {
 
               {/* 대기 */}
               {phase === "idle" && !error && (
-                <div className="flex flex-col items-center justify-center py-20 border-2 border-dashed border-[#E5E8EB] dark:border-[#2D3748] rounded-xl gap-2">
-                  <p className="text-xs text-[#B0B8C1] dark:text-[#4B5563]">
+                <div className="flex flex-col items-center justify-center py-20 border-2 border-dashed border-line rounded-xl gap-2">
+                  <p className="text-xs text-ink-muted">
                     좌측에서 정보를 입력하고 생성을 시작하세요
                   </p>
                 </div>

@@ -37,7 +37,7 @@ function imgSrc(c: Candidate): string | null {
 }
 
 const CARD =
-  'mt-2 w-full rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-white dark:bg-[#1C2333] p-4';
+  'mt-2 w-full rounded-xl border border-line bg-card p-4';
 
 export default function GenResultWidget({
   generationId,
@@ -70,8 +70,8 @@ export default function GenResultWidget({
   if (loading) {
     return (
       <div className={CARD}>
-        <div className='flex items-center gap-2 text-sm text-[#8B95A1]'>
-          <div className='w-3.5 h-3.5 border-2 border-[#E5E8EB] dark:border-[#2D3748] border-t-[#3182F6] dark:border-t-[#5B9DF9] rounded-full animate-spin' />
+        <div className='flex items-center gap-2 text-sm text-ink-tertiary'>
+          <div className='w-3.5 h-3.5 border-2 border-line border-t-primary dark:border-t-[#5B9DF9] rounded-full animate-spin' />
           광고 시안을 불러오는 중...
         </div>
       </div>
@@ -80,7 +80,7 @@ export default function GenResultWidget({
   if (!detail || !detail.candidates?.length) {
     return (
       <div className={CARD}>
-        <p className='text-sm text-[#8B95A1]'>광고 시안을 불러오지 못했어요.</p>
+        <p className='text-sm text-ink-tertiary'>광고 시안을 불러오지 못했어요.</p>
       </div>
     );
   }
@@ -93,12 +93,12 @@ export default function GenResultWidget({
   return (
     <div className={CARD}>
       <div className='flex items-center justify-between mb-3'>
-        <span className='text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]'>
+        <span className='text-sm font-semibold text-ink'>
           🎨 광고 시안 {cands.length}개
         </span>
         <Link
           href={`/generations/${generationId}`}
-          className='text-xs font-medium text-[#3182F6] hover:underline'>
+          className='text-xs font-medium text-primary hover:underline'>
           상세 보기 →
         </Link>
       </div>
@@ -110,22 +110,22 @@ export default function GenResultWidget({
           return (
             <div
               key={c.candidate_id}
-              className='shrink-0 w-44 snap-start rounded-lg border border-[#E5E8EB] dark:border-[#2D3748] overflow-hidden bg-white dark:bg-[#161B27]'>
+              className='shrink-0 w-44 snap-start rounded-lg border border-line overflow-hidden bg-white dark:bg-[#161B27]'>
               {src ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={src}
                   alt={`광고 후보 ${c.idx + 1}`}
-                  className='w-44 h-44 object-cover bg-[#F9FAFB] dark:bg-[#161B27]'
+                  className='w-44 h-44 object-cover bg-surface-1'
                 />
               ) : (
-                <div className='w-44 h-44 flex items-center justify-center bg-[#F2F4F6] dark:bg-[#161B27] text-xs text-[#B0B8C1]'>
+                <div className='w-44 h-44 flex items-center justify-center bg-surface-1 text-xs text-ink-muted'>
                   이미지 없음
                 </div>
               )}
               <div className='p-2.5 space-y-1'>
                 <div className='flex items-center justify-between'>
-                  <span className='text-[10px] font-semibold text-[#8B95A1]'>
+                  <span className='text-[10px] font-semibold text-ink-tertiary'>
                     후보 {c.idx + 1}
                     {stype ? ` · ${stype}` : ''}
                   </span>
@@ -146,18 +146,18 @@ export default function GenResultWidget({
                     className={`inline-block text-[10px] px-1.5 py-0.5 rounded-full font-semibold ${
                       c.rank === 1
                         ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400'
-                        : 'bg-[#F2F4F6] text-[#8B95A1] dark:bg-[#252D3D] dark:text-[#9CA3AF]'
+                        : 'bg-[#F2F4F6] text-ink-tertiary dark:bg-[#252D3D]'
                     }`}>
                     {c.rank === 1 ? '⭐ 추천 1순위' : `${c.rank}순위`}
                   </span>
                 )}
                 {headline && (
-                  <p className='text-xs font-semibold text-[#191F28] dark:text-[#F2F4F6] leading-snug line-clamp-2'>
+                  <p className='text-xs font-semibold text-ink leading-snug line-clamp-2'>
                     {headline}
                   </p>
                 )}
                 {c.performance_summary && (
-                  <p className='text-[10px] text-[#8B95A1] dark:text-[#6B7280] leading-snug'>
+                  <p className='text-[10px] text-ink-tertiary leading-snug'>
                     {c.performance_summary}
                   </p>
                 )}
@@ -173,7 +173,7 @@ export default function GenResultWidget({
                         imgSrc(c) ?? undefined
                       )
                     }
-                    className='mt-1 w-full py-1.5 rounded-md border border-[#3182F6]/30 text-[#3182F6] text-[11px] font-semibold hover:bg-[#EBF3FF] dark:hover:bg-[#1E3A5F] transition-colors'>
+                    className='mt-1 w-full py-1.5 rounded-md border border-primary/30 text-primary text-[11px] font-semibold hover:bg-primary-subtle transition-colors'>
                     🧪 이 시안으로 시뮬
                   </button>
                 )}
