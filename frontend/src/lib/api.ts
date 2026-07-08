@@ -174,6 +174,7 @@ export interface ActualOutcome {
 export interface BeforeAfterItem {
   campaign_id: string;
   name: string;
+  simulation_id?: string | null; // 링크된 시뮬 id — 결과 페이지(/simulation/{id}) 이동용(없으면 미연결)
   prediction: PredictionSnapshot | null;
   actual: ActualOutcome;
   verdict: 'aligned' | 'overperformed' | 'underperformed' | 'unknown';
