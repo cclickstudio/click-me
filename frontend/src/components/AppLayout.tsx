@@ -101,6 +101,13 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   // 데스크톱(md+)에만 좌측 패널 폭만큼 패딩 — 모바일은 풀폭(드로어로 사이드바 접근).
   const mainLeft = panelCollapsed ? 'md:pl-[274px]' : 'md:pl-[512px]';
 
+  // 페이지 전환 애니메이션 키 — /chat은 세션 id로는 리마운트하지 않도록 프로젝트 단위로만 잡는다.
+  // (Next 15에서 history.replaceState가 usePathname을 갱신 → key 변경 시 리마운트로 진행 중 대화가
+  //  유실되는 문제 방지. /chat/[pid]/new 와 /chat/[pid]/[sid] 가 같은 키를 공유한다.)
+  const transitionKey = pathname.startsWith('/chat/')
+    ? `/chat/${pathname.split('/')[2] ?? ''}`
+    : pathname;
+
   // 역할별 좌측 패널 — ADMIN: 회사>팀>프로젝트 / COMPANY: 조직 전체(ALL·TEAM, 조회) / USER: 내 팀 프로젝트
   const Panel =
     role === 'ADMIN' ? AdminPanel : role === 'COMPANY' ? CompanyPanel : ProjectPanel;
@@ -133,7 +140,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       </div>
       <main className={`${mainLeft} min-h-screen transition-all duration-200 max-md:pt-14`}>
         <motion.div
-          key={pathname}
+          key={transitionKey}
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.2, ease: 'easeOut' }}
