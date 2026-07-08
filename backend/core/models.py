@@ -710,6 +710,30 @@ class IdempotencyKeyRow(Base):
     created_at: Mapped[datetime] = mapped_column(_TS, server_default=func.now())
 
 
+class ApprovalRecordRow(Base):
+    """승인 원장 (집행 게이트 #5) — 서버가 발행한 승인만 집행되게 하는 진위 대조 원본."""
+
+    __tablename__ = "management_approval_records"
+    __table_args__ = (
+        Index("ix_mgmt_approval_proposal", "proposal_id"),
+        Index("ix_mgmt_approval_tenant", "tenant_id"),
+    )
+
+    approval_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    proposal_id: Mapped[str] = mapped_column(String(64))
+    proposal_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    tenant_id: Mapped[str] = mapped_column(String(64))
+    approver_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    action_tier: Mapped[int] = mapped_column(Integer, nullable=False)  # ActionTier(IntEnum) 값
+    execution_mode: Mapped[str] = mapped_column(String(16), nullable=False)  # ExecutionMode.value
+    approval_policy_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    expected_state_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    approved_at: Mapped[datetime] = mapped_column(_TS, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(_TS, nullable=False)
+    consumed_at: Mapped[datetime | None] = mapped_column(_TS)  # 집행 성공 시 마킹
+    created_at: Mapped[datetime] = mapped_column(_TS, server_default=func.now())
+
+
 # ──────────────────────────────────────────────
 # Persona Debate (시뮬레이터 4-1 페르소나 토론, simulations 1:N) — db-schema v3.1
 # ──────────────────────────────────────────────
