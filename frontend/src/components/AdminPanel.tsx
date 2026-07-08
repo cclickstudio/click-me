@@ -5,7 +5,6 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useProjects, type SimRow } from './ProjectContext';
 import TrashSection from './TrashSection';
-import ProjectChatSection from './chat/ProjectChatSection';
 import { authedFetch } from '@/lib/api';
 import { formatKST } from '@/lib/datetime';
 
@@ -190,9 +189,6 @@ function ProjectItem({
                   })}
                 </div>
               )}
-
-              {/* 채팅 — 프로젝트의 채팅 세션 목록(클릭 시 플로팅/대화 전환) */}
-              <ProjectChatSection projectId={project.id} />
 
               {/* 휴지통 — 펼치면 삭제된 시뮬/제너, 클릭 시 상세 */}
               <button

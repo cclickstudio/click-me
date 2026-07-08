@@ -7,7 +7,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 from domain.generator.contracts.enums import TemplateType
 from domain.generator.pipeline.carousel_copy import CarouselSlide
-from domain.generator.pipeline.text_overlay import _FONT_BOLD, render_ad_text
+from domain.generator.pipeline.text_overlay import _resolve_font, render_ad_text
 
 _WHITE = (255, 255, 255, 255)
 
@@ -49,7 +49,7 @@ def render_carousel_slide(
     img = Image.open(io.BytesIO(out)).convert("RGBA")
     w, h = img.size
     draw = ImageDraw.Draw(img)
-    font = ImageFont.truetype(_FONT_BOLD, max(16, h // 40))
+    font = ImageFont.truetype(_resolve_font("bold"), max(16, h // 40))
 
     # 슬라이드 번호(좌상단)
     _badge(draw, int(w * 0.04), int(h * 0.04), f"{idx}/{total}", font, (0, 0, 0, 140))

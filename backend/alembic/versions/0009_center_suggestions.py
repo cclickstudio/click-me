@@ -1,8 +1,8 @@
 # 센터 제안 알림 테이블(center_suggestions) 신설 — 크로스도메인 인라인 제안 저장소
 """add center_suggestions table + indexes
 
-Revision ID: 0008_center_suggestions
-Revises: 0007_chat_sessions_created_by
+Revision ID: 0009_center_suggestions
+Revises: 0008_chat_sessions_created_by
 Create Date: 2026-07-06
 
 스펙: docs/center/center-spec.md §5·§8.
@@ -14,8 +14,8 @@ management 이상감지(management_notifications)와 별개 테이블 — 알림
 
 from alembic import op
 
-revision = "0008_center_suggestions"
-down_revision = "0007_chat_sessions_created_by"
+revision = "0009_center_suggestions"
+down_revision = "0008_chat_sessions_created_by"
 branch_labels = None
 depends_on = None
 

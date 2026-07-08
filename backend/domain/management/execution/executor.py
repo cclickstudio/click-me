@@ -20,6 +20,7 @@ from datetime import UTC, datetime
 from typing import Any, Final, Protocol
 from uuid import uuid4
 
+from domain.management.contracts.approval_ledger import ApprovalStore, record_mismatches
 from domain.management.contracts.enums import (
     ActionTier,
     ExecutionMode,
@@ -135,9 +136,12 @@ class Executor:
         clock: Callable[[], datetime] = lambda: datetime.now(UTC),
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
         history_recorder: HistoryRecorder | None = None,  # None=기록 생략(테스트·미배선)
+        # 승인 원장(게이트 #5) — 기본값 없음(필수). None은 의도적 생략 명시(데모 CLI 등).
+        approvals: ApprovalStore | None,
     ) -> None:
         self._writer = writer
         self._history_recorder = history_recorder
+        self._approvals = approvals
         self._idempotency = idempotency
         self._audit = audit
         self._budget_for = budget_for
@@ -157,6 +161,13 @@ class Executor:
         rejection = self._validate(action, proposal)
         if rejection is not None:
             reason, detail = rejection
+            return await self._reject(run, action, proposal, reason, detail)
+
+        # 4.5) 승인 원장 대조 (게이트 #5) — 서버가 발행하지 않은(위조) 승인 차단.
+        # _validate()는 sync 순수 함수로 유지하고 원장 조회(async)만 여기서 한다(스펙 §3.3).
+        ledger_rejection = await self._verify_approval_record(action)
+        if ledger_rejection is not None:
+            reason, detail = ledger_rejection
             return await self._reject(run, action, proposal, reason, detail)
 
         # 5) expected_state_version 비교 — 낙관적 락
@@ -224,6 +235,9 @@ class Executor:
         if result.status in (ResultStatus.SUCCESS, ResultStatus.SUBMITTED_PENDING_REVIEW):
             await self._idempotency.save_result(key, result)
             budget.commit(proposal.max_total_spend_krw)
+            if self._approvals is not None:
+                with contextlib.suppress(Exception):  # 마킹 실패가 실행 결과를 바꾸지 않게
+                    await self._approvals.consume(action.approval_id, self._clock())
         elif result.failure_reason is FailureReason.PARTIAL_FAILURE:
             # 일부 타깃은 이미 집행됨 — 자동 재시도 시 성공분 중복 집행 위험이라 결과를
             # 박제(재생)하고 사람이 개입한다(P5/게이트 #7). 집행된 비율만큼만 예산 권한을
@@ -259,6 +273,26 @@ class Executor:
         return result
 
     # ── 4)단계 검증 ──────────────────────────────────────────────
+
+    async def _verify_approval_record(
+        self, action: ApprovedAction
+    ) -> tuple[FailureReason, str] | None:
+        """게이트 #5 — 제출된 ApprovedAction을 서버 승인 원장과 대조한다.
+
+        consumed_at으로는 거부하지 않는다(관측·감사용) — 재제출 차단은 멱등 게이트 담당.
+        """
+        if self._approvals is None:
+            return None
+        record = await self._approvals.get(action.approval_id)
+        if record is None:
+            return FailureReason.UNAPPROVED_ACTION, "승인 원장에 없는 approval_id (게이트 #5)"
+        mismatched = record_mismatches(record, action)
+        if mismatched:
+            return (
+                FailureReason.UNAPPROVED_ACTION,
+                f"승인 원장 불일치: {', '.join(mismatched)} (게이트 #5)",
+            )
+        return None
 
     def _validate(
         self, action: ApprovedAction, proposal: ActionProposal

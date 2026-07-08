@@ -11,8 +11,11 @@ import os
 import uuid
 from collections.abc import AsyncIterator
 
+from core.center_suggestions import create_center_suggestion
+from core.config import settings
 from core.execution_log import record_execution
 from core.tracing import make_trace_config
+from domain.management.contracts.policy import exec_gate_thresholds, is_executable_verdict
 from domain.simulation.adapters.ad_image_store import proxy_url_for
 from domain.simulation.contracts.schemas import SegmentSpec, SimulationRunRequest
 from domain.simulation.tools.aggregation.ocean_segments import ocean_segment_breakdown
@@ -93,6 +96,71 @@ async def _record_run_history(request: SimulationRunRequest, result: dict) -> No
     )
 
 
+async def _record_gen_suggestion(request: SimulationRunRequest, result: dict) -> None:
+    """시뮬 완료 직후 "제너레이터 제안"(gen_suggest) 센터 알림을 인라인 생성 — 스펙 §5.2.
+
+    상세(개선안)는 프론트가 source_sim_id로 GET /api/chat/result-summary?kind=sim 재조회.
+    영속화된 런(simulation_id 존재)에서만 — 프로젝트 미선택 런은 귀속할 곳이 없어 생략.
+    best-effort·비차단(create_center_suggestion 내부에서 예외 흡수).
+    """
+    sim_id = result.get("simulation_id")
+    if not sim_id or not request.project_id:
+        return
+    agg = result.get("aggregate") or {}
+    await create_center_suggestion(
+        suggestion_type="gen_suggest",
+        organization_id=request.organization_id,
+        project_id=request.project_id,
+        reason="simulation_improvement",
+        source_sim_id=sim_id,
+        payload={
+            "title": "제너레이터 제안",
+            "message": "시뮬 결과에 맞춘 개선 시안을 생성해 보시겠어요?",
+            "ad_title": request.ad_title,
+            "kpi": {
+                "click_intent_rate": agg.get("click_intent_rate"),
+                "purchase_intent": agg.get("purchase_intent"),
+                "trust_avg": agg.get("trust_avg"),
+                "rejection_rate": agg.get("rejection_rate"),
+            },
+        },
+        dedup_key=f"gen_suggest:{sim_id}",
+    )
+
+
+async def _record_launch_suggestion(request: SimulationRunRequest, result: dict) -> None:
+    """집행 권장 게이트 통과 시 "집행 제안"(launch_suggest) 센터 알림을 인라인 생성.
+
+    판정 정본은 management 집행 게이트(contracts.policy 재사용, 스펙 2026-07-07 §5) —
+    알림 받은 건은 from-simulation 집행 게이트를 반드시 통과한다(409 UX 파탄 방지).
+    영속화된 런(simulation_id 존재)에서만. best-effort·비차단(gen_suggest와 동일).
+    """
+    sim_id = result.get("simulation_id")
+    if not sim_id or not request.project_id:
+        return
+    agg = result.get("aggregate") or {}
+    cir = float(agg.get("click_intent_rate") or 0.0)
+    rej = float(agg.get("rejection_rate") or 0.0)
+    min_cir, max_rej = exec_gate_thresholds(settings)
+    if not is_executable_verdict(cir, rej, min_cir=min_cir, max_rej=max_rej):
+        return
+    await create_center_suggestion(
+        suggestion_type="launch_suggest",
+        organization_id=request.organization_id,
+        project_id=request.project_id,
+        reason="sim_result_good",
+        source_sim_id=sim_id,
+        payload={
+            "title": "집행 제안",
+            "message": "시뮬 결과가 집행 권장 기준을 충족했어요. 이 광고로 캠페인 집행을 검토해 보세요.",
+            "ad_title": request.ad_title,
+            "click_intent_rate": cir,
+            "rejection_rate": rej,
+        },
+        dedup_key=f"launch_suggest:{sim_id}",
+    )
+
+
 async def _record_comparison_history(
     request: SimulationRunRequest, run_id: str, segments: list[SegmentSpec]
 ) -> None:
@@ -166,6 +234,10 @@ class SimulationService:
             )
             # 실행 확정 지점 롱텀(실행 히스토리) 적재 — UI·채팅 모든 경로가 여기로 수렴.
             await _record_run_history(request, result)
+            # 센터 제안 알림 — 시뮬 완료 → "제너레이터 제안" 인라인 생성(best-effort).
+            await _record_gen_suggestion(request, result)
+            # 집행 제안 — 집행 권장 게이트 통과 시에만 생성(정본: management contracts.policy).
+            await _record_launch_suggestion(request, result)
         except Exception as exc:
             store.set_status(run_id, "FAILED")
             store.emit(run_id, {"event": "error", "message": str(exc)})

@@ -99,5 +99,14 @@ fonts/
 # scripts — 개인 로컬 워크트리 헬퍼(new_worktree/delete_worktree 등), 팀 공유 안 함
 /scripts/
 
+# .githooks — 문서 자동생성 pre-commit 훅. 저장소에 포함하지 않고 파일로만 공유,
+# 쓸 사람만 받아서 `git config core.hooksPath .githooks`로 설치. (CI가 drift 최종 검증)
+.githooks/
+.githooks.zip
+
 
 .understand-anything
+
+# 신뢰도 평가 생성 산출물(측정 결과 jsonl) — 로컬 전용. 소스·골든셋·리포트 프론트는 브랜치에 추적.
+/backend/domain/management/evals/_*.jsonl
+/backend/domain/management/evals/golden/_*.jsonl

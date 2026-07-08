@@ -16,11 +16,11 @@
 
 ## 핵심 기능 (기획서 v1.3)
 
-| #   | 기능              | 설명                                          | 우선순위 |
-| --- | ----------------- | --------------------------------------------- | -------- |
-| 4-1 | 광고 시뮬레이터   | 집행 전 반응 예측 → 개선 방향·보고서          | 핵심(2인) |
-| 4-2 | 광고 매니지먼트   | 목표·예산·플랫폼·성과를 단일 창구 관리        | 핵심(2인) |
-| 4-3 | 광고 생성         | 예측 반영 → 시안 3종 생성·기대성과 순위       | 핵심(2인) |
+| #   | 기능               | 설명                                         | 우선순위  |
+| --- | ------------------ | -------------------------------------------- | --------- |
+| 4-1 | 광고 시뮬레이터    | 집행 전 반응 예측 → 개선 방향·보고서         | 핵심(2인) |
+| 4-2 | 광고 매니지먼트    | 목표·예산·플랫폼·성과를 단일 창구 관리       | 핵심(2인) |
+| 4-3 | 광고 생성          | 예측 반영 → 개선 시안 3개 생성·기대성과 순위 | 핵심(2인) |
 | 4-4 | 채팅 AI 어시스턴트 | 자유질문 + 시뮬·분석·생성 결과 전달          | 후순위    |
 
 > 핵심 3기능 병렬 진행, 채팅(4-4)·팀 관리는 그 완료 후 착수.
@@ -108,7 +108,8 @@ NEXT_PUBLIC_COGNITO_REGION= / NEXT_PUBLIC_COGNITO_USER_POOL_ID= / NEXT_PUBLIC_CO
 
 **커밋 컨벤션** `타입: 한국어 설명` — `add`(새 기능/파일) · `delete`(삭제) · `edit`(수정/리팩토링) · `fix`(버그). 예: `add: 시뮬레이션 기능 추가`.
 
-**① 백엔드 .py 수정 직후 (IMPORTANT)** — 커밋 메시지 출력 **전에** Ruff 실행을 제안한다: *"백엔드 코드가 변경됐어요. 커밋 전에 Ruff로 맞춰두면 CI에서 안 막혀요. Ruff 실행할까요?"*
+**① 백엔드 .py 수정 직후 (IMPORTANT)** — 커밋 메시지 출력 **전에** Ruff 실행을 제안한다: _"백엔드 코드가 변경됐어요. 커밋 전에 Ruff로 맞춰두면 CI에서 안 막혀요. Ruff 실행할까요?"_
+
 - 수락(응/해줘/yes/ㅇㅇ) → `cd backend && uv run ruff format . && uv run ruff check . --fix` 실행.
 - 거절(나중에/ㄴㄴ) → 바로 커밋 메시지로. **프론트(TS)만 수정 시 생략.**
 - 왜: CI(`ci-cd.yml`)가 `ruff check`로 검증. 로컬 선통과 안 하면 push 후 CI 실패. (pytest는 느리고 비용↑이라 별개.)
@@ -118,16 +119,6 @@ NEXT_PUBLIC_COGNITO_REGION= / NEXT_PUBLIC_COGNITO_USER_POOL_ID= / NEXT_PUBLIC_CO
 **③ GitHub Issue 요청 시** — 먼저 `gh --version`으로 설치 확인. 미설치면 OS별 설치 안내(winget `GitHub.cli` / brew `gh` / apt `gh` → `gh auth login`) 후 `gh issue create` 제공. label은 `enhancement`/`bug`/`refactor`/`chore` 중 선택.
 
 **④ Issue 일괄 생성 스크립트** — 반드시 **Python(`.py`)** 으로 제공(`.ps1`/`.sh` 금지). 백엔드에 포함된 `httpx`로 GitHub REST API(`POST /repos/{repo}/issues`, `Bearer` 토큰) 호출, `uv run python create_issues.py` 실행.
-
-**⑤ 테스트·검증 요청 시 (IMPORTANT)** — "테스트 돌려줘 / 확인해줘" 류 요청이면 Ruff·pytest·E2E뿐 아니라, **브라우저에서 확인 가능한 변경(프론트·백엔드 화면/응답)이면 Claude Preview(`preview_*` 도구)로 실제 화면을 띄워 유저가 눈으로 볼 수 있게 하는 검증**도 함께 제안한다: *"실제 화면도 Claude Preview로 띄워서 동작을 보여드릴까요?"*
-- 수락(응/해줘/yes/ㅇㅇ) → `preview_start`로 dev 서버를 띄우고 `preview_*` 도구로 동작을 관찰한 뒤, 스크린샷·콘솔/네트워크 로그·스냅샷을 **증거로 공유**한다. "이걸 눌러보세요" 식 수동 체크리스트로 떠넘기지 않는다.
-- 거절(나중에/ㄴㄴ) → Ruff·pytest·E2E 등 기존 검증만.
-- 왜: 화면으로 확인되는 변경은 유저가 결과를 직접 보는 게 가장 확실. 브라우저로 확인 불가한 변경(타입·툴링·순수 로직)이면 제안을 생략한다.
-
-**⑥ 엔드포인트/페이지 추가 시 문서 자동 동기화 (IMPORTANT)** — 라우터(`backend/api/`)나 페이지(`frontend/src/app/`)를 추가·삭제·경로 변경하면 **`docs/api-endpoints.md`·`docs/frontend-routes.md`·CLAUDE.md의 AUTOGEN 구간**을 다시 생성해야 한다.
-- 생성기 `cd backend && uv run python scripts/gen_docs.py` (검사만: `--check`, CI drift용). 이 세 파일은 **자동 생성물이라 손으로 고치지 말 것** — 소스를 고치고 재실행.
-- 커밋 시 pre-commit 훅이 자동 실행·스테이징한다(설치 1회: `git config core.hooksPath .githooks`). 미설치·실패 시에도 CI(`ci-cd.yml` backend 잡의 *Docs drift check*)가 어긋나면 빌드를 막는다.
-- API의 요청/응답 스키마 등 상세 설명은 여전히 수기 문서 `docs/api-spec.md`에 둔다(자동 목록과 역할 분리).
 
 ## AI 작업 규칙 (행동 가이드라인)
 
@@ -153,12 +144,10 @@ NEXT_PUBLIC_COGNITO_REGION= / NEXT_PUBLIC_COGNITO_USER_POOL_ID= / NEXT_PUBLIC_CO
 
 ## Reference
 
-**자동 생성 인덱스**(라우터·페이지 추가 시 `backend/scripts/gen_docs.py`가 갱신 — 직접 수정 금지):
+**문서 인덱스**(라우터·페이지 추가 시 `backend/scripts/gen_docs.py`가 아래 두 목록을 갱신 — 직접 수정 금지):
 
-<!-- AUTOGEN:docs-index START -->
-- **API 엔드포인트 187개** — 전체 목록 [docs/api-endpoints.md](docs/api-endpoints.md) (자동 생성)
-- **프론트 라우트 42개** — 전체 목록 [docs/frontend-routes.md](docs/frontend-routes.md) (자동 생성)
-<!-- AUTOGEN:docs-index END -->
+- **API 엔드포인트** — 전체 목록 [docs/api-endpoints.md](docs/api-endpoints.md) (자동 생성)
+- **프론트 라우트** — 전체 목록 [docs/frontend-routes.md](docs/frontend-routes.md) (자동 생성)
 
 - API 명세(수기) → `docs/api-spec.md` / 자동 엔드포인트 목록 → `docs/api-endpoints.md` / 프론트 라우트 → `docs/frontend-routes.md`.
 - DB 스키마·Alembic → `docs/db-schema.md` / 실 DB ERD(introspection) → `docs/db-erd.md`.

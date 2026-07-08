@@ -74,12 +74,21 @@ class KbRetriever:
         return out[0]
 
     async def search(
-        self, query: str, k: int = 4, source_types: list[str] | None = None
+        self,
+        query: str,
+        k: int = 4,
+        source_types: list[str] | None = None,
+        per_source_cap: int = 2,
     ) -> list[dict]:
         """하이브리드 검색. source_types를 주면 해당 네임스페이스로만 한정(기본 None=전체).
 
         source_types는 management_kb_documents.source_type 값
         (예: platform_guide·persona_methodology·simulation_trust·meta_reference·kobaco_baseline).
+
+        per_source_cap: 최종 top-k에서 한 출처(문서)가 차지할 수 있는 청크 상한(기본 2). 용어사전
+        (management_glossary·marketing_terms)처럼 한 줄짜리 청크가 많은 문서가 키워드 매칭으로
+        top을 독점해 정작 답이 담긴 문서를 밀어내는 걸 막는다(출처 다양화). 평가에서 이 다양화가
+        검색 회수를 크게 끌어올린 게 확인돼 프로덕션에 반영. 상한을 크게(예: 99) 주면 사실상 비활성.
         """
         # expanding bindparam은 인덱싱 가능한 시퀀스만 받음(frozenset 불가) → list 변환.
         types = list(source_types) if source_types else None
@@ -108,11 +117,16 @@ class KbRetriever:
         async with self._sf() as db:
             vec = (await db.execute(vec_stmt)).all()
             kw = (await db.execute(kw_sql, kw_params)).all()
-        return self._fuse(vec, kw, k)
+        return self._fuse(vec, kw, k, per_source_cap)
 
     @staticmethod
-    def _fuse(vec: list, kw: list, k: int) -> list[dict]:
-        """RRF — 두 랭킹의 (1/(K+순위)) 합으로 재정렬. 두 채널에 다 잡힌 청크가 상위로."""
+    def _fuse(vec: list, kw: list, k: int, per_source_cap: int = 2) -> list[dict]:
+        """RRF — 두 랭킹의 (1/(K+순위)) 합으로 재정렬. 두 채널에 다 잡힌 청크가 상위로.
+
+        출처 다양화 — 점수순 정렬 뒤 출처별 상한(per_source_cap)을 적용해, 한 문서(용어사전 등)의
+        여러 청크가 top-k를 독점하지 못하게 한다. 상한 초과분은 overflow로 미뤄 서로 다른 출처를
+        우선 채운 뒤 남는 슬롯만 보충한다.
+        """
         fused: dict[str, dict] = {}
         for rank, r in enumerate(vec):
             fused.setdefault(str(r.id), {"r": r, "s": 0.0})["s"] += 1.0 / (_RRF_K + rank + 1)
@@ -120,7 +134,18 @@ class KbRetriever:
             key = str(r.id)
             entry = fused.setdefault(key, {"r": r, "s": 0.0})
             entry["s"] += 1.0 / (_RRF_K + rank + 1)
-        top = sorted(fused.values(), key=lambda x: x["s"], reverse=True)[:k]
+        ranked = sorted(fused.values(), key=lambda x: x["s"], reverse=True)
+        picked: list[dict] = []
+        overflow: list[dict] = []
+        seen: dict[str, int] = {}
+        for x in ranked:
+            src = x["r"].source
+            if seen.get(src, 0) < per_source_cap:
+                picked.append(x)
+                seen[src] = seen.get(src, 0) + 1
+            else:
+                overflow.append(x)
+        top = (picked + overflow)[:k]
         out: list[dict] = []
         for x in top:
             r = x["r"]

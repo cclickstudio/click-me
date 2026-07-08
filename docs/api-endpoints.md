@@ -2,7 +2,7 @@
 
 > 이 파일은 `backend/scripts/gen_docs.py`가 코드에서 **자동 생성**합니다. 직접 편집하지 말고 소스를 고친 뒤 스크립트를 다시 실행하세요(커밋 시 pre-commit 훅이 자동 갱신).
 
-총 **187개** 엔드포인트 · **17개** 그룹.
+총 **192개** 엔드포인트 · **18개** 그룹.
 
 ## admin
 
@@ -60,6 +60,15 @@
 | POST | `/api/billing/confirm` | confirm_payment |
 | GET | `/api/billing/history` | get_history |
 | POST | `/api/billing/orders` | create_order |
+
+## center
+
+| Method | Path | Name |
+|---|---|---|
+| GET | `/api/center/notifications` | center_notifications |
+| GET | `/api/center/sessions` | center_sessions |
+| POST | `/api/center/suggestions/{suggestion_id}/dismiss` | dismiss_center_suggestion |
+| POST | `/api/center/suggestions/{suggestion_id}/read` | read_suggestion |
 
 ## chat
 
@@ -273,5 +282,6 @@
 | POST | `/api/simulation/run` | run_simulation |
 | GET | `/api/simulation/{run_id}/result` | get_simulation_result |
 | GET | `/api/simulation/{run_id}/result/analysis` | get_simulation_result_analysis |
+| GET | `/api/simulation/{run_id}/status` | get_simulation_status |
 | GET | `/api/simulation/{run_id}/stream` | stream_simulation |
 | GET | `/api/simulation/{simulation_id}/db-result` | get_simulation_db_result |

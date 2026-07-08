@@ -132,6 +132,8 @@ class SimulationAggregate(SimBase):
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid(), primary_key=True, default=uuid.uuid4)
     simulation_id: Mapped[uuid.UUID] = mapped_column(Uuid(), nullable=False, unique=True)
+    # Numeric(5,4) — 집계 round(_, 4)와 정합. 집행 게이트 in-memory↔DB 판정 일치 보장.
+    # 자릿수 변경 시 aggregator.py 반올림도 함께 조정.
     click_intent_rate: Mapped[float] = mapped_column(Numeric(5, 4), nullable=False)
     ci_low: Mapped[float] = mapped_column(Numeric(5, 4), nullable=False)
     ci_high: Mapped[float] = mapped_column(Numeric(5, 4), nullable=False)
