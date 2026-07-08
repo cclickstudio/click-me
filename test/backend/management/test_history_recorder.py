@@ -36,6 +36,7 @@ def _build(writer: FakeWriter, recorder):
         clock=lambda: NOW,
         sleep=_no_sleep,
         history_recorder=recorder,
+        approvals=None,  # 원장 게이트 비대상 테스트 — 의도적 생략 명시
     )
 
 

@@ -33,7 +33,7 @@ class StyleProfile:
       적응적으로 색을 정하므로(_adaptive_text_color) 여기 값은 무시된다.
     - accent_override: CTA·강조색 강제(브랜드컬러 무시). FOMO 코랄 레드 등.
     - highlight_numbers: 헤드라인 속 숫자(할인율·수량 등)를 강조색으로 렌더(혜택 강조용).
-    - headline/body/cta_weight: KB Typography System의 전략별 폰트 웨이트. 보유 .otf가 없으면
+    - headline/body/cta_weight: KB Typography System의 전략별 폰트 웨이트. 보유 .woff2가 없으면
       text_overlay에서 가장 가까운 굵기로 폴백한다(누락 웨이트 추가 시 자동 적용).
     """
 

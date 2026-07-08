@@ -7,7 +7,12 @@ LLM 라우팅 대상이 아니므로 통합 에이전트를 거치지 않고 여
 
 from __future__ import annotations
 
-from domain.chat.loop_state import MAX_LOOP, get_loop_state
+from typing import TYPE_CHECKING
+
+from domain.chat.loop_state import MAX_LOOP, assess_early_stop, get_loop_state
+
+if TYPE_CHECKING:  # 판정 재료 타입 힌트 전용 — 런타임 시뮬 import 없음(경계 유지).
+    from domain.simulation.contracts.schemas import ObjectiveFit, SimulationAggregate
 
 _PREFIX = "[생성결과]"
 
@@ -17,10 +22,36 @@ def is_result_callback(question: str | None) -> bool:
     return (question or "").lstrip().startswith(_PREFIX)
 
 
-def handle(session_id: str | None, engine_label: str = "ClickMe") -> tuple[str, dict]:
-    """생성결과 콜백 → (answer, meta). 왕복 여력 있으면 재시뮬 approval, 한도 도달이면 완료 안내."""
+def handle(
+    session_id: str | None,
+    engine_label: str = "ClickMe",
+    objective_fit: ObjectiveFit | None = None,
+    aggregate: SimulationAggregate | None = None,
+) -> tuple[str, dict]:
+    """생성결과 콜백 → (answer, meta). 왕복 여력 있으면 재시뮬 approval, 한도 도달이면 완료 안내.
+
+    objective_fit·aggregate(직전 시뮬 신호)가 오면 재시뮬 제안 전에 KPI 등급 조기종료를 판정한다.
+    """
     loop = get_loop_state(session_id)
     loop.phase = "gen_done"
+
+    # 재시뮬 제안 직전 — 직전 시뮬 KPI가 충분히 강하면 왕복을 조기 종료(오조기종료 방지 규칙 내장).
+    stop, reason = assess_early_stop(objective_fit, aggregate)
+    if stop:
+        loop.phase = "finished"
+        loop.early_stop_reason = reason
+        return (
+            f"이번 반응 예측이 목표 기준을 충분히 충족했어요. 🎯 조기 종료 — {reason}. "
+            "추가 왕복 없이 이 시안으로 진행해도 좋아요.",
+            {
+                "source": "generator",
+                "label": "개선 루프 조기 종료",
+                "engine": engine_label,
+                "loop_done": True,
+                "early_stop_reason": reason,
+            },
+        )
+
     if loop.loop_count >= MAX_LOOP:
         return (
             f"개선 루프 {loop.loop_count}/{MAX_LOOP}턴을 다 돌았어요. 새 시안까지 충분히 "

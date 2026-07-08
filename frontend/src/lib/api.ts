@@ -646,14 +646,19 @@ export const api = {
       request<{ session_id: string; messages: ChatHistoryMessage[] }>(
         `/chat/sessions/${sessionId}/messages`,
       ),
-    // 개선 루프(시뮬↔제너) 상태 — 3턴 도달 시 '개선 시안 만들기' 제안을 숨기는 데 쓴다.
-    loopState: (sessionId: string) =>
+    // 개선 루프(시뮬↔제너) 상태 — 제안 숨김/조기종료 배지에 쓴다.
+    // simulationId를 주면 그 시뮬 KPI 등급으로 조기종료를 판정한다(3턴 전이라도 강하면 종료).
+    loopState: (sessionId: string, simulationId?: string) =>
       request<{
         loop_count: number;
         max_loop: number;
         can_improve: boolean;
         phase: string;
-      }>(`/chat/loop-state?session_id=${encodeURIComponent(sessionId)}`),
+        early_stop_reason?: string | null;
+      }>(
+        `/chat/loop-state?session_id=${encodeURIComponent(sessionId)}` +
+          (simulationId ? `&simulation_id=${encodeURIComponent(simulationId)}` : '')
+      ),
     // 미확인 알림(N5) — 라우트 변경마다 폴링해 벨 배지·패널에 표시.
     notifications: (projectId: string) =>
       request<{
@@ -824,10 +829,15 @@ export const api = {
     run: (fault: string) => request(`/management/run?fault=${fault}`),
     regenerate: (diagnosis: unknown) =>
       request("/management/regenerate", { method: "POST", body: JSON.stringify({ diagnosis }) }),
+    // 집행 권장 게이트 임계값 — 판정 정본은 서버, 프론트는 버튼 활성/안내 동기화용
+    execGate: () =>
+      request<{ min_click_intent_rate: number; max_rejection_rate: number }>(
+        "/management/exec-gate",
+      ),
     approve: (proposal: unknown, approved: boolean) =>
       request("/management/approve", {
         method: "POST",
-        body: JSON.stringify({ proposal, approved, approver_id: "user_demo" }),
+        body: JSON.stringify({ proposal, approved }),  // approver_id는 서버가 주입
       }),
     execute: (approved_action: unknown, proposal: unknown) =>
       request("/management/execute", {
@@ -860,6 +870,28 @@ export const api = {
         budget_before_krw: number;
         budget_after_krw: number;
       }>(`/management/campaigns/${campaignId}/budget-commit`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+    replaceCreativeProposal: (
+      campaignId: string,
+      body: { generation_id: string; candidate_id: string; link_url?: string },
+    ) =>
+      request<{
+        proposal: Proposal;
+        preview: {
+          candidate: { headline?: string | null; body?: string | null; s3_key?: string | null };
+          affected_ads: {
+            ad_id: string;
+            ad_name: string;
+            thumbnail_url?: string | null;
+            image_url?: string | null;
+            headline?: string | null;
+            primary_text?: string | null;
+            link_url?: string | null;
+          }[];
+        };
+      }>(`/management/campaigns/${campaignId}/replace-creative-proposal`, {
         method: "POST",
         body: JSON.stringify(body),
       }),

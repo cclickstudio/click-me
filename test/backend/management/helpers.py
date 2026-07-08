@@ -233,6 +233,7 @@ def build_executor(
     state_version: str = STATE_VERSION,
     policy: str = POLICY_VERSION,
     now: datetime = NOW,
+    approvals=None,  # 승인 원장(게이트 #5) — None이면 게이트 생략(기존 테스트 호환)
 ):
     """executor + 인메모리 의존성 일괄 조립. (executor, audit, idem, budget) 반환."""
 
@@ -251,5 +252,6 @@ def build_executor(
         current_policy_version=policy,
         clock=lambda: now,
         sleep=_no_sleep,
+        approvals=approvals,
     )
     return executor, audit, idem, budget

@@ -203,7 +203,8 @@ def _segment_breakdown(
                 low_confidence=eff < 10,
             )
         )
-    out.sort(key=lambda c: (c.age_band, c.gender))
+    # 인원 많은 셀부터 — 화면 테이블·PDF(_segment_block) 정렬과 통일(과신 방지 정렬).
+    out.sort(key=lambda c: c.n, reverse=True)
     return out
 
 

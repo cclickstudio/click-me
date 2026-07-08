@@ -110,6 +110,11 @@ class Settings(BaseSettings):
     # use_mock=True면 reader=Mock·writer=DRY_RUN (Meta 접촉 0, wiring.py 분기).
     # 실집행은 use_mock=False + management_execution_mode=live + 토큰일 때만.
     management_execution_mode: str = "dry_run"  # dry_run | validate_only | live
+    # 집행 권장 게이트 잠정값(시뮬팀 확인 대상) — 클릭 의향률 하한(포함)·거부율 상한(미만).
+    # 판정 정본은 domain/management/contracts/policy.py — 여기 값은 코드 수정 없는 조정 채널.
+    management_exec_gate_min_cir: float = 0.01
+    management_exec_gate_max_rej: float = 0.2
+    # 기본값은 contracts/policy.py EXEC_GATE_DEFAULT_*와 동일 유지.
     # 능동 스케줄러(주기 이상 스캔→알림) — 기본 off(테스트/CI/dev 안전). 운영에서만 켠다.
     management_scheduler_enabled: bool = False
     management_scan_interval_minutes: int = 60
@@ -182,7 +187,7 @@ class Settings(BaseSettings):
     generator_cutout_quality: str | None = None  # 누끼 — 폴백: image_quality
     generator_inpaint_provider: str | None = None  # 인페인팅 — 폴백: image_provider
     generator_inpaint_model: str | None = None  # 인페인팅 — 폴백: image_model
-    generator_font_dir: str | None = None  # 없으면 backend/assets/fonts 사용
+    generator_font_dir: str | None = None  # 없으면 시스템 임시 폴더에 폰트 캐시
     # 제너레이터 자동화 워커 — 기본 off(management와 동일 원칙, dev/CI 안전).
     generator_scheduler_enabled: bool = False
     generator_quality_digest_interval_minutes: int = 1440  # 품질 다이제스트 주기(기본 일1회)

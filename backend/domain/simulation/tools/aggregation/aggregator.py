@@ -120,6 +120,8 @@ class BasicAggregator:
                 1 for r in passed if r.purchase_intent_dist or r.trust_dist
             )
 
+        # 4자리 반올림 — DB Numeric(5,4)와 정합. 집행 게이트 알림↔from_simulation 판정 일치 보장.
+        # 자릿수 변경 시 domain/simulation/models.py 컬럼 정의도 함께 조정.
         return SimulationAggregate(
             click_intent_rate=round(_wmean(action_flags, weights), 4),
             ci_low=round(ci_low, 4),

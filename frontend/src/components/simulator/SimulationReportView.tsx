@@ -129,7 +129,7 @@ function Section({
 }
 
 function signal(score: number) {
-  return score >= 70 ? '#10B981' : score >= 50 ? '#F59E0B' : '#EF4444';
+  return score >= 70 ? '#16A34A' : score >= 50 ? '#F59E0B' : '#EF4444';
 }
 
 /* 종합 점수(PDF _overall과 동일 산식) */
@@ -169,10 +169,10 @@ function verdict(cir: number, rej: number): [string, string] {
 function ConfidenceStrip({ c }: { c: ConfidenceBadge }) {
   const tone =
     c.level === 'high'
-      ? { t: 'text-[#15803D] dark:text-[#4ADE80]', label: '신뢰 높음' }
+      ? { t: 'text-[#16A34A] dark:text-[#4ADE80]', label: '신뢰 높음' }
       : c.level === 'medium'
-        ? { t: 'text-[#B45309] dark:text-[#F4A100]', label: '신뢰 보통' }
-        : { t: 'text-[#DC2626] dark:text-[#FCA5A5]', label: '신뢰 낮음' };
+        ? { t: 'text-[#D97706] dark:text-[#F4A100]', label: '신뢰 보통' }
+        : { t: 'text-[#EF4444] dark:text-[#FCA5A5]', label: '신뢰 낮음' };
   return (
     <div className='rounded-xl bg-[#F9FAFB] dark:bg-[#252D3D] border border-[#E5E8EB] dark:border-[#2D3748] px-4 py-3'>
       <div className='flex flex-wrap items-center gap-2 text-xs'>
@@ -201,10 +201,10 @@ function ConfidenceStrip({ c }: { c: ConfidenceBadge }) {
 function ObjectiveFitCard({ f }: { f: ObjectiveFit }) {
   const tone =
     f.grade === '높음'
-      ? { text: 'text-[#15803D] dark:text-[#4ADE80]', bar: 'bg-[#22C55E]' }
+      ? { text: 'text-[#16A34A] dark:text-[#4ADE80]', bar: 'bg-[#22C55E]' }
       : f.grade === '보통'
-        ? { text: 'text-[#B45309] dark:text-[#F4A100]', bar: 'bg-[#F4A100]' }
-        : { text: 'text-[#DC2626] dark:text-[#FCA5A5]', bar: 'bg-[#F04452]' };
+        ? { text: 'text-[#D97706] dark:text-[#F4A100]', bar: 'bg-[#F4A100]' }
+        : { text: 'text-[#EF4444] dark:text-[#FCA5A5]', bar: 'bg-[#F04452]' };
   return (
     <Section
       title='캠페인 목표 달성 가능성'
@@ -255,7 +255,7 @@ function ObjectiveFitCard({ f }: { f: ObjectiveFit }) {
 const DONUT_PALETTE = [
   '#3182F6',
   '#F59E0B',
-  '#10B981',
+  '#16A34A',
   '#8B5CF6',
   '#EC4899',
   '#14B8A6',
@@ -332,10 +332,10 @@ function SegmentHeatmap({ segments }: { segments: SegmentCell[] }) {
   const worst = ranked[ranked.length - 1];
   const cellTone = (r: number) =>
     r >= 0.3
-      ? 'bg-[#EAF7EF] dark:bg-[#0B2E13] text-[#15803D] dark:text-[#4ADE80]'
+      ? 'bg-[#EAF7EF] dark:bg-[#0B2E13] text-[#16A34A] dark:text-[#4ADE80]'
       : r >= 0.15
-        ? 'bg-[#FFF8E6] dark:bg-[#2D2000] text-[#B45309] dark:text-[#F4A100]'
-        : 'bg-[#FEF2F2] dark:bg-[#3B0D0D] text-[#DC2626] dark:text-[#FCA5A5]';
+        ? 'bg-[#FFF8E6] dark:bg-[#2D2000] text-[#D97706] dark:text-[#F4A100]'
+        : 'bg-[#FEF2F2] dark:bg-[#3B0D0D] text-[#EF4444] dark:text-[#FCA5A5]';
   return (
     <Section
       title='누구에게 통하나 — 연령대×성별'
@@ -392,11 +392,11 @@ function SegmentHeatmap({ segments }: { segments: SegmentCell[] }) {
       {best && worst && best !== worst && (
         <p className='text-[11px] text-[#4E5968] dark:text-[#9CA3AF] mt-3'>
           실질 타깃은{' '}
-          <b className='text-[#15803D] dark:text-[#4ADE80]'>
+          <b className='text-[#16A34A] dark:text-[#4ADE80]'>
             {best.age_band} {GENDER_KO[best.gender] ?? best.gender}
           </b>
           (클릭 {pct(best.click_intent_rate)}), 가장 안 통한 층은{' '}
-          <b className='text-[#DC2626] dark:text-[#FCA5A5]'>
+          <b className='text-[#EF4444] dark:text-[#FCA5A5]'>
             {worst.age_band} {GENDER_KO[worst.gender] ?? worst.gender}
           </b>
           (클릭 {pct(worst.click_intent_rate)})입니다.
@@ -661,7 +661,7 @@ export function SimulationReportView({ rv }: { rv: ReportView }) {
     2: '#F59E0B',
     3: '#64748B',
     4: '#3182F6',
-    5: '#10B981',
+    5: '#16A34A',
   };
   const piTotal =
     Object.values(rep.purchase_intent_dist).reduce((s, v) => s + v, 0) || 1;
@@ -764,7 +764,7 @@ export function SimulationReportView({ rv }: { rv: ReportView }) {
               label: '신뢰도 (5점)',
               value: k.trust_avg.toFixed(1),
               sub: sm.trust_action_label,
-              color: '#0D9488',
+              color: '#14B8A6',
             },
             {
               label: '거부율',
@@ -810,7 +810,7 @@ export function SimulationReportView({ rv }: { rv: ReportView }) {
             />
           ))}
           {rep.bottleneck && (
-            <p className='mt-2 text-[11px] text-[#B45309] dark:text-[#F4A100] bg-[#FFF8E6] dark:bg-[#2D2000] rounded-lg px-3 py-2'>
+            <p className='mt-2 text-[11px] text-[#D97706] dark:text-[#F4A100] bg-[#FFF8E6] dark:bg-[#2D2000] rounded-lg px-3 py-2'>
               ⬇ 가장 많이 빠진 구간 —{' '}
               <b>
                 {AISAS_KO[rep.bottleneck.from_stage] ?? rep.bottleneck.from_stage}{' '}
@@ -849,7 +849,7 @@ export function SimulationReportView({ rv }: { rv: ReportView }) {
               label={EMOTION_KO[key] ?? key}
               ratio={v / emoTotal}
               disp={`${v}명`}
-              color='#0D9488'
+              color='#14B8A6'
             />
           ))}
         </Section>
@@ -889,7 +889,7 @@ export function SimulationReportView({ rv }: { rv: ReportView }) {
               label='기억함'
               ratio={rep.brand_recognition.recognition_rate}
               disp={`${rep.brand_recognition.recognized_count}명`}
-              color='#10B981'
+              color='#16A34A'
             />
             <Bar
               label='기억 못 함'
