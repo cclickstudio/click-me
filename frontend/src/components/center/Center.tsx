@@ -171,7 +171,9 @@ export default function Center() {
     <aside className="max-md:hidden fixed right-0 top-0 z-50 flex h-full w-[460px] flex-col border-l border-line bg-white shadow-xl dark:bg-[#1C2333]">
       <div className="flex items-center gap-2 border-b border-line px-3 py-2.5">
         {/* 로고 — 좌측 브랜드 마크(사이드바 워드마크와 통일) */}
-        <span className="shrink-0 select-none text-sm font-bold tracking-tight text-primary">
+        <span className="flex shrink-0 select-none items-center gap-1.5 text-sm font-bold tracking-tight text-primary">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/logo/logo-mark.png" alt="" className="h-5 w-5 rounded shrink-0" />
           ClickMe
         </span>
         {/* 채팅 | 알림 세그먼트 — 배지는 아이콘 위가 아니라 라벨 옆 인라인 */}

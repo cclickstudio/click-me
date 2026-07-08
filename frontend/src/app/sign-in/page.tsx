@@ -33,7 +33,11 @@ export default function SignInPage() {
     <div className="min-h-screen bg-surface-1 flex flex-col items-center justify-center p-4 transition-colors">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
-          <Link href="/" className="text-primary font-bold text-2xl tracking-tight">ClickMe</Link>
+          <Link href="/" className="inline-flex items-center justify-center gap-2 text-primary font-bold text-2xl tracking-tight">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/logo/logo-mark.png" alt="" className="h-8 w-8 rounded-md shrink-0" />
+            ClickMe
+          </Link>
           <p className="mt-2 text-sm text-ink-tertiary">다시 만나서 반가워요</p>
         </div>
 

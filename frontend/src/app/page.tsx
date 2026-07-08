@@ -94,7 +94,11 @@ export default function Page() {
       {/* Header */}
       <header className="border-b border-line sticky top-0 z-50 bg-surface-0/80 backdrop-blur-md transition-colors">
         <div className="max-w-screen-xl mx-auto px-6 h-14 flex items-center justify-between">
-          <span className="text-primary font-bold text-lg tracking-tight">ClickMe</span>
+          <span className="flex items-center gap-2 text-primary font-bold text-lg tracking-tight">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/logo/logo-mark.png" alt="" className="h-7 w-7 rounded-md shrink-0" />
+            ClickMe
+          </span>
           <div className="flex items-center gap-3">
             <button
               onClick={toggle}

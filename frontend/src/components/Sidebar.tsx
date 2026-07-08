@@ -188,7 +188,11 @@ export default function Sidebar({ mobileOpen = false }: { mobileOpen?: boolean }
     >
       {/* 로고 */}
       <div className="h-14 flex items-center px-5 border-b border-line shrink-0">
-        <Link href="/dashboard" className="text-primary font-bold text-lg tracking-tight">ClickMe</Link>
+        <Link href="/dashboard" className="flex items-center gap-2 text-primary font-bold text-lg tracking-tight">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/logo/logo-mark.png" alt="" className="h-7 w-7 rounded-md shrink-0" />
+          ClickMe
+        </Link>
       </div>
 
       {/* 네비게이션 */}

@@ -9,7 +9,7 @@ export const metadata: Metadata = {
   title: 'Click Me - 광고 관리 파이널 플래너',
   description: '광고를 집행하기 전에, AI 가상 소비자에게 먼저 테스트해보세요.',
   icons: {
-    icon: '/logo/logo-mark.svg',
+    icon: '/logo/logo-mark.png',
   },
 };
 
