@@ -33,7 +33,7 @@ function FacebookCard({ c }: { c: CreativePreview }) {
   return (
     <figure className={cardBase}>
       <div className="flex items-center gap-2 px-3 py-2">
-        <div className="h-7 w-7 shrink-0 rounded-full bg-gradient-to-br from-[#1877F2] to-[#3182F6]" />
+        <div className="h-7 w-7 shrink-0 rounded-full bg-gradient-to-br from-[#1877F2] to-[#2563EB]" />
         <div className="min-w-0 flex-1 leading-tight">
           <p className="truncate text-[12px] font-semibold text-ink">광고주</p>
           <p className="text-[10px] text-ink-tertiary">광고 · clickme.co.kr</p>

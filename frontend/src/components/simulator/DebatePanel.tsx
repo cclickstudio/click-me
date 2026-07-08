@@ -530,7 +530,7 @@ export function DebatePanel({
           {sessions.length > 0 && view !== 'topic_select' && (
             <button
               onClick={enterTopicSelect}
-              className='text-xs font-medium text-primary hover:text-[#1B6EEB]'>
+              className='text-xs font-medium text-primary hover:text-[#1D4ED8]'>
               + 추가 토론
             </button>
           )}

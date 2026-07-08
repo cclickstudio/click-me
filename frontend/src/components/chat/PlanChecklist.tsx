@@ -32,7 +32,7 @@ function StatusIcon({ status }: { status: PlanStep['status'] }) {
         className="shrink-0 mt-0.5 animate-spin"
         style={{ animationDuration: '1.2s' }}
         fill="none"
-        stroke="#3182F6"
+        stroke="#2563EB"
         strokeWidth="2.5"
         strokeLinecap="round">
         <path d="M21 12a9 9 0 1 1-6.219-8.56" />

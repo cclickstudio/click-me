@@ -263,7 +263,7 @@ export default function ChatCenter({
           <div className="flex h-8 shrink-0 items-center justify-between px-3">
             {progress ? (
               <span className="flex items-center gap-1.5 truncate text-xs font-semibold text-primary">
-                <span className="h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-primary/30 border-t-[#3182F6]" />
+                <span className="h-3 w-3 shrink-0 animate-spin rounded-full border-2 border-primary/30 border-t-[#2563EB]" />
                 {progress.label}
                 {typeof progress.pct === 'number' ? ` ${progress.pct}%` : ''}
               </span>

@@ -117,7 +117,7 @@ export function JobProgress({
       <div className="h-1.5 w-full rounded-full bg-surface-1 overflow-hidden">
         <div
           className={`h-full rounded-full transition-all duration-500 ${
-            status === 'error' ? 'bg-red-400' : 'bg-[#3182F6]'
+            status === 'error' ? 'bg-red-400' : 'bg-[#2563EB]'
           } ${status === 'running' && !hasPct ? 'animate-pulse' : ''}`}
           style={{ width: `${barPct}%` }}
         />

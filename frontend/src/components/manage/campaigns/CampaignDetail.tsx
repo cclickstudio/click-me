@@ -48,7 +48,7 @@ const AdPreviewCards = dynamic(() => import('./AdPreviewCards'), {
 function PacingRing({ pct }: { pct: number }) {
   const r = 14;
   const c = 2 * Math.PI * r;
-  const stroke = '#3182F6';
+  const stroke = '#2563EB';
   return (
     <svg width="38" height="38" viewBox="0 0 38 38" className="shrink-0">
       <circle cx="19" cy="19" r={r} fill="none" stroke="#EEF1F4" strokeWidth="4" />

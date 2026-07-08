@@ -16,7 +16,7 @@ export function ApprovalBridge({
   mode: ViewMode;
 }) {
   return (
-    <div className="my-6 rounded-2xl border-2 border-primary p-4 text-center bg-gradient-to-r from-[#3182F6]/[0.05] to-[#0F9D58]/[0.05]">
+    <div className="my-6 rounded-2xl border-2 border-primary p-4 text-center bg-gradient-to-r from-[#2563EB]/[0.05] to-[#0F9D58]/[0.05]">
       <p className="text-sm font-bold text-ink mb-1">
         🤝 승인 (HITL) <RoleTag mode={mode} role="AB" contract="ApprovedAction ▶" />
       </p>

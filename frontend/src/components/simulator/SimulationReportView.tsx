@@ -78,7 +78,7 @@ function Bar({
   label,
   ratio,
   disp,
-  color = '#3182F6',
+  color = '#2563EB',
 }: {
   label: string;
   ratio: number;
@@ -253,10 +253,10 @@ function ObjectiveFitCard({ f }: { f: ObjectiveFit }) {
 
 // 도넛 세그먼트 구분색(순환) — 인원 비중을 색으로 구분(클릭의향은 범례 텍스트로). PDF _DONUT_PALETTE와 동일.
 const DONUT_PALETTE = [
-  '#3182F6',
+  '#2563EB',
   '#F59E0B',
   '#16A34A',
-  '#8B5CF6',
+  '#6366F1',
   '#EC4899',
   '#14B8A6',
   '#EF4444',
@@ -660,7 +660,7 @@ export function SimulationReportView({ rv }: { rv: ReportView }) {
     1: '#EF4444',
     2: '#F59E0B',
     3: '#64748B',
-    4: '#3182F6',
+    4: '#2563EB',
     5: '#16A34A',
   };
   const piTotal =
@@ -752,7 +752,7 @@ export function SimulationReportView({ rv }: { rv: ReportView }) {
               label: '클릭 의향',
               value: pct(k.click_intent_rate),
               sub: `CI ${pct(k.ci_low)}~${pct(k.ci_high)}`,
-              color: '#3182F6',
+              color: '#2563EB',
             },
             {
               label: '구매의도 (5점)',

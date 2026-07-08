@@ -18,7 +18,7 @@ import type { ActionResult, RunResult } from './types';
 import { actionLabel } from './types';
 
 const OWNER = {
-  A: { emoji: '🅰', color: '#3182F6', lane: '측정·진단' },
+  A: { emoji: '🅰', color: '#2563EB', lane: '측정·진단' },
   B: { emoji: '🅱', color: '#0F9D58', lane: '개선·실행' },
   AB: { emoji: '🤝', color: '#8B95A1', lane: '승인(HITL)' },
 } as const;
@@ -153,7 +153,7 @@ function PipelineGraph({
         target,
         label,
         animated: active,
-        style: { stroke: blocked ? '#E5484D' : active ? '#3182F6' : '#D1D6DB', strokeWidth: 1.5 },
+        style: { stroke: blocked ? '#E5484D' : active ? '#2563EB' : '#D1D6DB', strokeWidth: 1.5 },
         labelStyle: { fontSize: 10, fill: '#8B95A1' },
         labelBgStyle: { fill: '#F9FAFB' },
       };

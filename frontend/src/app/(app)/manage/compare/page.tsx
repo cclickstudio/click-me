@@ -15,7 +15,7 @@ const VERDICT: Record<
   aligned: {
     label: '예측대로',
     cls: 'bg-[#EBF3FF] text-primary dark:bg-[#1E3A5F] dark:text-[#7BB4F5]',
-    accent: 'border-l-[#3182F6]',
+    accent: 'border-l-[#2563EB]',
   },
   overperformed: {
     label: '예측보다 좋음',
@@ -34,9 +34,9 @@ const VERDICT: Record<
   },
 };
 
-// 바 색 — 다른 탭과 동일 문법: 값 막대는 파랑 패밀리(퍼널의 #3182F6/#5B9DF9 페어링 재사용),
+// 바 색 — 다른 탭과 동일 문법: 값 막대는 파랑 패밀리(퍼널의 #2563EB/#5B9DF9 페어링 재사용),
 // 판정(강함/약함)은 배지·캡션 텍스트가 담당. 좌우 정체는 위치+라벨로 명시(색 단독 아님).
-const ACT_FILL = '#3182F6'; // 실측(Meta) — 앱 전반의 실측 파랑
+const ACT_FILL = '#2563EB'; // 실측(Meta) — 앱 전반의 실측 파랑
 const PRED_FILL = '#5B9DF9'; // 시뮬 예측 — 같은 패밀리 연파랑
 
 const VERDICT_ORDER: BeforeAfterItem['verdict'][] = [

@@ -20,7 +20,7 @@ export function Markdown({ children }: { children: string }) {
           strong: ({ children }) => <strong className="font-semibold">{children}</strong>,
           em: ({ children }) => <em className="italic">{children}</em>,
           a: ({ href, children }) => (
-            <a href={href} target="_blank" rel="noreferrer" className="text-[#3182F6] underline">
+            <a href={href} target="_blank" rel="noreferrer" className="text-[#2563EB] underline">
               {children}
             </a>
           ),

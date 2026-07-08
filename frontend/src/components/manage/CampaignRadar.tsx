@@ -14,7 +14,7 @@ import {
 import type { CampaignSummary } from '@/components/manage/campaigns/types';
 import { metricsBlocked } from '@/components/manage/campaigns/types';
 
-const PALETTE = ['#3182F6', '#F04452', '#22C55E'];
+const PALETTE = ['#2563EB', '#F04452', '#22C55E'];
 
 // 축 정의 — raw 추출 후 축별 최대=100 정규화. CPC는 낮을수록 좋아 최저=100(효율).
 const AXES: { label: string; raw: (c: CampaignSummary) => number; invert?: boolean }[] = [

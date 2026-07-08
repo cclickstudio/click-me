@@ -1535,7 +1535,7 @@ export default function ChatConversation({
       )}
       {/* 완료 토스트(P9) — 입력창 위 중앙에 잠깐 나타났다 사라짐 */}
       {toast && (
-        <div className='chat-pop pointer-events-none absolute bottom-24 left-1/2 -translate-x-1/2 z-30 px-4 py-2 rounded-full bg-[#191F28] dark:bg-[#F2F4F6] text-white text-sm font-medium shadow-lg'>
+        <div className='chat-pop pointer-events-none absolute bottom-24 left-1/2 -translate-x-1/2 z-30 px-4 py-2 rounded-full bg-[#191F28] dark:bg-[#F2F4F6] text-white dark:text-[#191F28] text-sm font-medium shadow-lg'>
           {toast}
         </div>
       )}
@@ -1548,7 +1548,7 @@ export default function ChatConversation({
               height='20'
               viewBox='0 0 24 24'
               fill='none'
-              stroke='#3182F6'
+              stroke='#2563EB'
               strokeWidth='2'
               strokeLinecap='round'
               strokeLinejoin='round'>
@@ -1661,7 +1661,7 @@ export default function ChatConversation({
                         className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold ${
                           msg.meta.source === 'management'
                             ? 'bg-[#EBF3FF] text-primary dark:bg-[#1E3A5F] dark:text-[#7BB4F5]'
-                            : 'bg-[#F2E9FF] text-[#7C3AED] dark:bg-[#2E1F47] dark:text-[#C4A8F5]'
+                            : 'bg-[#F2E9FF] text-[#4F46E5] dark:bg-[#2E1F47] dark:text-[#C4A8F5]'
                         }`}>
                         {msg.meta.source === 'management' ? '⚙' : '🧠'}{' '}
                         {msg.meta.label}

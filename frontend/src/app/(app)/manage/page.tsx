@@ -120,7 +120,7 @@ export default function Page() {
         ? 'stroke-red-500'
         : walletPct >= 80
           ? 'stroke-amber-500'
-          : 'stroke-[#3182F6]';
+          : 'stroke-[#2563EB]';
   const target = budget?.monthly_target_krw ?? budget?.limit_krw ?? 0;
   const projection = budget?.projection_krw ?? budget?.spent_krw ?? 0;
   const projPct = target > 0 ? Math.round((projection / target) * 100) : 0;

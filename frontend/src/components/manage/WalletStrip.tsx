@@ -69,7 +69,7 @@ export function WalletStrip({
         ? 'stroke-red-500'
         : pct >= 80
           ? 'stroke-amber-500'
-          : 'stroke-[#3182F6]';
+          : 'stroke-[#2563EB]';
   const pctText =
     pct == null
       ? ''

@@ -53,7 +53,7 @@ function MonitoringChart({ run }: { run: RunResult }) {
           strokeDasharray="4 3"
           dot={false}
         />
-        <Line type="monotone" dataKey="실측" stroke="#3182F6" strokeWidth={2} dot={false} connectNulls />
+        <Line type="monotone" dataKey="실측" stroke="#2563EB" strokeWidth={2} dot={false} connectNulls />
       </LineChart>
     </ResponsiveContainer>
   );

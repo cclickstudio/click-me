@@ -3,7 +3,7 @@
 
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts';
 
-const PALETTE = ['#3182F6', '#F04452', '#F59E0B', '#22C55E', '#8B5CF6', '#8B95A1'];
+const PALETTE = ['#2563EB', '#F04452', '#F59E0B', '#22C55E', '#6366F1', '#8B95A1'];
 
 export function SpendDonut({ rows }: { rows: { name: string; spend_krw: number }[] }) {
   const data = rows.filter((r) => r.spend_krw > 0);

@@ -1689,7 +1689,7 @@ export default function GeneratorPage() {
                       <input
                         ref={colorInputRef}
                         type="color"
-                        value={brandColor || "#3182F6"}
+                        value={brandColor || "#2563EB"}
                         onChange={(e) => setBrandColor(e.target.value)}
                         className="sr-only"
                         tabIndex={-1}
@@ -1716,7 +1716,7 @@ export default function GeneratorPage() {
                         className={inputCls}
                         value={brandColor}
                         onChange={(e) => setBrandColor(e.target.value)}
-                        placeholder="미적용 (예: #3182F6)"
+                        placeholder="미적용 (예: #2563EB)"
                       />
                       {brandColor && (
                         <button

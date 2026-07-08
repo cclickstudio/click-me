@@ -14,7 +14,7 @@ import {
   TARGET_POLICY,
 } from './data';
 
-const BLUE = '#3182F6';
+const BLUE = '#2563EB';
 const GRAY = '#C7D2E5';
 const MUTED = '#8B95A1';
 

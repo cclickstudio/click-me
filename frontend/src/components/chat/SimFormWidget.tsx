@@ -518,7 +518,7 @@ export default function SimFormWidget({
               ) : (
                 <div>
                   <label className={labelCls}>가상 소비자 수: {sampleSize}명</label>
-                  <input type="range" min={1} max={200} value={sampleSize} onChange={e => setSampleSize(Number(e.target.value))} className="w-full accent-[#3182F6]" />
+                  <input type="range" min={1} max={200} value={sampleSize} onChange={e => setSampleSize(Number(e.target.value))} className="w-full accent-[#2563EB]" />
                 </div>
               )}
               <div>
@@ -616,7 +616,7 @@ export default function SimFormWidget({
         title="클릭하면 시뮬레이션 페이지에서 자세히 봐요"
       >
         <div className="flex items-center gap-3">
-          <div className="w-6 h-6 border-[3px] border-line border-t-[#3182F6] dark:border-t-[#5B9DF9] rounded-full animate-spin" />
+          <div className="w-6 h-6 border-[3px] border-line border-t-[#2563EB] dark:border-t-[#5B9DF9] rounded-full animate-spin" />
           <div className="flex-1">
             <p className="text-sm text-ink">{stageMsg}</p>
             <div className="mt-1.5 h-1.5 rounded-full bg-surface-1 overflow-hidden">

@@ -24,11 +24,11 @@ export type ChartColors = Record<VarKey, string> & {
 };
 
 function read(name: string): string {
-  if (typeof window === 'undefined') return 'rgb(49 130 246)';
+  if (typeof window === 'undefined') return 'rgb(37 99 235)';
   const raw = getComputedStyle(document.documentElement)
     .getPropertyValue(`--${name}`)
     .trim();
-  return raw ? `rgb(${raw})` : 'rgb(49 130 246)';
+  return raw ? `rgb(${raw})` : 'rgb(37 99 235)';
 }
 
 export function useChartColors(): ChartColors {
@@ -59,8 +59,8 @@ export function useChartColors(): ChartColors {
 
 function buildFallback(): ChartColors {
   const base: Record<VarKey, string> = {
-    primary: 'rgb(49 130 246)',
-    point: 'rgb(139 92 246)',
+    primary: 'rgb(37 99 235)',
+    point: 'rgb(99 102 241)',
     success: 'rgb(22 163 74)',
     warning: 'rgb(217 119 6)',
     danger: 'rgb(239 68 68)',

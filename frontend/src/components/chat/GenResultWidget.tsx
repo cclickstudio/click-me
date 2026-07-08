@@ -71,7 +71,7 @@ export default function GenResultWidget({
     return (
       <div className={CARD}>
         <div className='flex items-center gap-2 text-sm text-ink-tertiary'>
-          <div className='w-3.5 h-3.5 border-2 border-line border-t-[#3182F6] dark:border-t-[#5B9DF9] rounded-full animate-spin' />
+          <div className='w-3.5 h-3.5 border-2 border-line border-t-[#2563EB] dark:border-t-[#5B9DF9] rounded-full animate-spin' />
           광고 시안을 불러오는 중...
         </div>
       </div>

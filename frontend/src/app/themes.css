@@ -3,17 +3,18 @@
 
 /* ══════════ 컬러 테마 11종 (neutrals 공유, primary만 교체) ══════════ */
 
-/* 1. blue (기본) */
+/* 1. blue (기본 #2563EB) */
 html[data-theme='blue'] {
-  --primary: 49 130 246;
-  --primary-hover: 27 110 235;
-  --primary-subtle: 232 241 254;
-  --ring: 49 130 246;
+  --primary: 37 99 235;
+  --primary-hover: 29 78 216;
+  --primary-subtle: 239 246 255;
+  --ring: 37 99 235;
 }
 html.dark[data-theme='blue'] {
-  --primary-hover: 74 144 247;
-  --primary-subtle: 22 35 58;
-  --ring: 74 144 247;
+  --primary: 59 130 246;
+  --primary-hover: 96 165 250;
+  --primary-subtle: 23 37 61;
+  --ring: 59 130 246;
 }
 
 /* 2. indigo */
