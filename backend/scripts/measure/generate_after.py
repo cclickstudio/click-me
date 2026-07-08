@@ -25,12 +25,13 @@ import argparse
 import asyncio
 import uuid
 from datetime import datetime
+from pathlib import Path
 
 from _bootstrap import setup
 
 setup()
 
-from baseline_text_in_image import SAMPLE_ADS  # noqa: E402  before와 상품 동일화 위해 재사용
+from baseline_text_in_image import SAMPLE_ADS, _slug  # noqa: E402  상품 정의·slug 규칙 재사용
 from sqlalchemy import select  # noqa: E402
 
 from core.config import settings  # noqa: E402
@@ -59,6 +60,36 @@ def _seed(item: dict) -> dict:
         "target_audience": target,
         "campaign_objective": objective,
     }
+
+
+# 라벨(글자) 많은 신규 상품 3종 — 상품 이미지 업로드 시 라벨 텍스트 보존 실험용. 이미 seed 형식.
+LABEL_PRODUCTS: list[dict] = [
+    {
+        "product_name": "오메가3",
+        "product_description": "혈행 개선과 눈 건강을 돕는 고순도 rTG 오메가3, 하루 한 알",
+        "target_audience": "건강관리에 관심 많은 40~50대",
+        "campaign_objective": "conversion",
+    },
+    {
+        "product_name": "수분크림",
+        "product_description": "72시간 지속 보습, 히알루론산 수분크림으로 속당김 없는 하루",
+        "target_audience": "건조함이 고민인 20~30대",
+        "campaign_objective": "conversion",
+    },
+    {
+        "product_name": "프로틴바",
+        "product_description": "단백질 20g, 저당 프로틴바로 간편하게 챙기는 한 끼",
+        "target_audience": "운동·다이어트하는 20~30대",
+        "campaign_objective": "conversion",
+    },
+]
+
+
+def _resolve_products(product_set: str) -> list[dict]:
+    """product_set → 생성 대상 seed 리스트. sample=SAMPLE_ADS 매핑, label=LABEL_PRODUCTS."""
+    if product_set == "label":
+        return LABEL_PRODUCTS
+    return [_seed(item) for item in SAMPLE_ADS]
 
 
 def _image_model() -> str:
@@ -99,26 +130,48 @@ async def main() -> None:
         "--project-id", default=None, help="측정 전용 프로젝트 UUID (미지정 시 신규 생성)"
     )
     parser.add_argument("--tag", default=None, help="신규 프로젝트 이름 태그 (기본: 현재 gen_mode)")
+    parser.add_argument(
+        "--product-set",
+        choices=["sample", "label"],
+        default="sample",
+        help="상품 세트 (sample=SAMPLE_ADS 3종, label=라벨 실험용 신규 3종)",
+    )
+    parser.add_argument(
+        "--product-images",
+        default=None,
+        help="상품 이미지 폴더 — <상품slug>.png 를 업로드해 상품이미지 기반 생성",
+    )
     args = parser.parse_args()
 
     if getattr(settings, "use_mock", False):
-        print(
-            "⚠️  settings.use_mock=True — 목업 이미지일 수 있음. 실측이면 USE_MOCK=false 확인."
-        )
+        print("⚠️  settings.use_mock=True — 목업 이미지일 수 있음. 실측이면 USE_MOCK=false 확인.")
 
     tag = args.tag or settings.generator_gen_mode
+    products = _resolve_products(args.product_set)
+    images_dir = Path(args.product_images) if args.product_images else None
     print(
         f"after 생성 — gen_mode={settings.generator_gen_mode} image_model={_image_model()} "
-        f"상품 {len(SAMPLE_ADS)}종 × {args.n}회"
+        f"상품 {len(products)}종({args.product_set}) × {args.n}회 "
+        f"{'상품이미지 ' + str(images_dir) if images_dir else '상품이미지 없음(0부터 생성)'}"
     )
     pid = await _resolve_project(args.project_id, tag)
 
     gen_ids: list[str] = []
-    for item in SAMPLE_ADS:
-        seed = _seed(item)
-        print(f"[{item['name']}]")
+    for seed in products:
+        name = seed["product_name"]
+        print(f"[{name}]")
+        temp_key: str | None = None
+        if images_dir is not None:
+            img_path = images_dir / f"{_slug(name)}.png"
+            if not img_path.exists():
+                raise SystemExit(f"상품 이미지 없음 — {img_path} (파일명은 상품 slug)")
+            temp_key = await generator_service.store_temp_image(img_path.read_bytes())
+            print(f"  상품 이미지 업로드 — {img_path.name} → {temp_key}")
         for rep in range(args.n):
-            gid = await generator_service.start_generation(_create_req(seed, str(pid)))
+            req = _create_req(seed, str(pid))
+            if temp_key:
+                req.product_image_temp_key = temp_key
+            gid = await generator_service.start_generation(req)
             await _await_completion(gid)
             status = (generator_service._tasks.get(gid) or {}).get("status")
             detail = await generator_service.get_detail(gid)
