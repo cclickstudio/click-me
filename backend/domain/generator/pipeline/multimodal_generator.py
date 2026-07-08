@@ -21,6 +21,14 @@ from core.config import settings
 from domain.generator.contracts.enums import AdSize, AdStrategy, TemplateType
 from domain.generator.contracts.pipeline_schemas import AdCopy, ProductAnalysis
 
+# 전략별 사진 연출 지시 재사용 — openai 경로 전용이 아니라 전략의 시각 정체성 자체라
+# gemini 경로도 동일하게 따라야 한다(그동안 여기선 strategy.value 슬러그 한 단어만 넘겨
+# "화면을 꽉 채워라" 류 지시가 레이아웃 문구 하나에만 의존해 준수율이 낮았다).
+from domain.generator.pipeline.image_generator import (
+    _STRATEGY_DESCRIPTIONS,
+    _STRATEGY_PHOTO_STYLE,
+)
+
 # 같은 도메인 pipeline 내부 헬퍼 재사용 — 비율 매핑·LangSmith usage 수동 기록.
 from domain.generator.pipeline.image_providers import (
     _GEMINI_NATIVE_ASPECT_RATIO,
@@ -107,12 +115,13 @@ def _build_prompt(
         if improvement_context
         else ""
     )
+    strategy_guide = f"{_STRATEGY_DESCRIPTIONS[strategy]}. {_STRATEGY_PHOTO_STYLE[strategy]}"
     prompt = _PROMPT_TEMPLATE.format(
         product_name=product_analysis.product_name,
         core_values=", ".join(product_analysis.core_values) or "-",
         benefits=", ".join(product_analysis.benefits) or "-",
         target_audience=product_analysis.target_audience or "일반 소비자",
-        strategy=strategy.value,
+        strategy=strategy_guide,
         layout=_TEMPLATE_LAYOUT[template],
         brand_color=brand_color or "지정 없음",
         tone=tone or "깔끔하고 신뢰감 있게",
