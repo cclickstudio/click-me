@@ -11,10 +11,10 @@ import { formatKST } from '@/lib/datetime';
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
 const statusColor: Record<string, string> = {
-  COMPLETED: 'bg-emerald-400', completed: 'bg-emerald-400',
-  QUEUED: 'bg-yellow-400', pending: 'bg-yellow-400',
-  RUNNING: 'bg-blue-400', running: 'bg-blue-400',
-  FAILED: 'bg-red-400', failed: 'bg-red-400',
+  COMPLETED: 'bg-success', completed: 'bg-success',
+  QUEUED: 'bg-warning', pending: 'bg-warning',
+  RUNNING: 'bg-info', running: 'bg-info',
+  FAILED: 'bg-danger', failed: 'bg-danger',
 };
 
 const fmt = (iso: string) => formatKST(iso);
@@ -73,19 +73,19 @@ function ProjectItem({
 
   return (
     <div ref={rootRef}>
-      <div className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg hover:bg-[#F2F4F6] dark:hover:bg-[#252D3D] transition-colors group">
+      <div className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg hover:bg-accent transition-colors group">
         <button onClick={toggle} className="flex items-center gap-1.5 flex-1 min-w-0 text-left">
           <ChevronIcon open={open} />
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="text-[#8B95A1] shrink-0">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="text-ink-tertiary shrink-0">
             <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
           </svg>
-          <span className="text-sm font-medium text-[#191F28] dark:text-[#F2F4F6] truncate flex-1">{project.name}</span>
+          <span className="text-sm font-medium text-ink truncate flex-1">{project.name}</span>
         </button>
         <Link
           href={`/projects/${project.id}`}
           title="상세 보기"
           onClick={e => e.stopPropagation()}
-          className="opacity-0 group-hover:opacity-100 shrink-0 p-0.5 rounded text-[#B0B8C1] hover:text-[#3182F6] transition-all"
+          className="opacity-0 group-hover:opacity-100 shrink-0 p-0.5 rounded text-ink-muted hover:text-primary transition-all"
         >
           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
@@ -96,28 +96,28 @@ function ProjectItem({
       </div>
 
       {open && (
-        <div className="ml-4 border-l border-[#E5E8EB] dark:border-[#2D3748] pl-2 space-y-0.5 mt-0.5 mb-1">
+        <div className="ml-4 border-l border-line pl-2 space-y-0.5 mt-0.5 mb-1">
           {isLoading ? (
-            <p className="text-[10px] text-[#B0B8C1] px-2 py-1">불러오는 중...</p>
+            <p className="text-[10px] text-ink-muted px-2 py-1">불러오는 중...</p>
           ) : (
             <>
               {/* 시뮬레이션 */}
               <button
                 onClick={() => setSimOpen(v => !v)}
-                className="w-full flex items-center gap-2 px-2 py-1.5 hover:bg-[#F2F4F6] dark:hover:bg-[#252D3D] rounded-md transition-colors"
+                className="w-full flex items-center gap-2 px-2 py-1.5 hover:bg-accent rounded-md transition-colors"
               >
                 <ChevronIcon open={simOpen} />
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-[#8B95A1] shrink-0">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-ink-tertiary shrink-0">
                   <circle cx="12" cy="12" r="10" /><polygon points="10 8 16 12 10 16 10 8" />
                 </svg>
-                <span className="text-xs font-semibold text-[#4E5968] dark:text-[#9CA3AF] uppercase tracking-wide">
+                <span className="text-xs font-semibold text-ink-secondary uppercase tracking-wide">
                   시뮬레이션{sims.length > 0 ? ` (${sims.length})` : ''}
                 </span>
               </button>
               {simOpen && (
                 <div className="ml-4 space-y-0.5">
                   {sims.length === 0 ? (
-                    <p className="text-xs text-[#B0B8C1] px-2 py-1">내역 없음</p>
+                    <p className="text-xs text-ink-muted px-2 py-1">내역 없음</p>
                   ) : sims.map(s => {
                     const isActive = s.id === activeSimId;
                     return (
@@ -125,22 +125,22 @@ function ProjectItem({
                         key={s.id}
                         href={`/simulation/${s.id}`}
                         className={`flex items-center gap-1.5 px-2 py-1 rounded-md transition-colors group ${
-                          isActive ? 'bg-[#EBF3FF] dark:bg-[#1E3A5F]' : 'hover:bg-[#EBF3FF] dark:hover:bg-[#1E3A5F]'
+                          isActive ? 'bg-primary-subtle' : 'hover:bg-primary-subtle'
                         }`}
                       >
-                        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${statusColor[s.status] ?? 'bg-[#B0B8C1]'}`} />
+                        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${statusColor[s.status] ?? 'bg-ink-muted'}`} />
                         <div className="flex-1 min-w-0">
-                          <p className={`text-xs truncate ${isActive ? 'text-[#3182F6] font-medium' : 'text-[#4E5968] dark:text-[#9CA3AF]'}`}>
+                          <p className={`text-xs truncate ${isActive ? 'text-primary font-medium' : 'text-ink-secondary'}`}>
                             {s.ad_title || '제목 없음'}
                           </p>
-                          <p className="text-[11px] text-[#B0B8C1] truncate">{s.sample_size}명 · {s.created_by_name ?? '—'} · {fmt(s.created_at)}</p>
+                          <p className="text-[11px] text-ink-muted truncate">{s.sample_size}명 · {s.created_by_name ?? '—'} · {fmt(s.created_at)}</p>
                         </div>
                       </Link>
                     );
                   })}
                   <button
                     onClick={() => router.push('/simulation')}
-                    className="w-full flex items-center gap-1 px-2 py-1 rounded-md text-xs text-[#3182F6] hover:bg-[#EBF3FF] dark:hover:bg-[#1E3A5F] transition-colors"
+                    className="w-full flex items-center gap-1 px-2 py-1 rounded-md text-xs text-primary hover:bg-primary-subtle transition-colors"
                   >
                     <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                       <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
@@ -153,20 +153,20 @@ function ProjectItem({
               {/* 제너레이터 */}
               <button
                 onClick={() => setGenOpen(v => !v)}
-                className="w-full flex items-center gap-2 px-2 py-1.5 hover:bg-[#F2F4F6] dark:hover:bg-[#252D3D] rounded-md transition-colors"
+                className="w-full flex items-center gap-2 px-2 py-1.5 hover:bg-accent rounded-md transition-colors"
               >
                 <ChevronIcon open={genOpen} />
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-[#8B95A1] shrink-0">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-ink-tertiary shrink-0">
                   <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
                 </svg>
-                <span className="text-xs font-semibold text-[#4E5968] dark:text-[#9CA3AF] uppercase tracking-wide">
+                <span className="text-xs font-semibold text-ink-secondary uppercase tracking-wide">
                   제너레이터{gens.length > 0 ? ` (${gens.length})` : ''}
                 </span>
               </button>
               {genOpen && (
                 <div className="ml-4 space-y-0.5">
                   {gens.length === 0 ? (
-                    <p className="text-xs text-[#B0B8C1] px-2 py-1">내역 없음</p>
+                    <p className="text-xs text-ink-muted px-2 py-1">내역 없음</p>
                   ) : gens.map(g => {
                     const isActive = g.id === activeGenId;
                     return (
@@ -174,15 +174,15 @@ function ProjectItem({
                         key={g.id}
                         href={`/generations/${g.id}`}
                         className={`flex items-center gap-1.5 px-2 py-1 rounded-md transition-colors group ${
-                          isActive ? 'bg-[#EBF3FF] dark:bg-[#1E3A5F]' : 'hover:bg-[#EBF3FF] dark:hover:bg-[#1E3A5F]'
+                          isActive ? 'bg-primary-subtle' : 'hover:bg-primary-subtle'
                         }`}
                       >
-                        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${statusColor[g.status] ?? 'bg-[#B0B8C1]'}`} />
+                        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${statusColor[g.status] ?? 'bg-ink-muted'}`} />
                         <div className="flex-1 min-w-0">
-                          <p className={`text-xs truncate ${isActive ? 'text-[#3182F6] font-medium' : 'text-[#4E5968] dark:text-[#9CA3AF]'}`}>
+                          <p className={`text-xs truncate ${isActive ? 'text-primary font-medium' : 'text-ink-secondary'}`}>
                             {g.product_name ?? '—'} · {g.created_by_name ?? '—'}
                           </p>
-                          <p className="text-[11px] text-[#B0B8C1]">{fmt(g.created_at)}</p>
+                          <p className="text-[11px] text-ink-muted">{fmt(g.created_at)}</p>
                         </div>
                       </Link>
                     );
@@ -193,14 +193,14 @@ function ProjectItem({
               {/* 휴지통 — 펼치면 삭제된 시뮬/제너, 클릭 시 상세 */}
               <button
                 onClick={() => setTrashOpen(v => !v)}
-                className="w-full flex items-center gap-2 px-2 py-1.5 hover:bg-[#F2F4F6] dark:hover:bg-[#252D3D] rounded-md transition-colors"
+                className="w-full flex items-center gap-2 px-2 py-1.5 hover:bg-accent rounded-md transition-colors"
               >
                 <ChevronIcon open={trashOpen} />
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-[#8B95A1] shrink-0">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-ink-tertiary shrink-0">
                   <polyline points="3 6 5 6 21 6" />
                   <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
                 </svg>
-                <span className="text-xs font-semibold text-[#4E5968] dark:text-[#9CA3AF] uppercase tracking-wide">
+                <span className="text-xs font-semibold text-ink-secondary uppercase tracking-wide">
                   휴지통{trashed.length > 0 ? ` (${trashed.length})` : ''}
                 </span>
               </button>
@@ -245,24 +245,24 @@ function TeamGroup({
     <div>
       <button
         onClick={() => setOpen(v => !v)}
-        className="w-full flex items-center gap-1.5 px-2 py-1 hover:bg-[#F2F4F6] dark:hover:bg-[#252D3D] rounded-md transition-colors"
+        className="w-full flex items-center gap-1.5 px-2 py-1 hover:bg-accent rounded-md transition-colors"
       >
         <ChevronIcon open={open} />
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-[#8B95A1] shrink-0">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-ink-tertiary shrink-0">
           <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
           <circle cx="9" cy="7" r="4" />
           <path d="M23 21v-2a4 4 0 0 0-3-3.87" /><path d="M16 3.13a4 4 0 0 1 0 7.75" />
         </svg>
-        <span className="flex-1 min-w-0 text-left text-xs font-semibold text-[#4E5968] dark:text-[#9CA3AF] truncate">
+        <span className="flex-1 min-w-0 text-left text-xs font-semibold text-ink-secondary truncate">
           {name}
         </span>
-        <span className="text-[10px] text-[#B0B8C1] shrink-0">{projects.length}</span>
+        <span className="text-[10px] text-ink-muted shrink-0">{projects.length}</span>
       </button>
 
       {open && (
-        <div className="ml-3 border-l border-[#E5E8EB] dark:border-[#2D3748] pl-2 space-y-0.5 mt-0.5 mb-1">
+        <div className="ml-3 border-l border-line pl-2 space-y-0.5 mt-0.5 mb-1">
           {projects.length === 0 ? (
-            <p className="text-[10px] text-[#B0B8C1] px-2 py-1">프로젝트 없음</p>
+            <p className="text-[10px] text-ink-muted px-2 py-1">프로젝트 없음</p>
           ) : projects.map(p => (
             <ProjectItem key={p.id} project={p} activeSimId={activeSimId} activeGenId={activeGenId} />
           ))}
@@ -306,25 +306,25 @@ function CompanyItem({
 
   return (
     <div>
-      <div className="w-full flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-[#F2F4F6] dark:hover:bg-[#252D3D] transition-colors group">
+      <div className="w-full flex items-center gap-2 px-3 py-2 rounded-lg hover:bg-accent transition-colors group">
         <button
           onClick={() => setOpen(v => !v)}
           className="flex items-center gap-2 flex-1 min-w-0 text-left"
         >
           <ChevronIcon open={open} />
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="text-[#3182F6] shrink-0">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" className="text-primary shrink-0">
             <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
             <polyline points="9 22 9 12 15 12 15 22" />
           </svg>
-          <span className="flex-1 min-w-0 text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6] truncate">{name}</span>
+          <span className="flex-1 min-w-0 text-sm font-semibold text-ink truncate">{name}</span>
         </button>
-        <span className="text-[10px] text-[#B0B8C1] shrink-0">{projects.length}</span>
+        <span className="text-[10px] text-ink-muted shrink-0">{projects.length}</span>
       </div>
 
       {open && (
-        <div className="ml-4 border-l border-[#E5E8EB] dark:border-[#2D3748] pl-2 space-y-0.5 mt-0.5 mb-1">
+        <div className="ml-4 border-l border-line pl-2 space-y-0.5 mt-0.5 mb-1">
           {projects.length === 0 ? (
-            <p className="text-[10px] text-[#B0B8C1] px-2 py-1">프로젝트 없음</p>
+            <p className="text-[10px] text-ink-muted px-2 py-1">프로젝트 없음</p>
           ) : teamNames.map(tn => (
             <TeamGroup
               key={tn}
@@ -344,9 +344,21 @@ function CompanyItem({
 // ADMIN 전용 — 전체 회사를 보고, 회사 안에서 다시 팀별로 프로젝트를 나눠 본다.
 export default function AdminPanel({ collapsed, onToggle }: { collapsed: boolean; onToggle: () => void }) {
   const pathname = usePathname();
-  const { projects, loading, refreshAll } = useProjects();
+  const { refreshAll } = useProjects();
   const [search, setSearch] = useState('');
   const [orgs, setOrgs] = useState<{ id: string; name: string }[]>([]);
+  // 어드민 패널은 전 기업을 한 화면에 보여줘야 한다. 공용 /api/projects 는 선택 기업(X-Org-Id)으로
+  // 스코프되어 다른 기업 프로젝트가 빠지므로, 스코프 없는 admin 전용 목록을 별도로 받는다.
+  const [panelProjects, setPanelProjects] = useState<
+    {
+      id: string;
+      name: string;
+      organization_name: string | null;
+      team_id: string | null;
+      team_name: string | null;
+    }[]
+  >([]);
+  const [panelLoading, setPanelLoading] = useState(true);
 
   // 전체 조직 목록 — 프로젝트가 0개인 회사도 패널에 표시하기 위함. 새로고침 버튼이 재호출.
   const loadOrgs = useCallback(() => {
@@ -356,9 +368,20 @@ export default function AdminPanel({ collapsed, onToggle }: { collapsed: boolean
       .catch(() => {});
   }, []);
 
+  // 전 기업 프로젝트(스코프 무관) — admin 패널 트리 소스.
+  const loadPanelProjects = useCallback(() => {
+    setPanelLoading(true);
+    authedFetch(`${API_BASE}/api/admin/projects`)
+      .then(r => (r.ok ? r.json() : []))
+      .then(d => { if (Array.isArray(d)) setPanelProjects(d); })
+      .catch(() => {})
+      .finally(() => setPanelLoading(false));
+  }, []);
+
   useEffect(() => {
     loadOrgs();
-  }, [loadOrgs]);
+    loadPanelProjects();
+  }, [loadOrgs, loadPanelProjects]);
 
   const simMatch = pathname.match(/^\/simulation\/([^/]+)/);
   const genMatch = pathname.match(/^\/generations\/([^/]+)/);
@@ -366,7 +389,7 @@ export default function AdminPanel({ collapsed, onToggle }: { collapsed: boolean
   const activeGenId = genMatch?.[1] ?? null;
 
   // 회사별 그룹핑 (팀 메타 포함)
-  const grouped = projects.reduce<Record<string, PanelProject[]>>((acc, p) => {
+  const grouped = panelProjects.reduce<Record<string, PanelProject[]>>((acc, p) => {
     const key = p.organization_name ?? '(회사 미지정)';
     if (!acc[key]) acc[key] = [];
     acc[key].push({ id: p.id, name: p.name, team_id: p.team_id, team_name: p.team_name });
@@ -398,11 +421,11 @@ export default function AdminPanel({ collapsed, onToggle }: { collapsed: boolean
   // ── 접힌 상태 ──
   if (collapsed) {
     return (
-      <aside className="fixed top-0 left-56 h-full w-[50px] bg-[#FAFBFC] dark:bg-[#161B27] border-r border-[#E5E8EB] dark:border-[#2D3748] flex flex-col items-center pt-3 z-30 transition-all duration-200">
+      <aside className="fixed top-0 left-56 h-full w-[50px] bg-surface-1 border-r border-line flex flex-col items-center pt-3 z-30 transition-all duration-200">
         <button
           onClick={onToggle}
           title="패널 펼치기"
-          className="w-8 h-8 flex items-center justify-center rounded-lg text-[#8B95A1] hover:bg-[#F2F4F6] dark:hover:bg-[#252D3D] hover:text-[#3182F6] transition-colors"
+          className="w-8 h-8 flex items-center justify-center rounded-lg text-ink-tertiary hover:bg-accent hover:text-primary transition-colors"
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="9 18 15 12 9 6" />
@@ -414,23 +437,23 @@ export default function AdminPanel({ collapsed, onToggle }: { collapsed: boolean
 
   // ── 펼친 상태 ──
   return (
-    <aside className="fixed top-0 left-56 h-full w-72 bg-[#FAFBFC] dark:bg-[#161B27] border-r border-[#E5E8EB] dark:border-[#2D3748] flex flex-col z-30 transition-all duration-200">
+    <aside className="fixed top-0 left-56 h-full w-72 bg-surface-1 border-r border-line flex flex-col z-30 transition-all duration-200">
       {/* 헤더 */}
-      <div className="h-14 flex items-center justify-between px-3 border-b border-[#E5E8EB] dark:border-[#2D3748] shrink-0">
+      <div className="h-14 flex items-center justify-between px-3 border-b border-line shrink-0">
         <button
           onClick={onToggle}
           title="패널 접기"
-          className="w-7 h-7 flex items-center justify-center rounded-lg text-[#8B95A1] hover:bg-[#F2F4F6] dark:hover:bg-[#252D3D] hover:text-[#3182F6] transition-colors"
+          className="w-7 h-7 flex items-center justify-center rounded-lg text-ink-tertiary hover:bg-accent hover:text-primary transition-colors"
         >
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="15 18 9 12 15 6" />
           </svg>
         </button>
-        <p className="text-sm font-semibold text-[#4E5968] dark:text-[#9CA3AF]">기업 현황</p>
+        <p className="text-sm font-semibold text-ink-secondary">기업 현황</p>
         <button
-          onClick={() => { refreshAll(); loadOrgs(); }}
+          onClick={() => { refreshAll(); loadOrgs(); loadPanelProjects(); }}
           title="새로고침"
-          className="w-7 h-7 flex items-center justify-center rounded-lg text-[#8B95A1] hover:bg-[#F2F4F6] dark:hover:bg-[#252D3D] hover:text-[#3182F6] transition-colors"
+          className="w-7 h-7 flex items-center justify-center rounded-lg text-ink-tertiary hover:bg-accent hover:text-primary transition-colors"
         >
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="23 4 23 10 17 10" /><polyline points="1 20 1 14 7 14" />
@@ -440,27 +463,27 @@ export default function AdminPanel({ collapsed, onToggle }: { collapsed: boolean
       </div>
 
       {/* 검색 */}
-      <div className="px-3 py-2 border-b border-[#E5E8EB] dark:border-[#2D3748] shrink-0">
+      <div className="px-3 py-2 border-b border-line shrink-0">
         <div className="relative">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
-            className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#B0B8C1]">
+            className="absolute left-2.5 top-1/2 -translate-y-1/2 text-ink-muted">
             <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
           </svg>
           <input
             value={search}
             onChange={e => setSearch(e.target.value)}
             placeholder="회사·프로젝트 검색"
-            className="w-full pl-7 pr-3 py-1.5 text-xs bg-[#F2F4F6] dark:bg-[#252D3D] border border-transparent rounded-lg text-[#191F28] dark:text-[#F2F4F6] placeholder-[#B0B8C1] focus:outline-none focus:border-[#3182F6] transition-colors"
+            className="w-full pl-7 pr-3 py-1.5 text-xs bg-surface-2 border border-transparent rounded-lg text-ink placeholder:text-ink-muted focus:outline-none focus:border-primary transition-colors"
           />
         </div>
       </div>
 
       {/* 목록 */}
       <div className="flex-1 overflow-y-auto py-2 px-2 space-y-0.5">
-        {loading ? (
-          <p className="text-xs text-[#B0B8C1] px-3 py-2">불러오는 중...</p>
+        {panelLoading ? (
+          <p className="text-xs text-ink-muted px-3 py-2">불러오는 중...</p>
         ) : companyNames.length === 0 ? (
-          <p className="text-xs text-[#B0B8C1] px-3 py-6 text-center">
+          <p className="text-xs text-ink-muted px-3 py-6 text-center">
             {search ? '검색 결과 없음' : '데이터가 없습니다'}
           </p>
         ) : companyNames.map(name => (
@@ -475,10 +498,10 @@ export default function AdminPanel({ collapsed, onToggle }: { collapsed: boolean
       </div>
 
       {/* 푸터 통계 */}
-      {!loading && companyNames.length > 0 && (
-        <div className="px-3 py-2 border-t border-[#E5E8EB] dark:border-[#2D3748] shrink-0">
-          <p className="text-[10px] text-[#B0B8C1] dark:text-[#4B5563]">
-            {companyNames.length}개 기업 · {projects.length}개 프로젝트
+      {!panelLoading && companyNames.length > 0 && (
+        <div className="px-3 py-2 border-t border-line shrink-0">
+          <p className="text-[10px] text-ink-muted">
+            {companyNames.length}개 기업 · {panelProjects.length}개 프로젝트
           </p>
         </div>
       )}

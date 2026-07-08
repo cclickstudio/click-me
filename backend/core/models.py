@@ -529,10 +529,12 @@ class Inquiry(Base):
     __tablename__ = "inquiries"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    name: Mapped[str] = mapped_column(String(255))
-    email: Mapped[str] = mapped_column(String(255))
-    message: Mapped[str] = mapped_column(Text)
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    title: Mapped[str] = mapped_column(String(300), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    contact_email: Mapped[str | None] = mapped_column(String(255), nullable=True)  # 회신 연락처
+    is_resolved: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class AdGeneration(Base):
@@ -707,6 +709,30 @@ class IdempotencyKeyRow(Base):
     approval_id: Mapped[str] = mapped_column(String(64), index=True)
     claimed: Mapped[bool] = mapped_column(Boolean, default=True)
     result: Mapped[dict | None] = mapped_column(JSONB)  # ActionResult JSON — replay용 (게이트 #1)
+    created_at: Mapped[datetime] = mapped_column(_TS, server_default=func.now())
+
+
+class ApprovalRecordRow(Base):
+    """승인 원장 (집행 게이트 #5) — 서버가 발행한 승인만 집행되게 하는 진위 대조 원본."""
+
+    __tablename__ = "management_approval_records"
+    __table_args__ = (
+        Index("ix_mgmt_approval_proposal", "proposal_id"),
+        Index("ix_mgmt_approval_tenant", "tenant_id"),
+    )
+
+    approval_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    proposal_id: Mapped[str] = mapped_column(String(64))
+    proposal_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    tenant_id: Mapped[str] = mapped_column(String(64))
+    approver_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    action_tier: Mapped[int] = mapped_column(Integer, nullable=False)  # ActionTier(IntEnum) 값
+    execution_mode: Mapped[str] = mapped_column(String(16), nullable=False)  # ExecutionMode.value
+    approval_policy_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    expected_state_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    approved_at: Mapped[datetime] = mapped_column(_TS, nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(_TS, nullable=False)
+    consumed_at: Mapped[datetime | None] = mapped_column(_TS)  # 집행 성공 시 마킹
     created_at: Mapped[datetime] = mapped_column(_TS, server_default=func.now())
 
 

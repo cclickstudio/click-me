@@ -54,25 +54,25 @@ export function WeeklyReportModal({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between">
-          <h3 className="text-lg font-bold text-[#191F28] dark:text-[#F2F4F6]">성과 리포트</h3>
+          <h3 className="text-lg font-bold text-ink">성과 리포트</h3>
           <button
             onClick={onClose}
-            className="text-sm text-[#8B95A1] hover:text-[#191F28] dark:hover:text-[#F2F4F6]"
+            className="text-sm text-ink-tertiary hover:text-ink dark:hover:text-[#F2F4F6]"
           >
             닫기 ✕
           </button>
         </div>
 
         {/* 기간 토글 — 최근 7일이 비어 있어도 30일·전체로 실측 값을 조회할 수 있게 한다 */}
-        <div className="mt-3 flex w-fit rounded-lg border border-[#E5E8EB] dark:border-[#2D3748] overflow-hidden text-[12px]">
+        <div className="mt-3 flex w-fit rounded-lg border border-line overflow-hidden text-[12px]">
           {PERIODS.map(([key, label]) => (
             <button
               key={key}
               onClick={() => setPeriod(key)}
               className={`px-2.5 py-1.5 ${
                 period === key
-                  ? 'bg-[#3182F6] text-white'
-                  : 'text-[#8B95A1] hover:bg-[#F2F4F6] dark:hover:bg-[#2D3748]'
+                  ? 'bg-primary text-primary-foreground'
+                  : 'text-ink-tertiary hover:bg-[#F2F4F6] dark:hover:bg-[#2D3748]'
               }`}
             >
               {label}
@@ -81,12 +81,12 @@ export function WeeklyReportModal({
         </div>
 
         {!report && (
-          <p className="mt-4 text-sm text-[#8B95A1]">{loading ? '불러오는 중…' : (note ?? '내용이 없어요.')}</p>
+          <p className="mt-4 text-sm text-ink-tertiary">{loading ? '불러오는 중…' : (note ?? '내용이 없어요.')}</p>
         )}
 
         {report && (
           <>
-            <p className="mt-3 text-xs text-[#8B95A1]">
+            <p className="mt-3 text-xs text-ink-tertiary">
               {report.period.since
                 ? `${report.period.since} ~ ${report.period.until}`
                 : (report.period.label ?? '전체 기간')}{' '}
@@ -107,10 +107,10 @@ export function WeeklyReportModal({
               ).map(([label, value]) => (
                 <div
                   key={label}
-                  className="rounded-xl border border-[#E5E8EB] px-3 py-2.5 dark:border-[#2D3748]"
+                  className="rounded-xl border border-line px-3 py-2.5"
                 >
-                  <p className="text-[11px] text-[#8B95A1]">{label}</p>
-                  <p className="mt-0.5 text-[15px] font-bold tabular-nums text-[#191F28] dark:text-[#F2F4F6]">
+                  <p className="text-[11px] text-ink-tertiary">{label}</p>
+                  <p className="mt-0.5 text-[15px] font-bold tabular-nums text-ink">
                     {value}
                   </p>
                 </div>
@@ -118,9 +118,9 @@ export function WeeklyReportModal({
             </div>
 
             {report.campaigns.length > 0 && (
-              <div className="mt-4 overflow-x-auto rounded-xl border border-[#E5E8EB] dark:border-[#2D3748]">
+              <div className="mt-4 overflow-x-auto rounded-xl border border-line">
                 <table className="w-full text-[12px] [&_td]:whitespace-nowrap [&_th]:whitespace-nowrap">
-                  <thead className="border-b border-[#E5E8EB] text-[#8B95A1] dark:border-[#2D3748]">
+                  <thead className="border-b border-line text-ink-tertiary">
                     <tr>
                       <th className="px-3 py-2 text-left font-semibold">캠페인</th>
                       <th className="px-3 py-2 text-right font-semibold">지출</th>
@@ -134,9 +134,9 @@ export function WeeklyReportModal({
                     {report.campaigns.map((c) => (
                       <tr
                         key={c.campaign_id}
-                        className="border-b border-[#F2F4F6] last:border-0 dark:border-[#2D3748]"
+                        className="border-b border-[#F2F4F6] last:border-0"
                       >
-                        <td className="px-3 py-2 text-[#191F28] dark:text-[#F2F4F6]">{c.name}</td>
+                        <td className="px-3 py-2 text-ink">{c.name}</td>
                         <td className="px-3 py-2 text-right tabular-nums">
                           ₩{c.spend_krw.toLocaleString()}
                         </td>
@@ -161,10 +161,10 @@ export function WeeklyReportModal({
 
             {report.highlights.length > 0 && (
               <div className="mt-4">
-                <p className="text-[12px] font-semibold text-[#4E5968] dark:text-[#9CA3AF]">
+                <p className="text-[12px] font-semibold text-ink-secondary">
                   하이라이트
                 </p>
-                <ul className="mt-1 space-y-1 text-[13px] text-[#191F28] dark:text-[#F2F4F6]">
+                <ul className="mt-1 space-y-1 text-[13px] text-ink">
                   {report.highlights.map((h) => (
                     <li key={h}>· {h}</li>
                   ))}
@@ -174,10 +174,10 @@ export function WeeklyReportModal({
 
             {report.next_actions.length > 0 && (
               <div className="mt-3 rounded-xl bg-[#F9FAFB] px-4 py-3 dark:bg-[#232A36]">
-                <p className="text-[12px] font-semibold text-[#4E5968] dark:text-[#9CA3AF]">
+                <p className="text-[12px] font-semibold text-ink-secondary">
                   다음 액션 제안
                 </p>
-                <ul className="mt-1 space-y-1 text-[13px] text-[#191F28] dark:text-[#F2F4F6]">
+                <ul className="mt-1 space-y-1 text-[13px] text-ink">
                   {report.next_actions.map((a) => (
                     <li key={a}>· {a}</li>
                   ))}

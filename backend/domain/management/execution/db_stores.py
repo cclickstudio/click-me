@@ -6,13 +6,16 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import TYPE_CHECKING
 
 from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from core.db import AsyncSessionLocal
-from core.models import AuditEventRow, IdempotencyKeyRow
+from core.models import ApprovalRecordRow, AuditEventRow, IdempotencyKeyRow
+from domain.management.contracts.approval_ledger import ApprovalRecord
+from domain.management.contracts.enums import ActionTier, ExecutionMode
 from domain.management.contracts.schemas import ActionResult
 from domain.management.execution.audit_log import AuditEvent, mask_sensitive
 
@@ -138,3 +141,64 @@ class DbAuditSink:
             )
             for row in rows
         )
+
+
+def approval_record_to_row(record: ApprovalRecord) -> ApprovalRecordRow:
+    """계약 → ORM row. enum은 int/str 값으로 저장."""
+    return ApprovalRecordRow(
+        approval_id=record.approval_id,
+        proposal_id=record.proposal_id,
+        proposal_hash=record.proposal_hash,
+        tenant_id=record.tenant_id,
+        approver_id=record.approver_id,
+        action_tier=int(record.action_tier),
+        execution_mode=record.execution_mode.value,
+        approval_policy_version=record.approval_policy_version,
+        expected_state_version=record.expected_state_version,
+        approved_at=record.approved_at,
+        expires_at=record.expires_at,
+        consumed_at=record.consumed_at,
+    )
+
+
+def row_to_approval_record(row: ApprovalRecordRow) -> ApprovalRecord:
+    return ApprovalRecord(
+        approval_id=row.approval_id,
+        proposal_id=row.proposal_id,
+        proposal_hash=row.proposal_hash,
+        tenant_id=row.tenant_id,
+        approver_id=row.approver_id,
+        action_tier=ActionTier(row.action_tier),
+        execution_mode=ExecutionMode(row.execution_mode),
+        approval_policy_version=row.approval_policy_version,
+        expected_state_version=row.expected_state_version,
+        approved_at=row.approved_at,
+        expires_at=row.expires_at,
+        consumed_at=row.consumed_at,
+    )
+
+
+class DbApprovalStore:
+    """management_approval_records 기반 승인 원장 (집행 게이트 #5)."""
+
+    def __init__(
+        self, session_factory: async_sessionmaker[AsyncSession] = AsyncSessionLocal
+    ) -> None:
+        self._sf = session_factory
+
+    async def put(self, record: ApprovalRecord) -> None:
+        async with self._sf() as session:
+            session.add(approval_record_to_row(record))
+            await session.commit()
+
+    async def get(self, approval_id: str) -> ApprovalRecord | None:
+        async with self._sf() as session:
+            row = await session.get(ApprovalRecordRow, approval_id)
+        return None if row is None else row_to_approval_record(row)
+
+    async def consume(self, approval_id: str, at: datetime) -> None:
+        async with self._sf() as session:
+            row = await session.get(ApprovalRecordRow, approval_id)
+            if row is not None and row.consumed_at is None:
+                row.consumed_at = at
+                await session.commit()

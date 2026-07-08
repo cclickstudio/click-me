@@ -35,7 +35,7 @@ export function AdminOrgPicker({
   }, []);
 
   return (
-    <label className="flex items-center gap-2 text-sm text-[#4E5968] dark:text-[#9CA3AF]">
+    <label className="flex items-center gap-2 text-sm text-ink-secondary">
       <span className="font-medium">조직</span>
       <Select
         aria-label="조직 선택"

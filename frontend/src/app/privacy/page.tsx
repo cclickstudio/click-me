@@ -4,15 +4,15 @@ import Link from 'next/link';
 
 export const metadata: Metadata = { title: '개인정보처리방침 | ClickMe' };
 
-const h2 = 'text-lg font-bold text-[#191F28] mt-8 mb-2';
-const p = 'text-sm leading-relaxed text-[#4E5968] mb-2';
-const li = 'text-sm leading-relaxed text-[#4E5968] ml-5 list-disc';
+const h2 = 'text-lg font-bold text-ink mt-8 mb-2';
+const p = 'text-sm leading-relaxed text-ink-secondary mb-2';
+const li = 'text-sm leading-relaxed text-ink-secondary ml-5 list-disc';
 
 export default function PrivacyPage() {
   return (
     <main className="mx-auto max-w-3xl px-6 py-12">
-      <h1 className="text-2xl font-bold text-[#191F28]">개인정보처리방침</h1>
-      <p className="mt-1 text-xs text-[#8B95A1]">시행일 2026-07-03</p>
+      <h1 className="text-2xl font-bold text-ink">개인정보처리방침</h1>
+      <p className="mt-1 text-xs text-ink-tertiary">시행일 2026-07-03</p>
 
       <p className={`${p} mt-6`}>
         ClickMe(이하 “회사”)는 광고 시뮬레이션·생성·관리 서비스를 제공하며, 이용자의 개인정보를
@@ -50,7 +50,7 @@ export default function PrivacyPage() {
       <p className={p}>
         Meta 연동 시 받는 액세스 토큰은 AES-256으로 암호화해 저장하며, 광고 성과 조회·관리
         목적에만 사용합니다. 연동 해제 또는 데이터 삭제 요청 방법은{' '}
-        <Link href="/data-deletion" className="text-[#3182F6] underline">
+        <Link href="/data-deletion" className="text-primary underline">
           데이터 삭제 안내
         </Link>
         를 참고하세요.
@@ -65,15 +65,15 @@ export default function PrivacyPage() {
       <h2 className={h2}>7. 문의처</h2>
       <p className={p}>개인정보 보호 책임: ClickMe 운영팀 · 이메일 rkdrudrn1031@gmail.com</p>
 
-      <p className="mt-10 text-xs text-[#B0B8C1]">
+      <p className="mt-10 text-xs text-ink-muted">
         본 방침은 서비스 변경에 따라 개정될 수 있으며, 개정 시 본 페이지에 게시합니다.
       </p>
       <p className="mt-4 text-sm">
-        <Link href="/terms" className="text-[#3182F6] underline">
+        <Link href="/terms" className="text-primary underline">
           이용약관
         </Link>
         {' · '}
-        <Link href="/data-deletion" className="text-[#3182F6] underline">
+        <Link href="/data-deletion" className="text-primary underline">
           데이터 삭제 안내
         </Link>
       </p>

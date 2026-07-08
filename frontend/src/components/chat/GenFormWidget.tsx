@@ -30,12 +30,12 @@ type Initial = {
 const ACTIVE_GEN_KEY = 'clickme_active_gen';
 
 const inputCls =
-  'w-full px-3 py-2 rounded-lg border border-[#E5E8EB] dark:border-[#2D3748] text-sm bg-white dark:bg-[#252D3D] text-[#191F28] dark:text-[#F2F4F6] focus:outline-none focus:border-[#3182F6]';
-const labelCls = 'text-[11px] font-semibold text-[#8B95A1] dark:text-[#6B7280] mb-1 block';
+  'w-full px-3 py-2 rounded-lg border border-line text-sm bg-surface-2 text-ink focus:outline-none focus:border-primary';
+const labelCls = 'text-[11px] font-semibold text-ink-tertiary mb-1 block';
 const cardCls =
-  'mt-1 w-full rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-white dark:bg-[#1C2333] p-4';
+  'mt-1 w-full rounded-xl border border-line bg-card p-4';
 const btnCls =
-  'flex-1 py-2 rounded-lg bg-[#3182F6] text-white text-sm font-semibold hover:bg-[#1B6EEB] disabled:opacity-40 transition-colors';
+  'flex-1 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary-hover disabled:opacity-40 transition-colors';
 
 export default function GenFormWidget({
   initial,
@@ -265,28 +265,28 @@ export default function GenFormWidget({
   if (phase === 'form' && isImprove) {
     return (
       <div className={cardCls}>
-        <p className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6] mb-3">
+        <p className="text-sm font-semibold text-ink mb-3">
           🔄 시뮬 결과 기반 개선 생성{initial?.product_name ? ` — ${initial.product_name}` : ''}
         </p>
         <div className="space-y-2">
           <div>
             <label className={labelCls}>시뮬레이션 결과</label>
-            <p className="text-sm text-[#191F28] dark:text-[#F2F4F6] rounded-lg bg-[#F9FAFB] dark:bg-[#252D3D] px-3 py-2">
+            <p className="text-sm text-ink rounded-lg bg-surface-1 px-3 py-2">
               {initial?.simulation_summary}
             </p>
           </div>
           {initial?.improvement_direction && (
             <div>
               <label className={labelCls}>개선 방향 (토론 권고)</label>
-              <p className="text-[12px] text-[#4E5968] dark:text-[#9CA3AF] whitespace-pre-line rounded-lg bg-[#F9FAFB] dark:bg-[#252D3D] px-3 py-2 max-h-24 overflow-y-auto">
+              <p className="text-[12px] text-ink-secondary whitespace-pre-line rounded-lg bg-surface-1 px-3 py-2 max-h-24 overflow-y-auto">
                 {initial.improvement_direction}
               </p>
             </div>
           )}
           {initial?.plain_summary && (
-            <details className="text-[12px] text-[#4E5968] dark:text-[#9CA3AF]">
-              <summary className="cursor-pointer text-[11px] font-semibold text-[#8B95A1]">AI 분석 보기</summary>
-              <p className="mt-1 whitespace-pre-line rounded-lg bg-[#F9FAFB] dark:bg-[#252D3D] px-3 py-2 max-h-24 overflow-y-auto">
+            <details className="text-[12px] text-ink-secondary">
+              <summary className="cursor-pointer text-[11px] font-semibold text-ink-tertiary">AI 분석 보기</summary>
+              <p className="mt-1 whitespace-pre-line rounded-lg bg-surface-1 px-3 py-2 max-h-24 overflow-y-auto">
                 {initial.plain_summary}
               </p>
             </details>
@@ -339,17 +339,17 @@ export default function GenFormWidget({
     const allValid = missing.length === 0;
     return (
       <div className={cardCls}>
-        <p className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6] mb-3">
+        <p className="text-sm font-semibold text-ink mb-3">
           🎨 광고 생성 정보 입력{' '}
-          <span className="text-[11px] font-normal text-[#8B95A1]">
+          <span className="text-[11px] font-normal text-ink-tertiary">
             ({step + 1}/{totalSteps})
           </span>
         </p>
         {imagePreview && (
           <div className="mb-3 flex items-center gap-2">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={imagePreview} alt="첨부 이미지" className="w-12 h-12 rounded-lg object-cover border border-[#E5E8EB] dark:border-[#2D3748]" />
-            <span className="text-[11px] text-[#8B95A1]">채팅에서 첨부한 이미지를 상품 이미지로 사용해요</span>
+            <img src={imagePreview} alt="첨부 이미지" className="w-12 h-12 rounded-lg object-cover border border-line" />
+            <span className="text-[11px] text-ink-tertiary">채팅에서 첨부한 이미지를 상품 이미지로 사용해요</span>
           </div>
         )}
         <div className="min-h-[68px]">
@@ -403,7 +403,7 @@ export default function GenFormWidget({
         )}
         <div className="flex gap-2 mt-3">
           {step > 0 && (
-            <button onClick={() => setStep(step - 1)} className="px-3 py-2 rounded-lg border border-[#E5E8EB] dark:border-[#2D3748] text-sm text-[#8B95A1]">
+            <button onClick={() => setStep(step - 1)} className="px-3 py-2 rounded-lg border border-line text-sm text-ink-tertiary">
               이전
             </button>
           )}
@@ -426,27 +426,27 @@ export default function GenFormWidget({
       <button
         type="button"
         onClick={() => genId && router.push(`/generations/${genId}`)}
-        className={`${cardCls} w-full text-left hover:border-[#3182F6] transition-colors`}
+        className={`${cardCls} w-full text-left hover:border-primary transition-colors`}
         title="클릭하면 생성 페이지에서 자세히 봐요"
       >
         <div className="flex items-center gap-3">
-          <div className="w-6 h-6 border-[3px] border-[#E5E8EB] dark:border-[#2D3748] border-t-[#3182F6] dark:border-t-[#5B9DF9] rounded-full animate-spin" />
+          <div className="w-6 h-6 border-[3px] border-line border-t-primary dark:border-t-[#5B9DF9] rounded-full animate-spin" />
           <div className="flex-1">
-            <p className="text-sm text-[#191F28] dark:text-[#F2F4F6]">{stageMsg}</p>
-            <div className="mt-1.5 h-1.5 rounded-full bg-[#F2F4F6] dark:bg-[#252D3D] overflow-hidden">
-              <div className="h-full bg-[#3182F6] transition-all duration-300" style={{ width: `${pct}%` }} />
+            <p className="text-sm text-ink">{stageMsg}</p>
+            <div className="mt-1.5 h-1.5 rounded-full bg-surface-1 overflow-hidden">
+              <div className="h-full bg-primary transition-all duration-300" style={{ width: `${pct}%` }} />
             </div>
           </div>
-          <span className="text-xs text-[#8B95A1]">{pct}%</span>
+          <span className="text-xs text-ink-tertiary">{pct}%</span>
         </div>
         {/* G1 — 무엇을 생성 중인지 입력 확인(상품·타깃) */}
         {(name || target) && (
-          <p className="text-[11px] text-[#4E5968] dark:text-[#9CA3AF] mt-2 truncate">
+          <p className="text-[11px] text-ink-secondary mt-2 truncate">
             🎨 {name || '광고'}
             {target ? ` · 타깃 ${target}` : ''}
           </p>
         )}
-        <p className="text-[10px] text-[#B0B8C1] mt-1">클릭하면 전체 화면에서 진행을 봐요 →</p>
+        <p className="text-[10px] text-ink-muted mt-1">클릭하면 전체 화면에서 진행을 봐요 →</p>
       </button>
     );
   }
@@ -455,7 +455,7 @@ export default function GenFormWidget({
     return (
       <div className={cardCls}>
         <p className="text-sm text-[#F04452]">광고 생성 실패: {err}</p>
-        <button onClick={() => setPhase('form')} className="mt-2 text-xs text-[#3182F6]">
+        <button onClick={() => setPhase('form')} className="mt-2 text-xs text-primary">
           다시 시도
         </button>
       </div>
@@ -466,21 +466,21 @@ export default function GenFormWidget({
   const cands = detail?.candidates ?? [];
   return (
     <div className={cardCls}>
-      <p className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6] mb-2">
+      <p className="text-sm font-semibold text-ink mb-2">
         ✅ 광고 시안 {cands.length}개 생성 완료
       </p>
       <ul className="space-y-1.5">
         {cands.slice(0, 3).map(c => (
-          <li key={c.candidate_id} className="rounded-lg bg-[#F9FAFB] dark:bg-[#252D3D] px-3 py-2 text-sm">
-            <span className="text-[10px] text-[#8B95A1]">{c.strategy?.strategy_type}</span>
-            <p className="text-[#191F28] dark:text-[#F2F4F6] truncate">{c.copy?.headline}</p>
+          <li key={c.candidate_id} className="rounded-lg bg-surface-1 px-3 py-2 text-sm">
+            <span className="text-[10px] text-ink-tertiary">{c.strategy?.strategy_type}</span>
+            <p className="text-ink truncate">{c.copy?.headline}</p>
           </li>
         ))}
       </ul>
       {genId && (
         <button
           onClick={() => router.push(`/generations/${genId}`)}
-          className="mt-3 w-full py-2 rounded-lg border border-[#3182F6]/30 text-[#3182F6] text-sm font-semibold hover:bg-[#EBF3FF] dark:hover:bg-[#1E3A5F] transition-colors"
+          className="mt-3 w-full py-2 rounded-lg border border-primary/30 text-primary text-sm font-semibold hover:bg-primary-subtle transition-colors"
         >
           상세 보기 →
         </button>

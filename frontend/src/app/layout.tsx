@@ -15,11 +15,11 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="ko" suppressHydrationWarning>
+    <html lang="ko" data-scroll-behavior="smooth" suppressHydrationWarning>
       <head>
         <script
           dangerouslySetInnerHTML={{
-            __html: `(function(){try{var t=localStorage.getItem('theme');var d=window.matchMedia('(prefers-color-scheme: dark)').matches;if(t==='dark'||(t===null&&d))document.documentElement.classList.add('dark')}catch(e){}})()`,
+            __html: `(function(){try{var e=document.documentElement;var dt=localStorage.getItem('data-theme')||'blue';e.setAttribute('data-theme',dt);var editor=['monokai','monokai-black','dracula'].indexOf(dt)!==-1;var t=localStorage.getItem('theme');var d=window.matchMedia('(prefers-color-scheme: dark)').matches;if(editor||t==='dark'||(t===null&&d))e.classList.add('dark')}catch(e){}})()`,
           }}
         />
       </head>

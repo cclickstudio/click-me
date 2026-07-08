@@ -38,8 +38,8 @@ type LedgerEntry = {
   created_at: string;
 };
 const REASON: Record<string, { label: string; cls: string }> = {
-  charge: { label: '충전', cls: 'text-[#3182F6]' },
-  spend: { label: '집행 차감', cls: 'text-[#4E5968] dark:text-[#9CA3AF]' },
+  charge: { label: '충전', cls: 'text-primary' },
+  spend: { label: '집행 차감', cls: 'text-ink-secondary' },
   refund: { label: '환불', cls: 'text-amber-600 dark:text-amber-400' },
 };
 
@@ -199,17 +199,17 @@ export default function Page() {
       <div className="max-w-screen-xl mx-auto px-6 py-8">
         <div className="mb-6 flex items-end justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-[#191F28] dark:text-[#F2F4F6]">예산 관리</h1>
-            <p className="text-sm text-[#8B95A1] mt-1">
+            <h1 className="text-2xl font-bold text-ink">예산 관리</h1>
+            <p className="text-sm text-ink-tertiary mt-1">
               월 목표 예산 대비 이번 달 실 Meta 집행 페이싱 · 여력=Meta 선불 잔액 · 90/95/100% 가드레일
             </p>
           </div>
-          <div className="flex items-center gap-2 shrink-0 text-xs text-[#8B95A1]">
+          <div className="flex items-center gap-2 shrink-0 text-xs text-ink-tertiary">
             {lastUpdated && <span>갱신 {lastUpdated}</span>}
             <button
               onClick={() => void fetchData()}
               disabled={refreshing}
-              className="px-2.5 py-1.5 rounded-lg border border-[#E5E8EB] dark:border-[#2D3748] hover:border-[#3182F6] hover:text-[#3182F6] disabled:opacity-50 transition-colors"
+              className="px-2.5 py-1.5 rounded-lg border border-line hover:border-primary hover:text-primary disabled:opacity-50 transition-colors"
             >
               {refreshing ? '불러오는 중…' : '↻ 새로고침'}
             </button>
@@ -227,8 +227,8 @@ export default function Page() {
             )}
 
             {/* 기본 목표 벤치마크 — 어떤 규모의 회사를 가정한 값인지(근거: management.py _BUDGET 주석) */}
-            <div className="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-2xl border border-[#E5E8EB] dark:border-[#2D3748] bg-[#F9FAFB] dark:bg-[#1A202C] px-5 py-3.5">
-              <span className="text-[13px] font-semibold text-[#4E5968] dark:text-[#9CA3AF]">
+            <div className="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-2xl border border-line bg-surface-1 px-5 py-3.5">
+              <span className="text-[13px] font-semibold text-ink-secondary">
                 기본 목표 기준
               </span>
               {(
@@ -240,20 +240,20 @@ export default function Page() {
                 ] as [string, string][]
               ).map(([label, value]) => (
                 <div key={label}>
-                  <p className="text-[11px] text-[#8B95A1]">{label}</p>
-                  <p className="mt-0.5 text-[13px] font-semibold text-[#191F28] dark:text-[#F2F4F6]">
+                  <p className="text-[11px] text-ink-tertiary">{label}</p>
+                  <p className="mt-0.5 text-[13px] font-semibold text-ink">
                     {value}
                   </p>
                 </div>
               ))}
-              <span className="ml-auto hidden text-[11px] text-[#B0B8C1] lg:block">
+              <span className="ml-auto hidden text-[11px] text-ink-muted lg:block">
                 내 매출 규모에 맞게 아래에서 목표를 조정하세요
               </span>
             </div>
 
-            <div className="rounded-2xl border border-[#E5E8EB] dark:border-[#2D3748] p-5">
+            <div className="rounded-2xl border border-line p-5">
               <div className="flex items-center justify-between mb-3">
-                <p className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]">
+                <p className="text-sm font-semibold text-ink">
                   {status.period ?? ''} 월 목표 대비 소진
                 </p>
                 {target > 0 && (
@@ -261,7 +261,7 @@ export default function Page() {
                     className={`text-xs font-medium px-2 py-1 rounded-lg ${
                       projOver
                         ? 'bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-300'
-                        : 'bg-[#EBF3FF] text-[#3182F6] dark:bg-[#1E3A5F] dark:text-[#7BB4F5]'
+                        : 'bg-[#EBF3FF] text-primary dark:bg-[#1E3A5F] dark:text-[#7BB4F5]'
                     }`}
                   >
                     이 페이스면 월말 ₩{projection.toLocaleString()} · 목표의 {projPct}%
@@ -312,33 +312,33 @@ export default function Page() {
 
             {/* Meta 선불 계정 정합 — 충전 한도 − 누적 지출 = 잔액 (충전 한도는 결제액의 부가세 제외분) */}
             {(status.account_spend_cap_krw ?? 0) > 0 && (
-              <div className="rounded-2xl border border-[#E5E8EB] dark:border-[#2D3748] p-5">
-                <p className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6] mb-3">
+              <div className="rounded-2xl border border-line p-5">
+                <p className="text-sm font-semibold text-ink mb-3">
                   Meta 선불 계정 정합
                 </p>
                 <div className="flex flex-wrap items-end gap-x-3 gap-y-2 tabular-nums">
                   <div>
-                    <p className="text-[11px] text-[#8B95A1]">충전 한도</p>
-                    <p className="text-lg font-bold text-[#191F28] dark:text-[#F2F4F6]">
+                    <p className="text-[11px] text-ink-tertiary">충전 한도</p>
+                    <p className="text-lg font-bold text-ink">
                       ₩{(status.account_spend_cap_krw ?? 0).toLocaleString()}
                     </p>
                   </div>
-                  <span className="pb-1 text-lg text-[#8B95A1]">−</span>
+                  <span className="pb-1 text-lg text-ink-tertiary">−</span>
                   <div>
-                    <p className="text-[11px] text-[#8B95A1]">누적 지출</p>
-                    <p className="text-lg font-bold text-[#191F28] dark:text-[#F2F4F6]">
+                    <p className="text-[11px] text-ink-tertiary">누적 지출</p>
+                    <p className="text-lg font-bold text-ink">
                       ₩{(status.account_amount_spent_krw ?? 0).toLocaleString()}
                     </p>
                   </div>
-                  <span className="pb-1 text-lg text-[#8B95A1]">=</span>
+                  <span className="pb-1 text-lg text-ink-tertiary">=</span>
                   <div>
-                    <p className="text-[11px] text-[#8B95A1]">선불 잔액</p>
-                    <p className="text-lg font-extrabold text-[#3182F6]">
+                    <p className="text-[11px] text-ink-tertiary">선불 잔액</p>
+                    <p className="text-lg font-extrabold text-primary">
                       ₩{(status.account_balance_krw ?? 0).toLocaleString()}
                     </p>
                   </div>
                 </div>
-                <p className="mt-3 text-[11px] text-[#B0B8C1]">
+                <p className="mt-3 text-[11px] text-ink-muted">
                   충전 한도는 결제액의 <b>부가세(10%) 제외분</b>입니다 — 실제 결제액 ≈ 충전 한도 × 1.1 (예:
                   충전 한도 ₩{(status.account_spend_cap_krw ?? 0).toLocaleString()} → 결제 ≈ ₩
                   {Math.round((status.account_spend_cap_krw ?? 0) * 1.1).toLocaleString()}).
@@ -348,24 +348,24 @@ export default function Page() {
 
             {/* 일자별 계획 vs 실제 */}
             {daily.length > 0 && (
-              <div className="rounded-2xl border border-[#E5E8EB] dark:border-[#2D3748] p-5">
+              <div className="rounded-2xl border border-line p-5">
                 <div className="flex items-center justify-between mb-3">
-                  <p className="font-bold text-[#191F28] dark:text-[#F2F4F6]">일자별 소진</p>
+                  <p className="font-bold text-ink">일자별 소진</p>
                   {dailyPlan > 0 && (
-                    <span className="text-[11px] text-[#8B95A1]">일 계획 ₩{dailyPlan.toLocaleString()}</span>
+                    <span className="text-[11px] text-ink-tertiary">일 계획 ₩{dailyPlan.toLocaleString()}</span>
                   )}
                 </div>
                 <div className="space-y-1.5">
                   {daily.map((d) => (
                     <div key={d.date} className="flex items-center gap-3">
-                      <span className="w-14 text-[11px] text-[#8B95A1] tabular-nums">{d.date.slice(5)}</span>
-                      <div className="flex-1 h-2 rounded-full bg-[#F2F4F6] dark:bg-[#2D3748] overflow-hidden">
+                      <span className="w-14 text-[11px] text-ink-tertiary tabular-nums">{d.date.slice(5)}</span>
+                      <div className="flex-1 h-2 rounded-full bg-surface-1 overflow-hidden">
                         <div
-                          className={`h-full ${dailyPlan > 0 && d.spend_krw > dailyPlan ? 'bg-red-400' : 'bg-[#3182F6]'}`}
+                          className={`h-full ${dailyPlan > 0 && d.spend_krw > dailyPlan ? 'bg-red-400' : 'bg-primary'}`}
                           style={{ width: `${(d.spend_krw / maxDaily) * 100}%` }}
                         />
                       </div>
-                      <span className="w-20 text-right text-xs tabular-nums text-[#191F28] dark:text-[#F2F4F6]">
+                      <span className="w-20 text-right text-xs tabular-nums text-ink">
                         ₩{d.spend_krw.toLocaleString()}
                       </span>
                     </div>
@@ -374,10 +374,10 @@ export default function Page() {
               </div>
             )}
 
-            <div className="rounded-2xl border border-[#E5E8EB] dark:border-[#2D3748] p-5">
+            <div className="rounded-2xl border border-line p-5">
               <div className="flex items-center justify-between mb-3">
-                <p className="font-bold text-[#191F28] dark:text-[#F2F4F6]">캠페인별 지출</p>
-                <div className="flex rounded-lg border border-[#E5E8EB] dark:border-[#2D3748] overflow-hidden text-[11px]">
+                <p className="font-bold text-ink">캠페인별 지출</p>
+                <div className="flex rounded-lg border border-line overflow-hidden text-[11px]">
                   {(
                     [
                       ['month', '이번 달'],
@@ -389,8 +389,8 @@ export default function Page() {
                       onClick={() => setSpendScope(key)}
                       className={`px-2.5 py-1 ${
                         spendScope === key
-                          ? 'bg-[#3182F6] text-white'
-                          : 'text-[#8B95A1] hover:bg-[#F2F4F6] dark:hover:bg-[#2D3748]'
+                          ? 'bg-primary text-primary-foreground'
+                          : 'text-ink-tertiary hover:bg-[#F2F4F6] dark:hover:bg-[#2D3748]'
                       }`}
                     >
                       {label}
@@ -399,11 +399,11 @@ export default function Page() {
                 </div>
               </div>
               {spendScope === 'all' && allTimeSpend == null ? (
-                <p className="text-xs text-[#8B95A1] py-2">불러오는 중…</p>
+                <p className="text-xs text-ink-tertiary py-2">불러오는 중…</p>
               ) : spendRows.length === 0 ? (
-                <p className="text-xs text-[#8B95A1] py-2">표시할 캠페인이 없어요.</p>
+                <p className="text-xs text-ink-tertiary py-2">표시할 캠페인이 없어요.</p>
               ) : spendScope === 'month' && spendRows.every((c) => c.spend_krw === 0) ? (
-                <p className="text-xs text-[#8B95A1] py-2">
+                <p className="text-xs text-ink-tertiary py-2">
                   이번 달 집행이 아직 없어요 — ‘전체 기간’으로 누적 지출을 볼 수 있어요.
                 </p>
               ) : (
@@ -413,16 +413,16 @@ export default function Page() {
                   <div className="space-y-2.5">
                     {spendRows.map((c) => (
                       <div key={c.name} className="flex items-center gap-3">
-                        <span className="w-32 truncate text-sm text-[#4E5968] dark:text-[#C9CED6]">{c.name}</span>
-                        <div className="flex-1 h-2 rounded-full bg-[#F2F4F6] dark:bg-[#2D3748] overflow-hidden">
-                          <div className="h-full bg-[#3182F6]" style={{ width: `${(c.spend_krw / maxSpend) * 100}%` }} />
+                        <span className="w-32 truncate text-sm text-ink-secondary dark:text-[#C9CED6]">{c.name}</span>
+                        <div className="flex-1 h-2 rounded-full bg-surface-1 overflow-hidden">
+                          <div className="h-full bg-primary" style={{ width: `${(c.spend_krw / maxSpend) * 100}%` }} />
                         </div>
                         {c.roas != null && (
-                          <span className="w-16 text-right text-[11px] tabular-nums text-[#8B95A1]">
+                          <span className="w-16 text-right text-[11px] tabular-nums text-ink-tertiary">
                             ROAS {c.roas.toFixed(1)}x
                           </span>
                         )}
-                        <span className="w-24 text-right text-sm tabular-nums text-[#191F28] dark:text-[#F2F4F6]">
+                        <span className="w-24 text-right text-sm tabular-nums text-ink">
                           ₩{c.spend_krw.toLocaleString()}
                         </span>
                       </div>
@@ -433,14 +433,14 @@ export default function Page() {
             </div>
 
             {/* 예산 리밸런싱 제안 — 저효율→고효율 이동(적용은 승인 경로 재사용) */}
-            <div className="rounded-2xl border border-[#E5E8EB] dark:border-[#2D3748] p-5">
-              <p className="font-bold text-[#191F28] dark:text-[#F2F4F6] mb-1">
+            <div className="rounded-2xl border border-line p-5">
+              <p className="font-bold text-ink mb-1">
                 예산 리밸런싱 제안
-                <span className="ml-2 rounded-md bg-[#EBF3FF] px-1.5 py-0.5 text-[10px] font-semibold text-[#3182F6] dark:bg-[#1E3A5F] dark:text-[#7BB4F5]">
+                <span className="ml-2 rounded-md bg-[#EBF3FF] px-1.5 py-0.5 text-[10px] font-semibold text-primary dark:bg-[#1E3A5F] dark:text-[#7BB4F5]">
                   AI 제안
                 </span>
               </p>
-              <p className="text-xs text-[#8B95A1] mb-3">
+              <p className="text-xs text-ink-tertiary mb-3">
                 최근 7일 실측 기반 제안 — 캠페인이 2개 이상이면 저효율 일예산 20%를 고효율 쪽으로
                 옮기고, 1개면 그 캠페인 소진율에 따라 일예산을 증액·감액합니다. 적용해도 바로
                 집행되지 않고 기존 예산 변경 검증·승인 경로를 그대로 거칩니다.
@@ -448,10 +448,10 @@ export default function Page() {
               {rebalance ? (
                 'campaign' in rebalance ? (
                   // 캠페인 1개 — 단일 증액/감액 제안.
-                  <div className="rounded-xl bg-[#F9FAFB] dark:bg-[#232A36] px-4 py-3">
-                    <p className="text-sm text-[#191F28] dark:text-[#F2F4F6]">
+                  <div className="rounded-xl bg-surface-1 px-4 py-3">
+                    <p className="text-sm text-ink">
                       <b>{rebalance.campaign.name}</b>{' '}
-                      <span className="tabular-nums text-[#8B95A1]">
+                      <span className="tabular-nums text-ink-tertiary">
                         (CPC ₩{rebalance.campaign.cpc_krw.toLocaleString()} · ₩
                         {rebalance.campaign.daily_budget_krw.toLocaleString()}→₩
                         {rebalance.campaign.after_krw.toLocaleString()})
@@ -459,19 +459,19 @@ export default function Page() {
                       <span
                         className={`ml-1 rounded px-1.5 py-0.5 text-[11px] font-semibold ${
                           rebalance.direction === 'increase'
-                            ? 'bg-[#EBF3FF] text-[#3182F6] dark:bg-[#1E3A5F] dark:text-[#7BB4F5]'
+                            ? 'bg-[#EBF3FF] text-primary dark:bg-[#1E3A5F] dark:text-[#7BB4F5]'
                             : 'bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300'
                         }`}
                       >
                         {rebalance.direction === 'increase' ? '증액' : '감액'}
                       </span>
                     </p>
-                    <p className="mt-1 text-xs text-[#8B95A1]">{rebalance.reason}</p>
+                    <p className="mt-1 text-xs text-ink-tertiary">{rebalance.reason}</p>
                     <div className="mt-2 flex justify-end">
                       <button
                         onClick={applyRebalance}
                         disabled={rebalanceBusy}
-                        className="rounded-lg bg-[#3182F6] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#1B6EEB] disabled:opacity-40"
+                        className="rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-white hover:bg-primary-hover disabled:opacity-40"
                       >
                         {rebalanceBusy
                           ? '적용 중…'
@@ -483,27 +483,27 @@ export default function Page() {
                   </div>
                 ) : (
                   // 캠페인 2개+ — 저효율→고효율 이전 제안.
-                  <div className="rounded-xl bg-[#F9FAFB] dark:bg-[#232A36] px-4 py-3">
-                    <p className="text-sm text-[#191F28] dark:text-[#F2F4F6]">
+                  <div className="rounded-xl bg-surface-1 px-4 py-3">
+                    <p className="text-sm text-ink">
                       <b>{rebalance.from.name}</b>{' '}
-                      <span className="tabular-nums text-[#8B95A1]">
+                      <span className="tabular-nums text-ink-tertiary">
                         (CPC ₩{rebalance.from.cpc_krw.toLocaleString()} · ₩
                         {rebalance.from.daily_budget_krw.toLocaleString()}→₩
                         {rebalance.from.after_krw.toLocaleString()})
                       </span>{' '}
                       → <b>{rebalance.to.name}</b>{' '}
-                      <span className="tabular-nums text-[#8B95A1]">
+                      <span className="tabular-nums text-ink-tertiary">
                         (CPC ₩{rebalance.to.cpc_krw.toLocaleString()} · ₩
                         {rebalance.to.daily_budget_krw.toLocaleString()}→₩
                         {rebalance.to.after_krw.toLocaleString()})
                       </span>
                     </p>
-                    <p className="mt-1 text-xs text-[#8B95A1]">{rebalance.reason}</p>
+                    <p className="mt-1 text-xs text-ink-tertiary">{rebalance.reason}</p>
                     <div className="mt-2 flex justify-end">
                       <button
                         onClick={applyRebalance}
                         disabled={rebalanceBusy}
-                        className="rounded-lg bg-[#3182F6] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#1B6EEB] disabled:opacity-40"
+                        className="rounded-lg bg-primary px-3 py-1.5 text-xs font-semibold text-white hover:bg-primary-hover disabled:opacity-40"
                       >
                         {rebalanceBusy
                           ? '적용 중…'
@@ -513,25 +513,25 @@ export default function Page() {
                   </div>
                 )
               ) : (
-                <p className="text-xs text-[#B0B8C1]">{rebalanceNote ?? '제안을 불러오는 중…'}</p>
+                <p className="text-xs text-ink-muted">{rebalanceNote ?? '제안을 불러오는 중…'}</p>
               )}
               {rebalanceMsg && (
-                <p className="mt-2 text-xs text-[#4E5968] dark:text-[#9CA3AF]">{rebalanceMsg}</p>
+                <p className="mt-2 text-xs text-ink-secondary">{rebalanceMsg}</p>
               )}
             </div>
 
             {/* 월 목표 예산 설정 */}
-            <div className="rounded-2xl border border-[#E5E8EB] dark:border-[#2D3748] p-5">
-              <p className="font-bold text-[#191F28] dark:text-[#F2F4F6] mb-1">월 목표 예산 설정</p>
-              <p className="text-xs text-[#8B95A1] mb-3">
+            <div className="rounded-2xl border border-line p-5">
+              <p className="font-bold text-ink mb-1">월 목표 예산 설정</p>
+              <p className="text-xs text-ink-tertiary mb-3">
                 이번 달 광고에 쓸 목표 금액. 소진이 이 목표에 가까워지면 가드레일이 경고합니다.
                 (실제 게재 가능액은 위 &lsquo;여력&rsquo; — Meta 선불 잔액)
               </p>
               {/* 월 매출 기반 권장 목표 계산기 — 벤치마크(매출의 5~15%, 표준 10%) */}
               <div className="mb-3 flex flex-wrap items-center gap-2 text-xs">
-                <span className="text-[#8B95A1]">월 매출로 계산</span>
+                <span className="text-ink-tertiary">월 매출로 계산</span>
                 <span className="inline-flex items-center gap-1">
-                  <span className="text-[#8B95A1]">₩</span>
+                  <span className="text-ink-tertiary">₩</span>
                   <input
                     type="number"
                     min={0}
@@ -539,12 +539,12 @@ export default function Page() {
                     value={revenueInput || ''}
                     onChange={(e) => setRevenueInput(Number(e.target.value))}
                     placeholder="예: 30000000"
-                    className="w-36 rounded-lg border border-[#E5E8EB] dark:border-[#2D3748] bg-transparent px-2 py-1.5 tabular-nums text-[#191F28] dark:text-[#F2F4F6] outline-none focus:border-[#3182F6]"
+                    className="w-36 rounded-lg border border-line bg-transparent px-2 py-1.5 tabular-nums text-ink outline-none focus:border-primary"
                   />
                 </span>
                 {revenueInput > 0 && (
                   <>
-                    <span className="text-[#4E5968] dark:text-[#9CA3AF] tabular-nums">
+                    <span className="text-ink-secondary tabular-nums">
                       권장 ₩{Math.round(revenueInput * 0.05).toLocaleString()}~₩
                       {Math.round(revenueInput * 0.15).toLocaleString()} (매출의 5~15%) · 표준 10% =
                       ₩{Math.round(revenueInput * 0.1).toLocaleString()}
@@ -553,7 +553,7 @@ export default function Page() {
                       onClick={() =>
                         setTargetInput(Math.round((revenueInput * 0.1) / 10_000) * 10_000)
                       }
-                      className="rounded-lg border border-[#3182F6] px-2 py-1 font-semibold text-[#3182F6] hover:bg-[#EBF3FF] dark:hover:bg-[#1E3A5F]"
+                      className="rounded-lg border border-primary px-2 py-1 font-semibold text-primary hover:bg-primary-subtle"
                     >
                       10% 적용
                     </button>
@@ -561,19 +561,19 @@ export default function Page() {
                 )}
               </div>
               <div className="flex items-center gap-2 max-w-md">
-                <span className="text-sm text-[#8B95A1]">₩</span>
+                <span className="text-sm text-ink-tertiary">₩</span>
                 <input
                   type="number"
                   min={0}
                   step={100_000}
                   value={targetInput}
                   onChange={(e) => setTargetInput(Number(e.target.value))}
-                  className="flex-1 rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-transparent px-3 py-2 text-sm text-[#191F28] dark:text-[#F2F4F6] focus:border-[#3182F6] outline-none tabular-nums"
+                  className="flex-1 rounded-xl border border-line bg-transparent px-3 py-2 text-sm text-ink focus:border-primary outline-none tabular-nums"
                 />
                 <button
                   onClick={applyTarget}
                   disabled={busy}
-                  className="px-4 py-2 bg-[#3182F6] text-white text-sm font-medium rounded-lg hover:bg-[#1B6EEB] disabled:opacity-40 whitespace-nowrap"
+                  className="px-4 py-2 bg-primary text-primary-foreground text-sm font-medium rounded-lg hover:bg-primary-hover disabled:opacity-40 whitespace-nowrap"
                 >
                   목표 설정
                 </button>
@@ -581,12 +581,12 @@ export default function Page() {
             </div>
 
             {ledger.length > 0 && (
-              <div className="rounded-2xl border border-[#E5E8EB] dark:border-[#2D3748] p-5">
-                <p className="font-bold text-[#191F28] dark:text-[#F2F4F6] mb-1">ClickMe 크레딧 내역</p>
-                <p className="text-[11px] text-[#B0B8C1] mb-3">ClickMe 서비스 크레딧(광고비와 별개)</p>
+              <div className="rounded-2xl border border-line p-5">
+                <p className="font-bold text-ink mb-1">ClickMe 크레딧 내역</p>
+                <p className="text-[11px] text-ink-muted mb-3">ClickMe 서비스 크레딧(광고비와 별개)</p>
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm [&_td]:whitespace-nowrap [&_th]:whitespace-nowrap">
-                    <thead className="border-b border-[#E5E8EB] text-[#8B95A1] dark:border-[#2D3748] text-xs">
+                    <thead className="border-b border-line text-ink-tertiary text-xs">
                       <tr>
                         <th className="px-3 py-2 text-left font-semibold">일시</th>
                         <th className="px-3 py-2 text-left font-semibold">구분</th>
@@ -594,7 +594,7 @@ export default function Page() {
                         <th className="px-3 py-2 text-right font-semibold">잔액</th>
                       </tr>
                     </thead>
-                    <tbody className="text-[#191F28] dark:text-[#F2F4F6]">
+                    <tbody className="text-ink">
                       {ledger
                         .slice()
                         .reverse()
@@ -605,7 +605,7 @@ export default function Page() {
                               key={e.entry_id}
                               className="border-b border-[#F2F4F6] last:border-0 dark:border-[#252D3D]"
                             >
-                              <td className="px-3 py-2 text-left text-[#4E5968] dark:text-[#9CA3AF]">
+                              <td className="px-3 py-2 text-left text-ink-secondary">
                                 {formatKSTFull(e.created_at)}
                               </td>
                               <td className={`px-3 py-2 text-left font-medium ${r.cls}`}>{r.label}</td>
@@ -613,7 +613,7 @@ export default function Page() {
                                 {e.delta_krw > 0 ? '+' : ''}
                                 {e.delta_krw.toLocaleString()}원
                               </td>
-                              <td className="px-3 py-2 text-right tabular-nums text-[#8B95A1]">
+                              <td className="px-3 py-2 text-right tabular-nums text-ink-tertiary">
                                 ₩{e.balance_after_krw.toLocaleString()}
                               </td>
                             </tr>
@@ -627,7 +627,7 @@ export default function Page() {
           </div>
         )}
 
-        <p className="mt-6 text-[11px] text-[#B0B8C1]">
+        <p className="mt-6 text-[11px] text-ink-muted">
           월 목표 = 내가 정한 이번 달 예산 · 소진 = 이번 달 실 Meta 집행 · 여력 = Meta 선불 잔액 · 금액 KRW(부가세 별도)
         </p>
       </div>

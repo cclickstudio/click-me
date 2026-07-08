@@ -5,14 +5,14 @@
 import { useState } from 'react';
 
 const cardCls =
-  'mt-1 w-full rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-white dark:bg-[#1C2333] p-4';
-const labelCls = 'text-[11px] font-semibold text-[#8B95A1] dark:text-[#6B7280] mb-1 block';
+  'mt-1 w-full rounded-xl border border-line bg-card p-4';
+const labelCls = 'text-[11px] font-semibold text-ink-tertiary mb-1 block';
 const inputCls =
-  'w-full px-3 py-2 rounded-lg border border-[#E5E8EB] dark:border-[#2D3748] text-sm bg-white dark:bg-[#252D3D] text-[#191F28] dark:text-[#F2F4F6] focus:outline-none focus:border-[#3182F6]';
+  'w-full px-3 py-2 rounded-lg border border-line text-sm bg-surface-2 text-ink focus:outline-none focus:border-primary';
 const chipBase = 'px-2.5 py-1.5 rounded-lg border text-[11px] font-medium transition-colors';
-const chipActive = 'border-[#3182F6] bg-[#EEF4FF] dark:bg-[#1E3A5F] text-[#3182F6]';
+const chipActive = 'border-primary bg-primary-subtle text-primary';
 const chipIdle =
-  'border-[#E5E8EB] dark:border-[#2D3748] text-[#8B95A1] dark:text-[#6B7280] hover:border-[#3182F6]';
+  'border-line text-ink-tertiary hover:border-primary';
 
 const GOALS = ['관심 유도', '클릭 유도', '가입·문의 유도', '구매 전환', '재구매·단골'];
 
@@ -45,14 +45,14 @@ export default function RecommendFormWidget({
   if (sent) {
     return (
       <div className={cardCls}>
-        <p className="text-sm text-[#8B95A1]">전략 추천을 요청했어요. 잠시만요...</p>
+        <p className="text-sm text-ink-tertiary">전략 추천을 요청했어요. 잠시만요...</p>
       </div>
     );
   }
 
   return (
     <div className={cardCls}>
-      <p className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6] mb-3">
+      <p className="text-sm font-semibold text-ink mb-3">
         💡 전략 추천 받기
       </p>
       <div className="space-y-3">
@@ -94,7 +94,7 @@ export default function RecommendFormWidget({
         <button
           onClick={submit}
           disabled={!canSubmit}
-          className="w-full py-2 rounded-lg bg-[#3182F6] text-white text-sm font-semibold hover:bg-[#1B6EEB] disabled:opacity-40 transition-colors"
+          className="w-full py-2 rounded-lg bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary-hover disabled:opacity-40 transition-colors"
         >
           전략 추천 받기
         </button>

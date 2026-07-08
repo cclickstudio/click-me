@@ -7,7 +7,7 @@ import { useAuth } from '@/components/AuthProvider';
 import { authApi } from '@/lib/authApi';
 
 const inputCls =
-  'w-full px-3 py-2.5 text-sm border border-[#E5E8EB] dark:border-[#2D3748] rounded-xl bg-white dark:bg-[#252D3D] text-[#191F28] dark:text-[#F2F4F6] placeholder-[#B0B8C1] focus:outline-none focus:border-[#3182F6] transition-colors';
+  'w-full px-3 py-2.5 text-sm border border-line rounded-xl bg-surface-2 text-ink placeholder:text-ink-muted focus:outline-none focus:border-primary transition-colors';
 
 // 숫자만 추출 후 000-0000-0000 형태로 포맷 (최대 11자리)
 const formatPhone = (v: string) => {
@@ -22,7 +22,7 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
-      <label className="text-xs font-medium text-[#4E5968] dark:text-[#9CA3AF] block mb-1">{label}</label>
+      <label className="text-xs font-medium text-ink-secondary block mb-1">{label}</label>
       {children}
     </div>
   );
@@ -85,19 +85,19 @@ export default function ProfilePage() {
   return (
       <div className="px-8 py-8 max-w-2xl mx-auto space-y-6">
         <div>
-          <h1 className="text-2xl font-bold text-[#191F28] dark:text-[#F2F4F6]">내 정보 관리</h1>
-          <p className="text-sm text-[#8B95A1] dark:text-[#6B7280] mt-1">이름·연락처를 수정하고 비밀번호를 변경할 수 있습니다</p>
+          <h1 className="text-2xl font-bold text-ink">내 정보 관리</h1>
+          <p className="text-sm text-ink-tertiary mt-1">이름·연락처를 수정하고 비밀번호를 변경할 수 있습니다</p>
         </div>
 
         {/* 기본 정보 */}
-        <div className="bg-white dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748] rounded-2xl p-6 space-y-4">
-          <p className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]">기본 정보</p>
+        <div className="bg-card border border-line rounded-2xl p-6 space-y-4">
+          <p className="text-sm font-semibold text-ink">기본 정보</p>
           <div className="grid grid-cols-2 gap-3">
             <Field label="아이디">
-              <p className="px-3 py-2.5 text-sm text-[#8B95A1] dark:text-[#6B7280] bg-[#F9FAFB] dark:bg-[#252D3D] rounded-xl">{user?.login_id ?? '-'}</p>
+              <p className="px-3 py-2.5 text-sm text-ink-tertiary bg-surface-1 rounded-xl">{user?.login_id ?? '-'}</p>
             </Field>
             <Field label="역할">
-              <p className="px-3 py-2.5 text-sm text-[#8B95A1] dark:text-[#6B7280] bg-[#F9FAFB] dark:bg-[#252D3D] rounded-xl">{user?.role ?? '-'}</p>
+              <p className="px-3 py-2.5 text-sm text-ink-tertiary bg-surface-1 rounded-xl">{user?.role ?? '-'}</p>
             </Field>
           </div>
           <Field label="이름">
@@ -114,15 +114,15 @@ export default function ProfilePage() {
           )}
           <div className="flex justify-end">
             <button onClick={saveInfo} disabled={savingInfo}
-              className="px-5 py-2.5 text-sm font-medium bg-[#3182F6] text-white rounded-xl hover:bg-[#1B6EEB] transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+              className="px-5 py-2.5 text-sm font-medium bg-primary text-primary-foreground rounded-xl hover:bg-primary-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
               {savingInfo ? '저장 중...' : '저장'}
             </button>
           </div>
         </div>
 
         {/* 비밀번호 변경 */}
-        <div className="bg-white dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748] rounded-2xl p-6 space-y-4">
-          <p className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]">비밀번호 변경</p>
+        <div className="bg-card border border-line rounded-2xl p-6 space-y-4">
+          <p className="text-sm font-semibold text-ink">비밀번호 변경</p>
           <Field label="새 비밀번호">
             <input type="password" value={pw} onChange={(e) => setPw(e.target.value)} placeholder="8자 이상" className={inputCls} />
           </Field>
@@ -134,7 +134,7 @@ export default function ProfilePage() {
           )}
           <div className="flex justify-end">
             <button onClick={savePw} disabled={savingPw}
-              className="px-5 py-2.5 text-sm font-medium bg-[#3182F6] text-white rounded-xl hover:bg-[#1B6EEB] transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+              className="px-5 py-2.5 text-sm font-medium bg-primary text-primary-foreground rounded-xl hover:bg-primary-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
               {savingPw ? '변경 중...' : '비밀번호 변경'}
             </button>
           </div>

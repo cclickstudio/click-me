@@ -2,7 +2,7 @@
 
 > 이 파일은 `backend/scripts/gen_docs.py`가 코드에서 **자동 생성**합니다. 직접 편집하지 말고 소스를 고친 뒤 스크립트를 다시 실행하세요(커밋 시 pre-commit 훅이 자동 갱신).
 
-총 **192개** 엔드포인트 · **18개** 그룹.
+총 **193개** 엔드포인트 · **18개** 그룹.
 
 ## admin
 
@@ -123,6 +123,7 @@
 | GET | `/api/dashboard/recent-generations` | get_recent_generations |
 | GET | `/api/dashboard/recent-simulations` | get_recent_simulations |
 | GET | `/api/dashboard/stats` | get_stats |
+| GET | `/api/dashboard/summary` | get_summary |
 
 ## debate
 

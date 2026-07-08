@@ -12,8 +12,10 @@ import uuid
 from collections.abc import AsyncIterator
 
 from core.center_suggestions import create_center_suggestion
+from core.config import settings
 from core.execution_log import record_execution
 from core.tracing import make_trace_config
+from domain.management.contracts.policy import exec_gate_thresholds, is_executable_verdict
 from domain.simulation.adapters.ad_image_store import proxy_url_for
 from domain.simulation.contracts.schemas import SegmentSpec, SimulationRunRequest
 from domain.simulation.tools.aggregation.ocean_segments import ocean_segment_breakdown
@@ -124,7 +126,39 @@ async def _record_gen_suggestion(request: SimulationRunRequest, result: dict) ->
         },
         dedup_key=f"gen_suggest:{sim_id}",
     )
-    # TODO(open-decisions §1): 시뮬 결과 "좋음" 판정 기준 확정 후 launch_suggest(집행 제안) 훅 추가.
+
+
+async def _record_launch_suggestion(request: SimulationRunRequest, result: dict) -> None:
+    """집행 권장 게이트 통과 시 "집행 제안"(launch_suggest) 센터 알림을 인라인 생성.
+
+    판정 정본은 management 집행 게이트(contracts.policy 재사용, 스펙 2026-07-07 §5) —
+    알림 받은 건은 from-simulation 집행 게이트를 반드시 통과한다(409 UX 파탄 방지).
+    영속화된 런(simulation_id 존재)에서만. best-effort·비차단(gen_suggest와 동일).
+    """
+    sim_id = result.get("simulation_id")
+    if not sim_id or not request.project_id:
+        return
+    agg = result.get("aggregate") or {}
+    cir = float(agg.get("click_intent_rate") or 0.0)
+    rej = float(agg.get("rejection_rate") or 0.0)
+    min_cir, max_rej = exec_gate_thresholds(settings)
+    if not is_executable_verdict(cir, rej, min_cir=min_cir, max_rej=max_rej):
+        return
+    await create_center_suggestion(
+        suggestion_type="launch_suggest",
+        organization_id=request.organization_id,
+        project_id=request.project_id,
+        reason="sim_result_good",
+        source_sim_id=sim_id,
+        payload={
+            "title": "집행 제안",
+            "message": "시뮬 결과가 집행 권장 기준을 충족했어요. 이 광고로 캠페인 집행을 검토해 보세요.",
+            "ad_title": request.ad_title,
+            "click_intent_rate": cir,
+            "rejection_rate": rej,
+        },
+        dedup_key=f"launch_suggest:{sim_id}",
+    )
 
 
 async def _record_comparison_history(
@@ -202,6 +236,8 @@ class SimulationService:
             await _record_run_history(request, result)
             # 센터 제안 알림 — 시뮬 완료 → "제너레이터 제안" 인라인 생성(best-effort).
             await _record_gen_suggestion(request, result)
+            # 집행 제안 — 집행 권장 게이트 통과 시에만 생성(정본: management contracts.policy).
+            await _record_launch_suggestion(request, result)
         except Exception as exc:
             store.set_status(run_id, "FAILED")
             store.emit(run_id, {"event": "error", "message": str(exc)})

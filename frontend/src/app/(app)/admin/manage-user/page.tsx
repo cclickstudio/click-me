@@ -36,12 +36,12 @@ const orgStatusLabel: Record<string, string> = { ACTIVE: '활성', INACTIVE: '�
 
 const roleStyle: Record<AccountRole, string> = {
   ADMIN: 'text-purple-500 bg-purple-50 dark:bg-purple-900/20',
-  COMPANY: 'text-[#3182F6] bg-[#EBF3FF] dark:bg-[#1E3A5F]',
-  USER: 'text-[#4E5968] bg-[#F2F4F6] dark:bg-[#252D3D] dark:text-[#9CA3AF]',
+  COMPANY: 'text-primary bg-primary-subtle',
+  USER: 'text-ink-secondary bg-surface-1',
 };
 
 const inputCls =
-  'w-full px-3 py-2.5 text-sm border border-[#E5E8EB] dark:border-[#2D3748] rounded-xl bg-white dark:bg-[#252D3D] text-[#191F28] dark:text-[#F2F4F6] placeholder-[#B0B8C1] focus:outline-none focus:border-[#3182F6] transition-colors';
+  'w-full px-3 py-2.5 text-sm border border-line rounded-xl bg-surface-2 text-ink placeholder:text-ink-muted focus:outline-none focus:border-primary transition-colors';
 
 // ── 계정 생성 모달 ──────────────────────────────────────────
 function CreateAccountModal({
@@ -102,11 +102,11 @@ function CreateAccountModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-      <div className="bg-white dark:bg-[#1C2333] rounded-2xl shadow-xl w-full max-w-md mx-4 p-6">
-        <h2 className="text-lg font-bold text-[#191F28] dark:text-[#F2F4F6] mb-4">계정 생성</h2>
+      <div className="bg-card rounded-2xl shadow-xl w-full max-w-md mx-4 p-6">
+        <h2 className="text-lg font-bold text-ink mb-4">계정 생성</h2>
         <div className="space-y-3">
           <div>
-            <label className="text-xs font-medium text-[#4E5968] dark:text-[#9CA3AF] block mb-1">역할</label>
+            <label className="text-xs font-medium text-ink-secondary block mb-1">역할</label>
             <select
               value={role}
               onChange={(e) => setRole(e.target.value as AccountRole)}
@@ -118,27 +118,27 @@ function CreateAccountModal({
             </select>
           </div>
           <div>
-            <label className="text-xs font-medium text-[#4E5968] dark:text-[#9CA3AF] block mb-1">이름</label>
+            <label className="text-xs font-medium text-ink-secondary block mb-1">이름</label>
             <input value={name} onChange={(e) => setName(e.target.value)} placeholder="홍길동" className={inputCls} />
           </div>
           <div>
-            <label className="text-xs font-medium text-[#4E5968] dark:text-[#9CA3AF] block mb-1">아이디</label>
+            <label className="text-xs font-medium text-ink-secondary block mb-1">아이디</label>
             <input value={loginId} onChange={(e) => setLoginId(e.target.value)} placeholder="로그인 아이디" className={inputCls} />
           </div>
           <div>
-            <label className="text-xs font-medium text-[#4E5968] dark:text-[#9CA3AF] block mb-1">비밀번호</label>
+            <label className="text-xs font-medium text-ink-secondary block mb-1">비밀번호</label>
             <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="8자 이상" className={inputCls} />
           </div>
 
           {role === 'COMPANY' && (
             <div>
-              <label className="text-xs font-medium text-[#4E5968] dark:text-[#9CA3AF] block mb-1">회사명 (새 조직)</label>
+              <label className="text-xs font-medium text-ink-secondary block mb-1">회사명 (새 조직)</label>
               <input value={companyName} onChange={(e) => setCompanyName(e.target.value)} placeholder="(주)클릭미" className={inputCls} />
             </div>
           )}
           {role === 'USER' && (
             <div>
-              <label className="text-xs font-medium text-[#4E5968] dark:text-[#9CA3AF] block mb-1">소속 조직</label>
+              <label className="text-xs font-medium text-ink-secondary block mb-1">소속 조직</label>
               <select value={orgId} onChange={(e) => setOrgId(e.target.value)} className={inputCls}>
                 <option value="">조직 선택…</option>
                 {activeOrgs.map((o) => (
@@ -146,7 +146,7 @@ function CreateAccountModal({
                 ))}
               </select>
               {activeOrgs.length === 0 && (
-                <p className="text-xs text-[#B0B8C1] mt-1">활성 조직이 없습니다. 먼저 COMPANY 계정을 만드세요.</p>
+                <p className="text-xs text-ink-muted mt-1">활성 조직이 없습니다. 먼저 COMPANY 계정을 만드세요.</p>
               )}
             </div>
           )}
@@ -157,11 +157,11 @@ function CreateAccountModal({
         </div>
         <div className="flex gap-2 mt-5">
           <button onClick={onClose}
-            className="flex-1 py-2.5 text-sm font-medium border border-[#E5E8EB] dark:border-[#2D3748] rounded-xl text-[#4E5968] dark:text-[#9CA3AF] hover:bg-[#F2F4F6] dark:hover:bg-[#252D3D] transition-colors">
+            className="flex-1 py-2.5 text-sm font-medium border border-line rounded-xl text-ink-secondary hover:bg-accent transition-colors">
             취소
           </button>
           <button onClick={submit} disabled={saving}
-            className="flex-1 py-2.5 text-sm font-medium bg-[#3182F6] text-white rounded-xl hover:bg-[#1B6EEB] transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+            className="flex-1 py-2.5 text-sm font-medium bg-primary text-primary-foreground rounded-xl hover:bg-primary-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
             {saving ? '생성 중...' : '계정 생성'}
           </button>
         </div>
@@ -208,16 +208,16 @@ function EditAccountModal({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-      <div className="bg-white dark:bg-[#1C2333] rounded-2xl shadow-xl w-full max-w-md mx-4 p-6">
-        <h2 className="text-lg font-bold text-[#191F28] dark:text-[#F2F4F6] mb-1">계정 수정</h2>
-        <p className="text-xs text-[#8B95A1] dark:text-[#6B7280] mb-4">{account.login_id} · {account.role}</p>
+      <div className="bg-card rounded-2xl shadow-xl w-full max-w-md mx-4 p-6">
+        <h2 className="text-lg font-bold text-ink mb-1">계정 수정</h2>
+        <p className="text-xs text-ink-tertiary mb-4">{account.login_id} · {account.role}</p>
         <div className="space-y-3">
           <div>
-            <label className="text-xs font-medium text-[#4E5968] dark:text-[#9CA3AF] block mb-1">이름</label>
+            <label className="text-xs font-medium text-ink-secondary block mb-1">이름</label>
             <input value={name} onChange={(e) => setName(e.target.value)} className={inputCls} />
           </div>
           <div>
-            <label className="text-xs font-medium text-[#4E5968] dark:text-[#9CA3AF] block mb-1">새 비밀번호</label>
+            <label className="text-xs font-medium text-ink-secondary block mb-1">새 비밀번호</label>
             <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="변경 시에만 입력 (8자 이상)" className={inputCls} />
           </div>
           {error && (
@@ -226,11 +226,11 @@ function EditAccountModal({
         </div>
         <div className="flex gap-2 mt-5">
           <button onClick={onClose}
-            className="flex-1 py-2.5 text-sm font-medium border border-[#E5E8EB] dark:border-[#2D3748] rounded-xl text-[#4E5968] dark:text-[#9CA3AF] hover:bg-[#F2F4F6] dark:hover:bg-[#252D3D] transition-colors">
+            className="flex-1 py-2.5 text-sm font-medium border border-line rounded-xl text-ink-secondary hover:bg-accent transition-colors">
             취소
           </button>
           <button onClick={submit} disabled={saving}
-            className="flex-1 py-2.5 text-sm font-medium bg-[#3182F6] text-white rounded-xl hover:bg-[#1B6EEB] transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
+            className="flex-1 py-2.5 text-sm font-medium bg-primary text-primary-foreground rounded-xl hover:bg-primary-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed">
             {saving ? '저장 중...' : '저장'}
           </button>
         </div>
@@ -316,11 +316,11 @@ export default function AdminManageUserPage() {
       <div className="px-8 py-8 max-w-5xl mx-auto space-y-6">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-[#191F28] dark:text-[#F2F4F6]">회원 관리</h1>
-            <p className="text-sm text-[#8B95A1] dark:text-[#6B7280] mt-1">전체 계정을 생성·조회·관리하세요</p>
+            <h1 className="text-2xl font-bold text-ink">회원 관리</h1>
+            <p className="text-sm text-ink-tertiary mt-1">전체 계정을 생성·조회·관리하세요</p>
           </div>
           <button onClick={() => setShowCreate(true)}
-            className="shrink-0 px-4 py-2.5 text-sm font-medium bg-[#3182F6] text-white rounded-xl hover:bg-[#1B6EEB] transition-colors">
+            className="shrink-0 px-4 py-2.5 text-sm font-medium bg-primary text-primary-foreground rounded-xl hover:bg-primary-hover transition-colors">
             + 계정 생성
           </button>
         </div>
@@ -333,24 +333,24 @@ export default function AdminManageUserPage() {
           onRole={setRole}
         />
 
-        <div className="bg-white dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748] rounded-2xl overflow-hidden">
-          <div className="px-6 py-4 border-b border-[#E5E8EB] dark:border-[#2D3748]">
-            <p className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]">전체 계정</p>
+        <div className="bg-card border border-line rounded-2xl overflow-hidden">
+          <div className="px-6 py-4 border-b border-line">
+            <p className="text-sm font-semibold text-ink">전체 계정</p>
           </div>
           {loading ? (
-            <div className="py-16 text-center text-sm text-[#8B95A1] dark:text-[#6B7280]">불러오는 중...</div>
+            <div className="py-16 text-center text-sm text-ink-tertiary">불러오는 중...</div>
           ) : items.length === 0 ? (
-            <div className="py-16 text-center text-sm text-[#8B95A1] dark:text-[#6B7280]">계정이 없습니다</div>
+            <div className="py-16 text-center text-sm text-ink-tertiary">계정이 없습니다</div>
           ) : (
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-[#F2F4F6] dark:border-[#252D3D] bg-[#F9FAFB] dark:bg-[#252D3D]">
-                  <th className="text-left px-6 py-3 text-xs font-semibold text-[#8B95A1] dark:text-[#6B7280]">이름</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-[#8B95A1] dark:text-[#6B7280]">아이디</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-[#8B95A1] dark:text-[#6B7280]">역할</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-[#8B95A1] dark:text-[#6B7280]">소속</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-[#8B95A1] dark:text-[#6B7280]">상태</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-[#8B95A1] dark:text-[#6B7280]">생성일</th>
+                <tr className="border-b border-line bg-surface-1">
+                  <th className="text-left px-6 py-3 text-xs font-semibold text-ink-tertiary">이름</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-ink-tertiary">아이디</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-ink-tertiary">역할</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-ink-tertiary">소속</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-ink-tertiary">상태</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-ink-tertiary">생성일</th>
                   <th className="px-4 py-3" />
                 </tr>
               </thead>
@@ -359,36 +359,36 @@ export default function AdminManageUserPage() {
                   const isCompany = a.role === 'COMPANY';
                   const isInactive = a.status === 'INACTIVE';
                   return (
-                    <tr key={a.id} className="border-b border-[#F9FAFB] dark:border-[#1C2333] last:border-0 hover:bg-[#F9FAFB] dark:hover:bg-[#252D3D] transition-colors">
-                      <td className="px-6 py-4 font-medium text-[#191F28] dark:text-[#F2F4F6]">{a.name}</td>
-                      <td className="px-4 py-4 text-[#4E5968] dark:text-[#9CA3AF]">{a.login_id}</td>
+                    <tr key={a.id} className="border-b border-line last:border-0 hover:bg-accent transition-colors">
+                      <td className="px-6 py-4 font-medium text-ink">{a.name}</td>
+                      <td className="px-4 py-4 text-ink-secondary">{a.login_id}</td>
                       <td className="px-4 py-4">
                         <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-medium ${roleStyle[a.role] ?? ''}`}>{a.role}</span>
                       </td>
-                      <td className="px-4 py-4 text-[#4E5968] dark:text-[#9CA3AF]">{a.organization_name ?? '—'}</td>
+                      <td className="px-4 py-4 text-ink-secondary">{a.organization_name ?? '—'}</td>
                       <td className="px-4 py-4">
                         <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-medium ${orgStatusStyle[a.status] ?? ''}`}>
                           {orgStatusLabel[a.status] ?? a.status}
                         </span>
                       </td>
-                      <td className="px-4 py-4 text-[#8B95A1] dark:text-[#6B7280]">{formatKSTDate(a.created_at)}</td>
+                      <td className="px-4 py-4 text-ink-tertiary">{formatKSTDate(a.created_at)}</td>
                       <td className="px-4 py-4">
                         <div className="flex items-center gap-2 justify-end">
                           <button onClick={() => setEditing(a)}
-                            className="px-3 py-1.5 text-xs text-[#4E5968] dark:text-[#9CA3AF] border border-[#E5E8EB] dark:border-[#2D3748] rounded-lg hover:bg-[#F2F4F6] dark:hover:bg-[#252D3D] transition-colors">수정</button>
+                            className="px-3 py-1.5 text-xs text-ink-secondary border border-line rounded-lg hover:bg-accent transition-colors">수정</button>
                           {isCompany ? (
                             <button disabled title="COMPANY 계정은 '조직 관리'에서 조직째 관리하세요"
-                              className="px-3 py-1.5 text-xs text-[#B0B8C1] dark:text-[#4B5563] rounded-lg cursor-not-allowed">삭제</button>
+                              className="px-3 py-1.5 text-xs text-ink-muted rounded-lg cursor-not-allowed">삭제</button>
                           ) : isInactive ? (
                             <>
                               <button onClick={() => handleRestore(a.id, a.name)}
-                                className="px-3 py-1.5 text-xs text-[#3182F6] border border-[#3182F6]/30 rounded-lg hover:bg-[#EBF3FF] dark:hover:bg-[#1E3A5F] transition-colors">복원</button>
+                                className="px-3 py-1.5 text-xs text-primary border border-primary/30 rounded-lg hover:bg-primary-subtle transition-colors">복원</button>
                               <button onClick={() => handlePurge(a.id, a.name)}
                                 className="px-3 py-1.5 text-xs text-white bg-red-500 rounded-lg hover:bg-red-600 transition-colors">영구삭제</button>
                             </>
                           ) : (
                             <button onClick={() => handleDelete(a.id, a.name)}
-                              className="px-3 py-1.5 text-xs text-[#8B95A1] rounded-lg hover:bg-red-50 hover:text-red-500 transition-colors">삭제</button>
+                              className="px-3 py-1.5 text-xs text-ink-tertiary rounded-lg hover:bg-red-50 hover:text-red-500 transition-colors">삭제</button>
                           )}
                         </div>
                       </td>
@@ -399,9 +399,9 @@ export default function AdminManageUserPage() {
             </table>
           )}
           <div ref={sentinelRef} className="h-1" />
-          {loadingMore && <p className="text-center text-[12px] text-[#8B95A1] py-3">더 불러오는 중…</p>}
+          {loadingMore && <p className="text-center text-[12px] text-ink-tertiary py-3">더 불러오는 중…</p>}
           {!hasMore && !loading && items.length > 0 && (
-            <p className="text-center text-[12px] text-[#B0B8C1] py-3">모두 불러왔어요</p>
+            <p className="text-center text-[12px] text-ink-muted py-3">모두 불러왔어요</p>
           )}
         </div>
       </div>

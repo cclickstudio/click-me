@@ -339,7 +339,7 @@ export default function Page() {
         <div className="flex items-center justify-between mb-6">
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-bold text-[#191F28] dark:text-[#F2F4F6]">캠페인</h1>
+              <h1 className="text-2xl font-bold text-ink">캠페인</h1>
               {source === 'live' ? (
                 <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
                   실데이터
@@ -350,7 +350,7 @@ export default function Page() {
                 </span>
               )}
             </div>
-            <p className="text-sm text-[#8B95A1] mt-1">
+            <p className="text-sm text-ink-tertiary mt-1">
               {source === 'live'
                 ? '실 Meta 연동 · 라이브 지표'
                 : '목표·예산·성과를 한 창구에서 (Mock 기반 데모)'}
@@ -363,8 +363,8 @@ export default function Page() {
                 title="보관·삭제된 캠페인을 과거 데이터와 함께 표시 (Meta에서 완전 삭제된 캠페인은 Meta가 제공하지 않아 안 보일 수 있어요)"
                 className={`text-[12px] px-2.5 py-1.5 rounded-lg border ${
                   includeArchived
-                    ? 'border-[#3182F6] text-[#3182F6] bg-[#EBF3FF] dark:bg-[#1E3A5F]'
-                    : 'border-[#E5E8EB] dark:border-[#2D3748] text-[#8B95A1] hover:text-[#191F28] dark:hover:text-[#F2F4F6]'
+                    ? 'border-primary text-primary bg-primary-subtle'
+                    : 'border-line text-ink-tertiary hover:text-ink dark:hover:text-[#F2F4F6]'
                 }`}
               >
                 {includeArchived ? '✓ 삭제됨 포함' : '삭제됨 포함'}
@@ -374,29 +374,29 @@ export default function Page() {
               <button
                 onClick={() => load(true)}
                 title="새로고침"
-                className="flex items-center gap-1.5 text-[12px] text-[#8B95A1] hover:text-[#191F28] dark:hover:text-[#F2F4F6] px-2 py-1.5"
+                className="flex items-center gap-1.5 text-[12px] text-ink-tertiary hover:text-ink dark:hover:text-[#F2F4F6] px-2 py-1.5"
               >
                 <span className="inline-block w-1.5 h-1.5 rounded-full bg-green-500 animate-pulse" />
                 {lastUpdated ? `갱신 ${lastUpdated}` : '실시간'} ↻
               </button>
             )}
-            <div className="flex rounded-lg border border-[#E5E8EB] dark:border-[#2D3748] overflow-hidden text-sm">
+            <div className="flex rounded-lg border border-line overflow-hidden text-sm">
               <button
                 onClick={() => setView('table')}
-                className={`px-3 py-1.5 ${view === 'table' ? 'bg-[#3182F6] text-white' : 'text-[#8B95A1]'}`}
+                className={`px-3 py-1.5 ${view === 'table' ? 'bg-primary text-primary-foreground' : 'text-ink-tertiary'}`}
               >
                 테이블
               </button>
               <button
                 onClick={() => setView('cards')}
-                className={`px-3 py-1.5 ${view === 'cards' ? 'bg-[#3182F6] text-white' : 'text-[#8B95A1]'}`}
+                className={`px-3 py-1.5 ${view === 'cards' ? 'bg-primary text-primary-foreground' : 'text-ink-tertiary'}`}
               >
                 카드
               </button>
             </div>
             <Link
               href="/manage/campaigns/new"
-              className="px-3 py-1.5 bg-[#3182F6] text-white text-sm font-medium rounded-lg hover:bg-[#1B6EEB]"
+              className="px-3 py-1.5 bg-primary text-primary-foreground text-sm font-medium rounded-lg hover:bg-primary-hover"
             >
               + 새 캠페인
             </Link>
@@ -413,8 +413,8 @@ export default function Page() {
         )}
 
         {permissionError && (
-          <div className="mb-4 rounded-xl border border-[#E5E8EB] bg-[#F9FAFB] px-4 py-3 dark:border-[#2D3748] dark:bg-[#1A1F28]">
-            <p className="text-sm text-[#4E5968] dark:text-[#9CA3AF]">
+          <div className="mb-4 rounded-xl border border-line bg-[#F9FAFB] px-4 py-3 dark:bg-[#1A1F28]">
+            <p className="text-sm text-ink-secondary">
               <span className="font-semibold">🔒 권한 없음</span> · {permissionError}
             </p>
           </div>
@@ -461,8 +461,8 @@ export default function Page() {
         )}
 
         {kpiHidden && (
-          <div className="mb-4 rounded-xl border border-[#E5E8EB] bg-[#F9FAFB] px-4 py-3 dark:border-[#2D3748] dark:bg-[#1A1F28]">
-            <p className="text-sm text-[#4E5968] dark:text-[#9CA3AF]">
+          <div className="mb-4 rounded-xl border border-line bg-[#F9FAFB] px-4 py-3 dark:bg-[#1A1F28]">
+            <p className="text-sm text-ink-secondary">
               <span className="font-semibold">🏢 조직을 선택하세요</span> · 수동 KPI(추정 CVR·ROAS)는
               특정 조직으로 전환했을 때만 조회·편집할 수 있어요. 상단 ‘조직 전환’에서 조직을 고르면
               KPI가 표시됩니다.
@@ -470,7 +470,7 @@ export default function Page() {
           </div>
         )}
 
-        {busy && <p className="text-sm text-[#8B95A1] py-20 text-center">불러오는 중…</p>}
+        {busy && <p className="text-sm text-ink-tertiary py-20 text-center">불러오는 중…</p>}
         {error && (
           <p className="text-sm text-red-500 py-20 text-center" role="alert">
             {error}
@@ -483,11 +483,11 @@ export default function Page() {
           <div className="space-y-4">
             <OriginLegend />
             {/* 입력은 둘뿐 — CVR·ROAS는 이 값으로 계산되는 결과(직접 입력 아님) */}
-            <div className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] px-4 py-3">
-              <label className="flex items-center gap-2 text-sm text-[#4E5968] dark:text-[#9CA3AF]">
+            <div className="flex flex-wrap items-center gap-x-5 gap-y-2 rounded-xl border border-line px-4 py-3">
+              <label className="flex items-center gap-2 text-sm text-ink-secondary">
                 전환 1건 가치
                 <span className="inline-flex items-center">
-                  <span className="text-[#8B95A1]">₩</span>
+                  <span className="text-ink-tertiary">₩</span>
                   <input
                     type="number"
                     min={0}
@@ -497,11 +497,11 @@ export default function Page() {
                     onChange={(e) =>
                       setConvValue(e.target.value === '' ? null : Number(e.target.value))
                     }
-                    className="ml-1 w-28 rounded-lg border border-[#E5E8EB] dark:border-[#2D3748] bg-transparent px-2 py-1 text-right text-sm tabular-nums text-[#191F28] dark:text-[#F2F4F6] focus:border-[#3182F6] outline-none"
+                    className="ml-1 w-28 rounded-lg border border-line bg-transparent px-2 py-1 text-right text-sm tabular-nums text-ink focus:border-primary outline-none"
                   />
                 </span>
               </label>
-              <label className="flex items-center gap-2 text-sm text-[#4E5968] dark:text-[#9CA3AF]">
+              <label className="flex items-center gap-2 text-sm text-ink-secondary">
                 목표 ROAS
                 <span className="inline-flex items-center">
                   <input
@@ -513,23 +513,23 @@ export default function Page() {
                     onChange={(e) =>
                       setTargetRoas(e.target.value === '' ? null : Number(e.target.value))
                     }
-                    className="w-20 rounded-lg border border-[#E5E8EB] dark:border-[#2D3748] bg-transparent px-2 py-1 text-right text-sm tabular-nums text-[#191F28] dark:text-[#F2F4F6] focus:border-[#3182F6] outline-none"
+                    className="w-20 rounded-lg border border-line bg-transparent px-2 py-1 text-right text-sm tabular-nums text-ink focus:border-primary outline-none"
                   />
-                  <span className="ml-0.5 text-[#8B95A1]">x</span>
+                  <span className="ml-0.5 text-ink-tertiary">x</span>
                 </span>
               </label>
-              <span className="text-[12px] text-[#8B95A1]">
+              <span className="text-[12px] text-ink-tertiary">
                 전환 가치 입력 시 ROAS(추정)가 채워지고, 목표 미달이면 표에 ‘목표↓’로 표시돼요.
               </span>
               <button
                 type="button"
                 onClick={() => setShowKpiHelp((o) => !o)}
-                className="ml-auto shrink-0 text-[12px] text-[#8B95A1] hover:text-[#3182F6] transition-colors"
+                className="ml-auto shrink-0 text-[12px] text-ink-tertiary hover:text-primary transition-colors"
               >
                 ⓘ CVR·ROAS 계산 방식 {showKpiHelp ? '▲' : '▾'}
               </button>
               {showKpiHelp && (
-                <p className="w-full text-[12px] leading-relaxed text-[#8B95A1] border-t border-[#F2F4F6] dark:border-[#2D3748] pt-2">
+                <p className="w-full text-[12px] leading-relaxed text-ink-tertiary border-t border-line pt-2">
                   <b>CVR(전환율)</b> = 전환수 ÷ 링크 클릭수(실측 · CTR의 전체 클릭과 분모가 달라요) ·{' '}
                   <b>ROAS(투자수익률)</b> = 전환가치 × 전환수 ÷ 지출(추정). 실측 데이터가 있으면{' '}
                   <b>계산 결과(읽기전용)</b>로 뜨고, 전환 추적 전 ‘미설정’ 캠페인은 표에서{' '}
@@ -577,17 +577,17 @@ export default function Page() {
             {/* 무한스크롤 센티넬 — 화면에 들어오면 다음 20개 로드 */}
             <div ref={sentinelRef} className="h-1" />
             {loadingMore && (
-              <p className="text-center text-[12px] text-[#8B95A1] py-3">더 불러오는 중…</p>
+              <p className="text-center text-[12px] text-ink-tertiary py-3">더 불러오는 중…</p>
             )}
             {!hasMore && total != null && campaigns.length > 0 && (
-              <p className="text-center text-[12px] text-[#B0B8C1] py-3">
+              <p className="text-center text-[12px] text-ink-muted py-3">
                 전체 {total}개 캠페인을 모두 불러왔어요
               </p>
             )}
           </div>
         )}
 
-        <p className="mt-6 text-[12px] text-[#B0B8C1]">
+        <p className="mt-6 text-[12px] text-ink-muted">
           {source === 'live'
             ? '실데이터 · Meta 라이브(전체 기간 누적) · CVR은 전환(구매·리드·가입 등) 발생 시 · ROAS는 전환가치 입력 시 추정 · 금액 KRW'
             : '⚠ Mock 기반 데모 · 노출/지출은 일중 곡선 모델 기반 · "예측 CTR" 등 실측 환산 없음 · 금액 KRW'}

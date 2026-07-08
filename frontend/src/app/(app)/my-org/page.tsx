@@ -68,45 +68,45 @@ export default function MyOrgPage() {
   return (
     <div className="px-8 py-8 max-w-5xl mx-auto space-y-8">
       <div>
-        <h1 className="text-2xl font-bold text-[#191F28] dark:text-[#F2F4F6]">내 조직</h1>
-        <p className="text-sm text-[#8B95A1] dark:text-[#6B7280] mt-1">
+        <h1 className="text-2xl font-bold text-ink">내 조직</h1>
+        <p className="text-sm text-ink-tertiary mt-1">
           {org ? `${org.name} · 전체 인원 ${members.length}명 · 팀 ${teams.length}개` : '우리 조직의 인원과 팀을 확인하세요'}
         </p>
       </div>
 
       {loading ? (
-        <div className="py-20 text-center text-sm text-[#8B95A1]">불러오는 중...</div>
+        <div className="py-20 text-center text-sm text-ink-tertiary">불러오는 중...</div>
       ) : (
         <>
           {/* 전체 인원 — 테이블(10명씩 페이지네이션) */}
           <div>
-            <div className="bg-white dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748] rounded-2xl overflow-hidden">
-              <div className="px-6 py-4 border-b border-[#E5E8EB] dark:border-[#2D3748]">
-                <p className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]">전체 인원</p>
+            <div className="bg-card border border-line rounded-2xl overflow-hidden">
+              <div className="px-6 py-4 border-b border-line">
+                <p className="text-sm font-semibold text-ink">전체 인원</p>
               </div>
               {members.length === 0 ? (
-                <div className="py-12 text-center text-sm text-[#8B95A1]">인원이 없습니다</div>
+                <div className="py-12 text-center text-sm text-ink-tertiary">인원이 없습니다</div>
               ) : (
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="border-b border-[#F2F4F6] dark:border-[#252D3D] bg-[#F9FAFB] dark:bg-[#252D3D]">
-                      <th className="text-left px-6 py-3 text-xs font-semibold text-[#8B95A1]">이름</th>
-                      <th className="text-center px-4 py-3 text-xs font-semibold text-[#8B95A1]">아이디</th>
-                      <th className="text-center px-4 py-3 text-xs font-semibold text-[#8B95A1]">팀</th>
-                      <th className="text-right px-6 py-3 text-xs font-semibold text-[#8B95A1]">합류일</th>
+                    <tr className="border-b border-line bg-surface-1">
+                      <th className="text-left px-6 py-3 text-xs font-semibold text-ink-tertiary">이름</th>
+                      <th className="text-center px-4 py-3 text-xs font-semibold text-ink-tertiary">아이디</th>
+                      <th className="text-center px-4 py-3 text-xs font-semibold text-ink-tertiary">팀</th>
+                      <th className="text-right px-6 py-3 text-xs font-semibold text-ink-tertiary">합류일</th>
                     </tr>
                   </thead>
                   <tbody>
                     {pageMembers.map((m) => (
-                      <tr key={m.member_id} className="border-b border-[#F9FAFB] dark:border-[#1C2333] last:border-0">
-                        <td className="text-left px-6 py-3 font-medium text-[#191F28] dark:text-[#F2F4F6]">
+                      <tr key={m.member_id} className="border-b border-line last:border-0">
+                        <td className="text-left px-6 py-3 font-medium text-ink">
                           {m.user_name}{m.user_name === user?.name ? ' (나)' : ''}
                         </td>
-                        <td className="text-center px-4 py-3 text-[#4E5968] dark:text-[#9CA3AF]">{m.login_id}</td>
-                        <td className="text-center px-4 py-3 text-[#4E5968] dark:text-[#9CA3AF]">
-                          {teamName(m.team_id) ?? <span className="text-[#B0B8C1]">미배정</span>}
+                        <td className="text-center px-4 py-3 text-ink-secondary">{m.login_id}</td>
+                        <td className="text-center px-4 py-3 text-ink-secondary">
+                          {teamName(m.team_id) ?? <span className="text-ink-muted">미배정</span>}
                         </td>
-                        <td className="text-right px-6 py-3 text-[#8B95A1]">{fmt(m.joined_at)}</td>
+                        <td className="text-right px-6 py-3 text-ink-tertiary">{fmt(m.joined_at)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -118,7 +118,7 @@ export default function MyOrgPage() {
 
           {/* 팀 — 팀별 팀원 칸반(조회 전용) */}
           <div>
-            <p className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6] mb-3">팀</p>
+            <p className="text-sm font-semibold text-ink mb-3">팀</p>
             <div className="flex gap-4 overflow-x-auto pb-4">
               {columns.map((col) => {
                 const list = membersOf(col.teamId);
@@ -128,26 +128,26 @@ export default function MyOrgPage() {
                     key={col.key}
                     className={`shrink-0 w-64 rounded-2xl border ${
                       isMyTeam
-                        ? 'border-[#3182F6] bg-[#EBF3FF] dark:bg-[#1E3A5F]'
-                        : 'border-[#E5E8EB] dark:border-[#2D3748] bg-[#F9FAFB] dark:bg-[#161B27]'
+                        ? 'border-primary bg-primary-subtle'
+                        : 'border-line bg-surface-1'
                     }`}
                   >
-                    <div className="flex items-center justify-between px-4 py-3 border-b border-[#E5E8EB] dark:border-[#2D3748]">
+                    <div className="flex items-center justify-between px-4 py-3 border-b border-line">
                       <div className="flex items-center gap-2 min-w-0">
-                        <span className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6] truncate">{col.name}</span>
-                        <span className="text-[10px] text-[#8B95A1] bg-[#E5E8EB] dark:bg-[#2D3748] rounded-full px-1.5 py-0.5">{list.length}</span>
+                        <span className="text-sm font-semibold text-ink truncate">{col.name}</span>
+                        <span className="text-[10px] text-ink-tertiary bg-surface-1 rounded-full px-1.5 py-0.5">{list.length}</span>
                       </div>
                       {isMyTeam && (
-                        <span className="shrink-0 text-[10px] font-medium text-[#3182F6] bg-white dark:bg-[#1C2333] rounded-full px-2 py-0.5">우리 팀</span>
+                        <span className="shrink-0 text-[10px] font-medium text-primary bg-card rounded-full px-2 py-0.5">우리 팀</span>
                       )}
                     </div>
                     <div className="p-2 space-y-2 min-h-[80px]">
                       {list.length === 0 ? (
-                        <p className="text-xs text-[#B0B8C1] dark:text-[#4B5563] text-center py-6">팀원 없음</p>
+                        <p className="text-xs text-ink-muted text-center py-6">팀원 없음</p>
                       ) : list.map((m) => (
                         <div key={m.member_id}
-                          className="px-3 py-2.5 rounded-xl bg-white dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748]">
-                          <p className="text-sm font-medium text-[#191F28] dark:text-[#F2F4F6] truncate">
+                          className="px-3 py-2.5 rounded-xl bg-card border border-line">
+                          <p className="text-sm font-medium text-ink truncate">
                             {m.user_name}{m.user_name === user?.name ? ' (나)' : ''}
                           </p>
                         </div>

@@ -1,4 +1,11 @@
+import { clsx, type ClassValue } from "clsx";
+import { twMerge } from "tailwind-merge";
 import { formatKSTDate } from "./datetime";
+
+// shadcn/ui 표준 클래스 병합 헬퍼 — 조건부 클래스(clsx) + Tailwind 충돌 해소(tailwind-merge).
+export function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs));
+}
 
 // 백엔드는 시각을 UTC로 저장·직렬화하므로 KST로 변환해 표시(타임존 표기 없으면 UTC 간주).
 export function formatDate(iso: string) {

@@ -63,7 +63,7 @@ export default function DeliveryChart({
             }}
           />
         )}
-        <Bar dataKey="spend_krw" name="지출" fill="#3182F6" radius={[4, 4, 0, 0]} />
+        <Bar dataKey="spend_krw" name="지출" fill="#2563EB" radius={[4, 4, 0, 0]} />
       </BarChart>
     </ResponsiveContainer>
   );

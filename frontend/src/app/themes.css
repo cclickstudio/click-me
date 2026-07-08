@@ -1,0 +1,353 @@
+/* data-theme 14종 팔레트 — 컬러11(primary/point만 override) + 에디터다크3(전체 팔레트).
+   선택자를 html[data-theme]로 둬 :root(0,1,0)보다 높은 specificity(0,1,1) 확보 → @import 순서 무관. */
+
+/* ══════════ 컬러 테마 11종 (neutrals 공유, primary만 교체) ══════════ */
+
+/* 1. blue (기본 #2563EB) */
+html[data-theme='blue'] {
+  --primary: 37 99 235;
+  --primary-hover: 29 78 216;
+  --primary-subtle: 239 246 255;
+  --ring: 37 99 235;
+}
+html.dark[data-theme='blue'] {
+  --primary: 59 130 246;
+  --primary-hover: 96 165 250;
+  --primary-subtle: 23 37 61;
+  --ring: 59 130 246;
+}
+
+/* 2. indigo */
+html[data-theme='indigo'] {
+  --primary: 79 70 229;
+  --primary-hover: 67 56 202;
+  --primary-subtle: 238 242 255;
+  --ring: 79 70 229;
+}
+html.dark[data-theme='indigo'] {
+  --primary: 99 102 241;
+  --primary-hover: 129 140 248;
+  --primary-subtle: 27 28 58;
+  --ring: 99 102 241;
+}
+
+/* 3. cyan */
+html[data-theme='cyan'] {
+  --primary: 8 145 178;
+  --primary-hover: 14 116 144;
+  --primary-subtle: 230 247 251;
+  --ring: 8 145 178;
+}
+html.dark[data-theme='cyan'] {
+  --primary: 34 197 217;
+  --primary-hover: 103 232 249;
+  --primary-foreground: 13 15 20;
+  --primary-subtle: 8 40 48;
+  --ring: 34 197 217;
+}
+
+/* 4. emerald */
+html[data-theme='emerald'] {
+  --primary: 5 150 105;
+  --primary-hover: 4 120 87;
+  --primary-subtle: 230 246 239;
+  --ring: 5 150 105;
+}
+html.dark[data-theme='emerald'] {
+  --primary: 16 185 129;
+  --primary-hover: 52 211 153;
+  --primary-foreground: 13 15 20;
+  --primary-subtle: 8 40 30;
+  --ring: 16 185 129;
+}
+
+/* 5. orange */
+html[data-theme='orange'] {
+  --primary: 234 88 12;
+  --primary-hover: 194 65 12;
+  --primary-subtle: 254 238 227;
+  --ring: 234 88 12;
+}
+html.dark[data-theme='orange'] {
+  --primary: 251 113 36;
+  --primary-hover: 253 138 74;
+  --primary-subtle: 48 28 14;
+  --ring: 251 113 36;
+}
+
+/* 6. mono (뉴트럴 슬레이트 primary + 파랑 point) */
+html[data-theme='mono'] {
+  --primary: 63 70 80;
+  --primary-hover: 42 47 55;
+  --primary-subtle: 238 240 242;
+  --ring: 63 70 80;
+  --point: 49 130 246;
+  --point-hover: 27 110 235;
+  --point-subtle: 232 241 254;
+}
+html.dark[data-theme='mono'] {
+  --primary: 209 214 219;
+  --primary-hover: 229 232 235;
+  --primary-foreground: 13 15 20;
+  --primary-subtle: 32 36 42;
+  --ring: 209 214 219;
+  --point: 74 144 247;
+  --point-subtle: 22 35 58;
+}
+
+/* 7. wine (버건디) */
+html[data-theme='wine'] {
+  --primary: 159 18 57;
+  --primary-hover: 136 19 55;
+  --primary-subtle: 251 232 238;
+  --ring: 159 18 57;
+}
+html.dark[data-theme='wine'] {
+  --primary: 225 60 100;
+  --primary-hover: 244 90 128;
+  --primary-subtle: 48 16 26;
+  --ring: 225 60 100;
+}
+
+/* 8. violet (primary 바이올렛 → point는 rose로 대체) */
+html[data-theme='violet'] {
+  --primary: 124 58 237;
+  --primary-hover: 109 40 217;
+  --primary-subtle: 241 235 254;
+  --ring: 124 58 237;
+  --point: 225 29 72;
+  --point-hover: 190 18 60;
+  --point-subtle: 254 231 236;
+}
+html.dark[data-theme='violet'] {
+  --primary: 139 92 246;
+  --primary-hover: 167 139 250;
+  --primary-subtle: 36 28 58;
+  --ring: 139 92 246;
+  --point: 251 113 133;
+  --point-subtle: 48 18 28;
+}
+
+/* 9. rose */
+html[data-theme='rose'] {
+  --primary: 225 29 72;
+  --primary-hover: 190 18 60;
+  --primary-subtle: 254 231 236;
+  --ring: 225 29 72;
+}
+html.dark[data-theme='rose'] {
+  --primary: 251 113 133;
+  --primary-hover: 253 164 175;
+  --primary-foreground: 13 15 20;
+  --primary-subtle: 48 18 28;
+  --ring: 251 113 133;
+}
+
+/* 10. amber */
+html[data-theme='amber'] {
+  --primary: 217 119 6;
+  --primary-hover: 180 83 9;
+  --primary-subtle: 254 243 217;
+  --ring: 217 119 6;
+}
+html.dark[data-theme='amber'] {
+  --primary: 245 158 11;
+  --primary-hover: 251 191 36;
+  --primary-foreground: 13 15 20;
+  --primary-subtle: 48 34 12;
+  --ring: 245 158 11;
+}
+
+/* 11. teal */
+html[data-theme='teal'] {
+  --primary: 13 148 136;
+  --primary-hover: 15 118 110;
+  --primary-subtle: 224 245 242;
+  --ring: 13 148 136;
+}
+html.dark[data-theme='teal'] {
+  --primary: 45 212 191;
+  --primary-hover: 94 234 212;
+  --primary-foreground: 13 15 20;
+  --primary-subtle: 8 40 38;
+  --ring: 45 212 191;
+}
+
+/* ══════════ 에디터 다크 3종 (전체 팔레트 override, 항상 다크) ══════════ */
+
+/* 12. monokai (#272822) */
+html[data-theme='monokai'] {
+  --surface-0: 39 40 34;
+  --surface-1: 47 48 42;
+  --surface-2: 52 53 46;
+  --surface-3: 62 63 54;
+  --background: 39 40 34;
+  --foreground: 248 248 242;
+  --card: 52 53 46;
+  --card-foreground: 248 248 242;
+  --popover: 62 63 54;
+  --popover-foreground: 248 248 242;
+  --text-primary: 248 248 242;
+  --text-secondary: 166 166 156;
+  --text-tertiary: 117 113 94;
+  --text-muted: 96 93 78;
+  --text-disabled: 74 72 60;
+  --border: 65 67 57;
+  --border-strong: 88 90 78;
+  --border-stronger: 110 112 98;
+  --input: 65 67 57;
+  --ring: 102 217 239;
+  --primary: 102 217 239;
+  --primary-hover: 133 226 244;
+  --primary-subtle: 30 52 56;
+  --primary-foreground: 39 40 34;
+  --accent: 62 63 54;
+  --accent-foreground: 248 248 242;
+  --point: 249 38 114;
+  --point-hover: 251 92 149;
+  --point-subtle: 58 26 40;
+  --point-foreground: 248 248 242;
+  --secondary: 62 63 54;
+  --secondary-foreground: 248 248 242;
+  --muted: 62 63 54;
+  --muted-foreground: 166 166 156;
+  --success: 166 226 46;
+  --success-foreground: 39 40 34;
+  --success-subtle: 40 50 24;
+  --success-border: 90 110 40;
+  --warning: 230 219 116;
+  --warning-foreground: 39 40 34;
+  --warning-subtle: 52 50 30;
+  --warning-border: 110 104 56;
+  --danger: 249 38 114;
+  --danger-foreground: 248 248 242;
+  --danger-subtle: 58 26 40;
+  --danger-border: 120 40 72;
+  --destructive: 249 38 114;
+  --destructive-foreground: 248 248 242;
+  --info: 102 217 239;
+  --info-foreground: 39 40 34;
+  --info-subtle: 30 52 56;
+  --info-border: 50 100 112;
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.35), 0 1px 3px 0 rgb(0 0 0 / 0.45);
+  --shadow-md: 0 2px 4px -1px rgb(0 0 0 / 0.45), 0 4px 12px -2px rgb(0 0 0 / 0.55);
+  --shadow-lg: 0 8px 16px -4px rgb(0 0 0 / 0.55), 0 16px 32px -8px rgb(0 0 0 / 0.65);
+}
+
+/* 13. monokai-black (#0A0A0A) */
+html[data-theme='monokai-black'] {
+  --surface-0: 10 10 10;
+  --surface-1: 20 20 20;
+  --surface-2: 26 26 26;
+  --surface-3: 36 36 36;
+  --background: 10 10 10;
+  --foreground: 248 248 242;
+  --card: 26 26 26;
+  --card-foreground: 248 248 242;
+  --popover: 36 36 36;
+  --popover-foreground: 248 248 242;
+  --text-primary: 248 248 242;
+  --text-secondary: 166 166 156;
+  --text-tertiary: 110 110 102;
+  --text-muted: 84 84 78;
+  --text-disabled: 60 60 56;
+  --border: 42 42 42;
+  --border-strong: 60 60 60;
+  --border-stronger: 82 82 82;
+  --input: 42 42 42;
+  --ring: 102 217 239;
+  --primary: 102 217 239;
+  --primary-hover: 133 226 244;
+  --primary-subtle: 12 34 38;
+  --primary-foreground: 10 10 10;
+  --accent: 36 36 36;
+  --accent-foreground: 248 248 242;
+  --point: 249 38 114;
+  --point-hover: 251 92 149;
+  --point-subtle: 40 14 26;
+  --point-foreground: 248 248 242;
+  --secondary: 36 36 36;
+  --secondary-foreground: 248 248 242;
+  --muted: 36 36 36;
+  --muted-foreground: 166 166 156;
+  --success: 166 226 46;
+  --success-foreground: 10 10 10;
+  --success-subtle: 24 34 12;
+  --success-border: 72 94 28;
+  --warning: 230 219 116;
+  --warning-foreground: 10 10 10;
+  --warning-subtle: 36 34 16;
+  --warning-border: 94 88 44;
+  --danger: 249 38 114;
+  --danger-foreground: 248 248 242;
+  --danger-subtle: 40 14 26;
+  --danger-border: 104 30 60;
+  --destructive: 249 38 114;
+  --destructive-foreground: 248 248 242;
+  --info: 102 217 239;
+  --info-foreground: 10 10 10;
+  --info-subtle: 12 34 38;
+  --info-border: 40 88 100;
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.5), 0 1px 3px 0 rgb(0 0 0 / 0.6);
+  --shadow-md: 0 2px 4px -1px rgb(0 0 0 / 0.6), 0 4px 12px -2px rgb(0 0 0 / 0.7);
+  --shadow-lg: 0 8px 16px -4px rgb(0 0 0 / 0.7), 0 16px 32px -8px rgb(0 0 0 / 0.8);
+}
+
+/* 14. dracula (#282A36) */
+html[data-theme='dracula'] {
+  --surface-0: 40 42 54;
+  --surface-1: 33 34 44;
+  --surface-2: 52 55 70;
+  --surface-3: 60 63 81;
+  --background: 40 42 54;
+  --foreground: 248 248 242;
+  --card: 52 55 70;
+  --card-foreground: 248 248 242;
+  --popover: 60 63 81;
+  --popover-foreground: 248 248 242;
+  --text-primary: 248 248 242;
+  --text-secondary: 169 177 198;
+  --text-tertiary: 98 114 164;
+  --text-muted: 84 96 138;
+  --text-disabled: 68 71 90;
+  --border: 68 71 90;
+  --border-strong: 90 94 118;
+  --border-stronger: 112 118 148;
+  --input: 68 71 90;
+  --ring: 189 147 249;
+  --primary: 189 147 249;
+  --primary-hover: 209 176 251;
+  --primary-subtle: 46 40 68;
+  --primary-foreground: 40 42 54;
+  --accent: 60 63 81;
+  --accent-foreground: 248 248 242;
+  --point: 255 121 198;
+  --point-hover: 255 158 213;
+  --point-subtle: 58 34 52;
+  --point-foreground: 40 42 54;
+  --secondary: 60 63 81;
+  --secondary-foreground: 248 248 242;
+  --muted: 60 63 81;
+  --muted-foreground: 169 177 198;
+  --success: 80 250 123;
+  --success-foreground: 40 42 54;
+  --success-subtle: 26 54 38;
+  --success-border: 56 118 78;
+  --warning: 241 250 140;
+  --warning-foreground: 40 42 54;
+  --warning-subtle: 52 54 34;
+  --warning-border: 116 120 68;
+  --danger: 255 85 85;
+  --danger-foreground: 40 42 54;
+  --danger-subtle: 58 32 40;
+  --danger-border: 130 54 60;
+  --destructive: 255 85 85;
+  --destructive-foreground: 40 42 54;
+  --info: 139 233 253;
+  --info-foreground: 40 42 54;
+  --info-subtle: 26 48 56;
+  --info-border: 58 106 122;
+  --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.4), 0 1px 3px 0 rgb(0 0 0 / 0.5);
+  --shadow-md: 0 2px 4px -1px rgb(0 0 0 / 0.5), 0 4px 12px -2px rgb(0 0 0 / 0.6);
+  --shadow-lg: 0 8px 16px -4px rgb(0 0 0 / 0.6), 0 16px 32px -8px rgb(0 0 0 / 0.7);
+}

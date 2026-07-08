@@ -125,20 +125,20 @@ export default function ChatCampaignActionCard({ action }: { action: CampaignAct
 
   if (phase === 'done') {
     return (
-      <div className="mt-1 rounded-2xl border border-[#E5E8EB] dark:border-[#2D3748] p-4 max-w-md">
+      <div className="mt-1 rounded-2xl border border-line p-4 max-w-md">
         {ok ? (
-          <p className="font-bold text-[#191F28] dark:text-[#F2F4F6]">
+          <p className="font-bold text-ink">
             ✓ {LABEL[action.action]} 완료
           </p>
         ) : (
           <>
             <p className="font-bold text-red-500">{LABEL[action.action]} 실패</p>
-            <p className="mt-1 text-sm text-[#8B95A1]">{error ?? '처리되지 않았어요.'}</p>
+            <p className="mt-1 text-sm text-ink-tertiary">{error ?? '처리되지 않았어요.'}</p>
           </>
         )}
         <Link
           href="/manage/campaigns"
-          className="mt-3 inline-block px-3 py-1.5 bg-[#3182F6] text-white text-xs font-medium rounded-lg hover:bg-[#1B6EEB]"
+          className="mt-3 inline-block px-3 py-1.5 bg-primary text-primary-foreground text-xs font-medium rounded-lg hover:bg-primary-hover"
         >
           대시보드로
         </Link>
@@ -147,8 +147,8 @@ export default function ChatCampaignActionCard({ action }: { action: CampaignAct
   }
 
   return (
-    <div className="mt-1 rounded-2xl border border-[#E5E8EB] dark:border-[#2D3748] p-4 max-w-md">
-      <p className="font-bold text-[#191F28] dark:text-[#F2F4F6] mb-2">캠페인 {LABEL[action.action]}</p>
+    <div className="mt-1 rounded-2xl border border-line p-4 max-w-md">
+      <p className="font-bold text-ink mb-2">캠페인 {LABEL[action.action]}</p>
 
       {warning && (
         <p className="mb-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-900/20 dark:text-amber-300">
@@ -158,11 +158,11 @@ export default function ChatCampaignActionCard({ action }: { action: CampaignAct
 
       {!resolvedCampaign ? (
         <label className="block mb-2">
-          <span className="text-xs text-[#8B95A1]">대상 캠페인</span>
+          <span className="text-xs text-ink-tertiary">대상 캠페인</span>
           <select
             value={campaignId}
             onChange={(e) => onSelectCampaign(e.target.value)}
-            className="mt-1 w-full rounded-lg border border-[#E5E8EB] dark:border-[#2D3748] bg-transparent px-3 py-2 text-sm"
+            className="mt-1 w-full rounded-lg border border-line bg-transparent px-3 py-2 text-sm"
           >
             <option value="">선택하세요</option>
             {picker.map((c) => (
@@ -172,13 +172,13 @@ export default function ChatCampaignActionCard({ action }: { action: CampaignAct
             ))}
           </select>
           {loaded && picker.length === 0 && (
-            <span className="mt-1 block text-xs text-[#8B95A1]">불러올 캠페인이 없어요.</span>
+            <span className="mt-1 block text-xs text-ink-tertiary">불러올 캠페인이 없어요.</span>
           )}
         </label>
       ) : (
-        <div className="mb-2 text-sm text-[#4E5968] dark:text-[#9CA3AF]">
-          <p className="font-medium text-[#191F28] dark:text-[#F2F4F6]">{resolvedCampaign.name}</p>
-          <p className="text-xs text-[#8B95A1]">
+        <div className="mb-2 text-sm text-ink-secondary">
+          <p className="font-medium text-ink">{resolvedCampaign.name}</p>
+          <p className="text-xs text-ink-tertiary">
             상태 {resolvedCampaign.state}
             {needsAck && commitKrw != null ? ` · 집행 상한 ₩${commitKrw.toLocaleString()}` : ''}
           </p>
@@ -186,7 +186,7 @@ export default function ChatCampaignActionCard({ action }: { action: CampaignAct
       )}
 
       {needsAck && (
-        <label className="flex items-start gap-2 text-xs text-[#4E5968] dark:text-[#9CA3AF] mb-2">
+        <label className="flex items-start gap-2 text-xs text-ink-secondary mb-2">
           <input type="checkbox" checked={ackBilling} onChange={(e) => setAckBilling(e.target.checked)} className="mt-0.5" />
           <span>이 작업은 지금부터 실제 과금이 시작됩니다 — 이해했습니다.</span>
         </label>
@@ -195,7 +195,7 @@ export default function ChatCampaignActionCard({ action }: { action: CampaignAct
       <button
         onClick={run}
         disabled={!canRun}
-        className="px-4 py-2 bg-[#3182F6] text-white text-sm font-medium rounded-lg hover:bg-[#1B6EEB] disabled:opacity-40"
+        className="px-4 py-2 bg-primary text-primary-foreground text-sm font-medium rounded-lg hover:bg-primary-hover disabled:opacity-40"
       >
         {phase === 'running' ? '처리 중…' : LABEL[action.action]}
       </button>

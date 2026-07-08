@@ -67,7 +67,7 @@ export default function CitationChips({
   return (
     <div className='px-1 mt-1.5 space-y-1.5'>
       <div className='flex flex-wrap items-center gap-1.5'>
-        <span className='text-[10px] text-[#B0B8C1] dark:text-[#6B7280] shrink-0'>
+        <span className='text-[10px] text-ink-muted shrink-0'>
           근거
         </span>
         {kb.map((c, i) => {
@@ -82,8 +82,8 @@ export default function CitationChips({
               title={`${fileLabel(c.source)}${c.title ? ` › ${c.title}` : ''}`}
               className={`inline-flex items-center gap-1 max-w-[220px] rounded-full border px-2 py-0.5 text-[11px] transition-colors ${
                 isOpen
-                  ? 'border-[#3182F6] bg-[#EBF3FF] text-[#3182F6] dark:bg-[#1E3A5F] dark:border-[#5B9DF9] dark:text-[#9CC4FF]'
-                  : 'border-[#E5E8EB] bg-white text-[#4E5968] hover:border-[#3182F6] hover:text-[#3182F6] dark:bg-[#1A1F2B] dark:border-[#2D3748] dark:text-[#B0B8C1] dark:hover:border-[#5B9DF9]'
+                  ? 'border-primary bg-[#EBF3FF] text-primary dark:bg-[#1E3A5F] dark:border-[#5B9DF9] dark:text-[#9CC4FF]'
+                  : 'border-line bg-white text-ink-secondary hover:border-primary hover:text-primary dark:bg-[#1A1F2B] dark:hover:border-[#5B9DF9]'
               }`}>
               <span aria-hidden>📄</span>
               <span className='truncate'>{label}</span>
@@ -120,13 +120,13 @@ export default function CitationChips({
         )}
       </div>
       {active && (
-        <div className='rounded-lg border border-[#E5E8EB] bg-[#F9FAFB] dark:bg-[#1A1F2B] dark:border-[#2D3748] p-2.5'>
-          <p className='text-[10px] font-semibold text-[#8B95A1] dark:text-[#6B7280] mb-1'>
+        <div className='rounded-lg border border-line bg-surface-1 p-2.5'>
+          <p className='text-[10px] font-semibold text-ink-tertiary mb-1'>
             {fileLabel(active.source)}
             {active.title ? ` › ${active.title}` : ''}
           </p>
           {activeChunk?.loading && (
-            <p className='text-[11px] text-[#B0B8C1] dark:text-[#6B7280]'>
+            <p className='text-[11px] text-ink-muted'>
               원문 불러오는 중…
             </p>
           )}
@@ -134,7 +134,7 @@ export default function CitationChips({
             <p className='text-[11px] text-[#F04452]'>{activeChunk.error}</p>
           )}
           {activeChunk?.text && (
-            <p className='text-[11px] leading-relaxed text-[#4E5968] dark:text-[#B0B8C1] whitespace-pre-wrap'>
+            <p className='text-[11px] leading-relaxed text-ink-secondary whitespace-pre-wrap'>
               {activeChunk.text.length > 400
                 ? `${activeChunk.text.slice(0, 400)}…`
                 : activeChunk.text}

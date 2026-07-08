@@ -107,11 +107,11 @@ export default function Page() {
   return (
       <div className="max-w-screen-xl mx-auto px-6 py-8">
         <div className="mb-6">
-          <Link href="/manage/campaigns" className="text-sm text-[#8B95A1] hover:text-[#3182F6]">
+          <Link href="/manage/campaigns" className="text-sm text-ink-tertiary hover:text-primary">
             ← 캠페인 대시보드
           </Link>
-          <h1 className="text-2xl font-bold text-[#191F28] dark:text-[#F2F4F6] mt-1">새 캠페인 만들기</h1>
-          <p className="text-sm text-[#8B95A1] mt-1">
+          <h1 className="text-2xl font-bold text-ink mt-1">새 캠페인 만들기</h1>
+          <p className="text-sm text-ink-tertiary mt-1">
             폼 → 제안 → 승인 → 생성 (Tier 3 · 사람 승인 · 생성은 PAUSED, 게재는 직접)
           </p>
         </div>
@@ -128,30 +128,30 @@ export default function Page() {
         )}
 
         {step === 'done' && (
-          <div className="rounded-2xl border border-[#E5E8EB] dark:border-[#2D3748] p-6 max-w-xl">
+          <div className="rounded-2xl border border-line p-6 max-w-xl">
             {success ? (
               <>
                 <div className="flex items-center gap-2 mb-2">
                   <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300 text-sm font-bold">
                     ✓
                   </span>
-                  <h2 className="font-bold text-[#191F28] dark:text-[#F2F4F6]">캠페인 생성됨 (PAUSED)</h2>
+                  <h2 className="font-bold text-ink">캠페인 생성됨 (PAUSED)</h2>
                 </div>
-                <p className="text-sm text-[#8B95A1]">
+                <p className="text-sm text-ink-tertiary">
                   생성 직후 <b>자동으로 게재를 시작</b>합니다. 게재에는 두 가지가 필요해요 —
                   <b>예산 한도(ClickMe 크레딧)</b>와 <b>실광고비(Meta 선불 잔액)</b>. 부족한 쪽을
                   채우면 게재가 이어집니다(크레딧만큼 집행 상한 적용).
                 </p>
 
                 {activating && (
-                  <p className="mt-3 text-sm text-[#8B95A1]">게재 시작 중…</p>
+                  <p className="mt-3 text-sm text-ink-tertiary">게재 시작 중…</p>
                 )}
 
                 {/* 게재 미시작(자동 시도 실패 등) 시의 수동 재시도 — 잔액 부족이면 충전 페이지로 이동 */}
                 {!activating && !activateResult && (
                   <div className="mt-4">
                     {adSkipped ? (
-                      <p className="text-xs text-[#8B95A1]">
+                      <p className="text-xs text-ink-tertiary">
                         광고 소재가 없어 게재할 수 없습니다. Meta Ads Manager에서 소재를 추가한 뒤
                         게재하세요.
                       </p>
@@ -164,7 +164,7 @@ export default function Page() {
                         게재 다시 시도
                       </button>
                     ) : (
-                      <p className="text-xs text-[#8B95A1]">
+                      <p className="text-xs text-ink-tertiary">
                         실모드(live)에서 생성된 캠페인만 앱에서 게재를 시작할 수 있습니다.
                       </p>
                     )}
@@ -206,7 +206,7 @@ export default function Page() {
                             commit: commitKrw ?? 0,
                           })
                         }
-                        className="inline-block mt-2 mr-2 px-3 py-1.5 bg-[#3182F6] text-white text-xs font-medium rounded-lg hover:bg-[#1B6EEB]"
+                        className="inline-block mt-2 mr-2 px-3 py-1.5 bg-primary text-primary-foreground text-xs font-medium rounded-lg hover:bg-primary-hover"
                       >
                         📊 예산 한도(크레딧) 충전하기
                       </Link>
@@ -234,7 +234,7 @@ export default function Page() {
                     <p className="text-sm text-red-600 dark:text-red-400 mt-1 leading-relaxed">{metaError}</p>
                   </div>
                 )}
-                <p className="text-sm text-[#8B95A1]">
+                <p className="text-sm text-ink-tertiary">
                   사유 코드 {result?.failure_reason ?? '알 수 없음'}
                   {!metaError && ' — 예산 한도·일정(최소 24h)·정책을 확인하세요.'}
                 </p>
@@ -243,13 +243,13 @@ export default function Page() {
             <div className="flex items-center gap-2 mt-5">
               <Link
                 href="/manage/campaigns"
-                className="px-4 py-2 bg-[#3182F6] text-white text-sm font-medium rounded-lg hover:bg-[#1B6EEB]"
+                className="px-4 py-2 bg-primary text-primary-foreground text-sm font-medium rounded-lg hover:bg-primary-hover"
               >
                 대시보드로
               </Link>
               <button
                 onClick={reset}
-                className="px-4 py-2 text-sm font-medium rounded-lg border border-[#E5E8EB] dark:border-[#2D3748] text-[#4E5968] dark:text-[#9CA3AF]"
+                className="px-4 py-2 text-sm font-medium rounded-lg border border-line text-ink-secondary"
               >
                 또 만들기
               </button>

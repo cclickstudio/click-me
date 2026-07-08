@@ -43,15 +43,15 @@ const COUNTRIES: { code: string; label: string }[] = [
 function Field({ label, children, hint }: { label: string; children: React.ReactNode; hint?: string }) {
   return (
     <label className="block">
-      <span className="text-sm font-medium text-[#191F28] dark:text-[#F2F4F6]">{label}</span>
+      <span className="text-sm font-medium text-ink">{label}</span>
       {children}
-      {hint && <span className="block text-[11px] text-[#8B95A1] mt-1">{hint}</span>}
+      {hint && <span className="block text-[11px] text-ink-tertiary mt-1">{hint}</span>}
     </label>
   );
 }
 
 const inputCls =
-  'mt-1.5 w-full rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-transparent px-3 py-2 text-sm text-[#191F28] dark:text-[#F2F4F6] focus:border-[#3182F6] outline-none';
+  'mt-1.5 w-full rounded-xl border border-line bg-transparent px-3 py-2 text-sm text-ink focus:border-primary outline-none';
 
 export function CampaignForm({
   onSubmit,
@@ -176,7 +176,7 @@ export function CampaignForm({
             gender,
           });
       }}
-      className="rounded-2xl border border-[#E5E8EB] dark:border-[#2D3748] p-5 space-y-4 max-w-xl"
+      className="rounded-2xl border border-line p-5 space-y-4 max-w-xl"
     >
       <Field label="캠페인 이름">
         <input className={inputCls} value={name} onChange={(e) => setName(e.target.value)} placeholder="예: 가을 신상 런칭" />
@@ -184,11 +184,11 @@ export function CampaignForm({
       {/* 예산 — 기본은 '총 예산만' 받고 일별은 자동 최적화(최소 일예산 × 최대 일수) */}
       <div>
         <div className="flex items-center justify-between">
-          <span className="text-sm font-medium text-[#191F28] dark:text-[#F2F4F6]">예산</span>
+          <span className="text-sm font-medium text-ink">예산</span>
           <button
             type="button"
             onClick={() => setAdvanced((v) => !v)}
-            className="text-[11px] font-medium text-[#8B95A1] hover:text-[#3182F6]"
+            className="text-[11px] font-medium text-ink-tertiary hover:text-primary"
           >
             {advanced ? '간편 설정으로' : '직접 설정(고급)'}
           </button>
@@ -210,13 +210,13 @@ export function CampaignForm({
             />
             {autoDays > 0 ? (
               <div className="mt-2 rounded-xl bg-[#F2F9FF] dark:bg-[#16263A] px-3 py-2.5">
-                <p className="text-sm font-semibold text-[#3182F6]">
+                <p className="text-sm font-semibold text-primary">
                   일 ₩{minBudget.toLocaleString()} × {autoDays}일 = ₩{autoTotal.toLocaleString()}
                 </p>
-                <p className="mt-0.5 text-[11px] text-[#4E5968] dark:text-[#9CA3AF]">
+                <p className="mt-0.5 text-[11px] text-ink-secondary">
                   최소 비용으로 최대한 길게 노출 — Meta 최소 일예산으로 가장 오래 집행해 노출·클릭에 유리.
                 </p>
-                <p className="mt-0.5 text-[11px] text-[#8B95A1]">
+                <p className="mt-0.5 text-[11px] text-ink-tertiary">
                   너무 낮은 일예산은 초반 게재가 느릴 수 있어요. 빠른 게재가 필요하면 ‘직접 설정’.
                 </p>
               </div>
@@ -271,7 +271,7 @@ export function CampaignForm({
       </Field>
 
       {/* ── 광고세트 타겟 (Meta) ── */}
-      <p className="text-[11px] font-semibold text-[#8B95A1] pt-1 border-t border-[#F2F4F6] dark:border-[#2D3748]">
+      <p className="text-[11px] font-semibold text-ink-tertiary pt-1 border-t border-line">
         타겟 · 정책
       </p>
       <div className="grid grid-cols-2 gap-4">
@@ -333,7 +333,7 @@ export function CampaignForm({
       {/* ── 광고 소재 이미지 (업로드 → Meta 해시 → 샘플 시안) ── */}
       <Field label="광고 이미지" hint="업로드하면 Meta가 FB·인스타에 자동 배치 게재 · 시안 미리보기 가능">
         <div className="mt-1.5 flex flex-wrap items-center gap-2">
-          <label className="cursor-pointer rounded-xl border border-dashed border-[#C9CED6] dark:border-[#3A4452] px-3 py-2 text-sm text-[#4E5968] dark:text-[#9CA3AF] hover:border-[#3182F6]">
+          <label className="cursor-pointer rounded-xl border border-dashed border-[#C9CED6] dark:border-[#3A4452] px-3 py-2 text-sm text-ink-secondary hover:border-primary">
             {uploading ? '업로드 중…' : imageName ? '이미지 변경' : '이미지 선택'}
             <input
               type="file"
@@ -350,7 +350,7 @@ export function CampaignForm({
                 type="button"
                 onClick={onPreview}
                 disabled={previewing}
-                className="rounded-lg border border-[#E5E8EB] dark:border-[#2D3748] px-2.5 py-1.5 text-[12px] font-medium text-[#3182F6] disabled:opacity-40"
+                className="rounded-lg border border-line px-2.5 py-1.5 text-[12px] font-medium text-primary disabled:opacity-40"
               >
                 {previewing ? '시안 생성 중…' : '샘플 시안 보기'}
               </button>
@@ -361,15 +361,15 @@ export function CampaignForm({
       </Field>
 
       {previews.length > 0 && (
-        <div className="rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] p-3">
-          <p className="mb-2 text-[12px] font-semibold text-[#4E5968] dark:text-[#9CA3AF]">
+        <div className="rounded-xl border border-line p-3">
+          <p className="mb-2 text-[12px] font-semibold text-ink-secondary">
             샘플 시안 (페이스북 · 인스타그램)
           </p>
           <div className="flex flex-wrap gap-3">
             {previews.map((p) => (
               <div
                 key={p.format}
-                className="overflow-hidden rounded-lg border border-[#E5E8EB] dark:border-[#2D3748]"
+                className="overflow-hidden rounded-lg border border-line"
                 // Meta 호스팅 iframe — 샌드박스된 미리보기
                 dangerouslySetInnerHTML={{ __html: p.html }}
               />
@@ -383,13 +383,13 @@ export function CampaignForm({
       </Field>
 
       <div className="flex items-center justify-between pt-1">
-        <p className="text-[11px] text-[#8B95A1]">
+        <p className="text-[11px] text-ink-tertiary">
           예상 총지출 ₩{(advanced ? budget * runDays : autoTotal).toLocaleString()}
         </p>
         <button
           type="submit"
           disabled={!valid || busy}
-          className="px-4 py-2 bg-[#3182F6] text-white text-sm font-medium rounded-lg hover:bg-[#1B6EEB] disabled:opacity-40"
+          className="px-4 py-2 bg-primary text-primary-foreground text-sm font-medium rounded-lg hover:bg-primary-hover disabled:opacity-40"
         >
           {busy ? '생성 중…' : '제안 생성 →'}
         </button>

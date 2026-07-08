@@ -8,6 +8,7 @@ import { useRouter } from 'next/navigation';
 import { api, type CenterNotificationItem } from '@/lib/api';
 import { useProjects } from '../ProjectContext';
 import { useNotificationStream } from '../manage/notifications/useNotificationStream';
+import { ExecuteFromSimulation } from '../manage/ExecuteFromSimulation';
 import type { CenterSegment } from './CenterFilterBar';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
@@ -199,47 +200,47 @@ export default function AlarmCenter({
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
       <div className="flex items-center justify-between px-3 py-2">
-        <span className="text-xs font-medium text-[#8B95A1] dark:text-[#6B7280]">
+        <span className="text-xs font-medium text-ink-tertiary">
           {visible.length}건
         </span>
         <button
           type="button"
           disabled={scanning}
           onClick={onScan}
-          className="rounded-md border border-[#E5E8EB] px-2 py-1 text-xs text-[#4E5968] hover:border-[#3182F6] disabled:opacity-50 dark:border-[#2D3748] dark:text-[#9CA3AF]"
+          className="rounded-md border border-line px-2 py-1 text-xs text-ink-secondary hover:border-primary disabled:opacity-50"
         >
           {scanning ? '점검 중…' : '지금 점검'}
         </button>
       </div>
-      {notice && <div className="bg-[#3182F6]/5 px-3 py-2 text-xs text-[#3182F6]">{notice}</div>}
+      {notice && <div className="bg-primary/5 px-3 py-2 text-xs text-primary">{notice}</div>}
       <div className="flex-1 overflow-y-auto">
         {visible.length === 0 ? (
-          <p className="px-4 py-10 text-center text-xs text-[#8B95A1]">새 알림이 없어요.</p>
+          <p className="px-4 py-10 text-center text-xs text-ink-tertiary">새 알림이 없어요.</p>
         ) : (
           visible.map((n) => {
             const open = openId === n.id;
             return (
               <div
                 key={n.id}
-                className="border-b border-[#F2F4F6] dark:border-[#2D3748]/60"
+                className="border-b border-line/60"
               >
                 <button
                   type="button"
                   onClick={() => toggle(n)}
-                  className="flex w-full items-center gap-2 px-3 py-3 text-left hover:bg-[#F9FAFB] dark:hover:bg-[#252D3D]"
+                  className="flex w-full items-center gap-2 px-3 py-3 text-left hover:bg-accent"
                 >
                   {!n.read_at && <span className="h-2 w-2 shrink-0 rounded-full bg-[#F04452]" />}
                   <span
                     className={`flex-1 truncate text-sm ${
                       n.read_at
-                        ? 'text-[#4E5968] dark:text-[#9CA3AF]'
-                        : 'font-medium text-[#191F28] dark:text-white'
+                        ? 'text-ink-secondary'
+                        : 'font-medium text-ink dark:text-white'
                     }`}
                   >
                     {titleOf(n)}
                   </span>
                   <svg
-                    className={`h-4 w-4 shrink-0 text-[#8B95A1] transition-transform ${open ? 'rotate-90' : ''}`}
+                    className={`h-4 w-4 shrink-0 text-ink-tertiary transition-transform ${open ? 'rotate-90' : ''}`}
                     viewBox="0 0 24 24"
                     fill="none"
                     stroke="currentColor"
@@ -250,7 +251,7 @@ export default function AlarmCenter({
                   </svg>
                 </button>
                 {open && (
-                  <div className="px-3 pb-3 text-xs text-[#4E5968] dark:text-[#9CA3AF]">
+                  <div className="px-3 pb-3 text-xs text-ink-secondary">
                     {renderDetail(n)}
                   </div>
                 )}
@@ -265,7 +266,7 @@ export default function AlarmCenter({
   // 종류별 상세 + 액션.
   function renderDetail(n: CenterNotificationItem) {
     const meta = (
-      <p className="mb-2 text-[11px] text-[#8B95A1]">
+      <p className="mb-2 text-[11px] text-ink-tertiary">
         {n.project_name || '프로젝트'}
         {n.created_at ? ` · ${new Date(n.created_at).toLocaleString('ko-KR')}` : ''}
       </p>
@@ -282,12 +283,12 @@ export default function AlarmCenter({
               {cands.map((c, i) => {
                 const src = imgSrc(c.image_url);
                 return (
-                  <div key={i} className="flex-1 overflow-hidden rounded-lg border border-[#E5E8EB] dark:border-[#2D3748]">
+                  <div key={i} className="flex-1 overflow-hidden rounded-lg border border-line">
                     {src ? (
                       // eslint-disable-next-line @next/next/no-img-element
                       <img src={src} alt={`시안 ${i + 1}`} className="h-16 w-full object-cover" />
                     ) : (
-                      <div className="flex h-16 items-center justify-center bg-[#F2F4F6] text-[10px] text-[#8B95A1] dark:bg-[#252D3D]">
+                      <div className="flex h-16 items-center justify-center bg-[#F2F4F6] text-[10px] text-ink-tertiary dark:bg-[#252D3D]">
                         시안 {i + 1}
                       </div>
                     )}
@@ -299,7 +300,7 @@ export default function AlarmCenter({
             <button
               type="button"
               onClick={() => goPrefill(n, '/simulation')}
-              className="rounded-lg bg-[#3182F6] px-3 py-1.5 text-xs font-medium text-white"
+              className="rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-white"
             >
               시뮬레이션 돌리기
             </button>
@@ -312,7 +313,7 @@ export default function AlarmCenter({
             {meta}
             <p className="mb-2">{pstr(n.payload, 'message') || '시뮬 결과에 맞춘 개선 시안을 생성해 보시겠어요?'}</p>
             {summaryLoading ? (
-              <p className="mb-2 text-[11px] text-[#8B95A1]">시뮬 요약 불러오는 중…</p>
+              <p className="mb-2 text-[11px] text-ink-tertiary">시뮬 요약 불러오는 중…</p>
             ) : genSummary ? (
               <div className="mb-2 grid grid-cols-2 gap-1 rounded-lg bg-[#F9FAFB] p-2 dark:bg-[#252D3D]">
                 <Kpi label="클릭 의향률" value={pct(genSummary.click_intent_rate)} />
@@ -324,26 +325,41 @@ export default function AlarmCenter({
             <button
               type="button"
               onClick={() => goPrefill(n, '/generator')}
-              className="rounded-lg bg-[#3182F6] px-3 py-1.5 text-xs font-medium text-white"
+              className="rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-white"
             >
               생성해 보기
             </button>
           </div>
         );
       }
-      // launch_suggest — 판정 기준 미확정(open-decisions §1). 상세·액션 최소만.
+      // launch_suggest — 집행 권장 게이트 통과 시 백엔드 훅이 생성(판정 정본은 서버).
+      // payload에 캐시된 지표로 ExecuteFromSimulation 모달을 카드에서 바로 연다.
+      const cir = Number(n.payload?.click_intent_rate ?? 0);
+      const rej = Number(n.payload?.rejection_rate ?? 0);
       return (
         <div>
           {meta}
-          <p className="mb-2">{pstr(n.payload, 'message') || '결과가 좋아요. 집행을 검토해 보세요.'}</p>
-          <button
-            type="button"
-            onClick={() => onIgnore(n)}
-            disabled={busyId === n.id}
-            className="rounded-lg border border-[#E5E8EB] px-3 py-1.5 text-xs text-[#4E5968] disabled:opacity-50 dark:border-[#2D3748] dark:text-[#9CA3AF]"
-          >
-            확인
-          </button>
+          <p className="mb-2">
+            {pstr(n.payload, 'message') || '결과가 좋아요. 집행을 검토해 보세요.'}
+          </p>
+          <div className="flex items-center gap-2">
+            {n.source_sim_id && (
+              <ExecuteFromSimulation
+                simulationId={n.source_sim_id}
+                defaultName={pstr(n.payload, 'ad_title')}
+                clickIntentRate={cir}
+                rejectionRate={rej}
+              />
+            )}
+            <button
+              type="button"
+              onClick={() => onIgnore(n)}
+              disabled={busyId === n.id}
+              className="rounded-lg border border-line px-3 py-1.5 text-xs text-ink-secondary disabled:opacity-50"
+            >
+              확인
+            </button>
+          </div>
         </div>
       );
     }
@@ -355,7 +371,7 @@ export default function AlarmCenter({
         {meta}
         {isAccount && pstr(n.payload, 'message') && <p className="mb-2">{pstr(n.payload, 'message')}</p>}
         {(n.followup_count ?? 0) > 0 && (
-          <p className="mb-2 text-[11px] text-[#8B95A1]">{(n.followup_count ?? 0) + 1}회째 알림</p>
+          <p className="mb-2 text-[11px] text-ink-tertiary">{(n.followup_count ?? 0) + 1}회째 알림</p>
         )}
         <div className="flex gap-2">
           {!isAccount && (
@@ -363,7 +379,7 @@ export default function AlarmCenter({
               type="button"
               disabled={busyId === n.id}
               onClick={() => onConsult(n)}
-              className="rounded-lg bg-[#3182F6] px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+              className="rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
             >
               상담하기
             </button>
@@ -372,7 +388,7 @@ export default function AlarmCenter({
             type="button"
             disabled={busyId === n.id}
             onClick={() => onIgnore(n, isAccount ? 'actioned' : 'ignored')}
-            className="rounded-lg border border-[#E5E8EB] px-3 py-1.5 text-xs text-[#4E5968] disabled:opacity-50 dark:border-[#2D3748] dark:text-[#9CA3AF]"
+            className="rounded-lg border border-line px-3 py-1.5 text-xs text-ink-secondary disabled:opacity-50"
           >
             {isAccount ? '확인' : '무시'}
           </button>
@@ -385,8 +401,8 @@ export default function AlarmCenter({
 function Kpi({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <p className="text-[10px] text-[#8B95A1]">{label}</p>
-      <p className="text-xs font-medium text-[#191F28] dark:text-white">{value}</p>
+      <p className="text-[10px] text-ink-tertiary">{label}</p>
+      <p className="text-xs font-medium text-ink dark:text-white">{value}</p>
     </div>
   );
 }

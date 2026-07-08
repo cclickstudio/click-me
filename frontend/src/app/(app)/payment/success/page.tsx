@@ -81,27 +81,27 @@ function SuccessContent() {
   return (
     <div className="max-w-screen-md mx-auto px-6 py-16 text-center">
       {status === 'confirming' && (
-        <p className="text-sm text-[#8B95A1] dark:text-[#6B7280]">결제 승인 확인 중…</p>
+        <p className="text-sm text-ink-tertiary">결제 승인 확인 중…</p>
       )}
 
       {status === 'done' && (
-        <div className="bg-white dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748] rounded-2xl p-10">
-          <div className="w-12 h-12 mx-auto mb-4 flex items-center justify-center rounded-full bg-[#3182F6]/10 text-[#3182F6]">
+        <div className="bg-card border border-line rounded-2xl p-10">
+          <div className="w-12 h-12 mx-auto mb-4 flex items-center justify-center rounded-full bg-primary/10 text-primary">
             ✓
           </div>
-          <h1 className="text-xl font-bold text-[#191F28] dark:text-[#F2F4F6] mb-2">충전 완료</h1>
-          <p className="text-sm text-[#8B95A1] dark:text-[#6B7280] mb-6">
+          <h1 className="text-xl font-bold text-ink mb-2">충전 완료</h1>
+          <p className="text-sm text-ink-tertiary mb-6">
             현재 크레딧 잔액{' '}
-            <span className="font-semibold text-[#3182F6]">{balance?.toLocaleString()}원</span>
+            <span className="font-semibold text-primary">{balance?.toLocaleString()}원</span>
           </p>
 
           {/* 만들던 캠페인이 있으면 — 게재할지 묻고, 동의해야 Meta로 넘긴다 */}
           {resume?.state === 'prompt' && (
-            <div className="mb-6 rounded-xl bg-[#F9FAFB] dark:bg-[#252D3D] p-4">
-              <p className="text-sm font-medium text-[#191F28] dark:text-[#F2F4F6] mb-1">
+            <div className="mb-6 rounded-xl bg-surface-1 p-4">
+              <p className="text-sm font-medium text-ink mb-1">
                 만들던 캠페인을 지금 게재할까요?
               </p>
-              <p className="text-xs text-[#8B95A1] dark:text-[#6B7280] mb-3">
+              <p className="text-xs text-ink-tertiary mb-3">
                 게재하면 광고가 실제로 노출되고 집행분만큼 크레딧이 차감됩니다
                 {pending ? ` (한도 ${pending.commit.toLocaleString()}원)` : ''}.
               </p>
@@ -114,7 +114,7 @@ function SuccessContent() {
             </div>
           )}
           {resume?.state === 'running' && (
-            <p className="text-sm text-[#8B95A1] dark:text-[#6B7280] mb-6">게재를 시작하는 중…</p>
+            <p className="text-sm text-ink-tertiary mb-6">게재를 시작하는 중…</p>
           )}
           {resume?.state === 'served' && (
             <p className="text-sm text-green-600 dark:text-green-400 mb-6">
@@ -129,7 +129,7 @@ function SuccessContent() {
 
           <Link
             href={resume ? '/manage/campaigns' : '/manage'}
-            className="inline-block px-6 py-3 bg-[#3182F6] text-white text-sm font-medium rounded-xl hover:bg-[#1B6EEB] transition-colors"
+            className="inline-block px-6 py-3 bg-primary text-primary-foreground text-sm font-medium rounded-xl hover:bg-primary-hover transition-colors"
           >
             {resume?.state === 'prompt' ? '나중에' : resume ? '캠페인으로 이동' : '광고 매니지먼트로 이동'}
           </Link>
@@ -137,12 +137,12 @@ function SuccessContent() {
       )}
 
       {status === 'error' && (
-        <div className="bg-white dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748] rounded-2xl p-10">
-          <h1 className="text-xl font-bold text-[#191F28] dark:text-[#F2F4F6] mb-2">승인 실패</h1>
+        <div className="bg-card border border-line rounded-2xl p-10">
+          <h1 className="text-xl font-bold text-ink mb-2">승인 실패</h1>
           <p className="text-sm text-red-500 mb-6">{message}</p>
           <Link
             href="/payment"
-            className="inline-block px-6 py-3 border border-[#E5E8EB] dark:border-[#2D3748] text-sm font-medium rounded-xl text-[#191F28] dark:text-[#F2F4F6]"
+            className="inline-block px-6 py-3 border border-line text-sm font-medium rounded-xl text-ink"
           >
             다시 시도
           </Link>

@@ -69,7 +69,7 @@ export default function NotificationBell() {
         type="button"
         onClick={openPanel}
         aria-label="운영 알림"
-        className="relative flex h-10 w-10 items-center justify-center rounded-lg border border-[#E5E8EB] dark:border-[#2D3748] bg-white dark:bg-[#1C2333] text-[#4E5968] dark:text-[#9CA3AF] shadow-sm"
+        className="relative flex h-10 w-10 items-center justify-center rounded-lg border border-line bg-card text-ink-secondary shadow-sm"
       >
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />

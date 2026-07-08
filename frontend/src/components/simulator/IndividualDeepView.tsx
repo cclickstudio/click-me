@@ -7,7 +7,7 @@ import { formatPercent } from '@/lib/utils';
 import type { ReportView, SimRunResult } from '@/lib/types';
 
 const cardCls =
-  'bg-white dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748] rounded-2xl p-6 transition-colors';
+  'bg-card border border-line rounded-2xl p-6 transition-colors';
 
 const GENDER_LABEL: Record<string, string> = { M: '남성', F: '여성' };
 const OCEAN_LABEL: Record<string, string> = {
@@ -68,10 +68,10 @@ export function IndividualDeepView({
         <div className='px-8 pt-8 max-w-7xl mx-auto'>
           <div className={`${cardCls} space-y-5`}>
             <div className='flex items-center gap-2'>
-              <span className='px-2 py-0.5 rounded-full text-[11px] font-semibold bg-[#EEF4FF] dark:bg-[#1E3A5F] text-[#3182F6]'>
+              <span className='px-2 py-0.5 rounded-full text-[11px] font-semibold bg-primary-subtle text-primary'>
                 1명 심층 분석
               </span>
-              <h2 className='text-lg font-bold text-[#191F28] dark:text-[#F2F4F6]'>
+              <h2 className='text-lg font-bold text-ink'>
                 {persona.age}세 {GENDER_LABEL[persona.gender] ?? persona.gender}
                 {persona.region ? ` · ${persona.region}` : ''}
               </h2>
@@ -80,10 +80,10 @@ export function IndividualDeepView({
             {/* 프로필 서사 */}
             {persona.profile_narrative && (
               <div>
-                <p className='text-xs font-semibold text-[#8B95A1] dark:text-[#6B7280] mb-1'>
+                <p className='text-xs font-semibold text-ink-tertiary mb-1'>
                   프로필 서사
                 </p>
-                <p className='text-sm text-[#4E5968] dark:text-[#9CA3AF] leading-relaxed'>
+                <p className='text-sm text-ink-secondary leading-relaxed'>
                   {persona.profile_narrative}
                 </p>
               </div>
@@ -91,14 +91,14 @@ export function IndividualDeepView({
 
             {/* OCEAN 성향 */}
             <div>
-              <p className='text-xs font-semibold text-[#8B95A1] dark:text-[#6B7280] mb-1.5'>
+              <p className='text-xs font-semibold text-ink-tertiary mb-1.5'>
                 OCEAN 성향
               </p>
               <div className='flex flex-wrap gap-2'>
                 {Object.entries(persona.ocean).map(([dim, v]) => (
                   <span
                     key={dim}
-                    className='text-[11px] px-2 py-1 rounded-full bg-[#F2F4F6] dark:bg-[#252D3D] text-[#4E5968] dark:text-[#9CA3AF]'>
+                    className='text-[11px] px-2 py-1 rounded-full bg-surface-1 text-ink-secondary'>
                     {OCEAN_LABEL[dim] ?? dim} {v.toFixed(2)}
                   </span>
                 ))}
@@ -107,9 +107,9 @@ export function IndividualDeepView({
 
             {/* 반응 근거 — AISAS 퍼널 + 감정 + 발화 */}
             {reaction && (
-              <div className='pt-2 border-t border-[#E5E8EB] dark:border-[#2D3748] space-y-3'>
+              <div className='pt-2 border-t border-line space-y-3'>
                 <div>
-                  <p className='text-xs font-semibold text-[#8B95A1] dark:text-[#6B7280] mb-1.5'>
+                  <p className='text-xs font-semibold text-ink-tertiary mb-1.5'>
                     반응 경로 (AISAS)
                   </p>
                   <div className='flex flex-wrap gap-1.5'>
@@ -120,8 +120,8 @@ export function IndividualDeepView({
                           key={k}
                           className={`text-[11px] px-2.5 py-1 rounded-lg font-medium ${
                             on
-                              ? 'bg-[#EEF4FF] dark:bg-[#1E3A5F] text-[#3182F6]'
-                              : 'bg-[#F2F4F6] dark:bg-[#252D3D] text-[#B0B8C1] dark:text-[#4B5563] line-through'
+                              ? 'bg-primary-subtle text-primary'
+                              : 'bg-surface-1 text-ink-muted line-through'
                           }`}>
                           {lbl}
                         </span>
@@ -139,13 +139,13 @@ export function IndividualDeepView({
                 </div>
 
                 <div className='flex flex-wrap items-center gap-2 text-xs'>
-                  <span className='px-2 py-1 rounded-lg bg-[#F2F4F6] dark:bg-[#252D3D] text-[#4E5968] dark:text-[#9CA3AF]'>
+                  <span className='px-2 py-1 rounded-lg bg-surface-1 text-ink-secondary'>
                     구매의도 {reaction.purchase_intent}/5
                   </span>
-                  <span className='px-2 py-1 rounded-lg bg-[#F2F4F6] dark:bg-[#252D3D] text-[#4E5968] dark:text-[#9CA3AF]'>
+                  <span className='px-2 py-1 rounded-lg bg-surface-1 text-ink-secondary'>
                     신뢰 {reaction.trust}/5
                   </span>
-                  <span className='px-2 py-1 rounded-lg bg-[#F2F4F6] dark:bg-[#252D3D] text-[#4E5968] dark:text-[#9CA3AF]'>
+                  <span className='px-2 py-1 rounded-lg bg-surface-1 text-ink-secondary'>
                     감정 {EMOTION_LABEL[reaction.emotion_tag] ?? reaction.emotion_tag}
                   </span>
                   {reaction.rejected && (
@@ -159,12 +159,12 @@ export function IndividualDeepView({
                 </div>
 
                 {reaction.utterance && (
-                  <blockquote className='text-sm text-[#191F28] dark:text-[#F2F4F6] border-l-2 border-[#3182F6] pl-3 py-1 italic'>
+                  <blockquote className='text-sm text-ink border-l-2 border-primary pl-3 py-1 italic'>
                     “{reaction.utterance}”
                   </blockquote>
                 )}
                 {reaction.perceived_message && (
-                  <p className='text-[11px] text-[#8B95A1] dark:text-[#6B7280]'>
+                  <p className='text-[11px] text-ink-tertiary'>
                     인지한 메시지: {reaction.perceived_message}
                   </p>
                 )}
@@ -172,7 +172,7 @@ export function IndividualDeepView({
             )}
 
             {result.aggregate && (
-              <p className='text-[11px] text-[#B0B8C1] dark:text-[#4B5563]'>
+              <p className='text-[11px] text-ink-muted'>
                 1명 심층 분석은 표본이 1명이라 통계 신뢰구간이 넓습니다. 집계
                 수치(클릭 의향률{' '}
                 {formatPercent(result.aggregate.click_intent_rate)})보다 위

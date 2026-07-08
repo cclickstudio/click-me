@@ -151,27 +151,27 @@ export default function BatchSimWidget({
   };
 
   return (
-    <div className="mt-1 w-full rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-white dark:bg-[#1C2333] p-3">
+    <div className="mt-1 w-full rounded-xl border border-line bg-card p-3">
       {!results ? (
         <>
           <div className="space-y-3">
             {ads.map((a, i) => (
-              <div key={i} className="rounded-lg border border-[#E5E8EB] dark:border-[#2D3748] p-2.5">
-                <div className="text-xs font-bold text-[#4E5968] dark:text-[#9CA3AF] mb-1.5">
+              <div key={i} className="rounded-lg border border-line p-2.5">
+                <div className="text-xs font-bold text-ink-secondary mb-1.5">
                   광고 {String.fromCharCode(65 + i)}
                 </div>
                 <input
                   value={a.ad_title}
                   onChange={(e) => update(i, 'ad_title', e.target.value)}
                   placeholder="제목 (선택)"
-                  className="w-full mb-1.5 px-2.5 py-1.5 rounded-md border border-[#E5E8EB] dark:border-[#2D3748] bg-white dark:bg-[#252D3D] text-sm text-[#191F28] dark:text-[#F2F4F6]"
+                  className="w-full mb-1.5 px-2.5 py-1.5 rounded-md border border-line bg-surface-2 text-sm text-ink"
                 />
                 <textarea
                   value={a.ad_content}
                   onChange={(e) => update(i, 'ad_content', e.target.value)}
                   placeholder="광고 카피·문구"
                   rows={2}
-                  className="w-full px-2.5 py-1.5 rounded-md border border-[#E5E8EB] dark:border-[#2D3748] bg-white dark:bg-[#252D3D] text-sm text-[#191F28] dark:text-[#F2F4F6] resize-none"
+                  className="w-full px-2.5 py-1.5 rounded-md border border-line bg-surface-2 text-sm text-ink resize-none"
                 />
               </div>
             ))}
@@ -180,7 +180,7 @@ export default function BatchSimWidget({
           <button
             disabled={!canRun}
             onClick={run}
-            className="mt-3 w-full py-2 rounded-lg bg-[#3182F6] text-white text-sm font-semibold hover:bg-[#1B6EEB] disabled:opacity-40 transition-colors"
+            className="mt-3 w-full py-2 rounded-lg bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary-hover disabled:opacity-40 transition-colors"
           >
             {running ? '비교 시뮬 실행 중…' : '비교 시뮬 실행'}
           </button>
@@ -195,7 +195,7 @@ export default function BatchSimWidget({
               v.tone === 'win'
                 ? 'border-[#00C471]/30 bg-[#E7F9F1] dark:bg-[#10241C] text-[#00854D]'
                 : v.tone === 'tie'
-                  ? 'border-[#E5E8EB] dark:border-[#2D3748] bg-[#F9FAFB] dark:bg-[#252D3D] text-[#4E5968] dark:text-[#9CA3AF]'
+                  ? 'border-line bg-surface-1 text-ink-secondary'
                   : 'border-[#FFB020]/30 bg-[#FFF7E6] dark:bg-[#2A2310] text-[#B7791F]';
             return (
               <div className={`mb-3 rounded-lg border px-3 py-2.5 ${cls}`}>
@@ -212,23 +212,23 @@ export default function BatchSimWidget({
           })()}
           <table className="w-full text-sm">
             <thead>
-              <tr className="text-[#8B95A1] dark:text-[#6B7280] text-xs">
+              <tr className="text-ink-tertiary text-xs">
                 <th className="text-left py-1.5 pr-2">지표</th>
                 {results.map((r, i) => (
-                  <th key={i} className="text-right py-1.5 px-2 text-[#191F28] dark:text-[#F2F4F6]">
+                  <th key={i} className="text-right py-1.5 px-2 text-ink">
                     {adName(r, i)}
                   </th>
                 ))}
               </tr>
             </thead>
-            <tbody className="text-[#4E5968] dark:text-[#9CA3AF]">
+            <tbody className="text-ink-secondary">
               {[
                 { label: '클릭 의향률', fmt: pct, key: 'click_intent_rate' as const },
                 { label: '구매의도', fmt: score, key: 'purchase_intent' as const },
                 { label: '신뢰도', fmt: score, key: 'trust_avg' as const },
                 { label: '거부율', fmt: pct, key: 'rejection_rate' as const },
               ].map((row) => (
-                <tr key={row.label} className="border-t border-[#F2F4F6] dark:border-[#252D3D]">
+                <tr key={row.label} className="border-t border-line">
                   <td className="py-1.5 pr-2">{row.label}</td>
                   {results.map((r, i) => (
                     <td key={i} className="text-right py-1.5 px-2 tabular-nums">
@@ -238,7 +238,7 @@ export default function BatchSimWidget({
                         !r.error &&
                         r.ci_low != null &&
                         r.ci_high != null && (
-                          <span className="block text-[10px] text-[#B0B8C1] dark:text-[#6B7280]">
+                          <span className="block text-[10px] text-ink-muted">
                             CI {pct(r.ci_low)}–{pct(r.ci_high)}
                           </span>
                         )}
@@ -248,7 +248,7 @@ export default function BatchSimWidget({
               ))}
             </tbody>
           </table>
-          <p className="mt-2 text-[10px] text-[#B0B8C1] dark:text-[#6B7280] leading-snug">
+          <p className="mt-2 text-[10px] text-ink-muted leading-snug">
             * 두 시안을 같은 AI 소비자 패널로 평가했어요. 승자 판정은 클릭 의향률의 신뢰구간
             겹침 기준이며, 겹치면 차이 없음으로 봐요(점추정 단언 안 함).
           </p>
@@ -257,7 +257,7 @@ export default function BatchSimWidget({
               setResults(null);
               setAds([{ ...EMPTY }, { ...EMPTY }]);
             }}
-            className="mt-3 text-xs text-[#3182F6] font-semibold hover:underline"
+            className="mt-3 text-xs text-primary font-semibold hover:underline"
           >
             새 비교 시작
           </button>

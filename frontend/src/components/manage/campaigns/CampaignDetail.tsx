@@ -25,30 +25,30 @@ import { OriginLegend, OriginTag } from '../ValueOrigin';
 const DeliveryChart = dynamic(() => import('./DeliveryChart'), {
   ssr: false,
   loading: () => (
-    <div className="h-[190px] animate-pulse rounded-xl bg-[#F2F4F6] dark:bg-[#2D3748]" />
+    <div className="h-[190px] animate-pulse rounded-xl bg-surface-1" />
   ),
 });
 
 const PlatformDonut = dynamic(() => import('./PlatformDonut'), {
   ssr: false,
-  loading: () => <div className="h-32 animate-pulse rounded-xl bg-[#F2F4F6] dark:bg-[#2D3748]" />,
+  loading: () => <div className="h-32 animate-pulse rounded-xl bg-surface-1" />,
 });
 
 const DemographicBars = dynamic(() => import('./DemographicBars'), {
   ssr: false,
-  loading: () => <div className="h-32 animate-pulse rounded-xl bg-[#F2F4F6] dark:bg-[#2D3748]" />,
+  loading: () => <div className="h-32 animate-pulse rounded-xl bg-surface-1" />,
 });
 
 const AdPreviewCards = dynamic(() => import('./AdPreviewCards'), {
   ssr: false,
-  loading: () => <div className="h-32 animate-pulse rounded-xl bg-[#F2F4F6] dark:bg-[#2D3748]" />,
+  loading: () => <div className="h-32 animate-pulse rounded-xl bg-surface-1" />,
 });
 
 // 일예산 대비 지출 게이지 링(SVG) — 누적지출÷일예산(중립색, 누적이라 초과 가능)
 function PacingRing({ pct }: { pct: number }) {
   const r = 14;
   const c = 2 * Math.PI * r;
-  const stroke = '#3182F6';
+  const stroke = '#2563EB';
   return (
     <svg width="38" height="38" viewBox="0 0 38 38" className="shrink-0">
       <circle cx="19" cy="19" r={r} fill="none" stroke="#EEF1F4" strokeWidth="4" />
@@ -80,12 +80,12 @@ function Tile({
   hint?: string; // 마우스오버 설명 — 합산 안 되는 지표(도달)·분모가 다른 지표(CVR) 오해 방지용
 }) {
   return (
-    <div title={hint} className="rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] px-3 py-2.5">
-      <p className="text-[12px] text-[#8B95A1]">
+    <div title={hint} className="rounded-xl border border-line px-3 py-2.5">
+      <p className="text-[12px] text-ink-tertiary">
         {label}
         {origin && <OriginTag origin={origin} />}
       </p>
-      <p className="text-base font-bold text-[#191F28] dark:text-[#F2F4F6] tabular-nums mt-0.5">{value}</p>
+      <p className="text-base font-bold text-ink tabular-nums mt-0.5">{value}</p>
     </div>
   );
 }
@@ -233,9 +233,9 @@ export function CampaignDetail({
   };
 
   return (
-    <div className="rounded-2xl border border-[#E5E8EB] dark:border-[#2D3748] px-5 py-4">
+    <div className="rounded-2xl border border-line px-5 py-4">
       <div className="flex items-center justify-between mb-2">
-        <p className="font-bold text-[#191F28] dark:text-[#F2F4F6]">
+        <p className="font-bold text-ink">
           {detail.name} — 일자별 지출 vs 일예산
         </p>
         <span className="inline-flex items-center gap-2">
@@ -252,7 +252,7 @@ export function CampaignDetail({
             <button
               onClick={onPause}
               disabled={actionBusy}
-              className="text-[11px] font-medium text-[#4E5968] dark:text-[#9CA3AF] border border-[#E5E8EB] dark:border-[#2D3748] rounded-md px-2 py-1 disabled:opacity-50"
+              className="text-[11px] font-medium text-ink-secondary border border-line rounded-md px-2 py-1 disabled:opacity-50"
             >
               {actionBusy ? '처리 중…' : '일시중지'}
             </button>
@@ -282,7 +282,7 @@ export function CampaignDetail({
           onClick={() =>
             setPendingActivation({ campaignId: detail.campaign_id, commit: lastCommit })
           }
-          className="mb-2 mr-2 inline-block rounded-lg bg-[#3182F6] px-3 py-1.5 text-[12px] font-medium text-white hover:bg-[#1B6EEB]"
+          className="mb-2 mr-2 inline-block rounded-lg bg-primary px-3 py-1.5 text-[12px] font-medium text-white hover:bg-primary-hover"
         >
           📊 예산 한도(크레딧) 충전하기
         </Link>
@@ -311,7 +311,7 @@ export function CampaignDetail({
       )}
       {dstatus?.spend_cap_krw ? (
         <div className="mb-2">
-          <div className="flex items-center justify-between text-[11px] text-[#8B95A1]">
+          <div className="flex items-center justify-between text-[11px] text-ink-tertiary">
             <span>충전 한도 대비 소진</span>
             <span className="tabular-nums">
               ₩{s.spend_krw.toLocaleString()} / ₩{dstatus.spend_cap_krw.toLocaleString()} (
@@ -320,7 +320,7 @@ export function CampaignDetail({
           </div>
           <div className="mt-1 h-1.5 rounded-full bg-[#EEF1F4] dark:bg-[#2D3748]">
             <div
-              className="h-1.5 rounded-full bg-[#3182F6]"
+              className="h-1.5 rounded-full bg-primary"
               style={{
                 width: `${Math.min(100, (s.spend_krw / dstatus.spend_cap_krw) * 100)}%`,
               }}
@@ -330,14 +330,14 @@ export function CampaignDetail({
       ) : null}
 
       <DeliveryChart series={detail.series} dailyBudget={detail.daily_budget_krw} />
-      <p className="mt-1 text-[12px] text-[#8B95A1]">
+      <p className="mt-1 text-[12px] text-ink-tertiary">
         {live ? '실 캠페인' : '데모'} · 전체 기간 일자별 지출(막대)과 일예산(점선).
         {blockReason ? ' 현재 게재 중단 — 선불 잔액 부족.' : ''}
       </p>
       {endReason && (
-        <p className="mt-2 rounded-lg bg-[#F2F4F6] px-3 py-2 text-[12px] text-[#4E5968] dark:bg-[#2D3748] dark:text-[#C9CED6]">
+        <p className="mt-2 rounded-lg bg-[#F2F4F6] px-3 py-2 text-[12px] text-ink-secondary dark:bg-[#2D3748] dark:text-[#C9CED6]">
           <span className="font-semibold">종료 사유</span> · {endReason}
-          <span className="ml-1 text-[#8B95A1]">
+          <span className="ml-1 text-ink-tertiary">
             (일예산은 하루 상한이라 미사용분은 이월되지 않습니다)
           </span>
         </p>
@@ -355,7 +355,7 @@ export function CampaignDetail({
       {/* 전달 → 효율 → 전환·예산 순, 4×3 정렬 */}
       <OriginLegend className="mt-4" />
       {dBlocked && (
-        <p className="mt-3 rounded-lg bg-[#F2F4F6] px-3 py-2 text-[12px] text-[#8B95A1] dark:bg-[#2D3748] dark:text-[#9CA3AF]">
+        <p className="mt-3 rounded-lg bg-[#F2F4F6] px-3 py-2 text-[12px] text-ink-tertiary dark:bg-[#2D3748]">
           <span className="font-semibold">권한 없음</span> · Meta에서 이 캠페인의 지표를 불러올
           권한이 없어요. 토큰 권한(스코프)·광고계정 자산 권한을 확인해 주세요. (예산·상태는 표시됨)
         </p>
@@ -409,14 +409,14 @@ export function CampaignDetail({
               : undefined
           }
         />
-        <div className="flex items-center gap-2.5 rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] px-3 py-2.5">
+        <div className="flex items-center gap-2.5 rounded-xl border border-line px-3 py-2.5">
           <PacingRing pct={showPacing ? s.pacing_pct : 0} />
           <div>
-            <p className="text-[12px] text-[#8B95A1]">
+            <p className="text-[12px] text-ink-tertiary">
               {showPacing ? '소진율' : '게재'}
               {showPacing && <OriginTag origin="computed" />}
             </p>
-            <p className="text-base font-bold text-[#191F28] dark:text-[#F2F4F6] tabular-nums mt-0.5">
+            <p className="text-base font-bold text-ink tabular-nums mt-0.5">
               {showPacing
                 ? `${s.pacing_pct.toFixed(0)}%`
                 : detail.state === 'ended'
@@ -444,12 +444,12 @@ export function CampaignDetail({
 
       {detail.series.length > 0 && (
         <div className="mt-4">
-          <p className="mb-2 text-[12px] font-semibold text-[#4E5968] dark:text-[#9CA3AF]">
+          <p className="mb-2 text-[12px] font-semibold text-ink-secondary">
             일자별 지표
           </p>
-          <div className="overflow-x-auto rounded-xl border border-[#E5E8EB] dark:border-[#2D3748]">
+          <div className="overflow-x-auto rounded-xl border border-line">
             <table className="w-full text-[12px] [&_td]:whitespace-nowrap [&_th]:whitespace-nowrap">
-              <thead className="border-b border-[#E5E8EB] text-[#8B95A1] dark:border-[#2D3748]">
+              <thead className="border-b border-line text-ink-tertiary">
                 <tr>
                   <th className="px-3 py-2 text-left font-semibold">날짜</th>
                   <th className="px-3 py-2 text-right font-semibold">노출</th>
@@ -463,39 +463,39 @@ export function CampaignDetail({
                   <th className="px-3 py-2 text-right font-semibold">지출</th>
                   <th className="px-3 py-2 text-right font-semibold">
                     CTR
-                    <span className="block text-[10px] font-normal text-[#B0B8C1]">클릭률</span>
+                    <span className="block text-[10px] font-normal text-ink-muted">클릭률</span>
                   </th>
                   <th className="px-3 py-2 text-right font-semibold">
                     CPC
-                    <span className="block text-[10px] font-normal text-[#B0B8C1]">클릭당비용</span>
+                    <span className="block text-[10px] font-normal text-ink-muted">클릭당비용</span>
                   </th>
                   <th
                     className="px-3 py-2 text-right font-semibold"
                     title="그날 노출 1,000회당 평균 비용 = 그날 지출 ÷ 그날 노출 × 1,000 — 단가라서 합산·평균이 전체 CPM과 달라요(전체는 기간 합산 기준)"
                   >
                     CPM
-                    <span className="block text-[10px] font-normal text-[#B0B8C1]">노출당비용</span>
+                    <span className="block text-[10px] font-normal text-ink-muted">노출당비용</span>
                   </th>
                   <th
                     className="px-3 py-2 text-right font-semibold"
                     title="그날 전환수 ÷ 그날 링크 클릭수 — 일자별 값을 평균해도 전체 CVR과는 달라요(전체는 기간 합산 기준)"
                   >
                     CVR
-                    <span className="block text-[10px] font-normal text-[#B0B8C1]">전환율</span>
+                    <span className="block text-[10px] font-normal text-ink-muted">전환율</span>
                   </th>
                   <th className="px-3 py-2 text-right font-semibold">
                     ROAS
-                    <span className="block text-[10px] font-normal text-[#B0B8C1]">투자수익률</span>
+                    <span className="block text-[10px] font-normal text-ink-muted">투자수익률</span>
                   </th>
                 </tr>
               </thead>
-              <tbody className="text-[#191F28] dark:text-[#F2F4F6]">
+              <tbody className="text-ink">
                 {detail.series.map((d) => (
                   <tr
                     key={d.label}
                     className="border-b border-[#F2F4F6] last:border-0 dark:border-[#252D3D]"
                   >
-                    <td className="px-3 py-2 text-left text-[#4E5968] dark:text-[#9CA3AF]">
+                    <td className="px-3 py-2 text-left text-ink-secondary">
                       {d.label}
                     </td>
                     <td className="px-3 py-2 text-right tabular-nums">
@@ -547,8 +547,8 @@ export function CampaignDetail({
                     onClick={() => setActiveTab(t.key)}
                     className={`rounded-lg px-3 py-1.5 text-[12px] font-semibold transition-colors ${
                       on
-                        ? 'bg-[#E8F3FF] text-[#3182F6] dark:bg-[#1E3A5F] dark:text-[#7BB4F5]'
-                        : 'text-[#8B95A1] hover:bg-[#F2F4F6] dark:hover:bg-[#2D3748]'
+                        ? 'bg-[#E8F3FF] text-primary dark:bg-[#1E3A5F] dark:text-[#7BB4F5]'
+                        : 'text-ink-tertiary hover:bg-[#F2F4F6] dark:hover:bg-[#2D3748]'
                     }`}
                   >
                     {t.label}
@@ -567,9 +567,9 @@ export function CampaignDetail({
           {/* 오른쪽: 대표 광고 시안(헤더는 탭과 같은 라인, 높이는 차트와 동일) */}
           {creatives.length > 0 && (
             <div className="flex w-full flex-col lg:flex-1">
-              <p className="mb-3 flex h-[30px] items-center gap-1.5 text-[12px] font-semibold text-[#4E5968] dark:text-[#9CA3AF]">
+              <p className="mb-3 flex h-[30px] items-center gap-1.5 text-[12px] font-semibold text-ink-secondary">
                 대표 광고 시안
-                <span className="font-normal text-[#B0B8C1]">
+                <span className="font-normal text-ink-muted">
                   같은 소재의 지면별(Facebook·Instagram) 미리보기
                 </span>
               </p>
@@ -583,25 +583,25 @@ export function CampaignDetail({
 
       {/* 받은 리드(잠재고객) — live 캠페인만. 데이터는 Meta에 저장되며 여기로 불러온다. */}
       {live && (
-        <div className="mt-4 rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] px-4 py-3">
+        <div className="mt-4 rounded-xl border border-line px-4 py-3">
           <div className="flex items-center justify-between">
-            <p className="text-[12px] font-semibold text-[#4E5968] dark:text-[#9CA3AF]">
+            <p className="text-[12px] font-semibold text-ink-secondary">
               받은 리드 (잠재고객)
             </p>
             <button
               type="button"
               onClick={loadLeads}
               disabled={leadsBusy}
-              className="rounded-md border border-[#E5E8EB] dark:border-[#2D3748] px-2.5 py-1 text-[11px] font-medium text-[#4E5968] dark:text-[#9CA3AF] hover:bg-[#F2F4F6] dark:hover:bg-[#2D3748] disabled:opacity-40"
+              className="rounded-md border border-line px-2.5 py-1 text-[11px] font-medium text-ink-secondary hover:bg-[#F2F4F6] dark:hover:bg-[#2D3748] disabled:opacity-40"
             >
               {leadsBusy ? '불러오는 중…' : leads === null ? '리드 불러오기' : '새로고침'}
             </button>
           </div>
 
           {leads !== null && leads.length > 0 && (
-            <div className="mt-3 overflow-x-auto rounded-lg border border-[#E5E8EB] dark:border-[#2D3748]">
+            <div className="mt-3 overflow-x-auto rounded-lg border border-line">
               <table className="w-full text-[12px] [&_td]:whitespace-nowrap [&_th]:whitespace-nowrap">
-                <thead className="border-b border-[#E5E8EB] text-[#8B95A1] dark:border-[#2D3748]">
+                <thead className="border-b border-line text-ink-tertiary">
                   <tr>
                     <th className="px-3 py-2 text-left font-semibold">제출 시각</th>
                     {leadCols.map((col) => (
@@ -611,13 +611,13 @@ export function CampaignDetail({
                     ))}
                   </tr>
                 </thead>
-                <tbody className="text-[#191F28] dark:text-[#F2F4F6]">
+                <tbody className="text-ink">
                   {leads.map((l, i) => (
                     <tr
                       key={`${l.created_time}-${i}`}
                       className="border-b border-[#F2F4F6] last:border-0 dark:border-[#252D3D]"
                     >
-                      <td className="px-3 py-2 text-left text-[#4E5968] dark:text-[#9CA3AF]">
+                      <td className="px-3 py-2 text-left text-ink-secondary">
                         {l.created_time ? formatKSTFull(l.created_time) : '-'}
                       </td>
                       {leadCols.map((col) => (
@@ -633,12 +633,12 @@ export function CampaignDetail({
           )}
 
           {leads !== null && leads.length === 0 && (
-            <p className="mt-2 text-[12px] text-[#8B95A1]">
+            <p className="mt-2 text-[12px] text-ink-tertiary">
               {leadsNote ?? '아직 받은 리드가 없습니다.'}
             </p>
           )}
           {leads === null && leadsNote && (
-            <p className="mt-2 text-[12px] text-[#8B95A1]">{leadsNote}</p>
+            <p className="mt-2 text-[12px] text-ink-tertiary">{leadsNote}</p>
           )}
         </div>
       )}
