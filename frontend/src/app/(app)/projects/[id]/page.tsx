@@ -40,9 +40,9 @@ const fmtFull = (iso: string) => formatKST(iso);
 
 function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <div className="flex items-start gap-4 py-3 border-b border-[#F2F4F6] dark:border-[#252D3D] last:border-0">
-      <span className="w-28 shrink-0 text-sm text-[#8B95A1] dark:text-[#6B7280]">{label}</span>
-      <span className="text-sm text-[#191F28] dark:text-[#F2F4F6] flex-1">{value}</span>
+    <div className="flex items-start gap-4 py-3 border-b border-line last:border-0">
+      <span className="w-28 shrink-0 text-sm text-ink-tertiary">{label}</span>
+      <span className="text-sm text-ink flex-1">{value}</span>
     </div>
   );
 }
@@ -95,7 +95,7 @@ export default function ProjectDetailPage() {
         {/* 뒤로가기 */}
         <button
           onClick={() => router.back()}
-          className="flex items-center gap-1.5 text-sm text-[#8B95A1] hover:text-[#3182F6] transition-colors mb-6"
+          className="flex items-center gap-1.5 text-sm text-ink-tertiary hover:text-primary transition-colors mb-6"
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="15 18 9 12 15 6" />
@@ -103,7 +103,7 @@ export default function ProjectDetailPage() {
           뒤로
         </button>
 
-        {loading && <p className="text-sm text-[#8B95A1]">불러오는 중...</p>}
+        {loading && <p className="text-sm text-ink-tertiary">불러오는 중...</p>}
         {error && <p className="text-sm text-red-500">{error}</p>}
 
         {project && (
@@ -111,9 +111,9 @@ export default function ProjectDetailPage() {
             {/* 헤더 */}
             <div className="flex items-start justify-between mb-6">
               <div>
-                <h1 className="text-2xl font-bold text-[#191F28] dark:text-[#F2F4F6]">{project.name}</h1>
+                <h1 className="text-2xl font-bold text-ink">{project.name}</h1>
                 {project.description && (
-                  <p className="text-sm text-[#8B95A1] dark:text-[#6B7280] mt-1">{project.description}</p>
+                  <p className="text-sm text-ink-tertiary mt-1">{project.description}</p>
                 )}
               </div>
               <button
@@ -129,33 +129,33 @@ export default function ProjectDetailPage() {
             </div>
 
             {/* 기본 정보 */}
-            <div className="bg-white dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748] rounded-2xl px-6 py-2 mb-6">
+            <div className="bg-card border border-line rounded-2xl px-6 py-2 mb-6">
               {isAdmin && <InfoRow label="ID" value={<span className="font-mono text-xs">{project.id}</span>} />}
               <InfoRow label="생성자" value={project.created_by_name ?? '—'} />
               <InfoRow label="생성일" value={fmt(project.created_at)} />
             </div>
 
             {/* 시뮬레이션 */}
-            <div className="bg-white dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748] rounded-2xl overflow-hidden mb-4">
-              <div className="flex items-center justify-between px-6 py-4 border-b border-[#E5E8EB] dark:border-[#2D3748]">
+            <div className="bg-card border border-line rounded-2xl overflow-hidden mb-4">
+              <div className="flex items-center justify-between px-6 py-4 border-b border-line">
                 <div className="flex items-center gap-2">
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-[#3182F6]">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-primary">
                     <circle cx="12" cy="12" r="10" /><polygon points="10 8 16 12 10 16 10 8" />
                   </svg>
-                  <p className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]">시뮬레이션</p>
-                  <span className="text-xs text-[#8B95A1]">({sims.length})</span>
+                  <p className="text-sm font-semibold text-ink">시뮬레이션</p>
+                  <span className="text-xs text-ink-tertiary">({sims.length})</span>
                 </div>
               </div>
               {sims.length === 0 ? (
-                <div className="py-10 text-center text-xs text-[#B0B8C1] dark:text-[#4B5563]">내역이 없습니다</div>
+                <div className="py-10 text-center text-xs text-ink-muted">내역이 없습니다</div>
               ) : (
                 <table className="w-full text-xs">
                   <thead>
-                    <tr className="border-b border-[#F2F4F6] dark:border-[#252D3D] text-left">
-                      <th className="px-6 py-3 font-medium text-[#8B95A1]">상태</th>
-                      <th className="px-3 py-3 font-medium text-[#8B95A1]">샘플 수</th>
-                      <th className="px-3 py-3 font-medium text-[#8B95A1]">실행자</th>
-                      <th className="px-3 py-3 font-medium text-[#8B95A1]">일시</th>
+                    <tr className="border-b border-line text-left">
+                      <th className="px-6 py-3 font-medium text-ink-tertiary">상태</th>
+                      <th className="px-3 py-3 font-medium text-ink-tertiary">샘플 수</th>
+                      <th className="px-3 py-3 font-medium text-ink-tertiary">실행자</th>
+                      <th className="px-3 py-3 font-medium text-ink-tertiary">일시</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -163,16 +163,16 @@ export default function ProjectDetailPage() {
                       <tr
                         key={s.id}
                         onClick={() => router.push(`/simulation/${s.id}`)}
-                        className="border-b border-[#F9FAFB] dark:border-[#1C2333] last:border-0 hover:bg-[#F9FAFB] dark:hover:bg-[#252D3D] cursor-pointer transition-colors"
+                        className="border-b border-line last:border-0 hover:bg-accent cursor-pointer transition-colors"
                       >
                         <td className="px-6 py-3">
                           <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-medium ${simStatusStyle[s.status] ?? ''}`}>
                             {simStatusLabel[s.status] ?? s.status}
                           </span>
                         </td>
-                        <td className="px-3 py-3 text-[#4E5968] dark:text-[#9CA3AF]">{s.sample_size}명</td>
-                        <td className="px-3 py-3 text-[#4E5968] dark:text-[#9CA3AF]">{s.created_by_name ?? '—'}</td>
-                        <td className="px-3 py-3 text-[#B0B8C1] dark:text-[#4B5563]">{fmtFull(s.created_at)}</td>
+                        <td className="px-3 py-3 text-ink-secondary">{s.sample_size}명</td>
+                        <td className="px-3 py-3 text-ink-secondary">{s.created_by_name ?? '—'}</td>
+                        <td className="px-3 py-3 text-ink-muted">{fmtFull(s.created_at)}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -181,26 +181,26 @@ export default function ProjectDetailPage() {
             </div>
 
             {/* 제너레이터 */}
-            <div className="bg-white dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748] rounded-2xl overflow-hidden">
-              <div className="flex items-center justify-between px-6 py-4 border-b border-[#E5E8EB] dark:border-[#2D3748]">
+            <div className="bg-card border border-line rounded-2xl overflow-hidden">
+              <div className="flex items-center justify-between px-6 py-4 border-b border-line">
                 <div className="flex items-center gap-2">
-                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-[#3182F6]">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-primary">
                     <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
                   </svg>
-                  <p className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]">제너레이터</p>
-                  <span className="text-xs text-[#8B95A1]">({gens.length})</span>
+                  <p className="text-sm font-semibold text-ink">제너레이터</p>
+                  <span className="text-xs text-ink-tertiary">({gens.length})</span>
                 </div>
               </div>
               {gens.length === 0 ? (
-                <div className="py-10 text-center text-xs text-[#B0B8C1] dark:text-[#4B5563]">내역이 없습니다</div>
+                <div className="py-10 text-center text-xs text-ink-muted">내역이 없습니다</div>
               ) : (
                 <table className="w-full text-xs">
                   <thead>
-                    <tr className="border-b border-[#F2F4F6] dark:border-[#252D3D] text-left">
-                      <th className="px-6 py-3 font-medium text-[#8B95A1]">상품명</th>
-                      <th className="px-3 py-3 font-medium text-[#8B95A1]">상태</th>
-                      <th className="px-3 py-3 font-medium text-[#8B95A1]">실행자</th>
-                      <th className="px-3 py-3 font-medium text-[#8B95A1]">일시</th>
+                    <tr className="border-b border-line text-left">
+                      <th className="px-6 py-3 font-medium text-ink-tertiary">상품명</th>
+                      <th className="px-3 py-3 font-medium text-ink-tertiary">상태</th>
+                      <th className="px-3 py-3 font-medium text-ink-tertiary">실행자</th>
+                      <th className="px-3 py-3 font-medium text-ink-tertiary">일시</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -208,16 +208,16 @@ export default function ProjectDetailPage() {
                       <tr
                         key={g.id}
                         onClick={() => router.push(`/generations/${g.id}`)}
-                        className="border-b border-[#F9FAFB] dark:border-[#1C2333] last:border-0 hover:bg-[#F9FAFB] dark:hover:bg-[#252D3D] cursor-pointer transition-colors"
+                        className="border-b border-line last:border-0 hover:bg-accent cursor-pointer transition-colors"
                       >
-                        <td className="px-6 py-3 text-[#4E5968] dark:text-[#9CA3AF]">{g.product_name ?? '—'}</td>
+                        <td className="px-6 py-3 text-ink-secondary">{g.product_name ?? '—'}</td>
                         <td className="px-3 py-3">
                           <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-medium ${genStatusStyle[g.status] ?? ''}`}>
                             {genStatusLabel[g.status] ?? g.status}
                           </span>
                         </td>
-                        <td className="px-3 py-3 text-[#4E5968] dark:text-[#9CA3AF]">{g.created_by_name ?? '—'}</td>
-                        <td className="px-3 py-3 text-[#B0B8C1] dark:text-[#4B5563]">{fmtFull(g.created_at)}</td>
+                        <td className="px-3 py-3 text-ink-secondary">{g.created_by_name ?? '—'}</td>
+                        <td className="px-3 py-3 text-ink-muted">{fmtFull(g.created_at)}</td>
                       </tr>
                     ))}
                   </tbody>

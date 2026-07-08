@@ -14,8 +14,8 @@ const VERDICT: Record<
 > = {
   aligned: {
     label: '예측대로',
-    cls: 'bg-[#EBF3FF] text-[#3182F6] dark:bg-[#1E3A5F] dark:text-[#7BB4F5]',
-    accent: 'border-l-[#3182F6]',
+    cls: 'bg-[#EBF3FF] text-primary dark:bg-[#1E3A5F] dark:text-[#7BB4F5]',
+    accent: 'border-l-primary',
   },
   overperformed: {
     label: '예측보다 좋음',
@@ -34,9 +34,9 @@ const VERDICT: Record<
   },
 };
 
-// 바 색 — 다른 탭과 동일 문법: 값 막대는 파랑 패밀리(퍼널의 #3182F6/#5B9DF9 페어링 재사용),
+// 바 색 — 다른 탭과 동일 문법: 값 막대는 파랑 패밀리(퍼널의 #2563EB/#5B9DF9 페어링 재사용),
 // 판정(강함/약함)은 배지·캡션 텍스트가 담당. 좌우 정체는 위치+라벨로 명시(색 단독 아님).
-const ACT_FILL = '#3182F6'; // 실측(Meta) — 앱 전반의 실측 파랑
+const ACT_FILL = '#2563EB'; // 실측(Meta) — 앱 전반의 실측 파랑
 const PRED_FILL = '#5B9DF9'; // 시뮬 예측 — 같은 패밀리 연파랑
 
 const VERDICT_ORDER: BeforeAfterItem['verdict'][] = [
@@ -49,9 +49,9 @@ const VERDICT_ORDER: BeforeAfterItem['verdict'][] = [
 function Metric({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
     <div>
-      <p className="text-[11px] text-[#8B95A1]">{label}</p>
-      <p className="text-sm font-bold text-[#191F28] dark:text-[#F2F4F6] tabular-nums">{value}</p>
-      {hint && <p className="text-[10px] text-[#B0B8C1]">{hint}</p>}
+      <p className="text-[11px] text-ink-tertiary">{label}</p>
+      <p className="text-sm font-bold text-ink tabular-nums">{value}</p>
+      {hint && <p className="text-[10px] text-ink-muted">{hint}</p>}
     </div>
   );
 }
@@ -68,7 +68,7 @@ const capCls = (s: boolean | null | undefined): string =>
     ? 'text-green-600 dark:text-green-400'
     : s === false
       ? 'text-amber-600 dark:text-amber-400'
-      : 'text-[#B0B8C1]';
+      : 'text-ink-muted';
 
 // 미러 바 — 중앙에서 좌(예측)/우(실측)로 자라는 막대 + 기준선 마커. 좌우는 각자 축(환산 금지).
 function MirrorBar({
@@ -93,7 +93,7 @@ function MirrorBar({
   const tickPct = Math.min((threshold / scale) * 100, 100);
   const fill = side === 'left' ? PRED_FILL : ACT_FILL;
   return (
-    <div className="relative h-4 flex-1 rounded-full bg-[#F2F4F6] dark:bg-[#2D3748]">
+    <div className="relative h-4 flex-1 rounded-full bg-surface-1">
       <div
         className={`absolute inset-y-0 ${side === 'left' ? 'right-0 rounded-l-full' : 'left-0 rounded-r-full'}`}
         style={{ width: `${widthPct}%`, background: fill }}
@@ -134,15 +134,15 @@ function MirrorRow({
   return (
     <div className="flex items-center gap-3 py-2.5">
       <div className="w-32 shrink-0 text-right">
-        <p className="text-[10px] text-[#8B95A1]">{pred.label}</p>
-        <p className="text-2xl font-extrabold leading-tight tabular-nums text-[#191F28] dark:text-[#F2F4F6]">
+        <p className="text-[10px] text-ink-tertiary">{pred.label}</p>
+        <p className="text-2xl font-extrabold leading-tight tabular-nums text-ink">
           {pred.value}
         </p>
         {pred.num == null && onRun ? (
           <button
             onClick={onRun}
             disabled={running}
-            className="mt-0.5 text-[10px] font-bold text-[#3182F6] hover:underline disabled:opacity-60"
+            className="mt-0.5 text-[10px] font-bold text-primary hover:underline disabled:opacity-60"
           >
             {running ? '불러오는 중…' : '시뮬 돌리기 →'}
           </button>
@@ -151,13 +151,13 @@ function MirrorRow({
         )}
       </div>
       <MirrorBar side="left" num={pred.num} threshold={pred.threshold} max={pred.max} />
-      <span className="w-12 shrink-0 text-center text-[11px] font-bold text-[#4E5968] dark:text-[#9CA3AF]">
+      <span className="w-12 shrink-0 text-center text-[11px] font-bold text-ink-secondary">
         {axis}
       </span>
       <MirrorBar side="right" num={act.num} threshold={act.threshold} max={act.max} />
       <div className="w-32 shrink-0">
-        <p className="text-[10px] text-[#8B95A1]">{act.label}</p>
-        <p className="text-2xl font-extrabold leading-tight tabular-nums text-[#191F28] dark:text-[#F2F4F6]">
+        <p className="text-[10px] text-ink-tertiary">{act.label}</p>
+        <p className="text-2xl font-extrabold leading-tight tabular-nums text-ink">
           {act.value}
         </p>
         <p className={`text-[10px] font-bold ${capCls(act.strong)}`}>{act.caption}</p>
@@ -186,26 +186,26 @@ function VerdictReason({ item, p, a }: { item: BeforeAfterItem; p: PredictionSna
   };
 
   return (
-    <div className="rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-[#F9FAFB] dark:bg-[#1C2333] p-4 space-y-3">
-      <p className="text-xs font-semibold text-[#4E5968] dark:text-[#9CA3AF]">왜 이렇게 판단했나요</p>
+    <div className="rounded-xl border border-line bg-surface-1 p-4 space-y-3">
+      <p className="text-xs font-semibold text-ink-secondary">왜 이렇게 판단했나요</p>
 
       {/* 클릭 축 */}
       <div className="space-y-1">
-        <p className="text-[11px] font-semibold text-[#191F28] dark:text-[#F2F4F6]">클릭 축</p>
-        <div className="flex gap-4 text-[11px] text-[#4E5968] dark:text-[#9CA3AF]">
+        <p className="text-[11px] font-semibold text-ink">클릭 축</p>
+        <div className="flex gap-4 text-[11px] text-ink-secondary">
           <span>
             {clickPredIcon} 클릭 의향률(예측) <strong>{cirVal}</strong>
             {item.pred_strong != null && (
-              <span className="ml-1 text-[#B0B8C1]">
+              <span className="ml-1 text-ink-muted">
                 (기준 20% {item.pred_strong ? '통과 → 강함' : '미달 → 약함'})
               </span>
             )}
           </span>
-          <span className="text-[#B0B8C1]">⟷</span>
+          <span className="text-ink-muted">⟷</span>
           <span>
             {clickActIcon} CTR(실측) <strong>{ctrVal}</strong>
             {item.act_strong != null && (
-              <span className="ml-1 text-[#B0B8C1]">
+              <span className="ml-1 text-ink-muted">
                 (기준 1% {item.act_strong ? '통과 → 양호' : '미달 → 약함'})
               </span>
             )}
@@ -215,21 +215,21 @@ function VerdictReason({ item, p, a }: { item: BeforeAfterItem; p: PredictionSna
 
       {/* 구매 축 */}
       <div className="space-y-1">
-        <p className="text-[11px] font-semibold text-[#191F28] dark:text-[#F2F4F6]">구매 축</p>
-        <div className="flex gap-4 text-[11px] text-[#4E5968] dark:text-[#9CA3AF]">
+        <p className="text-[11px] font-semibold text-ink">구매 축</p>
+        <div className="flex gap-4 text-[11px] text-ink-secondary">
           <span>
             {purchPredIcon} 구매의도(예측) <strong>{piVal}</strong>
             {item.purchase_pred_strong != null && (
-              <span className="ml-1 text-[#B0B8C1]">
+              <span className="ml-1 text-ink-muted">
                 (기준 3.5/5 {item.purchase_pred_strong ? '통과 → 강함' : '미달 → 약함'})
               </span>
             )}
           </span>
-          <span className="text-[#B0B8C1]">⟷</span>
+          <span className="text-ink-muted">⟷</span>
           <span>
             {purchActIcon} CVR(실측) <strong>{cvrVal}</strong>
             {item.purchase_act_strong != null && (
-              <span className="ml-1 text-[#B0B8C1]">
+              <span className="ml-1 text-ink-muted">
                 (기준 2% {item.purchase_act_strong ? '통과 → 양호' : '미달 → 약함'})
               </span>
             )}
@@ -237,14 +237,14 @@ function VerdictReason({ item, p, a }: { item: BeforeAfterItem; p: PredictionSna
         </div>
       </div>
 
-      <p className="text-[11px] text-[#3182F6] font-medium border-t border-[#E5E8EB] dark:border-[#2D3748] pt-2">
+      <p className="text-[11px] text-primary font-medium border-t border-line pt-2">
         → {verdictDesc[item.verdict]}
       </p>
       {item.rationale && (
-        <p className="text-[11px] text-[#8B95A1]">{item.rationale}</p>
+        <p className="text-[11px] text-ink-tertiary">{item.rationale}</p>
       )}
       {item.interpretation && (
-        <p className="text-[11px] text-[#B0B8C1] dark:text-[#6B7280]">↳ {item.interpretation}</p>
+        <p className="text-[11px] text-ink-muted">↳ {item.interpretation}</p>
       )}
     </div>
   );
@@ -254,10 +254,10 @@ function VerdictReason({ item, p, a }: { item: BeforeAfterItem; p: PredictionSna
 function SimDetail({ p }: { p: PredictionSnapshot }) {
   const date = formatKSTDate(p.as_of);
   return (
-    <div className="rounded-xl bg-[#F9FAFB] dark:bg-[#252D3D] p-3">
-      <p className="text-xs font-semibold text-[#4E5968] dark:text-[#9CA3AF] mb-2.5">
+    <div className="rounded-xl bg-surface-1 p-3">
+      <p className="text-xs font-semibold text-ink-secondary mb-2.5">
         집행 전 · 시뮬 전체 결과{' '}
-        <span className="text-[10px] font-normal text-[#B0B8C1]">({p.source === 'sim' ? '실 시뮬' : '예측(목)'} · {date})</span>
+        <span className="text-[10px] font-normal text-ink-muted">({p.source === 'sim' ? '실 시뮬' : '예측(목)'} · {date})</span>
       </p>
       <div className="grid grid-cols-4 gap-3">
         <Metric
@@ -284,10 +284,10 @@ function SimDetail({ p }: { p: PredictionSnapshot }) {
 // 집행 후 실측 전체 상세 패널
 function ActDetail({ a }: { a: ActualOutcome }) {
   return (
-    <div className="rounded-xl bg-white dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748] p-3">
-      <p className="text-xs font-semibold text-[#4E5968] dark:text-[#9CA3AF] mb-2.5">
+    <div className="rounded-xl bg-card border border-line p-3">
+      <p className="text-xs font-semibold text-ink-secondary mb-2.5">
         집행 후 · 실측 전체{' '}
-        <span className="text-[10px] font-normal text-[#3182F6]">(Meta)</span>
+        <span className="text-[10px] font-normal text-primary">(Meta)</span>
       </p>
       <div className="grid grid-cols-4 gap-3">
         <Metric label="노출수" value={a.impressions.toLocaleString()} />
@@ -308,7 +308,7 @@ function ActDetail({ a }: { a: ActualOutcome }) {
         />
       </div>
       {a.conversions != null && (
-        <p className="mt-2 text-[11px] text-[#8B95A1]">전환수: {a.conversions.toLocaleString()}건</p>
+        <p className="mt-2 text-[11px] text-ink-tertiary">전환수: {a.conversions.toLocaleString()}건</p>
       )}
     </div>
   );
@@ -329,7 +329,7 @@ function ActionRow({
     <button
       onClick={() => onRunSim(item.campaign_id)}
       disabled={running}
-      className="px-3 py-1.5 rounded-lg border border-[#E5E8EB] dark:border-[#2D3748] text-xs font-semibold text-[#4E5968] dark:text-[#9CA3AF] hover:border-[#3182F6] hover:text-[#3182F6] disabled:opacity-60 transition-colors"
+      className="px-3 py-1.5 rounded-lg border border-line text-xs font-semibold text-ink-secondary hover:border-primary hover:text-primary disabled:opacity-60 transition-colors"
     >
       {running ? '불러오는 중…' : item.prediction ? '시뮬 다시 돌리기' : '이 캠페인으로 시뮬 돌리기'}
     </button>
@@ -339,7 +339,7 @@ function ActionRow({
       {item.verdict === 'overperformed' && (
         <Link
           href="/manage/budget"
-          className="px-3 py-1.5 rounded-lg bg-[#3182F6] hover:bg-[#1B64DA] text-white text-xs font-semibold transition-colors"
+          className="px-3 py-1.5 rounded-lg bg-primary hover:bg-primary-hover text-white text-xs font-semibold transition-colors"
         >
           예산 늘리기 검토 →
         </Link>
@@ -347,7 +347,7 @@ function ActionRow({
       {item.verdict === 'underperformed' && (
         <Link
           href="/generator"
-          className="px-3 py-1.5 rounded-lg bg-[#3182F6] hover:bg-[#1B64DA] text-white text-xs font-semibold transition-colors"
+          className="px-3 py-1.5 rounded-lg bg-primary hover:bg-primary-hover text-white text-xs font-semibold transition-colors"
         >
           개선 시안 만들기 →
         </Link>
@@ -373,24 +373,24 @@ function BeforeAfterCard({
   const running = simLoading === item.campaign_id;
   return (
     <div
-      className={`rounded-2xl border border-l-4 border-[#E5E8EB] dark:border-[#2D3748] ${v.accent} bg-white dark:bg-[#1C2333]`}
+      className={`rounded-2xl border border-l-4 border-line ${v.accent} bg-card`}
     >
       {/* 헤더(토글) — 이름·판정 배지·지출 */}
       <button
         onClick={() => setOpen(o => !o)}
         className="w-full flex items-center gap-3 px-5 pt-4 pb-1 text-left"
       >
-        <p className="text-base font-bold text-[#191F28] dark:text-[#F2F4F6] truncate flex-1">
+        <p className="text-base font-bold text-ink truncate flex-1">
           {item.name}
         </p>
         <span className={`text-xs font-bold px-2.5 py-1 rounded-lg shrink-0 ${v.cls}`}>
           {v.label}
         </span>
-        <span className="text-xs text-[#8B95A1] tabular-nums shrink-0">
+        <span className="text-xs text-ink-tertiary tabular-nums shrink-0">
           ₩{a.spend_krw.toLocaleString()}
         </span>
         <span
-          className={`text-[#B0B8C1] text-xs shrink-0 transition-transform ${open ? 'rotate-180' : ''}`}
+          className={`text-ink-muted text-xs shrink-0 transition-transform ${open ? 'rotate-180' : ''}`}
         >
           ▼
         </span>
@@ -398,10 +398,10 @@ function BeforeAfterCard({
 
       {/* 미러 축 2행 — 좌=시뮬 예측 / 우=실측(Meta). 좌우는 각자 축·기준선(환산 없음). */}
       <div className="px-5 pb-4">
-        <div className="flex items-center justify-between px-0.5 text-[10px] font-semibold text-[#B0B8C1]">
+        <div className="flex items-center justify-between px-0.5 text-[10px] font-semibold text-ink-muted">
           <span>◀ 시뮬 예측</span>
           <span>
-            실측 <span className="text-[#3182F6]">(Meta)</span> ▶
+            실측 <span className="text-primary">(Meta)</span> ▶
           </span>
         </div>
         <MirrorRow
@@ -426,7 +426,7 @@ function BeforeAfterCard({
           onRun={() => onRunSim(item.campaign_id)}
           running={running}
         />
-        <div className="border-t border-[#F2F4F6] dark:border-[#2D3748]" />
+        <div className="border-t border-line" />
         <MirrorRow
           axis="구매"
           pred={{
@@ -458,7 +458,7 @@ function BeforeAfterCard({
 
       {/* 펼침 — 판정 근거 + 전/후 전체 상세 + 다음 행동 */}
       {open && (
-        <div className="px-5 pb-5 pt-4 space-y-3 border-t border-[#F2F4F6] dark:border-[#2D3748]">
+        <div className="px-5 pb-5 pt-4 space-y-3 border-t border-line">
           <VerdictReason item={item} p={p} a={a} />
           {p && <SimDetail p={p} />}
           <ActDetail a={a} />
@@ -471,7 +471,7 @@ function BeforeAfterCard({
 
 // 예측 적중률 → 색상(0.7+ 양호 / 0.5+ 보통 / 그 외 약함). null이면 회색.
 function concordanceCls(v: number | null | undefined): string {
-  if (v == null) return 'text-[#8B95A1]';
+  if (v == null) return 'text-ink-tertiary';
   if (v >= 0.7) return 'text-green-600 dark:text-green-400';
   if (v >= 0.5) return 'text-amber-600 dark:text-amber-400';
   return 'text-red-500 dark:text-red-400';
@@ -484,29 +484,29 @@ function CalibrationCard({ calib }: { calib: CalibrationResponse }) {
   const s = calib.summary;
   const progress = Math.min((s.n / s.unlock_threshold) * 100, 100);
   return (
-    <div className="rounded-2xl border border-[#E5E8EB] dark:border-[#2D3748] mb-4 bg-[#F9FAFB] dark:bg-[#252D3D]">
+    <div className="rounded-2xl border border-line mb-4 bg-surface-1">
       <button
         onClick={() => setOpen(o => !o)}
         className="w-full flex items-center justify-between px-5 py-3 text-left"
       >
-        <p className="text-xs font-semibold text-[#4E5968] dark:text-[#9CA3AF]">
+        <p className="text-xs font-semibold text-ink-secondary">
           예측 정확도 검증
-          <span className="ml-2 font-normal text-[#8B95A1]">
+          <span className="ml-2 font-normal text-ink-tertiary">
             {s.unlocked
               ? '정밀 검증 준비 완료'
               : `비교 데이터 ${s.n}/${s.unlock_threshold}건 수집 중`}
           </span>
         </p>
-        <span className={`text-[#B0B8C1] text-xs transition-transform ${open ? 'rotate-180' : ''}`}>▼</span>
+        <span className={`text-ink-muted text-xs transition-transform ${open ? 'rotate-180' : ''}`}>▼</span>
       </button>
       {open && (
         <div className="px-5 pb-4">
-          <p className="text-xs text-[#8B95A1] mb-4">
+          <p className="text-xs text-ink-tertiary mb-4">
             광고를 집행할 때마다 예측과 실제 결과를 자동으로 모아, 시뮬 예측이 얼마나 맞는지
             확인해요.
           </p>
           {s.n === 0 ? (
-            <p className="text-xs text-[#B0B8C1] py-2">
+            <p className="text-xs text-ink-muted py-2">
               시뮬과 연결된 캠페인이 쌓이면 자동으로 수집돼요. 제너레이터→시뮬→집행으로 광고를
               돌려보세요.
             </p>
@@ -514,36 +514,36 @@ function CalibrationCard({ calib }: { calib: CalibrationResponse }) {
             <>
               <div className="grid grid-cols-3 gap-4 mb-4">
                 <div>
-                  <p className="text-[11px] text-[#8B95A1]">모인 비교 데이터</p>
-                  <p className="text-2xl font-extrabold text-[#191F28] dark:text-[#F2F4F6] tabular-nums">
+                  <p className="text-[11px] text-ink-tertiary">모인 비교 데이터</p>
+                  <p className="text-2xl font-extrabold text-ink tabular-nums">
                     {s.n}건
                   </p>
                 </div>
                 <div>
-                  <p className="text-[11px] text-[#8B95A1]">클릭 예측 적중률</p>
+                  <p className="text-[11px] text-ink-tertiary">클릭 예측 적중률</p>
                   <p className={`text-2xl font-extrabold tabular-nums ${concordanceCls(s.concordance_click)}`}>
                     {pct(s.concordance_click)}
                   </p>
-                  <p className="text-[10px] text-[#B0B8C1]">클릭 의향률(예측) ↔ CTR(실측)</p>
+                  <p className="text-[10px] text-ink-muted">클릭 의향률(예측) ↔ CTR(실측)</p>
                 </div>
                 <div>
-                  <p className="text-[11px] text-[#8B95A1]">구매 예측 적중률</p>
+                  <p className="text-[11px] text-ink-tertiary">구매 예측 적중률</p>
                   <p
                     className={`text-2xl font-extrabold tabular-nums ${concordanceCls(s.concordance_purchase)}`}
                   >
                     {pct(s.concordance_purchase)}
                   </p>
-                  <p className="text-[10px] text-[#B0B8C1]">구매의도(예측) ↔ CVR(실측)</p>
+                  <p className="text-[10px] text-ink-muted">구매의도(예측) ↔ CVR(실측)</p>
                 </div>
               </div>
-              <div className="h-1.5 w-full rounded-full bg-[#E5E8EB] dark:bg-[#2D3748] overflow-hidden">
+              <div className="h-1.5 w-full rounded-full bg-surface-1 overflow-hidden">
                 <div
-                  className={`h-full ${s.unlocked ? 'bg-green-500' : 'bg-[#3182F6]'}`}
+                  className={`h-full ${s.unlocked ? 'bg-green-500' : 'bg-primary'}`}
                   style={{ width: `${progress}%` }}
                 />
               </div>
               {!s.unlocked && (
-                <p className="mt-2 text-[10px] text-[#B0B8C1]">
+                <p className="mt-2 text-[10px] text-ink-muted">
                   아직 데이터가 적어({s.n}/{s.unlock_threshold}건) 참고용이에요.{' '}
                   {s.unlock_threshold}건이 모이면 정밀 검증이 시작돼요.
                 </p>
@@ -627,12 +627,12 @@ export default function Page() {
       <div className="max-w-screen-xl mx-auto px-6 py-8">
         <div className="mb-4 flex items-end justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-[#191F28] dark:text-[#F2F4F6]">성과 비교</h1>
-            <p className="text-sm text-[#8B95A1] mt-1">
+            <h1 className="text-2xl font-bold text-ink">성과 비교</h1>
+            <p className="text-sm text-ink-tertiary mt-1">
               시뮬 예측(집행 전)과 실제 성과(집행 후)를 나란히 봅니다 · 단위가 달라 방향만 비교해요
             </p>
           </div>
-          <div className="flex items-center gap-2 shrink-0 text-xs text-[#8B95A1]">
+          <div className="flex items-center gap-2 shrink-0 text-xs text-ink-tertiary">
             {fetchedAt && (
               <span>
                 갱신{' '}
@@ -642,7 +642,7 @@ export default function Page() {
             <button
               onClick={() => void fetchData()}
               disabled={refreshing}
-              className="px-2.5 py-1.5 rounded-lg border border-[#E5E8EB] dark:border-[#2D3748] hover:border-[#3182F6] hover:text-[#3182F6] disabled:opacity-50 transition-colors"
+              className="px-2.5 py-1.5 rounded-lg border border-line hover:border-primary hover:text-primary disabled:opacity-50 transition-colors"
             >
               {refreshing ? '불러오는 중…' : '↻ 새로고침'}
             </button>
@@ -656,8 +656,8 @@ export default function Page() {
               onClick={() => setFilter('all')}
               className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition-colors ${
                 filter === 'all'
-                  ? 'border-[#3182F6] bg-[#EBF3FF] dark:bg-[#1E3A5F] text-[#3182F6]'
-                  : 'border-[#E5E8EB] dark:border-[#2D3748] text-[#8B95A1] hover:border-[#3182F6]'
+                  ? 'border-primary bg-primary-subtle text-primary'
+                  : 'border-line text-ink-tertiary hover:border-primary'
               }`}
             >
               전체 {items.length}
@@ -668,8 +668,8 @@ export default function Page() {
                 onClick={() => setFilter(f => (f === k ? 'all' : k))}
                 className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold border transition-colors ${
                   filter === k
-                    ? 'border-[#3182F6] bg-[#EBF3FF] dark:bg-[#1E3A5F] text-[#3182F6]'
-                    : 'border-[#E5E8EB] dark:border-[#2D3748] text-[#8B95A1] hover:border-[#3182F6]'
+                    ? 'border-primary bg-primary-subtle text-primary'
+                    : 'border-line text-ink-tertiary hover:border-primary'
                 }`}
               >
                 {VERDICT[k].label} {counts[k]}
@@ -679,7 +679,7 @@ export default function Page() {
         )}
 
         {/* 전/후 비교 — 주 화면 */}
-        {items === null && <p className="text-sm text-[#8B95A1] py-10 text-center">불러오는 중…</p>}
+        {items === null && <p className="text-sm text-ink-tertiary py-10 text-center">불러오는 중…</p>}
         {items !== null && visible.length > 0 && (
           <div className="space-y-3">
             {visible.map((it) => (
@@ -693,20 +693,20 @@ export default function Page() {
           </div>
         )}
         {items !== null && items.length === 0 && (
-          <div className="rounded-2xl border border-[#E5E8EB] dark:border-[#2D3748] p-8 text-center">
+          <div className="rounded-2xl border border-line p-8 text-center">
             {rateLimited ? (
               <>
                 <p className="text-sm text-amber-700 dark:text-amber-300">{rateLimited}</p>
-                <p className="text-xs text-[#B0B8C1] mt-1">
+                <p className="text-xs text-ink-muted mt-1">
                   Meta 요청 한도에 일시적으로 걸렸어요. 잠시 후 새로고침하면 실측이 표시돼요.
                 </p>
               </>
             ) : (
               <>
-                <p className="text-sm text-[#4E5968] dark:text-[#9CA3AF]">
+                <p className="text-sm text-ink-secondary">
                   아직 비교할 캠페인이 없어요.
                 </p>
-                <p className="text-xs text-[#B0B8C1] mt-1">
+                <p className="text-xs text-ink-muted mt-1">
                   캠페인을 게재하면 집행 후(실측)가 채워지고, 그 광고로 시뮬을 돌리면 집행
                   전(예측)이 나란히 표시돼요.
                 </p>
@@ -720,7 +720,7 @@ export default function Page() {
           {calib && <CalibrationCard calib={calib} />}
         </div>
 
-        <p className="mt-2 text-[11px] text-[#B0B8C1]">
+        <p className="mt-2 text-[11px] text-ink-muted">
           시뮬 예측(클릭 의향률·구매의도)과 실제 지표(CTR·CVR·ROAS)는 단위가 달라 서로 환산하지
           않고, 각자 기준선을 넘었는지로 방향만 비교해요 · CVR은 전환(구매·리드·가입 등)이 잡히면
           자동 계산 · ROAS는 구매 금액(전환가치)이 있을 때 표시돼요

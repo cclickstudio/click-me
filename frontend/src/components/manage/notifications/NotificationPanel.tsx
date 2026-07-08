@@ -99,22 +99,22 @@ export default function NotificationPanel({
   };
 
   return (
-    <div className="absolute right-0 top-11 z-50 w-96 max-w-[92vw] rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-white dark:bg-[#1C2333] shadow-lg">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-[#E5E8EB] dark:border-[#2D3748]">
-        <span className="text-sm font-semibold text-[#191F28] dark:text-white">운영 알림</span>
+    <div className="absolute right-0 top-11 z-50 w-96 max-w-[92vw] rounded-xl border border-line bg-card shadow-lg">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-line">
+        <span className="text-sm font-semibold text-ink dark:text-white">운영 알림</span>
         <div className="flex items-center gap-1.5">
           <button
             type="button"
             disabled={scanning}
             onClick={onScan}
-            className="text-xs rounded-md border border-[#E5E8EB] dark:border-[#2D3748] px-2 py-1 text-[#4E5968] dark:text-[#9CA3AF] hover:border-[#3182F6] disabled:opacity-50"
+            className="text-xs rounded-md border border-line px-2 py-1 text-ink-secondary hover:border-primary disabled:opacity-50"
           >
             {scanning ? '점검 중…' : '지금 점검'}
           </button>
           <select
             value={projectFilter}
             onChange={e => setProjectFilter(e.target.value)}
-            className="text-xs rounded-md border border-[#E5E8EB] dark:border-[#2D3748] bg-transparent px-2 py-1 text-[#4E5968] dark:text-[#9CA3AF]"
+            className="text-xs rounded-md border border-line bg-transparent px-2 py-1 text-ink-secondary"
           >
             <option value="">전체 프로젝트</option>
             {projects.map(p => (
@@ -124,20 +124,20 @@ export default function NotificationPanel({
         </div>
       </div>
       {notice && (
-        <div className="px-4 py-2 text-xs text-[#3182F6] bg-[#3182F6]/5">{notice}</div>
+        <div className="px-4 py-2 text-xs text-primary bg-primary/5">{notice}</div>
       )}
       <div className="max-h-96 overflow-y-auto">
         {visible.length === 0 ? (
-          <p className="px-4 py-8 text-center text-xs text-[#8B95A1]">새 알림이 없어요.</p>
+          <p className="px-4 py-8 text-center text-xs text-ink-tertiary">새 알림이 없어요.</p>
         ) : (
           visible.map(n => {
             // 계정 단위 정보성 알림(지갑·예산) — 캠페인·상담 없음. 제목·본문만 보여주고 [확인]만.
             const isAccount = n.payload.kind === 'account';
             return (
-            <div key={n.id} className="px-4 py-3 border-b border-[#F2F4F6] dark:border-[#2D3748]/60">
+            <div key={n.id} className="px-4 py-3 border-b border-line/60">
               <div className="flex items-start justify-between gap-2">
                 <div>
-                  <p className="text-sm font-medium text-[#191F28] dark:text-white">
+                  <p className="text-sm font-medium text-ink dark:text-white">
                     {isAccount ? (
                       <>⚠ {n.payload.title || '계정 점검'}</>
                     ) : (
@@ -148,11 +148,11 @@ export default function NotificationPanel({
                     )}
                   </p>
                   {isAccount && n.payload.message && (
-                    <p className="mt-0.5 text-xs text-[#4E5968] dark:text-[#9CA3AF]">
+                    <p className="mt-0.5 text-xs text-ink-secondary">
                       {n.payload.message}
                     </p>
                   )}
-                  <p className="mt-0.5 text-xs text-[#8B95A1]">
+                  <p className="mt-0.5 text-xs text-ink-tertiary">
                     {isAccount ? '계정 전체' : n.project_name}
                     {n.followup_count > 0 && ` · ${n.followup_count + 1}회째 알림`}
                     {' · '}
@@ -167,7 +167,7 @@ export default function NotificationPanel({
                     type="button"
                     disabled={busyId === n.id}
                     onClick={() => onConsult(n)}
-                    className="rounded-lg bg-[#3182F6] px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+                    className="rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
                   >
                     상담하기
                   </button>
@@ -176,7 +176,7 @@ export default function NotificationPanel({
                   type="button"
                   disabled={busyId === n.id}
                   onClick={() => onIgnore(n, isAccount ? 'actioned' : 'ignored')}
-                  className="rounded-lg border border-[#E5E8EB] dark:border-[#2D3748] px-3 py-1.5 text-xs text-[#4E5968] dark:text-[#9CA3AF] disabled:opacity-50"
+                  className="rounded-lg border border-line px-3 py-1.5 text-xs text-ink-secondary disabled:opacity-50"
                 >
                   {isAccount ? '확인' : '무시'}
                 </button>

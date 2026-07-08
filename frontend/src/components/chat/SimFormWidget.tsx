@@ -24,14 +24,14 @@ const MODE_TABS: { value: AnalysisMode; label: string; desc: string }[] = [
 const ACTIVE_SIM_KEY = 'chat_active_sim_run';
 
 const inputCls =
-  'w-full px-3 py-2 rounded-lg border border-[#E5E8EB] dark:border-[#2D3748] text-sm bg-white dark:bg-[#252D3D] text-[#191F28] dark:text-[#F2F4F6] focus:outline-none focus:border-[#3182F6]';
-const labelCls = 'text-[11px] font-semibold text-[#8B95A1] dark:text-[#6B7280] mb-1 block';
+  'w-full px-3 py-2 rounded-lg border border-line text-sm bg-surface-2 text-ink focus:outline-none focus:border-primary';
+const labelCls = 'text-[11px] font-semibold text-ink-tertiary mb-1 block';
 
 // 칩 스타일(/simulation 컨벤션 이식).
 const chipBase = 'px-2.5 py-1.5 rounded-lg border text-[11px] font-medium transition-colors';
-const chipActive = 'border-[#3182F6] bg-[#EEF4FF] dark:bg-[#1E3A5F] text-[#3182F6]';
+const chipActive = 'border-primary bg-primary-subtle text-primary';
 const chipIdle =
-  'border-[#E5E8EB] dark:border-[#2D3748] text-[#8B95A1] dark:text-[#6B7280] hover:border-[#3182F6]';
+  'border-line text-ink-tertiary hover:border-primary';
 
 // 광고 목표 — 일반인도 쉽게 고르는 단일 선택(/simulation의 AD_GOALS 이식).
 const AD_GOALS = ['관심 유도', '클릭 유도', '가입·문의 유도', '구매 전환', '재구매·단골'];
@@ -308,7 +308,7 @@ export default function SimFormWidget({
   };
 
   const cardCls =
-    'mt-1 w-full rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-white dark:bg-[#1C2333] p-4';
+    'mt-1 w-full rounded-xl border border-line bg-card p-4';
 
   if (phase === 'form') {
     const totalSteps = 5;
@@ -319,7 +319,7 @@ export default function SimFormWidget({
       (step !== 2 || (categoryId !== '' && serviceClass !== '')) &&
       (step !== 3 || objectiveValue.length > 0);
     const btnCls =
-      'flex-1 py-2 rounded-lg bg-[#3182F6] text-white text-sm font-semibold hover:bg-[#1B6EEB] disabled:opacity-40 transition-colors';
+      'flex-1 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary-hover disabled:opacity-40 transition-colors';
     // Enter로 다음 단계(마지막 단계는 실행). textarea 줄바꿈은 Shift+Enter.
     const goNext = () => {
       if (step < totalSteps - 1) {
@@ -349,7 +349,7 @@ export default function SimFormWidget({
             </button>
           ))}
         </div>
-        <p className="text-[11px] text-[#8B95A1] dark:text-[#6B7280] mt-1.5">
+        <p className="text-[11px] text-ink-tertiary mt-1.5">
           {MODE_TABS.find(m => m.value === analysisMode)?.desc}
         </p>
       </div>
@@ -359,13 +359,13 @@ export default function SimFormWidget({
       return (
         <div className={cardCls}>
           {modeTabs}
-          <p className="text-sm text-[#191F28] dark:text-[#F2F4F6]">
+          <p className="text-sm text-ink">
             세그먼트 비교는 세그먼트별로 조건을 나눠 편집해야 해서 채팅에서는 지원하지 않아요.
             전체 페이지에서 진행해주세요.
           </p>
           <button
             onClick={() => router.push('/simulation')}
-            className="mt-3 w-full py-2 rounded-lg bg-[#3182F6] text-white text-sm font-semibold hover:bg-[#1B6EEB] transition-colors"
+            className="mt-3 w-full py-2 rounded-lg bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary-hover transition-colors"
           >
             시뮬레이션 페이지로 이동 →
           </button>
@@ -376,9 +376,9 @@ export default function SimFormWidget({
       <div className={cardCls} onKeyDown={onFormKeyDown}>
         {modeTabs}
         <div className="mb-3">
-          <p className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]">
+          <p className="text-sm font-semibold text-ink">
             🧪 시뮬레이션 정보 입력{' '}
-            <span className="text-[11px] font-normal text-[#8B95A1]">
+            <span className="text-[11px] font-normal text-ink-tertiary">
               {step + 1}/{totalSteps} · {STEP_LABELS[step]}
             </span>
           </p>
@@ -397,10 +397,10 @@ export default function SimFormWidget({
                   aria-label={`${i + 1}단계 ${lbl}${current ? ' (현재)' : done ? ' (완료)' : ''}`}
                   className={`h-1.5 flex-1 rounded-full transition-colors ${
                     current
-                      ? 'bg-[#3182F6]'
+                      ? 'bg-primary'
                       : done
-                        ? 'bg-[#3182F6]/50 hover:bg-[#3182F6] cursor-pointer'
-                        : 'bg-[#E5E8EB] dark:bg-[#2D3748] cursor-default'
+                        ? 'bg-primary/50 hover:bg-primary cursor-pointer'
+                        : 'bg-surface-1 cursor-default'
                   }`}
                 />
               );
@@ -412,14 +412,14 @@ export default function SimFormWidget({
           {previewSrc ? (
             <div className="flex items-center gap-2">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={previewSrc} alt="광고 이미지" className="w-12 h-12 rounded-lg object-cover border border-[#E5E8EB] dark:border-[#2D3748]" />
-              <label className="text-xs text-[#3182F6] cursor-pointer hover:underline">
+              <img src={previewSrc} alt="광고 이미지" className="w-12 h-12 rounded-lg object-cover border border-line" />
+              <label className="text-xs text-primary cursor-pointer hover:underline">
                 이미지 변경
                 <input type="file" accept="image/*" className="hidden" onChange={onPickImage} />
               </label>
             </div>
           ) : (
-            <label className="flex items-center justify-center gap-2 py-3 rounded-lg border border-dashed border-[#E5E8EB] dark:border-[#2D3748] text-xs text-[#8B95A1] cursor-pointer hover:border-[#3182F6] hover:text-[#3182F6] transition-colors">
+            <label className="flex items-center justify-center gap-2 py-3 rounded-lg border border-dashed border-line text-xs text-ink-tertiary cursor-pointer hover:border-primary hover:text-primary transition-colors">
               + 광고 이미지 업로드 (필수)
               <input type="file" accept="image/*" className="hidden" onChange={onPickImage} />
             </label>
@@ -512,13 +512,13 @@ export default function SimFormWidget({
           {step === 4 && (
             <div className="space-y-3">
               {analysisMode === 'individual' ? (
-                <p className="text-[11px] text-[#8B95A1] dark:text-[#6B7280]">
+                <p className="text-[11px] text-ink-tertiary">
                   1명 심층 분석 — 표본 1명 고정. 아래 조건(연령대·성별)으로 그 1명을 고릅니다.
                 </p>
               ) : (
                 <div>
                   <label className={labelCls}>가상 소비자 수: {sampleSize}명</label>
-                  <input type="range" min={1} max={200} value={sampleSize} onChange={e => setSampleSize(Number(e.target.value))} className="w-full accent-[#3182F6]" />
+                  <input type="range" min={1} max={200} value={sampleSize} onChange={e => setSampleSize(Number(e.target.value))} className="w-full accent-primary" />
                 </div>
               )}
               <div>
@@ -589,7 +589,7 @@ export default function SimFormWidget({
         </div>
         <div className="flex gap-2 mt-3">
           {step > 0 && (
-            <button onClick={() => setStep(step - 1)} className="px-3 py-2 rounded-lg border border-[#E5E8EB] dark:border-[#2D3748] text-sm text-[#8B95A1]">
+            <button onClick={() => setStep(step - 1)} className="px-3 py-2 rounded-lg border border-line text-sm text-ink-tertiary">
               이전
             </button>
           )}
@@ -612,20 +612,20 @@ export default function SimFormWidget({
       <button
         type="button"
         onClick={() => runId && router.push(`/simulation/${runId}`)}
-        className={`${cardCls} w-full text-left hover:border-[#3182F6] transition-colors`}
+        className={`${cardCls} w-full text-left hover:border-primary transition-colors`}
         title="클릭하면 시뮬레이션 페이지에서 자세히 봐요"
       >
         <div className="flex items-center gap-3">
-          <div className="w-6 h-6 border-[3px] border-[#E5E8EB] dark:border-[#2D3748] border-t-[#3182F6] dark:border-t-[#5B9DF9] rounded-full animate-spin" />
+          <div className="w-6 h-6 border-[3px] border-line border-t-primary dark:border-t-[#5B9DF9] rounded-full animate-spin" />
           <div className="flex-1">
-            <p className="text-sm text-[#191F28] dark:text-[#F2F4F6]">{stageMsg}</p>
-            <div className="mt-1.5 h-1.5 rounded-full bg-[#F2F4F6] dark:bg-[#252D3D] overflow-hidden">
-              <div className="h-full bg-[#3182F6] transition-all duration-300" style={{ width: `${pct}%` }} />
+            <p className="text-sm text-ink">{stageMsg}</p>
+            <div className="mt-1.5 h-1.5 rounded-full bg-surface-1 overflow-hidden">
+              <div className="h-full bg-primary transition-all duration-300" style={{ width: `${pct}%` }} />
             </div>
           </div>
-          <span className="text-xs text-[#8B95A1]">{pct}%</span>
+          <span className="text-xs text-ink-tertiary">{pct}%</span>
         </div>
-        <p className="text-[10px] text-[#B0B8C1] mt-2">클릭하면 전체 화면에서 진행을 봐요 →</p>
+        <p className="text-[10px] text-ink-muted mt-2">클릭하면 전체 화면에서 진행을 봐요 →</p>
       </button>
     );
   }
@@ -634,7 +634,7 @@ export default function SimFormWidget({
     return (
       <div className={cardCls}>
         <p className="text-sm text-[#F04452]">시뮬레이션 실패: {err}</p>
-        <button onClick={() => setPhase('form')} className="mt-2 text-xs text-[#3182F6]">
+        <button onClick={() => setPhase('form')} className="mt-2 text-xs text-primary">
           다시 시도
         </button>
       </div>
@@ -644,8 +644,8 @@ export default function SimFormWidget({
   // phase === 'done' — 결과 요약·토론은 아래 별도 메시지(sim_result·debate_stream)로 이어진다.
   return (
     <div className={cardCls}>
-      <p className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]">✅ 시뮬레이션 완료</p>
-      <p className="mt-1 text-[12px] text-[#8B95A1]">아래에서 결과 요약과 토론을 확인하세요.</p>
+      <p className="text-sm font-semibold text-ink">✅ 시뮬레이션 완료</p>
+      <p className="mt-1 text-[12px] text-ink-tertiary">아래에서 결과 요약과 토론을 확인하세요.</p>
     </div>
   );
 }

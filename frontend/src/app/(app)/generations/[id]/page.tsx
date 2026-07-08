@@ -71,9 +71,9 @@ const fmt = (iso: string) => formatKSTFull(iso);
 
 function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <div className="flex items-start gap-4 py-3 border-b border-[#F2F4F6] dark:border-[#252D3D] last:border-0">
-      <span className="w-28 shrink-0 text-sm text-[#8B95A1] dark:text-[#6B7280]">{label}</span>
-      <span className="text-sm text-[#191F28] dark:text-[#F2F4F6] flex-1">{value}</span>
+    <div className="flex items-start gap-4 py-3 border-b border-line last:border-0">
+      <span className="w-28 shrink-0 text-sm text-ink-tertiary">{label}</span>
+      <span className="text-sm text-ink flex-1">{value}</span>
     </div>
   );
 }
@@ -134,10 +134,10 @@ function CandidateCard({
   const imgSrc = candidateImageSrc(candidate, platform);
   return (
     <div
-      className={`rounded-2xl border overflow-hidden bg-white dark:bg-[#1C2333] ${
+      className={`rounded-2xl border overflow-hidden bg-card ${
         isSelected
-          ? 'border-[#3182F6] ring-2 ring-[#3182F6]/20'
-          : 'border-[#E5E8EB] dark:border-[#2D3748]'
+          ? 'border-primary ring-2 ring-primary/20'
+          : 'border-line'
       }`}
     >
       {imgSrc ? (
@@ -145,7 +145,7 @@ function CandidateCard({
           type="button"
           onClick={() => onZoom(imgSrc, copy?.headline)}
           title="클릭하면 크게 봐요"
-          className={`relative block w-full ${aspect} bg-[#F9FAFB] dark:bg-[#161B27] cursor-zoom-in`}
+          className={`relative block w-full ${aspect} bg-surface-1 cursor-zoom-in`}
         >
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
@@ -154,20 +154,20 @@ function CandidateCard({
             className="w-full h-full object-contain"
           />
           {isSelected && (
-            <span className="absolute top-3 right-3 bg-[#3182F6] text-white text-xs font-semibold px-2.5 py-1 rounded-full">
+            <span className="absolute top-3 right-3 bg-primary text-primary-foreground text-xs font-semibold px-2.5 py-1 rounded-full">
               선택됨
             </span>
           )}
         </button>
       ) : (
-        <div className={`w-full ${aspect} bg-[#F2F4F6] dark:bg-[#161B27] flex items-center justify-center`}>
-          <span className="text-sm text-[#B0B8C1]">이미지 없음</span>
+        <div className={`w-full ${aspect} bg-surface-1 flex items-center justify-center`}>
+          <span className="text-sm text-ink-muted">이미지 없음</span>
         </div>
       )}
 
       <div className="p-4 space-y-2">
         <div className="flex items-center justify-between">
-          <span className="text-xs font-semibold text-[#8B95A1]">후보 {candidate.idx + 1}</span>
+          <span className="text-xs font-semibold text-ink-tertiary">후보 {candidate.idx + 1}</span>
           {candidate.qa_passed !== null && (
             <span
               className={`text-xs px-2 py-0.5 rounded-full font-medium ${
@@ -192,17 +192,17 @@ function CandidateCard({
           )}
         </div>
         {copy?.headline && (
-          <p className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6] leading-snug">
+          <p className="text-sm font-semibold text-ink leading-snug">
             {copy.headline}
           </p>
         )}
         {copy?.subcopy && (
-          <p className="text-xs text-[#4E5968] dark:text-[#9CA3AF] leading-relaxed">
+          <p className="text-xs text-ink-secondary leading-relaxed">
             {copy.subcopy}
           </p>
         )}
         {copy?.cta && (
-          <span className="inline-block mt-1 text-xs font-medium text-[#3182F6] border border-[#3182F6] rounded px-2 py-0.5">
+          <span className="inline-block mt-1 text-xs font-medium text-primary border border-primary rounded px-2 py-0.5">
             {copy.cta}
           </span>
         )}
@@ -214,13 +214,13 @@ function CandidateCard({
 function ChipList({ label, items }: { label: string; items?: string[] }) {
   if (!items || items.length === 0) return null;
   return (
-    <div className="flex items-start gap-4 py-3 border-b border-[#F2F4F6] dark:border-[#252D3D] last:border-0">
-      <span className="w-28 shrink-0 text-sm text-[#8B95A1] dark:text-[#6B7280]">{label}</span>
+    <div className="flex items-start gap-4 py-3 border-b border-line last:border-0">
+      <span className="w-28 shrink-0 text-sm text-ink-tertiary">{label}</span>
       <div className="flex flex-wrap gap-1.5 flex-1">
         {items.map((it, i) => (
           <span
             key={i}
-            className="px-2.5 py-1 rounded-full text-xs bg-[#EBF3FF] dark:bg-[#1E3A5F] text-[#3182F6]"
+            className="px-2.5 py-1 rounded-full text-xs bg-primary-subtle text-primary"
           >
             {it}
           </span>
@@ -245,20 +245,20 @@ function ProductAnalysisSection({ a }: { a: ProductAnalysis }) {
 function StrategyCard({ s, idx }: { s: Strategy; idx: number }) {
   const label = s.strategy ? (STRATEGY_LABELS[s.strategy] ?? s.strategy) : `전략 ${idx + 1}`;
   return (
-    <div className="rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] p-4">
+    <div className="rounded-xl border border-line p-4">
       <div className="flex items-center gap-2 mb-2">
-        <span className="text-xs font-semibold text-[#8B95A1]">전략 {idx + 1}</span>
-        <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-[#EBF3FF] dark:bg-[#1E3A5F] text-[#3182F6]">
+        <span className="text-xs font-semibold text-ink-tertiary">전략 {idx + 1}</span>
+        <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-primary-subtle text-primary">
           {label}
         </span>
       </div>
       {s.strategy_description && (
-        <p className="text-sm text-[#191F28] dark:text-[#F2F4F6] leading-relaxed">
+        <p className="text-sm text-ink leading-relaxed">
           {s.strategy_description}
         </p>
       )}
       {s.rationale && (
-        <p className="text-xs text-[#8B95A1] dark:text-[#6B7280] leading-relaxed mt-2">
+        <p className="text-xs text-ink-tertiary leading-relaxed mt-2">
           💡 {s.rationale}
         </p>
       )}
@@ -286,7 +286,7 @@ function CarouselViewer({
   return (
     <div className="max-w-sm">
       <div
-        className={`relative w-full ${aspect} rounded-2xl overflow-hidden border border-[#E5E8EB] dark:border-[#2D3748] bg-[#F9FAFB] dark:bg-[#161B27]`}
+        className={`relative w-full ${aspect} rounded-2xl overflow-hidden border border-line bg-surface-1`}
       >
         {imgSrc && (
           <button
@@ -317,17 +317,17 @@ function CarouselViewer({
         )}
       </div>
       <div className="mt-3 text-center">
-        <p className="text-xs text-[#8B95A1] dark:text-[#6B7280]">
+        <p className="text-xs text-ink-tertiary">
           슬라이드 {cur + 1} / {slides.length}
           {role ? ` · ${role}` : ''}
         </p>
         {c.copy?.headline && (
-          <p className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6] mt-1">
+          <p className="text-sm font-semibold text-ink mt-1">
             {c.copy.headline}
           </p>
         )}
         {c.copy?.body && (
-          <p className="text-xs text-[#4E5968] dark:text-[#9CA3AF] mt-1">{c.copy.body}</p>
+          <p className="text-xs text-ink-secondary mt-1">{c.copy.body}</p>
         )}
       </div>
       <div className="flex items-center justify-center gap-1.5 mt-3">
@@ -336,7 +336,7 @@ function CarouselViewer({
             key={s.candidate_id}
             onClick={() => setI(idx)}
             className={`w-2 h-2 rounded-full transition-colors ${
-              idx === cur ? 'bg-[#3182F6]' : 'bg-[#E5E8EB] dark:bg-[#2D3748]'
+              idx === cur ? 'bg-primary' : 'bg-surface-1'
             }`}
           />
         ))}
@@ -426,7 +426,7 @@ export default function GenerationDetailPage() {
       <div className="px-8 py-8 max-w-4xl mx-auto">
         <button
           onClick={() => router.back()}
-          className="flex items-center gap-1.5 text-sm text-[#8B95A1] hover:text-[#3182F6] transition-colors mb-6"
+          className="flex items-center gap-1.5 text-sm text-ink-tertiary hover:text-primary transition-colors mb-6"
         >
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
             <polyline points="15 18 9 12 15 6" />
@@ -434,15 +434,15 @@ export default function GenerationDetailPage() {
           뒤로
         </button>
 
-        {loading && <p className="text-sm text-[#8B95A1]">불러오는 중...</p>}
+        {loading && <p className="text-sm text-ink-tertiary">불러오는 중...</p>}
         {error && <p className="text-sm text-red-500">{error}</p>}
 
         {data && (
           <>
             <div className="flex items-start justify-between mb-6">
               <div>
-                {project && <p className="text-xs text-[#8B95A1] mb-1">{project.name}</p>}
-                <h1 className="text-2xl font-bold text-[#191F28] dark:text-[#F2F4F6] flex items-center gap-2">
+                {project && <p className="text-xs text-ink-tertiary mb-1">{project.name}</p>}
+                <h1 className="text-2xl font-bold text-ink flex items-center gap-2">
                   <ModeBadge
                     mode={data.input?.mode as string | undefined}
                     format={data.input?.format as string | undefined}
@@ -463,7 +463,7 @@ export default function GenerationDetailPage() {
                   <button
                     onClick={handleRestore}
                     disabled={restoring}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium text-[#3182F6] border border-[#3182F6]/30 hover:bg-[#EBF3FF] dark:hover:bg-[#1E3A5F] transition-colors disabled:opacity-40"
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium text-primary border border-primary/30 hover:bg-primary-subtle transition-colors disabled:opacity-40"
                   >
                     {restoring ? '복원 중...' : '복원'}
                   </button>
@@ -483,7 +483,7 @@ export default function GenerationDetailPage() {
             </div>
 
             {/* 기본 정보 */}
-            <div className="bg-white dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748] rounded-2xl px-6 py-2 mb-6">
+            <div className="bg-card border border-line rounded-2xl px-6 py-2 mb-6">
               {isAdmin && <InfoRow label="ID" value={<span className="font-mono text-xs">{data.generation_id}</span>} />}
               {project && <InfoRow label="프로젝트" value={project.name} />}
               {genRow?.created_by_name && <InfoRow label="실행자" value={genRow.created_by_name} />}
@@ -491,12 +491,12 @@ export default function GenerationDetailPage() {
             </div>
 
             {/* 입력 정보 */}
-            <div className="bg-white dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748] rounded-2xl px-6 py-2 mb-6">
-              <h2 className="text-base font-semibold text-[#191F28] dark:text-[#F2F4F6] pt-4 pb-2">입력 정보</h2>
+            <div className="bg-card border border-line rounded-2xl px-6 py-2 mb-6">
+              <h2 className="text-base font-semibold text-ink pt-4 pb-2">입력 정보</h2>
               {Object.keys(data.input).length > 0 ? (
                 <InputSection input={data.input} />
               ) : (
-                <p className="py-4 text-sm text-[#B0B8C1]">입력 정보가 없습니다.</p>
+                <p className="py-4 text-sm text-ink-muted">입력 정보가 없습니다.</p>
               )}
             </div>
 
@@ -504,7 +504,7 @@ export default function GenerationDetailPage() {
             {data.candidates && data.candidates.length > 0 && (
               <div className="mb-6">
                 <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
-                  <h2 className="text-base font-semibold text-[#191F28] dark:text-[#F2F4F6]">
+                  <h2 className="text-base font-semibold text-ink">
                     {isCarousel
                       ? `카드뉴스 (${data.candidates.length}장)`
                       : `생성된 광고 후보 (${data.candidates.length}개)`}
@@ -517,8 +517,8 @@ export default function GenerationDetailPage() {
                         onClick={() => setPlatform(p.key)}
                         className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
                           platform === p.key
-                            ? 'bg-[#3182F6] text-white'
-                            : 'bg-[#F2F4F6] dark:bg-[#252D3D] text-[#4E5968] dark:text-[#9CA3AF] hover:text-[#3182F6]'
+                            ? 'bg-primary text-primary-foreground'
+                            : 'bg-surface-1 text-ink-secondary hover:text-primary'
                         }`}
                       >
                         {p.label}
@@ -563,20 +563,20 @@ export default function GenerationDetailPage() {
             )}
 
             {/* 상품 분석 */}
-            <div className="bg-white dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748] rounded-2xl p-6 mb-6">
-              <h2 className="text-base font-semibold text-[#191F28] dark:text-[#F2F4F6] mb-4">상품 분석</h2>
+            <div className="bg-card border border-line rounded-2xl p-6 mb-6">
+              <h2 className="text-base font-semibold text-ink mb-4">상품 분석</h2>
               {data.product_analysis ? (
                 <ProductAnalysisSection a={data.product_analysis} />
               ) : (
-                <div className="py-6 text-center text-sm text-[#B0B8C1] dark:text-[#4B5563]">
+                <div className="py-6 text-center text-sm text-ink-muted">
                   분석 데이터가 없습니다.
                 </div>
               )}
             </div>
 
             {/* 광고 전략 */}
-            <div className="bg-white dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748] rounded-2xl p-6">
-              <h2 className="text-base font-semibold text-[#191F28] dark:text-[#F2F4F6] mb-4">
+            <div className="bg-card border border-line rounded-2xl p-6">
+              <h2 className="text-base font-semibold text-ink mb-4">
                 광고 전략{data.strategies ? ` (${data.strategies.length}개)` : ''}
               </h2>
               {data.strategies && data.strategies.length > 0 ? (
@@ -586,7 +586,7 @@ export default function GenerationDetailPage() {
                   ))}
                 </div>
               ) : (
-                <div className="py-6 text-center text-sm text-[#B0B8C1] dark:text-[#4B5563]">
+                <div className="py-6 text-center text-sm text-ink-muted">
                   {data.status === 'completed' ? '전략 데이터가 없습니다.' : '생성이 아직 완료되지 않았습니다.'}
                 </div>
               )}

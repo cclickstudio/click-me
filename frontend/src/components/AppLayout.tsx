@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
+import { motion } from 'framer-motion';
+import { Menu } from 'lucide-react';
 import { useAuth } from './AuthProvider';
 import Sidebar from './Sidebar';
 import ProjectPanel from './ProjectPanel';
@@ -69,8 +71,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#F9FAFB] dark:bg-[#0F1117] flex items-center justify-center">
-        <div className="w-6 h-6 border-2 border-[#3182F6] border-t-transparent rounded-full animate-spin" />
+      <div className="min-h-screen bg-surface-0 flex items-center justify-center">
+        <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
@@ -78,19 +80,19 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   // 미로그인 — 안내를 잠깐 띄우고 위 useEffect가 /sign-in으로 이동시킨다.
   if (!user) {
     return (
-      <div className="min-h-screen bg-[#F9FAFB] dark:bg-[#0F1117] flex flex-col items-center justify-center gap-3">
-        <p className="text-sm font-medium text-[#4E5968] dark:text-[#9CA3AF]">
+      <div className="min-h-screen bg-surface-0 flex flex-col items-center justify-center gap-3">
+        <p className="text-sm font-medium text-ink-secondary">
           로그인이 필요한 서비스입니다.
         </p>
-        <div className="w-6 h-6 border-2 border-[#3182F6] border-t-transparent rounded-full animate-spin" />
+        <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
 
   if (companyBlocked) {
     return (
-      <div className="min-h-screen bg-[#F9FAFB] dark:bg-[#0F1117] flex items-center justify-center">
-        <div className="w-6 h-6 border-2 border-[#3182F6] border-t-transparent rounded-full animate-spin" />
+      <div className="min-h-screen bg-surface-0 flex items-center justify-center">
+        <div className="w-6 h-6 border-2 border-primary border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
@@ -99,24 +101,27 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   // 데스크톱(md+)에만 좌측 패널 폭만큼 패딩 — 모바일은 풀폭(드로어로 사이드바 접근).
   const mainLeft = panelCollapsed ? 'md:pl-[274px]' : 'md:pl-[512px]';
 
+  // 페이지 전환 애니메이션 키 — /chat은 세션 id로는 리마운트하지 않도록 프로젝트 단위로만 잡는다.
+  // (Next 15에서 history.replaceState가 usePathname을 갱신 → key 변경 시 리마운트로 진행 중 대화가
+  //  유실되는 문제 방지. /chat/[pid]/new 와 /chat/[pid]/[sid] 가 같은 키를 공유한다.)
+  const transitionKey = pathname.startsWith('/chat/')
+    ? `/chat/${pathname.split('/')[2] ?? ''}`
+    : pathname;
+
   // 역할별 좌측 패널 — ADMIN: 회사>팀>프로젝트 / COMPANY: 조직 전체(ALL·TEAM, 조회) / USER: 내 팀 프로젝트
   const Panel =
     role === 'ADMIN' ? AdminPanel : role === 'COMPANY' ? CompanyPanel : ProjectPanel;
 
   return (
-    <div className="min-h-screen bg-[#F9FAFB] dark:bg-[#0F1117] transition-colors">
+    <div className="min-h-screen bg-surface-0 transition-colors">
       {/* 모바일 햄버거 — 사이드바 드로어 토글(데스크톱 숨김) */}
       <button
         type="button"
         onClick={() => setMobileNavOpen(true)}
         aria-label="메뉴 열기"
-        className="md:hidden fixed top-3 left-3 z-50 w-10 h-10 flex items-center justify-center rounded-lg bg-white dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748] text-[#4E5968] dark:text-[#9CA3AF] shadow-sm"
+        className="md:hidden fixed top-3 left-3 z-50 w-10 h-10 flex items-center justify-center rounded-lg bg-card border border-line text-ink-secondary shadow-sm"
       >
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-          <line x1="3" y1="6" x2="21" y2="6" />
-          <line x1="3" y1="12" x2="21" y2="12" />
-          <line x1="3" y1="18" x2="21" y2="18" />
-        </svg>
+        <Menu size={20} strokeWidth={2} />
       </button>
       {/* 모바일 드로어 배경 오버레이 */}
       {mobileNavOpen && (
@@ -133,8 +138,15 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <div className="max-md:hidden">
         <Panel collapsed={panelCollapsed} onToggle={togglePanel} />
       </div>
-      <main className={`${mainLeft} min-h-screen transition-all duration-200`}>
-        {children}
+      <main className={`${mainLeft} min-h-screen transition-all duration-200 max-md:pt-14`}>
+        <motion.div
+          key={transitionKey}
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.2, ease: 'easeOut' }}
+        >
+          {children}
+        </motion.div>
       </main>
       {user?.must_change_password && !pwDismissed && (
         <ChangePasswordModal onClose={dismissPwModal} />

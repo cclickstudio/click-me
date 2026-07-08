@@ -24,7 +24,7 @@ export const BZone = memo(function BZone({
 
       {candidates.length > 0 && (
         <>
-      <p className="text-xs text-[#8B95A1] mb-2">🎨 재생성 후보 (시뮬 점수는 실성과 상관 미검증·참고용)</p>
+      <p className="text-xs text-ink-tertiary mb-2">🎨 재생성 후보 (시뮬 점수는 실성과 상관 미검증·참고용)</p>
       <div className="grid grid-cols-3 gap-2 mb-3">
         {candidates.map((c) => (
           <div
@@ -32,11 +32,11 @@ export const BZone = memo(function BZone({
             className={`rounded-lg border p-2 text-center ${
               c.candidate_id === selected
                 ? "border-[#0F9D58] bg-[#0F9D58]/10"
-                : "border-[#E5E8EB] dark:border-[#2D3748]"
+                : "border-line"
             }`}
           >
-            <p className="text-[10px] text-[#8B95A1] truncate">{c.candidate_id.slice(0, 6)}</p>
-            <p className="text-sm font-bold text-[#191F28] dark:text-[#F2F4F6]">{c.sim_score?.toFixed(2) ?? "-"}</p>
+            <p className="text-[10px] text-ink-tertiary truncate">{c.candidate_id.slice(0, 6)}</p>
+            <p className="text-sm font-bold text-ink">{c.sim_score?.toFixed(2) ?? "-"}</p>
             {c.candidate_id === selected && <p className="text-[10px] text-[#0F9D58]">✓ 선택</p>}
           </div>
         ))}
@@ -45,16 +45,16 @@ export const BZone = memo(function BZone({
       )}
 
       {proposal && (
-        <div className="rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] p-3 mb-3">
+        <div className="rounded-xl border border-line p-3 mb-3">
           <div className="flex items-center justify-between">
-            <span className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]">📋 {actionLabel(proposal.action_type)}</span>
+            <span className="text-sm font-semibold text-ink">📋 {actionLabel(proposal.action_type)}</span>
             <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#FFF3E0] text-[#E5840F]">
               Tier {proposal.action_tier}
             </span>
           </div>
           {/* 예산 액션(증·감액)만 예산 변화를 보인다 — 소재·입찰·타겟은 예산 그대로라 줄을 숨김 */}
           {proposal.budget_after_krw !== proposal.budget_before_krw && (
-            <p className="text-xs text-[#8B95A1] mt-1">
+            <p className="text-xs text-ink-tertiary mt-1">
               예산 ₩{proposal.budget_before_krw.toLocaleString()} ▶ ₩{proposal.budget_after_krw.toLocaleString()}
             </p>
           )}
@@ -68,7 +68,7 @@ export const BZone = memo(function BZone({
             result.status === "failed" || result.status === "rejected" ? "border-[#E5484D]" : "border-[#0F9D58]"
           }`}
         >
-          <p className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]">
+          <p className="text-sm font-semibold text-ink">
             ⚙ 실행 결과: {result.status}
             {result.failure_reason ? ` (${result.failure_reason})` : ""}
           </p>

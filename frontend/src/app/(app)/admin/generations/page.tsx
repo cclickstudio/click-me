@@ -70,8 +70,8 @@ export default function AdminGenerationsPage() {
     <div className="px-8 py-8 max-w-5xl mx-auto">
       <div className="mb-6 flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-[#191F28] dark:text-[#F2F4F6]">제너레이터 내역</h1>
-          <p className="text-sm text-[#8B95A1] dark:text-[#6B7280] mt-1">전체 사용자 광고 생성 목록</p>
+          <h1 className="text-2xl font-bold text-ink">제너레이터 내역</h1>
+          <p className="text-sm text-ink-tertiary mt-1">전체 사용자 광고 생성 목록</p>
         </div>
         <div className="flex items-center gap-3">
           <OrgStatusFilter
@@ -86,22 +86,22 @@ export default function AdminGenerationsPage() {
         <HistoryControls value={query} onChange={setQuery} titleLabel="상품명" />
       </div>
 
-      <div className="bg-white dark:bg-[#1C2333] border border-[#E5E8EB] dark:border-[#2D3748] rounded-2xl overflow-hidden">
+      <div className="bg-card border border-line rounded-2xl overflow-hidden">
         {loading ? (
-          <div className="py-20 text-center text-sm text-[#8B95A1]">불러오는 중...</div>
+          <div className="py-20 text-center text-sm text-ink-tertiary">불러오는 중...</div>
         ) : items.length === 0 ? (
-          <div className="py-20 text-center text-sm text-[#8B95A1]">제너레이터 내역이 없습니다</div>
+          <div className="py-20 text-center text-sm text-ink-tertiary">제너레이터 내역이 없습니다</div>
         ) : (
           <table className="w-full text-sm">
             <thead>
-              <tr className="border-b border-[#F2F4F6] dark:border-[#252D3D] bg-[#F9FAFB] dark:bg-[#252D3D]">
-                <th className="text-left px-6 py-3 text-xs font-semibold text-[#8B95A1]">상품명</th>
-                <th className="text-center px-4 py-3 text-xs font-semibold text-[#8B95A1]">조직</th>
-                <th className="text-center px-4 py-3 text-xs font-semibold text-[#8B95A1]">조직 상태</th>
-                <th className="text-center px-4 py-3 text-xs font-semibold text-[#8B95A1]">프로젝트</th>
-                <th className="text-center px-4 py-3 text-xs font-semibold text-[#8B95A1]">실행자</th>
-                <th className="text-center px-4 py-3 text-xs font-semibold text-[#8B95A1]">상태</th>
-                <th className="text-right px-6 py-3 text-xs font-semibold text-[#8B95A1]">생성일</th>
+              <tr className="border-b border-line bg-surface-1">
+                <th className="text-left px-6 py-3 text-xs font-semibold text-ink-tertiary">상품명</th>
+                <th className="text-center px-4 py-3 text-xs font-semibold text-ink-tertiary">조직</th>
+                <th className="text-center px-4 py-3 text-xs font-semibold text-ink-tertiary">조직 상태</th>
+                <th className="text-center px-4 py-3 text-xs font-semibold text-ink-tertiary">프로젝트</th>
+                <th className="text-center px-4 py-3 text-xs font-semibold text-ink-tertiary">실행자</th>
+                <th className="text-center px-4 py-3 text-xs font-semibold text-ink-tertiary">상태</th>
+                <th className="text-right px-6 py-3 text-xs font-semibold text-ink-tertiary">생성일</th>
               </tr>
             </thead>
             <tbody>
@@ -109,21 +109,21 @@ export default function AdminGenerationsPage() {
                 <tr
                   key={r.id}
                   onClick={() => r.project_id && revealProjectInPanel(r.project_id)}
-                  className={`border-b border-[#F9FAFB] dark:border-[#1C2333] last:border-0 hover:bg-[#F9FAFB] dark:hover:bg-[#252D3D] transition-colors ${r.project_id ? 'cursor-pointer' : ''}`}
+                  className={`border-b border-line last:border-0 hover:bg-accent transition-colors ${r.project_id ? 'cursor-pointer' : ''}`}
                 >
-                  <td className="text-left px-6 py-3 text-[#191F28] dark:text-[#F2F4F6] font-medium">
+                  <td className="text-left px-6 py-3 text-ink font-medium">
                     {r.product_name ?? '—'}
                   </td>
-                  <td className="text-center px-4 py-3 text-[#4E5968] dark:text-[#9CA3AF]">
+                  <td className="text-center px-4 py-3 text-ink-secondary">
                     {r.org_name ?? '—'}
                   </td>
                   <td className="text-center px-4 py-3">
                     <OrgStatusDot status={r.org_status} />
                   </td>
-                  <td className="text-center px-4 py-3 text-[#4E5968] dark:text-[#9CA3AF]">
+                  <td className="text-center px-4 py-3 text-ink-secondary">
                     {r.project_name ?? '—'}
                   </td>
-                  <td className="text-center px-4 py-3 text-[#4E5968] dark:text-[#9CA3AF]">
+                  <td className="text-center px-4 py-3 text-ink-secondary">
                     {executorLabel(r)}
                   </td>
                   <td className="text-center px-4 py-3">
@@ -133,7 +133,7 @@ export default function AdminGenerationsPage() {
                       {statusLabel[r.status] ?? r.status}
                     </span>
                   </td>
-                  <td className="text-right px-6 py-3 text-[#8B95A1]">{fmt(r.created_at)}</td>
+                  <td className="text-right px-6 py-3 text-ink-tertiary">{fmt(r.created_at)}</td>
                 </tr>
               ))}
             </tbody>
@@ -141,10 +141,10 @@ export default function AdminGenerationsPage() {
         )}
         <div ref={sentinelRef} className="h-1" />
         {loadingMore && (
-          <p className="text-center text-[12px] text-[#8B95A1] py-3">더 불러오는 중…</p>
+          <p className="text-center text-[12px] text-ink-tertiary py-3">더 불러오는 중…</p>
         )}
         {!hasMore && !loading && items.length > 0 && (
-          <p className="text-center text-[12px] text-[#B0B8C1] py-3">모두 불러왔어요</p>
+          <p className="text-center text-[12px] text-ink-muted py-3">모두 불러왔어요</p>
         )}
       </div>
     </div>

@@ -30,29 +30,33 @@ export default function SignInPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#F9FAFB] dark:bg-[#0F1117] flex flex-col items-center justify-center p-4 transition-colors">
+    <div className="min-h-screen bg-surface-1 flex flex-col items-center justify-center p-4 transition-colors">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
-          <Link href="/" className="text-[#3182F6] font-bold text-2xl tracking-tight">ClickMe</Link>
-          <p className="mt-2 text-sm text-[#8B95A1] dark:text-[#6B7280]">다시 만나서 반가워요</p>
+          <Link href="/" className="inline-flex items-center justify-center gap-2 text-primary font-bold text-2xl tracking-tight">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/logo/logo-mark.png" alt="" className="h-8 w-8 rounded-md shrink-0" />
+            ClickMe
+          </Link>
+          <p className="mt-2 text-sm text-ink-tertiary">다시 만나서 반가워요</p>
         </div>
 
-        <div className="bg-white dark:bg-[#1C2333] rounded-2xl border border-[#E5E8EB] dark:border-[#2D3748] p-8 shadow-sm transition-colors">
+        <div className="bg-card rounded-2xl border border-line p-8 shadow-sm transition-colors">
           <form className="space-y-4" onSubmit={handleSubmit}>
             <div>
-              <label className="block text-sm font-medium text-[#4E5968] dark:text-[#9CA3AF] mb-1.5">아이디</label>
+              <label className="block text-sm font-medium text-ink-secondary mb-1.5">아이디</label>
               <input
                 type="text" value={loginId} onChange={(e) => setLoginId(e.target.value)} required
                 placeholder="아이디를 입력하세요"
-                className="w-full px-4 py-3 rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] text-sm text-[#191F28] dark:text-[#F2F4F6] placeholder-[#B0B8C1] dark:placeholder-[#4B5563] focus:outline-none focus:border-[#3182F6] focus:ring-2 focus:ring-[#3182F6]/10 transition-colors bg-white dark:bg-[#252D3D]"
+                className="w-full px-4 py-3 rounded-xl border border-line text-sm text-ink placeholder:text-ink-muted dark:placeholder-[#4B5563] focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-colors bg-surface-2"
               />
             </div>
             <div>
-              <label className="block text-sm font-medium text-[#4E5968] dark:text-[#9CA3AF] mb-1.5">비밀번호</label>
+              <label className="block text-sm font-medium text-ink-secondary mb-1.5">비밀번호</label>
               <input
                 type="password" value={password} onChange={(e) => setPassword(e.target.value)} required
                 placeholder="••••••••"
-                className="w-full px-4 py-3 rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] text-sm text-[#191F28] dark:text-[#F2F4F6] placeholder-[#B0B8C1] dark:placeholder-[#4B5563] focus:outline-none focus:border-[#3182F6] focus:ring-2 focus:ring-[#3182F6]/10 transition-colors bg-white dark:bg-[#252D3D]"
+                className="w-full px-4 py-3 rounded-xl border border-line text-sm text-ink placeholder:text-ink-muted dark:placeholder-[#4B5563] focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/10 transition-colors bg-surface-2"
               />
             </div>
 
@@ -62,21 +66,21 @@ export default function SignInPage() {
 
             <button
               type="submit" disabled={loading}
-              className="w-full py-3 bg-[#3182F6] text-white font-medium rounded-xl hover:bg-[#1B6EEB] disabled:opacity-60 transition-colors mt-2"
+              className="w-full py-3 bg-primary text-primary-foreground font-medium rounded-xl hover:bg-primary-hover disabled:opacity-60 transition-colors mt-2"
             >
               {loading ? '로그인 중...' : '로그인'}
             </button>
           </form>
 
-          <div className="mt-6 pt-6 border-t border-[#F2F4F6] dark:border-[#1E2A3A]">
-            <p className="text-center text-xs text-[#8B95A1] dark:text-[#6B7280]">
+          <div className="mt-6 pt-6 border-t border-line">
+            <p className="text-center text-xs text-ink-tertiary">
               계정은 관리자가 직접 발급합니다. 필요하면 담당자에게 문의하세요.
             </p>
           </div>
         </div>
 
-        <p className="text-center text-xs text-[#B0B8C1] dark:text-[#4B5563] mt-6">
-          <Link href="/" className="hover:text-[#8B95A1] transition-colors">← 메인으로 돌아가기</Link>
+        <p className="text-center text-xs text-ink-muted mt-6">
+          <Link href="/" className="hover:text-ink-tertiary transition-colors">← 메인으로 돌아가기</Link>
         </p>
       </div>
     </div>

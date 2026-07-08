@@ -59,10 +59,10 @@ export default function RemediationOptionsWidget({
           onClick={() => click(o)}
           className={`rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors ${
             selected === o.index
-              ? 'border-[#3182F6] bg-[#3182F6]/10 text-[#3182F6]'
+              ? 'border-primary bg-primary/10 text-primary'
               : selected !== null
-                ? 'border-[#E5E8EB] dark:border-[#2D3748] text-[#8B95A1] opacity-40'
-                : 'border-[#E5E8EB] dark:border-[#2D3748] text-[#4E5968] dark:text-[#9CA3AF] hover:border-[#3182F6]'
+                ? 'border-line text-ink-tertiary opacity-40'
+                : 'border-line text-ink-secondary hover:border-primary'
           }`}
         >
           {selected === o.index && '✓ '}
@@ -72,7 +72,7 @@ export default function RemediationOptionsWidget({
       <button
         type="button"
         onClick={onEtc}
-        className="rounded-lg border border-dashed border-[#E5E8EB] dark:border-[#2D3748] px-2.5 py-1.5 text-xs text-[#8B95A1]"
+        className="rounded-lg border border-dashed border-line px-2.5 py-1.5 text-xs text-ink-tertiary"
       >
         기타…
       </button>

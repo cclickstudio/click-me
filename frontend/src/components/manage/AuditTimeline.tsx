@@ -6,14 +6,14 @@ import { formatKST } from "@/lib/datetime";
 export function AuditTimeline({ events, mode }: { events: AuditEvent[]; mode: ViewMode }) {
   if (events.length === 0) return null;
   return (
-    <div className="mt-6 rounded-2xl border border-[#E5E8EB] dark:border-[#2D3748] p-4">
-      <p className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6] mb-2">
+    <div className="mt-6 rounded-2xl border border-line p-4">
+      <p className="text-sm font-semibold text-ink mb-2">
         🧾 감사 로그 <RoleTag mode={mode} role="AB" />
       </p>
       <ul className="space-y-1">
         {events.map((e) => (
-          <li key={e.event_id} className="text-xs text-[#8B95A1] flex gap-2">
-            <span className="text-[#B0B8C1]">{formatKST(e.occurred_at)}</span>
+          <li key={e.event_id} className="text-xs text-ink-tertiary flex gap-2">
+            <span className="text-ink-muted">{formatKST(e.occurred_at)}</span>
             <span className="font-mono">{e.category}</span>
           </li>
         ))}

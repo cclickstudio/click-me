@@ -47,7 +47,7 @@ const simSummary = (k: SimKpis) => {
 type IterRow = { iteration: number; quality_score: number | null };
 
 const cardCls =
-  'mt-1 w-full rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-white dark:bg-[#1C2333] p-4';
+  'mt-1 w-full rounded-xl border border-line bg-card p-4';
 
 const scoreLabel = (s: number | null | undefined) =>
   s == null ? '—' : `${Math.round(s * 100)}점`;
@@ -194,13 +194,13 @@ export default function GenLoopWidget({
   }
 
   const simBlock = simDiag && (simDiag.summary || simDiag.focus) && (
-    <div className="mt-2 rounded-lg bg-[#EEF4FF] dark:bg-[#1E3A5F] px-3 py-2 text-xs">
-      <span className="font-semibold text-[#3182F6]">🧪 소비자 반응 진단</span>
+    <div className="mt-2 rounded-lg bg-primary-subtle px-3 py-2 text-xs">
+      <span className="font-semibold text-primary">🧪 소비자 반응 진단</span>
       {simDiag.summary && (
-        <p className="text-[#4E5968] dark:text-[#9CA3AF] mt-0.5">{simDiag.summary}</p>
+        <p className="text-ink-secondary mt-0.5">{simDiag.summary}</p>
       )}
       {simDiag.focus && (
-        <p className="text-[#191F28] dark:text-[#F2F4F6] mt-0.5">
+        <p className="text-ink mt-0.5">
           최우선 개선 — <span className="font-semibold">{simDiag.focus}</span>
         </p>
       )}
@@ -212,12 +212,12 @@ export default function GenLoopWidget({
       {rows.map(r => (
         <li
           key={r.iteration}
-          className="flex items-center justify-between rounded-lg bg-[#F9FAFB] dark:bg-[#252D3D] px-3 py-1.5 text-xs"
+          className="flex items-center justify-between rounded-lg bg-surface-1 px-3 py-1.5 text-xs"
         >
-          <span className="text-[#4E5968] dark:text-[#9CA3AF]">
+          <span className="text-ink-secondary">
             {r.iteration === 0 ? '최초 생성' : `개선 ${r.iteration}회차`}
           </span>
-          <span className="font-semibold text-[#191F28] dark:text-[#F2F4F6]">
+          <span className="font-semibold text-ink">
             품질 {scoreLabel(r.quality_score)}
           </span>
         </li>
@@ -229,12 +229,12 @@ export default function GenLoopWidget({
     return (
       <div className={cardCls}>
         <div className="flex items-center gap-3">
-          <div className="w-6 h-6 border-[3px] border-[#E5E8EB] dark:border-[#2D3748] border-t-[#3182F6] dark:border-t-[#5B9DF9] rounded-full animate-spin" />
+          <div className="w-6 h-6 border-[3px] border-line border-t-primary dark:border-t-[#5B9DF9] rounded-full animate-spin" />
           <div className="flex-1">
-            <p className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]">
+            <p className="text-sm font-semibold text-ink">
               🔁 자동 개선 루프
             </p>
-            <p className="text-xs text-[#4E5968] dark:text-[#9CA3AF] mt-0.5 truncate">{statusMsg}</p>
+            <p className="text-xs text-ink-secondary mt-0.5 truncate">{statusMsg}</p>
           </div>
         </div>
         {simBlock}
@@ -246,7 +246,7 @@ export default function GenLoopWidget({
   // phase === 'done' — 새로고침 복원 등 인라인 요약(라이브 완료 시엔 gen_result 위젯이 따로 뜬다)
   return (
     <div className={cardCls}>
-      <p className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6] mb-1">
+      <p className="text-sm font-semibold text-ink mb-1">
         ✅ 자동 개선 루프 완료
         {thresholdMet != null && (
           <span
@@ -265,7 +265,7 @@ export default function GenLoopWidget({
       {finalGid && (
         <button
           onClick={() => router.push(`/generations/${finalGid}`)}
-          className="mt-3 w-full py-2 rounded-lg border border-[#3182F6]/30 text-[#3182F6] text-sm font-semibold hover:bg-[#EBF3FF] dark:hover:bg-[#1E3A5F] transition-colors"
+          className="mt-3 w-full py-2 rounded-lg border border-primary/30 text-primary text-sm font-semibold hover:bg-primary-subtle transition-colors"
         >
           최종 시안 보기 →
         </button>

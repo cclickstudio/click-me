@@ -78,7 +78,7 @@ function Bar({
   label,
   ratio,
   disp,
-  color = '#3182F6',
+  color = '#2563EB',
 }: {
   label: string;
   ratio: number;
@@ -88,16 +88,16 @@ function Bar({
   const w = Math.max(0, Math.min(1, ratio)) * 100;
   return (
     <div className='flex items-center gap-3 my-1'>
-      <span className='w-20 shrink-0 text-[11px] text-[#4E5968] dark:text-[#9CA3AF]'>
+      <span className='w-20 shrink-0 text-[11px] text-ink-secondary'>
         {label}
       </span>
-      <div className='flex-1 h-2.5 rounded-full bg-[#F2F4F6] dark:bg-[#252D3D] overflow-hidden'>
+      <div className='flex-1 h-2.5 rounded-full bg-surface-1 overflow-hidden'>
         <div
           className='h-full rounded-full'
           style={{ width: `${w}%`, background: color }}
         />
       </div>
-      <span className='w-[78px] shrink-0 text-right text-[10px] text-[#8B95A1] dark:text-[#6B7280]'>
+      <span className='w-[78px] shrink-0 text-right text-[10px] text-ink-tertiary'>
         {disp}
       </span>
     </div>
@@ -114,12 +114,12 @@ function Section({
   children: React.ReactNode;
 }) {
   return (
-    <section className='rounded-2xl border border-[#E5E8EB] dark:border-[#2D3748] bg-white dark:bg-[#1C2333] p-5'>
-      <h3 className='text-sm font-bold text-[#191F28] dark:text-[#F2F4F6] mb-1'>
+    <section className='rounded-2xl border border-line bg-card p-5'>
+      <h3 className='text-sm font-bold text-ink mb-1'>
         {title}
       </h3>
       {tip && (
-        <p className='text-[11px] leading-relaxed text-[#8B95A1] dark:text-[#6B7280] bg-[#F9FAFB] dark:bg-[#252D3D] rounded-lg px-3 py-2 mb-3'>
+        <p className='text-[11px] leading-relaxed text-ink-tertiary bg-surface-1 rounded-lg px-3 py-2 mb-3'>
           {tip}
         </p>
       )}
@@ -174,13 +174,13 @@ function ConfidenceStrip({ c }: { c: ConfidenceBadge }) {
         ? { t: 'text-[#D97706] dark:text-[#F4A100]', label: '신뢰 보통' }
         : { t: 'text-[#EF4444] dark:text-[#FCA5A5]', label: '신뢰 낮음' };
   return (
-    <div className='rounded-xl bg-[#F9FAFB] dark:bg-[#252D3D] border border-[#E5E8EB] dark:border-[#2D3748] px-4 py-3'>
+    <div className='rounded-xl bg-surface-1 border border-line px-4 py-3'>
       <div className='flex flex-wrap items-center gap-2 text-xs'>
         <span className={`font-bold ${tone.t}`}>● {tone.label}</span>
-        <span className='text-[#8B95A1] dark:text-[#6B7280]'>
+        <span className='text-ink-tertiary'>
           유효표본 {c.effective_n} / 총 {c.total_n}명
         </span>
-        <span className='text-[#8B95A1] dark:text-[#6B7280]'>
+        <span className='text-ink-tertiary'>
           신뢰구간 폭 {pct(c.ci_width)}
         </span>
       </div>
@@ -188,7 +188,7 @@ function ConfidenceStrip({ c }: { c: ConfidenceBadge }) {
         {c.warnings.map((w, i) => (
           <li
             key={i}
-            className='text-[11px] text-[#8B95A1] dark:text-[#6B7280] leading-relaxed'>
+            className='text-[11px] text-ink-tertiary leading-relaxed'>
             · {w}
           </li>
         ))}
@@ -210,23 +210,23 @@ function ObjectiveFitCard({ f }: { f: ObjectiveFit }) {
       title='캠페인 목표 달성 가능성'
       tip='결정권자가 가장 먼저 보는 판정 — 이 광고가 설정한 목표에 얼마나 부합하는지 시뮬 신호로 가늠한 상대 지수입니다(실측 아님, exploratory).'>
       <div className='flex items-start justify-between gap-4 flex-wrap'>
-        <p className='text-sm text-[#4E5968] dark:text-[#9CA3AF]'>
+        <p className='text-sm text-ink-secondary'>
           목표: {f.objective}
         </p>
         <div className='flex items-baseline gap-2'>
           <span className={`text-3xl font-bold ${tone.text}`}>{f.grade}</span>
-          <span className='text-sm text-[#8B95A1] dark:text-[#6B7280]'>
+          <span className='text-sm text-ink-tertiary'>
             지수 {f.score}/100
           </span>
         </div>
       </div>
-      <div className='mt-3 h-2 rounded-full bg-[#F2F4F6] dark:bg-[#252D3D] overflow-hidden'>
+      <div className='mt-3 h-2 rounded-full bg-surface-1 overflow-hidden'>
         <div
           className={`h-full rounded-full ${tone.bar}`}
           style={{ width: `${f.score}%` }}
         />
       </div>
-      <p className='text-sm text-[#4E5968] dark:text-[#9CA3AF] mt-3'>
+      <p className='text-sm text-ink-secondary mt-3'>
         {f.rationale}
       </p>
       {f.contributions.length > 0 && (
@@ -253,10 +253,10 @@ function ObjectiveFitCard({ f }: { f: ObjectiveFit }) {
 
 // 도넛 세그먼트 구분색(순환) — 인원 비중을 색으로 구분(클릭의향은 범례 텍스트로). PDF _DONUT_PALETTE와 동일.
 const DONUT_PALETTE = [
-  '#3182F6',
+  '#2563EB',
   '#F59E0B',
   '#16A34A',
-  '#8B5CF6',
+  '#6366F1',
   '#EC4899',
   '#14B8A6',
   '#EF4444',
@@ -292,12 +292,12 @@ function SegmentDonut({ segments }: { segments: SegmentCell[] }) {
       <div
         className='shrink-0 w-[112px] h-[112px] rounded-full grid place-items-center'
         style={{ background: `conic-gradient(${stops.join(',')})` }}>
-        <div className='w-[64px] h-[64px] rounded-full bg-white dark:bg-[#1C2333] grid place-items-center text-center'>
+        <div className='w-[64px] h-[64px] rounded-full bg-card grid place-items-center text-center'>
           <div>
-            <div className='text-[15px] font-extrabold text-[#191F28] dark:text-[#F2F4F6]'>
+            <div className='text-[15px] font-extrabold text-ink'>
               {total}
             </div>
-            <div className='text-[8px] text-[#8B95A1] dark:text-[#6B7280]'>명</div>
+            <div className='text-[8px] text-ink-tertiary'>명</div>
           </div>
         </div>
       </div>
@@ -308,10 +308,10 @@ function SegmentDonut({ segments }: { segments: SegmentCell[] }) {
               className='w-2 h-2 rounded-full shrink-0'
               style={{ background: l.col }}
             />
-            <span className='text-[#4E5968] dark:text-[#9CA3AF] truncate'>
+            <span className='text-ink-secondary truncate'>
               {l.name}
             </span>
-            <span className='ml-auto text-[#8B95A1] dark:text-[#6B7280] shrink-0'>
+            <span className='ml-auto text-ink-tertiary shrink-0'>
               {l.n}명 · 클릭 {pct(l.cir)}
             </span>
           </div>
@@ -344,7 +344,7 @@ function SegmentHeatmap({ segments }: { segments: SegmentCell[] }) {
       <div className='overflow-x-auto'>
         <table className='w-full text-xs border-collapse'>
           <thead>
-            <tr className='text-[#8B95A1] dark:text-[#6B7280]'>
+            <tr className='text-ink-tertiary'>
               <th className='text-left font-medium py-1.5 pr-2'>세그먼트</th>
               <th className='text-right font-medium px-2'>인원</th>
               <th className='text-right font-medium px-2'>클릭 의향</th>
@@ -357,16 +357,16 @@ function SegmentHeatmap({ segments }: { segments: SegmentCell[] }) {
             {segments.map(s => (
               <tr
                 key={`${s.age_band}-${s.gender}`}
-                className='border-t border-[#F2F4F6] dark:border-[#252D3D]'>
-                <td className='py-1.5 pr-2 text-[#191F28] dark:text-[#F2F4F6]'>
+                className='border-t border-line'>
+                <td className='py-1.5 pr-2 text-ink'>
                   {s.age_band} {GENDER_KO[s.gender] ?? s.gender}
                   {s.low_confidence && (
-                    <span className='ml-1 text-[10px] text-[#B0B8C1] dark:text-[#4B5563]'>
+                    <span className='ml-1 text-[10px] text-ink-muted'>
                       ⓘ얇음
                     </span>
                   )}
                 </td>
-                <td className='text-right px-2 text-[#8B95A1] dark:text-[#6B7280]'>
+                <td className='text-right px-2 text-ink-tertiary'>
                   {s.n}
                 </td>
                 <td className='text-right px-2'>
@@ -375,13 +375,13 @@ function SegmentHeatmap({ segments }: { segments: SegmentCell[] }) {
                     {pct(s.click_intent_rate)}
                   </span>
                 </td>
-                <td className='text-right px-2 text-[#4E5968] dark:text-[#9CA3AF]'>
+                <td className='text-right px-2 text-ink-secondary'>
                   {s.purchase_intent.toFixed(1)}
                 </td>
-                <td className='text-right px-2 text-[#4E5968] dark:text-[#9CA3AF]'>
+                <td className='text-right px-2 text-ink-secondary'>
                   {s.trust_avg.toFixed(1)}
                 </td>
-                <td className='text-right pl-2 text-[#4E5968] dark:text-[#9CA3AF]'>
+                <td className='text-right pl-2 text-ink-secondary'>
                   {pct(s.rejection_rate)}
                 </td>
               </tr>
@@ -390,7 +390,7 @@ function SegmentHeatmap({ segments }: { segments: SegmentCell[] }) {
         </table>
       </div>
       {best && worst && best !== worst && (
-        <p className='text-[11px] text-[#4E5968] dark:text-[#9CA3AF] mt-3'>
+        <p className='text-[11px] text-ink-secondary mt-3'>
           실질 타깃은{' '}
           <b className='text-[#16A34A] dark:text-[#4ADE80]'>
             {best.age_band} {GENDER_KO[best.gender] ?? best.gender}
@@ -413,7 +413,7 @@ function MessageCard({ m }: { m: NonNullable<ReportView['message_reception']> })
       title='메시지가 의도대로 받아들여졌나'
       tip='광고가 던진 메시지(의도)가 소비자에게 어떻게 닿았는지 — 과장·식상·무관심 같은 저항 표현 비율로 가늠합니다.'>
       {m.intended && (
-        <p className='text-sm text-[#191F28] dark:text-[#F2F4F6] mb-2'>
+        <p className='text-sm text-ink mb-2'>
           의도 메시지:{' '}
           <span className='font-medium'>“{m.intended}”</span>
         </p>
@@ -425,7 +425,7 @@ function MessageCard({ m }: { m: NonNullable<ReportView['message_reception']> })
         color={m.resistance_rate >= 0.3 ? '#EF4444' : '#64748B'}
       />
       {Object.keys(m.resistance_terms).length > 0 && (
-        <p className='text-[11px] text-[#8B95A1] dark:text-[#6B7280] mt-2'>
+        <p className='text-[11px] text-ink-tertiary mt-2'>
           저항 표현:{' '}
           {Object.entries(m.resistance_terms)
             .map(([k, v]) => `${k}(${v})`)
@@ -437,7 +437,7 @@ function MessageCard({ m }: { m: NonNullable<ReportView['message_reception']> })
           {m.resisted_quotes.slice(0, 3).map((q, i) => (
             <li
               key={i}
-              className='text-[11px] text-[#4E5968] dark:text-[#9CA3AF] bg-[#F9FAFB] dark:bg-[#252D3D] rounded-lg px-3 py-1.5'>
+              className='text-[11px] text-ink-secondary bg-surface-1 rounded-lg px-3 py-1.5'>
               “{q}”
             </li>
           ))}
@@ -453,18 +453,18 @@ function DebateDigestItem({ d, index }: { d: DebateDigest; index?: number }) {
   const consensus = d.consensus ?? [];
   const dissent = d.dissent ?? [];
   return (
-    <div className='rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-[#F9FAFB] dark:bg-[#252D3D] p-4'>
+    <div className='rounded-xl border border-line bg-surface-1 p-4'>
       <div className='flex items-start gap-2 flex-wrap'>
         {typeof index === 'number' && (
-          <span className='shrink-0 mt-0.5 w-5 h-5 rounded-full bg-[#3182F6] text-white text-[11px] font-bold flex items-center justify-center'>
+          <span className='shrink-0 mt-0.5 w-5 h-5 rounded-full bg-primary text-primary-foreground text-[11px] font-bold flex items-center justify-center'>
             {index + 1}
           </span>
         )}
-        <p className='min-w-0 flex-1 text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6] leading-snug'>
+        <p className='min-w-0 flex-1 text-sm font-semibold text-ink leading-snug'>
           {d.topic_headline}
         </p>
         {d.stop_reason && (
-          <span className='shrink-0 px-2 py-0.5 rounded-full bg-white dark:bg-[#1C2333] text-[10px] text-[#8B95A1] dark:text-[#6B7280]'>
+          <span className='shrink-0 px-2 py-0.5 rounded-full bg-card text-[10px] text-ink-tertiary'>
             {STOP_LABEL[d.stop_reason] ?? d.stop_reason}
           </span>
         )}
@@ -475,15 +475,15 @@ function DebateDigestItem({ d, index }: { d: DebateDigest; index?: number }) {
           {quotes.map((q, i) => (
             <li
               key={i}
-              className='text-[12px] text-[#4E5968] dark:text-[#9CA3AF] bg-white dark:bg-[#1C2333] rounded-lg px-3 py-2 leading-relaxed'>
+              className='text-[12px] text-ink-secondary bg-card rounded-lg px-3 py-2 leading-relaxed'>
               “{q.text}”
               {q.reason && (
-                <span className='block mt-1 text-[10px] text-[#8B95A1] dark:text-[#6B7280] leading-snug'>
+                <span className='block mt-1 text-[10px] text-ink-tertiary leading-snug'>
                   ↳ 무엇에/왜 — {q.reason}
                 </span>
               )}
               {q.persona_name && (
-                <span className='block mt-0.5 text-[10px] text-[#B0B8C1] dark:text-[#4B5563]'>
+                <span className='block mt-0.5 text-[10px] text-ink-muted'>
                   — {q.persona_name}
                   {q.role ? ` · ${q.role}` : ''}
                 </span>
@@ -504,7 +504,7 @@ function DebateDigestItem({ d, index }: { d: DebateDigest; index?: number }) {
                 {consensus.map((c, i) => (
                   <li
                     key={i}
-                    className='text-[11px] text-[#4E5968] dark:text-[#9CA3AF] leading-relaxed'>
+                    className='text-[11px] text-ink-secondary leading-relaxed'>
                     · {c}
                   </li>
                 ))}
@@ -520,7 +520,7 @@ function DebateDigestItem({ d, index }: { d: DebateDigest; index?: number }) {
                 {dissent.map((c, i) => (
                   <li
                     key={i}
-                    className='text-[11px] text-[#4E5968] dark:text-[#9CA3AF] leading-relaxed'>
+                    className='text-[11px] text-ink-secondary leading-relaxed'>
                     · {c}
                   </li>
                 ))}
@@ -536,7 +536,7 @@ function DebateDigestItem({ d, index }: { d: DebateDigest; index?: number }) {
 /* ─── 토론 참가자 입장 라벨(stance) — PDF _STANCE와 동일 의미 ─── */
 const STANCE_LABEL: Record<DebateStance, { label: string; cls: string }> = {
   positive: { label: '긍정', cls: 'text-[#00A661] bg-[#E7F7EF] dark:bg-[#143C2C]' },
-  neutral: { label: '중립', cls: 'text-[#8B95A1] bg-[#F2F4F6] dark:bg-[#252D3D]' },
+  neutral: { label: '중립', cls: 'text-ink-tertiary bg-surface-1' },
   negative: { label: '부정', cls: 'text-[#F04452] bg-[#FDECEE] dark:bg-[#3B1F23]' },
 };
 
@@ -562,17 +562,17 @@ function ParticipantRoster({
           return (
             <li
               key={p.persona_id}
-              className='flex items-center gap-2 flex-wrap text-[12px] bg-[#F9FAFB] dark:bg-[#252D3D] rounded-lg px-3 py-2'>
-              <span className='font-semibold text-[#191F28] dark:text-[#F2F4F6]'>
+              className='flex items-center gap-2 flex-wrap text-[12px] bg-surface-1 rounded-lg px-3 py-2'>
+              <span className='font-semibold text-ink'>
                 {p.persona_name}
               </span>
               {p.persona_profile && (
-                <span className='min-w-0 text-[#4E5968] dark:text-[#9CA3AF]'>
+                <span className='min-w-0 text-ink-secondary'>
                   · {p.persona_profile}
                 </span>
               )}
               {p.role && (
-                <span className='shrink-0 px-1.5 py-0.5 rounded bg-white dark:bg-[#1C2333] text-[10px] text-[#8B95A1] dark:text-[#6B7280]'>
+                <span className='shrink-0 px-1.5 py-0.5 rounded bg-card text-[10px] text-ink-tertiary'>
                   {p.role}
                 </span>
               )}
@@ -660,7 +660,7 @@ export function SimulationReportView({ rv }: { rv: ReportView }) {
     1: '#EF4444',
     2: '#F59E0B',
     3: '#64748B',
-    4: '#3182F6',
+    4: '#2563EB',
     5: '#16A34A',
   };
   const piTotal =
@@ -673,10 +673,10 @@ export function SimulationReportView({ rv }: { rv: ReportView }) {
       {/* 헤더 + PDF */}
       <div className='flex items-center justify-between gap-3 flex-wrap'>
         <div>
-          <h2 className='text-base font-bold text-[#191F28] dark:text-[#F2F4F6]'>
+          <h2 className='text-base font-bold text-ink'>
             최종 결과 리포트
           </h2>
-          <p className='text-xs text-[#8B95A1] dark:text-[#6B7280] mt-0.5'>
+          <p className='text-xs text-ink-tertiary mt-0.5'>
             AI 가상 소비자 {totalN}명의 반응을 종합한 단일 리포트입니다 (화면 =
             PDF 동일).
           </p>
@@ -685,7 +685,7 @@ export function SimulationReportView({ rv }: { rv: ReportView }) {
           href={pdfUrl}
           target='_blank'
           rel='noopener noreferrer'
-          className='shrink-0 inline-flex items-center gap-1.5 px-4 py-2 bg-[#3182F6] hover:bg-[#1B6EEB] text-white rounded-lg text-sm font-semibold transition-colors'>
+          className='shrink-0 inline-flex items-center gap-1.5 px-4 py-2 bg-primary hover:bg-primary-hover text-white rounded-lg text-sm font-semibold transition-colors'>
           <svg className='w-4 h-4' fill='currentColor' viewBox='0 0 24 24'>
             <path d='M5 20h14v-2H5v2zM19 9h-4V3H9v6H5l7 7 7-7z' />
           </svg>
@@ -694,18 +694,18 @@ export function SimulationReportView({ rv }: { rv: ReportView }) {
       </div>
 
       {/* 종합 판정 */}
-      <div className='rounded-2xl border border-[#E5E8EB] dark:border-[#2D3748] bg-white dark:bg-[#1C2333] p-5 flex items-center gap-5 flex-wrap'>
+      <div className='rounded-2xl border border-line bg-card p-5 flex items-center gap-5 flex-wrap'>
         <div className='shrink-0 text-center'>
           <div
             className='w-[88px] h-[88px] rounded-full grid place-items-center'
             style={{
               background: `conic-gradient(${oc} ${(overall / 100) * 360}deg, #E5E8EB 0)`,
             }}>
-            <div className='w-[64px] h-[64px] rounded-full bg-white dark:bg-[#1C2333] grid place-items-center text-2xl font-extrabold text-[#191F28] dark:text-[#F2F4F6]'>
+            <div className='w-[64px] h-[64px] rounded-full bg-card grid place-items-center text-2xl font-extrabold text-ink'>
               {overall}
             </div>
           </div>
-          <p className='text-[10px] text-[#8B95A1] dark:text-[#6B7280] mt-1'>
+          <p className='text-[10px] text-ink-tertiary mt-1'>
             종합 점수 / 100
           </p>
         </div>
@@ -717,20 +717,20 @@ export function SimulationReportView({ rv }: { rv: ReportView }) {
           </span>
           {/* 전문가용 진단(headline) — verdict 바로 아래 */}
           {(rep.headline || rep.plain_summary) && (
-            <p className='text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6] mt-2 leading-snug'>
+            <p className='text-sm font-semibold text-ink mt-2 leading-snug'>
               {rep.headline || rep.plain_summary}
             </p>
           )}
-          <p className='text-xs text-[#8B95A1] dark:text-[#6B7280] mt-1 leading-relaxed'>
+          <p className='text-xs text-ink-tertiary mt-1 leading-relaxed'>
             {vDesc}
           </p>
           {/* 비전문가용 '한눈에 보는 결론' — 가장 마지막(쉬운 말 요약) */}
           {rep.plain_summary && rep.plain_summary !== rep.headline && (
-            <div className='mt-3 pt-3 border-t border-[#F2F4F6] dark:border-[#252D3D]'>
-              <p className='text-[11px] font-bold text-[#3182F6] mb-1'>
+            <div className='mt-3 pt-3 border-t border-line'>
+              <p className='text-[11px] font-bold text-primary mb-1'>
                 🔎 한눈에 보는 결론
               </p>
-              <p className='text-xs text-[#4E5968] dark:text-[#9CA3AF] leading-relaxed'>
+              <p className='text-xs text-ink-secondary leading-relaxed'>
                 {rep.plain_summary}
               </p>
             </div>
@@ -752,7 +752,7 @@ export function SimulationReportView({ rv }: { rv: ReportView }) {
               label: '클릭 의향',
               value: pct(k.click_intent_rate),
               sub: `CI ${pct(k.ci_low)}~${pct(k.ci_high)}`,
-              color: '#3182F6',
+              color: '#2563EB',
             },
             {
               label: '구매의도 (5점)',
@@ -775,9 +775,9 @@ export function SimulationReportView({ rv }: { rv: ReportView }) {
           ].map(c => (
             <div
               key={c.label}
-              className='rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] p-3 border-t-4'
+              className='rounded-xl border border-line p-3 border-t-4'
               style={{ borderTopColor: c.color }}>
-              <p className='text-[11px] font-bold text-[#8B95A1] dark:text-[#6B7280]'>
+              <p className='text-[11px] font-bold text-ink-tertiary'>
                 {c.label}
               </p>
               <p
@@ -785,7 +785,7 @@ export function SimulationReportView({ rv }: { rv: ReportView }) {
                 style={{ color: c.color }}>
                 {c.value}
               </p>
-              <p className='text-[10px] text-[#B0B8C1] dark:text-[#4B5563] mt-0.5'>
+              <p className='text-[10px] text-ink-muted mt-0.5'>
                 {c.sub}
               </p>
             </div>
@@ -875,7 +875,7 @@ export function SimulationReportView({ rv }: { rv: ReportView }) {
                 )
               )
             ) : (
-              <p className='text-[11px] text-[#B0B8C1] dark:text-[#4B5563]'>
+              <p className='text-[11px] text-ink-muted'>
                 거부 없음
               </p>
             )}
@@ -900,7 +900,7 @@ export function SimulationReportView({ rv }: { rv: ReportView }) {
               color='#64748B'
             />
             {Object.keys(rep.brand_recognition.perceived_brands).length > 0 && (
-              <p className='mt-2 text-[10px] text-[#8B95A1] dark:text-[#6B7280]'>
+              <p className='mt-2 text-[10px] text-ink-tertiary'>
                 떠올린 브랜드 —{' '}
                 {Object.entries(rep.brand_recognition.perceived_brands)
                   .map(([key, v]) => `${key}(${v}명)`)
@@ -939,20 +939,20 @@ export function SimulationReportView({ rv }: { rv: ReportView }) {
               .map(([key, g]) => (
                 <div
                   key={key}
-                  className='rounded-xl bg-[#F9FAFB] dark:bg-[#252D3D] p-3'>
-                  <p className='text-xs font-bold text-[#191F28] dark:text-[#F2F4F6]'>
+                  className='rounded-xl bg-surface-1 p-3'>
+                  <p className='text-xs font-bold text-ink'>
                     {GROUP_KO[key] ?? key}{' '}
-                    <span className='text-[#8B95A1] dark:text-[#6B7280] font-normal'>
+                    <span className='text-ink-tertiary font-normal'>
                       {g.count}명
                     </span>
                   </p>
-                  <p className='text-[11px] text-[#4E5968] dark:text-[#9CA3AF] mt-1'>
+                  <p className='text-[11px] text-ink-secondary mt-1'>
                     평균 {g.avg_age}세
                     {g.top_emotion &&
                       ` · ${EMOTION_KO[g.top_emotion] ?? g.top_emotion}`}
                   </p>
                   {Object.keys(g.gender_ratio).length > 0 && (
-                    <p className='text-[10px] text-[#8B95A1] dark:text-[#6B7280] mt-0.5'>
+                    <p className='text-[10px] text-ink-tertiary mt-0.5'>
                       {Object.entries(g.gender_ratio)
                         .map(([gn, r]) => `${GENDER_KO[gn] ?? gn} ${pct(r)}`)
                         .join(' · ')}
@@ -973,21 +973,21 @@ export function SimulationReportView({ rv }: { rv: ReportView }) {
             {rep.ranked_actions.map(a => (
               <div
                 key={a.rank}
-                className='flex gap-3 p-3 rounded-xl bg-[#F9FAFB] dark:bg-[#252D3D]'>
-                <span className='shrink-0 w-6 h-6 rounded-full bg-[#3182F6] text-white text-xs font-bold flex items-center justify-center'>
+                className='flex gap-3 p-3 rounded-xl bg-surface-1'>
+                <span className='shrink-0 w-6 h-6 rounded-full bg-primary text-primary-foreground text-xs font-bold flex items-center justify-center'>
                   {a.rank}
                 </span>
                 <div className='min-w-0'>
-                  <p className='text-sm font-medium text-[#191F28] dark:text-[#F2F4F6]'>
+                  <p className='text-sm font-medium text-ink'>
                     {a.action}
                   </p>
                   {a.expected_effect && (
-                    <p className='text-xs text-[#8B95A1] dark:text-[#6B7280] mt-0.5'>
+                    <p className='text-xs text-ink-tertiary mt-0.5'>
                       기대효과: {a.expected_effect}
                     </p>
                   )}
                   {a.supporting_personas.length > 0 && (
-                    <p className='text-[11px] text-[#B0B8C1] dark:text-[#4B5563] mt-0.5'>
+                    <p className='text-[11px] text-ink-muted mt-0.5'>
                       뒷받침: {a.supporting_personas.join(', ')}
                     </p>
                   )}
@@ -1001,7 +1001,7 @@ export function SimulationReportView({ rv }: { rv: ReportView }) {
       {/* 페르소나 토론 요약 — debates(합산) 또는 단일 debate(하위호환) */}
       <DebateSection rv={rv} />
 
-      <p className='text-[11px] text-[#B0B8C1] dark:text-[#4B5563] leading-relaxed border-t border-[#E5E8EB] dark:border-[#2D3748] pt-4'>
+      <p className='text-[11px] text-ink-muted leading-relaxed border-t border-line pt-4'>
         이 리포트는 실제 사람이 아니라 한국 인구·성격·미디어 통계로 만든 AI 가상
         소비자의 반응을 모은 예측 참고 자료입니다. 클릭 의향률은 실측 CTR이
         아니며(calibration 전), 수치는 방향과 범위로 읽어 주세요.

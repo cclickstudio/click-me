@@ -13,7 +13,7 @@ import {
 } from 'recharts';
 import type { DemographicMetrics } from './types';
 
-const MALE = '#3182F6';
+const MALE = '#2563EB';
 const FEMALE = '#F2649B';
 // Meta 연령 버킷 정렬 순서(어린 → 많은 나이). 미등록 라벨은 뒤로.
 const AGE_ORDER = ['13-17', '18-24', '25-34', '35-44', '45-54', '55-64', '65+'];

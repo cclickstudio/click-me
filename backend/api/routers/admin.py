@@ -2,7 +2,7 @@
 
 import re
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
@@ -13,7 +13,7 @@ from api.routers.projects import _purge_project
 from core import cognito_admin
 from core.auth import require_admin
 from core.db import get_db
-from core.models import Organization, OrganizationMember, User
+from core.models import Inquiry, Organization, OrganizationMember, User
 
 router = APIRouter()
 
@@ -827,4 +827,105 @@ async def list_chats(
             created_at=r.created_at,
         )
         for r in rows.mappings()
+    ]
+
+
+# ── 고객 문의 (ADMIN 조회·해결) — append-only ──────────────────────────
+
+
+class InquiryOut(BaseModel):
+    id: str
+    title: str
+    content: str
+    contact_email: str | None
+    is_resolved: bool
+    created_at: datetime
+    resolved_at: datetime | None
+
+
+@router.get("/inquiries")
+async def list_inquiries(
+    _: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """전체 문의 목록(최신순). 프론트가 상태 탭으로 필터."""
+    rows = (await db.execute(select(Inquiry).order_by(Inquiry.created_at.desc()))).scalars().all()
+    return {
+        "inquiries": [
+            InquiryOut(
+                id=str(r.id),
+                title=r.title,
+                content=r.content,
+                contact_email=r.contact_email,
+                is_resolved=r.is_resolved,
+                created_at=r.created_at,
+                resolved_at=r.resolved_at,
+            )
+            for r in rows
+        ]
+    }
+
+
+@router.patch("/inquiries/{inquiry_id}/resolve")
+async def resolve_inquiry(
+    inquiry_id: str,
+    resolved: bool = True,
+    _: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """문의 해결 상태 토글."""
+    try:
+        pk = uuid.UUID(inquiry_id)
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail="문의를 찾을 수 없습니다.") from e
+    row = await db.get(Inquiry, pk)
+    if row is None:
+        raise HTTPException(status_code=404, detail="문의를 찾을 수 없습니다.")
+    row.is_resolved = resolved
+    row.resolved_at = datetime.now(UTC) if resolved else None
+    await db.commit()
+    return {"ok": True, "is_resolved": resolved}
+
+
+# ── 어드민 패널 전체 프로젝트 트리 — 선택 기업(X-Org-Id) 스코프와 무관하게 전 기업 반환 ──
+
+
+class AdminProjectRow(BaseModel):
+    id: str
+    name: str
+    organization_name: str | None
+    team_id: str | None
+    team_name: str | None
+
+
+@router.get("/projects", response_model=list[AdminProjectRow])
+async def list_all_projects(
+    _: User = Depends(require_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """전 기업 프로젝트(어드민 패널 트리용).
+
+    공용 GET /api/projects 는 어드민 선택 기업(X-Org-Id)으로 스코프되어 다른 기업 프로젝트가
+    빠진다. 어드민 패널은 모든 기업을 한 화면에 보여줘야 하므로 스코프 없이 전체를 반환한다.
+    """
+    rows = await db.execute(
+        text("""
+            SELECT p.id, p.name, p.team_id,
+                   o.name AS organization_name, t.name AS team_name
+            FROM projects p
+            LEFT JOIN organizations o ON o.id = p.organization_id
+            LEFT JOIN teams t ON t.id = p.team_id
+            WHERE p.status != 'DELETED' AND p.deleted_at IS NULL
+            ORDER BY o.name NULLS LAST, p.created_at DESC
+        """)
+    )
+    return [
+        AdminProjectRow(
+            id=str(r.id),
+            name=r.name,
+            organization_name=r.organization_name,
+            team_id=str(r.team_id) if r.team_id else None,
+            team_name=r.team_name,
+        )
+        for r in rows
     ]

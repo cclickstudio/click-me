@@ -176,22 +176,22 @@ export default function ChatBudgetProposalCard({ action }: { action: BudgetActio
     const pending = result.status === 'pending_review';
     const ok = result.status === 'success' || pending;
     return (
-      <div className="mt-1 rounded-2xl border border-[#E5E8EB] dark:border-[#2D3748] p-4 max-w-md">
-        <p className={`font-bold ${ok ? 'text-[#191F28] dark:text-[#F2F4F6]' : 'text-red-500'}`}>
+      <div className="mt-1 rounded-2xl border border-line p-4 max-w-md">
+        <p className={`font-bold ${ok ? 'text-ink' : 'text-red-500'}`}>
           {pending ? '검토 중' : ok ? '✓ 예산을 변경했어요' : '예산 변경 실패'}
         </p>
-        {pending && <p className="mt-1 text-sm text-[#8B95A1]">Meta 검토가 진행 중이에요.</p>}
+        {pending && <p className="mt-1 text-sm text-ink-tertiary">Meta 검토가 진행 중이에요.</p>}
         {!ok && (
-          <p className="mt-1 text-sm text-[#8B95A1]">
+          <p className="mt-1 text-sm text-ink-tertiary">
             {error ?? `사유 ${result.failure_reason ?? '알 수 없음'}`}
           </p>
         )}
         {ok && result.approval_id && (
-          <p className="mt-1 text-[11px] text-[#B0B8C1]">승인 ID {result.approval_id}</p>
+          <p className="mt-1 text-[11px] text-ink-muted">승인 ID {result.approval_id}</p>
         )}
         <Link
           href="/manage/campaigns"
-          className="mt-3 inline-block px-3 py-1.5 bg-[#3182F6] text-white text-xs font-medium rounded-lg hover:bg-[#1B6EEB]"
+          className="mt-3 inline-block px-3 py-1.5 bg-primary text-primary-foreground text-xs font-medium rounded-lg hover:bg-primary-hover"
         >
           대시보드로
         </Link>
@@ -200,8 +200,8 @@ export default function ChatBudgetProposalCard({ action }: { action: BudgetActio
   }
 
   return (
-    <div className="mt-1 rounded-2xl border border-[#E5E8EB] dark:border-[#2D3748] p-4 max-w-md">
-      <p className="font-bold text-[#191F28] dark:text-[#F2F4F6] mb-2">
+    <div className="mt-1 rounded-2xl border border-line p-4 max-w-md">
+      <p className="font-bold text-ink mb-2">
         예산 {isIncrease ? '증액' : '감액'}
       </p>
 
@@ -213,11 +213,11 @@ export default function ChatBudgetProposalCard({ action }: { action: BudgetActio
 
       {!resolvedCampaign && !proposal ? (
         <label className="mb-2 block">
-          <span className="text-xs text-[#8B95A1]">대상 캠페인</span>
+          <span className="text-xs text-ink-tertiary">대상 캠페인</span>
           <select
             value={campaignId}
             onChange={(e) => onSelectCampaign(e.target.value)}
-            className="mt-1 w-full rounded-lg border border-[#E5E8EB] dark:border-[#2D3748] bg-transparent px-3 py-2 text-sm"
+            className="mt-1 w-full rounded-lg border border-line bg-transparent px-3 py-2 text-sm"
           >
             <option value="">선택하세요</option>
             {picker.map((c) => (
@@ -227,41 +227,41 @@ export default function ChatBudgetProposalCard({ action }: { action: BudgetActio
             ))}
           </select>
           {loaded && picker.length === 0 && (
-            <span className="mt-1 block text-xs text-[#8B95A1]">불러올 캠페인이 없어요.</span>
+            <span className="mt-1 block text-xs text-ink-tertiary">불러올 캠페인이 없어요.</span>
           )}
         </label>
       ) : (
         resolvedCampaign && (
-          <div className="mb-2 text-sm text-[#4E5968] dark:text-[#9CA3AF]">
-            <p className="font-medium text-[#191F28] dark:text-[#F2F4F6]">
+          <div className="mb-2 text-sm text-ink-secondary">
+            <p className="font-medium text-ink">
               {resolvedCampaign.name}
             </p>
-            <p className="text-xs text-[#8B95A1]">상태 {resolvedCampaign.state}</p>
+            <p className="text-xs text-ink-tertiary">상태 {resolvedCampaign.state}</p>
           </div>
         )
       )}
 
       {needsManualTarget && (
         <label className="mb-2 block">
-          <span className="text-xs text-[#8B95A1]">목표 일 예산(원)</span>
+          <span className="text-xs text-ink-tertiary">목표 일 예산(원)</span>
           <input
             type="number"
             min={MIN_DAILY_BUDGET_KRW}
             value={manualTarget ?? ''}
             onChange={(e) => setManualTarget(e.target.value === '' ? null : Number(e.target.value))}
             placeholder="예: 50000"
-            className="mt-1 w-full rounded-lg border border-[#E5E8EB] dark:border-[#2D3748] bg-transparent px-3 py-2 text-sm"
+            className="mt-1 w-full rounded-lg border border-line bg-transparent px-3 py-2 text-sm"
           />
         </label>
       )}
 
       {showBefore != null && showTarget != null ? (
-        <div className="mb-2 text-sm text-[#4E5968] dark:text-[#9CA3AF]">
+        <div className="mb-2 text-sm text-ink-secondary">
           <p>
             일 예산 <b>{showBefore.toLocaleString()}원</b> →{' '}
-            <b className="text-[#3182F6]">{showTarget.toLocaleString()}원</b>
+            <b className="text-primary">{showTarget.toLocaleString()}원</b>
           </p>
-          <span className="block text-[11px] text-[#8B95A1] mt-0.5">
+          <span className="block text-[11px] text-ink-tertiary mt-0.5">
             7일 기준 예상 최대 지출 {((showTarget ?? 0) * 7).toLocaleString()}원
           </span>
           {isIncrease && (
@@ -270,20 +270,20 @@ export default function ChatBudgetProposalCard({ action }: { action: BudgetActio
             </span>
           )}
           {drift && (
-            <span className="block text-[11px] text-[#8B95A1] mt-0.5">
+            <span className="block text-[11px] text-ink-tertiary mt-0.5">
               현재 예산이 갱신됐어요.
             </span>
           )}
         </div>
       ) : (
-        <p className="text-xs text-[#8B95A1] mb-2">캠페인과 목표 예산을 확인할 수 없어요.</p>
+        <p className="text-xs text-ink-tertiary mb-2">캠페인과 목표 예산을 확인할 수 없어요.</p>
       )}
 
       {!proposal ? (
         <button
           onClick={review}
           disabled={busy || !resolvedCampaign || target == null}
-          className="px-4 py-2 bg-[#3182F6] text-white text-sm font-medium rounded-lg hover:bg-[#1B6EEB] disabled:opacity-40"
+          className="px-4 py-2 bg-primary text-primary-foreground text-sm font-medium rounded-lg hover:bg-primary-hover disabled:opacity-40"
         >
           {busy ? '준비 중…' : '검토·승인'}
         </button>
@@ -292,14 +292,14 @@ export default function ChatBudgetProposalCard({ action }: { action: BudgetActio
           <button
             onClick={execute}
             disabled={busy || !resolvedCampaign}
-            className="px-4 py-2 bg-[#3182F6] text-white text-sm font-medium rounded-lg hover:bg-[#1B6EEB] disabled:opacity-40"
+            className="px-4 py-2 bg-primary text-primary-foreground text-sm font-medium rounded-lg hover:bg-primary-hover disabled:opacity-40"
           >
             {busy ? '집행 중…' : '집행'}
           </button>
           <button
             onClick={() => setProposal(null)}
             disabled={busy}
-            className="px-4 py-2 border border-[#E5E8EB] dark:border-[#2D3748] text-sm rounded-lg disabled:opacity-40"
+            className="px-4 py-2 border border-line text-sm rounded-lg disabled:opacity-40"
           >
             취소
           </button>

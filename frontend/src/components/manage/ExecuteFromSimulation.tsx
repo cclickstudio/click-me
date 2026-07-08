@@ -101,7 +101,7 @@ export function ExecuteFromSimulation({
     <>
       <button
         onClick={() => setOpen(true)}
-        className="px-3 py-1.5 rounded-full text-sm font-semibold bg-[#3182F6] text-white hover:bg-[#1B64DA] transition-colors"
+        className="px-3 py-1.5 rounded-full text-sm font-semibold bg-primary text-primary-foreground hover:bg-primary-hover transition-colors"
       >
         이 광고로 캠페인 집행
       </button>
@@ -112,13 +112,13 @@ export function ExecuteFromSimulation({
           onClick={() => !busy && setOpen(false)}
         >
           <div
-            className="bg-white dark:bg-[#1C2333] rounded-2xl w-full max-w-md p-6 shadow-2xl"
+            className="bg-card rounded-2xl w-full max-w-md p-6 shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
-            <h3 className="text-lg font-bold text-[#191F28] dark:text-[#F2F4F6]">
+            <h3 className="text-lg font-bold text-ink">
               시뮬 광고로 캠페인 집행
             </h3>
-            <p className="mt-1 text-[12px] text-[#8B95A1]">
+            <p className="mt-1 text-[12px] text-ink-tertiary">
               이 시뮬 결과의 광고로 Meta 캠페인을 만듭니다(일시정지 상태로 생성 — 게재는
               매니지먼트에서 시작). 집행 후 성과비교에 예측이 자동 연결됩니다.
             </p>
@@ -141,13 +141,13 @@ export function ExecuteFromSimulation({
                 <div className="mt-4 flex justify-end gap-2">
                   <Link
                     href="/manage/campaigns"
-                    className="px-3 py-1.5 rounded-lg text-sm font-medium bg-[#3182F6] text-white hover:bg-[#1B64DA]"
+                    className="px-3 py-1.5 rounded-lg text-sm font-medium bg-primary text-primary-foreground hover:bg-primary-hover"
                   >
                     캠페인 관리로 →
                   </Link>
                   <button
                     onClick={() => setOpen(false)}
-                    className="px-3 py-1.5 rounded-lg text-sm font-medium text-[#4E5968] dark:text-[#9CA3AF]"
+                    className="px-3 py-1.5 rounded-lg text-sm font-medium text-ink-secondary"
                   >
                     닫기
                   </button>
@@ -165,13 +165,13 @@ export function ExecuteFromSimulation({
                 </Field>
                 {suggestions.length > 0 && (
                   <div className="-mt-1 flex flex-wrap items-center gap-1.5">
-                    <span className="text-[11px] text-[#8B95A1]">AI 추천</span>
+                    <span className="text-[11px] text-ink-tertiary">AI 추천</span>
                     {suggestions.map((s) => (
                       <button
                         key={s}
                         type="button"
                         onClick={() => setName(s)}
-                        className="rounded-full border border-[#E5E8EB] dark:border-[#2D3748] px-2.5 py-1 text-[11px] text-[#4E5968] dark:text-[#9CA3AF] hover:border-[#3182F6] hover:text-[#3182F6] transition-colors"
+                        className="rounded-full border border-line px-2.5 py-1 text-[11px] text-ink-secondary hover:border-primary hover:text-primary transition-colors"
                       >
                         {s}
                       </button>
@@ -224,14 +224,14 @@ export function ExecuteFromSimulation({
                   <button
                     onClick={() => setOpen(false)}
                     disabled={busy}
-                    className="px-3 py-1.5 rounded-lg text-sm font-medium text-[#4E5968] dark:text-[#9CA3AF] disabled:opacity-40"
+                    className="px-3 py-1.5 rounded-lg text-sm font-medium text-ink-secondary disabled:opacity-40"
                   >
                     취소
                   </button>
                   <button
                     onClick={handleExecute}
                     disabled={busy || !executable}
-                    className="px-4 py-1.5 rounded-lg text-sm font-semibold bg-[#3182F6] text-white hover:bg-[#1B64DA] disabled:opacity-40"
+                    className="px-4 py-1.5 rounded-lg text-sm font-semibold bg-primary text-primary-foreground hover:bg-primary-hover disabled:opacity-40"
                   >
                     {busy ? '집행 중…' : '집행하기'}
                   </button>
@@ -246,12 +246,12 @@ export function ExecuteFromSimulation({
 }
 
 const inputCls =
-  'w-full rounded-lg border border-[#E5E8EB] dark:border-[#2D3748] bg-white dark:bg-[#161B26] px-3 py-2 text-sm text-[#191F28] dark:text-[#F2F4F6] outline-none focus:border-[#3182F6]';
+  'w-full rounded-lg border border-line bg-white dark:bg-[#161B26] px-3 py-2 text-sm text-ink outline-none focus:border-primary';
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <label className="block">
-      <span className="mb-1 block text-[12px] font-medium text-[#4E5968] dark:text-[#9CA3AF]">
+      <span className="mb-1 block text-[12px] font-medium text-ink-secondary">
         {label}
       </span>
       {children}

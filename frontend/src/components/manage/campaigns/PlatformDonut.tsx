@@ -48,12 +48,12 @@ export default function PlatformDonut({ rows }: { rows: PlatformMetrics[] }) {
       <div className="w-full shrink-0 space-y-1.5">
         {rows.map((r) => (
           <div key={r.platform} className="flex items-center justify-between gap-3 text-[11px]">
-            <span className="flex items-center gap-1.5 font-medium text-[#191F28] dark:text-[#F2F4F6]">
+            <span className="flex items-center gap-1.5 font-medium text-ink">
               <span className="h-2 w-2 rounded-full" style={{ background: color(r.platform) }} />
               {LABELS[r.platform] ?? r.platform}
-              <span className="text-[#8B95A1]">{Math.round((r.impressions / total) * 100)}%</span>
+              <span className="text-ink-tertiary">{Math.round((r.impressions / total) * 100)}%</span>
             </span>
-            <span className="tabular-nums text-[#8B95A1]">
+            <span className="tabular-nums text-ink-tertiary">
               노출 {r.impressions.toLocaleString()} · 클릭 {r.clicks.toLocaleString()} · 지출 ₩
               {r.spend_krw.toLocaleString()}
             </span>
