@@ -40,7 +40,7 @@ _HTML = r"""<!doctype html>
   :root { color-scheme: light dark; }
   * { box-sizing: border-box; }
   body { margin: 0; font-family: "Pretendard", system-ui, sans-serif; background: #0f1115; color: #e7e9ee; }
-  header { position: sticky; top: 0; z-index: 10; background: #171a21; border-bottom: 1px solid #2a2f3a;
+  header { position: static; background: #171a21; border-bottom: 1px solid #2a2f3a;
            padding: 12px 20px; display: flex; gap: 20px; align-items: flex-start; flex-wrap: wrap; }
   header h1 { font-size: 15px; margin: 0 0 4px; font-weight: 700; }
   .dir { font-size: 12px; color: #8b93a3; }
@@ -415,13 +415,13 @@ def main() -> None:
     out_path.write_text(page, encoding="utf-8")
 
     size_mb = out_path.stat().st_size / 1_048_576
-    print(f"검수 시트 생성 — {out_path}  (이미지 {len(items)}장, {size_mb:.1f}MB, {mode} 모드)")
+    print(f"검수 시트 생성 - {out_path}  (이미지 {len(items)}장, {size_mb:.1f}MB, {mode} 모드)")
     if audit:
-        print(f"  VLM 프리필 적용 — {vlm_path.name}에서 {len(prefill_by_file)}장 판정 로드")
+        print(f"  VLM 프리필 적용 - {vlm_path.name}에서 {len(prefill_by_file)}장 판정 로드")
     else:
         print("  프리필 없음 — text_accuracy.csv가 없거나 --no-prefill. 먼저 measure_text_accuracy 실행 권장")
     if missing:
-        print(f"  경고 — 디스크에 없는 이미지 {missing}장 제외됨")
+        print(f"  경고 - 디스크에 없는 이미지 {missing}장 제외됨")
     print("브라우저로 열어 검수 → 'CSV 저장' → review_by_human.csv")
     print("  같은 스키마라 measure_text_accuracy.py의 text_accuracy.csv와 나란히 비교 가능")
 
