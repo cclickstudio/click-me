@@ -493,33 +493,16 @@ async def anomaly_notify_scan(
 
         from domain.management.notifications import LogNotificationSink  # noqa: PLC0415
         from domain.management.remediation.advisor import consult as _consult  # noqa: PLC0415
+        from domain.management.remediation.panel_sink import PanelNotificationSink  # noqa: PLC0415
         from domain.management.scheduler import _agent_scanner, run_scan  # noqa: PLC0415
 
-        # 채널 추가 시 build_notification_sink(notifications.py)와 함께 갱신 —
-        # 매핑 이중화는 org reader consult 주입 때문(의도적, log→chat 시연 유지).
-        channel = getattr(settings, "management_notify_channel", "log")
-        if channel == "panel":
-            from domain.management.remediation.panel_sink import (  # noqa: PLC0415
-                PanelNotificationSink,
-            )
-
-            sink = PanelNotificationSink(
-                settings,
-                fallback=LogNotificationSink(),
-                consult=partial(_consult, reader=reader),  # 재검증도 같은 org reader로
-            )
-        else:
-            # chat·log 공통 — 수동 스캔은 데모 트리거라 log 채널에서도 chat sink로 시연
-            # 동작을 유지한다(기존 동작 보존). 예약 스케줄러만 channel을 엄격히 따른다.
-            from domain.management.remediation.chat_sink import (  # noqa: PLC0415
-                ChatNotificationSink,
-            )
-
-            sink = ChatNotificationSink(
-                settings,
-                fallback=LogNotificationSink(),
-                consult=partial(_consult, reader=reader),
-            )
+        # 트리거 경로(채팅·전용 페이지·수동 스캔)와 무관하게 선제 알림은 항상 센터(panel)로만
+        # 간다(2026-07-09 확정) — 과거의 "log 채널에서도 chat sink로 시연" 동작은 폐기.
+        sink = PanelNotificationSink(
+            settings,
+            fallback=LogNotificationSink(),
+            consult=partial(_consult, reader=reader),  # 재검증도 같은 org reader로
+        )
         scanner = partial(_agent_scanner, reader=reader, tenant_id=key)
         count = await run_scan(settings, sink, scanner=scanner)
         summary = sink.summary()

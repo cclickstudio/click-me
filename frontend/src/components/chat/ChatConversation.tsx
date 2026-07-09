@@ -630,6 +630,12 @@ export default function ChatConversation({
     (acc, m, i) => (m.meta?.widget?.type === 'gen_form' ? i : acc),
     -1
   );
+  // 이미 토론 요약이 붙은 run_id 집합 — 새로고침·재방문 시 자동 요약 재생성(중복 메시지) 방지.
+  const debateSummaryRunIds = new Set(
+    messages
+      .filter(m => m.meta?.widget?.type === 'debate_summary' && m.meta.widget.data?.run_id)
+      .map(m => m.meta!.widget!.data!.run_id as string)
+  );
 
   const addLocalAssistant = (
     content: string,
@@ -1798,11 +1804,14 @@ export default function ChatConversation({
                       <SimFormWidget
                         initial={msg.meta.widget.data}
                         initialImage={msg.imageFile}
-                        initialImageUrl={
-                          (msg.meta.widget.data as { ad_image_url?: string })?.ad_image_url
-                        }
+                        initialImageUrl={fullUrl(
+                          (msg.meta.widget.data as { ad_image_url?: string })?.ad_image_url,
+                        )}
                         projectId={projectId}
                         latest={i === lastSimFormIdx}
+                        autoStart={Boolean(
+                          (msg.meta.widget.data as { autostart?: boolean })?.autostart,
+                        )}
                         onSimComplete={handleSimComplete}
                       />
                     )}
@@ -1824,6 +1833,7 @@ export default function ChatConversation({
                           onSummary={handleDebateSummary}
                           onAccept={handleApprove}
                           proposalDisabled={isStreaming}
+                          hasSummary={debateSummaryRunIds.has(msg.meta.widget.data.run_id)}
                         />
                       )}
                     {msg.meta?.widget?.type === 'debate_summary' &&
