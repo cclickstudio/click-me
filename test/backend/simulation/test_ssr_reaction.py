@@ -183,6 +183,39 @@ def test_aggregator_synthesizes_ssr_population_dist() -> None:
     assert agg.payload["ssr_dist_n"] == 2
 
 
+def test_aggregator_uses_raw_ssr_mean_not_rounded_scalar() -> None:
+    """집계는 반올림된 int(purchase_intent/trust)가 아니라 SSR dist.mean 원본으로 가중평균해야 한다.
+
+    reaction1: 반올림 스칼라=4, 원본 평균=3.5 / reaction2: 반올림 스칼라=2, 원본 평균=2.0.
+    반올림값으로 평균 내면 (4+2)/2=3.0, 원본으로 평균 내면 (3.5+2.0)/2=2.75 — 값이 달라 구분 가능.
+    최종 결과는 소수점 둘째 자리까지만.
+    """
+    from domain.simulation.tools.aggregation.aggregator import BasicAggregator
+
+    reactions = [
+        _reaction(
+            purchase_intent=4,
+            trust=4,
+            purchase_intent_dist=_dist(3.5),
+            trust_dist=_dist(3.5),
+            weight=1.0,
+        ),
+        _reaction(
+            purchase_intent=2,
+            trust=2,
+            purchase_intent_dist=_dist(2.0),
+            trust_dist=_dist(2.0),
+            weight=1.0,
+        ),
+    ]
+
+    agg = BasicAggregator().aggregate(reactions)
+
+    assert agg.purchase_intent == pytest.approx(2.75)  # 반올림 스칼라 평균(3.0)이 아님
+    assert agg.trust_avg == pytest.approx(2.75)
+    assert agg.purchase_intent == round(agg.purchase_intent, 2)  # 소수점 둘째 자리까지만
+
+
 def test_aggregator_payload_unchanged_without_ssr_dists() -> None:
     from domain.simulation.tools.aggregation.aggregator import BasicAggregator
 
@@ -197,7 +230,10 @@ def test_aggregator_payload_unchanged_without_ssr_dists() -> None:
 
 def test_ssr_scoring_flag(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("SIMULATION_SCORING", raising=False)
-    assert _ssr_scoring_enabled() is True  # 기본 on — LLM 정수 채점 할루시네이션 회피
+    # 기본 OFF(T1) — 앵커 판별력 문제로 봉인, ssr 명시해야 켬
+    assert _ssr_scoring_enabled() is False
+    monkeypatch.setenv("SIMULATION_SCORING", "ssr")
+    assert _ssr_scoring_enabled() is True
     monkeypatch.setenv("SIMULATION_SCORING", "llm")
     assert _ssr_scoring_enabled() is False
     monkeypatch.setenv("SIMULATION_SCORING", "ssr")

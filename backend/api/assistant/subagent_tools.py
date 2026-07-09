@@ -244,29 +244,58 @@ def build_chat_tools(settings, clio_retriever=None) -> list:
         state: Annotated[dict, InjectedState],
         tool_call_id: Annotated[str, InjectedToolCallId],
     ) -> Command:
-        """사용자가 광고를 '시뮬레이션 돌려달라/반응 예측해달라'고 하면 호출. 시뮬 입력 폼을 띄운다.
-        발화에 있는 값만 채우고 없으면 비운다(지어내지 말 것). 폼 호출 후 한 줄로만 안내하라.
+        """사용자가 광고를 '시뮬레이션 돌려달라/반응 예측해달라'고 하면 호출.
+        발화에 있는 값만 채우고 없으면 비운다(지어내지 말 것) — 부족분(특히 "방금 만든 시안으로"
+        류 요청)은 직전 완료된 광고 생성 결과에서 자동으로 채운다. 제목·내용·이미지가 모두
+        채워지면 폼 없이 곧바로 실행된다(제너레이터와 동일한 자동 실행 UX). 무언가 못 채웠으면
+        그 항목만 남긴 입력 폼을 띄운다. 호출 후 한 줄로만 안내하라.
 
         analysis_mode(3-모드 분석) — 기본 synthetic(표본 전체 합성). 사용자가 '한 명만 자세히'·
         '개인 반응'·'심층 분석'처럼 개별 페르소나를 원하면 individual. '세그먼트별로 비교'·
         '타깃별로 나눠서'처럼 여러 집단 비교를 원하면 persona_set(폼은 세그먼트 편집이 필요해
         채팅에선 미지원 — 이땐 폼을 띄우지 말고 /simulation 페이지 이용을 안내하라)."""
+        image_url = None
+        if not (ad_content.strip() and ad_title.strip()):
+            gen_items = await list_generations(state.get("project_id") or "", limit=10)
+            done = [i for i in gen_items if i.get("status") == "completed"]
+            if done:
+                from domain.generator.service import generator_service  # noqa: PLC0415
+
+                detail = await generator_service.get_detail(done[0]["id"])
+                cands = (detail or {}).get("candidates") or []
+                if cands:
+                    c0 = cands[0]
+                    copy = c0.get("copy") or {}
+                    ad_title = ad_title or (copy.get("headline") or "").strip()
+                    body = (copy.get("body") or "").strip()
+                    cta = (copy.get("cta") or "").strip()
+                    ad_content = ad_content or "\n".join(p for p in (ad_title, body, cta) if p)
+                    image_url = c0.get("image_url")
+                    gen_input = detail.get("input") or {}
+                    product_category = product_category or gen_input.get("product_category") or ""
+                    ad_objective = ad_objective or gen_input.get("campaign_objective") or ""
+        autostart = bool(ad_title.strip() and ad_content.strip() and image_url)
         sim_data = {
             "ad_title": ad_title or None,
             "ad_content": ad_content or "",
             "product_category": product_category or None,
             "ad_objective": ad_objective or None,
+            "ad_image_url": image_url,
             "analysis_mode": analysis_mode
             if analysis_mode in ("synthetic", "individual")
             else "synthetic",
+            "autostart": autostart,
         }
         helpers.spawn_persist(state.get("project_id"), "sim_input", sim_data)
+        msg = (
+            "직전 생성한 시안으로 시뮬레이션을 바로 실행할게요."
+            if autostart
+            else "시뮬레이션 입력 폼을 준비했습니다."
+        )
         return Command(
             update={
                 **widgets.sim_form(sim_data),
-                "messages": [
-                    ToolMessage("시뮬레이션 입력 폼을 준비했습니다.", tool_call_id=tool_call_id)
-                ],
+                "messages": [ToolMessage(msg, tool_call_id=tool_call_id)],
             }
         )
 
@@ -297,8 +326,18 @@ def build_chat_tools(settings, clio_retriever=None) -> list:
         helpers.spawn_persist(state.get("project_id"), "gen_input", gen_data)
         project_id = state.get("project_id")
         complete = bool(product_name and product_description and target_audience and project_id)
-        # 완비 + 이번 턴 이미지 첨부 → 폼 경로(첨부가 상품 이미지로 프리필됨, 실행만 누르면 됨)
-        if complete and state.get("has_image"):
+        # 이번 턴 첨부가 없으면 세션 히스토리에서 아직 미소비 첨부를 찾는다(턴 넘어가도 유실 방지).
+        has_image = bool(state.get("has_image"))
+        pending_image_url: str | None = None
+        if not has_image:
+            pending_image_url = await history.latest_pending_product_image(
+                state.get("session_id") or ""
+            )
+            has_image = bool(pending_image_url)
+        if pending_image_url:
+            gen_data["product_image_url"] = pending_image_url
+        # 완비 + 이미지(첨부 또는 대기 중) → 폼 경로(상품 이미지로 프리필됨, 실행만 누르면 됨)
+        if complete and has_image:
             return Command(
                 update={
                     **widgets.gen_form(gen_data),

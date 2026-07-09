@@ -38,20 +38,24 @@ def test_with_llm_retry_wraps_runnable():
 
 
 def test_require_openai_passes_for_openai():
-    # openai면 키 여부와 무관하게 통과.
-    image_providers._require_openai_for("이미지 편집", "openai")  # 예외 없으면 통과
+    # openai면 키 여부와 무관하게 모델 그대로 통과.
+    assert image_providers._require_openai_for("이미지 편집", "openai", "gpt-image-1") == "gpt-image-1"
 
 
 def test_require_openai_falls_back_when_key_present(monkeypatch):
     monkeypatch.setattr(settings, "openai_api_key", "sk-test", raising=False)
-    # 타 provider여도 openai 키가 있으면 폴백(예외 없이 통과).
-    image_providers._require_openai_for("인페인팅", "google_genai")
+    # 타 provider여도 openai 키가 있으면 폴백 — 원래 provider의 모델명이 아니라
+    # openai 호환 모델(generator_image_edit_model)로 바뀌어야 openai API가 실제로 받아준다.
+    result = image_providers._require_openai_for(
+        "인페인팅", "google_genai", "gemini-2.5-flash-image"
+    )
+    assert result == settings.generator_image_edit_model
 
 
 def test_require_openai_raises_without_key(monkeypatch):
     monkeypatch.setattr(settings, "openai_api_key", None, raising=False)
     with pytest.raises(NotImplementedError):
-        image_providers._require_openai_for("누끼", "google_genai")
+        image_providers._require_openai_for("누끼", "google_genai", "gemini-2.5-flash-image")
 
 
 def test_quality_digest_registered():

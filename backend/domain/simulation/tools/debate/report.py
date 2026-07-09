@@ -112,6 +112,7 @@ def build_report(
         brand_recognition_rate=aggregate.brand_recognition_rate,
         variance_warning=aggregate.variance_warning,
         effective_n=aggregate.effective_n,
+        interest_conditional=(aggregate.payload or {}).get("interest_conditional"),
     )
 
     # §2 반응 집계 상세·§4 루브릭은 토론 유무와 무관하게 동일하게 싣는다(이미 산출된 데이터).

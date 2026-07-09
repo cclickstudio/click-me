@@ -14,10 +14,14 @@ def _reaction(
     rejected: bool = False,
     qa: bool = True,
     weight: float = 1.0,
+    interest: bool | None = None,
 ) -> PersonaReaction:
+    # interest 미지정 시 깔때기 정합(action=True면 interest=True) 기본값.
     return PersonaReaction(
         persona_id=pid,
-        aisas=Aisas(attention=True, action=action),
+        aisas=Aisas(
+            attention=True, interest=action if interest is None else interest, action=action
+        ),
         purchase_intent=purchase,
         trust=trust,
         rejected=rejected,
@@ -123,6 +127,65 @@ def test_single_sample_no_exception() -> None:
     assert agg.ci_low == 1.0 and agg.ci_high == 1.0  # 단일 표본은 재추출해도 동일
     assert agg.effective_n == 1.0
     assert agg.variance_warning is True  # 단일 값 → 표준편차 0
+
+
+def test_interest_conditional_rate_and_gap() -> None:
+    # 20명 중 관심 통과 8명, 그중 클릭 4명 → 전체 0.2, 관심층 조건부 0.5.
+    reactions = [
+        _reaction(f"P-{i}", action=(i < 4), purchase=(i % 5) + 1, interest=(i < 8))
+        for i in range(20)
+    ]
+    agg = BasicAggregator().aggregate(reactions)
+    assert agg.click_intent_rate == 0.2  # 4/20 — 기존 KPI 무변경
+    ic = agg.payload["interest_conditional"]
+    assert ic["click_intent_rate"] == 0.5  # 4/8
+    assert ic["interest_passed_n"] == 8
+    assert ic["ci_low"] <= 0.5 <= ic["ci_high"]
+    assert ic["low_sample"] is False  # 균일 가중 유효표본 8 ≥ 5
+
+
+def test_interest_conditional_omitted_when_no_interest() -> None:
+    # 관심 통과 0명 → 키 자체 생략(0.0 채움 금지).
+    reactions = [_reaction(f"P-{i}", action=False, purchase=3, interest=False) for i in range(10)]
+    agg = BasicAggregator().aggregate(reactions)
+    assert "interest_conditional" not in agg.payload
+
+
+def test_interest_conditional_low_sample_flag() -> None:
+    # 관심 통과 3명(유효표본 3 < 5) → low_sample 플래그.
+    reactions = [
+        _reaction(f"P-{i}", action=(i < 2), purchase=(i % 5) + 1, interest=(i < 3))
+        for i in range(30)
+    ]
+    agg = BasicAggregator().aggregate(reactions)
+    ic = agg.payload["interest_conditional"]
+    assert ic["interest_passed_n"] == 3
+    assert ic["low_sample"] is True
+
+
+def test_interest_conditional_weighted() -> None:
+    # 관심층 내 가중 반영 — 클릭 1명 w=3, 비클릭 1명 w=1 → 3/4.
+    reactions = [
+        _reaction("P-1", action=True, purchase=5, weight=3.0),
+        _reaction("P-2", action=False, purchase=1, weight=1.0, interest=True),
+        _reaction("P-3", action=False, purchase=2, weight=5.0, interest=False),  # 분모 제외
+    ]
+    agg = BasicAggregator().aggregate(reactions)
+    ic = agg.payload["interest_conditional"]
+    assert ic["click_intent_rate"] == 0.75
+    assert ic["interest_passed_n"] == 2
+
+
+def test_interest_conditional_excludes_qa_failed() -> None:
+    # QA 실패 반응은 관심층 분모에서도 제외.
+    reactions = [
+        _reaction("P-1", action=True, purchase=5),
+        _reaction("P-2", action=False, purchase=1, interest=True, qa=False),
+    ]
+    agg = BasicAggregator().aggregate(reactions)
+    ic = agg.payload["interest_conditional"]
+    assert ic["interest_passed_n"] == 1
+    assert ic["click_intent_rate"] == 1.0
 
 
 def test_extreme_weight_deviation_collapses_effective_n() -> None:

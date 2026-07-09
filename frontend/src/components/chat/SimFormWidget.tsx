@@ -55,6 +55,7 @@ export default function SimFormWidget({
   initialImageUrl,
   projectId,
   latest,
+  autoStart,
   onSimComplete,
 }: {
   initial?: {
@@ -63,11 +64,14 @@ export default function SimFormWidget({
     product_category?: string;
     ad_objective?: string;
     analysis_mode?: AnalysisMode;
+    generation_id?: string; // 생성 출처 — 채팅 개선모드 누끼 역추적용(ads.generation_id로 영속)
   };
   initialImage?: File; // 채팅에서 첨부한 광고 이미지
   initialImageUrl?: string; // 생성 시안 등에서 넘어온 이미지 URL(파일 대신 URL로 시뮬)
   projectId?: string; // 현재 프로젝트 — DB 영속화·결과 상세 조회에 필요
   latest?: boolean; // 가장 최근 시뮬 위젯만 새로고침 시 진행중 런을 복원(중복 방지)
+  // 제목·내용·이미지가 전부 채워진 채로 넘어오면(직전 생성 시안 자동 채움) 폼 없이 곧바로 실행.
+  autoStart?: boolean;
   // 완료 시 결과를 채팅 컨트롤러로 넘긴다 — 입력 요약·결과 요약·토론을 별도 메시지로 띄우게.
   onSimComplete?: (
     result: SimRunResult,
@@ -295,6 +299,7 @@ export default function SimFormWidget({
         target_filter: targetFilter,
         target_mode: targetMode,
         analysis_mode: analysisMode,
+        generation_id: initial?.generation_id,
       });
       setRunId(run_id);
       setSimJob(run_id); // 동시실행 슬롯 점유(시뮬 1개 제한)
@@ -306,6 +311,18 @@ export default function SimFormWidget({
       setPhase('error');
     }
   };
+
+  // 자동 실행(제너레이터와 동일한 UX) — 제목·내용·이미지가 전부 채워진 채로 왔으면
+  // 폼을 보여주지 않고 곧바로 돌린다. 새로고침 복원 중인 런이 있으면 건드리지 않는다.
+  const autoStartedRef = useRef(false);
+  useEffect(() => {
+    if (autoStartedRef.current || !autoStart) return;
+    if (phase !== 'form' || localStorage.getItem(ACTIVE_SIM_KEY)) return;
+    if (!adTitle.trim() || !adContent.trim() || !hasImage) return;
+    autoStartedRef.current = true;
+    void run();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const cardCls =
     'mt-1 w-full rounded-xl border border-line bg-card p-4';

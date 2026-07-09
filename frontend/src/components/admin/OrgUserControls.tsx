@@ -20,10 +20,10 @@ export const USER_SORT_OPTIONS = [
   ...ORG_SORT_OPTIONS,
 ];
 
+// 회원 관리는 ADMIN/USER만 다룬다 — COMPANY는 조직 관리에서 조직째로 관리.
 export const ROLE_FILTER_OPTIONS = [
   { value: '', label: '전체 역할' },
   { value: 'ADMIN', label: 'ADMIN' },
-  { value: 'COMPANY', label: 'COMPANY' },
   { value: 'USER', label: 'USER' },
 ];
 

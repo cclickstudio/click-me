@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from functools import cache
 from pathlib import Path
 
-from PIL import Image, ImageDraw, ImageFilter, ImageFont
+from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageStat
 
 from domain.generator.contracts.enums import AdStrategy, TemplateType
 from domain.generator.pipeline.style_profile import get_style
@@ -113,16 +113,73 @@ def __getattr__(name: str) -> str:
 _DEFAULT_ACCENT = (37, 99, 235)  # brand_color 없을 때 기본 강조색(파랑)
 _WHITE = (255, 255, 255, 255)
 _LIGHT = (235, 235, 235, 255)
+_DARK_TEXT = (51, 51, 51, 255)  # 밝은 배경 위에 쓸 어두운 텍스트색(순검정 대신 부드러운 톤)
+_BRIGHTNESS_THRESHOLD = 140.0
 
 # 숫자 토큰(할인율·수량·기간 등) — 단어에 숫자가 포함되면 강조 대상으로 본다.
 _NUM_RE = re.compile(r"\d")
 
 
-def _contrast_stroke(color: tuple[int, int, int, int]) -> tuple[int, int, int, int]:
-    """텍스트 색의 밝기에 따라 대비되는 외곽선 색을 고른다(패널 없는 floating/emotional 가독성)."""
-    r, g, b = color[:3]
+def _sample_brightness(base: Image.Image, rect: tuple[int, int, int, int]) -> float:
+    """rect 영역(텍스트가 그려질 자리)의 평균 밝기(0~255)를 구한다.
+
+    패널 없는 floating/emotional 스타일은 사진이 그대로 비치므로, 전략별 고정 텍스트색
+    대신 실제로 그 자리에 뭐가 있는지 보고 텍스트색을 정하는 게 더 안전하다.
+    """
+    x0, y0, x1, y1 = rect
+    if x1 <= x0 or y1 <= y0:
+        return 128.0
+    region = base.convert("RGB").crop((x0, y0, x1, y1))
+    return ImageStat.Stat(region.convert("L")).mean[0]
+
+
+def _adaptive_text_color(brightness: float) -> tuple[int, int, int, int]:
+    """배경이 어두우면 흰색, 밝으면 어두운 톤 텍스트색을 고른다."""
+    return _WHITE if brightness < _BRIGHTNESS_THRESHOLD else _DARK_TEXT
+
+
+def _shadow_color_for(text_color: tuple[int, int, int, int]) -> tuple[int, int, int, int]:
+    """선택된 텍스트색과 반대 밝기의 반투명 그림자색 — 국지적으로 밝기가 섞인 배경에서도
+    텍스트색 하나만으로 커버 안 되는 부분을 부드러운 그림자로 보강한다."""
+    r, g, b = text_color[:3]
     luminance = 0.299 * r + 0.587 * g + 0.114 * b
-    return (255, 255, 255, 230) if luminance < 140 else (0, 0, 0, 200)
+    return (0, 0, 0, 110) if luminance >= _BRIGHTNESS_THRESHOLD else (255, 255, 255, 140)
+
+
+def _accent_or_tint(
+    accent: tuple[int, int, int], threshold: float = 140.0
+) -> tuple[int, int, int, int]:
+    """강조색이 threshold보다 어두우면 흰색과 섞어(tint) 색조는 유지한 채 최소 밝기를 확보한다.
+
+    box 스타일 패널이 항상 짙은 반투명 검정(예: 템플릿 A의 (0,0,0,190))이라,
+    실제 배경 픽셀 샘플링 없이 강조색 자체의 밝기만 봐도 대비 확보가 충분하다.
+    """
+    r, g, b = accent
+    luminance = 0.299 * r + 0.587 * g + 0.114 * b
+    if luminance >= threshold:
+        return (*accent, 255)
+    t = (threshold - luminance) / (255 - luminance)
+    tinted = tuple(int(c + (255 - c) * t) for c in (r, g, b))
+    return (*tinted, 255)
+
+
+def _accent_or_shade(
+    accent: tuple[int, int, int], threshold: float = 140.0
+) -> tuple[int, int, int, int]:
+    """강조색이 threshold보다 밝으면 검정과 섞어(shade) 색조는 유지한 채 최대 밝기를 낮춘다.
+
+    _accent_or_tint의 반대 방향 — CTA 버튼은 템플릿에 따라 흰 배경 위 강조색 글자(C) 또는
+    강조색 배경 위 흰 글자(A/B)를 쓰는데, 브랜드 컬러가 파스텔·연회색처럼 밝으면 흰색과
+    맞닿는 쪽(글자 또는 배경)이 거의 안 보인다. 두 경우 모두 "흰색과 짝지어지는 강조색이
+    충분히 어두운지"가 핵심이라 하나의 헬퍼로 공유한다.
+    """
+    r, g, b = accent
+    luminance = 0.299 * r + 0.587 * g + 0.114 * b
+    if luminance <= threshold or luminance == 0:
+        return (*accent, 255)
+    t = (luminance - threshold) / luminance
+    shaded = tuple(max(0, int(c * (1 - t))) for c in (r, g, b))
+    return (*shaded, 255)
 
 
 @dataclass(frozen=True)
@@ -152,22 +209,21 @@ _TEMPLATE_SPECS: dict[TemplateType, _Spec] = {
         body=_Block((0.06, 0.705, 0.94, 0.82), "center", 0.040),
         cta=_Block((0.28, 0.835, 0.72, 0.95), "center", 0.044),
     ),
-    # B — 상단 띠(헤드라인) + 하단 띠(본문·CTA)
+    # B(FOMO 전용) — 하단 단일 밴드(32%)에 헤드라인 좌측 + CTA 우측, 이미지 68% 확보.
+    # 위아래로 문구가 있어 이미지가 눌려 보인다는 피드백으로 상단 밴드를 없애고 재설계함.
     TemplateType.B: _Spec(
-        panels=[
-            ((0.0, 0.0, 1.0, 0.20), (0, 0, 0, 215)),
-            ((0.0, 0.60, 1.0, 1.0), (0, 0, 0, 215)),
-        ],
-        headline=_Block((0.06, 0.02, 0.94, 0.18), "center", 0.066),
-        body=_Block((0.06, 0.625, 0.94, 0.79), "center", 0.040),
-        cta=_Block((0.28, 0.815, 0.72, 0.96), "center", 0.044),
+        panels=[((0.0, 0.68, 1.0, 1.0), (0, 0, 0, 205))],
+        headline=_Block((0.05, 0.71, 0.60, 0.87), "left", 0.09),
+        body=_Block((0.05, 0.875, 0.60, 0.95), "left", 0.032),
+        cta=_Block((0.65, 0.73, 0.95, 0.93), "center", 0.05),
     ),
-    # C — 좌측 브랜드컬러 패널에 좌측정렬
+    # C — 좌측 브랜드컬러 패널에 좌측정렬. 좌우 여백을 0.05로 동일하게(패널 우측 끝 0.46 기준)
+    # 맞춰 텍스트가 길어져 박스 폭을 다 채워도 좌우 여백이 어긋나 보이지 않게 한다.
     TemplateType.C: _Spec(
         panels=[((0.0, 0.0, 0.46, 1.0), None)],
-        headline=_Block((0.04, 0.10, 0.42, 0.35), "left", 0.064),
-        body=_Block((0.04, 0.37, 0.42, 0.60), "left", 0.038),
-        cta=_Block((0.04, 0.70, 0.42, 0.85), "left", 0.044),
+        headline=_Block((0.05, 0.10, 0.41, 0.35), "left", 0.064),
+        body=_Block((0.05, 0.37, 0.41, 0.60), "left", 0.038),
+        cta=_Block((0.05, 0.70, 0.41, 0.85), "left", 0.044),
     ),
 }
 
@@ -244,41 +300,64 @@ def _fit(
         if line_h * len(lines) <= box_h and widest <= box_w:
             return font, lines, line_h
         size -= 2
+    # 최소 크기로도 안 맞음 — 박스 높이에 들어가는 줄 수만큼만 잘라 말줄임표를 붙인다
+    # (자르지 않으면 텍스트가 박스 밖으로 그려짐 — 좁은 템플릿 C에서 카피가 길 때 실제 발생).
     font = ImageFont.truetype(font_path, min_size)
     lines = _wrap(draw, text, font, box_w)
     ascent, descent = font.getmetrics()
-    return font, lines, int((ascent + descent) * 1.25)
+    line_h = int((ascent + descent) * 1.25)
+    max_lines = max(1, box_h // line_h)
+    if len(lines) > max_lines:
+        lines = lines[:max_lines]
+        last = lines[-1]
+        while last and draw.textlength(last + "…", font=font) > box_w:
+            last = last[:-1]
+        lines[-1] = last + "…"
+    return font, lines, line_h
 
 
 def _draw_block(
-    draw: ImageDraw.ImageDraw,
+    base: Image.Image,
     text: str,
     rect: tuple[int, int, int, int],
     font_path: str,
     max_size: int,
     color: tuple[int, int, int, int],
     align: str,
-    stroke_fill: tuple[int, int, int, int] | None = None,
-    shadow: bool = False,
-) -> None:
+    soft_shadow_color: tuple[int, int, int, int] | None = None,
+) -> Image.Image:
+    """텍스트를 rect 안에 그린다. soft_shadow_color가 있으면 딱딱한 외곽선 대신
+    부드럽게 블러 처리된 그림자를 텍스트 뒤에 먼저 합성한 뒤 텍스트를 그린다
+    (패널 없는 floating/emotional 스타일의 사진 위 가독성 보강용)."""
     if not text:
-        return
+        return base
+    draw = ImageDraw.Draw(base)
     x0, y0, x1, y1 = rect
     box_w, box_h = x1 - x0, y1 - y0
     font, lines, line_h = _fit(draw, text, font_path, box_w, box_h, max_size)
-    # 패널 없는 floating/emotional은 외곽선+그림자로 사진 위 가독성을 확보.
-    stroke_w = max(2, font.size // 14) if stroke_fill else 0
-    shadow_off = max(1, font.size // 22)
     y = y0 + (box_h - line_h * len(lines)) // 2
+
+    if soft_shadow_color is not None:
+        shadow_off = max(1, font.size // 18)
+        shadow_layer = Image.new("RGBA", base.size, (0, 0, 0, 0))
+        sdraw = ImageDraw.Draw(shadow_layer)
+        sy = y
+        for line in lines:
+            line_w = sdraw.textlength(line, font=font)
+            sx = x0 + (box_w - int(line_w)) // 2 if align == "center" else x0
+            sdraw.text((sx + shadow_off, sy + shadow_off), line, font=font, fill=soft_shadow_color)
+            sy += line_h
+        blur_radius = max(2, font.size // 12)
+        shadow_layer = shadow_layer.filter(ImageFilter.GaussianBlur(blur_radius))
+        base = Image.alpha_composite(base, shadow_layer)
+        draw = ImageDraw.Draw(base)
+
     for line in lines:
         line_w = draw.textlength(line, font=font)
         x = x0 + (box_w - int(line_w)) // 2 if align == "center" else x0
-        if shadow:
-            draw.text((x + shadow_off, y + shadow_off), line, font=font, fill=(0, 0, 0, 90))
-        draw.text(
-            (x, y), line, font=font, fill=color, stroke_width=stroke_w, stroke_fill=stroke_fill
-        )
+        draw.text((x, y), line, font=font, fill=color)
         y += line_h
+    return base
 
 
 def _draw_cta(
@@ -312,11 +391,13 @@ def _draw_cta(
     btn_h = text_h + 2 * pad_y
     bx = x0 + (box_w - btn_w) // 2 if align == "center" else x0
     by = y0 + (box_h - btn_h) // 2
-    # C는 흰 버튼+브랜드 글자, A/B는 브랜드 버튼+흰 글자
+    # C는 흰 버튼+브랜드 글자, A/B는 브랜드 버튼+흰 글자 — 어느 쪽이든 흰색과 맞닿는 강조색
+    # 쪽은 _accent_or_shade로 최소 대비를 확보한다(브랜드 컬러가 밝은 파스텔·연회색이면
+    # 안 그려도 안 보이는 수준까지 묻혀버림 — 실측으로 확인된 버그).
     if template == TemplateType.C:
-        fill, txt = _WHITE, (*accent, 255)
+        fill, txt = _WHITE, _accent_or_shade(accent)
     else:
-        fill, txt = (*accent, 255), _WHITE
+        fill, txt = _accent_or_shade(accent), _WHITE
     # floating/emotional은 패널 없이 사진 위에 바로 얹혀서, 사진의 밝은 영역과 버튼이 섞여
     # 보일 수 있다 — 텍스트에 붙이는 것과 같은 그림자를 버튼에도 붙여 경계를 항상 드러낸다.
     # 별도 레이어에 그린 뒤 블러 처리해 합성 — 딱딱한 사각형이 아닌 부드러운 그림자가 되게 한다.
@@ -369,7 +450,7 @@ def _draw_highlighted(
     if cur:
         lines.append(cur)
 
-    accent_rgba = (*accent, 255)
+    accent_rgba = _accent_or_tint(accent)
     y = y0 + (box_h - line_h * len(lines)) // 2
     for line in lines:
         line_w = sum(draw.textlength(w, font=font) for w in line) + space_w * (len(line) - 1)
@@ -395,8 +476,9 @@ def render_ad_text(
     템플릿(A/B/C)이 텍스트 *위치*를, strategy의 StyleProfile이 *스타일*을 결정한다.
     template=None(개선 모드 자유 레이아웃)이면 Template A 레이아웃으로 폴백.
     - box: 반투명 패널 + 굵은 폰트(현행).
-    - floating: 패널 없음 + 외곽선·그림자로 사진 위 가독성 확보.
-    - emotional: 패널 없음 + 얇은 폰트 + 여백(폰트 축소) + 외곽선·그림자.
+    - floating/emotional: 패널 없음 — 텍스트색은 그 자리 배경 밝기를 직접 재서 적응적으로
+      정하고(_adaptive_text_color), 부드러운 블러 그림자로 국지적 대비를 보강한다
+      (딱딱한 외곽선은 "스티커처럼 보인다"는 피드백으로 제거함). emotional은 폰트도 축소.
     """
     base = Image.open(io.BytesIO(image_bytes)).convert("RGBA")
     w, h = base.size
@@ -407,10 +489,6 @@ def render_ad_text(
     # accent_override(예: FOMO 코랄 레드)가 브랜드컬러보다 우선.
     accent_hex = (profile.accent_override if profile else None) or brand_color
     accent = _parse_color(accent_hex) or _DEFAULT_ACCENT
-    if profile is not None:
-        headline_color, body_color = profile.headline_color, profile.body_color
-    else:
-        headline_color, body_color = _WHITE, _LIGHT
 
     # 전략별 폰트 웨이트(KB Typography) → 실제 폰트 파일. 프로필 없으면 Bold/Regular 기본.
     if profile is not None:
@@ -427,8 +505,22 @@ def render_ad_text(
     # 감성형은 여백을 위해 폰트를 축소. 그 외는 원래 크기.
     size_factor = 0.82 if style == "emotional" else 1.0
     floating = style in ("floating", "emotional")
-    head_stroke = _contrast_stroke(headline_color) if floating else None
-    body_stroke = _contrast_stroke(body_color) if floating else None
+
+    if floating:
+        # 패널이 없어 사진이 그대로 비치므로, 전략별 고정색(profile.headline/body_color) 대신
+        # 실제 그 자리의 밝기를 재서 흰색/어두운 톤 중 더 잘 보이는 쪽을 고른다.
+        headline_color = _adaptive_text_color(
+            _sample_brightness(base, _px(spec.headline.box, w, h))
+        )
+        body_color = _adaptive_text_color(_sample_brightness(base, _px(spec.body.box, w, h)))
+        head_shadow: tuple[int, int, int, int] | None = _shadow_color_for(headline_color)
+        body_shadow: tuple[int, int, int, int] | None = _shadow_color_for(body_color)
+    elif profile is not None:
+        headline_color, body_color = profile.headline_color, profile.body_color
+        head_shadow = body_shadow = None
+    else:
+        headline_color, body_color = _WHITE, _LIGHT
+        head_shadow = body_shadow = None
 
     # box 스타일만 반투명 패널을 합성. floating/emotional은 패널 없음.
     if style == "box":
@@ -454,27 +546,25 @@ def render_ad_text(
             spec.headline.align,
         )
     else:
-        _draw_block(
-            draw,
+        base = _draw_block(
+            base,
             headline,
             _px(spec.headline.box, w, h),
             head_font,
             int(h * spec.headline.max_ratio * size_factor),
             headline_color,
             spec.headline.align,
-            stroke_fill=head_stroke,
-            shadow=floating,
+            soft_shadow_color=head_shadow,
         )
-    _draw_block(
-        draw,
+    base = _draw_block(
+        base,
         body,
         _px(spec.body.box, w, h),
         body_font,
         int(h * spec.body.max_ratio * size_factor),
         body_color,
         spec.body.align,
-        stroke_fill=body_stroke,
-        shadow=floating,
+        soft_shadow_color=body_shadow,
     )
     base = _draw_cta(
         base,

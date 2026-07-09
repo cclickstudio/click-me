@@ -151,12 +151,13 @@ def _grade(s: float) -> tuple[str, str]:
 
 
 def _overall(kpi: dict, rubric: list) -> int:
+    # 브랜드 식별률은 품질 지표가 아니라 전달력(불쾌한 광고도 브랜드는 각인됨) — 종합 점수 제외(T3).
+    # 리포트 본문(§05)에는 별도 지표로 계속 표시하되 평균에는 넣지 않는다.
     parts = [
         kpi.get("click_intent_rate", 0) or 0,
         (kpi.get("purchase_intent", 0) or 0) / 5,
         (kpi.get("trust_avg", 0) or 0) / 5,
         1 - (kpi.get("rejection_rate", 0) or 0),
-        kpi.get("brand_recognition_rate", 0) or 0,
     ]
     if rubric:
         parts.append(sum((s.get("score", 0) or 0) for s in rubric) / (len(rubric) * 100))
@@ -304,6 +305,26 @@ def _confidence_block(c: dict) -> str:
     return _section("", "신뢰도 안내", _SLATE, body)
 
 
+# 세그먼트 섹션 출력 최소 셀 크기(T4) — 유효표본이 이 값 이상인 셀이 하나도 없으면 섹션을 숨긴다.
+# "30대 여성 1명·클릭 0%"류의 과소표본 셀은 정보가 아니라 노이즈 → 발표 질의 원천 차단.
+MIN_SEGMENT_CELL_SIZE = 20
+
+
+def _segments_qualify(segs: list) -> bool:
+    """유효표본 20명 이상 셀이 하나라도 있으면 True — 세그먼트 섹션 출력 여부 판정(T4)."""
+    return any((s.get("effective_n") or 0) >= MIN_SEGMENT_CELL_SIZE for s in segs)
+
+
+def _segment_notice(num: str = "") -> str:
+    """세그먼트 섹션 대체 안내(T4) — 셀 표본이 작아 섹션을 숨길 때 이유를 밝힌다."""
+    body = (
+        f'<p class="text-[10.5px] leading-relaxed" style="color:{_MUTED}">'
+        f"세그먼트 분석은 셀당 {MIN_SEGMENT_CELL_SIZE}명 이상일 때 제공됩니다. "
+        "현재 표본으로는 전체 반응만 표시합니다.</p>"
+    )
+    return _section(num, "누구에게 통하나 — 연령대×성별", _INDIGO, body)
+
+
 def _segment_block(segs: list, num: str = "") -> str:
     """연령대×성별 세그먼트 — '누구에게 통하나'(우리 최대 차별점).
 
@@ -447,6 +468,7 @@ def _build_html(result: dict) -> str:
     tr = kpi.get("trust_avg", 0) or 0
     rej = kpi.get("rejection_rate") or 0
     brr = kpi.get("brand_recognition_rate") or 0
+    ic = kpi.get("interest_conditional") or {}  # 관심층 조건부(agg-3) — 과거 런은 빈 dict
     overall = _overall(kpi, rubric)
     grade, gtext = _grade(overall)
     ocolor = _signal(overall)
@@ -519,12 +541,17 @@ def _build_html(result: dict) -> str:
 
     # ── 상단 KPI 카드 strip (5개) — 색은 브랜드 구분이 아니라 좋음(초)·보통(노)·나쁨(빨) 신호로 통일 ──
     # 거부율은 낮을수록 좋으므로 (1-rej)로 신호를 뒤집어 판정한다(게이지 길이는 실제 rej).
+    # 관심층 기준(ic)이 있으면 클릭 카드에 병기 — 실측 CTR 환산 아님(하단 주석 참조).
+    click_exp = f"100명 중 {_n(cir)}명이 눌러보고 싶어 했어요"
+    if ic:
+        ic_badge = " · 표본 부족(참고용)" if ic.get("low_sample") else ""
+        click_exp += f" · 관심층 기준 {_pct(ic.get('click_intent_rate'))}{ic_badge}"
     blocks.append(
         '<div class="grid grid-cols-5 gap-3">'
         + _kpi_card(
             _pct(cir),
             "클릭 의향",
-            f"100명 중 {_n(cir)}명이 눌러보고 싶어 했어요",
+            click_exp,
             _kpi_tone(cir, 0.3, 0.15),
             gauge=cir,
         )
@@ -560,6 +587,13 @@ def _build_html(result: dict) -> str:
         )
         + "</div>"
     )
+    if ic:
+        blocks.append(
+            f'<div class="text-[9px] leading-snug" style="color:{_MUTED}">'
+            "관심층 기준 = AISAS 관심 단계를 통과한 페르소나 조건부 클릭 의향 — 실제 Meta 집행에서 "
+            "알고리즘이 관심 유저를 선별 노출하는 효과의 근사치입니다. 두 값 모두 실측 CTR 환산치가 "
+            "아니며 시안 간 상대 비교용입니다.</div>"
+        )
 
     # ── 종합 판정(풀폭) — verdict(전문가 진단) + 한눈에 보는 결론(비전문가, 하단 가로) ──
     # 화면(SimulationReportView)과 동일 구조. 강약점 요약은 §진단 섹션(rubric)에 그대로 있다.
@@ -672,10 +706,12 @@ def _build_html(result: dict) -> str:
         )
     )
 
-    # ── 세그먼트 히트맵(누구에게 통하나) ──
+    # ── 세그먼트 히트맵(누구에게 통하나) — 유효표본 20명 이상 셀이 있을 때만(T4) ──
     segs = result.get("segments") or []
-    if segs:
+    if _segments_qualify(segs):
         blocks.append(_segment_block(segs, _sec()))
+    else:
+        blocks.append(_segment_notice(_sec()))
 
     # ── 구매의도 | 감정 (2열) ──
     pid = report.get("purchase_intent_dist") or {}
