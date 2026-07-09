@@ -77,12 +77,15 @@ def _reaction_fallback_enabled() -> bool:
 
 
 def _ssr_scoring_enabled() -> bool:
-    """SSR 점수화 사용 여부 — 기본 OFF(현행 LLM 정수 유지). SIMULATION_SCORING=ssr이면 켠다."""
-    return os.environ.get("SIMULATION_SCORING", "llm").lower() == "ssr"
+    """SSR 점수화 사용 여부 — 기본 ON(LLM 정수 채점 할루시네이션 회피).
+
+    SIMULATION_SCORING=llm이면 끈다.
+    """
+    return os.environ.get("SIMULATION_SCORING", "ssr").lower() == "ssr"
 
 
 def _wrap_ssr(reactor: object) -> object:
-    """SSR 배선(기본 OFF, opt-in) — reactor를 SSRScoringReactor로 감싸 구매의도·신뢰도를 재산정."""
+    """SSR 배선(기본 ON) — reactor를 SSRScoringReactor로 감싸 구매의도·신뢰도를 재산정."""
     if not _ssr_scoring_enabled():
         return reactor
     _ensure_env("OPENAI_API_KEY")  # 임베딩(text-embedding-3-small)용
@@ -99,8 +102,8 @@ def _build_reactor() -> object:
     Gemini가 자체 백오프 재시도를 다 쓰고도 503/실패면 FallbackReactionEngine이 GPT로 폴백한다.
     키가 없으면 폴백 없이 Gemini 단독(기존 동작 보존).
     SIMULATION_LLM_PROVIDER=openai면 반응 추출을 OpenAI 단독으로(Gemini 미사용).
-    SSR 점수화는 기본 OFF(opt-in) — 체인 최외곽을 SSR로 감싼다(서술→임베딩 분포).
-    SIMULATION_SCORING=ssr이면 켠다.
+    SSR 점수화는 기본 ON — 체인 최외곽을 SSR로 감싼다(서술→임베딩 분포).
+    SIMULATION_SCORING=llm이면 끈다.
     """
     from domain.simulation.adapters.gemini._common import _use_openai
 
