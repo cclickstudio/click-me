@@ -3,6 +3,11 @@
 > 노트북 세션을 집 데스크탑 새 세션에서 그대로 이어가기 위한 맥락 전체.
 > 같은 디렉토리의 `pipeline-piece.md`(파이프라인 조각)와 `persona-debate-pipeline.md`(토론 설계)와 함께 읽을 것.
 
+> **이후 갱신 — 이 로그가 다루는 세션 이후 모델 배정이 한 번 더 단순화됐다.** §4-1의 "Haiku2+GPT2+Gemini2/Judge=Opus"와
+> §4-2의 "Haiku4+GPT4/Judge=Sonnet"은 모두 이 세션들 시점의 스냅샷이고, **현재 코드(`assigner.py`·`llm_debate.py`)는
+> 토론자 전원 gpt-4o-mini(`PANEL_ENGINE=["gpt"]`)·Judge는 Claude Haiku(`JUDGE_ENGINE="haiku"`)**로 더 단순화됐다.
+> 최신 배정·`lay_count` 기본값(현재 3, 2/3/4 중 선택)·선발 로직은 `persona-debate-pipeline.md`를 정본으로 본다.
+
 ## 0. 프로젝트 한 줄
 
 ClickMe — 집행 전 AI 가상 소비자에게 광고를 테스트하고 집행 후 성과를 추적하는 광고 전주기 플랫폼. 작업 브랜치 `feat/simulation-doyeon`. 지금 다루는 영역은 **시뮬레이터 도메인(`backend/domain/simulation/`)의 페르소나 토론 파이프라인**.

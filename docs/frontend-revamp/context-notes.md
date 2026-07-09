@@ -22,8 +22,8 @@ ClickMe 프론트를 **사용자친화적 UI/UX로 전면 개편**한다. 색만
 
 - **컨셉:** 토스 톤앤매너 재해석 — 미니멀·카드·여백·명확한 위계. 진입(`/`)은 Apple식 다이나믹.
 - **색 전략:** 뉴트럴 우선(회색+여백+타이포가 화면 90%) + **색은 포인트에만**. 화면당 브랜드 accent 1개. 의미 없는 색 금지. 라이트는 밝고 생기있게, 다크는 액센트 한 단계 밝혀서.
-- **기본 테마:** primary 파랑 `#3182F6`(브랜드/성과·주요 액션) + **AI 포인트 보라 `#8B5CF6`**(다크 `#A78BFA`). ⚠️ P0에서 `--point`를 `#7C3AED`로 빌드 → **`#8B5CF6`로 갱신**(0.6).
-- **색 역할(확정):** 파랑=브랜드/성과·주요 CTA · **보라=AI/시뮬·생성 전용 포인트**(리밸런스·시뮬·시안 생성 등, 아껴서) · 빨강/노랑/초록=**상태 의미색 전용**(위험/주의/정상, 장식 금지) · 그 외 전부 **무채색**. 활동 피드 등 비-의미 요소엔 보라 안 씀.
+- **기본 테마:** primary 파랑 `#2563EB`(브랜드/성과·주요 액션) + **포인트 인디고 `#6366F1`**(다크 `#818CF8`). P0.6에서 `--point`를 `#7C3AED`→`#8B5CF6`로 갱신했으나, 후속 커밋(`5e132576` "메인 팔레트 블루 재정립")에서 primary `#2563EB`·point 인디고로 재정립 — **현재 코드 기준값은 이쪽.**
+- **색 역할(확정):** 파랑=브랜드/성과·주요 CTA · **인디고=AI/시뮬·생성 전용 포인트**(리밸런스·시뮬·시안 생성 등, 아껴서) · 빨강/노랑/초록=**상태 의미색 전용**(위험/주의/정상, 장식 금지) · 그 외 전부 **무채색**. 활동 피드 등 비-의미 요소엔 포인트색 안 씀.
 - **노랑:** 브랜드/포인트색으론 여전히 비채택. **warning(주의) 의미색으로만** 사용.
 - **테마 14종(= 포인트 색 프리셋):** 컬러11(blue⭐·indigo·cyan·emerald·orange·mono·wine·violet·rose·amber·teal) + 에디터다크3(monokai·monokai-black·dracula). `data-theme` 한 줄로 전환, `/themes` 갤러리에서 비교.
 - **대시보드 원칙:** 5초 규칙 · 숫자보다 변화(델타) · "지금 할 일" 우선(이상감지/승인대기/리밸런스) · 멘탈모델 그룹 · 점진적 공개 · 허영지표 컷 · 역할별(USER/COMPANY/ADMIN) 분기 · 활동 피드.
@@ -45,8 +45,8 @@ shadcn CSS 변수를 **RGB 채널 트리플릿**으로 정의(`--primary: 49 130
 - **surface 위계:** `bg-surface-0`(페이지) `bg-surface-1`(hover/카드바닥) `bg-surface-2`(카드=`bg-card`) `bg-surface-3`(팝오버). 
 - **텍스트 위계(ink):** `text-ink`(주) `text-ink-secondary` `text-ink-tertiary` `text-ink-muted` `text-ink-disabled`. shadcn 표준 `text-foreground`/`text-muted-foreground`도 동일 계열. (`text-primary`는 **파랑**이므로 본문 텍스트에 쓰지 말 것.)
 - **보더(line):** `border-line`(기본=`border-border`) `border-line-strong` `border-line-stronger`.
-- **primary(브랜드 파랑 #3182F6):** `bg-primary` `text-primary` `bg-primary-hover` `bg-primary-subtle`(연배경) `text-primary-foreground`.
-- **point(AI 포인트 보라 #8B5CF6, 다크 #A78BFA):** `bg-point` `text-point` `bg-point-hover` `bg-point-subtle` `text-point-foreground`. **AI/시뮬·생성 계열 전용.** ⚠️ **shadcn `accent`(뉴트럴 hover)와 분리** — 브랜드 보라는 반드시 `point`, `accent`는 ghost/드롭다운 hover용 뉴트럴. (P0 빌드값 `#7C3AED` → `#8B5CF6` 갱신 필요, 0.6.)
+- **primary(브랜드 파랑 #2563EB):** `bg-primary` `text-primary` `bg-primary-hover` `bg-primary-subtle`(연배경) `text-primary-foreground`.
+- **point(포인트 인디고 #6366F1, 다크 #818CF8):** `bg-point` `text-point` `bg-point-hover` `bg-point-subtle` `text-point-foreground`. **AI/시뮬·생성 계열 전용.** ⚠️ **shadcn `accent`(뉴트럴 hover)와 분리** — 브랜드 포인트색은 반드시 `point`, `accent`는 ghost/드롭다운 hover용 뉴트럴. (P0 빌드값 `#7C3AED` → 0.6 `#8B5CF6` → 후속 커밋 `5e132576`에서 인디고 `#6366F1`로 재정립.)
 - **semantic 4종:** `success`/`warning`/`danger`/`info` 각각 `bg-{s}`(fg) `text-{s}` `bg-{s}-subtle`(배경) `border-{s}-border`. `destructive`=danger(shadcn 호환).
 - **radius:** `rounded-lg`=12px(카드) `rounded-md` `rounded-sm` `rounded-xl`. **shadow:** `shadow-sm/md/lg`(다크 대응).
 - **기존 `--color-*`**(color-primary/bg/surface/text-*/border/hover)는 새 토큰 alias로 유지 — 신규 코드는 위 토큰 사용, 기존 참조는 안 깨짐.

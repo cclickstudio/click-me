@@ -23,9 +23,9 @@
 
 ## 체크리스트
 
-- [ ] models.py 컬럼 추가
-- [ ] alembic 026 작성
-- [ ] history.py 임베딩 저장 + 시맨틱 검색 함수
-- [ ] orchestrator.py 진입부 시맨틱 교체
-- [ ] ruff format + check
-- [ ] import/pytest 검증
+- [x] models.py 컬럼 추가
+- [x] alembic 026 작성
+- [x] history.py 임베딩 저장 + 시맨틱 검색 함수(`ChatSessionSummary`/`search_long_term_memory`, pgvector 코사인, `text-embedding-3-small`)
+- [x] orchestrator.py 진입부 시맨틱 교체 — 이후 `domain/chat/orchestrator.py` 자체가 삭제(2026-06-30 `4c3e7c8f`)되고 통합 딥에이전트로 전환됐으나, 시맨틱 검색 배선은 유지됨
+- [x] ruff format + check
+- [x] import/pytest 검증 — 실 DB+임베딩 라운드트립까지 완료("예산" 쿼리 top-1 회수 확인, `docs/chat/deep-agent-migration/checklist.md` 4단계)

@@ -1,86 +1,101 @@
 # ClickMe DB Schema
 
-| Version | v4.0 |
+| Version | v4.2 |
 |---|---|
-| Date | 2026-06-18 |
+| Date | 2026-07-09 |
 | DB | NeonDB (PostgreSQL 18.4 + pgvector) |
-| Source | `pg_dump --schema-only` 실측 (public 스키마 전체) |
+| Source | ORM(`core/models.py` + `domain/simulation/models.py`) + Alembic 체인 대조 (구 v4.0 본문 SQL은 2026-06-18 `pg_dump` 실측) |
 
+> v4.2 변경 (2026-07-09) — Alembic head를 실제 현행(`0011_inquiries_schema`)으로 정정하고, ORM(`core/models.py`)에 실재하는 테이블 기준으로 목록·괴리 섹션을 재정리. 아래 「본문 SQL」섹션은 2026-06-18 `pg_dump` 실측본이라 최신 ORM과 어긋나는 부분이 있으므로, 정본은 ORM(`core/models.py`·`domain/simulation/models.py`)·Alembic이다.
+>
 > v4.0 변경 — 실 DB를 pg_dump로 전량 재추출. 테이블 30 → **45개**, ENUM 타입 10종 명시.
-> 신규: `teams`·`project_members`·`refresh_tokens`·`user_settings`·`audit_logs`·`chat_messages`·`generated_ads`·`persona_templates`·`brand_profiles`·`calibration_data`·`ad_campaign_logs`·`kinds`·`categories`·`category_kinds`·`alembic_version`.
 > 변경: `users` `email`→`login_id`, `team_id`·`phone_num`·`user_email`·`must_change_password` 추가 / 여러 테이블에 `deleted_at` 소프트삭제 컬럼 추가.
 >
 > **admin 소프트삭제** — 조직/유저 삭제는 hard delete가 아니라 `status='INACTIVE'`(+ Cognito disable)로 처리해 데이터는 보존한다. 복원 시 `status='ACTIVE'`, 영구삭제(purge) 시에만 행을 실제로 지운다. auth 미들웨어가 `status != 'ACTIVE'`면 401 차단.
 >
-> **Alembic 체인(현행)** — `0001_baseline`(구 001~029 squash) → `0002_persona_weight` → `0003_categories_kinds` → `0004_generator_kb_search_vector`. 구 3자리 리비전(001/002…)은 제거됨. 새 DB는 `0001_baseline`이 전체 스키마를 한 번에 생성.
-
-> **[덧붙임 2026-07-06] 마이그레이션 0005·0006 반영**
-> - 0006(2026-07-03 적용): `chat_long_term_memory`→`chat_session_summaries` · `execution_history`→`chat_execution_history` 개명, `management_user_memory` drop, `automation_runs` 신설.
-> - 0005: `management_notifications` 신설. **체인 주의: 0004 → 0006 → 0005** (0006이 먼저 적용됨).
+> **Alembic 체인(현행, head = `0011_inquiries_schema`)** — 완전 선형:
+> `0001_baseline`(구 001~029 squash) → `0002_persona_weight` → `0003_categories_kinds` → `0004_generator_kb_search_vector` → `0005_rename_memory_tables`(2026-07-03) → `0006_management_notifications` → `0007_ads_generation_id` → `0008_chat_sessions_created_by` → `0009_center_suggestions` → `0010_management_approval_records` → `0011_inquiries_schema`(2026-07-08).
+> 구 3자리 리비전(001/002…)은 제거됨. 새 DB는 `0001_baseline`이 대부분의 스키마를 create_all로 한 번에 생성하고 0002 이후는 증분.
+>
+> **마이그레이션 0005·0006 요약**
+> - `0005_rename_memory_tables`(2026-07-03 적용): `chat_long_term_memory`→`chat_session_summaries` · `execution_history`→`chat_execution_history` 개명, `management_user_memory` drop, `automation_runs` 신설.
+> - `0006_management_notifications`: `management_notifications` 신설.
+>   (이전 문서는 이 두 리비전 번호를 서로 뒤바꿔 「0004 → 0006 → 0005」라 적었으나, 실제 파일 기준 순서는 `0004 → 0005_rename → 0006_notifications`이다.)
 > - 매니지먼트(4-2) 표에 ORM 기준 테이블 목록 덧붙임 — 아래 §매니지먼트 참조.
 
 ---
 
-## 테이블 목록 (46개)
+## 테이블 목록
+
+> **범례** — ✅ = ORM(`core/models.py` 또는 `domain/simulation/models.py`)에 실재하는 테이블. ⏸ = 문서/구 스키마엔 있으나 **현재 ORM에 매핑 없음**(계획 단계·미구현이거나 옛 세대 잔존 테이블). 실 DB(6/24 스냅샷 introspection)엔 물리적으로 남아 있을 수 있으나 코드가 쓰지 않는다.
 
 ### 인증 · 사용자
-| 테이블 | 역할 |
-|---|---|
-| `users` | 사용자 (로그인 ID = `login_id`) |
-| `teams` | 팀 (조직 하위 협업 단위) |
-| `refresh_tokens` | JWT 리프레시 토큰 |
-| `user_settings` | 사용자별 설정(테마·알림) |
-| `audit_logs` | 사용자 행위 감사 로그 |
+| 테이블 | 상태 | 역할 |
+|---|---|---|
+| `users` | ✅ | 사용자 (로그인 ID = `login_id`, 비밀번호는 Cognito 관리 → ORM에 `password_hash` 없음) |
+| `teams` | ✅ | 팀 (조직 하위 협업 단위) |
+| `refresh_tokens` | ⏸ | JWT 리프레시 토큰 — local JWT 모드 대비 계획, ORM 미매핑(미구현) |
+| `user_settings` | ⏸ | 사용자별 설정(테마·알림) — ORM 미매핑(미구현) |
+| `audit_logs` | ⏸ | 사용자 행위 감사 로그 — ORM 미매핑(미구현). 매니지먼트 감사는 `management_audit_events` 사용 |
 
 ### 조직 · 빌링
-| 테이블 | 역할 |
-|---|---|
-| `organizations` | 기업(빌링 단위) |
-| `organization_members` | 기업-사용자 매핑 |
-| `organization_subscriptions` | 기업 구독 |
-| `subscription_plans` | 구독 플랜 정의 |
-| `project_members` | 프로젝트 협업 멤버(뷰어/에디터/오너) |
+| 테이블 | 상태 | 역할 |
+|---|---|---|
+| `organizations` | ✅ | 기업(빌링 단위). 플랜은 별도 테이블이 아니라 `organizations.plan` VARCHAR(`free`\|`professional`\|`enterprise`) |
+| `organization_members` | ✅ | 기업-사용자 매핑 |
+| `organization_subscriptions` | ⏸ | 기업 구독 — ORM 미매핑(미구현, 플랜은 `organizations.plan` 컬럼으로 대체) |
+| `subscription_plans` | ⏸ | 구독 플랜 정의 — ORM 미매핑(미구현) |
+| `project_members` | ⏸ | 프로젝트 협업 멤버(뷰어/에디터/오너, ENUM `project_member_role`) — **계획됐으나 ORM 미매핑(미구현, 실 DB 비어있음)** |
 
 ### 프로젝트 · 광고
-| 테이블 | 역할 |
-|---|---|
-| `projects` | 프로젝트(캠페인 단위) |
-| `ads` | 광고 소재 |
-| `ad_analyses` | 광고 분석 결과 |
-| `ad_embeddings` | 광고 벡터 임베딩 |
-| `rubric_scores` | 광고 루브릭 점수 |
+| 테이블 | 상태 | 역할 |
+|---|---|---|
+| `projects` | ✅ | 프로젝트(캠페인 단위) |
+| `ads` | ✅ | 광고 소재 (`generation_id` 느슨 참조 — 0007) |
+| `ad_analyses` | ✅ | 광고 분석 결과 (시뮬 SimBase) |
+| `ad_embeddings` | ⏸ | 광고 벡터 임베딩 — ORM 미매핑(미구현) |
+| `rubric_scores` | ✅ | 광고 루브릭 점수 (시뮬 SimBase) |
 
 ### 시뮬레이션 (4-1)
-| 테이블 | 역할 |
-|---|---|
-| `panels` | 페르소나 패널 |
-| `personas` | 개별 페르소나 |
-| `persona_templates` | 페르소나 템플릿(클러스터·임베딩) |
-| `simulations` | 시뮬레이션 실행 단위 |
-| `persona_responses` | 페르소나별 반응 |
-| `simulation_aggregates` | 시뮬레이션 집계 결과 |
-| `simulation_results` | 시뮬레이션 결과(분포/페르소나, 임시) |
-| `simulation_comparisons` | A/B 비교 |
-| `diagnoses` | 시뮬레이션 진단 |
-| `recommendations` | 개선 추천 |
-| `reports` | PDF 리포트 |
+| 테이블 | 상태 | 역할 |
+|---|---|---|
+| `panels` | ✅ | 페르소나 패널 (SimBase) |
+| `personas` | ✅ | 개별 페르소나 (SimBase) |
+| `persona_templates` | ⏸ | 페르소나 템플릿(클러스터·임베딩) — ORM 미매핑(미구현) |
+| `simulations` | ✅ | 시뮬레이션 실행 단위 (SimBase, 소프트삭제 `deleted_at`) |
+| `persona_responses` | ✅ | 페르소나별 반응 (SimBase, ORM 클래스명 `PersonaReaction`) |
+| `simulation_aggregates` | ✅ | 시뮬레이션 집계 결과 (SimBase, `brand_recognition_rate` 포함) |
+| `simulation_results` | ⏸ | 시뮬레이션 결과(분포/페르소나, 임시) — ORM 미매핑(미구현) |
+| `simulation_comparisons` | ⏸ | A/B 비교 — ORM 미매핑(미구현) |
+| `diagnoses` | ⏸ | 시뮬레이션 진단 — ORM 미매핑(미구현) |
+| `recommendations` | ⏸ | 개선 추천 — ORM 미매핑(미구현) |
+| `reports` | ⏸ | PDF 리포트 — ORM 미매핑(미구현, 리포트는 런타임 생성) |
+
+### KB / RAG 청크 (도메인별)
+| 테이블 | 상태 | 역할 |
+|---|---|---|
+| `simulation_kb_chunks` | ✅ | 시뮬 KB 청크(벡터) |
+| `generator_kb_chunks` | ✅ | 제너레이터 KB 청크(벡터 + FTS `search_vector` — 0004) |
+| `clio_kb_chunks` | ✅ | CLIO 광고 일반지식 KB 청크(벡터) |
 
 ### 페르소나 토론
-| 테이블 | 역할 |
-|---|---|
-| `persona_debates` | 페르소나 토론 세션 (simulations 1:N) |
-| `persona_debate_participants` | 토론 패널 |
-| `persona_debate_utterances` | 토론 발언 로그(라운드×패널) |
+| 테이블 | 상태 | 역할 |
+|---|---|---|
+| `persona_debates` | ✅ | 페르소나 토론 세션 (simulations 1:N) |
+| `persona_debate_participants` | ✅ | 토론 패널 |
+| `persona_debate_utterances` | ✅ | 토론 발언 로그(라운드×패널) |
 
 ### 광고 생성 (4-3) · 게시
-| 테이블 | 역할 |
-|---|---|
-| `ad_generations` | 광고 제너레이터 실행 |
-| `ad_generation_candidates` | 제너레이터 후보 |
-| `ad_publish_logs` | 광고 게시 이력(IG) |
-| `ad_campaign_logs` | Meta Marketing API 집행 이력 |
-| `generated_ads` | 생성 이미지 광고(독립 저장) |
-| `brand_profiles` | 클라이언트 브랜드 프로필 |
+| 테이블 | 상태 | 역할 |
+|---|---|---|
+| `ad_generations` | ✅ | 광고 제너레이터 실행 |
+| `ad_generation_candidates` | ✅ | 제너레이터 후보 |
+| `ad_publish_logs` | ✅ | 광고 게시 이력(IG) |
+| `ad_campaign_logs` | ✅ | Meta Marketing API 집행 이력 |
+| `generated_ads` | ⏸ | 생성 이미지 광고(독립 저장, ENUM `ad_status`) — ORM 미매핑(미구현) |
+| `brand_profiles` | ✅ | 클라이언트 브랜드 프로필(`client_id` PK) |
+| `brand_kits` | ✅ | 조직 단위 브랜드 키트(색·로고·톤 명명 저장) |
+| `ad_templates` | ✅ | 시뮬/생성 입력 명명 저장 템플릿(sim\|gen) |
 
 ### 매니지먼트 (4-2)
 | 테이블 | 역할 |
@@ -94,29 +109,47 @@
 | `management_campaign_kpi_overrides` | 캠페인별 KPI 목표(target_roas 등) 덮어쓰기 — 덧붙임 07-06 |
 | `management_kb_documents` / `_kb_chunks` / `_kb_feedback` / `_kb_eval_cases` | 어시스턴트(CLIO) RAG 지식베이스·평가 — 덧붙임 07-06 |
 | `management_chat_sessions` / `_chat_messages` / `management_agent_runs` | 어시스턴트 전용 대화·에이전트 실행 기록 — 덧붙임 07-06 |
-| `automation_runs` | APScheduler 워커 결과 공용 저장소(3도메인, dedup 부분 유니크) — 0006 신설 |
-| `chat_execution_history` | 실행 확정 이력 = 채팅 에이전트 롱텀 메모리 — 0006에서 `execution_history` 개명 |
+| `automation_runs` | APScheduler 워커 결과 공용 저장소(3도메인, dedup 부분 유니크) — 0005 신설 |
+| `chat_execution_history` | 실행 확정 이력 = 채팅 에이전트 롱텀 메모리 — 0005에서 `execution_history` 개명 |
+
+> 모두 ✅ ORM 매핑됨. 반면 옛 세대 매니지먼트 실행 테이블(`action_proposals`·`approvals`·`execution_runs`·`idempotency_keys`·`audit_events`·`remediation_escalations`·`created_campaigns`·`campaign_kpi_overrides`·`meta_connections`)은 ⏸ — 현 ORM은 `management_` 프리픽스 이름(`management_idempotency_keys`·`management_audit_events`·`management_created_campaigns`·`management_campaign_kpi_overrides`·`management_meta_connections`)만 쓰고, 제안·승인 원장은 `management_approval_records`로 일원화됐다(구 `action_proposals`·`approvals`·`execution_runs`는 현 ORM에 없음).
+
+### 채팅 (4-4) · 센터
+| 테이블 | 상태 | 역할 |
+|---|---|---|
+| `chat_sessions` | ✅ | 채팅 세션 (제목·`created_by`·`last_read_at`. 메시지는 `chat_messages`로 정규화 — 구 `messages` JSONB 컬럼 폐기) |
+| `chat_messages` | ✅ | 채팅 메시지(user\|assistant, ENUM `chat_role`, `metadata` JSONB) |
+| `chat_session_summaries` | ✅ | 세션 요약(숏텀 압축, 임베딩). 구 `chat_long_term_memory` 개명 — 0005 |
+| `chat_execution_history` | ✅ | 실행 이력 롱텀 메모리(tsvector BM25). 구 `execution_history` 개명 — 0005 |
+| `chat_brand_profiles` | ✅ | 프로젝트별 브랜드 톤·타겟 기억(project_id UNIQUE) |
+| `center_suggestions` | ✅ | 센터(우측 통합 알림) 크로스도메인 제안 — 0009 신설. 알림 센터가 `management_notifications`와 병합 조회 |
+
+### 결제 · 크레딧
+| 테이블 | 상태 | 역할 |
+|---|---|---|
+| `payment_orders` | ✅ | Toss 크레딧 충전 주문(서버 기억 금액·승인 상태) |
+| `credit_ledger` | ✅ | 크레딧 원장(append-only, 잔액 = delta 합) |
 
 ### 참조 · 기타
-| 테이블 | 역할 |
-|---|---|
-| `benchmarks` | 업종별 벤치마크 |
-| `rag_chunks` | RAG 청크 |
-| `calibration_data` | 예측↔실측 캘리브레이션 데이터 |
-| `kinds` | NICE 상품/서비스 분류 45류 |
-| `categories` | 업종 카테고리 묶음 |
-| `category_kinds` | 카테고리↔류 매핑(다대다) |
-| `chat_sessions` | 채팅 세션 |
-| `chat_messages` | 채팅 메시지 |
-| `inquiries` | 고객 문의 |
-| `alembic_version` | Alembic 마이그레이션 버전 |
+| 테이블 | 상태 | 역할 |
+|---|---|---|
+| `benchmarks` | ⏸ | 업종별 벤치마크 — ORM 미매핑(미구현) |
+| `rag_chunks` | ⏸ | RAG 청크(구 단일 테이블) — ORM 미매핑(도메인별 `*_kb_chunks`로 대체) |
+| `calibration_data` | ⏸ | 예측↔실측 캘리브레이션 데이터 — ORM 미매핑(미구현, calibration 해금 전) |
+| `kinds` | ✅* | NICE 상품/서비스 분류 45류 — 0003 마이그로 생성(ORM 클래스 없이 SQL 관리) |
+| `categories` | ✅* | 업종 카테고리 묶음 — 0003 |
+| `category_kinds` | ✅* | 카테고리↔류 매핑(다대다) — 0003 |
+| `inquiries` | ✅ | 고객 문의 — **0011에서 재정의**(구 `name`/`email`/`message` → `title`/`content`/`contact_email`/`is_resolved`/`resolved_at`) |
+| `alembic_version` | — | Alembic 마이그레이션 버전(스탬프) |
+
+> `✅*` = ORM `core/models.py`에 클래스는 없지만 Alembic 0003으로 생성·운영되는 참조 테이블.
 
 ---
 
 ## ENUM 타입 (10종)
 
 > DB에 타입은 정의돼 있으나, 대부분의 테이블은 `VARCHAR + 앱 레벨 검증`을 사용한다.
-> 실제 ENUM 컬럼은 `generated_ads.status`(ad_status) · `chat_messages.role`(chat_role) · `project_members.role`(project_member_role) 셋뿐.
+> ENUM 컬럼은 DB에 `generated_ads.status`(ad_status) · `chat_messages.role`(chat_role) · `project_members.role`(project_member_role) 셋뿐이며, 이 중 현 ORM이 실제로 매핑·사용하는 것은 **`chat_messages.role`(chat_role)** 하나다(나머지 두 테이블은 ⏸ ORM 미매핑).
 
 | 타입 | 값 | 사용처 |
 |---|---|---|
@@ -144,7 +177,7 @@
 CREATE TABLE users (
     id                   UUID PRIMARY KEY,
     login_id             VARCHAR(255) NOT NULL UNIQUE,    -- 로그인 ID
-    password_hash        VARCHAR(255) NOT NULL,
+    password_hash        VARCHAR(255) NOT NULL,           -- ⚠️ 구 실측 컬럼. 현 ORM(User)엔 미매핑 — 비밀번호는 Cognito 관리(local JWT 대비 잔존 가능)
     name                 VARCHAR(100) NOT NULL,
     role                 VARCHAR(20)  NOT NULL,                    -- ADMIN | COMPANY | USER
     status               VARCHAR(20)  NOT NULL DEFAULT 'ACTIVE',   -- ACTIVE | PENDING | INACTIVE(admin 소프트삭제)
@@ -441,6 +474,8 @@ CREATE TABLE persona_responses (
     emotion_tag          VARCHAR(50)   NOT NULL,
     perceived_message    TEXT,
     perceived_target     VARCHAR(100),
+    brand_recognized     BOOLEAN       NOT NULL DEFAULT false,  -- ORM 추가(6/18 실측엔 없음)
+    perceived_brand      VARCHAR(200),                          -- ORM 추가
     utterance            TEXT,
     qa_passed            BOOLEAN       NOT NULL,
     qa_fail_reason       VARCHAR(100),
@@ -461,6 +496,7 @@ CREATE TABLE simulation_aggregates (
     purchase_intent_avg NUMERIC       NOT NULL,
     trust_avg           NUMERIC       NOT NULL,
     rejection_rate      NUMERIC       NOT NULL,
+    brand_recognition_rate NUMERIC    NOT NULL DEFAULT 0.0,  -- ORM 추가(6/18 실측엔 없음)
     variance_warning    BOOLEAN       NOT NULL DEFAULT false,
     payload             JSONB         NOT NULL,
     engine_version      VARCHAR(50)   NOT NULL,
@@ -796,15 +832,18 @@ CREATE TABLE chat_messages (
 );
 
 -- ============================================================
--- inquiries
+-- inquiries  (⚠️ 0011에서 재정의됨 — 아래는 현행 스키마, 구 name/email/message 폐기)
 -- ============================================================
 CREATE TABLE inquiries (
-    id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    name       VARCHAR(255),
-    email      VARCHAR(255),
-    message    TEXT,
-    created_at TIMESTAMP DEFAULT now()
+    id            UUID PRIMARY KEY,
+    title         VARCHAR(300) NOT NULL,
+    content       TEXT         NOT NULL,
+    contact_email VARCHAR(255),                       -- 회신 연락처
+    is_resolved   BOOLEAN      NOT NULL DEFAULT false, -- 관리자 해결 처리
+    created_at    TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    resolved_at   TIMESTAMPTZ
 );
+CREATE INDEX ix_inquiries_created_at ON inquiries (created_at DESC);
 
 -- ============================================================
 -- management_notifications  (운영 알림, 이상 감지 C안 — 0005)
@@ -863,32 +902,35 @@ CREATE TABLE alembic_version (
 
 ---
 
-## ORM 모델(`core/models.py`) vs 실제 DB
+## ORM 모델 vs 실제 DB (2026-07-09 재정리)
 
-> `core/models.py`는 전체 테이블의 일부만 선언한다. 시뮬레이션 핵심 테이블(`simulations`·`personas`·`panels`·`ad_analyses`·`persona_responses`·`simulation_aggregates`·`diagnoses`·`recommendations`·`reports` 등)은 도메인 모델/Alembic로만 관리되고 `core/models.py`엔 없다.
+> ORM은 두 곳에 나뉜다. **`core/models.py`**(auth·조직·프로젝트·광고·생성·매니지먼트·채팅·결제·센터)와 **`domain/simulation/models.py`**(시뮬 전용 `SimBase` — `panels`·`personas`·`ad_analyses`·`simulations`·`persona_responses`·`rubric_scores`·`simulation_aggregates`). 시뮬 핵심 테이블은 `core`엔 없고 도메인 로컬 Base로 격리돼 있다(추후 병합 예정). 아래 "DB에 있음, ORM 없음"은 이 둘 어디에도 클래스가 없는 것만 가리킨다.
 
 | 구분 | 내용 |
 |---|---|
-| **ORM에 선언, DB에 없음** | `action_proposals`·`approvals`·`audit_events`·`execution_runs`·`idempotency_keys` (management 모델 — 현재 public 스키마 덤프에 부재, **미생성 추정**) |
-| **DB에 있음, ORM(core) 없음** | `simulations`·`ad_analyses`·`panels`·`personas`·`persona_templates`·`persona_responses`·`simulation_aggregates`·`simulation_comparisons`·`diagnoses`·`recommendations`·`reports`·`benchmarks`·`rag_chunks`·`rubric_scores`·`subscription_plans`·`organization_subscriptions`·`calibration_data`·`brand_profiles`·`alembic_version` |
-| `ads` | ORM `ad_type`/`s3_key`/`analysis` → 실제 `media_type`/`asset_url` + `copy_text`·`industry_category`·`product_category`·`ad_objective`·`target_filter`·`status`·`created_by`·`updated_at` (불일치 지속) |
-| `projects` | ORM은 `organization_id`·`name`·`created_at`만 → 실제 `+ description`·`status`·`created_by`·`updated_at`·`deleted_at` |
-| `inquiries` | ORM `email` 컬럼 → 실제 `email` (일치) |
-| `users` | ORM·DB 모두 `login_id` 기준으로 정렬됨 (v3.1 `email` 표기 해소) |
+| **DB에 있음, ORM(어느 Base에도) 없음 — ⏸ 미구현/계획/구세대** | `refresh_tokens`·`user_settings`·`audit_logs`·`organization_subscriptions`·`subscription_plans`·`project_members`·`ad_embeddings`·`persona_templates`·`simulation_results`·`simulation_comparisons`·`diagnoses`·`recommendations`·`reports`·`benchmarks`·`rag_chunks`·`calibration_data`·`generated_ads` · (구세대 매니지먼트) `action_proposals`·`approvals`·`execution_runs`·`idempotency_keys`·`audit_events`·`remediation_escalations`·`created_campaigns`·`campaign_kpi_overrides`·`meta_connections` · (SQL 관리) `kinds`·`categories`·`category_kinds`·`alembic_version` · (LangGraph 라이브러리) `checkpoints`·`checkpoint_blobs`·`checkpoint_writes`·`checkpoint_migrations` |
+| **ORM에 선언, 6/24 덤프엔 없음(이후 추가)** | `brand_kits`·`ad_templates`·`clio_kb_chunks`·`chat_session_summaries`(구 `chat_long_term_memory`)·`chat_execution_history`(구 `execution_history`)·`chat_brand_profiles`·`center_suggestions`·`payment_orders`·`credit_ledger`·`automation_runs`·`management_notifications`·`management_approval_records`·`management_meta_connections`·`management_campaign_kpi_overrides`·`management_created_campaigns`·`management_idempotency_keys`·`management_audit_events` |
+| `users` | ORM(`User`)엔 **`password_hash` 없음** — 비밀번호는 Cognito 관리. 구 실측 SQL의 `password_hash NOT NULL`은 local JWT 대비 잔존 컬럼일 수 있다. |
+| `ads` | 현 ORM은 실측과 정합(`media_type`/`asset_url`/`copy_text`/`industry_category`/`product_category`/`ad_objective`/`target_filter`/`status`/`created_by`/`updated_at`) + **0007에서 `generation_id` 추가**(cross-base 느슨 참조). |
+| `projects` | 현 ORM에 `description`·`status`·`created_by`·`updated_at`·`deleted_at`·`team_id` 전부 반영(정합). |
+| `inquiries` | **0011에서 재정의** — ORM(`Inquiry`)·DB 모두 `title`/`content`/`contact_email`/`is_resolved`/`created_at`/`resolved_at`. 구 `name`/`email`/`message`는 폐기. |
 
-> **[덧붙임 2026-07-06] 매니지먼트 실행 계열 테이블 — 이름이 두 세대다**
+> **매니지먼트 실행 계열 — 이름 두 세대**
 >
-> 위 표의 「ORM에 선언, DB에 없음」 행은 옛 이름 기준이라 지금과 어긋난다. 같은 역할의 테이블이 이름 세대 두 개로 존재한다.
+> 같은 역할의 테이블이 이름 세대 두 개로 존재한다. 현 ORM은 신명(`management_` prefix)만 사용한다.
 >
-> | 구명 (옛 세대) | 신명 (현재 ORM) |
+> | 구명 (옛 세대, ⏸ ORM 미매핑) | 신명 (현재 ORM ✅) |
 > |---|---|
 > | `idempotency_keys` | `management_idempotency_keys` |
 > | `audit_events` | `management_audit_events` |
-> | `action_proposals` · `approvals` · `execution_runs` | (현 ORM엔 없음 — 제안·승인은 DB 저장 안 함) |
+> | `created_campaigns` | `management_created_campaigns` |
+> | `campaign_kpi_overrides` | `management_campaign_kpi_overrides` |
+> | `meta_connections` | `management_meta_connections` |
+> | `action_proposals` · `approvals` · `execution_runs` | (제안·승인은 `management_approval_records` 원장으로 일원화 — 구 3종은 현 ORM에 없음) |
 >
-> 경위 — ① 초기 구 마이그레이션(008·009)이 구명 테이블을 생성했고, 6/24 실DB introspection(`db-erd.md`)에는 그래서 구명이 찍혀 있다(`idempotency_keys`엔 데이터 12행). ② 이후 ORM이 `management_` prefix 신명으로 정리됐고 구 008·009는 삭제되어 0005·0006으로 재편입됐다. ③ 빈 DB는 0001_baseline의 create_all이 신명으로 바로 생성하지만, 기존 DB엔 구명 테이블이 남아 있을 수 있다.
+> 경위 — ① 초기 구 마이그레이션이 구명 테이블을 생성했고, 6/24 실DB introspection(`db-erd.md`)엔 그래서 구명이 찍혀 있다(`idempotency_keys` 12행 등). ② 이후 ORM이 `management_` prefix 신명으로 정리됐고 구 마이그은 삭제·재편입됐다. ③ 빈 DB는 `0001_baseline`의 create_all이 신명으로 바로 생성하지만, 기존 DB엔 구명 테이블이 물리적으로 남아 있을 수 있다.
 >
-> 할 일 — `pg_dump --schema-only`를 다시 떠서 ⑴ 구명 테이블이 아직 남았는지(남았으면 12행 데이터 이관/폐기 결정) ⑵ 신명 테이블이 생성돼 있는지 확인하고, 결과로 위 행과 이 덧붙임을 합쳐 확정 정리한다.
+> 할 일 — `pg_dump --schema-only`를 다시 떠서 ⑴ 구명 테이블이 아직 남았는지 ⑵ 신명 테이블이 생성돼 있는지 확인하고, 결과로 위 표를 확정 정리한다.
 
 ---
 

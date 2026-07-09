@@ -32,7 +32,7 @@ function read(name: string): string {
 }
 
 export function useChartColors(): ChartColors {
-  const { theme, dataTheme } = useTheme();
+  const { theme } = useTheme();
   const [colors, setColors] = useState<ChartColors>(() => buildFallback());
 
   useEffect(() => {
@@ -51,8 +51,8 @@ export function useChartColors(): ChartColors {
         next.danger,
       ],
     });
-    // theme/dataTheme 바뀌면 CSS 변수 재판독.
-  }, [theme, dataTheme]);
+    // theme 바뀌면 CSS 변수 재판독.
+  }, [theme]);
 
   return colors;
 }

@@ -197,8 +197,8 @@ def test_aggregator_payload_unchanged_without_ssr_dists() -> None:
 
 def test_ssr_scoring_flag(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("SIMULATION_SCORING", raising=False)
-    assert _ssr_scoring_enabled() is False  # 기본 off — 현행 동작 보존
-    monkeypatch.setenv("SIMULATION_SCORING", "ssr")
-    assert _ssr_scoring_enabled() is True
+    assert _ssr_scoring_enabled() is True  # 기본 on — LLM 정수 채점 할루시네이션 회피
     monkeypatch.setenv("SIMULATION_SCORING", "llm")
     assert _ssr_scoring_enabled() is False
+    monkeypatch.setenv("SIMULATION_SCORING", "ssr")
+    assert _ssr_scoring_enabled() is True

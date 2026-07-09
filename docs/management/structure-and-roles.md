@@ -37,6 +37,8 @@
 ## 1. 확정 폴더 구조
 
 > **폴더 구조 원칙**: v1.3 트리를 **그대로 유지**한다. 새 폴더 0개 — 추가는 루트 단일 파일 `approval.py` 1개뿐(agents 단일 파일 철학과 동일). 고장 주입(FaultMode/FaultConfig)·골든 샘플도 별도 파일/폴더 없이 기존 `enums.py`/`schemas.py`/`evals/fixtures/` 안에서 해결한다.
+>
+> **[정정 2026-07-06]** 실제로는 `remediation/` 패키지(panel_sink.py 등, 알림 판정표+상담 연동)가 추가되어 이 원칙에서 벗어난다(알림 시스템 도입으로 인한 의도된 예외). 상세는 문서 상단 07-06 현행화 노트·`운영알림-README.md` 참고.
 
 ```
 backend/domain/management/
