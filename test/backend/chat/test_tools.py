@@ -49,7 +49,9 @@ async def test_run_simulation_emits_sim_form(tools):
             "ad_content": "여름 세일",
             "product_category": None,
             "ad_objective": None,
+            "ad_image_url": None,  # 제너 백필 미발동(제목·내용 완비) — 이미지 없음
             "analysis_mode": "synthetic",  # 3-모드 분석 기본값(1ad26926) 반영
+            "autostart": False,  # 이미지 없으면 자동 실행 안 함(91ec66e8 채팅 시뮬 자동화)
         },
     }
     assert cmd.update["source"] == "simulation"

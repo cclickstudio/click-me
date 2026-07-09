@@ -792,12 +792,7 @@ export default function GeneratorPage() {
   }, []);
   const selectedProject = projects.find((p) => p.id === localProjectId) ?? null;
   const selectProject = (id: string | null) => setLocalProjectId(id);
-  // N2 — 안읽음 뱃지(시뮬 경로와 대칭). 닫힘 여부는 ref로 최신값 읽음.
-  const { pushUnread, floatingOpen, openChat } = useChatController();
-  const floatingOpenRef = useRef(floatingOpen);
-  useEffect(() => {
-    floatingOpenRef.current = floatingOpen;
-  }, [floatingOpen]);
+  const { openChat } = useChatController();
   const [mode, setMode] = useState<GenMode>("create");
   const [format, setFormat] = useState<"single" | "carousel">("single");
   const [phase, setPhase] = useState<Phase>("idle");
@@ -816,6 +811,7 @@ export default function GeneratorPage() {
   const logoInputRef = useRef<HTMLInputElement>(null);
   const colorInputRef = useRef<HTMLInputElement>(null);
   const esRef = useRef<EventSource | null>(null);
+  const reconnectAttemptsRef = useRef(0);
 
   // 상품 이미지 (생성 모드)
   const [productImageTempKey, setProductImageTempKey] = useState("");
@@ -992,6 +988,86 @@ export default function GeneratorPage() {
       ? productName.trim() && productDescription.trim() && targetAudience.trim()
       : !!improveData?.summary;
 
+  // 생성 완료 처리 — SSE "completed" 이벤트와, onerror 폴백에서 재조회한 결과가 이미
+  // completed로 나온 경우(스트림만 끊긴 것) 양쪽에서 공용으로 쓴다.
+  async function applyCompletedResult(generationId: string, d: GenerationDetail) {
+    // CREATE 완료 시 누끼 S3 키 보관 — 개선 모드에서 재사용
+    if (d.product_cutout_s3_key) {
+      lastProductCutoutKeyRef.current = d.product_cutout_s3_key;
+    }
+    setDetail(d);
+    setPhase("done");
+    // 완료된 생성물을 좌측 패널 목록에 즉시 반영(새로고침 불필요).
+    if (selectedProject?.id) refreshDetails(selectedProject.id);
+    // N1 — 전용 페이지 직접 생성이 끝나면, 개선/시뮬 제안을 채팅에 자동 주입.
+    // 기존 대화에 끼워넣지 않고 '새 채팅 세션'을 만들어 거기에 제안한다(맥락 분리).
+    // 만든 세션 id는 저장해 아래 '시뮬레이션 돌리기' 버튼(#2)이 같은 세션을 연다.
+    const pid = selectedProject?.id;
+    if (pid) {
+      const injectKey = `n1_gen_injected_${generationId}`; // 동일 생성 1회만
+      if (!localStorage.getItem(injectKey)) {
+        localStorage.setItem(injectKey, "1");
+        const count = (d.candidates ?? []).length;
+        // 첫 후보를 시뮬 제안 프리필로 — 시안 카피 + 이미지 URL(시뮬 이미지 필수 충족).
+        const c0 = (d.candidates ?? [])[0];
+        const simImgRaw = c0?.image_url ?? null;
+        const simImg = simImgRaw
+          ? simImgRaw.startsWith("/")
+            ? `${API_BASE}${simImgRaw}`
+            : simImgRaw
+          : undefined;
+        const sessionTitle = `${productName || "광고 시안"} 시뮬·개선`;
+        api.chat.createSession(pid, sessionTitle).then((created) => {
+          const sid = created.id;
+          // #2 버튼이 이 제안 세션을 열 수 있게 생성별로 저장.
+          localStorage.setItem(`gen_sim_session_${generationId}`, sid);
+          void api.chat
+            .appendWidgets(sid, [
+              {
+                content: `광고 시안 ${count}개가 생성됐어요. 채팅에서 이어서 개선해볼까요?`,
+                meta: {
+                  source: "generator",
+                  label: "광고 생성",
+                  approval: {
+                    action: "run_generator",
+                    label: "개선 시안 다시 생성",
+                    reasons: ["전용 페이지에서 직접 만든 시안을 채팅에서 이어 개선할 수 있어요."],
+                  },
+                },
+              },
+              // #3 — 생성 완료 시 시뮬레이션 제안(첫 시안 프리필). 이미지 URL로 시뮬 즉시 실행 가능.
+              ...(c0
+                ? [
+                    {
+                      content:
+                        "생성한 시안으로 소비자 반응을 미리 예측해볼까요? 아래에서 확인·실행하세요.",
+                      meta: {
+                        source: "simulation",
+                        label: "시뮬레이션",
+                        widget: {
+                          type: "sim_form",
+                          data: {
+                            ad_title: c0.copy.headline,
+                            ad_content: [c0.copy.headline, c0.copy.body, c0.copy.cta]
+                              .filter(Boolean)
+                              .join("\n"),
+                            ad_image_url: simImg,
+                          },
+                        },
+                      },
+                    },
+                  ]
+                : []),
+            ])
+            .then(() => {
+              if (!floatingOpenRef.current) pushUnread();
+            })
+            .catch(() => {});
+        }).catch(() => {});
+      }
+    }
+  }
+
   // SSE 구독 — 시작/복원 공용. 완료·실패 시 localStorage 정리.
   function subscribe(generationId: string) {
     esRef.current?.close();
@@ -999,6 +1075,7 @@ export default function GeneratorPage() {
     const es = api.generator.stream(generationId);
     esRef.current = es;
     es.onmessage = async (e) => {
+      reconnectAttemptsRef.current = 0; // 이벤트를 정상 수신 — 연결 살아있음, 재연결 카운트 리셋
       const data = JSON.parse(e.data) as SSEProgressEvent;
       if (data.event === "progress") {
         setProgress({ stage: data.stage ?? "", pct: data.pct ?? 0, message: data.message ?? "" });
@@ -1008,81 +1085,7 @@ export default function GeneratorPage() {
         setGenJob(null); // 동시실행 슬롯 해제
         try {
           const d = (await api.generator.detail(generationId)) as GenerationDetail;
-          // CREATE 완료 시 누끼 S3 키 보관 — 개선 모드에서 재사용
-          if (d.product_cutout_s3_key) {
-            lastProductCutoutKeyRef.current = d.product_cutout_s3_key;
-          }
-          setDetail(d);
-          setPhase("done");
-          // 완료된 생성물을 좌측 패널 목록에 즉시 반영(새로고침 불필요).
-          if (selectedProject?.id) refreshDetails(selectedProject.id);
-          // N1 — 전용 페이지 직접 생성이 끝나면, 개선/시뮬 제안을 채팅에 자동 주입.
-          // 기존 대화에 끼워넣지 않고 '새 채팅 세션'을 만들어 거기에 제안한다(맥락 분리).
-          // 만든 세션 id는 저장해 아래 '시뮬레이션 돌리기' 버튼(#2)이 같은 세션을 연다.
-          const pid = selectedProject?.id;
-          if (pid) {
-            const injectKey = `n1_gen_injected_${generationId}`; // 동일 생성 1회만
-            if (!localStorage.getItem(injectKey)) {
-              localStorage.setItem(injectKey, "1");
-              const count = (d.candidates ?? []).length;
-              // 첫 후보를 시뮬 제안 프리필로 — 시안 카피 + 이미지 URL(시뮬 이미지 필수 충족).
-              const c0 = (d.candidates ?? [])[0];
-              const simImgRaw = c0?.image_url ?? null;
-              const simImg = simImgRaw
-                ? simImgRaw.startsWith("/")
-                  ? `${API_BASE}${simImgRaw}`
-                  : simImgRaw
-                : undefined;
-              const sessionTitle = `${productName || "광고 시안"} 시뮬·개선`;
-              api.chat.createSession(pid, sessionTitle).then((created) => {
-                const sid = created.id;
-                // #2 버튼이 이 제안 세션을 열 수 있게 생성별로 저장.
-                localStorage.setItem(`gen_sim_session_${generationId}`, sid);
-                void api.chat
-                  .appendWidgets(sid, [
-                    {
-                      content: `광고 시안 ${count}개가 생성됐어요. 채팅에서 이어서 개선해볼까요?`,
-                      meta: {
-                        source: "generator",
-                        label: "광고 생성",
-                        approval: {
-                          action: "run_generator",
-                          label: "개선 시안 다시 생성",
-                          reasons: ["전용 페이지에서 직접 만든 시안을 채팅에서 이어 개선할 수 있어요."],
-                        },
-                      },
-                    },
-                    // #3 — 생성 완료 시 시뮬레이션 제안(첫 시안 프리필). 이미지 URL로 시뮬 즉시 실행 가능.
-                    ...(c0
-                      ? [
-                          {
-                            content:
-                              "생성한 시안으로 소비자 반응을 미리 예측해볼까요? 아래에서 확인·실행하세요.",
-                            meta: {
-                              source: "simulation",
-                              label: "시뮬레이션",
-                              widget: {
-                                type: "sim_form",
-                                data: {
-                                  ad_title: c0.copy.headline,
-                                  ad_content: [c0.copy.headline, c0.copy.body, c0.copy.cta]
-                                    .filter(Boolean)
-                                    .join("\n"),
-                                  ad_image_url: simImg,
-                                },
-                              },
-                            },
-                          },
-                        ]
-                      : []),
-                  ])
-                  .then(() => {
-                    if (!floatingOpenRef.current) pushUnread();
-                  })
-                  .catch(() => {});
-              }).catch(() => {});
-            }
-          }
+          await applyCompletedResult(generationId, d);
         } catch (err) {
           setError(err instanceof Error ? err.message : "생성 결과를 불러오지 못했습니다.");
           setPhase("idle");
@@ -1095,22 +1098,39 @@ export default function GeneratorPage() {
         setPhase("idle");
       }
     };
+    const MAX_RECONNECT_ATTEMPTS = 5;
     es.onerror = async () => {
       es.close();
-      localStorage.removeItem(ACTIVE_GEN_KEY);
-      setGenJob(null); // 동시실행 슬롯 해제
-      // 스트림이 끊긴 이유가 서버측 생성 실패(error 이벤트가 종료 전 유실)일 수 있다.
-      // 상태를 조회해 실제 실패 원인이 있으면 그걸 우선 노출 — "네트워크 끊김"으로 오인 방지.
+      // 스트림이 끊긴 이유가 서버측 생성 실패(error 이벤트가 종료 전 유실)이거나,
+      // 생성 자체는 끝났는데 "completed" 이벤트만 유실된 것일 수도, 일시적 연결 문제일 수도 있다.
+      // 상태를 조회해 실제 상태를 우선 노출하고, 아직 안 끝났다면 "실패"로 단정하지 않고
+      // 재연결해서 이어 받는다("네트워크 끊김"·완료 오인 모두 방지).
       try {
         const d = (await api.generator.detail(generationId)) as GenerationDetail;
+        if (d.status === "completed") {
+          localStorage.removeItem(ACTIVE_GEN_KEY);
+          setGenJob(null); // 동시실행 슬롯 해제
+          await applyCompletedResult(generationId, d);
+          return;
+        }
         if (d.status === "failed") {
+          localStorage.removeItem(ACTIVE_GEN_KEY);
+          setGenJob(null); // 동시실행 슬롯 해제
           setError(d.error_message || "광고 생성에 실패했습니다.");
           setPhase("idle");
           return;
         }
+        if (reconnectAttemptsRef.current < MAX_RECONNECT_ATTEMPTS) {
+          reconnectAttemptsRef.current += 1;
+          // stream_events는 처음부터 이벤트를 재생하므로 재연결해도 유실·중복 없이 이어진다.
+          setTimeout(() => subscribe(generationId), 1500);
+          return;
+        }
       } catch {
-        // 조회 실패 시 아래 일반 안내로 폴백
+        // 상태 조회 자체 실패 — 아래 일반 안내로 폴백
       }
+      localStorage.removeItem(ACTIVE_GEN_KEY);
+      setGenJob(null); // 동시실행 슬롯 해제
       setError("진행 상태 연결이 끊어졌습니다. 다시 시도해주세요.");
       setPhase("idle");
     };
@@ -1271,6 +1291,7 @@ export default function GeneratorPage() {
             improvement_direction: improveData?.improvement_direction || null,
             fix_requests: fixRequests || null,
             product_cutout_s3_key: improveData?.product_cutout_s3_key || null,
+            existing_ad_s3_key: improveData?.ad_asset_url || null,
           };
 
     try {
@@ -1938,16 +1959,63 @@ export default function GeneratorPage() {
                         재생성
                       </button>
                     )}
-                    {/* #2 — 생성 시안으로 시뮬레이션 돌리기(채팅의 시뮬 제안으로 이동, 첫 시안 프리필) */}
+                    {/* 생성 시안으로 시뮬레이션 돌리기 — 클릭 시점에만 새 채팅 세션을 만들고
+                        첫 시안을 프리필한 시뮬 폼을 심는다(선제 알림 아님, 사용자 액션에 한함). */}
                     <button
                       type="button"
                       className="flex items-center gap-1.5 text-xs text-primary border border-primary/40 rounded-lg px-3 py-1.5 hover:bg-primary-subtle transition-colors"
-                      onClick={() => {
-                        // #3에서 만든 '제안 새 채팅'을 연다(기존 대화 아님).
-                        const sid = localStorage.getItem(
-                          `gen_sim_session_${detail.generation_id}`,
-                        );
-                        openChat(sid ?? null);
+                      onClick={async () => {
+                        const cacheKey = `gen_sim_session_${detail.generation_id}`;
+                        const cached = localStorage.getItem(cacheKey);
+                        if (cached) {
+                          openChat(cached);
+                          return;
+                        }
+                        const pid = selectedProject?.id;
+                        if (!pid) {
+                          openChat(null);
+                          return;
+                        }
+                        try {
+                          const created = await api.chat.createSession(
+                            pid,
+                            `${productName || "광고 시안"} 시뮬·개선`,
+                          );
+                          const sid = created.id;
+                          localStorage.setItem(cacheKey, sid);
+                          const c0 = (detail.candidates ?? [])[0];
+                          if (c0) {
+                            const simImgRaw = c0.image_url ?? null;
+                            const simImg = simImgRaw
+                              ? simImgRaw.startsWith("/")
+                                ? `${API_BASE}${simImgRaw}`
+                                : simImgRaw
+                              : undefined;
+                            await api.chat.appendWidgets(sid, [
+                              {
+                                content:
+                                  "생성한 시안으로 소비자 반응을 미리 예측해볼까요? 아래에서 확인·실행하세요.",
+                                meta: {
+                                  source: "simulation",
+                                  label: "시뮬레이션",
+                                  widget: {
+                                    type: "sim_form",
+                                    data: {
+                                      ad_title: c0.copy.headline,
+                                      ad_content: [c0.copy.headline, c0.copy.body, c0.copy.cta]
+                                        .filter(Boolean)
+                                        .join("\n"),
+                                      ad_image_url: simImg,
+                                    },
+                                  },
+                                },
+                              },
+                            ]);
+                          }
+                          openChat(sid);
+                        } catch {
+                          openChat(null);
+                        }
                       }}
                     >
                       🧪 시뮬레이션 돌리기

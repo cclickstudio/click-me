@@ -4,7 +4,7 @@
 // 생성은 project_id 필수(라우터 400)라 프로젝트 선택을 포함한다.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { api } from '@/lib/api';
+import { api, API_BASE } from '@/lib/api';
 import { useProjects } from '@/components/ProjectContext';
 import { getJobs, setGenJob } from '@/lib/runningJobs';
 import type { GenerationDetail, Project } from '@/lib/types';
@@ -24,6 +24,8 @@ type Initial = {
   existing_ad_s3_key?: string | null;
   product_cutout_s3_key?: string | null; // 생성한 광고로 시뮬한 경우 누끼 재사용(그 외 null)
   fix_requests?: string | null;
+  // 세션 히스토리에서 찾은 이전 턴 첨부 이미지(상대경로) — 이번 턴 첨부(initialImage)가 없을 때만 프리필.
+  product_image_url?: string;
 };
 
 // 진행 중 생성 id 보관 키(G4) — 동시 1개 정책이라 단일 키로 충분(새로고침 복원용).
@@ -34,6 +36,20 @@ const inputCls =
 const labelCls = 'text-[11px] font-semibold text-ink-tertiary mb-1 block';
 const cardCls =
   'mt-1 w-full rounded-xl border border-line bg-card p-4';
+// 광고 목표 칩 — /generator 페이지의 OBJECTIVES·칩 컨벤션과 동일
+const OBJECTIVES = [
+  { value: 'awareness', label: '브랜드 인지' },
+  { value: 'conversion', label: '구매 전환' },
+  { value: 'lead_gen', label: '리드 수집' },
+  { value: 'app_install', label: '앱 설치' },
+  { value: 'retention', label: '재구매 유도' },
+  { value: 'product_launch', label: '신제품 런칭' },
+  { value: 'promotion', label: '프로모션 반응' },
+];
+const chipBase =
+  'px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors';
+const chipActive = 'border-primary bg-primary-subtle text-primary';
+const chipIdle = 'border-line text-ink-tertiary hover:border-primary';
 const btnCls =
   'flex-1 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary-hover disabled:opacity-40 transition-colors';
 
@@ -54,7 +70,6 @@ export default function GenFormWidget({
 }) {
   const router = useRouter();
   const [phase, setPhase] = useState<Phase>('form');
-  const [step, setStep] = useState(0);
   const [genId, setGenId] = useState<string | null>(null);
   const [name, setName] = useState(initial?.product_name ?? '');
   const [desc, setDesc] = useState(initial?.product_description ?? '');
@@ -62,10 +77,36 @@ export default function GenFormWidget({
   const [objective, setObjective] = useState(initial?.campaign_objective ?? 'conversion');
   const [fixRequests, setFixRequests] = useState(initial?.fix_requests ?? '');
   const isImprove = initial?.mode === 'improve';
-  const [image] = useState<File | null>(initialImage ?? null);
-  const [imagePreview] = useState<string | null>(() =>
+  const [image, setImage] = useState<File | null>(initialImage ?? null);
+  const [imagePreview, setImagePreview] = useState<string | null>(() =>
     initialImage ? URL.createObjectURL(initialImage) : null,
   );
+  // 이번 턴 첨부가 없고 이전 턴에 첨부한 이미지가 대기 중이면(백엔드가 세션 히스토리에서 찾음)
+  // URL을 fetch해 File로 변환 — 아래 run()의 업로드 경로를 그대로 재사용한다.
+  useEffect(() => {
+    if (initialImage || isImprove || !initial?.product_image_url) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const url = initial.product_image_url!.startsWith('/')
+          ? `${API_BASE}${initial.product_image_url}`
+          : initial.product_image_url!;
+        const res = await fetch(url);
+        if (!res.ok) return;
+        const blob = await res.blob();
+        if (cancelled) return;
+        const file = new File([blob], 'product-image', { type: blob.type || 'image/png' });
+        setImage(file);
+        setImagePreview(URL.createObjectURL(file));
+      } catch {
+        /* 프리필 실패 — 이미지 없이 진행 가능하니 조용히 무시 */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectId, setProjectId] = useState('');
   const { refreshDetails } = useProjects(); // 완료 시 좌측 패널의 제너 목록 갱신용
@@ -328,8 +369,6 @@ export default function GenFormWidget({
   }
 
   if (phase === 'form') {
-    const totalSteps = 4;
-    const stepValid = [name.trim(), desc.trim(), target.trim(), projectId][step];
     // 백엔드 필수값(상품명·상품설명·타깃·저장 프로젝트)과 일치 — 누락 시 실행 차단·안내.
     const missing: string[] = [];
     if (!name.trim()) missing.push('상품명');
@@ -339,12 +378,7 @@ export default function GenFormWidget({
     const allValid = missing.length === 0;
     return (
       <div className={cardCls}>
-        <p className="text-sm font-semibold text-ink mb-3">
-          🎨 광고 생성 정보 입력{' '}
-          <span className="text-[11px] font-normal text-ink-tertiary">
-            ({step + 1}/{totalSteps})
-          </span>
-        </p>
+        <p className="text-sm font-semibold text-ink mb-3">🎨 광고 생성 정보 입력</p>
         {imagePreview && (
           <div className="mb-3 flex items-center gap-2">
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -352,70 +386,60 @@ export default function GenFormWidget({
             <span className="text-[11px] text-ink-tertiary">채팅에서 첨부한 이미지를 상품 이미지로 사용해요</span>
           </div>
         )}
-        <div className="min-h-[68px]">
-          {step === 0 && (
-            <div>
-              <label className={labelCls}>상품명 *</label>
-              <input className={inputCls} value={name} onChange={e => setName(e.target.value)} placeholder="예: 클릭미 수분크림" autoFocus />
+        <div className="space-y-3">
+          <div>
+            <label className={labelCls}>상품명 *</label>
+            <input className={inputCls} value={name} onChange={e => setName(e.target.value)} placeholder="예: 클릭미 수분크림" autoFocus />
+          </div>
+          <div>
+            <label className={labelCls}>상품 설명 *</label>
+            <textarea className={`${inputCls} resize-none`} rows={3} value={desc} onChange={e => setDesc(e.target.value)} placeholder="상품 특징·강점" />
+          </div>
+          <div>
+            <label className={labelCls}>타깃 고객 *</label>
+            <input className={inputCls} value={target} onChange={e => setTarget(e.target.value)} placeholder="예: 20-30대 건성 피부 여성" />
+          </div>
+          <div>
+            <label className={labelCls}>광고 목표 *</label>
+            <div className="flex flex-wrap gap-1.5">
+              {OBJECTIVES.map(o => (
+                <button
+                  key={o.value}
+                  type="button"
+                  onClick={() => setObjective(o.value)}
+                  className={`${chipBase} ${objective === o.value ? chipActive : chipIdle}`}
+                >
+                  {o.label}
+                </button>
+              ))}
             </div>
-          )}
-          {step === 1 && (
-            <div>
-              <label className={labelCls}>상품 설명 *</label>
-              <textarea className={`${inputCls} resize-none`} rows={3} value={desc} onChange={e => setDesc(e.target.value)} placeholder="상품 특징·강점" autoFocus />
-            </div>
-          )}
-          {step === 2 && (
-            <div>
-              <label className={labelCls}>타깃 고객 *</label>
-              <input className={inputCls} value={target} onChange={e => setTarget(e.target.value)} placeholder="예: 20-30대 건성 피부 여성" autoFocus />
-            </div>
-          )}
-          {step === 3 && (
-            <div className="space-y-2">
-              <div>
-                <label className={labelCls}>광고 목표</label>
-                <input className={inputCls} value={objective} onChange={e => setObjective(e.target.value)} placeholder="예: conversion" />
-              </div>
-              <div>
-                <label className={labelCls}>저장할 프로젝트 *</label>
-                <select className={inputCls} value={projectId} onChange={e => setProjectId(e.target.value)}>
-                  {projects.length === 0 && <option value="">프로젝트 없음</option>}
-                  {projects.map(p => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                    </option>
-                  ))}
-                </select>
-                {projects.length === 0 && (
-                  <p className="mt-1 text-[11px] text-[#F04452]">
-                    저장할 프로젝트가 없어요. 프로젝트를 먼저 만든 뒤 생성할 수 있어요.
-                  </p>
-                )}
-              </div>
-            </div>
-          )}
+          </div>
+          <div>
+            <label className={labelCls}>저장할 프로젝트 *</label>
+            <select className={inputCls} value={projectId} onChange={e => setProjectId(e.target.value)}>
+              {projects.length === 0 && <option value="">프로젝트 없음</option>}
+              {projects.map(p => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+            {projects.length === 0 && (
+              <p className="mt-1 text-[11px] text-[#F04452]">
+                저장할 프로젝트가 없어요. 프로젝트를 먼저 만든 뒤 생성할 수 있어요.
+              </p>
+            )}
+          </div>
         </div>
-        {step === totalSteps - 1 && !allValid && (
+        {!allValid && (
           <p className="mt-2 text-[11px] text-[#F04452]">
             필수 항목을 입력해주세요: {missing.join(', ')}
           </p>
         )}
         <div className="flex gap-2 mt-3">
-          {step > 0 && (
-            <button onClick={() => setStep(step - 1)} className="px-3 py-2 rounded-lg border border-line text-sm text-ink-tertiary">
-              이전
-            </button>
-          )}
-          {step < totalSteps - 1 ? (
-            <button onClick={() => setStep(step + 1)} disabled={!stepValid} className={btnCls}>
-              다음
-            </button>
-          ) : (
-            <button onClick={run} disabled={!allValid} className={btnCls}>
-              광고 생성 실행
-            </button>
-          )}
+          <button onClick={run} disabled={!allValid} className={btnCls}>
+            광고 생성 실행
+          </button>
         </div>
       </div>
     );

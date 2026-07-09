@@ -87,6 +87,12 @@ def create_campaign(prefill: dict) -> dict:
     }
 
 
+def exec_from_sim(data: dict) -> dict:
+    """시뮬 결과 집행 카드 — data={simulation_id, default_name, click_intent_rate,
+    rejection_rate, link_url?, daily_budget_krw?, start_date?, end_date?}. source 고정."""
+    return {"widget": {"type": "exec_from_sim", "data": data}, "source": DEEP_AGENT}
+
+
 def campaign_action(action: dict) -> dict:
     """캠페인 조치 카드 — action={action, campaign_id?, campaign_name?, …}. source 고정."""
     return {

@@ -1,10 +1,13 @@
 'use client';
 
 // 채팅 안 토론 요약 위젯 — run_id로 토론 결과(report)를 조회해 결론·합의·이견·권고를 정리해 보여준다.
-// "토론 요약" 버튼으로 띄우며, 별도 메시지로 영속화돼 새로고침에도 남는다. 모델 칩은 표시하지 않는다.
+// 토론 완료 시 자동으로 띄우며(DebateStreamWidget), 별도 메시지로 영속화돼 새로고침에도 남는다.
+// 하단에 해당 토론의 PDF 리포트 다운로드 링크를 둔다. 모델 칩은 표시하지 않는다.
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import type { DebateReport } from '@/lib/types';
+
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
 const cardCls =
   'mt-1 w-full rounded-xl border border-line bg-card p-4';
@@ -93,6 +96,14 @@ export default function DebateSummaryWidget({ runId }: { runId: string }) {
               </div>
             </div>
           )}
+          <a
+            href={`${API_BASE}/api/debate/${runId}/report.pdf`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-1 flex w-full items-center justify-center gap-1.5 rounded-lg border border-line py-2 text-[12px] font-medium text-ink-secondary transition-colors hover:border-primary hover:text-primary"
+          >
+            📄 결과 PDF 다운로드
+          </a>
         </div>
       )}
     </div>

@@ -493,33 +493,16 @@ async def anomaly_notify_scan(
 
         from domain.management.notifications import LogNotificationSink  # noqa: PLC0415
         from domain.management.remediation.advisor import consult as _consult  # noqa: PLC0415
+        from domain.management.remediation.panel_sink import PanelNotificationSink  # noqa: PLC0415
         from domain.management.scheduler import _agent_scanner, run_scan  # noqa: PLC0415
 
-        # 채널 추가 시 build_notification_sink(notifications.py)와 함께 갱신 —
-        # 매핑 이중화는 org reader consult 주입 때문(의도적, log→chat 시연 유지).
-        channel = getattr(settings, "management_notify_channel", "log")
-        if channel == "panel":
-            from domain.management.remediation.panel_sink import (  # noqa: PLC0415
-                PanelNotificationSink,
-            )
-
-            sink = PanelNotificationSink(
-                settings,
-                fallback=LogNotificationSink(),
-                consult=partial(_consult, reader=reader),  # 재검증도 같은 org reader로
-            )
-        else:
-            # chat·log 공통 — 수동 스캔은 데모 트리거라 log 채널에서도 chat sink로 시연
-            # 동작을 유지한다(기존 동작 보존). 예약 스케줄러만 channel을 엄격히 따른다.
-            from domain.management.remediation.chat_sink import (  # noqa: PLC0415
-                ChatNotificationSink,
-            )
-
-            sink = ChatNotificationSink(
-                settings,
-                fallback=LogNotificationSink(),
-                consult=partial(_consult, reader=reader),
-            )
+        # 트리거 경로(채팅·전용 페이지·수동 스캔)와 무관하게 선제 알림은 항상 센터(panel)로만
+        # 간다(2026-07-09 확정) — 과거의 "log 채널에서도 chat sink로 시연" 동작은 폐기.
+        sink = PanelNotificationSink(
+            settings,
+            fallback=LogNotificationSink(),
+            consult=partial(_consult, reader=reader),  # 재검증도 같은 org reader로
+        )
         scanner = partial(_agent_scanner, reader=reader, tenant_id=key)
         count = await run_scan(settings, sink, scanner=scanner)
         summary = sink.summary()
@@ -1086,7 +1069,10 @@ async def compare_before_after(
         link = sim_by_meta.get(cid)
         prediction = await pred_reader.get_prediction(link[0], link[1]) if link else None
         actual = _real_outcome(m, cid, creative_by_meta.get(cid))
-        return compute_before_after(cid, c.name, prediction, actual).model_dump(mode="json")
+        row = compute_before_after(cid, c.name, prediction, actual).model_dump(mode="json")
+        # 링크된 시뮬 id를 실어 프론트가 결과 페이지(/simulation/{id})로 바로 이동하게 함.
+        row["simulation_id"] = link[0] if link else None
+        return row
 
     # 캠페인 단위 병렬 — 순차 N회 Meta 왕복이 직렬로 쌓이지 않게(_list_campaigns_real과 동일).
     rows = await asyncio.gather(*(_row(c) for c in campaigns))
@@ -2551,7 +2537,8 @@ async def replace_creative_proposal(
 # 우리 S3 영속 네임스페이스 — 이 prefix 키만 핸드오프 집행 허용(임시·외부는 차단).
 # generated-ads/ = 제너레이터 실제 저장 접두사(tools/storage/s3.py candidate_key). 누락 시
 # 제너레이터 광고도 "durable 아님"으로 집행이 막혀, 양식을 맞춰 포함한다.
-_DURABLE_KEY_PREFIXES = ("generator/", "ads/", "generated-ads/")
+# simulation/ = 시뮬 업로드 접두사(ad_image_store.persist_ad_image) — 업로드도 S3 영속이라 포함.
+_DURABLE_KEY_PREFIXES = ("generator/", "ads/", "generated-ads/", "simulation/")
 
 
 def _resolve_sim_asset_key(asset_url: str | None) -> str | None:

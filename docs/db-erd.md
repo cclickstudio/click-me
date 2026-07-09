@@ -1,21 +1,26 @@
 # ClickMe DB ERD (실 DB 기준)
 
-> 개인 NeonDB(공용 DB 복제본)를 직접 introspection해 자동 생성. 레포의 `docs/db-schema.md`보다 최신이며 실제 운영 스키마와 일치한다.
+> 개인 NeonDB(공용 DB 복제본)를 직접 introspection해 자동 생성한 **6/24 스냅샷**이다. 컬럼표·행수는 그 시점 기준이라 최신 ORM과 일부 어긋난다 — 정본은 `backend/core/models.py`·`backend/domain/simulation/models.py`·Alembic. 아래 [갱신 2026-07-09] 표로 이후 변경분을 수동 반영한다.
 >
-> 레포 마이그레이션 현행 head는 `0004_generator_kb_search_vector`(`0001_baseline` squash 체인, 구 3자리 리비전 제거됨). 이 스냅샷은 운영 DB에서 뜬 것으로, 라이브러리 관리 테이블(LangGraph 체크포인터 등)까지 포함해 마이그레이션이 만드는 테이블보다 많다.
+> 레포 마이그레이션 현행 head는 **`0011_inquiries_schema`**(`0001_baseline` squash 체인 위 0002~0011 선형, 구 3자리 리비전 제거됨). 이 스냅샷은 운영 DB에서 뜬 것으로, 라이브러리 관리 테이블(LangGraph 체크포인터 등)까지 포함해 마이그레이션이 만드는 테이블보다 많다.
 
-- **총 테이블** 70개 · **FK 관계** 56개 · **Enum 타입** 10종
+- **총 테이블(6/24 스냅샷)** 70개 · **FK 관계** 56개 · **Enum 타입** 10종
 
-> **[덧붙임 2026-07-06] 이 ERD는 6/24 스냅샷 — 이후 변경분은 아래 4건 (재생성 전까지 수동 반영)**
+> **[갱신 2026-07-09] 이 ERD는 6/24 스냅샷 — 이후 변경분은 아래 (재생성 전까지 수동 반영)**
 >
 > | 변경 | 내용 | 마이그레이션 |
 > |---|---|---|
-> | 신설 | `management_notifications` — 이상 감지 운영 알림 (→organizations·projects FK, 미해결 부분 유니크) | 0005 |
-> | 신설 | `automation_runs` — APScheduler 워커 결과 공용 저장소 (3도메인, project_id 느슨 참조) | 0006 |
-> | 개명 | `chat_long_term_memory` → `chat_session_summaries` · `execution_history` → `chat_execution_history` | 0006 |
-> | 삭제 | `management_user_memory` (LLM 추출 기억 경로 제거 — 롱텀은 `chat_execution_history`로 일원화) | 0006 |
+> | 개명 | `chat_long_term_memory` → `chat_session_summaries`(임베딩 추가) · `execution_history` → `chat_execution_history`(tsvector) | 0005 |
+> | 삭제 | `management_user_memory` (LLM 추출 기억 경로 제거 — 롱텀은 `chat_execution_history`로 일원화) | 0005 |
+> | 신설 | `automation_runs` — APScheduler 워커 결과 공용 저장소 (3도메인, project_id 느슨 참조) | 0005 |
+> | 신설 | `management_notifications` — 이상 감지 운영 알림 (→organizations·projects FK, 미해결 부분 유니크) | 0006 |
+> | 신설 | `chat_sessions.created_by` 컬럼(세션 개시자). **주의: 채팅은 `messages` JSONB → `chat_messages` 정규화로 이행** | 0007·0008 |
+> | 신설 | `center_suggestions` — 센터 크로스도메인 제안 알림(→organizations·projects FK, dedup 부분 유니크) | 0009 |
+> | 신설 | `management_approval_records` — 승인 원장(집행 게이트 #5) | 0010 |
+> | 재정의 | `inquiries` — `name`/`email`/`message` → `title`/`content`/`contact_email`/`is_resolved`/`resolved_at` | 0011 |
+> | (기타 ORM 신규) | `brand_kits`·`ad_templates`·`clio_kb_chunks`·`chat_brand_profiles`·`payment_orders`·`credit_ledger` 등 — 스냅샷 이후 ORM에 추가(아래 각 도메인 표엔 일부만 반영) | — |
 >
-> 매니지먼트 실행 계열 테이블 이름의 신구 세대 문제(`idempotency_keys` vs `management_idempotency_keys` 등)는 `db-schema.md`의 [덧붙임 2026-07-06] 참조.
+> 매니지먼트 실행 계열 테이블 이름의 신구 세대 문제(`idempotency_keys` vs `management_idempotency_keys`, `created_campaigns` vs `management_created_campaigns` 등)는 `db-schema.md`의 §「ORM 모델 vs 실제 DB」 참조. **아래 📊 매니지먼트 ERD/표는 6/24 구세대 이름 기준이므로, 현 ORM은 `management_` 프리픽스 신명을 쓴다는 점에 유의.**
 
 
 ## 읽는 법
@@ -816,7 +821,9 @@ erDiagram
 
 ## 📊 광고 매니지먼트 (4-2)
 
-집행·성과 관리. 감지(diagnoses)→제안(action_proposals)→승인(approvals)→집행(execution_runs)의 단일 지출 경로 + 멱등·감사. Meta 연동·캠페인·에스컬레이션·어시스턴트 KB.
+집행·성과 관리. 감지→제안→승인→집행의 단일 지출 경로 + 멱등·감사. Meta 연동·캠페인·에스컬레이션·어시스턴트 KB.
+
+> **[갱신 2026-07-09] 이 절은 6/24 구세대 이름 기준.** 현 ORM은 아래 이름을 쓴다 — `idempotency_keys`→`management_idempotency_keys`, `audit_events`→`management_audit_events`, `created_campaigns`→`management_created_campaigns`, `campaign_kpi_overrides`→`management_campaign_kpi_overrides`, `meta_connections`→`management_meta_connections`. 제안·승인·집행(`action_proposals`·`approvals`·`execution_runs`)은 승인 원장 `management_approval_records`(0010)로 일원화됐고 구 3종은 현 ORM에 없다. 운영 알림 `management_notifications`(0006)도 이 도메인 소속이나 스냅샷 이후 신설이라 아래 표엔 없다 — 컬럼은 `db-schema.md` 참조.
 
 ```mermaid
 erDiagram
@@ -1281,16 +1288,25 @@ Meta에 생성된 캠페인 매핑.
 
 사용자 자유질문 채팅. 세션·메시지·장기기억·브랜드 프로필. (매니지먼트 어시스턴트 전용 대화는 management_chat_* 참고.)
 
+> **[갱신 2026-07-09]** `chat_long_term_memory` → `chat_session_summaries` 개명 + 임베딩 추가(0005), `chat_execution_history` 신설(0005), `chat_sessions`는 `messages` JSONB 폐기 → `chat_messages` 정규화 + `title`·`created_by`·`last_read_at` 추가(0007·0008).
+
 ```mermaid
 erDiagram
   chat_sessions {
     uuid id PK
     uuid project_id FK
+    uuid created_by FK
   }
   chat_messages {
     uuid id PK
+    uuid session_id FK
   }
-  chat_long_term_memory {
+  chat_session_summaries {
+    uuid id PK
+    uuid project_id FK
+    uuid user_id FK
+  }
+  chat_execution_history {
     uuid id PK
     uuid project_id FK
     uuid user_id FK
@@ -1299,43 +1315,63 @@ erDiagram
     uuid id PK
     uuid project_id FK
   }
+  chat_sessions ||--o{ chat_messages : "session_id"
 ```
 
 
 ### `chat_sessions` · 3행
-채팅 세션(프로젝트 연계).
+채팅 세션(프로젝트 연계). **[갱신] `messages` JSONB 폐기 → `chat_messages` 정규화. `title`·`created_by`(0007)·`last_read_at`(0008) 추가.**
 
 | 컬럼 | 타입 | NULL | 키 | 기본값 |
 |---|---|---|---|---|
 | id | uuid | NOT NULL | PK | gen_random_uuid() |
 | project_id | uuid |  | FK→projects.id |  |
-| created_at | timestamp |  |  | now() |
-| messages | jsonb |  |  |  |
+| title | varchar(200) | NOT NULL |  | '새 채팅' |
+| created_by | uuid |  | FK→users.id |  |
+| created_at | timestamp | NOT NULL |  | now() |
+| updated_at | timestamp | NOT NULL |  | now() |
+| last_read_at | timestamp |  |  |  |
 
-### `chat_messages` · `(비어있음)`
-채팅 메시지 로그.
+### `chat_messages` · (사용 중)
+채팅 메시지 로그(세션 정규화). **[갱신] 스냅샷 시점 비어있었으나 현재 정본 메시지 저장소.**
 
 | 컬럼 | 타입 | NULL | 키 | 기본값 |
 |---|---|---|---|---|
-| session_id | uuid | NOT NULL |  |  |
+| id | uuid | NOT NULL | PK | gen_random_uuid() |
+| session_id | uuid | NOT NULL | FK→chat_sessions.id (CASCADE) |  |
 | role | chat_role | NOT NULL |  |  |
 | content | text | NOT NULL |  |  |
 | metadata | jsonb |  |  |  |
 | tokens_used | int |  |  |  |
-| id | uuid | NOT NULL | PK | gen_random_uuid() |
 | created_at | timestamptz | NOT NULL |  | now() |
 
-### `chat_long_term_memory` · `(비어있음)`
-채팅 장기 기억.
+### `chat_session_summaries` · (구 `chat_long_term_memory`, 0005 개명)
+세션 요약(숏텀 압축 컨텍스트). **[갱신] 시맨틱 검색용 `embedding` vector(1536) 추가.**
 
 | 컬럼 | 타입 | NULL | 키 | 기본값 |
 |---|---|---|---|---|
 | id | uuid | NOT NULL | PK | gen_random_uuid() |
-| project_id | uuid |  | FK→projects.id |  |
-| user_id | uuid |  | FK→users.id |  |
+| project_id | uuid |  | FK→projects.id (CASCADE) |  |
+| user_id | uuid |  | FK→users.id (SET NULL) |  |
 | memory_type | varchar(32) | NOT NULL |  |  |
 | content | jsonb | NOT NULL |  |  |
+| embedding | vector(1536) |  |  |  |
 | created_at | timestamptz | NOT NULL |  | now() |
+
+### `chat_execution_history` · (0005 신설, 구 `execution_history` 개명)
+실행 이력 = 채팅 에이전트 롱텀 메모리. `summary`를 tsvector(`search_tsv`, GIN)로 색인해 BM25급 키워드 서치.
+
+| 컬럼 | 타입 | NULL | 키 | 기본값 |
+|---|---|---|---|---|
+| id | uuid | NOT NULL | PK | gen_random_uuid() |
+| project_id | uuid |  | FK→projects.id (CASCADE) |  |
+| user_id | uuid |  | FK→users.id (SET NULL) |  |
+| executed_at | timestamptz | NOT NULL |  | now() |
+| feature_type | varchar(20) | NOT NULL |  |  |
+| action | varchar(64) | NOT NULL |  |  |
+| summary | text | NOT NULL |  | '' |
+| payload | jsonb | NOT NULL |  | '{}'::jsonb |
+| search_tsv | tsvector |  |  | (생성 컬럼) |
 
 ### `chat_brand_profiles` · `(비어있음)`
 채팅용 브랜드 프로필.
@@ -1485,15 +1521,17 @@ erDiagram
 
 
 ### `inquiries` · `(비어있음)`
-인앱 문의 폼.
+인앱 문의 폼. **[갱신 2026-07-09] 0011에서 재정의 — 구 `name`/`email`/`message` 폐기.**
 
 | 컬럼 | 타입 | NULL | 키 | 기본값 |
 |---|---|---|---|---|
-| id | uuid | NOT NULL | PK | gen_random_uuid() |
-| name | varchar(255) |  |  |  |
-| email | varchar(255) |  |  |  |
-| message | text |  |  |  |
-| created_at | timestamp |  |  | now() |
+| id | uuid | NOT NULL | PK |  |
+| title | varchar(300) | NOT NULL |  |  |
+| content | text | NOT NULL |  |  |
+| contact_email | varchar(255) |  |  |  |
+| is_resolved | bool | NOT NULL |  | false |
+| created_at | timestamptz | NOT NULL |  | now() |
+| resolved_at | timestamptz |  |  |  |
 
 ### `alembic_version` · 1행
 현재 마이그레이션 리비전(스탬프).
@@ -1517,9 +1555,15 @@ erDiagram
 | campaign_kpi_overrides (management) | organization_id | organizations.id (auth) |
 | campaign_kpi_overrides (management) | updated_by | users.id (auth) |
 | chat_brand_profiles (chat) | project_id | projects.id (project) |
-| chat_long_term_memory (chat) | project_id | projects.id (project) |
-| chat_long_term_memory (chat) | user_id | users.id (auth) |
+| chat_session_summaries (chat) | project_id | projects.id (project) |
+| chat_session_summaries (chat) | user_id | users.id (auth) |
+| chat_execution_history (chat) | project_id | projects.id (project) |
+| chat_execution_history (chat) | user_id | users.id (auth) |
+| chat_messages (chat) | session_id | chat_sessions.id (chat) |
+| chat_sessions (chat) | created_by | users.id (auth) |
 | chat_sessions (chat) | project_id | projects.id (project) |
+| center_suggestions (center) | organization_id | organizations.id (auth) |
+| center_suggestions (center) | project_id | projects.id (project) |
 | diagnoses (management) | simulation_id | simulations.id (simulation) |
 | meta_connections (management) | organization_id | organizations.id (auth) |
 | projects (project) | created_by | users.id (auth) |

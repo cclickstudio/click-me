@@ -235,6 +235,34 @@ async def get_messages(db: AsyncSession, session_id: str) -> list[dict]:
     ]
 
 
+async def latest_pending_product_image(session_id: str) -> str | None:
+    """세션 히스토리에서 아직 소비 안 된 첨부 상품 이미지 URL을 찾는다.
+
+    gen_form/gen_progress 응답이 한 번이라도 나온 뒤의(그보다 오래된) 첨부는 이미
+    소비된 것으로 보고 제외한다 — 최근 50개 메시지만 훑어 무한 스캔을 막는다.
+    """
+    sid = _as_uuid(session_id)
+    if sid is None:
+        return None
+    async with AsyncSessionLocal() as db:
+        rows = await db.execute(
+            select(ChatMessage)
+            .where(ChatMessage.session_id == sid)
+            .order_by(ChatMessage.created_at.desc())
+            .limit(50)
+        )
+        for m in rows.scalars():
+            if m.role == "assistant":
+                widget_type = ((m.meta or {}).get("widget") or {}).get("type")
+                if widget_type in ("gen_form", "gen_progress"):
+                    return None
+            elif m.role == "user":
+                url = (m.meta or {}).get("image_url")
+                if url:
+                    return url
+    return None
+
+
 # ── 세션 자동 제목(F13) — 첫 user 메시지를 gpt-4o-mini로 짧게 요약 ──
 _TITLE_SYSTEM = (
     "다음은 광고 플랫폼 채팅의 첫 사용자 메시지다. 이 대화의 주제를 한국어 명사구 한 줄"

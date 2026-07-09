@@ -68,6 +68,8 @@ export function SimulationResultView({
     });
 
   const agg = result.aggregate;
+  // 관심층 조건부 클릭 의향(agg-3) — 과거 런·관심 통과 0명이면 undefined(기존 표기 유지).
+  const interestCond = agg?.payload?.interest_conditional;
   const reactions = result.reactions ?? [];
   const passed = reactions.filter(r => r.qa_passed);
 
@@ -200,7 +202,10 @@ export function SimulationResultView({
       {/* 히어로 — 목표달성 카드 + 4대 KPI 한 줄 (블루 모노크롬, 전면 배경 없음) */}
       {agg && (
         <>
-          <div className='grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4'>
+          <div
+            className={`grid grid-cols-2 md:grid-cols-3 gap-4 ${
+              interestCond ? 'lg:grid-cols-7' : 'lg:grid-cols-6'
+            }`}>
             {fit && (
               <div className='lg:col-span-2 col-span-2 bg-card border border-line rounded-2xl p-5'>
                 <p className='text-xs text-ink-tertiary'>
@@ -227,6 +232,18 @@ export function SimulationResultView({
               value={formatPercent(agg.click_intent_rate)}
               sub={`95% CI ${formatPercent(agg.ci_low)} ~ ${formatPercent(agg.ci_high)}`}
             />
+            {interestCond && (
+              <KpiCard
+                label='관심 오디언스 기준 클릭 의향률'
+                value={formatPercent(interestCond.click_intent_rate)}
+                sub={
+                  interestCond.low_sample
+                    ? `95% CI ${formatPercent(interestCond.ci_low)} ~ ${formatPercent(interestCond.ci_high)} · 표본 부족(참고용)`
+                    : `95% CI ${formatPercent(interestCond.ci_low)} ~ ${formatPercent(interestCond.ci_high)}`
+                }
+                trend={interestCond.low_sample ? 'down' : 'neutral'}
+              />
+            )}
             <KpiCard
               label='구매의도 (1~5 평균)'
               value={agg.purchase_intent.toFixed(2)}
@@ -241,6 +258,15 @@ export function SimulationResultView({
               trend={agg.rejection_rate > 0.3 ? 'down' : 'neutral'}
             />
           </div>
+          {interestCond && (
+            <p className='text-xs text-ink-tertiary'>
+              관심 오디언스 기준 = AISAS 관심 단계 통과 페르소나(
+              {interestCond.interest_passed_n}명) 조건부 클릭 의향 — 실제 Meta
+              집행에서 알고리즘이 관심 유저를 선별 노출하는 효과의
+              근사치입니다. 두 값 모두 실측 CTR 환산치가 아니며 시안 간 상대
+              비교용입니다.
+            </p>
+          )}
           <div className='flex flex-wrap gap-2 text-xs'>
             <span className='px-3 py-1 rounded-full bg-surface-1 text-ink-secondary'>
               유효표본수(effective_n) {agg.effective_n}

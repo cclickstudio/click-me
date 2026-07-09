@@ -34,6 +34,7 @@ import RemediationOptionsWidget, {
 } from './RemediationOptionsWidget';
 // 챗→매니지먼트 카드(재이식) — widget.type=create_campaign|campaign_action으로 렌더.
 import ChatCreateCampaignCard from './ChatCreateCampaignCard';
+import { ExecuteFromSimulation } from '@/components/manage/ExecuteFromSimulation';
 import ChatCampaignActionCard, { type CampaignActionPayload } from './ChatCampaignActionCard';
 import ChatBudgetProposalCard, { type BudgetActionPayload } from './ChatBudgetProposalCard';
 import ChatReplaceCreativeCard from './ChatReplaceCreativeCard';
@@ -208,9 +209,17 @@ type WidgetSpec = {
     project_id?: string;
     period?: string;
     simulation_id?: string; // sim_result·debate_stream 위젯 — 결과/토론 연결용
+    // exec_from_sim 위젯 — 시뮬 결과 집행 카드(챗 발화 프리필 포함)
+    default_name?: string;
+    click_intent_rate?: number;
+    rejection_rate?: number;
+    link_url?: string;
+    daily_budget_krw?: number;
+    start_date?: string;
+    end_date?: string;
     run_id?: string; // debate_stream·debate_summary 위젯 — 토론 스트림/결과 조회용
     sample_size?: number; // sim_input 위젯 — 실제 돌린 가상 소비자 수
-    generation_id?: string; // gen_result 위젯 — 생성 결과(후보·이미지) 조회용
+    generation_id?: string; // gen_result 위젯 — 생성 결과(후보·이미지) 조회용. sim_form 위젯에선 생성 출처(채팅 개선모드 누끼 역추적용)로 재사용
     loop_id?: string; // gen_loop 위젯 — 자동 개선 루프 진행 카드
     stream_url?: string; // gen_loop 위젯 — 루프 SSE 경로
     prefill?: CampaignPrefill; // create_campaign 위젯 — 캠페인 생성 폼 초기값
@@ -629,6 +638,12 @@ export default function ChatConversation({
   const lastGenFormIdx = messages.reduce(
     (acc, m, i) => (m.meta?.widget?.type === 'gen_form' ? i : acc),
     -1
+  );
+  // 이미 토론 요약이 붙은 run_id 집합 — 새로고침·재방문 시 자동 요약 재생성(중복 메시지) 방지.
+  const debateSummaryRunIds = new Set(
+    messages
+      .filter(m => m.meta?.widget?.type === 'debate_summary' && m.meta.widget.data?.run_id)
+      .map(m => m.meta!.widget!.data!.run_id as string)
   );
 
   const addLocalAssistant = (
@@ -1308,13 +1323,20 @@ export default function ChatConversation({
         }
       }
 
-      // 첨부 이미지를 S3에 1회 업로드 → 사용자 메시지에 영속화(실패해도 표시만 하고 진행).
+      // 첨부 이미지를 S3에 1회 업로드 → 사용자 메시지에 영속화(실패하면 이미지 없이 진행 + 안내).
       let imageUrl: string | undefined;
       if (imgFile) {
         try {
           imageUrl = (await api.chat.uploadImage(imgFile)).url;
         } catch {
-          // 업로드 실패 — 이번 세션 표시는 유지되나 내역엔 안 남음
+          setMessages(prev => [
+            ...prev,
+            {
+              role: 'assistant',
+              content: '이미지 업로드에 실패했어요. 다시 첨부해 주세요.',
+              meta: { source: 'orchestrator', label: '오류', error: true },
+            },
+          ]);
         }
       }
 
@@ -1798,11 +1820,14 @@ export default function ChatConversation({
                       <SimFormWidget
                         initial={msg.meta.widget.data}
                         initialImage={msg.imageFile}
-                        initialImageUrl={
-                          (msg.meta.widget.data as { ad_image_url?: string })?.ad_image_url
-                        }
+                        initialImageUrl={fullUrl(
+                          (msg.meta.widget.data as { ad_image_url?: string })?.ad_image_url,
+                        )}
                         projectId={projectId}
                         latest={i === lastSimFormIdx}
+                        autoStart={Boolean(
+                          (msg.meta.widget.data as { autostart?: boolean })?.autostart,
+                        )}
                         onSimComplete={handleSimComplete}
                       />
                     )}
@@ -1824,6 +1849,7 @@ export default function ChatConversation({
                           onSummary={handleDebateSummary}
                           onAccept={handleApprove}
                           proposalDisabled={isStreaming}
+                          hasSummary={debateSummaryRunIds.has(msg.meta.widget.data.run_id)}
                         />
                       )}
                     {msg.meta?.widget?.type === 'debate_summary' &&
@@ -1914,6 +1940,26 @@ export default function ChatConversation({
                     {msg.meta?.widget?.type === 'keyword_form' && (
                       <KeywordWidget />
                     )}
+                    {/* 시뮬 결과 집행 카드 — deep_agent의 execute_from_simulation 신호.
+                        KPI 2종은 백엔드가 항상 채우는 계약 — 없으면 렌더하지 않는다(가짜 0%/100% 표시 방지). */}
+                    {msg.meta?.widget?.type === 'exec_from_sim' &&
+                      msg.meta.widget.data?.simulation_id &&
+                      typeof msg.meta.widget.data.click_intent_rate === 'number' &&
+                      typeof msg.meta.widget.data.rejection_rate === 'number' && (
+                        <div className='mt-1'>
+                          <ExecuteFromSimulation
+                            simulationId={msg.meta.widget.data.simulation_id}
+                            defaultName={msg.meta.widget.data.default_name}
+                            clickIntentRate={msg.meta.widget.data.click_intent_rate}
+                            rejectionRate={msg.meta.widget.data.rejection_rate}
+                            initialLinkUrl={msg.meta.widget.data.link_url}
+                            initialBudget={msg.meta.widget.data.daily_budget_krw}
+                            initialStartDate={msg.meta.widget.data.start_date}
+                            initialEndDate={msg.meta.widget.data.end_date}
+                            inline
+                          />
+                        </div>
+                      )}
                     {/* 챗→매니지먼트 카드(재이식) — deep_agent의 create_campaign/manage_campaign 신호 */}
                     {msg.meta?.widget?.type === 'create_campaign' && (
                       <ChatCreateCampaignCard

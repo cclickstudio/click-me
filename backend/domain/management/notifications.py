@@ -32,14 +32,10 @@ class LogNotificationSink:
 def build_notification_sink(settings) -> NotificationSink:
     """채널 설정으로 sink 선택 — mock↔실연동 전환과 같은 Composition Root 원칙.
 
-    주의: 수동 스캔(/anomaly/notify-scan)은 org reader 주입 때문에 자체 채널 분기를
-    갖는다 — 채널 추가 시 그쪽도 함께 갱신(management.py notify-scan).
+    선제 알림은 트리거 경로와 무관하게 항상 센터(panel)로만 간다(2026-07-09 확정) —
+    chat 채널 옵션은 폐기. 수동 스캔(/anomaly/notify-scan)도 동일 정책(management.py 참고).
     """
     channel = getattr(settings, "management_notify_channel", "log")
-    if channel == "chat":
-        from domain.management.remediation.chat_sink import ChatNotificationSink  # noqa: PLC0415
-
-        return ChatNotificationSink(settings, fallback=LogNotificationSink())
     if channel == "panel":
         from domain.management.remediation.panel_sink import PanelNotificationSink  # noqa: PLC0415
 

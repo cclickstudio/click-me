@@ -58,13 +58,16 @@ export default function DebateStreamWidget({
   onSummary,
   onAccept,
   proposalDisabled,
+  hasSummary,
 }: {
   runId: string;
   sessionId?: string; // 개선 루프 3턴 한도 조회용(없으면 제안 그대로 노출)
   simulationId?: string; // 이 토론의 시뮬 id — 조기종료 KPI 판정 재료
-  onSummary?: (runId: string) => void; // "토론 요약" 클릭 → 요약 위젯 메시지 추가
+  onSummary?: (runId: string) => void; // 토론 완료 시 자동 호출 → 요약 위젯 메시지 추가
   onAccept?: (action: string) => void; // 개선 제안 수락(토론 종료 후) → 개선 루프 진행
   proposalDisabled?: boolean;
+  // 이 run_id의 요약 메시지가 대화에 이미 있으면 true — 새로고침 재마운트 시 중복 생성 방지.
+  hasSummary?: boolean;
 }) {
   const [phase, setPhase] = useState<Phase>('running');
   const [pct, setPct] = useState(0);
@@ -75,7 +78,6 @@ export default function DebateStreamWidget({
     []
   );
   const [err, setErr] = useState('');
-  const [summaryShown, setSummaryShown] = useState(false);
   // 개선 루프 한도 — 토론 완료 시 조회. canImprove=false면 '개선 시안 만들기' 대신 완료 안내.
   // earlyStopReason이 있으면 KPI 충족 조기종료 → 완료 안내 대신 '조기 종료' 배지.
   const [loop, setLoop] = useState<{
@@ -153,6 +155,14 @@ export default function DebateStreamWidget({
 
     return () => esRef.current?.();
   }, [runId]);
+
+  // 토론 완료 즉시 요약을 자동으로 띄운다 — 버튼 클릭 없이(사용자 요청, 2026-07-09).
+  const summaryAutoFiredRef = useRef(false);
+  useEffect(() => {
+    if (phase !== 'done' || summaryAutoFiredRef.current || hasSummary) return;
+    summaryAutoFiredRef.current = true;
+    onSummary?.(runId);
+  }, [phase, runId, onSummary, hasSummary]);
 
   // 토론 완료 후 개선 루프 한도 조회 — 3턴 도달 시 '개선 시안 만들기'를 숨긴다.
   useEffect(() => {
@@ -263,19 +273,9 @@ export default function DebateStreamWidget({
         </div>
       )}
 
-      {/* 완료 후 — 토론 요약 버튼 + 모든 결과가 나온 뒤 개선 제안(토론 종료 후 진행) */}
+      {/* 완료 후 — 토론 요약은 자동으로 뜨고(위 effect), 모든 결과가 나온 뒤 개선 제안만 보여준다 */}
       {phase === 'done' && (
         <div className='mt-3 space-y-2'>
-          {!summaryShown && (
-            <button
-              onClick={() => {
-                setSummaryShown(true);
-                onSummary?.(runId);
-              }}
-              className='w-full py-2 rounded-lg border border-primary/30 text-primary text-sm font-semibold hover:bg-primary-subtle transition-colors'>
-              📝 토론 요약 보기
-            </button>
-          )}
           {onAccept &&
             (loop?.earlyStopReason ? (
               <div className='rounded-xl border border-[#00C471]/40 bg-[#E7F9F1] dark:bg-[#0F2E22] px-3 py-2.5 text-[12px] text-[#0B7A4B] dark:text-[#5BD9A0]'>

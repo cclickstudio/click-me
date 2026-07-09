@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import case, select, text
+from sqlalchemy import and_, case, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.routers.projects import _purge_project
@@ -247,6 +247,8 @@ class OrganizationRow(BaseModel):
     name: str
     status: str
     created_at: datetime
+    owner_login_id: str | None = None  # 오너(COMPANY 계정) 아이디 — 조직 관리 화면 표시용
+    owner_name: str | None = None
 
 
 _ORG_SORT_COLS = {
@@ -269,15 +271,32 @@ async def list_organizations(
     limit, offset = _clamp_page(limit, offset)
     col = _ORG_SORT_COLS.get(sort, Organization.created_at)
     order_by = col.asc() if str(order).lower() == "asc" else col.desc()
-    rows = await db.execute(select(Organization).order_by(order_by).limit(limit).offset(offset))
+    # 오너(OWNER 멤버십) 계정의 아이디·이름을 같이 내려준다 — 조직 관리 화면에 "담당 계정" 표시용.
+    stmt = (
+        select(Organization, User.login_id, User.name)
+        .outerjoin(
+            OrganizationMember,
+            and_(
+                OrganizationMember.organization_id == Organization.id,
+                OrganizationMember.role == "OWNER",
+            ),
+        )
+        .outerjoin(User, User.id == OrganizationMember.user_id)
+        .order_by(order_by)
+        .limit(limit)
+        .offset(offset)
+    )
+    rows = await db.execute(stmt)
     return [
         OrganizationRow(
             id=str(o.id),
             name=o.name,
             status=o.status,
             created_at=o.created_at,
+            owner_login_id=owner_login_id,
+            owner_name=owner_name,
         )
-        for o in rows.scalars()
+        for o, owner_login_id, owner_name in rows.all()
     ]
 
 
@@ -303,7 +322,11 @@ async def list_users(
     db: AsyncSession = Depends(get_db),
     _: User = Depends(require_admin),
 ):
-    """전체 유저 목록. limit/offset·sort(role|name|created_at|status)·role 필터. 기본 ADMIN→USER."""
+    """전체 유저 목록. limit/offset·sort(role|name|created_at|status)·role 필터. 기본 ADMIN→USER.
+
+    role은 콤마로 여러 값을 받는다(예: "ADMIN,USER") — 회원 관리 화면이 COMPANY를 제외하고
+    조회할 때 사용.
+    """
     limit, offset = _clamp_page(limit, offset)
     # 소속 조직명은 멤버십(OrganizationMember)으로만 알 수 있어 outerjoin — 미소속(ADMIN 등)은 None.
     stmt = (
@@ -312,7 +335,11 @@ async def list_users(
         .outerjoin(Organization, Organization.id == OrganizationMember.organization_id)
     )
     if role:
-        stmt = stmt.where(User.role == role.upper())
+        roles = [r.strip().upper() for r in role.split(",") if r.strip()]
+        if len(roles) > 1:
+            stmt = stmt.where(User.role.in_(roles))
+        else:
+            stmt = stmt.where(User.role == roles[0])
     if sort in _USER_SORT_COLS:
         col = _USER_SORT_COLS[sort]
         stmt = stmt.order_by(col.asc() if str(order).lower() == "asc" else col.desc())

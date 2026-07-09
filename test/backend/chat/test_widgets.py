@@ -59,3 +59,20 @@ def test_campaign_action_source_is_deep_agent():
         "widget": {"type": "campaign_action", "data": {"action": {"action": "pause"}}},
         "source": "deep-agent",
     }
+
+
+def test_exec_from_sim_widget_shape():
+    data = {
+        "simulation_id": "sim-1",
+        "default_name": "수분크림 광고",
+        "click_intent_rate": 0.042,
+        "rejection_rate": 0.08,
+        "link_url": "https://example.com",
+        "daily_budget_krw": 20000,
+        "start_date": "2026-07-10",
+        "end_date": None,
+    }
+    out = widgets.exec_from_sim(data)
+    assert out["widget"]["type"] == "exec_from_sim"
+    assert out["widget"]["data"]["simulation_id"] == "sim-1"
+    assert out["source"] == "deep-agent"

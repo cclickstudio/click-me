@@ -648,9 +648,9 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* 3기능 요약 */}
+          {/* 3기능 요약 — COMPANY는 시뮬레이션·제너레이터 실행이 차단(AppLayout COMPANY_BLOCKED)돼 있어 매니지먼트만 노출 */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            {featureCards.map((card) => {
+            {featureCards.filter((card) => !isCompany || card.href === '/manage').map((card) => {
               const Icon = card.Icon;
               return (
                 <Card
@@ -714,8 +714,8 @@ export default function DashboardPage() {
         </>
       )}
 
-      {/* ── CLIO 어시스턴트 런처 (ADMIN 제외) — /chat 딥에이전트로 진입 ── */}
-      {!isAdmin && (
+      {/* ── CLIO 어시스턴트 런처 (ADMIN·COMPANY 제외) — /chat은 COMPANY_BLOCKED라 COMPANY는 진입 즉시 튕긴다 ── */}
+      {!isAdmin && !isCompany && (
         <Card className="overflow-hidden p-0">
           <div className="flex items-center justify-between px-6 py-4 border-b border-line">
             <div className="flex items-center gap-3">

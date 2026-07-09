@@ -2,7 +2,7 @@
 
 > 이 파일은 `backend/scripts/gen_docs.py`가 코드에서 **자동 생성**합니다. 직접 편집하지 말고 소스를 고친 뒤 스크립트를 다시 실행하세요(커밋 시 pre-commit 훅이 자동 갱신).
 
-총 **193개** 엔드포인트 · **18개** 그룹.
+총 **197개** 엔드포인트 · **18개** 그룹.
 
 ## admin
 
@@ -13,7 +13,10 @@
 | DELETE | `/api/admin/companies/{org_id}/purge` | purge_company |
 | POST | `/api/admin/companies/{org_id}/restore` | restore_company |
 | GET | `/api/admin/generations` | list_generations |
+| GET | `/api/admin/inquiries` | list_inquiries |
+| PATCH | `/api/admin/inquiries/{inquiry_id}/resolve` | resolve_inquiry |
 | GET | `/api/admin/organizations` | list_organizations |
+| GET | `/api/admin/projects` | list_all_projects |
 | GET | `/api/admin/simulations` | list_simulations |
 | GET | `/api/admin/users` | list_users |
 | POST | `/api/admin/users` | create_user |
@@ -222,6 +225,7 @@
 | GET | `/api/management/compare/before-after` | compare_before_after |
 | GET | `/api/management/compare/board` | compare_board |
 | GET | `/api/management/created-campaigns` | created_campaigns |
+| GET | `/api/management/exec-gate` | exec_gate |
 | POST | `/api/management/execute` | execute |
 | GET | `/api/management/execution/history` | execution_history_endpoint |
 | GET | `/api/management/kb/eval/faithfulness` | kb_eval_faithfulness |
