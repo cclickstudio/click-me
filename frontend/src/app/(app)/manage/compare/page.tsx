@@ -336,12 +336,12 @@ function ActionRow({
   );
   return (
     <div className="flex items-center gap-2 pt-1">
-      {item.verdict === 'overperformed' && (
+      {item.simulation_id && (
         <Link
-          href="/manage/budget"
+          href={`/simulation/${item.simulation_id}`}
           className="px-3 py-1.5 rounded-lg bg-primary hover:bg-primary-hover text-white text-xs font-semibold transition-colors"
         >
-          예산 늘리기 검토 →
+          시뮬 결과 보기 →
         </Link>
       )}
       {item.verdict === 'underperformed' && (

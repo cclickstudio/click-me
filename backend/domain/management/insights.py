@@ -30,9 +30,15 @@ BOARD_DEMO: tuple[tuple[str, str, str, int], ...] = (
 )
 
 
-async def weekly_report(reader: Any) -> dict:
-    """주간 성과 리포트 — 최근 7일 실측 총합·캠페인별 표·하이라이트·다음 액션(결정론 요약)."""
+async def weekly_report(reader: Any, date_preset: str = "last_7d") -> dict:
+    """성과 리포트 — 기간(date_preset) 실측 총합·캠페인별 표·하이라이트·다음 액션(결정론 요약).
+
+    date_preset='last_7d'(주간, 기본)·'maximum'(누적 전체) 등 — 기간만 다르고 형식은 동일.
+    종료된 캠페인은 최근 7일이 비므로 maximum(누적 전체)이 유의미하다.
+    """
     now = datetime.now(UTC)
+    is_full = date_preset == "maximum"
+    span_label = "전체 누적" if is_full else "최근 7일"
     try:
         infos = await reader.list_campaigns()
     except Exception as exc:  # noqa: BLE001
@@ -40,7 +46,7 @@ async def weekly_report(reader: Any) -> dict:
     rows: list[dict] = []
     for c in infos:
         try:
-            m = await reader.get_metrics(c.campaign_id, now, date_preset="last_7d")
+            m = await reader.get_metrics(c.campaign_id, now, date_preset=date_preset)
         except TypeError:  # mock 등 date_preset 미지원 — 전체 기간 폴백
             try:
                 m = await reader.get_metrics(c.campaign_id, now)
@@ -83,13 +89,18 @@ async def weekly_report(reader: Any) -> dict:
             f"'{r['name']}' 빈도 {r['frequency']:.1f} — 소재 교체 검토(이상 감지 참조)"
         )
     if spent == 0:
-        next_actions.append("최근 7일 집행이 없어요 — 새 캠페인 집행 또는 게재 재개를 검토하세요.")
+        next_actions.append(
+            f"{span_label} 집행 실적이 없어요 — 새 캠페인 집행 또는 게재 재개를 검토하세요."
+        )
     if len(active_rows) >= 2:
         next_actions.append("캠페인 간 효율 차이는 예산 관리의 리밸런싱 제안에서 확인하세요.")
     return {
         "report": {
             "period": {
-                "since": (now - timedelta(days=7)).date().isoformat(),
+                "preset": date_preset,
+                "label": span_label,
+                # 전체 누적(maximum)은 시작일이 계정 개시일이라 고정 표기하지 않는다.
+                "since": None if is_full else (now - timedelta(days=7)).date().isoformat(),
                 "until": now.date().isoformat(),
             },
             "totals": {
