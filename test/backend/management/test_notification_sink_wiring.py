@@ -1,4 +1,4 @@
-# sink 채널 분기 테스트 — log(기본)/chat/panel 3분기 (Composition Root 단일 전환점)
+# sink 채널 분기 테스트 — log(기본)/panel 2분기, chat 채널은 폐기(2026-07-09, 항상 센터로)
 from __future__ import annotations
 
 
@@ -13,11 +13,11 @@ def test_default_channel_is_log():
     assert isinstance(build_notification_sink(_S("log")), LogNotificationSink)
 
 
-def test_chat_channel_builds_chat_sink():
-    from domain.management.notifications import build_notification_sink
-    from domain.management.remediation.chat_sink import ChatNotificationSink
+def test_discontinued_chat_channel_falls_back_to_log():
+    # chat 채널 폐기(선제 알림은 항상 panel) — 구 설정이 남아도 log 폴백으로 안전.
+    from domain.management.notifications import LogNotificationSink, build_notification_sink
 
-    assert isinstance(build_notification_sink(_S("chat")), ChatNotificationSink)
+    assert isinstance(build_notification_sink(_S("chat")), LogNotificationSink)
 
 
 def test_panel_channel_builds_panel_sink():

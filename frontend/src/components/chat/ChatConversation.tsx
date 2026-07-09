@@ -34,6 +34,7 @@ import RemediationOptionsWidget, {
 } from './RemediationOptionsWidget';
 // 챗→매니지먼트 카드(재이식) — widget.type=create_campaign|campaign_action으로 렌더.
 import ChatCreateCampaignCard from './ChatCreateCampaignCard';
+import { ExecuteFromSimulation } from '@/components/manage/ExecuteFromSimulation';
 import ChatCampaignActionCard, { type CampaignActionPayload } from './ChatCampaignActionCard';
 import ChatBudgetProposalCard, { type BudgetActionPayload } from './ChatBudgetProposalCard';
 import ChatReplaceCreativeCard from './ChatReplaceCreativeCard';
@@ -208,6 +209,14 @@ type WidgetSpec = {
     project_id?: string;
     period?: string;
     simulation_id?: string; // sim_result·debate_stream 위젯 — 결과/토론 연결용
+    // exec_from_sim 위젯 — 시뮬 결과 집행 카드(챗 발화 프리필 포함)
+    default_name?: string;
+    click_intent_rate?: number;
+    rejection_rate?: number;
+    link_url?: string;
+    daily_budget_krw?: number;
+    start_date?: string;
+    end_date?: string;
     run_id?: string; // debate_stream·debate_summary 위젯 — 토론 스트림/결과 조회용
     sample_size?: number; // sim_input 위젯 — 실제 돌린 가상 소비자 수
     generation_id?: string; // gen_result 위젯 — 생성 결과(후보·이미지) 조회용. sim_form 위젯에선 생성 출처(채팅 개선모드 누끼 역추적용)로 재사용
@@ -1931,6 +1940,26 @@ export default function ChatConversation({
                     {msg.meta?.widget?.type === 'keyword_form' && (
                       <KeywordWidget />
                     )}
+                    {/* 시뮬 결과 집행 카드 — deep_agent의 execute_from_simulation 신호.
+                        KPI 2종은 백엔드가 항상 채우는 계약 — 없으면 렌더하지 않는다(가짜 0%/100% 표시 방지). */}
+                    {msg.meta?.widget?.type === 'exec_from_sim' &&
+                      msg.meta.widget.data?.simulation_id &&
+                      typeof msg.meta.widget.data.click_intent_rate === 'number' &&
+                      typeof msg.meta.widget.data.rejection_rate === 'number' && (
+                        <div className='mt-1'>
+                          <ExecuteFromSimulation
+                            simulationId={msg.meta.widget.data.simulation_id}
+                            defaultName={msg.meta.widget.data.default_name}
+                            clickIntentRate={msg.meta.widget.data.click_intent_rate}
+                            rejectionRate={msg.meta.widget.data.rejection_rate}
+                            initialLinkUrl={msg.meta.widget.data.link_url}
+                            initialBudget={msg.meta.widget.data.daily_budget_krw}
+                            initialStartDate={msg.meta.widget.data.start_date}
+                            initialEndDate={msg.meta.widget.data.end_date}
+                            inline
+                          />
+                        </div>
+                      )}
                     {/* 챗→매니지먼트 카드(재이식) — deep_agent의 create_campaign/manage_campaign 신호 */}
                     {msg.meta?.widget?.type === 'create_campaign' && (
                       <ChatCreateCampaignCard
