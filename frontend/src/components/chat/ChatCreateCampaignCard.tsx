@@ -87,25 +87,25 @@ export default function ChatCreateCampaignCard({ prefill }: { prefill?: Campaign
   const status = result?.status;
   const ok = status === 'success' || status === 'pending_review';
   return (
-    <div className="mt-1 rounded-2xl border border-[#E5E8EB] dark:border-[#2D3748] p-4 max-w-xl">
+    <div className="mt-1 rounded-2xl border border-line p-4 max-w-xl">
       {ok ? (
         <>
-          <p className="font-bold text-[#191F28] dark:text-[#F2F4F6]">
+          <p className="font-bold text-ink">
             {status === 'pending_review' ? '⏳ 캠페인 제출됨 (심사 중)' : '✓ 캠페인 생성됨 (PAUSED)'}
           </p>
-          <p className="mt-1 text-sm text-[#8B95A1]">
+          <p className="mt-1 text-sm text-ink-tertiary">
             {status === 'pending_review'
               ? 'Meta 심사가 끝나면 게재할 수 있어요.'
               : '대시보드에서 게재를 시작할 수 있어요.'}
           </p>
           {result?.approval_id && (
-            <p className="mt-1 text-[11px] text-[#B0B8C1]">승인 ID: {result.approval_id}</p>
+            <p className="mt-1 text-[11px] text-ink-muted">승인 ID: {result.approval_id}</p>
           )}
         </>
       ) : (
         <>
           <p className="font-bold text-red-500">생성 실패</p>
-          <p className="mt-1 text-sm text-[#8B95A1]">
+          <p className="mt-1 text-sm text-ink-tertiary">
             {error ?? `사유 코드 ${result?.failure_reason ?? '알 수 없음'}`}
           </p>
         </>
@@ -113,13 +113,13 @@ export default function ChatCreateCampaignCard({ prefill }: { prefill?: Campaign
       <div className="mt-3 flex gap-2">
         <Link
           href="/manage/campaigns"
-          className="px-3 py-1.5 bg-[#3182F6] text-white text-xs font-medium rounded-lg hover:bg-[#1B6EEB]"
+          className="px-3 py-1.5 bg-primary text-primary-foreground text-xs font-medium rounded-lg hover:bg-primary-hover"
         >
           대시보드로
         </Link>
         <button
           onClick={reset}
-          className="px-3 py-1.5 text-xs font-medium rounded-lg border border-[#E5E8EB] dark:border-[#2D3748] text-[#4E5968] dark:text-[#9CA3AF]"
+          className="px-3 py-1.5 text-xs font-medium rounded-lg border border-line text-ink-secondary"
         >
           다시 만들기
         </button>

@@ -56,7 +56,7 @@ export function CenterFilterBar({
   }, [isAdmin]);
 
   return (
-    <div className="flex flex-col gap-2 border-b border-[#E5E8EB] px-3 py-2.5 dark:border-[#2D3748]">
+    <div className="flex flex-col gap-2 border-b border-line px-3 py-2.5">
       {/* ADMIN 전용 — 기업 선택(프로젝트 드롭다운 위/왼쪽, 스펙 §7). 선택 시 X-Org-Id 반영. */}
       {isAdmin && (
         <Select
@@ -86,8 +86,8 @@ export function CenterFilterBar({
                 onClick={() => onSegment(s.v)}
                 className={`rounded-md px-2.5 py-1 text-xs font-medium transition-colors ${
                   active
-                    ? 'bg-white text-[#191F28] shadow-sm dark:bg-[#1C2333] dark:text-[#F2F4F6]'
-                    : 'text-[#8B95A1] hover:text-[#4E5968] dark:text-[#6B7280] dark:hover:text-[#9CA3AF]'
+                    ? 'bg-white text-ink shadow-sm dark:bg-[#1C2333] dark:text-[#F2F4F6]'
+                    : 'text-ink-tertiary hover:text-ink-secondary dark:hover:text-ink-secondary'
                 }`}
               >
                 {s.l}

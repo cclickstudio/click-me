@@ -4,6 +4,7 @@
 // 스펙: docs/center/center-spec.md §3. 콘텐츠(필터바·알림 목록·채팅)는 후속 Phase에서 슬롯에 채운다.
 
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { usePathname } from 'next/navigation';
 import { useAuth } from '../AuthProvider';
 import { useProjects } from '../ProjectContext';
 import { api, getAdminOrgId, setAdminOrgId } from '@/lib/api';
@@ -59,6 +60,12 @@ export default function Center() {
   const [openTarget, setOpenTarget] = useState<{ sessionId: string; projectId: string } | null>(
     null,
   );
+
+  // /chat 라우트에선 채팅이 페이지(패널 옆 세션 사이드바)로 이동 → 센터는 알림만 노출.
+  // 그 외 라우트에선 채팅+알림 둘 다. 채팅 탭을 숨기고 활성 탭을 알림으로 고정한다.
+  const pathname = usePathname();
+  const chatInPage = !!pathname && pathname.startsWith('/chat');
+  const effectiveTab: CenterTab = chatInPage ? 'alarm' : tab;
 
   // 상태 복원 — 펼침 여부 + 마지막으로 연 센터(스펙 §3).
   useEffect(() => {
@@ -134,21 +141,23 @@ export default function Center() {
   // 접힘 — 오른쪽 가장자리 세로 2버튼 띠(살짝 보이는 형태, 스펙 §3).
   if (!expanded) {
     return (
-      <div className="max-md:hidden fixed right-0 top-[100px] z-50 flex flex-col gap-1 rounded-l-xl border border-r-0 border-[#E5E8EB] bg-white p-1.5 shadow-lg dark:border-[#2D3748] dark:bg-[#1C2333]">
-        <button
-          type="button"
-          onClick={() => openTab('chat')}
-          aria-label="채팅 센터 열기"
-          className="relative flex h-10 w-10 items-center justify-center rounded-lg text-[#4E5968] hover:bg-[#F2F4F6] dark:text-[#9CA3AF] dark:hover:bg-[#252D3D]"
-        >
-          {ChatIcon}
-          <Badge count={chatUnread} />
-        </button>
+      <div className="max-md:hidden fixed right-0 top-[100px] z-50 flex flex-col gap-1 rounded-l-xl border border-r-0 border-line bg-white p-1.5 shadow-lg dark:bg-[#1C2333]">
+        {!chatInPage && (
+          <button
+            type="button"
+            onClick={() => openTab('chat')}
+            aria-label="채팅 센터 열기"
+            className="relative flex h-10 w-10 items-center justify-center rounded-lg text-ink-secondary hover:bg-[#F2F4F6] dark:hover:bg-[#252D3D]"
+          >
+            {ChatIcon}
+            <Badge count={chatUnread} />
+          </button>
+        )}
         <button
           type="button"
           onClick={() => openTab('alarm')}
           aria-label="알림 센터 열기"
-          className="relative flex h-10 w-10 items-center justify-center rounded-lg text-[#4E5968] hover:bg-[#F2F4F6] dark:text-[#9CA3AF] dark:hover:bg-[#252D3D]"
+          className="relative flex h-10 w-10 items-center justify-center rounded-lg text-ink-secondary hover:bg-[#F2F4F6] dark:hover:bg-[#252D3D]"
         >
           {BellIcon}
           <Badge count={alarmUnread} />
@@ -159,19 +168,30 @@ export default function Center() {
 
   // 펼침 — 우측 전체 높이 aside(본문 위에 덮음). 상단 두 버튼을 탭으로 전환(스펙 §3).
   return (
-    <aside className="max-md:hidden fixed right-0 top-0 z-50 flex h-full w-[400px] flex-col border-l border-[#E5E8EB] bg-white shadow-xl dark:border-[#2D3748] dark:bg-[#1C2333]">
-      <div className="flex items-center border-b border-[#E5E8EB] dark:border-[#2D3748]">
-        <TabButton active={tab === 'chat'} count={chatUnread} onClick={() => persistTab('chat')} icon={ChatIcon}>
-          채팅
-        </TabButton>
-        <TabButton active={tab === 'alarm'} count={alarmUnread} onClick={() => persistTab('alarm')} icon={BellIcon}>
-          알림
-        </TabButton>
+    <aside className="max-md:hidden fixed right-0 top-0 z-50 flex h-full w-[460px] flex-col border-l border-line bg-white shadow-xl dark:bg-[#1C2333]">
+      <div className="flex items-center gap-2 border-b border-line px-3 py-2.5">
+        {/* 로고 — 좌측 브랜드 마크(사이드바 워드마크와 통일) */}
+        <span className="flex shrink-0 select-none items-center gap-1.5 text-sm font-bold tracking-tight text-primary">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/logo/logo-mark.png" alt="" className="h-5 w-5 rounded shrink-0" />
+          ClickMe
+        </span>
+        {/* 채팅 | 알림 세그먼트 — 배지는 아이콘 위가 아니라 라벨 옆 인라인 */}
+        <div className="mx-auto flex items-center gap-0.5 rounded-lg bg-surface-1 p-0.5">
+          {!chatInPage && (
+            <SegTab active={effectiveTab === 'chat'} count={chatUnread} onClick={() => persistTab('chat')} icon={ChatIcon}>
+              채팅
+            </SegTab>
+          )}
+          <SegTab active={effectiveTab === 'alarm'} count={alarmUnread} onClick={() => persistTab('alarm')} icon={BellIcon}>
+            알림
+          </SegTab>
+        </div>
         <button
           type="button"
           onClick={() => persistExpanded(false)}
           aria-label="센터 접기"
-          className="ml-auto mr-1 flex h-8 w-8 items-center justify-center rounded-lg text-[#8B95A1] hover:bg-[#F2F4F6] dark:text-[#6B7280] dark:hover:bg-[#252D3D]"
+          className="shrink-0 flex h-8 w-8 items-center justify-center rounded-lg text-ink-tertiary hover:bg-accent"
         >
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
             <path d="M9 18l6-6-6-6" />
@@ -180,8 +200,8 @@ export default function Center() {
       </div>
       <div className="flex flex-1 flex-col overflow-hidden">
         <CenterFilterBar
-          segment={tab === 'chat' ? chatSeg : alarmSeg}
-          onSegment={tab === 'chat' ? setChatSeg : setAlarmSeg}
+          segment={effectiveTab === 'chat' ? chatSeg : alarmSeg}
+          onSegment={effectiveTab === 'chat' ? setChatSeg : setAlarmSeg}
           projectId={projectId}
           onProjectId={setProjectId}
           projects={projects}
@@ -192,10 +212,10 @@ export default function Center() {
         {isAdmin && !orgId ? (
           // ADMIN 기업 미선택 — 두 센터 disable + 안내(스펙 §7). 상단 기업 드롭다운으로 선택 유도.
           <div className="flex flex-1 flex-col items-center justify-center gap-1 p-6 text-center">
-            <p className="text-sm font-medium text-[#191F28] dark:text-[#F2F4F6]">
+            <p className="text-sm font-medium text-ink">
               기업을 선택해주세요
             </p>
-            <p className="text-xs text-[#8B95A1] dark:text-[#6B7280]">
+            <p className="text-xs text-ink-tertiary">
               상단 기업 드롭다운에서 기업을 고르면 채팅·알림이 열립니다.
             </p>
           </div>
@@ -203,17 +223,19 @@ export default function Center() {
           // 두 센터를 모두 마운트해 두고 탭은 CSS로만 토글 — 탭 전환 시 재요청 없이
           // 기업 선택(orgKey 변경) 때 각 1회만 조회한다.
           <>
-            <div className={tab === 'chat' ? 'flex flex-1 flex-col overflow-hidden' : 'hidden'}>
-              <ChatCenter
-                projectId={projectId}
-                segment={chatSeg}
-                readOnly={user?.role === 'COMPANY'}
-                orgKey={orgId}
-                openTarget={openTarget}
-                onOpenConsumed={() => setOpenTarget(null)}
-              />
-            </div>
-            <div className={tab === 'alarm' ? 'flex flex-1 flex-col overflow-hidden' : 'hidden'}>
+            {!chatInPage && (
+              <div className={effectiveTab === 'chat' ? 'flex flex-1 flex-col overflow-hidden' : 'hidden'}>
+                <ChatCenter
+                  projectId={projectId}
+                  segment={chatSeg}
+                  readOnly={user?.role === 'COMPANY'}
+                  orgKey={orgId}
+                  openTarget={openTarget}
+                  onOpenConsumed={() => setOpenTarget(null)}
+                />
+              </div>
+            )}
+            <div className={effectiveTab === 'alarm' ? 'flex flex-1 flex-col overflow-hidden' : 'hidden'}>
               <AlarmCenter
                 projectId={projectId}
                 segment={alarmSeg}
@@ -232,7 +254,8 @@ export default function Center() {
   );
 }
 
-function TabButton({
+// 세그먼트 탭 — 아이콘+라벨, 미읽음은 라벨 옆 인라인 배지(아이콘 위에 겹치지 않음).
+function SegTab({
   active,
   count,
   onClick,
@@ -249,17 +272,19 @@ function TabButton({
     <button
       type="button"
       onClick={onClick}
-      className={`relative flex flex-1 items-center justify-center gap-1.5 py-3 text-sm font-medium transition-colors ${
+      className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
         active
-          ? 'border-b-2 border-[#3182F6] text-[#3182F6]'
-          : 'text-[#8B95A1] hover:text-[#4E5968] dark:text-[#6B7280] dark:hover:text-[#9CA3AF]'
+          ? 'bg-card text-primary shadow-sm'
+          : 'text-ink-tertiary hover:text-ink-secondary'
       }`}
     >
-      <span className="relative">
-        {icon}
-        <Badge count={count} />
-      </span>
+      {icon}
       {children}
+      {count > 0 && (
+        <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-danger px-1 text-[10px] font-bold leading-none text-danger-foreground">
+          {count > 9 ? '9+' : count}
+        </span>
+      )}
     </button>
   );
 }

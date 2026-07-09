@@ -37,30 +37,30 @@ function str(v: unknown): string {
 
 function ResultCard({ data }: { data: CardData }) {
   return (
-    <div className='rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-white dark:bg-[#1A1F2B] px-4 py-3'>
+    <div className='rounded-xl border border-line bg-white dark:bg-[#1A1F2B] px-4 py-3'>
       <div className='flex items-center gap-1.5 mb-1.5'>
-        <span className='text-xs font-bold text-[#191F28] dark:text-[#E5E8EB]'>
+        <span className='text-xs font-bold text-ink dark:text-[#E5E8EB]'>
           추천 조치
         </span>
-        <span className='rounded-full bg-[#F2F4F6] dark:bg-[#252D3D] px-1.5 py-0.5 text-[10px] text-[#8B95A1] dark:text-[#6B7280]'>
+        <span className='rounded-full bg-surface-1 px-1.5 py-0.5 text-[10px] text-ink-tertiary'>
           초안
         </span>
         {data.tier ? (
-          <span className='rounded-full bg-[#F2F4F6] dark:bg-[#252D3D] px-1.5 py-0.5 text-[10px] text-[#8B95A1] dark:text-[#6B7280]'>
+          <span className='rounded-full bg-surface-1 px-1.5 py-0.5 text-[10px] text-ink-tertiary'>
             {str(data.tier)}
           </span>
         ) : null}
       </div>
-      <p className='text-sm font-semibold text-[#3182F6] mb-1'>
+      <p className='text-sm font-semibold text-primary mb-1'>
         {actionLabel(data.action_type)}
         {data.target_campaign_id ? (
-          <span className='ml-1 text-[11px] font-normal text-[#8B95A1]'>
+          <span className='ml-1 text-[11px] font-normal text-ink-tertiary'>
             · {str(data.target_campaign_id)}
           </span>
         ) : null}
       </p>
       {data.rationale ? (
-        <p className='text-xs leading-relaxed text-[#4E5968] dark:text-[#9CA3AF]'>
+        <p className='text-xs leading-relaxed text-ink-secondary'>
           {str(data.rationale)}
         </p>
       ) : null}
@@ -72,9 +72,9 @@ function ReviewCard({ data }: { data: CardData }) {
   const needsApproval = data.decision === 'needs_approval';
   const reasons = Array.isArray(data.reasons) ? (data.reasons as unknown[]) : [];
   return (
-    <div className='rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-[#F9FAFB] dark:bg-[#161B26] px-4 py-3'>
+    <div className='rounded-xl border border-line bg-surface-1 px-4 py-3'>
       <div className='flex items-center gap-1.5 mb-1.5'>
-        <span className='text-xs font-bold text-[#191F28] dark:text-[#E5E8EB]'>
+        <span className='text-xs font-bold text-ink dark:text-[#E5E8EB]'>
           정책 검토
         </span>
         <span
@@ -89,7 +89,7 @@ function ReviewCard({ data }: { data: CardData }) {
       {reasons.length > 0 ? (
         <ul className='space-y-0.5'>
           {reasons.map((r, i) => (
-            <li key={i} className='text-xs text-[#4E5968] dark:text-[#9CA3AF]'>
+            <li key={i} className='text-xs text-ink-secondary'>
               · {str(r)}
             </li>
           ))}
@@ -123,8 +123,8 @@ function ActionBar({
             onClick={enabled ? () => onAction?.(a.id) : undefined}
             className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
               a.kind === 'mutating'
-                ? 'bg-[#3182F6] text-white hover:bg-[#1B6EEB] disabled:bg-[#E5E8EB] disabled:text-[#B0B8C1] dark:disabled:bg-[#2D3748] dark:disabled:text-[#6B7280]'
-                : 'border border-[#E5E8EB] dark:border-[#2D3748] text-[#4E5968] dark:text-[#9CA3AF] hover:bg-[#F2F4F6] dark:hover:bg-[#252D3D] disabled:opacity-40'
+                ? 'bg-primary text-primary-foreground hover:bg-primary-hover disabled:bg-[#E5E8EB] disabled:text-ink-muted dark:disabled:bg-[#2D3748] dark:disabled:text-ink-tertiary'
+                : 'border border-line text-ink-secondary hover:bg-accent disabled:opacity-40'
             } disabled:cursor-not-allowed`}>
             {a.label}
           </button>

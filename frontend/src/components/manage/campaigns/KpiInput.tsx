@@ -32,13 +32,13 @@ export function KpiInput({
         }}
         placeholder="입력"
         title="전환 추적 전 — 직접 추정값 입력"
-        className={`w-12 rounded border border-dashed bg-transparent px-1 py-0.5 text-right text-sm tabular-nums focus:border-solid focus:border-[#3182F6] ${
+        className={`w-12 rounded border border-dashed bg-transparent px-1 py-0.5 text-right text-sm tabular-nums focus:border-solid focus:border-primary ${
           isSet
             ? 'border-amber-300 text-amber-700 dark:border-amber-700/60 dark:text-amber-400'
-            : 'border-[#C9CED6] text-[#191F28] dark:border-[#3A4452] dark:text-[#F2F4F6]'
+            : 'border-[#C9CED6] text-ink dark:border-[#3A4452] dark:text-[#F2F4F6]'
         }`}
       />
-      <span className="text-[#8B95A1]">{unit}</span>
+      <span className="text-ink-tertiary">{unit}</span>
       {isSet && <span className="text-[10px] font-medium text-amber-600">추정</span>}
     </span>
   );

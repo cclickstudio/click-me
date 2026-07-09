@@ -11,9 +11,9 @@ type ConfigView = {
 
 function Row({ label, value }: { label: string; value: string }) {
   return (
-    <div className="flex items-center justify-between py-2 border-b border-[#F2F4F6] dark:border-[#2D3748] last:border-0">
-      <span className="text-sm text-[#8B95A1]">{label}</span>
-      <span className="text-sm font-bold text-[#191F28] dark:text-[#F2F4F6] tabular-nums">{value}</span>
+    <div className="flex items-center justify-between py-2 border-b border-line last:border-0">
+      <span className="text-sm text-ink-tertiary">{label}</span>
+      <span className="text-sm font-bold text-ink tabular-nums">{value}</span>
     </div>
   );
 }
@@ -36,18 +36,18 @@ export function CreateProposalPreview({
   const objectiveLabel = cfg?.objective === 'leads' ? '리드 (잠재고객 폼)' : '트래픽 (클릭)';
 
   return (
-    <div className="rounded-2xl border border-[#E5E8EB] dark:border-[#2D3748] p-5 max-w-xl">
+    <div className="rounded-2xl border border-line p-5 max-w-xl">
       <div className="flex items-center justify-between mb-1">
-        <h2 className="font-bold text-[#191F28] dark:text-[#F2F4F6]">{name}</h2>
+        <h2 className="font-bold text-ink">{name}</h2>
         <span className="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-bold bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300">
           Tier 3 · 사람 승인 필요
         </span>
       </div>
-      <p className="text-xs text-[#8B95A1] mb-4">
+      <p className="text-xs text-ink-tertiary mb-4">
         신규 집행은 항상 건별 사용자 승인 — 승인해야 생성 단계로 넘어갑니다.
       </p>
 
-      <div className="rounded-xl bg-[#F9FAFB] dark:bg-[#1A202C] px-4 py-2">
+      <div className="rounded-xl bg-surface-1 px-4 py-2">
         <Row label="목표" value={objectiveLabel} />
         <Row label="일 예산" value={`₩${proposal.budget_after_krw.toLocaleString()}`} />
         <Row label="집행 기간" value={`${fmtDate(cfg?.start_at)} ~ ${fmtDate(cfg?.end_at)}`} />
@@ -59,14 +59,14 @@ export function CreateProposalPreview({
         <button
           onClick={onCancel}
           disabled={busy}
-          className="px-4 py-2 text-sm font-medium rounded-lg border border-[#E5E8EB] dark:border-[#2D3748] text-[#4E5968] dark:text-[#9CA3AF] disabled:opacity-40"
+          className="px-4 py-2 text-sm font-medium rounded-lg border border-line text-ink-secondary disabled:opacity-40"
         >
           취소
         </button>
         <button
           onClick={onApprove}
           disabled={busy}
-          className="px-4 py-2 bg-[#3182F6] text-white text-sm font-medium rounded-lg hover:bg-[#1B6EEB] disabled:opacity-40"
+          className="px-4 py-2 bg-primary text-primary-foreground text-sm font-medium rounded-lg hover:bg-primary-hover disabled:opacity-40"
         >
           {busy ? '생성 중…' : '승인하고 생성'}
         </button>

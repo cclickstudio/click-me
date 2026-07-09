@@ -16,7 +16,7 @@ import { Select } from '@/components/ui/Select';
 const PipelineGraph = dynamic(() => import('@/components/manage/PipelineGraph'), {
   ssr: false,
   loading: () => (
-    <div className="mb-4 h-[264px] animate-pulse rounded-2xl bg-[#F2F4F6] dark:bg-[#2D3748]" />
+    <div className="mb-4 h-[264px] animate-pulse rounded-2xl bg-surface-1" />
   ),
 });
 
@@ -146,33 +146,33 @@ export default function Page() {
         <div className="flex items-center justify-between mb-6">
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-2xl font-bold text-[#191F28] dark:text-[#F2F4F6]">이상 감지</h1>
+              <h1 className="text-2xl font-bold text-ink">이상 감지</h1>
               <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
                 시연
               </span>
             </div>
-            <p className="text-sm text-[#8B95A1] mt-1">
+            <p className="text-sm text-ink-tertiary mt-1">
               주입한 고장 시나리오로 감지→진단→처방→승인→집행 시연 · 집행은 DRY-RUN(실 과금 없음)
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <div className="flex rounded-lg border border-[#E5E8EB] dark:border-[#2D3748] overflow-hidden text-sm">
+            <div className="flex rounded-lg border border-line overflow-hidden text-sm">
               <button
                 onClick={() => setMode('user')}
                 title="결과를 사용자 관점으로 요약해서 보기"
-                className={`px-3 py-1.5 ${mode === 'user' ? 'bg-[#3182F6] text-white' : 'text-[#8B95A1]'}`}
+                className={`px-3 py-1.5 ${mode === 'user' ? 'bg-primary text-primary-foreground' : 'text-ink-tertiary'}`}
               >
                 사용자 보기
               </button>
               <button
                 onClick={() => setMode('arch')}
                 title="감지·진단·실행의 내부 동작(아키텍처) 상세 보기"
-                className={`px-3 py-1.5 ${mode === 'arch' ? 'bg-[#3182F6] text-white' : 'text-[#8B95A1]'}`}
+                className={`px-3 py-1.5 ${mode === 'arch' ? 'bg-primary text-primary-foreground' : 'text-ink-tertiary'}`}
               >
                 내부 동작
               </button>
             </div>
-            <span className="text-[11px] text-[#8B95A1]">문제 상황 주입</span>
+            <span className="text-[11px] text-ink-tertiary">문제 상황 주입</span>
             <Select
               aria-label="문제 상황 주입"
               className="min-w-[220px]"
@@ -186,7 +186,7 @@ export default function Page() {
             <button
               onClick={start}
               disabled={busy}
-              className="px-4 py-2 bg-[#3182F6] text-white text-sm font-medium rounded-lg hover:bg-[#1B6EEB] disabled:opacity-40"
+              className="px-4 py-2 bg-primary text-primary-foreground text-sm font-medium rounded-lg hover:bg-primary-hover disabled:opacity-40"
             >
               {busy ? '실행 중…' : '▶ 이상 대응 실행'}
             </button>
@@ -194,29 +194,29 @@ export default function Page() {
         </div>
 
         {/* 시연 안내 + 선택한 문제 상황의 증상 미리보기 */}
-        <div className="mb-4 rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-[#F9FAFB] dark:bg-[#1A202C] px-4 py-3">
-          <p className="text-[12px] text-[#4E5968] dark:text-[#9CA3AF]">
-            <span className="font-semibold text-[#3182F6]">시연 방법</span> · 문제 상황을 고르고{' '}
+        <div className="mb-4 rounded-xl border border-line bg-surface-1 px-4 py-3">
+          <p className="text-[12px] text-ink-secondary">
+            <span className="font-semibold text-primary">시연 방법</span> · 문제 상황을 고르고{' '}
             <b>이상 대응 실행</b>을 누르면, 시스템이 <b>감지 → 진단 → 처방</b>하는 과정을 보여줍니다.
           </p>
           <p className="mt-1.5 flex items-start gap-1.5 text-[12px]">
             <span className="shrink-0 px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400 text-[11px] font-semibold">
               예상 증상
             </span>
-            <span className="text-[#8B95A1]">
+            <span className="text-ink-tertiary">
               {FAULT_OPTIONS.find((o) => o.value === fault)?.symptom}
             </span>
           </p>
         </div>
 
         {/* 실 캠페인 성과 이상 스캔 — 데모(고장주입)와 별개, 실 Meta 캠페인을 진단 */}
-        <div className="mb-4 rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] px-4 py-3">
+        <div className="mb-4 rounded-xl border border-line px-4 py-3">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]">
+              <p className="text-sm font-semibold text-ink">
                 실 캠페인 성과 이상 스캔
               </p>
-              <p className="text-[12px] text-[#8B95A1] mt-0.5">
+              <p className="text-[12px] text-ink-tertiary mt-0.5">
                 실제 Meta 캠페인을 돌며 성과 진단(ROAS 미달·전환 저조)·빈도 피로(3+)를 실측합니다.
                 진입 시와 10분마다 자동 스캔되고, 버튼으로 즉시 재실행할 수 있어요. 위 시연과 별개.
               </p>
@@ -231,9 +231,9 @@ export default function Page() {
           </div>
           {scan && (
             <div className="mt-3">
-              {scan.note && <p className="text-[12px] text-[#8B95A1]">{scan.note}</p>}
+              {scan.note && <p className="text-[12px] text-ink-tertiary">{scan.note}</p>}
               {!scan.note && (
-                <p className="text-[12px] text-[#8B95A1]">
+                <p className="text-[12px] text-ink-tertiary">
                   {scan.scanned}개 캠페인 스캔 · 이상 {scan.items.length}건
                 </p>
               )}
@@ -254,7 +254,7 @@ export default function Page() {
                     {a.suggested_action === 'REPLACE_CREATIVE' && (
                       <Link
                         href="/generator"
-                        className="mt-1 inline-block text-[12px] font-semibold text-[#3182F6] hover:underline"
+                        className="mt-1 inline-block text-[12px] font-semibold text-primary hover:underline"
                       >
                         개선 시안 만들러 가기(제너레이터) →
                       </Link>
@@ -273,16 +273,16 @@ export default function Page() {
 
         {/* 서버 워커 자동 점검 결과 — 내부 운영 정보라 '내부 동작'(arch)에서만 노출 */}
         {mode === 'arch' && (
-        <div className="mb-4 rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] px-4 py-3">
-          <p className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]">
+        <div className="mb-4 rounded-xl border border-line px-4 py-3">
+          <p className="text-sm font-semibold text-ink">
             서버 자동 점검 결과
           </p>
-          <p className="text-[12px] text-[#8B95A1] mt-0.5">
+          <p className="text-[12px] text-ink-tertiary mt-0.5">
             백엔드 워커(APScheduler)가 서버에서 주기적으로 스스로 점검해 남긴 결과예요. 이 화면을 열어두지
             않아도 서버가 자동으로 쌓아둡니다.
           </p>
           {workerRuns.length === 0 ? (
-            <p className="mt-2 text-[12px] text-[#8B95A1]">
+            <p className="mt-2 text-[12px] text-ink-tertiary">
               아직 서버 자동 점검 결과가 없어요(워커 비활성이거나 이상 미발견).
             </p>
           ) : (
@@ -290,17 +290,17 @@ export default function Page() {
               {workerRuns.map((r) => (
                 <li
                   key={r.id}
-                  className="rounded-lg bg-[#F9FAFB] dark:bg-[#1A202C] px-3 py-2"
+                  className="rounded-lg bg-surface-1 px-3 py-2"
                 >
-                  <p className="text-[12px] font-semibold text-[#191F28] dark:text-[#F2F4F6]">
+                  <p className="text-[12px] font-semibold text-ink">
                     {r.title || r.job_name}
                     {r.created_at && (
-                      <span className="ml-2 font-normal text-[#B0B8C1]">
+                      <span className="ml-2 font-normal text-ink-muted">
                         {r.created_at.slice(0, 16).replace('T', ' ')}
                       </span>
                     )}
                   </p>
-                  {r.body && <p className="text-[12px] text-[#8B95A1]">{r.body}</p>}
+                  {r.body && <p className="text-[12px] text-ink-tertiary">{r.body}</p>}
                 </li>
               ))}
             </ul>
@@ -318,9 +318,9 @@ export default function Page() {
             )}
             {/* 탐지 기준 — 가정치·이상 판정 규칙(파라미터). 내부 동작(arch)에서만 노출 */}
             {mode === 'arch' && run.assumptions && (
-              <div className="mb-4 rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-[#F9FAFB] dark:bg-[#1A202C] px-5 py-3.5">
+              <div className="mb-4 rounded-xl border border-line bg-surface-1 px-5 py-3.5">
                 <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
-                  <span className="text-[13px] font-semibold text-[#4E5968] dark:text-[#9CA3AF]">
+                  <span className="text-[13px] font-semibold text-ink-secondary">
                     탐지 기준
                   </span>
                   {(
@@ -345,14 +345,14 @@ export default function Page() {
                     ] as [string, string][]
                   ).map(([label, value]) => (
                     <div key={label}>
-                      <p className="text-[11px] text-[#8B95A1]">{label}</p>
-                      <p className="mt-0.5 text-[13px] font-semibold text-[#191F28] dark:text-[#F2F4F6]">
+                      <p className="text-[11px] text-ink-tertiary">{label}</p>
+                      <p className="mt-0.5 text-[13px] font-semibold text-ink">
                         {value}
                       </p>
                     </div>
                   ))}
                 </div>
-                <p className="mt-2 border-t border-[#F2F4F6] dark:border-[#2D3748] pt-2 text-[11px] text-[#8B95A1]">
+                <p className="mt-2 border-t border-line pt-2 text-[11px] text-ink-tertiary">
                   출처{' '}
                   {run.assumptions.sources.map((s, i) => (
                     <span key={s.label}>
@@ -362,7 +362,7 @@ export default function Page() {
                           href={s.url}
                           target="_blank"
                           rel="noreferrer"
-                          className="underline decoration-dotted underline-offset-2 hover:text-[#3182F6]"
+                          className="underline decoration-dotted underline-offset-2 hover:text-primary"
                         >
                           {s.label}
                         </a>
@@ -380,14 +380,14 @@ export default function Page() {
               const detected = run.anomaly_hours.length > 0;
               const matched = detected === (run.fault !== 'none');
               return (
-                <div className="mb-4 rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] px-4 py-3 text-[12px] space-y-1">
+                <div className="mb-4 rounded-xl border border-line px-4 py-3 text-[12px] space-y-1">
                   <p>
                     <span className="font-semibold text-amber-700 dark:text-amber-400">예상</span>{' '}
-                    <span className="text-[#8B95A1]">{ran?.symptom}</span>
+                    <span className="text-ink-tertiary">{ran?.symptom}</span>
                   </p>
                   <p>
-                    <span className="font-semibold text-[#3182F6]">감지 결과</span>{' '}
-                    <span className="text-[#4E5968] dark:text-[#9CA3AF]">
+                    <span className="font-semibold text-primary">감지 결과</span>{' '}
+                    <span className="text-ink-secondary">
                       {detected
                         ? `이상 구간 ${run.anomaly_hours.length}개 감지`
                         : '이상 없음 — 정상 판정'}
@@ -409,7 +409,7 @@ export default function Page() {
             <AuditTimeline events={audit} mode={mode} />
           </>
         ) : (
-          <div className="rounded-2xl border border-[#E5E8EB] dark:border-[#2D3748] py-20 text-center text-sm text-[#8B95A1]">
+          <div className="rounded-2xl border border-line py-20 text-center text-sm text-ink-tertiary">
             &quot;이상 대응 실행&quot;을 눌러 감지→진단→처방→승인→실행 사이클을 시작하세요
           </div>
         )}
@@ -419,7 +419,7 @@ export default function Page() {
             {error}
           </p>
         )}
-        <p className="mt-6 text-[11px] text-[#B0B8C1]">
+        <p className="mt-6 text-[11px] text-ink-muted">
           ⚠ 감지 입력은 주입 시나리오 · 재생성은 실 계정 컨텍스트 · 집행은 DRY-RUN(실 과금 없음) · 금액 KRW
         </p>
       </div>

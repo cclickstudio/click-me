@@ -8,7 +8,7 @@ import { api } from '@/lib/api';
 import type { SimAggregate, SimPersonaReaction } from '@/lib/types';
 
 const cardCls =
-  'mt-1 w-full rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-white dark:bg-[#1C2333] p-4';
+  'mt-1 w-full rounded-xl border border-line bg-card p-4';
 
 const pct1 = (n: number | null | undefined) => (n == null ? '—' : `${(n * 100).toFixed(0)}%`);
 const sc = (n: number | null | undefined) => (n == null ? '—' : n.toFixed(2));
@@ -121,12 +121,12 @@ export default function SimResultWidget({ simulationId }: { simulationId: string
   return (
     <div className={cardCls}>
       <div className="flex items-center justify-between mb-2">
-        <p className="text-sm font-semibold text-[#191F28] dark:text-[#F2F4F6]">✅ 시뮬레이션 결과</p>
+        <p className="text-sm font-semibold text-ink">✅ 시뮬레이션 결과</p>
         {agg && !err && (
           <button
             onClick={copyKpis}
             title="KPI 복사"
-            className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#8B95A1] hover:text-[#3182F6] transition-colors"
+            className="inline-flex items-center gap-1 text-[11px] font-semibold text-ink-tertiary hover:text-primary transition-colors"
           >
             {copied ? (
               <>✓ 복사됨</>
@@ -143,36 +143,36 @@ export default function SimResultWidget({ simulationId }: { simulationId: string
         )}
       </div>
       {err ? (
-        <p className="text-[12px] text-[#B0B8C1]">결과를 불러오지 못했어요.</p>
+        <p className="text-[12px] text-ink-muted">결과를 불러오지 못했어요.</p>
       ) : (
         <>
           <div className="grid grid-cols-2 gap-2 text-sm">
-            <div className="rounded-lg bg-[#F9FAFB] dark:bg-[#252D3D] px-3 py-2">
-              <p className="text-[10px] text-[#8B95A1]">클릭 의향률</p>
-              <p className="font-bold text-[#191F28] dark:text-[#F2F4F6]">
+            <div className="rounded-lg bg-surface-1 px-3 py-2">
+              <p className="text-[10px] text-ink-tertiary">클릭 의향률</p>
+              <p className="font-bold text-ink">
                 {agg ? pct1(agg.click_intent_rate) : '…'}
               </p>
               {agg && (
-                <p className="text-[9px] text-[#B0B8C1]">
+                <p className="text-[9px] text-ink-muted">
                   95% CI {pct1(agg.ci_low)}~{pct1(agg.ci_high)}
                 </p>
               )}
             </div>
-            <div className="rounded-lg bg-[#F9FAFB] dark:bg-[#252D3D] px-3 py-2">
-              <p className="text-[10px] text-[#8B95A1]">구매의도</p>
-              <p className="font-bold text-[#191F28] dark:text-[#F2F4F6]">
+            <div className="rounded-lg bg-surface-1 px-3 py-2">
+              <p className="text-[10px] text-ink-tertiary">구매의도</p>
+              <p className="font-bold text-ink">
                 {agg ? `${sc(agg.purchase_intent)}/5` : '…'}
               </p>
             </div>
-            <div className="rounded-lg bg-[#F9FAFB] dark:bg-[#252D3D] px-3 py-2">
-              <p className="text-[10px] text-[#8B95A1]">신뢰도</p>
-              <p className="font-bold text-[#191F28] dark:text-[#F2F4F6]">
+            <div className="rounded-lg bg-surface-1 px-3 py-2">
+              <p className="text-[10px] text-ink-tertiary">신뢰도</p>
+              <p className="font-bold text-ink">
                 {agg ? `${sc(agg.trust_avg)}/5` : '…'}
               </p>
             </div>
-            <div className="rounded-lg bg-[#F9FAFB] dark:bg-[#252D3D] px-3 py-2">
-              <p className="text-[10px] text-[#8B95A1]">거부율</p>
-              <p className="font-bold text-[#191F28] dark:text-[#F2F4F6]">
+            <div className="rounded-lg bg-surface-1 px-3 py-2">
+              <p className="text-[10px] text-ink-tertiary">거부율</p>
+              <p className="font-bold text-ink">
                 {agg ? pct1(agg.rejection_rate) : '…'}
               </p>
             </div>
@@ -181,20 +181,20 @@ export default function SimResultWidget({ simulationId }: { simulationId: string
           {/* 구매의도 분포 — 평균 단정 방지, 1~5점 분포 미니 막대 */}
           {purchaseDist.total > 0 && (
             <div className="mt-2 space-y-1">
-              <p className="text-[10px] text-[#8B95A1]">구매의도 분포</p>
+              <p className="text-[10px] text-ink-tertiary">구매의도 분포</p>
               {[5, 4, 3, 2, 1].map(score => {
                 const c = purchaseDist.counts[score - 1];
                 const ratio = purchaseDist.total ? (c / purchaseDist.total) * 100 : 0;
                 return (
                   <div key={score} className="flex items-center gap-1.5 text-[10px]">
-                    <span className="w-5 shrink-0 text-right text-[#8B95A1]">{score}점</span>
-                    <div className="flex-1 h-2 rounded bg-[#F2F4F6] dark:bg-[#252D3D] overflow-hidden">
+                    <span className="w-5 shrink-0 text-right text-ink-tertiary">{score}점</span>
+                    <div className="flex-1 h-2 rounded bg-surface-1 overflow-hidden">
                       <div
-                        className="h-full rounded bg-[#3182F6] dark:bg-[#5B9DF9]"
+                        className="h-full rounded bg-primary dark:bg-[#5B9DF9]"
                         style={{ width: `${ratio}%` }}
                       />
                     </div>
-                    <span className="w-8 shrink-0 text-right text-[#B0B8C1]">{c}명</span>
+                    <span className="w-8 shrink-0 text-right text-ink-muted">{c}명</span>
                   </div>
                 );
               })}
@@ -204,21 +204,21 @@ export default function SimResultWidget({ simulationId }: { simulationId: string
           {/* 거부 사유 분해 — 상위 3개만(좁은 채팅 폭 고려) */}
           {rejectionDist.total > 0 && (
             <div className="mt-2 space-y-1">
-              <p className="text-[10px] text-[#8B95A1]">거부 사유(상위)</p>
+              <p className="text-[10px] text-ink-tertiary">거부 사유(상위)</p>
               {rejectionDist.entries.map(([tag, c]) => {
                 const ratio = rejectionDist.total ? (c / rejectionDist.total) * 100 : 0;
                 return (
                   <div key={tag} className="flex items-center gap-1.5 text-[10px]">
-                    <span className="w-14 shrink-0 text-right text-[#8B95A1]">
+                    <span className="w-14 shrink-0 text-right text-ink-tertiary">
                       {REJECTION_LABEL[tag] ?? tag}
                     </span>
-                    <div className="flex-1 h-2 rounded bg-[#F2F4F6] dark:bg-[#252D3D] overflow-hidden">
+                    <div className="flex-1 h-2 rounded bg-surface-1 overflow-hidden">
                       <div
                         className="h-full rounded bg-[#F74D4D] dark:bg-[#F87171]"
                         style={{ width: `${ratio}%` }}
                       />
                     </div>
-                    <span className="w-8 shrink-0 text-right text-[#B0B8C1]">{c}명</span>
+                    <span className="w-8 shrink-0 text-right text-ink-muted">{c}명</span>
                   </div>
                 );
               })}
@@ -229,7 +229,7 @@ export default function SimResultWidget({ simulationId }: { simulationId: string
             const kobaco = agg?.payload?.kobaco_reference as KobacoRef | undefined;
             if (!kobaco) return null;
             return (
-              <p className="mt-2 text-[11px] text-[#8B95A1] dark:text-[#6B7280]">
+              <p className="mt-2 text-[11px] text-ink-tertiary">
                 KOBACO 참고({kobaco.kobaco_category}):{' '}
                 {kobaco.purchase_intent_pct != null &&
                   `구매의향 ${pct1(kobaco.purchase_intent_pct)}`}
@@ -242,7 +242,7 @@ export default function SimResultWidget({ simulationId }: { simulationId: string
           })()}
           <button
             onClick={() => router.push(`/simulation/${simulationId}`)}
-            className="mt-3 w-full py-2 rounded-lg border border-[#3182F6]/30 text-[#3182F6] text-sm font-semibold hover:bg-[#EBF3FF] dark:hover:bg-[#1E3A5F] transition-colors"
+            className="mt-3 w-full py-2 rounded-lg border border-primary/30 text-primary text-sm font-semibold hover:bg-primary-subtle transition-colors"
           >
             상세 보기 →
           </button>

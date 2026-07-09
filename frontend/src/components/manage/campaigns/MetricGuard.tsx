@@ -3,7 +3,7 @@ export function Blocked({ label = '권한 없음' }: { label?: string }) {
   return (
     <span
       title="권한 없음 — Meta에서 이 값을 불러올 권한이 없어요. 토큰·자산 권한을 확인하세요."
-      className="text-[#B0B8C1] dark:text-[#6B7280]"
+      className="text-ink-muted"
     >
       {label}
     </span>

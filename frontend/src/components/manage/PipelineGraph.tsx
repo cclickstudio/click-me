@@ -18,7 +18,7 @@ import type { ActionResult, RunResult } from './types';
 import { actionLabel } from './types';
 
 const OWNER = {
-  A: { emoji: '🅰', color: '#3182F6', lane: '측정·진단' },
+  A: { emoji: '🅰', color: '#2563EB', lane: '측정·진단' },
   B: { emoji: '🅱', color: '#0F9D58', lane: '개선·실행' },
   AB: { emoji: '🤝', color: '#8B95A1', lane: '승인(HITL)' },
 } as const;
@@ -48,8 +48,8 @@ function StageNode({ data }: { data: StageData }) {
       <div className="text-[10px] font-semibold" style={{ color: o.color }}>
         {o.emoji} {o.lane}
       </div>
-      <div className="text-sm font-bold text-[#191F28] dark:text-[#F2F4F6]">{data.title}</div>
-      {data.detail && <div className="mt-0.5 text-[10px] text-[#8B95A1]">{data.detail}</div>}
+      <div className="text-sm font-bold text-ink">{data.title}</div>
+      {data.detail && <div className="mt-0.5 text-[10px] text-ink-tertiary">{data.detail}</div>}
       <div
         className="mt-0.5 text-[10px] font-medium"
         style={{ color: data.state === 'blocked' ? '#E5484D' : data.state === 'pending' ? '#B0B8C1' : o.color }}
@@ -153,7 +153,7 @@ function PipelineGraph({
         target,
         label,
         animated: active,
-        style: { stroke: blocked ? '#E5484D' : active ? '#3182F6' : '#D1D6DB', strokeWidth: 1.5 },
+        style: { stroke: blocked ? '#E5484D' : active ? '#2563EB' : '#D1D6DB', strokeWidth: 1.5 },
         labelStyle: { fontSize: 10, fill: '#8B95A1' },
         labelBgStyle: { fill: '#F9FAFB' },
       };
@@ -162,10 +162,10 @@ function PipelineGraph({
   }, [run, decided, result]);
 
   return (
-    <div className="mb-4 rounded-2xl border border-[#E5E8EB] dark:border-[#2D3748] overflow-hidden">
-      <div className="flex items-center justify-between px-4 py-2.5 border-b border-[#E5E8EB] dark:border-[#2D3748]">
-        <p className="text-sm font-bold text-[#191F28] dark:text-[#F2F4F6]">🔧 파이프라인 (내부 동작)</p>
-        <p className="text-[11px] text-[#8B95A1]">
+    <div className="mb-4 rounded-2xl border border-line overflow-hidden">
+      <div className="flex items-center justify-between px-4 py-2.5 border-b border-line">
+        <p className="text-sm font-bold text-ink">🔧 파이프라인 (내부 동작)</p>
+        <p className="text-[11px] text-ink-tertiary">
           서버 워커(APScheduler)가 자동 실행 · 승인만 사람(HITL) · 집행은 DRY-RUN
         </p>
       </div>

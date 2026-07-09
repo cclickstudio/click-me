@@ -81,25 +81,25 @@ export default function ComparisonWidget({ items }: { items: Picked[] }) {
   }
 
   return (
-    <div className='mt-1 w-full rounded-xl border border-[#E5E8EB] dark:border-[#2D3748] bg-white dark:bg-[#1C2333] p-3 overflow-x-auto'>
+    <div className='mt-1 w-full rounded-xl border border-line bg-card p-3 overflow-x-auto'>
       {!data ? (
-        <p className='text-xs text-[#B0B8C1] py-1'>결과를 불러오는 중…</p>
+        <p className='text-xs text-ink-muted py-1'>결과를 불러오는 중…</p>
       ) : (
         <table className='w-full text-sm'>
           <thead>
-            <tr className='text-[#8B95A1] text-xs'>
+            <tr className='text-ink-tertiary text-xs'>
               <th className='text-left py-1.5 pr-2'>지표</th>
               {items.map(it => (
                 <th
                   key={it.id}
-                  className='text-right py-1.5 px-2 text-[#191F28] dark:text-[#F2F4F6] truncate max-w-[120px]'>
+                  className='text-right py-1.5 px-2 text-ink truncate max-w-[120px]'>
                   {it.title}
                 </th>
               ))}
               {showDelta && <th className='text-right py-1.5 pl-2'>차이</th>}
             </tr>
           </thead>
-          <tbody className='text-[#4E5968] dark:text-[#9CA3AF]'>
+          <tbody className='text-ink-secondary'>
             {rows.map(row => {
               const d = showDelta
                 ? delta(row.key, row.isPct, row.higherBetter)
@@ -107,7 +107,7 @@ export default function ComparisonWidget({ items }: { items: Picked[] }) {
               return (
                 <tr
                   key={row.key}
-                  className='border-t border-[#F2F4F6] dark:border-[#252D3D]'>
+                  className='border-t border-line'>
                   <td className='py-1.5 pr-2'>{row.label}</td>
                   {data.map((dd, i) => (
                     <td key={i} className='text-right py-1.5 px-2 tabular-nums'>
@@ -118,7 +118,7 @@ export default function ComparisonWidget({ items }: { items: Picked[] }) {
                     <td
                       className={`text-right py-1.5 pl-2 tabular-nums font-semibold ${
                         !d || d.improved === 0
-                          ? 'text-[#8B95A1]'
+                          ? 'text-ink-tertiary'
                           : d.improved === 1
                             ? 'text-[#00C471]'
                             : 'text-[#F04452]'

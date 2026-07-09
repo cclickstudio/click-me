@@ -1086,7 +1086,10 @@ async def compare_before_after(
         link = sim_by_meta.get(cid)
         prediction = await pred_reader.get_prediction(link[0], link[1]) if link else None
         actual = _real_outcome(m, cid, creative_by_meta.get(cid))
-        return compute_before_after(cid, c.name, prediction, actual).model_dump(mode="json")
+        row = compute_before_after(cid, c.name, prediction, actual).model_dump(mode="json")
+        # 링크된 시뮬 id를 실어 프론트가 결과 페이지(/simulation/{id})로 바로 이동하게 함.
+        row["simulation_id"] = link[0] if link else None
+        return row
 
     # 캠페인 단위 병렬 — 순차 N회 Meta 왕복이 직렬로 쌓이지 않게(_list_campaigns_real과 동일).
     rows = await asyncio.gather(*(_row(c) for c in campaigns))

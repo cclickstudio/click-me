@@ -4,15 +4,15 @@ import Link from 'next/link';
 
 export const metadata: Metadata = { title: '이용약관 | ClickMe' };
 
-const h2 = 'text-lg font-bold text-[#191F28] mt-8 mb-2';
-const p = 'text-sm leading-relaxed text-[#4E5968] mb-2';
-const li = 'text-sm leading-relaxed text-[#4E5968] ml-5 list-disc';
+const h2 = 'text-lg font-bold text-ink mt-8 mb-2';
+const p = 'text-sm leading-relaxed text-ink-secondary mb-2';
+const li = 'text-sm leading-relaxed text-ink-secondary ml-5 list-disc';
 
 export default function TermsPage() {
   return (
     <main className="mx-auto max-w-3xl px-6 py-12">
-      <h1 className="text-2xl font-bold text-[#191F28]">이용약관</h1>
-      <p className="mt-1 text-xs text-[#8B95A1]">시행일 2026-07-03</p>
+      <h1 className="text-2xl font-bold text-ink">이용약관</h1>
+      <p className="mt-1 text-xs text-ink-tertiary">시행일 2026-07-03</p>
 
       <h2 className={h2}>제1조 (목적)</h2>
       <p className={p}>
@@ -66,11 +66,11 @@ export default function TermsPage() {
       </p>
 
       <p className="mt-10 text-sm">
-        <Link href="/privacy" className="text-[#3182F6] underline">
+        <Link href="/privacy" className="text-primary underline">
           개인정보처리방침
         </Link>
         {' · '}
-        <Link href="/data-deletion" className="text-[#3182F6] underline">
+        <Link href="/data-deletion" className="text-primary underline">
           데이터 삭제 안내
         </Link>
       </p>

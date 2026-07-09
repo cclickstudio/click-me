@@ -1,26 +1,23 @@
-import uuid
-from datetime import UTC, datetime
+# 고객 문의 API — 폼 접수(공개). 관리자 조회·해결은 admin 라우터(/api/admin/inquiries).
+from fastapi import APIRouter, Depends
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from fastapi import APIRouter
-
+from core.db import get_db
+from core.models import Inquiry
 from core.schemas import InquiryCreate
 
 router = APIRouter()
 
-_store: list[dict] = []
-
 
 @router.post("", status_code=201)
-async def create_inquiry(body: InquiryCreate):
-    inquiry_id = str(uuid.uuid4())
-    _store.append(
-        {
-            "inquiry_id": inquiry_id,
-            "title": body.title,
-            "content": body.content,
-            "contact_email": body.contact_email,
-            "is_resolved": False,
-            "created_at": datetime.now(UTC).isoformat(),
-        }
+async def create_inquiry(body: InquiryCreate, db: AsyncSession = Depends(get_db)):
+    """문의 접수 — 공개(인증 불필요). DB에 영속."""
+    row = Inquiry(
+        title=body.title,
+        content=body.content,
+        contact_email=body.contact_email,
     )
-    return {"inquiry_id": inquiry_id, "created_at": _store[-1]["created_at"]}
+    db.add(row)
+    await db.commit()
+    await db.refresh(row)
+    return {"inquiry_id": str(row.id), "created_at": row.created_at.isoformat()}
