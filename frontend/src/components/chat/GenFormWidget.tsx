@@ -34,6 +34,20 @@ const inputCls =
 const labelCls = 'text-[11px] font-semibold text-ink-tertiary mb-1 block';
 const cardCls =
   'mt-1 w-full rounded-xl border border-line bg-card p-4';
+// 광고 목표 칩 — /generator 페이지의 OBJECTIVES·칩 컨벤션과 동일
+const OBJECTIVES = [
+  { value: 'awareness', label: '브랜드 인지' },
+  { value: 'conversion', label: '구매 전환' },
+  { value: 'lead_gen', label: '리드 수집' },
+  { value: 'app_install', label: '앱 설치' },
+  { value: 'retention', label: '재구매 유도' },
+  { value: 'product_launch', label: '신제품 런칭' },
+  { value: 'promotion', label: '프로모션 반응' },
+];
+const chipBase =
+  'px-3 py-1.5 rounded-lg border text-xs font-medium transition-colors';
+const chipActive = 'border-primary bg-primary-subtle text-primary';
+const chipIdle = 'border-line text-ink-tertiary hover:border-primary';
 const btnCls =
   'flex-1 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary-hover disabled:opacity-40 transition-colors';
 
@@ -54,7 +68,6 @@ export default function GenFormWidget({
 }) {
   const router = useRouter();
   const [phase, setPhase] = useState<Phase>('form');
-  const [step, setStep] = useState(0);
   const [genId, setGenId] = useState<string | null>(null);
   const [name, setName] = useState(initial?.product_name ?? '');
   const [desc, setDesc] = useState(initial?.product_description ?? '');
@@ -328,8 +341,6 @@ export default function GenFormWidget({
   }
 
   if (phase === 'form') {
-    const totalSteps = 4;
-    const stepValid = [name.trim(), desc.trim(), target.trim(), projectId][step];
     // 백엔드 필수값(상품명·상품설명·타깃·저장 프로젝트)과 일치 — 누락 시 실행 차단·안내.
     const missing: string[] = [];
     if (!name.trim()) missing.push('상품명');
@@ -339,12 +350,7 @@ export default function GenFormWidget({
     const allValid = missing.length === 0;
     return (
       <div className={cardCls}>
-        <p className="text-sm font-semibold text-ink mb-3">
-          🎨 광고 생성 정보 입력{' '}
-          <span className="text-[11px] font-normal text-ink-tertiary">
-            ({step + 1}/{totalSteps})
-          </span>
-        </p>
+        <p className="text-sm font-semibold text-ink mb-3">🎨 광고 생성 정보 입력</p>
         {imagePreview && (
           <div className="mb-3 flex items-center gap-2">
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -352,70 +358,60 @@ export default function GenFormWidget({
             <span className="text-[11px] text-ink-tertiary">채팅에서 첨부한 이미지를 상품 이미지로 사용해요</span>
           </div>
         )}
-        <div className="min-h-[68px]">
-          {step === 0 && (
-            <div>
-              <label className={labelCls}>상품명 *</label>
-              <input className={inputCls} value={name} onChange={e => setName(e.target.value)} placeholder="예: 클릭미 수분크림" autoFocus />
+        <div className="space-y-3">
+          <div>
+            <label className={labelCls}>상품명 *</label>
+            <input className={inputCls} value={name} onChange={e => setName(e.target.value)} placeholder="예: 클릭미 수분크림" autoFocus />
+          </div>
+          <div>
+            <label className={labelCls}>상품 설명 *</label>
+            <textarea className={`${inputCls} resize-none`} rows={3} value={desc} onChange={e => setDesc(e.target.value)} placeholder="상품 특징·강점" />
+          </div>
+          <div>
+            <label className={labelCls}>타깃 고객 *</label>
+            <input className={inputCls} value={target} onChange={e => setTarget(e.target.value)} placeholder="예: 20-30대 건성 피부 여성" />
+          </div>
+          <div>
+            <label className={labelCls}>광고 목표 *</label>
+            <div className="flex flex-wrap gap-1.5">
+              {OBJECTIVES.map(o => (
+                <button
+                  key={o.value}
+                  type="button"
+                  onClick={() => setObjective(o.value)}
+                  className={`${chipBase} ${objective === o.value ? chipActive : chipIdle}`}
+                >
+                  {o.label}
+                </button>
+              ))}
             </div>
-          )}
-          {step === 1 && (
-            <div>
-              <label className={labelCls}>상품 설명 *</label>
-              <textarea className={`${inputCls} resize-none`} rows={3} value={desc} onChange={e => setDesc(e.target.value)} placeholder="상품 특징·강점" autoFocus />
-            </div>
-          )}
-          {step === 2 && (
-            <div>
-              <label className={labelCls}>타깃 고객 *</label>
-              <input className={inputCls} value={target} onChange={e => setTarget(e.target.value)} placeholder="예: 20-30대 건성 피부 여성" autoFocus />
-            </div>
-          )}
-          {step === 3 && (
-            <div className="space-y-2">
-              <div>
-                <label className={labelCls}>광고 목표</label>
-                <input className={inputCls} value={objective} onChange={e => setObjective(e.target.value)} placeholder="예: conversion" />
-              </div>
-              <div>
-                <label className={labelCls}>저장할 프로젝트 *</label>
-                <select className={inputCls} value={projectId} onChange={e => setProjectId(e.target.value)}>
-                  {projects.length === 0 && <option value="">프로젝트 없음</option>}
-                  {projects.map(p => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}
-                    </option>
-                  ))}
-                </select>
-                {projects.length === 0 && (
-                  <p className="mt-1 text-[11px] text-[#F04452]">
-                    저장할 프로젝트가 없어요. 프로젝트를 먼저 만든 뒤 생성할 수 있어요.
-                  </p>
-                )}
-              </div>
-            </div>
-          )}
+          </div>
+          <div>
+            <label className={labelCls}>저장할 프로젝트 *</label>
+            <select className={inputCls} value={projectId} onChange={e => setProjectId(e.target.value)}>
+              {projects.length === 0 && <option value="">프로젝트 없음</option>}
+              {projects.map(p => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+            {projects.length === 0 && (
+              <p className="mt-1 text-[11px] text-[#F04452]">
+                저장할 프로젝트가 없어요. 프로젝트를 먼저 만든 뒤 생성할 수 있어요.
+              </p>
+            )}
+          </div>
         </div>
-        {step === totalSteps - 1 && !allValid && (
+        {!allValid && (
           <p className="mt-2 text-[11px] text-[#F04452]">
             필수 항목을 입력해주세요: {missing.join(', ')}
           </p>
         )}
         <div className="flex gap-2 mt-3">
-          {step > 0 && (
-            <button onClick={() => setStep(step - 1)} className="px-3 py-2 rounded-lg border border-line text-sm text-ink-tertiary">
-              이전
-            </button>
-          )}
-          {step < totalSteps - 1 ? (
-            <button onClick={() => setStep(step + 1)} disabled={!stepValid} className={btnCls}>
-              다음
-            </button>
-          ) : (
-            <button onClick={run} disabled={!allValid} className={btnCls}>
-              광고 생성 실행
-            </button>
-          )}
+          <button onClick={run} disabled={!allValid} className={btnCls}>
+            광고 생성 실행
+          </button>
         </div>
       </div>
     );
