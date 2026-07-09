@@ -8,7 +8,7 @@ import random
 
 from domain.simulation.contracts.schemas import PersonaReaction, SimulationAggregate
 
-ENGINE_VERSION = "agg-2"  # agg-2: 가중 집계(§3.7) — 가중 평균·가중 부트스트랩·유효표본
+ENGINE_VERSION = "agg-3"  # agg-3: 관심층 조건부 클릭 의향률 P(action|interest) payload 추가(#172)
 
 # 부트스트랩 설정 — 결정적 재현을 위해 시드 고정.
 _BOOTSTRAP_ITERS = 2000
@@ -17,6 +17,9 @@ _ALPHA = 0.05  # 95% CI
 
 # 구매의도(1~5) (가중)표준편차가 이 값 미만이면 응답 집중 경고(동질화 의심).
 _VARIANCE_MIN_STD = 0.5
+
+# 관심층 조건부 지표의 유효표본(Kish)이 이 값 미만이면 low_sample 플래그(참고용 표기).
+_INTEREST_MIN_EFF_N = 5.0
 
 
 def _wmean(values: list[float], weights: list[float]) -> float:
@@ -61,6 +64,43 @@ def _weighted_bootstrap_ci(flags: list[float], weights: list[float]) -> tuple[fl
     return lo, hi
 
 
+def _interest_conditional_payload(passed: list[PersonaReaction]) -> dict:
+    """관심층 조건부 클릭 의향률 P(action|interest) — Meta 알고리즘 선별 오디언스 근사(#172).
+
+    Meta는 관심 유저를 선별 노출하므로 실제 타겟 도달 반응은 이 조건부에 가깝다.
+    Interest 통과 표본이 없으면 빈 dict(키 생략) — 0.0 채움은 오독 위험이라 금지.
+    탐색적(exploratory) 보조 지표: 실측 CTR 환산 금지, 전체 기준과의 간격 해석용.
+    """
+    interested = [r for r in passed if r.aisas.interest]
+    if not interested:
+        return {}
+    weights = [float(r.weight) for r in interested]
+    flags = [float(r.aisas.action) for r in interested]
+    ci_low, ci_high = _weighted_bootstrap_ci(flags, weights)
+    eff_n = _effective_n(weights)
+    return {
+        "interest_conditional": {
+            "click_intent_rate": round(_wmean(flags, weights), 4),
+            "ci_low": round(ci_low, 4),
+            "ci_high": round(ci_high, 4),
+            "interest_passed_n": len(interested),
+            "interest_passed_effective_n": round(eff_n, 1),
+            "low_sample": eff_n < _INTEREST_MIN_EFF_N,
+        }
+    }
+
+
+def _scalar_value(r: PersonaReaction, int_field: str, dist_field: str) -> float:
+    """SSR dist 원본 평균(반올림 전)을 우선 사용 — 없으면 기존 int 필드(llm 경로) 그대로.
+
+    SSRScoringReactor가 저장하는 int 필드(purchase_intent·trust)는 스키마 제약(1~5 정수)상
+    이미 반올림된 값이라 집계 입력으로 쓰면 이중 반올림이 된다. dist.mean(원본 float)을 써야
+    통계가 정직해진다(최종 결과만 소수점 둘째 자리로 반올림).
+    """
+    dist = getattr(r, dist_field)
+    return float(dist.mean) if dist is not None else float(getattr(r, int_field))
+
+
 def _ssr_population_probs(reactions: list[PersonaReaction], dim: str) -> list[float] | None:
     """SSR 분포(1~5 raw_probs)의 가중 평균 → population 분포. dist 있는 반응만, 없으면 None.
 
@@ -102,7 +142,9 @@ class BasicAggregator:
 
         weights = [float(r.weight) for r in passed]
         action_flags = [float(r.aisas.action) for r in passed]
-        purchases = [float(r.purchase_intent) for r in passed]
+        # SSR dist 있으면 원본 float 평균(반올림 전), 없으면 기존 int(llm 경로) — 이중 반올림 방지.
+        purchases = [_scalar_value(r, "purchase_intent", "purchase_intent_dist") for r in passed]
+        trusts = [_scalar_value(r, "trust", "trust_dist") for r in passed]
         ci_low, ci_high = _weighted_bootstrap_ci(action_flags, weights)
         purchase_std = _wstd(purchases, weights)
         eff_n = _effective_n(weights)
@@ -127,7 +169,7 @@ class BasicAggregator:
             ci_low=round(ci_low, 4),
             ci_high=round(ci_high, 4),
             purchase_intent=round(_wmean(purchases, weights), 2),
-            trust_avg=round(_wmean([float(r.trust) for r in passed], weights), 2),
+            trust_avg=round(_wmean(trusts, weights), 2),
             rejection_rate=round(_wmean([float(r.rejected) for r in passed], weights), 4),
             brand_recognition_rate=round(
                 _wmean([float(r.brand_recognized) for r in passed], weights), 4
@@ -140,6 +182,7 @@ class BasicAggregator:
                 "ci_iters": _BOOTSTRAP_ITERS,
                 "purchase_std": round(purchase_std, 3),
                 "weight_sum": round(sum(weights), 1),
+                **_interest_conditional_payload(passed),
                 **ssr_payload,
             },
             engine_version=ENGINE_VERSION,

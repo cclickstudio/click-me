@@ -78,6 +78,17 @@ export interface SimRubricScore {
   evidence: Record<string, unknown>;
 }
 
+// 관심층 조건부 클릭 의향(agg-3 payload.interest_conditional) — Meta 알고리즘 선별 노출 근사.
+// 과거 런(agg-2 이하)·관심 통과 0명이면 payload에 키 자체가 없음 — optional 처리 필수.
+export interface InterestConditional {
+  click_intent_rate: number;
+  ci_low: number;
+  ci_high: number;
+  interest_passed_n: number;
+  interest_passed_effective_n: number;
+  low_sample: boolean;
+}
+
 export interface SimAggregate {
   click_intent_rate: number;
   ci_low: number;
@@ -87,7 +98,7 @@ export interface SimAggregate {
   rejection_rate: number;
   variance_warning: boolean;
   effective_n: number;
-  payload: Record<string, unknown>;
+  payload: Record<string, unknown> & { interest_conditional?: InterestConditional };
   engine_version: string;
 }
 
