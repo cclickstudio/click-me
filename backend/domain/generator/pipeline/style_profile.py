@@ -28,7 +28,9 @@ class StyleProfile:
 
     - text_style: 텍스트 렌더 방식 (box=패널, floating=그림자, emotional=얇은폰트·여백).
     - product_fill: 누끼 compose에서 상품이 프레임에서 차지할 비중(0~1, 짧은 변 기준).
-    - headline_color/body_color: 텍스트 색(RGBA). box 외 스타일은 2단계에서 사용.
+    - headline_color/body_color: 텍스트 색(RGBA). box 스타일에서만 실제로 쓰인다 —
+      floating/emotional은 패널이 없어 사진 위 실제 밝기를 text_overlay가 직접 재서
+      적응적으로 색을 정하므로(_adaptive_text_color) 여기 값은 무시된다.
     - accent_override: CTA·강조색 강제(브랜드컬러 무시). FOMO 코랄 레드 등.
     - highlight_numbers: 헤드라인 속 숫자(할인율·수량 등)를 강조색으로 렌더(혜택 강조용).
     - headline/body/cta_weight: KB Typography System의 전략별 폰트 웨이트. 보유 .woff2가 없으면
@@ -70,7 +72,7 @@ STRATEGY_STYLE: dict[AdStrategy, StyleProfile] = {
     ),
     AdStrategy.SOCIAL_PROOF: StyleProfile(
         "floating",
-        0.25,
+        0.75,
         _DARK_GRAY,
         _MID_GRAY,
         headline_weight="semibold",
@@ -84,11 +86,11 @@ STRATEGY_STYLE: dict[AdStrategy, StyleProfile] = {
         _BROWN,
         headline_weight="semibold",
         body_weight="light",
-        cta_weight="regular",
+        cta_weight="medium",
     ),
     AdStrategy.FOMO: StyleProfile(
         "box",
-        0.45,
+        0.8,
         _WHITE,
         _WHITE,
         accent_override="#E63946",

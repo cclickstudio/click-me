@@ -326,8 +326,18 @@ def build_chat_tools(settings, clio_retriever=None) -> list:
         helpers.spawn_persist(state.get("project_id"), "gen_input", gen_data)
         project_id = state.get("project_id")
         complete = bool(product_name and product_description and target_audience and project_id)
-        # 완비 + 이번 턴 이미지 첨부 → 폼 경로(첨부가 상품 이미지로 프리필됨, 실행만 누르면 됨)
-        if complete and state.get("has_image"):
+        # 이번 턴 첨부가 없으면 세션 히스토리에서 아직 미소비 첨부를 찾는다(턴 넘어가도 유실 방지).
+        has_image = bool(state.get("has_image"))
+        pending_image_url: str | None = None
+        if not has_image:
+            pending_image_url = await history.latest_pending_product_image(
+                state.get("session_id") or ""
+            )
+            has_image = bool(pending_image_url)
+        if pending_image_url:
+            gen_data["product_image_url"] = pending_image_url
+        # 완비 + 이미지(첨부 또는 대기 중) → 폼 경로(상품 이미지로 프리필됨, 실행만 누르면 됨)
+        if complete and has_image:
             return Command(
                 update={
                     **widgets.gen_form(gen_data),

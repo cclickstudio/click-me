@@ -64,6 +64,7 @@ export default function SimFormWidget({
     product_category?: string;
     ad_objective?: string;
     analysis_mode?: AnalysisMode;
+    generation_id?: string; // 생성 출처 — 채팅 개선모드 누끼 역추적용(ads.generation_id로 영속)
   };
   initialImage?: File; // 채팅에서 첨부한 광고 이미지
   initialImageUrl?: string; // 생성 시안 등에서 넘어온 이미지 URL(파일 대신 URL로 시뮬)
@@ -298,6 +299,7 @@ export default function SimFormWidget({
         target_filter: targetFilter,
         target_mode: targetMode,
         analysis_mode: analysisMode,
+        generation_id: initial?.generation_id,
       });
       setRunId(run_id);
       setSimJob(run_id); // 동시실행 슬롯 점유(시뮬 1개 제한)

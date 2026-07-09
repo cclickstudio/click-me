@@ -210,7 +210,7 @@ type WidgetSpec = {
     simulation_id?: string; // sim_result·debate_stream 위젯 — 결과/토론 연결용
     run_id?: string; // debate_stream·debate_summary 위젯 — 토론 스트림/결과 조회용
     sample_size?: number; // sim_input 위젯 — 실제 돌린 가상 소비자 수
-    generation_id?: string; // gen_result 위젯 — 생성 결과(후보·이미지) 조회용
+    generation_id?: string; // gen_result 위젯 — 생성 결과(후보·이미지) 조회용. sim_form 위젯에선 생성 출처(채팅 개선모드 누끼 역추적용)로 재사용
     loop_id?: string; // gen_loop 위젯 — 자동 개선 루프 진행 카드
     stream_url?: string; // gen_loop 위젯 — 루프 SSE 경로
     prefill?: CampaignPrefill; // create_campaign 위젯 — 캠페인 생성 폼 초기값
@@ -1314,13 +1314,20 @@ export default function ChatConversation({
         }
       }
 
-      // 첨부 이미지를 S3에 1회 업로드 → 사용자 메시지에 영속화(실패해도 표시만 하고 진행).
+      // 첨부 이미지를 S3에 1회 업로드 → 사용자 메시지에 영속화(실패하면 이미지 없이 진행 + 안내).
       let imageUrl: string | undefined;
       if (imgFile) {
         try {
           imageUrl = (await api.chat.uploadImage(imgFile)).url;
         } catch {
-          // 업로드 실패 — 이번 세션 표시는 유지되나 내역엔 안 남음
+          setMessages(prev => [
+            ...prev,
+            {
+              role: 'assistant',
+              content: '이미지 업로드에 실패했어요. 다시 첨부해 주세요.',
+              meta: { source: 'orchestrator', label: '오류', error: true },
+            },
+          ]);
         }
       }
 
