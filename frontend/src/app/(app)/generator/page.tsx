@@ -792,12 +792,7 @@ export default function GeneratorPage() {
   }, []);
   const selectedProject = projects.find((p) => p.id === localProjectId) ?? null;
   const selectProject = (id: string | null) => setLocalProjectId(id);
-  // N2 — 안읽음 뱃지(시뮬 경로와 대칭). 닫힘 여부는 ref로 최신값 읽음.
-  const { pushUnread, floatingOpen, openChat } = useChatController();
-  const floatingOpenRef = useRef(floatingOpen);
-  useEffect(() => {
-    floatingOpenRef.current = floatingOpen;
-  }, [floatingOpen]);
+  const { openChat } = useChatController();
   const [mode, setMode] = useState<GenMode>("create");
   const [format, setFormat] = useState<"single" | "carousel">("single");
   const [phase, setPhase] = useState<Phase>("idle");
@@ -1964,16 +1959,63 @@ export default function GeneratorPage() {
                         재생성
                       </button>
                     )}
-                    {/* #2 — 생성 시안으로 시뮬레이션 돌리기(채팅의 시뮬 제안으로 이동, 첫 시안 프리필) */}
+                    {/* 생성 시안으로 시뮬레이션 돌리기 — 클릭 시점에만 새 채팅 세션을 만들고
+                        첫 시안을 프리필한 시뮬 폼을 심는다(선제 알림 아님, 사용자 액션에 한함). */}
                     <button
                       type="button"
                       className="flex items-center gap-1.5 text-xs text-primary border border-primary/40 rounded-lg px-3 py-1.5 hover:bg-primary-subtle transition-colors"
-                      onClick={() => {
-                        // #3에서 만든 '제안 새 채팅'을 연다(기존 대화 아님).
-                        const sid = localStorage.getItem(
-                          `gen_sim_session_${detail.generation_id}`,
-                        );
-                        openChat(sid ?? null);
+                      onClick={async () => {
+                        const cacheKey = `gen_sim_session_${detail.generation_id}`;
+                        const cached = localStorage.getItem(cacheKey);
+                        if (cached) {
+                          openChat(cached);
+                          return;
+                        }
+                        const pid = selectedProject?.id;
+                        if (!pid) {
+                          openChat(null);
+                          return;
+                        }
+                        try {
+                          const created = await api.chat.createSession(
+                            pid,
+                            `${productName || "광고 시안"} 시뮬·개선`,
+                          );
+                          const sid = created.id;
+                          localStorage.setItem(cacheKey, sid);
+                          const c0 = (detail.candidates ?? [])[0];
+                          if (c0) {
+                            const simImgRaw = c0.image_url ?? null;
+                            const simImg = simImgRaw
+                              ? simImgRaw.startsWith("/")
+                                ? `${API_BASE}${simImgRaw}`
+                                : simImgRaw
+                              : undefined;
+                            await api.chat.appendWidgets(sid, [
+                              {
+                                content:
+                                  "생성한 시안으로 소비자 반응을 미리 예측해볼까요? 아래에서 확인·실행하세요.",
+                                meta: {
+                                  source: "simulation",
+                                  label: "시뮬레이션",
+                                  widget: {
+                                    type: "sim_form",
+                                    data: {
+                                      ad_title: c0.copy.headline,
+                                      ad_content: [c0.copy.headline, c0.copy.body, c0.copy.cta]
+                                        .filter(Boolean)
+                                        .join("\n"),
+                                      ad_image_url: simImg,
+                                    },
+                                  },
+                                },
+                              },
+                            ]);
+                          }
+                          openChat(sid);
+                        } catch {
+                          openChat(null);
+                        }
                       }}
                     >
                       🧪 시뮬레이션 돌리기

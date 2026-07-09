@@ -6,7 +6,6 @@ import { useRouter } from 'next/navigation';
 import { useProjects } from '@/components/ProjectContext';
 import { CreateProjectModal } from '@/components/ProjectPanel';
 import { goalFromObjective } from '@/lib/metaObjective';
-import { useChatController } from '@/components/chat/ChatController';
 import ErrorCard from '@/components/chat/ErrorCard';
 import { openReconnectingStream } from '@/lib/sse';
 import { api, getAdminOrgId } from '@/lib/api';
@@ -137,13 +136,6 @@ export default function SimulationRunPage() {
   const selectProject = (id: string | null) => setLocalProjectId(id);
 
   const router = useRouter();
-  // N2 — 안읽음 뱃지: 직접 실행 완료로 채팅에 제안을 주입할 때 플로팅이 닫혀 있으면
-  // pushUnread로 빨간 뱃지를 올린다. 닫힘 여부는 최신값을 ref로 읽는다(완료 콜백 클로저 staleness 회피).
-  const { pushUnread, floatingOpen } = useChatController();
-  const floatingOpenRef = useRef(floatingOpen);
-  useEffect(() => {
-    floatingOpenRef.current = floatingOpen;
-  }, [floatingOpen]);
   const [step, setStep] = useState<Step>('setup');
 
   // 3-모드 분석(A-1) — synthetic(기본)·individual(1명)·persona_set(세그먼트 비교)
@@ -587,55 +579,12 @@ export default function SimulationRunPage() {
                 adDescription: adContent || undefined,
                 mode,
               });
-              // N1 — 전용 페이지 직접 실행이 끝나면, 결과 + "개선해서 다시 돌리기" 제안을
-              // 자동 주입. 기존 대화에 끼워넣지 않고 '새 채팅 세션'을 만들어 거기에 제안한다.
+              // 완료된 시뮬을 좌측 패널에 즉시 반영. 후속 제안("제너레이터 제안"·"집행 제안")은
+              // 백엔드가 시뮬 완료 시 항상 센터 알림(CenterSuggestion)으로 자동 생성한다
+              // (simulation_service._record_gen_suggestion/_record_launch_suggestion) —
+              // 트리거 경로(이 페이지·채팅)와 무관하게 선제 알림은 센터로만 간다.
               const pid = selectedProject?.id;
-              if (pid) refreshDetails(pid); // 완료된 시뮬을 좌측 패널에 즉시 반영
-              if (pid && r.simulation_id) {
-                const injectKey = `n1_injected_${run_id}`; // 동일 run 1회만(중복 주입 방지)
-                if (!localStorage.getItem(injectKey)) {
-                  localStorage.setItem(injectKey, '1');
-                  const simId = r.simulation_id;
-                  const sessionTitle = `${adTitle || '광고'} 시뮬 결과·개선`;
-                  api.chat.createSession(pid, sessionTitle).then(created => {
-                    const sid = created.id;
-                    void api.chat
-                      .appendWidgets(sid, [
-                        {
-                          content: '시뮬레이션 결과예요.',
-                          meta: {
-                            source: 'simulation',
-                            label: '시뮬레이션',
-                            widget: {
-                              type: 'sim_result',
-                              data: { simulation_id: simId },
-                            },
-                          },
-                        },
-                        {
-                          content:
-                            '결과를 바탕으로 광고를 개선해서 다시 돌려볼까요?',
-                          meta: {
-                            source: 'simulation',
-                            label: '개선 제안',
-                            approval: {
-                              action: 'rerun_simulation',
-                              label: '개선해서 다시 돌리기',
-                              reasons: [
-                                '전용 페이지에서 직접 돌린 결과를 채팅에서 이어 개선할 수 있어요.',
-                              ],
-                            },
-                          },
-                        },
-                      ])
-                      .then(() => {
-                        // N2 — 패널이 닫혀 있으면 안읽음 뱃지를 올린다(2건 주입 → +1, 알림은 1회).
-                        if (!floatingOpenRef.current) pushUnread();
-                      })
-                      .catch(() => {});
-                  }).catch(() => {});
-                }
-              }
+              if (pid) refreshDetails(pid);
               router.push(`/simulation/${routeId}`);
             })
             .catch(e => {

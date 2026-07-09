@@ -17,7 +17,7 @@ const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:8000';
 
 type Organization = { id: string; name: string; status: string; created_at: string };
 
-type AccountRole = 'ADMIN' | 'COMPANY' | 'USER';
+type AccountRole = 'ADMIN' | 'COMPANY' | 'USER'; // COMPANY는 이 화면에서 생성 불가(조직 관리 전용) — 표시용 타입만 유지
 type Account = {
   id: string;
   login_id: string;
@@ -53,11 +53,10 @@ function CreateAccountModal({
   onClose: () => void;
   onCreated: () => void;
 }) {
-  const [role, setRole] = useState<AccountRole>('USER');
+  const [role, setRole] = useState<'ADMIN' | 'USER'>('USER');
   const [name, setName] = useState('');
   const [loginId, setLoginId] = useState('');
   const [password, setPassword] = useState('');
-  const [companyName, setCompanyName] = useState('');
   const [orgId, setOrgId] = useState('');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -68,10 +67,6 @@ function CreateAccountModal({
     setError('');
     if (!name.trim() || !loginId.trim() || password.length < 8) {
       setError('이름·아이디·비밀번호(8자 이상)를 확인해주세요.');
-      return;
-    }
-    if (role === 'COMPANY' && !companyName.trim()) {
-      setError('회사명을 입력해주세요.');
       return;
     }
     if (role === 'USER' && !orgId) {
@@ -87,7 +82,6 @@ function CreateAccountModal({
         login_id: loginId.trim(),
         password,
         role,
-        company_name: role === 'COMPANY' ? companyName.trim() : null,
         organization_id: role === 'USER' ? orgId : null,
       }),
     });
@@ -109,11 +103,10 @@ function CreateAccountModal({
             <label className="text-xs font-medium text-ink-secondary block mb-1">역할</label>
             <select
               value={role}
-              onChange={(e) => setRole(e.target.value as AccountRole)}
+              onChange={(e) => setRole(e.target.value as 'ADMIN' | 'USER')}
               className={inputCls}
             >
               <option value="ADMIN">ADMIN — 관리자</option>
-              <option value="COMPANY">COMPANY — 기업(신규 조직 생성)</option>
               <option value="USER">USER — 팀원(기존 조직 소속)</option>
             </select>
           </div>
@@ -130,12 +123,6 @@ function CreateAccountModal({
             <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="8자 이상" className={inputCls} />
           </div>
 
-          {role === 'COMPANY' && (
-            <div>
-              <label className="text-xs font-medium text-ink-secondary block mb-1">회사명 (새 조직)</label>
-              <input value={companyName} onChange={(e) => setCompanyName(e.target.value)} placeholder="(주)클릭미" className={inputCls} />
-            </div>
-          )}
           {role === 'USER' && (
             <div>
               <label className="text-xs font-medium text-ink-secondary block mb-1">소속 조직</label>
@@ -146,7 +133,7 @@ function CreateAccountModal({
                 ))}
               </select>
               {activeOrgs.length === 0 && (
-                <p className="text-xs text-ink-muted mt-1">활성 조직이 없습니다. 먼저 COMPANY 계정을 만드세요.</p>
+                <p className="text-xs text-ink-muted mt-1">활성 조직이 없습니다. &lsquo;조직 관리&rsquo;에서 먼저 조직을 만드세요.</p>
               )}
             </div>
           )}
@@ -257,10 +244,11 @@ export default function AdminManageUserPage() {
       .catch(() => setOrgs([]));
   }, [refresh]);
 
+  // 회원 관리는 COMPANY를 다루지 않는다 — role 필터 미지정 시에도 ADMIN,USER로만 조회.
   const fetcher = useCallback(
     (offset: number, limit: number) =>
       authedFetch(
-        `${API_BASE}/api/admin/users?limit=${limit}&offset=${offset}&sort=${sortCol}&order=${order}${role ? `&role=${role}` : ''}`,
+        `${API_BASE}/api/admin/users?limit=${limit}&offset=${offset}&sort=${sortCol}&order=${order}&role=${role || 'ADMIN,USER'}`,
       )
         .then((r) => (r.ok ? r.json() : []))
         .then((d) => (Array.isArray(d) ? (d as Account[]) : [])),
@@ -356,7 +344,6 @@ export default function AdminManageUserPage() {
               </thead>
               <tbody>
                 {items.map((a) => {
-                  const isCompany = a.role === 'COMPANY';
                   const isInactive = a.status === 'INACTIVE';
                   return (
                     <tr key={a.id} className="border-b border-line last:border-0 hover:bg-accent transition-colors">
@@ -376,10 +363,7 @@ export default function AdminManageUserPage() {
                         <div className="flex items-center gap-2 justify-end">
                           <button onClick={() => setEditing(a)}
                             className="px-3 py-1.5 text-xs text-ink-secondary border border-line rounded-lg hover:bg-accent transition-colors">수정</button>
-                          {isCompany ? (
-                            <button disabled title="COMPANY 계정은 '조직 관리'에서 조직째 관리하세요"
-                              className="px-3 py-1.5 text-xs text-ink-muted rounded-lg cursor-not-allowed">삭제</button>
-                          ) : isInactive ? (
+                          {isInactive ? (
                             <>
                               <button onClick={() => handleRestore(a.id, a.name)}
                                 className="px-3 py-1.5 text-xs text-primary border border-primary/30 rounded-lg hover:bg-primary-subtle transition-colors">복원</button>
