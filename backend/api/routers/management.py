@@ -2554,7 +2554,8 @@ async def replace_creative_proposal(
 # 우리 S3 영속 네임스페이스 — 이 prefix 키만 핸드오프 집행 허용(임시·외부는 차단).
 # generated-ads/ = 제너레이터 실제 저장 접두사(tools/storage/s3.py candidate_key). 누락 시
 # 제너레이터 광고도 "durable 아님"으로 집행이 막혀, 양식을 맞춰 포함한다.
-_DURABLE_KEY_PREFIXES = ("generator/", "ads/", "generated-ads/")
+# simulation/ = 시뮬 업로드 접두사(ad_image_store.persist_ad_image) — 업로드도 S3 영속이라 포함.
+_DURABLE_KEY_PREFIXES = ("generator/", "ads/", "generated-ads/", "simulation/")
 
 
 def _resolve_sim_asset_key(asset_url: str | None) -> str | None:

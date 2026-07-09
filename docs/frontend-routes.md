@@ -2,17 +2,14 @@
 
 > 이 파일은 `backend/scripts/gen_docs.py`가 코드에서 **자동 생성**합니다. 직접 편집하지 말고 소스를 고친 뒤 스크립트를 다시 실행하세요(커밋 시 pre-commit 훅이 자동 갱신).
 
-총 **45개** 페이지.
+총 **41개** 페이지.
 
 | 라우트 | 파일 | 종류 |
 |---|---|---|
 | `/` | `frontend/src/app/page.tsx` | page |
 | `/admin` | `frontend/src/app/(app)/admin/page.tsx` | page |
-| `/admin/chat-log` | `frontend/src/app/(app)/admin/chat-log/page.tsx` | page |
 | `/admin/chats` | `frontend/src/app/(app)/admin/chats/page.tsx` | page |
-| `/admin/check` | `frontend/src/app/(app)/admin/check/page.tsx` | page |
 | `/admin/companies` | `frontend/src/app/(app)/admin/companies/page.tsx` | page |
-| `/admin/dashboard` | `frontend/src/app/(app)/admin/dashboard/page.tsx` | page |
 | `/admin/generations` | `frontend/src/app/(app)/admin/generations/page.tsx` | page |
 | `/admin/inquiry` | `frontend/src/app/(app)/admin/inquiry/page.tsx` | page |
 | `/admin/manage-user` | `frontend/src/app/(app)/admin/manage-user/page.tsx` | page |
@@ -49,5 +46,4 @@
 | `/simulation/:id` | `frontend/src/app/(app)/simulation/[id]/page.tsx` | page |
 | `/simulations` | `frontend/src/app/(app)/simulations/page.tsx` | page |
 | `/terms` | `frontend/src/app/terms/page.tsx` | page |
-| `/themes` | `frontend/src/app/themes/page.tsx` | page |
 | `/trash` | `frontend/src/app/(app)/trash/page.tsx` | page |

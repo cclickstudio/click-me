@@ -5,7 +5,7 @@
 // 결합하지 않는다(세션 클릭이 패널을 건드리지 않음).
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
-import { MessageSquarePlus, Search, X, MessagesSquare } from 'lucide-react';
+import { MessageSquarePlus, Search, X, MessagesSquare, Menu } from 'lucide-react';
 import { useAuth } from '@/components/AuthProvider';
 import { useProjects } from '@/components/ProjectContext';
 import { useChatController } from '@/components/chat/ChatController';
@@ -29,6 +29,8 @@ export default function ChatWorkspace() {
   // 대화 열림 — 열린 세션의 프로젝트(새 채팅이면 선택 프로젝트). null이면 우측은 빈 상태.
   const [convoProjectId, setConvoProjectId] = useState<string | null>(null);
   const [needProject, setNeedProject] = useState(false);
+  // 모바일 세션 목록 드로어 — AppLayout의 메인 nav 드로어와 동일 패턴(md 이상은 항상 열림 취급).
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
   // ADMIN — 기업 목록 + 마지막 선택 복원(센터와 동일 규칙).
   useEffect(() => {
@@ -60,6 +62,7 @@ export default function ChatWorkspace() {
     setActiveSessionId(s.id);
     setConvoProjectId(s.project_id);
     setNeedProject(false);
+    setMobileSidebarOpen(false);
   };
 
   // 새 채팅 — 프로젝트가 선택돼 있어야 저장 위치가 정해진다.
@@ -71,6 +74,7 @@ export default function ChatWorkspace() {
     setActiveSessionId(null);
     setConvoProjectId(projectId);
     setNeedProject(false);
+    setMobileSidebarOpen(false);
   };
 
   const remove = async (e: React.MouseEvent, id: string) => {
@@ -104,8 +108,20 @@ export default function ChatWorkspace() {
 
   return (
     <div className="flex h-screen bg-surface-0">
-      {/* ── 좌: 세션 사이드바 ── */}
-      <aside className="flex w-72 shrink-0 flex-col border-r border-line bg-surface-1/40">
+      {/* 모바일 세션 목록 드로어 배경 오버레이 */}
+      {mobileSidebarOpen && (
+        <div
+          onClick={() => setMobileSidebarOpen(false)}
+          className="md:hidden fixed inset-0 z-30 bg-black/40"
+          aria-hidden
+        />
+      )}
+      {/* ── 좌: 세션 사이드바 — 데스크톱은 일반 플로우, 모바일은 드로어(고정+슬라이드) ── */}
+      <aside
+        className={`flex w-72 shrink-0 flex-col border-r border-line bg-surface-1/40 max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:z-40 max-md:w-[85vw] max-md:max-w-xs max-md:bg-surface-1 max-md:shadow-xl max-md:transition-transform max-md:duration-200 ${
+          mobileSidebarOpen ? 'max-md:translate-x-0' : 'max-md:-translate-x-full'
+        }`}
+      >
         <div className="space-y-2 border-b border-line p-3">
           <div className="flex items-center justify-between">
             <h1 className="text-sm font-bold text-ink">채팅</h1>
@@ -203,6 +219,18 @@ export default function ChatWorkspace() {
 
       {/* ── 우: 대화 ── */}
       <div className="flex min-w-0 flex-1 flex-col">
+        {/* 모바일 전용 — 세션 목록 드로어 토글(데스크톱은 좌측에 항상 노출) */}
+        <div className="md:hidden flex items-center gap-2 border-b border-line px-3 py-2">
+          <button
+            type="button"
+            onClick={() => setMobileSidebarOpen(true)}
+            aria-label="세션 목록 열기"
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-ink-secondary hover:bg-surface-1"
+          >
+            <Menu size={18} strokeWidth={2} />
+          </button>
+          <span className="text-sm font-medium text-ink truncate">채팅</span>
+        </div>
         {adminBlocked ? (
           <EmptyPane title="기업을 선택해주세요" desc="좌측 상단에서 기업을 고르면 채팅이 열립니다." />
         ) : convoProjectId === null ? (

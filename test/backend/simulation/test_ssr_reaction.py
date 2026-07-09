@@ -235,3 +235,5 @@ def test_ssr_scoring_flag(monkeypatch: pytest.MonkeyPatch) -> None:
     assert _ssr_scoring_enabled() is True
     monkeypatch.setenv("SIMULATION_SCORING", "llm")
     assert _ssr_scoring_enabled() is False
+    monkeypatch.setenv("SIMULATION_SCORING", "ssr")
+    assert _ssr_scoring_enabled() is True

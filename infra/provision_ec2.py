@@ -482,7 +482,7 @@ def report(instance_id: str, host: str, key_created: bool) -> None:
     print("\n" + "=" * 60)
     print("\nCI/CD 및 배포:")
     print(" - 해당 작업은 인스턴스 생성만 돕습니다. 배포는 GitHub Actions를 통해 CI/CD가 이루어진 후 진행됩니다.")
-    print(" - main 또는 ci-cd 브랜치에 코드를 push하면 CI/CD·배포가 자동으로 이루어집니다.")
+    print(" - main 또는 prod 브랜치에 코드를 push하면 CI/CD·배포가 자동으로 이루어집니다.")
     print("\n" + "=" * 60)
     print("\nPEM Key:")
     if key_created:

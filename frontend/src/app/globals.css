@@ -1,5 +1,4 @@
 @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css');
-@import './themes.css';
 
 @tailwind base;
 @tailwind components;
@@ -8,7 +7,6 @@
 /* ══════════════════════════════════════════════════════════════════════════
    디자인 토큰 (shadcn 호환 · RGB 채널 트리플릿)
    - 값은 "R G B" 형태로 저장하고 tailwind에서 rgb(var(--x) / <alpha-value>)로 매핑.
-   - 컬러 테마는 data-theme 레이어(themes.css 아님, 아래 하단)에서 primary/accent만 override.
    ══════════════════════════════════════════════════════════════════════════ */
 
 :root {
@@ -134,11 +132,11 @@
   --text-muted: 100 116 139; /* #64748B */
   --text-disabled: 71 85 105; /* #475569 */
 
-  /* border */
-  --border: 51 65 85; /* #334155 */
-  --border-strong: 71 85 105; /* #475569 */
-  --border-stronger: 100 116 139; /* #64748B */
-  --input: 51 65 85;
+  /* border — 배경보다 어두운 톤(그림자처럼), surface-0(페이지 배경)보다도 더 짙게 */
+  --border: 6 10 19; /* surface-0(#0F172A)보다 어두운 그림자 톤 */
+  --border-strong: 3 5 10;
+  --border-stronger: 0 0 0;
+  --input: 6 10 19;
   --ring: 59 130 246;
 
   /* primary (다크 파랑 #3B82F6) */

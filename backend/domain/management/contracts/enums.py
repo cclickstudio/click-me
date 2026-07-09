@@ -9,7 +9,10 @@ from enum import IntEnum, StrEnum
 
 
 class ExecutionMode(StrEnum):
-    """실행 모드 격리 — 값은 설정, 강제는 executor 분기. v1에서 LIVE 비활성 (§7 Must)."""
+    """실행 모드 격리 — 값은 설정, 강제는 executor 분기.
+
+    v1부터 실 게재 단계 진입으로 LIVE 정식 허용(§7 갱신).
+    """
 
     MOCK = "mock"
     DRY_RUN = "dry_run"
