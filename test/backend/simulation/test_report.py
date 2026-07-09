@@ -82,6 +82,20 @@ def test_build_report_carries_brand_dist_and_rubric() -> None:
     assert report.debate_available is False
 
 
+def test_build_report_carries_interest_conditional() -> None:
+    # agg-3 payload.interest_conditional이 ReportKpi로 그대로 실린다(#175).
+    analysis = analyze_reactions(_REACTIONS, _AD)
+    aggregate = BasicAggregator().aggregate(_REACTIONS)
+    topic = build_topic(analysis, aggregate, _AD)
+
+    report = build_report(analysis, aggregate, topic)
+
+    ic = report.kpi.interest_conditional
+    assert ic is not None
+    assert ic["click_intent_rate"] == 0.4  # 전원 관심 통과(5명) 중 2명 클릭
+    assert ic == aggregate.payload["interest_conditional"]
+
+
 def test_build_report_without_rubric_leaves_diagnosis_empty() -> None:
     analysis = analyze_reactions(_REACTIONS, _AD)
     aggregate = BasicAggregator().aggregate(_REACTIONS)

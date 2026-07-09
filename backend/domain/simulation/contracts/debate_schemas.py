@@ -266,6 +266,9 @@ class ReportKpi(BaseModel):
     brand_recognition_rate: float = 0.0  # 브랜드 식별률(§2-5 Fluency) — 가중 비율
     variance_warning: bool
     effective_n: float
+    # 관심층 조건부 클릭 의향(agg-3 payload.interest_conditional) — Meta 알고리즘 선별 노출 근사.
+    # 과거 런(agg-2 이하)·관심 통과 0명이면 None(하위 호환 — 소비자는 부재 시 기존 표기 유지).
+    interest_conditional: dict | None = None
 
 
 class ReportQuote(BaseModel):

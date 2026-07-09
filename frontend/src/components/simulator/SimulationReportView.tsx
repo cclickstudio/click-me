@@ -61,6 +61,9 @@ const RUBRIC_KO: Record<string, string> = {
   objective_alignment: '목표 정합',
 };
 const GENDER_KO: Record<string, string> = { M: '남성', F: '여성' };
+// 세그먼트 섹션 출력 최소 셀 크기(T4) — PDF _overall 산식과 동일 임계. 유효표본이 이 값 이상인
+// 셀이 하나도 없으면 섹션 대신 안내 문구를 띄운다(과소표본 셀 노이즈 차단).
+const MIN_SEGMENT_CELL_SIZE = 20;
 const GROUP_KO: Record<string, string> = {
   finishers: '완주자',
   undecided: '미온',
@@ -132,7 +135,7 @@ function signal(score: number) {
   return score >= 70 ? '#16A34A' : score >= 50 ? '#F59E0B' : '#EF4444';
 }
 
-/* 종합 점수(PDF _overall과 동일 산식) */
+/* 종합 점수(PDF _overall과 동일 산식) — 브랜드 식별률은 품질 지표가 아니라 제외(T3) */
 function overallScore(rep: SimulationReport): number {
   const k = rep.kpi;
   const parts = [
@@ -140,7 +143,6 @@ function overallScore(rep: SimulationReport): number {
     k.purchase_intent / 5,
     k.trust_avg / 5,
     1 - k.rejection_rate,
-    k.brand_recognition_rate,
   ];
   if (rep.rubric_scores.length > 0) {
     parts.push(
@@ -324,6 +326,18 @@ function SegmentDonut({ segments }: { segments: SegmentCell[] }) {
 /* ─── 연령×성별 세그먼트 히트맵(최대 차별점) ─── */
 function SegmentHeatmap({ segments }: { segments: SegmentCell[] }) {
   if (segments.length === 0) return null;
+  // 유효표본 20명 이상 셀이 하나도 없으면 섹션 대신 안내 문구(T4) — PDF _segment_notice와 동일.
+  const qualifies = segments.some(s => (s.effective_n ?? 0) >= MIN_SEGMENT_CELL_SIZE);
+  if (!qualifies) {
+    return (
+      <Section title='누구에게 통하나 — 연령대×성별'>
+        <p className='text-[11px] leading-relaxed text-ink-tertiary'>
+          세그먼트 분석은 셀당 {MIN_SEGMENT_CELL_SIZE}명 이상일 때 제공됩니다. 현재
+          표본으로는 전체 반응만 표시합니다.
+        </p>
+      </Section>
+    );
+  }
   // 클릭 의향률 기준 최고/최저 셀 표시.
   const ranked = [...segments].sort(
     (a, b) => b.click_intent_rate - a.click_intent_rate

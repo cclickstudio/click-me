@@ -10,7 +10,12 @@ from domain.simulation.contracts.schemas import (
 from domain.simulation.tools.aggregation.aggregator import BasicAggregator
 from domain.simulation.tools.debate.analyzer import analyze_reactions
 from domain.simulation.tools.debate.kpi import build_topic
-from domain.simulation.tools.debate.pdf_report import render_report_pdf
+from domain.simulation.tools.debate.pdf_report import (
+    MIN_SEGMENT_CELL_SIZE,
+    _overall,
+    _segments_qualify,
+    render_report_pdf,
+)
 from domain.simulation.tools.debate.report import build_report
 
 _AD = AdInterpretation(
@@ -63,3 +68,29 @@ def test_pdf_handles_empty_result() -> None:
     # 방어 — 빈 result여도 예외 없이 최소 문서를 만든다.
     pdf = render_report_pdf({})
     assert pdf[:4] == b"%PDF"
+
+
+def test_overall_excludes_brand_recognition() -> None:
+    # T3 — 브랜드 식별률은 품질 지표가 아니므로 종합 점수 산식에서 제외한다(리포트엔 별도 표시).
+    # 브랜드 식별률만 다르고 나머지가 같으면 종합 점수가 동일해야 한다.
+    base = {
+        "click_intent_rate": 0.2,
+        "purchase_intent": 3.0,
+        "trust_avg": 4.0,
+        "rejection_rate": 0.1,
+    }
+    low_brand = {**base, "brand_recognition_rate": 0.0}
+    high_brand = {**base, "brand_recognition_rate": 0.9}
+    assert _overall(low_brand, []) == _overall(high_brand, [])
+    # 4개 지표(클릭·구매/5·신뢰/5·거부↓)의 평균×100
+    expected = round((0.2 + 3.0 / 5 + 4.0 / 5 + (1 - 0.1)) / 4 * 100)
+    assert _overall(high_brand, []) == expected
+
+
+def test_segments_qualify_threshold() -> None:
+    # T4 — 유효표본 20명 이상 셀이 하나라도 있어야 세그먼트 섹션을 출력한다(작은 표본 노이즈 차단).
+    assert MIN_SEGMENT_CELL_SIZE == 20
+    assert _segments_qualify([{"effective_n": 20.0}]) is True
+    assert _segments_qualify([{"effective_n": 24.0}, {"effective_n": 3.0}]) is True
+    assert _segments_qualify([{"effective_n": 19.9}, {"effective_n": 5.0}]) is False
+    assert _segments_qualify([]) is False  # 셀 없음도 미달로 취급
