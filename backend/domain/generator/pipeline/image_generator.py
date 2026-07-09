@@ -7,6 +7,7 @@ from core.config import settings
 from domain.generator.contracts.enums import AdSize, AdStrategy, TemplateType
 from domain.generator.contracts.pipeline_schemas import ProductAnalysis
 from domain.generator.pipeline import image_providers
+from domain.generator.pipeline.style_profile import get_style
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 전략별 메타데이터 매핑 (광고 전략 → 프롬프트 설명문)
@@ -36,7 +37,10 @@ _STRATEGY_PHOTO_STYLE: dict[AdStrategy, str] = {
     AdStrategy.SOCIAL_PROOF: (
         "Authentic UGC-style photography that looks like a real Instagram post, not an ad. "
         "Casual hand-held feel, real-world context, genuine everyday use. "
-        "Approachable and trustworthy, as if shared by a satisfied customer."
+        "Approachable and trustworthy, as if shared by a satisfied customer. "
+        "Medium shot — the subject fills the right portion of the frame consistently, "
+        "positioned so the left side of the frame stays open and uncluttered for a text "
+        "overlay. Avoid wide, distant framing that leaves the subject too small."
     ),
     AdStrategy.EMOTIONAL: (
         "Emotional lifestyle photography with generous negative space and breathing room. "
@@ -46,7 +50,14 @@ _STRATEGY_PHOTO_STYLE: dict[AdStrategy, str] = {
     AdStrategy.FOMO: (
         "Bold promotional photography for a flash-sale feel. Dramatic high-contrast lighting, "
         "vibrant punchy colors, dynamic eye-grabbing composition that creates urgency. "
-        "High-conversion Meta promotion aesthetic."
+        "High-conversion Meta promotion aesthetic. "
+        "The packaged product is the HERO SUBJECT of the advertisement. "
+        "The product must be the largest and most visually dominant object. "
+        "Place the product prominently in the upper foreground, filling most of the frame. "
+        "No person, hand, text, or decorative object may cover any part of the product. "
+        "People are supporting elements only and must appear behind or beside the product. "
+        "All subjects should direct attention toward the product. "
+        "The advertisement should immediately communicate the product before any human subject."
     ),
 }
 
@@ -62,9 +73,9 @@ _TEMPLATE_STYLE: dict[TemplateType, str] = {
         "Neutral or softly colored backdrop that makes the product stand out."
     ),
     TemplateType.B: (
-        "Dynamic product shot with energy and visual impact. "
-        "Product clearly visible and centered, with a vibrant or bold background. "
-        "Eye-catching composition suitable for promotional advertising."
+        "Dynamic product shot with energy and visual impact, filling most of the frame. "
+        "Product clearly visible and dominant, with a vibrant or bold background. "
+        "Eye-catching, high-energy composition suitable for promotional advertising."
     ),
     TemplateType.C: (
         "Rich lifestyle or brand imagery with atmospheric depth. "
@@ -132,64 +143,206 @@ _TEXT_LAYOUT: dict[TemplateType, str] = {
 # 텍스트 오버레이가 가려질 영역을 AI에게 알려주는 Safe Zone 지시문.
 # 각 템플릿은 텍스트 배너 위치가 다르므로, 제품이 가리지 않도록 구도를 강하게 유도한다.
 # 생성 모드에서 사용 — 처음부터 올바른 구도로 이미지를 만들어야 하므로 강제 배치 지시.
-_TEMPLATE_SAFE_ZONES: dict[TemplateType, str] = {
-    TemplateType.A: (
-        "COMPOSITION RULE: Keep the bottom 38% of the frame visually minimal and uncluttered "
-        "— this zone will be covered by a semi-transparent text overlay. "
-        "Place the product in the upper 55% of the frame."
-    ),
-    TemplateType.B: (
-        "COMPOSITION RULE: Keep the top 17% and bottom 24% of the frame clear and uncluttered "
-        "— these zones will be covered by solid color text banners. "
-        "Place the product prominently in the middle 59% of the frame."
-    ),
-    TemplateType.C: (
-        "COMPOSITION RULE: The left 46% of the frame is a solid color text panel — keep it empty. "
-        "The area from 46% to 53% has a gradient overlay fading to transparent. "
-        "Place the product clearly in the RIGHT 47% of the frame "
-        "(center the product at approximately 75-80% from the left edge). "
-        "No important visual elements in the left 53% of the frame."
-    ),
+#
+# 전략의 StyleProfile.text_style이 "box"일 때만 text_overlay가 실제로 반투명/단색 패널을
+# 그린다(그 외 floating/emotional은 패널 없이 사진 위에 텍스트를 바로 얹힌다 — text_overlay.py
+# 참고). 패널이 없는 전략인데도 "그 자리는 비워도 된다"고 안내하면 AI가 실제로 안 덮일 빈
+# 공간을 남겨 사진이 영역을 못 채운 것처럼 보인다 — style_key(box/floating/emotional)로 지시를
+# 나눈다. floating(social_proof)과 emotional은 둘 다 패널이 없다는 점은 같지만, emotional은
+# "여백·잔잔한 분위기"가 핵심 전략이라 floating과 똑같이 "꽉 채워라"고만 하면 두 전략의
+# 시각적 차이가 사라진다 — emotional은 별도로 "여백은 유지하되 완전히 빈 캔버스는 안 된다"로 지시.
+_TEMPLATE_SAFE_ZONES: dict[TemplateType, dict[str, str]] = {
+    TemplateType.A: {
+        "box": (
+            "COMPOSITION RULE: Keep the bottom 45% of the frame visually minimal and uncluttered "
+            "— this zone will be covered by a semi-transparent text overlay. "
+            "The scene must fill the entire upper 55% of the frame edge-to-edge with no empty "
+            "or blank gap — extend the background all the way down to where the text overlay begins, "
+            "but do not let any product detail cross past the 55% line into the bottom zone."
+        ),
+        "floating": (
+            "COMPOSITION RULE: There is NO text panel — text will float directly on top of the "
+            "photo with adaptive color and a soft shadow for legibility. The scene must fill the "
+            "ENTIRE frame edge-to-edge, top to bottom, with no empty or blank margin anywhere, "
+            "including the bottom 45% where the text will sit. Keep that bottom area a bit softer "
+            "and less busy so text stays legible, but it must still show real scene content — "
+            "never leave it blank or empty."
+        ),
+    },
+    TemplateType.B: {
+        "box": (
+            "COMPOSITION RULE: Keep the bottom 32% of the frame clear and uncluttered "
+            "— this zone will be covered by a solid color banner with headline and CTA. "
+            "Place the product prominently filling the upper 68% of the frame, "
+            "with dynamic, energetic framing (diagonal lines, motion-suggestive angles)."
+        ),
+        "floating": (
+            "COMPOSITION RULE: There is NO text banner panel — text will float directly on top of "
+            "the photo with adaptive color and a soft shadow for legibility. The scene must fill "
+            "the ENTIRE frame edge-to-edge, top to bottom, with no empty or blank margin anywhere, "
+            "including the bottom 32% where the text will sit. Keep that bottom area a bit softer "
+            "and less busy so text stays legible, but it must still show real scene content — "
+            "never leave it blank or empty."
+        ),
+    },
+    TemplateType.C: {
+        "box": (
+            "COMPOSITION RULE: The left 46% of the frame is a solid color text panel — keep it empty. "
+            "The area from 46% to 53% has a gradient overlay fading to transparent. "
+            "Place the product clearly in the RIGHT 47% of the frame "
+            "(center the product at approximately 75-80% from the left edge). "
+            "The scene must fill the RIGHT 47% edge-to-edge from the very top to the very bottom "
+            "of the frame with no empty or blank margin above or below it. "
+            "No important visual elements in the left 53% of the frame."
+        ),
+        "floating": (
+            "COMPOSITION RULE: There is NO text panel — text will float directly on top of the "
+            "photo with adaptive color and a soft shadow for legibility. The scene must fill the "
+            "ENTIRE frame edge-to-edge, top to bottom, left to right, with no empty or blank margin "
+            "anywhere, including the left 46% where the text will sit. Keep that left area a bit "
+            "softer and less busy (lower contrast, gentle bokeh) so text stays legible, but it must "
+            "still show real scene content — never leave it blank or empty. Center the product or "
+            "subject slightly right-of-frame (around 65-75% from the left edge) so it reads clearly "
+            "next to the text."
+        ),
+        "emotional": (
+            "COMPOSITION RULE: There is NO text panel — text will float directly on top of the "
+            "photo with adaptive color and a soft shadow for legibility. Unlike a packed product "
+            "shot, this strategy calls for airy negative space, soft natural light, warm tones, and "
+            "shallow-depth-of-field bokeh — the product should appear subtly, not as the dominant "
+            "subject. Still, the calm atmosphere itself must extend across the ENTIRE frame "
+            "edge-to-edge — no flat, undefined, or literally blank canvas anywhere, including the "
+            "left 46% where the text will sit (keep that side especially soft and quiet for "
+            "legibility). Place the subtle product or subject further toward the right (around "
+            "70-85% from the left edge) so the left side reads as open, breathable atmosphere "
+            "rather than empty space."
+        ),
+    },
 }
 
 # ── [컴포즈 모드] 텍스트 배치 가이드 (인페인팅) ───────────────────────────────
 # 상품은 이미 캔버스에 배치되어 잠겨 있다. 텍스트/배경을 상품과 겹치지 않게 배치하도록 안내한다.
-_TEMPLATE_SAFE_ZONES_COMPOSE: dict[TemplateType, str] = {
-    TemplateType.A: (
-        "LAYOUT: The locked product sits in the upper area. "
-        "Build the background around it and keep the bottom 38% suitable for a text overlay."
-    ),
-    TemplateType.B: (
-        "LAYOUT: The locked product sits in the middle area. "
-        "Keep the top 17% and bottom 24% suitable for text banners."
-    ),
-    TemplateType.C: (
-        "LAYOUT: The locked product sits on the RIGHT side. "
-        "Keep the left 46% suitable for a text panel."
-    ),
+# _TEMPLATE_SAFE_ZONES와 동일한 이유로 style_key(전략의 text_style)에 따라
+# "그 자리는 비워도 된다" vs "패널이 없으니 거기도 실제 장면으로 채워야 한다"를 나눈다.
+_TEMPLATE_SAFE_ZONES_COMPOSE: dict[TemplateType, dict[str, str]] = {
+    TemplateType.A: {
+        "box": (
+            "LAYOUT: The locked product sits in the upper area. "
+            "Build the background around it and keep the bottom 45% suitable for a text overlay — "
+            "keep that zone visually simple and free of badges, stamps, watermarks, or any text-like graphic."
+        ),
+        "floating": (
+            "LAYOUT: The locked product sits in the upper area. There is NO text panel — text will "
+            "float directly on the photo (adaptive color + soft shadow). Build the background so it "
+            "fills the ENTIRE frame edge-to-edge, including the bottom 45% where the text will sit — "
+            "never leave it blank. Keep that area a bit softer and less busy for legibility, and free "
+            "of badges, stamps, watermarks, or any text-like graphic."
+        ),
+    },
+    TemplateType.B: {
+        "box": (
+            "LAYOUT: The locked product sits in the upper area, filling it dynamically. "
+            "Build the background around it and keep the bottom 32% suitable for a text banner — "
+            "keep that zone visually simple and free of badges, stamps, watermarks, or any text-like graphic."
+        ),
+        "floating": (
+            "LAYOUT: The locked product sits in the upper area, filling it dynamically. There is NO "
+            "text banner panel — text will float directly on the photo (adaptive color + soft shadow). "
+            "Build the background so it fills the ENTIRE frame edge-to-edge, including the bottom 32% "
+            "where the text will sit — never leave it blank. Keep that area a bit softer and less busy "
+            "for legibility, and free of badges, stamps, watermarks, or any text-like graphic."
+        ),
+    },
+    TemplateType.C: {
+        "box": (
+            "LAYOUT: The locked product sits on the RIGHT side. "
+            "Build the background around it filling the right side edge-to-edge from top to bottom "
+            "with no empty or blank margin. Keep the left 46% suitable for a text panel — "
+            "keep that zone visually simple and free of badges, stamps, watermarks, or any text-like graphic."
+        ),
+        "floating": (
+            "LAYOUT: The locked product sits on the RIGHT side. There is NO text panel — text will "
+            "float directly on the photo (adaptive color + soft shadow). Build the background so it "
+            "fills the ENTIRE frame edge-to-edge, including the left 46% where the text will sit — "
+            "never leave it blank. Keep that area a bit softer and less busy for legibility, and free "
+            "of badges, stamps, watermarks, or any text-like graphic."
+        ),
+        "emotional": (
+            "LAYOUT: The locked product sits on the RIGHT side, kept intentionally small and subtle "
+            "per this strategy's airy, negative-space aesthetic. There is NO text panel — text will "
+            "float directly on the photo (adaptive color + soft shadow). Build a calm, atmospheric "
+            "background (soft natural light, gentle bokeh, warm tones) that extends across the ENTIRE "
+            "frame edge-to-edge, including the left 46% where the text will sit — keep that area "
+            "especially soft and quiet, never a flat blank space, and free of badges, stamps, "
+            "watermarks, or any text-like graphic."
+        ),
+    },
 }
 
 # ── [개선 모드] Safe Zone ─────────────────────────────────────────────────────
 # 원본 이미지 구도를 최대한 유지하면서 텍스트 오버레이 영역만 참고용으로 알려준다.
 # 개선 모드에서 사용 — 강제 배치 지시 대신 "가능하면 비워달라"는 소프트 힌트로 처리.
 # 생성 모드(_TEMPLATE_SAFE_ZONES)처럼 구도를 강제하면 원본 레이아웃이 크게 훼손된다.
-_TEMPLATE_SAFE_ZONES_EDIT: dict[TemplateType, str] = {
-    TemplateType.A: (
-        "LAYOUT NOTE: Text overlays will cover the bottom 38% of the frame. "
-        "If possible, avoid placing critical product details in that area, "
-        "but do NOT restructure the original composition."
-    ),
-    TemplateType.B: (
-        "LAYOUT NOTE: Text banners will cover the top 17% and bottom 24% of the frame. "
-        "If possible, keep those areas relatively uncluttered, "
-        "but do NOT restructure the original composition."
-    ),
-    TemplateType.C: (
-        "LAYOUT NOTE: A text panel will cover the left 46% of the frame. "
-        "If possible, keep the left side lighter or less detailed, "
-        "but do NOT restructure the original composition."
-    ),
+# style_key 분기 이유는 _TEMPLATE_SAFE_ZONES와 동일 — 패널 없는 전략에 "비워도 된다"고
+# 안내하면 실제로 안 덮일 빈 자리가 남는다.
+_TEMPLATE_SAFE_ZONES_EDIT: dict[TemplateType, dict[str, str]] = {
+    TemplateType.A: {
+        "box": (
+            "LAYOUT NOTE: Text overlays will cover the bottom 45% of the frame. "
+            "If possible, avoid placing critical product details in that area, "
+            "but do NOT restructure the original composition."
+        ),
+        "floating": (
+            "LAYOUT NOTE: There is NO text panel — text will float directly on the photo in the "
+            "bottom 45% (adaptive color + soft shadow). Keep that area reasonably clean and "
+            "uncluttered for legibility, but do NOT leave it blank and do NOT restructure the "
+            "original composition."
+        ),
+    },
+    TemplateType.B: {
+        "box": (
+            "LAYOUT NOTE: A text banner will cover the bottom 32% of the frame. "
+            "If possible, avoid placing critical product details in that area, "
+            "but do NOT restructure the original composition."
+        ),
+        "floating": (
+            "LAYOUT NOTE: There is NO text banner panel — text will float directly on the photo in "
+            "the bottom 32% (adaptive color + soft shadow). Keep that area reasonably clean and "
+            "uncluttered for legibility, but do NOT leave it blank and do NOT restructure the "
+            "original composition."
+        ),
+    },
+    TemplateType.C: {
+        "box": (
+            "LAYOUT NOTE: A text panel will cover the left 46% of the frame. "
+            "If possible, keep the left side lighter or less detailed, "
+            "but do NOT restructure the original composition."
+        ),
+        "floating": (
+            "LAYOUT NOTE: There is NO text panel — text will float directly on the photo in the "
+            "left 46% (adaptive color + soft shadow). Keep that side reasonably clean and "
+            "uncluttered for legibility, but do NOT leave it blank and do NOT restructure the "
+            "original composition."
+        ),
+        "emotional": (
+            "LAYOUT NOTE: There is NO text panel — text will float directly on the photo in the "
+            "left 46% (adaptive color + soft shadow). This strategy favors a calm, airy mood with "
+            "the product kept subtle — keep that side soft and uncluttered for legibility (not "
+            "blank), and do NOT restructure the original composition."
+        ),
+    },
 }
+
+
+def _by_style(
+    mapping: dict[TemplateType, dict[str, str]], template: TemplateType, style_key: str
+) -> str:
+    """style_key(box/floating/emotional)로 지시문을 찾는다. A/B는 emotional 전략이 실제로
+    배정되지 않으므로(template_selector가 emotional→C로만 매핑) emotional 키를 안 만들어뒀다 —
+    혹시 방어적 폴백 등으로 들어와도 floating과 같은 취급으로 안전하게 처리한다."""
+    variants = mapping[template]
+    return variants.get(style_key, variants["floating"])
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 이미지 생성 프롬프트 템플릿
@@ -230,8 +383,21 @@ Requirements:
 # 제품명·핵심 가치·타겟을 포함해 모델이 무엇을 보존해야 하는지 파악하도록 한다.
 _EDIT_PROMPT_TEMPLATE = """\
 IMPORTANT: This is an EXISTING advertisement image. \
-Your PRIMARY goal is to PRESERVE the original composition, product placement, \
-and visual identity. Apply only the targeted improvements described below.
+Your PRIMARY goal is to PRESERVE the original product, its packaging, and the photographic \
+scene/composition. Apply only the targeted improvements described below.
+
+CRITICAL — EXISTING TEXT IS NOT PART OF WHAT YOU PRESERVE: this image may already show an old \
+headline, body copy, or CTA button rendered directly onto the photo. That text is NOT part of \
+the product or scene — completely remove and erase it (and any button shape behind it) so the \
+underlying background is clean. New text will be added separately afterward in a later step; \
+do not redraw, restate, retain, or hallucinate any of the old wording, characters, or button \
+graphics.
+
+CRITICAL — THE PRODUCT'S OWN PRINTED TEXT MUST STAY PIXEL-IDENTICAL: if the product package \
+itself has text, a logo, or a label printed on it, that is part of the product, NOT the ad-copy \
+text above — preserve it exactly as pixels. Never redraw, re-spell, resize, or hallucinate any \
+character, shape, or color on the product packaging, even while removing the old ad-copy text \
+or changing the background around it.
 
 Product: {product_name}
 Core values: {core_values}
@@ -239,6 +405,7 @@ Target audience: {target_audience}
 
 Strategy to reinforce: {strategy_desc}
 Visual style guidance: {style}
+Photography style: {photo_style}
 {color_line}
 {tone_line}
 
@@ -250,7 +417,10 @@ Improvement direction (apply these changes to the existing image):
 Requirements:
 - PRESERVE the original product, composition, and layout as much as possible
 - Make only the changes specified in the improvement direction above
-- STRICTLY NO text, letters, words, numbers, or typography
+- REMOVE any pre-existing headline/body/CTA text or button graphic baked into the image
+- If the product package itself has printed text/logo/label, keep it pixel-identical — \
+never redraw or re-spell it
+- STRICTLY NO new text, letters, words, numbers, or typography of any kind in the output
 - Keep the product clearly recognizable
 - Adjust lighting, color, or mood only as needed by the improvement direction"""
 
@@ -292,35 +462,6 @@ Output requirements:
 - Commercial advertising quality, modern and clean aesthetic for Meta/Instagram
 - Product clearly visible and well-lit
 - CRITICAL: ALL three text elements (HEADLINE, BODY, CTA BUTTON) must be COMPLETELY visible within the image — zero clipping or cutoff allowed under any circumstance"""
-
-# ── [개선 모드 컴포즈] 프롬프트 — template 없는 자유 레이아웃 ──────────────────
-# template=None일 때 compose 경로(누끼 있음)에서 사용.
-# safe zone·레이아웃 지시 없이 AI가 구도를 자유롭게 결정.
-_IMPROVE_COMPOSE_TEMPLATE = """\
-This image already contains a REAL product photo that is LOCKED and must not change.
-DO NOT alter, move, redraw, recolor, or stylize the product in any way.
-Your task: generate a professional Meta/Instagram advertisement BACKGROUND around the locked product,
-optimized for the improvement directives below.
-
-Product: {product_name}
-{core_values_line}Target audience: {target_audience}
-{color_line}
-{tone_line}
-
-Background direction:
-{product_visual_context}
-
-Improvement directives (apply to the visual composition):
-{improvement_context}
-
-Requirements:
-- Keep the locked product EXACTLY as-is — zero modification to its pixels
-- Build a cohesive background that matches the product's lighting and perspective
-- Add a natural soft contact shadow under the product so it sits naturally in the scene
-- STRICTLY NO text, letters, words, numbers, or typography anywhere in the background
-- No logos, watermarks, URLs, or QR codes
-- You have FULL FREEDOM over composition and layout — optimize purely for the improvement directives
-- Clean, modern aesthetic suitable for Meta/Instagram feed"""
 
 # ── [컴포즈 모드] 프롬프트 (마스크 인페인팅) ─────────────────────────────────
 # 실제 상품 PNG를 캔버스에 미리 배치하고 마스크로 잠근 뒤 Edit API에 넘긴다.
@@ -472,12 +613,28 @@ def _build_product_visual_context(
 # 전략·템플릿·사이즈 등 입력값을 받아 프롬프트를 조립하고,
 # image_providers 디스패처를 통해 이미지 bytes를 반환한다.
 # ─────────────────────────────────────────────────────────────────────────────
+# 개선 모드(strategy=None)에서 쓰는 전략-독립 일반 문구 — CREATE 5전략 톤에 얽매이지 않고
+# 시뮬레이션 피드백(improvement_context)만으로 방향을 결정하게 한다.
+_IMPROVE_STRATEGY_DESC = "improving overall ad appeal and conversion based on feedback"
+_IMPROVE_PHOTO_STYLE = (
+    "Clean, professional commercial photography with balanced lighting and natural composition."
+)
+
+
+def _strategy_desc(strategy: AdStrategy | None) -> str:
+    return _STRATEGY_DESCRIPTIONS[strategy] if strategy is not None else _IMPROVE_STRATEGY_DESC
+
+
+def _strategy_photo_style(strategy: AdStrategy | None) -> str:
+    return _STRATEGY_PHOTO_STYLE[strategy] if strategy is not None else _IMPROVE_PHOTO_STYLE
+
+
 @traceable(
     name="generator:generate_image", metadata={"pipeline": "generator", "prompt_version": "v1.0"}
 )
 async def generate_image(
     product_analysis: ProductAnalysis,
-    strategy: AdStrategy,
+    strategy: AdStrategy | None,
     template: TemplateType | None,
     size: AdSize = AdSize.SQUARE,
     brand_color: str | None = None,
@@ -498,6 +655,12 @@ async def generate_image(
     # 텍스트는 이미지 생성 후 text_overlay(PIL)로 렌더한다 — AI는 글자를 그리지 않는다
     # (확산모델 텍스트 잘림·오탈자 방지). 모든 경로(생성/컴포즈/개선)가 텍스트 없는 프롬프트를 탄다.
     has_text = False
+    # text_overlay는 StyleProfile.text_style=="box"일 때만 패널을 실제로 그린다(그 외
+    # floating/emotional은 패널 없이 사진 위에 텍스트를 바로 얹힌다) — safe zone 지시문도
+    # 그 사실에 맞춰 "패널이 덮어줄 테니 비워둬라" vs "패널이 없으니 그 자리도 채워라"로 갈라야
+    # AI가 실제로 안 덮일 빈 공간을 남기지 않는다. strategy=None(방어적 폴백)이면 기본(box)로 간주.
+    profile = get_style(strategy) if strategy is not None else None
+    style_key = profile.text_style if profile is not None else "box"
     core_values_line = (
         f"Core values: {', '.join(product_analysis.core_values)}\n"
         if product_analysis.core_values
@@ -506,34 +669,32 @@ async def generate_image(
 
     # ── [컴포즈 모드] 상품 픽셀 보존 + 주변 배경 생성 ────────────────────────────
     # 마스크 인페인팅으로 상품 영역 잠금 후 배경 생성 (provider는 settings.inpaint_provider).
+    # 개선 모드도 CREATE와 동일한 실제 템플릿(A/B/C)·세이프존을 쓰고, improvement_context만
+    # product_visual_context에 병합해 반영한다(자유 레이아웃 아님 — PIL 텍스트 오버레이 위치와
+    # 어긋나지 않도록 구도를 템플릿에 고정).
     if product_cutout_bytes is not None:
+        # template=None(예상 밖 호출 등 방어적 폴백)이면 A로 — 실사용 경로에서는 항상 실값.
+        effective_compose_template = template if template is not None else TemplateType.A
         target_audience = product_analysis.target_audience or "general audience"
         product_visual_context = _build_product_visual_context(product_analysis, brand_color)
-
-        if template is None:
-            # 개선 모드 — 자유 레이아웃, safe zone 없이 분류기 지시문 기반
-            prompt = _IMPROVE_COMPOSE_TEMPLATE.format(
-                product_name=product_analysis.product_name,
-                core_values_line=core_values_line,
-                target_audience=target_audience,
-                color_line=color_line,
-                tone_line=tone_line,
-                product_visual_context=product_visual_context,
-                improvement_context=improvement_context or "광고 전반의 품질을 개선하세요.",
+        if improvement_context:
+            product_visual_context += (
+                f"\n\nImprovement direction (apply to visual):\n{improvement_context}"
             )
-        elif has_text:
+
+        if has_text:
             prompt = _COMPOSE_PROMPT_TEMPLATE_WITH_TEXT.format(
                 platform="Meta/Instagram",
-                style=_TEMPLATE_STYLE[template],
-                photo_style=_STRATEGY_PHOTO_STYLE[strategy],
-                strategy_desc=_STRATEGY_DESCRIPTIONS[strategy],
+                style=_TEMPLATE_STYLE[effective_compose_template],
+                photo_style=_strategy_photo_style(strategy),
+                strategy_desc=_strategy_desc(strategy),
                 product_name=product_analysis.product_name,
                 core_values_line=core_values_line,
                 target_audience=target_audience,
                 color_line=color_line,
                 tone_line=tone_line,
                 product_visual_context=product_visual_context,
-                text_layout=_TEXT_LAYOUT[template],
+                text_layout=_TEXT_LAYOUT[effective_compose_template],
                 headline=headline,
                 body=body,
                 cta=cta,
@@ -541,19 +702,26 @@ async def generate_image(
         else:
             prompt = _COMPOSE_PROMPT_TEMPLATE.format(
                 platform="Meta/Instagram",
-                style=_TEMPLATE_STYLE[template],
-                photo_style=_STRATEGY_PHOTO_STYLE[strategy],
-                strategy_desc=_STRATEGY_DESCRIPTIONS[strategy],
+                style=_TEMPLATE_STYLE[effective_compose_template],
+                photo_style=_strategy_photo_style(strategy),
+                strategy_desc=_strategy_desc(strategy),
                 product_name=product_analysis.product_name,
                 core_values_line=core_values_line,
                 target_audience=target_audience,
                 color_line=color_line,
                 tone_line=tone_line,
                 product_visual_context=product_visual_context,
-                safe_zone=_TEMPLATE_SAFE_ZONES_COMPOSE[template],
+                safe_zone=_by_style(
+                    _TEMPLATE_SAFE_ZONES_COMPOSE, effective_compose_template, style_key
+                ),
             )
 
-        base_png, mask_png = _build_inpaint_base_and_mask(product_cutout_bytes, template, size)
+        # 전략별 product_fill(StyleProfile) 적용 — floating/emotional처럼 패널 없는 전략은
+        # 상품을 작게 둬 텍스트 존과의 여백을 확보한다. strategy=None(방어적 폴백)이면 기본값.
+        compose_product_fill = profile.product_fill if profile is not None else _PRODUCT_FILL
+        base_png, mask_png = _build_inpaint_base_and_mask(
+            product_cutout_bytes, effective_compose_template, size, compose_product_fill
+        )
         return await image_providers.edit_with_mask(
             base_png,
             mask_png,
@@ -565,6 +733,9 @@ async def generate_image(
 
     # ── [개선 모드] Edit API ───────────────────────────────────────────────────
     if original_image_bytes is not None:
+        # template=None(개선 모드, 누끼 없이 원본 Edit)이면 A 레이아웃 문구로 폴백 —
+        # _TEMPLATE_STYLE/_TEMPLATE_SAFE_ZONES_EDIT/_TEXT_LAYOUT은 None 키가 없어 KeyError 방지.
+        effective_edit_template = template if template is not None else TemplateType.A
         core_values_str = (
             ", ".join(product_analysis.core_values) if product_analysis.core_values else "N/A"
         )
@@ -575,11 +746,11 @@ async def generate_image(
                 product_name=product_analysis.product_name,
                 core_values=core_values_str,
                 target_audience=target_audience,
-                strategy_desc=_STRATEGY_DESCRIPTIONS[strategy],
+                strategy_desc=_strategy_desc(strategy),
                 color_line=color_line,
                 tone_line=tone_line,
                 improvement_context=improvement_context or "전반적인 광고 품질을 개선하세요.",
-                text_layout=_TEXT_LAYOUT[template],
+                text_layout=_TEXT_LAYOUT[effective_edit_template],
                 headline=headline,
                 body=body,
                 cta=cta,
@@ -589,12 +760,13 @@ async def generate_image(
                 product_name=product_analysis.product_name,
                 core_values=core_values_str,
                 target_audience=target_audience,
-                strategy_desc=_STRATEGY_DESCRIPTIONS[strategy],
-                style=_TEMPLATE_STYLE[template],
+                strategy_desc=_strategy_desc(strategy),
+                style=_TEMPLATE_STYLE[effective_edit_template],
+                photo_style=_strategy_photo_style(strategy),
                 color_line=color_line,
                 tone_line=tone_line,
                 improvement_context=improvement_context or "전반적인 광고 품질을 개선하세요.",
-                safe_zone=_TEMPLATE_SAFE_ZONES_EDIT[template],
+                safe_zone=_by_style(_TEMPLATE_SAFE_ZONES_EDIT, effective_edit_template, style_key),
             )
 
         return await image_providers.edit(
@@ -615,8 +787,8 @@ async def generate_image(
         prompt = _PROMPT_TEMPLATE_WITH_TEXT.format(
             platform="Meta/Instagram",
             style=_TEMPLATE_STYLE[effective_template],
-            photo_style=_STRATEGY_PHOTO_STYLE[strategy],
-            strategy_desc=_STRATEGY_DESCRIPTIONS[strategy],
+            photo_style=_strategy_photo_style(strategy),
+            strategy_desc=_strategy_desc(strategy),
             product_name=product_analysis.product_name,
             core_values_line=core_values_line,
             target_audience=target_audience,
@@ -637,15 +809,15 @@ async def generate_image(
         prompt = _PROMPT_TEMPLATE.format(
             platform="Meta/Instagram",
             style=_TEMPLATE_STYLE[effective_template],
-            photo_style=_STRATEGY_PHOTO_STYLE[strategy],
-            strategy_desc=_STRATEGY_DESCRIPTIONS[strategy],
+            photo_style=_strategy_photo_style(strategy),
+            strategy_desc=_strategy_desc(strategy),
             product_name=product_analysis.product_name,
             core_values_line=core_values_line,
             target_audience=target_audience,
             color_line=color_line,
             tone_line=tone_line,
             product_visual_context=product_visual_context + improvement_line,
-            safe_zone=_TEMPLATE_SAFE_ZONES[effective_template],
+            safe_zone=_by_style(_TEMPLATE_SAFE_ZONES, effective_template, style_key),
         )
 
     return await image_providers.generate(
@@ -688,13 +860,14 @@ async def remove_product_background(product_image_bytes: bytes) -> bytes:
 # 상품은 이 박스 안에 비율 유지로 들어가며 박스 중앙에 정렬된다.
 _COMPOSE_PRODUCT_BOXES: dict[TemplateType, tuple[float, float, float, float]] = {
     TemplateType.A: (0.14, 0.06, 0.86, 0.52),  # 상단 영역(텍스트는 하단)
-    TemplateType.B: (0.16, 0.20, 0.84, 0.74),  # 중앙 영역(텍스트는 상·하 밴드)
+    TemplateType.B: (0.10, 0.04, 0.90, 0.66),  # 상단 영역(텍스트는 하단 단일 밴드)
     TemplateType.C: (0.52, 0.16, 0.96, 0.84),  # 우측 영역(텍스트는 좌측 패널)
 }
 # 개선 모드 — template=None일 때 사용하는 중앙 상단 배치 박스(AI가 배경 구도 자유 결정)
 _IMPROVE_PRODUCT_BOX: tuple[float, float, float, float] = (0.10, 0.06, 0.90, 0.72)
 
-# 박스 대비 상품이 차지할 최대 비율(여백 확보).
+# 박스 대비 상품이 차지할 최대 비율(여백 확보) — strategy=None(방어적 폴백)일 때만 쓰는 기본값.
+# 실제 컴포즈 경로는 StyleProfile.product_fill(전략별 값)을 우선 사용한다.
 _PRODUCT_FILL = 0.92
 
 
@@ -722,12 +895,15 @@ def _place_product(
 
 
 def _build_inpaint_base_and_mask(
-    product_cutout_bytes: bytes, template: TemplateType | None, size: AdSize
+    product_cutout_bytes: bytes,
+    template: TemplateType | None,
+    size: AdSize,
+    product_fill: float = _PRODUCT_FILL,
 ) -> tuple[bytes, bytes]:
     """누끼 상품을 배치한 베이스 PNG와, 상품 실루엣만 보존하는 마스크 PNG를 만든다."""
     w, h = (int(v) for v in size.value.split("x"))
     product = Image.open(io.BytesIO(product_cutout_bytes)).convert("RGBA")
-    product, x, y = _place_product(product, w, h, template, _PRODUCT_FILL)
+    product, x, y = _place_product(product, w, h, template, product_fill)
 
     # 베이스: 중립 회색 위에 상품 배치 (배경 영역은 어차피 재생성됨)
     base = Image.new("RGBA", (w, h), (245, 245, 245, 255))
@@ -766,13 +942,11 @@ def _composite_logo_pil(
         logo = logo.resize((logo_w, logo_h), Image.LANCZOS)
         x, y = margin, margin
     elif template == TemplateType.B:
-        # 상단 밴드(top 22%) 내 좌측 수직 중앙
-        band_h = int(ad.height * 0.22)
+        # 상단 밴드가 없어짐(하단 단일 배너로 재설계) — 이미지 상단 좌측에 작게 배치
         logo_w = max(1, int(ad.width * 0.10))
         logo_h = max(1, int(logo.height * logo_w / logo.width))
         logo = logo.resize((logo_w, logo_h), Image.LANCZOS)
-        x = margin
-        y = max(margin, (band_h - logo_h) // 2)
+        x, y = margin, margin
     else:  # C
         # 좌측 패널(left 46%) 상단 좌측 — 하단 CTA와 겹치지 않도록 상단 배치
         max_logo_h = int(ad.height * 0.08)
