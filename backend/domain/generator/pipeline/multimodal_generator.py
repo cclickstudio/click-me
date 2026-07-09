@@ -34,6 +34,7 @@ from domain.generator.pipeline.image_providers import (
     _GEMINI_NATIVE_ASPECT_RATIO,
     _record_genai_usage,
 )
+from domain.generator.pipeline.style_profile import get_style
 from tools.utils import str_or_none
 
 logger = logging.getLogger("clickme")
@@ -44,20 +45,58 @@ def _detect_mime(data: bytes) -> str:
     return {"JPEG": "image/jpeg", "WEBP": "image/webp"}.get(fmt, "image/png")
 
 
-_TEMPLATE_LAYOUT: dict[TemplateType, str] = {
-    TemplateType.A: (
-        "제품 장면을 화면 상단 55% 전체에 위·좌·우 가장자리까지 빈틈없이 꽉 채워 배치한다"
-        "(그 안에 빈 여백이나 배경만 남는 공간 금지). 하단 45%는 텍스트가 올라갈 영역이므로 비워둔다."
-    ),
-    TemplateType.B: (
-        "제품을 화면 상단 68% 전체에 위·좌·우 가장자리까지 빈틈없이 역동적으로 크게 채워 배치한다"
-        "(빈 여백 금지). 하단 32%는 텍스트 배너 영역이므로 비운다."
-    ),
-    TemplateType.C: (
-        "우측 47% 영역 전체를 제품·감성 이미지로 위에서 아래까지, 오른쪽 가장자리까지 빈틈없이 꽉 채운다"
-        "(사진이 영역 안에서 작게 떠 있거나 위아래로 여백이 남지 않게 한다). "
-        "좌측 46%는 텍스트 패널 영역이므로 비운다."
-    ),
+# text_overlay는 전략의 StyleProfile.text_style=="box"일 때만 실제로 패널을 그린다(그 외
+# floating/emotional은 패널 없이 사진 위에 텍스트를 바로 얹힌다). 패널이 없는 전략인데도
+# "그 자리는 비워둔다"고 안내하면 실제로 아무것도 안 덮을 빈 공간이 남아 사진이 영역을
+# 못 채운 것처럼 보인다 — style_key(box/floating/emotional)로 지시를 나눈다. floating(social_proof)
+# 과 emotional은 둘 다 패널이 없다는 점은 같지만, emotional은 "여백·잔잔한 분위기"가 핵심 전략이라
+# floating과 똑같이 "꽉 채워라"고만 하면 두 전략의 시각적 차이가 사라진다 — emotional은 별도로
+# "여백은 유지하되 완전히 빈 캔버스는 안 된다"로 지시한다.
+_TEMPLATE_LAYOUT: dict[TemplateType, dict[str, str]] = {
+    TemplateType.A: {
+        "box": (
+            "제품 장면을 화면 상단 55% 전체에 위·좌·우 가장자리까지 빈틈없이 꽉 채워 배치한다"
+            "(그 안에 빈 여백이나 배경만 남는 공간 금지). 하단 45%는 텍스트가 올라갈 영역이므로 비워둔다."
+        ),
+        "floating": (
+            "텍스트 패널이 없으므로(문구는 사진 위에 적응형 색상·그림자로 직접 얹힌다) 제품 장면을 "
+            "화면 전체(위·아래·좌·우 가장자리)까지 빈틈없이 꽉 채워 배치한다. 하단 45%도 실제 장면으로 "
+            "채우되, 문구 가독성을 위해 그 부분만 상대적으로 차분하고 덜 복잡하게 연출한다. 빈 여백이나 "
+            "배경만 남는 공간은 금지."
+        ),
+    },
+    TemplateType.B: {
+        "box": (
+            "제품을 화면 상단 68% 전체에 위·좌·우 가장자리까지 빈틈없이 역동적으로 크게 채워 배치한다"
+            "(빈 여백 금지). 하단 32%는 텍스트 배너 영역이므로 비운다."
+        ),
+        "floating": (
+            "텍스트 배너 패널이 없으므로(문구는 사진 위에 적응형 색상·그림자로 직접 얹힌다) 제품을 "
+            "화면 전체(위·아래·좌·우 가장자리)까지 빈틈없이 역동적으로 크게 채워 배치한다. 하단 32%도 "
+            "실제 장면으로 채우되, 문구 가독성을 위해 그 부분만 상대적으로 차분하게 연출한다. 빈 여백 금지."
+        ),
+    },
+    TemplateType.C: {
+        "box": (
+            "우측 47% 영역 전체를 제품·감성 이미지로 위에서 아래까지, 오른쪽 가장자리까지 빈틈없이 꽉 채운다"
+            "(사진이 영역 안에서 작게 떠 있거나 위아래로 여백이 남지 않게 한다). "
+            "좌측 46%는 텍스트 패널 영역이므로 비운다."
+        ),
+        "floating": (
+            "텍스트 패널이 없으므로(문구는 사진 위에 적응형 색상·그림자로 직접 얹힌다) 제품·감성 이미지를 "
+            "화면 전체(좌·우·상·하 가장자리)까지 빈틈없이 꽉 채운다. 좌측 46%도 실제 장면으로 채우되, "
+            "문구 가독성을 위해 그 부분만 상대적으로 차분하고 덜 복잡하게 연출한다(낮은 대비, 부드러운 "
+            "보케 등). 제품·피사체는 화면 왼쪽에서 65~75% 지점에 오도록 살짝 오른쪽에 배치한다. 빈 여백 금지."
+        ),
+        "emotional": (
+            "텍스트 패널이 없으므로(문구는 사진 위에 적응형 색상·그림자로 직접 얹힌다) 이 전략은 여백과 "
+            "잔잔한 분위기가 핵심이다 — 제품을 크고 뚜렷하게 강조하기보다, 은은한 자연광·부드러운 보케·"
+            "따뜻한 톤으로 감성적인 여백을 살린다. 다만 화면 전체(좌·우·상·하 가장자리)가 그 잔잔한 "
+            "분위기 자체로는 이어져야 하며, 아무 것도 없는 밋밋한 빈 공간이 남으면 안 된다. 좌측 46%는 "
+            "특히 차분하고 여백감 있게 유지하고, 제품·피사체는 화면 왼쪽에서 70~85% 지점에 작고 은은하게 "
+            "배치한다."
+        ),
+    },
 }
 
 _PROMPT_TEMPLATE = """\
@@ -116,13 +155,17 @@ def _build_prompt(
         else ""
     )
     strategy_guide = f"{_STRATEGY_DESCRIPTIONS[strategy]}. {_STRATEGY_PHOTO_STYLE[strategy]}"
+    style_key = get_style(strategy).text_style
+    # A/B는 emotional 전략이 실제로 배정되지 않으므로(template_selector가 emotional→C로만
+    # 매핑) emotional 키가 없다 — 방어적 폴백으로 floating과 동일하게 처리.
+    layout_variants = _TEMPLATE_LAYOUT[template]
     prompt = _PROMPT_TEMPLATE.format(
         product_name=product_analysis.product_name,
         core_values=", ".join(product_analysis.core_values) or "-",
         benefits=", ".join(product_analysis.benefits) or "-",
         target_audience=product_analysis.target_audience or "일반 소비자",
         strategy=strategy_guide,
-        layout=_TEMPLATE_LAYOUT[template],
+        layout=layout_variants.get(style_key, layout_variants["floating"]),
         brand_color=brand_color or "지정 없음",
         tone=tone or "깔끔하고 신뢰감 있게",
         improvement_section=improvement_section,

@@ -163,21 +163,23 @@ def _accent_or_tint(
     return (*tinted, 255)
 
 
-def _accent_or_tint(
+def _accent_or_shade(
     accent: tuple[int, int, int], threshold: float = 140.0
 ) -> tuple[int, int, int, int]:
-    """강조색이 threshold보다 어두우면 흰색과 섞어(tint) 색조는 유지한 채 최소 밝기를 확보한다.
+    """강조색이 threshold보다 밝으면 검정과 섞어(shade) 색조는 유지한 채 최대 밝기를 낮춘다.
 
-    box 스타일 패널이 항상 짙은 반투명 검정(예: 템플릿 A의 (0,0,0,190))이라,
-    실제 배경 픽셀 샘플링 없이 강조색 자체의 밝기만 봐도 대비 확보가 충분하다.
+    _accent_or_tint의 반대 방향 — CTA 버튼은 템플릿에 따라 흰 배경 위 강조색 글자(C) 또는
+    강조색 배경 위 흰 글자(A/B)를 쓰는데, 브랜드 컬러가 파스텔·연회색처럼 밝으면 흰색과
+    맞닿는 쪽(글자 또는 배경)이 거의 안 보인다. 두 경우 모두 "흰색과 짝지어지는 강조색이
+    충분히 어두운지"가 핵심이라 하나의 헬퍼로 공유한다.
     """
     r, g, b = accent
     luminance = 0.299 * r + 0.587 * g + 0.114 * b
-    if luminance >= threshold:
+    if luminance <= threshold or luminance == 0:
         return (*accent, 255)
-    t = (threshold - luminance) / (255 - luminance)
-    tinted = tuple(int(c + (255 - c) * t) for c in (r, g, b))
-    return (*tinted, 255)
+    t = (luminance - threshold) / luminance
+    shaded = tuple(max(0, int(c * (1 - t))) for c in (r, g, b))
+    return (*shaded, 255)
 
 
 @dataclass(frozen=True)
@@ -389,11 +391,13 @@ def _draw_cta(
     btn_h = text_h + 2 * pad_y
     bx = x0 + (box_w - btn_w) // 2 if align == "center" else x0
     by = y0 + (box_h - btn_h) // 2
-    # C는 흰 버튼+브랜드 글자, A/B는 브랜드 버튼+흰 글자
+    # C는 흰 버튼+브랜드 글자, A/B는 브랜드 버튼+흰 글자 — 어느 쪽이든 흰색과 맞닿는 강조색
+    # 쪽은 _accent_or_shade로 최소 대비를 확보한다(브랜드 컬러가 밝은 파스텔·연회색이면
+    # 안 그려도 안 보이는 수준까지 묻혀버림 — 실측으로 확인된 버그).
     if template == TemplateType.C:
-        fill, txt = _WHITE, (*accent, 255)
+        fill, txt = _WHITE, _accent_or_shade(accent)
     else:
-        fill, txt = (*accent, 255), _WHITE
+        fill, txt = _accent_or_shade(accent), _WHITE
     # floating/emotional은 패널 없이 사진 위에 바로 얹혀서, 사진의 밝은 영역과 버튼이 섞여
     # 보일 수 있다 — 텍스트에 붙이는 것과 같은 그림자를 버튼에도 붙여 경계를 항상 드러낸다.
     # 별도 레이어에 그린 뒤 블러 처리해 합성 — 딱딱한 사각형이 아닌 부드러운 그림자가 되게 한다.

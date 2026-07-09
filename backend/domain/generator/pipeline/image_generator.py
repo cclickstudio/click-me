@@ -143,73 +143,206 @@ _TEXT_LAYOUT: dict[TemplateType, str] = {
 # 텍스트 오버레이가 가려질 영역을 AI에게 알려주는 Safe Zone 지시문.
 # 각 템플릿은 텍스트 배너 위치가 다르므로, 제품이 가리지 않도록 구도를 강하게 유도한다.
 # 생성 모드에서 사용 — 처음부터 올바른 구도로 이미지를 만들어야 하므로 강제 배치 지시.
-_TEMPLATE_SAFE_ZONES: dict[TemplateType, str] = {
-    TemplateType.A: (
-        "COMPOSITION RULE: Keep the bottom 45% of the frame visually minimal and uncluttered "
-        "— this zone will be covered by a semi-transparent text overlay. "
-        "The scene must fill the entire upper 55% of the frame edge-to-edge with no empty "
-        "or blank gap — extend the background all the way down to where the text overlay begins, "
-        "but do not let any product detail cross past the 55% line into the bottom zone."
-    ),
-    TemplateType.B: (
-        "COMPOSITION RULE: Keep the bottom 32% of the frame clear and uncluttered "
-        "— this zone will be covered by a solid color banner with headline and CTA. "
-        "Place the product prominently filling the upper 68% of the frame, "
-        "with dynamic, energetic framing (diagonal lines, motion-suggestive angles)."
-    ),
-    TemplateType.C: (
-        "COMPOSITION RULE: The left 46% of the frame is a solid color text panel — keep it empty. "
-        "The area from 46% to 53% has a gradient overlay fading to transparent. "
-        "Place the product clearly in the RIGHT 47% of the frame "
-        "(center the product at approximately 75-80% from the left edge). "
-        "The scene must fill the RIGHT 47% edge-to-edge from the very top to the very bottom "
-        "of the frame with no empty or blank margin above or below it. "
-        "No important visual elements in the left 53% of the frame."
-    ),
+#
+# 전략의 StyleProfile.text_style이 "box"일 때만 text_overlay가 실제로 반투명/단색 패널을
+# 그린다(그 외 floating/emotional은 패널 없이 사진 위에 텍스트를 바로 얹힌다 — text_overlay.py
+# 참고). 패널이 없는 전략인데도 "그 자리는 비워도 된다"고 안내하면 AI가 실제로 안 덮일 빈
+# 공간을 남겨 사진이 영역을 못 채운 것처럼 보인다 — style_key(box/floating/emotional)로 지시를
+# 나눈다. floating(social_proof)과 emotional은 둘 다 패널이 없다는 점은 같지만, emotional은
+# "여백·잔잔한 분위기"가 핵심 전략이라 floating과 똑같이 "꽉 채워라"고만 하면 두 전략의
+# 시각적 차이가 사라진다 — emotional은 별도로 "여백은 유지하되 완전히 빈 캔버스는 안 된다"로 지시.
+_TEMPLATE_SAFE_ZONES: dict[TemplateType, dict[str, str]] = {
+    TemplateType.A: {
+        "box": (
+            "COMPOSITION RULE: Keep the bottom 45% of the frame visually minimal and uncluttered "
+            "— this zone will be covered by a semi-transparent text overlay. "
+            "The scene must fill the entire upper 55% of the frame edge-to-edge with no empty "
+            "or blank gap — extend the background all the way down to where the text overlay begins, "
+            "but do not let any product detail cross past the 55% line into the bottom zone."
+        ),
+        "floating": (
+            "COMPOSITION RULE: There is NO text panel — text will float directly on top of the "
+            "photo with adaptive color and a soft shadow for legibility. The scene must fill the "
+            "ENTIRE frame edge-to-edge, top to bottom, with no empty or blank margin anywhere, "
+            "including the bottom 45% where the text will sit. Keep that bottom area a bit softer "
+            "and less busy so text stays legible, but it must still show real scene content — "
+            "never leave it blank or empty."
+        ),
+    },
+    TemplateType.B: {
+        "box": (
+            "COMPOSITION RULE: Keep the bottom 32% of the frame clear and uncluttered "
+            "— this zone will be covered by a solid color banner with headline and CTA. "
+            "Place the product prominently filling the upper 68% of the frame, "
+            "with dynamic, energetic framing (diagonal lines, motion-suggestive angles)."
+        ),
+        "floating": (
+            "COMPOSITION RULE: There is NO text banner panel — text will float directly on top of "
+            "the photo with adaptive color and a soft shadow for legibility. The scene must fill "
+            "the ENTIRE frame edge-to-edge, top to bottom, with no empty or blank margin anywhere, "
+            "including the bottom 32% where the text will sit. Keep that bottom area a bit softer "
+            "and less busy so text stays legible, but it must still show real scene content — "
+            "never leave it blank or empty."
+        ),
+    },
+    TemplateType.C: {
+        "box": (
+            "COMPOSITION RULE: The left 46% of the frame is a solid color text panel — keep it empty. "
+            "The area from 46% to 53% has a gradient overlay fading to transparent. "
+            "Place the product clearly in the RIGHT 47% of the frame "
+            "(center the product at approximately 75-80% from the left edge). "
+            "The scene must fill the RIGHT 47% edge-to-edge from the very top to the very bottom "
+            "of the frame with no empty or blank margin above or below it. "
+            "No important visual elements in the left 53% of the frame."
+        ),
+        "floating": (
+            "COMPOSITION RULE: There is NO text panel — text will float directly on top of the "
+            "photo with adaptive color and a soft shadow for legibility. The scene must fill the "
+            "ENTIRE frame edge-to-edge, top to bottom, left to right, with no empty or blank margin "
+            "anywhere, including the left 46% where the text will sit. Keep that left area a bit "
+            "softer and less busy (lower contrast, gentle bokeh) so text stays legible, but it must "
+            "still show real scene content — never leave it blank or empty. Center the product or "
+            "subject slightly right-of-frame (around 65-75% from the left edge) so it reads clearly "
+            "next to the text."
+        ),
+        "emotional": (
+            "COMPOSITION RULE: There is NO text panel — text will float directly on top of the "
+            "photo with adaptive color and a soft shadow for legibility. Unlike a packed product "
+            "shot, this strategy calls for airy negative space, soft natural light, warm tones, and "
+            "shallow-depth-of-field bokeh — the product should appear subtly, not as the dominant "
+            "subject. Still, the calm atmosphere itself must extend across the ENTIRE frame "
+            "edge-to-edge — no flat, undefined, or literally blank canvas anywhere, including the "
+            "left 46% where the text will sit (keep that side especially soft and quiet for "
+            "legibility). Place the subtle product or subject further toward the right (around "
+            "70-85% from the left edge) so the left side reads as open, breathable atmosphere "
+            "rather than empty space."
+        ),
+    },
 }
 
 # ── [컴포즈 모드] 텍스트 배치 가이드 (인페인팅) ───────────────────────────────
 # 상품은 이미 캔버스에 배치되어 잠겨 있다. 텍스트/배경을 상품과 겹치지 않게 배치하도록 안내한다.
-_TEMPLATE_SAFE_ZONES_COMPOSE: dict[TemplateType, str] = {
-    TemplateType.A: (
-        "LAYOUT: The locked product sits in the upper area. "
-        "Build the background around it and keep the bottom 45% suitable for a text overlay — "
-        "keep that zone visually simple and free of badges, stamps, watermarks, or any text-like graphic."
-    ),
-    TemplateType.B: (
-        "LAYOUT: The locked product sits in the upper area, filling it dynamically. "
-        "Build the background around it and keep the bottom 32% suitable for a text banner — "
-        "keep that zone visually simple and free of badges, stamps, watermarks, or any text-like graphic."
-    ),
-    TemplateType.C: (
-        "LAYOUT: The locked product sits on the RIGHT side. "
-        "Build the background around it filling the right side edge-to-edge from top to bottom "
-        "with no empty or blank margin. Keep the left 46% suitable for a text panel — "
-        "keep that zone visually simple and free of badges, stamps, watermarks, or any text-like graphic."
-    ),
+# _TEMPLATE_SAFE_ZONES와 동일한 이유로 style_key(전략의 text_style)에 따라
+# "그 자리는 비워도 된다" vs "패널이 없으니 거기도 실제 장면으로 채워야 한다"를 나눈다.
+_TEMPLATE_SAFE_ZONES_COMPOSE: dict[TemplateType, dict[str, str]] = {
+    TemplateType.A: {
+        "box": (
+            "LAYOUT: The locked product sits in the upper area. "
+            "Build the background around it and keep the bottom 45% suitable for a text overlay — "
+            "keep that zone visually simple and free of badges, stamps, watermarks, or any text-like graphic."
+        ),
+        "floating": (
+            "LAYOUT: The locked product sits in the upper area. There is NO text panel — text will "
+            "float directly on the photo (adaptive color + soft shadow). Build the background so it "
+            "fills the ENTIRE frame edge-to-edge, including the bottom 45% where the text will sit — "
+            "never leave it blank. Keep that area a bit softer and less busy for legibility, and free "
+            "of badges, stamps, watermarks, or any text-like graphic."
+        ),
+    },
+    TemplateType.B: {
+        "box": (
+            "LAYOUT: The locked product sits in the upper area, filling it dynamically. "
+            "Build the background around it and keep the bottom 32% suitable for a text banner — "
+            "keep that zone visually simple and free of badges, stamps, watermarks, or any text-like graphic."
+        ),
+        "floating": (
+            "LAYOUT: The locked product sits in the upper area, filling it dynamically. There is NO "
+            "text banner panel — text will float directly on the photo (adaptive color + soft shadow). "
+            "Build the background so it fills the ENTIRE frame edge-to-edge, including the bottom 32% "
+            "where the text will sit — never leave it blank. Keep that area a bit softer and less busy "
+            "for legibility, and free of badges, stamps, watermarks, or any text-like graphic."
+        ),
+    },
+    TemplateType.C: {
+        "box": (
+            "LAYOUT: The locked product sits on the RIGHT side. "
+            "Build the background around it filling the right side edge-to-edge from top to bottom "
+            "with no empty or blank margin. Keep the left 46% suitable for a text panel — "
+            "keep that zone visually simple and free of badges, stamps, watermarks, or any text-like graphic."
+        ),
+        "floating": (
+            "LAYOUT: The locked product sits on the RIGHT side. There is NO text panel — text will "
+            "float directly on the photo (adaptive color + soft shadow). Build the background so it "
+            "fills the ENTIRE frame edge-to-edge, including the left 46% where the text will sit — "
+            "never leave it blank. Keep that area a bit softer and less busy for legibility, and free "
+            "of badges, stamps, watermarks, or any text-like graphic."
+        ),
+        "emotional": (
+            "LAYOUT: The locked product sits on the RIGHT side, kept intentionally small and subtle "
+            "per this strategy's airy, negative-space aesthetic. There is NO text panel — text will "
+            "float directly on the photo (adaptive color + soft shadow). Build a calm, atmospheric "
+            "background (soft natural light, gentle bokeh, warm tones) that extends across the ENTIRE "
+            "frame edge-to-edge, including the left 46% where the text will sit — keep that area "
+            "especially soft and quiet, never a flat blank space, and free of badges, stamps, "
+            "watermarks, or any text-like graphic."
+        ),
+    },
 }
 
 # ── [개선 모드] Safe Zone ─────────────────────────────────────────────────────
 # 원본 이미지 구도를 최대한 유지하면서 텍스트 오버레이 영역만 참고용으로 알려준다.
 # 개선 모드에서 사용 — 강제 배치 지시 대신 "가능하면 비워달라"는 소프트 힌트로 처리.
 # 생성 모드(_TEMPLATE_SAFE_ZONES)처럼 구도를 강제하면 원본 레이아웃이 크게 훼손된다.
-_TEMPLATE_SAFE_ZONES_EDIT: dict[TemplateType, str] = {
-    TemplateType.A: (
-        "LAYOUT NOTE: Text overlays will cover the bottom 45% of the frame. "
-        "If possible, avoid placing critical product details in that area, "
-        "but do NOT restructure the original composition."
-    ),
-    TemplateType.B: (
-        "LAYOUT NOTE: A text banner will cover the bottom 32% of the frame. "
-        "If possible, avoid placing critical product details in that area, "
-        "but do NOT restructure the original composition."
-    ),
-    TemplateType.C: (
-        "LAYOUT NOTE: A text panel will cover the left 46% of the frame. "
-        "If possible, keep the left side lighter or less detailed, "
-        "but do NOT restructure the original composition."
-    ),
+# style_key 분기 이유는 _TEMPLATE_SAFE_ZONES와 동일 — 패널 없는 전략에 "비워도 된다"고
+# 안내하면 실제로 안 덮일 빈 자리가 남는다.
+_TEMPLATE_SAFE_ZONES_EDIT: dict[TemplateType, dict[str, str]] = {
+    TemplateType.A: {
+        "box": (
+            "LAYOUT NOTE: Text overlays will cover the bottom 45% of the frame. "
+            "If possible, avoid placing critical product details in that area, "
+            "but do NOT restructure the original composition."
+        ),
+        "floating": (
+            "LAYOUT NOTE: There is NO text panel — text will float directly on the photo in the "
+            "bottom 45% (adaptive color + soft shadow). Keep that area reasonably clean and "
+            "uncluttered for legibility, but do NOT leave it blank and do NOT restructure the "
+            "original composition."
+        ),
+    },
+    TemplateType.B: {
+        "box": (
+            "LAYOUT NOTE: A text banner will cover the bottom 32% of the frame. "
+            "If possible, avoid placing critical product details in that area, "
+            "but do NOT restructure the original composition."
+        ),
+        "floating": (
+            "LAYOUT NOTE: There is NO text banner panel — text will float directly on the photo in "
+            "the bottom 32% (adaptive color + soft shadow). Keep that area reasonably clean and "
+            "uncluttered for legibility, but do NOT leave it blank and do NOT restructure the "
+            "original composition."
+        ),
+    },
+    TemplateType.C: {
+        "box": (
+            "LAYOUT NOTE: A text panel will cover the left 46% of the frame. "
+            "If possible, keep the left side lighter or less detailed, "
+            "but do NOT restructure the original composition."
+        ),
+        "floating": (
+            "LAYOUT NOTE: There is NO text panel — text will float directly on the photo in the "
+            "left 46% (adaptive color + soft shadow). Keep that side reasonably clean and "
+            "uncluttered for legibility, but do NOT leave it blank and do NOT restructure the "
+            "original composition."
+        ),
+        "emotional": (
+            "LAYOUT NOTE: There is NO text panel — text will float directly on the photo in the "
+            "left 46% (adaptive color + soft shadow). This strategy favors a calm, airy mood with "
+            "the product kept subtle — keep that side soft and uncluttered for legibility (not "
+            "blank), and do NOT restructure the original composition."
+        ),
+    },
 }
+
+
+def _by_style(
+    mapping: dict[TemplateType, dict[str, str]], template: TemplateType, style_key: str
+) -> str:
+    """style_key(box/floating/emotional)로 지시문을 찾는다. A/B는 emotional 전략이 실제로
+    배정되지 않으므로(template_selector가 emotional→C로만 매핑) emotional 키를 안 만들어뒀다 —
+    혹시 방어적 폴백 등으로 들어와도 floating과 같은 취급으로 안전하게 처리한다."""
+    variants = mapping[template]
+    return variants.get(style_key, variants["floating"])
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # 이미지 생성 프롬프트 템플릿
@@ -522,6 +655,12 @@ async def generate_image(
     # 텍스트는 이미지 생성 후 text_overlay(PIL)로 렌더한다 — AI는 글자를 그리지 않는다
     # (확산모델 텍스트 잘림·오탈자 방지). 모든 경로(생성/컴포즈/개선)가 텍스트 없는 프롬프트를 탄다.
     has_text = False
+    # text_overlay는 StyleProfile.text_style=="box"일 때만 패널을 실제로 그린다(그 외
+    # floating/emotional은 패널 없이 사진 위에 텍스트를 바로 얹힌다) — safe zone 지시문도
+    # 그 사실에 맞춰 "패널이 덮어줄 테니 비워둬라" vs "패널이 없으니 그 자리도 채워라"로 갈라야
+    # AI가 실제로 안 덮일 빈 공간을 남기지 않는다. strategy=None(방어적 폴백)이면 기본(box)로 간주.
+    profile = get_style(strategy) if strategy is not None else None
+    style_key = profile.text_style if profile is not None else "box"
     core_values_line = (
         f"Core values: {', '.join(product_analysis.core_values)}\n"
         if product_analysis.core_values
@@ -572,12 +711,13 @@ async def generate_image(
                 color_line=color_line,
                 tone_line=tone_line,
                 product_visual_context=product_visual_context,
-                safe_zone=_TEMPLATE_SAFE_ZONES_COMPOSE[effective_compose_template],
+                safe_zone=_by_style(
+                    _TEMPLATE_SAFE_ZONES_COMPOSE, effective_compose_template, style_key
+                ),
             )
 
         # 전략별 product_fill(StyleProfile) 적용 — floating/emotional처럼 패널 없는 전략은
         # 상품을 작게 둬 텍스트 존과의 여백을 확보한다. strategy=None(방어적 폴백)이면 기본값.
-        profile = get_style(strategy) if strategy is not None else None
         compose_product_fill = profile.product_fill if profile is not None else _PRODUCT_FILL
         base_png, mask_png = _build_inpaint_base_and_mask(
             product_cutout_bytes, effective_compose_template, size, compose_product_fill
@@ -626,7 +766,7 @@ async def generate_image(
                 color_line=color_line,
                 tone_line=tone_line,
                 improvement_context=improvement_context or "전반적인 광고 품질을 개선하세요.",
-                safe_zone=_TEMPLATE_SAFE_ZONES_EDIT[effective_edit_template],
+                safe_zone=_by_style(_TEMPLATE_SAFE_ZONES_EDIT, effective_edit_template, style_key),
             )
 
         return await image_providers.edit(
@@ -677,7 +817,7 @@ async def generate_image(
             color_line=color_line,
             tone_line=tone_line,
             product_visual_context=product_visual_context + improvement_line,
-            safe_zone=_TEMPLATE_SAFE_ZONES[effective_template],
+            safe_zone=_by_style(_TEMPLATE_SAFE_ZONES, effective_template, style_key),
         )
 
     return await image_providers.generate(
