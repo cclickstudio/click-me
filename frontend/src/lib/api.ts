@@ -175,6 +175,7 @@ export interface BeforeAfterItem {
   campaign_id: string;
   name: string;
   simulation_id?: string | null; // 링크된 시뮬 id — 결과 페이지(/simulation/{id}) 이동용(없으면 미연결)
+  unlaunched?: boolean; // 미집행 시뮬(캠페인 미연결) — 예측만 있는 '집행 전' 행
   prediction: PredictionSnapshot | null;
   actual: ActualOutcome;
   verdict: 'aligned' | 'overperformed' | 'underperformed' | 'unknown';

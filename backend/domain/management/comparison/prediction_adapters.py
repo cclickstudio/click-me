@@ -40,7 +40,10 @@ class MockPredictionReader:
 class SimPredictionReader:
     """실 시뮬 예측 읽기 — simulation_id로 simulation_aggregates를 raw SQL 조회(도메인 경계).
 
-    org 불일치/미완료(aggregate 없음)/미존재/삭제됨(soft delete)/형식오류는 None(연결 대기).
+    미완료(aggregate 없음)/미존재/삭제됨(soft delete)/형식오류는 None(연결 대기).
+    org 대조는 하지 않는다 — 호출부의 링크 행(created_campaigns)이 이미 뷰어 org로
+    스코프돼 있고, 링크 생성 경로가 org를 검증하므로 링크된 시뮬은 신뢰한다.
+    (제너레이터 org에서 돌린 시뮬을 매니지먼트 org 캠페인에 붙이는 교차-워크스페이스 흐름 허용.)
     simulation 도메인 ORM import 금지 — 테이블·컬럼명 문자열로만 접근.
     as_of는 시뮬 완료시각(UTC aware).
     """
@@ -67,8 +70,6 @@ class SimPredictionReader:
         async with self._session_factory() as db:
             row = (await db.execute(self._SQL, {"sid": str(sid)})).first()
         if row is None:
-            return None
-        if str(row[1]) != str(tenant_id):  # org 대조
             return None
         as_of = row[2].replace(tzinfo=UTC) if row[2] is not None else datetime.now(UTC)
         return PredictionSnapshot(
