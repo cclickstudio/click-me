@@ -102,6 +102,11 @@ const config: Config = {
           border: withOpacity('--info-border'),
         },
       },
+      // Tailwind 코어 프리셋이 bare `border` 클래스의 색을 gray-200으로 고정해버려서
+      // (colors.border를 확장해도 borderColor.DEFAULT는 별도로 안 따라옴) 명시적으로 재정의.
+      borderColor: {
+        DEFAULT: withOpacity('--border'),
+      },
       borderRadius: {
         sm: 'calc(var(--radius) - 4px)',
         md: 'calc(var(--radius) - 2px)',
