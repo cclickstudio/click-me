@@ -28,7 +28,7 @@
 | 결정 | 선택 | 근거 |
 |---|---|---|
 | 도구 형태 | **신규 도구 `execute_from_simulation`** (create_campaign 확장 아님) | docstring 수준에서 라우팅이 갈려 오라우팅 위험↓, 기존 직접 입력 경로 무회귀 |
-| 대상 시뮬 해석 | ① `simulation_id` 파라미터 → ② 최근 완료 시뮬 → ③ sim_list 선택 위젯 폴백 | "채팅창에 있으면 그걸로" — 채팅에서 방금 돌린 시뮬이 곧 최근 완료 시뮬 |
+| 대상 시뮬 해석 | ① `simulation_id` 파라미터 → ② 최근 완료 시뮬 → ③ 안내문 폴백 | "채팅창에 있으면 그걸로" — 채팅에서 방금 돌린 시뮬이 곧 최근 완료 시뮬. sim_list select 재사용안은 계획 단계에서 기각(선택 시 "개선해줘" 고정 발화를 보내 개선 흐름으로 오라우팅) |
 | 폼 UI | **기존 `ExecuteFromSimulation` 재사용** (신규 위젯 타입으로 임베드) | 이름 프리필·AI 이름 추천·게이트 경고·승인→집행 플로우 내장, 알림센터 임베드로 검증된 경로 |
 
 ## 데이터 흐름
@@ -38,11 +38,11 @@
   ↓ 딥에이전트 → execute_from_simulation 도구
     (발화에서 campaign_name·link_url·daily_budget_krw·start/end 추출, 없으면 빈 값)
   ↓ 대상 시뮬 해석: simulation_id 파라미터 → latest_completed_simulation_id(project_id)
-    → 둘 다 없으면 sim_list 선택 위젯 폴백
-  ↓ raw SQL로 click_intent_rate·rejection_rate·광고 제목 조회 (improve_context 패턴 재사용)
-  ↓ 신규 위젯 exec_from_sim { simulation_id, default_name, click_intent_rate,
-                              rejection_rate, prefill: {link_url, daily_budget_krw,
-                              start_date, end_date} }
+    → 둘 다 없으면 안내문 폴백
+  ↓ improve_context.fetch_improve_source 재사용 — 광고 제목 + click_intent_rate·rejection_rate
+  ↓ 신규 위젯 exec_from_sim { simulation_id, default_name, click_intent_rate, rejection_rate,
+                              link_url, daily_budget_krw, start_date, end_date } (평면 —
+                              기존 create_campaign 위젯의 prefill 타입과 충돌 회피)
   ↓ 프론트: ChatConversation이 ExecuteFromSimulation 렌더 (AlarmCenter와 동일 임베드)
   ↓ 이후 기존 그대로: 게이트 판정 → /campaign-proposals/from-simulation → /approve
     → /execute → created_campaigns.simulation_id 연결 → before-after 예측 자동 연결
@@ -74,8 +74,8 @@
 
 | 상황 | 처리 |
 |---|---|
-| 프로젝트에 완료 시뮬 없음 | sim_list 선택 위젯 폴백 ("집행할 시뮬을 골라주세요") — 선택 시 기존 sim_list onResult 경로로 발화가 되돌아와 도구가 `simulation_id` 채워진 채 재호출됨(신규 mode 추가 없이 기존 select 재사용) |
-| 시뮬 집계 없음(미완료) | 도구가 안내문 반환 ("시뮬이 아직 끝나지 않았어요") |
+| 프로젝트에 완료 시뮬 없음 | 도구가 안내문 반환 ("아직 완료된 시뮬레이션이 없어요…") — run_improvement와 동일 패턴. 완료 시뮬이 없으면 목록도 비므로 sim_list 폴백은 무의미 + select 모드는 개선 흐름으로 오라우팅 |
+| 시뮬 집계 없음(KPI null) | 도구가 안내문 반환 ("시뮬 집계가 아직 없어요") |
 | 게이트 미달(클릭의향률·거부율) | 도구는 막지 않음 — 기존 컴포넌트의 amber 경고가 안내·집행 차단 |
 | durable S3 이미지 아님 | 기존 from-simulation 422 메시지가 카드에 표시 |
 
