@@ -179,19 +179,32 @@ async def test_utterance_values_prefill_and_override_name(tools, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_auto_selects_latest_completed(tools, monkeypatch):
+async def test_auto_selects_latest_completed_and_records_history(tools, monkeypatch):
+    # project_id가 있으면 spawn_record_execution이 DB 백그라운드 적재를 시도하므로
+    # 스텁으로 막고(DB 미접근 유지) 호출 계약(요청 기록)만 고정한다.
+    from domain.chat import helpers
+
+    recorded = {}
+
     async def _latest(project_id):
         return "sim-latest" if project_id == "p1" else None
 
     async def _fake(sid, org_id=None):
         return dict(_SRC) if sid == "sim-latest" else None
 
+    def _record(project_id, feature_type, action, summary, payload):
+        recorded["project_id"] = project_id
+        recorded["action"] = action
+
     monkeypatch.setattr(improve_context, "latest_completed_simulation_id", _latest)
     monkeypatch.setattr(improve_context, "fetch_improve_source", _fake)
+    monkeypatch.setattr(helpers, "spawn_record_execution", _record)
     cmd = await tools["execute_from_simulation"].coroutine(
         state=_state(project_id="p1"), tool_call_id="t1"
     )
     assert cmd.update["widget"]["data"]["simulation_id"] == "sim-latest"
+    assert recorded["action"] == "execute_from_simulation_request"
+    assert recorded["project_id"] == "p1"
 
 
 @pytest.mark.asyncio
@@ -447,15 +460,18 @@ import { ExecuteFromSimulation } from '@/components/manage/ExecuteFromSimulation
 `{/* 챗→매니지먼트 카드(재이식) — deep_agent의 create_campaign/manage_campaign 신호 */}` 주석(1917행 근처) 바로 위에 추가:
 
 ```tsx
-                    {/* 시뮬 결과 집행 카드 — deep_agent의 execute_from_simulation 신호 */}
+                    {/* 시뮬 결과 집행 카드 — deep_agent의 execute_from_simulation 신호.
+                        KPI 2종은 백엔드가 항상 채우는 계약 — 없으면 렌더하지 않는다(가짜 0%/100% 표시 방지). */}
                     {msg.meta?.widget?.type === 'exec_from_sim' &&
-                      msg.meta.widget.data?.simulation_id && (
+                      msg.meta.widget.data?.simulation_id &&
+                      typeof msg.meta.widget.data.click_intent_rate === 'number' &&
+                      typeof msg.meta.widget.data.rejection_rate === 'number' && (
                         <div className='mt-1'>
                           <ExecuteFromSimulation
                             simulationId={msg.meta.widget.data.simulation_id}
                             defaultName={msg.meta.widget.data.default_name}
-                            clickIntentRate={msg.meta.widget.data.click_intent_rate ?? 0}
-                            rejectionRate={msg.meta.widget.data.rejection_rate ?? 1}
+                            clickIntentRate={msg.meta.widget.data.click_intent_rate}
+                            rejectionRate={msg.meta.widget.data.rejection_rate}
                             initialLinkUrl={msg.meta.widget.data.link_url}
                             initialBudget={msg.meta.widget.data.daily_budget_krw}
                             initialStartDate={msg.meta.widget.data.start_date}
@@ -465,7 +481,7 @@ import { ExecuteFromSimulation } from '@/components/manage/ExecuteFromSimulation
                       )}
 ```
 
-(KPI 폴백은 보수적으로 — `click_intent_rate ?? 0`·`rejection_rate ?? 1`이면 값 유실 시 게이트 미달로 집행이 막히는 쪽으로 기운다.)
+(백엔드는 KPI 없는 위젯을 내보내지 않으므로(도구의 null 가드) 렌더 조건에서 숫자 타입을 요구 — 계약이 깨지면 가짜 수치 대신 위젯 미표시로 드러난다. 다른 위젯들의 `simulation_id` 필수 검사와 동일 방식.)
 
 - [ ] **Step 4: 빌드 + 린트 확인**
 
