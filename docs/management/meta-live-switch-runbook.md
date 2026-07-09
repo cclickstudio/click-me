@@ -4,6 +4,14 @@
 > 켜는 절차서. **평소엔 발동하지 않게 봉인돼 있고, 이 문서의 절차로만 푼다.**
 > 작성 2026-06-17 · 갱신 2026-06-17(라우터 config-driven 리팩터 반영) · 도메인 `backend/domain/management`
 
+> **⚠ 해결됨 (2026-06-17 이후)** — 아래 §0·§1-D·핵심(이중 출처)이 경고하는 "라우터가 승인 발급 시 항상
+> `execution_mode=MOCK`을 실어 executor의 LIVE 차단 게이트가 무력화된다"는 위험은 이후 커밋에서 해결됐다.
+> 현재 라우터는 `_resolved_execution_mode()`(`management.py:227`, settings 기반)를 승인 발급 시 실제로
+> 실어 보내고(`management.py:3162,3303,3488` 근처 `/approve`), `_get_executor()`(`management.py:250-254`)도
+> `_resolved_execution_mode() is LIVE`일 때만 `DEFAULT_ALLOWED_MODES`에 LIVE를 추가한다. 즉 이중 출처
+> 버그는 없다 — 아래 §0·§1-D의 경고 서술은 그 시점의 스냅샷으로 읽을 것. 나머지 전환 절차(§2~§9)는
+> 여전히 유효하다.
+
 ---
 
 ## 0. 안전 전제 (먼저 읽기)

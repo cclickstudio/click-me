@@ -125,7 +125,13 @@ Meta에서 캠페인 1개 띄우려면 실제로는 **campaign → ad set → ad
 |---|---|---|---|
 | `DRY_RUN` | ✕ (요청 빌드만) | ✕ | 로컬 파라미터·스키마 검증 |
 | `SANDBOX_CONTRACT` | ○ (`execution_options=['validate_only']`) | ✕ | **Meta가 요청을 검증**해주되 변경 없음 — "실제 API 계약 검증"의 진짜 의미 |
-| `LIVE` | ○ | ○ | 실제 집행 — executor 허용 목록에서 빠져 봉인 |
+| `LIVE` | ○ | ○ | 실제 집행 — (이하 §2.1 표는 06-16 작성 스냅샷) |
+
+> **[정정]** 위 §2.1 표·본문의 "executor 허용 목록에서 LIVE 빠짐/②가 그대로면 거부"는 06-16 작성 시점
+> 서술이다. 현재 `executor.DEFAULT_ALLOWED_MODES`(`execution/executor.py:59`)는 이미 LIVE를 포함하며,
+> `_resolved_execution_mode() is LIVE`일 때만 라우터가 이를 허용 목록에 반영해 넘긴다(`management.py:250-254`).
+> 즉 실 게재 단계 진입으로 LIVE는 opt-in(`use_mock=False` + `management_execution_mode=live`)일 때 정식
+> 허용되며, §2.3의 defense-in-depth 재검증은 그대로 유효하다.
 
 `validate_only`는 Meta Graph API가 공식 지원하는 옵션이라, **실제 돈/변경 없이 "이 요청이 Meta에 통하는가"를 진짜로 검증**할 수 있다. LIVE 코드를 미리 만들어두되 안전하게 검증하는 핵심 장치.
 

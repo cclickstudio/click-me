@@ -65,14 +65,14 @@
 
 세 부분으로 쪼개진다. 토론 세부 규칙(선발 슬롯·모델 배정·라운드 동사·유동 게이트)은 `persona-debate-pipeline.md` 참조.
 
-### 10-a 구성 (결정론, LLM✗)
-- **패널 = 도메인 전문가 2 + 마케팅 전문가 2 + 일반인 N**(`lay_count` 2 또는 4, 기본 4). 전문가 4 합성 + 일반인 선발.
-- **일반인** = 조각 8의 groups에서 우선순위 **피벗 → 비판자 →(4명일 때)완주자 → 미온** 배타 선발(slot 5,6,… 연속). 피벗 = 신뢰-행동 갭, 비판자 = `min(stance_score)`(항상 1명 확보), 완주자 = action 전형(없으면 최대 긍정), 미온 = 미전환 중 피벗과 trust 차 최대.
-- **API 분리**: `POST /api/debate/start?lay_count=2|4` — 같은 데이터로 2/4 비교 후 채택.
+### 10-a 구성 (원칙적으로 결정론 — 동점 타이브레이크만 LLM)
+- **패널 = 도메인 전문가 2 + 마케팅 전문가 2 + 일반인 N**(`lay_count` 2·3·4, 기본 3). 전문가 4 합성 + 일반인 선발.
+- **일반인** = 조각 8의 groups에서 우선순위 **피벗 → 비판자 → 완주자(3명 이상) → 미온(4명)** 배타 선발(slot 5,6,… 연속). 피벗 = 신뢰-행동 갭, 비판자 = `min(stance_score)`(항상 1명 확보), 완주자 = action 전형(없으면 최대 긍정), 미온 = 미전환 중 피벗과 trust 차 최대. 스칼라로 못 가른 동점만 `rerank_fn`(LLM, Sonnet)이 재판단.
+- **API 분리**: `POST /api/debate/start?lay_count=2|3|4` — 같은 데이터로 비교 후 채택.
 - **전문가 4** = 합성. 도메인 2는 `ad_analysis`의 카테고리(`detected_industry`/`declared`)를 `{category}` 슬롯에 주입한 고정 템플릿, 마케팅 2는 카테고리 무관 고정. **분석결과(8·9)에 grounded**(수치 밖 사실 금지).
 
 ### 10-b 배정 (결정론, LLM✗)
-- 역할 기반 라운드로빈 — 토론자 8명 = Haiku 4 / GPT 4(엔진 ⊥ 역할, Gemini 제거), 주최자(Judge) = **Sonnet 4.6**(Opus에서 다운).
+- 역할 슬롯 고정 — 토론자 8명 = **gpt-4o-mini 전원**, 주최자(Judge) = **Claude Haiku**. 엔진이 하나뿐이라 역할군 쏠림 자체가 없고, 표현 다양성은 일반인 페르소나의 말투 풀(`_LAY_TONES`)로 확보한다.
 - `persona_name`·`persona_profile` 결정론 부여(일반인=persona_id 기반, 전문가=역할 키 기반). 더미는 factory를 안 거쳤으니 **여기서 이름 부여**.
 - **DB**: `persona_debates` 1행 생성(= 토론 id) + `persona_debate_participants` 8행 저장.
 
