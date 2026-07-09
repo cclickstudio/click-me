@@ -18,6 +18,7 @@ export function ExecuteFromSimulation({
   initialBudget,
   initialStartDate,
   initialEndDate,
+  inline,
 }: {
   simulationId: string;
   defaultName?: string;
@@ -27,6 +28,7 @@ export function ExecuteFromSimulation({
   initialBudget?: number;
   initialStartDate?: string; // YYYY-MM-DD
   initialEndDate?: string;
+  inline?: boolean; // 챗 카드 임베드 — 트리거 버튼·모달 없이 폼을 바로 펼친다
 }) {
   const [gate, setGate] = useState(DEFAULT_GATE);
   useEffect(() => {
@@ -43,7 +45,7 @@ export function ExecuteFromSimulation({
   }, []);
   const executable =
     clickIntentRate >= gate.min_click_intent_rate && rejectionRate < gate.max_rejection_rate;
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(!!inline); // inline이면 즉시 열림(이름 추천 로딩 트리거)
   const [name, setName] = useState(defaultName ?? '');
   const [linkUrl, setLinkUrl] = useState(initialLinkUrl ?? '');
   const [budget, setBudget] = useState(initialBudget ?? 10000);
@@ -107,24 +109,16 @@ export function ExecuteFromSimulation({
     }
   }
 
-  return (
-    <>
-      <button
-        onClick={() => setOpen(true)}
-        className="px-3 py-1.5 rounded-full text-sm font-semibold bg-primary text-primary-foreground hover:bg-primary-hover transition-colors"
-      >
-        이 광고로 캠페인 집행
-      </button>
-
-      {open && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
-          onClick={() => !busy && setOpen(false)}
-        >
-          <div
-            className="bg-card rounded-2xl w-full max-w-md p-6 shadow-2xl"
-            onClick={(e) => e.stopPropagation()}
-          >
+  // 폼 패널 본문 — 모달(기본)과 챗 인라인 카드가 공유한다.
+  const panel = (
+    <div
+      className={
+        inline
+          ? 'rounded-2xl border border-line bg-card w-full max-w-md p-4'
+          : 'bg-card rounded-2xl w-full max-w-md p-6 shadow-2xl'
+      }
+      onClick={inline ? undefined : (e) => e.stopPropagation()}
+    >
             <h3 className="text-lg font-bold text-ink">
               시뮬 광고로 캠페인 집행
             </h3>
@@ -155,12 +149,14 @@ export function ExecuteFromSimulation({
                   >
                     캠페인 관리로 →
                   </Link>
-                  <button
-                    onClick={() => setOpen(false)}
-                    className="px-3 py-1.5 rounded-lg text-sm font-medium text-ink-secondary"
-                  >
-                    닫기
-                  </button>
+                  {!inline && (
+                    <button
+                      onClick={() => setOpen(false)}
+                      className="px-3 py-1.5 rounded-lg text-sm font-medium text-ink-secondary"
+                    >
+                      닫기
+                    </button>
+                  )}
                 </div>
               </div>
             ) : (
@@ -231,13 +227,15 @@ export function ExecuteFromSimulation({
                 )}
 
                 <div className="flex justify-end gap-2 pt-1">
-                  <button
-                    onClick={() => setOpen(false)}
-                    disabled={busy}
-                    className="px-3 py-1.5 rounded-lg text-sm font-medium text-ink-secondary disabled:opacity-40"
-                  >
-                    취소
-                  </button>
+                  {!inline && (
+                    <button
+                      onClick={() => setOpen(false)}
+                      disabled={busy}
+                      className="px-3 py-1.5 rounded-lg text-sm font-medium text-ink-secondary disabled:opacity-40"
+                    >
+                      취소
+                    </button>
+                  )}
                   <button
                     onClick={handleExecute}
                     disabled={busy || !executable}
@@ -248,7 +246,26 @@ export function ExecuteFromSimulation({
                 </div>
               </div>
             )}
-          </div>
+    </div>
+  );
+
+  if (inline) return panel;
+
+  return (
+    <>
+      <button
+        onClick={() => setOpen(true)}
+        className="px-3 py-1.5 rounded-full text-sm font-semibold bg-primary text-primary-foreground hover:bg-primary-hover transition-colors"
+      >
+        이 광고로 캠페인 집행
+      </button>
+
+      {open && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+          onClick={() => !busy && setOpen(false)}
+        >
+          {panel}
         </div>
       )}
     </>

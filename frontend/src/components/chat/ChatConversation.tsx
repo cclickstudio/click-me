@@ -1939,6 +1939,7 @@ export default function ChatConversation({
                             initialBudget={msg.meta.widget.data.daily_budget_krw}
                             initialStartDate={msg.meta.widget.data.start_date}
                             initialEndDate={msg.meta.widget.data.end_date}
+                            inline
                           />
                         </div>
                       )}
