@@ -137,7 +137,7 @@ Let's Encrypt 알림 이메일은 `LETSENCRYPT_EMAIL` 환경변수로 바꾼다(
 ## 배포 흐름
 
 ```
-개발자 push(main·ci-cd) → ci-cd.yml: (CI 통과 후) backend/frontend 이미지 빌드 → ECR push
+개발자 push(main·prod) → ci-cd.yml: (CI 통과 후) backend/frontend 이미지 빌드 → ECR push
            → compose·nginx.conf·init-letsencrypt.sh EC2로 복사 → EC2가 ECR pull
            → (인증서 없으면) init-letsencrypt.sh 최초 발급 → docker compose up
 EC2 런타임: nginx(:80 리다이렉트/ACME, :443 서비스) ─ /api → backend(내부) · /docs 차단 · 그 외 → frontend(내부)
