@@ -230,7 +230,8 @@ def test_aggregator_payload_unchanged_without_ssr_dists() -> None:
 
 def test_ssr_scoring_flag(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("SIMULATION_SCORING", raising=False)
-    assert _ssr_scoring_enabled() is False  # 기본 OFF(T1) — 앵커 판별력 문제로 봉인, ssr 명시해야 켬
+    # 기본 OFF(T1) — 앵커 판별력 문제로 봉인, ssr 명시해야 켬
+    assert _ssr_scoring_enabled() is False
     monkeypatch.setenv("SIMULATION_SCORING", "ssr")
     assert _ssr_scoring_enabled() is True
     monkeypatch.setenv("SIMULATION_SCORING", "llm")
