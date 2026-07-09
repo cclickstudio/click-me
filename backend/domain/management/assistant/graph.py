@@ -32,12 +32,20 @@ _SYSTEM = (
     "도구를 적극 사용해 근거를 모은 뒤 답하라.\n"
     "- 현황·수치(예산·지출·CTR·ROAS·상태)는 반드시 live 도구(live_campaigns/live_budget/"
     "live_campaign_detail/live_before_after)로 조회해 그 값만 인용한다. 추정·환각 금지.\n"
-    "- 주간 정리는 live_weekly_report, 예산 재배분은 live_rebalance_proposal, 이상·피로 점검은 "
+    "- 주간 정리는 live_weekly_report, 전체 누적 성과 리포트는 live_full_report(캠페인이 종료돼 "
+    "최근 7일이 비면 이걸 쓴다), 예산 재배분은 live_rebalance_proposal, 이상·피로 점검은 "
     "live_anomaly_scan, 플랫폼·연령성별 분해는 live_campaign_breakdown, 시안은 "
     "live_campaign_creatives, 타깃 설정은 live_campaign_targeting, 리드 명단은 "
     "live_campaign_leads, 오가닉 대비 광고 증분은 live_organic_compare를 쓴다.\n"
     "- 사용자가 캠페인을 이름으로 말하면 live_campaign_find_by_name로 campaign_id를 먼저 찾고, "
     "다건이면 어느 것인지 되묻은 뒤 진행한다.\n"
+    "- 특정 캠페인의 타깃·분해·소재·리드·상세 질문은 find_by_name로 campaign_id를 얻은 뒤 "
+    "반드시 그 전용 도구(live_campaign_targeting/live_campaign_breakdown/live_campaign_creatives/"
+    "live_campaign_leads/live_campaign_detail)를 campaign_id 인자로 호출해 그 결과로 답한다. "
+    "live_campaigns·예산·리포트 결과로 대신 얼버무리지 말 것.\n"
+    "- 종료(ended)·일시중지 캠페인도 실측·타깃·분해·소재·리드가 모두 조회된다. '종료됨/존재하지 "
+    "않음'을 이유로 '조회 불가·정보 없음'이라 답하지 말고, 반드시 해당 전용 도구를 호출한 결과로 "
+    "답한다(도구가 실제로 빈 값을 주면 그때만 없다고 한다).\n"
     "- 원인·방법·정책·정의·기준(Tier·임계치·벤치마크 등)은 search_kb로 근거를 찾아 설명한다. "
     "특정 캠페인을 지목하지 않은 일반 지식·정책 질문은 실측 툴로 되묻지 말고 search_kb로 "
     "바로 답한다. ClickMe 고유 규칙(액션 Tier·승인 경로·판정 임계치·KPI 규칙)은 추측하지 말고 "
@@ -134,10 +142,10 @@ def build_graph(settings, retriever, llm, checkpointer=None):
         return await live_tools.live_campaigns(settings)
 
     @tool
-    async def live_budget() -> dict:
-        """이번 달 예산 소진액·런레이트(월말 예상)·계정 잔액.
-        예산·페이싱 질문에 쓴다."""
-        return await live_tools.live_budget(settings)
+    async def live_budget(period: str = "this_month") -> dict:
+        """예산 소진액·런레이트(월말 예상)·계정 잔액. 예산·페이싱 질문에 쓴다.
+        period='this_month'(이번 달, 기본)·'last_month'(지난 달·저번 달)."""
+        return await live_tools.live_budget(settings, period)
 
     @tool
     async def live_campaign_detail(campaign_id: str) -> dict:
@@ -165,6 +173,12 @@ def build_graph(settings, retriever, llm, checkpointer=None):
         return await live_tools.live_weekly_report(settings)
 
     @tool
+    async def live_full_report() -> dict:
+        """전체 누적 성과 리포트 — 주간과 같은 형식, 기간만 전체(누적). '전체 리포트/
+        누적 성과/전체 기간 정리' 또는 종료돼 최근 7일이 빈 캠페인 성과 질문에 쓴다."""
+        return await live_tools.live_full_report(settings)
+
+    @tool
     async def live_rebalance_proposal() -> dict:
         """캠페인 간 일예산 리밸런싱 제안 — 저효율(높은 CPC)→고효율로 20% 이동 제안(실행 아님).
         '예산 재배분/리밸런싱 어떻게' 질문에 쓴다. 적용은 승인 경로."""
@@ -180,7 +194,7 @@ def build_graph(settings, retriever, llm, checkpointer=None):
     @tool
     async def live_campaign_breakdown(campaign_id: str) -> dict:
         """단일 캠페인 분해 실측 — 게재 플랫폼별(FB/IG)과 연령×성별 노출·클릭·지출·도달.
-        '어디에/누구한테 잘 나가?' 같은 분해 질문에 쓴다."""
+        '어디에/누구한테 잘 나가?' 같은 분해 질문에 쓴다. 종료 캠페인도 누적 실측으로 조회된다."""
         return await live_tools.live_campaign_breakdown(settings, campaign_id)
 
     @tool
@@ -190,7 +204,8 @@ def build_graph(settings, retriever, llm, checkpointer=None):
 
     @tool
     async def live_campaign_targeting(campaign_id: str) -> dict:
-        """캠페인 타겟팅 설정(objective·연령·성별) 조회 — '이 캠페인 타깃이 뭐야'에 쓴다."""
+        """캠페인 타겟팅 설정(objective·연령·성별) 조회 — '이 캠페인 타깃이 뭐야'에 쓴다.
+        종료 캠페인도 조회된다."""
         return await live_tools.live_campaign_targeting(settings, campaign_id)
 
     @tool
@@ -273,6 +288,7 @@ def build_graph(settings, retriever, llm, checkpointer=None):
         live_campaign_find_by_name,
         live_before_after,
         live_weekly_report,
+        live_full_report,
         live_rebalance_proposal,
         live_anomaly_scan,
         live_campaign_breakdown,

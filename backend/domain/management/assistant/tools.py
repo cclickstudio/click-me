@@ -39,7 +39,7 @@ def _outcome(m, campaign_id: str, creative_id: str | None) -> RealOutcome:
 
 
 async def live_campaigns(settings) -> dict:
-    """캠페인 목록 + 핵심 실측(상태·지출·CTR·ROAS)."""
+    """캠페인 목록 + 실측 전체 지표(성과비교 화면과 동일 셋)."""
     reader = build_reader(settings)
     now = datetime.now(UTC)
     try:
@@ -47,16 +47,22 @@ async def live_campaigns(settings) -> dict:
         items = []
         for c in camps:
             m = await reader.get_metrics(c.campaign_id, now)
+            # 성과비교(집행 후 · 실측 전체)와 동일 지표: 노출·도달·지출·CTR·CPC·CPM·CVR·ROAS·전환.
             items.append(
                 {
                     "campaign_id": c.campaign_id,
                     "name": c.name,
                     "state": str(getattr(c.state, "value", c.state)),
-                    "spend_krw": m.spend_krw,
                     "impressions": m.impressions,
-                    "clicks": m.clicks,
+                    "reach": m.cum_reach,
+                    "clicks": m.clicks,  # 원값 유지 — 채팅 '클릭 수' 질문에 CTR 역산 없이 답하게
+                    "spend_krw": m.spend_krw,
                     "ctr": m.ctr,
+                    "cpc_krw": m.cpc_krw,
+                    "cpm_krw": m.cpm_krw,
+                    "cvr": m.cvr,
                     "roas": m.roas,
+                    "conversions": m.conversions,
                 }
             )
         return {"campaigns": items, "count": len(items)}
@@ -80,21 +86,42 @@ async def live_campaign_find_by_name(settings, name: str) -> dict:
     return {"query": name.strip(), "matches": matches, "count": len(matches)}
 
 
-async def live_budget(settings) -> dict:
-    """이번 달 소진·런레이트 예측·여력(Meta 선불 잔액)."""
+_BUDGET_PRESETS = ("this_month", "last_month")
+
+
+async def live_budget(settings, date_preset: str = "this_month") -> dict:
+    """예산 소진·런레이트(월말 예상)·여력. date_preset='this_month'(기본)·'last_month'.
+
+    이번 달은 경과일 기준 런레이트로 월말 예상 소진을, 지난 달은 완료 기간이라 실지출을 그대로 준다.
+    """
     reader = build_reader(settings)
     now = datetime.now(UTC)
+    if date_preset not in _BUDGET_PRESETS:
+        date_preset = "this_month"
+    is_current = date_preset == "this_month"
     try:
-        spent = await reader.get_account_spend("this_month")
+        spent = await reader.get_account_spend(date_preset)
         funding = await reader.get_account_funding()
-        days_in_month = calendar.monthrange(now.year, now.month)[1]
-        projection = round(spent / now.day * days_in_month) if now.day and spent else spent
-        return {
-            "period": now.strftime("%Y-%m"),
-            "this_month_spent_krw": spent,
+        if is_current:
+            days_in_month = calendar.monthrange(now.year, now.month)[1]
+            projection = round(spent / now.day * days_in_month) if now.day and spent else spent
+            period_label = now.strftime("%Y-%m")
+        else:
+            # 지난 달 = 이미 종료 → 월말 예상이 아니라 실지출 그대로.
+            py, pm = (now.year - 1, 12) if now.month == 1 else (now.year, now.month - 1)
+            period_label = f"{py:04d}-{pm:02d}"
+            projection = spent
+        result = {
+            "period": period_label,
+            "date_preset": date_preset,
+            "spent_krw": spent,
             "runrate_projection_krw": projection,
+            "period_complete": not is_current,  # 지난 달이면 projection은 예상 아닌 실지출
             "account_balance_krw": funding.available_balance_krw or 0,
         }
+        if is_current:
+            result["this_month_spent_krw"] = spent  # 구세대 agent.py 표시 호환
+        return result
     except MetaApiError as e:
         return {"error": "rate_limited" if e.is_rate_limited else "meta_error", "detail": str(e)}
 
@@ -106,11 +133,16 @@ async def live_campaign_detail(settings, campaign_id: str) -> dict:
     try:
         m = await reader.get_metrics(campaign_id, now)
         d = await reader.get_delivery_status_detail(campaign_id)
+        # 성과비교(실측 전체)와 동일 지표 + 게재 상태(심사·이슈).
         return {
             "campaign_id": campaign_id,
-            "spend_krw": m.spend_krw,
             "impressions": m.impressions,
+            "reach": m.cum_reach,
+            "spend_krw": m.spend_krw,
             "ctr": m.ctr,
+            "cpc_krw": m.cpc_krw,
+            "cpm_krw": m.cpm_krw,
+            "cvr": m.cvr,
             "roas": m.roas,
             "conversions": m.conversions,
             "effective_status": d.effective_status,
@@ -169,6 +201,16 @@ async def live_weekly_report(settings) -> dict:
     from domain.management.insights import weekly_report  # noqa: PLC0415
 
     return await weekly_report(build_reader(settings))
+
+
+async def live_full_report(settings) -> dict:
+    """전체 누적 성과 리포트 — 주간과 같은 형식, 기간만 전체(maximum) 실측.
+
+    캠페인이 모두 종료돼 최근 7일이 비는 경우 누적 성과를 봐야 하므로 쓴다.
+    """
+    from domain.management.insights import weekly_report  # noqa: PLC0415
+
+    return await weekly_report(build_reader(settings), date_preset="maximum")
 
 
 async def live_rebalance_proposal(settings) -> dict:

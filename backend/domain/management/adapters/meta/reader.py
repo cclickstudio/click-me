@@ -69,7 +69,9 @@ _HOURLY_FIELDS = "impressions,clicks,inline_link_clicks,spend,reach,frequency,ct
 _CAMPAIGN_FIELDS = "id,name,effective_status,daily_budget,lifetime_budget,stop_time"
 
 #: 보관 포함 조회용 effective_status — 기본 응답은 ACTIVE/PAUSED만이라 ARCHIVED를 명시 포함.
-_ARCHIVED_STATUSES = '["ACTIVE","PAUSED","ARCHIVED","IN_PROCESS","WITH_ISSUES"]'
+#: CAMPAIGN_PAUSED — 종료(캠페인 off)된 캠페인의 광고 상태. 빠지면 종료 캠페인 소재(이미지)가
+#: 0건으로 걸러져 시뮬 입력·대표 이미지가 비게 됨(캠페인 목록 쿼리엔 없는 값이라 무영향).
+_ARCHIVED_STATUSES = '["ACTIVE","PAUSED","ARCHIVED","IN_PROCESS","WITH_ISSUES","CAMPAIGN_PAUSED"]'
 
 #: 데모 핀 — 삭제됐어도 전 페이지에 '종료됨'으로 고정 표시할 캠페인 id (발표용·운영 전 비우기).
 #: 데이터(노출·리드·소재)는 insights로 그대로 조회되되 상태는 ENDED로 정직하게 표기한다

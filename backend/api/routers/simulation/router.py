@@ -77,6 +77,39 @@ async def _save_upload(ad_image: UploadFile | None) -> tuple[str | None, str | N
     return await persist_ad_image(data, ad_image.filename, ad_image.content_type)
 
 
+async def _persist_external_image_url(ad_image_url: str | None) -> tuple[str | None, str | None]:
+    """외부 이미지 URL을 서버가 한 번 받아 업로드와 동일한 S3(시뮬) 경로로 영속 → (vlm_ref, s3_key).
+
+    Meta 소재 등 외부 CDN URL은 서버 재요청 시 403(서명·핫링크·만료)이 잦다. 실행 중 VLM이 그 URL을
+    다시 받다 실패하면 런 전체가 깨지고, 그 403 문자열이 프론트에서 '인증·권한 오류'로 오분류된다.
+    그래서 업로드 파일과 같은 안정 경로(presign S3)로 선반영하고, 다운로드 실패는 여기서 알린다.
+    우리 버킷 presigned URL은 이미 안정적이라 재영속하지 않는다.
+    """
+    if not ad_image_url or not ad_image_url.startswith(("http://", "https://")):
+        return None, None
+    # 우리 자산은 이미 안정적이라 재영속하지 않는다 — 버킷 presigned URL, 내부 이미지 프록시
+    # (생성한 광고 /api/generator/image·시뮬 /api/simulation/image). 외부 CDN(Meta 소재)만 대상.
+    if settings.s3_bucket_name and settings.s3_bucket_name in ad_image_url:
+        return None, None
+    if "/api/generator/image" in ad_image_url or "/api/simulation/image" in ad_image_url:
+        return None, None
+    try:
+        async with httpx.AsyncClient(timeout=20, follow_redirects=True) as c:
+            r = await c.get(ad_image_url)
+            r.raise_for_status()
+            data = r.content
+            content_type = (r.headers.get("content-type") or "image/png").split(";")[0].strip()
+    except Exception as e:  # noqa: BLE001 — 접근 차단·타임아웃·4xx/5xx 모두 '불러오기 실패'
+        raise HTTPException(
+            status_code=422,
+            detail="광고 이미지를 불러오지 못했어요(접근 차단·만료). "
+            "이미지를 다시 선택하거나 파일로 업로드해 주세요.",
+        ) from e
+    if len(data) > _IMAGE_MAX_BYTES:
+        raise HTTPException(status_code=413, detail="이미지가 너무 큽니다(최대 10MB)")
+    return await persist_ad_image(data, None, content_type)
+
+
 def _require_ad_image(
     ad_image_path: str | None, ad_image_key: str | None, ad_image_url: str | None
 ) -> None:
@@ -169,6 +202,8 @@ async def start_simulation(
 ) -> dict:
     """비동기 시작 — run_id 반환. 진행률은 /stream, 결과는 /result."""
     ad_image_path, ad_image_key = await _save_upload(ad_image)
+    if ad_image_path is None:  # 업로드 파일이 없으면 외부 URL을 S3로 선영속(Meta 소재 403 방지)
+        ad_image_path, ad_image_key = await _persist_external_image_url(ad_image_url)
     _require_ad_image(ad_image_path, ad_image_key, ad_image_url)
     req = _build_request(
         ad_id=ad_id,
@@ -229,6 +264,8 @@ async def run_simulation(
     shape=analysis 면 분석팀 정리 스키마(중복 제거·평탄화)로 반환. 기본 full(원본).
     """
     ad_image_path, ad_image_key = await _save_upload(ad_image)
+    if ad_image_path is None:  # 업로드 파일이 없으면 외부 URL을 S3로 선영속(Meta 소재 403 방지)
+        ad_image_path, ad_image_key = await _persist_external_image_url(ad_image_url)
     _require_ad_image(ad_image_path, ad_image_key, ad_image_url)
     req = _build_request(
         ad_id=ad_id,
@@ -291,6 +328,8 @@ async def compare_simulation(
     except (ValidationError, TypeError) as e:
         raise HTTPException(status_code=422, detail=f"segments 항목 오류: {e}") from e
     ad_image_path, ad_image_key = await _save_upload(ad_image)
+    if ad_image_path is None:  # 업로드 파일이 없으면 외부 URL을 S3로 선영속(Meta 소재 403 방지)
+        ad_image_path, ad_image_key = await _persist_external_image_url(ad_image_url)
     _require_ad_image(ad_image_path, ad_image_key, ad_image_url)
     base_req = _build_request(
         ad_id=ad_id,
