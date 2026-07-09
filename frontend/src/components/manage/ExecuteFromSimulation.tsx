@@ -14,11 +14,19 @@ export function ExecuteFromSimulation({
   defaultName,
   clickIntentRate,
   rejectionRate,
+  initialLinkUrl,
+  initialBudget,
+  initialStartDate,
+  initialEndDate,
 }: {
   simulationId: string;
   defaultName?: string;
   clickIntentRate: number;
   rejectionRate: number;
+  initialLinkUrl?: string; // 챗 발화에서 추출된 프리필(없으면 기존 기본값)
+  initialBudget?: number;
+  initialStartDate?: string; // YYYY-MM-DD
+  initialEndDate?: string;
 }) {
   const [gate, setGate] = useState(DEFAULT_GATE);
   useEffect(() => {
@@ -37,10 +45,12 @@ export function ExecuteFromSimulation({
     clickIntentRate >= gate.min_click_intent_rate && rejectionRate < gate.max_rejection_rate;
   const [open, setOpen] = useState(false);
   const [name, setName] = useState(defaultName ?? '');
-  const [linkUrl, setLinkUrl] = useState('');
-  const [budget, setBudget] = useState(10000);
-  const [startDate, setStartDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [endDate, setEndDate] = useState('');
+  const [linkUrl, setLinkUrl] = useState(initialLinkUrl ?? '');
+  const [budget, setBudget] = useState(initialBudget ?? 10000);
+  const [startDate, setStartDate] = useState(
+    () => initialStartDate || new Date().toISOString().slice(0, 10)
+  );
+  const [endDate, setEndDate] = useState(initialEndDate ?? '');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
