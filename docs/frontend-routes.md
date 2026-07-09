@@ -2,7 +2,7 @@
 
 > 이 파일은 `backend/scripts/gen_docs.py`가 코드에서 **자동 생성**합니다. 직접 편집하지 말고 소스를 고친 뒤 스크립트를 다시 실행하세요(커밋 시 pre-commit 훅이 자동 갱신).
 
-총 **42개** 페이지.
+총 **41개** 페이지.
 
 | 라우트 | 파일 | 종류 |
 |---|---|---|
@@ -46,5 +46,4 @@
 | `/simulation/:id` | `frontend/src/app/(app)/simulation/[id]/page.tsx` | page |
 | `/simulations` | `frontend/src/app/(app)/simulations/page.tsx` | page |
 | `/terms` | `frontend/src/app/terms/page.tsx` | page |
-| `/themes` | `frontend/src/app/themes/page.tsx` | page |
 | `/trash` | `frontend/src/app/(app)/trash/page.tsx` | page |
