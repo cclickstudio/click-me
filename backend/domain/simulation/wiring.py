@@ -77,12 +77,15 @@ def _reaction_fallback_enabled() -> bool:
 
 
 def _ssr_scoring_enabled() -> bool:
-    """SSR 점수화 사용 여부 — 기본 ON. SIMULATION_SCORING=llm이면 끈다(LLM 정수 유지)."""
+    """SSR 점수화 사용 여부 — 기본 ON(LLM 정수 채점 할루시네이션 회피).
+
+    SIMULATION_SCORING=llm이면 끈다.
+    """
     return os.environ.get("SIMULATION_SCORING", "ssr").lower() == "ssr"
 
 
 def _wrap_ssr(reactor: object) -> object:
-    """SSR 배선(기본 ON) — reactor를 SSRScoringReactor로 감싸 구매의도·신뢰도를 분포로 재산정."""
+    """SSR 배선(기본 ON) — reactor를 SSRScoringReactor로 감싸 구매의도·신뢰도를 재산정."""
     if not _ssr_scoring_enabled():
         return reactor
     _ensure_env("OPENAI_API_KEY")  # 임베딩(text-embedding-3-small)용

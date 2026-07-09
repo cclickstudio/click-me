@@ -83,6 +83,7 @@
 - [x] `--point` 토큰 `#7C3AED` → **`#8B5CF6`**(다크 `#A78BFA`)로 갱신. 보라는 **AI/시뮬·생성 계열 포인트 전용**. (globals.css `:root`/`.dark` + chart-theme fallback 갱신, preview eval로 라이트 rgb(139,92,246)·다크 rgb(167,139,250) 확인.)
 - [x] 색 역할 확정 적용: 파랑=브랜드/성과 · 보라=AI/생성 · 빨강/노랑/초록=상태 의미색 · 그 외 무채색. 활동 피드 등 비-의미 요소에 보라 금지. (토큰 기본값에 반영, 화면 작업 시 준수 — 잔여 하드코딩 보라는 Phase 3/5 sweep에서 정리.)
 - [x] 노랑은 **warning 의미색으로만** 사용(브랜드/포인트색 비채택 유지). (테마 프리셋·의미색 토큰에 노랑 미채택 확인.)
+- 참고: 이후 별도 커밋(`5e132576` "메인 팔레트 블루 재정립")에서 primary `#2563EB`·point 인디고 `#6366F1`(다크 `#818CF8`)로 한 번 더 갱신됨 — **현재 코드 기준값은 이쪽**(위 P0.1/P0.6 항목의 `#3182F6`/`#8B5CF6`는 이 루프 진행 당시 기준의 기록).
 
 ---
 
@@ -252,8 +253,8 @@
 
 > **가드**: Phase 0~6의 모든 `[ ]`가 `[x]`가 되기 전에는 이 단계를 실행하지 않는다(E2E QA 수렴 포함).
 
-- [ ] `git status`로 **워킹트리가 깨끗한지**(스테이징/변경/untracked 남은 것 없음) 확인. 남은 변경이 있으면 먼저 논리 단위로 커밋해 워킹트리를 비운다.
-- [ ] 워킹트리가 완전히 비어 있으면 아래를 순서대로 실행해 `feat/front-fix`를 `feat/simulation-doyeon`에 통합한다.
+- [x] `git status`로 **워킹트리가 깨끗한지**(스테이징/변경/untracked 남은 것 없음) 확인. 남은 변경이 있으면 먼저 논리 단위로 커밋해 워킹트리를 비운다.
+- [x] 워킹트리가 완전히 비어 있으면 아래를 순서대로 실행해 `feat/front-fix`를 `feat/simulation-doyeon`에 통합한다.
 
 ```bash
 git push
@@ -264,7 +265,7 @@ git branch -d feat/front-fix
 git push origin --delete feat/front-fix
 ```
 
-- [ ] 병합 충돌이 나면 자동 해결하지 말고 **멈춰서 보고**. 워킹트리가 비어 있지 않으면 병합을 실행하지 말고 멈춘다.
+- [x] 병합 충돌이 나면 자동 해결하지 말고 **멈춰서 보고**. 워킹트리가 비어 있지 않으면 병합을 실행하지 말고 멈춘다. — **완료**: 위 CLI 스크립트 대신 GitHub PR로 병합(PR #169, merge commit `e0e3efdd`), 충돌 없음. `feat/front-fix` 브랜치는 로컬·원격 모두 삭제 확인됨(`git branch -a`에 미존재).
 
 ---
 
@@ -289,3 +290,4 @@ git push origin --delete feat/front-fix
 - 2026-07-08 P2.1/2.2 USER·COMPANY 대시보드 완료 — 역할별 인사·CTA, StatCard KPI 델타(summary 신규 엔드포인트), Recharts 8주 주간추이, 활동피드(recent 병합), 역할별 크레딧(USER 읽기전용/COMPANY 충전/ADMIN 미표시), 3기능·최근내역·CLIO 토큰화, Skeleton/EmptyState. **3역할 모두 실 Cognito 폼 로그인 검증**(admin 글로벌 7.4%·company org 7.0%·user 팀 16.1% 스코프 차이로 role 스코프 실동작 확인). CreditBalance 역할 인지형 전환. DB에 test/asdf 유저 append(test-data.md). "지금 주목할 것" 알림은 3.3 이월.
 - 2026-07-08 P1.2 랜딩 완료 — page.tsx 전면 재설계(framer-motion 히어로 순차 페이드+스크롤 리빌+배경 blob 패럴랙스), lucide 아이콘, 사실기반 소셜프루프(81만/5요인/분포·CI), 토큰화·반응형(sm:). 라이트/다크 스크린샷 증거, 콘솔 에러 0. layout.tsx에 data-scroll-behavior="smooth" 추가(Next 경고 해소).
 - 2026-07-08 P1.1 앱 셸 완료 — AppLayout·Sidebar·3패널(Project/Company/Admin) 전면 토큰화, 인라인 SVG→lucide, 사이드바 active 좌측 바 인디케이터, framer-motion 페이지 전환. **ADMIN 실제 Cognito 폼 로그인 end-to-end 검증**(/dashboard 진입, 실데이터 66시뮬·143생성 렌더, 라이트/다크 셸 확인, 콘솔 에러 0, 네비게이션 전환 동작). ⚠️ 로컬 인증 환경 셋업 필요 — context-notes '검증 환경' 참조.
+- 2026-07-09 문서 사실 정정 — 팔레트 서술을 실제 코드값(primary `#2563EB`·point 인디고 `#6366F1`, 다크 `#818CF8`, 후속 커밋 `5e132576`)으로 갱신(checklist.md·context-notes.md). Phase 7 브랜치 통합 체크박스를 실제 완료 상태(`[x]`)로 갱신 — `feat/front-fix`는 PR #169(commit `e0e3efdd`)로 이미 병합되고 로컬·원격 모두 삭제 확인(git branch -a 재확인). test-data.md의 test/asdf 테스트 계정 4건은 여전히 미삭제(❌, 데모용 의도적 유지)라 그대로 둠.

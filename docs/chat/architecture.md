@@ -23,15 +23,15 @@
 | 영역 | 현황 | 위치 |
 | --- | --- | --- |
 | 매니지먼트 서브에이전트 | **완성**. LangGraph ReAct + 하이브리드 RAG(실측 live + pgvector KB) + HITL interrupt. `build_management_agent(settings)→ask→AskResult` | `backend/domain/management/assistant/` |
-| 채팅 라우터 | `POST /api/chat/complete` SSE. **키워드 매칭**으로 매니지먼트 질문만 분기, 나머지는 CLIO(Gemini 2.5 Flash) | `backend/api/routers/chat.py:46` |
+| 채팅 라우터 | `POST /api/chat/complete` SSE. **통합 딥에이전트**(`build_unified_chat_agent`, OpenAI gpt-4.1)가 LLM 판단으로 3개 도메인에 tool 위임(2026-06-30 키워드 라우팅→통합 에이전트로 전환 완료, 8장 참고) | `backend/api/assistant/deep_agent_builder.py`·`backend/api/routers/chat.py` |
 | 시뮬/제너 서브에이전트 | **없음**. 서비스 실행 진입점만 존재(`SimulationService.start/stream/get_result`, `generator_service.start_generation/stream/get_detail`) | `domain/*/service/` |
 | 도메인 실행 인터페이스 | 둘 다 `asyncio.create_task` 백그라운드 + `run_id`/`generation_id` 반환 + SSE(`event/stage/pct`) + 메모리 store 조회 | `simulation_service.py:66`, `generator_service.py:43` |
 | 채팅 UI | 단일 `/chat` 페이지, SSE 파싱(`{token/meta/done}`), 출처 배지(management/clio) | `frontend/src/app/chat/page.tsx` |
 | 인라인 위젯 선례 | `DebatePanel` — 채팅 안에서 토론을 SSE로 실행·누적·결과 콜백. 위젯의 레퍼런스 패턴 | `components/simulator/DebatePanel.tsx` |
 | 채팅 DB | `chat_sessions` 테이블 존재(`project_id` FK + `messages` JSONB). **라우터에서 미사용**(`/sessions` 빈 구현) | `core/models.py:179` |
-| 플로팅 UI | **없음**. 모달은 z-50, AppLayout 좌패널 274/512px 오프셋 컨벤션만 존재 | `components/AppLayout.tsx` |
+| 플로팅 UI | **구현 완료**. 우측 통합 센터(채팅·알림, 접이식)가 AppLayout에 상시 렌더 — 구 NotificationBell·FloatingChat·ProjectChatSection을 대체 | `components/center/Center.tsx`·`components/center/ChatCenter.tsx` |
 
-핵심 공백은 세 가지다. ① **오케스트레이터 본체**(현재는 if-keyword 분기), ② **시뮬·제너 서브에이전트**, ③ **세션 영속화·UI 셸**.
+> 아래 3~7장은 2026-06-23 최초 설계 당시의 제안 내용(LangGraph route→delegate 기반 오케스트레이터 구상)이다. 실제로는 이후 **deepagents 기반 통합 에이전트로 클린 재작성**되어 8장의 최종 구조로 대체됐다. 설계 배경·시나리오 서술은 여전히 유효하므로 남겨두되, "as-is" 갭은 8장 기준으로 이미 해소됐다.
 
 ---
 
@@ -190,25 +190,39 @@
 
 ---
 
-## 8. 구현 현황 · 팀 구조 정렬 (2026-06-23)
+## 8. 구현 현황 (2026-07-09 갱신 — 최종 구조)
 
-**백엔드 골조 완료** — 오케스트레이터(`domain/chat/orchestrator.py`) + 매니지·시뮬·생성 3개 서브에이전트를 도구(`ask_*`)로 연결. 채팅 질문이 LLM 판단으로 해당 어시스턴트에 라우팅된다(풀모드). 시뮬·생성 KB 테이블 생성·적재는 운영 작업으로 남음(없어도 degrade 동작).
+**오케스트레이터 본체는 2026-06-23 당시 구상(위 3~7장, `domain/chat/orchestrator.py` 기반 LangGraph route→delegate)에서 이후 전면 교체됐다.** 2026-06-30 커밋 `4c3e7c8f`(`delete: 레거시 채팅 오케스트레이터·deep_agent 제거`)로 `domain/chat/orchestrator.py`(1073줄)와 손수 짠 `api/assistant/deep_agent.py`(828줄) 2-레이어 구조를 모두 삭제하고, **`deepagents` 기반 통합 에이전트 한 번 호출**로 클린 재작성했다(배경은 `docs/chat/deep-agent-migration/최종구현 계획서.md`, 전환 기록은 `docs/chat/deep-agent-migration/checklist.md` 1~4단계 참고).
 
-**팀 오케스트레이터 구조 채택** (팀 다이어그램 합의)
+**현재 오케스트레이터 본체** — `backend/api/assistant/deep_agent_builder.py::build_unified_chat_agent(settings)`가 다음을 한 번 조립한다.
 
-- `POST /api/assistant/chat` 단일 엔드포인트 (현재 `/api/chat/complete` → 변경 예정).
-- `classify_intent`(명시 노드) → `route` → 도메인 서브에이전트. 현재는 LLM 암묵 라우팅 → 명시 노드로 분리 예정.
-- **공통 계약** `AssistantRequest`/`AssistantResult`(`core/assistant.py`, `context_id`로 도메인 식별자 통일) — 시뮬·생성 적용 완료. 매니지는 독립 개발 유지 → 추후 합류.
-- 도메인별 방식 — 생성: **슬롯형 실행(결정론)** + RAG 어시스턴트 공존 / 시뮬: 팀 결정 / 관리: 에이전틱 RAG.
-- 1턴 = 1 트레이스 루트(LangSmith).
+```python
+create_deep_agent(
+    model=build_chat_llm(settings, ...),        # domain/chat/llm.py, provider=openai, model=gpt-4.1
+    tools=build_chat_tools(settings),            # api/assistant/subagent_tools.py, @tool 31개
+    system_prompt=CHAT_POLICY,                   # api/assistant/prompts.py
+    middleware=[ChatStateMiddleware()],           # api/assistant/chat_state.py
+    subagents=[],                                 # 의도적 — 아래 참고
+    checkpointer=build_checkpointer(settings),    # domain/management.wiring 재사용
+)
+```
 
-**완료 / 남은 작업**
+키 없음/mock이면 `None`을 반환해 `chat.py`가 CLIO 폴백으로 degrade한다(deepagents 자체가 없거나 충돌하면 `langchain.agents.create_agent`로 폴백).
 
-- ✅ 매니지·시뮬·생성 어시스턴트(질문답변·RAG) + 오케스트레이터 연결
-- ✅ 공통 계약(시뮬·생성)
-- ⬜ `classify_intent` 명시 노드 · 엔드포인트 `/api/assistant/chat`
-- ⬜ 실행 도구(`run_simulation`·`run_generator` 슬롯형) → 개선 루프(P2-5)
-- ⬜ 채팅 DB·프로젝트 귀속(P0) · 플로팅 UI·위젯(P1-5·P2-1)
+- **`subagents=[]`는 의도적 설계 결정이다.** deepagents 고유의 서브에이전트 기능(`CompiledSubAgent`)은 부모-자식이 `messages`만 주고받는 얕은 위임이라, management 도메인이 쓰던 thread_id 고정·memory_context 주입·citations/suggested_action→meta 변환 같은 어댑터 로직이 그대로는 옮겨지지 않는다. 대신 **얇은 `@tool`로 도메인을 감싸 상태(`Command(update={"sub_meta": ...})`)에 결과를 쌓는 방식**을 택했다.
+- **도구는 두 층으로 나뉜다** (`api/assistant/subagent_tools.py::build_chat_tools`).
+  - **위임 tool** — `ask_management`/`ask_simulation`/`ask_generator`/`ask_general_knowledge`. 조회·해석·조언만 하고 실행하지 않는다.
+  - **위젯 tool** — `run_simulation`/`run_generation` 등. 화면에 카드(위젯) 신호만 적재하고, 실제 실행은 화면이 별도 REST 호출로 수행한다(채팅이 직접 실행 API를 호출하지 않는다는 6장 "집행 분리" 원칙 그대로 승계).
+
+**Phase P0~P2 항목 실제 완료 현황** (3~7장 표의 사용자 6항목 매핑 기준)
+
+- ✅ P0-1·P0-2 채팅 내역 DB·프로젝트 귀속 — `chat_sessions`/`chat_messages` 실사용, 세션·프로젝트 필터 동작.
+- ✅ P0-3 세션/체크포인터 영속화 — `build_checkpointer(settings)`(로컬 `MemorySaver`/운영 `AsyncPostgresSaver`).
+- ✅ P1-1·P1-2·P1-3 오케스트레이터 본체·3도메인 연결 — 위 `build_unified_chat_agent` 구조로 대체 완료(LangGraph route→delegate 노드 방식이 아니라 deepagents 통합 에이전트 방식으로).
+- ✅ P1-5 플로팅 챗봇 UI — `components/center/Center.tsx`·`ChatCenter.tsx`(우측 통합 센터, 접이식)로 구현 완료. 위 2장 표도 갱신됨.
+- ✅ P2-1 기능 실행 위젯 — `meta.cards`(`ActionCards.tsx`, RESULT/REVIEW/ACTIONBAR) + 기존 14개 위젯 그대로 보존.
+- ⬜ P2-5 개선 루프 컨트롤러(시뮬↔제너 최대 3회 왕복·목표 조기종료) — 미착수. 현재 위임/위젯 tool 구조 위에 별도로 얹어야 한다.
+- ⬜ `classify_intent` 명시 노드 · 엔드포인트 `/api/assistant/chat` — 채택하지 않음. LLM이 시스템 프롬프트(`CHAT_POLICY`) 기준으로 tool 호출을 직접 판단하는 방식으로 대체돼 더 이상 유효한 목표가 아니다.
 
 ---
 
@@ -217,6 +231,7 @@
 - 선행 spec — [docs/superpowers/specs/2026-06-21-chat-management-agentic-rag.md](../superpowers/specs/2026-06-21-chat-management-agentic-rag.md)
 - 매니지 서브에이전트 — `backend/domain/management/assistant/{agent,graph,tools,retriever}.py`
 - 채팅 라우터·모델 — `backend/api/routers/chat.py` · `backend/core/models.py:179`
+- 통합 오케스트레이터(현재 본체, 8장) — `backend/api/assistant/deep_agent_builder.py` · `backend/api/assistant/subagent_tools.py` · `backend/api/assistant/prompts.py`
 - 도메인 실행 진입점 — `backend/domain/simulation/service/simulation_service.py:66` · `backend/domain/generator/service/generator_service.py:43`
-- 프론트 — `frontend/src/app/chat/page.tsx` · `frontend/src/components/simulator/DebatePanel.tsx` · `frontend/src/components/AppLayout.tsx`
+- 프론트 — `frontend/src/app/chat/page.tsx` · `frontend/src/components/simulator/DebatePanel.tsx` · `frontend/src/components/AppLayout.tsx` · `frontend/src/components/center/Center.tsx`
 </content>

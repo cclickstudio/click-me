@@ -2,7 +2,7 @@ name: CI/CD
 
 # CI(test) 통과 후에만 CD(build→deploy)가 실행되도록 needs 체인으로 묶은 단일 워크플로우.
 #   - pull_request          : test(backend·frontend)만. build/deploy 안 함.
-#   - push (main·ci-cd)      : test 통과 → build(backend·frontend, ECR push) → deploy(EC2).
+#   - push (main·prod)      : test 통과 → build(backend·frontend, ECR push) → deploy(EC2).
 #   - workflow_dispatch      : e2e(Playwright) 수동 실행.
 # 게이트: build-*/deploy는 needs로 test 성공을 전제하므로, 테스트가 깨지면 배포가 나가지 않는다.
 #
@@ -27,9 +27,9 @@ name: CI/CD
 
 on:
   push:
-    branches: [main, ci-cd]
+    branches: [main, prod]
   pull_request:
-    branches: [main, ci-cd]
+    branches: [main, prod]
   workflow_dispatch: {} # E2E(Playwright) 잡 수동 실행용
 
 env:
@@ -272,7 +272,7 @@ jobs:
   # CD — 빌드 & 배포 (push일 때만 · test 통과 후)
   #   build-*는 needs로 backend·frontend 테스트 성공을 전제한다.
   #   if: push → PR·workflow_dispatch에선 빌드/배포하지 않는다.
-  #   트리거 브랜치가 [main, ci-cd]라 그 두 브랜치 push만 배포된다.
+  #   트리거 브랜치가 [main, prod]라 그 두 브랜치 push만 배포된다.
   # ═════════════════════════════════════════════════════════════
 
   # ─────────────────────────────────────────

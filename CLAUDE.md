@@ -7,11 +7,11 @@
 
 - **Backend** FastAPI (Python only, No Spring) / **PM** uv(backend)·pnpm(frontend) 교차 금지 / **Arch** 모놀리식 + 부분 DDD/SOLID, 단일 EC2.
 - **비동기 잡** 인프로세스 async(`asyncio.create_task`) + **APScheduler 워커**(management: 이상 스캔·리밸런스 제안·주간 리포트 / generator: 품질 다이제스트; 기본 off, `*_SCHEDULER_ENABLED` 플래그로 on). 관측·집계·기록은 워커 자율, **집행 write는 사람 승인(HITL)**. 별도 MQ 미사용 — SQS·Redis 모두 안 씀.
-- **Sim engine** OCEAN 5요인 조건부 페르소나 샘플링(서울대-카카오 OCEAN N=81만·KISDI 미디어 실데이터; 행안부 인구는 확보 예정). **Scoring** 현재 LLM 루브릭(정합)+페르소나 반응 LLM+부트스트랩 신뢰구간 집계 — **SSR(임베딩 기반, arXiv 2510.08338) 전환은 데이터 확보 후**(구 `tools/simulation/ssr_scorer` 보존). **Output** 스칼라 아닌 분포.
+- **Sim engine** 행안부 인구 쿼터 + OCEAN 5요인 조건부 페르소나 샘플링(서울대-카카오 OCEAN N=81만·KISDI 미디어 실데이터, 4단계 모두 적용 완료). **Scoring** 기본은 LLM 루브릭(정합)+페르소나 반응 LLM 정수+부트스트랩 신뢰구간 집계, **SSR(임베딩 기반, arXiv 2510.08338, `tools/simulation/ssr_scorer`+`anchors`)은 `SIMULATION_SCORING=ssr` opt-in**으로 반응 텍스트를 임베딩해 구매의도·신뢰도 두 차원만 분포 재산정(초기 설계한 exposure+deliberation 2단계 전체는 아니며 그쪽은 죽은 코드, 아래 §65 참고. 2026-07-08 하루 기본 ON 전환했다가 다음날 원복). **Output** 스칼라 아닌 분포.
 - **구매의도 검증** KOBACO 베이스라인 대비(현재 챗봇 룩업으로 참고 제시, 실측 대비 자동 calibration은 **연결 캠페인 실측 5건 이상 확보 시 해금 예정**). 그 외 신호는 탐색적(exploratory) 표기.
 - **인증** AWS Cognito 기반 JWT(JWKS RS256 검증) **운영 중** + 관리자 직접 계정 생성(`cognito_admin`, 자가가입·소셜 없음), Admin/User 역할. 자체 local JWT 모드는 예비(로그인 발급 라우터 미완).
-- **A/B** UI 선반영, YouTube RAG 실기능은 최종 단계. **Chat** OpenAI gpt-4o-mini·CLIO·SSE — 오케스트레이터 본체(통합 딥에이전트, `deepagents` 기반, `api/assistant/deep_agent_builder.py`) **구현 완료**(`POST /api/chat/complete`). management·generator·simulation 3개 도메인 모두 **@tool 위임으로 연결**(deepagents 고유 서브에이전트 기능은 미사용, 커스텀 tool 라우팅).
-- **멀티 LLM 역할 배정** 채팅 gpt-4o-mini · 시뮬 반응 Gemini 2.5 Flash · 페르소나 토론 토론자 gpt-4o-mini/Judge Claude Haiku · 생성 gpt-4.1.
+- **A/B** UI 선반영, YouTube RAG 실기능은 최종 단계. **Chat** OpenAI gpt-4.1(`CHAT_ORCHESTRATOR_MODEL`)·CLIO·SSE — 오케스트레이터 본체(통합 딥에이전트, `deepagents` 기반, `api/assistant/deep_agent_builder.py`) **구현 완료**(`POST /api/chat/complete`). management·generator·simulation 3개 도메인 모두 **@tool 위임으로 연결**(deepagents 고유 서브에이전트 기능은 미사용, 커스텀 tool 라우팅).
+- **멀티 LLM 역할 배정** 채팅 gpt-4.1 · 시뮬 반응 Gemini 2.5 Flash · 페르소나 토론 토론자 gpt-4o-mini/Judge Claude Haiku · 생성 gpt-4.1.
 - **Ad gen** 시안 3종 자동생성+QA 기반 순위(개선 모드는 1종). 모델은 config 교체(`GENERATOR_*_MODEL`) — 현재 기본값 텍스트 gpt-4.1·비전 gpt-4o·이미지 gpt-image-1(OpenAI 모드)/gemini-2.5-flash-image(Gemini 모드). **PDF** 전체 생성 포함. **문의** in-app 폼 → DB.
 
 ## 핵심 기능 (기획서 v1.3)
@@ -31,7 +31,7 @@
 
 - **로드맵** 베이스라인 2026-06-12 ✅ → 최종 구현 2026-07-08(핵심 3기능 + 채팅·팀관리) → 발표 2026-07-14.
 - **플랜** Free(개인·제한 시뮬·트래킹 1개) / Professional(팀·확장·무제한 트래킹·API 연동) / Enterprise(기업·대규모·다채널). **결제** Toss Payments 연동 PoC(샌드박스 테스트키 전용, 실 과금 미개시).
-- **조직** = 결제 단위(플랜 공유), **프로젝트** = 캠페인 단위(시안+매니지먼트), **팀 관리** = 프로젝트 협업(뷰어/에디터/오너).
+- **조직** = 결제 단위(플랜 공유, `Organization.plan` 문자열 컬럼으로 free/professional/enterprise — 별도 플랜/구독 테이블 없음), **프로젝트** = 캠페인 단위(시안+매니지먼트). **팀**은 조직 하위 협업 단위로 실제 구현됨(`Team.organization_id`, `Project.team_id`/`User.team_id`로 소속). 문서(`docs/db-schema.md` 등)가 그리는 **프로젝트별 뷰어/에디터/오너 세분 권한(`project_members`)은 계획 단계이며 ORM에 미구현** — 실제로는 조직 팀 배정 수준의 협업만 동작.
 
 ## 인증 및 보안
 
@@ -44,7 +44,7 @@
 
 - **Frontend** Next.js(TS) + Tailwind (pnpm) / **Backend+AI** FastAPI + LangGraph (uv).
 - **DB** NeonDB(PostgreSQL + pgvector, vector(1536)) / **RAG** 하이브리드 검색(pgvector 코사인 + PostgreSQL FTS 키워드, RRF 융합) for management·generator KB / 장기기억 회수 tsvector 키워드 / CLIO 일반지식 벡터 전용 / **비동기 잡** asyncio + APScheduler / **Storage** AWS S3.
-- **Deploy** 단일 EC2 + Nginx / **CI/CD** GitHub Actions — CI(ruff·pytest·lint·build) + **CD 활성**(main push → ECR 빌드/푸시 → EC2 배포 → Let's Encrypt TLS 자동갱신) / **Tracing** LangSmith / **Chat LLM** OpenAI gpt-4o-mini(SSE).
+- **Deploy** 단일 EC2 + Nginx / **CI/CD** GitHub Actions — CI(ruff·pytest·lint·build) + **CD 활성**(main push → ECR 빌드/푸시 → EC2 배포 → Let's Encrypt TLS 자동갱신) / **Tracing** LangSmith / **Chat LLM** OpenAI gpt-4.1(SSE).
 
 ## 백엔드 아키텍처 (DDD)
 
@@ -62,7 +62,7 @@ backend/
 
 **의존성** `api/routers → domain/<ctx>/service → contracts(포트) ← adapters(구현)`. DB·설정은 `core`, LLM·SDK 래퍼는 `tools`에서만. mock/실연동 교체는 `wiring.py`에서만.
 
-> 이전 현황: generator·management·**simulation 모두 `domain/` 이전 완료**(등록 라우터는 `api/routers/simulation/`). 구 평면 라우터 `api/routers/simulate.py`는 **삭제 대상**(미등록 데드코드), `tools/simulation/`(ssr_scorer 등)은 **SSR 전환 대비 보존**.
+> 이전 현황: generator·management·**simulation 모두 `domain/` 이전 완료**(등록 라우터는 `api/routers/simulation/`). 구 평면 라우터 `api/routers/simulate.py`는 **삭제 대상**(미등록 데드코드). `tools/simulation/ssr_scorer.py`·`anchors.py`는 **SSR opt-in(`SIMULATION_SCORING=ssr`) 활성화 시 실제 호출되는 살아있는 코드**(보존용이 아님), 같은 폴더의 `exposure.py`·`deliberation.py`(2단계 설계, 다른 스키마 참조)만 실제 죽은 코드.
 
 ## 협업 규칙 (충돌 방지)
 
@@ -139,8 +139,8 @@ NEXT_PUBLIC_COGNITO_REGION= / NEXT_PUBLIC_COGNITO_USER_POOL_ID= / NEXT_PUBLIC_CO
 | ----------------------------------- | --------------------------------------------------------------- |
 | 비동기 잡 큐 도입 여부              | 현재 인프로세스 async(asyncio) + APScheduler 워커. SQS·Redis 미사용 — 운영 확장 시 재검토. |
 | local JWT 모드 완성 여부            | 운영은 Cognito로 확정·배선 완료. 자체 local JWT는 로그인 발급 라우터 미완(예비) — 완성 시점 미정. |
-| 구 오케스트레이터 데드코드 제거      | 통합 딥에이전트로 전환 완료. 구세대 `orchestrator.py`·`intent.py`·`registry.py`는 테스트만 참조하는 데드코드 → **발표 후 삭제**(`wiring.py`의 `_build_*_handler`는 통합 에이전트가 재사용하므로 보존). `domain/chat/__init__.py` docstring도 실제 역할(지원 인프라)로 정리 필요. |
-| 매니지먼트 집행 모드 안전(발표 전)   | 커밋된 `backend/.env`가 `MANAGEMENT_EXECUTION_MODE=live`+`USE_MOCK=false`+실 토큰 → 실 Meta 집행·과금 가능. 파일 내 주석("dry_run 유지")과 모순. **데모/발표 전 `dry_run` 복귀 필요.** |
+| 구 오케스트레이터 데드코드 제거      | 통합 딥에이전트로 전환 완료. 구세대 `api/assistant/orchestrator.py`·`intent.py`·`registry.py`는 테스트만 참조하는 데드코드 → **발표 후 삭제**(`wiring.py`의 `_build_*_handler`는 통합 에이전트가 재사용하므로 보존). `api/orchestration/routing.py`(키워드 기반 Router/KeywordMatcher, "LLM Deep Agent와 충돌해 미사용"이라 파일 자체에 명시)도 동일하게 테스트만 참조하는 별도 데드코드 → 같이 정리 대상. `domain/chat/__init__.py` docstring도 실제 역할(지원 인프라)로 정리 필요. |
+| 매니지먼트 집행 모드 안전(발표 전)   | `backend/.env`는 git에 커밋된 적 없음(`.gitignore` 적용 확인됨, 이 항목은 과거 오기재). 로컬 `.env`의 현재값은 `USE_MOCK=false`(읽기는 실 Meta 연동)+`MANAGEMENT_EXECUTION_MODE=dry_run`(쓰기는 봉인, 파일 내 주석과 실제로 일치)로 **현재는 안전**. 다만 실 영구 토큰이 로컬에 평문 존재하고 `USE_MOCK=false`라 `MANAGEMENT_EXECUTION_MODE`만 `live`로 바꾸면 Tier 1(PAUSE/DECREASE_BUDGET)은 `AUTO_APPROVER`로 즉시 자율 집행되므로, **데모/발표 전 로컬 `.env` 값이 바뀌지 않았는지 재확인 필요.** |
 
 ## Reference
 

@@ -61,7 +61,7 @@ docker compose up --build
 
 - **단일 파이프라인** (`.github/workflows/ci-cd.yml`): 구 `ci.yml`+`cd.yml`을 하나로 병합.
 - **CI**: Ruff lint + pytest(backend), ESLint + Next.js build(frontend). PR·push 모두 실행.
-- **CD**: `main`·`ci-cd` 브랜치 push에서만 CI 성공 시 ECR 이미지 빌드·push → EC2에서 `docker-compose.prod.yml`로 배포. Nginx + Let's Encrypt(certbot 자동 발급·갱신).
+- **CD**: `main`·`prod` 브랜치 push에서만 CI 성공 시 ECR 이미지 빌드·push → EC2에서 `docker-compose.prod.yml`로 배포. Nginx + Let's Encrypt(certbot 자동 발급·갱신).
 - 배포 인프라(EC2 프로비저닝·Elastic IP·PEM 공유)는 [`infra/README.md`](infra/README.md) 참고.
 
 ---
