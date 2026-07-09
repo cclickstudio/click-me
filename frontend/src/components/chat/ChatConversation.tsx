@@ -1308,13 +1308,20 @@ export default function ChatConversation({
         }
       }
 
-      // 첨부 이미지를 S3에 1회 업로드 → 사용자 메시지에 영속화(실패해도 표시만 하고 진행).
+      // 첨부 이미지를 S3에 1회 업로드 → 사용자 메시지에 영속화(실패하면 이미지 없이 진행 + 안내).
       let imageUrl: string | undefined;
       if (imgFile) {
         try {
           imageUrl = (await api.chat.uploadImage(imgFile)).url;
         } catch {
-          // 업로드 실패 — 이번 세션 표시는 유지되나 내역엔 안 남음
+          setMessages(prev => [
+            ...prev,
+            {
+              role: 'assistant',
+              content: '이미지 업로드에 실패했어요. 다시 첨부해 주세요.',
+              meta: { source: 'orchestrator', label: '오류', error: true },
+            },
+          ]);
         }
       }
 

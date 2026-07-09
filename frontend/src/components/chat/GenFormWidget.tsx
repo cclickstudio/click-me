@@ -4,7 +4,7 @@
 // 생성은 project_id 필수(라우터 400)라 프로젝트 선택을 포함한다.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { api } from '@/lib/api';
+import { api, API_BASE } from '@/lib/api';
 import { useProjects } from '@/components/ProjectContext';
 import { getJobs, setGenJob } from '@/lib/runningJobs';
 import type { GenerationDetail, Project } from '@/lib/types';
@@ -24,6 +24,8 @@ type Initial = {
   existing_ad_s3_key?: string | null;
   product_cutout_s3_key?: string | null; // 생성한 광고로 시뮬한 경우 누끼 재사용(그 외 null)
   fix_requests?: string | null;
+  // 세션 히스토리에서 찾은 이전 턴 첨부 이미지(상대경로) — 이번 턴 첨부(initialImage)가 없을 때만 프리필.
+  product_image_url?: string;
 };
 
 // 진행 중 생성 id 보관 키(G4) — 동시 1개 정책이라 단일 키로 충분(새로고침 복원용).
@@ -75,10 +77,36 @@ export default function GenFormWidget({
   const [objective, setObjective] = useState(initial?.campaign_objective ?? 'conversion');
   const [fixRequests, setFixRequests] = useState(initial?.fix_requests ?? '');
   const isImprove = initial?.mode === 'improve';
-  const [image] = useState<File | null>(initialImage ?? null);
-  const [imagePreview] = useState<string | null>(() =>
+  const [image, setImage] = useState<File | null>(initialImage ?? null);
+  const [imagePreview, setImagePreview] = useState<string | null>(() =>
     initialImage ? URL.createObjectURL(initialImage) : null,
   );
+  // 이번 턴 첨부가 없고 이전 턴에 첨부한 이미지가 대기 중이면(백엔드가 세션 히스토리에서 찾음)
+  // URL을 fetch해 File로 변환 — 아래 run()의 업로드 경로를 그대로 재사용한다.
+  useEffect(() => {
+    if (initialImage || isImprove || !initial?.product_image_url) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const url = initial.product_image_url!.startsWith('/')
+          ? `${API_BASE}${initial.product_image_url}`
+          : initial.product_image_url!;
+        const res = await fetch(url);
+        if (!res.ok) return;
+        const blob = await res.blob();
+        if (cancelled) return;
+        const file = new File([blob], 'product-image', { type: blob.type || 'image/png' });
+        setImage(file);
+        setImagePreview(URL.createObjectURL(file));
+      } catch {
+        /* 프리필 실패 — 이미지 없이 진행 가능하니 조용히 무시 */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [projects, setProjects] = useState<Project[]>([]);
   const [projectId, setProjectId] = useState('');
   const { refreshDetails } = useProjects(); // 완료 시 좌측 패널의 제너 목록 갱신용
