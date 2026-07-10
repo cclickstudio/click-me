@@ -20,8 +20,9 @@
 계약 등록(SUPPORTED_ACTION_TYPES·Tier 2 게이트)과 `_call_rebalance` 구현을 **한 커밋**으로 묶는다 — 등록만 먼저 커밋하면 "supported인데 집행 불가"인 반쪽 상태가 히스토리에 남는다.
 
 **Files:**
-- Modify: `backend/domain/management/execution/executor.py` — `:46-55`(SUPPORTED_ACTION_TYPES), `:317-318`(_validate Tier 2), `_call_targets`(342줄) 초입 분기, `_call_with_retry`(395줄) call 파라미터, `_call_rebalance` 신규
+- Modify: `backend/domain/management/execution/executor.py` — `:46-55`(SUPPORTED_ACTION_TYPES), `:317-318`(_validate Tier 2), `_call_targets`(342줄) 초입 분기, `_call_with_retry`(395줄) call 파라미터, `_call_rebalance`·`_halt_indeterminate` 신규
 - Modify: `backend/domain/management/contracts/policy.py:22` (주석)
+- Modify: `backend/domain/management/history_link.py:26` (_ACTION_LABELS — 실행 이력 한글 라벨)
 - Test: `test/backend/management/test_rebalance_execution.py` (신규)
 
 - [ ] **Step 1: 실패하는 테스트 작성** — 신규 파일 `test/backend/management/test_rebalance_execution.py` 전체.
@@ -57,21 +58,27 @@ from domain.management.execution.tier import BudgetAuthority
 
 
 class FakeRebalanceWriter:
-    """adjust_budget만 구현한 fake — 파생 멱등키 suffix(dec|inc|comp)로 실패를 주입한다."""
+    """adjust_budget만 구현한 fake — 파생 멱등키 suffix(dec|inc|comp)로 실패·pending 주입."""
 
-    def __init__(self, fail: set[str] | None = None):
+    def __init__(self, fail: set[str] | None = None, pending: set[str] | None = None):
         self.calls: list[tuple[str, int, str]] = []
         self.fail = fail or set()
+        self.pending = pending or set()
 
     async def adjust_budget(self, campaign_id: str, amount_krw: int, idem_key: str) -> ActionResult:
         self.calls.append((campaign_id, amount_krw, idem_key))
         leg = idem_key.rsplit(":", 1)[-1]
-        failed = leg in self.fail
+        if leg in self.fail:
+            status, reason = ResultStatus.FAILED, FailureReason.PLATFORM_ERROR
+        elif leg in self.pending:
+            status, reason = ResultStatus.SUBMITTED_PENDING_REVIEW, None
+        else:
+            status, reason = ResultStatus.SUCCESS, None
         return ActionResult(
             result_id=uuid4().hex,
             approval_id="",
-            status=ResultStatus.FAILED if failed else ResultStatus.SUCCESS,
-            failure_reason=FailureReason.PLATFORM_ERROR if failed else None,
+            status=status,
+            failure_reason=reason,
             executed_at=datetime.now(UTC),
             idempotency_key=idem_key,
         )
@@ -241,6 +248,26 @@ async def test_rebalance_compensation_failure_is_sealed():
     assert len(writer.calls) == calls_before
 
 
+async def test_rebalance_pending_leg_is_sealed_without_compensation():
+    """SUBMITTED_PENDING_REVIEW 등 불확정 다리는 보상 없이 박제 — SUCCESS만 성공으로 본다.
+
+    불확정 다리는 나중에 적용될 수 있어 진행(성공 오판)도 보상(이중 변경)도 위험하다.
+    """
+    writer = FakeRebalanceWriter(pending={"inc"})
+    proposal = make_rebalance_proposal()
+    action, store = await _approved(proposal)
+    executor = build_rebalance_executor(writer, store)
+
+    result = await executor.execute(action, proposal)
+
+    assert result.status is ResultStatus.FAILED
+    assert result.failure_reason is FailureReason.PARTIAL_FAILURE
+    assert len(writer.calls) == 2  # dec, inc — 보상(comp) 호출 없음
+    snaps = (result.platform_response_snapshot or {}).get("targets") or []
+    assert not any(s.get("compensation") for s in snaps)
+    assert any(s.get("indeterminate") for s in snaps)
+
+
 # ── 계약 불변식 방어 (executor = 최종 지출 게이트) ─────────────────
 
 
@@ -319,6 +346,13 @@ Expected: `test_tier2_auto_approver_blocked`를 제외한 전부 FAIL — 현재
 
 ```python
     "REBALANCE_BUDGET": ActionTier.TIER_2,  # 총액 불변 이전 — 건별 사용자 승인(자율 실행 비활성)
+```
+
+`backend/domain/management/history_link.py:26` `_ACTION_LABELS`에 한 줄 추가 — 실행 이력에 원문 노출 방지.
+
+```python
+    "CHANGE_BID_STRATEGY": "입찰 전략 변경",
+    "REBALANCE_BUDGET": "예산 리밸런싱",
 ```
 
 - [ ] **Step 4: 전용 경로 구현** — 같은 파일.
@@ -441,15 +475,21 @@ Expected: `test_tier2_auto_approver_blocked`를 제외한 전부 FAIL — 현재
                 dec.failure_reason or FailureReason.PLATFORM_ERROR,
                 snapshots,
             )
+        if dec.status is not ResultStatus.SUCCESS:
+            # SUBMITTED_PENDING_REVIEW 등 불확정 — 적용 여부를 몰라 진행·보상 모두 불가.
+            return await self._halt_indeterminate(run, action, proposal, key, snapshots)
         run.record_snapshot(snapshots[-1])
 
         inc = await _leg(to_id, to_after, "inc")
-        if inc.status is not ResultStatus.FAILED:
+        if inc.status is ResultStatus.SUCCESS:
             run.advance(RunStatus.SUCCEEDED)
             return self._build_result(action, key, ResultStatus.SUCCESS, None, snapshots)
+        if inc.status is not ResultStatus.FAILED:
+            # 불확정 증액 — 나중에 적용될 수 있어 원복(보상)하면 이중 변경 위험. 박제.
+            return await self._halt_indeterminate(run, action, proposal, key, snapshots)
 
         comp = await _leg(from_id, from_before, "comp")
-        if comp.status is not ResultStatus.FAILED:
+        if comp.status is ResultStatus.SUCCESS:
             # 원복 완료 — 순변경 0. 비-PARTIAL이라 멱등키가 해제돼 같은 승인 TTL 내 재시도 가능.
             snapshots.append({"compensation": "succeeded"})
             run.advance(RunStatus.FAILED, snapshot=snapshots[-1])
@@ -468,7 +508,7 @@ Expected: `test_tier2_auto_approver_blocked`를 제외한 전부 FAIL — 현재
                 snapshots,
             )
 
-        # 보상까지 실패 — 부분 변경 방치 상태. 박제(재집행 차단) + 수동 복구 안내.
+        # 보상 실패·불확정 — 부분 변경 방치 상태. 박제(재집행 차단) + 수동 복구 안내.
         snapshots.append(
             {
                 "compensation": "failed",
@@ -487,12 +527,38 @@ Expected: `test_tier2_auto_approver_blocked`를 제외한 전부 FAIL — 현재
         return self._build_result(
             action, key, ResultStatus.FAILED, FailureReason.PARTIAL_FAILURE, snapshots
         )
+
+    async def _halt_indeterminate(
+        self,
+        run: ExecutionRun,
+        action: ApprovedAction,
+        proposal: ActionProposal,
+        key: str,
+        snapshots: list[dict[str, Any]],
+    ) -> ActionResult:
+        """다리 결과가 성공도 실패도 아닌 불확정(pending 등) — 진행·보상 없이 박제.
+
+        재시도하면 불확정 다리가 이중 적용될 수 있어 PARTIAL_FAILURE로 봉인하고 사람이 본다.
+        (현 adjust_budget writer는 success/failed만 반환 — executor 계약 방어용.)
+        """
+        snapshots.append({"indeterminate": True})
+        run.advance(RunStatus.HALTED, snapshot=snapshots[-1])
+        await self._record(
+            run,
+            action,
+            proposal,
+            "executor.partial_failure",
+            {"indeterminate": True, "snapshots": snapshots},
+        )
+        return self._build_result(
+            action, key, ResultStatus.FAILED, FailureReason.PARTIAL_FAILURE, snapshots
+        )
 ```
 
 - [ ] **Step 5: 테스트 통과 확인**
 
 Run: `cd backend && uv run pytest ../test/backend/management/test_rebalance_execution.py -v`
-Expected: 9개 전부 PASS.
+Expected: 10개 전부 PASS.
 
 - [ ] **Step 6: 기존 테스트 회귀 확인**
 
@@ -503,7 +569,7 @@ Expected: 전부 PASS. Tier 2 무조건 차단을 단언하는 기존 테스트�
 
 ```bash
 cd backend && uv run ruff format . && uv run ruff check . --fix
-git add backend/domain/management/execution/executor.py backend/domain/management/contracts/policy.py test/backend/management/test_rebalance_execution.py
+git add backend/domain/management/execution/executor.py backend/domain/management/contracts/policy.py backend/domain/management/history_link.py test/backend/management/test_rebalance_execution.py
 git commit -m "add: REBALANCE_BUDGET 원자 집행 활성화 — Tier2 사용자 승인 + 전용 경로(불변식·보상 포함)"
 ```
 
@@ -657,7 +723,7 @@ def test_rebalance_commit_rejects_same_campaign(env):
 
 
 def test_rebalance_commit_rejects_from_after_below_min(env):
-    """MIN~MAX full range가 양쪽 after 모두에 적용된다."""
+    """MIN~MAX full range가 양쪽 after 모두에 적용된다 — from 하한."""
     client, reader, captured = env
     reader.budgets["camp_low"] = 11_000  # from_after=1,000 < MIN(1,521)
     res = client.post(
@@ -667,6 +733,24 @@ def test_rebalance_commit_rejects_from_after_below_min(env):
             "from_after_krw": 1_000,
             "to_after_krw": 40_000,
             "shown_from_before_krw": 11_000,
+        },
+    )
+    assert res.status_code == 422
+    assert "proposal" not in captured
+
+
+def test_rebalance_commit_rejects_to_after_below_min(env):
+    """to_after < MIN도 거부 — 한쪽 하한만 검사하는 회귀 방지."""
+    client, reader, captured = env
+    reader.budgets["camp_high"] = 400  # to_after=1,400 < MIN(1,521)
+    res = client.post(
+        "/api/management/budget/rebalance-commit",
+        json={
+            **_BODY,
+            "move_krw": 1_000,
+            "from_after_krw": 49_000,
+            "to_after_krw": 1_400,
+            "shown_to_before_krw": 400,
         },
     )
     assert res.status_code == 422
@@ -827,7 +911,7 @@ async def budget_rebalance_commit(
 - [ ] **Step 4: 테스트 통과 확인**
 
 Run: `cd backend && uv run pytest ../test/backend/management/test_rebalance_commit_router.py -v`
-Expected: 5개 PASS.
+Expected: 6개 PASS.
 
 - [ ] **Step 5: 문서 인덱스 갱신** — 라우터 추가 시 자동 생성 스크립트 실행.
 
@@ -1109,6 +1193,7 @@ git commit -m "add: 챗 apply_rebalance 툴 + rebalance_action 위젯 (카드 �
 
 **Files:**
 - Modify: `frontend/src/lib/api.ts` — `budgetCommit`(874줄) 아래 `rebalanceCommit` 추가, `RebalanceTransfer` 주석(83줄) 갱신
+- Modify: `frontend/src/components/manage/types.ts:72` — `ACTION_LABELS`에 리밸런스 라벨 추가
 - Modify: `frontend/src/app/(app)/manage/budget/page.tsx:92-133` — transfer 브랜치 교체
 - Create: `frontend/src/components/chat/ChatRebalanceActionCard.tsx`
 - Modify: `frontend/src/components/chat/ChatConversation.tsx` — import(38줄 근처) + `campaign_action` 분기(1969줄) 아래 렌더 추가
@@ -1137,6 +1222,13 @@ git commit -m "add: 챗 apply_rebalance 툴 + rebalance_action 위젯 (카드 �
 ```
 
 83줄 `RebalanceTransfer` 주석의 `(적용은 budget-commit 2건)`을 `(적용은 rebalance-commit 1건)`으로 교체.
+
+`frontend/src/components/manage/types.ts:72` `ACTION_LABELS`에 한 줄 추가 — 관리 UI에 원문 노출 방지.
+
+```typescript
+  CHANGE_BID_STRATEGY: "입찰 전략 변경",
+  REBALANCE_BUDGET: "예산 리밸런싱",
+```
 
 - [ ] **Step 2: budget 페이지 transfer 브랜치 교체** — `page.tsx`의 `applyRebalance` 내 else 블록(114-124줄)을 교체. adjust 브랜치(100-113줄)는 무변경.
 
@@ -1288,7 +1380,7 @@ Expected: 빌드 성공(타입 에러 0). `msg.meta.widget.data`의 타입이 �
 - [ ] **Step 6: 커밋**
 
 ```bash
-git add frontend/src/lib/api.ts "frontend/src/app/(app)/manage/budget/page.tsx" frontend/src/components/chat/ChatRebalanceActionCard.tsx frontend/src/components/chat/ChatConversation.tsx
+git add frontend/src/lib/api.ts frontend/src/components/manage/types.ts "frontend/src/app/(app)/manage/budget/page.tsx" frontend/src/components/chat/ChatRebalanceActionCard.tsx frontend/src/components/chat/ChatConversation.tsx
 git commit -m "edit: 리밸런스 transfer 적용을 rebalance-commit 1-call로 교체 + 챗 적용 카드 추가"
 ```
 
