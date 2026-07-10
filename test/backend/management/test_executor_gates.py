@@ -154,11 +154,12 @@ async def test_gate4_tier3_with_auto_approver_is_unapproved():
     assert writer.calls == []
 
 
-async def test_tier2_is_disabled_in_v1():
+async def test_tier2_auto_approver_is_blocked():
+    """Tier 2 자율(AUTO) 실행은 여전히 차단 — 사용자 승인 통과가 새 정본(리밸런스 활성화)."""
     writer = FakeWriter()
     executor, _, _, _ = build_executor(writer)
     proposal = make_proposal(action_tier=ActionTier.TIER_2)
-    action = make_action(proposal, action_tier=ActionTier.TIER_2)
+    action = make_action(proposal, action_tier=ActionTier.TIER_2, approver_id=AUTO_APPROVER)
 
     result = await executor.execute(action, proposal)
 

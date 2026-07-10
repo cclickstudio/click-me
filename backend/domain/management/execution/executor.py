@@ -52,6 +52,7 @@ SUPPORTED_ACTION_TYPES: Final[tuple[str, ...]] = (
     "ACTIVATE_CAMPAIGN",  # 게재 시작 — 캠페인·광고세트·광고 전부 ACTIVE (크레딧 게이트 후 호출)
     "EXPAND_AUDIENCE",  # 에스컬레이션 사다리 1순위 — 타겟 범위 확장 (direct)
     "CHANGE_BID_STRATEGY",  # 에스컬레이션 사다리 2순위 — 입찰 전략 변경 (direct)
+    "REBALANCE_BUDGET",  # Tier 2 — 캠페인 간 일예산 이전(총액 불변), 전용 경로 _call_rebalance
 )
 
 #: Writer 도달이 허용되는 실행 모드. 실 게재 단계 진입(§7 갱신) — LIVE 정식 허용.
@@ -314,8 +315,8 @@ class Executor:
             return FailureReason.PROPOSAL_HASH_MISMATCH, "제안 변조 감지"
         if proposal.action_type not in SUPPORTED_ACTION_TYPES:
             return FailureReason.UNSUPPORTED_ACTION, f"미지원 action_type: {proposal.action_type}"
-        if action.action_tier is ActionTier.TIER_2:
-            return FailureReason.INVALID_TIER, "Tier 2 자동 실행은 v1 비활성"
+        if action.action_tier is ActionTier.TIER_2 and action.approver_id == AUTO_APPROVER:
+            return FailureReason.INVALID_TIER, "Tier 2는 건별 사용자 승인 필수 (자율 실행 비활성)"
         if action.action_tier is ActionTier.TIER_3 and action.approver_id == AUTO_APPROVER:
             return FailureReason.UNAPPROVED_ACTION, "Tier 3은 건별 사용자 승인 필수 (게이트 #4)"
         # 레거시 REPLACE(selected_candidate_id·campaign target)는 Meta ad/creative 모델과 안 맞아
@@ -346,6 +347,10 @@ class Executor:
         proposal: ActionProposal,
         key: str,
     ) -> ActionResult:
+        # REBALANCE_BUDGET은 타깃 순회로 처리하면 from/to 각각에서 리밸런스가 반복된다
+        # (액션 1건 = 두 다리 + 보상) — 전용 경로로 한 번만 처리한다.
+        if proposal.action_type == "REBALANCE_BUDGET":
+            return await self._call_rebalance(run, action, proposal, key)
         snapshots: list[dict[str, Any]] = []
         pending = False
         for index, target in enumerate(proposal.target_object_ids):
@@ -392,6 +397,161 @@ class Executor:
         run.advance(RunStatus.SUCCEEDED)
         return self._build_result(action, key, ResultStatus.SUCCESS, None, snapshots)
 
+    async def _call_rebalance(
+        self,
+        run: ExecutionRun,
+        action: ApprovedAction,
+        proposal: ActionProposal,
+        key: str,
+    ) -> ActionResult:
+        """REBALANCE_BUDGET 전용 — 감액(from)→증액(to), 증액 실패 시 감액 원복(보상) 1회.
+
+        총예산이 순간적으로도 늘지 않게 감액이 먼저다. 보상 성공=순변경 0(비-PARTIAL,
+        멱등 해제로 같은 승인 TTL 내 재시도 가능), 보상 실패=PARTIAL_FAILURE(박제 —
+        P5/게이트 #7, 같은 승인 재집행 차단 + 수동 복구 안내).
+        """
+
+        def _invalid(detail: str) -> ActionResult:
+            run.advance(RunStatus.FAILED)
+            return self._build_result(
+                action,
+                key,
+                ResultStatus.FAILED,
+                FailureReason.PLATFORM_ERROR,
+                [{"error": f"REBALANCE_BUDGET 계약 위반: {detail}"}],
+            )
+
+        em = proposal.evidence_metrics
+        targets = proposal.target_object_ids
+        try:
+            from_before = int(em["from_before_krw"])
+            from_after = int(em["from_after_krw"])
+            to_before = int(em["to_before_krw"])
+            to_after = int(em["to_after_krw"])
+            move = int(em["move_krw"])
+        except (KeyError, TypeError, ValueError):
+            return _invalid("evidence_metrics 필드 누락/불량")
+        # 최종 게이트 불변식 — 타깃 정확히 2개·상이, 감액분=증액분=move>0
+        # (총액 불변은 두 등식에서 자동 도출).
+        if len(targets) != 2 or targets[0] == targets[1]:
+            return _invalid("from/to 타깃은 서로 다른 2개여야 함")
+        if move <= 0 or from_before - from_after != move or to_after - to_before != move:
+            return _invalid("이동량 불일치 (감액분=증액분=move 위반)")
+        from_id, to_id = targets[0], targets[1]
+
+        snapshots: list[dict[str, Any]] = []
+
+        async def _leg(target: str, amount: int, suffix: str) -> ActionResult:
+            leg_key = f"{key}:{target}:{suffix}"
+            outcome = await self._call_with_retry(
+                run,
+                action,
+                proposal,
+                target,
+                leg_key,
+                call=lambda: self._writer.adjust_budget(target, amount, leg_key),
+            )
+            snapshots.append(
+                {
+                    "target": target,
+                    "leg": suffix,
+                    "status": str(outcome.status),
+                    "failure_reason": outcome.failure_reason,
+                    "response": outcome.platform_response_snapshot,
+                }
+            )
+            return outcome
+
+        dec = await _leg(from_id, from_after, "dec")
+        if dec.status is ResultStatus.FAILED:
+            # 아무것도 집행 안 됨 — execute()가 멱등키를 해제해 재시도 가능.
+            run.advance(RunStatus.FAILED, snapshot=snapshots[-1])
+            return self._build_result(
+                action,
+                key,
+                ResultStatus.FAILED,
+                dec.failure_reason or FailureReason.PLATFORM_ERROR,
+                snapshots,
+            )
+        if dec.status is not ResultStatus.SUCCESS:
+            # SUBMITTED_PENDING_REVIEW 등 불확정 — 적용 여부를 몰라 진행·보상 모두 불가.
+            return await self._halt_indeterminate(run, action, proposal, key, snapshots)
+        run.record_snapshot(snapshots[-1])
+
+        inc = await _leg(to_id, to_after, "inc")
+        if inc.status is ResultStatus.SUCCESS:
+            run.advance(RunStatus.SUCCEEDED)
+            return self._build_result(action, key, ResultStatus.SUCCESS, None, snapshots)
+        if inc.status is not ResultStatus.FAILED:
+            # 불확정 증액 — 나중에 적용될 수 있어 원복(보상)하면 이중 변경 위험. 박제.
+            return await self._halt_indeterminate(run, action, proposal, key, snapshots)
+
+        comp = await _leg(from_id, from_before, "comp")
+        if comp.status is ResultStatus.SUCCESS:
+            # 원복 완료 — 순변경 0. 비-PARTIAL이라 멱등키가 해제돼 같은 승인 TTL 내 재시도 가능.
+            snapshots.append({"compensation": "succeeded"})
+            run.advance(RunStatus.FAILED, snapshot=snapshots[-1])
+            await self._record(
+                run,
+                action,
+                proposal,
+                "executor.rebalance_compensated",
+                {"from": from_id, "to": to_id, "restored_krw": from_before},
+            )
+            return self._build_result(
+                action,
+                key,
+                ResultStatus.FAILED,
+                inc.failure_reason or FailureReason.PLATFORM_ERROR,
+                snapshots,
+            )
+
+        # 보상 실패·불확정 — 부분 변경 방치 상태. 박제(재집행 차단) + 수동 복구 안내.
+        snapshots.append(
+            {
+                "compensation": "failed",
+                "manual_restore_target": from_id,
+                "manual_restore_krw": from_before,
+            }
+        )
+        run.advance(RunStatus.HALTED, snapshot=snapshots[-1])
+        await self._record(
+            run,
+            action,
+            proposal,
+            "executor.partial_failure",
+            {"from": from_id, "to": to_id, "compensation": "failed", "snapshots": snapshots},
+        )
+        return self._build_result(
+            action, key, ResultStatus.FAILED, FailureReason.PARTIAL_FAILURE, snapshots
+        )
+
+    async def _halt_indeterminate(
+        self,
+        run: ExecutionRun,
+        action: ApprovedAction,
+        proposal: ActionProposal,
+        key: str,
+        snapshots: list[dict[str, Any]],
+    ) -> ActionResult:
+        """다리 결과가 성공도 실패도 아닌 불확정(pending 등) — 진행·보상 없이 박제.
+
+        재시도하면 불확정 다리가 이중 적용될 수 있어 PARTIAL_FAILURE로 봉인하고 사람이 본다.
+        (현 adjust_budget writer는 success/failed만 반환 — executor 계약 방어용.)
+        """
+        snapshots.append({"indeterminate": True})
+        run.advance(RunStatus.HALTED, snapshot=snapshots[-1])
+        await self._record(
+            run,
+            action,
+            proposal,
+            "executor.partial_failure",
+            {"indeterminate": True, "snapshots": snapshots},
+        )
+        return self._build_result(
+            action, key, ResultStatus.FAILED, FailureReason.PARTIAL_FAILURE, snapshots
+        )
+
     async def _call_with_retry(
         self,
         run: ExecutionRun,
@@ -399,13 +559,16 @@ class Executor:
         proposal: ActionProposal,
         target: str,
         idem_key: str,
+        call: Callable[[], Awaitable[ActionResult]] | None = None,
     ) -> ActionResult:
         timeout_attempts = 0
         rate_attempts = 0
         while True:
             run.record_attempt()
             try:
-                outcome = await self._dispatch(proposal, target, idem_key)
+                outcome = await (
+                    call() if call is not None else self._dispatch(proposal, target, idem_key)
+                )
             except TimeoutError:
                 outcome = self._build_result(
                     action, idem_key, ResultStatus.FAILED, FailureReason.TIMEOUT, None
