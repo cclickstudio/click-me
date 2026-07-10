@@ -352,7 +352,8 @@ function ActionRow({
           개선 시안 만들기 →
         </Link>
       )}
-      {rerunBtn}
+      {/* 미집행 행은 대응하는 Meta 캠페인이 없어 재시뮬 버튼을 숨긴다 */}
+      {!item.unlaunched && rerunBtn}
     </div>
   );
 }
@@ -367,7 +368,15 @@ function BeforeAfterCard({
   simLoading: string | null;
 }) {
   const [open, setOpen] = useState(false);
-  const v = VERDICT[item.verdict];
+  // 미집행 시뮬(캠페인 미연결) — 실측 자리는 '집행 전'으로 비우고 배지도 구분한다.
+  const unlaunched = !!item.unlaunched;
+  const v = unlaunched
+    ? {
+        label: '집행 전 (예측만)',
+        cls: 'bg-violet-50 text-violet-700 dark:bg-violet-900/20 dark:text-violet-300',
+        accent: 'border-l-[#8B5CF6]',
+      }
+    : VERDICT[item.verdict];
   const p = item.prediction;
   const a = item.actual;
   const running = simLoading === item.campaign_id;
@@ -387,7 +396,7 @@ function BeforeAfterCard({
           {v.label}
         </span>
         <span className="text-xs text-ink-tertiary tabular-nums shrink-0">
-          ₩{a.spend_krw.toLocaleString()}
+          {unlaunched ? '미집행' : `₩${a.spend_krw.toLocaleString()}`}
         </span>
         <span
           className={`text-ink-muted text-xs shrink-0 transition-transform ${open ? 'rotate-180' : ''}`}
@@ -417,13 +426,15 @@ function BeforeAfterCard({
           }}
           act={{
             label: 'CTR(클릭률)',
-            value: `${(a.ctr * 100).toFixed(2)}%`,
-            num: a.ctr,
+            value: unlaunched ? '미집행' : `${(a.ctr * 100).toFixed(2)}%`,
+            num: unlaunched ? null : a.ctr,
             threshold: 0.01,
             strong: item.act_strong,
-            caption: capText(item.act_strong, '양호 ≥1%', '약함 <1%', '판정 대기'),
+            caption: unlaunched
+              ? '집행 후 채워져요'
+              : capText(item.act_strong, '양호 ≥1%', '약함 <1%', '판정 대기'),
           }}
-          onRun={() => onRunSim(item.campaign_id)}
+          onRun={unlaunched ? undefined : () => onRunSim(item.campaign_id)}
           running={running}
         />
         <div className="border-t border-line" />
@@ -440,28 +451,37 @@ function BeforeAfterCard({
           }}
           act={{
             label: 'CVR(전환율)',
-            value: a.cvr != null ? `${(a.cvr * 100).toFixed(1)}%` : '집계 전',
-            num: a.cvr ?? null,
+            value: unlaunched ? '미집행' : a.cvr != null ? `${(a.cvr * 100).toFixed(1)}%` : '집계 전',
+            num: unlaunched ? null : (a.cvr ?? null),
             threshold: 0.02,
             strong: item.purchase_act_strong,
-            caption: capText(
-              item.purchase_act_strong,
-              '양호 ≥2%',
-              '약함 <2%',
-              a.cvr == null ? '전환 잡히면 표시' : '판정 대기',
-            ),
+            caption: unlaunched
+              ? '집행 후 채워져요'
+              : capText(
+                  item.purchase_act_strong,
+                  '양호 ≥2%',
+                  '약함 <2%',
+                  a.cvr == null ? '전환 잡히면 표시' : '판정 대기',
+                ),
           }}
-          onRun={() => onRunSim(item.campaign_id)}
+          onRun={unlaunched ? undefined : () => onRunSim(item.campaign_id)}
           running={running}
         />
       </div>
 
-      {/* 펼침 — 판정 근거 + 전/후 전체 상세 + 다음 행동 */}
+      {/* 펼침 — 판정 근거 + 전/후 전체 상세 + 다음 행동 (미집행은 실측 대신 안내) */}
       {open && (
         <div className="px-5 pb-5 pt-4 space-y-3 border-t border-line">
-          <VerdictReason item={item} p={p} a={a} />
+          {unlaunched ? (
+            <p className="rounded-xl border border-line bg-surface-1 p-4 text-[11px] text-ink-tertiary">
+              아직 캠페인으로 집행되지 않은 시뮬 예측이에요. 이 광고를 캠페인으로 집행하면
+              실측(Meta)이 자동으로 채워지고 예측과 나란히 비교돼요.
+            </p>
+          ) : (
+            <VerdictReason item={item} p={p} a={a} />
+          )}
           {p && <SimDetail p={p} />}
-          <ActDetail a={a} />
+          {!unlaunched && <ActDetail a={a} />}
           <ActionRow item={item} onRunSim={onRunSim} simLoading={simLoading} />
         </div>
       )}
