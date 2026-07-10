@@ -533,38 +533,49 @@ export function CampaignDetail({
         </div>
       )}
 
-      {breakdownTabs.length > 0 && (
+      {(breakdownTabs.length > 0 || creatives.length > 0) && (
         <div className="mt-4 flex flex-col gap-x-6 gap-y-3 lg:flex-row lg:items-stretch">
-          {/* 왼쪽: 분해 탭 + 차트(카드 높이만큼 채움) */}
+          {/* 왼쪽: 분해 탭 + 차트 — 데이터 없으면 자리만 유지(오른쪽 시안 폭을 다른 캠페인과 통일) */}
           <div className="flex w-full flex-col lg:flex-1">
-            <div className="mb-3 flex h-[30px] shrink-0 items-center gap-1.5">
-              {breakdownTabs.map((t) => {
-                const on = t.key === tab;
-                return (
-                  <button
-                    key={t.key}
-                    type="button"
-                    onClick={() => setActiveTab(t.key)}
-                    className={`rounded-lg px-3 py-1.5 text-[12px] font-semibold transition-colors ${
-                      on
-                        ? 'bg-[#E8F3FF] text-primary dark:bg-[#1E3A5F] dark:text-[#7BB4F5]'
-                        : 'text-ink-tertiary hover:bg-[#F2F4F6] dark:hover:bg-[#2D3748]'
-                    }`}
-                  >
-                    {t.label}
-                  </button>
-                );
-              })}
-            </div>
-            <div className="flex min-h-0 flex-1 items-center">
-              {tab === 'demographics' ? (
-                <DemographicBars rows={demographics} />
-              ) : (
-                <PlatformDonut rows={platforms} />
-              )}
-            </div>
+            {breakdownTabs.length > 0 ? (
+              <>
+                <div className="mb-3 flex h-[30px] shrink-0 items-center gap-1.5">
+                  {breakdownTabs.map((t) => {
+                    const on = t.key === tab;
+                    return (
+                      <button
+                        key={t.key}
+                        type="button"
+                        onClick={() => setActiveTab(t.key)}
+                        className={`rounded-lg px-3 py-1.5 text-[12px] font-semibold transition-colors ${
+                          on
+                            ? 'bg-[#E8F3FF] text-primary dark:bg-[#1E3A5F] dark:text-[#7BB4F5]'
+                            : 'text-ink-tertiary hover:bg-[#F2F4F6] dark:hover:bg-[#2D3748]'
+                        }`}
+                      >
+                        {t.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="flex min-h-0 flex-1 items-center">
+                  {tab === 'demographics' ? (
+                    <DemographicBars rows={demographics} />
+                  ) : (
+                    <PlatformDonut rows={platforms} />
+                  )}
+                </div>
+              </>
+            ) : (
+              <>
+                <div className="mb-3 h-[30px] shrink-0" />
+                <div className="flex min-h-0 flex-1 items-center justify-center rounded-xl border border-dashed border-line px-4 text-center text-[12px] text-ink-muted">
+                  집행 데이터가 쌓이면 인구통계·플랫폼 분해가 표시됩니다.
+                </div>
+              </>
+            )}
           </div>
-          {/* 오른쪽: 대표 광고 시안(헤더는 탭과 같은 라인, 높이는 차트와 동일) */}
+          {/* 오른쪽: 대표 광고 시안 — creative만 있으면 분해 데이터 없어도 단독 표시 */}
           {creatives.length > 0 && (
             <div className="flex w-full flex-col lg:flex-1">
               <p className="mb-3 flex h-[30px] items-center gap-1.5 text-[12px] font-semibold text-ink-secondary">

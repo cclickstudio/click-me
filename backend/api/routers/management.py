@@ -208,6 +208,25 @@ async def _request_reader(
     return await _require_reader(db, await _require_org_id(user, db))
 
 
+async def _request_reader_lenient(
+    user: User | None = Depends(_optional_user),
+    db: AsyncSession = Depends(get_db),
+) -> AdPlatformReader | None:
+    """`_request_reader`의 관대한 변형 — Meta 미연결(409 등)이면 None으로 계속 진행.
+
+    성과 비교는 미집행 시뮬(예측만) 행이 있어 Meta 연결 전 org에서도 보여줄 게 있다.
+    무인증(401)은 그대로 올린다 — 관대해지는 건 '연결 안 됨'뿐.
+    """
+    if getattr(settings, "use_mock", True):
+        return build_reader(settings)
+    if user is None:
+        raise HTTPException(401, "인증 토큰이 없습니다.")
+    try:
+        return await _require_reader(db, await _require_org_id(user, db))
+    except HTTPException:
+        return None
+
+
 async def _request_writer(
     user: User | None = Depends(_optional_user),
     db: AsyncSession = Depends(get_db),
@@ -1030,9 +1049,69 @@ async def _campaign_links(
     return creative_by_meta, sim_by_meta
 
 
+#: 캠페인 미연결(미집행) 완료 시뮬 — 성과 비교 '집행 전(예측만)' 행 후보.
+#: simulation 도메인 ORM import 금지(도메인 경계) — SimPredictionReader와 같은 raw SQL 접근.
+#: 최근 20건 캡(화면 과밀 방지) — 링크되면 캠페인 행으로 흡수되므로 대기열은 짧게 유지된다.
+_UNLINKED_SIMS_SQL = text(
+    """
+    SELECT s.id, a.title
+    FROM simulations s
+    LEFT JOIN ads a ON a.id = s.ad_id
+    WHERE s.organization_id = :org AND s.deleted_at IS NULL AND s.status = 'COMPLETED'
+    ORDER BY s.completed_at DESC NULLS LAST
+    LIMIT 20
+    """
+)
+
+
+async def _unlaunched_sim_rows(
+    db: AsyncSession,
+    org_id: UUID,
+    pred_reader,
+    sim_by_meta: dict[str, tuple[str, str]],
+    now: datetime,
+) -> list[dict]:
+    """미집행 시뮬 → '집행 전(예측만)' 행. 생성한 광고로 돌린 시뮬도 성과 비교에 보이게.
+
+    캠페인 링크가 없으면 기존엔 이 화면에 아예 안 떴다(자동 링크는 from_campaign 시뮬만).
+    실측은 0(미집행)으로 채우고 unlaunched 플래그로 프론트가 '집행 전' 표기를 구분한다.
+    """
+    linked_sids = {sid for sid, _tenant in sim_by_meta.values()}
+    try:
+        sim_rows = (await db.execute(_UNLINKED_SIMS_SQL, {"org": str(org_id)})).all()
+    except Exception:  # noqa: BLE001 — 조회 실패해도 캠페인 행은 그대로
+        return []
+    items: list[dict] = []
+    for sid_raw, title in sim_rows:
+        sid = str(sid_raw)
+        if sid in linked_sids:
+            continue  # 링크된 시뮬은 캠페인 행에서 이미 예측으로 표시됨
+        prediction = await pred_reader.get_prediction(sid, str(org_id))
+        if prediction is None:  # aggregate 없음(집계 전·삭제) — 표시 불가
+            continue
+        actual = RealOutcome(
+            campaign_id=f"unlaunched:{sid}",
+            impressions=0,
+            reach=0,
+            spend_krw=0,
+            ctr=0.0,
+            cpc_krw=0,
+            cpm_krw=0,
+            as_of=now,
+        )
+        row = compute_before_after(
+            f"unlaunched:{sid}", title or "(제목 없는 광고)", prediction, actual
+        ).model_dump(mode="json")
+        row["simulation_id"] = sid
+        row["unlaunched"] = True
+        row["rationale"] = "미집행 — 아직 캠페인과 연결되지 않은 시뮬 예측이에요"
+        items.append(row)
+    return items
+
+
 @router.get("/compare/before-after")
 async def compare_before_after(
-    reader=Depends(_request_reader),
+    reader=Depends(_request_reader_lenient),
     user: User | None = Depends(_optional_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -1051,15 +1130,18 @@ async def compare_before_after(
     )
     creative_by_meta, sim_by_meta = await _campaign_links(db, org_id)
     items: list[dict] = []
+    rate_limited_msg: str | None = None
     try:
-        campaigns = await reader.list_campaigns()
+        # reader None = Meta 미연결 org(lenient) — 캠페인 행 없이 미집행 시뮬 행만 노출.
+        campaigns = await reader.list_campaigns() if reader is not None else []
     except MetaApiError as exc:
         # Meta 요청 한도(code 17 등) — "캠페인 없음"으로 오해되지 않게 표면화.
+        # 미집행 시뮬 행은 DB만 필요하므로 Meta가 막혀도 아래에서 계속 붙인다.
+        campaigns = []
         if exc.is_rate_limited:
-            return {"items": [], "rate_limited": "Meta 요청 한도 — 잠시 후 다시 시도하세요."}
-        return {"items": []}
-    except Exception:  # noqa: BLE001 — 그 외 목록 실패면 빈 결과
-        return {"items": []}
+            rate_limited_msg = "Meta 요청 한도 — 잠시 후 다시 시도하세요."
+    except Exception:  # noqa: BLE001 — 그 외 목록 실패면 캠페인 행 없이 진행
+        campaigns = []
 
     async def _row(c) -> dict | None:
         cid = c.campaign_id
@@ -1077,7 +1159,13 @@ async def compare_before_after(
     # 캠페인 단위 병렬 — 순차 N회 Meta 왕복이 직렬로 쌓이지 않게(_list_campaigns_real과 동일).
     rows = await asyncio.gather(*(_row(c) for c in campaigns))
     items = [r for r in rows if r is not None]
-    return {"items": items}
+    # 미집행 시뮬(캠페인 미연결) — '집행 전(예측만)' 행으로 뒤에 추가(live org에서만).
+    if org_id is not None:
+        items += await _unlaunched_sim_rows(db, org_id, pred_reader, sim_by_meta, now)
+    resp: dict = {"items": items}
+    if rate_limited_msg:
+        resp["rate_limited"] = rate_limited_msg
+    return resp
 
 
 @router.get("/campaigns/{campaign_id}/targeting")
@@ -1113,10 +1201,18 @@ async def link_simulation(
         sim_uuid = UUID(body.simulation_id)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail="simulation_id 형식 오류") from exc
-    owned = await db.scalar(
-        text("SELECT 1 FROM simulations WHERE id = :sid AND organization_id = :org"),
-        {"sid": str(sim_uuid), "org": str(org_id)},
-    )
+    # ADMIN은 교차 워크스페이스 링크 허용(존재만 검증) — 제너레이터 org에서 돌린 시뮬을
+    # 매니지먼트 org 캠페인에 붙이는 흐름. 비-ADMIN은 자기 org 시뮬만(기존 격리 유지).
+    if (getattr(user, "role", "") or "").upper() == "ADMIN":
+        owned = await db.scalar(
+            text("SELECT 1 FROM simulations WHERE id = :sid AND deleted_at IS NULL"),
+            {"sid": str(sim_uuid)},
+        )
+    else:
+        owned = await db.scalar(
+            text("SELECT 1 FROM simulations WHERE id = :sid AND organization_id = :org"),
+            {"sid": str(sim_uuid), "org": str(org_id)},
+        )
     if not owned:
         raise HTTPException(status_code=422, detail="해당 시뮬을 찾을 수 없거나 권한이 없습니다.")
     existing = await db.scalar(
@@ -1129,11 +1225,9 @@ async def link_simulation(
     if existing:
         existing.simulation_id = str(sim_uuid)
     else:
+        # MetaConnection은 soft delete 컬럼이 없다(org당 1건 upsert) — org 필터만.
         conn = await db.scalar(
-            select(MetaConnection).where(
-                MetaConnection.organization_id == str(org_id),
-                MetaConnection.deleted_at.is_(None),
-            )
+            select(MetaConnection).where(MetaConnection.organization_id == str(org_id))
         )
         ad_account_id = conn.ad_account_id if conn else ""
         db.add(
