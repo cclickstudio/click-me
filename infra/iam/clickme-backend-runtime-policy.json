@@ -1,0 +1,24 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "S3AssetsReadWrite",
+      "Effect": "Allow",
+      "Action": ["s3:PutObject", "s3:GetObject"],
+      "Resource": "arn:aws:s3:::clickme-assets/*"
+    },
+    {
+      "Sid": "CognitoUserLifecycle",
+      "Effect": "Allow",
+      "Action": [
+        "cognito-idp:AdminCreateUser",
+        "cognito-idp:AdminSetUserPassword",
+        "cognito-idp:AdminAddUserToGroup",
+        "cognito-idp:AdminDisableUser",
+        "cognito-idp:AdminEnableUser",
+        "cognito-idp:AdminDeleteUser"
+      ],
+      "Resource": "arn:aws:cognito-idp:us-west-2:445459853661:userpool/us-west-2_iHteTHXO0"
+    }
+  ]
+}
