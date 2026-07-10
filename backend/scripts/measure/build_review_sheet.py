@@ -357,6 +357,16 @@ def main() -> None:
     parser.add_argument(
         "--no-prefill", action="store_true", help="VLM CSV가 있어도 프리필하지 않음(백지 검수)"
     )
+    parser.add_argument(
+        "--gen-model",
+        default=None,
+        help="생성(이미지) 모델명 - 헤더 표기용 (예: gpt-image-1, gemini-2.5-flash-image)",
+    )
+    parser.add_argument(
+        "--judge-model",
+        default="gpt-4o",
+        help="VLM 판정 모델명 - 헤더 표기용 (measure_text_accuracy 기본 gpt-4o)",
+    )
     args = parser.parse_args()
 
     img_dir = Path(args.dir)
@@ -401,8 +411,10 @@ def main() -> None:
     title = f"검수 — {img_dir.name} ({len(items)}장)"
 
     mode = "감사(VLM 프리필)" if audit else "백지"
+    gen_txt = f"  ·  생성모델 {args.gen_model}" if args.gen_model else ""
     header_text = (
         f"{img_dir}  ·  {len(items)}장  ·  method={manifest.get('method') or '?'}  ·  {mode} 모드"
+        f"{gen_txt}  ·  판정모델 {args.judge_model}"
     )
     page = (
         _HTML.replace("__DATA__", data_json)
