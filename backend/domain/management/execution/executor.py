@@ -417,7 +417,7 @@ class Executor:
                 action,
                 key,
                 ResultStatus.FAILED,
-                FailureReason.PLATFORM_ERROR,
+                FailureReason.UNSUPPORTED_ACTION,
                 [{"error": f"REBALANCE_BUDGET 계약 위반: {detail}"}],
             )
 
@@ -442,6 +442,9 @@ class Executor:
         snapshots: list[dict[str, Any]] = []
 
         async def _leg(target: str, amount: int, suffix: str) -> ActionResult:
+            # leg 키는 감사 식별자일 뿐 dedup 키가 아니다 — 보상 성공 후 같은 승인 재시도가
+            # 동일 dec 키를 재사용하므로, writer/플랫폼이 이 키로 dedup하면 감액이 no-op되어
+            # 총액 불변이 깨진다. 액션 단위 멱등은 execute()의 키가 담당한다.
             leg_key = f"{key}:{target}:{suffix}"
             outcome = await self._call_with_retry(
                 run,
@@ -480,6 +483,7 @@ class Executor:
 
         inc = await _leg(to_id, to_after, "inc")
         if inc.status is ResultStatus.SUCCESS:
+            run.record_snapshot(snapshots[-1])
             run.advance(RunStatus.SUCCEEDED)
             return self._build_result(action, key, ResultStatus.SUCCESS, None, snapshots)
         if inc.status is not ResultStatus.FAILED:

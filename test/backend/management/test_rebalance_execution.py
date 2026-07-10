@@ -60,30 +60,30 @@ async def _state_v1(_ad_account_id: str) -> str:
 
 def make_rebalance_proposal(**overrides) -> ActionProposal:
     now = datetime.now(UTC)
-    base = dict(
-        proposal_id=f"prop_{uuid4().hex[:8]}",
-        tenant_id="tenant-1",
-        ad_account_id="act_1",
-        target_object_ids=("camp_from", "camp_to"),
-        action_type="REBALANCE_BUDGET",
-        action_tier=ActionTier.TIER_2,
-        evidence_metrics={
+    base = {
+        "proposal_id": f"prop_{uuid4().hex[:8]}",
+        "tenant_id": "tenant-1",
+        "ad_account_id": "act_1",
+        "target_object_ids": ("camp_from", "camp_to"),
+        "action_type": "REBALANCE_BUDGET",
+        "action_tier": ActionTier.TIER_2,
+        "evidence_metrics": {
             "from_before_krw": 50_000,
             "from_after_krw": 40_000,
             "to_before_krw": 30_000,
             "to_after_krw": 40_000,
             "move_krw": 10_000,
         },
-        metrics_as_of=now,
-        hypothesis="테스트 리밸런스",
-        confidence=1.0,
-        expected_state_version="state_v1",
-        budget_before_krw=80_000,
-        budget_after_krw=80_000,
-        max_total_spend_krw=0,
-        expires_at=now + timedelta(minutes=10),
-        approval_policy_version=APPROVAL_POLICY_VERSION,
-    )
+        "metrics_as_of": now,
+        "hypothesis": "테스트 리밸런스",
+        "confidence": 1.0,
+        "expected_state_version": "state_v1",
+        "budget_before_krw": 80_000,
+        "budget_after_krw": 80_000,
+        "max_total_spend_krw": 0,
+        "expires_at": now + timedelta(minutes=10),
+        "approval_policy_version": APPROVAL_POLICY_VERSION,
+    }
     base.update(overrides)
     return finalize_proposal(ActionProposal(**base))
 
@@ -238,6 +238,38 @@ async def test_rebalance_pending_leg_is_sealed_without_compensation():
     assert any(s.get("indeterminate") for s in snaps)
 
 
+async def test_rebalance_pending_first_leg_is_sealed():
+    """감액(dec) 다리가 불확정이면 증액 진행 없이 박제 — 첫 다리도 SUCCESS만 성공."""
+    writer = FakeRebalanceWriter(pending={"dec"})
+    proposal = make_rebalance_proposal()
+    action, store = await _approved(proposal)
+    executor = build_rebalance_executor(writer, store)
+
+    result = await executor.execute(action, proposal)
+
+    assert result.status is ResultStatus.FAILED
+    assert result.failure_reason is FailureReason.PARTIAL_FAILURE
+    assert len(writer.calls) == 1  # dec만 — inc·comp 진행 없음
+    snaps = (result.platform_response_snapshot or {}).get("targets") or []
+    assert any(s.get("indeterminate") for s in snaps)
+
+
+async def test_rebalance_pending_compensation_is_sealed():
+    """보상(comp) 다리가 불확정이면 보상 실패와 동일하게 박제(부분 변경 방치)."""
+    writer = FakeRebalanceWriter(fail={"inc"}, pending={"comp"})
+    proposal = make_rebalance_proposal()
+    action, store = await _approved(proposal)
+    executor = build_rebalance_executor(writer, store)
+
+    result = await executor.execute(action, proposal)
+
+    assert result.status is ResultStatus.FAILED
+    assert result.failure_reason is FailureReason.PARTIAL_FAILURE
+    assert len(writer.calls) == 3  # dec, inc, comp
+    snaps = (result.platform_response_snapshot or {}).get("targets") or []
+    assert any(s.get("compensation") == "failed" for s in snaps)
+
+
 # ── 계약 불변식 방어 (executor = 최종 지출 게이트) ─────────────────
 
 
@@ -251,6 +283,7 @@ async def test_rebalance_missing_evidence_fails_without_calls():
     result = await executor.execute(action, proposal)
 
     assert result.status is ResultStatus.FAILED
+    assert result.failure_reason is FailureReason.UNSUPPORTED_ACTION
     assert writer.calls == []
 
 
@@ -272,6 +305,7 @@ async def test_rebalance_move_mismatch_fails_without_calls():
     result = await executor.execute(action, proposal)
 
     assert result.status is ResultStatus.FAILED
+    assert result.failure_reason is FailureReason.UNSUPPORTED_ACTION
     assert writer.calls == []
 
 
@@ -285,4 +319,5 @@ async def test_rebalance_same_target_fails_without_calls():
     result = await executor.execute(action, proposal)
 
     assert result.status is ResultStatus.FAILED
+    assert result.failure_reason is FailureReason.UNSUPPORTED_ACTION
     assert writer.calls == []
