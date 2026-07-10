@@ -598,7 +598,7 @@ from fastapi.testclient import TestClient
 from api.routers import management
 from core.auth import get_current_user
 from core.db import get_db
-from domain.management.contracts.enums import ResultStatus
+from domain.management.contracts.enums import FailureReason, ResultStatus
 from domain.management.contracts.schemas import ActionResult
 
 
@@ -755,6 +755,35 @@ def test_rebalance_commit_rejects_to_after_below_min(env):
     )
     assert res.status_code == 422
     assert "proposal" not in captured
+
+
+def test_rebalance_commit_surfaces_indeterminate_guidance(env, monkeypatch):
+    """불확정(PARTIAL 박제) 결과는 generic 실패가 아닌 '확인 후 진행' 안내를 내려준다.
+
+    generic 실패로 보이면 사용자가 새 제안으로 재시도해 pending 다리가 이중 적용될 수 있다.
+    """
+    client, _reader, _captured = env
+
+    class _IndeterminateExecutor:
+        async def execute(self, action, proposal):
+            return ActionResult(
+                result_id="r1",
+                approval_id=action.approval_id,
+                status=ResultStatus.FAILED,
+                failure_reason=FailureReason.PARTIAL_FAILURE,
+                platform_response_snapshot={"targets": [{"indeterminate": True}]},
+                executed_at=datetime.now(UTC),
+                idempotency_key="k",
+            )
+
+    monkeypatch.setattr(
+        management, "_get_executor", lambda writer=None: _IndeterminateExecutor()
+    )
+    res = client.post("/api/management/budget/rebalance-commit", json=_BODY)
+    assert res.status_code == 200
+    body = res.json()
+    assert body.get("indeterminate") is True
+    assert "확인" in body["error_message"]  # 재시도 유도가 아닌 상태 확인 안내
 ```
 
 - [ ] **Step 2: 테스트가 실패하는지 확인**
@@ -894,6 +923,14 @@ async def budget_rebalance_commit(
             "수동 복구가 필요해요. 같은 승인으로는 재집행되지 않아요."
         )
         return response
+    if _find_in_snapshot(result.platform_response_snapshot, "indeterminate"):
+        # 불확정 박제 — generic 실패로 보이면 재시도(새 제안)를 유도해 이중 적용 위험.
+        response["indeterminate"] = True
+        response["error_message"] = (
+            "일부 변경이 플랫폼에서 아직 확정되지 않았어요 — 바로 재시도하지 말고 "
+            "현재 예산 상태를 확인한 뒤 진행해 주세요."
+        )
+        return response
     if comp == "succeeded":
         response["compensation"] = "succeeded"
     msg = _find_in_snapshot(result.platform_response_snapshot, "user_msg")
@@ -911,7 +948,7 @@ async def budget_rebalance_commit(
 - [ ] **Step 4: 테스트 통과 확인**
 
 Run: `cd backend && uv run pytest ../test/backend/management/test_rebalance_commit_router.py -v`
-Expected: 6개 PASS.
+Expected: 7개 PASS.
 
 - [ ] **Step 5: 문서 인덱스 갱신** — 라우터 추가 시 자동 생성 스크립트 실행.
 
@@ -1215,6 +1252,7 @@ git commit -m "add: 챗 apply_rebalance 툴 + rebalance_action 위젯 (카드 �
         result: ActionResult;
         error_message?: string;
         compensation?: 'succeeded' | 'failed';
+        indeterminate?: boolean;
       }>(`/management/budget/rebalance-commit`, {
         method: "POST",
         body: JSON.stringify(body),
