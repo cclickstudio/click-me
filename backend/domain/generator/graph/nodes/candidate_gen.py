@@ -294,33 +294,33 @@ async def generate_candidates(state: GenerationState, config: RunnableConfig) ->
             improvement_context=improvement_context,
         )
 
-    # 카피 3개를 LLM 1회 호출로 일괄 생성 (openai 모드만).
-    # gemini 모드는 generate_image_and_copy가 이미지와 함께 카피를 만든다.
-    batch_copies: list = [None, None, None]
-    if not gemini:
-        batch_copies = await generate_copies_batch(
-            product_analysis=product_analysis,
-            strategy_outputs=[
-                (
-                    StrategyOutput(
-                        strategy=plan.strategy,
-                        strategy_description=plan.strategy_description,
-                        rationale=plan.rationale,
-                    ),
-                    plan.template,
-                )
-                for plan in plans
-            ],
-            improvement_context=improvement_context,
-        )
+    # 카피 3개를 텍스트 LLM 1회 호출로 일괄 생성 (두 모드 공통).
+    # Gemini 이미지 모델(특히 3-pro)은 카피 텍스트를 자주 누락(이미지만 반환)하므로,
+    # 카피는 이미지 모델에 의존하지 않고 항상 텍스트 LLM으로 만든다.
+    batch_copies = await generate_copies_batch(
+        product_analysis=product_analysis,
+        strategy_outputs=[
+            (
+                StrategyOutput(
+                    strategy=plan.strategy,
+                    strategy_description=plan.strategy_description,
+                    rationale=plan.rationale,
+                ),
+                plan.template,
+            )
+            for plan in plans
+        ],
+        improvement_context=improvement_context,
+    )
 
     async def build(idx: int, variant_id: str, plan: StrategyPlan) -> dict:
         nonlocal done
 
         if gemini:
-            # gemini 모드 — 한 Gemini 호출로 카피·이미지 동시 생성.
-            # 상품 이미지가 있으면 원본을 멀티모달 입력으로 함께 넣어 참조(픽셀 보존은 보장 안 됨).
-            image_bytes, ad_copy = await generate_image_and_copy(
+            # gemini 모드 — 이미지는 Gemini로 생성(상품 있으면 원본 멀티모달 참조, 픽셀 보존 미보장).
+            # 카피는 배치(텍스트 LLM)를 사용 — Gemini 이미지 모델이 카피 텍스트를 자주 누락하기 때문.
+            ad_copy = batch_copies[idx]
+            image_bytes, _ = await generate_image_and_copy(
                 product_analysis=product_analysis,
                 strategy=plan.strategy,
                 template=plan.template,
