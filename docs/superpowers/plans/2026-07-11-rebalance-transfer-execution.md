@@ -4,7 +4,7 @@
 
 **Goal:** 예산 리밸런싱(캠페인 간 이전) 제안을 승인 1건·원자 액션 1건(REBALANCE_BUDGET)으로 Meta 실집행까지 연결한다 — 보상(원복) 포함, 챗 카드·스케줄러 알림·프론트 1-call 교체까지.
 
-**Architecture:** 스펙 `docs/superpowers/specs/2026-07-11-rebalance-transfer-execution-design.md` 기준. executor `_call_targets` 초입에서 `REBALANCE_BUDGET`을 전용 함수 `_call_rebalance`로 분기(타깃 순회 밖) — 감액→증액→실패 시 보상 1회. 라우터는 `POST /budget/rebalance-commit`(budget-commit 골격 재사용). 챗은 `apply_rebalance` 툴 → `rebalance_action` 위젯 카드(카드 클릭 = 승인). 단일 adjust는 기존 budget-commit 유지.
+**Architecture:** 스펙 `docs/superpowers/specs/2026-07-11-rebalance-transfer-execution-design.md` 기준. executor `_call_targets` 초입에서 `REBALANCE_BUDGET`을 전용 함수 `_call_rebalance`로 분기(타깃 순회 밖) — 불변식 검증 후 감액→증액→실패 시 보상 1회. 라우터는 `POST /budget/rebalance-commit`(budget-commit 골격 재사용). 챗은 `apply_rebalance` 툴 → `rebalance_action` 위젯 카드(카드 클릭 = 승인). 단일 adjust는 기존 budget-commit 유지.
 
 **Tech Stack:** FastAPI + pydantic(계약), pytest(uv), Next.js/TS(pnpm), LangChain @tool.
 
@@ -15,14 +15,16 @@
 
 ---
 
-### Task 1: 계약·정책 — REBALANCE_BUDGET 지원 등록 + Tier 2 게이트 완화
+### Task 1: executor — REBALANCE_BUDGET 활성화 + 전용 실행 경로 (원자 커밋)
+
+계약 등록(SUPPORTED_ACTION_TYPES·Tier 2 게이트)과 `_call_rebalance` 구현을 **한 커밋**으로 묶는다 — 등록만 먼저 커밋하면 "supported인데 집행 불가"인 반쪽 상태가 히스토리에 남는다.
 
 **Files:**
-- Modify: `backend/domain/management/execution/executor.py:46-55` (SUPPORTED_ACTION_TYPES), `:317-318` (_validate Tier 2)
+- Modify: `backend/domain/management/execution/executor.py` — `:46-55`(SUPPORTED_ACTION_TYPES), `:317-318`(_validate Tier 2), `_call_targets`(342줄) 초입 분기, `_call_with_retry`(395줄) call 파라미터, `_call_rebalance` 신규
 - Modify: `backend/domain/management/contracts/policy.py:22` (주석)
 - Test: `test/backend/management/test_rebalance_execution.py` (신규)
 
-- [ ] **Step 1: 실패하는 테스트 작성** — 신규 파일 `test/backend/management/test_rebalance_execution.py` 생성. 이 파일의 헬퍼(fake writer·제안·executor 빌더)는 Task 2 테스트도 같이 쓴다.
+- [ ] **Step 1: 실패하는 테스트 작성** — 신규 파일 `test/backend/management/test_rebalance_execution.py` 전체.
 
 ```python
 # 리밸런스(REBALANCE_BUDGET) 원자 집행 — 전용 경로·보상·멱등·Tier2 게이트 검증
@@ -129,20 +131,7 @@ async def _approved(proposal, approver="user-1", store=None):
     return action, store
 
 
-# ── Task 1: Tier 2 게이트 ─────────────────────────────────────────
-
-
-async def test_tier2_user_approval_passes_gate():
-    """사용자 승인 TIER_2는 INVALID_TIER로 거부되지 않는다."""
-    writer = FakeRebalanceWriter()
-    proposal = make_rebalance_proposal()
-    action, store = await _approved(proposal, approver="user-1")
-    executor = build_rebalance_executor(writer, store)
-
-    result = await executor.execute(action, proposal)
-
-    assert result.failure_reason is not FailureReason.INVALID_TIER
-    assert result.failure_reason is not FailureReason.UNSUPPORTED_ACTION
+# ── Tier 2 게이트 ────────────────────────────────────────────────
 
 
 async def test_tier2_auto_approver_blocked():
@@ -157,74 +146,13 @@ async def test_tier2_auto_approver_blocked():
     assert result.status is ResultStatus.REJECTED
     assert result.failure_reason is FailureReason.INVALID_TIER
     assert writer.calls == []
-```
 
-- [ ] **Step 2: 테스트가 실패하는지 확인**
 
-Run: `cd backend && uv run pytest ../test/backend/management/test_rebalance_execution.py -v`
-Expected: `test_tier2_user_approval_passes_gate` FAIL — 현재는 `UNSUPPORTED_ACTION` 또는 `INVALID_TIER`로 거부됨. `test_tier2_auto_approver_blocked`는 PASS일 수 있음(현행도 차단이므로) — 첫 테스트 실패만 확인하면 됨.
-
-- [ ] **Step 3: 구현** — `backend/domain/management/execution/executor.py`
-
-46-55줄 `SUPPORTED_ACTION_TYPES` 튜플에 한 줄 추가.
-
-```python
-    "CHANGE_BID_STRATEGY",  # 에스컬레이션 사다리 2순위 — 입찰 전략 변경 (direct)
-    "REBALANCE_BUDGET",  # Tier 2 — 캠페인 간 일예산 이전(총액 불변), 전용 경로 _call_rebalance
-)
-```
-
-317-318줄의 무조건 차단을 Tier 3 게이트(319줄)와 같은 패턴으로 교체.
-
-```python
-# 변경 전
-        if action.action_tier is ActionTier.TIER_2:
-            return FailureReason.INVALID_TIER, "Tier 2 자동 실행은 v1 비활성"
-# 변경 후
-        if action.action_tier is ActionTier.TIER_2 and action.approver_id == AUTO_APPROVER:
-            return FailureReason.INVALID_TIER, "Tier 2는 건별 사용자 승인 필수 (자율 실행 비활성)"
-```
-
-`backend/domain/management/contracts/policy.py:22` 주석 갱신.
-
-```python
-    "REBALANCE_BUDGET": ActionTier.TIER_2,  # 총액 불변 이전 — 건별 사용자 승인(자율 실행 비활성)
-```
-
-- [ ] **Step 4: 테스트 통과 확인**
-
-Run: `cd backend && uv run pytest ../test/backend/management/test_rebalance_execution.py -v`
-Expected: 2개 PASS. 주의 — 이 시점에 `test_tier2_user_approval_passes_gate`는 `_call_targets`가 타깃 2개를 순회하며 `_dispatch`의 `ValueError("미지원 action_type")`를 만나 PLATFORM_ERROR로 끝나지만, 단언은 INVALID_TIER/UNSUPPORTED_ACTION 아님만 보므로 통과한다(전용 경로는 Task 2).
-
-- [ ] **Step 5: 기존 executor 테스트 회귀 확인**
-
-Run: `cd backend && uv run pytest ../test/backend/management/test_execution_units.py -v`
-Expected: 전부 PASS. Tier 2 무조건 차단을 단언하는 기존 테스트가 있으면 실패한다 — 그 경우 해당 테스트를 "AUTO 승인 차단" 단언으로 갱신(사용자 승인 통과가 새 정본).
-
-- [ ] **Step 6: Ruff + 커밋**
-
-```bash
-cd backend && uv run ruff format . && uv run ruff check . --fix
-git add backend/domain/management/execution/executor.py backend/domain/management/contracts/policy.py test/backend/management/test_rebalance_execution.py
-git commit -m "add: REBALANCE_BUDGET 액션 등록 + Tier2 사용자 승인 허용 (AUTO는 차단 유지)"
-```
-
----
-
-### Task 2: executor — `_call_rebalance` 전용 실행 경로 (감액→증액→보상)
-
-**Files:**
-- Modify: `backend/domain/management/execution/executor.py` — `_call_targets`(342줄) 초입 분기, `_call_with_retry`(395줄) call 파라미터, `_call_rebalance` 신규
-- Test: `test/backend/management/test_rebalance_execution.py` (Task 1 파일에 추가)
-
-- [ ] **Step 1: 실패하는 테스트 작성** — Task 1 파일 하단에 추가.
-
-```python
-# ── Task 2: _call_rebalance 시퀀스 ────────────────────────────────
+# ── _call_rebalance 시퀀스 ────────────────────────────────────────
 
 
 async def test_rebalance_success_two_legs_in_order():
-    """감액(from)→증액(to) 순서로 각 1회, 파생 멱등키(dec/inc) 사용."""
+    """사용자 승인 TIER_2 통과 + 감액(from)→증액(to) 순서·파생 멱등키(dec/inc)로 성공."""
     writer = FakeRebalanceWriter()
     proposal = make_rebalance_proposal()
     action, store = await _approved(proposal)
@@ -255,7 +183,7 @@ async def test_rebalance_first_leg_failure_releases_idempotency():
     assert retry.status is ResultStatus.FAILED
 
 
-async def test_rebalance_compensation_success_is_retryable():
+async def test_rebalance_compensation_success_marks_and_restores():
     """증액 실패 + 보상 성공 = 원복 완료 — 비-PARTIAL 실패 + compensation=succeeded."""
     writer = FakeRebalanceWriter(fail={"inc"})
     proposal = make_rebalance_proposal()
@@ -271,6 +199,27 @@ async def test_rebalance_compensation_success_is_retryable():
     assert writer.calls[2][2].endswith(":camp_from:comp")
     snaps = (result.platform_response_snapshot or {}).get("targets") or []
     assert any(s.get("compensation") == "succeeded" for s in snaps)
+
+
+async def test_rebalance_compensation_success_allows_reexecution():
+    """보상 성공 후 같은 승인(TTL 내) 재실행은 의도된 동작 — 멱등키 해제로 실제 재호출.
+
+    승인 원장은 consumed로 거부하지 않고(재제출 차단은 멱등 게이트 담당 — executor 주석),
+    사용자가 승인한 동일 transfer의 일시 실패는 새 카드 없이 재시도 가능해야 한다.
+    """
+    writer = FakeRebalanceWriter(fail={"inc"})
+    proposal = make_rebalance_proposal()
+    action, store = await _approved(proposal)
+    executor = build_rebalance_executor(writer, store)
+
+    first = await executor.execute(action, proposal)
+    assert first.failure_reason is FailureReason.PLATFORM_ERROR
+    calls_after_first = len(writer.calls)  # dec, inc, comp = 3
+
+    writer.fail = set()  # 이번엔 증액 성공
+    second = await executor.execute(action, proposal)
+    assert second.status is ResultStatus.SUCCESS
+    assert len(writer.calls) == calls_after_first + 2  # dec, inc 실제 재호출
 
 
 async def test_rebalance_compensation_failure_is_sealed():
@@ -292,10 +241,47 @@ async def test_rebalance_compensation_failure_is_sealed():
     assert len(writer.calls) == calls_before
 
 
+# ── 계약 불변식 방어 (executor = 최종 지출 게이트) ─────────────────
+
+
 async def test_rebalance_missing_evidence_fails_without_calls():
-    """evidence_metrics 필드 누락은 writer 호출 전 실패(계약 방어)."""
+    """evidence_metrics 필드 누락은 writer 호출 전 실패."""
     writer = FakeRebalanceWriter()
     proposal = make_rebalance_proposal(evidence_metrics={"move_krw": 10_000})
+    action, store = await _approved(proposal)
+    executor = build_rebalance_executor(writer, store)
+
+    result = await executor.execute(action, proposal)
+
+    assert result.status is ResultStatus.FAILED
+    assert writer.calls == []
+
+
+async def test_rebalance_move_mismatch_fails_without_calls():
+    """감액분≠move 등 불변식 위반은 writer 호출 전 실패 — 라우터를 신뢰하지 않는다."""
+    writer = FakeRebalanceWriter()
+    proposal = make_rebalance_proposal(
+        evidence_metrics={
+            "from_before_krw": 50_000,
+            "from_after_krw": 40_000,
+            "to_before_krw": 30_000,
+            "to_after_krw": 45_000,  # 증액분 15,000 ≠ move 10,000
+            "move_krw": 10_000,
+        }
+    )
+    action, store = await _approved(proposal)
+    executor = build_rebalance_executor(writer, store)
+
+    result = await executor.execute(action, proposal)
+
+    assert result.status is ResultStatus.FAILED
+    assert writer.calls == []
+
+
+async def test_rebalance_same_target_fails_without_calls():
+    """동일 캠페인 from/to는 writer 호출 전 실패."""
+    writer = FakeRebalanceWriter()
+    proposal = make_rebalance_proposal(target_object_ids=("camp_from", "camp_from"))
     action, store = await _approved(proposal)
     executor = build_rebalance_executor(writer, store)
 
@@ -307,12 +293,37 @@ async def test_rebalance_missing_evidence_fails_without_calls():
 
 - [ ] **Step 2: 테스트가 실패하는지 확인**
 
-Run: `cd backend && uv run pytest ../test/backend/management/test_rebalance_execution.py -v -k rebalance`
-Expected: Task 2 테스트 5개 FAIL (현재는 타깃 순회 → `_dispatch` ValueError 경로라 호출 순서·보상·스냅샷이 없음).
+Run: `cd backend && uv run pytest ../test/backend/management/test_rebalance_execution.py -v`
+Expected: `test_tier2_auto_approver_blocked`를 제외한 전부 FAIL — 현재 REBALANCE_BUDGET은 `UNSUPPORTED_ACTION`으로 거부되고(사용자 승인 케이스), 전용 경로·보상·스냅샷이 없다. AUTO 차단 테스트는 현행(무조건 차단)도 통과할 수 있음 — 나머지 실패만 확인하면 됨.
 
-- [ ] **Step 3: 구현** — `backend/domain/management/execution/executor.py`
+- [ ] **Step 3: 계약·정책 구현** — `backend/domain/management/execution/executor.py` 46-55줄 `SUPPORTED_ACTION_TYPES` 튜플에 한 줄 추가.
 
-3-a. `_call_targets`(342줄) 초입에 분기 추가.
+```python
+    "CHANGE_BID_STRATEGY",  # 에스컬레이션 사다리 2순위 — 입찰 전략 변경 (direct)
+    "REBALANCE_BUDGET",  # Tier 2 — 캠페인 간 일예산 이전(총액 불변), 전용 경로 _call_rebalance
+)
+```
+
+317-318줄의 무조건 차단을 Tier 3 게이트(319줄)와 같은 패턴으로 교체.
+
+```python
+# 변경 전
+        if action.action_tier is ActionTier.TIER_2:
+            return FailureReason.INVALID_TIER, "Tier 2 자동 실행은 v1 비활성"
+# 변경 후
+        if action.action_tier is ActionTier.TIER_2 and action.approver_id == AUTO_APPROVER:
+            return FailureReason.INVALID_TIER, "Tier 2는 건별 사용자 승인 필수 (자율 실행 비활성)"
+```
+
+`backend/domain/management/contracts/policy.py:22` 주석 갱신.
+
+```python
+    "REBALANCE_BUDGET": ActionTier.TIER_2,  # 총액 불변 이전 — 건별 사용자 승인(자율 실행 비활성)
+```
+
+- [ ] **Step 4: 전용 경로 구현** — 같은 파일.
+
+4-a. `_call_targets`(342줄) 초입에 분기 추가.
 
 ```python
     async def _call_targets(
@@ -330,7 +341,7 @@ Expected: Task 2 테스트 5개 FAIL (현재는 타깃 순회 → `_dispatch` Va
         ...  # 이하 기존 코드 무변경
 ```
 
-3-b. `_call_with_retry`(395줄)에 선택 파라미터 `call` 추가 — 기존 호출부 무변경, 리밸런스 다리가 amount를 클로저로 넘길 수 있게.
+4-b. `_call_with_retry`(395줄)에 선택 파라미터 `call` 추가 — 기존 호출부 무변경, 리밸런스 다리가 amount를 클로저로 넘길 수 있게.
 
 ```python
     async def _call_with_retry(
@@ -354,7 +365,7 @@ Expected: Task 2 테스트 5개 FAIL (현재는 타깃 순회 → `_dispatch` Va
                 ...  # 이하 기존 코드 무변경
 ```
 
-3-c. `_call_rebalance` 신규 — `_call_targets` 아래에 추가.
+4-c. `_call_rebalance` 신규 — `_call_targets` 아래에 추가. 초입의 불변식 검증이 최종 지출 게이트다(라우터·챗 등 어떤 생산자도 신뢰하지 않는다).
 
 ```python
     async def _call_rebalance(
@@ -367,24 +378,34 @@ Expected: Task 2 테스트 5개 FAIL (현재는 타깃 순회 → `_dispatch` Va
         """REBALANCE_BUDGET 전용 — 감액(from)→증액(to), 증액 실패 시 감액 원복(보상) 1회.
 
         총예산이 순간적으로도 늘지 않게 감액이 먼저다. 보상 성공=순변경 0(비-PARTIAL,
-        멱등 해제로 재승인 후 재시도 가능), 보상 실패=PARTIAL_FAILURE(박제 — P5/게이트 #7,
-        같은 승인 재집행 차단 + 수동 복구 안내).
+        멱등 해제로 같은 승인 TTL 내 재시도 가능), 보상 실패=PARTIAL_FAILURE(박제 —
+        P5/게이트 #7, 같은 승인 재집행 차단 + 수동 복구 안내).
         """
+
+        def _invalid(detail: str) -> ActionResult:
+            run.advance(RunStatus.FAILED)
+            return self._build_result(
+                action, key, ResultStatus.FAILED, FailureReason.PLATFORM_ERROR,
+                [{"error": f"REBALANCE_BUDGET 계약 위반: {detail}"}],
+            )
+
         em = proposal.evidence_metrics
-        from_id, to_id = proposal.target_object_ids[0], proposal.target_object_ids[-1]
+        targets = proposal.target_object_ids
         try:
             from_before = int(em["from_before_krw"])
             from_after = int(em["from_after_krw"])
+            to_before = int(em["to_before_krw"])
             to_after = int(em["to_after_krw"])
+            move = int(em["move_krw"])
         except (KeyError, TypeError, ValueError):
-            run.advance(RunStatus.FAILED)
-            return self._build_result(
-                action,
-                key,
-                ResultStatus.FAILED,
-                FailureReason.PLATFORM_ERROR,
-                [{"error": "REBALANCE_BUDGET evidence_metrics 필드 누락/불량"}],
-            )
+            return _invalid("evidence_metrics 필드 누락/불량")
+        # 최종 게이트 불변식 — 타깃 정확히 2개·상이, 감액분=증액분=move>0
+        # (총액 불변은 두 등식에서 자동 도출).
+        if len(targets) != 2 or targets[0] == targets[1]:
+            return _invalid("from/to 타깃은 서로 다른 2개여야 함")
+        if move <= 0 or from_before - from_after != move or to_after - to_before != move:
+            return _invalid("이동량 불일치 (감액분=증액분=move 위반)")
+        from_id, to_id = targets[0], targets[1]
 
         snapshots: list[dict[str, Any]] = []
 
@@ -429,7 +450,7 @@ Expected: Task 2 테스트 5개 FAIL (현재는 타깃 순회 → `_dispatch` Va
 
         comp = await _leg(from_id, from_before, "comp")
         if comp.status is not ResultStatus.FAILED:
-            # 원복 완료 — 순변경 0. 비-PARTIAL이라 멱등키가 해제돼 재승인 후 재시도 가능.
+            # 원복 완료 — 순변경 0. 비-PARTIAL이라 멱등키가 해제돼 같은 승인 TTL 내 재시도 가능.
             snapshots.append({"compensation": "succeeded"})
             run.advance(RunStatus.FAILED, snapshot=snapshots[-1])
             await self._record(
@@ -468,30 +489,30 @@ Expected: Task 2 테스트 5개 FAIL (현재는 타깃 순회 → `_dispatch` Va
         )
 ```
 
-- [ ] **Step 4: 테스트 통과 확인**
+- [ ] **Step 5: 테스트 통과 확인**
 
 Run: `cd backend && uv run pytest ../test/backend/management/test_rebalance_execution.py -v`
-Expected: 전체(Task 1 포함 7개) PASS.
+Expected: 9개 전부 PASS.
 
-- [ ] **Step 5: 기존 테스트 회귀 확인**
+- [ ] **Step 6: 기존 테스트 회귀 확인**
 
 Run: `cd backend && uv run pytest ../test/backend/management -v`
-Expected: 전부 PASS (기존 `_call_with_retry` 호출부는 시그니처 뒤에 기본값 파라미터만 추가돼 무영향).
+Expected: 전부 PASS. Tier 2 무조건 차단을 단언하는 기존 테스트가 있으면 실패한다 — 그 경우 해당 테스트를 "AUTO 승인 차단" 단언으로 갱신(사용자 승인 통과가 새 정본).
 
-- [ ] **Step 6: Ruff + 커밋**
+- [ ] **Step 7: Ruff + 커밋**
 
 ```bash
 cd backend && uv run ruff format . && uv run ruff check . --fix
-git add backend/domain/management/execution/executor.py test/backend/management/test_rebalance_execution.py
-git commit -m "add: executor REBALANCE_BUDGET 전용 경로 — 감액→증액→보상, PARTIAL 박제"
+git add backend/domain/management/execution/executor.py backend/domain/management/contracts/policy.py test/backend/management/test_rebalance_execution.py
+git commit -m "add: REBALANCE_BUDGET 원자 집행 활성화 — Tier2 사용자 승인 + 전용 경로(불변식·보상 포함)"
 ```
 
 ---
 
-### Task 3: 라우터 — `POST /budget/rebalance-commit`
+### Task 2: 라우터 — `POST /budget/rebalance-commit`
 
 **Files:**
-- Modify: `backend/api/routers/management.py` — `_build_budget_proposal`(3429줄) 근처에 요청 모델·검증·빌더·엔드포인트 추가
+- Modify: `backend/api/routers/management.py` — `budget_commit`(3541줄) 아래에 요청 모델·검증·빌더·엔드포인트 추가
 - Test: `test/backend/management/test_rebalance_commit_router.py` (신규)
 
 - [ ] **Step 1: 실패하는 테스트 작성**
@@ -633,6 +654,23 @@ def test_rebalance_commit_rejects_same_campaign(env):
         json={**_BODY, "to_campaign_id": "camp_low"},
     )
     assert res.status_code == 422
+
+
+def test_rebalance_commit_rejects_from_after_below_min(env):
+    """MIN~MAX full range가 양쪽 after 모두에 적용된다."""
+    client, reader, captured = env
+    reader.budgets["camp_low"] = 11_000  # from_after=1,000 < MIN(1,521)
+    res = client.post(
+        "/api/management/budget/rebalance-commit",
+        json={
+            **_BODY,
+            "from_after_krw": 1_000,
+            "to_after_krw": 40_000,
+            "shown_from_before_krw": 11_000,
+        },
+    )
+    assert res.status_code == 422
+    assert "proposal" not in captured
 ```
 
 - [ ] **Step 2: 테스트가 실패하는지 확인**
@@ -676,7 +714,11 @@ async def _validate_rebalance_change(
         or body.to_after_krw - to_before != body.move_krw
     ):
         raise HTTPException(409, "이동 금액이 현재 예산과 맞지 않아요. 제안을 다시 확인해 주세요.")
-    if body.from_after_krw < _MIN_DAILY_BUDGET_KRW or body.to_after_krw > _MAX_DAILY_BUDGET_KRW:
+    # 양쪽 after 모두 full range — from_after>MAX(원예산이 상한 초과)·to_after<MIN도 거부.
+    if not (
+        _MIN_DAILY_BUDGET_KRW <= body.from_after_krw <= _MAX_DAILY_BUDGET_KRW
+        and _MIN_DAILY_BUDGET_KRW <= body.to_after_krw <= _MAX_DAILY_BUDGET_KRW
+    ):
         raise HTTPException(
             422,
             f"일예산은 {_MIN_DAILY_BUDGET_KRW:,}~{_MAX_DAILY_BUDGET_KRW:,}원 사이여야 해요.",
@@ -785,7 +827,7 @@ async def budget_rebalance_commit(
 - [ ] **Step 4: 테스트 통과 확인**
 
 Run: `cd backend && uv run pytest ../test/backend/management/test_rebalance_commit_router.py -v`
-Expected: 4개 PASS.
+Expected: 5개 PASS.
 
 - [ ] **Step 5: 문서 인덱스 갱신** — 라우터 추가 시 자동 생성 스크립트 실행.
 
@@ -797,12 +839,12 @@ Expected: `docs/api-endpoints.md`에 `/api/management/budget/rebalance-commit` �
 ```bash
 cd backend && uv run ruff format . && uv run ruff check . --fix
 git add backend/api/routers/management.py test/backend/management/test_rebalance_commit_router.py docs/api-endpoints.md
-git commit -m "add: /budget/rebalance-commit 엔드포인트 — 양쪽 drift 검증 + 원자 제안 집행"
+git commit -m "add: /budget/rebalance-commit 엔드포인트 — 양쪽 drift·full range 검증 + 원자 제안 집행"
 ```
 
 ---
 
-### Task 4: 스케줄러 — transfer 알림에 suggested_action 연결
+### Task 3: 스케줄러 — transfer 알림에 suggested_action 연결
 
 **Files:**
 - Modify: `backend/domain/management/scheduler.py:388-429` (`run_rebalance_report`)
@@ -836,6 +878,7 @@ git commit -m "add: /budget/rebalance-commit 엔드포인트 — 양쪽 drift �
         payload={"actor": "auto", "proposal": prop},
         dedup_key=dedup_key,
     )
+    return True
 ```
 
 - [ ] **Step 2: 스케줄러 관련 기존 테스트 확인**
@@ -853,7 +896,7 @@ git commit -m "edit: 리밸런스 transfer 알림에 suggested_action=apply_reba
 
 ---
 
-### Task 5: 챗 — `rebalance_action` 위젯 + `apply_rebalance` 툴 + 등록 3곳
+### Task 4: 챗 — `rebalance_action` 위젯 + `apply_rebalance` 툴 + 등록 3곳
 
 **Files:**
 - Modify: `backend/domain/chat/widgets.py` (파일 끝에 함수 추가)
@@ -1060,7 +1103,9 @@ git commit -m "add: 챗 apply_rebalance 툴 + rebalance_action 위젯 (카드 �
 
 ---
 
-### Task 6: 프론트 — api.ts + budget 페이지 1-call + 챗 카드
+### Task 5: 프론트 — api.ts + budget 페이지 1-call + 챗 카드
+
+카드 radius는 기존 챗 카드 패밀리(`ChatCampaignActionCard` 등)의 `rounded-2xl` 관례를 따른다 — 챗 위젯 간 일관성이 신규 8px 지침보다 우선(패밀리 일괄 리디자인 시 함께 변경).
 
 **Files:**
 - Modify: `frontend/src/lib/api.ts` — `budgetCommit`(874줄) 아래 `rebalanceCommit` 추가, `RebalanceTransfer` 주석(83줄) 갱신
@@ -1249,7 +1294,7 @@ git commit -m "edit: 리밸런스 transfer 적용을 rebalance-commit 1-call로 
 
 ---
 
-### Task 7: 통합 검증
+### Task 6: 통합 검증
 
 **Files:** 없음 (검증만)
 
