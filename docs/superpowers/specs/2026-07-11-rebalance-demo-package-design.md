@@ -62,12 +62,12 @@ MANAGEMENT_EXECUTION_MODE=validate_only   # 리허설 동안 실변경 봉인
 ### 1-5. 플랜 B (transfer 미발동 시)
 
 - **B-1**: 당일 아침 CPC 격차 미달이면 한쪽 캠페인 타게팅·입찰을 조정해 오후 재확인 — 발표가 오후면 시도 가치 있음.
-- **B-2**: 그래도 미발동이면 **kind=adjust 데모로 전환** — 활성 daily 1개만 남기고(다른 쪽 일시중지) 소진율 기준 증액/감액 제안 → 챗 `apply_rebalance`가 기존 campaign_action 카드로 폴백하는 경로 그대로 시연. 스토리는 "단일 캠페인 예산 최적화"로 서술 조정.
+- **B-2**: 그래도 미발동이면 **kind=adjust 데모로 전환** — 활성 daily 1개만 남기고(다른 쪽 일시중지) 소진율 기준 증액/감액 제안 → 챗 `apply_rebalance`가 기존 campaign_action 카드로 폴백하는 경로 그대로 시연. 스토리는 "단일 캠페인 예산 최적화"로 서술 조정. **주의: 워커는 transfer일 때만 `suggested_action=apply_rebalance`를 남기므로(adjust는 없음) B-2에선 알림 CTA 없이 챗에서 직접 시작한다.**
 - **B-3**: 최후 수단 — `USE_MOCK=true` 전 구간 mock 데모(집행까지 mock 봉인). 실돈 임팩트는 없지만 흐름은 완결.
 
 ## 2. 알림 CTA — 워커 알림 → 챗 진입 (발표 전 유일한 코드 작업)
 
-- **위치**: `frontend/src/app/(app)/manage/anomaly/page.tsx`의 workerRuns 카드(automation runs, management 도메인 렌더 지점).
+- **위치**: `frontend/src/app/(app)/manage/anomaly/page.tsx`. 단, workerRuns 카드는 `mode === 'arch'`(내부 동작) 전용이고 기본 화면은 `user` 모드다 — 데모 스토리는 사용자 화면에서 보여야 하므로 **`apply_rebalance` 제안만 필터링한 사용자 모드 배너**를 추가하고(내부 점검 전체는 arch 유지), arch 카드에도 같은 CTA를 단다.
 - **분기**: `run.suggested_action === 'apply_rebalance'` — 이 문자열이 계약이며 백엔드(scheduler.py, 커밋 f6eee22a)가 이미 이 값을 기록한다. 다른 값·오타 확장 금지.
 - **동작**: 기존 `suggested_action === 'REPLACE_CREATIVE'` → 제너레이터 링크 관례를 따르되, 챗 진입은 **기존 `clio:draft` 패턴 재사용** — 쿼리 파라미터·챗 페이지 변경 없음.
   ```tsx
