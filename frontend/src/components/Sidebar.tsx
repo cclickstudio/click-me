@@ -19,6 +19,7 @@ import {
   Sun,
   Moon,
   LogOut,
+  HelpCircle,
 } from 'lucide-react';
 import { useTheme } from './ThemeProvider';
 import { useAuth } from './AuthProvider';
@@ -253,6 +254,12 @@ export default function Sidebar({ mobileOpen = false }: { mobileOpen?: boolean }
               items={adminHistoryChildren}
               open={adminHistoryOpen} onToggle={() => setAdminHistoryOpen((o) => !o)}
               pathname={pathname}
+            />
+            <NavItem
+              href="/appendix"
+              label="발표 Q&A"
+              active={pathname === '/appendix'}
+              icon={<HelpCircle {...iconProps} />}
             />
           </>
         )}

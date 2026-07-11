@@ -66,9 +66,15 @@ async def test_sim_reader_maps_aggregate():
     assert snap.rejection_rate == 0.12
 
 
-async def test_sim_reader_other_org_none():
+async def test_sim_reader_trusts_caller_org_scope():
+    """org 대조 없음(b0ce8412) — 호출부가 이미 스코프한 링크는
+
+    org 불일치여도 신뢰(교차 조직 링크 허용)한다.
+    """
     row = (_AD, str(uuid.uuid4()), None, 0.42, 3.8, 4.1, 0.12)
-    assert await SimPredictionReader(_factory(row)).get_prediction(_SIM, _ORG) is None
+    snap = await SimPredictionReader(_factory(row)).get_prediction(_SIM, _ORG)
+    assert snap is not None
+    assert snap.ad_id == _AD
 
 
 async def test_sim_reader_no_row_none():
