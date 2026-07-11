@@ -50,6 +50,9 @@ _call_targets(...):
 1. `adjust_budget(from_id, from_after_krw, f"{key}:{from_id}:dec")` — 실패 시: 아무것도 집행 안 됨 → FAILED(원인 그대로), 멱등키는 execute()가 해제 → 재시도 가능.
 2. `adjust_budget(to_id, to_after_krw, f"{key}:{to_id}:inc")` — 실패 시 보상 1회:
    `adjust_budget(from_id, from_before_krw, f"{key}:{from_id}:comp")`.
+   **예외: 증액 실패 사유가 TIMEOUT이면 보상하지 않는다** — 타임아웃은 "적용됐는데 응답만
+   유실"일 수 있어, 보상하면 증액·원복이 둘 다 실반영돼 총예산이 부푼다(적대 리뷰 수용).
+   이 경우 불확정(indeterminate)으로 박제하고 사람이 실측 확인 후 진행한다.
 3. **보상 성공** — 원복 완료지만 리밸런스는 실패. `FAILED + failure_reason=(증액 실패 원인, 비-PARTIAL)` + 스냅샷 `compensation_succeeded=true` → 기존 로직이 멱등키 해제 → 재승인 후 재시도 가능.
 4. **보상 실패** — `FAILED + PARTIAL_FAILURE` + 스냅샷 `compensation_failed=true` + 수동 복구 안내(from 캠페인·원래 예산 명시) → 기존 P5/게이트 #7이 결과를 박제하고 같은 approval 재집행을 차단. `executor.partial_failure` 감사 이벤트 기록.
 5. 두 다리 모두 성공 — SUCCESS, 스냅샷에 양쪽 응답.
@@ -91,6 +94,7 @@ budget-commit(management.py:3541)과 같은 골격. transfer 전용.
 | 감액 실패 | FAILED, 멱등키 해제 | 가능 |
 | 증액 실패 + 보상 성공 | FAILED + `compensation_succeeded` | 가능(재승인) |
 | 증액 실패 + 보상 실패 | FAILED + PARTIAL_FAILURE + `compensation_failed` + 수동 복구 안내 | 같은 approval 차단 |
+| 증액 타임아웃(불확정) | FAILED + PARTIAL_FAILURE + `indeterminate` — 보상 없음 | 같은 approval 차단, 실측 확인 후 새 제안 |
 | TTL/해시/정책버전 위반 | 기존 게이트 그대로 | 새 제안 |
 
 ## 10. 테스트 계획
@@ -100,7 +104,18 @@ budget-commit(management.py:3541)과 같은 골격. transfer 전용.
 - **프론트** — `pnpm build` 통과(수동 확인은 데모 리허설에서).
 - **실계정** — `MANAGEMENT_EXECUTION_MODE=validate` (VALIDATE_ONLY, `execution_options=["validate_only"]`)로 1회 선검증 후 live 전환.
 
-## 11. 데모 / 운영 주의
+## 11. 후속 과제 (구현 후 리뷰에서 식별 — 이 피처 범위 밖)
+
+2026-07-11 Codex rescue·adversarial 리뷰 트리아지 결과. 유효하나 선재(pre-existing)·시스템 전반 이슈라 후속으로 남긴다.
+
+1. **알림 카드 "적용" CTA** — 스케줄러가 `suggested_action="apply_rebalance"`를 기록하지만 프론트 알림 카드에 진입 버튼이 없다(현재는 챗에 직접 입력해야 §6 경로 시작). 알림 → 챗 프리필 연결 배선.
+2. **동시성 가드** — 동일 캠페인 대상 동시 commit이 각자 검증을 통과할 수 있다(last-write-wins). 절대값 쓰기 + drift 검증이 창을 좁히지만, 기존 budget-commit 포함 커밋 경로 전반에 캠페인 단위 잠금(transfer-intent 키) 검토. 선재 속성.
+3. **saga outbox 부재** — Meta 성공 후 로컬 기록(save_result·감사) 실패 시 원격/로컬 불일치. executor 전체 선재 속성 — 호출 전 attempt 퍼시스트 + reconcile 검토.
+4. **재무 원장** — 감사 로그는 `budget`/`amount` 키를 의도적으로 마스킹(CLAUDE.md 보안 규칙)해 감사 스트림만으로 예산 변경을 재구성할 수 없다. 실행 히스토리·멱등 스냅샷엔 남지만, 재무 증거용 별도 원장(암호화) 검토.
+5. **`/approve` 클라이언트 제안 경로** — 범용 `/approve`(management.py:731)는 클라이언트가 빌드한 ActionProposal을 받는다(해시는 무키 sha256이라 자가 발급 가능). rebalance-commit은 서버 빌드라 무관하나, 범용 경로는 서버 저장 제안을 proposal_id로 로드하는 방식으로 강화 필요. 팀 조율 필요(선재, docs/chat 2026-06-28 계획서에도 기록됨).
+6. **simulation 결과 읽기 API 테넌트 스코핑** — `docs/management/2026-06-19-coord-simulation-result-read-api.md` 계약의 org 스코핑 미결(D4). simulation 팀 전달 사항.
+
+## 12. 데모 / 운영 주의
 
 - transfer 제안은 **활성 일예산 캠페인 2개 이상**이어야 발동 — 데모 전 테스트 캠페인 1개 추가 필요.
 - 현재 `.env`가 `USE_MOCK=false + MANAGEMENT_EXECUTION_MODE=live + 실 토큰`이라 승인 즉시 실예산이 변경된다. 개발·테스트 중에는 validate 모드 권장, 발표 후 dry_run 복귀(CLAUDE.md Open Issue).

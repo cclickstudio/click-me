@@ -489,6 +489,10 @@ class Executor:
         if inc.status is not ResultStatus.FAILED:
             # 불확정 증액 — 나중에 적용될 수 있어 원복(보상)하면 이중 변경 위험. 박제.
             return await self._halt_indeterminate(run, action, proposal, key, snapshots)
+        if inc.failure_reason is FailureReason.TIMEOUT:
+            # 타임아웃은 '적용됐는데 응답만 유실'일 수 있다(적대 리뷰) — 이때 보상하면
+            # 증액·원복이 둘 다 남아 총예산이 부푼다. 확정 실패가 아니므로 보상 없이 박제.
+            return await self._halt_indeterminate(run, action, proposal, key, snapshots)
 
         comp = await _leg(from_id, from_before, "comp")
         if comp.status is ResultStatus.SUCCESS:

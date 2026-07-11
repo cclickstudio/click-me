@@ -28,17 +28,25 @@ from domain.management.execution.tier import BudgetAuthority
 
 
 class FakeRebalanceWriter:
-    """adjust_budget만 구현한 fake — 파생 멱등키 suffix(dec|inc|comp)로 실패·pending 주입."""
+    """adjust_budget만 구현한 fake — 멱등키 suffix(dec|inc|comp)로 실패·pending·timeout 주입."""
 
-    def __init__(self, fail: set[str] | None = None, pending: set[str] | None = None):
+    def __init__(
+        self,
+        fail: set[str] | None = None,
+        pending: set[str] | None = None,
+        timeout: set[str] | None = None,
+    ):
         self.calls: list[tuple[str, int, str]] = []
         self.fail = fail or set()
         self.pending = pending or set()
+        self.timeout = timeout or set()
 
     async def adjust_budget(self, campaign_id: str, amount_krw: int, idem_key: str) -> ActionResult:
         self.calls.append((campaign_id, amount_krw, idem_key))
         leg = idem_key.rsplit(":", 1)[-1]
-        if leg in self.fail:
+        if leg in self.timeout:
+            status, reason = ResultStatus.FAILED, FailureReason.TIMEOUT
+        elif leg in self.fail:
             status, reason = ResultStatus.FAILED, FailureReason.PLATFORM_ERROR
         elif leg in self.pending:
             status, reason = ResultStatus.SUBMITTED_PENDING_REVIEW, None
@@ -268,6 +276,31 @@ async def test_rebalance_pending_compensation_is_sealed():
     assert len(writer.calls) == 3  # dec, inc, comp
     snaps = (result.platform_response_snapshot or {}).get("targets") or []
     assert any(s.get("compensation") == "failed" for s in snaps)
+
+
+async def test_rebalance_inc_timeout_seals_without_compensation():
+    """증액 leg 타임아웃은 '적용됐는데 응답 유실'일 수 있다 — 보상 없이 박제(이중 반영 방지).
+
+    타임아웃 후 보상이 돌면 증액·원복이 둘 다 실반영돼 총예산이 부풀 수 있다(적대 리뷰 #1).
+    """
+    writer = FakeRebalanceWriter(timeout={"inc"})
+    proposal = make_rebalance_proposal()
+    action, store = await _approved(proposal)
+    executor = build_rebalance_executor(writer, store)
+
+    result = await executor.execute(action, proposal)
+
+    assert result.status is ResultStatus.FAILED
+    assert result.failure_reason is FailureReason.PARTIAL_FAILURE
+    legs = [c[2].rsplit(":", 1)[-1] for c in writer.calls]
+    assert "comp" not in legs  # 보상 미실행 — 불확정 증액을 원복하지 않는다
+    snaps = (result.platform_response_snapshot or {}).get("targets") or []
+    assert any(s.get("indeterminate") for s in snaps)
+
+    calls_before = len(writer.calls)
+    replayed = await executor.execute(action, proposal)  # 박제 — 같은 승인 재집행 차단
+    assert replayed.failure_reason is FailureReason.PARTIAL_FAILURE
+    assert len(writer.calls) == calls_before
 
 
 # ── 계약 불변식 방어 (executor = 최종 지출 게이트) ─────────────────
