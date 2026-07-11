@@ -3588,6 +3588,156 @@ async def budget_commit(
     return response
 
 
+class RebalanceCommitRequest(BaseModel):
+    from_campaign_id: str
+    to_campaign_id: str
+    from_after_krw: int
+    to_after_krw: int
+    move_krw: int = Field(gt=0)
+    shown_from_before_krw: int | None = None
+    shown_to_before_krw: int | None = None
+
+
+async def _validate_rebalance_change(
+    reader: AdPlatformReader, body: RebalanceCommitRequest
+) -> tuple[int, int]:
+    """양쪽 현재값(서버 정본)으로 drift·이동량·범위를 검증하고 (from_before, to_before) 반환."""
+    if body.from_campaign_id == body.to_campaign_id:
+        raise HTTPException(422, "같은 캠페인끼리는 예산을 옮길 수 없어요.")
+    from_before = await _current_daily_budget(reader, body.from_campaign_id)
+    to_before = await _current_daily_budget(reader, body.to_campaign_id)
+    if from_before <= 0 or to_before <= 0:
+        raise HTTPException(409, "현재 일예산을 확인할 수 없어 리밸런싱을 진행할 수 없어요.")
+    if body.shown_from_before_krw is not None and body.shown_from_before_krw != from_before:
+        raise HTTPException(
+            409,
+            f"저효율 캠페인 예산이 {from_before:,}원으로 바뀌었어요. 제안을 다시 확인해 주세요.",
+        )
+    if body.shown_to_before_krw is not None and body.shown_to_before_krw != to_before:
+        raise HTTPException(
+            409, f"고효율 캠페인 예산이 {to_before:,}원으로 바뀌었어요. 제안을 다시 확인해 주세요."
+        )
+    if (
+        from_before - body.from_after_krw != body.move_krw
+        or body.to_after_krw - to_before != body.move_krw
+    ):
+        raise HTTPException(409, "이동 금액이 현재 예산과 맞지 않아요. 제안을 다시 확인해 주세요.")
+    # 양쪽 after 모두 full range — from_after>MAX(원예산이 상한 초과)·to_after<MIN도 거부.
+    if not (
+        _MIN_DAILY_BUDGET_KRW <= body.from_after_krw <= _MAX_DAILY_BUDGET_KRW
+        and _MIN_DAILY_BUDGET_KRW <= body.to_after_krw <= _MAX_DAILY_BUDGET_KRW
+    ):
+        raise HTTPException(
+            422,
+            f"일예산은 {_MIN_DAILY_BUDGET_KRW:,}~{_MAX_DAILY_BUDGET_KRW:,}원 사이여야 해요.",
+        )
+    return from_before, to_before
+
+
+def _build_rebalance_proposal(
+    *,
+    tenant_id: str,
+    ad_account_id: str,
+    body: RebalanceCommitRequest,
+    from_before: int,
+    to_before: int,
+) -> ActionProposal:
+    """검증 통과한 transfer를 원자 REBALANCE_BUDGET 제안 1건으로 빌드."""
+    now = datetime.now(UTC)
+    return finalize_proposal(
+        ActionProposal(
+            proposal_id=f"prop_{uuid4().hex[:8]}",
+            tenant_id=tenant_id,
+            ad_account_id=ad_account_id,
+            target_object_ids=(body.from_campaign_id, body.to_campaign_id),
+            action_type="REBALANCE_BUDGET",
+            action_tier=judge_tier("REBALANCE_BUDGET"),
+            evidence_metrics={
+                "source": "rebalance",
+                "from_before_krw": from_before,
+                "from_after_krw": body.from_after_krw,
+                "to_before_krw": to_before,
+                "to_after_krw": body.to_after_krw,
+                "move_krw": body.move_krw,
+            },
+            metrics_as_of=now,
+            hypothesis="예산 리밸런싱(저효율→고효율) 사용자 승인 집행",
+            confidence=1.0,
+            expected_state_version="state_v1",
+            budget_before_krw=from_before + to_before,
+            budget_after_krw=body.from_after_krw + body.to_after_krw,
+            max_total_spend_krw=0,  # 총액 불변 — Tier 2 정의와 정합
+            expires_at=now + timedelta(minutes=PROPOSAL_TTL_MINUTES),
+            approval_policy_version=APPROVAL_POLICY_VERSION,
+        )
+    )
+
+
+@router.post("/budget/rebalance-commit")
+async def budget_rebalance_commit(
+    body: RebalanceCommitRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """리밸런싱(transfer) 적용 — 승인 1건·원자 액션 1건으로 감액+증액 집행(보상은 executor)."""
+    org_id = await _require_org_id_write(user, db, action="rebalance_commit")
+    await _require_owned_campaign(db, org_id, body.from_campaign_id)
+    await _require_owned_campaign(db, org_id, body.to_campaign_id)
+    reader = await _require_reader(db, org_id)
+    from_before, to_before = await _validate_rebalance_change(reader, body)
+    ad_account = await _require_ad_account(db, org_id)
+    proposal = _build_rebalance_proposal(
+        tenant_id=str(org_id),
+        ad_account_id=ad_account,
+        body=body,
+        from_before=from_before,
+        to_before=to_before,
+    )
+    action = await issue_approval(
+        proposal, str(user.id), execution_mode=_resolved_execution_mode(), store=_APPROVAL_STORE
+    )
+    is_demo = proposal.tenant_id == TENANT_ID
+    executor = (
+        _get_executor()
+        if is_demo or getattr(settings, "use_mock", True)
+        else _get_executor(await _require_writer(db, org_id))
+    )
+    result = await executor.execute(action, proposal)
+    response: dict[str, object] = {"result": result.model_dump(mode="json")}
+    status = result.status.value if hasattr(result.status, "value") else str(result.status)
+    if status == "success":
+        await _resolve_campaign_notifications(org_id, body.from_campaign_id)
+        await _resolve_campaign_notifications(org_id, body.to_campaign_id)
+        return response
+    comp = _find_in_snapshot(result.platform_response_snapshot, "compensation")
+    if comp == "failed":
+        # 부분 변경 방치 — 수동 복구 안내가 Meta 원문 에러보다 우선한다.
+        response["compensation"] = "failed"
+        response["error_message"] = (
+            f"예산이 부분 변경됐어요 — 저효율 캠페인 일예산을 {from_before:,}원으로 "
+            "수동 복구가 필요해요. 같은 승인으로는 재집행되지 않아요."
+        )
+        return response
+    if _find_in_snapshot(result.platform_response_snapshot, "indeterminate"):
+        # 불확정 박제 — generic 실패로 보이면 재시도(새 제안)를 유도해 이중 적용 위험.
+        response["indeterminate"] = True
+        response["error_message"] = (
+            "일부 변경이 플랫폼에서 아직 확정되지 않았어요 — 바로 재시도하지 말고 "
+            "현재 예산 상태를 확인한 뒤 진행해 주세요."
+        )
+        return response
+    if comp == "succeeded":
+        response["compensation"] = "succeeded"
+    msg = _find_in_snapshot(result.platform_response_snapshot, "user_msg")
+    if msg:
+        response["error_message"] = str(msg)
+    elif comp == "succeeded":
+        response["error_message"] = (
+            "증액에 실패해 감액을 원복했어요. 예산은 원래대로예요 — 잠시 후 다시 시도해 주세요."
+        )
+    return response
+
+
 @router.get("/campaigns/{campaign_id}/leads")
 async def campaign_leads(campaign_id: str):
     """이 캠페인 광고로 제출된 잠재고객(리드) 명단 — Meta leadgen에서 조회.
