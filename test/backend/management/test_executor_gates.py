@@ -183,10 +183,23 @@ async def test_tampered_proposal_hash_detected():
     assert writer.calls == []
 
 
-async def test_live_mode_is_allowed():
-    # 실 게재 단계 — LIVE 봉인 해제. LIVE 액션이 막히지 않고 writer에 도달한다.
+async def test_live_mode_blocked_by_default():
+    # LIVE는 기본 executor에서 봉인 — opt-in 없이는 EXECUTION_MODE_DISABLED로 막힌다.
     writer = FakeWriter()
     executor, _, _, _ = build_executor(writer)
+    proposal = make_proposal()
+    action = make_action(proposal, execution_mode=ExecutionMode.LIVE)
+
+    result = await executor.execute(action, proposal)
+
+    assert result.failure_reason is FailureReason.EXECUTION_MODE_DISABLED
+    assert writer.calls == []
+
+
+async def test_live_mode_allowed_when_opted_in():
+    # opt-in(allow_live=True) executor에선 LIVE가 게이트를 넘어 writer에 도달한다.
+    writer = FakeWriter()
+    executor, _, _, _ = build_executor(writer, allow_live=True)
     proposal = make_proposal()
     action = make_action(proposal, execution_mode=ExecutionMode.LIVE)
 
@@ -211,9 +224,13 @@ async def test_budget_hardcap_blocks_spend():
 
 
 async def test_budget_softcap_95_blocks_auto_but_allows_human():
-    """P4 [안]: 95% 도달 시 자율(AUTO) 불가 — 사용자 승인 건은 진행."""
+    """P4 [안]: 95% 도달 시 자율(AUTO) 불가 — 사용자 승인 건은 진행.
+
+    budget_after_krw는 서버 재계산 하한(budget_after×7)이 신고값 96_000을 넘지 않게 낮게 둔다
+    (C-3 재계산이 이 소프트캡 판정 자체를 바꾸지 않도록).
+    """
     proposal = make_proposal(
-        action_type="INCREASE_BUDGET", budget_after_krw=48_000, max_total_spend_krw=96_000
+        action_type="INCREASE_BUDGET", budget_after_krw=10_000, max_total_spend_krw=96_000
     )
 
     writer_auto = FakeWriter()
@@ -329,13 +346,17 @@ async def test_transient_failure_is_retryable_not_permanently_cached():
 
 
 async def test_partial_failure_commits_budget_for_executed_targets():
-    """부분 실패 시 이미 집행된 타깃 비율만큼 예산 권한이 커밋된다(잔여 권한 과대 방지)."""
+    """부분 실패 시 이미 집행된 타깃 비율만큼 예산 권한이 커밋된다(잔여 권한 과대 방지).
+
+    budget_after_krw는 서버 재계산 하한(budget_after×7)이 신고값 100_000을 넘지 않게 낮게 둬,
+    비례 커밋(1/2) 검증이 C-3 재계산에 흔들리지 않게 한다.
+    """
     writer = FakeWriter(fail_targets={"camp-002"})
     executor, _, _, budget = build_executor(writer)
     proposal = make_proposal(
         action_type="INCREASE_BUDGET",
         target_object_ids=("camp-001", "camp-002"),
-        budget_after_krw=40_000,
+        budget_after_krw=10_000,
         max_total_spend_krw=100_000,
     )
     action = make_action(proposal)
@@ -466,7 +487,7 @@ async def test_legacy_replace_rejected_in_sending_mode():
     # codex 리뷰 #4 — 레거시 selected_candidate_id REPLACE(campaign target)는 실 모드에서
     # 캠페인 id를 ad로 보내 Meta에서 깨진다 → 승인 전 fail-fast 거부(writer 미호출).
     writer = FakeWriter()
-    executor, _, _, _ = build_executor(writer)
+    executor, _, _, _ = build_executor(writer, allow_live=True)  # LIVE opt-in — 레거시 게이트 도달
     proposal = make_proposal(
         action_type="REPLACE_CREATIVE",
         action_tier=ActionTier.TIER_3,

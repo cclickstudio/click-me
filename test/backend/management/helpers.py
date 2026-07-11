@@ -20,7 +20,11 @@ from domain.management.contracts.schemas import (
     finalize_proposal,
 )
 from domain.management.execution.audit_log import InMemoryAuditLog
-from domain.management.execution.executor import Executor, InMemoryIdempotencyStore
+from domain.management.execution.executor import (
+    DEFAULT_ALLOWED_MODES,
+    Executor,
+    InMemoryIdempotencyStore,
+)
 from domain.management.execution.tier import BudgetAuthority
 
 NOW = datetime(2026, 6, 12, 9, 0, 0, tzinfo=UTC)
@@ -234,6 +238,7 @@ def build_executor(
     policy: str = POLICY_VERSION,
     now: datetime = NOW,
     approvals=None,  # 승인 원장(게이트 #5) — None이면 게이트 생략(기존 테스트 호환)
+    allow_live: bool = False,  # LIVE opt-in — 기본 executor는 LIVE 불허(EXECUTION_MODE_DISABLED)
 ):
     """executor + 인메모리 의존성 일괄 조립. (executor, audit, idem, budget) 반환."""
 
@@ -243,6 +248,9 @@ def build_executor(
     audit = InMemoryAuditLog()
     idem = InMemoryIdempotencyStore()
     budget = BudgetAuthority(limit_krw=limit_krw)
+    allowed = (
+        (*DEFAULT_ALLOWED_MODES, ExecutionMode.LIVE) if allow_live else DEFAULT_ALLOWED_MODES
+    )
     executor = Executor(
         writer,
         idempotency=idem,
@@ -250,6 +258,7 @@ def build_executor(
         budget_for=lambda _tenant_id: budget,
         state_version_provider=state_provider,
         current_policy_version=policy,
+        allowed_modes=allowed,
         clock=lambda: now,
         sleep=_no_sleep,
         approvals=approvals,

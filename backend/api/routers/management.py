@@ -1766,7 +1766,10 @@ async def _get_campaign_real(
     """
     today = _today_utc()
     # 보관/삭제 캠페인 상세도 열 수 있게 archived 포함 조회(상세는 by-id라 데이터는 그대로 조회됨).
-    campaigns = await reader.list_campaigns(include_archived=True)
+    try:
+        campaigns = await reader.list_campaigns(include_archived=True)
+    except MetaApiError as exc:  # 데모 중 Meta 장애 → raw 500 대신 명확한 HTTP로 변환
+        raise _campaign_meta_error(exc, campaign_id) from exc
     info = next((c for c in campaigns if c.campaign_id == campaign_id), None)
     if info is None:
         raise HTTPException(status_code=404, detail=f"캠페인 없음: {campaign_id}")
@@ -2270,6 +2273,8 @@ async def create_campaign_proposal(
             status_code=422,
             detail=f"{body.objective} 캠페인의 최소 일예산은 ₩{min_budget:,}입니다 (Meta 정책).",
         )
+    if body.daily_budget_krw > _MAX_DAILY_BUDGET_KRW:
+        raise HTTPException(422, f"일예산은 {_MAX_DAILY_BUDGET_KRW:,}원을 넘을 수 없어요.")
     # 시뮬 연결 키 — 형식·org 소유 검증(방어 심층, 읽기 시점 대조와 이중).
     if body.simulation_id is not None:
         try:
@@ -2412,6 +2417,8 @@ async def from_candidate(
     min_budget = min_daily_budget_for(body.objective, policy)
     if body.daily_budget_krw < min_budget:
         raise HTTPException(status_code=422, detail=f"최소 일예산은 ₩{min_budget:,}입니다.")
+    if body.daily_budget_krw > _MAX_DAILY_BUDGET_KRW:
+        raise HTTPException(422, f"일예산은 {_MAX_DAILY_BUDGET_KRW:,}원을 넘을 수 없어요.")
 
     now = datetime.now(UTC)
     ad_account = await _require_ad_account(db, org_id)
@@ -2770,6 +2777,8 @@ async def from_simulation(
     min_budget = min_daily_budget_for("traffic", policy)
     if body.daily_budget_krw < min_budget:
         raise HTTPException(status_code=422, detail=f"최소 일예산은 ₩{min_budget:,}입니다.")
+    if body.daily_budget_krw > _MAX_DAILY_BUDGET_KRW:
+        raise HTTPException(422, f"일예산은 {_MAX_DAILY_BUDGET_KRW:,}원을 넘을 수 없어요.")
 
     now = datetime.now(UTC)
     ad_account = await _require_ad_account(db, org_id)
@@ -3138,7 +3147,7 @@ async def activate_campaign(
     if _resolved_execution_mode() is ExecutionMode.LIVE:
         from api.routers.billing import get_billing_service  # noqa: PLC0415 — 순환 방지
 
-        credit_balance = await get_billing_service().balance(body.org_id)
+        credit_balance = await get_billing_service().balance(str(org_id))
         if credit_balance < commit:
             return {
                 "serving": False,
@@ -3236,7 +3245,13 @@ async def activate_campaign(
     action = await issue_approval(
         proposal, str(user.id), execution_mode=_resolved_execution_mode(), store=_APPROVAL_STORE
     )
-    result = await _get_executor().execute(action, proposal)
+    # org 연결 writer 주입 — 실 모드는 전역 토큰이 아닌 로그인 org writer로 집행(크로스테넌트 방지).
+    executor = (
+        _get_executor()
+        if getattr(settings, "use_mock", True)
+        else _get_executor(await _require_writer(db, org_id))
+    )
+    result = await executor.execute(action, proposal)
     status = result.status.value if hasattr(result.status, "value") else str(result.status)
     serving = status == "success"
     if serving and row is not None:
@@ -3261,7 +3276,10 @@ async def activate_campaign(
 @router.get("/campaigns/{campaign_id}/delivery-status")
 async def delivery_status(campaign_id: str, reader=Depends(_request_reader)):
     """게재 여부 + 불가 원인 + Meta 선불 잔액 — 대시보드/게재 화면이 원인을 그대로 표시."""
-    detail = await reader.get_delivery_status_detail(campaign_id)
+    try:
+        detail = await reader.get_delivery_status_detail(campaign_id)
+    except MetaApiError as exc:  # 데모 중 Meta 장애 → raw 500 대신 명확한 HTTP로 변환
+        raise _campaign_meta_error(exc, campaign_id) from exc
     try:
         funding = await reader.get_account_funding()
     except Exception:  # noqa: BLE001 — 자금 조회 실패가 상태 표시를 막지 않게
@@ -3296,7 +3314,11 @@ async def sync_campaign(
     org_id = str(org_uuid)
     reader = await _require_reader(db, org_uuid)
     billing = get_billing_service()
-    metrics = await reader.get_metrics(campaign_id, datetime.now(UTC))
+    # 차감 전에 감싼다 — 여기서 실패해야 크레딧 차감 없이 안전하게 중단(이중차감 방지).
+    try:
+        metrics = await reader.get_metrics(campaign_id, datetime.now(UTC))
+    except MetaApiError as exc:  # 데모 중 Meta 장애 → raw 500 대신 명확한 HTTP로 변환
+        raise _campaign_meta_error(exc, campaign_id) from exc
     spent = max(0, metrics.spend_krw or 0)
     already = await billing.spent_for(org_id, campaign_id)
     charged = 0
@@ -3310,7 +3332,11 @@ async def sync_campaign(
                 await _emit_impersonation_audit(user, org_uuid, action="sync_credit_adjust")
             except BillingError:
                 charged = 0
-    detail = await reader.get_delivery_status_detail(campaign_id)
+    # 차감 이후라 이미 크레딧이 빠졌다 — 상세 조회 실패는 502로 명확히(재차감 없음).
+    try:
+        detail = await reader.get_delivery_status_detail(campaign_id)
+    except MetaApiError as exc:
+        raise _campaign_meta_error(exc, campaign_id) from exc
     ended = (detail.effective_status or "").upper() not in ("ACTIVE", "PENDING_REVIEW")
     row = await _created_campaign_row(db, campaign_id)
     if row is not None:
@@ -3377,7 +3403,13 @@ async def pause_campaign(
     action = await issue_approval(
         proposal, str(user.id), execution_mode=_resolved_execution_mode(), store=_APPROVAL_STORE
     )
-    result = await _get_executor().execute(action, proposal)
+    # org 연결 writer 주입 — 실 모드는 전역 토큰이 아닌 로그인 org writer로 집행(크로스테넌트 방지).
+    executor = (
+        _get_executor()
+        if getattr(settings, "use_mock", True)
+        else _get_executor(await _require_writer(db, org_id))
+    )
+    result = await executor.execute(action, proposal)
     status = result.status.value if hasattr(result.status, "value") else str(result.status)
     if status == "success":
         try:

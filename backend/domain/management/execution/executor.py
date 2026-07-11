@@ -38,7 +38,11 @@ from domain.management.contracts.schemas import (
 )
 from domain.management.execution.audit_log import AuditEvent, AuditSink
 from domain.management.execution.state_machine import ExecutionRun, RunStatus
-from domain.management.execution.tier import BudgetAuthority, BudgetDecision
+from domain.management.execution.tier import (
+    BudgetAuthority,
+    BudgetDecision,
+    estimate_max_total_spend,
+)
 
 #: v1 executor가 실행 가능한 action_type — 어휘 정본은 contracts/policy.py TIER_POLICY (P1)
 #: REPLACE_CREATIVE는 replace_creative_tree로 실행 — 소재 필드 + 결속 affected_ad_ids 기반 fan-out.
@@ -55,14 +59,21 @@ SUPPORTED_ACTION_TYPES: Final[tuple[str, ...]] = (
     "REBALANCE_BUDGET",  # Tier 2 — 캠페인 간 일예산 이전(총액 불변), 전용 경로 _call_rebalance
 )
 
-#: Writer 도달이 허용되는 실행 모드. 실 게재 단계 진입(§7 갱신) — LIVE 정식 허용.
-#: ⚠️ LIVE는 실제 게재·실과금. 실집행은 use_mock=False + mode=live opt-in일 때만.
+#: Writer 도달이 허용되는 실행 모드 (기본). LIVE는 기본 불허 —
+#: _get_executor가 use_mock=False + mode=live일 때만 명시적으로 append(opt-in)한다.
+#: ⚠️ LIVE는 실제 게재·실과금이라 기본 executor 게이트에서 EXECUTION_MODE_DISABLED로 막힌다.
 DEFAULT_ALLOWED_MODES: Final[tuple[ExecutionMode, ...]] = (
     ExecutionMode.MOCK,
     ExecutionMode.DRY_RUN,
     ExecutionMode.VALIDATE_ONLY,
-    ExecutionMode.LIVE,
 )
+
+#: 지출을 증가시키는 액션 — max_total_spend_krw를 클라이언트 신고값이 아닌 서버 재계산값으로 방어.
+_SPEND_INCREASING_ACTIONS: Final[frozenset[str]] = frozenset(
+    {"INCREASE_BUDGET", "ACTIVATE_CAMPAIGN", "CREATE_CAMPAIGN"}
+)
+#: _build_budget_proposal·demo와 동일 산정일수 — estimate_max_total_spend 재계산 기준.
+_DEFAULT_RUN_DAYS: Final[int] = 7
 
 
 def build_idempotency_key(action: ApprovedAction, proposal: ActionProposal) -> str:
@@ -200,7 +211,9 @@ class Executor:
             return replayed
 
         budget = self._budget_for(action.tenant_id)
-        decision = budget.evaluate(proposal.max_total_spend_krw)
+        # 지출 증가 액션은 클라이언트 신고값을 신뢰하지 않고 서버 재계산값으로 예산 평가·커밋한다.
+        effective = self._effective_spend(proposal)
+        decision = budget.evaluate(effective)
         if decision is BudgetDecision.BLOCK:
             return await self._reject(
                 run, action, proposal, FailureReason.BUDGET_CAP_EXCEEDED, "100% 하드캡 차단"
@@ -235,7 +248,7 @@ class Executor:
         result = await self._call_targets(run, action, proposal, key)
         if result.status in (ResultStatus.SUCCESS, ResultStatus.SUBMITTED_PENDING_REVIEW):
             await self._idempotency.save_result(key, result)
-            budget.commit(proposal.max_total_spend_krw)
+            budget.commit(effective)
             if self._approvals is not None:
                 with contextlib.suppress(Exception):  # 마킹 실패가 실행 결과를 바꾸지 않게
                     await self._approvals.consume(action.approval_id, self._clock())
@@ -247,7 +260,7 @@ class Executor:
             executed = self._executed_target_count(result)
             total = len(proposal.target_object_ids) or 1
             if executed:
-                budget.commit(proposal.max_total_spend_krw * executed // total)
+                budget.commit(effective * executed // total)
         else:
             # 아무 타깃도 집행되지 않은 일시 실패 — 멱등 선점을 풀어 재승인 없이 재시도 가능.
             await self._idempotency.release(key)
@@ -677,6 +690,20 @@ class Executor:
         raise ValueError(f"미지원 action_type: {proposal.action_type}")  # _validate에서 차단됨
 
     # ── 결과·감사 헬퍼 ───────────────────────────────────────────
+
+    @staticmethod
+    def _effective_spend(proposal: ActionProposal) -> int:
+        """지출 증가 액션은 클라이언트 신고값을 신뢰하지 않고 budget_after로 서버 재계산(하한).
+
+        위조 제안이 max_total_spend_krw=0으로 예산 하드캡을 우회하는 것을 막는다.
+        REBALANCE_BUDGET/DECREASE_BUDGET 등 총액 불변·감소 액션은 신고값 유지.
+        """
+        if proposal.action_type in _SPEND_INCREASING_ACTIONS:
+            return max(
+                proposal.max_total_spend_krw,
+                estimate_max_total_spend(proposal.budget_after_krw, _DEFAULT_RUN_DAYS),
+            )
+        return proposal.max_total_spend_krw
 
     @staticmethod
     def _executed_target_count(result: ActionResult) -> int:
