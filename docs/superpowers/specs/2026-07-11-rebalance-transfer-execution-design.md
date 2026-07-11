@@ -112,8 +112,11 @@ budget-commit(management.py:3541)과 같은 골격. transfer 전용.
 2. **동시성 가드** — 동일 캠페인 대상 동시 commit이 각자 검증을 통과할 수 있다(last-write-wins). 절대값 쓰기 + drift 검증이 창을 좁히지만, 기존 budget-commit 포함 커밋 경로 전반에 캠페인 단위 잠금(transfer-intent 키) 검토. 선재 속성.
 3. **saga outbox 부재** — Meta 성공 후 로컬 기록(save_result·감사) 실패 시 원격/로컬 불일치. executor 전체 선재 속성 — 호출 전 attempt 퍼시스트 + reconcile 검토.
 4. **재무 원장** — 감사 로그는 `budget`/`amount` 키를 의도적으로 마스킹(CLAUDE.md 보안 규칙)해 감사 스트림만으로 예산 변경을 재구성할 수 없다. 실행 히스토리·멱등 스냅샷엔 남지만, 재무 증거용 별도 원장(암호화) 검토.
-5. **`/approve` 클라이언트 제안 경로** — 범용 `/approve`(management.py:731)는 클라이언트가 빌드한 ActionProposal을 받는다(해시는 무키 sha256이라 자가 발급 가능). rebalance-commit은 서버 빌드라 무관하나, 범용 경로는 서버 저장 제안을 proposal_id로 로드하는 방식으로 강화 필요. 팀 조율 필요(선재, docs/chat 2026-06-28 계획서에도 기록됨).
+5. **`/approve` 클라이언트 제안 경로** — 범용 `/approve`(management.py:731)는 클라이언트가 빌드한 ActionProposal을 받는다(해시는 무키 sha256이라 자가 발급 가능). rebalance-commit은 서버 빌드라 무관하나, 범용 경로는 서버 저장 제안을 proposal_id로 로드하는 방식으로 강화 필요. 팀 조율 필요(선재, docs/chat 2026-06-28 계획서에도 기록됨). **부분 완화 완료(2026-07-11, 커밋 0c7546f4)**: `max_total_spend_krw` 자가신고로 예산 하드캡을 우회하던 벡터는 executor `_effective_spend`가 지출 증가 액션을 서버 재계산으로 덮어 차단. 남은 건 제안 자체의 서버 저장·결속.
 6. **simulation 결과 읽기 API 테넌트 스코핑** — `docs/management/2026-06-19-coord-simulation-result-read-api.md` 계약의 org 스코핑 미결(D4). simulation 팀 전달 사항.
+7. **`DELETE /campaigns/{id}`가 executor 우회** (management.py:2091) — 캠페인 삭제(비가역)가 승인 원장·LIVE opt-in 게이트·감사 단일 경로 밖에서 `writer.delete_campaign` 직접 호출. org 소유 검증만 게이트. live에서 오클릭 시 비가역 삭제 위험 — 승인 경로로 통합 필요(범위·리스크 있어 별도 작업).
+8. **예산 권한(TenantBudgetRegistry) 인메모리** (management.py:186) — 실모드에서도 인메모리라 컨테이너 재시작(=CD 배포)마다 월 캡이 리셋. 실지출과 무연동. 실질 상한은 Meta 선불 충전액 — 발표 기간 충전 최소화로 운영 커버, 후속으로 DB 영속 + 실지출 동기화.
+9. **`/sync` 크레딧 차감 동시성**·**Meta 비-MetaApiError 예외(타임아웃/게이트웨이 5xx) raw 500** — sync 이중차감 창은 인앱 크레딧 한정(실돈 아님), H-3 방어는 구조화된 `MetaApiError`만 HTTP 변환(전송 예외는 여전히 500). 후속으로 락·전역 예외 핸들러 검토.
 
 ## 12. 데모 / 운영 주의
 

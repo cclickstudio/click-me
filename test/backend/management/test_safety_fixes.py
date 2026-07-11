@@ -68,6 +68,17 @@ async def test_forged_increase_budget_blocked_by_recomputed_cap():
     assert writer.calls == []
 
 
+def test_effective_spend_recomputes_escalation_actions():
+    # 에스컬레이션 지출 증가 액션도 위조 0-신고를 서버 재계산으로 덮는다(코드리뷰 반영).
+    for action_type in ("EXPAND_AUDIENCE", "CHANGE_BID_STRATEGY"):
+        proposal = make_proposal(
+            action_type=action_type,
+            budget_after_krw=100_000_000,
+            max_total_spend_krw=0,
+        )
+        assert Executor._effective_spend(proposal) == estimate_max_total_spend(100_000_000, 7)
+
+
 # ── C-2: LIVE opt-in 게이트 ─────────────────────────────────────────
 async def test_live_blocked_in_default_executor():
     writer = FakeWriter()

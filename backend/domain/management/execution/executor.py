@@ -70,7 +70,13 @@ DEFAULT_ALLOWED_MODES: Final[tuple[ExecutionMode, ...]] = (
 
 #: 지출을 증가시키는 액션 — max_total_spend_krw를 클라이언트 신고값이 아닌 서버 재계산값으로 방어.
 _SPEND_INCREASING_ACTIONS: Final[frozenset[str]] = frozenset(
-    {"INCREASE_BUDGET", "ACTIVATE_CAMPAIGN", "CREATE_CAMPAIGN"}
+    {
+        "INCREASE_BUDGET",
+        "ACTIVATE_CAMPAIGN",
+        "CREATE_CAMPAIGN",
+        "EXPAND_AUDIENCE",  # 에스컬레이션 — 라이브 캠페인 개입(늘림), /execute 위조 방어
+        "CHANGE_BID_STRATEGY",  # 동상 — policy.py "라이브 캠페인 개입(늘림)"
+    }
 )
 #: _build_budget_proposal·demo와 동일 산정일수 — estimate_max_total_spend 재계산 기준.
 _DEFAULT_RUN_DAYS: Final[int] = 7
