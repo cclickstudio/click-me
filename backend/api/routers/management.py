@@ -43,6 +43,7 @@ from core.models import (
     User,
 )
 from domain.billing.service.billing_service import BillingError
+from domain.management.adapters import demo_store
 from domain.management.adapters.generator.client import (
     GeneratorUnavailableError,
     InvalidGenerationError,
@@ -206,6 +207,25 @@ async def _request_reader(
     if user is None:
         raise HTTPException(401, "인증 토큰이 없습니다.")
     return await _require_reader(db, await _require_org_id(user, db))
+
+
+async def _request_reader_lenient(
+    user: User | None = Depends(_optional_user),
+    db: AsyncSession = Depends(get_db),
+) -> AdPlatformReader | None:
+    """`_request_reader`의 관대한 변형 — Meta 미연결(409 등)이면 None으로 계속 진행.
+
+    성과 비교는 미집행 시뮬(예측만) 행이 있어 Meta 연결 전 org에서도 보여줄 게 있다.
+    무인증(401)은 그대로 올린다 — 관대해지는 건 '연결 안 됨'뿐.
+    """
+    if getattr(settings, "use_mock", True):
+        return build_reader(settings)
+    if user is None:
+        raise HTTPException(401, "인증 토큰이 없습니다.")
+    try:
+        return await _require_reader(db, await _require_org_id(user, db))
+    except HTTPException:
+        return None
 
 
 async def _request_writer(
@@ -1030,9 +1050,69 @@ async def _campaign_links(
     return creative_by_meta, sim_by_meta
 
 
+#: 캠페인 미연결(미집행) 완료 시뮬 — 성과 비교 '집행 전(예측만)' 행 후보.
+#: simulation 도메인 ORM import 금지(도메인 경계) — SimPredictionReader와 같은 raw SQL 접근.
+#: 최근 20건 캡(화면 과밀 방지) — 링크되면 캠페인 행으로 흡수되므로 대기열은 짧게 유지된다.
+_UNLINKED_SIMS_SQL = text(
+    """
+    SELECT s.id, a.title
+    FROM simulations s
+    LEFT JOIN ads a ON a.id = s.ad_id
+    WHERE s.organization_id = :org AND s.deleted_at IS NULL AND s.status = 'COMPLETED'
+    ORDER BY s.completed_at DESC NULLS LAST
+    LIMIT 20
+    """
+)
+
+
+async def _unlaunched_sim_rows(
+    db: AsyncSession,
+    org_id: UUID,
+    pred_reader,
+    sim_by_meta: dict[str, tuple[str, str]],
+    now: datetime,
+) -> list[dict]:
+    """미집행 시뮬 → '집행 전(예측만)' 행. 생성한 광고로 돌린 시뮬도 성과 비교에 보이게.
+
+    캠페인 링크가 없으면 기존엔 이 화면에 아예 안 떴다(자동 링크는 from_campaign 시뮬만).
+    실측은 0(미집행)으로 채우고 unlaunched 플래그로 프론트가 '집행 전' 표기를 구분한다.
+    """
+    linked_sids = {sid for sid, _tenant in sim_by_meta.values()}
+    try:
+        sim_rows = (await db.execute(_UNLINKED_SIMS_SQL, {"org": str(org_id)})).all()
+    except Exception:  # noqa: BLE001 — 조회 실패해도 캠페인 행은 그대로
+        return []
+    items: list[dict] = []
+    for sid_raw, title in sim_rows:
+        sid = str(sid_raw)
+        if sid in linked_sids:
+            continue  # 링크된 시뮬은 캠페인 행에서 이미 예측으로 표시됨
+        prediction = await pred_reader.get_prediction(sid, str(org_id))
+        if prediction is None:  # aggregate 없음(집계 전·삭제) — 표시 불가
+            continue
+        actual = RealOutcome(
+            campaign_id=f"unlaunched:{sid}",
+            impressions=0,
+            reach=0,
+            spend_krw=0,
+            ctr=0.0,
+            cpc_krw=0,
+            cpm_krw=0,
+            as_of=now,
+        )
+        row = compute_before_after(
+            f"unlaunched:{sid}", title or "(제목 없는 광고)", prediction, actual
+        ).model_dump(mode="json")
+        row["simulation_id"] = sid
+        row["unlaunched"] = True
+        row["rationale"] = "미집행 — 아직 캠페인과 연결되지 않은 시뮬 예측이에요"
+        items.append(row)
+    return items
+
+
 @router.get("/compare/before-after")
 async def compare_before_after(
-    reader=Depends(_request_reader),
+    reader=Depends(_request_reader_lenient),
     user: User | None = Depends(_optional_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -1051,15 +1131,18 @@ async def compare_before_after(
     )
     creative_by_meta, sim_by_meta = await _campaign_links(db, org_id)
     items: list[dict] = []
+    rate_limited_msg: str | None = None
     try:
-        campaigns = await reader.list_campaigns()
+        # reader None = Meta 미연결 org(lenient) — 캠페인 행 없이 미집행 시뮬 행만 노출.
+        campaigns = await reader.list_campaigns() if reader is not None else []
     except MetaApiError as exc:
         # Meta 요청 한도(code 17 등) — "캠페인 없음"으로 오해되지 않게 표면화.
+        # 미집행 시뮬 행은 DB만 필요하므로 Meta가 막혀도 아래에서 계속 붙인다.
+        campaigns = []
         if exc.is_rate_limited:
-            return {"items": [], "rate_limited": "Meta 요청 한도 — 잠시 후 다시 시도하세요."}
-        return {"items": []}
-    except Exception:  # noqa: BLE001 — 그 외 목록 실패면 빈 결과
-        return {"items": []}
+            rate_limited_msg = "Meta 요청 한도 — 잠시 후 다시 시도하세요."
+    except Exception:  # noqa: BLE001 — 그 외 목록 실패면 캠페인 행 없이 진행
+        campaigns = []
 
     async def _row(c) -> dict | None:
         cid = c.campaign_id
@@ -1077,7 +1160,13 @@ async def compare_before_after(
     # 캠페인 단위 병렬 — 순차 N회 Meta 왕복이 직렬로 쌓이지 않게(_list_campaigns_real과 동일).
     rows = await asyncio.gather(*(_row(c) for c in campaigns))
     items = [r for r in rows if r is not None]
-    return {"items": items}
+    # 미집행 시뮬(캠페인 미연결) — '집행 전(예측만)' 행으로 뒤에 추가(live org에서만).
+    if org_id is not None:
+        items += await _unlaunched_sim_rows(db, org_id, pred_reader, sim_by_meta, now)
+    resp: dict = {"items": items}
+    if rate_limited_msg:
+        resp["rate_limited"] = rate_limited_msg
+    return resp
 
 
 @router.get("/campaigns/{campaign_id}/targeting")
@@ -1113,10 +1202,18 @@ async def link_simulation(
         sim_uuid = UUID(body.simulation_id)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail="simulation_id 형식 오류") from exc
-    owned = await db.scalar(
-        text("SELECT 1 FROM simulations WHERE id = :sid AND organization_id = :org"),
-        {"sid": str(sim_uuid), "org": str(org_id)},
-    )
+    # ADMIN은 교차 워크스페이스 링크 허용(존재만 검증) — 제너레이터 org에서 돌린 시뮬을
+    # 매니지먼트 org 캠페인에 붙이는 흐름. 비-ADMIN은 자기 org 시뮬만(기존 격리 유지).
+    if (getattr(user, "role", "") or "").upper() == "ADMIN":
+        owned = await db.scalar(
+            text("SELECT 1 FROM simulations WHERE id = :sid AND deleted_at IS NULL"),
+            {"sid": str(sim_uuid)},
+        )
+    else:
+        owned = await db.scalar(
+            text("SELECT 1 FROM simulations WHERE id = :sid AND organization_id = :org"),
+            {"sid": str(sim_uuid), "org": str(org_id)},
+        )
     if not owned:
         raise HTTPException(status_code=422, detail="해당 시뮬을 찾을 수 없거나 권한이 없습니다.")
     existing = await db.scalar(
@@ -1129,11 +1226,9 @@ async def link_simulation(
     if existing:
         existing.simulation_id = str(sim_uuid)
     else:
+        # MetaConnection은 soft delete 컬럼이 없다(org당 1건 upsert) — org 필터만.
         conn = await db.scalar(
-            select(MetaConnection).where(
-                MetaConnection.organization_id == str(org_id),
-                MetaConnection.deleted_at.is_(None),
-            )
+            select(MetaConnection).where(MetaConnection.organization_id == str(org_id))
         )
         ad_account_id = conn.ad_account_id if conn else ""
         db.add(
@@ -1323,17 +1418,11 @@ async def kb_eval_faithfulness(n: int = 30) -> dict:
 
 
 # ── 캠페인 목록·성과 대시보드 (🅰 reader 영역 데모 노출) ──────────────────
-# 백엔드에 "캠페인 목록" 능력이 없어(이름·상태 미보유) 데모 캠페인 상수 + MockAdPlatform로
-# 요약/시계열을 합성한다. 실연동 시 reader.list_campaigns로 교체.
-# 일예산 합 100_000 = policy.DAILY_BUDGET_KRW(SMB 데모 표준) — 월 환산 300만으로
+# 백엔드에 "캠페인 목록" 능력이 없어(이름·상태 미보유) 데모 캠페인 정본(demo_store.campaigns(),
+# 구 _CAMPAIGNS_DEMO 상수와 동일 형태·값) + MockAdPlatform로 요약/시계열을 합성한다.
+# 예산은 가변(리밸런스 mock 적용이 갱신) — 실연동 시 reader.list_campaigns로 교체.
+# 초기 일예산 합 100_000 = policy.DAILY_BUDGET_KRW(SMB 데모 표준) — 월 환산 300만으로
 # _BUDGET 기본 월 목표와 페이싱 정합(일반 중소기업 규모, 근거는 _BUDGET 주석 참조).
-_CAMPAIGNS_DEMO: tuple[tuple[str, str, CampaignState, int, FaultMode | None], ...] = (
-    ("camp_1", "여름 신상 원피스", CampaignState.ACTIVE, 40_000, None),
-    ("camp_2", "브랜드 데일리 룩", CampaignState.ACTIVE, 25_000, FaultMode.BID_LOSS),
-    ("camp_3", "신상 액세서리 모음", CampaignState.ACTIVE, 15_000, FaultMode.AUDIENCE_TOO_NARROW),
-    ("camp_4", "쿠폰 안내 공지", CampaignState.UNDER_REVIEW, 10_000, FaultMode.REVIEW_DELAY),
-    ("camp_5", "봄 시즌오프 마감", CampaignState.ENDED, 10_000, None),
-)
 
 
 async def _campaign_snapshots(
@@ -1814,8 +1903,9 @@ async def list_campaigns(
                 }
             raise
     # mock 데모도 동일 페이지네이션 계약(total·has_more)으로 — 프론트 무한스크롤 코드 공유.
-    total = len(_CAMPAIGNS_DEMO)
-    page = list(enumerate(_CAMPAIGNS_DEMO))[offset : offset + limit]
+    demo = demo_store.campaigns()
+    total = len(demo)
+    page = list(enumerate(demo))[offset : offset + limit]
     # 데모 일별지출은 합성이라 네트워크 부하 없음 — opt-in 시 상세와 같은 소스로 series 채움.
     mock = MockAdPlatform() if include_series else None
     out = []
@@ -2030,7 +2120,7 @@ async def get_campaign(
         return await _get_campaign_real(
             reader, campaign_id, conversion_value_krw, target_roas, _valid_preset(date_preset)
         )
-    for i, (cid, name, state, budget, fault) in enumerate(_CAMPAIGNS_DEMO):
+    for i, (cid, name, state, budget, fault) in enumerate(demo_store.campaigns()):
         if cid == campaign_id:
             snaps = await _campaign_snapshots(cid, budget, fault, seed=40 + i)
             actual = [s.impressions for s in snaps]
@@ -2857,8 +2947,8 @@ async def _created_campaign_row(db: AsyncSession, campaign_id: str) -> CreatedCa
 
 
 def _is_demo_campaign(campaign_id: str) -> bool:
-    """campaign_id가 데모 픽스처(_CAMPAIGNS_DEMO)에 존재하는지."""
-    return any(cid == campaign_id for cid, *_ in _CAMPAIGNS_DEMO)
+    """campaign_id가 데모 정본(demo_store.campaigns())에 존재하는지."""
+    return any(cid == campaign_id for cid, *_ in demo_store.campaigns())
 
 
 async def _validated_org(db, sel: str, *, require_active: bool) -> UUID:
@@ -3318,15 +3408,8 @@ _MAX_DAILY_BUDGET_KRW = 100_000_000
 async def _current_daily_budget(reader: AdPlatformReader, campaign_id: str) -> int:
     """현재 일예산 정본 — /campaigns와 동일 소스(리더 목록)에서 조회(없으면 0=진입 전 거부)."""
     if getattr(settings, "use_mock", True):
-        demo = next(
-            (
-                budget
-                for cid, _name, _state, budget, _fault in _CAMPAIGNS_DEMO
-                if cid == campaign_id
-            ),
-            0,
-        )
-        return int(demo)
+        # 데모 정본 스토어에서 직접 조회 — 목록·mock reader와 같은 값(없으면 0=진입 전 거부).
+        return demo_store.get_budget(campaign_id)
     campaigns = await reader.list_campaigns(include_archived=True)
     info = next((c for c in campaigns if c.campaign_id == campaign_id), None)
     return int(info.daily_budget_krw) if info and info.daily_budget_krw else 0
@@ -3494,6 +3577,158 @@ async def budget_commit(
     return response
 
 
+class RebalanceCommitRequest(BaseModel):
+    from_campaign_id: str
+    to_campaign_id: str
+    from_after_krw: int
+    to_after_krw: int
+    move_krw: int = Field(gt=0)
+    shown_from_before_krw: int | None = None
+    shown_to_before_krw: int | None = None
+
+
+async def _validate_rebalance_change(
+    reader: AdPlatformReader, body: RebalanceCommitRequest
+) -> tuple[int, int]:
+    """양쪽 현재값(서버 정본)으로 drift·이동량·범위를 검증하고 (from_before, to_before) 반환."""
+    if body.from_campaign_id == body.to_campaign_id:
+        raise HTTPException(422, "같은 캠페인끼리는 예산을 옮길 수 없어요.")
+    from_before = await _current_daily_budget(reader, body.from_campaign_id)
+    to_before = await _current_daily_budget(reader, body.to_campaign_id)
+    if from_before <= 0 or to_before <= 0:
+        raise HTTPException(409, "현재 일예산을 확인할 수 없어 리밸런싱을 진행할 수 없어요.")
+    if body.shown_from_before_krw is not None and body.shown_from_before_krw != from_before:
+        raise HTTPException(
+            409,
+            f"저효율 캠페인 예산이 {from_before:,}원으로 바뀌었어요. 제안을 다시 확인해 주세요.",
+        )
+    if body.shown_to_before_krw is not None and body.shown_to_before_krw != to_before:
+        raise HTTPException(
+            409, f"고효율 캠페인 예산이 {to_before:,}원으로 바뀌었어요. 제안을 다시 확인해 주세요."
+        )
+    if (
+        from_before - body.from_after_krw != body.move_krw
+        or body.to_after_krw - to_before != body.move_krw
+    ):
+        raise HTTPException(409, "이동 금액이 현재 예산과 맞지 않아요. 제안을 다시 확인해 주세요.")
+    # 양쪽 after 모두 full range — from_after>MAX(원예산이 상한 초과)·to_after<MIN도 거부.
+    if not (
+        _MIN_DAILY_BUDGET_KRW <= body.from_after_krw <= _MAX_DAILY_BUDGET_KRW
+        and _MIN_DAILY_BUDGET_KRW <= body.to_after_krw <= _MAX_DAILY_BUDGET_KRW
+    ):
+        raise HTTPException(
+            422,
+            f"일예산은 {_MIN_DAILY_BUDGET_KRW:,}~{_MAX_DAILY_BUDGET_KRW:,}원 사이여야 해요.",
+        )
+    return from_before, to_before
+
+
+def _build_rebalance_proposal(
+    *,
+    tenant_id: str,
+    ad_account_id: str,
+    body: RebalanceCommitRequest,
+    from_before: int,
+    to_before: int,
+) -> ActionProposal:
+    """검증 통과한 transfer를 원자 REBALANCE_BUDGET 제안 1건으로 빌드."""
+    now = datetime.now(UTC)
+    return finalize_proposal(
+        ActionProposal(
+            proposal_id=f"prop_{uuid4().hex[:8]}",
+            tenant_id=tenant_id,
+            ad_account_id=ad_account_id,
+            target_object_ids=(body.from_campaign_id, body.to_campaign_id),
+            action_type="REBALANCE_BUDGET",
+            action_tier=judge_tier("REBALANCE_BUDGET"),
+            evidence_metrics={
+                "source": "rebalance",
+                "from_before_krw": from_before,
+                "from_after_krw": body.from_after_krw,
+                "to_before_krw": to_before,
+                "to_after_krw": body.to_after_krw,
+                "move_krw": body.move_krw,
+            },
+            metrics_as_of=now,
+            hypothesis="예산 리밸런싱(저효율→고효율) 사용자 승인 집행",
+            confidence=1.0,
+            expected_state_version="state_v1",
+            budget_before_krw=from_before + to_before,
+            budget_after_krw=body.from_after_krw + body.to_after_krw,
+            max_total_spend_krw=0,  # 총액 불변 — Tier 2 정의와 정합
+            expires_at=now + timedelta(minutes=PROPOSAL_TTL_MINUTES),
+            approval_policy_version=APPROVAL_POLICY_VERSION,
+        )
+    )
+
+
+@router.post("/budget/rebalance-commit")
+async def budget_rebalance_commit(
+    body: RebalanceCommitRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """리밸런싱(transfer) 적용 — 승인 1건·원자 액션 1건으로 감액+증액 집행(보상은 executor)."""
+    org_id = await _require_org_id_write(user, db, action="rebalance_commit")
+    await _require_owned_campaign(db, org_id, body.from_campaign_id)
+    await _require_owned_campaign(db, org_id, body.to_campaign_id)
+    reader = await _require_reader(db, org_id)
+    from_before, to_before = await _validate_rebalance_change(reader, body)
+    ad_account = await _require_ad_account(db, org_id)
+    proposal = _build_rebalance_proposal(
+        tenant_id=str(org_id),
+        ad_account_id=ad_account,
+        body=body,
+        from_before=from_before,
+        to_before=to_before,
+    )
+    action = await issue_approval(
+        proposal, str(user.id), execution_mode=_resolved_execution_mode(), store=_APPROVAL_STORE
+    )
+    is_demo = proposal.tenant_id == TENANT_ID
+    executor = (
+        _get_executor()
+        if is_demo or getattr(settings, "use_mock", True)
+        else _get_executor(await _require_writer(db, org_id))
+    )
+    result = await executor.execute(action, proposal)
+    response: dict[str, object] = {"result": result.model_dump(mode="json")}
+    response["from_before_krw"] = from_before
+    response["to_before_krw"] = to_before
+    status = result.status.value if hasattr(result.status, "value") else str(result.status)
+    if status == "success":
+        await _resolve_campaign_notifications(org_id, body.from_campaign_id)
+        await _resolve_campaign_notifications(org_id, body.to_campaign_id)
+        return response
+    comp = _find_in_snapshot(result.platform_response_snapshot, "compensation")
+    if comp == "failed":
+        # 부분 변경 방치 — 수동 복구 안내가 Meta 원문 에러보다 우선한다.
+        response["compensation"] = "failed"
+        response["error_message"] = (
+            f"예산이 부분 변경됐어요 — 저효율 캠페인 일예산을 {from_before:,}원으로 "
+            "수동 복구가 필요해요. 같은 승인으로는 재집행되지 않아요."
+        )
+        return response
+    if _find_in_snapshot(result.platform_response_snapshot, "indeterminate"):
+        # 불확정 박제 — generic 실패로 보이면 재시도(새 제안)를 유도해 이중 적용 위험.
+        response["indeterminate"] = True
+        response["error_message"] = (
+            "일부 변경이 플랫폼에서 아직 확정되지 않았어요 — 바로 재시도하지 말고 "
+            "현재 예산 상태를 확인한 뒤 진행해 주세요."
+        )
+        return response
+    if comp == "succeeded":
+        response["compensation"] = "succeeded"
+    msg = _find_in_snapshot(result.platform_response_snapshot, "user_msg")
+    if msg:
+        response["error_message"] = str(msg)
+    elif comp == "succeeded":
+        response["error_message"] = (
+            "증액에 실패해 감액을 원복했어요. 예산은 원래대로예요 — 잠시 후 다시 시도해 주세요."
+        )
+    return response
+
+
 @router.get("/campaigns/{campaign_id}/leads")
 async def campaign_leads(campaign_id: str):
     """이 캠페인 광고로 제출된 잠재고객(리드) 명단 — Meta leadgen에서 조회.
@@ -3555,7 +3790,7 @@ async def _budget_status(reader, budget_key: str = TENANT_ID) -> dict:
     elapsed_days = datetime.now(UTC).day
     spent = 0
     campaigns = []
-    for i, (cid, name, _state, budget, fault) in enumerate(_CAMPAIGNS_DEMO):
+    for i, (cid, name, _state, budget, fault) in enumerate(demo_store.campaigns()):
         snaps = await _campaign_snapshots(cid, budget, fault, seed=40 + i)
         spend = _campaign_summary(snaps, budget)["spend_krw"] * elapsed_days
         spent += spend

@@ -264,3 +264,63 @@ async def test_replace_creative_emits_widget_without_id(tools):
     cmd = await _run(tools, "replace_creative")
     assert cmd.update["widget"]["type"] == "replace_creative"
     assert cmd.update["widget"]["data"] == {"campaign_id": "", "campaign_name": ""}
+
+
+def _patch_rebalance_proposal(monkeypatch, data):
+    # apply_rebalance는 호출 시점에 domain 모듈에서 import하므로 원본 모듈을 패치한다.
+    from domain.management.assistant import tools as mgmt_tools
+
+    async def _proposal(settings):  # noqa: ANN001
+        return data
+
+    monkeypatch.setattr(mgmt_tools, "live_rebalance_proposal", _proposal)
+
+
+@pytest.mark.asyncio
+async def test_apply_rebalance_no_proposal_returns_note_only(tools, monkeypatch):
+    # 제안 없음 — 카드(위젯) 없이 note 그대로 안내.
+    _patch_rebalance_proposal(monkeypatch, {"proposal": None, "note": "캠페인이 있으면 제안해요."})
+    cmd = await _run(tools, "apply_rebalance")
+    assert "widget" not in cmd.update
+    assert cmd.update["messages"][0].content == "캠페인이 있으면 제안해요."
+
+
+@pytest.mark.asyncio
+async def test_apply_rebalance_adjust_maps_direction_and_budget(tools, monkeypatch):
+    # adjust 분기 — direction→action 매핑과 after_krw 전달을 잠근다(campaign_action 카드 재사용).
+    _patch_rebalance_proposal(
+        monkeypatch,
+        {
+            "proposal": {
+                "kind": "adjust",
+                "direction": "decrease",
+                "campaign": {"campaign_id": "c1", "name": "캠프", "after_krw": 40_000},
+            },
+            "note": None,
+        },
+    )
+    cmd = await _run(tools, "apply_rebalance")
+    assert cmd.update["widget"]["type"] == "campaign_action"
+    action = cmd.update["widget"]["data"]["action"]
+    assert action["action"] == "decrease_budget"
+    assert action["new_daily_budget_krw"] == 40_000
+
+
+@pytest.mark.asyncio
+async def test_apply_rebalance_transfer_emits_rebalance_card(tools, monkeypatch):
+    # transfer 분기 — 제안을 그대로 rebalance_action 카드에 싣는다(from/to 보존).
+    _patch_rebalance_proposal(
+        monkeypatch,
+        {
+            "proposal": {
+                "kind": "transfer",
+                "from": {"campaign_id": "c1", "name": "저성과"},
+                "to": {"campaign_id": "c2", "name": "고성과"},
+                "move_krw": 10_000,
+            },
+            "note": None,
+        },
+    )
+    cmd = await _run(tools, "apply_rebalance")
+    assert cmd.update["widget"]["type"] == "rebalance_action"
+    assert cmd.update["widget"]["data"]["proposal"]["from"]["campaign_id"] == "c1"

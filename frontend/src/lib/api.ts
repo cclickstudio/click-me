@@ -80,7 +80,7 @@ export interface RebalanceSide {
   daily_budget_krw: number;
   after_krw: number;
 }
-// 캠페인 2개+ — 저효율→고효율 일예산 이동(적용은 budget-commit 2건). kind 없으면 하위호환으로 이전.
+// 캠페인 2개+ — 저효율→고효율 일예산 이동(적용은 rebalance-commit 1건). kind 없으면 하위호환으로 이전.
 export interface RebalanceTransfer {
   kind?: 'transfer';
   from: RebalanceSide;
@@ -175,6 +175,7 @@ export interface BeforeAfterItem {
   campaign_id: string;
   name: string;
   simulation_id?: string | null; // 링크된 시뮬 id — 결과 페이지(/simulation/{id}) 이동용(없으면 미연결)
+  unlaunched?: boolean; // 미집행 시뮬(캠페인 미연결) — 예측만 있는 '집행 전' 행
   prediction: PredictionSnapshot | null;
   actual: ActualOutcome;
   verdict: 'aligned' | 'overperformed' | 'underperformed' | 'unknown';
@@ -884,6 +885,25 @@ export const api = {
         budget_before_krw: number;
         budget_after_krw: number;
       }>(`/management/campaigns/${campaignId}/budget-commit`, {
+        method: "POST",
+        body: JSON.stringify(body),
+      }),
+    // 리밸런싱(transfer) 원자 적용 — 감액+증액+실패 시 보상을 백엔드 1건으로 처리(HITL 승인=이 호출).
+    rebalanceCommit: (body: {
+      from_campaign_id: string;
+      to_campaign_id: string;
+      from_after_krw: number;
+      to_after_krw: number;
+      move_krw: number;
+      shown_from_before_krw?: number;
+      shown_to_before_krw?: number;
+    }) =>
+      request<{
+        result: ActionResult;
+        error_message?: string;
+        compensation?: 'succeeded' | 'failed';
+        indeterminate?: boolean;
+      }>(`/management/budget/rebalance-commit`, {
         method: "POST",
         body: JSON.stringify(body),
       }),
