@@ -128,6 +128,8 @@ export default function Page() {
       void fetchData();
     } catch (e) {
       setRebalanceMsg(e instanceof Error ? e.message : '적용 실패');
+      // 부분 변경(보상 실패 등) 시 화면 예산을 서버 정본으로 갱신
+      void fetchData();
     } finally {
       setRebalanceBusy(false);
     }

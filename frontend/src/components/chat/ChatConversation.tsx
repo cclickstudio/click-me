@@ -1987,7 +1987,7 @@ export default function ChatConversation({
                     {msg.meta?.widget?.type === 'rebalance_action' &&
                       msg.meta.widget.data?.proposal && (
                         <ChatRebalanceActionCard
-                          proposal={msg.meta.widget.data.proposal as RebalanceTransfer}
+                          proposal={msg.meta.widget.data.proposal}
                         />
                       )}
                     {msg.meta?.widget?.type === 'replace_creative' && (
