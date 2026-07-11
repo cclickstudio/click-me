@@ -1,0 +1,751 @@
+<!-- 예산 리밸런싱 데모 목업 — 발표 부록 캡처용. 실화면 /manage/budget(앱 셸 포함)을 실제 토큰·구조·문구로 재현, 서버 불필요 -->
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ClickMe — 예산 관리</title>
+<!-- 실제 앱과 동일한 웹폰트 (globals.css 첫 줄과 동일 CDN) -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
+<style>
+  /* ── 디자인 토큰 — frontend/src/app/globals.css :root(라이트) 실값 그대로 ── */
+  :root {
+    --surface-0: #F8FAFC;        /* 페이지 배경 */
+    --surface-1: #F1F5F9;        /* 카드바닥/hover/track */
+    --card: #FFFFFF;             /* 카드 */
+    --ink: #0F172A;              /* text-primary */
+    --ink-secondary: #475569;
+    --ink-tertiary: #64748B;
+    --ink-muted: #94A3B8;
+    --line: #E2E8F0;             /* border */
+    --primary: #2563EB;
+    --primary-hover: #1D4ED8;
+    --primary-subtle: #EFF6FF;
+    --accent: #F1F5F9;
+    --success: #16A34A;
+    --radius-lg: 12px;           /* --radius */
+    --radius-xl: 16px;           /* rounded-xl = radius+4 */
+    --radius-2xl: 16px;          /* tailwind rounded-2xl */
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-font-smoothing: antialiased; }
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: 'Pretendard Variable', 'Pretendard', 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif;
+    background: var(--surface-0); color: var(--ink);
+    min-width: 1360px;
+  }
+  button { font-family: inherit; cursor: pointer; background: none; border: 0; color: inherit; }
+  svg { display: block; }
+  .tnum { font-variant-numeric: tabular-nums; }
+
+  /* ══════════ 앱 셸 — AppLayout: 사이드바(w-56) + 좌측 프로젝트 패널(w-72) ══════════ */
+  .sidebar {
+    position: fixed; top: 0; left: 0; height: 100vh; width: 224px; z-index: 40;
+    background: var(--card); border-right: 1px solid var(--line);
+    display: flex; flex-direction: column;
+  }
+  .sidebar-logo {
+    height: 56px; display: flex; align-items: center; padding: 0 20px;
+    border-bottom: 1px solid var(--line); flex-shrink: 0;
+  }
+  .sidebar-logo a {
+    display: flex; align-items: center; gap: 8px; text-decoration: none;
+    color: var(--primary); font-weight: 700; font-size: 18px; letter-spacing: -0.025em;
+  }
+  .sidebar-logo .mark { width: 28px; height: 28px; border-radius: 6px; flex-shrink: 0; }
+  .sidebar-nav { flex: 1; padding: 12px; overflow-y: auto; }
+  .sidebar-nav > * + * { margin-top: 2px; }
+  .nav-item {
+    position: relative; display: flex; align-items: center; gap: 12px;
+    padding: 10px 12px; border-radius: 8px; font-size: 14px; font-weight: 500;
+    color: var(--ink-secondary); text-decoration: none;
+  }
+  .nav-item:hover { background: var(--accent); color: var(--ink); }
+  .nav-item .icn { color: var(--ink-tertiary); display: flex; }
+  .nav-item.active {
+    background: var(--primary-subtle); color: var(--primary);
+  }
+  .nav-item.active::before {
+    content: ''; position: absolute; left: 0; top: 50%; transform: translateY(-50%);
+    height: 20px; width: 4px; border-radius: 0 9999px 9999px 0; background: var(--primary);
+  }
+  .nav-item.active .icn { color: var(--primary); }
+  .nav-item span.lbl { flex: 1; }
+  /* 아코디언(광고 매니지먼트) */
+  .nav-acc-btn {
+    display: flex; align-items: center; width: 100%; border-radius: 8px;
+    font-size: 14px; font-weight: 500; color: var(--ink-secondary); text-align: left;
+  }
+  .nav-acc-btn.section-active { color: var(--primary); }
+  .nav-acc-btn .head { display: flex; align-items: center; gap: 12px; flex: 1; padding: 10px 0 10px 12px; }
+  .nav-acc-btn .icn { color: var(--ink-tertiary); display: flex; }
+  .nav-acc-btn.section-active .icn { color: var(--primary); }
+  .nav-acc-btn .chev { padding: 10px 12px; color: var(--ink-tertiary); }
+  .nav-acc-btn .chev svg { transform: rotate(180deg); }
+  .subnav { margin-top: 2px; }
+  .subnav > * + * { margin-top: 2px; }
+  .subnav-item {
+    display: flex; align-items: center; gap: 10px; padding: 8px 12px 8px 44px;
+    border-radius: 8px; font-size: 14px; color: var(--ink-tertiary); text-decoration: none;
+  }
+  .subnav-item:hover { background: var(--accent); color: var(--ink); }
+  .subnav-item .dot { width: 6px; height: 6px; border-radius: 9999px; background: currentColor; opacity: .5; flex-shrink: 0; }
+  .subnav-item.active { background: var(--primary-subtle); color: var(--primary); font-weight: 500; }
+  .subnav-item.active .dot { background: var(--primary); opacity: 1; }
+  .section-label {
+    padding: 16px 12px 4px; font-size: 10px; font-weight: 600;
+    color: var(--ink-muted); text-transform: uppercase; letter-spacing: 0.05em;
+  }
+  .sidebar-bottom { padding: 16px; border-top: 1px solid var(--line); flex-shrink: 0; }
+  .sidebar-bottom > * + * { margin-top: 4px; }
+  .credit-widget {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    padding: 8px 12px; border-radius: 8px; background: var(--surface-1); margin-bottom: 8px;
+  }
+  .credit-widget .cap { font-size: 10px; color: var(--ink-tertiary); }
+  .credit-widget .val { font-size: 14px; font-weight: 700; color: var(--ink); }
+  .user-card { padding: 10px 12px; border-radius: 8px; background: var(--surface-1); margin-bottom: 4px; }
+  .user-card .name { font-size: 12px; font-weight: 600; color: var(--ink); }
+  .user-card .id { font-size: 10px; color: var(--ink-tertiary); }
+  .user-card .role {
+    display: inline-block; margin-top: 4px; font-size: 9px; font-weight: 500;
+    padding: 2px 6px; border-radius: 4px; background: var(--primary-subtle); color: var(--primary);
+  }
+  .ghost-btn {
+    display: flex; align-items: center; gap: 12px; padding: 10px 12px; width: 100%;
+    border-radius: 8px; font-size: 14px; font-weight: 500; color: var(--ink-secondary); text-align: left;
+  }
+  .ghost-btn:hover { background: var(--accent); color: var(--ink); }
+  .ghost-btn.logout { color: var(--ink-tertiary); }
+
+  /* 좌측 프로젝트 패널 (ProjectPanel 펼침, w-72 bg-surface-1) */
+  .panel {
+    position: fixed; top: 0; left: 224px; height: 100vh; width: 288px; z-index: 30;
+    background: var(--surface-1); border-right: 1px solid var(--line);
+    display: flex; flex-direction: column;
+  }
+  .panel-head {
+    height: 56px; display: flex; align-items: center; justify-content: space-between;
+    padding: 0 12px; border-bottom: 1px solid var(--line); flex-shrink: 0;
+  }
+  .panel-head .title { font-size: 14px; font-weight: 600; color: var(--ink-secondary); }
+  .icon-btn {
+    width: 28px; height: 28px; display: flex; align-items: center; justify-content: center;
+    border-radius: 8px; color: var(--ink-tertiary);
+  }
+  .icon-btn:hover { background: var(--accent); color: var(--primary); }
+  .panel-list { flex: 1; overflow-y: auto; padding: 8px; }
+  .proj-item {
+    display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+    border-radius: 8px; text-align: left; width: 100%;
+  }
+  .proj-item:hover { background: var(--accent); }
+  .proj-item.selected { background: var(--primary-subtle); }
+  .proj-item .nm { flex: 1; font-size: 14px; font-weight: 500; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .proj-item.selected .nm { color: var(--primary); }
+  .proj-item .icn { color: var(--ink-tertiary); display: flex; flex-shrink: 0; }
+  .proj-item.selected .icn.folder { color: var(--primary); }
+  .proj-item .ext { color: var(--ink-muted); padding: 4px; border-radius: 6px; }
+  .panel-trash { border-top: 1px solid var(--line); padding: 8px; flex-shrink: 0; }
+  .panel-trash a {
+    display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 8px;
+    font-size: 14px; color: var(--ink-tertiary); text-decoration: none;
+  }
+  .panel-trash a:hover { background: var(--accent); color: var(--primary); }
+
+  /* ══════════ 메인 — /manage/budget ══════════ */
+  main { margin-left: 512px; min-height: 100vh; }
+  .content { max-width: 1280px; margin: 0 auto; padding: 32px 24px; }
+
+  /* 페이지 헤더 */
+  .page-head { margin-bottom: 24px; display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; }
+  .page-head h1 { font-size: 24px; line-height: 32px; font-weight: 700; color: var(--ink); }
+  .page-head .sub { font-size: 14px; color: var(--ink-tertiary); margin-top: 4px; }
+  .page-head .right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; font-size: 12px; color: var(--ink-tertiary); }
+  .refresh-btn {
+    padding: 6px 10px; border-radius: 8px; border: 1px solid var(--line);
+    font-size: 12px; color: var(--ink-tertiary);
+  }
+  .refresh-btn:hover { border-color: var(--primary); color: var(--primary); }
+
+  .stack > * + * { margin-top: 16px; }
+  .card2xl { border: 1px solid var(--line); border-radius: var(--radius-2xl); padding: 20px; }
+  .card-title-sm { font-size: 14px; font-weight: 600; color: var(--ink); }
+  .card-title-b { font-weight: 700; color: var(--ink); font-size: 16px; }
+
+  /* 기본 목표 기준 스트립 */
+  .bench {
+    display: flex; flex-wrap: wrap; align-items: center; column-gap: 24px; row-gap: 8px;
+    border: 1px solid var(--line); border-radius: var(--radius-2xl);
+    background: var(--surface-1); padding: 14px 20px;
+  }
+  .bench .lead { font-size: 13px; font-weight: 600; color: var(--ink-secondary); }
+  .bench .kv .k { font-size: 11px; color: var(--ink-tertiary); }
+  .bench .kv .v { margin-top: 2px; font-size: 13px; font-weight: 600; color: var(--ink); }
+  .bench .note { margin-left: auto; font-size: 11px; color: var(--ink-muted); }
+
+  /* 게이지 카드 */
+  .gauge-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+  .pace-badge {
+    font-size: 12px; font-weight: 500; padding: 4px 8px; border-radius: 8px;
+    background: #EBF3FF; color: var(--primary);
+  }
+  .gauge-meta { display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 8px; }
+  .gauge-meta .l { font-size: 14px; color: var(--ink-tertiary); }
+  .gauge-meta .l b { color: var(--ink); }
+  .gauge-meta .pct { font-size: 24px; font-weight: 800; color: var(--ink); }
+  .gauge-track { position: relative; height: 24px; border-radius: 9999px; background: var(--surface-1); overflow: hidden; }
+  .gauge-band-amber { position: absolute; top: 0; bottom: 0; left: 90%; width: 5%; background: #FEF3C7; }  /* amber-100 */
+  .gauge-band-red { position: absolute; top: 0; bottom: 0; left: 95%; width: 5%; background: #FEE2E2; }    /* red-100 */
+  .gauge-fill { position: relative; height: 100%; border-radius: 9999px; background: var(--primary); transition: width .3s; }
+  .gauge-line { position: absolute; top: 0; height: 100%; border-left: 1px solid rgba(255,255,255,.7); }
+  .gauge-plan { position: absolute; top: 0; height: 100%; border-left: 2px dashed rgba(25,31,40,.6); }
+  .gauge-scale { position: relative; height: 16px; margin-top: 4px; font-size: 10px; color: var(--ink-muted); }
+  .gauge-scale .zero { position: absolute; left: 0; }
+  .gauge-scale .plan { position: absolute; transform: translateX(-50%); color: var(--ink-secondary); }
+  .gauge-scale .rail { position: absolute; right: 0; }
+
+  /* 출처 범례 */
+  .legend { display: flex; flex-wrap: wrap; align-items: center; column-gap: 12px; row-gap: 4px; font-size: 11px; color: var(--ink-tertiary); }
+  .legend .it { display: inline-flex; align-items: center; gap: 4px; }
+  .legend .dot-b { width: 6px; height: 6px; border-radius: 9999px; background: var(--primary); }
+  .origin-tag {
+    display: inline-block; vertical-align: middle; border-radius: 4px; border: 1px solid;
+    padding: 0 4px; font-size: 9px; font-weight: 500; line-height: 1.5; margin-left: 4px;
+  }
+  .origin-setting { background: #F5F3FF; color: #7C3AED; border-color: #DDD6FE; }  /* violet-50/600/200 */
+  .origin-computed { background: #FFFBEB; color: #D97706; border-color: #FDE68A; } /* amber-50/600/200 */
+
+  /* 스탯 카드 6열 */
+  .stat-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; }
+  .stat-card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius-2xl); padding: 20px; }
+  .stat-card .lbl { font-size: 12px; color: var(--ink-tertiary); margin-bottom: 4px; }
+  .stat-card .row { display: flex; align-items: flex-end; justify-content: space-between; gap: 8px; }
+  .stat-card .val { font-size: 24px; line-height: 32px; font-weight: 700; color: var(--ink); }
+  .stat-card .meta { margin-top: 2px; display: flex; align-items: center; gap: 6px; }
+  .stat-card .delta-down { font-size: 10px; font-weight: 500; color: #EF4444; } /* red-500 */
+  .stat-card .sub { font-size: 11px; color: var(--ink-muted); }
+  .stat-card .spark { flex-shrink: 0; padding-bottom: 2px; }
+
+  /* Meta 선불 정합 */
+  .recon { display: flex; flex-wrap: wrap; align-items: flex-end; column-gap: 12px; row-gap: 8px; }
+  .recon .k { font-size: 11px; color: var(--ink-tertiary); }
+  .recon .v { font-size: 18px; line-height: 28px; font-weight: 700; color: var(--ink); }
+  .recon .v.hl { font-weight: 800; color: var(--primary); }
+  .recon .op { font-size: 18px; color: var(--ink-tertiary); padding-bottom: 4px; }
+  .recon-note { margin-top: 12px; font-size: 11px; color: var(--ink-muted); }
+
+  /* 일자별 소진 */
+  .bars-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+  .bars-head .plan { font-size: 11px; color: var(--ink-tertiary); }
+  .day-rows > * + * { margin-top: 6px; }
+  .day-row { display: flex; align-items: center; gap: 12px; }
+  .day-row .d { width: 56px; font-size: 11px; color: var(--ink-tertiary); }
+  .day-row .track { flex: 1; height: 8px; border-radius: 9999px; background: var(--surface-1); overflow: hidden; }
+  .day-row .fill { height: 100%; background: var(--primary); }
+  .day-row .fill.over { background: #F87171; } /* red-400 */
+  .day-row .amt { width: 80px; text-align: right; font-size: 12px; color: var(--ink); }
+
+  /* 캠페인별 지출 */
+  .scope-toggle { display: flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; font-size: 11px; }
+  .scope-toggle button { padding: 4px 10px; color: var(--ink-tertiary); }
+  .scope-toggle button.on { background: var(--primary); color: #fff; }
+  .spend-grid { display: grid; grid-template-columns: 220px 1fr; gap: 20px; align-items: center; }
+  .donut-wrap { display: flex; flex-direction: column; align-items: center; gap: 12px; width: 100%; }
+  .donut-legend { width: 100%; }
+  .donut-legend > * + * { margin-top: 4px; }
+  .donut-legend .lr { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 11px; }
+  .donut-legend .nm { display: flex; min-width: 0; align-items: center; gap: 6px; font-weight: 500; color: var(--ink); }
+  .donut-legend .sw { width: 8px; height: 8px; border-radius: 9999px; flex-shrink: 0; }
+  .donut-legend .pc { flex-shrink: 0; color: var(--ink-tertiary); }
+  .camp-rows > * + * { margin-top: 10px; }
+  .camp-row { display: flex; align-items: center; gap: 12px; }
+  .camp-row .nm { width: 128px; font-size: 14px; color: var(--ink-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .camp-row .track { flex: 1; height: 8px; border-radius: 9999px; background: var(--surface-1); overflow: hidden; }
+  .camp-row .fill { height: 100%; background: var(--primary); }
+  .camp-row .roas { width: 64px; text-align: right; font-size: 11px; color: var(--ink-tertiary); }
+  .camp-row .amt { width: 96px; text-align: right; font-size: 14px; color: var(--ink); }
+
+  /* 리밸런싱 제안 */
+  .ai-badge {
+    margin-left: 8px; border-radius: 6px; background: #EBF3FF; padding: 2px 6px;
+    font-size: 10px; font-weight: 600; color: var(--primary); vertical-align: middle;
+  }
+  .card-desc { font-size: 12px; color: var(--ink-tertiary); margin-bottom: 12px; line-height: 1.6; }
+  .proposal-box { border-radius: var(--radius-lg); background: var(--surface-1); padding: 12px 16px; }
+  .proposal-line { font-size: 14px; color: var(--ink); line-height: 1.7; }
+  .proposal-line b { font-weight: 700; }
+  .proposal-line .nums { color: var(--ink-tertiary); }
+  .proposal-line .chg { font-size: 11px; font-weight: 600; margin-left: 4px; }
+  .proposal-line .chg.up { color: var(--success); }
+  .proposal-line .chg.down { color: #B45309; }
+  .proposal-reason { margin-top: 4px; font-size: 12px; color: var(--ink-tertiary); line-height: 1.6; }
+  .proposal-actions { margin-top: 8px; display: flex; justify-content: flex-end; }
+  .apply-btn {
+    border-radius: 8px; background: var(--primary); padding: 6px 12px;
+    font-size: 12px; font-weight: 600; color: #fff;
+  }
+  .apply-btn:hover { background: var(--primary-hover); }
+  .apply-btn:disabled { opacity: .4; cursor: default; }
+  .rebalance-msg { margin-top: 8px; font-size: 12px; color: var(--ink-secondary); display: none; }
+
+  /* 월 목표 예산 설정 */
+  .calc-row { margin-bottom: 12px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 12px; }
+  .calc-row .cap { color: var(--ink-tertiary); }
+  .calc-row input {
+    width: 144px; border-radius: 8px; border: 1px solid var(--line); background: transparent;
+    padding: 6px 8px; font-size: 12px; color: var(--ink); outline: none; font-family: inherit;
+  }
+  .calc-row input::placeholder { color: var(--ink-muted); }
+  .target-row { display: flex; align-items: center; gap: 8px; max-width: 448px; }
+  .target-row .won { font-size: 14px; color: var(--ink-tertiary); }
+  .target-row input {
+    flex: 1; border-radius: var(--radius-xl); border: 1px solid var(--line); background: transparent;
+    padding: 8px 12px; font-size: 14px; color: var(--ink); outline: none; font-family: inherit;
+    font-variant-numeric: tabular-nums;
+  }
+  .target-row input:focus, .calc-row input:focus { border-color: var(--primary); }
+  .target-btn {
+    padding: 8px 16px; background: var(--primary); color: #fff; font-size: 14px; font-weight: 500;
+    border-radius: 8px; white-space: nowrap;
+  }
+  .target-btn:hover { background: var(--primary-hover); }
+
+  /* 크레딧 내역 테이블 */
+  .ledger-cap { font-size: 11px; color: var(--ink-muted); margin-bottom: 12px; }
+  table.ledger { width: 100%; font-size: 14px; border-collapse: collapse; }
+  table.ledger thead tr { border-bottom: 1px solid var(--line); }
+  table.ledger th { padding: 8px 12px; font-size: 12px; font-weight: 600; color: var(--ink-tertiary); white-space: nowrap; }
+  table.ledger td { padding: 8px 12px; white-space: nowrap; color: var(--ink); }
+  table.ledger tbody tr { border-bottom: 1px solid #F2F4F6; }
+  table.ledger tbody tr:last-child { border-bottom: 0; }
+  .ta-l { text-align: left; } .ta-r { text-align: right; }
+  .r-charge { color: var(--primary); font-weight: 500; }
+  .r-spend { color: var(--ink-secondary); font-weight: 500; }
+  .cell-dim { color: var(--ink-secondary); }
+  .cell-mute { color: var(--ink-tertiary); }
+
+  .foot-note { margin-top: 24px; font-size: 11px; color: var(--ink-muted); }
+
+  /* ── 앱 셸 밖 각주 — 캡처 크롭이 쉽게 페이지 하단 분리 ── */
+  .demo-note {
+    margin: 40px 0 24px; padding-top: 14px; border-top: 1px dashed var(--line);
+    font-size: 11px; color: var(--ink-tertiary); line-height: 1.8;
+  }
+  .demo-note b { color: var(--ink-secondary); }
+  .reset-btn { color: var(--ink-tertiary); font-size: 11px; text-decoration: underline; float: right; }
+</style>
+</head>
+<body>
+
+<!-- ══════════ 사이드바 (Sidebar.tsx — USER 역할) ══════════ -->
+<aside class="sidebar">
+  <div class="sidebar-logo">
+    <a href="#">
+      <!-- 로고 마크 — logo-mark.png(파란 라운드 사각형 + 흰 C·커서 화살표)를 inline SVG로 대체 -->
+      <svg class="mark" viewBox="0 0 48 48" aria-hidden="true">
+        <rect width="48" height="48" rx="11" fill="#2E7CF5"/>
+        <path d="M33.8 17.2a12.5 12.5 0 1 0 .2 13.4" stroke="#fff" stroke-width="5.4" fill="none" stroke-linecap="round"/>
+        <path d="M19.8 24.6 31.4 19l-2.9 12.4-2.7-5z" fill="#fff"/>
+      </svg>
+      ClickMe
+    </a>
+  </div>
+
+  <nav class="sidebar-nav">
+    <a class="nav-item" href="#">
+      <span class="icn"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg></span>
+      <span class="lbl">대시보드</span>
+    </a>
+    <a class="nav-item" href="#">
+      <span class="icn"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg></span>
+      <span class="lbl">채팅</span>
+    </a>
+    <a class="nav-item" href="#">
+      <span class="icn"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span>
+      <span class="lbl">광고 시뮬레이션</span>
+    </a>
+    <a class="nav-item" href="#">
+      <span class="icn"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/><path d="M4 17v2"/><path d="M5 18H3"/></svg></span>
+      <span class="lbl">광고 제너레이터</span>
+    </a>
+
+    <!-- 광고 매니지먼트 아코디언 — 펼침 상태, '예산 관리' 활성 -->
+    <div>
+      <button type="button" class="nav-acc-btn section-active">
+        <span class="head">
+          <span class="icn"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg></span>
+          <span>광고 매니지먼트</span>
+        </span>
+        <span class="chev"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></span>
+      </button>
+      <div class="subnav">
+        <a class="subnav-item" href="#"><span class="dot"></span><span>홈</span></a>
+        <a class="subnav-item" href="#"><span class="dot"></span><span>캠페인</span></a>
+        <a class="subnav-item" href="#"><span class="dot"></span><span>모니터링</span></a>
+        <a class="subnav-item" href="#"><span class="dot"></span><span>이상 감지</span></a>
+        <a class="subnav-item active" href="#"><span class="dot"></span><span>예산 관리</span></a>
+        <a class="subnav-item" href="#"><span class="dot"></span><span>성과 비교</span></a>
+        <a class="subnav-item" href="#"><span class="dot"></span><span>신뢰도</span></a>
+        <a class="subnav-item" href="#"><span class="dot"></span><span>연동</span></a>
+      </div>
+    </div>
+
+    <p class="section-label">계정</p>
+    <a class="nav-item" href="#">
+      <span class="icn"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/></svg></span>
+      <span class="lbl">내 조직</span>
+    </a>
+    <a class="nav-item" href="#">
+      <span class="icn"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="15" r="3"/><circle cx="9" cy="7" r="4"/><path d="M10 15H6a4 4 0 0 0-4 4v2"/><path d="m21.7 16.4-.9-.3"/><path d="m15.2 13.9-.9-.3"/><path d="m16.6 18.7.3-.9"/><path d="m19.1 12.2.3-.9"/><path d="m19.6 18.7-.4-1"/><path d="m16.8 12.3-.4-1"/><path d="m14.3 16.6 1-.4"/><path d="m20.7 13.8 1-.4"/></svg></span>
+      <span class="lbl">내 정보 관리</span>
+    </a>
+  </nav>
+
+  <div class="sidebar-bottom">
+    <div class="credit-widget">
+      <div>
+        <p class="cap">크레딧 잔액 (예산 한도)</p>
+        <p class="val">1,000,000원</p>
+      </div>
+    </div>
+    <div class="user-card">
+      <p class="name">김보은</p>
+      <p class="id">boeun.kim</p>
+      <span class="role">USER</span>
+    </div>
+    <button class="ghost-btn">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></svg>
+      다크 모드
+    </button>
+    <button class="ghost-btn logout">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" x2="9" y1="12" y2="12"/></svg>
+      로그아웃
+    </button>
+  </div>
+</aside>
+
+<!-- ══════════ 좌측 프로젝트 패널 (ProjectPanel 펼침) ══════════ -->
+<aside class="panel">
+  <div class="panel-head">
+    <button class="icon-btn" title="패널 접기">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+    </button>
+    <p class="title">프로젝트</p>
+    <div style="display:flex;align-items:center;gap:4px;">
+      <button class="icon-btn" title="새로고침">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+      </button>
+      <button class="icon-btn" title="새 프로젝트">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+      </button>
+    </div>
+  </div>
+  <div class="panel-list">
+    <div class="proj-item selected">
+      <span class="icn"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></span>
+      <span class="icn folder"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></span>
+      <span class="nm">여름 신상 캠페인</span>
+      <span class="ext"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></span>
+    </div>
+    <div class="proj-item">
+      <span class="icn"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg></span>
+      <span class="icn"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></span>
+      <span class="nm">브랜드 리뉴얼</span>
+      <span class="ext"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg></span>
+    </div>
+  </div>
+  <div class="panel-trash">
+    <a href="#">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+      휴지통
+    </a>
+  </div>
+</aside>
+
+<!-- ══════════ 메인 — /manage/budget (page.tsx 재현) ══════════ -->
+<main>
+  <div class="content">
+    <div class="page-head">
+      <div>
+        <h1>예산 관리</h1>
+        <p class="sub">월 목표 예산 대비 이번 달 실 Meta 집행 페이싱 · 여력=Meta 선불 잔액 · 90/95/100% 가드레일</p>
+      </div>
+      <div class="right">
+        <span>갱신 오후 2:38:12</span>
+        <button class="refresh-btn">↻ 새로고침</button>
+      </div>
+    </div>
+
+    <div class="stack">
+      <!-- 기본 목표 벤치마크 -->
+      <div class="bench">
+        <span class="lead">기본 목표 기준</span>
+        <div class="kv"><p class="k">가정 업종·규모</p><p class="v">이커머스·리테일 소기업 (5~20인)</p></div>
+        <div class="kv"><p class="k">월 매출</p><p class="v">₩2,000만~6,000만</p></div>
+        <div class="kv"><p class="k">광고비 비중</p><p class="v">매출의 5~15%</p></div>
+        <div class="kv"><p class="k">권장 월 광고비</p><p class="v">₩3,000,000 (일 ₩100,000)</p></div>
+        <span class="note">내 매출 규모에 맞게 아래에서 목표를 조정하세요</span>
+      </div>
+
+      <!-- 월 목표 대비 소진 게이지 -->
+      <div class="card2xl">
+        <div class="gauge-head">
+          <p class="card-title-sm">2026-07 월 목표 대비 소진</p>
+          <span class="pace-badge tnum">이 페이스면 월말 ₩2,369,392 · 목표의 79%</span>
+        </div>
+        <div class="gauge-meta">
+          <span class="l tnum">소진 <b>₩764,320</b> / 한도 ₩3,000,000</span>
+          <span class="pct tnum">25%</span>
+        </div>
+        <div class="gauge-track">
+          <div class="gauge-band-amber"></div>
+          <div class="gauge-band-red"></div>
+          <div class="gauge-fill" style="width:25.5%"></div>
+          <div class="gauge-line" style="left:90%"></div>
+          <div class="gauge-line" style="left:95%"></div>
+          <div class="gauge-plan" style="left:35.5%" title="오늘까지 계획 페이스 35%"></div>
+        </div>
+        <div class="gauge-scale">
+          <span class="zero">0</span>
+          <span class="plan" style="left:35.5%">오늘 계획 35%</span>
+          <span class="rail">경고 90% · 차단 95%</span>
+        </div>
+      </div>
+
+      <!-- 출처 범례 -->
+      <div class="legend">
+        <span class="it"><span class="dot-b"></span>Meta 실측</span>
+        <span class="it"><span class="origin-tag origin-setting" style="margin-left:0">내 설정</span>내가 정한 값</span>
+        <span class="it"><span class="origin-tag origin-computed" style="margin-left:0">계산</span>실측을 내 설정과 합쳐 계산(일부 추정)</span>
+      </div>
+
+      <!-- KPI 스탯 카드 6열 -->
+      <div class="stat-grid">
+        <div class="stat-card">
+          <p class="lbl">월 목표<span class="origin-tag origin-setting">내 설정</span></p>
+          <div class="row"><div><p class="val tnum">₩3,000,000</p></div></div>
+        </div>
+        <div class="stat-card">
+          <p class="lbl">이번 달 소진</p>
+          <div class="row">
+            <div style="min-width:0">
+              <p class="val tnum">₩764,320</p>
+              <p class="meta"><span class="delta-down">일간 ▼9%</span></p>
+            </div>
+            <div class="spark">
+              <svg width="72" height="26" style="overflow:visible">
+                <path d="M2,24.0 L9.6,21.2 L17.1,19.8 L24.7,15.6 L32.2,23.0 L39.8,2.0 L47.3,20.2 L54.9,22.3 L62.4,18.4 L70,22.8" fill="none" stroke="#2563EB" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"/>
+                <circle cx="70" cy="22.8" r="2" fill="#2563EB"/>
+              </svg>
+            </div>
+          </div>
+        </div>
+        <div class="stat-card">
+          <p class="lbl">잔여<span class="origin-tag origin-computed">계산</span></p>
+          <div class="row"><div><p class="val tnum">₩2,235,680</p></div></div>
+        </div>
+        <div class="stat-card">
+          <p class="lbl">월 목표 소진율<span class="origin-tag origin-computed">계산</span></p>
+          <div class="row"><div><p class="val tnum">25%</p></div></div>
+        </div>
+        <div class="stat-card">
+          <p class="lbl">크레딧 잔액 (집행 한도)</p>
+          <div class="row"><div><p class="val tnum">₩1,000,000</p><p class="meta"><span class="sub">ClickMe 크레딧 — spend_cap</span></p></div></div>
+        </div>
+        <div class="stat-card">
+          <p class="lbl">여력 (Meta 선불 잔액)</p>
+          <div class="row"><div><p class="val tnum">₩735,680</p><p class="meta"><span class="sub">실제 게재 가능 금액</span></p></div></div>
+        </div>
+      </div>
+
+      <!-- Meta 선불 계정 정합 -->
+      <div class="card2xl">
+        <p class="card-title-sm" style="margin-bottom:12px">Meta 선불 계정 정합</p>
+        <div class="recon tnum">
+          <div><p class="k">충전 한도</p><p class="v">₩2,000,000</p></div>
+          <span class="op">−</span>
+          <div><p class="k">누적 지출</p><p class="v">₩1,264,320</p></div>
+          <span class="op">=</span>
+          <div><p class="k">선불 잔액</p><p class="v hl">₩735,680</p></div>
+        </div>
+        <p class="recon-note">충전 한도는 결제액의 <b>부가세(10%) 제외분</b>입니다 — 실제 결제액 ≈ 충전 한도 × 1.1 (예: 충전 한도 ₩2,000,000 → 결제 ≈ ₩2,200,000).</p>
+      </div>
+
+      <!-- 일자별 소진 -->
+      <div class="card2xl">
+        <div class="bars-head">
+          <p class="card-title-b">일자별 소진</p>
+          <span class="plan tnum">일 계획 ₩96,774</span>
+        </div>
+        <div class="day-rows tnum">
+          <div class="day-row"><span class="d">07-01</span><div class="track"><div class="fill" style="width:66.3%"></div></div><span class="amt">₩68,410</span></div>
+          <div class="day-row"><span class="d">07-02</span><div class="track"><div class="fill" style="width:70.6%"></div></div><span class="amt">₩72,850</span></div>
+          <div class="day-row"><span class="d">07-03</span><div class="track"><div class="fill" style="width:72.8%"></div></div><span class="amt">₩75,120</span></div>
+          <div class="day-row"><span class="d">07-04</span><div class="track"><div class="fill" style="width:79.1%"></div></div><span class="amt">₩81,660</span></div>
+          <div class="day-row"><span class="d">07-05</span><div class="track"><div class="fill" style="width:67.7%"></div></div><span class="amt">₩69,930</span></div>
+          <div class="day-row"><span class="d">07-06</span><div class="track"><div class="fill over" style="width:100%"></div></div><span class="amt">₩103,220</span></div>
+          <div class="day-row"><span class="d">07-07</span><div class="track"><div class="fill" style="width:72.2%"></div></div><span class="amt">₩74,480</span></div>
+          <div class="day-row"><span class="d">07-08</span><div class="track"><div class="fill" style="width:68.9%"></div></div><span class="amt">₩71,090</span></div>
+          <div class="day-row"><span class="d">07-09</span><div class="track"><div class="fill" style="width:74.9%"></div></div><span class="amt">₩77,310</span></div>
+          <div class="day-row"><span class="d">07-10</span><div class="track"><div class="fill" style="width:68.1%"></div></div><span class="amt">₩70,250</span></div>
+        </div>
+      </div>
+
+      <!-- 캠페인별 지출 -->
+      <div class="card2xl">
+        <div class="bars-head">
+          <p class="card-title-b">캠페인별 지출</p>
+          <div class="scope-toggle">
+            <button class="on">이번 달</button>
+            <button>전체 기간</button>
+          </div>
+        </div>
+        <div class="spend-grid">
+          <!-- 지출 비중 도넛 (SpendDonut — 실측 구성비) -->
+          <div class="donut-wrap">
+            <svg width="150" height="130" viewBox="0 0 150 130">
+              <g transform="translate(75,65)">
+                <!-- 51% / 31% / 18%, paddingAngle 재현(작은 갭) -->
+                <circle r="44" fill="none" stroke="#2563EB" stroke-width="16" stroke-dasharray="138 276.46" transform="rotate(-90)"/>
+                <circle r="44" fill="none" stroke="#F04452" stroke-width="16" stroke-dasharray="82.7 276.46" transform="rotate(96.6)"/>
+                <circle r="44" fill="none" stroke="#F59E0B" stroke-width="16" stroke-dasharray="46.8 276.46" transform="rotate(211.2)"/>
+              </g>
+            </svg>
+            <div class="donut-legend">
+              <div class="lr"><span class="nm"><span class="sw" style="background:#2563EB"></span><span>여름 신상 원피스</span></span><span class="pc tnum">51%</span></div>
+              <div class="lr"><span class="nm"><span class="sw" style="background:#F04452"></span><span>브랜드 데일리 룩</span></span><span class="pc tnum">31%</span></div>
+              <div class="lr"><span class="nm"><span class="sw" style="background:#F59E0B"></span><span>신상 액세서리 모음</span></span><span class="pc tnum">18%</span></div>
+            </div>
+          </div>
+          <div class="camp-rows">
+            <div class="camp-row"><span class="nm">여름 신상 원피스</span><div class="track"><div class="fill" style="width:100%"></div></div><span class="roas tnum">ROAS 4.2x</span><span class="amt tnum">₩392,540</span></div>
+            <div class="camp-row"><span class="nm">브랜드 데일리 룩</span><div class="track"><div class="fill" style="width:60.2%"></div></div><span class="roas tnum">ROAS 1.8x</span><span class="amt tnum">₩236,180</span></div>
+            <div class="camp-row"><span class="nm">신상 액세서리 모음</span><div class="track"><div class="fill" style="width:34.5%"></div></div><span class="roas tnum">ROAS 2.6x</span><span class="amt tnum">₩135,600</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 예산 리밸런싱 제안 — 저효율→고효율 이동(적용은 승인 경로 재사용) -->
+      <div class="card2xl">
+        <p class="card-title-b" style="margin-bottom:4px">
+          예산 리밸런싱 제안
+          <span class="ai-badge">AI 제안</span>
+        </p>
+        <p class="card-desc">
+          최근 7일 실측 기반 제안 — 캠페인이 2개 이상이면 저효율 일예산 20%를 고효율 쪽으로
+          옮기고, 1개면 그 캠페인 소진율에 따라 일예산을 증액·감액합니다. 적용해도 바로
+          집행되지 않고 기존 예산 변경 검증·승인 경로를 그대로 거칩니다.
+        </p>
+        <div class="proposal-box">
+          <p class="proposal-line">
+            <b>브랜드 데일리 룩</b>
+            <span class="nums tnum" id="from-num">(CPC ₩1,105 · ₩25,000→₩20,000)</span><span class="chg down" id="from-chg"></span>
+            → <b>여름 신상 원피스</b>
+            <span class="nums tnum" id="to-num">(CPC ₩622 · ₩40,000→₩45,000)</span><span class="chg up" id="to-chg"></span>
+          </p>
+          <p class="proposal-reason">
+            최근 7일 CPC가 1,105원으로 여름 신상 원피스(622원)의 1.8배예요. 일예산의 20%를
+            효율 좋은 쪽으로 옮기면 같은 돈으로 더 많은 클릭을 살 수 있어요.
+          </p>
+          <div class="proposal-actions">
+            <button class="apply-btn" id="apply-btn" onclick="applyRebalance()">₩5,000 이동 적용</button>
+          </div>
+        </div>
+        <p class="rebalance-msg" id="rebalance-msg">적용 완료 — 두 캠페인의 일예산을 변경했어요.</p>
+      </div>
+
+      <!-- 월 목표 예산 설정 -->
+      <div class="card2xl">
+        <p class="card-title-b" style="margin-bottom:4px">월 목표 예산 설정</p>
+        <p class="card-desc">
+          이번 달 광고에 쓸 목표 금액. 소진이 이 목표에 가까워지면 가드레일이 경고합니다.
+          (실제 게재 가능액은 위 ‘여력’ — Meta 선불 잔액)
+        </p>
+        <div class="calc-row">
+          <span class="cap">월 매출로 계산</span>
+          <span style="display:inline-flex;align-items:center;gap:4px;">
+            <span class="cap">₩</span>
+            <input type="number" placeholder="예: 30000000" class="tnum" />
+          </span>
+        </div>
+        <div class="target-row">
+          <span class="won">₩</span>
+          <input type="number" value="3000000" />
+          <button class="target-btn">목표 설정</button>
+        </div>
+      </div>
+
+      <!-- ClickMe 크레딧 내역 -->
+      <div class="card2xl">
+        <p class="card-title-b" style="margin-bottom:4px">ClickMe 크레딧 내역</p>
+        <p class="ledger-cap">ClickMe 서비스 크레딧(광고비와 별개)</p>
+        <div style="overflow-x:auto">
+          <table class="ledger">
+            <thead>
+              <tr>
+                <th class="ta-l">일시</th>
+                <th class="ta-l">구분</th>
+                <th class="ta-r">금액</th>
+                <th class="ta-r">잔액</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="ta-l cell-dim">2026-07-01 09:12</td>
+                <td class="ta-l r-charge">충전</td>
+                <td class="ta-r tnum">+500,000원</td>
+                <td class="ta-r tnum cell-mute">₩1,000,000</td>
+              </tr>
+              <tr>
+                <td class="ta-l cell-dim">2026-06-24 14:03</td>
+                <td class="ta-l r-spend">집행 차감</td>
+                <td class="ta-r tnum">-200,000원</td>
+                <td class="ta-r tnum cell-mute">₩500,000</td>
+              </tr>
+              <tr>
+                <td class="ta-l cell-dim">2026-06-20 11:40</td>
+                <td class="ta-l r-charge">충전</td>
+                <td class="ta-r tnum">+700,000원</td>
+                <td class="ta-r tnum cell-mute">₩700,000</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <p class="foot-note">
+      월 목표 = 내가 정한 이번 달 예산 · 소진 = 이번 달 실 Meta 집행 · 여력 = Meta 선불 잔액 · 금액 KRW(부가세 별도)
+    </p>
+
+    <!-- ── 앱 화면 밖 데모 각주 — 캡처 시 이 아래를 잘라내면 됨 ── -->
+    <div class="demo-note">
+      <button class="reset-btn" onclick="location.reload()">초기화</button>
+      <b>작동 방식</b> — ① 워커(APScheduler)가 최근 7일 실측(CPC·지출)을 분석해 저효율→고효율
+      이동을 <b>제안</b>합니다(자동 집행 없음). ② 사용자가 적용을 누르면 서버가 현재 예산
+      재검증(drift)·승인 발행 후 <b>원자 액션 1건</b>(감액→증액, 실패 시 자동 원복)으로
+      Meta Marketing API에 집행합니다. ③ 결과는 감사 로그와 실행 이력에 기록됩니다.
+      총 일예산은 변하지 않습니다.
+    </div>
+  </div>
+</main>
+
+<script>
+  // 적용 클릭 → '적용 중…' → 완료 메시지 + 제안 라인의 일예산 숫자 갱신(25,000→20,000 / 40,000→45,000)
+  function applyRebalance() {
+    var btn = document.getElementById('apply-btn');
+    btn.disabled = true;
+    btn.textContent = '적용 중…';
+    setTimeout(function () {
+      document.getElementById('from-num').textContent = '(CPC ₩1,105 · ₩20,000)';
+      document.getElementById('from-chg').textContent = '−5,000';
+      document.getElementById('to-num').textContent = '(CPC ₩622 · ₩45,000)';
+      document.getElementById('to-chg').textContent = '+5,000';
+      document.getElementById('rebalance-msg').style.display = 'block';
+      btn.textContent = '적용됨';
+    }, 700);
+  }
+</script>
+</body>
+</html>

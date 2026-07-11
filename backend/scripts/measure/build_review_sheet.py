@@ -404,7 +404,12 @@ def main() -> None:
         )
 
     audit = bool(prefill_by_file)
-    meta = {"dir": str(img_dir), "method": manifest.get("method"), "count": len(items), "audit": audit}
+    meta = {
+        "dir": str(img_dir),
+        "method": manifest.get("method"),
+        "count": len(items),
+        "audit": audit,
+    }
     # </script> 조기종료·XSS 방지용으로 '<'를 유니코드 이스케이프
     data_json = json.dumps(items, ensure_ascii=False).replace("<", "\\u003c")
     meta_json = json.dumps(meta, ensure_ascii=False).replace("<", "\\u003c")
@@ -431,7 +436,9 @@ def main() -> None:
     if audit:
         print(f"  VLM 프리필 적용 - {vlm_path.name}에서 {len(prefill_by_file)}장 판정 로드")
     else:
-        print("  프리필 없음 — text_accuracy.csv가 없거나 --no-prefill. 먼저 measure_text_accuracy 실행 권장")
+        print(
+            "  프리필 없음 — text_accuracy.csv가 없거나 --no-prefill. 먼저 measure_text_accuracy 실행 권장"
+        )
     if missing:
         print(f"  경고 - 디스크에 없는 이미지 {missing}장 제외됨")
     print("브라우저로 열어 검수 → 'CSV 저장' → review_by_human.csv")

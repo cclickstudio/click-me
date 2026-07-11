@@ -19,7 +19,7 @@ TIER_POLICY: dict[str, ActionTier] = {
     "PREVIEW_AD": ActionTier.TIER_0,
     "PAUSE_CAMPAIGN": ActionTier.TIER_1,
     "DECREASE_BUDGET": ActionTier.TIER_1,
-    "REBALANCE_BUDGET": ActionTier.TIER_2,  # 비활성 (7/8 스코프 제외)
+    "REBALANCE_BUDGET": ActionTier.TIER_2,  # 총액 불변 이전 — 건별 사용자 승인(자율 실행 비활성)
     "INCREASE_BUDGET": ActionTier.TIER_3,
     "REPLACE_CREATIVE": ActionTier.TIER_3,
     "CREATE_CAMPAIGN": ActionTier.TIER_3,  # 신규 집행 — 항상 건별 사용자 승인 (PR2)

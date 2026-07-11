@@ -49,7 +49,9 @@ def test_very_long_text_truncates_with_ellipsis():
     from PIL import ImageDraw
 
     draw = ImageDraw.Draw(img)
-    very_long_text = "광고 제작부터 관리까지 AI 하나로 해결하세요 업종별 맞춤 최적화로 더 빠르게 진행하세요 " * 5
+    very_long_text = (
+        "광고 제작부터 관리까지 AI 하나로 해결하세요 업종별 맞춤 최적화로 더 빠르게 진행하세요 " * 5
+    )
     box_w, box_h = 195, 118  # 템플릿 C 본문 박스 근사치(512px 기준)
     font, lines, line_h = _fit(draw, very_long_text, _font_regular(), box_w, box_h, max_size=40)
     assert line_h * len(lines) <= box_h

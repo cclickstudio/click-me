@@ -10,6 +10,7 @@ import random
 from datetime import UTC, datetime
 from uuid import uuid4
 
+from domain.management.adapters import demo_store
 from domain.management.comparison.schemas import PostInsights, PostType
 from domain.management.contracts.enums import CampaignState, RelevanceRank, ResultStatus
 from domain.management.contracts.fault_injection import FaultConfig, FaultMode
@@ -37,21 +38,17 @@ from domain.management.contracts.schemas import (
 _FAULT_ONSET_HOUR = 14  # 고장 발현 시각 (일중 곡선상 오후 — 정상/이상 대비가 뚜렷)
 _REVIEW_DELAY_UNTIL = 10  # 심사 지연: 이 시각 전까지 노출 0
 
-# 데모 캠페인 시나리오 — list_campaigns·get_metrics 공유 단일 소스. 지표는 하드코딩하지 않고
-# 예산·고장에서 파생한다(fetch_hourly_metrics가 policy.py 앵커로 증상 생성). 예산 리밸런싱이
-# 판단하는 CPC 격차는 근거 있는 고장에서 자연히 나온다: 정상=고효율(CPC↓), 입찰 패배=저효율
-# (CPM↑→CPC↑). 출처: meta-data-sources.md §3.2(분위)·§4.5(고장 매핑).
-# (name, daily_budget_krw, fault) — 예산은 일예산 앵커(₩100,000) 스케일.
-_DEMO_SCENARIOS: dict[str, tuple[str, int, FaultMode | None]] = {
-    "camp_1": ("여름 신상 원피스", 100_000, None),  # 정상·고효율 → 리밸런싱 수혜(to)
-    "camp_2": (
-        "브랜드 데일리 룩",
-        80_000,
-        FaultMode.BID_LOSS,
-    ),  # 입찰 패배·저효율 → 리밸런싱 출연(from)
+# 데모 캠페인 시나리오 — list_campaigns·get_metrics 공유 구성(이름·고장). 예산은 여기 안 두고
+# demo_store(단일 가변 정본)에서 읽는다 — 라우터 데모 목록과 예산이 갈라져 리밸런스 적용이
+# drift 409로 막히던 이중 정본을 해소. 지표는 하드코딩하지 않고 예산·고장에서 파생한다
+# (fetch_hourly_metrics가 policy.py 앵커로 증상 생성). 예산 리밸런싱이 판단하는 CPC 격차는
+# 근거 있는 고장에서 자연히 나온다: 정상=고효율(CPC↓), 입찰 패배=저효율(CPM↑→CPC↑).
+# 출처: meta-data-sources.md §3.2(분위)·§4.5(고장 매핑).
+_DEMO_SCENARIOS: dict[str, tuple[str, FaultMode | None]] = {
+    "camp_1": ("여름 신상 원피스", None),  # 정상·고효율 → 리밸런싱 수혜(to)
+    "camp_2": ("브랜드 데일리 룩", FaultMode.BID_LOSS),  # 입찰 패배·저효율 → 리밸런싱 출연(from)
     "camp_3": (
         "신규 런칭 티저",
-        60_000,
         FaultMode.REVIEW_REJECTED,
     ),  # 게재 중단(노출 0) → 제외·이상 신호
 }
@@ -74,7 +71,11 @@ class MockAdPlatform:
         읽는 CPC 격차가 여기서 생긴다. 시나리오 밖 id(비교 데모 등)는 기존대로 정상·주입 예산.
         date_preset은 실 reader 시그니처 일치용(데모는 무시).
         """
-        _name, budget, fault = _DEMO_SCENARIOS.get(campaign_id, (None, self._budget, None))
+        _name, fault = _DEMO_SCENARIOS.get(campaign_id, (None, None))
+        # 예산은 스토어 정본(가변) — 시나리오 밖 id(비교 데모 등)는 기존대로 주입 예산.
+        budget = (
+            demo_store.get_budget(campaign_id) if campaign_id in _DEMO_SCENARIOS else self._budget
+        )
         if fault is FaultMode.REVIEW_REJECTED:
             # 심사 거절(DISAPPROVED) — 전 구간 노출 0(이상 감지 no_delivery 신호). 클릭 0이라
             # 리밸런싱 대상에서 자연 제외된다 (검증 가이드 §2 방법 B).
@@ -109,18 +110,17 @@ class MockAdPlatform:
         return CampaignState.ACTIVE
 
     async def list_campaigns(self, include_archived: bool = False) -> list[CampaignInfo]:  # noqa: ARG002
-        """Port 충족 — 데모 캠페인 목록. 시나리오 단일 소스(_DEMO_SCENARIOS)에서 빌드해
-        예산·이름·상태가 get_metrics의 고장 데이터와 정합한다. 라우터 데모 경로의 풍부한
-        목록(_CAMPAIGNS_DEMO)과는 별개(Port 일반 소비자용). (mock은 보관 개념 없어 무시.)
+        """Port 충족 — 데모 캠페인 목록. 구성은 _DEMO_SCENARIOS, 예산은 demo_store 정본에서
+        읽어 라우터 데모 목록·get_metrics의 고장 데이터와 정합한다. (mock은 보관 개념 없어 무시.)
         """
         return [
             CampaignInfo(
                 campaign_id=cid,
                 name=name,
                 state=CampaignState.ACTIVE,
-                daily_budget_krw=budget,
+                daily_budget_krw=demo_store.get_budget(cid),
             )
-            for cid, (name, budget, _fault) in _DEMO_SCENARIOS.items()
+            for cid, (name, _fault) in _DEMO_SCENARIOS.items()
         ]
 
     async def get_platform_breakdown(
