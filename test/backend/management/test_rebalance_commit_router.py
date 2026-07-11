@@ -34,8 +34,7 @@ class _TwoCampaignReader:
 
     async def list_campaigns(self, include_archived=False):
         return [
-            SimpleNamespace(campaign_id=cid, daily_budget_krw=b)
-            for cid, b in self.budgets.items()
+            SimpleNamespace(campaign_id=cid, daily_budget_krw=b) for cid, b in self.budgets.items()
         ]
 
 
@@ -60,6 +59,7 @@ def env(monkeypatch):
         return reader
 
     async def fake_require_owned(db, org, campaign_id):
+        captured.setdefault("owned", []).append(campaign_id)
         return None
 
     async def fake_require_ad_account(db, org):
@@ -82,9 +82,7 @@ def env(monkeypatch):
 
     # use_mock=False — _current_daily_budget이 데모 고정값이 아닌 fake reader를 보게 한다.
     monkeypatch.setattr(management.settings, "use_mock", False, raising=False)
-    monkeypatch.setattr(
-        management.settings, "management_execution_mode", "dry_run", raising=False
-    )
+    monkeypatch.setattr(management.settings, "management_execution_mode", "dry_run", raising=False)
     monkeypatch.setattr(management, "_require_reader", fake_require_reader)
     monkeypatch.setattr(management, "_require_owned_campaign", fake_require_owned)
     monkeypatch.setattr(management, "_require_ad_account", fake_require_ad_account)
@@ -108,6 +106,7 @@ def test_rebalance_commit_builds_atomic_proposal(env):
     assert prop.max_total_spend_krw == 0
     assert prop.evidence_metrics["from_before_krw"] == 50_000
     assert prop.evidence_metrics["to_after_krw"] == 40_000
+    assert captured["owned"] == ["camp_low", "camp_high"]
 
 
 def test_rebalance_commit_rejects_drift(env):
@@ -118,11 +117,18 @@ def test_rebalance_commit_rejects_drift(env):
     assert "proposal" not in captured  # executor 진입 전 차단
 
 
+def test_rebalance_commit_rejects_to_side_drift(env):
+    """to 캠페인 drift도 409 — from만 검사하는 회귀 방지."""
+    client, reader, captured = env
+    reader.budgets["camp_high"] = 35_000  # 제안 이후 to 예산 변동
+    res = client.post("/api/management/budget/rebalance-commit", json=_BODY)
+    assert res.status_code == 409
+    assert "proposal" not in captured
+
+
 def test_rebalance_commit_rejects_move_mismatch(env):
     client, _reader, captured = env
-    res = client.post(
-        "/api/management/budget/rebalance-commit", json={**_BODY, "move_krw": 5_000}
-    )
+    res = client.post("/api/management/budget/rebalance-commit", json={**_BODY, "move_krw": 5_000})
     assert res.status_code == 409
     assert "proposal" not in captured
 
@@ -190,11 +196,36 @@ def test_rebalance_commit_surfaces_indeterminate_guidance(env, monkeypatch):
                 idempotency_key="k",
             )
 
-    monkeypatch.setattr(
-        management, "_get_executor", lambda writer=None: _IndeterminateExecutor()
-    )
+    monkeypatch.setattr(management, "_get_executor", lambda writer=None: _IndeterminateExecutor())
     res = client.post("/api/management/budget/rebalance-commit", json=_BODY)
     assert res.status_code == 200
     body = res.json()
     assert body.get("indeterminate") is True
     assert "확인" in body["error_message"]  # 재시도 유도가 아닌 상태 확인 안내
+
+
+def test_rebalance_commit_surfaces_compensation_failed_guidance(env, monkeypatch):
+    """보상 실패는 수동 복구 안내 + compensation=failed 플래그를 내려준다."""
+    client, _reader, _captured = env
+
+    class _CompFailedExecutor:
+        async def execute(self, action, proposal):
+            return ActionResult(
+                result_id="r1",
+                approval_id=action.approval_id,
+                status=ResultStatus.FAILED,
+                failure_reason=FailureReason.PARTIAL_FAILURE,
+                platform_response_snapshot={
+                    "targets": [{"compensation": "failed", "manual_restore_krw": 50_000}]
+                },
+                executed_at=datetime.now(UTC),
+                idempotency_key="k",
+            )
+
+    monkeypatch.setattr(management, "_get_executor", lambda writer=None: _CompFailedExecutor())
+    res = client.post("/api/management/budget/rebalance-commit", json=_BODY)
+    assert res.status_code == 200
+    body = res.json()
+    assert body.get("compensation") == "failed"
+    assert "수동 복구" in body["error_message"]
+    assert "50,000" in body["error_message"]  # 서버 정본 from_before 금액 안내

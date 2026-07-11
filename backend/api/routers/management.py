@@ -3704,6 +3704,8 @@ async def budget_rebalance_commit(
     )
     result = await executor.execute(action, proposal)
     response: dict[str, object] = {"result": result.model_dump(mode="json")}
+    response["from_before_krw"] = from_before
+    response["to_before_krw"] = to_before
     status = result.status.value if hasattr(result.status, "value") else str(result.status)
     if status == "success":
         await _resolve_campaign_notifications(org_id, body.from_campaign_id)
