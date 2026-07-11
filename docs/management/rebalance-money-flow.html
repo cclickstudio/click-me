@@ -1,0 +1,347 @@
+<!-- 예산 리밸런싱 머니 플로우 애니메이션 — PPT '결과' 캡처용. 광고 A→B로 20만 원이 실제 이동하는 연출, 서버 불필요 단독 실행 (기존 rebalance-demo.html과 별개 신규 페이지) -->
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ClickMe — 예산 리밸런싱 머니 플로우</title>
+<!-- 실제 앱과 동일한 웹폰트 (globals.css 첫 줄과 동일 CDN) -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
+<style>
+  /* ── 디자인 토큰 — frontend/src/app/globals.css :root(라이트) 실값 그대로 ── */
+  :root {
+    --surface-0: #F8FAFC;
+    --surface-1: #F1F5F9;
+    --card: #FFFFFF;
+    --ink: #0F172A;
+    --ink-secondary: #475569;
+    --ink-tertiary: #64748B;
+    --ink-muted: #94A3B8;
+    --line: #E2E8F0;
+    --primary: #2563EB;
+    --primary-subtle: #EFF6FF;
+    --success: #16A34A;
+    --success-subtle: #F0FDF4;
+    --danger: #DC2626;
+    --danger-subtle: #FEF2F2;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-font-smoothing: antialiased; }
+  body {
+    font-family: 'Pretendard Variable', 'Pretendard', 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif;
+    background: var(--surface-0); color: var(--ink);
+    min-width: 1560px; padding: 28px 0 48px;
+  }
+  button { font-family: inherit; cursor: pointer; background: none; border: 0; color: inherit; }
+  .tnum { font-variant-numeric: tabular-nums; }
+  .wrap { width: 1480px; margin: 0 auto; }
+
+  /* ── 툴바 (캡처 영역 밖) ── */
+  .toolbar { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
+  .toolbar .hint { font-size: 13px; color: var(--ink-tertiary); margin-left: auto; }
+  .tb-btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 7px 14px; border-radius: 8px; font-size: 13px; font-weight: 600;
+    background: var(--card); border: 1px solid var(--line); color: var(--ink-secondary);
+  }
+  .tb-btn:hover { border-color: var(--primary); color: var(--primary); }
+  .tb-btn.on { background: var(--primary-subtle); border-color: var(--primary); color: var(--primary); }
+
+  /* ── 스테이지 = 캡처 대상 ── */
+  .stage {
+    position: relative; width: 1480px; height: 500px; overflow: hidden;
+    background: var(--card); border: 1px solid var(--line); border-radius: 20px;
+    box-shadow: 0 1px 2px rgba(15,23,42,.04), 0 8px 24px rgba(15,23,42,.05);
+  }
+  .stage-head {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 26px 36px 0;
+  }
+  .head-pill {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 8px 14px; border-radius: 9999px; font-size: 15px; font-weight: 600;
+    background: var(--success-subtle); color: var(--success);
+  }
+  .head-pill .chk {
+    width: 18px; height: 18px; border-radius: 9999px; background: var(--success);
+    display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+  }
+  .stage-head .basis { font-size: 14px; color: var(--ink-tertiary); font-weight: 500; }
+  .stage-head .basis b { color: var(--ink-secondary); font-weight: 600; }
+
+  /* 카드 2장 + 중앙 라벨 */
+  .cards {
+    position: relative; z-index: 2;
+    display: grid; grid-template-columns: 430px 1fr 430px; gap: 0;
+    padding: 52px 56px 0; align-items: start;
+  }
+  .adcard {
+    background: var(--card); border: 1px solid var(--line); border-radius: 16px;
+    padding: 24px 26px 26px; position: relative;
+  }
+  .adcard.gain { border-color: rgba(37,99,235,.45); box-shadow: 0 0 0 3px var(--primary-subtle); }
+  .adcard .top { display: flex; align-items: center; gap: 10px; }
+  .adcard .nm { font-size: 21px; font-weight: 700; letter-spacing: -0.02em; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 4px 10px; border-radius: 9999px; font-size: 12.5px; font-weight: 600;
+  }
+  .chip.gray { background: var(--surface-1); color: var(--ink-secondary); }
+  .chip.blue { background: var(--primary-subtle); color: var(--primary); }
+  .adcard .role { margin-top: 6px; font-size: 13.5px; font-weight: 500; }
+  .adcard.lose .role { color: var(--ink-tertiary); }
+  .adcard.gain .role { color: var(--primary); }
+
+  .adcard .money-row { display: flex; align-items: baseline; gap: 12px; margin-top: 18px; }
+  .adcard .money { font-size: 46px; font-weight: 800; letter-spacing: -0.03em; line-height: 1; }
+  .delta {
+    font-size: 15px; font-weight: 700; padding: 5px 10px; border-radius: 8px;
+    opacity: 0; transform: translateY(4px); transition: opacity .4s, transform .4s;
+  }
+  .delta.show { opacity: 1; transform: none; }
+  .delta.minus { background: var(--danger-subtle); color: var(--danger); }
+  .delta.plus { background: var(--primary-subtle); color: var(--primary); }
+
+  /* 예산 바 — 두 카드 공통 스케일(최대 70만) */
+  .bar-wrap { margin-top: 22px; }
+  .bar-cap { display: flex; justify-content: space-between; font-size: 12px; color: var(--ink-muted); margin-bottom: 7px; font-weight: 500; }
+  .bar { position: relative; height: 14px; border-radius: 7px; background: var(--surface-1); }
+  .bar .fill {
+    position: absolute; left: 0; top: 0; bottom: 0; border-radius: 7px 4px 4px 7px;
+    background: var(--primary);
+  }
+  .adcard.lose .fill { background: #93C5FD; }
+  .bar .tick {
+    position: absolute; top: -4px; bottom: -4px; width: 2px; background: var(--ink-muted);
+    border-radius: 1px; left: calc(50 / 70 * 100%); opacity: .55;
+  }
+  .bar-note { margin-top: 7px; font-size: 12px; color: var(--ink-muted); }
+
+  /* 중앙 라벨 */
+  .mid { position: relative; display: flex; flex-direction: column; align-items: center; padding-top: 148px; }
+  .mid .amt { font-size: 42px; font-weight: 800; color: var(--primary); letter-spacing: -0.03em; }
+  .mid .amt-sub { margin-top: 8px; font-size: 15.5px; color: var(--ink-secondary); font-weight: 500; }
+  .mid .amt-sub b { color: var(--ink); }
+
+  /* 흐름 SVG 오버레이 */
+  #flow { position: absolute; inset: 0; z-index: 3; pointer-events: none; }
+  #flow .track { fill: none; stroke: #CBD5E1; stroke-width: 2; stroke-dasharray: 3 7; stroke-linecap: round; }
+  #flow .coin-c { fill: var(--primary); stroke: #FFFFFF; stroke-width: 2.5; }
+  #flow .coin-t { fill: #FFFFFF; font-size: 14px; font-weight: 700; text-anchor: middle; dominant-baseline: central; }
+  #flow .ring { fill: none; stroke: var(--primary); stroke-width: 2; }
+
+  /* 하단 각주 */
+  .foot {
+    position: absolute; left: 0; right: 0; bottom: 0;
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 16px 36px; border-top: 1px solid var(--line);
+    font-size: 13.5px; color: var(--ink-tertiary);
+  }
+  .foot b { color: var(--ink-secondary); font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- 툴바: 캡처 영역(흰 스테이지) 밖 -->
+  <div class="toolbar">
+    <button class="tb-btn" id="btnPlay">▶ 다시 재생 <span style="color:var(--ink-muted)">Space</span></button>
+    <button class="tb-btn" id="btnPause">⏸ 일시정지 <span style="color:var(--ink-muted)">P</span></button>
+    <button class="tb-btn" id="btnMid">🪙 이동 장면 <span style="color:var(--ink-muted)">M</span></button>
+    <button class="tb-btn" id="btnEnd">🏁 최종 장면 <span style="color:var(--ink-muted)">C</span></button>
+    <span class="hint">아래 흰 카드 영역만 캡처하세요 — 정지 화면은 '이동 장면'이 가장 생동감 있어요</span>
+  </div>
+
+  <div class="stage" id="stage">
+    <div class="stage-head">
+      <span class="head-pill">
+        <span class="chk"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+        사용자 승인 완료 — 리밸런스 적용 중
+      </span>
+      <span class="basis">판단 근거 <b>실측 CPC</b> · 직감이 아닌 데이터</span>
+    </div>
+
+    <div class="cards">
+      <!-- 광고 A: 감액 -->
+      <div class="adcard lose" id="cardA">
+        <div class="top">
+          <span class="nm">광고 A</span>
+          <span class="chip gray">CPC ₩1,000</span>
+        </div>
+        <div class="role">저효율 — 예산 감액</div>
+        <div class="money-row">
+          <span class="money tnum" id="moneyA">₩500,000</span>
+          <span class="delta minus" id="deltaA">−₩200,000</span>
+        </div>
+        <div class="bar-wrap">
+          <div class="bar-cap"><span>일예산</span><span>최대 70만 스케일</span></div>
+          <div class="bar"><div class="fill" id="fillA" style="width:71.4%"></div><div class="tick"></div></div>
+          <div class="bar-note">이전 배분 50만 원 — 성과와 관계없이 동일 배분</div>
+        </div>
+      </div>
+
+      <!-- 중앙: 이동 금액 -->
+      <div class="mid">
+        <span class="amt tnum">₩200,000</span>
+        <span class="amt-sub">저효율 → 고효율 <b>재배분</b> · 사용자 승인 후 적용</span>
+      </div>
+
+      <!-- 광고 B: 증액 -->
+      <div class="adcard gain" id="cardB">
+        <div class="top">
+          <span class="nm">광고 B</span>
+          <span class="chip blue">CPC ₩500 · A 대비 50% 낮음</span>
+        </div>
+        <div class="role">고효율 — 예산 증액</div>
+        <div class="money-row">
+          <span class="money tnum" id="moneyB">₩500,000</span>
+          <span class="delta plus" id="deltaB">+₩200,000</span>
+        </div>
+        <div class="bar-wrap">
+          <div class="bar-cap"><span>일예산</span><span>최대 70만 스케일</span></div>
+          <div class="bar"><div class="fill" id="fillB" style="width:71.4%"></div><div class="tick"></div></div>
+          <div class="bar-note">이전 배분 50만 원 → 증액 반영</div>
+        </div>
+      </div>
+    </div>
+
+    <svg id="flow"></svg>
+
+    <div class="foot">
+      <span>감지 <b>APScheduler 24시간 실측 스캔</b> · CPC 격차 <b>1.2배 초과</b> 시에만 일예산 <b>20% 이전</b> 제안</span>
+      <span>오판 방지 <b>HITL</b> — 사용자가 승인한 건만 집행</span>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  // ── 타임라인 상수 (ms) ──
+  var COINS = 4;                 // 5만 원 코인 4개 = 20만 원
+  var UNIT = 50000;
+  var DEPART = [400, 850, 1300, 1750];
+  var TRAVEL = 1300;
+  var END = DEPART[COINS - 1] + TRAVEL + 600;   // 마지막 도착 + 정착
+  var HOLD = 2600;                              // 최종 상태 유지 후 루프
+  var MID_T = 1900;                             // '이동 장면' 정지 시점
+
+  var stage = document.getElementById('stage');
+  var svg = document.getElementById('flow');
+  var moneyA = document.getElementById('moneyA');
+  var moneyB = document.getElementById('moneyB');
+  var fillA = document.getElementById('fillA');
+  var fillB = document.getElementById('fillB');
+  var deltaA = document.getElementById('deltaA');
+  var deltaB = document.getElementById('deltaB');
+
+  function smooth(t, a, b) {
+    var u = Math.min(1, Math.max(0, (t - a) / (b - a)));
+    return u * u * (3 - 2 * u);
+  }
+  // ── SVG 경로: 카드 A 우측 → 카드 B 좌측, 위로 아치 ──
+  var path, pathLen, coins = [], rings = [];
+  function buildFlow() {
+    var sr = stage.getBoundingClientRect();
+    var ra = document.getElementById('cardA').getBoundingClientRect();
+    var rb = document.getElementById('cardB').getBoundingClientRect();
+    var ax = ra.right - sr.left + 10, ay = ra.top - sr.top + ra.height * 0.42;
+    var bx = rb.left - sr.left - 10, by = rb.top - sr.top + rb.height * 0.42;
+    var lift = 128;
+    svg.setAttribute('viewBox', '0 0 ' + sr.width + ' ' + sr.height);
+    svg.innerHTML =
+      '<path class="track" d="M' + ax + ' ' + ay +
+      ' C ' + (ax + 150) + ' ' + (ay - lift) + ', ' + (bx - 150) + ' ' + (by - lift) + ', ' + bx + ' ' + by + '"/>' +
+      '<path d="M' + (bx - 13) + ' ' + (by - 9) + ' L' + bx + ' ' + by + ' L' + (bx - 15) + ' ' + (by + 5) + '" fill="none" stroke="#CBD5E1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>';
+    path = svg.querySelector('.track');
+    pathLen = path.getTotalLength();
+    coins = []; rings = [];
+    for (var i = 0; i < COINS; i++) {
+      var g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+      g.innerHTML = '<circle class="coin-c" r="23"/><text class="coin-t" y="1">5만</text>';
+      g.style.display = 'none';
+      svg.appendChild(g);
+      coins.push(g);
+      var ring = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+      ring.setAttribute('class', 'ring');
+      ring.setAttribute('cx', bx); ring.setAttribute('cy', by);
+      ring.style.display = 'none';
+      svg.appendChild(ring);
+      rings.push(ring);
+    }
+  }
+
+  // ── 프레임 렌더: 시각 t(ms)의 상태를 결정적으로 그림 (일시정지·정지 장면 안전) ──
+  function render(t) {
+    var departed = 0, arrived = 0;
+    for (var i = 0; i < COINS; i++) {
+      var d = DEPART[i], a = d + TRAVEL;
+      departed += UNIT * smooth(t, d, d + 350);
+      arrived += UNIT * smooth(t, a - 100, a + 250);
+
+      var p = (t - d) / TRAVEL;
+      if (p > 0 && p < 1) {
+        var pt = path.getPointAtLength(smooth(t, d, a) * pathLen);
+        var s = Math.min(1, p / 0.09, (1 - p) / 0.09);
+        coins[i].style.display = '';
+        coins[i].setAttribute('transform', 'translate(' + pt.x + ' ' + pt.y + ') scale(' + Math.max(0.01, s) + ')');
+      } else {
+        coins[i].style.display = 'none';
+      }
+      var age = t - a;
+      if (age > 0 && age < 600) {
+        rings[i].style.display = '';
+        rings[i].setAttribute('r', 10 + (age / 600) * 40);
+        rings[i].style.opacity = 0.5 * (1 - age / 600);
+      } else {
+        rings[i].style.display = 'none';
+      }
+    }
+    var vA = 500000 - departed, vB = 500000 + arrived;
+    moneyA.textContent = '₩' + (Math.round(vA / 1000) * 1000).toLocaleString('ko-KR');
+    moneyB.textContent = '₩' + (Math.round(vB / 1000) * 1000).toLocaleString('ko-KR');
+    fillA.style.width = (vA / 700000 * 100) + '%';
+    fillB.style.width = (vB / 700000 * 100) + '%';
+    deltaA.classList.toggle('show', t > DEPART[0]);
+    deltaB.classList.toggle('show', t > DEPART[0] + TRAVEL);
+  }
+
+  // ── 재생 루프 ──
+  var t = 0, paused = false, last = null, loop = true;
+  function tick(now) {
+    if (last === null) last = now;
+    if (!paused) {
+      t += now - last;
+      if (t > END + HOLD) { if (loop) t = 0; else t = END; }
+      render(Math.min(t, END));
+    }
+    last = now;
+    requestAnimationFrame(tick);
+  }
+  function jump(to, pause) { t = to; paused = !!pause; render(Math.min(t, END)); syncBtn(); }
+  function syncBtn() { document.getElementById('btnPause').classList.toggle('on', paused); }
+
+  document.getElementById('btnPlay').addEventListener('click', function () { jump(0, false); });
+  document.getElementById('btnPause').addEventListener('click', function () { paused = !paused; syncBtn(); });
+  document.getElementById('btnMid').addEventListener('click', function () { jump(MID_T, true); });
+  document.getElementById('btnEnd').addEventListener('click', function () { jump(END, true); });
+  document.addEventListener('keydown', function (e) {
+    if (e.code === 'Space') { e.preventDefault(); jump(0, false); }
+    else if (e.key === 'p' || e.key === 'P') { paused = !paused; syncBtn(); }
+    else if (e.key === 'm' || e.key === 'M') { jump(MID_T, true); }
+    else if (e.key === 'c' || e.key === 'C') { jump(END, true); }
+  });
+  stage.addEventListener('click', function () { jump(0, false); });
+
+  window.addEventListener('resize', function () { buildFlow(); render(Math.min(t, END)); });
+
+  buildFlow();
+  if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    jump(END, true); loop = false;
+  } else {
+    render(0);
+    requestAnimationFrame(tick);
+  }
+})();
+</script>
+</body>
+</html>
