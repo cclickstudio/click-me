@@ -404,6 +404,7 @@ async def run_rebalance_report(settings) -> bool:
     if not prop:
         return False
     move = prop.get("move_krw", 0)
+    suggested: str | None = None
     if prop.get("kind") == "adjust":  # 캠페인 1개 — 단일 증액/감액
         camp = prop.get("campaign") or {}
         verb = "증액" if prop.get("direction") == "increase" else "감액"
@@ -417,12 +418,14 @@ async def run_rebalance_report(settings) -> bool:
             f"{move:,}원 이동 제안 (실행은 승인 필요)"
         )
         dedup_key = f"rebalance:{frm.get('campaign_id', '')}:{to.get('campaign_id', '')}"
+        suggested = "apply_rebalance"  # 챗/알림 카드의 적용 진입 힌트(집행은 HITL 그대로)
     await record_automation_run(
         domain="management",
         job_name="rebalance_proposal",
         title="예산 리밸런싱 제안",
         body=body,
         status="proposal",
+        suggested_action=suggested,
         payload={"actor": "auto", "proposal": prop},
         dedup_key=dedup_key,
     )
