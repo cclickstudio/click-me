@@ -8,6 +8,7 @@ per-turn 컨텍스트(session_id·project_id…)는 InjectedState로 읽는다(c
 
 from __future__ import annotations
 
+import logging
 from typing import Annotated
 
 from langchain_core.messages import ToolMessage
@@ -34,6 +35,8 @@ from domain.generator.assistant.tools import (
 )
 from domain.simulation.assistant.tools import list_simulations
 from domain.simulation.assistant.tools import run_simulation as sim_run_simulation
+
+logger = logging.getLogger(__name__)
 
 _VALID_CAMPAIGN_ACTIONS = ("pause", "activate", "increase_budget", "decrease_budget")
 
@@ -1127,6 +1130,7 @@ def build_chat_tools(settings, clio_retriever=None) -> list:
         try:
             data = await live_rebalance_proposal(settings)
         except Exception:  # noqa: BLE001 — 조회 실패는 안내로(카드 없이)
+            logger.warning("apply_rebalance 제안 조회 실패", exc_info=True)
             data = {"proposal": None, "note": "리밸런싱 제안을 불러오지 못했어요."}
         prop = data.get("proposal")
         if not prop:
