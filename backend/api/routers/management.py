@@ -12,6 +12,7 @@ import json
 import logging
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
 from contextvars import ContextVar
 from datetime import UTC, datetime, timedelta
 from random import Random
@@ -3538,29 +3539,31 @@ async def budget_commit(
     org_id = await _require_org_id_write(user, db, action="budget_commit")
     await _require_owned_campaign(db, org_id, campaign_id)
     reader = await _require_reader(db, org_id)
-    before, declared = await _validate_budget_change(
-        reader, campaign_id, body, reject_shown_drift=True
-    )
-    new = body.new_daily_budget_krw
-    ad_account = await _require_ad_account(db, org_id)
-    proposal = _build_budget_proposal(
-        tenant_id=str(org_id),
-        ad_account_id=ad_account,
-        campaign_id=campaign_id,
-        action_type=declared,
-        budget_before_krw=before,
-        new_daily_budget_krw=new,
-    )
-    action = await issue_approval(
-        proposal, str(user.id), execution_mode=_resolved_execution_mode(), store=_APPROVAL_STORE
-    )
-    is_demo = proposal.tenant_id == TENANT_ID
-    executor = (
-        _get_executor()
-        if is_demo or getattr(settings, "use_mock", True)
-        else _get_executor(await _require_writer(db, org_id))
-    )
-    result = await executor.execute(action, proposal)
+    # rebalance-commit과 같은 락 맵 — 단일 조정과 리밸런스가 같은 캠페인에서 교차해도 직렬화.
+    async with _campaign_budget_guard(campaign_id):
+        before, declared = await _validate_budget_change(
+            reader, campaign_id, body, reject_shown_drift=True
+        )
+        new = body.new_daily_budget_krw
+        ad_account = await _require_ad_account(db, org_id)
+        proposal = _build_budget_proposal(
+            tenant_id=str(org_id),
+            ad_account_id=ad_account,
+            campaign_id=campaign_id,
+            action_type=declared,
+            budget_before_krw=before,
+            new_daily_budget_krw=new,
+        )
+        action = await issue_approval(
+            proposal, str(user.id), execution_mode=_resolved_execution_mode(), store=_APPROVAL_STORE
+        )
+        is_demo = proposal.tenant_id == TENANT_ID
+        executor = (
+            _get_executor()
+            if is_demo or getattr(settings, "use_mock", True)
+            else _get_executor(await _require_writer(db, org_id))
+        )
+        result = await executor.execute(action, proposal)
     response: dict[str, object] = {
         "result": result.model_dump(mode="json"),
         "budget_before_krw": before,
@@ -3575,6 +3578,29 @@ async def budget_commit(
         if msg:
             response["error_message"] = str(msg)
     return response
+
+
+# 캠페인 예산 write 직렬화 — 드리프트 검증(read)과 집행(write) 사이에 다른 요청이 끼어들면
+# 둘 다 낡은 예산으로 검증을 통과해 총액 불변이 깨진다(예: X→Y·X→Z 동시 리밸런스 커밋).
+# 단일 프로세스(모놀리식 EC2) 전제의 인프로세스 락 — 멀티 프로세스 확장 시 pg advisory lock 필요.
+_CAMPAIGN_BUDGET_LOCKS: dict[str, asyncio.Lock] = {}
+
+
+@asynccontextmanager
+async def _campaign_budget_guard(*campaign_ids: str) -> AsyncIterator[None]:
+    """캠페인별 락을 정렬 순서로 획득 — 교차 요청(X→Y vs Y→X) 데드락 방지."""
+    locks = [
+        _CAMPAIGN_BUDGET_LOCKS.setdefault(cid, asyncio.Lock()) for cid in sorted(set(campaign_ids))
+    ]
+    acquired: list[asyncio.Lock] = []
+    try:
+        for lock in locks:
+            await lock.acquire()
+            acquired.append(lock)
+        yield
+    finally:
+        for lock in reversed(acquired):
+            lock.release()
 
 
 class RebalanceCommitRequest(BaseModel):
@@ -3673,25 +3699,26 @@ async def budget_rebalance_commit(
     await _require_owned_campaign(db, org_id, body.from_campaign_id)
     await _require_owned_campaign(db, org_id, body.to_campaign_id)
     reader = await _require_reader(db, org_id)
-    from_before, to_before = await _validate_rebalance_change(reader, body)
-    ad_account = await _require_ad_account(db, org_id)
-    proposal = _build_rebalance_proposal(
-        tenant_id=str(org_id),
-        ad_account_id=ad_account,
-        body=body,
-        from_before=from_before,
-        to_before=to_before,
-    )
-    action = await issue_approval(
-        proposal, str(user.id), execution_mode=_resolved_execution_mode(), store=_APPROVAL_STORE
-    )
-    is_demo = proposal.tenant_id == TENANT_ID
-    executor = (
-        _get_executor()
-        if is_demo or getattr(settings, "use_mock", True)
-        else _get_executor(await _require_writer(db, org_id))
-    )
-    result = await executor.execute(action, proposal)
+    async with _campaign_budget_guard(body.from_campaign_id, body.to_campaign_id):
+        from_before, to_before = await _validate_rebalance_change(reader, body)
+        ad_account = await _require_ad_account(db, org_id)
+        proposal = _build_rebalance_proposal(
+            tenant_id=str(org_id),
+            ad_account_id=ad_account,
+            body=body,
+            from_before=from_before,
+            to_before=to_before,
+        )
+        action = await issue_approval(
+            proposal, str(user.id), execution_mode=_resolved_execution_mode(), store=_APPROVAL_STORE
+        )
+        is_demo = proposal.tenant_id == TENANT_ID
+        executor = (
+            _get_executor()
+            if is_demo or getattr(settings, "use_mock", True)
+            else _get_executor(await _require_writer(db, org_id))
+        )
+        result = await executor.execute(action, proposal)
     response: dict[str, object] = {"result": result.model_dump(mode="json")}
     response["from_before_krw"] = from_before
     response["to_before_krw"] = to_before
