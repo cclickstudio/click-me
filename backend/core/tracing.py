@@ -78,13 +78,24 @@ _IMAGE_PRICE_USD: dict[str, dict[tuple[str, str], float]] = {
         ("1536x1024", "medium"): 0.063,
         ("1536x1024", "high"): 0.25,
     },
+    # gpt-image-2 공개가(기준 2026-07) — 정사각은 gpt-image-1보다 low는 싸고 high는 비쌈.
+    "gpt-image-2": {
+        ("1024x1024", "low"): 0.006,
+        ("1024x1024", "medium"): 0.053,
+        ("1024x1024", "high"): 0.211,
+        ("1024x1536", "low"): 0.005,
+        ("1024x1536", "medium"): 0.041,
+        ("1024x1536", "high"): 0.165,
+        ("1536x1024", "low"): 0.005,
+        ("1536x1024", "medium"): 0.041,
+        ("1536x1024", "high"): 0.165,
+    },
 }
-# gpt-image-2 단가 미공개 — 확정 전 gpt-image-1과 동일 가정(확정 시 갱신).
-_IMAGE_PRICE_USD["gpt-image-2"] = _IMAGE_PRICE_USD["gpt-image-1"]
 # 토큰 기반(gemini image): 토큰 실측이 있으면 그걸로 계산, 없으면 이미지당 근사 정액.
 _GEMINI_IMAGE_USD_PER_1K_TOK = 0.03  # ~$30 / 1M 출력 토큰
 _IMAGE_FLAT_USD: dict[str, float] = {
     "gemini-2.5-flash-image": 0.039,  # ~1290 tok/이미지 근사
+    "gemini-3-pro-image": 0.134,  # 1K~2K 표준(출처 상이 — Google 공식가로 확정 권장)
 }
 
 
@@ -103,11 +114,14 @@ def record_image_cost(
     quality: str | None = None,
     n: int = 1,
     tokens: int | None = None,
+    operation: str | None = None,
 ) -> None:
     """현재 트레이스 노드에 이미지 생성 cost_usd를 기록(best-effort).
 
     gpt-image 계열은 size×quality 단가표로, gemini image는 tokens 실측(있으면) 또는
     정액으로 계산한다. 활성 run이 없으면(트레이싱 off) 조용히 무시한다.
+    operation(generate/edit/edit_with_mask/remove_background)과 image_quality를 함께 남겨
+    LangSmith에서 모델×품질×작업 단위로 비용을 분해·필터할 수 있게 한다.
     """
     run = get_current_run_tree()
     if run is None:
@@ -128,7 +142,10 @@ def record_image_cost(
         "image_model": model,
         "image_count": (prev_meta.get("image_count") or 0) + n,
         "image_size": size,
+        "image_quality": quality,
     }
+    if operation is not None:
+        meta["operation"] = operation
     if cost is not None:
         meta["cost_usd"] = round((prev_meta.get("cost_usd") or 0) + cost, 6)
     run.set(metadata=meta)

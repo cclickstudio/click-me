@@ -94,32 +94,68 @@ async def generate(prompt: str, size: AdSize, *, provider: str, model: str, qual
 
 
 async def edit(
-    image_bytes: bytes, prompt: str, size: AdSize, *, provider: str, model: str
+    image_bytes: bytes,
+    prompt: str,
+    size: AdSize,
+    *,
+    provider: str,
+    model: str,
+    quality: str | None = None,
 ) -> bytes:
-    """기존 이미지를 마스크 없이 편집. openai 전용 op — 타 provider는 openai로 폴백."""
+    """기존 이미지를 마스크 없이 편집. openai 전용 op — 타 provider는 openai로 폴백.
+
+    quality 미지정(None)이면 기존 동작(API 기본 품질) — 파이프라인 호출부는 변화 없음.
+    측정용으로 명시하면 gpt-image 계열에 한해 품질을 전달해 단가 티어를 비교할 수 있다.
+    """
     model = _require_openai_for("이미지 편집", provider, model)
     image_file = io.BytesIO(image_bytes)
     image_file.name = "original.png"
-    response = await _openai_client.images.edit(
-        model=model, image=image_file, prompt=prompt, n=1, size=size.value
-    )
-    record_image_cost(model=model, size=size.value)
+    kwargs: dict = {
+        "model": model,
+        "image": image_file,
+        "prompt": prompt,
+        "n": 1,
+        "size": size.value,
+    }
+    if quality is not None and model.startswith("gpt-image"):
+        kwargs["quality"] = quality
+    response = await _openai_client.images.edit(**kwargs)
+    record_image_cost(model=model, size=size.value, quality=quality, operation="edit")
     return base64.b64decode(response.data[0].b64_json)
 
 
 async def edit_with_mask(
-    base_png: bytes, mask_png: bytes, prompt: str, size: AdSize, *, provider: str, model: str
+    base_png: bytes,
+    mask_png: bytes,
+    prompt: str,
+    size: AdSize,
+    *,
+    provider: str,
+    model: str,
+    quality: str | None = None,
 ) -> bytes:
-    """마스크 인페인팅 — 마스크 투명영역만 재생성, 나머지(상품) 잠금. openai 전용 op(명시 마스크)."""
+    """마스크 인페인팅 — 마스크 투명영역만 재생성, 나머지(상품) 잠금. openai 전용 op(명시 마스크).
+
+    quality 미지정(None)이면 기존 동작(API 기본 품질) — 파이프라인 호출부는 변화 없음.
+    측정용으로 명시하면 gpt-image 계열에 한해 품질을 전달해 단가 티어를 비교할 수 있다.
+    """
     model = _require_openai_for("인페인팅", provider, model)
     base_file = io.BytesIO(base_png)
     base_file.name = "base.png"
     mask_file = io.BytesIO(mask_png)
     mask_file.name = "mask.png"
-    response = await _openai_client.images.edit(
-        model=model, image=base_file, mask=mask_file, prompt=prompt, n=1, size=size.value
-    )
-    record_image_cost(model=model, size=size.value)
+    kwargs: dict = {
+        "model": model,
+        "image": base_file,
+        "mask": mask_file,
+        "prompt": prompt,
+        "n": 1,
+        "size": size.value,
+    }
+    if quality is not None and model.startswith("gpt-image"):
+        kwargs["quality"] = quality
+    response = await _openai_client.images.edit(**kwargs)
+    record_image_cost(model=model, size=size.value, quality=quality, operation="edit_with_mask")
     return base64.b64decode(response.data[0].b64_json)
 
 
@@ -142,7 +178,7 @@ async def remove_background(
         kwargs["quality"] = quality
     response = await _openai_client.images.edit(**kwargs)
     # 누끼는 입력 크기를 따라 출력 — 정확 size 미상, 단가는 기본(1024²) 근사.
-    record_image_cost(model=model, quality=quality)
+    record_image_cost(model=model, quality=quality, operation="remove_background")
     return base64.b64decode(response.data[0].b64_json)
 
 
@@ -154,7 +190,7 @@ async def _openai_generate(prompt: str, size: AdSize, model: str, quality: str) 
         kwargs["response_format"] = "b64_json"
         kwargs["quality"] = quality
     response = await _openai_client.images.generate(**kwargs)
-    record_image_cost(model=model, size=size.value, quality=quality)
+    record_image_cost(model=model, size=size.value, quality=quality, operation="generate")
     return base64.b64decode(response.data[0].b64_json)
 
 
@@ -202,7 +238,11 @@ async def _genai_native(model: str, prompt: str, size: AdSize) -> bytes:
     )
     _record_genai_usage(response, model)
     _um = getattr(response, "usage_metadata", None)
-    record_image_cost(model=model, tokens=getattr(_um, "total_token_count", None) if _um else None)
+    record_image_cost(
+        model=model,
+        tokens=getattr(_um, "total_token_count", None) if _um else None,
+        operation="generate",
+    )
     if not response.candidates:
         raise RuntimeError("Gemini 응답에 candidates가 없음")
     for part in response.candidates[0].content.parts:
