@@ -39,7 +39,8 @@ def test_with_llm_retry_wraps_runnable():
 
 def test_require_openai_passes_for_openai():
     # openai면 키 여부와 무관하게 모델 그대로 통과.
-    assert image_providers._require_openai_for("이미지 편집", "openai", "gpt-image-1") == "gpt-image-1"
+    got = image_providers._require_openai_for("이미지 편집", "openai", "gpt-image-1")
+    assert got == "gpt-image-1"
 
 
 def test_require_openai_falls_back_when_key_present(monkeypatch):

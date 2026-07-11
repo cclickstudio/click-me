@@ -14,10 +14,20 @@ from domain.management.remediation.contracts import (
 
 _TRANSFER = {
     "kind": "transfer",
-    "from": {"campaign_id": "camp_low", "name": "저효율", "cpc_krw": 1200,
-             "daily_budget_krw": 50_000, "after_krw": 40_000},
-    "to": {"campaign_id": "camp_high", "name": "고효율", "cpc_krw": 800,
-           "daily_budget_krw": 30_000, "after_krw": 40_000},
+    "from": {
+        "campaign_id": "camp_low",
+        "name": "저효율",
+        "cpc_krw": 1200,
+        "daily_budget_krw": 50_000,
+        "after_krw": 40_000,
+    },
+    "to": {
+        "campaign_id": "camp_high",
+        "name": "고효율",
+        "cpc_krw": 800,
+        "daily_budget_krw": 30_000,
+        "after_krw": 40_000,
+    },
     "move_krw": 10_000,
     "basis": "last_7d",
     "reason": "테스트",

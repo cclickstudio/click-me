@@ -31,7 +31,7 @@ def analyze(name, rows):
     for r in rows:
         imgs.setdefault(r["file"], []).append(r)
 
-    def defect(s):
+    def defect(s: str) -> bool:
         return s != "exact"
 
     flawless = sum(1 for rs in imgs.values() if all(not defect(x["status"]) for x in rs))
@@ -55,8 +55,14 @@ def analyze(name, rows):
     print("|---|---|")
     print(f"| 이미지 수 | {n} |")
     print(f"| 텍스트 인스턴스 총계 | {total} |")
-    print(f"| 카피 정확율(headline+body+cta) | {copy_exact}/{len(copy_rows)} = {pct(copy_exact, len(copy_rows))} |")
-    print(f"| 라벨(other) 정확율 | {other_exact}/{len(other_rows)} = {pct(other_exact, len(other_rows))} |")
+    print(
+        f"| 카피 정확율(headline+body+cta) | {copy_exact}/{len(copy_rows)} "
+        f"= {pct(copy_exact, len(copy_rows))} |"
+    )
+    print(
+        f"| 라벨(other) 정확율 | {other_exact}/{len(other_rows)} "
+        f"= {pct(other_exact, len(other_rows))} |"
+    )
     print(f"| 전체 결함율 | {defects}/{total} = {pct(defects, total)} |")
     print(f"| 무결점 이미지 비율(전체) | {flawless}/{n} = {pct(flawless, n)} |")
     print(f"| 카피만 무결점 이미지 비율 | {copy_flawless}/{n} = {pct(copy_flawless, n)} |")
