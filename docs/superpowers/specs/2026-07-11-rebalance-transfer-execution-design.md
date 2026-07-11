@@ -75,7 +75,7 @@ budget-commit(management.py:3541)과 같은 골격. transfer 전용.
 
 ## 7. 스케줄러 알림 연결
 
-`run_rebalance_report`(scheduler.py:388)의 transfer 알림에 `suggested_action={"type": "rebalance", "proposal": prop}`을 추가한다. 홈 브리핑/챗 알림 카드에서 "적용" 진입 → §6 카드 → §5 집행. dedup_key·24h 주기·HITL 불변.
+`run_rebalance_report`(scheduler.py:388)의 transfer 알림에 `suggested_action`을 추가한다 — `record_automation_run`의 `suggested_action`은 문자열 파라미터이므로 `suggested_action="apply_rebalance"`를 넘기고, 제안 본문은 기존처럼 `payload.proposal`에 실린다. 홈 브리핑/챗 알림 카드에서 "적용" 진입 → §6 카드 → §5 집행. dedup_key·24h 주기·HITL 불변.
 
 ## 8. 프론트 변경
 
