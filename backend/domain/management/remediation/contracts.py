@@ -10,7 +10,9 @@ from pydantic import BaseModel, Field, model_validator
 CONSULT_SCHEMA_VERSION = 1
 
 #: 채팅에 실제 등록된 도구명만 tool_hint로 허용(오타·미등록 도구 차단).
-ALLOWED_TOOL_HINTS = frozenset({"run_generation", "run_simulation", "manage_campaign"})
+ALLOWED_TOOL_HINTS = frozenset(
+    {"run_generation", "run_simulation", "manage_campaign", "apply_rebalance"}
+)
 
 
 class OptionKind(StrEnum):

@@ -1115,6 +1115,82 @@ def build_chat_tools(settings, clio_retriever=None) -> list:
         )
 
     @tool
+    async def apply_rebalance(
+        *,
+        state: Annotated[dict, InjectedState],
+        tool_call_id: Annotated[str, InjectedToolCallId],
+    ) -> Command:
+        """'리밸런스/예산 재배분 적용해줘' 요청에 호출. 현재 리밸런싱 제안을 조회해
+        적용 확인 카드를 띄운다(집행은 카드에서 사용자 확인 = 승인, 직접 실행 금지)."""
+        from domain.management.assistant.tools import live_rebalance_proposal  # noqa: PLC0415
+
+        try:
+            data = await live_rebalance_proposal(settings)
+        except Exception:  # noqa: BLE001 — 조회 실패는 안내로(카드 없이)
+            data = {"proposal": None, "note": "리밸런싱 제안을 불러오지 못했어요."}
+        prop = data.get("proposal")
+        if not prop:
+            return Command(
+                update={
+                    "messages": [
+                        ToolMessage(
+                            data.get("note") or "지금은 리밸런싱 제안이 없어요.",
+                            tool_call_id=tool_call_id,
+                        )
+                    ]
+                }
+            )
+        if prop.get("kind") == "adjust":
+            # 단일 증액/감액 — 기존 캠페인 조치 카드(budget-commit 경로) 재사용.
+            camp = prop.get("campaign") or {}
+            payload = {
+                "action": "increase_budget"
+                if prop.get("direction") == "increase"
+                else "decrease_budget",
+                "campaign_id": camp.get("campaign_id", ""),
+                "campaign_name": camp.get("name", ""),
+                "new_daily_budget_krw": camp.get("after_krw", 0),
+            }
+            helpers.spawn_record_execution(
+                state.get("project_id"),
+                "management",
+                "rebalance_adjust_request",
+                f"리밸런스 단일 조정 요청(카드) {camp.get('name', '')} "
+                f"일예산 {camp.get('after_krw', 0)}원",
+                {**payload, "stage": "request"},
+            )
+            return Command(
+                update={
+                    **widgets.campaign_action(payload),
+                    "messages": [
+                        ToolMessage(
+                            "단일 캠페인 예산 조정 제안이에요. 확인 카드에서 적용해 주세요.",
+                            tool_call_id=tool_call_id,
+                        )
+                    ],
+                }
+            )
+        helpers.spawn_record_execution(
+            state.get("project_id"),
+            "management",
+            "rebalance_request",
+            f"리밸런스 적용 요청(카드) {(prop.get('from') or {}).get('name', '')} → "
+            f"{(prop.get('to') or {}).get('name', '')} {prop.get('move_krw', 0)}원",
+            {"proposal": prop, "stage": "request"},
+        )
+        return Command(
+            update={
+                **widgets.rebalance_action(prop),
+                "messages": [
+                    ToolMessage(
+                        "리밸런싱 적용 확인 카드를 준비했어요. 확인해 주세요.",
+                        tool_call_id=tool_call_id,
+                    )
+                ],
+            }
+        )
+
+    @tool
     async def replace_creative(
         campaign_id: str = "",
         campaign_name: str = "",
@@ -1354,6 +1430,7 @@ def build_chat_tools(settings, clio_retriever=None) -> list:
         create_campaign,
         execute_from_simulation,
         manage_campaign,
+        apply_rebalance,
         replace_creative,
         consult_anomaly,
         load_template,

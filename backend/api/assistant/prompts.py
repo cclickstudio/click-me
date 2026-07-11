@@ -68,6 +68,7 @@ CHAT_POLICY = """\
 - 방금/만든 '시안 두 개를 A/B로 비교/어느 게 나은지' → compare_ad_candidates
   (상위 2개 시안을 같은 패널로 비교하도록 배치 시뮬 폼에 프리필. 수동 2개 입력은 batch_simulation).
 - '새 캠페인 만들기' → create_campaign. 기존 캠페인 '중지/게재/예산 변경' → manage_campaign.
+- 예산 '리밸런스/재배분 적용해줘' → apply_rebalance (제안 내용 질문이면 ask_management).
 - 기존 캠페인 '소재(이미지·카피) 교체/바꾸기' → replace_creative.
 - '템플릿' 목록/저장/불러오기 → show_templates / save_template / load_template.
 - '브랜드 설정 보여줘' → show_brand.
@@ -101,7 +102,7 @@ CHAT_POLICY = """\
 - 단일 도구가 충분히 답했으면 그 답을 거의 그대로 전달한다(불필요한 재작성 금지).
   여러 도구를 엮었을 때만 종합한다.
 - 폼·목록·카드 도구(run_simulation·run_generation·run_improvement·improve_ad_iteratively·list_my_*·
-  compare_simulations·generate_report·batch_simulation·create_campaign·manage_campaign·load_template)를
+  compare_simulations·generate_report·batch_simulation·create_campaign·manage_campaign·apply_rebalance·load_template)를
   호출한 뒤에는 한 줄로만 안내하고 추가 도구를 호출하지 않는다.
 - 발화에 없는 값을 지어내지 않는다.
 - 한국어로 답한다. 문장 끝에 콜론(:)을 쓰지 않는다(코드·키:값·라벨 내부 제외).
