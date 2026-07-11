@@ -6,7 +6,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { api, authedFetch } from '@/lib/api';
+import { api, authedFetch, type RebalanceTransfer } from '@/lib/api';
 import { formatRelativeKST, formatKSTFull } from '@/lib/datetime';
 import SimFormWidget from './SimFormWidget';
 import SimInputWidget from './SimInputWidget';
@@ -36,6 +36,7 @@ import RemediationOptionsWidget, {
 import ChatCreateCampaignCard from './ChatCreateCampaignCard';
 import { ExecuteFromSimulation } from '@/components/manage/ExecuteFromSimulation';
 import ChatCampaignActionCard, { type CampaignActionPayload } from './ChatCampaignActionCard';
+import ChatRebalanceActionCard from './ChatRebalanceActionCard';
 import ChatBudgetProposalCard, { type BudgetActionPayload } from './ChatBudgetProposalCard';
 import ChatReplaceCreativeCard from './ChatReplaceCreativeCard';
 import type { CampaignPrefill } from '@/components/manage/campaigns/CampaignForm';
@@ -226,6 +227,7 @@ type WidgetSpec = {
     action?: CampaignActionPayload | BudgetActionPayload; // campaign_action 위젯 — 조치 페이로드
     campaign_id?: string; // replace_creative 위젯 — 소재 교체 대상 캠페인(빈 값이면 카드가 picker)
     campaign_name?: string; // replace_creative 위젯 — 캠페인명(이름→id 해석용)
+    proposal?: RebalanceTransfer; // rebalance_action 위젯 — 리밸런싱 이전(transfer) 제안
   };
 };
 type SourceMeta = {
@@ -1982,6 +1984,12 @@ export default function ChatConversation({
                           />
                         );
                       })()}
+                    {msg.meta?.widget?.type === 'rebalance_action' &&
+                      msg.meta.widget.data?.proposal && (
+                        <ChatRebalanceActionCard
+                          proposal={msg.meta.widget.data.proposal as RebalanceTransfer}
+                        />
+                      )}
                     {msg.meta?.widget?.type === 'replace_creative' && (
                       <ChatReplaceCreativeCard
                         campaignId={msg.meta.widget.data?.campaign_id ?? ''}
