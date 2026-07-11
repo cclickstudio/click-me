@@ -176,6 +176,25 @@ Expected (Task 3 전): 활성 daily 캠페인 0개 → `"proposal": null` + "진
 
 ---
 
+### Task 7: mock 데모 상태화 + 데모 정본 단일화 (부록 캡처 ①②③용)
+
+**배경** — 데모 캠페인 정본이 두 개(MockAdPlatform 100k/80k/60k vs `_CAMPAIGNS_DEMO` 40k/25k/15k/10k/10k)라 mock에서 리밸런스 적용이 drift 409로 막히고, mock writer(DRY_RUN)가 무동작이라 "예산이 움직인" 장면이 안 나온다. 단일 가변 스토어로 통일하고 mock writer가 스토어를 갱신하게 한다.
+
+**Files:**
+- Create: `backend/domain/management/adapters/demo_store.py` — 가변 데모 캠페인 스토어(싱글턴). 초기값 = 기존 `_CAMPAIGNS_DEMO` 5캠(이름·상태·예산·FaultMode 그대로). API: `campaigns()`(튜플 목록), `get_budget(cid) -> int`, `set_budget(cid, krw)`, `reset()`(테스트용). 첫 줄 한국어 헤더 주석.
+- Modify: `backend/domain/management/adapters/mock.py` — `_DEMO_SCENARIOS` 예산을 스토어에서 읽게(camp_1~3 유지, 값은 스토어의 40k/25k/15k). `list_campaigns`·`get_metrics`의 예산 참조를 스토어 경유로.
+- Modify: `backend/domain/management/wiring.py` — `build_writer`의 use_mock 분기에서 `DemoBudgetWriter(MetaAdsWriter(settings, mode=DRY_RUN))` 반환. `DemoBudgetWriter`는 demo_store.py(또는 mock.py)에 두는 얇은 위임 래퍼 — `adjust_budget`만 inner 호출 성공 시 `store.set_budget` 추가, 나머지 메서드는 `__getattr__` 위임.
+- Modify: `backend/api/routers/management.py` — `_CAMPAIGNS_DEMO` 상수를 스토어 참조로 교체(소비처 4곳: `get_campaigns`·`get_campaign`·`_current_daily_budget` mock 분기·`_budget_status_demo`). 예산 숫자·5캠 구성은 불변이므로 화면·기존 데모 동작 유지.
+- Test: `test/backend/management/test_demo_store.py` (신규) — ① 스토어 초기값=기존 값 ② set_budget 후 mock reader·`_current_daily_budget`이 같은 값 ③ DemoBudgetWriter.adjust_budget 성공 시 스토어 갱신·실패 시 미갱신.
+
+- [ ] **Step 1: 실패하는 테스트 작성** (위 3케이스 — dict 리터럴, C408 금지)
+- [ ] **Step 2: 구현** (스토어 → mock.py → wiring → 라우터 순)
+- [ ] **Step 3: 전체 회귀** — `cd backend && uv run pytest -q`. `_CAMPAIGNS_DEMO`·mock 예산 숫자를 단언하는 기존 테스트가 있으면 값은 안 바뀌었으므로 통과해야 정상. MockAdPlatform 예산이 100k→40k대로 바뀌는 영향으로 mock 지표 절대값을 단언하는 테스트가 깨지면, 비율 기반 단언으로 고칠 수 있는 것만 고치고 판단이 필요한 건 보고.
+- [ ] **Step 4: mock E2E 수동 검증 절차 출력** — USE_MOCK=true로 서버 켜고 budget 페이지에서 제안→적용→새로고침 시 예산 이동 확인(캡처 ①②③). 검증 후 USE_MOCK 원복.
+- [ ] **Step 5: Ruff + 커밋** — `fix: mock 데모 정본 단일화 + 상태화 — 리밸런스 mock 적용 drift 409 해소`
+
+---
+
 ### Task 6: 스펙 문서 커밋 (스펙이 아직 미커밋 상태면)
 
 - [ ] Run: `git status --short docs/superpowers/specs/2026-07-11-rebalance-demo-package-design.md` — 미추적/변경이면 커밋.
