@@ -43,6 +43,7 @@ from core.models import (
     User,
 )
 from domain.billing.service.billing_service import BillingError
+from domain.management.adapters import demo_store
 from domain.management.adapters.generator.client import (
     GeneratorUnavailableError,
     InvalidGenerationError,
@@ -1417,17 +1418,11 @@ async def kb_eval_faithfulness(n: int = 30) -> dict:
 
 
 # ── 캠페인 목록·성과 대시보드 (🅰 reader 영역 데모 노출) ──────────────────
-# 백엔드에 "캠페인 목록" 능력이 없어(이름·상태 미보유) 데모 캠페인 상수 + MockAdPlatform로
-# 요약/시계열을 합성한다. 실연동 시 reader.list_campaigns로 교체.
-# 일예산 합 100_000 = policy.DAILY_BUDGET_KRW(SMB 데모 표준) — 월 환산 300만으로
+# 백엔드에 "캠페인 목록" 능력이 없어(이름·상태 미보유) 데모 캠페인 정본(demo_store.campaigns(),
+# 구 _CAMPAIGNS_DEMO 상수와 동일 형태·값) + MockAdPlatform로 요약/시계열을 합성한다.
+# 예산은 가변(리밸런스 mock 적용이 갱신) — 실연동 시 reader.list_campaigns로 교체.
+# 초기 일예산 합 100_000 = policy.DAILY_BUDGET_KRW(SMB 데모 표준) — 월 환산 300만으로
 # _BUDGET 기본 월 목표와 페이싱 정합(일반 중소기업 규모, 근거는 _BUDGET 주석 참조).
-_CAMPAIGNS_DEMO: tuple[tuple[str, str, CampaignState, int, FaultMode | None], ...] = (
-    ("camp_1", "여름 신상 원피스", CampaignState.ACTIVE, 40_000, None),
-    ("camp_2", "브랜드 데일리 룩", CampaignState.ACTIVE, 25_000, FaultMode.BID_LOSS),
-    ("camp_3", "신상 액세서리 모음", CampaignState.ACTIVE, 15_000, FaultMode.AUDIENCE_TOO_NARROW),
-    ("camp_4", "쿠폰 안내 공지", CampaignState.UNDER_REVIEW, 10_000, FaultMode.REVIEW_DELAY),
-    ("camp_5", "봄 시즌오프 마감", CampaignState.ENDED, 10_000, None),
-)
 
 
 async def _campaign_snapshots(
@@ -1908,8 +1903,9 @@ async def list_campaigns(
                 }
             raise
     # mock 데모도 동일 페이지네이션 계약(total·has_more)으로 — 프론트 무한스크롤 코드 공유.
-    total = len(_CAMPAIGNS_DEMO)
-    page = list(enumerate(_CAMPAIGNS_DEMO))[offset : offset + limit]
+    demo = demo_store.campaigns()
+    total = len(demo)
+    page = list(enumerate(demo))[offset : offset + limit]
     # 데모 일별지출은 합성이라 네트워크 부하 없음 — opt-in 시 상세와 같은 소스로 series 채움.
     mock = MockAdPlatform() if include_series else None
     out = []
@@ -2124,7 +2120,7 @@ async def get_campaign(
         return await _get_campaign_real(
             reader, campaign_id, conversion_value_krw, target_roas, _valid_preset(date_preset)
         )
-    for i, (cid, name, state, budget, fault) in enumerate(_CAMPAIGNS_DEMO):
+    for i, (cid, name, state, budget, fault) in enumerate(demo_store.campaigns()):
         if cid == campaign_id:
             snaps = await _campaign_snapshots(cid, budget, fault, seed=40 + i)
             actual = [s.impressions for s in snaps]
@@ -2951,8 +2947,8 @@ async def _created_campaign_row(db: AsyncSession, campaign_id: str) -> CreatedCa
 
 
 def _is_demo_campaign(campaign_id: str) -> bool:
-    """campaign_id가 데모 픽스처(_CAMPAIGNS_DEMO)에 존재하는지."""
-    return any(cid == campaign_id for cid, *_ in _CAMPAIGNS_DEMO)
+    """campaign_id가 데모 정본(demo_store.campaigns())에 존재하는지."""
+    return any(cid == campaign_id for cid, *_ in demo_store.campaigns())
 
 
 async def _validated_org(db, sel: str, *, require_active: bool) -> UUID:
@@ -3412,15 +3408,8 @@ _MAX_DAILY_BUDGET_KRW = 100_000_000
 async def _current_daily_budget(reader: AdPlatformReader, campaign_id: str) -> int:
     """현재 일예산 정본 — /campaigns와 동일 소스(리더 목록)에서 조회(없으면 0=진입 전 거부)."""
     if getattr(settings, "use_mock", True):
-        demo = next(
-            (
-                budget
-                for cid, _name, _state, budget, _fault in _CAMPAIGNS_DEMO
-                if cid == campaign_id
-            ),
-            0,
-        )
-        return int(demo)
+        # 데모 정본 스토어에서 직접 조회 — 목록·mock reader와 같은 값(없으면 0=진입 전 거부).
+        return demo_store.get_budget(campaign_id)
     campaigns = await reader.list_campaigns(include_archived=True)
     info = next((c for c in campaigns if c.campaign_id == campaign_id), None)
     return int(info.daily_budget_krw) if info and info.daily_budget_krw else 0
@@ -3801,7 +3790,7 @@ async def _budget_status(reader, budget_key: str = TENANT_ID) -> dict:
     elapsed_days = datetime.now(UTC).day
     spent = 0
     campaigns = []
-    for i, (cid, name, _state, budget, fault) in enumerate(_CAMPAIGNS_DEMO):
+    for i, (cid, name, _state, budget, fault) in enumerate(demo_store.campaigns()):
         snaps = await _campaign_snapshots(cid, budget, fault, seed=40 + i)
         spend = _campaign_summary(snaps, budget)["spend_krw"] * elapsed_days
         spent += spend

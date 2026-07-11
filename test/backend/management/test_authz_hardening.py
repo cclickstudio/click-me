@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 from api.routers import management
 from core.auth import get_current_user
 from core.db import get_db
+from domain.management.adapters import demo_store
 
 
 class _FakeScalars:
@@ -98,7 +99,7 @@ async def test_require_owned_campaign_unknown_404(monkeypatch):
 async def test_require_owned_campaign_demo_fixture_allows_none(monkeypatch):
     monkeypatch.setattr(management.settings, "use_mock", True, raising=False)
     db = _FakeDB(campaign=None)
-    demo_id = management._CAMPAIGNS_DEMO[0][0]
+    demo_id = demo_store.campaigns()[0][0]
     assert await management._require_owned_campaign(db, uuid.uuid4(), demo_id) is None
 
 

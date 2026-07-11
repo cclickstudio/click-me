@@ -26,14 +26,16 @@ def build_reader(settings) -> AdPlatformReader:
 
 
 def build_writer(settings) -> AdPlatformWriter:
-    # mock/데모 writer = DRY_RUN MetaAdsWriter (실제 쓰기 없이 계약만 검증).
-    # MockAdPlatform은 reader 전용이라 writer Port를 만족하지 못함 — 분기에서 제외.
+    # mock/데모 writer = DemoBudgetWriter(DRY_RUN MetaAdsWriter) — 실전송 없이 계약만 검증하되,
+    # adjust_budget 성공 시 demo_store 예산을 갱신해 "적용 → 새로고침 시 예산 이동"이 mock에서
+    # 완결된다. (MockAdPlatform은 reader 전용이라 writer Port를 만족하지 못함 — 분기에서 제외.)
     from domain.management.adapters.meta.writer import MetaAdsWriter  # noqa: PLC0415
 
     if getattr(settings, "use_mock", True):
+        from domain.management.adapters.demo_store import DemoBudgetWriter  # noqa: PLC0415
         from domain.management.contracts.enums import ExecutionMode  # noqa: PLC0415
 
-        return MetaAdsWriter(settings, mode=ExecutionMode.DRY_RUN)
+        return DemoBudgetWriter(MetaAdsWriter(settings, mode=ExecutionMode.DRY_RUN))
     return MetaAdsWriter(settings)
 
 
