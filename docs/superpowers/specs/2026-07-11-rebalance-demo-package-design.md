@@ -75,7 +75,8 @@ MANAGEMENT_EXECUTION_MODE=validate_only   # 리허설 동안 실변경 봉인
   sessionStorage.setItem('clio:draft', '리밸런스 적용해줘');
   router.push('/chat');
   ```
-  ChatConversation이 새 챗 진입 시 draft를 1회 소비해 입력창에 싣는다(ChatConversation.tsx:382-392). **자동 전송하지 않는다** — 사용자가 전송·카드 확인을 직접 누르는 HITL 유지.
+  ChatConversation이 **새 채팅이 열릴 때** draft를 1회 소비해 입력창에 싣는다(ChatConversation.tsx:382-392). **자동 전송하지 않는다** — 사용자가 전송·카드 확인을 직접 누르는 HITL 유지.
+- **주의(흐름 한계)**: `/chat`은 ChatWorkspace가 뜨며, 우측 대화는 **프로젝트 선택 + "새 채팅" 클릭 전까지 마운트되지 않는다**(ChatWorkspace.tsx:68-75). 따라서 CTA 클릭 직후 프리필이 바로 보이는 게 아니라, 프로젝트 선택→새 채팅 후 보인다 — 기존 대시보드 CLIO 런처와 동일한 동작이며, 발표 전에는 이 동작을 그대로 쓴다(A안). draft 존재 시 새 채팅 자동 오픈(B안)은 대시보드 런처 UX까지 바꾸는 공용 변경이라 발표 후 폴리시로 미룬다(§3 로드맵).
 - **문구**: "챗에서 리밸런스 적용하기 →".
 - **테스트**: `pnpm build` + 렌더 분기(suggested_action 있는 run/없는 run) 확인. 백엔드 무변경.
 
@@ -88,9 +89,10 @@ MANAGEMENT_EXECUTION_MODE=validate_only   # 리허설 동안 실변경 봉인
 | 3 | ③ saga outbox | Meta 호출 전 attempt 퍼시스트 + reconcile | executor 전반 선재 속성 |
 | 4 | ④ 재무 원장 | 감사 마스킹 유지 + 암호화 원장(예산 변경 재구성용) | CLAUDE.md 보안 규칙과 병행 |
 | 전달 | ⑥ simulation 스코핑 | 구현 아님 — org 스코핑 미결(D4) 전달 메모 작성해 simulation 팀 공유 | coord 문서 기반 |
+| 폴리시 | 챗 draft 자동 오픈(B안) | clio:draft 존재 시 마지막/첫 프로젝트로 새 채팅 자동 오픈(자동 전송은 안 함) | 알림 CTA와 대시보드 런처 UX 동시 개선 — 공용 챗 워크스페이스 변경이라 발표 후 |
 
 ## 4. 성공 기준
 
-- 발표 리허설(D-1)에서 "워커 알림 → CTA 클릭 → 챗 입력 프리필 → 전송 → 리밸런스 카드 → 확인 → validate 통과" 전 구간이 클릭만으로 이어진다.
+- 발표 리허설(D-1)에서 "워커 알림 → CTA 클릭 → `/chat` 진입 → 프로젝트 선택 → 새 채팅(입력 프리필 확인) → 전송 → 리밸런스 카드 → 확인 → validate 통과" 전 구간이 이어진다(A안 — 프리필은 새 채팅 시점에 보이는 게 정상 동작).
 - D-day live 집행 1회가 Meta 광고관리자 실측과 일치(감액→증액, 총액 불변).
 - 발표 직후 dry_run 복귀가 체크리스트로 확인된다.
