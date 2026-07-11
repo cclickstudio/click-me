@@ -29,8 +29,8 @@ const iconProps = { size: 18, strokeWidth: 1.8 } as const;
 const mainNav = [
   { label: '대시보드', href: '/dashboard', icon: <LayoutDashboard {...iconProps} /> },
   { label: '채팅', href: '/chat', icon: <MessageSquare {...iconProps} /> },
-  { label: '광고 시뮬레이션', href: '/simulation', icon: <Users {...iconProps} /> },
   { label: '광고 제너레이터', href: '/generator', icon: <Sparkles {...iconProps} /> },
+  { label: '광고 시뮬레이션', href: '/simulation', icon: <Users {...iconProps} /> },
   { label: '광고 매니지먼트', href: '/manage', icon: <BarChart3 {...iconProps} /> },
 ];
 
