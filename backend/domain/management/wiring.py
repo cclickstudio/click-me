@@ -188,7 +188,7 @@ def build_generator_client(settings):
 
 
 def resolve_execution_mode(settings):
-    """settings 기반 실행 모드 — 라우터의 _resolved_execution_mode() 미러.
+    """settings 기반 실행 모드 정본 — 라우터 _resolved_execution_mode가 이 함수에 위임.
 
     use_mock이면 무조건 MOCK(봉인). 실모드에서만 management_execution_mode를 따른다.
     DRY_RUN을 폴백으로 사용한다.

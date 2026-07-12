@@ -90,6 +90,7 @@ from domain.management.contracts.policy import (
     CPM_ANCHOR_KRW,
     CPM_NORMAL_RANGE_KRW,
     DAILY_BUDGET_KRW,
+    DEFAULT_MONTHLY_TARGET_KRW,
     FATIGUE_FREQUENCY,
     PROPOSAL_TTL_MINUTES,
     exec_gate_thresholds,
@@ -141,6 +142,8 @@ from domain.management.wiring import (
     build_prediction_reader,
     build_reader,
     build_writer,
+    resolve_execution_mode,
+    state_version_v1,
 )
 from tools.storage.s3 import download_bytes
 
@@ -184,7 +187,7 @@ _DEMO_FAULTS = {"bid_loss", "review_rejected", "none"}
 # 예산(중소기업 월 마케팅 500만 중 광고비·성장기업 광고비 100만+), 아이보스(매출의 5~15%).
 # policy.DAILY_BUDGET_KRW(100_000)와 정합 — 일 10만 × 30일 = 300만.
 _AUDIT_LOG = build_audit_sink(settings)
-_BUDGET = TenantBudgetRegistry(default_limit_krw=3_000_000)
+_BUDGET = TenantBudgetRegistry(default_limit_krw=DEFAULT_MONTHLY_TARGET_KRW)
 _executor: Executor | None = None
 _APPROVAL_STORE = build_approval_store(settings)  # 승인 원장 — 발행(/approve)과 executor가 공유
 
@@ -242,23 +245,13 @@ async def _request_writer(
     return await _require_writer(db, await _require_org_id(user, db))
 
 
-async def _state_version(_ad_account_id: str) -> str:
-    return "state_v1"  # 데모 고정 — 제안의 expected_state_version과 일치
-
-
 def _resolved_execution_mode() -> ExecutionMode:
-    """settings 기반 실행 모드 — use_mock이면 무조건 MOCK(봉인).
+    """실행 모드 — 정본은 wiring.resolve_execution_mode(use_mock이면 MOCK 봉인).
 
-    실모드(use_mock=False)에서만 management_execution_mode(dry_run|validate_only|live)를 따른다.
-    LIVE는 여기를 통해서만 들어오고, 호출부는 /approve 단일 경로(AUTO 자율 승인은 안 거침).
+    LIVE 분기는 /approve와 사용자 명시 실행 엔드포인트(활성화·중지·예산 변경 등)에서
+    이 함수로 판정한다(AUTO 자율 승인은 안 거침).
     """
-    if getattr(settings, "use_mock", True):
-        return ExecutionMode.MOCK
-    raw = getattr(settings, "management_execution_mode", "dry_run")
-    try:
-        return ExecutionMode(raw)
-    except ValueError:
-        return ExecutionMode.DRY_RUN
+    return resolve_execution_mode(settings)
 
 
 def _is_sending_mode() -> bool:
@@ -283,7 +276,7 @@ def _get_executor(writer=None) -> Executor:
             idempotency=build_idempotency_store(settings),
             audit=_AUDIT_LOG,
             budget_for=_BUDGET.for_tenant,
-            state_version_provider=_state_version,
+            state_version_provider=state_version_v1,
             current_policy_version=APPROVAL_POLICY_VERSION,
             allowed_modes=allowed,
             approvals=_APPROVAL_STORE,
@@ -295,7 +288,7 @@ def _get_executor(writer=None) -> Executor:
             idempotency=build_idempotency_store(settings),
             audit=_AUDIT_LOG,
             budget_for=_BUDGET.for_tenant,
-            state_version_provider=_state_version,
+            state_version_provider=state_version_v1,
             current_policy_version=APPROVAL_POLICY_VERSION,
             allowed_modes=allowed,
             approvals=_APPROVAL_STORE,
@@ -324,7 +317,7 @@ def _demo_executor() -> Executor:
             idempotency=InMemoryIdempotencyStore(),
             audit=_AUDIT_LOG,
             budget_for=_BUDGET.for_tenant,
-            state_version_provider=_state_version,
+            state_version_provider=state_version_v1,
             current_policy_version=APPROVAL_POLICY_VERSION,
             # LIVE는 시연 경로에 불필요 — 승인이 MOCK로 고정되고 writer도 DRY_RUN이라 이중 봉인.
             allowed_modes=DEFAULT_ALLOWED_MODES,
