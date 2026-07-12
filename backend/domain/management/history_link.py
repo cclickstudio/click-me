@@ -1,7 +1,9 @@
 # 실행 확정 → 롱텀 메모리 연결 — 캠페인→프로젝트 역추적 + executor 기록 콜백 빌더
 """management 액션은 tenant 스코프라 프로젝트가 없다. created_campaigns의
 creative_ad_id → ads.project_id 경로로 역추적해 chat_execution_history(프로젝트 스코프)에
-남긴다. 연결 불가(수동 연동 캠페인 등)면 기록 생략 — 알림·감사 로그는 별도로 남는다.
+남긴다. CREATE_CAMPAIGN은 그 시점 created_campaigns가 미적재라 제안의 귀속 단서
+(creative_ad_id → source_ad_id → generation_id)로 ads·ad_generations를 직조회한다.
+연결 불가(수동 연동 캠페인 등)면 기록 생략 — 알림·감사 로그는 별도로 남는다.
 전부 best-effort — 실패가 실행 결과를 바꾸지 않는다.
 """
 
