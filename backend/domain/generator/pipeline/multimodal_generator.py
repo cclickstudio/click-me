@@ -18,6 +18,7 @@ from langsmith import traceable
 from PIL import Image
 
 from core.config import settings
+from core.tracing import record_image_cost
 from domain.generator.contracts.enums import AdSize, AdStrategy, TemplateType
 from domain.generator.contracts.pipeline_schemas import AdCopy, ProductAnalysis
 
@@ -199,6 +200,14 @@ async def _generate_once(
         ),
     )
     _record_genai_usage(response, settings.generator_gemini_image_model)
+    # 이미지 cost_usd도 기록 — openai 경로(_genai_native)와 동일하게 토큰 실측으로 계산한다.
+    # 이게 없으면 gemini 모드(현재 기본)의 이미지 비용이 LangSmith 메타에 안 잡힌다.
+    _um = getattr(response, "usage_metadata", None)
+    record_image_cost(
+        model=settings.generator_gemini_image_model,
+        tokens=getattr(_um, "total_token_count", None) if _um else None,
+        operation="generate",
+    )
 
     if not response.candidates:
         logger.warning(
