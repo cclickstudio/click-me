@@ -1,27 +1,31 @@
 'use client';
 
-// 발표 Q&A 부록 — 기능별(제너레이터·시뮬레이션·매니지먼트·채팅) 예상 질문을 클릭하면, 그 질문에
-// 답하며 보여줄 시각 자료(파이프라인·구조도·매트릭스·타임라인 등)를 바로 띄우는 프레젠테이션 보조 페이지.
+// 발표 Q&A 부록 — 좌측은 AdminPanel과 같은 파일트리 스타일 내비게이터(도메인 폴더 → 질문 파일,
+// 폴더 하나 열면 다른 폴더는 자동으로 닫힘), 우측은 선택한 질문에 답하며 보여줄 시각 자료 패널이다.
+// 상단에는 포털사이트 스타일의 큰 검색창을 둔다. 우측 패널은 전체화면(진짜 PPT처럼) 전환 버튼을
+// 지원 — Fullscreen API + CSS 오버레이를 함께 써서 iframe처럼 API가 막힌 환경에서도 동작한다.
+// 프레젠테이션(빔 프로젝터용 확대) / 기본 열람 밀도를 라이트·다크 토글과 나란히 전환할 수 있다.
 // 로그인 없이 접근 가능한 공개 라우트. 질문에 대한 글로 쓴 정답은 두지 않는다 — 자료만 스위칭한다.
 
-import { useMemo, useState } from 'react';
-import { Search } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Search, ChevronRight, Sun, Moon, Maximize2, X } from 'lucide-react';
 import { DOMAINS, EXHIBITS } from './_lib/exhibits';
-import { TONE_CLASS } from './_lib/primitives';
+import { TONE_CLASS, DensityProvider, type Density } from './_lib/primitives';
+import { useTheme } from '@/components/ThemeProvider';
 
 export default function AppendixPage() {
+  const { theme, toggle } = useTheme();
+  const [density, setDensity] = useState<Density>('presentation');
   const [query, setQuery] = useState('');
-  const [selectedKey, setSelectedKey] = useState<string>(`${DOMAINS[0].id}:${DOMAINS[0].questions[0].id}`);
-  const [openNav, setOpenNav] = useState<string | null>(null);
+  const [openDomain, setOpenDomain] = useState<string | null>(DOMAINS[0].id);
+  const [selectedByDomain, setSelectedByDomain] = useState<Record<string, string>>(() =>
+    Object.fromEntries(DOMAINS.map((d) => [d.id, d.questions[0].id])),
+  );
+  const [fullscreen, setFullscreen] = useState(false);
+  const stageRef = useRef<HTMLDivElement>(null);
 
-  const selected = useMemo(() => {
-    for (const d of DOMAINS) {
-      const found = d.questions.find((q) => `${d.id}:${q.id}` === selectedKey);
-      if (found) return { domain: d, question: found, exhibit: EXHIBITS[found.exhibitKey] };
-    }
-    const q0 = DOMAINS[0].questions[0];
-    return { domain: DOMAINS[0], question: q0, exhibit: EXHIBITS[q0.exhibitKey] };
-  }, [selectedKey]);
+  const big = density === 'presentation';
+  const isSearching = query.trim().length > 0;
 
   const filteredDomains = useMemo(() => {
     const q = query.trim();
@@ -32,130 +36,222 @@ export default function AppendixPage() {
     })).filter((d) => d.questions.length > 0);
   }, [query]);
 
-  const pick = (domainId: string, questionId: string) => {
-    setSelectedKey(`${domainId}:${questionId}`);
-    setOpenNav(null);
+  const activeDomainId = filteredDomains.find((d) => isSearching || d.id === openDomain)?.id ?? null;
+  const activeDomain = filteredDomains.find((d) => d.id === activeDomainId) ?? null;
+  const activeQuestion = activeDomain
+    ? activeDomain.questions.find((q) => q.id === selectedByDomain[activeDomain.id]) ?? activeDomain.questions[0]
+    : null;
+  const activeExhibit = activeQuestion ? EXHIBITS[activeQuestion.exhibitKey] : null;
+
+  const exitFullscreen = () => {
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    setFullscreen(false);
+  };
+  const enterFullscreen = async () => {
+    setFullscreen(true);
+    try {
+      await stageRef.current?.requestFullscreen();
+    } catch {
+      // Fullscreen API가 막힌 환경(iframe 등) — CSS 오버레이만으로도 화면을 채운다.
+    }
   };
 
-  return (
-    <div className="mx-auto max-w-7xl px-6 py-8">
-      <div className="mb-6">
-        <h1 className="text-h1">발표 Q&A 부록</h1>
-        <p className="text-body mt-1">예상 질문을 클릭하면 답변에 쓸 시각 자료가 바로 뜹니다. 기능별 nav에 커서를 올리면 10문항 목록이 드롭다운으로 나옵니다.</p>
-      </div>
+  useEffect(() => {
+    const onFsChange = () => {
+      if (!document.fullscreenElement) setFullscreen(false);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') exitFullscreen();
+    };
+    document.addEventListener('fullscreenchange', onFsChange);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('fullscreenchange', onFsChange);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, []);
 
-      {/* 상단 nav — 호버 드롭다운 */}
-      <div className="sticky top-0 z-30 -mx-6 mb-6 border-b border-line bg-surface-0/95 px-6 py-3 backdrop-blur">
-        <nav className="flex flex-wrap gap-2">
-          {DOMAINS.map((d) => (
-            <div
-              key={d.id}
-              className="relative"
-              onMouseEnter={() => setOpenNav(d.id)}
-              onMouseLeave={() => setOpenNav((cur) => (cur === d.id ? null : cur))}
-            >
+  return (
+    <div className={big ? 'mx-auto w-[90%] py-10' : 'mx-auto max-w-6xl px-6 py-8'}>
+      <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className={big ? 'text-4xl font-bold tracking-tight text-ink sm:text-5xl' : 'text-h1'}>발표 Q&A 부록</h1>
+          <p className={big ? 'mt-2 text-lg text-ink-secondary' : 'text-body mt-1'}>
+            아래 검색창이나 폴더에서 예상 질문을 클릭하면, 답변에 쓸 시각 자료가 우측에 뜹니다.
+          </p>
+        </div>
+
+        <div className="flex shrink-0 items-center gap-2">
+          <div className="flex rounded-lg border border-line bg-card p-0.5">
+            {(['presentation', 'normal'] as const).map((d) => (
               <button
+                key={d}
                 type="button"
-                onClick={() => setOpenNav((cur) => (cur === d.id ? null : d.id))}
-                className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
-                  selected.domain.id === d.id
-                    ? `${TONE_CLASS[d.accent].bg} ${TONE_CLASS[d.accent].text} ${TONE_CLASS[d.accent].border}`
-                    : 'border-line text-ink-secondary hover:bg-accent hover:text-ink'
+                onClick={() => setDensity(d)}
+                className={`rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                  density === d ? 'bg-primary text-primary-foreground' : 'text-ink-secondary hover:bg-accent hover:text-ink'
                 }`}
               >
-                <span className={selected.domain.id === d.id ? TONE_CLASS[d.accent].text : 'text-ink-tertiary'}>{d.icon}</span>
-                {d.label}
-                <span className="text-caption">{d.questions.length}</span>
+                {d === 'presentation' ? '프레젠테이션' : '기본 열람'}
               </button>
-
-              {openNav === d.id && (
-                <div className="absolute left-0 top-full z-40 mt-1 w-80 rounded-lg border border-line bg-popover p-1.5 shadow-lg">
-                  {d.questions.map((item, idx) => (
-                    <button
-                      key={item.id}
-                      type="button"
-                      onClick={() => pick(d.id, item.id)}
-                      className={`flex w-full items-start gap-2 rounded-md px-2.5 py-2 text-left text-sm transition-colors ${
-                        selectedKey === `${d.id}:${item.id}` ? TONE_CLASS[d.accent].bg : 'hover:bg-accent'
-                      }`}
-                    >
-                      <span className="text-caption mt-0.5 w-4 shrink-0 text-right">{idx + 1}</span>
-                      <span className="flex-1 text-ink-secondary">{item.q}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-            </div>
-          ))}
-        </nav>
+            ))}
+          </div>
+          <button
+            type="button"
+            onClick={toggle}
+            aria-label="다크 모드 전환"
+            className="rounded-lg border border-line bg-card p-2 text-ink-tertiary transition-colors hover:bg-accent hover:text-ink"
+          >
+            {theme === 'dark' ? <Sun size={16} strokeWidth={1.8} /> : <Moon size={16} strokeWidth={1.8} />}
+          </button>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-[400px_1fr]">
-        {/* 좌측 — 40문항 전체를 한눈에 스캔하는 맵 */}
-        <div>
-          <div className="relative mb-3">
-            <Search size={15} strokeWidth={1.8} className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-tertiary" />
-            <input
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              placeholder="키워드로 질문 찾기 (예: SSR, HITL, DDD)"
-              className="w-full rounded-lg border border-line bg-card py-2 pl-9 pr-3 text-sm text-ink placeholder:text-ink-muted focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            />
-          </div>
+      {/* 포털사이트 스타일 대형 검색창 */}
+      <div className="relative mb-8">
+        <Search
+          size={big ? 26 : 20}
+          strokeWidth={1.8}
+          className={`pointer-events-none absolute top-1/2 -translate-y-1/2 text-ink-tertiary ${big ? 'left-6' : 'left-5'}`}
+        />
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="궁금한 키워드로 바로 찾기 — SSR, HITL, Meta API, DDD..."
+          className={`w-full rounded-full border-2 border-line bg-card text-ink placeholder:text-ink-muted shadow-sm transition-colors focus:border-primary focus:outline-none focus-visible:ring-4 focus-visible:ring-ring/20 ${
+            big ? 'py-5 pl-16 pr-6 text-2xl' : 'py-3 pl-12 pr-5 text-base'
+          }`}
+        />
+      </div>
 
-          <div className="max-h-[70vh] space-y-5 overflow-y-auto rounded-lg border border-line bg-card p-4">
-            {filteredDomains.length === 0 && (
-              <p className="text-body py-8 text-center">일치하는 질문이 없습니다.</p>
-            )}
-            {filteredDomains.map((d) => (
-              <div key={d.id}>
-                <div className="mb-1.5 flex items-center gap-2">
-                  <span className={TONE_CLASS[d.accent].text}>{d.icon}</span>
-                  <span className="text-h3">{d.label}</span>
-                  <span className="text-caption">{d.questions.length}문항</span>
+      <div className={`grid grid-cols-1 gap-6 ${big ? 'lg:grid-cols-[340px_1fr]' : 'lg:grid-cols-[300px_1fr]'}`}>
+        {/* 좌측 — 파일트리 내비게이터 */}
+        <div>
+          {filteredDomains.length === 0 && <p className="text-body py-8 text-center">일치하는 질문이 없습니다.</p>}
+
+          <div className="max-h-[75vh] overflow-y-auto rounded-lg border border-line bg-card p-2">
+            {filteredDomains.map((d) => {
+              const open = isSearching || openDomain === d.id;
+              const t = TONE_CLASS[d.accent];
+              return (
+                <div key={d.id}>
+                  <button
+                    type="button"
+                    onClick={() => setOpenDomain((cur) => (cur === d.id ? null : d.id))}
+                    className={`flex w-full items-center gap-1.5 rounded-md px-2 py-2 text-left transition-colors ${
+                      open ? t.bg : 'hover:bg-accent'
+                    }`}
+                  >
+                    <ChevronRight size={14} strokeWidth={2.5} className={`shrink-0 text-ink-tertiary transition-transform ${open ? 'rotate-90' : ''}`} />
+                    <span className={open ? t.text : 'text-ink-tertiary'}>{d.icon}</span>
+                    <span className={`flex-1 truncate text-sm font-medium ${open ? t.text : 'text-ink'}`}>{d.label}</span>
+                    <span className="text-[11px] text-ink-muted">{d.questions.length}</span>
+                  </button>
+
+                  {open && (
+                    <div className="mb-1 ml-4 space-y-0.5 border-l border-line py-0.5 pl-2">
+                      {d.questions.map((item) => {
+                        const active = activeDomainId === d.id && activeQuestion?.id === item.id;
+                        return (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onClick={() => {
+                              setOpenDomain(d.id);
+                              setSelectedByDomain((cur) => ({ ...cur, [d.id]: item.id }));
+                            }}
+                            title={item.q}
+                            className={`flex w-full items-start gap-1.5 rounded-md px-2 py-1.5 text-left text-xs leading-snug transition-colors ${
+                              active ? `${t.bg} ${t.text} font-medium` : 'text-ink-secondary hover:bg-accent hover:text-ink'
+                            }`}
+                          >
+                            <span className={`mt-1 inline-block h-1 w-1 shrink-0 rounded-full ${active ? t.dot : 'bg-line-strong'}`} />
+                            <span className="flex-1">{item.q}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
-                <div className="space-y-0.5">
-                  {d.questions.map((item) => {
-                    const active = selectedKey === `${d.id}:${item.id}`;
-                    return (
-                      <button
-                        key={item.id}
-                        type="button"
-                        onClick={() => pick(d.id, item.id)}
-                        title={item.q}
-                        className={`flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-left text-sm transition-colors ${
-                          active ? `${TONE_CLASS[d.accent].bg} ${TONE_CLASS[d.accent].text} font-medium` : 'text-ink-secondary hover:bg-accent hover:text-ink'
-                        }`}
-                      >
-                        <span
-                          className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full transition-colors ${
-                            active ? TONE_CLASS[d.accent].dot : 'bg-line-strong'
-                          }`}
-                        />
-                        <span className="flex-1 truncate">{item.q}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 
         {/* 우측 — 선택한 질문에 쓸 시각 자료 */}
-        <div className="lg:sticky lg:top-24 lg:self-start">
-          <div className={`rounded-xl border p-8 ${TONE_CLASS[selected.domain.accent].border} bg-card`}>
-            <div className={`mb-4 inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${TONE_CLASS[selected.domain.accent].bg} ${TONE_CLASS[selected.domain.accent].text}`}>
-              {selected.domain.icon}
-              {selected.domain.label}
+        <div className="min-w-0 lg:sticky lg:top-8 lg:self-start">
+          {activeDomain && activeQuestion && activeExhibit ? (
+            <div
+              ref={stageRef}
+              className={
+                fullscreen
+                  ? 'fixed inset-0 z-50 overflow-y-auto bg-surface-0 p-12'
+                  : big
+                    ? `rounded-2xl border-2 p-10 ${TONE_CLASS[activeDomain.accent].border} bg-card`
+                    : `rounded-xl border p-6 ${TONE_CLASS[activeDomain.accent].border} bg-card`
+              }
+            >
+              {fullscreen && (
+                <button
+                  type="button"
+                  onClick={exitFullscreen}
+                  aria-label="전체화면 닫기"
+                  className="fixed right-6 top-6 z-50 rounded-full border border-line bg-card p-3 text-ink-secondary shadow-md transition-colors hover:bg-accent hover:text-ink"
+                >
+                  <X size={24} />
+                </button>
+              )}
+
+              <div className={fullscreen ? 'mx-auto max-w-6xl' : ''}>
+                <div className="mb-5 flex items-center justify-between gap-3">
+                  <div
+                    className={
+                      big || fullscreen
+                        ? `inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-sm font-semibold ${TONE_CLASS[activeDomain.accent].bg} ${TONE_CLASS[activeDomain.accent].text}`
+                        : `inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${TONE_CLASS[activeDomain.accent].bg} ${TONE_CLASS[activeDomain.accent].text}`
+                    }
+                  >
+                    {activeDomain.icon}
+                    {activeDomain.label}
+                  </div>
+                  {!fullscreen && (
+                    <button
+                      type="button"
+                      onClick={enterFullscreen}
+                      aria-label="전체화면으로 보기"
+                      title="전체화면으로 보기"
+                      className="rounded-lg border border-line p-2 text-ink-tertiary transition-colors hover:bg-accent hover:text-ink"
+                    >
+                      <Maximize2 size={16} strokeWidth={1.8} />
+                    </button>
+                  )}
+                </div>
+
+                <p className={big || fullscreen ? 'mb-2 text-sm text-ink-tertiary' : 'text-caption mb-1'}>Q. {activeQuestion.q}</p>
+                <h2 className={big || fullscreen ? 'mb-6 text-4xl font-bold leading-snug text-ink' : 'text-h3 mb-4'}>
+                  {activeExhibit.title}
+                </h2>
+                <DensityProvider density={fullscreen ? 'presentation' : density}>
+                  <div className="mb-4">{activeExhibit.render()}</div>
+                </DensityProvider>
+                {activeExhibit.note && (
+                  <p
+                    className={
+                      big || fullscreen
+                        ? 'border-t border-line pt-4 text-base leading-relaxed text-ink-tertiary'
+                        : 'border-t border-line pt-3 text-xs leading-relaxed text-ink-tertiary'
+                    }
+                  >
+                    {activeExhibit.note}
+                  </p>
+                )}
+              </div>
             </div>
-            <p className="text-caption mb-1">Q. {selected.question.q}</p>
-            <h2 className="text-h2 mb-5 leading-snug">{selected.exhibit.title}</h2>
-            <div className="mb-4">{selected.exhibit.render()}</div>
-            {selected.exhibit.note && (
-              <p className="border-t border-line pt-3 text-xs leading-relaxed text-ink-tertiary">{selected.exhibit.note}</p>
-            )}
-          </div>
+          ) : (
+            <div className="rounded-2xl border-2 border-line bg-card p-10 text-center text-ink-tertiary">
+              왼쪽에서 폴더를 열고 질문을 선택하세요.
+            </div>
+          )}
         </div>
       </div>
     </div>
