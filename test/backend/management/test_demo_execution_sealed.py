@@ -90,7 +90,7 @@ async def test_demo_approve_execute_succeeds_in_mock_under_live(monkeypatch):
     monkeypatch.setattr(management, "_demo_executor_instance", None)  # 새 원장을 잡도록 재빌드
     org = uuid.uuid4()
     user = SimpleNamespace(id=uuid.uuid4(), role="USER")
-    # executor의 state 버전 provider(_state_version)가 "state_v1"이라 제안도 그에 맞춘다.
+    # executor의 state 버전 provider(wiring.state_version_v1)가 "state_v1"이라 제안도 그에 맞춘다.
     proposal = _fresh_proposal(management.TENANT_ID, expected_state_version="state_v1")
 
     approved = await management.approve_proposal(

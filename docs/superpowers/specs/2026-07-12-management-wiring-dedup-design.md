@@ -110,6 +110,7 @@ executor 쪽 호출 시맨틱(성공 1회·재생/거부 미호출·콜백 예�
 
 1. **구 오케스트레이터 데드코드 삭제** — `api/assistant/orchestrator.py`·`intent.py`·`registry.py` + `api/assistant/wiring.py`의 `build_assistant`/`Orchestrator` 등록부. CLAUDE.md Open Issues 기존 항목대로 발표(7/14) 후 진행. `_build_*_handler`는 통합 딥에이전트가 재사용하므로 보존.
 2. **org live 분기의 wiring 우회 정리** — `_resolve_reader/_resolve_writer`(management.py:3075·3087)가 `MetaAdsReader/Writer`를 직접 import하는 구조를 wiring 팩토리로 이관. 챗 도구·스케줄러가 전역 `.env` 토큰 기반 `build_reader(settings)`만 쓰는 이중 데이터 경로(라우터 live=org 연결, 챗·워커=전역 토큰) 문제와 묶어 별도 설계.
+3. **실행 모드 해석의 잔여 두 번째 지점** — `MetaAdsWriter.__init__`(adapters/meta/writer.py)가 `management_execution_mode`를 독자 파싱하며 폴백 의미도 다르다(wiring 정본: 쓰레기 값→DRY_RUN 폴백 / writer: 쓰레기 값→ValueError 즉사). 구성 시점 즉사가 안전한 면이 있어 버그는 아니지만, 단일 정본 관점의 잔여 갭으로 기록해 둔다(커밋 2 품질 리뷰 발견).
 
 ## 참고 — 이름 충돌 주의
 
